@@ -1,0 +1,3 @@
+sku,title_ko,title_en,src_url,buy_currency,buy_price,source_country,images,stock,tags,vendor,status
+KR-001,무신사 스니커즈,Musinsa Sneakers,https://store.example.kr/p/1,KRW,69000,KR,,50,sneakers,k-fashion,active
+US-001,US Hoodie Classic,US Hoodie Classic,https://store.example.com/p/hoodie,USD,49.99,US,,30,hoodie,brandY,active
