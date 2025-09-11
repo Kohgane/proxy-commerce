@@ -1,0 +1,44 @@
+project:
+  mode: "APPLY"   # APPLY | DRY_RUN
+  locale_primary: "ko"
+  locale_secondary: "en"
+
+catalog:
+  source: "google_sheets"
+  sheet_id: "${GOOGLE_SHEET_ID}"
+  worksheet: "catalog"
+
+media:
+  cloudinary:
+    cloud_name: "${CLOUDINARY_CLOUD_NAME}"
+    api_key: "${CLOUDINARY_API_KEY}"
+    api_secret: "${CLOUDINARY_API_SECRET}"
+    folder: "proxy-commerce"
+
+shopify:
+  enabled: true
+  shop: "${SHOPIFY_SHOP}"
+  access_token: "${SHOPIFY_ACCESS_TOKEN}"
+  location_id: "${SHOPIFY_LOCATION_ID}"
+  currency: "USD"
+
+woocommerce:
+  enabled: true
+  base_url: "${WOO_BASE_URL}"
+  consumer_key: "${WOO_CK}"
+  consumer_secret: "${WOO_CS}"
+  currency: "KRW"
+
+pricing:
+  target_margin_pct: ${TARGET_MARGIN_PCT}
+  fx_source: "${FX_SOURCE}"
+  fx_usdkrw: ${FX_USDKRW}
+  shipping_fee_default: ${SHIPPING_FEE_DEFAULT}
+
+orders:
+  router: "task"  # api | task
+  notify:
+    email:
+      enabled: ${EMAIL_ENABLED}
+    telegram:
+      enabled: ${TELEGRAM_ENABLED}
