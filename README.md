@@ -29,7 +29,26 @@
 
 ---
 
-## 명령
+## 주문 자동 라우팅
+
+Shopify에서 주문이 들어오면 자동으로 벤더별 구매 태스크를 생성합니다.
+
+### 흐름
+1. Shopify 주문 웹훅 수신 → HMAC 검증
+2. SKU 기반 카탈로그 조회 → 벤더/배대지 식별
+3. 벤더별 구매 태스크 생성 (포터→젠마켓, 메모파리→직배송)
+4. 텔레그램/이메일/Notion으로 구매 지시 알림
+5. 배대지에서 송장 수신 → Shopify fulfillment 업데이트
+
+### 트래킹 업데이트
+배대지에서 발송 후 아래 엔드포인트로 POST:
+```bash
+curl -X POST http://your-server/webhook/forwarder/tracking \
+  -H 'Content-Type: application/json' \
+  -d '{"order_id": 12345, "sku": "PTR-TNK-001", "tracking_number": "...", "carrier": "cj"}'
+```
+
+---
 
 로컬 테스트:
 ```bash
