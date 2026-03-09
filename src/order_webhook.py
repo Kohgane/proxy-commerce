@@ -3,11 +3,17 @@ from flask import Flask, request, jsonify
 from .utils.emailer import send_mail
 from .utils.telegram import send_tele
 from .utils.notion import create_task_if_env
+from .vendors.shopify_client import verify_webhook
 
 app = Flask(__name__)
 
 @app.post('/webhook/shopify/order')
 def shopify_order():
+    raw_body = request.get_data()
+    hmac_header = request.headers.get('X-Shopify-Hmac-Sha256', '')
+    if not verify_webhook(raw_body, hmac_header):
+        return jsonify({"error": "Invalid signature"}), 401
+
     data = request.get_json(force=True)
     order_id = data.get('id')
     line_items = data.get('line_items', [])
