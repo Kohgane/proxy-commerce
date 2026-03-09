@@ -258,3 +258,14 @@ python -m pytest tests/ -v
 - `.env.example` 업데이트: `DAILY_SUMMARY_ENABLED`, `ORDERS_WORKSHEET`, `ALERT_*` 환경변수
 - `config.example.yml` 업데이트: `dashboard` 섹션 추가
 - 68개 테스트 (`tests/test_dashboard.py`)
+### Step 4-2 — 재고 자동 동기화
+
+- `src/inventory/` 패키지 신규:
+  - `stock_checker.py`: `StockChecker` — 벤더 사이트 HTML 스크래핑으로 재고/가격 확인 (포터: カートに入れる/売り切れ, 메모파리: add to bag/out of stock)
+  - `inventory_sync.py`: `InventorySync` — 핵심 동기화 엔진 (Sheets ↔ Shopify/WooCommerce), full_sync/sync_single/dry_run 지원
+  - `stock_alerts.py`: `StockAlertManager` — 품절/재입고/가격변동 텔레그램/이메일 알림
+  - `cli.py`: 재고 CLI (`full-sync`, `check`, `check-all`, `report`)
+- `.github/workflows/inventory_sync.yml`: 4시간마다 자동 실행 + `workflow_dispatch` (액션/드라이런/벤더 필터)
+- `.env.example` 업데이트: `INVENTORY_SYNC_ENABLED`, `STOCK_CHECK_DELAY`, `LOW_STOCK_THRESHOLD`, `PRICE_CHANGE_THRESHOLD_PCT`, `INVENTORY_CHECK_TIMEOUT`
+- `config.example.yml` 업데이트: `inventory` 섹션 추가 (벤더별 HTML 패턴 포함)
+- 52개 테스트 (`tests/test_inventory.py`)

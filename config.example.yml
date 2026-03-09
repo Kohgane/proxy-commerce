@@ -90,3 +90,20 @@ dashboard:
     low_margin_threshold: 15.0
     high_margin_threshold: 35.0
 
+
+inventory:
+  sync_enabled: true
+  check_delay_seconds: 2
+  check_timeout_seconds: 15
+  low_stock_threshold: 3
+  price_change_threshold_pct: 5.0
+  auto_deactivate_on_stockout: true
+  vendors:
+    porter:
+      stock_patterns:
+        in_stock: ["カートに入れる", "add to cart"]
+        out_of_stock: ["売り切れ", "sold out"]
+    memo_paris:
+      stock_patterns:
+        in_stock: ["add to bag", "add to cart", "ajouter au panier"]
+        out_of_stock: ["out of stock", "sold out", "rupture de stock"]
