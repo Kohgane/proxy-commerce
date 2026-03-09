@@ -124,3 +124,34 @@ GitHub Actions 워크플로(`.github/workflows/daily_summary.yml`)가 매일 KST
 ### 추가 필수 Secrets (대시보드용)
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`: 일일 요약 텔레그램 발송
 
+
+## 재고 자동 동기화
+
+```bash
+# 전체 재고 동기화 (벤더 확인 → 카탈로그 → 스토어)
+python -m src.inventory.cli --action full-sync
+
+# 드라이런 (변경사항 확인만, 실제 업데이트 없음)
+python -m src.inventory.cli --action full-sync --dry-run
+
+# 특정 SKU 확인
+python -m src.inventory.cli --action check --sku PTR-TNK-001
+
+# 특정 벤더만 확인
+python -m src.inventory.cli --action check-all --vendor porter
+
+# 동기화 리포트
+python -m src.inventory.cli --action report
+```
+
+### 재고 자동화 워크플로
+
+GitHub Actions 워크플로(`.github/workflows/inventory_sync.yml`)가 4시간마다 자동 실행됩니다.
+수동 실행 시 액션, 드라이런 여부, 벤더 필터를 지정할 수 있습니다.
+
+### 추가 환경변수 (재고 동기화)
+- `INVENTORY_SYNC_ENABLED`: 동기화 활성화 (기본 `1`)
+- `STOCK_CHECK_DELAY`: 벤더 요청 간격 (초, 기본 `2`)
+- `LOW_STOCK_THRESHOLD`: 재고 부족 임계값 (기본 `3`)
+- `PRICE_CHANGE_THRESHOLD_PCT`: 가격 변동 알림 임계값 % (기본 `5.0`)
+- `INVENTORY_CHECK_TIMEOUT`: HTTP 타임아웃 (초, 기본 `15`)

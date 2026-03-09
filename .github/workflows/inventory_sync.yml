@@ -1,0 +1,66 @@
+name: Inventory Sync
+
+on:
+  schedule:
+    - cron: "0 */4 * * *"   # 4시간마다 실행
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action: full-sync, check-all, report'
+        required: false
+        default: 'full-sync'
+        type: choice
+        options:
+          - full-sync
+          - check-all
+          - report
+      dry_run:
+        description: 'Dry run (no actual updates)'
+        required: false
+        default: false
+        type: boolean
+      vendor:
+        description: 'Vendor filter (porter, memo_paris, or all)'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - porter
+          - memo_paris
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run inventory sync
+        env:
+          GOOGLE_SERVICE_JSON_B64: ${{ secrets.GOOGLE_SERVICE_JSON_B64 }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          SHOPIFY_SHOP: ${{ secrets.SHOPIFY_SHOP }}
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
+          WOO_BASE_URL: ${{ secrets.WOO_BASE_URL }}
+          WOO_CK: ${{ secrets.WOO_CK }}
+          WOO_CS: ${{ secrets.WOO_CS }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          STOCK_CHECK_DELAY: "2"
+          INVENTORY_SYNC_ENABLED: "1"
+        run: |
+          ACTION="${{ github.event.inputs.action || 'full-sync' }}"
+          DRY_RUN="${{ github.event.inputs.dry_run }}"
+          VENDOR="${{ github.event.inputs.vendor || 'all' }}"
+          CMD="python -m src.inventory.cli --action $ACTION"
+          if [ "$DRY_RUN" = "true" ]; then CMD="$CMD --dry-run"; fi
+          if [ "$VENDOR" != "all" ]; then CMD="$CMD --vendor $VENDOR"; fi
+          eval $CMD
