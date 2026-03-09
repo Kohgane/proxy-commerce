@@ -1,12 +1,121 @@
+import os
 from decimal import Decimal
 
-def calc_price(buy_price, buy_currency, fx_usdkrw, margin_pct, target_currency):
+# 기본 환율 (모두 KRW 기준)
+DEFAULT_FX_RATES = {
+    'USDKRW': Decimal('1350'),
+    'JPYKRW': Decimal('9.0'),
+    'EURKRW': Decimal('1470'),
+}
+
+
+def _build_fx_rates(fx_usdkrw=None, fx_jpykrw=None, fx_eurkrw=None):
+    """환경변수 또는 파라미터에서 환율 딕셔너리를 생성한다."""
+    return {
+        'USDKRW': Decimal(str(fx_usdkrw)) if fx_usdkrw is not None
+                  else Decimal(os.getenv('FX_USDKRW', str(DEFAULT_FX_RATES['USDKRW']))),
+        'JPYKRW': Decimal(str(fx_jpykrw)) if fx_jpykrw is not None
+                  else Decimal(os.getenv('FX_JPYKRW', str(DEFAULT_FX_RATES['JPYKRW']))),
+        'EURKRW': Decimal(str(fx_eurkrw)) if fx_eurkrw is not None
+                  else Decimal(os.getenv('FX_EURKRW', str(DEFAULT_FX_RATES['EURKRW']))),
+    }
+
+
+def _to_krw(amount, currency, fx_rates):
+    """임의 통화를 KRW로 환산한다."""
+    if currency == 'KRW':
+        return amount
+    key = f'{currency}KRW'
+    if key not in fx_rates:
+        raise ValueError(f'지원하지 않는 통화: {currency}')
+    return amount * fx_rates[key]
+
+
+def _from_krw(amount_krw, currency, fx_rates):
+    """KRW를 임의 통화로 환산한다."""
+    if currency == 'KRW':
+        return amount_krw
+    key = f'{currency}KRW'
+    if key not in fx_rates:
+        raise ValueError(f'지원하지 않는 통화: {currency}')
+    return amount_krw / fx_rates[key]
+
+
+def calc_price(buy_price, buy_currency, fx_usdkrw, margin_pct, target_currency,
+               fx_rates=None):
+    """구매가를 목표 통화로 환산하고 마진을 적용한 판매가를 반환한다.
+
+    기존 호출 시그니처(buy_price, buy_currency, fx_usdkrw, margin_pct,
+    target_currency)를 그대로 지원하며, 추가로 fx_rates 딕셔너리를
+    키워드 인수로 받아 다중통화 환산에 사용한다.
+    """
     buy = Decimal(str(buy_price))
-    if buy_currency == 'USD' and target_currency == 'KRW':
-        base = buy * Decimal(str(fx_usdkrw))
-    elif buy_currency == 'KRW' and target_currency == 'USD':
-        base = buy / Decimal(str(fx_usdkrw))
-    else:
-        base = buy
-    sell = (base * (Decimal('1') + Decimal(str(margin_pct))/Decimal('100')))
+
+    # fx_rates가 없으면 fx_usdkrw 값을 기준으로 생성 (하위호환)
+    if fx_rates is None:
+        fx_rates = _build_fx_rates(fx_usdkrw=fx_usdkrw)
+
+    base = _from_krw(_to_krw(buy, buy_currency, fx_rates), target_currency, fx_rates)
+    sell = base * (Decimal('1') + Decimal(str(margin_pct)) / Decimal('100'))
+    return round(sell, 2)
+
+
+def calc_landed_cost(buy_price, buy_currency, margin_pct, fx_rates=None,
+                     forwarder_fee=None, shipping_fee=None, customs_rate=None,
+                     customs_threshold_krw=None):
+    """구매대행 최종 판매가(KRW)를 계산한다.
+
+    최종 판매가 =
+        (원가 KRW 환산 + 배대지 수수료 KRW 환산 + 국제배송비)
+        × (1 + 관부가세율)
+        × (1 + 마진율)
+
+    Args:
+        buy_price: 구매가
+        buy_currency: 구매 통화 ('KRW', 'USD', 'JPY', 'EUR')
+        margin_pct: 마진율 (%)
+        fx_rates: 환율 딕셔너리. None이면 환경변수에서 읽음.
+        forwarder_fee: 배대지(젠마켓 등) 수수료 (JPY). None이면 환경변수 FORWARDER_FEE_JPY 사용.
+        shipping_fee: 국제배송비 (KRW). None이면 환경변수 SHIPPING_FEE_DEFAULT 사용.
+        customs_rate: 관부가세율. None이면 원가 KRW 환산액이 customs_threshold_krw 초과 시 자동 적용.
+        customs_threshold_krw: 관부가세 면세 기준액 (KRW). None이면 환경변수 CUSTOMS_THRESHOLD_KRW 사용.
+    """
+    if fx_rates is None:
+        fx_rates = _build_fx_rates()
+
+    buy = Decimal(str(buy_price))
+
+    # 배대지 수수료 기본값 (JPY)
+    if forwarder_fee is None:
+        forwarder_fee = Decimal(os.getenv('FORWARDER_FEE_JPY', '300'))
+    forwarder_fee = Decimal(str(forwarder_fee))
+
+    # 국제배송비 기본값 (KRW)
+    if shipping_fee is None:
+        shipping_fee = Decimal(os.getenv('SHIPPING_FEE_DEFAULT', '12000'))
+    shipping_fee = Decimal(str(shipping_fee))
+
+    # 관부가세 면세 기준액
+    if customs_threshold_krw is None:
+        customs_threshold_krw = Decimal(os.getenv('CUSTOMS_THRESHOLD_KRW', '150000'))
+    customs_threshold_krw = Decimal(str(customs_threshold_krw))
+
+    # 원가 KRW 환산
+    cost_krw = _to_krw(buy, buy_currency, fx_rates)
+
+    # 배대지 수수료 KRW 환산 (JPY 기준)
+    forwarder_fee_krw = _to_krw(forwarder_fee, 'JPY', fx_rates)
+
+    total_before_customs = cost_krw + forwarder_fee_krw + shipping_fee
+
+    # 관부가세율 결정
+    if customs_rate is None:
+        if cost_krw > customs_threshold_krw:
+            customs_rate = Decimal(os.getenv('CUSTOMS_RATE_DEFAULT', '0.20'))
+        else:
+            customs_rate = Decimal('0')
+    customs_rate = Decimal(str(customs_rate))
+
+    total_after_customs = total_before_customs * (Decimal('1') + customs_rate)
+    sell = total_after_customs * (Decimal('1') + Decimal(str(margin_pct)) / Decimal('100'))
     return round(sell, 2)

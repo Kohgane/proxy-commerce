@@ -33,7 +33,12 @@ pricing:
   target_margin_pct: ${TARGET_MARGIN_PCT}
   fx_source: "${FX_SOURCE}"
   fx_usdkrw: ${FX_USDKRW}
+  fx_jpykrw: ${FX_JPYKRW}        # 신규: JPY→KRW 환율
+  fx_eurkrw: ${FX_EURKRW}        # 신규: EUR→KRW 환율
   shipping_fee_default: ${SHIPPING_FEE_DEFAULT}
+  forwarder_fee_jpy: ${FORWARDER_FEE_JPY}  # 신규: 젠마켓 수수료 (엔)
+  customs_threshold_krw: 150000   # 신규: 관부가세 면세 기준 (원)
+  customs_rate_default: 0.20      # 신규: 기본 관부가세율
 
 orders:
   router: "task"  # api | task
