@@ -43,6 +43,7 @@ jobs:
           GOOGLE_SERVICE_JSON_B64: ${{ secrets.GOOGLE_SERVICE_JSON_B64 }}
           SHOPIFY_SHOP: ${{ secrets.SHOPIFY_SHOP }}
           SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
           WOO_BASE_URL: ${{ secrets.WOO_BASE_URL }}
           WOO_CK: ${{ secrets.WOO_CK }}
           WOO_CS: ${{ secrets.WOO_CS }}
