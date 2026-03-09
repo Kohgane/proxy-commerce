@@ -8,9 +8,53 @@ DEFAULT_FX_RATES = {
     'EURKRW': Decimal('1470'),
 }
 
+# FXCache를 최상위에서 임포트하여 테스트 시 패치 가능하게 함
+# fx 패키지가 설치돼 있지 않은 환경(테스트 격리)에서도 안전하게 로드
+try:
+    from .fx.cache import FXCache
+except Exception:  # ImportError / 순환 참조 방어
+    FXCache = None
 
-def _build_fx_rates(fx_usdkrw=None, fx_jpykrw=None, fx_eurkrw=None):
-    """환경변수 또는 파라미터에서 환율 딕셔너리를 생성한다."""
+
+def _build_fx_rates(fx_usdkrw=None, fx_jpykrw=None, fx_eurkrw=None, use_live=None):
+    """환율 딕셔너리를 생성한다.
+
+    우선순위:
+    1) 파라미터 직접 지정
+    2) use_live=True이면 FXCache에서 실시간 환율 (FX_USE_LIVE 환경변수로도 제어)
+    3) 환경변수 (FX_USDKRW 등)
+    4) DEFAULT_FX_RATES 기본값
+    """
+    # use_live 기본값: FX_USE_LIVE 환경변수 확인
+    if use_live is None:
+        use_live = os.getenv('FX_USE_LIVE', '0') == '1'
+
+    # 파라미터가 모두 지정된 경우 바로 반환 (최우선)
+    if fx_usdkrw is not None and fx_jpykrw is not None and fx_eurkrw is not None:
+        return {
+            'USDKRW': Decimal(str(fx_usdkrw)),
+            'JPYKRW': Decimal(str(fx_jpykrw)),
+            'EURKRW': Decimal(str(fx_eurkrw)),
+        }
+
+    # use_live=True: FXCache에서 실시간 환율 시도
+    if use_live:
+        try:
+            if FXCache is not None:
+                cache = FXCache()
+                cached = cache.get()
+                if cached:
+                    return {
+                        'USDKRW': Decimal(str(fx_usdkrw)) if fx_usdkrw is not None
+                                  else Decimal(str(cached['USDKRW'])),
+                        'JPYKRW': Decimal(str(fx_jpykrw)) if fx_jpykrw is not None
+                                  else Decimal(str(cached['JPYKRW'])),
+                        'EURKRW': Decimal(str(fx_eurkrw)) if fx_eurkrw is not None
+                                  else Decimal(str(cached['EURKRW'])),
+                    }
+        except Exception:
+            pass  # 캐시 실패 시 환경변수 폴백
+
     return {
         'USDKRW': Decimal(str(fx_usdkrw)) if fx_usdkrw is not None
                   else Decimal(os.getenv('FX_USDKRW', str(DEFAULT_FX_RATES['USDKRW']))),

@@ -107,3 +107,15 @@ inventory:
       stock_patterns:
         in_stock: ["add to bag", "add to cart", "ajouter au panier"]
         out_of_stock: ["out of stock", "sold out", "rupture de stock"]
+
+fx:
+  provider: frankfurter
+  use_live: true
+  cache_ttl_seconds: 3600
+  change_alert_pct: 3.0
+  history_worksheet: fx_history
+  rates_worksheet: fx_rates
+  supported_pairs:
+    - USDKRW
+    - JPYKRW
+    - EURKRW

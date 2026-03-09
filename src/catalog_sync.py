@@ -15,7 +15,7 @@ FX_JPYKRW = Decimal(os.getenv('FX_JPYKRW', '9.0'))
 FX_EURKRW = Decimal(os.getenv('FX_EURKRW', '1470'))
 SHIPPING_FEE_DEFAULT = Decimal(os.getenv('SHIPPING_FEE_DEFAULT', '12000'))
 
-FX_RATES = _build_fx_rates(fx_usdkrw=FX_USDKRW, fx_jpykrw=FX_JPYKRW, fx_eurkrw=FX_EURKRW)
+FX_RATES = _build_fx_rates(fx_usdkrw=FX_USDKRW, fx_jpykrw=FX_JPYKRW, fx_eurkrw=FX_EURKRW, use_live=True)
 
 SHEET_ID = os.getenv('GOOGLE_SHEET_ID')
 WORKSHEET = os.getenv('WORKSHEET', 'catalog')
