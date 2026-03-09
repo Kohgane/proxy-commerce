@@ -360,20 +360,25 @@ class TestWooPrepareProduct:
         result = self.channel.prepare_product(PORTER_CATALOG, SELL_PRICE_KRW)
         assert result['regular_price'] == str(int(SELL_PRICE_KRW))
 
-    def test_categories_brand(self):
-        result = self.channel.prepare_product(PORTER_CATALOG, SELL_PRICE_KRW)
-        cat_names = [c['name'] for c in result['categories']]
-        assert 'PORTER' in cat_names
+    def test_categories_id_mapped(self):
+        """카테고리가 API로 조회되면 ID로 매핑된다 (API 사용 가능 시)."""
+        from unittest.mock import patch as mock_patch
+        import src.vendors.woocommerce_client as woo_mod
+        with mock_patch.object(woo_mod, 'get_or_create_category', return_value=7):
+            with mock_patch.object(woo_mod, 'get_or_create_tag', return_value=1):
+                result = self.channel.prepare_product(PORTER_CATALOG, SELL_PRICE_KRW)
+        assert result['categories'] == [{'id': 7}]
 
     def test_meta_source_country(self):
         result = self.channel.prepare_product(PORTER_CATALOG, SELL_PRICE_KRW)
         meta = {m['key']: m['value'] for m in result['meta_data']}
         assert meta['source_country'] == 'JP'
 
-    def test_meta_forwarder(self):
+    def test_meta_vendor(self):
+        """meta_data에 vendor 키가 포함된다."""
         result = self.channel.prepare_product(PORTER_CATALOG, SELL_PRICE_KRW)
         meta = {m['key']: m['value'] for m in result['meta_data']}
-        assert meta['forwarder'] == 'zenmarket'
+        assert meta['vendor'] == 'PORTER'
 
     def test_channel_name(self):
         assert self.channel.channel_name == 'woocommerce'

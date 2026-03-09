@@ -28,6 +28,11 @@ woocommerce:
   consumer_key: "${WOO_CK}"
   consumer_secret: "${WOO_CS}"
   currency: "KRW"
+  api_version: "${WOO_API_VERSION}"
+  webhook_secret: "${WOO_WEBHOOK_SECRET}"
+  batch_size: 10
+  shipping_class: "overseas"
+  default_stock_manage: true
 
 pricing:
   target_margin_pct: ${TARGET_MARGIN_PCT}
