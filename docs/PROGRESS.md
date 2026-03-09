@@ -14,6 +14,7 @@
 | 1 | 1-4 | 스크래퍼 모듈 (Listly CSV/JSON 로더 + Sheets 적재 + CLI) | [#4](https://github.com/Kohgane/proxy-commerce/pull/4) | ✅ 머지 완료 |
 | 2 | 2-1 | 판매 채널 모듈 (Percenty CSV 내보내기 + Shopify/WooCommerce 래퍼) | [#5](https://github.com/Kohgane/proxy-commerce/pull/5) | ✅ 머지 완료 |
 | 2 | 2-2 | Shopify 인증 강화 (HMAC 검증 + CLIENT_SECRET + retry/GraphQL) | [#6](https://github.com/Kohgane/proxy-commerce/pull/6) | ✅ 머지 완료 |
+| 3 | 3-1 | 주문 자동 라우팅 엔진 (SKU→벤더→배대지→알림→Fulfillment) | [#7](https://github.com/Kohgane/proxy-commerce/pull/7) | ✅ |
 
 ---
 
@@ -80,6 +81,20 @@
 
 ---
 
+## ✅ Phase 3: 주문 자동 라우팅 (완료)
+
+### PR #7 — 주문 자동 라우팅 엔진 (SKU→벤더→배대지→알림→Fulfillment)
+- `src/orders/` 패키지 신규:
+  - `catalog_lookup.py`: `CatalogLookup` — Google Sheets에서 SKU 조회, 배치 조회, 벤더 정보 추출, 캐싱
+  - `router.py`: `OrderRouter` — Shopify 주문 → 벤더별 구매 태스크 라우팅 (PTR-→포터/젠마켓, MMP-→메모파리/직배송)
+  - `notifier.py`: `OrderNotifier` — 텔레그램/이메일/Notion 통합 알림
+  - `tracker.py`: `OrderTracker` — 배대지 송장 수신 → Shopify fulfillment + WooCommerce 상태 업데이트, 택배사 코드 매핑
+- `src/order_webhook.py` 리팩터링: OrderRouter/Notifier/Tracker 통합
+- `.env.example` 업데이트: `ZENMARKET_ADDRESS`, `WAREHOUSE_ADDRESS`, `SHOPIFY_LOCATION_ID`, 택배사 기본값
+- 70개 테스트 (`tests/test_orders.py`)
+
+---
+
 ## 📁 현재 프로젝트 구조
 
 ```
@@ -99,7 +114,7 @@ proxy-commerce/
 ├── src/
 │   ├── __init__.py
 │   ├── catalog_sync.py         # Sheets → Shopify/WooCommerce 동기화
-│   ├── order_webhook.py        # 주문 웹훅 (HMAC 검증)
+│   ├── order_webhook.py        # 주문 웹훅 (라우팅+알림+트래킹 통합)
 │   ├── image_uploader.py       # Cloudinary 이미지
 │   ├── price.py                # 다중통화 + calc_landed_cost()
 │   ├── translate.py            # DeepL 다국어 번역 + 캐시
@@ -113,6 +128,12 @@ proxy-commerce/
 │   │   ├── woo_domestic.py     # WooCommerce 채널 래퍼
 │   │   ├── cli.py              # 채널 CLI
 │   │   └── templates/          # 상세페이지 HTML
+│   ├── orders/
+│   │   ├── __init__.py         # orders 패키지
+│   │   ├── catalog_lookup.py   # CatalogLookup (SKU→시트 조회, 캐싱)
+│   │   ├── router.py           # OrderRouter (주문→벤더 태스크 라우팅)
+│   │   ├── notifier.py         # OrderNotifier (텔레그램/이메일/Notion)
+│   │   └── tracker.py          # OrderTracker (Shopify fulfillment + WooCommerce)
 │   ├── scrapers/
 │   │   ├── __init__.py
 │   │   ├── listly_client.py    # Listly CSV/JSON 로더
@@ -136,7 +157,10 @@ proxy-commerce/
     ├── test_translate.py       # 19 tests
     ├── test_vendors.py         # 53 tests
     ├── test_scrapers.py        # 36 tests
-    └── test_channels.py        # 51 tests
+    ├── test_channels.py        # 51 tests
+    ├── test_shopify_auth.py    # 17 tests
+    ├── test_woocommerce.py     # 34 tests
+    └── test_orders.py          # 70 tests
 ```
 
 ---
@@ -186,13 +210,16 @@ python -m pytest tests/ -v
 | vendors/ | test_vendors.py | 53 |
 | scrapers/ | test_scrapers.py | 36 |
 | channels/ | test_channels.py | 51 |
-| **합계** | | **175** |
+| auth/ + utils/ | test_shopify_auth.py | 17 |
+| vendors/woocommerce | test_woocommerce.py | 34 |
+| orders/ | test_orders.py | 70 |
+| **합계** | | **296** |
 
 ---
 
 ## 🚀 다음 단계 (미정)
 
-- [ ] Phase 3: 주문 자동 라우팅 (Shopify 주문 → 벤더별 자동 발주)
+- [x] Phase 3: 주문 자동 라우팅 (Shopify 주문 → 벤더별 자동 발주)
 - [ ] 실시간 환율 API 연동 (`FX_SOURCE=api`)
 - [ ] 재고 자동 동기화 (크롤링 스케줄링)
 - [ ] 쿠팡/스마트스토어 API 직접 연동 (퍼센티 대체)
