@@ -1,3 +1,5 @@
-sku,title_ko,title_en,src_url,buy_currency,buy_price,source_country,images,stock,tags,vendor,status
-KR-001,무신사 스니커즈,Musinsa Sneakers,https://store.example.kr/p/1,KRW,69000,KR,,50,sneakers,k-fashion,active
-US-001,US Hoodie Classic,US Hoodie Classic,https://store.example.com/p/hoodie,USD,49.99,US,,30,hoodie,brandY,active
+sku,title_ko,title_en,title_ja,title_fr,src_url,buy_currency,buy_price,source_country,images,stock,tags,vendor,status,category,brand,forwarder,customs_category
+KR-001,무신사 스니커즈,Musinsa Sneakers,,,https://store.example.kr/p/1,KRW,69000,KR,,50,sneakers,k-fashion,active,shoes,musinsa,,fashion
+US-001,US Hoodie Classic,US Hoodie Classic,,,https://store.example.com/p/hoodie,USD,49.99,US,,30,hoodie,brandY,active,apparel,brandY,,fashion
+PTR-TNK-001,,PORTER TANKER 2WAY BRIEFCASE,タンカー 2WAYブリーフケース,,https://www.yoshidakaban.com/product/100000.html,JPY,30800,JP,,0,"bag,tanker,briefcase",PORTER,active,bag,PORTER,zenmarket,bag
+MMP-EDP-001,,Memo Paris African Leather,,African Leather Eau de Parfum,https://www.memoparis.com/products/african-leather,EUR,250,FR,,0,"perfume,edp,75ml",MEMO_PARIS,active,perfume,MEMO_PARIS,,perfume
