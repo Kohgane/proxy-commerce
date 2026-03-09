@@ -192,22 +192,29 @@ class StockChecker:
     def _extract_price_eur(self, html: str) -> Decimal | None:
         """HTML에서 EUR 가격을 추출한다."""
         import re
-        # €120.00 또는 120,00 € 패턴
+        # €120.00 또는 120,00 € 패턴 (US: 1,234.56 / European: 1.234,56)
         patterns = [
-            r'€\s*([\d,\.]+)',
-            r'([\d,\.]+)\s*€',
+            r'€\s*([\d\s,\.]+)',
+            r'([\d\s,\.]+)\s*€',
             r'"price"\s*:\s*"?([\d\.]+)"?',
         ]
         for pat in patterns:
             m = re.search(pat, html)
             if m:
-                raw = m.group(1).replace(',', '.')
-                # 유럽식 1.234,56 → 소수점만 남기기
-                parts = raw.rsplit('.', 1)
+                raw = m.group(1).strip()
                 try:
-                    if len(parts) == 2 and len(parts[1]) <= 2:
-                        return Decimal(raw)
-                    return Decimal(parts[0])
+                    # Try to detect format: if comma precedes exactly 2 digits at end → European decimal
+                    # e.g. "120,00" → 120.00, "1.234,56" → 1234.56
+                    if ',' in raw and raw.index(',') < len(raw) - 3:
+                        # Thousand separator is comma (US style: 1,234.56)
+                        cleaned = raw.replace(',', '')
+                        return Decimal(cleaned)
+                    elif ',' in raw:
+                        # Decimal separator is comma (European: 120,00 or 1.234,56)
+                        cleaned = raw.replace('.', '').replace(',', '.')
+                        return Decimal(cleaned)
+                    else:
+                        return Decimal(raw.replace(',', ''))
                 except InvalidOperation:
                     pass
         return None

@@ -318,7 +318,6 @@ class InventorySync:
         """Shopify REST API로 variant 재고 업데이트 (location_id 없을 때 폴백)."""
         try:
             from ..vendors.shopify_client import _find_by_sku, _request_with_retry
-            import os
             API = f"https://{os.getenv('SHOPIFY_SHOP')}/admin/api/{os.getenv('SHOPIFY_API_VERSION', '2024-07')}"
             product = _find_by_sku(sku)
             if not product:
