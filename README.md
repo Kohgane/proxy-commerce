@@ -39,3 +39,27 @@ export $(cat .env.example | xargs)  # 필요 시 값 수정 후 사용
 python -m src.catalog_sync  # 카탈로그 동기화 1회 실행
 python -m src.order_webhook  # 웹훅 서버 로컬 실행 (기본 8000)
 ```
+
+## 크롤링 데이터 적재
+
+Listly에서 내보낸 CSV/JSON 파일을 Google Sheets 카탈로그에 적재:
+
+```bash
+# 포터 상품 적재
+python -m src.scrapers.cli --vendor porter --file data/porter_raw.csv
+
+# 메모파리 상품 적재
+python -m src.scrapers.cli --vendor memo_paris --file data/memo_raw.csv
+
+# DRY_RUN (시트에 쓰지 않고 결과만 확인)
+python -m src.scrapers.cli --vendor porter --file data/porter_raw.csv --dry-run
+```
+
+샘플 데이터로 테스트:
+```bash
+# 포터 샘플 DRY_RUN
+python -m src.scrapers.cli --vendor porter --file data/porter_raw_sample.csv --dry-run
+
+# 메모파리 샘플 DRY_RUN
+python -m src.scrapers.cli --vendor memo_paris --file data/memo_raw_sample.csv --dry-run
+```

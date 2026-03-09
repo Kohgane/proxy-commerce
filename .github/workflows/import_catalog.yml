@@ -1,0 +1,62 @@
+name: Import Catalog from Listly
+
+on:
+  workflow_dispatch:
+    inputs:
+      vendor:
+        description: 'Vendor name (porter / memo_paris)'
+        required: true
+        type: choice
+        options:
+          - porter
+          - memo_paris
+      file_url:
+        description: 'Listly export file URL (optional, for URL-based import)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Import catalog from Listly
+        env:
+          GOOGLE_SERVICE_JSON_B64: ${{ secrets.GOOGLE_SERVICE_JSON_B64 }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+        run: |
+          if [ -n "${{ inputs.file_url }}" ]; then
+            # URL에서 임시 파일로 다운로드
+            curl -fsSL "${{ inputs.file_url }}" -o /tmp/listly_import.csv
+            python -m src.scrapers.cli \
+              --vendor "${{ inputs.vendor }}" \
+              --file /tmp/listly_import.csv
+          else
+            # 샘플 파일 사용 (테스트/데모용)
+            python -m src.scrapers.cli \
+              --vendor "${{ inputs.vendor }}" \
+              --file "data/${{ inputs.vendor }}_raw_sample.csv"
+          fi
+
+      - name: Trigger catalog sync (optional)
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run deploy.yml --ref ${{ github.ref_name }} || true
