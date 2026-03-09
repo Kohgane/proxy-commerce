@@ -78,3 +78,15 @@ channels:
     markets_enabled: ${SHOPIFY_MARKETS_ENABLED}
   woocommerce:
     brand_collections: true
+
+dashboard:
+  orders_worksheet: orders
+  daily_summary_enabled: true
+  alerts:
+    stale_order_days: 7
+    forwarder_days: 5
+    fx_change_threshold_pct: 3.0
+  revenue:
+    low_margin_threshold: 15.0
+    high_margin_threshold: 35.0
+

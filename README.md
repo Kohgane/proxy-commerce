@@ -82,3 +82,45 @@ python -m src.scrapers.cli --vendor porter --file data/porter_raw_sample.csv --d
 # 메모파리 샘플 DRY_RUN
 python -m src.scrapers.cli --vendor memo_paris --file data/memo_raw_sample.csv --dry-run
 ```
+
+---
+
+## 대시보드 / 모니터링
+
+주문 상태 추적, 매출/마진 분석, 일일 운영 요약을 제공합니다.
+주문 상태는 Google Sheets(`orders` 시트)에 자동으로 기록됩니다.
+
+```bash
+# 일일 요약 발송 (텔레그램/이메일)
+python -m src.dashboard.cli --action daily-summary
+
+# 특정 날짜 일일 요약
+python -m src.dashboard.cli --action daily-summary --date 2026-03-09
+
+# 매출 리포트 (일별)
+python -m src.dashboard.cli --action revenue --period daily --date 2026-03-09
+
+# 매출 리포트 (주별)
+python -m src.dashboard.cli --action revenue --period weekly --week-start 2026-03-03
+
+# 매출 리포트 (월별)
+python -m src.dashboard.cli --action revenue --period monthly --month 2026-03
+
+# 미완료 주문 조회
+python -m src.dashboard.cli --action status --filter pending
+
+# 특정 주문 조회
+python -m src.dashboard.cli --action status --order-id 12345
+
+# 마진 분석
+python -m src.dashboard.cli --action margin-analysis
+```
+
+### 일일 요약 자동화
+
+GitHub Actions 워크플로(`.github/workflows/daily_summary.yml`)가 매일 KST 22:00에 자동 실행됩니다.
+수동 실행 시 날짜를 지정할 수 있습니다.
+
+### 추가 필수 Secrets (대시보드용)
+- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`: 일일 요약 텔레그램 발송
+
