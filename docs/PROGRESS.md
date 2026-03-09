@@ -14,7 +14,8 @@
 | 1 | 1-4 | 스크래퍼 모듈 (Listly CSV/JSON 로더 + Sheets 적재 + CLI) | [#4](https://github.com/Kohgane/proxy-commerce/pull/4) | ✅ 머지 완료 |
 | 2 | 2-1 | 판매 채널 모듈 (Percenty CSV 내보내기 + Shopify/WooCommerce 래퍼) | [#5](https://github.com/Kohgane/proxy-commerce/pull/5) | ✅ 머지 완료 |
 | 2 | 2-2 | Shopify 인증 강화 (HMAC 검증 + CLIENT_SECRET + retry/GraphQL) | [#6](https://github.com/Kohgane/proxy-commerce/pull/6) | ✅ 머지 완료 |
-| 3 | 3-1 | 주문 자동 라우팅 엔진 (SKU→벤더→배대지→알림→Fulfillment) | [#7](https://github.com/Kohgane/proxy-commerce/pull/7) | ✅ |
+| 3 | 3-1 | 주문 자동 라우팅 엔진 (SKU→벤더→배대지→알림→Fulfillment) | [#7](https://github.com/Kohgane/proxy-commerce/pull/7) | ✅ 머지 완료 |
+| 4 | 4-1 | 모니터링 대시보드 (주문 상태 추적 + 매출/마진 리포트 + 일일 요약) | — | 🚀 진행 중 |
 
 ---
 
@@ -134,6 +135,12 @@ proxy-commerce/
 │   │   ├── router.py           # OrderRouter (주문→벤더 태스크 라우팅)
 │   │   ├── notifier.py         # OrderNotifier (텔레그램/이메일/Notion)
 │   │   └── tracker.py          # OrderTracker (Shopify fulfillment + WooCommerce)
+│   ├── dashboard/
+│   │   ├── __init__.py         # dashboard 패키지
+│   │   ├── order_status.py     # OrderStatusTracker (주문 상태 Sheets 기록)
+│   │   ├── revenue_report.py   # RevenueReporter (매출/마진 분석)
+│   │   ├── daily_summary.py    # DailySummaryGenerator (일일 요약 + 발송)
+│   │   └── cli.py              # 대시보드 CLI
 │   ├── scrapers/
 │   │   ├── __init__.py
 │   │   ├── listly_client.py    # Listly CSV/JSON 로더
@@ -160,7 +167,8 @@ proxy-commerce/
     ├── test_channels.py        # 51 tests
     ├── test_shopify_auth.py    # 17 tests
     ├── test_woocommerce.py     # 34 tests
-    └── test_orders.py          # 70 tests
+    ├── test_orders.py          # 70 tests
+    └── test_dashboard.py       # 68 tests
 ```
 
 ---
@@ -177,6 +185,8 @@ proxy-commerce/
 | `WOO_BASE_URL` | WooCommerce 사이트 URL |
 | `WOO_CK` | WooCommerce Consumer Key |
 | `WOO_CS` | WooCommerce Consumer Secret |
+| `TELEGRAM_BOT_TOKEN` | 텔레그램 봇 토큰 (일일 요약 발송) |
+| `TELEGRAM_CHAT_ID` | 텔레그램 채널/그룹 ID |
 
 ---
 
@@ -194,6 +204,12 @@ python -m src.scrapers.cli --vendor memo_paris --file data/memo_raw.csv --dry-ru
 python -m src.channels.cli --channel percenty --output data/exports/
 python -m src.channels.cli --channel percenty --market coupang --output data/exports/
 python -m src.channels.cli --channel percenty --output data/exports/ --dry-run
+
+# 대시보드
+python -m src.dashboard.cli --action daily-summary
+python -m src.dashboard.cli --action revenue --period daily --date 2026-03-09
+python -m src.dashboard.cli --action status --filter pending
+python -m src.dashboard.cli --action margin-analysis
 
 # 테스트
 python -m pytest tests/ -v
@@ -213,14 +229,32 @@ python -m pytest tests/ -v
 | auth/ + utils/ | test_shopify_auth.py | 17 |
 | vendors/woocommerce | test_woocommerce.py | 34 |
 | orders/ | test_orders.py | 70 |
-| **합계** | | **296** |
+| dashboard/ | test_dashboard.py | 68 |
+| **합계** | | **364** |
 
 ---
 
 ## 🚀 다음 단계 (미정)
 
 - [x] Phase 3: 주문 자동 라우팅 (Shopify 주문 → 벤더별 자동 발주)
+- [x] Phase 4 Step 4-1: 모니터링 대시보드 (주문 상태 추적 + 매출/마진 리포트 + 일일 요약)
 - [ ] 실시간 환율 API 연동 (`FX_SOURCE=api`)
 - [ ] 재고 자동 동기화 (크롤링 스케줄링)
 - [ ] 쿠팡/스마트스토어 API 직접 연동 (퍼센티 대체)
-- [ ] 대시보드 (Notion/Telegram 알림 고도화)
+
+---
+
+## ✅ Phase 4: 모니터링 대시보드 (진행 중)
+
+### Step 4-1 — 주문 상태 추적 + 매출/마진 리포트 + 일일 요약
+
+- `src/dashboard/` 패키지 신규:
+  - `order_status.py`: `OrderStatusTracker` — Google Sheets `orders` 시트에 주문 상태 기록/업데이트, 상태별 조회, 통계
+  - `revenue_report.py`: `RevenueReporter` — 일별/주별/월별 매출 요약, 벤더별 마진 분석, 환율 영향 분석
+  - `daily_summary.py`: `DailySummaryGenerator` — 일일 요약 생성, 텔레그램/이메일 포맷팅, 발송, 장기 미배송/환율 급변 알림
+  - `cli.py`: 대시보드 CLI (`daily-summary`, `revenue`, `status`, `margin-analysis`)
+- `src/order_webhook.py` 업데이트: `OrderStatusTracker` 통합 — 주문 수신 시 자동 상태 기록, 배송 추적 수신 시 자동 상태 업데이트 (graceful degradation)
+- `.github/workflows/daily_summary.yml`: 매일 KST 22:00 자동 실행 + `workflow_dispatch`
+- `.env.example` 업데이트: `DAILY_SUMMARY_ENABLED`, `ORDERS_WORKSHEET`, `ALERT_*` 환경변수
+- `config.example.yml` 업데이트: `dashboard` 섹션 추가
+- 68개 테스트 (`tests/test_dashboard.py`)
