@@ -1,7 +1,7 @@
 import os, time
 from decimal import Decimal
 from .utils.sheets import open_sheet
-from .translate import ko_to_en_if_needed
+from .translate import ko_to_en_if_needed, ja_to_ko, fr_to_ko
 from .image_uploader import ensure_images
 from .price import calc_price, _build_fx_rates
 from .vendors.shopify_client import upsert_product as shopify_upsert
@@ -24,11 +24,21 @@ WORKSHEET = os.getenv('WORKSHEET', 'catalog')
 def row_to_product(row):
     sku = str(row['sku']).strip()
     title_ko = str(row['title_ko']).strip()
+    title_ja = str(row.get('title_ja', '') or '').strip()
+    title_fr = str(row.get('title_fr', '') or '').strip()
+    source_country = str(row['source_country']).strip()
+
+    # source_country에 따른 title_ko 자동 번역
+    if not title_ko:
+        if source_country == 'JP' and title_ja:
+            title_ko = ja_to_ko(title_ja)
+        elif source_country == 'FR' and title_fr:
+            title_ko = fr_to_ko(title_fr)
+
     title_en = (str(row.get('title_en', '')).strip()) or ko_to_en_if_needed(title_ko)
     src_url = str(row['src_url']).strip()
     buy_currency = str(row['buy_currency']).strip()
     buy_price = Decimal(str(row['buy_price']).replace(',', ''))
-    source_country = str(row['source_country']).strip()
     stock = int(row.get('stock', 0) or 0)
     tags = str(row.get('tags', '') or '')
     vendor = str(row.get('vendor', '') or '')
