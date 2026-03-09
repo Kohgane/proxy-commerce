@@ -15,7 +15,9 @@
 | 2 | 2-1 | 판매 채널 모듈 (Percenty CSV 내보내기 + Shopify/WooCommerce 래퍼) | [#5](https://github.com/Kohgane/proxy-commerce/pull/5) | ✅ 머지 완료 |
 | 2 | 2-2 | Shopify 인증 강화 (HMAC 검증 + CLIENT_SECRET + retry/GraphQL) | [#6](https://github.com/Kohgane/proxy-commerce/pull/6) | ✅ 머지 완료 |
 | 3 | 3-1 | 주문 자동 라우팅 엔진 (SKU→벤더→배대지→알림→Fulfillment) | [#7](https://github.com/Kohgane/proxy-commerce/pull/7) | ✅ 머지 완료 |
-| 4 | 4-1 | 모니터링 대시보드 (주문 상태 추적 + 매출/마진 리포트 + 일일 요약) | — | 🚀 진행 중 |
+| 4 | 4-1 | 모니터링 대시보드 (주문 상태 추적 + 매출/마진 리포트 + 일일 요약) | [#9](https://github.com/Kohgane/proxy-commerce/pull/9) | ✅ 머지 완료 |
+| 4 | 4-2 | 재고 자동 동기화 (벤더 재고 확인 → 카탈로그 → 스토어 반영) | [#10](https://github.com/Kohgane/proxy-commerce/pull/10) | ✅ 머지 완료 |
+| 4 | 4-3 | 실시간 환율 자동 연동 (다중 프로바이더 + 캐시 + 이력 + 가격 재계산) | — | 🚀 진행 중 |
 
 ---
 
@@ -141,6 +143,13 @@ proxy-commerce/
 │   │   ├── revenue_report.py   # RevenueReporter (매출/마진 분석)
 │   │   ├── daily_summary.py    # DailySummaryGenerator (일일 요약 + 발송)
 │   │   └── cli.py              # 대시보드 CLI
+│   ├── fx/
+│   │   ├── __init__.py         # fx 패키지 (FXProvider/FXCache/FXHistory/FXUpdater)
+│   │   ├── provider.py         # FXProvider (frankfurter → exchangerate-api → env)
+│   │   ├── cache.py            # FXCache (TTL 인메모리 + Sheets 영속화)
+│   │   ├── history.py          # FXHistory (Sheets 이력 + 급변 감지)
+│   │   ├── updater.py          # FXUpdater (업데이트 → 재계산 → 스토어 반영)
+│   │   └── cli.py              # 환율 CLI
 │   ├── scrapers/
 │   │   ├── __init__.py
 │   │   ├── listly_client.py    # Listly CSV/JSON 로더
@@ -230,7 +239,9 @@ python -m pytest tests/ -v
 | vendors/woocommerce | test_woocommerce.py | 34 |
 | orders/ | test_orders.py | 70 |
 | dashboard/ | test_dashboard.py | 68 |
-| **합계** | | **364** |
+| inventory/ | test_inventory.py | 52 |
+| fx/ | test_fx.py | 38 |
+| **합계** | | **454** |
 
 ---
 
@@ -238,8 +249,8 @@ python -m pytest tests/ -v
 
 - [x] Phase 3: 주문 자동 라우팅 (Shopify 주문 → 벤더별 자동 발주)
 - [x] Phase 4 Step 4-1: 모니터링 대시보드 (주문 상태 추적 + 매출/마진 리포트 + 일일 요약)
-- [ ] 실시간 환율 API 연동 (`FX_SOURCE=api`)
-- [ ] 재고 자동 동기화 (크롤링 스케줄링)
+- [x] Phase 4 Step 4-2: 재고 자동 동기화 (벤더 재고 변동 감지 → 카탈로그/스토어 반영)
+- [x] Phase 4 Step 4-3: 실시간 환율 자동 연동 (다중 프로바이더 + 캐시 + 이력 + 가격 재계산)
 - [ ] 쿠팡/스마트스토어 API 직접 연동 (퍼센티 대체)
 
 ---
@@ -269,3 +280,18 @@ python -m pytest tests/ -v
 - `.env.example` 업데이트: `INVENTORY_SYNC_ENABLED`, `STOCK_CHECK_DELAY`, `LOW_STOCK_THRESHOLD`, `PRICE_CHANGE_THRESHOLD_PCT`, `INVENTORY_CHECK_TIMEOUT`
 - `config.example.yml` 업데이트: `inventory` 섹션 추가 (벤더별 HTML 패턴 포함)
 - 52개 테스트 (`tests/test_inventory.py`)
+
+### Step 4-3 — 실시간 환율 자동 연동
+
+- `src/fx/` 패키지 신규:
+  - `provider.py`: `FXProvider` — 다중 API 프로바이더 (frankfurter.app → exchangerate-api.com → 환경변수 폴백), 자동 폴백
+  - `cache.py`: `FXCache` — TTL 기반 인메모리 캐시 + Google Sheets `fx_rates` 시트 영속화
+  - `history.py`: `FXHistory` — Google Sheets `fx_history` 시트 이력 기록, 변동률 계산, 급변 감지 (기본 3%)
+  - `updater.py`: `FXUpdater` — 환율 업데이트 → 이력 기록 → 급변 알림 → 카탈로그 가격 재계산 → Shopify/WooCommerce 업데이트 통합
+  - `cli.py`: 환율 CLI (`update`, `current`, `history`, `recalculate`, `check-changes`)
+- `src/price.py` 수정: `_build_fx_rates(use_live=None)` 파라미터 추가 — FXCache 우선, 하위호환 유지
+- `src/catalog_sync.py` 수정: `use_live=True`로 실시간 환율 사용 (`FX_USE_LIVE` 환경변수 제어)
+- `.github/workflows/fx_update.yml`: 하루 4회 (UTC 00:30, 06:30, 12:30, 18:30) 자동 실행 + `workflow_dispatch`
+- `.env.example` 업데이트: `FX_PROVIDER`, `FX_USE_LIVE`, `FX_CACHE_TTL`, `FX_CHANGE_ALERT_PCT`, `EXCHANGERATE_API_KEY`, `FX_HISTORY_WORKSHEET`, `FX_RATES_WORKSHEET`
+- `config.example.yml` 업데이트: `fx` 섹션 추가
+- 38개 테스트 (`tests/test_fx.py`)
