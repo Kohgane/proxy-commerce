@@ -40,6 +40,13 @@ pricing:
   customs_threshold_krw: 150000   # 신규: 관부가세 면세 기준 (원)
   customs_rate_default: 0.20      # 신규: 기본 관부가세율
 
+translation:
+  provider: "${TRANSLATE_PROVIDER}"   # deepl | papago | none
+  deepl:
+    api_key: "${DEEPL_API_KEY}"
+    api_url: "${DEEPL_API_URL}"       # https://api-free.deepl.com/v2/translate
+  cache_enabled: true
+
 orders:
   router: "task"  # api | task
   notify:
