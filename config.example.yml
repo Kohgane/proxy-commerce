@@ -54,3 +54,22 @@ orders:
       enabled: ${EMAIL_ENABLED}
     telegram:
       enabled: ${TELEGRAM_ENABLED}
+
+channels:
+  percenty:
+    warehouse_address: "${WAREHOUSE_ADDRESS}"
+    return_address: "${RETURN_ADDRESS}"
+    markets:
+      coupang:
+        margin_adjust: ${COUPANG_MARGIN_ADJUST}
+        commission_rate: 10.8
+      smartstore:
+        margin_adjust: ${NAVER_MARGIN_ADJUST}
+        commission_rate: 5.0
+      11st:
+        margin_adjust: -1.0
+        commission_rate: 12.0
+  shopify:
+    markets_enabled: ${SHOPIFY_MARKETS_ENABLED}
+  woocommerce:
+    brand_collections: true
