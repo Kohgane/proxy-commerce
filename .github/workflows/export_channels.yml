@@ -1,0 +1,80 @@
+name: Export to Sales Channels
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Target channel'
+        required: true
+        type: choice
+        options:
+          - percenty
+          - shopify
+          - woocommerce
+      market:
+        description: 'Target market (percenty only)'
+        required: false
+        type: choice
+        options:
+          - all
+          - coupang
+          - smartstore
+          - 11st
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Export to channel
+        env:
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_SERVICE_JSON_B64: ${{ secrets.GOOGLE_SERVICE_JSON_B64 }}
+          SHOPIFY_SHOP: ${{ secrets.SHOPIFY_SHOP }}
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          WOO_BASE_URL: ${{ secrets.WOO_BASE_URL }}
+          WOO_CK: ${{ secrets.WOO_CK }}
+          WOO_CS: ${{ secrets.WOO_CS }}
+          WAREHOUSE_ADDRESS: ${{ secrets.WAREHOUSE_ADDRESS }}
+          RETURN_ADDRESS: ${{ secrets.RETURN_ADDRESS }}
+          COUPANG_MARGIN_ADJUST: ${{ vars.COUPANG_MARGIN_ADJUST || '-2.0' }}
+          NAVER_MARGIN_ADJUST: ${{ vars.NAVER_MARGIN_ADJUST || '0.0' }}
+          FX_USDKRW: ${{ vars.FX_USDKRW || '1350' }}
+          FX_JPYKRW: ${{ vars.FX_JPYKRW || '9.0' }}
+          FX_EURKRW: ${{ vars.FX_EURKRW || '1470' }}
+          TARGET_MARGIN_PCT: ${{ vars.TARGET_MARGIN_PCT || '22' }}
+        run: |
+          MARKET_ARG=""
+          if [ "${{ inputs.channel }}" = "percenty" ] && [ -n "${{ inputs.market }}" ]; then
+            MARKET_ARG="--market ${{ inputs.market }}"
+          fi
+
+          SYNC_ARG=""
+          if [ "${{ inputs.channel }}" != "percenty" ]; then
+            SYNC_ARG="--sync"
+          fi
+
+          python -m src.channels.cli \
+            --channel ${{ inputs.channel }} \
+            --output data/exports/ \
+            $MARKET_ARG \
+            $SYNC_ARG
+
+      - name: Upload CSV artifacts
+        if: inputs.channel == 'percenty'
+        uses: actions/upload-artifact@v4
+        with:
+          name: percenty-exports-${{ github.run_number }}
+          path: data/exports/*.csv
+          retention-days: 30
