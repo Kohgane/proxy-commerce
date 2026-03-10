@@ -1,6 +1,6 @@
 # Proxy Commerce — 프로젝트 진행상황
 
-> 마지막 업데이트: 2026-03-09
+> 마지막 업데이트: 2026-03-10
 
 ---
 
@@ -18,7 +18,8 @@
 | 4 | 4-1 | 모니터링 대시보드 (주문 상태 추적 + 매출/마진 리포트 + 일일 요약) | [#9](https://github.com/Kohgane/proxy-commerce/pull/9) | ✅ 머지 완료 |
 | 4 | 4-2 | 재고 자동 동기화 (벤더 재고 확인 → 카탈로그 → 스토어 반영) | [#10](https://github.com/Kohgane/proxy-commerce/pull/10) | ✅ 머지 완료 |
 | 4 | 4-3 | 실시간 환율 자동 연동 (다중 프로바이더 + 캐시 + 이력 + 가격 재계산) | [#11](https://github.com/Kohgane/proxy-commerce/pull/11) | ✅ 머지 완료 |
-| 5 | 5-1 | 프로덕션 배포 환경 (Docker + Gunicorn + Healthcheck) | — | 🚀 진행 중 |
+| 5 | 5-1 | 프로덕션 배포 환경 (Docker + Gunicorn + Healthcheck) | [#12](https://github.com/Kohgane/proxy-commerce/pull/12) | ✅ 머지 완료 |
+| 5 | 5-2 | CI/CD 파이프라인 (GitHub Actions 테스트 자동화 + Docker 이미지 빌드/푸시) | — | 🚀 진행 중 |
 
 ---
 
@@ -253,11 +254,12 @@ python -m pytest tests/ -v
 - [x] Phase 4 Step 4-2: 재고 자동 동기화 (벤더 재고 변동 감지 → 카탈로그/스토어 반영)
 - [x] Phase 4 Step 4-3: 실시간 환율 자동 연동 (다중 프로바이더 + 캐시 + 이력 + 가격 재계산)
 - [x] Phase 5 Step 5-1: 프로덕션 배포 환경 (Docker + Gunicorn + Healthcheck)
+- [x] Phase 5 Step 5-2: CI/CD 파이프라인 (GitHub Actions 테스트 자동화 + Docker 이미지 빌드/푸시)
 - [ ] 쿠팡/스마트스토어 API 직접 연동 (퍼센티 대체)
 
 ---
 
-## ✅ Phase 5: 프로덕션 배포 환경 (진행 중)
+## ✅ Phase 5: 프로덕션 배포 환경 (완료)
 
 ### Step 5-1 — Docker + Gunicorn + Healthcheck
 
@@ -279,6 +281,21 @@ python -m pytest tests/ -v
 - `.env.example` 업데이트: Docker/Gunicorn 환경변수 추가
 - `README.md` 업데이트: Docker 배포 섹션 추가
 - 10개 테스트 (`tests/test_health.py`)
+
+### Step 5-2 — CI/CD 파이프라인 (GitHub Actions 테스트 자동화 + Docker 이미지 빌드/푸시)
+
+- `.github/workflows/ci.yml` 신규:
+  - `lint` 잡: flake8 코드 품질 검사 (Python 3.11)
+  - `test` 잡: Python 3.11 / 3.12 매트릭스 pytest 실행, JUnit XML 아티팩트 업로드
+  - `docker` 잡: Docker 이미지 빌드 검증 (push=false), GHA 캐시 적용
+  - PR + main 브랜치 push 시 자동 트리거
+- `.github/workflows/docker-publish.yml` 신규:
+  - main 브랜치 push 및 `v*` 태그 push 시 GHCR 자동 배포
+  - `docker/metadata-action@v5`로 branch/semver/sha 태그 자동 생성
+  - `GITHUB_TOKEN` 기본 토큰으로 패키지 push (별도 시크릿 불필요)
+  - GHA 캐시(type=gha)로 빌드 속도 최적화
+- `requirements-dev.txt` 신규: `pytest`, `pytest-cov`, `flake8`
+- `setup.cfg` 신규: flake8 설정 (max-line-length=120, E501/W503/W504/E402 무시) + pytest testpaths/addopts/env
 
 ---
 

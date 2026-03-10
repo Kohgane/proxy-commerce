@@ -1,5 +1,30 @@
 # Proxy Commerce – 2단계 구매대행 자동화 (Runnable)
 
+## 🔄 CI/CD
+
+### CI (자동 테스트)
+
+모든 PR과 main 브랜치 push 시 자동 실행:
+- **Lint**: flake8 코드 품질 검사
+- **Test**: Python 3.11 / 3.12 pytest 실행
+- **Docker Build**: 이미지 빌드 검증
+
+### Docker 이미지 배포
+
+main 브랜치 push 또는 `v*` 태그 시 GHCR에 자동 배포:
+```bash
+docker pull ghcr.io/kohgane/proxy-commerce:main
+docker pull ghcr.io/kohgane/proxy-commerce:v1.0.0
+```
+
+### 로컬 테스트 실행
+```bash
+pip install -r requirements-dev.txt
+python -m pytest tests/ -v
+```
+
+---
+
 이 레포는 **즉시 실행** 가능한 2단계(반자동 주문 라우팅) 템플릿입니다.
 
 ## 🐳 Docker 배포
