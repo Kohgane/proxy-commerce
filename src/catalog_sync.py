@@ -1,4 +1,5 @@
-import os, time
+import os
+import time
 from decimal import Decimal
 from .utils.sheets import open_sheet
 from .translate import ko_to_en_if_needed, ja_to_ko, fr_to_ko
@@ -83,7 +84,7 @@ def row_to_product(row):
 def sync_once():
     ws = open_sheet(SHEET_ID, WORKSHEET)
     rows = ws.get_all_records()
-    active_rows = [r for r in rows if (str(r.get('status','')).strip().lower() == 'active')]
+    active_rows = [r for r in rows if (str(r.get('status', '')).strip().lower() == 'active')]
     for row in active_rows:
         s_prod, w_prod = row_to_product(row)
         # Shopify
@@ -103,6 +104,7 @@ def sync_once():
 
 def main():
     sync_once()
+
 
 if __name__ == '__main__':
     main()

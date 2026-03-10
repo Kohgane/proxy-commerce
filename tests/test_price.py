@@ -7,11 +7,8 @@ import os
 # 패키지 루트를 sys.path에 추가
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.price import (
+from src.price import (  # noqa: E402
     DEFAULT_FX_RATES,
-    _build_fx_rates,
-    _to_krw,
-    _from_krw,
     calc_price,
     calc_landed_cost,
 )

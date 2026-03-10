@@ -2,7 +2,7 @@
 import os
 import sys
 from datetime import date, datetime, timezone, timedelta
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -161,7 +161,7 @@ class TestOrderStatusTracker:
             'summary': {},
         }
         with patch.object(tracker, '_get_worksheet', return_value=mock_ws):
-            result = tracker.record_order(SHOPIFY_ORDER_DATA, multi_routed)
+            _ = tracker.record_order(SHOPIFY_ORDER_DATA, multi_routed)
 
         # Two data rows appended
         assert mock_ws.append_row.call_count == 2
@@ -675,7 +675,6 @@ class TestDashboardCLI:
 
     def test_cli_main_revenue_daily(self, capsys):
         from src.dashboard.cli import main
-        from src.dashboard.order_status import OrderStatusTracker
         mock_tracker = MagicMock()
         mock_tracker._get_all_rows = MagicMock(return_value=list(SAMPLE_ORDER_ROWS))
 
@@ -719,7 +718,6 @@ class TestWebhookIntegration:
     """order_webhook.py에서 status_tracker가 올바르게 호출되는지 확인."""
 
     def _make_app(self):
-        import importlib
         import src.order_webhook as webhook_module
         return webhook_module.app
 

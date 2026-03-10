@@ -12,7 +12,6 @@
 
 import argparse
 import json
-import sys
 
 
 def _build_parser() -> argparse.ArgumentParser:

@@ -169,7 +169,7 @@ def _run_shopify(args, catalog: list, dry_run: bool):
 
     if dry_run:
         logger.info('[DRY-RUN] 채널=shopify, 상품수=%d (API 미호출)', len(products))
-        print(f'\n[DRY-RUN] shopify')
+        print('\n[DRY-RUN] shopify')
         print(f'  변환된 상품 수: {len(products)}')
         return
 
@@ -194,7 +194,7 @@ def _run_woocommerce(args, catalog: list, dry_run: bool):
 
     if dry_run:
         logger.info('[DRY-RUN] 채널=woocommerce, 상품수=%d (API 미호출)', len(products))
-        print(f'\n[DRY-RUN] woocommerce')
+        print('\n[DRY-RUN] woocommerce')
         print(f'  변환된 상품 수: {len(products)}')
         return
 

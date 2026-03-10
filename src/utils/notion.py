@@ -1,7 +1,10 @@
-import os, requests
+import os
+
+import requests
 
 NOTION_TOKEN = os.getenv('NOTION_TOKEN')
 NOTION_DB = os.getenv('NOTION_DB')
+
 
 def create_task_if_env(title: str, url: str, sku: str, order_id):
     if not (NOTION_TOKEN and NOTION_DB):
