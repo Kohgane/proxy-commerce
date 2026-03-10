@@ -1,6 +1,6 @@
 # Proxy Commerce — 프로젝트 진행상황
 
-> 마지막 업데이트: 2026-03-09
+> 마지막 업데이트: 2026-03-10
 
 ---
 
@@ -18,7 +18,8 @@
 | 4 | 4-1 | 모니터링 대시보드 (주문 상태 추적 + 매출/마진 리포트 + 일일 요약) | [#9](https://github.com/Kohgane/proxy-commerce/pull/9) | ✅ 머지 완료 |
 | 4 | 4-2 | 재고 자동 동기화 (벤더 재고 확인 → 카탈로그 → 스토어 반영) | [#10](https://github.com/Kohgane/proxy-commerce/pull/10) | ✅ 머지 완료 |
 | 4 | 4-3 | 실시간 환율 자동 연동 (다중 프로바이더 + 캐시 + 이력 + 가격 재계산) | [#11](https://github.com/Kohgane/proxy-commerce/pull/11) | ✅ 머지 완료 |
-| 5 | 5-1 | 프로덕션 배포 환경 (Docker + Gunicorn + Healthcheck) | — | 🚀 진행 중 |
+| 5 | 5-1 | 프로덕션 배포 환경 (Docker + Gunicorn + Healthcheck) | <a href="https://github.com/Kohgane/proxy-commerce/pull/12">#12</a> | ✅ 머지 완료 |
+| 5 | 5-2 | CI/CD 파이프라인 (GitHub Actions 테스트 자동화 + Docker 이미지 빌드/푸시) | <a href="https://github.com/Kohgane/proxy-commerce/pull/13">#13</a>, <a href="https://github.com/Kohgane/proxy-commerce/pull/14">#14</a>, <a href="https://github.com/Kohgane/proxy-commerce/pull/15">#15</a> | ✅ 머지 완료 |
 
 ---
 
@@ -105,7 +106,9 @@
 proxy-commerce/
 ├── .env.example
 ├── .github/workflows/
+│   ├── ci.yml                  # PR + main push 자동 lint/test/docker
 │   ├── deploy.yml              # 카탈로그 싱크 + 웹훅
+│   ├── docker-publish.yml      # main push + v* 태그 시 GHCR 자동 배포
 │   ├── import_catalog.yml      # 크롤링 데이터 적재
 │   └── export_channels.yml     # 채널별 CSV 내보내기
 ├── config.example.yml
@@ -115,6 +118,8 @@ proxy-commerce/
 │   ├── memo_raw_sample.csv     # 메모파리 Listly 샘플
 │   └── exports/.gitkeep
 ├── requirements.txt
+├── requirements-dev.txt        # pytest, pytest-cov, flake8
+├── setup.cfg                   # flake8 + pytest 중앙 설정
 ├── src/
 │   ├── __init__.py
 │   ├── catalog_sync.py         # Sheets → Shopify/WooCommerce 동기화
@@ -242,7 +247,8 @@ python -m pytest tests/ -v
 | dashboard/ | test_dashboard.py | 68 |
 | inventory/ | test_inventory.py | 52 |
 | fx/ | test_fx.py | 38 |
-| **합계** | | **454** |
+| healthcheck | test_health.py | 10 |
+| **합계** | | **464** |
 
 ---
 
@@ -253,11 +259,13 @@ python -m pytest tests/ -v
 - [x] Phase 4 Step 4-2: 재고 자동 동기화 (벤더 재고 변동 감지 → 카탈로그/스토어 반영)
 - [x] Phase 4 Step 4-3: 실시간 환율 자동 연동 (다중 프로바이더 + 캐시 + 이력 + 가격 재계산)
 - [x] Phase 5 Step 5-1: 프로덕션 배포 환경 (Docker + Gunicorn + Healthcheck)
+- [x] Phase 5 Step 5-2: CI/CD 파이프라인 (GitHub Actions + Docker GHCR + Lint)
+- [ ] Phase 6: 글로벌 확장 (해외 직판 D2C)
 - [ ] 쿠팡/스마트스토어 API 직접 연동 (퍼센티 대체)
 
 ---
 
-## ✅ Phase 5: 프로덕션 배포 환경 (진행 중)
+## ✅ Phase 5: 프로덕션 배포 + CI/CD (완료)
 
 ### Step 5-1 — Docker + Gunicorn + Healthcheck
 
@@ -279,6 +287,20 @@ python -m pytest tests/ -v
 - `.env.example` 업데이트: Docker/Gunicorn 환경변수 추가
 - `README.md` 업데이트: Docker 배포 섹션 추가
 - 10개 테스트 (`tests/test_health.py`)
+
+### Step 5-2 — CI/CD 파이프라인
+
+- `.github/workflows/ci.yml` 신규: PR + main push 시 자동 실행
+  - `lint` → `test` (Python 3.11 / 3.12 matrix) → `docker` 순차 실행
+  - 테스트 환경 격리: `TRANSLATE_PROVIDER=none`, `FX_USE_LIVE=0` 등 외부 API 호출 없음
+  - JUnit XML 아티팩트 업로드, GHA Docker 레이어 캐시 적용
+  - 모든 job에 `permissions: contents: read` 명시 (최소 권한)
+- `.github/workflows/docker-publish.yml` 신규: main push + `v*` 태그 시 GHCR 자동 배포
+  - `GITHUB_TOKEN` 기본 토큰으로 push (별도 시크릿 불필요)
+  - `docker/metadata-action@v5`로 branch / semver / sha 태그 자동 생성
+- `requirements-dev.txt` 신규: `pytest`, `pytest-cov`, `flake8`
+- `setup.cfg` 신규: flake8(`max-line-length=120`, E501/W503/W504/E402 무시) + pytest `testpaths`/`addopts`/`env` 중앙 관리
+- PR #14, #15: 전체 flake8 lint 에러 수정 (14개 파일, 30건+ 에러 — F401/F841/F541/E401/E131/E302/E305/E231)
 
 ---
 
@@ -322,3 +344,120 @@ python -m pytest tests/ -v
 - `.env.example` 업데이트: `FX_PROVIDER`, `FX_USE_LIVE`, `FX_CACHE_TTL`, `FX_CHANGE_ALERT_PCT`, `EXCHANGERATE_API_KEY`, `FX_HISTORY_WORKSHEET`, `FX_RATES_WORKSHEET`
 - `config.example.yml` 업데이트: `fx` 섹션 추가
 - 38개 테스트 (`tests/test_fx.py`)
+
+---
+
+## 🌍 Phase 6 준비: 글로벌 확장 시장조사
+
+### 2-1. 한국 제품 수요가 높은 국가
+
+| 순위 | 국가/지역 | 핵심 근거 |
+|------|----------|----------|
+| 1 | 🇺🇸 미국 | K-뷰티 수출 상위권, 한류 콘텐츠 확산 |
+| 2 | 🇯🇵 일본 | 한국 화장품 수입 상위, "한국 감성" 소비재 수용도 높음 |
+| 3 | 🇻🇳🇮🇩🇹🇭🇵🇭 동남아 | 한류 호감도 최상위권(필리핀/인도네시아/태국/베트남), K-뷰티 수출 성장 |
+| 4 | 🇦🇪 UAE/중동 | K-뷰티 수출 급성장 신흥 시장, 한류 선호도 높음 |
+| 5 | 🇵🇱🇬🇧🇫🇷 유럽 | 폴란드: K-뷰티 신흥 급성장, 영국/프랑스도 성장세 |
+
+### 2-2. 온라인 쇼핑 비중이 높은 국가
+
+| 국가 | 온라인 비중 | 출처/기준 |
+|------|-----------|----------|
+| 🇰🇷 한국 | ~50.6% (2024) | 주요 유통업체 기준 |
+| 🇬🇧 영국 | ~27.4% (2025) | ONS(영국 통계청) |
+| 🇨🇳 중국 | ~26.8% (2024) | NBS(국가통계) |
+| 🇺🇸 미국 | ~16.1% (2024) | Census Bureau |
+
+### 2-3. 우선 공략 국가 Tier 분류 (D2C Shopify 수출 MVP 기준)
+
+**Tier 1 — 즉시 공략:**
+- 🇺🇸 미국: 한국 수요 + 이커머스 비중 + 결제/물류 생태계 완성
+- 🇬🇧 영국: 온라인 비중 매우 높고, K-콘텐츠/뷰티 수요 성장
+
+**Tier 2 — 성장 시장:**
+- 🇯🇵 일본: 한국 제품 수요 확실 + 구매력/반복구매 강점
+- 🇵🇭🇮🇩🇹🇭🇻🇳 동남아: 한류 호감도 기반 "K-라이프스타일" 수용 강함
+- 🇦🇪 UAE: 신흥 고성장 + 한류 선호
+
+**Tier 3 — 확장 카드:**
+- 🇵🇱 폴란드: 유럽 내 신흥 수요 급성장
+- 🇨🇳 중국: 온라인 비중 높지만 크로스보더/정책 변수 큼
+
+### 2-4. 국가별 통관 요건 & 세금 정리
+
+#### 🇺🇸 미국 (US)
+- **면세**: 기존 $800 de minimis 사실상 종료 방향 (소포에도 관세 적용)
+- **관세**: HS코드(HTS)별 상이 + 추가관세(무역조치) 가능
+- **부가세(VAT)**: 없음 (주(State) 판매세는 별도)
+- **통관 필수**: 인보이스 + HS코드 + 원산지 + 수입자 연락처
+- **전략**: 초반 DAP(수취인 부담) + 라벨/트래킹 자동화로 리스크 최소화
+
+#### 🇬🇧 영국 (UK)
+- **£135 이하**: 판매자가 결제 시점에 UK VAT 부과/신고
+- **£135 초과**: 수입 시점에 수입 VAT + 관세
+- **VAT**: 표준 20%
+- **통관 필수**: 인보이스 + HS코드 + 원산지 + 정확한 가격/배송비
+- **전략**: 세금 선납(DDP) 권장 (반품/CS 감소)
+
+#### 🇯🇵 일본 (JP)
+- **면세**: 총 과세가격 10,000엔 이하 → 관세+소비세 면세 (일부 예외 품목)
+- **소비세**: 표준 10%
+- **통관 필수**: 인보이스(구체 품명) + HS코드 + 원산지 + 가격
+- **주의**: 화장품/식품류는 별도 규정
+
+#### 🇨🇳 중국 (CN)
+- **개인우편물 루트**: 세액 50위안 이하 면세, 신고가액 한도 2,000위안
+- **CBEC(크로스보더)**: 1회 5,000위안 / 연 26,000위안 한도
+- **수입 VAT**: 품목별 13%/9% 등
+- **주의**: 통관 루트 선택이 성패 좌우, 자동화 난이도 높음
+
+#### 🇪🇺 EU / 🇵🇱 폴란드
+- **면세**: €22 이하 VAT 면세 이미 폐지 → 모든 수입품에 VAT
+- **IOSS**: €150 이하 B2C VAT 신고/납부 단순화 제도
+- **변화 예정**: EU가 €150 관세 면제도 2026년 제거 진행 중
+- **폴란드 VAT**: 표준 23%
+- **전략**: IOSS 활용 + DDP 선호(DAP 시 반품/클레임 증가)
+
+#### 🇸🇬 싱가포르 (SG)
+- **GST**: 9%
+- **S$400 이하**: 항공/우편 GST 면제 규정 있으나, 저가물품(LVG) 해외판매자 GST 징수(OVR) 구조도 도입
+
+#### 🇲🇾 말레이시아 (MY)
+- **LVG(RM500 이하)**: 판매세 10% (2024-01-01부터 실제 부과)
+- **주의**: "저가라도 세금 0" 아님
+
+#### 🇹🇭 태국 (TH)
+- **2026-01-01부터**: 1바트부터 온라인 해외구매에 수입관세 + VAT 7% (저가면세 종료)
+
+#### 🇻🇳 베트남 (VN)
+- **2025-02-18부터**: 100만동 이하 저가수입 VAT 면제 폐지
+- **VAT**: 품목/정책에 따라 변동 가능
+
+#### 🇮🇩 인도네시아 (ID)
+- **FOB ≤ $3**: 관세 면제 + VAT 11%
+- **$3~$1,500**: 관세 7.5% + VAT 11%
+
+#### 🇵🇭 필리핀 (PH)
+- **10,000페소 이하**: de minimis → 관세/세금 면제
+- **수입 VAT**: 12%
+
+#### 🇦🇪 UAE
+- **관세**: 대부분 5% (CIF 기준)
+- **VAT**: 표준 5%
+
+#### 🇸🇦 사우디 (KSA)
+- **관세**: GCC 체계 5%+ (품목별 상향 가능)
+- **VAT**: 표준 15%
+- **주의**: 통관 전자화/사전 제출 요구 강화 추세
+
+### 2-5. 운영 전략 요약
+
+| 국가 | 추천 Incoterms | 핵심 이유 |
+|------|---------------|----------|
+| 미국 | DAP | 정책변동 커서 수취인 부담으로 리스크 최소화 |
+| 영국 | DDP | 세금 선납 → 반품/CS 감소 |
+| EU/폴란드 | DDP (IOSS) | IOSS로 VAT 단순화, DAP 시 클레임 증가 |
+| 일본 | DAP/DDP | 저가(1만엔 이하) 면세 활용, 고가는 DDP 검토 |
+| 동남아 | DAP | 저가면세 종료 추세이므로 면세 기대 금지 |
+| UAE/사우디 | DAP | 관세/VAT 낮아서 수취인 부담도 저항 적음 |
+| 중국 | CBEC 전용 | 크로스보더 전자상거래 전용 루트 필수 |
