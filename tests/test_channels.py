@@ -6,7 +6,6 @@ PercentyExporter, ShopifyGlobalChannel, WooDomesticChannel,
 """
 
 import csv
-import io
 import os
 import sys
 import tempfile
@@ -16,15 +15,15 @@ import pytest
 # 패키지 루트를 sys.path에 추가
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.channels import get_channel, CHANNEL_REGISTRY
-from src.channels.percenty import (
+from src.channels import get_channel, CHANNEL_REGISTRY  # noqa: E402
+from src.channels.percenty import (  # noqa: E402
     PercentyExporter,
     COUPANG_CATEGORIES,
     NAVER_CATEGORIES,
     MARKET_PRICE_POLICY,
 )
-from src.channels.shopify_global import ShopifyGlobalChannel
-from src.channels.woo_domestic import WooDomesticChannel
+from src.channels.shopify_global import ShopifyGlobalChannel  # noqa: E402
+from src.channels.woo_domestic import WooDomesticChannel  # noqa: E402
 
 
 # ──────────────────────────────────────────────────────────

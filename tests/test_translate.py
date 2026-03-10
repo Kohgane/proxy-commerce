@@ -3,8 +3,6 @@ import os
 import sys
 from unittest.mock import patch, MagicMock
 
-import pytest
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 
@@ -169,7 +167,6 @@ class TestCache:
         """동일한 텍스트+언어쌍은 캐시에서 반환 — API 호출 1회만."""
         env = {'TRANSLATE_PROVIDER': 'deepl', 'DEEPL_API_KEY': 'dummy-key'}
         with patch.dict(os.environ, env):
-            import requests
             mock_resp = MagicMock()
             mock_resp.raise_for_status.return_value = None
             mock_resp.json.return_value = {

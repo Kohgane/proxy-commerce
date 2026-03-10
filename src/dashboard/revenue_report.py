@@ -302,7 +302,6 @@ class RevenueReporter:
         현재 구현: 환경변수 기반 현재 환율과 buy_currency를 사용해 추정.
         """
         import os
-        from decimal import Decimal
 
         rows = self._tracker._get_all_rows()
 

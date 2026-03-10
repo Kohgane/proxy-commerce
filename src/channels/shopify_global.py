@@ -5,7 +5,6 @@ BaseChannel 인터페이스를 구현하며 Shopify REST API를 직접 호출한
 """
 
 import logging
-import os
 
 from .base_channel import BaseChannel
 

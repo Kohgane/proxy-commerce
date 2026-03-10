@@ -2,7 +2,7 @@
 
 import os
 import logging
-from datetime import date, datetime, timezone, timedelta
+from datetime import date, datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ class DailySummaryGenerator:
     def format_telegram(self, summary: dict) -> str:
         """텔레그램 메시지 형식으로 포맷팅."""
         rev = summary.get('revenue', {})
-        stats = summary.get('order_stats', {})
+        _ = summary.get('order_stats', {})
         pending = summary.get('pending_orders', [])
         alerts = summary.get('alerts', [])
 
@@ -116,7 +116,7 @@ class DailySummaryGenerator:
     def format_email_html(self, summary: dict) -> str:
         """이메일 HTML 형식으로 포맷팅."""
         rev = summary.get('revenue', {})
-        stats = summary.get('order_stats', {})
+        _ = summary.get('order_stats', {})
         alerts = summary.get('alerts', [])
         date_str = summary.get('date', '')
         pending = summary.get('pending_orders', [])

@@ -6,10 +6,9 @@ import pytest
 # 패키지 루트를 sys.path에 추가
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.vendors import get_vendor, VENDOR_REGISTRY, CATALOG_FIELDS
-from src.vendors.base_vendor import BaseVendor
-from src.vendors.porter import PorterVendor, PORTER_CATEGORIES, _clean_price as porter_clean_price
-from src.vendors.memo_paris import MemoPariVendor, MEMO_COLLECTIONS, _clean_price as memo_clean_price
+from src.vendors import get_vendor, VENDOR_REGISTRY, CATALOG_FIELDS  # noqa: E402
+from src.vendors.porter import PorterVendor, _clean_price as porter_clean_price  # noqa: E402
+from src.vendors.memo_paris import MemoPariVendor, _clean_price as memo_clean_price  # noqa: E402
 
 
 # ──────────────────────────────────────────────────────────

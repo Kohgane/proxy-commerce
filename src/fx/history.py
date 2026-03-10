@@ -32,7 +32,6 @@ class FXHistory:
             return
         try:
             ws = self._get_worksheet()
-            from .provider import FXProvider
             row = [
                 datetime.now(tz=timezone.utc).strftime('%Y-%m-%d'),
                 str(rates.get('USDKRW', '')),

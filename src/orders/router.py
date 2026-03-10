@@ -3,7 +3,7 @@
 import os
 import logging
 
-from .catalog_lookup import CatalogLookup, SKU_PREFIX_VENDOR
+from .catalog_lookup import CatalogLookup
 
 logger = logging.getLogger(__name__)
 
