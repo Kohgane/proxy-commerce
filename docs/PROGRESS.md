@@ -17,7 +17,8 @@
 | 3 | 3-1 | 주문 자동 라우팅 엔진 (SKU→벤더→배대지→알림→Fulfillment) | [#7](https://github.com/Kohgane/proxy-commerce/pull/7) | ✅ 머지 완료 |
 | 4 | 4-1 | 모니터링 대시보드 (주문 상태 추적 + 매출/마진 리포트 + 일일 요약) | [#9](https://github.com/Kohgane/proxy-commerce/pull/9) | ✅ 머지 완료 |
 | 4 | 4-2 | 재고 자동 동기화 (벤더 재고 확인 → 카탈로그 → 스토어 반영) | [#10](https://github.com/Kohgane/proxy-commerce/pull/10) | ✅ 머지 완료 |
-| 4 | 4-3 | 실시간 환율 자동 연동 (다중 프로바이더 + 캐시 + 이력 + 가격 재계산) | — | 🚀 진행 중 |
+| 4 | 4-3 | 실시간 환율 자동 연동 (다중 프로바이더 + 캐시 + 이력 + 가격 재계산) | [#11](https://github.com/Kohgane/proxy-commerce/pull/11) | ✅ 머지 완료 |
+| 5 | 5-1 | 프로덕션 배포 환경 (Docker + Gunicorn + Healthcheck) | — | 🚀 진행 중 |
 
 ---
 
@@ -251,7 +252,33 @@ python -m pytest tests/ -v
 - [x] Phase 4 Step 4-1: 모니터링 대시보드 (주문 상태 추적 + 매출/마진 리포트 + 일일 요약)
 - [x] Phase 4 Step 4-2: 재고 자동 동기화 (벤더 재고 변동 감지 → 카탈로그/스토어 반영)
 - [x] Phase 4 Step 4-3: 실시간 환율 자동 연동 (다중 프로바이더 + 캐시 + 이력 + 가격 재계산)
+- [x] Phase 5 Step 5-1: 프로덕션 배포 환경 (Docker + Gunicorn + Healthcheck)
 - [ ] 쿠팡/스마트스토어 API 직접 연동 (퍼센티 대체)
+
+---
+
+## ✅ Phase 5: 프로덕션 배포 환경 (진행 중)
+
+### Step 5-1 — Docker + Gunicorn + Healthcheck
+
+- `Dockerfile` 신규:
+  - `python:3.11-slim` 베이스 이미지
+  - non-root 유저 `appuser` 실행
+  - `HEALTHCHECK` 지시자 (curl 기반, 30초 간격)
+  - 환경변수 `PORT`, `GUNICORN_WORKERS`, `GUNICORN_TIMEOUT` 커스터마이즈 지원
+- `docker-compose.yml` 신규:
+  - `web` 서비스: Flask/Gunicorn 웹훅 서버 (포트 8000)
+  - `worker` 서비스: 카탈로그 동기화/재고/환율 스케줄러 (`python -m src.main`)
+  - `healthcheck` + `restart: unless-stopped` 설정
+- `gunicorn.conf.py` 신규: bind/workers/timeout/log 환경변수 기반 설정
+- `.dockerignore` 신규: 불필요 파일 제외
+- `src/order_webhook.py` 업데이트:
+  - `GET /health`: 서비스 상태 확인 (200 OK)
+  - `GET /health/ready`: 외부 의존성(Secrets) 연결 확인 (200/503)
+- `requirements.txt` 업데이트: `gunicorn` 추가
+- `.env.example` 업데이트: Docker/Gunicorn 환경변수 추가
+- `README.md` 업데이트: Docker 배포 섹션 추가
+- 10개 테스트 (`tests/test_health.py`)
 
 ---
 
