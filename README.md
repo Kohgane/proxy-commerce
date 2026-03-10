@@ -2,6 +2,27 @@
 
 이 레포는 **즉시 실행** 가능한 2단계(반자동 주문 라우팅) 템플릿입니다.
 
+## 🐳 Docker 배포
+
+### 빌드 & 실행
+```bash
+docker build -t proxy-commerce .
+docker run -p 8000:8000 --env-file .env proxy-commerce
+```
+
+### Docker Compose
+```bash
+docker-compose up -d
+```
+
+### Healthcheck
+```bash
+curl http://localhost:8000/health
+curl http://localhost:8000/health/ready
+```
+
+---
+
 ## 빠른 시작
 
 1) **Google Sheet** 만들기 → 시트명 `catalog`, 헤더/데이터는 이 레포의 `data/catalog.sample.csv`를 그대로 Import (즉시 배포용)

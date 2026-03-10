@@ -71,5 +71,34 @@ def tracking_update():
     return jsonify(result)
 
 
+@app.get('/health')
+def health():
+    """Healthcheck 엔드포인트 — Docker/LB용."""
+    return jsonify({
+        "status": "ok",
+        "service": "proxy-commerce",
+        "version": os.getenv("APP_VERSION", "dev"),
+    })
+
+
+@app.get('/health/ready')
+def readiness():
+    """Readiness check — 외부 의존성(Sheets 등) 연결 확인."""
+    checks = {}
+    try:
+        from .utils.secret_check import check_secrets
+        result = check_secrets('core')
+        checks['secrets_core'] = len(result['core']['missing']) == 0
+    except Exception:
+        checks['secrets_core'] = False
+
+    all_ok = all(checks.values())
+    status_code = 200 if all_ok else 503
+    return jsonify({
+        "status": "ready" if all_ok else "not_ready",
+        "checks": checks,
+    }), status_code
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', 8000)))
