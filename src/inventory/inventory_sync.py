@@ -256,7 +256,6 @@ class InventorySync:
                 logger.warning("Shopify: SKU %s not found", sku)
                 return False
 
-            product_id = product.get('id')
             # Shopify Inventory API: inventorySetOnHandQuantities
             location_id = os.getenv('SHOPIFY_LOCATION_ID', '')
             if not location_id:

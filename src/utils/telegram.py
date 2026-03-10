@@ -1,7 +1,9 @@
-import os, requests
+import os
+import requests
 
 BOT = os.getenv('TELEGRAM_BOT_TOKEN')
 CHAT = os.getenv('TELEGRAM_CHAT_ID')
+
 
 def send_tele(text: str):
     if not BOT or not CHAT:
