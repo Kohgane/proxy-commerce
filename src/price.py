@@ -45,23 +45,17 @@ def _build_fx_rates(fx_usdkrw=None, fx_jpykrw=None, fx_eurkrw=None, use_live=Non
                 cached = cache.get()
                 if cached:
                     return {
-                        'USDKRW': Decimal(str(fx_usdkrw)) if fx_usdkrw is not None
-                                  else Decimal(str(cached['USDKRW'])),
-                        'JPYKRW': Decimal(str(fx_jpykrw)) if fx_jpykrw is not None
-                                  else Decimal(str(cached['JPYKRW'])),
-                        'EURKRW': Decimal(str(fx_eurkrw)) if fx_eurkrw is not None
-                                  else Decimal(str(cached['EURKRW'])),
+                        'USDKRW': Decimal(str(fx_usdkrw)) if fx_usdkrw is not None else Decimal(str(cached['USDKRW'])),
+                        'JPYKRW': Decimal(str(fx_jpykrw)) if fx_jpykrw is not None else Decimal(str(cached['JPYKRW'])),
+                        'EURKRW': Decimal(str(fx_eurkrw)) if fx_eurkrw is not None else Decimal(str(cached['EURKRW'])),
                     }
         except Exception:
             pass  # 캐시 실패 시 환경변수 폴백
 
     return {
-        'USDKRW': Decimal(str(fx_usdkrw)) if fx_usdkrw is not None
-                  else Decimal(os.getenv('FX_USDKRW', str(DEFAULT_FX_RATES['USDKRW']))),
-        'JPYKRW': Decimal(str(fx_jpykrw)) if fx_jpykrw is not None
-                  else Decimal(os.getenv('FX_JPYKRW', str(DEFAULT_FX_RATES['JPYKRW']))),
-        'EURKRW': Decimal(str(fx_eurkrw)) if fx_eurkrw is not None
-                  else Decimal(os.getenv('FX_EURKRW', str(DEFAULT_FX_RATES['EURKRW']))),
+        'USDKRW': Decimal(str(fx_usdkrw)) if fx_usdkrw is not None else Decimal(os.getenv('FX_USDKRW', str(DEFAULT_FX_RATES['USDKRW']))),
+        'JPYKRW': Decimal(str(fx_jpykrw)) if fx_jpykrw is not None else Decimal(os.getenv('FX_JPYKRW', str(DEFAULT_FX_RATES['JPYKRW']))),
+        'EURKRW': Decimal(str(fx_eurkrw)) if fx_eurkrw is not None else Decimal(os.getenv('FX_EURKRW', str(DEFAULT_FX_RATES['EURKRW']))),
     }
 
 

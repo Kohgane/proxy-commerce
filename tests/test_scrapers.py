@@ -3,18 +3,17 @@ tests/test_scrapers.py
 src/scrapers 모듈 단위 테스트
 """
 
-import io
 import json
 import os
 import sys
 import tempfile
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.scrapers.listly_client import ListlyLoader
+from src.scrapers.listly_client import ListlyLoader  # noqa: E402
 
 # 샘플 파일 경로
 DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data')

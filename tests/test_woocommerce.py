@@ -4,8 +4,7 @@ import hashlib
 import hmac
 import os
 import sys
-from unittest.mock import MagicMock, patch, call
-
+from unittest.mock import MagicMock, patch
 import pytest
 import requests
 

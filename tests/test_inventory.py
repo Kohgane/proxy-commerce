@@ -2,7 +2,7 @@
 import os
 import sys
 from decimal import Decimal
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -189,7 +189,7 @@ class TestStockCheckerBatch:
         ]
         side_effects = [PORTER_IN_STOCK_HTML, PORTER_OUT_OF_STOCK_HTML, MEMO_IN_STOCK_HTML]
         with patch.object(checker, '_fetch_html', side_effect=side_effects):
-            with patch('src.inventory.stock_checker.time') as mock_time:
+            with patch('src.inventory.stock_checker.time'):
                 results = checker.check_batch(inputs)
         assert len(results) == 3
 
@@ -642,7 +642,8 @@ class TestInventoryCLI:
         return proc
 
     def test_cli_full_sync_dry_run(self):
-        import argparse, io
+        import argparse
+        import io
         from contextlib import redirect_stdout
         from src.inventory.cli import cmd_full_sync
 
@@ -667,10 +668,10 @@ class TestInventoryCLI:
             cmd_check(args)
 
     def test_cli_report_no_result(self):
-        import argparse, io
+        import argparse
+        import io
         from contextlib import redirect_stdout
         from src.inventory.cli import cmd_report
-        from src.inventory.inventory_sync import InventorySync
 
         args = argparse.Namespace()
         mock_syncer = MagicMock()
@@ -682,7 +683,8 @@ class TestInventoryCLI:
         assert 'No sync report' in f.getvalue()
 
     def test_cli_report_with_result(self):
-        import argparse, io
+        import argparse
+        import io
         from contextlib import redirect_stdout
         from src.inventory.cli import cmd_report
 

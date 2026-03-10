@@ -1,9 +1,7 @@
 """tests/test_orders.py — Phase 3 주문 라우팅 엔진 테스트 (40+)"""
 import os
 import sys
-from unittest.mock import MagicMock, patch, call
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
