@@ -1,6 +1,6 @@
 # Proxy Commerce — 프로젝트 진행상황
 
-> 마지막 업데이트: 2026-03-10
+> 마지막 업데이트: 2026-03-11
 
 ---
 
@@ -20,6 +20,7 @@
 | 4 | 4-3 | 실시간 환율 자동 연동 (다중 프로바이더 + 캐시 + 이력 + 가격 재계산) | [#11](https://github.com/Kohgane/proxy-commerce/pull/11) | ✅ 머지 완료 |
 | 5 | 5-1 | 프로덕션 배포 환경 (Docker + Gunicorn + Healthcheck) | <a href="https://github.com/Kohgane/proxy-commerce/pull/12">#12</a> | ✅ 머지 완료 |
 | 5 | 5-2 | CI/CD 파이프라인 (GitHub Actions 테스트 자동화 + Docker 이미지 빌드/푸시) | <a href="https://github.com/Kohgane/proxy-commerce/pull/13">#13</a>, <a href="https://github.com/Kohgane/proxy-commerce/pull/14">#14</a>, <a href="https://github.com/Kohgane/proxy-commerce/pull/15">#15</a> | ✅ 머지 완료 |
+| 6 | 6-1 | 다국가 배송/세금 엔진 (13개국 통관/세금/배송비 자동 계산) | #16 | ✅ 머지 완료 |
 
 ---
 
@@ -167,6 +168,12 @@ proxy-commerce/
 │   │   ├── emailer.py
 │   │   ├── telegram.py
 │   │   └── notion.py
+│   ├── shipping/               # Phase 6-1: 다국가 배송/세금 엔진
+│   │   ├── __init__.py         # 패키지 초기화
+│   │   ├── country_config.py   # 13개국 통관/세금 설정 DB
+│   │   ├── tax_calculator.py   # TaxCalculator (관세+VAT 자동 계산)
+│   │   ├── shipping_estimator.py # ShippingEstimator (배송비/리드타임)
+│   │   └── customs_document.py # CustomsDocumentHelper (인보이스/HS코드)
 │   └── vendors/
 │       ├── __init__.py         # VENDOR_REGISTRY + get_vendor()
 │       ├── base_vendor.py      # BaseVendor ABC
@@ -183,7 +190,8 @@ proxy-commerce/
     ├── test_shopify_auth.py    # 17 tests
     ├── test_woocommerce.py     # 34 tests
     ├── test_orders.py          # 70 tests
-    └── test_dashboard.py       # 68 tests
+    ├── test_dashboard.py       # 68 tests
+    └── test_shipping.py        # 105 tests
 ```
 
 ---
@@ -248,7 +256,8 @@ python -m pytest tests/ -v
 | inventory/ | test_inventory.py | 52 |
 | fx/ | test_fx.py | 38 |
 | healthcheck | test_health.py | 10 |
-| **합계** | | **464** |
+| shipping/ | test_shipping.py | 105 |
+| **합계** | | **569** |
 
 ---
 
@@ -260,7 +269,8 @@ python -m pytest tests/ -v
 - [x] Phase 4 Step 4-3: 실시간 환율 자동 연동 (다중 프로바이더 + 캐시 + 이력 + 가격 재계산)
 - [x] Phase 5 Step 5-1: 프로덕션 배포 환경 (Docker + Gunicorn + Healthcheck)
 - [x] Phase 5 Step 5-2: CI/CD 파이프라인 (GitHub Actions + Docker GHCR + Lint)
-- [ ] Phase 6: 글로벌 확장 (해외 직판 D2C)
+- [x] Phase 6 Step 6-1: 다국가 배송/세금 엔진 (13개국 통관/세금/배송비 자동 계산)
+- [ ] Phase 6 Step 6-2: 글로벌 확장 (해외 직판 D2C 채널 연동)
 - [ ] 쿠팡/스마트스토어 API 직접 연동 (퍼센티 대체)
 
 ---
@@ -461,3 +471,46 @@ python -m pytest tests/ -v
 | 동남아 | DAP | 저가면세 종료 추세이므로 면세 기대 금지 |
 | UAE/사우디 | DAP | 관세/VAT 낮아서 수취인 부담도 저항 적음 |
 | 중국 | CBEC 전용 | 크로스보더 전자상거래 전용 루트 필수 |
+
+---
+
+## ✅ Phase 6: 글로벌 확장 (진행 중)
+
+### Step 6-1 — 다국가 배송/세금 엔진 (13개국 통관/세금/배송비 자동 계산)
+
+#### 신규 파일
+
+- `src/shipping/__init__.py`: 패키지 초기화 (`CountryConfig`, `TaxCalculator`, `ShippingEstimator` 노출)
+- `src/shipping/country_config.py`: 13개국 통관/세금 설정 DB (`COUNTRY_DB`, `get_country()`, `SUPPORTED_COUNTRIES`)
+- `src/shipping/tax_calculator.py`: `TaxCalculator` — `calc_import_tax()`, `calc_landed_price()`
+- `src/shipping/shipping_estimator.py`: `ShippingEstimator` — `estimate()`, `cheapest()`, `fastest()`
+- `src/shipping/customs_document.py`: `CustomsDocumentHelper` — `generate_invoice_data()`, `get_hs_code()`
+- `tests/test_shipping.py`: 105개 테스트
+
+#### 지원 국가 (13개국)
+
+| 국가 | 코드 | 통화 | VAT | 관세 | de minimis | Incoterms | Tier |
+|------|------|------|-----|------|-----------|-----------|------|
+| 미국 | US | USD | 0% | 5% | $800 | DAP | 1 |
+| 영국 | GB | GBP | 20% | 4% | £135 | DDP | 1 |
+| 일본 | JP | JPY | 10% | 5% | ¥10,000 | DAP | 2 |
+| 태국 | TH | THB | 7% | 10% | 없음 | DAP | 2 |
+| 베트남 | VN | VND | 10% | 10% | 없음 | DAP | 2 |
+| 인도네시아 | ID | IDR | 11% | 7.5% | $3 | DAP | 2 |
+| 필리핀 | PH | PHP | 12% | 5% | ₱10,000 | DAP | 2 |
+| UAE | AE | AED | 5% | 5% | 없음 | DAP | 2 |
+| 사우디 | SA | SAR | 15% | 5% | 없음 | DAP | 2 |
+| 싱가포르 | SG | SGD | 9% | 0% | S$400 | DAP | 2 |
+| 말레이시아 | MY | MYR | 10% | 5% | RM500 | DAP | 2 |
+| 폴란드 | PL | PLN | 23% | 4% | 없음 (IOSS €150) | DDP | 3 |
+| 중국 | CN | CNY | 13% | 10% | ¥50 | DAP | 3 |
+
+#### 주요 구현 사항
+
+- **KRW 피벗 환율 변환**: `_convert_currency()` — 모든 통화 쌍을 KRW 경유로 환산
+- **de minimis 면세 로직**: 완전 면세(JP/PH) vs. 관세만 면제+VAT 부과(GB/ID/SG/MY) 분리 처리
+- **배송비 포함 CIF 관세**: 관세 = (상품가 + 배송비) × 관세율
+- **배송비 KRW 테이블 (0.5kg 기준)**: EMS/K-Packet/등기 3종 × 5개 zone
+- **중량 비례 배송비**: 0.5kg 단위 올림 처리
+- **EU IOSS 메타데이터**: `ioss_eligible`, `ioss_threshold` 플래그 제공
+- **기존 `src/price.py` 수정 없음**: 완전 독립 패키지로 동작
