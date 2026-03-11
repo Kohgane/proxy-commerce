@@ -758,3 +758,10 @@ class TestGenerateInvoiceData:
                   'quantity': 1, 'unit_value': Decimal('20'), 'currency': 'USD'}]
         inv = doc_helper.generate_invoice_data(items, 'US', self._sender, self._receiver)
         assert inv['items'][0]['origin_country'] == 'KR'
+        assert inv['items'][0]['hs_code'] == '4202.92'  # pouch HS code from HS_CODE_MAP
+
+    def test_unknown_category_fallback_hs_code(self):
+        items = [{'description': 'Mystery Item', 'category': 'unknown',
+                  'quantity': 1, 'unit_value': Decimal('10'), 'currency': 'USD'}]
+        inv = doc_helper.generate_invoice_data(items, 'US', self._sender, self._receiver)
+        assert inv['items'][0]['hs_code'] == '9999.99'  # fallback for unknown category
