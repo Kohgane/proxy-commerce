@@ -36,7 +36,7 @@ def _parse_args(argv=None):
     parser.add_argument(
         '--channel',
         required=True,
-        choices=['percenty', 'shopify', 'woocommerce'],
+        choices=['percenty', 'shopify', 'woocommerce', 'shopify_markets'],
         help='대상 채널 이름',
     )
     parser.add_argument(
@@ -204,6 +204,49 @@ def _run_woocommerce(args, catalog: list, dry_run: bool):
         logger.info('--sync 플래그 없음: WooCommerce API 호출 생략')
 
 
+def _run_shopify_markets(args, catalog: list, dry_run: bool):
+    """Shopify Markets 다통화 동기화 실행."""
+    from .shopify_markets import ShopifyMarketsChannel
+    from src.price import calc_price, _build_fx_rates
+
+    channel = ShopifyMarketsChannel()
+    fx_rates = _build_fx_rates()
+    margin_pct = float(os.getenv('TARGET_MARGIN_PCT', '22'))
+
+    products = []
+    for row in catalog:
+        if row.get('status', 'active') != 'active':
+            continue
+        try:
+            usd_price = calc_price(
+                buy_price=float(row.get('buy_price', 0)),
+                buy_currency=row.get('buy_currency', 'USD'),
+                fx_usdkrw=float(fx_rates['USDKRW']),
+                margin_pct=margin_pct,
+                target_currency='USD',
+                fx_rates=fx_rates,
+            )
+        except Exception as exc:
+            logger.warning('USD 가격 계산 실패: %s', exc)
+            usd_price = 0.0
+
+        products.append(channel.prepare_product(row, float(usd_price)))
+
+    if dry_run:
+        logger.info('[DRY-RUN] 채널=shopify_markets, 상품수=%d (API 미호출)', len(products))
+        print('\n[DRY-RUN] shopify_markets')
+        print(f'  변환된 상품 수: {len(products)}')
+        if products:
+            cp = products[0].get('country_prices', {})
+            print(f'  샘플 국가별 가격: {list(cp.keys())}')
+        return
+
+    if args.sync:
+        channel.export_batch(products, '')
+    else:
+        logger.info('--sync 플래그 없음: Shopify Markets API 호출 생략')
+
+
 def main(argv=None):
     args = _parse_args(argv)
     dry_run = args.dry_run
@@ -228,6 +271,8 @@ def main(argv=None):
         _run_shopify(args, active, dry_run)
     elif args.channel == 'woocommerce':
         _run_woocommerce(args, active, dry_run)
+    elif args.channel == 'shopify_markets':
+        _run_shopify_markets(args, active, dry_run)
 
     logger.info('내보내기 완료')
 

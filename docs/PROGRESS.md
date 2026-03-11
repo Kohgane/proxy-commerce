@@ -21,6 +21,7 @@
 | 5 | 5-1 | 프로덕션 배포 환경 (Docker + Gunicorn + Healthcheck) | <a href="https://github.com/Kohgane/proxy-commerce/pull/12">#12</a> | ✅ 머지 완료 |
 | 5 | 5-2 | CI/CD 파이프라인 (GitHub Actions 테스트 자동화 + Docker 이미지 빌드/푸시) | <a href="https://github.com/Kohgane/proxy-commerce/pull/13">#13</a>, <a href="https://github.com/Kohgane/proxy-commerce/pull/14">#14</a>, <a href="https://github.com/Kohgane/proxy-commerce/pull/15">#15</a> | ✅ 머지 완료 |
 | 6 | 6-1 | 다국가 배송/세금 엔진 (13개국 통관/세금/배송비 자동 계산) | #16 | ✅ 머지 완료 |
+| 6 | 6-2 | Shopify Markets 다통화 연동 + 국제 주문 라우팅 | #18 | ✅ 머지 완료 |
 
 ---
 
