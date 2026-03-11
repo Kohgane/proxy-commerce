@@ -1,4 +1,4 @@
-"""tests/test_shopify_markets.py — Phase 6-2 신규 모듈 테스트 (80개+).
+"""tests/test_shopify_markets.py — Phase 6-2 신규 모듈 테스트 (107개+).
 
 커버리지:
 - MultiCurrencyConverter: 모든 통화 쌍 변환, to_krw/from_krw, get_rate, 엣지 케이스

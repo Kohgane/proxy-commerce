@@ -155,7 +155,7 @@ class ShopifyMarketsChannel(BaseChannel):
             저장된 파일 경로 또는 빈 문자열 (API 모드)
         """
         if output_path:
-            os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else '.', exist_ok=True)
+            os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
             # Decimal 직렬화를 위해 price를 str로 변환
             serializable = []
             for prod in products:
