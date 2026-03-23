@@ -1,0 +1,96 @@
+name: CD – Staging
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest --tb=short -q
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          build-args: |
+            APP_ENV=staging
+          tags: |
+            ghcr.io/kohgane/proxy-commerce:staging-${{ github.sha }}
+            ghcr.io/kohgane/proxy-commerce:staging-latest
+
+      - name: Deploy to Render (staging)
+        run: |
+          curl -fsSL -X POST "${{ secrets.RENDER_DEPLOY_HOOK_STAGING }}"
+
+      - name: Post-deploy healthcheck
+        run: |
+          # Wait for the service to become reachable after the deploy hook fires
+          sleep 30
+          python scripts/post_deploy_check.py \
+            --url "${{ secrets.STAGING_APP_URL }}" \
+            --env staging \
+            --retries 5 \
+            --interval 15
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.STAGING_TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.STAGING_TELEGRAM_CHAT_ID }}
+          APP_VERSION: staging-${{ github.sha }}
+
+      - name: Notify success
+        if: success()
+        run: |
+          python scripts/post_deploy_check.py \
+            --url "${{ secrets.STAGING_APP_URL }}" \
+            --env staging \
+            --notify-only
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.STAGING_TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.STAGING_TELEGRAM_CHAT_ID }}
+          APP_VERSION: staging-${{ github.sha }}
+
+      - name: Notify failure
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.STAGING_TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.STAGING_TELEGRAM_CHAT_ID }}
+          APP_VERSION: staging-${{ github.sha }}
+        run: |
+          python -c "
+          import os, requests
+          bot = os.getenv('TELEGRAM_BOT_TOKEN')
+          chat = os.getenv('TELEGRAM_CHAT_ID')
+          version = os.getenv('APP_VERSION', 'unknown')
+          if bot and chat:
+              requests.post(
+                  f'https://api.telegram.org/bot{bot}/sendMessage',
+                  json={'chat_id': chat, 'text': f'❌ [staging] 배포 실패 - {version}'},
+                  timeout=15
+              )
+          "

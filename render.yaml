@@ -1,0 +1,84 @@
+services:
+  - type: web
+    name: proxy-commerce-staging
+    env: docker
+    plan: free
+    autoDeploy: false
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: staging
+      - key: MODE
+        value: DRY_RUN
+      - key: GUNICORN_WORKERS
+        value: "1"
+      - key: GUNICORN_LOG_LEVEL
+        value: debug
+      - key: PORT
+        value: "8000"
+      - key: GOOGLE_SERVICE_JSON_B64
+        sync: false
+      - key: GOOGLE_SHEET_ID
+        sync: false
+      - key: SHOPIFY_SHOP
+        sync: false
+      - key: SHOPIFY_ACCESS_TOKEN
+        sync: false
+      - key: SHOPIFY_CLIENT_SECRET
+        sync: false
+      - key: WOO_BASE_URL
+        sync: false
+      - key: WOO_CK
+        sync: false
+      - key: WOO_CS
+        sync: false
+      - key: WOO_WEBHOOK_SECRET
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+
+  - type: web
+    name: proxy-commerce-production
+    env: docker
+    plan: standard
+    autoDeploy: false
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: MODE
+        value: APPLY
+      - key: GUNICORN_WORKERS
+        value: "4"
+      - key: GUNICORN_LOG_LEVEL
+        value: warning
+      - key: PORT
+        value: "8000"
+      - key: GOOGLE_SERVICE_JSON_B64
+        sync: false
+      - key: GOOGLE_SHEET_ID
+        sync: false
+      - key: SHOPIFY_SHOP
+        sync: false
+      - key: SHOPIFY_ACCESS_TOKEN
+        sync: false
+      - key: SHOPIFY_CLIENT_SECRET
+        sync: false
+      - key: WOO_BASE_URL
+        sync: false
+      - key: WOO_CK
+        sync: false
+      - key: WOO_CS
+        sync: false
+      - key: WOO_WEBHOOK_SECRET
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
