@@ -34,9 +34,34 @@ class DailySummaryGenerator:
         if date_str is None:
             date_str = str(date.today())
 
-        revenue = self.reporter.daily_revenue(date_str)
-        order_stats = self.order_tracker.get_stats()
-        pending_orders = self.order_tracker.get_pending_orders()
+        try:
+            revenue = self.reporter.daily_revenue(date_str)
+        except Exception as exc:
+            logger.warning("daily_revenue(%s) failed, using defaults: %s", date_str, exc)
+            revenue = {
+                'date': date_str,
+                'total_orders': 0,
+                'total_revenue_krw': 0,
+                'total_cost_krw': 0,
+                'gross_profit_krw': 0,
+                'gross_margin_pct': 0.0,
+                'by_vendor': {},
+                'by_channel': {},
+                'top_products': [],
+            }
+
+        try:
+            order_stats = self.order_tracker.get_stats()
+        except Exception as exc:
+            logger.warning("get_stats() failed, using defaults: %s", exc)
+            order_stats = {'total': 0, 'by_status': {}, 'by_vendor': {}, 'avg_processing_days': 0.0}
+
+        try:
+            pending_orders = self.order_tracker.get_pending_orders()
+        except Exception as exc:
+            logger.warning("get_pending_orders() failed, using defaults: %s", exc)
+            pending_orders = []
+
         alerts = self._check_alerts(order_stats, pending_orders)
 
         return {
