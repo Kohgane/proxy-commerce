@@ -48,15 +48,23 @@ class OrderStatusTracker:
     # ── 내부 헬퍼 ───────────────────────────────────────────
 
     def _get_worksheet(self):
-        """Google Sheets 워크시트 객체 반환."""
+        """Google Sheets 워크시트 객체 반환 (없으면 자동 생성)."""
         from ..utils.sheets import open_sheet
-        return open_sheet(self._sheet_id, self._worksheet)
+        ws = open_sheet(self._sheet_id, self._worksheet)
+        existing = ws.get_all_values()
+        if not existing:
+            ws.append_row(ORDER_HEADERS)
+        return ws
 
     def _get_all_rows(self) -> list[dict]:
-        """시트 전체 행 반환."""
-        ws = self._get_worksheet()
-        rows = ws.get_all_records()
-        return rows
+        """시트 전체 행 반환. 워크시트가 없거나 비어있으면 빈 리스트 반환."""
+        try:
+            ws = self._get_worksheet()
+            rows = ws.get_all_records()
+            return rows
+        except Exception as exc:
+            logger.warning("_get_all_rows() failed, returning empty list: %s", exc)
+            return []
 
     @staticmethod
     def _now_iso() -> str:

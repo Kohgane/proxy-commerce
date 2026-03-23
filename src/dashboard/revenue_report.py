@@ -33,12 +33,20 @@ class RevenueReporter:
 
     def _rows_for_date(self, target: date) -> list[dict]:
         """특정 날짜에 생성된 주문 행 반환."""
-        rows = self._tracker._get_all_rows()
+        try:
+            rows = self._tracker._get_all_rows()
+        except Exception as exc:
+            logger.warning("_rows_for_date() failed to fetch rows: %s", exc)
+            return []
         return [r for r in rows if self._parse_date(r.get('order_date', '')) == target]
 
     def _rows_for_range(self, start: date, end: date) -> list[dict]:
         """날짜 범위 내 주문 행 반환 (start ≤ date < end)."""
-        rows = self._tracker._get_all_rows()
+        try:
+            rows = self._tracker._get_all_rows()
+        except Exception as exc:
+            logger.warning("_rows_for_range() failed to fetch rows: %s", exc)
+            return []
         result = []
         for r in rows:
             d = self._parse_date(r.get('order_date', ''))
