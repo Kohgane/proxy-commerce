@@ -284,3 +284,24 @@ def sample_shopify_order():
         'total_price': '370000.00',
         'currency': 'KRW',
     }
+
+
+
+# ──────────────────────────────────────────────────────────
+# Phase 10: 검증기 상태 리셋 fixture
+# ──────────────────────────────────────────────────────────
+
+@pytest.fixture(autouse=True)
+def reset_order_validator():
+    """각 테스트 후 OrderValidator 중복 감지 캐시를 초기화한다.
+
+    order_webhook.py의 모듈 레벨 order_validator 싱글톤이 테스트 간
+    상태를 공유하지 않도록 한다.
+    """
+    yield
+    try:
+        import src.order_webhook as wh
+        if hasattr(wh, 'order_validator'):
+            wh.order_validator.reset_duplicate_cache()
+    except Exception:
+        pass
