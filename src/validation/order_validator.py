@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 _ENABLED = os.getenv("ORDER_VALIDATION_ENABLED", "1") == "1"
 _MAX_DUPLICATE_CACHE = int(os.getenv("ORDER_DUPLICATE_CACHE_SIZE", "10000"))
 
+# 중복 주문 오류 태그 — order_webhook.py 등에서 프로그래매틱하게 감지할 때 사용
+DUPLICATE_ORDER_TAG = "DUPLICATE_ORDER"
+
 
 class OrderValidator:
     """주문 데이터 검증기.
@@ -160,7 +163,7 @@ class OrderValidator:
         """중복 주문 여부를 확인하고 캐시에 등록한다."""
         with self._lock:
             if order_id in self._seen_ids:
-                return f"중복 주문 감지: order_id={order_id}"
+                return f"{DUPLICATE_ORDER_TAG}: order_id={order_id}"
             # 캐시 크기 제한
             if len(self._seen_ids) >= _MAX_DUPLICATE_CACHE:
                 # 가장 오래된 항목 일부 제거 (간단한 LRU 근사)

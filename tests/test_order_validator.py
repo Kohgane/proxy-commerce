@@ -101,10 +101,11 @@ class TestShopifyOrderValidation:
 
     def test_duplicate_order_detected(self, validator):
         """동일 order_id의 두 번째 요청은 중복으로 감지된다."""
+        from src.validation.order_validator import DUPLICATE_ORDER_TAG
         validator.validate_shopify(VALID_SHOPIFY_ORDER)
         is_valid2, errors2 = validator.validate_shopify(VALID_SHOPIFY_ORDER)
         assert is_valid2 is False
-        assert any("중복" in e for e in errors2)
+        assert any(e.startswith(DUPLICATE_ORDER_TAG) for e in errors2)
 
     def test_reset_clears_duplicate_cache(self, validator):
         """reset_duplicate_cache() 후 동일 주문을 다시 처리할 수 있다."""
@@ -134,7 +135,8 @@ class TestWooCommerceOrderValidation:
 
     def test_woo_duplicate_detection(self, validator):
         """WooCommerce 주문도 중복 감지된다."""
+        from src.validation.order_validator import DUPLICATE_ORDER_TAG
         validator.validate_woocommerce(VALID_WOO_ORDER)
         is_valid2, errors2 = validator.validate_woocommerce(VALID_WOO_ORDER)
         assert is_valid2 is False
-        assert any("중복" in e for e in errors2)
+        assert any(e.startswith(DUPLICATE_ORDER_TAG) for e in errors2)

@@ -13,7 +13,7 @@ from .dashboard.order_status import OrderStatusTracker
 from .utils.rate_limiter import create_limiter, LIMIT_WEBHOOK, LIMIT_HEALTH
 from .middleware.request_logger import RequestLogger
 from .middleware.security import SecurityMiddleware
-from .validation.order_validator import OrderValidator
+from .validation.order_validator import OrderValidator, DUPLICATE_ORDER_TAG
 from .audit.audit_logger import AuditLogger
 from .audit.event_types import EventType
 
@@ -68,15 +68,16 @@ def shopify_order():
     is_valid, validation_errors = order_validator.validate_shopify(data)
     if not is_valid:
         logger.warning("Shopify 주문 검증 실패: %s", validation_errors)
+        is_duplicate = any(e.startswith(DUPLICATE_ORDER_TAG) for e in validation_errors)
         audit_logger.log(
-            EventType.ORDER_DUPLICATE_DETECTED if any("중복" in e for e in validation_errors) else EventType.WEBHOOK_REJECTED,
+            EventType.ORDER_DUPLICATE_DETECTED if is_duplicate else EventType.WEBHOOK_REJECTED,
             actor="order_validator",
             resource=f"order:{data.get('id')}",
             details={"errors": validation_errors},
             ip_address=request.remote_addr or "",
         )
         # 중복 주문은 200 반환 (재전송 방지), 다른 검증 실패는 400
-        if any("중복" in e for e in validation_errors):
+        if is_duplicate:
             return jsonify({"ok": True, "skipped": "duplicate"}), 200
         return jsonify({"error": "validation_failed", "details": validation_errors}), 400
 
