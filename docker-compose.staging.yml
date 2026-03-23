@@ -1,0 +1,31 @@
+version: "3.9"
+
+services:
+  web:
+    build:
+      context: .
+      args:
+        APP_ENV: staging
+    ports:
+      - "8001:8000"  # Staging uses 8001 to avoid collision with a local production instance on 8000
+    env_file: .env.staging
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+    deploy:
+      replicas: 1
+
+  worker:
+    build:
+      context: .
+      args:
+        APP_ENV: staging
+    command: python -m src.main
+    env_file: .env.staging
+    restart: unless-stopped
+    deploy:
+      replicas: 1

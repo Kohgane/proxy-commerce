@@ -119,3 +119,24 @@ fx:
     - USDKRW
     - JPYKRW
     - EURKRW
+
+deploy:
+  environments:
+    staging:
+      mode: "DRY_RUN"
+      gunicorn_workers: 1
+      log_level: "debug"
+    production:
+      mode: "APPLY"
+      gunicorn_workers: 4
+      log_level: "warning"
+  healthcheck:
+    path: "/health"
+    ready_path: "/health/ready"
+    timeout_seconds: 10
+    retries: 5
+    interval_seconds: 15
+  notifications:
+    telegram_on_deploy: true
+    telegram_on_failure: true
+    telegram_on_rollback: true

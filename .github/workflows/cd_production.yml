@@ -1,0 +1,113 @@
+name: CD – Production
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest --tb=short -q
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          build-args: |
+            APP_ENV=production
+          tags: |
+            ghcr.io/kohgane/proxy-commerce:${{ steps.version.outputs.VERSION }}
+            ghcr.io/kohgane/proxy-commerce:latest
+
+      - name: Deploy to Render (production)
+        run: |
+          curl -fsSL -X POST "${{ secrets.RENDER_DEPLOY_HOOK_PRODUCTION }}"
+
+      - name: Post-deploy healthcheck with retry
+        id: healthcheck
+        run: |
+          python scripts/post_deploy_check.py \
+            --url "${{ secrets.PRODUCTION_APP_URL }}" \
+            --env production \
+            --retries 3 \
+            --interval 10
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.PROD_TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.PROD_TELEGRAM_CHAT_ID }}
+          APP_VERSION: ${{ steps.version.outputs.VERSION }}
+
+      - name: Rollback on failure
+        if: failure() && steps.healthcheck.outcome == 'failure'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.PROD_TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.PROD_TELEGRAM_CHAT_ID }}
+          APP_VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          echo "Healthcheck failed – triggering rollback via Render deploy hook (previous image)"
+          curl -fsSL -X POST "${{ secrets.RENDER_ROLLBACK_HOOK_PRODUCTION }}" || true
+          python -c "
+          import os, requests
+          bot = os.getenv('TELEGRAM_BOT_TOKEN')
+          chat = os.getenv('TELEGRAM_CHAT_ID')
+          version = os.getenv('APP_VERSION', 'unknown')
+          if bot and chat:
+              requests.post(
+                  f'https://api.telegram.org/bot{bot}/sendMessage',
+                  json={'chat_id': chat,
+                        'text': f'🔄 [production] 롤백 실행 - {version} 배포 실패로 인한 자동 롤백'},
+                  timeout=15
+              )
+          "
+
+      - name: Notify failure
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.PROD_TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.PROD_TELEGRAM_CHAT_ID }}
+          APP_VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          python -c "
+          import os, requests
+          bot = os.getenv('TELEGRAM_BOT_TOKEN')
+          chat = os.getenv('TELEGRAM_CHAT_ID')
+          version = os.getenv('APP_VERSION', 'unknown')
+          if bot and chat:
+              requests.post(
+                  f'https://api.telegram.org/bot{bot}/sendMessage',
+                  json={'chat_id': chat, 'text': f'❌ [production] 배포 실패 - {version}'},
+                  timeout=15
+              )
+          "
