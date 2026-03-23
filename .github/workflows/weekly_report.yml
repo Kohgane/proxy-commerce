@@ -1,0 +1,42 @@
+name: Weekly Business Report
+
+on:
+  schedule:
+    - cron: "0 0 * * 1"   # 매주 월요일 09:00 KST (UTC 00:00)
+  workflow_dispatch:
+    inputs:
+      week_start:
+        description: 'Report week start (YYYY-MM-DD, empty for current week)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  weekly-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Generate weekly report
+        env:
+          GOOGLE_SERVICE_JSON_B64: ${{ secrets.GOOGLE_SERVICE_JSON_B64 }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SHOPIFY_SHOP: ${{ secrets.SHOPIFY_SHOP }}
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          WEEKLY_REPORT_ENABLED: "1"
+          TELEGRAM_ENABLED: "1"
+        run: |
+          WEEK_ARG="${{ github.event.inputs.week_start }}"
+          if [ -n "$WEEK_ARG" ]; then
+            python -m src.analytics.cli --action weekly-report --week-start "$WEEK_ARG"
+          else
+            python -m src.analytics.cli --action weekly-report
+          fi
