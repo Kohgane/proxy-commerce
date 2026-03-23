@@ -163,3 +163,30 @@ deploy:
     telegram_on_deploy: true
     telegram_on_failure: true
     telegram_on_rollback: true
+
+bot:
+  commands_enabled: true
+  webhook_secret: "${TELEGRAM_BOT_WEBHOOK_SECRET}"
+
+notifications:
+  customer:
+    enabled: false
+    smtp:
+      host: "${SMTP_HOST}"
+      port: 587
+      user: "${SMTP_USER}"
+      from_name: "Proxy Commerce"
+      from_email: "${SMTP_FROM_EMAIL}"
+  channels:
+    slack:
+      enabled: false
+      webhook_url: "${SLACK_WEBHOOK_URL}"
+    discord:
+      enabled: false
+      webhook_url: "${DISCORD_WEBHOOK_URL}"
+
+reorder:
+  enabled: false
+  threshold: 2
+  worksheet: reorder_queue
+  approval_required: true
