@@ -1,7 +1,5 @@
 """텔레그램 봇 메인 핸들러 — Flask webhook receiver."""
 
-import hashlib
-import hmac
 import logging
 import os
 
@@ -24,18 +22,6 @@ _COMMAND_MAP = {
     '/fx': lambda _args: cmd_fx(),
     '/help': lambda _args: cmd_help(),
 }
-
-
-def _verify_secret(token: str) -> bool:
-    """TELEGRAM_BOT_WEBHOOK_SECRET으로 요청 검증."""
-    if not WEBHOOK_SECRET:
-        return True  # 시크릿 미설정 시 모든 요청 허용
-    expected = hmac.new(
-        WEBHOOK_SECRET.encode(),
-        token.encode(),
-        hashlib.sha256,
-    ).hexdigest()
-    return hmac.compare_digest(expected, token)
 
 
 def _send_reply(chat_id: int, text: str) -> None:

@@ -177,7 +177,6 @@ class AutoReorder:
 
     def _send_approval_request(self, queue_items: list) -> None:
         """텔레그램으로 발주 승인 요청 발송."""
-        import os
         import requests as req_lib
 
         bot_token = os.getenv('TELEGRAM_BOT_TOKEN', '')

@@ -135,7 +135,7 @@ class NotificationHub:
 
     def _send_telegram_order(self, order: dict, event: str) -> bool:
         """텔레그램 주문 이벤트 알림."""
-        from ..notifications.templates import get_telegram_template
+        from .templates import get_telegram_template
         try:
             text = get_telegram_template(event, order)
             return self._send_telegram_raw(text)

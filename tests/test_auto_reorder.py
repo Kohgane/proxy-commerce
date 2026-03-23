@@ -65,7 +65,19 @@ class TestAutoReorder:
             result = reorder._build_queue(SAMPLE_ROWS[:2])
         assert result == []
 
-    def test_calc_reorder_qty(self):
+    def test_detect_low_stock_threshold(self):
+        """_detect_low_stock()이 threshold를 올바르게 적용해야 한다."""
+        reorder = self._make_reorder(enabled=True, threshold=2)
+        mock_sync = MagicMock()
+        mock_sync._get_active_rows.return_value = SAMPLE_ROWS  # stock: 1, 5, 0
+        with patch('src.inventory.inventory_sync.InventorySync', return_value=mock_sync):
+            low = reorder._detect_low_stock()
+        # stock=1 (≤2), stock=5 (>2 — 제외), stock=0 (≤2) → 2개
+        assert len(low) == 2
+        skus = [r['sku'] for r in low]
+        assert 'PTR-TNK-001' in skus
+        assert 'PTR-TNK-002' in skus
+        assert 'MMP-EDP-001' not in skus
         from src.reorder.auto_reorder import AutoReorder
         qty = AutoReorder._calc_reorder_qty({'sales_velocity': 2.0})
         assert qty >= 1
