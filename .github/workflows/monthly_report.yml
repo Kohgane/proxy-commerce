@@ -1,0 +1,42 @@
+name: Monthly Business Report
+
+on:
+  schedule:
+    - cron: "0 0 1 * *"   # 매월 1일 09:00 KST (UTC 00:00)
+  workflow_dispatch:
+    inputs:
+      year_month:
+        description: 'Report month (YYYY-MM, empty for current month)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  monthly-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Generate monthly report
+        env:
+          GOOGLE_SERVICE_JSON_B64: ${{ secrets.GOOGLE_SERVICE_JSON_B64 }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SHOPIFY_SHOP: ${{ secrets.SHOPIFY_SHOP }}
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          MONTHLY_REPORT_ENABLED: "1"
+          TELEGRAM_ENABLED: "1"
+        run: |
+          MONTH_ARG="${{ github.event.inputs.year_month }}"
+          if [ -n "$MONTH_ARG" ]; then
+            python -m src.analytics.cli --action monthly-report --month "$MONTH_ARG"
+          else
+            python -m src.analytics.cli --action monthly-report
+          fi

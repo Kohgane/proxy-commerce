@@ -120,6 +120,29 @@ fx:
     - JPYKRW
     - EURKRW
 
+analytics:
+  auto_pricing:
+    enabled: true
+    mode: "DRY_RUN"  # DRY_RUN | APPLY
+    min_margin_pct: 10
+    max_price_change_pct: 8
+    check_interval_hours: 24
+  reorder:
+    enabled: true
+    sales_velocity_days: 30
+    safety_stock_days: 3
+    lead_times:
+      porter: 7
+      memo_paris: 10
+  new_products:
+    enabled: true
+    min_margin_pct: 15
+  reports:
+    weekly_enabled: true
+    monthly_enabled: true
+    weekly_worksheet: weekly_reports
+    monthly_worksheet: monthly_reports
+
 deploy:
   environments:
     staging:

@@ -1,0 +1,30 @@
+name: New Product Check
+
+on:
+  schedule:
+    - cron: "0 1 * * *"   # 매일 10:00 KST (UTC 01:00)
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  new-product-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Check for new vendor products
+        env:
+          GOOGLE_SERVICE_JSON_B64: ${{ secrets.GOOGLE_SERVICE_JSON_B64 }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          NEW_PRODUCT_CHECK_ENABLED: "1"
+          NEW_PRODUCT_MIN_MARGIN_PCT: "15"
+          TELEGRAM_ENABLED: "1"
+        run: python -m src.analytics.cli --action new-product-check
