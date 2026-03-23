@@ -1,161 +1,456 @@
-# Proxy Commerce – 2단계 구매대행 자동화 (Runnable)
+# Proxy Commerce — 해외 구매대행 자동화 플랫폼
 
-이 레포는 **즉시 실행** 가능한 2단계(반자동 주문 라우팅) 템플릿입니다.
+> **Phase 1~8 완료** — 크롤링→번역→가격계산→주문라우팅→재고동기화→환율연동→BI→프로덕션 안정화
 
-## 🐳 Docker 배포
+Python 3.11 + Flask 3 + Google Sheets 기반의 **완전 자동화된 해외 구매대행 운영 플랫폼**입니다.
+크롤링부터 주문 라우팅, 재고 동기화, BI 분석, Staging/Production 배포까지 모든 단계를 자동화합니다.
 
-### 빌드 & 실행
-```bash
-docker build -t proxy-commerce .
-docker run -p 8000:8000 --env-file .env proxy-commerce
+---
+
+## 목차
+
+1. [아키텍처](#아키텍처)
+2. [주요 기능](#주요-기능)
+3. [빠른 시작](#빠른-시작)
+4. [환경변수 매뉴얼](#환경변수-매뉴얼)
+5. [API 엔드포인트](#api-엔드포인트)
+6. [CLI 명령어](#cli-명령어)
+7. [배포 가이드](#배포-가이드)
+8. [기여 가이드](#기여-가이드)
+
+---
+
+## 아키텍처
+
+```
+┌────────────────────────────────────────────────────────┐
+│                   외부 판매 채널                         │
+│    Shopify (글로벌/다통화)  ·  WooCommerce (국내)         │
+└────────────────┬───────────────────┬───────────────────┘
+                 │ 주문 웹훅            │ 상품 동기화
+                 ▼                   ▼
+┌────────────────────────────────────────────────────────┐
+│              order_webhook.py  (Flask 3)               │
+│   POST /webhook/shopify/order  (HMAC + Rate Limit)     │
+│   POST /webhook/forwarder/tracking                     │
+│   GET  /health  /health/ready  /health/deep            │
+└────────────────┬───────────────────────────────────────┘
+                 │
+        ┌────────▼────────────────────────┐
+        │       src/orders/               │
+        │   OrderRouter → CatalogLookup   │
+        │   InternationalRouter           │
+        │   OrderNotifier (Telegram)      │
+        │   OrderTracker  (Sheets)        │
+        └────────┬────────────────────────┘
+                 │
+    ┌────────────▼──────────────┐  ┌──────────────────────┐
+    │   src/vendors/            │  │  src/inventory/      │
+    │   ShopifyClient (REST/GQL)│  │  InventorySync       │
+    │   WooCommerceClient       │  │  StockChecker        │
+    │   PorterVendor            │  │  StockAlerts         │
+    │   MemoPariVendor          │  └──────────────────────┘
+    └───────────────────────────┘
+                 │
+    ┌────────────▼──────────────┐  ┌──────────────────────┐
+    │   src/fx/                 │  │  src/dashboard/      │
+    │   FXProvider (다중공급사)  │  │  DailySummary        │
+    │   FXCache (Sheets 영속)   │  │  RevenueReporter     │
+    │   FXUpdater               │  │  OrderStatusTracker  │
+    └───────────────────────────┘  └──────────────────────┘
+                 │
+    ┌────────────▼──────────────────────────────────────┐
+    │               src/analytics/ (Phase 7 BI)         │
+    │   BusinessAnalytics · AutoPricingEngine           │
+    │   ReorderAlertManager · PeriodicReportGenerator   │
+    │   NewProductDetector                              │
+    └───────────────────────────────────────────────────┘
+                 │
+    ┌────────────▼──────────────┐
+    │   Google Sheets (데이터 허브) │
+    │   catalog / orders / fx_rates / fx_history       │
+    │   weekly_reports / monthly_reports / ...         │
+    └───────────────────────────────────────────────────┘
 ```
 
-### Docker Compose
-```bash
-docker-compose up -d
+**데이터 흐름:**
+```
+벤더 사이트 → src/scrapers → Google Sheets(catalog)
+                                      ↓
+                              src/price.py (랜딩 코스트)
+                              src/translate.py (DeepL)
+                                      ↓
+                     Shopify / WooCommerce (상품 등록)
+                                      ↓
+                       고객 주문 → order_webhook
+                                      ↓
+                     OrderRouter → 벤더 구매 지시 (Telegram)
+                                      ↓
+                     배대지 배송 → tracking webhook
+                                      ↓
+                       Shopify fulfillment 업데이트
 ```
 
-### Healthcheck
-```bash
-curl http://localhost:8000/health
-curl http://localhost:8000/health/ready
-```
+---
+
+## 주요 기능
+
+### Phase 1 — 기반
+| 기능 | 설명 |
+|------|------|
+| 🌏 다중통화 지원 | JPY·EUR·USD → KRW 랜딩 코스트 자동 계산 (관·부가세 포함) |
+| 🌐 DeepL 다국어 번역 | 일본어·프랑스어 → 한국어·영어 자동 번역 + 인메모리 캐시 |
+| 🏷️ 소싱 벤더 모듈 | Porter(일), Memo Paris(프) 상품 정규화 |
+| 🕷️ 크롤러/스크래퍼 | Listly CSV → Google Sheets 카탈로그 자동 적재 |
+
+### Phase 2 — 판매 채널
+| 기능 | 설명 |
+|------|------|
+| 📦 퍼센티 CSV | 국내 판매채널 상품 내보내기 |
+| 🛒 Shopify | HMAC 검증, Retry, GraphQL/REST, Markets 다통화 |
+| 🛍️ WooCommerce | REST API 기반 국내 스토어 연동 |
+
+### Phase 3 — 주문
+| 기능 | 설명 |
+|------|------|
+| 🔀 자동 주문 라우팅 | SKU→벤더 매핑, 배대지 자동 배정 |
+| 🌍 국제 라우팅 | 국가별 배송 전략 + Shopify Markets |
+
+### Phase 4 — 모니터링
+| 기능 | 설명 |
+|------|------|
+| 📊 모니터링 대시보드 | 주문 상태 추적, 매출/마진 분석 |
+| 📦 재고 자동 동기화 | 벤더 재고 확인 → 카탈로그/스토어 자동 반영 |
+| 💱 실시간 환율 | frankfurter.app API → Google Sheets 캐시 → 자동 갱신 |
+
+### Phase 5-3 — 인프라
+| 기능 | 설명 |
+|------|------|
+| 🐳 Docker + Gunicorn | 프로덕션급 컨테이너 배포 |
+| 🚀 Staging/Production 분리 | 환경별 docker-compose, CD 워크플로 |
+
+### Phase 6 — 글로벌
+| 기능 | 설명 |
+|------|------|
+| ✈️ 다국가 배송/세금 엔진 | 13개국 배송비·관세 자동 계산 |
+| 💰 Shopify Markets 다통화 | USD·EUR·JPY 자동 가격 노출 |
+
+### Phase 7 — BI
+| 기능 | 설명 |
+|------|------|
+| 📈 비즈니스 분석 | 국가별·브랜드별·채널별 매출/마진/트렌드 |
+| 💸 자동 가격 조정 | 환율 변동 시 마진 보호 자동 가격 재계산 |
+| 📦 재주문 알림 | 판매 속도 기반 재주문 시점 예측 |
+| 📋 주간/월간 리포트 | Telegram + Google Sheets 자동 발송 |
+| 🆕 신상품 감지 | 벤더 신상품 자동 감지 + 카탈로그 등록 제안 |
+
+### Phase 8 — 프로덕션 안정화
+| 기능 | 설명 |
+|------|------|
+| 🧪 통합 테스트 | 전 모듈 단위/통합 테스트 (944+ 테스트) |
+| 🔒 Rate Limiting | Flask-Limiter 기반 웹훅/헬스체크 요청 제한 |
+| 🌐 CORS | Flask-Cors 기반 헬스체크 엔드포인트 CORS 설정 |
+| ⚡ TTL 캐시 유틸 | `src/utils/cache.py` — 환율·번역·재고 캐싱 통합 |
+| 📊 Deep Healthcheck | `/health/deep` — Sheets·시크릿·업타임 통합 검증 |
 
 ---
 
 ## 빠른 시작
 
-1) **Google Sheet** 만들기 → 시트명 `catalog`, 헤더/데이터는 이 레포의 `data/catalog.sample.csv`를 그대로 Import (즉시 배포용)
-2) **Cloudinary** 키 준비 (Dashboard에서 cloud_name/api_key/api_secret)
-3) **Shopify** 앱 생성 → Admin API Token / Shop 도메인 준비
-4) **WooCommerce** → REST API 키(consumer key/secret) 생성
-5) 이 레포를 깃허브에 올린 뒤, 레포 **Settings → Secrets and variables → Actions**에 아래 시크릿 입력
-6) **Actions** 탭에서 워크플로 수동 실행 → Shopify/Woo에 제품이 생성됨
-7) `order_webhook`를 Render/Cloud Run 등에 배포 후, Shopify에 주문 Webhook 등록
+### 1. 사전 준비
 
-### 필수 Secrets
-- `GOOGLE_SERVICE_JSON_B64`: Google 서비스계정 JSON base64
-- `GOOGLE_SHEET_ID`: 카탈로그 시트 파일 ID
-- `SHOPIFY_ACCESS_TOKEN`: Shopify Admin API Token
-- `SHOPIFY_SHOP`: `your-shop.myshopify.com`
-- `SHOPIFY_LOCATION_ID`: (선택) 재고 관리 위치 ID (없으면 기본값 사용)
-- `WOO_BASE_URL`: WooCommerce 사이트 URL (예: https://example.kr)
-- `WOO_CK`: WooCommerce Consumer Key
-- `WOO_CS`: WooCommerce Consumer Secret
-- `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
-- (선택) `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
-- (선택) `NOTION_TOKEN`, `NOTION_DB`
-
-> 주의: 실제 판매 전 **이미지 사용권/상표권/약관**을 반드시 확인하세요.
-
----
-
-## 주문 자동 라우팅
-
-Shopify에서 주문이 들어오면 자동으로 벤더별 구매 태스크를 생성합니다.
-
-### 흐름
-1. Shopify 주문 웹훅 수신 → HMAC 검증
-2. SKU 기반 카탈로그 조회 → 벤더/배대지 식별
-3. 벤더별 구매 태스크 생성 (포터→젠마켓, 메모파리→직배송)
-4. 텔레그램/이메일/Notion으로 구매 지시 알림
-5. 배대지에서 송장 수신 → Shopify fulfillment 업데이트
-
-### 트래킹 업데이트
-배대지에서 발송 후 아래 엔드포인트로 POST:
 ```bash
-curl -X POST http://your-server/webhook/forwarder/tracking \
-  -H 'Content-Type: application/json' \
-  -d '{"order_id": 12345, "sku": "PTR-TNK-001", "tracking_number": "...", "carrier": "cj"}'
-```
+# Python 3.11 이상 필요
+python --version
 
----
+# 저장소 클론
+git clone https://github.com/Kohgane/proxy-commerce.git
+cd proxy-commerce
 
-로컬 테스트:
-```bash
-python -m venv .venv && . .venv/bin/activate
+# 가상환경 생성 및 패키지 설치
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-export $(cat .env.example | xargs)  # 필요 시 값 수정 후 사용
-python -m src.catalog_sync  # 카탈로그 동기화 1회 실행
-python -m src.order_webhook  # 웹훅 서버 로컬 실행 (기본 8000)
+pip install pytest pytest-cov  # 개발/테스트용
 ```
 
-## 크롤링 데이터 적재
-
-Listly에서 내보낸 CSV/JSON 파일을 Google Sheets 카탈로그에 적재:
+### 2. 환경변수 설정
 
 ```bash
-# 포터 상품 적재
+# 예시 파일 복사 후 값 입력
+cp .env.example .env
+# 편집기로 .env 열고 필수 값 입력
+```
+
+최소 필요 환경변수:
+```bash
+GOOGLE_SERVICE_JSON_B64=<base64 인코딩된 서비스계정 JSON>
+GOOGLE_SHEET_ID=<Google Sheets 파일 ID>
+SHOPIFY_SHOP=your-store.myshopify.com
+SHOPIFY_ACCESS_TOKEN=shpat_xxxxx
+SHOPIFY_CLIENT_SECRET=shpss_xxxxx
+```
+
+### 3. Google Sheets 설정
+
+1. Google Cloud Console에서 서비스 계정 생성
+2. Google Sheets API 활성화
+3. 서비스 계정에 대상 시트 편집 권한 부여
+4. 서비스 계정 JSON 키 파일을 base64로 인코딩:
+   ```bash
+   base64 -i service-account.json | tr -d '\n'
+   ```
+5. `GOOGLE_SERVICE_JSON_B64` 환경변수에 설정
+6. Google Sheet에 다음 워크시트 생성:
+   - `catalog` — 상품 카탈로그
+   - `orders` — 주문 이력
+   - `fx_rates` — 환율 캐시
+   - `fx_history` — 환율 이력
+
+### 4. 로컬 실행
+
+```bash
+# 환경변수 로드
+export $(grep -v '^#' .env | xargs)
+
+# 웹훅 서버 실행
+python -m src.order_webhook
+
+# 테스트 실행
+python -m pytest tests/ --no-cov -q
+
+# 커버리지 포함 테스트
+python -m pytest tests/
+```
+
+### 5. Docker 실행
+
+```bash
+# 빌드 및 실행
+docker build -t proxy-commerce .
+docker run -p 8000:8000 --env-file .env proxy-commerce
+
+# Docker Compose
+docker-compose up -d
+
+# Staging 환경
+docker-compose -f docker-compose.staging.yml up -d
+
+# Production 환경
+docker-compose -f docker-compose.production.yml up -d
+```
+
+---
+
+## 환경변수 매뉴얼
+
+### 핵심 (필수)
+
+| 변수명 | 설명 | 기본값 | 필수 |
+|--------|------|--------|------|
+| `GOOGLE_SERVICE_JSON_B64` | Google 서비스계정 JSON (base64) | — | ✅ |
+| `GOOGLE_SHEET_ID` | Google Sheets 파일 ID | — | ✅ |
+| `SHOPIFY_SHOP` | Shopify 도메인 (`xxx.myshopify.com`) | — | ✅ |
+| `SHOPIFY_ACCESS_TOKEN` | Shopify Admin API Token | — | ✅ |
+| `SHOPIFY_CLIENT_SECRET` | Shopify App Secret (웹훅 HMAC 검증) | — | ✅ |
+
+### 판매 채널
+
+| 변수명 | 설명 | 기본값 | 필수 |
+|--------|------|--------|------|
+| `WOO_BASE_URL` | WooCommerce 사이트 URL | — | WooCommerce 사용 시 |
+| `WOO_CK` | WooCommerce Consumer Key | — | WooCommerce 사용 시 |
+| `WOO_CS` | WooCommerce Consumer Secret | — | WooCommerce 사용 시 |
+| `WOO_API_VERSION` | WooCommerce API 버전 | `wc/v3` | ❌ |
+| `SHOPIFY_API_VERSION` | Shopify API 버전 | `2024-07` | ❌ |
+| `SHOPIFY_LOCATION_ID` | Shopify 재고 위치 ID | — | ❌ |
+| `SHOPIFY_MARKETS_ENABLED` | Shopify Markets 활성화 | `1` | ❌ |
+
+### 번역
+
+| 변수명 | 설명 | 기본값 | 필수 |
+|--------|------|--------|------|
+| `TRANSLATE_PROVIDER` | 번역 공급자 (`deepl` \| `none`) | `deepl` | ❌ |
+| `DEEPL_API_KEY` | DeepL API 키 | — | 번역 사용 시 |
+| `DEEPL_API_URL` | DeepL API 엔드포인트 | Free API URL | ❌ |
+
+### 환율
+
+| 변수명 | 설명 | 기본값 | 필수 |
+|--------|------|--------|------|
+| `FX_USE_LIVE` | 실시간 환율 사용 | `1` | ❌ |
+| `FX_PROVIDER` | 환율 공급자 (`frankfurter` \| `exchangerate-api`) | `frankfurter` | ❌ |
+| `FX_CACHE_TTL` | 환율 캐시 유효 시간 (초) | `3600` | ❌ |
+| `FX_USDKRW` | 수동 USD/KRW 환율 | `1350` | ❌ |
+| `FX_JPYKRW` | 수동 JPY/KRW 환율 | `9.0` | ❌ |
+| `FX_EURKRW` | 수동 EUR/KRW 환율 | `1470` | ❌ |
+| `FX_CHANGE_ALERT_PCT` | 환율 급변 알림 임계값 % | `3.0` | ❌ |
+| `EXCHANGERATE_API_KEY` | exchangerate-api.com 키 | — | exchangerate-api 사용 시 |
+
+### 알림
+
+| 변수명 | 설명 | 기본값 | 필수 |
+|--------|------|--------|------|
+| `TELEGRAM_BOT_TOKEN` | Telegram Bot Token | — | 알림 사용 시 |
+| `TELEGRAM_CHAT_ID` | Telegram Chat ID | — | 알림 사용 시 |
+| `TELEGRAM_ENABLED` | Telegram 알림 활성화 | `1` | ❌ |
+| `EMAIL_ENABLED` | 이메일 알림 활성화 | `0` | ❌ |
+| `NOTION_TOKEN` | Notion API 토큰 | — | ❌ |
+| `NOTION_DB` | Notion 데이터베이스 ID | — | ❌ |
+
+### 재고 동기화
+
+| 변수명 | 설명 | 기본값 | 필수 |
+|--------|------|--------|------|
+| `INVENTORY_SYNC_ENABLED` | 재고 동기화 활성화 | `1` | ❌ |
+| `LOW_STOCK_THRESHOLD` | 재고 부족 임계값 | `3` | ❌ |
+| `PRICE_CHANGE_THRESHOLD_PCT` | 가격 변동 알림 임계값 % | `5.0` | ❌ |
+| `STOCK_CHECK_DELAY` | 벤더 요청 간격 (초) | `2` | ❌ |
+| `INVENTORY_CHECK_TIMEOUT` | HTTP 타임아웃 (초) | `15` | ❌ |
+
+### 가격/마진
+
+| 변수명 | 설명 | 기본값 | 필수 |
+|--------|------|--------|------|
+| `TARGET_MARGIN_PCT` | 목표 마진율 % | `22` | ❌ |
+| `MIN_MARGIN_PCT` | 최소 마진율 % (자동가격조정) | `10` | ❌ |
+| `MAX_PRICE_CHANGE_PCT` | 최대 가격 변동폭 % | `8` | ❌ |
+| `AUTO_PRICING_ENABLED` | 자동 가격 조정 활성화 | `1` | ❌ |
+| `AUTO_PRICING_MODE` | 자동 가격 조정 모드 (`DRY_RUN` \| `APPLY`) | `DRY_RUN` | ❌ |
+| `CUSTOMS_THRESHOLD_KRW` | 관세 면세 한도 (KRW) | `150000` | ❌ |
+| `CUSTOMS_RATE_DEFAULT` | 기본 관세율 | `0.20` | ❌ |
+| `SHIPPING_FEE_DEFAULT` | 기본 배송비 (KRW) | `12000` | ❌ |
+| `FORWARDER_FEE_JPY` | 배대지 수수료 (JPY) | `300` | ❌ |
+
+### 보안 / Rate Limiting
+
+| 변수명 | 설명 | 기본값 | 필수 |
+|--------|------|--------|------|
+| `RATE_LIMIT_ENABLED` | Rate Limiting 활성화 | `1` | ❌ |
+| `RATE_LIMIT_WEBHOOK` | 웹훅 요청 제한 | `60 per minute` | ❌ |
+| `RATE_LIMIT_HEALTH` | 헬스체크 요청 제한 | `120 per minute` | ❌ |
+| `CORS_ORIGINS` | CORS 허용 오리진 | `*` | ❌ |
+
+### 서버
+
+| 변수명 | 설명 | 기본값 | 필수 |
+|--------|------|--------|------|
+| `PORT` | 서버 포트 | `8000` | ❌ |
+| `APP_VERSION` | 앱 버전 (헬스체크 응답) | `dev` | ❌ |
+| `APP_ENV` | 환경 (`development` \| `staging` \| `production`) | `development` | ❌ |
+| `GUNICORN_WORKERS` | Gunicorn 워커 수 | `2` | ❌ |
+| `GUNICORN_TIMEOUT` | Gunicorn 타임아웃 (초) | `120` | ❌ |
+
+### 워크시트
+
+| 변수명 | 설명 | 기본값 | 필수 |
+|--------|------|--------|------|
+| `WORKSHEET` | 카탈로그 워크시트명 | `catalog` | ❌ |
+| `ORDERS_WORKSHEET` | 주문 워크시트명 | `orders` | ❌ |
+| `FX_RATES_WORKSHEET` | 환율 캐시 워크시트명 | `fx_rates` | ❌ |
+| `FX_HISTORY_WORKSHEET` | 환율 이력 워크시트명 | `fx_history` | ❌ |
+
+---
+
+## API 엔드포인트
+
+### 웹훅
+
+| 메서드 | URL | 설명 | 인증 |
+|--------|-----|------|------|
+| `POST` | `/webhook/shopify/order` | Shopify 주문 수신 | HMAC 서명 |
+| `POST` | `/webhook/forwarder/tracking` | 배대지 배송 추적 업데이트 | — |
+
+**Shopify 주문 웹훅 등록:**
+```bash
+# Shopify Admin에서 웹훅 URL 등록
+# URL: https://your-server.com/webhook/shopify/order
+# 이벤트: orders/create
+```
+
+**배송 추적 업데이트 예시:**
+```bash
+curl -X POST https://your-server.com/webhook/forwarder/tracking \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "order_id": "12345",
+    "sku": "PTR-TNK-001",
+    "tracking_number": "JD123456789KR",
+    "carrier": "CJ대한통운",
+    "status": "in_transit"
+  }'
+```
+
+### 헬스체크
+
+| 메서드 | URL | 설명 | 응답 |
+|--------|-----|------|------|
+| `GET` | `/health` | 기본 헬스체크 | `{"status":"ok","service":"proxy-commerce","version":"..."}` |
+| `GET` | `/health/ready` | Readiness check (시크릿 검증) | `{"status":"ready","checks":{...}}` |
+| `GET` | `/health/deep` | Deep healthcheck (Sheets + 시크릿 + 업타임) | `{"status":"ok","checks":{...},"uptime_seconds":...}` |
+
+**헬스체크 예시:**
+```bash
+curl http://localhost:8000/health
+# {"status":"ok","service":"proxy-commerce","version":"8.0.0"}
+
+curl http://localhost:8000/health/ready
+# {"status":"ready","checks":{"secrets_core":true}}
+
+curl http://localhost:8000/health/deep
+# {"status":"ok","timestamp":"2026-03-23T17:00:00+00:00","uptime_seconds":3600.0,
+#  "version":"8.0.0","checks":{"secrets_core":true,"google_sheets":true}}
+```
+
+---
+
+## CLI 명령어
+
+### 크롤러/스크래퍼
+
+```bash
+# Porter 상품 적재
 python -m src.scrapers.cli --vendor porter --file data/porter_raw.csv
 
-# 메모파리 상품 적재
+# Memo Paris 상품 적재
 python -m src.scrapers.cli --vendor memo_paris --file data/memo_raw.csv
 
-# DRY_RUN (시트에 쓰지 않고 결과만 확인)
-python -m src.scrapers.cli --vendor porter --file data/porter_raw.csv --dry-run
-```
-
-샘플 데이터로 테스트:
-```bash
-# 포터 샘플 DRY_RUN
+# DRY_RUN (시트에 쓰지 않고 확인만)
 python -m src.scrapers.cli --vendor porter --file data/porter_raw_sample.csv --dry-run
-
-# 메모파리 샘플 DRY_RUN
-python -m src.scrapers.cli --vendor memo_paris --file data/memo_raw_sample.csv --dry-run
 ```
 
----
-
-## 대시보드 / 모니터링
-
-주문 상태 추적, 매출/마진 분석, 일일 운영 요약을 제공합니다.
-주문 상태는 Google Sheets(`orders` 시트)에 자동으로 기록됩니다.
+### 대시보드
 
 ```bash
-# 일일 요약 발송 (텔레그램/이메일)
+# 일일 요약 발송 (Telegram/이메일)
 python -m src.dashboard.cli --action daily-summary
 
 # 특정 날짜 일일 요약
-python -m src.dashboard.cli --action daily-summary --date 2026-03-09
+python -m src.dashboard.cli --action daily-summary --date 2026-03-23
 
-# 매출 리포트 (일별)
-python -m src.dashboard.cli --action revenue --period daily --date 2026-03-09
-
-# 매출 리포트 (주별)
-python -m src.dashboard.cli --action revenue --period weekly --week-start 2026-03-03
-
-# 매출 리포트 (월별)
+# 매출 리포트 (일별/주별/월별)
+python -m src.dashboard.cli --action revenue --period daily --date 2026-03-23
+python -m src.dashboard.cli --action revenue --period weekly --week-start 2026-03-17
 python -m src.dashboard.cli --action revenue --period monthly --month 2026-03
 
-# 미완료 주문 조회
+# 주문 상태 조회
 python -m src.dashboard.cli --action status --filter pending
-
-# 특정 주문 조회
 python -m src.dashboard.cli --action status --order-id 12345
 
 # 마진 분석
 python -m src.dashboard.cli --action margin-analysis
 ```
 
-### 일일 요약 자동화
-
-GitHub Actions 워크플로(`.github/workflows/daily_summary.yml`)가 매일 KST 22:00에 자동 실행됩니다.
-수동 실행 시 날짜를 지정할 수 있습니다.
-
-### 추가 필수 Secrets (대시보드용)
-- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`: 일일 요약 텔레그램 발송
-
-
-## 재고 자동 동기화
+### 재고 동기화
 
 ```bash
-# 전체 재고 동기화 (벤더 확인 → 카탈로그 → 스토어)
+# 전체 재고 동기화
 python -m src.inventory.cli --action full-sync
 
-# 드라이런 (변경사항 확인만, 실제 업데이트 없음)
+# DRY_RUN (변경사항 확인만)
 python -m src.inventory.cli --action full-sync --dry-run
 
-# 특정 SKU 확인
+# 단일 SKU 확인
 python -m src.inventory.cli --action check --sku PTR-TNK-001
 
 # 특정 벤더만 확인
@@ -165,30 +460,16 @@ python -m src.inventory.cli --action check-all --vendor porter
 python -m src.inventory.cli --action report
 ```
 
-### 재고 자동화 워크플로
-
-GitHub Actions 워크플로(`.github/workflows/inventory_sync.yml`)가 4시간마다 자동 실행됩니다.
-수동 실행 시 액션, 드라이런 여부, 벤더 필터를 지정할 수 있습니다.
-
-### 추가 환경변수 (재고 동기화)
-- `INVENTORY_SYNC_ENABLED`: 동기화 활성화 (기본 `1`)
-- `STOCK_CHECK_DELAY`: 벤더 요청 간격 (초, 기본 `2`)
-- `LOW_STOCK_THRESHOLD`: 재고 부족 임계값 (기본 `3`)
-- `PRICE_CHANGE_THRESHOLD_PCT`: 가격 변동 알림 임계값 % (기본 `5.0`)
-- `INVENTORY_CHECK_TIMEOUT`: HTTP 타임아웃 (초, 기본 `15`)
-
----
-
-## 실시간 환율
+### 환율
 
 ```bash
-# 환율 업데이트 (API 조회 → 캐시 → 이력 기록)
+# 환율 업데이트
 python -m src.fx.cli --action update
 
 # 강제 갱신 (캐시 무시)
 python -m src.fx.cli --action update --force
 
-# 드라이런 (실제 업데이트 없음)
+# DRY_RUN
 python -m src.fx.cli --action update --dry-run
 
 # 현재 환율 확인
@@ -198,22 +479,167 @@ python -m src.fx.cli --action current
 python -m src.fx.cli --action history --days 30
 
 # 환율 변동 기반 가격 재계산
-python -m src.fx.cli --action recalculate [--dry-run]
-
-# 급변 감지
-python -m src.fx.cli --action check-changes --threshold 3.0
+python -m src.fx.cli --action recalculate --dry-run
 ```
 
-### 환율 자동화 워크플로
+### 판매 채널
 
-GitHub Actions 워크플로(`.github/workflows/fx_update.yml`)가 하루 4회(KST 09:30, 15:30, 21:30, 03:30) 자동 실행됩니다.
-수동 실행 시 액션, 강제 갱신, 드라이런 여부를 지정할 수 있습니다.
+```bash
+# Shopify 상품 내보내기
+python -m src.channels.cli --channel shopify --action export
 
-### 추가 환경변수 (환율 연동)
-- `FX_PROVIDER`: 기본 환율 프로바이더 (`frankfurter` | `exchangerate-api`, 기본 `frankfurter`)
-- `FX_USE_LIVE`: 실시간 환율 사용 여부 (기본 `1`)
-- `FX_CACHE_TTL`: 환율 캐시 유효 시간 (초, 기본 `3600`)
-- `FX_CHANGE_ALERT_PCT`: 환율 급변 알림 임계값 % (기본 `3.0`)
-- `EXCHANGERATE_API_KEY`: exchangerate-api.com API 키 (선택, exchangerate-api 사용 시 필요)
-- `FX_HISTORY_WORKSHEET`: 환율 이력 시트명 (기본 `fx_history`)
-- `FX_RATES_WORKSHEET`: 환율 캐시 시트명 (기본 `fx_rates`)
+# WooCommerce 상품 동기화
+python -m src.channels.cli --channel woocommerce --action sync
+
+# 퍼센티 CSV 내보내기
+python -m src.channels.cli --channel percenty --action export
+```
+
+### BI / 분석 (Phase 7)
+
+```bash
+# 자동 가격 조정 (DRY_RUN)
+python -m src.analytics.cli --action auto-pricing --dry-run
+
+# 주간 리포트 발송
+python -m src.analytics.cli --action weekly-report
+
+# 월간 리포트 발송
+python -m src.analytics.cli --action monthly-report
+
+# 신상품 감지
+python -m src.analytics.cli --action detect-new-products
+
+# 재주문 알림
+python -m src.analytics.cli --action reorder-check
+```
+
+### 보안 / 환경변수 검증
+
+```bash
+# 필수 환경변수 검증
+python scripts/validate_env.py
+
+# .env 파일 생성 템플릿
+python scripts/generate_env.py --env staging > .env.staging
+
+# 배포 후 헬스체크
+python scripts/post_deploy_check.py --url https://your-server.com
+```
+
+---
+
+## 배포 가이드
+
+### 로컬 → Staging
+
+```bash
+# 1. Staging 환경변수 설정
+cp .env.example .env.staging
+# .env.staging 수정 (APP_ENV=staging, DRY_RUN 등)
+
+# 2. Staging Docker Compose 실행
+docker-compose -f docker-compose.staging.yml up -d
+
+# 3. 헬스체크
+curl http://localhost:8001/health/deep
+```
+
+### Staging → Production
+
+```bash
+# 1. git tag 생성 (Production CD 트리거)
+git tag v8.0.0
+git push origin v8.0.0
+
+# 2. GitHub Actions > cd_production.yml 에서 수동 승인
+
+# 3. 배포 후 검증
+python scripts/post_deploy_check.py --url https://your-production-server.com
+```
+
+### Render 배포
+
+`render.yaml` Blueprint를 사용하면 Staging/Production 서비스를 자동 생성합니다:
+```bash
+# Render CLI로 배포
+render blueprint apply
+```
+
+### GitHub Actions 워크플로
+
+| 워크플로 | 트리거 | 설명 |
+|---------|--------|------|
+| `daily_summary.yml` | 매일 22:00 KST | 일일 운영 요약 |
+| `inventory_sync.yml` | 4시간마다 | 재고 자동 동기화 |
+| `fx_update.yml` | 하루 4회 | 환율 자동 갱신 |
+| `auto_pricing_check.yml` | 매일 07:00 KST | 자동 가격 조정 |
+| `weekly_report.yml` | 매주 월요일 09:00 KST | 주간 리포트 |
+| `monthly_report.yml` | 매월 1일 09:00 KST | 월간 리포트 |
+| `new_product_check.yml` | 매일 10:00 KST | 신상품 감지 |
+| `cd_staging.yml` | main push | Staging 자동 배포 |
+| `cd_production.yml` | v* 태그 | Production 수동 승인 배포 |
+
+---
+
+## 기여 가이드
+
+### 코드 스타일
+
+```bash
+# flake8 린트 (max-line-length=120)
+flake8 src/ tests/ scripts/
+
+# 테스트 실행
+python -m pytest tests/ -q
+
+# 커버리지 확인
+python -m pytest tests/ --cov=src --cov-report=term-missing
+```
+
+### PR 규칙
+
+1. **브랜치 이름**: `feature/`, `fix/`, `refactor/`, `docs/` 접두사 사용
+2. **커밋 메시지**: Conventional Commits 형식 (`feat:`, `fix:`, `docs:`, `test:`)
+3. **테스트**: 모든 변경에 대한 테스트 추가 (커버리지 유지)
+4. **flake8**: 린트 오류 없어야 함
+5. **한글 주석**: 비즈니스 로직 주석은 한국어로 작성
+6. **mock**: 모든 테스트는 외부 서비스 호출 없이 mock으로 처리
+
+### 디렉토리 구조
+
+```
+src/
+├── analytics/      Phase 7 — BI + 운영 자동화
+├── auth/           Shopify OAuth
+├── channels/       Phase 2 — 판매 채널
+├── dashboard/      Phase 4 — 모니터링
+├── fx/             Phase 4-3 — 환율
+├── inventory/      Phase 4-2 — 재고
+├── orders/         Phase 3 — 주문 라우팅
+├── scrapers/       Phase 1-4 — 크롤러
+├── shipping/       Phase 6-1 — 배송/세금
+├── vendors/        Phase 1-3 — 소싱 벤더
+├── utils/
+│   ├── cache.py        TTL 인메모리 캐시
+│   ├── rate_limiter.py Flask-Limiter 미들웨어
+│   ├── secret_check.py 환경변수 검증
+│   ├── sheets.py       Google Sheets 연결
+│   ├── telegram.py     Telegram 알림
+│   └── emailer.py      이메일 알림
+├── catalog_sync.py
+├── order_webhook.py
+├── price.py
+└── translate.py
+tests/
+├── conftest.py     공통 fixtures
+├── test_*.py       모듈별 테스트
+docs/
+├── DEPLOYMENT.md   배포 가이드
+├── operations.md   운영 매뉴얼
+└── PROGRESS.md     개발 진행 현황
+```
+
+---
+
+> 주의: 실제 판매 전 **이미지 사용권/상표권/약관**을 반드시 확인하세요.
