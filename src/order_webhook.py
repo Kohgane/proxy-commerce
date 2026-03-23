@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # CORS 설정 — 허용 오리진은 환경변수로 제어
+# 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')
 CORS(app, resources={r'/health/*': {'origins': _cors_origins}})
 

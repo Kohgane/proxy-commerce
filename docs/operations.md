@@ -219,7 +219,12 @@ python -m src.inventory.cli --action check --sku PTR-TNK-001
 
 **대응 절차:**
 1. 벤더 사이트 접근 가능 여부 확인 (yoshidakaban.com, memoparis.com)
-2. `STOCK_CHECK_DELAY` 값 증가 (기본 2초 → 5초)로 재시도
+2. `STOCK_CHECK_DELAY` 값 증가 (기본 2초 → 5초)로 재시도:
+   ```bash
+   # .env 또는 GitHub Secrets에서 환경변수 수정
+   STOCK_CHECK_DELAY=5
+   docker restart proxy-commerce
+   ```
 3. 특정 SKU만 오류 시 해당 `src_url` 유효성 확인
 4. Shopify/WooCommerce API 오류 시 인증 토큰 재확인
 
