@@ -15,6 +15,8 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+_MAX_LOG_MSG_LEN = 200
+
 
 def send_telegram(text: str) -> None:
     """Send a Telegram message using BOT_TOKEN and CHAT_ID from the environment.
@@ -25,7 +27,7 @@ def send_telegram(text: str) -> None:
     bot = os.getenv('TELEGRAM_BOT_TOKEN')
     chat = os.getenv('TELEGRAM_CHAT_ID')
     if not bot or not chat:
-        logger.info('[telegram disabled] %s', text[:200])
+        logger.info('[telegram disabled] %s', text[:_MAX_LOG_MSG_LEN])
         return
     try:
         requests.post(

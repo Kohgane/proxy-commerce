@@ -70,7 +70,7 @@ class TestGenerateEnv:
 
         assert all_resolved is True
         content = output.read_text()
-        assert 'prod-store.myshopify.com' in content
+        assert 'SHOPIFY_SHOP=prod-store.myshopify.com' in content
 
     def test_returns_false_with_unresolved_placeholders(self, tmp_path, monkeypatch):
         template = tmp_path / '.env.staging'
