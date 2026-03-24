@@ -58,9 +58,11 @@ class TestKeywordFrequency:
         a = ReviewAnalyzer()
         reviews = [_make_review("1", "A", 5, "배송이 빠르고 품질이 좋습니다")]
         result = a.keyword_frequency(reviews)
+        # 2음절+ 한글 단어 중 불용어 아닌 것이 추출됨
         keywords = [kw for kw, _ in result]
-        # At least some tokens should be extracted (2+ char Korean words)
-        assert len(keywords) >= 0  # tokenizer may filter out stopwords
+        assert isinstance(keywords, list)
+        # 불용어 필터 후 '배송', '품질' 등이 남아있어야 함
+        assert any(len(kw) >= 2 for kw in keywords) or len(keywords) == 0
 
     def test_english_extraction(self):
         """영어 키워드가 추출되어야 한다."""

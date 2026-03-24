@@ -194,9 +194,10 @@ class ReviewAnalyzer:
                 filtered.append(r)
 
         total = len(filtered)
+        valid_ratings = [int(r.get("rating", 0)) for r in filtered if 1 <= int(r.get("rating", 0) or 0) <= 5]
         avg_rating = (
-            round(sum(int(r.get("rating", 0)) for r in filtered) / total, 2)
-            if total else 0.0
+            round(sum(valid_ratings) / len(valid_ratings), 2)
+            if valid_ratings else 0.0
         )
         by_rating: Dict[int, int] = {i: 0 for i in range(1, 6)}
         for r in filtered:

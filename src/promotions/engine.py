@@ -186,9 +186,10 @@ class PromotionEngine:
         free_shipping = any(
             p.get("type", "").upper() == TYPE_FREE_SHIPPING for p in applicable
         )
+        order_total = float(order_data.get("order_total_krw", 0) or 0)
 
         if stack_mode == "stack":
-            total_discount = sum(d for d in discounts if d > 0)
+            total_discount = min(sum(d for d in discounts if d > 0), order_total)
         else:
             total_discount = max(discounts) if discounts else 0
 

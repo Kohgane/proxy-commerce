@@ -149,7 +149,7 @@ class PromotionScheduler:
                 return
             text = (
                 f"🎯 *프로모션 시작 예정*\n\n"
-                f"다음 {len(names)}개 프로모션이 24시간 내 시작됩니다:\n"
+                f"다음 {len(names)}개 프로모션이 {_UPCOMING_HOURS}시간 내 시작됩니다:\n"
                 + "\n".join(f"• {n}" for n in names)
             )
             import requests

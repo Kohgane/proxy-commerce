@@ -137,7 +137,7 @@ def _format_reviews(summary: dict, label: str = '') -> str:
     if by_rating:
         lines.append("\n평점별 분포:")
         for rating in range(5, 0, -1):
-            count = by_rating.get(str(rating), by_rating.get(rating, 0))
+            count = by_rating.get(rating, 0)
             stars = '⭐' * rating
             lines.append(f"  {stars}: {count}건")
     top_keywords = summary.get('top_keywords', [])
