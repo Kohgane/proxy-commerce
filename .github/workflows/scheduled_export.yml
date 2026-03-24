@@ -1,0 +1,37 @@
+name: Scheduled Daily Export
+
+on:
+  schedule:
+    # 매일 06:30 KST (21:30 UTC 전날)
+    - cron: '30 21 * * *'
+  workflow_dispatch:
+
+env:
+  PYTHONPATH: .
+
+jobs:
+  daily-export:
+    name: 일일 리포트 + CSV 내보내기
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 의존성 설치
+        run: pip install -r requirements.txt
+
+      - name: 일일 CSV 내보내기 + 리포트 발송
+        env:
+          GOOGLE_SERVICE_JSON_B64: ${{ secrets.GOOGLE_SERVICE_JSON_B64 }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          EXPORT_ENABLED: '1'
+          EXPORT_DAILY_ENABLED: '1'
+        run: python -m src.export.scheduled_export daily

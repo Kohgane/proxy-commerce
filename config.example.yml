@@ -225,3 +225,21 @@ circuit_breaker:
 audit:
   enabled: true
   worksheet: audit_log
+
+# === Phase 11: 관리자 대시보드 API + 데이터 내보내기 + 운영 CLI ===
+api:
+  dashboard_enabled: true
+  cors_origins: "*"
+  pagination_default: 20
+  pagination_max: 100
+
+export:
+  enabled: true
+  worksheet: daily_exports
+  daily_enabled: true
+  weekly_enabled: true
+  csv_encoding: utf-8-sig
+
+cli:
+  output_format: table
+  color_enabled: true

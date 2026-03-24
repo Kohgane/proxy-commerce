@@ -1,0 +1,37 @@
+name: Scheduled Weekly Export
+
+on:
+  schedule:
+    # 매주 월요일 07:00 KST (22:00 UTC 전주 일요일)
+    - cron: '0 22 * * 0'
+  workflow_dispatch:
+
+env:
+  PYTHONPATH: .
+
+jobs:
+  weekly-export:
+    name: 주간 종합 리포트
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 의존성 설치
+        run: pip install -r requirements.txt
+
+      - name: 주간 종합 리포트 발송
+        env:
+          GOOGLE_SERVICE_JSON_B64: ${{ secrets.GOOGLE_SERVICE_JSON_B64 }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          EXPORT_ENABLED: '1'
+          EXPORT_WEEKLY_ENABLED: '1'
+        run: python -m src.export.scheduled_export weekly

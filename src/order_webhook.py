@@ -21,6 +21,15 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# 대시보드 API Blueprint 등록 (DASHBOARD_API_ENABLED=1 시)
+if os.getenv("DASHBOARD_API_ENABLED", "1") == "1":
+    try:
+        from .api import dashboard_bp
+        app.register_blueprint(dashboard_bp)
+        logger.info("대시보드 API Blueprint 등록 완료")
+    except Exception as _bp_exc:
+        logger.warning("대시보드 API Blueprint 등록 실패: %s", _bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')
