@@ -263,3 +263,8 @@ profiling:
   enabled: false
   slow_threshold_ms: 5000
   metrics_enabled: true
+
+config:
+  hot_reload: false
+  check_interval: 60
+  strict_validation: false
