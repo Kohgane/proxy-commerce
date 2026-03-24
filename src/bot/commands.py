@@ -92,6 +92,72 @@ def cmd_fx() -> str:
         return format_message('error', f'환율 조회 실패: {exc}')
 
 
+def cmd_reviews(period: str = 'today') -> str:
+    """/reviews [today|week|month] — 리뷰 요약."""
+    period = period.strip().lower()
+    valid = ('today', 'week', 'month')
+    if period not in valid:
+        period = 'today'
+
+    days_map = {'today': 1, 'week': 7, 'month': 30}
+    days = days_map[period]
+
+    try:
+        from ..reviews.collector import ReviewCollector
+        from ..reviews.analyzer import ReviewAnalyzer
+        collector = ReviewCollector()
+        analyzer = ReviewAnalyzer()
+        reviews = collector.get_reviews()
+        summary = analyzer.generate_review_summary(reviews=reviews, days=days)
+        return format_message('reviews', summary, label=period)
+    except Exception as exc:
+        logger.error("cmd_reviews 오류: %s", exc)
+        return format_message('error', f'리뷰 조회 실패: {exc}')
+
+
+def cmd_promo(sub: str = 'active') -> str:
+    """/promo [list|active] — 프로모션 현황."""
+    sub = sub.strip().lower()
+    active_only = sub != 'list'
+
+    try:
+        from ..promotions.engine import PromotionEngine
+        engine = PromotionEngine()
+        promos = engine.get_promotions(active_only=active_only)
+        label = "활성 프로모션" if active_only else "전체 프로모션"
+        return format_message('promos', promos, label=label)
+    except Exception as exc:
+        logger.error("cmd_promo 오류: %s", exc)
+        return format_message('error', f'프로모션 조회 실패: {exc}')
+
+
+def cmd_customers(sub: str = 'summary') -> str:
+    """/customers [vip|at_risk|summary] — 고객 세그먼트 요약."""
+    sub = sub.strip().lower()
+
+    try:
+        from ..crm.customer_profile import CustomerProfileManager
+        from ..crm.segmentation import CustomerSegmentation
+        manager = CustomerProfileManager()
+        segmentation = CustomerSegmentation()
+
+        if sub == 'summary':
+            customers = manager.get_all_customers()
+            summary = segmentation.get_segment_summary(customers=customers)
+            return format_message('customer_segments', summary)
+        elif sub == 'vip':
+            customers = manager.get_all_customers(segment='VIP')
+            return format_message('customer_list', customers, label='VIP')
+        elif sub == 'at_risk':
+            customers = manager.get_all_customers(segment='AT_RISK')
+            return format_message('customer_list', customers, label='이탈 위험')
+        else:
+            return format_message('error', f'유효하지 않은 옵션: {sub}\n사용법: /customers [vip|at_risk|summary]')
+    except Exception as exc:
+        logger.error("cmd_customers 오류: %s", exc)
+        return format_message('error', f'고객 조회 실패: {exc}')
+
+
 def cmd_help() -> str:
     """/help — 도움말."""
     return (
@@ -103,5 +169,8 @@ def cmd_help() -> str:
         "📊 `/stock [low|all]` — 재고 현황\n"
         "  예) `/stock low` (저재고만 표시)\n\n"
         "💱 `/fx` — 현재 환율 + 변동률\n"
+        "⭐ `/reviews [today|week|month]` — 리뷰 요약\n"
+        "🎯 `/promo [list|active]` — 프로모션 현황\n"
+        "👥 `/customers [vip|at_risk|summary]` — 고객 세그먼트 요약\n"
         "❓ `/help` — 이 도움말\n"
     )
