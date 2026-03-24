@@ -6,6 +6,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 from .vendors.shopify_client import verify_webhook
+from .vendors.woocommerce_client import verify_woo_webhook
 from .orders.router import OrderRouter
 from .orders.notifier import OrderNotifier
 from .orders.tracker import OrderTracker
@@ -29,6 +30,14 @@ if os.getenv("DASHBOARD_API_ENABLED", "1") == "1":
         logger.info("대시보드 API Blueprint 등록 완료")
     except Exception as _bp_exc:
         logger.warning("대시보드 API Blueprint 등록 실패: %s", _bp_exc)
+
+# 설정 관리 API Blueprint 등록
+try:
+    from .api.config_routes import config_bp
+    app.register_blueprint(config_bp)
+    logger.info("설정 관리 API Blueprint 등록 완료")
+except Exception as _cfg_bp_exc:
+    logger.warning("설정 관리 API Blueprint 등록 실패: %s", _cfg_bp_exc)
 
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
@@ -107,6 +116,51 @@ def shopify_order():
         EventType.ORDER_ROUTED,
         order_id=data.get('id'),
         details={"summary": routed.get('summary', {})},
+        ip_address=request.remote_addr or "",
+    )
+
+    return jsonify({"ok": True, "tasks": routed['summary']})
+
+
+@app.post('/webhook/woo')
+@limiter.limit(LIMIT_WEBHOOK)
+def woocommerce_order():
+    """WooCommerce 주문 웹훅 처리 엔드포인트."""
+    raw_body = request.get_data()
+    sig_header = request.headers.get('X-WC-Webhook-Signature', '')
+    if not verify_woo_webhook(raw_body, sig_header):
+        audit_logger.log(
+            EventType.WEBHOOK_REJECTED,
+            actor="woo_webhook",
+            resource="webhook:/webhook/woo",
+            ip_address=request.remote_addr or "",
+        )
+        return jsonify({"error": "Invalid signature"}), 401
+
+    data = request.get_json(force=True)
+
+    # 주문 페이로드 검증
+    is_valid, validation_errors = order_validator.validate_woocommerce(data)
+    if not is_valid:
+        logger.warning("WooCommerce 주문 검증 실패: %s", validation_errors)
+        is_duplicate = any(e.startswith(DUPLICATE_ORDER_TAG) for e in validation_errors)
+        if is_duplicate:
+            return jsonify({"ok": True, "skipped": "duplicate"}), 200
+        return jsonify({"error": "validation_failed", "details": validation_errors}), 400
+
+    routed = router.route_order(data)
+
+    try:
+        status_tracker.record_order(data, routed)
+    except Exception as e:
+        logger.warning("Failed to record woo order status: %s", e)
+
+    notifier.notify_new_order(routed)
+
+    audit_logger.log_order(
+        EventType.ORDER_ROUTED,
+        order_id=data.get('id'),
+        details={"summary": routed.get('summary', {}), "source": "woocommerce"},
         ip_address=request.remote_addr or "",
     )
 
