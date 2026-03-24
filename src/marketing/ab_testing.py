@@ -19,6 +19,13 @@ _ENABLED = os.getenv("AB_TESTING_ENABLED", "0") == "1"
 _SHEET_NAME = os.getenv("AB_TESTING_SHEET_NAME", "ab_tests")
 _SHEET_ID = os.getenv("GOOGLE_SHEET_ID", "")
 
+# A/B 할당: 해시 값 모듈로 기준 상수
+_HASH_MODULO = 100
+_VARIANT_A_THRESHOLD = 50  # 50/50 분할
+
+# Z-검정 임계값 (p < 0.05, 95% 신뢰수준)
+_Z_CRITICAL_VALUE = 1.96
+
 _HEADERS = [
     "experiment_name", "variant", "impressions", "conversions", "total_revenue", "updated_at",
 ]
@@ -103,7 +110,7 @@ class ABTestManager:
             'A' 또는 'B'.
         """
         key = experiment_name + customer_email
-        return "A" if hash(key) % 100 < 50 else "B"
+        return "A" if hash(key) % _HASH_MODULO < _VARIANT_A_THRESHOLD else "B"
 
     def record_impression(self, experiment_name: str, variant: str) -> None:
         """노출을 기록한다.
@@ -178,6 +185,6 @@ class ABTestManager:
             variance = p1 * (1 - p1) / n1 + p2 * (1 - p2) / n2
             if variance > 0:
                 z = (p1 - p2) / math.sqrt(variance)
-                stats["is_significant"] = math.fabs(z) > 1.96
+                stats["is_significant"] = math.fabs(z) > _Z_CRITICAL_VALUE
 
         return stats

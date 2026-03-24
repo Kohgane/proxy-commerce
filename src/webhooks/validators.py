@@ -6,6 +6,7 @@
   TELEGRAM_BOT_TOKEN  — Telegram 봇 토큰
 """
 
+import base64
 import hashlib
 import hmac
 import logging
@@ -60,7 +61,6 @@ class WebhookValidator:
         expected = hmac.new(secret, body, hashlib.sha256).hexdigest()
 
         # base64 인코딩된 헤더와 비교 (Shopify는 base64 hex 형태 모두 허용)
-        import base64
         expected_b64 = base64.b64encode(
             hmac.new(secret, body, hashlib.sha256).digest()
         ).decode()
@@ -88,7 +88,6 @@ class WebhookValidator:
         if isinstance(secret, str):
             secret = secret.encode("utf-8")
 
-        import base64
         expected = base64.b64encode(
             hmac.new(secret, body, hashlib.sha256).digest()
         ).decode()

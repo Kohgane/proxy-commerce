@@ -4,6 +4,7 @@
 """
 
 import re
+from typing import Dict
 
 
 class URLOptimizer:
@@ -11,7 +12,7 @@ class URLOptimizer:
 
     def __init__(self):
         # 슬러그 중복 방지용 인메모리 레지스트리
-        self._registry: dict = {}
+        self._registry: Dict[str, bool] = {}
 
     def _slugify(self, text: str) -> str:
         """텍스트를 URL 슬러그로 변환한다."""
