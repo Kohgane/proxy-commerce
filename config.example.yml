@@ -243,3 +243,23 @@ export:
 cli:
   output_format: table
   color_enabled: true
+
+# === Phase 12: 플러그인 + 마이그레이션 + 프로파일링 ===
+plugins:
+  enabled: true
+  auto_load: true
+  vendors:
+    porter:
+      enabled: true
+    memo_paris:
+      enabled: true
+
+migration:
+  auto_check: false
+  backup_enabled: true
+  schema_version_worksheet: schema_version
+
+profiling:
+  enabled: false
+  slow_threshold_ms: 5000
+  metrics_enabled: true
