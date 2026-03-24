@@ -55,10 +55,12 @@ jobs:
             ghcr.io/kohgane/proxy-commerce:latest
 
       - name: Deploy to Render (production)
+        if: secrets.RENDER_DEPLOY_HOOK_PRODUCTION != ''
         run: |
           curl -fsSL -X POST "${{ secrets.RENDER_DEPLOY_HOOK_PRODUCTION }}"
 
       - name: Post-deploy healthcheck with retry
+        if: secrets.PRODUCTION_APP_URL != ''
         id: healthcheck
         run: |
           python scripts/post_deploy_check.py \
@@ -79,7 +81,9 @@ jobs:
           APP_VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
           echo "Healthcheck failed – triggering rollback via Render deploy hook (previous image)"
-          curl -fsSL -X POST "${{ secrets.RENDER_ROLLBACK_HOOK_PRODUCTION }}" || true
+          if [ -n "${{ secrets.RENDER_ROLLBACK_HOOK_PRODUCTION }}" ]; then
+            curl -fsSL -X POST "${{ secrets.RENDER_ROLLBACK_HOOK_PRODUCTION }}"
+          fi
           python -c "
           import os, requests
           bot = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -95,7 +99,7 @@ jobs:
           "
 
       - name: Notify failure
-        if: failure()
+        if: failure() && secrets.PROD_TELEGRAM_BOT_TOKEN != ''
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.PROD_TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.PROD_TELEGRAM_CHAT_ID }}
