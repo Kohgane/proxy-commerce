@@ -55,12 +55,12 @@ jobs:
             ghcr.io/kohgane/proxy-commerce:latest
 
       - name: Deploy to Render (production)
-        if: ${{ secrets.RENDER_DEPLOY_HOOK_PRODUCTION != '' }}
+        if: secrets.RENDER_DEPLOY_HOOK_PRODUCTION != ''
         run: |
           curl -fsSL -X POST "${{ secrets.RENDER_DEPLOY_HOOK_PRODUCTION }}"
 
       - name: Post-deploy healthcheck with retry
-        if: ${{ secrets.PRODUCTION_APP_URL != '' }}
+        if: secrets.PRODUCTION_APP_URL != ''
         id: healthcheck
         run: |
           python scripts/post_deploy_check.py \
@@ -99,7 +99,7 @@ jobs:
           "
 
       - name: Notify failure
-        if: failure() && env.TELEGRAM_BOT_TOKEN != ''
+        if: failure() && secrets.PROD_TELEGRAM_BOT_TOKEN != ''
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.PROD_TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.PROD_TELEGRAM_CHAT_ID }}

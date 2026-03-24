@@ -51,12 +51,12 @@ jobs:
             ghcr.io/kohgane/proxy-commerce:staging-latest
 
       - name: Deploy to Render (staging)
-        if: ${{ secrets.RENDER_DEPLOY_HOOK_STAGING != '' }}
+        if: secrets.RENDER_DEPLOY_HOOK_STAGING != ''
         run: |
           curl -fsSL -X POST "${{ secrets.RENDER_DEPLOY_HOOK_STAGING }}"
 
       - name: Post-deploy healthcheck
-        if: ${{ secrets.STAGING_APP_URL != '' }}
+        if: secrets.STAGING_APP_URL != ''
         run: |
           # Wait for the service to become reachable after the deploy hook fires
           sleep 30
@@ -71,7 +71,7 @@ jobs:
           APP_VERSION: staging-${{ github.sha }}
 
       - name: Notify success
-        if: success() && env.TELEGRAM_BOT_TOKEN != ''
+        if: success() && secrets.STAGING_TELEGRAM_BOT_TOKEN != ''
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.STAGING_TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.STAGING_TELEGRAM_CHAT_ID }}
@@ -83,7 +83,7 @@ jobs:
             --notify-only
 
       - name: Notify failure
-        if: failure() && env.TELEGRAM_BOT_TOKEN != ''
+        if: failure() && secrets.STAGING_TELEGRAM_BOT_TOKEN != ''
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.STAGING_TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.STAGING_TELEGRAM_CHAT_ID }}

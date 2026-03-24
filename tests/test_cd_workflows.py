@@ -36,19 +36,17 @@ class TestCdStagingWorkflow:
 
     def test_notify_success_has_telegram_check(self):
         """Notify success 스텝에 텔레그램 토큰 조건이 있어야 한다."""
-        assert "TELEGRAM_BOT_TOKEN != ''" in self.content, (
-            "Notify success 스텝에 TELEGRAM_BOT_TOKEN 빈값 체크가 없습니다."
+        assert "STAGING_TELEGRAM_BOT_TOKEN != ''" in self.content, (
+            "Notify success 스텝에 STAGING_TELEGRAM_BOT_TOKEN 빈값 체크가 없습니다."
         )
 
     def test_notify_failure_has_telegram_check(self):
         """Notify failure 스텝에 텔레그램 토큰 조건이 있어야 한다."""
-        # failure() 조건과 TELEGRAM_BOT_TOKEN 체크가 모두 있어야 함
         assert "failure()" in self.content
-        assert "TELEGRAM_BOT_TOKEN != ''" in self.content
+        assert "STAGING_TELEGRAM_BOT_TOKEN != ''" in self.content
 
     def test_curl_not_called_unconditionally(self):
         """curl 이 조건 없이 직접 호출되지 않아야 한다 (빈 URL 방지)."""
-        # if 조건 없이 curl이 단독으로 있으면 안 됨
         lines = self.content.splitlines()
         for i, line in enumerate(lines):
             if "curl -fsSL -X POST" in line and "RENDER_DEPLOY_HOOK" in line:
@@ -88,4 +86,4 @@ class TestCdProductionWorkflow:
 
     def test_notify_failure_has_telegram_check(self):
         """Notify failure 스텝에 텔레그램 토큰 조건이 있어야 한다."""
-        assert "TELEGRAM_BOT_TOKEN != ''" in self.content
+        assert "PROD_TELEGRAM_BOT_TOKEN != ''" in self.content
