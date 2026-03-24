@@ -11,6 +11,11 @@ from .orders.notifier import OrderNotifier
 from .orders.tracker import OrderTracker
 from .dashboard.order_status import OrderStatusTracker
 from .utils.rate_limiter import create_limiter, LIMIT_WEBHOOK, LIMIT_HEALTH
+from .middleware.request_logger import RequestLogger
+from .middleware.security import SecurityMiddleware
+from .validation.order_validator import OrderValidator, DUPLICATE_ORDER_TAG
+from .audit.audit_logger import AuditLogger
+from .audit.event_types import EventType
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +29,12 @@ CORS(app, resources={r'/health/*': {'origins': _cors_origins}})
 # Rate Limiter 초기화
 limiter = create_limiter(app)
 
+# 요청 로거 미들웨어 초기화
+request_logger = RequestLogger(app)
+
+# 보안 미들웨어 초기화
+security = SecurityMiddleware(app)
+
 # 서버 시작 시각 (uptime 계산용)
 _START_TIME = time.time()
 
@@ -32,6 +43,10 @@ notifier = OrderNotifier()
 tracker = OrderTracker()
 status_tracker = OrderStatusTracker()
 
+# 주문 검증기 + 감사 로거 초기화
+order_validator = OrderValidator()
+audit_logger = AuditLogger()
+
 
 @app.post('/webhook/shopify/order')
 @limiter.limit(LIMIT_WEBHOOK)
@@ -39,9 +54,32 @@ def shopify_order():
     raw_body = request.get_data()
     hmac_header = request.headers.get('X-Shopify-Hmac-Sha256', '')
     if not verify_webhook(raw_body, hmac_header):
+        audit_logger.log(
+            EventType.WEBHOOK_REJECTED,
+            actor="shopify_webhook",
+            resource="webhook:/webhook/shopify/order",
+            ip_address=request.remote_addr or "",
+        )
         return jsonify({"error": "Invalid signature"}), 401
 
     data = request.get_json(force=True)
+
+    # 주문 페이로드 검증
+    is_valid, validation_errors = order_validator.validate_shopify(data)
+    if not is_valid:
+        logger.warning("Shopify 주문 검증 실패: %s", validation_errors)
+        is_duplicate = any(e.startswith(DUPLICATE_ORDER_TAG) for e in validation_errors)
+        audit_logger.log(
+            EventType.ORDER_DUPLICATE_DETECTED if is_duplicate else EventType.WEBHOOK_REJECTED,
+            actor="order_validator",
+            resource=f"order:{data.get('id')}",
+            details={"errors": validation_errors},
+            ip_address=request.remote_addr or "",
+        )
+        # 중복 주문은 200 반환 (재전송 방지), 다른 검증 실패는 400
+        if is_duplicate:
+            return jsonify({"ok": True, "skipped": "duplicate"}), 200
+        return jsonify({"error": "validation_failed", "details": validation_errors}), 400
 
     # 주문 라우팅
     routed = router.route_order(data)
@@ -54,6 +92,14 @@ def shopify_order():
 
     # 알림 발송
     notifier.notify_new_order(routed)
+
+    # 감사 로그 기록
+    audit_logger.log_order(
+        EventType.ORDER_ROUTED,
+        order_id=data.get('id'),
+        details={"summary": routed.get('summary', {})},
+        ip_address=request.remote_addr or "",
+    )
 
     return jsonify({"ok": True, "tasks": routed['summary']})
 

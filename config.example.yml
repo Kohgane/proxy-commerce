@@ -190,3 +190,38 @@ reorder:
   threshold: 2
   worksheet: reorder_queue
   approval_required: true
+
+# === Phase 10: 성능 최적화 + 보안 강화 ===
+rate_limiting:
+  enabled: true
+  default: "60/minute"
+  webhook: "100/minute"
+  bot: "30/minute"
+
+request_logging:
+  level: "info"
+  mask_fields:
+    - api_key
+    - token
+    - secret
+    - password
+    - authorization
+
+security:
+  max_content_length: 1048576  # 1MB
+  hsts_enabled: false
+  cors_allowed_origins: "*"
+
+cache:
+  enabled: true
+  max_size: 1000
+  default_ttl: 300
+
+circuit_breaker:
+  enabled: true
+  failure_threshold: 5
+  timeout: 60
+
+audit:
+  enabled: true
+  worksheet: audit_log
