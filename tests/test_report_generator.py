@@ -108,7 +108,7 @@ class TestMarginAnalysisReport:
             gen = ReportGenerator()
             report = gen.margin_analysis_report()
 
-        assert "없음" in report
+        assert "마진 데이터 없음" in report
 
 
 class TestSendToTelegram:
