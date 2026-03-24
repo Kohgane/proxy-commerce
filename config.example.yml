@@ -291,3 +291,32 @@ crm:
   vip_min_spent: 1000000
   at_risk_days: 90
   dormant_days: 180
+
+# === Phase 15: 마케팅 자동화 ===
+marketing:
+  enabled: false
+  sheet_name: campaigns
+  ab_testing_enabled: false
+  email_batch_size: 50
+  email_delay_sec: 2
+
+# === Phase 15: 리포팅 ===
+reporting:
+  enabled: false
+  daily: true
+  weekly: true
+  monthly: true
+  sheet_name: reports
+
+# === Phase 15: SEO ===
+seo:
+  enabled: false
+  default_language: ko
+  site_name: Proxy Commerce
+  site_url: https://example.com
+
+# === Phase 15: 웹훅 허브 ===
+webhooks:
+  hub_enabled: false
+  retry_enabled: false
+  retry_max: 3

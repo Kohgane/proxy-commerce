@@ -63,6 +63,30 @@ try:
 except Exception as _crm_bp_exc:
     logger.warning("CRM API Blueprint 등록 실패: %s", _crm_bp_exc)
 
+# Marketing API Blueprint 등록
+try:
+    from .api.marketing_api import marketing_bp
+    app.register_blueprint(marketing_bp)
+    logger.info("마케팅 API Blueprint 등록 완료")
+except Exception as _mkt_bp_exc:
+    logger.warning("마케팅 API Blueprint 등록 실패: %s", _mkt_bp_exc)
+
+# 리포트 API Blueprint 등록
+try:
+    from .api.reports_api import reports_bp
+    app.register_blueprint(reports_bp)
+    logger.info("리포트 API Blueprint 등록 완료")
+except Exception as _rep_bp_exc:
+    logger.warning("리포트 API Blueprint 등록 실패: %s", _rep_bp_exc)
+
+# SEO API Blueprint 등록
+try:
+    from .api.seo_api import seo_bp
+    app.register_blueprint(seo_bp)
+    logger.info("SEO API Blueprint 등록 완료")
+except Exception as _seo_bp_exc:
+    logger.warning("SEO API Blueprint 등록 실패: %s", _seo_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')
