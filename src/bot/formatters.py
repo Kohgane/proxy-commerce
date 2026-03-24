@@ -200,6 +200,66 @@ def _format_customer_list(customers: list, label: str = '') -> str:
     return '\n'.join(lines)
 
 
+def _format_campaigns(campaigns: list, label: str = '') -> str:
+    """캠페인 목록 포맷."""
+    lines = [f"*📣 {label}*\n"]
+    if not campaigns:
+        lines.append("캠페인이 없습니다.")
+        return '\n'.join(lines)
+    lines.append(f"총 {len(campaigns)}개:\n")
+    for c in campaigns[:10]:
+        name = c.get('name', '-')
+        status = c.get('status', '-')
+        ctype = c.get('type', '-')
+        budget = int(float(c.get('budget_krw', 0) or 0))
+        lines.append(f"  • *{name}* [{status}] ({ctype}) — {budget:,}원")
+    if len(campaigns) > 10:
+        lines.append(f"\n_... 외 {len(campaigns) - 10}개 생략_")
+    return '\n'.join(lines)
+
+
+def _format_report(data: dict, label: str = '') -> str:
+    """리포트 요약 포맷."""
+    rtype = data.get('report_type', label)
+    lines = [f"*📊 {rtype.upper()} 리포트*\n"]
+    if 'error' in data:
+        lines.append(f"오류: {data['error']}")
+        return '\n'.join(lines)
+    if rtype == 'sales':
+        lines.append(f"총 주문: *{data.get('total_orders', 0)}건*")
+        lines.append(f"총 매출: *{int(data.get('total_revenue_krw', 0)):,}원*")
+        lines.append(f"평균 주문: *{int(data.get('avg_order_krw', 0)):,}원*")
+    elif rtype == 'inventory':
+        lines.append(f"전체 SKU: *{data.get('total_skus', 0)}*")
+        lines.append(f"재고 없음: *{data.get('out_of_stock', 0)}*")
+        lines.append(f"저재고: *{data.get('low_stock', 0)}*")
+    elif rtype == 'customers':
+        lines.append(f"전체 고객: *{data.get('total_customers', 0)}명*")
+        lines.append(f"신규 고객: *{data.get('new_customers', 0)}명*")
+    elif rtype == 'marketing':
+        lines.append(f"전체 캠페인: *{data.get('total_campaigns', 0)}*")
+        lines.append(f"활성 캠페인: *{data.get('active_campaigns', 0)}*")
+        lines.append(f"총 예산: *{int(data.get('total_budget_krw', 0)):,}원*")
+    return '\n'.join(lines)
+
+
+def _format_abtest(data: dict, label: str = '') -> str:
+    """A/B 테스트 결과 포맷."""
+    lines = [f"*🧪 A/B 테스트 — {label}*\n"]
+    if not data:
+        lines.append("데이터가 없습니다.")
+        return '\n'.join(lines)
+    for variant in ('A', 'B'):
+        info = data.get(variant, {})
+        impressions = info.get('impressions', 0)
+        conversions = info.get('conversions', 0)
+        rate = info.get('conversion_rate', 0.0)
+        lines.append(f"  *변형 {variant}*: 노출 {impressions} / 전환 {conversions} ({rate:.1%})")
+    significant = data.get('is_significant', False)
+    lines.append(f"\n통계적 유의성: {'✅ 유의미' if significant else '❌ 유의미하지 않음'}")
+    return '\n'.join(lines)
+
+
 def format_message(msg_type: str, data, **kwargs) -> str:
     """메시지 타입에 따라 포맷 함수 라우팅.
 
@@ -219,6 +279,9 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'promos': lambda d: _format_promos(d, label=kwargs.get('label', '')),
         'customer_segments': lambda d: _format_customer_segments(d),
         'customer_list': lambda d: _format_customer_list(d, label=kwargs.get('label', '')),
+        'campaigns': lambda d: _format_campaigns(d, label=kwargs.get('label', '')),
+        'report': lambda d: _format_report(d, label=kwargs.get('label', '')),
+        'abtest': lambda d: _format_abtest(d, label=kwargs.get('label', '')),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:

@@ -172,5 +172,56 @@ def cmd_help() -> str:
         "⭐ `/reviews [today|week|month]` — 리뷰 요약\n"
         "🎯 `/promo [list|active]` — 프로모션 현황\n"
         "👥 `/customers [vip|at_risk|summary]` — 고객 세그먼트 요약\n"
+        "📣 `/campaign [list|active]` — 캠페인 현황\n"
+        "📊 `/report [sales|inventory|customers|marketing]` — 리포트 생성\n"
+        "🧪 `/abtest [list|<실험명>]` — A/B 테스트 결과\n"
         "❓ `/help` — 이 도움말\n"
     )
+
+
+def cmd_campaign(args: str = 'list') -> str:
+    """/campaign [list|active] — 캠페인 현황."""
+    sub = args.strip().lower()
+    active_only = sub == 'active'
+
+    try:
+        from ..marketing.campaign_manager import CampaignManager
+        manager = CampaignManager()
+        status_filter = 'active' if active_only else None
+        campaigns = manager.get_campaigns(status=status_filter)
+        label = "활성 캠페인" if active_only else "전체 캠페인"
+        return format_message('campaigns', campaigns, label=label)
+    except Exception as exc:
+        logger.error("cmd_campaign 오류: %s", exc)
+        return format_message('error', f'캠페인 조회 실패: {exc}')
+
+
+def cmd_report(args: str = 'sales today') -> str:
+    """/report [sales|inventory|customers|marketing] — 리포트 생성."""
+    parts = args.strip().lower().split()
+    report_type = parts[0] if parts else 'sales'
+
+    try:
+        from ..reporting.report_builder import ReportBuilder
+        builder = ReportBuilder()
+        report = builder.generate_report(report_type)
+        return format_message('report', report, label=report_type)
+    except Exception as exc:
+        logger.error("cmd_report 오류: %s", exc)
+        return format_message('error', f'리포트 생성 실패: {exc}')
+
+
+def cmd_abtest(args: str = 'list') -> str:
+    """/abtest [list|<실험명>] — A/B 테스트 결과."""
+    experiment_name = args.strip()
+    if not experiment_name or experiment_name.lower() == 'list':
+        return format_message('abtest', {}, label='A/B 테스트 목록')
+
+    try:
+        from ..marketing.ab_testing import ABTestManager
+        manager = ABTestManager()
+        results = manager.get_results(experiment_name)
+        return format_message('abtest', results, label=experiment_name)
+    except Exception as exc:
+        logger.error("cmd_abtest 오류: %s", exc)
+        return format_message('error', f'A/B 테스트 조회 실패: {exc}')
