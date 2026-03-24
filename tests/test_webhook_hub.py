@@ -13,10 +13,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 @pytest.fixture(autouse=True)
 def reset_hub():
-    """각 테스트 전에 허브 핸들러를 초기화한다."""
-    from src.webhooks.hub import WebhookHub
-    hub = WebhookHub()
-    yield hub
+    """각 테스트 전에 모듈 레벨 싱글턴 허브 핸들러를 초기화한다."""
+    import src.webhooks.hub as hub_module
+    hub_module.hub._handlers.clear()
+    yield hub_module.hub
 
 
 class TestWebhookHub:

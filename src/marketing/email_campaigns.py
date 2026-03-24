@@ -68,7 +68,7 @@ class EmailCampaignSender:
                 "utm_campaign": [campaign_id],
                 "utm_content": [email],
             })
-            new_query = urlencode({k: v[0] for k, v in params.items()})
+            new_query = urlencode({k: v[0] for k, v in params.items() if v})
             return urlunparse(parsed._replace(query=new_query))
         except Exception:
             return url

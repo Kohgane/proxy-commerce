@@ -58,12 +58,10 @@ class WebhookValidator:
         if isinstance(secret, str):
             secret = secret.encode("utf-8")
 
-        expected = hmac.new(secret, body, hashlib.sha256).hexdigest()
-
-        # base64 인코딩된 헤더와 비교 (Shopify는 base64 hex 형태 모두 허용)
-        expected_b64 = base64.b64encode(
-            hmac.new(secret, body, hashlib.sha256).digest()
-        ).decode()
+        # 다이제스트를 한 번만 계산하여 hex와 base64 두 가지 형태로 비교
+        digest = hmac.new(secret, body, hashlib.sha256).digest()
+        expected = digest.hex()
+        expected_b64 = base64.b64encode(digest).decode()
 
         if hmac.compare_digest(expected, provided_signature) or \
                 hmac.compare_digest(expected_b64, provided_signature):
