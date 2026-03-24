@@ -268,3 +268,26 @@ config:
   hot_reload: false
   check_interval: 60
   strict_validation: false
+
+# === Phase 14: Reviews ===
+reviews:
+  collection_enabled: false
+  auto_response_enabled: false
+  negative_threshold: 2
+  sheet_name: reviews
+
+# === Phase 14: Promotions ===
+promotions:
+  enabled: false
+  stack_mode: best  # best | stack
+  sheet_name: promotions
+
+# === Phase 14: CRM ===
+crm:
+  enabled: false
+  lifecycle_enabled: false
+  sheet_name: customers
+  vip_min_orders: 3
+  vip_min_spent: 1000000
+  at_risk_days: 90
+  dormant_days: 180

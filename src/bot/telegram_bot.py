@@ -5,7 +5,10 @@ import os
 
 from flask import Blueprint, request, jsonify
 
-from .commands import cmd_status, cmd_revenue, cmd_stock, cmd_fx, cmd_help
+from .commands import (
+    cmd_status, cmd_revenue, cmd_stock, cmd_fx, cmd_help,
+    cmd_reviews, cmd_promo, cmd_customers,
+)
 from .formatters import format_message
 
 logger = logging.getLogger(__name__)
@@ -21,6 +24,9 @@ _COMMAND_MAP = {
     '/stock': lambda args: cmd_stock(args[0] if args else 'low'),
     '/fx': lambda _args: cmd_fx(),
     '/help': lambda _args: cmd_help(),
+    '/reviews': lambda args: cmd_reviews(args[0] if args else 'today'),
+    '/promo': lambda args: cmd_promo(args[0] if args else 'active'),
+    '/customers': lambda args: cmd_customers(args[0] if args else 'summary'),
 }
 
 

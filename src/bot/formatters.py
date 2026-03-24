@@ -123,11 +123,89 @@ def _format_error(message: str) -> str:
     return f"*❌ 오류*\n\n{message}"
 
 
+def _format_reviews(summary: dict, label: str = '') -> str:
+    """리뷰 요약 포맷."""
+    lines = [f"*⭐ 리뷰 요약 — {label}*\n"]
+    total = summary.get('total_reviews', 0)
+    avg = summary.get('average_rating', 0.0)
+    negative = summary.get('negative_count', 0)
+    lines.append(f"전체 리뷰: *{total}건*")
+    lines.append(f"평균 평점: *{float(avg):.1f}점*")
+    if negative:
+        lines.append(f"부정 리뷰: *{negative}건* ⚠️")
+    by_rating = summary.get('by_rating', {})
+    if by_rating:
+        lines.append("\n평점별 분포:")
+        for rating in range(5, 0, -1):
+            count = by_rating.get(str(rating), by_rating.get(rating, 0))
+            stars = '⭐' * rating
+            lines.append(f"  {stars}: {count}건")
+    top_keywords = summary.get('top_keywords', [])
+    if top_keywords:
+        kws = ', '.join(f"{kw}({cnt})" for kw, cnt in top_keywords[:5])
+        lines.append(f"\n주요 키워드: {kws}")
+    return '\n'.join(lines)
+
+
+def _format_promos(promos: list, label: str = '') -> str:
+    """프로모션 목록 포맷."""
+    lines = [f"*🎯 {label}*\n"]
+    if not promos:
+        lines.append("해당 프로모션이 없습니다.")
+        return '\n'.join(lines)
+    lines.append(f"총 {len(promos)}개:\n")
+    for p in promos[:10]:
+        name = p.get('name', '-')
+        ptype = p.get('type', '-')
+        value = p.get('value', '')
+        end_date = str(p.get('end_date', ''))[:10]
+        lines.append(f"  • *{name}* ({ptype}) {f'~ {end_date}' if end_date else ''}")
+        if value:
+            lines.append(f"    할인: {value}")
+    if len(promos) > 10:
+        lines.append(f"\n_... 외 {len(promos) - 10}개 생략_")
+    return '\n'.join(lines)
+
+
+def _format_customer_segments(summary: dict) -> str:
+    """고객 세그먼트 요약 포맷."""
+    lines = ["*👥 고객 세그먼트 요약*\n"]
+    icons = {
+        'VIP': '👑', 'LOYAL': '💚', 'AT_RISK': '⚠️',
+        'NEW': '🆕', 'DORMANT': '😴',
+    }
+    for seg, info in summary.items():
+        icon = icons.get(seg, '👤')
+        count = info.get('count', 0)
+        avg_spent = int(info.get('avg_spent_krw', 0))
+        lines.append(f"{icon} *{seg}*: {count}명 (평균 {avg_spent:,}원)")
+    return '\n'.join(lines)
+
+
+def _format_customer_list(customers: list, label: str = '') -> str:
+    """고객 목록 포맷."""
+    lines = [f"*👥 고객 목록 — {label}*\n"]
+    if not customers:
+        lines.append("해당 고객이 없습니다.")
+        return '\n'.join(lines)
+    lines.append(f"총 {len(customers)}명:\n")
+    for c in customers[:15]:
+        email = c.get('email', '-')
+        name = c.get('name', '-')
+        orders = c.get('total_orders', 0)
+        spent = int(float(c.get('total_spent_krw', 0) or 0))
+        lines.append(f"  • {name} ({email}) — {orders}회 / {spent:,}원")
+    if len(customers) > 15:
+        lines.append(f"\n_... 외 {len(customers) - 15}명 생략_")
+    return '\n'.join(lines)
+
+
 def format_message(msg_type: str, data, **kwargs) -> str:
     """메시지 타입에 따라 포맷 함수 라우팅.
 
     Args:
         msg_type: 'status' | 'revenue' | 'stock' | 'fx' | 'error'
+                  | 'reviews' | 'promos' | 'customer_segments' | 'customer_list'
         data: 각 타입에 맞는 데이터
         **kwargs: 추가 파라미터 (label, pending, prev_rates 등)
     """
@@ -137,6 +215,10 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'stock': lambda d: _format_stock(d, label=kwargs.get('label', '')),
         'fx': lambda d: _format_fx(d, prev_rates=kwargs.get('prev_rates')),
         'error': lambda d: _format_error(d),
+        'reviews': lambda d: _format_reviews(d, label=kwargs.get('label', '')),
+        'promos': lambda d: _format_promos(d, label=kwargs.get('label', '')),
+        'customer_segments': lambda d: _format_customer_segments(d),
+        'customer_list': lambda d: _format_customer_list(d, label=kwargs.get('label', '')),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:

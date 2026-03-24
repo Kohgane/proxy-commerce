@@ -9,5 +9,8 @@ Flask Blueprint 기반의 관리자 대시보드 API.
 
 from .dashboard_routes import dashboard_bp
 from .auth_middleware import require_api_key
+from .reviews_api import reviews_bp
+from .promotions_api import promotions_bp
+from .crm_api import crm_bp
 
-__all__ = ["dashboard_bp", "require_api_key"]
+__all__ = ["dashboard_bp", "require_api_key", "reviews_bp", "promotions_bp", "crm_bp"]
