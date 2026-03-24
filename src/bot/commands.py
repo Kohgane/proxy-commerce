@@ -175,6 +175,12 @@ def cmd_help() -> str:
         "📣 `/campaign [list|active]` — 캠페인 현황\n"
         "📊 `/report [sales|inventory|customers|marketing]` — 리포트 생성\n"
         "🧪 `/abtest [list|<실험명>]` — A/B 테스트 결과\n"
+        "🏪 `/competitor [sku]` — 경쟁사 가격 비교\n"
+        "  SKU 없으면 전체 가격 경쟁력 요약\n"
+        "🔮 `/forecast [sku]` — 수요 예측 + 재고 소진 예상일\n"
+        "  SKU 없으면 14일 내 소진 위험 상품 목록\n"
+        "📈 `/trends [top|declining]` — 상품 트렌드 요약\n"
+        "⚙️ `/rules [list|stats]` — 자동화 규칙 현황\n"
         "❓ `/help` — 이 도움말\n"
     )
 
@@ -225,3 +231,88 @@ def cmd_abtest(args: str = 'list') -> str:
     except Exception as exc:
         logger.error("cmd_abtest 오류: %s", exc)
         return format_message('error', f'A/B 테스트 조회 실패: {exc}')
+
+
+def cmd_competitor(args: str = '') -> str:
+    """/competitor [sku] — 특정 SKU 경쟁사 가격 비교."""
+    sku = args.strip()
+    try:
+        from ..competitor.price_tracker import CompetitorPriceTracker
+        tracker = CompetitorPriceTracker()
+        if sku:
+            data = tracker.get_price_comparison(sku)
+        else:
+            overpriced = tracker.get_overpriced_items(threshold_pct=10)
+            underpriced = tracker.get_underpriced_items(threshold_pct=10)
+            data = {'overpriced': overpriced, 'underpriced': underpriced}
+        return format_message('competitor', data, label=sku or '전체')
+    except Exception as exc:
+        logger.error("cmd_competitor 오류: %s", exc)
+        return format_message('error', f'경쟁사 가격 조회 실패: {exc}')
+
+
+def cmd_forecast(args: str = '') -> str:
+    """/forecast [sku] — 수요 예측 + 재고 소진 예상일."""
+    sku = args.strip()
+    try:
+        from ..forecasting.demand_predictor import DemandPredictor
+        from ..forecasting.stock_optimizer import StockOptimizer
+        predictor = DemandPredictor()
+        optimizer = StockOptimizer()
+        if sku:
+            forecast = predictor.predict_demand(sku, days_ahead=30)
+            at_risk = optimizer.get_stockout_risk(days_horizon=14)
+            sku_risk = next((r for r in at_risk if r['sku'] == sku), None)
+            data = {'forecast': forecast, 'stockout_risk': sku_risk}
+        else:
+            at_risk = optimizer.get_stockout_risk(days_horizon=14)
+            data = {'stockout_risk': at_risk}
+        return format_message('forecast', data, label=sku or '소진 위험')
+    except Exception as exc:
+        logger.error("cmd_forecast 오류: %s", exc)
+        return format_message('error', f'수요 예측 조회 실패: {exc}')
+
+
+def cmd_trends(args: str = 'top') -> str:
+    """/trends [top|declining] — 상품 트렌드 요약."""
+    sub = args.strip().lower()
+    try:
+        from ..forecasting.trend_analyzer import TrendAnalyzer
+        analyzer = TrendAnalyzer()
+        trends = analyzer.analyze_trends(period_days=30)
+        if sub == 'declining':
+            items = [t for t in trends if t.get('trend') == 'falling']
+            label = '하락 추세'
+        else:
+            items = [t for t in trends if t.get('grade') in ('Star', 'Cash Cow')][:10]
+            label = '상위 상품'
+        return format_message('trends', items, label=label)
+    except Exception as exc:
+        logger.error("cmd_trends 오류: %s", exc)
+        return format_message('error', f'트렌드 조회 실패: {exc}')
+
+
+def cmd_rules(args: str = 'list') -> str:
+    """/rules [list|stats] — 자동화 규칙 현황."""
+    sub = args.strip().lower()
+    try:
+        from ..automation.rule_engine import RuleEngine
+        engine = RuleEngine()
+        rules = engine.get_rules(enabled_only=False)
+        if sub == 'stats':
+            enabled = sum(1 for r in rules if str(r.get('enabled', '1')) in ('1', 'true', 'True'))
+            data = {
+                'total': len(rules),
+                'enabled': enabled,
+                'disabled': len(rules) - enabled,
+                'by_trigger': {},
+            }
+            for r in rules:
+                trigger = r.get('trigger', 'unknown')
+                data['by_trigger'][trigger] = data['by_trigger'].get(trigger, 0) + 1
+        else:
+            data = rules
+        return format_message('rules', data, label=sub)
+    except Exception as exc:
+        logger.error("cmd_rules 오류: %s", exc)
+        return format_message('error', f'자동화 규칙 조회 실패: {exc}')

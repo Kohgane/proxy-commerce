@@ -320,3 +320,22 @@ webhooks:
   hub_enabled: false
   retry_enabled: false
   retry_max: 3
+
+# === Phase 16: 경쟁사 분석 ===
+competitor:
+  tracking_enabled: false
+  sheet_name: competitors
+  price_alert_threshold_pct: 5
+
+# === Phase 16: 수요 예측 ===
+forecasting:
+  enabled: false
+  min_data_days: 30
+  stock_safety_factor: 1.5
+  stock_lead_time_days: 7
+
+# === Phase 16: 워크플로 자동화 ===
+automation:
+  enabled: false
+  sheet_name: automation_rules
+  scheduler_enabled: false
