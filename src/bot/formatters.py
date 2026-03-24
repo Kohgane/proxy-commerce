@@ -260,12 +260,168 @@ def _format_abtest(data: dict, label: str = '') -> str:
     return '\n'.join(lines)
 
 
+def _format_competitor(data, label: str = '') -> str:
+    """경쟁사 가격 비교 포맷."""
+    lines = [f"*🏪 경쟁사 가격 비교 — {label}*\n"]
+
+    # 단일 SKU 비교 케이스
+    if isinstance(data, dict) and 'our_sku' in data and 'competitors' in data:
+        our_price = data.get('our_price_krw', 0)
+        lines.append(f"우리 가격: *{int(our_price):,}원*")
+        lines.append(f"경쟁사 최저가: *{int(data.get('best_competitor_price_krw', 0)):,}원*\n")
+        competitors = data.get('competitors', [])
+        if competitors:
+            lines.append("경쟁사 목록:")
+            for c in competitors[:10]:
+                name = c.get('competitor_name', '-')
+                price_krw = c.get('competitor_price_krw', 0)
+                diff = c.get('price_diff_pct', 0)
+                sign = '+' if diff >= 0 else ''
+                lines.append(f"  • {name}: {int(price_krw):,}원 ({sign}{diff:.1f}%)")
+        else:
+            lines.append("경쟁사 데이터 없음")
+        return '\n'.join(lines)
+
+    # 전체 요약 케이스
+    overpriced = data.get('overpriced', [])
+    underpriced = data.get('underpriced', [])
+    lines.append(f"가격 경쟁력 부족: *{len(overpriced)}개*")
+    lines.append(f"마진 개선 가능: *{len(underpriced)}개*")
+
+    if overpriced:
+        lines.append("\n🚨 더 비싼 상품 (상위 5개):")
+        for item in overpriced[:5]:
+            lines.append(
+                f"  • `{item['our_sku']}` +{item['price_diff_pct']:.1f}% "
+                f"[{item['competitor_name']}]"
+            )
+
+    if underpriced:
+        lines.append("\n💡 더 저렴한 상품 (상위 5개):")
+        for item in underpriced[:5]:
+            lines.append(
+                f"  • `{item['our_sku']}` {item['price_diff_pct']:.1f}% "
+                f"[{item['competitor_name']}]"
+            )
+
+    return '\n'.join(lines)
+
+
+def _format_forecast(data: dict, label: str = '') -> str:
+    """수요 예측 포맷."""
+    lines = [f"*🔮 수요 예측 — {label}*\n"]
+
+    forecast = data.get('forecast')
+    if forecast:
+        sku = forecast.get('sku', label)
+        predicted = forecast.get('predicted_qty', 0)
+        confidence = forecast.get('confidence', '-')
+        trend = forecast.get('trend', '-')
+        avg_daily = forecast.get('avg_daily_demand', 0)
+        lines.append(f"SKU: `{sku}`")
+        lines.append(f"30일 예측 수요: *{predicted}개*")
+        lines.append(f"일평균 수요: {avg_daily:.2f}개")
+        lines.append(f"추세: {trend} | 신뢰도: {confidence}")
+
+        stockout = data.get('stockout_risk')
+        if stockout:
+            days = stockout.get('days_of_stock')
+            lines.append(f"\n⚠️ 재고 소진 예상: *{days:.0f}일 후*" if days else "")
+        return '\n'.join(lines)
+
+    # 전체 소진 위험 목록
+    at_risk = data.get('stockout_risk', [])
+    if not at_risk:
+        lines.append("14일 내 소진 위험 상품 없음 ✅")
+        return '\n'.join(lines)
+
+    lines.append(f"⚠️ 14일 내 재고 소진 위험: *{len(at_risk)}개*\n")
+    for item in at_risk[:10]:
+        sku = item.get('sku', '-')
+        days = item.get('days_of_stock')
+        stock = item.get('current_stock', 0)
+        days_str = f"{days:.0f}일" if days is not None else "즉시"
+        lines.append(f"  • `{sku}` 재고 {stock}개 → {days_str} 후 소진")
+
+    if len(at_risk) > 10:
+        lines.append(f"\n_... 외 {len(at_risk) - 10}개_")
+
+    return '\n'.join(lines)
+
+
+def _format_trends(items: list, label: str = '') -> str:
+    """상품 트렌드 포맷."""
+    lines = [f"*📈 상품 트렌드 — {label}*\n"]
+
+    if not items:
+        lines.append("트렌드 데이터가 없습니다.")
+        return '\n'.join(lines)
+
+    lines.append(f"총 {len(items)}개 상품:\n")
+    grade_icons = {
+        'Star': '⭐', 'Cash Cow': '🐄', 'Rising': '🚀', 'Declining': '📉',
+    }
+    for item in items[:15]:
+        sku = item.get('sku', '-')
+        grade = item.get('grade', '-')
+        growth = item.get('growth_rate_pct', 0)
+        sales = item.get('total_sales', 0)
+        icon = grade_icons.get(grade, '•')
+        sign = '+' if growth >= 0 else ''
+        lines.append(
+            f"  {icon} `{sku}` [{grade}] 성장 {sign}{growth:.1f}% / {sales}개 판매"
+        )
+
+    if len(items) > 15:
+        lines.append(f"\n_... 외 {len(items) - 15}개 생략_")
+
+    return '\n'.join(lines)
+
+
+def _format_rules(data, label: str = '') -> str:
+    """자동화 규칙 포맷."""
+    lines = [f"*⚙️ 자동화 규칙 — {label}*\n"]
+
+    if isinstance(data, dict) and 'total' in data:
+        # stats 케이스
+        lines.append(f"전체 규칙: *{data.get('total', 0)}개*")
+        lines.append(f"활성: *{data.get('enabled', 0)}개*")
+        lines.append(f"비활성: *{data.get('disabled', 0)}개*")
+        by_trigger = data.get('by_trigger', {})
+        if by_trigger:
+            lines.append("\n트리거별:")
+            for trigger, count in by_trigger.items():
+                lines.append(f"  • {trigger}: {count}개")
+        return '\n'.join(lines)
+
+    # list 케이스
+    rules = data if isinstance(data, list) else []
+    if not rules:
+        lines.append("등록된 규칙이 없습니다.")
+        return '\n'.join(lines)
+
+    lines.append(f"총 {len(rules)}개:\n")
+    for r in rules[:10]:
+        name = r.get('name', '-')
+        trigger = r.get('trigger', '-')
+        enabled = str(r.get('enabled', '1')) in ('1', 'true', 'True')
+        status = '✅' if enabled else '❌'
+        lines.append(f"  {status} *{name}* ({trigger})")
+
+    if len(rules) > 10:
+        lines.append(f"\n_... 외 {len(rules) - 10}개 생략_")
+
+    return '\n'.join(lines)
+
+
 def format_message(msg_type: str, data, **kwargs) -> str:
     """메시지 타입에 따라 포맷 함수 라우팅.
 
     Args:
         msg_type: 'status' | 'revenue' | 'stock' | 'fx' | 'error'
                   | 'reviews' | 'promos' | 'customer_segments' | 'customer_list'
+                  | 'campaigns' | 'report' | 'abtest'
+                  | 'competitor' | 'forecast' | 'trends' | 'rules'
         data: 각 타입에 맞는 데이터
         **kwargs: 추가 파라미터 (label, pending, prev_rates 등)
     """
@@ -282,6 +438,10 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'campaigns': lambda d: _format_campaigns(d, label=kwargs.get('label', '')),
         'report': lambda d: _format_report(d, label=kwargs.get('label', '')),
         'abtest': lambda d: _format_abtest(d, label=kwargs.get('label', '')),
+        'competitor': lambda d: _format_competitor(d, label=kwargs.get('label', '')),
+        'forecast': lambda d: _format_forecast(d, label=kwargs.get('label', '')),
+        'trends': lambda d: _format_trends(d, label=kwargs.get('label', '')),
+        'rules': lambda d: _format_rules(d, label=kwargs.get('label', '')),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:
