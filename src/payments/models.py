@@ -1,6 +1,6 @@
 """src/payments/models.py — 결제/정산 데이터 모델."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass

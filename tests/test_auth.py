@@ -136,8 +136,9 @@ class TestOAuthProvider:
 # ──────────────────────────────────────────────────────────
 
 @pytest.fixture
-def auth_client():
+def auth_client(monkeypatch):
     """Flask test client with auth_api_bp registered."""
+    monkeypatch.setenv('AUTH_DEMO_MODE', '1')
     from flask import Flask
     from src.api.auth_api import auth_api_bp
     app = Flask(__name__)

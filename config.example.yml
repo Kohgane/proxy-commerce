@@ -358,3 +358,40 @@ collectors:
       - JP
     category_map_enabled: true
   collected_worksheet: "${COLLECTED_WORKSHEET}"
+
+# === Phase 21: 주문 알림 텔레그램 강화 ===
+order_alerts:
+  enabled: true
+  telegram_bot_token: "${ORDER_ALERT_TELEGRAM_BOT_TOKEN}"
+  telegram_chat_id: "${ORDER_ALERT_TELEGRAM_CHAT_ID}"
+
+# === Phase 22: 결제/정산 시스템 ===
+payments:
+  enabled: false
+  pg_provider: toss
+  toss_secret_key: "${TOSS_PAYMENTS_SECRET_KEY}"
+  toss_client_key: "${TOSS_PAYMENTS_CLIENT_KEY}"
+  fee_rates:
+    coupang: 0.108
+    naver: 0.055
+    shopify: 0.02
+    woo: 0.0
+
+# === Phase 23: 모니터링 대시보드 ===
+monitoring:
+  enabled: true
+  alert_error_threshold: 100
+  alert_latency_threshold_seconds: 2.0
+
+# === Phase 24: OAuth + API Key 관리 ===
+auth:
+  jwt_secret_key: "${JWT_SECRET_KEY}"
+  jwt_access_expire_minutes: 15
+  jwt_refresh_expire_days: 7
+  oauth:
+    google:
+      client_id: "${GOOGLE_OAUTH_CLIENT_ID}"
+      client_secret: "${GOOGLE_OAUTH_CLIENT_SECRET}"
+    kakao:
+      client_id: "${KAKAO_OAUTH_CLIENT_ID}"
+      client_secret: "${KAKAO_OAUTH_CLIENT_SECRET}"

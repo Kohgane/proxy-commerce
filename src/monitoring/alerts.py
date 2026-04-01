@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import operator as op
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List
 
 from .metrics import MetricsCollector
 

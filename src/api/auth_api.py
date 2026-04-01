@@ -17,14 +17,18 @@ _key_manager = APIKeyManager()
 
 @auth_api_bp.route('/login', methods=['POST'])
 def login():
-    """Demo login: accepts any credentials and returns JWT tokens.
+    """Demo login: returns JWT tokens for any non-empty username.
 
-    WARNING: This is a demo implementation only. Do NOT deploy to production
-    without adding real credential validation (e.g., database user lookup + password hashing).
+    WARNING: This endpoint is for development/demo use only.
+    Set AUTH_DEMO_MODE=1 to enable it. In production, replace this with
+    real credential validation (database user lookup + password hashing).
     """
+    import os
+    if os.getenv('AUTH_DEMO_MODE', '0') != '1':
+        return jsonify({'error': 'Auth demo mode is disabled. Set AUTH_DEMO_MODE=1 to enable.'}), 403
+
     data = request.get_json(silent=True) or {}
     username = data.get('username', '')
-    password = data.get('password', '')  # noqa: F841 — demo mode: password not validated
 
     if not username:
         return jsonify({'error': 'username is required'}), 400
