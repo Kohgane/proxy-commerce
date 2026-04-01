@@ -2,10 +2,12 @@
 
 from .base_collector import BaseCollector
 from .amazon_collector import AmazonCollector
+from .taobao_collector import TaobaoCollector
 from .collection_manager import CollectionManager
 
 __all__ = [
     'BaseCollector',
     'AmazonCollector',
+    'TaobaoCollector',
     'CollectionManager',
 ]

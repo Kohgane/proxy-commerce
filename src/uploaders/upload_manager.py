@@ -196,7 +196,7 @@ class UploadManager:
         try:
             from src.collectors.collection_manager import CollectionManager
             mgr = CollectionManager()
-            all_products = mgr._read_all_rows()
+            all_products = mgr.get_collected()
             for product in all_products:
                 sku = product.get('sku', '')
                 if sku in skus:
@@ -210,7 +210,7 @@ class UploadManager:
         try:
             from src.collectors.collection_manager import CollectionManager
             mgr = CollectionManager()
-            all_products = mgr._read_all_rows()
+            all_products = mgr.get_collected()
             uploaded_skus = {r.get('sku', '') for r in self.get_upload_history({'market': market})}
             return [
                 p.get('sku', '') for p in all_products

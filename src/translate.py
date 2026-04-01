@@ -100,3 +100,13 @@ def ko_to_ja(text: str) -> str:
 def ko_to_en_if_needed(text_ko: str) -> str:
     """하위호환용. 내부적으로 ko_to_en() 호출."""
     return ko_to_en(text_ko)
+
+
+def zh_to_ko(text: str) -> str:
+    """중국어(간체) → 한국어 번역 (타오바오/1688 상품명)"""
+    return translate(text, 'ZH', 'KO')
+
+
+def zh_to_en(text: str) -> str:
+    """중국어(간체) → 영어 번역"""
+    return translate(text, 'ZH', 'EN')

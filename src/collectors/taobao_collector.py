@@ -596,8 +596,12 @@ class TaobaoCollector(BaseCollector):
         category_code = product.get('category_code', 'GEN')
         collector_id = product.get('collector_id', '')
         if collector_id:
-            digits = ''.join(filter(str.isdigit, str(collector_id)[-4:]))
-            suffix = digits[-3:].zfill(3) if digits else '001'
+            id_str = str(collector_id)
+            digits = ''.join(filter(str.isdigit, id_str))
+            if digits:
+                suffix = digits[-3:].zfill(3)
+            else:
+                suffix = datetime.now(timezone.utc).strftime('%H%M')
         else:
             suffix = datetime.now(timezone.utc).strftime('%H%M')
         return f'{prefix}-{category_code}-{suffix}'
