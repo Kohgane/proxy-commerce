@@ -1,6 +1,7 @@
 """src/editor/market_sanitizer.py — 마켓별 HTML 제약에 맞춘 sanitize."""
 
 import re
+from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 
 
@@ -101,8 +102,10 @@ class MarketSanitizer:
             # 외부 링크 확인
             for a_tag in soup.find_all('a', href=True):
                 href = a_tag.get('href', '')
-                if href.startswith('http') and 'naver' not in href:
-                    warnings.append(f'외부 링크 발견: {href}')
+                if href.startswith('http'):
+                    domain = urlparse(href).netloc
+                    if 'naver' not in domain and 'naver.com' not in domain:
+                        warnings.append(f'외부 링크 발견: {href}')
 
         if market == 'shopify':
             # Liquid 구문 확인

@@ -98,36 +98,36 @@ class TestImageProcessor:
 
     def test_resize_returns_cloudinary_url(self):
         url = self.processor.resize('https://example.com/img.jpg', 800, 600)
-        assert 'cloudinary.com' in url
+        assert url.startswith('https://res.cloudinary.com/')
         assert 'w_800' in url
         assert 'h_600' in url
 
     def test_add_watermark_returns_cloudinary_url(self):
         url = self.processor.add_watermark('https://example.com/img.jpg', 'MyBrand')
-        assert 'cloudinary.com' in url
+        assert url.startswith('https://res.cloudinary.com/')
         assert 'MyBrand' in url
 
     def test_optimize_for_coupang(self):
         url = self.processor.optimize_for_market('https://example.com/img.jpg', 'coupang')
-        assert 'cloudinary.com' in url
+        assert url.startswith('https://res.cloudinary.com/')
         assert 'w_1000' in url
         assert 'h_1000' in url
 
     def test_optimize_for_smartstore(self):
         url = self.processor.optimize_for_market('https://example.com/img.jpg', 'smartstore')
-        assert 'cloudinary.com' in url
+        assert url.startswith('https://res.cloudinary.com/')
         assert 'w_1000' in url
 
     def test_optimize_for_shopify(self):
         url = self.processor.optimize_for_market('https://example.com/img.jpg', 'shopify')
-        assert 'cloudinary.com' in url
+        assert url.startswith('https://res.cloudinary.com/')
         assert 'w_2048' in url
 
     def test_batch_process_returns_list(self):
         urls = ['https://example.com/a.jpg', 'https://example.com/b.jpg']
         result = self.processor.batch_process(urls, 'coupang')
         assert len(result) == 2
-        assert all('cloudinary.com' in u for u in result)
+        assert all(u.startswith('https://res.cloudinary.com/') for u in result)
 
     def test_batch_process_empty_list(self):
         result = self.processor.batch_process([], 'coupang')
@@ -250,7 +250,7 @@ class TestProductEditor:
     def test_export_for_market_images_optimized(self, sample_product):
         result = self.editor.export_for_market(sample_product, 'shopify')
         assert len(result['images']) == len(sample_product['images'])
-        assert all('cloudinary.com' in u for u in result['images'])
+        assert all(u.startswith('https://res.cloudinary.com/') for u in result['images'])
 
     def test_export_removes_scripts(self, sample_product):
         product_with_script = dict(sample_product)

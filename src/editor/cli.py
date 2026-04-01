@@ -22,6 +22,8 @@ import argparse
 import json
 import logging
 
+PREVIEW_TRUNCATE_LENGTH = 500
+
 logging.basicConfig(level=logging.INFO, format='%(levelname)s %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -57,7 +59,7 @@ def _action_preview(args):
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write(standalone)
     logger.info('미리보기 파일 생성: %s', output_file)
-    print(standalone[:500] + '...' if len(standalone) > 500 else standalone)
+    print(standalone[:PREVIEW_TRUNCATE_LENGTH] + '...' if len(standalone) > PREVIEW_TRUNCATE_LENGTH else standalone)
 
 
 def _action_export(args):
