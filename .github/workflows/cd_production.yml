@@ -55,7 +55,6 @@ jobs:
             ghcr.io/kohgane/proxy-commerce:latest
 
       - name: Deploy to Render (production)
-        if: secrets.RENDER_DEPLOY_HOOK_PRODUCTION != ''
         run: |
           if [ -z "$RENDER_DEPLOY_HOOK_PRODUCTION" ]; then
             echo "RENDER_DEPLOY_HOOK_PRODUCTION not set – skipping deploy"
@@ -67,7 +66,6 @@ jobs:
 
       - name: Post-deploy healthcheck with retry
         id: healthcheck
-        if: secrets.PRODUCTION_APP_URL != ''
         run: |
           if [ -z "$PRODUCTION_APP_URL" ]; then
             echo "PRODUCTION_APP_URL not set – skipping healthcheck"
@@ -110,7 +108,7 @@ jobs:
           "
 
       - name: Notify failure
-        if: failure() && secrets.PROD_TELEGRAM_BOT_TOKEN != ''
+        if: failure()
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.PROD_TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.PROD_TELEGRAM_CHAT_ID }}
