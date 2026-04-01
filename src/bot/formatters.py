@@ -440,6 +440,21 @@ def _format_order_alerts(data: dict, label: str = '') -> str:
     return '\n'.join(lines)
 
 
+def _format_settlement(data: dict, label: str = '') -> str:
+    """정산 요약 메시지를 포맷한다."""
+    period_label = {'today': '오늘', 'week': '이번 주', 'month': '이번 달'}.get(label, label or '전체')
+    lines = [f"*💰 정산 요약 — {period_label}*\n"]
+    lines.append(f"주문 수: *{data.get('count', 0)}건*")
+    lines.append(f"총 매출: *{data.get('total_revenue', 0):,.0f}원*")
+    lines.append(f"총 원가: *{data.get('total_cost', 0):,.0f}원*")
+    lines.append(f"총 수수료: *{data.get('total_fees', 0):,.0f}원*")
+    lines.append(f"총 배송비: *{data.get('total_shipping', 0):,.0f}원*")
+    net = data.get('total_net_profit', 0)
+    emoji = '📈' if net >= 0 else '📉'
+    lines.append(f"순이익: {emoji} *{net:,.0f}원*")
+    return '\n'.join(lines)
+
+
 def format_message(msg_type: str, data, **kwargs) -> str:
     """메시지 타입에 따라 포맷 함수 라우팅.
 
@@ -448,7 +463,7 @@ def format_message(msg_type: str, data, **kwargs) -> str:
                   | 'reviews' | 'promos' | 'customer_segments' | 'customer_list'
                   | 'campaigns' | 'report' | 'abtest'
                   | 'competitor' | 'forecast' | 'trends' | 'rules'
-                  | 'order_alerts'
+                  | 'order_alerts' | 'settlement'
         data: 각 타입에 맞는 데이터
         **kwargs: 추가 파라미터 (label, pending, prev_rates 등)
     """
@@ -470,6 +485,7 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'trends': lambda d: _format_trends(d, label=kwargs.get('label', '')),
         'rules': lambda d: _format_rules(d, label=kwargs.get('label', '')),
         'order_alerts': lambda d: _format_order_alerts(d, label=kwargs.get('label', '')),
+        'settlement': lambda d: _format_settlement(d, label=kwargs.get('label', '')),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:

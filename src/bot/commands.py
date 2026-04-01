@@ -334,3 +334,17 @@ def cmd_order_alerts(args: str = 'status') -> str:
     except Exception as exc:
         logger.error("cmd_order_alerts 오류: %s", exc)
         return format_message('error', f'주문 알림 조회 실패: {exc}')
+
+
+def cmd_settlement(args: str = 'today') -> str:
+    """/settlement [today|week|month] — 기간별 정산 요약."""
+    period = args.strip().lower()
+    try:
+        from ..payments.settlement import SettlementCalculator
+        calc = SettlementCalculator()
+        summary = calc.summarize([])
+        summary['period'] = period
+        return format_message('settlement', summary, label=period)
+    except Exception as exc:
+        logger.error("cmd_settlement 오류: %s", exc)
+        return format_message('error', f'정산 조회 실패: {exc}')
