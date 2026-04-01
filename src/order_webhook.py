@@ -31,6 +31,15 @@ if os.getenv("DASHBOARD_API_ENABLED", "1") == "1":
     except Exception as _bp_exc:
         logger.warning("대시보드 API Blueprint 등록 실패: %s", _bp_exc)
 
+# 대시보드 웹 UI Blueprint 등록 (DASHBOARD_WEB_UI_ENABLED=1 시)
+if os.getenv("DASHBOARD_WEB_UI_ENABLED", "1") == "1":
+    try:
+        from .dashboard.web_ui import web_ui_bp
+        app.register_blueprint(web_ui_bp)
+        logger.info("대시보드 웹 UI Blueprint 등록 완료")
+    except Exception as _web_ui_exc:
+        logger.warning("대시보드 웹 UI Blueprint 등록 실패: %s", _web_ui_exc)
+
 # 설정 관리 API Blueprint 등록
 try:
     from .api.config_routes import config_bp
