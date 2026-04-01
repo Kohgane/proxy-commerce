@@ -339,3 +339,22 @@ automation:
   enabled: false
   sheet_name: automation_rules
   scheduler_enabled: false
+
+# === Phase 17: 상품 수집기 ===
+collectors:
+  timeout: ${COLLECTOR_TIMEOUT}
+  delay: ${COLLECTOR_DELAY}
+  max_retries: ${COLLECTOR_MAX_RETRIES}
+  user_agent: "${COLLECTOR_USER_AGENT}"
+  import:
+    margin_pct: ${IMPORT_MARGIN_PCT}
+    shipping_base_krw: ${IMPORT_SHIPPING_BASE_KRW}
+    shipping_per_kg_krw: ${IMPORT_SHIPPING_PER_KG_KRW}
+    customs_threshold_krw: ${IMPORT_CUSTOMS_THRESHOLD_KRW}
+    customs_rate_pct: ${IMPORT_CUSTOMS_RATE_PCT}
+  amazon:
+    supported_countries:
+      - US
+      - JP
+    category_map_enabled: true
+  collected_worksheet: "${COLLECTED_WORKSHEET}"
