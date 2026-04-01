@@ -50,8 +50,8 @@ def refresh_token():
     token = auth_header[len('Bearer '):]
     try:
         payload = _jwt.decode_token(token)
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 401
+    except ValueError:
+        return jsonify({'error': 'Invalid or expired token'}), 401
 
     if payload.get('type') != 'refresh':
         return jsonify({'error': 'Not a refresh token'}), 400

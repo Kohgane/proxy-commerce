@@ -27,7 +27,7 @@ def require_jwt(f):
             g.jwt_payload = payload
         except ValueError as exc:
             logger.warning("JWT validation failed: %s", exc)
-            return jsonify({'error': 'Unauthorized', 'message': str(exc)}), 401
+            return jsonify({'error': 'Unauthorized', 'message': 'Invalid or expired token'}), 401
         return f(*args, **kwargs)
     return wrapper
 
