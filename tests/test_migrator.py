@@ -8,8 +8,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.migration.migrator import Migrator, MigrationRecord
-from src.migration.versions.v001_initial_schema import WORKSHEET_SCHEMAS, VERSION
+from src.migration.migrator import Migrator, MigrationRecord  # noqa: E402
+from src.migration.versions.v001_initial_schema import WORKSHEET_SCHEMAS, VERSION  # noqa: E402
 
 
 # ── 더미 마이그레이션 모듈 생성 헬퍼 ─────────────────────────────

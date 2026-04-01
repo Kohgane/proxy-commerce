@@ -4,7 +4,6 @@ import hmac
 import base64
 import os
 import sys
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -66,7 +65,9 @@ class TestWebhookHub:
         """get_handlers는 등록된 핸들러 리스트를 반환해야 한다."""
         from src.webhooks.hub import WebhookHub
         hub = WebhookHub()
-        fn = lambda p: None
+
+        def fn(p):
+            return None
         hub.register_handler("p", "e", fn)
         handlers = hub.get_handlers("p", "e")
         assert fn in handlers

@@ -12,8 +12,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.middleware.security import SecurityMiddleware
-from src.middleware.request_logger import RequestLogger, _mask_dict
+from src.middleware.security import SecurityMiddleware  # noqa: E402
+from src.middleware.request_logger import RequestLogger, _mask_dict  # noqa: E402
 
 
 # ──────────────────────────────────────────────────────────

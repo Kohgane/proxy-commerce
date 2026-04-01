@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.analytics.business_report import BusinessAnalytics
+from src.analytics.business_report import BusinessAnalytics  # noqa: E402
 
 # ──────────────────────────────────────────────────────────
 # 공통 픽스처

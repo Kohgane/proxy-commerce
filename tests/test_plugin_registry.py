@@ -6,8 +6,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.plugins.base import VendorPlugin
-from src.plugins.registry import register_vendor, get_registry
+from src.plugins.base import VendorPlugin  # noqa: E402
+from src.plugins.registry import register_vendor, get_registry  # noqa: E402
 
 
 # ── 테스트용 더미 플러그인 ──────────────────────────────────────

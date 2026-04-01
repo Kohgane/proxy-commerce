@@ -1,7 +1,7 @@
 """tests/test_forecast_api.py — 수요 예측 API 테스트."""
 import os
 import sys
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 

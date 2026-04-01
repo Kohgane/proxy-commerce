@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.analytics.new_product_detector import NewProductDetector
+from src.analytics.new_product_detector import NewProductDetector  # noqa: E402
 
 # ──────────────────────────────────────────────────────────
 # 공통 픽스처

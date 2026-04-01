@@ -6,9 +6,9 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.profiling.timer import profile_time, TimingContext
-from src.profiling.api_metrics import ApiMetrics, EndpointMetrics, get_metrics
-from src.profiling.resource_monitor import ResourceMonitor
+from src.profiling.timer import profile_time, TimingContext  # noqa: E402
+from src.profiling.api_metrics import ApiMetrics, EndpointMetrics, get_metrics  # noqa: E402
+from src.profiling.resource_monitor import ResourceMonitor  # noqa: E402
 
 
 # ── TimingContext 테스트 ──────────────────────────────────────

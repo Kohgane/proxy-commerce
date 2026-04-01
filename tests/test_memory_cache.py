@@ -12,8 +12,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.cache.memory_cache import MemoryCache
-from src.cache.api_cache import ApiCache, cached, _make_cache_key
+from src.cache.memory_cache import MemoryCache  # noqa: E402
+from src.cache.api_cache import ApiCache, cached, _make_cache_key  # noqa: E402
 
 
 # ──────────────────────────────────────────────────────────

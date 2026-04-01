@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.analytics.reorder_alert import ReorderAlertEngine
+from src.analytics.reorder_alert import ReorderAlertEngine  # noqa: E402
 
 # ──────────────────────────────────────────────────────────
 # 공통 픽스처

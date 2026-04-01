@@ -3,8 +3,6 @@ import os
 import sys
 from unittest.mock import patch
 
-import pytest
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 
@@ -83,7 +81,6 @@ class TestGetPricingOpportunities:
         """경쟁사보다 비싼 상품은 price_decrease 타입이어야 한다."""
         from src.competitor.market_analyzer import MarketAnalyzer
         analyzer = MarketAnalyzer()
-        catalog_map = {'SKU-A': 100000}
         rows = [{'our_sku': 'SKU-A', 'competitor_name': 'CompA',
                  'price_diff_pct': 15.0, 'competitor_price': 0,
                  'competitor_currency': 'KRW'}]

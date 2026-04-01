@@ -2,11 +2,9 @@
 import os
 import sys
 
-import pytest
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.reporting.visualizer import render_bar_chart, render_table
+from src.reporting.visualizer import render_bar_chart, render_table  # noqa: E402
 
 
 class TestRenderBarChart:

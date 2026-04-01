@@ -1,9 +1,7 @@
 """tests/test_rule_engine.py — 규칙 엔진 테스트."""
 import os
 import sys
-from unittest.mock import patch, MagicMock
-
-import pytest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 

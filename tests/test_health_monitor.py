@@ -12,7 +12,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.resilience.health_monitor import HealthMonitor
+from src.resilience.health_monitor import HealthMonitor  # noqa: E402
 
 
 # ──────────────────────────────────────────────────────────
