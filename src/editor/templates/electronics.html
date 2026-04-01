@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>{{ title_ko }}</title>
+</head>
+<body>
+<div class="electronics-detail" style="font-family:'Apple SD Gothic Neo','Noto Sans KR',sans-serif;max-width:900px;margin:0 auto;background:#f8f9fa;">
+  <div class="electronics-header" style="background:#1a1a2e;color:#eee;padding:30px 24px;">
+    <h1 style="font-size:1.7em;font-weight:500;margin:0;">{{ title_ko }}</h1>
+    {% if title_en %}<p style="font-size:0.9em;color:#aaa;margin:6px 0 0;">{{ title_en }}</p>{% endif %}
+  </div>
+
+  {% if images %}
+  <div class="electronics-images" style="background:#fff;padding:20px;display:flex;flex-wrap:wrap;gap:12px;justify-content:center;">
+    {% for img in images %}
+    <img src="{{ img }}" alt="{{ title_ko }}"
+         style="width:300px;height:300px;object-fit:contain;border:1px solid #eee;padding:8px;">
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if description %}
+  <div class="electronics-desc" style="padding:20px 24px;line-height:1.75;color:#333;font-size:0.95em;background:#fff;margin-top:8px;">
+    <p>{{ description }}</p>
+  </div>
+  {% endif %}
+
+  {% if specs %}
+  <div class="electronics-specs" style="padding:20px 24px;background:#fff;margin-top:8px;">
+    <h3 style="font-size:1em;color:#1a1a2e;border-bottom:2px solid #1a1a2e;padding-bottom:8px;">스펙</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:0.9em;">
+      {% for key, value in specs.items() %}
+      <tr style="border-bottom:1px solid #eee;">
+        <th style="text-align:left;padding:10px 8px;color:#555;font-weight:500;width:35%;background:#f4f6f8;">{{ key }}</th>
+        <td style="padding:10px 8px;color:#333;">{{ value }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="electronics-footer" style="padding:16px 24px;background:#fff;margin-top:8px;font-size:0.85em;color:#888;border-top:1px solid #eee;">
+    {% if origin_country %}<span>원산지: {{ origin_country }}</span>{% endif %}
+    {% if shipping_info %}<span style="margin-left:16px;">{{ shipping_info }}</span>{% endif %}
+  </div>
+</div>
+</body>
+</html>

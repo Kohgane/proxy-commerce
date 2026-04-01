@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>{{ title_ko }}</title>
+</head>
+<body>
+<div class="cosmetic-detail" style="font-family:'Apple SD Gothic Neo','Noto Sans KR',sans-serif;max-width:860px;margin:0 auto;background:#fff;">
+  <div class="cosmetic-header" style="text-align:center;padding:40px 20px;background:linear-gradient(135deg,#fdf6f0,#fce8e2);">
+    <h1 style="font-size:1.8em;color:#c06070;font-weight:300;">{{ title_ko }}</h1>
+    {% if title_en %}<p style="font-size:0.9em;color:#bbb;letter-spacing:0.1em;">{{ title_en }}</p>{% endif %}
+  </div>
+
+  {% if images %}
+  <div class="cosmetic-images" style="padding:30px;text-align:center;">
+    {% for img in images %}
+    <img src="{{ img }}" alt="{{ title_ko }}"
+         style="max-width:380px;width:100%;margin:10px auto;display:block;border-radius:4px;">
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if description %}
+  <div class="cosmetic-desc" style="padding:20px 30px;line-height:1.8;color:#555;font-size:0.97em;">
+    <p>{{ description }}</p>
+  </div>
+  {% endif %}
+
+  {% if specs %}
+  <div class="cosmetic-ingredients" style="padding:20px 30px;background:#fdf8f5;border-top:1px solid #f0e0d6;">
+    <h3 style="color:#c06070;font-size:0.95em;margin-bottom:12px;">성분 및 스펙</h3>
+    <dl style="font-size:0.9em;">
+      {% for key, value in specs.items() %}
+      <dt style="font-weight:bold;color:#888;margin-top:8px;">{{ key }}</dt>
+      <dd style="margin:2px 0 0 16px;color:#555;">{{ value }}</dd>
+      {% endfor %}
+    </dl>
+  </div>
+  {% endif %}
+
+  <div class="cosmetic-footer" style="padding:20px 30px;font-size:0.85em;color:#aaa;text-align:center;">
+    {% if origin_country %}<p>원산지: {{ origin_country }}</p>{% endif %}
+    {% if shipping_info %}<p>{{ shipping_info }}</p>{% endif %}
+  </div>
+</div>
+</body>
+</html>

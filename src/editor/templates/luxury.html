@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>{{ title_ko }}</title>
+</head>
+<body>
+<div class="luxury-detail" style="font-family:'Georgia',serif;max-width:900px;margin:0 auto;background:#fafaf8;">
+  <div class="luxury-hero" style="text-align:center;padding:40px 20px;border-bottom:1px solid #c9a96e;">
+    <h1 style="font-size:2em;letter-spacing:0.1em;color:#2c2c2c;">{{ title_ko }}</h1>
+    {% if title_en %}<p style="font-size:1em;color:#888;letter-spacing:0.2em;">{{ title_en }}</p>{% endif %}
+  </div>
+
+  {% if images %}
+  <div class="luxury-gallery" style="display:flex;flex-wrap:wrap;gap:10px;padding:30px;justify-content:center;">
+    {% for img in images %}
+    <img src="{{ img }}" alt="{{ title_ko }}" style="width:280px;height:280px;object-fit:cover;">
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if description %}
+  <div class="luxury-desc" style="padding:30px;line-height:1.9;color:#444;font-size:1.05em;">
+    <p>{{ description }}</p>
+  </div>
+  {% endif %}
+
+  {% if specs %}
+  <div class="luxury-specs" style="padding:20px 30px;background:#f5f0e8;">
+    <h3 style="font-size:0.85em;letter-spacing:0.2em;text-transform:uppercase;color:#888;">Product Details</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:0.95em;">
+      {% for key, value in specs.items() %}
+      <tr style="border-bottom:1px solid #ddd;">
+        <th style="text-align:left;padding:8px 0;color:#666;font-weight:normal;width:40%;">{{ key }}</th>
+        <td style="padding:8px 0;color:#333;">{{ value }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="luxury-footer" style="text-align:center;padding:30px;font-size:0.85em;color:#999;">
+    {% if origin_country %}<p>원산지: {{ origin_country }}</p>{% endif %}
+    {% if shipping_info %}<p>{{ shipping_info }}</p>{% endif %}
+  </div>
+</div>
+</body>
+</html>

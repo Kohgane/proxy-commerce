@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>{{ title_ko }}</title>
+</head>
+<body>
+<div class="product-detail">
+  <h1>{{ title_ko }}</h1>
+  {% if title_en %}<h2>{{ title_en }}</h2>{% endif %}
+
+  {% if images %}
+  <div class="product-images">
+    {% for img in images %}
+    <img src="{{ img }}" alt="{{ title_ko }}" style="max-width:100%;display:block;margin-bottom:10px;">
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if description %}
+  <div class="product-description">
+    <p>{{ description }}</p>
+  </div>
+  {% endif %}
+
+  {% if specs %}
+  <div class="product-specs">
+    <h3>상품 스펙</h3>
+    <table style="border-collapse:collapse;width:100%;">
+      {% for key, value in specs.items() %}
+      <tr>
+        <th style="text-align:left;padding:6px;border:1px solid #ddd;">{{ key }}</th>
+        <td style="padding:6px;border:1px solid #ddd;">{{ value }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endif %}
+
+  {% if shipping_info %}
+  <div class="shipping-info">
+    <h3>배송 정보</h3>
+    <p>{{ shipping_info }}</p>
+  </div>
+  {% endif %}
+
+  {% if origin_country %}
+  <div class="origin">
+    <p><strong>원산지:</strong> {{ origin_country }}</p>
+  </div>
+  {% endif %}
+</div>
+</body>
+</html>
