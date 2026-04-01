@@ -10,6 +10,14 @@ Usage::
     python -m src.collectors.cli --marketplace amazon --country JP \\
         --action search --keyword "ワイヤレスイヤホン" --max 20
 
+    # 타오바오에서 키워드 검색 수집
+    python -m src.collectors.cli --marketplace taobao \\
+        --action search --keyword "무선이어폰"
+
+    # 1688에서 단일 상품 URL 수집
+    python -m src.collectors.cli --marketplace 1688 \\
+        --action collect --url "https://detail.1688.com/offer/12345.html"
+
     # 단일 상품 URL 수집
     python -m src.collectors.cli --action collect \\
         --url "https://www.amazon.com/dp/B09..."
@@ -39,6 +47,9 @@ def _build_collector(marketplace: str, country: str):
     if marketplace == 'amazon':
         from src.collectors.amazon_collector import AmazonCollector
         return AmazonCollector(country=country.upper())
+    if marketplace in ('taobao', '1688'):
+        from src.collectors.taobao_collector import TaobaoCollector
+        return TaobaoCollector(platform=marketplace)
     raise ValueError(f'Unsupported marketplace: {marketplace}')
 
 
@@ -106,8 +117,8 @@ def main(argv=None):
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument('--marketplace', default='amazon', help='수집 마켓플레이스 (amazon)')
-    parser.add_argument('--country', default='US', help='국가 코드 (US, JP)')
+    parser.add_argument('--marketplace', default='amazon', help='수집 마켓플레이스 (amazon, taobao, 1688)')
+    parser.add_argument('--country', default='US', help='국가 코드 (US, JP) — amazon 전용')
     parser.add_argument(
         '--action', required=True,
         choices=['search', 'collect', 'batch', 'report'],

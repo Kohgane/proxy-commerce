@@ -6,6 +6,7 @@ DEFAULT_FX_RATES = {
     'USDKRW': Decimal('1350'),
     'JPYKRW': Decimal('9.0'),
     'EURKRW': Decimal('1470'),
+    'CNYKRW': Decimal('185'),   # 위안화 (타오바오/1688)
 }
 
 # FXCache를 최상위에서 임포트하여 테스트 시 패치 가능하게 함
@@ -16,7 +17,7 @@ except Exception:  # ImportError / 순환 참조 방어
     FXCache = None
 
 
-def _build_fx_rates(fx_usdkrw=None, fx_jpykrw=None, fx_eurkrw=None, use_live=None):
+def _build_fx_rates(fx_usdkrw=None, fx_jpykrw=None, fx_eurkrw=None, fx_cnykrw=None, use_live=None):
     """환율 딕셔너리를 생성한다.
 
     우선순위:
@@ -31,11 +32,16 @@ def _build_fx_rates(fx_usdkrw=None, fx_jpykrw=None, fx_eurkrw=None, use_live=Non
 
     # 파라미터가 모두 지정된 경우 바로 반환 (최우선)
     if fx_usdkrw is not None and fx_jpykrw is not None and fx_eurkrw is not None:
-        return {
+        rates = {
             'USDKRW': Decimal(str(fx_usdkrw)),
             'JPYKRW': Decimal(str(fx_jpykrw)),
             'EURKRW': Decimal(str(fx_eurkrw)),
         }
+        if fx_cnykrw is not None:
+            rates['CNYKRW'] = Decimal(str(fx_cnykrw))
+        else:
+            rates['CNYKRW'] = Decimal(os.getenv('FX_CNYKRW', str(DEFAULT_FX_RATES['CNYKRW'])))
+        return rates
 
     # use_live=True: FXCache에서 실시간 환율 시도
     if use_live:
@@ -57,6 +63,10 @@ def _build_fx_rates(fx_usdkrw=None, fx_jpykrw=None, fx_eurkrw=None, use_live=Non
                             Decimal(str(fx_eurkrw)) if fx_eurkrw is not None
                             else Decimal(str(cached['EURKRW']))
                         ),
+                        'CNYKRW': (
+                            Decimal(str(fx_cnykrw)) if fx_cnykrw is not None
+                            else Decimal(str(cached.get('CNYKRW', DEFAULT_FX_RATES['CNYKRW'])))
+                        ),
                     }
         except Exception:
             pass  # 캐시 실패 시 환경변수 폴백
@@ -73,6 +83,10 @@ def _build_fx_rates(fx_usdkrw=None, fx_jpykrw=None, fx_eurkrw=None, use_live=Non
         'EURKRW': (
             Decimal(str(fx_eurkrw)) if fx_eurkrw is not None
             else Decimal(os.getenv('FX_EURKRW', str(DEFAULT_FX_RATES['EURKRW'])))
+        ),
+        'CNYKRW': (
+            Decimal(str(fx_cnykrw)) if fx_cnykrw is not None
+            else Decimal(os.getenv('FX_CNYKRW', str(DEFAULT_FX_RATES['CNYKRW'])))
         ),
     }
 

@@ -22,6 +22,8 @@
 | 5 | 5-2 | CI/CD 파이프라인 (GitHub Actions 테스트 자동화 + Docker 이미지 빌드/푸시) | <a href="https://github.com/Kohgane/proxy-commerce/pull/13">#13</a>, <a href="https://github.com/Kohgane/proxy-commerce/pull/14">#14</a>, <a href="https://github.com/Kohgane/proxy-commerce/pull/15">#15</a> | ✅ 머지 완료 |
 | 6 | 6-1 | 다국가 배송/세금 엔진 (13개국 통관/세금/배송비 자동 계산) | #16 | ✅ 머지 완료 |
 | 6 | 6-2 | Shopify Markets 다통화 연동 + 국제 주문 라우팅 | #18 | ✅ 머지 완료 |
+| 17 | 17-1 | Amazon US/JP 상품 수집기 + 수집 파이프라인 기반 | #35 | ✅ 머지 완료 |
+| 17 | 17-2 | 타오바오/1688 수집기 + 쿠팡/스마트스토어 업로더 | — | 🚧 진행 중 |
 
 ---
 
@@ -550,3 +552,40 @@ Phase 1~16 + lint fix(PR #34)까지 전체 머지 완료. 이제 **수입(해외
 - **SKU 생성**: `AMZ-US-ELC-001` / `AMZ-JP-BTY-001` 형식
 - **CollectionManager**: 중복 검사(collector_id 기준), 신규 추가/가격변동 업데이트, dry_run 모드, 필터 조회
 - **에러 핸들링**: 모든 HTTP 요청 try/except, 절대 크래시하지 않음, COLLECTOR_TIMEOUT/DELAY 적용
+
+---
+
+## 🚧 Phase 17: 수입 구매대행 — 상품 수집 파이프라인 (진행 중)
+
+### Step 17-2 — 타오바오/1688 수집기 + 국내 마켓 업로더 (쿠팡/스마트스토어)
+
+#### 신규 파일
+
+- `src/collectors/taobao_collector.py`: `TaobaoCollector` — 타오바오/1688 상품 수집 (URL ID 추출, BeautifulSoup 파싱, 중국어→한국어 번역, CNY→KRW 가격계산)
+- `src/uploaders/__init__.py`: 패키지 초기화 (`BaseUploader`, `CoupangUploader`, `NaverSmartStoreUploader`, `UploadManager` 노출)
+- `src/uploaders/base_uploader.py`: `BaseUploader` ABC — `UPLOAD_FIELDS` 15개 표준 필드, `upload_batch()` / `prepare_product()` 공통 메서드
+- `src/uploaders/coupang_uploader.py`: `CoupangUploader` — 쿠팡 Wing API HMAC 인증, 상품 등록/업데이트/삭제/카테고리 조회
+- `src/uploaders/naver_uploader.py`: `NaverSmartStoreUploader` — 네이버 커머스 API OAuth2 토큰, 상품 등록/업데이트/삭제
+- `src/uploaders/upload_manager.py`: `UploadManager` — 수집 상품 → 마켓 업로드 전체 흐름, 이력 관리, 가격 동기화, 리포트
+- `src/uploaders/cli.py`: 업로드 CLI (`upload`, `upload-pending`, `sync-prices`, `report` 액션, `--dry-run` 지원)
+- `tests/test_taobao_collector.py`: 54개 테스트
+- `tests/test_uploaders.py`: 65개 테스트
+
+#### 업데이트 파일
+
+- `src/translate.py`: `zh_to_ko()`, `zh_to_en()` 편의 함수 추가 (중국어 번역 지원)
+- `src/price.py`: `DEFAULT_FX_RATES`에 `'CNYKRW': Decimal('185')` 추가, `_build_fx_rates()` CNY 파라미터 지원
+- `src/collectors/__init__.py`: `TaobaoCollector` 내보내기 추가
+- `src/collectors/cli.py`: `--marketplace taobao` / `--marketplace 1688` 지원 추가
+- `.env.example`: 타오바오/1688 수집 + 쿠팡/네이버 API + 업로더 공통 환경변수 추가
+
+#### 주요 구현 사항
+
+- **TaobaoCollector**: 타오바오/1688 양 플랫폼 지원, `_extract_item_id()` URL 파싱, `_parse_taobao_page()` / `_parse_1688_page()` HTML 파싱, CNY 가격 범위(¥19.9-39.9) 처리
+- **CNY→KRW 가격 계산**: `_calculate_import_price()` — 원가 KRW 환산 + 배대지 수수료(기본 3,000원 + kg당 2,000원) + 관세(15만원 초과 시) + 마진
+- **SKU 생성**: 타오바오 `TAO-{카테고리}-{번호}`, 1688 `ALB-{카테고리}-{번호}`
+- **19개 카테고리 매핑**: 女装→WCL, 数码→DIG 등
+- **CoupangUploader**: HMAC-SHA256 서명 생성, 상품명 50자 제한 + `[해외직구]` 접두사, 가격 100원 단위 올림, 429/401/500 에러 처리
+- **NaverSmartStoreUploader**: OAuth2 client_credentials 토큰 자동 갱신, 가격 10원 단위 올림, 401 시 토큰 무효화 + 재시도
+- **UploadManager**: CollectionManager 연동, dry_run 모드, Google Sheets upload_history 이력 기록, 미업로드 SKU 필터링
+- **에러 핸들링**: 모든 API 호출 try/except, API 키 미설정 시 경고 로그 + graceful degradation
