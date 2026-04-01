@@ -414,6 +414,32 @@ def _format_rules(data, label: str = '') -> str:
     return '\n'.join(lines)
 
 
+def _format_order_alerts(data: dict, label: str = '') -> str:
+    """주문 알림 현황 포맷."""
+    orders = data.get('orders', [])
+    total = data.get('total', len(orders))
+    lines = [f"*🔔 주문 알림 현황*\n"]
+    lines.append(f"최근 주문: *{total}건*\n")
+
+    if not orders:
+        lines.append("최근 주문 알림이 없습니다.")
+        return '\n'.join(lines)
+
+    _platform_emoji = {'coupang': '🛒', 'naver': '🟢'}
+    for order in orders[:10]:
+        platform = order.get('platform', 'unknown')
+        emoji = _platform_emoji.get(platform, '📦')
+        order_number = order.get('order_number', order.get('order_id', 'N/A'))
+        status = order.get('status', '-')
+        buyer = order.get('buyer_name', '')
+        lines.append(f"  {emoji} `{order_number}` [{status}] {buyer}")
+
+    if total > 10:
+        lines.append(f"\n_... 외 {total - 10}건 생략_")
+
+    return '\n'.join(lines)
+
+
 def format_message(msg_type: str, data, **kwargs) -> str:
     """메시지 타입에 따라 포맷 함수 라우팅.
 
@@ -422,6 +448,7 @@ def format_message(msg_type: str, data, **kwargs) -> str:
                   | 'reviews' | 'promos' | 'customer_segments' | 'customer_list'
                   | 'campaigns' | 'report' | 'abtest'
                   | 'competitor' | 'forecast' | 'trends' | 'rules'
+                  | 'order_alerts'
         data: 각 타입에 맞는 데이터
         **kwargs: 추가 파라미터 (label, pending, prev_rates 등)
     """
@@ -442,6 +469,7 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'forecast': lambda d: _format_forecast(d, label=kwargs.get('label', '')),
         'trends': lambda d: _format_trends(d, label=kwargs.get('label', '')),
         'rules': lambda d: _format_rules(d, label=kwargs.get('label', '')),
+        'order_alerts': lambda d: _format_order_alerts(d, label=kwargs.get('label', '')),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:

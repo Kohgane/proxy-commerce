@@ -316,3 +316,21 @@ def cmd_rules(args: str = 'list') -> str:
     except Exception as exc:
         logger.error("cmd_rules 오류: %s", exc)
         return format_message('error', f'자동화 규칙 조회 실패: {exc}')
+
+
+def cmd_order_alerts(args: str = 'status') -> str:
+    """/order_alerts [status] — 최근 주문 알림 요약 또는 상태 조회."""
+    sub = args.strip().lower()
+    try:
+        from ..order_alerts.order_tracker import OrderTracker
+        tracker = OrderTracker()
+        recent = tracker.get_alerted_orders(limit=10)
+        data = {
+            'sub': sub,
+            'orders': recent,
+            'total': len(recent),
+        }
+        return format_message('order_alerts', data, label=sub)
+    except Exception as exc:
+        logger.error("cmd_order_alerts 오류: %s", exc)
+        return format_message('error', f'주문 알림 조회 실패: {exc}')

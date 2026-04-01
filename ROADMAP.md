@@ -16,38 +16,32 @@
 
 ## 🚧 진행 예정 Phase
 
-### Phase 21-1: 통합 테스트 + E2E 테스트 강화 ← **현재**
-- 전체 파이프라인 E2E 테스트 (수집→번역→가격산정→업로드)
-- Integration test suite 구축
-- Mock 기반 외부 API 시뮬레이션
-- 테스트 커버리지 목표: 80%+
+## Phase 21: 주문 알림 텔레그램 강화
+- `src/order_alerts/` 완성
+- 실시간 주문 상태 변경 알림 (주문접수 → 결제완료 → 배송중 → 배송완료)
+- 텔레그램 봇 인라인 버튼 (주문 승인/취소/배송 시작)
+- 관련 코드: `src/order_alerts/`, `src/bot/`
 
-### Phase 21-2: 결제 시스템 연동
-- PG사 연동 (토스페이먼츠 / 이니시스)
-- 결제 상태 관리 (대기/완료/취소/환불)
-- 결제 이력 관리 및 정산 리포트
-- Webhook 기반 결제 알림
+## Phase 22: 결제/정산 시스템
+- PG 연동 (토스페이먼츠/이니시스 등)
+- 자동 정산 (판매가 - 원가 - 수수료 - 배송비)
+- 수수료 계산 (쿠팡/스마트스토어 플랫폼별)
+- 관련 코드: `src/orders/`, `src/fx/`
 
-### Phase 21-3: 멀티테넌시 고도화
-- 셀러별 독립 설정 (마진율, 환율 전략, 배송비 정책)
-- 구독 플랜 관리 (Free / Basic / Pro / Enterprise)
-- 테넌트별 데이터 격리 강화
-- 관리자 대시보드 (셀러 관리)
+## Phase 23: 모니터링 대시보드
+- Prometheus 메트릭 노출 (주문수, 에러율, API 응답시간)
+- 헬스체크 엔드포인트 강화
+- Grafana 대시보드 JSON 프로비저닝
+- 관련 코드: `src/profiling/`, `scripts/post_deploy_check.py`
 
-### Phase 21-4: AI 상품 추천 / 자동 마크업
-- ML 기반 판매가 추천 (경쟁사 가격 + 수요 예측 기반)
-- 트렌드 분석 (카테고리별 인기 상품 분석)
-- 자동 상품 설명 생성 (GPT 기반)
-- 마크업 자동 최적화 엔진
-
-### Phase 21-5: 모바일 앱 API / PWA
-- RESTful API v2 (모바일 최적화)
-- PWA 매니페스트 + Service Worker
-- Push 알림 (FCM 연동)
-- 오프라인 지원 (캐시 전략)
+## Phase 24: OAuth + API Key 관리
+- JWT 인증 시스템
+- 소셜 로그인 (Google/Kakao OAuth2)
+- API Key 발급/관리/Rate Limiting
+- 관련 코드: `src/auth/`, `src/middleware/`
 
 ## 🔮 향후 고려 사항
-- Phase 22: 글로벌 확장 (다국어 상품 페이지, 해외 결제)
-- Phase 23: 자동 CS 챗봇 (고객 문의 자동 응답)
-- Phase 24: 물류 추적 통합 (배송사 API 연동)
-- Phase 25: 데이터 분석 대시보드 (BI 도구 연동)
+- Phase 25: 프론트엔드 관리자 패널 (React/Vue 기반 관리자 대시보드)
+- Phase 26: 성능 최적화 + 스케일링 (Redis 캐시 고도화, DB 인덱스 최적화)
+- Phase 27: 글로벌 확장 (다국어 상품 페이지, 해외 결제)
+- Phase 28: 자동 CS 챗봇 (고객 문의 자동 응답)
