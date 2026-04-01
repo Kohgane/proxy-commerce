@@ -515,3 +515,38 @@ python -m pytest tests/ -v
 - **중량 비례 배송비**: 0.5kg 단위 올림 처리
 - **EU IOSS 메타데이터**: `ioss_eligible`, `ioss_threshold` 플래그 제공
 - **기존 `src/price.py` 수정 없음**: 완전 독립 패키지로 동작
+
+---
+
+## ✅ Phase 17: 수입 구매대행 — 상품 수집 파이프라인
+
+### Step 17-1 — Amazon 상품 수집기 (US/JP) + 수집 파이프라인 기반
+
+#### 배경
+
+Phase 1~16 + lint fix(PR #34)까지 전체 머지 완료. 이제 **수입(해외→한국)** 구매대행 기능을 추가하여 퍼센티 스타일의 상품 수집 → 번역 → 가격계산 → 국내 마켓 업로드 파이프라인을 구축한다.
+
+#### 신규 파일
+
+- `src/collectors/__init__.py`: 패키지 초기화 (`BaseCollector`, `AmazonCollector`, `CollectionManager` 노출)
+- `src/collectors/base_collector.py`: `BaseCollector` ABC — 수집 표준 필드 정의, 번역/가격계산/SKU 공통 로직
+- `src/collectors/amazon_collector.py`: `AmazonCollector` — Amazon US/JP 상품 수집 (ASIN 추출, BeautifulSoup 파싱, User-Agent 로테이션)
+- `src/collectors/collection_manager.py`: `CollectionManager` — Google Sheets 저장/중복 검사/리포트
+- `src/collectors/cli.py`: 수집 CLI (`search`, `collect`, `batch`, `report` 액션)
+- `tests/test_collectors.py`: 40+ 테스트
+
+#### 업데이트 파일
+
+- `requirements.txt`: `beautifulsoup4>=4.12`, `lxml>=5.0`, `fake-useragent>=1.4` 추가
+- `.env.example`: Phase 17 수집기 환경변수 추가 (`COLLECTOR_TIMEOUT`, `IMPORT_MARGIN_PCT` 등)
+- `config.example.yml`: `collectors:` 섹션 추가
+
+#### 주요 구현 사항
+
+- **BaseCollector ABC**: `COLLECTED_FIELDS` 27개 표준 필드, `translate_product()` / `calculate_prices()` / `generate_sku()` 공통 메서드
+- **AmazonCollector**: US/JP 멀티리전 지원, ASIN 정규식 추출, BeautifulSoup HTML 파싱 (제목/가격/이미지/카테고리/브랜드/평점/리뷰/재고/중량/옵션), User-Agent 로테이션 (fake-useragent + fallback 내장 UA 5종)
+- **가격 계산**: `src/price.py` `calc_landed_cost()` 재활용, 마진/배송비/관세 자동 계산
+- **번역 통합**: `src/translate.py` `translate()` 재활용, EN→KO / JA→KO 자동 번역, 실패 시 원문 유지
+- **SKU 생성**: `AMZ-US-ELC-001` / `AMZ-JP-BTY-001` 형식
+- **CollectionManager**: 중복 검사(collector_id 기준), 신규 추가/가격변동 업데이트, dry_run 모드, 필터 조회
+- **에러 핸들링**: 모든 HTTP 요청 try/except, 절대 크래시하지 않음, COLLECTOR_TIMEOUT/DELAY 적용
