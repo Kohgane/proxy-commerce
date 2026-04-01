@@ -136,6 +136,14 @@ try:
 except Exception as _mon_bp_exc:
     logger.warning("모니터링 API Blueprint 등록 실패: %s", _mon_bp_exc)
 
+# Auth API Blueprint 등록
+try:
+    from .api.auth_api import auth_api_bp
+    app.register_blueprint(auth_api_bp)
+    logger.info("Auth API Blueprint 등록 완료")
+except Exception as _auth_api_exc:
+    logger.warning("Auth API Blueprint 등록 실패: %s", _auth_api_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')
