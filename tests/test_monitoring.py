@@ -117,18 +117,18 @@ class TestHealthChecker:
         result = self.hc.check_redis("redis://localhost:6379/0")
         assert result["status"] == "ok"
 
-    @patch("src.monitoring.health.requests")
-    def test_check_external_api_success(self, mock_requests):
+    @patch("src.monitoring.health.requests.head")
+    def test_check_external_api_success(self, mock_head):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_requests.head.return_value = mock_resp
+        mock_head.return_value = mock_resp
         result = self.hc.check_external_api("https://example.com")
         assert result["status"] == "ok"
         assert "latency_ms" in result
 
-    @patch("src.monitoring.health.requests")
-    def test_check_external_api_failure(self, mock_requests):
-        mock_requests.head.side_effect = Exception("Connection refused")
+    @patch("src.monitoring.health.requests.head")
+    def test_check_external_api_failure(self, mock_head):
+        mock_head.side_effect = Exception("Connection refused")
         result = self.hc.check_external_api("https://unreachable.example.com")
         assert result["status"] == "error"
         assert "latency_ms" in result

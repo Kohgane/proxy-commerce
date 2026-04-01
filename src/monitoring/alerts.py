@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import operator as op
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Optional
 
 from .metrics import MetricsCollector
@@ -31,8 +31,6 @@ class AlertRule:
 
 class AlertManager:
     """알림 규칙을 평가하고 Telegram 등으로 통보하는 매니저."""
-
-    DEFAULT_RULES: List[AlertRule] = field(default_factory=list)
 
     def __init__(self, notifier=None) -> None:
         self._notifier = notifier
