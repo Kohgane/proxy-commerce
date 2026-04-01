@@ -1,8 +1,7 @@
 """tests/test_reviews_api.py — 리뷰 API 엔드포인트 테스트."""
 import os
 import sys
-import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 

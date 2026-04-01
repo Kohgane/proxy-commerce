@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.analytics.auto_pricing import AutoPricingEngine
+from src.analytics.auto_pricing import AutoPricingEngine  # noqa: E402
 
 # ──────────────────────────────────────────────────────────
 # 공통 픽스처

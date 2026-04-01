@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.migration.schema_manager import SchemaManager
+from src.migration.schema_manager import SchemaManager  # noqa: E402
 
 
 def _make_mock_client(version_value=None):

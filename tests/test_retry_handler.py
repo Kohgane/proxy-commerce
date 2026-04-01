@@ -10,7 +10,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.resilience.retry_handler import RetryHandler, retry
+from src.resilience.retry_handler import RetryHandler, retry  # noqa: E402
 
 
 # ──────────────────────────────────────────────────────────

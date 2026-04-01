@@ -6,7 +6,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.seo.structured_data import StructuredDataGenerator
+from src.seo.structured_data import StructuredDataGenerator  # noqa: E402
 
 SAMPLE_PRODUCT = {
     "sku": "SKU-001",

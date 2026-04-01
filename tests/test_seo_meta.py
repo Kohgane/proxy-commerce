@@ -6,7 +6,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.seo.meta_generator import MetaGenerator
+from src.seo.meta_generator import MetaGenerator  # noqa: E402
 
 SAMPLE_PRODUCT = {
     "sku": "TEST-001",

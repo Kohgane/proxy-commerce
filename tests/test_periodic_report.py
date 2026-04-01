@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.analytics.periodic_report import PeriodicReportGenerator
+from src.analytics.periodic_report import PeriodicReportGenerator  # noqa: E402
 
 # ──────────────────────────────────────────────────────────
 # 공통 픽스처

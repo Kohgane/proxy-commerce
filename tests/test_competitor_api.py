@@ -1,7 +1,7 @@
 """tests/test_competitor_api.py — 경쟁사 분석 API 테스트."""
 import os
 import sys
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 

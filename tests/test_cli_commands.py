@@ -1,13 +1,8 @@
 """tests/test_cli_commands.py — CLI 커맨드 테스트."""
 
-import datetime
-import sys
-from io import StringIO
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from src.cli.main import main, _build_parser
+from src.cli.main import _build_parser
 
 
 class TestCliParser:

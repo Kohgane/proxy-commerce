@@ -10,7 +10,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.validation.order_validator import OrderValidator
+from src.validation.order_validator import OrderValidator  # noqa: E402
 
 
 # ──────────────────────────────────────────────────────────

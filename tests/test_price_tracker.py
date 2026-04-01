@@ -1,7 +1,7 @@
 """tests/test_price_tracker.py — 경쟁사 가격 추적 테스트."""
 import os
 import sys
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -137,7 +137,7 @@ class TestTrackPrice:
             try:
                 from src.fx.provider import FXProvider
                 with patch.object(FXProvider, 'get_rates',
-                                   return_value={'USDKRW': '1380'}):
+                                  return_value={'USDKRW': '1380'}):
                     krw = tracker._convert_to_krw(100, 'USD')
             except Exception:
                 # FX provider 없는 경우 폴백

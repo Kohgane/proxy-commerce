@@ -11,8 +11,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.audit.audit_logger import AuditLogger
-from src.audit.event_types import EventType
+from src.audit.audit_logger import AuditLogger  # noqa: E402
+from src.audit.event_types import EventType  # noqa: E402
 
 
 # ──────────────────────────────────────────────────────────

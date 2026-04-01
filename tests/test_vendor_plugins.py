@@ -4,9 +4,9 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.plugins.vendors.porter_plugin import PorterPlugin
-from src.plugins.vendors.memo_paris_plugin import MemoParisPlugin
-from src.plugins.validator import validate_plugin_class, validate_plugin_instance, check_compatibility
+from src.plugins.vendors.porter_plugin import PorterPlugin  # noqa: E402
+from src.plugins.vendors.memo_paris_plugin import MemoParisPlugin  # noqa: E402
+from src.plugins.validator import validate_plugin_class, validate_plugin_instance, check_compatibility  # noqa: E402
 
 
 # ── Porter 플러그인 테스트 ──────────────────────────────────────

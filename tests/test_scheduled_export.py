@@ -1,9 +1,6 @@
 """tests/test_scheduled_export.py — 정기 내보내기 스케줄러 테스트."""
 
-import datetime
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from src.export.scheduled_export import ScheduledExport
 

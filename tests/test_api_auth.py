@@ -1,11 +1,8 @@
 """tests/test_api_auth.py — API 인증 미들웨어 테스트."""
 
-import os
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
-
-from src.api.auth_middleware import require_api_key
 
 
 @pytest.fixture

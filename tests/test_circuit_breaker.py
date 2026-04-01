@@ -11,7 +11,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.resilience.circuit_breaker import (
+from src.resilience.circuit_breaker import (  # noqa: E402
     CircuitBreaker, CircuitOpenError, CircuitState, circuit_breaker
 )
 

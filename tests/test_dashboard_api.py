@@ -1,7 +1,6 @@
 """tests/test_dashboard_api.py — 대시보드 API 엔드포인트 테스트."""
 
-import datetime
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
