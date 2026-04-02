@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from .carriers import CarrierFactory
-from .models import ShipmentRecord, ShipmentStatus
+from .models import ShipmentRecord
 
 logger = logging.getLogger(__name__)
 

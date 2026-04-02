@@ -144,6 +144,38 @@ try:
 except Exception as _auth_api_exc:
     logger.warning("Auth API Blueprint 등록 실패: %s", _auth_api_exc)
 
+# 관리자 패널 Blueprint 등록 (Phase 25)
+try:
+    from .dashboard.admin_views import admin_panel_bp
+    app.register_blueprint(admin_panel_bp)
+    logger.info("관리자 패널 Blueprint 등록 완료")
+except Exception as _admin_bp_exc:
+    logger.warning("관리자 패널 Blueprint 등록 실패: %s", _admin_bp_exc)
+
+# 배송 추적 API Blueprint 등록 (Phase 27)
+try:
+    from .api.shipping_api import shipping_api
+    app.register_blueprint(shipping_api)
+    logger.info("배송 추적 API Blueprint 등록 완료")
+except Exception as _ship_api_exc:
+    logger.warning("배송 추적 API Blueprint 등록 실패: %s", _ship_api_exc)
+
+# CS API Blueprint 등록 (Phase 28)
+try:
+    from .api.cs_api import cs_api
+    app.register_blueprint(cs_api)
+    logger.info("CS API Blueprint 등록 완료")
+except Exception as _cs_api_exc:
+    logger.warning("CS API Blueprint 등록 실패: %s", _cs_api_exc)
+
+# 분석 API Blueprint 등록 (Phase 29)
+try:
+    from .api.analytics_api import analytics_api
+    app.register_blueprint(analytics_api)
+    logger.info("분석 API Blueprint 등록 완료")
+except Exception as _analytics_api_exc:
+    logger.warning("분석 API Blueprint 등록 실패: %s", _analytics_api_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')

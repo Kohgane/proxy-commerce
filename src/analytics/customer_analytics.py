@@ -89,7 +89,6 @@ class CustomerAnalytics:
         return 1
 
     def _assign_segment(self, r: int, f: int, m: int) -> str:
-        avg = (r + f + m) / 3
         if r >= 4 and f >= 4:
             return 'Champions'
         if f >= 3 and m >= 3:

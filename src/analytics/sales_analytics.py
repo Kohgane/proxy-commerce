@@ -1,7 +1,6 @@
 """src/analytics/sales_analytics.py — Phase 29: Sales Analytics."""
 
 import random
-from datetime import date, timedelta
 
 
 class SalesAnalytics:

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Smoke test for deployed application."""
-import json
 import os
 import sys
 import urllib.error
