@@ -728,6 +728,16 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'categories': lambda d: _format_categories(d, label=kwargs.get('label', '')),
         'jobs': lambda d: _format_jobs(d, label=kwargs.get('label', '')),
         'audit_log': lambda d: _format_audit_log(d, label=kwargs.get('label', '')),
+        'wishlist': lambda d: _format_wishlist(d, label=kwargs.get('label', '')),
+        'bundles': lambda d: _format_bundles(d, label=kwargs.get('label', '')),
+        'currency': lambda d: _format_currency(d),
+        'payment_status': lambda d: _format_payment_status(d),
+        'images': lambda d: _format_images(d, label=kwargs.get('label', '')),
+        'user_profile': lambda d: _format_user_profile(d),
+        'user_addresses': lambda d: _format_user_addresses(d, label=kwargs.get('label', '')),
+        'user_activity': lambda d: _format_user_activity(d, label=kwargs.get('label', '')),
+        'search_results': lambda d: _format_search_results(d, label=kwargs.get('label', '')),
+        'popular_searches': lambda d: _format_popular_searches(d),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:
@@ -735,3 +745,133 @@ def format_message(msg_type: str, data, **kwargs) -> str:
     except Exception as exc:
         logger.error("format_message('%s') 오류: %s", msg_type, exc)
         return f"메시지 포맷 오류: {exc}"
+
+
+def _format_wishlist(data, label: str = '') -> str:
+    """위시리스트 포맷."""
+    header = f"*🛍️ 위시리스트{f' — {label}' if label else ''}*\n"
+    if not data:
+        return header + "항목 없음"
+    lines = [header]
+    for item in data:
+        if 'product_id' in item:
+            lines.append(f"• {item.get('product_id')} (우선순위: {item.get('priority', '-')})")
+        elif 'name' in item:
+            lines.append(f"• {item.get('name')} (id: {item.get('id', '-')})")
+        else:
+            lines.append(f"• {item}")
+    return "\n".join(lines)
+
+
+def _format_bundles(data, label: str = '') -> str:
+    """번들 포맷."""
+    header = f"*📦 번들{f' — {label}' if label else ''}*\n"
+    if not data:
+        return header + "번들 없음"
+    lines = [header]
+    for bundle in data:
+        name = bundle.get('name', bundle.get('strategy', str(bundle)))
+        status = bundle.get('status', '')
+        btype = bundle.get('type', '')
+        lines.append(f"• {name} ({btype}) [{status}]")
+    return "\n".join(lines)
+
+
+def _format_currency(data) -> str:
+    """통화 변환 포맷."""
+    if isinstance(data, dict) and 'formatted' in data:
+        return (
+            f"*💱 통화 변환*\n"
+            f"{data.get('amount')} {data.get('from')} = "
+            f"*{data.get('formatted')}* ({data.get('to')})"
+        )
+    return str(data)
+
+
+def _format_payment_status(data) -> str:
+    """결제 상태 포맷."""
+    if isinstance(data, dict):
+        pid = data.get('payment_id', '-')
+        status = data.get('status', '-')
+        return f"*💳 결제 상태*\nID: `{pid}`\n상태: *{status}*"
+    return str(data)
+
+
+def _format_images(data, label: str = '') -> str:
+    """이미지 갤러리 포맷."""
+    header = f"*🖼️ 이미지{f' — {label}' if label else ''}*\n"
+    if not data:
+        return header + "이미지 없음"
+    lines = [header]
+    for img in data:
+        lines.append(f"• [{img.get('format', '?')}] {img.get('url', '-')}")
+    return "\n".join(lines)
+
+
+def _format_user_profile(data) -> str:
+    """사용자 프로필 포맷."""
+    if not isinstance(data, dict):
+        return str(data)
+    grade_emoji = {'bronze': '🥉', 'silver': '🥈', 'gold': '🥇', 'vip': '💎'}.get(
+        data.get('grade', 'bronze'), '🥉'
+    )
+    return (
+        f"*👤 내 프로필*\n"
+        f"이름: {data.get('name', '-')}\n"
+        f"이메일: {data.get('email', '-')}\n"
+        f"등급: {grade_emoji} {data.get('grade', 'bronze').upper()}\n"
+        f"누적 구매: {data.get('total_purchase_amount', '0')}원"
+    )
+
+
+def _format_user_addresses(data, label: str = '') -> str:
+    """배송지 포맷."""
+    header = f"*📍 배송지{f' — {label}' if label else ''}*\n"
+    if not data:
+        return header + "배송지 없음"
+    lines = [header]
+    for addr in data:
+        lines.append(
+            f"• {addr.get('recipient_name', '-')} / "
+            f"{addr.get('address1', '-')}, {addr.get('city', '-')}"
+        )
+    return "\n".join(lines)
+
+
+def _format_user_activity(data, label: str = '') -> str:
+    """활동 로그 포맷."""
+    header = f"*📋 활동 로그{f' — {label}' if label else ''}*\n"
+    if not data:
+        return header + "활동 없음"
+    lines = [header]
+    for record in data:
+        lines.append(
+            f"• [{record.get('activity_type', '-')}] "
+            f"{record.get('recorded_at', '-')[:10]}"
+        )
+    return "\n".join(lines)
+
+
+def _format_search_results(data, label: str = '') -> str:
+    """검색 결과 포맷."""
+    header = f"*🔍 검색 결과{f': {label}' if label else ''}*\n"
+    if not data:
+        return header + "결과 없음"
+    lines = [header, f"총 {len(data)}건"]
+    for product in data[:10]:
+        lines.append(f"• {product.get('title', '-')} — {product.get('price', '-')}원")
+    return "\n".join(lines)
+
+
+def _format_popular_searches(data) -> str:
+    """인기 검색어 포맷."""
+    header = "*🔥 인기 검색어*\n"
+    if not data:
+        return header + "데이터 없음"
+    lines = [header]
+    for i, item in enumerate(data[:10], 1):
+        if isinstance(item, dict):
+            lines.append(f"{i}. {item.get('query', '-')} ({item.get('count', 0)}회)")
+        else:
+            lines.append(f"{i}. {item}")
+    return "\n".join(lines)

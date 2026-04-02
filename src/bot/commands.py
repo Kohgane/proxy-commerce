@@ -757,3 +757,234 @@ def cmd_audit_search(keyword: str = '') -> str:
     except Exception as exc:
         logger.error("cmd_audit_search 오류: %s", exc)
         return format_message('error', f'감사 로그 검색 실패: {exc}')
+
+
+def cmd_wishlist(user_id: str = '') -> str:
+    """/wishlist — 내 위시리스트 목록."""
+    user_id = user_id.strip() or 'default'
+    try:
+        from ..wishlist.wishlist_manager import WishlistManager
+        mgr = WishlistManager()
+        lists = mgr.list_wishlists(user_id)
+        return format_message('wishlist', lists, label=user_id)
+    except Exception as exc:
+        logger.error("cmd_wishlist 오류: %s", exc)
+        return format_message('error', f'위시리스트 조회 실패: {exc}')
+
+
+def cmd_wish_add(product_id: str = '', user_id: str = 'default') -> str:
+    """/wish_add <product_id> — 위시리스트에 상품 추가."""
+    product_id = product_id.strip()
+    if not product_id:
+        return format_message('error', '사용법: /wish_add <product_id>')
+    try:
+        from ..wishlist.wishlist_manager import WishlistManager
+        mgr = WishlistManager()
+        lists = mgr.list_wishlists(user_id)
+        if not lists:
+            wl = mgr.create_wishlist(user_id, '기본')
+        else:
+            wl = lists[0]
+        item = mgr.add_item(wl['id'], product_id)
+        return format_message('wishlist', [item], label=f'추가됨: {product_id}')
+    except Exception as exc:
+        logger.error("cmd_wish_add 오류: %s", exc)
+        return format_message('error', f'위시리스트 추가 실패: {exc}')
+
+
+def cmd_wish_watch(product_id: str = '', target_price: str = '') -> str:
+    """/wish_watch <product_id> <target_price> — 가격 감시 등록."""
+    product_id = product_id.strip()
+    target_price = target_price.strip()
+    if not product_id or not target_price:
+        return format_message('error', '사용법: /wish_watch <product_id> <target_price>')
+    try:
+        from ..wishlist.price_watch import PriceWatch
+        pw = PriceWatch()
+        watch = pw.watch('default', product_id, float(target_price))
+        return format_message('wishlist', [watch], label=f'가격 감시: {product_id}')
+    except Exception as exc:
+        logger.error("cmd_wish_watch 오류: %s", exc)
+        return format_message('error', f'가격 감시 등록 실패: {exc}')
+
+
+def cmd_bundles() -> str:
+    """/bundles — 번들 목록."""
+    try:
+        from ..bundles.bundle_manager import BundleManager
+        mgr = BundleManager()
+        bundles = mgr.list_all(status='active')
+        return format_message('bundles', bundles)
+    except Exception as exc:
+        logger.error("cmd_bundles 오류: %s", exc)
+        return format_message('error', f'번들 목록 조회 실패: {exc}')
+
+
+def cmd_bundle_create(name: str = '', bundle_type: str = 'fixed') -> str:
+    """/bundle_create [name] — 번들 생성."""
+    name = name.strip() or '새 번들'
+    try:
+        from ..bundles.bundle_manager import BundleManager
+        mgr = BundleManager()
+        bundle = mgr.create({'name': name, 'type': bundle_type})
+        return format_message('bundles', [bundle], label='생성됨')
+    except Exception as exc:
+        logger.error("cmd_bundle_create 오류: %s", exc)
+        return format_message('error', f'번들 생성 실패: {exc}')
+
+
+def cmd_bundle_price(bundle_id: str = '') -> str:
+    """/bundle_price <bundle_id> — 번들 가격 조회."""
+    bundle_id = bundle_id.strip()
+    if not bundle_id:
+        return format_message('error', '사용법: /bundle_price <bundle_id>')
+    try:
+        from ..bundles.bundle_manager import BundleManager
+        from ..bundles.pricing import BundlePricing
+        mgr = BundleManager()
+        bundle = mgr.get(bundle_id)
+        if bundle is None:
+            return format_message('error', f'번들 없음: {bundle_id}')
+        pricing = BundlePricing()
+        result = pricing.calculate(bundle.get('items', []))
+        return format_message('bundles', [result], label=bundle_id)
+    except Exception as exc:
+        logger.error("cmd_bundle_price 오류: %s", exc)
+        return format_message('error', f'번들 가격 조회 실패: {exc}')
+
+
+def cmd_convert(amount: str = '', from_currency: str = 'USD', to_currency: str = 'KRW') -> str:
+    """/convert <amount> <from> <to> — 통화 변환."""
+    amount = amount.strip()
+    if not amount:
+        return format_message('error', '사용법: /convert <amount> <from> <to>')
+    try:
+        from ..multicurrency.conversion import CurrencyConverter
+        from ..multicurrency.display import CurrencyDisplay
+        converter = CurrencyConverter()
+        display = CurrencyDisplay()
+        result = converter.convert(float(amount), from_currency, to_currency)
+        formatted = display.format(result, to_currency)
+        return format_message('currency', {
+            'amount': amount,
+            'from': from_currency,
+            'to': to_currency,
+            'result': result,
+            'formatted': formatted,
+        })
+    except Exception as exc:
+        logger.error("cmd_convert 오류: %s", exc)
+        return format_message('error', f'통화 변환 실패: {exc}')
+
+
+def cmd_payment_status(payment_id: str = '') -> str:
+    """/payment_status <payment_id> — 결제 상태 조회."""
+    payment_id = payment_id.strip()
+    if not payment_id:
+        return format_message('error', '사용법: /payment_status <payment_id>')
+    try:
+        return format_message('payment_status', {'payment_id': payment_id, 'status': 'unknown'})
+    except Exception as exc:
+        logger.error("cmd_payment_status 오류: %s", exc)
+        return format_message('error', f'결제 상태 조회 실패: {exc}')
+
+
+def cmd_images(product_id: str = '') -> str:
+    """/images <product_id> — 상품 이미지 갤러리."""
+    product_id = product_id.strip()
+    if not product_id:
+        return format_message('error', '사용법: /images <product_id>')
+    try:
+        from ..images.image_manager import ImageManager
+        mgr = ImageManager()
+        images = mgr.list_all(product_id=product_id)
+        return format_message('images', images, label=product_id)
+    except Exception as exc:
+        logger.error("cmd_images 오류: %s", exc)
+        return format_message('error', f'이미지 목록 조회 실패: {exc}')
+
+
+def cmd_image_upload(product_id: str = '', url: str = '') -> str:
+    """/image_upload <product_id> <url> — 이미지 등록."""
+    product_id = product_id.strip()
+    url = url.strip()
+    if not product_id or not url:
+        return format_message('error', '사용법: /image_upload <product_id> <url>')
+    try:
+        from ..images.image_manager import ImageManager
+        mgr = ImageManager()
+        image = mgr.register(url, product_id=product_id)
+        return format_message('images', [image], label=f'등록됨: {product_id}')
+    except Exception as exc:
+        logger.error("cmd_image_upload 오류: %s", exc)
+        return format_message('error', f'이미지 등록 실패: {exc}')
+
+
+def cmd_profile(user_id: str = '') -> str:
+    """/profile — 내 프로필."""
+    user_id = user_id.strip() or 'default'
+    try:
+        from ..users.user_manager import UserManager
+        mgr = UserManager()
+        user = mgr.get(user_id)
+        if user is None:
+            return format_message('error', f'사용자 없음: {user_id}')
+        return format_message('user_profile', user)
+    except Exception as exc:
+        logger.error("cmd_profile 오류: %s", exc)
+        return format_message('error', f'프로필 조회 실패: {exc}')
+
+
+def cmd_address_add(user_id: str = 'default', **kwargs) -> str:
+    """/address_add — 배송지 추가."""
+    try:
+        from ..users.address_book import AddressBook
+        book = AddressBook()
+        address = book.add(user_id, kwargs)
+        return format_message('user_addresses', [address], label='추가됨')
+    except Exception as exc:
+        logger.error("cmd_address_add 오류: %s", exc)
+        return format_message('error', f'배송지 추가 실패: {exc}')
+
+
+def cmd_my_activity(user_id: str = '') -> str:
+    """/my_activity — 최근 활동 로그."""
+    user_id = user_id.strip() or 'default'
+    try:
+        from ..users.activity_log import ActivityLog
+        log = ActivityLog()
+        records = log.get_recent(user_id, n=10)
+        return format_message('user_activity', records, label=user_id)
+    except Exception as exc:
+        logger.error("cmd_my_activity 오류: %s", exc)
+        return format_message('error', f'활동 로그 조회 실패: {exc}')
+
+
+def cmd_search(keyword: str = '') -> str:
+    """/search <keyword> — 상품 검색."""
+    keyword = keyword.strip()
+    if not keyword:
+        return format_message('error', '사용법: /search <keyword>')
+    try:
+        from ..search.search_engine import SearchEngine
+        from ..search.autocomplete import Autocomplete
+        engine = SearchEngine()
+        ac = Autocomplete()
+        ac.record_query(keyword)
+        results = engine.search(keyword, limit=10)
+        return format_message('search_results', results, label=keyword)
+    except Exception as exc:
+        logger.error("cmd_search 오류: %s", exc)
+        return format_message('error', f'검색 실패: {exc}')
+
+
+def cmd_popular_searches() -> str:
+    """/popular_searches — 인기 검색어."""
+    try:
+        from ..search.search_analytics import SearchAnalytics
+        analytics = SearchAnalytics()
+        popular = analytics.get_popular_queries()
+        return format_message('popular_searches', popular)
+    except Exception as exc:
+        logger.error("cmd_popular_searches 오류: %s", exc)
+        return format_message('error', f'인기 검색어 조회 실패: {exc}')

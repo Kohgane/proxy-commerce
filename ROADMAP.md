@@ -17,6 +17,24 @@
 | Phase 22 | 결제/정산 시스템 (토스페이먼츠, 수수료 계산) | #42 | 2026-04-02 |
 | Phase 23 | 모니터링 대시보드 (Prometheus, Grafana) | #42 | 2026-04-02 |
 | Phase 24 | OAuth + API Key 관리 (JWT, Google/Kakao) | #42 | 2026-04-02 |
+| Phase 25 | 프론트엔드 관리자 패널 (Jinja2 + Bootstrap 5) | #43 | 2026-04-02 |
+| Phase 26 | 성능 최적화 + 스케일링 (캐시 전략, 비동기 큐) | #43 | 2026-04-02 |
+| Phase 27 | 배송 추적 시스템 (택배사 연동, 상태 알림) | #43 | 2026-04-02 |
+| Phase 28 | 고객 서비스 (CS) 시스템 (티켓, 자동 응답, SLA) | #43 | 2026-04-02 |
+| Phase 29 | 데이터 분석 + 리포팅 고도화 (RFM, ABC 분류) | #43 | 2026-04-02 |
+| Phase 30 | CI/CD 파이프라인 고도화 (의존성 감사, 자동 릴리스) | #43 | 2026-04-02 |
+| Phase 31 | 멀티 채널 재고 동기화 (쿠팡/네이버/자체몰) | #44 | 2026-04-02 |
+| Phase 32 | 다국어 상품 번역 파이프라인 (EN/JA/ZH→KO) | #44 | 2026-04-02 |
+| Phase 33 | 자동 가격 조정 엔진 (마진/경쟁가/수요 기반) | #44 | 2026-04-02 |
+| Phase 34 | 공급업체 관리 시스템 (CRUD, 스코어링, 발주서) | #44 | 2026-04-02 |
+| Phase 35 | 알림 허브 통합 (텔레그램+이메일+Slack 다채널) | #44 | 2026-04-02 |
+| Phase 36 | E2E 테스트 + 통합 테스트 | #44 | 2026-04-02 |
+| Phase 37 | 반품/교환 관리 (환불 계산, 검수 A~D, 교환 처리) | #45 | 2026-04-02 |
+| Phase 38 | 쿠폰/프로모션 코드 시스템 | #45 | 2026-04-02 |
+| Phase 39 | 카테고리/태그 관리 (계층 트리, 자동 태깅) | #45 | 2026-04-02 |
+| Phase 40 | 배치 작업 스케줄러 (cron 파싱, 작업 이력) | #45 | 2026-04-02 |
+| Phase 41 | 감사 로그 고도화 (who/what/when, 데코레이터) | #45 | 2026-04-02 |
+| Phase 42 | 데이터 마이그레이션/시드 도구 | #45 | 2026-04-02 |
 
 ## 🚧 진행 중 Phase
 
@@ -195,3 +213,63 @@
 - `ExportImport`: JSON/CSV 내보내기/가져오기, 대량 가져오기
 - CLI: `scripts/migrate.py` (up/down/status), `scripts/seed.py` (seed/reset)
 - 관련 코드: `src/migration/` (seed.py, validators.py, export_import.py 추가)
+
+## Phase 43: 위시리스트 / 관심상품 관리
+- `WishlistManager`: 위시리스트 CRUD, 아이템 추가/삭제/이동 (폴더 그룹), 메모/우선순위(1~5)
+  - 사용자당 최대 위시리스트: 10, 위시리스트당 최대 아이템: 100
+- `PriceWatch`: 목표 가격 설정, 현재 가격 비교, 알림 생성, 가격 이력 추적 (최근 30일)
+- `WishlistShare`: 공유 토큰 생성, 읽기 전용 조회, 만료 처리
+- `WishlistRecommender`: 카테고리/태그 분석 → 유사 상품 추천
+- API Blueprint: `src/api/wishlist_api.py` (`/api/v1/wishlist`)
+- 봇 커맨드: `/wishlist`, `/wish_add <product_id>`, `/wish_watch <product_id> <target_price>`
+- 관련 코드: `src/wishlist/`
+
+## Phase 44: 상품 번들/세트 관리
+- `BundleManager`: 번들 CRUD (fixed/pick_n/mix_match 타입), 상태 (draft/active/inactive)
+- `BundlePricing`: sum_discount/fixed_price/cheapest_free 전략
+- `BundleAvailability`: 구성 상품 전체 재고 확인, 부분 가용 시 대안 제안
+- `BundleSuggestion`: 구매 이력 기반 함께 구매 빈도 분석 → 번들 제안
+- API Blueprint: `src/api/bundles_api.py` (`/api/v1/bundles`)
+- 봇 커맨드: `/bundles`, `/bundle_create`, `/bundle_price <bundle_id>`
+- 관련 코드: `src/bundles/`
+
+## Phase 45: 멀티 통화 확장 + 결제 게이트웨이 추상화
+- `CurrencyManager`: 지원 통화 등록/조회, 기본 통화 설정 (KRW)
+- `CurrencyConverter`: 환율 기반 변환, 캐시 (TTL 1시간), 통화별 라운딩 규칙
+- `CurrencyDisplay`: 통화별 포맷팅 (₩12,300 / $12.30 / ¥1,230)
+- `SettlementCalculator`: 통화별 정산 (환전 수수료%, 최소 수수료)
+- `PaymentGateway` ABC + `TossPaymentsGateway`, `StripeGateway`, `PayPalGateway` mock
+- `GatewayManager`: 통화/국가 기반 PG 선택, 결제 라우팅
+- API Blueprint: `src/api/multicurrency_api.py` (`/api/v1/currency`), `src/api/payment_api.py` (`/api/v1/payments`)
+- 봇 커맨드: `/convert <amount> <from> <to>`, `/payment_status <payment_id>`
+- 관련 코드: `src/multicurrency/`, `src/payment_gateway/`
+
+## Phase 46: 이미지 관리 파이프라인
+- `ImageManager`: 이미지 CRUD + 메타데이터 (크기, 포맷, URL, alt 텍스트)
+- `ImageOptimizer`: 리사이즈 스펙 (thumbnail/medium/large), 변환 시뮬레이션 (mock)
+- `WatermarkService`: 텍스트 워터마크 (위치/크기/투명도), 적용 시뮬레이션 (mock)
+- `CDNUploader` ABC + `CloudinaryUploader`, `S3Uploader` mock 구현
+- `ProductGallery`: 상품별 이미지 순서 관리, 대표 이미지 설정, 최대 10장
+- API Blueprint: `src/api/images_api.py` (`/api/v1/images`)
+- 봇 커맨드: `/images <product_id>`, `/image_upload <product_id> <url>`
+- 관련 코드: `src/images/`
+
+## Phase 47: 사용자 프로필 + 주소록 관리
+- `UserManager`: 사용자 프로필 CRUD, 등급 (bronze→silver→gold→vip, 누적 구매 기준)
+  - 등급별 혜택: 할인율, 무료배송 기준, 포인트 적립률
+- `AddressBook`: 배송지 CRUD (최대 5개), 기본 배송지 설정, 필수 필드 유효성 검증
+- `UserPreferences`: 언어 (ko/en/ja/zh), 통화, 알림 채널 (telegram/email/sms)
+- `ActivityLog`: 활동 기록 (로그인/상품조회/주문/검색), 최근 N건 조회
+- API Blueprint: `src/api/users_api.py` (`/api/v1/users`)
+- 봇 커맨드: `/profile`, `/address_add`, `/my_activity`
+- 관련 코드: `src/users/`
+
+## Phase 48: 검색 엔진 + 필터링
+- `SearchEngine`: 키워드 기반 인메모리 역인덱스, 한/영/중/일 지원, 스코어링 (제목 3x, 태그 2x, 설명 1x)
+- `SearchFilter`: 가격 범위/카테고리/마켓플레이스/평점/재고 필터 (AND 로직)
+- `SearchSorter`: price_asc/price_desc/newest/popularity/rating 정렬
+- `Autocomplete`: 접두사 매칭, 인기 검색어 상위 10개, 최근 검색어
+- `SearchAnalytics`: 검색어 빈도 집계, 결과 없는 검색어 추적, 클릭률 추적
+- API Blueprint: `src/api/search_api.py` (`/api/v1/search`)
+- 봇 커맨드: `/search <keyword>`, `/popular_searches`
+- 관련 코드: `src/search/`
