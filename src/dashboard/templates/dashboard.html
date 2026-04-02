@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}대시보드{% endblock %}
+{% block content %}
+<h4 class="mb-4">📊 대시보드</h4>
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card">
+      <div class="card-body">
+        <div class="text-muted small">전체 주문</div>
+        <div class="fs-3 fw-bold">{{ total_orders }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card">
+      <div class="card-body">
+        <div class="text-muted small">대기 주문</div>
+        <div class="fs-3 fw-bold text-warning">{{ pending_orders }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card">
+      <div class="card-body">
+        <div class="text-muted small">총 매출</div>
+        <div class="fs-3 fw-bold">{{ total_revenue }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card">
+      <div class="card-body">
+        <div class="text-muted small">USD/KRW</div>
+        <div class="fs-3 fw-bold">{{ usd_krw }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

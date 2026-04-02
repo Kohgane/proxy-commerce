@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}상품 목록{% endblock %}
+{% block content %}
+<h4 class="mb-4">📦 상품 목록</h4>
+<form class="row g-2 mb-3">
+  <div class="col-auto">
+    <input class="form-control form-control-sm" name="source" placeholder="소스 필터" value="{{ source_filter }}">
+  </div>
+  <div class="col-auto">
+    <input class="form-control form-control-sm" name="status" placeholder="상태 필터" value="{{ status_filter }}">
+  </div>
+  <div class="col-auto">
+    <button class="btn btn-sm btn-primary">검색</button>
+  </div>
+</form>
+<table class="table table-hover table-sm">
+  <thead><tr><th>상품명</th><th>소스</th><th>업로드 상태</th></tr></thead>
+  <tbody>
+    {% for p in products %}
+    <tr>
+      <td>{{ p.name or p.title }}</td>
+      <td>{{ p.source }}</td>
+      <td><span class="badge bg-{{ 'success' if p.upload_status == 'uploaded' else 'secondary' }}">{{ p.upload_status }}</span></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3" class="text-center text-muted">데이터 없음</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

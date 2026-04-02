@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}주문 목록{% endblock %}
+{% block content %}
+<h4 class="mb-4">🛒 주문 목록</h4>
+<form class="row g-2 mb-3">
+  <div class="col-auto">
+    <select class="form-select form-select-sm" name="status">
+      <option value="">전체</option>
+      <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>pending</option>
+      <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>completed</option>
+      <option value="cancelled" {% if status_filter == 'cancelled' %}selected{% endif %}>cancelled</option>
+    </select>
+  </div>
+  <div class="col-auto">
+    <button class="btn btn-sm btn-primary">검색</button>
+  </div>
+</form>
+<table class="table table-hover table-sm">
+  <thead><tr><th>주문 ID</th><th>상태</th><th>금액</th><th>날짜</th></tr></thead>
+  <tbody>
+    {% for r in orders %}
+    <tr>
+      <td>{{ r.order_id or r.id }}</td>
+      <td><span class="badge bg-{{ 'success' if r.status == 'completed' else 'warning' if r.status == 'pending' else 'danger' }}">{{ r.status }}</span></td>
+      <td>{{ r.amount or r.total }}</td>
+      <td>{{ r.created_at or r.date }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="text-center text-muted">데이터 없음</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
