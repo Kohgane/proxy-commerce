@@ -518,6 +518,21 @@ def _format_cs_reply(data, **kwargs) -> str:
     return f'✅ CS 답변 전송 완료\n메시지 ID: {msg_id}\n내용: {content}'
 
 
+def _format_analytics(data: dict, label: str = '', **kwargs) -> str:
+    """분석 데이터 포맷."""
+    if not data:
+        return '📊 분석 데이터 없음'
+    if 'error' in data:
+        return f'❌ {data["error"]}'
+    if 'message' in data:
+        return f'📊 [{label}] {data["message"]}'
+    lines = [f'📊 분석 결과 [{label}]']
+    for key, value in data.items():
+        if not isinstance(value, (list, dict)):
+            lines.append(f'  {key}: {value}')
+    return '\n'.join(lines)
+
+
 def format_message(msg_type: str, data, **kwargs) -> str:
     """메시지 타입에 따라 포맷 함수 라우팅.
 
@@ -552,6 +567,7 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'tracking': lambda d: _format_tracking(d),
         'cs_tickets': lambda d: _format_cs_tickets(d, label=kwargs.get('label', '전체')),
         'cs_reply': lambda d: _format_cs_reply(d),
+        'analytics': lambda d: _format_analytics(d, label=kwargs.get('label', '')),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:

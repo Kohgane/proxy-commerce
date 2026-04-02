@@ -396,3 +396,24 @@ def cmd_cs_reply(args: str = '') -> str:
     except Exception as exc:
         logger.error("cmd_cs_reply 오류: %s", exc)
         return format_message('error', f'CS 답변 전송 실패: {exc}')
+
+
+def cmd_analytics(args: str = 'sales') -> str:
+    """/analytics [sales|customers|products] — 분석 데이터."""
+    mode = args.strip().lower() or 'sales'
+    try:
+        if mode == 'sales':
+            from ..analytics.sales_analytics import SalesAnalytics
+            data = SalesAnalytics().daily_summary()
+        elif mode == 'customers':
+            from ..analytics.customer_analytics import CustomerAnalytics
+            data = {'message': 'RFM 분석은 POST /api/v1/analytics/customers/rfm 를 사용하세요.'}
+        elif mode == 'products':
+            from ..analytics.product_analytics import ProductAnalytics
+            data = {'message': 'ABC 분류는 POST /api/v1/analytics/products/abc 를 사용하세요.'}
+        else:
+            data = {'error': f'알 수 없는 분석 유형: {mode}. sales|customers|products 중 선택하세요.'}
+        return format_message('analytics', data, label=mode)
+    except Exception as exc:
+        logger.error("cmd_analytics 오류: %s", exc)
+        return format_message('error', f'분석 데이터 조회 실패: {exc}')
