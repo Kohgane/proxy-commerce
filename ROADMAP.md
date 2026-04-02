@@ -144,3 +144,54 @@
 - `NotificationTemplate`: 이벤트 기반 메시지 렌더링
 - API Blueprint: `/api/notifications` (dispatch, preferences)
 - 관련 코드: `src/notifications/notification_hub.py`, `src/notifications/channels/`, `src/notifications/preferences.py`
+
+## Phase 37: 반품/교환 관리 (Returns/Exchange)
+- `ReturnManager`: 반품 CRUD + 상태 전환 (`requested`→`approved`→`received`→`inspected`→`refunded`/`exchanged`)
+- `RefundCalculator`: 환불 금액 계산 (배송비 공제, 검수 등급 비율, 쿠폰 처리)
+- `InspectionService`: 검수 등급 A(100%)/B(90%)/C(70%)/D(0%)
+- `ExchangeHandler`: 동일 상품 재배송, 옵션 변경 교환
+- API Blueprint: `/api/v1/returns`
+- 봇 커맨드: `/returns`, `/return_approve <id>`, `/return_inspect <id> <grade>`
+- 관련 코드: `src/returns/`
+
+## Phase 38: 쿠폰/프로모션 코드 시스템 (Coupon/Promotion)
+- `CouponManager`: CRUD + 유효성 검증; 타입: percentage/fixed_amount/free_shipping
+- `CodeGenerator`: 랜덤 8~16자 코드, 접두사 지원 (SUMMER-XXXX), 일괄 생성
+- `RedemptionService`: 쿠폰 사용, 중복 방지, 이력 추적
+- `CouponRule` (ABC): `MinOrderAmountRule`, `ProductCategoryRule`, `DateRangeRule`, `FirstPurchaseRule`
+- API Blueprint: `/api/v1/coupons`
+- 봇 커맨드: `/coupons`, `/coupon_create`, `/coupon_validate <code>`
+- 관련 코드: `src/coupons/`
+
+## Phase 39: 카테고리/태그 관리 (Category/Tag)
+- `CategoryManager`: 무한 깊이 계층 트리 CRUD, 이동, 자식 포함 삭제
+- `TagManager`: CRUD, 키워드 기반 자동 태깅, 태그 검색
+- `CategoryMapping`: 플랫폼 카테고리 ID 매핑 (쿠팡↔네이버↔내부), 미매핑 탐색
+- `BreadcrumbGenerator`: 경로 문자열 생성 "전자제품 > 컴퓨터 > 노트북"
+- API Blueprint: `/api/v1/categories`
+- 봇 커맨드: `/categories`, `/add_tag <product_id> <tag>`
+- 관련 코드: `src/categories/`
+
+## Phase 40: 작업 스케줄러 (Job Scheduler)
+- `JobScheduler`: 인터벌 스케줄링 (every_minutes, every_hours, daily_at), 간단한 cron 파서, 실행/일시정지/재개/삭제
+- `JobRegistry`: 이름→callable 매핑, @register_job 데코레이터
+- `JobHistory`: 실행 이력 (시작/종료/상태/결과/오류), 최근 N개
+- `RetryPolicy`: 최대 재시도, 지수 백오프
+- API Blueprint: `/api/v1/scheduler`
+- 봇 커맨드: `/jobs`, `/job_run <name>`, `/job_history <name>`
+- 관련 코드: `src/scheduler/`
+
+## Phase 41: 감사 로그 확장 (Audit Log)
+- `AuditStore`: 인메모리 + JSON Lines 파일 백업, 최대 레코드 설정
+- `AuditQuery`: 기간/사용자/이벤트 타입/리소스 필터, 페이지네이션, 전문 검색
+- `@audit_log` 데코레이터: 함수 실행 전/후 자동 기록
+- API Blueprint: `/api/v1/audit`
+- 봇 커맨드: `/audit_log`, `/audit_search <keyword>`
+- 관련 코드: `src/audit/` (audit_store.py, audit_query.py, decorators.py 추가)
+
+## Phase 42: 데이터 마이그레이션 + 시드 도구 (Migration/Seed)
+- `SeedGenerator`: 개발/테스트용 시드 데이터 (상품 50개, 주문 30개, 고객 20개), 한국어 샘플 데이터
+- `DataValidator`: 무결성 검사 (필수 필드, 참조 무결성, 타입 검증)
+- `ExportImport`: JSON/CSV 내보내기/가져오기, 대량 가져오기
+- CLI: `scripts/migrate.py` (up/down/status), `scripts/seed.py` (seed/reset)
+- 관련 코드: `src/migration/` (seed.py, validators.py, export_import.py 추가)

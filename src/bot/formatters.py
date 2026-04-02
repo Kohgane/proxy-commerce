@@ -608,6 +608,75 @@ def _format_po_create(data: dict, **kwargs) -> str:
     return f'📋 발주서 생성 완료\nPO ID: {po_id}…\nSKU: {sku}\n수량: {qty}\n상태: {status}'
 
 
+def _format_returns(data, label: str = '', **kwargs) -> str:
+    """반품/교환 목록 포맷."""
+    if not data:
+        return f'📦 반품 목록{f" — {label}" if label else ""}: 없음'
+    lines = [f'📦 반품 목록{f" — {label}" if label else ""} ({len(data)}건)']
+    for r in data[:5]:
+        rid = str(r.get('id', ''))[:8]
+        status = r.get('status', '')
+        reason = r.get('reason', '')[:20]
+        lines.append(f'  • [{rid}] {status} — {reason}')
+    return '\n'.join(lines)
+
+
+def _format_coupons(data, label: str = '', **kwargs) -> str:
+    """쿠폰 목록 포맷."""
+    if not data:
+        return f'🎟 쿠폰 목록{f" — {label}" if label else ""}: 없음'
+    lines = [f'🎟 쿠폰 목록{f" — {label}" if label else ""} ({len(data)}개)']
+    for c in data[:5]:
+        if c is None:
+            continue
+        code = c.get('code', '')
+        ctype = c.get('type', '')
+        value = c.get('value', '')
+        active = '✅' if c.get('active') else '❌'
+        lines.append(f'  • {active} {code} ({ctype}: {value})')
+    return '\n'.join(lines)
+
+
+def _format_categories(data, label: str = '', **kwargs) -> str:
+    """카테고리 목록 포맷."""
+    if not data:
+        return f'📂 카테고리{f" — {label}" if label else ""}: 없음'
+    lines = [f'📂 카테고리{f" — {label}" if label else ""} ({len(data)}개)']
+    for c in data[:10]:
+        name = c.get('name', '')
+        active = '✅' if c.get('active', True) else '❌'
+        lines.append(f'  • {active} {name}')
+    return '\n'.join(lines)
+
+
+def _format_jobs(data, label: str = '', **kwargs) -> str:
+    """스케줄러 작업 목록 포맷."""
+    if not data:
+        return f'⏰ 작업 목록{f" — {label}" if label else ""}: 없음'
+    lines = [f'⏰ 작업{f" — {label}" if label else ""} ({len(data)}개)']
+    for j in data[:10]:
+        name = j.get('name', j.get('job_name', ''))
+        status = j.get('status', '')
+        stype = j.get('schedule_type', '')
+        sval = j.get('schedule_value', '')
+        lines.append(f'  • [{status}] {name} ({stype}: {sval})')
+    return '\n'.join(lines)
+
+
+def _format_audit_log(data, label: str = '', **kwargs) -> str:
+    """감사 로그 포맷."""
+    if not data:
+        return f'📋 감사 로그{f" — {label}" if label else ""}: 없음'
+    lines = [f'📋 감사 로그{f" — {label}" if label else ""} ({len(data)}건)']
+    for entry in data[:5]:
+        ts = str(entry.get('timestamp', ''))[:19]
+        etype = entry.get('event_type', '')
+        actor = entry.get('actor', '')
+        resource = entry.get('resource', '')[:20]
+        lines.append(f'  • [{ts}] {etype} | {actor} | {resource}')
+    return '\n'.join(lines)
+
+
 def format_message(msg_type: str, data, **kwargs) -> str:
     """메시지 타입에 따라 포맷 함수 라우팅.
 
@@ -654,6 +723,11 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'suppliers': lambda d: _format_suppliers(d),
         'supplier_score': lambda d: _format_supplier_score(d),
         'po_create': lambda d: _format_po_create(d),
+        'returns': lambda d: _format_returns(d, label=kwargs.get('label', '')),
+        'coupons': lambda d: _format_coupons(d, label=kwargs.get('label', '')),
+        'categories': lambda d: _format_categories(d, label=kwargs.get('label', '')),
+        'jobs': lambda d: _format_jobs(d, label=kwargs.get('label', '')),
+        'audit_log': lambda d: _format_audit_log(d, label=kwargs.get('label', '')),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:
