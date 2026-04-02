@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}재고 현황{% endblock %}
+{% block content %}
+<h4 class="mb-4">📋 재고 현황</h4>
+{% if reorder_count %}
+<div class="alert alert-danger">⚠️ 재주문 필요 상품: {{ reorder_count }}개</div>
+{% endif %}
+{% if low_stock_count %}
+<div class="alert alert-warning">⚠️ 재고 부족 상품: {{ low_stock_count }}개</div>
+{% endif %}
+<table class="table table-hover table-sm">
+  <thead><tr><th>SKU</th><th>상품명</th><th>수량</th><th>상태</th></tr></thead>
+  <tbody>
+    {% for item in inventory %}
+    <tr>
+      <td>{{ item.sku }}</td>
+      <td>{{ item.name or item.title }}</td>
+      <td>{{ item.quantity or item.stock }}</td>
+      <td>
+        {% set qty = (item.quantity or item.stock or 0)|int %}
+        {% if qty == 0 %}
+          <span class="badge bg-danger">재주문 필요</span>
+        {% elif qty < 5 %}
+          <span class="badge bg-warning text-dark">재고 부족</span>
+        {% else %}
+          <span class="badge bg-success">정상</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="text-center text-muted">데이터 없음</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

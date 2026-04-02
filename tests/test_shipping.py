@@ -765,3 +765,122 @@ class TestGenerateInvoiceData:
                   'quantity': 1, 'unit_value': Decimal('10'), 'currency': 'USD'}]
         inv = doc_helper.generate_invoice_data(items, 'US', self._sender, self._receiver)
         assert inv['items'][0]['hs_code'] == '9999.99'  # fallback for unknown category
+
+
+# ──────────────────────────────────────────────────────────
+# Phase 27 — Shipping Tracking System Tests
+# ──────────────────────────────────────────────────────────
+
+from src.shipping.models import ShipmentStatus, ShipmentRecord, TrackingEvent  # noqa: E402
+from src.shipping.carriers import (  # noqa: E402
+    CJCarrier, HanjinCarrier, KoreaPostCarrier, CarrierFactory,
+)
+from src.shipping.tracker import ShipmentTracker  # noqa: E402
+
+
+class TestShipmentStatusEnum:
+    def test_shipment_status_enum(self):
+        assert ShipmentStatus.picked_up.value == "picked_up"
+        assert ShipmentStatus.in_transit.value == "in_transit"
+        assert ShipmentStatus.out_for_delivery.value == "out_for_delivery"
+        assert ShipmentStatus.delivered.value == "delivered"
+        assert ShipmentStatus.exception.value == "exception"
+
+
+class TestCarrierFactory:
+    def test_carrier_factory_cj(self):
+        carrier = CarrierFactory.get_carrier("cj")
+        assert isinstance(carrier, CJCarrier)
+
+    def test_carrier_factory_hanjin(self):
+        carrier = CarrierFactory.get_carrier("hanjin")
+        assert isinstance(carrier, HanjinCarrier)
+
+    def test_carrier_factory_koreapost(self):
+        carrier = CarrierFactory.get_carrier("koreapost")
+        assert isinstance(carrier, KoreaPostCarrier)
+
+    def test_carrier_mock_tracking(self):
+        carrier = CarrierFactory.get_carrier("cj")
+        record = carrier.track("1234567890")
+        assert isinstance(record, ShipmentRecord)
+        assert record.tracking_number == "1234567890"
+        assert record.carrier == "cj"
+        assert isinstance(record.status, ShipmentStatus)
+        assert len(record.events) > 0
+        assert all(isinstance(e, TrackingEvent) for e in record.events)
+
+
+class TestShipmentTracker:
+    def test_tracker_register(self):
+        tracker = ShipmentTracker()
+        record = tracker.register("9999999999", "hanjin", order_id="ORD-001")
+        assert record.tracking_number == "9999999999"
+        assert record.carrier == "hanjin"
+        assert record.order_id == "ORD-001"
+
+    def test_tracker_get_status(self):
+        tracker = ShipmentTracker()
+        tracker.register("8888888888", "cj")
+        result = tracker.get_status("8888888888")
+        assert result is not None
+        assert result.tracking_number == "8888888888"
+
+    def test_tracker_get_status_not_found(self):
+        tracker = ShipmentTracker()
+        assert tracker.get_status("NONEXISTENT") is None
+
+    def test_tracker_update_status(self):
+        tracker = ShipmentTracker()
+        tracker.register("7777777777", "koreapost")
+        updated = tracker.update_status("7777777777")
+        assert updated is not None
+        assert isinstance(updated.status, ShipmentStatus)
+
+    def test_tracker_get_all(self):
+        tracker = ShipmentTracker()
+        tracker.register("1111111111", "cj")
+        tracker.register("2222222222", "hanjin")
+        all_records = tracker.get_all()
+        assert len(all_records) == 2
+
+
+class TestShippingApi:
+    @pytest.fixture
+    def shipping_client(self):
+        from flask import Flask
+        from src.api.shipping_api import shipping_api
+        app = Flask(__name__)
+        app.register_blueprint(shipping_api)
+        app.config['TESTING'] = True
+        with app.test_client() as c:
+            yield c
+
+    def test_shipping_api_status(self, shipping_client):
+        resp = shipping_client.get("/api/v1/shipping/status_check")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "ok"
+
+    def test_shipping_api_register(self, shipping_client):
+        resp = shipping_client.post(
+            "/api/v1/shipping/register",
+            json={"tracking_number": "3333333333", "carrier": "cj", "order_id": "ORD-999"},
+        )
+        assert resp.status_code == 201
+        data = resp.get_json()
+        assert data["tracking_number"] == "3333333333"
+        assert data["carrier"] == "cj"
+
+    def test_shipping_api_register_missing_fields(self, shipping_client):
+        resp = shipping_client.post("/api/v1/shipping/register", json={"carrier": "cj"})
+        assert resp.status_code == 400
+
+    def test_shipping_api_get_status(self, shipping_client):
+        # Register first, then fetch via carrier query param
+        resp = shipping_client.get(
+            "/api/v1/shipping/status/4444444444?carrier=hanjin"
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["tracking_number"] == "4444444444"

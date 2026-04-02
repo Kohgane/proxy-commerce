@@ -395,3 +395,36 @@ auth:
     kakao:
       client_id: "${KAKAO_OAUTH_CLIENT_ID}"
       client_secret: "${KAKAO_OAUTH_CLIENT_SECRET}"
+
+# === Phase 25: 프론트엔드 관리자 패널 ===
+admin_panel:
+  enabled: true
+  max_items: 200
+
+# === Phase 26: 성능 최적화 + 스케일링 ===
+performance:
+  cache_default_ttl: 300
+  async_task_max_retries: 3
+  connection_pool_size: 5
+
+# === Phase 27: 배송 추적 시스템 ===
+shipping_tracking:
+  enabled: true
+  carriers:
+    - cj
+    - hanjin
+    - koreapost
+
+# === Phase 28: 고객 서비스 (CS) 시스템 ===
+customer_service:
+  sla_alert_hours: 24
+  sla_escalate_hours: 48
+
+# === Phase 29: 데이터 분석 + 리포팅 ===
+analytics:
+  enabled: true
+  export_path: /tmp/reports
+
+# === Phase 30: CI/CD 파이프라인 ===
+cicd:
+  smoke_test_base_url: "${SMOKE_TEST_BASE_URL}"

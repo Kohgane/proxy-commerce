@@ -295,3 +295,254 @@ class TestSalesTrend:
             assert len(result) >= 0
         else:
             assert isinstance(result, list)
+
+
+# ══════════════════════════════════════════════════════════
+# Phase 29: SalesAnalytics
+# ══════════════════════════════════════════════════════════
+
+class TestSalesAnalytics:
+    def _make(self):
+        from src.analytics.sales_analytics import SalesAnalytics
+        return SalesAnalytics()
+
+    def test_sales_daily_summary(self):
+        result = self._make().daily_summary()
+        assert isinstance(result, dict)
+        for key in ('date', 'revenue', 'orders', 'avg_order_value'):
+            assert key in result, f"missing key: {key}"
+
+    def test_sales_weekly_summary(self):
+        result = self._make().weekly_summary(year=2024, week=10)
+        assert isinstance(result, dict)
+        assert result['year'] == 2024
+        assert result['week'] == 10
+        assert 'revenue' in result
+        assert 'orders' in result
+
+    def test_sales_monthly_summary(self):
+        result = self._make().monthly_summary(year=2024, month=3)
+        assert isinstance(result, dict)
+        assert result['year'] == 2024
+        assert result['month'] == 3
+        assert 'revenue' in result
+
+    def test_sales_channel_comparison(self):
+        result = self._make().channel_comparison(
+            ['shopify', 'woocommerce'], '2024-01-01', '2024-01-31'
+        )
+        assert isinstance(result, dict)
+        assert 'shopify' in result
+        assert 'woocommerce' in result
+        for ch_data in result.values():
+            assert 'revenue' in ch_data
+            assert 'orders' in ch_data
+
+
+# ══════════════════════════════════════════════════════════
+# Phase 29: CustomerAnalytics
+# ══════════════════════════════════════════════════════════
+
+SAMPLE_RFM_ORDERS = [
+    {'customer_id': 'C001', 'order_date': '2024-01-10', 'amount': 300000},
+    {'customer_id': 'C001', 'order_date': '2024-02-15', 'amount': 250000},
+    {'customer_id': 'C001', 'order_date': '2024-03-01', 'amount': 400000},
+    {'customer_id': 'C002', 'order_date': '2023-05-20', 'amount': 150000},
+    {'customer_id': 'C003', 'order_date': '2024-03-10', 'amount': 500000},
+]
+
+
+class TestCustomerAnalytics:
+    def _make(self):
+        from src.analytics.customer_analytics import CustomerAnalytics
+        return CustomerAnalytics()
+
+    def test_rfm_analysis_basic(self):
+        result = self._make().rfm_analysis(SAMPLE_RFM_ORDERS)
+        assert isinstance(result, list)
+        assert len(result) == 3  # 3 unique customers
+        ids = {r['customer_id'] for r in result}
+        assert ids == {'C001', 'C002', 'C003'}
+
+    def test_rfm_segments(self):
+        result = self._make().rfm_analysis(SAMPLE_RFM_ORDERS)
+        valid_segments = {'Champions', 'Loyal', 'At Risk', 'Lost', 'Promising'}
+        for row in result:
+            assert row['segment'] in valid_segments
+            assert 'rfm_score' in row
+            assert 'recency_days' in row
+            assert 'frequency' in row
+            assert 'monetary' in row
+
+    def test_ltv_estimate(self):
+        ca = self._make()
+        ltv = ca.ltv_estimate('C001', SAMPLE_RFM_ORDERS)
+        assert isinstance(ltv, float)
+        assert ltv > 0
+
+    def test_ltv_unknown_customer_returns_zero(self):
+        ca = self._make()
+        ltv = ca.ltv_estimate('UNKNOWN', SAMPLE_RFM_ORDERS)
+        assert ltv == 0.0
+
+
+# ══════════════════════════════════════════════════════════
+# Phase 29: ProductAnalytics
+# ══════════════════════════════════════════════════════════
+
+SAMPLE_PRODUCTS_ABC = [
+    {'product_id': 'P001', 'revenue': 500000},
+    {'product_id': 'P002', 'revenue': 300000},
+    {'product_id': 'P003', 'revenue': 100000},
+    {'product_id': 'P004', 'revenue': 80000},
+    {'product_id': 'P005', 'revenue': 20000},
+]
+
+SAMPLE_PRODUCTS_MARGIN = [
+    {'product_id': 'P001', 'sale_price': 100000, 'cost_price': 70000},
+    {'product_id': 'P002', 'sale_price': 50000, 'cost_price': 30000},
+]
+
+SAMPLE_PRODUCTS_TURNOVER = [
+    {'product_id': 'P001', 'cogs': 1000000, 'avg_inventory': 200000},
+    {'product_id': 'P002', 'cogs': 500000, 'avg_inventory': 250000},
+]
+
+
+class TestProductAnalytics:
+    def _make(self):
+        from src.analytics.product_analytics import ProductAnalytics
+        return ProductAnalytics()
+
+    def test_abc_classification(self):
+        result = self._make().abc_classification(SAMPLE_PRODUCTS_ABC)
+        assert isinstance(result, dict)
+        assert set(result.keys()) == {'A', 'B', 'C'}
+        all_ids = result['A'] + result['B'] + result['C']
+        assert len(all_ids) == 5
+        assert 'P001' in result['A'], "Top revenue product should be in A"
+
+    def test_abc_empty(self):
+        result = self._make().abc_classification([])
+        assert result == {'A': [], 'B': [], 'C': []}
+
+    def test_margin_analysis(self):
+        result = self._make().margin_analysis(SAMPLE_PRODUCTS_MARGIN)
+        assert isinstance(result, list)
+        assert len(result) == 2
+        p1 = next(r for r in result if r['product_id'] == 'P001')
+        assert p1['margin_amount'] == 30000.0
+        assert abs(p1['margin_rate'] - 30.0) < 0.01
+
+    def test_inventory_turnover(self):
+        result = self._make().inventory_turnover(SAMPLE_PRODUCTS_TURNOVER)
+        assert isinstance(result, list)
+        assert len(result) == 2
+        p1 = next(r for r in result if r['product_id'] == 'P001')
+        assert abs(p1['turnover_rate'] - 5.0) < 0.01
+
+
+# ══════════════════════════════════════════════════════════
+# Phase 29: ReportExporter
+# ══════════════════════════════════════════════════════════
+
+class TestReportExporter:
+    def _make(self):
+        from src.analytics.export import ReportExporter
+        return ReportExporter()
+
+    def test_export_to_csv(self):
+        data = [{'name': 'Alice', 'score': 90}, {'name': 'Bob', 'score': 85}]
+        csv_str = self._make().to_csv(data, 'test.csv')
+        assert isinstance(csv_str, str)
+        assert 'Alice' in csv_str
+        assert 'Bob' in csv_str
+        assert 'name' in csv_str  # header row
+
+    def test_export_to_csv_empty(self):
+        assert self._make().to_csv([], 'empty.csv') == ''
+
+    def test_export_to_google_sheets_mock(self):
+        data = [{'col': 'val'}]
+        result = self._make().to_google_sheets(data, 'TestSheet')
+        assert result['success'] is True
+        assert result['sheet_name'] == 'TestSheet'
+        assert result['rows_written'] == 1
+
+
+# ══════════════════════════════════════════════════════════
+# Phase 29: Analytics API Blueprint
+# ══════════════════════════════════════════════════════════
+
+import pytest
+
+
+@pytest.fixture
+def analytics_client():
+    from flask import Flask
+    from src.api.analytics_api import analytics_api
+    app = Flask(__name__)
+    app.register_blueprint(analytics_api)
+    app.config['TESTING'] = True
+    with app.test_client() as client:
+        yield client
+
+
+class TestAnalyticsApi:
+    def test_analytics_api_status(self, analytics_client):
+        resp = analytics_client.get('/api/v1/analytics/status')
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data['status'] == 'ok'
+
+    def test_analytics_api_sales_daily(self, analytics_client):
+        resp = analytics_client.get('/api/v1/analytics/sales/daily')
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert 'revenue' in data
+        assert 'orders' in data
+
+    def test_analytics_api_sales_weekly(self, analytics_client):
+        resp = analytics_client.get('/api/v1/analytics/sales/weekly?year=2024&week=5')
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data['year'] == 2024
+        assert data['week'] == 5
+
+    def test_analytics_api_sales_monthly(self, analytics_client):
+        resp = analytics_client.get('/api/v1/analytics/sales/monthly?year=2024&month=2')
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data['year'] == 2024
+        assert data['month'] == 2
+
+    def test_analytics_api_rfm(self, analytics_client):
+        payload = {'orders': SAMPLE_RFM_ORDERS}
+        resp = analytics_client.post(
+            '/api/v1/analytics/customers/rfm',
+            json=payload,
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert isinstance(data, list)
+        assert len(data) == 3
+
+    def test_analytics_api_abc(self, analytics_client):
+        payload = {'products': SAMPLE_PRODUCTS_ABC}
+        resp = analytics_client.post(
+            '/api/v1/analytics/products/abc',
+            json=payload,
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert set(data.keys()) == {'A', 'B', 'C'}
+
+    def test_analytics_api_margin(self, analytics_client):
+        payload = {'products': SAMPLE_PRODUCTS_MARGIN}
+        resp = analytics_client.post(
+            '/api/v1/analytics/products/margin',
+            json=payload,
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert isinstance(data, list)

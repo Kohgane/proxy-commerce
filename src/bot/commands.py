@@ -348,3 +348,72 @@ def cmd_settlement(args: str = 'today') -> str:
     except Exception as exc:
         logger.error("cmd_settlement 오류: %s", exc)
         return format_message('error', f'정산 조회 실패: {exc}')
+
+
+def cmd_tracking(tracking_number: str = '') -> str:
+    """/tracking <운송장번호> — 배송 추적."""
+    tn = tracking_number.strip()
+    if not tn:
+        return format_message('error', '운송장 번호를 입력해 주세요. 예: /tracking 1234567890')
+    try:
+        from ..shipping.tracker import ShipmentTracker
+        tracker = ShipmentTracker()
+        record = tracker.get_status(tn)
+        if record is None:
+            return format_message('error', f'등록되지 않은 운송장 번호: {tn}')
+        return format_message('tracking', record)
+    except Exception as exc:
+        logger.error("cmd_tracking 오류: %s", exc)
+        return format_message('error', f'배송 추적 실패: {exc}')
+
+
+def cmd_cs_list(args: str = '') -> str:
+    """/cs_list — CS 티켓 목록."""
+    status_filter = args.strip() or None
+    try:
+        from ..customer_service.ticket_manager import TicketManager
+        manager = TicketManager()
+        tickets = manager.list_tickets(status=status_filter)
+        return format_message('cs_tickets', tickets, label=status_filter or '전체')
+    except Exception as exc:
+        logger.error("cmd_cs_list 오류: %s", exc)
+        return format_message('error', f'CS 티켓 목록 조회 실패: {exc}')
+
+
+def cmd_cs_reply(args: str = '') -> str:
+    """/cs_reply <ticket_id> <message> — CS 티켓 답변."""
+    parts = args.strip().split(' ', 1)
+    if len(parts) < 2 or not parts[0] or not parts[1]:
+        return format_message('error', '사용법: /cs_reply <ticket_id> <message>')
+    ticket_id, content = parts[0], parts[1]
+    try:
+        from ..customer_service.ticket_manager import TicketManager
+        manager = TicketManager()
+        msg = manager.add_message(ticket_id, sender='agent', content=content)
+        if msg is None:
+            return format_message('error', f'티켓을 찾을 수 없습니다: {ticket_id}')
+        return format_message('cs_reply', msg)
+    except Exception as exc:
+        logger.error("cmd_cs_reply 오류: %s", exc)
+        return format_message('error', f'CS 답변 전송 실패: {exc}')
+
+
+def cmd_analytics(args: str = 'sales') -> str:
+    """/analytics [sales|customers|products] — 분석 데이터."""
+    mode = args.strip().lower() or 'sales'
+    try:
+        if mode == 'sales':
+            from ..analytics.sales_analytics import SalesAnalytics
+            data = SalesAnalytics().daily_summary()
+        elif mode == 'customers':
+            from ..analytics.customer_analytics import CustomerAnalytics
+            data = {'message': 'RFM 분석은 POST /api/v1/analytics/customers/rfm 를 사용하세요.'}
+        elif mode == 'products':
+            from ..analytics.product_analytics import ProductAnalytics
+            data = {'message': 'ABC 분류는 POST /api/v1/analytics/products/abc 를 사용하세요.'}
+        else:
+            data = {'error': f'알 수 없는 분석 유형: {mode}. sales|customers|products 중 선택하세요.'}
+        return format_message('analytics', data, label=mode)
+    except Exception as exc:
+        logger.error("cmd_analytics 오류: %s", exc)
+        return format_message('error', f'분석 데이터 조회 실패: {exc}')

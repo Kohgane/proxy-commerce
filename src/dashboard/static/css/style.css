@@ -1,0 +1,36 @@
+/* src/dashboard/static/css/style.css — Admin panel minimal styles */
+
+body {
+  background: #f8f9fa;
+}
+
+.sidebar {
+  min-height: 100vh;
+  background: #212529;
+}
+
+.sidebar .nav-link {
+  color: #adb5bd;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+}
+
+.sidebar .nav-link:hover,
+.sidebar .nav-link.active {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.card-stat .card-body {
+  padding: 1.25rem;
+}
+
+.table th {
+  background: #f0f2f5;
+  font-size: 0.85rem;
+}
+
+.table td {
+  font-size: 0.9rem;
+  vertical-align: middle;
+}
