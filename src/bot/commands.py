@@ -417,3 +417,135 @@ def cmd_analytics(args: str = 'sales') -> str:
     except Exception as exc:
         logger.error("cmd_analytics 오류: %s", exc)
         return format_message('error', f'분석 데이터 조회 실패: {exc}')
+
+
+def cmd_sync_inventory() -> str:
+    """/sync_inventory — 재고 동기화 실행."""
+    try:
+        from ..inventory_sync.sync_manager import InventorySyncManager
+        manager = InventorySyncManager()
+        result = manager.sync_all_channels()
+        return format_message('sync_inventory', result)
+    except Exception as exc:
+        logger.error("cmd_sync_inventory 오류: %s", exc)
+        return format_message('error', f'재고 동기화 실패: {exc}')
+
+
+def cmd_stock_status(sku: str = '') -> str:
+    """/stock_status [sku] — 재고 상태 조회."""
+    try:
+        from ..inventory_sync.sync_manager import InventorySyncManager
+        manager = InventorySyncManager()
+        if sku:
+            result = manager.sync_sku(sku.strip())
+        else:
+            result = manager.get_sync_status()
+        return format_message('stock_status', result, label=sku or '전체')
+    except Exception as exc:
+        logger.error("cmd_stock_status 오류: %s", exc)
+        return format_message('error', f'재고 상태 조회 실패: {exc}')
+
+
+def cmd_translate(product_id: str = '') -> str:
+    """/translate <product_id> — 상품 번역 요청."""
+    pid = product_id.strip()
+    if not pid:
+        return format_message('error', '사용법: /translate <product_id>')
+    try:
+        from ..translation.translator import TranslationManager
+        manager = TranslationManager()
+        req = manager.create_request(pid, f'Product {pid}', 'en', 'ko')
+        return format_message('translate', req)
+    except Exception as exc:
+        logger.error("cmd_translate 오류: %s", exc)
+        return format_message('error', f'번역 요청 실패: {exc}')
+
+
+def cmd_translation_status() -> str:
+    """/translation_status — 번역 요청 목록."""
+    try:
+        from ..translation.translator import TranslationManager
+        manager = TranslationManager()
+        requests = manager.get_all()
+        return format_message('translation_status', requests)
+    except Exception as exc:
+        logger.error("cmd_translation_status 오류: %s", exc)
+        return format_message('error', f'번역 상태 조회 실패: {exc}')
+
+
+def cmd_reprice(sku: str = '') -> str:
+    """/reprice [sku] — 자동 가격 산정 실행."""
+    try:
+        from ..pricing_engine.auto_pricer import AutoPricer
+        pricer = AutoPricer()
+        skus = [sku.strip()] if sku.strip() else None
+        result = pricer.run(skus=skus, dry_run=True)
+        return format_message('reprice', result, label=sku or '전체')
+    except Exception as exc:
+        logger.error("cmd_reprice 오류: %s", exc)
+        return format_message('error', f'가격 산정 실패: {exc}')
+
+
+def cmd_price_history(sku: str = '') -> str:
+    """/price_history <sku> — 가격 이력 조회."""
+    sku = sku.strip()
+    if not sku:
+        return format_message('error', '사용법: /price_history <sku>')
+    try:
+        from ..pricing_engine.price_history import PriceHistory
+        history = PriceHistory()
+        data = history.get_history(sku)
+        change_rate = history.get_change_rate(sku)
+        return format_message('price_history', data, label=sku, change_rate=change_rate)
+    except Exception as exc:
+        logger.error("cmd_price_history 오류: %s", exc)
+        return format_message('error', f'가격 이력 조회 실패: {exc}')
+
+
+def cmd_suppliers() -> str:
+    """/suppliers — 공급자 목록 조회."""
+    try:
+        from ..suppliers.supplier_manager import SupplierManager
+        manager = SupplierManager()
+        suppliers = manager.list_all(active_only=True)
+        return format_message('suppliers', suppliers)
+    except Exception as exc:
+        logger.error("cmd_suppliers 오류: %s", exc)
+        return format_message('error', f'공급자 목록 조회 실패: {exc}')
+
+
+def cmd_supplier_score(supplier_id: str = '') -> str:
+    """/supplier_score <supplier_id> — 공급자 점수 조회."""
+    sid = supplier_id.strip()
+    if not sid:
+        return format_message('error', '사용법: /supplier_score <supplier_id>')
+    try:
+        from ..suppliers.scoring import SupplierScoring
+        scoring = SupplierScoring()
+        score = scoring.calculate_score(80, 75, 70)
+        grade = scoring.get_grade(score)
+        data = {'supplier_id': sid, 'score': score, 'grade': grade}
+        return format_message('supplier_score', data)
+    except Exception as exc:
+        logger.error("cmd_supplier_score 오류: %s", exc)
+        return format_message('error', f'공급자 점수 조회 실패: {exc}')
+
+
+def cmd_po_create(args: str = '') -> str:
+    """/po_create <supplier_id> <sku> <qty> — 발주서 생성."""
+    parts = args.strip().split()
+    if len(parts) < 3:
+        return format_message('error', '사용법: /po_create <supplier_id> <sku> <qty>')
+    supplier_id, sku = parts[0], parts[1]
+    try:
+        qty = int(parts[2])
+    except ValueError:
+        return format_message('error', f'수량은 숫자여야 합니다: {parts[2]}')
+    try:
+        from ..suppliers.purchase_order import PurchaseOrderManager
+        manager = PurchaseOrderManager()
+        order = manager.create(supplier_id, sku, qty)
+        return format_message('po_create', order)
+    except Exception as exc:
+        logger.error("cmd_po_create 오류: %s", exc)
+        return format_message('error', f'발주서 생성 실패: {exc}')

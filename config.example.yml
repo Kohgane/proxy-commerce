@@ -428,3 +428,42 @@ analytics:
 # === Phase 30: CI/CD 파이프라인 ===
 cicd:
   smoke_test_base_url: "${SMOKE_TEST_BASE_URL}"
+
+# === Phase 31: 재고 동기화 ===
+inventory_sync:
+  conflict_strategy: conservative  # conservative | last_write_wins
+  channels:
+    - coupang
+    - naver
+    - internal
+
+# === Phase 32: 번역 관리 ===
+translation:
+  default_src_lang: en
+  default_tgt_lang: ko
+  provider: google  # google | manual
+
+# === Phase 33: 자동 가격 엔진 ===
+pricing_engine:
+  default_margin_rate: 0.30
+  default_channel_fee_rate: 0.05
+  alert_threshold_pct: 20.0
+
+# === Phase 34: 공급자 관리 ===
+suppliers:
+  scoring:
+    quality_weight: 0.40
+    delivery_weight: 0.30
+    price_weight: 0.30
+
+# === Phase 35: 알림 허브 ===
+notification_hub:
+  channels:
+    telegram:
+      bot_token: "${TELEGRAM_BOT_TOKEN}"
+      chat_id: "${TELEGRAM_CHAT_ID}"
+    slack:
+      webhook_url: "${SLACK_WEBHOOK_URL}"
+    email:
+      smtp_host: "${SMTP_HOST}"
+      smtp_port: 587

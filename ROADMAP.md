@@ -97,3 +97,50 @@
 - Phase 31: 글로벌 확장 (다국어 상품 페이지, 해외 결제)
 - Phase 32: AI 기반 상품 추천 시스템
 - Phase 33: 모바일 앱 API (React Native/Flutter)
+
+## Phase 31: 재고 동기화 (Inventory Sync)
+- `InventorySyncManager`: 다중 채널(쿠팡/네이버/내부) 재고 동기화
+- `ChannelAdapter` ABC + `CoupangAdapter`, `NaverAdapter`, `InternalAdapter` 구현
+- `ConflictResolver`: `conservative`(최솟값) / `last_write_wins` 전략
+- `SafetyStockCalculator`: 안전 재고 계산, 재주문 포인트, 재주문 필요 여부 확인
+- API Blueprint: `/api/inventory` (GET/POST `/sync`, GET `/status`)
+- 봇 커맨드: `/sync_inventory`, `/stock_status [sku]`
+- 관련 코드: `src/inventory_sync/`
+
+## Phase 32: 번역 관리 (Translation)
+- `TranslationManager`: 번역 요청 생성/상태조회/승인 (`pending`→`review`→`approved`)
+- `GoogleTranslateProvider` / `ManualTranslationProvider` 구현
+- `CommerceGlossary`: 커머스 용어집 적용 (Free Shipping → 무료배송 등)
+- `QualityChecker`: 길이 비율, HTML 태그 보존, 금지어 검사
+- API Blueprint: `/api/translation` (CRUD 요청, 승인, 상태 조회)
+- 봇 커맨드: `/translate <product_id>`, `/translation_status`
+- 관련 코드: `src/translation/`
+
+## Phase 33: 자동 가격 엔진 (Pricing Engine)
+- `AutoPricer`: 마진/경쟁자/수요 기반 가격 시뮬레이션 및 실행
+- `MarginBasedRule`: 원가 / (1 - 마진율 - 채널수수료율)
+- `CompetitorBasedRule`: 경쟁자 가격 × (1 + 조정률)
+- `DemandBasedRule`: 기준가 × 수요지수
+- `PriceHistory`: SKU별 가격 이력 저장/변동률 계산
+- `PriceAlerts`: 임계값 초과 시 알림
+- API Blueprint: `/api/pricing` (simulate, run, history)
+- 봇 커맨드: `/reprice [sku]`, `/price_history <sku>`
+- 관련 코드: `src/pricing_engine/`
+
+## Phase 34: 공급자 관리 (Suppliers)
+- `SupplierManager`: 공급자 CRUD (추가/조회/업데이트/비활성화)
+- `SupplierScoring`: 품질(40%) + 납기(30%) + 가격(30%) 가중 점수, 등급(A/B/C/D)
+- `PurchaseOrderManager`: 발주서 생성/상태변경 (`draft`→`sent`→`confirmed`→`shipped`→`received`)
+- `SupplierCommunication`: 이메일 템플릿 기반 발주/확인/클레임 발송 (mock)
+- API Blueprint: `/api/suppliers` (CRUD, 점수계산, 발주서 관리)
+- 봇 커맨드: `/suppliers`, `/supplier_score <id>`, `/po_create <sup_id> <sku> <qty>`
+- 관련 코드: `src/suppliers/`
+
+## Phase 35: 알림 허브 고도화 (Notification Hub)
+- `NotificationHub`: 이벤트 기반 다중 채널 알림 허브 (`notification_hub.py`)
+- 지원 이벤트: `order_placed`, `order_shipped`, `stock_low`, `price_changed`, `cs_ticket`, `system_alert`
+- `TelegramChannel`, `EmailChannel`, `SlackChannel` 구현 (`channels/`)
+- `NotificationPreference`: 사용자별 채널/이벤트 설정 관리
+- `NotificationTemplate`: 이벤트 기반 메시지 렌더링
+- API Blueprint: `/api/notifications` (dispatch, preferences)
+- 관련 코드: `src/notifications/notification_hub.py`, `src/notifications/channels/`, `src/notifications/preferences.py`

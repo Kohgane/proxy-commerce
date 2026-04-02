@@ -198,3 +198,24 @@ def get_telegram_template(stage: str, order: dict) -> str:
         return tmpl.format(**ctx)
     except (KeyError, ValueError):
         return str(ctx)
+
+
+class NotificationTemplate:
+    """이벤트 기반 알림 템플릿 렌더링."""
+
+    _TEMPLATES = {
+        'order_placed': '주문이 접수되었습니다. 주문번호: {order_id}',
+        'order_shipped': '주문이 발송되었습니다. 운송장: {tracking_number}',
+        'stock_low': '재고 부족 경고: {sku} (현재: {current_stock})',
+        'price_changed': '가격 변동: {sku} {old_price} -> {new_price}',
+        'cs_ticket': 'CS 티켓 접수: [{priority}] {subject}',
+        'system_alert': '시스템 알림: {message}',
+    }
+
+    def render(self, event_type: str, data: dict) -> str:
+        """이벤트 타입과 데이터로 메시지 렌더링."""
+        template = self._TEMPLATES.get(event_type, '{message}')
+        try:
+            return template.format(**data)
+        except (KeyError, ValueError):
+            return template
