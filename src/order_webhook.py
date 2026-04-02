@@ -176,6 +176,46 @@ try:
 except Exception as _analytics_api_exc:
     logger.warning("분석 API Blueprint 등록 실패: %s", _analytics_api_exc)
 
+# 재고 동기화 API Blueprint 등록
+try:
+    from .api.inventory_sync_api import inventory_sync_bp
+    app.register_blueprint(inventory_sync_bp)
+    logger.info("재고 동기화 API Blueprint 등록 완료")
+except Exception as _inv_sync_bp_exc:
+    logger.warning("재고 동기화 API Blueprint 등록 실패: %s", _inv_sync_bp_exc)
+
+# 번역 관리 API Blueprint 등록
+try:
+    from .api.translation_api import translation_bp
+    app.register_blueprint(translation_bp)
+    logger.info("번역 관리 API Blueprint 등록 완료")
+except Exception as _trans_bp_exc:
+    logger.warning("번역 관리 API Blueprint 등록 실패: %s", _trans_bp_exc)
+
+# 가격 엔진 API Blueprint 등록
+try:
+    from .api.pricing_api import pricing_bp
+    app.register_blueprint(pricing_bp)
+    logger.info("가격 엔진 API Blueprint 등록 완료")
+except Exception as _pricing_bp_exc:
+    logger.warning("가격 엔진 API Blueprint 등록 실패: %s", _pricing_bp_exc)
+
+# 공급자 관리 API Blueprint 등록
+try:
+    from .api.suppliers_api import suppliers_bp
+    app.register_blueprint(suppliers_bp)
+    logger.info("공급자 API Blueprint 등록 완료")
+except Exception as _sup_bp_exc:
+    logger.warning("공급자 API Blueprint 등록 실패: %s", _sup_bp_exc)
+
+# 알림 관리 API Blueprint 등록
+try:
+    from .api.notifications_api import notifications_bp
+    app.register_blueprint(notifications_bp)
+    logger.info("알림 관리 API Blueprint 등록 완료")
+except Exception as _notif_bp_exc:
+    logger.warning("알림 관리 API Blueprint 등록 실패: %s", _notif_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')

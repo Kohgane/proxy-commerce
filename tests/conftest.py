@@ -304,3 +304,65 @@ def reset_order_validator():
             wh.order_validator.reset_duplicate_cache()
     except Exception:
         pass
+
+
+# ──────────────────────────────────────────────────────────
+# Phase 31-35 fixtures
+# ──────────────────────────────────────────────────────────
+
+@pytest.fixture
+def mock_inventory_sync():
+    """재고 동기화 mock fixture."""
+    with patch('src.inventory_sync.sync_manager.InventorySyncManager') as mock_cls:
+        mock_instance = MagicMock()
+        mock_cls.return_value = mock_instance
+        mock_instance.sync_all_channels.return_value = {'synced_count': 0, 'results': {}, 'timestamp': '2024-01-01'}
+        mock_instance.sync_sku.return_value = {'sku': 'test', 'resolved_stock': 10}
+        mock_instance.get_sync_status.return_value = {'channels': ['coupang', 'naver', 'internal'], 'last_sync': {}}
+        yield mock_instance
+
+
+@pytest.fixture
+def mock_translation():
+    """번역 관리자 mock fixture."""
+    with patch('src.translation.translator.TranslationManager') as mock_cls:
+        mock_instance = MagicMock()
+        mock_cls.return_value = mock_instance
+        mock_instance.get_all.return_value = []
+        mock_instance.create_request.return_value = {
+            'request_id': 'test-req-id',
+            'status': 'review',
+            'translated_text': '[ko] test',
+        }
+        yield mock_instance
+
+
+@pytest.fixture
+def mock_pricing_engine():
+    """가격 엔진 mock fixture."""
+    with patch('src.pricing_engine.auto_pricer.AutoPricer') as mock_cls:
+        mock_instance = MagicMock()
+        mock_cls.return_value = mock_instance
+        mock_instance.run.return_value = {'dry_run': True, 'processed': 0, 'results': []}
+        mock_instance.simulate.return_value = {'sku': 'test', 'prices': {'margin_based': '14286'}}
+        yield mock_instance
+
+
+@pytest.fixture
+def mock_suppliers():
+    """공급자 관리자 mock fixture."""
+    with patch('src.suppliers.supplier_manager.SupplierManager') as mock_cls:
+        mock_instance = MagicMock()
+        mock_cls.return_value = mock_instance
+        mock_instance.list_all.return_value = []
+        yield mock_instance
+
+
+@pytest.fixture
+def mock_notification_hub():
+    """알림 허브 mock fixture."""
+    with patch('src.notifications.notification_hub.NotificationHub') as mock_cls:
+        mock_instance = MagicMock()
+        mock_cls.return_value = mock_instance
+        mock_instance.dispatch.return_value = {}
+        yield mock_instance

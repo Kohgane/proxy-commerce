@@ -533,6 +533,81 @@ def _format_analytics(data: dict, label: str = '', **kwargs) -> str:
     return '\n'.join(lines)
 
 
+def _format_sync_inventory(data: dict, **kwargs) -> str:
+    synced = data.get('synced_count', 0)
+    ts = data.get('timestamp', '')
+    return f'🔄 재고 동기화 완료\n동기화 SKU: {synced}건\n시각: {ts}'
+
+
+def _format_stock_status(data: dict, label: str = '', **kwargs) -> str:
+    if 'sku' in data:
+        resolved = data.get('resolved_stock', 0)
+        return f'📦 재고 상태 [{label}]\n결정 재고: {resolved}개'
+    channels = data.get('channels', [])
+    return f'📦 재고 동기화 상태\n등록 채널: {", ".join(channels)}'
+
+
+def _format_translate(data: dict, **kwargs) -> str:
+    req_id = data.get('request_id', '')[:8]
+    status = data.get('status', '')
+    translated = data.get('translated_text', '')
+    return f'🌐 번역 요청 완료\nID: {req_id}…\n상태: {status}\n번역: {translated}'
+
+
+def _format_translation_status(data: list, **kwargs) -> str:
+    if not data:
+        return '🌐 번역 요청: 없음'
+    lines = [f'🌐 번역 요청 목록 — {len(data)}건']
+    for req in data[:5]:
+        req_id = req.get('request_id', '')[:8]
+        status = req.get('status', '')
+        lines.append(f'  • {req_id}… [{status}]')
+    return '\n'.join(lines)
+
+
+def _format_reprice(data: dict, label: str = '', **kwargs) -> str:
+    processed = data.get('processed', 0)
+    dry_run = data.get('dry_run', False)
+    mode = '시뮬레이션' if dry_run else '적용'
+    return f'💰 가격 산정 ({mode}) [{label}]\n처리 SKU: {processed}건'
+
+
+def _format_price_history(data: list, label: str = '', **kwargs) -> str:
+    change_rate = kwargs.get('change_rate', 0.0)
+    if not data:
+        return f'💰 가격 이력 [{label}]: 없음'
+    lines = [f'💰 가격 이력 [{label}] — {len(data)}건 (변동률: {change_rate:.1f}%)']
+    for entry in data[-5:]:
+        lines.append(f'  • {entry.get("price")} ({entry.get("channel")})')
+    return '\n'.join(lines)
+
+
+def _format_suppliers(data: list, **kwargs) -> str:
+    if not data:
+        return '🏭 공급자 목록: 없음'
+    lines = [f'🏭 공급자 목록 — {len(data)}개']
+    for s in data[:5]:
+        name = s.get('name', s.get('supplier_id', ''))
+        active = '✅' if s.get('active') else '❌'
+        lines.append(f'  • {active} {name}')
+    return '\n'.join(lines)
+
+
+def _format_supplier_score(data: dict, **kwargs) -> str:
+    sid = data.get('supplier_id', '')
+    score = data.get('score', 0)
+    grade = data.get('grade', 'D')
+    return f'🏭 공급자 점수\nID: {sid}\n점수: {score:.1f}\n등급: {grade}'
+
+
+def _format_po_create(data: dict, **kwargs) -> str:
+    po_id = data.get('po_id', '')[:8]
+    sku = data.get('sku', '')
+    qty = data.get('qty', 0)
+    status = data.get('status', '')
+    return f'📋 발주서 생성 완료\nPO ID: {po_id}…\nSKU: {sku}\n수량: {qty}\n상태: {status}'
+
+
 def format_message(msg_type: str, data, **kwargs) -> str:
     """메시지 타입에 따라 포맷 함수 라우팅.
 
@@ -568,6 +643,17 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'cs_tickets': lambda d: _format_cs_tickets(d, label=kwargs.get('label', '전체')),
         'cs_reply': lambda d: _format_cs_reply(d),
         'analytics': lambda d: _format_analytics(d, label=kwargs.get('label', '')),
+        'sync_inventory': lambda d: _format_sync_inventory(d),
+        'stock_status': lambda d: _format_stock_status(d, label=kwargs.get('label', '')),
+        'translate': lambda d: _format_translate(d),
+        'translation_status': lambda d: _format_translation_status(d),
+        'reprice': lambda d: _format_reprice(d, label=kwargs.get('label', '')),
+        'price_history': lambda d: _format_price_history(
+            d, label=kwargs.get('label', ''), change_rate=kwargs.get('change_rate', 0.0)
+        ),
+        'suppliers': lambda d: _format_suppliers(d),
+        'supplier_score': lambda d: _format_supplier_score(d),
+        'po_create': lambda d: _format_po_create(d),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:
