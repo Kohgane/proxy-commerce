@@ -216,6 +216,46 @@ try:
 except Exception as _notif_bp_exc:
     logger.warning("알림 관리 API Blueprint 등록 실패: %s", _notif_bp_exc)
 
+# 반품/교환 API Blueprint 등록 (Phase 37)
+try:
+    from .api.returns_api import returns_bp
+    app.register_blueprint(returns_bp)
+    logger.info("반품/교환 API Blueprint 등록 완료")
+except Exception as _ret_bp_exc:
+    logger.warning("반품/교환 API Blueprint 등록 실패: %s", _ret_bp_exc)
+
+# 쿠폰 API Blueprint 등록 (Phase 38)
+try:
+    from .api.coupons_api import coupons_bp
+    app.register_blueprint(coupons_bp)
+    logger.info("쿠폰 API Blueprint 등록 완료")
+except Exception as _coup_bp_exc:
+    logger.warning("쿠폰 API Blueprint 등록 실패: %s", _coup_bp_exc)
+
+# 카테고리 API Blueprint 등록 (Phase 39)
+try:
+    from .api.categories_api import categories_bp
+    app.register_blueprint(categories_bp)
+    logger.info("카테고리 API Blueprint 등록 완료")
+except Exception as _cat_bp_exc:
+    logger.warning("카테고리 API Blueprint 등록 실패: %s", _cat_bp_exc)
+
+# 스케줄러 API Blueprint 등록 (Phase 40)
+try:
+    from .api.scheduler_api import scheduler_bp
+    app.register_blueprint(scheduler_bp)
+    logger.info("스케줄러 API Blueprint 등록 완료")
+except Exception as _sched_bp_exc:
+    logger.warning("스케줄러 API Blueprint 등록 실패: %s", _sched_bp_exc)
+
+# 감사 로그 API Blueprint 등록 (Phase 41)
+try:
+    from .api.audit_api import audit_bp
+    app.register_blueprint(audit_bp)
+    logger.info("감사 로그 API Blueprint 등록 완료")
+except Exception as _audit_bp_exc:
+    logger.warning("감사 로그 API Blueprint 등록 실패: %s", _audit_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')

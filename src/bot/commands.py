@@ -549,3 +549,211 @@ def cmd_po_create(args: str = '') -> str:
     except Exception as exc:
         logger.error("cmd_po_create 오류: %s", exc)
         return format_message('error', f'발주서 생성 실패: {exc}')
+
+
+def cmd_returns() -> str:
+    """/returns — 최근 반품 요청 목록."""
+    try:
+        from ..returns.return_manager import ReturnManager
+        manager = ReturnManager()
+        items = manager.list_all()
+        return format_message('returns', items)
+    except Exception as exc:
+        logger.error("cmd_returns 오류: %s", exc)
+        return format_message('error', f'반품 목록 조회 실패: {exc}')
+
+
+def cmd_return_approve(return_id: str = '') -> str:
+    """/return_approve <id> — 반품 요청 승인."""
+    rid = return_id.strip()
+    if not rid:
+        return format_message('error', '사용법: /return_approve <id>')
+    try:
+        from ..returns.return_manager import ReturnManager
+        manager = ReturnManager()
+        record = manager.update_status(rid, 'approved', '봇에서 승인')
+        if record is None:
+            return format_message('error', f'반품 요청 없음: {rid}')
+        return format_message('returns', [record], label='승인')
+    except ValueError as exc:
+        return format_message('error', str(exc))
+    except Exception as exc:
+        logger.error("cmd_return_approve 오류: %s", exc)
+        return format_message('error', f'반품 승인 실패: {exc}')
+
+
+def cmd_return_inspect(args: str = '') -> str:
+    """/return_inspect <id> <grade> — 검수 등급 설정."""
+    parts = args.strip().split()
+    if len(parts) < 2:
+        return format_message('error', '사용법: /return_inspect <id> <grade>')
+    return_id, grade = parts[0], parts[1].upper()
+    try:
+        from ..returns.inspection import InspectionService
+        from ..returns.return_manager import ReturnManager
+        inspector = InspectionService()
+        grade_info = inspector.get_grade_info(grade)
+        if grade_info is None:
+            return format_message('error', f'유효하지 않은 등급: {grade} (A/B/C/D)')
+        manager = ReturnManager()
+        record = manager.set_inspection(return_id, grade, grade_info['refund_pct'])
+        if record is None:
+            return format_message('error', f'반품 요청 없음: {return_id}')
+        return format_message('returns', [record], label=f'검수 등급: {grade}')
+    except Exception as exc:
+        logger.error("cmd_return_inspect 오류: %s", exc)
+        return format_message('error', f'검수 등급 설정 실패: {exc}')
+
+
+def cmd_coupons() -> str:
+    """/coupons — 활성 쿠폰 목록."""
+    try:
+        from ..coupons.coupon_manager import CouponManager
+        manager = CouponManager()
+        coupons = manager.list_all(active_only=True)
+        return format_message('coupons', coupons)
+    except Exception as exc:
+        logger.error("cmd_coupons 오류: %s", exc)
+        return format_message('error', f'쿠폰 목록 조회 실패: {exc}')
+
+
+def cmd_coupon_create(args: str = '') -> str:
+    """/coupon_create — 샘플 쿠폰 생성."""
+    try:
+        from ..coupons.coupon_manager import CouponManager
+        from ..coupons.code_generator import CodeGenerator
+        gen = CodeGenerator()
+        code = gen.generate(prefix='BOT')
+        manager = CouponManager()
+        coupon = manager.create({
+            'code': code,
+            'type': 'percentage',
+            'value': 10,
+            'min_order_amount': 10000,
+        })
+        return format_message('coupons', [coupon], label='생성됨')
+    except Exception as exc:
+        logger.error("cmd_coupon_create 오류: %s", exc)
+        return format_message('error', f'쿠폰 생성 실패: {exc}')
+
+
+def cmd_coupon_validate(code: str = '') -> str:
+    """/coupon_validate <code> — 쿠폰 코드 유효성 확인."""
+    code = code.strip()
+    if not code:
+        return format_message('error', '사용법: /coupon_validate <code>')
+    try:
+        from ..coupons.coupon_manager import CouponManager
+        manager = CouponManager()
+        result = manager.validate(code)
+        return format_message('coupons', [result.get('coupon')] if result.get('coupon') else [],
+                              label=result.get('reason', ''))
+    except Exception as exc:
+        logger.error("cmd_coupon_validate 오류: %s", exc)
+        return format_message('error', f'쿠폰 검증 실패: {exc}')
+
+
+def cmd_categories() -> str:
+    """/categories — 최상위 카테고리 목록."""
+    try:
+        from ..categories.category_manager import CategoryManager
+        manager = CategoryManager()
+        cats = manager.list_top_level()
+        return format_message('categories', cats)
+    except Exception as exc:
+        logger.error("cmd_categories 오류: %s", exc)
+        return format_message('error', f'카테고리 목록 조회 실패: {exc}')
+
+
+def cmd_add_tag(args: str = '') -> str:
+    """/add_tag <product_id> <tag> — 상품에 태그 추가."""
+    parts = args.strip().split(None, 1)
+    if len(parts) < 2:
+        return format_message('error', '사용법: /add_tag <product_id> <tag>')
+    product_id, tag_name = parts[0], parts[1]
+    try:
+        from ..categories.tag_manager import TagManager
+        manager = TagManager()
+        tag = manager.get_tag_by_name(tag_name) or manager.create_tag(tag_name)
+        manager.add_tag_to_product(product_id, tag['id'])
+        return format_message('categories', [tag], label=f'{product_id}에 태그 추가됨')
+    except Exception as exc:
+        logger.error("cmd_add_tag 오류: %s", exc)
+        return format_message('error', f'태그 추가 실패: {exc}')
+
+
+def cmd_jobs() -> str:
+    """/jobs — 등록된 작업 목록."""
+    try:
+        from ..scheduler.job_scheduler import JobScheduler
+        scheduler = JobScheduler()
+        jobs = scheduler.list_all()
+        return format_message('jobs', jobs)
+    except Exception as exc:
+        logger.error("cmd_jobs 오류: %s", exc)
+        return format_message('error', f'작업 목록 조회 실패: {exc}')
+
+
+def cmd_job_run(name: str = '') -> str:
+    """/job_run <name> — 작업 수동 실행."""
+    name = name.strip()
+    if not name:
+        return format_message('error', '사용법: /job_run <name>')
+    try:
+        from ..scheduler.job_scheduler import JobScheduler
+        from ..scheduler.job_registry import JobRegistry
+        registry = JobRegistry()
+        func = registry.get(name)
+        if func is None:
+            return format_message('error', f'등록되지 않은 작업: {name}')
+        scheduler = JobScheduler()
+        job = scheduler.every_minutes(name, func, 60)
+        result = scheduler.run_job(job['id'])
+        return format_message('jobs', [result], label=name)
+    except Exception as exc:
+        logger.error("cmd_job_run 오류: %s", exc)
+        return format_message('error', f'작업 실행 실패: {exc}')
+
+
+def cmd_job_history(name: str = '') -> str:
+    """/job_history <name> — 작업 실행 이력."""
+    name = name.strip()
+    if not name:
+        return format_message('error', '사용법: /job_history <name>')
+    try:
+        from ..scheduler.job_history import JobHistory
+        history = JobHistory()
+        records = history.get_by_name(name)
+        return format_message('jobs', records, label=f'{name} 이력')
+    except Exception as exc:
+        logger.error("cmd_job_history 오류: %s", exc)
+        return format_message('error', f'작업 이력 조회 실패: {exc}')
+
+
+def cmd_audit_log() -> str:
+    """/audit_log — 최근 감사 로그."""
+    try:
+        from ..audit.audit_store import AuditStore
+        store = AuditStore()
+        records = store.get_recent(10)
+        return format_message('audit_log', records)
+    except Exception as exc:
+        logger.error("cmd_audit_log 오류: %s", exc)
+        return format_message('error', f'감사 로그 조회 실패: {exc}')
+
+
+def cmd_audit_search(keyword: str = '') -> str:
+    """/audit_search <keyword> — 감사 로그 검색."""
+    keyword = keyword.strip()
+    if not keyword:
+        return format_message('error', '사용법: /audit_search <keyword>')
+    try:
+        from ..audit.audit_store import AuditStore
+        from ..audit.audit_query import AuditQuery
+        store = AuditStore()
+        query = AuditQuery(store=store)
+        results = query.search(keyword)
+        return format_message('audit_log', results, label=keyword)
+    except Exception as exc:
+        logger.error("cmd_audit_search 오류: %s", exc)
+        return format_message('error', f'감사 로그 검색 실패: {exc}')

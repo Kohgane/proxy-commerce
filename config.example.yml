@@ -467,3 +467,40 @@ notification_hub:
     email:
       smtp_host: "${SMTP_HOST}"
       smtp_port: 587
+
+# === Phase 37: 반품/교환 관리 ===
+returns:
+  default_shipping_deduction: 3000  # 배송비 공제 (원)
+  inspection_grades: [A, B, C, D]
+  refund_ratios: {A: 1.0, B: 0.9, C: 0.7, D: 0.0}
+
+# === Phase 38: 쿠폰/프로모션 ===
+coupons:
+  code_length: 8
+  safe_chars: true
+  default_prefix: ""
+
+# === Phase 39: 카테고리/태그 ===
+categories:
+  breadcrumb_separator: " > "
+  platforms: [coupang, naver, internal]
+
+# === Phase 40: 작업 스케줄러 ===
+scheduler:
+  max_job_history: 1000
+  default_retry_max: 3
+  default_retry_base_delay: 1.0
+  default_retry_backoff: 2.0
+
+# === Phase 41: 감사 로그 확장 ===
+audit_store:
+  max_records: 10000
+  backup_enabled: false
+  backup_path: "data/audit.jsonl"
+
+# === Phase 42: 데이터 마이그레이션 ===
+migration:
+  seed_products: 50
+  seed_orders: 30
+  seed_customers: 20
+  export_path: "data/exports"

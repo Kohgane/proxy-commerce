@@ -2,5 +2,8 @@
 
 from .audit_logger import AuditLogger
 from .event_types import EventType
+from .audit_store import AuditStore
+from .audit_query import AuditQuery
+from .decorators import audit_log
 
-__all__ = ["AuditLogger", "EventType"]
+__all__ = ["AuditLogger", "EventType", "AuditStore", "AuditQuery", "audit_log"]
