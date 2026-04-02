@@ -41,8 +41,8 @@ def convert_currency():
             'to': to_currency,
             'result': result,
         })
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
+    except ValueError:
+        return jsonify({'error': 'Invalid request'}), 400
     except Exception as exc:
         logger.error("통화 변환 오류: %s", exc)
         return jsonify({'error': 'Internal server error'}), 500

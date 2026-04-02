@@ -26,8 +26,8 @@ def create_wishlist():
         mgr = WishlistManager()
         wl = mgr.create_wishlist(user_id, name)
         return jsonify(wl), 201
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
+    except ValueError:
+        return jsonify({'error': 'Invalid request'}), 400
     except Exception as exc:
         logger.error("위시리스트 생성 오류: %s", exc)
         return jsonify({'error': 'Internal server error'}), 500
@@ -58,8 +58,8 @@ def add_item():
         mgr = WishlistManager()
         item = mgr.add_item(wishlist_id, product_id, **body)
         return jsonify(item), 201
-    except (KeyError, ValueError) as exc:
-        return jsonify({'error': str(exc)}), 400
+    except (KeyError, ValueError):
+        return jsonify({'error': 'Invalid request'}), 400
     except Exception as exc:
         logger.error("아이템 추가 오류: %s", exc)
         return jsonify({'error': 'Internal server error'}), 500

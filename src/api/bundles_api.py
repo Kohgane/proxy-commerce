@@ -35,8 +35,8 @@ def create_bundle():
         mgr = BundleManager()
         bundle = mgr.create(body)
         return jsonify(bundle), 201
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
+    except ValueError:
+        return jsonify({'error': 'Invalid request'}), 400
     except Exception as exc:
         logger.error("번들 생성 오류: %s", exc)
         return jsonify({'error': 'Internal server error'}), 500
@@ -75,8 +75,8 @@ def get_bundle_price(bundle_id: str):
                                                discount_pct=body.get('discount_pct', 0),
                                                fixed_price=body.get('fixed_price'))
         return jsonify(result)
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
+    except ValueError:
+        return jsonify({'error': 'Invalid request'}), 400
     except Exception as exc:
         logger.error("번들 가격 오류: %s", exc)
         return jsonify({'error': 'Internal server error'}), 500

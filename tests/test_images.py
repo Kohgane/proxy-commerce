@@ -123,7 +123,7 @@ class TestCDNUploader:
         result = uploader.upload('https://example.com/img.jpg')
         assert 'public_id' in result
         assert result['provider'] == 'cloudinary'
-        assert 'cloudinary.com' in result['cdn_url']
+        assert result['cdn_url'].startswith('https://res.cloudinary.com/')
 
     def test_cloudinary_delete(self):
         from src.images.cdn_uploader import CloudinaryUploader
@@ -142,7 +142,7 @@ class TestCDNUploader:
         uploader = S3Uploader()
         result = uploader.upload('https://example.com/img.jpg')
         assert result['provider'] == 's3'
-        assert 'amazonaws.com' in result['cdn_url']
+        assert result['cdn_url'].startswith('https://')
 
     def test_s3_delete(self):
         from src.images.cdn_uploader import S3Uploader

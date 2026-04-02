@@ -22,8 +22,8 @@ def create_user():
         mgr = UserManager()
         user = mgr.create(body)
         return jsonify(user), 201
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
+    except ValueError:
+        return jsonify({'error': 'Invalid request'}), 400
     except Exception as exc:
         logger.error("사용자 생성 오류: %s", exc)
         return jsonify({'error': 'Internal server error'}), 500
@@ -53,8 +53,8 @@ def add_address(user_id: str):
         book = AddressBook()
         address = book.add(user_id, body)
         return jsonify(address), 201
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
+    except ValueError:
+        return jsonify({'error': 'Invalid request'}), 400
     except Exception as exc:
         logger.error("배송지 추가 오류: %s", exc)
         return jsonify({'error': 'Internal server error'}), 500
