@@ -25,7 +25,7 @@ def list_returns():
         return jsonify(manager.list_all(status=status, order_id=order_id))
     except Exception as exc:
         logger.error("반품 목록 조회 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @returns_bp.post('/')
@@ -39,7 +39,7 @@ def create_return():
         return jsonify(record), 201
     except Exception as exc:
         logger.error("반품 생성 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @returns_bp.get('/<return_id>')
@@ -54,7 +54,7 @@ def get_return(return_id: str):
         return jsonify(record)
     except Exception as exc:
         logger.error("반품 조회 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @returns_bp.post('/<return_id>/status')
@@ -73,10 +73,11 @@ def update_return_status(return_id: str):
             return jsonify({'error': 'not found'}), 404
         return jsonify(record)
     except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
+        logger.warning("입력 오류: %s", exc)
+        return jsonify({'error': 'Invalid request'}), 400
     except Exception as exc:
         logger.error("반품 상태 변경 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @returns_bp.post('/<return_id>/inspect')
@@ -106,7 +107,7 @@ def inspect_return(return_id: str):
         return jsonify({'inspection': result, 'refund': refund_data, 'return': record})
     except Exception as exc:
         logger.error("검수 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @returns_bp.post('/<return_id>/exchange')
@@ -129,7 +130,7 @@ def create_exchange(return_id: str):
         return jsonify(exchange), 201
     except Exception as exc:
         logger.error("교환 생성 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @returns_bp.post('/refund/calculate')
@@ -153,4 +154,4 @@ def calculate_refund():
         return jsonify(result)
     except Exception as exc:
         logger.error("환불 계산 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500

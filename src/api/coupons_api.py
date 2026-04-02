@@ -23,7 +23,7 @@ def list_coupons():
         return jsonify(manager.list_all(active_only=active_only))
     except Exception as exc:
         logger.error("쿠폰 목록 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @coupons_bp.post('/')
@@ -36,10 +36,11 @@ def create_coupon():
         coupon = manager.create(body)
         return jsonify(coupon), 201
     except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
+        logger.warning("입력 오류: %s", exc)
+        return jsonify({'error': 'Invalid request'}), 400
     except Exception as exc:
         logger.error("쿠폰 생성 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @coupons_bp.get('/<coupon_id>')
@@ -53,7 +54,8 @@ def get_coupon(coupon_id: str):
             return jsonify({'error': 'not found'}), 404
         return jsonify(coupon)
     except Exception as exc:
-        return jsonify({'error': str(exc)}), 500
+        logger.error("오류: %s", exc)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @coupons_bp.post('/validate')
@@ -72,7 +74,7 @@ def validate_coupon():
         return jsonify(result)
     except Exception as exc:
         logger.error("쿠폰 검증 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @coupons_bp.post('/generate')
@@ -89,7 +91,7 @@ def generate_codes():
         return jsonify({'codes': codes, 'count': len(codes)})
     except Exception as exc:
         logger.error("코드 생성 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @coupons_bp.post('/redeem')
@@ -109,7 +111,8 @@ def redeem_coupon():
         record = service.redeem(coupon_id, order_id, user_id, Decimal(str(discount_amount)))
         return jsonify(record), 201
     except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
+        logger.warning("입력 오류: %s", exc)
+        return jsonify({'error': 'Invalid request'}), 400
     except Exception as exc:
         logger.error("쿠폰 사용 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500

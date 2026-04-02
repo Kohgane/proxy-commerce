@@ -49,7 +49,7 @@ def list_audit_logs():
         return jsonify(result)
     except Exception as exc:
         logger.error("감사 로그 조회 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @audit_bp.post('/')
@@ -78,7 +78,7 @@ def create_audit_log():
         return jsonify(entry), 201
     except Exception as exc:
         logger.error("감사 로그 기록 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @audit_bp.get('/search')
@@ -93,7 +93,8 @@ def search_audit_logs():
         results = query.search(keyword)
         return jsonify({'items': results, 'total': len(results)})
     except Exception as exc:
-        return jsonify({'error': str(exc)}), 500
+        logger.error("오류: %s", exc)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @audit_bp.get('/recent')
@@ -104,4 +105,5 @@ def recent_audit_logs():
         records = _get_store().get_recent(n)
         return jsonify({'items': records, 'total': len(records)})
     except Exception as exc:
-        return jsonify({'error': str(exc)}), 500
+        logger.error("오류: %s", exc)
+        return jsonify({'error': 'Internal server error'}), 500

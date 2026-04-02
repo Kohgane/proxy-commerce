@@ -31,7 +31,6 @@ def audit_log(
                 except Exception:
                     pass
 
-            before = None  # reserved for future before/after state capture
             result = None
             error = None
             try:

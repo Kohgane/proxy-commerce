@@ -25,7 +25,8 @@ def list_jobs():
         safe_jobs = [{k: v for k, v in j.items() if k != 'func'} for j in jobs]
         return jsonify(safe_jobs)
     except Exception as exc:
-        return jsonify({'error': str(exc)}), 500
+        logger.error("오류: %s", exc)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @scheduler_bp.post('/jobs')
@@ -62,7 +63,7 @@ def register_job():
         return jsonify(safe_job), 201
     except Exception as exc:
         logger.error("작업 등록 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @scheduler_bp.post('/jobs/<job_id>/pause')
@@ -76,7 +77,8 @@ def pause_job(job_id: str):
             return jsonify({'error': 'not found'}), 404
         return jsonify({k: v for k, v in job.items() if k != 'func'})
     except Exception as exc:
-        return jsonify({'error': str(exc)}), 500
+        logger.error("오류: %s", exc)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @scheduler_bp.post('/jobs/<job_id>/resume')
@@ -90,7 +92,8 @@ def resume_job(job_id: str):
             return jsonify({'error': 'not found'}), 404
         return jsonify({k: v for k, v in job.items() if k != 'func'})
     except Exception as exc:
-        return jsonify({'error': str(exc)}), 500
+        logger.error("오류: %s", exc)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @scheduler_bp.delete('/jobs/<job_id>')
@@ -104,7 +107,8 @@ def delete_job(job_id: str):
             return jsonify({'error': 'not found'}), 404
         return jsonify({'deleted': True})
     except Exception as exc:
-        return jsonify({'error': str(exc)}), 500
+        logger.error("오류: %s", exc)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @scheduler_bp.get('/registry')
@@ -115,4 +119,5 @@ def list_registry():
         registry = JobRegistry()
         return jsonify({'jobs': registry.list_names()})
     except Exception as exc:
-        return jsonify({'error': str(exc)}), 500
+        logger.error("오류: %s", exc)
+        return jsonify({'error': 'Internal server error'}), 500

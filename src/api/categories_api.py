@@ -27,7 +27,8 @@ def list_categories():
             return jsonify(manager.list_children(parent_id))
         return jsonify(manager.list_all())
     except Exception as exc:
-        return jsonify({'error': str(exc)}), 500
+        logger.error("오류: %s", exc)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @categories_bp.post('/')
@@ -40,9 +41,11 @@ def create_category():
         cat = manager.create(body)
         return jsonify(cat), 201
     except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
+        logger.warning("입력 오류: %s", exc)
+        return jsonify({'error': 'Invalid request'}), 400
     except Exception as exc:
-        return jsonify({'error': str(exc)}), 500
+        logger.error("오류: %s", exc)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @categories_bp.get('/<cat_id>')
@@ -55,7 +58,8 @@ def get_category(cat_id: str):
             return jsonify({'error': 'not found'}), 404
         return jsonify(cat)
     except Exception as exc:
-        return jsonify({'error': str(exc)}), 500
+        logger.error("오류: %s", exc)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @categories_bp.get('/<cat_id>/breadcrumb')
@@ -71,7 +75,8 @@ def get_breadcrumb(cat_id: str):
             return jsonify({'error': 'not found'}), 404
         return jsonify({'id': cat_id, 'breadcrumb': path})
     except Exception as exc:
-        return jsonify({'error': str(exc)}), 500
+        logger.error("오류: %s", exc)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @categories_bp.get('/tags/')
@@ -85,7 +90,8 @@ def list_tags():
             return jsonify(manager.search_tags(query))
         return jsonify(manager.list_tags())
     except Exception as exc:
-        return jsonify({'error': str(exc)}), 500
+        logger.error("오류: %s", exc)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @categories_bp.post('/tags/')
@@ -101,7 +107,8 @@ def create_tag():
         tag = manager.create_tag(name, body.get('color', ''))
         return jsonify(tag), 201
     except Exception as exc:
-        return jsonify({'error': str(exc)}), 500
+        logger.error("오류: %s", exc)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @categories_bp.post('/tags/<product_id>')
@@ -117,6 +124,8 @@ def add_product_tag(product_id: str):
         manager.add_tag_to_product(product_id, tag_id)
         return jsonify({'product_id': product_id, 'tag_id': tag_id, 'added': True})
     except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
+        logger.warning("입력 오류: %s", exc)
+        return jsonify({'error': 'Invalid request'}), 400
     except Exception as exc:
-        return jsonify({'error': str(exc)}), 500
+        logger.error("오류: %s", exc)
+        return jsonify({'error': 'Internal server error'}), 500
