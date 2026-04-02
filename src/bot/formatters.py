@@ -491,6 +491,33 @@ def _format_tracking(data, **kwargs) -> str:
     return '\n'.join(lines)
 
 
+def _format_cs_tickets(data, **kwargs) -> str:
+    label = kwargs.get('label', '전체')
+    if not data:
+        return f'📋 CS 티켓 목록 ({label}): 없음'
+    lines = [f'📋 CS 티켓 목록 ({label}) — {len(data)}건']
+    for t in data:
+        ticket_id = getattr(t, 'id', t.get('id', '')) if not hasattr(t, 'id') else t.id
+        subject = getattr(t, 'subject', '') if hasattr(t, 'subject') else t.get('subject', '')
+        status = getattr(t, 'status', '') if hasattr(t, 'status') else t.get('status', '')
+        priority = getattr(t, 'priority', '') if hasattr(t, 'priority') else t.get('priority', '')
+        # Handle enum values
+        if hasattr(status, 'value'):
+            status = status.value
+        if hasattr(priority, 'value'):
+            priority = priority.value
+        lines.append(f'• [{priority}] {subject} ({status}) — {ticket_id[:8]}…')
+    return '\n'.join(lines)
+
+
+def _format_cs_reply(data, **kwargs) -> str:
+    if data is None:
+        return '❌ CS 답변 전송 실패'
+    msg_id = getattr(data, 'id', '') if hasattr(data, 'id') else data.get('id', '')
+    content = getattr(data, 'content', '') if hasattr(data, 'content') else data.get('content', '')
+    return f'✅ CS 답변 전송 완료\n메시지 ID: {msg_id}\n내용: {content}'
+
+
 def format_message(msg_type: str, data, **kwargs) -> str:
     """메시지 타입에 따라 포맷 함수 라우팅.
 
@@ -499,7 +526,7 @@ def format_message(msg_type: str, data, **kwargs) -> str:
                   | 'reviews' | 'promos' | 'customer_segments' | 'customer_list'
                   | 'campaigns' | 'report' | 'abtest'
                   | 'competitor' | 'forecast' | 'trends' | 'rules'
-                  | 'order_alerts' | 'settlement'
+                  | 'order_alerts' | 'settlement' | 'cs_tickets' | 'cs_reply'
         data: 각 타입에 맞는 데이터
         **kwargs: 추가 파라미터 (label, pending, prev_rates 등)
     """
@@ -523,6 +550,8 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'order_alerts': lambda d: _format_order_alerts(d, label=kwargs.get('label', '')),
         'settlement': lambda d: _format_settlement(d, label=kwargs.get('label', '')),
         'tracking': lambda d: _format_tracking(d),
+        'cs_tickets': lambda d: _format_cs_tickets(d, label=kwargs.get('label', '전체')),
+        'cs_reply': lambda d: _format_cs_reply(d),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:

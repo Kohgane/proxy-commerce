@@ -365,3 +365,34 @@ def cmd_tracking(tracking_number: str = '') -> str:
     except Exception as exc:
         logger.error("cmd_tracking 오류: %s", exc)
         return format_message('error', f'배송 추적 실패: {exc}')
+
+
+def cmd_cs_list(args: str = '') -> str:
+    """/cs_list — CS 티켓 목록."""
+    status_filter = args.strip() or None
+    try:
+        from ..customer_service.ticket_manager import TicketManager
+        manager = TicketManager()
+        tickets = manager.list_tickets(status=status_filter)
+        return format_message('cs_tickets', tickets, label=status_filter or '전체')
+    except Exception as exc:
+        logger.error("cmd_cs_list 오류: %s", exc)
+        return format_message('error', f'CS 티켓 목록 조회 실패: {exc}')
+
+
+def cmd_cs_reply(args: str = '') -> str:
+    """/cs_reply <ticket_id> <message> — CS 티켓 답변."""
+    parts = args.strip().split(' ', 1)
+    if len(parts) < 2 or not parts[0] or not parts[1]:
+        return format_message('error', '사용법: /cs_reply <ticket_id> <message>')
+    ticket_id, content = parts[0], parts[1]
+    try:
+        from ..customer_service.ticket_manager import TicketManager
+        manager = TicketManager()
+        msg = manager.add_message(ticket_id, sender='agent', content=content)
+        if msg is None:
+            return format_message('error', f'티켓을 찾을 수 없습니다: {ticket_id}')
+        return format_message('cs_reply', msg)
+    except Exception as exc:
+        logger.error("cmd_cs_reply 오류: %s", exc)
+        return format_message('error', f'CS 답변 전송 실패: {exc}')
