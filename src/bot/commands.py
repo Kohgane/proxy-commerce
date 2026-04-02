@@ -348,3 +348,20 @@ def cmd_settlement(args: str = 'today') -> str:
     except Exception as exc:
         logger.error("cmd_settlement 오류: %s", exc)
         return format_message('error', f'정산 조회 실패: {exc}')
+
+
+def cmd_tracking(tracking_number: str = '') -> str:
+    """/tracking <운송장번호> — 배송 추적."""
+    tn = tracking_number.strip()
+    if not tn:
+        return format_message('error', '운송장 번호를 입력해 주세요. 예: /tracking 1234567890')
+    try:
+        from ..shipping.tracker import ShipmentTracker
+        tracker = ShipmentTracker()
+        record = tracker.get_status(tn)
+        if record is None:
+            return format_message('error', f'등록되지 않은 운송장 번호: {tn}')
+        return format_message('tracking', record)
+    except Exception as exc:
+        logger.error("cmd_tracking 오류: %s", exc)
+        return format_message('error', f'배송 추적 실패: {exc}')

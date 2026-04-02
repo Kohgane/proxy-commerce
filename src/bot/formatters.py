@@ -455,6 +455,42 @@ def _format_settlement(data: dict, label: str = '') -> str:
     return '\n'.join(lines)
 
 
+def _format_tracking(data, **kwargs) -> str:
+    """배송 추적 메시지를 포맷한다."""
+    status_emoji = {
+        'picked_up': '📦',
+        'in_transit': '🚚',
+        'out_for_delivery': '🏃',
+        'delivered': '✅',
+        'exception': '⚠️',
+    }
+    # data may be a ShipmentRecord dataclass or a plain dict
+    if hasattr(data, 'tracking_number'):
+        tn = data.tracking_number
+        carrier = data.carrier
+        status = data.status.value if hasattr(data.status, 'value') else str(data.status)
+        events = data.events or []
+    else:
+        tn = data.get('tracking_number', '-')
+        carrier = data.get('carrier', '-')
+        status = data.get('status', '-')
+        events = data.get('events', [])
+
+    emoji = status_emoji.get(status, '📦')
+    lines = [f"*{emoji} 배송 추적*\n"]
+    lines.append(f"운송장: *{tn}*")
+    lines.append(f"택배사: *{carrier}*")
+    lines.append(f"상태: *{status}*")
+    if events:
+        lines.append("\n*최근 이벤트:*")
+        for ev in events[-3:]:
+            if hasattr(ev, 'description'):
+                lines.append(f"• {ev.location} — {ev.description}")
+            else:
+                lines.append(f"• {ev.get('location', '')} — {ev.get('description', '')}")
+    return '\n'.join(lines)
+
+
 def format_message(msg_type: str, data, **kwargs) -> str:
     """메시지 타입에 따라 포맷 함수 라우팅.
 
@@ -486,6 +522,7 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'rules': lambda d: _format_rules(d, label=kwargs.get('label', '')),
         'order_alerts': lambda d: _format_order_alerts(d, label=kwargs.get('label', '')),
         'settlement': lambda d: _format_settlement(d, label=kwargs.get('label', '')),
+        'tracking': lambda d: _format_tracking(d),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:
