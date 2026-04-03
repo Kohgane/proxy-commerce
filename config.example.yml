@@ -650,3 +650,39 @@ integrations:
   health_check_interval_seconds: 60
   sync_timeout_seconds: 30
   max_log_entries: 5000
+
+# === Phase 61: 데이터 백업/복원 ===
+backup:
+  max_backups: 100
+  default_strategy: full
+  encryption_enabled: true
+  schedule_default: daily
+
+# === Phase 62: 레이트 리미팅 고도화 ===
+rate_limiting:
+  default_limit: 100
+  default_window_seconds: 60
+  algorithm: sliding_window
+
+# === Phase 63: CMS ===
+cms:
+  max_content_items: 10000
+  max_versions_per_item: 50
+  default_status: draft
+
+# === Phase 64: 이벤트 소싱 ===
+event_sourcing:
+  max_events: 1000000
+  snapshot_interval: 100
+
+# === Phase 65: 캐시 계층 ===
+cache_layer:
+  l1_maxsize: 1000
+  l1_ttl_seconds: 300
+  l2_ttl_seconds: 3600
+  l2_path: ./data/cache
+
+# === Phase 66: 워크플로 엔진 ===
+workflow:
+  max_instances: 10000
+  max_history_per_instance: 100

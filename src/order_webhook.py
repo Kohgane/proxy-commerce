@@ -408,6 +408,54 @@ try:
 except Exception as _integrations_bp_exc:
     logger.warning("외부 연동 허브 API Blueprint 등록 실패: %s", _integrations_bp_exc)
 
+# 백업/복원 API Blueprint 등록 (Phase 61)
+try:
+    from .api.backup_api import backup_bp
+    app.register_blueprint(backup_bp)
+    logger.info("백업/복원 API Blueprint 등록 완료")
+except Exception as _backup_bp_exc:
+    logger.warning("백업/복원 API Blueprint 등록 실패: %s", _backup_bp_exc)
+
+# 레이트 리미팅 API Blueprint 등록 (Phase 62)
+try:
+    from .api.rate_limits_api import rate_limits_bp
+    app.register_blueprint(rate_limits_bp)
+    logger.info("레이트 리미팅 API Blueprint 등록 완료")
+except Exception as _rate_limits_bp_exc:
+    logger.warning("레이트 리미팅 API Blueprint 등록 실패: %s", _rate_limits_bp_exc)
+
+# CMS API Blueprint 등록 (Phase 63)
+try:
+    from .api.cms_api import cms_bp
+    app.register_blueprint(cms_bp)
+    logger.info("CMS API Blueprint 등록 완료")
+except Exception as _cms_bp_exc:
+    logger.warning("CMS API Blueprint 등록 실패: %s", _cms_bp_exc)
+
+# 이벤트 소싱 API Blueprint 등록 (Phase 64)
+try:
+    from .api.events_api import events_bp
+    app.register_blueprint(events_bp)
+    logger.info("이벤트 소싱 API Blueprint 등록 완료")
+except Exception as _events_bp_exc:
+    logger.warning("이벤트 소싱 API Blueprint 등록 실패: %s", _events_bp_exc)
+
+# 캐시 계층 API Blueprint 등록 (Phase 65)
+try:
+    from .api.cache_api import cache_bp
+    app.register_blueprint(cache_bp)
+    logger.info("캐시 계층 API Blueprint 등록 완료")
+except Exception as _cache_bp_exc:
+    logger.warning("캐시 계층 API Blueprint 등록 실패: %s", _cache_bp_exc)
+
+# 워크플로 엔진 API Blueprint 등록 (Phase 66)
+try:
+    from .api.workflows_api import workflows_bp
+    app.register_blueprint(workflows_bp)
+    logger.info("워크플로 엔진 API Blueprint 등록 완료")
+except Exception as _workflows_bp_exc:
+    logger.warning("워크플로 엔진 API Blueprint 등록 실패: %s", _workflows_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')
