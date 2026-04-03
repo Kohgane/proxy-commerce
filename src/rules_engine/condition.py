@@ -19,12 +19,18 @@ class ComparisonCondition(Condition):
 
     def evaluate(self, context: dict) -> bool:
         actual = context.get(self.field)
-        if self.operator == 'gt': return actual > self.value
-        if self.operator == 'lt': return actual < self.value
-        if self.operator == 'eq': return actual == self.value
-        if self.operator == 'ne': return actual != self.value
-        if self.operator == 'in': return actual in self.value
-        if self.operator == 'contains': return self.value in str(actual)
+        if self.operator == 'gt':
+            return actual > self.value
+        elif self.operator == 'lt':
+            return actual < self.value
+        elif self.operator == 'eq':
+            return actual == self.value
+        elif self.operator == 'ne':
+            return actual != self.value
+        elif self.operator == 'in':
+            return actual in self.value
+        elif self.operator == 'contains':
+            return self.value in str(actual)
         return False
 
 
@@ -34,9 +40,12 @@ class CompositeCondition(Condition):
     conditions: list = field(default_factory=list)
 
     def evaluate(self, context: dict) -> bool:
-        if self.operator == 'AND': return all(c.evaluate(context) for c in self.conditions)
-        if self.operator == 'OR': return any(c.evaluate(context) for c in self.conditions)
-        if self.operator == 'NOT': return not self.conditions[0].evaluate(context) if self.conditions else True
+        if self.operator == 'AND':
+            return all(c.evaluate(context) for c in self.conditions)
+        elif self.operator == 'OR':
+            return any(c.evaluate(context) for c in self.conditions)
+        elif self.operator == 'NOT':
+            return not self.conditions[0].evaluate(context) if self.conditions else True
         return False
 
 

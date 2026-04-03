@@ -27,7 +27,7 @@ class ImportManager:
             else:
                 errors.append(f"지원하지 않는 형식: {format_}")
         except Exception as exc:
-            errors.append(str(exc))
+            errors.append(f"파싱 오류: {type(exc).__name__}")
 
         valid = len(records)
         invalid = len(errors)

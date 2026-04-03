@@ -41,4 +41,6 @@ class SyncScheduler:
             return True
         now = datetime.datetime.now(tz=datetime.timezone.utc)
         next_dt = datetime.datetime.fromisoformat(next_sync)
+        if next_dt.tzinfo is None:
+            next_dt = next_dt.replace(tzinfo=datetime.timezone.utc)
         return now >= next_dt

@@ -8,7 +8,7 @@ class InputSanitizer:
     """입력 살균기."""
 
     _XSS_PATTERNS = [
-        (re.compile(r'<script[^>]*>.*?</script>', re.IGNORECASE | re.DOTALL), ''),
+        (re.compile(r'<script[^>]*>.*?</\s*script\s*>', re.IGNORECASE | re.DOTALL), ''),
         (re.compile(r'<[^>]+on\w+\s*=', re.IGNORECASE), '<'),
         (re.compile(r'javascript:', re.IGNORECASE), ''),
         (re.compile(r'<[^>]*>', re.IGNORECASE), ''),
