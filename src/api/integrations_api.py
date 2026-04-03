@@ -71,9 +71,9 @@ def sync(name: str):
         result = connector.sync()
         log.record(name, True, "sync", None)
         return jsonify({"name": name, "result": result})
-    except Exception as exc:
-        log.record(name, False, "sync", str(exc))
-        return jsonify({"error": str(exc)}), 500
+    except Exception:
+        log.record(name, False, "sync", "sync_failed")
+        return jsonify({"error": "동기화 실패"}), 500
 
 
 @integrations_bp.get("/logs")

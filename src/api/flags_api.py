@@ -45,8 +45,8 @@ def create_flag():
                                    description=data.get("description", ""))
         audit.record(name, "create", None, flag)
         return jsonify(flag), 201
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 409
+    except ValueError:
+        return jsonify({"error": "이미 존재하는 플래그입니다."}), 409
 
 
 @flags_bp.get("/<name>")
@@ -69,8 +69,8 @@ def update_flag(name: str):
         updated = manager.update_flag(name, **data)
         audit.record(name, "update", old, updated)
         return jsonify(updated)
-    except KeyError as e:
-        return jsonify({"error": str(e)}), 404
+    except KeyError:
+        return jsonify({"error": "플래그 없음"}), 404
 
 
 @flags_bp.delete("/<name>")

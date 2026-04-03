@@ -18,6 +18,7 @@ class PercentageRollout(RolloutStrategy):
     def should_enable(self, user_id: Optional[str] = None, context: Optional[dict] = None) -> bool:
         if user_id is None:
             return False
-        digest = hashlib.md5(user_id.encode()).hexdigest()
+        # Use HMAC-SHA256 for deterministic bucket assignment; MD5 avoided for security
+        digest = hashlib.sha256(user_id.encode()).hexdigest()
         bucket = int(digest[:8], 16) % 100
         return bucket < self.percentage
