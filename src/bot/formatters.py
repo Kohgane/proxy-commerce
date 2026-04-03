@@ -677,6 +677,179 @@ def _format_audit_log(data, label: str = '', **kwargs) -> str:
     return '\n'.join(lines)
 
 
+# ─────────────────────────────────────────────────────────────
+# Phase 67: 실시간 대시보드 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_realtime_status(data) -> str:
+    return (
+        f"*🔴 실시간 연결 상태*\n"
+        f"연결된 클라이언트: {data.get('total_connections', 0)}개\n"
+        f"활성 채널: {data.get('active_channels', 0)}개\n"
+        f"하트비트 성공률: {data.get('heartbeat_rate', 0):.1%}"
+    )
+
+
+def _format_realtime_metrics(data) -> str:
+    orders = data.get('orders', {})
+    revenue = data.get('revenue', {})
+    return (
+        f"*📊 실시간 메트릭*\n"
+        f"주문: 전체 {orders.get('count', 0)}건 / 대기 {orders.get('pending', 0)}건\n"
+        f"오늘 매출: {revenue.get('today', 0):,}원\n"
+        f"에러율: {data.get('error_rate', 0):.2%}"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 68: 데이터 교환 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_export(data) -> str:
+    return (
+        f"*📤 데이터 내보내기*\n"
+        f"형식: {data.get('format', '-')}\n"
+        f"레코드: {data.get('records', 0)}건\n"
+        f"완료 시각: {str(data.get('exported_at', '-'))[:19]}"
+    )
+
+
+def _format_import_status(data) -> str:
+    if isinstance(data, list):
+        return f"*📥 가져오기 현황*\n작업 수: {len(data)}개"
+    return (
+        f"*📥 가져오기 현황*\n"
+        f"처리: {data.get('records_processed', 0)}건\n"
+        f"성공: {data.get('records_valid', 0)}건\n"
+        f"실패: {data.get('records_invalid', 0)}건"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 69: 규칙 엔진 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_rules_list(data) -> str:
+    header = f"*⚖️ 규칙 목록 ({len(data)}개)*\n"
+    if not data:
+        return header + "규칙 없음"
+    lines = [header]
+    for r in data[:5]:
+        status = '✅' if r.get('enabled', True) else '❌'
+        lines.append(f"• {status} {r.get('name', '-')} (우선순위: {r.get('priority', 0)})")
+    return "\n".join(lines)
+
+
+def _format_rules_test(data) -> str:
+    results = data.get('results', [])
+    return (
+        f"*⚖️ 규칙 테스트 결과*\n"
+        f"규칙 ID: {str(data.get('rule_id', '-'))[:8]}...\n"
+        f"실행된 액션: {len(results)}개"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 70: KPI 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_kpi_summary(data) -> str:
+    header = f"*📈 KPI 요약 ({len(data)}개)*\n"
+    if not data:
+        return header + "KPI 없음"
+    lines = [header]
+    for name, value in list(data.items())[:5]:
+        lines.append(f"• {name}: {value}")
+    return "\n".join(lines)
+
+
+def _format_kpi_detail(data) -> str:
+    return (
+        f"*📈 KPI 상세*\n"
+        f"이름: {data.get('name', '-')}\n"
+        f"목표: {data.get('target', 0)} {data.get('unit', '')}\n"
+        f"주기: {data.get('period', '-')}\n"
+        f"공식: {data.get('formula', '-')}"
+    )
+
+
+def _format_kpi_alerts(data) -> str:
+    header = f"*🔔 KPI 알림 ({len(data)}개)*\n"
+    if not data:
+        return header + "알림 없음"
+    lines = [header]
+    for a in data[:5]:
+        lines.append(f"• [{a.get('alert_type', '-')}] {a.get('kpi_name', '-')}: {a.get('current_value', 0)}")
+    return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 71: 마켓플레이스 동기화 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_sync_marketplace(data) -> str:
+    return (
+        f"*🔄 마켓플레이스 동기화*\n"
+        f"마켓플레이스: {data.get('marketplace', '-')}\n"
+        f"작업 유형: {data.get('job_type', '-')}\n"
+        f"상태: {data.get('status', '-')}\n"
+        f"동기화: {data.get('records_synced', 0)}건"
+    )
+
+
+def _format_sync_status(data) -> str:
+    marketplaces = data.get('marketplaces', {})
+    header = f"*🔄 동기화 현황*\n"
+    lines = [header]
+    for name, status in marketplaces.items():
+        lines.append(f"• {name}: {status.get('status', '-')} ({status.get('last_sync', '-')})")
+    return "\n".join(lines) if len(lines) > 1 else header + "동기화 없음"
+
+
+def _format_sync_logs(data) -> str:
+    return (
+        f"*🔄 동기화 로그 요약*\n"
+        f"전체: {data.get('total_jobs', 0)}건\n"
+        f"성공: {data.get('success_count', 0)}건\n"
+        f"실패: {data.get('failure_count', 0)}건\n"
+        f"건너뜀: {data.get('skip_count', 0)}건"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 72: 보안 강화 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_security_audit(data) -> str:
+    header = f"*🔒 보안 감사 로그 ({len(data)}개)*\n"
+    if not data:
+        return header + "로그 없음"
+    lines = [header]
+    for e in data[:5]:
+        lines.append(f"• [{e.get('event_type', '-')}] {e.get('user_id', '-')} @ {e.get('ip', '-')}")
+    return "\n".join(lines)
+
+
+def _format_security_sessions(data) -> str:
+    header = f"*🔒 활성 세션 ({len(data)}개)*\n"
+    if not data:
+        return header + "세션 없음"
+    lines = [header]
+    for s in data[:5]:
+        lines.append(f"• {s.get('user_id', '-')} ({str(s.get('session_id', '-'))[:8]}...)")
+    return "\n".join(lines)
+
+
+def _format_ip_block(data) -> str:
+    action = data.get('action', '-')
+    return (
+        f"*🔒 IP 차단*\n"
+        f"IP: {data.get('ip', '-')}\n"
+        f"조치: {action}\n"
+        f"접근 허용: {'예' if data.get('allowed', False) else '아니오'}"
+    )
+
+
 def format_message(msg_type: str, data, **kwargs) -> str:
     """메시지 타입에 따라 포맷 함수 라우팅.
 
@@ -788,6 +961,27 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'workflow_list': lambda d: _format_workflow_list(d),
         'workflow_start': lambda d: _format_workflow_start(d),
         'workflow_status': lambda d: _format_workflow_status(d),
+        # Phase 67: 실시간 대시보드
+        'realtime_status': lambda d: _format_realtime_status(d),
+        'realtime_metrics': lambda d: _format_realtime_metrics(d),
+        # Phase 68: 데이터 교환
+        'export': lambda d: _format_export(d),
+        'import_status': lambda d: _format_import_status(d),
+        # Phase 69: 규칙 엔진
+        'rules_list': lambda d: _format_rules_list(d),
+        'rules_test': lambda d: _format_rules_test(d),
+        # Phase 70: KPI
+        'kpi_summary': lambda d: _format_kpi_summary(d),
+        'kpi_detail': lambda d: _format_kpi_detail(d),
+        'kpi_alerts': lambda d: _format_kpi_alerts(d),
+        # Phase 71: 마켓플레이스 동기화
+        'sync_marketplace': lambda d: _format_sync_marketplace(d),
+        'sync_status': lambda d: _format_sync_status(d),
+        'sync_logs': lambda d: _format_sync_logs(d),
+        # Phase 72: 보안 강화
+        'security_audit': lambda d: _format_security_audit(d),
+        'security_sessions': lambda d: _format_security_sessions(d),
+        'ip_block': lambda d: _format_ip_block(d),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:
