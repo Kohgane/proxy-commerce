@@ -767,6 +767,27 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         # Phase 60: 외부 연동
         'integration_list': lambda d: _format_integration_list(d),
         'integration_sync': lambda d: _format_integration_sync(d),
+        # Phase 61: 백업/복원
+        'backup_create': lambda d: _format_backup_create(d),
+        'backup_list': lambda d: _format_backup_list(d),
+        'backup_restore': lambda d: _format_backup_restore(d),
+        # Phase 62: 레이트 리미팅
+        'ratelimit_status': lambda d: _format_ratelimit_status(d),
+        'ratelimit_policy': lambda d: _format_ratelimit_policy(d),
+        # Phase 63: CMS
+        'cms_list': lambda d: _format_cms_list(d),
+        'cms_publish': lambda d: _format_cms_publish(d),
+        'cms_draft': lambda d: _format_cms_draft(d),
+        # Phase 64: 이벤트 소싱
+        'events_recent': lambda d: _format_events_recent(d),
+        'events_replay': lambda d: _format_events_replay(d),
+        # Phase 65: 캐시 계층
+        'cache_stats': lambda d: _format_cache_stats(d),
+        'cache_clear': lambda d: _format_cache_clear(d),
+        # Phase 66: 워크플로 엔진
+        'workflow_list': lambda d: _format_workflow_list(d),
+        'workflow_start': lambda d: _format_workflow_start(d),
+        'workflow_status': lambda d: _format_workflow_status(d),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:
@@ -1212,4 +1233,191 @@ def _format_integration_sync(data) -> str:
     return (
         f"*🔗 연동 동기화: {name}*\n"
         f"{icon} 동기화: {'완료' if synced else '실패'}"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 61: 백업/복원 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_backup_create(data) -> str:
+    """백업 생성 결과 포맷."""
+    return (
+        f"*💾 백업 생성 완료*\n"
+        f"ID: {str(data.get('backup_id', '-'))[:8]}...\n"
+        f"전략: {data.get('strategy', '-')}\n"
+        f"크기: {data.get('size_bytes', 0)} bytes\n"
+        f"생성: {data.get('created_at', '-')[:19]}"
+    )
+
+
+def _format_backup_list(data) -> str:
+    """백업 목록 포맷."""
+    header = f"*💾 백업 목록 ({len(data)}개)*\n"
+    if not data:
+        return header + "백업 없음"
+    lines = [header]
+    for b in data[:5]:
+        lines.append(f"• {str(b.get('backup_id', '-'))[:8]}... ({b.get('strategy', '-')})")
+    return "\n".join(lines)
+
+
+def _format_backup_restore(data) -> str:
+    """백업 복원 결과 포맷."""
+    return (
+        f"*💾 백업 복원*\n"
+        f"ID: {str(data.get('backup_id', '-'))[:8]}...\n"
+        f"✅ 복원 완료"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 62: 레이트 리미팅 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_ratelimit_status(data) -> str:
+    """레이트 리밋 상태 포맷."""
+    return (
+        f"*🚦 레이트 리밋 상태*\n"
+        f"정책 수: {data.get('total_policies', 0)}\n"
+        f"사용량 항목: {len(data.get('usage', []))}"
+    )
+
+
+def _format_ratelimit_policy(data) -> str:
+    """레이트 리밋 정책 포맷."""
+    if "policies" in data:
+        policies = data["policies"]
+        header = f"*🚦 레이트 리밋 정책 ({len(policies)}개)*\n"
+        if not policies:
+            return header + "정책 없음"
+        lines = [header]
+        for p in policies[:5]:
+            lines.append(f"• {p.get('endpoint', '-')}: {p.get('limit', 0)}req/{p.get('window', 0)}s")
+        return "\n".join(lines)
+    return (
+        f"*🚦 레이트 리밋 정책*\n"
+        f"엔드포인트: {data.get('endpoint', '-')}\n"
+        f"제한: {data.get('limit', '-')} req/{data.get('window', '-')}s"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 63: CMS 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_cms_list(data) -> str:
+    """CMS 콘텐츠 목록 포맷."""
+    header = f"*📄 CMS 콘텐츠 목록 ({len(data)}개)*\n"
+    if not data:
+        return header + "콘텐츠 없음"
+    lines = [header]
+    for item in data[:5]:
+        icon = "✅" if item.get("status") == "published" else "📝"
+        lines.append(f"{icon} {item.get('title', '-')} [{item.get('content_type', '-')}]")
+    return "\n".join(lines)
+
+
+def _format_cms_publish(data) -> str:
+    """콘텐츠 발행 결과 포맷."""
+    return (
+        f"*📄 콘텐츠 발행*\n"
+        f"ID: {str(data.get('content_id', '-'))[:8]}...\n"
+        f"✅ 상태: {data.get('status', 'published')}"
+    )
+
+
+def _format_cms_draft(data) -> str:
+    """콘텐츠 초안 전환 결과 포맷."""
+    return (
+        f"*📄 콘텐츠 초안 전환*\n"
+        f"ID: {str(data.get('content_id', '-'))[:8]}...\n"
+        f"📝 상태: {data.get('status', 'draft')}"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 64: 이벤트 소싱 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_events_recent(data) -> str:
+    """최근 이벤트 포맷."""
+    header = f"*📨 최근 이벤트 ({len(data)}개)*\n"
+    if not data:
+        return header + "이벤트 없음"
+    lines = [header]
+    for e in data[:5]:
+        lines.append(f"• [{e.get('event_type', '-')}] {e.get('aggregate_id', '-')[:8]}...")
+    return "\n".join(lines)
+
+
+def _format_events_replay(data) -> str:
+    """이벤트 리플레이 결과 포맷."""
+    events = data.get("events", [])
+    return (
+        f"*📨 이벤트 리플레이*\n"
+        f"Aggregate: {data.get('aggregate_id', '-')[:8]}...\n"
+        f"리플레이된 이벤트: {len(events)}개"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 65: 캐시 계층 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_cache_stats(data) -> str:
+    """캐시 통계 포맷."""
+    return (
+        f"*⚡ 캐시 통계*\n"
+        f"히트: {data.get('hits', 0)} / 미스: {data.get('misses', 0)}\n"
+        f"히트율: {data.get('hit_rate', 0):.1%}\n"
+        f"평균 히트: {data.get('avg_hit_ms', 0):.1f}ms"
+    )
+
+
+def _format_cache_clear(data) -> str:
+    """캐시 초기화 결과 포맷."""
+    count = data.get('invalidated', 0)
+    if count == -1:
+        return f"*⚡ 캐시 전체 초기화 완료*"
+    return (
+        f"*⚡ 캐시 무효화*\n"
+        f"패턴: {data.get('pattern', '-')}\n"
+        f"무효화된 항목: {count}개"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 66: 워크플로 엔진 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_workflow_list(data) -> str:
+    """워크플로 목록 포맷."""
+    header = f"*⚙️ 워크플로 목록 ({len(data)}개)*\n"
+    if not data:
+        return header + "워크플로 없음"
+    lines = [header]
+    for wf in data:
+        lines.append(f"• {wf.get('name', '-')} (초기: {wf.get('initial_state', '-')})")
+    return "\n".join(lines)
+
+
+def _format_workflow_start(data) -> str:
+    """워크플로 시작 결과 포맷."""
+    return (
+        f"*⚙️ 워크플로 시작*\n"
+        f"인스턴스: {str(data.get('instance_id', '-'))[:8]}...\n"
+        f"워크플로: {data.get('definition_name', '-')}\n"
+        f"현재 상태: {data.get('current_state', '-')}"
+    )
+
+
+def _format_workflow_status(data) -> str:
+    """워크플로 상태 포맷."""
+    history = data.get("history", [])
+    return (
+        f"*⚙️ 워크플로 상태*\n"
+        f"인스턴스: {str(data.get('instance_id', '-'))[:8]}...\n"
+        f"현재 상태: {data.get('current_state', '-')}\n"
+        f"전환 횟수: {len(history)}"
     )

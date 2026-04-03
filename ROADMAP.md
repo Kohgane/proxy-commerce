@@ -413,10 +413,82 @@
 - 봇 커맨드: `/integration_list`, `/integration_sync`
 - 관련 코드: `src/integrations/`
 
-## 🔮 향후 Phase 61+ 고려 사항
-- Phase 61: AI 기반 상품 추천 시스템 (협업 필터링, 콘텐츠 기반)
-- Phase 62: 실시간 재고 예측 (시계열 예측)
-- Phase 63: GraphQL API 게이트웨이
-- Phase 64: 이벤트 소싱 + CQRS 패턴
-- Phase 65: 분산 캐시 클러스터
-- Phase 66: 마이크로서비스 분리
+## Phase 61: 백업/복원
+- `BackupStrategy` ABC: `create`, `restore` 인터페이스
+- `BackupManager`: 백업 생성/복원/삭제/목록 (인메모리)
+- `FullBackup`: 전체 데이터 JSON 직렬화
+- `IncrementalBackup`: 변경 키만 저장하는 증분 백업
+- `BackupScheduler`: daily/weekly/monthly 스케줄 관리
+- `BackupEncryption`: HMAC-SHA256 서명/검증 (무결성 보장)
+- `RestoreValidator`: 복원 전 데이터 유효성 검증
+- API Blueprint: `src/api/backup_api.py` (`/api/v1/backup`)
+- 봇 커맨드: `/backup_create`, `/backup_list`, `/backup_restore`
+- 관련 코드: `src/backup/`
+
+## Phase 62: 레이트 리미팅
+- `RateLimiter`: 기본 클래스
+- `SlidingWindowLimiter`: 슬라이딩 윈도우 알고리즘
+- `TokenBucketLimiter`: 토큰 버킷 알고리즘
+- `LeakyBucketLimiter`: 리키 버킷 알고리즘
+- `RateLimitPolicy`: 엔드포인트별 정책 관리
+- `RateLimitMiddleware`: Flask before_request 미들웨어
+- `RateLimitDashboard`: 현재 사용량/통계 조회
+- API Blueprint: `src/api/rate_limits_api.py` (`/api/v1/rate-limits`)
+- 봇 커맨드: `/ratelimit_status`, `/ratelimit_policy`
+- 관련 코드: `src/rate_limiting/`
+
+## Phase 63: CMS
+- `ContentType` Enum: page, notice, faq, blog, banner
+- `ContentManager`: 콘텐츠 CRUD
+- `ContentVersion`: 버전 히스토리 (스냅샷)
+- `ContentPublisher`: 발행/비발행/예약
+- `ContentRenderer`: 마크다운→HTML (stdlib only)
+- `SEOMetadata`: title/description/keywords 관리
+- API Blueprint: `src/api/cms_api.py` (`/api/v1/cms`)
+- 봇 커맨드: `/cms_list`, `/cms_publish`, `/cms_draft`
+- 관련 코드: `src/cms/`
+
+## Phase 64: 이벤트 소싱
+- `Event` 데이터클래스: event_type, aggregate_id, data, timestamp, version, event_id
+- `EventStore`: append-only 이벤트 저장소
+- `EventHandler` ABC: 이벤트 처리 인터페이스
+- `EventBus`: pub-sub 이벤트 버스
+- `Aggregate`: 이벤트 기반 애그리게이트
+- `EventProjection`: 이벤트→읽기 모델 변환
+- `EventReplay`: 버전/타임스탬프 기준 리플레이
+- API Blueprint: `src/api/events_api.py` (`/api/v1/events`)
+- 봇 커맨드: `/events_recent`, `/events_replay`
+- 관련 코드: `src/event_sourcing/`
+
+## Phase 65: 캐시 계층
+- `L1Cache`: OrderedDict 기반 인메모리 LRU 캐시
+- `L2Cache`: JSON 파일 기반 캐시 (TTL)
+- `CacheManager`: L1+L2 오케스트레이션
+- `CacheInvalidator`: 태그/패턴 기반 무효화
+- `CacheWarmer`: 캐시 사전 워밍
+- `CacheStats`: 히트/미스/응답시간 통계
+- `cached` 데코레이터: 함수 결과 캐시
+- API Blueprint: `src/api/cache_api.py` (`/api/v1/cache`)
+- 봇 커맨드: `/cache_stats`, `/cache_clear`
+- 관련 코드: `src/cache_layer/`
+
+## Phase 66: 워크플로 엔진
+- `State`: 상태 데이터클래스 (on_enter, on_exit, is_terminal)
+- `Transition`: 전환 데이터클래스 (from/to state, condition, action)
+- `WorkflowAction` ABC: execute/rollback 인터페이스
+- `WorkflowDefinition`: 워크플로 정의 (상태+전환+초기상태)
+- `WorkflowInstance`: 실행 중인 인스턴스 (UUID, 히스토리)
+- `WorkflowEngine`: 정의 등록/인스턴스 실행/전환
+- `WorkflowHistory`: 전환 이력 저장
+- 내장 워크플로: `OrderWorkflow` (주문접수→결제→배송→완료), `ReturnWorkflow` (반품접수→검수→환불)
+- API Blueprint: `src/api/workflows_api.py` (`/api/v1/workflows`)
+- 봇 커맨드: `/workflow_list`, `/workflow_start`, `/workflow_status`
+- 관련 코드: `src/workflow/`
+
+## 🔮 향후 Phase 67+ 고려 사항
+- Phase 67: AI 기반 상품 추천 시스템 (협업 필터링, 콘텐츠 기반)
+- Phase 68: 실시간 재고 예측 (시계열 예측)
+- Phase 69: GraphQL API 게이트웨이
+- Phase 70: 분산 추적 (Distributed Tracing)
+- Phase 71: 마이크로서비스 분리
+

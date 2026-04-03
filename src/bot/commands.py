@@ -1340,3 +1340,264 @@ def cmd_integration_sync(name: str = '') -> str:
     except Exception as exc:
         logger.error("cmd_integration_sync 오류: %s", exc)
         return format_message('error', f'연동 동기화 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 61: 백업/복원
+# ─────────────────────────────────────────────────────────────
+
+def cmd_backup_create() -> str:
+    """/backup_create — 백업 생성."""
+    try:
+        from ..backup.backup_manager import BackupManager
+        from ..backup.full_backup import FullBackup
+        manager = BackupManager()
+        entry = manager.create({"timestamp": "now"}, strategy=FullBackup())
+        return format_message('backup_create', entry)
+    except Exception as exc:
+        logger.error("cmd_backup_create 오류: %s", exc)
+        return format_message('error', f'백업 생성 실패: {exc}')
+
+
+def cmd_backup_list() -> str:
+    """/backup_list — 백업 목록."""
+    try:
+        from ..backup.backup_manager import BackupManager
+        manager = BackupManager()
+        backups = manager.list_backups()
+        return format_message('backup_list', backups)
+    except Exception as exc:
+        logger.error("cmd_backup_list 오류: %s", exc)
+        return format_message('error', f'백업 목록 조회 실패: {exc}')
+
+
+def cmd_backup_restore(backup_id: str = '') -> str:
+    """/backup_restore <id> — 백업 복원."""
+    backup_id = backup_id.strip()
+    if not backup_id:
+        return format_message('error', '사용법: /backup_restore <id>')
+    try:
+        from ..backup.backup_manager import BackupManager
+        manager = BackupManager()
+        restored = manager.restore(backup_id)
+        return format_message('backup_restore', {'backup_id': backup_id, 'restored': restored})
+    except KeyError:
+        return format_message('error', f'백업 없음: {backup_id}')
+    except Exception as exc:
+        logger.error("cmd_backup_restore 오류: %s", exc)
+        return format_message('error', f'백업 복원 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 62: 레이트 리미팅
+# ─────────────────────────────────────────────────────────────
+
+def cmd_ratelimit_status() -> str:
+    """/ratelimit_status — 레이트 리밋 상태."""
+    try:
+        from ..rate_limiting.rate_limit_policy import RateLimitPolicy
+        from ..rate_limiting.sliding_window_limiter import SlidingWindowLimiter
+        from ..rate_limiting.rate_limit_dashboard import RateLimitDashboard
+        policy = RateLimitPolicy()
+        limiter = SlidingWindowLimiter()
+        dashboard = RateLimitDashboard(limiter=limiter, policy=policy)
+        stats = dashboard.get_stats()
+        return format_message('ratelimit_status', stats)
+    except Exception as exc:
+        logger.error("cmd_ratelimit_status 오류: %s", exc)
+        return format_message('error', f'레이트 리밋 상태 조회 실패: {exc}')
+
+
+def cmd_ratelimit_policy(endpoint: str = '') -> str:
+    """/ratelimit_policy <endpoint> — 레이트 리밋 정책 조회."""
+    endpoint = endpoint.strip()
+    try:
+        from ..rate_limiting.rate_limit_policy import RateLimitPolicy
+        policy = RateLimitPolicy()
+        if endpoint:
+            p = policy.get_policy(endpoint)
+            return format_message('ratelimit_policy', p or {'endpoint': endpoint, 'error': '정책 없음'})
+        return format_message('ratelimit_policy', {'policies': policy.list_policies()})
+    except Exception as exc:
+        logger.error("cmd_ratelimit_policy 오류: %s", exc)
+        return format_message('error', f'레이트 리밋 정책 조회 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 63: CMS
+# ─────────────────────────────────────────────────────────────
+
+def cmd_cms_list() -> str:
+    """/cms_list — CMS 콘텐츠 목록."""
+    try:
+        from ..cms.content_manager import ContentManager
+        manager = ContentManager()
+        items = manager.list_all()
+        return format_message('cms_list', items)
+    except Exception as exc:
+        logger.error("cmd_cms_list 오류: %s", exc)
+        return format_message('error', f'CMS 목록 조회 실패: {exc}')
+
+
+def cmd_cms_publish(content_id: str = '') -> str:
+    """/cms_publish <id> — 콘텐츠 발행."""
+    content_id = content_id.strip()
+    if not content_id:
+        return format_message('error', '사용법: /cms_publish <id>')
+    try:
+        from ..cms.content_manager import ContentManager
+        from ..cms.content_publisher import ContentPublisher
+        manager = ContentManager()
+        publisher = ContentPublisher(manager=manager)
+        result = publisher.publish(content_id)
+        return format_message('cms_publish', result)
+    except KeyError:
+        return format_message('error', f'콘텐츠 없음: {content_id}')
+    except Exception as exc:
+        logger.error("cmd_cms_publish 오류: %s", exc)
+        return format_message('error', f'콘텐츠 발행 실패: {exc}')
+
+
+def cmd_cms_draft(content_id: str = '') -> str:
+    """/cms_draft <id> — 콘텐츠 초안으로 전환."""
+    content_id = content_id.strip()
+    if not content_id:
+        return format_message('error', '사용법: /cms_draft <id>')
+    try:
+        from ..cms.content_manager import ContentManager
+        from ..cms.content_publisher import ContentPublisher
+        manager = ContentManager()
+        publisher = ContentPublisher(manager=manager)
+        result = publisher.unpublish(content_id)
+        return format_message('cms_draft', result)
+    except KeyError:
+        return format_message('error', f'콘텐츠 없음: {content_id}')
+    except Exception as exc:
+        logger.error("cmd_cms_draft 오류: %s", exc)
+        return format_message('error', f'콘텐츠 초안 전환 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 64: 이벤트 소싱
+# ─────────────────────────────────────────────────────────────
+
+def cmd_events_recent() -> str:
+    """/events_recent — 최근 이벤트 목록."""
+    try:
+        from ..event_sourcing.event_store import EventStore
+        store = EventStore()
+        events = store.get_all()[-10:]
+        return format_message('events_recent', [e.to_dict() for e in events])
+    except Exception as exc:
+        logger.error("cmd_events_recent 오류: %s", exc)
+        return format_message('error', f'이벤트 조회 실패: {exc}')
+
+
+def cmd_events_replay(aggregate_id: str = '') -> str:
+    """/events_replay <aggregate_id> — 이벤트 리플레이."""
+    aggregate_id = aggregate_id.strip()
+    if not aggregate_id:
+        return format_message('error', '사용법: /events_replay <aggregate_id>')
+    try:
+        from ..event_sourcing.event_store import EventStore
+        from ..event_sourcing.event_replay import EventReplay
+        store = EventStore()
+        replay = EventReplay()
+        events = store.get_events(aggregate_id)
+        replayed = replay.replay(events)
+        return format_message('events_replay', {
+            'aggregate_id': aggregate_id,
+            'events': [e.to_dict() for e in replayed],
+        })
+    except Exception as exc:
+        logger.error("cmd_events_replay 오류: %s", exc)
+        return format_message('error', f'이벤트 리플레이 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 65: 캐시 계층
+# ─────────────────────────────────────────────────────────────
+
+def cmd_cache_stats() -> str:
+    """/cache_stats — 캐시 통계."""
+    try:
+        from ..cache_layer.cache_stats import CacheStats
+        stats = CacheStats()
+        return format_message('cache_stats', stats.get_stats())
+    except Exception as exc:
+        logger.error("cmd_cache_stats 오류: %s", exc)
+        return format_message('error', f'캐시 통계 조회 실패: {exc}')
+
+
+def cmd_cache_clear(pattern: str = '') -> str:
+    """/cache_clear [pattern] — 캐시 초기화."""
+    try:
+        from ..cache_layer.cache_manager import CacheManager
+        from ..cache_layer.cache_invalidator import CacheInvalidator
+        manager = CacheManager()
+        if pattern.strip():
+            invalidator = CacheInvalidator(manager)
+            count = invalidator.invalidate_by_pattern(pattern.strip())
+            return format_message('cache_clear', {'pattern': pattern, 'invalidated': count})
+        manager.clear()
+        return format_message('cache_clear', {'pattern': '*', 'invalidated': -1})
+    except Exception as exc:
+        logger.error("cmd_cache_clear 오류: %s", exc)
+        return format_message('error', f'캐시 초기화 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 66: 워크플로 엔진
+# ─────────────────────────────────────────────────────────────
+
+def cmd_workflow_list() -> str:
+    """/workflow_list — 워크플로 목록."""
+    try:
+        from ..workflow.workflow_engine import WorkflowEngine
+        from ..workflow.workflows.order_workflow import OrderWorkflow
+        from ..workflow.workflows.return_workflow import ReturnWorkflow
+        engine = WorkflowEngine()
+        engine.register(OrderWorkflow.build())
+        engine.register(ReturnWorkflow.build())
+        return format_message('workflow_list', engine.list_definitions())
+    except Exception as exc:
+        logger.error("cmd_workflow_list 오류: %s", exc)
+        return format_message('error', f'워크플로 목록 조회 실패: {exc}')
+
+
+def cmd_workflow_start(name: str = '') -> str:
+    """/workflow_start <name> — 워크플로 시작."""
+    name = name.strip()
+    if not name:
+        return format_message('error', '사용법: /workflow_start <name>')
+    try:
+        from ..workflow.workflow_engine import WorkflowEngine
+        from ..workflow.workflows.order_workflow import OrderWorkflow
+        from ..workflow.workflows.return_workflow import ReturnWorkflow
+        engine = WorkflowEngine()
+        engine.register(OrderWorkflow.build())
+        engine.register(ReturnWorkflow.build())
+        instance = engine.start(name)
+        return format_message('workflow_start', instance.to_dict())
+    except KeyError:
+        return format_message('error', f'워크플로 없음: {name}')
+    except Exception as exc:
+        logger.error("cmd_workflow_start 오류: %s", exc)
+        return format_message('error', f'워크플로 시작 실패: {exc}')
+
+
+def cmd_workflow_status(instance_id: str = '') -> str:
+    """/workflow_status <instance_id> — 워크플로 상태."""
+    instance_id = instance_id.strip()
+    if not instance_id:
+        return format_message('error', '사용법: /workflow_status <instance_id>')
+    try:
+        from ..workflow.workflow_engine import WorkflowEngine
+        engine = WorkflowEngine()
+        status_data = engine.get_status(instance_id)
+        if status_data is None:
+            return format_message('error', f'인스턴스 없음: {instance_id}')
+        return format_message('workflow_status', status_data)
+    except Exception as exc:
+        logger.error("cmd_workflow_status 오류: %s", exc)
+        return format_message('error', f'워크플로 상태 조회 실패: {exc}')
