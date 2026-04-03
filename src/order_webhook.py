@@ -256,6 +256,62 @@ try:
 except Exception as _audit_bp_exc:
     logger.warning("감사 로그 API Blueprint 등록 실패: %s", _audit_bp_exc)
 
+# 위시리스트 API Blueprint 등록 (Phase 43)
+try:
+    from .api.wishlist_api import wishlist_bp
+    app.register_blueprint(wishlist_bp)
+    logger.info("위시리스트 API Blueprint 등록 완료")
+except Exception as _wishlist_bp_exc:
+    logger.warning("위시리스트 API Blueprint 등록 실패: %s", _wishlist_bp_exc)
+
+# 번들 API Blueprint 등록 (Phase 44)
+try:
+    from .api.bundles_api import bundles_bp
+    app.register_blueprint(bundles_bp)
+    logger.info("번들 API Blueprint 등록 완료")
+except Exception as _bundles_bp_exc:
+    logger.warning("번들 API Blueprint 등록 실패: %s", _bundles_bp_exc)
+
+# 멀티통화 API Blueprint 등록 (Phase 45)
+try:
+    from .api.multicurrency_api import multicurrency_bp
+    app.register_blueprint(multicurrency_bp)
+    logger.info("멀티통화 API Blueprint 등록 완료")
+except Exception as _mc_bp_exc:
+    logger.warning("멀티통화 API Blueprint 등록 실패: %s", _mc_bp_exc)
+
+# 결제 게이트웨이 API Blueprint 등록 (Phase 45)
+try:
+    from .api.payment_api import payment_bp
+    app.register_blueprint(payment_bp)
+    logger.info("결제 게이트웨이 API Blueprint 등록 완료")
+except Exception as _pay_bp_exc:
+    logger.warning("결제 게이트웨이 API Blueprint 등록 실패: %s", _pay_bp_exc)
+
+# 이미지 관리 API Blueprint 등록 (Phase 46)
+try:
+    from .api.images_api import images_bp
+    app.register_blueprint(images_bp)
+    logger.info("이미지 관리 API Blueprint 등록 완료")
+except Exception as _img_bp_exc:
+    logger.warning("이미지 관리 API Blueprint 등록 실패: %s", _img_bp_exc)
+
+# 사용자 프로필 API Blueprint 등록 (Phase 47)
+try:
+    from .api.users_api import users_bp
+    app.register_blueprint(users_bp)
+    logger.info("사용자 프로필 API Blueprint 등록 완료")
+except Exception as _users_bp_exc:
+    logger.warning("사용자 프로필 API Blueprint 등록 실패: %s", _users_bp_exc)
+
+# 검색 엔진 API Blueprint 등록 (Phase 48)
+try:
+    from .api.search_api import search_bp
+    app.register_blueprint(search_bp)
+    logger.info("검색 엔진 API Blueprint 등록 완료")
+except Exception as _search_bp_exc:
+    logger.warning("검색 엔진 API Blueprint 등록 실패: %s", _search_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')
