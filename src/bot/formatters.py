@@ -982,6 +982,26 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'security_audit': lambda d: _format_security_audit(d),
         'security_sessions': lambda d: _format_security_sessions(d),
         'ip_block': lambda d: _format_ip_block(d),
+        # Phase 73: 고객 세그먼트
+        'segments_list': lambda d: _format_segments_list(d),
+        'segment_detail': lambda d: _format_segment_detail(d),
+        'segment_export': lambda d: _format_segment_export(d),
+        # Phase 74: 동적 폼 빌더
+        'forms_list': lambda d: _format_forms_list(d),
+        'form_submissions': lambda d: _format_form_submissions(d),
+        # Phase 75: 워크플로 엔진 고도화
+        'workflow_engine_list': lambda d: _format_workflow_engine_list(d),
+        'workflow_engine_start': lambda d: _format_workflow_engine_start(d),
+        'workflow_engine_status': lambda d: _format_workflow_engine_status(d),
+        # Phase 76: 파일 스토리지
+        'files_list': lambda d: _format_files_list(d),
+        'file_quota': lambda d: _format_file_quota(d),
+        'file_delete': lambda d: _format_file_delete(d),
+        # Phase 77: 이벤트 소싱 고도화
+        'events_list': lambda d: _format_events_list(d),
+        'event_replay': lambda d: _format_event_replay(d),
+        # Phase 78: 피처 플래그 고도화
+        'flag_evaluate': lambda d: _format_flag_evaluate(d),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:
@@ -1614,4 +1634,187 @@ def _format_workflow_status(data) -> str:
         f"인스턴스: {str(data.get('instance_id', '-'))[:8]}...\n"
         f"현재 상태: {data.get('current_state', '-')}\n"
         f"전환 횟수: {len(history)}"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 73: 고객 세그먼트 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_segments_list(data) -> str:
+    """세그먼트 목록 포맷."""
+    header = f"*👥 세그먼트 목록 ({len(data)}개)*\n"
+    if not data:
+        return header + "세그먼트 없음"
+    lines = [header]
+    for seg in data:
+        builtin_tag = " (내장)" if seg.get("builtin") else ""
+        lines.append(f"• {seg.get('name', '-')}{builtin_tag} — {seg.get('customer_count', 0)}명")
+    return "\n".join(lines)
+
+
+def _format_segment_detail(data) -> str:
+    """세그먼트 상세 포맷."""
+    rules = data.get("rules", [])
+    return (
+        f"*👥 세그먼트: {data.get('name', '-')}*\n"
+        f"설명: {data.get('description', '-')}\n"
+        f"로직: {data.get('logic', 'AND')}\n"
+        f"규칙 수: {len(rules)}개\n"
+        f"고객 수: {data.get('customer_count', 0)}명"
+    )
+
+
+def _format_segment_export(data) -> str:
+    """세그먼트 내보내기 결과 포맷."""
+    return (
+        f"*📊 세그먼트 내보내기*\n"
+        f"세그먼트: {data.get('segment_name', '-')}\n"
+        f"레코드: {data.get('record_count', 0)}개\n"
+        f"✅ CSV 생성 완료"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 74: 동적 폼 빌더 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_forms_list(data) -> str:
+    """폼 목록 포맷."""
+    header = f"*📋 폼 목록 ({len(data)}개)*\n"
+    if not data:
+        return header + "폼 없음"
+    lines = [header]
+    for form in data:
+        fields_count = len(form.get("fields", []))
+        lines.append(f"• {form.get('name', '-')} (v{form.get('version', 1)}, {fields_count}개 필드)")
+    return "\n".join(lines)
+
+
+def _format_form_submissions(data) -> str:
+    """폼 제출 목록 포맷."""
+    submissions = data.get("submissions", [])
+    return (
+        f"*📋 폼 제출 목록*\n"
+        f"폼 ID: {data.get('form_id', '-')}\n"
+        f"제출 수: {len(submissions)}개"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 75: 워크플로 엔진 고도화 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_workflow_engine_list(data) -> str:
+    """워크플로 엔진 목록 포맷."""
+    header = f"*⚙️ 워크플로 목록 ({len(data)}개)*\n"
+    if not data:
+        return header + "워크플로 없음"
+    lines = [header]
+    for wf in data:
+        states_count = len(wf.get("states", []))
+        lines.append(f"• {wf.get('name', '-')} ({states_count}개 상태)")
+    return "\n".join(lines)
+
+
+def _format_workflow_engine_start(data) -> str:
+    """워크플로 시작 결과 포맷."""
+    return (
+        f"*⚙️ 워크플로 시작*\n"
+        f"인스턴스: {str(data.get('instance_id', '-'))[:8]}...\n"
+        f"워크플로: {data.get('definition_name', '-')}\n"
+        f"현재 상태: {data.get('current_state', '-')}"
+    )
+
+
+def _format_workflow_engine_status(data) -> str:
+    """워크플로 인스턴스 상태 포맷."""
+    history = data.get("history", [])
+    return (
+        f"*⚙️ 워크플로 상태*\n"
+        f"인스턴스: {str(data.get('instance_id', '-'))[:8]}...\n"
+        f"상태: {data.get('status', '-')}\n"
+        f"현재: {data.get('current_state', '-')}\n"
+        f"전환 횟수: {len(history)}"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 76: 파일 스토리지 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_files_list(data) -> str:
+    """파일 목록 포맷."""
+    header = f"*📁 파일 목록 ({len(data)}개)*\n"
+    if not data:
+        return header + "파일 없음"
+    lines = [header]
+    for f in data[:10]:
+        lines.append(f"• {f.get('filename', '-')} ({f.get('size', 0):,}B)")
+    if len(data) > 10:
+        lines.append(f"_... 외 {len(data) - 10}개 생략_")
+    return "\n".join(lines)
+
+
+def _format_file_quota(data) -> str:
+    """스토리지 사용량 포맷."""
+    used_mb = data.get("used_bytes", 0) / (1024 * 1024)
+    quota_mb = data.get("quota_bytes", 0) / (1024 * 1024)
+    return (
+        f"*📁 스토리지 사용량*\n"
+        f"소유자: {data.get('owner_id', '-')}\n"
+        f"사용: {used_mb:.1f}MB / {quota_mb:.1f}MB\n"
+        f"사용률: {data.get('usage_pct', 0):.1f}%"
+    )
+
+
+def _format_file_delete(data) -> str:
+    """파일 삭제 결과 포맷."""
+    return (
+        f"*📁 파일 삭제*\n"
+        f"키: {data.get('key', '-')}\n"
+        f"✅ 삭제 완료"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 77: 이벤트 소싱 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_events_list(data) -> str:
+    """이벤트 목록 포맷."""
+    header = f"*📨 이벤트 목록 ({len(data)}개)*\n"
+    if not data:
+        return header + "이벤트 없음"
+    lines = [header]
+    for e in data[:5]:
+        lines.append(f"• [{e.get('event_type', '-')}] {e.get('aggregate_id', '-')[:8]}...")
+    if len(data) > 5:
+        lines.append(f"_... 외 {len(data) - 5}개 생략_")
+    return "\n".join(lines)
+
+
+def _format_event_replay(data) -> str:
+    """이벤트 리플레이 결과 포맷."""
+    return (
+        f"*📨 이벤트 리플레이*\n"
+        f"Aggregate: {data.get('aggregate_id', '-')[:8]}...\n"
+        f"리플레이: {data.get('replayed_count', 0)}개"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 78: 피처 플래그 고도화 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_flag_evaluate(data) -> str:
+    """플래그 평가 결과 포맷."""
+    status = "✅ 활성" if data.get("enabled") else "❌ 비활성"
+    return (
+        f"*🚩 플래그 평가*\n"
+        f"플래그: {data.get('flag_name', '-')}\n"
+        f"사용자: {data.get('user_id', '-') or '(없음)'}\n"
+        f"결과: {status}\n"
+        f"이유: {data.get('reason', '-')}\n"
+        f"변형: {data.get('variant') or '없음'}"
     )

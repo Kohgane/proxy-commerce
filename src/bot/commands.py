@@ -1812,3 +1812,277 @@ def cmd_ip_block(ip: str = '') -> str:
     except Exception as exc:
         logger.error("cmd_ip_block 오류: %s", exc)
         return format_message('error', f'IP 차단 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 73: 고객 세그먼트 커맨드
+# ─────────────────────────────────────────────────────────────
+
+def cmd_segments() -> str:
+    """/segments — 세그먼트 목록."""
+    try:
+        from ..segmentation import SegmentManager
+        mgr = SegmentManager()
+        return format_message('segments_list', mgr.list())
+    except Exception as exc:
+        logger.error("cmd_segments 오류: %s", exc)
+        return format_message('error', f'세그먼트 목록 조회 실패: {exc}')
+
+
+def cmd_segment_detail(name: str = '') -> str:
+    """/segment_detail <name> — 세그먼트 상세."""
+    name = name.strip()
+    if not name:
+        return format_message('error', '사용법: /segment_detail <name>')
+    try:
+        from ..segmentation import SegmentManager
+        mgr = SegmentManager()
+        seg = mgr.get(name)
+        if seg is None:
+            return format_message('error', f'세그먼트 없음: {name}')
+        return format_message('segment_detail', seg)
+    except Exception as exc:
+        logger.error("cmd_segment_detail 오류: %s", exc)
+        return format_message('error', f'세그먼트 상세 조회 실패: {exc}')
+
+
+def cmd_segment_export(name: str = '') -> str:
+    """/segment_export <name> — 세그먼트 CSV 내보내기."""
+    name = name.strip()
+    if not name:
+        return format_message('error', '사용법: /segment_export <name>')
+    try:
+        from ..segmentation import SegmentManager, SegmentExporter
+        mgr = SegmentManager()
+        if mgr.get(name) is None:
+            return format_message('error', f'세그먼트 없음: {name}')
+        customer_ids = mgr.get_customers(name)
+        customers = [{'customer_id': cid} for cid in customer_ids]
+        exporter = SegmentExporter()
+        result = exporter.export_segment(name, customers)
+        return format_message('segment_export', result)
+    except Exception as exc:
+        logger.error("cmd_segment_export 오류: %s", exc)
+        return format_message('error', f'세그먼트 내보내기 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 74: 동적 폼 빌더 커맨드
+# ─────────────────────────────────────────────────────────────
+
+def cmd_forms_list() -> str:
+    """/forms_list — 폼 목록."""
+    try:
+        from ..form_builder import FormManager
+        mgr = FormManager()
+        return format_message('forms_list', mgr.list())
+    except Exception as exc:
+        logger.error("cmd_forms_list 오류: %s", exc)
+        return format_message('error', f'폼 목록 조회 실패: {exc}')
+
+
+def cmd_form_submissions(form_id: str = '') -> str:
+    """/form_submissions <form_id> — 폼 제출 목록."""
+    form_id = form_id.strip()
+    if not form_id:
+        return format_message('error', '사용법: /form_submissions <form_id>')
+    try:
+        from ..form_builder import FormSubmission
+        store = FormSubmission()
+        submissions = store.list_by_form(form_id)
+        return format_message('form_submissions', {'form_id': form_id, 'submissions': submissions})
+    except Exception as exc:
+        logger.error("cmd_form_submissions 오류: %s", exc)
+        return format_message('error', f'폼 제출 목록 조회 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 75: 워크플로 엔진 커맨드
+# ─────────────────────────────────────────────────────────────
+
+def cmd_workflows() -> str:
+    """/workflows — 워크플로 목록."""
+    try:
+        from ..workflow_engine import WorkflowEngine
+        engine = WorkflowEngine()
+        return format_message('workflow_engine_list', engine.list_definitions())
+    except Exception as exc:
+        logger.error("cmd_workflows 오류: %s", exc)
+        return format_message('error', f'워크플로 목록 조회 실패: {exc}')
+
+
+def cmd_workflow_start_engine(name: str = '') -> str:
+    """/workflow_start <name> — 워크플로 시작."""
+    name = name.strip()
+    if not name:
+        return format_message('error', '사용법: /workflow_start <name>')
+    try:
+        from ..workflow_engine import WorkflowEngine
+        engine = WorkflowEngine()
+        instance = engine.start(name)
+        return format_message('workflow_engine_start', instance.to_dict())
+    except Exception as exc:
+        logger.error("cmd_workflow_start_engine 오류: %s", exc)
+        return format_message('error', f'워크플로 시작 실패: {exc}')
+
+
+def cmd_workflow_status_engine(instance_id: str = '') -> str:
+    """/workflow_status <id> — 워크플로 인스턴스 상태."""
+    instance_id = instance_id.strip()
+    if not instance_id:
+        return format_message('error', '사용법: /workflow_status <id>')
+    try:
+        from ..workflow_engine import WorkflowEngine
+        engine = WorkflowEngine()
+        instance = engine.get_instance(instance_id)
+        if instance is None:
+            return format_message('error', f'인스턴스 없음: {instance_id}')
+        return format_message('workflow_engine_status', instance.to_dict())
+    except Exception as exc:
+        logger.error("cmd_workflow_status_engine 오류: %s", exc)
+        return format_message('error', f'워크플로 상태 조회 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 76: 파일 스토리지 커맨드
+# ─────────────────────────────────────────────────────────────
+
+def cmd_files_list() -> str:
+    """/files_list — 파일 목록."""
+    try:
+        from ..file_storage import StorageManager
+        mgr = StorageManager()
+        files = mgr.list()
+        return format_message('files_list', [f.to_dict() for f in files])
+    except Exception as exc:
+        logger.error("cmd_files_list 오류: %s", exc)
+        return format_message('error', f'파일 목록 조회 실패: {exc}')
+
+
+def cmd_file_quota(owner_id: str = 'default') -> str:
+    """/file_quota — 스토리지 사용량."""
+    owner_id = owner_id.strip() or 'default'
+    try:
+        from ..file_storage import StorageManager
+        mgr = StorageManager()
+        return format_message('file_quota', mgr.get_quota(owner_id))
+    except Exception as exc:
+        logger.error("cmd_file_quota 오류: %s", exc)
+        return format_message('error', f'스토리지 사용량 조회 실패: {exc}')
+
+
+def cmd_file_delete(key: str = '') -> str:
+    """/file_delete <key> — 파일 삭제."""
+    key = key.strip()
+    if not key:
+        return format_message('error', '사용법: /file_delete <key>')
+    try:
+        from ..file_storage import StorageManager
+        mgr = StorageManager()
+        mgr.delete(key)
+        return format_message('file_delete', {'key': key, 'deleted': True})
+    except Exception as exc:
+        logger.error("cmd_file_delete 오류: %s", exc)
+        return format_message('error', f'파일 삭제 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 77: 이벤트 소싱 커맨드
+# ─────────────────────────────────────────────────────────────
+
+def cmd_events_list(aggregate_id: str = '') -> str:
+    """/events_list <aggregate_id> — 이벤트 목록."""
+    aggregate_id = aggregate_id.strip()
+    try:
+        from ..event_sourcing import EventStore
+        store = EventStore()
+        if aggregate_id:
+            events = store.get_events(aggregate_id)
+        else:
+            events = store.get_all()
+        return format_message('events_list', [e.to_dict() for e in events])
+    except Exception as exc:
+        logger.error("cmd_events_list 오류: %s", exc)
+        return format_message('error', f'이벤트 목록 조회 실패: {exc}')
+
+
+def cmd_event_replay(aggregate_id: str = '') -> str:
+    """/event_replay <aggregate_id> — 이벤트 리플레이."""
+    aggregate_id = aggregate_id.strip()
+    if not aggregate_id:
+        return format_message('error', '사용법: /event_replay <aggregate_id>')
+    try:
+        from ..event_sourcing import EventStore, EventReplay
+        store = EventStore()
+        replay = EventReplay()
+        events = store.get_events(aggregate_id)
+        replayed = replay.replay(events)
+        return format_message('event_replay', {
+            'aggregate_id': aggregate_id,
+            'replayed_count': len(replayed),
+        })
+    except Exception as exc:
+        logger.error("cmd_event_replay 오류: %s", exc)
+        return format_message('error', f'이벤트 리플레이 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 78: 피처 플래그 고도화 커맨드
+# ─────────────────────────────────────────────────────────────
+
+def cmd_flags() -> str:
+    """/flags — 피처 플래그 목록."""
+    try:
+        from ..feature_flags import FeatureFlagManager
+        mgr = FeatureFlagManager()
+        return format_message('flag_list', mgr.list_flags())
+    except Exception as exc:
+        logger.error("cmd_flags 오류: %s", exc)
+        return format_message('error', f'피처 플래그 목록 조회 실패: {exc}')
+
+
+def cmd_flag_toggle(name: str = '') -> str:
+    """/flag_toggle <name> — 플래그 토글."""
+    name = name.strip()
+    if not name:
+        return format_message('error', '사용법: /flag_toggle <name>')
+    try:
+        from ..feature_flags import FeatureFlagManager
+        mgr = FeatureFlagManager()
+        flag = mgr.get_flag(name)
+        if flag is None:
+            return format_message('error', f'플래그 없음: {name}')
+        updated = mgr.update_flag(name, enabled=not flag['enabled'])
+        return format_message('flag_toggle', updated)
+    except Exception as exc:
+        logger.error("cmd_flag_toggle 오류: %s", exc)
+        return format_message('error', f'플래그 토글 실패: {exc}')
+
+
+def cmd_flag_evaluate(name: str = '', user_id: str = '') -> str:
+    """/flag_evaluate <name> <user_id> — 플래그 평가."""
+    name = name.strip()
+    user_id = user_id.strip()
+    if not name:
+        return format_message('error', '사용법: /flag_evaluate <name> <user_id>')
+    try:
+        from ..feature_flags import (
+            FeatureFlagManager, FeatureFlag, TargetingRule, FlagEvaluatorAdvanced
+        )
+        mgr = FeatureFlagManager()
+        flag_data = mgr.get_flag(name)
+        if flag_data is None:
+            return format_message('error', f'플래그 없음: {name}')
+        rules = [TargetingRule(**r) for r in flag_data.get('rules', [])]
+        flag = FeatureFlag(
+            name=flag_data['name'],
+            enabled=flag_data.get('enabled', False),
+            rules=rules,
+            rollout_percentage=flag_data.get('rollout_percentage', 100.0),
+        )
+        evaluator = FlagEvaluatorAdvanced()
+        result = evaluator.evaluate(flag, user_id=user_id)
+        return format_message('flag_evaluate', {'flag_name': name, 'user_id': user_id, **result})
+    except Exception as exc:
+        logger.error("cmd_flag_evaluate 오류: %s", exc)
+        return format_message('error', f'플래그 평가 실패: {exc}')

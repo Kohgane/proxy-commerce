@@ -47,6 +47,30 @@
 | Phase 52 | API 문서 자동 생성 (OpenAPI 3.0, HTML 렌더링) | #47 | 2026-04-03 |
 | Phase 53 | 구조화된 로깅 + 분산 추적 (JSON 로그, trace_id) | #47 | 2026-04-03 |
 | Phase 54 | 성능 벤치마크 도구 (부하 테스트, 회귀 감지) | #47 | 2026-04-03 |
+| Phase 55 | 파일 스토리지 관리 (로컬/S3/GCS 백엔드, 쿼터) | #48 | 2026-04-03 |
+| Phase 56 | 이메일 서비스 (SMTP/SendGrid mock, 템플릿, 발송 큐) | #48 | 2026-04-03 |
+| Phase 57 | 검색 엔진 고도화 (역인덱스, TF-IDF, 자동완성) | #48 | 2026-04-03 |
+| Phase 58 | 작업 파이프라인 (순차 파이프라인, 빌더 패턴) | #48 | 2026-04-03 |
+| Phase 59 | 피처 플래그 (플래그 CRUD, % 롤아웃, 사용자 타겟팅) | #48 | 2026-04-03 |
+| Phase 60 | 외부 연동 허브 (Slack/Sheets/Shopify mock, 헬스체크) | #48 | 2026-04-03 |
+| Phase 61 | 백업/복원 시스템 (전체/증분, 암호화, 스케줄) | #49 | 2026-04-03 |
+| Phase 62 | 레이트 리미팅 (슬라이딩 윈도우/토큰 버킷/리키 버킷) | #49 | 2026-04-03 |
+| Phase 63 | CMS 콘텐츠 관리 (페이지/공지/FAQ/블로그, 버전 관리) | #49 | 2026-04-03 |
+| Phase 64 | 이벤트 소싱 (이벤트 저장소, pub-sub 버스, 프로젝션) | #49 | 2026-04-03 |
+| Phase 65 | 캐시 계층 (L1 LRU + L2 파일, 태그 무효화, @cached) | #49 | 2026-04-03 |
+| Phase 66 | 워크플로 엔진 (상태 머신, 전환 조건/액션, 내장 워크플로) | #49 | 2026-04-03 |
+| Phase 67 | 실시간 대시보드 (SSE 이벤트 허브, 채널 구독, 메트릭) | #50 | 2026-04-03 |
+| Phase 68 | 데이터 교환 (CSV/JSON/XML 내보내기/가져오기, 변환) | #50 | 2026-04-03 |
+| Phase 69 | 규칙 엔진 (복합 조건 AND/OR/NOT, 우선순위 실행) | #50 | 2026-04-03 |
+| Phase 70 | KPI 대시보드 (GMV/CVR/AOV 등 내장 KPI, 임계값 알림) | #50 | 2026-04-03 |
+| Phase 71 | 마켓플레이스 동기화 (쿠팡/네이버/G마켓, 충돌 해결) | #50 | 2026-04-03 |
+| Phase 72 | 보안 강화 (XSS/SQLi 방어, CSRF, IP 필터, 세션 관리) | #50 | 2026-04-03 |
+| Phase 73 | 고객 세그먼트 관리 (규칙 기반 자동 분류, 분석, CSV 내보내기) | #51 | 2026-04-03 |
+| Phase 74 | 동적 폼 빌더 (폼 정의/검증/제출, 다양한 필드 타입, HTML 렌더링) | #51 | 2026-04-03 |
+| Phase 75 | 워크플로 엔진 고도화 (상태 머신, 전환 조건, 내장 4종 워크플로) | #51 | 2026-04-03 |
+| Phase 76 | 파일 스토리지 추상화 (Local/S3/GCS mock, 청크 업로드, 쿼터) | #51 | 2026-04-03 |
+| Phase 77 | 이벤트 소싱 고도화 (스냅샷, OrderAggregate, 리플레이) | #51 | 2026-04-03 |
+| Phase 78 | 피처 플래그 고도화 (타겟팅, 점진적 롤아웃, A/B 변형, 오버라이드) | #51 | 2026-04-03 |
 
 ## 🚧 진행 중 Phase
 
@@ -547,10 +571,76 @@
 - API Blueprint: `src/api/security_api.py` (`/api/v1/security`)
 - 봇 커맨드: `/security_audit`, `/security_sessions`, `/ip_block`
 
-## 🔮 향후 Phase 73+ 고려 사항
-- Phase 73: AI 기반 상품 추천 시스템 (협업 필터링, 콘텐츠 기반)
-- Phase 74: 실시간 재고 예측 (시계열 예측)
-- Phase 75: GraphQL API 게이트웨이
-- Phase 76: 분산 추적 (Distributed Tracing)
-- Phase 77: 마이크로서비스 분리
+## 🔮 향후 Phase 79+ 고려 사항
+- Phase 79: AI 기반 상품 추천 시스템 (협업 필터링, 콘텐츠 기반)
+- Phase 80: 실시간 재고 예측 (시계열 예측)
+- Phase 81: GraphQL API 게이트웨이
+- Phase 82: 분산 추적 (Distributed Tracing)
+- Phase 83: 마이크로서비스 분리
 
+
+## Phase 73: 고객 세그먼트 관리 ✅
+- `SegmentRule`: 세그먼트 조건 정의 (구매금액, 구매횟수, 마지막구매일, 지역, 채널)
+- `SegmentBuilder`: 규칙 기반 자동 세그먼트 빌더 (AND/OR 조합)
+- `SegmentManager`: 고객 세그먼트 CRUD + 자동/수동 분류
+- `SegmentAnalyzer`: 세그먼트별 통계 (크기, 평균 주문금액, LTV, 이탈률)
+- `SegmentExporter`: 세그먼트 고객 목록 CSV 내보내기
+- 내장 세그먼트: VIP, 신규, 이탈위험, 대량구매, 재구매고객
+- API Blueprint: `src/api/segmentation_api.py` (`/api/v1/segments`)
+- 봇 커맨드: `/segments`, `/segment_detail`, `/segment_export`
+
+## Phase 74: 동적 폼 빌더 ✅
+- `FieldType`: 텍스트, 숫자, 셀렉트, 체크박스, 날짜, 파일, 주소, 이메일, 전화 등
+- `FormField` 데이터클래스: name, field_type, label, required, options, validation
+- `FormDefinition` 데이터클래스: name, fields, validation_rules, version
+- `FormManager`: 폼 CRUD + 버전 관리
+- `FormValidator`: 폼 제출 데이터 검증 (필수, 패턴, 범위, 커스텀 규칙)
+- `FormSubmission`: 폼 제출 데이터 저장 + 조회
+- `FormRenderer`: 폼 HTML 렌더링 (서버사이드)
+- API Blueprint: `src/api/form_builder_api.py` (`/api/v1/forms`)
+- 봇 커맨드: `/forms_list`, `/form_submissions`
+
+## Phase 75: 워크플로 엔진 고도화 ✅
+- `WorkflowState`: 상태 정의 (이름, 진입/이탈 액션, 타임아웃, 종료 여부)
+- `WorkflowTransition`: 전환 정의 (from_state, to_state, condition, action)
+- `WorkflowDefinition` 데이터클래스: name, states, transitions, triggers
+- `WorkflowInstance`: 워크플로 실행 인스턴스 (현재 상태, 이력, 컨텍스트)
+- `WorkflowTrigger`: 트리거 (이벤트 기반, 스케줄 기반, 수동)
+- `WorkflowHistory`: 워크플로 실행 이력 추적
+- `WorkflowEngine`: 워크플로 실행 엔진 (상태 머신 기반)
+- 내장 워크플로: 주문처리, 반품처리, CS티켓, 상품등록
+- API Blueprint: `src/api/workflow_engine_api.py` (`/api/v1/workflows`)
+- 봇 커맨드: `/workflows`, `/workflow_start`, `/workflow_status`
+
+## Phase 76: 파일 스토리지 추상화 ✅
+- `StorageBackend` ABC: 스토리지 백엔드 인터페이스 (put/get/delete/exists/list)
+- `LocalStorage`: 로컬 파일시스템 mock (인메모리 dict)
+- `S3Storage`: AWS S3 호환 mock
+- `GCSStorage`: Google Cloud Storage mock
+- `FileMetadata` 데이터클래스: key, filename, content_type, size, checksum, created_at
+- `FileUploader`: 파일 업로드 (청크 업로드, 진행률, 중복 검사)
+- `FileOrganizer`: 파일 경로 관리 (날짜별, 타입별 자동 정리)
+- `FileQuota`: 사용자별/테넌트별 스토리지 사용량 관리
+- `StorageManager`: 파일 스토리지 통합 관리자
+- API Blueprint: `src/api/file_storage_api.py` (`/api/v1/files`)
+- 봇 커맨드: `/files_list`, `/file_quota`, `/file_delete`
+
+## Phase 77: 이벤트 소싱 고도화 ✅
+- `Snapshot` 데이터클래스: aggregate_id, version, state, snapshot_id, created_at
+- `SnapshotStore`: 스냅샷 저장소 (인메모리, N개 이벤트마다 자동 트리거)
+- `OrderAggregate`: 주문 애그리거트 예제 (생성/확인/배송/완료/취소 이벤트)
+- 기존 EventStore, EventBus, Aggregate, EventProjection, EventReplay 확장
+- API Blueprint: `src/api/event_sourcing_api.py` (`/api/v1/events`)
+- 봇 커맨드: `/events_list`, `/event_replay`
+
+## Phase 78: 피처 플래그 고도화 ✅
+- `TargetingRule`: 타겟팅 규칙 (사용자 속성, eq/neq/in/not_in/gt/lt 연산자)
+- `Variant`: A/B 변형 정의 (가중치 포함)
+- `FeatureFlag` 데이터클래스: name, enabled, rules, rollout_percentage, variants
+- `GradualRollout`: 점진적 롤아웃 (비율 기반, 해시 기반 일관성)
+- `VariantManager`: A/B 변형 관리 (가중치 기반 할당, 사용자 고정)
+- `FlagHistory`: 플래그 변경 이력 추적
+- `FlagOverride`: 특정 사용자/환경에 대한 오버라이드
+- `FlagEvaluatorAdvanced`: 컨텍스트 기반 고도화 평가 (타겟팅, 롤아웃, 오버라이드 우선순위)
+- API Blueprint: `src/api/feature_flags_api.py` (`/api/v1/feature-flags`)
+- 봇 커맨드: `/flags`, `/flag_toggle`, `/flag_evaluate`

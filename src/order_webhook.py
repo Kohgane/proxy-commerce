@@ -504,6 +504,54 @@ try:
 except Exception as _security_bp_exc:
     logger.warning("보안 강화 API Blueprint 등록 실패: %s", _security_bp_exc)
 
+# 고객 세그먼트 API Blueprint 등록 (Phase 73)
+try:
+    from .api.segmentation_api import segmentation_bp
+    app.register_blueprint(segmentation_bp)
+    logger.info("고객 세그먼트 API Blueprint 등록 완료")
+except Exception as _seg_bp_exc:
+    logger.warning("고객 세그먼트 API Blueprint 등록 실패: %s", _seg_bp_exc)
+
+# 동적 폼 빌더 API Blueprint 등록 (Phase 74)
+try:
+    from .api.form_builder_api import form_builder_bp
+    app.register_blueprint(form_builder_bp)
+    logger.info("동적 폼 빌더 API Blueprint 등록 완료")
+except Exception as _form_bp_exc:
+    logger.warning("동적 폼 빌더 API Blueprint 등록 실패: %s", _form_bp_exc)
+
+# 워크플로 엔진 고도화 API Blueprint 등록 (Phase 75)
+try:
+    from .api.workflow_engine_api import workflow_engine_bp
+    app.register_blueprint(workflow_engine_bp)
+    logger.info("워크플로 엔진 고도화 API Blueprint 등록 완료")
+except Exception as _wf_engine_bp_exc:
+    logger.warning("워크플로 엔진 고도화 API Blueprint 등록 실패: %s", _wf_engine_bp_exc)
+
+# 파일 스토리지 추상화 API Blueprint 등록 (Phase 76)
+try:
+    from .api.file_storage_api import file_storage_bp
+    app.register_blueprint(file_storage_bp)
+    logger.info("파일 스토리지 추상화 API Blueprint 등록 완료")
+except Exception as _fs_bp_exc:
+    logger.warning("파일 스토리지 추상화 API Blueprint 등록 실패: %s", _fs_bp_exc)
+
+# 이벤트 소싱 고도화 API Blueprint 등록 (Phase 77)
+try:
+    from .api.event_sourcing_api import event_sourcing_bp
+    app.register_blueprint(event_sourcing_bp)
+    logger.info("이벤트 소싱 고도화 API Blueprint 등록 완료")
+except Exception as _es_bp_exc:
+    logger.warning("이벤트 소싱 고도화 API Blueprint 등록 실패: %s", _es_bp_exc)
+
+# 피처 플래그 고도화 API Blueprint 등록 (Phase 78)
+try:
+    from .api.feature_flags_api import feature_flags_bp
+    app.register_blueprint(feature_flags_bp)
+    logger.info("피처 플래그 고도화 API Blueprint 등록 완료")
+except Exception as _ff_bp_exc:
+    logger.warning("피처 플래그 고도화 API Blueprint 등록 실패: %s", _ff_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')

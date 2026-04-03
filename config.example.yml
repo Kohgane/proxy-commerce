@@ -732,3 +732,52 @@ security:
     require_uppercase: true
     require_numbers: true
     require_special: true
+
+# === Phase 73: 고객 세그먼트 관리 ===
+segmentation:
+  auto_rebuild_interval_hours: 24
+  max_segments: 100
+  builtin_segments:
+    - VIP
+    - 신규
+    - 이탈위험
+    - 대량구매
+    - 재구매고객
+
+# === Phase 74: 동적 폼 빌더 ===
+form_builder:
+  max_fields_per_form: 50
+  max_submissions_per_form: 10000
+  submission_ttl_days: 365
+
+# === Phase 75: 워크플로 엔진 고도화 ===
+workflow_engine:
+  max_instances: 50000
+  max_history_per_instance: 200
+  instance_ttl_days: 90
+
+# === Phase 76: 파일 스토리지 추상화 ===
+file_storage:
+  default_backend: local
+  default_quota_gb: 1
+  max_file_size_mb: 100
+  allowed_content_types:
+    - image/jpeg
+    - image/png
+    - image/gif
+    - application/pdf
+    - text/csv
+    - application/json
+
+# === Phase 77: 이벤트 소싱 고도화 ===
+event_sourcing_advanced:
+  snapshot_interval: 10
+  max_events_per_aggregate: 10000
+  replay_batch_size: 100
+
+# === Phase 78: 피처 플래그 고도화 ===
+feature_flags_advanced:
+  max_flags: 500
+  flag_cache_ttl_seconds: 60
+  default_rollout_percentage: 100
+  history_retention_days: 90
