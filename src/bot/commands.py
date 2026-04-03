@@ -1013,3 +1013,123 @@ def cmd_experiments() -> str:
         logger.error("cmd_experiments 오류: %s", exc)
         return format_message('error', f'실험 목록 조회 실패: {exc}')
 
+
+
+def cmd_tenant_info(tenant_id: str = '') -> str:
+    """/tenant_info <tenant_id> — 테넌트 정보 조회."""
+    tenant_id = tenant_id.strip()
+    if not tenant_id:
+        return format_message('error', '사용법: /tenant_info <tenant_id>')
+    try:
+        from ..tenancy.tenant_manager import TenantManager
+        mgr = TenantManager()
+        tenant = mgr.get(tenant_id)
+        if tenant is None:
+            return format_message('error', f'테넌트 없음: {tenant_id}')
+        return format_message('tenant_info', tenant)
+    except Exception as exc:
+        logger.error("cmd_tenant_info 오류: %s", exc)
+        return format_message('error', f'테넌트 조회 실패: {exc}')
+
+
+def cmd_tenant_usage(tenant_id: str = '') -> str:
+    """/tenant_usage <tenant_id> — 테넌트 사용량."""
+    tenant_id = tenant_id.strip()
+    if not tenant_id:
+        return format_message('error', '사용법: /tenant_usage <tenant_id>')
+    try:
+        from ..tenancy.usage_tracker import UsageTracker
+        tracker = UsageTracker()
+        usage = tracker.get_usage(tenant_id)
+        return format_message('tenant_usage', usage, label=tenant_id)
+    except Exception as exc:
+        logger.error("cmd_tenant_usage 오류: %s", exc)
+        return format_message('error', f'사용량 조회 실패: {exc}')
+
+
+def cmd_experiment_list() -> str:
+    """/experiment_list — A/B 실험 목록."""
+    try:
+        from ..ab_testing.experiment_manager import ExperimentManager
+        mgr = ExperimentManager()
+        experiments = mgr.list_experiments()
+        return format_message('experiment_list', experiments)
+    except Exception as exc:
+        logger.error("cmd_experiment_list 오류: %s", exc)
+        return format_message('error', f'실험 목록 조회 실패: {exc}')
+
+
+def cmd_experiment_result(experiment_id: str = '') -> str:
+    """/experiment_result <id> — A/B 실험 결과."""
+    experiment_id = experiment_id.strip()
+    if not experiment_id:
+        return format_message('error', '사용법: /experiment_result <id>')
+    try:
+        from ..ab_testing.experiment_report import ExperimentReport
+        report = ExperimentReport()
+        result = report.generate(experiment_id)
+        return format_message('experiment_result', result)
+    except Exception as exc:
+        logger.error("cmd_experiment_result 오류: %s", exc)
+        return format_message('error', f'실험 결과 조회 실패: {exc}')
+
+
+def cmd_webhook_list() -> str:
+    """/webhook_list — 웹훅 목록."""
+    try:
+        from ..webhook_manager.webhook_registry import WebhookRegistry
+        registry = WebhookRegistry()
+        webhooks = registry.list_webhooks()
+        return format_message('webhook_list', webhooks)
+    except Exception as exc:
+        logger.error("cmd_webhook_list 오류: %s", exc)
+        return format_message('error', f'웹훅 목록 조회 실패: {exc}')
+
+
+def cmd_webhook_test(webhook_id: str = '') -> str:
+    """/webhook_test <id> — 웹훅 테스트 전송."""
+    webhook_id = webhook_id.strip()
+    if not webhook_id:
+        return format_message('error', '사용법: /webhook_test <id>')
+    try:
+        from ..webhook_manager.webhook_registry import WebhookRegistry
+        registry = WebhookRegistry()
+        webhook = registry.get_webhook(webhook_id)
+        if webhook is None:
+            return format_message('error', f'웹훅 없음: {webhook_id}')
+        return format_message('webhook_test', {'webhook_id': webhook_id, 'status': 'queued'})
+    except Exception as exc:
+        logger.error("cmd_webhook_test 오류: %s", exc)
+        return format_message('error', f'웹훅 테스트 실패: {exc}')
+
+
+def cmd_benchmark_run(url: str = '') -> str:
+    """/benchmark_run — 벤치마크 실행."""
+    url = url.strip() or 'http://localhost:8000/health'
+    try:
+        from ..benchmark.load_profile import LoadProfile
+        from ..benchmark.benchmark_runner import BenchmarkRunner
+        profile = LoadProfile(
+            concurrent_users=5,
+            duration_seconds=5,
+            ramp_up_seconds=1,
+            target_url=url,
+        )
+        runner = BenchmarkRunner()
+        result = runner.run(profile)
+        return format_message('benchmark_result', result)
+    except Exception as exc:
+        logger.error("cmd_benchmark_run 오류: %s", exc)
+        return format_message('error', f'벤치마크 실행 실패: {exc}')
+
+
+def cmd_benchmark_results() -> str:
+    """/benchmark_results — 최근 벤치마크 결과."""
+    try:
+        from ..benchmark.regression_detector import RegressionDetector
+        detector = RegressionDetector()
+        results = detector.list_results()
+        return format_message('benchmark_results', results)
+    except Exception as exc:
+        logger.error("cmd_benchmark_results 오류: %s", exc)
+        return format_message('error', f'벤치마크 결과 조회 실패: {exc}')

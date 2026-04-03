@@ -740,6 +740,14 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'popular_searches': lambda d: _format_popular_searches(d),
         'tenants': lambda d: _format_tenants(d),
         'experiments': lambda d: _format_experiments(d),
+        'tenant_info': lambda d: _format_tenant_info(d),
+        'tenant_usage': lambda d: _format_tenant_usage(d, label=kwargs.get('label', '')),
+        'experiment_list': lambda d: _format_experiment_list(d),
+        'experiment_result': lambda d: _format_experiment_result(d),
+        'webhook_list': lambda d: _format_webhook_list(d),
+        'webhook_test': lambda d: _format_webhook_test(d),
+        'benchmark_result': lambda d: _format_benchmark_result(d),
+        'benchmark_results': lambda d: _format_benchmark_results(d),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:
@@ -906,4 +914,109 @@ def _format_experiments(data) -> str:
             f"• [{exp.get('status', '-')}] {exp.get('name', '-')} "
             f"(변형: {variants})"
         )
+    return "\n".join(lines)
+
+
+def _format_tenant_info(data) -> str:
+    """테넌트 상세 정보 포맷."""
+    if not isinstance(data, dict):
+        return str(data)
+    status_emoji = '✅' if data.get('status') == 'active' else '❌'
+    return (
+        f"*🏢 테넌트 정보*\n"
+        f"ID: {data.get('id', '-')}\n"
+        f"이름: {data.get('name', '-')}\n"
+        f"상태: {status_emoji} {data.get('status', '-')}\n"
+        f"플랜: {data.get('plan', 'free')}\n"
+        f"생성일: {str(data.get('created_at', '-'))[:10]}"
+    )
+
+
+def _format_tenant_usage(data, label: str = '') -> str:
+    """테넌트 사용량 포맷."""
+    header = f"*📊 테넌트 사용량{f' — {label}' if label else ''}*\n"
+    if not data:
+        return header + "사용량 없음"
+    lines = [header]
+    for metric, value in data.items():
+        lines.append(f"• {metric}: {value}")
+    return "\n".join(lines)
+
+
+def _format_experiment_list(data) -> str:
+    """A/B 실험 목록 포맷."""
+    header = "*🧪 A/B 실험 목록*\n"
+    if not data:
+        return header + "실험 없음"
+    lines = [header]
+    for exp in data[:10]:
+        status = exp.get('status', '-')
+        lines.append(f"• [{status}] {exp.get('name', '-')} (ID: {exp.get('id', '-')})")
+    return "\n".join(lines)
+
+
+def _format_experiment_result(data) -> str:
+    """A/B 실험 결과 포맷."""
+    if not isinstance(data, dict):
+        return str(data)
+    header = f"*📈 실험 결과: {data.get('experiment_name', data.get('experiment_id', '-'))}*\n"
+    lines = [header]
+    metrics = data.get('metrics', {})
+    for variant, m in metrics.items():
+        sig = data.get('significance', {}).get(variant, {})
+        sig_mark = '✅' if sig.get('is_significant') else '-'
+        lines.append(
+            f"• {variant}: 전환 {m.get('conversions', 0)}/{m.get('impressions', 0)} {sig_mark}"
+        )
+    return "\n".join(lines)
+
+
+def _format_webhook_list(data) -> str:
+    """웹훅 목록 포맷."""
+    header = "*🔗 웹훅 목록*\n"
+    if not data:
+        return header + "등록된 웹훅 없음"
+    lines = [header]
+    for wh in data[:10]:
+        status = '✅' if wh.get('active', True) else '❌'
+        events = ','.join(wh.get('events', []))
+        lines.append(f"• {status} {wh.get('url', '-')} — {events}")
+    return "\n".join(lines)
+
+
+def _format_webhook_test(data) -> str:
+    """웹훅 테스트 결과 포맷."""
+    return (
+        f"*🔔 웹훅 테스트*\n"
+        f"ID: {data.get('webhook_id', '-')}\n"
+        f"상태: {data.get('status', '-')}"
+    )
+
+
+def _format_benchmark_result(data) -> str:
+    """벤치마크 결과 포맷."""
+    if not isinstance(data, dict):
+        return str(data)
+    stats = data.get('stats', {})
+    error_rate = data.get('error_rate', 0)
+    return (
+        f"*⚡ 벤치마크 결과*\n"
+        f"P50: {stats.get('p50', '-')}ms\n"
+        f"P95: {stats.get('p95', '-')}ms\n"
+        f"P99: {stats.get('p99', '-')}ms\n"
+        f"평균: {stats.get('mean', '-')}ms\n"
+        f"오류율: {error_rate:.1%}"
+    )
+
+
+def _format_benchmark_results(data) -> str:
+    """벤치마크 결과 목록 포맷."""
+    header = "*📊 벤치마크 결과 목록*\n"
+    if not data:
+        return header + "결과 없음"
+    lines = [header]
+    items = data.items() if isinstance(data, dict) else []
+    for name, result in items:
+        stats = result.get('stats', {}) if isinstance(result, dict) else {}
+        lines.append(f"• {name}: P95={stats.get('p95', '-')}ms")
     return "\n".join(lines)
