@@ -22,7 +22,7 @@ def get_docs_html():
         return response
     except Exception as exc:
         logger.error("API 문서 생성 오류: %s", exc)
-        return make_response(f"Error: {exc}", 500)
+        return make_response("API 문서 생성 중 오류가 발생했습니다.", 500)
 
 
 @docs_bp.get('/docs/openapi.json')
