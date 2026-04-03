@@ -966,13 +966,13 @@ def cmd_search(keyword: str = '') -> str:
     if not keyword:
         return format_message('error', '사용법: /search <keyword>')
     try:
-        from ..search.search_index import SearchIndex
+        from ..search.search_engine import SearchEngine
         from ..search.autocomplete import Autocomplete
-        index = SearchIndex()
+        engine = SearchEngine()
         ac = Autocomplete()
         ac.record_query(keyword)
-        results = index.search(keyword)
-        return format_message('search_results', {'query': keyword, 'results': results}, label=keyword)
+        results = engine.search(keyword, limit=10)
+        return format_message('search_results', results, label=keyword)
     except Exception as exc:
         logger.error("cmd_search 오류: %s", exc)
         return format_message('error', f'검색 실패: {exc}')
