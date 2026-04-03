@@ -552,6 +552,54 @@ try:
 except Exception as _ff_bp_exc:
     logger.warning("피처 플래그 고도화 API Blueprint 등록 실패: %s", _ff_bp_exc)
 
+# 리뷰 분석 API Blueprint 등록 (Phase 79)
+try:
+    from .api.review_analytics_api import review_analytics_bp
+    app.register_blueprint(review_analytics_bp)
+    logger.info("리뷰 분석 API Blueprint 등록 완료")
+except Exception as _review_analytics_bp_exc:
+    logger.warning("리뷰 분석 API Blueprint 등록 실패: %s", _review_analytics_bp_exc)
+
+# 배송비 계산기 API Blueprint 등록 (Phase 80)
+try:
+    from .api.shipping_calculator_api import shipping_calculator_bp
+    app.register_blueprint(shipping_calculator_bp)
+    logger.info("배송비 계산기 API Blueprint 등록 완료")
+except Exception as _shipping_calc_bp_exc:
+    logger.warning("배송비 계산기 API Blueprint 등록 실패: %s", _shipping_calc_bp_exc)
+
+# 알림 템플릿 엔진 API Blueprint 등록 (Phase 81)
+try:
+    from .api.notification_templates_api import notification_templates_bp
+    app.register_blueprint(notification_templates_bp)
+    logger.info("알림 템플릿 엔진 API Blueprint 등록 완료")
+except Exception as _notif_tmpl_bp_exc:
+    logger.warning("알림 템플릿 엔진 API Blueprint 등록 실패: %s", _notif_tmpl_bp_exc)
+
+# 결제 복구 API Blueprint 등록 (Phase 82)
+try:
+    from .api.payment_recovery_api import payment_recovery_bp
+    app.register_blueprint(payment_recovery_bp)
+    logger.info("결제 복구 API Blueprint 등록 완료")
+except Exception as _payment_recovery_bp_exc:
+    logger.warning("결제 복구 API Blueprint 등록 실패: %s", _payment_recovery_bp_exc)
+
+# 상품 추천 API Blueprint 등록 (Phase 83)
+try:
+    from .api.recommendation_api import recommendation_bp
+    app.register_blueprint(recommendation_bp)
+    logger.info("상품 추천 API Blueprint 등록 완료")
+except Exception as _recommendation_bp_exc:
+    logger.warning("상품 추천 API Blueprint 등록 실패: %s", _recommendation_bp_exc)
+
+# 주문 분할/병합 API Blueprint 등록 (Phase 84)
+try:
+    from .api.order_management_api import order_management_bp
+    app.register_blueprint(order_management_bp)
+    logger.info("주문 분할/병합 API Blueprint 등록 완료")
+except Exception as _order_mgmt_bp_exc:
+    logger.warning("주문 분할/병합 API Blueprint 등록 실패: %s", _order_mgmt_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')

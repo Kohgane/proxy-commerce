@@ -1002,6 +1002,25 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'event_replay': lambda d: _format_event_replay(d),
         # Phase 78: 피처 플래그 고도화
         'flag_evaluate': lambda d: _format_flag_evaluate(d),
+        # Phase 79: 리뷰 분석
+        'review_stats': lambda d: _format_review_stats(d),
+        'review_sentiment': lambda d: _format_review_sentiment(d),
+        # Phase 80: 배송비 계산기
+        'shipping_calc': lambda d: _format_shipping_calc(d),
+        'shipping_zones': lambda d: _format_shipping_zones(d),
+        # Phase 81: 알림 템플릿
+        'templates_list': lambda d: _format_templates_list(d),
+        'template_preview': lambda d: _format_template_preview(d),
+        # Phase 82: 결제 복구
+        'payment_failures': lambda d: _format_payment_failures(d),
+        'payment_retry': lambda d: _format_payment_retry(d),
+        # Phase 83: 상품 추천
+        'recommendations': lambda d: _format_recommendations(d),
+        'trending_products': lambda d: _format_trending_products(d),
+        # Phase 84: 주문 분할/병합
+        'order_split': lambda d: _format_order_split(d),
+        'order_merge': lambda d: _format_order_merge(d),
+        'sub_orders': lambda d: _format_sub_orders(d),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:
@@ -1818,3 +1837,158 @@ def _format_flag_evaluate(data) -> str:
         f"이유: {data.get('reason', '-')}\n"
         f"변형: {data.get('variant') or '없음'}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 79: 리뷰 분석 포매터
+# ---------------------------------------------------------------------------
+def _format_review_stats(d: dict) -> str:
+    """리뷰 통계를 포맷."""
+    return (
+        f"📊 리뷰 통계\n"
+        f"상품 ID: {d.get('product_id', '-')}\n"
+        f"리뷰 수: {d.get('review_count', 0)}\n"
+        f"평균 평점: {d.get('avg_rating', 0):.1f}⭐\n"
+        f"긍정 비율: {d.get('positive_ratio', 0):.1%}"
+    )
+
+
+def _format_review_sentiment(d: dict) -> str:
+    """리뷰 감성 분석 결과를 포맷."""
+    sentiment_map = {'positive': '😊 긍정', 'negative': '😞 부정', 'neutral': '😐 중립'}
+    sentiment = sentiment_map.get(d.get('sentiment', 'neutral'), d.get('sentiment', '-'))
+    return (
+        f"💬 감성 분석\n"
+        f"감성: {sentiment}\n"
+        f"점수: {d.get('score', 0):.2f}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 80: 배송비 계산기 포매터
+# ---------------------------------------------------------------------------
+def _format_shipping_calc(d: dict) -> str:
+    """배송비 계산 결과를 포맷."""
+    return (
+        f"🚚 배송비 계산\n"
+        f"구역: {d.get('zone', '-')}\n"
+        f"무게: {d.get('weight_g', 0)}g\n"
+        f"배송비: {d.get('price', 0):,}원\n"
+        f"택배사: {d.get('carrier', '-')}"
+    )
+
+
+def _format_shipping_zones(d: dict) -> str:
+    """배송 구역 목록을 포맷."""
+    zones = d if isinstance(d, list) else d.get('zones', [])
+    lines = ["🌍 배송 구역 목록"]
+    for z in zones:
+        lines.append(f"• {z.get('zone_id', '-')}: {z.get('name', '-')}")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Phase 81: 알림 템플릿 포매터
+# ---------------------------------------------------------------------------
+def _format_templates_list(d: dict) -> str:
+    """템플릿 목록을 포맷."""
+    templates = d if isinstance(d, list) else d.get('templates', [])
+    lines = ["📝 알림 템플릿 목록"]
+    for t in templates:
+        lines.append(f"• [{t.get('channel', '-')}] {t.get('name', '-')} (v{t.get('version', 1)})")
+    return "\n".join(lines)
+
+
+def _format_template_preview(d: dict) -> str:
+    """템플릿 미리보기를 포맷."""
+    return (
+        f"👁️ 템플릿 미리보기\n"
+        f"이름: {d.get('name', '-')}\n"
+        f"채널: {d.get('channel', '-')}\n"
+        f"내용:\n{d.get('body_preview', '-')}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 82: 결제 복구 포매터
+# ---------------------------------------------------------------------------
+def _format_payment_failures(d: dict) -> str:
+    """결제 실패 목록을 포맷."""
+    failures = d if isinstance(d, list) else d.get('failures', [])
+    lines = ["💳 결제 실패 목록"]
+    for f in failures:
+        lines.append(f"• {f.get('payment_id', '-')}: {f.get('error_code', '-')} ({f.get('status', '-')})")
+    return "\n".join(lines)
+
+
+def _format_payment_retry(d: dict) -> str:
+    """결제 재시도 결과를 포맷."""
+    success = d.get('success', False)
+    icon = "✅" if success else "❌"
+    return (
+        f"{icon} 결제 재시도\n"
+        f"결제 ID: {d.get('payment_id', '-')}\n"
+        f"시도 횟수: {d.get('attempts', 0)}\n"
+        f"결과: {'성공' if success else '실패'}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 83: 상품 추천 포매터
+# ---------------------------------------------------------------------------
+def _format_recommendations(d: dict) -> str:
+    """추천 상품 목록을 포맷."""
+    items = d if isinstance(d, list) else d.get('recommendations', [])
+    lines = ["🎯 추천 상품"]
+    for item in items[:10]:
+        pid = item.get('product_id', item.get('id', '-'))
+        lines.append(f"• {pid}")
+    return "\n".join(lines)
+
+
+def _format_trending_products(d: dict) -> str:
+    """트렌딩 상품 목록을 포맷."""
+    items = d if isinstance(d, list) else d.get('trending', [])
+    lines = ["🔥 트렌딩 상품"]
+    for item in items[:10]:
+        pid = item.get('product_id', '-')
+        score = item.get('score', 0)
+        lines.append(f"• {pid} (점수: {score:.1f})")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Phase 84: 주문 분할/병합 포매터
+# ---------------------------------------------------------------------------
+def _format_order_split(d: dict) -> str:
+    """주문 분할 결과를 포맷."""
+    sub_orders = d.get('sub_orders', [])
+    lines = [
+        f"✂️ 주문 분할",
+        f"원주문: {d.get('parent_order_id', '-')}",
+        f"분할 수: {len(sub_orders)}",
+    ]
+    for so in sub_orders:
+        so_id = so.get('sub_order_id', '-') if isinstance(so, dict) else getattr(so, 'sub_order_id', '-')
+        lines.append(f"  • {so_id}")
+    return "\n".join(lines)
+
+
+def _format_order_merge(d: dict) -> str:
+    """주문 병합 결과를 포맷."""
+    return (
+        f"🔀 주문 병합\n"
+        f"병합 주문 ID: {d.get('merged_order_id', '-')}\n"
+        f"원주문 수: {len(d.get('merged_order_ids', []))}\n"
+        f"상태: {d.get('status', '-')}"
+    )
+
+
+def _format_sub_orders(d: dict) -> str:
+    """하위 주문 목록을 포맷."""
+    sub_orders = d.get('sub_orders', [])
+    lines = [f"📦 하위 주문 목록 (원주문: {d.get('parent_order_id', '-')})"]
+    for so in sub_orders:
+        so_id = so if isinstance(so, str) else so.get('sub_order_id', '-')
+        lines.append(f"• {so_id}")
+    return "\n".join(lines)

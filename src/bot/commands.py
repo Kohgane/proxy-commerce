@@ -2086,3 +2086,209 @@ def cmd_flag_evaluate(name: str = '', user_id: str = '') -> str:
     except Exception as exc:
         logger.error("cmd_flag_evaluate 오류: %s", exc)
         return format_message('error', f'플래그 평가 실패: {exc}')
+
+
+# ---------------------------------------------------------------------------
+# Phase 79: 리뷰 분석 명령어
+# ---------------------------------------------------------------------------
+
+def cmd_review_stats(product_id: str = '') -> str:
+    """/review_stats <product_id> — 리뷰 통계 조회."""
+    product_id = product_id.strip() or 'p001'
+    try:
+        from ..review_analytics import ReviewAnalyzer
+        analyzer = ReviewAnalyzer()
+        result = analyzer.analyze(product_id)
+        return format_message('review_stats', result)
+    except Exception as exc:
+        logger.error("cmd_review_stats 오류: %s", exc)
+        return format_message('error', f'리뷰 통계 조회 실패: {exc}')
+
+
+def cmd_review_sentiment(text: str = '') -> str:
+    """/review_sentiment <text> — 리뷰 감성 분석."""
+    text = text.strip()
+    if not text:
+        return format_message('error', '사용법: /review_sentiment <text>')
+    try:
+        from ..review_analytics import SentimentAnalyzer
+        analyzer = SentimentAnalyzer()
+        result = analyzer.analyze_text(text)
+        return format_message('review_sentiment', result)
+    except Exception as exc:
+        logger.error("cmd_review_sentiment 오류: %s", exc)
+        return format_message('error', f'감성 분석 실패: {exc}')
+
+
+# ---------------------------------------------------------------------------
+# Phase 80: 배송비 계산기 명령어
+# ---------------------------------------------------------------------------
+
+def cmd_shipping_calc(weight_g: str = '500', zone: str = 'domestic') -> str:
+    """/shipping_calc <weight_g> <zone> — 배송비 계산."""
+    try:
+        from ..shipping_calculator import ShippingCalculator
+        calc = ShippingCalculator()
+        result = calc.calculate(weight_g=float(weight_g), zone=zone)
+        return format_message('shipping_calc', result)
+    except Exception as exc:
+        logger.error("cmd_shipping_calc 오류: %s", exc)
+        return format_message('error', f'배송비 계산 실패: {exc}')
+
+
+def cmd_shipping_zones() -> str:
+    """/shipping_zones — 배송 구역 목록 조회."""
+    try:
+        from ..shipping_calculator import ShippingZone
+        zones = ShippingZone().list_zones()
+        return format_message('shipping_zones', zones)
+    except Exception as exc:
+        logger.error("cmd_shipping_zones 오류: %s", exc)
+        return format_message('error', f'배송 구역 조회 실패: {exc}')
+
+
+# ---------------------------------------------------------------------------
+# Phase 81: 알림 템플릿 명령어
+# ---------------------------------------------------------------------------
+
+def cmd_templates_list() -> str:
+    """/templates_list — 알림 템플릿 목록 조회."""
+    try:
+        from ..notification_templates import TemplateManager
+        mgr = TemplateManager()
+        templates = mgr.list()
+        return format_message('templates_list', templates)
+    except Exception as exc:
+        logger.error("cmd_templates_list 오류: %s", exc)
+        return format_message('error', f'템플릿 목록 조회 실패: {exc}')
+
+
+def cmd_template_preview(name: str = '') -> str:
+    """/template_preview <name> — 템플릿 미리보기."""
+    name = name.strip()
+    if not name:
+        return format_message('error', '사용법: /template_preview <name>')
+    try:
+        from ..notification_templates import TemplateManager, TemplatePreview
+        mgr = TemplateManager()
+        tmpl = mgr.get(name)
+        if tmpl is None:
+            return format_message('error', f'템플릿 없음: {name}')
+        preview = TemplatePreview()
+        result = preview.preview(tmpl)
+        return format_message('template_preview', result)
+    except Exception as exc:
+        logger.error("cmd_template_preview 오류: %s", exc)
+        return format_message('error', f'템플릿 미리보기 실패: {exc}')
+
+
+# ---------------------------------------------------------------------------
+# Phase 82: 결제 복구 명령어
+# ---------------------------------------------------------------------------
+
+def cmd_payment_failures() -> str:
+    """/payment_failures — 결제 실패 목록 조회."""
+    try:
+        from ..payment_recovery import PaymentRecoveryManager
+        mgr = PaymentRecoveryManager()
+        failures = mgr.list_failures()
+        return format_message('payment_failures', failures)
+    except Exception as exc:
+        logger.error("cmd_payment_failures 오류: %s", exc)
+        return format_message('error', f'결제 실패 목록 조회 실패: {exc}')
+
+
+def cmd_payment_retry(payment_id: str = '') -> str:
+    """/payment_retry <payment_id> — 결제 재시도."""
+    payment_id = payment_id.strip()
+    if not payment_id:
+        return format_message('error', '사용법: /payment_retry <payment_id>')
+    try:
+        from ..payment_recovery import PaymentRecoveryManager
+        mgr = PaymentRecoveryManager()
+        result = mgr.retry(payment_id)
+        return format_message('payment_retry', result)
+    except KeyError:
+        return format_message('error', f'결제 없음: {payment_id}')
+    except Exception as exc:
+        logger.error("cmd_payment_retry 오류: %s", exc)
+        return format_message('error', f'결제 재시도 실패: {exc}')
+
+
+# ---------------------------------------------------------------------------
+# Phase 83: 상품 추천 명령어
+# ---------------------------------------------------------------------------
+
+def cmd_recommendations(user_id: str = '') -> str:
+    """/recommendations <user_id> — 추천 상품 조회."""
+    user_id = user_id.strip() or 'anonymous'
+    try:
+        from ..recommendation import RecommendationEngine
+        engine = RecommendationEngine()
+        result = engine.recommend(user_id)
+        return format_message('recommendations', result)
+    except Exception as exc:
+        logger.error("cmd_recommendations 오류: %s", exc)
+        return format_message('error', f'추천 상품 조회 실패: {exc}')
+
+
+def cmd_trending_products() -> str:
+    """/trending_products — 트렌딩 상품 조회."""
+    try:
+        from ..recommendation import RecommendationEngine
+        engine = RecommendationEngine()
+        result = engine.trending()
+        return format_message('trending_products', result)
+    except Exception as exc:
+        logger.error("cmd_trending_products 오류: %s", exc)
+        return format_message('error', f'트렌딩 상품 조회 실패: {exc}')
+
+
+# ---------------------------------------------------------------------------
+# Phase 84: 주문 분할/병합 명령어
+# ---------------------------------------------------------------------------
+
+def cmd_order_split(order_id: str = '', strategy: str = 'supplier') -> str:
+    """/order_split <order_id> <strategy> — 주문 분할."""
+    order_id = order_id.strip()
+    if not order_id:
+        return format_message('error', '사용법: /order_split <order_id> [strategy]')
+    try:
+        from ..order_management import OrderSplitter
+        splitter = OrderSplitter()
+        result = splitter.split(order_id, strategy=strategy)
+        return format_message('order_split', result)
+    except Exception as exc:
+        logger.error("cmd_order_split 오류: %s", exc)
+        return format_message('error', f'주문 분할 실패: {exc}')
+
+
+def cmd_order_merge(order_ids_str: str = '') -> str:
+    """/order_merge <id1,id2,...> — 주문 병합."""
+    order_ids_str = order_ids_str.strip()
+    if not order_ids_str:
+        return format_message('error', '사용법: /order_merge <id1,id2,...>')
+    try:
+        from ..order_management import OrderMerger
+        order_ids = [oid.strip() for oid in order_ids_str.split(',')]
+        merger = OrderMerger()
+        result = merger.merge(order_ids)
+        return format_message('order_merge', result)
+    except Exception as exc:
+        logger.error("cmd_order_merge 오류: %s", exc)
+        return format_message('error', f'주문 병합 실패: {exc}')
+
+
+def cmd_sub_orders(order_id: str = '') -> str:
+    """/sub_orders <order_id> — 하위 주문 목록 조회."""
+    order_id = order_id.strip()
+    if not order_id:
+        return format_message('error', '사용법: /sub_orders <order_id>')
+    try:
+        from ..order_management import SplitHistory
+        history = SplitHistory()
+        result = history.get_sub_orders(order_id)
+        return format_message('sub_orders', result)
+    except Exception as exc:
+        logger.error("cmd_sub_orders 오류: %s", exc)
+        return format_message('error', f'하위 주문 조회 실패: {exc}')
