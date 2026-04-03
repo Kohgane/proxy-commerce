@@ -312,6 +312,54 @@ try:
 except Exception as _search_bp_exc:
     logger.warning("검색 엔진 API Blueprint 등록 실패: %s", _search_bp_exc)
 
+# 멀티테넌시 API Blueprint 등록 (Phase 49)
+try:
+    from .api.tenancy_api import tenancy_bp
+    app.register_blueprint(tenancy_bp)
+    logger.info("멀티테넌시 API Blueprint 등록 완료")
+except Exception as _tenancy_bp_exc:
+    logger.warning("멀티테넌시 API Blueprint 등록 실패: %s", _tenancy_bp_exc)
+
+# A/B 테스트 API Blueprint 등록 (Phase 50)
+try:
+    from .api.experiments_api import experiments_bp
+    app.register_blueprint(experiments_bp)
+    logger.info("A/B 테스트 API Blueprint 등록 완료")
+except Exception as _experiments_bp_exc:
+    logger.warning("A/B 테스트 API Blueprint 등록 실패: %s", _experiments_bp_exc)
+
+# 웹훅 관리 API Blueprint 등록 (Phase 51)
+try:
+    from .api.webhooks_mgr_api import webhooks_mgr_bp
+    app.register_blueprint(webhooks_mgr_bp)
+    logger.info("웹훅 관리 API Blueprint 등록 완료")
+except Exception as _webhooks_mgr_bp_exc:
+    logger.warning("웹훅 관리 API Blueprint 등록 실패: %s", _webhooks_mgr_bp_exc)
+
+# API 문서 Blueprint 등록 (Phase 52)
+try:
+    from .api.api_docs_api import api_docs_bp
+    app.register_blueprint(api_docs_bp)
+    logger.info("API 문서 Blueprint 등록 완료")
+except Exception as _api_docs_bp_exc:
+    logger.warning("API 문서 Blueprint 등록 실패: %s", _api_docs_bp_exc)
+
+# 분산 추적 API Blueprint 등록 (Phase 53)
+try:
+    from .api.traces_api import traces_bp
+    app.register_blueprint(traces_bp)
+    logger.info("분산 추적 API Blueprint 등록 완료")
+except Exception as _traces_bp_exc:
+    logger.warning("분산 추적 API Blueprint 등록 실패: %s", _traces_bp_exc)
+
+# 벤치마크 API Blueprint 등록 (Phase 54)
+try:
+    from .api.benchmark_api import benchmark_bp
+    app.register_blueprint(benchmark_bp)
+    logger.info("벤치마크 API Blueprint 등록 완료")
+except Exception as _benchmark_bp_exc:
+    logger.warning("벤치마크 API Blueprint 등록 실패: %s", _benchmark_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')

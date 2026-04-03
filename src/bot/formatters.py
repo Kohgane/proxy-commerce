@@ -738,6 +738,18 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'user_activity': lambda d: _format_user_activity(d, label=kwargs.get('label', '')),
         'search_results': lambda d: _format_search_results(d, label=kwargs.get('label', '')),
         'popular_searches': lambda d: _format_popular_searches(d),
+        # Phase 49: 멀티테넌시
+        'tenant_info': lambda d: _format_tenant_info(d),
+        'tenant_usage': lambda d: _format_tenant_usage(d, label=kwargs.get('label', '')),
+        # Phase 50: A/B 테스트
+        'experiment_list': lambda d: _format_experiment_list(d),
+        'experiment_result': lambda d: _format_experiment_result(d),
+        # Phase 51: 웹훅 관리
+        'webhook_list': lambda d: _format_webhook_list(d),
+        'webhook_test': lambda d: _format_webhook_test(d, label=kwargs.get('label', '')),
+        # Phase 54: 벤치마크
+        'benchmark_result': lambda d: _format_benchmark_result(d, label=kwargs.get('label', '')),
+        'benchmark_results': lambda d: _format_benchmark_results(d),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:
@@ -874,4 +886,154 @@ def _format_popular_searches(data) -> str:
             lines.append(f"{i}. {item.get('query', '-')} ({item.get('count', 0)}회)")
         else:
             lines.append(f"{i}. {item}")
+    return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 49: 멀티테넌시 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_tenant_info(data) -> str:
+    """테넌트 정보 포맷."""
+    if isinstance(data, dict) and 'tenant' in data:
+        t = data['tenant']
+        cfg = data.get('config', {})
+        return (
+            f"*🏢 테넌트 정보*\n"
+            f"ID: `{t.get('tenant_id', '-')}`\n"
+            f"이름: {t.get('name', '-')}\n"
+            f"플랜: {t.get('plan', '-')}\n"
+            f"상태: {'✅ 활성' if t.get('active') else '❌ 비활성'}\n"
+            f"마진율: {cfg.get('margin_rate', '-')}"
+        )
+    tenants = data.get('tenants', data) if isinstance(data, dict) else data
+    if not tenants:
+        return "*🏢 테넌트 목록*\n테넌트 없음"
+    lines = ["*🏢 테넌트 목록*"]
+    for t in (tenants if isinstance(tenants, list) else [tenants]):
+        lines.append(f"• {t.get('name', '-')} ({t.get('plan', '-')}) — "
+                     f"{'활성' if t.get('active') else '비활성'}")
+    return "\n".join(lines)
+
+
+def _format_tenant_usage(data, label: str = '') -> str:
+    """테넌트 사용량 포맷."""
+    header = f"*📊 테넌트 사용량{f' — {label}' if label else ''}*\n"
+    if isinstance(data, list):
+        if not data:
+            return header + "데이터 없음"
+        lines = [header]
+        for item in data:
+            lines.append(
+                f"• {item.get('tenant_id', '-')}: "
+                f"API {item.get('api_calls', 0)}, "
+                f"주문 {item.get('orders', 0)}, "
+                f"상품 {item.get('products', 0)}"
+            )
+        return "\n".join(lines)
+    return (
+        header
+        + f"API 호출: {data.get('api_calls', 0)}\n"
+        + f"주문수: {data.get('orders', 0)}\n"
+        + f"상품수: {data.get('products', 0)}"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 50: A/B 테스트 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_experiment_list(data) -> str:
+    """실험 목록 포맷."""
+    header = "*🧪 실험 목록*\n"
+    if not data:
+        return header + "실험 없음"
+    lines = [header]
+    for exp in data[:10]:
+        lines.append(
+            f"• [{exp.get('status', '-')}] {exp.get('name', '-')} "
+            f"(ID: `{exp.get('experiment_id', '-')[:8]}...`)"
+        )
+    return "\n".join(lines)
+
+
+def _format_experiment_result(data) -> str:
+    """실험 결과 포맷."""
+    name = data.get('name', '-')
+    winner = data.get('winner', '-')
+    lines = [f"*🧪 실험 결과: {name}*"]
+    for v in data.get('variants', []):
+        lines.append(
+            f"• {v.get('variant', '-')}: "
+            f"CVR {v.get('cvr', 0):.2%}, "
+            f"노출 {v.get('impressions', 0)}"
+        )
+    if winner:
+        lines.append(f"\n🏆 승자: {winner}")
+    return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 51: 웹훅 관리 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_webhook_list(data) -> str:
+    """웹훅 목록 포맷."""
+    header = "*🔔 웹훅 목록*\n"
+    if not data:
+        return header + "웹훅 없음"
+    lines = [header]
+    for w in data[:10]:
+        lines.append(
+            f"• {w.get('name', '-') or w.get('webhook_id', '-')[:8]} — "
+            f"{w.get('url', '-')} "
+            f"({'활성' if w.get('active') else '비활성'})"
+        )
+    return "\n".join(lines)
+
+
+def _format_webhook_test(data, label: str = '') -> str:
+    """웹훅 테스트 결과 포맷."""
+    status = data.get('status', '-')
+    icon = "✅" if status == "success" else "❌"
+    return (
+        f"*🔔 웹훅 테스트{f' — {label}' if label else ''}*\n"
+        f"{icon} 상태: {status}\n"
+        f"응답 코드: {data.get('response_code', '-')}"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 54: 벤치마크 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_benchmark_result(data, label: str = '') -> str:
+    """벤치마크 결과 포맷."""
+    stats = data.get('stats', {})
+    profile = data.get('profile', {})
+    return (
+        f"*⚡ 벤치마크 결과{f': {label}' if label else ''}*\n"
+        f"총 요청: {stats.get('count', 0)}\n"
+        f"평균: {stats.get('mean', 0):.1f}ms\n"
+        f"p95: {stats.get('p95', 0):.1f}ms\n"
+        f"p99: {stats.get('p99', 0):.1f}ms\n"
+        f"처리량: {data.get('throughput_rps', 0):.1f} RPS\n"
+        f"에러율: {data.get('error_rate', 0):.1f}%"
+    )
+
+
+def _format_benchmark_results(data) -> str:
+    """벤치마크 결과 목록 포맷."""
+    header = "*⚡ 벤치마크 이력*\n"
+    if not data:
+        return header + "이력 없음"
+    lines = [header]
+    for report in data[-5:]:
+        profile = report.get('profile', {})
+        stats = report.get('stats', {})
+        lines.append(
+            f"• {profile.get('name', '-')}: "
+            f"p95={stats.get('p95', 0):.1f}ms, "
+            f"RPS={report.get('throughput_rps', 0):.1f}"
+        )
     return "\n".join(lines)
