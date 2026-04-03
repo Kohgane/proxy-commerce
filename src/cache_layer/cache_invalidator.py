@@ -28,6 +28,10 @@ class CacheInvalidator:
     def invalidate_by_pattern(self, pattern: str) -> int:
         keys = self._manager.keys()
         count = 0
+        # Validate pattern to prevent ReDoS: only allow safe characters
+        safe_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_:-/.*?[]^$")
+        if not all(c in safe_chars for c in pattern):
+            return 0
         try:
             regex = re.compile(pattern)
             for k in keys:

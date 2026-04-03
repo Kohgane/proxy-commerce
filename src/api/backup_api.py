@@ -82,5 +82,5 @@ def set_schedule():
     try:
         schedule = scheduler.set_schedule(frequency)
         return jsonify(schedule)
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+    except ValueError:
+        return jsonify({"error": "유효하지 않은 주기 값입니다. (daily/weekly/monthly)"}), 400

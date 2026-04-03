@@ -42,8 +42,8 @@ def define_workflow():
         definition = WorkflowDefinition.from_dict(data)
         engine.register(definition)
         return jsonify(definition.to_dict()), 201
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+    except Exception:
+        return jsonify({"error": "워크플로 정의 처리 중 오류가 발생했습니다."}), 400
 
 
 @workflows_bp.post("/start")
@@ -56,8 +56,8 @@ def start_workflow():
     try:
         instance = engine.start(workflow_name)
         return jsonify(instance.to_dict()), 201
-    except KeyError as exc:
-        return jsonify({"error": str(exc)}), 404
+    except KeyError:
+        return jsonify({"error": "워크플로를 찾을 수 없습니다."}), 404
 
 
 @workflows_bp.post("/<instance_id>/transition")
@@ -70,8 +70,8 @@ def transition_workflow(instance_id: str):
     try:
         instance = engine.transition(instance_id, event)
         return jsonify(instance.to_dict())
-    except (KeyError, ValueError) as exc:
-        return jsonify({"error": str(exc)}), 400
+    except (KeyError, ValueError):
+        return jsonify({"error": "전환 처리 중 오류가 발생했습니다."}), 400
 
 
 @workflows_bp.get("/<instance_id>/status")
