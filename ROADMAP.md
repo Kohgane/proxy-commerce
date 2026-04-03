@@ -35,6 +35,18 @@
 | Phase 40 | 배치 작업 스케줄러 (cron 파싱, 작업 이력) | #45 | 2026-04-02 |
 | Phase 41 | 감사 로그 고도화 (who/what/when, 데코레이터) | #45 | 2026-04-02 |
 | Phase 42 | 데이터 마이그레이션/시드 도구 | #45 | 2026-04-02 |
+| Phase 43 | 위시리스트/관심상품 관리 (목표가 알림, 추천) | #46 | 2026-04-03 |
+| Phase 44 | 상품 번들/세트 관리 (fixed/pick_n/mix_match) | #46 | 2026-04-03 |
+| Phase 45 | 멀티통화 + 결제 게이트웨이 추상화 | #46 | 2026-04-03 |
+| Phase 46 | 이미지 관리 파이프라인 (최적화, CDN, 갤러리) | #46 | 2026-04-03 |
+| Phase 47 | 사용자 프로필 + 주소록 관리 (등급 bronze→vip) | #46 | 2026-04-03 |
+| Phase 48 | 검색 엔진 + 필터링 (역인덱스, 자동완성, 분석) | #46 | 2026-04-03 |
+| Phase 49 | 멀티테넌시 (테넌트 CRUD, 구독 플랜, 사용량 추적) | #47 | 2026-04-03 |
+| Phase 50 | A/B 테스트 엔진 (실험 관리, 통계적 유의성 검정) | #47 | 2026-04-03 |
+| Phase 51 | 웹훅 관리 시스템 (HMAC 서명, 재시도, 전송 로그) | #47 | 2026-04-03 |
+| Phase 52 | API 문서 자동 생성 (OpenAPI 3.0, HTML 렌더링) | #47 | 2026-04-03 |
+| Phase 53 | 구조화된 로깅 + 분산 추적 (JSON 로그, trace_id) | #47 | 2026-04-03 |
+| Phase 54 | 성능 벤치마크 도구 (부하 테스트, 회귀 감지) | #47 | 2026-04-03 |
 
 ## 🚧 진행 중 Phase
 
@@ -273,3 +285,69 @@
 - API Blueprint: `src/api/search_api.py` (`/api/v1/search`)
 - 봇 커맨드: `/search <keyword>`, `/popular_searches`
 - 관련 코드: `src/search/`
+
+## Phase 49: 멀티테넌시 (Multi-Tenancy)
+- `TenantManager`: 테넌트 CRUD (생성/조회/업데이트/비활성화)
+- `TenantConfig`: 테넌트별 독립 설정 (마진율, 환율 전략, 배송비 정책, 알림 설정)
+- `TenantIsolation`: 데이터 격리 (테넌트 ID 기반 필터링)
+- `SubscriptionPlan`: 구독 플랜 관리 (Free / Basic / Pro / Enterprise) - 기능 제한, 사용량 제한
+- `UsageTracker`: 테넌트별 API 호출/주문수/상품수 사용량 추적
+- API Blueprint: `src/api/tenancy_api.py` (`/api/v1/tenants`)
+- 봇 커맨드: `/tenant_info`, `/tenant_usage`
+- 관련 코드: `src/tenancy/`
+
+## Phase 50: A/B 테스트 엔진 (A/B Testing)
+- `ExperimentManager`: 실험 생성/시작/중지/결과조회
+- `VariantAssigner`: 사용자를 변형(variant)에 일관되게 할당 (해시 기반)
+- `MetricsTracker`: 실험별 전환율/클릭율/매출 메트릭 수집
+- `StatisticalAnalyzer`: 통계적 유의성 검정 (Z-test, p-value 계산)
+- `ExperimentReport`: 실험 결과 리포트 생성
+- API Blueprint: `src/api/experiments_api.py` (`/api/v1/experiments`)
+- 봇 커맨드: `/experiment_list`, `/experiment_result <id>`
+- 관련 코드: `src/ab_testing/`
+
+## Phase 51: 웹훅 관리 시스템 (Webhook Management)
+- `WebhookRegistry`: 웹훅 엔드포인트 등록/수정/삭제
+- `WebhookDispatcher`: 이벤트 발생 시 등록된 웹훅으로 페이로드 전송 (비동기, 재시도)
+- `WebhookSigner`: HMAC-SHA256 서명으로 페이로드 무결성 보장
+- `DeliveryLog`: 전송 이력 (성공/실패/재시도 횟수/응답코드)
+- `RetryScheduler`: 실패 시 지수 백오프 재시도 (최대 5회)
+- API Blueprint: `src/api/webhooks_mgr_api.py` (`/api/v1/webhooks`)
+- 봇 커맨드: `/webhook_list`, `/webhook_test <id>`
+- 관련 코드: `src/webhook_manager/`
+
+## Phase 52: API 문서 자동 생성 (API Documentation)
+- `APIDocGenerator`: Flask Blueprint들을 스캔하여 OpenAPI 3.0 스펙 자동 생성
+- `EndpointScanner`: 등록된 모든 라우트, 메서드, 파라미터 수집
+- `SchemaBuilder`: 요청/응답 스키마를 dict 기반으로 정의
+- `DocRenderer`: OpenAPI JSON → HTML 문서 렌더링 (내장 템플릿)
+- API 엔드포인트: `GET /api/docs` (HTML), `GET /api/docs/openapi.json` (JSON)
+- 관련 코드: `src/docs/`, `src/api/api_docs_api.py`
+
+## Phase 53: 구조화된 로깅 + 분산 추적 (Structured Logging & Tracing)
+- `StructuredLogger`: JSON 형식 로그 출력 (timestamp, level, service, trace_id, message, extra)
+- `TraceContext`: 요청별 고유 trace_id/span_id 생성 및 전파
+- `RequestTracer`: Flask middleware로 요청 시작/종료 자동 추적
+- `LogAggregator`: 로그 수집 및 검색 (인메모리, 최근 N개 보관)
+- `CorrelationMiddleware`: Flask before_request/after_request에서 trace_id 주입
+- API Blueprint: `src/api/traces_api.py` (`/api/v1/traces`)
+- 관련 코드: `src/logging_tracing/`
+
+## Phase 54: 성능 벤치마크 도구 (Performance Benchmark)
+- `BenchmarkRunner`: 엔드포인트별 부하 테스트 실행 (concurrent requests)
+- `LoadProfile`: 부하 프로파일 정의 (concurrent users, duration, ramp-up)
+- `ResponseAnalyzer`: 응답시간 통계 (p50, p95, p99, mean, min, max)
+- `BenchmarkReport`: 결과 리포트 생성 (JSON + 텍스트 요약)
+- `RegressionDetector`: 이전 결과와 비교하여 성능 저하 감지
+- API Blueprint: `src/api/benchmark_api.py` (`/api/v1/benchmark`)
+- 봇 커맨드: `/benchmark_run`, `/benchmark_results`
+- CLI: `scripts/benchmark.py`
+- 관련 코드: `src/benchmark/`
+
+## 🔮 향후 Phase 55+ 고려 사항
+- Phase 55: AI 기반 상품 추천 시스템 (협업 필터링, 콘텐츠 기반)
+- Phase 56: 실시간 재고 예측 (LSTM/Prophet 기반 시계열 예측)
+- Phase 57: GraphQL API 게이트웨이
+- Phase 58: 이벤트 소싱 + CQRS 패턴
+- Phase 59: 분산 캐시 클러스터 (Redis Cluster)
+- Phase 60: 마이크로서비스 분리 (주문/재고/결제 독립 서비스)

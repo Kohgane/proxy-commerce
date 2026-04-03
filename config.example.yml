@@ -556,3 +556,57 @@ search:
     tags: 2
     description: 1
   autocomplete_popular_top_n: 10
+
+# === Phase 49: 멀티테넌시 ===
+tenancy:
+  default_plan: free
+  plans:
+    free:
+      monthly_api_calls: 1000
+      monthly_orders: 50
+      max_products: 100
+    basic:
+      monthly_api_calls: 10000
+      monthly_orders: 500
+      max_products: 1000
+    pro:
+      monthly_api_calls: 100000
+      monthly_orders: 5000
+      max_products: 10000
+    enterprise:
+      monthly_api_calls: -1
+      monthly_orders: -1
+      max_products: -1
+
+# === Phase 50: A/B 테스트 엔진 ===
+ab_testing:
+  default_variants: [control, treatment]
+  min_sample_size: 100
+  significance_level: 0.05
+  max_experiments: 100
+
+# === Phase 51: 웹훅 관리 ===
+webhook_manager:
+  max_retries: 5
+  base_retry_delay_seconds: 1
+  timeout_seconds: 10
+  max_webhooks_per_tenant: 50
+
+# === Phase 52: API 문서 자동 생성 ===
+api_docs:
+  title: "Proxy Commerce API"
+  version: "1.0.0"
+  enabled: true
+
+# === Phase 53: 구조화된 로깅 + 분산 추적 ===
+logging_tracing:
+  log_format: json
+  max_log_entries: 10000
+  trace_header: "X-Trace-Id"
+  span_header: "X-Span-Id"
+
+# === Phase 54: 성능 벤치마크 ===
+benchmark:
+  default_concurrent_users: 10
+  default_duration_seconds: 30
+  regression_threshold_pct: 20
