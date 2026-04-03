@@ -30,7 +30,7 @@ class VariantManager:
         if total_weight <= 0:
             return variants[0]
         key = f"{flag_name}:{user_id}:variant"
-        bucket = int(hashlib.md5(key.encode()).hexdigest()[:8], 16) / (2**32)
+        bucket = int(hashlib.sha256(key.encode()).hexdigest()[:8], 16) / (2**32)
         cumulative = 0.0
         for variant in variants:
             cumulative += variant.weight / total_weight

@@ -30,8 +30,8 @@ def create_flag():
                                 description=body.get("description", ""))
         history.record(name, "created")
         return jsonify(flag), 201
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 409
+    except ValueError:
+        return jsonify({"error": f"플래그 이름 '{name}'이(가) 이미 존재합니다"}), 409
 
 
 @feature_flags_bp.get("/<name>")
@@ -56,8 +56,8 @@ def update_flag(name: str):
         flag = mgr.update_flag(name, **body)
         history.record(name, "updated", changes=body)
         return jsonify(flag)
-    except KeyError as e:
-        return jsonify({"error": str(e)}), 404
+    except KeyError:
+        return jsonify({"error": f"플래그 '{name}'을(를) 찾을 수 없습니다"}), 404
 
 
 @feature_flags_bp.delete("/<name>")
@@ -70,8 +70,8 @@ def delete_flag(name: str):
         mgr.delete_flag(name)
         history.record(name, "deleted")
         return jsonify({"deleted": name})
-    except KeyError as e:
-        return jsonify({"error": str(e)}), 404
+    except KeyError:
+        return jsonify({"error": f"플래그 '{name}'을(를) 찾을 수 없습니다"}), 404
 
 
 @feature_flags_bp.post("/<name>/evaluate")

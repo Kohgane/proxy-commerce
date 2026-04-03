@@ -60,8 +60,8 @@ def start_workflow():
     try:
         instance = engine.start(name, context=body.get("context", {}))
         return jsonify(instance.to_dict()), 201
-    except KeyError as e:
-        return jsonify({"error": str(e)}), 404
+    except KeyError:
+        return jsonify({"error": f"워크플로 '{name}'을(를) 찾을 수 없습니다"}), 404
 
 
 @workflow_engine_bp.post("/instances/<instance_id>/transition")
@@ -79,8 +79,8 @@ def transition_workflow(instance_id: str):
             context_updates=body.get("context", {})
         )
         return jsonify(instance.to_dict())
-    except (KeyError, ValueError) as e:
-        return jsonify({"error": str(e)}), 400
+    except (KeyError, ValueError):
+        return jsonify({"error": "워크플로 전환에 실패했습니다. 전환 이름 또는 인스턴스를 확인하세요"}), 400
 
 
 @workflow_engine_bp.get("/instances/<instance_id>")
@@ -102,8 +102,8 @@ def get_history(instance_id: str):
     try:
         history = engine.get_history(instance_id)
         return jsonify({"instance_id": instance_id, "history": history})
-    except KeyError as e:
-        return jsonify({"error": str(e)}), 404
+    except KeyError:
+        return jsonify({"error": f"인스턴스 '{instance_id}'을(를) 찾을 수 없습니다"}), 404
 
 
 @workflow_engine_bp.get("/instances/")

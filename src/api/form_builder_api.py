@@ -31,8 +31,8 @@ def create_form():
             description=body.get("description", ""),
         )
         return jsonify(form.to_dict()), 201
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 409
+    except ValueError:
+        return jsonify({"error": "동일한 이름의 폼이 이미 존재합니다"}), 409
 
 
 @form_builder_bp.get("/<form_id>")
@@ -55,8 +55,8 @@ def update_form(form_id: str):
     try:
         form = mgr.update(form_id, **body)
         return jsonify(form.to_dict())
-    except KeyError as e:
-        return jsonify({"error": str(e)}), 404
+    except KeyError:
+        return jsonify({"error": f"폼 '{form_id}'을(를) 찾을 수 없습니다"}), 404
 
 
 @form_builder_bp.delete("/<form_id>")
@@ -67,8 +67,8 @@ def delete_form(form_id: str):
     try:
         mgr.delete(form_id)
         return jsonify({"deleted": form_id})
-    except KeyError as e:
-        return jsonify({"error": str(e)}), 404
+    except KeyError:
+        return jsonify({"error": f"폼 '{form_id}'을(를) 찾을 수 없습니다"}), 404
 
 
 @form_builder_bp.post("/<form_id>/submit")

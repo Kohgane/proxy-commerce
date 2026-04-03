@@ -31,8 +31,8 @@ def create_segment():
             logic=body.get("logic", "AND"),
         )
         return jsonify(seg), 201
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 409
+    except ValueError:
+        return jsonify({"error": f"세그먼트 이름 '{name}'이(가) 이미 존재합니다"}), 409
 
 
 @segmentation_bp.get("/<name>")
@@ -55,8 +55,8 @@ def update_segment(name: str):
     try:
         seg = mgr.update(name, **body)
         return jsonify(seg)
-    except KeyError as e:
-        return jsonify({"error": str(e)}), 404
+    except KeyError:
+        return jsonify({"error": f"세그먼트 '{name}'을(를) 찾을 수 없습니다"}), 404
 
 
 @segmentation_bp.delete("/<name>")
@@ -67,8 +67,8 @@ def delete_segment(name: str):
     try:
         mgr.delete(name)
         return jsonify({"deleted": name})
-    except (KeyError, ValueError) as e:
-        return jsonify({"error": str(e)}), 400
+    except (KeyError, ValueError):
+        return jsonify({"error": f"세그먼트 '{name}' 삭제에 실패했습니다"}), 400
 
 
 @segmentation_bp.post("/<name>/build")
@@ -81,8 +81,8 @@ def build_segment(name: str):
     try:
         count = mgr.build_segment(name, customers)
         return jsonify({"segment_name": name, "matched_count": count})
-    except KeyError as e:
-        return jsonify({"error": str(e)}), 404
+    except KeyError:
+        return jsonify({"error": f"세그먼트 '{name}'을(를) 찾을 수 없습니다"}), 404
 
 
 @segmentation_bp.get("/<name>/analyze")
@@ -122,5 +122,5 @@ def segment_customers(name: str):
     try:
         customers = mgr.get_customers(name)
         return jsonify({"segment_name": name, "customers": customers, "count": len(customers)})
-    except KeyError as e:
-        return jsonify({"error": str(e)}), 404
+    except KeyError:
+        return jsonify({"error": f"세그먼트 '{name}'을(를) 찾을 수 없습니다"}), 404

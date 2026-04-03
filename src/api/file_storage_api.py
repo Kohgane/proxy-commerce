@@ -36,8 +36,8 @@ def upload_file():
     try:
         meta = mgr.upload(key, data, filename, content_type, owner_id)
         return jsonify(meta.to_dict()), 201
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+    except ValueError:
+        return jsonify({"error": "파일 업로드에 실패했습니다. 스토리지 할당량을 확인하세요"}), 400
 
 
 @file_storage_bp.get("/download/<path:key>")

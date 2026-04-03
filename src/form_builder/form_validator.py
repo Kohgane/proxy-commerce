@@ -59,8 +59,14 @@ class FormValidator:
                 if not re.match(v["pattern"], str_val):
                     errors.append(f"{field.label}: 형식이 올바르지 않습니다")
             if ft == FieldType.EMAIL:
-                if not re.match(r"^[^@]+@[^@]+\.[^@]+$", str_val):
+                # Simple linear email check to avoid ReDoS
+                at_count = str_val.count("@")
+                if at_count != 1:
                     errors.append(f"{field.label}: 유효한 이메일 주소가 아닙니다")
+                else:
+                    local, _, domain = str_val.partition("@")
+                    if not local or "." not in domain or domain.startswith(".") or domain.endswith("."):
+                        errors.append(f"{field.label}: 유효한 이메일 주소가 아닙니다")
 
         elif ft == FieldType.SELECT:
             if field.options and value not in field.options:

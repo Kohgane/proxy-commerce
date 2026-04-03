@@ -20,6 +20,6 @@ class GradualRollout:
     def _get_bucket(self, flag_name: str, user_id: str) -> float:
         """해시로 버킷 번호 계산 (0.0 ~ 100.0)."""
         key = f"{flag_name}:{user_id}"
-        digest = hashlib.md5(key.encode()).hexdigest()
+        digest = hashlib.sha256(key.encode()).hexdigest()
         bucket = int(digest[:8], 16) % 10000 / 100.0  # 0.0 ~ 99.99
         return bucket
