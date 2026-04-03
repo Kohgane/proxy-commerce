@@ -26,7 +26,7 @@ class FileMetadata:
 
     @staticmethod
     def compute_checksum(data: bytes) -> str:
-        return hashlib.md5(data).hexdigest()
+        return hashlib.sha256(data).hexdigest()
 
     def to_dict(self) -> dict:
         return {

@@ -24,7 +24,7 @@ class TestFileMetadata:
     def test_compute_checksum(self):
         data = b"hello world"
         checksum = FileMetadata.compute_checksum(data)
-        assert len(checksum) == 32  # MD5 hex
+        assert len(checksum) == 64  # SHA-256 hex
         assert checksum == FileMetadata.compute_checksum(data)
 
     def test_to_dict(self):
