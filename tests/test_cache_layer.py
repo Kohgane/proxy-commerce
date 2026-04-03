@@ -91,7 +91,7 @@ class TestCacheInvalidator:
         manager.set("user:2", "B")
         manager.set("product:1", "C")
         invalidator = CacheInvalidator(manager)
-        count = invalidator.invalidate_by_pattern(r"^user:")
+        count = invalidator.invalidate_by_pattern("user:*")
         assert count == 2
         assert manager.get("product:1") == "C"
 
