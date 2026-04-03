@@ -13,6 +13,6 @@ class VariantAssigner:
         if not variants:
             return None
         key = f"{experiment_id}:{user_id}"
-        digest = hashlib.md5(key.encode(), usedforsecurity=False).hexdigest()
+        digest = hashlib.sha256(key.encode()).hexdigest()
         index = int(digest, 16) % len(variants)
         return variants[index]
