@@ -360,6 +360,54 @@ try:
 except Exception as _benchmark_bp_exc:
     logger.warning("벤치마크 API Blueprint 등록 실패: %s", _benchmark_bp_exc)
 
+# 파일 스토리지 API Blueprint 등록 (Phase 55)
+try:
+    from .api.storage_api import storage_bp
+    app.register_blueprint(storage_bp)
+    logger.info("파일 스토리지 API Blueprint 등록 완료")
+except Exception as _storage_bp_exc:
+    logger.warning("파일 스토리지 API Blueprint 등록 실패: %s", _storage_bp_exc)
+
+# 이메일 서비스 API Blueprint 등록 (Phase 56)
+try:
+    from .api.email_api import email_bp
+    app.register_blueprint(email_bp)
+    logger.info("이메일 서비스 API Blueprint 등록 완료")
+except Exception as _email_bp_exc:
+    logger.warning("이메일 서비스 API Blueprint 등록 실패: %s", _email_bp_exc)
+
+# 검색 엔진 고급 API Blueprint 등록 (Phase 57)
+try:
+    from .api.search_engine_api import search_engine_bp
+    app.register_blueprint(search_engine_bp)
+    logger.info("검색 엔진 고급 API Blueprint 등록 완료")
+except Exception as _search_engine_bp_exc:
+    logger.warning("검색 엔진 고급 API Blueprint 등록 실패: %s", _search_engine_bp_exc)
+
+# 작업 파이프라인 API Blueprint 등록 (Phase 58)
+try:
+    from .api.pipeline_api import pipeline_bp
+    app.register_blueprint(pipeline_bp)
+    logger.info("작업 파이프라인 API Blueprint 등록 완료")
+except Exception as _pipeline_bp_exc:
+    logger.warning("작업 파이프라인 API Blueprint 등록 실패: %s", _pipeline_bp_exc)
+
+# 피쳐 플래그 API Blueprint 등록 (Phase 59)
+try:
+    from .api.flags_api import flags_bp
+    app.register_blueprint(flags_bp)
+    logger.info("피쳐 플래그 API Blueprint 등록 완료")
+except Exception as _flags_bp_exc:
+    logger.warning("피쳐 플래그 API Blueprint 등록 실패: %s", _flags_bp_exc)
+
+# 외부 연동 허브 API Blueprint 등록 (Phase 60)
+try:
+    from .api.integrations_api import integrations_bp
+    app.register_blueprint(integrations_bp)
+    logger.info("외부 연동 허브 API Blueprint 등록 완료")
+except Exception as _integrations_bp_exc:
+    logger.warning("외부 연동 허브 API Blueprint 등록 실패: %s", _integrations_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')

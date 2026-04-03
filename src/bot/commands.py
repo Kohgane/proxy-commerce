@@ -961,7 +961,7 @@ def cmd_my_activity(user_id: str = '') -> str:
 
 
 def cmd_search(keyword: str = '') -> str:
-    """/search <keyword> — 상품 검색."""
+    """/search <keyword> — 상품/문서 검색."""
     keyword = keyword.strip()
     if not keyword:
         return format_message('error', '사용법: /search <keyword>')
@@ -1140,3 +1140,203 @@ def cmd_benchmark_results() -> str:
     except Exception as exc:
         logger.error("cmd_benchmark_results 오류: %s", exc)
         return format_message('error', f'벤치마크 결과 조회 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 55: 파일 스토리지
+# ─────────────────────────────────────────────────────────────
+
+def cmd_storage_usage(owner_id: str = '') -> str:
+    """/storage_usage [owner_id] — 스토리지 사용량."""
+    owner_id = owner_id.strip() or 'default'
+    try:
+        from ..storage.storage_quota import StorageQuota
+        quota = StorageQuota()
+        summary = quota.get_summary(owner_id)
+        return format_message('storage_usage', summary)
+    except Exception as exc:
+        logger.error("cmd_storage_usage 오류: %s", exc)
+        return format_message('error', f'스토리지 사용량 조회 실패: {exc}')
+
+
+def cmd_storage_quota(owner_id: str = '', quota_mb: str = '') -> str:
+    """/storage_quota [owner_id] [quota_mb] — 스토리지 할당량 설정/조회."""
+    owner_id = owner_id.strip() or 'default'
+    try:
+        from ..storage.storage_quota import StorageQuota
+        quota = StorageQuota()
+        if quota_mb.strip():
+            bytes_limit = int(quota_mb.strip()) * 1024 * 1024
+            quota.set_quota(owner_id, bytes_limit)
+        summary = quota.get_summary(owner_id)
+        return format_message('storage_quota', summary)
+    except Exception as exc:
+        logger.error("cmd_storage_quota 오류: %s", exc)
+        return format_message('error', f'스토리지 할당량 설정 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 56: 이메일 서비스
+# ─────────────────────────────────────────────────────────────
+
+def cmd_email_stats() -> str:
+    """/email_stats — 이메일 발송 통계."""
+    try:
+        from ..email_service.email_tracker import EmailTracker
+        tracker = EmailTracker()
+        stats = tracker.get_stats()
+        return format_message('email_stats', stats)
+    except Exception as exc:
+        logger.error("cmd_email_stats 오류: %s", exc)
+        return format_message('error', f'이메일 통계 조회 실패: {exc}')
+
+
+def cmd_email_send(to: str = '', template: str = '') -> str:
+    """/email_send <to> <template> — 이메일 발송."""
+    to = to.strip()
+    template = template.strip() or 'order_confirm'
+    if not to:
+        return format_message('error', '사용법: /email_send <to> <template>')
+    try:
+        from ..email_service.smtp_provider import SMTPProvider
+        from ..email_service.email_queue import EmailQueue
+        provider = SMTPProvider()
+        queue = EmailQueue()
+        email_id = queue.enqueue(to, template, {'name': '사용자', 'order_id': 'ORD-001', 'total': '0'})
+        results = queue.process_queue(provider)
+        return format_message('email_send', {'email_id': email_id, 'results': results})
+    except Exception as exc:
+        logger.error("cmd_email_send 오류: %s", exc)
+        return format_message('error', f'이메일 발송 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 57: 검색 엔진
+# ─────────────────────────────────────────────────────────────
+
+def cmd_search_popular() -> str:
+    """/search_popular — 인기 검색어 조회."""
+    try:
+        from ..search.search_analytics import SearchAnalytics
+        analytics = SearchAnalytics()
+        popular = analytics.get_popular_queries(limit=5)
+        return format_message('search_popular', popular)
+    except Exception as exc:
+        logger.error("cmd_search_popular 오류: %s", exc)
+        return format_message('error', f'인기 검색어 조회 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 58: 작업 파이프라인
+# ─────────────────────────────────────────────────────────────
+
+def cmd_pipeline_run(name: str = '') -> str:
+    """/pipeline_run <name> — 파이프라인 실행."""
+    name = name.strip() or 'default'
+    try:
+        from ..pipeline.pipeline_builder import PipelineBuilder
+        from ..pipeline.pipeline_executor import PipelineExecutor
+        from ..pipeline.stages.collect_stage import CollectStage
+        from ..pipeline.stages.translate_stage import TranslateStage
+        builder = PipelineBuilder(name=name)
+        builder.add_stage(CollectStage()).add_stage(TranslateStage())
+        pipeline = builder.build()
+        executor = PipelineExecutor()
+        results = executor.execute(pipeline, {})
+        return format_message('pipeline_run', {'name': name, 'results': {k: v.to_dict() for k, v in results.items()}})
+    except Exception as exc:
+        logger.error("cmd_pipeline_run 오류: %s", exc)
+        return format_message('error', f'파이프라인 실행 실패: {exc}')
+
+
+def cmd_pipeline_status() -> str:
+    """/pipeline_status — 파이프라인 상태 조회."""
+    try:
+        from ..pipeline.pipeline_monitor import PipelineMonitor
+        monitor = PipelineMonitor()
+        stats = monitor.get_all_stats()
+        return format_message('pipeline_status', stats)
+    except Exception as exc:
+        logger.error("cmd_pipeline_status 오류: %s", exc)
+        return format_message('error', f'파이프라인 상태 조회 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 59: 피쳐 플래그
+# ─────────────────────────────────────────────────────────────
+
+def cmd_flag_list() -> str:
+    """/flag_list — 피쳐 플래그 목록."""
+    try:
+        from ..feature_flags.feature_flag_manager import FeatureFlagManager
+        manager = FeatureFlagManager()
+        flags = manager.list_flags()
+        return format_message('flag_list', flags)
+    except Exception as exc:
+        logger.error("cmd_flag_list 오류: %s", exc)
+        return format_message('error', f'플래그 목록 조회 실패: {exc}')
+
+
+def cmd_flag_toggle(name: str = '') -> str:
+    """/flag_toggle <name> — 피쳐 플래그 토글."""
+    name = name.strip()
+    if not name:
+        return format_message('error', '사용법: /flag_toggle <name>')
+    try:
+        from ..feature_flags.feature_flag_manager import FeatureFlagManager
+        manager = FeatureFlagManager()
+        try:
+            flag = manager.get_flag(name)
+            if flag is None:
+                flag = manager.create_flag(name, enabled=True)
+            else:
+                flag = manager.update_flag(name, enabled=not flag.get('enabled', False))
+        except KeyError:
+            flag = manager.create_flag(name, enabled=True)
+        return format_message('flag_toggle', flag)
+    except Exception as exc:
+        logger.error("cmd_flag_toggle 오류: %s", exc)
+        return format_message('error', f'플래그 토글 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 60: 외부 연동
+# ─────────────────────────────────────────────────────────────
+
+def cmd_integration_list() -> str:
+    """/integration_list — 연동 목록."""
+    try:
+        from ..integrations.integration_registry import IntegrationRegistry
+        from ..integrations.slack_connector import SlackConnector
+        from ..integrations.google_sheets_connector import GoogleSheetsConnector
+        from ..integrations.shopify_connector import ShopifyConnector
+        registry = IntegrationRegistry()
+        for c in [SlackConnector(), GoogleSheetsConnector(), ShopifyConnector()]:
+            registry.register(c)
+        return format_message('integration_list', {'integrations': registry.list_all()})
+    except Exception as exc:
+        logger.error("cmd_integration_list 오류: %s", exc)
+        return format_message('error', f'연동 목록 조회 실패: {exc}')
+
+
+def cmd_integration_sync(name: str = '') -> str:
+    """/integration_sync <name> — 연동 동기화."""
+    name = name.strip()
+    if not name:
+        return format_message('error', '사용법: /integration_sync <name>')
+    try:
+        from ..integrations.integration_registry import IntegrationRegistry
+        from ..integrations.slack_connector import SlackConnector
+        from ..integrations.google_sheets_connector import GoogleSheetsConnector
+        from ..integrations.shopify_connector import ShopifyConnector
+        registry = IntegrationRegistry()
+        for c in [SlackConnector(), GoogleSheetsConnector(), ShopifyConnector()]:
+            registry.register(c)
+        connector = registry.get(name)
+        if connector is None:
+            return format_message('error', f'연동 없음: {name}')
+        result = connector.sync()
+        return format_message('integration_sync', {'name': name, 'result': result})
+    except Exception as exc:
+        logger.error("cmd_integration_sync 오류: %s", exc)
+        return format_message('error', f'연동 동기화 실패: {exc}')

@@ -610,3 +610,43 @@ benchmark:
   default_concurrent_users: 10
   default_duration_seconds: 30
   regression_threshold_pct: 20
+
+# === Phase 55: 파일 스토리지 ===
+storage:
+  backend: local
+  local_path: ./data/storage
+  max_file_size_mb: 50
+  allowed_extensions: [jpg, png, gif, pdf, csv, json]
+  quota_default_mb: 1024
+
+# === Phase 56: 이메일 서비스 ===
+email_service:
+  provider: smtp
+  smtp_host: smtp.example.com
+  smtp_port: 587
+  smtp_user: noreply@example.com
+  queue_max_size: 1000
+  max_retries: 3
+
+# === Phase 57: 검색 엔진 ===
+search_engine:
+  max_index_size: 100000
+  default_top_k: 10
+  suggestion_limit: 5
+
+# === Phase 58: 작업 파이프라인 ===
+pipeline:
+  max_history: 100
+  timeout_seconds: 300
+  enable_rollback: true
+
+# === Phase 59: 피쳐 플래그 ===
+feature_flags:
+  max_flags: 500
+  audit_log_size: 10000
+
+# === Phase 60: 외부 연동 허브 ===
+integrations:
+  health_check_interval_seconds: 60
+  sync_timeout_seconds: 30
+  max_log_entries: 5000
