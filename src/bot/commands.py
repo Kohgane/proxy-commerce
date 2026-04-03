@@ -1601,3 +1601,214 @@ def cmd_workflow_status(instance_id: str = '') -> str:
     except Exception as exc:
         logger.error("cmd_workflow_status 오류: %s", exc)
         return format_message('error', f'워크플로 상태 조회 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 67: 실시간 대시보드 커맨드
+# ─────────────────────────────────────────────────────────────
+
+def cmd_realtime_status() -> str:
+    """/realtime_status — 실시간 연결 상태."""
+    try:
+        from ..realtime.connection_manager import ConnectionManager
+        mgr = ConnectionManager()
+        return format_message('realtime_status', mgr.get_stats())
+    except Exception as exc:
+        logger.error("cmd_realtime_status 오류: %s", exc)
+        return format_message('error', f'실시간 상태 조회 실패: {exc}')
+
+
+def cmd_realtime_metrics() -> str:
+    """/realtime_metrics — 실시간 대시보드 메트릭."""
+    try:
+        from ..realtime.dashboard_metrics import DashboardMetrics
+        metrics = DashboardMetrics()
+        return format_message('realtime_metrics', metrics.collect())
+    except Exception as exc:
+        logger.error("cmd_realtime_metrics 오류: %s", exc)
+        return format_message('error', f'실시간 메트릭 조회 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 68: 데이터 교환 커맨드
+# ─────────────────────────────────────────────────────────────
+
+def cmd_export(type_: str = '', format_: str = '') -> str:
+    """/export <type> <format> — 데이터 내보내기."""
+    type_ = type_.strip() or 'orders'
+    format_ = format_.strip() or 'json'
+    try:
+        from ..data_exchange.export_manager import ExportManager
+        mgr = ExportManager()
+        result = mgr.export([], format_=format_)
+        return format_message('export', result)
+    except Exception as exc:
+        logger.error("cmd_export 오류: %s", exc)
+        return format_message('error', f'내보내기 실패: {exc}')
+
+
+def cmd_import_status() -> str:
+    """/import_status — 가져오기 현황."""
+    try:
+        from ..data_exchange.bulk_operation import BulkOperation
+        bulk = BulkOperation()
+        return format_message('import_status', bulk.list_jobs())
+    except Exception as exc:
+        logger.error("cmd_import_status 오류: %s", exc)
+        return format_message('error', f'가져오기 현황 조회 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 69: 규칙 엔진 커맨드
+# ─────────────────────────────────────────────────────────────
+
+def cmd_rules_list() -> str:
+    """/rules_list — 규칙 목록."""
+    try:
+        from ..rules_engine.rules_engine import RulesEngine
+        engine = RulesEngine()
+        return format_message('rules_list', engine.list_rules())
+    except Exception as exc:
+        logger.error("cmd_rules_list 오류: %s", exc)
+        return format_message('error', f'규칙 목록 조회 실패: {exc}')
+
+
+def cmd_rules_test(rule_id: str = '', data_json: str = '') -> str:
+    """/rules_test <rule_id> <data_json> — 규칙 테스트."""
+    rule_id = rule_id.strip()
+    if not rule_id:
+        return format_message('error', '사용법: /rules_test <rule_id> [data_json]')
+    try:
+        import json
+        from ..rules_engine.rules_engine import RulesEngine
+        engine = RulesEngine()
+        context = json.loads(data_json) if data_json.strip() else {}
+        result = engine.evaluate('default', context)
+        return format_message('rules_test', {'rule_id': rule_id, 'results': result})
+    except Exception as exc:
+        logger.error("cmd_rules_test 오류: %s", exc)
+        return format_message('error', f'규칙 테스트 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 70: KPI 커맨드
+# ─────────────────────────────────────────────────────────────
+
+def cmd_kpi_summary() -> str:
+    """/kpi_summary — KPI 전체 요약."""
+    try:
+        from ..kpi.kpi_manager import KPIManager
+        mgr = KPIManager()
+        data = mgr.calculate_all({})
+        return format_message('kpi_summary', data)
+    except Exception as exc:
+        logger.error("cmd_kpi_summary 오류: %s", exc)
+        return format_message('error', f'KPI 요약 조회 실패: {exc}')
+
+
+def cmd_kpi_detail(name: str = '') -> str:
+    """/kpi_detail <name> — KPI 상세."""
+    name = name.strip()
+    if not name:
+        return format_message('error', '사용법: /kpi_detail <name>')
+    try:
+        from ..kpi.kpi_manager import KPIManager
+        mgr = KPIManager()
+        kpi = mgr.get(name)
+        if kpi is None:
+            return format_message('error', f'KPI 없음: {name}')
+        return format_message('kpi_detail', kpi.to_dict())
+    except Exception as exc:
+        logger.error("cmd_kpi_detail 오류: %s", exc)
+        return format_message('error', f'KPI 상세 조회 실패: {exc}')
+
+
+def cmd_kpi_alerts() -> str:
+    """/kpi_alerts — KPI 알림 목록."""
+    try:
+        from ..kpi.kpi_alert import KPIAlert
+        alert = KPIAlert()
+        return format_message('kpi_alerts', alert.get_alerts())
+    except Exception as exc:
+        logger.error("cmd_kpi_alerts 오류: %s", exc)
+        return format_message('error', f'KPI 알림 조회 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 71: 마켓플레이스 동기화 커맨드
+# ─────────────────────────────────────────────────────────────
+
+def cmd_sync_marketplace(name: str = '') -> str:
+    """/sync_marketplace <name> — 마켓플레이스 동기화."""
+    name = name.strip() or 'coupang'
+    try:
+        from ..marketplace_sync.sync_manager import MarketplaceSyncManager
+        mgr = MarketplaceSyncManager()
+        job = mgr.sync(name)
+        return format_message('sync_marketplace', job.to_dict())
+    except Exception as exc:
+        logger.error("cmd_sync_marketplace 오류: %s", exc)
+        return format_message('error', f'마켓플레이스 동기화 실패: {exc}')
+
+
+def cmd_sync_status() -> str:
+    """/sync_status — 동기화 현황."""
+    try:
+        from ..marketplace_sync.sync_manager import MarketplaceSyncManager
+        mgr = MarketplaceSyncManager()
+        return format_message('sync_status', mgr.get_status())
+    except Exception as exc:
+        logger.error("cmd_sync_status 오류: %s", exc)
+        return format_message('error', f'동기화 현황 조회 실패: {exc}')
+
+
+def cmd_sync_logs() -> str:
+    """/sync_logs — 동기화 로그."""
+    try:
+        from ..marketplace_sync.sync_log import SyncLog
+        log = SyncLog()
+        return format_message('sync_logs', log.get_summary())
+    except Exception as exc:
+        logger.error("cmd_sync_logs 오류: %s", exc)
+        return format_message('error', f'동기화 로그 조회 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 72: 보안 강화 커맨드
+# ─────────────────────────────────────────────────────────────
+
+def cmd_security_audit() -> str:
+    """/security_audit — 보안 감사 로그."""
+    try:
+        from ..security.security_audit import SecurityAudit
+        audit = SecurityAudit()
+        return format_message('security_audit', audit.get_logs())
+    except Exception as exc:
+        logger.error("cmd_security_audit 오류: %s", exc)
+        return format_message('error', f'보안 감사 로그 조회 실패: {exc}')
+
+
+def cmd_security_sessions() -> str:
+    """/security_sessions — 활성 세션 목록."""
+    try:
+        from ..security.session_manager import SessionManager
+        mgr = SessionManager()
+        return format_message('security_sessions', mgr.get_active_sessions())
+    except Exception as exc:
+        logger.error("cmd_security_sessions 오류: %s", exc)
+        return format_message('error', f'세션 목록 조회 실패: {exc}')
+
+
+def cmd_ip_block(ip: str = '') -> str:
+    """/ip_block <ip> — IP 차단."""
+    ip = ip.strip()
+    if not ip:
+        return format_message('error', '사용법: /ip_block <ip>')
+    try:
+        from ..security.ip_filter import IPFilter
+        f = IPFilter()
+        f.add_blacklist(ip)
+        return format_message('ip_block', {'ip': ip, 'action': 'blocked', 'allowed': f.is_allowed(ip)})
+    except Exception as exc:
+        logger.error("cmd_ip_block 오류: %s", exc)
+        return format_message('error', f'IP 차단 실패: {exc}')

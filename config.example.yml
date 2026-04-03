@@ -686,3 +686,49 @@ cache_layer:
 workflow:
   max_instances: 10000
   max_history_per_instance: 100
+
+# === Phase 67: 실시간 대시보드 ===
+realtime:
+  max_events_per_channel: 1000
+  heartbeat_interval_seconds: 30
+  max_connections: 500
+
+# === Phase 68: 데이터 교환 ===
+data_exchange:
+  max_export_records: 100000
+  supported_formats:
+    - json
+    - csv
+  bulk_job_ttl_hours: 24
+
+# === Phase 69: 규칙 엔진 ===
+rules_engine:
+  max_rules_per_set: 100
+  evaluation_timeout_seconds: 5
+
+# === Phase 70: KPI 대시보드 ===
+kpi:
+  calculation_interval_minutes: 60
+  alert_threshold_pct: 10
+  history_retention_days: 90
+
+# === Phase 71: 마켓플레이스 동기화 ===
+marketplace_sync:
+  default_interval_minutes: 60
+  max_retry_count: 3
+  supported_marketplaces:
+    - coupang
+    - naver
+    - gmarket
+
+# === Phase 72: 보안 강화 ===
+security:
+  max_sessions_per_user: 5
+  session_ttl_hours: 24
+  csrf_token_ttl_minutes: 60
+  suspicious_login_threshold: 5
+  password_policy:
+    min_length: 8
+    require_uppercase: true
+    require_numbers: true
+    require_special: true

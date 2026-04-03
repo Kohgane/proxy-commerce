@@ -456,6 +456,54 @@ try:
 except Exception as _workflows_bp_exc:
     logger.warning("워크플로 엔진 API Blueprint 등록 실패: %s", _workflows_bp_exc)
 
+# 실시간 대시보드 API Blueprint 등록 (Phase 67)
+try:
+    from .api.realtime_api import realtime_bp
+    app.register_blueprint(realtime_bp)
+    logger.info("실시간 대시보드 API Blueprint 등록 완료")
+except Exception as _realtime_bp_exc:
+    logger.warning("실시간 대시보드 API Blueprint 등록 실패: %s", _realtime_bp_exc)
+
+# 데이터 교환 API Blueprint 등록 (Phase 68)
+try:
+    from .api.data_exchange_api import data_exchange_bp
+    app.register_blueprint(data_exchange_bp)
+    logger.info("데이터 교환 API Blueprint 등록 완료")
+except Exception as _data_exchange_bp_exc:
+    logger.warning("데이터 교환 API Blueprint 등록 실패: %s", _data_exchange_bp_exc)
+
+# 규칙 엔진 API Blueprint 등록 (Phase 69)
+try:
+    from .api.rules_api import rules_bp
+    app.register_blueprint(rules_bp)
+    logger.info("규칙 엔진 API Blueprint 등록 완료")
+except Exception as _rules_bp_exc:
+    logger.warning("규칙 엔진 API Blueprint 등록 실패: %s", _rules_bp_exc)
+
+# KPI 대시보드 API Blueprint 등록 (Phase 70)
+try:
+    from .api.kpi_api import kpi_bp
+    app.register_blueprint(kpi_bp)
+    logger.info("KPI 대시보드 API Blueprint 등록 완료")
+except Exception as _kpi_bp_exc:
+    logger.warning("KPI 대시보드 API Blueprint 등록 실패: %s", _kpi_bp_exc)
+
+# 마켓플레이스 동기화 API Blueprint 등록 (Phase 71)
+try:
+    from .api.marketplace_sync_api import marketplace_sync_bp
+    app.register_blueprint(marketplace_sync_bp)
+    logger.info("마켓플레이스 동기화 API Blueprint 등록 완료")
+except Exception as _marketplace_sync_bp_exc:
+    logger.warning("마켓플레이스 동기화 API Blueprint 등록 실패: %s", _marketplace_sync_bp_exc)
+
+# 보안 강화 API Blueprint 등록 (Phase 72)
+try:
+    from .api.security_api import security_bp
+    app.register_blueprint(security_bp)
+    logger.info("보안 강화 API Blueprint 등록 완료")
+except Exception as _security_bp_exc:
+    logger.warning("보안 강화 API Blueprint 등록 실패: %s", _security_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')
