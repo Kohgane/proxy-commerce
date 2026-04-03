@@ -961,18 +961,18 @@ def cmd_my_activity(user_id: str = '') -> str:
 
 
 def cmd_search(keyword: str = '') -> str:
-    """/search <keyword> — 상품 검색."""
+    """/search <keyword> — 상품/문서 검색."""
     keyword = keyword.strip()
     if not keyword:
         return format_message('error', '사용법: /search <keyword>')
     try:
-        from ..search.search_engine import SearchEngine
+        from ..search.search_index import SearchIndex
         from ..search.autocomplete import Autocomplete
-        engine = SearchEngine()
+        index = SearchIndex()
         ac = Autocomplete()
         ac.record_query(keyword)
-        results = engine.search(keyword, limit=10)
-        return format_message('search_results', results, label=keyword)
+        results = index.search(keyword)
+        return format_message('search_results', {'query': keyword, 'results': results}, label=keyword)
     except Exception as exc:
         logger.error("cmd_search 오류: %s", exc)
         return format_message('error', f'검색 실패: {exc}')
@@ -1213,21 +1213,6 @@ def cmd_email_send(to: str = '', template: str = '') -> str:
 # ─────────────────────────────────────────────────────────────
 # Phase 57: 검색 엔진
 # ─────────────────────────────────────────────────────────────
-
-def cmd_search(query: str = '') -> str:
-    """/search <query> — 상품/문서 검색."""
-    query = query.strip()
-    if not query:
-        return format_message('error', '사용법: /search <query>')
-    try:
-        from ..search.search_index import SearchIndex
-        index = SearchIndex()
-        results = index.search(query)
-        return format_message('search_results', {'query': query, 'results': results})
-    except Exception as exc:
-        logger.error("cmd_search 오류: %s", exc)
-        return format_message('error', f'검색 실패: {exc}')
-
 
 def cmd_search_popular() -> str:
     """/search_popular — 인기 검색어 조회."""

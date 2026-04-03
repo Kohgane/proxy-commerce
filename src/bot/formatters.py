@@ -757,7 +757,6 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'email_stats': lambda d: _format_email_stats(d),
         'email_send': lambda d: _format_email_send(d),
         # Phase 57: 검색 엔진
-        'search_results': lambda d: _format_search_results(d, label=kwargs.get('label', '')),
         'search_popular': lambda d: _format_search_popular(d),
         # Phase 58: 작업 파이프라인
         'pipeline_run': lambda d: _format_pipeline_run(d),
