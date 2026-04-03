@@ -42,7 +42,7 @@ def get_segment(segment_id: str):
         return jsonify({"error": "not found"}), 404
     return jsonify({"segment_id": seg.segment_id, "name": seg.name, "description": seg.description})
 
-@customer_segmentation_bp.get("/<segment_id>/analyze")
+@customer_segmentation_bp.post("/<segment_id>/analyze")
 def analyze(segment_id: str):
     data = request.get_json(silent=True) or {}
     customers = data.get("customers", [])

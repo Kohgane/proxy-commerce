@@ -23,7 +23,7 @@ class PurchaseFrequencyRule(SegmentRule):
             return freq >= self._thresholds["heavy"]
         elif self._level == "medium":
             return self._thresholds["light"] <= freq < self._thresholds["heavy"]
-        return freq < self._thresholds["light"] + 1
+        return freq < self._thresholds["light"]
 
 class SpendingRule(SegmentRule):
     """총 지출 기반: VIP/일반/저가치."""
@@ -39,7 +39,7 @@ class SpendingRule(SegmentRule):
         if self._tier == "VIP":
             return spend >= self._thresholds["VIP"]
         elif self._tier == "일반":
-            return self._thresholds["저가치"] <= spend < self._thresholds["VIP"]
+            return self._thresholds["일반"] <= spend < self._thresholds["VIP"]
         return spend < self._thresholds["일반"]
 
 class RecencyRule(SegmentRule):
