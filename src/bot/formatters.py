@@ -950,9 +950,11 @@ def _format_experiment_list(data) -> str:
         return header + "실험 없음"
     lines = [header]
     for exp in data[:10]:
+        exp_id = exp.get('experiment_id', '-')
+        exp_id_short = exp_id[:8] + "..." if len(exp_id) > 8 else exp_id
         lines.append(
             f"• [{exp.get('status', '-')}] {exp.get('name', '-')} "
-            f"(ID: `{exp.get('experiment_id', '-')[:8]}...`)"
+            f"(ID: `{exp_id_short}`)"
         )
     return "\n".join(lines)
 

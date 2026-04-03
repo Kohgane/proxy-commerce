@@ -73,7 +73,7 @@ class SubscriptionPlan:
         limit = plan.get(resource, 0)
         if limit == -1:
             return True
-        return current_usage < limit
+        return current_usage <= limit
 
     def has_feature(self, tier: str, feature: str) -> bool:
         """해당 플랜에 특정 기능이 포함되는지 확인."""

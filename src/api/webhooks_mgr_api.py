@@ -46,8 +46,8 @@ def register_webhook():
             name=data.get("name", ""),
         )
         return jsonify(webhook), 201
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+    except ValueError:
+        return jsonify({"error": "url은 필수입니다."}), 400
 
 
 @webhooks_mgr_bp.get("/<webhook_id>")
@@ -65,8 +65,8 @@ def update_webhook(webhook_id: str):
     data = request.get_json(force=True) or {}
     try:
         return jsonify(registry.update(webhook_id, **data))
-    except KeyError as exc:
-        return jsonify({"error": str(exc)}), 404
+    except KeyError:
+        return jsonify({"error": "웹훅 없음"}), 404
 
 
 @webhooks_mgr_bp.delete("/<webhook_id>")
@@ -84,10 +84,10 @@ def test_webhook(webhook_id: str):
     try:
         result = dispatcher.test_webhook(webhook_id)
         return jsonify(result)
-    except KeyError as exc:
-        return jsonify({"error": str(exc)}), 404
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+    except KeyError:
+        return jsonify({"error": "웹훅 없음"}), 404
+    except Exception:
+        return jsonify({"error": "웹훅 테스트 중 오류가 발생했습니다."}), 500
 
 
 @webhooks_mgr_bp.get("/<webhook_id>/deliveries")

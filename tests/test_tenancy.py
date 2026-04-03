@@ -180,10 +180,12 @@ class TestSubscriptionPlan:
         assert "enterprise" in tiers
 
     def test_check_limit_within(self):
+        # Free plan has monthly_orders limit of 50; usage of 50 is at limit (<=), should be True
+        assert self.plans.check_limit("free", "monthly_orders", 50) is True
         assert self.plans.check_limit("free", "monthly_orders", 10) is True
 
     def test_check_limit_exceeded(self):
-        assert self.plans.check_limit("free", "monthly_orders", 100) is False
+        assert self.plans.check_limit("free", "monthly_orders", 51) is False
 
     def test_check_limit_enterprise_unlimited(self):
         assert self.plans.check_limit("enterprise", "monthly_orders", 999999) is True

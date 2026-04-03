@@ -48,8 +48,8 @@ def create_tenant():
             plan=data.get("plan", "free"),
         )
         return jsonify(tenant), 201
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+    except ValueError:
+        return jsonify({"error": "name과 owner_email은 필수입니다."}), 400
 
 
 @tenancy_bp.get("/<tenant_id>")
@@ -68,8 +68,8 @@ def update_tenant(tenant_id: str):
     try:
         tenant = mgr.update(tenant_id, **data)
         return jsonify(tenant)
-    except KeyError as exc:
-        return jsonify({"error": str(exc)}), 404
+    except KeyError:
+        return jsonify({"error": "테넌트 없음"}), 404
 
 
 @tenancy_bp.delete("/<tenant_id>")
@@ -78,8 +78,8 @@ def deactivate_tenant(tenant_id: str):
     try:
         tenant = mgr.deactivate(tenant_id)
         return jsonify(tenant)
-    except KeyError as exc:
-        return jsonify({"error": str(exc)}), 404
+    except KeyError:
+        return jsonify({"error": "테넌트 없음"}), 404
 
 
 @tenancy_bp.get("/<tenant_id>/config")

@@ -45,8 +45,8 @@ def run_benchmark():
         report = runner.run_mock(profile, response_times_ms=mock_times)
         _reports.append(report)
         return jsonify(report)
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+    except ValueError:
+        return jsonify({"error": "유효하지 않은 프로파일 설정입니다."}), 400
 
 
 @benchmark_bp.get("/results")

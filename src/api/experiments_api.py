@@ -50,8 +50,8 @@ def create_experiment():
             variants=data.get("variants"),
         )
         return jsonify(exp), 201
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+    except ValueError:
+        return jsonify({"error": "name은 필수입니다."}), 400
 
 
 @experiments_bp.get("/<experiment_id>")
@@ -68,8 +68,8 @@ def start_experiment(experiment_id: str):
     mgr, _, _, _, _ = _get_services()
     try:
         return jsonify(mgr.start(experiment_id))
-    except KeyError as exc:
-        return jsonify({"error": str(exc)}), 404
+    except KeyError:
+        return jsonify({"error": "실험 없음"}), 404
 
 
 @experiments_bp.post("/<experiment_id>/stop")
@@ -77,8 +77,8 @@ def stop_experiment(experiment_id: str):
     mgr, _, _, _, _ = _get_services()
     try:
         return jsonify(mgr.stop(experiment_id))
-    except KeyError as exc:
-        return jsonify({"error": str(exc)}), 404
+    except KeyError:
+        return jsonify({"error": "실험 없음"}), 404
 
 
 @experiments_bp.post("/<experiment_id>/assign")
