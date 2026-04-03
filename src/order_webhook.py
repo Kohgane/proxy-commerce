@@ -600,6 +600,54 @@ try:
 except Exception as _order_mgmt_bp_exc:
     logger.warning("주문 분할/병합 API Blueprint 등록 실패: %s", _order_mgmt_bp_exc)
 
+# 재고 입출고 이력 API Blueprint 등록 (Phase 85)
+try:
+    from .api.inventory_transactions_api import inventory_transactions_bp
+    app.register_blueprint(inventory_transactions_bp)
+    logger.info("재고 입출고 이력 API Blueprint 등록 완료")
+except Exception as _inv_tx_bp_exc:
+    logger.warning("재고 입출고 이력 API Blueprint 등록 실패: %s", _inv_tx_bp_exc)
+
+# 고객 세그멘테이션 API Blueprint 등록 (Phase 86)
+try:
+    from .api.customer_segmentation_api import customer_segmentation_bp
+    app.register_blueprint(customer_segmentation_bp)
+    logger.info("고객 세그멘테이션 API Blueprint 등록 완료")
+except Exception as _cust_seg_bp_exc:
+    logger.warning("고객 세그멘테이션 API Blueprint 등록 실패: %s", _cust_seg_bp_exc)
+
+# 상품 비교 API Blueprint 등록 (Phase 87)
+try:
+    from .api.product_comparison_api import product_comparison_bp
+    app.register_blueprint(product_comparison_bp)
+    logger.info("상품 비교 API Blueprint 등록 완료")
+except Exception as _prod_cmp_bp_exc:
+    logger.warning("상품 비교 API Blueprint 등록 실패: %s", _prod_cmp_bp_exc)
+
+# 이메일 마케팅 API Blueprint 등록 (Phase 88)
+try:
+    from .api.email_marketing_api import email_marketing_bp
+    app.register_blueprint(email_marketing_bp)
+    logger.info("이메일 마케팅 API Blueprint 등록 완료")
+except Exception as _email_mkt_bp_exc:
+    logger.warning("이메일 마케팅 API Blueprint 등록 실패: %s", _email_mkt_bp_exc)
+
+# 창고 관리 API Blueprint 등록 (Phase 89)
+try:
+    from .api.warehouse_api import warehouse_bp
+    app.register_blueprint(warehouse_bp)
+    logger.info("창고 관리 API Blueprint 등록 완료")
+except Exception as _warehouse_bp_exc:
+    logger.warning("창고 관리 API Blueprint 등록 실패: %s", _warehouse_bp_exc)
+
+# 세금 계산 엔진 API Blueprint 등록 (Phase 90)
+try:
+    from .api.tax_engine_api import tax_engine_bp
+    app.register_blueprint(tax_engine_bp)
+    logger.info("세금 계산 엔진 API Blueprint 등록 완료")
+except Exception as _tax_bp_exc:
+    logger.warning("세금 계산 엔진 API Blueprint 등록 실패: %s", _tax_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')
