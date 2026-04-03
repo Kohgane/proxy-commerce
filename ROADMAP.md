@@ -273,3 +273,59 @@
 - API Blueprint: `src/api/search_api.py` (`/api/v1/search`)
 - 봇 커맨드: `/search <keyword>`, `/popular_searches`
 - 관련 코드: `src/search/`
+
+## Phase 49: 멀티테넌시
+- `TenantManager`: 테넌트 CRUD, 플랜 관리, 상태 (active/inactive)
+- `TenantConfig`: 테넌트별 설정 (마진율, 통화 전략, 배송 정책, 알림 설정)
+- `TenantIsolation`: tenant_id 기반 데이터 격리 유틸리티
+- `SubscriptionPlan`: free/basic/pro/enterprise 플랜, 기능/사용량 제한
+- `UsageTracker`: 테넌트별 API 호출/주문/상품 사용량 추적
+- API Blueprint: `src/api/tenancy_api.py` (`/api/v1/tenants`)
+- 봇 커맨드: `/tenants`
+- 관련 코드: `src/tenancy/`
+
+## Phase 50: A/B 테스트 프레임워크
+- `ExperimentManager`: 실험 CRUD (draft→running→stopped), 변형 목록 관리
+- `VariantAssigner`: MD5 해시 기반 일관된 변형 할당
+- `MetricsTracker`: 실험/변형별 이벤트 (impression/conversion/click/revenue) 추적
+- `StatisticalAnalyzer`: Z-검정 통계적 유의성 분석, 표준정규분포 CDF 근사
+- `ExperimentReport`: 실험 결과 보고서 (메트릭 + 유의성 검정)
+- API Blueprint: `src/api/ab_testing_api.py` (`/api/v1/experiments`)
+- 봇 커맨드: `/experiments`
+- 관련 코드: `src/ab_testing/`
+
+## Phase 51: 웹훅 관리
+- `WebhookRegistry`: 웹훅 URL/이벤트/시크릿 CRUD, 활성/비활성 관리
+- `WebhookSigner`: HMAC-SHA256 서명 및 검증
+- `DeliveryLog`: 전달 기록 (상태코드, 응답, 성공여부, 재시도 횟수)
+- `WebhookDispatcher`: HTTP POST 발송, 서명 추가, 실패 시 재시도 예약
+- `RetryScheduler`: 지수 백오프 재시도 큐 (최대 5회, 60~1500초)
+- API Blueprint: `src/api/webhook_manager_api.py` (`/api/v1/webhooks`)
+- 관련 코드: `src/webhook_manager/`
+
+## Phase 52: API 문서 자동 생성
+- `EndpointScanner`: Flask URL map 스캔, 엔드포인트/메서드/블루프린트 추출
+- `SchemaBuilder`: OpenAPI 3.0 파라미터/응답/요청 스키마 빌더
+- `APIDocGenerator`: OpenAPI 3.0 스펙 자동 생성
+- `DocRenderer`: OpenAPI 스펙을 HTML 테이블로 렌더링
+- API Blueprint: `src/api/docs_api.py` (`/api/docs`, `/api/docs/openapi.json`)
+- 관련 코드: `src/docs/`
+
+## Phase 53: 구조화된 로깅/추적
+- `StructuredLogger`: JSON 형식 구조화된 로그 (timestamp/level/message/service/trace_id)
+- `TraceContext`: 스레드 로컬 trace_id/span_id 관리
+- `RequestTracer`: 함수 데코레이터 기반 요청 추적 (시작/종료/소요시간)
+- `LogAggregator`: 로그 수집/조회 (level/service/trace_id 필터, 최대 1000건)
+- `CorrelationMiddleware`: Flask before/after 훅으로 X-Trace-ID 자동 주입
+- API Blueprint: `src/api/traces_api.py` (`/api/v1/traces`)
+- 관련 코드: `src/logging_tracing/`
+
+## Phase 54: 성능 벤치마크
+- `LoadProfile`: 부하 프로파일 (동시사용자/실행시간/램프업/대상URL/메서드)
+- `ResponseAnalyzer`: 응답시간 통계 (p50/p95/p99/mean/min/max/count)
+- `BenchmarkReport`: 벤치마크 결과 보고서 (통계+오류율+요약텍스트)
+- `RegressionDetector`: 이전 결과 대비 성능 회귀 감지 (기본 임계값 20%)
+- `BenchmarkRunner`: ThreadPoolExecutor 기반 병렬 부하 테스트 실행
+- API Blueprint: `src/api/benchmark_api.py` (`/api/v1/benchmark`)
+- CLI: `scripts/benchmark.py`
+- 관련 코드: `src/benchmark/`

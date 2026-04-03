@@ -556,3 +556,39 @@ search:
     tags: 2
     description: 1
   autocomplete_popular_top_n: 10
+
+# === Phase 49: 멀티테넌시 ===
+tenancy:
+  default_plan: free
+  plans:
+    - free
+    - basic
+    - pro
+    - enterprise
+
+# === Phase 50: A/B 테스트 ===
+ab_testing:
+  max_variants: 10
+  default_significance_level: 0.05
+
+# === Phase 51: 웹훅 관리 ===
+webhook_manager:
+  max_retries: 5
+  base_delay_seconds: 60
+  timeout_seconds: 30
+
+# === Phase 52: API 문서 ===
+docs:
+  enabled: true
+  openapi_version: '3.0.0'
+
+# === Phase 53: 로깅/추적 ===
+logging_tracing:
+  max_logs: 1000
+  trace_header: X-Trace-ID
+
+# === Phase 54: 벤치마크 ===
+benchmark:
+  regression_threshold: 0.20
+  default_concurrent_users: 10
+  default_duration_seconds: 30

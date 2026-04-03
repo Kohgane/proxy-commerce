@@ -1,96 +1,144 @@
-"""tests/test_ab_testing.py — ABTestManager 테스트."""
-import os
-import sys
-from unittest.mock import MagicMock, patch
-
+"""tests/test_ab_testing.py — Phase 50: A/B 테스트 테스트."""
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-
-
-@pytest.fixture
-def manager(mock_env):
-    """ABTestManager 인스턴스."""
-    from src.marketing.ab_testing import ABTestManager
-    return ABTestManager(sheet_id="fake_id", sheet_name="ab_tests")
+from src.ab_testing.experiment_manager import ExperimentManager
+from src.ab_testing.variant_assigner import VariantAssigner
+from src.ab_testing.metrics_tracker import MetricsTracker
+from src.ab_testing.statistical_analyzer import StatisticalAnalyzer
+from src.ab_testing.experiment_report import ExperimentReport
 
 
-def _mock_ws(records=None):
-    ws = MagicMock()
-    ws.get_all_records.return_value = records or []
-    ws.get_all_values.return_value = []
-    return ws
+class TestExperimentManager:
+    def setup_method(self):
+        self.mgr = ExperimentManager()
+
+    def test_create_experiment(self):
+        exp = self.mgr.create('Test Exp', ['control', 'treatment'])
+        assert exp['name'] == 'Test Exp'
+        assert exp['status'] == 'draft'
+        assert 'id' in exp
+
+    def test_get_experiment(self):
+        exp = self.mgr.create('Exp A', ['A', 'B'])
+        found = self.mgr.get(exp['id'])
+        assert found is not None
+
+    def test_get_missing(self):
+        assert self.mgr.get('no-such') is None
+
+    def test_start_experiment(self):
+        exp = self.mgr.create('Exp B', ['A', 'B'])
+        started = self.mgr.start(exp['id'])
+        assert started['status'] == 'running'
+        assert started['start_time'] is not None
+
+    def test_stop_experiment(self):
+        exp = self.mgr.create('Exp C', ['A', 'B'])
+        self.mgr.start(exp['id'])
+        stopped = self.mgr.stop(exp['id'])
+        assert stopped['status'] == 'stopped'
+        assert stopped['end_time'] is not None
+
+    def test_start_missing(self):
+        with pytest.raises(KeyError):
+            self.mgr.start('bad-id')
+
+    def test_list_experiments(self):
+        self.mgr.create('E1', ['a', 'b'])
+        self.mgr.create('E2', ['a', 'b'])
+        experiments = self.mgr.list_experiments()
+        assert len(experiments) == 2
 
 
-class TestGetVariant:
-    def test_get_variant_returns_a_or_b(self, manager):
-        """get_variant는 'A' 또는 'B'를 반환해야 한다."""
-        variant = manager.get_variant("exp1", "user@example.com")
-        assert variant in ("A", "B")
+class TestVariantAssigner:
+    def setup_method(self):
+        self.assigner = VariantAssigner()
 
-    def test_consistent_variant(self, manager):
-        """동일한 실험 이름과 이메일은 항상 동일한 변형을 반환해야 한다."""
-        v1 = manager.get_variant("exp_test", "consistent@example.com")
-        v2 = manager.get_variant("exp_test", "consistent@example.com")
+    def test_assign_returns_variant(self):
+        variant = self.assigner.assign('exp1', 'user1', ['control', 'treatment'])
+        assert variant in ['control', 'treatment']
+
+    def test_consistent_assignment(self):
+        v1 = self.assigner.assign('exp1', 'user1', ['control', 'treatment'])
+        v2 = self.assigner.assign('exp1', 'user1', ['control', 'treatment'])
         assert v1 == v2
 
-    def test_different_email_may_differ(self, manager):
-        """다른 이메일은 다른 변형을 받을 수 있다."""
-        variants = {manager.get_variant("exp_diff", f"user{i}@example.com") for i in range(20)}
-        # 20개 이메일 중 A, B가 모두 등장해야 확률적으로 성립
-        assert "A" in variants or "B" in variants
+    def test_different_users_may_differ(self):
+        results = set()
+        for i in range(20):
+            v = self.assigner.assign('exp1', f'user{i}', ['control', 'treatment'])
+            results.add(v)
+        assert len(results) > 1
+
+    def test_empty_variants(self):
+        assert self.assigner.assign('exp1', 'u1', []) is None
 
 
-class TestRecordConversion:
-    def test_record_conversion_no_error(self, manager):
-        """record_conversion은 오류 없이 실행되어야 한다."""
-        ws = _mock_ws()
-        with patch('src.marketing.ab_testing.open_sheet', return_value=ws):
-            manager.record_conversion("exp_conv", "A", revenue=5000)
+class TestMetricsTracker:
+    def setup_method(self):
+        self.tracker = MetricsTracker()
 
-    def test_record_impression_no_error(self, manager):
-        """record_impression은 오류 없이 실행되어야 한다."""
-        ws = _mock_ws()
-        with patch('src.marketing.ab_testing.open_sheet', return_value=ws):
-            manager.record_impression("exp_imp", "B")
+    def test_track_event(self):
+        self.tracker.track_event('exp1', 'control', 'impression')
+        metrics = self.tracker.get_metrics('exp1')
+        assert metrics['control']['impressions'] == 1
+
+    def test_multiple_events(self):
+        self.tracker.track_event('exp1', 'control', 'impression', 5)
+        self.tracker.track_event('exp1', 'control', 'conversion', 2)
+        metrics = self.tracker.get_metrics('exp1')
+        assert metrics['control']['impressions'] == 5
+        assert metrics['control']['conversions'] == 2
+
+    def test_multiple_variants(self):
+        self.tracker.track_event('exp1', 'A', 'impression')
+        self.tracker.track_event('exp1', 'B', 'impression')
+        metrics = self.tracker.get_metrics('exp1')
+        assert 'A' in metrics
+        assert 'B' in metrics
+
+    def test_empty_metrics(self):
+        assert self.tracker.get_metrics('no-exp') == {}
 
 
-class TestGetResults:
-    def test_get_results_empty(self, manager):
-        """데이터가 없을 때 기본 통계를 반환해야 한다."""
-        ws = _mock_ws([])
-        with patch('src.marketing.ab_testing.open_sheet', return_value=ws):
-            results = manager.get_results("exp_empty")
-        assert results["A"]["impressions"] == 0
-        assert results["B"]["impressions"] == 0
-        assert isinstance(results["is_significant"], bool)
+class TestStatisticalAnalyzer:
+    def setup_method(self):
+        self.analyzer = StatisticalAnalyzer()
 
-    def test_get_results_with_data(self, manager):
-        """데이터가 있을 때 올바른 통계를 반환해야 한다."""
-        records = [
-            {"experiment_name": "exp_data", "variant": "A",
-             "impressions": 100, "conversions": 10, "total_revenue": 50000, "updated_at": ""},
-            {"experiment_name": "exp_data", "variant": "B",
-             "impressions": 100, "conversions": 5, "total_revenue": 25000, "updated_at": ""},
-        ]
-        ws = _mock_ws(records)
-        with patch('src.marketing.ab_testing.open_sheet', return_value=ws):
-            results = manager.get_results("exp_data")
-        assert results["A"]["conversions"] == 10
-        assert results["B"]["conversions"] == 5
-        assert results["A"]["conversion_rate"] == 0.1
+    def test_significant_result(self):
+        result = self.analyzer.z_test(100, 1000, 200, 1000)
+        assert result['is_significant'] is True
+        assert result['z_score'] != 0
 
-    def test_significance_calculation(self, manager):
-        """Z-검정 결과는 bool이어야 한다."""
-        records = [
-            {"experiment_name": "exp_sig", "variant": "A",
-             "impressions": 1000, "conversions": 100, "total_revenue": 0, "updated_at": ""},
-            {"experiment_name": "exp_sig", "variant": "B",
-             "impressions": 1000, "conversions": 50, "total_revenue": 0, "updated_at": ""},
-        ]
-        ws = _mock_ws(records)
-        with patch('src.marketing.ab_testing.open_sheet', return_value=ws):
-            results = manager.get_results("exp_sig")
-        assert isinstance(results["is_significant"], bool)
-        # 전환율 10% vs 5%는 대규모 샘플에서 유의미해야 함
-        assert results["is_significant"] is True
+    def test_not_significant(self):
+        result = self.analyzer.z_test(100, 1000, 105, 1000)
+        assert result['is_significant'] is False
+
+    def test_zero_totals(self):
+        result = self.analyzer.z_test(0, 0, 0, 0)
+        assert result['p_value'] == 1.0
+        assert result['is_significant'] is False
+
+    def test_p_value_range(self):
+        result = self.analyzer.z_test(50, 100, 60, 100)
+        assert 0 <= result['p_value'] <= 1
+
+    def test_symmetric(self):
+        r1 = self.analyzer.z_test(100, 1000, 150, 1000)
+        r2 = self.analyzer.z_test(150, 1000, 100, 1000)
+        assert abs(r1['z_score']) == abs(r2['z_score'])
+
+
+class TestExperimentReport:
+    def setup_method(self):
+        self.report = ExperimentReport()
+
+    def test_generate_missing(self):
+        result = self.report.generate('no-such-exp')
+        assert 'error' in result
+
+    def test_generate_empty_metrics(self):
+        mgr = self.report._exp_mgr
+        exp = mgr.create('Report Exp', ['control', 'treatment'])
+        result = self.report.generate(exp['id'])
+        assert result['experiment_id'] == exp['id']
+        assert 'metrics' in result

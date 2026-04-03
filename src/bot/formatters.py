@@ -738,6 +738,8 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'user_activity': lambda d: _format_user_activity(d, label=kwargs.get('label', '')),
         'search_results': lambda d: _format_search_results(d, label=kwargs.get('label', '')),
         'popular_searches': lambda d: _format_popular_searches(d),
+        'tenants': lambda d: _format_tenants(d),
+        'experiments': lambda d: _format_experiments(d),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:
@@ -874,4 +876,34 @@ def _format_popular_searches(data) -> str:
             lines.append(f"{i}. {item.get('query', '-')} ({item.get('count', 0)}회)")
         else:
             lines.append(f"{i}. {item}")
+    return "\n".join(lines)
+
+
+def _format_tenants(data) -> str:
+    """테넌트 목록 포맷."""
+    header = "*🏢 테넌트 목록*\n"
+    if not data:
+        return header + "테넌트 없음"
+    lines = [header, f"총 {len(data)}건"]
+    for tenant in data[:20]:
+        status = '✅' if tenant.get('status') == 'active' else '❌'
+        lines.append(
+            f"{status} [{tenant.get('plan', '-')}] {tenant.get('name', '-')} "
+            f"(ID: {tenant.get('id', '-')})"
+        )
+    return "\n".join(lines)
+
+
+def _format_experiments(data) -> str:
+    """A/B 실험 목록 포맷."""
+    header = "*🧪 A/B 실험 목록*\n"
+    if not data:
+        return header + "실험 없음"
+    lines = [header, f"총 {len(data)}건"]
+    for exp in data[:20]:
+        variants = ', '.join(exp.get('variants', []))
+        lines.append(
+            f"• [{exp.get('status', '-')}] {exp.get('name', '-')} "
+            f"(변형: {variants})"
+        )
     return "\n".join(lines)

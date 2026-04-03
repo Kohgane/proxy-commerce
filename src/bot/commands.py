@@ -988,3 +988,28 @@ def cmd_popular_searches() -> str:
     except Exception as exc:
         logger.error("cmd_popular_searches 오류: %s", exc)
         return format_message('error', f'인기 검색어 조회 실패: {exc}')
+
+
+def cmd_tenants() -> str:
+    """/tenants — 테넌트 목록 조회."""
+    try:
+        from ..tenancy.tenant_manager import TenantManager
+        mgr = TenantManager()
+        tenants = mgr.list_tenants()
+        return format_message('tenants', tenants)
+    except Exception as exc:
+        logger.error("cmd_tenants 오류: %s", exc)
+        return format_message('error', f'테넌트 목록 조회 실패: {exc}')
+
+
+def cmd_experiments() -> str:
+    """/experiments — A/B 실험 목록 조회."""
+    try:
+        from ..ab_testing.experiment_manager import ExperimentManager
+        mgr = ExperimentManager()
+        experiments = mgr.list_experiments()
+        return format_message('experiments', experiments)
+    except Exception as exc:
+        logger.error("cmd_experiments 오류: %s", exc)
+        return format_message('error', f'실험 목록 조회 실패: {exc}')
+
