@@ -11,8 +11,8 @@ def _now_iso() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
 
 
-def _md5(data: bytes) -> str:
-    return hashlib.md5(data).hexdigest()
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
 
 @dataclass
@@ -30,7 +30,7 @@ class FileMetadata:
 
     def __post_init__(self) -> None:
         if not self.hash and self.data:
-            self.hash = _md5(self.data)
+            self.hash = _sha256(self.data)
 
     def to_dict(self) -> dict:
         return {

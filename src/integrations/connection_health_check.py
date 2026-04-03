@@ -16,8 +16,8 @@ class ConnectionHealthCheck:
             if connector:
                 try:
                     results[name] = connector.health_check()
-                except Exception as exc:
-                    results[name] = {"name": name, "status": "error", "error": str(exc)}
+                except Exception:
+                    results[name] = {"name": name, "status": "error"}
         return results
 
     def check_one(self, connector_name: str, registry: IntegrationRegistry) -> dict:
@@ -26,5 +26,5 @@ class ConnectionHealthCheck:
             return {"name": connector_name, "status": "not_found"}
         try:
             return connector.health_check()
-        except Exception as exc:
-            return {"name": connector_name, "status": "error", "error": str(exc)}
+        except Exception:
+            return {"name": connector_name, "status": "error"}

@@ -79,7 +79,7 @@ class TestFileMetadata:
         data = b"hello"
         meta = FileMetadata(name="f.txt", size=5, content_type="text/plain", owner_id="u1", data=data)
         import hashlib
-        assert meta.hash == hashlib.md5(data).hexdigest()
+        assert meta.hash == hashlib.sha256(data).hexdigest()
 
     def test_to_dict(self):
         meta = FileMetadata(name="f.txt", size=5, content_type="text/plain", owner_id="u1")
