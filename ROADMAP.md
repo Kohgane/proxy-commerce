@@ -286,7 +286,7 @@
 
 ## Phase 50: A/B 테스트 프레임워크
 - `ExperimentManager`: 실험 CRUD (draft→running→stopped), 변형 목록 관리
-- `VariantAssigner`: MD5 해시 기반 일관된 변형 할당
+- `VariantAssigner`: SHA-256 해시 기반 일관된 변형 할당
 - `MetricsTracker`: 실험/변형별 이벤트 (impression/conversion/click/revenue) 추적
 - `StatisticalAnalyzer`: Z-검정 통계적 유의성 분석, 표준정규분포 CDF 근사
 - `ExperimentReport`: 실험 결과 보고서 (메트릭 + 유의성 검정)

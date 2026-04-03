@@ -58,4 +58,4 @@ class SubscriptionPlan:
         limit = plan['usage_limits'].get(feature, 0)
         if limit == -1:
             return True
-        return current_usage <= limit
+        return current_usage < limit
