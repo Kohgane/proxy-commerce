@@ -750,6 +750,24 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         # Phase 54: 벤치마크
         'benchmark_result': lambda d: _format_benchmark_result(d, label=kwargs.get('label', '')),
         'benchmark_results': lambda d: _format_benchmark_results(d),
+        # Phase 55: 파일 스토리지
+        'storage_usage': lambda d: _format_storage_usage(d),
+        'storage_quota': lambda d: _format_storage_quota(d),
+        # Phase 56: 이메일 서비스
+        'email_stats': lambda d: _format_email_stats(d),
+        'email_send': lambda d: _format_email_send(d),
+        # Phase 57: 검색 엔진
+        'search_results': lambda d: _format_search_results(d, label=kwargs.get('label', '')),
+        'search_popular': lambda d: _format_search_popular(d),
+        # Phase 58: 작업 파이프라인
+        'pipeline_run': lambda d: _format_pipeline_run(d),
+        'pipeline_status': lambda d: _format_pipeline_status(d),
+        # Phase 59: 피쳐 플래그
+        'flag_list': lambda d: _format_flag_list(d),
+        'flag_toggle': lambda d: _format_flag_toggle(d),
+        # Phase 60: 외부 연동
+        'integration_list': lambda d: _format_integration_list(d),
+        'integration_sync': lambda d: _format_integration_sync(d),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:
@@ -1039,3 +1057,160 @@ def _format_benchmark_results(data) -> str:
             f"RPS={report.get('throughput_rps', 0):.1f}"
         )
     return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 55: 파일 스토리지 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_storage_usage(data) -> str:
+    """스토리지 사용량 포맷."""
+    usage_mb = round(data.get('usage_bytes', 0) / 1024 / 1024, 2)
+    quota_mb = round(data.get('quota_bytes', 0) / 1024 / 1024, 2)
+    return (
+        f"*💾 스토리지 사용량*\n"
+        f"사용자: {data.get('owner_id', '-')}\n"
+        f"사용: {usage_mb} MB / {quota_mb} MB\n"
+        f"사용률: {data.get('usage_percent', 0):.1f}%"
+    )
+
+
+def _format_storage_quota(data) -> str:
+    """스토리지 할당량 포맷."""
+    quota_mb = round(data.get('quota_bytes', 0) / 1024 / 1024, 2)
+    available_mb = round(data.get('available_bytes', 0) / 1024 / 1024, 2)
+    return (
+        f"*💾 스토리지 할당량*\n"
+        f"사용자: {data.get('owner_id', '-')}\n"
+        f"할당량: {quota_mb} MB\n"
+        f"가용: {available_mb} MB"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 56: 이메일 서비스 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_email_stats(data) -> str:
+    """이메일 통계 포맷."""
+    return (
+        f"*📧 이메일 통계*\n"
+        f"발송: {data.get('total_sent', 0)}\n"
+        f"열람: {data.get('total_opened', 0)} ({data.get('open_rate', 0):.1f}%)\n"
+        f"클릭: {data.get('total_clicks', 0)}"
+    )
+
+
+def _format_email_send(data) -> str:
+    """이메일 발송 결과 포맷."""
+    results = data.get('results', [])
+    status = results[0].get('status', '-') if results else '-'
+    icon = "✅" if status == "sent" else "❌"
+    return (
+        f"*📧 이메일 발송*\n"
+        f"{icon} 상태: {status}\n"
+        f"ID: {data.get('email_id', '-')[:8]}..."
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 57: 검색 엔진 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_search_popular(data) -> str:
+    """인기 검색어 포맷."""
+    header = "*🔍 인기 검색어*\n"
+    if not data:
+        return header + "데이터 없음"
+    lines = [header]
+    for i, item in enumerate(data[:10], 1):
+        if isinstance(item, dict):
+            lines.append(f"{i}. {item.get('query', item)}")
+        else:
+            lines.append(f"{i}. {item}")
+    return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 58: 작업 파이프라인 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_pipeline_run(data) -> str:
+    """파이프라인 실행 결과 포맷."""
+    name = data.get('name', '-')
+    results = data.get('results', {})
+    lines = [f"*⚙️ 파이프라인 실행: {name}*"]
+    for stage, result in results.items():
+        status = result.get('status', '-')
+        icon = "✅" if status == "success" else ("⏭️" if status == "skipped" else "❌")
+        lines.append(f"{icon} {stage}: {status} ({result.get('duration_ms', 0):.0f}ms)")
+    return "\n".join(lines)
+
+
+def _format_pipeline_status(data) -> str:
+    """파이프라인 상태 포맷."""
+    header = "*⚙️ 파이프라인 상태*\n"
+    if not data:
+        return header + "실행 이력 없음"
+    lines = [header]
+    for stat in data[:5]:
+        lines.append(
+            f"• {stat.get('pipeline_name', '-')}: "
+            f"실행 {stat.get('runs', 0)}회, "
+            f"성공률 {stat.get('success_rate', 0):.1f}%"
+        )
+    return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 59: 피쳐 플래그 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_flag_list(data) -> str:
+    """피쳐 플래그 목록 포맷."""
+    header = "*🚩 피쳐 플래그 목록*\n"
+    if not data:
+        return header + "플래그 없음"
+    lines = [header]
+    for flag in data[:10]:
+        icon = "✅" if flag.get('enabled') else "❌"
+        lines.append(f"{icon} {flag.get('name', '-')}: {flag.get('description', '')}")
+    return "\n".join(lines)
+
+
+def _format_flag_toggle(data) -> str:
+    """피쳐 플래그 토글 결과 포맷."""
+    icon = "✅" if data.get('enabled') else "❌"
+    return (
+        f"*🚩 피쳐 플래그 토글*\n"
+        f"이름: {data.get('name', '-')}\n"
+        f"{icon} 상태: {'활성' if data.get('enabled') else '비활성'}"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 60: 외부 연동 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_integration_list(data) -> str:
+    """연동 목록 포맷."""
+    integrations = data.get('integrations', [])
+    header = f"*🔗 연동 목록 ({len(integrations)}개)*\n"
+    if not integrations:
+        return header + "연동 없음"
+    lines = [header]
+    for name in integrations:
+        lines.append(f"• {name}")
+    return "\n".join(lines)
+
+
+def _format_integration_sync(data) -> str:
+    """연동 동기화 결과 포맷."""
+    name = data.get('name', '-')
+    result = data.get('result', {})
+    synced = result.get('synced', False)
+    icon = "✅" if synced else "❌"
+    return (
+        f"*🔗 연동 동기화: {name}*\n"
+        f"{icon} 동기화: {'완료' if synced else '실패'}"
+    )
