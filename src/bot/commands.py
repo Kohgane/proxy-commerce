@@ -2829,3 +2829,159 @@ def cmd_push_send(user_id: str = '', message: str = '') -> str:
     except Exception as exc:
         logger.error("cmd_push_send 오류: %s", exc)
         return format_message('error', f'푸시 발송 실패: {exc}')
+
+
+# ── Phase 96: 자동 구매 엔진 커맨드 ────────────────────────────────────────
+
+def cmd_auto_buy(product_url: str = '') -> str:
+    """/auto_buy <product_url> — 자동 구매 실행."""
+    if not product_url:
+        return format_message('error', '사용법: /auto_buy <product_url>')
+    try:
+        from ..auto_purchase.import_automation import ProxyBuyAutomation
+        from ..auto_purchase.purchase_engine import AutoPurchaseEngine
+        engine = AutoPurchaseEngine()
+        automation = ProxyBuyAutomation(purchase_engine=engine)
+        # URL에서 마켓플레이스 추론
+        if 'amazon' in product_url.lower():
+            marketplace = 'amazon_us'
+        elif 'taobao' in product_url.lower():
+            marketplace = 'taobao'
+        elif '1688' in product_url.lower():
+            marketplace = 'alibaba_1688'
+        else:
+            marketplace = 'amazon_us'
+        request = automation.create_proxy_request(
+            customer_id='bot_user',
+            product_url=product_url,
+            product_name='Bot Purchase',
+            marketplace=marketplace,
+        )
+        return format_message('info',
+                               f'자동 구매 요청 생성:\n'
+                               f'• 요청 ID: {request.request_id}\n'
+                               f'• 마켓플레이스: {marketplace}\n'
+                               f'• 상태: {request.status}')
+    except Exception as exc:
+        logger.error("cmd_auto_buy 오류: %s", exc)
+        return format_message('error', f'자동 구매 실패: {exc}')
+
+
+def cmd_buy_status(order_id: str = '') -> str:
+    """/buy_status <order_id> — 구매 상태 확인."""
+    if not order_id:
+        return format_message('error', '사용법: /buy_status <order_id>')
+    try:
+        from ..auto_purchase.purchase_engine import AutoPurchaseEngine
+        engine = AutoPurchaseEngine()
+        status = engine.get_order_status(order_id)
+        if not status:
+            return format_message('error', f'주문을 찾을 수 없습니다: {order_id}')
+        lines = [
+            f'• 주문 ID: {status["order_id"]}',
+            f'• 상태: {status["status"]}',
+            f'• 마켓플레이스: {status["marketplace"]}',
+            f'• 상품 ID: {status["product_id"]}',
+            f'• 수량: {status["quantity"]}',
+        ]
+        if status.get('tracking_number'):
+            lines.append(f'• 운송장: {status["tracking_number"]}')
+        if status.get('error_message'):
+            lines.append(f'• 오류: {status["error_message"]}')
+        return format_message('info', '구매 상태:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_buy_status 오류: %s", exc)
+        return format_message('error', f'상태 조회 실패: {exc}')
+
+
+def cmd_buy_queue() -> str:
+    """/buy_queue — 현재 구매 큐."""
+    try:
+        from ..auto_purchase.purchase_engine import AutoPurchaseEngine
+        engine = AutoPurchaseEngine()
+        q = engine.get_queue_status()
+        lines = [
+            f'• 긴급: {q["urgent"]}건',
+            f'• 일반: {q["normal"]}건',
+            f'• 대기: {q["low"]}건',
+            f'• 처리 중: {q["active"]}건',
+            f'• 총 대기: {q["total_queued"]}건',
+        ]
+        return format_message('info', '구매 큐 현황:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_buy_queue 오류: %s", exc)
+        return format_message('error', f'큐 조회 실패: {exc}')
+
+
+def cmd_buy_metrics() -> str:
+    """/buy_metrics — 구매 성과 현황."""
+    try:
+        from ..auto_purchase.purchase_engine import AutoPurchaseEngine
+        engine = AutoPurchaseEngine()
+        m = engine.get_metrics()
+        lines = [
+            f'• 총 주문: {m["total_orders"]}건',
+            f'• 성공: {m["successful_orders"]}건',
+            f'• 실패: {m["failed_orders"]}건',
+            f'• 성공률: {m["success_rate"]:.1%}',
+            f'• 총 구매금액: ${m["total_spend"]:,.2f}',
+        ]
+        return format_message('info', '구매 성과:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_buy_metrics 오류: %s", exc)
+        return format_message('error', f'메트릭 조회 실패: {exc}')
+
+
+def cmd_buy_rules() -> str:
+    """/buy_rules — 구매 규칙 목록."""
+    try:
+        from ..auto_purchase.purchase_rules import PurchaseRuleEngine
+        engine = PurchaseRuleEngine()
+        rules = engine.list_rules()
+        if not rules:
+            return format_message('info', '등록된 구매 규칙이 없습니다.')
+        lines = [f'• [{r["name"]}] {r["description"]}' for r in rules]
+        return format_message('info', '구매 규칙 목록:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_buy_rules 오류: %s", exc)
+        return format_message('error', f'규칙 조회 실패: {exc}')
+
+
+def cmd_buy_simulate(product_url: str = '') -> str:
+    """/buy_simulate <product_url> — 구매 시뮬레이션."""
+    if not product_url:
+        return format_message('error', '사용법: /buy_simulate <product_url>')
+    try:
+        from ..auto_purchase.purchase_engine import AutoPurchaseEngine
+        engine = AutoPurchaseEngine()
+        # URL에서 마켓플레이스/상품 ID 추론
+        if 'amazon' in product_url.lower():
+            marketplace = 'amazon_us'
+            parts = product_url.split('/dp/')
+            product_id = parts[1].split('/')[0].split('?')[0] if len(parts) > 1 else 'B08N5WRWNW'
+        elif 'taobao' in product_url.lower():
+            marketplace = 'taobao'
+            product_id = 'TB001234'
+        else:
+            marketplace = 'amazon_us'
+            product_id = 'B08N5WRWNW'
+
+        result = engine.simulate(
+            source_product_id=product_id,
+            marketplace=marketplace,
+            quantity=1,
+            unit_price=50.0,
+            selling_price=70.0,
+        )
+        lines = [
+            f'• 상품: {product_id}',
+            f'• 마켓플레이스: {marketplace}',
+            f'• 규칙 결정: {result["rule_decision"]}',
+            f'• 마진율: {result["margin_rate"]:.1%}',
+            f'• 예상 비용: ${result["estimated_total_cost"]:.2f}',
+            f'• 진행 여부: {"✅ 진행" if result["would_proceed"] else "❌ 중단"}',
+        ]
+        return format_message('info', '구매 시뮬레이션:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_buy_simulate 오류: %s", exc)
+        return format_message('error', f'시뮬레이션 실패: {exc}')

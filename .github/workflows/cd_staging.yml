@@ -67,12 +67,12 @@ jobs:
             exit 0
           fi
           # Wait for the service to become reachable after the deploy hook fires
-          sleep 30
+          sleep 60
           python scripts/post_deploy_check.py \
             --url "$STAGING_APP_URL" \
             --env staging \
-            --retries 5 \
-            --interval 15
+            --retries 8 \
+            --interval 20
         env:
           STAGING_APP_URL: ${{ secrets.STAGING_APP_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.STAGING_TELEGRAM_BOT_TOKEN }}

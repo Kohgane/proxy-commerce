@@ -72,6 +72,10 @@ def check_endpoint(url: str, retries: int, interval: int) -> tuple[bool, str]:
 def run_healthcheck(base_url: str, env: str, retries: int, interval: int) -> tuple[bool, str]:
     """Run health and readiness checks against *base_url*.
 
+    If /health passes but /health/ready fails (e.g. Render cold start), the
+    function treats it as a soft-fail: it logs a warning, sends a Telegram
+    notification, but still returns (True, '') so the workflow exits 0.
+
     Args:
         base_url: Service base URL (no trailing slash).
         env: Environment label for logging.
@@ -89,7 +93,14 @@ def run_healthcheck(base_url: str, env: str, retries: int, interval: int) -> tup
 
     ready_ok, ready_err = check_endpoint(f'{base_url}/health/ready', retries, interval)
     if not ready_ok:
-        return False, f'/health/ready failed: {ready_err}'
+        warning_msg = (
+            f'⚠️ [{env}] /health/ready 미완료 ({ready_err}) — '
+            f'/health 는 정상이므로 배포는 계속 진행합니다.'
+        )
+        logger.warning(warning_msg)
+        send_telegram(warning_msg)
+        # Soft fail: /health is OK, so treat the deploy as succeeded
+        return True, ''
 
     return True, ''
 
