@@ -650,8 +650,14 @@ class TestPricingAnalytics:
             competitor_avg=10000.0,
             competitor_max=12000.0,
         )
-        # 최저가보다 비싸므로 낮은 점수
-        assert result['score'] < result['score'] or True  # Just validates runs OK
+        leader = self.analytics.competitiveness_score(
+            our_price=8000.0,
+            competitor_min=9000.0,
+            competitor_avg=10000.0,
+            competitor_max=12000.0,
+        )
+        # 경쟁사보다 비싼 상품은 저렴한 상품보다 경쟁력 지수가 낮아야 함
+        assert result['score'] <= leader['score']
 
     def test_forecast_accuracy_report(self):
         report = self.analytics.forecast_accuracy_report(
@@ -925,7 +931,7 @@ class TestDynamicPricingEngine:
 class TestAIPricingAPI:
     def setup_method(self):
         import src.api.ai_pricing_api as m
-        # 엔진 초기화 초기화
+        # 엔진 재초기화
         m._engine = None
         from flask import Flask
         self.app = Flask(__name__)

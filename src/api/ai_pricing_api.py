@@ -97,7 +97,7 @@ def optimize():
 
     except Exception as exc:
         logger.error('가격 최적화 오류: %s', exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -127,7 +127,7 @@ def simulate():
         return jsonify(result)
     except Exception as exc:
         logger.error('시뮬레이션 오류: %s', exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +144,7 @@ def recommendations():
         return jsonify({'recommendations': recs, 'count': len(recs)})
     except Exception as exc:
         logger.error('추천 조회 오류: %s', exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +175,7 @@ def competitor_prices(sku: str):
         })
     except Exception as exc:
         logger.error('경쟁사 가격 조회 오류: %s', exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +201,7 @@ def demand_forecast(sku: str):
         })
     except Exception as exc:
         logger.error('수요 예측 조회 오류: %s', exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -234,7 +234,7 @@ def price_history(sku: str):
         })
     except Exception as exc:
         logger.error('가격 이력 조회 오류: %s', exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -254,7 +254,7 @@ def analytics():
         })
     except Exception as exc:
         logger.error('분석 리포트 오류: %s', exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -280,7 +280,7 @@ def metrics():
         })
     except Exception as exc:
         logger.error('메트릭 조회 오류: %s', exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -334,7 +334,7 @@ def add_rule():
 
     except Exception as exc:
         logger.error('규칙 추가 오류: %s', exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -353,7 +353,7 @@ def list_rules():
         return jsonify({'rules': rules, 'count': len(rules)})
     except Exception as exc:
         logger.error('규칙 목록 조회 오류: %s', exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -380,7 +380,7 @@ def add_schedule():
         return jsonify(job.to_dict()), 201
     except Exception as exc:
         logger.error('스케줄 등록 오류: %s', exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -398,4 +398,4 @@ def get_alerts():
         return jsonify({'alerts': alerts, 'count': len(alerts)})
     except Exception as exc:
         logger.error('알림 조회 오류: %s', exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
