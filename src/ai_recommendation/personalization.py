@@ -85,11 +85,6 @@ class PersonalizationEngine:
         if event.event_type == EventType.PURCHASE:
             if pid not in profile.purchase_history:
                 profile.purchase_history.append(pid)
-        elif event.event_type in (EventType.VIEW, EventType.SEARCH):
-            if pid not in profile.view_history:
-                profile.view_history.append(pid)
-            if len(profile.view_history) > 200:
-                profile.view_history = profile.view_history[-200:]
         elif event.event_type == EventType.WISHLIST:
             if pid not in profile.wishlist:
                 profile.wishlist.append(pid)
@@ -98,6 +93,15 @@ class PersonalizationEngine:
                 profile.search_history.append(pid)
             if len(profile.search_history) > 100:
                 profile.search_history = profile.search_history[-100:]
+            if pid not in profile.view_history:
+                profile.view_history.append(pid)
+            if len(profile.view_history) > 200:
+                profile.view_history = profile.view_history[-200:]
+        elif event.event_type == EventType.VIEW:
+            if pid not in profile.view_history:
+                profile.view_history.append(pid)
+            if len(profile.view_history) > 200:
+                profile.view_history = profile.view_history[-200:]
 
     def get_profile(self, user_id: str) -> UserProfile:
         """사용자 프로필을 반환한다."""

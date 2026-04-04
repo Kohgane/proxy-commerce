@@ -99,7 +99,7 @@ class AITrendingAnalyzer:
                 product_id=pid,
                 score=score,
                 strategy="trending",
-                reason=f"트렌딩 상품{'(' + category + ')' if category else ''}",
+                reason=f"트렌딩 상품({category})" if category else "트렌딩 상품",
             )
             for pid, score in sorted_items
         ]

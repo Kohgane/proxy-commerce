@@ -4,6 +4,10 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime
 
+# 가중치 혼합 비율: 기존 가중치 유지 비율 (성과 기반 비율 = 1 - _WEIGHT_BLEND_KEEP)
+_WEIGHT_BLEND_KEEP = 0.7
+_WEIGHT_BLEND_PERF = 1.0 - _WEIGHT_BLEND_KEEP
+
 
 class FeedbackLoop:
     """추천 피드백 루프.
@@ -127,7 +131,7 @@ class FeedbackLoop:
         for s in strategies:
             perf_weight = scores[s] / total_score
             # 기존 가중치 70% + 성과 기반 가중치 30%
-            blended = self._strategy_weights.get(s, 0.1) * 0.7 + perf_weight * 0.3
+            blended = self._strategy_weights.get(s, 0.1) * _WEIGHT_BLEND_KEEP + perf_weight * _WEIGHT_BLEND_PERF
             new_weights[s] = round(blended, 4)
 
         self._strategy_weights = new_weights

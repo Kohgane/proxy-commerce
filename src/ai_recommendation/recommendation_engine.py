@@ -59,7 +59,7 @@ class AIRecommendationEngine:
 
     def _cache_key(self, user_id: str, strategy: str, **kwargs) -> str:
         raw = f"{user_id}:{strategy}:{sorted(kwargs.items())}"
-        return f"{user_id}:{hashlib.md5(raw.encode()).hexdigest()}"
+        return f"{user_id}:{hashlib.sha256(raw.encode()).hexdigest()}"
 
     def _get_cache(self, key: str) -> list | None:
         entry = self._cache.get(key)
@@ -174,7 +174,7 @@ class AIRecommendationEngine:
         if not self._ab_experiments.get(experiment_id):
             return "ensemble"
         # 사용자 ID 해시로 variant 결정
-        h = int(hashlib.md5(f"{user_id}:{experiment_id}".encode()).hexdigest(), 16)
+        h = int(hashlib.sha256(f"{user_id}:{experiment_id}".encode()).hexdigest(), 16)
         strategies = ["ensemble", "collaborative", "content", "trending"]
         return strategies[h % len(strategies)]
 

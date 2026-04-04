@@ -2789,8 +2789,9 @@ def cmd_recommend_metrics() -> str:
             )
         top_strategies = sorted(weights.items(), key=lambda x: -x[1])[:3]
         weight_lines = ', '.join(f"{s}: {w:.2f}" for s, w in top_strategies)
+        metrics_text = '\n'.join(lines)
         return format_message('info',
-                               f"추천 성능 현황:\n{''.join(lines)}\n"
+                               f"추천 성능 현황:\n{metrics_text}\n"
                                f"상위 가중치: {weight_lines}")
     except Exception as exc:
         logger.error("cmd_recommend_metrics 오류: %s", exc)
