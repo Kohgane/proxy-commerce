@@ -87,6 +87,7 @@
 | Phase 92 | 포인트/마일리지 시스템 + 구독 결제 관리 | #56 | 2026-04-04 |
 | Phase 93 | 글로벌 확장 (다국어 상품 페이지 + 해외 결제 + 수입/수출 지원) | #57 | 2026-04-04 |
 | Phase 94 | AI 기반 상품 추천 시스템 (앙상블 엔진, 협업/콘텐츠 필터링, 개인화, 트렌딩, 크로스셀, 피드백 루프) | #58 | 2026-04-04 |
+| Phase 95 | 모바일 앱 API (React Native/Flutter 지원, JWT 인증, 커서 페이지네이션, FCM/APNs mock, 관리자 모바일) | #59 | 2026-04-04 |
 
 ## 🚧 진행 중 Phase
 
@@ -166,7 +167,7 @@
 ## 🔮 향후 고려 사항
 - Phase 93으로 구현 완료: 글로벌 확장 (다국어 상품 페이지, 해외 결제, 수입/수출)
 - Phase 94로 구현 완료: AI 기반 상품 추천 시스템 (앙상블 엔진, 협업/콘텐츠 필터링, 개인화, 트렌딩, 크로스셀, 피드백 루프)
-- Phase 95: 모바일 앱 API (React Native/Flutter)
+- Phase 95로 구현 완료: 모바일 앱 API (React Native/Flutter 지원, JWT 인증, 커서 페이지네이션, FCM/APNs mock)
 
 ## Phase 31: 재고 동기화 (Inventory Sync)
 - `InventorySyncManager`: 다중 채널(쿠팡/네이버/내부) 재고 동기화
@@ -587,13 +588,13 @@
 - API Blueprint: `src/api/security_api.py` (`/api/v1/security`)
 - 봇 커맨드: `/security_audit`, `/security_sessions`, `/ip_block`
 
-## 🔮 향후 Phase 95+ 고려 사항
-- Phase 95: 실시간 채팅 고객 지원 (WebSocket 기반, 상담원 배정)
-- Phase 96: AI 기반 동적 가격 최적화 (경쟁가 + 수요 예측 통합)
-- Phase 97: 멀티벤더 마켓플레이스 (판매자 온보딩, 수수료 정산)
-- Phase 98: 물류 최적화 (배송 경로 최적화, 라스트마일 추적)
-- Phase 99: 데이터 파이프라인 (ETL, 데이터 웨어하우스 연동)
-- Phase 100: 모바일 앱 API (React Native/Flutter)
+## 🔮 향후 Phase 96+ 고려 사항
+- Phase 95로 구현 완료: 모바일 앱 API (React Native/Flutter 지원)
+- Phase 96: 실시간 채팅 고객 지원 (WebSocket 기반, 상담원 배정)
+- Phase 97: AI 기반 동적 가격 최적화 (경쟁가 + 수요 예측 통합)
+- Phase 98: 멀티벤더 마켓플레이스 (판매자 온보딩, 수수료 정산)
+- Phase 99: 물류 최적화 (배송 경로 최적화, 라스트마일 추적)
+- Phase 100: 데이터 파이프라인 (ETL, 데이터 웨어하우스 연동)
 - Phase 101: 자동 구매 엔진 (Amazon SP-API 자동 주문, 결제 자동화)
 - Phase 102: 배송대행지 연동 (몰테일/이하넥스 API, 입고 확인 자동화)
 - Phase 103: 풀필먼트 자동화 (국내 배송 자동 발송, 운송장 자동 등록)
@@ -850,3 +851,15 @@
 - API Blueprint: `src/api/ai_recommendation_api.py` (`/api/v1/ai-recommend`) — 8개 엔드포인트 (개인화/크로스셀/트렌딩/이벤트/메트릭/피드백/재구매)
 - 봇 커맨드: `/ai_recommend <user_id>`, `/trending [category]`, `/cross_sell <product_id>`, `/recommend_metrics`
 - 관련 코드: `src/ai_recommendation/`, `src/api/ai_recommendation_api.py`
+
+## Phase 95: 모바일 앱 API (React Native/Flutter 지원) ✅
+- `MobileAuthManager`: 모바일 전용 JWT 토큰 (access: 1시간, refresh: 30일), 디바이스 등록 (iOS/Android), 동시 세션 최대 5개
+- `MobileProductService`: 커서 기반 페이지네이션, 상품 목록/상세/검색, AI 추천/트렌딩 연동
+- `MobileOrderService`: 장바구니 CRUD, 주문 생성/목록/상세/추적, 수입 주문 생성, 관세 예상 계산
+- `MobileUserService`: 프로필 조회/수정, 배송지 CRUD, 위시리스트, 알림 설정 (푸시/이메일/텔레그램)
+- `MobilePushService`: FCM/APNs mock, 알림 타입별 전송 (주문상태/가격하락/재입고/배송완료/프로모션), 알림 이력 조회/읽음 처리
+- `MobileAdminService`: 관리자 대시보드 요약, 주문 승인/취소, 재고 현황, 시스템 알림, 수입/수출 현황
+- `MobileResponseFormatter`: 표준 응답 포맷 (success/error/paginated), 이미지 URL 리사이즈, cursor 인코딩
+- API Blueprint: `src/api/mobile_api_routes.py` (`/api/mobile/v1`) — 32개 엔드포인트
+- 봇 커맨드: `/mobile_stats`, `/push_send <user_id> <message>`
+- 관련 코드: `src/mobile_api/`

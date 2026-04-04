@@ -2796,3 +2796,36 @@ def cmd_recommend_metrics() -> str:
     except Exception as exc:
         logger.error("cmd_recommend_metrics 오류: %s", exc)
         return format_message('error', f'추천 메트릭 조회 실패: {exc}')
+
+
+def cmd_mobile_stats() -> str:
+    """/mobile_stats — 모바일 API 사용 현황."""
+    try:
+        from ..mobile_api.mobile_admin import MobileAdminService
+        svc = MobileAdminService()
+        summary = svc.get_dashboard_summary()
+        lines = [
+            f"• 주문 수: {summary['order_count']}",
+            f"• 매출: {summary['revenue']:,.2f}",
+            f"• 활성 사용자: {summary['active_users']}",
+            f"• 재고 알림: {summary['inventory_alerts']}",
+            f"• CS 대기: {summary['pending_cs']}",
+        ]
+        return format_message('info', '모바일 API 현황:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_mobile_stats 오류: %s", exc)
+        return format_message('error', f'모바일 현황 조회 실패: {exc}')
+
+
+def cmd_push_send(user_id: str = '', message: str = '') -> str:
+    """/push_send <user_id> <message> — 수동 푸시 발송."""
+    if not user_id or not message:
+        return format_message('error', '사용법: /push_send <user_id> <message>')
+    try:
+        from ..mobile_api.mobile_notification import MobilePushService
+        svc = MobilePushService()
+        notif = svc.send_promotion_notification(user_id, '관리자 알림', message)
+        return format_message('info', f'푸시 발송 완료: {notif.notification_id}')
+    except Exception as exc:
+        logger.error("cmd_push_send 오류: %s", exc)
+        return format_message('error', f'푸시 발송 실패: {exc}')
