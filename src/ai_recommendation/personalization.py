@@ -93,10 +93,6 @@ class PersonalizationEngine:
                 profile.search_history.append(pid)
             if len(profile.search_history) > 100:
                 profile.search_history = profile.search_history[-100:]
-            if pid not in profile.view_history:
-                profile.view_history.append(pid)
-            if len(profile.view_history) > 200:
-                profile.view_history = profile.view_history[-200:]
         elif event.event_type == EventType.VIEW:
             if pid not in profile.view_history:
                 profile.view_history.append(pid)

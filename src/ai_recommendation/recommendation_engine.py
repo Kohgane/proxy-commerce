@@ -42,6 +42,8 @@ class AIRecommendationEngine:
         self.cross_sell = CrossSellEngine()
         self.feedback = FeedbackLoop()
         self._cache: dict[str, _CacheEntry] = {}
+        # user_id -> set of cache keys (for targeted invalidation)
+        self._user_cache_keys: dict[str, set[str]] = {}
         self._cache_ttl = cache_ttl
         # A/B 테스트 실험 등록 (실험 ID -> 활성 여부)
         self._ab_experiments: dict[str, bool] = {}
@@ -59,7 +61,7 @@ class AIRecommendationEngine:
 
     def _cache_key(self, user_id: str, strategy: str, **kwargs) -> str:
         raw = f"{user_id}:{strategy}:{sorted(kwargs.items())}"
-        return f"{user_id}:{hashlib.sha256(raw.encode()).hexdigest()}"
+        return hashlib.sha256(raw.encode()).hexdigest()
 
     def _get_cache(self, key: str) -> list | None:
         entry = self._cache.get(key)
@@ -69,8 +71,10 @@ class AIRecommendationEngine:
             del self._cache[key]
         return None
 
-    def _set_cache(self, key: str, data: list) -> None:
+    def _set_cache(self, key: str, data: list, user_id: str = "") -> None:
         self._cache[key] = _CacheEntry(data, self._cache_ttl)
+        if user_id:
+            self._user_cache_keys.setdefault(user_id, set()).add(key)
 
     def recommend(
         self,
@@ -101,7 +105,7 @@ class AIRecommendationEngine:
             results = self._ensemble(user_id, top_n=top_n)
 
         if use_cache:
-            self._set_cache(cache_key, results)
+            self._set_cache(cache_key, results, user_id=user_id)
         return results
 
     def _ensemble(self, user_id: str, top_n: int = 10) -> list[RecommendationResult]:
@@ -182,7 +186,8 @@ class AIRecommendationEngine:
         """캐시를 무효화한다."""
         if user_id is None:
             self._cache.clear()
+            self._user_cache_keys.clear()
         else:
-            keys_to_delete = [k for k in self._cache if user_id in k]
+            keys_to_delete = self._user_cache_keys.pop(user_id, set())
             for k in keys_to_delete:
-                del self._cache[k]
+                self._cache.pop(k, None)

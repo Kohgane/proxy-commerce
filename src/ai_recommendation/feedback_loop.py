@@ -7,6 +7,8 @@ from datetime import datetime
 # 가중치 혼합 비율: 기존 가중치 유지 비율 (성과 기반 비율 = 1 - _WEIGHT_BLEND_KEEP)
 _WEIGHT_BLEND_KEEP = 0.7
 _WEIGHT_BLEND_PERF = 1.0 - _WEIGHT_BLEND_KEEP
+# 전략 가중치 기본값 (성과 데이터 없을 때 폴백)
+_DEFAULT_STRATEGY_WEIGHT = 0.1
 
 
 class FeedbackLoop:
@@ -131,7 +133,7 @@ class FeedbackLoop:
         for s in strategies:
             perf_weight = scores[s] / total_score
             # 기존 가중치 70% + 성과 기반 가중치 30%
-            blended = self._strategy_weights.get(s, 0.1) * _WEIGHT_BLEND_KEEP + perf_weight * _WEIGHT_BLEND_PERF
+            blended = self._strategy_weights.get(s, _DEFAULT_STRATEGY_WEIGHT) * _WEIGHT_BLEND_KEEP + perf_weight * _WEIGHT_BLEND_PERF
             new_weights[s] = round(blended, 4)
 
         self._strategy_weights = new_weights
