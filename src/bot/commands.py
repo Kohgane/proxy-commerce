@@ -2603,3 +2603,107 @@ def cmd_dispute_resolve(dispute_id: str = '', decision: str = '') -> str:
     except Exception as exc:
         logger.error("cmd_dispute_resolve 오류: %s", exc)
         return format_message('error', f'분쟁 해결 실패: {exc}')
+
+
+# ---------------------------------------------------------------------------
+# Phase 93: 글로벌 커머스 명령어
+# ---------------------------------------------------------------------------
+
+def cmd_import_order(source: str = '', product_url: str = '') -> str:
+    """/import_order <source> <product_url> — 수입 주문 생성."""
+    source = source.strip()
+    product_url = product_url.strip()
+    if not source or not product_url:
+        return format_message('error', '사용법: /import_order <source_country> <product_url>')
+    try:
+        from ..global_commerce.trade.import_manager import ImportManager
+        mgr = ImportManager()
+        order = mgr.create(
+            product_url=product_url,
+            source_country=source,
+        )
+        return format_message('info',
+                               f"수입 주문 생성 완료: {order.order_id}\n"
+                               f"출처: {order.source_country} | 상태: {order.status.value}")
+    except Exception as exc:
+        logger.error("cmd_import_order 오류: %s", exc)
+        return format_message('error', f'수입 주문 생성 실패: {exc}')
+
+
+def cmd_customs_calc(price: str = '', country: str = '', hs_code: str = 'DEFAULT') -> str:
+    """/customs_calc <price_usd> <country> <hs_code> — 관세 계산."""
+    price = price.strip()
+    country = country.strip()
+    if not price or not country:
+        return format_message('error', '사용법: /customs_calc <price_usd> <country> <hs_code>')
+    try:
+        from ..global_commerce.trade.import_manager import CustomsDutyCalculator
+        calc = CustomsDutyCalculator()
+        result = calc.calculate(
+            total_price_usd=float(price),
+            hs_code=hs_code.strip(),
+            source_country=country,
+        )
+        if result.get('duty_free'):
+            return format_message('info',
+                                   f"면세 해당: ${float(price):.2f} <= ${result['threshold_usd']:.2f} ({country})")
+        return format_message('info',
+                               f"관세 계산 결과:\n"
+                               f"• 상품가: {result['total_price_krw']:,.0f}원\n"
+                               f"• 관세({result['duty_rate']*100:.0f}%): {result['customs_duty_krw']:,.0f}원\n"
+                               f"• 부가세: {result['vat_krw']:,.0f}원\n"
+                               f"• 총 세금: {result['total_tax_krw']:,.0f}원")
+    except Exception as exc:
+        logger.error("cmd_customs_calc 오류: %s", exc)
+        return format_message('error', f'관세 계산 실패: {exc}')
+
+
+def cmd_trade_status(order_id: str = '') -> str:
+    """/trade_status <order_id> — 무역 주문 상태."""
+    order_id = order_id.strip()
+    if not order_id:
+        return format_message('error', '사용법: /trade_status <order_id>')
+    try:
+        from ..global_commerce.trade.import_manager import ImportManager
+        from ..global_commerce.trade.export_manager import ExportManager
+        imp_mgr = ImportManager()
+        exp_mgr = ExportManager()
+        order = imp_mgr.get(order_id) or exp_mgr.get(order_id)
+        if order is None:
+            return format_message('error', f'주문을 찾을 수 없습니다: {order_id}')
+        order_type = '수입' if hasattr(order, 'product_url') else '수출'
+        return format_message('info',
+                               f"{order_type} 주문 상태:\n"
+                               f"• ID: {order.order_id[:8]}\n"
+                               f"• 상태: {order.status.value}\n"
+                               f"• 업데이트: {order.updated_at}")
+    except Exception as exc:
+        logger.error("cmd_trade_status 오류: %s", exc)
+        return format_message('error', f'무역 주문 상태 조회 실패: {exc}')
+
+
+def cmd_shipping_intl(weight: str = '', from_country: str = '', to_country: str = '') -> str:
+    """/shipping_intl <weight_kg> <from_country> <to_country> — 국제 배송비 계산."""
+    weight = weight.strip()
+    from_country = from_country.strip()
+    to_country = to_country.strip()
+    if not weight or not from_country or not to_country:
+        return format_message('error', '사용법: /shipping_intl <weight_kg> <from> <to>')
+    try:
+        from ..global_commerce.shipping.international_shipping_manager import InternationalShippingManager
+        mgr = InternationalShippingManager()
+        quote = mgr.calculate(
+            weight_kg=float(weight),
+            origin_country=from_country,
+            destination_country=to_country,
+        )
+        return format_message('info',
+                               f"국제 배송비 ({from_country}→{to_country}):\n"
+                               f"• 무게: {quote.chargeable_weight_kg}kg\n"
+                               f"• 기본료: {quote.base_fee_krw:,.0f}원\n"
+                               f"• 유류할증: {quote.fuel_surcharge_krw:,.0f}원\n"
+                               f"• 합계: {quote.total_fee_krw:,.0f}원\n"
+                               f"• 예상 배송: {quote.transit_days}일")
+    except Exception as exc:
+        logger.error("cmd_shipping_intl 오류: %s", exc)
+        return format_message('error', f'국제 배송비 계산 실패: {exc}')

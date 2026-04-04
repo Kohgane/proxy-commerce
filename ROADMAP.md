@@ -85,6 +85,7 @@
 | Phase 90 | 세금 계산 엔진 (VAT/관세/개별소비세, 해외직구, 면세 조건, 세금 계산서) | #54 | 2026-04-03 |
 | Phase 91 | 주문 분쟁/중재 시스템 + SEO/CTA 보강 (Sitemap, robots.txt, Twitter Card, 중국어 CTA) | #55 | 2026-04-04 |
 | Phase 92 | 포인트/마일리지 시스템 + 구독 결제 관리 | #56 | 2026-04-04 |
+| Phase 93 | 글로벌 확장 (다국어 상품 페이지 + 해외 결제 + 수입/수출 지원) | #57 | 2026-04-04 |
 
 ## 🚧 진행 중 Phase
 
@@ -162,9 +163,9 @@
 - 관련 코드: `.github/workflows/dependency_audit.yml`, `.github/workflows/release.yml`, `scripts/generate_changelog.py`, `scripts/smoke_test.py`
 
 ## 🔮 향후 고려 사항
-- Phase 31: 글로벌 확장 (다국어 상품 페이지, 해외 결제)
-- Phase 32: AI 기반 상품 추천 시스템
-- Phase 33: 모바일 앱 API (React Native/Flutter)
+- Phase 94: 글로벌 확장 추가 (다국어 상품 페이지, 해외 결제) ← Phase 93으로 구현 완료
+- Phase 98: AI 기반 상품 추천 시스템
+- Phase 99: 모바일 앱 API (React Native/Flutter)
 
 ## Phase 31: 재고 동기화 (Inventory Sync)
 - `InventorySyncManager`: 다중 채널(쿠팡/네이버/내부) 재고 동기화
@@ -585,12 +586,20 @@
 - API Blueprint: `src/api/security_api.py` (`/api/v1/security`)
 - 봇 커맨드: `/security_audit`, `/security_sessions`, `/ip_block`
 
-## 🔮 향후 Phase 93+ 고려 사항
-- Phase 93: 실시간 채팅 고객 지원 (WebSocket 기반, 상담원 배정)
-- Phase 94: AI 기반 동적 가격 최적화 (경쟁가 + 수요 예측 통합)
-- Phase 95: 멀티벤더 마켓플레이스 (판매자 온보딩, 수수료 정산)
-- Phase 96: 물류 최적화 (배송 경로 최적화, 라스트마일 추적)
-- Phase 97: 데이터 파이프라인 (ETL, 데이터 웨어하우스 연동)
+## 🔮 향후 Phase 94+ 고려 사항
+- Phase 94: 실시간 채팅 고객 지원 (WebSocket 기반, 상담원 배정)
+- Phase 95: AI 기반 동적 가격 최적화 (경쟁가 + 수요 예측 통합)
+- Phase 96: 멀티벤더 마켓플레이스 (판매자 온보딩, 수수료 정산)
+- Phase 97: 물류 최적화 (배송 경로 최적화, 라스트마일 추적)
+- Phase 98: 데이터 파이프라인 (ETL, 데이터 웨어하우스 연동)
+- Phase 99: AI 기반 상품 추천 시스템
+- Phase 100: 모바일 앱 API (React Native/Flutter)
+- Phase 101: 자동 구매 엔진 (Amazon SP-API 자동 주문, 결제 자동화)
+- Phase 102: 배송대행지 연동 (몰테일/이하넥스 API, 입고 확인 자동화)
+- Phase 103: 풀필먼트 자동화 (국내 배송 자동 발송, 운송장 자동 등록)
+- Phase 104: 타오바오/1688 자동 구매 (에이전트 API or RPA)
+- Phase 105: 예외 처리 + 자동 복구 (품절 대안, 가격 변동 알림, 재시도)
+- Phase 106: 완전 자율 운영 대시보드 (수입+수출 모두, 사람 개입 최소화, 이상 감지 시만 알림)
 
 
 ## Phase 73: 고객 세그먼트 관리 ✅
@@ -804,3 +813,25 @@
 - API Blueprint: `/api/v1/points`, `/api/v1/subscriptions`
 - 봇 커맨드: `/points`, `/point_earn`, `/subscription`, `/plans`
 - 관련 코드: `src/points/`, `src/subscriptions/`
+
+
+## Phase 93: 글로벌 확장 (다국어 상품 페이지 + 해외 결제 + 수입/수출 지원) ✅
+- `I18nManager`: 다국어 콘텐츠 관리 — ko/en/ja/zh 지원, 로케일별 저장/조회, 기본 로케일 + 폴백 로직
+- `LocaleDetector`: Accept-Language 헤더 파싱, 사용자 설정 기반 로케일 결정 (품질값 정렬)
+- `TranslationSync`: 기존 `src/translation/` 모듈 연동 — 번역 상태 동기화, 대기 목록 관리
+- `LocalizedProductPage`: 로케일별 상품 페이지 데이터 생성 (SEO 메타 — canonical, og, hreflang 포함)
+- `GlobalPaymentRouter`: 국가/통화별 최적 PG 라우팅 — Stripe/PayPal/Alipay/토스페이먼츠 mock
+- `CrossBorderSettlement`: 해외 결제 정산 — 환전 수수료 계산, 해외 송금 시뮬레이션, 통화별 정산 주기
+- `PaymentComplianceChecker`: 해외 결제 규정 체크 — 거래 한도, KYC 필요 여부
+- `TradeDirection` Enum: `IMPORT` / `EXPORT` / `PROXY_BUY`
+- `ImportManager`: 수입 주문 생성/조회/상태 관리 (placed→purchased→in_transit→customs→cleared→delivered)
+- `CustomsDutyCalculator`: HS Code 기반 관세율, 과세가격 계산, 면세 한도 체크 (미국 $800, 한국 $150 등)
+- `CustomsClearanceTracker`: 통관 상태 이벤트 추적
+- `ExportManager`: 수출 주문 상태 관리 (ordered→collected→quality_check→shipped→delivered), 인보이스/패킹리스트 mock 생성
+- `TradeComplianceChecker`: 수출입 규정 체크 — 금지 품목, 수량 제한, 제재 국가
+- `InternationalShippingManager`: 국제 배송비 계산 (무게/부피 기반, 유류할증료), 배송 루트 계산
+- `ForwardingAgentABC` + `MoltailAgent`, `OhmyzipAgent`: 입고 확인, 합배송, 출고 요청 시뮬레이션
+- `ShippingInsurance`: 국제 배송 보험료 계산 (목적지 위험 등급 기반)
+- API Blueprint: `src/api/global_commerce_api.py` (`/api/v1/global`)
+- 봇 커맨드: `/import_order <source> <product_url>`, `/customs_calc <price> <country> <hs_code>`, `/trade_status <order_id>`, `/shipping_intl <weight> <from> <to>`
+- 관련 코드: `src/global_commerce/`
