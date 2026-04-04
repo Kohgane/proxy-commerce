@@ -124,8 +124,7 @@ class PurchaseMonitor:
 
         # timezone 통일
         if expected.tzinfo is None:
-            from datetime import timezone as tz
-            expected = expected.replace(tzinfo=tz.utc)
+            expected = expected.replace(tzinfo=timezone.utc)
 
         delay_days = (now - expected).days
         if delay_days > _DELIVERY_DELAY_DAYS:

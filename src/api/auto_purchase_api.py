@@ -103,7 +103,7 @@ def create_order():
         }), 201
     except Exception as exc:
         logger.error('create_order error: %s', exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +121,7 @@ def get_order(order_id: str):
         return jsonify(status)
     except Exception as exc:
         logger.error('get_order error: %s', exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -139,7 +139,7 @@ def cancel_order(order_id: str):
         return jsonify({'order_id': order_id, 'cancelled': True})
     except Exception as exc:
         logger.error('cancel_order error: %s', exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +178,7 @@ def get_sources(product_id: str):
         })
     except Exception as exc:
         logger.error('get_sources error: %s', exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +231,7 @@ def select_source():
         })
     except Exception as exc:
         logger.error('select_source error: %s', exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +246,7 @@ def get_metrics():
         return jsonify(engine.get_metrics())
     except Exception as exc:
         logger.error('get_metrics error: %s', exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -261,7 +261,7 @@ def list_rules():
         return jsonify({'rules': rules.list_rules()})
     except Exception as exc:
         logger.error('list_rules error: %s', exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -293,7 +293,7 @@ def add_rule():
         elif rule_type == 'daily_limit':
             rules.add_rule(DailyLimitRule(max_daily_orders=int(value or 50)))
         elif rule_type in ('blacklist_seller', 'blacklist_product'):
-            bl_rule = next((r for r in rules._rules if r.name == 'blacklist'), None)
+            bl_rule = rules.get_rule_by_name('blacklist')
             if bl_rule is None:
                 bl_rule = BlacklistRule()
                 rules.add_rule(bl_rule)
@@ -307,7 +307,7 @@ def add_rule():
         return jsonify({'added': True, 'type': rule_type, 'rules': rules.list_rules()}), 201
     except Exception as exc:
         logger.error('add_rule error: %s', exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -341,7 +341,7 @@ def simulate():
         return jsonify(result)
     except Exception as exc:
         logger.error('simulate error: %s', exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -356,4 +356,4 @@ def get_queue():
         return jsonify(engine.get_queue_status())
     except Exception as exc:
         logger.error('get_queue error: %s', exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500

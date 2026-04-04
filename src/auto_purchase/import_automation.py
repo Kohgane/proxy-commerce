@@ -44,6 +44,7 @@ class ProxyBuyRequest:
     notes: str = ''
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     status: str = 'received'
+    metadata: Dict = field(default_factory=dict)
 
 
 class ImportAutomation:
@@ -249,8 +250,6 @@ class ProxyBuyAutomation:
         if not request:
             return False
         request.status = 'inspection_passed' if passed else 'inspection_failed'
-        if not hasattr(request, 'metadata'):
-            object.__setattr__(request, 'metadata', {})
         request.metadata['inspection_notes'] = notes
         return True
 

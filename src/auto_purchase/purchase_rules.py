@@ -318,6 +318,13 @@ class PurchaseRuleEngine:
             'hold_reasons': hold_reasons,
         }
 
+    def get_rule_by_name(self, rule_name: str) -> Optional['PurchaseRule']:
+        """이름으로 규칙을 조회한다."""
+        for rule in self._rules:
+            if rule.name == rule_name:
+                return rule
+        return None
+
     def list_rules(self) -> List[Dict]:
         """등록된 규칙 목록을 반환한다."""
         return [
