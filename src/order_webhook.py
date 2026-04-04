@@ -672,6 +672,14 @@ try:
 except Exception as _subscriptions_bp_exc:
     logger.warning("구독 관리 API Blueprint 등록 실패: %s", _subscriptions_bp_exc)
 
+# 글로벌 커머스 API Blueprint 등록 (Phase 93)
+try:
+    from .api.global_commerce_api import global_commerce_bp
+    app.register_blueprint(global_commerce_bp)
+    logger.info("글로벌 커머스 API Blueprint 등록 완료")
+except Exception as _global_commerce_bp_exc:
+    logger.warning("글로벌 커머스 API Blueprint 등록 실패: %s", _global_commerce_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')
