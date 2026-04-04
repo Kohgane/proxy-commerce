@@ -17,6 +17,7 @@ SAMPLE_PRODUCT = {
     "brand": "TechBrand",
     "image_url": "https://example.com/image.jpg",
     "features": ["노이즈 캔슬링", "30시간 배터리", "방수"],
+    "canonical_url": "https://example.com/products/premium-wireless-earphones",
 }
 
 
@@ -79,6 +80,56 @@ class TestMultilingual:
         """일본어 CTA가 포함되어야 한다."""
         result = generator.generate_meta(SAMPLE_PRODUCT, language='ja')
         assert "今すぐ購入" in result["meta_description"]
+
+    def test_multilingual_zh(self, generator):
+        """중국어 CTA가 포함되어야 한다."""
+        result = generator.generate_meta(SAMPLE_PRODUCT, language='zh')
+        assert "立即购买" in result["meta_description"]
+
+
+class TestCanonicalUrl:
+    def test_canonical_url_present(self, generator):
+        """canonical_url 필드가 존재해야 한다."""
+        result = generator.generate_meta(SAMPLE_PRODUCT, language='ko')
+        assert "canonical_url" in result
+
+    def test_canonical_url_value(self, generator):
+        """canonical_url이 제품 데이터의 canonical_url과 일치해야 한다."""
+        result = generator.generate_meta(SAMPLE_PRODUCT, language='ko')
+        assert result["canonical_url"] == SAMPLE_PRODUCT["canonical_url"]
+
+    def test_canonical_url_empty_when_not_provided(self, generator):
+        """canonical_url이 없을 때 빈 문자열을 반환해야 한다."""
+        product = {k: v for k, v in SAMPLE_PRODUCT.items() if k != "canonical_url"}
+        result = generator.generate_meta(product, language='ko')
+        assert result["canonical_url"] == ""
+
+
+class TestTwitterCard:
+    def test_twitter_tags_present(self, generator):
+        """twitter_tags 필드가 존재해야 한다."""
+        result = generator.generate_meta(SAMPLE_PRODUCT, language='ko')
+        assert "twitter_tags" in result
+
+    def test_twitter_card_type(self, generator):
+        """twitter:card는 'summary_large_image'여야 한다."""
+        result = generator.generate_meta(SAMPLE_PRODUCT, language='ko')
+        assert result["twitter_tags"]["twitter:card"] == "summary_large_image"
+
+    def test_twitter_title(self, generator):
+        """twitter:title이 meta_title과 일치해야 한다."""
+        result = generator.generate_meta(SAMPLE_PRODUCT, language='ko')
+        assert result["twitter_tags"]["twitter:title"] == result["meta_title"]
+
+    def test_twitter_description(self, generator):
+        """twitter:description이 meta_description과 일치해야 한다."""
+        result = generator.generate_meta(SAMPLE_PRODUCT, language='ko')
+        assert result["twitter_tags"]["twitter:description"] == result["meta_description"]
+
+    def test_twitter_image(self, generator):
+        """twitter:image가 image_url과 일치해야 한다."""
+        result = generator.generate_meta(SAMPLE_PRODUCT, language='ko')
+        assert result["twitter_tags"]["twitter:image"] == SAMPLE_PRODUCT["image_url"]
 
 
 class TestBulkGenerate:

@@ -16,6 +16,7 @@ _CTA_TEXTS = {
     "ko": "지금 구매하기",
     "en": "Buy Now",
     "ja": "今すぐ購入",
+    "zh": "立即购买",
 }
 
 # 언어별 기본 설명 접두어
@@ -23,6 +24,7 @@ _FEATURE_PREFIX = {
     "ko": "특징",
     "en": "Features",
     "ja": "特徴",
+    "zh": "特点",
 }
 
 
@@ -62,11 +64,11 @@ class MetaGenerator:
 
         Args:
             product_data: 제품 딕셔너리 (sku, title_ko, title_en, category, price_krw,
-                          brand, image_url, features).
-            language: 언어 코드 (ko/en/ja, 기본 "ko").
+                          brand, image_url, features, canonical_url).
+            language: 언어 코드 (ko/en/ja/zh, 기본 "ko").
 
         Returns:
-            {meta_title, meta_description, og_tags} 딕셔너리.
+            {meta_title, meta_description, og_tags, twitter_tags, canonical_url} 딕셔너리.
         """
         cta = _CTA_TEXTS.get(language, _CTA_TEXTS["ko"])
         raw_title = self._get_title(product_data, language)
@@ -80,6 +82,8 @@ class MetaGenerator:
         meta_description = self._truncate(raw_desc, 160)
 
         image_url = product_data.get("image_url", "")
+        canonical_url = product_data.get("canonical_url", "")
+
         og_tags: Dict[str, str] = {
             "og:title": meta_title,
             "og:description": meta_description,
@@ -87,11 +91,20 @@ class MetaGenerator:
             "og:type": "product",
         }
 
+        twitter_tags: Dict[str, str] = {
+            "twitter:card": "summary_large_image",
+            "twitter:title": meta_title,
+            "twitter:description": meta_description,
+            "twitter:image": image_url,
+        }
+
         return {
             "sku": product_data.get("sku", ""),
             "meta_title": meta_title,
             "meta_description": meta_description,
             "og_tags": og_tags,
+            "twitter_tags": twitter_tags,
+            "canonical_url": canonical_url,
         }
 
     def bulk_generate(self, products_list: List[Dict[str, Any]], language: str = "ko") -> List[Dict[str, Any]]:
