@@ -696,6 +696,14 @@ try:
 except Exception as _mobile_bp_exc:
     logger.warning("모바일 API Blueprint 등록 실패: %s", _mobile_bp_exc)
 
+# 자동 구매 API Blueprint 등록 (Phase 96)
+try:
+    from .api.auto_purchase_api import auto_purchase_bp
+    app.register_blueprint(auto_purchase_bp)
+    logger.info("자동 구매 API Blueprint 등록 완료")
+except Exception as _auto_purchase_bp_exc:
+    logger.warning("자동 구매 API Blueprint 등록 실패: %s", _auto_purchase_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')

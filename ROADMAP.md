@@ -88,6 +88,7 @@
 | Phase 93 | 글로벌 확장 (다국어 상품 페이지 + 해외 결제 + 수입/수출 지원) | #57 | 2026-04-04 |
 | Phase 94 | AI 기반 상품 추천 시스템 (앙상블 엔진, 협업/콘텐츠 필터링, 개인화, 트렌딩, 크로스셀, 피드백 루프) | #58 | 2026-04-04 |
 | Phase 95 | 모바일 앱 API (React Native/Flutter 지원, JWT 인증, 커서 페이지네이션, FCM/APNs mock, 관리자 모바일) | #59 | 2026-04-04 |
+| Phase 96 | 자동 구매 엔진 (Amazon SP-API 자동 주문, 결제 자동화, 수입/구매대행 자동 플로우) + CD Staging 안정화 | #60 | 2026-04-04 |
 
 ## 🚧 진행 중 Phase
 
@@ -863,3 +864,20 @@
 - API Blueprint: `src/api/mobile_api_routes.py` (`/api/mobile/v1`) — 32개 엔드포인트
 - 봇 커맨드: `/mobile_stats`, `/push_send <user_id> <message>`
 - 관련 코드: `src/mobile_api/`
+
+## Phase 96: 자동 구매 엔진 (Amazon SP-API 자동 주문, 결제 자동화) + CD Staging 안정화 ✅
+- `AutoPurchaseEngine`: 자동 구매 오케스트레이터 — 주문접수 → 규칙평가 → 소스선택 → 구매 → 결제 → 확인 전체 플로우
+- `SourceSelector`: 최적 소스 자동 선택 — `CheapestFirst` / `FastestDelivery` / `ReliabilityFirst` / `BalancedStrategy` (가격40%+배송30%+신뢰도30%)
+- `AmazonBuyer(MarketplaceBuyer)`: Amazon SP-API mock — ASIN 기반 검색, 재고 확인, 주문 생성 (배송대행지 주소 자동 설정), 주문 취소 (US/JP 지원)
+- `TaobaoBuyer(MarketplaceBuyer)`: 타오바오 API mock — 에이전트 경유 주문 생성, 상품 검색
+- `AlibabaBuyer(MarketplaceBuyer)`: 1688 API mock — B2B 대량 구매, MOQ(최소주문수량) 체크
+- `PaymentAutomator`: 자동 결제 관리 — 마켓플레이스별 최적 결제수단 선택, 일일/월간/단건 한도 관리, 결제 내역 기록 + 영수증 보관, 환율 자동 적용 (FX 연동)
+- `PurchaseMonitor`: 구매 상태 실시간 모니터링 — 가격 이상 감지 (±20%), 배송 지연 감지, 대시보드 메트릭, 텔레그램 알림 연동
+- `PurchaseRuleEngine`: 자동 구매 규칙 엔진 — `MaxPriceRule` / `MinMarginRule` / `StockThresholdRule` / `BlacklistRule` / `DailyLimitRule` → pass/reject/hold 결정
+- `PurchaseOrder`, `SourceOption`, `PurchaseResult`, `PurchaseMetrics` 데이터클래스
+- `ImportAutomation`: 수입 전체 플로우 자동화 — 고객 주문 → 해외 자동 구매 → 배송대행지 입고 → 관세 계산 → 국내 배송 (ImportManager/ForwardingAgent 연동)
+- `ProxyBuyAutomation`: 구매대행 자동 플로우 — 고객 요청 → 해외 구매 → 검수 → 발송
+- API Blueprint: `src/api/auto_purchase_api.py` (`/api/v1/auto-purchase`) — 10개 엔드포인트 (주문생성/조회/취소/소스조회/선택/메트릭/규칙/시뮬레이션/큐)
+- 봇 커맨드: `/auto_buy <url>`, `/buy_status <order_id>`, `/buy_queue`, `/buy_metrics`, `/buy_rules`, `/buy_simulate <url>`
+- CD Staging 수정: `sleep 30→60`, `retries 5/15→8/20`, `/health/ready` soft fail (`/health` OK면 exit 0)
+- 관련 코드: `src/auto_purchase/`, `src/api/auto_purchase_api.py`, `scripts/post_deploy_check.py`, `.github/workflows/cd_staging.yml`
