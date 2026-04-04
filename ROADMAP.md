@@ -86,6 +86,7 @@
 | Phase 91 | 주문 분쟁/중재 시스템 + SEO/CTA 보강 (Sitemap, robots.txt, Twitter Card, 중국어 CTA) | #55 | 2026-04-04 |
 | Phase 92 | 포인트/마일리지 시스템 + 구독 결제 관리 | #56 | 2026-04-04 |
 | Phase 93 | 글로벌 확장 (다국어 상품 페이지 + 해외 결제 + 수입/수출 지원) | #57 | 2026-04-04 |
+| Phase 94 | AI 기반 상품 추천 시스템 (앙상블 엔진, 협업/콘텐츠 필터링, 개인화, 트렌딩, 크로스셀, 피드백 루프) | #58 | 2026-04-04 |
 
 ## 🚧 진행 중 Phase
 
@@ -164,8 +165,8 @@
 
 ## 🔮 향후 고려 사항
 - Phase 93으로 구현 완료: 글로벌 확장 (다국어 상품 페이지, 해외 결제, 수입/수출)
-- Phase 98: AI 기반 상품 추천 시스템
-- Phase 99: 모바일 앱 API (React Native/Flutter)
+- Phase 94로 구현 완료: AI 기반 상품 추천 시스템 (앙상블 엔진, 협업/콘텐츠 필터링, 개인화, 트렌딩, 크로스셀, 피드백 루프)
+- Phase 95: 모바일 앱 API (React Native/Flutter)
 
 ## Phase 31: 재고 동기화 (Inventory Sync)
 - `InventorySyncManager`: 다중 채널(쿠팡/네이버/내부) 재고 동기화
@@ -586,13 +587,12 @@
 - API Blueprint: `src/api/security_api.py` (`/api/v1/security`)
 - 봇 커맨드: `/security_audit`, `/security_sessions`, `/ip_block`
 
-## 🔮 향후 Phase 94+ 고려 사항
-- Phase 94: 실시간 채팅 고객 지원 (WebSocket 기반, 상담원 배정)
-- Phase 95: AI 기반 동적 가격 최적화 (경쟁가 + 수요 예측 통합)
-- Phase 96: 멀티벤더 마켓플레이스 (판매자 온보딩, 수수료 정산)
-- Phase 97: 물류 최적화 (배송 경로 최적화, 라스트마일 추적)
-- Phase 98: 데이터 파이프라인 (ETL, 데이터 웨어하우스 연동)
-- Phase 99: AI 기반 상품 추천 시스템
+## 🔮 향후 Phase 95+ 고려 사항
+- Phase 95: 실시간 채팅 고객 지원 (WebSocket 기반, 상담원 배정)
+- Phase 96: AI 기반 동적 가격 최적화 (경쟁가 + 수요 예측 통합)
+- Phase 97: 멀티벤더 마켓플레이스 (판매자 온보딩, 수수료 정산)
+- Phase 98: 물류 최적화 (배송 경로 최적화, 라스트마일 추적)
+- Phase 99: 데이터 파이프라인 (ETL, 데이터 웨어하우스 연동)
 - Phase 100: 모바일 앱 API (React Native/Flutter)
 - Phase 101: 자동 구매 엔진 (Amazon SP-API 자동 주문, 결제 자동화)
 - Phase 102: 배송대행지 연동 (몰테일/이하넥스 API, 입고 확인 자동화)
@@ -835,3 +835,18 @@
 - API Blueprint: `src/api/global_commerce_api.py` (`/api/v1/global`)
 - 봇 커맨드: `/import_order <source> <product_url>`, `/customs_calc <price> <country> <hs_code>`, `/trade_status <order_id>`, `/shipping_intl <weight> <from> <to>`
 - 관련 코드: `src/global_commerce/`
+
+
+## Phase 94: AI 기반 상품 추천 시스템 ✅
+- `AIRecommendationEngine`: 추천 전략 통합 오케스트레이터 — 가중치 기반 앙상블, TTL 캐싱, A/B 테스트 연동
+- `AdvancedCollaborativeFilter`: 사용자-상품 행렬 기반 협업 필터링 — 코사인 유사도 (사용자/아이템), 이벤트 가중치 (구매 5x/장바구니 3x/조회 1x), 신규 사용자 콜드 스타트 폴백
+- `AdvancedContentBasedFilter`: 상품 속성 벡터화 — 가중 속성 매칭 (카테고리 3x/브랜드 2x/가격대 1.5x/태그 1x), TF-IDF 설명 유사도 (코사인 유사도)
+- `PersonalizationEngine`: 사용자 취향 벡터 생성 — 카테고리/브랜드/가격대 선호도 자동 학습, 실시간 세션 컨텍스트, 세그먼트별 전략 가중치 (VIP/신규/이탈위험)
+- `AITrendingAnalyzer`: 시간 가중 트렌딩 점수 (지수 감쇠), 카테고리별 트렌딩, 급상승 상품 감지 (기간 대비 성장률), 시즌 기반 추천
+- `CrossSellEngine`: 연관 규칙 마이닝 (support/confidence/lift), 장바구니 기반 크로스셀, 동일 카테고리 업셀, 번들 연동
+- `FeedbackLoop`: 노출→클릭→구매 전환 추적, CTR/CVR/정밀도 메트릭, CVR 기반 전략 가중치 자동 조정
+- `AutoRecommender`: 일일 추천 메일 생성, 구매 주기 분석 기반 재구매 예측, 이탈 방지 추천, 신상품 알림 자동화
+- `UserEvent`, `RecommendationResult`, `UserProfile`, `ProductVector` 데이터클래스
+- API Blueprint: `src/api/ai_recommendation_api.py` (`/api/v1/ai-recommend`) — 8개 엔드포인트 (개인화/크로스셀/트렌딩/이벤트/메트릭/피드백/재구매)
+- 봇 커맨드: `/ai_recommend <user_id>`, `/trending [category]`, `/cross_sell <product_id>`, `/recommend_metrics`
+- 관련 코드: `src/ai_recommendation/`, `src/api/ai_recommendation_api.py`

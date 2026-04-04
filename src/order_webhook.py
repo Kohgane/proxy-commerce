@@ -680,6 +680,14 @@ try:
 except Exception as _global_commerce_bp_exc:
     logger.warning("글로벌 커머스 API Blueprint 등록 실패: %s", _global_commerce_bp_exc)
 
+# AI 추천 API Blueprint 등록 (Phase 94)
+try:
+    from .api.ai_recommendation_api import ai_recommendation_bp
+    app.register_blueprint(ai_recommendation_bp)
+    logger.info("AI 추천 API Blueprint 등록 완료")
+except Exception as _ai_rec_bp_exc:
+    logger.warning("AI 추천 API Blueprint 등록 실패: %s", _ai_rec_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')
