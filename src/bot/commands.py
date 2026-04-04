@@ -2707,3 +2707,92 @@ def cmd_shipping_intl(weight: str = '', from_country: str = '', to_country: str 
     except Exception as exc:
         logger.error("cmd_shipping_intl 오류: %s", exc)
         return format_message('error', f'국제 배송비 계산 실패: {exc}')
+
+
+def cmd_ai_recommend(user_id: str = '') -> str:
+    """/ai_recommend <user_id> — AI 맞춤 추천."""
+    user_id = user_id.strip()
+    if not user_id:
+        return format_message('error', '사용법: /ai_recommend <user_id>')
+    try:
+        from ..ai_recommendation import AIRecommendationEngine
+        engine = AIRecommendationEngine()
+        results = engine.recommend(user_id, top_n=5, strategy='ensemble')
+        if not results:
+            return format_message('info', f'{user_id}님을 위한 추천 상품이 없습니다.')
+        lines = '\n'.join(
+            f"• {r.product_id} (점수: {r.score:.2f}, 전략: {r.strategy})"
+            for r in results
+        )
+        return format_message('info', f"AI 맞춤 추천 ({user_id}):\n{lines}")
+    except Exception as exc:
+        logger.error("cmd_ai_recommend 오류: %s", exc)
+        return format_message('error', f'AI 추천 실패: {exc}')
+
+
+def cmd_trending(category: str = '') -> str:
+    """/trending [category] — 트렌딩 상품."""
+    category = category.strip()
+    try:
+        from ..ai_recommendation import AIRecommendationEngine
+        engine = AIRecommendationEngine()
+        results = engine.get_trending(top_n=5, category=category or None)
+        if not results:
+            label = f'카테고리 "{category}"' if category else '전체'
+            return format_message('info', f'{label} 트렌딩 상품이 없습니다.')
+        label = f'카테고리 "{category}"' if category else '전체'
+        lines = '\n'.join(
+            f"• {r.product_id} (점수: {r.score:.2f})"
+            for r in results
+        )
+        return format_message('info', f"트렌딩 상품 ({label}):\n{lines}")
+    except Exception as exc:
+        logger.error("cmd_trending 오류: %s", exc)
+        return format_message('error', f'트렌딩 조회 실패: {exc}')
+
+
+def cmd_cross_sell(product_id: str = '') -> str:
+    """/cross_sell <product_id> — 함께 구매 추천."""
+    product_id = product_id.strip()
+    if not product_id:
+        return format_message('error', '사용법: /cross_sell <product_id>')
+    try:
+        from ..ai_recommendation import AIRecommendationEngine
+        engine = AIRecommendationEngine()
+        results = engine.get_cross_sell([product_id], top_n=5)
+        if not results:
+            return format_message('info', f'"{product_id}"에 대한 크로스셀 추천이 없습니다.')
+        lines = '\n'.join(
+            f"• {r.product_id} (점수: {r.score:.2f})"
+            for r in results
+        )
+        return format_message('info', f"함께 구매 추천 ({product_id}):\n{lines}")
+    except Exception as exc:
+        logger.error("cmd_cross_sell 오류: %s", exc)
+        return format_message('error', f'크로스셀 추천 실패: {exc}')
+
+
+def cmd_recommend_metrics() -> str:
+    """/recommend_metrics — 추천 성능 현황."""
+    try:
+        from ..ai_recommendation import AIRecommendationEngine
+        engine = AIRecommendationEngine()
+        metrics = engine.feedback.get_metrics()
+        weights = engine.feedback.get_strategy_weights()
+        if not metrics:
+            return format_message('info', '추천 메트릭 데이터가 없습니다.')
+        lines = []
+        for strategy, m in metrics.items():
+            lines.append(
+                f"• {strategy}: 노출 {m['impressions']}, "
+                f"CTR {m['ctr']:.1%}, CVR {m['cvr']:.1%}"
+            )
+        top_strategies = sorted(weights.items(), key=lambda x: -x[1])[:3]
+        weight_lines = ', '.join(f"{s}: {w:.2f}" for s, w in top_strategies)
+        metrics_text = '\n'.join(lines)
+        return format_message('info',
+                               f"추천 성능 현황:\n{metrics_text}\n"
+                               f"상위 가중치: {weight_lines}")
+    except Exception as exc:
+        logger.error("cmd_recommend_metrics 오류: %s", exc)
+        return format_message('error', f'추천 메트릭 조회 실패: {exc}')
