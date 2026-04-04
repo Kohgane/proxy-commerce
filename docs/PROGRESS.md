@@ -619,3 +619,33 @@ Phase 1~16 + lint fix(PR #34)까지 전체 머지 완료. 이제 **수입(해외
 - 대시보드 웹 UI: `<meta name="description">`, `<meta name="robots">`, Open Graph 태그 적용
 - API Blueprint: `/api/v1/disputes` (POST /, GET /, GET /<id>, PUT /<id>/status, POST /<id>/evidence, GET /<id>/evidence, POST /<id>/mediate, GET /analytics)
 - 봇 커맨드: `/disputes`, `/dispute_create <order_id> <type> <reason>`, `/dispute_resolve <id> <decision>`
+
+---
+
+## Phase 92: 포인트/마일리지 시스템 + 구독 결제 관리 (2026-04-04)
+
+### 최종 업데이트: 2026-04-04
+
+### 전체 진행률
+- 완료된 Phase: 1~92
+- 총 PR: #1~#56
+- 현재 상태: Phase 92 구현 완료
+
+### 최근 완료
+| Phase | 내용 | PR |
+|---|---|---|
+| Phase 91 | 주문 분쟁/중재 시스템 + SEO/CTA 보강 | #55 |
+| Phase 92 | 포인트/마일리지 시스템 + 구독 결제 관리 | #56 |
+
+### Phase 92 구현 상세
+- `PointManager`: 포인트 적립/사용/잔액 관리 (등급별: bronze 1%, silver 2%, gold 3%, vip 5%)
+- `PointHistory`: earn/use/expire/cancel 이력, 기간/타입 필터, 페이지네이션
+- `PointPolicy`: 등급별 적립률, 이벤트 보너스 (더블 포인트 등), 첫구매/생일/리뷰 보너스
+- `ExpiryManager`: 365일 만료, 만료 예정 조회 (7일/30일), 배치 만료 처리, 만료 알림
+- `SubscriptionManager`: 구독 CRUD (trial→active→past_due→cancelled/expired), 자동 갱신
+- `PlanManager`: Free/Starter/Pro/Enterprise 플랜, 플랜별 제한, 월간/연간 가격 (연간 20% 할인)
+- `BillingService`: 청구서 생성/조회, mock PG 결제, 실패 시 최대 3회 재시도 (3일 간격), 영수증 발급
+- `UsageLimiter`: 플랜별 사용량 제한 체크 (상품/주문/API/스토리지), 80% 경고, 100% 차단
+- API Blueprint: `/api/v1/points` (잔액/적립/사용/이력/만료/정책), `/api/v1/subscriptions` (구독/플랜/청구서/사용량)
+- 봇 커맨드: `/points <user_id>`, `/point_earn <user_id> <amount> <reason>`, `/subscription <id>`, `/plans`
+- 관련 코드: `src/points/`, `src/subscriptions/`

@@ -84,6 +84,7 @@
 | Phase 89 | 창고 관리 시스템 (구역/로케이션, 피킹 경로, 창고 간 이동, 공간 최적화) | #53 | 2026-04-03 |
 | Phase 90 | 세금 계산 엔진 (VAT/관세/개별소비세, 해외직구, 면세 조건, 세금 계산서) | #54 | 2026-04-03 |
 | Phase 91 | 주문 분쟁/중재 시스템 + SEO/CTA 보강 (Sitemap, robots.txt, Twitter Card, 중국어 CTA) | #55 | 2026-04-04 |
+| Phase 92 | 포인트/마일리지 시스템 + 구독 결제 관리 | #56 | 2026-04-04 |
 
 ## 🚧 진행 중 Phase
 
@@ -584,11 +585,10 @@
 - API Blueprint: `src/api/security_api.py` (`/api/v1/security`)
 - 봇 커맨드: `/security_audit`, `/security_sessions`, `/ip_block`
 
-## 🔮 향후 Phase 92+ 고려 사항
-- Phase 92: 실시간 채팅 고객 지원 (WebSocket 기반, 상담원 배정)
-- Phase 93: AI 기반 동적 가격 최적화 (경쟁가 + 수요 예측 통합)
-- Phase 94: 멀티벤더 마켓플레이스 (판매자 온보딩, 수수료 정산)
-- Phase 95: 구독 결제 시스템 (정기 결제, 플랜 업그레이드/다운그레이드)
+## 🔮 향후 Phase 93+ 고려 사항
+- Phase 93: 실시간 채팅 고객 지원 (WebSocket 기반, 상담원 배정)
+- Phase 94: AI 기반 동적 가격 최적화 (경쟁가 + 수요 예측 통합)
+- Phase 95: 멀티벤더 마켓플레이스 (판매자 온보딩, 수수료 정산)
 - Phase 96: 물류 최적화 (배송 경로 최적화, 라스트마일 추적)
 - Phase 97: 데이터 파이프라인 (ETL, 데이터 웨어하우스 연동)
 
@@ -790,3 +790,17 @@
 - API Blueprint: `src/api/disputes_api.py` (`/api/v1/disputes`)
 - 봇 커맨드: `/disputes`, `/dispute_create <order_id> <type> <reason>`, `/dispute_resolve <id> <decision>`
 - 관련 코드: `src/disputes/`, `src/seo/sitemap_generator.py`, `src/seo/robots_generator.py`
+
+
+## Phase 92: 포인트/마일리지 시스템 + 구독 결제 관리
+- `PointManager`: 포인트 적립/사용/잔액 관리 (등급별 적립률 bronze 1%~vip 5%)
+- `PointHistory`: 이력 기록 (earn/use/expire/cancel), 기간/타입 필터
+- `PointPolicy`: 등급별 적립률, 이벤트 보너스, 첫구매/생일/리뷰 보너스
+- `ExpiryManager`: 365일 만료, 만료 예정 조회, 배치 만료 처리
+- `SubscriptionManager`: 구독 CRUD (trial→active→cancelled), 자동 갱신
+- `PlanManager`: Free/Starter/Pro/Enterprise 플랜, 제한/가격 관리
+- `BillingService`: 청구서 생성, 결제 처리 (mock), 재시도
+- `UsageLimiter`: 플랜별 사용량 제한/초과 경고
+- API Blueprint: `/api/v1/points`, `/api/v1/subscriptions`
+- 봇 커맨드: `/points`, `/point_earn`, `/subscription`, `/plans`
+- 관련 코드: `src/points/`, `src/subscriptions/`

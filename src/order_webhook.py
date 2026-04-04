@@ -656,6 +656,22 @@ try:
 except Exception as _disputes_bp_exc:
     logger.warning("분쟁 관리 API Blueprint 등록 실패: %s", _disputes_bp_exc)
 
+# 포인트 API Blueprint 등록 (Phase 92)
+try:
+    from .api.points_api import points_bp
+    app.register_blueprint(points_bp)
+    logger.info("포인트 API Blueprint 등록 완료")
+except Exception as _points_bp_exc:
+    logger.warning("포인트 API Blueprint 등록 실패: %s", _points_bp_exc)
+
+# 구독 관리 API Blueprint 등록 (Phase 92)
+try:
+    from .api.subscriptions_api import subscriptions_bp
+    app.register_blueprint(subscriptions_bp)
+    logger.info("구독 관리 API Blueprint 등록 완료")
+except Exception as _subscriptions_bp_exc:
+    logger.warning("구독 관리 API Blueprint 등록 실패: %s", _subscriptions_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')
