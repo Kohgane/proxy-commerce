@@ -139,3 +139,126 @@ class TestStorageQuota:
         summary = self.quota.get_summary("u1")
         assert summary["owner_id"] == "u1"
         assert summary["usage_percent"] == 50.0
+
+
+class TestStorageAPI:
+    def setup_method(self):
+        import src.api.storage_api as storage_api_module
+        storage_api_module._backend = None
+        storage_api_module._quota = None
+        storage_api_module._metadata_store.clear()
+
+        from flask import Flask
+        from src.api.storage_api import storage_bp
+        app = Flask(__name__)
+        app.register_blueprint(storage_bp)
+        self.client = app.test_client()
+
+    def test_status(self):
+        resp = self.client.get("/api/v1/storage/status")
+        assert resp.status_code == 200
+        assert resp.get_json()["status"] == "ok"
+
+    def test_upload(self):
+        resp = self.client.post("/api/v1/storage/upload", json={
+            "owner_id": "user1",
+            "filename": "hello.txt",
+            "content_type": "text/plain",
+            "content": "hello world",
+        })
+        assert resp.status_code == 201
+        data = resp.get_json()
+        assert data["name"] == "hello.txt"
+        assert "id" in data
+
+    def test_download(self):
+        resp = self.client.post("/api/v1/storage/upload", json={
+            "owner_id": "user1",
+            "filename": "dl.txt",
+            "content_type": "text/plain",
+            "content": "download me",
+        })
+        file_id = resp.get_json()["id"]
+        resp2 = self.client.get(f"/api/v1/storage/download/{file_id}")
+        assert resp2.status_code == 200
+        data = resp2.get_json()
+        assert data["file_id"] == file_id
+
+    def test_download_missing(self):
+        resp = self.client.get("/api/v1/storage/download/nonexistent")
+        assert resp.status_code == 404
+
+    def test_list_files(self):
+        self.client.post("/api/v1/storage/upload", json={
+            "owner_id": "user1",
+            "filename": "img/photo.jpg",
+            "content_type": "image/jpeg",
+            "content": "jpg",
+        })
+        self.client.post("/api/v1/storage/upload", json={
+            "owner_id": "user1",
+            "filename": "doc/report.pdf",
+            "content_type": "application/pdf",
+            "content": "pdf",
+        })
+        resp = self.client.get("/api/v1/storage/list")
+        assert resp.status_code == 200
+        assert resp.get_json()["count"] == 2
+
+    def test_list_files_with_prefix(self):
+        self.client.post("/api/v1/storage/upload", json={
+            "owner_id": "user1",
+            "filename": "img/photo.jpg",
+            "content_type": "image/jpeg",
+            "content": "jpg",
+        })
+        self.client.post("/api/v1/storage/upload", json={
+            "owner_id": "user1",
+            "filename": "doc/report.pdf",
+            "content_type": "application/pdf",
+            "content": "pdf",
+        })
+        resp = self.client.get("/api/v1/storage/list?prefix=img/")
+        assert resp.status_code == 200
+        assert resp.get_json()["count"] == 1
+
+    def test_delete_file(self):
+        resp = self.client.post("/api/v1/storage/upload", json={
+            "owner_id": "user1",
+            "filename": "todelete.txt",
+            "content_type": "text/plain",
+            "content": "bye",
+        })
+        file_id = resp.get_json()["id"]
+        resp2 = self.client.delete(f"/api/v1/storage/delete/{file_id}")
+        assert resp2.status_code == 200
+        assert resp2.get_json()["deleted"] == file_id
+
+    def test_delete_missing(self):
+        resp = self.client.delete("/api/v1/storage/delete/nonexistent")
+        assert resp.status_code == 404
+
+    def test_quota(self):
+        resp = self.client.get("/api/v1/storage/quota?owner_id=user1")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["owner_id"] == "user1"
+        assert "quota_bytes" in data
+        assert "usage_bytes" in data
+
+    def test_upload_quota_exceeded(self):
+        import src.api.storage_api as storage_api_module
+        from src.storage.local_storage import LocalStorageBackend
+        from src.storage.storage_quota import StorageQuota
+        quota = StorageQuota()
+        quota.set_quota("limited_user", 1)
+        storage_api_module._backend = LocalStorageBackend()
+        storage_api_module._quota = quota
+        resp = self.client.post("/api/v1/storage/upload", json={
+            "owner_id": "limited_user",
+            "filename": "big.bin",
+            "content_type": "application/octet-stream",
+            "content": "this is too big",
+        })
+        assert resp.status_code == 400
+        assert "할당량" in resp.get_json().get("error", "")
