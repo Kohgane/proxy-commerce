@@ -688,6 +688,14 @@ try:
 except Exception as _ai_rec_bp_exc:
     logger.warning("AI 추천 API Blueprint 등록 실패: %s", _ai_rec_bp_exc)
 
+# 모바일 API Blueprint 등록 (Phase 95)
+try:
+    from .api.mobile_api_routes import mobile_api_bp
+    app.register_blueprint(mobile_api_bp)
+    logger.info("모바일 API Blueprint 등록 완료")
+except Exception as _mobile_bp_exc:
+    logger.warning("모바일 API Blueprint 등록 실패: %s", _mobile_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')
