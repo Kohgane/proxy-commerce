@@ -648,6 +648,14 @@ try:
 except Exception as _tax_bp_exc:
     logger.warning("세금 계산 엔진 API Blueprint 등록 실패: %s", _tax_bp_exc)
 
+# 분쟁 관리 API Blueprint 등록 (Phase 91)
+try:
+    from .api.disputes_api import disputes_bp
+    app.register_blueprint(disputes_bp)
+    logger.info("분쟁 관리 API Blueprint 등록 완료")
+except Exception as _disputes_bp_exc:
+    logger.warning("분쟁 관리 API Blueprint 등록 실패: %s", _disputes_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')

@@ -82,7 +82,8 @@
 | Phase 87 | 상품 비교 도구 (속성/가격/기능 매트릭스, 종합 점수, 비교 이력) | #53 | 2026-04-03 |
 | Phase 88 | 자동 이메일 마케팅 (캠페인 CRUD, 트리거, A/B 테스트, 구독 취소) | #53 | 2026-04-03 |
 | Phase 89 | 창고 관리 시스템 (구역/로케이션, 피킹 경로, 창고 간 이동, 공간 최적화) | #53 | 2026-04-03 |
-| Phase 90 | 세금 계산 엔진 (VAT/관세/개별소비세, 해외직구, 면세 조건, 세금 계산서) | #53 | 2026-04-03 |
+| Phase 90 | 세금 계산 엔진 (VAT/관세/개별소비세, 해외직구, 면세 조건, 세금 계산서) | #54 | 2026-04-03 |
+| Phase 91 | 주문 분쟁/중재 시스템 + SEO/CTA 보강 (Sitemap, robots.txt, Twitter Card, 중국어 CTA) | #55 | 2026-04-04 |
 
 ## 🚧 진행 중 Phase
 
@@ -583,13 +584,13 @@
 - API Blueprint: `src/api/security_api.py` (`/api/v1/security`)
 - 봇 커맨드: `/security_audit`, `/security_sessions`, `/ip_block`
 
-## 🔮 향후 Phase 91+ 고려 사항
-- Phase 91: 실시간 채팅 고객 지원 (WebSocket 기반, 상담원 배정)
-- Phase 92: AI 기반 동적 가격 최적화 (경쟁가 + 수요 예측 통합)
-- Phase 93: 멀티벤더 마켓플레이스 (판매자 온보딩, 수수료 정산)
-- Phase 94: 구독 결제 시스템 (정기 결제, 플랜 업그레이드/다운그레이드)
-- Phase 95: 물류 최적화 (배송 경로 최적화, 라스트마일 추적)
-- Phase 96: 데이터 파이프라인 (ETL, 데이터 웨어하우스 연동)
+## 🔮 향후 Phase 92+ 고려 사항
+- Phase 92: 실시간 채팅 고객 지원 (WebSocket 기반, 상담원 배정)
+- Phase 93: AI 기반 동적 가격 최적화 (경쟁가 + 수요 예측 통합)
+- Phase 94: 멀티벤더 마켓플레이스 (판매자 온보딩, 수수료 정산)
+- Phase 95: 구독 결제 시스템 (정기 결제, 플랜 업그레이드/다운그레이드)
+- Phase 96: 물류 최적화 (배송 경로 최적화, 라스트마일 추적)
+- Phase 97: 데이터 파이프라인 (ETL, 데이터 웨어하우스 연동)
 
 
 ## Phase 73: 고객 세그먼트 관리 ✅
@@ -774,3 +775,18 @@
 - `TaxInvoice`: 세금 계산서 데이터 생성
 - API Blueprint: `src/api/tax_engine_api.py` (`/api/v1/tax`)
 - 봇 커맨드: `/tax_calc`, `/customs`
+
+
+## Phase 91: 주문 분쟁/중재 시스템 (Dispute & Mediation) ✅
+- `DisputeManager`: 분쟁 CRUD + 상태 전환 (opened→under_review→mediation→resolved/rejected)
+- `EvidenceCollector`: 증거 자료 첨부 (스크린샷, 대화 기록, 운송장) — 분쟁당 최대 10개
+- `MediationService`: 자동 판정 규칙 (금액 기준, 배송 지연 기준, 사진 불일치) + 수동 대기열
+- `RefundDecision`: 전액/부분/거절 환불 판정 + 판매자 패널티 (경고/판매 제한)
+- `DisputeAnalytics`: 분쟁률, 평균 해결 시간, 카테고리별 분석, 판매자별 통계
+- SEO 보강: `SitemapGenerator` (sitemap.xml 자동 생성, sitemap index 지원)
+- SEO 보강: `RobotsGenerator` (robots.txt 동적 생성)
+- SEO 보강: `MetaGenerator` — canonical URL, Twitter Card 태그, 중국어 CTA ("立即购买") 추가
+- CTA 보강: 대시보드 웹 UI `_BASE_HTML`에 `<meta name="description">`, `<meta name="robots">`, Open Graph 태그 적용
+- API Blueprint: `src/api/disputes_api.py` (`/api/v1/disputes`)
+- 봇 커맨드: `/disputes`, `/dispute_create <order_id> <type> <reason>`, `/dispute_resolve <id> <decision>`
+- 관련 코드: `src/disputes/`, `src/seo/sitemap_generator.py`, `src/seo/robots_generator.py`

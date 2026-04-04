@@ -43,6 +43,11 @@ _BASE_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="{{ description }}">
+<meta name="robots" content="noindex, nofollow">
+<meta property="og:title" content="{{ title }} — proxy-commerce">
+<meta property="og:description" content="{{ description }}">
+<meta property="og:type" content="website">
 <title>{{ title }} — proxy-commerce</title>
 <style>
   body { font-family: system-ui, sans-serif; margin: 0; background: #f5f7fa; color: #333; }
@@ -94,8 +99,8 @@ _BASE_HTML = """<!DOCTYPE html>
 </html>"""
 
 
-def _render(title: str, body: str) -> str:
-    return render_template_string(_BASE_HTML, title=title, body=body)
+def _render(title: str, body: str, description: str = "proxy-commerce 관리 대시보드") -> str:
+    return render_template_string(_BASE_HTML, title=title, body=body, description=description)
 
 
 # ---------------------------------------------------------------------------

@@ -589,3 +589,33 @@ Phase 1~16 + lint fix(PR #34)까지 전체 머지 완료. 이제 **수입(해외
 - **NaverSmartStoreUploader**: OAuth2 client_credentials 토큰 자동 갱신, 가격 10원 단위 올림, 401 시 토큰 무효화 + 재시도
 - **UploadManager**: CollectionManager 연동, dry_run 모드, Google Sheets upload_history 이력 기록, 미업로드 SKU 필터링
 - **에러 핸들링**: 모든 API 호출 try/except, API 키 미설정 시 경고 로그 + graceful degradation
+
+---
+
+## Phase 91: 주문 분쟁/중재 시스템 + SEO/CTA 보강 (2026-04-04)
+
+### 최종 업데이트: 2026-04-04
+
+### 전체 진행률
+- 완료된 Phase: 1~91
+- 총 PR: #1~#55 (예상)
+- 현재 상태: Phase 91 구현 완료
+
+### 최근 완료
+| Phase | 내용 | PR |
+|---|---|---|
+| Phase 85~90 | 재고 트랜잭션, 고객 세그멘테이션, 상품 비교, 이메일 마케팅, 창고 관리, 세금 엔진 | #54 |
+| Phase 91 | 주문 분쟁/중재 시스템 + SEO/CTA 보강 | #55 |
+
+### Phase 91 구현 상세
+- `DisputeManager`: 분쟁 CRUD + 상태 전환 (opened→under_review→mediation→resolved/rejected)
+- `EvidenceCollector`: 증거 자료 첨부 (스크린샷, 사진, 대화 기록, 운송장) — 분쟁당 최대 10개
+- `MediationService`: 자동 판정 규칙 (소액 < 50,000원, 배송 +7일 초과, 사진 증거) + 수동 대기열
+- `RefundDecision`: 전액/부분/거절 환불 + 판매자 패널티 (분쟁률 5%→경고, 10%→판매 제한)
+- `DisputeAnalytics`: 분쟁률, 평균 해결 시간, 유형별/상태별/판매자별 통계
+- `SitemapGenerator`: XML sitemap 자동 생성 (상품/카테고리/정적 페이지), sitemap index 지원
+- `RobotsGenerator`: robots.txt 동적 생성 (/admin/, /api/ Disallow, /products/, /categories/ Allow)
+- `MetaGenerator` 보강: canonical URL 필드, Twitter Card 태그, 중국어 CTA "立即购买" 추가
+- 대시보드 웹 UI: `<meta name="description">`, `<meta name="robots">`, Open Graph 태그 적용
+- API Blueprint: `/api/v1/disputes` (POST /, GET /, GET /<id>, PUT /<id>/status, POST /<id>/evidence, GET /<id>/evidence, POST /<id>/mediate, GET /analytics)
+- 봇 커맨드: `/disputes`, `/dispute_create <order_id> <type> <reason>`, `/dispute_resolve <id> <decision>`

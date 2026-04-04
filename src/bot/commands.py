@@ -2546,3 +2546,60 @@ def cmd_customs(amount: str = '', origin: str = 'US') -> str:
     except Exception as exc:
         logger.error("cmd_customs 오류: %s", exc)
         return format_message('error', f'관세 계산 실패: {exc}')
+
+
+# ---------------------------------------------------------------------------
+# Phase 91: 분쟁 관리 명령어
+# ---------------------------------------------------------------------------
+
+def cmd_disputes() -> str:
+    """/disputes — 열린 분쟁 목록."""
+    try:
+        from ..disputes.dispute_manager import DisputeManager
+        mgr = DisputeManager()
+        disputes = mgr.list(status='opened')
+        if not disputes:
+            return format_message('info', '열린 분쟁이 없습니다.')
+        lines = [f"• [{d.dispute_id[:8]}] {d.dispute_type.value} | {d.order_id}" for d in disputes]
+        return format_message('info', f"열린 분쟁 {len(disputes)}건:\n" + "\n".join(lines))
+    except Exception as exc:
+        logger.error("cmd_disputes 오류: %s", exc)
+        return format_message('error', f'분쟁 목록 조회 실패: {exc}')
+
+
+def cmd_dispute_create(order_id: str = '', dispute_type: str = '', reason: str = '') -> str:
+    """/dispute_create <order_id> <type> <reason> — 분쟁 생성."""
+    order_id = order_id.strip()
+    dispute_type = dispute_type.strip()
+    reason = reason.strip()
+    if not order_id or not dispute_type or not reason:
+        return format_message('error', '사용법: /dispute_create <order_id> <type> <reason>')
+    try:
+        from ..disputes.dispute_manager import DisputeManager
+        mgr = DisputeManager()
+        dispute = mgr.create(
+            order_id=order_id,
+            customer_id='bot',
+            reason=reason,
+            dispute_type=dispute_type,
+        )
+        return format_message('info', f"분쟁 생성 완료: {dispute.dispute_id}")
+    except Exception as exc:
+        logger.error("cmd_dispute_create 오류: %s", exc)
+        return format_message('error', f'분쟁 생성 실패: {exc}')
+
+
+def cmd_dispute_resolve(dispute_id: str = '', decision: str = '') -> str:
+    """/dispute_resolve <dispute_id> <decision> — 분쟁 해결."""
+    dispute_id = dispute_id.strip()
+    decision = decision.strip()
+    if not dispute_id or not decision:
+        return format_message('error', '사용법: /dispute_resolve <dispute_id> <decision>')
+    try:
+        from ..disputes.dispute_manager import DisputeManager
+        mgr = DisputeManager()
+        dispute = mgr.transition(dispute_id, decision)
+        return format_message('info', f"분쟁 상태 변경: {dispute.dispute_id} → {dispute.status.value}")
+    except Exception as exc:
+        logger.error("cmd_dispute_resolve 오류: %s", exc)
+        return format_message('error', f'분쟁 해결 실패: {exc}')
