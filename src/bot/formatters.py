@@ -1021,6 +1021,27 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'order_split': lambda d: _format_order_split(d),
         'order_merge': lambda d: _format_order_merge(d),
         'sub_orders': lambda d: _format_sub_orders(d),
+        # Phase 85: 재고 입출고 이력
+        'stock_in': lambda d: _format_stock_in(d),
+        'stock_out': lambda d: _format_stock_out(d),
+        'stock_ledger': lambda d: _format_stock_ledger(d),
+        # Phase 86: 고객 세그멘테이션
+        'segments_list': lambda d: _format_segments_list(d),
+        'segment_stats': lambda d: _format_segment_stats(d),
+        # Phase 87: 상품 비교
+        'compare': lambda d: _format_compare(d),
+        'comparison_history': lambda d: _format_comparison_history(d),
+        # Phase 88: 이메일 마케팅
+        'campaigns_list': lambda d: _format_campaigns_list(d),
+        'campaign_stats': lambda d: _format_campaign_stats(d),
+        'campaign_send': lambda d: _format_campaign_send(d),
+        # Phase 89: 창고 관리
+        'warehouses': lambda d: _format_warehouses(d),
+        'warehouse_status': lambda d: _format_warehouse_status(d),
+        'picking_order': lambda d: _format_picking_order(d),
+        # Phase 90: 세금 계산
+        'tax_calc': lambda d: _format_tax_calc(d),
+        'customs': lambda d: _format_customs(d),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:
@@ -1991,4 +2012,201 @@ def _format_sub_orders(d: dict) -> str:
     for so in sub_orders:
         so_id = so if isinstance(so, str) else so.get('sub_order_id', '-')
         lines.append(f"• {so_id}")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Phase 85: 재고 입출고 이력 포매터
+# ---------------------------------------------------------------------------
+def _format_stock_in(d: dict) -> str:
+    """재고 입고 결과를 포맷."""
+    return (
+        f"📥 재고 입고 완료\n"
+        f"SKU: {d.get('sku', '-')}\n"
+        f"수량: {d.get('quantity', 0)}\n"
+        f"트랜잭션 ID: {d.get('transaction_id', '-')}"
+    )
+
+
+def _format_stock_out(d: dict) -> str:
+    """재고 출고 결과를 포맷."""
+    return (
+        f"📤 재고 출고 완료\n"
+        f"SKU: {d.get('sku', '-')}\n"
+        f"수량: {d.get('quantity', 0)}\n"
+        f"트랜잭션 ID: {d.get('transaction_id', '-')}"
+    )
+
+
+def _format_stock_ledger(d: dict) -> str:
+    """재고 원장을 포맷."""
+    return (
+        f"📒 재고 원장\n"
+        f"SKU: {d.get('sku', '-')}\n"
+        f"현재 수량: {d.get('quantity', 0)}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 86: 고객 세그멘테이션 포매터
+# ---------------------------------------------------------------------------
+def _format_segments_list(d) -> str:
+    """세그먼트 목록을 포맷."""
+    segments = d if isinstance(d, list) else d.get('segments', [])
+    lines = ["🎯 세그먼트 목록"]
+    for seg in segments:
+        if hasattr(seg, 'segment_id'):
+            lines.append(f"• [{seg.segment_id[:8]}] {seg.name} (고객: {seg.customer_count})")
+        else:
+            lines.append(f"• [{seg.get('segment_id', '-')[:8]}] {seg.get('name', '-')}")
+    if not segments:
+        lines.append("(세그먼트 없음)")
+    return "\n".join(lines)
+
+
+def _format_segment_stats(d: dict) -> str:
+    """세그먼트 통계를 포맷."""
+    return (
+        f"📊 세그먼트 통계\n"
+        f"세그먼트 ID: {d.get('segment_id', '-')}\n"
+        f"고객 수: {d.get('count', 0)}\n"
+        f"평균 주문가: {d.get('avg_order_value', 0):,.0f}원\n"
+        f"LTV: {d.get('ltv', 0):,.0f}원\n"
+        f"재구매율: {d.get('repurchase_rate', 0):.1%}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 87: 상품 비교 포매터
+# ---------------------------------------------------------------------------
+def _format_compare(d: dict) -> str:
+    """상품 비교 결과를 포맷."""
+    scores = d.get('scores', [])
+    lines = [f"🔍 상품 비교 (ID: {d.get('comparison_id', '-')[:8]})"]
+    for s in scores:
+        lines.append(f"• {s.get('product_id', '-')}: {s.get('score', 0):.4f}점")
+    return "\n".join(lines)
+
+
+def _format_comparison_history(d) -> str:
+    """비교 이력을 포맷."""
+    items = d if isinstance(d, list) else d.get('history', [])
+    lines = ["📋 비교 이력"]
+    for item in items[:10]:
+        if hasattr(item, 'comparison_id'):
+            lines.append(f"• {item.comparison_id[:8]}: {item.product_ids}")
+        else:
+            lines.append(f"• {item.get('comparison_id', '-')[:8]}: {item.get('product_ids', [])}")
+    if not items:
+        lines.append("(이력 없음)")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Phase 88: 이메일 마케팅 포매터
+# ---------------------------------------------------------------------------
+def _format_campaigns_list(d) -> str:
+    """캠페인 목록을 포맷."""
+    camps = d if isinstance(d, list) else d.get('campaigns', [])
+    lines = ["📧 이메일 캠페인 목록"]
+    for c in camps:
+        if hasattr(c, 'campaign_id'):
+            lines.append(f"• [{c.status}] {c.name}")
+        else:
+            lines.append(f"• [{c.get('status', '-')}] {c.get('name', '-')}")
+    if not camps:
+        lines.append("(캠페인 없음)")
+    return "\n".join(lines)
+
+
+def _format_campaign_stats(d: dict) -> str:
+    """캠페인 통계를 포맷."""
+    return (
+        f"📊 캠페인 통계\n"
+        f"캠페인 ID: {d.get('campaign_id', '-')}\n"
+        f"발송 수: {d.get('sent_count', 0)}\n"
+        f"오픈 수: {d.get('open_count', 0)} ({d.get('open_rate', 0):.1%})\n"
+        f"클릭 수: {d.get('click_count', 0)} ({d.get('click_rate', 0):.1%})"
+    )
+
+
+def _format_campaign_send(d: dict) -> str:
+    """캠페인 발송 결과를 포맷."""
+    success = d.get('success', False)
+    icon = "✅" if success else "❌"
+    return (
+        f"{icon} 캠페인 발송\n"
+        f"캠페인 ID: {d.get('campaign_id', '-')}\n"
+        f"발송 수: {d.get('sent_count', 0)}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 89: 창고 관리 포매터
+# ---------------------------------------------------------------------------
+def _format_warehouses(d) -> str:
+    """창고 목록을 포맷."""
+    whs = d if isinstance(d, list) else d.get('warehouses', [])
+    lines = ["🏭 창고 목록"]
+    for wh in whs:
+        if hasattr(wh, 'warehouse_id'):
+            status = "✅" if wh.is_active else "❌"
+            lines.append(f"• {status} {wh.name} (용량: {wh.capacity})")
+        else:
+            lines.append(f"• {wh.get('name', '-')} (용량: {wh.get('capacity', 0)})")
+    if not whs:
+        lines.append("(창고 없음)")
+    return "\n".join(lines)
+
+
+def _format_warehouse_status(d: dict) -> str:
+    """창고 현황을 포맷."""
+    return (
+        f"🏭 창고 현황\n"
+        f"이름: {d.get('name', '-')}\n"
+        f"용량: {d.get('capacity', 0)}\n"
+        f"현재 사용: {d.get('current_usage', 0)}\n"
+        f"구역 수: {d.get('zone_count', 0)}\n"
+        f"로케이션 수: {d.get('location_count', 0)}\n"
+        f"상태: {'활성' if d.get('is_active') else '비활성'}"
+    )
+
+
+def _format_picking_order(d: dict) -> str:
+    """피킹 주문을 포맷."""
+    items = d.get('items', [])
+    return (
+        f"🛒 피킹 주문 생성\n"
+        f"주문 ID: {d.get('order_id', '-')}\n"
+        f"피킹 ID: {d.get('pick_id', '-')}\n"
+        f"아이템 수: {len(items)}\n"
+        f"상태: {d.get('status', '-')}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 90: 세금 계산 포매터
+# ---------------------------------------------------------------------------
+def _format_tax_calc(d: dict) -> str:
+    """세금 계산 결과를 포맷."""
+    return (
+        f"🧾 세금 계산\n"
+        f"과세 금액: {d.get('amount', 0):,.0f}원\n"
+        f"세금 합계: {d.get('total_tax', 0):,.0f}원\n"
+        f"세금 포함 금액: {d.get('tax_inclusive_amount', 0):,.0f}원"
+    )
+
+
+def _format_customs(d: dict) -> str:
+    """관세 계산 결과를 포맷."""
+    if d.get('exempt'):
+        return f"✅ 소액 면세 적용 (금액: {d.get('amount', 0):,.0f}원)"
+    breakdown = d.get('breakdown', [])
+    lines = [
+        f"🛃 관세 계산",
+        f"과세 금액: {d.get('amount', 0):,.0f}원",
+        f"총 세금: {d.get('total_tax', 0):,.0f}원",
+    ]
+    for b in breakdown:
+        lines.append(f"  • {b.get('rule', '-')}: {b.get('tax', 0):,.0f}원 ({b.get('rate', 0):.1%})")
     return "\n".join(lines)

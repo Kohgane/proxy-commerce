@@ -71,6 +71,18 @@
 | Phase 76 | 파일 스토리지 추상화 (Local/S3/GCS mock, 청크 업로드, 쿼터) | #51 | 2026-04-03 |
 | Phase 77 | 이벤트 소싱 고도화 (스냅샷, OrderAggregate, 리플레이) | #51 | 2026-04-03 |
 | Phase 78 | 피처 플래그 고도화 (타겟팅, 점진적 롤아웃, A/B 변형, 오버라이드) | #51 | 2026-04-03 |
+| Phase 79 | 리뷰 분석 & 감성 분석 (키워드 빈도, 긍/부정 분류, 신고 관리) | #52 | 2026-04-03 |
+| Phase 80 | 배송비 계산기 (무게/구역 기반, 무료배송 임계값, 프로모션 배송) | #52 | 2026-04-03 |
+| Phase 81 | 알림 템플릿 엔진 (채널별 템플릿, 변수 치환, 미리보기, 버전 관리) | #52 | 2026-04-03 |
+| Phase 82 | 결제 복구 (실패 내역, 자동 재시도, 대안 결제 전략) | #52 | 2026-04-03 |
+| Phase 83 | 상품 추천 엔진 (협업 필터링, 콘텐츠 기반, 트렌딩 상품) | #52 | 2026-04-03 |
+| Phase 84 | 주문 분할/병합 (공급사별 분할, 동일 고객 병합, 이력 관리) | #52 | 2026-04-03 |
+| Phase 85 | 재고 입출고 이력 (트랜잭션 로그, 원장, 실사 조정, 유효성 검증) | #53 | 2026-04-03 |
+| Phase 86 | 고객 세그멘테이션 (구매빈도/지출/최근성/지역 규칙, 자동 배정, CSV 내보내기) | #53 | 2026-04-03 |
+| Phase 87 | 상품 비교 도구 (속성/가격/기능 매트릭스, 종합 점수, 비교 이력) | #53 | 2026-04-03 |
+| Phase 88 | 자동 이메일 마케팅 (캠페인 CRUD, 트리거, A/B 테스트, 구독 취소) | #53 | 2026-04-03 |
+| Phase 89 | 창고 관리 시스템 (구역/로케이션, 피킹 경로, 창고 간 이동, 공간 최적화) | #53 | 2026-04-03 |
+| Phase 90 | 세금 계산 엔진 (VAT/관세/개별소비세, 해외직구, 면세 조건, 세금 계산서) | #53 | 2026-04-03 |
 
 ## 🚧 진행 중 Phase
 
@@ -571,12 +583,13 @@
 - API Blueprint: `src/api/security_api.py` (`/api/v1/security`)
 - 봇 커맨드: `/security_audit`, `/security_sessions`, `/ip_block`
 
-## 🔮 향후 Phase 79+ 고려 사항
-- Phase 79: AI 기반 상품 추천 시스템 (협업 필터링, 콘텐츠 기반)
-- Phase 80: 실시간 재고 예측 (시계열 예측)
-- Phase 81: GraphQL API 게이트웨이
-- Phase 82: 분산 추적 (Distributed Tracing)
-- Phase 83: 마이크로서비스 분리
+## 🔮 향후 Phase 91+ 고려 사항
+- Phase 91: 실시간 채팅 고객 지원 (WebSocket 기반, 상담원 배정)
+- Phase 92: AI 기반 동적 가격 최적화 (경쟁가 + 수요 예측 통합)
+- Phase 93: 멀티벤더 마켓플레이스 (판매자 온보딩, 수수료 정산)
+- Phase 94: 구독 결제 시스템 (정기 결제, 플랜 업그레이드/다운그레이드)
+- Phase 95: 물류 최적화 (배송 경로 최적화, 라스트마일 추적)
+- Phase 96: 데이터 파이프라인 (ETL, 데이터 웨어하우스 연동)
 
 
 ## Phase 73: 고객 세그먼트 관리 ✅
@@ -644,3 +657,120 @@
 - `FlagEvaluatorAdvanced`: 컨텍스트 기반 고도화 평가 (타겟팅, 롤아웃, 오버라이드 우선순위)
 - API Blueprint: `src/api/feature_flags_api.py` (`/api/v1/feature-flags`)
 - 봇 커맨드: `/flags`, `/flag_toggle`, `/flag_evaluate`
+
+## Phase 79: 리뷰 분석 & 감성 분석 ✅
+- `ReviewAnalyzer`: 상품별 리뷰 분석 (평점 집계, 긍정 비율, 기간별 트렌드)
+- `SentimentAnalyzer`: 한국어 감성 분석 (키워드 기반 긍/부정/중립 분류)
+- `ReviewSummary`: 키워드 빈도 분석, 장단점 추출
+- `ReviewFlagManager`: 리뷰 신고 관리 (스팸/부적절 등)
+- `ReviewResponse`: 평점/감성 기반 응답 제안
+- API Blueprint: `src/api/review_analytics_api.py` (`/api/v1/review-analytics`)
+- 봇 커맨드: `/review_stats`, `/review_sentiment`
+
+## Phase 80: 배송비 계산기 ✅
+- `WeightBasedRule`: 무게 기반 배송비 (구간별 요율)
+- `PriceBasedRule`: 금액 기반 무료배송 임계값
+- `ShippingCalculator`: 통합 배송비 계산 (무게 + 구역 + 금액)
+- `ZoneManager`: 배송 구역 관리 (국내/해외)
+- `FreeShippingPromotion`: 무료배송 프로모션 조건
+- `ShippingEstimator`: 배송비 예상 계산
+- API Blueprint: `src/api/shipping_calculator_api.py` (`/api/v1/shipping-calculator`)
+- 봇 커맨드: `/shipping_calc`, `/shipping_zones`
+
+## Phase 81: 알림 템플릿 엔진 ✅
+- `NotificationTemplate` 데이터클래스: 채널별 템플릿, 변수 치환, 버전 관리
+- `TemplateManager`: 템플릿 CRUD + 버전 관리
+- `TemplateRenderer`: 변수 치환 + 미리보기 렌더링
+- `ChannelAdapter` ABC: 채널별 전송 어댑터 (Telegram/Email/Slack)
+- API Blueprint: `src/api/notification_templates_api.py` (`/api/v1/notification-templates`)
+- 봇 커맨드: `/templates_list`, `/template_preview`
+
+## Phase 82: 결제 복구 ✅
+- `FailedPayment` 데이터클래스: 실패 내역, 오류 코드, 재시도 횟수
+- `PaymentRecoveryManager`: 실패 내역 관리 + 재시도 전략
+- `RetryStrategy` ABC + 구현체 (ExponentialBackoff, FixedInterval)
+- `AlternativePaymentSuggester`: 대안 결제 수단 제안
+- API Blueprint: `src/api/payment_recovery_api.py` (`/api/v1/payment-recovery`)
+- 봇 커맨드: `/payment_failures`, `/payment_retry`
+
+## Phase 83: 상품 추천 엔진 ✅
+- `RecommendationEngine`: 통합 추천 엔진 (협업 필터링 + 콘텐츠 기반)
+- `CollaborativeFilter`: 유사 사용자 기반 추천
+- `ContentBasedFilter`: 상품 속성 기반 추천
+- `TrendingEngine`: 트렌딩 상품 계산 (조회수/구매수 가중치)
+- API Blueprint: `src/api/recommendation_api.py` (`/api/v1/recommendations`)
+- 봇 커맨드: `/recommendations`, `/trending_products`
+
+## Phase 84: 주문 분할/병합 ✅
+- `OrderSplitter`: 주문 분할 (공급사별/창고별/카테고리별 전략)
+- `OrderMerger`: 주문 병합 (동일 고객 + 미처리 상태)
+- `SplitHistory`: 분할/병합 이력 관리
+- `SubOrder` 데이터클래스: 하위 주문 정보
+- API Blueprint: `src/api/order_management_api.py` (`/api/v1/order-management`)
+- 봇 커맨드: `/order_split`, `/order_merge`, `/sub_orders`
+
+## Phase 85: 재고 입출고 이력 관리 ✅
+- `InventoryTransaction` 데이터클래스: transaction_id, sku, type, quantity, reason, timestamp, user_id, reference_id
+- `TransactionManager`: 입출고 기록 생성/조회/통계
+- `StockLedger`: SKU별 현재 수량 계산, 특정 시점 재고 스냅샷
+- `TransactionReport`: 기간별 입출고 요약, SKU별 이동 이력, 불일치 감지
+- `StockAdjustment`: 재고 실사 조정 (차이 자동 계산, 조정 사유 기록)
+- `TransactionValidator`: 입출고 유효성 검증 (음수 재고 방지)
+- API Blueprint: `src/api/inventory_transactions_api.py` (`/api/v1/inventory-transactions`)
+- 봇 커맨드: `/stock_in`, `/stock_out`, `/stock_ledger`
+
+## Phase 86: 고객 세그멘테이션 ✅
+- `Segment` 데이터클래스: segment_id, name, description, rules, customer_count, created_at
+- `SegmentManager`: 세그먼트 CRUD
+- `SegmentRule` ABC + 구현체: PurchaseFrequencyRule, SpendingRule, RecencyRule, GeographicRule
+- `SegmentAnalyzer`: 세그먼트별 통계 (평균 주문가, 재구매율, LTV)
+- `SegmentExporter`: 세그먼트별 고객 목록 CSV 내보내기
+- `AutoSegmenter`: 규칙 기반 자동 세그먼트 배정
+- API Blueprint: `src/api/customer_segmentation_api.py` (`/api/v1/segments`)
+- 봇 커맨드: `/segments_list`, `/segment_stats`
+
+## Phase 87: 상품 비교 도구 ✅
+- `ComparisonSet` 데이터클래스: comparison_id, product_ids, created_at, user_id
+- `ComparisonEngine`: 상품 비교 통합 엔진
+- `AttributeComparer`: 속성별 비교 (가격, 무게, 카테고리, 평점)
+- `PriceComparer`: 가격 비교 (원가, 판매가, 마진율)
+- `FeatureMatrix`: 기능/스펙 비교 매트릭스 생성
+- `ComparisonScore`: 종합 비교 점수 계산 (가중치 기반)
+- `ComparisonHistory`: 비교 이력 저장/조회
+- API Blueprint: `src/api/product_comparison_api.py` (`/api/v1/product-comparison`)
+- 봇 커맨드: `/compare`, `/comparison_history`
+
+## Phase 88: 자동 이메일 마케팅 ✅
+- `Campaign` 데이터클래스: campaign_id, name, subject, body_template, segment_id, status, sent_count, open_count, click_count
+- `CampaignManager`: 이메일 캠페인 CRUD + 스케줄링
+- `EmailTemplateRenderer`: 이메일 본문 렌더링 (변수 치환)
+- `CampaignTrigger` ABC + 구현체: ScheduleTrigger, EventTrigger, SegmentTrigger
+- `CampaignAnalytics`: 오픈율, 클릭률 집계
+- `UnsubscribeManager`: 수신 거부 관리
+- `ABTestCampaign`: 제목/본문 A/B 테스트
+- API Blueprint: `src/api/email_marketing_api.py` (`/api/v1/email-campaigns`)
+- 봇 커맨드: `/campaigns_list`, `/campaign_stats`, `/campaign_send`
+
+## Phase 89: 창고 관리 시스템 ✅
+- `Warehouse` 데이터클래스: warehouse_id, name, address, capacity, current_usage, zones, is_active
+- `StorageZone`: 창고 내 구역 관리 (일반/냉장/냉동/위험물)
+- `StorageLocation`: 로케이션 관리 (통로-행-층 좌표)
+- `WarehouseManager`: 창고 CRUD + 위치 관리
+- `PickingOrder`: 피킹 주문 생성 + 최적 경로 계산
+- `WarehouseTransfer`: 창고 간 재고 이동 (출고-이동중-입고)
+- `SpaceOptimizer`: 적재율 계산 + 공간 최적화 제안
+- `WarehouseReport`: 창고별 재고 현황, 적재율 리포트
+- API Blueprint: `src/api/warehouse_api.py` (`/api/v1/warehouses`)
+- 봇 커맨드: `/warehouses`, `/warehouse_status`, `/picking_order`
+
+## Phase 90: 세금 계산 엔진 ✅
+- `TaxRate` 데이터클래스: country, region, category, rate, name, is_inclusive
+- `TaxCalculator`: 세금 계산 통합 엔진
+- `TaxRule` ABC + 구현체: VATRule (한국 10%), CustomsDutyRule (미국/일본/중국), ExciseTaxRule
+- `TaxExemption`: 면세 조건 관리 (면세 상품, 소액 면세 한도 15만원)
+- `TaxBracket`: 금액 구간별 세율 적용
+- `CrossBorderTax`: 해외 직구 세금 (관세+부가세+개별소비세 통합)
+- `TaxReport`: 세금 리포트 (기간별 납부 세액 집계, 카테고리별)
+- `TaxInvoice`: 세금 계산서 데이터 생성
+- API Blueprint: `src/api/tax_engine_api.py` (`/api/v1/tax`)
+- 봇 커맨드: `/tax_calc`, `/customs`

@@ -2292,3 +2292,257 @@ def cmd_sub_orders(order_id: str = '') -> str:
     except Exception as exc:
         logger.error("cmd_sub_orders 오류: %s", exc)
         return format_message('error', f'하위 주문 조회 실패: {exc}')
+
+
+# ---------------------------------------------------------------------------
+# Phase 85: 재고 입출고 이력 명령어
+# ---------------------------------------------------------------------------
+
+def cmd_stock_in(sku: str = '', qty: str = '') -> str:
+    """/stock_in <sku> <qty> — 재고 입고 처리."""
+    sku = sku.strip()
+    qty_str = qty.strip()
+    if not sku or not qty_str:
+        return format_message('error', '사용법: /stock_in <sku> <qty>')
+    try:
+        from ..inventory_transactions import TransactionManager
+        mgr = TransactionManager()
+        tx = mgr.create(sku=sku, tx_type='inbound', quantity=int(qty_str), reason='manual_stock_in')
+        return format_message('stock_in', {'transaction_id': tx.transaction_id, 'sku': tx.sku, 'quantity': tx.quantity})
+    except Exception as exc:
+        logger.error("cmd_stock_in 오류: %s", exc)
+        return format_message('error', f'재고 입고 실패: {exc}')
+
+
+def cmd_stock_out(sku: str = '', qty: str = '') -> str:
+    """/stock_out <sku> <qty> — 재고 출고 처리."""
+    sku = sku.strip()
+    qty_str = qty.strip()
+    if not sku or not qty_str:
+        return format_message('error', '사용법: /stock_out <sku> <qty>')
+    try:
+        from ..inventory_transactions import TransactionManager
+        mgr = TransactionManager()
+        tx = mgr.create(sku=sku, tx_type='outbound', quantity=int(qty_str), reason='manual_stock_out')
+        return format_message('stock_out', {'transaction_id': tx.transaction_id, 'sku': tx.sku, 'quantity': tx.quantity})
+    except Exception as exc:
+        logger.error("cmd_stock_out 오류: %s", exc)
+        return format_message('error', f'재고 출고 실패: {exc}')
+
+
+def cmd_stock_ledger(sku: str = '') -> str:
+    """/stock_ledger <sku> — SKU 재고 원장 조회."""
+    sku = sku.strip()
+    if not sku:
+        return format_message('error', '사용법: /stock_ledger <sku>')
+    try:
+        from ..inventory_transactions import TransactionManager, StockLedger
+        mgr = TransactionManager()
+        ledger = StockLedger(mgr)
+        result = ledger.snapshot(sku)
+        return format_message('stock_ledger', result)
+    except Exception as exc:
+        logger.error("cmd_stock_ledger 오류: %s", exc)
+        return format_message('error', f'재고 원장 조회 실패: {exc}')
+
+
+# ---------------------------------------------------------------------------
+# Phase 86: 고객 세그멘테이션 명령어
+# ---------------------------------------------------------------------------
+
+def cmd_segments_list() -> str:
+    """/segments_list — 세그먼트 목록 조회."""
+    try:
+        from ..customer_segmentation import SegmentManager
+        mgr = SegmentManager()
+        segments = mgr.list()
+        return format_message('segments_list', segments)
+    except Exception as exc:
+        logger.error("cmd_segments_list 오류: %s", exc)
+        return format_message('error', f'세그먼트 목록 조회 실패: {exc}')
+
+
+def cmd_segment_stats(segment_id: str = '') -> str:
+    """/segment_stats <segment_id> — 세그먼트 통계 조회."""
+    segment_id = segment_id.strip()
+    if not segment_id:
+        return format_message('error', '사용법: /segment_stats <segment_id>')
+    try:
+        from ..customer_segmentation import SegmentManager, SegmentAnalyzer
+        mgr = SegmentManager()
+        seg = mgr.get(segment_id)
+        if not seg:
+            return format_message('error', f'세그먼트 없음: {segment_id}')
+        analyzer = SegmentAnalyzer()
+        result = analyzer.analyze(segment_id, [])
+        return format_message('segment_stats', result)
+    except Exception as exc:
+        logger.error("cmd_segment_stats 오류: %s", exc)
+        return format_message('error', f'세그먼트 통계 조회 실패: {exc}')
+
+
+# ---------------------------------------------------------------------------
+# Phase 87: 상품 비교 명령어
+# ---------------------------------------------------------------------------
+
+def cmd_compare(product_id1: str = '', product_id2: str = '') -> str:
+    """/compare <product_id1> <product_id2> — 상품 비교."""
+    product_id1 = product_id1.strip()
+    product_id2 = product_id2.strip()
+    if not product_id1 or not product_id2:
+        return format_message('error', '사용법: /compare <product_id1> <product_id2>')
+    try:
+        from ..product_comparison import ComparisonEngine
+        engine = ComparisonEngine()
+        products = [{'product_id': product_id1}, {'product_id': product_id2}]
+        result = engine.compare(products)
+        return format_message('compare', result)
+    except Exception as exc:
+        logger.error("cmd_compare 오류: %s", exc)
+        return format_message('error', f'상품 비교 실패: {exc}')
+
+
+def cmd_comparison_history() -> str:
+    """/comparison_history — 비교 이력 조회."""
+    try:
+        from ..product_comparison import ComparisonHistory
+        history = ComparisonHistory()
+        result = history.list()
+        return format_message('comparison_history', result)
+    except Exception as exc:
+        logger.error("cmd_comparison_history 오류: %s", exc)
+        return format_message('error', f'비교 이력 조회 실패: {exc}')
+
+
+# ---------------------------------------------------------------------------
+# Phase 88: 이메일 마케팅 명령어
+# ---------------------------------------------------------------------------
+
+def cmd_campaigns_list() -> str:
+    """/campaigns_list — 이메일 캠페인 목록 조회."""
+    try:
+        from ..email_marketing import CampaignManager
+        mgr = CampaignManager()
+        camps = mgr.list()
+        return format_message('campaigns_list', camps)
+    except Exception as exc:
+        logger.error("cmd_campaigns_list 오류: %s", exc)
+        return format_message('error', f'캠페인 목록 조회 실패: {exc}')
+
+
+def cmd_campaign_stats(campaign_id: str = '') -> str:
+    """/campaign_stats <campaign_id> — 캠페인 통계 조회."""
+    campaign_id = campaign_id.strip()
+    if not campaign_id:
+        return format_message('error', '사용법: /campaign_stats <campaign_id>')
+    try:
+        from ..email_marketing import CampaignManager, CampaignAnalytics
+        mgr = CampaignManager()
+        c = mgr.get(campaign_id)
+        if not c:
+            return format_message('error', f'캠페인 없음: {campaign_id}')
+        analytics = CampaignAnalytics()
+        result = analytics.stats(c)
+        return format_message('campaign_stats', result)
+    except Exception as exc:
+        logger.error("cmd_campaign_stats 오류: %s", exc)
+        return format_message('error', f'캠페인 통계 조회 실패: {exc}')
+
+
+def cmd_campaign_send(campaign_id: str = '') -> str:
+    """/campaign_send <campaign_id> — 캠페인 발송."""
+    campaign_id = campaign_id.strip()
+    if not campaign_id:
+        return format_message('error', '사용법: /campaign_send <campaign_id>')
+    try:
+        from ..email_marketing import CampaignManager
+        mgr = CampaignManager()
+        result = mgr.send(campaign_id)
+        return format_message('campaign_send', result)
+    except Exception as exc:
+        logger.error("cmd_campaign_send 오류: %s", exc)
+        return format_message('error', f'캠페인 발송 실패: {exc}')
+
+
+# ---------------------------------------------------------------------------
+# Phase 89: 창고 관리 명령어
+# ---------------------------------------------------------------------------
+
+def cmd_warehouses() -> str:
+    """/warehouses — 창고 목록 조회."""
+    try:
+        from ..warehouse import WarehouseManager
+        mgr = WarehouseManager()
+        whs = mgr.list()
+        return format_message('warehouses', whs)
+    except Exception as exc:
+        logger.error("cmd_warehouses 오류: %s", exc)
+        return format_message('error', f'창고 목록 조회 실패: {exc}')
+
+
+def cmd_warehouse_status(warehouse_id: str = '') -> str:
+    """/warehouse_status <id> — 창고 현황 조회."""
+    warehouse_id = warehouse_id.strip()
+    if not warehouse_id:
+        return format_message('error', '사용법: /warehouse_status <id>')
+    try:
+        from ..warehouse import WarehouseManager, WarehouseReport
+        mgr = WarehouseManager()
+        wh = mgr.get(warehouse_id)
+        if not wh:
+            return format_message('error', f'창고 없음: {warehouse_id}')
+        report = WarehouseReport()
+        result = report.status(wh)
+        return format_message('warehouse_status', result)
+    except Exception as exc:
+        logger.error("cmd_warehouse_status 오류: %s", exc)
+        return format_message('error', f'창고 현황 조회 실패: {exc}')
+
+
+def cmd_picking_order(order_id: str = '') -> str:
+    """/picking_order <order_id> — 피킹 주문 생성."""
+    order_id = order_id.strip()
+    if not order_id:
+        return format_message('error', '사용법: /picking_order <order_id>')
+    try:
+        from ..warehouse import PickingOrder
+        picking = PickingOrder()
+        result = picking.create(order_id=order_id, items=[])
+        return format_message('picking_order', result)
+    except Exception as exc:
+        logger.error("cmd_picking_order 오류: %s", exc)
+        return format_message('error', f'피킹 주문 생성 실패: {exc}')
+
+
+# ---------------------------------------------------------------------------
+# Phase 90: 세금 계산 명령어
+# ---------------------------------------------------------------------------
+
+def cmd_tax_calc(amount: str = '', country: str = 'KR') -> str:
+    """/tax_calc <amount> <country> — 세금 계산."""
+    amount = amount.strip()
+    if not amount:
+        return format_message('error', '사용법: /tax_calc <amount> <country>')
+    try:
+        from ..tax_engine import TaxCalculator
+        calc = TaxCalculator()
+        result = calc.calculate(float(amount), context={'country': country.strip()})
+        return format_message('tax_calc', result)
+    except Exception as exc:
+        logger.error("cmd_tax_calc 오류: %s", exc)
+        return format_message('error', f'세금 계산 실패: {exc}')
+
+
+def cmd_customs(amount: str = '', origin: str = 'US') -> str:
+    """/customs <amount> <origin> — 관세 계산."""
+    amount = amount.strip()
+    if not amount:
+        return format_message('error', '사용법: /customs <amount> <origin>')
+    try:
+        from ..tax_engine import CrossBorderTax
+        cb = CrossBorderTax()
+        result = cb.calculate(float(amount), origin_country=origin.strip())
+        return format_message('customs', result)
+    except Exception as exc:
+        logger.error("cmd_customs 오류: %s", exc)
+        return format_message('error', f'관세 계산 실패: {exc}')

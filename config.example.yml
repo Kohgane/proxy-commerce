@@ -781,3 +781,124 @@ feature_flags_advanced:
   flag_cache_ttl_seconds: 60
   default_rollout_percentage: 100
   history_retention_days: 90
+
+# === Phase 79: 리뷰 분석 ===
+review_analytics:
+  sentiment_positive_keywords:
+    - 좋아요
+    - 최고
+    - 만족
+    - 추천
+  sentiment_negative_keywords:
+    - 별로
+    - 최악
+    - 실망
+    - 환불
+
+# === Phase 80: 배송비 계산기 ===
+shipping_calculator:
+  default_carrier: CJ
+  free_shipping_threshold: 50000
+  zones:
+    - domestic
+    - international
+
+# === Phase 81: 알림 템플릿 엔진 ===
+notification_templates:
+  max_versions: 10
+  default_channel: telegram
+  supported_channels:
+    - telegram
+    - email
+    - slack
+
+# === Phase 82: 결제 복구 ===
+payment_recovery:
+  max_retry_attempts: 3
+  retry_interval_minutes: 60
+  recovery_strategies:
+    - retry
+    - alternative_payment
+    - notify_customer
+
+# === Phase 83: 상품 추천 ===
+recommendation:
+  max_recommendations: 10
+  algorithm: collaborative_filtering
+  trending_window_days: 7
+
+# === Phase 84: 주문 분할/병합 ===
+order_management:
+  max_split_parts: 10
+  merge_same_customer_only: true
+
+# === Phase 85: 재고 입출고 이력 ===
+inventory_transactions:
+  transaction_types:
+    - inbound
+    - outbound
+    - adjustment
+    - transfer
+  history_retention_days: 365
+  negative_stock_allowed: false
+
+# === Phase 86: 고객 세그멘테이션 ===
+customer_segmentation:
+  auto_rebuild_interval_hours: 24
+  max_segments: 100
+  builtin_segments:
+    - VIP
+    - 신규
+    - 이탈위험
+    - 대량구매
+    - 재구매고객
+  recency_thresholds:
+    active_days: 30
+    dormant_days: 90
+
+# === Phase 87: 상품 비교 도구 ===
+product_comparison:
+  max_products_per_comparison: 10
+  history_retention_days: 30
+  default_comparison_attributes:
+    - price
+    - weight
+    - rating
+    - category
+
+# === Phase 88: 이메일 마케팅 ===
+email_marketing:
+  max_campaigns: 1000
+  default_from_email: noreply@example.com
+  unsubscribe_page_url: /unsubscribe
+  ab_test_min_recipients: 100
+  tracking_enabled: true
+
+# === Phase 89: 창고 관리 시스템 ===
+warehouse:
+  max_warehouses: 50
+  zone_types:
+    - general
+    - refrigerated
+    - frozen
+    - hazardous
+  picking_strategy: aisle_first
+  transfer_statuses:
+    - pending
+    - in_transit
+    - received
+
+# === Phase 90: 세금 계산 엔진 ===
+tax_engine:
+  default_vat_rate: 0.10
+  de_minimis_limit_krw: 150000
+  customs_duty_rates:
+    US: 0.08
+    JP: 0.05
+    CN: 0.15
+  excise_tax_rate: 0.05
+  supported_countries:
+    - KR
+    - US
+    - JP
+    - CN
