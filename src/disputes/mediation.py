@@ -116,7 +116,7 @@ class MediationService:
     ):
         """자동 판정 규칙을 순서대로 적용한다."""
         # 규칙 1: 소액 분쟁 → 자동 환불 승인
-        if amount > 0 and amount < SMALL_AMOUNT_THRESHOLD:
+        if 0 < amount < SMALL_AMOUNT_THRESHOLD:
             return (
                 MediationResult.FULL_REFUND,
                 f"소액 분쟁 자동 승인 (금액: {amount:,.0f}원 < {SMALL_AMOUNT_THRESHOLD:,}원)",

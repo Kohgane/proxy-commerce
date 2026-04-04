@@ -40,7 +40,7 @@ class TestSitemapGeneratorBasic:
 
     def test_contains_static_pages(self, gen):
         result = gen.generate()
-        assert "https://example.com/" in result
+        assert "<loc>https://example.com/</loc>" in result
 
     def test_contains_product_urls(self, gen):
         result = gen.generate(products=SAMPLE_PRODUCTS)
@@ -66,7 +66,7 @@ class TestSitemapGeneratorBasic:
     def test_base_url_respected(self):
         gen2 = SitemapGenerator(base_url="https://myshop.kr")
         result = gen2.generate()
-        assert "https://myshop.kr/" in result
+        assert "<loc>https://myshop.kr/</loc>" in result
 
     def test_no_products_or_categories(self, gen):
         result = gen.generate(products=None, categories=None)

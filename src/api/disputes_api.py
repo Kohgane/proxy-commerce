@@ -66,7 +66,8 @@ def create_dispute():
         )
         return jsonify(dispute.to_dict()), 201
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        logger.warning("분쟁 생성 실패: %s", exc)
+        return jsonify({"error": "유효하지 않은 분쟁 유형입니다."}), 400
 
 
 @disputes_bp.get("/")
@@ -101,10 +102,11 @@ def update_status(dispute_id: str):
     try:
         dispute = mgr.transition(dispute_id, new_status, notes=data.get("notes", ""))
         return jsonify(dispute.to_dict())
-    except KeyError as exc:
-        return jsonify({"error": str(exc)}), 404
+    except KeyError:
+        return jsonify({"error": "분쟁을 찾을 수 없습니다."}), 404
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        logger.warning("상태 전환 실패: %s", exc)
+        return jsonify({"error": "허용되지 않은 상태 전환입니다."}), 400
 
 
 @disputes_bp.post("/<dispute_id>/evidence")
@@ -132,7 +134,8 @@ def add_evidence(dispute_id: str):
         mgr.add_evidence(dispute_id, evidence.evidence_id)
         return jsonify(evidence.to_dict()), 201
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        logger.warning("증거 추가 실패: %s", exc)
+        return jsonify({"error": "유효하지 않은 증거 유형이거나 최대 개수를 초과했습니다."}), 400
 
 
 @disputes_bp.get("/<dispute_id>/evidence")
