@@ -100,7 +100,7 @@ class MobileAuthManager:
         try:
             payload = self._jwt.decode_token(refresh_token_str)
         except ValueError as exc:
-            raise ValueError(f'Invalid refresh token: {exc}') from exc
+            raise ValueError('Invalid refresh token') from exc
         if payload.get('type') != 'refresh':
             raise ValueError('Token is not a refresh token')
         user_id = payload.get('sub', '')

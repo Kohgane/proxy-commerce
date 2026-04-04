@@ -252,8 +252,8 @@ def mobile_create_order():
     coupon_code = data.get('coupon_code')
     try:
         order = _orders().create_order(user_id, shipping_address, payment_method, coupon_code)
-    except ValueError as exc:
-        return jsonify(_fmt().error('INVALID_REQUEST', str(exc))), 400
+    except ValueError:
+        return jsonify(_fmt().error('INVALID_REQUEST', 'Cart is empty or invalid')), 400
     return jsonify(_fmt().success(order)), 201
 
 

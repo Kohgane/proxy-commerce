@@ -70,9 +70,9 @@ class MobileUserService:
 
     def delete_address(self, user_id: str, address_id: str) -> bool:
         addresses = self._addresses.get(user_id, [])
-        for addr in addresses:
+        for i, addr in enumerate(addresses):
             if addr['address_id'] == address_id:
-                addresses.remove(addr)
+                del addresses[i]
                 return True
         return False
 
