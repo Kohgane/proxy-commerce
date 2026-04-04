@@ -76,6 +76,8 @@ def _fmt():
 
 
 def _get_user_id() -> str | None:
+    # NOTE: X-User-Id is used for simplicity in this demo API.
+    # Production implementations should validate the JWT Bearer token instead.
     return request.headers.get('X-User-Id')
 
 

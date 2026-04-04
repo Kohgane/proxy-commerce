@@ -22,10 +22,7 @@ class MobileResponseFormatter:
         resp: dict = {'success': True, 'data': data, 'api_version': 'v1'}
         if message:
             resp['message'] = message
-        if meta:
-            resp['meta'] = meta
-        else:
-            resp['meta'] = {}
+        resp['meta'] = meta or {}
         return resp
 
     @staticmethod
