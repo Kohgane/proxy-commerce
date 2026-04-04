@@ -45,7 +45,7 @@ class MobileProductService:
             items = [p for p in items if p['category'] == category]
         if search:
             s = search.lower()
-            items = [p for p in items if s in p['name'].lower() or s in p['description'].lower()]
+            items = [p for p in items if s in p['name'].lower() or s in p.get('description', '').lower()]
 
         offset = 0
         if cursor:

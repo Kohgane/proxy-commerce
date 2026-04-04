@@ -99,11 +99,11 @@ def mobile_login():
         )
         result = _auth().login(email, password, device_info)
         return jsonify(_fmt().success(result, 'Login successful'))
-    except ValueError as exc:
-        return jsonify(_fmt().error('AUTH_FAILED', str(exc))), 401
+    except ValueError:
+        return jsonify(_fmt().error('AUTH_FAILED', 'Invalid credentials')), 401
     except Exception as exc:
         logger.error("mobile_login error: %s", exc)
-        return jsonify(_fmt().error('SERVER_ERROR', str(exc), status_code=500)), 500
+        return jsonify(_fmt().error('SERVER_ERROR', 'An internal error occurred', status_code=500)), 500
 
 
 @mobile_api_bp.post('/auth/refresh')
@@ -116,8 +116,8 @@ def mobile_refresh():
     try:
         result = _auth().refresh_token(refresh_token, device_id)
         return jsonify(_fmt().success(result))
-    except ValueError as exc:
-        return jsonify(_fmt().error('TOKEN_INVALID', str(exc))), 401
+    except ValueError:
+        return jsonify(_fmt().error('TOKEN_INVALID', 'Invalid or expired refresh token')), 401
 
 
 @mobile_api_bp.post('/auth/device')
@@ -250,7 +250,10 @@ def mobile_create_order():
     shipping_address = data.get('shipping_address', {})
     payment_method = data.get('payment_method', 'card')
     coupon_code = data.get('coupon_code')
-    order = _orders().create_order(user_id, shipping_address, payment_method, coupon_code)
+    try:
+        order = _orders().create_order(user_id, shipping_address, payment_method, coupon_code)
+    except ValueError as exc:
+        return jsonify(_fmt().error('INVALID_REQUEST', str(exc))), 400
     return jsonify(_fmt().success(order)), 201
 
 

@@ -15,7 +15,7 @@ class MobileUserService:
     def __init__(self):
         self._profiles: dict[str, dict] = {}
         self._addresses: dict[str, list[dict]] = {}
-        self._wishlists: dict[str, list[str]] = {}
+        self._wishlists: dict[str, list[dict]] = {}
         self._notification_settings: dict[str, dict] = {}
 
     def _get_profile(self, user_id: str) -> dict:
@@ -77,20 +77,20 @@ class MobileUserService:
         return False
 
     def get_wishlist(self, user_id: str) -> list[dict]:
-        skus = self._wishlists.get(user_id, [])
-        return [{'sku': sku, 'added_at': time.time()} for sku in skus]
+        return list(self._wishlists.get(user_id, []))
 
     def add_to_wishlist(self, user_id: str, sku: str) -> bool:
         wl = self._wishlists.setdefault(user_id, [])
-        if sku not in wl:
-            wl.append(sku)
+        if not any(item['sku'] == sku for item in wl):
+            wl.append({'sku': sku, 'added_at': time.time()})
         return True
 
     def remove_from_wishlist(self, user_id: str, sku: str) -> bool:
         wl = self._wishlists.get(user_id, [])
-        if sku in wl:
-            wl.remove(sku)
-            return True
+        for i, item in enumerate(wl):
+            if item['sku'] == sku:
+                del wl[i]
+                return True
         return False
 
     def get_notification_settings(self, user_id: str) -> dict:

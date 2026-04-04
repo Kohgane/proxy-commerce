@@ -43,7 +43,7 @@ class MobileAuthManager:
         self._user_sessions: dict[str, list[str]] = {}
         from ..auth.jwt_handler import JWTHandler
         self._jwt = JWTHandler()
-        # simple in-memory user store for demo
+        # simple in-memory user store for demo — passwords are plain-text only in this demo fixture
         self._users: dict[str, dict] = {
             'user_001': {'email': 'user@example.com', 'password': 'pass123', 'name': 'Test User'},
         }

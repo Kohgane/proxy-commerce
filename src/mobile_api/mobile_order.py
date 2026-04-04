@@ -51,10 +51,10 @@ class MobileOrderService:
 
     def update_cart_item(self, user_id: str, item_id: str, quantity: int) -> Optional[dict]:
         cart = self._carts.get(user_id, [])
-        for item in cart:
+        for i, item in enumerate(cart):
             if item.item_id == item_id:
                 if quantity <= 0:
-                    cart.remove(item)
+                    del cart[i]
                     return None
                 item.quantity = quantity
                 return {'item_id': item.item_id, 'sku': item.sku, 'quantity': item.quantity, 'price': item.price}
@@ -62,15 +62,17 @@ class MobileOrderService:
 
     def remove_from_cart(self, user_id: str, item_id: str) -> bool:
         cart = self._carts.get(user_id, [])
-        for item in cart:
+        for i, item in enumerate(cart):
             if item.item_id == item_id:
-                cart.remove(item)
+                del cart[i]
                 return True
         return False
 
     def create_order(self, user_id: str, shipping_address: dict, payment_method: str,
                      coupon_code: Optional[str] = None) -> dict:
         cart = self._carts.get(user_id, [])
+        if not cart:
+            raise ValueError('Cart is empty')
         items_snapshot = [
             {'sku': i.sku, 'quantity': i.quantity, 'price': i.price}
             for i in cart
