@@ -163,7 +163,7 @@
 - 관련 코드: `.github/workflows/dependency_audit.yml`, `.github/workflows/release.yml`, `scripts/generate_changelog.py`, `scripts/smoke_test.py`
 
 ## 🔮 향후 고려 사항
-- Phase 94: 글로벌 확장 추가 (다국어 상품 페이지, 해외 결제) ← Phase 93으로 구현 완료
+- Phase 93으로 구현 완료: 글로벌 확장 (다국어 상품 페이지, 해외 결제, 수입/수출)
 - Phase 98: AI 기반 상품 추천 시스템
 - Phase 99: 모바일 앱 API (React Native/Flutter)
 

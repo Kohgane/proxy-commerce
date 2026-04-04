@@ -80,8 +80,8 @@ class I18nManager:
             fallback['_fallback'] = True
             fallback['_requested_locale'] = locale
             return fallback
-        # 어떤 로케일이든 첫 번째 반환
-        first_locale = next(iter(sku_data))
+        # 어떤 로케일이든 첫 번째 반환 (정렬하여 결정적 순서 보장)
+        first_locale = min(sku_data.keys())
         fallback = dict(sku_data[first_locale])
         fallback['_fallback'] = True
         fallback['_requested_locale'] = locale

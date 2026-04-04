@@ -123,8 +123,8 @@ def set_product_content(sku: str):
     try:
         content = i18n_mgr.set_content(sku, locale, title, description, features)
         return jsonify(content), 201
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+    except ValueError:
+        return jsonify({"error": "지원하지 않는 로케일입니다. 지원 로케일: ko, en, ja, zh"}), 400
 
 
 # ---------------------------------------------------------------------------
