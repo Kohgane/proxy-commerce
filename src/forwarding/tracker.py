@@ -108,6 +108,7 @@ class ShipmentTracker:
                 try:
                     ts = datetime.fromisoformat(ev['timestamp'])
                 except (ValueError, KeyError):
+                    logger.warning("추적 이벤트 타임스탬프 파싱 실패, 현재 시각으로 대체")
                     ts = datetime.now(timezone.utc)
                 ev_status = status_map.get(ev.get('status', 'pending'), ShipmentStatus.PENDING)
                 new_events.append(

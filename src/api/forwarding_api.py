@@ -333,8 +333,8 @@ def execute_consolidation(group_id: str):
         return jsonify(_group_to_dict(group))
     except KeyError:
         return jsonify({'error': 'Consolidation group not found'}), 404
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
+    except ValueError:
+        return jsonify({'error': 'Invalid operation for current group status'}), 400
     except Exception as exc:
         logger.error('execute_consolidation error: %s', exc)
         return jsonify({'error': 'Internal server error'}), 500
@@ -396,7 +396,7 @@ def list_agents():
 # ---------------------------------------------------------------------------
 
 @forwarding_bp.get('/agents/<agent_id>/recommend')
-def recommend_agent(agent_id: str):
+def recommend_agent(agent_id: str):  # noqa: ARG001 — path param kept for API consistency
     """에이전트를 추천한다."""
     priority = request.args.get('priority', 'balanced')
     try:
