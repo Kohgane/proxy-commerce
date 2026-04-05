@@ -2985,3 +2985,105 @@ def cmd_buy_simulate(product_url: str = '') -> str:
     except Exception as exc:
         logger.error("cmd_buy_simulate 오류: %s", exc)
         return format_message('error', f'시뮬레이션 실패: {exc}')
+
+
+# ── Phase 98: 멀티벤더 마켓플레이스 ─────────────────────────────────────────
+
+def cmd_vendors(status: str = '') -> str:
+    """/vendors [status] — 판매자 목록."""
+    try:
+        from ..vendor_marketplace.vendor_manager import VendorOnboardingManager
+        mgr = VendorOnboardingManager()
+        vendors = mgr.list_vendors(status=status or None)
+        if not vendors:
+            return format_message('info', f'판매자 없음 (상태: {status or "전체"})')
+        lines = [f'• [{v.status.value}] {v.name} ({v.email}) — {v.tier.value}' for v in vendors]
+        return format_message('info', f'판매자 목록 ({len(vendors)}명):\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_vendors 오류: %s", exc)
+        return format_message('error', f'판매자 목록 조회 실패: {exc}')
+
+
+def cmd_vendor_approve(vendor_id: str = '') -> str:
+    """/vendor_approve <vendor_id> — 판매자 승인."""
+    if not vendor_id:
+        return format_message('error', '사용법: /vendor_approve <vendor_id>')
+    try:
+        from ..vendor_marketplace.vendor_manager import VendorOnboardingManager
+        mgr = VendorOnboardingManager()
+        vendor = mgr.approve(vendor_id)
+        return format_message('info', f'판매자 승인 완료: {vendor.name} ({vendor.status.value})')
+    except Exception as exc:
+        logger.error("cmd_vendor_approve 오류: %s", exc)
+        return format_message('error', f'판매자 승인 실패: {exc}')
+
+
+def cmd_vendor_score(vendor_id: str = '') -> str:
+    """/vendor_score <vendor_id> — 판매자 점수 조회."""
+    if not vendor_id:
+        return format_message('error', '사용법: /vendor_score <vendor_id>')
+    try:
+        from ..vendor_marketplace.vendor_analytics import VendorScoring
+        scoring = VendorScoring()
+        # Mock 지표로 점수 계산
+        score = scoring.calculate(
+            delivery_delay_rate=0.05,
+            return_rate=0.03,
+            avg_rating=4.5,
+            cs_response_hours=2.0,
+        )
+        lines = [
+            f'• 종합 점수: {score["total_score"]:.1f}점 (등급: {score["grade"]})',
+            f'• 배송 점수: {score["delivery_score"]:.1f}',
+            f'• 반품 점수: {score["return_score"]:.1f}',
+            f'• 평점 점수: {score["rating_score"]:.1f}',
+            f'• CS 점수: {score["cs_score"]:.1f}',
+        ]
+        return format_message('info', f'판매자 점수 [{vendor_id}]:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_vendor_score 오류: %s", exc)
+        return format_message('error', f'점수 조회 실패: {exc}')
+
+
+def cmd_vendor_settlement(vendor_id: str = '') -> str:
+    """/vendor_settlement <vendor_id> — 정산 조회."""
+    if not vendor_id:
+        return format_message('error', '사용법: /vendor_settlement <vendor_id>')
+    try:
+        from ..vendor_marketplace.settlement import SettlementManager
+        mgr = SettlementManager()
+        settlements = mgr.list_vendor_settlements(vendor_id)
+        if not settlements:
+            return format_message('info', f'정산 내역 없음: {vendor_id}')
+        lines = [
+            f'• [{s.status.value}] {s.settlement_id[:8]}... '
+            f'순수익: {s.net_amount:,.0f}원 ({s.cycle})'
+            for s in settlements
+        ]
+        return format_message('info', f'정산 내역 ({len(settlements)}건):\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_vendor_settlement 오류: %s", exc)
+        return format_message('error', f'정산 조회 실패: {exc}')
+
+
+def cmd_vendor_ranking() -> str:
+    """/vendor_ranking — 판매자 랭킹."""
+    try:
+        from ..vendor_marketplace.vendor_analytics import VendorRanking
+        ranking = VendorRanking()
+        # Mock 데이터로 예시 랭킹 표시
+        sample_stats = [
+            {'vendor_id': 'V001', 'name': '베스트샵', 'total_sales': 5000000, 'total_score': 92.0, 'avg_rating': 4.8},
+            {'vendor_id': 'V002', 'name': '스마트스토어', 'total_sales': 3000000, 'total_score': 85.0, 'avg_rating': 4.5},
+            {'vendor_id': 'V003', 'name': '마켓킹', 'total_sales': 1500000, 'total_score': 70.0, 'avg_rating': 4.0},
+        ]
+        leaderboard = ranking.build_leaderboard(sample_stats)
+        lines = [
+            f'#{v["score_rank"]} {v["name"]} — 점수: {v["total_score"]:.0f}점 '
+            f'({" ".join(v["badges"]) if v["badges"] else "-"})'
+            for v in leaderboard
+        ]
+        return format_message('info', '판매자 랭킹:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_vendor_ranking 오류: %s", exc)
+        return format_message('error', f'랭킹 조회 실패: {exc}')
