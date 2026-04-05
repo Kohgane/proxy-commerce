@@ -1049,6 +1049,11 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'shipment_record': lambda d: _format_shipment_record(d),
         'cost_estimate': lambda d: _format_cost_estimate(d),
         'forwarding_dashboard': lambda d: _format_forwarding_dashboard(d),
+        # Phase 103: 풀필먼트
+        'fulfillment_status': lambda d: _format_fulfillment_status(d),
+        'inspection_result': lambda d: _format_inspection_result(d),
+        'packing_result': lambda d: _format_packing_result(d),
+        'fulfillment_dashboard': lambda d: _format_fulfillment_dashboard(d),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:
@@ -2296,4 +2301,57 @@ def _format_forwarding_dashboard(d: dict) -> str:
         f"배송 중: {ship.get('in_transit', 0)}\n"
         f"합배송 그룹: {cons.get('total_groups', 0)}\n"
         f"비용 절감 합계: ${cons.get('total_savings_usd', 0):.2f}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 103: 풀필먼트 포매터
+# ---------------------------------------------------------------------------
+def _format_fulfillment_status(d: dict) -> str:
+    """풀필먼트 현황 포맷."""
+    by_status = d.get('by_status', {})
+    return (
+        f"🏭 풀필먼트 현황\n"
+        f"총 주문: {d.get('total', 0)}건\n"
+        f"입고: {by_status.get('received', 0)}\n"
+        f"검수 중: {by_status.get('inspecting', 0)}\n"
+        f"포장 중: {by_status.get('packing', 0)}\n"
+        f"발송 대기: {by_status.get('ready_to_ship', 0)}\n"
+        f"발송됨: {by_status.get('shipped', 0)}\n"
+        f"배송 중: {by_status.get('in_transit', 0)}\n"
+        f"배송 완료: {by_status.get('delivered', 0)}"
+    )
+
+
+def _format_inspection_result(d: dict) -> str:
+    """검수 결과 포맷."""
+    return (
+        f"🔍 검수 결과\n"
+        f"주문: {d.get('order_id', '-')}\n"
+        f"등급: {d.get('grade', '-')}\n"
+        f"코멘트: {d.get('comment', '-')}\n"
+        f"반품 필요: {'예' if d.get('requires_return') else '아니오'}"
+    )
+
+
+def _format_packing_result(d: dict) -> str:
+    """포장 결과 포맷."""
+    dims = d.get('dimensions_cm', {})
+    return (
+        f"📦 포장 결과\n"
+        f"주문: {d.get('order_id', '-')}\n"
+        f"포장 유형: {d.get('packing_type', '-')}\n"
+        f"무게: {d.get('weight_kg', 0):.2f}kg\n"
+        f"크기: {dims.get('length', 0)}×{dims.get('width', 0)}×{dims.get('height', 0)}cm"
+    )
+
+
+def _format_fulfillment_dashboard(d: dict) -> str:
+    """풀필먼트 대시보드 포맷."""
+    fulf = d.get('fulfillment_orders', {})
+    ship = d.get('shipping', {})
+    return (
+        f"🏭 풀필먼트 대시보드\n"
+        f"총 주문: {fulf.get('total', 0)}건\n"
+        f"총 발송: {ship.get('total', 0)}건"
     )
