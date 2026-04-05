@@ -93,6 +93,7 @@
 | Phase 98 | 멀티벤더 마켓플레이스 (판매자 온보딩, 상품 관리, 수수료 정산, 대시보드/분석, 관리자 기능) | #63 | 2026-04-05 |
 | Phase 99 | 물류 최적화 (배송 경로 최적화, 라스트마일 추적, ETA 예측, 비용 최적화) | #64 | 2026-04-05 |
 | Phase 100 | 데이터 파이프라인 (ETL 엔진, 데이터 웨어하우스, 품질 관리, 분석 뷰 마트) | #65 | 2026-04-05 |
+| Phase 101 | 자동 구매 엔진 (Amazon SP-API 자동 주문, 결제 자동화, 수입/구매대행 자동 플로우) | #67 | 2026-04-05 |
 
 ## 🚧 진행 중 Phase
 
@@ -596,9 +597,9 @@
 ## 🔮 향후 Phase 98+ 고려 사항
 - Phase 97로 구현 완료: AI 기반 동적 가격 최적화 (경쟁가 + 수요 예측 통합)
 - Phase 98로 구현 완료: 멀티벤더 마켓플레이스 (판매자 온보딩, 수수료 정산)
-- Phase 99: 물류 최적화 (배송 경로 최적화, 라스트마일 추적)
-- Phase 100: 데이터 파이프라인 (ETL, 데이터 웨어하우스 연동)
-- Phase 101: 자동 구매 엔진 (Amazon SP-API 자동 주문, 결제 자동화)
+- Phase 99로 구현 완료: 물류 최적화 (배송 경로 최적화, 라스트마일 추적)
+- Phase 100으로 구현 완료: 데이터 파이프라인 (ETL, 데이터 웨어하우스 연동)
+- Phase 101로 구현 완료: 자동 구매 엔진 (Amazon SP-API 자동 주문, 결제 자동화)
 - Phase 102: 배송대행지 연동 (몰테일/이하넥스 API, 입고 확인 자동화)
 - Phase 103: 풀필먼트 자동화 (국내 배송 자동 발송, 운송장 자동 등록)
 - Phase 104: 타오바오/1688 자동 구매 (에이전트 API or RPA)
@@ -965,3 +966,23 @@
 - API Blueprint: `src/api/data_pipeline_api.py` (`/api/v1/data-pipeline`) — 17개 엔드포인트 (pipelines-CRUD/run/history, sources, warehouse/tables/query, quality/reports/check, views/refresh, dashboard, lineage)
 - 봇 커맨드: `/etl_status`, `/etl_run <id>`, `/warehouse_tables`, `/data_quality`, `/etl_dashboard`
 - 관련 코드: `src/data_pipeline/`, `src/api/data_pipeline_api.py`, `src/bot/commands.py`
+
+## Phase 101 — 자동 구매 엔진 (Amazon SP-API 자동 주문, 결제 자동화) ✅ 완료
+
+- `PurchaseStatus` Enum: pending/confirmed/paid/shipped/delivered/failed/cancelled
+- `PurchaseOrder`, `SourceOption`, `PurchaseResult`, `PurchaseMetrics`, `PaymentRecord` 데이터클래스 — `total_price`, `total_cost`, `recalculate()` 메서드 포함
+- `AutoPurchaseEngine`: 주문 접수 → 규칙 평가 → 소스 선택 → 구매 → 결제 → 확인 전체 오케스트레이션, 큐 관리 (urgent/normal/low), 메트릭 집계, 시뮬레이션 모드
+- `SourceSelector`: `CheapestFirst` (최저가 우선), `FastestDelivery` (최단 배송), `ReliabilityFirst` (신뢰도 우선), `BalancedStrategy` (가격40%+배송30%+신뢰도30%) 4가지 전략
+- `MarketplaceBuyer` ABC: `search_product()`, `check_stock()`, `create_order()`, `cancel_order()` 추상 인터페이스
+- `AmazonBuyer(MarketplaceBuyer)`: Amazon SP-API mock — ASIN 기반 검색, 재고 확인, 주문 생성 (배송대행지 주소 자동 설정), US/JP 지원
+- `TaobaoBuyer(MarketplaceBuyer)`: 타오바오 API mock — 에이전트 경유 주문 생성, 상품 검색
+- `AlibabaBuyer(MarketplaceBuyer)`: 1688 API mock — B2B 대량 구매, MOQ(최소주문수량) 체크
+- `PaymentAutomator`: 마켓플레이스별 최적 결제수단 선택, 일일/월간/단건 한도 관리, 결제 내역 기록 + 영수증 보관, 환율 자동 적용 (FX 연동 시도)
+- `PurchaseMonitor`: 가격 이상 감지 (±20%), 배송 지연 감지, 대시보드 메트릭, 텔레그램 알림 연동 시도
+- `MaxPriceRule`, `MinMarginRule`, `StockThresholdRule`, `BlacklistRule`, `DailyLimitRule` — 5종 구매 규칙, pass/reject/hold 결정
+- `PurchaseRuleEngine`: 규칙 등록/평가/목록/초기화
+- `ImportAutomation`: 고객 주문 → 해외 자동 구매 → 배송대행지 입고 → 관세 계산 → 국내 배송 전체 프로세스 (ImportManager/ForwardingAgent 연동 시도)
+- `ProxyBuyAutomation`: 고객 요청 → 해외 구매 → 검수 → 발송 구매대행 자동 플로우
+- API Blueprint: `src/api/auto_purchase_api.py` (`/api/v1/auto-purchase`) — 10개 엔드포인트 (주문생성/조회/취소/소스조회/선택/메트릭/규칙/시뮬레이션/큐)
+- 봇 커맨드: `/auto_buy <url>`, `/buy_status <order_id>`, `/buy_queue`, `/buy_metrics`, `/buy_rules`, `/buy_simulate <url>`
+- 관련 코드: `src/auto_purchase/`, `src/api/auto_purchase_api.py`, `src/bot/commands.py`
