@@ -89,6 +89,7 @@
 | Phase 94 | AI 기반 상품 추천 시스템 (앙상블 엔진, 협업/콘텐츠 필터링, 개인화, 트렌딩, 크로스셀, 피드백 루프) | #58 | 2026-04-04 |
 | Phase 95 | 모바일 앱 API (React Native/Flutter 지원, JWT 인증, 커서 페이지네이션, FCM/APNs mock, 관리자 모바일) | #59 | 2026-04-04 |
 | Phase 96 | 자동 구매 엔진 (Amazon SP-API 자동 주문, 결제 자동화, 수입/구매대행 자동 플로우) + CD Staging 안정화 | #60 | 2026-04-04 |
+| Phase 97 | AI 기반 동적 가격 최적화 (경쟁사 가격 추적, 수요 예측, 앙상블 가격 결정, 가격 규칙 6종, 알림/분석/스케줄러) | #62 | 2026-04-04 |
 
 ## 🚧 진행 중 Phase
 
@@ -589,10 +590,8 @@
 - API Blueprint: `src/api/security_api.py` (`/api/v1/security`)
 - 봇 커맨드: `/security_audit`, `/security_sessions`, `/ip_block`
 
-## 🔮 향후 Phase 96+ 고려 사항
-- Phase 95로 구현 완료: 모바일 앱 API (React Native/Flutter 지원)
-- Phase 96: 실시간 채팅 고객 지원 (WebSocket 기반, 상담원 배정)
-- Phase 97: AI 기반 동적 가격 최적화 (경쟁가 + 수요 예측 통합)
+## 🔮 향후 Phase 97+ 고려 사항
+- Phase 97로 구현 완료: AI 기반 동적 가격 최적화 (경쟁가 + 수요 예측 통합)
 - Phase 98: 멀티벤더 마켓플레이스 (판매자 온보딩, 수수료 정산)
 - Phase 99: 물류 최적화 (배송 경로 최적화, 라스트마일 추적)
 - Phase 100: 데이터 파이프라인 (ETL, 데이터 웨어하우스 연동)
@@ -602,6 +601,7 @@
 - Phase 104: 타오바오/1688 자동 구매 (에이전트 API or RPA)
 - Phase 105: 예외 처리 + 자동 복구 (품절 대안, 가격 변동 알림, 재시도)
 - Phase 106: 완전 자율 운영 대시보드 (수입+수출 모두, 사람 개입 최소화, 이상 감지 시만 알림)
+- Phase 107: 실시간 채팅 고객 지원 (WebSocket 기반, 상담원 배정)
 
 
 ## Phase 73: 고객 세그먼트 관리 ✅
@@ -881,3 +881,17 @@
 - 봇 커맨드: `/auto_buy <url>`, `/buy_status <order_id>`, `/buy_queue`, `/buy_metrics`, `/buy_rules`, `/buy_simulate <url>`
 - CD Staging 수정: `sleep 30→60`, `retries 5/15→8/20`, `/health/ready` soft fail (`/health` OK면 exit 0)
 - 관련 코드: `src/auto_purchase/`, `src/api/auto_purchase_api.py`, `scripts/post_deploy_check.py`, `.github/workflows/cd_staging.yml`
+
+## Phase 97: AI 기반 동적 가격 최적화 (경쟁가 + 수요 예측 통합) ✅
+- `DynamicPricingEngine`: AI 동적 가격 최적화 오케스트레이터 — 전략별 가중치 기반 앙상블 가격 결정, SKU/카테고리별 최적화, 가격 변경 이력 + 롤백 지원, 자동/수동 모드 (자동: 즉시 반영, 수동: 승인 대기)
+- `CompetitorPriceTracker`: 경쟁사 가격 수집 시뮬레이션 (Amazon US/JP, 쿠팡, 네이버, 11번가 mock), 시계열 이력 저장, 급등/급락 ±10% 감지 알림, 포지셔닝 분석, 가격 갭 분석
+- `DemandForecaster`: 시계열 수요 예측 (이동 평균, 지수 평활법, 가중 평균, 앙상블), 계절성 분석 (월별/요일별), 외부 요인 반영 (환율/명절/프로모션), 가격 탄력성 계산, MAPE/RMSE 메트릭
+- `PriceOptimizer`: 목적함수 선택 (매출/이익/시장점유율 최대화), 제약 조건 (최소 마진, 가격 범위, 경쟁사 대비 ±N%), 탄력성 기반 최적 가격 계산, A/B 테스트 연동, 시뮬레이션 모드
+- `PricingRule` ABC + 6종: `CompetitorMatchRule` (경쟁사 최저가 매칭), `DemandSurgeRule` (수요 급증 가격 인상), `SlowMoverRule` (부진 상품 자동 할인), `SeasonalRule` (시즌 가격 조정), `BundlePricingRule` (번들 연동), `MarginProtectionRule` (최소 마진 보호 + 환율 반영)
+- `PriceAlertSystem`: 가격 변경/경쟁사 변동/마진 위험 알림 (NotificationHub 연동), 일일 가격 리포트 자동 생성
+- `PricingAnalytics`: Before/After 매출/이익 비교, 탄력성 리포트, 경쟁력 지수 (100점 만점), 수요 예측 정확도, ROI 분석
+- `PricingScheduler`: 매시간/매일/수동 스케줄, 피크타임/오프피크 가격 배율, 프로모션 예약 (시작/종료), 배치 업데이트
+- `PricePoint`, `CompetitorPrice`, `DemandForecast`, `PricingDecision`, `PricingMetrics` 데이터클래스
+- API Blueprint: `src/api/ai_pricing_api.py` (`/api/v1/ai-pricing`) — 12개 엔드포인트 (optimize/simulate/recommendations/competitors/forecast/history/analytics/metrics/rules/schedule/alerts)
+- 봇 커맨드: `/ai_price <sku>`, `/price_optimize [category]`, `/competitor_prices <sku>`, `/demand_forecast <sku>`, `/price_alert`, `/price_report`
+- 관련 코드: `src/ai_pricing/`, `src/api/ai_pricing_api.py`
