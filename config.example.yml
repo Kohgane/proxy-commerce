@@ -977,3 +977,41 @@ forwarding:
       clothing: 0.13
       default: 0.08
     vat_rate: 0.10
+
+# === Phase 103: 풀필먼트 자동화 ===
+fulfillment:
+  enabled: true
+  inspection:
+    auto_inspect: true
+    notify_on_grade_d: true
+    photo_storage: "s3"
+  packing:
+    default_type: standard
+    fragile_threshold_value: 100000
+    oversized_weight_kg: 10
+  shipping:
+    default_carrier: cj_logistics
+    default_strategy: balanced
+    carriers:
+      cj_logistics:
+        api_key: ""
+        api_secret: ""
+      hanjin:
+        api_key: ""
+        api_secret: ""
+      lotte:
+        api_key: ""
+        api_secret: ""
+  tracking:
+    platforms:
+      coupang:
+        api_key: ""
+      naver:
+        api_key: ""
+    auto_register: true
+    retry_on_failure: true
+    max_retries: 3
+  delivery:
+    eta_buffer_days: 0.5
+    delay_alert_days: 3
+    poll_interval_minutes: 60

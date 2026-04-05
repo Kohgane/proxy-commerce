@@ -3479,3 +3479,135 @@ def cmd_forwarding_dashboard() -> str:
     except Exception as exc:
         logger.error("cmd_forwarding_dashboard 오류: %s", exc)
         return format_message('error', f'대시보드 조회 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 103: 풀필먼트 커맨드
+# ─────────────────────────────────────────────────────────────
+
+def cmd_fulfillment_status() -> str:
+    """/fulfillment_status — 전체 풀필먼트 현황."""
+    try:
+        from ..fulfillment.engine import FulfillmentEngine
+        engine = FulfillmentEngine()
+        stats = engine.get_stats()
+        by_status = stats.get('by_status', {})
+        lines = [
+            f"📦 입고: {by_status.get('received', 0)}",
+            f"🔍 검수 중: {by_status.get('inspecting', 0)}",
+            f"📦 포장 중: {by_status.get('packing', 0)}",
+            f"✅ 발송 대기: {by_status.get('ready_to_ship', 0)}",
+            f"🚀 발송됨: {by_status.get('shipped', 0)}",
+            f"🚚 배송 중: {by_status.get('in_transit', 0)}",
+            f"🏠 배송 완료: {by_status.get('delivered', 0)}",
+        ]
+        return format_message('info', '풀필먼트 현황:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_fulfillment_status 오류: %s", exc)
+        return format_message('error', f'풀필먼트 현황 조회 실패: {exc}')
+
+
+def cmd_inspect(order_id: str = '') -> str:
+    """/inspect <order_id> — 검수 결과 조회."""
+    if not order_id.strip():
+        return format_message('error', '사용법: /inspect <order_id>')
+    try:
+        from ..fulfillment.inspection import InspectionService
+        svc = InspectionService()
+        history = svc.get_history(order_id.strip())
+        if not history:
+            return format_message('info', f'검수 이력 없음: {order_id}')
+        latest = history[-1]
+        lines = [
+            f"• 주문: {latest.order_id}",
+            f"• 등급: {latest.grade.value}",
+            f"• 코멘트: {latest.comment}",
+            f"• 반품 필요: {'예' if latest.requires_return else '아니오'}",
+        ]
+        if latest.defect_types:
+            lines.append(f"• 불량 유형: {', '.join(latest.defect_types)}")
+        return format_message('info', '검수 결과:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_inspect 오류: %s", exc)
+        return format_message('error', f'검수 결과 조회 실패: {exc}')
+
+
+def cmd_ship(order_id: str = '') -> str:
+    """/ship <order_id> — 발송 요청."""
+    if not order_id.strip():
+        return format_message('error', '사용법: /ship <order_id>')
+    try:
+        from ..fulfillment.engine import FulfillmentEngine
+        from ..fulfillment.shipping import DomesticShippingManager
+        from ..fulfillment.tracking import TrackingNumberManager, DeliveryTracker
+        engine = FulfillmentEngine()
+        order = engine.get_order(order_id.strip())
+        if not order:
+            return format_message('error', f'주문을 찾을 수 없습니다: {order_id}')
+        shipping_mgr = DomesticShippingManager()
+        packing_info = order.packing_result or {}
+        package_info = {'weight_kg': packing_info.get('weight_kg', 1.0), 'dimensions_cm': {}}
+        shipment = shipping_mgr.ship(order_id=order_id.strip(), recipient=order.recipient, package_info=package_info)
+        trk_mgr = TrackingNumberManager()
+        trk_mgr.register(order_id=order_id.strip(), tracking_number=shipment['tracking_number'], carrier_id=shipment['carrier_id'])
+        lines = [
+            f"• 운송장: {shipment['tracking_number']}",
+            f"• 택배사: {shipment['carrier_name']}",
+        ]
+        return format_message('info', f'발송 완료:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_ship 오류: %s", exc)
+        return format_message('error', f'발송 요청 실패: {exc}')
+
+
+def cmd_tracking(tracking_number: str = '') -> str:
+    """/tracking <tracking_number> — 배송 추적."""
+    if not tracking_number.strip():
+        return format_message('error', '사용법: /tracking <tracking_number>')
+    try:
+        from ..fulfillment.shipping import DomesticShippingManager
+        mgr = DomesticShippingManager()
+        result = mgr.get_tracking(tracking_number.strip())
+        lines = [
+            f"• 운송장: {result.get('tracking_number', '-')}",
+            f"• 상태: {result.get('status', '-')}",
+        ]
+        events = result.get('events', [])
+        if events:
+            latest = events[-1]
+            lines.append(f"• 최근: {latest.get('location', '-')} — {latest.get('description', '-')}")
+        return format_message('info', '배송 추적:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_tracking 오류: %s", exc)
+        return format_message('error', f'배송 추적 실패: {exc}')
+
+
+def cmd_fulfillment_dashboard() -> str:
+    """/fulfillment_dashboard — 풀필먼트 대시보드 요약."""
+    try:
+        from ..fulfillment.engine import FulfillmentEngine
+        from ..fulfillment.inspection import InspectionService
+        from ..fulfillment.packing import PackingService
+        from ..fulfillment.shipping import DomesticShippingManager
+        from ..fulfillment.tracking import TrackingNumberManager, DeliveryTracker
+        from ..fulfillment.dashboard import FulfillmentDashboard
+        dashboard = FulfillmentDashboard(
+            engine=FulfillmentEngine(),
+            inspection_service=InspectionService(),
+            packing_service=PackingService(),
+            shipping_manager=DomesticShippingManager(),
+            tracking_manager=TrackingNumberManager(),
+            delivery_tracker=DeliveryTracker(),
+        )
+        summary = dashboard.get_summary()
+        fulf = summary.get('fulfillment_orders', {})
+        lines = [
+            f"📊 총 주문: {fulf.get('total', 0)}건",
+        ]
+        proc = dashboard.get_processing_stats()
+        lines.append(f"🚚 배송 중: {proc.get('in_transit', 0)}")
+        lines.append(f"✅ 완료: {proc.get('delivered', 0)}")
+        return format_message('info', '풀필먼트 대시보드:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_fulfillment_dashboard 오류: %s", exc)
+        return format_message('error', f'대시보드 조회 실패: {exc}')

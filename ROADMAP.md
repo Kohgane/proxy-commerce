@@ -95,6 +95,7 @@
 | Phase 100 | 데이터 파이프라인 (ETL 엔진, 데이터 웨어하우스, 품질 관리, 분석 뷰 마트) | #65 | 2026-04-05 |
 | Phase 101 | 자동 구매 엔진 (Amazon SP-API 자동 주문, 결제 자동화, 수입/구매대행 자동 플로우) | #67 | 2026-04-05 |
 | Phase 102 | 배송대행지 연동 (몰테일/이하넥스 API, 입고 확인 자동화) | #PR | 2026-04-05 |
+| Phase 103 | 풀필먼트 자동화 (국내 배송 자동 발송, 운송장 자동 등록) | #PR | 2026-04-05 |
 
 ## 🚧 진행 중 Phase
 
@@ -1009,3 +1010,28 @@
 - API Blueprint: `src/api/forwarding_api.py` (`/api/v1/forwarding`) — 14개 엔드포인트 (배송/입고/합배송/견적/에이전트/대시보드)
 - 봇 커맨드: `/forwarding_status`, `/incoming_check <tracking>`, `/shipping_estimate <weight> <country>`, `/consolidation_list`, `/forwarding_dashboard`
 - 관련 코드: `src/forwarding/`, `src/api/forwarding_api.py`, `src/bot/commands.py`
+
+## Phase 103 — 풀필먼트 자동화 (국내 배송 자동 발송, 운송장 자동 등록) ✅ 완료
+
+### 구현 내용
+- `FulfillmentStatus` Enum: received/inspecting/packing/ready_to_ship/shipped/in_transit/delivered
+- `FulfillmentOrder` 데이터클래스 — order_id, status, items, tracking_number, carrier, recipient, inspection_result, packing_result, timestamps, metadata
+- `FulfillmentEngine`: 풀필먼트 오케스트레이터 — create_order(), get_order(), list_orders(), advance_to_* 상태 전환, get_stats()
+- `InspectionGrade` Enum: A(정상)/B(경미)/C(하자)/D(불량)
+- `InspectionResult` 데이터클래스 — inspection_id, order_id, grade, defect_types, photo_urls, comment, requires_return
+- `InspectionService`: 검수 서비스 — inspect(), get_history(), get_stats(), Grade D 감지 시 반품 트리거
+- `PackingType` Enum: standard/fragile/oversized/multi_item
+- `PackingResult` 데이터클래스 — packing_id, order_id, packing_type, weight_kg, dimensions_cm, materials_used
+- `PackingService`: 포장 서비스 — determine_packing_type(), pack(), consolidate_orders(), get_results(), get_stats()
+- `CarrierAdapter` ABC: create_waybill(), request_pickup(), get_tracking()
+- `CJLogisticsAdapter`, `HanjinAdapter`, `LotteAdapter`: 택배사 mock 구현
+- `CarrierSelector`: 최적 택배사 선택 — recommend(cheapest/fastest/balanced), list_carriers(), get_carrier()
+- `DomesticShippingManager`: 국내 배송 관리 — ship(), get_tracking(), list_shipments(), get_stats()
+- `DeliveryStatus` Enum: picked_up/in_transit/out_for_delivery/delivered/failed
+- `TrackingRecord`, `DeliveryEvent` 데이터클래스
+- `TrackingNumberManager`: 운송장 등록/관리 — register(), get_history(), get_record(), get_stats()
+- `DeliveryTracker`: 배송 상태 추적 — start_tracking(), update_status(), get_status(), estimate_eta(), get_all_active(), get_stats()
+- `FulfillmentDashboard`: 통합 대시보드 — get_summary(), get_processing_stats(), get_carrier_performance()
+- API Blueprint: `src/api/fulfillment_api.py` (`/api/v1/fulfillment`) — 14개 엔드포인트 (주문/검수/포장/발송/운송장/택배사/대시보드/일괄발송)
+- 봇 커맨드: `/fulfillment_status`, `/inspect <order_id>`, `/ship <order_id>`, `/tracking <tracking_number>`, `/fulfillment_dashboard`
+- 관련 코드: `src/fulfillment/`, `src/api/fulfillment_api.py`, `src/bot/commands.py`
