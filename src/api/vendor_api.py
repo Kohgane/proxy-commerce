@@ -115,7 +115,8 @@ def apply_vendor():
         )
         return jsonify(vendor.to_dict()), 201
     except ValueError as exc:
-        return jsonify({'error': str(exc)}), 422
+        logger.warning('판매자 신청 검증 오류: %s', exc)
+        return jsonify({'error': '입력값이 유효하지 않습니다.'}), 422
     except Exception as exc:
         logger.error('판매자 신청 오류: %s', exc)
         return jsonify({'error': 'Internal server error'}), 500
@@ -270,7 +271,8 @@ def approve_vendor(vendor_id: str):
         notif_svc.notify_approval(vendor_id, vendor.name)
         return jsonify(vendor.to_dict())
     except (KeyError, ValueError) as exc:
-        return jsonify({'error': str(exc)}), 422
+        logger.warning('판매자 승인 오류: %s', exc)
+        return jsonify({'error': '요청을 처리할 수 없습니다.'}), 422
     except Exception as exc:
         logger.error('판매자 승인 오류: %s', exc)
         return jsonify({'error': 'Internal server error'}), 500
@@ -287,7 +289,8 @@ def reject_vendor(vendor_id: str):
         notif_svc.notify_rejection(vendor_id, vendor.name, body.get('reason', ''))
         return jsonify(vendor.to_dict())
     except (KeyError, ValueError) as exc:
-        return jsonify({'error': str(exc)}), 422
+        logger.warning('판매자 거절 오류: %s', exc)
+        return jsonify({'error': '요청을 처리할 수 없습니다.'}), 422
     except Exception as exc:
         logger.error('판매자 거절 오류: %s', exc)
         return jsonify({'error': 'Internal server error'}), 500
@@ -305,7 +308,8 @@ def suspend_vendor(vendor_id: str):
         notif_svc.notify_suspension(vendor_id, vendor.name, body.get('reason', ''))
         return jsonify(vendor.to_dict())
     except (KeyError, ValueError) as exc:
-        return jsonify({'error': str(exc)}), 422
+        logger.warning('판매자 정지 오류: %s', exc)
+        return jsonify({'error': '요청을 처리할 수 없습니다.'}), 422
     except Exception as exc:
         logger.error('판매자 정지 오류: %s', exc)
         return jsonify({'error': 'Internal server error'}), 500
@@ -359,7 +363,8 @@ def add_vendor_product(vendor_id: str):
         )
         return jsonify(product), 201
     except PermissionError as exc:
-        return jsonify({'error': str(exc)}), 403
+        logger.warning('상품 등록 권한 오류: %s', exc)
+        return jsonify({'error': '상품 등록 한도를 초과했습니다. 티어 업그레이드가 필요합니다.'}), 403
     except Exception as exc:
         logger.error('상품 등록 오류: %s', exc)
         return jsonify({'error': 'Internal server error'}), 500
@@ -393,7 +398,8 @@ def approve_vendor_product(vendor_id: str, product_id: str):
                 )
         return jsonify(result)
     except (KeyError, ValueError) as exc:
-        return jsonify({'error': str(exc)}), 422
+        logger.warning('상품 승인 오류: %s', exc)
+        return jsonify({'error': '요청을 처리할 수 없습니다.'}), 422
     except Exception as exc:
         logger.error('상품 승인 오류: %s', exc)
         return jsonify({'error': 'Internal server error'}), 500
