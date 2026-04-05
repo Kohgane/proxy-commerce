@@ -76,7 +76,7 @@ class TestRunHealthcheck:
         assert ok is False
         assert '/health' in err
 
-    def test_failure_when_ready_endpoint_fails(self):
+    def test_soft_fail_when_ready_endpoint_fails(self):
         health_ok = MagicMock()
         health_ok.status_code = 200
         ready_fail = MagicMock()
@@ -86,8 +86,9 @@ class TestRunHealthcheck:
             with patch('scripts.post_deploy_check.time.sleep'):
                 ok, err = run_healthcheck('http://example.com', 'staging', retries=1, interval=0)
 
-        assert ok is False
-        assert '/health/ready' in err
+        # soft-fail: /health is OK so deploy is treated as succeeded
+        assert ok is True
+        assert err == ''
 
 
 class TestSendTelegram:
