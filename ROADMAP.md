@@ -90,6 +90,7 @@
 | Phase 95 | 모바일 앱 API (React Native/Flutter 지원, JWT 인증, 커서 페이지네이션, FCM/APNs mock, 관리자 모바일) | #59 | 2026-04-04 |
 | Phase 96 | 자동 구매 엔진 (Amazon SP-API 자동 주문, 결제 자동화, 수입/구매대행 자동 플로우) + CD Staging 안정화 | #60 | 2026-04-04 |
 | Phase 97 | AI 기반 동적 가격 최적화 (경쟁사 가격 추적, 수요 예측, 앙상블 가격 결정, 가격 규칙 6종, 알림/분석/스케줄러) | #62 | 2026-04-04 |
+| Phase 98 | 멀티벤더 마켓플레이스 (판매자 온보딩, 상품 관리, 수수료 정산, 대시보드/분석, 관리자 기능) | #63 | 2026-04-05 |
 
 ## 🚧 진행 중 Phase
 
@@ -590,9 +591,9 @@
 - API Blueprint: `src/api/security_api.py` (`/api/v1/security`)
 - 봇 커맨드: `/security_audit`, `/security_sessions`, `/ip_block`
 
-## 🔮 향후 Phase 97+ 고려 사항
+## 🔮 향후 Phase 98+ 고려 사항
 - Phase 97로 구현 완료: AI 기반 동적 가격 최적화 (경쟁가 + 수요 예측 통합)
-- Phase 98: 멀티벤더 마켓플레이스 (판매자 온보딩, 수수료 정산)
+- Phase 98로 구현 완료: 멀티벤더 마켓플레이스 (판매자 온보딩, 수수료 정산)
 - Phase 99: 물류 최적화 (배송 경로 최적화, 라스트마일 추적)
 - Phase 100: 데이터 파이프라인 (ETL, 데이터 웨어하우스 연동)
 - Phase 101: 자동 구매 엔진 (Amazon SP-API 자동 주문, 결제 자동화)
@@ -895,3 +896,25 @@
 - API Blueprint: `src/api/ai_pricing_api.py` (`/api/v1/ai-pricing`) — 12개 엔드포인트 (optimize/simulate/recommendations/competitors/forecast/history/analytics/metrics/rules/schedule/alerts)
 - 봇 커맨드: `/ai_price <sku>`, `/price_optimize [category]`, `/competitor_prices <sku>`, `/demand_forecast <sku>`, `/price_alert`, `/price_report`
 - 관련 코드: `src/ai_pricing/`, `src/api/ai_pricing_api.py`
+
+## Phase 98: 멀티벤더 마켓플레이스 (판매자 온보딩, 수수료 정산) ✅
+- `Vendor`, `VendorStatus`, `VendorTier`, `VendorProfile`, `VendorDocument`, `VendorAgreementRecord` 데이터클래스 — 상태머신 (pending→under_review→approved→active→suspended→deactivated), 티어별 수수료/기능 제한
+- `VendorOnboardingManager`: 판매자 신청 접수, 상태 전환, 서류 업로드/검증, 약관 동의 관리
+- `VendorVerification`: 사업자등록번호 유효성 검사 (mock), 본인 인증 (mock), 서류 업로드 시뮬레이션
+- `VendorAgreement`: 입점 계약서 동의 관리 (약관 버전, 필수/선택 약관)
+- `VendorProfileManager`: 판매자 프로필 CRUD (상호명, 배송 정책, 반품 정책, 브랜드 로고, 계좌 정보 등)
+- `VendorProductManager`: 판매자별 상품 CRUD, 심사 워크플로 (draft→pending_review→approved→listed/rejected)
+- `ProductApprovalService`: 금지어 필터, 카테고리 적합성, 가격 적정성 심사
+- `VendorInventorySync`: 판매자별 재고 관리 (set/adjust/bulk sync, 재고 부족 알림)
+- `VendorProductRestriction`: 티어별 상품 등록 수 제한 (basic: 50, standard: 200, premium: 1000, enterprise: 무제한)
+- `CommissionRule`: 수수료 규칙 (tier/category/rate/min_max/프로모션), `CommissionCalculator`: 티어별/카테고리별 수수료 계산, 규칙 우선순위 적용
+- `SettlementManager`: 정산 생성/처리/완료/실패, 주기별 정산, `SettlementReport`: 정산 리포트
+- `PayoutService`: 은행 계좌 등록, 지급 처리 (mock), 지급 이력 조회
+- `VendorDashboard`: 매출 요약/주문 현황/재고 알림/정산 예정액, `VendorAnalytics`: 일별 트렌드/상품 순위/반품률/평점
+- `VendorScoring`: 100점 만점 판매자 평가 (배송30%+반품25%+평점30%+CS15%), `VendorRanking`: 랭킹 + 우수 판매자 뱃지
+- `VendorAdminManager`: 판매자 목록/검색/일괄 승인·거절/정지·해제, `PlatformFeeManager`: 수수료 정책 CRUD
+- `VendorComplianceChecker`: 반품률/응답률/배송 지연률 자동 경고, 스코어 부족 시 자동 정지
+- `VendorNotificationService`: 10종 알림 (승인/거절/정산완료/정산실패/정책변경/위반경고/상품승인/상품거절/재고부족/정지)
+- API Blueprint: `src/api/vendor_api.py` (`/api/v1/vendors`) — 17개 엔드포인트 (apply/list/get/update/approve/reject/suspend/products-CRUD/product-approve/settlements-CRUD/dashboard/analytics/ranking/commission-rules)
+- 봇 커맨드: `/vendors`, `/vendor_approve <id>`, `/vendor_score <id>`, `/vendor_settlement <id>`, `/vendor_ranking`
+- 관련 코드: `src/vendor_marketplace/`, `src/api/vendor_api.py`, `src/bot/commands.py`
