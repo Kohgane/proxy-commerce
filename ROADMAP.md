@@ -918,3 +918,24 @@
 - API Blueprint: `src/api/vendor_api.py` (`/api/v1/vendors`) — 17개 엔드포인트 (apply/list/get/update/approve/reject/suspend/products-CRUD/product-approve/settlements-CRUD/dashboard/analytics/ranking/commission-rules)
 - 봇 커맨드: `/vendors`, `/vendor_approve <id>`, `/vendor_score <id>`, `/vendor_settlement <id>`, `/vendor_ranking`
 - 관련 코드: `src/vendor_marketplace/`, `src/api/vendor_api.py`, `src/bot/commands.py`
+
+## Phase 99 — 물류 최적화 (Logistics Optimization) ✅ 완료
+
+- `DeliveryStatus` Enum: assigned/picked_up/in_transit/near_destination/delivered/failed — 유효한 상태 전이 검증
+- `Coordinate`, `DeliveryStop`, `RouteResult`, `DeliveryAgent`, `DeliveryRecord`, `ProofOfDelivery`, `DeliveryTimeWindow`, `CarrierInfo`, `ConsolidationGroup`, `LogisticsKPIData` 데이터클래스
+- `DistanceCalculator`: Haversine 공식 거리 계산, 거리 행렬 생성
+- `NearestNeighborStrategy`: 최근접 이웃 탐욕 알고리즘, `TwoOptStrategy`: 2-opt 지역 탐색 개선, `ClusterFirstRouteSecond`: 지역 클러스터링 후 경로 최적화
+- `RouteOptimizer`: 3가지 전략 선택 경로 최적화, 경로 저장/조회/목록
+- `LastMileTracker`: 배송 생성/위치 업데이트/상태 전이/ETA 계산/조회, `DeliveryAssignment`: 배달 기사 등록/최적 배정 (거리+부하 스코어링)
+- `ProofOfDeliveryService`: 배송 완료 증빙 (수령인/서명/사진/GPS), `DeliveryTimeWindowManager`: 4개 시간대 (오전/오후/저녁/야간) + 할증률
+- `LogisticsCostCalculator`: 운송비/포장비/인건비/연료비 계산, `CarrierSelector`: CJ/한진/우체국/로젠/쿠팡 5개사 추천 (비용/속도/신뢰도)
+- `ConsolidationManager`: 동일 지역 주문 통합 분석 및 절감액 계산, `CostOptimizer`: 종합 비용 최적화
+- `HistoricalDeliveryData`: 지역별/택배사별 과거 데이터, `DeliveryDelayPredictor`: 명절/요일/장거리 지연 예측
+- `ETACalculator`: 좌표 기반 도착 예정 시간 (신뢰도 포함), `DeliveryTimeEstimator`: 지역별 배송 일수 예측
+- `LogisticsAnalytics`: 성공률/평균 배송 시간/택배사 비교/지역 통계, `LogisticsKPI`: KPI 계산 (정시율/사고율/비용/수익)
+- `LogisticsReport`: 일별/주별/월별/택배사별 보고서, `LogisticsDashboard`: 실시간 현황/비용 요약/지연 알림
+- `DeliveryHeatmap`: 지역별/시간대별 배송 분포 히트맵
+- `LogisticsAlertService`: 지연 감지/알림 전송/조회 (NotificationHub 연동 시도), `LogisticsAutomation`: 택배사 자동 선택/운송장 생성/상태 업데이트/실패 재배정/일괄 처리
+- API Blueprint: `src/api/logistics_api.py` (`/api/v1/logistics`) — 16개 엔드포인트 (routes/optimize, routes/get, deliveries-CRUD, deliveries-status/assign/eta/proof, agents-CRUD, consolidation/analyze, carriers/recommend, analytics, dashboard, heatmap)
+- 봇 커맨드: `/logistics_status`, `/route_optimize <ids>`, `/delivery_eta <id>`, `/carrier_recommend <weight> <region>`, `/logistics_report`
+- 관련 코드: `src/logistics/`, `src/api/logistics_api.py`, `src/bot/commands.py`
