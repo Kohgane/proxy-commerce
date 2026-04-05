@@ -3087,3 +3087,138 @@ def cmd_vendor_ranking() -> str:
     except Exception as exc:
         logger.error("cmd_vendor_ranking 오류: %s", exc)
         return format_message('error', f'랭킹 조회 실패: {exc}')
+
+
+# ── Phase 99: 물류 최적화 봇 커맨드 ──────────────────────────────────────
+
+def cmd_logistics_status() -> str:
+    """/logistics_status — 물류 현황 조회."""
+    try:
+        from ..logistics.last_mile import LastMileTracker, DeliveryAssignment
+        from ..logistics.logistics_automation import LogisticsAlertService
+        from ..logistics.logistics_models import DeliveryStatus
+
+        tracker = LastMileTracker()
+        assignment = DeliveryAssignment()
+        alert_svc = LogisticsAlertService()
+
+        active = tracker.list_deliveries(DeliveryStatus.in_transit)
+        available_agents = assignment.list_agents("available")
+        alerts = alert_svc.get_alerts()
+
+        lines = [
+            f'• 진행 중 배송: {len(active)}건',
+            f'• 사용 가능 기사: {len(available_agents)}명',
+            f'• 최근 알림: {len(alerts)}건',
+        ]
+        return format_message('info', '물류 현황:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_logistics_status 오류: %s", exc)
+        return format_message('error', f'물류 현황 조회 실패: {exc}')
+
+
+def cmd_route_optimize(delivery_ids_str: str = '') -> str:
+    """/route_optimize <delivery_ids> — 경로 최적화."""
+    if not delivery_ids_str.strip():
+        return format_message('error', '사용법: /route_optimize <delivery_id1,delivery_id2,...>')
+    try:
+        from ..logistics.route_optimizer import RouteOptimizer, RouteConstraint
+        from ..logistics.logistics_models import Coordinate, DeliveryStop
+        import uuid as _uuid
+
+        delivery_ids = [d.strip() for d in delivery_ids_str.split(',') if d.strip()]
+        optimizer = RouteOptimizer()
+        depot = Coordinate(lat=37.5665, lon=126.9780)
+
+        stops = [
+            DeliveryStop(
+                stop_id=_uuid.uuid4().hex[:8],
+                address=f'배송지 {i + 1}',
+                coordinate=Coordinate(lat=37.5 + i * 0.01, lon=127.0 + i * 0.01),
+                order_id=did,
+                weight_kg=2.0,
+            )
+            for i, did in enumerate(delivery_ids)
+        ]
+
+        result = optimizer.optimize(stops, depot, strategy='nearest_neighbor', constraints=RouteConstraint())
+        lines = [
+            f'• 경로 ID: {result.route_id[:8]}...',
+            f'• 정류장 수: {len(result.stops)}개',
+            f'• 총 거리: {result.total_distance_km:.1f}km',
+            f'• 예상 시간: {result.estimated_duration_min:.0f}분',
+            f'• 전략: {result.strategy_used}',
+        ]
+        return format_message('info', '경로 최적화 완료:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_route_optimize 오류: %s", exc)
+        return format_message('error', f'경로 최적화 실패: {exc}')
+
+
+def cmd_delivery_eta(delivery_id: str = '') -> str:
+    """/delivery_eta <delivery_id> — 배송 ETA 조회."""
+    if not delivery_id.strip():
+        return format_message('error', '사용법: /delivery_eta <delivery_id>')
+    try:
+        from ..logistics.last_mile import LastMileTracker
+
+        tracker = LastMileTracker()
+        delivery = tracker.get_delivery(delivery_id.strip())
+        if delivery is None:
+            return format_message('error', f'배송 없음: {delivery_id}')
+        eta = tracker.calculate_eta(delivery_id.strip())
+        lines = [
+            f'• 배송 ID: {delivery_id[:8]}...',
+            f'• 상태: {delivery.status.value}',
+            f'• 예상 도착: {eta:.0f}분 후',
+            f'• 거리: {delivery.distance_km:.1f}km',
+        ]
+        return format_message('info', 'ETA 조회:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_delivery_eta 오류: %s", exc)
+        return format_message('error', f'ETA 조회 실패: {exc}')
+
+
+def cmd_carrier_recommend(args: str = '') -> str:
+    """/carrier_recommend <weight> <region> — 택배사 추천."""
+    parts = args.strip().split()
+    if len(parts) < 2:
+        return format_message('error', '사용법: /carrier_recommend <weight_kg> <region>')
+    try:
+        from ..logistics.cost_optimizer import CarrierSelector
+
+        weight = float(parts[0])
+        region = parts[1]
+        selector = CarrierSelector()
+        carrier = selector.recommend_carrier(weight, region, priority='cost')
+        lines = [
+            f'• 택배사: {carrier.name}',
+            f'• 기본 요금: {carrier.base_rate:,.0f}원',
+            f'• kg당 요금: {carrier.per_kg_rate:,.0f}원',
+            f'• 평균 배송일: {carrier.avg_delivery_days}일',
+            f'• 신뢰도: {carrier.reliability_score:.0%}',
+        ]
+        return format_message('info', f'택배사 추천 ({weight}kg, {region}):\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_carrier_recommend 오류: %s", exc)
+        return format_message('error', f'택배사 추천 실패: {exc}')
+
+
+def cmd_logistics_report() -> str:
+    """/logistics_report — 물류 보고서 생성."""
+    try:
+        from ..logistics.logistics_analytics import LogisticsReport
+
+        report = LogisticsReport()
+        daily = report.generate_daily_report()
+        weekly = report.generate_weekly_report()
+        lines = [
+            f'• 오늘 배송: {daily["total_deliveries"]}건',
+            f'• 성공률: {daily["success_rate"]:.0%}',
+            f'• 이번 주 배송: {weekly["total_deliveries"]}건',
+            f'• 주간 성공률: {weekly["success_rate"]:.0%}',
+        ]
+        return format_message('info', '물류 보고서:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_logistics_report 오류: %s", exc)
+        return format_message('error', f'보고서 생성 실패: {exc}')
