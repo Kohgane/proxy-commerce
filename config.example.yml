@@ -902,3 +902,44 @@ tax_engine:
     - US
     - JP
     - CN
+
+# === Phase 101: 자동 구매 엔진 ===
+auto_purchase:
+  enabled: true
+  default_strategy: balanced
+  marketplaces:
+    - amazon_us
+    - amazon_jp
+    - taobao
+    - alibaba_1688
+  forwarding_address:
+    name: "My Forwarding Agent"
+    address1: "123 Forwarding St"
+    city: "Portland"
+    state: "OR"
+    zip: "97201"
+    country: "US"
+    phone: "+15031234567"
+  payment:
+    daily_limit_usd: 10000
+    monthly_limit_usd: 100000
+    single_limit_usd: 1000
+    preferred_methods:
+      amazon_us: credit_card
+      amazon_jp: credit_card
+      taobao: alipay
+      alibaba_1688: bank_transfer
+  rules:
+    max_price_usd: 500
+    min_margin_rate: 0.15
+    stock_threshold: 5
+    daily_order_limit: 100
+    blacklisted_sellers: []
+  monitor:
+    price_alert_threshold: 0.20
+    delivery_delay_days: 14
+    check_interval_minutes: 30
+  source_selection:
+    price_weight: 0.40
+    delivery_weight: 0.30
+    reliability_weight: 0.30
