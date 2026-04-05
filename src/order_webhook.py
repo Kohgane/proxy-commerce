@@ -712,6 +712,14 @@ try:
 except Exception as _logistics_bp_exc:
     logger.warning("물류 최적화 API Blueprint 등록 실패: %s", _logistics_bp_exc)
 
+# 배송대행지 API Blueprint 등록 (Phase 102)
+try:
+    from .api.forwarding_api import forwarding_bp
+    app.register_blueprint(forwarding_bp)
+    logger.info("배송대행지 API Blueprint 등록 완료")
+except Exception as _forwarding_bp_exc:
+    logger.warning("배송대행지 API Blueprint 등록 실패: %s", _forwarding_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')

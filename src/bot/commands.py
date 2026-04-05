@@ -3334,3 +3334,148 @@ def cmd_etl_dashboard() -> str:
     except Exception as exc:
         logger.error("cmd_etl_dashboard 오류: %s", exc)
         return format_message('error', f'ETL 대시보드 조회 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 102: 배송대행지 커맨드
+# ─────────────────────────────────────────────────────────────
+
+def cmd_forwarding_status() -> str:
+    """/forwarding_status — 전체 배송대행 현황."""
+    try:
+        from ..forwarding.dashboard import ForwardingDashboard
+        from ..forwarding.incoming import IncomingVerifier
+        from ..forwarding.consolidation import ConsolidationManager
+        from ..forwarding.tracker import ShipmentTracker
+        dashboard = ForwardingDashboard(
+            verifier=IncomingVerifier(),
+            manager=ConsolidationManager(),
+            tracker=ShipmentTracker(),
+        )
+        summary = dashboard.get_summary()
+        inc = summary.get('incoming_stats', {})
+        ship = summary.get('shipment_stats', {})
+        cons = summary.get('consolidation_stats', {})
+        lines = [
+            f"📦 입고 대기: {inc.get('waiting', 0)}",
+            f"✅ 입고 완료: {inc.get('received', 0)}",
+            f"🔍 검수 중: {inc.get('inspected', 0)}",
+            f"🚢 배송 준비: {inc.get('ready_to_ship', 0)}",
+            f"⚠️ 문제 발생: {inc.get('issue_found', 0)}",
+            f"🚚 배송 중: {ship.get('in_transit', 0)}",
+            f"🏠 배송 완료: {ship.get('delivered', 0)}",
+            f"📋 합배송 그룹: {cons.get('total_groups', 0)}",
+        ]
+        return format_message('info', '배송대행 현황:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_forwarding_status 오류: %s", exc)
+        return format_message('error', f'배송대행 현황 조회 실패: {exc}')
+
+
+def cmd_incoming_check(tracking_number: str = '') -> str:
+    """/incoming_check <tracking_number> — 입고 확인."""
+    if not tracking_number.strip():
+        return format_message('error', '사용법: /incoming_check <tracking_number>')
+    try:
+        from ..forwarding.incoming import IncomingVerifier
+        verifier = IncomingVerifier()
+        record = verifier.verify(
+            order_id=f'order_{tracking_number}',
+            tracking_number=tracking_number.strip(),
+            agent_id='moltail',
+        )
+        lines = [
+            f"• 트래킹: {record.tracking_number}",
+            f"• 상태: {record.status.value}",
+            f"• 무게: {record.weight_kg:.2f}kg",
+            f"• 입고일: {record.received_at.strftime('%Y-%m-%d %H:%M') if record.received_at else '-'}",
+        ]
+        if record.issue_type:
+            lines.append(f"• 문제: {record.issue_type}")
+        return format_message('info', '입고 확인 결과:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_incoming_check 오류: %s", exc)
+        return format_message('error', f'입고 확인 실패: {exc}')
+
+
+def cmd_shipping_estimate(weight: str = '', country: str = '') -> str:
+    """/shipping_estimate <weight> <country> — 배송비 견적."""
+    if not weight.strip() or not country.strip():
+        return format_message('error', '사용법: /shipping_estimate <weight_kg> <country>')
+    try:
+        from ..forwarding.cost_estimator import CostEstimator
+        estimator = CostEstimator()
+        try:
+            w = float(weight.strip())
+        except ValueError:
+            return format_message('error', f'무게는 숫자여야 합니다: {weight}')
+        breakdown = estimator.estimate(w, country.strip().upper(), agent_id='moltail')
+        lines = [
+            f"• 기본 배송비: ${breakdown.base_shipping_usd:.2f}",
+            f"• 유류 할증: ${breakdown.fuel_surcharge_usd:.2f}",
+            f"• 보험료: ${breakdown.insurance_usd:.2f}",
+            f"• 대행 수수료: ${breakdown.agent_fee_usd:.2f}",
+            f"• 관세: ${breakdown.customs_duty_usd:.2f}",
+            f"• 부가세: ${breakdown.vat_usd:.2f}",
+            f"━━━━━━━━━━━━━━",
+            f"• 합계: ${breakdown.total_usd:.2f}",
+        ]
+        return format_message('info', f'배송비 견적 ({w}kg → {country.upper()}):\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_shipping_estimate 오류: %s", exc)
+        return format_message('error', f'배송비 견적 실패: {exc}')
+
+
+def cmd_consolidation_list() -> str:
+    """/consolidation_list — 합배송 그룹 목록."""
+    try:
+        from ..forwarding.consolidation import ConsolidationManager
+        manager = ConsolidationManager()
+        groups = manager.list_groups()
+        if not groups:
+            return format_message('info', '합배송 그룹이 없습니다.')
+        lines = [f'총 {len(groups)}개:']
+        for g in groups[:10]:
+            lines.append(
+                f"• [{g.status.value}] {g.group_id[:8]}... "
+                f"({len(g.order_ids)}건, {g.estimated_weight_kg:.1f}kg, "
+                f"절감: ${g.savings_usd:.2f})"
+            )
+        if len(groups) > 10:
+            lines.append(f'... 외 {len(groups) - 10}개')
+        return format_message('info', '합배송 그룹 목록:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_consolidation_list 오류: %s", exc)
+        return format_message('error', f'합배송 목록 조회 실패: {exc}')
+
+
+def cmd_forwarding_dashboard() -> str:
+    """/forwarding_dashboard — 배송대행 대시보드 요약."""
+    try:
+        from ..forwarding.dashboard import ForwardingDashboard
+        from ..forwarding.incoming import IncomingVerifier
+        from ..forwarding.consolidation import ConsolidationManager
+        from ..forwarding.tracker import ShipmentTracker
+        from ..forwarding.cost_estimator import CostEstimator
+        from ..forwarding.agent import ForwardingAgentManager
+        dashboard = ForwardingDashboard(
+            verifier=IncomingVerifier(),
+            manager=ConsolidationManager(),
+            tracker=ShipmentTracker(),
+            estimator=CostEstimator(),
+            agent_manager=ForwardingAgentManager(),
+        )
+        summary = dashboard.get_summary()
+        agent_stats = dashboard.get_agent_stats()
+        lines = [
+            f"📊 전체 배송: {summary.get('total_shipments', 0)}건",
+        ]
+        for ag in agent_stats:
+            lines.append(
+                f"  • {ag.get('name', ag.get('agent_id', '-'))}: "
+                f"신뢰도 {ag.get('reliability', 0):.0%}"
+            )
+        return format_message('info', '배송대행 대시보드:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_forwarding_dashboard 오류: %s", exc)
+        return format_message('error', f'대시보드 조회 실패: {exc}')

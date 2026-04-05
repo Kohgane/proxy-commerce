@@ -1042,6 +1042,13 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         # Phase 90: 세금 계산
         'tax_calc': lambda d: _format_tax_calc(d),
         'customs': lambda d: _format_customs(d),
+        # Phase 102: 배송대행지
+        'forwarding_status': lambda d: _format_forwarding_status(d),
+        'incoming_record': lambda d: _format_incoming_record(d),
+        'consolidation_group': lambda d: _format_consolidation_group(d),
+        'shipment_record': lambda d: _format_shipment_record(d),
+        'cost_estimate': lambda d: _format_cost_estimate(d),
+        'forwarding_dashboard': lambda d: _format_forwarding_dashboard(d),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:
@@ -2210,3 +2217,83 @@ def _format_customs(d: dict) -> str:
     for b in breakdown:
         lines.append(f"  • {b.get('rule', '-')}: {b.get('tax', 0):,.0f}원 ({b.get('rate', 0):.1%})")
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Phase 102: 배송대행지 포매터
+# ---------------------------------------------------------------------------
+def _format_forwarding_status(d: dict) -> str:
+    """배송대행 현황 포맷."""
+    inc = d.get('incoming_stats', {})
+    ship = d.get('shipment_stats', {})
+    return (
+        f"📦 배송대행 현황\n"
+        f"입고 대기: {inc.get('waiting', 0)}\n"
+        f"입고 완료: {inc.get('received', 0)}\n"
+        f"배송 중: {ship.get('in_transit', 0)}\n"
+        f"배송 완료: {ship.get('delivered', 0)}"
+    )
+
+
+def _format_incoming_record(d: dict) -> str:
+    """입고 기록 포맷."""
+    return (
+        f"📬 입고 기록\n"
+        f"주문 ID: {d.get('order_id', '-')}\n"
+        f"트래킹: {d.get('tracking_number', '-')}\n"
+        f"상태: {d.get('status', '-')}\n"
+        f"무게: {d.get('weight_kg', 0):.2f}kg"
+    )
+
+
+def _format_consolidation_group(d: dict) -> str:
+    """합배송 그룹 포맷."""
+    return (
+        f"📋 합배송 그룹\n"
+        f"그룹 ID: {d.get('group_id', '-')}\n"
+        f"주문 수: {len(d.get('order_ids', []))}건\n"
+        f"상태: {d.get('status', '-')}\n"
+        f"예상 무게: {d.get('estimated_weight_kg', 0):.2f}kg\n"
+        f"비용 절감: ${d.get('savings_usd', 0):.2f}"
+    )
+
+
+def _format_shipment_record(d: dict) -> str:
+    """배송 기록 포맷."""
+    return (
+        f"🚚 배송 기록\n"
+        f"배송 ID: {d.get('shipment_id', '-')}\n"
+        f"트래킹: {d.get('tracking_number', '-')}\n"
+        f"상태: {d.get('status', '-')}\n"
+        f"출발지: {d.get('origin_country', '-')}\n"
+        f"도착지: {d.get('destination_country', '-')}"
+    )
+
+
+def _format_cost_estimate(d: dict) -> str:
+    """비용 견적 포맷."""
+    return (
+        f"💰 배송비 견적\n"
+        f"기본 배송비: ${d.get('base_shipping_usd', 0):.2f}\n"
+        f"유류 할증: ${d.get('fuel_surcharge_usd', 0):.2f}\n"
+        f"보험료: ${d.get('insurance_usd', 0):.2f}\n"
+        f"대행 수수료: ${d.get('agent_fee_usd', 0):.2f}\n"
+        f"관세: ${d.get('customs_duty_usd', 0):.2f}\n"
+        f"부가세: ${d.get('vat_usd', 0):.2f}\n"
+        f"합계: ${d.get('total_usd', 0):.2f}"
+    )
+
+
+def _format_forwarding_dashboard(d: dict) -> str:
+    """배송대행 대시보드 포맷."""
+    inc = d.get('incoming_stats', {})
+    ship = d.get('shipment_stats', {})
+    cons = d.get('consolidation_stats', {})
+    return (
+        f"📊 배송대행 대시보드\n"
+        f"총 배송: {d.get('total_shipments', 0)}건\n"
+        f"입고 대기: {inc.get('waiting', 0)}\n"
+        f"배송 중: {ship.get('in_transit', 0)}\n"
+        f"합배송 그룹: {cons.get('total_groups', 0)}\n"
+        f"비용 절감 합계: ${cons.get('total_savings_usd', 0):.2f}"
+    )

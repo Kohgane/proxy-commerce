@@ -94,6 +94,7 @@
 | Phase 99 | 물류 최적화 (배송 경로 최적화, 라스트마일 추적, ETA 예측, 비용 최적화) | #64 | 2026-04-05 |
 | Phase 100 | 데이터 파이프라인 (ETL 엔진, 데이터 웨어하우스, 품질 관리, 분석 뷰 마트) | #65 | 2026-04-05 |
 | Phase 101 | 자동 구매 엔진 (Amazon SP-API 자동 주문, 결제 자동화, 수입/구매대행 자동 플로우) | #67 | 2026-04-05 |
+| Phase 102 | 배송대행지 연동 (몰테일/이하넥스 API, 입고 확인 자동화) | #PR | 2026-04-05 |
 
 ## 🚧 진행 중 Phase
 
@@ -986,3 +987,25 @@
 - API Blueprint: `src/api/auto_purchase_api.py` (`/api/v1/auto-purchase`) — 10개 엔드포인트 (주문생성/조회/취소/소스조회/선택/메트릭/규칙/시뮬레이션/큐)
 - 봇 커맨드: `/auto_buy <url>`, `/buy_status <order_id>`, `/buy_queue`, `/buy_metrics`, `/buy_rules`, `/buy_simulate <url>`
 - 관련 코드: `src/auto_purchase/`, `src/api/auto_purchase_api.py`, `src/bot/commands.py`
+
+## Phase 102 — 배송대행지 연동 (몰테일/이하넥스 API, 입고 확인 자동화) ✅ 완료
+
+- `IncomingStatus` Enum: waiting/received/inspected/ready_to_ship/issue_found
+- `IncomingRecord` 데이터클래스 — record_id, order_id, agent_id, tracking_number, status, received_at, weight_kg, photo_urls, inspection_notes, issue_type
+- `IncomingVerifier`: 입고 확인 자동화 — verify(), check_status(), list_records(), process_inspection(), get_stats()
+- `ConsolidationStatus` Enum: pending/approved/executing/completed/cancelled
+- `ConsolidationGroup` 데이터클래스 — group_id, order_ids, agent_id, estimated_weight_kg, estimated_cost_usd, savings_usd
+- `ConsolidationManager`: 합배송 그룹 관리 — create_group(), execute_group(), cancel_group(), auto_recommend(), calculate_savings(), split_shipment()
+- `ShipmentStatus` Enum: pending/shipped_from_warehouse/customs_clearance/domestic_transit/delivered
+- `TrackingEvent`, `ShipmentRecord` 데이터클래스
+- `ShipmentTracker`: 배송 추적 — create_shipment(), update_tracking(), list_shipments(), calculate_eta(), get_stats()
+- `CostBreakdown` 데이터클래스 — base_shipping_usd, fuel_surcharge_usd, insurance_usd, agent_fee_usd, customs_duty_usd, vat_usd, total_usd
+- `CostEstimator`: 비용 견적 — estimate(), simulate_consolidation(), get_cheapest_agent()
+- `ForwardingAgent` ABC: check_incoming(), request_consolidation(), request_shipment(), get_tracking(), get_warehouse_address(), estimate_shipping_cost()
+- `MoltailAgent(ForwardingAgent)`: 몰테일 mock 구현 — US/JP 창고 지원, reliability 0.95
+- `IhanexAgent(ForwardingAgent)`: 이하넥스 mock 구현 — US/JP 창고 지원, reliability 0.88
+- `ForwardingAgentManager`: 에이전트 등록/조회/목록/추천 (cost/speed/reliability/balanced)
+- `ForwardingDashboard`: 통합 대시보드 — get_summary(), get_agent_stats(), get_cost_stats()
+- API Blueprint: `src/api/forwarding_api.py` (`/api/v1/forwarding`) — 14개 엔드포인트 (배송/입고/합배송/견적/에이전트/대시보드)
+- 봇 커맨드: `/forwarding_status`, `/incoming_check <tracking>`, `/shipping_estimate <weight> <country>`, `/consolidation_list`, `/forwarding_dashboard`
+- 관련 코드: `src/forwarding/`, `src/api/forwarding_api.py`, `src/bot/commands.py`

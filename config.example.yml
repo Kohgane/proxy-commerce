@@ -943,3 +943,37 @@ auto_purchase:
     price_weight: 0.40
     delivery_weight: 0.30
     reliability_weight: 0.30
+
+# === Phase 102: 배송대행지 연동 ===
+forwarding:
+  enabled: true
+  default_agent: moltail
+  agents:
+    moltail:
+      api_key: ""
+      api_secret: ""
+      us_warehouse: "20 Corporate Park, Suite 100, Irvine, CA 92606, USA"
+      jp_warehouse: "〒540-0001 大阪府大阪市中央区城見1丁目2番27号"
+    ihanex:
+      api_key: ""
+      api_secret: ""
+      us_warehouse: "3003 Commerce St, Dallas, TX 75226, USA"
+      jp_warehouse: "〒135-0063 東京都江東区有明3丁目7番26号"
+  incoming:
+    auto_verify: true
+    poll_interval_minutes: 30
+    notify_on_receive: true
+    notify_on_issue: true
+  consolidation:
+    auto_recommend: true
+    window_hours: 24
+    min_orders: 2
+  shipment:
+    default_service: standard
+    customs_threshold_usd: 150
+  cost:
+    duty_rates:
+      electronics: 0.08
+      clothing: 0.13
+      default: 0.08
+    vat_rate: 0.10
