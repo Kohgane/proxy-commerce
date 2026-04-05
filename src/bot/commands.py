@@ -3222,3 +3222,115 @@ def cmd_logistics_report() -> str:
     except Exception as exc:
         logger.error("cmd_logistics_report 오류: %s", exc)
         return format_message('error', f'보고서 생성 실패: {exc}')
+
+
+# ── Phase 100: 데이터 파이프라인 봇 커맨드 ──────────────────────────────────────
+
+def cmd_etl_status() -> str:
+    """/etl_status — ETL 파이프라인 현황 조회."""
+    try:
+        from ..data_pipeline.etl_engine import ETLEngine
+        engine = ETLEngine()
+        pipelines = engine.list_pipelines()
+        if not pipelines:
+            return format_message('info', 'ETL 파이프라인이 없습니다.')
+        lines = [f'• [{p.status.value}] {p.name} (ID: {p.pipeline_id[:8]}...)' for p in pipelines]
+        return format_message('info', f'ETL 파이프라인 현황 ({len(pipelines)}개):\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_etl_status 오류: %s", exc)
+        return format_message('error', f'ETL 현황 조회 실패: {exc}')
+
+
+def cmd_etl_run(pipeline_id: str = '') -> str:
+    """/etl_run <pipeline_id> — 파이프라인 실행."""
+    if not pipeline_id.strip():
+        return format_message('error', '사용법: /etl_run <pipeline_id>')
+    try:
+        from ..data_pipeline.etl_engine import ETLEngine
+        engine = ETLEngine()
+        record = engine.run_pipeline(pipeline_id.strip())
+        lines = [
+            f'• 실행 ID: {record.run_id[:8]}...',
+            f'• 상태: {record.status}',
+            f'• 처리 행수: {record.rows_processed:,}',
+            f'• 시작: {record.started_at}',
+            f'• 완료: {record.finished_at}',
+        ]
+        if record.error:
+            lines.append(f'• 오류: {record.error}')
+        return format_message('info', '파이프라인 실행 완료:\n' + '\n'.join(lines))
+    except KeyError:
+        return format_message('error', f'파이프라인 없음: {pipeline_id}')
+    except Exception as exc:
+        logger.error("cmd_etl_run 오류: %s", exc)
+        return format_message('error', f'파이프라인 실행 실패: {exc}')
+
+
+def cmd_warehouse_tables() -> str:
+    """/warehouse_tables — 웨어하우스 테이블 목록."""
+    try:
+        from ..data_pipeline.data_warehouse import DataWarehouse
+        warehouse = DataWarehouse()
+        tables = warehouse.list_tables()
+        if not tables:
+            return format_message('info', '웨어하우스 테이블이 없습니다.')
+        stats = warehouse.get_stats()
+        lines = [
+            f'• 총 테이블: {stats["total_tables"]}개',
+            f'• 총 행수: {stats["total_rows"]:,}',
+            f'• 용량 (추정): {stats["disk_size_mb"]:.2f}MB',
+        ]
+        for t in tables:
+            lines.append(f'  - {t.table_name}: {t.row_count:,}행')
+        return format_message('info', '웨어하우스 테이블 목록:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_warehouse_tables 오류: %s", exc)
+        return format_message('error', f'테이블 목록 조회 실패: {exc}')
+
+
+def cmd_data_quality() -> str:
+    """/data_quality — 데이터 품질 리포트."""
+    try:
+        from ..data_pipeline.data_quality import DataQualityChecker, NotNullRule, RangeRule
+        checker = DataQualityChecker()
+        checker.add_rule(NotNullRule(fields=["id"]))
+        checker.add_rule(RangeRule(field="value", min_val=0))
+        sample_data = [{"id": str(i), "value": i * 10} for i in range(20)]
+        report = checker.check(sample_data, "sample_table")
+        lines = [
+            f'• 테이블: {report.table_name}',
+            f'• 총 행수: {report.total_rows}',
+            f'• 통과: {report.passed_rows}',
+            f'• 실패: {report.failed_rows}',
+            f'• 품질 점수: {report.score:.1f}%',
+        ]
+        return format_message('info', '데이터 품질 리포트:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_data_quality 오류: %s", exc)
+        return format_message('error', f'품질 검사 실패: {exc}')
+
+
+def cmd_etl_dashboard() -> str:
+    """/etl_dashboard — ETL 대시보드."""
+    try:
+        from ..data_pipeline.etl_engine import ETLEngine
+        from ..data_pipeline.data_warehouse import DataWarehouse
+        from ..data_pipeline.pipeline_monitor import PipelineMonitor, ETLDashboard
+        engine = ETLEngine()
+        warehouse = DataWarehouse()
+        monitor = PipelineMonitor()
+        dashboard = ETLDashboard(engine, warehouse, monitor)
+        summary = dashboard.get_summary()
+        stats = summary.get('warehouse_stats', {})
+        lines = [
+            f'• 파이프라인: {summary["pipeline_count"]}개',
+            f'• 실행 중: {summary["active_pipelines"]}개',
+            f'• 총 실행: {summary["total_runs"]}회',
+            f'• 성공률: {summary["success_rate"]:.0%}',
+            f'• 웨어하우스 테이블: {stats.get("total_tables", 0)}개',
+            f'• 총 데이터: {stats.get("total_rows", 0):,}행',
+        ]
+        return format_message('info', 'ETL 대시보드:\n' + '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_etl_dashboard 오류: %s", exc)
+        return format_message('error', f'ETL 대시보드 조회 실패: {exc}')

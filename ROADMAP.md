@@ -91,6 +91,8 @@
 | Phase 96 | 자동 구매 엔진 (Amazon SP-API 자동 주문, 결제 자동화, 수입/구매대행 자동 플로우) + CD Staging 안정화 | #60 | 2026-04-04 |
 | Phase 97 | AI 기반 동적 가격 최적화 (경쟁사 가격 추적, 수요 예측, 앙상블 가격 결정, 가격 규칙 6종, 알림/분석/스케줄러) | #62 | 2026-04-04 |
 | Phase 98 | 멀티벤더 마켓플레이스 (판매자 온보딩, 상품 관리, 수수료 정산, 대시보드/분석, 관리자 기능) | #63 | 2026-04-05 |
+| Phase 99 | 물류 최적화 (배송 경로 최적화, 라스트마일 추적, ETA 예측, 비용 최적화) | #64 | 2026-04-05 |
+| Phase 100 | 데이터 파이프라인 (ETL 엔진, 데이터 웨어하우스, 품질 관리, 분석 뷰 마트) | #65 | 2026-04-05 |
 
 ## 🚧 진행 중 Phase
 
@@ -939,3 +941,27 @@
 - API Blueprint: `src/api/logistics_api.py` (`/api/v1/logistics`) — 16개 엔드포인트 (routes/optimize, routes/get, deliveries-CRUD, deliveries-status/assign/eta/proof, agents-CRUD, consolidation/analyze, carriers/recommend, analytics, dashboard, heatmap)
 - 봇 커맨드: `/logistics_status`, `/route_optimize <ids>`, `/delivery_eta <id>`, `/carrier_recommend <weight> <region>`, `/logistics_report`
 - 관련 코드: `src/logistics/`, `src/api/logistics_api.py`, `src/bot/commands.py`
+
+## Phase 100 — 데이터 파이프라인 (ETL, 데이터 웨어하우스 연동) ✅ 완료
+
+- `PipelineStatus` Enum: idle/running/completed/failed/paused
+- `ETLPipeline`, `WarehouseSchema`, `WarehouseTable`, `RunRecord` 데이터클래스 — `to_dict()` 메서드 포함
+- `PipelineScheduler`: hourly/daily/weekly/monthly 스케줄 계산, cron 파싱, 실행 예정 여부 확인
+- `ETLEngine`: 파이프라인 CRUD, 동기 실행 (추출→변환→적재), 실행 이력 관리
+- `InternalDBSource`: orders/products/customers/inventory/reviews 테이블 모의 추출
+- `APISource`: marketplace/competitor_price 외부 API 모의 추출
+- `FileSource`: CSV/JSON 파일 모의 추출, `EventStreamSource`: 이벤트 스트림 추출 (EventStore 연동 시도)
+- `SourceRegistry`: 데이터 소스 등록/조회/해제
+- `FilterTransform`, `MapTransform`, `AggregateTransform`, `JoinTransform`, `EnrichTransform`, `DeduplicateTransform`, `TypeCastTransform`, `TransformChain` — 7종 변환 + 체인
+- `DataWarehouse`: 인메모리 테이블 CRUD, append/replace/upsert 적재 모드, 필터 쿼리, 샘플 조회, 통계
+- `InMemoryLoader`, `FileLoader`: 두 종류 적재기, `PartitionManager`: 파티션 생성/조회/삭제/데이터 조회
+- `NotNullRule`, `UniqueRule`, `RangeRule`, `PatternRule`, `ReferentialIntegrityRule`, `FreshnessRule` — 6종 품질 규칙
+- `DataQualityChecker`: 규칙 등록/실행/리포트 생성/임계치 알림 (NotificationHub 연동 시도)
+- `QueryEngine`: 인메모리 쿼리 (select/where/group_by/order_by/limit), `MaterializedView`: 구체화된 뷰 + stale 감지
+- `AnalyticsViewManager`: 뷰 생성/새로고침/조회/삭제
+- `SalesFactMart`, `CustomerDimensionMart`, `ProductPerformanceMart`, `InventorySnapshotMart`, `VendorPerformanceMart` — 5종 분석 마트
+- `LineageTracker`: 파이프라인 리니지 노드/엣지 기록, 테이블 리니지 역추적
+- `PipelineMonitor`: 실행 지표 (성공률/평균 시간/처리량/에러율), `ETLDashboard`: 종합 대시보드
+- API Blueprint: `src/api/data_pipeline_api.py` (`/api/v1/data-pipeline`) — 17개 엔드포인트 (pipelines-CRUD/run/history, sources, warehouse/tables/query, quality/reports/check, views/refresh, dashboard, lineage)
+- 봇 커맨드: `/etl_status`, `/etl_run <id>`, `/warehouse_tables`, `/data_quality`, `/etl_dashboard`
+- 관련 코드: `src/data_pipeline/`, `src/api/data_pipeline_api.py`, `src/bot/commands.py`
