@@ -363,5 +363,6 @@ def batch_ship():
             engine.advance_to_shipped(oid, shipment['tracking_number'], shipment['carrier_id'])
             results.append({'order_id': oid, 'tracking_number': shipment['tracking_number'], 'status': 'shipped'})
         except Exception as exc:
-            errors.append({'order_id': oid, 'error': str(exc)})
+            logger.error("batch-ship 오류 order=%s: %s", oid, exc)
+            errors.append({'order_id': oid, 'error': '발송 처리 중 오류가 발생했습니다'})
     return jsonify({'results': results, 'errors': errors, 'total': len(order_ids), 'success': len(results)})

@@ -35,12 +35,6 @@ class TrackingRecord:
 class TrackingNumberManager:
     """운송장번호 자동 생성/등록/관리."""
 
-    _PLATFORM_REGISTER_FNS = {
-        'coupang': '_register_coupang',
-        'naver': '_register_naver',
-        'internal': '_register_internal',
-    }
-
     def __init__(self):
         self._records: List[TrackingRecord] = []
 

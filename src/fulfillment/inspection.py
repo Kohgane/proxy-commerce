@@ -45,13 +45,14 @@ class InspectionService:
         comment = '검수 완료 — 이상 없음'
 
         # items에 defects가 있으면 grade 낮춤
+        grade_order = list(InspectionGrade)
         for item in items:
             if item.get('defect_type'):
                 defect_types.append(item['defect_type'])
             if item.get('grade'):
                 try:
                     candidate = InspectionGrade(item['grade'])
-                    if list(InspectionGrade).index(candidate) > list(InspectionGrade).index(grade):
+                    if grade_order.index(candidate) > grade_order.index(grade):
                         grade = candidate
                 except ValueError:
                     pass

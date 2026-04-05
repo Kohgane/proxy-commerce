@@ -217,7 +217,7 @@ class TestInspectionService:
         result = svc.inspect('order_002', [])
         assert result.grade == InspectionGrade.A
 
-    def test_inspect_with_defect_upgrades_grade(self):
+    def test_inspect_defect_lowers_grade(self):
         from src.fulfillment.inspection import InspectionGrade
         svc = self._make_svc()
         result = svc.inspect('order_003', [{'grade': 'C', 'defect_type': 'scratch'}])
