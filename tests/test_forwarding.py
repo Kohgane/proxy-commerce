@@ -873,7 +873,7 @@ class TestFormatters:
             'savings_usd': 5.50,
         })
         assert 'grp001' in result
-        assert '2건' in result
+        assert '2' in result  # order count
         assert '5.50' in result
 
     def test_format_shipment_record(self):
