@@ -4619,3 +4619,125 @@ def cmd_vstock_dashboard() -> str:
     except Exception as exc:
         logger.error("cmd_vstock_dashboard 오류: %s", exc)
         return format_message('error', f'대시보드 조회 실패: {exc}')
+
+
+# ── Phase 114: 셀러 성과 리포트 ───────────────────────────────────────────────
+
+def cmd_my_report(report_type: str = 'daily') -> str:
+    """/my_report [daily|weekly|monthly] — 리포트 생성 + 텔레그램 발송."""
+    try:
+        from .seller_report_commands import cmd_my_report as _cmd
+        return _cmd(report_type)
+    except Exception as exc:
+        logger.error("cmd_my_report 오류: %s", exc)
+        return format_message('error', f'리포트 생성 실패: {exc}')
+
+
+def cmd_daily_summary() -> str:
+    """/daily_summary — 오늘 매출/주문/마진 요약."""
+    try:
+        from .seller_report_commands import cmd_daily_summary as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_daily_summary 오류: %s", exc)
+        return format_message('error', f'일간 요약 실패: {exc}')
+
+
+def cmd_product_rank(direction: str = 'top', n: int = 5) -> str:
+    """/product_rank [top|bottom] [N] — 상품 수익성 순위."""
+    try:
+        from .seller_report_commands import cmd_product_rank as _cmd
+        return _cmd(direction, int(n))
+    except Exception as exc:
+        logger.error("cmd_product_rank 오류: %s", exc)
+        return format_message('error', f'상품 순위 조회 실패: {exc}')
+
+
+def cmd_channel_compare() -> str:
+    """/channel_compare — 채널별 성과 비교."""
+    try:
+        from .seller_report_commands import cmd_channel_compare as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_channel_compare 오류: %s", exc)
+        return format_message('error', f'채널 비교 실패: {exc}')
+
+
+def cmd_source_rank() -> str:
+    """/source_rank — 소싱처 성과 순위."""
+    try:
+        from .seller_report_commands import cmd_source_rank as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_source_rank 오류: %s", exc)
+        return format_message('error', f'소싱처 순위 조회 실패: {exc}')
+
+
+def cmd_hybrid_suggest() -> str:
+    """/hybrid_suggest — 사입 전환 추천 상품."""
+    try:
+        from .seller_report_commands import cmd_hybrid_suggest as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_hybrid_suggest 오류: %s", exc)
+        return format_message('error', f'사입 추천 조회 실패: {exc}')
+
+
+def cmd_hybrid_invest() -> str:
+    """/hybrid_invest — 사입 전환 투자금 추정."""
+    try:
+        from .seller_report_commands import cmd_hybrid_invest as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_hybrid_invest 오류: %s", exc)
+        return format_message('error', f'투자금 추정 실패: {exc}')
+
+
+def cmd_performance_alerts() -> str:
+    """/performance_alerts — 성과 알림 현황."""
+    try:
+        from .seller_report_commands import cmd_performance_alerts as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_performance_alerts 오류: %s", exc)
+        return format_message('error', f'알림 조회 실패: {exc}')
+
+
+def cmd_dead_stock() -> str:
+    """/dead_stock — 장기 미판매 상품."""
+    try:
+        from .seller_report_commands import cmd_dead_stock as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_dead_stock 오류: %s", exc)
+        return format_message('error', f'장기 미판매 조회 실패: {exc}')
+
+
+def cmd_trending_products() -> str:
+    """/trending_products — 판매 급상승 상품."""
+    try:
+        from .seller_report_commands import cmd_trending_products as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_trending_products 오류: %s", exc)
+        return format_message('error', f'급상승 상품 조회 실패: {exc}')
+
+
+def cmd_my_goals() -> str:
+    """/my_goals — 목표 진행률."""
+    try:
+        from .seller_report_commands import cmd_my_goals as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_my_goals 오류: %s", exc)
+        return format_message('error', f'목표 조회 실패: {exc}')
+
+
+def cmd_seller_dashboard() -> str:
+    """/seller_dashboard — 종합 대시보드 요약."""
+    try:
+        from .seller_report_commands import cmd_seller_dashboard as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_seller_dashboard 오류: %s", exc)
+        return format_message('error', f'대시보드 조회 실패: {exc}')

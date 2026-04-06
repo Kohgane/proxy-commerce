@@ -792,6 +792,14 @@ try:
 except Exception as _virtual_inventory_bp_exc:
     logger.warning("가상 재고 API Blueprint 등록 실패: %s", _virtual_inventory_bp_exc)
 
+# 셀러 성과 리포트 API Blueprint 등록 (Phase 114)
+try:
+    from .api.seller_report_api import seller_report_bp
+    app.register_blueprint(seller_report_bp)
+    logger.info("셀러 성과 리포트 API Blueprint 등록 완료")
+except Exception as _seller_report_bp_exc:
+    logger.warning("셀러 성과 리포트 API Blueprint 등록 실패: %s", _seller_report_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')

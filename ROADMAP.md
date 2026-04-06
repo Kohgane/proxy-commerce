@@ -105,6 +105,8 @@
 | Phase 110 | 실시간 마진 계산기 강화 — 적자 판매 완전 방지 (원가+배송+관세+수수료+환율 전부 포함) | #76 | 2026-04-06 |
 | Phase 111 | 경쟁사 가격 모니터링 + 자동 가격 조정 제안 | #77 | 2026-04-07 |
 | Phase 112 | 고객 주문 ↔ 소싱 자동 매칭 + 이행 가능성 사전 확인 | #78 | 2026-04-06 |
+| Phase 113 | 재고 가상화 — 복수 소싱처 통합 가상 재고 관리 | #79 | 2026-04-06 |
+| Phase 114 | 셀러 성과 리포트 — 내 스토어 종합 분석 + 하이브리드 모델 자동 전환 제안 | #80 | 2026-04-06 |
 
 ## 🚧 진행 중 Phase
 
@@ -1285,3 +1287,30 @@
 - 봇 커맨드: `/vstock`, `/vstock_all`, `/vstock_low`, `/vstock_out`, `/vstock_alerts`, `/vstock_reserve`, `/vstock_allocate`, `/vstock_sync`, `/vstock_health`, `/vstock_risk`, `/vstock_dashboard`
 - 관련 코드: `src/virtual_inventory/`, `src/api/virtual_inventory_api.py`, `src/bot/virtual_inventory_commands.py`
 - 테스트: `tests/test_virtual_inventory.py` (89개+ 테스트)
+
+## Phase 114 — 셀러 성과 리포트 — 내 스토어 종합 분석 + 하이브리드 모델 자동 전환 제안 ✅ 완료
+
+- `PerformanceMetrics` 데이터클래스: period, start_date, end_date, total_revenue, total_cost, gross_profit, net_profit, gross_margin_rate, net_margin_rate, total_orders, avg_order_value, return_rate, cancel_rate, fulfillment_rate, sla_compliance_rate, customer_satisfaction_score, unique_customers, repeat_customer_rate, active_products, out_of_stock_products
+- `PerformanceMetricsEngine`: 핵심 KPI 수집/계산 — calculate_metrics()(daily/weekly/monthly/custom), get_kpi_summary()(전일 대비 변화율), compare_periods()(MoM/WoW/YoY), get_metric_trend()
+- `ChannelPerformance` 데이터클래스: channel, revenue, orders, avg_order_value, margin_rate, return_rate, fulfillment_rate, top_products, growth_rate
+- `ChannelPerformanceAnalyzer`: 채널별 성과 분석 — analyze_channel(), compare_channels(), get_best_channel(), get_channel_recommendations()
+- `ProductGrade` Enum: star(상위10%)/good(10~30%)/average(30~70%)/underperform(70~90%)/poor(하위10%)
+- `ProductPerformance` 데이터클래스: product_id, name, channel, revenue, units_sold, margin_rate, return_rate, ranking, grade, avg_daily_sales, days_of_stock, sourcing_cost_trend
+- `ProductPerformanceAnalyzer`: 상품별 성과 분석 — analyze_product(), get_product_ranking(), get_product_grades(), get_profitability_matrix()(4사분면: stars/hidden_gems/volume_drivers/dogs), get_dead_stock(), get_trending_products()
+- `SourcingPerformance` 데이터클래스: source_id, source_name, platform, total_orders, success_rate, avg_delivery_days, avg_cost_variance, quality_score, issue_count, reliability_trend
+- `SourcingPerformanceAnalyzer`: 소싱처별 성과 분석 — analyze_source(), compare_sources(), get_source_ranking(), get_problematic_sources(), get_source_recommendations()
+- `SourcingModel` Enum: pure_dropship/semi_stock/full_stock/hybrid
+- `ProductSourcingRecommendation` 데이터클래스: product_id, name, current_model, recommended_model, reason, monthly_sales, monthly_revenue, avg_margin, estimated_savings, estimated_delivery_improvement, confidence_score, recommended_stock_qty, estimated_investment
+- `HybridModelAdvisor` ⭐: 무재고→사입 전환 자동 추천 — A급(월50개+)→full_stock, B급(월10~50개)→semi_stock, C급(월10개미만)→pure_dropship 유지; analyze_all_products(), get_stock_recommendations(), get_investment_estimate(), get_delivery_improvement_estimate(), get_hybrid_summary(), simulate_model_change()
+- `ReportType` Enum: daily/weekly/monthly; `ReportFormat` Enum: text/markdown/json
+- `PerformanceReportGenerator`: 자동 리포트 생성 — generate_daily_report()(매출/주문/마진/알림), generate_weekly_report()(KPI트렌드/채널비교/하이브리드제안), generate_monthly_report()(종합성과/수익성매트릭스/소싱처평가/하이브리드분석/다음달목표), get_report_history(), schedule_reports()
+- `AlertType` Enum: revenue_drop/margin_decline/return_spike/sla_breach/stock_risk/channel_underperform/product_grade_change
+- `PerformanceAlert` 데이터클래스: alert_id, alert_type, severity, message, metric_name, current_value, threshold_value, change_rate, affected_items, recommendation, created_at, acknowledged
+- `PerformanceAlertService`: 성과 이상 감지 — check_alerts()(매출30%하락→CRITICAL, 마진5%p하락→WARNING, 반품2배→WARNING, SLA80%미만→CRITICAL), get_alerts(), acknowledge_alert(), get_alert_summary()
+- `GoalStatus` Enum: on_track/at_risk/behind/achieved/failed
+- `PerformanceGoal` 데이터클래스: goal_id, metric_name, target_value, current_value, progress_rate, period, start_date, end_date, status, created_at
+- `PerformanceGoalManager`: 목표 설정 + 진행률 추적 — set_goal(), get_goals(), update_progress(), get_goal_dashboard()(진행률 바), check_goal_alerts()
+- API Blueprint: `src/api/seller_report_api.py` (`/api/v1/seller-report`) — 42개+ 엔드포인트 (메트릭4종/채널4종/상품6종/소싱처5종/하이브리드6종/리포트4종/알림3종/목표4종/대시보드1종)
+- 봇 커맨드: `/my_report`, `/daily_summary`, `/product_rank`, `/channel_compare`, `/source_rank`, `/hybrid_suggest`, `/hybrid_invest`, `/performance_alerts`, `/dead_stock`, `/trending_products`, `/my_goals`, `/seller_dashboard`
+- 관련 코드: `src/seller_report/`, `src/api/seller_report_api.py`, `src/bot/seller_report_commands.py`
+- 테스트: `tests/test_seller_report.py` (140개+ 테스트)
