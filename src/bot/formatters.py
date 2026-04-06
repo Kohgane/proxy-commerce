@@ -1067,6 +1067,12 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'price_alert': lambda d: _format_price_alert(d),
         'retry_record': lambda d: _format_retry_record(d),
         'exception_dashboard': lambda d: _format_exception_dashboard(d),
+        # Phase 107: 실시간 채팅
+        'chat_session': lambda d: _format_chat_session(d),
+        'chat_stats': lambda d: _format_chat_stats(d),
+        'chat_queue': lambda d: _format_chat_queue(d),
+        'agent_profile': lambda d: _format_agent_profile(d),
+        'chat_dashboard': lambda d: _format_chat_dashboard(d),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:
@@ -2624,3 +2630,90 @@ def _format_simulation_result(d: dict) -> str:
     for rec in recs[:2]:
         lines.append(f'💡 {rec}')
     return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 107: 실시간 채팅 고객 지원 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_chat_session(data: dict) -> str:
+    """채팅 세션 포맷."""
+    session_id = data.get('session_id', '-')
+    status = data.get('status', '-')
+    customer_id = data.get('customer_id', '-')
+    agent_id = data.get('agent_id') or '미배정'
+    rating = data.get('rating')
+    rating_str = f'{rating}/5' if rating is not None else '-'
+    return (
+        f"*💬 채팅 세션*\n"
+        f"ID: `{session_id[:8]}...`\n"
+        f"상태: *{status}*\n"
+        f"고객: {customer_id}\n"
+        f"상담원: {agent_id}\n"
+        f"메시지: {data.get('message_count', 0)}개\n"
+        f"만족도: {rating_str}"
+    )
+
+
+def _format_chat_stats(data: dict) -> str:
+    """채팅 통계 포맷."""
+    lines = ['*📊 채팅 통계*\n']
+    lines.append(f"전체 세션: *{data.get('total_sessions', 0)}건*")
+    lines.append(f"평균 만족도: *{data.get('average_rating', 0):.1f}/5.0*")
+    lines.append(f"평가 세션: {data.get('rated_sessions', 0)}건")
+    by_status = data.get('by_status', {})
+    if by_status:
+        lines.append('\n상태별:')
+        for status, count in by_status.items():
+            lines.append(f"  • {status}: {count}건")
+    return '\n'.join(lines)
+
+
+def _format_chat_queue(data: dict) -> str:
+    """대기열 포맷."""
+    queue = data.get('queue', [])
+    lines = [f"*🔢 채팅 대기열* ({len(queue)}명)\n"]
+    if not queue:
+        lines.append('대기 중인 고객이 없습니다.')
+    else:
+        for i, entry in enumerate(queue[:10], 1):
+            vip = ' [VIP]' if entry.get('is_vip') else ''
+            lines.append(f"  {i}. 고객 {entry.get('customer_id', '-')}{vip}")
+        if len(queue) > 10:
+            lines.append(f'_... 외 {len(queue) - 10}명_')
+    agent_stats = data.get('agent_stats', {})
+    if agent_stats:
+        lines.append(f"\n가용 상담원: {agent_stats.get('available', 0)}명")
+    return '\n'.join(lines)
+
+
+def _format_agent_profile(data: dict) -> str:
+    """상담원 프로필 포맷."""
+    available = '✅ 가용' if data.get('is_available') else '❌ 불가'
+    return (
+        f"*🎧 상담원 프로필*\n"
+        f"이름: *{data.get('name', '-')}*\n"
+        f"상태: {data.get('status', '-')} ({available})\n"
+        f"세션: {data.get('current_sessions', 0)}/{data.get('max_sessions', 0)}\n"
+        f"스킬: {', '.join(data.get('skills', [])) or '-'}\n"
+        f"평점: {data.get('rating', 0):.1f}/5.0\n"
+        f"근무: {data.get('shift', '-')}"
+    )
+
+
+def _format_chat_dashboard(data: dict) -> str:
+    """채팅 대시보드 포맷."""
+    rt = data.get('realtime', {})
+    perf = data.get('performance', {})
+    lines = [
+        '*📱 채팅 대시보드*\n',
+        f"활성 세션: *{rt.get('active_sessions', 0)}건*",
+        f"대기 고객: *{rt.get('waiting_customers', 0)}명*",
+        f"온라인 상담원: *{rt.get('online_agents', 0)}명*",
+        '',
+        f"평균 첫 응답: {perf.get('avg_first_response_seconds', 0):.0f}초",
+        f"평균 해결 시간: {perf.get('avg_resolution_seconds', 0):.0f}초",
+        f"평균 만족도: {perf.get('average_rating', 0):.1f}/5.0",
+        f"전체 세션: {perf.get('total_sessions', 0)}건",
+    ]
+    return '\n'.join(lines)

@@ -4023,3 +4023,145 @@ def cmd_simulate(scenario: str = '') -> str:
     except Exception as exc:
         logger.error("cmd_simulate 오류: %s", exc)
         return format_message('error', f'시뮬레이션 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 107: 실시간 채팅 고객 지원 커맨드
+# ─────────────────────────────────────────────────────────────
+
+def cmd_chat_status() -> str:
+    """/chat_status — 채팅 서비스 현황."""
+    try:
+        from ..live_chat.engine import ChatEngine
+        from ..live_chat.websocket_manager import WebSocketManager
+        engine = ChatEngine()
+        ws = WebSocketManager()
+        stats = engine.get_stats()
+        ws_status = ws.get_status()
+        lines = [
+            '💬 채팅 서비스 현황',
+            f"• 전체 세션: {stats['total_sessions']}건",
+            f"• 온라인 연결: {ws_status['total_connections']}명",
+            f"• 온라인 고객: {ws_status['online_customers']}명",
+            f"• 온라인 상담원: {ws_status['online_agents']}명",
+            f"• 평균 만족도: {stats['average_rating']:.1f}/5.0",
+        ]
+        by_status = stats.get('by_status', {})
+        if by_status:
+            lines.append('\n상태별:')
+            for status, count in by_status.items():
+                lines.append(f"  • {status}: {count}건")
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_chat_status 오류: %s", exc)
+        return format_message('error', f'채팅 현황 조회 실패: {exc}')
+
+
+def cmd_chat_queue() -> str:
+    """/chat_queue — 대기열 현황."""
+    try:
+        from ..live_chat.agent_assignment import AgentAssignmentService
+        service = AgentAssignmentService()
+        queue = service.get_queue()
+        stats = service.get_stats()
+        lines = [
+            '🔢 채팅 대기열 현황',
+            f"• 대기 고객 수: {len(queue)}명",
+            f"• 가용 상담원: {stats['available']}명",
+            f"• 총 상담원: {stats['total_agents']}명",
+        ]
+        if queue:
+            lines.append('\n대기 목록 (최대 5개):')
+            for i, entry in enumerate(queue[:5], 1):
+                vip = ' [VIP]' if entry.is_vip else ''
+                lines.append(f"  {i}. 고객 {entry.customer_id}{vip}")
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_chat_queue 오류: %s", exc)
+        return format_message('error', f'대기열 조회 실패: {exc}')
+
+
+def cmd_agent_status() -> str:
+    """/agent_status — 상담원 현황."""
+    try:
+        from ..live_chat.agent_assignment import AgentAssignmentService
+        service = AgentAssignmentService()
+        stats = service.get_stats()
+        agents = service.list_agents()
+        lines = [
+            '🎧 상담원 현황',
+            f"• 전체: {stats['total_agents']}명",
+            f"• 온라인: {stats['available']}명",
+            f"• 바쁨: {stats['busy']}명",
+            f"• 자리비움: {stats['away']}명",
+            f"• 오프라인: {stats['offline']}명",
+            f"• 진행 중 세션: {stats['total_current_sessions']}건",
+        ]
+        if agents:
+            lines.append('\n상담원 목록 (최대 5명):')
+            for a in agents[:5]:
+                available_icon = '✅' if a.is_available else '❌'
+                lines.append(
+                    f"  {available_icon} {a.name} "
+                    f"({a.current_sessions}/{a.max_sessions})"
+                )
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_agent_status 오류: %s", exc)
+        return format_message('error', f'상담원 현황 조회 실패: {exc}')
+
+
+def cmd_chat_stats() -> str:
+    """/chat_stats — 채팅 통계."""
+    try:
+        from ..live_chat.engine import ChatEngine
+        from ..live_chat.auto_reply import AutoReplyService
+        from ..live_chat.history import ChatHistoryManager
+        engine = ChatEngine()
+        auto_reply = AutoReplyService()
+        history = ChatHistoryManager()
+        stats = engine.get_stats()
+        faq_stats = auto_reply.get_stats()
+        hist_stats = history.get_stats()
+        lines = [
+            '📊 채팅 통계',
+            f"• 전체 세션: {stats['total_sessions']}건",
+            f"• 평균 만족도: {stats['average_rating']:.1f}/5.0",
+            f"• 평가된 세션: {stats['rated_sessions']}건",
+            f"• FAQ 항목: {faq_stats['total_faqs']}개",
+            f"• FAQ 조회 수: {faq_stats['total_hits']}회",
+            f"• 이력 저장: {hist_stats['total_sessions']}건",
+            f"• 평균 메시지 수: {hist_stats['average_messages_per_session']:.1f}개",
+        ]
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_chat_stats 오류: %s", exc)
+        return format_message('error', f'채팅 통계 조회 실패: {exc}')
+
+
+def cmd_chat_dashboard() -> str:
+    """/chat_dashboard — 채팅 대시보드 요약."""
+    try:
+        from ..live_chat.engine import ChatEngine
+        from ..live_chat.agent_assignment import AgentAssignmentService
+        from ..live_chat.analytics import ChatAnalytics
+        engine = ChatEngine()
+        assignment = AgentAssignmentService()
+        analytics = ChatAnalytics()
+        queue = assignment.get_queue()
+        agent_stats = assignment.get_stats()
+        session_stats = engine.get_stats()
+        perf = analytics.get_performance_metrics()
+        lines = [
+            '📱 채팅 대시보드',
+            f"• 전체 세션: {session_stats['total_sessions']}건",
+            f"• 대기 고객: {len(queue)}명",
+            f"• 가용 상담원: {agent_stats['available']}명",
+            f"• 평균 만족도: {session_stats['average_rating']:.1f}/5.0",
+            f"• 평균 첫 응답: {perf['avg_first_response_seconds']:.0f}초",
+            f"• 평균 해결 시간: {perf['avg_resolution_seconds']:.0f}초",
+        ]
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_chat_dashboard 오류: %s", exc)
+        return format_message('error', f'대시보드 조회 실패: {exc}')

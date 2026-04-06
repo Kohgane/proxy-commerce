@@ -752,6 +752,14 @@ try:
 except Exception as _autonomous_ops_bp_exc:
     logger.warning("자율 운영 대시보드 API Blueprint 등록 실패: %s", _autonomous_ops_bp_exc)
 
+# 실시간 채팅 고객 지원 API Blueprint 등록 (Phase 107)
+try:
+    from .api.live_chat_api import live_chat_bp
+    app.register_blueprint(live_chat_bp)
+    logger.info("실시간 채팅 API Blueprint 등록 완료")
+except Exception as _live_chat_bp_exc:
+    logger.warning("실시간 채팅 API Blueprint 등록 실패: %s", _live_chat_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')
