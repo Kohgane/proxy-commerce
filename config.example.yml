@@ -1137,3 +1137,24 @@ live_chat:
   history:
     max_sessions_per_customer: 100
     search_limit: 50
+
+# === Phase 108: 소싱처 실시간 모니터링 ===
+source_monitor:
+  enabled: true
+  check_intervals:
+    popular_minutes: 30
+    normal_minutes: 120
+    inactive_minutes: 1440
+  change_detection:
+    price_high_threshold_pct: 20
+    price_medium_threshold_pct: 10
+  auto_deactivation:
+    enabled: true
+    notify_on_deactivation: true
+  alternative_finder:
+    enabled: true
+    max_alternatives: 5
+    min_match_score: 50.0
+  scheduler:
+    max_concurrent_checks: 10
+    failure_threshold_for_escalation: 5

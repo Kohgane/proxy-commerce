@@ -760,6 +760,14 @@ try:
 except Exception as _live_chat_bp_exc:
     logger.warning("실시간 채팅 API Blueprint 등록 실패: %s", _live_chat_bp_exc)
 
+# 소싱처 실시간 모니터링 API Blueprint 등록 (Phase 108)
+try:
+    from .api.source_monitor_api import source_monitor_bp
+    app.register_blueprint(source_monitor_bp)
+    logger.info("소싱처 모니터링 API Blueprint 등록 완료")
+except Exception as _source_monitor_bp_exc:
+    logger.warning("소싱처 모니터링 API Blueprint 등록 실패: %s", _source_monitor_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')
