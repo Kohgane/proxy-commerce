@@ -1261,3 +1261,27 @@
 - 봇 커맨드: `/match_order`, `/match_status`, `/fulfillment_check`, `/fulfillment_risk`, `/sla_status`, `/sla_overdue`, `/source_priority`, `/matching_dashboard`, `/unfulfillable`, `/high_risk_orders`
 - 관련 코드: `src/order_matching/`, `src/api/order_matching_api.py`, `src/bot/order_matching_commands.py`
 - 테스트: `tests/test_order_matching.py` (123개 테스트)
+
+## Phase 113 — 재고 가상화 — 복수 소싱처 통합 재고 관리 ✅ 완료
+
+- `SourceStock` 데이터클래스: source_id, source_name, platform, available_qty, price, currency, lead_time_days, reliability_score, is_active, last_checked_at
+- `VirtualStock` 데이터클래스: product_id, total_available, reserved, sellable, sources, aggregation_strategy, last_synced_at, metadata
+- `StockReservation` 데이터클래스: reservation_id, product_id, quantity, source_id, status(pending/confirmed/released), created_at, expires_at
+- `VirtualStockPool`: 복수 소싱처 가상 재고 풀 — add_source_stock(), update_source_stock(), remove_source_stock(), get_virtual_stock(), get_all_virtual_stocks(), get_source_stocks(), reserve_stock()(재고 부족 시 ValueError), release_reservation(), confirm_reservation(), get_reservations(); sum_active 기본 전략으로 활성 소싱처 합산
+- `AggregationStrategy` Enum: sum_all/sum_active/max_single/weighted/conservative
+- `StockAggregationEngine`: 소싱처 재고 집계 엔진 — aggregate()(5가지 전략), calculate_safety_stock(), get_sellable_quantity(); conservative = sum_active - max(3, sum_active*0.1)
+- `AllocationStrategy` Enum: cheapest_first/fastest_first/single_source/balanced/reliability_first
+- `SourceAllocation` 데이터클래스: source_id, allocated_qty, unit_cost, currency, estimated_delivery_days
+- `AllocationResult` 데이터클래스: allocation_id, product_id, quantity, allocated_sources, total_cost, estimated_delivery_days, strategy_used, status, allocated_at
+- `SourceAllocator`: 소싱처 할당 엔진 — allocate()(그리디 할당), get_allocation(), get_allocation_history(), cancel_allocation(); balanced 전략: 가격40%+배송속도30%+신뢰도30%
+- `InventorySyncBridge`: 채널 동기화 브리지 — sync_to_channels(), get_channel_stock_map(), calculate_channel_stock()(쿠팡90%/네이버95%/내부100%/기타85%), get_sync_status(), get_stock_discrepancies()
+- `AlertType` Enum: low_stock/out_of_stock/overstock/single_source_risk/source_depleted/reservation_expiring/sync_discrepancy
+- `AlertSeverity` Enum: critical/warning/info
+- `StockAlert` 데이터클래스: alert_id, product_id, alert_type, severity, message, current_stock, threshold, source_details, created_at, acknowledged
+- `VirtualStockAlertService`: 재고 알림 서비스 — check_alerts()(5종 알림 자동 생성), get_alerts()(severity/type/acknowledged 필터), acknowledge_alert(), get_alert_summary()
+- `VirtualStockAnalytics`: 재고 분석 — get_stock_summary(), get_source_distribution(), get_stock_health(), get_turnover_analysis(), get_single_source_products(), get_stock_value()
+- `VirtualInventoryDashboard`: 통합 대시보드 — get_dashboard_data()(재고건강도+소싱처분포+부족상품top10+단일소싱처위험+최근예약+알림+동기화상태)
+- API Blueprint: `src/api/virtual_inventory_api.py` (`/api/v1/virtual-inventory`) — 35개+ 엔드포인트 (재고관리6종/예약5종/할당4종/집계1종/동기화4종/알림4종/분석6종/대시보드1종)
+- 봇 커맨드: `/vstock`, `/vstock_all`, `/vstock_low`, `/vstock_out`, `/vstock_alerts`, `/vstock_reserve`, `/vstock_allocate`, `/vstock_sync`, `/vstock_health`, `/vstock_risk`, `/vstock_dashboard`
+- 관련 코드: `src/virtual_inventory/`, `src/api/virtual_inventory_api.py`, `src/bot/virtual_inventory_commands.py`
+- 테스트: `tests/test_virtual_inventory.py` (65개+ 테스트)

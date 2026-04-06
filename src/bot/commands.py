@@ -4507,3 +4507,115 @@ def cmd_high_risk_orders() -> str:
     except Exception as exc:
         logger.error("cmd_high_risk_orders 오류: %s", exc)
         return format_message('error', f'고위험 주문 조회 실패: {exc}')
+
+
+# ── Phase 113: 가상 재고 ───────────────────────────────────────────────────────
+
+def cmd_vstock(sku: str) -> str:
+    """/vstock <sku> — 상품 가상 재고 조회."""
+    try:
+        from .virtual_inventory_commands import cmd_vstock as _cmd
+        return _cmd(sku)
+    except Exception as exc:
+        logger.error("cmd_vstock 오류: %s", exc)
+        return format_message('error', f'조회 실패: {exc}')
+
+
+def cmd_vstock_all() -> str:
+    """/vstock_all — 전체 가상 재고 요약."""
+    try:
+        from .virtual_inventory_commands import cmd_vstock_all as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_vstock_all 오류: %s", exc)
+        return format_message('error', f'조회 실패: {exc}')
+
+
+def cmd_vstock_low() -> str:
+    """/vstock_low — 재고 부족 상품 목록."""
+    try:
+        from .virtual_inventory_commands import cmd_vstock_low as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_vstock_low 오류: %s", exc)
+        return format_message('error', f'조회 실패: {exc}')
+
+
+def cmd_vstock_out() -> str:
+    """/vstock_out — 재고 소진 상품 목록."""
+    try:
+        from .virtual_inventory_commands import cmd_vstock_out as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_vstock_out 오류: %s", exc)
+        return format_message('error', f'조회 실패: {exc}')
+
+
+def cmd_vstock_alerts() -> str:
+    """/vstock_alerts — 재고 알림 목록."""
+    try:
+        from .virtual_inventory_commands import cmd_vstock_alerts as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_vstock_alerts 오류: %s", exc)
+        return format_message('error', f'알림 조회 실패: {exc}')
+
+
+def cmd_vstock_reserve(sku: str, qty: str) -> str:
+    """/vstock_reserve <sku> <qty> — 재고 예약."""
+    try:
+        from .virtual_inventory_commands import cmd_vstock_reserve as _cmd
+        return _cmd(sku, qty)
+    except Exception as exc:
+        logger.error("cmd_vstock_reserve 오류: %s", exc)
+        return format_message('error', f'예약 실패: {exc}')
+
+
+def cmd_vstock_allocate(sku: str, qty: str) -> str:
+    """/vstock_allocate <sku> <qty> — 소싱처 할당."""
+    try:
+        from .virtual_inventory_commands import cmd_vstock_allocate as _cmd
+        return _cmd(sku, qty)
+    except Exception as exc:
+        logger.error("cmd_vstock_allocate 오류: %s", exc)
+        return format_message('error', f'할당 실패: {exc}')
+
+
+def cmd_vstock_sync() -> str:
+    """/vstock_sync — 채널 재고 동기화."""
+    try:
+        from .virtual_inventory_commands import cmd_vstock_sync as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_vstock_sync 오류: %s", exc)
+        return format_message('error', f'동기화 실패: {exc}')
+
+
+def cmd_vstock_health() -> str:
+    """/vstock_health — 재고 건강도."""
+    try:
+        from .virtual_inventory_commands import cmd_vstock_health as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_vstock_health 오류: %s", exc)
+        return format_message('error', f'건강도 조회 실패: {exc}')
+
+
+def cmd_vstock_risk() -> str:
+    """/vstock_risk — 단일 소싱처 위험 상품."""
+    try:
+        from .virtual_inventory_commands import cmd_vstock_risk as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_vstock_risk 오류: %s", exc)
+        return format_message('error', f'위험 조회 실패: {exc}')
+
+
+def cmd_vstock_dashboard() -> str:
+    """/vstock_dashboard — 가상 재고 대시보드."""
+    try:
+        from .virtual_inventory_commands import cmd_vstock_dashboard as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_vstock_dashboard 오류: %s", exc)
+        return format_message('error', f'대시보드 조회 실패: {exc}')
