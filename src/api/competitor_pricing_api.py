@@ -119,7 +119,7 @@ def _convert_enums(obj: Any) -> Any:
 
 @competitor_pricing_bp.post('/competitors')
 def add_competitor():
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True) or {}
     try:
         product = _get_tracker().add_competitor(data)
         return jsonify({'ok': True, 'competitor': _to_dict(product)}), 201
@@ -192,7 +192,7 @@ def get_price_history(competitor_id: str):
 
 @competitor_pricing_bp.post('/match/<my_product_id>')
 def find_competitors(my_product_id: str):
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True) or {}
     try:
         matches = _get_matcher().find_competitors(
             my_product_id,
@@ -292,7 +292,7 @@ def price_distribution(my_product_id: str):
 
 @competitor_pricing_bp.post('/suggest/<my_product_id>')
 def suggest_adjustment(my_product_id: str):
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True) or {}
     try:
         from src.competitor_pricing.adjuster import AdjustmentStrategy
         strategy_str = data.get('strategy')
@@ -310,7 +310,7 @@ def suggest_adjustment(my_product_id: str):
 
 @competitor_pricing_bp.post('/suggest/bulk')
 def suggest_bulk():
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True) or {}
     try:
         from src.competitor_pricing.adjuster import AdjustmentStrategy
         strategy_str = data.get('strategy')
@@ -353,7 +353,7 @@ def apply_suggestion(suggestion_id: str):
 
 @competitor_pricing_bp.post('/suggestions/<suggestion_id>/reject')
 def reject_suggestion(suggestion_id: str):
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True) or {}
     try:
         ok = _get_adjuster().reject_suggestion(suggestion_id, reason=data.get('reason'))
         if not ok:
@@ -380,7 +380,7 @@ def list_rules():
 
 @competitor_pricing_bp.post('/rules')
 def add_rule():
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True) or {}
     try:
         rule = _get_rules().add_rule(data)
         return jsonify({'ok': True, 'rule': _to_dict(rule)}), 201
