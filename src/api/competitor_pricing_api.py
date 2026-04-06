@@ -125,7 +125,7 @@ def add_competitor():
         return jsonify({'ok': True, 'competitor': _to_dict(product)}), 201
     except Exception as exc:
         logger.error("add_competitor 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 400
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 400
 
 
 @competitor_pricing_bp.get('/competitors')
@@ -136,7 +136,7 @@ def list_competitors():
         return jsonify({'ok': True, 'competitors': [_to_dict(c) for c in competitors]})
     except Exception as exc:
         logger.error("list_competitors 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @competitor_pricing_bp.get('/competitors/<competitor_id>')
@@ -148,7 +148,7 @@ def get_competitor(competitor_id: str):
         return jsonify({'ok': True, 'competitor': _to_dict(product)})
     except Exception as exc:
         logger.error("get_competitor 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @competitor_pricing_bp.delete('/competitors/<competitor_id>')
@@ -160,7 +160,7 @@ def remove_competitor(competitor_id: str):
         return jsonify({'ok': True})
     except Exception as exc:
         logger.error("remove_competitor 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @competitor_pricing_bp.post('/competitors/<competitor_id>/check')
@@ -172,7 +172,7 @@ def check_competitor(competitor_id: str):
         return jsonify({'ok': True, 'competitor': _to_dict(product)})
     except Exception as exc:
         logger.error("check_competitor 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @competitor_pricing_bp.get('/competitors/<competitor_id>/history')
@@ -183,7 +183,7 @@ def get_price_history(competitor_id: str):
         return jsonify({'ok': True, 'history': history})
     except Exception as exc:
         logger.error("get_price_history 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -202,7 +202,7 @@ def find_competitors(my_product_id: str):
         return jsonify({'ok': True, 'matches': [_to_dict(m) for m in matches]}), 201
     except Exception as exc:
         logger.error("find_competitors 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 400
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 400
 
 
 @competitor_pricing_bp.get('/matches')
@@ -213,7 +213,7 @@ def list_matches():
         return jsonify({'ok': True, 'matches': [_to_dict(m) for m in matches]})
     except Exception as exc:
         logger.error("list_matches 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @competitor_pricing_bp.post('/matches/<match_id>/confirm')
@@ -225,7 +225,7 @@ def confirm_match(match_id: str):
         return jsonify({'ok': True})
     except Exception as exc:
         logger.error("confirm_match 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @competitor_pricing_bp.post('/matches/<match_id>/reject')
@@ -237,7 +237,7 @@ def reject_match(match_id: str):
         return jsonify({'ok': True})
     except Exception as exc:
         logger.error("reject_match 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -252,7 +252,7 @@ def analyze_position(my_product_id: str):
         return jsonify({'ok': True, 'position': _to_dict(position)})
     except Exception as exc:
         logger.error("analyze_position 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @competitor_pricing_bp.get('/position/all')
@@ -263,7 +263,7 @@ def analyze_all_positions():
         return jsonify({'ok': True, 'positions': {k: _to_dict(v) for k, v in positions.items()}})
     except Exception as exc:
         logger.error("analyze_all_positions 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @competitor_pricing_bp.get('/position/summary')
@@ -273,7 +273,7 @@ def position_summary():
         return jsonify({'ok': True, 'summary': summary})
     except Exception as exc:
         logger.error("position_summary 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @competitor_pricing_bp.get('/position/<my_product_id>/distribution')
@@ -283,7 +283,7 @@ def price_distribution(my_product_id: str):
         return jsonify({'ok': True, 'distribution': dist})
     except Exception as exc:
         logger.error("price_distribution 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -305,7 +305,7 @@ def suggest_adjustment(my_product_id: str):
         return jsonify({'ok': True, 'suggestion': _to_dict(suggestion)}), 201
     except Exception as exc:
         logger.error("suggest_adjustment 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 400
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 400
 
 
 @competitor_pricing_bp.post('/suggest/bulk')
@@ -321,7 +321,7 @@ def suggest_bulk():
         return jsonify({'ok': True, 'suggestions': [_to_dict(s) for s in suggestions]}), 201
     except Exception as exc:
         logger.error("suggest_bulk 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 400
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 400
 
 
 @competitor_pricing_bp.get('/suggestions')
@@ -336,7 +336,7 @@ def list_suggestions():
         return jsonify({'ok': True, 'suggestions': [_to_dict(s) for s in suggestions]})
     except Exception as exc:
         logger.error("list_suggestions 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @competitor_pricing_bp.post('/suggestions/<suggestion_id>/apply')
@@ -348,7 +348,7 @@ def apply_suggestion(suggestion_id: str):
         return jsonify({'ok': True})
     except Exception as exc:
         logger.error("apply_suggestion 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @competitor_pricing_bp.post('/suggestions/<suggestion_id>/reject')
@@ -361,7 +361,7 @@ def reject_suggestion(suggestion_id: str):
         return jsonify({'ok': True})
     except Exception as exc:
         logger.error("reject_suggestion 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -375,7 +375,7 @@ def list_rules():
         return jsonify({'ok': True, 'rules': [_to_dict(r) for r in rules]})
     except Exception as exc:
         logger.error("list_rules 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @competitor_pricing_bp.post('/rules')
@@ -386,7 +386,7 @@ def add_rule():
         return jsonify({'ok': True, 'rule': _to_dict(rule)}), 201
     except Exception as exc:
         logger.error("add_rule 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 400
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 400
 
 
 @competitor_pricing_bp.delete('/rules/<rule_id>')
@@ -398,7 +398,7 @@ def remove_rule(rule_id: str):
         return jsonify({'ok': True})
     except Exception as exc:
         logger.error("remove_rule 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -423,7 +423,7 @@ def list_alerts():
         return jsonify({'ok': True, 'alerts': [_to_dict(a) for a in alerts]})
     except Exception as exc:
         logger.error("list_alerts 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @competitor_pricing_bp.get('/alerts/summary')
@@ -433,7 +433,7 @@ def alert_summary():
         return jsonify({'ok': True, 'summary': summary})
     except Exception as exc:
         logger.error("alert_summary 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @competitor_pricing_bp.post('/alerts/<alert_id>/acknowledge')
@@ -445,7 +445,7 @@ def acknowledge_alert(alert_id: str):
         return jsonify({'ok': True})
     except Exception as exc:
         logger.error("acknowledge_alert 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -459,7 +459,7 @@ def dashboard():
         return jsonify({'ok': True, 'dashboard': data})
     except Exception as exc:
         logger.error("dashboard 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @competitor_pricing_bp.get('/schedule')
@@ -475,4 +475,4 @@ def schedule():
         })
     except Exception as exc:
         logger.error("schedule 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
