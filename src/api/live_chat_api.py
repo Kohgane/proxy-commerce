@@ -189,8 +189,8 @@ def send_message(session_id):
     try:
         sender_type = SenderType(sender_type_str)
         message_type = MessageType(message_type_str)
-    except ValueError as e:
-        return jsonify({'error': str(e)}), 400
+    except ValueError:
+        return jsonify({'error': 'invalid sender_type or message_type'}), 400
 
     engine = _get_engine()
     msg = engine.send_message(
@@ -275,8 +275,8 @@ def rate_session(session_id):
         return jsonify({'error': 'rating is required'}), 400
     try:
         session = _get_engine().rate_session(session_id, int(rating))
-    except ValueError as e:
-        return jsonify({'error': str(e)}), 400
+    except (ValueError, TypeError):
+        return jsonify({'error': 'rating must be an integer between 1 and 5'}), 400
     if not session:
         return jsonify({'error': 'session not found'}), 404
     return jsonify(session.to_dict())
