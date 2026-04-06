@@ -4405,3 +4405,105 @@ def cmd_price_rules() -> str:
     except Exception as exc:
         logger.error("cmd_price_rules 오류: %s", exc)
         return format_message('error', f'규칙 조회 실패: {exc}')
+
+
+# ── Phase 112: 주문 매칭 + 이행 가능성 확인 ───────────────────────────────────
+
+def cmd_match_order(order_id: str) -> str:
+    """/match_order <order_id> — 주문 소싱처 매칭 실행."""
+    try:
+        from .order_matching_commands import cmd_match_order as _cmd
+        return _cmd(order_id)
+    except Exception as exc:
+        logger.error("cmd_match_order 오류: %s", exc)
+        return format_message('error', f'매칭 실패: {exc}')
+
+
+def cmd_match_status(order_id: str) -> str:
+    """/match_status <order_id> — 주문 매칭 결과 조회."""
+    try:
+        from .order_matching_commands import cmd_match_status as _cmd
+        return _cmd(order_id)
+    except Exception as exc:
+        logger.error("cmd_match_status 오류: %s", exc)
+        return format_message('error', f'조회 실패: {exc}')
+
+
+def cmd_fulfillment_check(order_id: str) -> str:
+    """/fulfillment_check <order_id> — 이행 가능성 확인."""
+    try:
+        from .order_matching_commands import cmd_fulfillment_check as _cmd
+        return _cmd(order_id)
+    except Exception as exc:
+        logger.error("cmd_fulfillment_check 오류: %s", exc)
+        return format_message('error', f'이행 확인 실패: {exc}')
+
+
+def cmd_fulfillment_risk(order_id: str = '') -> str:
+    """/fulfillment_risk [order_id] — 주문 리스크 평가."""
+    try:
+        from .order_matching_commands import cmd_fulfillment_risk as _cmd
+        return _cmd(order_id)
+    except Exception as exc:
+        logger.error("cmd_fulfillment_risk 오류: %s", exc)
+        return format_message('error', f'리스크 평가 실패: {exc}')
+
+
+def cmd_sla_status(order_id: str = '') -> str:
+    """/sla_status [order_id] — SLA 현황."""
+    try:
+        from .order_matching_commands import cmd_sla_status as _cmd
+        return _cmd(order_id)
+    except Exception as exc:
+        logger.error("cmd_sla_status 오류: %s", exc)
+        return format_message('error', f'SLA 조회 실패: {exc}')
+
+
+def cmd_sla_overdue() -> str:
+    """/sla_overdue — SLA 초과 주문 목록."""
+    try:
+        from .order_matching_commands import cmd_sla_overdue as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_sla_overdue 오류: %s", exc)
+        return format_message('error', f'SLA 초과 조회 실패: {exc}')
+
+
+def cmd_source_priority(product_id: str) -> str:
+    """/source_priority <product_id> — 소싱처 우선순위 조회."""
+    try:
+        from .order_matching_commands import cmd_source_priority as _cmd
+        return _cmd(product_id)
+    except Exception as exc:
+        logger.error("cmd_source_priority 오류: %s", exc)
+        return format_message('error', f'우선순위 조회 실패: {exc}')
+
+
+def cmd_matching_dashboard() -> str:
+    """/matching_dashboard — 매칭 대시보드 요약."""
+    try:
+        from .order_matching_commands import cmd_matching_dashboard as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_matching_dashboard 오류: %s", exc)
+        return format_message('error', f'대시보드 조회 실패: {exc}')
+
+
+def cmd_unfulfillable() -> str:
+    """/unfulfillable — 이행 불가 상품 목록."""
+    try:
+        from .order_matching_commands import cmd_unfulfillable as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_unfulfillable 오류: %s", exc)
+        return format_message('error', f'이행 불가 조회 실패: {exc}')
+
+
+def cmd_high_risk_orders() -> str:
+    """/high_risk_orders — 고위험 주문 목록."""
+    try:
+        from .order_matching_commands import cmd_high_risk_orders as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_high_risk_orders 오류: %s", exc)
+        return format_message('error', f'고위험 주문 조회 실패: {exc}')
