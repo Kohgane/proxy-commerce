@@ -1158,3 +1158,29 @@ source_monitor:
   scheduler:
     max_concurrent_checks: 10
     failure_threshold_for_escalation: 5
+
+# === Phase 111: 경쟁사 가격 모니터링 + 자동 가격 조정 제안 ===
+competitor_pricing:
+  enabled: true
+  check_intervals:
+    popular_minutes: 60
+    normal_minutes: 240
+    inactive_minutes: 1440
+    price_war_minutes: 15
+  position_labels:
+    cheapest_threshold_percentile: 10
+    below_average_threshold_percentile: 40
+    above_average_threshold_percentile: 60
+    most_expensive_threshold_percentile: 90
+  adjustment:
+    auto_adjust_mode: false
+    default_strategy: dynamic
+    min_margin_rate: 5.0
+    beat_lowest_discount_rate: 1.0
+  alerts:
+    price_drop_threshold_pct: 5.0
+    price_increase_threshold_pct: 5.0
+    price_war_detection_min_drops: 3
+  rules:
+    enabled: true
+    evaluation_interval_minutes: 60

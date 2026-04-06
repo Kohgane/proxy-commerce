@@ -103,6 +103,7 @@
 | Phase 108 | 소싱처 실시간 모니터링 (상품 생존 추적, 자동 비활성화, 대체 소싱처 검색) | #74 | 2026-04-06 |
 | Phase 109 | 판매 채널 자동 연동 (소싱처 변동 → 쿠팡/네이버/자체몰 자동 반영) | #75 | 2026-04-06 |
 | Phase 110 | 실시간 마진 계산기 강화 — 적자 판매 완전 방지 (원가+배송+관세+수수료+환율 전부 포함) | #76 | 2026-04-06 |
+| Phase 111 | 경쟁사 가격 모니터링 + 자동 가격 조정 제안 | #77 | 2026-04-07 |
 
 ## 🚧 진행 중 Phase
 
@@ -1206,3 +1207,31 @@
 - 봇 커맨드: `/margin`, `/margin_alert`, `/profit_ranking`, `/loss_products`, `/margin_simulate`, `/break_even`, `/margin_trend`, `/margin_dashboard`, `/platform_fees`, `/margin_config`
 - 관련 코드: `src/margin_calculator/`, `src/api/margin_api.py`, `src/bot/margin_commands.py`
 - 테스트: `tests/test_margin_calculator.py` (102개 Phase 110 신규 테스트, 총 159개)
+
+## Phase 111 — 경쟁사 가격 모니터링 + 자동 가격 조정 제안 ✅ 완료
+
+### 구현 내용
+- `CompetitorProduct` 데이터클래스: competitor_id, product_id, competitor_name, platform, title, price, currency, url, seller_name, seller_rating, shipping_cost, is_available, last_checked_at, check_interval_minutes, metadata
+- `CompetitorTracker`: 경쟁사 상품 추적 — add_competitor(), remove_competitor(), check_competitor()(mock: ±5% 가격 변동, 최대 3회 재시도), check_all(), get_competitors(), get_competitor(), get_price_history(); 인메모리 가격 이력 저장
+- `MatchType` Enum: exact/similar/alternative
+- `CompetitorMatch` 데이터클래스: match_id, my_product_id, competitor_product, match_score, match_type, matched_at, confirmed, rejected
+- `CompetitorMatcher`: 경쟁사 자동 매칭 — find_competitors()(mock: 2–3개 생성), calculate_match_score()(제목유사도40%+가격유사도25%+카테고리20%+브랜드15%), get_matches(), confirm_match(), reject_match()
+- `PositionLabel` Enum: cheapest/below_average/average/above_average/most_expensive
+- `PricePosition` 데이터클래스: my_product_id, my_price, competitor_prices, min/max/avg/median_price, my_rank, total_competitors, percentile, position_label, analyzed_at
+- `PricePositionAnalyzer`: 가격 포지션 분석 — analyze_position(), analyze_all_positions(), get_price_distribution()(5구간 히스토그램), get_position_summary(), detect_price_war()(3회 이상 가격 하락 감지); 경쟁사 없을 때 mock 가격 사용
+- `AdjustmentStrategy` Enum: match_lowest/beat_lowest/match_average/maintain_margin/dynamic
+- `SuggestionStatus` Enum: pending/applied/rejected
+- `AdjustmentSuggestion` 데이터클래스: suggestion_id, my_product_id, current_price, suggested_price, strategy, reason, estimated_margin, estimated_margin_rate, confidence, created_at, status
+- `PriceAdjustmentSuggester`: 자동 가격 조정 제안 — suggest_adjustment()(5가지 전략, 마진 안전장치 -5% 임계값), suggest_bulk_adjustments(), apply_suggestion(), reject_suggestion(), get_suggestions(); auto_adjust_mode 속성
+- `PriceRule` 데이터클래스: rule_id, name, condition, action, priority, is_active, created_at
+- `CompetitorPriceRules`: 가격 규칙 관리 — 5개 기본 규칙(비싼_상품_알림/경쟁사_인하_알림/독점_판매/경쟁사_품절/마진_안전장치), add_rule(), remove_rule(), evaluate_rules(), get_rules()
+- `AlertType` Enum: price_drop/price_increase/new_competitor/competitor_out_of_stock/competitor_back_in_stock/price_war_detected/lost_cheapest/became_cheapest
+- `AlertSeverity` Enum: critical/warning/info
+- `CompetitorAlert` 데이터클래스: alert_id, my_product_id, competitor_id, alert_type, message, severity, old_price, new_price, change_percent, created_at, acknowledged
+- `CompetitorAlertService`: 경쟁사 알림 서비스 — check_alerts()(5% 이상 변동 감지), get_alerts(), acknowledge_alert(), get_alert_summary()
+- `CompetitorDashboard`: 대시보드 — get_dashboard_data()(포지션분포/경쟁사통계/독점상품/최근가격변동/제안통계/가격전쟁/경쟁점수), get_competition_intensity()
+- `ScheduleEntry` 데이터클래스: competitor_id, interval_minutes, priority, next_check_at, last_checked_at, is_price_war
+- `CompetitorCheckScheduler`: 체크 스케줄 관리 — register(), unregister(), get_next_checks(), update_schedule(), mark_checked(), get_stats(); POPULAR=60분/NORMAL=240분/INACTIVE=1440분/PRICE_WAR=15분
+- API Blueprint: `src/api/competitor_pricing_api.py` (`/api/v1/competitor-pricing`) — 27개 엔드포인트 (경쟁사관리6종/매칭4종/포지션분석4종/가격조정제안5종/규칙3종/알림3종/대시보드+스케줄2종)
+- 봇 커맨드: `/competitors`, `/price_position`, `/price_suggest`, `/competitor_alerts`, `/competitor_dashboard`, `/price_war`, `/competitor_find`, `/price_rules`
+- 관련 코드: `src/competitor_pricing/`, `src/api/competitor_pricing_api.py`, `src/bot/competitor_pricing_commands.py`
