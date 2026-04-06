@@ -672,3 +672,713 @@ class TestMarginFXIntegration:
         for result in results:
             assert result['success'] is True
             assert result['cost_krw'] > 0
+
+
+# ==============================================================================
+# Phase 110: RealTimeMarginCalculator (src/margin_calculator/) 테스트
+# ==============================================================================
+
+# ── 공통 헬퍼 ─────────────────────────────────────────────────────────────────
+
+def _ph110_sample_product(
+    selling_price=30000, source_cost=10.0, currency='USD', exchange_rate=1300.0,
+    international_shipping=3000.0, customs_duty_rate=8.0, domestic_shipping=2500.0,
+    payment_fee_rate=2.0, packaging_cost=1000.0, labeling_cost=500.0,
+    return_reserve_rate=2.0, misc_costs=0.0, category='electronics',
+):
+    return dict(
+        selling_price=selling_price, source_cost=source_cost, currency=currency,
+        exchange_rate=exchange_rate, international_shipping=international_shipping,
+        customs_duty_rate=customs_duty_rate, domestic_shipping=domestic_shipping,
+        payment_fee_rate=payment_fee_rate, packaging_cost=packaging_cost,
+        labeling_cost=labeling_cost, return_reserve_rate=return_reserve_rate,
+        misc_costs=misc_costs, category=category,
+    )
+
+
+# ─── Phase110: MarginConfig ───────────────────────────────────────────────────
+
+class TestPh110MarginConfig:
+    def _make(self):
+        from src.margin_calculator.margin_config import MarginConfig
+        return MarginConfig()
+
+    def test_default_config_values(self):
+        cfg = self._make()
+        c = cfg.get_config()
+        assert c['default_target_margin'] == 15.0
+        assert c['critical_margin_threshold'] == 0.0
+        assert c['warning_margin_threshold'] == 5.0
+        assert c['exchange_spread_rate'] == 1.5
+        assert c['vat_rate'] == 10.0
+
+    def test_update_config(self):
+        cfg = self._make()
+        updated = cfg.update_config({'default_target_margin': 20.0})
+        assert updated['default_target_margin'] == 20.0
+
+    def test_update_unknown_key_ignored(self):
+        cfg = self._make()
+        cfg.update_config({'unknown_key': 999})
+        assert 'unknown_key' not in cfg.get_config()
+
+    def test_category_override(self):
+        cfg = self._make()
+        cfg.set_category_config('fashion', {'default_target_margin': 25.0})
+        c = cfg.get_config(category='fashion')
+        assert c['default_target_margin'] == 25.0
+
+    def test_product_override(self):
+        cfg = self._make()
+        cfg.set_product_config('p1', {'vat_rate': 0.0})
+        c = cfg.get_config(product_id='p1')
+        assert c['vat_rate'] == 0.0
+
+    def test_product_overrides_category(self):
+        cfg = self._make()
+        cfg.set_category_config('electronics', {'default_target_margin': 20.0})
+        cfg.set_product_config('p1', {'default_target_margin': 30.0})
+        c = cfg.get_config(product_id='p1', category='electronics')
+        assert c['default_target_margin'] == 30.0
+
+    def test_reset_to_defaults(self):
+        cfg = self._make()
+        cfg.update_config({'default_target_margin': 99.0})
+        defaults = cfg.reset_to_defaults()
+        assert defaults['default_target_margin'] == 15.0
+
+
+# ─── Phase110: PlatformFeeCalculator ─────────────────────────────────────────
+
+class TestPh110PlatformFeeCalculator:
+    def _make(self):
+        from src.margin_calculator.platform_fees import PlatformFeeCalculator
+        return PlatformFeeCalculator()
+
+    def test_coupang_electronics_fee(self):
+        calc = self._make()
+        fee = calc.get_platform_fee('coupang', 10000, category='electronics')
+        assert fee == pytest.approx(800.0)
+
+    def test_coupang_fashion_fee(self):
+        calc = self._make()
+        fee = calc.get_platform_fee('coupang', 10000, category='fashion')
+        assert fee == pytest.approx(1080.0)
+
+    def test_coupang_rocket_extra(self):
+        calc = self._make()
+        fee = calc.get_platform_fee('coupang', 10000, category='electronics', rocket_delivery=True)
+        assert fee == pytest.approx(1000.0)
+
+    def test_naver_fee(self):
+        calc = self._make()
+        fee = calc.get_platform_fee('naver', 10000)
+        assert fee == pytest.approx(774.0)
+
+    def test_internal_toss_fee(self):
+        calc = self._make()
+        fee = calc.get_platform_fee('internal', 10000, pg_method='toss')
+        assert fee == pytest.approx(320.0)
+
+    def test_unknown_channel_zero(self):
+        calc = self._make()
+        assert calc.get_platform_fee('unknown', 10000) == 0.0
+
+    def test_get_fee_structure_coupang(self):
+        calc = self._make()
+        s = calc.get_fee_structure('coupang')
+        assert s['channel'] == 'coupang'
+        assert 'categories' in s
+
+    def test_get_all_fee_structures(self):
+        calc = self._make()
+        all_fees = calc.get_all_fee_structures()
+        assert set(all_fees.keys()) == {'coupang', 'naver', 'internal'}
+
+
+# ─── Phase110: RealTimeMarginCalculator ──────────────────────────────────────
+
+class TestPh110RealTimeMarginCalculator:
+    def _make(self):
+        from src.margin_calculator.calculator import RealTimeMarginCalculator
+        return RealTimeMarginCalculator()
+
+    def _reg(self, calc, pid='p1', **kwargs):
+        data = _ph110_sample_product(**kwargs)
+        calc.register_product(pid, data)
+        return data
+
+    def test_basic_margin_calculation(self):
+        calc = self._make()
+        self._reg(calc, 'p1', selling_price=30000, source_cost=10.0, exchange_rate=1300.0)
+        result = calc.calculate_margin('p1')
+        assert result.source_cost_krw == pytest.approx(13000.0)
+        assert result.product_id == 'p1'
+
+    def test_all_cost_items_nonnegative(self):
+        calc = self._make()
+        self._reg(calc, 'p1')
+        r = calc.calculate_margin('p1')
+        for f in ('source_cost_krw', 'international_shipping', 'customs_duty',
+                  'vat', 'domestic_shipping', 'platform_fee', 'payment_fee',
+                  'exchange_loss', 'packaging_cost', 'labeling_cost',
+                  'return_reserve', 'misc_costs'):
+            assert getattr(r, f) >= 0
+
+    def test_net_profit_formula(self):
+        calc = self._make()
+        self._reg(calc, 'p1')
+        r = calc.calculate_margin('p1')
+        assert r.net_profit == pytest.approx(r.selling_price - r.total_cost, abs=0.01)
+
+    def test_margin_rate_formula(self):
+        calc = self._make()
+        self._reg(calc, 'p1', selling_price=30000)
+        r = calc.calculate_margin('p1')
+        expected = r.net_profit / r.selling_price * 100
+        assert r.margin_rate == pytest.approx(expected, abs=0.01)
+
+    def test_customs_duty_calculation(self):
+        calc = self._make()
+        self._reg(calc, 'p1', source_cost=10.0, exchange_rate=1300.0,
+                  international_shipping=3000.0, customs_duty_rate=8.0)
+        r = calc.calculate_margin('p1')
+        assert r.customs_duty == pytest.approx(1280.0)
+
+    def test_vat_calculation(self):
+        calc = self._make()
+        self._reg(calc, 'p1', source_cost=10.0, exchange_rate=1300.0,
+                  international_shipping=3000.0, customs_duty_rate=8.0)
+        r = calc.calculate_margin('p1')
+        assert r.vat == pytest.approx(1728.0)
+
+    def test_exchange_loss(self):
+        calc = self._make()
+        self._reg(calc, 'p1', source_cost=10.0, exchange_rate=1300.0)
+        r = calc.calculate_margin('p1')
+        assert r.exchange_loss == pytest.approx(195.0)
+
+    def test_coupang_channel(self):
+        calc = self._make()
+        self._reg(calc, 'p1', selling_price=30000, category='electronics')
+        r = calc.calculate_margin('p1', 'coupang')
+        assert r.channel == 'coupang'
+        assert r.platform_fee == pytest.approx(2400.0)
+
+    def test_naver_channel(self):
+        calc = self._make()
+        self._reg(calc, 'p1', selling_price=30000)
+        r = calc.calculate_margin('p1', 'naver')
+        assert r.channel == 'naver'
+
+    def test_usd_product(self):
+        calc = self._make()
+        self._reg(calc, 'p1', source_cost=15.0, currency='USD', exchange_rate=1350.0)
+        r = calc.calculate_margin('p1')
+        assert r.source_cost_krw == pytest.approx(20250.0)
+
+    def test_jpy_product(self):
+        calc = self._make()
+        self._reg(calc, 'p1', source_cost=1500.0, currency='JPY', exchange_rate=9.0)
+        r = calc.calculate_margin('p1')
+        assert r.source_cost_krw == pytest.approx(13500.0)
+
+    def test_cny_product(self):
+        calc = self._make()
+        self._reg(calc, 'p1', source_cost=50.0, currency='CNY', exchange_rate=185.0)
+        r = calc.calculate_margin('p1')
+        assert r.source_cost_krw == pytest.approx(9250.0)
+
+    def test_loss_product(self):
+        calc = self._make()
+        calc.register_product('p_loss', {'selling_price': 5000, 'source_cost': 10.0,
+                                          'exchange_rate': 1300.0, 'international_shipping': 5000.0})
+        r = calc.calculate_margin('p_loss')
+        assert r.net_profit < 0
+
+    def test_cache_hit(self):
+        calc = self._make()
+        self._reg(calc, 'p1')
+        r1 = calc.calculate_margin('p1', use_cache=True)
+        r2 = calc.calculate_margin('p1', use_cache=True)
+        assert r1.result_id == r2.result_id
+
+    def test_cache_invalidation_on_update(self):
+        calc = self._make()
+        self._reg(calc, 'p1', selling_price=30000)
+        r1 = calc.calculate_margin('p1', use_cache=True)
+        calc.update_product('p1', {'selling_price': 50000})
+        r2 = calc.calculate_margin('p1', use_cache=True)
+        assert r1.result_id != r2.result_id
+        assert r2.selling_price == 50000
+
+    def test_bulk_margins(self):
+        calc = self._make()
+        for i in range(5):
+            self._reg(calc, f'p{i}', selling_price=30000 + i * 1000)
+        results = calc.calculate_bulk_margins()
+        assert len(results) == 5
+
+    def test_recalculate_all(self):
+        calc = self._make()
+        self._reg(calc, 'p1')
+        self._reg(calc, 'p2')
+        result = calc.recalculate_all()
+        assert result['total'] > 0
+
+    def test_history_saved(self):
+        calc = self._make()
+        self._reg(calc, 'p1')
+        calc.calculate_margin('p1', use_cache=False)
+        calc.calculate_margin('p1', use_cache=False)
+        history = calc.get_history(product_id='p1')
+        assert len(history) >= 2
+
+    def test_to_dict_has_required_fields(self):
+        calc = self._make()
+        self._reg(calc, 'p1')
+        d = calc.calculate_margin('p1').to_dict()
+        for field in ('product_id', 'margin_rate', 'net_profit', 'calculated_at'):
+            assert field in d
+
+
+# ─── Phase110: CostBreakdownService ──────────────────────────────────────────
+
+class TestPh110CostBreakdown:
+    def _make(self):
+        from src.margin_calculator.calculator import RealTimeMarginCalculator
+        from src.margin_calculator.cost_breakdown import CostBreakdownService
+        calc = RealTimeMarginCalculator()
+        calc.register_product('p1', _ph110_sample_product(selling_price=30000))
+        return CostBreakdownService(calc)
+
+    def test_breakdown_structure(self):
+        svc = self._make()
+        bd = svc.get_cost_breakdown('p1')
+        assert all(k in bd for k in ('costs', 'percentages', 'total_cost', 'net_profit', 'margin_rate'))
+
+    def test_all_cost_keys_present(self):
+        svc = self._make()
+        bd = svc.get_cost_breakdown('p1')
+        for key in ('source_cost_krw', 'international_shipping', 'customs_duty', 'vat',
+                    'domestic_shipping', 'platform_fee', 'payment_fee', 'exchange_spread',
+                    'packaging_cost', 'labeling_cost', 'return_reserve', 'misc_costs'):
+            assert key in bd['costs']
+
+    def test_percentages_plus_profit_approx_100(self):
+        svc = self._make()
+        bd = svc.get_cost_breakdown('p1')
+        sp = bd['selling_price']
+        if sp > 0:
+            total_pct = sum(bd['percentages'].values())
+            profit_pct = bd['net_profit'] / sp * 100
+            assert total_pct + profit_pct == pytest.approx(100.0, abs=0.2)
+
+
+# ─── Phase110: MarginAlertService ────────────────────────────────────────────
+
+class TestPh110MarginAlerts:
+    def _calc_with(self, pid, selling, cost_krw):
+        from src.margin_calculator.calculator import RealTimeMarginCalculator
+        calc = RealTimeMarginCalculator()
+        calc.register_product(pid, {'selling_price': selling, 'source_cost': cost_krw,
+                                     'currency': 'KRW', 'exchange_rate': 1.0})
+        return calc
+
+    def test_critical_alert_loss(self):
+        from src.margin_calculator.margin_alerts import MarginAlertService, AlertSeverity
+        calc = self._calc_with('p_loss', 5000, 10000)
+        svc = MarginAlertService(calculator=calc)
+        alerts = svc.check_margin_alerts('p_loss')
+        assert len(alerts) == 1
+        assert alerts[0].severity == AlertSeverity.CRITICAL
+
+    def test_good_product_no_alert(self):
+        from src.margin_calculator.margin_alerts import MarginAlertService
+        calc = self._calc_with('p_good', 30000, 1000)
+        svc = MarginAlertService(calculator=calc)
+        alerts = svc.check_margin_alerts('p_good')
+        assert len(alerts) == 0
+
+    def test_acknowledge_alert(self):
+        from src.margin_calculator.margin_alerts import MarginAlertService
+        calc = self._calc_with('p_loss', 5000, 10000)
+        svc = MarginAlertService(calculator=calc)
+        alerts = svc.check_margin_alerts('p_loss')
+        acked = svc.acknowledge_alert(alerts[0].alert_id)
+        assert acked.acknowledged is True
+
+    def test_acknowledge_nonexistent_returns_none(self):
+        from src.margin_calculator.margin_alerts import MarginAlertService
+        svc = MarginAlertService()
+        assert svc.acknowledge_alert('nonexistent') is None
+
+    def test_dedup_prevents_duplicate_alerts(self):
+        from src.margin_calculator.margin_alerts import MarginAlertService
+        calc = self._calc_with('p_loss', 5000, 10000)
+        svc = MarginAlertService(calculator=calc)
+        a1 = svc.check_margin_alerts('p_loss')
+        a2 = svc.check_margin_alerts('p_loss')
+        assert len(a1) == 1
+        assert len(a2) == 0
+
+    def test_alert_summary_structure(self):
+        from src.margin_calculator.margin_alerts import MarginAlertService, AlertSeverity
+        svc = MarginAlertService()
+        summary = svc.get_alert_summary()
+        assert AlertSeverity.CRITICAL.value in summary
+
+    def test_custom_threshold(self):
+        from src.margin_calculator.margin_alerts import MarginAlertService
+        svc = MarginAlertService()
+        svc.set_threshold('p1', critical=-10.0, warning=2.0, target=20.0)
+        assert svc._custom_thresholds['p1']['critical'] == -10.0
+
+    def test_alert_to_dict(self):
+        from src.margin_calculator.margin_alerts import MarginAlertService
+        calc = self._calc_with('p_loss', 5000, 10000)
+        svc = MarginAlertService(calculator=calc)
+        alerts = svc.check_margin_alerts('p_loss')
+        d = alerts[0].to_dict()
+        assert 'alert_id' in d and 'severity' in d and 'suggestion' in d
+
+
+# ─── Phase110: MarginSimulator ───────────────────────────────────────────────
+
+class TestPh110MarginSimulator:
+    def _make(self):
+        from src.margin_calculator.calculator import RealTimeMarginCalculator
+        from src.margin_calculator.margin_simulator import MarginSimulator
+        calc = RealTimeMarginCalculator()
+        calc.register_product('p1', _ph110_sample_product(selling_price=30000))
+        return MarginSimulator(calc)
+
+    def test_price_increase_improves_margin(self):
+        sim = self._make()
+        r = sim.simulate_price_change('p1', 40000)
+        assert r['delta_margin_rate'] > 0
+
+    def test_price_decrease_lowers_margin(self):
+        sim = self._make()
+        r = sim.simulate_price_change('p1', 20000)
+        assert r['delta_margin_rate'] < 0
+
+    def test_exchange_rate_increase_lowers_margin(self):
+        from src.margin_calculator.calculator import RealTimeMarginCalculator
+        from src.margin_calculator.margin_simulator import MarginSimulator
+        calc = RealTimeMarginCalculator()
+        calc.register_product('p1', _ph110_sample_product(exchange_rate=1300.0))
+        sim = MarginSimulator(calc)
+        r = sim.simulate_exchange_rate('p1', 1500.0)
+        assert r['delta_margin_rate'] < 0
+
+    def test_cost_change_lowers_profit(self):
+        sim = self._make()
+        r = sim.simulate_cost_change('p1', 'domestic_shipping', 5000.0)
+        assert r['delta_net_profit'] < 0
+
+    def test_break_even_approx_zero_margin(self):
+        from src.margin_calculator.calculator import RealTimeMarginCalculator
+        from src.margin_calculator.margin_simulator import MarginSimulator
+        calc = RealTimeMarginCalculator()
+        calc.register_product('p1', _ph110_sample_product())
+        sim = MarginSimulator(calc)
+        r = sim.find_break_even_price('p1')
+        assert abs(r['margin_rate_at_break_even']) < 1.0
+
+    def test_target_margin_price(self):
+        from src.margin_calculator.calculator import RealTimeMarginCalculator
+        from src.margin_calculator.margin_simulator import MarginSimulator
+        calc = RealTimeMarginCalculator()
+        calc.register_product('p1', _ph110_sample_product())
+        sim = MarginSimulator(calc)
+        r = sim.find_target_margin_price('p1', 15.0)
+        assert abs(r['margin_rate_achieved'] - 15.0) < 1.0
+
+    def test_what_if_analysis(self):
+        sim = self._make()
+        scenarios = [
+            {'name': 'S1', 'changes': {'selling_price': 35000}},
+            {'name': 'S2', 'changes': {'selling_price': 25000}},
+        ]
+        r = sim.what_if_analysis('p1', scenarios)
+        assert len(r['scenarios']) == 2
+        assert 'baseline' in r
+
+
+# ─── Phase110: ProfitabilityAnalyzer ─────────────────────────────────────────
+
+class TestPh110Profitability:
+    def _make(self):
+        from src.margin_calculator.calculator import RealTimeMarginCalculator
+        from src.margin_calculator.profitability import ProfitabilityAnalyzer
+        calc = RealTimeMarginCalculator()
+        for i in range(5):
+            calc.register_product(f'p{i}', {
+                'selling_price': 30000, 'source_cost': 3000.0 + i * 2000,
+                'currency': 'KRW', 'exchange_rate': 1.0,
+            })
+        return ProfitabilityAnalyzer(calc)
+
+    def test_ranking_top_descending(self):
+        ana = self._make()
+        ranking = ana.get_profitability_ranking(limit=3, reverse=True)
+        for i in range(len(ranking) - 1):
+            assert ranking[i]['margin_rate'] >= ranking[i + 1]['margin_rate']
+
+    def test_ranking_bottom_ascending(self):
+        ana = self._make()
+        ranking = ana.get_profitability_ranking(limit=3, reverse=False)
+        for i in range(len(ranking) - 1):
+            assert ranking[i]['margin_rate'] <= ranking[i + 1]['margin_rate']
+
+    def test_loss_products_correctly_identified(self):
+        from src.margin_calculator.calculator import RealTimeMarginCalculator
+        from src.margin_calculator.profitability import ProfitabilityAnalyzer
+        calc = RealTimeMarginCalculator()
+        calc.register_product('p_loss', {'selling_price': 5000, 'source_cost': 10000,
+                                          'currency': 'KRW', 'exchange_rate': 1.0})
+        calc.register_product('p_good', {'selling_price': 30000, 'source_cost': 5000,
+                                          'currency': 'KRW', 'exchange_rate': 1.0})
+        ana = ProfitabilityAnalyzer(calc)
+        loss = ana.get_loss_products()
+        pids = [p['product_id'] for p in loss]
+        assert 'p_loss' in pids
+        assert 'p_good' not in pids
+
+    def test_low_margin_products(self):
+        from src.margin_calculator.calculator import RealTimeMarginCalculator
+        from src.margin_calculator.profitability import ProfitabilityAnalyzer
+        calc = RealTimeMarginCalculator()
+        calc.register_product('p_low', {'selling_price': 10000, 'source_cost': 9700,
+                                         'currency': 'KRW', 'exchange_rate': 1.0})
+        ana = ProfitabilityAnalyzer(calc)
+        low = ana.get_low_margin_products(threshold=10.0)
+        assert any(p['product_id'] == 'p_low' for p in low)
+
+    def test_distribution_structure(self):
+        ana = self._make()
+        dist = ana.get_profitability_distribution()
+        assert 'distribution' in dist
+        assert 'total_products' in dist
+
+    def test_channel_profitability_all_channels(self):
+        ana = self._make()
+        cp = ana.get_channel_profitability()
+        assert set(cp.keys()) == {'coupang', 'naver', 'internal'}
+
+
+# ─── Phase110: MarginTrendAnalyzer ───────────────────────────────────────────
+
+class TestPh110MarginTrend:
+    def _make(self):
+        from src.margin_calculator.calculator import RealTimeMarginCalculator
+        from src.margin_calculator.margin_trend import MarginTrendAnalyzer
+        calc = RealTimeMarginCalculator()
+        calc.register_product('p1', _ph110_sample_product())
+        return MarginTrendAnalyzer(calc)
+
+    def test_record_returns_point(self):
+        ana = self._make()
+        pt = ana.record('p1')
+        assert pt.product_id == 'p1'
+
+    def test_product_trend(self):
+        ana = self._make()
+        ana.record('p1')
+        ana.record('p1')
+        trend = ana.get_product_trend('p1')
+        assert len(trend['data']) >= 2
+
+    def test_detect_decline(self):
+        from src.margin_calculator.calculator import RealTimeMarginCalculator
+        from src.margin_calculator.margin_trend import MarginTrendAnalyzer
+        calc = RealTimeMarginCalculator()
+        ana = MarginTrendAnalyzer(calc)
+        ana.seed_history([
+            {'product_id': 'p1', 'channel': 'internal', 'margin_rate': 15.0, 'net_profit': 4500, 'selling_price': 30000},
+            {'product_id': 'p1', 'channel': 'internal', 'margin_rate': 5.0, 'net_profit': 1500, 'selling_price': 30000},
+        ])
+        declining = ana.detect_margin_decline(threshold=5.0)
+        assert any(d['product_id'] == 'p1' for d in declining)
+
+    def test_trend_summary_structure(self):
+        from src.margin_calculator.calculator import RealTimeMarginCalculator
+        from src.margin_calculator.margin_trend import MarginTrendAnalyzer
+        calc = RealTimeMarginCalculator()
+        ana = MarginTrendAnalyzer(calc)
+        summary = ana.get_trend_summary()
+        assert all(k in summary for k in ('rising', 'declining', 'stable', 'total'))
+
+
+# ─── Phase110: API 테스트 ─────────────────────────────────────────────────────
+
+class TestPh110MarginAPI:
+    @pytest.fixture
+    def client(self):
+        from flask import Flask
+        from src.api.margin_api import margin_bp
+        app = Flask(__name__)
+        app.register_blueprint(margin_bp)
+        app.config['TESTING'] = True
+        with app.test_client() as c:
+            yield c
+
+    def test_get_margin(self, client):
+        assert client.get('/api/v1/margin/p1').status_code == 200
+
+    def test_get_breakdown(self, client):
+        assert client.get('/api/v1/margin/p1/breakdown').status_code == 200
+
+    def test_bulk_margin(self, client):
+        assert client.post('/api/v1/margin/bulk', json={}).status_code == 200
+
+    def test_recalculate(self, client):
+        assert client.post('/api/v1/margin/recalculate', json={}).status_code == 200
+
+    def test_get_alerts(self, client):
+        assert client.get('/api/v1/margin/alerts').status_code == 200
+
+    def test_get_alert_summary(self, client):
+        assert client.get('/api/v1/margin/alerts/summary').status_code == 200
+
+    def test_simulate_price(self, client):
+        resp = client.post('/api/v1/margin/simulate/price',
+                           json={'product_id': 'p1', 'new_price': 30000})
+        assert resp.status_code == 200
+
+    def test_simulate_price_missing_id(self, client):
+        resp = client.post('/api/v1/margin/simulate/price', json={'new_price': 30000})
+        assert resp.status_code == 400
+
+    def test_simulate_exchange_rate(self, client):
+        resp = client.post('/api/v1/margin/simulate/exchange-rate',
+                           json={'product_id': 'p1', 'new_rate': 1400.0})
+        assert resp.status_code == 200
+
+    def test_simulate_cost(self, client):
+        resp = client.post('/api/v1/margin/simulate/cost',
+                           json={'product_id': 'p1', 'cost_type': 'domestic_shipping', 'new_value': 3000})
+        assert resp.status_code == 200
+
+    def test_simulate_break_even(self, client):
+        resp = client.post('/api/v1/margin/simulate/break-even', json={'product_id': 'p1'})
+        assert resp.status_code == 200
+
+    def test_simulate_target_price(self, client):
+        resp = client.post('/api/v1/margin/simulate/target-price',
+                           json={'product_id': 'p1', 'target_margin': 15.0})
+        assert resp.status_code == 200
+
+    def test_simulate_what_if(self, client):
+        resp = client.post('/api/v1/margin/simulate/what-if',
+                           json={'product_id': 'p1', 'scenarios': []})
+        assert resp.status_code == 200
+
+    def test_get_ranking(self, client):
+        assert client.get('/api/v1/margin/ranking').status_code == 200
+
+    def test_get_loss_products(self, client):
+        assert client.get('/api/v1/margin/loss-products').status_code == 200
+
+    def test_get_low_margin(self, client):
+        assert client.get('/api/v1/margin/low-margin').status_code == 200
+
+    def test_get_distribution(self, client):
+        assert client.get('/api/v1/margin/distribution').status_code == 200
+
+    def test_get_channel_profitability(self, client):
+        assert client.get('/api/v1/margin/channel-profitability').status_code == 200
+
+    def test_get_product_trend(self, client):
+        assert client.get('/api/v1/margin/trend/p1').status_code == 200
+
+    def test_get_overall_trend(self, client):
+        assert client.get('/api/v1/margin/trend/overall').status_code == 200
+
+    def test_get_channel_trend(self, client):
+        assert client.get('/api/v1/margin/trend/channel/coupang').status_code == 200
+
+    def test_get_declining(self, client):
+        assert client.get('/api/v1/margin/trend/declining').status_code == 200
+
+    def test_get_config(self, client):
+        r = client.get('/api/v1/margin/config')
+        assert r.status_code == 200
+        assert 'config' in r.get_json()
+
+    def test_update_config(self, client):
+        assert client.put('/api/v1/margin/config',
+                          json={'default_target_margin': 20.0}).status_code == 200
+
+    def test_get_all_platform_fees(self, client):
+        assert client.get('/api/v1/margin/platform-fees').status_code == 200
+
+    def test_get_channel_fees(self, client):
+        assert client.get('/api/v1/margin/platform-fees/coupang').status_code == 200
+
+    def test_get_dashboard(self, client):
+        assert client.get('/api/v1/margin/dashboard').status_code == 200
+
+    def test_acknowledge_nonexistent(self, client):
+        assert client.post('/api/v1/margin/alerts/nonexistent/acknowledge').status_code == 404
+
+
+# ─── Phase110: 봇 커맨드 테스트 ──────────────────────────────────────────────
+
+class TestPh110BotCommands:
+    def test_cmd_margin_no_sku(self):
+        from src.bot.margin_commands import cmd_margin
+        assert '❌' in cmd_margin('')
+
+    def test_cmd_margin_with_sku(self):
+        from src.bot.margin_commands import cmd_margin
+        r = cmd_margin('SKU-001')
+        assert 'SKU-001' in r or '마진' in r
+
+    def test_cmd_margin_alert(self):
+        from src.bot.margin_commands import cmd_margin_alert
+        r = cmd_margin_alert()
+        assert '마진' in r or 'CRITICAL' in r or '현황' in r
+
+    def test_cmd_profit_ranking_top(self):
+        from src.bot.margin_commands import cmd_profit_ranking
+        r = cmd_profit_ranking('top', 5)
+        assert '수익성' in r or '상위' in r or '없음' in r
+
+    def test_cmd_loss_products(self):
+        from src.bot.margin_commands import cmd_loss_products
+        r = cmd_loss_products()
+        assert '적자' in r or '없음' in r
+
+    def test_cmd_margin_simulate_no_sku(self):
+        from src.bot.margin_commands import cmd_margin_simulate
+        assert '❌' in cmd_margin_simulate('', 30000)
+
+    def test_cmd_break_even_no_sku(self):
+        from src.bot.margin_commands import cmd_break_even
+        assert '❌' in cmd_break_even('')
+
+    def test_cmd_margin_trend_no_sku(self):
+        from src.bot.margin_commands import cmd_margin_trend
+        assert '❌' in cmd_margin_trend('')
+
+    def test_cmd_margin_dashboard(self):
+        from src.bot.margin_commands import cmd_margin_dashboard
+        r = cmd_margin_dashboard()
+        assert '대시보드' in r or '마진' in r
+
+    def test_cmd_platform_fees_all(self):
+        from src.bot.margin_commands import cmd_platform_fees
+        r = cmd_platform_fees()
+        assert '수수료' in r
+
+    def test_cmd_platform_fees_channel(self):
+        from src.bot.margin_commands import cmd_platform_fees
+        r = cmd_platform_fees('coupang')
+        assert 'coupang' in r or '수수료' in r
+
+    def test_cmd_margin_config(self):
+        from src.bot.margin_commands import cmd_margin_config
+        r = cmd_margin_config()
+        assert '마진' in r or '설정' in r or 'target' in r
