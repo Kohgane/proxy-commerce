@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -126,7 +126,7 @@ class VirtualStockPool:
             source_id=source_id,
             status=ReservationStatus.pending,
             created_at=now,
-            expires_at=now.replace(hour=(now.hour + 24) % 24),
+            expires_at=now + timedelta(hours=24),
         )
         self._reservations[reservation.reservation_id] = reservation
         return reservation

@@ -1284,4 +1284,4 @@
 - API Blueprint: `src/api/virtual_inventory_api.py` (`/api/v1/virtual-inventory`) — 35개+ 엔드포인트 (재고관리6종/예약5종/할당4종/집계1종/동기화4종/알림4종/분석6종/대시보드1종)
 - 봇 커맨드: `/vstock`, `/vstock_all`, `/vstock_low`, `/vstock_out`, `/vstock_alerts`, `/vstock_reserve`, `/vstock_allocate`, `/vstock_sync`, `/vstock_health`, `/vstock_risk`, `/vstock_dashboard`
 - 관련 코드: `src/virtual_inventory/`, `src/api/virtual_inventory_api.py`, `src/bot/virtual_inventory_commands.py`
-- 테스트: `tests/test_virtual_inventory.py` (65개+ 테스트)
+- 테스트: `tests/test_virtual_inventory.py` (89개+ 테스트)

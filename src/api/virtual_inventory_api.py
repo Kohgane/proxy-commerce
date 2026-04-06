@@ -161,7 +161,7 @@ def add_source(product_id: str):
         pool.add_source_stock(product_id, src)
         return jsonify({'ok': True, 'source_id': src.source_id}), 201
     except KeyError as exc:
-        return jsonify({'error': f'필수 필드 누락: {exc}'}), 400
+        return jsonify({'error': f'필수 필드 누락: {exc.args[0] if exc.args else "unknown"}'}), 400
 
 
 @virtual_inventory_bp.get('/stock/<product_id>/sources')
@@ -205,8 +205,8 @@ def reserve(product_id: str):
         source_id = body.get('source_id')
         reservation = pool.reserve_stock(product_id, qty, source_id=source_id)
         return jsonify(_serialize(reservation)), 201
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
+    except ValueError:
+        return jsonify({'error': '재고 부족 또는 잘못된 요청입니다'}), 400
 
 
 @virtual_inventory_bp.get('/reservations')
@@ -265,9 +265,9 @@ def allocate():
         result = allocator.allocate(product_id, qty, strategy)
         return jsonify(_serialize(result)), 201
     except KeyError as exc:
-        return jsonify({'error': f'필수 필드 누락: {exc}'}), 400
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
+        return jsonify({'error': f'필수 필드 누락: {exc.args[0] if exc.args else "unknown"}'}), 400
+    except ValueError:
+        return jsonify({'error': '잘못된 전략 값입니다'}), 400
 
 
 @virtual_inventory_bp.get('/allocations')
@@ -317,8 +317,8 @@ def aggregate():
         qty = engine.aggregate(sources, strategy)
         safety = engine.calculate_safety_stock(product_id, sources)
         return jsonify({'product_id': product_id, 'aggregated_qty': qty, 'safety_stock': safety}), 200
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
+    except ValueError:
+        return jsonify({'error': '잘못된 집계 전략입니다'}), 400
 
 
 # ── 동기화 엔드포인트 ─────────────────────────────────────────────────────────

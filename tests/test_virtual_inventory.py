@@ -1,4 +1,4 @@
-"""tests/test_virtual_inventory.py — Phase 113: 가상 재고 관리 테스트 (65개+)."""
+"""tests/test_virtual_inventory.py — Phase 113: 가상 재고 관리 테스트 (89개+)."""
 from __future__ import annotations
 
 import pytest
