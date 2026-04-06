@@ -108,7 +108,7 @@ def register_source():
         return jsonify({'success': True, 'product': product.to_dict()}), 201
     except Exception as exc:
         logger.error("register_source 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 400
+        return jsonify({'error': '소싱처 상품 등록에 실패했습니다.'}), 400
 
 
 @source_monitor_bp.get('/sources')
@@ -124,7 +124,7 @@ def list_sources():
         })
     except Exception as exc:
         logger.error("list_sources 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '소싱처 목록 조회에 실패했습니다.'}), 500
 
 
 @source_monitor_bp.get('/sources/<source_id>')
@@ -166,7 +166,7 @@ def check_source(source_id: str):
         return jsonify({'success': True, **result})
     except Exception as exc:
         logger.error("check_source 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '상품 상태 체크에 실패했습니다.'}), 500
 
 
 @source_monitor_bp.get('/sources/<source_id>/history')
@@ -281,7 +281,7 @@ def add_rule():
         return jsonify({'success': True, 'rule': rule.to_dict()}), 201
     except Exception as exc:
         logger.error("add_rule 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 400
+        return jsonify({'error': '비활성화 규칙 추가에 실패했습니다.'}), 400
 
 
 # ── 대시보드 ─────────────────────────────────────────────────────────────────
@@ -294,4 +294,4 @@ def get_dashboard():
         return jsonify({'success': True, **data})
     except Exception as exc:
         logger.error("get_dashboard 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '대시보드 데이터 조회에 실패했습니다.'}), 500
