@@ -100,6 +100,8 @@
 | Phase 105 | 예외 처리 + 자동 복구 (훼손 대응, 가격 변동 알림, 재시도, 자동 복구) | #71 | 2026-04-06 |
 | Phase 106 | 완전 자율 운영 대시보드 (수익 모델, 이상 감지, AutoPilot, 시뮬레이션) | #72 | 2026-04-06 |
 | Phase 107 | 실시간 채팅 고객 지원 (WebSocket, 상담원 배정, FAQ 자동응답) | #73 | 2026-04-06 |
+| Phase 108 | 소싱처 실시간 모니터링 (상품 생존 추적, 자동 비활성화, 대체 소싱처 검색) | #74 | 2026-04-06 |
+| Phase 109 | 판매 채널 자동 연동 (소싱처 변동 → 쿠팡/네이버/자체몰 자동 반영) | #75 | 2026-04-06 |
 
 ## 🚧 진행 중 Phase
 
@@ -1153,3 +1155,34 @@
 - API Blueprint: `src/api/source_monitor_api.py` (`/api/v1/source-monitor`) — 16개 엔드포인트 (소싱처 등록/목록/상세/수정/삭제/체크/이력/대체/전환/변동/긴급/비활성/재활성/규칙/대시보드)
 - 봇 커맨드: `/source_status`, `/source_check`, `/source_alerts`, `/source_dead`, `/source_alternatives`, `/source_dashboard`
 - 관련 코드: `src/source_monitor/`, `src/api/source_monitor_api.py`, `src/bot/commands.py`
+
+## Phase 109 — 판매 채널 자동 연동 (소싱처 변동 → 판매채널 자동 반영) ✅ 완료
+
+### 구현 내용
+- `ListingState` Enum: draft/pending_review/active/paused/inactive/deleted/error
+- `PublishResult` 데이터클래스: success, listing_id, channel, message, error, raw_response, executed_at
+- `ListingStatus` 데이터클래스: listing_id, channel, product_id, state, channel_listing_id, title, price, stock, last_synced_at, error_message, metadata
+- `ChannelPublisher` ABC: publish(), update(), deactivate(), activate(), delete(), get_status(), health_check()
+- `CoupangPublisher`: 쿠팡 상품 등록/수정/삭제/상태변경 mock — 카테고리 매핑, 수수료율 적용
+- `NaverPublisher`: 네이버 스마트스토어 상품 관리 mock — 카테고리 매핑, 태그 자동 생성, 수수료율 적용
+- `InternalPublisher`: 자체몰 상품 관리 mock (직접 DB 업데이트 시뮬레이션)
+- `ProductMapper`: 소싱처 상품 → 채널별 상품 데이터 변환 — map_product(), 가격/환율/마진 계산, 카테고리/제목/설명/이미지/옵션 변환
+- `ListingHistoryEntry` 데이터클래스: entry_id, listing_id, old_state, new_state, reason, changed_at
+- `ListingStatusManager`: 리스팅 상태 관리 + 이력 추적 — register_listing(), get_listing(), get_listings(), pause_listing(), resume_listing(), deactivate_listing(), delete_listing(), bulk_pause(), bulk_resume(), get_history(), get_stats()
+- `ConflictStrategy` Enum: source_priority/channel_priority/latest_wins/manual
+- `ConflictStatus` Enum: unresolved/resolved/pending_manual
+- `Conflict` 데이터클래스: conflict_id, product_id, field_name, source_value, channel_value, channel, strategy, status, resolved_value, resolved_at
+- `SyncConflictResolver`: 충돌 감지 + 전략별 해결 + 수동 해결 — detect_conflicts(), resolve(), resolve_conflict(), get_unresolved_conflicts(), get_all_conflicts(), get_stats()
+- `SyncPriority` 상수: EVENT(1) > QUICK(2) > FULL(3)
+- `ScheduledSyncJob` 데이터클래스: job_id, product_id, channels, priority, scheduled_at, reason, completed
+- `ChannelSyncScheduler`: 스케줄 관리 — schedule_event_sync(), schedule_quick_sync(), schedule_full_sync(), get_pending_jobs(), mark_completed(), is_full_sync_due(), is_quick_sync_due(), get_stats()
+- `SyncStatus` Enum: pending/in_progress/success/failed/retrying
+- `ChangeEventType` Enum: price_changed/out_of_stock/listing_removed/seller_inactive/back_in_stock/source_recovered/info_changed
+- `SyncQueueItem` 데이터클래스: item_id, product_id, channels, action, payload, priority, retries, status
+- `SyncHistoryEntry` 데이터클래스: entry_id, product_id, channel, action, success, listing_id, error, synced_at
+- `ChannelSyncEngine`: 동기화 오케스트레이션 — sync_product(), sync_all(), handle_source_change(), enqueue(), process_queue(), get_sync_status(), get_sync_history(), get_sync_stats(), get_channel_health(), 재시도(최대 3회, 지수 백오프)
+- `ChannelSyncDashboard`: 채널별 현황 + 건강도 + 큐 — get_dashboard(), get_channel_summary(), get_recent_sync_feed(), get_pending_conflicts()
+- API Blueprint: `src/api/channel_sync_api.py` (`/api/v1/channel-sync`) — 17개 엔드포인트 (동기화/상태/이력/통계/리스팅/채널/대시보드/충돌)
+- 봇 커맨드: `/sync_status`, `/sync_channel`, `/sync_product`, `/sync_force`, `/listing_status`, `/listing_pause`, `/listing_resume`, `/channel_health`, `/sync_dashboard`, `/sync_conflicts`
+- 관련 코드: `src/channel_sync/`, `src/api/channel_sync_api.py`, `src/bot/channel_sync_commands.py`
+- 테스트: `tests/test_channel_sync.py` (121개 테스트)
