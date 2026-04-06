@@ -131,7 +131,7 @@ def get_margin(product_id: str):
         return jsonify({'success': True, 'margin': result.to_dict()})
     except Exception as exc:
         logger.error("get_margin 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @margin_bp.get('/<product_id>/breakdown')
@@ -143,7 +143,7 @@ def get_breakdown(product_id: str):
         return jsonify({'success': True, 'breakdown': breakdown})
     except Exception as exc:
         logger.error("get_breakdown 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @margin_bp.post('/bulk')
@@ -161,7 +161,7 @@ def bulk_margin():
         })
     except Exception as exc:
         logger.error("bulk_margin 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @margin_bp.post('/recalculate')
@@ -174,7 +174,7 @@ def recalculate():
         return jsonify({'success': True, **result})
     except Exception as exc:
         logger.error("recalculate 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 # ── 알림 ──────────────────────────────────────────────────────────────────────
@@ -197,7 +197,7 @@ def get_alerts():
         })
     except Exception as exc:
         logger.error("get_alerts 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @margin_bp.get('/alerts/summary')
@@ -208,7 +208,7 @@ def get_alert_summary():
         return jsonify({'success': True, 'summary': summary})
     except Exception as exc:
         logger.error("get_alert_summary 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @margin_bp.post('/alerts/<alert_id>/acknowledge')
@@ -221,7 +221,7 @@ def acknowledge_alert(alert_id: str):
         return jsonify({'success': True, 'alert': alert.to_dict()})
     except Exception as exc:
         logger.error("acknowledge_alert 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 # ── 시뮬레이션 ────────────────────────────────────────────────────────────────
@@ -240,7 +240,7 @@ def simulate_price():
         return jsonify({'success': True, 'simulation': result})
     except Exception as exc:
         logger.error("simulate_price 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @margin_bp.post('/simulate/exchange-rate')
@@ -257,7 +257,7 @@ def simulate_exchange_rate():
         return jsonify({'success': True, 'simulation': result})
     except Exception as exc:
         logger.error("simulate_exchange_rate 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @margin_bp.post('/simulate/cost')
@@ -275,7 +275,7 @@ def simulate_cost():
         return jsonify({'success': True, 'simulation': result})
     except Exception as exc:
         logger.error("simulate_cost 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @margin_bp.post('/simulate/break-even')
@@ -291,7 +291,7 @@ def simulate_break_even():
         return jsonify({'success': True, 'result': result})
     except Exception as exc:
         logger.error("simulate_break_even 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @margin_bp.post('/simulate/target-price')
@@ -308,7 +308,7 @@ def simulate_target_price():
         return jsonify({'success': True, 'result': result})
     except Exception as exc:
         logger.error("simulate_target_price 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @margin_bp.post('/simulate/what-if')
@@ -325,7 +325,7 @@ def simulate_what_if():
         return jsonify({'success': True, 'analysis': result})
     except Exception as exc:
         logger.error("simulate_what_if 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 # ── 수익성 ────────────────────────────────────────────────────────────────────
@@ -344,7 +344,7 @@ def get_ranking():
         return jsonify({'success': True, 'ranking': ranking, 'total': len(ranking)})
     except Exception as exc:
         logger.error("get_ranking 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @margin_bp.get('/loss-products')
@@ -356,7 +356,7 @@ def get_loss_products():
         return jsonify({'success': True, 'products': products, 'total': len(products)})
     except Exception as exc:
         logger.error("get_loss_products 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @margin_bp.get('/low-margin')
@@ -369,7 +369,7 @@ def get_low_margin():
         return jsonify({'success': True, 'products': products, 'total': len(products)})
     except Exception as exc:
         logger.error("get_low_margin 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @margin_bp.get('/distribution')
@@ -381,7 +381,7 @@ def get_distribution():
         return jsonify({'success': True, **dist})
     except Exception as exc:
         logger.error("get_distribution 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @margin_bp.get('/channel-profitability')
@@ -392,7 +392,7 @@ def get_channel_profitability():
         return jsonify({'success': True, 'channels': result})
     except Exception as exc:
         logger.error("get_channel_profitability 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 # ── 추이 ──────────────────────────────────────────────────────────────────────
@@ -407,7 +407,7 @@ def get_product_trend(product_id: str):
         return jsonify({'success': True, 'trend': trend})
     except Exception as exc:
         logger.error("get_product_trend 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @margin_bp.get('/trend/overall')
@@ -421,7 +421,7 @@ def get_overall_trend():
         return jsonify({'success': True, 'trend': trend})
     except Exception as exc:
         logger.error("get_overall_trend 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @margin_bp.get('/trend/channel/<channel>')
@@ -434,7 +434,7 @@ def get_channel_trend(channel: str):
         return jsonify({'success': True, 'trend': trend})
     except Exception as exc:
         logger.error("get_channel_trend 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @margin_bp.get('/trend/declining')
@@ -446,7 +446,7 @@ def get_declining():
         return jsonify({'success': True, 'declining': declining, 'total': len(declining)})
     except Exception as exc:
         logger.error("get_declining 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
@@ -461,7 +461,7 @@ def get_config():
         return jsonify({'success': True, 'config': cfg})
     except Exception as exc:
         logger.error("get_config 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @margin_bp.put('/config')
@@ -473,7 +473,7 @@ def update_config():
         return jsonify({'success': True, 'config': updated})
     except Exception as exc:
         logger.error("update_config 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 # ── 플랫폼 수수료 ─────────────────────────────────────────────────────────────
@@ -486,7 +486,7 @@ def get_all_platform_fees():
         return jsonify({'success': True, 'fees': fees})
     except Exception as exc:
         logger.error("get_all_platform_fees 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 @margin_bp.get('/platform-fees/<channel>')
@@ -497,7 +497,7 @@ def get_channel_fees(channel: str):
         return jsonify({'success': True, 'fee_structure': fee_structure})
     except Exception as exc:
         logger.error("get_channel_fees 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
 
 
 # ── 대시보드 ──────────────────────────────────────────────────────────────────
@@ -530,4 +530,4 @@ def get_dashboard():
         })
     except Exception as exc:
         logger.error("get_dashboard 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청 처리 중 오류가 발생했습니다.'}), 500
