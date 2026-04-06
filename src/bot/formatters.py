@@ -1060,6 +1060,13 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'china_seller_score': lambda d: _format_china_seller_score(d),
         'china_dashboard': lambda d: _format_china_dashboard(d),
         'rpa_task': lambda d: _format_rpa_task(d),
+        # Phase 105: 예외 처리
+        'exception_case': lambda d: _format_exception_case(d),
+        'exception_stats': lambda d: _format_exception_stats(d),
+        'damage_report': lambda d: _format_damage_report(d),
+        'price_alert': lambda d: _format_price_alert(d),
+        'retry_record': lambda d: _format_retry_record(d),
+        'exception_dashboard': lambda d: _format_exception_dashboard(d),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:
@@ -2437,3 +2444,92 @@ def _format_rpa_task(d: dict) -> str:
         f"상태: {emoji} {status}\n"
         f"단계 수: {len(d.get('steps', []))}"
     )
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 105: 예외 처리 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_exception_case(d: dict) -> str:
+    """예외 케이스 포맷."""
+    severity_emoji = {'low': '🟢', 'medium': '🟡', 'high': '🔴', 'critical': '🚨'}.get(d.get('severity', ''), '⚠️')
+    return (
+        f"🚨 예외 케이스\n"
+        f"ID: {d.get('case_id', '-')}\n"
+        f"유형: {d.get('type', '-')}\n"
+        f"심각도: {severity_emoji} {d.get('severity', '-')}\n"
+        f"상태: {d.get('status', '-')}\n"
+        f"주문: {d.get('order_id') or '-'}\n"
+        f"재시도: {d.get('retry_count', 0)}회"
+    )
+
+
+def _format_exception_stats(d: dict) -> str:
+    """예외 통계 포맷."""
+    lines = [
+        f"📊 예외 통계",
+        f"전체: {d.get('total', 0)}건",
+        f"해결: {d.get('resolved', 0)}건",
+        f"해결률: {d.get('resolution_rate', 0) * 100:.1f}%",
+    ]
+    by_sev = d.get('by_severity', {})
+    if by_sev:
+        lines.append('심각도별: ' + ', '.join(f'{k}:{v}' for k, v in by_sev.items()))
+    return "\n".join(lines)
+
+
+def _format_damage_report(d: dict) -> str:
+    """훼손 보고 포맷."""
+    grade_emoji = {'A': '🟡', 'B': '🟠', 'C': '🔴', 'D': '💀'}.get(d.get('grade', ''), '⚠️')
+    return (
+        f"📦 훼손 보고\n"
+        f"ID: {d.get('report_id', '-')}\n"
+        f"주문: {d.get('order_id', '-')}\n"
+        f"유형: {d.get('damage_type', '-')}\n"
+        f"등급: {grade_emoji} Grade {d.get('grade', '-')}\n"
+        f"보상액: {d.get('compensation_amount', 0):,.0f}원\n"
+        f"클레임: {'✅' if d.get('claim_sent') else '❌'}"
+    )
+
+
+def _format_price_alert(d: dict) -> str:
+    """가격 알림 포맷."""
+    type_emoji = {
+        'price_drop': '📉', 'price_surge': '📈',
+        'out_of_budget': '💸', 'better_deal_found': '🎯',
+    }.get(d.get('alert_type', ''), '💰')
+    change = d.get('change_percent', 0)
+    return (
+        f"{type_emoji} 가격 알림\n"
+        f"상품: {d.get('product_id', '-')}\n"
+        f"유형: {d.get('alert_type', '-')}\n"
+        f"변동: {d.get('old_price', 0):,.0f} → {d.get('new_price', 0):,.0f} ({change:+.1f}%)"
+    )
+
+
+def _format_retry_record(d: dict) -> str:
+    """재시도 레코드 포맷."""
+    status_emoji = {
+        'pending': '⏳', 'running': '🔄', 'succeeded': '✅',
+        'failed': '❌', 'exhausted': '💀', 'manual_required': '🙋',
+    }.get(d.get('status', ''), '❓')
+    return (
+        f"🔁 재시도 레코드\n"
+        f"ID: {d.get('record_id', '-')}\n"
+        f"작업: {d.get('task_type', '-')}\n"
+        f"상태: {status_emoji} {d.get('status', '-')}\n"
+        f"시도: {d.get('attempt_count', 0)}회"
+    )
+
+
+def _format_exception_dashboard(d: dict) -> str:
+    """예외 대시보드 포맷."""
+    exc = d.get('exceptions', {})
+    recovery = d.get('recovery', {})
+    lines = [
+        "🛡️ 예외 대시보드",
+        f"전체 예외: {exc.get('total', 0)}건",
+        f"해결률: {exc.get('resolution_rate', 0) * 100:.1f}%",
+        f"복구 성공률: {recovery.get('success_rate', 0) * 100:.1f}%",
+    ]
+    return "\n".join(lines)
