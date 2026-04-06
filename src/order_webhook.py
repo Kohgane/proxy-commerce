@@ -736,6 +736,14 @@ try:
 except Exception as _china_marketplace_bp_exc:
     logger.warning("중국 마켓플레이스 API Blueprint 등록 실패: %s", _china_marketplace_bp_exc)
 
+# 예외 처리 API Blueprint 등록 (Phase 105)
+try:
+    from .api.exception_handler_api import exception_handler_bp
+    app.register_blueprint(exception_handler_bp)
+    logger.info("예외 처리 API Blueprint 등록 완료")
+except Exception as _exception_handler_bp_exc:
+    logger.warning("예외 처리 API Blueprint 등록 실패: %s", _exception_handler_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')

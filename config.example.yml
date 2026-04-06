@@ -1057,3 +1057,33 @@ china_marketplace:
   agents:
     auto_assign: true
     max_concurrent_orders: 10
+
+# === Phase 105: 예외 처리 + 자동 복구 ===
+exception_handler:
+  enabled: true
+  price_detector:
+    drop_threshold_pct: -10.0
+    surge_threshold_pct: 10.0
+    check_interval_minutes: 30
+  damage:
+    auto_claim_on_grade_c: true
+    auto_insurance_on_grade_d: true
+  retry:
+    default_max_retries: 3
+    default_backoff: exponential
+    default_delay_seconds: 5
+    max_delay_seconds: 300
+  delivery_delay:
+    minor_threshold_days: 2
+    moderate_threshold_days: 5
+    auto_notify: true
+    auto_compensate_on_moderate: true
+  payment_failure:
+    auto_switch_alternative: true
+    retry_system_error: true
+    max_auto_retries: 2
+  recovery:
+    default_actions:
+      - reorder
+      - refund
+      - escalate

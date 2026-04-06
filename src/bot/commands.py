@@ -3749,3 +3749,131 @@ def cmd_china_dashboard() -> str:
     except Exception as exc:
         logger.error("cmd_china_dashboard 오류: %s", exc)
         return format_message('error', f'대시보드 조회 실패: {exc}')
+
+
+
+# ── Phase 105: 예외 처리 + 자동 복구 ────────────────────────────────────────
+
+def cmd_exceptions(args_str: str = '') -> str:
+    """/exceptions — 현재 예외 현황."""
+    try:
+        from ..exception_handler.engine import ExceptionEngine
+        engine = ExceptionEngine()
+        stats = engine.get_stats()
+        lines = [
+            '🚨 예외 현황',
+            f"• 전체: {stats['total']}건",
+            f"• 해결: {stats['resolved']}건",
+            f"• 해결률: {stats['resolution_rate'] * 100:.1f}%",
+        ]
+        if stats['by_severity']:
+            lines.append('심각도별:')
+            for sev, cnt in stats['by_severity'].items():
+                lines.append(f'  - {sev}: {cnt}건')
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_exceptions 오류: %s", exc)
+        return format_message('error', f'예외 현황 조회 실패: {exc}')
+
+
+def cmd_exception_detail(case_id: str = '') -> str:
+    """/exception_detail <case_id> — 예외 상세."""
+    if not case_id.strip():
+        return format_message('error', '사용법: /exception_detail <case_id>')
+    try:
+        from ..exception_handler.engine import ExceptionEngine
+        engine = ExceptionEngine()
+        case = engine.get_case(case_id.strip())
+        if not case:
+            return format_message('error', f'예외 케이스를 찾을 수 없습니다: {case_id}')
+        d = case.to_dict()
+        lines = [
+            f'🔍 예외 상세: {d["case_id"]}',
+            f'• 유형: {d["type"]}',
+            f'• 심각도: {d["severity"]}',
+            f'• 상태: {d["status"]}',
+            f'• 주문: {d["order_id"] or "-"}',
+            f'• 감지: {d["detected_at"]}',
+            f'• 재시도: {d["retry_count"]}회',
+        ]
+        if d.get('resolution'):
+            lines.append(f'• 해결: {d["resolution"]}')
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_exception_detail 오류: %s", exc)
+        return format_message('error', f'예외 상세 조회 실패: {exc}')
+
+
+def cmd_price_alerts(args_str: str = '') -> str:
+    """/price_alerts — 가격 알림 목록."""
+    try:
+        from ..exception_handler.price_detector import PriceChangeDetector
+        detector = PriceChangeDetector()
+        alerts = detector.list_alerts(acknowledged=False)
+        if not alerts:
+            return format_message('info', '미확인 가격 알림이 없습니다.')
+        lines = ['💰 가격 알림 목록 (미확인)']
+        for a in alerts[:10]:
+            d = a.to_dict()
+            lines.append(
+                f'• [{d["alert_type"]}] {d["product_id"]} '
+                f'{d["old_price"]:,.0f} → {d["new_price"]:,.0f} ({d["change_percent"]:+.1f}%)'
+            )
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_price_alerts 오류: %s", exc)
+        return format_message('error', f'가격 알림 조회 실패: {exc}')
+
+
+def cmd_retry(case_id: str = '') -> str:
+    """/retry <case_id> — 수동 재시도."""
+    if not case_id.strip():
+        return format_message('error', '사용법: /retry <case_id>')
+    try:
+        from ..exception_handler.engine import ExceptionEngine
+        engine = ExceptionEngine()
+        case = engine.get_case(case_id.strip())
+        if not case:
+            return format_message('error', f'예외 케이스를 찾을 수 없습니다: {case_id}')
+        engine.increment_retry(case.case_id)
+        return format_message('info', f'재시도 완료: {case_id} (총 {case.retry_count}회)')
+    except Exception as exc:
+        logger.error("cmd_retry 오류: %s", exc)
+        return format_message('error', f'재시도 실패: {exc}')
+
+
+def cmd_exception_dashboard() -> str:
+    """/exception_dashboard — 예외 대시보드 요약."""
+    try:
+        from ..exception_handler.engine import ExceptionEngine
+        from ..exception_handler.damage_handler import DamageHandler
+        from ..exception_handler.price_detector import PriceChangeDetector
+        from ..exception_handler.retry_manager import RetryManager
+        from ..exception_handler.auto_recovery import AutoRecoveryService
+        from ..exception_handler.delay_handler import DeliveryDelayHandler
+        from ..exception_handler.payment_failure import PaymentFailureHandler
+        from ..exception_handler.dashboard import ExceptionDashboard
+
+        dashboard = ExceptionDashboard(
+            engine=ExceptionEngine(),
+            damage_handler=DamageHandler(),
+            price_detector=PriceChangeDetector(),
+            retry_manager=RetryManager(),
+            recovery_service=AutoRecoveryService(),
+            delay_handler=DeliveryDelayHandler(),
+            payment_handler=PaymentFailureHandler(),
+        )
+        metrics = dashboard.get_resolution_metrics()
+        cost = dashboard.get_cost_impact()
+        lines = [
+            '🛡️ 예외 대시보드',
+            f"• 자동 복구율: {metrics['auto_recovery_rate'] * 100:.1f}%",
+            f"• 평균 해결시간: {metrics['avg_resolution_hours']:.1f}시간",
+            f"• 에스컬레이션율: {metrics['escalation_rate'] * 100:.1f}%",
+            f"• 훼손 보상 총액: {cost['damage_compensation']:,.0f}원",
+            f"• 복구 비용 총액: {cost['recovery_cost']:,.0f}원",
+        ]
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_exception_dashboard 오류: %s", exc)
+        return format_message('error', f'대시보드 조회 실패: {exc}')
