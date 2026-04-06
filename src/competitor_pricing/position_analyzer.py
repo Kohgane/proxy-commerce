@@ -84,7 +84,7 @@ class PricePositionAnalyzer:
         avg_price = round(sum(all_prices) / len(all_prices), 2)
         median_price = statistics.median(all_prices)
 
-        my_rank = sorted(all_prices).index(my_price) + 1
+        my_rank = sum(1 for p in all_prices if p < my_price) + 1
         total = len(all_prices)
         percentile = round((my_rank - 1) / total * 100, 2) if total > 1 else 50.0
 

@@ -465,7 +465,7 @@ def dashboard():
 @competitor_pricing_bp.get('/schedule')
 def schedule():
     try:
-        limit = int(request.args.get('limit', 10))
+        limit = min(int(request.args.get('limit', 10)), 100)
         entries = _get_scheduler().get_next_checks(limit=limit)
         stats = _get_scheduler().get_stats()
         return jsonify({

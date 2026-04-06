@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 
 # 마진 안전 임계값: 이 이하로 마진이 떨어지면 제안을 거부한다
 _LOSS_THRESHOLD = -0.05  # -5%
+# 원가를 알 수 없을 때 사용하는 추정 원가 비율 (판매가의 80%)
+_ESTIMATED_COST_RATIO = 0.80
 
 
 class AdjustmentStrategy(str, Enum):
@@ -120,8 +122,8 @@ class PriceAdjustmentSuggester:
             reason = "동적 전략 기본값: 평균가 적용"
             confidence = 0.70
 
-        # 마진 안전성 검사 (원가를 모를 경우 판매가의 80%를 원가로 가정)
-        estimated_cost = suggested_price * 0.80
+        # 마진 안전성 검사 (원가를 모를 경우 판매가의 _ESTIMATED_COST_RATIO를 원가로 가정)
+        estimated_cost = suggested_price * _ESTIMATED_COST_RATIO
         estimated_margin = suggested_price - estimated_cost
         estimated_margin_rate = (estimated_margin / suggested_price) if suggested_price > 0 else 0.0
 

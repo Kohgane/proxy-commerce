@@ -81,21 +81,24 @@ class CompetitorTracker:
 
     def check_competitor(self, competitor_id: str) -> Optional[CompetitorProduct]:
         """단일 경쟁사 가격 체크 (mock: ±5% 변동 시뮬레이션)."""
-        for attempt in range(MAX_RETRIES):
-            product = self._competitors.get(competitor_id)
-            if product is None:
-                logger.warning(
-                    "경쟁사 없음: %s (시도 %d/%d)", competitor_id, attempt + 1, MAX_RETRIES
-                )
-                continue
+        product = self._competitors.get(competitor_id)
+        if product is None:
+            logger.warning("경쟁사 없음: %s", competitor_id)
+            return None
 
-            variation = random.uniform(-0.05, 0.05)
-            new_price = max(0.0, round(product.price * (1 + variation), 0))
-            product.price = new_price
-            product.last_checked_at = datetime.now(tz=timezone.utc).isoformat()
-            self._record_price(competitor_id, new_price)
-            logger.debug("경쟁사 가격 체크 완료: %s → %.0f", competitor_id, new_price)
-            return product
+        # 실제 환경에서는 네트워크 오류 등 일시적 장애를 재시도하지만,
+        # mock 구현에서는 성공을 보장한다.
+        for attempt in range(MAX_RETRIES):
+            try:
+                variation = random.uniform(-0.05, 0.05)
+                new_price = max(0.0, round(product.price * (1 + variation), 0))
+                product.price = new_price
+                product.last_checked_at = datetime.now(tz=timezone.utc).isoformat()
+                self._record_price(competitor_id, new_price)
+                logger.debug("경쟁사 가격 체크 완료: %s → %.0f", competitor_id, new_price)
+                return product
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("가격 체크 시도 %d/%d 실패: %s", attempt + 1, MAX_RETRIES, exc)
 
         logger.error("경쟁사 가격 체크 실패 (최대 재시도 초과): %s", competitor_id)
         return None

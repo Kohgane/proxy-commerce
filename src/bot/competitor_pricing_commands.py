@@ -61,7 +61,7 @@ def cmd_price_position(sku: str = '') -> str:
                 f'• 최저가: {pos.min_price:,.0f}원',
                 f'• 평균가: {pos.avg_price:,.0f}원',
                 f'• 최고가: {pos.max_price:,.0f}원',
-                f'• 순위: {pos.my_rank}/{pos.my_rank + pos.total_competitors}',
+                f'• 순위: {pos.my_rank}/{pos.total_competitors + 1}',
                 f'• 포지션: {label_icon} {pos.position_label.value if hasattr(pos.position_label, "value") else pos.position_label}',
             ]
         else:
