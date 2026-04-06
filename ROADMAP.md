@@ -102,6 +102,7 @@
 | Phase 107 | 실시간 채팅 고객 지원 (WebSocket, 상담원 배정, FAQ 자동응답) | #73 | 2026-04-06 |
 | Phase 108 | 소싱처 실시간 모니터링 (상품 생존 추적, 자동 비활성화, 대체 소싱처 검색) | #74 | 2026-04-06 |
 | Phase 109 | 판매 채널 자동 연동 (소싱처 변동 → 쿠팡/네이버/자체몰 자동 반영) | #75 | 2026-04-06 |
+| Phase 110 | 실시간 마진 계산기 강화 — 적자 판매 완전 방지 (원가+배송+관세+수수료+환율 전부 포함) | #76 | 2026-04-06 |
 
 ## 🚧 진행 중 Phase
 
@@ -1186,3 +1187,22 @@
 - 봇 커맨드: `/sync_status`, `/sync_channel`, `/sync_product`, `/sync_force`, `/listing_status`, `/listing_pause`, `/listing_resume`, `/channel_health`, `/sync_dashboard`, `/sync_conflicts`
 - 관련 코드: `src/channel_sync/`, `src/api/channel_sync_api.py`, `src/bot/channel_sync_commands.py`
 - 테스트: `tests/test_channel_sync.py` (121개 테스트)
+
+## Phase 110 — 실시간 마진 계산기 강화 — 적자 판매 완전 방지 ✅ 완료
+
+### 구현 내용
+- `MarginConfig`: 전역/카테고리별/상품별 마진 설정 관리 — get_config(), update_config(), set_category_config(), set_product_config(), reset_to_defaults()
+- `MarginResult` 데이터클래스: product_id, channel, selling_price, source_cost, source_cost_krw, currency, exchange_rate, international_shipping, customs_duty, vat, domestic_shipping, platform_fee, payment_fee, exchange_loss, packaging_cost, labeling_cost, return_reserve, misc_costs, total_cost, net_profit, margin_rate, calculated_at, result_id
+- `RealTimeMarginCalculator`: 상품별 실시간 마진 계산 엔진 — register_product(), calculate_margin(), calculate_bulk_margins(), recalculate_all(), get_history(), invalidate_cache(); 마진 계산 공식(판매가 - 원가 - 해외배송 - 관세 - 부가세 - 국내배송 - 플랫폼수수료 - 결제수수료 - 환율손실 - 포장비 - 라벨링비 - 반품충당금); TTL 5분 캐시 + 가격 변동 시 즉시 무효화; 마진 계산 이력 저장
+- `CostBreakdownService`: 비용 항목별 상세 분해 — get_cost_breakdown(); 12개 비용 항목 분해; 파이차트용 판매가 기준 백분율 계산
+- `PlatformFeeCalculator`: 플랫폼별 수수료 자동 계산 — get_platform_fee(), get_platform_fee_rate(), get_fee_structure(), get_all_fee_structures(); 쿠팡 카테고리별 수수료(의류 10.8%, 전자 8%, 식품 6.5% 등) + 로켓배송 추가 2%; 네이버 기본 2% + 매출연동 2% + 결제 3.74%; 자체몰 PG 수수료(토스 3.2%, 카카오 3.3%)
+- `AlertSeverity` Enum: CRITICAL(적자, 마진<0%) / WARNING(저마진, 마진<5%) / INFO(목표미달) / GOOD(정상)
+- `MarginAlert` 데이터클래스: alert_id, product_id, channel, severity, margin_rate, net_profit, selling_price, message, suggestion, acknowledged, created_at, acknowledged_at
+- `MarginAlertService`: 마진율 임계값 기반 알림 — check_margin_alerts(), get_alerts(), acknowledge_alert(), get_alert_summary(), set_threshold(); 중복 방지(동일 상품 동일 등급 1시간 내), 커스텀 임계값 지원
+- `MarginSimulator`: 가격/환율/비용 변경 마진 영향 시뮬레이션 — simulate_price_change(), simulate_exchange_rate(), simulate_cost_change(), find_break_even_price(), find_target_margin_price(), what_if_analysis(); before/after 비교 반환, 이진 탐색 손익분기 계산
+- `ProfitabilityAnalyzer`: 상품별 수익성 분석 + 순위 — get_profitability_ranking(), get_loss_products(), get_low_margin_products(), get_profitability_distribution(), get_channel_profitability()
+- `MarginTrendAnalyzer`: 마진율 추이 분석 — record(), seed_history(), get_product_trend(), get_overall_trend(), get_channel_trend(), detect_margin_decline(), get_trend_summary()
+- API Blueprint: `src/api/margin_api.py` (`/api/v1/margin`) — 28개 엔드포인트 (마진계산/비용분해/일괄계산/재계산/알림/시뮬레이션6종/수익성순위/적자/저마진/분포/채널수익성/추이4종/설정/수수료/대시보드)
+- 봇 커맨드: `/margin`, `/margin_alert`, `/profit_ranking`, `/loss_products`, `/margin_simulate`, `/break_even`, `/margin_trend`, `/margin_dashboard`, `/platform_fees`, `/margin_config`
+- 관련 코드: `src/margin_calculator/`, `src/api/margin_api.py`, `src/bot/margin_commands.py`
+- 테스트: `tests/test_margin_calculator.py` (102개 Phase 110 신규 테스트, 총 159개)
