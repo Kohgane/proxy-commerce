@@ -337,13 +337,13 @@ class TestRequestSigner:
 
     def test_verify_signature_expired_timestamp(self, signer):
         api_key, api_secret = signer.generate_api_key()
-        old_ts = str(time.time() - 400)  # 6분 이상 전
+        old_ts = str(time.time() - 400)  # 6분 40초 이상 전
         sig = signer.sign_request("GET", "/", "", old_ts, api_secret)
         assert not signer.verify_signature("GET", "/", "", old_ts, sig, api_key)
 
     def test_verify_signature_future_timestamp(self, signer):
         api_key, api_secret = signer.generate_api_key()
-        future_ts = str(time.time() + 400)  # 6분 후
+        future_ts = str(time.time() + 400)  # 6분 40초 후
         sig = signer.sign_request("GET", "/", "", future_ts, api_secret)
         assert not signer.verify_signature("GET", "/", "", future_ts, sig, api_key)
 

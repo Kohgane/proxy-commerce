@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 # 타임스탬프 허용 오차 (초) — 리플레이 공격 방지
-_TIMESTAMP_TOLERANCE_SECONDS = 300  # ±5분
+_TIMESTAMP_TOLERANCE_SECONDS = 300  # ±5분 (300초)
 
 
 @dataclass
