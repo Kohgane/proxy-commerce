@@ -4323,3 +4323,85 @@ def cmd_source_dashboard() -> str:
     except Exception as exc:
         logger.error("cmd_source_dashboard 오류: %s", exc)
         return format_message('error', f'대시보드 조회 실패: {exc}')
+
+
+# ── Phase 111: 경쟁사 가격 모니터링 ──────────────────────────────────────────
+
+def cmd_competitors(sku: str) -> str:
+    """/competitors <sku> — 특정 상품의 경쟁사 목록 + 가격 비교."""
+    try:
+        from .competitor_pricing_commands import cmd_competitors as _cmd
+        return _cmd(sku)
+    except Exception as exc:
+        logger.error("cmd_competitors 오류: %s", exc)
+        return format_message('error', f'경쟁사 조회 실패: {exc}')
+
+
+def cmd_price_position(sku: str = '') -> str:
+    """/price_position [sku] — 가격 포지션 분석."""
+    try:
+        from .competitor_pricing_commands import cmd_price_position as _cmd
+        return _cmd(sku)
+    except Exception as exc:
+        logger.error("cmd_price_position 오류: %s", exc)
+        return format_message('error', f'포지션 분석 실패: {exc}')
+
+
+def cmd_price_suggest(sku: str = '') -> str:
+    """/price_suggest [sku] — 가격 조정 제안."""
+    try:
+        from .competitor_pricing_commands import cmd_price_suggest as _cmd
+        return _cmd(sku)
+    except Exception as exc:
+        logger.error("cmd_price_suggest 오류: %s", exc)
+        return format_message('error', f'가격 제안 실패: {exc}')
+
+
+def cmd_competitor_alerts() -> str:
+    """/competitor_alerts — 경쟁사 알림 현황."""
+    try:
+        from .competitor_pricing_commands import cmd_competitor_alerts as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_competitor_alerts 오류: %s", exc)
+        return format_message('error', f'경쟁사 알림 조회 실패: {exc}')
+
+
+def cmd_competitor_dashboard() -> str:
+    """/competitor_dashboard — 경쟁사 대시보드 요약."""
+    try:
+        from .competitor_pricing_commands import cmd_competitor_dashboard as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_competitor_dashboard 오류: %s", exc)
+        return format_message('error', f'대시보드 조회 실패: {exc}')
+
+
+def cmd_price_war() -> str:
+    """/price_war — 가격 전쟁 감지."""
+    try:
+        from .competitor_pricing_commands import cmd_price_war as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_price_war 오류: %s", exc)
+        return format_message('error', f'가격 전쟁 감지 실패: {exc}')
+
+
+def cmd_competitor_find(sku: str) -> str:
+    """/competitor_find <sku> — 경쟁사 자동 검색."""
+    try:
+        from .competitor_pricing_commands import cmd_competitor_find as _cmd
+        return _cmd(sku)
+    except Exception as exc:
+        logger.error("cmd_competitor_find 오류: %s", exc)
+        return format_message('error', f'경쟁사 검색 실패: {exc}')
+
+
+def cmd_price_rules() -> str:
+    """/price_rules — 가격 규칙 목록."""
+    try:
+        from .competitor_pricing_commands import cmd_price_rules as _cmd
+        return _cmd()
+    except Exception as exc:
+        logger.error("cmd_price_rules 오류: %s", exc)
+        return format_message('error', f'규칙 조회 실패: {exc}')
