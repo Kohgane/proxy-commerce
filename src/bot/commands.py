@@ -3646,13 +3646,18 @@ def cmd_china_buy(url: str = '', quantity: int = 1) -> str:
     if not url.strip():
         return format_message('error', '사용법: /china_buy <url> [quantity]')
     try:
+        qty = int(quantity)
+    except (ValueError, TypeError):
+        return format_message('error', 'quantity는 정수여야 합니다.')
+    try:
         from ..china_marketplace.engine import ChinaMarketplaceEngine
         engine = ChinaMarketplaceEngine()
-        marketplace = '1688' if '1688.com' in url else 'taobao'
+        parsed_url = url.strip()
+        marketplace = '1688' if parsed_url.startswith('https://detail.1688.com') or parsed_url.startswith('https://www.1688.com') else 'taobao'
         order = engine.create_order(
             marketplace=marketplace,
-            product_url=url.strip(),
-            quantity=int(quantity),
+            product_url=parsed_url,
+            quantity=qty,
         )
         lines = [
             f"✅ 주문 생성 완료",

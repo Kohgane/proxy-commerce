@@ -222,8 +222,8 @@ def cancel_order(order_id: str):
     try:
         order = _get_engine().cancel_order(order_id, reason)
         return jsonify(order.to_dict())
-    except KeyError as exc:
-        return jsonify({'error': str(exc)}), 404
+    except KeyError:
+        return jsonify({'error': f'주문을 찾을 수 없습니다: {order_id}'}), 404
 
 
 @china_marketplace_bp.get('/orders/<order_id>/tracking')
@@ -318,8 +318,8 @@ def assign_agent(agent_id: str):
     try:
         agent = _get_agent_manager().assign_agent(order_id, agent_id)
         return jsonify({'order_id': order_id, 'agent': agent.to_dict()})
-    except KeyError as exc:
-        return jsonify({'error': str(exc)}), 404
+    except KeyError:
+        return jsonify({'error': f'에이전트를 찾을 수 없습니다: {agent_id}'}), 404
 
 
 # ── RPA ──────────────────────────────────────────────────────────────────────

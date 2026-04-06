@@ -240,13 +240,15 @@ class Alibaba1688Agent:
         """대량 구매 할인 협상 시뮬레이션 (mock)."""
         accepted = random.random() > 0.3
         offered_price = target_unit_price_cny if accepted else round(target_unit_price_cny * 1.08, 2)
+        original_price = target_unit_price_cny / (1 - 0.05) if accepted else target_unit_price_cny
+        discount_rate = round((original_price - offered_price) / original_price, 4) if accepted and original_price > 0 else 0.0
         return {
             'product_id': product_id,
             'quantity': quantity,
             'requested_price': target_unit_price_cny,
             'offered_price': offered_price,
             'accepted': accepted,
-            'discount_rate': round(1 - offered_price / (offered_price / (1 - 0.05 if accepted else 0)), 4) if accepted else 0.0,
+            'discount_rate': discount_rate,
         }
 
     def get_order(self, order_id: str) -> Optional[Alibaba1688Order]:
