@@ -1344,3 +1344,33 @@
 - 봇 커맨드: `/discover`, `/trending`, `/opportunities`, `/opportunity`, `/market_gaps`, `/scout_suppliers`, `/predict_profit`, `/seasonal`, `/discovery_alerts`, `/discovery_dashboard`, `/discovery_pipeline`
 - 관련 코드: `src/sourcing_discovery/`, `src/api/sourcing_discovery_api.py`, `src/bot/discovery_commands.py`
 - 테스트: `tests/test_sourcing_discovery.py` (55개+ 테스트)
+
+## 📋 예정 Phase
+
+| Phase | 내용 |
+|---|---|
+| Phase 117 | 실시간 대시보드 v2 — WebSocket 기반 실시간 매출/주문/재고 모니터링 |
+| Phase 118 | AI 챗봇 CS — GPT 기반 고객 문의 자동 응답 + FAQ 자동 생성 |
+| Phase 119 | 창고 간 재고 이동 — 멀티 창고 간 재고 전환/이동 요청 + 승인 워크플로 |
+| Phase 120 | 세금계산서/영수증 자동 발행 — 전자세금계산서 API 연동 (홈택스/팝빌) |
+| Phase 121 | 매출 예측 고도화 — 시계열 분석 기반 매출/수요 예측 (Prophet/ARIMA) |
+
+## Phase 116 — 보안 강화 — RBAC 세분화, IP 화이트리스트, API 요청 서명 검증 강화 ✅ 완료
+
+- `Permission` 클래스: 14종 권한 상수 — product:read/write/delete, order:read/write/cancel, inventory:read/write, analytics:read/export, settings:read/write, user:manage, admin:full
+- `Role` 데이터클래스: id, name, permissions(set), description, is_system(내장 여부)
+- `RBACManager`: 역할 기반 접근 제어 — create_role(), delete_role()(내장 역할 삭제 불가), assign_role(), revoke_role(), get_user_roles(), get_user_permissions()(합집합), check_permission(); @require_permission(permission) 데코레이터 — 권한 없으면 PermissionDeniedError
+- 내장 역할 5종: super_admin(전체 권한), admin(admin:full 제외), manager(주문/재고/분석 읽기+쓰기), operator(주문/재고 읽기+쓰기), viewer(모든 read 권한)
+- `IPEntry` 데이터클래스: ip_address, description, added_by, added_at, network
+- `BlockedAttempt` 데이터클래스: ip_address, timestamp, endpoint, reason
+- `IPWhitelistManager`: IP 화이트리스트 — add_ip()(IPv4/IPv6/CIDR 지원), remove_ip(), is_allowed()(비어있으면 전체 허용), list_ips(), record_blocked(), get_blocked_attempts()
+- `IPFilterMiddleware`: Flask before_request IP 필터 — 차단 시 403 + 이력 기록, 경로 제외 설정 가능
+- `APIKeyRecord` 데이터클래스: api_key, description, created_by, created_at, is_active, last_used_at
+- `RequestSigner`: HMAC-SHA256 API 서명/검증 — generate_api_key()(ak_ 접두사), sign_request()(method+path+body+timestamp), verify_signature()(±5분 타임스탬프 검증 포함), revoke_api_key(), list_api_keys()(secret 제외)
+- `SignatureVerificationMiddleware`: X-API-Key/X-Timestamp/X-Signature 헤더 검증, 불일치 시 401
+- `SecurityEvent` 데이터클래스: event_id, event_type, user_id, resource, action, result, ip_address, details, timestamp
+- `SuspiciousActivity` 데이터클래스: user_id, ip_address, failure_count, window_minutes, first_occurrence, last_occurrence, events
+- `SecurityAuditLogger`: 보안 감사 로그 — log_access(), log_auth_event(), log_permission_change(); get_security_events()(event_type/user_id/result/ip_address/since 필터+페이지네이션), get_suspicious_activity()(window_minutes 내 threshold회 이상 실패 IP 탐지)
+- API Blueprint: `src/api/security_advanced_api.py` (`/api/v1/security`) — 17개 엔드포인트 (RBAC7종/IP화이트리스트4종/API서명4종/보안감사2종)
+- 관련 코드: `src/security_advanced/`, `src/api/security_advanced_api.py`
+- 테스트: `tests/test_security_advanced.py` (100개 테스트)

@@ -808,6 +808,14 @@ try:
 except Exception as _sourcing_discovery_bp_exc:
     logger.warning("소싱 발굴 API Blueprint 등록 실패: %s", _sourcing_discovery_bp_exc)
 
+# 보안 강화 API Blueprint 등록 (Phase 116)
+try:
+    from .api.security_advanced_api import security_advanced_bp
+    app.register_blueprint(security_advanced_bp)
+    logger.info("보안 강화 API Blueprint 등록 완료")
+except Exception as _security_advanced_bp_exc:
+    logger.warning("보안 강화 API Blueprint 등록 실패: %s", _security_advanced_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')
