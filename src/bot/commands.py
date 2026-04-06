@@ -4165,3 +4165,161 @@ def cmd_chat_dashboard() -> str:
     except Exception as exc:
         logger.error("cmd_chat_dashboard 오류: %s", exc)
         return format_message('error', f'대시보드 조회 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 108: 소싱처 실시간 모니터링 커맨드
+# ─────────────────────────────────────────────────────────────────────────────
+
+def cmd_source_status() -> str:
+    """/source_status — 소싱처 모니터링 현황."""
+    try:
+        from ..source_monitor.engine import SourceMonitorEngine
+        from ..source_monitor.change_detector import ChangeDetector
+        engine = SourceMonitorEngine()
+        detector = ChangeDetector()
+        summary = engine.get_summary()
+        event_stats = detector.get_stats()
+        lines = [
+            '🔍 소싱처 모니터링 현황',
+            f"• 전체 소싱 상품: {summary['total']}개",
+            f"• 활성: {summary['active']}개",
+            f"• 문제: {summary['problem']}개",
+            f"• 비활성: {summary['inactive']}개",
+            f"• 변동 이벤트: {event_stats['total']}건",
+        ]
+        by_type = summary.get('by_source_type', {})
+        if by_type:
+            lines.append('\n마켓플레이스별:')
+            for k, v in by_type.items():
+                lines.append(f"  • {k}: {v}개")
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_source_status 오류: %s", exc)
+        return format_message('error', f'소싱처 현황 조회 실패: {exc}')
+
+
+def cmd_source_check(product_id: str) -> str:
+    """/source_check <product_id> — 특정 상품 즉시 체크."""
+    try:
+        from ..source_monitor.engine import SourceMonitorEngine
+        engine = SourceMonitorEngine()
+        result = engine.run_check(product_id)
+        if 'error' in result:
+            return format_message('error', f"상품 없음: {product_id}")
+        cr = result.get('check_result', {})
+        events = result.get('events', [])
+        lines = [
+            f'🔎 상품 체크: {product_id}',
+            f"• 생존 여부: {'✅ 활성' if cr.get('is_alive') else '❌ 삭제/오류'}",
+            f"• 현재 가격: {cr.get('price', '-')}",
+            f"• 재고 상태: {cr.get('stock_status', '-')}",
+            f"• 판매자 활성: {'✅' if cr.get('seller_active') else '❌'}",
+            f"• 변동 감지: {len(events)}건",
+        ]
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_source_check 오류: %s", exc)
+        return format_message('error', f'상품 체크 실패: {exc}')
+
+
+def cmd_source_alerts() -> str:
+    """/source_alerts — 현재 변동 알림."""
+    try:
+        from ..source_monitor.change_detector import ChangeDetector
+        detector = ChangeDetector()
+        events = detector.get_events()
+        critical = detector.get_critical_events()
+        lines = [
+            '🚨 소싱처 변동 알림',
+            f"• 전체 변동: {len(events)}건",
+            f"• 긴급 변동: {len(critical)}건",
+        ]
+        if critical:
+            lines.append('\n긴급 변동 (최대 5건):')
+            for e in critical[:5]:
+                ct = e.change_type.value if hasattr(e.change_type, 'value') else str(e.change_type)
+                lines.append(f"  ⚠️ {e.source_product_id}: {ct}")
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_source_alerts 오류: %s", exc)
+        return format_message('error', f'변동 알림 조회 실패: {exc}')
+
+
+def cmd_source_dead() -> str:
+    """/source_dead — 비활성화된 상품 목록."""
+    try:
+        from ..source_monitor.auto_deactivation import AutoDeactivationService
+        svc = AutoDeactivationService()
+        records = svc.list_deactivated()
+        lines = [
+            '❌ 비활성화된 상품',
+            f"• 비활성화 수: {len(records)}건",
+        ]
+        if records:
+            lines.append('\n목록 (최대 5개):')
+            for r in records[:5]:
+                action = r.action_taken.value if hasattr(r.action_taken, 'value') else str(r.action_taken)
+                lines.append(f"  • {r.source_product_id} — {r.reason[:40]} [{action}]")
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_source_dead 오류: %s", exc)
+        return format_message('error', f'비활성화 목록 조회 실패: {exc}')
+
+
+def cmd_source_alternatives(product_id: str) -> str:
+    """/source_alternatives <product_id> — 대체 소싱처 조회."""
+    try:
+        from ..source_monitor.engine import SourceMonitorEngine
+        from ..source_monitor.alternative_finder import AlternativeSourceFinder
+        engine = SourceMonitorEngine()
+        finder = AlternativeSourceFinder()
+        product = engine.get_product(product_id)
+        if not product:
+            return format_message('error', f"상품 없음: {product_id}")
+        alternatives = finder.find_alternatives(product)
+        lines = [
+            f'🔄 대체 소싱처: {product_id}',
+            f"• 발견: {len(alternatives)}개",
+        ]
+        for a in alternatives[:5]:
+            st = a.source_type.value if hasattr(a.source_type, 'value') else str(a.source_type)
+            lines.append(
+                f"  • [{st}] 가격: {a.price} | 점수: {a.match_score:.1f} | 배송: {a.estimated_delivery_days}일"
+            )
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_source_alternatives 오류: %s", exc)
+        return format_message('error', f'대체 소싱처 조회 실패: {exc}')
+
+
+def cmd_source_dashboard() -> str:
+    """/source_dashboard — 모니터링 대시보드."""
+    try:
+        from ..source_monitor.engine import SourceMonitorEngine
+        from ..source_monitor.change_detector import ChangeDetector
+        from ..source_monitor.auto_deactivation import AutoDeactivationService
+        from ..source_monitor.scheduler import SourceMonitorScheduler
+        from ..source_monitor.dashboard import SourceMonitorDashboard
+        engine = SourceMonitorEngine()
+        detector = ChangeDetector()
+        deactivation_svc = AutoDeactivationService()
+        scheduler = SourceMonitorScheduler()
+        dashboard = SourceMonitorDashboard(engine, detector, deactivation_svc, scheduler)
+        data = dashboard.get_dashboard()
+        summary = data.get('summary', {})
+        lines = [
+            '📊 소싱처 모니터링 대시보드',
+            f"• 전체 소싱 상품: {summary.get('total', 0)}개",
+            f"• 활성: {summary.get('active', 0)}개",
+            f"• 문제: {summary.get('problem', 0)}개",
+            f"• 긴급 변동: {data.get('critical_events_count', 0)}건",
+            f"• 비활성화: {data.get('deactivated_count', 0)}건",
+            f"• 체크 성공률: {data.get('check_success_rate', 100.0):.1f}%",
+            f"• 자동 처리: {data.get('auto_processed', 0)}건",
+            f"• 수동 필요: {data.get('manual_required', 0)}건",
+        ]
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_source_dashboard 오류: %s", exc)
+        return format_message('error', f'대시보드 조회 실패: {exc}')

@@ -1073,6 +1073,12 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'chat_queue': lambda d: _format_chat_queue(d),
         'agent_profile': lambda d: _format_agent_profile(d),
         'chat_dashboard': lambda d: _format_chat_dashboard(d),
+        # Phase 108: 소싱처 모니터링
+        'source_product': lambda d: _format_source_product(d),
+        'source_status': lambda d: _format_source_status(d),
+        'source_change_event': lambda d: _format_source_change_event(d),
+        'source_alternatives': lambda d: _format_source_alternatives(d),
+        'source_dashboard': lambda d: _format_source_dashboard(d),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:
@@ -2715,5 +2721,95 @@ def _format_chat_dashboard(data: dict) -> str:
         f"평균 해결 시간: {perf.get('avg_resolution_seconds', 0):.0f}초",
         f"평균 만족도: {perf.get('average_rating', 0):.1f}/5.0",
         f"전체 세션: {perf.get('total_sessions', 0)}건",
+    ]
+    return '\n'.join(lines)
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 108: 소싱처 실시간 모니터링 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_source_product(data: dict) -> str:
+    """소싱처 상품 포맷."""
+    lines = [f"*🔍 소싱처 상품*\n"]
+    lines.append(f"ID: {data.get('source_product_id', '-')}")
+    lines.append(f"제목: {data.get('title', '-')}")
+    lines.append(f"마켓: {data.get('source_type', '-')}")
+    lines.append(f"가격: {data.get('current_price', '-')} {data.get('currency', '')}")
+    lines.append(f"재고: {data.get('stock_status', '-')}")
+    lines.append(f"상태: {data.get('status', '-')}")
+    lines.append(f"생존: {'✅' if data.get('is_alive') else '❌'}")
+    return '\n'.join(lines)
+
+
+def _format_source_status(data: dict) -> str:
+    """소싱처 모니터링 현황 포맷."""
+    lines = [f"*📡 소싱처 모니터링 현황*\n"]
+    lines.append(f"전체: *{data.get('total', 0)}개*")
+    lines.append(f"활성: *{data.get('active', 0)}개*")
+    lines.append(f"문제: *{data.get('problem', 0)}개*")
+    lines.append(f"비활성: *{data.get('inactive', 0)}개*")
+    by_type = data.get('by_source_type', {})
+    if by_type:
+        lines.append('\n마켓플레이스별:')
+        for k, v in by_type.items():
+            lines.append(f"  • {k}: {v}개")
+    return '\n'.join(lines)
+
+
+def _format_source_change_event(data: dict) -> str:
+    """소싱처 변동 이벤트 포맷."""
+    severity_icon = {
+        'critical': '🔴',
+        'high': '🟠',
+        'medium': '🟡',
+        'low': '🟢',
+    }.get(data.get('severity', ''), '⚪')
+    return (
+        f"*{severity_icon} 소싱처 변동*\n"
+        f"상품: {data.get('source_product_id', '-')}\n"
+        f"유형: {data.get('change_type', '-')}\n"
+        f"이전: {data.get('old_value', '-')}\n"
+        f"현재: {data.get('new_value', '-')}\n"
+        f"심각도: {data.get('severity', '-')}"
+    )
+
+
+def _format_source_alternatives(data) -> str:
+    """대체 소싱처 목록 포맷."""
+    alts = data if isinstance(data, list) else data.get('alternatives', [])
+    lines = [f"*🔄 대체 소싱처 목록*\n"]
+    if not alts:
+        lines.append("대체 소싱처 없음")
+        return '\n'.join(lines)
+    lines.append(f"총 {len(alts)}개:\n")
+    for a in alts[:5]:
+        st = a.get('source_type', '-')
+        score = a.get('match_score', 0)
+        price = a.get('price', '-')
+        rating = a.get('seller_rating', '-')
+        delivery = a.get('estimated_delivery_days', '-')
+        approved = '✅' if a.get('approved') else '⏳'
+        lines.append(
+            f"  {approved} [{st}] 가격:{price} 점수:{score:.1f} "
+            f"평점:{rating} 배송:{delivery}일"
+        )
+    return '\n'.join(lines)
+
+
+def _format_source_dashboard(data: dict) -> str:
+    """소싱처 대시보드 포맷."""
+    summary = data.get('summary', {})
+    lines = [
+        '*📊 소싱처 모니터링 대시보드*\n',
+        f"전체 소싱 상품: *{summary.get('total', 0)}개*",
+        f"활성: {summary.get('active', 0)}개",
+        f"문제: {summary.get('problem', 0)}개",
+        f"비활성: {summary.get('inactive', 0)}개",
+        f"긴급 변동: {data.get('critical_events_count', 0)}건",
+        f"비활성화: {data.get('deactivated_count', 0)}건",
+        f"체크 성공률: {data.get('check_success_rate', 100.0):.1f}%",
+        f"자동 처리: {data.get('auto_processed', 0)}건",
+        f"수동 필요: {data.get('manual_required', 0)}건",
     ]
     return '\n'.join(lines)

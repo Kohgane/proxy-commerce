@@ -1124,3 +1124,30 @@
 - API Blueprint: `src/api/live_chat_api.py` (`/api/v1/live-chat`) — 16개 엔드포인트 (세션/메시지/종료/평가/이관/상담원/대기열/FAQ/분석/대시보드)
 - 봇 커맨드: `/chat_status`, `/chat_queue`, `/agent_status`, `/chat_stats`, `/chat_dashboard`
 - 관련 코드: `src/live_chat/`, `src/api/live_chat_api.py`, `src/bot/commands.py`
+
+## Phase 108 — 소싱처 실시간 모니터링 (상품 생존 추적 + 자동 비활성화 + 대체 소싱처 검색) ✅ 완료
+
+### 구현 내용
+- `SourceType` Enum: amazon_us/amazon_jp/taobao/alibaba_1688/coupang/naver/custom
+- `SourceStatus` Enum: active/price_changed/out_of_stock/listing_removed/seller_inactive/restricted/unknown
+- `StockStatus` Enum: in_stock/low_stock/out_of_stock/preorder/discontinued
+- `SourceProduct` 데이터클래스: source_product_id, source_type, source_url, seller_id, seller_name, my_product_id, title, current_price, original_price, currency, stock_status, is_alive, last_checked_at, check_interval_minutes, consecutive_failures, metadata
+- `SourceMonitorEngine`: 소싱처 등록/조회/수정/삭제 + 체크 오케스트레이션 — register_product(), get_product(), update_product(), delete_product(), list_products(), run_check(), get_summary()
+- `SourceChecker` ABC + 구현체: `AmazonSourceChecker`, `TaobaoSourceChecker`, `Alibaba1688SourceChecker`, `CoupangSourceChecker`, `NaverSourceChecker`, `CustomSourceChecker`
+- `CheckResult` 데이터클래스: source_product_id, checked_at, is_alive, price, stock_status, seller_active, changes_detected, raw_data
+- `ChangeType` Enum: listing_removed/price_increase/price_decrease/out_of_stock/back_in_stock/seller_deactivated/shipping_changed/description_changed/rating_dropped
+- `Severity` Enum: critical/high/medium/low
+- `ChangeEvent` 데이터클래스: event_id, source_product_id, change_type, old_value, new_value, severity, detected_at, auto_action_taken
+- `ChangeDetector`: 변동 감지 + 심각도 자동 분류 — detect(), get_events(), get_critical_events(), get_stats()
+- `DeactivationAction` Enum: immediate_deactivate/temp_deactivate/notify_only/search_alternative/admin_review
+- `DeactivationRule` 데이터클래스: rule_id, trigger_type, action, delay_minutes, notify, description
+- `DeactivationRecord` 데이터클래스: record_id, source_product_id, my_product_id, reason, action_taken, deactivated_at, reactivated_at, is_active
+- `AutoDeactivationService`: 자동 비활성화 + 재활성화 — process_event(), add_rule(), list_rules(), list_deactivated(), reactivate(), get_history()
+- `AlternativeSource` 데이터클래스: alternative_id, original_product_id, source_type, url, price, seller_rating, estimated_delivery_days, match_score, found_at, approved
+- `AlternativeSourceFinder`: 대체 소싱처 검색 + 매칭 점수 계산 (가격40%+평점30%+배송20%+안정성10%) — find_alternatives(), get_alternatives(), approve_alternative(), switch_source()
+- `ScheduleEntry` 데이터클래스: source_product_id, interval_minutes, priority, next_check_at, failure_count
+- `SourceMonitorScheduler`: 스케줄 관리 + 우선순위 체크 — register(), unregister(), get_due_products(), mark_checked(), update_interval(), get_stats()
+- `SourceMonitorDashboard`: 전체 현황 + 변동 피드 + 마켓플레이스 분포 + 가격 추이 — get_dashboard(), get_price_trend(), get_status_overview()
+- API Blueprint: `src/api/source_monitor_api.py` (`/api/v1/source-monitor`) — 16개 엔드포인트 (소싱처 등록/목록/상세/수정/삭제/체크/이력/대체/전환/변동/긴급/비활성/재활성/규칙/대시보드)
+- 봇 커맨드: `/source_status`, `/source_check`, `/source_alerts`, `/source_dead`, `/source_alternatives`, `/source_dashboard`
+- 관련 코드: `src/source_monitor/`, `src/api/source_monitor_api.py`, `src/bot/commands.py`
