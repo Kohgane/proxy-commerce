@@ -2554,11 +2554,15 @@ def _format_ops_status(d: dict) -> str:
     )
 
 
+_REVENUE_STREAM_KEYS = {'proxy_buy', 'import_', 'export', 'commission', 'service_fee'}
+
+
 def _format_revenue_summary(d: dict) -> str:
     """수익 요약 포맷."""
-    total = sum(v for v in d.values() if isinstance(v, (int, float)))
+    total = sum(v for k, v in d.items() if k in _REVENUE_STREAM_KEYS and isinstance(v, (int, float)))
     lines = ['💰 수익 현황', f'총계: {total:,.0f}원']
-    for key, val in d.items():
+    for key in _REVENUE_STREAM_KEYS:
+        val = d.get(key, 0)
         if isinstance(val, (int, float)) and val > 0:
             lines.append(f'• {key}: {val:,.0f}원')
     return "\n".join(lines)
