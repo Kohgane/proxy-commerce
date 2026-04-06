@@ -1111,3 +1111,29 @@ autonomous_ops:
     manual_queue_max_size: 100
   simulation:
     default_duration_hours: 24
+
+# === Phase 107: 실시간 채팅 고객 지원 ===
+live_chat:
+  enabled: true
+  websocket:
+    heartbeat_interval_seconds: 30
+    connection_timeout_seconds: 60
+  agent_assignment:
+    default_strategy: least_load  # round_robin | least_load | skill_based | priority
+    max_sessions_per_agent: 5
+    vip_priority_bonus: 10
+  auto_reply:
+    enabled: true
+    business_hours_start: 9
+    business_hours_end: 18
+    off_hours_auto_reply: true
+    min_keyword_match_score: 1
+  notification:
+    wait_time_interval_seconds: 120
+    no_response_timeout_minutes: 5
+  analytics:
+    peak_hours_analysis: true
+    agent_performance_tracking: true
+  history:
+    max_sessions_per_customer: 100
+    search_limit: 50

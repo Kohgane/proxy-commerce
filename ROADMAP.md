@@ -1098,3 +1098,29 @@
 - API Blueprint: `src/api/autonomous_ops_api.py` (`/api/v1/autonomous-ops`) — 16개 엔드포인트
 - 봇 커맨드: `/ops_status`, `/revenue`, `/anomalies`, `/automation_rate`, `/ops_dashboard`, `/simulate`
 - 관련 코드: `src/autonomous_ops/`, `src/api/autonomous_ops_api.py`, `src/bot/commands.py`
+
+## Phase 107 — 실시간 채팅 고객 지원 (WebSocket 기반, 상담원 배정) ✅ 완료
+
+### 구현 내용
+- `ChatSessionStatus` Enum: waiting/assigned/active/on_hold/resolved/closed
+- `MessageType` Enum: text/image/file/system/auto_reply/quick_reply
+- `SenderType` Enum: customer/agent/bot/system
+- `ChatMessage` 데이터클래스: message_id, session_id, sender_type, sender_id, content, message_type, timestamp, metadata
+- `ChatSession` 데이터클래스: session_id, customer_id, agent_id, status, channel, started_at, ended_at, messages, rating, tags
+- `ChatEngine`: 세션 생성/관리/메시지 교환/종료/만족도 조사 오케스트레이션 — create_session(), assign_agent(), activate_session(), hold_session(), close_session(), resolve_session(), rate_session(), send_message(), transfer_session(), get_stats()
+- `Connection` 데이터클래스: connection_id, user_id, user_type, connected_at, last_ping
+- `WebSocketManager`: WebSocket 연결 관리 mock — connect(), disconnect(), reconnect(), ping(), broadcast(), unicast(), get_status()
+- `AgentStatus` Enum: online/busy/away/offline
+- `AgentProfile` 데이터클래스: agent_id, name, status, skills, current_sessions, max_sessions, languages, rating, shift
+- `AssignmentStrategy` ABC + 구현체: `RoundRobinStrategy`, `LeastLoadStrategy`, `SkillBasedStrategy`, `PriorityStrategy`
+- `QueueEntry` 데이터클래스: session_id, customer_id, priority, tags, is_vip
+- `AgentAssignmentService`: 상담원 배정 + 대기열 관리 — register_agent(), assign(), release(), get_queue(), dequeue_next(), get_stats()
+- `FAQEntry` 데이터클래스: faq_id, keywords, question, answer, category, hit_count
+- `QuickReply` 데이터클래스: label, value
+- `AutoReplyService`: FAQ 키워드 매칭 자동 응답 — get_reply(), is_business_hours(), add_faq(), list_faqs(), get_stats()
+- `ChatHistoryManager`: 채팅 이력 저장/조회/검색 — save_session(), get_session_history(), get_customer_history(), search(), get_stats()
+- `ChatNotificationService`: 알림 발송 mock — notify_wait_time(), notify_agent_assigned(), notify_new_session(), notify_no_response(), request_rating(), notify_off_hours()
+- `ChatAnalytics`: 분석 대시보드 — get_realtime_metrics(), get_performance_metrics(), get_agent_performance(), get_category_analysis(), get_peak_hours(), get_dashboard()
+- API Blueprint: `src/api/live_chat_api.py` (`/api/v1/live-chat`) — 16개 엔드포인트 (세션/메시지/종료/평가/이관/상담원/대기열/FAQ/분석/대시보드)
+- 봇 커맨드: `/chat_status`, `/chat_queue`, `/agent_status`, `/chat_stats`, `/chat_dashboard`
+- 관련 코드: `src/live_chat/`, `src/api/live_chat_api.py`, `src/bot/commands.py`
