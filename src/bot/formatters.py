@@ -2533,3 +2533,90 @@ def _format_exception_dashboard(d: dict) -> str:
         f"복구 성공률: {recovery.get('success_rate', 0) * 100:.1f}%",
     ]
     return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 106: 자율 운영 대시보드 포맷터
+# ─────────────────────────────────────────────────────────────
+
+def _format_ops_status(d: dict) -> str:
+    """운영 상태 포맷."""
+    mode_emoji = {
+        'fully_auto': '🤖', 'semi_auto': '🔄', 'manual': '👤', 'emergency': '🚨',
+    }.get(d.get('mode', ''), '❓')
+    score = d.get('health_score', 0)
+    return (
+        f"{mode_emoji} 운영 상태\n"
+        f"모드: {d.get('mode', '-')}\n"
+        f"건강 점수: {score:.1f}/100\n"
+        f"활성 알림: {d.get('active_alerts', 0)}건\n"
+        f"자동 액션: {d.get('auto_actions_count', 0)}건"
+    )
+
+
+def _format_revenue_summary(d: dict) -> str:
+    """수익 요약 포맷."""
+    total = sum(v for v in d.values() if isinstance(v, (int, float)))
+    lines = ['💰 수익 현황', f'총계: {total:,.0f}원']
+    for key, val in d.items():
+        if isinstance(val, (int, float)) and val > 0:
+            lines.append(f'• {key}: {val:,.0f}원')
+    return "\n".join(lines)
+
+
+def _format_anomaly_alert(d: dict) -> str:
+    """이상 알림 포맷."""
+    sev_emoji = {
+        'low': '🟡', 'medium': '🟠', 'high': '🔴', 'critical': '💀',
+    }.get(d.get('severity', ''), '⚠️')
+    return (
+        f"{sev_emoji} 이상 알림\n"
+        f"ID: {d.get('alert_id', '-')}\n"
+        f"유형: {d.get('type', '-')}\n"
+        f"지표: {d.get('metric_name', '-')}\n"
+        f"편차: {d.get('deviation_percent', 0):.1f}%\n"
+        f"확인: {'✅' if d.get('acknowledged') else '❌'}"
+    )
+
+
+def _format_automation_report(d: dict) -> str:
+    """자동화 보고 포맷."""
+    coverage = d.get('automation_coverage', 0)
+    return (
+        f"🤖 자동화 보고\n"
+        f"커버리지: {coverage * 100:.1f}%\n"
+        f"자동 처리: {d.get('auto_handled', 0)}건\n"
+        f"수동 개입: {d.get('manual_interventions', 0)}건\n"
+        f"목표 달성: {'✅' if coverage >= 0.95 else '❌'}"
+    )
+
+
+def _format_ops_dashboard(d: dict) -> str:
+    """통합 대시보드 포맷."""
+    realtime = d.get('realtime', {})
+    return (
+        f"📊 통합 대시보드\n"
+        f"수익: {realtime.get('revenue_today', 0):,.0f}원\n"
+        f"이익: {realtime.get('profit_today', 0):,.0f}원\n"
+        f"마진: {realtime.get('margin_rate', 0) * 100:.1f}%\n"
+        f"자동화율: {realtime.get('automation_rate', 0) * 100:.1f}%\n"
+        f"건강 점수: {realtime.get('health_score', 0):.1f}/100"
+    )
+
+
+def _format_simulation_result(d: dict) -> str:
+    """시뮬레이션 결과 포맷."""
+    status_emoji = {
+        'completed': '✅', 'failed': '❌', 'running': '🔄', 'pending': '⏳',
+    }.get(d.get('status', ''), '❓')
+    recs = d.get('recommendations', [])
+    lines = [
+        f"{status_emoji} 시뮬레이션 결과",
+        f"수익 영향: {d.get('revenue_impact', 0):+,.0f}원",
+        f"비용 영향: {d.get('cost_impact', 0):+,.0f}원",
+        f"주문 영향: {d.get('order_impact', 0):+d}건",
+        f"위험 점수: {d.get('risk_score', 0):.1f}/100",
+    ]
+    for rec in recs[:2]:
+        lines.append(f'💡 {rec}')
+    return "\n".join(lines)

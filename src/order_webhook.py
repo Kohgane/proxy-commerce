@@ -744,6 +744,14 @@ try:
 except Exception as _exception_handler_bp_exc:
     logger.warning("예외 처리 API Blueprint 등록 실패: %s", _exception_handler_bp_exc)
 
+# 자율 운영 대시보드 API Blueprint 등록 (Phase 106)
+try:
+    from .api.autonomous_ops_api import autonomous_ops_bp
+    app.register_blueprint(autonomous_ops_bp)
+    logger.info("자율 운영 대시보드 API Blueprint 등록 완료")
+except Exception as _autonomous_ops_bp_exc:
+    logger.warning("자율 운영 대시보드 API Blueprint 등록 실패: %s", _autonomous_ops_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')

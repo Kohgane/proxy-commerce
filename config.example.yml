@@ -1087,3 +1087,27 @@ exception_handler:
       - reorder
       - refund
       - escalate
+
+# === Phase 106: 자율 운영 대시보드 ===
+autonomous_ops:
+  enabled: true
+  operation_mode: fully_auto
+  health_check_interval_seconds: 60
+  anomaly_detector:
+    std_dev_threshold: 2.0
+    change_threshold_pct: 30.0
+    min_consecutive: 2
+  autopilot:
+    enabled: true
+    actions:
+      - pause_ordering
+      - adjust_pricing
+      - notify_admin
+  revenue:
+    forecast_periods: 7
+    currency: KRW
+  intervention:
+    target_automation_rate: 0.95
+    manual_queue_max_size: 100
+  simulation:
+    default_duration_hours: 24

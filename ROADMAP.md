@@ -1065,3 +1065,36 @@
 - API Blueprint: `src/api/china_marketplace_api.py` (`/api/v1/china-marketplace`) — 16개 엔드포인트 (검색/상품/주문/셀러/에이전트/RPA/대시보드)
 - 봇 커맨드: `/china_search <keyword>`, `/china_buy <url> [quantity]`, `/china_status <order_id>`, `/seller_check <seller_id>`, `/china_dashboard`
 - 관련 코드: `src/china_marketplace/`, `src/api/china_marketplace_api.py`, `src/bot/commands.py`
+
+## Phase 106 — 완전 자유 운영 대시보드 (수익/수출 모델, 사람 개입 최소화, 이상 감지 시뮬레이션 알림) ✅ 완료
+
+### 구현 내용
+- `OperationMode` Enum: fully_auto/semi_auto/manual/emergency
+- `OperationStatus` 데이터클래스: mode, health_score, active_alerts, auto_actions_count, last_check
+- `AutonomousOperationEngine`: 모니터링→이상감지→자동대응→알림→보고 오케스트레이션
+- `RevenueStream` Enum: proxy_buy/import_/export/commission/service_fee
+- `RevenueRecord`, `CostBreakdown` 데이터클래스
+- `RevenueTracker`: 실시간 수익 추적 (일별/주별/월별)
+- `ProfitCalculator`: 순이익 계산 (매출-원가-배송-관세-수수료-환율손실)
+- `MarginAnalyzer`: 마진율 분석 (스트림별/채널별)
+- `RevenueForecaster`: 이동평균 기반 수익 예측
+- `AnomalyType` Enum: revenue_drop/cost_spike/order_surge/order_drought/conversion_drop/refund_spike/delivery_delay_spike/seller_issue/system_error
+- `AnomalySeverity` Enum: low/medium/high/critical
+- `AnomalyAlert` 데이터클래스: type, severity, metric_name, expected_value, actual_value, deviation_percent, detected_at
+- `AnomalyDetector`: 이동평균±표준편차, 전일/전주 변동, 임계값 기반 이상 감지
+- `ActionStatus` Enum: pending/running/completed/failed/skipped
+- `ActionRecord` 데이터클래스
+- `AutoAction` ABC + 구현체: PauseOrderingAction/AdjustPricingAction/ScaleInventoryAction/NotifyAdminAction/ActivateBackupAction
+- `AutoPilotController`: 이상 감지 시 자동 대응 실행 + 이력 관리
+- `ManualTask`, `InterventionRecord` 데이터클래스
+- `InterventionTracker`: 수동 개입 추적 + 자동화 커버리지 측정
+- `ManualTaskQueue`: 수동 처리 필요 작업 큐 (우선순위 정렬)
+- `AutomationCoverage`: 자동화 커버리지 측정
+- `InterventionReport`: 개입 사유 분석 + 개선 제안
+- `ScenarioType` Enum: price_crash/demand_surge/supply_disruption/currency_shock/system_failure/competitor_action
+- `Scenario`, `SimulationResult` 데이터클래스
+- `SimulationEngine`: 시나리오 시뮬레이션 + What-if 분석
+- `UnifiedDashboard`: 매출/주문/자동화율/건강도/비용/트렌드 통합 대시보드
+- API Blueprint: `src/api/autonomous_ops_api.py` (`/api/v1/autonomous-ops`) — 16개 엔드포인트
+- 봇 커맨드: `/ops_status`, `/revenue`, `/anomalies`, `/automation_rate`, `/ops_dashboard`, `/simulate`
+- 관련 코드: `src/autonomous_ops/`, `src/api/autonomous_ops_api.py`, `src/bot/commands.py`
