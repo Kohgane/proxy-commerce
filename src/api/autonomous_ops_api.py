@@ -143,7 +143,7 @@ def get_status():
         return jsonify(_get_engine().get_status().to_dict())
     except Exception as exc:
         logger.error("get_status 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
 
 
 @autonomous_ops_bp.post('/mode')
@@ -162,7 +162,7 @@ def set_mode():
         return jsonify(_get_engine().set_mode(mode).to_dict())
     except Exception as exc:
         logger.error("set_mode 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
 
 
 # ── 수익 ──────────────────────────────────────────────────────────────────────
@@ -175,7 +175,7 @@ def get_revenue():
         return jsonify(_get_revenue_tracker().get_daily_revenue(date_str))
     except Exception as exc:
         logger.error("get_revenue 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
 
 
 @autonomous_ops_bp.get('/revenue/forecast')
@@ -190,7 +190,7 @@ def get_revenue_forecast():
         return jsonify({'forecast': forecast, 'periods': periods})
     except Exception as exc:
         logger.error("get_revenue_forecast 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
 
 
 @autonomous_ops_bp.get('/revenue/breakdown')
@@ -210,7 +210,7 @@ def get_revenue_breakdown():
         return jsonify(breakdown.to_dict())
     except Exception as exc:
         logger.error("get_revenue_breakdown 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 400
+        return jsonify({'error': '요청 파라미터가 유효하지 않습니다.'}), 400
 
 
 # ── 마진 ──────────────────────────────────────────────────────────────────────
@@ -222,7 +222,7 @@ def get_margins():
         return jsonify(_get_margin_analyzer().analyze_by_stream([]))
     except Exception as exc:
         logger.error("get_margins 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
 
 
 # ── 이상 알림 ─────────────────────────────────────────────────────────────────
@@ -239,7 +239,7 @@ def list_anomalies():
         return jsonify({'alerts': alerts, 'total': len(alerts)})
     except Exception as exc:
         logger.error("list_anomalies 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
 
 
 @autonomous_ops_bp.get('/anomalies/<alert_id>')
@@ -254,7 +254,7 @@ def get_anomaly(alert_id: str):
         return jsonify({'error': f'알림을 찾을 수 없습니다: {alert_id}'}), 404
     except Exception as exc:
         logger.error("get_anomaly 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
 
 
 @autonomous_ops_bp.post('/anomalies/<alert_id>/acknowledge')
@@ -267,7 +267,7 @@ def acknowledge_anomaly(alert_id: str):
         return jsonify({'acknowledged': True, 'alert_id': alert_id})
     except Exception as exc:
         logger.error("acknowledge_anomaly 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
 
 
 # ── 자동화 ────────────────────────────────────────────────────────────────────
@@ -279,7 +279,7 @@ def get_automation():
         return jsonify(_get_intervention_tracker().get_stats())
     except Exception as exc:
         logger.error("get_automation 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
 
 
 # ── 수동 작업 큐 ──────────────────────────────────────────────────────────────
@@ -293,7 +293,7 @@ def get_manual_queue():
         return jsonify({'tasks': tasks, 'total': len(tasks)})
     except Exception as exc:
         logger.error("get_manual_queue 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
 
 
 # ── 시뮬레이션 ────────────────────────────────────────────────────────────────
@@ -321,7 +321,7 @@ def run_simulation():
         return jsonify({'scenario': scenario.to_dict(), 'result': result.to_dict()}), 201
     except Exception as exc:
         logger.error("run_simulation 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
 
 
 @autonomous_ops_bp.get('/simulate/<result_id>')
@@ -334,7 +334,7 @@ def get_simulation_result(result_id: str):
         return jsonify(result.to_dict())
     except Exception as exc:
         logger.error("get_simulation_result 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
 
 
 # ── 통합 대시보드 ─────────────────────────────────────────────────────────────
@@ -346,7 +346,7 @@ def get_dashboard():
         return jsonify(_get_dashboard().get_full_dashboard())
     except Exception as exc:
         logger.error("get_dashboard 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
 
 
 # ── 헬스 체크 ─────────────────────────────────────────────────────────────────
@@ -358,7 +358,7 @@ def get_health():
         return jsonify(_get_engine().run_health_check())
     except Exception as exc:
         logger.error("get_health 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
 
 
 # ── 자동 액션 이력 ────────────────────────────────────────────────────────────
@@ -372,4 +372,4 @@ def get_actions():
         return jsonify({'actions': history, 'total': len(history)})
     except Exception as exc:
         logger.error("get_actions 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500

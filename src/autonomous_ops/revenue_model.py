@@ -154,8 +154,11 @@ class MarginAnalyzer:
         return result
 
     def analyze_by_channel(self, records: List[RevenueRecord], channel_fn=None) -> Dict:
+        def _default_channel_fn(r: RevenueRecord) -> str:
+            return r.metadata.get('channel', 'unknown')
+
         if channel_fn is None:
-            channel_fn = lambda r: r.metadata.get('channel', 'unknown')
+            channel_fn = _default_channel_fn
         data: Dict[str, Dict] = {}
         for r in records:
             key = channel_fn(r)
