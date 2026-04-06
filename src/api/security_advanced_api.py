@@ -110,10 +110,10 @@ def delete_role(role_id: str):
     try:
         rbac.delete_role(role_id)
         return jsonify({"deleted": role_id}), 200
-    except KeyError as exc:
-        return jsonify({"error": str(exc)}), 404
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+    except KeyError:
+        return jsonify({"error": "역할을 찾을 수 없음"}), 404
+    except ValueError:
+        return jsonify({"error": "내장 역할은 삭제할 수 없음"}), 400
 
 
 @security_advanced_bp.post("/roles/assign")
@@ -128,8 +128,8 @@ def assign_role():
     try:
         rbac.assign_role(user_id, role_id)
         return jsonify({"assigned": {"user_id": user_id, "role_id": role_id}}), 200
-    except KeyError as exc:
-        return jsonify({"error": str(exc)}), 404
+    except KeyError:
+        return jsonify({"error": "역할을 찾을 수 없음"}), 404
 
 
 @security_advanced_bp.post("/roles/revoke")
@@ -195,8 +195,8 @@ def add_ip():
     try:
         entry = mgr.add_ip(ip_address, description, added_by)
         return jsonify({"entry": _to_dict(entry)}), 201
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+    except ValueError:
+        return jsonify({"error": "유효하지 않은 IP/CIDR 주소"}), 400
 
 
 @security_advanced_bp.delete("/ip-whitelist/<path:ip_address>")
@@ -206,8 +206,8 @@ def remove_ip(ip_address: str):
     try:
         mgr.remove_ip(ip_address)
         return jsonify({"deleted": ip_address}), 200
-    except KeyError as exc:
-        return jsonify({"error": str(exc)}), 404
+    except KeyError:
+        return jsonify({"error": "등록되지 않은 IP"}), 404
 
 
 @security_advanced_bp.get("/ip-whitelist/blocked")
@@ -248,8 +248,8 @@ def revoke_api_key(api_key: str):
     try:
         signer.revoke_api_key(api_key)
         return jsonify({"revoked": api_key}), 200
-    except KeyError as exc:
-        return jsonify({"error": str(exc)}), 404
+    except KeyError:
+        return jsonify({"error": "API 키를 찾을 수 없음"}), 404
 
 
 @security_advanced_bp.post("/verify-signature")

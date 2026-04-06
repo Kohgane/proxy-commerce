@@ -49,15 +49,15 @@ class RequestSigner:
             created_at=datetime.now(tz=timezone.utc),
         )
         self._keys[api_key] = (api_secret, record)
-        logger.info("API 키 발급: %s (%s)", api_key, created_by)
+        logger.info("API 키 발급: %s...(%s)", api_key[:8], created_by)
         return api_key, api_secret
 
     def revoke_api_key(self, api_key: str) -> None:
         if api_key not in self._keys:
-            raise KeyError(f"API 키를 찾을 수 없음: {api_key}")
+            raise KeyError(f"API 키를 찾을 수 없음: {api_key[:8]}...")
         secret, record = self._keys[api_key]
         record.is_active = False
-        logger.info("API 키 비활성화: %s", api_key)
+        logger.info("API 키 비활성화: %s...", api_key[:8])
 
     def list_api_keys(self) -> List[APIKeyRecord]:
         """secret 제외한 키 목록 반환."""
@@ -93,11 +93,11 @@ class RequestSigner:
     ) -> bool:
         """서명 검증. 타임스탬프 유효성 + HMAC 일치 확인."""
         if api_key not in self._keys:
-            logger.warning("알 수 없는 API 키: %s", api_key)
+            logger.warning("알 수 없는 API 키: %s...", api_key[:8] if api_key else "")
             return False
         api_secret, record = self._keys[api_key]
         if not record.is_active:
-            logger.warning("비활성화된 API 키: %s", api_key)
+            logger.warning("비활성화된 API 키: %s...", api_key[:8])
             return False
 
         # 타임스탬프 유효성 검사
