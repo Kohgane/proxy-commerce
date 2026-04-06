@@ -1054,6 +1054,12 @@ def format_message(msg_type: str, data, **kwargs) -> str:
         'inspection_result': lambda d: _format_inspection_result(d),
         'packing_result': lambda d: _format_packing_result(d),
         'fulfillment_dashboard': lambda d: _format_fulfillment_dashboard(d),
+        # Phase 104: 중국 마켓플레이스
+        'china_order': lambda d: _format_china_order(d),
+        'china_search': lambda d: _format_china_search(d),
+        'china_seller_score': lambda d: _format_china_seller_score(d),
+        'china_dashboard': lambda d: _format_china_dashboard(d),
+        'rpa_task': lambda d: _format_rpa_task(d),
     }
     formatter = formatters.get(msg_type, lambda d: str(d))
     try:
@@ -2354,4 +2360,80 @@ def _format_fulfillment_dashboard(d: dict) -> str:
         f"🏭 풀필먼트 대시보드\n"
         f"총 주문: {fulf.get('total', 0)}건\n"
         f"총 발송: {ship.get('total', 0)}건"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 104: 중국 마켓플레이스 포매터
+# ---------------------------------------------------------------------------
+
+def _format_china_order(d: dict) -> str:
+    """중국 구매 주문 포맷."""
+    return (
+        f"🇨🇳 중국 구매 주문\n"
+        f"주문 ID: {d.get('order_id', '-')}\n"
+        f"마켓: {d.get('marketplace', '-')}\n"
+        f"수량: {d.get('quantity', 0)}\n"
+        f"상태: {d.get('status', '-')}\n"
+        f"에이전트: {d.get('agent') or '미배정'}"
+    )
+
+
+def _format_china_search(d: dict) -> str:
+    """중국 상품 검색 결과 포맷."""
+    results = d.get('results', [])
+    header = f"🔍 {d.get('marketplace', '중국')} 검색: {d.get('keyword', '')} ({len(results)}건)\n"
+    if not results:
+        return header + "결과 없음"
+    lines = [header]
+    for p in results[:5]:
+        price = p.get('price_cny') or (p.get('price_tiers') or [{}])[0].get('price_cny', 0)
+        lines.append(f"• {p.get('title', '-')} — ¥{price:.2f}")
+    return '\n'.join(lines)
+
+
+def _format_china_seller_score(d: dict) -> str:
+    """셀러 검증 점수 포맷."""
+    emoji = '✅' if d.get('recommendation') == 'approved' else ('⚠️' if d.get('recommendation') == 'caution' else '❌')
+    return (
+        f"{emoji} 셀러 검증\n"
+        f"셀러 ID: {d.get('seller_id', '-')}\n"
+        f"신뢰도: {d.get('reliability', 0):.1f}\n"
+        f"품질: {d.get('quality', 0):.1f}\n"
+        f"종합: {d.get('overall', 0):.1f}\n"
+        f"판정: {d.get('recommendation', '-')}"
+    )
+
+
+def _format_china_dashboard(d: dict) -> str:
+    """중국 구매 대시보드 포맷."""
+    orders = d.get('orders', {})
+    payments = d.get('payments', {})
+    rpa = d.get('rpa', {})
+    return (
+        f"🇨🇳 중국 구매 대시보드\n"
+        f"총 주문: {orders.get('total', 0)}건\n"
+        f"결제 총액: ¥{payments.get('total_amount_cny', 0):.2f}\n"
+        f"RPA 작업: {rpa.get('total_tasks', 0)}건 "
+        f"(성공률: {rpa.get('success_rate', 0) * 100:.1f}%)"
+    )
+
+
+def _format_rpa_task(d: dict) -> str:
+    """RPA 작업 포맷."""
+    status_emoji = {
+        'completed': '✅',
+        'running': '⏳',
+        'failed': '❌',
+        'manual_required': '⚠️',
+        'pending': '🕐',
+    }
+    status = d.get('status', '-')
+    emoji = status_emoji.get(status, '•')
+    return (
+        f"🤖 RPA 작업\n"
+        f"작업 ID: {d.get('task_id', '-')}\n"
+        f"유형: {d.get('task_type', '-')}\n"
+        f"상태: {emoji} {status}\n"
+        f"단계 수: {len(d.get('steps', []))}"
     )

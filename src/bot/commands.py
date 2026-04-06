@@ -3611,3 +3611,141 @@ def cmd_fulfillment_dashboard() -> str:
     except Exception as exc:
         logger.error("cmd_fulfillment_dashboard 오류: %s", exc)
         return format_message('error', f'대시보드 조회 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 104: 중국 마켓플레이스 커맨드
+# ─────────────────────────────────────────────────────────────
+
+def cmd_china_search(keyword: str = '') -> str:
+    """/china_search <keyword> — 중국 상품 검색."""
+    if not keyword.strip():
+        return format_message('error', '사용법: /china_search <keyword>')
+    try:
+        from ..china_marketplace.taobao_agent import TaobaoAgent
+        from ..china_marketplace.alibaba_agent import Alibaba1688Agent
+        tb_results = TaobaoAgent().search(keyword.strip(), max_results=3)
+        ali_results = Alibaba1688Agent().search(keyword.strip(), max_results=2)
+        lines = [f'🔍 "{keyword}" 검색 결과:']
+        lines.append('\n[타오바오]')
+        for p in tb_results:
+            lines.append(f"• {p.title} — ¥{p.price_cny:.2f}")
+        lines.append('\n[1688]')
+        for p in ali_results:
+            tiers = p.price_tiers
+            min_price = tiers[0]['price_cny'] if tiers else 0
+            lines.append(f"• {p.title} — ¥{min_price:.2f}~ (MOQ: {p.moq})")
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_china_search 오류: %s", exc)
+        return format_message('error', f'검색 실패: {exc}')
+
+
+def cmd_china_buy(url: str = '', quantity: int = 1) -> str:
+    """/china_buy <url> [quantity] — 중국 구매 주문."""
+    if not url.strip():
+        return format_message('error', '사용법: /china_buy <url> [quantity]')
+    try:
+        qty = int(quantity)
+    except (ValueError, TypeError):
+        return format_message('error', 'quantity는 정수여야 합니다.')
+    try:
+        from ..china_marketplace.engine import ChinaMarketplaceEngine
+        engine = ChinaMarketplaceEngine()
+        parsed_url = url.strip()
+        marketplace = '1688' if parsed_url.startswith('https://detail.1688.com') or parsed_url.startswith('https://www.1688.com') else 'taobao'
+        order = engine.create_order(
+            marketplace=marketplace,
+            product_url=parsed_url,
+            quantity=qty,
+        )
+        lines = [
+            f"✅ 주문 생성 완료",
+            f"• 주문 ID: {order.order_id}",
+            f"• 마켓: {order.marketplace}",
+            f"• 수량: {order.quantity}",
+            f"• 상태: {order.status.value}",
+        ]
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_china_buy 오류: %s", exc)
+        return format_message('error', f'주문 생성 실패: {exc}')
+
+
+def cmd_china_status(order_id: str = '') -> str:
+    """/china_status <order_id> — 주문 상태 확인."""
+    if not order_id.strip():
+        return format_message('error', '사용법: /china_status <order_id>')
+    try:
+        from ..china_marketplace.engine import ChinaMarketplaceEngine
+        engine = ChinaMarketplaceEngine()
+        order = engine.get_order(order_id.strip())
+        if not order:
+            return format_message('error', f'주문을 찾을 수 없습니다: {order_id}')
+        lines = [
+            f"📦 주문 상태",
+            f"• 주문 ID: {order.order_id}",
+            f"• 마켓: {order.marketplace}",
+            f"• 상태: {order.status.value}",
+            f"• 에이전트: {order.agent or '미배정'}",
+        ]
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_china_status 오류: %s", exc)
+        return format_message('error', f'상태 조회 실패: {exc}')
+
+
+def cmd_seller_check(seller_id: str = '') -> str:
+    """/seller_check <seller_id> — 셀러 검증."""
+    if not seller_id.strip():
+        return format_message('error', '사용법: /seller_check <seller_id>')
+    try:
+        from ..china_marketplace.seller_verification import SellerVerificationService
+        svc = SellerVerificationService()
+        score = svc.verify_seller(seller_id.strip())
+        emoji = '✅' if score.recommendation == 'approved' else ('⚠️' if score.recommendation == 'caution' else '❌')
+        lines = [
+            f"{emoji} 셀러 검증 결과: {seller_id}",
+            f"• 신뢰도: {score.reliability:.1f}",
+            f"• 품질: {score.quality:.1f}",
+            f"• 배송속도: {score.shipping_speed:.1f}",
+            f"• 소통: {score.communication:.1f}",
+            f"• 종합: {score.overall:.1f}",
+            f"• 판정: {score.recommendation}",
+        ]
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_seller_check 오류: %s", exc)
+        return format_message('error', f'셀러 검증 실패: {exc}')
+
+
+def cmd_china_dashboard() -> str:
+    """/china_dashboard — 중국 구매 대시보드."""
+    try:
+        from ..china_marketplace.engine import ChinaMarketplaceEngine
+        from ..china_marketplace.agent_manager import AgentManager
+        from ..china_marketplace.seller_verification import SellerVerificationService
+        from ..china_marketplace.payment import ChinaPaymentService
+        from ..china_marketplace.rpa_controller import RPAController
+        from ..china_marketplace.dashboard import ChinaPurchaseDashboard
+        dashboard = ChinaPurchaseDashboard(
+            engine=ChinaMarketplaceEngine(),
+            agent_manager=AgentManager(),
+            seller_service=SellerVerificationService(),
+            payment_service=ChinaPaymentService(),
+            rpa_controller=RPAController(),
+        )
+        summary = dashboard.get_summary()
+        orders = summary.get('orders', {})
+        payments = summary.get('payments', {})
+        rpa = summary.get('rpa', {})
+        lines = [
+            '🇨🇳 중국 구매 대시보드',
+            f"📦 전체 주문: {orders.get('total', 0)}건",
+            f"💳 결제 총액: ¥{payments.get('total_amount_cny', 0):.2f}",
+            f"🤖 RPA 작업: {rpa.get('total_tasks', 0)}건 (성공률: {rpa.get('success_rate', 0) * 100:.1f}%)",
+        ]
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_china_dashboard 오류: %s", exc)
+        return format_message('error', f'대시보드 조회 실패: {exc}')

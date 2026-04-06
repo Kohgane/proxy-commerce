@@ -1015,3 +1015,45 @@ fulfillment:
     eta_buffer_days: 0.5
     delay_alert_days: 3
     poll_interval_minutes: 60
+
+# === Phase 104: 타오바오/1688 자동 구매 ===
+china_marketplace:
+  enabled: true
+  taobao:
+    agent_api_key: ""
+    agent_api_secret: ""
+    warehouse_address: "广东省广州市番禺区代收仓库001号"
+    auto_coupon: true
+    max_price_cny: 10000
+  alibaba_1688:
+    agent_api_key: ""
+    agent_api_secret: ""
+    default_moq_check: true
+    bulk_discount_negotiate: true
+    sample_order_enabled: true
+  payment:
+    default_provider: alipay  # alipay | wechatpay
+    cny_krw_rate: 188.0
+    alipay:
+      app_id: ""
+      private_key: ""
+      daily_limit_cny: 200000
+      single_limit_cny: 50000
+    wechatpay:
+      mch_id: ""
+      api_key: ""
+      daily_limit_cny: 100000
+      single_limit_cny: 20000
+  seller_verification:
+    auto_verify: true
+    min_trust_score: 70
+    blacklist_auto_block: true
+  rpa:
+    enabled: true
+    headless: true
+    timeout_seconds: 30
+    screenshot_storage: "s3"
+    fallback_to_manual: true
+  agents:
+    auto_assign: true
+    max_concurrent_orders: 10

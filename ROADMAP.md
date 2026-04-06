@@ -1035,3 +1035,31 @@
 - API Blueprint: `src/api/fulfillment_api.py` (`/api/v1/fulfillment`) — 14개 엔드포인트 (주문/검수/포장/발송/운송장/택배사/대시보드/일괄발송)
 - 봇 커맨드: `/fulfillment_status`, `/inspect <order_id>`, `/ship <order_id>`, `/tracking <tracking_number>`, `/fulfillment_dashboard`
 - 관련 코드: `src/fulfillment/`, `src/api/fulfillment_api.py`, `src/bot/commands.py`
+
+## Phase 104 — 타오바오/1688 자동 구매 규격 (에이전트 API or RPA) ✅ 완료
+
+### 구현 내용
+- `ChinaPurchaseStatus` Enum: created/agent_assigned/searching/seller_verified/ordering/paid/shipped/warehouse_received/completed/cancelled/failed
+- `ChinaPurchaseOrder` 데이터클래스 — order_id, marketplace, product_url, quantity, status, agent, product_info, seller_info, payment_info, tracking_info, timestamps, metadata
+- `ChinaMarketplaceEngine`: 오케스트레이터 — create_order(), assign_agent(), start_searching(), mark_seller_verified(), start_ordering(), mark_paid(), mark_shipped(), mark_warehouse_received(), complete_order(), cancel_order(), get_stats()
+- `TaobaoProduct`, `TaobaoOrder` 데이터클래스
+- `TaobaoAgent`: 타오바오 자동 구매 mock — search(), search_by_url(), get_detail(), evaluate_seller(), place_order(), track_order(), negotiate_price(), apply_coupon()
+- `Alibaba1688Product`, `Alibaba1688Order` 데이터클래스
+- `Alibaba1688Agent`: 1688 B2B 구매 mock — search(), search_by_url(), check_moq(), get_supplier_detail(), place_sample_order(), place_bulk_order(), check_certifications(), negotiate_bulk_discount()
+- `PurchasingAgent` ABC: search(), get_detail(), verify_seller(), place_order(), track_order()
+- `AgentRecord` 데이터클래스 — agent_id, name, marketplace, specialties, performance metrics
+- `AgentManager`: 에이전트 등록/배정/성과추적 — register_agent(), assign_best_agent(), assign_agent(), record_completion(), get_performance_stats()
+- `RPATaskType` Enum: search_product/place_order/check_status/apply_coupon
+- `RPATaskStatus` Enum: pending/running/completed/failed/manual_required
+- `RPAStep`, `RPATask` 데이터클래스
+- `RPAController`: RPA 작업 관리 — create_task(), execute_task(), get_task(), list_tasks(), get_history(), get_stats()
+- `VerificationStatus` Enum: unverified/pending/verified/rejected/blacklisted/whitelisted
+- `SellerProfile`, `SellerScore` 데이터클래스
+- `SellerVerificationService`: 셀러 검증 + 블랙/화이트리스트 — register_seller(), verify_seller(), add_to_blacklist(), add_to_whitelist(), get_stats()
+- `AlipayProvider`, `WechatPayProvider`: 결제 mock (한도 관리 포함)
+- `PaymentRecord` 데이터클래스
+- `ChinaPaymentService`: CNY↔KRW 환율 + 결제/환불/이력 — pay(), refund(), convert_cny_to_krw(), update_exchange_rate(), get_stats()
+- `ChinaPurchaseDashboard`: 통합 대시보드 — get_summary(), get_order_status_chart(), get_agent_performance(), get_seller_distribution(), get_payment_stats(), get_rpa_stats()
+- API Blueprint: `src/api/china_marketplace_api.py` (`/api/v1/china-marketplace`) — 16개 엔드포인트 (검색/상품/주문/셀러/에이전트/RPA/대시보드)
+- 봇 커맨드: `/china_search <keyword>`, `/china_buy <url> [quantity]`, `/china_status <order_id>`, `/seller_check <seller_id>`, `/china_dashboard`
+- 관련 코드: `src/china_marketplace/`, `src/api/china_marketplace_api.py`, `src/bot/commands.py`
