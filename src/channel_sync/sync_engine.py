@@ -243,6 +243,7 @@ class ChannelSyncEngine:
         return results
 
     def _handle_out_of_stock(self, product_id: str, channels: List[str]) -> dict:
+        from .publishers.base import PublishResult
         results = {}
         for channel in channels:
             publisher = self._publishers.get(channel)
@@ -253,12 +254,13 @@ class ChannelSyncEngine:
                 result = self._execute_with_retry(publisher, 'deactivate', listing_id, '품절')
                 self._listing_manager.pause_listing(listing_id, '품절')
             else:
-                result = type('R', (), {'success': False, 'listing_id': None, 'error': 'no listing', 'to_dict': lambda s: {'success': False, 'error': 'no listing'}})()
+                result = PublishResult(success=False, channel=channel, error='no listing')
             self._record_history(product_id, channel, 'pause_out_of_stock', result.success, listing_id, result.error)
             results[channel] = result.to_dict()
         return results
 
     def _handle_deactivation(self, product_id: str, channels: List[str], reason: str) -> dict:
+        from .publishers.base import PublishResult
         results = {}
         for channel in channels:
             publisher = self._publishers.get(channel)
@@ -269,7 +271,7 @@ class ChannelSyncEngine:
                 result = self._execute_with_retry(publisher, 'deactivate', listing_id, reason)
                 self._listing_manager.deactivate_listing(listing_id, reason)
             else:
-                result = type('R', (), {'success': False, 'listing_id': None, 'error': 'no listing', 'to_dict': lambda s: {'success': False, 'error': 'no listing'}})()
+                result = PublishResult(success=False, channel=channel, error='no listing')
             self._record_history(product_id, channel, 'deactivate', result.success, listing_id, result.error)
             results[channel] = result.to_dict()
         return results

@@ -161,7 +161,8 @@ class NaverPublisher(ChannelPublisher):
         """수수료 포함 판매가 계산."""
         if price <= 0:
             return 0.0
-        return round(price / (1 - fee_rate))
+        effective_rate = min(fee_rate, 0.99)
+        return round(price / (1 - effective_rate))
 
     @staticmethod
     def _build_tags(product_data: dict) -> List[str]:
