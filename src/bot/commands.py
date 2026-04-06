@@ -3877,3 +3877,149 @@ def cmd_exception_dashboard() -> str:
     except Exception as exc:
         logger.error("cmd_exception_dashboard 오류: %s", exc)
         return format_message('error', f'대시보드 조회 실패: {exc}')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 106: 자율 운영 대시보드 커맨드
+# ─────────────────────────────────────────────────────────────
+
+def cmd_ops_status() -> str:
+    """/ops_status — 운영 상태 요약."""
+    try:
+        from ..autonomous_ops.engine import AutonomousOperationEngine
+        engine = AutonomousOperationEngine()
+        status = engine.get_status().to_dict()
+        lines = [
+            '🤖 자율 운영 상태',
+            f"• 모드: {status['mode']}",
+            f"• 건강 점수: {status['health_score']:.1f}/100",
+            f"• 활성 알림: {status['active_alerts']}건",
+            f"• 자동 액션: {status['auto_actions_count']}건",
+            f"• 업타임: {status['uptime_seconds']:.0f}초",
+        ]
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_ops_status 오류: %s", exc)
+        return format_message('error', f'운영 상태 조회 실패: {exc}')
+
+
+def cmd_revenue_today() -> str:
+    """/revenue — 오늘 수익 현황."""
+    try:
+        from ..autonomous_ops.revenue_model import RevenueTracker
+        tracker = RevenueTracker()
+        daily = tracker.get_daily_revenue()
+        total = sum(daily.values())
+        lines = ['💰 오늘 수익 현황', f'총 수익: {total:,.0f}원']
+        for stream, amount in daily.items():
+            if amount > 0:
+                lines.append(f'• {stream}: {amount:,.0f}원')
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_revenue_today 오류: %s", exc)
+        return format_message('error', f'수익 조회 실패: {exc}')
+
+
+def cmd_anomalies() -> str:
+    """/anomalies — 현재 이상 알림."""
+    try:
+        from ..autonomous_ops.anomaly_detector import AnomalyDetector
+        detector = AnomalyDetector()
+        active = detector.get_active_alerts()
+        if not active:
+            return format_message('info', '현재 활성 이상 알림이 없습니다.')
+        lines = [f'⚠️ 활성 이상 알림 ({len(active)}건)']
+        for a in active[:10]:
+            lines.append(
+                f"• [{a['severity']}] {a['type']} — {a['metric_name']} "
+                f"(편차: {a['deviation_percent']:.1f}%)"
+            )
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_anomalies 오류: %s", exc)
+        return format_message('error', f'이상 알림 조회 실패: {exc}')
+
+
+def cmd_automation_rate() -> str:
+    """/automation_rate — 자동화율."""
+    try:
+        from ..autonomous_ops.intervention import InterventionTracker
+        tracker = InterventionTracker()
+        stats = tracker.get_stats()
+        coverage = stats['automation_coverage']
+        lines = [
+            '🤖 자동화율',
+            f"• 자동화 커버리지: {coverage * 100:.1f}%",
+            f"• 자동 처리: {stats['auto_handled']}건",
+            f"• 수동 개입: {stats['manual_interventions']}건",
+            f"• 목표 달성: {'✅' if coverage >= 0.95 else '❌'} (목표 95%)",
+        ]
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_automation_rate 오류: %s", exc)
+        return format_message('error', f'자동화율 조회 실패: {exc}')
+
+
+def cmd_ops_dashboard() -> str:
+    """/ops_dashboard — 통합 대시보드 요약."""
+    try:
+        from ..autonomous_ops.engine import AutonomousOperationEngine
+        from ..autonomous_ops.revenue_model import RevenueTracker
+        from ..autonomous_ops.anomaly_detector import AnomalyDetector
+        from ..autonomous_ops.autopilot import AutoPilotController
+        from ..autonomous_ops.intervention import InterventionTracker, ManualTaskQueue
+        from ..autonomous_ops.dashboard import UnifiedDashboard
+
+        dashboard = UnifiedDashboard(
+            engine=AutonomousOperationEngine(),
+            revenue_tracker=RevenueTracker(),
+            anomaly_detector=AnomalyDetector(),
+            autopilot=AutoPilotController(),
+            intervention_tracker=InterventionTracker(),
+            task_queue=ManualTaskQueue(),
+        )
+        metrics = dashboard.get_realtime_metrics()
+        lines = [
+            '📊 통합 운영 대시보드',
+            f"• 오늘 수익: {metrics['revenue_today']:,.0f}원",
+            f"• 오늘 이익: {metrics['profit_today']:,.0f}원",
+            f"• 마진율: {metrics['margin_rate'] * 100:.1f}%",
+            f"• 자동화율: {metrics['automation_rate'] * 100:.1f}%",
+            f"• 활성 알림: {metrics['active_alerts']}건",
+            f"• 건강 점수: {metrics['health_score']:.1f}/100",
+        ]
+        return format_message('info', '\n'.join(lines))
+    except Exception as exc:
+        logger.error("cmd_ops_dashboard 오류: %s", exc)
+        return format_message('error', f'대시보드 조회 실패: {exc}')
+
+
+def cmd_simulate(scenario: str = '') -> str:
+    """/simulate <scenario> — 시나리오 시뮬레이션."""
+    if not scenario.strip():
+        return format_message('error', '사용법: /simulate <price_crash|demand_surge|supply_disruption|currency_shock|system_failure|competitor_action>')
+    try:
+        from ..autonomous_ops.simulation import SimulationEngine, ScenarioType
+        sim = SimulationEngine()
+        scenario_type = ScenarioType(scenario.strip().lower())
+        sc = sim.create_scenario(
+            name=f'{scenario} 시뮬레이션',
+            type=scenario_type,
+            parameters={},
+        )
+        result = sim.run_simulation(sc.scenario_id, {})
+        lines = [
+            f'🔬 시뮬레이션 결과: {scenario}',
+            f"• 수익 영향: {result.revenue_impact:+,.0f}원",
+            f"• 비용 영향: {result.cost_impact:+,.0f}원",
+            f"• 주문 영향: {result.order_impact:+d}건",
+            f"• 위험 점수: {result.risk_score:.1f}/100",
+        ]
+        for rec in result.recommendations[:2]:
+            lines.append(f'💡 {rec}')
+        return format_message('info', '\n'.join(lines))
+    except ValueError:
+        return format_message('error', f'유효하지 않은 시나리오: {scenario}')
+    except Exception as exc:
+        logger.error("cmd_simulate 오류: %s", exc)
+        return format_message('error', f'시뮬레이션 실패: {exc}')
