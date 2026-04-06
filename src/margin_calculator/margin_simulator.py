@@ -11,7 +11,7 @@ from .calculator import MarginResult, RealTimeMarginCalculator
 
 logger = logging.getLogger(__name__)
 
-_SIMULATION_TOLERANCE = 0.01   # 손익분기 탐색 수렴 허용 오차 (원)
+_BREAK_EVEN_CONVERGENCE_KRW = 0.01   # 손익분기 이진탐색 수렴 허용 오차 (원)
 
 
 class MarginSimulator:

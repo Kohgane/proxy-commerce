@@ -1032,7 +1032,9 @@ class TestPh110MarginAlerts:
         from src.margin_calculator.margin_alerts import MarginAlertService
         svc = MarginAlertService()
         svc.set_threshold('p1', critical=-10.0, warning=2.0, target=20.0)
-        assert svc._custom_thresholds['p1']['critical'] == -10.0
+        thresholds = svc.get_threshold('p1')
+        assert thresholds is not None
+        assert thresholds['critical'] == -10.0
 
     def test_alert_to_dict(self):
         from src.margin_calculator.margin_alerts import MarginAlertService

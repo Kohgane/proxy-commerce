@@ -154,6 +154,10 @@ class MarginAlertService:
             'target': target,
         }
 
+    def get_threshold(self, key: str) -> Optional[Dict[str, float]]:
+        """커스텀 임계값 조회."""
+        return dict(self._custom_thresholds[key]) if key in self._custom_thresholds else None
+
     # ── 내부 로직 ─────────────────────────────────────────────────────────────
 
     def _get_thresholds(self, product_id: str) -> Dict[str, float]:
