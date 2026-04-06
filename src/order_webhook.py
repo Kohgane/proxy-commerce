@@ -776,6 +776,14 @@ try:
 except Exception as _competitor_pricing_bp_exc:
     logger.warning("경쟁사 가격 모니터링 API Blueprint 등록 실패: %s", _competitor_pricing_bp_exc)
 
+# 주문 매칭 API Blueprint 등록 (Phase 112)
+try:
+    from .api.order_matching_api import order_matching_bp
+    app.register_blueprint(order_matching_bp)
+    logger.info("주문 매칭 API Blueprint 등록 완료")
+except Exception as _order_matching_bp_exc:
+    logger.warning("주문 매칭 API Blueprint 등록 실패: %s", _order_matching_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')

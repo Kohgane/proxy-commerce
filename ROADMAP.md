@@ -104,6 +104,7 @@
 | Phase 109 | 판매 채널 자동 연동 (소싱처 변동 → 쿠팡/네이버/자체몰 자동 반영) | #75 | 2026-04-06 |
 | Phase 110 | 실시간 마진 계산기 강화 — 적자 판매 완전 방지 (원가+배송+관세+수수료+환율 전부 포함) | #76 | 2026-04-06 |
 | Phase 111 | 경쟁사 가격 모니터링 + 자동 가격 조정 제안 | #77 | 2026-04-07 |
+| Phase 112 | 고객 주문 ↔ 소싱 자동 매칭 + 이행 가능성 사전 확인 | #78 | 2026-04-06 |
 
 ## 🚧 진행 중 Phase
 
@@ -1235,3 +1236,28 @@
 - API Blueprint: `src/api/competitor_pricing_api.py` (`/api/v1/competitor-pricing`) — 27개 엔드포인트 (경쟁사관리6종/매칭4종/포지션분석4종/가격조정제안5종/규칙3종/알림3종/대시보드+스케줄2종)
 - 봇 커맨드: `/competitors`, `/price_position`, `/price_suggest`, `/competitor_alerts`, `/competitor_dashboard`, `/price_war`, `/competitor_find`, `/price_rules`
 - 관련 코드: `src/competitor_pricing/`, `src/api/competitor_pricing_api.py`, `src/bot/competitor_pricing_commands.py`
+
+## Phase 112 — 고객 주문 ↔ 소싱 자동 매칭 + 이행 가능성 사전 확인 ✅ 완료
+
+### 구현 내용
+- `FulfillmentStatus` Enum: fulfillable/partially_fulfillable/unfulfillable/risky/pending_check
+- `MatchResult` 데이터클래스: match_id, order_id, product_id, matched_sources, best_source, fulfillment_status, estimated_cost, estimated_delivery_days, risk_score, matched_at, metadata
+- `OrderSourceMatcher`: 주문 소싱처 자동 매칭 엔진 — register_order(), register_source(), match_order()(전체 상품 매칭), match_product()(단일 상품 매칭; 활성 소싱처 필터→재고 확인→우선순위+점수 기반 최적 선택→이행 상태 판정), match_bulk_orders(), get_match_result(), get_match_history(), get_match_stats(); 리스크 점수 자동 산출(소싱처 수/신뢰도/재고 기반)
+- `FulfillmentCheckResult` 데이터클래스: check_id, order_id, product_id, source_id, is_available, stock_available, price_valid, shipping_possible, estimated_total_cost, estimated_margin, estimated_delivery_days, issues, checked_at
+- `FulfillmentChecker`: 이행 가능성 즉시 확인 — check_fulfillment(), check_product_fulfillment(); 확인 항목: 소싱처 활성 여부/재고/가격 변동폭/배송 가능/신뢰도/마진율; 이행 불가 사유: out_of_stock/price_exceeded/source_inactive/shipping_unavailable/margin_below_threshold/source_unreliable; handle_unfulfillable()(대안 소싱처 자동 검색 → 없으면 고객 알림 생성 + Phase 109 채널 중지 mock)
+- `ScoringFactors` 데이터클래스: price_score, reliability_score, shipping_speed_score, quality_score, weighted_total
+- `SourcePriority` 데이터클래스: product_id, source_id, priority_rank, is_primary, is_backup, score, scoring_factors, last_updated
+- `SourcePriorityManager`: 소싱처 우선순위 관리 — set_priority(), get_priorities(), get_primary_source(), get_backup_sources(); auto_rank_sources()(가격40%+신뢰도30%+배송속도20%+품질10% 가중 점수); promote_backup()(백업→주 소싱처 승격), demote_source()(문제 발생 시 강등+이력 저장)
+- `RiskLevel` Enum: low(0~30)/medium(31~60)/high(61~80)/critical(81~100)
+- `RiskFactor` 데이터클래스: factor_type, score, description, weight
+- `RiskAssessment` 데이터클래스: assessment_id, order_id, product_id, overall_risk_score, risk_level, risk_factors, recommendations, assessed_at
+- `OrderRiskAssessor`: 주문 이행 리스크 평가 — assess_order_risk(), assess_product_risk(); 6개 리스크 요소(소싱처 안정성25%/가격변동성20%/배송 불확실성15%/재고리스크20%/환율리스크10%/시즌수요리스크10%); get_high_risk_orders(), get_risk_summary()
+- `SLAConfig` 데이터클래스: order_to_purchase_hours(4h), purchase_to_warehouse_hours(72h), warehouse_to_ship_hours(24h), total_fulfillment_hours(100h)
+- `SLAStatus` 데이터클래스: order_id, stage, stage_started_at, stage_deadline, is_overdue, elapsed_hours, remaining_hours
+- `FulfillmentStage` Enum: order_received→source_matched→purchase_initiated→purchase_confirmed→warehouse_received→quality_checked→shipped→delivered
+- `FulfillmentSLATracker`: SLA 추적 — start_tracking(), update_stage()(단계 전환+이력 저장), get_sla_status(), get_overdue_orders(), get_sla_performance(), get_stage_duration_stats(); SLA 초과 시 자동 알림 생성(중복 방지)
+- `OrderMatchingDashboard`: 주문 매칭 대시보드 — get_dashboard_data()(매칭현황+SLA현황+리스크분포+이행불가사유+소싱처빈도+최근피드), get_daily_stats(), get_unfulfillable_summary()
+- API Blueprint: `src/api/order_matching_api.py` (`/api/v1/order-matching`) — 28개 엔드포인트 (주문매칭6종/이행확인3종/소싱처우선순위5종/리스크평가4종/SLA추적6종/대시보드3종)
+- 봇 커맨드: `/match_order`, `/match_status`, `/fulfillment_check`, `/fulfillment_risk`, `/sla_status`, `/sla_overdue`, `/source_priority`, `/matching_dashboard`, `/unfulfillable`, `/high_risk_orders`
+- 관련 코드: `src/order_matching/`, `src/api/order_matching_api.py`, `src/bot/order_matching_commands.py`
+- 테스트: `tests/test_order_matching.py` (123개 테스트)
