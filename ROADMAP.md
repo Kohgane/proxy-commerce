@@ -1313,4 +1313,4 @@
 - API Blueprint: `src/api/seller_report_api.py` (`/api/v1/seller-report`) — 42개+ 엔드포인트 (메트릭4종/채널4종/상품6종/소싱처5종/하이브리드6종/리포트4종/알림3종/목표4종/대시보드1종)
 - 봇 커맨드: `/my_report`, `/daily_summary`, `/product_rank`, `/channel_compare`, `/source_rank`, `/hybrid_suggest`, `/hybrid_invest`, `/performance_alerts`, `/dead_stock`, `/trending_products`, `/my_goals`, `/seller_dashboard`
 - 관련 코드: `src/seller_report/`, `src/api/seller_report_api.py`, `src/bot/seller_report_commands.py`
-- 테스트: `tests/test_seller_report.py` (55개+ 테스트)
+- 테스트: `tests/test_seller_report.py` (140개+ 테스트)

@@ -125,7 +125,7 @@ def get_metrics():
         return jsonify(_serialize(metrics))
     except Exception as exc:
         logger.warning("get_metrics 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.get('/metrics/summary')
@@ -137,7 +137,7 @@ def get_metrics_summary():
         return jsonify(_serialize(summary))
     except Exception as exc:
         logger.warning("get_metrics_summary 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.get('/metrics/compare')
@@ -151,7 +151,7 @@ def compare_metrics():
         return jsonify(_serialize(result))
     except Exception as exc:
         logger.warning("compare_metrics 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.get('/metrics/trend/<metric_name>')
@@ -165,7 +165,7 @@ def get_metric_trend(metric_name: str):
         return jsonify({'metric_name': metric_name, 'trend': trend})
     except Exception as exc:
         logger.warning("get_metric_trend 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 # ── 채널 성과 ─────────────────────────────────────────────────────────────────
@@ -180,7 +180,7 @@ def get_channels():
         return jsonify([_serialize(c) for c in channels])
     except Exception as exc:
         logger.warning("get_channels 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.get('/channel/compare')
@@ -193,7 +193,7 @@ def compare_channels():
         return jsonify([_serialize(c) for c in channels])
     except Exception as exc:
         logger.warning("compare_channels 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.get('/channel/recommendations')
@@ -205,7 +205,7 @@ def get_channel_recommendations():
         return jsonify(recs)
     except Exception as exc:
         logger.warning("get_channel_recommendations 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.get('/channel/<channel>')
@@ -217,7 +217,7 @@ def get_channel(channel: str):
         return jsonify(_serialize(perf))
     except Exception as exc:
         logger.warning("get_channel 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 # ── 상품 성과 ─────────────────────────────────────────────────────────────────
@@ -234,7 +234,7 @@ def get_product_ranking():
         return jsonify([_serialize(p) for p in ranking])
     except Exception as exc:
         logger.warning("get_product_ranking 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.get('/product/grades')
@@ -246,7 +246,7 @@ def get_product_grades():
         return jsonify({k: [_serialize(p) for p in v] for k, v in grades.items()})
     except Exception as exc:
         logger.warning("get_product_grades 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.get('/product/matrix')
@@ -258,7 +258,7 @@ def get_product_matrix():
         return jsonify({k: [_serialize(p) for p in v] for k, v in matrix.items()})
     except Exception as exc:
         logger.warning("get_product_matrix 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.get('/product/dead-stock')
@@ -271,7 +271,7 @@ def get_dead_stock():
         return jsonify([_serialize(p) for p in dead])
     except Exception as exc:
         logger.warning("get_dead_stock 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.get('/product/trending')
@@ -284,7 +284,7 @@ def get_trending_products():
         return jsonify([_serialize(p) for p in trending])
     except Exception as exc:
         logger.warning("get_trending_products 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.get('/product/<product_id>')
@@ -298,7 +298,7 @@ def get_product(product_id: str):
         return jsonify(_serialize(perf))
     except Exception as exc:
         logger.warning("get_product 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 # ── 소싱처 성과 ───────────────────────────────────────────────────────────────
@@ -312,7 +312,7 @@ def get_sourcing():
         return jsonify([_serialize(s) for s in sources])
     except Exception as exc:
         logger.warning("get_sourcing 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.get('/sourcing/ranking')
@@ -324,7 +324,7 @@ def get_sourcing_ranking():
         return jsonify([_serialize(s) for s in ranking])
     except Exception as exc:
         logger.warning("get_sourcing_ranking 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.get('/sourcing/problematic')
@@ -336,7 +336,7 @@ def get_problematic_sources():
         return jsonify([_serialize(s) for s in sources])
     except Exception as exc:
         logger.warning("get_problematic_sources 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.get('/sourcing/recommendations')
@@ -348,7 +348,7 @@ def get_sourcing_recommendations():
         return jsonify(recs)
     except Exception as exc:
         logger.warning("get_sourcing_recommendations 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.get('/sourcing/<source_id>')
@@ -362,7 +362,7 @@ def get_source(source_id: str):
         return jsonify(_serialize(perf))
     except Exception as exc:
         logger.warning("get_source 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 # ── 하이브리드 모델 ────────────────────────────────────────────────────────────
@@ -376,7 +376,7 @@ def get_hybrid_analysis():
         return jsonify([_serialize(r) for r in recs])
     except Exception as exc:
         logger.warning("get_hybrid_analysis 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.get('/hybrid/recommendations')
@@ -388,7 +388,7 @@ def get_hybrid_recommendations():
         return jsonify([_serialize(r) for r in recs])
     except Exception as exc:
         logger.warning("get_hybrid_recommendations 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.get('/hybrid/investment')
@@ -400,7 +400,7 @@ def get_hybrid_investment():
         return jsonify(_serialize(estimate))
     except Exception as exc:
         logger.warning("get_hybrid_investment 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.get('/hybrid/delivery-improvement')
@@ -412,7 +412,7 @@ def get_delivery_improvement():
         return jsonify(_serialize(result))
     except Exception as exc:
         logger.warning("get_delivery_improvement 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.get('/hybrid/summary')
@@ -424,7 +424,7 @@ def get_hybrid_summary():
         return jsonify(_serialize(summary))
     except Exception as exc:
         logger.warning("get_hybrid_summary 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.post('/hybrid/simulate')
@@ -441,7 +441,7 @@ def simulate_model_change():
         return jsonify(_serialize(result))
     except Exception as exc:
         logger.warning("simulate_model_change 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 # ── 리포트 ────────────────────────────────────────────────────────────────────
@@ -455,7 +455,7 @@ def generate_daily_report():
         return jsonify(_serialize(report))
     except Exception as exc:
         logger.warning("generate_daily_report 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.post('/report/weekly')
@@ -467,7 +467,7 @@ def generate_weekly_report():
         return jsonify(_serialize(report))
     except Exception as exc:
         logger.warning("generate_weekly_report 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.post('/report/monthly')
@@ -479,7 +479,7 @@ def generate_monthly_report():
         return jsonify(_serialize(report))
     except Exception as exc:
         logger.warning("generate_monthly_report 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.get('/report/history')
@@ -493,7 +493,7 @@ def get_report_history():
         return jsonify(_serialize(history))
     except Exception as exc:
         logger.warning("get_report_history 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 # ── 알림 ──────────────────────────────────────────────────────────────────────
@@ -511,7 +511,7 @@ def get_alerts():
         return jsonify([_serialize(a) for a in alerts])
     except Exception as exc:
         logger.warning("get_alerts 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.get('/alerts/summary')
@@ -523,7 +523,7 @@ def get_alert_summary():
         return jsonify(_serialize(summary))
     except Exception as exc:
         logger.warning("get_alert_summary 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.post('/alerts/<alert_id>/acknowledge')
@@ -537,7 +537,7 @@ def acknowledge_alert(alert_id: str):
         return jsonify({'acknowledged': True, 'alert_id': alert_id})
     except Exception as exc:
         logger.warning("acknowledge_alert 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 # ── 목표 ──────────────────────────────────────────────────────────────────────
@@ -557,7 +557,7 @@ def set_goal():
         return jsonify(_serialize(goal)), 201
     except Exception as exc:
         logger.warning("set_goal 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.get('/goals')
@@ -571,7 +571,7 @@ def get_goals():
         return jsonify([_serialize(g) for g in goals])
     except Exception as exc:
         logger.warning("get_goals 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.get('/goals/dashboard')
@@ -583,7 +583,7 @@ def get_goal_dashboard():
         return jsonify(_serialize(dashboard))
     except Exception as exc:
         logger.warning("get_goal_dashboard 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 @seller_report_bp.post('/goals/update-progress')
@@ -595,7 +595,7 @@ def update_goal_progress():
         return jsonify([_serialize(g) for g in updated])
     except Exception as exc:
         logger.warning("update_goal_progress 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
 
 
 # ── 대시보드 ──────────────────────────────────────────────────────────────────
@@ -631,4 +631,4 @@ def get_dashboard():
         })
     except Exception as exc:
         logger.warning("get_dashboard 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500

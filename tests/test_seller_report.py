@@ -1,4 +1,4 @@
-"""tests/test_seller_report.py — Phase 114: 셀러 성과 리포트 테스트 (55개+)."""
+"""tests/test_seller_report.py — Phase 114: 셀러 성과 리포트 테스트 (140개+)."""
 from __future__ import annotations
 
 import pytest
