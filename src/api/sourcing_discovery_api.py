@@ -218,8 +218,8 @@ def evaluate_opportunity(opportunity_id: str):
     try:
         result = _get_opportunity_finder().evaluate_opportunity(opportunity_id)
         return jsonify(_serialize(result))
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 404
+    except ValueError:
+        return jsonify({'error': '리소스를 찾을 수 없습니다.'}), 404
     except Exception as exc:
         logger.warning("evaluate_opportunity 오류: %s", exc)
         return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
@@ -231,8 +231,8 @@ def approve_opportunity(opportunity_id: str):
     try:
         opp = _get_opportunity_finder().approve_opportunity(opportunity_id)
         return jsonify(_serialize(opp))
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 404
+    except ValueError:
+        return jsonify({'error': '리소스를 찾을 수 없습니다.'}), 404
     except Exception as exc:
         logger.warning("approve_opportunity 오류: %s", exc)
         return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
@@ -247,8 +247,8 @@ def reject_opportunity(opportunity_id: str):
             opportunity_id, reason=body.get('reason', '')
         )
         return jsonify(_serialize(opp))
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 404
+    except ValueError:
+        return jsonify({'error': '리소스를 찾을 수 없습니다.'}), 404
     except Exception as exc:
         logger.warning("reject_opportunity 오류: %s", exc)
         return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
@@ -345,8 +345,8 @@ def approve_supplier(candidate_id: str):
     try:
         candidate = _get_supplier_scout().approve_supplier(candidate_id)
         return jsonify(_serialize(candidate))
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 404
+    except ValueError:
+        return jsonify({'error': '리소스를 찾을 수 없습니다.'}), 404
     except Exception as exc:
         logger.warning("approve_supplier 오류: %s", exc)
         return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
@@ -361,8 +361,8 @@ def reject_supplier(candidate_id: str):
             candidate_id, reason=body.get('reason', '')
         )
         return jsonify(_serialize(candidate))
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 404
+    except ValueError:
+        return jsonify({'error': '리소스를 찾을 수 없습니다.'}), 404
     except Exception as exc:
         logger.warning("reject_supplier 오류: %s", exc)
         return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
@@ -503,8 +503,8 @@ def acknowledge_alert(alert_id: str):
     try:
         alert = _get_alert_service().acknowledge_alert(alert_id)
         return jsonify(_serialize(alert))
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 404
+    except ValueError:
+        return jsonify({'error': '리소스를 찾을 수 없습니다.'}), 404
     except Exception as exc:
         logger.warning("acknowledge_alert 오류: %s", exc)
         return jsonify({'error': '요청을 처리하는 중 오류가 발생했습니다.'}), 500
