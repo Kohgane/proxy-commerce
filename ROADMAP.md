@@ -1314,3 +1314,33 @@
 - 봇 커맨드: `/my_report`, `/daily_summary`, `/product_rank`, `/channel_compare`, `/source_rank`, `/hybrid_suggest`, `/hybrid_invest`, `/performance_alerts`, `/dead_stock`, `/trending_products`, `/my_goals`, `/seller_dashboard`
 - 관련 코드: `src/seller_report/`, `src/api/seller_report_api.py`, `src/bot/seller_report_commands.py`
 - 테스트: `tests/test_seller_report.py` (140개+ 테스트)
+
+## Phase 115 — 소싱 자동 발굴 — 트렌드 기반 신규 소싱처/상품 자동 발견 ✅ 완료
+
+- `TrendDirection` Enum: rising/stable/declining/seasonal/explosive
+- `CompetitionLevel` Enum: low/medium/high/saturated
+- `TrendData` 데이터클래스: trend_id, keyword, category, platform, search_volume, growth_rate, seasonality_score, competition_level, trend_direction, peak_month, data_points, analyzed_at
+- `TrendAnalyzer`: 200개+ 키워드 기반 트렌드 분석 — analyze_keyword_trend(), analyze_category_trends()(전자기기/패션/뷰티/스포츠/주방용품/가구·인테리어/반려동물/건강식품), get_rising_trends()(성장률 정렬), get_seasonal_opportunities()(월별 시즌 필터), get_trend_summary()(카테고리·방향 분포)
+- `OpportunityStatus` Enum: discovered/evaluating/approved/rejected/listed
+- `DiscoveryMethod` Enum: trend_based/competitor_gap/margin_opportunity/seasonal/supplier_recommendation/cross_platform
+- `SourcingOpportunity` 데이터클래스: opportunity_id, product_name, category, source_platform, source_url, source_price, source_currency, estimated_selling_price, estimated_margin_rate, estimated_monthly_demand, competition_level, opportunity_score, trend_data, risk_factors, discovery_method, status, discovered_at, metadata
+- `SourcingOpportunityFinder`: 다방면 소싱 기회 발굴 — discover_opportunities()(방법별 5~10개 생성), evaluate_opportunity()(상태→evaluating), approve_opportunity(), reject_opportunity(), get_opportunities()(상태/방법 필터+정렬), get_opportunity()
+- `GapType` Enum: unserved_demand/price_gap/quality_gap/feature_gap/availability_gap
+- `MarketGap` 데이터클래스: gap_id, category, description, gap_type, demand_score, supply_score, gap_score, example_products, recommended_action, analyzed_at
+- `MarketGapAnalyzer`: 32개+ 사전 생성 마켓 갭 — analyze_gaps()(카테고리 필터+점수 정렬), get_top_gaps()(상위N개), get_gap_by_category()(카테고리별 분류)
+- `CandidateStatus` Enum: scouted/contacting/evaluating/approved/rejected
+- `SupplierCandidate` 데이터클래스: candidate_id, supplier_name, platform, location, product_categories, min_order_quantity, avg_price_level, estimated_reliability, response_rate, sample_products, contact_info, scouted_at, status
+- `SupplierScout`: 멀티 플랫폼 공급사 탐색 (amazon/taobao/1688/alibaba) — scout_suppliers()(플랫폼별 3~5개 후보), evaluate_supplier(), get_candidates(), approve_supplier(), reject_supplier()
+- `ProfitabilityPrediction` 데이터클래스: product_name, source_price, source_currency, estimated_selling_price, estimated_costs(세관8%/부가세10%/플랫폼수수료10%/배송5000원), estimated_margin_rate, estimated_monthly_units, estimated_monthly_profit, break_even_units, recommended_model, confidence_score, risk_factors
+- `ProfitabilityPredictor`: 환율 기반 수익성 예측 (CNY×185/USD×1350/JPY×9/EUR×1480) — predict_profitability()(마크업 2.5배), predict_demand(), recommend_sourcing_model()(월50개+→full_stock/10~49개→semi_stock/10개미만→pure_dropship), batch_predict()
+- `PipelineConfig` 데이터클래스: auto_discover_interval_hours, max_opportunities_per_run, min_opportunity_score, auto_approve_threshold, categories_to_monitor, platforms_to_scan
+- `PipelineRun` 데이터클래스: run_id, started_at, completed_at, opportunities_found, opportunities_approved, opportunities_rejected, duration_seconds, status
+- `DiscoveryPipeline` ⭐: 엔드투엔드 자동 발굴 파이프라인 — run_pipeline()(트렌드→갭분석→기회발굴→수익성예측→자동승인), get_pipeline_history(), get_pipeline_config(), update_pipeline_config()
+- `AlertType` Enum: high_score_opportunity/trending_category/competitor_new_product/price_drop_source/seasonal_reminder/supplier_new_product
+- `DiscoveryAlert` 데이터클래스: alert_id, alert_type, severity, message, opportunity_id, details, created_at, acknowledged
+- `DiscoveryAlertService`: 20개+ 사전 생성 알림 — check_alerts()(미확인), get_alerts()(심각도/유형/확인 필터), acknowledge_alert(), get_alert_summary()
+- `DiscoveryDashboard`: 주간 KPI 대시보드 — get_dashboard_data()(기회수/승인수/트렌드키워드/카테고리분포/수익성TOP5/마켓갭/공급사후보수), get_weekly_discovery_report()
+- API Blueprint: `src/api/sourcing_discovery_api.py` (`/api/v1/sourcing-discovery`) — 30개+ 엔드포인트 (트렌드4종/기회발굴7종/마켓갭3종/공급사탐색5종/수익성예측4종/파이프라인4종/알림3종/대시보드2종)
+- 봇 커맨드: `/discover`, `/trending`, `/opportunities`, `/opportunity`, `/market_gaps`, `/scout_suppliers`, `/predict_profit`, `/seasonal`, `/discovery_alerts`, `/discovery_dashboard`, `/discovery_pipeline`
+- 관련 코드: `src/sourcing_discovery/`, `src/api/sourcing_discovery_api.py`, `src/bot/discovery_commands.py`
+- 테스트: `tests/test_sourcing_discovery.py` (55개+ 테스트)
