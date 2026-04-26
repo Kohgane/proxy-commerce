@@ -90,6 +90,48 @@ def main(args=None):
         _print_json(result)
         return
 
+    # src/dashboard/cli.py 에 액션 추가
+
+    elif args.action == 'morning-briefing':
+        from src.dashboard.daily_summary import (
+            DailySummaryGenerator, format_morning_briefing
+        )
+        from src.fx.provider import FXProvider
+        from src.fx.history import FXHistory
+        from src.analytics.pricing import AutoPricing
+    
+        # 1. 일일 요약 데이터
+        daily_gen = DailySummaryGenerator()
+        daily_summary = daily_gen.generate_summary_data()
+    
+        # 2. 환율 데이터 + 이력
+        fx_provider = FXProvider()
+        fx_data = fx_provider.get_all_rates()  # {USDKRW: 1450, JPYKRW: 9.2, ...}
+    
+        fx_history_obj = FXHistory()
+        fx_history = {}
+        for pair in ['USDKRW', 'JPYKRW', 'EURKRW']:
+            prev_rate = fx_history_obj.get_previous_rate(pair, days_ago=1)
+            fx_history[pair] = {
+               'current': fx_data.get(pair),
+                'previous': prev_rate
+            }
+    
+        # 3. 자동 가격 조정 요약
+        pricing = AutoPricing(mode='DRY_RUN')
+        pricing_summary = pricing.get_summary()
+    
+        # 4. 통합 메시지 포맷
+        message = format_morning_briefing(
+            daily_summary, fx_data, pricing_summary, fx_history
+        )
+    
+        # 5. 텔레그램 발송
+        from src.utils.telegram import send_telegram_message
+        send_telegram_message(message)
+    
+        print(message)
+
 
 if __name__ == '__main__':
     main()
