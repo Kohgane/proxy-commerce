@@ -13,6 +13,7 @@ _DEFAULT_RATES = {
     'USDKRW': Decimal('1350'),
     'JPYKRW': Decimal('9.0'),
     'EURKRW': Decimal('1470'),
+    'CNYKRW': Decimal('190'),
 }
 
 _REQUEST_TIMEOUT = 10
@@ -31,7 +32,7 @@ class FXProvider:
     PROVIDER_FRANKFURTER = 'frankfurter'
     PROVIDER_FALLBACK_ENV = 'env'
 
-    SUPPORTED_PAIRS = ['USDKRW', 'JPYKRW', 'EURKRW']
+    SUPPORTED_PAIRS = ['USDKRW', 'JPYKRW', 'EURKRW', 'CNYKRW']
 
     def __init__(self, primary_provider: str = None):
         self._primary = (
@@ -49,6 +50,7 @@ class FXProvider:
                 'USDKRW': Decimal('1345.50'),
                 'JPYKRW': Decimal('8.95'),
                 'EURKRW': Decimal('1462.30'),
+                'CNYKRW': Decimal('189.50'),
                 'fetched_at': '2026-03-09T18:00:00+09:00',
                 'provider': 'frankfurter',
             }
@@ -81,7 +83,7 @@ class FXProvider:
     def _fetch_frankfurter(self) -> dict:
         """frankfurter.app API 호출 (ECB 기준, 완전 무료).
 
-        https://api.frankfurter.app/latest?from=USD&to=KRW
+        CNY는 frankfurter에서 지원하지 않으므로 별도 소스 또는 환경변수 폴백.
         """
         from datetime import datetime, timezone
 
@@ -97,11 +99,37 @@ class FXProvider:
                 raise ValueError(f'frankfurter: {to_cur} not in response for {from_cur}')
             rates[pair] = Decimal(str(rate_val))
 
+        # CNY: frankfurter는 CNY 미지원 → USD 기준 교차 환율 계산
+        rates['CNYKRW'] = self._fetch_cny_rate(rates.get('USDKRW'))
+
         now = datetime.now(tz=timezone.utc).isoformat()
         rates['fetched_at'] = now
         rates['provider'] = self.PROVIDER_FRANKFURTER
         logger.info("FX rates fetched from frankfurter: %s", {k: str(v) for k, v in rates.items() if k in self.SUPPORTED_PAIRS})
         return rates
+
+    def _fetch_cny_rate(self, usdkrw: Decimal = None) -> Decimal:
+        """CNY/KRW 환율 조회.
+
+        방법 1: frankfurter USD/CNY → USDKRW / USDCNY 교차환율
+        방법 2: 환경변수 FX_CNYKRW 폴백
+        """
+        if usdkrw:
+            try:
+                url = 'https://api.frankfurter.app/latest?from=USD&to=CNY'
+                resp = requests.get(url, timeout=_REQUEST_TIMEOUT)
+                resp.raise_for_status()
+                data = resp.json()
+                usdcny = data['rates'].get('CNY')
+                if usdcny and usdcny > 0:
+                    cnykrw = usdkrw / Decimal(str(usdcny))
+                    logger.info("CNY/KRW calculated via cross rate: %s", cnykrw)
+                    return cnykrw.quantize(Decimal('0.01'))
+            except Exception as exc:
+                logger.warning("CNY cross rate calculation failed: %s", exc)
+
+        # 폴백: 환경변수
+        return Decimal(os.getenv('FX_CNYKRW', str(_DEFAULT_RATES['CNYKRW'])))
 
     def _fetch_exchangerate_api(self) -> dict:
         """exchangerate-api.com 호출 (무료 1500회/월).
@@ -114,7 +142,12 @@ class FXProvider:
         if not api_key:
             raise ValueError('EXCHANGERATE_API_KEY not set')
 
-        pairs = {'USDKRW': ('USD', 'KRW'), 'JPYKRW': ('JPY', 'KRW'), 'EURKRW': ('EUR', 'KRW')}
+        pairs = {
+            'USDKRW': ('USD', 'KRW'),
+            'JPYKRW': ('JPY', 'KRW'),
+            'EURKRW': ('EUR', 'KRW'),
+            'CNYKRW': ('CNY', 'KRW'),
+        }
         rates: dict = {}
         for pair, (from_cur, to_cur) in pairs.items():
             url = f'https://v6.exchangerate-api.com/v6/{api_key}/pair/{from_cur}/{to_cur}'
@@ -142,6 +175,7 @@ class FXProvider:
             'USDKRW': Decimal(os.getenv('FX_USDKRW', str(_DEFAULT_RATES['USDKRW']))),
             'JPYKRW': Decimal(os.getenv('FX_JPYKRW', str(_DEFAULT_RATES['JPYKRW']))),
             'EURKRW': Decimal(os.getenv('FX_EURKRW', str(_DEFAULT_RATES['EURKRW']))),
+            'CNYKRW': Decimal(os.getenv('FX_CNYKRW', str(_DEFAULT_RATES['CNYKRW']))),
             'fetched_at': datetime.now(tz=timezone.utc).isoformat(),
             'provider': self.PROVIDER_FALLBACK_ENV,
         }
