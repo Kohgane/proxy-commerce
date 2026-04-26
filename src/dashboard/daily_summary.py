@@ -310,3 +310,95 @@ class DailySummaryGenerator:
                 pass
 
         return alerts
+
+# src/dashboard/daily_summary.py 끝 부분에 추가
+
+def format_morning_briefing(
+    daily_summary: dict,
+    fx_data: dict,
+    pricing_summary: dict,
+    fx_history: dict = None
+) -> str:
+    """
+    통합 모닝 브리핑 - 일일 요약 + 환율 + 가격 조정을 하나로.
+    
+    fx_history: {"USDKRW": {"current": 1450, "previous": 1443}, ...}
+    """
+    from datetime import datetime
+    import pytz
+    
+    kst = pytz.timezone('Asia/Seoul')
+    now = datetime.now(kst)
+    yesterday = (now - timedelta(days=1)).strftime('%m-%d')
+    weekday_kr = ['월', '화', '수', '목', '금', '토', '일'][now.weekday()]
+    
+    lines = []
+    lines.append(f"🌅 [모닝 브리핑] {now.strftime('%Y-%m-%d')} ({weekday_kr})")
+    lines.append("━" * 24)
+    lines.append("")
+    
+    # 1. 어제 운영 현황
+    lines.append(f"📊 어제({yesterday}) 운영 현황")
+    lines.append(f"• 총 주문: {daily_summary.get('total_orders', 0)}건")
+    lines.append(f"• 총 매출: {daily_summary.get('total_revenue', 0):,}원")
+    lines.append(f"• 평균 마진: {daily_summary.get('avg_margin', 0):.1f}%")
+    lines.append(f"• 재고 부족: {daily_summary.get('low_stock_count', 0)}개 SKU")
+    lines.append("")
+    
+    # 2. 환율 (화살표 포함)
+    lines.append("💱 환율 현황")
+    fx_history = fx_history or {}
+    for pair_name, rate in fx_data.items():
+        prev = fx_history.get(pair_name, {}).get('previous')
+        if prev:
+            change_pct = ((rate - prev) / prev) * 100
+            if change_pct > 0.1:
+                arrow = "⬆"
+                sign = "+"
+            elif change_pct < -0.1:
+                arrow = "⬇"
+                sign = ""
+            else:
+                arrow = "━"
+                sign = ""
+            
+            # 급변 강조
+            strong_arrow = ""
+            if abs(change_pct) >= 3:
+                strong_arrow = "↑↑" if change_pct > 0 else "↓↓"
+            
+            display = pair_name.replace('KRW', '/KRW')
+            lines.append(
+                f"• {display}: {rate:,.1f}원 {arrow} "
+                f"{sign}{change_pct:.1f}% {strong_arrow}".rstrip()
+            )
+        else:
+            lines.append(f"• {pair_name}: {rate:,.1f}원")
+    lines.append("")
+    
+    # 3. 자동 가격 조정
+    lines.append("💰 자동 가격 조정 (DRY RUN)")
+    lines.append(f"• 검토 SKU: {pricing_summary.get('checked', 0)}개")
+    lines.append(f"• 조정 필요: {pricing_summary.get('to_adjust', 0)}개")
+    lines.append("")
+    
+    # 4. 급변/이상 알림 (있을 때만)
+    alerts = []
+    for pair_name, rate in fx_data.items():
+        prev = fx_history.get(pair_name, {}).get('previous')
+        if prev:
+            change_pct = ((rate - prev) / prev) * 100
+            if abs(change_pct) >= 3:
+                arrow = "↑↑" if change_pct > 0 else "↓↓"
+                alerts.append(f"• 환율 급변: {pair_name} {change_pct:+.1f}% {arrow}")
+    
+    if pricing_summary.get('to_adjust', 0) > 5:
+        alerts.append(f"• 가격 조정 필요 SKU 다수: {pricing_summary['to_adjust']}개")
+    
+    if alerts:
+        lines.append("⚠️ 알림")
+        lines.extend(alerts)
+        lines.append("")
+    
+    lines.append("━" * 24)
+    return "\n".join(lines)
