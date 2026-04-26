@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "0 22 * * *"   # 매일 KST 07:00 (UTC 22:00 전날)
   workflow_dispatch:
+    inputs:
+      date:
+        description: 'Report date (YYYY-MM-DD, empty for today)'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -26,6 +31,16 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           SHOPIFY_SHOP: ${{ secrets.SHOPIFY_SHOP }}
           SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          WOO_BASE_URL: ${{ secrets.WOO_BASE_URL }}
+          WOO_CK: ${{ secrets.WOO_CK }}
+          WOO_CS: ${{ secrets.WOO_CS }}
           FX_USE_LIVE: "1"
+          DAILY_SUMMARY_ENABLED: "1"
           TELEGRAM_ENABLED: "1"
-        run: python -m src.dashboard.cli --action morning-briefing
+        run: |
+          DATE_ARG="${{ github.event.inputs.date }}"
+          if [ -n "$DATE_ARG" ]; then
+            python -m src.dashboard.cli --action morning-briefing --date "$DATE_ARG"
+          else
+            python -m src.dashboard.cli --action morning-briefing
+          fi
