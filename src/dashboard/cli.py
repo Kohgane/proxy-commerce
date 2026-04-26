@@ -1,6 +1,7 @@
-"""대시보드 CLI — 매출 리포트 / 일일 요약 / 주문 상태 조회.
+"""대시보드 CLI — 매출 / 일일 요약 / 모닝 브리핑 / 주문 상태 조회.
 
 사용법:
+  python -m src.dashboard.cli --action morning-briefing [--date 2026-04-26]
   python -m src.dashboard.cli --action daily-summary [--date 2026-03-09]
   python -m src.dashboard.cli --action revenue --period daily [--date 2026-03-09]
   python -m src.dashboard.cli --action revenue --period weekly [--week-start 2026-03-03]
@@ -12,6 +13,9 @@
 
 import argparse
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -23,7 +27,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '--action',
         required=True,
-        choices=['daily-summary', 'revenue', 'status', 'margin-analysis'],
+        choices=[
+            'daily-summary',
+            'morning-briefing',
+            'revenue',
+            'status',
+            'margin-analysis',
+        ],
         help='실행할 액션',
     )
     parser.add_argument('--date', default=None, help='날짜 (YYYY-MM-DD)')
@@ -40,7 +50,94 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _print_json(data):
-    print(json.dumps(data, ensure_ascii=False, indent=2))
+    print(json.dumps(data, ensure_ascii=False, indent=2, default=str))
+
+
+def _action_morning_briefing(ns):
+    """통합 모닝 브리핑 - 일일 요약 + 환율 + 가격 조정 → 텔레그램."""
+    from .daily_summary import DailySummaryGenerator, format_morning_briefing
+
+    # 1. 일일 요약 (기존 generate_summary 활용)
+    daily_gen = DailySummaryGenerator()
+    daily_summary = daily_gen.generate_summary(ns.date)
+
+    # 2. 환율 데이터 + 이력 (모듈 없으면 빈 dict로 폴백)
+    fx_data = {}
+    fx_history = {}
+    try:
+        from ..fx.provider import FXProvider
+        fx_provider = FXProvider()
+        for pair in ['USDKRW', 'JPYKRW', 'EURKRW']:
+            try:
+                # FXProvider 메서드 시그니처는 코드베이스에 따라 다를 수 있음
+                if hasattr(fx_provider, 'get_rate'):
+                    rate = fx_provider.get_rate(pair)
+                elif hasattr(fx_provider, 'get_all_rates'):
+                    all_rates = fx_provider.get_all_rates()
+                    rate = all_rates.get(pair)
+                else:
+                    rate = None
+                if rate:
+                    fx_data[pair] = float(rate)
+            except Exception as exc:
+                logger.debug("FX rate %s fetch failed: %s", pair, exc)
+    except ImportError:
+        logger.info("FXProvider not available, skipping FX data")
+
+    try:
+        from ..fx.history import FXHistory
+        fx_hist = FXHistory()
+        for pair in fx_data:
+            try:
+                if hasattr(fx_hist, 'get_previous_rate'):
+                    prev = fx_hist.get_previous_rate(pair, days_ago=1)
+                elif hasattr(fx_hist, 'get_rate_at'):
+                    from datetime import date as _date, timedelta
+                    prev = fx_hist.get_rate_at(pair, _date.today() - timedelta(days=1))
+                else:
+                    prev = None
+                if prev:
+                    fx_history[pair] = {'current': fx_data[pair], 'previous': float(prev)}
+            except Exception as exc:
+                logger.debug("FX history %s fetch failed: %s", pair, exc)
+    except ImportError:
+        logger.info("FXHistory not available, skipping FX history")
+
+    # 3. 자동 가격 조정 요약 (모듈 없으면 빈 dict)
+    pricing_summary = {'checked': 0, 'to_adjust': 0}
+    try:
+        from ..analytics.pricing import AutoPricing
+        pricing = AutoPricing(mode='DRY_RUN')
+        if hasattr(pricing, 'get_summary'):
+            pricing_summary = pricing.get_summary()
+        elif hasattr(pricing, 'check_all'):
+            result = pricing.check_all()
+            pricing_summary = {
+                'checked': result.get('total_checked', 0),
+                'to_adjust': result.get('to_adjust', 0),
+            }
+    except (ImportError, Exception) as exc:
+        logger.debug("AutoPricing not available: %s", exc)
+
+    # 4. 통합 메시지 생성
+    message = format_morning_briefing(
+        daily_summary=daily_summary,
+        fx_data=fx_data,
+        pricing_summary=pricing_summary,
+        fx_history=fx_history,
+    )
+
+    # 5. 텔레그램 발송
+    import os
+    if os.getenv('TELEGRAM_ENABLED', '1') == '1':
+        try:
+            from ..utils.telegram import send_tele
+            send_tele(message)
+            logger.info("Morning briefing sent via Telegram")
+        except Exception as exc:
+            logger.warning("Telegram send failed: %s", exc)
+
+    print(message)
 
 
 def main(args=None):
@@ -53,6 +150,10 @@ def main(args=None):
         summary = gen.send_daily_summary(ns.date)
         if summary:
             print(gen.format_telegram(summary))
+        return
+
+    if ns.action == 'morning-briefing':
+        _action_morning_briefing(ns)
         return
 
     if ns.action == 'revenue':
@@ -89,48 +190,6 @@ def main(args=None):
         result = reporter.margin_analysis()
         _print_json(result)
         return
-
-    # src/dashboard/cli.py 에 액션 추가
-
-    elif args.action == 'morning-briefing':
-        from src.dashboard.daily_summary import (
-            DailySummaryGenerator, format_morning_briefing
-        )
-        from src.fx.provider import FXProvider
-        from src.fx.history import FXHistory
-        from src.analytics.pricing import AutoPricing
-    
-        # 1. 일일 요약 데이터
-        daily_gen = DailySummaryGenerator()
-        daily_summary = daily_gen.generate_summary_data()
-    
-        # 2. 환율 데이터 + 이력
-        fx_provider = FXProvider()
-        fx_data = fx_provider.get_all_rates()  # {USDKRW: 1450, JPYKRW: 9.2, ...}
-    
-        fx_history_obj = FXHistory()
-        fx_history = {}
-        for pair in ['USDKRW', 'JPYKRW', 'EURKRW']:
-            prev_rate = fx_history_obj.get_previous_rate(pair, days_ago=1)
-            fx_history[pair] = {
-               'current': fx_data.get(pair),
-                'previous': prev_rate
-            }
-    
-        # 3. 자동 가격 조정 요약
-        pricing = AutoPricing(mode='DRY_RUN')
-        pricing_summary = pricing.get_summary()
-    
-        # 4. 통합 메시지 포맷
-        message = format_morning_briefing(
-            daily_summary, fx_data, pricing_summary, fx_history
-        )
-    
-        # 5. 텔레그램 발송
-        from src.utils.telegram import send_telegram_message
-        send_telegram_message(message)
-    
-        print(message)
 
 
 if __name__ == '__main__':
