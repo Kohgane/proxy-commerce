@@ -23,6 +23,11 @@ def cmd_update(args):
     result = updater.update(force=args.force, dry_run=args.dry_run)
     _print_json(result)
 
+    # 텔레그램 환율 요약 발송
+    if not args.dry_run:
+        from src.utils.telegram import send_fx_summary
+        send_fx_summary(result)
+
 
 def cmd_current(args):
     from .updater import FXUpdater
