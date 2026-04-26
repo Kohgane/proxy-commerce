@@ -61,6 +61,7 @@ jobs:
           FX_USE_LIVE: '1'
           FX_CACHE_TTL: ${{ vars.FX_CACHE_TTL || '3600' }}
           FX_CHANGE_ALERT_PCT: ${{ vars.FX_CHANGE_ALERT_PCT || '3.0' }}
+          FX_CNYKRW: ${{ vars.FX_CNYKRW || '190' }}
           TARGET_MARGIN_PCT: ${{ vars.TARGET_MARGIN_PCT || '22' }}
         run: |
           ACTION="${{ github.event.inputs.action || 'update' }}"
@@ -72,3 +73,4 @@ jobs:
             EXTRA_FLAGS="$EXTRA_FLAGS --dry-run"
           fi
           python -m src.fx.cli --action "$ACTION" $EXTRA_FLAGS
+          
