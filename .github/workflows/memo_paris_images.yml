@@ -27,4 +27,4 @@ jobs:
           WC_SECRET: ${{ secrets.WC_SECRET }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python automation/memo_paris_images/collect_memo_images.py
+        run: python automation/memo_paris_images/collect_memo_images_v2.py
