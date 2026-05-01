@@ -36,11 +36,6 @@ def run(source: str, dry_run: bool = False) -> Dict[str, Any]:
                 updated += 1
             elif action == "create":
                 created += 1
-            elif dry_run:
-                if result.get("existing_id"):
-                    updated += 1
-                else:
-                    created += 1
             results.append({"source_product_id": product.source_product_id, "result": result})
         except Exception as exc:
             failed += 1

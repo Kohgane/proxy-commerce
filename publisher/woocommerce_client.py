@@ -91,8 +91,9 @@ class WooCommerceClient:
         else:
             source, source_product_id = "", ""
 
+        max_pages = 100
         page = 1
-        while True:
+        while page <= max_pages:
             products = self.list_products(status="any", page=page, per_page=100)
             if not products:
                 return None
@@ -108,3 +109,5 @@ class WooCommerceClient:
                 ):
                     return product
             page += 1
+        logger.warning("Exceeded max page limit while searching idempotency key: %s", idempotency_key)
+        return None
