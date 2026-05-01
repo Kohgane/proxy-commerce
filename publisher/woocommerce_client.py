@@ -68,3 +68,43 @@ class WooCommerceClient:
         resp = requests.get(url, params=params, auth=self.auth, timeout=self.timeout)
         resp.raise_for_status()
         return resp.json()
+
+    @staticmethod
+    def _meta_value(product: Dict[str, Any], key: str) -> Optional[str]:
+        for item in product.get("meta_data", []):
+            if item.get("key") == key:
+                value = item.get("value")
+                return None if value is None else str(value)
+        return None
+
+    def find_product_by_idempotency(self, idempotency_key: str) -> Optional[Dict[str, Any]]:
+        """Find an existing product by idempotency metadata.
+
+        Primary key:
+            _idempotency_key = "{source}:{source_product_id}"
+
+        Backward-compatible fallback:
+            _source + _source_product_id
+        """
+        if ":" in idempotency_key:
+            source, source_product_id = idempotency_key.split(":", 1)
+        else:
+            source, source_product_id = "", ""
+
+        page = 1
+        while True:
+            products = self.list_products(status="any", page=page, per_page=100)
+            if not products:
+                return None
+
+            for product in products:
+                if self._meta_value(product, "_idempotency_key") == idempotency_key:
+                    return product
+                if (
+                    source
+                    and source_product_id
+                    and self._meta_value(product, "_source") == source
+                    and self._meta_value(product, "_source_product_id") == source_product_id
+                ):
+                    return product
+            page += 1
