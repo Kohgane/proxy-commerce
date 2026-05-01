@@ -1,0 +1,22 @@
+presets:
+  entry:
+    target_margin_rate: 0.20
+    min_margin_rate: 0.20
+    platform_fee_rate: 0.05
+    shipping_fee: 0.0
+    exchange_rate: 1.0
+    markup_rate: 1.266667
+  standard:
+    target_margin_rate: 0.28
+    min_margin_rate: 0.28
+    platform_fee_rate: 0.05
+    shipping_fee: 0.0
+    exchange_rate: 1.0
+    markup_rate: 1.41791
+  aggressive:
+    target_margin_rate: 0.35
+    min_margin_rate: 0.35
+    platform_fee_rate: 0.05
+    shipping_fee: 0.0
+    exchange_rate: 1.0
+    markup_rate: 1.583333
