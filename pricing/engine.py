@@ -89,8 +89,10 @@ def calculate_margin_rate(
     if config is None:
         config = PRESETS["standard"]
 
-    if sell_price <= 0:
-        raise ValueError(f"sell_price must be positive, got {sell_price}")
+    if sell_price < 0:
+        raise ValueError(f"sell_price must be non-negative, got {sell_price}")
+    if sell_price == 0:
+        raise ValueError("sell_price must not be zero (division by zero)")
 
     revenue_after_fee = sell_price * (1.0 - config.platform_fee_rate)
     net = revenue_after_fee - config.shipping_fee - (cost_price * config.exchange_rate)

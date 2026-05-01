@@ -109,8 +109,7 @@ class BaseCollectorPipeline(ABC):
             return None
 
         try:
-            product = self.validate(normalized)
-            return product
+            return self.validate(normalized)
         except (ValidationError, TypeError) as exc:
             logger.error("[%s] validate failed for %s: %s", self.source, source_id, exc)
             _log_failed_item(normalized, "validate", str(exc))

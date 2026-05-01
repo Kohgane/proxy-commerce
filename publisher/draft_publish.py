@@ -13,6 +13,18 @@ from publisher.woocommerce_client import WooCommerceClient
 logger = logging.getLogger(__name__)
 
 
+def _resolve_sell_price(product: Product) -> float:
+    """Return sell_price, falling back to cost_price with a warning."""
+    if product.sell_price is not None:
+        return product.sell_price
+    logger.warning(
+        "sell_price not set for product %s (%s); falling back to cost_price — margin will be zero",
+        product.source_product_id,
+        product.title,
+    )
+    return product.cost_price
+
+
 def product_to_woo_payload(product: Product) -> Dict[str, Any]:
     """Convert a Product model into a WooCommerce product payload.
 
@@ -33,7 +45,7 @@ def product_to_woo_payload(product: Product) -> Dict[str, Any]:
         "name": product.title,
         "status": "draft",
         "description": product.description or "",
-        "regular_price": str(product.sell_price or product.cost_price),
+        "regular_price": str(_resolve_sell_price(product)),
         "images": images,
         "attributes": attributes,
         "meta_data": [
