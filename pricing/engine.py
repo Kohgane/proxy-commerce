@@ -10,6 +10,8 @@ from typing import Optional
 
 import yaml
 
+MARGIN_COMPARISON_TOLERANCE = 5e-4
+
 
 @dataclass
 class PricingConfig:
@@ -164,7 +166,7 @@ def calculate_sell_price(
     sell = round(sell, 2)
 
     margin = calculate_margin_rate(cost_price=cost_price, sell_price=sell, config=resolved)
-    if margin + 5e-4 < resolved.min_margin_rate:
+    if margin + MARGIN_COMPARISON_TOLERANCE < resolved.min_margin_rate:
         raise MarginBelowThresholdError(
             f"Margin {margin:.2%} is below minimum {resolved.min_margin_rate:.2%}"
         )

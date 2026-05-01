@@ -1,6 +1,7 @@
 import pytest
 
 from pricing.engine import (
+    MARGIN_COMPARISON_TOLERANCE,
     MarginBelowThresholdError,
     PRESETS,
     calculate_margin_rate,
@@ -50,4 +51,4 @@ def test_presets_produce_margin_at_or_above_threshold():
     for config in PRESETS.values():
         sell = calculate_sell_price(cost_price=100.0, config=config)
         margin = calculate_margin_rate(cost_price=100.0, sell_price=sell, config=config)
-        assert margin + 5e-4 >= config.min_margin_rate
+        assert margin + MARGIN_COMPARISON_TOLERANCE >= config.min_margin_rate
