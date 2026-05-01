@@ -29,4 +29,4 @@ jobs:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python automation/memo_paris_images/collect_memo_images_v5_1_retry.py
+        run: python automation/memo_paris_images/collect_memo_images_v5_2_pexels_only.py
