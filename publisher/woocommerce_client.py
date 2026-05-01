@@ -31,10 +31,12 @@ class WooCommerceClient:
         wc_key: Optional[str] = None,
         wc_secret: Optional[str] = None,
         timeout: int = 30,
+        max_lookup_pages: int = 100,
     ) -> None:
         self.base_url = (wc_url or _WC_URL).rstrip("/")
         self.auth = HTTPBasicAuth(wc_key or _WC_KEY, wc_secret or _WC_SECRET)
         self.timeout = timeout
+        self.max_lookup_pages = max_lookup_pages
 
     def _url(self, path: str = "") -> str:
         return urljoin(self.base_url + "/", (_API_PATH + path).lstrip("/"))
@@ -68,3 +70,49 @@ class WooCommerceClient:
         resp = requests.get(url, params=params, auth=self.auth, timeout=self.timeout)
         resp.raise_for_status()
         return resp.json()
+
+    @staticmethod
+    def _meta_value(product: Dict[str, Any], key: str) -> Optional[str]:
+        for item in product.get("meta_data", []):
+            if item.get("key") == key:
+                value = item.get("value")
+                return None if value is None else str(value)
+        return None
+
+    def find_product_by_idempotency(self, idempotency_key: str) -> Optional[Dict[str, Any]]:
+        """Find an existing product by idempotency metadata.
+
+        Primary key:
+            _idempotency_key = "{source}:{source_product_id}"
+
+        Backward-compatible fallback:
+            _source + _source_product_id
+        """
+        if ":" in idempotency_key:
+            source, source_product_id = idempotency_key.split(":", 1)
+        else:
+            source, source_product_id = "", ""
+
+        page = 1
+        while page <= self.max_lookup_pages:
+            products = self.list_products(status="any", page=page, per_page=100)
+            if not products:
+                return None
+
+            for product in products:
+                if self._meta_value(product, "_idempotency_key") == idempotency_key:
+                    return product
+                if (
+                    source
+                    and source_product_id
+                    and self._meta_value(product, "_source") == source
+                    and self._meta_value(product, "_source_product_id") == source_product_id
+                ):
+                    return product
+            page += 1
+        logger.warning(
+            "Exceeded max page limit (%s) while searching idempotency key: %s",
+            self.max_lookup_pages,
+            idempotency_key,
+        )
+        return None
