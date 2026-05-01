@@ -73,16 +73,17 @@ class TestPipeline(BaseCollectorPipeline):
 # Pipeline registry
 # ---------------------------------------------------------------------------
 
-PIPELINES: dict[str, BaseCollectorPipeline] = {
-    "test": TestPipeline(),
+PIPELINE_CLASSES: dict[str, type[BaseCollectorPipeline]] = {
+    "test": TestPipeline,
 }
 
 
-def run(source: str, dry_run: bool = False) -> Dict[str, Any]:
-    pipeline = PIPELINES.get(source)
-    if pipeline is None:
-        available = list(PIPELINES.keys())
+def run(source: str, dry_run: bool = False, max_retries: int = 0, backoff_factor: float = 0.0) -> Dict[str, Any]:
+    pipeline_cls = PIPELINE_CLASSES.get(source)
+    if pipeline_cls is None:
+        available = list(PIPELINE_CLASSES.keys())
         raise ValueError(f"Unknown source {source!r}. Available: {available}")
+    pipeline = pipeline_cls(max_retries=max_retries, backoff_factor=backoff_factor)
 
     # For the test scaffold, run a single sample item
     source_ids = [SAMPLE_ITEM["id"]] if source == "test" else []
@@ -102,10 +103,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Proxy Commerce collector runner")
     parser.add_argument("--source", required=True, help="Collector source name (e.g. test)")
     parser.add_argument("--dry-run", action="store_true", help="Do not publish; only validate")
+    parser.add_argument("--max-retries", type=int, default=0, help="Retry attempts for fetch stage")
+    parser.add_argument("--backoff-factor", type=float, default=0.0, help="Exponential backoff base seconds")
     args = parser.parse_args()
 
     try:
-        result = run(source=args.source, dry_run=args.dry_run)
+        result = run(
+            source=args.source,
+            dry_run=args.dry_run,
+            max_retries=args.max_retries,
+            backoff_factor=args.backoff_factor,
+        )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         sys.exit(0 if result["failed"] == 0 else 1)
     except ValueError as exc:

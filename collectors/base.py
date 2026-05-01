@@ -8,10 +8,11 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from pydantic import ValidationError
 
@@ -48,6 +49,16 @@ class BaseCollectorPipeline(ABC):
 
     source: str = "unknown"
 
+    def __init__(
+        self,
+        max_retries: int = 0,
+        backoff_factor: float = 0.0,
+        sleep_func: Optional[Callable[[float], None]] = None,
+    ) -> None:
+        self.max_retries = max(0, int(max_retries))
+        self.backoff_factor = max(0.0, float(backoff_factor))
+        self._sleep_func = sleep_func or time.sleep
+
     # ------------------------------------------------------------------
     # Abstract stages — implement in subclasses
     # ------------------------------------------------------------------
@@ -79,6 +90,39 @@ class BaseCollectorPipeline(ABC):
     # Pipeline runner
     # ------------------------------------------------------------------
 
+    def _run_stage(
+        self,
+        stage: str,
+        source_id: str,
+        func: Callable[..., Any],
+        *args: Any,
+        retryable: bool = False,
+    ) -> Any:
+        total_attempts = self.max_retries + 1 if retryable else 1
+        for attempt in range(1, total_attempts + 1):
+            logger.info("[%s] %s start for %s (%d/%d)", self.source, stage, source_id, attempt, total_attempts)
+            try:
+                result = func(*args)
+                logger.info("[%s] %s success for %s", self.source, stage, source_id)
+                return result
+            except Exception as exc:
+                if retryable and attempt < total_attempts:
+                    delay = self.backoff_factor * (2 ** (attempt - 1))
+                    logger.warning(
+                        "[%s] %s failed for %s (%d/%d): %s; retrying in %.2fs",
+                        self.source,
+                        stage,
+                        source_id,
+                        attempt,
+                        total_attempts,
+                        exc,
+                        delay,
+                    )
+                    if delay > 0:
+                        self._sleep_func(delay)
+                    continue
+                raise
+
     def run_one(self, source_id: str) -> Optional[Product]:
         """Run the full pipeline for one item.
 
@@ -86,7 +130,7 @@ class BaseCollectorPipeline(ABC):
         """
         raw = None
         try:
-            raw = self.fetch(source_id)
+            raw = self._run_stage("fetch", source_id, self.fetch, source_id, retryable=True)
         except Exception as exc:
             logger.error("[%s] fetch failed for %s: %s", self.source, source_id, exc)
             _log_failed_item(source_id, "fetch", str(exc))
@@ -94,7 +138,7 @@ class BaseCollectorPipeline(ABC):
 
         parsed = None
         try:
-            parsed = self.parse(raw)
+            parsed = self._run_stage("parse", source_id, self.parse, raw)
         except Exception as exc:
             logger.error("[%s] parse failed for %s: %s", self.source, source_id, exc)
             _log_failed_item(raw, "parse", str(exc))
@@ -102,15 +146,16 @@ class BaseCollectorPipeline(ABC):
 
         normalized = None
         try:
-            normalized = self.normalize(parsed)
+            normalized = self._run_stage("normalize", source_id, self.normalize, parsed)
         except Exception as exc:
             logger.error("[%s] normalize failed for %s: %s", self.source, source_id, exc)
             _log_failed_item(parsed, "normalize", str(exc))
             return None
 
         try:
-            return self.validate(normalized)
-        except (ValidationError, TypeError) as exc:
+            product = self._run_stage("validate", source_id, self.validate, normalized)
+            return product
+        except (ValidationError, TypeError, ValueError) as exc:
             logger.error("[%s] validate failed for %s: %s", self.source, source_id, exc)
             _log_failed_item(normalized, "validate", str(exc))
             return None
