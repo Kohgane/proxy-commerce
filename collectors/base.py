@@ -100,7 +100,10 @@ class BaseCollectorPipeline(ABC):
     ) -> Any:
         total_attempts = self.max_retries + 1 if retryable else 1
         for attempt in range(1, total_attempts + 1):
-            logger.info("[%s] %s start for %s (%d/%d)", self.source, stage, source_id, attempt, total_attempts)
+            if retryable:
+                logger.info("[%s] %s start for %s (%d/%d)", self.source, stage, source_id, attempt, total_attempts)
+            else:
+                logger.info("[%s] %s start for %s", self.source, stage, source_id)
             try:
                 result = func(*args)
                 logger.info("[%s] %s success for %s", self.source, stage, source_id)
@@ -155,7 +158,7 @@ class BaseCollectorPipeline(ABC):
         try:
             product = self._run_stage("validate", source_id, self.validate, normalized)
             return product
-        except (ValidationError, TypeError, ValueError) as exc:
+        except (ValidationError, TypeError) as exc:
             logger.error("[%s] validate failed for %s: %s", self.source, source_id, exc)
             _log_failed_item(normalized, "validate", str(exc))
             return None

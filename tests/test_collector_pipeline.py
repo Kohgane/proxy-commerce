@@ -12,7 +12,7 @@ class _SamplePipeline(BaseCollectorPipeline):
         return {"id": source_id, "title": "Sample", "price": 10}
 
     def parse(self, raw):
-        return dict(raw)
+        return raw
 
     def normalize(self, parsed):
         return {
