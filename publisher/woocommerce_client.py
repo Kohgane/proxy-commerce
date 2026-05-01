@@ -110,5 +110,9 @@ class WooCommerceClient:
                 ):
                     return product
             page += 1
-        logger.warning("Exceeded max page limit while searching idempotency key: %s", idempotency_key)
+        logger.warning(
+            "Exceeded max page limit (%s) while searching idempotency key: %s",
+            self.max_lookup_pages,
+            idempotency_key,
+        )
         return None

@@ -114,5 +114,5 @@ class DraftPublisher:
             result = self.client.update_product(existing["id"], payload)
         else:
             result = self.client.create_product(payload)
-        logger.info("Published WooCommerce draft product id=%s action=%s", result.get("id"), action)
+        logger.info("Upserted WooCommerce draft product id=%s action=%s", result.get("id"), action)
         return result
