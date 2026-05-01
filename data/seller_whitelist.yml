@@ -1,0 +1,7 @@
+# Seller whitelist for Taobao gate compliance
+# Add trusted seller IDs (one per line, or as a YAML list)
+sellers:
+  - TB-VERIFIED-001
+  - TB-VERIFIED-002
+  - TB-GOLD-SHOP-888
+  - TB-PLATINUM-007
