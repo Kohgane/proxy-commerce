@@ -77,6 +77,11 @@ PIPELINE_CLASSES: dict[str, type[BaseCollectorPipeline]] = {
     "test": TestPipeline,
 }
 
+# Pre-instantiated pipelines for use by app.publish and tests.
+PIPELINES: dict[str, BaseCollectorPipeline] = {
+    name: cls() for name, cls in PIPELINE_CLASSES.items()
+}
+
 
 def run(source: str, dry_run: bool = False, max_retries: int = 0, backoff_factor: float = 0.0) -> Dict[str, Any]:
     pipeline_cls = PIPELINE_CLASSES.get(source)
