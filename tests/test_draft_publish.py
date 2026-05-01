@@ -80,6 +80,7 @@ def test_draft_publisher_dry_run_returns_action_without_write():
 class DummyLookupClient(WooCommerceClient):
     def __init__(self, pages):
         self.pages = pages
+        self.max_lookup_pages = 100
 
     def list_products(self, **params):
         page = params["page"]

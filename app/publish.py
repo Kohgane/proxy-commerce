@@ -56,7 +56,11 @@ def run(source: str, dry_run: bool = False) -> Dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Proxy Commerce WooCommerce draft publisher")
     parser.add_argument("--source", required=True, help="Collector source name (e.g. test)")
-    parser.add_argument("--dry-run", action="store_true", help="Do not publish; only simulate")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Do not publish; only simulate and report create/update actions",
+    )
     args = parser.parse_args()
 
     try:

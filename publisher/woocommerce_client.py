@@ -31,10 +31,12 @@ class WooCommerceClient:
         wc_key: Optional[str] = None,
         wc_secret: Optional[str] = None,
         timeout: int = 30,
+        max_lookup_pages: int = 100,
     ) -> None:
         self.base_url = (wc_url or _WC_URL).rstrip("/")
         self.auth = HTTPBasicAuth(wc_key or _WC_KEY, wc_secret or _WC_SECRET)
         self.timeout = timeout
+        self.max_lookup_pages = max_lookup_pages
 
     def _url(self, path: str = "") -> str:
         return urljoin(self.base_url + "/", (_API_PATH + path).lstrip("/"))
@@ -91,9 +93,8 @@ class WooCommerceClient:
         else:
             source, source_product_id = "", ""
 
-        max_pages = 100
         page = 1
-        while page <= max_pages:
+        while page <= self.max_lookup_pages:
             products = self.list_products(status="any", page=page, per_page=100)
             if not products:
                 return None
