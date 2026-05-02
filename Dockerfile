@@ -33,14 +33,17 @@ RUN adduser --disabled-password --gecos '' appuser \
     && chown -R appuser:appuser /app
 USER appuser
 
-EXPOSE 8000
+EXPOSE 10000
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-10000}/health || exit 1
 
-ENV PORT=8000 \
+ENV PORT=10000 \
     GUNICORN_WORKERS=2 \
     GUNICORN_TIMEOUT=120 \
     APP_ENV=${APP_ENV}
 
-CMD ["sh", "-c", "gunicorn src.order_webhook:app --config gunicorn.conf.py"]
+# Copy startup script
+COPY scripts/start_render.sh ./scripts/start_render.sh
+
+CMD ["sh", "scripts/start_render.sh"]

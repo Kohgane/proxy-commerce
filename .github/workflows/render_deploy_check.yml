@@ -1,0 +1,72 @@
+name: Render — Docker Build Check
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  docker-build-check:
+    name: Docker Build & Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          load: true
+          tags: proxy-commerce:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Start container
+        run: |
+          docker run -d \
+            --name pc-ci \
+            -p 10000:10000 \
+            -e PORT=10000 \
+            -e APP_ENV=ci \
+            -e FX_DISABLE_NETWORK=1 \
+            proxy-commerce:ci
+          echo "Container started, waiting for health..."
+
+      - name: Wait for healthcheck
+        run: |
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost:10000/health; then
+              echo ""
+              echo "✓ Health check passed on attempt $i"
+              exit 0
+            fi
+            echo "Attempt $i/15 — waiting 4s..."
+            sleep 4
+          done
+          echo "✗ Health check failed after 15 attempts"
+          docker logs pc-ci
+          exit 1
+
+      - name: Run smoke tests
+        run: |
+          python scripts/render_smoke.py http://localhost:10000
+
+      - name: Show container logs (on failure)
+        if: failure()
+        run: docker logs pc-ci
+
+      - name: Cleanup
+        if: always()
+        run: docker rm -f pc-ci || true

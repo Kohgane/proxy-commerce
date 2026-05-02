@@ -1,4 +1,56 @@
 services:
+  # ──────────────────────────────────────────────────────────────────
+  # 실제 운영 서비스 (Render Free tier)
+  # 제약사항:
+  #   - RAM: 512MB (GUNICORN_WORKERS=2 권장)
+  #   - 15분 비활성 시 슬립 (cold start 약 30~60초)
+  #   - 커스텀 도메인: kohganepercenti.com (별도 등록 필요)
+  # ──────────────────────────────────────────────────────────────────
+  - type: web
+    name: proxy-commerce
+    runtime: docker
+    plan: free
+    region: virginia
+    branch: main
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: PORT
+        value: "10000"
+      - key: FX_DISABLE_NETWORK
+        value: "1"
+      - key: GUNICORN_WORKERS
+        value: "2"
+      - key: GUNICORN_TIMEOUT
+        value: "120"
+      - key: GUNICORN_LOG_LEVEL
+        value: warning
+      # 아래 시크릿은 Render 대시보드 → Environment에서 직접 등록 (sync: false)
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: WOO_BASE_URL
+        sync: false
+      - key: WOO_CK
+        sync: false
+      - key: WOO_CS
+        sync: false
+      - key: WOO_WEBHOOK_SECRET
+        sync: false
+      - key: GOOGLE_SERVICE_JSON_B64
+        sync: false
+      - key: GOOGLE_SHEET_ID
+        sync: false
+      - key: SHOPIFY_SHOP
+        sync: false
+      - key: SHOPIFY_ACCESS_TOKEN
+        sync: false
+      - key: SHOPIFY_CLIENT_SECRET
+        sync: false
+
   - type: web
     name: proxy-commerce-staging
     env: docker
@@ -12,54 +64,14 @@ services:
         value: staging
       - key: MODE
         value: DRY_RUN
+      - key: FX_DISABLE_NETWORK
+        value: "1"
       - key: GUNICORN_WORKERS
         value: "1"
       - key: GUNICORN_LOG_LEVEL
         value: debug
       - key: PORT
-        value: "8000"
-      - key: GOOGLE_SERVICE_JSON_B64
-        sync: false
-      - key: GOOGLE_SHEET_ID
-        sync: false
-      - key: SHOPIFY_SHOP
-        sync: false
-      - key: SHOPIFY_ACCESS_TOKEN
-        sync: false
-      - key: SHOPIFY_CLIENT_SECRET
-        sync: false
-      - key: WOO_BASE_URL
-        sync: false
-      - key: WOO_CK
-        sync: false
-      - key: WOO_CS
-        sync: false
-      - key: WOO_WEBHOOK_SECRET
-        sync: false
-      - key: TELEGRAM_BOT_TOKEN
-        sync: false
-      - key: TELEGRAM_CHAT_ID
-        sync: false
-
-  - type: web
-    name: proxy-commerce-production
-    env: docker
-    plan: standard
-    autoDeploy: false
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
-    healthCheckPath: /health
-    envVars:
-      - key: APP_ENV
-        value: production
-      - key: MODE
-        value: APPLY
-      - key: GUNICORN_WORKERS
-        value: "4"
-      - key: GUNICORN_LOG_LEVEL
-        value: warning
-      - key: PORT
-        value: "8000"
+        value: "10000"
       - key: GOOGLE_SERVICE_JSON_B64
         sync: false
       - key: GOOGLE_SHEET_ID
