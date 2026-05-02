@@ -4889,3 +4889,116 @@ def cmd_return_metrics() -> str:
     except Exception as exc:
         logger.error("cmd_return_metrics 오류: %s", exc)
         return format_message('error', f'반품 메트릭 조회 실패: {exc}')
+
+
+# ── Phase 119: 정산/회계 자동화 봇 커맨드 ─────────────────────────────────────
+
+
+def cmd_finance_close(period_type: str = 'daily') -> str:
+    """/finance_close <daily|weekly|monthly> — 회계 기간 마감 (Phase 119)."""
+    pt = period_type.strip().lower() or 'daily'
+    try:
+        from ..finance_automation.automation_manager import FinanceAutomationManager
+        mgr = FinanceAutomationManager()
+        if pt == 'daily':
+            close = mgr.run_daily_close()
+        elif pt == 'weekly':
+            close = mgr.run_weekly_close()
+        elif pt == 'monthly':
+            close = mgr.run_monthly_close()
+        else:
+            return format_message('error', f'지원하지 않는 기간 유형: {pt}')
+        data = {
+            'period': close.period,
+            'type': close.type,
+            'status': close.status,
+            'closed_at': close.closed_at,
+        }
+        return format_message('analytics', data, label=f'기간 마감 완료: {close.type} {close.period}')
+    except Exception as exc:
+        logger.error("cmd_finance_close 오류: %s", exc)
+        return format_message('error', f'기간 마감 실패: {exc}')
+
+
+def cmd_finance_pnl(period: str = '') -> str:
+    """/finance_pnl <period> — 손익계산서 조회 (Phase 119)."""
+    p = period.strip()
+    if not p:
+        from datetime import datetime, timezone
+        p = datetime.now(timezone.utc).strftime('%Y-%m')
+    try:
+        from ..finance_automation.automation_manager import FinanceAutomationManager
+        mgr = FinanceAutomationManager()
+        stmt = mgr.generate_statement('pnl', p)
+        data = {'period': stmt.period, 'totals': stmt.totals, 'line_items': stmt.line_items}
+        return format_message('analytics', data, label=f'손익계산서 {p}')
+    except Exception as exc:
+        logger.error("cmd_finance_pnl 오류: %s", exc)
+        return format_message('error', f'손익계산서 조회 실패: {exc}')
+
+
+def cmd_finance_settlement(channel: str = '') -> str:
+    """/finance_settlement <channel> — 채널별 정산 조회 (Phase 119)."""
+    ch = channel.strip()
+    try:
+        from ..finance_automation.automation_manager import FinanceAutomationManager
+        mgr = FinanceAutomationManager()
+        batches = mgr.get_settlements(ch)
+        items = [
+            {
+                'batch_id': b.batch_id,
+                'channel': b.channel,
+                'gross': str(b.gross),
+                'net': str(b.net),
+                'status': b.status,
+            }
+            for b in batches
+        ]
+        return format_message('analytics', items, label=f'정산 목록 (채널={ch or "전체"}): {len(items)}건')
+    except Exception as exc:
+        logger.error("cmd_finance_settlement 오류: %s", exc)
+        return format_message('error', f'정산 조회 실패: {exc}')
+
+
+def cmd_finance_tax(period: str = '') -> str:
+    """/finance_tax <period> — 세무 리포트 조회 (Phase 119)."""
+    p = period.strip()
+    if not p:
+        from datetime import datetime, timezone
+        p = datetime.now(timezone.utc).strftime('%Y-%m')
+    try:
+        from ..finance_automation.automation_manager import FinanceAutomationManager
+        mgr = FinanceAutomationManager()
+        report = mgr.generate_tax_report(p)
+        data = {
+            'period': report.period,
+            'vat_payable': str(report.vat_payable),
+            'vat_receivable': str(report.vat_receivable),
+            'customs_paid': str(report.customs_paid),
+            'total_taxable': str(report.total_taxable),
+        }
+        return format_message('analytics', data, label=f'세무 리포트 {p}')
+    except Exception as exc:
+        logger.error("cmd_finance_tax 오류: %s", exc)
+        return format_message('error', f'세무 리포트 조회 실패: {exc}')
+
+
+def cmd_finance_anomalies() -> str:
+    """/finance_anomalies — 이상 거래 감지 결과 조회 (Phase 119)."""
+    try:
+        from ..finance_automation.automation_manager import FinanceAutomationManager
+        mgr = FinanceAutomationManager()
+        anomalies = mgr.get_anomalies()
+        items = [
+            {
+                'type': a.type,
+                'severity': a.severity,
+                'reference': a.reference,
+                'detail': a.detail,
+            }
+            for a in anomalies
+        ]
+        return format_message('analytics', items, label=f'재무 이상 감지: {len(items)}건')
+    except Exception as exc:
+        logger.error("cmd_finance_anomalies 오류: %s", exc)
+        return format_message('error', f'이상 감지 조회 실패: {exc}')
