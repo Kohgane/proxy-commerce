@@ -154,8 +154,8 @@ def collect_preview():
             "draft": draft_dict,
             "trust": trust_info,
         })
-    except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
+    except ValueError:
+        return jsonify({"ok": False, "error": "URL 형식이 올바르지 않습니다."}), 400
     except Exception as exc:
         logger.warning("수집기 오류: %s", exc)
         return jsonify({"ok": False, "error": "추출 중 오류가 발생했습니다."}), 500
@@ -216,8 +216,8 @@ def pricing_calc():
         market_fee_rate = float(data.get("market_fee_rate", 0))
         pg_fee_rate = float(data.get("pg_fee_rate", 0))
         target_margin_pct = float(data.get("target_margin_pct", 30))
-    except (TypeError, ValueError) as exc:
-        return jsonify({"ok": False, "error": f"입력값 오류: {exc}"}), 400
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "입력값 형식이 올바르지 않습니다."}), 400
 
     if buy_price <= 0:
         return jsonify({"ok": False, "error": "매입가를 입력하세요."}), 400

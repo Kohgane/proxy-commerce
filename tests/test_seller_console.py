@@ -57,7 +57,6 @@ class TestSellerConsoleViews:
         """GET /seller/dashboard → 200."""
         resp = client.get("/seller/dashboard")
         assert resp.status_code == 200
-        assert "seller_console" in resp.headers.get("Content-Type", "") or resp.status_code == 200
 
     def test_collect_returns_200(self, client):
         """GET /seller/collect → 200."""
