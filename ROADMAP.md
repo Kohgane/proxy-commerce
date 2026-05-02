@@ -110,6 +110,8 @@
 | Phase 115 | 소싱 자동 발굴 — 트렌드 기반 신규 소싱처/상품 자동 발견 | #81 | 2026-04-06 |
 | Phase 116 | 보안 강화 — RBAC 세분화, IP 화이트리스트, API 요청 서명 검증 강화 | #82 | 2026-05-01 |
 | Phase 117 | 배송 추적 상태 기반 고객 알림 자동화 (다국어 템플릿, 지연 감지, CS 자동 티켓) | #105 | 2026-05-02 |
+| Phase 118 | 반품/교환 자동 처리 워크플로우 (자동 분류, 승인, 회수 물류, 검수, 환불/교환 오케스트레이션) | #PR | 2026-05-02 |
+| Phase 119 | 정산/회계 자동화 전체 사이클 (매출 인식, 매입 집계, 채널 수수료, FX 손익, 일/주/월 마감, 재무제표, 세무 리포트, 복식부기 원장, 이상거래 감지) | #PR | 2026-05-02 |
 
 ## 🚧 진행 중 Phase
 
@@ -190,6 +192,8 @@
 - Phase 93으로 구현 완료: 글로벌 확장 (다국어 상품 페이지, 해외 결제, 수입/수출)
 - Phase 94로 구현 완료: AI 기반 상품 추천 시스템 (앙상블 엔진, 협업/콘텐츠 필터링, 개인화, 트렌딩, 크로스셀, 피드백 루프)
 - Phase 95로 구현 완료: 모바일 앱 API (React Native/Flutter 지원, JWT 인증, 커서 페이지네이션, FCM/APNs mock)
+- Phase 120: E2E 통합 테스트 + 운영 시뮬레이션 (Phase 117~119 전 사이클 검증)
+- Phase 121: 통합 모니터링/알람 대시보드 고도화
 
 ## Phase 31: 재고 동기화 (Inventory Sync)
 - `InventorySyncManager`: 다중 채널(쿠팡/네이버/내부) 재고 동기화
@@ -1373,9 +1377,28 @@
 |---|---|
 | Phase 117 | 배송 추적 상태 기반 고객 알림 자동화 — 다국어 템플릿, 지연 감지, CS 자동 티켓 ✅ 완료 |
 | Phase 118 | 반품/교환 자동 처리 워크플로우 — 자동 분류, 회수 운송장 자동 발급, 검수 자동 등급, 환불/교환 자동 처리, 분쟁 에스컬레이션 ✅ 완료 |
-| Phase 119 | 정산/회계 자동화 전체 사이클 — 주문→매입→배송→정산 전 사이클 자동화 |
+| Phase 119 | 정산/회계 자동화 전체 사이클 — 복식부기 원장, 매출 인식, 매입 집계, 채널 수수료, FX 손익, 일/주/월 마감, 재무제표, 세무 리포트, 이상거래 감지 ✅ 완료 |
 | Phase 120 | 세금계산서/영수증 자동 발행 — 전자세금계산서 API 연동 (홈택스/팝빌) |
 | Phase 121 | 매출 예측 고도화 — 시계열 분석 기반 매출/수요 예측 (Prophet/ARIMA) |
+
+## Phase 119 — 정산/회계 자동화 전체 사이클 ✅ 완료
+
+- `Ledger`: 인메모리 복식부기 원장 — post(균형 검증), query(계정/기간 필터), trial_balance, lock_period
+- `RevenueRecognizer`: 매출 인식 엔진 — DEBIT AR / CREDIT REVENUE 분개 자동 생성, 환불 역인식
+- `CostAggregator`: 매입 원가 집계 — DEBIT COGS/SHIPPING_OUT/CUSTOMS_DUTY / CREDIT AP 분개
+- `ChannelFeeCalculator`: 채널/PG 수수료 계산 — coupang 11%, naver 5.85%, own 0%, toss 1.4%, stripe 2.9%, paypal 3.4%
+- `FxPnLCalculator`: 외환 손익 계산 — FXProvider 연동 또는 기본 환율 fallback, 매입/정산 환율 차이로 실현 손익 산출
+- `SettlementOrchestrator`: 채널별 정산 배치 관리 — coupang(주간)/naver(일간)/vendor(월간)/own(월간) 주기
+- `RefundReconciler`: 환불 대사 — 매출 역인식 + 채널 수수료 역환급 + PG 수수료 역환급 분개
+- `PeriodCloser`: 일/주/월 마감 — 이상 감지 → 원장 잠금 → 집계 저장 → 알림
+- `FinancialStatementBuilder`: 재무제표 자동 생성 — 손익계산서(P&L), 재무상태표(BS), 현금흐름표(CF)
+- `TaxReporter`: 세무 리포트 — VAT 납부/매입세액 계산, 관세 집계, JSON/CSV 내보내기
+- `FinanceAnomalyDetector`: 이상거래 감지 — 마이너스 마진, FX 손실 한도, 미정산, 중복 분개, 매출 불일치
+- `FinanceAutomationManager`: 통합 오케스트레이터 — on_order_event 라우팅, run_daily/weekly/monthly_close, metrics
+- API Blueprint: `src/api/finance_automation_api.py` (`/api/v1/finance`) — 12개 엔드포인트
+- 봇 커맨드: `/finance_close`, `/finance_pnl`, `/finance_settlement`, `/finance_tax`, `/finance_anomalies` (Phase 119 신규)
+- 관련 코드: `src/finance_automation/` (15개 파일), `src/api/finance_automation_api.py`
+- 테스트: `tests/test_finance_automation.py` (120개 이상 테스트 함수)
 
 ## Phase 118 — 반품/교환 자동 처리 워크플로우 ✅ 완료
 
