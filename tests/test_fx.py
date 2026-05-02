@@ -80,6 +80,7 @@ class TestFXProviderExchangeRateAPI:
             self._make_resp('USD', 'KRW', 1350.0),
             self._make_resp('JPY', 'KRW', 9.0),
             self._make_resp('EUR', 'KRW', 1470.0),
+            self._make_resp('CNY', 'KRW', 190.0),
         ]
         from src.fx.provider import FXProvider
         with patch.dict(os.environ, {'EXCHANGERATE_API_KEY': 'test-key'}):

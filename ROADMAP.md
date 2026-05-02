@@ -109,6 +109,7 @@
 | Phase 114 | 셀러 성과 리포트 — 내 스토어 종합 분석 + 하이브리드 모델 자동 전환 제안 | #80 | 2026-04-06 |
 | Phase 115 | 소싱 자동 발굴 — 트렌드 기반 신규 소싱처/상품 자동 발견 | #81 | 2026-04-06 |
 | Phase 116 | 보안 강화 — RBAC 세분화, IP 화이트리스트, API 요청 서명 검증 강화 | #82 | 2026-05-01 |
+| Phase 117 | 배송 추적 상태 기반 고객 알림 자동화 (다국어 템플릿, 지연 감지, CS 자동 티켓) | #105 | 2026-05-02 |
 
 ## 🚧 진행 중 Phase
 
@@ -1370,11 +1371,25 @@
 
 | Phase | 내용 |
 |---|---|
-| Phase 117 | 실시간 대시보드 v2 — WebSocket 기반 실시간 매출/주문/재고 모니터링 |
-| Phase 118 | AI 챗봇 CS — GPT 기반 고객 문의 자동 응답 + FAQ 자동 생성 |
-| Phase 119 | 창고 간 재고 이동 — 멀티 창고 간 재고 전환/이동 요청 + 승인 워크플로 |
+| Phase 117 | 배송 추적 상태 기반 고객 알림 자동화 — 다국어 템플릿, 지연 감지, CS 자동 티켓 ✅ 완료 |
+| Phase 118 | 반품/교환 자동 처리 워크플로우 — 반품 요청 자동 승인, CS 연동, 환불 처리 자동화 |
+| Phase 119 | 정산/회계 자동화 전체 사이클 — 주문→매입→배송→정산 전 사이클 자동화 |
 | Phase 120 | 세금계산서/영수증 자동 발행 — 전자세금계산서 API 연동 (홈택스/팝빌) |
 | Phase 121 | 매출 예측 고도화 — 시계열 분석 기반 매출/수요 예측 (Prophet/ARIMA) |
+
+## Phase 117 — 배송 추적 상태 기반 고객 알림 자동화 ✅ 완료
+
+- `DeliveryStatusWatcher`: 운송장 폴링 기반 상태 변화 감지 — register/unregister/poll_once/tick/start/stop 백그라운드 스레드
+- `DeliveryNotificationDispatcher`: NotificationHub 위임 — 채널별 다중 발송, 조용시간 제어, 중요 상태(delivered/exception) 무조건 발송
+- `DeliveryDelayDetector`: 임계값 기반 지연 감지 — picked_up(24h)/in_transit(48h/72h)/out_for_delivery(12h), 이상 감지 중복 방지
+- `DeliveryExceptionHandler`: exception 상태 + 이상 감지 → TicketManager 자동 티켓 생성 (priority: high) + 운영자 텔레그램 즉시 알림
+- `CustomerPreferenceManager`: 고객별 알림 채널/언어/조용시간 인메모리 설정 관리
+- 다국어 템플릿: ko/en/ja/zh × 6가지 상태(picked_up/in_transit/out_for_delivery/delivered/exception/delayed) — 총 24종 기본 템플릿
+- 데이터 모델: `DeliveryNotification`, `DeliveryEvent`, `NotificationPreference`, `DeliveryAnomaly`
+- API Blueprint: `src/api/delivery_notifications_api.py` (`/api/v1/delivery-notifications`) — 7개 엔드포인트 (watch등록/상태조회/선호설정/수동폴링/이력/이상목록)
+- 봇 커맨드: `/delivery_watch`, `/delivery_status`, `/delivery_prefs`, `/delivery_anomalies`
+- 관련 코드: `src/delivery_notifications/`, `src/api/delivery_notifications_api.py`
+- 테스트: `tests/test_delivery_notifications.py` (112개 테스트)
 
 ## Phase 116 — 보안 강화 — RBAC 세분화, IP 화이트리스트, API 요청 서명 검증 강화 ✅ 완료
 
