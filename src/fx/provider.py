@@ -18,6 +18,10 @@ _DEFAULT_RATES = {
 
 _REQUEST_TIMEOUT = 10
 
+# CI/테스트 환경에서 네트워크 호출을 비활성화하는 가드
+# FX_DISABLE_NETWORK=1 설정 시 env 폴백으로 즉시 응답
+_DISABLE_NETWORK = os.getenv('FX_DISABLE_NETWORK', '0') == '1'
+
 
 class FXProvider:
     """실시간 환율 조회 프로바이더.
@@ -58,6 +62,9 @@ class FXProvider:
         모든 API 실패 시 환경변수 값(기본값) 반환.
         """
         ordered = self._provider_order()
+        # 네트워크 비활성화 가드 — CI 환경 등에서 즉시 env 폴백 사용
+        if _DISABLE_NETWORK:
+            return self._fallback_env()
         for provider in ordered:
             try:
                 if provider == self.PROVIDER_FRANKFURTER:

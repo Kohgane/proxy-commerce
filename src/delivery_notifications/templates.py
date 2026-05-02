@@ -45,7 +45,11 @@ def render_template(status: str, language: str, **kwargs) -> str:
     lang = language if language in TEMPLATES else 'ko'
     status_templates = TEMPLATES[lang]
     template = status_templates.get(status, status_templates.get('exception', ''))
-    try:
-        return template.format(**{k: (v or '') for k, v in kwargs.items()})
-    except KeyError:
-        return template
+
+    class _SafeDict(dict):
+        """누락된 키에 대해 빈 문자열을 반환하는 dict."""
+        def __missing__(self, key: str) -> str:
+            return ''
+
+    safe_kwargs = _SafeDict({k: (v or '') for k, v in kwargs.items()})
+    return template.format_map(safe_kwargs)

@@ -134,22 +134,18 @@ class TestCustomerPreferenceManager:
     def test_is_quiet_time_midnight_crossing(self, mgr):
         # quiet hours 22~08 (crosses midnight)
         mgr.set(NotificationPreference(user_id='u3', quiet_hours_start=22, quiet_hours_end=8))
-        with patch('src.delivery_notifications.customer_preferences.datetime') as mock_dt:
-            mock_dt.now.return_value = datetime(2024, 1, 1, 23, 0, tzinfo=timezone.utc)
-            mock_dt.now.return_value = MagicMock()
-            # Test via is_quiet_time implementation directly
-            pref = mgr.get('u3')
-            # hour=23 → should be quiet (23 >= 22)
-            assert pref.quiet_hours_start > pref.quiet_hours_end  # crosses midnight
-            # hours 22..23 and 0..7 are quiet
-            for h in [22, 23, 0, 1, 7]:
-                start, end = pref.quiet_hours_start, pref.quiet_hours_end
-                result = h >= start or h < end
-                assert result is True
-            # hour 10 is not quiet
-            h = 10
-            result = h >= 22 or h < 8
-            assert result is False
+        pref = mgr.get('u3')
+        # hour=23 → should be quiet (23 >= 22)
+        assert pref.quiet_hours_start > pref.quiet_hours_end  # crosses midnight
+        # hours 22..23 and 0..7 are quiet
+        for h in [22, 23, 0, 1, 7]:
+            start, end = pref.quiet_hours_start, pref.quiet_hours_end
+            result = h >= start or h < end
+            assert result is True
+        # hour 10 is not quiet
+        h = 10
+        result = h >= 22 or h < 8
+        assert result is False
 
     def test_is_quiet_time_no_crossing(self, mgr):
         # quiet hours 2~5 (no midnight crossing)

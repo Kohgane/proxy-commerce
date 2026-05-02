@@ -36,10 +36,6 @@ def _get_watcher():
     global _watcher
     if _watcher is None:
         from ..delivery_notifications.status_watcher import DeliveryStatusWatcher
-        from ..delivery_notifications.notification_dispatcher import DeliveryNotificationDispatcher
-        from ..delivery_notifications.delay_detector import DeliveryDelayDetector
-        from ..delivery_notifications.exception_handler import DeliveryExceptionHandler
-        from ..delivery_notifications.customer_preferences import CustomerPreferenceManager
         _watcher = DeliveryStatusWatcher(
             dispatcher=_get_dispatcher(),
             delay_detector=_get_delay_detector(),
