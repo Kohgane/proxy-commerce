@@ -77,8 +77,16 @@ class DeliveryNotificationDispatcher:
         return list(self._history)
 
     def _send_to_channel(self, hub, channel: str, recipient: str, message: str) -> bool:
-        """채널로 메시지 발송. NotificationHub 위임."""
-        result = hub.dispatch('order_shipped', recipient, message)
+        """채널로 메시지 발송 — 채널명을 이벤트 타입에 매핑하여 hub 위임."""
+        # 채널명 → 이벤트 타입 매핑 (hub의 _EVENT_CHANNEL_MAP 기반)
+        _CHANNEL_TO_EVENT = {
+            'telegram': 'system_alert',
+            'email': 'order_placed',
+            'kakao': 'order_shipped',
+            'slack': 'stock_low',
+        }
+        event_type = _CHANNEL_TO_EVENT.get(channel, 'order_shipped')
+        result = hub.dispatch(event_type, recipient, message)
         return bool(result)
 
     def _is_quiet_time(self, pref: NotificationPreference) -> bool:
