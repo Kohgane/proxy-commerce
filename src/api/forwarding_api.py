@@ -478,8 +478,8 @@ def inbound_register():
             destination_country=data.get('destination_country', 'KR'),
         )
         return jsonify(registration.to_dict()), 201
-    except KeyError as exc:
-        return jsonify({'error': str(exc)}), 404
+    except KeyError:
+        return jsonify({'error': 'Provider not found'}), 404
     except Exception as exc:
         logger.error('inbound_register error: %s', exc)
         return jsonify({'error': 'Internal server error'}), 500
@@ -500,8 +500,8 @@ def arrival_confirm():
         engine = _get_fwd_engine()
         registration = engine.confirm_arrival(package_id, registration_id)
         return jsonify(registration.to_dict())
-    except KeyError as exc:
-        return jsonify({'error': str(exc)}), 404
+    except KeyError:
+        return jsonify({'error': 'Package or registration not found'}), 404
     except Exception as exc:
         logger.error('arrival_confirm error: %s', exc)
         return jsonify({'error': 'Internal server error'}), 500
@@ -527,10 +527,10 @@ def consolidate():
             destination_country=destination_country,
         )
         return jsonify(req.to_dict()), 201
-    except KeyError as exc:
-        return jsonify({'error': str(exc)}), 404
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
+    except KeyError:
+        return jsonify({'error': 'Provider not found'}), 404
+    except ValueError:
+        return jsonify({'error': 'Invalid consolidation request'}), 400
     except Exception as exc:
         logger.error('consolidate error: %s', exc)
         return jsonify({'error': 'Internal server error'}), 500
@@ -562,10 +562,10 @@ def outbound_request():
             recipient_address=recipient_address,
         )
         return jsonify(req.to_dict()), 201
-    except KeyError as exc:
-        return jsonify({'error': str(exc)}), 404
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
+    except KeyError:
+        return jsonify({'error': 'Provider not found'}), 404
+    except ValueError:
+        return jsonify({'error': 'Invalid outbound request'}), 400
     except Exception as exc:
         logger.error('outbound_request error: %s', exc)
         return jsonify({'error': 'Internal server error'}), 500
