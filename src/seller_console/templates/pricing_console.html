@@ -1,0 +1,203 @@
+{% extends "_base.html" %}
+{% block title %}마진 계산기{% endblock %}
+
+{% block content %}
+<h4 class="fw-bold mb-4">💰 마진 계산기</h4>
+
+<div class="row g-4">
+  <!-- 입력 패널 -->
+  <div class="col-md-5">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <h6 class="fw-semibold mb-3">입력</h6>
+
+        <div class="mb-3">
+          <label class="form-label">매입가</label>
+          <div class="input-group">
+            <input type="number" id="buyPrice" class="form-control" value="50" step="0.01" min="0.01">
+            <select id="currency" class="form-select" style="max-width:90px;">
+              <option value="USD">USD</option>
+              <option value="JPY">JPY</option>
+              <option value="CNY">CNY</option>
+              <option value="EUR">EUR</option>
+              <option value="KRW">KRW</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">배송비 (KRW)</label>
+          <input type="number" id="shippingFee" class="form-control" value="5000" min="0">
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">관세율 (%)</label>
+          <input type="number" id="customsRate" class="form-control" value="8" step="0.1" min="0" max="100">
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">마켓 수수료율 (%)</label>
+          <div class="d-flex gap-2 mb-1">
+            <button class="btn btn-outline-secondary btn-sm" onclick="setFee('marketFeeRate', 7.8)">쿠팡 7.8%</button>
+            <button class="btn btn-outline-secondary btn-sm" onclick="setFee('marketFeeRate', 6)">스스 6%</button>
+            <button class="btn btn-outline-secondary btn-sm" onclick="setFee('marketFeeRate', 7)">11번가 7%</button>
+            <button class="btn btn-outline-secondary btn-sm" onclick="setFee('marketFeeRate', 5)">WC 5%</button>
+          </div>
+          <input type="number" id="marketFeeRate" class="form-control" value="7.8" step="0.1" min="0" max="50">
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">PG 수수료율 (%)</label>
+          <input type="number" id="pgFeeRate" class="form-control" value="3.3" step="0.1" min="0" max="10">
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">목표 마진율: <span id="targetMarginDisplay" class="text-primary fw-bold">30</span>%</label>
+          <input type="range" class="form-range" id="targetMargin" min="5" max="70" value="30"
+                 oninput="document.getElementById('targetMarginDisplay').textContent=this.value">
+        </div>
+
+        <button class="btn btn-primary w-100" onclick="calcMargin()">🧮 계산하기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 결과 패널 -->
+  <div class="col-md-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <h6 class="fw-semibold mb-3">결과</h6>
+        <div id="calcResult">
+          <div class="text-muted text-center py-4">
+            입력값을 넣고 "계산하기"를 클릭하세요.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 마진 시나리오 테이블 -->
+    <div class="card border-0 shadow-sm mt-3">
+      <div class="card-body">
+        <h6 class="fw-semibold mb-2">📋 마진 시나리오 (5종)</h6>
+        <table class="table table-sm" id="scenarioTable">
+          <thead>
+            <tr>
+              <th>목표 마진</th>
+              <th>판매가 (KRW)</th>
+              <th>실제 마진</th>
+            </tr>
+          </thead>
+          <tbody id="scenarioBody">
+            <tr><td colspan="3" class="text-muted text-center">계산 후 표시됩니다.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function setFee(fieldId, value) {
+  document.getElementById(fieldId).value = value;
+}
+
+function calcMargin() {
+  const payload = {
+    buy_price: parseFloat(document.getElementById('buyPrice').value),
+    currency: document.getElementById('currency').value,
+    shipping_fee: parseFloat(document.getElementById('shippingFee').value) || 0,
+    customs_rate: parseFloat(document.getElementById('customsRate').value) || 0,
+    market_fee_rate: parseFloat(document.getElementById('marketFeeRate').value) || 0,
+    pg_fee_rate: parseFloat(document.getElementById('pgFeeRate').value) || 0,
+    target_margin_pct: parseFloat(document.getElementById('targetMargin').value) || 30,
+  };
+
+  fetch('/seller/pricing/calc', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (!data.ok) {
+      document.getElementById('calcResult').innerHTML =
+        `<div class="alert alert-danger">${data.error}</div>`;
+      return;
+    }
+    renderResult(data.result);
+    renderScenarios(payload);
+  });
+}
+
+function renderResult(r) {
+  const marginColor = r.actual_margin_pct >= 20 ? 'success' : r.actual_margin_pct >= 10 ? 'warning' : 'danger';
+  document.getElementById('calcResult').innerHTML = `
+    <div class="row g-3">
+      <div class="col-6">
+        <div class="text-muted small">매입가 (KRW)</div>
+        <div class="fs-5 fw-bold">₩${r.buy_price_krw.toLocaleString()}</div>
+        <div class="text-muted small">환율: 1 ${r.currency} = ₩${r.fx_rate_used}</div>
+      </div>
+      <div class="col-6">
+        <div class="text-muted small">관세</div>
+        <div class="fs-5">₩${r.customs_amount_krw.toLocaleString()}</div>
+      </div>
+      <div class="col-6">
+        <div class="text-muted small">배송비</div>
+        <div class="fs-5">₩${r.shipping_fee_krw.toLocaleString()}</div>
+      </div>
+      <div class="col-6">
+        <div class="text-muted small">총 원가</div>
+        <div class="fs-5 fw-semibold">₩${r.cost_krw.toLocaleString()}</div>
+      </div>
+      <div class="col-6">
+        <div class="text-muted small">🎯 권장 판매가</div>
+        <div class="fs-3 fw-bold text-primary">₩${r.sell_price_krw.toLocaleString()}</div>
+      </div>
+      <div class="col-6">
+        <div class="text-muted small">실제 마진</div>
+        <div class="fs-3 fw-bold text-${marginColor}">${r.actual_margin_pct}%</div>
+        <div class="text-muted small">₩${r.actual_margin_krw.toLocaleString()}</div>
+      </div>
+      <div class="col-12">
+        <div class="text-muted small">손익분기점</div>
+        <div class="fs-5">₩${r.breakeven_krw.toLocaleString()}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderScenarios(basePayload) {
+  const scenarios = [10, 20, 30, 40, 50];
+  const tbody = document.getElementById('scenarioBody');
+  tbody.innerHTML = '';
+
+  const promises = scenarios.map(margin => {
+    const p = Object.assign({}, basePayload, {target_margin_pct: margin});
+    return fetch('/seller/pricing/calc', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(p)
+    }).then(r => r.json()).then(data => ({margin, data}));
+  });
+
+  Promise.all(promises).then(results => {
+    tbody.innerHTML = '';
+    results.forEach(({margin, data}) => {
+      if (!data.ok) return;
+      const r = data.result;
+      const color = margin >= 20 ? 'text-success' : margin >= 10 ? 'text-warning' : 'text-danger';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${margin}%</td>
+        <td>₩${r.sell_price_krw.toLocaleString()}</td>
+        <td class="${color} fw-semibold">${r.actual_margin_pct}%</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  });
+}
+</script>
+{% endblock %}

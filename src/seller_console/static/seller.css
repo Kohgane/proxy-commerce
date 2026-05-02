@@ -1,0 +1,98 @@
+/* src/seller_console/static/seller.css — 셀러 콘솔 스타일 (Phase 122) */
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: #f5f7fa;
+}
+
+/* 사이드바 */
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.sidebar .nav-link {
+  font-size: 0.9rem;
+  padding: 6px 10px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+
+.sidebar .nav-link:hover,
+.sidebar .nav-link.text-white {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* 카드 공통 */
+.card {
+  border-radius: 10px;
+}
+
+/* KPI 값 */
+.kpi-value {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+/* 배지 */
+.badge {
+  font-weight: 500;
+}
+
+/* 테이블 */
+.table th {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #6c757d;
+  letter-spacing: 0.5px;
+}
+
+.table td {
+  font-size: 0.9rem;
+  vertical-align: middle;
+}
+
+/* 범위 슬라이더 */
+input[type="range"] {
+  accent-color: #0d6efd;
+}
+
+/* 토스트 */
+.toast {
+  min-width: 280px;
+}
+
+/* 이미지 갤러리 */
+#imageGallery img {
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+#imageGallery img:hover {
+  transform: scale(1.05);
+}
+
+/* 로딩 오버레이 */
+.loading-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+
+/* 반응형 */
+@media (max-width: 768px) {
+  .sidebar {
+    width: 180px !important;
+  }
+}
+
+@media (max-width: 576px) {
+  .sidebar {
+    display: none !important;
+  }
+}

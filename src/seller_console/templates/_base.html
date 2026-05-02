@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}셀러 콘솔{% endblock %} — kohganepercentiii.com</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="{{ url_for('seller_console.static', filename='seller.css') }}">
+</head>
+<body>
+<div class="d-flex" style="min-height:100vh;">
+  <!-- 사이드바 -->
+  <nav class="sidebar d-flex flex-column p-3" style="width:220px;min-height:100vh;background:#1a1a2e;flex-shrink:0;">
+    <a href="/seller/" class="text-white text-decoration-none mb-4 d-block">
+      <span class="fs-5 fw-bold">🛒 셀러 콘솔</span><br>
+      <small class="text-secondary" style="font-size:0.7rem;">kohganepercentiii.com</small>
+    </a>
+    <ul class="nav flex-column gap-1 flex-grow-1">
+      <li class="nav-item">
+        <a class="nav-link text-secondary {% if page == 'dashboard' %}text-white fw-semibold{% endif %}"
+           href="/seller/dashboard">📊 대시보드</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link text-secondary {% if page == 'collect' %}text-white fw-semibold{% endif %}"
+           href="/seller/collect">🔍 수동 수집기</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link text-secondary {% if page == 'pricing' %}text-white fw-semibold{% endif %}"
+           href="/seller/pricing">💰 마진 계산기</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link text-secondary {% if page == 'market_status' %}text-white fw-semibold{% endif %}"
+           href="/seller/market-status">🏪 마켓 현황</a>
+      </li>
+    </ul>
+    <div class="mt-auto pt-3 border-top border-secondary">
+      <a class="nav-link text-secondary small" href="/dashboard/">← 어드민</a>
+      <a class="nav-link text-secondary small" href="/seller/health">🟢 헬스</a>
+    </div>
+  </nav>
+
+  <!-- 메인 콘텐츠 -->
+  <main class="flex-grow-1 p-4" style="background:#f5f7fa;">
+    {% block content %}{% endblock %}
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="{{ url_for('seller_console.static', filename='seller.js') }}"></script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

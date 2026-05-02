@@ -1,0 +1,198 @@
+{% extends "_base.html" %}
+{% block title %}대시보드{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0 fw-bold">📊 셀러 대시보드</h4>
+  <div class="d-flex gap-2">
+    <a href="/seller/collect" class="btn btn-primary btn-sm">+ 수동 수집</a>
+    <a href="/seller/pricing" class="btn btn-outline-secondary btn-sm">마진 계산</a>
+    <a href="/seller/market-status" class="btn btn-outline-secondary btn-sm">마켓 동기화</a>
+  </div>
+</div>
+
+{% for widget in widgets %}
+  {% if widget.type == "kpi" %}
+  <!-- KPI 카드 -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <div class="text-muted small">📦 오늘 주문</div>
+          <div class="fs-3 fw-bold">{{ widget.data.order_count }}</div>
+          {% if widget.data.is_mock %}<span class="badge bg-warning text-dark" style="font-size:0.65rem;">mock</span>{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <div class="text-muted small">💵 GMV</div>
+          <div class="fs-3 fw-bold">₩{{ "{:,}".format(widget.data.gmv_krw) }}</div>
+          {% if widget.data.is_mock %}<span class="badge bg-warning text-dark" style="font-size:0.65rem;">mock</span>{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <div class="text-muted small">📈 마진</div>
+          <div class="fs-3 fw-bold">{{ widget.data.margin_pct }}%</div>
+          <div class="text-muted small">₩{{ "{:,}".format(widget.data.margin_krw) }}</div>
+          {% if widget.data.is_mock %}<span class="badge bg-warning text-dark" style="font-size:0.65rem;">mock</span>{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <div class="text-muted small">🆕 신규 수집</div>
+          <div class="fs-3 fw-bold">{{ widget.data.new_products_collected }}</div>
+          {% if widget.data.is_mock %}<span class="badge bg-warning text-dark" style="font-size:0.65rem;">mock</span>{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if widget.type == "queue" %}
+  <!-- 수집 큐 -->
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+      <h6 class="card-title">🔄 수집 큐 상태
+        {% if widget.data.is_mock %}<span class="badge bg-warning text-dark ms-1" style="font-size:0.65rem;">mock</span>{% endif %}
+      </h6>
+      <div class="d-flex gap-3 flex-wrap">
+        <span class="badge bg-secondary fs-6">대기 {{ widget.data.pending }}</span>
+        <span class="badge bg-info text-dark fs-6">번역중 {{ widget.data.translating }}</span>
+        <span class="badge bg-warning text-dark fs-6">검수중 {{ widget.data.reviewing }}</span>
+        <span class="badge bg-success fs-6">업로드완료 {{ widget.data.uploaded }}</span>
+        <span class="badge bg-light text-dark fs-6">합계 {{ widget.data.total }}</span>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if widget.type == "market_status" %}
+  <!-- 마켓 상태 -->
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+      <h6 class="card-title">🏪 마켓별 상품 상태
+        {% if widget.data.is_mock %}<span class="badge bg-warning text-dark ms-1" style="font-size:0.65rem;">mock</span>{% endif %}
+      </h6>
+      <div class="row g-2">
+        {% for m in widget.data.markets %}
+        <div class="col-md-4">
+          <div class="border rounded p-2">
+            <div class="fw-semibold mb-1">{{ m.label }}</div>
+            <span class="badge bg-success me-1">✅ 활성 {{ m.active }}</span>
+            <span class="badge bg-warning text-dark me-1">⚠️ 품절 {{ m.out_of_stock }}</span>
+            <span class="badge bg-danger">❌ 오류 {{ m.error }}</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if widget.type == "alerts" %}
+  <!-- 소싱처 알림 -->
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+      <h6 class="card-title">🔔 소싱처 알림
+        {% if widget.data.is_mock %}<span class="badge bg-warning text-dark ms-1" style="font-size:0.65rem;">mock</span>{% endif %}
+      </h6>
+      {% for alert in widget.data.alerts %}
+      <div class="alert
+        {% if alert.severity == 'error' %}alert-danger
+        {% elif alert.severity == 'warning' %}alert-warning
+        {% else %}alert-info{% endif %} py-1 px-2 mb-1 small">
+        <strong>{{ alert.label }}</strong>: {{ alert.product }}
+      </div>
+      {% endfor %}
+      {% if not widget.data.alerts %}<div class="text-muted small">알림 없음</div>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if widget.type == "returns_cs" %}
+  <!-- 반품/CS -->
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body d-flex gap-4 align-items-center">
+      <div>
+        <div class="text-muted small">반품 대기</div>
+        <span class="fs-4 fw-bold {% if widget.data.pending_returns > 0 %}text-danger{% endif %}">
+          {{ widget.data.pending_returns }}
+        </span>
+      </div>
+      <div>
+        <div class="text-muted small">CS 대기</div>
+        <span class="fs-4 fw-bold {% if widget.data.pending_cs > 0 %}text-warning{% endif %}">
+          {{ widget.data.pending_cs }}
+        </span>
+      </div>
+      <div>
+        <div class="text-muted small">에스컬레이션</div>
+        <span class="fs-4 fw-bold {% if widget.data.escalated > 0 %}text-danger{% endif %}">
+          {{ widget.data.escalated }}
+        </span>
+      </div>
+      {% if widget.data.is_mock %}<span class="badge bg-warning text-dark ms-auto" style="font-size:0.65rem;">mock</span>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if widget.type == "auto_purchase" %}
+  <!-- 자동 구매 큐 -->
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body d-flex gap-4 align-items-center">
+      <div>
+        <div class="text-muted small">대기</div>
+        <span class="fs-4 fw-bold">{{ widget.data.waiting }}</span>
+      </div>
+      <div>
+        <div class="text-muted small">처리중</div>
+        <span class="fs-4 fw-bold text-info">{{ widget.data.processing }}</span>
+      </div>
+      <div>
+        <div class="text-muted small">오늘 완료</div>
+        <span class="fs-4 fw-bold text-success">{{ widget.data.completed_today }}</span>
+      </div>
+      <div>
+        <div class="text-muted small">실패</div>
+        <span class="fs-4 fw-bold {% if widget.data.failed > 0 %}text-danger{% endif %}">{{ widget.data.failed }}</span>
+      </div>
+      {% if widget.data.is_mock %}<span class="badge bg-warning text-dark ms-auto" style="font-size:0.65rem;">mock</span>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if widget.type == "fx" %}
+  <!-- 환율 -->
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+      <h6 class="card-title">💱 환율
+        {% if widget.data.is_mock %}<span class="badge bg-warning text-dark ms-1" style="font-size:0.65rem;">mock</span>{% endif %}
+      </h6>
+      <div class="d-flex gap-3 flex-wrap">
+        <span><strong>USD</strong> ₩{{ widget.data.USD }}</span>
+        <span><strong>JPY</strong> ₩{{ widget.data.JPY }}</span>
+        <span><strong>CNY</strong> ₩{{ widget.data.CNY }}</span>
+        <span><strong>EUR</strong> ₩{{ widget.data.EUR }}</span>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if widget.status == "준비 중" %}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body text-muted small">{{ widget.title }} — 준비 중</div>
+  </div>
+  {% endif %}
+{% endfor %}
+
+{% if not widgets %}
+<div class="alert alert-info">위젯 데이터를 로드 중입니다...</div>
+{% endif %}
+{% endblock %}

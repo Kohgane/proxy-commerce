@@ -114,6 +114,7 @@
 | Phase 119 | 정산/회계 자동화 전체 사이클 (매출 인식, 매입 집계, 채널 수수료, FX 손익, 일/주/월 마감, 재무제표, 세무 리포트, 복식부기 원장, 이상거래 감지) | #PR | 2026-05-02 |
 | Phase 120 | 사이트 배포 + Cloudflare/Render 도메인 연결 + 운영 RUNBOOK 안정화 | #PR | 2026-05-02 |
 | Phase 121 | 도메인 배포 자동화 강화 (Hobby tier 슬롯 관리, --target auto 자동 조회, /health/ready soft-fail, kohganepercentiii.com 통합) | #PR | 2026-05-02 |
+| Phase 122 | 셀러 SaaS 코어 UI (셀러 대시보드 + 수동 수집기 + 마진 계산기 + 마켓 현황 + 비전 마스터 문서) | #PR | 2026-05-02 |
 
 ## 🚧 진행 중 Phase
 
@@ -1452,3 +1453,31 @@
 - API Blueprint: `src/api/security_advanced_api.py` (`/api/v1/security`) — 17개 엔드포인트 (RBAC7종/IP화이트리스트4종/API서명4종/보안감사2종)
 - 관련 코드: `src/security_advanced/`, `src/api/security_advanced_api.py`
 - 테스트: `tests/test_security_advanced.py` (100개 테스트)
+
+
+## Phase 122 — 셀러 SaaS 코어 UI ✅ 완료
+
+- `src/seller_console/` 신규 모듈: Flask Blueprint `/seller/*`
+- 셀러 대시보드 (`/seller/dashboard`): 오늘 KPI·수집큐·마켓현황·소싱알림·반품CS·자동구매큐·환율 위젯 (모두 graceful import + mock fallback)
+- 수동 수집기 UI (`/seller/collect`): URL 붙여넣기 → 메타데이터 추출 미리보기 → 마켓 업로드 (퍼센티 스타일)
+- 마진 계산기 (`/seller/pricing`): 매입가/통화/배송비/관세/마켓수수료/PG수수료/목표마진 → 판매가/실마진/손익분기점 + 5종 시나리오
+- 마켓 현황 (`/seller/market-status`): 쿠팡/스마트스토어/11번가 활성/품절/오류 카드 + 필터 + 30초 자동새로고침
+- `ManualCollectorService` + 어댑터 패턴: Amazon/Taobao/Alibaba/Porter/Memo/AloYoga/lululemon/PremiumSports/Generic (mock 구현)
+- `TaobaoSellerTrustChecker`: 별점/판매량/운영기간/부정리뷰/응답시간 기반 0~100점 + A/B/C/D 등급 (mock)
+- `UploadDispatcher`: 선택 마켓으로 비동기 업로드 (graceful import; 모듈 없으면 큐 적재)
+- `docs/vision/MASTER_VISION.md` + `GAP_ANALYSIS.md` + `PR_QUEUE.md` 신규 작성
+- 관련 코드: `src/seller_console/`, `docs/vision/`
+- 테스트: `tests/test_seller_console.py`
+
+## 🔭 향후 고려 (P1~P3 Queue)
+
+| Phase | 내용 | 우선순위 |
+|-------|------|----------|
+| Phase 123 | 신규 브랜드 어댑터 실연동 (Alo Yoga, lululemon, 프리미엄 스포츠) | P1 |
+| Phase 124 | 타오바오 셀러 신뢰도 실연동 + 자동 차단 | P2 |
+| Phase 125 | WooCommerce 마이그레이션 도구 (스마트스토어 → kohganemultishop.org 일괄 이전) | P2 |
+| Phase 126 | PortOne 결제 게이트웨이 연동 (한국 PG) | P2 |
+| Phase 127 | 배대지 확장 (미국/유럽/중국) | P2 |
+| Phase 128 | 신상품 자동 캐치 + 브랜드별 구독 알림 | P3 |
+| Phase 129 | 멀티테넌시 SaaS 활성화 (가입/요금제/공개) | P3 |
+| Phase 130 | 수입/수출 양방향 배송 자동화 (kohganemultishop.org 통합) | P3 |
