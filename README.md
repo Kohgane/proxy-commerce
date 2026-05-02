@@ -1,9 +1,57 @@
 # Proxy Commerce — 해외 구매대행 자동화 플랫폼
 
-> **Phase 1~8 완료** — 크롤링→번역→가격계산→주문라우팅→재고동기화→환율연동→BI→프로덕션 안정화
+> 🌐 **Live**: https://kohganepercenti.com (예정 · [배포 가이드](docs/deployment/DOMAIN_CLOUDFLARE.md))  
+> [![Render](https://img.shields.io/badge/Render-Deployed-46E3B7?logo=render)](https://dashboard.render.com)
+> [![Phase](https://img.shields.io/badge/Phase-120-blue)](ROADMAP.md)
+> [![Tests](https://img.shields.io/badge/Tests-7000%2B-brightgreen)](tests/)
 
 Python 3.11 + Flask 3 + Google Sheets 기반의 **완전 자동화된 해외 구매대행 운영 플랫폼**입니다.
 크롤링부터 주문 라우팅, 재고 동기화, BI 분석, Staging/Production 배포까지 모든 단계를 자동화합니다.
+
+---
+
+## 🚀 Quick Deploy (Render)
+
+1. **Fork** 또는 이 레포를 Render에 연결
+2. `render.yaml` Blueprint 자동 적용 → `proxy-commerce` 서비스 생성
+3. Render 대시보드 → **Environment** 에 시크릿 등록 ([환경변수 가이드](docs/deployment/ENV_VARS.md))
+4. `main` 브랜치 push 시 자동 배포
+
+```bash
+# 배포 후 헬스체크
+curl https://kohganepercenti.com/health
+python scripts/render_smoke.py https://kohganepercenti.com
+```
+
+> 📖 **전체 배포 가이드**: [docs/deployment/DOMAIN_CLOUDFLARE.md](docs/deployment/DOMAIN_CLOUDFLARE.md)
+
+---
+
+## 📚 운영 문서
+
+| 문서 | 내용 |
+|------|------|
+| [📋 RUNBOOK](docs/operations/RUNBOOK.md) | 일일/주간/월간 체크리스트, 장애 대응 플레이북 |
+| [🗺️ SYSTEM_OVERVIEW](docs/operations/SYSTEM_OVERVIEW.md) | Phase 1~120 전체 요약, 데이터 플로우 다이어그램 |
+| [✅ STABILIZATION_CHECKLIST](docs/operations/STABILIZATION_CHECKLIST.md) | Known limitation + 실서비스 전환 체크리스트 |
+| [🖥️ SITE_PREVIEW_GUIDE](docs/operations/SITE_PREVIEW_GUIDE.md) | 화면별 미리보기 + 수정 파일 매핑 |
+| [🔑 ENV_VARS](docs/deployment/ENV_VARS.md) | 환경변수 전체 목록 + Render 등록 방법 |
+| [🌐 DOMAIN_CLOUDFLARE](docs/deployment/DOMAIN_CLOUDFLARE.md) | 도메인 구매 + Cloudflare DNS 연결 상세 가이드 |
+
+---
+
+## 📊 Phase 누적 통계 (Phase 1 → 120)
+
+| 항목 | 수치 |
+|------|------|
+| 완료 Phase | 120 |
+| 총 테스트 수 | 7,000+ |
+| 주요 모듈 수 | 80+ |
+| API 엔드포인트 | 200+ |
+| 봇 커맨드 | 50+ |
+| 지원 판매 채널 | 쿠팡, 네이버, WooCommerce, Shopify |
+| 지원 소싱처 | Amazon US/JP, 타오바오, 1688 |
+| 지원 알림 채널 | 텔레그램, 이메일, 카카오 |
 
 ---
 
