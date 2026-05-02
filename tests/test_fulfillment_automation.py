@@ -561,7 +561,7 @@ class TestTrackingRegistry:
 # ─── 통합 플로우 테스트 ───────────────────────────────────────────────────────
 
 class TestFullFulfillmentAutomationFlow:
-    """outbound-confirmed → dispatch → tracking_register 전체 플로우."""
+    """outbound-confirmed → dispatch → tracking registration 전체 플로우."""
 
     def test_end_to_end_flow(self):
         from src.fulfillment_automation.dispatcher import AutoDispatcher
