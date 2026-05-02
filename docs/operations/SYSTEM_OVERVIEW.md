@@ -57,7 +57,7 @@
 ```mermaid
 sequenceDiagram
     participant BUYER as 구매자
-    participant SHOP as WooCommerce<br/>(kohganepercenti.com)
+    participant SHOP as WooCommerce<br/>(kohganepercentiii.com)
     participant APP as Flask App<br/>(Render)
     participant BOT as Telegram Bot
     participant SOURCE as 소싱처<br/>(타오바오/Amazon)
@@ -89,14 +89,14 @@ sequenceDiagram
 | 서비스 | 용도 | 환경변수 | 비고 |
 |--------|------|----------|------|
 | **Telegram** | 봇 알림 + 운영자 커맨드 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | BotFather에서 발급 |
-| **WooCommerce** | 메인 쇼핑몰 (주문/상품) | `WOO_BASE_URL`, `WOO_CK`, `WOO_CS` | kohganepercenti.com |
+| **WooCommerce** | 메인 쇼핑몰 (주문/상품) | `WOO_BASE_URL`, `WOO_CK`, `WOO_CS` | kohganepercentiii.com |
 | **Amazon SP-API** | 상품 수집 (US/JP) | `AMAZON_SP_*` | SP-API 계정 필요 |
 | **타오바오/1688** | 소싱처 (중국) | — (스크래핑) | IP 차단 주의 |
 | **쿠팡** | 판매 채널 | `COUPANG_ACCESS_KEY`, `COUPANG_SECRET_KEY` | 쿠팡 파트너스 |
 | **네이버 스마트스토어** | 판매 채널 | `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` | 네이버 커머스 API |
 | **Google Sheets** | 데이터 영속 (주문/재고/환율) | `GOOGLE_SERVICE_JSON_B64`, `GOOGLE_SHEET_ID` | Service Account |
 | **Render** | 호스팅 (Web Service, Docker) | `RENDER_API_TOKEN` | srv-d78d5rfkijhs73868f8g |
-| **Cloudflare** | DNS + CDN + WAF | `CF_API_TOKEN` | kohganepercenti.com |
+| **Cloudflare** | DNS + CDN + WAF | `CF_API_TOKEN` | kohganepercentiii.com |
 | **FX Provider** | 환율 (exchangerate-api / frankfurter) | — | `FX_DISABLE_NETWORK=1` 로 mock 가능 |
 | **토스페이먼츠** | PG (결제/환불) | `TOSS_CLIENT_KEY`, `TOSS_SECRET_KEY` | Phase 22 |
 | **Shopify** | 보조 판매 채널 | `SHOPIFY_SHOP`, `SHOPIFY_ACCESS_TOKEN` | 선택적 사용 |

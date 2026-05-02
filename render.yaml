@@ -4,7 +4,7 @@ services:
   # 제약사항:
   #   - RAM: 512MB (GUNICORN_WORKERS=2 권장)
   #   - 15분 비활성 시 슬립 (cold start 약 30~60초)
-  #   - 커스텀 도메인: kohganepercenti.com (별도 등록 필요)
+  #   - 커스텀 도메인: kohganepercentiii.com (별도 등록 필요)
   # ──────────────────────────────────────────────────────────────────
   - type: web
     name: proxy-commerce

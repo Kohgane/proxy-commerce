@@ -40,7 +40,7 @@
 
 | 변수명 | 설명 |
 |--------|------|
-| `WOO_BASE_URL` | WooCommerce 사이트 URL (예: `https://kohganepercenti.com`) |
+| `WOO_BASE_URL` | WooCommerce 사이트 URL (예: `https://kohganepercentiii.com`) |
 | `WOO_CK` | WooCommerce Consumer Key |
 | `WOO_CS` | WooCommerce Consumer Secret |
 | `WOO_WEBHOOK_SECRET` | WooCommerce 웹훅 시크릿 |

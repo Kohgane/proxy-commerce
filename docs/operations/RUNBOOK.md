@@ -95,10 +95,10 @@ flowchart TD
 
 ```bash
 # Render 서비스 헬스체크
-curl -sf https://kohganepercenti.com/health | python3 -m json.tool
+curl -sf https://kohganepercentiii.com/health | python3 -m json.tool
 
 # 상세 헬스체크
-curl -sf https://kohganepercenti.com/health/deep | python3 -m json.tool
+curl -sf https://kohganepercentiii.com/health/deep | python3 -m json.tool
 ```
 
 예상 응답:
@@ -114,7 +114,7 @@ curl -sf https://kohganepercenti.com/health/deep | python3 -m json.tool
 
 또는 API:
 ```bash
-curl -X POST https://kohganepercenti.com/api/v1/finance/close/daily \
+curl -X POST https://kohganepercentiii.com/api/v1/finance/close/daily \
   -H "Authorization: Bearer $JWT_TOKEN"
 ```
 
@@ -160,7 +160,7 @@ Phase 119 이상거래 감지기가 다음을 체크합니다:
 ### 4-2. 정산 배치 확정
 
 ```bash
-curl -X POST https://kohganepercenti.com/api/v1/finance/close/weekly \
+curl -X POST https://kohganepercentiii.com/api/v1/finance/close/weekly \
   -H "Authorization: Bearer $JWT_TOKEN"
 ```
 
@@ -197,12 +197,12 @@ level:error OR level:critical
 
 ```bash
 # CSV 형식
-curl "https://kohganepercenti.com/api/v1/finance/tax-report?year=2026&month=5&format=csv" \
+curl "https://kohganepercentiii.com/api/v1/finance/tax-report?year=2026&month=5&format=csv" \
   -H "Authorization: Bearer $JWT_TOKEN" \
   -o tax_report_2026_05.csv
 
 # JSON 형식
-curl "https://kohganepercenti.com/api/v1/finance/tax-report?year=2026&month=5&format=json" \
+curl "https://kohganepercentiii.com/api/v1/finance/tax-report?year=2026&month=5&format=json" \
   -H "Authorization: Bearer $JWT_TOKEN" \
   -o tax_report_2026_05.json
 ```
@@ -288,12 +288,12 @@ Phase 119 `anomaly_detector`에서 알림 도착 시:
    ```
 2. 해당 주문 ID로 수동 검토:
    ```bash
-   curl "https://kohganepercenti.com/api/v1/finance/ledger?order_id=<ID>" \
+   curl "https://kohganepercentiii.com/api/v1/finance/ledger?order_id=<ID>" \
      -H "Authorization: Bearer $JWT_TOKEN"
    ```
 3. 필요 시 수동 조정 후 원장 잠금:
    ```bash
-   curl -X POST "https://kohganepercenti.com/api/v1/finance/close/daily" \
+   curl -X POST "https://kohganepercentiii.com/api/v1/finance/close/daily" \
      -H "Authorization: Bearer $JWT_TOKEN"
    ```
 
