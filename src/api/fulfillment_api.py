@@ -1,4 +1,4 @@
-"""src/api/fulfillment_api.py — 풀필먼트 API Blueprint (Phase 103).
+"""src/api/fulfillment_api.py — 풀필먼트 API Blueprint (Phase 103 + Phase 84).
 
 Blueprint: /api/v1/fulfillment
 
@@ -17,6 +17,11 @@ Blueprint: /api/v1/fulfillment
   GET  /dashboard                     — 대시보드 데이터
   GET  /stats                         — 처리량 통계
   POST /batch-ship                    — 일괄 발송
+
+  Phase 84 — 풀필먼트 자동화:
+  POST /dispatch                      — 자동 발송 처리 (outbound-confirmed 이벤트 소비)
+  POST /automation/tracking/register  — 자동화 운송장 등록
+  GET  /status/<order_id>             — 자동화 주문 상태 조회
 """
 from __future__ import annotations
 
@@ -36,6 +41,10 @@ _shipping_manager = None
 _tracking_manager = None
 _delivery_tracker = None
 _dashboard = None
+
+# Phase 84 — 풀필먼트 자동화 서비스
+_auto_dispatcher = None
+_tracking_registry = None
 
 
 def _get_engine():
@@ -366,3 +375,71 @@ def batch_ship():
             logger.error("batch-ship 오류 order=%s: %s", oid, exc)
             errors.append({'order_id': oid, 'error': '발송 처리 중 오류가 발생했습니다'})
     return jsonify({'results': results, 'errors': errors, 'total': len(order_ids), 'success': len(results)})
+
+
+# ─── Phase 84: 풀필먼트 자동화 엔드포인트 ────────────────────────────────────
+
+
+def _get_auto_dispatcher():
+    global _auto_dispatcher
+    if _auto_dispatcher is None:
+        from ..fulfillment_automation.dispatcher import AutoDispatcher
+        _auto_dispatcher = AutoDispatcher()
+    return _auto_dispatcher
+
+
+def _get_tracking_registry():
+    global _tracking_registry
+    if _tracking_registry is None:
+        from ..fulfillment_automation.tracking_registry import TrackingRegistry
+        _tracking_registry = TrackingRegistry()
+    return _tracking_registry
+
+
+@fulfillment_bp.post('/dispatch')
+def dispatch():
+    """자동 발송 처리 — outbound-confirmed 이벤트를 소비해 국내 배송을 자동 발송한다."""
+    data = request.get_json(force=True, silent=True) or {}
+    dispatcher = _get_auto_dispatcher()
+    registry = _get_tracking_registry()
+    order = dispatcher.consume_outbound_confirmed(data)
+    if order.tracking_number:
+        registry.register_from_order(order)
+        dispatcher.notify_bot(order)
+    return jsonify(order.to_dict()), 201
+
+
+@fulfillment_bp.post('/automation/tracking/register')
+def automation_register_tracking():
+    """자동화 운송장 등록 — 주문 ID와 운송장 번호를 연결해 등록한다."""
+    data = request.get_json(force=True, silent=True) or {}
+    order_id = data.get('order_id', '')
+    tracking_number = data.get('tracking_number', '')
+    carrier_id = data.get('carrier_id', '')
+    if not order_id or not tracking_number or not carrier_id:
+        return jsonify({'error': 'order_id, tracking_number, carrier_id 필수'}), 400
+    registry = _get_tracking_registry()
+    info = registry.register(
+        order_id=order_id,
+        tracking_number=tracking_number,
+        carrier_id=carrier_id,
+        metadata=data.get('metadata', {}),
+    )
+    registry.notify_order_tracking(order_id, tracking_number, carrier_id)
+    return jsonify(info.to_dict()), 201
+
+
+@fulfillment_bp.get('/status/<order_id>')
+def get_fulfillment_status(order_id: str):
+    """자동화 주문 상태 조회 — 자동 발송 처리된 주문의 현재 상태를 반환한다."""
+    dispatcher = _get_auto_dispatcher()
+    order = dispatcher.get_order(order_id)
+    if order is None:
+        return jsonify({'error': '주문을 찾을 수 없습니다'}), 404
+    registry = _get_tracking_registry()
+    tracking_records = registry.get_by_order(order_id)
+    return jsonify({
+        'order': order.to_dict(),
+        'tracking': [t.to_dict() for t in tracking_records],
+    })
+

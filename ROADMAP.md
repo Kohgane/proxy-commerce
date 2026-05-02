@@ -1049,6 +1049,25 @@
 - 봇 커맨드: `/fulfillment_status`, `/inspect <order_id>`, `/ship <order_id>`, `/tracking <tracking_number>`, `/fulfillment_dashboard`
 - 관련 코드: `src/fulfillment/`, `src/api/fulfillment_api.py`, `src/bot/commands.py`
 
+## Phase 84 (fulfillment_automation) — 풀필먼트 자동화 심화 (국내 배송 자동 발송 + 운송장 자동 등록) ✅ 완료
+
+### 구현 내용
+- `FulfillmentStatus` Enum: pending/dispatching/dispatched/tracking_registered/in_transit/delivered/failed
+- `FulfillmentOrder` 데이터클래스 — order_id, outbound_request_id, package_ids, carrier_id, tracking_number, status, recipient_name, recipient_address, items, created_at, updated_at, metadata
+- `DispatchRequest` 데이터클래스 — dispatch_id, outbound_request_id, package_ids, carrier_id, recipient_name, recipient_address, weight_kg, strategy, created_at, metadata
+- `TrackingInfo` 데이터클래스 — tracking_id, order_id, tracking_number, carrier_id, carrier_name, status, events, registered_at, last_synced_at, metadata
+- `CarrierBase` ABC: carrier_id, name, base_cost_krw, avg_delivery_days, create_waybill(), request_pickup(), get_tracking()
+- `CJLogisticsCarrier`, `HanjinCarrier`, `LotteCarrier`: 택배사 mock 구현 (`src/fulfillment_automation/carriers/`)
+- `CarrierRegistry`: 택배사 등록/추천 — get(), list_carriers(), recommend(cheapest/fastest/balanced)
+- `AutoDispatcher`: 자동 발송 오케스트레이터 — consume_outbound_confirmed(), dispatch(), get_order(), list_orders(), get_stats(), notify_bot()
+- `TrackingRegistry`: 운송장 자동 등록/동기화 — register(), register_from_order(), sync_status(), sync_all(), get(), get_by_order(), list_all(), notify_order_tracking()
+- API 엔드포인트 추가 (`src/api/fulfillment_api.py`):
+  - `POST /api/v1/fulfillment/dispatch` — outbound-confirmed 이벤트 소비 후 자동 발송
+  - `POST /api/v1/fulfillment/automation/tracking/register` — 자동화 운송장 등록
+  - `GET  /api/v1/fulfillment/status/<order_id>` — 자동화 주문 상태 + 운송장 정보 조회
+- forwarding integration 연동: outbound-confirmed 이벤트 → 국내 배송 자동 발송 → 운송장 등록 → 봇 알림
+- 관련 코드: `src/fulfillment_automation/`, `src/api/fulfillment_api.py`
+
 ## Phase 104 — 타오바오/1688 자동 구매 규격 (에이전트 API or RPA) ✅ 완료
 
 ### 구현 내용
