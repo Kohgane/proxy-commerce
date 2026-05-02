@@ -246,8 +246,8 @@ def get_statement():
             'line_items': stmt.line_items,
             'totals': stmt.totals,
         }), 200
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
+    except ValueError:
+        return jsonify({'error': '지원하지 않는 재무제표 유형입니다.'}), 400
     except Exception as exc:
         logger.error("재무제표 생성 오류: %s", exc)
         return jsonify({'error': 'Internal server error'}), 500
@@ -268,7 +268,8 @@ def get_tax_report():
         if fmt == 'csv':
             csv_str = mgr._tax_reporter.export_csv(report)
             return Response(csv_str, mimetype='text/csv'), 200
-        return jsonify(mgr._tax_reporter.export_json(report)), 200
+        json_str = mgr._tax_reporter.export_json(report)
+        return Response(json_str, mimetype='application/json'), 200
     except Exception as exc:
         logger.error("세무 리포트 오류: %s", exc)
         return jsonify({'error': 'Internal server error'}), 500

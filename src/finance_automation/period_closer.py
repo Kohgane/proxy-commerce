@@ -1,6 +1,7 @@
 """src/finance_automation/period_closer.py — Phase 119: 기간 마감 처리."""
 from __future__ import annotations
 
+import calendar
 import logging
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -106,8 +107,10 @@ class PeriodCloser:
 
         anomalies = self._anomaly_det.run_all({'period': month_str})
         trial = self._ledger.trial_balance(month_str)
-        # 월의 마지막 날로 원장 잠금
-        lock_date = f'{month_str}-31'
+        # 월의 실제 마지막 날로 원장 잠금
+        year, month = int(month_str[:4]), int(month_str[5:7])
+        last_day = calendar.monthrange(year, month)[1]
+        lock_date = f'{month_str}-{last_day:02d}'
         self._ledger.lock_period(lock_date)
 
         close = PeriodClose(

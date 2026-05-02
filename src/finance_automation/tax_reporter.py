@@ -1,6 +1,7 @@
 """src/finance_automation/tax_reporter.py — Phase 119: 세무 리포트 생성."""
 from __future__ import annotations
 
+import calendar
 import csv
 import io
 import json
@@ -44,7 +45,9 @@ class TaxReporter:
         vat_receivable = (cogs_debit * _VAT_RATE).quantize(Decimal('1'))
 
         start = f'{period}-01'
-        end = f'{period}-31'
+        year, month = int(period[:4]), int(period[5:7])
+        last_day = calendar.monthrange(year, month)[1]
+        end = f'{period}-{last_day:02d}'
         cost_records = self._cost_agg.get_costs_by_period(start, end)
         customs_paid = sum(r.customs for r in cost_records)
 

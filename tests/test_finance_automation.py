@@ -1313,6 +1313,8 @@ class TestFinanceAutomationAPI:
     def test_get_tax_report_200(self, client):
         resp = client.get('/api/v1/finance/tax-report?period=2026-05')
         assert resp.status_code == 200
+        data = json.loads(resp.data)
+        assert 'period' in data
 
     def test_get_tax_report_400_missing_period(self, client):
         resp = client.get('/api/v1/finance/tax-report')

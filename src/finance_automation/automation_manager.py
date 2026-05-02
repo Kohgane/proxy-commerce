@@ -131,7 +131,8 @@ class FinanceAutomationManager:
         """
         if not week_str:
             now = datetime.now(timezone.utc)
-            week_str = now.strftime('%Y-W%W')
+            iso_cal = now.isocalendar()
+            week_str = f'{iso_cal[0]}-W{iso_cal[1]:02d}'
         return self._period_closer.close_weekly(week_str)
 
     def run_monthly_close(self, month_str: str = '') -> PeriodClose:
