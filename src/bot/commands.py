@@ -4816,3 +4816,76 @@ def cmd_delivery_anomalies() -> str:
     except Exception as exc:
         logger.error("cmd_delivery_anomalies 오류: %s", exc)
         return format_message('error', f'배송 이상 조회 실패: {exc}')
+
+
+# ── Phase 118: 반품/교환 자동 처리 봇 커맨드 ────────────────────────────────
+
+
+def cmd_return_request(args: str = '') -> str:
+    """/return_request <order_id> <reason_code> — 반품 요청 접수 (Phase 118)."""
+    parts = args.strip().split()
+    if len(parts) < 2:
+        return format_message('error', '사용법: /return_request <order_id> <reason_code>')
+    order_id, reason_code = parts[0], parts[1]
+    try:
+        from ..returns_automation.automation_manager import ReturnsAutomationManager
+        mgr = ReturnsAutomationManager()
+        req = mgr.submit_request(
+            order_id=order_id,
+            user_id='bot_user',
+            items=[{'sku': 'UNKNOWN', 'product_name': '봇 요청 상품', 'quantity': 1, 'unit_price': 0}],
+            reason_code=reason_code,
+            reason_text=f'봇 커맨드 반품 요청: {reason_code}',
+        )
+        data = req.to_dict()
+        return format_message('returns', [data], label=f'반품 접수: {req.request_id}')
+    except Exception as exc:
+        logger.error("cmd_return_request 오류: %s", exc)
+        return format_message('error', f'반품 요청 실패: {exc}')
+
+
+def cmd_return_status(request_id: str = '') -> str:
+    """/return_status <request_id> — 반품/교환 요청 상태 조회 (Phase 118)."""
+    rid = request_id.strip()
+    if not rid:
+        return format_message('error', '사용법: /return_status <request_id>')
+    try:
+        from ..returns_automation.automation_manager import ReturnsAutomationManager
+        mgr = ReturnsAutomationManager()
+        data = mgr.get_status(rid)
+        if data is None:
+            return format_message('error', f'요청을 찾을 수 없습니다: {rid}')
+        return format_message('returns', [data], label=f'반품 상태: {rid}')
+    except Exception as exc:
+        logger.error("cmd_return_status 오류: %s", exc)
+        return format_message('error', f'반품 상태 조회 실패: {exc}')
+
+
+def cmd_return_approve_auto(request_id: str = '') -> str:
+    """/return_approve_auto <request_id> — 반품 요청 수동 승인 (관리자, Phase 118)."""
+    rid = request_id.strip()
+    if not rid:
+        return format_message('error', '사용법: /return_approve_auto <request_id>')
+    try:
+        from ..returns_automation.automation_manager import ReturnsAutomationManager
+        mgr = ReturnsAutomationManager()
+        req = mgr.approve(rid, notes='관리자 봇 승인')
+        data = req.to_dict()
+        return format_message('returns', [data], label=f'승인 완료: {rid}')
+    except KeyError:
+        return format_message('error', f'요청을 찾을 수 없습니다: {rid}')
+    except Exception as exc:
+        logger.error("cmd_return_approve_auto 오류: %s", exc)
+        return format_message('error', f'반품 승인 실패: {exc}')
+
+
+def cmd_return_metrics() -> str:
+    """/return_metrics — 반품/교환 자동화 메트릭 조회 (Phase 118)."""
+    try:
+        from ..returns_automation.automation_manager import ReturnsAutomationManager
+        mgr = ReturnsAutomationManager()
+        data = mgr.metrics()
+        return format_message('analytics', data, label='반품/교환 자동화 메트릭')
+    except Exception as exc:
+        logger.error("cmd_return_metrics 오류: %s", exc)
+        return format_message('error', f'반품 메트릭 조회 실패: {exc}')
