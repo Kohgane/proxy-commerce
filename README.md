@@ -1,6 +1,6 @@
 # Proxy Commerce — 해외 구매대행 자동화 플랫폼
 
-> 🌐 **Live**: https://kohganepercenti.com (예정 · [배포 가이드](docs/deployment/DOMAIN_CLOUDFLARE.md))  
+> 🌐 **Live**: https://kohganepercentiii.com (예정 · [배포 가이드](docs/deployment/DOMAIN_CLOUDFLARE.md))  
 > [![Render](https://img.shields.io/badge/Render-Deployed-46E3B7?logo=render)](https://dashboard.render.com)
 > [![Phase](https://img.shields.io/badge/Phase-120-blue)](ROADMAP.md)
 > [![Tests](https://img.shields.io/badge/Tests-7000%2B-brightgreen)](tests/)
@@ -19,8 +19,8 @@ Python 3.11 + Flask 3 + Google Sheets 기반의 **완전 자동화된 해외 구
 
 ```bash
 # 배포 후 헬스체크
-curl https://kohganepercenti.com/health
-python scripts/render_smoke.py https://kohganepercenti.com
+curl https://kohganepercentiii.com/health
+python scripts/render_smoke.py https://kohganepercentiii.com
 ```
 
 > 📖 **전체 배포 가이드**: [docs/deployment/DOMAIN_CLOUDFLARE.md](docs/deployment/DOMAIN_CLOUDFLARE.md)

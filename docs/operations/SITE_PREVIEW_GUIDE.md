@@ -1,6 +1,6 @@
 # 사이트 미리보기 가이드 (SITE_PREVIEW_GUIDE.md)
 
-> `https://kohganepercenti.com` 에서 볼 수 있는 화면들과, 수정하고 싶을 때 어느 파일을 바꾸면 되는지 안내합니다.
+> `https://kohganepercentiii.com` 에서 볼 수 있는 화면들과, 수정하고 싶을 때 어느 파일을 바꾸면 되는지 안내합니다.
 
 ---
 
@@ -185,6 +185,6 @@ git push origin main
 
 # 3. Render 자동 배포 대기 (보통 3~5분)
 # 4. 배포 확인
-curl https://kohganepercenti.com/health
-python scripts/render_smoke.py https://kohganepercenti.com
+curl https://kohganepercentiii.com/health
+python scripts/render_smoke.py https://kohganepercentiii.com
 ```

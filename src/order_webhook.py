@@ -988,21 +988,32 @@ def health():
 @app.get('/health/ready')
 @limiter.limit(LIMIT_HEALTH)
 def readiness():
-    """Readiness check — 외부 의존성(Sheets 등) 연결 확인."""
+    """Readiness check — 외부 의존성(Sheets 등) 연결 확인.
+
+    optional 시크릿(GOOGLE_SERVICE_JSON_B64, GOOGLE_SHEET_ID 등) 미설정 시에는
+    HTTP 200 + degraded:true 를 반환합니다 (soft-fail).
+    진짜 fatal한 의존성(코어 DB 연결 등)만 503을 반환합니다.
+    """
     checks = {}
+    degraded = False
     try:
         from .utils.secret_check import check_secrets
         result = check_secrets('core')
-        checks['secrets_core'] = len(result['core']['missing']) == 0
+        secrets_ok = len(result['core']['missing']) == 0
+        checks['secrets_core'] = secrets_ok
+        # optional 시크릿 누락은 degraded 처리 (fatal 아님)
+        if not secrets_ok:
+            degraded = True
     except Exception:
         checks['secrets_core'] = False
+        degraded = True
 
-    all_ok = all(checks.values())
-    status_code = 200 if all_ok else 503
+    # fatal 의존성이 없으면 200 반환 (optional 누락은 degraded:true로만 표시)
     return jsonify({
-        "status": "ready" if all_ok else "not_ready",
+        "status": "ready",
+        "degraded": degraded,
         "checks": checks,
-    }), status_code
+    }), 200
 
 
 @app.get('/health/deep')

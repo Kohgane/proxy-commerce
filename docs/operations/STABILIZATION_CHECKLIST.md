@@ -78,10 +78,10 @@
 
 - [ ] `FX_DISABLE_NETWORK=0` 으로 전환 후 환율 API 정상 동작 확인
 - [ ] WooCommerce 환경변수 Render에 등록 (`WOO_BASE_URL`, `WOO_CK`, `WOO_CS`)
-- [ ] `kohganepercenti.com` 도메인 구매 (Cloudflare Registrar)
+- [ ] `kohganepercentiii.com` 도메인 구매 (Cloudflare Registrar)
 - [ ] Render 커스텀 도메인 추가 (`python scripts/render_domain_attach.py`)
 - [ ] Cloudflare DNS 설정 (`python scripts/cloudflare_setup.py`)
-- [ ] 헬스체크 확인: `curl https://kohganepercenti.com/health`
+- [ ] 헬스체크 확인: `curl https://kohganepercentiii.com/health`
 
 ### P1 — 이번 달
 
