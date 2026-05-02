@@ -170,7 +170,11 @@ for i in $(seq 1 "${MAX_WAIT}"); do
     HTTP_CODE=$(curl -o /dev/null -s -w "%{http_code}" \
         --max-time 15 \
         -L \
-        "https://${APEX}/health" 2>/dev/null || echo "000")
+        "https://${APEX}/health" 2>/tmp/deploy_curl_err.txt || echo "000")
+
+    if [[ -s /tmp/deploy_curl_err.txt ]]; then
+        warn "curl 에러 (참고): $(cat /tmp/deploy_curl_err.txt)"
+    fi
 
     if [[ "${HTTP_CODE}" == "200" ]]; then
         ok "SSL 발급 완료! https://${APEX}/health → HTTP ${HTTP_CODE}"
