@@ -1372,10 +1372,27 @@
 | Phase | 내용 |
 |---|---|
 | Phase 117 | 배송 추적 상태 기반 고객 알림 자동화 — 다국어 템플릿, 지연 감지, CS 자동 티켓 ✅ 완료 |
-| Phase 118 | 반품/교환 자동 처리 워크플로우 — 반품 요청 자동 승인, CS 연동, 환불 처리 자동화 |
+| Phase 118 | 반품/교환 자동 처리 워크플로우 — 자동 분류, 회수 운송장 자동 발급, 검수 자동 등급, 환불/교환 자동 처리, 분쟁 에스컬레이션 ✅ 완료 |
 | Phase 119 | 정산/회계 자동화 전체 사이클 — 주문→매입→배송→정산 전 사이클 자동화 |
 | Phase 120 | 세금계산서/영수증 자동 발행 — 전자세금계산서 API 연동 (홈택스/팝빌) |
 | Phase 121 | 매출 예측 고도화 — 시계열 분석 기반 매출/수요 예측 (Prophet/ARIMA) |
+
+## Phase 118 — 반품/교환 자동 처리 워크플로우 ✅ 완료
+
+- `ReturnClassifier`: 반품/교환 자동 분류 엔진 — 5가지 우선순위 규칙 (사진+손상/VIP변심/금액/30일초과/분쟁이력) → auto_approve/manual_review/auto_reject/dispute 분류
+- `AutoApprovalEngine`: 자동 승인 규칙 엔진 — ABC `ApprovalRule` + 5개 구현체 (BlacklistRule/AmountThresholdRule/ReasonBasedRule/CustomerTierRule/TimeWindowRule)
+- `ReverseLogisticsManager`: 회수 운송장 자동 발급 + 픽업 예약 (CJ/한진/우체국 mock) — Phase 27 ShipmentTracker 재사용
+- `InspectionOrchestrator`: 검수 자동화 — 사진/패키지 상태/중량차이 기반 A~D 등급 자동 추정 + Phase 37 InspectionService 위임
+- `RefundOrchestrator`: 환불 자동 처리 — PG 환불 mock + 포인트/쿠폰 환원 + NotificationHub 알림
+- `ExchangeOrchestrator`: 교환 자동 처리 — 재고 확인 → Phase 84 fulfillment 재dispatch + Phase 117 delivery_notifications 등록, 재고 부족 시 환불 fallback
+- `EscalationRouter`: 분쟁 에스컬레이션 — Phase 91 DisputeManager 연동 + Phase 28 TicketManager CS 티켓 생성 + 운영자 즉시 알림
+- `ReturnsAutomationWorkflow`: 상태머신 — requested→classified→approved/rejected/disputed→pickup_scheduled→in_return_transit→received→inspected→refunded/exchanged/partially_refunded
+- `ReturnsAutomationManager`: 통합 오케스트레이터 — submit_request/approve/reject/escalate/schedule_pickup/process_inspection/process_refund/process_exchange/metrics
+- `AutoReturnRequest`, `ExchangeRequest`, `ReturnDecision`, `ReturnReasonCategory`, `ReturnClassification`, `ReturnStatus` 데이터 모델
+- API Blueprint: `src/api/returns_automation_api.py` (`/api/v1/returns-automation`) — 12개 엔드포인트
+- 봇 커맨드: `/return_request`, `/return_status`, `/return_approve_auto`, `/return_metrics` (Phase 118 신규)
+- 관련 코드: `src/returns_automation/` (10개 파일), `src/api/returns_automation_api.py`
+- 테스트: `tests/test_returns_automation.py`
 
 ## Phase 117 — 배송 추적 상태 기반 고객 알림 자동화 ✅ 완료
 
