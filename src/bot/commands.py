@@ -4741,3 +4741,78 @@ def cmd_seller_dashboard() -> str:
     except Exception as exc:
         logger.error("cmd_seller_dashboard 오류: %s", exc)
         return format_message('error', f'대시보드 조회 실패: {exc}')
+
+
+def cmd_delivery_watch(args: str = '') -> str:
+    """/delivery_watch <order_id> <tracking_no> <carrier> — 배송 추적 등록."""
+    parts = args.strip().split()
+    if len(parts) < 3:
+        return format_message('error', '사용법: /delivery_watch <order_id> <tracking_no> <carrier>')
+    order_id, tracking_no, carrier = parts[0], parts[1], parts[2]
+    try:
+        from ..delivery_notifications.status_watcher import DeliveryStatusWatcher
+        watcher = DeliveryStatusWatcher()
+        entry = watcher.register(tracking_no, carrier, order_id, user_id='bot_user')
+        return format_message('tracking', {'tracking_no': entry.tracking_no, 'carrier': entry.carrier, 'order_id': entry.order_id, 'status': '등록됨'})
+    except Exception as exc:
+        logger.error("cmd_delivery_watch 오류: %s", exc)
+        return format_message('error', f'배송 추적 등록 실패: {exc}')
+
+
+def cmd_delivery_status(tracking_no: str = '') -> str:
+    """/delivery_status <tracking_no> — 배송 상태 조회."""
+    tn = tracking_no.strip()
+    if not tn:
+        return format_message('error', '사용법: /delivery_status <tracking_no>')
+    try:
+        from ..shipping.tracker import ShipmentTracker
+        tracker = ShipmentTracker()
+        record = tracker.get_status(tn)
+        if record is None:
+            return format_message('error', f'등록되지 않은 운송장: {tn}')
+        return format_message('tracking', record)
+    except Exception as exc:
+        logger.error("cmd_delivery_status 오류: %s", exc)
+        return format_message('error', f'배송 상태 조회 실패: {exc}')
+
+
+def cmd_delivery_prefs(user_id: str = '') -> str:
+    """/delivery_prefs — 본인 알림 설정 조회/변경."""
+    uid = user_id.strip() or 'bot_user'
+    try:
+        from ..delivery_notifications.customer_preferences import CustomerPreferenceManager
+        mgr = CustomerPreferenceManager()
+        pref = mgr.get(uid)
+        data = {
+            'user_id': pref.user_id,
+            'channels': pref.channels,
+            'language': pref.language,
+            'quiet_hours': f'{pref.quiet_hours_start}~{pref.quiet_hours_end}',
+            'frequency': pref.frequency,
+        }
+        return format_message('order_alerts', data, label='알림 설정')
+    except Exception as exc:
+        logger.error("cmd_delivery_prefs 오류: %s", exc)
+        return format_message('error', f'알림 설정 조회 실패: {exc}')
+
+
+def cmd_delivery_anomalies() -> str:
+    """/delivery_anomalies — 운영자용 감지된 지연/예외 목록."""
+    try:
+        from ..delivery_notifications.delay_detector import DeliveryDelayDetector
+        detector = DeliveryDelayDetector()
+        anomalies = detector.get_all_anomalies()
+        data = [
+            {
+                'tracking_no': a.tracking_no,
+                'type': a.anomaly_type,
+                'severity': a.severity,
+                'detected_at': a.detected_at,
+                'order_id': a.order_id,
+            }
+            for a in anomalies
+        ]
+        return format_message('order_alerts', data, label='배송 이상')
+    except Exception as exc:
+        logger.error("cmd_delivery_anomalies 오류: %s", exc)
+        return format_message('error', f'배송 이상 조회 실패: {exc}')
