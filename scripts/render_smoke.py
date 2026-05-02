@@ -64,9 +64,9 @@ def check_endpoint(base_url: str, path: str, optional: bool = False) -> bool:
         return False
 
 
-def wait_for_ready(base_url: str, retries: int = 10, interval: int = 15) -> bool:
+def wait_for_ready(base_url: str, retries: int = 20, interval: int = 20) -> bool:
     """서비스가 준비될 때까지 헬스체크를 반복합니다."""
-    print(f"\n[smoke] {base_url}/health 준비 대기 중 (최대 {retries}회, {interval}s 간격)…")
+    print(f"\n[smoke] {base_url}/health 준비 대기 중 (최대 {retries}회, {interval}s 간격, 약 {retries*interval//60}분)…")
     for i in range(1, retries + 1):
         try:
             with urllib.request.urlopen(f"{base_url.rstrip('/')}/health", timeout=TIMEOUT) as r:

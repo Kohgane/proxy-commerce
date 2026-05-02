@@ -15,9 +15,13 @@ if [ "${RUN_MIGRATIONS:-0}" = "1" ]; then
 fi
 
 # 시드 데이터 (옵션 — RUN_SEED=1 로 활성화, 프로덕션에서는 사용 자제)
-if [ "${RUN_SEED:-0}" = "1" ] && [ "${APP_ENV}" != "production" ]; then
-    echo "[start_render] Running seed data..."
-    python scripts/seed.py || { echo "[start_render] Seed failed"; exit 1; }
+if [ "${RUN_SEED:-0}" = "1" ]; then
+    if [ "${APP_ENV}" = "production" ]; then
+        echo "[start_render] WARNING: RUN_SEED=1 is set but APP_ENV=production — skipping seed to prevent data corruption."
+    else
+        echo "[start_render] Running seed data..."
+        python scripts/seed.py || { echo "[start_render] Seed failed"; exit 1; }
+    fi
 fi
 
 echo "[start_render] Starting gunicorn on 0.0.0.0:${PORT}..."
