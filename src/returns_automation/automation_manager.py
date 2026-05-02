@@ -327,6 +327,10 @@ class ReturnsAutomationManager:
             return None
         return req.to_dict()
 
+    def get_request_object(self, request_id: str) -> Optional[AutoReturnRequest]:
+        """요청 객체 반환 (API 레이어용 public 접근자)."""
+        return self._requests.get(request_id)
+
     def list_pending(
         self,
         status: Optional[str] = None,

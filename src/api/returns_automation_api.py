@@ -78,7 +78,7 @@ def submit_request():
         return jsonify(req.to_dict()), 201
     except Exception as exc:
         logger.error("반품 요청 접수 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ─── 상세 조회 ───────────────────────────────────────────────────────────────
@@ -94,7 +94,7 @@ def get_request(request_id: str):
         return jsonify(data), 200
     except Exception as exc:
         logger.error("요청 조회 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ─── 목록 조회 ───────────────────────────────────────────────────────────────
@@ -110,7 +110,7 @@ def list_requests():
         return jsonify({'requests': items, 'total': len(items)}), 200
     except Exception as exc:
         logger.error("요청 목록 조회 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ─── 강제 재분류 ─────────────────────────────────────────────────────────────
@@ -121,7 +121,7 @@ def reclassify(request_id: str):
     data = request.get_json(force=True, silent=True) or {}
     try:
         mgr = _get_manager()
-        req_obj = mgr._requests.get(request_id)
+        req_obj = mgr.get_request_object(request_id)
         if req_obj is None:
             return jsonify({'error': '요청을 찾을 수 없습니다.'}), 404
 
@@ -136,7 +136,7 @@ def reclassify(request_id: str):
         return jsonify({'request_id': request_id, 'classification': classification.value}), 200
     except Exception as exc:
         logger.error("재분류 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ─── 수동 승인 ───────────────────────────────────────────────────────────────
@@ -158,7 +158,7 @@ def approve_request(request_id: str):
         return jsonify({'error': '요청을 찾을 수 없습니다.'}), 404
     except Exception as exc:
         logger.error("수동 승인 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ─── 수동 거절 ───────────────────────────────────────────────────────────────
@@ -175,7 +175,7 @@ def reject_request(request_id: str):
         return jsonify({'error': '요청을 찾을 수 없습니다.'}), 404
     except Exception as exc:
         logger.error("수동 거절 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ─── 분쟁 에스컬레이션 ────────────────────────────────────────────────────────
@@ -192,7 +192,7 @@ def escalate_request(request_id: str):
         return jsonify({'error': '요청을 찾을 수 없습니다.'}), 404
     except Exception as exc:
         logger.error("에스컬레이션 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ─── 회수 픽업 예약 ──────────────────────────────────────────────────────────
@@ -212,10 +212,11 @@ def schedule_pickup(request_id: str):
     except KeyError:
         return jsonify({'error': '요청을 찾을 수 없습니다.'}), 404
     except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
+        logger.warning("픽업 예약 입력 오류: %s", exc)
+        return jsonify({'error': '잘못된 요청 데이터입니다.'}), 400
     except Exception as exc:
         logger.error("픽업 예약 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ─── 검수 등록 ───────────────────────────────────────────────────────────────
@@ -238,7 +239,7 @@ def inspect_request(request_id: str):
         return jsonify({'error': '요청을 찾을 수 없습니다.'}), 404
     except Exception as exc:
         logger.error("검수 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ─── 환불 처리 ───────────────────────────────────────────────────────────────
@@ -258,7 +259,7 @@ def process_refund(request_id: str):
         return jsonify({'error': '요청을 찾을 수 없습니다.'}), 404
     except Exception as exc:
         logger.error("환불 처리 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ─── 교환 처리 ───────────────────────────────────────────────────────────────
@@ -278,7 +279,7 @@ def process_exchange(request_id: str):
         return jsonify({'error': '요청을 찾을 수 없습니다.'}), 404
     except Exception as exc:
         logger.error("교환 처리 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ─── 메트릭 ─────────────────────────────────────────────────────────────────
@@ -291,4 +292,4 @@ def get_metrics():
         return jsonify(mgr.metrics()), 200
     except Exception as exc:
         logger.error("메트릭 조회 오류: %s", exc)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
