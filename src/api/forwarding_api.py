@@ -34,6 +34,15 @@ _consolidation_manager = None
 _tracker = None
 _estimator = None
 _agent_manager = None
+_fwd_engine = None
+
+
+def _get_fwd_engine():
+    global _fwd_engine
+    if _fwd_engine is None:
+        from ..forwarding_integration.forwarding_engine import ForwardingEngine
+        _fwd_engine = ForwardingEngine()
+    return _fwd_engine
 
 
 def _get_verifier():
@@ -437,4 +446,141 @@ def get_dashboard():
         })
     except Exception as exc:
         logger.error('get_dashboard error: %s', exc)
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+# ---------------------------------------------------------------------------
+# Phase 83: 배송대행 통합 자동화 엔드포인트
+# ---------------------------------------------------------------------------
+
+# POST /inbound/register
+@forwarding_bp.post('/inbound/register')
+def inbound_register():
+    """해외 구매 주문에서 입고를 등록한다."""
+    data = request.get_json(force=True, silent=True) or {}
+    purchase_order_id = data.get('purchase_order_id', '')
+    product_name = data.get('product_name', '')
+    provider = data.get('provider', 'malltail')
+
+    if not purchase_order_id or not product_name:
+        return jsonify({'error': 'purchase_order_id and product_name are required'}), 400
+
+    try:
+        engine = _get_fwd_engine()
+        registration = engine.register_inbound_from_purchase(
+            purchase_order_id=purchase_order_id,
+            product_name=product_name,
+            provider=provider,
+            quantity=int(data.get('quantity', 1)),
+            weight_kg=float(data.get('weight_kg', 0.0)),
+            customer_order_id=data.get('customer_order_id', ''),
+            origin_country=data.get('origin_country', 'US'),
+            destination_country=data.get('destination_country', 'KR'),
+        )
+        return jsonify(registration.to_dict()), 201
+    except KeyError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except Exception as exc:
+        logger.error('inbound_register error: %s', exc)
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+# POST /arrival/confirm
+@forwarding_bp.post('/arrival/confirm')
+def arrival_confirm():
+    """패키지 도착 이벤트를 확인한다."""
+    data = request.get_json(force=True, silent=True) or {}
+    package_id = data.get('package_id', '')
+    registration_id = data.get('registration_id', '')
+
+    if not package_id or not registration_id:
+        return jsonify({'error': 'package_id and registration_id are required'}), 400
+
+    try:
+        engine = _get_fwd_engine()
+        registration = engine.confirm_arrival(package_id, registration_id)
+        return jsonify(registration.to_dict())
+    except KeyError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except Exception as exc:
+        logger.error('arrival_confirm error: %s', exc)
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+# POST /consolidate
+@forwarding_bp.post('/consolidate')
+def consolidate():
+    """다중 패키지 합배송을 요청한다."""
+    data = request.get_json(force=True, silent=True) or {}
+    package_ids = data.get('package_ids', [])
+    provider = data.get('provider', 'malltail')
+    destination_country = data.get('destination_country', 'KR')
+
+    if not package_ids:
+        return jsonify({'error': 'package_ids is required'}), 400
+
+    try:
+        engine = _get_fwd_engine()
+        req = engine.request_consolidation(
+            package_ids=package_ids,
+            provider=provider,
+            destination_country=destination_country,
+        )
+        return jsonify(req.to_dict()), 201
+    except KeyError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        logger.error('consolidate error: %s', exc)
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+# POST /outbound/request
+@forwarding_bp.post('/outbound/request')
+def outbound_request():
+    """출고 배송을 요청한다."""
+    data = request.get_json(force=True, silent=True) or {}
+    package_ids = data.get('package_ids', [])
+    provider = data.get('provider', 'malltail')
+    destination_country = data.get('destination_country', 'KR')
+    recipient_name = data.get('recipient_name', '')
+    recipient_address = data.get('recipient_address', '')
+
+    if not package_ids:
+        return jsonify({'error': 'package_ids is required'}), 400
+    if not recipient_name or not recipient_address:
+        return jsonify({'error': 'recipient_name and recipient_address are required'}), 400
+
+    try:
+        engine = _get_fwd_engine()
+        req = engine.request_outbound(
+            package_ids=package_ids,
+            provider=provider,
+            destination_country=destination_country,
+            recipient_name=recipient_name,
+            recipient_address=recipient_address,
+        )
+        return jsonify(req.to_dict()), 201
+    except KeyError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        logger.error('outbound_request error: %s', exc)
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+# GET /status/<package_id>
+@forwarding_bp.get('/status/<package_id>')
+def get_forwarding_status(package_id: str):
+    """배송대행 패키지 상태를 조회한다."""
+    try:
+        engine = _get_fwd_engine()
+        status = engine.sync_status(package_id)
+        return jsonify(status.to_dict())
+    except KeyError:
+        return jsonify({'error': 'Package not found'}), 404
+    except Exception as exc:
+        logger.error('get_forwarding_status error: %s', exc)
         return jsonify({'error': 'Internal server error'}), 500
