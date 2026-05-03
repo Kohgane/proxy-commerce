@@ -1076,6 +1076,11 @@ def deep_health():
     now_iso = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
     uptime = round(time.time() - _START_TIME, 1)
 
+    def _safe_exc_msg(exc: Exception, max_len: int = 200) -> str:
+        """예외 메시지를 안전하게 반환 (스택트레이스 노출 방지)."""
+        msg = str(exc)
+        return msg[:max_len] if len(msg) > max_len else msg
+
     # 시트 ID 마스킹 helper
     def _mask(sid: str) -> str:
         if len(sid) <= 8:
@@ -1137,7 +1142,7 @@ def deep_health():
         check_list.append({
             "name": "google_credentials",
             "status": "fail",
-            "detail": str(exc),
+            "detail": _safe_exc_msg(exc),
             "hint": (
                 "Render Dashboard → Environment → Secret Files 에서 "
                 "service-account.json 등록 또는 GOOGLE_SERVICE_JSON_B64 환경변수 설정"
@@ -1156,7 +1161,7 @@ def deep_health():
         }), 200
     except Exception as exc:
         logger.warning("Deep health: credentials load unexpected error: %s", exc)
-        check_list.append({"name": "google_credentials", "status": "fail", "detail": str(exc)})
+        check_list.append({"name": "google_credentials", "status": "fail", "detail": _safe_exc_msg(exc)})
         check_list.append({"name": "google_sheets", "status": "skip", "detail": "google_credentials fail로 인해 스킵"})
         check_list.append({"name": "google_worksheets", "status": "skip", "detail": "google_credentials fail로 인해 스킵"})
         has_fail = True
@@ -1236,11 +1241,11 @@ def deep_health():
                     check_list.append({
                         "name": "google_worksheets",
                         "status": "fail",
-                        "detail": f"워크시트 조회 실패: {ws_exc}",
+                        "detail": f"워크시트 조회 실패: {_safe_exc_msg(ws_exc)}",
                     })
         except Exception as exc:
             logger.warning("Deep health: Google Sheets check failed: %s", exc)
-            check_list.append({"name": "google_sheets", "status": "fail", "detail": str(exc)})
+            check_list.append({"name": "google_sheets", "status": "fail", "detail": _safe_exc_msg(exc)})
             check_list.append({"name": "google_worksheets", "status": "skip", "detail": "google_sheets fail로 인해 스킵"})
 
     # 전체 상태 판단
