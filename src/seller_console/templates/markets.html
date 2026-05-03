@@ -107,8 +107,7 @@
         <tbody id="productTableBody">
           {% if items %}
             {% for item in items %}
-            <tr data-market="{{ item.marketplace }}" data-status="{{ item.state }}">
-              <td><span class="badge bg-secondary">{{ item.marketplace_label }}</span></td>
+            <tr data-market="{{ item.marketplace }}" data-status="{{ item.state }}">              <td><span class="badge bg-secondary">{{ item.marketplace_label }}</span></td>
               <td><code class="small">{{ item.product_id }}</code></td>
               <td>{{ item.title or '—' }}</td>
               <td><code class="small">{{ item.sku or '—' }}</code></td>
@@ -134,8 +133,8 @@
             </tr>
             {% endfor %}
           {% else %}
-            <!-- 시트에 데이터 없음 또는 mock 모드일 때 mock 샘플 표시 -->
-            <tr data-market="coupang smartstore 11st" data-status="active">
+            <!-- 시트에 데이터 없음 또는 mock 모드일 때 안내 메시지 표시 -->
+            <tr>
               <td colspan="7" class="text-center text-muted py-4">
                 {% if market_data.is_mock %}
                 <div>📋 <strong>Mock 모드</strong> — Google Sheets <code>catalog</code> 워크시트에 데이터를 추가하면 실 데이터가 표시됩니다.</div>

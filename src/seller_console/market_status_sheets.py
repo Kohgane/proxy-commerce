@@ -3,7 +3,7 @@
 시트 구조 (워크시트 `catalog`):
 | product_id | sku | title | marketplace | state | price_krw | last_synced_at | error_message |
 
-워크시트가 존재하지 않으면 자동 생성 + 헤더 작성.
+워크시트가 존재하지 않으면 AUTO_BOOTSTRAP_SHEETS=1 환경변수 설정 시 자동 생성 + 헤더 작성.
 시트를 열 수 없으면 mock 폴백으로 graceful 처리.
 """
 from __future__ import annotations

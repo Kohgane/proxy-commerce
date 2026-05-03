@@ -406,7 +406,7 @@ def markets_status():
         })
     except Exception as exc:
         logger.warning("markets_status API 오류: %s", exc)
-        return jsonify({"error": str(exc)}), 500
+        return jsonify({"error": "마켓 상태 조회 중 오류가 발생했습니다."}), 500
 
 
 @bp.post("/markets/sync")
@@ -429,7 +429,7 @@ def markets_sync():
         return jsonify(results)
     except Exception as exc:
         logger.warning("markets_sync API 오류: %s", exc)
-        return jsonify({"error": str(exc)}), 500
+        return jsonify({"error": "동기화 중 오류가 발생했습니다."}), 500
 
 
 @bp.get("/health")
