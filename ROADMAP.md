@@ -117,6 +117,16 @@
 | Phase 122 | 셀러 SaaS 코어 UI (셀러 대시보드 + 수동 수집기 + 마진 계산기 + 마켓 현황 + 비전 마스터 문서) | #PR | 2026-05-02 |
 | Phase 123 | 긴급 UI 픽스 (루트 페이지 + Admin escape + API docs 디자인 + 404 핸들러) | #PR | 2026-05-02 |
 | Phase 124 | UI 디자인 정상화 (CSP 경로별 분기, Admin escape 진짜 수정, /health/deep 디버그 detail 추가, Bootstrap 로딩 보장) | #PR | 2026-05-03 |
+| Phase 125 | 마진 계산기 실연동 (CostInput + MarginCalculator + 마켓 비교 UI + 실시간 환율) | #PR | 2026-05-03 |
+
+## 📋 다음 큐
+
+| Phase | 내용 |
+|---|---|
+| Phase 126 | 마켓 상태 실연동 (D — 쿠팡/스마트스토어/11번가 진짜 데이터) |
+| Phase 127 | PortOne 결제 연동 (F) |
+| Phase 128 | 수동 수집기 실연동 + Alo/Lululemon 어댑터 (A, B) |
+| Phase 129 | 인증 시스템 활성화 (E — Phase 24 OAuth 연결) |
 
 ## 🚧 진행 중 Phase
 

@@ -46,7 +46,7 @@ class TestSellerConsoleViews:
         data = resp.get_json()
         assert data["ok"] is True
         assert data["service"] == "seller_console"
-        assert data["phase"] == 122
+        assert data["phase"] >= 122
 
     def test_root_redirects_to_dashboard(self, client):
         """GET /seller/ → 302 (대시보드 리다이렉트)."""

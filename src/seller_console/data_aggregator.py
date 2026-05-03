@@ -263,6 +263,7 @@ def get_fx_rates() -> Dict[str, Any]:
     """환율 데이터 반환.
 
     Phase 19 (fx) 모듈 재사용. FX_DISABLE_NETWORK 가드 적용.
+    실시간 환율 사용 가능 시 source='realtime', 아니면 'env' 또는 'default'.
     """
     mock_data = {
         "USD": 1370.5,
@@ -271,6 +272,7 @@ def get_fx_rates() -> Dict[str, Any]:
         "EUR": 1485.0,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "is_mock": True,
+        "source": "default",
     }
 
     if _FX_DISABLE_NETWORK:
@@ -278,14 +280,44 @@ def get_fx_rates() -> Dict[str, Any]:
         return mock_data
 
     try:
-        fx_mod = _safe_import("src.fx")
-        if fx_mod and hasattr(fx_mod, "get_rates"):
-            rates = fx_mod.get_rates()
-            if rates:
-                mock_data.update(rates)
-                mock_data["is_mock"] = False
+        from src.fx.provider import FXProvider  # type: ignore
+        provider = FXProvider()
+        rates = provider.get_rates()
+        if rates:
+            result = dict(mock_data)
+            if "USDKRW" in rates:
+                result["USD"] = float(rates["USDKRW"])
+            if "JPYKRW" in rates:
+                result["JPY"] = float(rates["JPYKRW"])
+            if "EURKRW" in rates:
+                result["EUR"] = float(rates["EURKRW"])
+            if "CNYKRW" in rates:
+                result["CNY"] = float(rates["CNYKRW"])
+            result["updated_at"] = rates.get("fetched_at", datetime.now(timezone.utc).isoformat())
+            result["source"] = rates.get("provider", "realtime")
+            result["is_mock"] = False
+            return result
     except Exception as exc:
-        logger.debug("fx 환율 조회 실패 (mock 사용): %s", exc)
+        logger.debug("FXProvider 환율 조회 실패 (mock 사용): %s", exc)
+
+    # 환경변수 폴백
+    env_usd = os.getenv("FX_USDKRW")
+    env_jpy = os.getenv("FX_JPYKRW")
+    env_eur = os.getenv("FX_EURKRW")
+    env_cny = os.getenv("FX_CNYKRW")
+    if any([env_usd, env_jpy, env_eur, env_cny]):
+        result = dict(mock_data)
+        if env_usd:
+            result["USD"] = float(env_usd)
+        if env_jpy:
+            result["JPY"] = float(env_jpy)
+        if env_eur:
+            result["EUR"] = float(env_eur)
+        if env_cny:
+            result["CNY"] = float(env_cny)
+        result["source"] = "env"
+        result["is_mock"] = False
+        return result
 
     return mock_data
 

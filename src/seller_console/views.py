@@ -1,4 +1,4 @@
-"""src/seller_console/views.py — 셀러 콘솔 Flask Blueprint (Phase 122).
+"""src/seller_console/views.py — 셀러 콘솔 Flask Blueprint (Phase 125).
 
 라우트:
   GET  /seller/              → 메인 대시보드 (리다이렉트)
@@ -7,9 +7,11 @@
   POST /seller/collect/preview → URL → 메타데이터 추출 결과 (JSON)
   POST /seller/collect/upload  → 마켓 업로드 트리거 (JSON)
   GET  /seller/pricing       → 마진 계산기
-  POST /seller/pricing/calc  → 마진 계산 결과 (JSON)
+  POST /seller/pricing/calc  → 단일 마켓 마진 계산 (JSON)
+  POST /seller/pricing/compare → 여러 마켓 비교 계산 (JSON)
   GET  /seller/market-status → 마켓 현황
   GET  /seller/health        → 셀러 콘솔 헬스체크
+  POST /api/v1/pricing/calculate → 공개 API (인증 stub)
 
 인증: 현재 stub 미들웨어만 (다음 PR에서 Phase 24 OAuth 연결 예정).
 """
@@ -18,6 +20,8 @@ from __future__ import annotations
 import logging
 import os
 from typing import Any, Dict
+
+from decimal import Decimal, InvalidOperation
 
 from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 
@@ -196,12 +200,25 @@ def pricing():
     if not _check_auth():
         return redirect(url_for("seller_console.index"))
 
-    return render_template("pricing_console.html", page="pricing")
+    all_marketplaces = [
+        {"id": "coupang", "label": "쿠팡"},
+        {"id": "smartstore", "label": "스마트스토어"},
+        {"id": "11st", "label": "11번가"},
+        {"id": "kohganemultishop", "label": "코가네멀티샵"},
+        {"id": "shopify", "label": "Shopify"},
+    ]
+    return render_template(
+        "pricing_console.html",
+        page="pricing",
+        all_marketplaces=all_marketplaces,
+        default_currencies=["KRW", "USD", "JPY", "EUR", "CNY"],
+        default_target_margin=22,
+    )
 
 
 @bp.post("/pricing/calc")
 def pricing_calc():
-    """마진 계산 결과 (JSON).
+    """단일 마켓 마진 계산 (JSON).
 
     Request body: 계산 파라미터
     Response: {"ok": true, "result": {...}}
@@ -209,33 +226,120 @@ def pricing_calc():
     data = request.get_json(force=True, silent=True) or {}
 
     try:
-        buy_price = float(data.get("buy_price", 0))
+        buy_price = Decimal(str(data.get("buy_price", 0)))
         currency = str(data.get("currency", "USD")).upper()
-        shipping_fee = float(data.get("shipping_fee", 0))
-        customs_rate = float(data.get("customs_rate", 0))
-        market_fee_rate = float(data.get("market_fee_rate", 0))
-        pg_fee_rate = float(data.get("pg_fee_rate", 0))
-        target_margin_pct = float(data.get("target_margin_pct", 30))
-    except (TypeError, ValueError):
+        qty = int(data.get("qty", 1))
+        forwarder_fee = Decimal(str(data.get("forwarder_fee", 0)))
+        international_shipping = Decimal(str(data.get("international_shipping", 0)))
+        domestic_shipping = Decimal(str(data.get("domestic_shipping", 0)))
+        # 하위 호환: shipping_fee → domestic_shipping 으로 매핑
+        if "shipping_fee" in data and not data.get("domestic_shipping"):
+            domestic_shipping = Decimal(str(data["shipping_fee"]))
+        customs_rate_pct = Decimal(str(data.get("customs_rate", 20)))
+        customs_rate = customs_rate_pct / Decimal("100")
+        marketplace = str(data.get("marketplace", "coupang"))
+        # 하위 호환: market_fee_rate 직접 지정 허용
+        if "market_fee_rate" in data:
+            commission_rate = Decimal(str(data["market_fee_rate"]))
+        else:
+            from .margin_calculator import default_commission_rate
+            commission_rate = default_commission_rate(marketplace)
+        pg_fee_rate = Decimal(str(data.get("pg_fee_rate", 0)))
+        target_margin_pct = Decimal(str(data.get("target_margin_pct", 22)))
+        sell_price_raw = data.get("sell_price")
+        sell_price = Decimal(str(sell_price_raw)) if sell_price_raw else None
+        fx_override_raw = data.get("fx_override") or data.get("fx_rate")
+        fx_override = Decimal(str(fx_override_raw)) if fx_override_raw else None
+    except (TypeError, ValueError, InvalidOperation):
         return jsonify({"ok": False, "error": "입력값 형식이 올바르지 않습니다."}), 400
 
-    if buy_price <= 0:
+    if buy_price <= Decimal("0"):
         return jsonify({"ok": False, "error": "매입가를 입력하세요."}), 400
 
     try:
-        from .data_aggregator import calculate_margin
-        result = calculate_margin(
+        from .margin_calculator import CostInput, MarginCalculator, MarketInput
+        cost = CostInput(
             buy_price=buy_price,
-            currency=currency,
-            shipping_fee=shipping_fee,
+            buy_currency=currency,
+            qty=qty,
+            forwarder_fee=forwarder_fee,
+            international_shipping=international_shipping,
+            domestic_shipping=domestic_shipping,
             customs_rate=customs_rate,
-            market_fee_rate=market_fee_rate,
+            fx_override=fx_override,
+        )
+        market = MarketInput(
+            marketplace=marketplace,
+            commission_rate=commission_rate,
             pg_fee_rate=pg_fee_rate,
             target_margin_pct=target_margin_pct,
         )
-        return jsonify({"ok": True, "result": result})
+        calc = MarginCalculator()
+        result = calc.calculate(cost, market, sell_price=sell_price)
+        return jsonify({"ok": True, "result": _result_to_dict(result)})
     except Exception as exc:
         logger.warning("마진 계산 오류: %s", exc)
+        return jsonify({"ok": False, "error": "계산 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/pricing/compare")
+def pricing_compare():
+    """여러 마켓 동시 비교 (JSON).
+
+    Request body: 계산 파라미터 + marketplaces 목록
+    Response: {"ok": true, "results": [...]}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+
+    try:
+        buy_price = Decimal(str(data.get("buy_price", 0)))
+        currency = str(data.get("currency", "USD")).upper()
+        qty = int(data.get("qty", 1))
+        forwarder_fee = Decimal(str(data.get("forwarder_fee", 0)))
+        international_shipping = Decimal(str(data.get("international_shipping", 0)))
+        domestic_shipping = Decimal(str(data.get("domestic_shipping", 0)))
+        if "shipping_fee" in data and not data.get("domestic_shipping"):
+            domestic_shipping = Decimal(str(data["shipping_fee"]))
+        customs_rate_pct = Decimal(str(data.get("customs_rate", 20)))
+        customs_rate = customs_rate_pct / Decimal("100")
+        target_margin_pct = Decimal(str(data.get("target_margin_pct", 22)))
+        marketplaces = data.get("marketplaces") or ["coupang", "smartstore", "11st", "kohganemultishop"]
+        sell_price_raw = data.get("sell_price")
+        sell_price = Decimal(str(sell_price_raw)) if sell_price_raw else None
+        fx_override_raw = data.get("fx_override") or data.get("fx_rate")
+        fx_override = Decimal(str(fx_override_raw)) if fx_override_raw else None
+    except (TypeError, ValueError, InvalidOperation):
+        return jsonify({"ok": False, "error": "입력값 형식이 올바르지 않습니다."}), 400
+
+    if buy_price <= Decimal("0"):
+        return jsonify({"ok": False, "error": "매입가를 입력하세요."}), 400
+
+    try:
+        from .margin_calculator import CostInput, MarginCalculator
+        cost = CostInput(
+            buy_price=buy_price,
+            buy_currency=currency,
+            qty=qty,
+            forwarder_fee=forwarder_fee,
+            international_shipping=international_shipping,
+            domestic_shipping=domestic_shipping,
+            customs_rate=customs_rate,
+            fx_override=fx_override,
+        )
+        cost.customs_threshold_krw = Decimal(str(data.get("customs_threshold_krw", 150000)))
+        calc = MarginCalculator()
+        results = calc.compare_marketplaces(
+            cost,
+            marketplaces=marketplaces,
+            sell_price=sell_price,
+        )
+        return jsonify({
+            "ok": True,
+            "results": [_result_to_dict(r) for r in results],
+            "target_margin_pct": str(target_margin_pct),
+        })
+    except Exception as exc:
+        logger.warning("마진 비교 계산 오류: %s", exc)
         return jsonify({"ok": False, "error": "계산 중 오류가 발생했습니다."}), 500
 
 
@@ -261,6 +365,107 @@ def health():
     return jsonify({
         "ok": True,
         "service": "seller_console",
-        "phase": 122,
+        "phase": 125,
         "auth_enabled": _AUTH_ENABLED,
     })
+
+
+# ---------------------------------------------------------------------------
+# 헬퍼: MarginResult → dict 직렬화
+# ---------------------------------------------------------------------------
+
+def _result_to_dict(result) -> Dict[str, Any]:
+    """MarginResult 인스턴스를 JSON 직렬화 가능한 dict로 변환."""
+    try:
+        from .margin_calculator import MarginCalculator
+        labels = MarginCalculator.MARKETPLACE_LABELS
+    except Exception:
+        labels = {
+            "coupang": "쿠팡", "smartstore": "스마트스토어", "11st": "11번가",
+            "kohganemultishop": "코가네멀티샵", "shopify": "Shopify",
+        }
+    return {
+        "marketplace": result.marketplace,
+        "marketplace_label": labels.get(result.marketplace, result.marketplace),
+        "cost_in_krw": int(result.cost_in_krw),
+        "customs_in_krw": int(result.customs_in_krw),
+        "total_landed_cost": int(result.total_landed_cost),
+        "recommended_price": int(result.recommended_price),
+        "given_price": int(result.given_price) if result.given_price is not None else None,
+        "actual_margin_krw": int(result.actual_margin_krw),
+        "actual_margin_pct": float(result.actual_margin_pct),
+        "breakeven_price": int(result.breakeven_price),
+        "fx_used": result.fx_used,
+        "warnings": result.warnings,
+        # 하위 호환 필드 (기존 UI가 참조)
+        "buy_price_krw": int(result.cost_in_krw),
+        "customs_amount_krw": int(result.customs_in_krw),
+        "cost_krw": int(result.total_landed_cost),
+        "sell_price_krw": int(result.given_price if result.given_price is not None else result.recommended_price),
+        "breakeven_krw": int(result.breakeven_price),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 공개 API — /api/v1/pricing/calculate
+# ---------------------------------------------------------------------------
+
+# 공개 API Blueprint 없이 직접 메인 앱에 붙이기 위해 lazy registration 패턴
+def _register_api_routes(app):
+    """메인 Flask 앱에 공개 마진 계산 API 라우트 등록."""
+
+    @app.route("/api/v1/pricing/calculate", methods=["POST"])
+    def api_pricing_calculate():
+        """공개 마진 계산 API.
+
+        Request body: 계산 파라미터 (pricing/calc 와 동일)
+        Response: {"ok": true, "result": {...}}
+        """
+        # 인증 stub — Phase 24/129에서 실제 토큰 검증으로 교체
+        data = request.get_json(force=True, silent=True) or {}
+        try:
+            buy_price = Decimal(str(data.get("buy_price", 0)))
+            currency = str(data.get("currency", "USD")).upper()
+            marketplace = str(data.get("marketplace", "coupang"))
+            customs_rate_pct = Decimal(str(data.get("customs_rate", 20)))
+            customs_rate = customs_rate_pct / Decimal("100")
+            domestic_shipping = Decimal(str(data.get("domestic_shipping") or data.get("shipping_fee", 0)))
+            international_shipping = Decimal(str(data.get("international_shipping", 0)))
+            forwarder_fee = Decimal(str(data.get("forwarder_fee", 0)))
+            if "market_fee_rate" in data:
+                commission_rate = Decimal(str(data["market_fee_rate"]))
+            else:
+                from .margin_calculator import default_commission_rate
+                commission_rate = default_commission_rate(marketplace)
+            pg_fee_rate = Decimal(str(data.get("pg_fee_rate", 0)))
+            target_margin_pct = Decimal(str(data.get("target_margin_pct", 22)))
+            sell_price_raw = data.get("sell_price")
+            sell_price = Decimal(str(sell_price_raw)) if sell_price_raw else None
+        except (TypeError, ValueError, InvalidOperation):
+            return jsonify({"ok": False, "error": "입력값 형식이 올바르지 않습니다."}), 400
+
+        if buy_price <= Decimal("0"):
+            return jsonify({"ok": False, "error": "매입가를 입력하세요."}), 400
+
+        try:
+            from .margin_calculator import CostInput, MarginCalculator, MarketInput
+            cost = CostInput(
+                buy_price=buy_price,
+                buy_currency=currency,
+                forwarder_fee=forwarder_fee,
+                international_shipping=international_shipping,
+                domestic_shipping=domestic_shipping,
+                customs_rate=customs_rate,
+            )
+            market = MarketInput(
+                marketplace=marketplace,
+                commission_rate=commission_rate,
+                pg_fee_rate=pg_fee_rate,
+                target_margin_pct=target_margin_pct,
+            )
+            calc = MarginCalculator()
+            result = calc.calculate(cost, market, sell_price=sell_price)
+            return jsonify({"ok": True, "result": _result_to_dict(result)})
+        except Exception as exc:
+            logger.warning("공개 API 마진 계산 오류: %s", exc)
+            return jsonify({"ok": False, "error": "계산 중 오류가 발생했습니다."}), 500
