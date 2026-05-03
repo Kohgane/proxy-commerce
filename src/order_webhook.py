@@ -1088,15 +1088,11 @@ def deep_health():
         logger.warning("Deep health: secret check failed: %s", exc)
         check_list.append({"name": "secrets_core", "status": "fail", "detail": str(exc)})
 
-    # 2) Google Sheets 연결 확인
+    # 2) Google Sheets 연결 확인 (단계별 진단)
     try:
-        from .utils.sheets import open_sheet
-        sheet_id = os.getenv('GOOGLE_SHEET_ID', '')
-        if sheet_id:
-            open_sheet(sheet_id, os.getenv('WORKSHEET', 'catalog'))
-            check_list.append({"name": "google_sheets", "status": "ok", "detail": "연결 성공"})
-        else:
-            check_list.append({"name": "google_sheets", "status": "skip", "detail": "GOOGLE_SHEET_ID 미설정"})
+        from .utils.sheets import diagnose_sheets_connection
+        diag = diagnose_sheets_connection()
+        check_list.append({"name": "google_sheets", **diag})
     except Exception as exc:
         logger.warning("Deep health: Google Sheets check failed: %s", exc)
         check_list.append({"name": "google_sheets", "status": "fail", "detail": str(exc)})

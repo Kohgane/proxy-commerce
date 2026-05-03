@@ -115,6 +115,8 @@
 | Phase 120 | 사이트 배포 + Cloudflare/Render 도메인 연결 + 운영 RUNBOOK 안정화 | #PR | 2026-05-02 |
 | Phase 121 | 도메인 배포 자동화 강화 (Hobby tier 슬롯 관리, --target auto 자동 조회, /health/ready soft-fail, kohganepercentiii.com 통합) | #PR | 2026-05-02 |
 | Phase 122 | 셀러 SaaS 코어 UI (셀러 대시보드 + 수동 수집기 + 마진 계산기 + 마켓 현황 + 비전 마스터 문서) | #PR | 2026-05-02 |
+| Phase 123 | 긴급 UI 픽스 (루트 페이지 + Admin escape + API docs 디자인 + 404 핸들러) | #PR | 2026-05-02 |
+| Phase 124 | UI 디자인 정상화 (CSP 경로별 분기, Admin escape 진짜 수정, /health/deep 디버그 detail 추가, Bootstrap 로딩 보장) | #PR | 2026-05-03 |
 
 ## 🚧 진행 중 Phase
 

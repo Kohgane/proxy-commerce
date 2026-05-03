@@ -116,3 +116,79 @@ class TestReadinessEndpoint:
         resp = client.get('/health/ready')
         data = json.loads(resp.data)
         assert isinstance(data['degraded'], bool)
+
+
+# ══════════════════════════════════════════════════════════
+# GET /health/deep — 상세 진단 응답 포맷 검증
+# ══════════════════════════════════════════════════════════
+
+class TestDeepHealthResponseFormat:
+    def test_deep_health_checks_is_list(self, client):
+        """/health/deep 응답의 checks 필드는 list 형식이어야 한다."""
+        from unittest.mock import patch, MagicMock
+        with patch('src.utils.secret_check.check_secrets') as mock_check, \
+             patch('src.utils.sheets.diagnose_sheets_connection') as mock_diag:
+            mock_check.return_value = {
+                'core': {'set': ['GOOGLE_SERVICE_JSON_B64', 'GOOGLE_SHEET_ID'], 'missing': []}
+            }
+            mock_diag.return_value = {"status": "ok", "detail": "연결 성공"}
+            resp = client.get('/health/deep')
+        data = json.loads(resp.data)
+        assert isinstance(data['checks'], list)
+
+    def test_deep_health_each_check_has_required_keys(self, client):
+        """각 check 항목은 name, status, detail 키를 가져야 한다."""
+        from unittest.mock import patch, MagicMock
+        with patch('src.utils.secret_check.check_secrets') as mock_check, \
+             patch('src.utils.sheets.diagnose_sheets_connection') as mock_diag:
+            mock_check.return_value = {
+                'core': {'set': ['GOOGLE_SERVICE_JSON_B64', 'GOOGLE_SHEET_ID'], 'missing': []}
+            }
+            mock_diag.return_value = {"status": "ok", "detail": "연결 성공"}
+            resp = client.get('/health/deep')
+        data = json.loads(resp.data)
+        for check in data['checks']:
+            assert 'name' in check
+            assert 'status' in check
+            assert 'detail' in check
+
+    def test_deep_health_google_sheets_fail_has_hint(self, client):
+        """google_sheets fail 케이스에서 hint 필드가 노출되어야 한다."""
+        from unittest.mock import patch
+        with patch('src.utils.secret_check.check_secrets') as mock_check, \
+             patch('src.utils.sheets.diagnose_sheets_connection') as mock_diag:
+            mock_check.return_value = {
+                'core': {'set': ['GOOGLE_SERVICE_JSON_B64', 'GOOGLE_SHEET_ID'], 'missing': []}
+            }
+            mock_diag.return_value = {
+                "status": "fail",
+                "detail": "permission denied — 시트 접근 권한 없음",
+                "hint": "시트의 공유 메뉴에서 서비스계정 이메일을 편집자로 추가",
+            }
+            resp = client.get('/health/deep')
+        data = json.loads(resp.data)
+        sheets_check = next(
+            (c for c in data['checks'] if c['name'] == 'google_sheets'), None
+        )
+        assert sheets_check is not None
+        assert sheets_check['status'] == 'fail'
+        assert 'hint' in sheets_check
+
+    def test_deep_health_has_timestamp(self, client):
+        """/health/deep 응답에 timestamp 필드가 있어야 한다."""
+        from unittest.mock import patch
+        with patch('src.utils.sheets.diagnose_sheets_connection') as mock_diag:
+            mock_diag.return_value = {"status": "skip", "detail": "미설정"}
+            resp = client.get('/health/deep')
+        data = json.loads(resp.data)
+        assert 'timestamp' in data
+
+    def test_deep_health_has_uptime_seconds(self, client):
+        """/health/deep 응답에 uptime_seconds 필드가 있어야 한다."""
+        from unittest.mock import patch
+        with patch('src.utils.sheets.diagnose_sheets_connection') as mock_diag:
+            mock_diag.return_value = {"status": "skip", "detail": "미설정"}
+            resp = client.get('/health/deep')
+        data = json.loads(resp.data)
+        assert 'uptime_seconds' in data
+        assert isinstance(data['uptime_seconds'], (int, float))
