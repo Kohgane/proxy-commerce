@@ -80,7 +80,9 @@ class GoogleCredentialsLoader:
         # CRLF/LF 정규화 + 공백 제거
         clean = b64.replace("\r", "").replace("\n", "").replace(" ", "").strip()
         try:
-            decoded = base64.b64decode(clean, validate=False)
+            # 패딩 정규화 (길이가 4의 배수가 되도록)
+            padding = (4 - len(clean) % 4) % 4
+            decoded = base64.b64decode(clean + "=" * padding, validate=True)
         except Exception as exc:
             raise CredentialsLoadError(
                 f"GOOGLE_SERVICE_JSON_B64 base64 디코드 실패: {exc}. "
