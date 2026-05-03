@@ -50,7 +50,7 @@ _STATE_NORMALIZE: Dict[str, str] = {
 
 
 class MarketStatusSheetsAdapter:
-    """Google Sheets `proxy_catalog` 시트 기반 마켓 상태 어댑터.
+    """Google Sheets `catalog` 워크시트 기반 마켓 상태 어댑터.
 
     - 시트에서 catalog 워크시트 읽기 → 마켓별 집계
     - 시트 읽기 실패 시 mock 폴백
