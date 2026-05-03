@@ -2,7 +2,7 @@ import logging
 import os
 import time
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, redirect, render_template
 from flask_cors import CORS
 
 from .vendors.shopify_client import verify_webhook
@@ -851,6 +851,33 @@ order_validator = OrderValidator()
 audit_logger = AuditLogger()
 
 
+# ---------------------------------------------------------------------------
+# Phase 123 — 루트 라우트 + 에러 핸들러
+# ---------------------------------------------------------------------------
+
+@app.get('/')
+def root():
+    """루트는 셀러 콘솔로 리다이렉트 (셀러 콘솔 미등록 시 랜딩 페이지 표시)."""
+    try:
+        from .seller_console.views import bp as _seller_bp  # noqa: F401
+        return redirect('/seller/', code=302)
+    except Exception:
+        version = os.getenv('APP_VERSION', 'dev')
+        return render_template('landing.html', version=version)
+
+
+@app.errorhandler(404)
+def not_found(e):
+    """404 — 커스텀 에러 페이지."""
+    return render_template('errors/404.html'), 404
+
+
+@app.errorhandler(500)
+def server_error(e):
+    """500 — 커스텀 에러 페이지."""
+    return render_template('errors/500.html'), 500
+
+
 @app.post('/webhook/shopify/order')
 @limiter.limit(LIMIT_WEBHOOK)
 def shopify_order():
@@ -1043,7 +1070,7 @@ def deep_health():
         }
     """
     import datetime
-    checks = {}
+    check_list = []
     now_iso = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
     uptime = round(time.time() - _START_TIME, 1)
 
@@ -1051,10 +1078,15 @@ def deep_health():
     try:
         from .utils.secret_check import check_secrets
         secret_result = check_secrets('core')
-        checks['secrets_core'] = len(secret_result['core']['missing']) == 0
+        missing = secret_result['core']['missing']
+        check_list.append({
+            "name": "secrets_core",
+            "status": "ok" if not missing else "fail",
+            "detail": f"누락된 시크릿: {missing}" if missing else "모든 코어 시크릿 정상",
+        })
     except Exception as exc:
         logger.warning("Deep health: secret check failed: %s", exc)
-        checks['secrets_core'] = False
+        check_list.append({"name": "secrets_core", "status": "fail", "detail": str(exc)})
 
     # 2) Google Sheets 연결 확인
     try:
@@ -1062,22 +1094,24 @@ def deep_health():
         sheet_id = os.getenv('GOOGLE_SHEET_ID', '')
         if sheet_id:
             open_sheet(sheet_id, os.getenv('WORKSHEET', 'catalog'))
-            checks['google_sheets'] = True
+            check_list.append({"name": "google_sheets", "status": "ok", "detail": "연결 성공"})
         else:
-            checks['google_sheets'] = False
+            check_list.append({"name": "google_sheets", "status": "skip", "detail": "GOOGLE_SHEET_ID 미설정"})
     except Exception as exc:
         logger.warning("Deep health: Google Sheets check failed: %s", exc)
-        checks['google_sheets'] = False
+        check_list.append({"name": "google_sheets", "status": "fail", "detail": str(exc)})
 
-    all_ok = all(checks.values())
-    status_code = 200 if all_ok else 503
+    # 전체 상태 판단 — fail 항목이 있으면 degraded, skip만 있으면 ok
+    has_fail = any(c["status"] == "fail" for c in check_list)
+    overall = "degraded" if has_fail else "ok"
+    # degraded여도 앱은 코어 동작 가능하므로 200 반환 (운영 가시성)
     return jsonify({
-        "status": "ok" if all_ok else "degraded",
+        "status": overall,
         "timestamp": now_iso,
         "uptime_seconds": uptime,
         "version": os.getenv("APP_VERSION", "dev"),
-        "checks": checks,
-    }), status_code
+        "checks": check_list,
+    }), 200
 
 
 if __name__ == '__main__':

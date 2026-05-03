@@ -1,0 +1,35 @@
+{# 공통 상단 내비게이션 바 — Phase 123 #}
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">
+  <div class="container-fluid">
+    <a class="navbar-brand fw-bold" href="/">
+      <i class="bi bi-bag-check-fill text-teal me-1"></i>
+      Proxy Commerce
+      <small class="text-secondary fw-normal" style="font-size:.65rem;">Kohgane Percentii</small>
+    </a>
+    <button class="navbar-toggler" type="button"
+            data-bs-toggle="collapse" data-bs-target="#topNav"
+            aria-controls="topNav" aria-expanded="false" aria-label="메뉴 열기">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="topNav">
+      <ul class="navbar-nav ms-auto gap-1">
+        <li class="nav-item">
+          <a class="nav-link {% if request.path.startswith('/seller') %}active fw-semibold{% endif %}"
+             href="/seller/">🛒 셀러 콘솔</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link {% if request.path.startswith('/admin') %}active fw-semibold{% endif %}"
+             href="/admin/">🛠 관리자</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link {% if request.path.startswith('/api/docs') %}active fw-semibold{% endif %}"
+             href="/api/docs">📚 API 문서</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link {% if request.path == '/health/deep' %}active fw-semibold{% endif %}"
+             href="/health/deep">💚 시스템 상태</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
