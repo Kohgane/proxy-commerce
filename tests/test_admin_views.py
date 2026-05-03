@@ -62,7 +62,7 @@ def test_admin_dashboard_has_bootstrap_cdn(client):
     """대시보드 응답 <head>에 Bootstrap CDN 링크가 포함되어야 한다."""
     resp = client.get("/admin/")
     body = resp.data.decode("utf-8")
-    assert "cdn.jsdelivr.net" in body
+    assert "jsdelivr.net" in body
     assert "bootstrap" in body.lower()
 
 

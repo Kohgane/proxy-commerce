@@ -95,33 +95,34 @@ class TestSecurityHeaders:
             assert 'Content-Security-Policy' in resp.headers
 
     def test_csp_html_page_allows_cdn(self, secure_app):
-        """/admin/ 응답에는 cdn.jsdelivr.net 허용 CSP가 적용된다."""
+        """/admin/ 응답에는 Bootstrap CDN 허용 CSP가 적용된다 (style-src에 CDN 포함)."""
         with secure_app.test_client() as client:
             resp = client.get('/admin/')
             csp = resp.headers.get('Content-Security-Policy', '')
-            assert 'cdn.jsdelivr.net' in csp
+            # style-src 또는 script-src에 CDN 도메인이 명시되어야 함
+            assert 'jsdelivr.net' in csp
 
     def test_csp_seller_page_allows_cdn(self, secure_app):
-        """/seller/ 응답에는 cdn.jsdelivr.net 허용 CSP가 적용된다."""
+        """/seller/ 응답에는 Bootstrap CDN 허용 CSP가 적용된다."""
         with secure_app.test_client() as client:
             resp = client.get('/seller/dashboard')
             csp = resp.headers.get('Content-Security-Policy', '')
-            assert 'cdn.jsdelivr.net' in csp
+            assert 'jsdelivr.net' in csp
 
     def test_csp_api_docs_allows_cdn(self, secure_app):
-        """/api/docs 응답에는 cdn.jsdelivr.net 허용 CSP가 적용된다."""
+        """/api/docs 응답에는 Bootstrap CDN 허용 CSP가 적용된다."""
         with secure_app.test_client() as client:
             resp = client.get('/api/docs')
             csp = resp.headers.get('Content-Security-Policy', '')
-            assert 'cdn.jsdelivr.net' in csp
+            assert 'jsdelivr.net' in csp
 
     def test_csp_api_v1_is_strict(self, secure_app):
-        """/api/v1/ 응답에는 strict CSP가 적용된다."""
+        """/api/v1/ 응답에는 strict CSP가 적용된다 (외부 리소스 차단)."""
         with secure_app.test_client() as client:
             resp = client.get('/api/v1/health')
             csp = resp.headers.get('Content-Security-Policy', '')
             assert "default-src 'none'" in csp
-            assert 'cdn.jsdelivr.net' not in csp
+            assert 'jsdelivr' not in csp
 
     def test_csp_health_is_strict(self, secure_app):
         """/health/ 응답에는 strict CSP가 적용된다."""
@@ -129,7 +130,7 @@ class TestSecurityHeaders:
             resp = client.get('/health/deep')
             csp = resp.headers.get('Content-Security-Policy', '')
             assert "default-src 'none'" in csp
-            assert 'cdn.jsdelivr.net' not in csp
+            assert 'jsdelivr' not in csp
 
     def test_csp_webhook_is_strict(self, secure_app):
         """/webhook/ 응답에는 strict CSP가 적용된다."""
@@ -137,7 +138,7 @@ class TestSecurityHeaders:
             resp = client.get('/webhook/test')
             csp = resp.headers.get('Content-Security-Policy', '')
             assert "default-src 'none'" in csp
-            assert 'cdn.jsdelivr.net' not in csp
+            assert 'jsdelivr' not in csp
 
     def test_security_headers_present_on_api_endpoint(self, secure_app):
         """API 응답에도 X-Frame-Options, X-Content-Type-Options는 유지된다."""

@@ -46,7 +46,8 @@ _CSP_API = (
 )
 
 # API 경로 prefix (이 prefix로 시작하면 strict CSP 적용)
-_API_PREFIXES = ("/api/v1/", "/api/dashboard", "/webhook", "/health")
+# 각 prefix는 trailing slash 포함 — "/healthy" 같은 의도치 않은 매칭 방지
+_API_PREFIXES = ("/api/v1/", "/api/dashboard/", "/webhook/", "/health/")
 # 단, /api/docs 는 HTML 페이지이므로 제외
 _API_DOCS_PREFIX = "/api/docs"
 
