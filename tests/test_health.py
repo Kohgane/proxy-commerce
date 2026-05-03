@@ -154,9 +154,20 @@ class TestDeepHealthResponseFormat:
 
     def test_deep_health_google_sheets_fail_has_hint(self, client):
         """google_sheets fail 케이스에서 hint 필드가 노출되어야 한다."""
-        from unittest.mock import patch
+        from unittest.mock import patch, MagicMock
+        mock_loader = MagicMock()
+        mock_loader.load.return_value = {
+            "type": "service_account",
+            "project_id": "test-project",
+            "private_key": "key",
+            "client_email": "svc@test.iam.gserviceaccount.com",
+        }
+        mock_loader.source = "GOOGLE_SERVICE_JSON_B64"
+        sheet_id = "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms"  # 유효한 길이의 ID
         with patch('src.utils.secret_check.check_secrets') as mock_check, \
-             patch('src.utils.sheets.diagnose_sheets_connection') as mock_diag:
+             patch('src.utils.google_credentials.GoogleCredentialsLoader', return_value=mock_loader), \
+             patch('src.utils.sheets.diagnose_sheets_connection') as mock_diag, \
+             patch.dict('os.environ', {'GOOGLE_SHEET_ID': sheet_id}):
             mock_check.return_value = {
                 'core': {'set': ['GOOGLE_SERVICE_JSON_B64', 'GOOGLE_SHEET_ID'], 'missing': []}
             }
@@ -182,6 +193,50 @@ class TestDeepHealthResponseFormat:
             resp = client.get('/health/deep')
         data = json.loads(resp.data)
         assert 'timestamp' in data
+
+    def test_deep_health_has_google_credentials_check(self, client):
+        """/health/deep 응답에 google_credentials check가 있어야 한다."""
+        from unittest.mock import patch, MagicMock
+        from src.utils.google_credentials import CredentialsLoadError
+        with patch('src.utils.google_credentials.GoogleCredentialsLoader.load',
+                   side_effect=CredentialsLoadError("자격증명 없음")):
+            resp = client.get('/health/deep')
+        data = json.loads(resp.data)
+        names = [c['name'] for c in data['checks']]
+        assert 'google_credentials' in names
+
+    def test_deep_health_credentials_fail_skips_sheets(self, client):
+        """google_credentials fail 시 google_sheets는 skip이어야 한다."""
+        from unittest.mock import patch
+        from src.utils.google_credentials import CredentialsLoadError
+        with patch('src.utils.google_credentials.GoogleCredentialsLoader.load',
+                   side_effect=CredentialsLoadError("no creds")):
+            resp = client.get('/health/deep')
+        data = json.loads(resp.data)
+        sheets_check = next((c for c in data['checks'] if c['name'] == 'google_sheets'), None)
+        assert sheets_check is not None
+        assert sheets_check['status'] == 'skip'
+
+    def test_deep_health_credentials_ok_shows_source(self, client):
+        """google_credentials ok 시 source 필드가 노출되어야 한다."""
+        from unittest.mock import patch, MagicMock
+        mock_loader = MagicMock()
+        mock_loader.load.return_value = {
+            "type": "service_account",
+            "project_id": "test-project",
+            "private_key": "key",
+            "client_email": "svc@test.iam.gserviceaccount.com",
+        }
+        mock_loader.source = "GOOGLE_SERVICE_JSON_B64"
+        with patch('src.utils.google_credentials.GoogleCredentialsLoader', return_value=mock_loader), \
+             patch('src.utils.sheets.diagnose_sheets_connection',
+                   return_value={"status": "ok", "detail": "연결 성공", "service_account": "svc@test.iam.gserviceaccount.com"}):
+            resp = client.get('/health/deep')
+        data = json.loads(resp.data)
+        cred_check = next((c for c in data['checks'] if c['name'] == 'google_credentials'), None)
+        assert cred_check is not None
+        assert cred_check['status'] == 'ok'
+        assert 'source' in cred_check
 
     def test_deep_health_has_uptime_seconds(self, client):
         """/health/deep 응답에 uptime_seconds 필드가 있어야 한다."""

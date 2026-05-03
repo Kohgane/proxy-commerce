@@ -1,11 +1,11 @@
-import base64
-import json
 import logging
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+
+from .google_credentials import GoogleCredentialsLoader, CredentialsLoadError
 
 logger = logging.getLogger(__name__)
 
@@ -14,12 +14,22 @@ SCOPES = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/a
 # 필수 워크시트 목록
 _REQUIRED_WORKSHEETS = ["catalog", "orders", "fx_rates", "fx_history"]
 
+# 모듈 레벨 로더 (소스 기록 공유)
+_loader = GoogleCredentialsLoader()
+
+
+def get_credentials_dict() -> dict:
+    """다중 소스에서 서비스 계정 자격증명 dict 반환."""
+    return _loader.load()
+
+
+def get_credentials_source() -> Optional[str]:
+    """마지막으로 성공한 자격증명 소스 반환 (None = 아직 로드 안 됨)."""
+    return _loader.source
+
 
 def _service_account():
-    b64 = os.getenv('GOOGLE_SERVICE_JSON_B64')
-    if not b64:
-        raise RuntimeError('GOOGLE_SERVICE_JSON_B64 missing')
-    data = json.loads(base64.b64decode(b64))
+    data = get_credentials_dict()
     creds = ServiceAccountCredentials.from_json_keyfile_dict(data, SCOPES)
     client = gspread.authorize(creds)
     return client
@@ -40,53 +50,31 @@ def open_sheet(sheet_id: str, worksheet: str):
 def diagnose_sheets_connection() -> Dict[str, Any]:
     """Google Sheets 연결을 단계별로 진단하고 상세 결과를 반환한다.
 
-    각 단계:
-      1. GOOGLE_SERVICE_JSON_B64 base64 디코딩
-      2. JSON 파싱
-      3. private_key 형식 검증 (literal \\n 처리)
-      4. 서비스 계정 인증
-      5. GOOGLE_SHEET_ID 시트 열기
-      6. 필수 워크시트 존재 확인
+    GoogleCredentialsLoader를 통해 다중 소스 자격증명을 로드한 뒤
+    시트 열기 + 워크시트 존재 확인까지 수행한다.
 
     보안: private_key, 토큰 등 시크릿 값은 절대 반환하지 않는다.
     """
-    # 단계 1: base64 디코딩
-    b64 = os.getenv('GOOGLE_SERVICE_JSON_B64', '')
-    if not b64:
-        return {
-            "status": "skip",
-            "detail": "GOOGLE_SERVICE_JSON_B64 환경변수 미설정",
-            "hint": "Render 환경변수 탭에서 GOOGLE_SERVICE_JSON_B64 추가",
-        }
+    loader = GoogleCredentialsLoader()
+
+    # 자격증명 로드
     try:
-        raw = base64.b64decode(b64)
-    except Exception as exc:
+        data = loader.load()
+    except CredentialsLoadError as exc:
         return {
             "status": "fail",
-            "detail": f"base64 decode 실패: {exc}",
-            "hint": "base64 -w 0 service-account.json | tr -d '\\n' 으로 다시 인코딩",
+            "detail": f"자격증명 로드 실패: {exc}",
+            "hint": (
+                "다음 중 하나를 설정하세요: "
+                "Secret File /etc/secrets/service-account.json, "
+                "GOOGLE_SERVICE_JSON_B64, GOOGLE_SERVICE_JSON"
+            ),
         }
-
-    # 단계 2: JSON 파싱
-    try:
-        data = json.loads(raw)
-    except Exception as exc:
-        return {
-            "status": "fail",
-            "detail": f"JSON 파싱 실패: {exc}",
-            "hint": "공백/개행 제거 후 다시 시도",
-        }
-
-    # 단계 3: private_key 형식 검증
-    private_key = data.get("private_key", "")
-    if private_key and "\\n" in private_key and "\n" not in private_key:
-        # literal \n → 실제 개행으로 치환
-        data["private_key"] = private_key.replace("\\n", "\n")
-        logger.info("diagnose_sheets_connection: private_key literal \\n → 실제 개행으로 치환")
 
     svc_email = data.get("client_email", "")
+    cred_source = loader.source
 
-    # 단계 4: 서비스 계정 인증
+    # 서비스 계정 인증
     try:
         creds = ServiceAccountCredentials.from_json_keyfile_dict(data, SCOPES)
         client = gspread.authorize(creds)
@@ -95,9 +83,10 @@ def diagnose_sheets_connection() -> Dict[str, Any]:
             "status": "fail",
             "detail": f"서비스 계정 인증 실패: {exc}",
             "service_account": svc_email,
+            "source": cred_source,
         }
 
-    # 단계 5: 시트 열기
+    # 시트 열기
     sheet_id = os.getenv('GOOGLE_SHEET_ID', '')
     if not sheet_id:
         return {
@@ -105,40 +94,47 @@ def diagnose_sheets_connection() -> Dict[str, Any]:
             "detail": "GOOGLE_SHEET_ID 환경변수 미설정",
             "hint": "Render 환경변수 탭에서 GOOGLE_SHEET_ID 추가",
             "service_account": svc_email,
+            "source": cred_source,
         }
     try:
         sh = client.open_by_key(sheet_id)
     except gspread.exceptions.APIError as exc:
         status_code = getattr(getattr(exc, 'response', None), 'status_code', 0)
+        masked_id = _mask_sheet_id(sheet_id)
         if status_code == 403:
             return {
                 "status": "fail",
-                "detail": "permission denied — 시트 접근 권한 없음",
+                "detail": f"permission denied — 시트 접근 권한 없음 (ID: {masked_id})",
                 "hint": (
-                    f"시트의 공유 메뉴에서 서비스계정 이메일 ({svc_email}) 을 편집자로 추가"
+                    f"Google Sheets 공유 메뉴에서 '{svc_email}'을 편집자로 추가했는지 확인. "
+                    f"또는 GOOGLE_SHEET_ID 환경변수가 시트 URL의 /d/와 /edit 사이 부분과 일치하는지 확인"
                 ),
                 "service_account": svc_email,
+                "source": cred_source,
             }
         if status_code == 404:
             return {
                 "status": "fail",
-                "detail": "spreadsheet not found — 시트를 찾을 수 없음",
+                "detail": f"spreadsheet not found — 시트를 찾을 수 없음 (ID: {masked_id})",
                 "hint": "GOOGLE_SHEET_ID가 올바른지 확인 (시트 URL의 /d/ 다음 부분)",
                 "service_account": svc_email,
+                "source": cred_source,
             }
         return {
             "status": "fail",
             "detail": f"시트 열기 실패: {exc}",
             "service_account": svc_email,
+            "source": cred_source,
         }
     except Exception as exc:
         return {
             "status": "fail",
             "detail": f"시트 열기 실패: {exc}",
             "service_account": svc_email,
+            "source": cred_source,
         }
 
-    # 단계 6: 필수 워크시트 존재 확인
+    # 필수 워크시트 존재 확인
     try:
         existing = {ws.title for ws in sh.worksheets()}
         missing_ws = [ws for ws in _REQUIRED_WORKSHEETS if ws not in existing]
@@ -148,6 +144,7 @@ def diagnose_sheets_connection() -> Dict[str, Any]:
                 "detail": f"누락된 워크시트: {missing_ws}",
                 "hint": f"Google Sheets에 다음 워크시트 생성 필요: {missing_ws}",
                 "service_account": svc_email,
+                "source": cred_source,
             }
     except Exception as exc:
         # 워크시트 목록 조회 실패는 non-fatal (연결은 됐음)
@@ -157,4 +154,12 @@ def diagnose_sheets_connection() -> Dict[str, Any]:
         "status": "ok",
         "detail": "연결 성공",
         "service_account": svc_email,
+        "source": cred_source,
     }
+
+
+def _mask_sheet_id(sheet_id: str) -> str:
+    """시트 ID 마스킹 (앞 4자 + *** + 뒤 4자)."""
+    if len(sheet_id) <= 8:
+        return "***"
+    return f"{sheet_id[:4]}***{sheet_id[-4:]}"
