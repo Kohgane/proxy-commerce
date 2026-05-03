@@ -1473,11 +1473,12 @@
 
 | Phase | 내용 | 우선순위 |
 |-------|------|----------|
-| Phase 123 | 신규 브랜드 어댑터 실연동 (Alo Yoga, lululemon, 프리미엄 스포츠) | P1 |
-| Phase 124 | 타오바오 셀러 신뢰도 실연동 + 자동 차단 | P2 |
-| Phase 125 | WooCommerce 마이그레이션 도구 (스마트스토어 → kohganemultishop.org 일괄 이전) | P2 |
-| Phase 126 | PortOne 결제 게이트웨이 연동 (한국 PG) | P2 |
-| Phase 127 | 배대지 확장 (미국/유럽/중국) | P2 |
-| Phase 128 | 신상품 자동 캐치 + 브랜드별 구독 알림 | P3 |
-| Phase 129 | 멀티테넌시 SaaS 활성화 (가입/요금제/공개) | P3 |
-| Phase 130 | 수입/수출 양방향 배송 자동화 (kohganemultishop.org 통합) | P3 |
+| Phase 123 | 긴급 UI 픽스 (루트 페이지, Admin escape 버그, API docs 디자인, 404/500 핸들러, 공통 base 레이아웃, Bootstrap 정상화) | P0 |
+| Phase 124 | 신규 브랜드 어댑터 실연동 (Alo Yoga, lululemon, 프리미엄 스포츠) | P1 |
+| Phase 125 | 타오바오 셀러 신뢰도 실연동 + 자동 차단 | P2 |
+| Phase 126 | WooCommerce 마이그레이션 도구 (스마트스토어 → kohganemultishop.org 일괄 이전) | P2 |
+| Phase 127 | PortOne 결제 게이트웨이 연동 (한국 PG) | P2 |
+| Phase 128 | 배대지 확장 (미국/유럽/중국) | P2 |
+| Phase 129 | 신상품 자동 캐치 + 브랜드별 구독 알림 | P3 |
+| Phase 130 | 멀티테넌시 SaaS 활성화 (가입/요금제/공개) | P3 |
+| Phase 131 | 수입/수출 양방향 배송 자동화 (kohganemultishop.org 통합) | P3 |

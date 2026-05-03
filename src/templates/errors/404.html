@@ -1,0 +1,25 @@
+{# 404 에러 페이지 — Phase 123 #}
+{% extends "_base_app.html" %}
+
+{% block title %}404 — 페이지를 찾을 수 없음{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+  <div class="col-md-6 text-center">
+    <div class="display-1 fw-bold text-danger mb-3">404</div>
+    <h2 class="mb-3">찾으시는 페이지가 없어요</h2>
+    <p class="text-muted mb-4">
+      URL을 다시 확인하거나 아래 링크를 이용해 주세요.
+    </p>
+    <div class="d-flex flex-wrap gap-2 justify-content-center">
+      <a href="/seller/" class="btn btn-outline-primary">🛒 셀러 콘솔</a>
+      <a href="/admin/" class="btn btn-outline-secondary">🛠 관리자 패널</a>
+      <a href="/api/docs" class="btn btn-outline-info">📚 API 문서</a>
+      <a href="/health/deep" class="btn btn-outline-success">💚 시스템 상태</a>
+    </div>
+    <div class="mt-4">
+      <a href="/" class="text-muted small"><i class="bi bi-house"></i> 홈으로 돌아가기</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

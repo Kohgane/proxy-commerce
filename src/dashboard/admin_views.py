@@ -72,7 +72,9 @@ _BASE_HTML = (
 
 
 def _render(title: str, body: str) -> str:
-    return render_template_string(_BASE_HTML, title=title, body=body)
+    # body는 뷰에서 직접 조합한 신뢰할 수 있는 HTML 문자열이므로 Markup으로 전달
+    from markupsafe import Markup
+    return render_template_string(_BASE_HTML, title=title, body=Markup(body))
 
 
 # ---------------------------------------------------------------------------

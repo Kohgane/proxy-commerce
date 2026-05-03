@@ -1,0 +1,61 @@
+/* app.css — 공통 스타일 (Phase 123) */
+
+/* ── 폰트: Pretendard (CDN) ── */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+
+body {
+  font-family: 'Pretendard Variable', 'Pretendard', -apple-system,
+               BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #f5f7fa;
+  color: #1a1a2e;
+}
+
+/* ── 컬러 팔레트 ── */
+:root {
+  --color-seller: #0d9488;   /* 셀러 콘솔 — 청록 */
+  --color-admin:  #1e3a8a;   /* 관리자 패널 — 네이비 */
+  --color-error:  #dc2626;   /* 에러 — 빨강 */
+  --color-teal:   #0d9488;
+}
+
+/* ── 유틸리티 ── */
+.text-teal { color: var(--color-teal) !important; }
+.bg-teal   { background-color: var(--color-teal) !important; }
+
+/* ── 랜딩 카드 ── */
+.landing-card {
+  border-radius: 12px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.landing-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12) !important;
+}
+
+/* ── 상단 내비 ── */
+.navbar-brand small {
+  display: block;
+  line-height: 1;
+  margin-top: -2px;
+}
+
+/* ── 배지 (메서드) ── */
+.badge-get    { background: #22c55e; color: #fff; }
+.badge-post   { background: #3b82f6; color: #fff; }
+.badge-put    { background: #f97316; color: #fff; }
+.badge-patch  { background: #a855f7; color: #fff; }
+.badge-delete { background: #ef4444; color: #fff; }
+
+/* ── API 문서 ── */
+.endpoint-path {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: .85rem;
+}
+.api-accordion .accordion-button:not(.collapsed) {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+/* ── 에러 페이지 ── */
+.display-1.text-danger  { text-shadow: 2px 4px 8px rgba(220,38,38,.15); }
+.display-1.text-warning { text-shadow: 2px 4px 8px rgba(245,158,11,.15); }
