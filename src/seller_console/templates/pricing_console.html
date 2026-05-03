@@ -5,92 +5,134 @@
 <h4 class="fw-bold mb-4">💰 마진 계산기</h4>
 
 <div class="row g-4">
-  <!-- 입력 패널 -->
+  <!-- 입력 패널 (좌측) -->
   <div class="col-md-5">
     <div class="card border-0 shadow-sm">
       <div class="card-body">
-        <h6 class="fw-semibold mb-3">입력</h6>
+        <h6 class="fw-semibold mb-3">📥 입력</h6>
 
+        <!-- 매입가 + 통화 -->
         <div class="mb-3">
-          <label class="form-label">매입가</label>
+          <label class="form-label fw-semibold">매입가</label>
           <div class="input-group">
-            <input type="number" id="buyPrice" class="form-control" value="50" step="0.01" min="0.01">
+            <input type="number" id="buyPrice" class="form-control" value="100" step="0.01" min="0.01">
             <select id="currency" class="form-select" style="max-width:90px;">
-              <option value="USD">USD</option>
-              <option value="JPY">JPY</option>
-              <option value="CNY">CNY</option>
-              <option value="EUR">EUR</option>
-              <option value="KRW">KRW</option>
+              {% for c in default_currencies %}
+              <option value="{{ c }}"{% if c == 'USD' %} selected{% endif %}>{{ c }}</option>
+              {% endfor %}
             </select>
           </div>
         </div>
 
+        <!-- 수량 -->
         <div class="mb-3">
-          <label class="form-label">배송비 (KRW)</label>
-          <input type="number" id="shippingFee" class="form-control" value="5000" min="0">
+          <label class="form-label">수량</label>
+          <input type="number" id="qty" class="form-control" value="1" min="1" step="1">
         </div>
 
+        <!-- 배대지 수수료 -->
+        <div class="mb-3">
+          <label class="form-label">배대지 수수료 (KRW)</label>
+          <input type="number" id="forwarderFee" class="form-control" value="0" min="0">
+        </div>
+
+        <!-- 국제 배송비 -->
+        <div class="mb-3">
+          <label class="form-label">국제 배송비 (KRW)</label>
+          <input type="number" id="intlShipping" class="form-control" value="0" min="0">
+        </div>
+
+        <!-- 국내 배송비 -->
+        <div class="mb-3">
+          <label class="form-label">국내 배송비 (KRW)</label>
+          <input type="number" id="domShipping" class="form-control" value="3000" min="0">
+        </div>
+
+        <!-- 관세율 -->
         <div class="mb-3">
           <label class="form-label">관세율 (%)</label>
-          <input type="number" id="customsRate" class="form-control" value="8" step="0.1" min="0" max="100">
+          <input type="number" id="customsRate" class="form-control" value="20" step="0.1" min="0" max="100">
         </div>
 
+        <!-- 환율 모드 -->
         <div class="mb-3">
-          <label class="form-label">마켓 수수료율 (%)</label>
-          <div class="d-flex gap-2 mb-1">
-            <button class="btn btn-outline-secondary btn-sm" onclick="setFee('marketFeeRate', 7.8)">쿠팡 7.8%</button>
-            <button class="btn btn-outline-secondary btn-sm" onclick="setFee('marketFeeRate', 6)">스스 6%</button>
-            <button class="btn btn-outline-secondary btn-sm" onclick="setFee('marketFeeRate', 7)">11번가 7%</button>
-            <button class="btn btn-outline-secondary btn-sm" onclick="setFee('marketFeeRate', 5)">WC 5%</button>
+          <label class="form-label fw-semibold">환율 모드</label>
+          <div class="d-flex gap-2 align-items-center">
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="fxMode" id="fxModeRealtime" value="realtime" checked
+                     onchange="toggleFxManual()">
+              <label class="form-check-label" for="fxModeRealtime">실시간</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="fxMode" id="fxModeManual" value="manual"
+                     onchange="toggleFxManual()">
+              <label class="form-check-label" for="fxModeManual">수동 입력</label>
+            </div>
           </div>
-          <input type="number" id="marketFeeRate" class="form-control" value="7.8" step="0.1" min="0" max="50">
+          <div id="fxManualGroup" class="mt-2 d-none">
+            <input type="number" id="fxOverride" class="form-control form-control-sm"
+                   placeholder="예: 1370 (1 USD = ? KRW)" step="0.01" min="1">
+          </div>
         </div>
 
+        <!-- 목표 마진 슬라이더 -->
         <div class="mb-3">
-          <label class="form-label">PG 수수료율 (%)</label>
-          <input type="number" id="pgFeeRate" class="form-control" value="3.3" step="0.1" min="0" max="10">
+          <label class="form-label fw-semibold">
+            목표 마진율: <span id="targetMarginDisplay" class="text-primary fw-bold">{{ default_target_margin }}</span>%
+          </label>
+          <input type="range" class="form-range" id="targetMargin"
+                 min="5" max="50" value="{{ default_target_margin }}"
+                 oninput="document.getElementById('targetMarginDisplay').textContent=this.value; triggerCompare()">
         </div>
 
+        <!-- 마켓 다중 선택 -->
         <div class="mb-3">
-          <label class="form-label">목표 마진율: <span id="targetMarginDisplay" class="text-primary fw-bold">30</span>%</label>
-          <input type="range" class="form-range" id="targetMargin" min="5" max="70" value="30"
-                 oninput="document.getElementById('targetMarginDisplay').textContent=this.value">
+          <label class="form-label fw-semibold">비교 마켓</label>
+          <div class="d-flex flex-wrap gap-2">
+            {% for mp in all_marketplaces %}
+            <div class="form-check form-check-inline">
+              <input class="form-check-input market-check" type="checkbox"
+                     id="mp_{{ mp.id }}" value="{{ mp.id }}"
+                     {% if mp.id in ['coupang','smartstore','11st','kohganemultishop'] %}checked{% endif %}
+                     onchange="triggerCompare()">
+              <label class="form-check-label" for="mp_{{ mp.id }}">{{ mp.label }}</label>
+            </div>
+            {% endfor %}
+          </div>
         </div>
 
-        <button class="btn btn-primary w-100" onclick="calcMargin()">🧮 계산하기</button>
+        <button class="btn btn-primary w-100" id="calcBtn" onclick="runCompare()">🧮 비교 계산</button>
       </div>
     </div>
   </div>
 
-  <!-- 결과 패널 -->
+  <!-- 결과 패널 (우측) -->
   <div class="col-md-7">
-    <div class="card border-0 shadow-sm">
-      <div class="card-body">
-        <h6 class="fw-semibold mb-3">결과</h6>
-        <div id="calcResult">
-          <div class="text-muted text-center py-4">
-            입력값을 넣고 "계산하기"를 클릭하세요.
-          </div>
-        </div>
+    <!-- 환율 표시 -->
+    <div id="fxBadgeRow" class="mb-3 d-none">
+      <small class="text-muted" id="fxBadgeText"></small>
+    </div>
+
+    <!-- 마켓 카드 그리드 -->
+    <div id="marketCards" class="row g-3 mb-4">
+      <div class="col-12 text-muted text-center py-5">
+        입력값을 넣고 "비교 계산"을 클릭하세요.
       </div>
     </div>
 
-    <!-- 마진 시나리오 테이블 -->
-    <div class="card border-0 shadow-sm mt-3">
+    <!-- 비교 차트 -->
+    <div class="card border-0 shadow-sm mb-3" id="chartCard" style="display:none!important;">
       <div class="card-body">
-        <h6 class="fw-semibold mb-2">📋 마진 시나리오 (5종)</h6>
-        <table class="table table-sm" id="scenarioTable">
-          <thead>
-            <tr>
-              <th>목표 마진</th>
-              <th>판매가 (KRW)</th>
-              <th>실제 마진</th>
-            </tr>
-          </thead>
-          <tbody id="scenarioBody">
-            <tr><td colspan="3" class="text-muted text-center">계산 후 표시됩니다.</td></tr>
-          </tbody>
-        </table>
+        <h6 class="fw-semibold mb-3">📊 마진율 비교</h6>
+        <canvas id="marginChart" height="120"></canvas>
+      </div>
+    </div>
+
+    <!-- 랜딩 코스트 요약 -->
+    <div class="card border-0 shadow-sm" id="landedCostCard" style="display:none!important;">
+      <div class="card-body">
+        <h6 class="fw-semibold mb-2">📦 원가 상세</h6>
+        <div id="landedCostDetail"></div>
       </div>
     </div>
   </div>
@@ -98,106 +140,234 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-function setFee(fieldId, value) {
-  document.getElementById(fieldId).value = value;
+// ─────────────────────────────────────────
+// 상태
+// ─────────────────────────────────────────
+let _debounceTimer = null;
+let _chartInstance = null;
+
+const MARKETPLACE_LABELS = {
+  coupang: '쿠팡',
+  smartstore: '스마트스토어',
+  '11st': '11번가',
+  kohganemultishop: '코가네멀티샵',
+  shopify: 'Shopify',
+};
+
+// ─────────────────────────────────────────
+// 입력 이벤트 → debounce 300ms → triggerCompare
+// ─────────────────────────────────────────
+['buyPrice','qty','forwarderFee','intlShipping','domShipping','customsRate','fxOverride']
+  .forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', () => triggerCompare());
+  });
+document.getElementById('currency').addEventListener('change', () => triggerCompare());
+
+function triggerCompare() {
+  clearTimeout(_debounceTimer);
+  _debounceTimer = setTimeout(runCompare, 300);
 }
 
-function calcMargin() {
+function toggleFxManual() {
+  const isManual = document.getElementById('fxModeManual').checked;
+  document.getElementById('fxManualGroup').classList.toggle('d-none', !isManual);
+  triggerCompare();
+}
+
+// ─────────────────────────────────────────
+// 메인 비교 계산
+// ─────────────────────────────────────────
+function runCompare() {
+  const buyPrice = parseFloat(document.getElementById('buyPrice').value);
+  if (!buyPrice || buyPrice <= 0) return;
+
+  const marketplaces = Array.from(document.querySelectorAll('.market-check:checked')).map(el => el.value);
+  if (marketplaces.length === 0) return;
+
+  const isManual = document.getElementById('fxModeManual').checked;
+  const fxOverride = isManual ? parseFloat(document.getElementById('fxOverride').value) || null : null;
+
   const payload = {
-    buy_price: parseFloat(document.getElementById('buyPrice').value),
+    buy_price: buyPrice,
     currency: document.getElementById('currency').value,
-    shipping_fee: parseFloat(document.getElementById('shippingFee').value) || 0,
+    qty: parseInt(document.getElementById('qty').value) || 1,
+    forwarder_fee: parseFloat(document.getElementById('forwarderFee').value) || 0,
+    international_shipping: parseFloat(document.getElementById('intlShipping').value) || 0,
+    domestic_shipping: parseFloat(document.getElementById('domShipping').value) || 0,
     customs_rate: parseFloat(document.getElementById('customsRate').value) || 0,
-    market_fee_rate: parseFloat(document.getElementById('marketFeeRate').value) || 0,
-    pg_fee_rate: parseFloat(document.getElementById('pgFeeRate').value) || 0,
-    target_margin_pct: parseFloat(document.getElementById('targetMargin').value) || 30,
+    target_margin_pct: parseFloat(document.getElementById('targetMargin').value) || 22,
+    marketplaces: marketplaces,
+    fx_override: fxOverride,
   };
 
-  fetch('/seller/pricing/calc', {
+  const btn = document.getElementById('calcBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ 계산 중...';
+
+  fetch('/seller/pricing/compare', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
   })
   .then(r => r.json())
   .then(data => {
+    btn.disabled = false;
+    btn.textContent = '🧮 비교 계산';
     if (!data.ok) {
-      document.getElementById('calcResult').innerHTML =
-        `<div class="alert alert-danger">${data.error}</div>`;
+      showError(data.error);
       return;
     }
-    renderResult(data.result);
-    renderScenarios(payload);
+    renderResults(data.results, data.target_margin_pct);
+  })
+  .catch(err => {
+    btn.disabled = false;
+    btn.textContent = '🧮 비교 계산';
+    showError('서버 오류가 발생했습니다.');
   });
 }
 
-function renderResult(r) {
-  const marginColor = r.actual_margin_pct >= 20 ? 'success' : r.actual_margin_pct >= 10 ? 'warning' : 'danger';
-  document.getElementById('calcResult').innerHTML = `
-    <div class="row g-3">
-      <div class="col-6">
-        <div class="text-muted small">매입가 (KRW)</div>
-        <div class="fs-5 fw-bold">₩${r.buy_price_krw.toLocaleString()}</div>
-        <div class="text-muted small">환율: 1 ${r.currency} = ₩${r.fx_rate_used}</div>
-      </div>
-      <div class="col-6">
-        <div class="text-muted small">관세</div>
-        <div class="fs-5">₩${r.customs_amount_krw.toLocaleString()}</div>
-      </div>
-      <div class="col-6">
-        <div class="text-muted small">배송비</div>
-        <div class="fs-5">₩${r.shipping_fee_krw.toLocaleString()}</div>
-      </div>
-      <div class="col-6">
-        <div class="text-muted small">총 원가</div>
-        <div class="fs-5 fw-semibold">₩${r.cost_krw.toLocaleString()}</div>
-      </div>
-      <div class="col-6">
-        <div class="text-muted small">🎯 권장 판매가</div>
-        <div class="fs-3 fw-bold text-primary">₩${r.sell_price_krw.toLocaleString()}</div>
-      </div>
-      <div class="col-6">
-        <div class="text-muted small">실제 마진</div>
-        <div class="fs-3 fw-bold text-${marginColor}">${r.actual_margin_pct}%</div>
-        <div class="text-muted small">₩${r.actual_margin_krw.toLocaleString()}</div>
-      </div>
-      <div class="col-12">
-        <div class="text-muted small">손익분기점</div>
-        <div class="fs-5">₩${r.breakeven_krw.toLocaleString()}</div>
-      </div>
+// ─────────────────────────────────────────
+// 결과 렌더링
+// ─────────────────────────────────────────
+function renderResults(results, targetMarginPct) {
+  if (!results || results.length === 0) return;
+
+  // FX 배지 표시
+  const first = results[0];
+  if (first.fx_used) {
+    const fxInfo = first.fx_used;
+    const src = fxInfo.source || 'default';
+    const srcLabel = src === 'realtime' ? '실시간' : src === 'env' ? '환경변수' : src === 'manual' ? '수동' : '기본값';
+    const currency = document.getElementById('currency').value;
+    const rate = fxInfo[currency] || '';
+    const badge = document.getElementById('fxBadgeText');
+    badge.innerHTML = `💱 환율 출처: <strong>${srcLabel}</strong>${rate ? ` &nbsp;|&nbsp; 1 ${currency} = ₩${parseFloat(rate).toLocaleString()}` : ''}`;
+    document.getElementById('fxBadgeRow').classList.remove('d-none');
+  }
+
+  // 원가 상세
+  const lc = results[0];
+  document.getElementById('landedCostDetail').innerHTML = `
+    <div class="row g-2 text-sm">
+      <div class="col-6"><span class="text-muted small">매입가 (KRW)</span><br><strong>₩${lc.cost_in_krw.toLocaleString()}</strong></div>
+      <div class="col-6"><span class="text-muted small">관부가세</span><br><strong>₩${lc.customs_in_krw.toLocaleString()}</strong></div>
+      <div class="col-6"><span class="text-muted small">총 랜딩 코스트</span><br><strong class="text-primary">₩${lc.total_landed_cost.toLocaleString()}</strong></div>
     </div>
   `;
+  document.getElementById('landedCostCard').style.removeProperty('display');
+
+  // 마켓 카드 렌더링
+  const container = document.getElementById('marketCards');
+  container.innerHTML = '';
+  results.forEach(r => {
+    const marginColor = r.actual_margin_pct >= 20 ? 'success' : r.actual_margin_pct >= 10 ? 'warning' : 'danger';
+    const label = MARKETPLACE_LABELS[r.marketplace] || r.marketplace;
+    const card = document.createElement('div');
+    card.className = 'col-sm-6';
+    card.innerHTML = `
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start mb-2">
+            <h6 class="fw-bold mb-0">${label}</h6>
+            <span class="badge bg-${marginColor}">${r.actual_margin_pct}%</span>
+          </div>
+          <div class="mb-1">
+            <span class="text-muted small">권장 판매가</span>
+            <div class="fs-5 fw-bold text-primary">₩${r.recommended_price.toLocaleString()}</div>
+          </div>
+          <div class="row g-1 text-center mb-2">
+            <div class="col-6">
+              <div class="text-muted" style="font-size:0.72rem;">실 마진</div>
+              <div class="fw-semibold text-${marginColor}">₩${r.actual_margin_krw.toLocaleString()}</div>
+            </div>
+            <div class="col-6">
+              <div class="text-muted" style="font-size:0.72rem;">손익분기</div>
+              <div class="fw-semibold">₩${r.breakeven_price.toLocaleString()}</div>
+            </div>
+          </div>
+          ${r.warnings && r.warnings.length > 0 ? `<div class="text-warning small mb-2">⚠️ ${r.warnings.join(' ')}</div>` : ''}
+          <button class="btn btn-outline-secondary btn-sm w-100"
+            onclick="applyPrice('${r.marketplace}', ${r.recommended_price})">
+            이 가격으로 적용
+          </button>
+        </div>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+
+  // 차트 렌더링
+  renderChart(results);
+  document.getElementById('chartCard').style.removeProperty('display');
 }
 
-function renderScenarios(basePayload) {
-  const scenarios = [10, 20, 30, 40, 50];
-  const tbody = document.getElementById('scenarioBody');
-  tbody.innerHTML = '';
+function renderChart(results) {
+  const labels = results.map(r => MARKETPLACE_LABELS[r.marketplace] || r.marketplace);
+  const marginData = results.map(r => parseFloat(r.actual_margin_pct));
+  const colors = marginData.map(v => v >= 20 ? '#198754' : v >= 10 ? '#ffc107' : '#dc3545');
 
-  const promises = scenarios.map(margin => {
-    const p = Object.assign({}, basePayload, {target_margin_pct: margin});
-    return fetch('/seller/pricing/calc', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(p)
-    }).then(r => r.json()).then(data => ({margin, data}));
+  if (_chartInstance) {
+    _chartInstance.destroy();
+  }
+  const ctx = document.getElementById('marginChart').getContext('2d');
+  _chartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: '마진율 (%)',
+        data: marginData,
+        backgroundColor: colors,
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: {
+        y: {
+          beginAtZero: true,
+          suggestedMax: 50,
+          ticks: { callback: v => v + '%' },
+        },
+      },
+    },
   });
+}
 
-  Promise.all(promises).then(results => {
-    tbody.innerHTML = '';
-    results.forEach(({margin, data}) => {
-      if (!data.ok) return;
-      const r = data.result;
-      const color = margin >= 20 ? 'text-success' : margin >= 10 ? 'text-warning' : 'text-danger';
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${margin}%</td>
-        <td>₩${r.sell_price_krw.toLocaleString()}</td>
-        <td class="${color} fw-semibold">${r.actual_margin_pct}%</td>
-      `;
-      tbody.appendChild(tr);
-    });
-  });
+// ─────────────────────────────────────────
+// "이 가격으로 적용" — 토스트 (다음 PR D에서 마켓 동기화 연결 예정)
+// ─────────────────────────────────────────
+function applyPrice(marketplace, price) {
+  const label = MARKETPLACE_LABELS[marketplace] || marketplace;
+  showToast(`${label} 권장 판매가 ₩${price.toLocaleString()} 복사됨. (마켓 동기화는 Phase 126에서 연결 예정)`);
+}
+
+function showToast(msg) {
+  let container = document.getElementById('toastContainer');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toastContainer';
+    container.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;';
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement('div');
+  toast.className = 'toast show align-items-center text-bg-dark border-0';
+  toast.role = 'alert';
+  toast.innerHTML = `
+    <div class="d-flex">
+      <div class="toast-body">${msg}</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" onclick="this.closest('.toast').remove()"></button>
+    </div>`;
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 4000);
+}
+
+function showError(msg) {
+  document.getElementById('marketCards').innerHTML =
+    `<div class="col-12"><div class="alert alert-danger">${msg}</div></div>`;
 }
 </script>
 {% endblock %}

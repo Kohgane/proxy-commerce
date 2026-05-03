@@ -94,12 +94,18 @@ def build_auto_purchase_widget() -> Dict[str, Any]:
 
 
 def build_fx_widget() -> Dict[str, Any]:
-    """환율 위젯 데이터."""
+    """환율 위젯 데이터.
+
+    실시간 환율 사용 가능 시 is_mock=False + source 표시.
+    """
     data = _safe_call(get_fx_rates)
+    # 실제 데이터인 경우에만 mock 라벨 제거
+    is_live = not data.get("is_mock", True)
     return {
         "title": "환율",
         "type": "fx",
         "data": data,
+        "live": is_live,
     }
 
 

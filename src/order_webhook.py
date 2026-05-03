@@ -821,6 +821,10 @@ try:
     from .seller_console.views import bp as seller_bp
     app.register_blueprint(seller_bp)
     logger.info("셀러 콘솔 Blueprint 등록 완료 (/seller/)")
+    # 공개 마진 계산 API 등록 (Phase 125)
+    from .seller_console.views import _register_api_routes as _register_seller_api
+    _register_seller_api(app)
+    logger.info("공개 마진 계산 API 등록 완료 (/api/v1/pricing/calculate)")
 except Exception as _seller_bp_exc:
     logger.warning("셀러 콘솔 Blueprint 등록 실패: %s", _seller_bp_exc)
 
