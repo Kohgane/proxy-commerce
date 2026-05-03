@@ -36,6 +36,30 @@ def secure_app():
     def test_post():
         return jsonify({"ok": True})
 
+    @app.get('/admin/')
+    def admin_endpoint():
+        return '<html><body>Admin</body></html>', 200
+
+    @app.get('/seller/dashboard')
+    def seller_endpoint():
+        return '<html><body>Seller</body></html>', 200
+
+    @app.get('/api/docs')
+    def api_docs_endpoint():
+        return '<html><body>Docs</body></html>', 200
+
+    @app.get('/api/v1/health')
+    def api_health_endpoint():
+        return jsonify({"status": "ok"})
+
+    @app.get('/health/deep')
+    def health_deep_endpoint():
+        return jsonify({"status": "ok"})
+
+    @app.get('/webhook/test')
+    def webhook_endpoint():
+        return jsonify({"received": True})
+
     return app
 
 
@@ -69,6 +93,59 @@ class TestSecurityHeaders:
         with secure_app.test_client() as client:
             resp = client.get('/test')
             assert 'Content-Security-Policy' in resp.headers
+
+    def test_csp_html_page_allows_cdn(self, secure_app):
+        """/admin/ 응답에는 Bootstrap CDN 허용 CSP가 적용된다 (style-src에 CDN 포함)."""
+        with secure_app.test_client() as client:
+            resp = client.get('/admin/')
+            csp = resp.headers.get('Content-Security-Policy', '')
+            # style-src 또는 script-src에 CDN 도메인이 명시되어야 함
+            assert 'jsdelivr.net' in csp
+
+    def test_csp_seller_page_allows_cdn(self, secure_app):
+        """/seller/ 응답에는 Bootstrap CDN 허용 CSP가 적용된다."""
+        with secure_app.test_client() as client:
+            resp = client.get('/seller/dashboard')
+            csp = resp.headers.get('Content-Security-Policy', '')
+            assert 'jsdelivr.net' in csp
+
+    def test_csp_api_docs_allows_cdn(self, secure_app):
+        """/api/docs 응답에는 Bootstrap CDN 허용 CSP가 적용된다."""
+        with secure_app.test_client() as client:
+            resp = client.get('/api/docs')
+            csp = resp.headers.get('Content-Security-Policy', '')
+            assert 'jsdelivr.net' in csp
+
+    def test_csp_api_v1_is_strict(self, secure_app):
+        """/api/v1/ 응답에는 strict CSP가 적용된다 (외부 리소스 차단)."""
+        with secure_app.test_client() as client:
+            resp = client.get('/api/v1/health')
+            csp = resp.headers.get('Content-Security-Policy', '')
+            assert "default-src 'none'" in csp
+            assert 'jsdelivr' not in csp
+
+    def test_csp_health_is_strict(self, secure_app):
+        """/health/ 응답에는 strict CSP가 적용된다."""
+        with secure_app.test_client() as client:
+            resp = client.get('/health/deep')
+            csp = resp.headers.get('Content-Security-Policy', '')
+            assert "default-src 'none'" in csp
+            assert 'jsdelivr' not in csp
+
+    def test_csp_webhook_is_strict(self, secure_app):
+        """/webhook/ 응답에는 strict CSP가 적용된다."""
+        with secure_app.test_client() as client:
+            resp = client.get('/webhook/test')
+            csp = resp.headers.get('Content-Security-Policy', '')
+            assert "default-src 'none'" in csp
+            assert 'jsdelivr' not in csp
+
+    def test_security_headers_present_on_api_endpoint(self, secure_app):
+        """API 응답에도 X-Frame-Options, X-Content-Type-Options는 유지된다."""
+        with secure_app.test_client() as client:
+            resp = client.get('/api/v1/health')
+            assert resp.headers.get('X-Frame-Options') == 'DENY'
+            assert resp.headers.get('X-Content-Type-Options') == 'nosniff'
 
     def test_post_with_json_content_type_allowed(self, secure_app):
         """application/json Content-Type의 POST는 허용된다."""
