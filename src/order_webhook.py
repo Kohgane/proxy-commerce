@@ -1060,51 +1060,192 @@ def readiness():
 def deep_health():
     """Deep healthcheck — 외부 의존성 상세 연결 확인.
 
-    응답 JSON:
-        {
-            "status": "ok" | "degraded",
-            "timestamp": "ISO8601",
-            "uptime_seconds": float,
-            "checks": {
-                "secrets_core": bool,
-                "google_sheets": bool,
-                ...
-            },
-            "version": str
-        }
+    단계별 진단:
+      1. secrets_core    — 필수 환경변수 존재 여부
+      2. google_credentials — 자격증명 로드 (다중 소스)
+      3. google_sheets   — 스프레드시트 열기
+      4. google_worksheets — 필수 워크시트 존재 확인
+
+    각 단계 실패 시 이후 단계는 skip 처리.
     """
     import datetime
+    import re
+    from .utils.google_credentials import GoogleCredentialsLoader, CredentialsLoadError
+
     check_list = []
     now_iso = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
     uptime = round(time.time() - _START_TIME, 1)
 
-    # 1) 시크릿 검증
+    # 시트 ID 마스킹 helper
+    def _mask(sid: str) -> str:
+        if len(sid) <= 8:
+            return "***"
+        return f"{sid[:4]}***{sid[-4:]}"
+
+    # placeholder 시트 ID 감지
+    _PLACEHOLDER_PATTERNS = {"your-sheet-id", "for-google-sheet-id", "xxx", "yyy", "test", "example"}
+
+    def _validate_sheet_id(sid: str):
+        """(cleaned_id, warning) 반환. warning=None 이면 이상 없음."""
+        # URL 형식이면 ID 추출 시도
+        m = re.search(r'/spreadsheets/d/([^/]+)', sid)
+        if m:
+            sid = m.group(1)
+        lower = sid.lower()
+        for ph in _PLACEHOLDER_PATTERNS:
+            if ph in lower:
+                return sid, f"GOOGLE_SHEET_ID가 placeholder 값처럼 보임: {_mask(sid)!r}"
+        if len(sid) < 20:
+            return sid, f"GOOGLE_SHEET_ID 길이가 너무 짧음 ({len(sid)}자): {_mask(sid)!r}"
+        if len(sid) > 100:
+            return sid, f"GOOGLE_SHEET_ID 길이가 너무 김 ({len(sid)}자)"
+        return sid, None
+
+    # ── 1) secrets_core ───────────────────────────────────────────────
+    secrets_ok = False
     try:
         from .utils.secret_check import check_secrets
         secret_result = check_secrets('core')
         missing = secret_result['core']['missing']
+        secrets_ok = len(missing) == 0
         check_list.append({
             "name": "secrets_core",
-            "status": "ok" if not missing else "fail",
-            "detail": f"누락된 시크릿: {missing}" if missing else "모든 코어 시크릿 정상",
+            "status": "ok" if secrets_ok else "fail",
+            "detail": f"누락된 시크릿: {missing}" if missing else "필수 환경변수 모두 존재",
         })
     except Exception as exc:
         logger.warning("Deep health: secret check failed: %s", exc)
         check_list.append({"name": "secrets_core", "status": "fail", "detail": str(exc)})
 
-    # 2) Google Sheets 연결 확인 (단계별 진단)
+    # ── 2) google_credentials ─────────────────────────────────────────
+    cred_data = None
+    cred_source = None
     try:
-        from .utils.sheets import diagnose_sheets_connection
-        diag = diagnose_sheets_connection()
-        check_list.append({"name": "google_sheets", **diag})
+        loader = GoogleCredentialsLoader()
+        cred_data = loader.load()
+        cred_source = loader.source
+        check_list.append({
+            "name": "google_credentials",
+            "status": "ok",
+            "source": cred_source,
+            "detail": "service_account 로드 성공",
+            "service_account": cred_data.get("client_email", ""),
+            "project_id": cred_data.get("project_id", ""),
+        })
+    except CredentialsLoadError as exc:
+        logger.warning("Deep health: credentials load failed: %s", exc)
+        check_list.append({
+            "name": "google_credentials",
+            "status": "fail",
+            "detail": str(exc),
+            "hint": (
+                "Render Dashboard → Environment → Secret Files 에서 "
+                "service-account.json 등록 또는 GOOGLE_SERVICE_JSON_B64 환경변수 설정"
+            ),
+        })
+        # 이후 단계 skip
+        check_list.append({"name": "google_sheets", "status": "skip", "detail": "google_credentials fail로 인해 스킵"})
+        check_list.append({"name": "google_worksheets", "status": "skip", "detail": "google_credentials fail로 인해 스킵"})
+        has_fail = any(c["status"] == "fail" for c in check_list)
+        return jsonify({
+            "status": "degraded" if has_fail else "ok",
+            "timestamp": now_iso,
+            "uptime_seconds": uptime,
+            "version": os.getenv("APP_VERSION", "dev"),
+            "checks": check_list,
+        }), 200
     except Exception as exc:
-        logger.warning("Deep health: Google Sheets check failed: %s", exc)
-        check_list.append({"name": "google_sheets", "status": "fail", "detail": str(exc)})
+        logger.warning("Deep health: credentials load unexpected error: %s", exc)
+        check_list.append({"name": "google_credentials", "status": "fail", "detail": str(exc)})
+        check_list.append({"name": "google_sheets", "status": "skip", "detail": "google_credentials fail로 인해 스킵"})
+        check_list.append({"name": "google_worksheets", "status": "skip", "detail": "google_credentials fail로 인해 스킵"})
+        has_fail = True
+        return jsonify({
+            "status": "degraded",
+            "timestamp": now_iso,
+            "uptime_seconds": uptime,
+            "version": os.getenv("APP_VERSION", "dev"),
+            "checks": check_list,
+        }), 200
 
-    # 전체 상태 판단 — fail 항목이 있으면 degraded, skip만 있으면 ok
+    # ── 3) google_sheets ──────────────────────────────────────────────
+    sheet_id_raw = os.getenv('GOOGLE_SHEET_ID', '').strip()
+    sheet_id, sid_warning = _validate_sheet_id(sheet_id_raw) if sheet_id_raw else ('', None)
+    svc_email = cred_data.get("client_email", "") if cred_data else ""
+
+    if not sheet_id_raw:
+        check_list.append({
+            "name": "google_sheets",
+            "status": "skip",
+            "detail": "GOOGLE_SHEET_ID 환경변수 미설정",
+            "hint": "Render 환경변수 탭에서 GOOGLE_SHEET_ID 추가",
+        })
+        check_list.append({"name": "google_worksheets", "status": "skip", "detail": "google_sheets skip으로 인해 스킵"})
+    elif sid_warning:
+        check_list.append({
+            "name": "google_sheets",
+            "status": "fail",
+            "detail": sid_warning,
+            "sheet_id_masked": _mask(sheet_id),
+            "hint": "시트 URL에서 /d/ 와 /edit 사이의 ID 값을 GOOGLE_SHEET_ID 로 등록하세요",
+        })
+        check_list.append({"name": "google_worksheets", "status": "skip", "detail": "google_sheets fail로 인해 스킵"})
+    else:
+        try:
+            from .utils.sheets import diagnose_sheets_connection
+            diag = diagnose_sheets_connection()
+            # worksheets 체크는 diagnose_sheets_connection에서 통합하므로 여기서 분리
+            sheets_status = diag.get("status", "fail")
+            check_list.append({
+                "name": "google_sheets",
+                "sheet_id_masked": _mask(sheet_id),
+                **{k: v for k, v in diag.items() if k not in ("status",)},
+                "status": sheets_status,
+            })
+            if sheets_status != "ok":
+                check_list.append({
+                    "name": "google_worksheets",
+                    "status": "skip",
+                    "detail": "google_sheets fail로 인해 스킵",
+                })
+            else:
+                # 워크시트 체크 (별도)
+                try:
+                    import gspread as _gspread
+                    from oauth2client.service_account import ServiceAccountCredentials as _SAC
+                    from .utils.sheets import SCOPES, _REQUIRED_WORKSHEETS
+                    _creds = _SAC.from_json_keyfile_dict(cred_data, SCOPES)
+                    _client = _gspread.authorize(_creds)
+                    _sh = _client.open_by_key(sheet_id)
+                    existing_ws = {ws.title for ws in _sh.worksheets()}
+                    missing_ws = [ws for ws in _REQUIRED_WORKSHEETS if ws not in existing_ws]
+                    if missing_ws:
+                        check_list.append({
+                            "name": "google_worksheets",
+                            "status": "fail",
+                            "detail": f"누락된 워크시트: {missing_ws}",
+                            "hint": f"Google Sheets에 다음 워크시트 생성 필요: {missing_ws}",
+                        })
+                    else:
+                        check_list.append({
+                            "name": "google_worksheets",
+                            "status": "ok",
+                            "detail": f"필수 워크시트 모두 존재: {_REQUIRED_WORKSHEETS}",
+                        })
+                except Exception as ws_exc:
+                    check_list.append({
+                        "name": "google_worksheets",
+                        "status": "fail",
+                        "detail": f"워크시트 조회 실패: {ws_exc}",
+                    })
+        except Exception as exc:
+            logger.warning("Deep health: Google Sheets check failed: %s", exc)
+            check_list.append({"name": "google_sheets", "status": "fail", "detail": str(exc)})
+            check_list.append({"name": "google_worksheets", "status": "skip", "detail": "google_sheets fail로 인해 스킵"})
+
+    # 전체 상태 판단
     has_fail = any(c["status"] == "fail" for c in check_list)
     overall = "degraded" if has_fail else "ok"
-    # degraded여도 앱은 코어 동작 가능하므로 200 반환 (운영 가시성)
     return jsonify({
         "status": overall,
         "timestamp": now_iso,

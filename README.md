@@ -278,17 +278,55 @@ SHOPIFY_ACCESS_TOKEN=shpat_xxxxx
 SHOPIFY_CLIENT_SECRET=shpss_xxxxx
 ```
 
-### 3. Google Sheets 설정
+### 3. Google Sheets 설정 (자격증명 등록)
+
+#### 방법 1 — Render Secret File (권장 ⭐)
+
+Render 배포 시 가장 안정적인 방법입니다. base64 인코딩이 필요 없습니다.
+
+1. Render Dashboard → 서비스 → **Environment** 탭
+2. **Secret Files** 섹션 → **Add Secret File**
+3. Filename: `service-account.json`
+4. Contents: `service-account.json` 파일 내용 그대로 붙여넣기 (base64 X)
+5. Save → 자동 재배포
+
+`/health/deep` 에서 `google_credentials.source = "secret_file:/etc/secrets/service-account.json"` 으로 확인.
+
+#### 방법 2 — 환경변수 (base64)
+
+```bash
+# Linux / Mac / Git Bash (LF 보장, 줄바꿈 없이)
+base64 -w 0 service-account.json > sa_b64.txt
+
+# 검증 (올바른 JSON이 나와야 함)
+cat sa_b64.txt | base64 -d | python3 -m json.tool | head -3
+
+# 길이 확인 (보통 3000~4500자)
+wc -c sa_b64.txt
+```
+
+Render → Environment Variables → `GOOGLE_SERVICE_JSON_B64` 에 `sa_b64.txt` 내용 붙여넣기.
+
+> ⚠️ Windows base64 도구 사용 시 **LF (Unix)** 옵션 선택, 줄바꿈 없이 한 줄로 출력할 것.
+
+#### 방법 3 — 환경변수 (raw JSON)
+
+`GOOGLE_SERVICE_JSON` 환경변수에 JSON 전체를 그대로 붙여넣기.
+특수문자(`"`, `\n` 등) 이스케이프에 주의.
+
+#### 등록 후 검증
+
+```bash
+curl https://your-service.onrender.com/health/deep | python3 -m json.tool
+# google_credentials.source 필드로 어느 소스가 사용 중인지 확인
+# google_sheets.status 가 ok 이면 완료
+```
 
 1. Google Cloud Console에서 서비스 계정 생성
 2. Google Sheets API 활성화
-3. 서비스 계정에 대상 시트 편집 권한 부여
-4. 서비스 계정 JSON 키 파일을 base64로 인코딩:
-   ```bash
-   base64 -i service-account.json | tr -d '\n'
-   ```
-5. `GOOGLE_SERVICE_JSON_B64` 환경변수에 설정
-6. Google Sheet에 다음 워크시트 생성:
+3. 서비스 계정에 대상 시트 편집 권한 부여 (시트 공유 → 서비스계정 이메일 → 편집자)
+4. 위 방법 중 하나로 자격증명 등록
+5. Google Sheet에 다음 워크시트 생성:
    - `catalog` — 상품 카탈로그
    - `orders` — 주문 이력
    - `fx_rates` — 환율 캐시
