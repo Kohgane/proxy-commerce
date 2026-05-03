@@ -376,11 +376,17 @@ def health():
 
 def _result_to_dict(result) -> Dict[str, Any]:
     """MarginResult 인스턴스를 JSON 직렬화 가능한 dict로 변환."""
+    try:
+        from .margin_calculator import MarginCalculator
+        labels = MarginCalculator.MARKETPLACE_LABELS
+    except Exception:
+        labels = {
+            "coupang": "쿠팡", "smartstore": "스마트스토어", "11st": "11번가",
+            "kohganemultishop": "코가네멀티샵", "shopify": "Shopify",
+        }
     return {
         "marketplace": result.marketplace,
-        "marketplace_label": result.fx_used.get("marketplace_label",
-            {"coupang": "쿠팡", "smartstore": "스마트스토어", "11st": "11번가",
-             "kohganemultishop": "코가네멀티샵", "shopify": "Shopify"}.get(result.marketplace, result.marketplace)),
+        "marketplace_label": labels.get(result.marketplace, result.marketplace),
         "cost_in_krw": int(result.cost_in_krw),
         "customs_in_krw": int(result.customs_in_krw),
         "total_landed_cost": int(result.total_landed_cost),
@@ -429,7 +435,7 @@ def _register_api_routes(app):
             if "market_fee_rate" in data:
                 commission_rate = Decimal(str(data["market_fee_rate"]))
             else:
-                from src.seller_console.margin_calculator import default_commission_rate
+                from .margin_calculator import default_commission_rate
                 commission_rate = default_commission_rate(marketplace)
             pg_fee_rate = Decimal(str(data.get("pg_fee_rate", 0)))
             target_margin_pct = Decimal(str(data.get("target_margin_pct", 22)))
@@ -442,7 +448,7 @@ def _register_api_routes(app):
             return jsonify({"ok": False, "error": "매입가를 입력하세요."}), 400
 
         try:
-            from src.seller_console.margin_calculator import CostInput, MarginCalculator, MarketInput
+            from .margin_calculator import CostInput, MarginCalculator, MarketInput
             cost = CostInput(
                 buy_price=buy_price,
                 buy_currency=currency,

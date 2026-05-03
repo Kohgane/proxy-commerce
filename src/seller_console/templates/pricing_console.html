@@ -342,7 +342,7 @@ function renderChart(results) {
 // ─────────────────────────────────────────
 function applyPrice(marketplace, price) {
   const label = MARKETPLACE_LABELS[marketplace] || marketplace;
-  showToast(`${label} 권장 판매가 ₩${price.toLocaleString()} 복사됨. (마켓 동기화는 Phase 126에서 연결 예정)`);
+  showToast(`${label} 권장 판매가 ₩${price.toLocaleString()} — 마켓 동기화는 Phase 126에서 연결 예정입니다.`);
 }
 
 function showToast(msg) {

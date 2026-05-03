@@ -37,6 +37,9 @@ _DEFAULT_COMMISSION: Dict[str, Decimal] = {
     "shopify": Decimal("2"),            # Shopify Payments 기본
 }
 
+# 자체몰/Shopify 기본 PG 수수료율 (외부 결제 게이트웨이 사용 시 적용)
+_DEFAULT_PG_FEE: Decimal = Decimal("3.3")
+
 # ──────────────────────────────────────────────────────────
 # Graceful imports
 # ──────────────────────────────────────────────────────────
@@ -270,7 +273,7 @@ class MarginCalculator:
             market = MarketInput(
                 marketplace=mp,
                 commission_rate=default_commission_rate(mp),
-                pg_fee_rate=Decimal("3.3") if mp in ("kohganemultishop", "shopify") else Decimal("0"),
+                pg_fee_rate=_DEFAULT_PG_FEE if mp in ("kohganemultishop", "shopify") else Decimal("0"),
             )
             results.append(self.calculate(cost, market, sell_price=sell_price))
         return results
