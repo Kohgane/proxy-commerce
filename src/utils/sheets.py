@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -13,6 +13,9 @@ SCOPES = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/a
 
 # 필수 워크시트 목록
 _REQUIRED_WORKSHEETS = ["catalog", "orders", "fx_rates", "fx_history"]
+
+# 자동 워크시트 생성 옵트인 (AUTO_BOOTSTRAP_SHEETS=1 시 활성화)
+_AUTO_BOOTSTRAP = os.getenv("AUTO_BOOTSTRAP_SHEETS", "0") == "1"
 
 # 모듈 레벨 로더 (소스 기록 공유)
 _loader = GoogleCredentialsLoader()
@@ -45,6 +48,45 @@ def open_sheet(sheet_id: str, worksheet: str):
         logger.info("Worksheet '%s' not found, creating...", worksheet)
         ws = sh.add_worksheet(title=worksheet, rows=1000, cols=20)
     return ws
+
+
+def open_sheet_object(sheet_id: str):
+    """Google Sheets Spreadsheet 객체 반환 (워크시트 선택 없이)."""
+    client = _service_account()
+    return client.open_by_key(sheet_id)
+
+
+def get_or_create_worksheet(sheet, name: str, headers: Optional[List[str]] = None):
+    """워크시트 없으면 생성 + 헤더 작성.
+
+    AUTO_BOOTSTRAP_SHEETS=1 환경변수로 옵트인.
+    옵트인 안 된 경우에도 워크시트가 이미 있으면 그대로 반환.
+
+    Args:
+        sheet: gspread Spreadsheet 인스턴스
+        name: 워크시트 이름
+        headers: 첫 번째 행에 쓸 헤더 리스트 (워크시트 신규 생성 시만 적용)
+
+    Returns:
+        gspread Worksheet 인스턴스
+    """
+    try:
+        ws = sheet.worksheet(name)
+        return ws
+    except gspread.exceptions.WorksheetNotFound:
+        if not _AUTO_BOOTSTRAP:
+            logger.warning(
+                "워크시트 '%s' 없음 — AUTO_BOOTSTRAP_SHEETS=1 로 자동 생성 가능", name
+            )
+            raise
+
+        cols = max(len(headers or []), 10)
+        ws = sheet.add_worksheet(title=name, rows=1000, cols=cols)
+        logger.info("워크시트 '%s' 자동 생성 완료", name)
+        if headers:
+            ws.update("A1", [headers])
+            logger.info("워크시트 '%s' 헤더 작성: %s", name, headers)
+        return ws
 
 
 def diagnose_sheets_connection() -> Dict[str, Any]:

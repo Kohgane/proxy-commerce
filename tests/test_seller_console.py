@@ -68,10 +68,10 @@ class TestSellerConsoleViews:
         resp = client.get("/seller/pricing")
         assert resp.status_code == 200
 
-    def test_market_status_returns_200(self, client):
-        """GET /seller/market-status → 200."""
+    def test_market_status_returns_redirect(self, client):
+        """GET /seller/market-status → 302 (/seller/markets 리다이렉트, Phase 127)."""
         resp = client.get("/seller/market-status")
-        assert resp.status_code == 200
+        assert resp.status_code in (301, 302)
 
     def test_collect_preview_no_url_returns_400(self, client):
         """POST /seller/collect/preview — URL 없으면 400."""

@@ -77,9 +77,21 @@
   <!-- 마켓 상태 -->
   <div class="card border-0 shadow-sm mb-3">
     <div class="card-body">
-      <h6 class="card-title">🏪 마켓별 상품 상태
-        {% if widget.data.is_mock %}<span class="badge bg-warning text-dark ms-1" style="font-size:0.65rem;">mock</span>{% endif %}
-      </h6>
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="card-title mb-0">🏪 마켓별 상품 상태
+          {% if widget.data.is_mock %}<span class="badge bg-warning text-dark ms-1" style="font-size:0.65rem;">mock</span>{% endif %}
+        </h6>
+        <div class="d-flex gap-2 align-items-center">
+          {% if widget.data.fetched_at %}
+          <span class="text-muted" style="font-size:0.7rem;" id="dashSyncTime" data-fetched="{{ widget.data.fetched_at }}">
+            마지막 동기화: <span id="dashSyncAgo">—</span>
+          </span>
+          {% endif %}
+          <a href="/seller/markets" class="btn btn-outline-secondary btn-sm" style="font-size:0.75rem;">상세 보기</a>
+          <button class="btn btn-outline-primary btn-sm" style="font-size:0.75rem;"
+                  onclick="dashSyncAll(this)">🔄 지금 동기화</button>
+        </div>
+      </div>
       <div class="row g-2">
         {% for m in widget.data.markets %}
         <div class="col-md-4">
@@ -195,4 +207,68 @@
 {% if not widgets %}
 <div class="alert alert-info">위젯 데이터를 로드 중입니다...</div>
 {% endif %}
+
+<!-- 동기화 토스트 -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999">
+  <div id="dashSyncToast" class="toast align-items-center text-bg-success border-0" role="alert">
+    <div class="d-flex">
+      <div class="toast-body" id="dashSyncToastBody">동기화 완료</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function dashSyncAll(btn) {
+  btn.disabled = true;
+  btn.textContent = '⏳ 동기화 중...';
+  fetch('/seller/markets/sync', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({marketplace: 'all'})
+  })
+  .then(r => r.json())
+  .then(data => {
+    const total = Object.values(data).reduce((a, b) => a + (b || 0), 0);
+    const toastBody = document.getElementById('dashSyncToastBody');
+    if (toastBody) toastBody.textContent = `동기화 완료: ${total}개 항목 갱신`;
+    const toast = document.getElementById('dashSyncToast');
+    if (toast && window.bootstrap) new bootstrap.Toast(toast, {delay: 3000}).show();
+    setTimeout(() => location.reload(), 2000);
+  })
+  .catch(err => {
+    const toastBody = document.getElementById('dashSyncToastBody');
+    if (toastBody) toastBody.textContent = '동기화 실패: ' + err.message;
+    const toast = document.getElementById('dashSyncToast');
+    if (toast) {
+      toast.className = 'toast align-items-center text-bg-danger border-0';
+      if (window.bootstrap) new bootstrap.Toast(toast, {delay: 3000}).show();
+    }
+  })
+  .finally(() => {
+    btn.disabled = false;
+    btn.textContent = '🔄 지금 동기화';
+  });
+}
+
+// 마지막 동기화 경과 시간
+function updateDashSyncAgo() {
+  const el = document.getElementById('dashSyncTime');
+  if (!el) return;
+  const fetchedAt = el.dataset.fetched;
+  if (!fetchedAt) return;
+  const diff = Math.floor((Date.now() - new Date(fetchedAt).getTime()) / 1000);
+  let ago;
+  if (diff < 60) ago = `${diff}초 전`;
+  else if (diff < 3600) ago = `${Math.floor(diff/60)}분 전`;
+  else ago = `${Math.floor(diff/3600)}시간 전`;
+  const agoEl = document.getElementById('dashSyncAgo');
+  if (agoEl) agoEl.textContent = ago;
+}
+
+updateDashSyncAgo();
+setInterval(updateDashSyncAgo, 10000);
+</script>
 {% endblock %}
