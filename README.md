@@ -141,6 +141,33 @@ python scripts/render_smoke.py https://kohganepercentiii.com
 
 ---
 
+## 🛒 셀러 콘솔 (Phase 122)
+
+셀러(=운영자) 관점의 SaaS UI. `/seller/` URL로 접근.
+
+| 화면 | URL | 설명 |
+|------|-----|------|
+| 대시보드 | `/seller/dashboard` | 오늘 KPI·수집큐·마켓현황·알림·환율 통합 |
+| 수동 수집기 | `/seller/collect` | 상품 URL → 추출 → 편집 → 마켓 업로드 |
+| 마진 계산기 | `/seller/pricing` | 원가+관세+수수료+환율 기반 실시간 마진 계산 |
+| 마켓 현황 | `/seller/market-status` | 쿠팡/스마트스토어/11번가 상품 상태 모니터링 |
+
+**비전 마스터 문서**: [docs/vision/MASTER_VISION.md](docs/vision/MASTER_VISION.md)
+
+### 수동 수집기 사용법 (3단계)
+
+1. **URL 입력**: `/seller/collect` 접속 → 상품 URL 붙여넣기
+   (Amazon, 타오바오, 1688, Porter, Memo, Alo Yoga, lululemon 등)
+
+2. **메타데이터 추출**: "🔍 메타데이터 추출" 버튼 클릭
+   → 이미지/제목(한국어)/가격/옵션/마진 슬라이더 미리보기
+
+3. **마켓 업로드**: 업로드 대상 마켓 선택(쿠팡/스스/11번가/WC) → "📤 업로드" 버튼
+
+> **참고**: 현재 모든 어댑터는 mock 데이터 기반. 실 스크래핑은 Phase 123 PR에서 처리.
+
+---
+
 ## 주요 기능
 
 ### Phase 1 — 기반

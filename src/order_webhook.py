@@ -816,6 +816,14 @@ try:
 except Exception as _security_advanced_bp_exc:
     logger.warning("보안 강화 API Blueprint 등록 실패: %s", _security_advanced_bp_exc)
 
+# 셀러 콘솔 Blueprint 등록 (Phase 122)
+try:
+    from .seller_console.views import bp as seller_bp
+    app.register_blueprint(seller_bp)
+    logger.info("셀러 콘솔 Blueprint 등록 완료 (/seller/)")
+except Exception as _seller_bp_exc:
+    logger.warning("셀러 콘솔 Blueprint 등록 실패: %s", _seller_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')
