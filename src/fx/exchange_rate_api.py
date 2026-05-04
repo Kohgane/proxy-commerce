@@ -115,8 +115,8 @@ def _fetch_from_api(base: str = "KRW") -> Optional[dict]:
             return None
         return data.get("conversion_rates", {})
     except Exception as exc:
-        # URL 로그 시 API 키 마스킹
-        logger.warning("ExchangeRate-API fetch 실패 (%s/.../latest/%s): %s", safe_url_prefix, base, type(exc).__name__)
+        # URL 로그 시 API 키 마스킹 — exc 메시지에 URL이 포함되지 않도록 type만 로그
+        logger.warning("ExchangeRate-API fetch 실패 (base=%s, error=%s: %s)", base, type(exc).__name__, str(exc).split("api_key")[0][:80])
         return None
 
 

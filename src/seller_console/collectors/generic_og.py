@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 
 _USER_AGENT = "Mozilla/5.0 (compatible; KohganeBot/1.0; +https://kohganepercentiii.com)"
 
+# HTML 파싱 최대 길이 (ReDoS 및 메모리 과다 사용 방지)
+_MAX_HTML_LENGTH = 500_000
+
 # 허용 URL 스키마 (SSRF 방지)
 _ALLOWED_SCHEMES = frozenset({"http", "https"})
 # 내부 IP 블록 방지를 위한 프라이빗 IP 패턴
@@ -66,11 +69,12 @@ def _parse_price(price_str: str) -> Optional[Decimal]:
 
     예: "$29.99" → Decimal("29.99"), "1,234.56" → Decimal("1234.56")
     음수나 잘못된 형식은 None 반환.
+    소수점은 최대 6자리 허용 (JPY 등 소수점 없는 통화부터 가상화폐까지 대응).
     """
     try:
         # 쉼표 제거 후 숫자와 점만 남김
         cleaned = price_str.replace(",", "")
-        # 숫자, 점, 선택적 앞 마이너스만 허용 (점이 최대 하나인지도 검증)
+        # 양의 정수 또는 소수 (최대 6자리 소수점)
         m = re.fullmatch(r"\d+(?:\.\d{1,6})?", cleaned.strip())
         if m:
             val = Decimal(m.group())
@@ -187,8 +191,8 @@ def _parse_og_regex(html: str) -> dict:
                     self._json_ld_buf.append(data)
 
         parser = _MetaParser()
-        # 입력 길이를 제한해 매우 큰 HTML 처리 방지
-        parser.feed(html[:500_000])
+        # 입력 길이를 제한해 매우 큰 HTML 처리 방지 (DoS 방지)
+        parser.feed(html[:_MAX_HTML_LENGTH])
 
         for attrs in parser.metas:
             prop = attrs.get("property", "") or attrs.get("name", "")

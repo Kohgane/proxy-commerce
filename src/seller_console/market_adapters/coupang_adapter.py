@@ -46,6 +46,8 @@ def _hmac_sign(method: str, url_path: str, query: str = "") -> dict:
     secret_key = os.getenv("COUPANG_SECRET_KEY", "")
 
     dt = datetime.now(tz=timezone.utc)
+    # 쿠팡 윙 OpenAPI 규격: 2자리 연도 (%y) 사용 (예: 261023T143512Z)
+    # 참고: https://developers.coupang.com/doc/OpenAPI_v2_20230427.pdf
     datetime_str = dt.strftime("%y%m%dT%H%M%SZ")
     # HMAC 서명: 날짜시간 + HTTP메서드 + 경로 + 쿼리 (순서 고정)
     message = f"{datetime_str}{method}{url_path}{query}"

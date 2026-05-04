@@ -55,7 +55,9 @@ def detect_collector(url: str) -> BaseCollector:
         적절한 BaseCollector 인스턴스
     """
     try:
-        host = urlparse(url).netloc.lower().lstrip("www.")
+        raw_host = urlparse(url).netloc.lower()
+        # www. 접두사만 정확하게 제거 (lstrip은 개별 문자 제거로 오동작할 수 있음)
+        host = raw_host[4:] if raw_host.startswith("www.") else raw_host
     except Exception:
         return GenericOgCollector()
 
@@ -90,7 +92,8 @@ def collect(url: str) -> CollectorResult:
 
     # 미지원 도메인 경고
     try:
-        host = urlparse(url).netloc.lower().lstrip("www.")
+        raw_host = urlparse(url).netloc.lower()
+        host = raw_host[4:] if raw_host.startswith("www.") else raw_host
         warn_msg = None
         for domain, msg in _UNSUPPORTED_WARN.items():
             if host == domain or host.endswith(f".{domain}"):
