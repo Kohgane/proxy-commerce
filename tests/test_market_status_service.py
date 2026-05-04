@@ -148,11 +148,12 @@ class TestAdapterLoad:
         assert expected.issubset(set(service.live_adapters.keys()))
 
     def test_adapter_health_check_returns_stub(self, service):
-        """어댑터 health_check() → stub 상태 반환."""
+        """어댑터 health_check() → stub 또는 missing 상태 반환 (Phase 128: API 키 없으면 missing)."""
         for key, adapter in service.live_adapters.items():
             result = adapter.health_check()
             assert "status" in result
-            assert result["status"] == "stub"
+            # Phase 128: API 키 미설정 시 "missing" 반환, 기존 stub 모드 어댑터는 "stub"
+            assert result["status"] in ("stub", "missing", "dry_run")
 
 
 # ---------------------------------------------------------------------------

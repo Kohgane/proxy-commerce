@@ -2,7 +2,20 @@
 {% block title %}수동 수집기{% endblock %}
 
 {% block content %}
-<h4 class="fw-bold mb-4">🔍 수동 수집기 (퍼센티 스타일)</h4>
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0 fw-bold">🔍 수동 수집기 (Phase 128)</h4>
+  <a href="/seller/api-status" class="btn btn-outline-secondary btn-sm">🔑 API 상태</a>
+</div>
+
+{% if api_status %}
+{% set active_count = api_status | selectattr('status', 'equalto', 'active') | list | length %}
+{% if active_count == 0 %}
+<div class="alert alert-info mb-3 py-2">
+  <small>⚠️ API 키 미설정 — OG 메타 폴백 모드로 동작합니다.
+  <a href="/seller/api-status" class="alert-link">API 상태 확인 →</a></small>
+</div>
+{% endif %}
+{% endif %}
 
 <!-- URL 입력 -->
 <div class="card border-0 shadow-sm mb-4">
@@ -10,14 +23,14 @@
     <label class="form-label fw-semibold">상품 URL 붙여넣기</label>
     <div class="input-group">
       <input type="url" id="productUrl" class="form-control"
-             placeholder="https://www.amazon.com/... 또는 taobao, 1688, aloyoga, lululemon 등"
+             placeholder="https://www.amazon.com/... 또는 taobao, 1688, aloyoga, lululemon, rakuten 등"
              autocomplete="off">
       <button class="btn btn-primary" id="extractBtn" onclick="extractProduct()">
-        🔍 메타데이터 추출
+        🔍 수집
       </button>
     </div>
     <div class="form-text mt-1">
-      지원 소싱처: Amazon US/JP · 타오바오 · 1688 · Porter · Memo Paris · Alo Yoga · lululemon · Nike · Arc'teryx 등
+      지원 소싱처: Amazon US/JP (PA-API) · 라쿠텐 (WS API) · Alo Yoga · lululemon · 타오바오 · 1688 · 기타 (OG 메타)
     </div>
   </div>
 </div>
@@ -25,11 +38,16 @@
 <!-- 로딩 스피너 -->
 <div id="loadingSpinner" class="text-center py-4 d-none">
   <div class="spinner-border text-primary" role="status"></div>
-  <div class="mt-2 text-muted">추출 중...</div>
+  <div class="mt-2 text-muted">수집 중...</div>
 </div>
 
 <!-- 오류 메시지 -->
 <div id="errorAlert" class="alert alert-danger d-none" role="alert"></div>
+
+<!-- 수집기 경고 배너 (소스 정보 포함) -->
+<div id="collectorWarnings" class="d-none mb-3">
+  <div id="warningsList"></div>
+</div>
 
 <!-- 타오바오 신뢰도 경고 배너 -->
 <div id="trustWarning" class="alert alert-warning d-none mb-3" role="alert">
@@ -42,15 +60,23 @@
   <div class="card border-0 shadow-sm mb-4">
     <div class="card-body">
       <div class="row g-3">
-        <!-- 이미지 갤러리 -->
+        <!-- 이미지 갤러리 (캐러셀 스타일) -->
         <div class="col-md-4">
-          <div id="imageGallery" class="d-flex flex-wrap gap-2">
-            <!-- 이미지 동적 삽입 -->
+          <div id="imageCarousel" class="position-relative">
+            <div id="imageGallery" class="d-flex flex-wrap gap-2">
+              <!-- 이미지 동적 삽입 -->
+            </div>
           </div>
         </div>
 
         <!-- 상품 정보 -->
         <div class="col-md-8">
+          <!-- 수집 소스 배지 -->
+          <div class="mb-2">
+            <span class="badge bg-secondary" id="sourceBadge"></span>
+            <span class="badge bg-info text-dark" id="asinBadge" style="display:none;"></span>
+          </div>
+
           <div class="mb-3">
             <label class="form-label fw-semibold">제목 (한국어)</label>
             <input type="text" id="titleKo" class="form-control">
@@ -112,9 +138,17 @@
     </div>
   </div>
 
-  <!-- 업로드 대상 선택 -->
+  <!-- Phase 128 액션 버튼 -->
   <div class="card border-0 shadow-sm mb-4">
     <div class="card-body">
+      <h6 class="fw-semibold mb-3">💾 저장 / 등록</h6>
+      <div class="d-flex flex-wrap gap-2 mb-3">
+        <button class="btn btn-success" onclick="saveToSheets()">
+          📊 Sheets에 저장
+        </button>
+        <span id="saveStatus" class="align-self-center text-muted small"></span>
+      </div>
+      <hr class="my-3">
       <h6 class="fw-semibold mb-3">📤 마켓 업로드 대상 선택</h6>
       <div class="d-flex flex-wrap gap-3 mb-3">
         <div class="form-check form-switch">
@@ -134,7 +168,7 @@
           <label class="form-check-label" for="chk_woocommerce">🌐 코가네멀티샵</label>
         </div>
       </div>
-      <button class="btn btn-success" onclick="uploadProduct()">📤 선택 마켓에 업로드</button>
+      <button class="btn btn-primary" onclick="uploadProduct()">📤 선택 마켓에 업로드</button>
     </div>
   </div>
 </div>
@@ -143,7 +177,7 @@
 <div class="toast-container position-fixed bottom-0 end-0 p-3">
   <div id="uploadToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
     <div class="toast-header">
-      <strong class="me-auto" id="toastTitle">업로드 결과</strong>
+      <strong class="me-auto" id="toastTitle">결과</strong>
       <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
     </div>
     <div class="toast-body" id="toastBody"></div>
@@ -164,7 +198,9 @@ function extractProduct() {
   document.getElementById('previewCard').classList.add('d-none');
   document.getElementById('errorAlert').classList.add('d-none');
   document.getElementById('trustWarning').classList.add('d-none');
+  document.getElementById('collectorWarnings').classList.add('d-none');
   document.getElementById('extractBtn').disabled = true;
+  document.getElementById('saveStatus').textContent = '';
 
   fetch('/seller/collect/preview', {
     method: 'POST',
@@ -184,7 +220,7 @@ function extractProduct() {
     }
 
     currentDraft = data.draft;
-    renderPreview(data.draft);
+    renderPreview(data.draft, data.source, data.warnings || []);
 
     // 신뢰도 정보 표시
     if (data.trust) {
@@ -199,24 +235,47 @@ function extractProduct() {
   });
 }
 
-function renderPreview(draft) {
-  document.getElementById('titleKo').value = draft.title_ko || '';
-  document.getElementById('titleEn').value = draft.title_en || '';
-  document.getElementById('priceOriginal').value = draft.price_original || '';
+function renderPreview(draft, source, warnings) {
+  // Phase 128: 새 수집기 결과 형식 지원 (title 직접, 또는 title_ko)
+  document.getElementById('titleKo').value = draft.title_ko || draft.title || '';
+  document.getElementById('titleEn').value = draft.title_en || draft.title || '';
+  document.getElementById('priceOriginal').value = draft.price_original || draft.price || '';
   document.getElementById('currencyLabel').textContent = draft.currency || 'USD';
   document.getElementById('brand').value = draft.brand || '';
   document.getElementById('category').value = draft.category || '';
   document.getElementById('description').value = draft.description || '';
 
+  // 수집 소스 배지
+  const sourceEl = document.getElementById('sourceBadge');
+  if (source || draft.source || draft.adapter_used) {
+    sourceEl.textContent = '소스: ' + (source || draft.source || draft.adapter_used);
+    sourceEl.style.display = '';
+  } else {
+    sourceEl.style.display = 'none';
+  }
+
+  // ASIN 배지
+  const asinEl = document.getElementById('asinBadge');
+  if (draft.asin) {
+    asinEl.textContent = 'ASIN: ' + draft.asin;
+    asinEl.style.display = '';
+  } else {
+    asinEl.style.display = 'none';
+  }
+
   // 이미지 갤러리
   const gallery = document.getElementById('imageGallery');
   gallery.innerHTML = '';
-  (draft.images || []).forEach(imgUrl => {
+  (draft.images || []).slice(0, 8).forEach(imgUrl => {
     const img = document.createElement('img');
     img.src = imgUrl;
-    img.alt = draft.title_en;
-    img.style.cssText = 'width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #ddd;';
-    img.onerror = function() { this.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="80" height="80"%3E%3Crect width="80" height="80" fill="%23eee"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%23aaa" font-size="12"%3E이미지 없음%3C/text%3E%3C/svg%3E'; };
+    img.alt = '상품 이미지';
+    img.style.cssText = 'width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #ddd;cursor:pointer;';
+    img.onclick = function() {
+      document.querySelectorAll('#imageGallery img').forEach(i => i.style.borderColor = '#ddd');
+      this.style.borderColor = '#0d6efd';
+    };
+    img.onerror = function() { this.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="80" height="80"%3E%3Crect width="80" height="80" fill="%23eee"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%23aaa" font-size="12"%3E없음%3C/text%3E%3C/svg%3E'; };
     gallery.appendChild(img);
   });
   if (!draft.images || !draft.images.length) {
@@ -228,14 +287,24 @@ function renderPreview(draft) {
   tbody.innerHTML = '';
   (draft.options || []).forEach(opt => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${opt.name}</td><td>${opt.values.join(', ')}</td>`;
+    tr.innerHTML = `<td>${opt.name}</td><td>${opt.values ? opt.values.join(', ') : ''}</td>`;
     tbody.appendChild(tr);
   });
 
   // 별점/리뷰
   document.getElementById('ratingDisplay').textContent = draft.rating ? `⭐ ${draft.rating}` : '';
   document.getElementById('reviewDisplay').textContent = draft.review_count ? `리뷰 ${draft.review_count.toLocaleString()}개` : '';
-  document.getElementById('mockBadge').innerHTML = draft.is_mock ? '<span class="badge bg-warning text-dark">mock 데이터</span>' : '';
+  document.getElementById('mockBadge').innerHTML = draft.is_mock ? '<span class="badge bg-warning text-dark">mock 데이터</span>' : '<span class="badge bg-success">실 데이터</span>';
+
+  // 경고 메시지
+  const warnContainer = document.getElementById('collectorWarnings');
+  const warnList = document.getElementById('warningsList');
+  if (warnings && warnings.length) {
+    warnList.innerHTML = warnings.map(w =>
+      `<div class="alert alert-warning py-2 mb-1"><small>⚠️ ${w}</small></div>`
+    ).join('');
+    warnContainer.classList.remove('d-none');
+  }
 
   document.getElementById('previewCard').classList.remove('d-none');
 }
@@ -265,8 +334,47 @@ function updateMarginDisplay(val) {
   document.getElementById('marginPctDisplay').textContent = val;
 }
 
+/* Phase 128: Sheets에 저장 */
+function saveToSheets() {
+  if (!currentDraft) { alert('먼저 상품을 수집하세요.'); return; }
+
+  const saveStatus = document.getElementById('saveStatus');
+  saveStatus.textContent = '저장 중...';
+
+  const payload = {
+    title: document.getElementById('titleKo').value || currentDraft.title || currentDraft.title_ko,
+    price: document.getElementById('priceOriginal').value || currentDraft.price || currentDraft.price_original,
+    currency: currentDraft.currency || 'USD',
+    sku: currentDraft.sku || currentDraft.asin,
+    asin: currentDraft.asin,
+    brand: document.getElementById('brand').value,
+    category: document.getElementById('category').value,
+    marketplace: 'collected',
+  };
+
+  fetch('/seller/collect/save', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      saveStatus.textContent = '✅ Sheets에 저장됨';
+      saveStatus.style.color = 'green';
+    } else {
+      saveStatus.textContent = '❌ 저장 실패: ' + (data.error || '');
+      saveStatus.style.color = 'red';
+    }
+  })
+  .catch(err => {
+    saveStatus.textContent = '❌ 오류: ' + err;
+    saveStatus.style.color = 'red';
+  });
+}
+
 function uploadProduct() {
-  if (!currentDraft) { alert('먼저 상품을 추출하세요.'); return; }
+  if (!currentDraft) { alert('먼저 상품을 수집하세요.'); return; }
 
   const markets = [];
   ['coupang', 'smartstore', 'elevenst', 'woocommerce'].forEach(m => {
@@ -283,18 +391,22 @@ function uploadProduct() {
   .then(data => {
     const toast = document.getElementById('uploadToast');
     const body = document.getElementById('toastBody');
-    if (data.ok) {
+    if (data.ok && data.result) {
       const r = data.result;
-      body.innerHTML = `성공 ${r.succeeded} / 큐적재 ${r.queued} / 실패 ${r.failed}<br>` +
-        r.results.map(x => `${x.market_label}: ${x.message}`).join('<br>');
+      body.innerHTML = `성공 ${r.succeeded || 0} / 큐적재 ${r.queued || 0} / 실패 ${r.failed || 0}<br>` +
+        (r.results || []).map(x => `${x.market_label || x.market}: ${x.message}`).join('<br>');
     } else {
       body.textContent = data.error || '업로드 오류';
     }
     new bootstrap.Toast(toast).show();
+  })
+  .catch(err => {
+    document.getElementById('toastBody').textContent = '업로드 오류: ' + err;
+    new bootstrap.Toast(document.getElementById('uploadToast')).show();
   });
 }
 
-// Enter 키로 추출 실행
+// Enter 키로 수집 실행
 document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('productUrl').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') extractProduct();

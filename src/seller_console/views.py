@@ -120,16 +120,25 @@ def dashboard():
 
 @bp.get("/collect")
 def collect():
-    """수동 수집기 페이지."""
+    """수동 수집기 페이지 (Phase 128: API 상태 포함)."""
     if not _check_auth():
         return redirect(url_for("seller_console.index"))
 
-    return render_template("manual_collect.html", page="collect")
+    try:
+        from src.utils.env_catalog import get_api_status
+        api_status = get_api_status()
+    except Exception as exc:
+        logger.warning("API 상태 로드 실패: %s", exc)
+        api_status = []
+
+    return render_template("manual_collect.html", page="collect", api_status=api_status)
 
 
 @bp.post("/collect/preview")
 def collect_preview():
     """URL → 메타데이터 추출 결과 (JSON).
+
+    Phase 128: 실 수집기 우선 시도 → 기존 ManualCollectorService 폴백.
 
     Request body: {"url": "https://..."}
     Response: {"ok": true, "draft": {...}}
@@ -140,6 +149,32 @@ def collect_preview():
     if not url:
         return jsonify({"ok": False, "error": "URL이 필요합니다."}), 400
 
+    # Phase 128: 실 수집기 dispatcher 우선 사용
+    try:
+        from src.seller_console.collectors.dispatcher import collect as dispatcher_collect
+        result = dispatcher_collect(url)
+        if result.success:
+            # 기존 draft 형식과 호환되도록 변환
+            draft_dict = result.to_dict()
+            # 하위 호환 필드 추가
+            draft_dict.update({
+                "title_en": result.title or "",
+                "title_ko": result.title or "",
+                "price_original": float(result.price) if result.price else 0.0,
+                "is_mock": False,
+                "adapter_used": result.source,
+            })
+            return jsonify({
+                "ok": True,
+                "draft": draft_dict,
+                "trust": None,
+                "source": result.source,
+                "warnings": result.warnings,
+            })
+    except Exception as exc:
+        logger.debug("실 수집기 실패, 기존 수집기로 폴백: %s", exc)
+
+    # 기존 ManualCollectorService 폴백
     collector = _get_collector_service()
     if collector is None:
         return jsonify({"ok": False, "error": "수집기 모듈 준비 중입니다."}), 503
@@ -195,6 +230,116 @@ def collect_upload():
     except Exception as exc:
         logger.warning("업로드 디스패처 오류: %s", exc)
         return jsonify({"ok": False, "error": "업로드 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/collect/save")
+def collect_save():
+    """수집 결과를 Sheets catalog 워크시트에 저장 (Phase 128).
+
+    Request body: 수집 결과 dict
+    Response: {"ok": true, "saved": true}
+    """
+    payload = request.get_json(force=True, silent=True) or {}
+    if not payload:
+        return jsonify({"ok": False, "error": "저장할 데이터가 없습니다."}), 400
+
+    try:
+        from .market_status_sheets import MarketStatusSheetsAdapter
+        from .market_status import MarketStatusItem
+        from datetime import datetime
+
+        adapter = MarketStatusSheetsAdapter()
+        item = MarketStatusItem(
+            marketplace=payload.get("marketplace", "collected"),
+            product_id=payload.get("sku") or payload.get("asin") or f"col_{int(datetime.now().timestamp())}",
+            state="active",
+            sku=payload.get("sku") or payload.get("asin"),
+            title=payload.get("title"),
+            price_krw=int(float(payload["price"])) if payload.get("price") else None,
+            last_synced_at=datetime.now(),
+        )
+        saved = adapter.upsert_item(item)
+        return jsonify({"ok": True, "saved": saved})
+    except Exception as exc:
+        logger.warning("collect_save 오류: %s", exc)
+        return jsonify({"ok": False, "error": "저장 중 오류가 발생했습니다."}), 500
+
+
+@bp.get("/catalog")
+def catalog():
+    """상품 카탈로그 페이지 (Phase 128) — Sheets catalog 워크시트 뷰."""
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+
+    page_num = request.args.get("page", 1, type=int)
+    per_page = 50
+
+    items = []
+    total = 0
+    source = "mock"
+    error_msg = None
+
+    try:
+        from .market_status_sheets import MarketStatusSheetsAdapter
+        adapter = MarketStatusSheetsAdapter()
+        result = adapter.fetch_all()
+        all_items = result.items
+        source = result.source
+        total = len(all_items)
+        start = (page_num - 1) * per_page
+        items = all_items[start:start + per_page]
+    except Exception as exc:
+        logger.warning("카탈로그 데이터 로드 실패: %s", exc)
+        error_msg = str(exc)
+
+    total_pages = max(1, (total + per_page - 1) // per_page)
+
+    return render_template(
+        "catalog.html",
+        items=items,
+        page="catalog",
+        current_page=page_num,
+        total_pages=total_pages,
+        total=total,
+        source=source,
+        error_msg=error_msg,
+    )
+
+
+@bp.get("/orders")
+def orders():
+    """주문 관리 페이지 (Phase 128 — stub, Phase 129에서 실연동)."""
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+
+    return render_template("orders.html", page="orders")
+
+
+@bp.get("/api-status")
+def api_status():
+    """API 상태 페이지 (Phase 128)."""
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+
+    try:
+        from src.utils.env_catalog import get_api_status as _get_api_status
+        api_list = _get_api_status()
+    except Exception as exc:
+        logger.warning("API 상태 로드 실패: %s", exc)
+        api_list = []
+
+    return render_template("api_status.html", page="api_status", api_list=api_list)
+
+
+@bp.get("/api-status/json")
+def api_status_json():
+    """API 상태 JSON 응답 (Phase 128)."""
+    try:
+        from src.utils.env_catalog import get_api_status as _get_api_status
+        return jsonify({"ok": True, "apis": _get_api_status()})
+    except Exception as exc:
+        logger.warning("API 상태 JSON 오류: %s", exc)
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @bp.get("/pricing")
@@ -435,11 +580,26 @@ def markets_sync():
 @bp.get("/health")
 def health():
     """셀러 콘솔 헬스체크."""
+    try:
+        from src.utils.env_catalog import get_api_status
+        api_statuses = get_api_status()
+        active_count = sum(1 for a in api_statuses if a["status"] == "active")
+        missing_count = sum(1 for a in api_statuses if a["status"] == "missing")
+    except Exception:
+        api_statuses = []
+        active_count = 0
+        missing_count = 0
+
     return jsonify({
         "ok": True,
         "service": "seller_console",
-        "phase": 127,
+        "phase": 128,
         "auth_enabled": _AUTH_ENABLED,
+        "api_keys": {
+            "active": active_count,
+            "missing": missing_count,
+            "total": len(api_statuses),
+        },
     })
 
 

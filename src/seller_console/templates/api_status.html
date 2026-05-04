@@ -1,0 +1,68 @@
+{% extends "_base.html" %}
+{% block title %}API 상태{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0 fw-bold">🔑 API 상태</h4>
+  <a href="/seller/api-status/json" class="btn btn-outline-secondary btn-sm" target="_blank">JSON 보기</a>
+</div>
+
+<p class="text-muted mb-4">
+  외부 API 키 상태를 확인합니다. 활성화하려면 Render Environment에 환경변수를 등록하세요.
+</p>
+
+<div class="row g-3">
+{% for api in api_list %}
+<div class="col-md-6">
+  <div class="card border-0 shadow-sm h-100 {% if api.status == 'active' %}border-start border-success border-4{% else %}border-start border-warning border-4{% endif %}">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-start mb-2">
+        <h6 class="card-title mb-0 fw-semibold">{{ api.name }}</h6>
+        {% if api.status == 'active' %}
+          <span class="badge bg-success">✅ 활성</span>
+        {% else %}
+          <span class="badge bg-warning text-dark">⚠️ 미설정</span>
+        {% endif %}
+      </div>
+      <p class="text-muted small mb-2">{{ api.purpose }}</p>
+
+      <!-- 환경변수 상태 -->
+      <div class="mb-2">
+        {% for var_name, var_val in api.env_vars.items() %}
+        <div class="d-flex align-items-center gap-2 mb-1">
+          {% if var_val %}
+            <span class="badge bg-light text-dark border" style="font-family:monospace;font-size:0.7rem;">✅ {{ var_name }}</span>
+            <span class="text-muted" style="font-family:monospace;font-size:0.7rem;">{{ var_val }}</span>
+          {% else %}
+            <span class="badge bg-danger" style="font-family:monospace;font-size:0.7rem;">❌ {{ var_name }}</span>
+            <span class="text-muted small">미설정</span>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+
+      <!-- 발급 링크 -->
+      {% if api.status == 'missing' %}
+      <a href="{{ api.docs_url }}" class="btn btn-outline-primary btn-sm" target="_blank">
+        📋 발급 가이드 →
+      </a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="col-12">
+  <div class="alert alert-info">API 상태 데이터를 로드할 수 없습니다.</div>
+</div>
+{% endfor %}
+</div>
+
+<div class="mt-4 p-3 bg-light rounded">
+  <h6 class="fw-semibold mb-2">📌 환경변수 등록 방법</h6>
+  <ol class="text-muted small mb-0">
+    <li>Render Dashboard → proxy-commerce → <strong>Environment</strong> 탭 클릭</li>
+    <li>환경변수 이름(위의 ❌ 항목)과 값을 입력하고 저장</li>
+    <li>Manual Deploy → 이 페이지 새로고침으로 확인</li>
+  </ol>
+</div>
+{% endblock %}
