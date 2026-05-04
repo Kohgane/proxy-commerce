@@ -88,12 +88,8 @@ class LululemonCollector(BaseCollector):
 
         price: Optional[Decimal] = None
         if data.get("price"):
-            try:
-                price_str = re.sub(r"[^\d.]", "", str(data["price"]).replace(",", ""))
-                if price_str:
-                    price = Decimal(price_str)
-            except InvalidOperation:
-                pass
+            from .generic_og import _parse_price
+            price = _parse_price(str(data["price"]))
 
         images = list(dict.fromkeys(data.get("images", [])))
 

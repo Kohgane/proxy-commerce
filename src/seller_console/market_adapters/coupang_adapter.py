@@ -47,7 +47,7 @@ def _hmac_sign(method: str, url_path: str, query: str = "") -> dict:
 
     dt = datetime.now(tz=timezone.utc)
     datetime_str = dt.strftime("%y%m%dT%H%M%SZ")
-    path_with_query = f"{url_path}?{query}" if query else url_path
+    # HMAC 서명: 날짜시간 + HTTP메서드 + 경로 + 쿼리 (순서 고정)
     message = f"{datetime_str}{method}{url_path}{query}"
     signature = hmac.new(
         secret_key.encode("utf-8"),

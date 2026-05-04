@@ -102,7 +102,9 @@ def _fetch_from_api(base: str = "KRW") -> Optional[dict]:
         logger.debug("EXCHANGE_RATE_API_KEY 미설정 — ExchangeRate-API 건너뜀")
         return None
 
+    # API 키를 URL 경로에 포함 (ExchangeRate-API v6 규격)
     url = f"https://v6.exchangerate-api.com/v6/{api_key}/latest/{base}"
+    safe_url_prefix = "https://v6.exchangerate-api.com/v6/***"  # 로그용 마스킹
     try:
         import requests
         resp = requests.get(url, timeout=10)
@@ -113,7 +115,8 @@ def _fetch_from_api(base: str = "KRW") -> Optional[dict]:
             return None
         return data.get("conversion_rates", {})
     except Exception as exc:
-        logger.warning("ExchangeRate-API fetch 실패: %s", exc)
+        # URL 로그 시 API 키 마스킹
+        logger.warning("ExchangeRate-API fetch 실패 (%s/.../latest/%s): %s", safe_url_prefix, base, type(exc).__name__)
         return None
 
 

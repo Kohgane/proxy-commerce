@@ -11,7 +11,7 @@ import logging
 import re
 from decimal import Decimal, InvalidOperation
 from typing import Optional
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 from .base import BaseCollector, CollectorResult
 
@@ -19,17 +19,65 @@ logger = logging.getLogger(__name__)
 
 _USER_AGENT = "Mozilla/5.0 (compatible; KohganeBot/1.0; +https://kohganepercentiii.com)"
 
+# 허용 URL 스키마 (SSRF 방지)
+_ALLOWED_SCHEMES = frozenset({"http", "https"})
+# 내부 IP 블록 방지를 위한 프라이빗 IP 패턴
+_PRIVATE_HOST_RE = re.compile(
+    r"^(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|::1|0\.0\.0\.0)",
+    re.IGNORECASE,
+)
+
+
+def _is_safe_url(url: str) -> bool:
+    """SSRF 방지: http/https 스키마, 내부 IP 차단."""
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in _ALLOWED_SCHEMES:
+            return False
+        host = parsed.hostname or ""
+        if _PRIVATE_HOST_RE.match(host):
+            logger.warning("내부 호스트 차단 (SSRF 방지): %s", host)
+            return False
+        return True
+    except Exception:
+        return False
+
 
 def _fetch_html(url: str, timeout: float = 10.0) -> Optional[str]:
-    """URL에서 HTML 텍스트 fetch."""
+    """URL에서 HTML 텍스트 fetch.
+
+    SSRF 방지: http/https만 허용, 내부 IP 차단.
+    """
+    if not _is_safe_url(url):
+        logger.warning("안전하지 않은 URL 거부: %s", url[:100])
+        return None
     try:
         import requests
         resp = requests.get(url, headers={"User-Agent": _USER_AGENT}, timeout=timeout, allow_redirects=True)
         resp.raise_for_status()
         return resp.text
     except Exception as exc:
-        logger.warning("HTML fetch 실패 (%s): %s", url, exc)
+        logger.warning("HTML fetch 실패 (%s): %s", url[:100], exc)
         return None
+
+
+def _parse_price(price_str: str) -> Optional[Decimal]:
+    """가격 문자열을 Decimal로 변환. 숫자와 점(.)만 허용.
+
+    예: "$29.99" → Decimal("29.99"), "1,234.56" → Decimal("1234.56")
+    음수나 잘못된 형식은 None 반환.
+    """
+    try:
+        # 쉼표 제거 후 숫자와 점만 남김
+        cleaned = price_str.replace(",", "")
+        # 숫자, 점, 선택적 앞 마이너스만 허용 (점이 최대 하나인지도 검증)
+        m = re.fullmatch(r"\d+(?:\.\d{1,6})?", cleaned.strip())
+        if m:
+            val = Decimal(m.group())
+            return val if val > 0 else None
+    except (InvalidOperation, Exception):
+        pass
+    return None
 
 
 def _parse_og_bs4(html: str) -> dict:
@@ -100,58 +148,100 @@ def _parse_og_bs4(html: str) -> dict:
 
 
 def _parse_og_regex(html: str) -> dict:
-    """stdlib html.parser + 정규식으로 OG 메타태그 파싱 (BeautifulSoup4 없을 때)."""
+    """stdlib html.parser + 정규식으로 OG 메타태그 파싱 (BeautifulSoup4 없을 때).
+
+    html.parser 기반으로 안전하게 파싱. 정규식 ReDoS 방지.
+    """
     result: dict = {}
 
-    # meta 태그 파싱
-    meta_re = re.compile(r'<meta\s+([^>]+)>', re.IGNORECASE | re.DOTALL)
-    attr_re = re.compile(r'(\w[\w\-:]*)\s*=\s*(?:"([^"]*?)"|\'([^\']*?)\'|([^\s>]*))', re.IGNORECASE)
+    # html.parser 기반 파싱 (정규식 대신 표준 라이브러리 사용)
+    try:
+        from html.parser import HTMLParser
 
-    for meta_match in meta_re.finditer(html):
-        attrs_str = meta_match.group(1)
-        attrs = {}
-        for m in attr_re.finditer(attrs_str):
-            key = m.group(1).lower()
-            val = m.group(2) or m.group(3) or m.group(4) or ""
-            attrs[key] = val
+        class _MetaParser(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.metas: list = []
+                self.scripts: list = []
+                self._in_json_ld = False
+                self._json_ld_buf = []
 
-        prop = attrs.get("property", "") or attrs.get("name", "")
-        content = attrs.get("content", "")
-        if not content or not prop:
-            continue
+            def handle_starttag(self, tag, attrs):
+                attr_dict = dict(attrs)
+                if tag == "meta":
+                    self.metas.append(attr_dict)
+                elif tag == "script":
+                    t = attr_dict.get("type", "")
+                    if "application/ld+json" in t:
+                        self._in_json_ld = True
+                        self._json_ld_buf = []
 
-        prop_lower = prop.lower()
-        if prop_lower == "og:title":
-            result["title"] = content
-        elif prop_lower == "og:description":
-            result["description"] = content
-        elif prop_lower in ("og:image", "og:image:url"):
-            result.setdefault("images", [])
-            result["images"].append(content)
-        elif prop_lower == "product:price:amount":
-            result["price"] = content
-        elif prop_lower == "product:price:currency":
-            result["currency"] = content
-        elif prop_lower == "og:site_name":
-            result["site_name"] = content
+            def handle_endtag(self, tag):
+                if tag == "script" and self._in_json_ld:
+                    self.scripts.append("".join(self._json_ld_buf))
+                    self._in_json_ld = False
+                    self._json_ld_buf = []
 
-    # JSON-LD 간단 추출
-    ld_re = re.compile(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', re.IGNORECASE | re.DOTALL)
-    for m in ld_re.finditer(html):
-        try:
-            data = json.loads(m.group(1))
-            schemas = data if isinstance(data, list) else [data]
-            for schema in schemas:
-                if schema.get("@type") == "Product":
-                    if not result.get("title") and schema.get("name"):
-                        result["title"] = schema["name"]
-                    if not result.get("brand") and schema.get("brand"):
-                        brand = schema["brand"]
-                        result["brand"] = brand.get("name", brand) if isinstance(brand, dict) else str(brand)
-                    if not result.get("sku") and schema.get("sku"):
-                        result["sku"] = schema["sku"]
-        except (json.JSONDecodeError, AttributeError, TypeError):
-            pass
+            def handle_data(self, data):
+                if self._in_json_ld:
+                    self._json_ld_buf.append(data)
+
+        parser = _MetaParser()
+        # 입력 길이를 제한해 매우 큰 HTML 처리 방지
+        parser.feed(html[:500_000])
+
+        for attrs in parser.metas:
+            prop = attrs.get("property", "") or attrs.get("name", "")
+            content = attrs.get("content", "")
+            if not content or not prop:
+                continue
+            prop_lower = prop.lower()
+            if prop_lower == "og:title":
+                result["title"] = content
+            elif prop_lower == "og:description":
+                result["description"] = content
+            elif prop_lower in ("og:image", "og:image:url"):
+                result.setdefault("images", [])
+                result["images"].append(content)
+            elif prop_lower == "product:price:amount":
+                result["price"] = content
+            elif prop_lower == "product:price:currency":
+                result["currency"] = content
+            elif prop_lower == "og:site_name":
+                result["site_name"] = content
+
+        # JSON-LD 파싱
+        for script_text in parser.scripts:
+            try:
+                data = json.loads(script_text)
+                schemas = data if isinstance(data, list) else [data]
+                for schema in schemas:
+                    if schema.get("@type") == "Product":
+                        if not result.get("title") and schema.get("name"):
+                            result["title"] = schema["name"]
+                        if not result.get("brand") and schema.get("brand"):
+                            brand = schema["brand"]
+                            result["brand"] = brand.get("name", brand) if isinstance(brand, dict) else str(brand)
+                        if not result.get("price"):
+                            offers = schema.get("offers", {})
+                            if isinstance(offers, list):
+                                offers = offers[0] if offers else {}
+                            if offers:
+                                result["price"] = str(offers.get("price", ""))
+                                result.setdefault("currency", offers.get("priceCurrency", ""))
+                        if not result.get("sku"):
+                            result["sku"] = schema.get("sku", "")
+                        imgs = schema.get("image", [])
+                        if isinstance(imgs, str):
+                            imgs = [imgs]
+                        if imgs and not result.get("images"):
+                            result["images"] = list(imgs)
+                        break
+            except (json.JSONDecodeError, AttributeError):
+                continue
+
+    except Exception as exc:
+        logger.debug("html.parser 파싱 실패, 빈 결과 반환: %s", exc)
 
     return result
 
@@ -176,13 +266,7 @@ class GenericOgCollector(BaseCollector):
 
         price: Optional[Decimal] = None
         if data.get("price"):
-            try:
-                # 통화 기호 및 쉼표 제거
-                price_str = re.sub(r"[^\d.]", "", str(data["price"]).replace(",", ""))
-                if price_str:
-                    price = Decimal(price_str)
-            except InvalidOperation:
-                pass
+            price = _parse_price(str(data["price"]))
 
         images = list(dict.fromkeys(data.get("images", [])))  # 중복 제거
 

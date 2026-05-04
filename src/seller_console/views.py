@@ -339,7 +339,8 @@ def api_status_json():
         return jsonify({"ok": True, "apis": _get_api_status()})
     except Exception as exc:
         logger.warning("API 상태 JSON 오류: %s", exc)
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        # 내부 오류 메시지를 외부에 노출하지 않음
+        return jsonify({"ok": False, "error": "API 상태 로드 중 오류가 발생했습니다."}), 500
 
 
 @bp.get("/pricing")
