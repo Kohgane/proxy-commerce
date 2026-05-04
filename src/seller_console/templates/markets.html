@@ -1,0 +1,264 @@
+{% extends "_base.html" %}
+{% block title %}마켓 현황{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="fw-bold mb-0">🏪 마켓 상품 현황</h4>
+  <div class="d-flex gap-2 align-items-center">
+    {% if market_data.is_mock %}
+    <span class="badge bg-warning text-dark">mock 데이터</span>
+    {% else %}
+    <span class="badge bg-success">실 데이터 ({{ market_data.source }})</span>
+    {% endif %}
+    {% if market_data.fetched_at %}
+    <span class="text-muted small" id="syncTime" data-fetched="{{ market_data.fetched_at }}">
+      마지막 동기화: <span id="syncAgo">방금 전</span>
+    </span>
+    {% endif %}
+    <button class="btn btn-outline-primary btn-sm" id="syncAllBtn" onclick="syncAllMarkets()">
+      🔄 지금 동기화
+    </button>
+    <button class="btn btn-outline-secondary btn-sm" onclick="location.reload()">새로고침</button>
+  </div>
+</div>
+
+<!-- 마켓별 KPI 카드 -->
+<div class="row g-3 mb-4">
+  {% for m in market_data.markets %}
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body">
+        <h6 class="fw-semibold mb-2">{{ m.label }}</h6>
+        <div class="d-flex justify-content-between text-center">
+          <div>
+            <div class="text-success fw-bold fs-4">{{ m.active }}</div>
+            <div class="text-muted small">활성</div>
+          </div>
+          <div>
+            <div class="text-warning fw-bold fs-4">{{ m.out_of_stock }}</div>
+            <div class="text-muted small">품절</div>
+          </div>
+          <div>
+            <div class="text-danger fw-bold fs-4">{{ m.error }}</div>
+            <div class="text-muted small">오류</div>
+          </div>
+          <div>
+            <div class="fw-bold fs-4">{{ m.total }}</div>
+            <div class="text-muted small">합계</div>
+          </div>
+        </div>
+        {% if m.source != "mock" %}
+        <div class="mt-2">
+          <button class="btn btn-outline-secondary btn-sm w-100"
+                  onclick="syncMarket('{{ m.marketplace }}')">
+            🔄 동기화
+          </button>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- 필터 바 -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+      <label class="form-label mb-0 small fw-semibold">필터:</label>
+      <select class="form-select form-select-sm" id="filterMarket" style="width:auto;" onchange="filterTable()">
+        <option value="">전체 마켓</option>
+        <option value="coupang">쿠팡</option>
+        <option value="smartstore">스마트스토어</option>
+        <option value="11st">11번가</option>
+        <option value="kohganemultishop">코가네멀티샵</option>
+      </select>
+      <select class="form-select form-select-sm" id="filterStatus" style="width:auto;" onchange="filterTable()">
+        <option value="">전체 상태</option>
+        <option value="active">활성 ✅</option>
+        <option value="out_of_stock">품절 ⚠️</option>
+        <option value="error">오류 ❌</option>
+        <option value="price_anomaly">가격이상 💰</option>
+        <option value="suspended">정지 🚫</option>
+      </select>
+      <input type="text" class="form-control form-control-sm" id="filterSearch"
+             placeholder="상품명/SKU 검색..." style="width:200px;" oninput="filterTable()">
+      <span class="text-muted small ms-auto" id="rowCount"></span>
+    </div>
+  </div>
+</div>
+
+<!-- 상품 테이블 -->
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0" id="productTable">
+        <thead class="table-light">
+          <tr>
+            <th>마켓</th>
+            <th>상품 ID</th>
+            <th>상품명</th>
+            <th>SKU</th>
+            <th class="text-center">상태</th>
+            <th class="text-end">가격</th>
+            <th>마지막 동기화</th>
+          </tr>
+        </thead>
+        <tbody id="productTableBody">
+          {% if items %}
+            {% for item in items %}
+            <tr data-market="{{ item.marketplace }}" data-status="{{ item.state }}">              <td><span class="badge bg-secondary">{{ item.marketplace_label }}</span></td>
+              <td><code class="small">{{ item.product_id }}</code></td>
+              <td>{{ item.title or '—' }}</td>
+              <td><code class="small">{{ item.sku or '—' }}</code></td>
+              <td class="text-center">
+                {% if item.state == "active" %}
+                <span class="badge bg-success">✅ 활성</span>
+                {% elif item.state == "out_of_stock" %}
+                <span class="badge bg-warning text-dark">⚠️ 품절</span>
+                {% elif item.state == "error" %}
+                <span class="badge bg-danger" title="{{ item.error_message }}">❌ 오류</span>
+                {% elif item.state == "price_anomaly" %}
+                <span class="badge bg-info text-dark">💰 가격이상</span>
+                {% elif item.state == "suspended" %}
+                <span class="badge bg-dark">🚫 정지</span>
+                {% else %}
+                <span class="badge bg-secondary">{{ item.state }}</span>
+                {% endif %}
+              </td>
+              <td class="text-end">
+                {% if item.price_krw %}₩{{ "{:,}".format(item.price_krw) }}{% else %}—{% endif %}
+              </td>
+              <td class="small text-muted">{{ item.last_synced_at or '—' }}</td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <!-- 시트에 데이터 없음 또는 mock 모드일 때 안내 메시지 표시 -->
+            <tr>
+              <td colspan="7" class="text-center text-muted py-4">
+                {% if market_data.is_mock %}
+                <div>📋 <strong>Mock 모드</strong> — Google Sheets <code>catalog</code> 워크시트에 데이터를 추가하면 실 데이터가 표시됩니다.</div>
+                <div class="small mt-1">컬럼: product_id / sku / title / marketplace / state / price_krw / last_synced_at / error_message</div>
+                {% else %}
+                <div>📭 상품 데이터가 없습니다. Google Sheets에 데이터를 추가해주세요.</div>
+                {% endif %}
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- 페이지네이션 -->
+{% if items and items|length > 50 %}
+<div class="d-flex justify-content-center mt-3">
+  <nav>
+    <ul class="pagination pagination-sm" id="pagination"></ul>
+  </nav>
+</div>
+{% endif %}
+
+<div class="text-muted small mt-2">
+  ℹ️ Phase 127: Google Sheets 기반 실연동. Phase 130에서 마켓 API 직접 연동 예정.
+</div>
+
+<!-- 토스트 알림 -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999">
+  <div id="syncToast" class="toast align-items-center text-bg-success border-0" role="alert">
+    <div class="d-flex">
+      <div class="toast-body" id="syncToastBody">동기화 완료</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// 마켓 동기화 트리거
+function syncMarket(marketplace) {
+  const btn = document.getElementById('syncAllBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ 동기화 중...';
+
+  fetch('/seller/markets/sync', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({marketplace: marketplace})
+  })
+  .then(r => r.json())
+  .then(data => {
+    const total = Object.values(data).reduce((a, b) => a + (b || 0), 0);
+    showToast(`동기화 완료: ${total}개 항목 갱신`);
+    setTimeout(() => location.reload(), 1500);
+  })
+  .catch(err => showToast('동기화 실패: ' + err.message, 'danger'))
+  .finally(() => {
+    btn.disabled = false;
+    btn.textContent = '🔄 지금 동기화';
+  });
+}
+
+function syncAllMarkets() {
+  syncMarket('all');
+}
+
+// 토스트 표시
+function showToast(message, type='success') {
+  const toast = document.getElementById('syncToast');
+  const body = document.getElementById('syncToastBody');
+  body.textContent = message;
+  toast.className = `toast align-items-center text-bg-${type} border-0`;
+  const bsToast = new bootstrap.Toast(toast, {delay: 3000});
+  bsToast.show();
+}
+
+// 테이블 필터링
+function filterTable() {
+  const market = document.getElementById('filterMarket').value.toLowerCase();
+  const status = document.getElementById('filterStatus').value.toLowerCase();
+  const search = document.getElementById('filterSearch').value.toLowerCase();
+  const rows = document.querySelectorAll('#productTableBody tr');
+  let visible = 0;
+
+  rows.forEach(row => {
+    const rowMarket = (row.dataset.market || '').toLowerCase();
+    const rowStatus = (row.dataset.status || '').toLowerCase();
+    const rowText = row.textContent.toLowerCase();
+
+    const marketOk = !market || rowMarket.includes(market);
+    const statusOk = !status || rowStatus === status;
+    const searchOk = !search || rowText.includes(search);
+    const show = marketOk && statusOk && searchOk;
+
+    row.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+
+  const countEl = document.getElementById('rowCount');
+  if (countEl) countEl.textContent = `${visible}개 표시`;
+}
+
+// 마지막 동기화 경과 시간 표시
+function updateSyncAgo() {
+  const el = document.getElementById('syncTime');
+  if (!el) return;
+  const fetchedAt = el.dataset.fetched;
+  if (!fetchedAt) return;
+  const diff = Math.floor((Date.now() - new Date(fetchedAt).getTime()) / 1000);
+  let ago;
+  if (diff < 60) ago = `${diff}초 전`;
+  else if (diff < 3600) ago = `${Math.floor(diff/60)}분 전`;
+  else ago = `${Math.floor(diff/3600)}시간 전`;
+  const agoEl = document.getElementById('syncAgo');
+  if (agoEl) agoEl.textContent = ago;
+}
+
+// 초기화
+filterTable();
+updateSyncAgo();
+setInterval(updateSyncAgo, 10000);
+</script>
+{% endblock %}

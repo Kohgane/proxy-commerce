@@ -1,4 +1,4 @@
-"""src/seller_console/views.py — 셀러 콘솔 Flask Blueprint (Phase 125).
+"""src/seller_console/views.py — 셀러 콘솔 Flask Blueprint (Phase 127).
 
 라우트:
   GET  /seller/              → 메인 대시보드 (리다이렉트)
@@ -9,7 +9,10 @@
   GET  /seller/pricing       → 마진 계산기
   POST /seller/pricing/calc  → 단일 마켓 마진 계산 (JSON)
   POST /seller/pricing/compare → 여러 마켓 비교 계산 (JSON)
-  GET  /seller/market-status → 마켓 현황
+  GET  /seller/market-status → 마켓 현황 (기존, 리다이렉트)
+  GET  /seller/markets       → 마켓 현황 상세 페이지 (Phase 127)
+  GET  /seller/markets/status → JSON: 모든 마켓 상태 (Phase 127)
+  POST /seller/markets/sync  → 라이브 동기화 트리거 (Phase 127)
   GET  /seller/health        → 셀러 콘솔 헬스체크
   POST /api/v1/pricing/calculate → 공개 API (인증 stub)
 
@@ -345,18 +348,88 @@ def pricing_compare():
 
 @bp.get("/market-status")
 def market_status():
-    """마켓 상품 현황 페이지."""
+    """마켓 상품 현황 페이지 (기존 URL 유지 — /seller/markets로 리다이렉트)."""
+    return redirect(url_for("seller_console.markets_overview"))
+
+
+@bp.get("/markets")
+def markets_overview():
+    """마켓 현황 상세 페이지 (Phase 127)."""
     if not _check_auth():
         return redirect(url_for("seller_console.index"))
 
     try:
-        from .data_aggregator import get_market_product_status
-        market_data = get_market_product_status()
+        from .market_status_service import MarketStatusService
+        svc = MarketStatusService()
+        result = svc.get_all()
+        market_data = result.to_legacy_dict()
+        # items도 템플릿에 전달
+        items = [
+            {
+                "marketplace": item.marketplace,
+                "marketplace_label": _marketplace_label(item.marketplace),
+                "product_id": item.product_id,
+                "sku": item.sku or "",
+                "title": item.title or "",
+                "state": item.state,
+                "price_krw": item.price_krw,
+                "last_synced_at": item.last_synced_at.isoformat() if item.last_synced_at else "",
+                "error_message": item.error_message or "",
+            }
+            for item in result.items
+        ]
     except Exception as exc:
         logger.warning("마켓 현황 데이터 로드 실패: %s", exc)
-        market_data = {"markets": [], "is_mock": True}
+        from .data_aggregator import get_market_product_status
+        market_data = get_market_product_status()
+        items = []
 
-    return render_template("market_status.html", market_data=market_data, page="market_status")
+    return render_template(
+        "markets.html",
+        market_data=market_data,
+        items=items,
+        page="market_status",
+    )
+
+
+@bp.get("/markets/status")
+def markets_status():
+    """JSON: 모든 마켓 상태 (Phase 127)."""
+    try:
+        from .market_status_service import MarketStatusService
+        svc = MarketStatusService()
+        result = svc.get_all()
+        return jsonify({
+            "summaries": [s.to_dict() for s in result.summaries],
+            "fetched_at": result.fetched_at.isoformat(),
+            "source": result.source,
+        })
+    except Exception as exc:
+        logger.warning("markets_status API 오류: %s", exc)
+        return jsonify({"error": "마켓 상태 조회 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/markets/sync")
+def markets_sync():
+    """라이브 동기화 트리거 (Phase 127 — stub, Phase 130에서 실 API 활성화).
+
+    Request body: {"marketplace": "coupang" | "all"}
+    Response: {"coupang": 0, ...}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    marketplace = str(data.get("marketplace", "all")).strip()
+
+    try:
+        from .market_status_service import MarketStatusService
+        svc = MarketStatusService()
+        if marketplace == "all":
+            results = {m: svc.sync_marketplace(m) for m in svc.live_adapters}
+        else:
+            results = {marketplace: svc.sync_marketplace(marketplace)}
+        return jsonify(results)
+    except Exception as exc:
+        logger.warning("markets_sync API 오류: %s", exc)
+        return jsonify({"error": "동기화 중 오류가 발생했습니다."}), 500
 
 
 @bp.get("/health")
@@ -365,9 +438,25 @@ def health():
     return jsonify({
         "ok": True,
         "service": "seller_console",
-        "phase": 125,
+        "phase": 127,
         "auth_enabled": _AUTH_ENABLED,
     })
+
+
+# ---------------------------------------------------------------------------
+# 헬퍼: 마켓 레이블
+# ---------------------------------------------------------------------------
+
+_MARKETPLACE_LABELS = {
+    "coupang": "쿠팡",
+    "smartstore": "스마트스토어",
+    "11st": "11번가",
+    "kohganemultishop": "코가네멀티샵",
+}
+
+
+def _marketplace_label(marketplace: str) -> str:
+    return _MARKETPLACE_LABELS.get(marketplace, marketplace)
 
 
 # ---------------------------------------------------------------------------

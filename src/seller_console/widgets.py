@@ -54,8 +54,19 @@ def build_collect_queue_widget() -> Dict[str, Any]:
 
 
 def build_market_status_widget() -> Dict[str, Any]:
-    """마켓별 상품 상태 위젯 데이터."""
-    data = _safe_call(get_market_product_status)
+    """마켓별 상품 상태 위젯 데이터.
+
+    MarketStatusService (Sheets 어댑터 우선)에서 데이터를 가져온다.
+    서비스 로드 실패 시 data_aggregator mock으로 graceful 폴백.
+    """
+    try:
+        from .market_status_service import MarketStatusService
+        svc = MarketStatusService()
+        result = svc.get_all()
+        data = result.to_legacy_dict()
+    except Exception as exc:
+        logger.warning("MarketStatusService 로드 실패 (mock 폴백): %s", exc)
+        data = _safe_call(get_market_product_status)
     return {
         "title": "마켓 상품 현황",
         "type": "market_status",
