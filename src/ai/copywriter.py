@@ -198,7 +198,8 @@ def _call_openai(req: CopyRequest, variant_index: int = 0) -> CopyResult:
 
     usage = data.get("usage", {})
     tokens = usage.get("total_tokens", 0)
-    # gpt-4o-mini 가격: input $0.15/1M, output $0.60/1M (2024년 기준 근사치)
+    # gpt-4o-mini 가격: input $0.15/1M, output $0.60/1M
+    # TODO: OpenAI 가격 정책 변경 시 주기적으로 검토 필요 (https://openai.com/pricing)
     input_tokens = usage.get("prompt_tokens", 0)
     output_tokens = usage.get("completion_tokens", 0)
     cost_usd = Decimal(str(input_tokens)) * Decimal("0.00000015") + Decimal(str(output_tokens)) * Decimal("0.0000006")

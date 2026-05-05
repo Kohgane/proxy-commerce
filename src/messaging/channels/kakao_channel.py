@@ -51,7 +51,8 @@ class KakaoAlimtalkChannel(MessageChannel):
                 "senderkey": sender_key,
                 "tpl_code": template_code,
                 "sender": os.getenv("KAKAO_ALIMTALK_SENDER", ""),
-                "receiver_1": phone.replace("+82", "0").replace("+", ""),
+                # E.164 → 한국 로컬 번호 변환 (+82XXXXXXXXX → 0XXXXXXXXX)
+                "receiver_1": ("0" + phone[3:]) if phone.startswith("+82") else phone.replace("+", ""),
                 "recvname_1": recipient.name,
                 "subject_1": context.get("subject", "알림"),
                 "message_1": template_body,

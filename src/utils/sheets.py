@@ -89,7 +89,7 @@ def get_or_create_worksheet(sheet, name: str, headers: Optional[List[str]] = Non
         return ws
 
 
-def get_worksheet(name: str, headers: Optional[List[str]] = None):
+def get_worksheet(name: str, headers: Optional[List[str]] = None) -> Optional[gspread.Worksheet]:
     """기본 Spreadsheet에서 워크시트 반환 (GOOGLE_SHEET_ID 사용).
 
     워크시트가 없으면 AUTO_BOOTSTRAP_SHEETS=1 시 자동 생성.
@@ -115,6 +115,7 @@ def get_worksheet(name: str, headers: Optional[List[str]] = None):
 
 
 
+def diagnose_sheets_connection() -> Dict[str, Any]:
     """Google Sheets 연결을 단계별로 진단하고 상세 결과를 반환한다.
 
     GoogleCredentialsLoader를 통해 다중 소스 자격증명을 로드한 뒤

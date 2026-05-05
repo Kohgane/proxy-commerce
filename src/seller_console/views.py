@@ -847,9 +847,8 @@ def collect_ai_copy():
         results = writer.generate(req)
         return jsonify({"ok": True, "results": [r.to_dict() for r in results]})
     except Exception as exc:
-        from src.ai.budget import BudgetExceededError
-        if isinstance(exc, BudgetExceededError):
-            return jsonify({"ok": False, "error": "AI 월 예산을 초과했습니다.", "budget": exc.summary}), 402
+        if exc.__class__.__name__ == "BudgetExceededError":
+            return jsonify({"ok": False, "error": "AI 월 예산을 초과했습니다.", "budget": getattr(exc, "summary", {})}), 402
         logger.warning("AI 카피 생성 오류: %s", exc)
         return jsonify({"ok": False, "error": "AI 카피 생성 중 오류가 발생했습니다."}), 500
 
@@ -919,7 +918,13 @@ def messaging_test():
         from src.messaging.router import MessageRouter
         router = MessageRouter()
         result = router.test_send(channel, locale, event, {})
-        return jsonify({"ok": True, "result": result})
+        # Sanitize result: only expose safe fields to external response
+        safe_result = {
+            "sent": result.get("sent", False),
+            "channel": result.get("channel", ""),
+            "fallback": result.get("fallback"),
+        }
+        return jsonify({"ok": True, "result": safe_result})
     except Exception as exc:
         logger.warning("테스트 메시지 오류: %s", exc)
         return jsonify({"ok": False, "error": "테스트 메시지 발송 중 오류가 발생했습니다."}), 500
