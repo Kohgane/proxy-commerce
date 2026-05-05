@@ -16,14 +16,15 @@ class OrderSyncService:
         from src.seller_console.market_adapters.coupang_adapter import CoupangAdapter
         from src.seller_console.market_adapters.smartstore_adapter import SmartStoreAdapter
         from src.seller_console.market_adapters.eleven_adapter import ElevenAdapter
-        from src.seller_console.market_adapters.kohgane_multishop_adapter import KohganeMultishopAdapter
+        from src.seller_console.market_adapters.woocommerce_adapter import WooCommerceAdapter
 
         self.sheets = OrderSheetsAdapter()
         self.adapters = {
             "coupang": CoupangAdapter(),
             "smartstore": SmartStoreAdapter(),
             "11st": ElevenAdapter(),
-            "kohganemultishop": KohganeMultishopAdapter(),
+            # Phase 132: kohganemultishop → woocommerce (kohganemultishop.org 실연동)
+            "woocommerce": WooCommerceAdapter(),
         }
 
     def sync_all(self, since: datetime = None) -> dict:
