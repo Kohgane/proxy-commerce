@@ -139,7 +139,7 @@ class TestCache:
         assert len(results) == 1
         assert results[0].title_ko == "[캐시] 레깅스"
         assert results[0].cached is True
-        mock_cache.get.assert_called_once()
+        mock_cache.get.assert_called_once_with(req.cache_key())
 
     def test_cache_miss_proceeds_to_generation(self, monkeypatch):
         monkeypatch.setenv("ADAPTER_DRY_RUN", "0")

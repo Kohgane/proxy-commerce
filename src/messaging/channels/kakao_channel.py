@@ -51,8 +51,9 @@ class KakaoAlimtalkChannel(MessageChannel):
                 "senderkey": sender_key,
                 "tpl_code": template_code,
                 "sender": os.getenv("KAKAO_ALIMTALK_SENDER", ""),
-                # E.164 → 한국 로컬 번호 변환 (+82XXXXXXXXX → 0XXXXXXXXX)
                 "receiver_1": ("0" + phone[3:]) if phone.startswith("+82") else phone.replace("+", ""),
+                # NOTE: Aligo 한국 알림톡 API는 한국 번호만 지원합니다.
+                # 국제 번호는 SMS 채널(Twilio)을 사용하세요.
                 "recvname_1": recipient.name,
                 "subject_1": context.get("subject", "알림"),
                 "message_1": template_body,

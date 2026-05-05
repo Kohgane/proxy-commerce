@@ -830,9 +830,9 @@ def collect_ai_copy():
     if not title:
         return jsonify({"ok": False, "error": "상품명이 필요합니다."}), 400
 
+    from src.ai.budget import BudgetExceededError
     try:
         from src.ai.copywriter import AICopywriter, CopyRequest
-        from src.ai.budget import BudgetExceededError
 
         req = CopyRequest(
             title=title,
@@ -846,9 +846,9 @@ def collect_ai_copy():
         writer = AICopywriter()
         results = writer.generate(req)
         return jsonify({"ok": True, "results": [r.to_dict() for r in results]})
+    except BudgetExceededError as exc:
+        return jsonify({"ok": False, "error": "AI 월 예산을 초과했습니다.", "budget": exc.summary}), 402
     except Exception as exc:
-        if exc.__class__.__name__ == "BudgetExceededError":
-            return jsonify({"ok": False, "error": "AI 월 예산을 초과했습니다.", "budget": getattr(exc, "summary", {})}), 402
         logger.warning("AI 카피 생성 오류: %s", exc)
         return jsonify({"ok": False, "error": "AI 카피 생성 중 오류가 발생했습니다."}), 500
 
