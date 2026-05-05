@@ -33,14 +33,16 @@ def test_shop_redirects_to_external(client):
     """/shop → 302 → kohganemultishop.org."""
     resp = client.get("/shop")
     assert resp.status_code == 302
-    assert "kohganemultishop.org" in resp.headers.get("Location", "")
+    location = resp.headers.get("Location", "")
+    assert location == "https://kohganemultishop.org"
 
 
 def test_shop_slash_redirects_to_external(client):
     """/shop/ → 302 → kohganemultishop.org."""
     resp = client.get("/shop/")
     assert resp.status_code == 302
-    assert "kohganemultishop.org" in resp.headers.get("Location", "")
+    location = resp.headers.get("Location", "")
+    assert location == "https://kohganemultishop.org"
 
 
 def test_shop_redirect_target_url(client):
@@ -62,7 +64,8 @@ def test_root_redirect_shop_external(monkeypatch):
     with app.test_client() as c:
         resp = c.get("/")
     assert resp.status_code == 302
-    assert "kohganemultishop.org" in resp.headers.get("Location", "")
+    location = resp.headers.get("Location", "")
+    assert location == "https://kohganemultishop.org"
 
 
 def test_root_redirect_shop_legacy(monkeypatch):
@@ -73,7 +76,8 @@ def test_root_redirect_shop_legacy(monkeypatch):
     with app.test_client() as c:
         resp = c.get("/")
     assert resp.status_code == 302
-    assert "kohganemultishop.org" in resp.headers.get("Location", "")
+    location = resp.headers.get("Location", "")
+    assert location == "https://kohganemultishop.org"
 
 
 # ---------------------------------------------------------------------------

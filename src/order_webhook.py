@@ -880,6 +880,11 @@ order_validator = OrderValidator()
 audit_logger = AuditLogger()
 
 
+# Phase 132: 외부 자체몰 URL (kohganemultishop.org)
+# 이 상수를 변경하거나 EXTERNAL_SHOP_URL 환경변수로 재정의 가능.
+_EXTERNAL_SHOP_URL = os.getenv("EXTERNAL_SHOP_URL", "https://kohganemultishop.org")
+
+
 # ---------------------------------------------------------------------------
 # Phase 123 — 루트 라우트 + 에러 핸들러
 # ---------------------------------------------------------------------------
@@ -908,7 +913,7 @@ def root():
     redirect_target = os.getenv("ROOT_REDIRECT", "seller").strip().lower()
 
     if redirect_target in ("shop_external", "shop"):
-        return redirect("https://kohganemultishop.org", code=302)
+        return redirect(_EXTERNAL_SHOP_URL, code=302)
 
     if redirect_target == "landing":
         version = os.getenv('APP_VERSION', 'dev')
@@ -926,8 +931,8 @@ def root():
 @app.route("/shop")
 @app.route("/shop/")
 def shop_external_redirect():
-    """Phase 132: /shop → kohganemultishop.org (외부 워드프레스 자체몰)."""
-    return redirect("https://kohganemultishop.org", code=302)
+    """Phase 132: /shop → 외부 자체몰 (kohganemultishop.org) redirect."""
+    return redirect(_EXTERNAL_SHOP_URL, code=302)
 
 
 @app.errorhandler(404)

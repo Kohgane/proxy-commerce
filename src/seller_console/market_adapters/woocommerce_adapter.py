@@ -107,7 +107,10 @@ class WooCommerceAdapter(MarketAdapter):
                 if not products:
                     break
                 for p in products:
-                    price_str = p.get("price") or p.get("regular_price", "0") or "0"
+                    price_val = p.get("price")
+                    if price_val is None:
+                        price_val = p.get("regular_price")
+                    price_str = price_val if price_val else "0"
                     try:
                         price_krw = int(float(price_str))
                     except (ValueError, TypeError):
@@ -198,11 +201,14 @@ class WooCommerceAdapter(MarketAdapter):
 
         items = []
         for li in (woo.get("line_items") or []):
+            price_val = li.get("price")
+            if price_val is None:
+                price_val = li.get("subtotal")
             items.append({
                 "sku": li.get("sku") or str(li.get("product_id", "")),
                 "title": li.get("name", ""),
                 "qty": li.get("quantity", 1),
-                "unit_price_krw": li.get("price") or li.get("subtotal") or "0",
+                "unit_price_krw": price_val if price_val is not None else "0",
             })
 
         return {
