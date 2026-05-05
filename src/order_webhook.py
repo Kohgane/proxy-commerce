@@ -833,7 +833,17 @@ try:
     from .shop import shop_bp
     # Flask 세션 SECRET_KEY 설정 (카트 세션 필요)
     if not app.secret_key:
-        app.secret_key = os.getenv("SECRET_KEY", os.urandom(32))
+        _shop_secret = os.getenv("SECRET_KEY")
+        if _shop_secret:
+            app.secret_key = _shop_secret
+        else:
+            import warnings
+            warnings.warn(
+                "SECRET_KEY 환경변수가 설정되지 않았습니다. "
+                "프로덕션에서는 반드시 SECRET_KEY를 설정하세요.",
+                stacklevel=1,
+            )
+            app.secret_key = "dev-insecure-do-not-use-in-production"
     app.register_blueprint(shop_bp)
     logger.info("자체몰 Blueprint 등록 완료 (/shop/)")
 except Exception as _shop_bp_exc:
@@ -1342,6 +1352,9 @@ if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', 8000)))
 
 
+_DELIVERY_COMPLETE_LEVEL = 6  # SweetTracker 배송완료 level
+
+
 # ---------------------------------------------------------------------------
 # Phase 131 — 주문 취소 라우트 + 운송장 자동 추적 cron
 # ---------------------------------------------------------------------------
@@ -1361,7 +1374,7 @@ def shop_order_cancel():
         return jsonify(result)
     except Exception as exc:
         logger.warning("주문 취소 실패: %s", exc)
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return jsonify({"ok": False, "error": "주문 취소 중 오류가 발생했습니다."}), 500
 
 
 @app.get('/cron/track-shipments')
@@ -1402,8 +1415,8 @@ def cron_track_shipments():
             try:
                 result = tracker_client.track(courier, tracking_no)
                 level = result.get("level", 0) if result else 0
-                # level 6 = 배송완료
-                if level >= 6 and status != "delivered":
+                # level 6 = 배송완료 (SweetTracker API 스펙)
+                if level >= _DELIVERY_COMPLETE_LEVEL and status != "delivered":
                     row["status"] = "delivered"
                     sheets.upsert_row(row)
                     updated += 1
@@ -1422,6 +1435,8 @@ def cron_track_shipments():
 
     except Exception as exc:
         logger.warning("cron_track_shipments 실패: %s", exc)
-        return jsonify({"status": "fail", "error": str(exc)}), 500
+        return jsonify({"status": "fail", "error": "운송장 추적 중 오류가 발생했습니다."}), 500
 
-    return jsonify({"status": "ok", "updated": updated, "errors": errors[:10]})
+    # 내부 오류 메시지는 로그에만 기록
+    sanitized_errors = [f"추적 오류 {i+1}" for i, _ in enumerate(errors[:10])]
+    return jsonify({"status": "ok", "updated": updated, "errors": sanitized_errors})

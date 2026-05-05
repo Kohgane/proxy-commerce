@@ -34,6 +34,9 @@ from flask import (
 
 logger = logging.getLogger(__name__)
 
+# 토스페이먼츠 sandbox 클라이언트 키 (공개 테스트용, 비밀정보 아님)
+_TOSS_SANDBOX_CLIENT_KEY = "test_ck_D5GePWvyJnrK0W0k6q8gLzN97Eoq"
+
 shop_bp = Blueprint(
     "shop",
     __name__,
@@ -251,7 +254,7 @@ def checkout_view():
         "shop/checkout.html",
         summary=summary,
         cart_count=summary["item_count"],
-        toss_client_key=os.getenv("TOSS_CLIENT_KEY", "test_ck_D5GePWvyJnrK0W0k6q8gLzN97Eoq"),
+        toss_client_key=os.getenv("TOSS_CLIENT_KEY", _TOSS_SANDBOX_CLIENT_KEY),
         sandbox=not bool(os.getenv("TOSS_CLIENT_KEY")),
     )
 
@@ -384,7 +387,8 @@ def shop_health():
         catalog_detail = f"진열 상품 {len(products)}개 (featured {len(featured)}개)"
         catalog_status = "ok"
     except Exception as exc:
-        catalog_detail = str(exc)
+        logger.warning("shop_health: catalog 로드 실패: %s", exc)
+        catalog_detail = "카탈로그 로드 실패"
         catalog_status = "fail"
 
     sandbox = not bool(os.getenv("TOSS_CLIENT_KEY"))

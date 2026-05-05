@@ -12,6 +12,7 @@ from typing import Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 _SESSION_KEY = "shop_cart"
+_FREE_SHIPPING_THRESHOLD_KRW = 50_000  # 이 금액 이상 주문 시 배송비 무료
 
 
 def _get_session():
@@ -151,8 +152,8 @@ class Cart:
         # 배송비: 가장 높은 배송비 단일 적용 (아이템별 합산 X)
         shipping_fees = [i.get("shipping_fee_krw", 0) for i in cart_items if i.get("shipping_fee_krw", 0) > 0]
         shipping_fee = max(shipping_fees) if shipping_fees else 0
-        # 무료 배송 임계값 50,000원
-        if subtotal >= 50000:
+        # 무료 배송 임계값 이상이면 배송비 무료
+        if subtotal >= _FREE_SHIPPING_THRESHOLD_KRW:
             shipping_fee = 0
 
         return {

@@ -43,7 +43,13 @@ def _gen_order_id() -> str:
 
 def _order_token(order_id: str, buyer_phone: str) -> str:
     """HMAC-SHA256(order_id + buyer_phone) — 비로그인 주문 조회용."""
-    secret = os.getenv("SECRET_KEY", "shop-secret-fallback")
+    secret = os.getenv("SECRET_KEY") or os.getenv("ORDER_TOKEN_SECRET", "")
+    if not secret:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "SECRET_KEY 미설정 — 주문 토큰 보안이 약해집니다. 프로덕션에서 반드시 설정하세요."
+        )
+        secret = "dev-order-token-insecure"
     msg = f"{order_id}:{buyer_phone}"
     return hmac.new(secret.encode(), msg.encode(), hashlib.sha256).hexdigest()[:16]
 
@@ -164,7 +170,7 @@ class CheckoutService:
                 "confirm_payment: 금액 불일치 order=%s expected=%s got=%s",
                 order_id, expected_amount, amount,
             )
-            return {"ok": False, "error": f"금액 불일치 (기대: {expected_amount}, 수신: {amount})"}
+            return {"ok": False, "error": "결제 금액이 올바르지 않습니다."}
 
         # 토스 승인 API 호출
         try:
