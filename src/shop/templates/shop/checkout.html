@@ -1,0 +1,159 @@
+{% extends "shop/base.html" %}
+
+{% block title %}결제 — 코가네멀티샵{% endblock %}
+
+{% block content %}
+<h1 class="fs-4 fw-bold mb-4">💳 결제</h1>
+
+<!-- 단계 표시 -->
+<div class="d-flex gap-2 mb-4 align-items-center small">
+  <span class="text-muted">장바구니</span>
+  <span>→</span>
+  <span class="fw-semibold text-primary">주문/결제</span>
+  <span>→</span>
+  <span class="text-muted">주문 완료</span>
+</div>
+
+{% if sandbox %}
+<div class="alert alert-info small mb-3">
+  <i class="bi bi-info-circle me-1"></i>
+  <strong>테스트 모드</strong> — 토스페이먼츠 sandbox 환경입니다. 실제 결제가 일어나지 않습니다.
+</div>
+{% endif %}
+
+<div class="row g-4">
+  <!-- 주문서 작성 -->
+  <div class="col-md-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <h5 class="fw-bold mb-4">배송 정보</h5>
+        <form id="checkoutForm">
+          <div class="mb-3">
+            <label class="form-label">이름 <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" id="buyerName" name="name" required placeholder="홍길동">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">연락처 <span class="text-danger">*</span></label>
+            <input type="tel" class="form-control" id="buyerPhone" name="phone" required placeholder="010-1234-5678">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">배송지 주소 <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" id="buyerAddress" name="address" required placeholder="서울시 강남구 테헤란로 123">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">배송 메모</label>
+            <input type="text" class="form-control" id="buyerMemo" name="memo" placeholder="배송 시 요청 사항 (예: 문 앞에 놔주세요)">
+          </div>
+          <button type="submit" class="btn btn-primary btn-lg d-block w-100" id="payBtn">
+            ₩{{ "{:,}".format(summary.total_krw) }} 결제하기
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 주문 요약 -->
+  <div class="col-md-5">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-body">
+        <h5 class="fw-bold mb-3">주문 상품</h5>
+        {% for item in summary.items %}
+        <div class="d-flex justify-content-between align-items-center py-2 {% if not loop.last %}border-bottom{% endif %}">
+          <div>
+            <span class="small fw-semibold">{{ item.title_ko }}</span>
+            {% if item.options %}
+            <br><small class="text-muted">{% for k,v in item.options.items() %}{{ k }}: {{ v }}{% endfor %}</small>
+            {% endif %}
+            <br><small class="text-muted">× {{ item.qty }}</small>
+          </div>
+          <span class="small fw-bold">₩{{ "{:,}".format(item.line_total) }}</span>
+        </div>
+        {% endfor %}
+        <hr>
+        <div class="d-flex justify-content-between small mb-1">
+          <span class="text-muted">상품 금액</span>
+          <span>₩{{ "{:,}".format(summary.subtotal_krw) }}</span>
+        </div>
+        <div class="d-flex justify-content-between small mb-1">
+          <span class="text-muted">배송비</span>
+          <span>{% if summary.shipping_fee_krw == 0 %}<span class="text-success">무료</span>{% else %}₩{{ "{:,}".format(summary.shipping_fee_krw) }}{% endif %}</span>
+        </div>
+        <hr>
+        <div class="d-flex justify-content-between fw-bold">
+          <span>합계</span>
+          <span class="text-primary">₩{{ "{:,}".format(summary.total_krw) }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 토스페이먼츠 결제 위젯 컨테이너 -->
+<div id="tossPaymentWidget" class="mt-3" style="display:none;"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const TOSS_CLIENT_KEY = "{{ toss_client_key }}";
+
+document.getElementById('checkoutForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const btn = document.getElementById('payBtn');
+  btn.disabled = true;
+  btn.textContent = '주문 생성 중...';
+
+  const payload = {
+    name: document.getElementById('buyerName').value,
+    phone: document.getElementById('buyerPhone').value,
+    address: document.getElementById('buyerAddress').value,
+    memo: document.getElementById('buyerMemo').value,
+  };
+
+  try {
+    const res = await fetch('/shop/checkout/create', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      alert(data.error || '주문 생성 실패');
+      btn.disabled = false;
+      btn.textContent = '₩{{ "{:,}".format(summary.total_krw) }} 결제하기';
+      return;
+    }
+
+    const props = data.payment_props;
+    // 토스페이먼츠 결제 요청
+    const successUrl = window.location.origin + '/shop/checkout/confirm';
+    const failUrl = window.location.origin + '/shop/checkout';
+
+    if (typeof TossPayments !== 'undefined') {
+      const tossPayments = TossPayments(TOSS_CLIENT_KEY);
+      tossPayments.requestPayment('카드', {
+        amount: props.amount,
+        orderId: props.order_id,
+        orderName: props.order_name,
+        customerName: props.customer_name || payload.name,
+        successUrl: successUrl,
+        failUrl: failUrl,
+      });
+    } else {
+      // SDK 미로드 시 sandbox redirect
+      const params = new URLSearchParams({
+        paymentKey: 'sandbox_' + props.order_id,
+        orderId: props.order_id,
+        amount: props.amount,
+      });
+      window.location.href = '/shop/checkout/confirm?' + params.toString();
+    }
+  } catch(err) {
+    alert('오류: ' + err.message);
+    btn.disabled = false;
+    btn.textContent = '₩{{ "{:,}".format(summary.total_krw) }} 결제하기';
+  }
+});
+</script>
+<!-- 토스페이먼츠 SDK (sandbox 포함) -->
+<script src="https://js.tosspayments.com/v1/payment"></script>
+{% endblock %}

@@ -1,0 +1,127 @@
+{% extends "shop/base.html" %}
+
+{% block title %}장바구니 — 코가네멀티샵{% endblock %}
+
+{% block content %}
+<h1 class="fs-4 fw-bold mb-4">🛒 장바구니</h1>
+
+{% if summary.items %}
+<div class="row g-4">
+  <!-- 상품 목록 -->
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        {% for item in summary.items %}
+        <div class="d-flex gap-3 align-items-center py-3 {% if not loop.last %}border-bottom{% endif %}" data-slug="{{ item.slug }}">
+          <!-- 썸네일 -->
+          <div style="width:80px;flex-shrink:0;">
+            {% if item.thumbnail_url %}
+            <img src="{{ item.thumbnail_url }}" class="img-fluid rounded" alt="{{ item.title_ko }}" style="object-fit:cover;height:80px;width:80px;">
+            {% else %}
+            <div class="rounded bg-light d-flex align-items-center justify-content-center" style="height:80px;width:80px;">
+              <span class="fs-4">🛍️</span>
+            </div>
+            {% endif %}
+          </div>
+          <!-- 상품 정보 -->
+          <div class="flex-grow-1">
+            <a href="/shop/products/{{ item.slug }}" class="text-decoration-none text-dark fw-semibold small">{{ item.title_ko }}</a>
+            {% if item.options %}
+            <p class="text-muted small mb-1">
+              {% for k, v in item.options.items() %}{{ k }}: {{ v }}{% if not loop.last %}, {% endif %}{% endfor %}
+            </p>
+            {% endif %}
+            <div class="d-flex align-items-center gap-2 mt-2">
+              <div class="input-group input-group-sm" style="width:110px;">
+                <button class="btn btn-outline-secondary" onclick="updateQty('{{ item.slug }}', {{ item.qty - 1 }})">−</button>
+                <input type="number" class="form-control text-center qty-input" value="{{ item.qty }}" min="1"
+                       onchange="updateQty('{{ item.slug }}', this.value)">
+                <button class="btn btn-outline-secondary" onclick="updateQty('{{ item.slug }}', {{ item.qty + 1 }})">+</button>
+              </div>
+              <button class="btn btn-link btn-sm text-danger p-0" onclick="removeItem('{{ item.slug }}')">삭제</button>
+            </div>
+          </div>
+          <!-- 금액 -->
+          <div class="text-end" style="min-width:90px;">
+            <span class="fw-bold">₩{{ "{:,}".format(item.line_total) }}</span>
+            <br>
+            <small class="text-muted">₩{{ "{:,}".format(item.price_krw) }} × {{ item.qty }}</small>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="mt-2">
+      <button class="btn btn-link btn-sm text-muted" onclick="clearCart()">🗑️ 전체 삭제</button>
+    </div>
+  </div>
+
+  <!-- 주문 요약 -->
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <h5 class="fw-bold mb-3">주문 요약</h5>
+        <div class="d-flex justify-content-between mb-2">
+          <span class="text-muted">상품 금액</span>
+          <span>₩{{ "{:,}".format(summary.subtotal_krw) }}</span>
+        </div>
+        <div class="d-flex justify-content-between mb-2">
+          <span class="text-muted">배송비</span>
+          <span>
+            {% if summary.shipping_fee_krw == 0 %}
+            <span class="text-success">무료</span>
+            {% else %}
+            ₩{{ "{:,}".format(summary.shipping_fee_krw) }}
+            {% endif %}
+          </span>
+        </div>
+        <hr>
+        <div class="d-flex justify-content-between fw-bold fs-5 mb-4">
+          <span>합계</span>
+          <span class="text-primary">₩{{ "{:,}".format(summary.total_krw) }}</span>
+        </div>
+        <a href="/shop/checkout" class="btn btn-primary d-block btn-lg">
+          결제하기 →
+        </a>
+        <a href="/shop/products" class="btn btn-outline-secondary d-block mt-2">
+          쇼핑 계속하기
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% else %}
+<div class="text-center py-5">
+  <div class="fs-1 mb-3">🛒</div>
+  <h4 class="text-muted">장바구니가 비어있습니다</h4>
+  <a href="/shop/products" class="btn btn-primary mt-3">상품 보러가기</a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function updateQty(slug, qty) {
+  qty = parseInt(qty);
+  fetch('/shop/cart/update', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({slug, qty})
+  }).then(() => location.reload());
+}
+
+function removeItem(slug) {
+  fetch('/shop/cart/remove', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({slug})
+  }).then(() => location.reload());
+}
+
+function clearCart() {
+  if (!confirm('장바구니를 비울까요?')) return;
+  fetch('/shop/cart/clear', {method: 'POST'}).then(() => location.reload());
+}
+</script>
+{% endblock %}

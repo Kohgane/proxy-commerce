@@ -828,6 +828,17 @@ try:
 except Exception as _seller_bp_exc:
     logger.warning("셀러 콘솔 Blueprint 등록 실패: %s", _seller_bp_exc)
 
+# 자체몰 (코가네멀티샵) Blueprint 등록 (Phase 131)
+try:
+    from .shop import shop_bp
+    # Flask 세션 SECRET_KEY 설정 (카트 세션 필요)
+    if not app.secret_key:
+        app.secret_key = os.getenv("SECRET_KEY", os.urandom(32))
+    app.register_blueprint(shop_bp)
+    logger.info("자체몰 Blueprint 등록 완료 (/shop/)")
+except Exception as _shop_bp_exc:
+    logger.warning("자체몰 Blueprint 등록 실패: %s", _shop_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')
@@ -861,7 +872,23 @@ audit_logger = AuditLogger()
 
 @app.get('/')
 def root():
-    """루트는 셀러 콘솔로 리다이렉트 (셀러 콘솔 미등록 시 랜딩 페이지 표시)."""
+    """루트 라우트 — ROOT_REDIRECT 환경변수로 동작 제어 (Phase 131).
+
+    ROOT_REDIRECT:
+      "shop"    → /shop/ (자체몰)
+      "seller"  → /seller/ (셀러 콘솔, 기본값)
+      "landing" → 통합 랜딩 페이지
+    """
+    redirect_target = os.getenv("ROOT_REDIRECT", "seller").strip().lower()
+
+    if redirect_target == "shop":
+        return redirect('/shop/', code=302)
+
+    if redirect_target == "landing":
+        version = os.getenv('APP_VERSION', 'dev')
+        return render_template('landing.html', version=version)
+
+    # 기본: "seller" (백워드 호환)
     try:
         from .seller_console.views import bp as _seller_bp  # noqa: F401
         return redirect('/seller/', code=302)
@@ -1274,6 +1301,33 @@ def deep_health():
     except Exception as _ext_exc:
         logger.debug("external_apis 로드 실패 (무시): %s", _ext_exc)
 
+    # ── shop checks (Phase 131) ───────────────────────────────────────────
+    try:
+        from .shop.catalog import get_catalog as _get_shop_catalog
+        _cat = _get_shop_catalog()
+        _products = _cat.list_all()
+        _featured = [p for p in _products if p.featured]
+        check_list.append({
+            "name": "shop_catalog",
+            "status": "ok",
+            "detail": f"진열 상품 {len(_products)}개 (featured {len(_featured)}개)",
+        })
+    except Exception as _shop_cat_exc:
+        check_list.append({
+            "name": "shop_catalog",
+            "status": "fail",
+            "detail": str(_shop_cat_exc)[:200],
+        })
+
+    _toss_sandbox = not bool(os.getenv("TOSS_CLIENT_KEY"))
+    check_list.append({
+        "name": "shop_payments",
+        "status": "ok",
+        "detail": f"토스페이먼츠 활성 ({'sandbox' if _toss_sandbox else 'live'})",
+        "provider": "toss",
+        "mode": "sandbox" if _toss_sandbox else "live",
+    })
+
     return jsonify({
         "status": overall,
         "timestamp": now_iso,
@@ -1286,3 +1340,88 @@ def deep_health():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', 8000)))
+
+
+# ---------------------------------------------------------------------------
+# Phase 131 — 주문 취소 라우트 + 운송장 자동 추적 cron
+# ---------------------------------------------------------------------------
+
+@app.post('/shop/checkout/cancel')
+def shop_order_cancel():
+    """자체몰 주문 취소 (Phase 131)."""
+    data = request.get_json(force=True, silent=True) or {}
+    order_id = str(data.get("order_id", "")).strip()
+    reason = str(data.get("reason", "고객 요청")).strip()
+    if not order_id:
+        return jsonify({"ok": False, "error": "order_id 필수"}), 400
+    try:
+        from .shop.checkout import CheckoutService
+        svc = CheckoutService()
+        result = svc.cancel_payment(order_id, reason)
+        return jsonify(result)
+    except Exception as exc:
+        logger.warning("주문 취소 실패: %s", exc)
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@app.get('/cron/track-shipments')
+def cron_track_shipments():
+    """운송장 자동 추적 cron (30분 폴링, Phase 131).
+
+    SWEETTRACKER_API_KEY 활성 시:
+    - 운송장 등록된 주문 → 상태 폴링
+    - 변경 시 orders 시트 갱신
+    """
+    api_key = os.getenv("SWEETTRACKER_API_KEY")
+    if not api_key:
+        return jsonify({"status": "skip", "detail": "SWEETTRACKER_API_KEY 미설정"}), 200
+
+    if os.getenv("ADAPTER_DRY_RUN", "0") == "1":
+        return jsonify({"status": "dry_run", "detail": "ADAPTER_DRY_RUN=1"}), 200
+
+    updated = 0
+    errors = []
+    try:
+        from .seller_console.orders.sheets_adapter import OrderSheetsAdapter
+        from .seller_console.orders.tracking_sweet import SweetTrackerClient
+
+        sheets = OrderSheetsAdapter()
+        tracker_client = SweetTrackerClient()
+        rows = sheets.get_all_rows()
+
+        for row in rows:
+            tracking_no = str(row.get("tracking_no", "")).strip()
+            courier = str(row.get("courier", "")).strip()
+            status = str(row.get("status", "")).strip().lower()
+
+            if not tracking_no or not courier:
+                continue
+            if status in ("delivered", "canceled", "returned"):
+                continue
+
+            try:
+                result = tracker_client.track(courier, tracking_no)
+                level = result.get("level", 0) if result else 0
+                # level 6 = 배송완료
+                if level >= 6 and status != "delivered":
+                    row["status"] = "delivered"
+                    sheets.upsert_row(row)
+                    updated += 1
+                    # 알림 (구매자 연락처 없으므로 telegram 만)
+                    try:
+                        from .notifications.telegram import send_telegram
+                        send_telegram(
+                            f"📦 배송완료 #{row.get('order_id')} "
+                            f"(운송장: {courier}/{tracking_no})",
+                            urgency="info",
+                        )
+                    except Exception:
+                        pass
+            except Exception as exc:
+                errors.append(f"{tracking_no}: {exc}")
+
+    except Exception as exc:
+        logger.warning("cron_track_shipments 실패: %s", exc)
+        return jsonify({"status": "fail", "error": str(exc)}), 500
+
+    return jsonify({"status": "ok", "updated": updated, "errors": errors[:10]})

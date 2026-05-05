@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}코가네멀티샵{% endblock %} — kohganepercentiii.com</title>
+  <meta name="description" content="{% block meta_description %}코가네멀티샵 — 프리미엄 요가/아웃도어 의류 공식 쇼핑몰{% endblock %}">
+  <meta property="og:title" content="{% block og_title %}코가네멀티샵{% endblock %}">
+  <meta property="og:description" content="{% block og_desc %}코가네멀티샵 공식 쇼핑몰{% endblock %}">
+  {% if self.og_image() %}<meta property="og:image" content="{% block og_image %}{% endblock %}">{% endif %}
+  <meta property="og:type" content="website">
+  <link rel="canonical" href="{% block canonical %}{{ request.url }}{% endblock %}">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="{{ url_for('shop.static', filename='shop/style.css') }}">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+<!-- 헤더 -->
+<header class="shop-header sticky-top shadow-sm">
+  <nav class="navbar navbar-expand-lg navbar-light bg-white py-2">
+    <div class="container">
+      <!-- 로고 -->
+      <a class="navbar-brand fw-bold fs-4" href="/shop/">
+        🛍️ 코가네멀티샵
+      </a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#shopNav">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="shopNav">
+        <!-- 카테고리 -->
+        <ul class="navbar-nav me-auto gap-2">
+          <li class="nav-item"><a class="nav-link" href="/shop/products">전체</a></li>
+          <li class="nav-item"><a class="nav-link" href="/shop/products?category=yoga">요가웨어</a></li>
+          <li class="nav-item"><a class="nav-link" href="/shop/products?category=outerwear">아우터</a></li>
+          <li class="nav-item"><a class="nav-link" href="/shop/products?category=accessories">액세서리</a></li>
+        </ul>
+        <!-- 검색 -->
+        <form class="d-flex gap-2 me-3" action="/shop/products" method="get">
+          <input class="form-control form-control-sm" name="q" placeholder="상품 검색..." value="{{ request.args.get('q','') }}">
+          <button class="btn btn-outline-secondary btn-sm" type="submit"><i class="bi bi-search"></i></button>
+        </form>
+        <!-- 카트 -->
+        <a href="/shop/cart" class="btn btn-outline-primary btn-sm position-relative">
+          <i class="bi bi-cart3"></i>
+          {% if cart_count %}
+          <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+            {{ cart_count }}
+          </span>
+          {% endif %}
+        </a>
+      </div>
+    </div>
+  </nav>
+</header>
+
+<!-- 메인 콘텐츠 -->
+<main class="shop-main py-4">
+  <div class="container">
+    {% block content %}{% endblock %}
+  </div>
+</main>
+
+<!-- 푸터 -->
+<footer class="shop-footer bg-dark text-secondary py-5 mt-5">
+  <div class="container">
+    <div class="row g-4">
+      <div class="col-md-4">
+        <h6 class="text-white fw-bold">코가네멀티샵</h6>
+        <p class="small mb-1">통신판매업 신고번호: 제 0000-서울-00000 호</p>
+        <p class="small mb-1">사업자등록번호: 000-00-00000</p>
+        <p class="small mb-1">대표: 코가네</p>
+        <p class="small">주소: 서울특별시 (상세주소)</p>
+      </div>
+      <div class="col-md-4">
+        <h6 class="text-white fw-bold">고객센터</h6>
+        <p class="small mb-1">이메일: support@kohganepercentiii.com</p>
+        <p class="small mb-1">운영시간: 평일 10:00 ~ 18:00</p>
+      </div>
+      <div class="col-md-4">
+        <h6 class="text-white fw-bold">이용안내</h6>
+        <ul class="list-unstyled small">
+          <li><a href="#" class="text-secondary text-decoration-none">이용약관</a></li>
+          <li><a href="#" class="text-secondary text-decoration-none">개인정보처리방침</a></li>
+          <li><a href="#" class="text-secondary text-decoration-none">배송/반품 안내</a></li>
+        </ul>
+      </div>
+    </div>
+    <hr class="border-secondary mt-4">
+    <p class="text-center small mb-0">© 2026 코가네멀티샵. All rights reserved.</p>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="{{ url_for('shop.static', filename='shop/shop.js') }}"></script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

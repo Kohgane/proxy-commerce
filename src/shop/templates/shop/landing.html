@@ -1,0 +1,120 @@
+{% extends "shop/base.html" %}
+
+{% block title %}코가네멀티샵 — 프리미엄 요가/아웃도어{% endblock %}
+
+{% block content %}
+<!-- 히어로 배너 -->
+<div class="shop-hero rounded-4 mb-5 text-white d-flex align-items-center justify-content-center"
+     style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 360px;">
+  <div class="text-center p-4">
+    <h1 class="display-5 fw-bold mb-2">코가네멀티샵</h1>
+    <p class="lead mb-4">프리미엄 요가웨어 & 아웃도어 공식 쇼핑몰</p>
+    <a href="/shop/products" class="btn btn-light btn-lg px-5 fw-semibold">쇼핑하기 →</a>
+  </div>
+</div>
+
+<!-- 카테고리 카드 -->
+{% if categories %}
+<section class="mb-5">
+  <h2 class="fs-4 fw-bold mb-3">카테고리</h2>
+  <div class="row g-3">
+    {% for cat in categories[:6] %}
+    <div class="col-6 col-md-4 col-lg-2">
+      <a href="/shop/products?category={{ cat.name }}" class="text-decoration-none">
+        <div class="card text-center border-0 shadow-sm h-100 shop-category-card">
+          <div class="card-body py-3">
+            <div class="fs-3 mb-1">
+              {% if cat.name == 'yoga' %}🧘{% elif cat.name == 'outerwear' %}🧥{% elif cat.name == 'accessories' %}👜{% else %}📦{% endif %}
+            </div>
+            <p class="card-text small fw-semibold mb-0">{{ cat.name }}</p>
+            <small class="text-muted">{{ cat.count }}개</small>
+          </div>
+        </div>
+      </a>
+    </div>
+    {% endfor %}
+    <div class="col-6 col-md-4 col-lg-2">
+      <a href="/shop/products" class="text-decoration-none">
+        <div class="card text-center border-0 shadow-sm h-100 shop-category-card">
+          <div class="card-body py-3">
+            <div class="fs-3 mb-1">🔍</div>
+            <p class="card-text small fw-semibold mb-0">전체보기</p>
+            <small class="text-muted">모든 상품</small>
+          </div>
+        </div>
+      </a>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<!-- 추천 상품 -->
+<section class="mb-5">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="fs-4 fw-bold mb-0">🌟 추천 상품</h2>
+    <a href="/shop/products" class="text-decoration-none text-muted small">전체보기 →</a>
+  </div>
+
+  {% if featured %}
+  <div class="row g-3">
+    {% for product in featured %}
+    <div class="col-6 col-md-4 col-lg-3">
+      <a href="/shop/products/{{ product.slug }}" class="text-decoration-none">
+        <div class="card border-0 shadow-sm h-100 shop-product-card">
+          {% if product.thumbnail_url %}
+          <img src="{{ product.thumbnail_url }}" class="card-img-top shop-product-img" alt="{{ product.title_ko }}" loading="lazy">
+          {% else %}
+          <div class="shop-product-img-placeholder d-flex align-items-center justify-content-center bg-light">
+            <span class="fs-1">🛍️</span>
+          </div>
+          {% endif %}
+          <div class="card-body p-3">
+            <h6 class="card-title small fw-semibold mb-1 text-truncate">{{ product.title_ko }}</h6>
+            <div>
+              {% if product.sale_price_krw %}
+              <span class="text-danger fw-bold">₩{{ "{:,}".format(product.sale_price_krw) }}</span>
+              <small class="text-muted text-decoration-line-through ms-1">₩{{ "{:,}".format(product.price_krw) }}</small>
+              {% else %}
+              <span class="fw-bold">₩{{ "{:,}".format(product.price_krw) }}</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </a>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <!-- mock 데이터 표시 (상품 없을 때 깨지지 않게) -->
+  <div class="row g-3">
+    {% for i in range(4) %}
+    <div class="col-6 col-md-4 col-lg-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="shop-product-img-placeholder d-flex align-items-center justify-content-center bg-light rounded-top">
+          <span class="fs-1 text-muted">🛍️</span>
+        </div>
+        <div class="card-body p-3">
+          <div class="placeholder-glow">
+            <span class="placeholder col-10 mb-1"></span>
+            <span class="placeholder col-6"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="text-center text-muted mt-3 small">
+    catalog 워크시트에 상품을 등록하면 여기에 표시됩니다.
+    (<a href="/seller/catalog" target="_blank">셀러 콘솔 →</a>)
+  </p>
+  {% endif %}
+</section>
+
+<!-- CTA 배너 -->
+<section class="rounded-4 p-5 text-center mb-5"
+         style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+  <h2 class="text-white fw-bold mb-2">신규 가입 혜택</h2>
+  <p class="text-white mb-4">첫 구매 시 무료 배송 + 5% 할인</p>
+  <a href="/shop/products" class="btn btn-light btn-lg px-5 fw-semibold">쇼핑 시작하기</a>
+</section>
+{% endblock %}
