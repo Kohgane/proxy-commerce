@@ -1152,12 +1152,19 @@ def deep_health():
         check_list.append({"name": "google_sheets", "status": "skip", "detail": "google_credentials fail로 인해 스킵"})
         check_list.append({"name": "google_worksheets", "status": "skip", "detail": "google_credentials fail로 인해 스킵"})
         has_fail = any(c["status"] == "fail" for c in check_list)
+        _ext_apis = []
+        try:
+            from .utils.env_catalog import get_api_status
+            _ext_apis = get_api_status()
+        except Exception:
+            pass
         return jsonify({
             "status": "degraded" if has_fail else "ok",
             "timestamp": now_iso,
             "uptime_seconds": uptime,
             "version": os.getenv("APP_VERSION", "dev"),
             "checks": check_list,
+            "external_apis": _ext_apis,
         }), 200
     except Exception as exc:
         logger.warning("Deep health: credentials load unexpected error: %s", exc)
@@ -1165,12 +1172,19 @@ def deep_health():
         check_list.append({"name": "google_sheets", "status": "skip", "detail": "google_credentials fail로 인해 스킵"})
         check_list.append({"name": "google_worksheets", "status": "skip", "detail": "google_credentials fail로 인해 스킵"})
         has_fail = True
+        _ext_apis = []
+        try:
+            from .utils.env_catalog import get_api_status
+            _ext_apis = get_api_status()
+        except Exception:
+            pass
         return jsonify({
             "status": "degraded",
             "timestamp": now_iso,
             "uptime_seconds": uptime,
             "version": os.getenv("APP_VERSION", "dev"),
             "checks": check_list,
+            "external_apis": _ext_apis,
         }), 200
 
     # ── 3) google_sheets ──────────────────────────────────────────────
@@ -1251,12 +1265,22 @@ def deep_health():
     # 전체 상태 판단
     has_fail = any(c["status"] == "fail" for c in check_list)
     overall = "degraded" if has_fail else "ok"
+
+    # ── external_apis (Phase 128) ─────────────────────────────────────────
+    external_apis = []
+    try:
+        from .utils.env_catalog import get_api_status
+        external_apis = get_api_status()
+    except Exception as _ext_exc:
+        logger.debug("external_apis 로드 실패 (무시): %s", _ext_exc)
+
     return jsonify({
         "status": overall,
         "timestamp": now_iso,
         "uptime_seconds": uptime,
         "version": os.getenv("APP_VERSION", "dev"),
         "checks": check_list,
+        "external_apis": external_apis,
     }), 200
 
 

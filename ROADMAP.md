@@ -120,15 +120,18 @@
 | Phase 125 | 마진 계산기 실연동 (CostInput + MarginCalculator + 마켓 비교 UI + 실시간 환율) | #PR | 2026-05-03 |
 | Phase 126 | Google 자격증명 다중 소스 지원 (Secret File + b64 + raw + 파일) + /health/deep 단계별 진단 강화 | #PR | 2026-05-03 |
 | Phase 127 | 마켓 상태 실연동 (Google Sheets 어댑터 + 마켓별 어댑터 인터페이스 + 마켓 현황 페이지 + Sheets 워크시트 자동 부트스트랩) | #PR | 2026-05-03 |
+| Phase 128 | 수동 수집기 실연동 + 마켓 셀러 어댑터 실연동 + 환율 실시간 + 환경변수 카탈로그 + /seller/catalog · /seller/api-status 페이지 | #PR | 2026-05-04 |
 
 ## 📋 다음 큐
 
 | Phase | 내용 |
 |---|---|
-| Phase 128 | PortOne 결제 연동 (F) |
-| Phase 129 | 수동 수집기 실연동 + Alo/Lululemon 어댑터 (A, B) |
-| Phase 130 | 마켓별 어댑터 활성화 (쿠팡/스마트스토어/11번가 실 API) |
-| Phase 131 | 인증 시스템 활성화 (E — Phase 24 OAuth 연결) |
+| Phase 128 | 수동 수집기 실연동 + 마켓 셀러 어댑터 실연동 + 환율 실시간 + 환경변수 카탈로그 + /seller/catalog · /seller/api-status 페이지 | #PR | 2026-05-04 |
+| Phase 129 | 주문 관리 통합 (마켓별 주문 → 통합 뷰) |
+| Phase 130 | 번역/카피 자동 생성 (OpenAI/DeepL) |
+| Phase 131 | 자체몰(코가네멀티샵) 본 구현 |
+| Phase 132 | PortOne 결제 연동 (SaaS 공개 시작점) |
+| Phase 133 | 인증 시스템 활성화 |
 
 ## 🚧 진행 중 Phase
 

@@ -1,0 +1,47 @@
+{% extends "_base.html" %}
+{% block title %}주문 관리{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0 fw-bold">🛍 주문 관리</h4>
+  <span class="badge bg-warning text-dark">Phase 129 예정</span>
+</div>
+
+<div class="alert alert-info">
+  <strong>ℹ️ 준비 중:</strong> 주문 통합 관리는 Phase 129에서 구현 예정입니다.
+  쿠팡 / 스마트스토어 / 11번가 주문을 통합해서 표시합니다.
+</div>
+
+<div class="row g-3">
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body text-center">
+        <div class="fs-1 mb-2">🛒</div>
+        <h6 class="fw-semibold">쿠팡 주문</h6>
+        <p class="text-muted small mb-0">COUPANG_VENDOR_ID 등록 후 활성화</p>
+        <a href="/seller/api-status" class="btn btn-outline-primary btn-sm mt-2">API 키 확인</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body text-center">
+        <div class="fs-1 mb-2">🟢</div>
+        <h6 class="fw-semibold">스마트스토어 주문</h6>
+        <p class="text-muted small mb-0">NAVER_COMMERCE_CLIENT_ID 등록 후 활성화</p>
+        <a href="/seller/api-status" class="btn btn-outline-primary btn-sm mt-2">API 키 확인</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body text-center">
+        <div class="fs-1 mb-2">🔴</div>
+        <h6 class="fw-semibold">11번가 주문</h6>
+        <p class="text-muted small mb-0">ELEVENST_API_KEY 등록 후 활성화</p>
+        <a href="/seller/api-status" class="btn btn-outline-primary btn-sm mt-2">API 키 확인</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

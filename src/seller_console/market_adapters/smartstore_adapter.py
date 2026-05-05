@@ -1,29 +1,203 @@
-"""src/seller_console/market_adapters/smartstore_adapter.py — 스마트스토어 어댑터 stub (Phase 127).
+"""src/seller_console/market_adapters/smartstore_adapter.py — 스마트스토어 어댑터 (Phase 128).
 
-Phase 130에서 네이버 커머스 API 실연동 예정.
-현재는 빈 리스트 반환 + 경고 로그.
+실 API 연동: 네이버 커머스 API OAuth 2.0 client_credentials.
+환경변수 미설정 시 stub 모드 자동 폴백.
+ADAPTER_DRY_RUN=1 시 실 API 호출 없이 dry-run 응답 반환.
+
+환경변수:
+  NAVER_COMMERCE_CLIENT_ID       — 네이버 커머스 API 클라이언트 ID
+  NAVER_COMMERCE_CLIENT_SECRET   — 클라이언트 시크릿
+  ADAPTER_DRY_RUN                — 1 이면 실 API 호출 차단 (테스트용)
 """
 from __future__ import annotations
 
 import logging
-from typing import List
+import os
+import time
+from typing import List, Optional
 
 from src.seller_console.market_status import MarketStatusItem
 from .base import MarketAdapter
 
 logger = logging.getLogger(__name__)
 
+_NAVER_AUTH_URL = "https://api.commerce.naver.com/external/v1/oauth2/token"
+_NAVER_BASE_URL = "https://api.commerce.naver.com"
+
+# 토큰 캐시 (메모리)
+_token_cache: dict = {}
+
+
+def _api_active() -> bool:
+    return all(os.getenv(v) for v in ["NAVER_COMMERCE_CLIENT_ID", "NAVER_COMMERCE_CLIENT_SECRET"])
+
+
+def _dry_run() -> bool:
+    return os.getenv("ADAPTER_DRY_RUN", "0") == "1"
+
+
+def _get_access_token() -> Optional[str]:
+    """OAuth 2.0 client_credentials로 액세스 토큰 발급/갱신."""
+    now = time.time()
+    cached = _token_cache.get("smartstore")
+    if cached and cached.get("expires_at", 0) > now + 60:
+        return cached["access_token"]
+
+    client_id = os.getenv("NAVER_COMMERCE_CLIENT_ID", "")
+    client_secret = os.getenv("NAVER_COMMERCE_CLIENT_SECRET", "")
+
+    try:
+        import requests
+        resp = requests.post(
+            _NAVER_AUTH_URL,
+            data={
+                "grant_type": "client_credentials",
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "type": "SELF",
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        token_data = resp.json()
+        access_token = token_data.get("access_token")
+        expires_in = int(token_data.get("expires_in", 3600))
+        _token_cache["smartstore"] = {
+            "access_token": access_token,
+            "expires_at": now + expires_in,
+        }
+        logger.info("스마트스토어 OAuth 토큰 발급 성공")
+        return access_token
+    except Exception as exc:
+        logger.warning("스마트스토어 토큰 발급 실패: %s", exc)
+        return None
+
+
+def _stub_response(action: str = "fetch_inventory") -> dict:
+    return {
+        "status": "stub",
+        "action": action,
+        "detail": "NAVER_COMMERCE_CLIENT_ID/SECRET 미설정 — stub 모드",
+    }
+
+
+def _dry_run_response(action: str = "upload_product") -> dict:
+    return {
+        "status": "dry_run",
+        "action": action,
+        "detail": "ADAPTER_DRY_RUN=1 — 실제 API 호출 차단됨",
+    }
+
 
 class SmartStoreAdapter(MarketAdapter):
-    """스마트스토어(네이버) 어댑터 (Phase 130 실연동 예정)."""
+    """스마트스토어 네이버 커머스 API 어댑터 (Phase 128)."""
 
     marketplace = "smartstore"
 
     def fetch_inventory(self) -> List[MarketStatusItem]:
-        """스마트스토어 API에서 재고 조회 — Phase 130 실연동 예정."""
-        logger.warning("스마트스토어 어댑터 미구현 — Sheets 캐시 사용")
-        return []
+        """스마트스토어 API에서 상품 목록 조회."""
+        if not _api_active():
+            logger.warning("스마트스토어 API 키 미설정 — stub 모드")
+            return []
+
+        if _dry_run():
+            logger.info("ADAPTER_DRY_RUN=1 — 스마트스토어 fetch_inventory dry-run")
+            return []
+
+        token = _get_access_token()
+        if not token:
+            return []
+
+        try:
+            import requests
+            resp = requests.get(
+                f"{_NAVER_BASE_URL}/external/v2/products",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"size": 50, "page": 1},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            items = []
+            for p in data.get("contents", []):
+                items.append(MarketStatusItem(
+                    marketplace="smartstore",
+                    product_id=str(p.get("originProductNo", "")),
+                    state="active" if p.get("saleStatus") == "ON_SALE" else "suspended",
+                    sku=str(p.get("channelProducts", [{}])[0].get("channelProductNo", "")) or None,
+                    title=p.get("name"),
+                    price_krw=int(p.get("salePrice", 0)) or None,
+                ))
+            return items
+        except Exception as exc:
+            logger.warning("스마트스토어 fetch_inventory 실패: %s", exc)
+            return []
+
+    def upload_product(self, product: dict) -> dict:
+        """스마트스토어에 상품 등록."""
+        if not _api_active():
+            return _stub_response("upload_product")
+
+        if _dry_run():
+            return _dry_run_response("upload_product")
+
+        token = _get_access_token()
+        if not token:
+            return {"status": "error", "detail": "토큰 발급 실패"}
+
+        try:
+            import requests
+            resp = requests.post(
+                f"{_NAVER_BASE_URL}/external/v2/products",
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                json=product,
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return {"status": "ok", "data": resp.json()}
+        except Exception as exc:
+            logger.warning("스마트스토어 upload_product 실패: %s", exc)
+            return {"status": "error", "detail": str(exc)}
+
+    def fetch_orders(self) -> list:
+        """스마트스토어 주문 조회."""
+        if not _api_active():
+            return []
+
+        if _dry_run():
+            return []
+
+        token = _get_access_token()
+        if not token:
+            return []
+
+        try:
+            import requests
+            resp = requests.get(
+                f"{_NAVER_BASE_URL}/external/v1/pay-order/seller/orders",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"lastChangedFrom": "2024-01-01T00:00:00", "lastChangedType": "PAYED"},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json().get("data", {}).get("contents", [])
+        except Exception as exc:
+            logger.warning("스마트스토어 fetch_orders 실패: %s", exc)
+            return []
 
     def health_check(self) -> dict:
-        """스마트스토어 API 상태 확인 — stub."""
-        return {"status": "stub", "detail": "스마트스토어 어댑터 미구현 (Phase 130 예정)"}
+        """스마트스토어 API 상태 확인."""
+        if not _api_active():
+            return {
+                "status": "missing",
+                "detail": "NAVER_COMMERCE_CLIENT_ID/SECRET 미설정",
+                "hint": "https://commerce.naver.com 에서 API 키 발급",
+            }
+
+        if _dry_run():
+            return {"status": "dry_run", "detail": "ADAPTER_DRY_RUN=1"}
+
+        token = _get_access_token()
+        if token:
+            return {"status": "ok", "detail": "스마트스토어 OAuth 토큰 발급 성공"}
+        return {"status": "fail", "detail": "토큰 발급 실패 — 클라이언트 ID/시크릿 확인 필요"}
