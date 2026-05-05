@@ -542,18 +542,18 @@ def api_status_json():
 
 @bp.get("/notifications")
 def notifications():
-    """알림 설정 페이지 (Phase 130)."""
+    """알림 설정 페이지 (Phase 133)."""
     if not _check_auth():
         return redirect(url_for("seller_console.index"))
 
     from src.utils.env_catalog import is_active as _is_active
     telegram_active = _is_active("telegram")
-    sendgrid_active = _is_active("sendgrid")
+    resend_active = _is_active("resend")
     return render_template(
         "notifications.html",
         page="notifications",
         telegram_active=telegram_active,
-        sendgrid_active=sendgrid_active,
+        resend_active=resend_active,
     )
 
 
@@ -569,6 +569,53 @@ def notifications_test():
     except Exception as exc:
         logger.warning("텔레그램 테스트 오류: %s", exc)
         return jsonify({"ok": False, "error": "메시지 전송 중 오류가 발생했습니다."}), 500
+
+
+# ---------------------------------------------------------------------------
+# 마이페이지 (Phase 133)
+# ---------------------------------------------------------------------------
+
+@bp.get("/me")
+def my_page():
+    """셀러 마이페이지 (Phase 133)."""
+    from flask import session as _session
+    user_id = _session.get("user_id")
+    user = None
+    if user_id:
+        try:
+            from src.auth.user_store import get_store
+            user = get_store().find_by_id(user_id)
+        except Exception as exc:
+            logger.warning("마이페이지 사용자 조회 실패: %s", exc)
+
+    return render_template(
+        "me.html",
+        page="me",
+        user=user,
+        telegram_active=bool(os.getenv("TELEGRAM_BOT_TOKEN")),
+        resend_active=bool(os.getenv("RESEND_API_KEY")),
+    )
+
+
+@bp.post("/me/deactivate")
+def deactivate_account():
+    """계정 비활성화 (soft delete, Phase 133)."""
+    from flask import session as _session
+    user_id = _session.get("user_id")
+    if not user_id:
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    try:
+        from src.auth.user_store import get_store
+        store = get_store()
+        user = store.find_by_id(user_id)
+        if user:
+            user.active = False
+            store.update(user)
+        _session.clear()
+        return jsonify({"ok": True, "message": "계정이 비활성화되었습니다."})
+    except Exception as exc:
+        logger.warning("계정 비활성화 오류: %s", exc)
+        return jsonify({"ok": False, "error": "계정 비활성화 중 오류가 발생했습니다."}), 500
 
 
 @bp.get("/pricing")

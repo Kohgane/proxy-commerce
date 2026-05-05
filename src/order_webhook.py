@@ -828,24 +828,41 @@ try:
 except Exception as _seller_bp_exc:
     logger.warning("셀러 콘솔 Blueprint 등록 실패: %s", _seller_bp_exc)
 
+# Phase 133: 인증 시스템 Blueprint 등록 (카카오/구글/네이버 로그인)
+# SECRET_KEY 설정 — 인증 세션 필수
+if not app.secret_key:
+    _sk = os.getenv("SECRET_KEY")
+    if _sk:
+        app.secret_key = _sk
+    else:
+        import secrets as _sec_mod
+        import warnings
+        _dev_key = _sec_mod.token_hex(32)
+        warnings.warn(
+            "SECRET_KEY 환경변수가 설정되지 않았습니다. "
+            "프로덕션에서는 반드시 SECRET_KEY를 설정하세요. "
+            "현재 임시 키 사용 중 (재시작 시 모든 세션 만료).",
+            stacklevel=1,
+        )
+        app.secret_key = _dev_key
+
+# 세션 쿠키 보안 설정
+app.config.setdefault("SESSION_COOKIE_SECURE", os.getenv("SESSION_COOKIE_SECURE", "0") == "1")
+app.config.setdefault("SESSION_COOKIE_HTTPONLY", True)
+app.config.setdefault("SESSION_COOKIE_SAMESITE", "Lax")
+
+try:
+    from .auth.views import auth_bp
+    app.register_blueprint(auth_bp)
+    logger.info("인증 시스템 Blueprint 등록 완료 (/auth/)")
+except Exception as _auth_bp_exc:
+    logger.warning("인증 시스템 Blueprint 등록 실패: %s", _auth_bp_exc)
+
 # Phase 132: /shop 블루프린트는 외부 kohganemultishop.org가 진짜 자체몰이므로 기본 비활성.
 # 향후 데모/쇼윈도우 용도로 부활시키려면 ENABLE_INTERNAL_SHOP=1 환경변수 설정.
 if os.getenv("ENABLE_INTERNAL_SHOP", "0") == "1":
     try:
         from .shop import shop_bp
-        # Flask 세션 SECRET_KEY 설정 (카트 세션 필요)
-        if not app.secret_key:
-            _shop_secret = os.getenv("SECRET_KEY")
-            if _shop_secret:
-                app.secret_key = _shop_secret
-            else:
-                import warnings
-                warnings.warn(
-                    "SECRET_KEY 환경변수가 설정되지 않았습니다. "
-                    "프로덕션에서는 반드시 SECRET_KEY를 설정하세요.",
-                    stacklevel=1,
-                )
-                app.secret_key = "dev-insecure-do-not-use-in-production"
         app.register_blueprint(shop_bp)
         logger.info("내부 /shop 블루프린트 등록 (옵트인)")
     except Exception as _shop_bp_exc:
@@ -1383,6 +1400,57 @@ def deep_health():
             "detail": str(_woo_exc)[:200],
         })
 
+    # ── Resend 체크 (Phase 133) ─────────────────────────────────────────
+    try:
+        from .notifications.email_resend import health_check as _resend_hc
+        _resend_result = _resend_hc()
+        check_list.append({
+            "name": "resend",
+            "category": "notification",
+            **_resend_result,
+        })
+    except Exception as _resend_exc:
+        logger.warning("Resend 헬스 체크 오류: %s", _resend_exc)
+        check_list.append({
+            "name": "resend",
+            "category": "notification",
+            "status": "fail",
+            "detail": "Resend 헬스 체크 오류",
+        })
+
+    # ── TrackingMore 체크 (Phase 133) ──────────────────────────────────
+    try:
+        from .seller_console.orders.tracking_trackingmore import TrackingMoreClient as _TMClient
+        _tm_result = _TMClient().health_check()
+        check_list.append({
+            "name": "trackingmore",
+            "category": "logistics",
+            **_tm_result,
+        })
+    except Exception as _tm_exc:
+        logger.warning("TrackingMore 헬스 체크 오류: %s", _tm_exc)
+        check_list.append({
+            "name": "trackingmore",
+            "category": "logistics",
+            "status": "fail",
+            "detail": "TrackingMore 헬스 체크 오류",
+        })
+
+    # ── 인증 프로바이더 체크 (Phase 133) ───────────────────────────────
+    _auth_providers = [
+        ("kakao_login", "KAKAO_REST_API_KEY"),
+        ("google_oauth", "GOOGLE_OAUTH_CLIENT_ID"),
+        ("naver_login", "NAVER_CLIENT_ID"),
+    ]
+    for _auth_name, _auth_env in _auth_providers:
+        _auth_active = bool(os.getenv(_auth_env))
+        check_list.append({
+            "name": _auth_name,
+            "category": "auth",
+            "status": "active" if _auth_active else "missing",
+            "detail": f"{_auth_env} {'설정됨' if _auth_active else '미설정'}",
+        })
+
     return jsonify({
         "status": overall,
         "timestamp": now_iso,
@@ -1424,15 +1492,15 @@ def shop_order_cancel():
 
 @app.get('/cron/track-shipments')
 def cron_track_shipments():
-    """운송장 자동 추적 cron (30분 폴링, Phase 131).
+    """운송장 자동 추적 cron (30분 폴링, Phase 133).
 
-    SWEETTRACKER_API_KEY 활성 시:
+    TRACKINGMORE_API_KEY 활성 시:
     - 운송장 등록된 주문 → 상태 폴링
     - 변경 시 orders 시트 갱신
     """
-    api_key = os.getenv("SWEETTRACKER_API_KEY")
+    api_key = os.getenv("TRACKINGMORE_API_KEY")
     if not api_key:
-        return jsonify({"status": "skip", "detail": "SWEETTRACKER_API_KEY 미설정"}), 200
+        return jsonify({"status": "skip", "detail": "TRACKINGMORE_API_KEY 미설정"}), 200
 
     if os.getenv("ADAPTER_DRY_RUN", "0") == "1":
         return jsonify({"status": "dry_run", "detail": "ADAPTER_DRY_RUN=1"}), 200
@@ -1441,10 +1509,10 @@ def cron_track_shipments():
     errors = []
     try:
         from .seller_console.orders.sheets_adapter import OrderSheetsAdapter
-        from .seller_console.orders.tracking_sweet import SweetTrackerClient
+        from .seller_console.orders.tracking_trackingmore import TrackingMoreClient
 
         sheets = OrderSheetsAdapter()
-        tracker_client = SweetTrackerClient()
+        tracker_client = TrackingMoreClient()
         rows = sheets.get_all_rows()
 
         for row in rows:
@@ -1458,10 +1526,9 @@ def cron_track_shipments():
                 continue
 
             try:
-                result = tracker_client.track(courier, tracking_no)
-                level = result.get("level", 0) if result else 0
-                # level 6 = 배송완료 (SweetTracker API 스펙)
-                if level >= _DELIVERY_COMPLETE_LEVEL and status != "delivered":
+                result = tracker_client.get_status(tracking_no, courier)
+                is_delivered = result.get("is_delivered", False)
+                if is_delivered and status != "delivered":
                     row["status"] = "delivered"
                     sheets.upsert_row(row)
                     updated += 1

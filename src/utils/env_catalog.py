@@ -1,9 +1,9 @@
-"""src/utils/env_catalog.py — 외부 API 환경변수 카탈로그 (Phase 130).
+"""src/utils/env_catalog.py — 외부 API 환경변수 카탈로그 (Phase 133).
 
 모든 외부 API 환경변수를 한 곳에서 관리.
 - 누락 시 stub 모드로 자동 폴백
 - /health/deep 에 어떤 키가 활성/누락인지 노출 (마스킹된 상태로)
-- Phase 130: 24개 항목, 카테고리별 그루핑, 별칭 매핑, 요약 통계
+- Phase 133: SendGrid → Resend, SweetTracker → TrackingMore 교체 (24개 유지)
 """
 from __future__ import annotations
 
@@ -194,18 +194,18 @@ API_REGISTRY: list = [
         category=ApiCategory.NOTIFICATION,
     ),
     ApiKey(
-        name="sendgrid",
-        env_vars=["SENDGRID_API_KEY"],
-        purpose="이메일 발송 - 주문 확인/알림",
-        docs_url="https://app.sendgrid.com",
+        name="resend",
+        env_vars=["RESEND_API_KEY"],
+        purpose="Resend 이메일 — 회원가입/주문 확인/비밀번호 재설정",
+        docs_url="https://resend.com/api-keys",
         category=ApiCategory.NOTIFICATION,
     ),
     # ── 물류 ─────────────────────────────────────────────────────────────
     ApiKey(
-        name="sweettracker",
-        env_vars=["SWEETTRACKER_API_KEY"],
-        purpose="운송장 자동 추적",
-        docs_url="https://www.sweettracker.co.kr",
+        name="trackingmore",
+        env_vars=["TRACKINGMORE_API_KEY"],
+        purpose="TrackingMore 운송장 자동 추적",
+        docs_url="https://my.trackingmore.com/api",
         category=ApiCategory.LOGISTICS,
     ),
     # ── 자체몰 ───────────────────────────────────────────────────────────
