@@ -1,0 +1,13 @@
+안녕하세요 {name}님,
+
+배송이 시작되었습니다! 🚚
+
+주문번호: {order_id}
+택배사: {courier_name}
+운송장번호: {tracking_no}
+예상 배송일: {eta_date}
+
+배송 추적: {tracking_url}
+
+코가네멀티샵 드림
+{shop_url}

@@ -1,0 +1,13 @@
+Hi {name},
+
+Your refund has been processed. ✅
+
+Order ID: {order_id}
+Refund Amount: ₩{refund_amount}
+Refund Method: {refund_method}
+Date: {refund_date}
+
+Please allow 3-5 business days for the refund to reflect.
+
+Kohgane Multishop
+{shop_url}

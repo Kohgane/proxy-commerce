@@ -125,15 +125,22 @@
 | Phase 130 | API 카탈로그 24개 확장 + 번역/카피 자동 생성 (OpenAI/DeepL) + 텔레그램 알림 + 운송장 자동 추적 (SweetTracker) + 토스/Shopify/WooCommerce stub + 보조 이미지 (Pexels/Unsplash) | #PR | 2026-05-05 |
 | Phase 131 | 자체몰(코가네멀티샵) 본 구현 — /shop 블루프린트 + 카트/체크아웃 + 토스페이먼츠 + Shopify/Woo 본 구현 + 자체몰 SEO + 텔레그램/추적 통합 | #PR | 2026-05-05 |
 | Phase 132 | 노선 변경 — /shop 폐기(보존) + KohganeMultishopAdapter 폐기 + WooCommerceAdapter 본 구현 + kohganemultishop.org 실연동 + ROOT_REDIRECT 정책 명확화 | #PR | 2026-05-05 |
+| Phase 133 | Resend 이메일 어댑터 + TrackingMore 운송장 추적 + 카카오/구글/네이버 로그인 + 셀러 가입 흐름 | #PR | 2026-05-05 |
+| Phase 134 | AI 카피라이터 본 구현 + 다채널 고객 메시징 허브(8 채널, locale 라우팅) + AI 예산 가드 + 캐시 | #PR | 2026-05-05 |
 
 ## 📋 다음 큐
 
 | Phase | 내용 |
 |---|---|
-| Phase 133 | 카카오/구글/네이버 로그인 활성화 + 셀러 가입 흐름 |
-| Phase 134 | 토스 정기결제 (셀러 SaaS 구독료) |
-| Phase 135 | 랜딩 페이지/약관/개인정보처리방침 |
-| Phase 136 | ShopifyAdapter 본 구현 (Phase 132와 동일 패턴) |
+| Phase 135 | 브랜드별 자동 수집기 (Alo/Lululemon/Amazon/Rakuten/Shein 도메인 본 구현) |
+| Phase 136 | 자동 가격 조정 엔진 (환율/경쟁사/마진 임계값) |
+| Phase 137 | CS 자동응답 (텔레그램 봇) |
+| Phase 138 | 수요 예측 + 재고 알림 |
+| Phase 139 | Amazon PA-API + Rakuten 본 구현 |
+| Phase 140 | 모바일 PWA + 푸시 |
+| Phase 141 | 데이터 백업/복구 + Postgres 마이그 검토 |
+| Phase 142 | 모니터링 강화 (Sentry, Uptime) |
+| (2026 Q4) | SaaS 공개 준비 Act 별도 시작 |
 
 ## 🚧 진행 중 Phase
 

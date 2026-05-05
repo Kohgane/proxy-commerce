@@ -92,7 +92,7 @@ class ApiKey:
 
 
 # ---------------------------------------------------------------------------
-# 전체 API 레지스트리 — 24개
+# 전체 API 레지스트리 — 32개
 # ---------------------------------------------------------------------------
 
 API_REGISTRY: list = [
@@ -194,18 +194,74 @@ API_REGISTRY: list = [
         category=ApiCategory.NOTIFICATION,
     ),
     ApiKey(
-        name="sendgrid",
-        env_vars=["SENDGRID_API_KEY"],
-        purpose="이메일 발송 - 주문 확인/알림",
-        docs_url="https://app.sendgrid.com",
+        name="resend",
+        env_vars=["RESEND_API_KEY"],
+        purpose="Resend 이메일 발송 - 주문 확인/알림 (Phase 133+)",
+        docs_url="https://resend.com",
+        category=ApiCategory.NOTIFICATION,
+    ),
+    ApiKey(
+        name="kakao_alimtalk",
+        env_vars=["KAKAO_ALIMTALK_API_KEY", "KAKAO_ALIMTALK_SENDER_KEY"],
+        purpose="카카오 알림톡 (한국 고객)",
+        docs_url="https://business.kakao.com",
+        category=ApiCategory.NOTIFICATION,
+    ),
+    ApiKey(
+        name="line_notify",
+        env_vars=["LINE_NOTIFY_TOKEN"],
+        purpose="LINE Notify (일본 고객 운영자 알림)",
+        docs_url="https://notify-bot.line.me",
+        category=ApiCategory.NOTIFICATION,
+    ),
+    ApiKey(
+        name="line_messaging",
+        env_vars=["LINE_CHANNEL_ACCESS_TOKEN", "LINE_CHANNEL_SECRET"],
+        purpose="LINE Messaging API (일본 고객 풀 메시징)",
+        docs_url="https://developers.line.biz",
+        category=ApiCategory.NOTIFICATION,
+    ),
+    ApiKey(
+        name="whatsapp",
+        env_vars=["META_WHATSAPP_TOKEN", "META_WHATSAPP_PHONE_ID"],
+        purpose="WhatsApp Business (글로벌 고객)",
+        docs_url="https://developers.facebook.com/docs/whatsapp",
+        category=ApiCategory.NOTIFICATION,
+    ),
+    ApiKey(
+        name="wechat",
+        env_vars=["WECHAT_APP_ID", "WECHAT_APP_SECRET"],
+        purpose="WeChat 공식계정 (중국 고객)",
+        docs_url="https://mp.weixin.qq.com",
+        category=ApiCategory.NOTIFICATION,
+    ),
+    ApiKey(
+        name="twilio_sms",
+        env_vars=["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM"],
+        purpose="Twilio SMS (글로벌)",
+        docs_url="https://www.twilio.com",
+        category=ApiCategory.NOTIFICATION,
+    ),
+    ApiKey(
+        name="aligo_sms",
+        env_vars=["ALIGO_API_KEY", "ALIGO_USER_ID", "ALIGO_SENDER"],
+        purpose="Aligo SMS (한국, 카카오 알림톡 우회)",
+        docs_url="https://smartsms.aligo.in",
+        category=ApiCategory.NOTIFICATION,
+    ),
+    ApiKey(
+        name="discord_webhook",
+        env_vars=["DISCORD_WEBHOOK_URL"],
+        purpose="Discord 운영자 알림",
+        docs_url="https://discord.com",
         category=ApiCategory.NOTIFICATION,
     ),
     # ── 물류 ─────────────────────────────────────────────────────────────
     ApiKey(
-        name="sweettracker",
-        env_vars=["SWEETTRACKER_API_KEY"],
-        purpose="운송장 자동 추적",
-        docs_url="https://www.sweettracker.co.kr",
+        name="trackingmore",
+        env_vars=["TRACKINGMORE_API_KEY"],
+        purpose="TrackingMore 운송장 자동 추적 (Phase 133+)",
+        docs_url="https://www.trackingmore.com",
         category=ApiCategory.LOGISTICS,
     ),
     # ── 자체몰 ───────────────────────────────────────────────────────────

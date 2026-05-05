@@ -1,0 +1,13 @@
+Hi {name},
+
+Your order has been shipped! 🚚
+
+Order ID: {order_id}
+Courier: {courier_name}
+Tracking No: {tracking_no}
+Est. Delivery: {eta_date}
+
+Track your package: {tracking_url}
+
+Kohgane Multishop
+{shop_url}
