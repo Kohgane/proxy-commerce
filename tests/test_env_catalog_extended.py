@@ -39,7 +39,7 @@ def test_api_category_enum():
 
 
 def test_api_registry_has_new_keys():
-    """신규 24개 항목에 필수 키 포함 여부."""
+    """신규 24개 항목에 필수 키 포함 여부 (Phase 133: resend/trackingmore 교체)."""
     from src.utils.env_catalog import API_REGISTRY
     names = {k.name for k in API_REGISTRY}
     required = {
@@ -48,8 +48,8 @@ def test_api_registry_has_new_keys():
         "openai", "deepl",
         "toss_payments", "paypal",
         "kakao_login", "google_oauth", "naver_login",
-        "telegram", "sendgrid",
-        "sweettracker",
+        "telegram", "resend",
+        "trackingmore",
         "shopify", "woocommerce",
         "exchange_rate", "pexels", "unsplash",
     }

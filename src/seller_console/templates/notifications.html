@@ -34,12 +34,12 @@
   </div>
 </div>
 
-<!-- SendGrid 상태 -->
+<!-- Resend 상태 -->
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body">
     <div class="d-flex justify-content-between align-items-center mb-2">
-      <h6 class="fw-semibold mb-0">📧 이메일 알림 (SendGrid)</h6>
-      {% if sendgrid_active %}
+      <h6 class="fw-semibold mb-0">📧 이메일 알림 (Resend)</h6>
+      {% if resend_active %}
         <span class="badge bg-success">✅ 활성</span>
       {% else %}
         <span class="badge bg-warning text-dark">⚠️ 미설정</span>
@@ -47,11 +47,11 @@
     </div>
     <p class="text-muted small mb-3">
       주문 확인, 배송 시작 등의 이벤트를 이메일로 발송합니다.
-      <br>환경변수: <code>SENDGRID_API_KEY</code>
+      <br>환경변수: <code>RESEND_API_KEY</code>, <code>RESEND_FROM_EMAIL</code> (선택)
     </p>
-    {% if not sendgrid_active %}
-    <a href="https://app.sendgrid.com" target="_blank" class="btn btn-outline-secondary btn-sm">
-      📋 SendGrid에서 API 키 발급 →
+    {% if not resend_active %}
+    <a href="https://resend.com/api-keys" target="_blank" class="btn btn-outline-secondary btn-sm">
+      📋 Resend에서 API 키 발급 →
     </a>
     {% endif %}
   </div>
