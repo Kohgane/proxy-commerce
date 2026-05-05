@@ -1410,11 +1410,12 @@ def deep_health():
             **_resend_result,
         })
     except Exception as _resend_exc:
+        logger.warning("Resend 헬스 체크 오류: %s", _resend_exc)
         check_list.append({
             "name": "resend",
             "category": "notification",
             "status": "fail",
-            "detail": str(_resend_exc)[:200],
+            "detail": "Resend 헬스 체크 오류",
         })
 
     # ── TrackingMore 체크 (Phase 133) ──────────────────────────────────
@@ -1427,11 +1428,12 @@ def deep_health():
             **_tm_result,
         })
     except Exception as _tm_exc:
+        logger.warning("TrackingMore 헬스 체크 오류: %s", _tm_exc)
         check_list.append({
             "name": "trackingmore",
             "category": "logistics",
             "status": "fail",
-            "detail": str(_tm_exc)[:200],
+            "detail": "TrackingMore 헬스 체크 오류",
         })
 
     # ── 인증 프로바이더 체크 (Phase 133) ───────────────────────────────

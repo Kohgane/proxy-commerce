@@ -40,7 +40,8 @@ class TestKakaoProvider:
         from src.auth.providers.kakao import KakaoProvider
         p = KakaoProvider()
         url = p.get_authorize_url(state="test_state", redirect_uri="https://example.com/callback")
-        assert "kauth.kakao.com" in url
+        # 카카오 인증 서버 도메인 및 파라미터 확인
+        assert url.startswith("https://kauth.kakao.com/oauth/authorize?")
         assert "kakao_test_key_abc123" in url
         assert "test_state" in url
 
@@ -103,7 +104,7 @@ class TestGoogleProvider:
         monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "google_client_secret_xyz")
         from src.auth.providers.google import GoogleProvider
         url = GoogleProvider().get_authorize_url(state="my_state", redirect_uri="https://ex.com/cb")
-        assert "accounts.google.com" in url
+        assert url.startswith("https://accounts.google.com/o/oauth2/auth?")
         assert "my_state" in url
         assert "openid" in url
 
@@ -160,7 +161,7 @@ class TestNaverProvider:
         monkeypatch.setenv("NAVER_CLIENT_SECRET", "naver_client_secret_xyz")
         from src.auth.providers.naver import NaverProvider
         url = NaverProvider().get_authorize_url(state="nv_state", redirect_uri="https://ex.com/cb")
-        assert "nid.naver.com" in url
+        assert url.startswith("https://nid.naver.com/oauth2.0/authorize?")
         assert "nv_state" in url
 
     def test_get_user_info_mapping(self, monkeypatch):

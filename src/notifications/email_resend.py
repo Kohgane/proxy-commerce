@@ -50,7 +50,7 @@ def send_email(
 
     payload: dict = {
         "from": from_email or os.getenv("RESEND_FROM_EMAIL") or DEFAULT_FROM,
-        "to": [to] if isinstance(to, str) else list(to),
+        "to": to if isinstance(to, list) else [to],
         "subject": subject,
         "html": html,
     }

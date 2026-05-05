@@ -74,7 +74,7 @@
                  style="width:32px;height:32px;font-size:0.85rem;">
               {{ (_user_name or '?')[0].upper() }}
             </div>
-            <span class="text-dark small">{{ _user_name or session.get('user_email','') }}</span>
+            <span class="text-dark small">{{ _user_name or session.get('user_email', '') }}</span>
             {% if _user_role == 'admin' %}
               <span class="badge bg-danger" style="font-size:0.65rem;">Admin</span>
             {% endif %}

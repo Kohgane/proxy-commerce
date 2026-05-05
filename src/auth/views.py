@@ -24,9 +24,10 @@ import logging
 import os
 import secrets
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from typing import Optional
+from urllib.parse import urlparse
 
 from flask import (
     Blueprint,
@@ -109,6 +110,24 @@ def get_current_user():
         return None
 
 
+def _safe_next_url(next_url: str, default: str = "/seller/dashboard") -> str:
+    """리다이렉트 대상이 내부 URL인지 검증 (open redirect 방어).
+
+    외부 도메인으로의 리다이렉트를 차단하고, 안전한 내부 경로만 허용.
+    """
+    if not next_url:
+        return default
+    try:
+        parsed = urlparse(next_url)
+        # scheme 또는 netloc가 있으면 외부 URL → 기본값 반환
+        if parsed.scheme or parsed.netloc:
+            return default
+        # 경로만 있는 경우 허용 (상대 경로)
+        return next_url
+    except Exception:
+        return default
+
+
 # ---------------------------------------------------------------------------
 # 인증 데코레이터
 # ---------------------------------------------------------------------------
@@ -181,7 +200,7 @@ def login():
     """로그인 페이지."""
     if session.get("user_id"):
         return redirect("/seller/dashboard")
-    next_url = request.args.get("next", "/seller/dashboard")
+    next_url = _safe_next_url(request.args.get("next", ""))
     kakao = _get_provider("kakao")
     google = _get_provider("google")
     naver = _get_provider("naver")
@@ -242,7 +261,7 @@ def signup_post():
         # 이메일 인증 토큰
         verify_token = secrets.token_urlsafe(32)
         user.reset_token = verify_token  # 인증 전까지 재사용
-        user.reset_token_exp = (datetime.utcnow() + timedelta(hours=24)).isoformat() + "Z"
+        user.reset_token_exp = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
 
         store.create(user)
 
@@ -284,7 +303,7 @@ def login_post():
     """이메일 + 비밀번호 로그인 처리."""
     email = request.form.get("email", "").strip().lower()
     password = request.form.get("password", "")
-    next_url = request.form.get("next", "/seller/dashboard")
+    next_url = _safe_next_url(request.form.get("next", ""))
 
     if not email or not password:
         flash("이메일과 비밀번호를 입력해주세요.", "danger")
@@ -326,7 +345,7 @@ def oauth_start(provider: str):
 
     state = secrets.token_urlsafe(24)
     session[f"oauth_state_{provider}"] = state
-    session[f"oauth_next_{provider}"] = request.args.get("next", "/seller/dashboard")
+    session[f"oauth_next_{provider}"] = _safe_next_url(request.args.get("next", ""))
 
     redirect_uri = _callback_uri(provider)
     auth_url = p.get_authorize_url(state=state, redirect_uri=redirect_uri)
@@ -400,7 +419,7 @@ def oauth_callback(provider: str):
             user.social_accounts = [{
                 "provider": provider,
                 "provider_user_id": provider_user_id,
-                "linked_at": datetime.utcnow().isoformat() + "Z",
+                "linked_at": datetime.now(timezone.utc).isoformat(),
             }]
             store.create(user)
 
@@ -492,7 +511,7 @@ def forgot():
         if user:
             token = secrets.token_urlsafe(32)
             user.reset_token = token
-            user.reset_token_exp = (datetime.utcnow() + timedelta(hours=1)).isoformat() + "Z"
+            user.reset_token_exp = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
             store.update(user)
 
             reset_url = f"{os.getenv('APP_BASE_URL', 'https://kohganepercentiii.com')}/auth/reset?token={token}"
@@ -553,7 +572,8 @@ def reset_post():
         if exp_str:
             try:
                 exp_dt = datetime.fromisoformat(exp_str.replace("Z", "+00:00"))
-                if datetime.utcnow().replace(tzinfo=exp_dt.tzinfo) > exp_dt:
+                now_aware = datetime.now(timezone.utc)
+                if now_aware > exp_dt:
                     flash("링크가 만료되었습니다. 다시 요청해주세요.", "danger")
                     return redirect(url_for("auth.login"))
             except Exception:
