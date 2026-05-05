@@ -122,17 +122,16 @@
 | Phase 127 | 마켓 상태 실연동 (Google Sheets 어댑터 + 마켓별 어댑터 인터페이스 + 마켓 현황 페이지 + Sheets 워크시트 자동 부트스트랩) | #PR | 2026-05-03 |
 | Phase 128 | 수동 수집기 실연동 + 마켓 셀러 어댑터 실연동 + 환율 실시간 + 환경변수 카탈로그 + /seller/catalog · /seller/api-status 페이지 | #PR | 2026-05-04 |
 | Phase 129 | 주문 관리 통합 (4개 마켓 UnifiedOrder + Google Sheets orders 워크시트 + KPI + 운송장 등록 + CSV 내보내기) | #PR | 2026-05-05 |
+| Phase 130 | API 카탈로그 24개 확장 + 번역/카피 자동 생성 (OpenAI/DeepL) + 텔레그램 알림 + 운송장 자동 추적 (SweetTracker) + 토스/Shopify/WooCommerce stub + 보조 이미지 (Pexels/Unsplash) | #PR | 2026-05-05 |
 
 ## 📋 다음 큐
 
 | Phase | 내용 |
 |---|---|
-| Phase 128 | 수동 수집기 실연동 + 마켓 셀러 어댑터 실연동 + 환율 실시간 + 환경변수 카탈로그 + /seller/catalog · /seller/api-status 페이지 | #PR | 2026-05-04 |
-| Phase 129 | 주문 관리 통합 (마켓별 주문 → 통합 뷰) |
-| Phase 130 | 번역/카피 자동 생성 (OpenAI/DeepL) |
-| Phase 131 | 자체몰(코가네멀티샵) 본 구현 |
-| Phase 132 | PortOne 결제 연동 (SaaS 공개 시작점) |
-| Phase 133 | 인증 시스템 활성화 |
+| Phase 131 | 자체몰(코가네멀티샵) 본 구현 (SaaS 공개 직전 단계) |
+| Phase 132 | 토스/PortOne 결제 본 구현 |
+| Phase 133 | 카카오/구글/네이버 로그인 활성화 |
+| Phase 134 | SaaS 공개 준비 (랜딩 페이지, 가격, 약관) |
 
 ## 🚧 진행 중 Phase
 

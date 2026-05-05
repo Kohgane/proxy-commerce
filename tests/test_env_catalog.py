@@ -76,12 +76,14 @@ def test_masked_values_none_when_missing(monkeypatch):
 
 
 def test_get_api_status_returns_list():
-    """get_api_status()는 dict 목록 반환."""
+    """get_api_status()는 dict 반환 (Phase 130: apis 키에 목록 포함)."""
     from src.utils.env_catalog import get_api_status
     result = get_api_status()
-    assert isinstance(result, list)
-    assert len(result) > 0
-    for item in result:
+    # Phase 130: dict 반환 (apis, summary, categories, render_env_note)
+    assert isinstance(result, dict)
+    api_list = result.get("apis", [])
+    assert len(api_list) > 0
+    for item in api_list:
         assert "name" in item
         assert "status" in item
         assert item["status"] in ("active", "missing")
@@ -92,7 +94,8 @@ def test_get_api_status_missing_has_hint(monkeypatch):
     from src.utils.env_catalog import get_api_status
     monkeypatch.delenv("EXCHANGE_RATE_API_KEY", raising=False)
     result = get_api_status()
-    er = next(r for r in result if r["name"] == "exchange_rate")
+    api_list = result.get("apis", []) if isinstance(result, dict) else result
+    er = next(r for r in api_list if r["name"] == "exchange_rate")
     assert er["status"] == "missing"
     assert er["hint"] is not None
 

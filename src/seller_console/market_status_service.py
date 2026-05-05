@@ -99,6 +99,8 @@ class MarketStatusService:
             ("smartstore", "src.seller_console.market_adapters.smartstore_adapter", "SmartStoreAdapter"),
             ("11st", "src.seller_console.market_adapters.eleven_adapter", "ElevenAdapter"),
             ("kohganemultishop", "src.seller_console.market_adapters.kohgane_multishop_adapter", "KohganeMultishopAdapter"),
+            ("shopify", "src.seller_console.market_adapters.shopify_adapter", "ShopifyAdapter"),
+            ("woocommerce", "src.seller_console.market_adapters.woocommerce_adapter", "WooCommerceAdapter"),
         ]
         for key, module_path, class_name in _adapter_specs:
             try:

@@ -126,7 +126,8 @@ def collect():
 
     try:
         from src.utils.env_catalog import get_api_status
-        api_status = get_api_status()
+        _api_data = get_api_status()
+        api_status = _api_data.get("apis", []) if isinstance(_api_data, dict) else _api_data
     except Exception as exc:
         logger.warning("API 상태 로드 실패: %s", exc)
         api_status = []
@@ -497,30 +498,77 @@ def orders_export_csv():
 
 @bp.get("/api-status")
 def api_status():
-    """API 상태 페이지 (Phase 128)."""
+    """API 상태 페이지 (Phase 130: 카테고리 그루핑)."""
     if not _check_auth():
         return redirect(url_for("seller_console.index"))
 
     try:
         from src.utils.env_catalog import get_api_status as _get_api_status
-        api_list = _get_api_status()
+        api_data = _get_api_status()
+        # api_data 는 dict (categories, apis, summary, render_env_note)
+        api_list = api_data.get("apis", [])
+        summary = api_data.get("summary", {})
+        categories = api_data.get("categories", [])
+        render_env_note = api_data.get("render_env_note", "")
     except Exception as exc:
         logger.warning("API 상태 로드 실패: %s", exc)
         api_list = []
+        summary = {}
+        categories = []
+        render_env_note = ""
 
-    return render_template("api_status.html", page="api_status", api_list=api_list)
+    return render_template(
+        "api_status.html",
+        page="api_status",
+        api_list=api_list,
+        summary=summary,
+        categories=categories,
+        render_env_note=render_env_note,
+    )
 
 
 @bp.get("/api-status/json")
 def api_status_json():
-    """API 상태 JSON 응답 (Phase 128)."""
+    """API 상태 JSON 응답 (Phase 130: 구조화된 응답)."""
     try:
         from src.utils.env_catalog import get_api_status as _get_api_status
-        return jsonify({"ok": True, "apis": _get_api_status()})
+        data = _get_api_status()
+        return jsonify({"ok": True, **data})
     except Exception as exc:
         logger.warning("API 상태 JSON 오류: %s", exc)
         # 내부 오류 메시지를 외부에 노출하지 않음
         return jsonify({"ok": False, "error": "API 상태 로드 중 오류가 발생했습니다."}), 500
+
+
+@bp.get("/notifications")
+def notifications():
+    """알림 설정 페이지 (Phase 130)."""
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+
+    from src.utils.env_catalog import is_active as _is_active
+    telegram_active = _is_active("telegram")
+    sendgrid_active = _is_active("sendgrid")
+    return render_template(
+        "notifications.html",
+        page="notifications",
+        telegram_active=telegram_active,
+        sendgrid_active=sendgrid_active,
+    )
+
+
+@bp.post("/notifications/test")
+def notifications_test():
+    """텔레그램 테스트 메시지 전송 (Phase 130)."""
+    try:
+        from src.notifications.telegram import send_telegram
+        ok = send_telegram("✅ proxy-commerce 알림 테스트 메시지입니다.", urgency="info")
+        if ok:
+            return jsonify({"ok": True, "message": "텔레그램 메시지 전송 성공"})
+        return jsonify({"ok": False, "message": "TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID 미설정 — 알림 비활성"}), 200
+    except Exception as exc:
+        logger.warning("텔레그램 테스트 오류: %s", exc)
+        return jsonify({"ok": False, "error": "메시지 전송 중 오류가 발생했습니다."}), 500
 
 
 @bp.get("/pricing")
@@ -763,7 +811,8 @@ def health():
     """셀러 콘솔 헬스체크."""
     try:
         from src.utils.env_catalog import get_api_status
-        api_statuses = get_api_status()
+        _api_data = get_api_status()
+        api_statuses = _api_data.get("apis", []) if isinstance(_api_data, dict) else _api_data
         active_count = sum(1 for a in api_statuses if a["status"] == "active")
         missing_count = sum(1 for a in api_statuses if a["status"] == "missing")
     except Exception:
