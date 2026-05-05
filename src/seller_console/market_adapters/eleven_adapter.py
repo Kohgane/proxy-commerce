@@ -130,6 +130,161 @@ class ElevenAdapter(MarketAdapter):
             logger.warning("11번가 upload_product 실패: %s", exc)
             return {"status": "error", "detail": str(exc)}
 
+    def fetch_orders_unified(self, since=None, until=None) -> list:
+        """11번가 주문 조회 → UnifiedOrder 목록."""
+        from src.seller_console.orders.models import (
+            OrderLineItem,
+            OrderStatus,
+            UnifiedOrder,
+            mask_address,
+            mask_name,
+            mask_phone,
+        )
+        from decimal import Decimal
+        from datetime import datetime, timedelta
+
+        if not _api_active():
+            logger.warning("11번가 API 키 미설정 — 빈 목록 반환")
+            return []
+
+        if _dry_run():
+            logger.info("ADAPTER_DRY_RUN=1 — 11번가 fetch_orders_unified dry-run")
+            return []
+
+        since_dt = since or datetime.utcnow() - timedelta(days=7)
+        since_str = since_dt.strftime("%Y%m%d")
+
+        try:
+            import requests
+            resp = requests.get(
+                f"{_BASE_URL}/orderservices/order/selOrderInfo",
+                headers=_auth_headers(),
+                params={
+                    "ordDtFrom": since_str,
+                    "ordDtTo": datetime.utcnow().strftime("%Y%m%d"),
+                    "pageNum": 1,
+                    "pageSize": 50,
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            raw_xml = resp.text
+        except Exception as exc:
+            logger.warning("11번가 fetch_orders_unified 실패: %s", exc)
+            return []
+
+        return self._parse_orders_xml(raw_xml)
+
+    def _parse_orders_xml(self, xml_text: str) -> list:
+        """11번가 XML 주문 목록 파싱 → UnifiedOrder 목록."""
+        from src.seller_console.orders.models import (
+            OrderLineItem,
+            OrderStatus,
+            UnifiedOrder,
+            mask_address,
+            mask_name,
+            mask_phone,
+        )
+        from decimal import Decimal
+        from datetime import datetime
+
+        _status_map = {
+            "PAYMENT_DONE": OrderStatus.PAID,
+            "PRODUCT_READY": OrderStatus.PREPARING,
+            "DELIVERING": OrderStatus.SHIPPED,
+            "DELIVERED": OrderStatus.DELIVERED,
+            "CANCEL_DONE": OrderStatus.CANCELED,
+            "RETURN_DONE": OrderStatus.RETURNED,
+        }
+
+        results = []
+        try:
+            root = ElementTree.fromstring(xml_text)
+            for order in root.findall(".//Order"):
+                try:
+                    order_id = order.findtext("ordNo") or order.findtext("orderNo") or ""
+                    status_raw = order.findtext("ordStatus") or "PAYMENT_DONE"
+                    status = _status_map.get(status_raw, OrderStatus.PAID)
+                    placed_str = order.findtext("ordDt") or order.findtext("orderDate") or ""
+                    try:
+                        placed_at = datetime.strptime(placed_str[:8], "%Y%m%d") if placed_str else datetime.utcnow()
+                    except Exception:
+                        placed_at = datetime.utcnow()
+
+                    buyer_name = order.findtext("buyerNm") or ""
+                    buyer_phone = order.findtext("buyerTel") or ""
+                    buyer_addr = order.findtext("dlvrAdrs") or ""
+
+                    item_name = order.findtext("prdNm") or ""
+                    qty_text = order.findtext("ordQty") or "1"
+                    price_text = order.findtext("ordAmt") or "0"
+                    try:
+                        qty = int(qty_text)
+                    except ValueError:
+                        qty = 1
+                    try:
+                        price = Decimal(str(price_text))
+                    except Exception:
+                        price = Decimal(0)
+
+                    results.append(UnifiedOrder(
+                        order_id=order_id,
+                        marketplace="11st",
+                        status=status,
+                        placed_at=placed_at,
+                        buyer_name_masked=mask_name(buyer_name),
+                        buyer_phone_masked=mask_phone(buyer_phone) if buyer_phone else None,
+                        buyer_address_masked=mask_address(buyer_addr),
+                        total_krw=price,
+                        items=[OrderLineItem(
+                            sku=order.findtext("prdCd") or order_id,
+                            title=item_name,
+                            qty=qty,
+                            unit_price_krw=price,
+                        )],
+                    ))
+                except Exception as exc:
+                    logger.warning("11번가 단건 주문 파싱 실패: %s", exc)
+                    continue
+        except ElementTree.ParseError as exc:
+            logger.warning("11번가 주문 XML 파싱 실패: %s", exc)
+        return results
+
+    def fetch_orders(self) -> list:
+        """11번가 주문 조회 (하위 호환)."""
+        return self.fetch_orders_unified()
+
+    def update_tracking(self, order_id: str, courier: str = "", tracking_no: str = "") -> bool:
+        """11번가 운송장 등록."""
+        if _dry_run():
+            logger.info("ADAPTER_DRY_RUN=1 — 11번가 update_tracking 차단: %s", order_id)
+            return True
+
+        if not _api_active():
+            return False
+
+        try:
+            import requests
+            resp = requests.post(
+                f"{_BASE_URL}/orderservices/invoice/sellerInvoice",
+                headers={**_auth_headers(), "Content-Type": "application/xml"},
+                data=(
+                    f"<InvoiceRequest>"
+                    f"<ordNo>{order_id}</ordNo>"
+                    f"<dlvrCmpyCd>{courier}</dlvrCmpyCd>"
+                    f"<invoiceNo>{tracking_no}</invoiceNo>"
+                    f"</InvoiceRequest>"
+                ).encode("utf-8"),
+                timeout=10,
+            )
+            if resp.status_code in (200, 201):
+                return True
+            logger.warning("11번가 운송장 등록 실패 HTTP %s", resp.status_code)
+            return False
+        except Exception as exc:
+            logger.warning("11번가 update_tracking 오류: %s", exc)
+            return False
+
     def health_check(self) -> dict:
         """11번가 API 상태 확인."""
         if not _api_active():

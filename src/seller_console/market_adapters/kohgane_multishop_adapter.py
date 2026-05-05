@@ -24,6 +24,16 @@ class KohganeMultishopAdapter(MarketAdapter):
         logger.warning("코가네멀티샵 어댑터 미구현 — Sheets 캐시 사용")
         return []
 
+    def fetch_orders_unified(self, since=None, until=None) -> list:
+        """자체몰 주문 조회 — 향후 실연동 예정 (현재 stub)."""
+        logger.warning("코가네멀티샵 fetch_orders_unified 미구현 — 빈 목록 반환")
+        return []
+
+    def update_tracking(self, order_id: str, courier: str = "", tracking_no: str = "") -> bool:
+        """자체몰 운송장 등록 — stub."""
+        logger.warning("코가네멀티샵 update_tracking 미구현")
+        return False
+
     def health_check(self) -> dict:
         """자체몰 API 상태 확인 — stub."""
         return {"status": "stub", "detail": "코가네멀티샵 어댑터 미구현"}

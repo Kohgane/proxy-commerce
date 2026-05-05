@@ -4,44 +4,201 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h4 class="mb-0 fw-bold">🛍 주문 관리</h4>
-  <span class="badge bg-warning text-dark">Phase 129 예정</span>
+  <button class="btn btn-primary btn-sm" onclick="syncNow()">
+    <span id="sync-spinner" class="spinner-border spinner-border-sm d-none" role="status"></span>
+    ⟳ 지금 동기화
+  </button>
 </div>
 
-<div class="alert alert-info">
-  <strong>ℹ️ 준비 중:</strong> 주문 통합 관리는 Phase 129에서 구현 예정입니다.
-  쿠팡 / 스마트스토어 / 11번가 주문을 통합해서 표시합니다.
+<!-- KPI 카드 -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="fs-2 fw-bold text-primary">{{ kpi.today_new }}</div>
+        <div class="small text-muted">신규(오늘)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="fs-2 fw-bold text-warning">{{ kpi.pending_ship }}</div>
+        <div class="small text-muted">발송대기</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="fs-2 fw-bold text-success">{{ kpi.shipped }}</div>
+        <div class="small text-muted">발송중</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="fs-2 fw-bold text-danger">{{ kpi.returned_exchanged }}</div>
+        <div class="small text-muted">반품/교환</div>
+      </div>
+    </div>
+  </div>
 </div>
 
-<div class="row g-3">
-  <div class="col-md-4">
-    <div class="card border-0 shadow-sm">
-      <div class="card-body text-center">
-        <div class="fs-1 mb-2">🛒</div>
-        <h6 class="fw-semibold">쿠팡 주문</h6>
-        <p class="text-muted small mb-0">COUPANG_VENDOR_ID 등록 후 활성화</p>
-        <a href="/seller/api-status" class="btn btn-outline-primary btn-sm mt-2">API 키 확인</a>
+<!-- 필터 바 -->
+<form method="get" action="/seller/orders" class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label small mb-1">마켓</label>
+        <div class="d-flex gap-2 flex-wrap">
+          {% for mp in ["coupang", "smartstore", "11st", "kohganemultishop"] %}
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="checkbox" name="marketplace" value="{{ mp }}" id="mp-{{ mp }}"
+              {% if mp in (filters.get('marketplace') or []) %}checked{% endif %}>
+            <label class="form-check-label small" for="mp-{{ mp }}">{{ mp }}</label>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">상태</label>
+        <select name="status" class="form-select form-select-sm">
+          <option value="">전체</option>
+          {% for s in ["new","paid","preparing","shipped","delivered","canceled","returned","exchanged","refund_requested"] %}
+          <option value="{{ s }}" {% if filters.get('status') == s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">시작일</label>
+        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ filters.get('date_from', '') }}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">종료일</label>
+        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ filters.get('date_to', '') }}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">검색</label>
+        <input type="text" name="search" class="form-control form-control-sm" placeholder="주문번호/구매자" value="{{ filters.get('search', '') }}">
+      </div>
+      <div class="col-md-1">
+        <button type="submit" class="btn btn-outline-secondary btn-sm w-100">검색</button>
       </div>
     </div>
   </div>
-  <div class="col-md-4">
-    <div class="card border-0 shadow-sm">
-      <div class="card-body text-center">
-        <div class="fs-1 mb-2">🟢</div>
-        <h6 class="fw-semibold">스마트스토어 주문</h6>
-        <p class="text-muted small mb-0">NAVER_COMMERCE_CLIENT_ID 등록 후 활성화</p>
-        <a href="/seller/api-status" class="btn btn-outline-primary btn-sm mt-2">API 키 확인</a>
-      </div>
-    </div>
+</form>
+
+<!-- 주문 테이블 -->
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <span class="fw-semibold">주문 목록</span>
+    <a href="/seller/orders/export.csv" class="btn btn-outline-secondary btn-sm">CSV 내보내기</a>
   </div>
-  <div class="col-md-4">
-    <div class="card border-0 shadow-sm">
-      <div class="card-body text-center">
-        <div class="fs-1 mb-2">🔴</div>
-        <h6 class="fw-semibold">11번가 주문</h6>
-        <p class="text-muted small mb-0">ELEVENST_API_KEY 등록 후 활성화</p>
-        <a href="/seller/api-status" class="btn btn-outline-primary btn-sm mt-2">API 키 확인</a>
+  <div class="card-body p-0">
+    {% if orders %}
+    <div class="table-responsive">
+      <table class="table table-hover table-sm mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>마켓</th>
+            <th>주문번호</th>
+            <th>주문일시</th>
+            <th>상품</th>
+            <th class="text-end">금액</th>
+            <th>상태</th>
+            <th>운송장</th>
+            <th>액션</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for o in orders %}
+          <tr>
+            <td>
+              {% if o.marketplace == 'coupang' %}<span class="badge bg-warning text-dark">쿠팡</span>
+              {% elif o.marketplace == 'smartstore' %}<span class="badge bg-success">스마트스토어</span>
+              {% elif o.marketplace == '11st' %}<span class="badge bg-danger">11번가</span>
+              {% else %}<span class="badge bg-secondary">{{ o.marketplace }}</span>{% endif %}
+            </td>
+            <td><small class="font-monospace">{{ o.order_id }}</small></td>
+            <td><small>{{ (o.placed_at or '')[:16] }}</small></td>
+            <td>
+              {% if o["items"] %}
+                <small>{{ o["items"][0]["title"][:20] }}{% if o["items"][0]["title"]|length > 20 %}…{% endif %}</small>
+                {% if o["items"]|length > 1 %}<span class="badge bg-light text-dark">+{{ o["items"]|length - 1 }}</span>{% endif %}
+              {% endif %}
+            </td>
+            <td class="text-end"><small>{{ "{:,}".format(o.total_krw|int) }}원</small></td>
+            <td>
+              {% set status_colors = {"new":"secondary","paid":"primary","preparing":"info","shipped":"warning","delivered":"success","canceled":"dark","returned":"danger","exchanged":"danger","refund_requested":"danger"} %}
+              <span class="badge bg-{{ status_colors.get(o.status, 'secondary') }}">{{ o.status }}</span>
+            </td>
+            <td>
+              {% if o.tracking_no %}<small class="font-monospace">{{ o.courier }} {{ o.tracking_no }}</small>
+              {% else %}<span class="text-muted small">-</span>{% endif %}
+            </td>
+            <td>
+              <button class="btn btn-outline-primary btn-sm py-0"
+                onclick="openTrackingModal('{{ o.marketplace }}', '{{ o.order_id }}')">운송장</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center py-5 text-muted">
+      <div class="fs-1">📦</div>
+      <p>주문이 없습니다. 동기화를 실행해 보세요.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- 운송장 입력 모달 -->
+<div class="modal fade" id="trackingModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">운송장 등록</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="tm-marketplace">
+        <input type="hidden" id="tm-order-id">
+        <div class="mb-3">
+          <label class="form-label">택배사</label>
+          <select id="tm-courier" class="form-select">
+            {% for c in couriers %}
+            <option value="{{ c }}">{{ c }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">운송장 번호</label>
+          <input type="text" id="tm-tracking-no" class="form-control" placeholder="운송장 번호 입력">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+        <button type="button" class="btn btn-primary" onclick="saveTracking()">저장</button>
       </div>
     </div>
   </div>
 </div>
+
+<!-- 토스트 -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999">
+  <div id="toast" class="toast" role="alert">
+    <div class="toast-header">
+      <strong class="me-auto">알림</strong>
+      <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+    </div>
+    <div class="toast-body" id="toast-msg"></div>
+  </div>
+</div>
+
+<script src="/seller/static/orders.js"></script>
 {% endblock %}
+

@@ -120,6 +120,24 @@ def build_fx_widget() -> Dict[str, Any]:
     }
 
 
+def build_orders_kpi_widget() -> Dict[str, Any]:
+    """주문 KPI 위젯 데이터."""
+    try:
+        from .orders.sync_service import OrderSyncService
+        svc = OrderSyncService()
+        data = svc.kpi_summary()
+        # 위젯 공통 is_mock 플래그 추가
+        data.setdefault("is_mock", data.get("source") != "sheets")
+    except Exception as exc:
+        logger.warning("orders KPI 위젯 로드 실패: %s", exc)
+        data = dict(_NOT_READY)
+    return {
+        "title": "주문 현황",
+        "type": "orders_kpi",
+        "data": data,
+    }
+
+
 def build_all_widgets() -> List[Dict[str, Any]]:
     """모든 대시보드 위젯 데이터 목록 반환."""
     return [
@@ -130,4 +148,5 @@ def build_all_widgets() -> List[Dict[str, Any]]:
         build_returns_cs_widget(),
         build_auto_purchase_widget(),
         build_fx_widget(),
+        build_orders_kpi_widget(),
     ]

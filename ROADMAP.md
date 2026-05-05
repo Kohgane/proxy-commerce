@@ -121,6 +121,7 @@
 | Phase 126 | Google 자격증명 다중 소스 지원 (Secret File + b64 + raw + 파일) + /health/deep 단계별 진단 강화 | #PR | 2026-05-03 |
 | Phase 127 | 마켓 상태 실연동 (Google Sheets 어댑터 + 마켓별 어댑터 인터페이스 + 마켓 현황 페이지 + Sheets 워크시트 자동 부트스트랩) | #PR | 2026-05-03 |
 | Phase 128 | 수동 수집기 실연동 + 마켓 셀러 어댑터 실연동 + 환율 실시간 + 환경변수 카탈로그 + /seller/catalog · /seller/api-status 페이지 | #PR | 2026-05-04 |
+| Phase 129 | 주문 관리 통합 (4개 마켓 UnifiedOrder + Google Sheets orders 워크시트 + KPI + 운송장 등록 + CSV 내보내기) | #PR | 2026-05-05 |
 
 ## 📋 다음 큐
 

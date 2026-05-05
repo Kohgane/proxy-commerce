@@ -306,13 +306,192 @@ def catalog():
     )
 
 
+def _get_order_sync_service():
+    """OrderSyncService 인스턴스 반환 (graceful import)."""
+    try:
+        from .orders.sync_service import OrderSyncService
+        return OrderSyncService()
+    except Exception as exc:
+        logger.warning("OrderSyncService 로드 실패: %s", exc)
+        return None
+
+
 @bp.get("/orders")
 def orders():
-    """주문 관리 페이지 (Phase 128 — stub, Phase 129에서 실연동)."""
+    """주문 관리 페이지 (Phase 129 — 실연동)."""
     if not _check_auth():
         return redirect(url_for("seller_console.index"))
 
-    return render_template("orders.html", page="orders")
+    filters = {
+        "marketplace": request.args.getlist("marketplace") or None,
+        "status": request.args.get("status") or None,
+        "search": request.args.get("search") or None,
+        "date_from": request.args.get("date_from") or None,
+        "date_to": request.args.get("date_to") or None,
+    }
+    # None 값 제거
+    filters = {k: v for k, v in filters.items() if v}
+
+    limit = request.args.get("limit", 50, type=int)
+    offset = request.args.get("offset", 0, type=int)
+
+    svc = _get_order_sync_service()
+    order_list = []
+    kpi = {"today_new": 0, "pending_ship": 0, "shipped": 0, "returned_exchanged": 0, "source": "none"}
+    if svc:
+        order_list = svc.list_orders(filters=filters, limit=limit, offset=offset)
+        kpi = svc.kpi_summary()
+
+    from .orders.tracking import COURIER_MAP
+    order_dicts = [o.to_dict() for o in order_list]
+    return render_template(
+        "orders.html",
+        page="orders",
+        orders=order_dicts,
+        kpi=kpi,
+        filters=filters,
+        limit=limit,
+        offset=offset,
+        couriers=list(COURIER_MAP.keys()),
+    )
+
+
+@bp.post("/orders/sync")
+def orders_sync():
+    """주문 동기화 트리거 (Phase 129).
+
+    Response: {"ok": true, "results": {...}}
+    """
+    svc = _get_order_sync_service()
+    if svc is None:
+        return jsonify({"ok": False, "error": "OrderSyncService 준비 중입니다."}), 503
+
+    try:
+        results = svc.sync_all()
+        return jsonify({"ok": True, "results": results})
+    except Exception as exc:
+        logger.warning("orders_sync 오류: %s", exc)
+        return jsonify({"ok": False, "error": "동기화 중 오류가 발생했습니다."}), 500
+
+
+@bp.get("/orders/<marketplace>/<order_id>")
+def order_detail(marketplace: str, order_id: str):
+    """주문 상세 조회 (JSON).
+
+    Response: {"ok": true, "order": {...}}
+    """
+    svc = _get_order_sync_service()
+    if svc is None:
+        return jsonify({"ok": False, "error": "서비스 준비 중입니다."}), 503
+
+    try:
+        orders_list = svc.list_orders(
+            filters={"marketplace": marketplace, "search": order_id},
+            limit=1,
+        )
+        matched = [o for o in orders_list if o.order_id == order_id]
+        if not matched:
+            return jsonify({"ok": False, "error": "주문을 찾을 수 없습니다."}), 404
+        return jsonify({"ok": True, "order": matched[0].to_dict()})
+    except Exception as exc:
+        logger.warning("order_detail 오류: %s", exc)
+        return jsonify({"ok": False, "error": "조회 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/orders/<marketplace>/<order_id>/tracking")
+def order_tracking(marketplace: str, order_id: str):
+    """운송장 등록 (Phase 129).
+
+    Request body: {"courier": "CJ대한통운", "tracking_no": "1234567890"}
+    Response: {"ok": true}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    courier = (data.get("courier") or "").strip()
+    tracking_no = (data.get("tracking_no") or "").strip()
+
+    if not courier or not tracking_no:
+        return jsonify({"ok": False, "error": "택배사와 운송장 번호를 입력하세요."}), 400
+
+    svc = _get_order_sync_service()
+    if svc is None:
+        return jsonify({"ok": False, "error": "서비스 준비 중입니다."}), 503
+
+    try:
+        ok = svc.update_tracking(order_id, marketplace, courier, tracking_no)
+        return jsonify({"ok": ok})
+    except Exception as exc:
+        logger.warning("order_tracking 오류: %s", exc)
+        return jsonify({"ok": False, "error": "운송장 등록 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/orders/bulk/tracking")
+def orders_bulk_tracking():
+    """일괄 운송장 등록 (Phase 129).
+
+    Request body: {"items": [{"order_id": "...", "marketplace": "...", "courier": "...", "tracking_no": "..."}]}
+    Response: {"ok": true, "results": [...]}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    items = data.get("items") or []
+
+    if not items:
+        return jsonify({"ok": False, "error": "업데이트 항목이 없습니다."}), 400
+
+    svc = _get_order_sync_service()
+    if svc is None:
+        return jsonify({"ok": False, "error": "서비스 준비 중입니다."}), 503
+
+    results = []
+    for item in items:
+        try:
+            ok = svc.update_tracking(
+                item.get("order_id", ""),
+                item.get("marketplace", ""),
+                item.get("courier", ""),
+                item.get("tracking_no", ""),
+            )
+            results.append({"order_id": item.get("order_id"), "ok": ok})
+        except Exception as exc:
+            results.append({"order_id": item.get("order_id"), "ok": False, "error": str(exc)})
+
+    return jsonify({"ok": True, "results": results})
+
+
+@bp.get("/orders/export.csv")
+def orders_export_csv():
+    """주문 목록 CSV 내보내기 (Phase 129)."""
+    import csv
+    import io
+
+    svc = _get_order_sync_service()
+    orders_list = svc.list_orders(limit=1000) if svc else []
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "order_id", "marketplace", "status", "placed_at",
+        "buyer_name_masked", "total_krw", "items_count",
+        "courier", "tracking_no", "notes",
+    ])
+    for o in orders_list:
+        writer.writerow([
+            o.order_id, o.marketplace,
+            o.status.value if hasattr(o.status, "value") else o.status,
+            o.placed_at.isoformat() if o.placed_at else "",
+            o.buyer_name_masked or "",
+            str(o.total_krw),
+            len(o.items),
+            o.courier or "",
+            o.tracking_no or "",
+            o.notes or "",
+        ])
+
+    from flask import Response
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=orders.csv"},
+    )
 
 
 @bp.get("/api-status")
