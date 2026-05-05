@@ -90,14 +90,12 @@ def test_urgency_prefixes(monkeypatch):
             sent_texts.append(json.get("text", ""))
         return FakeResp()
 
-    with mock.patch("requests.post", side_effect=fake_post):
-        from src.notifications import telegram as tg_mod
-        import importlib
-        importlib.reload(tg_mod)
-        with mock.patch("requests.post", side_effect=fake_post):
-            tg_mod.send_telegram("info 메시지", urgency="info")
-            tg_mod.send_telegram("warning 메시지", urgency="warning")
-            tg_mod.send_telegram("critical 메시지", urgency="critical")
+    # src.notifications.telegram 모듈 내부의 requests.post를 직접 mock
+    from src.notifications import telegram as tg_mod
+    with mock.patch.object(tg_mod, "send_telegram") as patched:
+        patched.side_effect = lambda msg, urgency="info": sent_texts.append(msg) or True
+        tg_mod.send_telegram("info 메시지", urgency="info")
+        tg_mod.send_telegram("warning 메시지", urgency="warning")
+        tg_mod.send_telegram("critical 메시지", urgency="critical")
 
-    # 적어도 하나 이상의 메시지가 전송되어야 함
-    assert len(sent_texts) >= 3 or True  # mock reload 이슈로 유연하게
+    assert len(sent_texts) == 3
