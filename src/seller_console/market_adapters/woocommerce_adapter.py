@@ -60,7 +60,7 @@ def _mask_name(name: str) -> str:
     """이름 마스킹 (첫 글자만 공개)."""
     if not name:
         return ""
-    return name[0] + "*" * max(len(name) - 1, 1)
+    return name[0] + "*" * max(len(name) - 1, 0)
 
 
 def _mask_phone(phone: str) -> str:
@@ -107,9 +107,7 @@ class WooCommerceAdapter(MarketAdapter):
                 if not products:
                     break
                 for p in products:
-                    price_val = p.get("price")
-                    if price_val is None:
-                        price_val = p.get("regular_price")
+                    price_val = p.get("price") or p.get("regular_price")
                     price_str = price_val if price_val else "0"
                     try:
                         price_krw = int(float(price_str))
@@ -201,9 +199,7 @@ class WooCommerceAdapter(MarketAdapter):
 
         items = []
         for li in (woo.get("line_items") or []):
-            price_val = li.get("price")
-            if price_val is None:
-                price_val = li.get("subtotal")
+            price_val = li.get("price") or li.get("subtotal")
             items.append({
                 "sku": li.get("sku") or str(li.get("product_id", "")),
                 "title": li.get("name", ""),

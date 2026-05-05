@@ -913,6 +913,7 @@ def root():
     redirect_target = os.getenv("ROOT_REDIRECT", "seller").strip().lower()
 
     if redirect_target in ("shop_external", "shop"):
+        # "shop"은 "shop_external"의 레거시 별칭 (하위 호환)
         return redirect(_EXTERNAL_SHOP_URL, code=302)
 
     if redirect_target == "landing":
