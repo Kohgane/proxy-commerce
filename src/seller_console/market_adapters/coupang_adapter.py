@@ -160,6 +160,182 @@ class CoupangAdapter(MarketAdapter):
             logger.warning("쿠팡 upload_product 실패: %s", exc)
             return {"status": "error", "detail": str(exc)}
 
+    def fetch_orders_unified(self, since=None, until=None) -> list:
+        """쿠팡 주문 조회 → UnifiedOrder 목록.
+
+        API 키 미설정 시 mock 3건 반환.
+        """
+        from src.seller_console.orders.models import (
+            OrderLineItem,
+            OrderStatus,
+            UnifiedOrder,
+            mask_address,
+            mask_name,
+            mask_phone,
+        )
+        from decimal import Decimal
+        from datetime import datetime, timedelta
+
+        if not _api_active():
+            logger.warning("쿠팡 API 키 미설정 — mock 주문 3건 반환")
+            now = datetime.utcnow()
+            return [
+                UnifiedOrder(
+                    order_id="CP-MOCK-001",
+                    marketplace="coupang",
+                    status=OrderStatus.PAID,
+                    placed_at=now - timedelta(hours=2),
+                    paid_at=now - timedelta(hours=1),
+                    buyer_name_masked=mask_name("홍길동"),
+                    buyer_phone_masked=mask_phone("010-1234-5678"),
+                    buyer_address_masked=mask_address("서울시 강남구 테헤란로 123 456호"),
+                    total_krw=Decimal("39000"),
+                    shipping_fee_krw=Decimal("3000"),
+                    items=[OrderLineItem(sku="SKU-A", title="테스트 상품 A", qty=1, unit_price_krw=Decimal("36000"))],
+                    notes="mock 데이터",
+                ),
+                UnifiedOrder(
+                    order_id="CP-MOCK-002",
+                    marketplace="coupang",
+                    status=OrderStatus.PREPARING,
+                    placed_at=now - timedelta(days=1),
+                    paid_at=now - timedelta(days=1),
+                    buyer_name_masked=mask_name("김철수"),
+                    buyer_phone_masked=mask_phone("010-9876-5432"),
+                    buyer_address_masked=mask_address("경기도 성남시 분당구 판교로 1 101호"),
+                    total_krw=Decimal("78000"),
+                    shipping_fee_krw=Decimal("0"),
+                    items=[
+                        OrderLineItem(sku="SKU-B", title="테스트 상품 B", qty=2, unit_price_krw=Decimal("39000")),
+                    ],
+                    notes="mock 데이터",
+                ),
+                UnifiedOrder(
+                    order_id="CP-MOCK-003",
+                    marketplace="coupang",
+                    status=OrderStatus.SHIPPED,
+                    placed_at=now - timedelta(days=3),
+                    paid_at=now - timedelta(days=3),
+                    buyer_name_masked=mask_name("이영희"),
+                    buyer_phone_masked=mask_phone("010-5555-7777"),
+                    buyer_address_masked=mask_address("부산시 해운대구 해운대로 99 202호"),
+                    total_krw=Decimal("55000"),
+                    shipping_fee_krw=Decimal("3000"),
+                    items=[OrderLineItem(sku="SKU-C", title="테스트 상품 C", qty=1, unit_price_krw=Decimal("52000"))],
+                    courier="CJ대한통운",
+                    tracking_no="123456789012",
+                    shipped_at=now - timedelta(days=2),
+                    notes="mock 데이터",
+                ),
+            ]
+
+        if _dry_run():
+            logger.info("ADAPTER_DRY_RUN=1 — 쿠팡 fetch_orders_unified dry-run")
+            return []
+
+        # 실 API 연동: fetch_orders() 호출 후 정규화
+        from datetime import datetime as _dt
+        since_str = since.strftime("%Y-%m-%dT%H:%M:%S") if since else "2024-01-01T00:00:00"
+        raw_orders = self.fetch_orders(created_at_from=since_str)
+
+        from src.seller_console.orders.models import (
+            OrderLineItem,
+            OrderStatus,
+            UnifiedOrder,
+            mask_address,
+            mask_name,
+            mask_phone,
+        )
+        from decimal import Decimal
+
+        results = []
+        for raw in raw_orders:
+            try:
+                order_id = str(raw.get("orderId", raw.get("orderSheetId", "")))
+                status_raw = str(raw.get("orderStatus", "PAYMENTWAITING")).upper()
+                _status_map = {
+                    "PAYMENTWAITING": OrderStatus.NEW,
+                    "PAYMENT_DONE": OrderStatus.PAID,
+                    "INSTRUCT": OrderStatus.PREPARING,
+                    "ACCEPT": OrderStatus.PREPARING,
+                    "IN_TRANSIT": OrderStatus.SHIPPED,
+                    "DELIVERED": OrderStatus.DELIVERED,
+                    "CANCEL_DONE": OrderStatus.CANCELED,
+                    "RETURN_DONE": OrderStatus.RETURNED,
+                }
+                status = _status_map.get(status_raw, OrderStatus.NEW)
+                placed_str = raw.get("orderedAt") or raw.get("orderDate") or ""
+                placed_at = None
+                if placed_str:
+                    try:
+                        placed_at = datetime.strptime(placed_str[:19], "%Y-%m-%dT%H:%M:%S")
+                    except Exception:
+                        placed_at = datetime.utcnow()
+                placed_at = placed_at or datetime.utcnow()
+
+                items = []
+                for item in raw.get("orderItems", raw.get("items", [])):
+                    items.append(OrderLineItem(
+                        sku=str(item.get("sellerProductItemCode", item.get("sku", ""))),
+                        title=str(item.get("productName", item.get("itemName", ""))),
+                        qty=int(item.get("shippingCount", item.get("qty", 1))),
+                        unit_price_krw=Decimal(str(item.get("unitPrice", item.get("salePrice", 0)))),
+                    ))
+
+                results.append(UnifiedOrder(
+                    order_id=order_id,
+                    marketplace="coupang",
+                    status=status,
+                    placed_at=placed_at,
+                    total_krw=Decimal(str(raw.get("totalPrice", 0))),
+                    shipping_fee_krw=Decimal(str(raw.get("deliveryPrice", 0))),
+                    items=items,
+                    courier=raw.get("deliveryCompanyCode"),
+                    tracking_no=raw.get("invoiceNumber"),
+                    raw=raw,
+                ))
+            except Exception as exc:
+                logger.warning("쿠팡 주문 정규화 실패: %s", exc)
+                continue
+
+        return results
+
+    def update_tracking(self, order_id: str, shipment_box_id: str = None, courier: str = "", tracking_no: str = "") -> bool:
+        """쿠팡 운송장 등록.
+
+        ADAPTER_DRY_RUN=1 이면 로그만 기록 후 True 반환.
+        """
+        if _dry_run():
+            logger.info("ADAPTER_DRY_RUN=1 — 쿠팡 update_tracking 차단: %s", order_id)
+            return True
+
+        if not _api_active():
+            logger.warning("쿠팡 API 키 미설정 — update_tracking 불가")
+            return False
+
+        vendor_id = os.getenv("COUPANG_VENDOR_ID", "")
+        box_id = shipment_box_id or order_id
+        url_path = f"/v2/providers/openapi/apis/api/v4/vendors/{vendor_id}/ordersheets/{box_id}/invoices"
+        try:
+            import requests
+            import json
+            headers = _hmac_sign("PUT", url_path)
+            payload = {"courierCode": courier, "invoiceNumber": tracking_no}
+            resp = requests.put(
+                f"{_BASE_URL}{url_path}",
+                headers=headers,
+                json=payload,
+                timeout=10,
+            )
+            if resp.status_code in (200, 201):
+                logger.info("쿠팡 운송장 등록 성공: %s", order_id)
+                return True
+            logger.warning("쿠팡 운송장 등록 실패 HTTP %s: %s", resp.status_code, resp.text)
+            return False
+        except Exception as exc:
+            logger.warning("쿠팡 update_tracking 오류: %s", exc)
+            return False
+
     def fetch_orders(self, created_at_from: Optional[str] = None) -> list:
         """쿠팡 주문 조회.
 

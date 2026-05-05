@@ -159,31 +159,139 @@ class SmartStoreAdapter(MarketAdapter):
             logger.warning("스마트스토어 upload_product 실패: %s", exc)
             return {"status": "error", "detail": str(exc)}
 
-    def fetch_orders(self) -> list:
-        """스마트스토어 주문 조회."""
+    def fetch_orders_unified(self, since=None, until=None) -> list:
+        """스마트스토어 주문 조회 → UnifiedOrder 목록."""
+        from src.seller_console.orders.models import (
+            OrderLineItem,
+            OrderStatus,
+            UnifiedOrder,
+            mask_address,
+            mask_name,
+            mask_phone,
+        )
+        from decimal import Decimal
+        from datetime import datetime, timedelta
+
         if not _api_active():
+            logger.warning("스마트스토어 API 키 미설정 — 빈 목록 반환")
             return []
 
         if _dry_run():
+            logger.info("ADAPTER_DRY_RUN=1 — 스마트스토어 fetch_orders_unified dry-run")
             return []
 
         token = _get_access_token()
         if not token:
             return []
 
+        since_str = (since or datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
+
         try:
             import requests
             resp = requests.get(
                 f"{_NAVER_BASE_URL}/external/v1/pay-order/seller/orders",
                 headers={"Authorization": f"Bearer {token}"},
-                params={"lastChangedFrom": "2024-01-01T00:00:00", "lastChangedType": "PAYED"},
+                params={"lastChangedFrom": since_str, "lastChangedType": "PAYED"},
                 timeout=10,
             )
             resp.raise_for_status()
-            return resp.json().get("data", {}).get("contents", [])
+            raw_orders = resp.json().get("data", {}).get("contents", [])
         except Exception as exc:
-            logger.warning("스마트스토어 fetch_orders 실패: %s", exc)
+            logger.warning("스마트스토어 fetch_orders_unified 실패: %s", exc)
             return []
+
+        _status_map = {
+            "PAYMENT_WAITING": OrderStatus.NEW,
+            "PAYED": OrderStatus.PAID,
+            "DELIVERING": OrderStatus.SHIPPED,
+            "DELIVERED": OrderStatus.DELIVERED,
+            "CANCELED": OrderStatus.CANCELED,
+            "RETURNED": OrderStatus.RETURNED,
+            "EXCHANGED": OrderStatus.EXCHANGED,
+        }
+
+        results = []
+        for raw in raw_orders:
+            try:
+                order_id = str(raw.get("orderNo", ""))
+                status = _status_map.get(str(raw.get("paymentStatus", "PAYED")), OrderStatus.PAID)
+                placed_str = raw.get("orderDate") or raw.get("paymentDate") or ""
+                try:
+                    placed_at = datetime.strptime(placed_str[:19], "%Y-%m-%dT%H:%M:%S")
+                except Exception:
+                    placed_at = datetime.utcnow()
+
+                items = []
+                for prod in raw.get("productOrderList", []):
+                    items.append(OrderLineItem(
+                        sku=str(prod.get("productId", "")),
+                        title=str(prod.get("productName", "")),
+                        qty=int(prod.get("quantity", 1)),
+                        unit_price_krw=Decimal(str(prod.get("unitPrice", 0))),
+                    ))
+
+                orderer = raw.get("orderer", {})
+                delivery = raw.get("deliveryAddress", {})
+                results.append(UnifiedOrder(
+                    order_id=order_id,
+                    marketplace="smartstore",
+                    status=status,
+                    placed_at=placed_at,
+                    buyer_name_masked=mask_name(orderer.get("name", "")),
+                    buyer_phone_masked=mask_phone(orderer.get("tel", "")),
+                    buyer_address_masked=mask_address(delivery.get("addressDetail", "")),
+                    total_krw=Decimal(str(raw.get("totalPaymentAmount", 0))),
+                    shipping_fee_krw=Decimal(str(raw.get("deliveryFeeAmount", 0))),
+                    items=items,
+                    raw=raw,
+                ))
+            except Exception as exc:
+                logger.warning("스마트스토어 주문 정규화 실패: %s", exc)
+                continue
+
+        return results
+
+    def fetch_orders(self) -> list:
+        """스마트스토어 주문 조회 (하위 호환)."""
+        return self.fetch_orders_unified()
+
+    def update_tracking(self, order_id: str, courier: str = "", tracking_no: str = "") -> bool:
+        """스마트스토어 운송장 등록."""
+        if _dry_run():
+            logger.info("ADAPTER_DRY_RUN=1 — 스마트스토어 update_tracking 차단: %s", order_id)
+            return True
+
+        if not _api_active():
+            return False
+
+        token = _get_access_token()
+        if not token:
+            return False
+
+        try:
+            import requests
+            resp = requests.post(
+                f"{_NAVER_BASE_URL}/external/v1/pay-order/seller/product-orders/dispatch",
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                json={
+                    "dispatchProductOrders": [
+                        {
+                            "productOrderId": order_id,
+                            "deliveryMethod": "DELIVERY",
+                            "deliveryCompanyCode": courier,
+                            "trackingNumber": tracking_no,
+                        }
+                    ]
+                },
+                timeout=10,
+            )
+            if resp.status_code in (200, 201):
+                return True
+            logger.warning("스마트스토어 운송장 등록 실패 HTTP %s", resp.status_code)
+            return False
+        except Exception as exc:
+            logger.warning("스마트스토어 update_tracking 오류: %s", exc)
+            return False
 
     def health_check(self) -> dict:
         """스마트스토어 API 상태 확인."""
