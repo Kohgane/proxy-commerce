@@ -69,6 +69,12 @@ def _parse_dec(raw) -> Optional[Decimal]:
         return None
 
 
+def _fallback_placed_at(order_id: str) -> datetime:
+    """placed_at 파싱 실패 시 경고 후 현재 UTC 시각 반환."""
+    logger.warning("placed_at 파싱 실패 — order_id=%s, utcnow() 사용", order_id)
+    return datetime.utcnow()
+
+
 class OrderSheetsAdapter:
     """Google Sheets `orders` 워크시트 CRUD 어댑터."""
 
@@ -313,7 +319,7 @@ class OrderSheetsAdapter:
             order_id=str(row.get("order_id", "")),
             marketplace=str(row.get("marketplace", "")),
             status=status,
-            placed_at=_parse_dt(str(row.get("placed_at", ""))) or datetime.utcnow(),
+            placed_at=_parse_dt(str(row.get("placed_at", ""))) or _fallback_placed_at(row.get("order_id", "")),
             paid_at=_parse_dt(str(row.get("paid_at", ""))),
             buyer_name_masked=str(row.get("buyer_name_masked", "")) or None,
             buyer_phone_masked=str(row.get("buyer_phone_masked", "")) or None,

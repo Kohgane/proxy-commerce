@@ -452,7 +452,8 @@ def orders_bulk_tracking():
             )
             results.append({"order_id": item.get("order_id"), "ok": ok})
         except Exception as exc:
-            results.append({"order_id": item.get("order_id"), "ok": False, "error": str(exc)})
+            logger.warning("orders_bulk_tracking 항목 오류 %s: %s", item.get("order_id"), exc)
+            results.append({"order_id": item.get("order_id"), "ok": False, "error": "운송장 등록 중 오류가 발생했습니다."})
 
     return jsonify({"ok": True, "results": results})
 

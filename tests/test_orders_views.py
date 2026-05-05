@@ -89,7 +89,10 @@ class TestOrdersViews:
         """GET /seller/orders/<mp>/<id> → {"ok": true, "order": {...}}."""
         with patch("src.seller_console.views._get_order_sync_service", return_value=mock_sync_service):
             resp = client.get("/seller/orders/coupang/CP-001")
-        assert resp.status_code in (200, 404)
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert data["order"]["order_id"] == "CP-001"
 
     def test_get_order_detail_not_found(self, client, mock_sync_service):
         """주문 없음 → 404."""
