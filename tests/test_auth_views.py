@@ -57,7 +57,7 @@ class TestOAuthStart:
         assert resp.status_code in (302, 301)
         location = resp.headers.get("Location", "")
         # 카카오 OAuth URL로 리다이렉트 확인
-        assert location.startswith("https://kauth.kakao.com") or location.lower().startswith("https://kauth.kakao.com")
+        assert location.lower().startswith("https://kauth.kakao.com")
 
     def test_invalid_provider_returns_400(self, client):
         """지원하지 않는 프로바이더 → 400."""

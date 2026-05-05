@@ -114,6 +114,12 @@ def _safe_next_url(next_url: str, default: str = "/seller/dashboard") -> str:
     """리다이렉트 대상이 내부 URL인지 검증 (open redirect 방어).
 
     외부 도메인으로의 리다이렉트를 차단하고, 안전한 내부 경로만 허용.
+
+    Examples::
+        _safe_next_url("https://evil.com") -> "/seller/dashboard"  # 외부 URL 차단
+        _safe_next_url("//evil.com/path")  -> "/seller/dashboard"  # 프로토콜 상대 URL 차단
+        _safe_next_url("/seller/me")       -> "/seller/me"          # 내부 경로 허용
+        _safe_next_url("")                 -> "/seller/dashboard"   # 빈 값 → 기본값
     """
     if not next_url:
         return default
@@ -277,8 +283,8 @@ def signup_post():
                      f"<p><a href='{verify_url}'>이메일 인증하기</a></p>",
                 text=f"이메일 인증: {verify_url}",
             )
-        except Exception:
-            pass  # 메일 실패해도 가입은 진행
+        except Exception as mail_exc:
+            logger.warning("인증 메일 발송 실패 (가입은 완료됨): %s", mail_exc)
 
         # 텔레그램 알림
         try:
