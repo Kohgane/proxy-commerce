@@ -34,7 +34,7 @@
 | **알림** | SendGrid | SENDGRID_API_KEY | 이메일 발송 |
 | **물류** | 스윗트래커 | SWEETTRACKER_API_KEY | 운송장 자동 추적 |
 | **자체몰** | Shopify | SHOPIFY_ACCESS_TOKEN, SHOPIFY_SHOP | Shopify 자체몰 |
-| **자체몰** | WooCommerce | WC_KEY, WC_SECRET, WC_URL | WooCommerce 자체몰 |
+| **자체몰** | WooCommerce | WC_KEY, WC_SECRET, WC_URL | kohganemultishop.org 실연동 (Phase 132) |
 | **유틸** | ExchangeRate-API | EXCHANGE_RATE_API_KEY | 실시간 환율 |
 | **유틸** | Pexels | PEXELS_API_KEY | 무료 보조 이미지 |
 | **유틸** | Unsplash | UNSPLASH_ACCESS_KEY | 무료 보조 이미지 |

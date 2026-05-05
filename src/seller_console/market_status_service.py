@@ -92,15 +92,17 @@ class MarketStatusService:
 
     @staticmethod
     def _build_live_adapters() -> Dict[str, object]:
-        """라이브 어댑터 인스턴스 딕셔너리 빌드 (graceful import)."""
+        """라이브 어댑터 인스턴스 딕셔너리 빌드 (graceful import).
+
+        Phase 132: kohganemultishop 제거 → woocommerce(kohganemultishop.org 실연동)로 통합.
+        """
         adapters: Dict[str, object] = {}
         _adapter_specs = [
             ("coupang", "src.seller_console.market_adapters.coupang_adapter", "CoupangAdapter"),
             ("smartstore", "src.seller_console.market_adapters.smartstore_adapter", "SmartStoreAdapter"),
             ("11st", "src.seller_console.market_adapters.eleven_adapter", "ElevenAdapter"),
-            ("kohganemultishop", "src.seller_console.market_adapters.kohgane_multishop_adapter", "KohganeMultishopAdapter"),
-            ("shopify", "src.seller_console.market_adapters.shopify_adapter", "ShopifyAdapter"),
             ("woocommerce", "src.seller_console.market_adapters.woocommerce_adapter", "WooCommerceAdapter"),
+            ("shopify", "src.seller_console.market_adapters.shopify_adapter", "ShopifyAdapter"),
         ]
         for key, module_path, class_name in _adapter_specs:
             try:

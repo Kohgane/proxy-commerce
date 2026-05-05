@@ -828,26 +828,30 @@ try:
 except Exception as _seller_bp_exc:
     logger.warning("셀러 콘솔 Blueprint 등록 실패: %s", _seller_bp_exc)
 
-# 자체몰 (코가네멀티샵) Blueprint 등록 (Phase 131)
-try:
-    from .shop import shop_bp
-    # Flask 세션 SECRET_KEY 설정 (카트 세션 필요)
-    if not app.secret_key:
-        _shop_secret = os.getenv("SECRET_KEY")
-        if _shop_secret:
-            app.secret_key = _shop_secret
-        else:
-            import warnings
-            warnings.warn(
-                "SECRET_KEY 환경변수가 설정되지 않았습니다. "
-                "프로덕션에서는 반드시 SECRET_KEY를 설정하세요.",
-                stacklevel=1,
-            )
-            app.secret_key = "dev-insecure-do-not-use-in-production"
-    app.register_blueprint(shop_bp)
-    logger.info("자체몰 Blueprint 등록 완료 (/shop/)")
-except Exception as _shop_bp_exc:
-    logger.warning("자체몰 Blueprint 등록 실패: %s", _shop_bp_exc)
+# Phase 132: /shop 블루프린트는 외부 kohganemultishop.org가 진짜 자체몰이므로 기본 비활성.
+# 향후 데모/쇼윈도우 용도로 부활시키려면 ENABLE_INTERNAL_SHOP=1 환경변수 설정.
+if os.getenv("ENABLE_INTERNAL_SHOP", "0") == "1":
+    try:
+        from .shop import shop_bp
+        # Flask 세션 SECRET_KEY 설정 (카트 세션 필요)
+        if not app.secret_key:
+            _shop_secret = os.getenv("SECRET_KEY")
+            if _shop_secret:
+                app.secret_key = _shop_secret
+            else:
+                import warnings
+                warnings.warn(
+                    "SECRET_KEY 환경변수가 설정되지 않았습니다. "
+                    "프로덕션에서는 반드시 SECRET_KEY를 설정하세요.",
+                    stacklevel=1,
+                )
+                app.secret_key = "dev-insecure-do-not-use-in-production"
+        app.register_blueprint(shop_bp)
+        logger.info("내부 /shop 블루프린트 등록 (옵트인)")
+    except Exception as _shop_bp_exc:
+        logger.warning("내부 /shop 블루프린트 등록 실패: %s", _shop_bp_exc)
+else:
+    logger.info("내부 /shop 블루프린트 비활성 (기본). kohganemultishop.org가 자체몰.")
 
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
@@ -882,17 +886,29 @@ audit_logger = AuditLogger()
 
 @app.get('/')
 def root():
-    """루트 라우트 — ROOT_REDIRECT 환경변수로 동작 제어 (Phase 131).
+    """루트 라우트 — ROOT_REDIRECT 환경변수로 동작 제어 (Phase 132).
+
+    Phase 132: 도메인별 라우팅 정책
+      kohganepercentiii.com   → 셀러 SaaS + 운영 백오피스 (이 앱)
+        /                     → ROOT_REDIRECT 환경변수 따라 (기본: seller)
+        /seller/*             → 셀러 콘솔
+        /admin/*              → 어드민
+        /api/*                → API
+        /shop, /shop/         → 302 redirect → kohganemultishop.org
+        /health/*             → 헬스체크
+      kohganemultishop.org    → 외부 WordPress + WooCommerce 자체몰 (별도)
+        본 앱이 WooCommerce REST API로 데이터 통합 조회/등록만 함
 
     ROOT_REDIRECT:
-      "shop"    → /shop/ (자체몰)
-      "seller"  → /seller/ (셀러 콘솔, 기본값)
-      "landing" → 통합 랜딩 페이지
+      "seller"       → /seller/ (셀러 콘솔, 기본값)
+      "landing"      → 통합 랜딩 페이지
+      "shop_external" → kohganemultishop.org로 외부 redirect
+      "shop"         → kohganemultishop.org로 외부 redirect (레거시 호환)
     """
     redirect_target = os.getenv("ROOT_REDIRECT", "seller").strip().lower()
 
-    if redirect_target == "shop":
-        return redirect('/shop/', code=302)
+    if redirect_target in ("shop_external", "shop"):
+        return redirect("https://kohganemultishop.org", code=302)
 
     if redirect_target == "landing":
         version = os.getenv('APP_VERSION', 'dev')
@@ -905,6 +921,13 @@ def root():
     except Exception:
         version = os.getenv('APP_VERSION', 'dev')
         return render_template('landing.html', version=version)
+
+
+@app.route("/shop")
+@app.route("/shop/")
+def shop_external_redirect():
+    """Phase 132: /shop → kohganemultishop.org (외부 워드프레스 자체몰)."""
+    return redirect("https://kohganemultishop.org", code=302)
 
 
 @app.errorhandler(404)
@@ -1311,32 +1334,48 @@ def deep_health():
     except Exception as _ext_exc:
         logger.debug("external_apis 로드 실패 (무시): %s", _ext_exc)
 
-    # ── shop checks (Phase 131) ───────────────────────────────────────────
-    try:
-        from .shop.catalog import get_catalog as _get_shop_catalog
-        _cat = _get_shop_catalog()
-        _products = _cat.list_all()
-        _featured = [p for p in _products if p.featured]
+    # ── shop checks (Phase 131) — 내부 /shop 블루프린트 (ENABLE_INTERNAL_SHOP=1 시만 유효) ─────
+    if os.getenv("ENABLE_INTERNAL_SHOP", "0") == "1":
+        try:
+            from .shop.catalog import get_catalog as _get_shop_catalog
+            _cat = _get_shop_catalog()
+            _products = _cat.list_all()
+            _featured = [p for p in _products if p.featured]
+            check_list.append({
+                "name": "shop_catalog",
+                "status": "ok",
+                "detail": f"진열 상품 {len(_products)}개 (featured {len(_featured)}개)",
+            })
+        except Exception as _shop_cat_exc:
+            check_list.append({
+                "name": "shop_catalog",
+                "status": "fail",
+                "detail": str(_shop_cat_exc)[:200],
+            })
+
+        _toss_sandbox = not bool(os.getenv("TOSS_CLIENT_KEY"))
         check_list.append({
-            "name": "shop_catalog",
+            "name": "shop_payments",
             "status": "ok",
-            "detail": f"진열 상품 {len(_products)}개 (featured {len(_featured)}개)",
-        })
-    except Exception as _shop_cat_exc:
-        check_list.append({
-            "name": "shop_catalog",
-            "status": "fail",
-            "detail": str(_shop_cat_exc)[:200],
+            "detail": f"토스페이먼츠 활성 ({'sandbox' if _toss_sandbox else 'live'})",
+            "provider": "toss",
+            "mode": "sandbox" if _toss_sandbox else "live",
         })
 
-    _toss_sandbox = not bool(os.getenv("TOSS_CLIENT_KEY"))
-    check_list.append({
-        "name": "shop_payments",
-        "status": "ok",
-        "detail": f"토스페이먼츠 활성 ({'sandbox' if _toss_sandbox else 'live'})",
-        "provider": "toss",
-        "mode": "sandbox" if _toss_sandbox else "live",
-    })
+    # ── WooCommerce 체크 (Phase 132) — kohganemultishop.org 실연동 ────────
+    try:
+        from .seller_console.market_adapters.woocommerce_adapter import WooCommerceAdapter as _WooAdapter
+        _woo_result = _WooAdapter().health_check()
+        check_list.append({
+            "name": "woocommerce",
+            **_woo_result,
+        })
+    except Exception as _woo_exc:
+        check_list.append({
+            "name": "woocommerce",
+            "status": "fail",
+            "detail": str(_woo_exc)[:200],
+        })
 
     return jsonify({
         "status": overall,
