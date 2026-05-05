@@ -1,0 +1,161 @@
+{% extends "shop/base.html" %}
+
+{% block title %}주문 조회 — 코가네멀티샵{% endblock %}
+
+{% block content %}
+<h1 class="fs-4 fw-bold mb-4">📦 주문 조회</h1>
+
+{% if error %}
+<div class="alert alert-danger">{{ error }}</div>
+<div class="text-center mt-4">
+  <a href="/shop/" class="btn btn-primary">홈으로</a>
+</div>
+{% elif order %}
+
+<!-- 주문 상태 스텝 -->
+{% set status_steps = ['new', 'paid', 'shipped', 'delivered'] %}
+{% set status_labels = {'new': '주문접수', 'paid': '결제완료', 'preparing': '상품준비', 'shipped': '배송중', 'delivered': '배송완료', 'canceled': '취소됨', 'returned': '반품완료'} %}
+{% set current_status = order.status or 'new' %}
+
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start mb-3">
+      <div>
+        <h5 class="fw-bold mb-1">주문번호: {{ order.order_id }}</h5>
+        <p class="text-muted small mb-0">주문일시: {{ order.placed_at or '-' }}</p>
+      </div>
+      <span class="badge bg-primary fs-6">{{ status_labels.get(current_status, current_status) }}</span>
+    </div>
+
+    <!-- 진행 단계 -->
+    {% if current_status not in ('canceled', 'returned', 'refund_requested') %}
+    <div class="d-flex justify-content-between align-items-center mt-3 mb-4">
+      {% for step in status_steps %}
+      <div class="text-center flex-grow-1">
+        <div class="rounded-circle mx-auto d-flex align-items-center justify-content-center
+                    {% if current_status == step or (step == 'paid' and current_status in ('preparing', 'shipped', 'delivered')) or (step == 'new' and current_status != 'new') %}
+                    bg-primary text-white
+                    {% elif current_status == step %}
+                    bg-primary text-white
+                    {% else %}
+                    bg-light text-muted
+                    {% endif %}"
+             style="width:36px;height:36px;font-size:14px;">
+          {% if step == 'new' %}1{% elif step == 'paid' %}2{% elif step == 'shipped' %}3{% else %}4{% endif %}
+        </div>
+        <small class="d-block mt-1 {% if current_status == step %}fw-bold text-primary{% else %}text-muted{% endif %}">
+          {{ status_labels.get(step, step) }}
+        </small>
+      </div>
+      {% if not loop.last %}
+      <div class="flex-grow-1 border-top" style="height:2px;"></div>
+      {% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- 주문 상품 -->
+{% if items %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <h5 class="fw-bold mb-3">주문 상품</h5>
+    {% for item in items %}
+    <div class="d-flex justify-content-between py-2 {% if not loop.last %}border-bottom{% endif %}">
+      <div>
+        <span class="fw-semibold">{{ item.title or item.slug or '-' }}</span>
+        {% if item.options %}
+        <br><small class="text-muted">
+          {% for k, v in item.options.items() %}{{ k }}: {{ v }}{% endfor %}
+        </small>
+        {% endif %}
+        <br><small class="text-muted">× {{ item.qty }}</small>
+      </div>
+      <span class="fw-bold">₩{{ "{:,}".format(item.price * item.qty) if item.price else '-' }}</span>
+    </div>
+    {% endfor %}
+    <hr>
+    <div class="d-flex justify-content-between fw-bold">
+      <span>합계</span>
+      <span class="text-primary">₩{{ "{:,}".format(order.total_krw | int) }}</span>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- 배송 정보 -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <h5 class="fw-bold mb-3">배송 정보</h5>
+    <dl class="row small mb-0">
+      <dt class="col-sm-3 text-muted">받는 분</dt>
+      <dd class="col-sm-9">{{ order.buyer_name_masked or '-' }}</dd>
+      <dt class="col-sm-3 text-muted">연락처</dt>
+      <dd class="col-sm-9">{{ order.buyer_phone_masked or '-' }}</dd>
+      <dt class="col-sm-3 text-muted">배송지</dt>
+      <dd class="col-sm-9">{{ order.buyer_address_masked or '-' }}</dd>
+      {% if order.notes %}
+      <dt class="col-sm-3 text-muted">요청사항</dt>
+      <dd class="col-sm-9">{{ order.notes.split('|')[0] if '|' in order.notes else order.notes }}</dd>
+      {% endif %}
+    </dl>
+  </div>
+</div>
+
+<!-- 운송장 추적 -->
+{% if order.tracking_no %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <h5 class="fw-bold mb-3">배송 추적</h5>
+    <p class="mb-1"><strong>택배사:</strong> {{ order.courier or '-' }}</p>
+    <p class="mb-3"><strong>운송장:</strong> {{ order.tracking_no }}</p>
+    {% if tracking_info %}
+    <div class="table-responsive">
+      <table class="table table-sm">
+        <thead><tr><th>시각</th><th>상태</th><th>위치</th></tr></thead>
+        <tbody>
+          {% for t in tracking_info.get('trackingDetails', []) %}
+          <tr>
+            <td class="small">{{ t.get('timeString', '') }}</td>
+            <td class="small">{{ t.get('kind', '') }}</td>
+            <td class="small">{{ t.get('where', '') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-muted small">추적 정보를 불러오는 중입니다.</p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<!-- 취소/반품 버튼 -->
+{% if current_status in ('new', 'paid') %}
+<div class="d-flex gap-2">
+  <button class="btn btn-outline-danger" onclick="requestCancel()">주문 취소</button>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if order %}
+<script>
+function requestCancel() {
+  if (!confirm('주문을 취소하시겠습니까?')) return;
+  fetch('/shop/checkout/cancel', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({order_id: '{{ order.order_id }}', reason: '고객 요청'})
+  }).then(r => r.json()).then(d => {
+    if (d.ok) { alert('취소되었습니다.'); location.reload(); }
+    else { alert(d.error || '취소 실패'); }
+  });
+}
+</script>
+{% endif %}
+{% endblock %}

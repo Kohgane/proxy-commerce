@@ -1,0 +1,222 @@
+{% extends "shop/base.html" %}
+
+{% block title %}{{ product.title_ko }} — 코가네멀티샵{% endblock %}
+{% block meta_description %}{{ product.short_desc or product.title_ko }}{% endblock %}
+{% block og_title %}{{ product.title_ko }}{% endblock %}
+{% block og_desc %}{{ product.short_desc }}{% endblock %}
+{% if product.thumbnail_url %}{% block og_image %}{{ product.thumbnail_url }}{% endblock %}{% endif %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/shop/">홈</a></li>
+    <li class="breadcrumb-item"><a href="/shop/products">상품</a></li>
+    {% if product.category %}
+    <li class="breadcrumb-item"><a href="/shop/products?category={{ product.category }}">{{ product.category }}</a></li>
+    {% endif %}
+    <li class="breadcrumb-item active">{{ product.title_ko }}</li>
+  </ol>
+</nav>
+
+<div class="row g-5 mb-5">
+  <!-- 좌측: 갤러리 -->
+  <div class="col-md-6">
+    <!-- 메인 이미지 -->
+    <div class="mb-3">
+      {% if product.thumbnail_url %}
+      <img id="mainImg" src="{{ product.thumbnail_url }}" class="img-fluid rounded-3 w-100" alt="{{ product.title_ko }}"
+           style="object-fit:cover;max-height:480px;">
+      {% else %}
+      <div class="rounded-3 bg-light d-flex align-items-center justify-content-center" style="height:480px;">
+        <span class="display-1 text-muted">🛍️</span>
+      </div>
+      {% endif %}
+    </div>
+    <!-- 썸네일 갤러리 -->
+    {% if product.gallery_urls %}
+    <div class="d-flex gap-2 flex-wrap">
+      {% for url in product.gallery_urls[:6] %}
+      <img src="{{ url }}" class="rounded shop-gallery-thumb"
+           alt="갤러리 {{ loop.index }}"
+           onclick="document.getElementById('mainImg').src='{{ url }}'"
+           style="width:72px;height:72px;object-fit:cover;cursor:pointer;">
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- 우측: 상품 정보 -->
+  <div class="col-md-6">
+    <h1 class="fs-3 fw-bold mb-2">{{ product.title_ko }}</h1>
+    <p class="text-muted small mb-3">SKU: {{ product.sku or '-' }}</p>
+
+    <!-- 가격 -->
+    <div class="mb-3">
+      {% if product.sale_price_krw %}
+      <span class="fs-3 fw-bold text-danger">₩{{ "{:,}".format(product.sale_price_krw) }}</span>
+      <span class="fs-5 text-muted text-decoration-line-through ms-2">₩{{ "{:,}".format(product.price_krw) }}</span>
+      <span class="badge bg-danger ms-2">
+        {{ ((1 - product.sale_price_krw / product.price_krw) * 100) | int }}% 할인
+      </span>
+      {% else %}
+      <span class="fs-3 fw-bold">₩{{ "{:,}".format(product.price_krw) }}</span>
+      {% endif %}
+    </div>
+
+    <!-- 배송비 -->
+    <p class="text-muted small mb-3">
+      배송비:
+      {% if product.shipping_fee_krw == 0 %}
+      <span class="text-success fw-semibold">무료배송</span>
+      {% else %}
+      ₩{{ "{:,}".format(product.shipping_fee_krw) }}
+      <small>(5만원 이상 무료)</small>
+      {% endif %}
+    </p>
+
+    <!-- 설명 (short) -->
+    {% if product.short_desc %}
+    <p class="mb-3">{{ product.short_desc }}</p>
+    {% endif %}
+
+    <!-- 재고 -->
+    {% if product.stock_qty == 0 %}
+    <div class="alert alert-warning py-2 mb-3">품절된 상품입니다.</div>
+    {% elif product.stock_qty <= 5 %}
+    <div class="alert alert-info py-2 mb-3">잔여 {{ product.stock_qty }}개 — 서두르세요!</div>
+    {% endif %}
+
+    <!-- 옵션 선택 -->
+    {% if product.options %}
+    <div class="mb-3" id="optionContainer">
+      {% for opt in product.options %}
+      <div class="mb-2">
+        <label class="form-label small fw-semibold">{{ opt.name }}</label>
+        <select class="form-select form-select-sm" data-opt-name="{{ opt.name }}" onchange="updateOption(this)">
+          <option value="">선택하세요</option>
+          {% for val in opt.values %}
+          <option value="{{ val }}">{{ val }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- 수량 -->
+    <div class="d-flex align-items-center gap-3 mb-4">
+      <label class="form-label small fw-semibold mb-0">수량</label>
+      <div class="input-group" style="width:120px;">
+        <button class="btn btn-outline-secondary btn-sm" onclick="changeQty(-1)">−</button>
+        <input type="number" id="qtyInput" class="form-control form-control-sm text-center" value="1" min="1" max="{{ product.stock_qty or 99 }}">
+        <button class="btn btn-outline-secondary btn-sm" onclick="changeQty(1)">+</button>
+      </div>
+    </div>
+
+    <!-- 버튼 -->
+    {% if product.stock_qty != 0 %}
+    <div class="d-grid gap-2">
+      <button class="btn btn-primary btn-lg" onclick="addToCart('{{ product.slug }}')">
+        <i class="bi bi-cart-plus me-2"></i>장바구니 담기
+      </button>
+      <button class="btn btn-danger btn-lg" onclick="buyNow('{{ product.slug }}')">
+        바로구매
+      </button>
+    </div>
+    {% else %}
+    <div class="d-grid">
+      <button class="btn btn-secondary btn-lg" disabled>품절</button>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- 상세 설명 탭 -->
+{% if product.long_desc_html %}
+<section class="mb-5">
+  <hr>
+  <h2 class="fs-5 fw-bold mb-4">상품 상세</h2>
+  <div class="shop-product-desc">
+    {{ product.long_desc_html | safe }}
+  </div>
+</section>
+{% endif %}
+
+<!-- 관련 상품 -->
+{% if related %}
+<section class="mb-5">
+  <hr>
+  <h2 class="fs-5 fw-bold mb-4">관련 상품</h2>
+  <div class="row g-3">
+    {% for rp in related %}
+    <div class="col-6 col-md-3">
+      <a href="/shop/products/{{ rp.slug }}" class="text-decoration-none">
+        <div class="card border-0 shadow-sm h-100 shop-product-card">
+          {% if rp.thumbnail_url %}
+          <img src="{{ rp.thumbnail_url }}" class="card-img-top shop-product-img" alt="{{ rp.title_ko }}" loading="lazy">
+          {% else %}
+          <div class="shop-product-img-placeholder d-flex align-items-center justify-content-center bg-light rounded-top">
+            <span class="fs-3 text-muted">🛍️</span>
+          </div>
+          {% endif %}
+          <div class="card-body p-2">
+            <p class="small fw-semibold mb-1 text-dark" style="overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">{{ rp.title_ko }}</p>
+            <span class="small fw-bold">₩{{ "{:,}".format(rp.sale_price_krw or rp.price_krw) }}</span>
+          </div>
+        </div>
+      </a>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const selectedOptions = {};
+
+function changeQty(delta) {
+  const input = document.getElementById('qtyInput');
+  const newVal = Math.max(1, parseInt(input.value || 1) + delta);
+  input.value = newVal;
+}
+
+function updateOption(sel) {
+  selectedOptions[sel.dataset.optName] = sel.value;
+}
+
+function getOptions() {
+  const opts = {};
+  document.querySelectorAll('[data-opt-name]').forEach(sel => {
+    if (sel.value) opts[sel.dataset.optName] = sel.value;
+  });
+  return opts;
+}
+
+function addToCart(slug) {
+  const qty = parseInt(document.getElementById('qtyInput').value || 1);
+  const options = getOptions();
+  fetch('/shop/cart/add', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({slug, qty, options})
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      showToast('장바구니에 담겼습니다! 🛒');
+      updateCartBadge(data.cart_count);
+    } else {
+      alert(data.error || '오류가 발생했습니다.');
+    }
+  });
+}
+
+function buyNow(slug) {
+  addToCart(slug);
+  setTimeout(() => { window.location.href = '/shop/checkout'; }, 300);
+}
+</script>
+{% endblock %}

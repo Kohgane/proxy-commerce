@@ -336,3 +336,51 @@ class OrderSheetsAdapter:
             last_synced_at=_parse_dt(str(row.get("last_synced_at", ""))),
             notes=str(row.get("notes", "")),
         )
+
+    # ------------------------------------------------------------------
+    # 자체몰 체크아웃 전용 raw dict 인터페이스 (Phase 131)
+    # ------------------------------------------------------------------
+
+    def get_all_rows(self) -> list:
+        """orders 워크시트의 모든 행을 raw dict 목록으로 반환."""
+        if not self.sheet_id:
+            return []
+        try:
+            from src.utils.sheets import get_or_create_worksheet, open_sheet_object
+            sh = open_sheet_object(self.sheet_id)
+            ws = get_or_create_worksheet(sh, "orders", headers=ORDERS_HEADERS)
+            return ws.get_all_records()
+        except Exception as exc:
+            logger.warning("get_all_rows 실패: %s", exc)
+            return []
+
+    def upsert_row(self, row: dict) -> bool:
+        """raw dict로 orders 워크시트 행 upsert (order_id 기준).
+
+        주문 생성 및 상태 갱신에 사용 (자체몰 체크아웃).
+        """
+        if not self.sheet_id:
+            logger.warning("upsert_row: GOOGLE_SHEET_ID 미설정")
+            return False
+        try:
+            from src.utils.sheets import get_or_create_worksheet, open_sheet_object
+            sh = open_sheet_object(self.sheet_id)
+            ws = get_or_create_worksheet(sh, "orders", headers=ORDERS_HEADERS)
+            all_rows = ws.get_all_records()
+
+            order_id = str(row.get("order_id", ""))
+            row_idx = None
+            for idx, existing in enumerate(all_rows, start=2):
+                if str(existing.get("order_id", "")) == order_id:
+                    row_idx = idx
+                    break
+
+            row_data = [str(row.get(h, "")) for h in ORDERS_HEADERS]
+            if row_idx:
+                ws.update(f"A{row_idx}", [row_data])
+            else:
+                ws.append_row(row_data)
+            return True
+        except Exception as exc:
+            logger.warning("upsert_row 실패: %s", exc)
+            return False

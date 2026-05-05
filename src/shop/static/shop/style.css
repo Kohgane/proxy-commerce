@@ -1,0 +1,97 @@
+/* src/shop/static/shop/style.css — 코가네멀티샵 스타일 (Phase 131) */
+
+/* ── 헤더 ─────────────────────────────── */
+.shop-header {
+  z-index: 1000;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+/* ── 메인 ─────────────────────────────── */
+.shop-main {
+  min-height: calc(100vh - 80px - 260px);
+  background: #f9fafb;
+}
+
+/* ── 히어로 ────────────────────────────── */
+.shop-hero {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+/* ── 상품 카드 ─────────────────────────── */
+.shop-product-card {
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  border-radius: 12px !important;
+  overflow: hidden;
+}
+
+.shop-product-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1) !important;
+}
+
+.shop-product-img {
+  height: 240px;
+  object-fit: cover;
+  width: 100%;
+}
+
+.shop-product-img-placeholder {
+  height: 240px;
+  width: 100%;
+}
+
+/* ── 카테고리 카드 ──────────────────────── */
+.shop-category-card {
+  border-radius: 12px !important;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.shop-category-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* ── 상품 상세 갤러리 ──────────────────── */
+.shop-gallery-thumb {
+  border: 2px solid transparent;
+  border-radius: 6px;
+  transition: border-color 0.15s;
+}
+
+.shop-gallery-thumb:hover {
+  border-color: #0d6efd;
+}
+
+/* ── 상품 설명 HTML ─────────────────────── */
+.shop-product-desc img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ── 토스트 알림 ────────────────────────── */
+.shop-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  min-width: 260px;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.shop-toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── 반응형 ─────────────────────────────── */
+@media (max-width: 576px) {
+  .shop-product-img,
+  .shop-product-img-placeholder {
+    height: 180px;
+  }
+  .shop-hero {
+    min-height: 240px !important;
+  }
+}
