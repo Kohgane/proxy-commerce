@@ -2,19 +2,11 @@
 {% block title %}API 상태{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="mb-0 fw-bold">🔑 API 상태</h4>
-  <a href="/seller/api-status/json" class="btn btn-outline-secondary btn-sm" target="_blank">JSON 보기</a>
-</div>
-
-<p class="text-muted mb-4">
-  외부 API 키 상태를 확인합니다. 활성화하려면 Render Environment에 환경변수를 등록하세요.
-</p>
-
-<div class="row g-3">
-{% for api in api_list %}
+<!-- 카드 매크로 — 사용 전 반드시 정의 -->
+{% macro render_card(api) %}
 <div class="col-md-6">
-  <div class="card border-0 shadow-sm h-100 {% if api.status == 'active' %}border-start border-success border-4{% else %}border-start border-warning border-4{% endif %}">
+  <div class="card border-0 shadow-sm h-100
+    {% if api.status == 'active' %}border-start border-success border-4{% else %}border-start border-warning border-4{% endif %}">
     <div class="card-body">
       <div class="d-flex justify-content-between align-items-start mb-2">
         <h6 class="card-title mb-0 fw-semibold">{{ api.name }}</h6>
@@ -50,17 +42,129 @@
     </div>
   </div>
 </div>
+{% endmacro %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0 fw-bold">🔑 API 상태</h4>
+  <a href="/seller/api-status/json" class="btn btn-outline-secondary btn-sm" target="_blank">JSON 보기</a>
+</div>
+
+<!-- Render Env 경고 배너 -->
+<div class="alert alert-warning d-flex align-items-start gap-2 mb-3" role="alert">
+  <span class="fs-5">⚠️</span>
+  <div>
+    <strong>GitHub Secrets는 인식하지 않습니다.</strong>
+    환경변수는 반드시
+    <a href="https://dashboard.render.com" target="_blank" class="alert-link">Render Dashboard</a>
+    → proxy-commerce → <strong>Environment</strong> 탭에 직접 등록해야 합니다.
+    등록 후 <strong>Manual Deploy</strong> 버튼을 눌러야 적용됩니다.
+  </div>
+</div>
+
+<!-- 요약 진행 바 -->
+{% if summary %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body py-3">
+    <div class="d-flex justify-content-between align-items-center mb-1">
+      <span class="fw-semibold">활성 API</span>
+      <span class="text-muted small">
+        <span class="text-success fw-bold">{{ summary.active }}</span> / {{ summary.total }} 활성
+        ({{ summary.missing }} 미설정)
+      </span>
+    </div>
+    {% if summary.total > 0 %}
+    {% set pct = ((summary.active / summary.total) * 100) | int %}
+    <div class="progress" style="height:10px;">
+      <div class="progress-bar bg-success" role="progressbar"
+           style="width:{{ pct }}%" aria-valuenow="{{ pct }}" aria-valuemin="0" aria-valuemax="100">
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<!-- 카테고리 탭 -->
+{% set cat_labels = {
+  "marketplace": "🛒 마켓",
+  "sourcing": "📦 소싱",
+  "ai": "🤖 AI",
+  "payment": "💳 결제",
+  "auth": "🔐 인증",
+  "notification": "🔔 알림",
+  "logistics": "🚚 물류",
+  "self_mall": "🏪 자체몰",
+  "utility": "🛠 유틸",
+  "infra": "⚙️ 인프라"
+} %}
+
+{% set all_cats = [] %}
+{% for api in api_list %}
+  {% if api.category not in all_cats %}
+    {% set _ = all_cats.append(api.category) %}
+  {% endif %}
+{% endfor %}
+
+{% if all_cats %}
+<ul class="nav nav-tabs mb-3" id="apiCategoryTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="tab-all" data-bs-toggle="tab" data-bs-target="#pane-all"
+            type="button" role="tab">전체 ({{ api_list | length }})</button>
+  </li>
+  {% for cat in all_cats %}
+  {% set cat_apis = api_list | selectattr("category", "equalto", cat) | list %}
+  {% set cat_active = cat_apis | selectattr("status", "equalto", "active") | list | length %}
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-{{ cat }}" data-bs-toggle="tab" data-bs-target="#pane-{{ cat }}"
+            type="button" role="tab">
+      {{ cat_labels.get(cat, cat) }}
+      <span class="badge {% if cat_active > 0 %}bg-success{% else %}bg-secondary{% endif %} ms-1" style="font-size:0.7rem;">
+        {{ cat_active }}/{{ cat_apis | length }}
+      </span>
+    </button>
+  </li>
+  {% endfor %}
+</ul>
+
+<div class="tab-content" id="apiCategoryTabContent">
+  <!-- 전체 탭 -->
+  <div class="tab-pane fade show active" id="pane-all" role="tabpanel">
+    <div class="row g-3">
+      {% for api in api_list %}
+        {{ render_card(api) }}
+      {% else %}
+      <div class="col-12"><div class="alert alert-info">API 상태 데이터를 로드할 수 없습니다.</div></div>
+      {% endfor %}
+    </div>
+  </div>
+  <!-- 카테고리별 탭 -->
+  {% for cat in all_cats %}
+  <div class="tab-pane fade" id="pane-{{ cat }}" role="tabpanel">
+    <div class="row g-3">
+      {% for api in api_list if api.category == cat %}
+        {{ render_card(api) }}
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<!-- 카테고리 없을 때 폴백 -->
+<div class="row g-3">
+{% for api in api_list %}
+  {{ render_card(api) }}
 {% else %}
 <div class="col-12">
   <div class="alert alert-info">API 상태 데이터를 로드할 수 없습니다.</div>
 </div>
 {% endfor %}
 </div>
+{% endif %}
 
 <div class="mt-4 p-3 bg-light rounded">
   <h6 class="fw-semibold mb-2">📌 환경변수 등록 방법</h6>
   <ol class="text-muted small mb-0">
-    <li>Render Dashboard → proxy-commerce → <strong>Environment</strong> 탭 클릭</li>
+    <li><a href="https://dashboard.render.com" target="_blank">Render Dashboard</a> → proxy-commerce → <strong>Environment</strong> 탭 클릭</li>
     <li>환경변수 이름(위의 ❌ 항목)과 값을 입력하고 저장</li>
     <li>Manual Deploy → 이 페이지 새로고침으로 확인</li>
   </ol>

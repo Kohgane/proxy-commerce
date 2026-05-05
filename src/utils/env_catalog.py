@@ -1,16 +1,63 @@
-"""src/utils/env_catalog.py — 외부 API 환경변수 카탈로그 (Phase 128).
+"""src/utils/env_catalog.py — 외부 API 환경변수 카탈로그 (Phase 130).
 
 모든 외부 API 환경변수를 한 곳에서 관리.
 - 누락 시 stub 모드로 자동 폴백
 - /health/deep 에 어떤 키가 활성/누락인지 노출 (마스킹된 상태로)
+- Phase 130: 24개 항목, 카테고리별 그루핑, 별칭 매핑, 요약 통계
 """
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import Literal, Optional
+from enum import Enum
+from typing import Dict, List, Literal, Optional
 
 ApiStatus = Literal["active", "missing"]
+
+
+class ApiCategory(str, Enum):
+    """외부 API 카테고리 분류."""
+
+    MARKETPLACE = "marketplace"    # 쿠팡/스마트스토어/11번가
+    SOURCING = "sourcing"          # Amazon/Rakuten
+    AI = "ai"                      # OpenAI/DeepL
+    PAYMENT = "payment"            # 토스/페이팔
+    AUTH = "auth"                  # 카카오/구글/네이버 로그인
+    NOTIFICATION = "notification"  # 텔레그램/SendGrid
+    LOGISTICS = "logistics"        # 스윗트래커
+    SELF_MALL = "self_mall"        # Shopify/WooCommerce
+    UTILITY = "utility"            # 환율/이미지
+    INFRA = "infra"                # Google Sheets
+
+
+# ---------------------------------------------------------------------------
+# 별칭 매핑 — 사용자 환경변수 이름 다양성 대응
+# ---------------------------------------------------------------------------
+
+ENV_ALIASES: Dict[str, List[str]] = {
+    "NAVER_COMMERCE_CLIENT_ID": ["NAVER_COMMERCE_CLIENT_ID", "NAVER_API_CLIENT_ID"],
+    "NAVER_COMMERCE_CLIENT_SECRET": ["NAVER_COMMERCE_CLIENT_SECRET", "NAVER_API_CLIENT_SECRET"],
+    "WC_URL": ["WC_URL", "WOO_BASE_URL"],
+    "WC_KEY": ["WC_KEY", "WOO_CK"],
+    "WC_SECRET": ["WC_SECRET", "WOO_CS"],
+}
+
+
+def resolve_env(name: str) -> Optional[str]:
+    """별칭 포함하여 환경변수 검색.
+
+    Args:
+        name: 기준 환경변수 이름
+
+    Returns:
+        최초로 발견된 값, 없으면 None
+    """
+    aliases = ENV_ALIASES.get(name, [name])
+    for alias in aliases:
+        val = os.getenv(alias)
+        if val:
+            return val
+    return None
 
 
 @dataclass
@@ -21,12 +68,13 @@ class ApiKey:
     env_vars: list  # 필요한 모든 환경변수
     purpose: str    # 한국어 용도
     docs_url: str
+    category: ApiCategory = ApiCategory.UTILITY
     optional: bool = True
 
     @property
     def status(self) -> ApiStatus:
-        """환경변수 존재 여부로 상태 판단."""
-        if all(os.getenv(v) for v in self.env_vars):
+        """환경변수 존재 여부로 상태 판단 (별칭 포함)."""
+        if all(resolve_env(v) for v in self.env_vars):
             return "active"
         return "missing"
 
@@ -35,7 +83,7 @@ class ApiKey:
         """환경변수 값을 마스킹해 반환 (앞4***뒤4)."""
         result = {}
         for v in self.env_vars:
-            val = os.getenv(v)
+            val = resolve_env(v)
             if val:
                 result[v] = val[:4] + "***" + val[-4:] if len(val) > 12 else "***"
             else:
@@ -44,82 +92,258 @@ class ApiKey:
 
 
 # ---------------------------------------------------------------------------
-# 전체 API 레지스트리
+# 전체 API 레지스트리 — 24개
 # ---------------------------------------------------------------------------
 
 API_REGISTRY: list = [
+    # ── 마켓플레이스 ──────────────────────────────────────────────────────
     ApiKey(
         name="coupang_wing",
         env_vars=["COUPANG_VENDOR_ID", "COUPANG_ACCESS_KEY", "COUPANG_SECRET_KEY"],
         purpose="쿠팡 윙 OpenAPI — 상품 등록/주문 조회",
         docs_url="https://wing.coupang.com",
+        category=ApiCategory.MARKETPLACE,
     ),
     ApiKey(
         name="naver_commerce",
         env_vars=["NAVER_COMMERCE_CLIENT_ID", "NAVER_COMMERCE_CLIENT_SECRET"],
         purpose="네이버 커머스 API — 스마트스토어",
         docs_url="https://commerce.naver.com",
+        category=ApiCategory.MARKETPLACE,
     ),
     ApiKey(
         name="elevenst",
         env_vars=["ELEVENST_API_KEY"],
         purpose="11번가 셀러 API",
         docs_url="https://soffice.11st.co.kr",
+        category=ApiCategory.MARKETPLACE,
     ),
-    ApiKey(
-        name="exchange_rate",
-        env_vars=["EXCHANGE_RATE_API_KEY"],
-        purpose="실시간 환율 (USD/JPY/EUR/CNY)",
-        docs_url="https://app.exchangerate-api.com",
-    ),
+    # ── 소싱 ─────────────────────────────────────────────────────────────
     ApiKey(
         name="amazon_paapi",
         env_vars=["AMAZON_ACCESS_KEY", "AMAZON_SECRET_KEY", "AMAZON_PARTNER_TAG"],
         purpose="Amazon Product Advertising API 5.0 — 미국 소싱",
         docs_url="https://affiliate-program.amazon.com",
+        category=ApiCategory.SOURCING,
     ),
     ApiKey(
         name="rakuten",
         env_vars=["RAKUTEN_APP_ID"],
         purpose="라쿠텐 Web Service — 일본 소싱",
         docs_url="https://webservice.rakuten.co.jp",
+        category=ApiCategory.SOURCING,
     ),
+    # ── AI / 번역 ─────────────────────────────────────────────────────────
     ApiKey(
         name="openai",
         env_vars=["OPENAI_API_KEY"],
         purpose="번역 + 광고 카피 자동 생성",
         docs_url="https://platform.openai.com",
+        category=ApiCategory.AI,
     ),
     ApiKey(
         name="deepl",
         env_vars=["DEEPL_API_KEY"],
-        purpose="번역 (OpenAI 대체)",
+        purpose="번역 (OpenAI 대체, 더 저렴)",
         docs_url="https://www.deepl.com/pro-api",
+        category=ApiCategory.AI,
+    ),
+    # ── 결제 ─────────────────────────────────────────────────────────────
+    ApiKey(
+        name="toss_payments",
+        env_vars=["TOSS_CLIENT_KEY", "TOSS_SECRET_KEY"],
+        purpose="토스페이먼츠 - 한국 결제(셀러 SaaS 또는 자체몰)",
+        docs_url="https://app.tosspayments.com",
+        category=ApiCategory.PAYMENT,
+    ),
+    ApiKey(
+        name="paypal",
+        env_vars=["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET"],
+        purpose="PayPal - 해외 결제",
+        docs_url="https://developer.paypal.com",
+        category=ApiCategory.PAYMENT,
+    ),
+    # ── 인증 ─────────────────────────────────────────────────────────────
+    ApiKey(
+        name="kakao_login",
+        env_vars=["KAKAO_REST_API_KEY", "KAKAO_CLIENT_SECRET"],
+        purpose="카카오 로그인",
+        docs_url="https://developers.kakao.com",
+        category=ApiCategory.AUTH,
+    ),
+    ApiKey(
+        name="google_oauth",
+        env_vars=["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET"],
+        purpose="Google OAuth — 구글 로그인",
+        docs_url="https://console.cloud.google.com",
+        category=ApiCategory.AUTH,
+    ),
+    ApiKey(
+        name="naver_login",
+        env_vars=["NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET"],
+        purpose="네이버 로그인 (커머스 API와 별개)",
+        docs_url="https://developers.naver.com",
+        category=ApiCategory.AUTH,
+    ),
+    # ── 알림 ─────────────────────────────────────────────────────────────
+    ApiKey(
+        name="telegram",
+        env_vars=["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"],
+        purpose="텔레그램 알림 - 주문/오류/이벤트",
+        docs_url="https://core.telegram.org/bots",
+        category=ApiCategory.NOTIFICATION,
+    ),
+    ApiKey(
+        name="sendgrid",
+        env_vars=["SENDGRID_API_KEY"],
+        purpose="이메일 발송 - 주문 확인/알림",
+        docs_url="https://app.sendgrid.com",
+        category=ApiCategory.NOTIFICATION,
+    ),
+    # ── 물류 ─────────────────────────────────────────────────────────────
+    ApiKey(
+        name="sweettracker",
+        env_vars=["SWEETTRACKER_API_KEY"],
+        purpose="운송장 자동 추적",
+        docs_url="https://www.sweettracker.co.kr",
+        category=ApiCategory.LOGISTICS,
+    ),
+    # ── 자체몰 ───────────────────────────────────────────────────────────
+    ApiKey(
+        name="shopify",
+        env_vars=["SHOPIFY_ACCESS_TOKEN", "SHOPIFY_SHOP"],
+        purpose="Shopify 자체몰",
+        docs_url="https://partners.shopify.com",
+        category=ApiCategory.SELF_MALL,
+    ),
+    ApiKey(
+        name="woocommerce",
+        env_vars=["WC_KEY", "WC_SECRET", "WC_URL"],
+        purpose="WooCommerce 자체몰",
+        docs_url="https://woocommerce.com",
+        category=ApiCategory.SELF_MALL,
+    ),
+    # ── 유틸리티 ─────────────────────────────────────────────────────────
+    ApiKey(
+        name="exchange_rate",
+        env_vars=["EXCHANGE_RATE_API_KEY"],
+        purpose="실시간 환율 (USD/JPY/EUR/CNY)",
+        docs_url="https://app.exchangerate-api.com",
+        category=ApiCategory.UTILITY,
+    ),
+    ApiKey(
+        name="pexels",
+        env_vars=["PEXELS_API_KEY"],
+        purpose="Pexels - 무료 보조 이미지",
+        docs_url="https://www.pexels.com/api",
+        category=ApiCategory.UTILITY,
+    ),
+    ApiKey(
+        name="unsplash",
+        env_vars=["UNSPLASH_ACCESS_KEY"],
+        purpose="Unsplash - 무료 보조 이미지",
+        docs_url="https://unsplash.com/developers",
+        category=ApiCategory.UTILITY,
+    ),
+    # ── 인프라 ───────────────────────────────────────────────────────────
+    ApiKey(
+        name="google_sheets",
+        env_vars=["GOOGLE_SHEET_ID", "GOOGLE_SERVICE_JSON_B64"],
+        purpose="Google Sheets — 카탈로그/주문/재고 저장소",
+        docs_url="https://console.cloud.google.com",
+        category=ApiCategory.INFRA,
+    ),
+    # ── Shopify 추가 시크릿 (별도 노출) ──────────────────────────────────
+    ApiKey(
+        name="shopify_webhook",
+        env_vars=["SHOPIFY_CLIENT_SECRET"],
+        purpose="Shopify 웹훅 서명 검증",
+        docs_url="https://partners.shopify.com",
+        category=ApiCategory.SELF_MALL,
+    ),
+    # ── WooCommerce 별칭 그룹 ─────────────────────────────────────────────
+    ApiKey(
+        name="woocommerce_alt",
+        env_vars=["WOO_CK", "WOO_CS", "WOO_BASE_URL"],
+        purpose="WooCommerce 자체몰 (WOO_* 별칭)",
+        docs_url="https://woocommerce.com",
+        category=ApiCategory.SELF_MALL,
+    ),
+    # ── 미래 예약 ─────────────────────────────────────────────────────────
+    ApiKey(
+        name="portone",
+        env_vars=["PORTONE_API_KEY", "PORTONE_API_SECRET"],
+        purpose="PortOne(아임포트) — 통합 PG (Phase 132)",
+        docs_url="https://portone.io",
+        category=ApiCategory.PAYMENT,
     ),
 ]
 
 
-def get_api_status() -> list:
-    """전체 API 상태 목록 반환 (마스킹된 값 포함).
+# ---------------------------------------------------------------------------
+# 공개 조회 함수
+# ---------------------------------------------------------------------------
 
-    Returns:
-        각 API의 상태 정보를 담은 dict 목록
+
+def get_api_status() -> dict:
+    """전체 API 상태 반환 — 카테고리별 그루핑 + 요약 통계.
+
+    반환 구조 (백워드 호환: apis 목록 필드 유지):
+    {
+      "categories": [...],
+      "apis": [...],
+      "summary": {"total": N, "active": N, "missing": N, "by_category": {...}},
+      "render_env_note": "..."
+    }
     """
-    return [
-        {
-            "name": k.name,
-            "purpose": k.purpose,
-            "status": k.status,
-            "env_vars": k.masked_values,
-            "docs_url": k.docs_url,
-            "hint": (
-                f"{k.docs_url} 에서 API 발급 후 "
-                f"{', '.join(k.env_vars)} 등록"
-                if k.status == "missing" else None
-            ),
-        }
-        for k in API_REGISTRY
-    ]
+    apis = []
+    by_category: dict = {}
+
+    for k in API_REGISTRY:
+        cat = k.category.value
+        status = k.status
+        apis.append(
+            {
+                "name": k.name,
+                "category": cat,
+                "status": status,
+                "purpose": k.purpose,
+                "env_vars": k.masked_values,
+                "docs_url": k.docs_url,
+                "hint": (
+                    f"{k.docs_url} 에서 API 발급 후 "
+                    f"{', '.join(k.env_vars)} 등록"
+                    if status == "missing"
+                    else None
+                ),
+                "last_ping_at": None,
+                "ping_status": None,
+            }
+        )
+        if cat not in by_category:
+            by_category[cat] = {"total": 0, "active": 0}
+        by_category[cat]["total"] += 1
+        if status == "active":
+            by_category[cat]["active"] += 1
+
+    total = len(apis)
+    active_count = sum(1 for a in apis if a["status"] == "active")
+    missing_count = total - active_count
+
+    return {
+        "categories": [c.value for c in ApiCategory],
+        "apis": apis,
+        "summary": {
+            "total": total,
+            "active": active_count,
+            "missing": missing_count,
+            "by_category": by_category,
+        },
+        "render_env_note": (
+            "환경변수는 Render Dashboard → proxy-commerce → Environment에 등록해야 합니다. "
+            "GitHub Secrets는 인식하지 않습니다."
+        ),
+    }
 
 
 def get_api_key(name: str) -> Optional[ApiKey]:

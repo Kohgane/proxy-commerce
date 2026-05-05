@@ -222,12 +222,13 @@ def test_api_status_json_schema(client):
 # ---------------------------------------------------------------------------
 
 def test_health_deep_has_external_apis(client):
-    """/health/deep 응답에 external_apis 필드 포함 (Phase 128)."""
+    """/health/deep 응답에 external_apis 필드 포함 (Phase 130: dict or list)."""
     resp = client.get("/health/deep")
     assert resp.status_code == 200
     data = json.loads(resp.data)
     assert "external_apis" in data
-    assert isinstance(data["external_apis"], list)
+    # Phase 130: get_api_status() returns dict with 'apis' key
+    assert isinstance(data["external_apis"], (list, dict))
 
 
 # ---------------------------------------------------------------------------
