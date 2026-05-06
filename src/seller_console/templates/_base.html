@@ -52,6 +52,10 @@
         <a class="nav-link text-secondary {% if page == 'api_status' %}text-white fw-semibold{% endif %}"
            href="/seller/api-status">🔑 API 상태</a>
       </li>
+      <li class="nav-item">
+        <a class="nav-link text-secondary {% if page == 'me' %}text-white fw-semibold{% endif %}"
+           href="/seller/me">👤 마이페이지</a>
+      </li>
     </ul>
     <div class="mt-auto pt-3 border-top border-secondary">
       <a class="nav-link text-secondary small" href="/dashboard/">← 어드민</a>
@@ -60,9 +64,47 @@
   </nav>
 
   <!-- 메인 콘텐츠 -->
-  <main class="flex-grow-1 p-4" style="background:#f5f7fa;">
-    {% block content %}{% endblock %}
-  </main>
+  <div class="flex-grow-1 d-flex flex-column" style="background:#f5f7fa;">
+    <!-- 상단 헤더 (Phase 133: 사용자 아바타 + 드롭다운) -->
+    <header class="d-flex justify-content-end align-items-center px-4 py-2 bg-white border-bottom shadow-sm" style="min-height:52px;">
+      {% set _user_id = session.get('user_id') if session is defined else None %}
+      {% set _user_name = session.get('user_name') if session is defined else None %}
+      {% set _user_role = session.get('user_role') if session is defined else None %}
+      {% if _user_id %}
+        <div class="dropdown">
+          <button class="btn btn-link text-decoration-none p-0 d-flex align-items-center gap-2"
+                  data-bs-toggle="dropdown" aria-expanded="false">
+            <div class="rounded-circle bg-primary d-flex align-items-center justify-content-center text-white fw-bold"
+                 style="width:32px;height:32px;font-size:0.85rem;">
+              {{ (_user_name or '?')[0].upper() }}
+            </div>
+            <span class="text-dark small">{{ _user_name or session.get('user_email', '') }}</span>
+            {% if _user_role == 'admin' %}
+              <span class="badge bg-danger" style="font-size:0.65rem;">Admin</span>
+            {% endif %}
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item" href="/seller/me">👤 마이페이지</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li>
+              <form method="post" action="/auth/logout" class="px-2">
+                <button type="submit" class="btn btn-outline-secondary btn-sm w-100">🚪 로그아웃</button>
+              </form>
+            </li>
+          </ul>
+        </div>
+      {% else %}
+        <div class="d-flex gap-2">
+          <a href="/auth/login" class="btn btn-outline-primary btn-sm">로그인</a>
+          <a href="/auth/signup" class="btn btn-primary btn-sm">가입</a>
+        </div>
+      {% endif %}
+    </header>
+
+    <main class="flex-grow-1 p-4">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>

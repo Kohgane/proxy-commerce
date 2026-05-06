@@ -132,15 +132,9 @@
 
 | Phase | 내용 |
 |---|---|
-| Phase 135 | 브랜드별 자동 수집기 (Alo/Lululemon/Amazon/Rakuten/Shein 도메인 본 구현) |
-| Phase 136 | 자동 가격 조정 엔진 (환율/경쟁사/마진 임계값) |
-| Phase 137 | CS 자동응답 (텔레그램 봇) |
-| Phase 138 | 수요 예측 + 재고 알림 |
-| Phase 139 | Amazon PA-API + Rakuten 본 구현 |
-| Phase 140 | 모바일 PWA + 푸시 |
-| Phase 141 | 데이터 백업/복구 + Postgres 마이그 검토 |
-| Phase 142 | 모니터링 강화 (Sentry, Uptime) |
-| (2026 Q4) | SaaS 공개 준비 Act 별도 시작 |
+| Phase 134 | 토스 정기결제 (셀러 SaaS 구독료) |
+| Phase 135 | 랜딩 페이지/약관/개인정보처리방침 |
+| Phase 136 | ShopifyAdapter 본 구현 (Phase 132와 동일 패턴) |
 
 ## 🚧 진행 중 Phase
 

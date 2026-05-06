@@ -1,9 +1,9 @@
-"""src/utils/env_catalog.py — 외부 API 환경변수 카탈로그 (Phase 130).
+"""src/utils/env_catalog.py — 외부 API 환경변수 카탈로그 (Phase 133).
 
 모든 외부 API 환경변수를 한 곳에서 관리.
 - 누락 시 stub 모드로 자동 폴백
 - /health/deep 에 어떤 키가 활성/누락인지 노출 (마스킹된 상태로)
-- Phase 130: 24개 항목, 카테고리별 그루핑, 별칭 매핑, 요약 통계
+- Phase 133: SendGrid → Resend, SweetTracker → TrackingMore 교체 (24개 유지)
 """
 from __future__ import annotations
 

@@ -1,6 +1,7 @@
-# API_KEYS.md — 외부 API 키 발급 가이드 (Phase 130)
+# API_KEYS.md — 외부 API 키 발급 가이드 (Phase 133)
 
 형이 발급할 모든 API 키 목록과 등록 방법. 총 24개 항목.
+Phase 133: **SendGrid → Resend**, **SweetTracker → TrackingMore** 교체.
 
 ---
 
@@ -31,14 +32,26 @@
 | **인증** | Google OAuth | GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET | 구글 로그인 |
 | **인증** | 네이버 로그인 | NAVER_CLIENT_ID, NAVER_CLIENT_SECRET | 네이버 로그인 |
 | **알림** | 텔레그램 | TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID | 실시간 알림 |
-| **알림** | SendGrid | SENDGRID_API_KEY | 이메일 발송 |
-| **물류** | 스윗트래커 | SWEETTRACKER_API_KEY | 운송장 자동 추적 |
+| **알림** | ~~SendGrid~~ → **Resend** | RESEND_API_KEY | 이메일 발송 (Phase 133 교체) |
+| **물류** | ~~SweetTracker~~ → **TrackingMore** | TRACKINGMORE_API_KEY | 운송장 자동 추적 (Phase 133 교체) |
 | **자체몰** | Shopify | SHOPIFY_ACCESS_TOKEN, SHOPIFY_SHOP | Shopify 자체몰 |
 | **자체몰** | WooCommerce | WC_KEY, WC_SECRET, WC_URL | kohganemultishop.org 실연동 (Phase 132) |
 | **유틸** | ExchangeRate-API | EXCHANGE_RATE_API_KEY | 실시간 환율 |
 | **유틸** | Pexels | PEXELS_API_KEY | 무료 보조 이미지 |
 | **유틸** | Unsplash | UNSPLASH_ACCESS_KEY | 무료 보조 이미지 |
 | **인프라** | Google Sheets | GOOGLE_SHEET_ID, GOOGLE_SERVICE_JSON_B64 | 데이터 저장 |
+
+---
+
+## ⚠️ Phase 133 변경사항
+
+| 구분 | 이전 | 현재 |
+|---|---|---|
+| 이메일 | `SENDGRID_API_KEY` | `RESEND_API_KEY` (Resend) |
+| 운송장 추적 | `SWEETTRACKER_API_KEY` | `TRACKINGMORE_API_KEY` (TrackingMore) |
+
+- `SENDGRID_API_KEY`, `SWEETTRACKER_API_KEY` → Render에서 **삭제 권장**
+- `RESEND_FROM_EMAIL` 추가 권장: `noreply@kohganepercentiii.com`
 
 ---
 

@@ -1,5 +1,10 @@
 """src/seller_console/orders/tracking_sweet.py — SweetTracker 운송장 자동 추적 (Phase 130).
 
+.. deprecated:: Phase 133
+   SweetTracker는 TrackingMore로 교체되었습니다.
+   신규 코드는 tracking_trackingmore.py를 사용하세요.
+   이 모듈은 백워드 호환성을 위해 유지됩니다.
+
 SWEETTRACKER_API_KEY 활성 시 실 API 호출, 미설정 시 stub 반환.
 ADAPTER_DRY_RUN=1 시 API 호출 차단.
 
