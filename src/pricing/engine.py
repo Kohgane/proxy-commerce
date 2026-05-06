@@ -408,8 +408,8 @@ class PricingEngine:
         except Exception:
             pass
         try:
-            from src.seller_console.market_adapters.smartstore_adapter import SmartstoreAdapter
-            adapters["smartstore"] = SmartstoreAdapter()
+            from src.seller_console.market_adapters.smartstore_adapter import SmartStoreAdapter
+            adapters["smartstore"] = SmartStoreAdapter()
         except Exception:
             pass
         try:

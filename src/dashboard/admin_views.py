@@ -378,7 +378,8 @@ def diagnostics_test_telegram():
         ok = send_telegram("🔔 /admin/diagnostics 테스트 메시지입니다.", urgency="info")
         return {"ok": ok, "message": "전송 성공" if ok else "전송 실패 (로그 확인)"}
     except Exception as exc:
-        return {"ok": False, "error": str(exc)}, 500
+        logger.warning("텔레그램 테스트 메시지 오류: %s", exc)
+        return {"ok": False, "error": "테스트 메시지 발송 중 오류가 발생했습니다."}, 500
 
 
 @admin_panel_bp.get("/diagnostics/telegram-health")
@@ -402,13 +403,14 @@ def _build_env_matrix() -> list:
         from src.utils.env_catalog import API_REGISTRY
         result = []
         for api in API_REGISTRY:
+            cat = api.category
             result.append({
                 "name": api.name,
                 "purpose": api.purpose,
-                "category": api.category.value if hasattr(api.category, "value") else str(api.category),
+                "category": cat.value if hasattr(cat, "value") else str(cat),
                 "status": api.status,
                 "env_vars": api.env_vars,
-                "docs_url": api.docs_url if hasattr(api, "docs_url") else "",
+                "docs_url": getattr(api, "docs_url", ""),
             })
         return result
     except Exception as exc:

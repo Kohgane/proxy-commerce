@@ -45,7 +45,7 @@ def reprice():
         results = engine.evaluate(dry_run=dry_run)
     except Exception as exc:
         logger.error("재가격 엔진 오류: %s", exc)
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return jsonify({"ok": False, "error": "재가격 실행 중 오류가 발생했습니다."}), 500
 
     # 요약 알림 발송
     _send_summary_notification(results)

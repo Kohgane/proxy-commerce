@@ -58,7 +58,7 @@ class PriceHistoryStore:
         Returns:
             생성된 이력 ID
         """
-        history_id = str(uuid.uuid4())[:8]
+        history_id = str(uuid.uuid4())
         if old_price_krw and old_price_krw != 0:
             delta_pct = round((new_price_krw - old_price_krw) / old_price_krw * 100, 2)
         else:
