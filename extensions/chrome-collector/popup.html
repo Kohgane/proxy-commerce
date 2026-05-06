@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>코가네 퍼센티 수집기</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 320px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+      background: #fff;
+    }
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 16px;
+      text-align: center;
+    }
+    .header h1 { font-size: 16px; font-weight: 700; }
+    .header p { font-size: 12px; opacity: 0.85; margin-top: 4px; }
+    .content { padding: 16px; }
+    .page-info {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+      font-size: 12px;
+      color: #555;
+      word-break: break-all;
+    }
+    .page-info .url { color: #667eea; font-weight: 500; }
+    .btn-collect {
+      width: 100%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .btn-collect:hover { opacity: 0.9; }
+    .btn-collect:disabled { opacity: 0.6; cursor: not-allowed; }
+    .status {
+      margin-top: 12px;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      display: none;
+    }
+    .status.success { background: #d4edda; color: #155724; }
+    .status.error { background: #f8d7da; color: #721c24; }
+    .status.loading { background: #d1ecf1; color: #0c5460; }
+    .preview-link {
+      display: block;
+      margin-top: 8px;
+      color: #667eea;
+      text-decoration: none;
+      font-size: 12px;
+    }
+    .footer {
+      padding: 8px 16px;
+      border-top: 1px solid #eee;
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #aaa;
+    }
+    .footer a { color: #667eea; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🛍️ 코가네 퍼센티 수집기</h1>
+    <p>한 클릭으로 상품 정보 수집</p>
+  </div>
+
+  <div class="content">
+    <div class="page-info">
+      <div class="url" id="pageUrl">페이지 로딩 중...</div>
+    </div>
+
+    <button class="btn-collect" id="btnCollect">
+      📦 이 상품 수집하기
+    </button>
+
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="footer">
+    <span id="statusText">준비됨</span>
+    <a href="#" id="optionsLink">⚙️ 설정</a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

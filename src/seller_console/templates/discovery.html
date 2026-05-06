@@ -1,0 +1,132 @@
+{% extends "_base.html" %}
+{% block title %}Discovery 후보 관리{% endblock %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h1 class="h3 mb-0">🔍 Discovery 후보 관리</h1>
+      <small class="text-muted">자동 발견된 쇼핑몰 후보를 검토합니다.</small>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="/seller/discovery/keywords" class="btn btn-outline-secondary">🏷 키워드 관리</a>
+      <button class="btn btn-primary" id="runScoutBtn">▶ Discovery 실행</button>
+    </div>
+  </div>
+
+  <!-- 필터 탭 -->
+  <ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+      <a class="nav-link {% if status_filter == 'pending' %}active{% endif %}" href="?status=pending">대기 중</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link {% if status_filter == 'approved' %}active{% endif %}" href="?status=approved">승인됨</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link {% if status_filter == 'rejected' %}active{% endif %}" href="?status=rejected">거부됨</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link {% if not status_filter %}active{% endif %}" href="?status=">전체</a>
+    </li>
+  </ul>
+
+  {% if candidates %}
+  <div class="card">
+    <div class="card-body p-0">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>도메인</th>
+            <th>키워드</th>
+            <th>소스</th>
+            <th>발견일</th>
+            <th>상태</th>
+            <th>액션</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in candidates %}
+          <tr>
+            <td>
+              <a href="https://{{ c.domain }}" target="_blank" class="text-decoration-none">
+                {{ c.domain }}
+              </a>
+            </td>
+            <td><span class="badge bg-light text-dark">{{ c.keyword }}</span></td>
+            <td>{{ c.source }}</td>
+            <td>{{ c.discovered_at[:10] if c.discovered_at else '-' }}</td>
+            <td>
+              {% if c.status == 'approved' %}
+              <span class="badge bg-success">승인됨</span>
+              {% elif c.status == 'rejected' %}
+              <span class="badge bg-danger">거부됨</span>
+              {% else %}
+              <span class="badge bg-warning text-dark">대기 중</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if c.status == 'pending' %}
+              <button class="btn btn-sm btn-success approve-btn" data-domain="{{ c.domain }}">✅ 승인</button>
+              <button class="btn btn-sm btn-outline-danger reject-btn ms-1" data-domain="{{ c.domain }}">❌ 거부</button>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-info">
+    발견된 후보가 없습니다.
+    <strong>Discovery 실행</strong> 버튼을 클릭하거나 <a href="/seller/discovery/keywords">키워드를 추가</a>하세요.
+  </div>
+  {% endif %}
+</div>
+
+<script>
+document.getElementById('runScoutBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('runScoutBtn');
+  btn.disabled = true;
+  btn.textContent = '실행 중...';
+  try {
+    const resp = await fetch('/cron/discovery', {method: 'POST'});
+    const data = await resp.json();
+    alert('Discovery 완료: ' + (data.discovered || 0) + '개 신규 도메인 발견');
+    location.reload();
+  } catch(e) {
+    alert('오류: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '▶ Discovery 실행';
+  }
+});
+
+document.querySelectorAll('.approve-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const domain = btn.dataset.domain;
+    const resp = await fetch('/seller/discovery/approve', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({domain})
+    });
+    const data = await resp.json();
+    if (data.ok) location.reload();
+    else alert('승인 실패: ' + (data.error || '알 수 없는 오류'));
+  });
+});
+
+document.querySelectorAll('.reject-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const domain = btn.dataset.domain;
+    const resp = await fetch('/seller/discovery/reject', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({domain})
+    });
+    const data = await resp.json();
+    if (data.ok) location.reload();
+    else alert('거부 실패: ' + (data.error || '알 수 없는 오류'));
+  });
+});
+</script>
+{% endblock %}

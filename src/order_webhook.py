@@ -858,6 +858,14 @@ try:
 except Exception as _auth_bp_exc:
     logger.warning("인증 시스템 Blueprint 등록 실패: %s", _auth_bp_exc)
 
+# Phase 135: 크롬 확장/북마클릿/벌크 수집 API
+try:
+    from .api.extension_api import extension_bp
+    app.register_blueprint(extension_bp)
+    logger.info("Extension API Blueprint 등록 완료 (/api/v1/collect/)")
+except Exception as _ext_bp_exc:
+    logger.warning("Extension API Blueprint 등록 실패: %s", _ext_bp_exc)
+
 # Phase 132: /shop 블루프린트는 외부 kohganemultishop.org가 진짜 자체몰이므로 기본 비활성.
 # 향후 데모/쇼윈도우 용도로 부활시키려면 ENABLE_INTERNAL_SHOP=1 환경변수 설정.
 if os.getenv("ENABLE_INTERNAL_SHOP", "0") == "1":
@@ -1552,3 +1560,27 @@ def cron_track_shipments():
     # 내부 오류 메시지는 로그에만 기록
     sanitized_errors = [f"추적 오류 {i+1}" for i, _ in enumerate(errors[:10])]
     return jsonify({"status": "ok", "updated": updated, "errors": sanitized_errors})
+
+
+# Phase 135: Discovery 봇 cron
+@app.route('/cron/discovery', methods=['GET', 'POST'])
+def cron_discovery():
+    """Discovery 봇 수동/자동 실행 (Phase 135).
+
+    Render Cron Job 또는 /seller/discovery 페이지에서 수동 호출.
+    Response: {ok: true, discovered: N, domains: [...]}
+    """
+    if os.getenv("ADAPTER_DRY_RUN", "0") == "1":
+        return jsonify({"ok": True, "status": "dry_run", "discovered": 0, "domains": []}), 200
+
+    try:
+        from .discovery.scout import DiscoveryScout
+        scout = DiscoveryScout()
+        results = scout.run_once()
+        domains = [r.get("domain", "") for r in results]
+        logger.info("cron_discovery 완료: %d개 신규 도메인", len(results))
+        return jsonify({"ok": True, "discovered": len(results), "domains": domains})
+    except Exception as exc:
+        logger.warning("cron_discovery 실패: %s", exc)
+        return jsonify({"ok": False, "error": "Discovery 실행 중 오류가 발생했습니다."}), 500
+

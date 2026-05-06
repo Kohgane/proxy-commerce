@@ -1,0 +1,190 @@
+{% extends "_base.html" %}
+{% block title %}Personal Access Token 관리{% endblock %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h1 class="h3 mb-0">🔑 Personal Access Token 관리</h1>
+      <small class="text-muted">크롬 확장 / 북마클릿 인증에 사용합니다.</small>
+    </div>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#generateModal">
+      ＋ 새 토큰 발급
+    </button>
+  </div>
+
+  {% if tokens %}
+  <div class="card mb-4">
+    <div class="card-body p-0">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>토큰 해시 (앞8자리)</th>
+            <th>스코프</th>
+            <th>발급일</th>
+            <th>마지막 사용</th>
+            <th>만료일</th>
+            <th>상태</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for tok in tokens %}
+          <tr>
+            <td><code>{{ tok.token_hash_prefix }}</code></td>
+            <td>
+              {% for scope in tok.scopes %}
+              <span class="badge bg-secondary me-1">{{ scope }}</span>
+              {% endfor %}
+            </td>
+            <td>{{ tok.created_at[:10] if tok.created_at else '-' }}</td>
+            <td>{{ tok.last_used_at[:10] if tok.last_used_at else '아직 미사용' }}</td>
+            <td>{{ tok.expires_at[:10] if tok.expires_at else '-' }}</td>
+            <td>
+              {% if tok.revoked %}
+              <span class="badge bg-danger">회수됨</span>
+              {% else %}
+              <span class="badge bg-success">활성</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if not tok.revoked %}
+              <button class="btn btn-sm btn-outline-danger revoke-btn"
+                      data-hash="{{ tok.token_hash }}">회수</button>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-info">아직 발급된 토큰이 없습니다. 새 토큰을 발급하세요.</div>
+  {% endif %}
+
+  <!-- 사용 가이드 -->
+  <div class="card">
+    <div class="card-header"><strong>📋 사용 방법</strong></div>
+    <div class="card-body">
+      <h6>크롬 확장에서</h6>
+      <ol>
+        <li>확장 아이콘 우클릭 → <strong>옵션</strong></li>
+        <li>서버 URL: <code>{{ request.host_url.rstrip('/') }}</code></li>
+        <li>발급된 토큰을 <strong>Personal Access Token</strong> 필드에 붙여넣기</li>
+      </ol>
+      <h6 class="mt-3">북마클릿에서</h6>
+      <p><a href="/seller/bookmarklet" class="btn btn-sm btn-outline-secondary">→ 북마클릿 페이지로</a></p>
+    </div>
+  </div>
+</div>
+
+<!-- 토큰 발급 모달 -->
+<div class="modal fade" id="generateModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">새 Personal Access Token 발급</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">권한 스코프</label>
+          {% for scope in valid_scopes %}
+          <div class="form-check">
+            <input class="form-check-input scope-check" type="checkbox"
+                   value="{{ scope }}" id="scope_{{ loop.index }}"
+                   {% if scope == 'collect.write' %}checked{% endif %}>
+            <label class="form-check-label" for="scope_{{ loop.index }}">
+              <code>{{ scope }}</code>
+            </label>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">만료 기간</label>
+          <select class="form-select" id="expiresDays">
+            <option value="30">30일</option>
+            <option value="90">90일</option>
+            <option value="365" selected>1년</option>
+            <option value="3650">10년 (사실상 무기한)</option>
+          </select>
+        </div>
+        <div id="tokenResult" class="d-none">
+          <div class="alert alert-warning">
+            ⚠️ 이 토큰은 <strong>지금 한 번만</strong> 표시됩니다. 안전한 곳에 복사해두세요.
+          </div>
+          <div class="input-group">
+            <input type="text" class="form-control font-monospace" id="rawToken" readonly>
+            <button class="btn btn-outline-secondary" onclick="copyToken()">복사</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>
+        <button type="button" class="btn btn-primary" id="generateBtn">발급하기</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('generateBtn').addEventListener('click', async () => {
+  const scopes = [...document.querySelectorAll('.scope-check:checked')].map(el => el.value);
+  const expiresDays = parseInt(document.getElementById('expiresDays').value);
+  const btn = document.getElementById('generateBtn');
+  btn.disabled = true;
+  btn.textContent = '발급 중...';
+  try {
+    const resp = await fetch('/seller/me/tokens/generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({scopes, expires_days: expiresDays})
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      document.getElementById('rawToken').value = data.raw_token;
+      document.getElementById('tokenResult').classList.remove('d-none');
+      btn.classList.replace('btn-primary', 'btn-success');
+      btn.textContent = '✅ 발급 완료';
+    } else {
+      alert('토큰 발급 실패: ' + (data.error || '알 수 없는 오류'));
+      btn.disabled = false;
+      btn.textContent = '발급하기';
+    }
+  } catch(e) {
+    alert('오류: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = '발급하기';
+  }
+});
+
+function copyToken() {
+  const input = document.getElementById('rawToken');
+  input.select();
+  document.execCommand('copy');
+  alert('토큰이 클립보드에 복사되었습니다.');
+}
+
+document.querySelectorAll('.revoke-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    if (!confirm('이 토큰을 회수하시겠습니까? 회수 후 복구할 수 없습니다.')) return;
+    const hash = btn.dataset.hash;
+    try {
+      const resp = await fetch('/seller/me/tokens/revoke', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({token_hash: hash})
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        location.reload();
+      } else {
+        alert('회수 실패: ' + (data.error || '알 수 없는 오류'));
+      }
+    } catch(e) {
+      alert('오류: ' + e.message);
+    }
+  });
+});
+</script>
+{% endblock %}
