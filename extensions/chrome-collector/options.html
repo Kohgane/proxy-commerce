@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>코가네 퍼센티 수집기 — 설정</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+      background: #f0f2f5;
+      padding: 24px;
+      min-height: 100vh;
+    }
+    .container { max-width: 520px; margin: 0 auto; }
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      margin-bottom: 16px;
+    }
+    h1 { font-size: 20px; color: #333; margin-bottom: 4px; }
+    .subtitle { color: #888; font-size: 13px; margin-bottom: 20px; }
+    h2 { font-size: 16px; color: #444; margin-bottom: 12px; }
+    label {
+      display: block;
+      font-weight: 600;
+      color: #555;
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+    input[type="text"], input[type="url"], input[type="password"] {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1.5px solid #ddd;
+      border-radius: 8px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input:focus { border-color: #667eea; }
+    .form-group { margin-bottom: 16px; }
+    .hint { font-size: 12px; color: #999; margin-top: 4px; }
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-danger { background: #dc3545; color: white; margin-left: 8px; }
+    .status-msg {
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-top: 12px;
+      display: none;
+    }
+    .status-msg.success { background: #d4edda; color: #155724; }
+    .status-msg.error { background: #f8d7da; color: #721c24; }
+    .token-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .token-row input { flex: 1; }
+    a { color: #667eea; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h1>⚙️ 코가네 퍼센티 수집기</h1>
+      <p class="subtitle">서버 URL과 Personal Access Token을 설정하세요.</p>
+
+      <div class="form-group">
+        <label for="serverUrl">서버 URL</label>
+        <input type="url" id="serverUrl" placeholder="https://kohganepercentiii.com">
+        <div class="hint">Kohgane Percentiii 서버 주소 (기본: https://kohganepercentiii.com)</div>
+      </div>
+
+      <div class="form-group">
+        <label for="token">Personal Access Token</label>
+        <div class="token-row">
+          <input type="password" id="token" placeholder="tok_xxxxxxxxxxxxxxxxxxxx">
+          <button class="btn btn-primary" id="toggleToken" title="토큰 표시/숨기기">👁</button>
+        </div>
+        <div class="hint">
+          <a href="#" id="getTokenLink">→ 토큰 발급하기</a>
+          (서버 로그인 후 /seller/me/tokens에서 발급)
+        </div>
+      </div>
+
+      <button class="btn btn-primary" id="saveBtn">💾 저장</button>
+      <button class="btn btn-danger" id="clearBtn">🗑 초기화</button>
+
+      <div class="status-msg" id="statusMsg"></div>
+    </div>
+
+    <div class="card">
+      <h2>💡 사용 방법</h2>
+      <ol style="padding-left: 20px; line-height: 2;">
+        <li>쇼핑몰 상품 페이지로 이동</li>
+        <li>브라우저 상단의 확장 아이콘 클릭</li>
+        <li>"이 상품 수집하기" 버튼 클릭</li>
+        <li>수집 완료 알림 확인</li>
+      </ol>
+      <p style="margin-top: 12px; color: #888; font-size: 12px;">
+        우클릭 → "코가네 퍼센티에 보내기" 로도 수집 가능합니다.
+      </p>
+    </div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "코가네 퍼센티 수집기",
+  "version": "1.0.0",
+  "description": "쇼핑 페이지를 한 클릭에 코가네 퍼센티로 수집",
+  "permissions": ["activeTab", "storage", "contextMenus", "notifications"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/16.png",
+      "48": "icons/48.png",
+      "128": "icons/128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content_script.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options.html"
+}

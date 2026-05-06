@@ -127,14 +127,20 @@
 | Phase 132 | 노선 변경 — /shop 폐기(보존) + KohganeMultishopAdapter 폐기 + WooCommerceAdapter 본 구현 + kohganemultishop.org 실연동 + ROOT_REDIRECT 정책 명확화 | #PR | 2026-05-05 |
 | Phase 133 | Resend 이메일 어댑터 + TrackingMore 운송장 추적 + 카카오/구글/네이버 로그인 + 셀러 가입 흐름 | #PR | 2026-05-05 |
 | Phase 134 | AI 카피라이터 본 구현 + 다채널 고객 메시징 허브(8 채널, locale 라우팅) + AI 예산 가드 + 캐시 | #PR | 2026-05-05 |
+| Phase 135 | 범용 수집기(UniversalScraper) + 브랜드 어댑터(Marketstudio/Pleasures/Yoshida-PORTER) + 크롬 확장 본 구현(MV3) + 북마클릿 + 벌크 수집 API + Discovery 봇 + Personal Access Token | #PR | 2026-05-06 |
 
 ## 📋 다음 큐
 
 | Phase | 내용 |
 |---|---|
-| Phase 134 | 토스 정기결제 (셀러 SaaS 구독료) |
-| Phase 135 | 랜딩 페이지/약관/개인정보처리방침 |
-| Phase 136 | ShopifyAdapter 본 구현 (Phase 132와 동일 패턴) |
+| Phase 136 | 자동 가격 조정 엔진 (환율 변동/경쟁사 가격/마진 임계값) |
+| Phase 137 | CS 자동응답 (텔레그램 봇) |
+| Phase 138 | 수요 예측 + 재고 알림 |
+| Phase 139 | Amazon PA-API + Rakuten 본 구현 |
+| Phase 140 | 모바일 PWA + 푸시 |
+| Phase 141 | 데이터 백업/복구 |
+| Phase 142 | 모니터링 강화 (Sentry, Uptime) |
+| (2026 Q4) | SaaS 공개 준비 (약관/결제/랜딩) |
 
 ## 🚧 진행 중 Phase
 

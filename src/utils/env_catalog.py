@@ -333,6 +333,23 @@ API_REGISTRY: list = [
         docs_url="https://portone.io",
         category=ApiCategory.PAYMENT,
     ),
+    # ── Phase 135: Discovery + Scraper 설정 ──────────────────────────────
+    ApiKey(
+        name="discovery",
+        env_vars=["DISCOVERY_KEYWORDS"],
+        purpose="수집 자동 발견 봇 키워드 (Sheets 우선, env 폴백)",
+        docs_url="https://kohganepercentiii.com/seller/discovery",
+        category=ApiCategory.UTILITY,
+        optional=True,
+    ),
+    ApiKey(
+        name="scraper",
+        env_vars=["SCRAPER_USER_AGENT", "SCRAPER_TIMEOUT_SEC"],
+        purpose="수집기 공통 설정 (미설정 시 기본값 사용)",
+        docs_url="https://kohganepercentiii.com/docs/operations/COLLECTING.md",
+        category=ApiCategory.UTILITY,
+        optional=True,
+    ),
 ]
 
 

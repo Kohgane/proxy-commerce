@@ -1133,3 +1133,241 @@ def _register_api_routes(app):
         except Exception as exc:
             logger.warning("공개 API 마진 계산 오류: %s", exc)
             return jsonify({"ok": False, "error": "계산 중 오류가 발생했습니다."}), 500
+
+
+# ---------------------------------------------------------------------------
+# Phase 135: Personal Access Token 관리
+# ---------------------------------------------------------------------------
+
+@bp.get("/me/tokens")
+def personal_tokens():
+    """Personal Access Token 관리 페이지 (Phase 135)."""
+    from flask import session as _session
+    user_id = _session.get("user_id", "dev")
+
+    tokens = []
+    try:
+        from src.auth.personal_tokens import list_tokens
+        tokens = list_tokens(user_id)
+    except Exception as exc:
+        logger.warning("토큰 목록 조회 실패: %s", exc)
+
+    return render_template(
+        "personal_tokens.html",
+        page="me",
+        tokens=tokens,
+        valid_scopes=["collect.write", "catalog.read", "markets.write"],
+    )
+
+
+@bp.post("/me/tokens/generate")
+def personal_tokens_generate():
+    """새 Personal Access Token 발급 (Phase 135).
+
+    Request body: {"scopes": ["collect.write", ...], "expires_days": 365}
+    Response: {"ok": true, "raw_token": "tok_...", "expires_at": "..."}
+    주의: raw_token은 1회만 반환됨.
+    """
+    from flask import session as _session
+    user_id = _session.get("user_id", "dev")
+
+    data = request.get_json(force=True, silent=True) or {}
+    scopes = data.get("scopes") or ["collect.write"]
+    expires_days = int(data.get("expires_days", 365))
+
+    try:
+        from src.auth.personal_tokens import generate_token
+        result = generate_token(user_id=user_id, scopes=scopes, expires_days=expires_days)
+        return jsonify({"ok": True, **result})
+    except Exception as exc:
+        logger.warning("토큰 발급 실패: %s", exc)
+        return jsonify({"ok": False, "error": "토큰 발급 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/me/tokens/revoke")
+def personal_tokens_revoke():
+    """Personal Access Token 회수 (Phase 135).
+
+    Request body: {"token_hash": "..."}
+    Response: {"ok": true}
+    """
+    from flask import session as _session
+    user_id = _session.get("user_id", "dev")
+
+    data = request.get_json(force=True, silent=True) or {}
+    token_hash = (data.get("token_hash") or "").strip()
+    if not token_hash:
+        return jsonify({"ok": False, "error": "token_hash가 필요합니다."}), 400
+
+    try:
+        from src.auth.personal_tokens import revoke_token
+        ok = revoke_token(token_hash=token_hash, user_id=user_id)
+        return jsonify({"ok": ok})
+    except Exception as exc:
+        logger.warning("토큰 회수 실패: %s", exc)
+        return jsonify({"ok": False, "error": "토큰 회수 중 오류가 발생했습니다."}), 500
+
+
+# ---------------------------------------------------------------------------
+# Phase 135: 북마클릿
+# ---------------------------------------------------------------------------
+
+@bp.get("/bookmarklet")
+def bookmarklet():
+    """북마클릿 설치 페이지 (Phase 135)."""
+    from flask import session as _session
+    server_url = os.getenv("APP_BASE_URL", "https://kohganepercentiii.com")
+
+    # 사용자 토큰 힌트
+    user_id = _session.get("user_id", "dev")
+
+    return render_template(
+        "bookmarklet.html",
+        page="bookmarklet",
+        server_url=server_url,
+        user_id=user_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 135: Discovery 봇
+# ---------------------------------------------------------------------------
+
+@bp.get("/discovery")
+def discovery():
+    """Discovery 후보 목록 페이지 (Phase 135)."""
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+
+    try:
+        from src.discovery.scout import DiscoveryScout
+        scout = DiscoveryScout()
+        candidates = scout.get_candidates(status=request.args.get("status") or "pending")
+    except Exception as exc:
+        logger.warning("Discovery 후보 조회 실패: %s", exc)
+        candidates = []
+
+    return render_template(
+        "discovery.html",
+        page="discovery",
+        candidates=candidates,
+        status_filter=request.args.get("status", "pending"),
+    )
+
+
+@bp.post("/discovery/approve")
+def discovery_approve():
+    """Discovery 후보 도메인 승인 (Phase 135).
+
+    Request body: {"domain": "example.com"}
+    Response: {"ok": true}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    domain = (data.get("domain") or "").strip().lower()
+    if not domain:
+        return jsonify({"ok": False, "error": "domain이 필요합니다."}), 400
+
+    try:
+        from src.discovery.scout import DiscoveryScout
+        ok = DiscoveryScout().approve(domain)
+        return jsonify({"ok": ok})
+    except Exception as exc:
+        logger.warning("Discovery 승인 실패: %s", exc)
+        return jsonify({"ok": False, "error": "승인 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/discovery/reject")
+def discovery_reject():
+    """Discovery 후보 도메인 거부 (Phase 135).
+
+    Request body: {"domain": "example.com"}
+    Response: {"ok": true}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    domain = (data.get("domain") or "").strip().lower()
+    if not domain:
+        return jsonify({"ok": False, "error": "domain이 필요합니다."}), 400
+
+    try:
+        from src.discovery.scout import DiscoveryScout
+        ok = DiscoveryScout().reject(domain)
+        return jsonify({"ok": ok})
+    except Exception as exc:
+        logger.warning("Discovery 거부 실패: %s", exc)
+        return jsonify({"ok": False, "error": "거부 중 오류가 발생했습니다."}), 500
+
+
+@bp.get("/discovery/keywords")
+def discovery_keywords():
+    """Discovery 키워드 관리 페이지 (Phase 135)."""
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+
+    try:
+        from src.discovery.scout import DiscoveryScout
+        keywords = DiscoveryScout().get_keywords()
+    except Exception as exc:
+        logger.warning("키워드 목록 조회 실패: %s", exc)
+        keywords = []
+
+    return render_template(
+        "discovery_keywords.html",
+        page="discovery",
+        keywords=keywords,
+    )
+
+
+@bp.post("/discovery/keywords/add")
+def discovery_keywords_add():
+    """키워드 추가 (Phase 135).
+
+    Request body: {"keyword": "yoga wear brand"}
+    Response: {"ok": true}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    keyword = (data.get("keyword") or "").strip()
+    if not keyword:
+        return jsonify({"ok": False, "error": "keyword가 필요합니다."}), 400
+
+    try:
+        from src.discovery.scout import DiscoveryScout
+        ok = DiscoveryScout().add_keyword(keyword)
+        return jsonify({"ok": ok})
+    except Exception as exc:
+        logger.warning("키워드 추가 실패: %s", exc)
+        return jsonify({"ok": False, "error": "키워드 추가 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/discovery/keywords/remove")
+def discovery_keywords_remove():
+    """키워드 삭제 (Phase 135).
+
+    Request body: {"keyword": "yoga wear brand"}
+    Response: {"ok": true}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    keyword = (data.get("keyword") or "").strip()
+    if not keyword:
+        return jsonify({"ok": False, "error": "keyword가 필요합니다."}), 400
+
+    try:
+        from src.discovery.scout import DiscoveryScout
+        ok = DiscoveryScout().remove_keyword(keyword)
+        return jsonify({"ok": ok})
+    except Exception as exc:
+        logger.warning("키워드 삭제 실패: %s", exc)
+        return jsonify({"ok": False, "error": "키워드 삭제 중 오류가 발생했습니다."}), 500
+
+
+# ---------------------------------------------------------------------------
+# Phase 135: collect/preview/<id> + /cron/discovery
+# ---------------------------------------------------------------------------
+
+@bp.get("/collect/preview/<product_id>")
+def collect_preview_by_id(product_id: str):
+    """수집된 상품 미리보기 (product_id로 조회)."""
+    return jsonify({
+        "ok": True,
+        "product_id": product_id,
+        "message": "상품 미리보기 (Sheets catalog 조회)",
+    })
