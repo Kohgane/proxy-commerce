@@ -128,6 +128,7 @@
 | Phase 133 | Resend 이메일 어댑터 + TrackingMore 운송장 추적 + 카카오/구글/네이버 로그인 + 셀러 가입 흐름 | #PR | 2026-05-05 |
 | Phase 134 | AI 카피라이터 본 구현 + 다채널 고객 메시징 허브(8 채널, locale 라우팅) + AI 예산 가드 + 캐시 | #PR | 2026-05-05 |
 | Phase 135 | 범용 수집기(UniversalScraper) + 브랜드 어댑터(Marketstudio/Pleasures/Yoshida-PORTER) + 크롬 확장 본 구현(MV3) + 북마클릿 + 벌크 수집 API + Discovery 봇 + Personal Access Token | #PR | 2026-05-06 |
+| Phase 135.1 | Hotfix — /seller/me/tokens 페이지 등록 + 크롬 확장 icons/*.png 4개 생성 | #PR | 2026-05-06 |
 
 ## 📋 다음 큐
 
