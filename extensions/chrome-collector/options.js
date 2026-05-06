@@ -36,7 +36,12 @@ toggleToken.addEventListener("click", () => {
 // 서버 URL 변경시 토큰 발급 링크 갱신
 serverUrlInput.addEventListener("input", () => {
   const server = serverUrlInput.value.trim() || "https://kohganepercentiii.com";
-  getTokenLink.href = server + "/seller/me/tokens";
+  try {
+    const url = new URL("/seller/me/tokens", server);
+    getTokenLink.href = url.href;
+  } catch (_) {
+    getTokenLink.href = "https://kohganepercentiii.com/seller/me/tokens";
+  }
 });
 
 // 저장

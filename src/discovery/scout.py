@@ -138,8 +138,15 @@ def _search_reddit(keyword: str) -> list:
             for post in posts:
                 post_data = post.get("data", {})
                 url = post_data.get("url", "")
-                if url and not url.startswith("https://www.reddit.com"):
-                    urls.append(url)
+                if url:
+                    try:
+                        from urllib.parse import urlparse as _urlparse
+                        parsed = _urlparse(url)
+                        # Reddit 내부 링크는 제외, 외부 링크만 수집
+                        if parsed.netloc and parsed.netloc not in ("www.reddit.com", "reddit.com", "i.redd.it", "v.redd.it"):
+                            urls.append(url)
+                    except Exception:
+                        pass
             time.sleep(1)  # Reddit rate limit 준수
     except Exception as exc:
         logger.debug("Reddit 검색 실패 (%s): %s", keyword, exc)

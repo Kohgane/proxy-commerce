@@ -36,10 +36,10 @@ class TestUtils:
         assert _extract_domain("https://localhost/path") is None
 
     def test_known_platforms_contains_amazon(self):
-        assert "amazon.com" in _KNOWN_PLATFORMS
+        assert any(p == "amazon.com" for p in _KNOWN_PLATFORMS)
 
     def test_known_platforms_contains_instagram(self):
-        assert "instagram.com" in _KNOWN_PLATFORMS
+        assert any(p == "instagram.com" for p in _KNOWN_PLATFORMS)
 
     def test_get_keywords_from_env_empty(self):
         with patch.dict(os.environ, {"DISCOVERY_KEYWORDS": ""}):

@@ -21,23 +21,23 @@ class TestCollectorDispatcher:
 
     def test_supported_domains_includes_aloyoga(self):
         domains = self.dispatcher.supported_domains()
-        assert "aloyoga.com" in domains
+        assert any(d == "aloyoga.com" for d in domains)
 
     def test_supported_domains_includes_lululemon(self):
         domains = self.dispatcher.supported_domains()
-        assert "lululemon.com" in domains
+        assert any(d == "lululemon.com" for d in domains)
 
     def test_supported_domains_includes_marketstudio(self):
         domains = self.dispatcher.supported_domains()
-        assert "marketstudio.com" in domains
+        assert any(d == "marketstudio.com" for d in domains)
 
     def test_supported_domains_includes_pleasuresnow(self):
         domains = self.dispatcher.supported_domains()
-        assert "pleasuresnow.com" in domains
+        assert any(d == "pleasuresnow.com" for d in domains)
 
     def test_supported_domains_includes_yoshidakaban(self):
         domains = self.dispatcher.supported_domains()
-        assert "yoshidakaban.com" in domains
+        assert any(d == "yoshidakaban.com" for d in domains)
 
     def test_no_shein_in_supported_domains(self):
         """Shein은 수집 대상에서 제외됨."""

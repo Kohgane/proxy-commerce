@@ -98,12 +98,14 @@ function buildBookmarkletCode(token) {
 }
 
 function updateBookmarklet() {
-  const token = document.getElementById('tokenInput').value.trim();
-  if (!token) {
+  const rawToken = document.getElementById('tokenInput').value.trim();
+  if (!rawToken) {
     alert('토큰을 입력해주세요.');
     return;
   }
-  const code = buildBookmarkletCode(token);
+  // 토큰 값을 JSON-encode하여 특수 문자가 JS 코드에 삽입되지 않도록 처리
+  const safeToken = JSON.stringify(rawToken).slice(1, -1);
+  const code = buildBookmarkletCode(safeToken);
   document.getElementById('bookmarkletLink').href = code;
   document.getElementById('bookmarkletCode').textContent = code;
 }
