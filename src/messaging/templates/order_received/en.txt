@@ -1,0 +1,13 @@
+Hi {name},
+
+Your order has been received! 🛍️
+
+Order ID: {order_id}
+Amount: ₩{total_krw}
+Date: {placed_at}
+
+We'll process your order right away.
+Feel free to contact us with any questions.
+
+Kohgane Multishop
+{shop_url}

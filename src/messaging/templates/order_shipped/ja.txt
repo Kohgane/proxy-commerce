@@ -1,0 +1,13 @@
+{name}様、
+
+商品の発送が開始されました！🚚
+
+注文番号: {order_id}
+配送会社: {courier_name}
+追跡番号: {tracking_no}
+お届け予定: {eta_date}
+
+配送追跡: {tracking_url}
+
+コガネマルチショップより
+{shop_url}

@@ -89,6 +89,32 @@ def get_or_create_worksheet(sheet, name: str, headers: Optional[List[str]] = Non
         return ws
 
 
+def get_worksheet(name: str, headers: Optional[List[str]] = None) -> Optional[gspread.Worksheet]:
+    """기본 Spreadsheet에서 워크시트 반환 (GOOGLE_SHEET_ID 사용).
+
+    워크시트가 없으면 AUTO_BOOTSTRAP_SHEETS=1 시 자동 생성.
+    키 미설정 시 None 반환 (graceful).
+
+    Args:
+        name: 워크시트 이름
+        headers: 신규 생성 시 첫 행 헤더
+
+    Returns:
+        gspread Worksheet 인스턴스 또는 None
+    """
+    sheet_id = os.getenv("GOOGLE_SHEET_ID")
+    if not sheet_id:
+        logger.debug("GOOGLE_SHEET_ID 미설정 — 워크시트 '%s' 건너뜀", name)
+        return None
+    try:
+        sh = open_sheet_object(sheet_id)
+        return get_or_create_worksheet(sh, name, headers=headers)
+    except Exception as exc:
+        logger.debug("워크시트 '%s' 접근 실패: %s", name, exc)
+        return None
+
+
+
 def diagnose_sheets_connection() -> Dict[str, Any]:
     """Google Sheets 연결을 단계별로 진단하고 상세 결과를 반환한다.
 

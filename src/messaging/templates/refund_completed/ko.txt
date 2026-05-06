@@ -1,0 +1,13 @@
+안녕하세요 {name}님,
+
+환불이 완료되었습니다. ✅
+
+주문번호: {order_id}
+환불금액: {refund_amount}원
+환불수단: {refund_method}
+처리일시: {refund_date}
+
+3~5 영업일 내 계좌/카드로 입금됩니다.
+
+코가네멀티샵 드림
+{shop_url}

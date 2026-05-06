@@ -1,0 +1,13 @@
+亲爱的{name}，
+
+您的订单已发货！🚚
+
+订单编号: {order_id}
+快递公司: {courier_name}
+快递单号: {tracking_no}
+预计到达: {eta_date}
+
+物流追踪: {tracking_url}
+
+Kohgane多功能商店
+{shop_url}

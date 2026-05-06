@@ -1,9 +1,6 @@
 """src/notifications/email_resend.py — Resend 이메일 발송 (Phase 133).
 
-SendGrid 대체. POST https://api.resend.com/emails
-- Authorization: Bearer {RESEND_API_KEY}
-- 키 미설정 시 noop + 로그
-- ADAPTER_DRY_RUN=1 시 외부 호출 차단
+ADAPTER_DRY_RUN=1 또는 RESEND_API_KEY 미설정 시 silently noop.
 """
 from __future__ import annotations
 
@@ -11,88 +8,80 @@ import logging
 import os
 from typing import Optional
 
-import requests
-
 logger = logging.getLogger(__name__)
-
-DEFAULT_FROM = "noreply@kohganepercentiii.com"
 
 
 def send_email(
-    to: "str | list[str]",
+    to: str,
     subject: str,
     html: str,
-    text: Optional[str] = None,
     from_email: Optional[str] = None,
-    reply_to: Optional[str] = None,
-) -> dict:
-    """Resend로 이메일 발송.
+    text: Optional[str] = None,
+) -> bool:
+    """Resend API로 이메일 발송.
 
     Args:
-        to: 수신자 이메일 (문자열 또는 목록)
+        to: 수신자 이메일 주소
         subject: 제목
         html: HTML 본문
-        text: 텍스트 대체 본문 (선택)
-        from_email: 발신자 이메일 (미설정 시 RESEND_FROM_EMAIL 또는 기본값)
-        reply_to: 회신 이메일 (선택)
+        from_email: 발신자 (기본값: RESEND_FROM_EMAIL env)
+        text: 텍스트 본문 (선택)
 
     Returns:
-        {"sent": True, "id": "..."} 또는 {"sent": False, "reason": "..."}
+        발송 성공 시 True
     """
+    if os.getenv("ADAPTER_DRY_RUN", "0") == "1":
+        logger.info("ADAPTER_DRY_RUN=1 — 이메일 전송 차단: to=%s subject=%s", to, subject)
+        return False
+
     api_key = os.getenv("RESEND_API_KEY")
     if not api_key:
-        logger.warning("RESEND_API_KEY 미설정 — 이메일 발송 건너뜀 (to=%s)", to)
-        return {"sent": False, "reason": "RESEND_API_KEY 미설정"}
+        logger.debug("RESEND_API_KEY 미설정 — 이메일 비활성")
+        return False
 
-    if os.getenv("ADAPTER_DRY_RUN") == "1":
-        logger.info("ADAPTER_DRY_RUN=1 — Resend 이메일 차단 (to=%s, subject=%s)", to, subject)
-        return {"sent": False, "_dry_run": True, "to": to, "subject": subject}
+    sender = from_email or os.getenv("RESEND_FROM_EMAIL", "noreply@kohganepercentiii.com")
 
     payload: dict = {
-        "from": from_email or os.getenv("RESEND_FROM_EMAIL") or DEFAULT_FROM,
-        "to": to if isinstance(to, list) else [to],
+        "from": sender,
+        "to": [to],
         "subject": subject,
         "html": html,
     }
     if text:
         payload["text"] = text
-    if reply_to:
-        payload["reply_to"] = reply_to
 
     try:
-        r = requests.post(
+        import requests
+        resp = requests.post(
             "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json=payload,
-            headers={"Authorization": f"Bearer {api_key}"},
             timeout=10,
         )
-        r.raise_for_status()
-        return {"sent": True, "id": r.json().get("id")}
-    except requests.HTTPError as exc:
-        logger.warning("Resend 이메일 발송 실패 (HTTP %s): %s", exc.response.status_code, exc)
-        return {"sent": False, "reason": f"HTTP {exc.response.status_code}"}
+        if resp.ok:
+            msg_id = resp.json().get("id", "")
+            logger.info("이메일 발송 성공: to=%s id=%s", to, msg_id)
+            return True
+        logger.warning("이메일 발송 실패 HTTP %s: %s", resp.status_code, resp.text[:200])
+        return False
     except Exception as exc:
-        logger.warning("Resend 이메일 발송 오류: %s", exc)
-        return {"sent": False, "reason": "이메일 발송 중 오류가 발생했습니다."}
+        logger.warning("이메일 발송 오류: %s", exc)
+        return False
 
 
-def health_check() -> dict:
-    """API 키 유효성 light ping (도메인 정보 GET).
+def send_admin_email(subject: str, html: str) -> bool:
+    """운영자(ADMIN_EMAILS)에게 이메일 발송.
 
-    Returns:
-        {"status": "ok", "domains": N} 또는 {"status": "missing"|"fail", ...}
+    ADMIN_EMAILS: 쉼표로 구분된 이메일 목록
     """
-    api_key = os.getenv("RESEND_API_KEY")
-    if not api_key:
-        return {"status": "missing", "hint": "RESEND_API_KEY 환경변수 등록 필요"}
-    try:
-        r = requests.get(
-            "https://api.resend.com/domains",
-            headers={"Authorization": f"Bearer {api_key}"},
-            timeout=5,
-        )
-        if r.status_code == 200:
-            return {"status": "ok", "domains": len(r.json().get("data", []))}
-        return {"status": "fail", "code": r.status_code}
-    except Exception as exc:
-        return {"status": "fail", "error": "Resend 헬스 체크 오류"}
+    admin_emails_raw = os.getenv("ADMIN_EMAILS", "")
+    if not admin_emails_raw:
+        logger.debug("ADMIN_EMAILS 미설정 — 운영자 이메일 비활성")
+        return False
+
+    admin_emails = [e.strip() for e in admin_emails_raw.split(",") if e.strip()]
+    ok = False
+    for email in admin_emails:
+        if send_email(email, subject, html):
+            ok = True
+    return ok

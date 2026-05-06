@@ -853,6 +853,144 @@ def markets_sync():
         return jsonify({"error": "동기화 중 오류가 발생했습니다."}), 500
 
 
+# ---------------------------------------------------------------------------
+# Phase 134: AI 카피라이터 엔드포인트
+# ---------------------------------------------------------------------------
+
+@bp.post("/collect/ai-copy")
+def collect_ai_copy():
+    """AI 카피 생성 (Phase 134).
+
+    Request body: {
+        "title": str,
+        "description": str,
+        "brand": str,
+        "marketplace": str,
+        "source_lang": str,
+        "variants": int,
+        "price_krw": int,
+    }
+    Response: {"ok": true, "results": [...]}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    title = (data.get("title") or "").strip()
+    if not title:
+        return jsonify({"ok": False, "error": "상품명이 필요합니다."}), 400
+
+    from src.ai.budget import BudgetExceededError
+    try:
+        from src.ai.copywriter import AICopywriter, CopyRequest
+
+        req = CopyRequest(
+            title=title,
+            description=data.get("description", ""),
+            brand=data.get("brand"),
+            marketplace=data.get("marketplace"),
+            source_lang=data.get("source_lang", "en"),
+            price_krw=int(data["price_krw"]) if data.get("price_krw") else None,
+            variants=max(1, min(int(data.get("variants", 1)), 5)),
+        )
+        writer = AICopywriter()
+        results = writer.generate(req)
+        return jsonify({"ok": True, "results": [r.to_dict() for r in results]})
+    except BudgetExceededError as exc:
+        return jsonify({"ok": False, "error": "AI 월 예산을 초과했습니다.", "budget": exc.summary}), 402
+    except Exception as exc:
+        logger.warning("AI 카피 생성 오류: %s", exc)
+        return jsonify({"ok": False, "error": "AI 카피 생성 중 오류가 발생했습니다."}), 500
+
+
+@bp.get("/ai-budget")
+def ai_budget():
+    """AI 예산 현황 JSON (Phase 134)."""
+    try:
+        from src.ai.budget import BudgetGuard
+        guard = BudgetGuard()
+        return jsonify({"ok": True, "budget": guard.summary()})
+    except Exception as exc:
+        logger.warning("AI 예산 조회 오류: %s", exc)
+        return jsonify({"ok": False, "error": "예산 조회 중 오류가 발생했습니다."}), 500
+
+
+# ---------------------------------------------------------------------------
+# Phase 134: 다채널 메시징 엔드포인트
+# ---------------------------------------------------------------------------
+
+@bp.get("/messaging")
+def messaging():
+    """다채널 메시징 페이지 (Phase 134)."""
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+
+    try:
+        from src.messaging.router import MessageRouter
+        router = MessageRouter()
+        channels_status = router.channels_status()
+        log = router._log.recent(50)
+    except Exception as exc:
+        logger.warning("메시징 상태 로드 실패: %s", exc)
+        channels_status = []
+        log = []
+
+    events = [
+        "order_received", "payment_confirmed", "order_shipped",
+        "order_delivered", "refund_requested", "refund_completed",
+        "out_of_stock", "cs_auto_reply",
+    ]
+    locales = ["ko", "ja", "en", "zh-CN"]
+
+    return render_template(
+        "messaging.html",
+        page="messaging",
+        channels_status=channels_status,
+        log=log,
+        events=events,
+        locales=locales,
+    )
+
+
+@bp.post("/messaging/test")
+def messaging_test():
+    """테스트 메시지 발송 (Phase 134).
+
+    Request body: {"channel": str, "locale": str, "event": str}
+    Response: {"ok": true, "result": {...}}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    channel = (data.get("channel") or "").strip()
+    locale = (data.get("locale") or "ko").strip()
+    event = (data.get("event") or "order_received").strip()
+
+    try:
+        from src.messaging.router import MessageRouter
+        router = MessageRouter()
+        result = router.test_send(channel, locale, event, {})
+        # Sanitize result: only expose safe fields to external response
+        safe_result = {
+            "sent": result.get("sent", False),
+            "channel": result.get("channel", ""),
+            "fallback": result.get("fallback"),
+        }
+        return jsonify({"ok": True, "result": safe_result})
+    except Exception as exc:
+        logger.warning("테스트 메시지 오류: %s", exc)
+        return jsonify({"ok": False, "error": "테스트 메시지 발송 중 오류가 발생했습니다."}), 500
+
+
+@bp.get("/messaging/log")
+def messaging_log():
+    """메시지 발송 로그 JSON (Phase 134)."""
+    n = request.args.get("n", 50, type=int)
+    try:
+        from src.messaging.router import MessageLog
+        log = MessageLog()
+        rows = log.recent(n)
+        return jsonify({"ok": True, "log": rows})
+    except Exception as exc:
+        logger.warning("메시지 로그 조회 오류: %s", exc)
+        return jsonify({"ok": False, "error": "로그 조회 중 오류가 발생했습니다."}), 500
+
+
 @bp.get("/health")
 def health():
     """셀러 콘솔 헬스체크."""

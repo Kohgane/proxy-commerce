@@ -39,7 +39,7 @@ def test_api_category_enum():
 
 
 def test_api_registry_has_new_keys():
-    """신규 24개 항목에 필수 키 포함 여부 (Phase 133: resend/trackingmore 교체)."""
+    """신규 32개 항목에 필수 키 포함 여부 (Phase 134 갱신)."""
     from src.utils.env_catalog import API_REGISTRY
     names = {k.name for k in API_REGISTRY}
     required = {
@@ -52,6 +52,9 @@ def test_api_registry_has_new_keys():
         "trackingmore",
         "shopify", "woocommerce",
         "exchange_rate", "pexels", "unsplash",
+        # Phase 134 신규
+        "kakao_alimtalk", "line_notify", "line_messaging",
+        "whatsapp", "wechat", "twilio_sms", "aligo_sms", "discord_webhook",
     }
     missing = required - names
     assert not missing, f"누락된 키: {missing}"
