@@ -49,6 +49,11 @@
 
 ## 트러블슈팅
 
+### "확장 프로그램을 로드하지 못함. icons/16.png 없음"
+GitHub에서 최신 리포 ZIP을 다시 다운로드하세요.  
+`extensions/chrome-collector/icons/` 디렉터리(16.png, 32.png, 48.png, 128.png)가 포함된 버전이 필요합니다.  
+→ 확장 삭제 → 새 폴더로 재설치.
+
 ### "토큰이 설정되지 않았습니다" 오류
 → 옵션 페이지에서 Personal Access Token 입력
 
