@@ -1,0 +1,103 @@
+{% extends "_base.html" %}
+{% block title %}가격 변동 이력{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="mb-1">📜 가격 변동 이력</h4>
+    <small class="text-muted">자동/수동 가격 변경 이력을 조회하고 롤백하세요.</small>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="/seller/pricing/rules" class="btn btn-outline-primary btn-sm">← 룰 관리</a>
+  </div>
+</div>
+
+<!-- 필터 -->
+<form class="row g-2 mb-4" method="get">
+  <div class="col-md-3">
+    <input type="text" class="form-control form-control-sm" name="sku" value="{{ filters.sku }}" placeholder="SKU 필터">
+  </div>
+  <div class="col-md-3">
+    <input type="date" class="form-control form-control-sm" name="date_from" value="{{ filters.date_from }}" placeholder="시작일">
+  </div>
+  <div class="col-md-3">
+    <input type="date" class="form-control form-control-sm" name="date_to" value="{{ filters.date_to }}" placeholder="종료일">
+  </div>
+  <div class="col-md-3">
+    <button type="submit" class="btn btn-primary btn-sm">🔍 조회</button>
+    <a href="/seller/pricing/history" class="btn btn-outline-secondary btn-sm">초기화</a>
+  </div>
+</form>
+
+{% if items %}
+<div class="table-responsive">
+  <table class="table table-sm table-hover">
+    <thead class="table-dark">
+      <tr>
+        <th>적용 시각</th>
+        <th>SKU</th>
+        <th>이전 가격</th>
+        <th>변경 가격</th>
+        <th>변동</th>
+        <th>적용 룰</th>
+        <th>적용자</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for item in items %}
+    <tr {% if item.rolled_back == 'True' %}class="table-secondary"{% endif %}>
+      <td class="small">{{ item.applied_at[:19] if item.applied_at else '-' }}</td>
+      <td><code>{{ item.sku }}</code></td>
+      <td>{{ "{:,}".format(item.old_price_krw | int) }}원</td>
+      <td class="fw-bold">{{ "{:,}".format(item.new_price_krw | int) }}원</td>
+      <td>
+        {% set delta = item.delta_pct | float %}
+        {% if delta > 0 %}
+          <span class="text-danger">▲ {{ "%.1f" | format(delta) }}%</span>
+        {% elif delta < 0 %}
+          <span class="text-success">▼ {{ "%.1f" | format(delta | abs) }}%</span>
+        {% else %}
+          <span class="text-muted">0%</span>
+        {% endif %}
+      </td>
+      <td class="small">{{ item.rules_applied or '-' }}</td>
+      <td class="small text-muted">{{ item.applied_by or '-' }}</td>
+      <td>
+        {% if item.rolled_back == 'True' %}
+          <span class="badge bg-secondary">롤백됨</span>
+        {% elif item.rules_applied != 'rollback' %}
+          <button class="btn btn-outline-warning btn-sm"
+                  onclick="rollback('{{ item.id }}', '{{ item.sku }}', {{ item.old_price_krw }})">
+            ↩ 롤백
+          </button>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="text-center py-5 text-muted">
+  <div style="font-size: 3rem">📜</div>
+  <p class="mt-2">가격 변동 이력이 없습니다.</p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function rollback(historyId, sku, oldPrice) {
+  if (!confirm(`SKU "${sku}"를 ${oldPrice.toLocaleString()}원으로 롤백할까요?`)) return;
+  const r = await fetch(`/seller/pricing/history/${historyId}/rollback`, {method:'POST'});
+  const d = await r.json();
+  if (d.ok) {
+    alert('롤백 완료');
+    location.reload();
+  } else {
+    alert('롤백 실패: ' + d.error);
+  }
+}
+</script>
+{% endblock %}

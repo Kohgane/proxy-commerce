@@ -1421,3 +1421,224 @@ def collect_preview_by_id(item_id: str):
         item=item,
         extra=extra,
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 136: 자동 가격 조정 룰 관리 + 이력 + cron
+# ---------------------------------------------------------------------------
+
+def _get_pricing_rule_store():
+    try:
+        from src.pricing.rule import PricingRuleStore
+        return PricingRuleStore()
+    except Exception as exc:
+        logger.warning("PricingRuleStore 로드 실패: %s", exc)
+        return None
+
+
+@bp.get("/pricing/rules")
+def pricing_rules():
+    """가격 정책 룰 관리 페이지 (Phase 136)."""
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+
+    store = _get_pricing_rule_store()
+    rules = []
+    if store:
+        try:
+            rules = [r.to_dict() for r in store.list_all()]
+        except Exception as exc:
+            logger.warning("룰 목록 로드 실패: %s", exc)
+
+    dry_run_active = os.getenv("PRICING_DRY_RUN", "1") == "1"
+
+    return render_template(
+        "pricing_rules.html",
+        page="pricing_rules",
+        rules=rules,
+        dry_run_active=dry_run_active,
+    )
+
+
+@bp.post("/pricing/rules")
+def pricing_rules_create():
+    """가격 룰 신규 생성 (Phase 136).
+
+    Request body: 룰 파라미터 (JSON)
+    Response: {"ok": true, "rule": {...}}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    if not data.get("name"):
+        return jsonify({"ok": False, "error": "룰 이름이 필요합니다."}), 400
+
+    store = _get_pricing_rule_store()
+    if store is None:
+        return jsonify({"ok": False, "error": "가격 엔진 준비 중입니다."}), 503
+
+    try:
+        from src.pricing.rule import PricingRule
+        rule = PricingRule.from_dict(data)
+        rule = store.create(rule)
+        return jsonify({"ok": True, "rule": rule.to_dict()}), 201
+    except Exception as exc:
+        logger.warning("룰 생성 실패: %s", exc)
+        return jsonify({"ok": False, "error": "룰 생성 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/pricing/rules/<rule_id>/edit")
+def pricing_rules_edit(rule_id: str):
+    """가격 룰 수정 (Phase 136)."""
+    data = request.get_json(force=True, silent=True) or {}
+    store = _get_pricing_rule_store()
+    if store is None:
+        return jsonify({"ok": False, "error": "가격 엔진 준비 중입니다."}), 503
+
+    rule = store.get(rule_id)
+    if not rule:
+        return jsonify({"ok": False, "error": "룰을 찾을 수 없습니다."}), 404
+
+    try:
+        from src.pricing.rule import PricingRule
+        data["rule_id"] = rule_id
+        updated_rule = PricingRule.from_dict({**rule.to_dict(), **data})
+        ok = store.update(updated_rule)
+        return jsonify({"ok": ok, "rule": updated_rule.to_dict()})
+    except Exception as exc:
+        logger.warning("룰 수정 실패: %s", exc)
+        return jsonify({"ok": False, "error": "룰 수정 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/pricing/rules/<rule_id>/delete")
+def pricing_rules_delete(rule_id: str):
+    """가격 룰 삭제 (Phase 136)."""
+    store = _get_pricing_rule_store()
+    if store is None:
+        return jsonify({"ok": False, "error": "가격 엔진 준비 중입니다."}), 503
+
+    ok = store.delete(rule_id)
+    if not ok:
+        return jsonify({"ok": False, "error": "룰을 찾을 수 없습니다."}), 404
+    return jsonify({"ok": True})
+
+
+@bp.post("/pricing/rules/<rule_id>/toggle")
+def pricing_rules_toggle(rule_id: str):
+    """가격 룰 활성/비활성 토글 (Phase 136)."""
+    store = _get_pricing_rule_store()
+    if store is None:
+        return jsonify({"ok": False, "error": "가격 엔진 준비 중입니다."}), 503
+
+    new_state = store.toggle(rule_id)
+    if new_state is None:
+        return jsonify({"ok": False, "error": "룰을 찾을 수 없습니다."}), 404
+    return jsonify({"ok": True, "enabled": new_state})
+
+
+@bp.post("/pricing/rules/reorder")
+def pricing_rules_reorder():
+    """룰 우선순위 재정렬 (Phase 136).
+
+    Request body: {"ordered_ids": ["rule_id_1", "rule_id_2", ...]}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    ordered_ids = data.get("ordered_ids") or []
+    if not ordered_ids:
+        return jsonify({"ok": False, "error": "ordered_ids가 필요합니다."}), 400
+
+    store = _get_pricing_rule_store()
+    if store is None:
+        return jsonify({"ok": False, "error": "가격 엔진 준비 중입니다."}), 503
+
+    try:
+        store.reorder(ordered_ids)
+        return jsonify({"ok": True})
+    except Exception as exc:
+        logger.warning("룰 재정렬 실패: %s", exc)
+        return jsonify({"ok": False, "error": "재정렬 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/pricing/simulate")
+def pricing_simulate():
+    """가격 시뮬레이션 (dry_run=True) — 영향 SKU 미리보기 (Phase 136).
+
+    Response: {"ok": true, "results": {...}}
+    """
+    try:
+        from src.pricing.engine import PricingEngine
+        engine = PricingEngine()
+        results = engine.evaluate(dry_run=True)
+        return jsonify({"ok": True, "results": results})
+    except Exception as exc:
+        logger.warning("가격 시뮬레이션 오류: %s", exc)
+        return jsonify({"ok": False, "error": "시뮬레이션 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/pricing/run-now")
+def pricing_run_now():
+    """가격 즉시 실행 (Phase 136).
+
+    Request body: {"dry_run": true|false}
+    Response: {"ok": true, "results": {...}}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    dry_run = data.get("dry_run", True)
+
+    try:
+        from src.pricing.engine import PricingEngine
+        engine = PricingEngine()
+        results = engine.evaluate(dry_run=bool(dry_run))
+        return jsonify({"ok": True, "results": results})
+    except Exception as exc:
+        logger.warning("가격 즉시 실행 오류: %s", exc)
+        return jsonify({"ok": False, "error": "실행 중 오류가 발생했습니다."}), 500
+
+
+@bp.get("/pricing/history")
+def pricing_history():
+    """가격 변동 이력 페이지 (Phase 136)."""
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+
+    sku = request.args.get("sku", "").strip()
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
+
+    items = []
+    try:
+        from src.pricing.history_store import PriceHistoryStore
+        store = PriceHistoryStore()
+        items = store.list_history(
+            sku=sku or None,
+            date_from=date_from or None,
+            date_to=date_to or None,
+        )
+    except Exception as exc:
+        logger.warning("가격 이력 조회 실패: %s", exc)
+
+    return render_template(
+        "pricing_history.html",
+        page="pricing_rules",
+        items=items,
+        filters={"sku": sku, "date_from": date_from, "date_to": date_to},
+    )
+
+
+@bp.post("/pricing/history/<history_id>/rollback")
+def pricing_history_rollback(history_id: str):
+    """가격 롤백 (Phase 136) — 이전 가격으로 복원.
+
+    Response: {"ok": true, "new_history": {...}}
+    """
+    from flask import session as _session
+    applied_by = _session.get("user_email") or _session.get("user_id") or "manual"
+
+    try:
+        from src.pricing.history_store import PriceHistoryStore
+        store = PriceHistoryStore()
+        new_item = store.rollback(history_id, applied_by=applied_by)
+        if not new_item:
+            return jsonify({"ok": False, "error": "이력을 찾을 수 없습니다."}), 404
+        return jsonify({"ok": True, "new_history": new_item})
+    except Exception as exc:
+        logger.warning("가격 롤백 오류: %s", exc)
+        return jsonify({"ok": False, "error": "롤백 중 오류가 발생했습니다."}), 500

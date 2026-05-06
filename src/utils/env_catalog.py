@@ -350,6 +350,21 @@ API_REGISTRY: list = [
         category=ApiCategory.UTILITY,
         optional=True,
     ),
+    # ── Phase 136: 자동 가격 조정 엔진 설정 ─────────────────────────────
+    ApiKey(
+        name="pricing_engine",
+        env_vars=[
+            "PRICING_MIN_MARGIN_PCT",
+            "PRICING_FX_TRIGGER_PCT",
+            "PRICING_DRY_RUN",
+            "PRICING_NOTIFY_THRESHOLD_PCT",
+            "PRICING_CRON_HOUR",
+        ],
+        purpose="자동 가격 조정 엔진 설정 (미설정 시 안전한 기본값 사용)",
+        docs_url="https://kohganepercentiii.com/docs/operations/PRICING.md",
+        category=ApiCategory.UTILITY,
+        optional=True,
+    ),
 ]
 
 

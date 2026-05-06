@@ -160,6 +160,79 @@ class CoupangAdapter(MarketAdapter):
             logger.warning("쿠팡 upload_product 실패: %s", exc)
             return {"status": "error", "detail": str(exc)}
 
+    def update_price(self, sku: str, new_price_krw: int) -> dict:
+        """쿠팡 상품 가격 업데이트 (Phase 136).
+
+        쿠팡 윙 OpenAPI:
+            PUT /v2/providers/seller_api/apis/api/v1/marketplace/seller-products/{vendorItemId}/prices
+
+        SKU로 vendorItemId를 조회한 뒤 가격을 업데이트합니다.
+
+        Args:
+            sku: 상품 SKU
+            new_price_krw: 새 판매가 (원)
+
+        Returns:
+            {"updated": True|False, "reason": str, ...}
+        """
+        if not _api_active():
+            return {"updated": False, "reason": "missing_credentials"}
+
+        if _dry_run():
+            logger.info("ADAPTER_DRY_RUN=1 — 쿠팡 update_price 차단: %s → %d원", sku, new_price_krw)
+            return {"updated": False, "_dry_run": True, "sku": sku, "price": new_price_krw}
+
+        vendor_id = os.getenv("COUPANG_VENDOR_ID", "")
+        # Step 1: SKU로 vendorItemId 조회
+        vendor_item_id = self._find_vendor_item_id(sku, vendor_id)
+        if not vendor_item_id:
+            logger.warning("쿠팡 vendorItemId 조회 실패: sku=%s", sku)
+            return {"updated": False, "reason": "vendor_item_not_found", "sku": sku}
+
+        # Step 2: 가격 업데이트
+        url_path = (
+            f"/v2/providers/seller_api/apis/api/v1/marketplace/"
+            f"seller-products/{vendor_item_id}/prices"
+        )
+        try:
+            import requests
+            headers = _hmac_sign("PUT", url_path)
+            resp = requests.put(
+                f"{_BASE_URL}{url_path}",
+                headers=headers,
+                json={"vendorItemId": vendor_item_id, "originalPrice": new_price_krw, "salePrice": new_price_krw},
+                timeout=10,
+            )
+            if resp.status_code in (200, 201):
+                logger.info("쿠팡 가격 업데이트 성공: %s → %d원", sku, new_price_krw)
+                return {"updated": True, "sku": sku, "price": new_price_krw, "marketplace_response": resp.json()}
+            logger.warning("쿠팡 가격 업데이트 실패 HTTP %s: %s", resp.status_code, resp.text[:200])
+            return {"updated": False, "reason": f"HTTP {resp.status_code}", "sku": sku}
+        except Exception as exc:
+            logger.warning("쿠팡 update_price 오류 (%s): %s", sku, exc)
+            return {"updated": False, "reason": str(exc), "sku": sku}
+
+    def _find_vendor_item_id(self, sku: str, vendor_id: str) -> Optional[str]:
+        """SKU로 쿠팡 vendorItemId 조회."""
+        url_path = "/v2/providers/seller_api/apis/api/v1/marketplace/seller-products"
+        try:
+            import requests
+            headers = _hmac_sign("GET", url_path)
+            resp = requests.get(
+                f"{_BASE_URL}{url_path}",
+                headers=headers,
+                params={"vendorId": vendor_id, "sellerProductCode": sku},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                for product in resp.json().get("data", []):
+                    for item in product.get("items", []):
+                        if item.get("sellerProductItemCode") == sku or product.get("sellerProductCode") == sku:
+                            return str(item.get("vendorItemId", ""))
+        except Exception as exc:
+            logger.warning("쿠팡 vendorItemId 조회 오류: %s", exc)
+        return None
+
     def fetch_orders_unified(self, since=None, until=None) -> list:
         """쿠팡 주문 조회 → UnifiedOrder 목록.
 
