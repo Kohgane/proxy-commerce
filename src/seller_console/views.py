@@ -20,6 +20,7 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 from typing import Any, Dict
@@ -1360,14 +1361,63 @@ def discovery_keywords_remove():
 
 
 # ---------------------------------------------------------------------------
-# Phase 135: collect/preview/<id> + /cron/discovery
+# Phase 135.2: /seller/collect/history + /seller/collect/preview/<id>
 # ---------------------------------------------------------------------------
 
-@bp.get("/collect/preview/<product_id>")
-def collect_preview_by_id(product_id: str):
-    """수집된 상품 미리보기 (product_id로 조회)."""
-    return jsonify({
-        "ok": True,
-        "product_id": product_id,
-        "message": "상품 미리보기 (Sheets catalog 조회)",
-    })
+@bp.get("/collect/history")
+def collect_history():
+    """수집 이력 페이지 (Phase 135.2)."""
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+
+    domain = request.args.get("domain", "").strip()
+    source = request.args.get("source", "").strip()
+    days = int(request.args.get("days", "30"))
+
+    items = []
+    summ = {"total": 0, "today": 0, "domains": 0, "by_source": {"extension": 0, "bookmarklet": 0, "manual": 0, "bulk": 0}}
+    domains = []
+    try:
+        from .collect_history_store import list_items, summary, distinct_domains
+        items = list_items(domain=domain, source=source, days=days)
+        summ = summary(days=days)
+        domains = distinct_domains()
+    except Exception as exc:
+        logger.warning("수집 이력 조회 실패: %s", exc)
+
+    return render_template(
+        "collect_history.html",
+        page="collect_history",
+        items=items,
+        summary=summ,
+        domains=domains,
+        filters={"domain": domain, "source": source, "days": days},
+    )
+
+
+@bp.get("/collect/preview/<item_id>")
+def collect_preview_by_id(item_id: str):
+    """수집된 상품 미리보기 (Phase 135.2)."""
+    from flask import abort
+    item = None
+    try:
+        from .collect_history_store import get as history_get
+        item = history_get(item_id)
+    except Exception as exc:
+        logger.warning("미리보기 조회 실패: %s", exc)
+
+    if not item:
+        abort(404)
+
+    extra = {}
+    try:
+        extra = json.loads(item.get("extra_json") or "{}")
+    except Exception:
+        pass
+
+    return render_template(
+        "collect_preview.html",
+        page="collect_history",
+        item=item,
+        extra=extra,
+    )

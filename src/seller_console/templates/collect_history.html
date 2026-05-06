@@ -1,0 +1,172 @@
+{% extends "_base.html" %}
+{% block title %}수집 이력{% endblock %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex align-items-center mb-4">
+    <div>
+      <h1 class="h3 mb-0">📦 수집 이력</h1>
+      <small class="text-muted">크롬 확장, 북마클릿, 수동 입력으로 수집된 상품 기록</small>
+    </div>
+  </div>
+
+  <!-- 요약 카드 -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="card text-center">
+        <div class="card-body py-3">
+          <div class="fs-4 fw-bold text-primary">{{ summary.total }}</div>
+          <div class="small text-muted">총 수집</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card text-center">
+        <div class="card-body py-3">
+          <div class="fs-4 fw-bold text-success">{{ summary.today }}</div>
+          <div class="small text-muted">오늘</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card text-center">
+        <div class="card-body py-3">
+          <div class="fs-4 fw-bold text-info">{{ summary.domains }}</div>
+          <div class="small text-muted">도메인</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card text-center">
+        <div class="card-body py-3">
+          <div class="small">
+            확장 <strong>{{ summary.by_source.extension }}</strong> /
+            북마클릿 <strong>{{ summary.by_source.bookmarklet }}</strong>
+          </div>
+          <div class="small text-muted">
+            수동 <strong>{{ summary.by_source.manual }}</strong> /
+            벌크 <strong>{{ summary.by_source.bulk }}</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 필터 -->
+  <div class="card mb-4">
+    <div class="card-body">
+      <form method="get" class="row g-2 align-items-end">
+        <div class="col-sm-4">
+          <label class="form-label small text-muted mb-1">도메인</label>
+          <select name="domain" class="form-select form-select-sm">
+            <option value="">전체 도메인</option>
+            {% for d in domains %}
+            <option value="{{ d }}" {% if d == filters.domain %}selected{% endif %}>{{ d }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-sm-3">
+          <label class="form-label small text-muted mb-1">수집 경로</label>
+          <select name="source" class="form-select form-select-sm">
+            <option value="">전체 경로</option>
+            <option value="extension" {% if filters.source == "extension" %}selected{% endif %}>크롬 확장</option>
+            <option value="bookmarklet" {% if filters.source == "bookmarklet" %}selected{% endif %}>북마클릿</option>
+            <option value="manual" {% if filters.source == "manual" %}selected{% endif %}>수동</option>
+            <option value="bulk" {% if filters.source == "bulk" %}selected{% endif %}>벌크</option>
+          </select>
+        </div>
+        <div class="col-sm-2">
+          <label class="form-label small text-muted mb-1">기간</label>
+          <select name="days" class="form-select form-select-sm">
+            <option value="7" {% if filters.days == 7 %}selected{% endif %}>최근 7일</option>
+            <option value="30" {% if filters.days == 30 %}selected{% endif %}>최근 30일</option>
+            <option value="90" {% if filters.days == 90 %}selected{% endif %}>최근 90일</option>
+          </select>
+        </div>
+        <div class="col-sm-2">
+          <button type="submit" class="btn btn-primary btn-sm w-100">필터 적용</button>
+        </div>
+        {% if filters.domain or filters.source %}
+        <div class="col-sm-1">
+          <a href="/seller/collect/history" class="btn btn-outline-secondary btn-sm w-100">초기화</a>
+        </div>
+        {% endif %}
+      </form>
+    </div>
+  </div>
+
+  <!-- 목록 -->
+  {% if items %}
+  <div class="card">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th class="ps-3">수집 시각</th>
+              <th>경로</th>
+              <th>도메인</th>
+              <th>제목</th>
+              <th>가격</th>
+              <th>상태</th>
+              <th>미리보기</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for it in items %}
+            <tr>
+              <td class="ps-3 text-muted small">{{ it.collected_at[:16] if it.collected_at else "-" }}</td>
+              <td>
+                {% if it.source in ("extension", "chrome_extension") %}
+                  <span class="badge bg-primary">확장</span>
+                {% elif it.source == "bookmarklet" %}
+                  <span class="badge bg-secondary">북마클릿</span>
+                {% elif it.source == "manual" %}
+                  <span class="badge bg-info text-dark">수동</span>
+                {% elif it.source in ("bulk", "bulk_collect") %}
+                  <span class="badge bg-warning text-dark">벌크</span>
+                {% else %}
+                  <span class="badge bg-light text-dark">{{ it.source or "-" }}</span>
+                {% endif %}
+              </td>
+              <td class="text-muted small">{{ it.domain or "-" }}</td>
+              <td>
+                <a href="{{ it.url }}" target="_blank" rel="noopener noreferrer"
+                   class="text-decoration-none text-dark">
+                  {{ it.title or "(제목 없음)" }}
+                </a>
+              </td>
+              <td class="text-muted small">
+                {% if it.price %}{{ it.price }} {{ it.currency }}{% else %}-{% endif %}
+              </td>
+              <td>
+                {% if it.status == "ok" %}
+                  <span class="badge bg-success">✓</span>
+                {% else %}
+                  <span class="badge bg-danger">{{ it.status }}</span>
+                {% endif %}
+              </td>
+              <td>
+                <a href="/seller/collect/preview/{{ it.id }}"
+                   class="btn btn-outline-secondary btn-sm py-0">→</a>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="card">
+    <div class="card-body text-center py-5">
+      <p class="text-muted mb-3">아직 수집 이력이 없습니다.</p>
+      <p class="small text-muted">
+        <a href="/seller/collect" class="text-decoration-none">🔍 수동 수집기</a>나
+        <a href="/seller/bookmarklet" class="text-decoration-none">📌 북마클릿</a> 또는
+        크롬 확장을 사용해 상품을 수집해보세요.
+      </p>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

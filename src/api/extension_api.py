@@ -127,9 +127,29 @@ def collect_from_extension():
         return jsonify({"ok": False, "error": "url 필드가 필요합니다."}), 400
 
     title = payload.get("title") or ""
-    source = "chrome_extension"
+    source = "extension"
 
     product_id = _upsert_catalog(payload, source=source)
+
+    # 수집 이력 기록
+    try:
+        from src.seller_console.collect_history_store import append as history_append
+        item_id = history_append(
+            source=source,
+            url=url,
+            title=title,
+            image=payload.get("image", ""),
+            price=payload.get("price", ""),
+            currency=payload.get("currency", "USD"),
+            status="ok",
+            extra={"jsonld": payload.get("jsonld", []),
+                   "description": payload.get("description", "")},
+        )
+        preview_url = f"/seller/collect/preview/{item_id}"
+    except Exception as exc:
+        logger.warning("수집 이력 기록 실패: %s", exc)
+        item_id = product_id
+        preview_url = f"/seller/collect/preview/{product_id}"
 
     # 텔레그램 알림
     msg = f"🛒 [확장] {title or url} 수집됨 (by {user.get('user_id', '?')})"
@@ -140,7 +160,7 @@ def collect_from_extension():
     return jsonify({
         "ok": True,
         "product_id": product_id,
-        "preview_url": f"/seller/collect/preview/{product_id}",
+        "preview_url": preview_url,
         "title": title,
     })
 

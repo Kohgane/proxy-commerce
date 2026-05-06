@@ -71,6 +71,7 @@ function extractProductMeta() {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === "extractMeta") {
     sendResponse(extractProductMeta());
+    return true;
   }
   return false;
 });
