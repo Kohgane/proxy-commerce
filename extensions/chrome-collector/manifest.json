@@ -3,7 +3,7 @@
   "name": "코가네 퍼센티 수집기",
   "version": "1.0.0",
   "description": "쇼핑 페이지를 한 클릭에 코가네 퍼센티로 수집",
-  "permissions": ["activeTab", "storage", "contextMenus", "notifications"],
+  "permissions": ["activeTab", "storage", "contextMenus", "notifications", "scripting"],
   "host_permissions": ["<all_urls>"],
   "icons": {
     "16": "icons/16.png",

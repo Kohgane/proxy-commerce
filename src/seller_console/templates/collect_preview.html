@@ -1,0 +1,75 @@
+{% extends "_base.html" %}
+{% block title %}상품 미리보기 — {{ item.title or item.id }}{% endblock %}
+{% block content %}
+<div class="container-fluid py-4" style="max-width:860px;">
+  <div class="mb-3">
+    <a href="/seller/collect/history" class="text-decoration-none text-muted small">← 수집 이력으로 돌아가기</a>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-body">
+      <div class="row g-4">
+        {% if item.image_url %}
+        <div class="col-md-4 text-center">
+          <img src="{{ item.image_url }}" alt="{{ item.title }}"
+               class="img-fluid rounded" style="max-height:260px;object-fit:contain;">
+        </div>
+        {% endif %}
+        <div class="col-md-{% if item.image_url %}8{% else %}12{% endif %}">
+          <h2 class="h4 mb-2">{{ item.title or "(제목 없음)" }}</h2>
+          <p class="text-muted small mb-1">
+            🌐 <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.domain }}</a>
+          </p>
+          {% if item.price %}
+          <p class="fs-5 fw-bold mb-2">{{ item.price }} {{ item.currency }}</p>
+          {% endif %}
+          <div class="d-flex gap-2 flex-wrap mb-3">
+            {% if item.source in ("extension", "chrome_extension") %}
+              <span class="badge bg-primary">크롬 확장</span>
+            {% elif item.source == "bookmarklet" %}
+              <span class="badge bg-secondary">북마클릿</span>
+            {% elif item.source == "manual" %}
+              <span class="badge bg-info text-dark">수동</span>
+            {% elif item.source in ("bulk", "bulk_collect") %}
+              <span class="badge bg-warning text-dark">벌크</span>
+            {% else %}
+              <span class="badge bg-light text-dark">{{ item.source or "-" }}</span>
+            {% endif %}
+            <span class="badge bg-{% if item.status == 'ok' %}success{% else %}danger{% endif %}">
+              {{ item.status }}
+            </span>
+            <span class="text-muted small">{{ item.collected_at[:16] if item.collected_at else "" }}</span>
+          </div>
+
+          <div class="d-flex gap-2 flex-wrap">
+            <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer"
+               class="btn btn-outline-secondary btn-sm">🔗 원본 페이지</a>
+            <button class="btn btn-primary btn-sm" disabled title="Phase 136 예정">
+              ✨ AI 카피 생성
+            </button>
+            <button class="btn btn-success btn-sm" disabled title="마켓 등록 — Phase 136 예정">
+              📤 마켓에 등록
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RAW 메타 JSON -->
+  {% if extra %}
+  <div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span class="small fw-semibold">🔍 수집된 원본 메타</span>
+      <button class="btn btn-outline-secondary btn-sm py-0"
+              onclick="this.closest('.card').querySelector('pre').classList.toggle('d-none')">
+        펼치기/접기
+      </button>
+    </div>
+    <div class="card-body p-0">
+      <pre class="p-3 mb-0 small d-none" style="max-height:300px;overflow:auto;">{{ extra | tojson(indent=2) }}</pre>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

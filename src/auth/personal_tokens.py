@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 
 _SHEET_ID = os.getenv("GOOGLE_SHEET_ID")
 _WS_NAME = "personal_tokens"
-_TOKEN_PREFIX = "tok_"
+_TOKEN_PREFIX = "kgp_"
+_TOKEN_PREFIX_LEGACY = "tok_"  # Phase 135 이전 발급분 호환
 _TOKEN_LENGTH = 64  # 총 길이 (prefix 포함)
 _DEFAULT_EXPIRY_DAYS = 365
 _VALID_SCOPES = {"collect.write", "catalog.read", "markets.write"}
@@ -74,7 +75,7 @@ def generate_token(user_id: str, scopes: list = None, expires_days: int = _DEFAU
     if not scopes:
         scopes = ["collect.write"]
 
-    # 토큰 생성: tok_ + 60자리 랜덤 hex
+    # 토큰 생성: kgp_ + 60자리 랜덤 hex
     raw_suffix = secrets.token_hex(30)  # 60자
     raw_token = f"{_TOKEN_PREFIX}{raw_suffix}"
     token_hash = _hash_token(raw_token)
@@ -122,7 +123,7 @@ def validate_token(raw_token: str, required_scopes: list = None) -> Optional[dic
         유효한 경우 {user_id, scopes, expires_at}, 없으면 None
     """
     required_scopes = required_scopes or []
-    if not raw_token or not raw_token.startswith(_TOKEN_PREFIX):
+    if not raw_token or not (raw_token.startswith(_TOKEN_PREFIX) or raw_token.startswith(_TOKEN_PREFIX_LEGACY)):
         return None
 
     token_hash = _hash_token(raw_token)

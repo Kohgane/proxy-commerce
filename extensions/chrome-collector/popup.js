@@ -35,32 +35,53 @@ btnCollect.addEventListener("click", async () => {
       throw new Error("현재 탭을 찾을 수 없습니다.");
     }
 
-    // content_script에서 메타 추출
-    const results = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: () => {
-        const getMeta = (prop) => {
-          const el = document.querySelector(`meta[property="${prop}"], meta[name="${prop}"]`);
-          return el ? el.getAttribute("content") || "" : "";
-        };
-        const jsonldScripts = [...document.querySelectorAll('script[type="application/ld+json"]')]
-          .map(s => { try { return JSON.parse(s.innerText || s.textContent || ""); } catch { return null; } })
-          .filter(Boolean);
-        return {
-          url: location.href,
-          title: getMeta("og:title") || document.title || "",
-          image: getMeta("og:image") || "",
-          price: getMeta("product:price:amount") || "",
-          currency: getMeta("product:price:currency") || "USD",
-          description: getMeta("og:description") || getMeta("description") || "",
-          jsonld: jsonldScripts,
-          collected_at: new Date().toISOString()
-        };
+    // 1차 시도: scripting.executeScript (권한 있고 허용된 페이지)
+    let meta;
+    try {
+      if (chrome.scripting && chrome.scripting.executeScript) {
+        const results = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => {
+            const getMeta = (prop) => {
+              const el = document.querySelector(`meta[property="${prop}"], meta[name="${prop}"]`);
+              return el ? el.getAttribute("content") || "" : "";
+            };
+            const jsonldScripts = [...document.querySelectorAll('script[type="application/ld+json"]')]
+              .map(s => { try { return JSON.parse(s.innerText || s.textContent || ""); } catch { return null; } })
+              .filter(Boolean);
+            return {
+              url: location.href,
+              title: getMeta("og:title") || document.title || "",
+              image: getMeta("og:image") || "",
+              price: getMeta("product:price:amount") || "",
+              currency: getMeta("product:price:currency") || "USD",
+              description: getMeta("og:description") || getMeta("description") || "",
+              jsonld: jsonldScripts,
+              collected_at: new Date().toISOString()
+            };
+          }
+        });
+        meta = results[0]?.result;
       }
-    });
+    } catch (e) {
+      console.warn("scripting.executeScript 실패, tabs.sendMessage로 폴백:", e);
+    }
 
-    const meta = results[0]?.result;
-    if (!meta) throw new Error("메타 추출 실패");
+    // 2차 시도: content_script.js의 extractProductMeta() 메시지 패싱 폴백
+    if (!meta) {
+      meta = await new Promise((resolve) => {
+        chrome.tabs.sendMessage(tab.id, { action: "extractMeta" }, (resp) => {
+          if (chrome.runtime.lastError) {
+            console.warn("tabs.sendMessage 실패:", chrome.runtime.lastError.message);
+            resolve(null);
+          } else {
+            resolve(resp);
+          }
+        });
+      });
+    }
+
+    if (!meta) throw new Error("메타 추출 실패 (scripting/messaging 모두)");
 
     // 백그라운드로 전송
     const response = await new Promise((resolve, reject) => {
