@@ -129,12 +129,13 @@
 | Phase 134 | AI 카피라이터 본 구현 + 다채널 고객 메시징 허브(8 채널, locale 라우팅) + AI 예산 가드 + 캐시 | #PR | 2026-05-05 |
 | Phase 135 | 범용 수집기(UniversalScraper) + 브랜드 어댑터(Marketstudio/Pleasures/Yoshida-PORTER) + 크롬 확장 본 구현(MV3) + 북마클릿 + 벌크 수집 API + Discovery 봇 + Personal Access Token | #PR | 2026-05-06 |
 | Phase 135.1 | Hotfix — /seller/me/tokens 페이지 등록 + 크롬 확장 icons/*.png 4개 생성 | #PR | 2026-05-06 |
+| Phase 135.2 | Hotfix — scripting 권한 + collect/history + preview + 토큰 prefix | #PR | 2026-05-06 |
+| Phase 136 | 자동 가격 조정 엔진(룰/시뮬레이션/이력/cron) + 마켓 update_price 본 구현 + /admin/diagnostics + 텔레그램 health 강화 | #PR | 2026-05-06 |
 
 ## 📋 다음 큐
 
 | Phase | 내용 |
 |---|---|
-| Phase 136 | 자동 가격 조정 엔진 (환율 변동/경쟁사 가격/마진 임계값) |
 | Phase 137 | CS 자동응답 (텔레그램 봇) |
 | Phase 138 | 수요 예측 + 재고 알림 |
 | Phase 139 | Amazon PA-API + Rakuten 본 구현 |

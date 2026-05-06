@@ -159,6 +159,71 @@ class SmartStoreAdapter(MarketAdapter):
             logger.warning("스마트스토어 upload_product 실패: %s", exc)
             return {"status": "error", "detail": str(exc)}
 
+    def update_price(self, sku: str, new_price_krw: int) -> dict:
+        """스마트스토어 상품 가격 업데이트 (Phase 136).
+
+        네이버 커머스 API:
+            PUT /external/v2/products/{originProductNo}/sale-price
+
+        Args:
+            sku: 상품 SKU (originProductNo 또는 sellerProductId로 사용)
+            new_price_krw: 새 판매가 (원)
+
+        Returns:
+            {"updated": True|False, "reason": str, ...}
+        """
+        if not _api_active():
+            return {"updated": False, "reason": "missing_credentials"}
+
+        if _dry_run():
+            logger.info("ADAPTER_DRY_RUN=1 — 스마트스토어 update_price 차단: %s → %d원", sku, new_price_krw)
+            return {"updated": False, "_dry_run": True, "sku": sku, "price": new_price_krw}
+
+        token = _get_access_token()
+        if not token:
+            return {"updated": False, "reason": "token_error", "sku": sku}
+
+        # originProductNo 조회
+        origin_no = self._find_origin_product_no(sku, token)
+        if not origin_no:
+            logger.warning("스마트스토어 originProductNo 조회 실패: sku=%s", sku)
+            return {"updated": False, "reason": "product_not_found", "sku": sku}
+
+        try:
+            import requests
+            resp = requests.patch(
+                f"{_NAVER_BASE_URL}/external/v2/products/{origin_no}/sale-price",
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                json={"salePrice": new_price_krw},
+                timeout=10,
+            )
+            if resp.status_code in (200, 204):
+                logger.info("스마트스토어 가격 업데이트 성공: %s → %d원", sku, new_price_krw)
+                return {"updated": True, "sku": sku, "price": new_price_krw}
+            logger.warning("스마트스토어 가격 업데이트 실패 HTTP %s: %s", resp.status_code, resp.text[:200])
+            return {"updated": False, "reason": f"HTTP {resp.status_code}", "sku": sku}
+        except Exception as exc:
+            logger.warning("스마트스토어 update_price 오류 (%s): %s", sku, exc)
+            return {"updated": False, "reason": str(exc), "sku": sku}
+
+    def _find_origin_product_no(self, sku: str, token: str) -> Optional[str]:
+        """SKU로 originProductNo 조회."""
+        try:
+            import requests
+            resp = requests.get(
+                f"{_NAVER_BASE_URL}/external/v2/products",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"sellerCode": sku, "size": 1},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                contents = resp.json().get("contents", [])
+                if contents:
+                    return str(contents[0].get("originProductNo", ""))
+        except Exception as exc:
+            logger.warning("스마트스토어 originProductNo 조회 오류: %s", exc)
+        return None
+
     def fetch_orders_unified(self, since=None, until=None) -> list:
         """스마트스토어 주문 조회 → UnifiedOrder 목록."""
         from src.seller_console.orders.models import (

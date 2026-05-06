@@ -137,6 +137,72 @@ class WooCommerceAdapter(MarketAdapter):
             return "out_of_stock"
         return "active"
 
+    def update_price(self, sku: str, new_price_krw: int) -> dict:
+        """WooCommerce 상품 가격 업데이트 (Phase 136).
+
+        WooCommerce REST API v3:
+            PUT /wp-json/wc/v3/products/{id}
+            body: {"regular_price": "39000", "sale_price": "39000"}
+
+        SKU로 product_id를 조회한 뒤 가격을 업데이트합니다.
+
+        Args:
+            sku: 상품 SKU
+            new_price_krw: 새 판매가 (원)
+
+        Returns:
+            {"updated": True|False, "reason": str, ...}
+        """
+        if not _api_active():
+            return {"updated": False, "reason": "missing_credentials"}
+
+        if _dry_run():
+            logger.info("ADAPTER_DRY_RUN=1 — WooCommerce update_price 차단: %s → %d원", sku, new_price_krw)
+            return {"updated": False, "_dry_run": True, "sku": sku, "price": new_price_krw}
+
+        # Step 1: SKU로 product_id 조회
+        product_id = self._find_product_id_by_sku(sku)
+        if not product_id:
+            logger.warning("WooCommerce product_id 조회 실패: sku=%s", sku)
+            return {"updated": False, "reason": "product_not_found", "sku": sku}
+
+        # Step 2: 가격 업데이트
+        try:
+            import requests
+            price_str = str(new_price_krw)
+            resp = requests.put(
+                f"{_api_url()}/products/{product_id}",
+                auth=_auth(),
+                json={"regular_price": price_str, "sale_price": price_str},
+                timeout=10,
+            )
+            if resp.status_code in (200, 201):
+                logger.info("WooCommerce 가격 업데이트 성공: %s → %d원", sku, new_price_krw)
+                return {"updated": True, "sku": sku, "price": new_price_krw, "product_id": product_id}
+            logger.warning("WooCommerce 가격 업데이트 실패 HTTP %s: %s", resp.status_code, resp.text[:200])
+            return {"updated": False, "reason": f"HTTP {resp.status_code}", "sku": sku}
+        except Exception as exc:
+            logger.warning("WooCommerce update_price 오류 (%s): %s", sku, exc)
+            return {"updated": False, "reason": str(exc), "sku": sku}
+
+    def _find_product_id_by_sku(self, sku: str) -> Optional[int]:
+        """SKU로 WooCommerce product_id 조회."""
+        try:
+            import requests
+            resp = requests.get(
+                f"{_api_url()}/products",
+                auth=_auth(),
+                params={"sku": sku, "per_page": 1},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                products = resp.json()
+                if products:
+                    return products[0].get("id")
+        except Exception as exc:
+            logger.warning("WooCommerce product_id 조회 오류: %s", exc)
+        return None
+
     def fetch_orders(self, since: Optional[datetime] = None) -> list:
         """WooCommerce 주문 목록 조회. 페이지네이션 자동 처리.
 

@@ -310,3 +310,478 @@ def admin_inventory():
         "</table>"
     )
     return _render("재고 현황", body)
+
+
+# ---------------------------------------------------------------------------
+# Phase 136: /admin/diagnostics — 운영 진단 대시보드
+# ---------------------------------------------------------------------------
+
+@admin_panel_bp.route("/diagnostics")
+def admin_diagnostics():
+    """운영 진단 대시보드 (Phase 136).
+
+    admin 역할 필수.
+    """
+    from flask import session, jsonify as _jsonify
+
+    # require_role("admin") 패턴 (auth Blueprint 데코레이터 사용 불가이므로 직접 구현)
+    user_role = session.get("user_role")
+    if not session.get("user_id"):
+        from flask import redirect, url_for
+        return redirect("/auth/login?next=/admin/diagnostics")
+    if user_role != "admin":
+        return _render("접근 거부", "<div class='alert alert-danger'>관리자 권한이 필요합니다.</div>"), 403
+
+    # 섹션 1: 환경변수 매트릭스
+    env_matrix = _build_env_matrix()
+
+    # 섹션 2: OAuth 콜백 URL
+    base_url = _get_base_url()
+    oauth_urls = {
+        "Google": f"{base_url}/auth/google/callback",
+        "Kakao": f"{base_url}/auth/kakao/callback",
+        "Naver": f"{base_url}/auth/naver/callback",
+    }
+
+    # 섹션 3: 메신저 채널 health
+    messenger_health = _build_messenger_health()
+
+    # 섹션 4: 마켓 어댑터 health
+    market_health = _build_market_health()
+
+    # 섹션 5: 가격 엔진 상태
+    pricing_status = _build_pricing_status()
+
+    # 섹션 6: 최근 24시간 알림 로그
+    message_log = _build_message_log()
+
+    from flask import render_template_string
+    from markupsafe import Markup
+
+    return render_template_string(
+        _DIAGNOSTICS_TEMPLATE,
+        env_matrix=env_matrix,
+        oauth_urls=oauth_urls,
+        messenger_health=messenger_health,
+        market_health=market_health,
+        pricing_status=pricing_status,
+        message_log=message_log,
+        base_url=base_url,
+    )
+
+
+@admin_panel_bp.post("/diagnostics/test-telegram")
+def diagnostics_test_telegram():
+    """텔레그램 테스트 메시지 발송 (Phase 136)."""
+    try:
+        from src.notifications.telegram import send_telegram
+        ok = send_telegram("🔔 /admin/diagnostics 테스트 메시지입니다.", urgency="info")
+        return {"ok": ok, "message": "전송 성공" if ok else "전송 실패 (로그 확인)"}
+    except Exception as exc:
+        logger.warning("텔레그램 테스트 메시지 오류: %s", exc)
+        return {"ok": False, "error": "테스트 메시지 발송 중 오류가 발생했습니다."}, 500
+
+
+@admin_panel_bp.get("/diagnostics/telegram-health")
+def diagnostics_telegram_health():
+    """텔레그램 health_check JSON (Phase 136)."""
+    from src.notifications.telegram import health_check
+    from flask import jsonify
+    return jsonify(health_check())
+
+
+# ── 진단 헬퍼 함수 ────────────────────────────────────────────────────────
+
+def _get_base_url() -> str:
+    import os
+    return os.getenv("APP_BASE_URL", "https://kohganepercentiii.com").rstrip("/")
+
+
+def _build_env_matrix() -> list:
+    """환경변수 카탈로그 상태 매트릭스."""
+    try:
+        from src.utils.env_catalog import API_REGISTRY
+        result = []
+        for api in API_REGISTRY:
+            cat = api.category
+            result.append({
+                "name": api.name,
+                "purpose": api.purpose,
+                "category": cat.value if hasattr(cat, "value") else str(cat),
+                "status": api.status,
+                "env_vars": api.env_vars,
+                "docs_url": getattr(api, "docs_url", ""),
+            })
+        return result
+    except Exception as exc:
+        logger.warning("env_matrix 로드 실패: %s", exc)
+        return []
+
+
+def _build_messenger_health() -> dict:
+    """메신저 채널 health 상태."""
+    health = {}
+
+    # 텔레그램
+    try:
+        from src.notifications.telegram import health_check
+        health["telegram"] = health_check()
+    except Exception as exc:
+        health["telegram"] = {"status": "error", "error": str(exc)}
+
+    # Resend
+    import os
+    health["resend"] = {
+        "status": "active" if os.getenv("RESEND_API_KEY") else "missing",
+        "hint": "RESEND_API_KEY 미설정" if not os.getenv("RESEND_API_KEY") else None,
+    }
+
+    # 카카오 알림톡
+    health["kakao_alimtalk"] = {
+        "status": "active" if os.getenv("KAKAO_ALIMTALK_API_KEY") else "missing",
+    }
+
+    # LINE
+    health["line"] = {
+        "status": "active" if (os.getenv("LINE_NOTIFY_TOKEN") or os.getenv("LINE_CHANNEL_ACCESS_TOKEN")) else "missing",
+    }
+
+    # WhatsApp
+    health["whatsapp"] = {
+        "status": "active" if os.getenv("META_WHATSAPP_TOKEN") else "missing",
+    }
+
+    # Discord
+    health["discord"] = {
+        "status": "active" if os.getenv("DISCORD_WEBHOOK_URL") else "missing",
+    }
+
+    return health
+
+
+def _build_market_health() -> dict:
+    """마켓 어댑터 health 상태."""
+    health = {}
+    adapter_map = {
+        "coupang": ("src.seller_console.market_adapters.coupang_adapter", "CoupangAdapter"),
+        "smartstore": ("src.seller_console.market_adapters.smartstore_adapter", "SmartStoreAdapter"),
+        "11st": ("src.seller_console.market_adapters.eleven_adapter", "ElevenAdapter"),
+        "woocommerce": ("src.seller_console.market_adapters.woocommerce_adapter", "WooCommerceAdapter"),
+    }
+    for name, (module_path, class_name) in adapter_map.items():
+        try:
+            import importlib
+            module = importlib.import_module(module_path)
+            adapter_cls = getattr(module, class_name)
+            adapter = adapter_cls()
+            health[name] = adapter.health_check()
+        except Exception as exc:
+            health[name] = {"status": "error", "detail": str(exc)}
+    return health
+
+
+def _build_pricing_status() -> dict:
+    """가격 엔진 상태."""
+    import os
+    try:
+        from src.pricing.rule import PricingRuleStore
+        store = PricingRuleStore()
+        rules = store.active_sorted()
+        active_count = len(rules)
+        last_run = None
+        for rule in sorted(rules, key=lambda r: r.last_run_at or "", reverse=True):
+            if rule.last_run_at:
+                last_run = rule.last_run_at
+                break
+    except Exception:
+        active_count = 0
+        last_run = None
+
+    return {
+        "active_rules": active_count,
+        "dry_run": os.getenv("PRICING_DRY_RUN", "1") == "1",
+        "cron_hour": os.getenv("PRICING_CRON_HOUR", "3"),
+        "last_run_at": last_run,
+        "min_margin_pct": os.getenv("PRICING_MIN_MARGIN_PCT", "15"),
+        "fx_trigger_pct": os.getenv("PRICING_FX_TRIGGER_PCT", "3"),
+    }
+
+
+def _build_message_log() -> dict:
+    """최근 24시간 메시지 로그 요약."""
+    try:
+        from src.messaging.router import MessageLog
+        log = MessageLog()
+        rows = log.recent(200)
+        from datetime import datetime, timedelta, timezone
+        cutoff = datetime.now(tz=timezone.utc) - timedelta(hours=24)
+        recent = []
+        for row in rows:
+            ts = row.get("sent_at") or row.get("created_at") or ""
+            try:
+                dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    from datetime import timezone as _tz
+                    dt = dt.replace(tzinfo=_tz.utc)
+                if dt >= cutoff:
+                    recent.append(row)
+            except Exception:
+                recent.append(row)
+
+        by_channel: dict = {}
+        errors: dict = {}
+        for row in recent:
+            ch = row.get("channel", "unknown")
+            by_channel.setdefault(ch, {"sent": 0, "failed": 0})
+            if row.get("success") in (True, "True", "1", 1):
+                by_channel[ch]["sent"] += 1
+            else:
+                by_channel[ch]["failed"] += 1
+                err = str(row.get("error") or "알 수 없는 오류")[:80]
+                errors[err] = errors.get(err, 0) + 1
+
+        return {
+            "total": len(recent),
+            "by_channel": by_channel,
+            "top_errors": sorted(errors.items(), key=lambda x: -x[1])[:5],
+        }
+    except Exception as exc:
+        logger.debug("message_log 로드 실패: %s", exc)
+        return {"total": 0, "by_channel": {}, "top_errors": []}
+
+
+# ── 진단 HTML 템플릿 ──────────────────────────────────────────────────────
+
+_DIAGNOSTICS_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>운영 진단 — Admin</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <style>
+    body { background: #f8f9fa; }
+    .sidebar { min-height: 100vh; background: #212529; }
+    .sidebar .nav-link { color: #adb5bd; }
+    .sidebar .nav-link:hover { color: #fff; }
+    .status-ok { color: #198754; }
+    .status-fail { color: #dc3545; }
+    .status-missing { color: #6c757d; }
+    .status-dry_run { color: #0dcaf0; }
+    .copy-btn { cursor: pointer; }
+  </style>
+</head>
+<body>
+<div class="container-fluid">
+<div class="row">
+  <nav class="col-md-2 sidebar p-3">
+    <h5 class="text-white mb-3">🛒 Admin</h5>
+    <ul class="nav flex-column">
+      <li><a class="nav-link" href="/admin/">대시보드</a></li>
+      <li><a class="nav-link text-white fw-bold" href="/admin/diagnostics">🔍 진단</a></li>
+      <li><a class="nav-link" href="/seller/">← 셀러 콘솔</a></li>
+    </ul>
+  </nav>
+  <main class="col-md-10 p-4">
+    <h4 class="mb-4">🔍 운영 진단 대시보드</h4>
+
+    <!-- 섹션 1: 환경변수 매트릭스 -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">📋 섹션 1 — 환경변수 매트릭스</div>
+      <div class="card-body">
+        <div class="row g-2">
+          {% set categories = env_matrix | map(attribute='category') | unique | list %}
+          {% for cat in categories %}
+            <div class="col-md-6 mb-3">
+              <h6 class="text-muted text-uppercase small">{{ cat }}</h6>
+              <table class="table table-sm table-hover mb-0">
+                <tbody>
+                {% for api in env_matrix if api.category == cat %}
+                  <tr>
+                    <td class="w-50">
+                      <span class="fw-semibold">{{ api.name }}</span>
+                      <br><small class="text-muted">{{ api.purpose[:50] }}</small>
+                    </td>
+                    <td>
+                      {% if api.status == 'active' %}
+                        <span class="badge bg-success">✅ 활성</span>
+                      {% else %}
+                        <span class="badge bg-secondary">❌ 누락</span>
+                        {% if api.docs_url %}
+                          <a href="{{ api.docs_url }}" target="_blank" class="ms-1 small">발급 →</a>
+                        {% endif %}
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- 섹션 2: OAuth 콜백 URL -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">🔑 섹션 2 — OAuth 콜백 URL</div>
+      <div class="card-body">
+        <p class="text-muted small mb-3">각 개발자 콘솔에 아래 URL을 정확히 등록하세요.</p>
+        <table class="table table-sm">
+          <thead><tr><th>프로바이더</th><th>콜백 URL</th><th></th></tr></thead>
+          <tbody>
+          {% for provider, url in oauth_urls.items() %}
+            <tr>
+              <td>{{ provider }}</td>
+              <td><code id="cb-{{ loop.index }}">{{ url }}</code></td>
+              <td>
+                <button class="btn btn-outline-secondary btn-sm copy-btn"
+                        onclick="navigator.clipboard.writeText('{{ url }}').then(()=>this.textContent='✅')">
+                  📋 복사
+                </button>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 섹션 3: 메신저 채널 health -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">📡 섹션 3 — 메신저 채널 Health</div>
+      <div class="card-body">
+        <div class="row g-3">
+          {% for channel, info in messenger_health.items() %}
+            <div class="col-md-4">
+              <div class="card h-100">
+                <div class="card-body">
+                  <h6 class="card-title">
+                    {% if info.status == 'ok' or info.status == 'active' %}
+                      <span class="status-ok">✅</span>
+                    {% elif info.status == 'missing' %}
+                      <span class="status-missing">⬜</span>
+                    {% else %}
+                      <span class="status-fail">❌</span>
+                    {% endif %}
+                    {{ channel }}
+                  </h6>
+                  {% if info.status == 'ok' %}
+                    <p class="text-success small mb-1">봇: {{ info.bot or '' }}</p>
+                    {% if info.chat_title %}<p class="text-muted small mb-0">채팅: {{ info.chat_title }}</p>{% endif %}
+                  {% elif info.hint %}
+                    <p class="text-muted small mb-0">{{ info.hint }}</p>
+                  {% elif info.error %}
+                    <p class="text-danger small mb-0">{{ info.error[:80] }}</p>
+                  {% endif %}
+                  {% if channel == 'telegram' %}
+                    <button class="btn btn-outline-primary btn-sm mt-2"
+                            onclick="fetch('/admin/diagnostics/test-telegram',{method:'POST'}).then(r=>r.json()).then(d=>alert(d.message||d.error))">
+                      📨 테스트
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm mt-2"
+                            onclick="fetch('/admin/diagnostics/telegram-health').then(r=>r.json()).then(d=>alert(JSON.stringify(d,null,2)))">
+                      🔄 재진단
+                    </button>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- 섹션 4: 마켓 어댑터 health -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">🏪 섹션 4 — 마켓 어댑터 Health</div>
+      <div class="card-body">
+        <div class="row g-3">
+          {% for market, info in market_health.items() %}
+            <div class="col-md-3">
+              <div class="card h-100">
+                <div class="card-body">
+                  <h6>{% if info.status == 'ok' %}✅{% elif info.status == 'missing' %}⬜{% else %}❌{% endif %} {{ market }}</h6>
+                  <p class="small text-muted mb-0">{{ info.detail or info.status }}</p>
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- 섹션 5: 가격 엔진 상태 -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">💰 섹션 5 — 가격 엔진 상태</div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-2">
+            <div class="text-muted small">활성 룰</div>
+            <div class="fs-4 fw-bold">{{ pricing_status.active_rules }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-muted small">DRY_RUN 모드</div>
+            <div class="fs-5">
+              {% if pricing_status.dry_run %}
+                <span class="badge bg-info">🔵 시뮬레이션 전용</span>
+              {% else %}
+                <span class="badge bg-success">🟢 실제 적용</span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-muted small">마지막 실행</div>
+            <div class="small">{{ pricing_status.last_run_at or '없음' }}</div>
+          </div>
+          <div class="col-md-2">
+            <div class="text-muted small">Cron 시각 (KST)</div>
+            <div>{{ pricing_status.cron_hour }}시</div>
+          </div>
+          <div class="col-md-2">
+            <a href="/seller/pricing/rules" class="btn btn-outline-primary btn-sm">룰 관리 →</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 섹션 6: 최근 24시간 알림 로그 -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">📊 섹션 6 — 최근 24시간 알림 로그</div>
+      <div class="card-body">
+        <p class="text-muted small">총 {{ message_log.total }}건</p>
+        {% if message_log.by_channel %}
+          <table class="table table-sm table-hover">
+            <thead><tr><th>채널</th><th>성공</th><th>실패</th></tr></thead>
+            <tbody>
+            {% for ch, stats in message_log.by_channel.items() %}
+              <tr>
+                <td>{{ ch }}</td>
+                <td class="text-success">{{ stats.sent }}</td>
+                <td class="{% if stats.failed > 0 %}text-danger fw-bold{% endif %}">{{ stats.failed }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="text-muted">로그 없음</p>
+        {% endif %}
+        {% if message_log.top_errors %}
+          <h6 class="mt-3">오류 Top-{{ message_log.top_errors | length }}</h6>
+          <ul class="list-unstyled">
+          {% for err, cnt in message_log.top_errors %}
+            <li class="text-danger small">{{ err }} <span class="badge bg-danger">{{ cnt }}</span></li>
+          {% endfor %}
+          </ul>
+        {% endif %}
+      </div>
+    </div>
+
+  </main>
+</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
+"""

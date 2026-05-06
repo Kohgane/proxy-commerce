@@ -130,6 +130,50 @@ class ElevenAdapter(MarketAdapter):
             logger.warning("11번가 upload_product 실패: %s", exc)
             return {"status": "error", "detail": str(exc)}
 
+    def update_price(self, sku: str, new_price_krw: int) -> dict:
+        """11번가 상품 가격 업데이트 (Phase 136).
+
+        11번가 OpenAPI XML:
+            POST /prodservices/product/{prdCd}/price
+                 body: <PriceRequest><sellprc>{price}</sellprc></PriceRequest>
+
+        Args:
+            sku: 상품 SKU (11번가 prdCd)
+            new_price_krw: 새 판매가 (원)
+
+        Returns:
+            {"updated": True|False, "reason": str, ...}
+        """
+        if not _api_active():
+            return {"updated": False, "reason": "missing_credentials"}
+
+        if _dry_run():
+            logger.info("ADAPTER_DRY_RUN=1 — 11번가 update_price 차단: %s → %d원", sku, new_price_krw)
+            return {"updated": False, "_dry_run": True, "sku": sku, "price": new_price_krw}
+
+        try:
+            import requests
+            xml_body = (
+                f"<?xml version='1.0' encoding='UTF-8'?>"
+                f"<PriceRequest>"
+                f"<sellprc>{new_price_krw}</sellprc>"
+                f"</PriceRequest>"
+            )
+            resp = requests.post(
+                f"{_BASE_URL}/prodservices/product/{sku}/price",
+                headers={**_auth_headers(), "Content-Type": "application/xml; charset=UTF-8"},
+                data=xml_body.encode("utf-8"),
+                timeout=10,
+            )
+            if resp.status_code in (200, 201):
+                logger.info("11번가 가격 업데이트 성공: %s → %d원", sku, new_price_krw)
+                return {"updated": True, "sku": sku, "price": new_price_krw, "marketplace_response": resp.text[:200]}
+            logger.warning("11번가 가격 업데이트 실패 HTTP %s: %s", resp.status_code, resp.text[:200])
+            return {"updated": False, "reason": f"HTTP {resp.status_code}", "sku": sku}
+        except Exception as exc:
+            logger.warning("11번가 update_price 오류 (%s): %s", sku, exc)
+            return {"updated": False, "reason": str(exc), "sku": sku}
+
     def fetch_orders_unified(self, since=None, until=None) -> list:
         """11번가 주문 조회 → UnifiedOrder 목록."""
         from src.seller_console.orders.models import (

@@ -1,0 +1,348 @@
+{% extends "_base.html" %}
+{% block title %}가격 정책 룰 관리{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="mb-1">💰 가격 정책 룰 관리</h4>
+    <small class="text-muted">자동 가격 조정 룰을 설정하고 시뮬레이션하세요.</small>
+  </div>
+  <div class="d-flex gap-2">
+    {% if dry_run_active %}
+      <span class="badge bg-info fs-6">🔵 DRY_RUN 모드 (시뮬레이션 전용)</span>
+    {% else %}
+      <span class="badge bg-success fs-6">🟢 실제 적용 모드</span>
+    {% endif %}
+    <a href="/seller/pricing/history" class="btn btn-outline-secondary btn-sm">📜 변동 이력</a>
+    <button class="btn btn-outline-primary btn-sm" id="btnSimulate">🔍 시뮬레이션</button>
+    <button class="btn btn-warning btn-sm" id="btnRunNow">⚡ 지금 실행</button>
+    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalCreate">+ 새 룰</button>
+  </div>
+</div>
+
+<!-- 룰 목록 -->
+{% if rules %}
+<div id="rulesList">
+  {% for rule in rules %}
+  <div class="card mb-3 rule-card {% if not rule.enabled %}opacity-50{% endif %}"
+       data-rule-id="{{ rule.rule_id }}" draggable="true">
+    <div class="card-body">
+      <div class="d-flex align-items-center gap-3">
+        <span class="text-muted" style="cursor:grab;">⠿</span>
+        <div class="flex-grow-1">
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <span class="fw-bold">{{ rule.name }}</span>
+            <span class="badge bg-secondary">우선순위 {{ rule.priority }}</span>
+            <span class="badge bg-info">{{ rule.scope_type }}</span>
+            <span class="badge bg-primary">{{ rule.action_kind }}</span>
+            {% if rule.dry_run %}<span class="badge bg-warning text-dark">dry_run</span>{% endif %}
+          </div>
+          <small class="text-muted">
+            트리거: {{ rule.triggers | length }}개 조건 |
+            액션값: {{ rule.action_value }}
+            {% if rule.action_floor_krw %} | 최저가: {{ "{:,}".format(rule.action_floor_krw) }}원{% endif %}
+            {% if rule.action_ceiling_krw %} | 최고가: {{ "{:,}".format(rule.action_ceiling_krw) }}원{% endif %}
+          </small>
+          {% if rule.last_run_at %}
+          <br><small class="text-secondary">마지막 실행: {{ rule.last_run_at[:19] }} ({{ rule.last_changed_count }}건 변경)</small>
+          {% endif %}
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-sm {% if rule.enabled %}btn-success{% else %}btn-outline-secondary{% endif %}"
+                  onclick="toggleRule('{{ rule.rule_id }}', this)">
+            {{ '활성' if rule.enabled else '비활성' }}
+          </button>
+          <button class="btn btn-sm btn-outline-primary"
+                  onclick="editRule({{ rule | tojson }})">수정</button>
+          <button class="btn btn-sm btn-outline-danger"
+                  onclick="deleteRule('{{ rule.rule_id }}', '{{ rule.name }}')">삭제</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-5 text-muted">
+  <div style="font-size: 3rem">💰</div>
+  <p class="mt-2">등록된 룰이 없습니다.<br>+ 새 룰 버튼을 클릭하여 첫 가격 정책 룰을 만드세요.</p>
+</div>
+{% endif %}
+
+<!-- 시뮬레이션 결과 -->
+<div id="simulateResult" class="d-none mt-4">
+  <div class="card border-info">
+    <div class="card-header bg-info text-white">🔍 시뮬레이션 결과</div>
+    <div class="card-body" id="simulateResultBody">
+      <div class="spinner-border spinner-border-sm me-2"></div> 평가 중...
+    </div>
+  </div>
+</div>
+
+<!-- 신규 룰 모달 -->
+<div class="modal fade" id="modalCreate" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">➕ 새 가격 정책 룰</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="formCreate">
+          <div class="row g-3">
+            <div class="col-md-8">
+              <label class="form-label">룰 이름 *</label>
+              <input type="text" class="form-control" name="name" required placeholder="예: 최소 마진 15% 가드">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">우선순위</label>
+              <input type="number" class="form-control" name="priority" value="100">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">활성</label>
+              <select class="form-select" name="enabled">
+                <option value="true">활성</option>
+                <option value="false">비활성</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">적용 범위</label>
+              <select class="form-select" name="scope_type" id="scopeType">
+                <option value="all">전체</option>
+                <option value="domain">도메인</option>
+                <option value="category">카테고리</option>
+                <option value="sku_list">특정 SKU</option>
+              </select>
+            </div>
+            <div class="col-md-8" id="scopeValueRow">
+              <label class="form-label">범위 값</label>
+              <input type="text" class="form-control" name="scope_value" placeholder="도메인/카테고리/SKU 목록">
+            </div>
+            <div class="col-12">
+              <label class="form-label">트리거 (JSON 배열)</label>
+              <textarea class="form-control font-monospace" name="triggers" rows="3"
+                        placeholder='[{"kind": "min_margin_pct", "op": "<", "value": 15}]'></textarea>
+              <small class="text-muted">트리거 미설정 시 항상 실행. 예시: min_margin_pct / fx_change_pct / stock_qty / weekday / days_since_listing</small>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">액션 종류</label>
+              <select class="form-select" name="action_kind">
+                <option value="set_margin">set_margin (마진율 재산정)</option>
+                <option value="multiply">multiply (가격 × N)</option>
+                <option value="add">add (가격 + N원)</option>
+                <option value="match_competitor">match_competitor (경쟁사 매칭)</option>
+                <option value="notify_only">notify_only (알림만)</option>
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">액션 값</label>
+              <input type="number" class="form-control" name="action_value" value="0" step="0.01">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">최저가 가드 (원)</label>
+              <input type="number" class="form-control" name="action_floor_krw" placeholder="없음">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">최고가 가드 (원)</label>
+              <input type="number" class="form-control" name="action_ceiling_krw" placeholder="없음">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">변동 알림 임계값 (%)</label>
+              <input type="number" class="form-control" name="notify_threshold_pct" value="10">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">DRY RUN (시뮬레이션만)</label>
+              <select class="form-select" name="dry_run">
+                <option value="true" selected>시뮬레이션만</option>
+                <option value="false">실제 적용</option>
+              </select>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+        <button type="button" class="btn btn-primary" onclick="submitCreate()">생성</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 수정 모달 -->
+<div class="modal fade" id="modalEdit" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">✏️ 룰 수정</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="formEdit">
+          <input type="hidden" name="rule_id" id="editRuleId">
+          <div class="row g-3">
+            <div class="col-md-8">
+              <label class="form-label">룰 이름 *</label>
+              <input type="text" class="form-control" name="name" id="editName" required>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">우선순위</label>
+              <input type="number" class="form-control" name="priority" id="editPriority">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">활성</label>
+              <select class="form-select" name="enabled" id="editEnabled">
+                <option value="true">활성</option>
+                <option value="false">비활성</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">적용 범위</label>
+              <select class="form-select" name="scope_type" id="editScopeType">
+                <option value="all">전체</option>
+                <option value="domain">도메인</option>
+                <option value="category">카테고리</option>
+                <option value="sku_list">특정 SKU</option>
+              </select>
+            </div>
+            <div class="col-md-8">
+              <label class="form-label">범위 값</label>
+              <input type="text" class="form-control" name="scope_value" id="editScopeValue">
+            </div>
+            <div class="col-12">
+              <label class="form-label">트리거 (JSON)</label>
+              <textarea class="form-control font-monospace" name="triggers" id="editTriggers" rows="3"></textarea>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">액션 종류</label>
+              <select class="form-select" name="action_kind" id="editActionKind">
+                <option value="set_margin">set_margin</option>
+                <option value="multiply">multiply</option>
+                <option value="add">add</option>
+                <option value="match_competitor">match_competitor</option>
+                <option value="notify_only">notify_only</option>
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">액션 값</label>
+              <input type="number" class="form-control" name="action_value" id="editActionValue" step="0.01">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">최저가 가드 (원)</label>
+              <input type="number" class="form-control" name="action_floor_krw" id="editFloor">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">최고가 가드 (원)</label>
+              <input type="number" class="form-control" name="action_ceiling_krw" id="editCeiling">
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+        <button type="button" class="btn btn-primary" onclick="submitEdit()">저장</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function toggleRule(ruleId, btn) {
+  const r = await fetch(`/seller/pricing/rules/${ruleId}/toggle`, {method:'POST'});
+  const d = await r.json();
+  if (d.ok) {
+    btn.textContent = d.enabled ? '활성' : '비활성';
+    btn.className = `btn btn-sm ${d.enabled ? 'btn-success' : 'btn-outline-secondary'}`;
+    btn.closest('.rule-card').classList.toggle('opacity-50', !d.enabled);
+  }
+}
+
+async function deleteRule(ruleId, name) {
+  if (!confirm(`룰 "${name}"을 삭제할까요?`)) return;
+  const r = await fetch(`/seller/pricing/rules/${ruleId}/delete`, {method:'POST'});
+  const d = await r.json();
+  if (d.ok) location.reload();
+  else alert('삭제 실패: ' + d.error);
+}
+
+function editRule(rule) {
+  document.getElementById('editRuleId').value = rule.rule_id;
+  document.getElementById('editName').value = rule.name;
+  document.getElementById('editPriority').value = rule.priority;
+  document.getElementById('editEnabled').value = rule.enabled ? 'true' : 'false';
+  document.getElementById('editScopeType').value = rule.scope_type;
+  document.getElementById('editScopeValue').value = rule.scope_value || '';
+  document.getElementById('editTriggers').value = JSON.stringify(rule.triggers || [], null, 2);
+  document.getElementById('editActionKind').value = rule.action_kind;
+  document.getElementById('editActionValue').value = rule.action_value;
+  document.getElementById('editFloor').value = rule.action_floor_krw || '';
+  document.getElementById('editCeiling').value = rule.action_ceiling_krw || '';
+  new bootstrap.Modal(document.getElementById('modalEdit')).show();
+}
+
+async function submitCreate() {
+  const form = document.getElementById('formCreate');
+  const data = Object.fromEntries(new FormData(form));
+  try { data.triggers = JSON.parse(data.triggers || '[]'); } catch { data.triggers = []; }
+  data.enabled = data.enabled === 'true';
+  data.dry_run = data.dry_run === 'true';
+  data.priority = parseInt(data.priority) || 100;
+  data.action_value = data.action_value || '0';
+  const r = await fetch('/seller/pricing/rules', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+  const d = await r.json();
+  if (d.ok) location.reload();
+  else alert('생성 실패: ' + d.error);
+}
+
+async function submitEdit() {
+  const form = document.getElementById('formEdit');
+  const data = Object.fromEntries(new FormData(form));
+  const ruleId = data.rule_id;
+  try { data.triggers = JSON.parse(data.triggers || '[]'); } catch { data.triggers = []; }
+  data.enabled = data.enabled === 'true';
+  data.priority = parseInt(data.priority) || 100;
+  const r = await fetch(`/seller/pricing/rules/${ruleId}/edit`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+  const d = await r.json();
+  if (d.ok) location.reload();
+  else alert('저장 실패: ' + d.error);
+}
+
+document.getElementById('btnSimulate').addEventListener('click', async () => {
+  const el = document.getElementById('simulateResult');
+  const body = document.getElementById('simulateResultBody');
+  el.classList.remove('d-none');
+  body.innerHTML = '<div class="spinner-border spinner-border-sm me-2"></div> 평가 중...';
+  const r = await fetch('/seller/pricing/simulate', {method:'POST'});
+  const d = await r.json();
+  if (!d.ok) { body.innerHTML = `<span class="text-danger">오류: ${d.error}</span>`; return; }
+  const res = d.results;
+  let html = `<div class="row g-3 mb-3">
+    <div class="col-md-3"><div class="text-muted small">평가 SKU</div><div class="fs-4 fw-bold">${res.evaluated}</div></div>
+    <div class="col-md-3"><div class="text-muted small">변경 예정</div><div class="fs-4 fw-bold text-warning">${res.changed}</div></div>
+    <div class="col-md-3"><div class="text-muted small">오류</div><div class="fs-4 fw-bold text-danger">${(res.errors||[]).length}</div></div>
+  </div>`;
+  if (res.details && res.details.length) {
+    html += '<table class="table table-sm"><thead><tr><th>SKU</th><th>현재가</th><th>변경가</th><th>변동</th><th>적용 룰</th></tr></thead><tbody>';
+    for (const d2 of res.details.slice(0,50)) {
+      const arrow = d2.delta_pct >= 0 ? '▲' : '▼';
+      const cls = d2.delta_pct >= 0 ? 'text-danger' : 'text-success';
+      html += `<tr><td>${d2.sku}</td><td>${d2.old.toLocaleString()}원</td><td class="fw-bold">${d2.new.toLocaleString()}원</td><td class="${cls}">${arrow} ${Math.abs(d2.delta_pct).toFixed(1)}%</td><td><small>${(d2.rules||[]).join(', ')}</small></td></tr>`;
+    }
+    html += '</tbody></table>';
+    if (res.details.length > 50) html += `<p class="text-muted small">+ ${res.details.length-50}건 더</p>`;
+  }
+  body.innerHTML = html;
+});
+
+document.getElementById('btnRunNow').addEventListener('click', async () => {
+  const dryRun = !confirm('실제로 가격을 변경할까요?\n취소하면 시뮬레이션(dry_run)으로 실행합니다.');
+  const label = dryRun ? '시뮬레이션' : '실제 적용';
+  if (!dryRun && !confirm(`주의: 마켓에 실제 가격이 변경됩니다.\n계속하시겠습니까?`)) return;
+  const r = await fetch('/seller/pricing/run-now', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({dry_run: dryRun})});
+  const d = await r.json();
+  if (d.ok) alert(`${label} 완료 — ${d.results.changed}건 변경`);
+  else alert('오류: ' + d.error);
+});
+</script>
+{% endblock %}

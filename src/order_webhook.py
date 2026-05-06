@@ -866,6 +866,14 @@ try:
 except Exception as _ext_bp_exc:
     logger.warning("Extension API Blueprint 등록 실패: %s", _ext_bp_exc)
 
+# Phase 136: 자동 재가격 Cron Blueprint 등록 (/cron/reprice)
+try:
+    from .pricing.cron import cron_bp
+    app.register_blueprint(cron_bp)
+    logger.info("재가격 Cron Blueprint 등록 완료 (/cron/reprice)")
+except Exception as _cron_bp_exc:
+    logger.warning("재가격 Cron Blueprint 등록 실패: %s", _cron_bp_exc)
+
 # Phase 132: /shop 블루프린트는 외부 kohganemultishop.org가 진짜 자체몰이므로 기본 비활성.
 # 향후 데모/쇼윈도우 용도로 부활시키려면 ENABLE_INTERNAL_SHOP=1 환경변수 설정.
 if os.getenv("ENABLE_INTERNAL_SHOP", "0") == "1":
