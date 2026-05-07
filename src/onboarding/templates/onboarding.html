@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>처음 오셨나요? | 온보딩</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+</head>
+<body class="bg-light">
+<main class="container py-5" style="max-width:860px;">
+  <h1 class="h3 mb-3">👋 처음 오셨나요?</h1>
+  <p class="text-muted">아래 순서대로 로그인 문제를 해결해 보세요.</p>
+  <div class="card mb-3"><div class="card-body">
+    <h2 class="h5">1) OAuth 로그인 (Google/Kakao/Naver)</h2>
+    <a class="btn btn-primary btn-sm" href="/auth/login">🔐 OAuth 로그인으로 이동</a>
+  </div></div>
+  <div class="card mb-3"><div class="card-body">
+    <h2 class="h5">2) 안 되면 이메일 로그인</h2>
+    <a class="btn btn-outline-secondary btn-sm" href="/auth/magic-link">📧 이메일 로그인</a>
+  </div></div>
+  <div class="card mb-3"><div class="card-body">
+    <h2 class="h5">3) 그래도 안 되면 비상 진입 (운영자만)</h2>
+    <a class="btn btn-warning btn-sm" href="/auth/diagnostic-token/issue?reveal_safe=1&format=html">🆘 비상 진입</a>
+  </div></div>
+  <div class="small text-muted mb-3">
+    트러블슈팅: <a href="/admin/diagnostics">/admin/diagnostics</a>
+  </div>
+</main>
+</body>
+</html>

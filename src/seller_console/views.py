@@ -47,6 +47,13 @@ bp = Blueprint(
 _AUTH_ENABLED = os.getenv("SELLER_CONSOLE_AUTH", "0") == "1"
 
 
+@bp.app_context_processor
+def inject_seller_template_flags():
+    return {
+        "diagnostic_reveal_enabled": os.getenv("DIAGNOSTIC_REVEAL", "0") == "1",
+    }
+
+
 def _check_auth() -> bool:
     """인증 확인 stub. SELLER_CONSOLE_AUTH=1 시 추후 실제 인증으로 교체."""
     if not _AUTH_ENABLED:
@@ -948,6 +955,38 @@ def messaging():
         events=events,
         locales=locales,
     )
+
+
+@bp.get("/cs/inbox")
+def cs_inbox():
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+    from src.cs_bot.service import CsAutoReplyService
+
+    sample_message = request.args.get("q", "배송 문의가 많아요")
+    suggestions = CsAutoReplyService().suggest(sample_message)
+    return render_template(
+        "cs_inbox.html",
+        page="messaging",
+        sample_message=sample_message,
+        suggestions=suggestions,
+    )
+
+
+@bp.route("/cs/faq", methods=["GET", "POST"])
+def cs_faq():
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+    from src.cs_bot.store import CsFaqStore
+
+    store = CsFaqStore()
+    if request.method == "POST":
+        keyword = (request.form.get("keyword") or "").strip()
+        answer = (request.form.get("answer") or "").strip()
+        locale = (request.form.get("locale") or "ko").strip()
+        if keyword and answer:
+            store.add_item(keyword=keyword, answer=answer, locale=locale)
+    return render_template("cs_faq.html", page="messaging", faq_items=store.list_items(), worksheet=store.worksheet_name)
 
 
 @bp.post("/messaging/test")

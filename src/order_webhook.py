@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 import time
 
 from flask import Flask, request, jsonify, redirect, render_template
@@ -21,6 +22,18 @@ from .audit.event_types import EventType
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+
+def _configure_logging() -> None:
+    level_name = (os.getenv("GUNICORN_LOG_LEVEL") or os.getenv("LOG_LEVEL") or "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+    root = logging.getLogger()
+    if not root.handlers:
+        logging.basicConfig(level=level, stream=sys.stdout)
+    root.setLevel(level)
+
+
+_configure_logging()
 
 # 대시보드 API Blueprint 등록 (DASHBOARD_API_ENABLED=1 시)
 if os.getenv("DASHBOARD_API_ENABLED", "1") == "1":
@@ -885,6 +898,14 @@ try:
     logger.info("Legal Blueprint 등록 완료")
 except Exception as _legal_bp_exc:
     logger.warning("Legal Blueprint 등록 실패: %s", _legal_bp_exc)
+
+try:
+    from .onboarding.views import onboarding_bp
+
+    app.register_blueprint(onboarding_bp)
+    logger.info("Onboarding Blueprint 등록 완료")
+except Exception as _onboarding_bp_exc:
+    logger.warning("Onboarding Blueprint 등록 실패: %s", _onboarding_bp_exc)
 
 # Phase 135: 크롬 확장/북마클릿/벌크 수집 API
 try:

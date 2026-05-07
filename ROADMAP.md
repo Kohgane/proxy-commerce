@@ -134,6 +134,7 @@
 | Phase 136.1 | Hotfix — PricingRuleStore JSONL 영구 저장 + OAuth ADMIN 자동 승격 + /auth/whoami + 헤더 사용자 표시 | #PR | 2026-05-06 |
 | Phase 136.2 | Hotfix — Magic Link + Bootstrap 토큰 + /privacy/terms + OAuth 진단 강화 | #PR | 2026-05-06 |
 | Phase 136.3 | Hotfix — CI 회귀 13개 + Magic Link 화면표시 폴백 + Bootstrap UX + /auth/diagnostic-token | #PR | 2026-05-06 |
+| Phase 136.4 | Hotfix — Diagnostic Token 화면 표시 + 비상 진입 헤더 카드 + 셀프 온보딩 + Phase 137 골격 | #PR | 2026-05-07 |
 
 ## 📋 다음 큐
 

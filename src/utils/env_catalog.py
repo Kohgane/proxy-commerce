@@ -201,6 +201,14 @@ API_REGISTRY: list = [
         category=ApiCategory.AUTH,
         optional=True,
     ),
+    ApiKey(
+        name="diagnostic_token",
+        env_vars=["DIAGNOSTIC_REVEAL", "DIAGNOSTIC_TOKEN_PATH"],
+        purpose="Diagnostic Token 화면 노출 동의 + 토큰 저장 경로",
+        docs_url="https://kohganepercentiii.com/docs/operations/EMERGENCY_ACCESS.md",
+        category=ApiCategory.AUTH,
+        optional=True,
+    ),
     # ── 알림 ─────────────────────────────────────────────────────────────
     ApiKey(
         name="telegram",
