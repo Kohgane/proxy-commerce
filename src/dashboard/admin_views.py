@@ -330,6 +330,10 @@ def admin_diagnostics():
     if user_role != "admin":
         return _render("접근 거부", "<div class='alert alert-danger'>관리자 권한이 필요합니다.</div>"), 403
 
+    return _render_diagnostics(issued_magic_link=None)
+
+
+def _render_diagnostics(issued_magic_link: str | None):
     # 섹션 1: 환경변수 매트릭스
     env_matrix = _build_env_matrix()
 
@@ -341,7 +345,7 @@ def admin_diagnostics():
         "Naver": f"{base_url}/auth/naver/callback",
     }
     emergency_access = _build_emergency_access_status()
-    emergency_access["issued_magic_link"] = session.pop("issued_magic_link", None)
+    emergency_access["issued_magic_link"] = issued_magic_link
     oauth_diagnostics = _build_oauth_diagnostics(base_url, oauth_urls)
 
     # 섹션 3: 메신저 채널 health
@@ -386,8 +390,8 @@ def diagnostics_issue_magic_link():
 
     from src.auth.magic_link import issue_magic_link
 
-    session["issued_magic_link"] = issue_magic_link(email=email, next_url="/admin/diagnostics")
-    return redirect("/admin/diagnostics")
+    issued_magic_link = issue_magic_link(email=email, next_url="/admin/diagnostics")
+    return _render_diagnostics(issued_magic_link=issued_magic_link)
 
 
 @admin_panel_bp.post("/diagnostics/test-telegram")

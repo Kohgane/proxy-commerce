@@ -135,7 +135,7 @@ class TestDiagnosticsView:
         data = resp.get_json()
         assert data["status"] == "missing"
 
-    def test_issue_magic_link_route_sets_session_link(self, monkeypatch):
+    def test_issue_magic_link_route_shows_issued_link(self, monkeypatch):
         app = _make_app()
         monkeypatch.setenv("ADMIN_EMAILS", "admin@example.com")
         with patch("src.auth.magic_link.issue_magic_link", return_value="https://example.com/auth/magic-link/verify?token=x"):
@@ -144,7 +144,5 @@ class TestDiagnosticsView:
                     sess["user_id"] = "admin-001"
                     sess["user_role"] = "admin"
                 resp = client.post("/admin/diagnostics/issue-magic-link", data={"email": "admin@example.com"})
-                assert resp.status_code in (301, 302)
-                assert resp.headers["Location"].endswith("/admin/diagnostics")
-                with client.session_transaction() as sess:
-                    assert sess["issued_magic_link"].startswith("https://example.com/")
+                assert resp.status_code == 200
+                assert "https://example.com/auth/magic-link/verify?token=x" in resp.get_data(as_text=True)

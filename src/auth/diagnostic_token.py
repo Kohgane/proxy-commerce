@@ -53,7 +53,6 @@ def issue_token():
     logger.warning("URL: %s", redeem_url)
     logger.warning("발급 IP: %s", request.remote_addr)
     logger.warning("=" * 60)
-    print(f"\nDIAGNOSTIC TOKEN URL:\n{redeem_url}\n", flush=True)
 
     return jsonify(
         {

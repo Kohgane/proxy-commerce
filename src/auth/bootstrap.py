@@ -42,7 +42,14 @@ def bootstrap_login():
     token = request.args.get("token", "")
     email = (request.args.get("email") or "").strip().lower()
     next_url = _trusted_redirect_target(request.args.get("next", ""), default="/admin/diagnostics")
-    placeholder_patterns = ["<", ">", "your-token", "ADMIN_BOOTSTRAP_TOKEN", "REPLACE", "여기에"]
+    placeholder_patterns = [
+        "<TOKEN>",
+        "<ADMIN_BOOTSTRAP_TOKEN>",
+        "your-token",
+        "ADMIN_BOOTSTRAP_TOKEN",
+        "REPLACE",
+        "여기에",
+    ]
 
     if any(p in token for p in placeholder_patterns):
         return (
