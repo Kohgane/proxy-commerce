@@ -4,14 +4,36 @@ from __future__ import annotations
 import hmac
 import logging
 import os
+from urllib.parse import urlparse
 
 from flask import Blueprint, flash, jsonify, redirect, request
 
-from .views import _is_admin_email, _safe_next_url, establish_session
+from .views import _is_admin_email, establish_session
 
 logger = logging.getLogger(__name__)
 
 bootstrap_bp = Blueprint("bootstrap_auth", __name__)
+
+
+def _trusted_redirect_target(raw_next_url: str, default: str = "/admin/diagnostics") -> str:
+    candidate = (raw_next_url or "").strip()
+    parsed = urlparse(candidate)
+    if (
+        not candidate
+        or parsed.scheme
+        or parsed.netloc
+        or not candidate.startswith("/")
+        or candidate.startswith("//")
+        or "\\" in candidate
+        or not (
+            candidate == "/"
+            or candidate.startswith("/seller/")
+            or candidate.startswith("/admin/")
+            or candidate.startswith("/auth/")
+        )
+    ):
+        return default
+    return candidate
 
 
 @bootstrap_bp.get("/auth/bootstrap")
@@ -19,7 +41,7 @@ def bootstrap_login():
     """비상 admin 진입."""
     token = request.args.get("token", "")
     email = (request.args.get("email") or "").strip().lower()
-    next_url = _safe_next_url(request.args.get("next", ""), default="/admin/diagnostics")
+    next_url = _trusted_redirect_target(request.args.get("next", ""), default="/admin/diagnostics")
 
     expected = os.getenv("ADMIN_BOOTSTRAP_TOKEN", "")
     if not expected:

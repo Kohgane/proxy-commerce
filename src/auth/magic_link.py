@@ -9,7 +9,7 @@ import secrets
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
 
@@ -72,6 +72,27 @@ def _build_magic_link(raw_token: str, email: str, next_url: str) -> str:
     if next_url:
         query["next"] = next_url
     return f"{base_url.rstrip('/')}/auth/magic-link/verify?{urlencode(query)}"
+
+
+def _trusted_redirect_target(raw_next_url: str, default: str = "/seller/dashboard") -> str:
+    candidate = (raw_next_url or "").strip()
+    parsed = urlparse(candidate)
+    if (
+        not candidate
+        or parsed.scheme
+        or parsed.netloc
+        or not candidate.startswith("/")
+        or candidate.startswith("//")
+        or "\\" in candidate
+        or not (
+            candidate == "/"
+            or candidate.startswith("/seller/")
+            or candidate.startswith("/admin/")
+            or candidate.startswith("/auth/")
+        )
+    ):
+        return default
+    return candidate
 
 
 @magic_link_bp.get("/auth/magic-link")
@@ -186,7 +207,7 @@ def magic_link_verify():
         set_role(user.user_id, role)
         establish_session(user, role=role)
         flash(f"환영합니다, {email}님! ({role})", "success")
-        return redirect(next_url or "/seller/dashboard")
+        return redirect(_trusted_redirect_target(next_url, default="/seller/dashboard"))
     except Exception as exc:
         logger.warning("Magic Link 사용자 저장 실패: %s", exc)
         flash("로그인 처리 중 오류가 발생했습니다.", "danger")

@@ -142,12 +142,19 @@ def _safe_next_url(next_url: str, default: str = "/seller/dashboard") -> str:
     if not next_url:
         return default
     try:
-        parsed = urlparse(next_url)
-        # scheme 또는 netloc가 있으면 외부 URL → 기본값 반환
-        if parsed.scheme or parsed.netloc:
+        candidate = next_url.strip()
+        parsed = urlparse(candidate)
+        allowed_prefixes = ("/", "/seller/", "/admin/", "/auth/")
+        if (
+            parsed.scheme
+            or parsed.netloc
+            or not candidate.startswith("/")
+            or candidate.startswith("//")
+            or "\\" in candidate
+            or not any(candidate == prefix or candidate.startswith(prefix) for prefix in allowed_prefixes)
+        ):
             return default
-        # 경로만 있는 경우 허용 (상대 경로)
-        return next_url
+        return candidate
     except Exception:
         return default
 
