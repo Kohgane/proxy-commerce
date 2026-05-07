@@ -858,6 +858,27 @@ try:
 except Exception as _auth_bp_exc:
     logger.warning("인증 시스템 Blueprint 등록 실패: %s", _auth_bp_exc)
 
+try:
+    from .auth.magic_link import magic_link_bp
+    app.register_blueprint(magic_link_bp)
+    logger.info("Magic Link Blueprint 등록 완료")
+except Exception as _magic_link_bp_exc:
+    logger.warning("Magic Link Blueprint 등록 실패: %s", _magic_link_bp_exc)
+
+try:
+    from .auth.bootstrap import bootstrap_bp
+    app.register_blueprint(bootstrap_bp)
+    logger.info("Bootstrap auth Blueprint 등록 완료")
+except Exception as _bootstrap_bp_exc:
+    logger.warning("Bootstrap auth Blueprint 등록 실패: %s", _bootstrap_bp_exc)
+
+try:
+    from .legal.views import legal_bp
+    app.register_blueprint(legal_bp)
+    logger.info("Legal Blueprint 등록 완료")
+except Exception as _legal_bp_exc:
+    logger.warning("Legal Blueprint 등록 실패: %s", _legal_bp_exc)
+
 # Phase 135: 크롬 확장/북마클릿/벌크 수집 API
 try:
     from .api.extension_api import extension_bp
@@ -1591,4 +1612,3 @@ def cron_discovery():
     except Exception as exc:
         logger.warning("cron_discovery 실패: %s", exc)
         return jsonify({"ok": False, "error": "Discovery 실행 중 오류가 발생했습니다."}), 500
-

@@ -47,7 +47,9 @@ def test_whoami_logged_in(client):
 def test_seller_header_logged_out_shows_login_links(client):
     resp = client.get("/seller/dashboard")
     assert resp.status_code == 200
-    assert "로그인" in resp.get_data(as_text=True)
+    html = resp.get_data(as_text=True)
+    assert "로그인" in html
+    assert "이메일 로그인" in html
 
 
 def test_seller_header_logged_in_shows_email_and_badge(client):

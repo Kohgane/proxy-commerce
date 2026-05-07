@@ -194,3 +194,77 @@ def get_store() -> UserStore:
     if _store is None:
         _store = UserStore()
     return _store
+
+
+def upsert_by_email(
+    email: str,
+    provider: str,
+    provider_id: str,
+    name: str = "",
+    avatar_url: str = "",
+) -> User:
+    """이메일 기준으로 사용자를 조회/생성하고 소셜 연결을 보장."""
+    store = get_store()
+    normalized_email = (email or "").strip().lower()
+    display_name = (name or normalized_email.split("@")[0] or provider_id or "user").strip()
+
+    user = store.find_by_email(normalized_email) if normalized_email else None
+    if user is None:
+        user = User.new(
+            email=normalized_email,
+            name=display_name,
+            avatar_url=avatar_url,
+            role="seller",
+        )
+        user.email_verified = bool(normalized_email)
+        if provider and provider_id:
+            user.social_accounts = [{
+                "provider": provider,
+                "provider_user_id": provider_id,
+                "linked_at": datetime.now(timezone.utc).isoformat(),
+            }]
+        store.create(user)
+        return user
+
+    changed = False
+    if display_name and not user.name:
+        user.name = display_name
+        changed = True
+    if avatar_url and avatar_url != user.avatar_url:
+        user.avatar_url = avatar_url
+        changed = True
+    if normalized_email and not user.email_verified:
+        user.email_verified = True
+        changed = True
+    if provider and provider_id:
+        existing = any(
+            acc.get("provider") == provider and acc.get("provider_user_id") == provider_id
+            for acc in user.social_accounts
+        )
+        if not existing:
+            store.link_social(
+                user.user_id,
+                {"provider": provider, "provider_user_id": provider_id},
+            )
+            changed = True
+            refreshed = store.find_by_email(normalized_email) if normalized_email else None
+            if refreshed is not None:
+                user = refreshed
+    if changed:
+        store.update(user)
+    return user
+
+
+def set_role(user_id: str, role: str) -> bool:
+    """사용자 역할 변경."""
+    if not user_id:
+        return False
+    store = get_store()
+    user = store.find_by_id(user_id)
+    if user is None:
+        return False
+    if user.role == role:
+        return True
+    user.role = role
+    store.update(user)
+    return True

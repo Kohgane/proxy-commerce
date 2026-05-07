@@ -45,11 +45,21 @@ class TestDiagnosticsView:
     def test_diagnostics_ok_for_admin(self):
         app = _make_app()
         with patch("src.dashboard.admin_views._build_env_matrix", return_value=[]), \
+             patch(
+                 "src.dashboard.admin_views._build_emergency_access_status",
+                 return_value={
+                     "magic_link_url": "/auth/magic-link",
+                     "bootstrap_configured": True,
+                     "bootstrap_url": "/auth/bootstrap?token=<TOKEN>&email=<ADMIN_EMAIL>",
+                     "admin_emails_configured": True,
+                 },
+             ), \
+             patch("src.dashboard.admin_views._build_oauth_diagnostics", return_value=[]), \
              patch("src.dashboard.admin_views._build_messenger_health", return_value={}), \
              patch("src.dashboard.admin_views._build_market_health", return_value={}), \
              patch("src.dashboard.admin_views._build_pricing_status",
                    return_value={"active_rules": 0, "dry_run": True, "cron_hour": "3",
-                                 "last_run_at": None, "min_margin_pct": "15", "fx_trigger_pct": "3"}), \
+                                  "last_run_at": None, "min_margin_pct": "15", "fx_trigger_pct": "3"}), \
              patch("src.dashboard.admin_views._build_message_log",
                    return_value={"total": 0, "by_channel": {}, "top_errors": []}):
 
@@ -61,6 +71,52 @@ class TestDiagnosticsView:
 
         assert resp.status_code == 200
         assert b"diagnostics" in resp.data.lower() or "진단".encode() in resp.data
+
+    def test_diagnostics_shows_emergency_access_links(self):
+        app = _make_app()
+        with patch("src.dashboard.admin_views._build_env_matrix", return_value=[]), \
+             patch(
+                 "src.dashboard.admin_views._build_emergency_access_status",
+                 return_value={
+                     "magic_link_url": "/auth/magic-link",
+                     "bootstrap_configured": True,
+                     "bootstrap_url": "/auth/bootstrap?token=<TOKEN>&email=<ADMIN_EMAIL>",
+                     "admin_emails_configured": True,
+                 },
+             ), \
+             patch(
+                 "src.dashboard.admin_views._build_oauth_diagnostics",
+                 return_value=[
+                     {
+                         "name": "Google OAuth",
+                         "client_id_env": "GOOGLE_OAUTH_CLIENT_ID",
+                         "client_secret_env": "GOOGLE_OAUTH_CLIENT_SECRET",
+                         "client_id_set": True,
+                         "client_secret_set": True,
+                         "callback_url": "https://kohganepercentiii.com/auth/google/callback",
+                         "checklist": [
+                             {"label": "개인정보처리방침 URL: https://kohganepercentiii.com/privacy", "done": True},
+                             {"label": "이용약관 URL: https://kohganepercentiii.com/terms", "done": True},
+                         ],
+                     }
+                 ],
+             ), \
+             patch("src.dashboard.admin_views._build_messenger_health", return_value={}), \
+             patch("src.dashboard.admin_views._build_market_health", return_value={}), \
+             patch("src.dashboard.admin_views._build_pricing_status", return_value={"active_rules": 0, "dry_run": True, "cron_hour": "3", "last_run_at": None, "min_margin_pct": "15", "fx_trigger_pct": "3"}), \
+             patch("src.dashboard.admin_views._build_message_log", return_value={"total": 0, "by_channel": {}, "top_errors": []}):
+            with app.test_client() as client:
+                with client.session_transaction() as sess:
+                    sess["user_id"] = "admin-001"
+                    sess["user_role"] = "admin"
+                resp = client.get("/admin/diagnostics")
+
+        html = resp.get_data(as_text=True)
+        assert resp.status_code == 200
+        assert "/auth/magic-link" in html
+        assert "/auth/bootstrap?token=&lt;TOKEN&gt;&amp;email=&lt;ADMIN_EMAIL&gt;" in html
+        assert "/privacy" in html
+        assert "/terms" in html
 
     def test_telegram_health_endpoint(self):
         app = _make_app()

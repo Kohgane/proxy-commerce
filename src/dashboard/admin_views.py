@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 
-from flask import Blueprint, render_template_string, request
+from flask import Blueprint, current_app, render_template_string, request
 
 MAX_DISPLAY_ITEMS = 200
 
@@ -342,6 +342,8 @@ def admin_diagnostics():
         "Kakao": f"{base_url}/auth/kakao/callback",
         "Naver": f"{base_url}/auth/naver/callback",
     }
+    emergency_access = _build_emergency_access_status()
+    oauth_diagnostics = _build_oauth_diagnostics(base_url, oauth_urls)
 
     # 섹션 3: 메신저 채널 health
     messenger_health = _build_messenger_health()
@@ -355,13 +357,12 @@ def admin_diagnostics():
     # 섹션 6: 최근 24시간 알림 로그
     message_log = _build_message_log()
 
-    from flask import render_template_string
-    from markupsafe import Markup
-
     return render_template_string(
         _DIAGNOSTICS_TEMPLATE,
         env_matrix=env_matrix,
         oauth_urls=oauth_urls,
+        emergency_access=emergency_access,
+        oauth_diagnostics=oauth_diagnostics,
         messenger_health=messenger_health,
         market_health=market_health,
         pricing_status=pricing_status,
@@ -550,6 +551,90 @@ def _build_message_log() -> dict:
         return {"total": 0, "by_channel": {}, "top_errors": []}
 
 
+def _page_route_available(endpoint: str) -> bool:
+    return endpoint in current_app.view_functions
+
+
+def _build_emergency_access_status() -> dict:
+    import os
+
+    return {
+        "magic_link_url": "/auth/magic-link",
+        "bootstrap_configured": bool(os.getenv("ADMIN_BOOTSTRAP_TOKEN")),
+        "bootstrap_url": "/auth/bootstrap?token=<TOKEN>&email=<ADMIN_EMAIL>",
+        "admin_emails_configured": bool(os.getenv("ADMIN_EMAILS")),
+    }
+
+
+def _build_oauth_diagnostics(base_url: str, oauth_urls: dict) -> list[dict]:
+    import os
+    from urllib.parse import urlparse
+
+    domain = urlparse(base_url).netloc or base_url.replace("https://", "").replace("http://", "")
+    privacy_url = f"{base_url}/privacy"
+    terms_url = f"{base_url}/terms"
+    privacy_ok = _page_route_available("legal.privacy")
+    terms_ok = _page_route_available("legal.terms")
+
+    return [
+        {
+            "name": "Google OAuth",
+            "client_id_env": "GOOGLE_OAUTH_CLIENT_ID",
+            "client_secret_env": "GOOGLE_OAUTH_CLIENT_SECRET",
+            "client_id_set": bool(os.getenv("GOOGLE_OAUTH_CLIENT_ID")),
+            "client_secret_set": bool(os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")),
+            "callback_url": oauth_urls["Google"],
+            "checklist": [
+                {"label": "Google Cloud Console → 클라이언트 → 콜백 URL 정확히 등록", "done": None},
+                {
+                    "label": "OAuth 동의 화면 → 게시 상태 확인",
+                    "done": None,
+                    "details": [
+                        "테스트 모드: 테스트 사용자 추가 필수",
+                        "프로덕션: 도메인 검증 + 개인정보처리방침 + 약관 필수",
+                    ],
+                },
+                {"label": f"승인된 도메인: {domain}만 유지", "done": None},
+                {"label": f"개인정보처리방침 URL: {privacy_url}", "done": privacy_ok},
+                {"label": f"이용약관 URL: {terms_url}", "done": terms_ok},
+                {"label": "변경 후 5~10분 대기 (Google 캐시)", "done": None},
+            ],
+        },
+        {
+            "name": "Kakao OAuth",
+            "client_id_env": "KAKAO_REST_API_KEY",
+            "client_secret_env": "KAKAO_CLIENT_SECRET",
+            "client_id_set": bool(os.getenv("KAKAO_REST_API_KEY")),
+            "client_secret_set": bool(os.getenv("KAKAO_CLIENT_SECRET")),
+            "callback_url": oauth_urls["Kakao"],
+            "checklist": [
+                {"label": f"Web 플랫폼 등록: {base_url}", "done": None},
+                {"label": f"Redirect URI 정확히 등록: {oauth_urls['Kakao']}", "done": None},
+                {"label": "카카오 로그인 활성화", "done": None},
+                {"label": "필수 동의 항목(이메일/닉네임) 확인", "done": None},
+                {"label": f"개인정보처리방침 URL: {privacy_url}", "done": privacy_ok},
+                {"label": f"이용약관 URL: {terms_url}", "done": terms_ok},
+            ],
+        },
+        {
+            "name": "Naver OAuth",
+            "client_id_env": "NAVER_CLIENT_ID",
+            "client_secret_env": "NAVER_CLIENT_SECRET",
+            "client_id_set": bool(os.getenv("NAVER_CLIENT_ID")),
+            "client_secret_set": bool(os.getenv("NAVER_CLIENT_SECRET")),
+            "callback_url": oauth_urls["Naver"],
+            "checklist": [
+                {"label": f"서비스 URL/Callback URL 정확히 등록: {oauth_urls['Naver']}", "done": None},
+                {"label": "멤버 관리는 네이버 로그인 ID 기준으로 등록", "done": None},
+                {"label": "앱 상태가 개발 중이면 등록된 멤버만 로그인 가능", "done": None},
+                {"label": "정식 서비스 전환을 위해 앱 검수 요청", "done": None},
+                {"label": f"개인정보처리방침 URL: {privacy_url}", "done": privacy_ok},
+                {"label": f"이용약관 URL: {terms_url}", "done": terms_ok},
+            ],
+        },
+    ]
+
+
 # ── 진단 HTML 템플릿 ──────────────────────────────────────────────────────
 
 _DIAGNOSTICS_TEMPLATE = """
@@ -623,28 +708,73 @@ _DIAGNOSTICS_TEMPLATE = """
       </div>
     </div>
 
-    <!-- 섹션 2: OAuth 콜백 URL -->
+    <!-- 섹션 2: 비상 로그인 + OAuth 진단 -->
     <div class="card mb-4">
-      <div class="card-header fw-bold">🔑 섹션 2 — OAuth 콜백 URL</div>
+      <div class="card-header fw-bold">🆘 섹션 2 — 비상 로그인 + OAuth 진단</div>
       <div class="card-body">
-        <p class="text-muted small mb-3">각 개발자 콘솔에 아래 URL을 정확히 등록하세요.</p>
-        <table class="table table-sm">
-          <thead><tr><th>프로바이더</th><th>콜백 URL</th><th></th></tr></thead>
-          <tbody>
-          {% for provider, url in oauth_urls.items() %}
-            <tr>
-              <td>{{ provider }}</td>
-              <td><code id="cb-{{ loop.index }}">{{ url }}</code></td>
-              <td>
-                <button class="btn btn-outline-secondary btn-sm copy-btn"
-                        onclick="navigator.clipboard.writeText('{{ url }}').then(()=>this.textContent='✅')">
-                  📋 복사
-                </button>
-              </td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
+        <div class="alert alert-warning">
+          <div class="fw-semibold mb-2">🆘 비상 로그인 (OAuth 정상화 전 임시)</div>
+          <ul class="mb-0 ps-3">
+            <li>Magic Link: <a href="{{ emergency_access.magic_link_url }}">{{ emergency_access.magic_link_url }}</a></li>
+            <li>
+              Bootstrap:
+              {% if emergency_access.bootstrap_configured %}
+                <span class="badge bg-success">ADMIN_BOOTSTRAP_TOKEN 설정됨 ✅</span>
+              {% else %}
+                <span class="badge bg-secondary">ADMIN_BOOTSTRAP_TOKEN 미설정</span>
+              {% endif %}
+              <div class="small text-muted mt-1">사용법: <code>{{ emergency_access.bootstrap_url }}</code></div>
+            </li>
+            <li class="small mt-1">권장: OAuth 정상화 후 ADMIN_BOOTSTRAP_TOKEN 환경변수 삭제</li>
+          </ul>
+        </div>
+
+        {% for item in oauth_diagnostics %}
+          <div class="border rounded p-3 mb-3 bg-white">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+              <div>
+                <h5 class="mb-2">🔐 {{ item.name }}</h5>
+                <div class="small">
+                  <div>{{ item.client_id_env }}:
+                    {% if item.client_id_set %}<span class="badge bg-success">✅ 설정됨</span>{% else %}<span class="badge bg-secondary">❌ 누락</span>{% endif %}
+                  </div>
+                  <div class="mt-1">{{ item.client_secret_env }}:
+                    {% if item.client_secret_set %}<span class="badge bg-success">✅ 설정됨</span>{% else %}<span class="badge bg-secondary">❌ 누락</span>{% endif %}
+                  </div>
+                  <div class="mt-2">콜백 URL (등록필요): <code>{{ item.callback_url }}</code></div>
+                </div>
+              </div>
+              <button class="btn btn-outline-secondary btn-sm copy-btn"
+                      onclick="navigator.clipboard.writeText('{{ item.callback_url }}').then(()=>this.textContent='✅ 복사됨')">
+                📋 콜백 URL 복사
+              </button>
+            </div>
+            <details class="mt-3">
+              <summary class="fw-semibold">트러블슈팅 체크리스트</summary>
+              <ul class="mt-2 mb-0 ps-3">
+                {% for check in item.checklist %}
+                  <li class="mb-1">
+                    {% if check.done is sameas true %}
+                      ✅
+                    {% elif check.done is sameas false %}
+                      ❌
+                    {% else %}
+                      ⬜
+                    {% endif %}
+                    {{ check.label }}
+                    {% if check.details %}
+                      <ul class="small text-muted mt-1">
+                        {% for detail in check.details %}
+                          <li>{{ detail }}</li>
+                        {% endfor %}
+                      </ul>
+                    {% endif %}
+                  </li>
+                {% endfor %}
+              </ul>
+            </details>
+          </div>
+        {% endfor %}
       </div>
     </div>
 

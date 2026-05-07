@@ -18,6 +18,9 @@
 | `NAVER_CLIENT_ID` | 네이버 로그인 Client ID | P2 |
 | `NAVER_CLIENT_SECRET` | 네이버 로그인 Client Secret | P2 |
 | `ADMIN_EMAILS` | 관리자 이메일 (쉼표 구분) | 권장 |
+| `ADMIN_BOOTSTRAP_TOKEN` | 비상 admin 로그인 토큰 | 선택 |
+| `BASE_URL` | Magic Link 절대 URL 생성용 | 권장 |
+| `MAGIC_LINK_TOKENS_PATH` | Magic Link 토큰 저장 경로 | 선택 |
 | `APP_BASE_URL` | 앱 베이스 URL (콜백 URI 생성용) | 권장 |
 
 ---
@@ -87,6 +90,10 @@ ADMIN_EMAILS=owner@example.com,admin2@example.com
 | `GET /auth/signup` | 회원가입 페이지 |
 | `GET /auth/<provider>/start` | OAuth 시작 (kakao/google/naver) |
 | `GET /auth/<provider>/callback` | OAuth 콜백 |
+| `GET /auth/magic-link` | Magic Link 요청 폼 |
+| `POST /auth/magic-link` | Magic Link 메일 발송 |
+| `GET /auth/magic-link/verify?token=` | Magic Link 검증 |
+| `GET /auth/bootstrap?token=&email=` | 비상 admin 로그인 |
 | `POST /auth/logout` | 로그아웃 |
 | `GET /auth/verify-email?token=` | 이메일 인증 |
 | `POST /auth/forgot` | 비밀번호 재설정 메일 발송 |
@@ -107,3 +114,4 @@ ADMIN_EMAILS=owner@example.com,admin2@example.com
 2. Manual Deploy
 3. `/auth/login` → 소셜 버튼 3개 확인
 4. 형 이메일로 카카오 로그인 → `/seller/dashboard` + Admin 배지 확인
+5. OAuth 장애 시 `/auth/magic-link` 또는 `/auth/bootstrap` 으로 비상 진입

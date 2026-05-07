@@ -102,6 +102,16 @@ def _resolve_user_role(email: str) -> str:
     return "seller"
 
 
+def establish_session(user, role: Optional[str] = None) -> None:
+    """사용자 세션 공통 설정."""
+    resolved_role = role or getattr(user, "role", "seller")
+    session["user_id"] = getattr(user, "user_id", "")
+    session["user_email"] = getattr(user, "email", "")
+    session["user_name"] = getattr(user, "name", "")
+    session["user_role"] = resolved_role
+    session.permanent = True
+
+
 # ---------------------------------------------------------------------------
 # 헬퍼: 현재 로그인 사용자
 # ---------------------------------------------------------------------------
@@ -332,11 +342,7 @@ def login_post():
             flash("이메일 또는 비밀번호가 올바르지 않습니다.", "danger")
             return redirect(url_for("auth.login"))
 
-        session["user_id"] = user.user_id
-        session["user_email"] = user.email
-        session["user_name"] = user.name
-        session["user_role"] = user.role
-        session.permanent = True
+        establish_session(user)
 
         store.update_last_login(user.user_id)
         return redirect(next_url)
@@ -455,11 +461,7 @@ def oauth_callback(provider: str):
             user.role = role
             store.update(user)
 
-        session["user_id"] = user.user_id
-        session["user_email"] = user.email
-        session["user_name"] = user.name
-        session["user_role"] = role
-        session.permanent = True
+        establish_session(user, role=role)
 
         store.update_last_login(user.user_id)
         return redirect(next_url)

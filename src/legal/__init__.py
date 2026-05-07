@@ -1,0 +1,1 @@
+"""Legal pages package."""
