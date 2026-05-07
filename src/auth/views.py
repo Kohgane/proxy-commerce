@@ -451,7 +451,6 @@ def oauth_callback(provider: str):
         role = _resolve_user_role(email)
         if not email:
             flash("이메일 동의가 없어 일반 셀러 권한으로 로그인됩니다.", "warning")
-            role = "seller"
         if user.role != role:
             user.role = role
             store.update(user)

@@ -8,7 +8,6 @@ from __future__ import annotations
 import logging
 import os
 import json
-import secrets
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -255,8 +254,6 @@ class PricingRuleStore:
 
     def create(self, rule: PricingRule) -> PricingRule:
         """룰 생성."""
-        if not rule.rule_id:
-            rule.rule_id = secrets.token_hex(8)
         ws = self._open_ws()
         if ws is not None:
             try:

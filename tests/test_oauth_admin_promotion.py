@@ -41,7 +41,7 @@ class _DummyStore:
         return self.by_email.get((email or "").lower())
 
     def link_social(self, user_id: str, provider_data: dict) -> None:
-        return None
+        pass
 
     def create(self, user):
         provider = user.social_accounts[0]["provider"]
@@ -52,7 +52,7 @@ class _DummyStore:
 
     def update(self, user):
         self.by_email[(user.email or "").lower()] = user
-        return None
+        pass
 
     def update_last_login(self, user_id: str):
         return None
