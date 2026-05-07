@@ -1,0 +1,28 @@
+{% extends "_base.html" %}
+{% block title %}CS Inbox{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">🤖 CS 자동응답 Inbox (Phase 137 골격)</h4>
+  <a class="btn btn-outline-secondary btn-sm" href="/seller/cs/faq">FAQ 관리</a>
+</div>
+<div class="card border-0 shadow-sm">
+  <div class="card-body">
+    <p class="text-muted mb-2">입력 메시지(샘플): <code>{{ sample_message }}</code></p>
+    <p class="small text-muted">텔레그램 webhook 연동은 다음 Phase에서 연결됩니다. 현재는 키워드 매칭 추천만 제공합니다.</p>
+    {% if suggestions %}
+      <ul class="list-group">
+      {% for item in suggestions %}
+        <li class="list-group-item">
+          <div class="fw-semibold">{{ item.keyword }}</div>
+          <div class="small text-muted">{{ item.answer }}</div>
+          <span class="badge bg-warning text-dark mt-2">운영자 승인 후 발송</span>
+        </li>
+      {% endfor %}
+      </ul>
+    {% else %}
+      <div class="alert alert-secondary mb-0">추천 가능한 FAQ가 없습니다. <a href="/seller/cs/faq">FAQ를 먼저 등록</a>하세요.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

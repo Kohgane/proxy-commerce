@@ -30,6 +30,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for
 
 logger = logging.getLogger(__name__)
+_CS_FAQ_SUPPORTED_LOCALES = {"ko", "ja", "en", "zh-CN"}
 
 # Blueprint 정의
 bp = Blueprint(
@@ -45,6 +46,13 @@ bp = Blueprint(
 # 인증 stub — Phase 24 OAuth 연결 전까지 환경변수로 제어
 # ---------------------------------------------------------------------------
 _AUTH_ENABLED = os.getenv("SELLER_CONSOLE_AUTH", "0") == "1"
+
+
+@bp.app_context_processor
+def inject_seller_template_flags():
+    return {
+        "diagnostic_reveal_enabled": os.getenv("DIAGNOSTIC_REVEAL", "0") == "1",
+    }
 
 
 def _check_auth() -> bool:
@@ -947,6 +955,46 @@ def messaging():
         log=log,
         events=events,
         locales=locales,
+    )
+
+
+@bp.get("/cs/inbox")
+def cs_inbox():
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+    from src.cs_bot.service import CsAutoReplyService
+
+    sample_message = request.args.get("q", "배송 문의가 많아요")
+    suggestions = CsAutoReplyService().suggest(sample_message)
+    return render_template(
+        "cs_inbox.html",
+        page="cs_bot",
+        sample_message=sample_message,
+        suggestions=suggestions,
+    )
+
+
+@bp.route("/cs/faq", methods=["GET", "POST"])
+def cs_faq():
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+    from src.cs_bot.store import CsFaqStore
+
+    store = CsFaqStore()
+    if request.method == "POST":
+        keyword = (request.form.get("keyword") or "").strip()
+        answer = (request.form.get("answer") or "").strip()
+        locale = (request.form.get("locale") or "ko").strip()
+        if locale not in _CS_FAQ_SUPPORTED_LOCALES:
+            locale = "ko"
+        if keyword and answer:
+            store.add_item(keyword=keyword, answer=answer, locale=locale)
+    return render_template(
+        "cs_faq.html",
+        page="cs_bot",
+        faq_items=store.list_items(),
+        worksheet=store.worksheet_name,
+        locales=sorted(_CS_FAQ_SUPPORTED_LOCALES),
     )
 
 

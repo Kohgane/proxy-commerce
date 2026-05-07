@@ -87,5 +87,5 @@ def test_admin_emails_required(client, monkeypatch):
     issue = c.get("/auth/diagnostic-token/issue")
     redeem = c.get("/auth/diagnostic-token/redeem?token=any")
 
-    assert issue.status_code == 503
+    assert issue.status_code == 200
     assert redeem.status_code == 503

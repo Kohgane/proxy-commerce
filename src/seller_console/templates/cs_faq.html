@@ -1,0 +1,36 @@
+{% extends "_base.html" %}
+{% block title %}CS FAQ{% endblock %}
+
+{% block content %}
+<h4 class="mb-3">📚 CS FAQ 관리 ({{ worksheet }} 워크시트 / JSONL 폴백)</h4>
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body">
+    <form method="post" class="row g-2">
+      <div class="col-md-3"><input name="keyword" class="form-control form-control-sm" placeholder="키워드(예: 배송)" required></div>
+      <div class="col-md-6"><input name="answer" class="form-control form-control-sm" placeholder="답변" required></div>
+      <div class="col-md-2">
+        <select name="locale" class="form-select form-select-sm">
+          {% for loc in locales %}
+          <option value="{{ loc }}">{{ loc }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-1"><button class="btn btn-primary btn-sm w-100">추가</button></div>
+    </form>
+  </div>
+</div>
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <table class="table table-sm mb-0">
+      <thead class="table-light"><tr><th>FAQ ID</th><th>키워드</th><th>답변</th><th>locale</th></tr></thead>
+      <tbody>
+      {% for row in faq_items %}
+        <tr><td>{{ row.faq_id }}</td><td>{{ row.keyword }}</td><td>{{ row.answer }}</td><td>{{ row.locale }}</td></tr>
+      {% else %}
+        <tr><td colspan="4" class="text-center text-muted py-4">등록된 FAQ가 없습니다.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -394,6 +394,22 @@ def diagnostics_issue_magic_link():
     return _render_diagnostics(issued_magic_link=issued_magic_link)
 
 
+@admin_panel_bp.post("/diagnostics/expire-diagnostic-tokens")
+def diagnostics_expire_diagnostic_tokens():
+    if not session.get("user_id"):
+        return redirect("/auth/login?next=/admin/diagnostics")
+    if session.get("user_role") != "admin":
+        return _render("접근 거부", "<div class='alert alert-danger'>관리자 권한이 필요합니다.</div>"), 403
+    try:
+        from src.auth.diagnostic_token import expire_all_tokens
+
+        expired_count = expire_all_tokens()
+        return _render_diagnostics(issued_magic_link=f"진단 토큰 {expired_count}개를 만료 처리했습니다.")
+    except Exception as exc:
+        logger.warning("diagnostic token 만료 처리 실패: %s", exc)
+        return _render("처리 실패", "<div class='alert alert-danger'>만료 처리 중 오류가 발생했습니다.</div>"), 500
+
+
 @admin_panel_bp.post("/diagnostics/test-telegram")
 def diagnostics_test_telegram():
     """텔레그램 테스트 메시지 발송 (Phase 136)."""
@@ -581,11 +597,26 @@ def _page_route_available(endpoint: str) -> bool:
 def _build_emergency_access_status() -> dict:
     import os
 
+    bootstrap_token = os.getenv("ADMIN_BOOTSTRAP_TOKEN", "")
+    masked_prefix = f"{bootstrap_token[:6]}..." if len(bootstrap_token) >= 6 else ("***" if bootstrap_token else None)
+    diagnostic_stats = {"active_count": 0, "latest_issued_at": None}
+    try:
+        from src.auth.diagnostic_token import token_status
+
+        diagnostic_stats = token_status()
+    except Exception as exc:
+        logger.debug("diagnostic token 상태 조회 실패: %s", exc)
+
     return {
         "magic_link_url": "/auth/magic-link",
         "bootstrap_configured": bool(os.getenv("ADMIN_BOOTSTRAP_TOKEN")),
         "bootstrap_url": "/auth/bootstrap?token=<TOKEN>&email=<ADMIN_EMAIL>",
+        "bootstrap_masked_prefix": masked_prefix,
         "admin_emails_configured": bool(os.getenv("ADMIN_EMAILS")),
+        "diagnostic_reveal_enabled": os.getenv("DIAGNOSTIC_REVEAL", "0") == "1",
+        "diagnostic_issue_url": "/auth/diagnostic-token/issue?reveal_safe=1&format=html",
+        "diagnostic_active_count": diagnostic_stats["active_count"],
+        "diagnostic_latest_issued_at": diagnostic_stats["latest_issued_at"],
     }
 
 
@@ -736,14 +767,31 @@ _DIAGNOSTICS_TEMPLATE = """
       <div class="card-header fw-bold">🆘 섹션 2 — 비상 로그인 + OAuth 진단</div>
       <div class="card-body">
         <div class="alert alert-warning">
-          <div class="fw-semibold mb-2">🆘 비상 로그인 (OAuth 정상화 전 임시)</div>
+          <div class="fw-semibold mb-2">🆘 비상 진입 도구 (OAuth 정상화 전 임시)</div>
           <ul class="mb-0 ps-3">
             <li>Magic Link: <a href="{{ emergency_access.magic_link_url }}">{{ emergency_access.magic_link_url }}</a></li>
-            <li>Diagnostic Token: <code>/auth/diagnostic-token/issue</code> (Render 로그에서 URL 확인)</li>
+            <li>
+              Diagnostic Token:
+              <a href="{{ emergency_access.diagnostic_issue_url }}" target="_blank">{{ emergency_access.diagnostic_issue_url }}</a>
+              {% if emergency_access.diagnostic_reveal_enabled %}
+                <span class="badge bg-success">DIAGNOSTIC_REVEAL=1</span>
+              {% else %}
+                <span class="badge bg-secondary">DIAGNOSTIC_REVEAL=0</span>
+              {% endif %}
+            </li>
+            <li>
+              활성 토큰: <span class="fw-semibold">{{ emergency_access.diagnostic_active_count }}</span>개
+              {% if emergency_access.diagnostic_latest_issued_at %}
+                <span class="small text-muted">(최근 발급: {{ emergency_access.diagnostic_latest_issued_at }})</span>
+              {% endif %}
+            </li>
             <li>
               Bootstrap:
               {% if emergency_access.bootstrap_configured %}
                 <span class="badge bg-success">ADMIN_BOOTSTRAP_TOKEN 설정됨 ✅</span>
+                {% if emergency_access.bootstrap_masked_prefix %}
+                  <span class="small text-muted">(prefix: {{ emergency_access.bootstrap_masked_prefix }})</span>
+                {% endif %}
               {% else %}
                 <span class="badge bg-secondary">ADMIN_BOOTSTRAP_TOKEN 미설정</span>
               {% endif %}
@@ -751,9 +799,15 @@ _DIAGNOSTICS_TEMPLATE = """
             </li>
             <li class="small mt-1">권장: OAuth 정상화 후 ADMIN_BOOTSTRAP_TOKEN 환경변수 삭제</li>
           </ul>
+          <div class="mt-3 d-flex gap-2 flex-wrap">
+            <a class="btn btn-sm btn-danger" target="_blank" href="{{ emergency_access.diagnostic_issue_url }}">🆘 Diagnostic Token 즉시 발급 + 화면 표시</a>
+            <form method="POST" action="/admin/diagnostics/expire-diagnostic-tokens">
+              <button type="submit" class="btn btn-sm btn-outline-danger">🧯 이 토큰들 모두 만료시키기</button>
+            </form>
+          </div>
           <form method="POST" action="/admin/diagnostics/issue-magic-link" class="mt-3 d-flex gap-2 flex-wrap">
             <input type="email" name="email" class="form-control form-control-sm" style="max-width:280px" placeholder="admin 이메일" required>
-            <button type="submit" class="btn btn-sm btn-outline-primary">🔗 1회용 링크 발급 (화면 표시)</button>
+            <button type="submit" class="btn btn-sm btn-outline-primary">📧 Magic Link 즉시 발급 (이메일+화면 표시)</button>
           </form>
           {% if emergency_access.issued_magic_link %}
             <div class="mt-2 p-2 bg-white border rounded small">

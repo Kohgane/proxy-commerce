@@ -49,6 +49,10 @@
            href="/seller/messaging">💬 고객 메시징</a>
       </li>
       <li class="nav-item">
+        <a class="nav-link text-secondary {% if page == 'cs_bot' %}text-white fw-semibold{% endif %}"
+           href="/seller/cs/inbox">🤖 CS 자동응답(골격)</a>
+      </li>
+      <li class="nav-item">
         <a class="nav-link text-secondary {% if page == 'api_status' %}text-white fw-semibold{% endif %}"
            href="/seller/api-status">🔑 API 상태</a>
       </li>
@@ -120,8 +124,11 @@
         </div>
       {% else %}
         <div class="d-flex gap-2">
-          <a href="/auth/login" class="btn btn-outline-primary btn-sm">로그인</a>
+          <a href="/auth/login" class="btn btn-outline-primary btn-sm">🔐 OAuth 로그인</a>
           <a href="/auth/magic-link" class="btn btn-outline-secondary btn-sm">📧 이메일 로그인</a>
+          {% if diagnostic_reveal_enabled %}
+          <a href="/auth/diagnostic-token/issue?reveal_safe=1&format=html" class="btn btn-warning btn-sm">🆘 비상 진입 (운영자)</a>
+          {% endif %}
           <a href="/auth/signup" class="btn btn-primary btn-sm">가입</a>
         </div>
       {% endif %}
