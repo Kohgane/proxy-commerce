@@ -15,7 +15,8 @@ class CsAutoReplyService:
             return []
         suggestions = []
         for item in self._store.list_items():
-            if item.keyword.lower() in query:
+            keyword = item.keyword.casefold()
+            if keyword and keyword in query:
                 suggestions.append(
                     {
                         "faq_id": item.faq_id,
@@ -25,4 +26,3 @@ class CsAutoReplyService:
                     }
                 )
         return suggestions
-

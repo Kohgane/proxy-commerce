@@ -22,6 +22,7 @@ _LOCK = threading.Lock()
 _FILE = Path(os.getenv("DIAGNOSTIC_TOKEN_PATH", "data/diagnostic_tokens.jsonl"))
 _FILE.parent.mkdir(parents=True, exist_ok=True)
 TTL_SECONDS = 600
+_SEPARATOR = "=" * 70
 
 
 def _admin_emails() -> list[str]:
@@ -75,7 +76,7 @@ def expire_all_tokens() -> int:
 def _notify_telegram_on_issue(ip: str | None, issued_at: str) -> None:
     try:
         from src.notifications.telegram import send_telegram
-        kst = datetime.fromisoformat(issued_at.replace("Z", "+00:00")).astimezone(ZoneInfo("Asia/Seoul"))
+        kst = datetime.fromisoformat(issued_at).astimezone(ZoneInfo("Asia/Seoul"))
         message = (
             "🆘 Diagnostic Token 발급됨\n"
             f"- IP: {ip or '-'}\n"
@@ -106,24 +107,23 @@ def issue_token():
     base_url = os.getenv("BASE_URL", "https://kohganepercentiii.com").rstrip("/")
     redeem_url = f"{base_url}/auth/diagnostic-token/redeem?token={raw}"
 
-    sys.stdout.write("\n" + "=" * 70 + "\n")
+    sys.stdout.write("\n" + _SEPARATOR + "\n")
     sys.stdout.write(f"🆘 DIAGNOSTIC TOKEN URL: {redeem_url}\n")
-    sys.stdout.write("=" * 70 + "\n\n")
+    sys.stdout.write(_SEPARATOR + "\n\n")
     sys.stdout.flush()
 
-    logger.warning("=" * 70)
+    logger.warning(_SEPARATOR)
     logger.warning("🆘 DIAGNOSTIC TOKEN 발급됨 (10분 유효, 1회용)")
     logger.warning("URL: %s", redeem_url)
     logger.warning("발급 IP: %s", request.remote_addr)
-    logger.warning("=" * 70)
+    logger.warning(_SEPARATOR)
 
     _notify_telegram_on_issue(ip=request.remote_addr, issued_at=record["issued_at"])
 
     admin_emails_set = bool(os.getenv("ADMIN_EMAILS", "").strip())
     reveal_env = os.getenv("DIAGNOSTIC_REVEAL", "0") == "1"
-    reveal_param = request.args.get("reveal_safe") == "1"
 
-    can_reveal = reveal_env or (reveal_param and admin_emails_set)
+    can_reveal = reveal_env and admin_emails_set
     if request.args.get("format") != "json" and can_reveal:
         return render_template(
             "auth/diagnostic_token_issued.html",
@@ -137,7 +137,7 @@ def issue_token():
         "hint": (
             "Render Logs 탭에서 'DIAGNOSTIC TOKEN' 검색 → URL 복사. "
             "또는 ?reveal_safe=1&format=html 쿼리 추가 시 화면 표시 "
-            "(ADMIN_EMAILS 설정 + DIAGNOSTIC_REVEAL=1 환경변수 권장)."
+            "(ADMIN_EMAILS 설정 + DIAGNOSTIC_REVEAL=1 환경변수 필요)."
         ),
         "ttl_seconds": TTL_SECONDS,
         "issued_at": record["issued_at"],

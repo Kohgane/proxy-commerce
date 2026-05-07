@@ -25,6 +25,7 @@ def client(monkeypatch, tmp_path):
 
 def test_issue_calls_stdout_write_and_flush(client, monkeypatch):
     events = {"writes": 0, "flushed": False}
+    expected_min_writes = 3  # 구분선 + URL 본문 + 구분선
 
     class _Stdout:
         def write(self, _text):
@@ -39,6 +40,5 @@ def test_issue_calls_stdout_write_and_flush(client, monkeypatch):
 
     resp = client.get("/auth/diagnostic-token/issue?format=json")
     assert resp.status_code == 200
-    assert events["writes"] >= 3
+    assert events["writes"] >= expected_min_writes
     assert events["flushed"] is True
-

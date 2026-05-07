@@ -33,10 +33,17 @@ class CsFaqStore:
 
     def save_items(self, items: list[FaqItem]) -> None:
         tmp = self._path.with_suffix(self._path.suffix + ".tmp")
-        with tmp.open("w", encoding="utf-8") as handle:
-            for item in items:
-                handle.write(json.dumps(item.to_dict(), ensure_ascii=False) + "\n")
-        tmp.replace(self._path)
+        try:
+            with tmp.open("w", encoding="utf-8") as handle:
+                for item in items:
+                    handle.write(json.dumps(item.to_dict(), ensure_ascii=False) + "\n")
+            tmp.replace(self._path)
+        finally:
+            if tmp.exists():
+                try:
+                    tmp.unlink()
+                except Exception:
+                    pass
 
     def add_item(self, keyword: str, answer: str, locale: str = "ko") -> FaqItem:
         items = self.list_items()
@@ -44,4 +51,3 @@ class CsFaqStore:
         items.append(item)
         self.save_items(items)
         return item
-
