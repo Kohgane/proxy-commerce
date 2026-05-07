@@ -30,6 +30,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for
 
 logger = logging.getLogger(__name__)
+_CS_FAQ_SUPPORTED_LOCALES = {"ko", "ja", "en", "zh-CN"}
 
 # Blueprint 정의
 bp = Blueprint(
@@ -967,7 +968,7 @@ def cs_inbox():
     suggestions = CsAutoReplyService().suggest(sample_message)
     return render_template(
         "cs_inbox.html",
-        page="messaging",
+        page="cs_bot",
         sample_message=sample_message,
         suggestions=suggestions,
     )
@@ -984,9 +985,17 @@ def cs_faq():
         keyword = (request.form.get("keyword") or "").strip()
         answer = (request.form.get("answer") or "").strip()
         locale = (request.form.get("locale") or "ko").strip()
+        if locale not in _CS_FAQ_SUPPORTED_LOCALES:
+            locale = "ko"
         if keyword and answer:
             store.add_item(keyword=keyword, answer=answer, locale=locale)
-    return render_template("cs_faq.html", page="messaging", faq_items=store.list_items(), worksheet=store.worksheet_name)
+    return render_template(
+        "cs_faq.html",
+        page="cs_bot",
+        faq_items=store.list_items(),
+        worksheet=store.worksheet_name,
+        locales=sorted(_CS_FAQ_SUPPORTED_LOCALES),
+    )
 
 
 @bp.post("/messaging/test")

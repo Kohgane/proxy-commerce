@@ -11,6 +11,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from flask import Blueprint, jsonify, redirect, render_template, request, session
 
@@ -73,12 +74,8 @@ def expire_all_tokens() -> int:
 
 def _notify_telegram_on_issue(ip: str | None, issued_at: str) -> None:
     try:
-        from datetime import timedelta
-
         from src.notifications.telegram import send_telegram
-        kst = datetime.fromisoformat(issued_at.replace("Z", "+00:00")).astimezone(
-            timezone(timedelta(hours=9))
-        )
+        kst = datetime.fromisoformat(issued_at.replace("Z", "+00:00")).astimezone(ZoneInfo("Asia/Seoul"))
         message = (
             "🆘 Diagnostic Token 발급됨\n"
             f"- IP: {ip or '-'}\n"
