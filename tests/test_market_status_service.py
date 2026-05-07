@@ -144,7 +144,7 @@ class TestAdapterLoad:
 
     def test_live_adapters_contains_known_markets(self, service):
         """live_adapters에 4개 마켓 키 존재."""
-        expected = {"coupang", "smartstore", "11st", "kohganemultishop"}
+        expected = {"coupang", "smartstore", "11st", "woocommerce", "shopify"}
         assert expected.issubset(set(service.live_adapters.keys()))
 
     def test_adapter_health_check_returns_stub(self, service):

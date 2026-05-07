@@ -873,6 +873,13 @@ except Exception as _bootstrap_bp_exc:
     logger.warning("Bootstrap auth Blueprint 등록 실패: %s", _bootstrap_bp_exc)
 
 try:
+    from .auth.diagnostic_token import bp as diagnostic_token_bp
+    app.register_blueprint(diagnostic_token_bp)
+    logger.info("Diagnostic token Blueprint 등록 완료")
+except Exception as _diagnostic_token_bp_exc:
+    logger.warning("Diagnostic token Blueprint 등록 실패: %s", _diagnostic_token_bp_exc)
+
+try:
     from .legal.views import legal_bp
     app.register_blueprint(legal_bp)
     logger.info("Legal Blueprint 등록 완료")

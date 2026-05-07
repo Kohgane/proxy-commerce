@@ -42,6 +42,21 @@ class TestFXProviderFrankfurter:
         assert 'fetched_at' in rates
 
     @patch('src.fx.provider.requests.get')
+    def test_mock_provider_wins_over_env_fallback(self, mock_get):
+        mock_get.side_effect = [
+            self._make_resp('USD', 'KRW', 1345.5),
+            self._make_resp('JPY', 'KRW', 8.95),
+            self._make_resp('EUR', 'KRW', 1462.3),
+            self._make_resp('USD', 'CNY', 7.1),
+        ]
+        from src.fx.provider import FXProvider
+        with patch.dict(os.environ, {'FX_USDKRW': '9999'}):
+            rates = FXProvider(primary_provider='frankfurter').get_rates()
+
+        assert rates['USDKRW'] == Decimal('1345.5')
+        assert rates['provider'] == 'frankfurter'
+
+    @patch('src.fx.provider.requests.get')
     def test_get_rate_single(self, mock_get):
         mock_get.side_effect = [
             self._make_resp('USD', 'KRW', 1340.0),

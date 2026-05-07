@@ -52,6 +52,7 @@ class TestDiagnosticsView:
                      "bootstrap_configured": True,
                      "bootstrap_url": "/auth/bootstrap?token=<TOKEN>&email=<ADMIN_EMAIL>",
                      "admin_emails_configured": True,
+                     "issued_magic_link": None,
                  },
              ), \
              patch("src.dashboard.admin_views._build_oauth_diagnostics", return_value=[]), \
@@ -82,6 +83,7 @@ class TestDiagnosticsView:
                      "bootstrap_configured": True,
                      "bootstrap_url": "/auth/bootstrap?token=<TOKEN>&email=<ADMIN_EMAIL>",
                      "admin_emails_configured": True,
+                     "issued_magic_link": None,
                  },
              ), \
              patch(
@@ -114,6 +116,7 @@ class TestDiagnosticsView:
         html = resp.get_data(as_text=True)
         assert resp.status_code == 200
         assert "/auth/magic-link" in html
+        assert "/admin/diagnostics/issue-magic-link" in html
         assert "/auth/bootstrap?token=&lt;TOKEN&gt;&amp;email=&lt;ADMIN_EMAIL&gt;" in html
         assert "/privacy" in html
         assert "/terms" in html
@@ -131,3 +134,15 @@ class TestDiagnosticsView:
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["status"] == "missing"
+
+    def test_issue_magic_link_route_shows_issued_link(self, monkeypatch):
+        app = _make_app()
+        monkeypatch.setenv("ADMIN_EMAILS", "admin@example.com")
+        with patch("src.auth.magic_link.issue_magic_link", return_value="https://example.com/auth/magic-link/verify?token=x"):
+            with app.test_client() as client:
+                with client.session_transaction() as sess:
+                    sess["user_id"] = "admin-001"
+                    sess["user_role"] = "admin"
+                resp = client.post("/admin/diagnostics/issue-magic-link", data={"email": "admin@example.com"})
+                assert resp.status_code == 200
+                assert "https://example.com/auth/magic-link/verify?token=x" in resp.get_data(as_text=True)

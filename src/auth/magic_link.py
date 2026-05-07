@@ -74,6 +74,30 @@ def _build_magic_link(raw_token: str, email: str, next_url: str) -> str:
     return f"{base_url.rstrip('/')}/auth/magic-link/verify?{urlencode(query)}"
 
 
+def _admin_emails() -> list[str]:
+    return [e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()]
+
+
+def issue_magic_link(email: str, next_url: str = "") -> str:
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    now = _now_utc()
+    record = {
+        "token_hash": token_hash,
+        "email": email,
+        "created_at": now.isoformat(),
+        "expires_at": (now + timedelta(minutes=TOKEN_TTL_MINUTES)).isoformat(),
+        "used": False,
+    }
+
+    with _LOCK:
+        records = _load_records()
+        records.append(record)
+        _write_records(records)
+
+    return _build_magic_link(raw_token=raw_token, email=email, next_url=next_url)
+
+
 def _trusted_redirect_target(raw_next_url: str, default: str = "/seller/dashboard") -> str:
     candidate = (raw_next_url or "").strip()
     parsed = urlparse(candidate)
@@ -111,23 +135,8 @@ def magic_link_send():
         flash("올바른 이메일을 입력하세요.", "danger")
         return redirect(url_for("magic_link.magic_link_request", next=next_url))
 
-    raw_token = secrets.token_urlsafe(32)
-    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
-    now = _now_utc()
-    record = {
-        "token_hash": token_hash,
-        "email": email,
-        "created_at": now.isoformat(),
-        "expires_at": (now + timedelta(minutes=TOKEN_TTL_MINUTES)).isoformat(),
-        "used": False,
-    }
-
-    with _LOCK:
-        records = _load_records()
-        records.append(record)
-        _write_records(records)
-
-    link = _build_magic_link(raw_token=raw_token, email=email, next_url=next_url)
+    link = issue_magic_link(email=email, next_url=next_url)
+    sent_ok = False
 
     try:
         from src.messaging.resend_adapter import send_email
@@ -145,14 +154,23 @@ def magic_link_send():
             ),
             text=f"로그인 링크 (15분 유효): {link}",
         )
-        if sent_ok:
-            flash("이메일을 확인하세요. 로그인 링크가 발송되었습니다.", "success")
-        else:
-            logger.warning("Magic Link 발송 실패: email=%s", email)
-            flash("이메일 발송에 실패했습니다. 운영자 로그를 확인하세요.", "danger")
     except Exception as exc:
         logger.warning("Magic Link 발송 실패: %s", exc)
-        flash("이메일 발송에 실패했습니다. 운영자 로그를 확인하세요.", "danger")
+
+    if sent_ok:
+        flash("이메일을 확인하세요. 로그인 링크가 발송되었습니다.", "success")
+        return redirect(url_for("magic_link.magic_link_request", next=next_url))
+
+    if email in _admin_emails():
+        logger.info("Magic Link 화면 폴백 — admin 이메일: %s", email)
+        return render_template(
+            "auth/magic_link_fallback.html",
+            link=link,
+            email=email,
+            ttl_minutes=TOKEN_TTL_MINUTES,
+        )
+
+    flash("이메일 발송에 실패했습니다.", "danger")
 
     return redirect(url_for("magic_link.magic_link_request", next=next_url))
 

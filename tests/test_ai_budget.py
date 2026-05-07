@@ -28,6 +28,10 @@ class TestBudgetGuard:
         guard = self._make_guard(used_usd=100.5, limit=100.0)
         assert guard.can_spend(Decimal("0")) is False
 
+    def test_cannot_spend_when_exceeds_by_one_cent(self):
+        guard = self._make_guard(used_usd=100.0, limit=100.0)
+        assert guard.can_spend(Decimal("0.01")) is False
+
     def test_can_spend_in_dry_run(self, monkeypatch):
         monkeypatch.setenv("ADAPTER_DRY_RUN", "1")
         guard = self._make_guard(used_usd=200.0, limit=100.0)
