@@ -102,6 +102,16 @@ def _resolve_user_role(email: str) -> str:
     return "seller"
 
 
+def establish_session(user, role: Optional[str] = None) -> None:
+    """사용자 세션 공통 설정."""
+    resolved_role = role or getattr(user, "role", "seller")
+    session["user_id"] = getattr(user, "user_id", "")
+    session["user_email"] = getattr(user, "email", "")
+    session["user_name"] = getattr(user, "name", "")
+    session["user_role"] = resolved_role
+    session.permanent = True
+
+
 # ---------------------------------------------------------------------------
 # 헬퍼: 현재 로그인 사용자
 # ---------------------------------------------------------------------------
@@ -132,12 +142,19 @@ def _safe_next_url(next_url: str, default: str = "/seller/dashboard") -> str:
     if not next_url:
         return default
     try:
-        parsed = urlparse(next_url)
-        # scheme 또는 netloc가 있으면 외부 URL → 기본값 반환
-        if parsed.scheme or parsed.netloc:
+        candidate = next_url.strip()
+        parsed = urlparse(candidate)
+        allowed_prefixes = ("/", "/seller/", "/admin/", "/auth/")
+        if (
+            parsed.scheme
+            or parsed.netloc
+            or not candidate.startswith("/")
+            or candidate.startswith("//")
+            or "\\" in candidate
+            or not any(candidate == prefix or candidate.startswith(prefix) for prefix in allowed_prefixes)
+        ):
             return default
-        # 경로만 있는 경우 허용 (상대 경로)
-        return next_url
+        return candidate
     except Exception:
         return default
 
@@ -332,11 +349,7 @@ def login_post():
             flash("이메일 또는 비밀번호가 올바르지 않습니다.", "danger")
             return redirect(url_for("auth.login"))
 
-        session["user_id"] = user.user_id
-        session["user_email"] = user.email
-        session["user_name"] = user.name
-        session["user_role"] = user.role
-        session.permanent = True
+        establish_session(user)
 
         store.update_last_login(user.user_id)
         return redirect(next_url)
@@ -455,11 +468,7 @@ def oauth_callback(provider: str):
             user.role = role
             store.update(user)
 
-        session["user_id"] = user.user_id
-        session["user_email"] = user.email
-        session["user_name"] = user.name
-        session["user_role"] = role
-        session.permanent = True
+        establish_session(user, role=role)
 
         store.update_last_login(user.user_id)
         return redirect(next_url)

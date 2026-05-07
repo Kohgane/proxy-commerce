@@ -185,6 +185,22 @@ API_REGISTRY: list = [
         docs_url="https://developers.naver.com",
         category=ApiCategory.AUTH,
     ),
+    ApiKey(
+        name="admin_bootstrap",
+        env_vars=["ADMIN_BOOTSTRAP_TOKEN"],
+        purpose="비상 admin 로그인용 부트스트랩 토큰",
+        docs_url="https://kohganepercentiii.com/docs/operations/EMERGENCY_ACCESS.md",
+        category=ApiCategory.AUTH,
+        optional=True,
+    ),
+    ApiKey(
+        name="magic_link",
+        env_vars=["BASE_URL", "MAGIC_LINK_TOKENS_PATH"],
+        purpose="Magic Link 절대 URL + 토큰 저장 경로",
+        docs_url="https://kohganepercentiii.com/docs/operations/EMERGENCY_ACCESS.md",
+        category=ApiCategory.AUTH,
+        optional=True,
+    ),
     # ── 알림 ─────────────────────────────────────────────────────────────
     ApiKey(
         name="telegram",

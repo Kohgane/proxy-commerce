@@ -71,11 +71,18 @@
         <button type="submit" class="btn btn-primary w-100">로그인</button>
       </form>
 
+      <a href="/auth/magic-link{% if next_url %}?next={{ next_url }}{% endif %}"
+         class="btn btn-outline-secondary w-100 mt-2">📧 이메일 로그인</a>
+
       <div class="text-center mt-3 small">
         <a href="/auth/signup" class="text-decoration-none">회원가입</a>
         &nbsp;·&nbsp;
         <a href="#" class="text-decoration-none text-muted"
            onclick="document.getElementById('forgotForm').style.display='block';return false;">비밀번호 찾기</a>
+        &nbsp;·&nbsp;
+        <a href="/privacy" class="text-decoration-none">개인정보처리방침</a>
+        &nbsp;·&nbsp;
+        <a href="/terms" class="text-decoration-none">이용약관</a>
       </div>
 
       <!-- 비밀번호 재설정 폼 (숨김) -->
