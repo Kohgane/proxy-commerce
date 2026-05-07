@@ -27,7 +27,7 @@ from typing import Any, Dict
 
 from decimal import Decimal, InvalidOperation
 
-from flask import Blueprint, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for
 
 logger = logging.getLogger(__name__)
 
@@ -1467,6 +1467,11 @@ def pricing_rules_create():
     Request body: 룰 파라미터 (JSON)
     Response: {"ok": true, "rule": {...}}
     """
+    if not session.get("user_id"):
+        return jsonify({"ok": False, "error": "로그인이 필요합니다.", "login_url": "/auth/login"}), 401
+    if session.get("user_role") not in ("seller", "admin"):
+        return jsonify({"ok": False, "error": "권한이 없습니다."}), 403
+
     data = request.get_json(force=True, silent=True) or {}
     if not data.get("name"):
         return jsonify({"ok": False, "error": "룰 이름이 필요합니다."}), 400

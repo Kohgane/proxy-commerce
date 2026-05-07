@@ -94,6 +94,14 @@ def _is_admin_email(email: str) -> bool:
     return email.lower() in admin_emails
 
 
+def _resolve_user_role(email: str) -> str:
+    """ADMIN_EMAILS 매칭 시 admin, 그 외 seller."""
+    if email and _is_admin_email(email):
+        logger.info("ADMIN_EMAILS 매칭 — admin role 부여: %s", email)
+        return "admin"
+    return "seller"
+
+
 # ---------------------------------------------------------------------------
 # 헬퍼: 현재 로그인 사용자
 # ---------------------------------------------------------------------------
@@ -419,7 +427,7 @@ def oauth_callback(provider: str):
 
         if user is None:
             # 신규 가입
-            role = "admin" if _is_admin_email(email) else "seller"
+            role = _resolve_user_role(email)
             user = User.new(email=email, name=name, avatar_url=avatar_url, role=role)
             user.email_verified = True  # 소셜 검증된 이메일
             user.social_accounts = [{
@@ -440,10 +448,17 @@ def oauth_callback(provider: str):
             except Exception:
                 pass
 
+        role = _resolve_user_role(email)
+        if not email:
+            flash("이메일 동의가 없어 일반 셀러 권한으로 로그인됩니다.", "warning")
+        if user.role != role:
+            user.role = role
+            store.update(user)
+
         session["user_id"] = user.user_id
         session["user_email"] = user.email
         session["user_name"] = user.name
-        session["user_role"] = user.role
+        session["user_role"] = role
         session.permanent = True
 
         store.update_last_login(user.user_id)
@@ -453,6 +468,20 @@ def oauth_callback(provider: str):
         logger.warning("oauth_callback 오류 (%s): %s", provider, exc)
         flash("로그인 중 오류가 발생했습니다.", "danger")
         return redirect(url_for("auth.login"))
+
+
+@auth_bp.get("/whoami")
+def whoami():
+    """현재 세션 디버그용. 로그인 상태/role/email 표시."""
+    return jsonify({
+        "logged_in": bool(session.get("user_id")),
+        "user_id": session.get("user_id"),
+        "user_email": session.get("user_email"),
+        "user_role": session.get("user_role"),
+        "user_name": session.get("user_name"),
+        "admin_emails_configured": bool(os.getenv("ADMIN_EMAILS")),
+        "is_admin": session.get("user_role") == "admin",
+    })
 
 
 @auth_bp.post("/logout")

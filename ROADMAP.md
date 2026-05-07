@@ -131,6 +131,7 @@
 | Phase 135.1 | Hotfix — /seller/me/tokens 페이지 등록 + 크롬 확장 icons/*.png 4개 생성 | #PR | 2026-05-06 |
 | Phase 135.2 | Hotfix — scripting 권한 + collect/history + preview + 토큰 prefix | #PR | 2026-05-06 |
 | Phase 136 | 자동 가격 조정 엔진(룰/시뮬레이션/이력/cron) + 마켓 update_price 본 구현 + /admin/diagnostics + 텔레그램 health 강화 | #PR | 2026-05-06 |
+| Phase 136.1 | Hotfix — PricingRuleStore JSONL 영구 저장 + OAuth ADMIN 자동 승격 + /auth/whoami + 헤더 사용자 표시 | #PR | 2026-05-06 |
 
 ## 📋 다음 큐
 

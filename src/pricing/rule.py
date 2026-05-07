@@ -7,9 +7,12 @@ from __future__ import annotations
 
 import logging
 import os
+import json
+import threading
 import uuid
 from dataclasses import dataclass, field
 from decimal import Decimal
+from pathlib import Path
 from typing import List, Optional
 
 logger = logging.getLogger(__name__)
@@ -143,27 +146,56 @@ class PricingRuleStore:
     """가격 룰 Sheets 저장소.
 
     Sheets 워크시트 ``pricing_rules`` 에 룰을 저장/조회/수정/삭제.
-    키 미설정 시 메모리 폴백.
+    키 미설정 또는 Sheets 오류 시 JSONL 영구 저장 폴백.
     """
 
+    _LOCK = threading.RLock()
+
     def __init__(self):
-        self._memory: List[PricingRule] = []
+        fallback_path = os.getenv("PRICING_RULES_FALLBACK_PATH", "data/pricing_rules.jsonl")
+        self._fallback_path = Path(fallback_path)
+        self._fallback_path.parent.mkdir(parents=True, exist_ok=True)
 
     # ── 내부 헬퍼 ─────────────────────────────────────────────────────────
 
     def _open_ws(self):
         """Sheets 워크시트 열기 (없으면 생성)."""
         try:
-            from src.utils.sheets import open_sheet
-            ws = open_sheet(_WORKSHEET_NAME)
-            # 헤더 없으면 초기화
-            existing = ws.row_values(1)
-            if not existing:
-                ws.append_row(_HEADERS)
+            from src.utils.sheets import get_worksheet
+            ws = get_worksheet(_WORKSHEET_NAME, headers=_HEADERS)
             return ws
         except Exception as exc:
             logger.debug("pricing_rules Sheets 열기 실패: %s", exc)
             return None
+
+    def _read_fallback(self) -> List[PricingRule]:
+        if not self._fallback_path.exists():
+            return []
+        rules: List[PricingRule] = []
+        try:
+            with self._fallback_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    raw = line.strip()
+                    if not raw:
+                        continue
+                    try:
+                        rules.append(PricingRule.from_dict(json.loads(raw)))
+                    except Exception as exc:
+                        logger.warning("pricing_rules JSONL 행 파싱 실패: %s", exc)
+        except Exception as exc:
+            logger.warning("pricing_rules JSONL 읽기 실패: %s", exc)
+        return rules
+
+    def _write_fallback(self, rules: List[PricingRule]) -> None:
+        with self._LOCK:
+            try:
+                tmp_path = self._fallback_path.with_suffix(".tmp")
+                with tmp_path.open("w", encoding="utf-8") as f:
+                    for rule in rules:
+                        f.write(json.dumps(rule.to_dict(), ensure_ascii=False) + "\n")
+                tmp_path.replace(self._fallback_path)
+            except Exception as exc:
+                logger.warning("pricing_rules JSONL 쓰기 실패: %s", exc)
 
     def _row_to_rule(self, row: dict) -> PricingRule:
         """Sheets 행 dict → PricingRule."""
@@ -171,7 +203,6 @@ class PricingRuleStore:
 
     def _rule_to_row(self, rule: PricingRule) -> list:
         """PricingRule → Sheets 행 list (헤더 순서대로)."""
-        import json
         d = rule.to_dict()
         return [
             d["rule_id"],
@@ -196,20 +227,19 @@ class PricingRuleStore:
     def list_all(self) -> List[PricingRule]:
         """모든 룰 조회 (우선순위 오름차순)."""
         ws = self._open_ws()
-        if ws is None:
-            return sorted(self._memory, key=lambda r: r.priority)
-        try:
-            rows = ws.get_all_records()
-            rules = []
-            for row in rows:
-                try:
-                    rules.append(self._row_to_rule(row))
-                except Exception as exc:
-                    logger.warning("룰 파싱 실패: %s — %s", row, exc)
-            return sorted(rules, key=lambda r: r.priority)
-        except Exception as exc:
-            logger.warning("pricing_rules list_all 실패: %s", exc)
-            return sorted(self._memory, key=lambda r: r.priority)
+        if ws is not None:
+            try:
+                rows = ws.get_all_records()
+                rules = []
+                for row in rows:
+                    try:
+                        rules.append(self._row_to_rule(row))
+                    except Exception as exc:
+                        logger.warning("룰 파싱 실패: %s — %s", row, exc)
+                return sorted(rules, key=lambda r: r.priority)
+            except Exception as exc:
+                logger.warning("pricing_rules list_all 실패, JSONL 폴백: %s", exc)
+        return sorted(self._read_fallback(), key=lambda r: r.priority)
 
     def active_sorted(self) -> List[PricingRule]:
         """활성 룰만, 우선순위 오름차순."""
@@ -225,57 +255,64 @@ class PricingRuleStore:
     def create(self, rule: PricingRule) -> PricingRule:
         """룰 생성."""
         ws = self._open_ws()
-        if ws is None:
-            self._memory.append(rule)
-            return rule
-        try:
-            ws.append_row(self._rule_to_row(rule))
-            logger.info("룰 생성: %s (%s)", rule.name, rule.rule_id)
-        except Exception as exc:
-            logger.warning("룰 생성 실패 (Sheets): %s", exc)
-            self._memory.append(rule)
+        if ws is not None:
+            try:
+                ws.append_row(self._rule_to_row(rule))
+                logger.info("룰 생성: %s (%s)", rule.name, rule.rule_id)
+                return rule
+            except Exception as exc:
+                logger.warning("룰 생성 실패 (Sheets), JSONL 폴백: %s", exc)
+        with self._LOCK:
+            rules = self._read_fallback()
+            rules.append(rule)
+            self._write_fallback(rules)
         return rule
 
     def update(self, rule: PricingRule) -> bool:
         """룰 업데이트 (rule_id로 행 찾아 덮어쓰기)."""
         ws = self._open_ws()
-        if ws is None:
-            for i, r in enumerate(self._memory):
-                if r.rule_id == rule.rule_id:
-                    self._memory[i] = rule
+        if ws is not None:
+            try:
+                rows = ws.get_all_records()
+                for i, row in enumerate(rows):
+                    if row.get("rule_id") == rule.rule_id:
+                        row_num = i + 2  # 헤더 포함 1-indexed
+                        new_row = self._rule_to_row(rule)
+                        for col_idx, val in enumerate(new_row, start=1):
+                            ws.update_cell(row_num, col_idx, val)
+                        logger.info("룰 업데이트: %s", rule.rule_id)
+                        return True
+            except Exception as exc:
+                logger.warning("룰 업데이트 실패 (Sheets), JSONL 폴백: %s", exc)
+        with self._LOCK:
+            rules = self._read_fallback()
+            for i, existing in enumerate(rules):
+                if existing.rule_id == rule.rule_id:
+                    rules[i] = rule
+                    self._write_fallback(rules)
                     return True
-            return False
-        try:
-            rows = ws.get_all_records()
-            for i, row in enumerate(rows):
-                if row.get("rule_id") == rule.rule_id:
-                    row_num = i + 2  # 헤더 포함 1-indexed
-                    new_row = self._rule_to_row(rule)
-                    for col_idx, val in enumerate(new_row, start=1):
-                        ws.update_cell(row_num, col_idx, val)
-                    logger.info("룰 업데이트: %s", rule.rule_id)
-                    return True
-        except Exception as exc:
-            logger.warning("룰 업데이트 실패: %s", exc)
         return False
 
     def delete(self, rule_id: str) -> bool:
         """룰 삭제."""
         ws = self._open_ws()
-        if ws is None:
-            before = len(self._memory)
-            self._memory = [r for r in self._memory if r.rule_id != rule_id]
-            return len(self._memory) < before
-        try:
-            rows = ws.get_all_records()
-            for i, row in enumerate(rows):
-                if row.get("rule_id") == rule_id:
-                    ws.delete_rows(i + 2)
-                    logger.info("룰 삭제: %s", rule_id)
-                    return True
-        except Exception as exc:
-            logger.warning("룰 삭제 실패: %s", exc)
-        return False
+        if ws is not None:
+            try:
+                rows = ws.get_all_records()
+                for i, row in enumerate(rows):
+                    if row.get("rule_id") == rule_id:
+                        ws.delete_rows(i + 2)
+                        logger.info("룰 삭제: %s", rule_id)
+                        return True
+            except Exception as exc:
+                logger.warning("룰 삭제 실패 (Sheets), JSONL 폴백: %s", exc)
+        with self._LOCK:
+            rules = self._read_fallback()
+            filtered = [r for r in rules if r.rule_id != rule_id]
+            if len(filtered) == len(rules):
+                return False
+            self._write_fallback(filtered)
+            return True
 
     def reorder(self, ordered_ids: List[str]) -> bool:
         """priority를 ordered_ids 순서대로 재설정."""

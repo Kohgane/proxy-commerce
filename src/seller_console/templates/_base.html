@@ -78,7 +78,9 @@
       </li>
     </ul>
     <div class="mt-auto pt-3 border-top border-secondary">
-      <a class="nav-link text-secondary small" href="/dashboard/">← 어드민</a>
+      {% if session is defined and session.get('user_role') == 'admin' %}
+      <a class="nav-link text-secondary small" href="/admin/diagnostics">🛠️ 관리자 패널</a>
+      {% endif %}
       <a class="nav-link text-secondary small" href="/seller/health">🟢 헬스</a>
     </div>
   </nav>
@@ -89,6 +91,7 @@
     <header class="d-flex justify-content-end align-items-center px-4 py-2 bg-white border-bottom shadow-sm" style="min-height:52px;">
       {% set _user_id = session.get('user_id') if session is defined else None %}
       {% set _user_name = session.get('user_name') if session is defined else None %}
+      {% set _user_email = session.get('user_email') if session is defined else None %}
       {% set _user_role = session.get('user_role') if session is defined else None %}
       {% if _user_id %}
         <div class="dropdown">
@@ -98,9 +101,11 @@
                  style="width:32px;height:32px;font-size:0.85rem;">
               {{ (_user_name or '?')[0].upper() }}
             </div>
-            <span class="text-dark small">{{ _user_name or session.get('user_email', '') }}</span>
+            <span class="text-dark small">{{ _user_email or _user_name or '' }}</span>
             {% if _user_role == 'admin' %}
-              <span class="badge bg-danger" style="font-size:0.65rem;">Admin</span>
+              <span class="badge bg-danger" style="font-size:0.65rem;">관리자</span>
+            {% else %}
+              <span class="badge bg-primary" style="font-size:0.65rem;">셀러</span>
             {% endif %}
           </button>
           <ul class="dropdown-menu dropdown-menu-end">
