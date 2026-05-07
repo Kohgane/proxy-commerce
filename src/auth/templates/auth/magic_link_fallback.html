@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Magic Link 비상 폴백</title>
+  <style>
+    body { font-family: sans-serif; background: #f8f9fa; margin: 0; padding: 24px; }
+    .wrap { max-width: 760px; margin: 0 auto; }
+    .warn { background: #fff3cd; color: #664d03; border: 1px solid #ffecb5; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+    .card { background: #fff; border: 1px solid #dee2e6; border-radius: 8px; padding: 16px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .link { flex: 1; min-width: 280px; padding: 10px; border: 1px solid #ced4da; border-radius: 6px; background: #f8f9fa; word-break: break-all; }
+    button { padding: 10px 14px; border-radius: 6px; border: 1px solid #ced4da; background: #fff; cursor: pointer; }
+    .danger { color: #842029; background: #f8d7da; border: 1px solid #f5c2c7; border-radius: 8px; padding: 12px; margin-top: 16px; }
+    .meta { color: #6c757d; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="warn"><strong>이메일 발송 실패.</strong> 아래 1회용 링크를 사용하세요.</div>
+    <div class="card">
+      <div class="row">
+        <div class="link" id="magic-link">{{ link }}</div>
+        <button type="button" onclick="copyLink()">복사</button>
+      </div>
+      <div class="meta">대상 이메일: {{ email }}</div>
+      <div class="meta">만료까지 <strong id="countdown">--:--</strong></div>
+    </div>
+    <div class="danger">보안 메모: 이 링크는 본인만 사용. 다른 사람과 공유 금지.</div>
+  </div>
+  <script>
+    function copyLink() {
+      const text = document.getElementById('magic-link').textContent || '';
+      navigator.clipboard.writeText(text);
+    }
+    (function initCountdown() {
+      let remaining = {{ ttl_minutes|int }} * 60;
+      const el = document.getElementById('countdown');
+      function render() {
+        if (remaining < 0) {
+          el.textContent = '만료됨';
+          return;
+        }
+        const m = String(Math.floor(remaining / 60)).padStart(2, '0');
+        const s = String(remaining % 60).padStart(2, '0');
+        el.textContent = `${m}:${s}`;
+        remaining -= 1;
+      }
+      render();
+      setInterval(render, 1000);
+    })();
+  </script>
+</body>
+</html>

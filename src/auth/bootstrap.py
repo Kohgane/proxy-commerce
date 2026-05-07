@@ -42,6 +42,30 @@ def bootstrap_login():
     token = request.args.get("token", "")
     email = (request.args.get("email") or "").strip().lower()
     next_url = _trusted_redirect_target(request.args.get("next", ""), default="/admin/diagnostics")
+    placeholder_patterns = ["<", ">", "your-token", "ADMIN_BOOTSTRAP_TOKEN", "REPLACE", "여기에"]
+
+    if any(p in token for p in placeholder_patterns):
+        return (
+            jsonify(
+                {
+                    "error": "토큰 자리에 placeholder 값이 들어있습니다.",
+                    "hint": "Render 환경변수 ADMIN_BOOTSTRAP_TOKEN의 실제 값으로 교체하세요.",
+                    "received_token_preview": token[:20] + "..." if len(token) > 20 else token,
+                }
+            ),
+            400,
+        )
+
+    if token.startswith("/auth/") or token.startswith("https://"):
+        return (
+            jsonify(
+                {
+                    "error": "토큰에 URL 일부가 포함되어 있습니다 (이중 입력).",
+                    "hint": "토큰 값만 깔끔히 입력하세요. 새 탭에서 다시 시도하세요.",
+                }
+            ),
+            400,
+        )
 
     expected = os.getenv("ADMIN_BOOTSTRAP_TOKEN", "")
     if not expected:

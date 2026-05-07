@@ -12,8 +12,9 @@ Phase 25: Frontend Admin Panel
 from __future__ import annotations
 
 import logging
+import os
 
-from flask import Blueprint, current_app, render_template_string, request
+from flask import Blueprint, current_app, redirect, render_template_string, request, session
 
 MAX_DISPLAY_ITEMS = 200
 
@@ -322,12 +323,9 @@ def admin_diagnostics():
 
     admin 역할 필수.
     """
-    from flask import session, jsonify as _jsonify
-
     # require_role("admin") 패턴 (auth Blueprint 데코레이터 사용 불가이므로 직접 구현)
     user_role = session.get("user_role")
     if not session.get("user_id"):
-        from flask import redirect, url_for
         return redirect("/auth/login?next=/admin/diagnostics")
     if user_role != "admin":
         return _render("접근 거부", "<div class='alert alert-danger'>관리자 권한이 필요합니다.</div>"), 403
@@ -343,6 +341,7 @@ def admin_diagnostics():
         "Naver": f"{base_url}/auth/naver/callback",
     }
     emergency_access = _build_emergency_access_status()
+    emergency_access["issued_magic_link"] = session.pop("issued_magic_link", None)
     oauth_diagnostics = _build_oauth_diagnostics(base_url, oauth_urls)
 
     # 섹션 3: 메신저 채널 health
@@ -369,6 +368,26 @@ def admin_diagnostics():
         message_log=message_log,
         base_url=base_url,
     )
+
+
+@admin_panel_bp.post("/diagnostics/issue-magic-link")
+def diagnostics_issue_magic_link():
+    if not session.get("user_id"):
+        return redirect("/auth/login?next=/admin/diagnostics")
+    if session.get("user_role") != "admin":
+        return _render("접근 거부", "<div class='alert alert-danger'>관리자 권한이 필요합니다.</div>"), 403
+
+    email = (request.form.get("email") or "").strip().lower()
+    admin_emails = [e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()]
+    if not email or "@" not in email:
+        return _render("발급 실패", "<div class='alert alert-danger'>올바른 이메일을 입력하세요.</div>"), 400
+    if email not in admin_emails:
+        return _render("발급 실패", "<div class='alert alert-danger'>ADMIN_EMAILS에 등록된 관리자 이메일만 발급 가능합니다.</div>"), 403
+
+    from src.auth.magic_link import issue_magic_link
+
+    session["issued_magic_link"] = issue_magic_link(email=email, next_url="/admin/diagnostics")
+    return redirect("/admin/diagnostics")
 
 
 @admin_panel_bp.post("/diagnostics/test-telegram")
@@ -716,6 +735,7 @@ _DIAGNOSTICS_TEMPLATE = """
           <div class="fw-semibold mb-2">🆘 비상 로그인 (OAuth 정상화 전 임시)</div>
           <ul class="mb-0 ps-3">
             <li>Magic Link: <a href="{{ emergency_access.magic_link_url }}">{{ emergency_access.magic_link_url }}</a></li>
+            <li>Diagnostic Token: <code>/auth/diagnostic-token/issue</code> (Render 로그에서 URL 확인)</li>
             <li>
               Bootstrap:
               {% if emergency_access.bootstrap_configured %}
@@ -727,6 +747,16 @@ _DIAGNOSTICS_TEMPLATE = """
             </li>
             <li class="small mt-1">권장: OAuth 정상화 후 ADMIN_BOOTSTRAP_TOKEN 환경변수 삭제</li>
           </ul>
+          <form method="POST" action="/admin/diagnostics/issue-magic-link" class="mt-3 d-flex gap-2 flex-wrap">
+            <input type="email" name="email" class="form-control form-control-sm" style="max-width:280px" placeholder="admin 이메일" required>
+            <button type="submit" class="btn btn-sm btn-outline-primary">🔗 1회용 링크 발급 (화면 표시)</button>
+          </form>
+          {% if emergency_access.issued_magic_link %}
+            <div class="mt-2 p-2 bg-white border rounded small">
+              <div class="fw-semibold mb-1">발급된 1회용 링크</div>
+              <code>{{ emergency_access.issued_magic_link }}</code>
+            </div>
+          {% endif %}
         </div>
 
         {% for item in oauth_diagnostics %}

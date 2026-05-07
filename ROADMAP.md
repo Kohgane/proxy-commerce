@@ -133,6 +133,7 @@
 | Phase 136 | 자동 가격 조정 엔진(룰/시뮬레이션/이력/cron) + 마켓 update_price 본 구현 + /admin/diagnostics + 텔레그램 health 강화 | #PR | 2026-05-06 |
 | Phase 136.1 | Hotfix — PricingRuleStore JSONL 영구 저장 + OAuth ADMIN 자동 승격 + /auth/whoami + 헤더 사용자 표시 | #PR | 2026-05-06 |
 | Phase 136.2 | Hotfix — Magic Link + Bootstrap 토큰 + /privacy/terms + OAuth 진단 강화 | #PR | 2026-05-06 |
+| Phase 136.3 | Hotfix — CI 회귀 13개 + Magic Link 화면표시 폴백 + Bootstrap UX + /auth/diagnostic-token | #PR | 2026-05-06 |
 
 ## 📋 다음 큐
 

@@ -111,6 +111,18 @@ class TestSellerConsoleViews:
         # 타오바오는 trust 정보도 반환해야 함
         assert "trust" in data
 
+    def test_collect_preview_with_tmall_url(self, client):
+        """POST /seller/collect/preview — tmall URL도 taobao로 식별."""
+        resp = client.post(
+            "/seller/collect/preview",
+            json={"url": "https://detail.tmall.com/item.htm?id=12345"},
+            content_type="application/json",
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert data["draft"]["source"] == "taobao"
+
     def test_collect_upload_no_product_returns_400(self, client):
         """POST /seller/collect/upload — 상품 없으면 400."""
         resp = client.post(
