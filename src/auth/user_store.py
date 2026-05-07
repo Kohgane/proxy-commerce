@@ -164,8 +164,10 @@ class UserStore:
             return
         # 중복 체크
         for acc in user.social_accounts:
-            if acc.get("provider") == provider_data.get("provider")
-               and acc.get("provider_user_id") == provider_data.get("provider_user_id")):
+            if (
+                acc.get("provider") == provider_data.get("provider")
+                and acc.get("provider_user_id") == provider_data.get("provider_user_id")
+            ):
                 return  # 이미 연결됨
         user.social_accounts.append({
             "provider": provider_data.get("provider", ""),

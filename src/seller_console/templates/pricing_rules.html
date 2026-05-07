@@ -290,6 +290,12 @@ async function submitCreate() {
   data.priority = parseInt(data.priority) || 100;
   data.action_value = data.action_value || '0';
   const r = await fetch('/seller/pricing/rules', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+  if (r.status === 401) {
+    if (confirm('로그인이 필요합니다. 로그인 페이지로 이동할까요?')) {
+      location.href = '/auth/login?next=/seller/pricing/rules';
+    }
+    return;
+  }
   const d = await r.json();
   if (d.ok) location.reload();
   else alert('생성 실패: ' + d.error);

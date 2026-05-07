@@ -17,6 +17,7 @@
 | `PRICING_NOTIFY_THRESHOLD_PCT` | `10` | 가격 변동 알림 임계값 (%) |
 | `PRICING_CRON_HOUR` | `3` | 일일 cron 실행 시각 (KST) |
 | `CRON_SECRET` | (없음) | `/cron/reprice` 인증 헤더 값 |
+| `PRICING_RULES_FALLBACK_PATH` | `data/pricing_rules.jsonl` | Sheets 미연결/오류 시 룰 JSONL 영구 저장 경로 |
 
 ---
 
@@ -131,3 +132,23 @@ Render Cron Job 설정:
 - Method: `POST`
 - Header: `X-Cron-Secret: <CRON_SECRET 값>`
 - 스케줄: `0 18 * * *` (UTC 18:00 = KST 03:00)
+
+---
+
+## 룰이 생성되는데 목록에 안 보일 때
+
+### 증상
+- `/seller/pricing/rules`에서 룰 생성 성공 후 새로고침하면 목록이 비어 있음
+
+### 원인
+- 멀티워커 환경에서 인메모리 저장은 워커 간 공유되지 않음
+
+### 현재 동작 (Phase 136.1)
+- 기본 저장소는 Google Sheets
+- Sheets 사용 불가 시 `PRICING_RULES_FALLBACK_PATH` JSONL 파일로 영구 저장
+- JSONL 쓰기는 `tmp → replace` 원자적(atomic) 교체로 처리
+
+### 점검 순서
+1. `/auth/whoami`에서 로그인 상태 확인
+2. `GOOGLE_SHEET_ID`/자격증명 설정 확인
+3. fallback 파일 경로 쓰기 가능 여부 확인 (`data/pricing_rules.jsonl` 기본)
