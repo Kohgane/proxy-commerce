@@ -1,0 +1,52 @@
+name: KOHGANE - Category Setup
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to run'
+        required: true
+        type: choice
+        options:
+          - 'category_images'
+          - 'recategorize_memo'
+          - 'cleanup_inspect'
+        default: 'category_images'
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: pip install requests
+      
+      - name: Run action
+        env:
+          WC_URL: ${{ secrets.WC_URL }}
+          WC_KEY: ${{ secrets.WC_KEY }}
+          WC_SECRET: ${{ secrets.WC_SECRET }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          case "${{ github.event.inputs.action }}" in
+            "category_images")
+              python automation/store_migration/category_images.py
+              ;;
+            "recategorize_memo")
+              python automation/store_migration/recategorize_memo.py
+              ;;
+            "cleanup_inspect")
+              python automation/store_migration/cleanup_old_categories.py
+              ;;
+          esac
