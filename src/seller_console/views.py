@@ -1827,6 +1827,24 @@ def _get_pricing_rule_store():
         return None
 
 
+def _get_competitor_monitor():
+    try:
+        from src.pricing.competitor_monitor import CompetitorMonitor
+        return CompetitorMonitor()
+    except Exception as exc:
+        logger.warning("CompetitorMonitor 로드 실패: %s", exc)
+        return None
+
+
+def _get_fx_impact_analyzer():
+    try:
+        from src.pricing.fx_impact import FXImpactAnalyzer
+        return FXImpactAnalyzer()
+    except Exception as exc:
+        logger.warning("FXImpactAnalyzer 로드 실패: %s", exc)
+        return None
+
+
 @bp.get("/pricing/rules")
 def pricing_rules():
     """가격 정책 룰 관리 페이지 (Phase 136)."""
@@ -1960,13 +1978,18 @@ def pricing_simulate():
     Response: {"ok": true, "results": {...}}
     """
     try:
-        from src.pricing.engine import PricingEngine
-        engine = PricingEngine()
-        results = engine.evaluate(dry_run=True)
+        from src.pricing.auto_adjuster import PricingAutoAdjuster
+        results = PricingAutoAdjuster().evaluate(dry_run=True)
         return jsonify({"ok": True, "results": results})
     except Exception as exc:
-        logger.warning("가격 시뮬레이션 오류: %s", exc)
-        return jsonify({"ok": False, "error": "시뮬레이션 중 오류가 발생했습니다."}), 500
+        logger.warning("자동 조정 시뮬레이션 오류(엔진 폴백): %s", exc)
+        try:
+            from src.pricing.engine import PricingEngine
+            results = PricingEngine().evaluate(dry_run=True)
+            return jsonify({"ok": True, "results": results})
+        except Exception as fallback_exc:
+            logger.warning("가격 시뮬레이션 폴백 오류: %s", fallback_exc)
+            return jsonify({"ok": False, "error": "시뮬레이션 중 오류가 발생했습니다."}), 500
 
 
 @bp.post("/pricing/run-now")
@@ -1980,13 +2003,127 @@ def pricing_run_now():
     dry_run = data.get("dry_run", True)
 
     try:
-        from src.pricing.engine import PricingEngine
-        engine = PricingEngine()
-        results = engine.evaluate(dry_run=bool(dry_run))
+        from src.pricing.auto_adjuster import PricingAutoAdjuster
+        results = PricingAutoAdjuster().evaluate(dry_run=bool(dry_run))
         return jsonify({"ok": True, "results": results})
     except Exception as exc:
-        logger.warning("가격 즉시 실행 오류: %s", exc)
-        return jsonify({"ok": False, "error": "실행 중 오류가 발생했습니다."}), 500
+        logger.warning("자동 가격 실행 오류(엔진 폴백): %s", exc)
+        try:
+            from src.pricing.engine import PricingEngine
+            results = PricingEngine().evaluate(dry_run=bool(dry_run))
+            return jsonify({"ok": True, "results": results})
+        except Exception as fallback_exc:
+            logger.warning("가격 즉시 실행 폴백 오류: %s", fallback_exc)
+            return jsonify({"ok": False, "error": "실행 중 오류가 발생했습니다."}), 500
+
+
+@bp.get("/pricing/competitors")
+def pricing_competitors():
+    """경쟁사 모니터링 대상 관리 + 가격 추이 페이지 (Phase 140)."""
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+
+    monitor = _get_competitor_monitor()
+    targets = []
+    trend_map: Dict[str, list] = {}
+    if monitor:
+        try:
+            targets = [t.to_dict() for t in monitor.list_targets()]
+            for t in targets:
+                trend_map[t["competitor_id"]] = monitor.get_price_trend(t["competitor_id"], points=20)
+        except Exception as exc:
+            logger.warning("경쟁사 목록 로드 실패: %s", exc)
+
+    return render_template(
+        "pricing_competitors.html",
+        page="pricing_competitors",
+        targets=targets,
+        trend_map=trend_map,
+    )
+
+
+@bp.post("/pricing/competitors")
+def pricing_competitors_create():
+    payload = request.get_json(force=True, silent=True) or {}
+    monitor = _get_competitor_monitor()
+    if monitor is None:
+        return jsonify({"ok": False, "error": "경쟁사 모니터 모듈 준비 중입니다."}), 503
+    if not payload.get("url"):
+        return jsonify({"ok": False, "error": "URL이 필요합니다."}), 400
+    target = monitor.create_target(payload)
+    return jsonify({"ok": True, "target": target.to_dict()}), 201
+
+
+@bp.post("/pricing/competitors/<competitor_id>/edit")
+def pricing_competitors_edit(competitor_id: str):
+    payload = request.get_json(force=True, silent=True) or {}
+    monitor = _get_competitor_monitor()
+    if monitor is None:
+        return jsonify({"ok": False, "error": "경쟁사 모니터 모듈 준비 중입니다."}), 503
+    target = monitor.update_target(competitor_id, payload)
+    if not target:
+        return jsonify({"ok": False, "error": "대상을 찾을 수 없습니다."}), 404
+    return jsonify({"ok": True, "target": target.to_dict()})
+
+
+@bp.post("/pricing/competitors/<competitor_id>/delete")
+def pricing_competitors_delete(competitor_id: str):
+    monitor = _get_competitor_monitor()
+    if monitor is None:
+        return jsonify({"ok": False, "error": "경쟁사 모니터 모듈 준비 중입니다."}), 503
+    ok = monitor.delete_target(competitor_id)
+    if not ok:
+        return jsonify({"ok": False, "error": "대상을 찾을 수 없습니다."}), 404
+    return jsonify({"ok": True})
+
+
+@bp.post("/pricing/competitors/monitor-now")
+def pricing_competitors_monitor_now():
+    monitor = _get_competitor_monitor()
+    if monitor is None:
+        return jsonify({"ok": False, "error": "경쟁사 모니터 모듈 준비 중입니다."}), 503
+    payload = request.get_json(force=True, silent=True) or {}
+    competitor_id = payload.get("competitor_id")
+    result = monitor.monitor_now(competitor_id=competitor_id)
+    return jsonify({"ok": True, "result": result})
+
+
+@bp.get("/pricing/fx-impact")
+def pricing_fx_impact():
+    """환율 영향 페이지 (Phase 140)."""
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+
+    analyzer = _get_fx_impact_analyzer()
+    data = {"alerts": [], "impacted": [], "threshold_pct": 0}
+    if analyzer:
+        try:
+            data = analyzer.detect_and_notify()
+        except Exception as exc:
+            logger.warning("FX 영향 분석 실패: %s", exc)
+
+    return render_template(
+        "pricing_fx_impact.html",
+        page="pricing_fx_impact",
+        fx_data=data,
+    )
+
+
+@bp.post("/pricing/fx-impact/reprice")
+def pricing_fx_impact_reprice():
+    analyzer = _get_fx_impact_analyzer()
+    if analyzer is None:
+        return jsonify({"ok": False, "error": "FX 영향 분석 모듈 준비 중입니다."}), 503
+    impacted = analyzer.impacted_products()
+    sku_filter = {str(x.get("sku") or "") for x in impacted if x.get("sku")}
+    try:
+        from src.pricing.auto_adjuster import PricingAutoAdjuster
+        dry_run = request.args.get("dry_run", "1") != "0"
+        results = PricingAutoAdjuster().evaluate(dry_run=dry_run, product_filter=sku_filter)
+        return jsonify({"ok": True, "results": results, "impacted": impacted})
+    except Exception as exc:
+        logger.warning("FX 일괄 재가격 오류: %s", exc)
+        return jsonify({"ok": False, "error": "일괄 재가격 실행 중 오류가 발생했습니다."}), 500
 
 
 @bp.get("/pricing/history")

@@ -1,0 +1,105 @@
+{% extends "_base.html" %}
+{% block title %}경쟁사 모니터링{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="mb-1">🕵️ 경쟁사 가격 모니터링</h4>
+    <small class="text-muted">본사 상품과 경쟁사 URL을 1:N으로 연결해 가격/재고/배송비를 추적합니다.</small>
+  </div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-outline-primary btn-sm" onclick="monitorNow()">⏱ 지금 즉시 모니터링</button>
+    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createModal">+ 경쟁사 추가</button>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-body p-0">
+    <table class="table table-sm table-hover mb-0">
+      <thead><tr><th>본사 SKU</th><th>이름</th><th>사이트</th><th>URL</th><th>액션</th></tr></thead>
+      <tbody>
+      {% if targets %}
+        {% for t in targets %}
+        <tr>
+          <td>{{ t.product_id or '-' }}</td>
+          <td>{{ t.name or '-' }}</td>
+          <td>{{ t.site }}</td>
+          <td><a href="{{ t.url }}" target="_blank" rel="noopener">링크</a></td>
+          <td>
+            <button class="btn btn-outline-primary btn-sm" onclick="monitorNow('{{ t.competitor_id }}')">체크</button>
+            <button class="btn btn-outline-danger btn-sm" onclick="removeTarget('{{ t.competitor_id }}')">삭제</button>
+          </td>
+        </tr>
+        <tr>
+          <td colspan="5" class="bg-light">
+            <small class="text-muted d-block mb-1">가격 추이 (최근 {{ (trend_map.get(t.competitor_id) or [])|length }}건)</small>
+            <div class="small">{{ (trend_map.get(t.competitor_id) or [])|tojson }}</div>
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="5" class="text-center text-muted py-4">등록된 경쟁사 대상이 없습니다.</td></tr>
+      {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal fade" id="createModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">경쟁사 추가</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="createForm" class="row g-2">
+          <div class="col-12"><input class="form-control" name="product_id" placeholder="본사 SKU"></div>
+          <div class="col-12"><input class="form-control" name="name" placeholder="경쟁사 상품명"></div>
+          <div class="col-12"><input class="form-control" name="url" placeholder="https://..." required></div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+        <button class="btn btn-primary" onclick="createTarget()">저장</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function createTarget() {
+  const data = Object.fromEntries(new FormData(document.getElementById('createForm')));
+  const res = await fetch('/seller/pricing/competitors', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+  });
+  const d = await res.json();
+  if (d.ok) location.reload();
+  else alert(d.error || '저장 실패');
+}
+
+async function removeTarget(id) {
+  if (!confirm('삭제할까요?')) return;
+  const res = await fetch(`/seller/pricing/competitors/${id}/delete`, {method: 'POST'});
+  const d = await res.json();
+  if (d.ok) location.reload();
+  else alert(d.error || '삭제 실패');
+}
+
+async function monitorNow(id) {
+  const body = id ? {competitor_id: id} : {};
+  const res = await fetch('/seller/pricing/competitors/monitor-now', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+  });
+  const d = await res.json();
+  if (d.ok) {
+    alert(`모니터링 완료: ${d.result.captured}건 수집 / 알림 ${d.result.alerts}건`);
+    location.reload();
+  } else {
+    alert(d.error || '모니터링 실패');
+  }
+}
+</script>
+{% endblock %}

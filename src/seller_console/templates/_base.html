@@ -80,6 +80,14 @@
         <a class="nav-link text-secondary {% if page == 'pricing_rules' %}text-white fw-semibold{% endif %}"
            href="/seller/pricing/rules">💰 가격 정책 룰</a>
       </li>
+      <li class="nav-item">
+        <a class="nav-link text-secondary {% if page == 'pricing_competitors' %}text-white fw-semibold{% endif %}"
+           href="/seller/pricing/competitors">🕵️ 경쟁사</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link text-secondary {% if page == 'pricing_fx_impact' %}text-white fw-semibold{% endif %}"
+           href="/seller/pricing/fx-impact">💱 환율 영향</a>
+      </li>
     </ul>
     <div class="mt-auto pt-3 border-top border-secondary">
       {% if session is defined and session.get('user_role') == 'admin' %}

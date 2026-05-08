@@ -95,6 +95,30 @@ class FXHistory:
             return Decimal('0')
         return sum(values, Decimal('0')) / Decimal(str(len(values)))
 
+    def get_rate_n_days_ago(self, currency: str, days: int = 1) -> Decimal:
+        """N일 전 통화 환율을 반환한다.
+
+        Args:
+            currency: ``USD`` 또는 ``USDKRW`` 형태 모두 허용
+            days: 며칠 전 값인지
+        """
+        pair = str(currency or "").upper()
+        if not pair.endswith("KRW"):
+            pair = f"{pair}KRW"
+
+        history = self.get_history(days=max(days + 1, 2))
+        if not history:
+            return Decimal("0")
+
+        history_sorted = sorted(history, key=lambda r: r.get("date", ""))
+        idx = max(0, len(history_sorted) - (days + 1))
+        row = history_sorted[idx]
+        val = row.get(pair)
+        try:
+            return Decimal(str(val or "0"))
+        except Exception:
+            return Decimal("0")
+
     def detect_significant_changes(self, threshold_pct: float = None) -> list:
         """급변 감지 (기본 3%).
 
