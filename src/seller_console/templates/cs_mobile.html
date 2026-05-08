@@ -1,0 +1,111 @@
+{% extends "_base.html" %}
+{% block title %}CS Mobile{% endblock %}
+
+{% block content %}
+<link rel="manifest" href="/seller/static/manifest.json">
+<meta name="theme-color" content="#212529">
+<link rel="apple-touch-icon" href="/seller/static/icon-192.png">
+
+<style>
+  .msg-card { border-radius: 12px; cursor: pointer; transition: transform .1s; user-select: none; }
+  .msg-card:active { transform: scale(.97); }
+  .category-refund { border-left: 4px solid #dc3545; }
+  .category-shipping { border-left: 4px solid #0d6efd; }
+  .category-size { border-left: 4px solid #198754; }
+  .category-stock { border-left: 4px solid #ffc107; }
+  .category-general { border-left: 4px solid #6c757d; }
+  .ai-suggestion { font-size: .85rem; max-height: 2.4em; overflow: hidden; transition: max-height .3s; }
+  .ai-suggestion.expanded { max-height: 10em; }
+  .action-btns .btn { min-width: 80px; font-size: 1rem; padding: .6rem 1rem; }
+  .priority-badge { font-size: .7rem; }
+  #install-banner { display: none; }
+</style>
+
+<div class="container-sm py-3" style="max-width:520px">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0">📱 CS Mobile</h5>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary btn-sm" href="/seller/cs/inbox">PC 버전</a>
+      <button class="btn btn-outline-primary btn-sm" id="install-banner" onclick="installPWA()">홈화면 추가</button>
+    </div>
+  </div>
+
+  <!-- 통계 요약 -->
+  <div class="row g-2 mb-3">
+    <div class="col-4 text-center">
+      <div class="card py-2">
+        <div class="text-muted" style="font-size:.75rem">미응답</div>
+        <div class="fs-5 fw-bold">{{ stats.unanswered }}</div>
+      </div>
+    </div>
+    <div class="col-4 text-center">
+      <div class="card py-2">
+        <div class="text-muted" style="font-size:.75rem">긴급</div>
+        <div class="fs-5 fw-bold text-danger">{{ stats.urgent_unanswered }}</div>
+      </div>
+    </div>
+    <div class="col-4 text-center">
+      <div class="card py-2">
+        <div class="text-muted" style="font-size:.75rem">24h 신규</div>
+        <div class="fs-5 fw-bold">{{ stats.new_24h }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 메시지 카드 목록 -->
+  {% for msg in messages %}
+  <div class="card msg-card shadow-sm mb-3 category-{{ msg.category or 'general' }}"
+       id="card-{{ msg.message_id }}">
+    <div class="card-body pb-2">
+      <div class="d-flex justify-content-between align-items-start mb-1">
+        <div>
+          <span class="fw-semibold">{{ msg.customer_name }}</span>
+          <span class="badge bg-secondary ms-1 priority-badge">{{ msg.channel }}</span>
+          {% if msg.priority >= 2 %}
+            <span class="badge bg-danger ms-1 priority-badge">긴급</span>
+          {% endif %}
+        </div>
+        <small class="text-muted">{{ msg.received_at[:16] if msg.received_at else '' }}</small>
+      </div>
+      <p class="mb-2 small text-truncate" style="max-width:100%">{{ msg.body }}</p>
+
+      {% if msg.suggested_reply %}
+      <div class="ai-suggestion text-muted border-start ps-2 mb-2"
+           id="ai-{{ msg.message_id }}"
+           ontouchstart=""
+           onclick="toggleAI('{{ msg.message_id }}')">
+        💡 {{ msg.suggested_reply }}
+      </div>
+      {% endif %}
+
+      <!-- 답변 입력 + 버튼 -->
+      <form method="post" action="/seller/cs/inbox/respond">
+        <input type="hidden" name="message_id" value="{{ msg.message_id }}">
+        <textarea class="form-control form-control-sm mb-2" name="final_reply" rows="2"
+                  placeholder="답변 입력 (비워두면 AI 제안 사용)"></textarea>
+        <div class="d-flex gap-2 action-btns">
+          <button type="submit" name="action" value="send"
+                  class="btn btn-success flex-fill">✅ 발송</button>
+          <button type="submit" name="action" value="hold"
+                  class="btn btn-outline-warning flex-fill">⏸ 보류</button>
+          <button type="submit" name="action" value="resolve"
+                  class="btn btn-outline-secondary flex-fill">✔ 해결</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% else %}
+  <div class="text-center text-muted py-5">
+    <div style="font-size:2rem">🎉</div>
+    <div>미응답 메시지 없음</div>
+  </div>
+  {% endfor %}
+</div>
+
+<script src="/seller/static/cs_mobile.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/seller/static/sw.js').catch(()=>{});
+  }
+</script>
+{% endblock %}

@@ -30,7 +30,15 @@ def suggest_reply(msg: CSMessage, faq_store: FAQStore) -> str:
     candidates = faq_store.list_all(language=msg.language, category=msg.category or None, enabled_only=True)
     if not candidates:
         candidates = faq_store.search_by_keywords(msg.body, language=msg.language)
-    scored = _rank_candidates(msg, candidates)
+
+    # 임베딩 계산 (BudgetGuard 통과 못 하면 None)
+    try:
+        from src.cs_bot.embeddings import get_embedding
+        msg_emb = get_embedding(msg.body, language=msg.language)
+    except Exception:
+        msg_emb = None
+
+    scored = _rank_candidates(msg, candidates, query_embedding=msg_emb)
     if not scored:
         fallback = "문의 주셔서 감사합니다. 확인 후 빠르게 안내드리겠습니다."
         return _polish_with_ai(fallback, msg.language)
@@ -40,7 +48,7 @@ def suggest_reply(msg: CSMessage, faq_store: FAQStore) -> str:
     return _polish_with_ai(draft, msg.language)
 
 
-def _rank_candidates(msg: CSMessage, candidates: list[FAQEntry]) -> list[FAQEntry]:
+def _rank_candidates(msg: CSMessage, candidates: list[FAQEntry], *, query_embedding: list[float] | None = None) -> list[FAQEntry]:
     body = (msg.body or "").lower()
     tokens = [t for t in body.replace("\n", " ").split(" ") if t]
     rows: list[tuple[float, FAQEntry]] = []
@@ -58,8 +66,8 @@ def _rank_candidates(msg: CSMessage, candidates: list[FAQEntry]) -> list[FAQEntr
         if msg.language and entry.language == msg.language:
             score += 0.5
         score += max(0, entry.priority) * 0.2
-        if entry.embedding:
-            score += _cosine_bonus(entry.embedding, None)
+        if entry.embedding and query_embedding:
+            score += _cosine_bonus(entry.embedding, query_embedding)
         if score > 0:
             rows.append((score, entry))
     rows.sort(key=lambda x: (-x[0], -x[1].priority, x[1].faq_id))
