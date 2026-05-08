@@ -28,6 +28,7 @@ class ApiCategory(str, Enum):
     SELF_MALL = "self_mall"        # Shopify/WooCommerce
     UTILITY = "utility"            # 환율/이미지
     INFRA = "infra"                # Google Sheets
+    CS_BOT = "cs_bot"              # CS 자동응답 봇
 
 
 # ---------------------------------------------------------------------------
@@ -387,6 +388,32 @@ API_REGISTRY: list = [
         purpose="자동 가격 조정 엔진 설정 (미설정 시 안전한 기본값 사용)",
         docs_url="https://kohganepercentiii.com/docs/operations/PRICING.md",
         category=ApiCategory.UTILITY,
+        optional=True,
+    ),
+    ApiKey(
+        name="cs_bot",
+        env_vars=[
+            "CS_FAQ_FALLBACK_PATH",
+            "CS_INBOX_FALLBACK_PATH",
+            "CS_AUTO_SEND",
+            "CS_TELEGRAM_WEBHOOK_SECRET",
+        ],
+        purpose="CS 자동응답 봇 저장소/자동발송/웹훅 시크릿 설정",
+        docs_url="https://kohganepercentiii.com/docs/operations/CS_BOT.md",
+        category=ApiCategory.CS_BOT,
+        optional=True,
+    ),
+    ApiKey(
+        name="cs_sla",
+        env_vars=[
+            "CS_SLA_REFUND_HOURS",
+            "CS_SLA_SHIPPING_HOURS",
+            "CS_SLA_SIZE_HOURS",
+            "CS_SLA_GENERAL_HOURS",
+        ],
+        purpose="CS SLA 카테고리별 응답 시간 정책",
+        docs_url="https://kohganepercentiii.com/docs/operations/CS_BOT.md",
+        category=ApiCategory.CS_BOT,
         optional=True,
     ),
 ]

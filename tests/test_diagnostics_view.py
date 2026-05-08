@@ -59,10 +59,15 @@ class TestDiagnosticsView:
              patch("src.dashboard.admin_views._build_messenger_health", return_value={}), \
              patch("src.dashboard.admin_views._build_market_health", return_value={}), \
              patch("src.dashboard.admin_views._build_pricing_status",
-                   return_value={"active_rules": 0, "dry_run": True, "cron_hour": "3",
-                                  "last_run_at": None, "min_margin_pct": "15", "fx_trigger_pct": "3"}), \
+                    return_value={"active_rules": 0, "dry_run": True, "cron_hour": "3",
+                                   "last_run_at": None, "min_margin_pct": "15", "fx_trigger_pct": "3"}), \
+             patch("src.dashboard.admin_views._build_cs_bot_status",
+                   return_value={"faq_total": 0, "faq_enabled": 0, "new_24h": 0, "unanswered": 0,
+                                 "urgent_unanswered": 0, "avg_response_minutes": 0, "response_rate": 0,
+                                 "ai_calls_24h": 0, "budget_remaining_pct": 100, "auto_send": False,
+                                 "sla_nearing": 0, "sla_overdue": 0, "channels": []}), \
              patch("src.dashboard.admin_views._build_message_log",
-                   return_value={"total": 0, "by_channel": {}, "top_errors": []}):
+                    return_value={"total": 0, "by_channel": {}, "top_errors": []}):
 
             with app.test_client() as client:
                 with client.session_transaction() as sess:
@@ -105,6 +110,11 @@ class TestDiagnosticsView:
              ), \
              patch("src.dashboard.admin_views._build_messenger_health", return_value={}), \
              patch("src.dashboard.admin_views._build_market_health", return_value={}), \
+             patch("src.dashboard.admin_views._build_cs_bot_status",
+                   return_value={"faq_total": 0, "faq_enabled": 0, "new_24h": 0, "unanswered": 0,
+                                 "urgent_unanswered": 0, "avg_response_minutes": 0, "response_rate": 0,
+                                 "ai_calls_24h": 0, "budget_remaining_pct": 100, "auto_send": False,
+                                 "sla_nearing": 0, "sla_overdue": 0, "channels": []}), \
              patch("src.dashboard.admin_views._build_pricing_status", return_value={"active_rules": 0, "dry_run": True, "cron_hour": "3", "last_run_at": None, "min_margin_pct": "15", "fx_trigger_pct": "3"}), \
              patch("src.dashboard.admin_views._build_message_log", return_value={"total": 0, "by_channel": {}, "top_errors": []}):
             with app.test_client() as client:

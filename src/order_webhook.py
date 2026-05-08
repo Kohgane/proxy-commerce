@@ -841,6 +841,20 @@ try:
 except Exception as _seller_bp_exc:
     logger.warning("셀러 콘솔 Blueprint 등록 실패: %s", _seller_bp_exc)
 
+try:
+    from .cs_bot.views import bp as cs_bot_bp
+    app.register_blueprint(cs_bot_bp)
+    logger.info("CS Bot admin Blueprint 등록 완료 (/admin/cs/)")
+except Exception as _cs_bot_bp_exc:
+    logger.warning("CS Bot admin Blueprint 등록 실패: %s", _cs_bot_bp_exc)
+
+try:
+    from .cs_bot.inbound_telegram import bp as cs_telegram_inbound_bp
+    app.register_blueprint(cs_telegram_inbound_bp)
+    logger.info("CS Telegram inbound Blueprint 등록 완료 (/webhooks/telegram/cs)")
+except Exception as _cs_tg_bp_exc:
+    logger.warning("CS Telegram inbound Blueprint 등록 실패: %s", _cs_tg_bp_exc)
+
 # Phase 133: 인증 시스템 Blueprint 등록 (카카오/구글/네이버 로그인)
 # SECRET_KEY 설정 — 인증 세션 필수
 if not app.secret_key:

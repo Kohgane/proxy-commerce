@@ -36,6 +36,7 @@ def test_api_category_enum():
     assert ApiCategory.NOTIFICATION.value == "notification"
     assert ApiCategory.LOGISTICS.value == "logistics"
     assert ApiCategory.SELF_MALL.value == "self_mall"
+    assert ApiCategory.CS_BOT.value == "cs_bot"
 
 
 def test_api_registry_has_new_keys():
@@ -138,7 +139,7 @@ def test_get_api_status_apis_have_category():
         assert "category" in api
         assert api["category"] in [
             "marketplace", "sourcing", "ai", "payment", "auth",
-            "notification", "logistics", "self_mall", "utility", "infra",
+            "notification", "logistics", "self_mall", "utility", "infra", "cs_bot",
         ]
 
 

@@ -136,12 +136,12 @@
 | Phase 136.3 | Hotfix — CI 회귀 13개 + Magic Link 화면표시 폴백 + Bootstrap UX + /auth/diagnostic-token | #PR | 2026-05-06 |
 | Phase 136.4 | Hotfix — Diagnostic Token 화면 표시 + 비상 진입 헤더 카드 + 셀프 온보딩 + Phase 137 골격 | #PR | 2026-05-07 |
 | Phase 136.5 | Hotfix — Diagnostic Token HMAC 서명 전환 + CI 회귀 14개 진짜 수정 | #PR | 2026-05-07 |
+| Phase 137 | CS 자동응답 봇 — Inbox + FAQ + 분류기 + AI 제안 + SLA + 텔레그램 webhook | #PR | 2026-05-07 |
 
 ## 📋 다음 큐
 
 | Phase | 내용 |
 |---|---|
-| Phase 137 | CS 자동응답 (텔레그램 봇) |
 | Phase 138 | 수요 예측 + 재고 알림 |
 | Phase 139 | Amazon PA-API + Rakuten 본 구현 |
 | Phase 140 | 모바일 PWA + 푸시 |

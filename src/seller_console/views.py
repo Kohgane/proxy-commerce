@@ -23,14 +23,16 @@ from __future__ import annotations
 import json
 import logging
 import os
+import uuid
 from typing import Any, Dict
 
 from decimal import Decimal, InvalidOperation
+from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for
+from flask import Blueprint, abort, jsonify, redirect, render_template, request, session, url_for
 
 logger = logging.getLogger(__name__)
-_CS_FAQ_SUPPORTED_LOCALES = {"ko", "ja", "en", "zh-CN"}
+_CS_FAQ_SUPPORTED_LOCALES = {"ko", "ja", "en", "zh"}
 
 # Blueprint 정의
 bp = Blueprint(
@@ -61,6 +63,15 @@ def _check_auth() -> bool:
         return True
     # TODO: Phase 24 OAuth 미들웨어 연결
     return True
+
+
+def _cs_role_allowed() -> bool:
+    role = (session.get("user_role") or "").strip().lower()
+    if role and role not in {"admin", "seller"}:
+        return False
+    if not _AUTH_ENABLED:
+        return True
+    return role in {"admin", "seller"}
 
 
 # ---------------------------------------------------------------------------
@@ -962,15 +973,40 @@ def messaging():
 def cs_inbox():
     if not _check_auth():
         return redirect(url_for("seller_console.index"))
-    from src.cs_bot.service import CsAutoReplyService
+    if not _cs_role_allowed():
+        abort(403)
+    from src.cs_bot.faq_store import FAQStore
+    from src.cs_bot.inbox_store import InboxStore
+    from src.cs_bot.replier import suggest_reply
 
-    sample_message = request.args.get("q", "배송 문의가 많아요")
-    suggestions = CsAutoReplyService().suggest(sample_message)
+    store = InboxStore()
+    faq_store = FAQStore()
+    status = (request.args.get("status") or "").strip()
+    channel = (request.args.get("channel") or "").strip()
+    query = (request.args.get("q") or "").strip().lower()
+    selected_id = (request.args.get("msg") or "").strip()
+
+    messages = store.list_messages(status=status or None, channel=channel or None, limit=200)
+    if query:
+        messages = [
+            m
+            for m in messages
+            if query in (m.body or "").lower() or query in (m.customer_name or "").lower() or query in (m.order_no or "").lower()
+        ]
+
+    selected = store.get(selected_id) if selected_id else (messages[0] if messages else None)
+    if selected and not selected.suggested_reply:
+        selected.suggested_reply = suggest_reply(selected, faq_store)
+        store.upsert(selected)
+
+    stats = store.stats_24h()
     return render_template(
         "cs_inbox.html",
         page="cs_bot",
-        sample_message=sample_message,
-        suggestions=suggestions,
+        messages=messages,
+        selected=selected,
+        stats=stats,
+        filters={"status": status, "channel": channel, "q": query},
     )
 
 
@@ -978,23 +1014,117 @@ def cs_inbox():
 def cs_faq():
     if not _check_auth():
         return redirect(url_for("seller_console.index"))
-    from src.cs_bot.store import CsFaqStore
+    if not _cs_role_allowed():
+        abort(403)
+    from src.cs_bot.faq_store import FAQEntry, FAQStore
 
-    store = CsFaqStore()
+    store = FAQStore()
     if request.method == "POST":
-        keyword = (request.form.get("keyword") or "").strip()
-        answer = (request.form.get("answer") or "").strip()
-        locale = (request.form.get("locale") or "ko").strip()
-        if locale not in _CS_FAQ_SUPPORTED_LOCALES:
-            locale = "ko"
-        if keyword and answer:
-            store.add_item(keyword=keyword, answer=answer, locale=locale)
+        action = (request.form.get("action") or "create").strip()
+        if action == "delete":
+            faq_id = (request.form.get("faq_id") or "").strip()
+            if faq_id:
+                store.delete(faq_id)
+        else:
+            faq_id = (request.form.get("faq_id") or f"faq_{uuid.uuid4().hex[:10]}").strip()
+            language = (request.form.get("language") or request.form.get("locale") or "ko").strip()
+            if language == "zh-CN":
+                language = "zh"
+            if language not in _CS_FAQ_SUPPORTED_LOCALES:
+                language = "ko"
+            keywords = (request.form.get("keywords") or request.form.get("keyword") or "").strip()
+            question = (request.form.get("question") or keywords or "").strip()
+            answer_template = (request.form.get("answer_template") or request.form.get("answer") or "").strip()
+            category = (request.form.get("category") or "general").strip()
+            entry = FAQEntry(
+                faq_id=faq_id,
+                category=category or "general",
+                language=language,
+                question=question,
+                keywords=[x.strip() for x in keywords.split(",") if x.strip()],
+                answer_template=answer_template,
+                priority=int(request.form.get("priority") or 0),
+                enabled=request.form.get("enabled", "1") in {"1", "true", "on", "yes"},
+            )
+            if action == "update":
+                store.update(entry)
+            elif question and answer_template:
+                store.create(entry)
+
+    preview_text = (request.args.get("preview") or "").strip()
+    preview = store.search_by_keywords(preview_text, language=(request.args.get("language") or "ko")) if preview_text else []
+    faq_items = store.list_all(enabled_only=False)
     return render_template(
         "cs_faq.html",
         page="cs_bot",
-        faq_items=store.list_items(),
-        worksheet=store.worksheet_name,
+        faq_items=faq_items,
+        worksheet="cs_faq",
         locales=sorted(_CS_FAQ_SUPPORTED_LOCALES),
+        preview_text=preview_text,
+        preview=preview[:5],
+    )
+
+
+@bp.post("/cs/inbox/respond")
+def cs_inbox_respond():
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+    if not _cs_role_allowed():
+        abort(403)
+    from src.cs_bot.inbox_store import InboxStore
+    from src.cs_bot.inbound_telegram import _send_customer_reply
+
+    message_id = (request.form.get("message_id") or "").strip()
+    action = (request.form.get("action") or "").strip()
+    final_reply = (request.form.get("final_reply") or "").strip()
+    if not message_id:
+        return redirect("/seller/cs/inbox")
+    store = InboxStore()
+    row = store.get(message_id)
+    if not row:
+        return redirect("/seller/cs/inbox")
+
+    if action == "send":
+        reply = final_reply or row.suggested_reply
+        row.final_reply = reply
+        row.status = "resolved"
+        row.responded_at = datetime.now(timezone.utc).isoformat()
+        if row.channel == "telegram":
+            _send_customer_reply(row.customer_id, reply)
+    elif action == "hold":
+        row.status = "in_progress"
+        row.final_reply = final_reply or row.final_reply
+    elif action == "resolve":
+        row.status = "resolved"
+        row.final_reply = final_reply or row.final_reply
+        row.responded_at = datetime.now(timezone.utc).isoformat()
+    store.upsert(row)
+    return redirect(f"/seller/cs/inbox?msg={row.message_id}")
+
+
+@bp.get("/cs/sla")
+def cs_sla():
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+    if not _cs_role_allowed():
+        abort(403)
+    from src.cs_bot.inbox_store import InboxStore
+    from src.cs_bot.sla import classify_sla
+
+    store = InboxStore()
+    rows = store.list_messages(limit=5000)
+    summary = classify_sla(rows)
+    by_channel: dict[str, int] = {}
+    by_category: dict[str, int] = {}
+    for row in rows:
+        by_channel[row.channel] = by_channel.get(row.channel, 0) + 1
+        by_category[row.category or "general"] = by_category.get(row.category or "general", 0) + 1
+    return render_template(
+        "cs_sla.html",
+        page="cs_bot",
+        summary=summary,
+        by_channel=by_channel,
+        by_category=by_category,
     )
 
 
