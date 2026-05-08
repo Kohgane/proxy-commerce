@@ -1,16 +1,16 @@
-"""운영자 비상 진입용 diagnostic token."""
+"""운영자 비상 진입용 diagnostic token (HMAC 서명, stateless)."""
 from __future__ import annotations
 
+import base64
+import hmac
 import hashlib
 import json
 import logging
 import os
 import secrets
 import sys
-import threading
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from flask import Blueprint, jsonify, redirect, render_template, request, session
@@ -18,59 +18,134 @@ from flask import Blueprint, jsonify, redirect, render_template, request, sessio
 bp = Blueprint("diagnostic_token", __name__)
 logger = logging.getLogger(__name__)
 
-_LOCK = threading.Lock()
-_FILE = Path(os.getenv("DIAGNOSTIC_TOKEN_PATH", "data/diagnostic_tokens.jsonl"))
-_FILE.parent.mkdir(parents=True, exist_ok=True)
 TTL_SECONDS = 600
 _SEPARATOR = "=" * 70
+_HOUR_SECONDS = 3600
+
+_used_nonces: dict[str, int] = {}
+_issued_nonces: dict[str, dict] = {}
+_issue_events: list[int] = []
+_redeem_events: list[int] = []
 
 
 def _admin_emails() -> list[str]:
     return [e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()]
 
 
-def _load_records() -> list[dict]:
-    if not _FILE.exists():
-        return []
-    rows: list[dict] = []
-    with _FILE.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            raw_line = line.strip()
-            if not raw_line:
-                continue
-            try:
-                rows.append(json.loads(raw_line))
-            except Exception:
-                continue
-    return rows
+def _b64url_encode(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
 
 
-def _write_records(records: list[dict]) -> None:
-    with _FILE.open("w", encoding="utf-8") as handle:
-        for row in records:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+def _b64url_decode(value: str) -> bytes:
+    pad = "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode(value + pad)
+
+
+def _signing_key() -> bytes:
+    """서명 키 = SECRET_KEY + DIAGNOSTIC_SALT."""
+    base = os.getenv("SECRET_KEY") or os.getenv("ADMIN_BOOTSTRAP_TOKEN") or ""
+    salt = os.getenv("DIAGNOSTIC_SALT", "diagnostic-token-v1")
+    if not base:
+        return b""
+    return hashlib.sha256((base + salt).encode("utf-8")).digest()
+
+
+def _sign_payload(payload: dict) -> str:
+    key = _signing_key()
+    if not key:
+        raise RuntimeError("SECRET_KEY 미설정")
+    body = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+    sig = hmac.new(key, body.encode("ascii"), hashlib.sha256).digest()
+    return f"{body}.{_b64url_encode(sig)}"
+
+
+def _verify_token(token: str) -> dict:
+    if "." not in token:
+        raise ValueError("형식 오류")
+    body, sig = token.rsplit(".", 1)
+    key = _signing_key()
+    if not key:
+        raise RuntimeError("서명 키 미설정")
+    expected = hmac.new(key, body.encode("ascii"), hashlib.sha256).digest()
+    if not hmac.compare_digest(_b64url_decode(sig), expected):
+        raise ValueError("서명 불일치")
+    payload = json.loads(_b64url_decode(body))
+    if int(payload.get("exp", 0) or 0) < int(time.time()):
+        raise ValueError("만료됨")
+    nonce = str(payload.get("nonce") or "")
+    if not nonce:
+        raise ValueError("nonce 누락")
+    return payload
+
+
+def _prune(now: int | None = None) -> int:
+    now = now or int(time.time())
+    for nonce, exp in list(_used_nonces.items()):
+        if exp < now:
+            _used_nonces.pop(nonce, None)
+    for nonce, meta in list(_issued_nonces.items()):
+        if int(meta.get("exp", 0) or 0) < now:
+            _issued_nonces.pop(nonce, None)
+
+    cutoff = now - _HOUR_SECONDS
+    while _issue_events and _issue_events[0] < cutoff:
+        _issue_events.pop(0)
+    while _redeem_events and _redeem_events[0] < cutoff:
+        _redeem_events.pop(0)
+    return cutoff
+
+
+def _record_event(events: list[int], ts: int | None = None) -> None:
+    now = ts or int(time.time())
+    events.append(now)
+    _prune(now)
+
+
+def _is_used(nonce: str) -> bool:
+    _prune()
+    return nonce in _used_nonces
+
+
+def _mark_used(nonce: str, exp: int) -> None:
+    _used_nonces[nonce] = int(exp)
 
 
 def token_status() -> dict:
     now = int(time.time())
-    with _LOCK:
-        rows = _load_records()
-    active = [r for r in rows if (not r.get("used")) and int(r.get("expires_at", 0) or 0) > now]
-    latest = max((str(r.get("issued_at", "")) for r in rows if r.get("issued_at")), default=None)
-    return {"active_count": len(active), "latest_issued_at": latest}
+    _prune(now)
+    active_count = 0
+    latest_issued_at = None
+    for nonce, meta in _issued_nonces.items():
+        if nonce in _used_nonces:
+            continue
+        exp = int(meta.get("exp", 0) or 0)
+        if exp <= now:
+            continue
+        active_count += 1
+        issued_at = str(meta.get("issued_at") or "")
+        if issued_at and (latest_issued_at is None or issued_at > latest_issued_at):
+            latest_issued_at = issued_at
+    return {"active_count": active_count, "latest_issued_at": latest_issued_at}
 
 
 def expire_all_tokens() -> int:
-    updated = 0
-    with _LOCK:
-        rows = _load_records()
-        for row in rows:
-            if not row.get("used"):
-                row["used"] = True
-                updated += 1
-            row["expires_at"] = 0
-        _write_records(rows)
-    return updated
+    stats = token_status()
+    _issued_nonces.clear()
+    _used_nonces.clear()
+    _issue_events.clear()
+    _redeem_events.clear()
+    return int(stats.get("active_count", 0) or 0)
+
+
+def runtime_stats() -> dict:
+    _prune()
+    return {
+        "worker_pid": os.getpid(),
+        "web_concurrency": os.getenv("WEB_CONCURRENCY", ""),
+        "nonce_cache_size": len(_used_nonces),
+        "issued_last_hour": len(_issue_events),
+        "redeemed_last_hour": len(_redeem_events),
+    }
 
 
 def _notify_telegram_on_issue(ip: str | None, issued_at: str) -> None:
@@ -90,22 +165,24 @@ def _notify_telegram_on_issue(ip: str | None, issued_at: str) -> None:
 
 @bp.get("/auth/diagnostic-token/issue")
 def issue_token():
-    raw = secrets.token_urlsafe(24)
-    token_hash = hashlib.sha256(raw.encode()).hexdigest()
-    expires_at = int(time.time()) + TTL_SECONDS
-    record = {
-        "token_hash": token_hash,
-        "expires_at": expires_at,
-        "used": False,
-        "issued_at": datetime.now(tz=timezone.utc).isoformat(),
-        "issuer_ip": request.remote_addr,
-    }
-    with _LOCK:
-        with _FILE.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    if not _signing_key():
+        return jsonify(
+            {
+                "error": "SECRET_KEY 또는 ADMIN_BOOTSTRAP_TOKEN 환경변수 필요",
+                "hint": "Render Environment에서 설정 후 재배포",
+            }
+        ), 503
+
+    nonce = secrets.token_urlsafe(18)
+    exp = int(time.time()) + TTL_SECONDS
+    issued_at = datetime.now(tz=timezone.utc).isoformat()
+    payload = {"v": 1, "exp": exp, "nonce": nonce}
+    token = _sign_payload(payload)
+    _issued_nonces[nonce] = {"exp": exp, "issued_at": issued_at}
+    _record_event(_issue_events)
 
     base_url = os.getenv("BASE_URL", "https://kohganepercentiii.com").rstrip("/")
-    redeem_url = f"{base_url}/auth/diagnostic-token/redeem?token={raw}"
+    redeem_url = f"{base_url}/auth/diagnostic-token/redeem?token={token}"
 
     sys.stdout.write("\n" + _SEPARATOR + "\n")
     sys.stdout.write(f"🆘 DIAGNOSTIC TOKEN URL: {redeem_url}\n")
@@ -118,12 +195,13 @@ def issue_token():
     logger.warning("발급 IP: %s", request.remote_addr)
     logger.warning(_SEPARATOR)
 
-    _notify_telegram_on_issue(ip=request.remote_addr, issued_at=record["issued_at"])
+    _notify_telegram_on_issue(ip=request.remote_addr, issued_at=issued_at)
 
     admin_emails_set = bool(os.getenv("ADMIN_EMAILS", "").strip())
     reveal_env = os.getenv("DIAGNOSTIC_REVEAL", "0") == "1"
+    reveal_param = request.args.get("reveal_safe") == "1"
 
-    can_reveal = reveal_env and admin_emails_set
+    can_reveal = reveal_env or (reveal_param and admin_emails_set)
     if request.args.get("format") != "json" and can_reveal:
         return render_template(
             "auth/diagnostic_token_issued.html",
@@ -140,7 +218,7 @@ def issue_token():
             "(ADMIN_EMAILS 설정 + DIAGNOSTIC_REVEAL=1 환경변수 필요)."
         ),
         "ttl_seconds": TTL_SECONDS,
-        "issued_at": record["issued_at"],
+        "issued_at": issued_at,
         "log_keyword": "DIAGNOSTIC TOKEN",
     }
     if can_reveal:
@@ -150,35 +228,28 @@ def issue_token():
 
 @bp.get("/auth/diagnostic-token/redeem")
 def redeem_token():
+    token = request.args.get("token", "")
+    if not token:
+        return jsonify({"error": "토큰 누락"}), 400
+
+    try:
+        payload = _verify_token(token)
+    except ValueError as exc:
+        logger.info("Diagnostic token 검증 실패: %s", exc)
+        return jsonify({"error": f"유효하지 않은 토큰: {exc}"}), 401
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+    nonce = str(payload.get("nonce", ""))
+    if _is_used(nonce):
+        return jsonify({"error": "이미 사용된 토큰"}), 401
+    _mark_used(nonce, int(payload.get("exp", 0) or 0))
+    _issued_nonces.pop(nonce, None)
+    _record_event(_redeem_events)
+
     admin_emails = _admin_emails()
     if not admin_emails:
         return jsonify({"error": "ADMIN_EMAILS 환경변수 미설정"}), 503
-
-    raw = request.args.get("token", "")
-    if not raw:
-        return jsonify({"error": "토큰 누락"}), 400
-
-    token_hash = hashlib.sha256(raw.encode()).hexdigest()
-    now = int(time.time())
-    records: list[dict] = []
-    matched = False
-    with _LOCK:
-        for row in _load_records():
-            is_match = (
-                row.get("token_hash") == token_hash
-                and not row.get("used")
-                and int(row.get("expires_at", 0)) > now
-            )
-            if is_match:
-                row["used"] = True
-                matched = True
-            records.append(row)
-
-    if not matched:
-        return jsonify({"error": "토큰을 찾을 수 없거나 만료/사용됨"}), 401
-
-    with _LOCK:
-        _write_records(records)
 
     primary_admin = admin_emails[0]
     try:
@@ -196,7 +267,7 @@ def redeem_token():
         session["user_role"] = "admin"
         session["user_name"] = user.name or primary_admin
     except Exception as exc:
-        logger.error("diagnostic 세션 생성 실패: %s", exc)
+        logger.warning("user_store 폴백 (직접 세션): %s", exc)
         session["user_id"] = "diagnostic-admin"
         session["user_email"] = primary_admin
         session["user_role"] = "admin"

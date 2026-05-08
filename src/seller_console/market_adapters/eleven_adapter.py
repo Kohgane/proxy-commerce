@@ -83,6 +83,9 @@ class ElevenAdapter(MarketAdapter):
 
     marketplace = "11st"
 
+    def __init__(self) -> None:
+        self.is_active = _api_active()
+
     def fetch_inventory(self) -> List[MarketStatusItem]:
         """11번가 API에서 상품 목록 조회."""
         if not _api_active():
@@ -300,12 +303,12 @@ class ElevenAdapter(MarketAdapter):
 
     def update_tracking(self, order_id: str, courier: str = "", tracking_no: str = "") -> bool:
         """11번가 운송장 등록."""
+        if not self.is_active:
+            return False
+
         if _dry_run():
             logger.info("ADAPTER_DRY_RUN=1 — 11번가 update_tracking 차단: %s", order_id)
             return True
-
-        if not _api_active():
-            return False
 
         try:
             import requests

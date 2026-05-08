@@ -43,6 +43,7 @@ _UNSUPPORTED_WARN: dict = {
     "taobao.com": "타오바오는 직접 API가 없습니다. OG 메타로 기본 정보만 수집됩니다. 수동 입력을 권장합니다.",
     "tmall.com": "티몰은 직접 API가 없습니다. OG 메타로 기본 정보만 수집됩니다.",
 }
+_TAOBAO_DOMAINS = ("taobao.com", "tmall.com")
 
 
 def detect_collector(url: str) -> BaseCollector:
@@ -91,6 +92,7 @@ def collect(url: str) -> CollectorResult:
         url = "https://" + url
 
     # 미지원 도메인 경고
+    host = ""
     try:
         raw_host = urlparse(url).netloc.lower()
         host = raw_host[4:] if raw_host.startswith("www.") else raw_host
@@ -106,6 +108,9 @@ def collect(url: str) -> CollectorResult:
     logger.info("URL 수집 시작: %s (collector: %s)", url, collector.name)
 
     result = collector.collect(url)
+
+    if result.source == "generic_og" and any(host == d or host.endswith(f".{d}") for d in _TAOBAO_DOMAINS):
+        result.source = "taobao"
 
     if warn_msg and warn_msg not in result.warnings:
         result.warnings.insert(0, warn_msg)

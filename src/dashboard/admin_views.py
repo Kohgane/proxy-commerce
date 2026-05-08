@@ -600,10 +600,18 @@ def _build_emergency_access_status() -> dict:
     bootstrap_token = os.getenv("ADMIN_BOOTSTRAP_TOKEN", "")
     masked_prefix = f"{bootstrap_token[:6]}..." if len(bootstrap_token) >= 6 else ("***" if bootstrap_token else None)
     diagnostic_stats = {"active_count": 0, "latest_issued_at": None}
+    diagnostic_runtime = {
+        "worker_pid": "-",
+        "web_concurrency": "-",
+        "nonce_cache_size": 0,
+        "issued_last_hour": 0,
+        "redeemed_last_hour": 0,
+    }
     try:
-        from src.auth.diagnostic_token import token_status
+        from src.auth.diagnostic_token import runtime_stats, token_status
 
         diagnostic_stats = token_status()
+        diagnostic_runtime = runtime_stats()
     except Exception as exc:
         logger.debug("diagnostic token 상태 조회 실패: %s", exc)
 
@@ -617,6 +625,11 @@ def _build_emergency_access_status() -> dict:
         "diagnostic_issue_url": "/auth/diagnostic-token/issue?reveal_safe=1&format=html",
         "diagnostic_active_count": diagnostic_stats["active_count"],
         "diagnostic_latest_issued_at": diagnostic_stats["latest_issued_at"],
+        "diagnostic_worker_pid": diagnostic_runtime["worker_pid"],
+        "diagnostic_web_concurrency": diagnostic_runtime["web_concurrency"] or "-",
+        "diagnostic_nonce_cache_size": diagnostic_runtime["nonce_cache_size"],
+        "diagnostic_issued_last_hour": diagnostic_runtime["issued_last_hour"],
+        "diagnostic_redeemed_last_hour": diagnostic_runtime["redeemed_last_hour"],
     }
 
 
@@ -784,6 +797,16 @@ _DIAGNOSTICS_TEMPLATE = """
               {% if emergency_access.diagnostic_latest_issued_at %}
                 <span class="small text-muted">(최근 발급: {{ emergency_access.diagnostic_latest_issued_at }})</span>
               {% endif %}
+            </li>
+            <li class="small">
+              Worker PID: <code>{{ emergency_access.diagnostic_worker_pid }}</code> ·
+              WEB_CONCURRENCY: <code>{{ emergency_access.diagnostic_web_concurrency }}</code> ·
+              nonce 캐시: <span class="fw-semibold">{{ emergency_access.diagnostic_nonce_cache_size }}</span>
+            </li>
+            <li class="small">
+              최근 1시간 issue/redeem:
+              <span class="fw-semibold">{{ emergency_access.diagnostic_issued_last_hour }}</span> /
+              <span class="fw-semibold">{{ emergency_access.diagnostic_redeemed_last_hour }}</span>
             </li>
             <li>
               Bootstrap:

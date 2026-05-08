@@ -135,6 +135,7 @@
 | Phase 136.2 | Hotfix — Magic Link + Bootstrap 토큰 + /privacy/terms + OAuth 진단 강화 | #PR | 2026-05-06 |
 | Phase 136.3 | Hotfix — CI 회귀 13개 + Magic Link 화면표시 폴백 + Bootstrap UX + /auth/diagnostic-token | #PR | 2026-05-06 |
 | Phase 136.4 | Hotfix — Diagnostic Token 화면 표시 + 비상 진입 헤더 카드 + 셀프 온보딩 + Phase 137 골격 | #PR | 2026-05-07 |
+| Phase 136.5 | Hotfix — Diagnostic Token HMAC 서명 전환 + CI 회귀 14개 진짜 수정 | #PR | 2026-05-07 |
 
 ## 📋 다음 큐
 
