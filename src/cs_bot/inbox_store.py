@@ -27,6 +27,7 @@ _HEADERS = [
     "status",
     "suggested_reply",
     "final_reply",
+    "matched_faq_id",
     "sla_deadline",
     "received_at",
     "responded_at",
@@ -48,6 +49,7 @@ class CSMessage:
     status: str = "open"
     suggested_reply: str = ""
     final_reply: str = ""
+    matched_faq_id: str = ""
     sla_deadline: str = ""
     received_at: str = ""
     responded_at: str = ""
@@ -71,6 +73,7 @@ class CSMessage:
             status=str(payload.get("status") or "open"),
             suggested_reply=str(payload.get("suggested_reply") or ""),
             final_reply=str(payload.get("final_reply") or ""),
+            matched_faq_id=str(payload.get("matched_faq_id") or ""),
             sla_deadline=str(payload.get("sla_deadline") or ""),
             received_at=str(payload.get("received_at") or ""),
             responded_at=str(payload.get("responded_at") or ""),
@@ -150,6 +153,7 @@ class InboxStore:
             data["status"],
             data["suggested_reply"],
             data["final_reply"],
+            data["matched_faq_id"],
             data["sla_deadline"],
             data["received_at"],
             data["responded_at"],

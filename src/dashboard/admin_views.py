@@ -651,17 +651,31 @@ def _build_message_log() -> dict:
 
 
 def _build_cs_bot_status() -> dict:
+    try:
+        auto_send_daily_limit = int(os.getenv("CS_AUTO_SEND_DAILY_LIMIT", "20"))
+    except Exception:
+        auto_send_daily_limit = 20
     result = {
         "faq_total": 0,
         "faq_enabled": 0,
+        "faq_by_lang": {"ko": 0, "en": 0, "ja": 0, "zh": 0},
+        "translation_cache_count": 0,
         "new_24h": 0,
         "unanswered": 0,
         "urgent_unanswered": 0,
+        "auto_sent_24h": 0,
         "avg_response_minutes": 0.0,
         "response_rate": 0.0,
         "ai_calls_24h": 0,
+        "ai_adoption_rate": 0.0,
+        "ai_edit_rate": 0.0,
+        "low_quality_count": 0,
         "budget_remaining_pct": 100.0,
         "auto_send": os.getenv("CS_AUTO_SEND", "0") == "1",
+        "auto_send_categories": [x.strip() for x in os.getenv("CS_AUTO_SEND_CATEGORIES", "general,shipping").split(",") if x.strip()],
+        "auto_send_daily_limit": auto_send_daily_limit,
+        "auto_send_used_today": 0,
+        "embedding_cached": "0/0",
         "sla_nearing": 0,
         "sla_overdue": 0,
         "channels": [],
@@ -672,6 +686,19 @@ def _build_cs_bot_status() -> dict:
         faq_items = FAQStore().list_all(enabled_only=False)
         result["faq_total"] = len(faq_items)
         result["faq_enabled"] = len([x for x in faq_items if x.enabled])
+        by_lang = {"ko": 0, "en": 0, "ja": 0, "zh": 0}
+        cache_count = 0
+        emb_count = 0
+        for item in faq_items:
+            lang = str(item.language or "ko")
+            if lang in by_lang:
+                by_lang[lang] += 1
+            cache_count += len(item.translations or {})
+            if item.embedding:
+                emb_count += 1
+        result["faq_by_lang"] = by_lang
+        result["translation_cache_count"] = cache_count
+        result["embedding_cached"] = f"{emb_count}/{len(faq_items)}"
     except Exception as exc:
         logger.debug("cs_bot FAQ 상태 조회 실패: %s", exc)
 
@@ -683,10 +710,19 @@ def _build_cs_bot_status() -> dict:
         result["new_24h"] = stats.get("new_24h", 0)
         result["unanswered"] = stats.get("unanswered", 0)
         result["urgent_unanswered"] = stats.get("urgent_unanswered", 0)
+        rows = store.list_messages(limit=5000)
+        result["auto_sent_24h"] = len([x for x in rows if x.status == "auto_handled"])
         result["avg_response_minutes"] = stats.get("avg_response_minutes", 0.0)
         result["response_rate"] = stats.get("response_rate", 0.0)
-        ai_calls = len([x for x in store.list_messages(limit=5000) if x.suggested_reply and x.received_at])
+        ai_calls = len([x for x in rows if x.suggested_reply and x.received_at])
         result["ai_calls_24h"] = ai_calls
+        ai_used = len([x for x in rows if x.suggested_reply and x.final_reply and x.final_reply.strip() == x.suggested_reply.strip()])
+        if ai_calls > 0:
+            adoption = round((ai_used / ai_calls) * 100, 1)
+            result["ai_adoption_rate"] = adoption
+            result["ai_edit_rate"] = round(max(0.0, 100.0 - adoption), 1)
+        if rows:
+            result["auto_send_used_today"] = len([x for x in rows if x.status == "auto_handled"])
     except Exception as exc:
         logger.debug("cs_bot Inbox 상태 조회 실패: %s", exc)
 
@@ -697,6 +733,14 @@ def _build_cs_bot_status() -> dict:
         result["budget_remaining_pct"] = max(0.0, round(100.0 - float(budget.get("pct", 0.0)), 1))
     except Exception as exc:
         logger.debug("cs_bot 예산 조회 실패: %s", exc)
+
+    try:
+        from src.cs_bot.quality_logger import get_low_quality_faqs
+
+        low_quality = get_low_quality_faqs()
+        result["low_quality_count"] = len(low_quality)
+    except Exception as exc:
+        logger.debug("cs_bot 품질 상태 조회 실패: %s", exc)
 
     try:
         from src.cs_bot.channel_adapters import list_channel_adapters
@@ -1164,26 +1208,27 @@ _DIAGNOSTICS_TEMPLATE = """
 
     <!-- 섹션 7: CS 봇 -->
     <div class="card mb-4">
-      <div class="card-header fw-bold">🤖 섹션 7 — CS 봇 (Phase 138)</div>
+      <div class="card-header fw-bold">🤖 섹션 7 — CS 봇 (Phase 139)</div>
       <div class="card-body">
         <ul class="mb-3">
-          <li>FAQ 개수: {{ cs_bot_status.faq_total }}개 (활성 {{ cs_bot_status.faq_enabled }}개)</li>
-          <li>24h 신규: {{ cs_bot_status.new_24h }}건</li>
-          <li>미응답: {{ cs_bot_status.unanswered }}건 (긴급 {{ cs_bot_status.urgent_unanswered }}건)</li>
-          <li>평균 응답: {{ cs_bot_status.avg_response_minutes }}분 · 응답률 {{ cs_bot_status.response_rate }}%</li>
+          <li>활성 채널: {% for ch in cs_bot_status.channels %}{{ ch.channel }} {% if ch.enabled %}✅{% else %}❌{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</li>
+          <li>FAQ: {{ cs_bot_status.faq_total }}개 (KO {{ cs_bot_status.get('faq_by_lang', {}).get('ko', 0) }}, EN {{ cs_bot_status.get('faq_by_lang', {}).get('en', 0) }} 자동번역 캐시 {{ cs_bot_status.get('translation_cache_count', 0) }}, JA {{ cs_bot_status.get('faq_by_lang', {}).get('ja', 0) }}, ZH {{ cs_bot_status.get('faq_by_lang', {}).get('zh', 0) }})</li>
+          <li>24h: 신규 {{ cs_bot_status.new_24h }} / 미응답 {{ cs_bot_status.unanswered }} / 자동발송 {{ cs_bot_status.auto_sent_24h }} / 평균응답 {{ cs_bot_status.avg_response_minutes }}분</li>
+          <li>AI 제안 채택률: {{ cs_bot_status.ai_adoption_rate }}% (편집률 {{ cs_bot_status.ai_edit_rate }}%)</li>
+          <li>저품질 FAQ: {{ cs_bot_status.low_quality_count }}개 검토 필요</li>
           <li>AI 제안 호출: {{ cs_bot_status.ai_calls_24h }}건 (예산 잔여 {{ cs_bot_status.budget_remaining_pct }}%)</li>
-          <li>자동 발송: {% if cs_bot_status.auto_send %}<span class="badge bg-danger">ON</span>{% else %}<span class="badge bg-secondary">OFF</span>{% endif %}</li>
+          <li>자동 발송: {% if cs_bot_status.auto_send %}<span class="badge bg-danger">ON</span>{% else %}<span class="badge bg-secondary">OFF</span>{% endif %} ({{ cs_bot_status.get('auto_send_categories', ['general','shipping'])|join('/') }}만, 일일 {{ cs_bot_status.get('auto_send_used_today', 0) }}/{{ cs_bot_status.get('auto_send_daily_limit', 20) }})</li>
           <li>SLA: 임박 {{ cs_bot_status.sla_nearing }}건 / 초과 {{ cs_bot_status.sla_overdue }}건</li>
+          <li>임베딩 캐시: {{ cs_bot_status.get('embedding_cached', '0/0') }} ✅</li>
           <li>스케줄러: {% if cs_bot_status.scheduler_running %}<span class="badge bg-success">실행 중</span>{% elif cs_bot_status.scheduler_enabled %}<span class="badge bg-warning text-dark">활성/미실행</span>{% else %}<span class="badge bg-secondary">비활성</span>{% endif %}{% if cs_bot_status.scheduler_next_poll %} · 다음 폴링 {{ cs_bot_status.scheduler_next_poll[:19] }}{% endif %}</li>
         </ul>
-        <div class="small text-muted mb-2">
-          채널: {% for ch in cs_bot_status.channels %}{{ ch.channel }}({{ ch.mode }}){% if not loop.last %}, {% endif %}{% endfor %}
-        </div>
         <div class="d-flex gap-2 flex-wrap">
           <a class="btn btn-outline-primary btn-sm" href="/seller/cs/inbox">Inbox 열기</a>
           <a class="btn btn-outline-secondary btn-sm" href="/seller/cs/faq">FAQ 관리</a>
           <a class="btn btn-outline-info btn-sm" href="/seller/cs/mobile">Mobile PWA</a>
           <a class="btn btn-outline-secondary btn-sm" href="/seller/cs/stats">통계</a>
+          <a class="btn btn-outline-secondary btn-sm" href="/seller/cs/quality">Quality</a>
+          <a class="btn btn-outline-secondary btn-sm" href="/seller/cs/inbox?msg=&channel=&status=&q=">Multi-Send Test</a>
           <button class="btn btn-outline-warning btn-sm"
                   onclick="fetch('/admin/cs/check-sla',{method:'POST'}).then(r=>r.json()).then(d=>alert(JSON.stringify(d,null,2)))">
             SLA 점검 실행

@@ -22,6 +22,7 @@ _HEADERS = [
     "answer_template",
     "priority",
     "enabled",
+    "translations",
     "created_at",
     "updated_at",
 ]
@@ -38,6 +39,7 @@ class FAQEntry:
     priority: int = 0
     enabled: bool = True
     embedding: list[float] | None = None
+    translations: dict[str, str] | None = None
     created_at: str = ""
     updated_at: str = ""
 
@@ -63,6 +65,13 @@ class FAQEntry:
                 embedding = decoded if isinstance(decoded, list) else None
             except Exception:
                 embedding = None
+        translations = payload.get("translations") or {}
+        if isinstance(translations, str):
+            try:
+                decoded = json.loads(translations)
+                translations = decoded if isinstance(decoded, dict) else {}
+            except Exception:
+                translations = {}
         return cls(
             faq_id=str(payload.get("faq_id") or ""),
             category=str(payload.get("category") or "general"),
@@ -73,6 +82,7 @@ class FAQEntry:
             priority=int(payload.get("priority") or 0),
             enabled=_as_bool(payload.get("enabled", True)),
             embedding=[float(x) for x in embedding] if isinstance(embedding, list) else None,
+            translations={str(k): str(v) for k, v in translations.items()} if isinstance(translations, dict) else {},
             created_at=str(payload.get("created_at") or ""),
             updated_at=str(payload.get("updated_at") or ""),
         )
@@ -146,6 +156,7 @@ class FAQStore:
             data["answer_template"],
             str(data["priority"]),
             str(bool(data["enabled"])),
+            json.dumps(data.get("translations") or {}, ensure_ascii=False),
             data["created_at"],
             data["updated_at"],
         ]

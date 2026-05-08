@@ -1,0 +1,51 @@
+{% extends "_base.html" %}
+{% block title %}CS 품질{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">🧪 CS 답변 품질 루프</h4>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="/seller/cs/inbox">Inbox</a>
+    <a class="btn btn-outline-secondary btn-sm" href="/seller/cs/faq">FAQ</a>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-6"><span class="text-muted small">평균 응답시간</span><div class="fs-5 fw-bold">{{ avg_response }}분</div></div>
+      <div class="col-md-6"><span class="text-muted small">응답시간 P95</span><div class="fs-5 fw-bold">{{ p95_response }}분</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-header fw-semibold">저품질 FAQ 후보</div>
+  <div class="card-body p-0">
+    <table class="table table-sm mb-0">
+      <thead><tr><th>FAQ ID</th><th>카테고리</th><th>언어</th><th>점수</th><th>매칭수</th><th>학습</th></tr></thead>
+      <tbody>
+      {% for row in low_quality %}
+      <tr>
+        <td>{{ row.faq.faq_id }}</td>
+        <td>{{ row.faq.category }}</td>
+        <td>{{ row.faq.language }}</td>
+        <td class="text-danger fw-semibold">{{ row.score }}</td>
+        <td>{{ row.hits }}</td>
+        <td>
+          <form method="post" class="d-inline">
+            <input type="hidden" name="action" value="promote">
+            <input type="hidden" name="faq_id" value="{{ row.faq.faq_id }}">
+            <input type="hidden" name="last_final" value="{{ row.last_final }}">
+            <button class="btn btn-outline-primary btn-sm" {% if not row.last_final %}disabled{% endif %}>이 FAQ 답변을 마지막 발송문으로 갱신</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-muted text-center">검토 대상 없음</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

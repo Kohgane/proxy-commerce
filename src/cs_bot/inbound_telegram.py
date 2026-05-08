@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import os
 import uuid
+from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
 
 from src.cs_bot.classifier import classify, detect_language
+from src.cs_bot.auto_send_guard import should_auto_send
 from src.cs_bot.faq_store import FAQStore
 from src.cs_bot.inbox_store import CSMessage, InboxStore
-from src.cs_bot.replier import suggest_reply
+from src.cs_bot.replier import suggest_reply_details
 from src.cs_bot.sla import compute_deadline
 from src.notifications.telegram import send_telegram
 
@@ -50,7 +52,9 @@ def telegram_inbound():
         status="open",
     )
     msg.sla_deadline = compute_deadline(msg.received_at, msg.category)
-    msg.suggested_reply = suggest_reply(msg, faq_store)
+    suggested, confidence, matched_faq = suggest_reply_details(msg, faq_store)
+    msg.suggested_reply = suggested
+    msg.matched_faq_id = matched_faq.faq_id if matched_faq else ""
     stored = store.upsert(msg)
 
     urgency = "긴급" if stored.priority >= 2 else "일반"
@@ -64,9 +68,19 @@ def telegram_inbound():
         urgency="critical" if stored.priority >= 2 else "info",
     )
 
-    if os.getenv("CS_AUTO_SEND", "0") == "1" and stored.suggested_reply:
-        _send_customer_reply(chat_id=stored.customer_id, text=stored.suggested_reply)
-        store.mark_responded(stored.message_id, stored.suggested_reply)
+    can_send, reason = should_auto_send(stored, stored.suggested_reply, confidence)
+    if can_send:
+        if _send_customer_reply(chat_id=stored.customer_id, text=stored.suggested_reply):
+            stored.status = "auto_handled"
+            stored.final_reply = stored.suggested_reply
+            stored.responded_at = datetime.now(timezone.utc).isoformat()
+            store.upsert(stored)
+            send_telegram(
+                f"🤖 CS 자동 발송 완료\n- 메시지: {stored.message_id}\n- 카테고리: {stored.category}\n- 신뢰도: {confidence:.2f}",
+                urgency="warning",
+            )
+    elif os.getenv("CS_AUTO_SEND", "0") == "1":
+        send_telegram(f"ℹ️ CS 자동 발송 보류: {reason} ({stored.message_id})", urgency="info")
 
     return jsonify({"ok": True, "message_id": stored.message_id})
 
