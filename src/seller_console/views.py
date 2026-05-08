@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import uuid
 from typing import Any, Dict
 
@@ -72,6 +73,42 @@ def _cs_role_allowed() -> bool:
     if not _AUTH_ENABLED:
         return True
     return role in {"admin", "seller"}
+
+
+def _infer_customer_identity(msg) -> dict[str, str]:
+    if not msg:
+        return {}
+    raw = f"{msg.customer_id or ''} {msg.body or ''}"
+    email_match = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", raw)
+    phone_match = re.search(r"\+?\d[\d\-\s]{7,}\d", raw)
+    return {
+        "name": msg.customer_name or "",
+        "email": email_match.group(0) if email_match else "",
+        "phone": re.sub(r"[\s\-]", "", phone_match.group(0)) if phone_match else "",
+    }
+
+
+def _find_cross_channel_messages(messages: list, identity: dict[str, str]) -> list:
+    if not identity:
+        return []
+    out = []
+    for row in messages:
+        if not row:
+            continue
+        if identity.get("name") and row.customer_name == identity["name"]:
+            out.append(row.channel)
+            continue
+        raw = f"{row.customer_id or ''} {row.body or ''}"
+        if identity.get("email") and identity["email"] in raw:
+            out.append(row.channel)
+            continue
+        if identity.get("phone") and identity["phone"] in re.sub(r"[\s\-]", "", raw):
+            out.append(row.channel)
+    uniq = []
+    for ch in out:
+        if ch not in uniq:
+            uniq.append(ch)
+    return uniq
 
 
 # ---------------------------------------------------------------------------
@@ -977,7 +1014,7 @@ def cs_inbox():
         abort(403)
     from src.cs_bot.faq_store import FAQStore
     from src.cs_bot.inbox_store import InboxStore
-    from src.cs_bot.replier import suggest_reply
+    from src.cs_bot.replier import suggest_reply_details
 
     store = InboxStore()
     faq_store = FAQStore()
@@ -996,8 +1033,13 @@ def cs_inbox():
 
     selected = store.get(selected_id) if selected_id else (messages[0] if messages else None)
     if selected and not selected.suggested_reply:
-        selected.suggested_reply = suggest_reply(selected, faq_store)
+        suggested, _, matched_faq = suggest_reply_details(selected, faq_store)
+        selected.suggested_reply = suggested
+        selected.matched_faq_id = matched_faq.faq_id if matched_faq else ""
         store.upsert(selected)
+
+    identity = _infer_customer_identity(selected) if selected else {}
+    matched_channels = _find_cross_channel_messages(messages, identity)
 
     stats = store.stats_24h()
     return render_template(
@@ -1005,6 +1047,8 @@ def cs_inbox():
         page="cs_bot",
         messages=messages,
         selected=selected,
+        identity=identity,
+        matched_channels=matched_channels,
         stats=stats,
         filters={"status": status, "channel": channel, "q": query},
     )
@@ -1072,11 +1116,14 @@ def cs_inbox_respond():
     if not _cs_role_allowed():
         abort(403)
     from src.cs_bot.inbox_store import InboxStore
+    from src.cs_bot.multi_channel_send import Customer, send_to_channels
+    from src.cs_bot.quality_logger import log_reply_quality
     from src.cs_bot.inbound_telegram import _send_customer_reply
 
     message_id = (request.form.get("message_id") or "").strip()
     action = (request.form.get("action") or "").strip()
     final_reply = (request.form.get("final_reply") or "").strip()
+    multi_channels = request.form.getlist("channels")
     if not message_id:
         return redirect("/seller/cs/inbox")
     store = InboxStore()
@@ -1098,8 +1145,71 @@ def cs_inbox_respond():
         row.status = "resolved"
         row.final_reply = final_reply or row.final_reply
         row.responded_at = datetime.now(timezone.utc).isoformat()
+    elif action == "multi_send":
+        reply = final_reply or row.suggested_reply
+        identity = _infer_customer_identity(row)
+        customer = Customer(
+            customer_id=row.customer_id,
+            customer_name=row.customer_name,
+            language=row.language or "ko",
+            email=identity.get("email", ""),
+            phone=identity.get("phone", ""),
+            telegram_chat_id=row.customer_id if row.channel == "telegram" else "",
+        )
+        result = send_to_channels(customer, reply, multi_channels)
+        if any(result.values()):
+            row.status = "resolved"
+            row.final_reply = reply
+            row.responded_at = datetime.now(timezone.utc).isoformat()
     store.upsert(row)
+    if action in {"send", "resolve", "multi_send"}:
+        final_text = row.final_reply or final_reply or row.suggested_reply
+        accepted = bool(row.suggested_reply and final_text.strip() == row.suggested_reply.strip())
+        log_reply_quality(row, row.suggested_reply, final_text, accepted)
     return redirect(f"/seller/cs/inbox?msg={row.message_id}")
+
+
+@bp.route("/cs/quality", methods=["GET", "POST"])
+def cs_quality():
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+    if not _cs_role_allowed():
+        abort(403)
+    from src.cs_bot.faq_store import FAQStore
+    from src.cs_bot.quality_logger import get_low_quality_records
+    from src.cs_bot.inbox_store import InboxStore
+
+    faq_store = FAQStore()
+    if request.method == "POST":
+        action = (request.form.get("action") or "").strip()
+        faq_id = (request.form.get("faq_id") or "").strip()
+        if action == "promote" and faq_id:
+            final_reply = (request.form.get("last_final") or "").strip()
+            target = faq_store.get(faq_id)
+            if target and final_reply:
+                target.answer_template = final_reply
+                faq_store.update(target)
+
+    low_quality = get_low_quality_records(threshold=float(request.args.get("threshold", 0.5)))
+    rows = InboxStore().list_messages(limit=5000)
+    response_minutes: list[float] = []
+    for row in rows:
+        if not row.received_at or not row.responded_at:
+            continue
+        try:
+            recv = datetime.fromisoformat(row.received_at.replace("Z", "+00:00"))
+            resp = datetime.fromisoformat(row.responded_at.replace("Z", "+00:00"))
+            if resp >= recv:
+                response_minutes.append((resp - recv).total_seconds() / 60)
+        except Exception:
+            continue
+    return render_template(
+        "cs_quality.html",
+        page="cs_bot",
+        low_quality=low_quality,
+        avg_response=round(sum(response_minutes) / len(response_minutes), 1) if response_minutes else 0.0,
+        p95_response=round(sorted(response_minutes)[int(len(response_minutes) * 0.95)] if response_minutes else 0.0, 1),
+    )
 
 
 @bp.get("/cs/sla")

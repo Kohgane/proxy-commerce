@@ -7,6 +7,7 @@
   <div class="d-flex gap-2">
     <a class="btn btn-outline-secondary btn-sm" href="/seller/cs/faq">FAQ 관리</a>
     <a class="btn btn-outline-secondary btn-sm" href="/seller/cs/sla">SLA 현황</a>
+    <a class="btn btn-outline-secondary btn-sm" href="/seller/cs/quality">품질 루프</a>
   </div>
 </div>
 
@@ -83,6 +84,13 @@
           <div>{{ selected.body }}</div>
         </div>
 
+        <div class="small text-muted mb-2">
+          고객 식별: 이름 {{ identity.name or '-' }} · 이메일 {{ identity.email or '-' }} · 전화 {{ identity.phone or '-' }}
+          {% if matched_channels %}
+          · 교차 채널 {{ matched_channels|join(', ') }}
+          {% endif %}
+        </div>
+
         <form method="post" action="/seller/cs/inbox/respond">
           <input type="hidden" name="message_id" value="{{ selected.message_id }}">
           <label class="form-label small">AI 제안 답변</label>
@@ -90,6 +98,16 @@
           <div class="small text-muted mt-2">주문번호: {{ selected.order_no or '-' }} · SLA: {{ selected.sla_deadline or '-' }}</div>
           <div class="d-flex gap-2 mt-3">
             <button class="btn btn-primary btn-sm" name="action" value="send">발송</button>
+            <details class="ms-1">
+              <summary class="btn btn-outline-primary btn-sm d-inline-block">여러 채널로 발송</summary>
+              <div class="mt-2 p-2 border rounded bg-light small">
+                <label class="d-block"><input type="checkbox" name="channels" value="telegram"> 텔레그램</label>
+                <label class="d-block"><input type="checkbox" name="channels" value="email"> 이메일</label>
+                <label class="d-block"><input type="checkbox" name="channels" value="kakao"> 카카오</label>
+                <label class="d-block"><input type="checkbox" name="channels" value="sms"> SMS</label>
+                <button class="btn btn-sm btn-outline-dark mt-2" name="action" value="multi_send">선택 채널 발송</button>
+              </div>
+            </details>
             <button class="btn btn-outline-warning btn-sm" name="action" value="hold">보류</button>
             <button class="btn btn-outline-success btn-sm" name="action" value="resolve">해결</button>
           </div>

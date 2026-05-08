@@ -84,7 +84,8 @@ def poll_all_channels() -> dict:
     from .classifier import classify, detect_language
     from .sla import compute_deadline
     from .faq_store import FAQStore
-    from .replier import suggest_reply
+    from .auto_send_guard import should_auto_send
+    from .replier import suggest_reply_details
 
     adapters = [EmailImapAdapter(), CoupangQAAdapter(), NaverTalkAdapter(), ElevenQAAdapter()]
     store = InboxStore()
@@ -124,7 +125,14 @@ def poll_all_channels() -> dict:
                     sla_deadline=deadline,
                     received_at=m.received_at,
                 )
-                cs_msg.suggested_reply = suggest_reply(cs_msg, faq_store)
+                suggested, confidence, matched_faq = suggest_reply_details(cs_msg, faq_store)
+                cs_msg.suggested_reply = suggested
+                cs_msg.matched_faq_id = matched_faq.faq_id if matched_faq else ""
+                can_send, _ = should_auto_send(cs_msg, suggested, confidence)
+                if can_send and adapter.send_reply(cs_msg.customer_id, suggested, ref=m.raw_id):
+                    cs_msg.status = "auto_handled"
+                    cs_msg.final_reply = suggested
+                    cs_msg.responded_at = cs_msg.received_at
                 store.upsert(cs_msg)
                 new_count += 1
             results[adapter.name] = {"new": new_count}

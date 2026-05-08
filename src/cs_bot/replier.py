@@ -9,6 +9,7 @@ from typing import Optional
 from src.ai.budget import BudgetGuard
 from src.cs_bot.faq_store import FAQEntry, FAQStore
 from src.cs_bot.inbox_store import CSMessage
+from src.cs_bot.translator import get_or_translate_faq
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +28,16 @@ def render_template(template: str, msg: CSMessage, order_info: dict | None) -> s
 
 
 def suggest_reply(msg: CSMessage, faq_store: FAQStore) -> str:
+    reply, _, _ = suggest_reply_details(msg, faq_store)
+    return reply
+
+
+def suggest_reply_details(msg: CSMessage, faq_store: FAQStore) -> tuple[str, float, FAQEntry | None]:
     candidates = faq_store.list_all(language=msg.language, category=msg.category or None, enabled_only=True)
     if not candidates:
         candidates = faq_store.search_by_keywords(msg.body, language=msg.language)
+    if not candidates and msg.category:
+        candidates = faq_store.list_all(category=msg.category, enabled_only=True)
 
     # 임베딩 계산 (BudgetGuard 통과 못 하면 None)
     try:
@@ -38,17 +46,34 @@ def suggest_reply(msg: CSMessage, faq_store: FAQStore) -> str:
     except Exception:
         msg_emb = None
 
-    scored = _rank_candidates(msg, candidates, query_embedding=msg_emb)
+    ranked = _rank_candidates_with_scores(msg, candidates, query_embedding=msg_emb)
+    scored = [entry for _, entry in ranked]
     if not scored:
         fallback = "문의 주셔서 감사합니다. 확인 후 빠르게 안내드리겠습니다."
-        return _polish_with_ai(fallback, msg.language)
+        return _polish_with_ai(fallback, msg.language), 0.0, None
 
     top = scored[:3]
-    draft = render_template(top[0].answer_template, msg, order_info={"order_no": msg.order_no})
-    return _polish_with_ai(draft, msg.language)
+    selected = top[0]
+    template = selected.answer_template
+    if msg.language and selected.language and msg.language != selected.language:
+        template = get_or_translate_faq(selected, msg.language, faq_store)
+    draft = render_template(template, msg, order_info={"order_no": msg.order_no})
+    confidence = float(ranked[0][0]) if ranked else 0.0
+    confidence = max(0.0, min(1.0, confidence / 5.0))
+    return _polish_with_ai(draft, msg.language), confidence, selected
 
 
 def _rank_candidates(msg: CSMessage, candidates: list[FAQEntry], *, query_embedding: list[float] | None = None) -> list[FAQEntry]:
+    rows = _rank_candidates_with_scores(msg, candidates, query_embedding=query_embedding)
+    return [entry for _, entry in rows]
+
+
+def _rank_candidates_with_scores(
+    msg: CSMessage,
+    candidates: list[FAQEntry],
+    *,
+    query_embedding: list[float] | None = None,
+) -> list[tuple[float, FAQEntry]]:
     body = (msg.body or "").lower()
     tokens = [t for t in body.replace("\n", " ").split(" ") if t]
     rows: list[tuple[float, FAQEntry]] = []
@@ -71,7 +96,7 @@ def _rank_candidates(msg: CSMessage, candidates: list[FAQEntry], *, query_embedd
         if score > 0:
             rows.append((score, entry))
     rows.sort(key=lambda x: (-x[0], -x[1].priority, x[1].faq_id))
-    return [entry for _, entry in rows]
+    return rows
 
 
 def _cosine_bonus(entry_embedding: list[float], query_embedding: Optional[list[float]]) -> float:

@@ -15,6 +15,7 @@ def test_cs_pages_200(tmp_path, monkeypatch):
     with app.test_client() as client:
         assert client.get("/seller/cs/inbox").status_code == 200
         assert client.get("/seller/cs/faq").status_code == 200
+        assert client.get("/seller/cs/quality").status_code == 200
 
 
 def test_cs_role_check_forbidden_guest(tmp_path, monkeypatch):
