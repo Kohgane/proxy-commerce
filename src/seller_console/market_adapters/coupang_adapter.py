@@ -90,6 +90,9 @@ class CoupangAdapter(MarketAdapter):
 
     marketplace = "coupang"
 
+    def __init__(self) -> None:
+        self.is_active = _api_active()
+
     def fetch_inventory(self) -> List[MarketStatusItem]:
         """쿠팡 API에서 재고/상품 상태 조회."""
         if not _api_active():
@@ -378,13 +381,12 @@ class CoupangAdapter(MarketAdapter):
 
         ADAPTER_DRY_RUN=1 이면 로그만 기록 후 True 반환.
         """
+        if not self.is_active:
+            return False
+
         if _dry_run():
             logger.info("ADAPTER_DRY_RUN=1 — 쿠팡 update_tracking 차단: %s", order_id)
             return True
-
-        if not _api_active():
-            logger.warning("쿠팡 API 키 미설정 — update_tracking 불가")
-            return False
 
         vendor_id = os.getenv("COUPANG_VENDOR_ID", "")
         box_id = shipment_box_id or order_id

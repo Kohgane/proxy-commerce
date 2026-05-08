@@ -9,15 +9,17 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
 @pytest.fixture
-def client(monkeypatch, tmp_path):
-    token_path = tmp_path / "diagnostic_tokens.jsonl"
-    monkeypatch.setenv("DIAGNOSTIC_TOKEN_PATH", str(token_path))
+def client(monkeypatch):
     monkeypatch.setenv("BASE_URL", "https://kohganepercentiii.com")
     monkeypatch.setenv("ADMIN_EMAILS", "admin@example.com")
+    monkeypatch.setenv("ADMIN_BOOTSTRAP_TOKEN", "bootstrap-secret")
     from src.order_webhook import app
     import src.auth.diagnostic_token as diagnostic_token
 
-    diagnostic_token._FILE = token_path
+    diagnostic_token._used_nonces.clear()
+    diagnostic_token._issued_nonces.clear()
+    diagnostic_token._issue_events.clear()
+    diagnostic_token._redeem_events.clear()
     app.config["TESTING"] = True
     with app.test_client() as c:
         yield c

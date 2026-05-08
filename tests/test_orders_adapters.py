@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import sys
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -85,6 +86,18 @@ class TestCoupangOrdersUnified:
         result = CoupangAdapter().update_tracking("ORDER-001", courier="CJ", tracking_no="123456")
         assert result is False
 
+    @patch("requests.put")
+    def test_update_tracking_active_success(self, mock_put, monkeypatch):
+        monkeypatch.setenv("COUPANG_VENDOR_ID", "V001")
+        monkeypatch.setenv("COUPANG_ACCESS_KEY", "AK001")
+        monkeypatch.setenv("COUPANG_SECRET_KEY", "SK001")
+        mock_put.return_value = MagicMock(status_code=200, text="ok")
+
+        from src.seller_console.market_adapters.coupang_adapter import CoupangAdapter
+        adapter = CoupangAdapter()
+        assert adapter.is_active is True
+        assert adapter.update_tracking("ORDER-001", courier="CJ", tracking_no="123456") is True
+
 
 # ---------------------------------------------------------------------------
 # SmartStoreAdapter
@@ -136,6 +149,18 @@ class TestSmartStoreOrdersUnified:
         from src.seller_console.market_adapters.smartstore_adapter import SmartStoreAdapter
         result = SmartStoreAdapter().update_tracking("ORDER-001", courier="CJ", tracking_no="123456")
         assert result is False
+
+    @patch("requests.post")
+    def test_update_tracking_active_success(self, mock_post, monkeypatch):
+        monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "NAVER_ID")
+        monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", "NAVER_SECRET")
+        mock_post.return_value = MagicMock(status_code=200)
+
+        from src.seller_console.market_adapters.smartstore_adapter import SmartStoreAdapter
+        adapter = SmartStoreAdapter()
+        assert adapter.is_active is True
+        with patch("src.seller_console.market_adapters.smartstore_adapter._get_access_token", return_value="token"):
+            assert adapter.update_tracking("ORDER-001", courier="CJ", tracking_no="123456") is True
 
 
 # ---------------------------------------------------------------------------
@@ -206,6 +231,16 @@ class TestElevenOrdersUnified:
         from src.seller_console.market_adapters.eleven_adapter import ElevenAdapter
         result = ElevenAdapter().update_tracking("ORDER-001", courier="04", tracking_no="123456")
         assert result is False
+
+    @patch("requests.post")
+    def test_update_tracking_active_success(self, mock_post, monkeypatch):
+        monkeypatch.setenv("ELEVENST_API_KEY", "ELEVEN_KEY")
+        mock_post.return_value = MagicMock(status_code=200)
+
+        from src.seller_console.market_adapters.eleven_adapter import ElevenAdapter
+        adapter = ElevenAdapter()
+        assert adapter.is_active is True
+        assert adapter.update_tracking("ORDER-001", courier="04", tracking_no="123456") is True
 
 
 # ---------------------------------------------------------------------------

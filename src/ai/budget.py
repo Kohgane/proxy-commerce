@@ -127,16 +127,17 @@ class BudgetGuard:
             return True
 
         used = self.sheets.month_to_date()
-        if used + estimated_cost_usd > self.monthly_limit_usd:
+        projected = used + Decimal(estimated_cost_usd)
+        if projected >= self.monthly_limit_usd:
             logger.warning(
                 "AI 월 예산 초과: used=%.4f limit=%.4f", used, self.monthly_limit_usd
             )
             self._send_exceeded_alert(used)
             return False
 
-        ratio = used / self.monthly_limit_usd if self.monthly_limit_usd > 0 else Decimal("0")
+        ratio = projected / self.monthly_limit_usd if self.monthly_limit_usd > 0 else Decimal("0")
         if ratio >= self.warn_threshold and not self._warned_this_session:
-            self._send_warning(used)
+            self._send_warning(projected)
             self._warned_this_session = True
 
         return True

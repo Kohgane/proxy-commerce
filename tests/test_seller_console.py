@@ -123,6 +123,18 @@ class TestSellerConsoleViews:
         assert data["ok"] is True
         assert data["draft"]["source"] == "taobao"
 
+    def test_collect_preview_with_1688_url(self, client):
+        """POST /seller/collect/preview — 1688 URL은 generic_og/alibaba 중 하나."""
+        resp = client.post(
+            "/seller/collect/preview",
+            json={"url": "https://detail.1688.com/offer/12345.html"},
+            content_type="application/json",
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert data["draft"]["source"] in ("generic_og", "alibaba")
+
     def test_collect_upload_no_product_returns_400(self, client):
         """POST /seller/collect/upload — 상품 없으면 400."""
         resp = client.post(

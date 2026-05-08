@@ -9,15 +9,17 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
 @pytest.fixture
-def client(monkeypatch, tmp_path):
-    token_path = tmp_path / "diagnostic_tokens.jsonl"
-    monkeypatch.setenv("DIAGNOSTIC_TOKEN_PATH", str(token_path))
+def client(monkeypatch):
     monkeypatch.setenv("BASE_URL", "https://kohganepercentiii.com")
     monkeypatch.setenv("ADMIN_EMAILS", "admin@example.com")
+    monkeypatch.setenv("ADMIN_BOOTSTRAP_TOKEN", "bootstrap-secret")
     from src.order_webhook import app
     import src.auth.diagnostic_token as diagnostic_token
 
-    diagnostic_token._FILE = token_path
+    diagnostic_token._used_nonces.clear()
+    diagnostic_token._issued_nonces.clear()
+    diagnostic_token._issue_events.clear()
+    diagnostic_token._redeem_events.clear()
     app.config["TESTING"] = True
     with app.test_client() as c:
         yield c
@@ -25,12 +27,12 @@ def client(monkeypatch, tmp_path):
 
 def test_reveal_html_when_env_enabled(client, monkeypatch):
     monkeypatch.setenv("DIAGNOSTIC_REVEAL", "1")
-    monkeypatch.setattr("src.auth.diagnostic_token.secrets.token_urlsafe", lambda _n: "reveal-token")
+    monkeypatch.setattr("src.auth.diagnostic_token.secrets.token_urlsafe", lambda _n: "reveal-nonce")
     resp = client.get("/auth/diagnostic-token/issue?format=html")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     assert "Admin 세션 시작" in html
-    assert "reveal-token" in html
+    assert "/auth/diagnostic-token/redeem?token=" in html
 
 
 def test_json_only_when_reveal_disabled(client, monkeypatch):
@@ -52,4 +54,3 @@ def test_reveal_safe_without_admin_emails_does_not_reveal_url(client, monkeypatc
     assert resp.status_code == 200
     assert resp.is_json
     assert "safe-token" not in resp.get_data(as_text=True)
-

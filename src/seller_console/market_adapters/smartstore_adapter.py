@@ -94,6 +94,9 @@ class SmartStoreAdapter(MarketAdapter):
 
     marketplace = "smartstore"
 
+    def __init__(self) -> None:
+        self.is_active = _api_active()
+
     def fetch_inventory(self) -> List[MarketStatusItem]:
         """스마트스토어 API에서 상품 목록 조회."""
         if not _api_active():
@@ -322,12 +325,12 @@ class SmartStoreAdapter(MarketAdapter):
 
     def update_tracking(self, order_id: str, courier: str = "", tracking_no: str = "") -> bool:
         """스마트스토어 운송장 등록."""
+        if not self.is_active:
+            return False
+
         if _dry_run():
             logger.info("ADAPTER_DRY_RUN=1 — 스마트스토어 update_tracking 차단: %s", order_id)
             return True
-
-        if not _api_active():
-            return False
 
         token = _get_access_token()
         if not token:
