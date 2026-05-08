@@ -416,6 +416,30 @@ API_REGISTRY: list = [
         category=ApiCategory.CS_BOT,
         optional=True,
     ),
+    ApiKey(
+        name="cs_scheduler",
+        env_vars=["CS_SCHEDULER_ENABLED", "CS_POLL_INTERVAL_MINUTES", "CS_SLA_CHECK_INTERVAL_MINUTES"],
+        purpose="CS 자동 cron 스케줄러 (APScheduler, 멀티워커 잠금)",
+        docs_url="https://kohganepercentiii.com/docs/operations/CS_SCHEDULER.md",
+        category=ApiCategory.CS_BOT,
+        optional=True,
+    ),
+    ApiKey(
+        name="cs_email_imap",
+        env_vars=["CS_EMAIL_IMAP_HOST", "CS_EMAIL_IMAP_USER", "CS_EMAIL_IMAP_PASS"],
+        purpose="CS 이메일 IMAP 인바운드 채널",
+        docs_url="https://kohganepercentiii.com/docs/operations/CS_CHANNELS.md",
+        category=ApiCategory.CS_BOT,
+        optional=True,
+    ),
+    ApiKey(
+        name="cs_embedding",
+        env_vars=["CS_EMBEDDING_PROVIDER", "CS_EMBEDDING_MODEL"],
+        purpose="CS FAQ 임베딩 매칭 (OpenAI text-embedding-3-small)",
+        docs_url="https://kohganepercentiii.com/docs/operations/CS_CHANNELS.md",
+        category=ApiCategory.CS_BOT,
+        optional=True,
+    ),
 ]
 
 

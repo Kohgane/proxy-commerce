@@ -25,32 +25,44 @@ class TelegramCSAdapter:
             "channel": self.channel_name,
             "enabled": self.is_enabled(),
             "mode": "webhook",
-            "phase": "137",
-        }
-
-
-@dataclass
-class StubCSAdapter:
-    channel_name: str
-
-    def is_enabled(self) -> bool:
-        return True
-
-    def status(self) -> dict:
-        return {
-            "channel": self.channel_name,
-            "enabled": True,
-            "mode": "stub",
             "phase": "138",
         }
 
 
-def list_channel_adapters() -> list[CSChannelAdapter]:
-    return [
-        TelegramCSAdapter(),
-        StubCSAdapter("kakao"),
-        StubCSAdapter("email"),
-        StubCSAdapter("coupang_qa"),
-        StubCSAdapter("naver_talk"),
-        StubCSAdapter("11st_qa"),
-    ]
+@dataclass
+class _ChannelAdapterWrapper:
+    """Wraps InboundChannelAdapter for status() compatibility."""
+    _adapter: object
+
+    @property
+    def channel_name(self) -> str:
+        return getattr(self._adapter, "name", "unknown")
+
+    def is_enabled(self) -> bool:
+        try:
+            return bool(self._adapter.is_active())  # type: ignore
+        except Exception:
+            return False
+
+    def status(self) -> dict:
+        return {
+            "channel": self.channel_name,
+            "enabled": self.is_enabled(),
+            "mode": "poll",
+            "phase": "138",
+        }
+
+
+def list_channel_adapters() -> list:
+    adapters = [TelegramCSAdapter()]
+    try:
+        from src.cs_bot.channels.email_imap import EmailImapAdapter
+        from src.cs_bot.channels.coupang_qa import CoupangQAAdapter
+        from src.cs_bot.channels.naver_talk import NaverTalkAdapter
+        from src.cs_bot.channels.eleven_qa import ElevenQAAdapter
+        for cls in [EmailImapAdapter, CoupangQAAdapter, NaverTalkAdapter, ElevenQAAdapter]:
+            adapters.append(_ChannelAdapterWrapper(cls()))
+    except Exception:
+        pass
+    return adapters
+

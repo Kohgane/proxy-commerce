@@ -1128,6 +1128,96 @@ def cs_sla():
     )
 
 
+@bp.get("/cs/mobile")
+def cs_mobile():
+    """운영자 모바일 PWA."""
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+    if not _cs_role_allowed():
+        abort(403)
+    from src.cs_bot.inbox_store import InboxStore
+    store = InboxStore()
+    # 미응답 우선 정렬
+    messages = store.list_messages(status="open", limit=50)
+    stats = store.stats_24h()
+    return render_template(
+        "cs_mobile.html",
+        page="cs_bot",
+        messages=messages,
+        stats=stats,
+    )
+
+
+@bp.get("/cs/stats")
+def cs_stats():
+    """CS 통계 대시보드."""
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+    if not _cs_role_allowed():
+        abort(403)
+    from src.cs_bot.inbox_store import InboxStore
+    store = InboxStore()
+    rows = store.list_messages(limit=5000)
+    # 채널별 통계
+    by_channel: dict[str, dict] = {}
+    by_category: dict[str, dict] = {}
+    by_language: dict[str, int] = {}
+    response_times: list[float] = []
+    ai_suggested = 0
+    ai_used = 0
+
+    from datetime import datetime, timezone
+    for row in rows:
+        # 채널
+        ch = row.channel or "unknown"
+        by_channel.setdefault(ch, {"total": 0, "resolved": 0})
+        by_channel[ch]["total"] += 1
+        if row.status in {"resolved", "auto_handled"}:
+            by_channel[ch]["resolved"] += 1
+        # 카테고리
+        cat = row.category or "general"
+        by_category.setdefault(cat, {"total": 0, "resolved": 0})
+        by_category[cat]["total"] += 1
+        if row.status in {"resolved", "auto_handled"}:
+            by_category[cat]["resolved"] += 1
+        # 언어
+        lang = row.language or "ko"
+        by_language[lang] = by_language.get(lang, 0) + 1
+        # 응답 시간
+        if row.received_at and row.responded_at:
+            try:
+                recv = datetime.fromisoformat(row.received_at.replace("Z", "+00:00"))
+                resp = datetime.fromisoformat(row.responded_at.replace("Z", "+00:00"))
+                if resp >= recv:
+                    response_times.append((resp - recv).total_seconds() / 60)
+            except Exception:
+                pass
+        # AI 제안 채택률
+        if row.suggested_reply:
+            ai_suggested += 1
+            if row.final_reply:
+                # 간단한 유사도: 같거나 포함이면 채택
+                if row.final_reply.strip() == row.suggested_reply.strip() or row.suggested_reply.strip() in row.final_reply:
+                    ai_used += 1
+
+    avg_response = round(sum(response_times) / len(response_times), 1) if response_times else 0.0
+    ai_adoption_rate = round(ai_used / ai_suggested * 100, 1) if ai_suggested else 0.0
+
+    stats_summary = store.stats_24h()
+    return render_template(
+        "cs_stats.html",
+        page="cs_bot",
+        by_channel=by_channel,
+        by_category=by_category,
+        by_language=by_language,
+        avg_response=avg_response,
+        ai_adoption_rate=ai_adoption_rate,
+        ai_suggested=ai_suggested,
+        stats=stats_summary,
+        total_messages=len(rows),
+    )
+
+
 @bp.post("/messaging/test")
 def messaging_test():
     """테스트 메시지 발송 (Phase 134).

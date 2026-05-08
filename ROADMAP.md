@@ -137,6 +137,7 @@
 | Phase 136.4 | Hotfix — Diagnostic Token 화면 표시 + 비상 진입 헤더 카드 + 셀프 온보딩 + Phase 137 골격 | #PR | 2026-05-07 |
 | Phase 136.5 | Hotfix — Diagnostic Token HMAC 서명 전환 + CI 회귀 14개 진짜 수정 | #PR | 2026-05-07 |
 | Phase 137 | CS 자동응답 봇 — Inbox + FAQ + 분류기 + AI 제안 + SLA + 텔레그램 webhook | #PR | 2026-05-07 |
+| Phase 138 | CS 다채널 폴링 + APScheduler 자동 cron + 임베딩 매칭 + 운영자 PWA + 통계 대시보드 | #PR | 2026-05-08 |
 
 ## 📋 다음 큐
 

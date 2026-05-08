@@ -1,0 +1,111 @@
+{% extends "_base.html" %}
+{% block title %}CS 통계{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">📊 CS 통계 대시보드</h4>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="/seller/cs/inbox">Inbox</a>
+    <a class="btn btn-outline-secondary btn-sm" href="/seller/cs/mobile">Mobile</a>
+  </div>
+</div>
+
+<!-- KPI 요약 -->
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small">전체 메시지</div>
+      <div class="fs-3 fw-bold">{{ total_messages }}</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small">24h 미응답</div>
+      <div class="fs-3 fw-bold text-danger">{{ stats.unanswered }}</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small">평균 응답 시간</div>
+      <div class="fs-3 fw-bold">{{ avg_response }}분</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small">AI 제안 채택률</div>
+      <div class="fs-3 fw-bold text-primary">{{ ai_adoption_rate }}%</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- 채널별 -->
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header fw-semibold">📡 채널별</div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead><tr><th>채널</th><th>전체</th><th>해결</th></tr></thead>
+          <tbody>
+          {% for ch, d in by_channel.items() %}
+          <tr>
+            <td>{{ ch }}</td>
+            <td>{{ d.total }}</td>
+            <td>{{ d.resolved }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3" class="text-muted text-center">데이터 없음</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 카테고리별 -->
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header fw-semibold">🏷 카테고리별</div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead><tr><th>카테고리</th><th>전체</th><th>해결</th></tr></thead>
+          <tbody>
+          {% for cat, d in by_category.items() %}
+          <tr>
+            <td>{{ cat }}</td>
+            <td>{{ d.total }}</td>
+            <td>{{ d.resolved }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3" class="text-muted text-center">데이터 없음</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 언어별 -->
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header fw-semibold">🌐 언어별</div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead><tr><th>언어</th><th>건수</th></tr></thead>
+          <tbody>
+          {% for lang, cnt in by_language.items() %}
+          <tr><td>{{ lang }}</td><td>{{ cnt }}</td></tr>
+          {% else %}
+          <tr><td colspan="2" class="text-muted text-center">데이터 없음</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mt-3">
+  <small class="text-muted">AI 제안: {{ ai_suggested }}건 중 채택 {{ ai_adoption_rate }}% · 24h 응답률 {{ stats.response_rate }}%</small>
+</div>
+{% endblock %}

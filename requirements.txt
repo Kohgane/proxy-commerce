@@ -16,3 +16,4 @@ beautifulsoup4>=4.12
 lxml>=5.0
 fake-useragent>=1.4
 pydantic>=2.0
+APScheduler>=3.10

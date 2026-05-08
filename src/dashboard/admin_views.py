@@ -432,6 +432,64 @@ def diagnostics_telegram_health():
     return jsonify(health_check())
 
 
+@admin_panel_bp.post("/cs/poll-now")
+def admin_cs_poll_now():
+    """즉시 다채널 폴링 트리거."""
+    from flask import jsonify
+    if not session.get("user_id"):
+        return jsonify({"ok": False, "error": "인증 필요"}), 401
+    try:
+        from src.cs_bot.scheduler import poll_all_channels
+        result = poll_all_channels()
+        return jsonify({"ok": True, "result": result})
+    except Exception as exc:
+        logger.warning("cs poll-now 오류: %s", exc)
+        return jsonify({"ok": False, "error": "내부 오류가 발생했습니다"}), 500
+
+
+@admin_panel_bp.post("/cs/check-sla")
+def admin_cs_check_sla():
+    """SLA 점검 수동 트리거."""
+    from flask import jsonify
+    try:
+        from src.cs_bot.sla import check_and_notify_sla
+        result = check_and_notify_sla()
+        return jsonify({"ok": True, "nearing": result.get("nearing_count", 0), "overdue": result.get("overdue_count", 0)})
+    except Exception as exc:
+        logger.warning("cs check-sla 오류: %s", exc)
+        return jsonify({"ok": False, "error": "내부 오류가 발생했습니다"}), 500
+
+
+@admin_panel_bp.post("/cs/rebuild-embeddings")
+def admin_cs_rebuild_embeddings():
+    """FAQ 임베딩 일괄 재계산."""
+    from flask import jsonify
+    if not session.get("user_id"):
+        return jsonify({"ok": False, "error": "인증 필요"}), 401
+    try:
+        from src.cs_bot.faq_store import FAQStore
+        from src.cs_bot.embeddings import rebuild_faq_embeddings
+        updated = rebuild_faq_embeddings(FAQStore())
+        return jsonify({"ok": True, "updated": updated})
+    except Exception as exc:
+        logger.warning("cs rebuild-embeddings 오류: %s", exc)
+        return jsonify({"ok": False, "error": "내부 오류가 발생했습니다"}), 500
+
+
+@admin_panel_bp.get("/cs/stats")
+def admin_cs_stats():
+    """CS 통계 대시보드 (JSON API)."""
+    from flask import jsonify
+    try:
+        from src.cs_bot.inbox_store import InboxStore
+        store = InboxStore()
+        stats = store.stats_24h()
+        return jsonify({"ok": True, "stats": stats})
+    except Exception as exc:
+        logger.warning("cs stats 오류: %s", exc)
+        return jsonify({"ok": False, "error": "내부 오류가 발생했습니다"}), 500
+
+
 # ── 진단 헬퍼 함수 ────────────────────────────────────────────────────────
 
 def _get_base_url() -> str:
@@ -656,6 +714,21 @@ def _build_cs_bot_status() -> dict:
         result["sla_overdue"] = summary.get("overdue_count", 0)
     except Exception as exc:
         logger.debug("cs_bot SLA 상태 조회 실패: %s", exc)
+
+    try:
+        from src.cs_bot.scheduler import get_scheduler_status
+        sched = get_scheduler_status()
+        result["scheduler_enabled"] = sched.get("enabled", False)
+        result["scheduler_running"] = sched.get("running", False)
+        result["scheduler_next_poll"] = sched.get("next_poll")
+        result["scheduler_next_sla"] = sched.get("next_sla")
+    except Exception as exc:
+        logger.debug("cs_bot 스케줄러 상태 조회 실패: %s", exc)
+
+    result.setdefault("scheduler_enabled", False)
+    result.setdefault("scheduler_running", False)
+    result.setdefault("scheduler_next_poll", None)
+    result.setdefault("scheduler_next_sla", None)
 
     return result
 
@@ -1091,7 +1164,7 @@ _DIAGNOSTICS_TEMPLATE = """
 
     <!-- 섹션 7: CS 봇 -->
     <div class="card mb-4">
-      <div class="card-header fw-bold">🤖 섹션 7 — CS 봇 (Phase 137)</div>
+      <div class="card-header fw-bold">🤖 섹션 7 — CS 봇 (Phase 138)</div>
       <div class="card-body">
         <ul class="mb-3">
           <li>FAQ 개수: {{ cs_bot_status.faq_total }}개 (활성 {{ cs_bot_status.faq_enabled }}개)</li>
@@ -1101,6 +1174,7 @@ _DIAGNOSTICS_TEMPLATE = """
           <li>AI 제안 호출: {{ cs_bot_status.ai_calls_24h }}건 (예산 잔여 {{ cs_bot_status.budget_remaining_pct }}%)</li>
           <li>자동 발송: {% if cs_bot_status.auto_send %}<span class="badge bg-danger">ON</span>{% else %}<span class="badge bg-secondary">OFF</span>{% endif %}</li>
           <li>SLA: 임박 {{ cs_bot_status.sla_nearing }}건 / 초과 {{ cs_bot_status.sla_overdue }}건</li>
+          <li>스케줄러: {% if cs_bot_status.scheduler_running %}<span class="badge bg-success">실행 중</span>{% elif cs_bot_status.scheduler_enabled %}<span class="badge bg-warning text-dark">활성/미실행</span>{% else %}<span class="badge bg-secondary">비활성</span>{% endif %}{% if cs_bot_status.scheduler_next_poll %} · 다음 폴링 {{ cs_bot_status.scheduler_next_poll[:19] }}{% endif %}</li>
         </ul>
         <div class="small text-muted mb-2">
           채널: {% for ch in cs_bot_status.channels %}{{ ch.channel }}({{ ch.mode }}){% if not loop.last %}, {% endif %}{% endfor %}
@@ -1108,9 +1182,19 @@ _DIAGNOSTICS_TEMPLATE = """
         <div class="d-flex gap-2 flex-wrap">
           <a class="btn btn-outline-primary btn-sm" href="/seller/cs/inbox">Inbox 열기</a>
           <a class="btn btn-outline-secondary btn-sm" href="/seller/cs/faq">FAQ 관리</a>
+          <a class="btn btn-outline-info btn-sm" href="/seller/cs/mobile">Mobile PWA</a>
+          <a class="btn btn-outline-secondary btn-sm" href="/seller/cs/stats">통계</a>
           <button class="btn btn-outline-warning btn-sm"
                   onclick="fetch('/admin/cs/check-sla',{method:'POST'}).then(r=>r.json()).then(d=>alert(JSON.stringify(d,null,2)))">
             SLA 점검 실행
+          </button>
+          <button class="btn btn-outline-success btn-sm"
+                  onclick="fetch('/admin/cs/poll-now',{method:'POST'}).then(r=>r.json()).then(d=>alert(JSON.stringify(d,null,2)))">
+            즉시 폴링
+          </button>
+          <button class="btn btn-outline-secondary btn-sm"
+                  onclick="fetch('/admin/cs/rebuild-embeddings',{method:'POST'}).then(r=>r.json()).then(d=>alert(JSON.stringify(d,null,2)))">
+            임베딩 재계산
           </button>
         </div>
       </div>
