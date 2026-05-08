@@ -3,25 +3,101 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <h4 class="mb-0">🤖 CS 자동응답 Inbox (Phase 137 골격)</h4>
-  <a class="btn btn-outline-secondary btn-sm" href="/seller/cs/faq">FAQ 관리</a>
+  <h4 class="mb-0">📨 CS Inbox</h4>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="/seller/cs/faq">FAQ 관리</a>
+    <a class="btn btn-outline-secondary btn-sm" href="/seller/cs/sla">SLA 현황</a>
+  </div>
 </div>
-<div class="card border-0 shadow-sm">
+
+<div class="card border-0 shadow-sm mb-3">
   <div class="card-body">
-    <p class="text-muted mb-2">입력 메시지(샘플): <code>{{ sample_message }}</code></p>
-    <p class="small text-muted">텔레그램 webhook 연동은 다음 Phase에서 연결됩니다. 현재는 키워드 매칭 추천만 제공합니다.</p>
-    {% if suggestions %}
-      <ul class="list-group">
-      {% for item in suggestions %}
-        <li class="list-group-item">
-          <div class="fw-semibold">{{ item.keyword }}</div>
-          <div class="small text-muted">{{ item.answer }}</div>
-          <span class="badge bg-warning text-dark mt-2">운영자 승인 후 발송</span>
-        </li>
+    <div class="row g-3">
+      <div class="col-md-3"><div class="text-muted small">24h 신규</div><div class="fs-5 fw-bold">{{ stats.new_24h }}</div></div>
+      <div class="col-md-3"><div class="text-muted small">미응답</div><div class="fs-5 fw-bold">{{ stats.unanswered }} <span class="badge bg-danger">긴급 {{ stats.urgent_unanswered }}</span></div></div>
+      <div class="col-md-3"><div class="text-muted small">평균 응답</div><div class="fs-5 fw-bold">{{ stats.avg_response_minutes }}분</div></div>
+      <div class="col-md-3"><div class="text-muted small">응답률</div><div class="fs-5 fw-bold">{{ stats.response_rate }}%</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-body">
+        <form method="get" class="row g-2">
+          <div class="col-4">
+            <select name="status" class="form-select form-select-sm">
+              <option value="" {% if not filters.status %}selected{% endif %}>전체 상태</option>
+              {% for s in ["open","in_progress","resolved","auto_handled"] %}
+              <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-4">
+            <select name="channel" class="form-select form-select-sm">
+              <option value="" {% if not filters.channel %}selected{% endif %}>전체 채널</option>
+              {% for c in ["telegram","kakao","email","coupang_qa","naver_talk","11st_qa"] %}
+              <option value="{{ c }}" {% if filters.channel == c %}selected{% endif %}>{{ c }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-4"><input name="q" class="form-control form-control-sm" placeholder="검색" value="{{ filters.q }}"></div>
+          <div class="col-12"><button class="btn btn-sm btn-outline-primary">필터 적용</button></div>
+        </form>
+      </div>
+    </div>
+
+    <div class="list-group shadow-sm">
+      {% for msg in messages %}
+      <a class="list-group-item list-group-item-action {% if selected and selected.message_id == msg.message_id %}active{% endif %}"
+         href="/seller/cs/inbox?msg={{ msg.message_id }}&status={{ filters.status }}&channel={{ filters.channel }}&q={{ filters.q }}">
+        <div class="d-flex justify-content-between">
+          <small>{{ msg.customer_name }}</small>
+          <span class="badge {% if msg.priority >= 2 %}bg-danger{% elif msg.priority == 1 %}bg-warning text-dark{% else %}bg-secondary{% endif %}">P{{ msg.priority }}</span>
+        </div>
+        <div class="small">{{ msg.body[:70] }}</div>
+        <div class="small text-muted">{{ msg.channel }} · {{ msg.status }}</div>
+      </a>
+      {% else %}
+      <div class="list-group-item text-muted">메시지가 없습니다.</div>
       {% endfor %}
-      </ul>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    {% if selected %}
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between mb-2">
+          <h5 class="mb-0">{{ selected.customer_name }}</h5>
+          <div class="d-flex gap-1">
+            <span class="badge bg-light text-dark">{{ selected.channel }}</span>
+            <span class="badge bg-light text-dark">{{ selected.language }}</span>
+            <span class="badge bg-light text-dark">{{ selected.category or "general" }}</span>
+          </div>
+        </div>
+
+        <div class="mb-3 p-2 border rounded bg-light">
+          <div class="small text-muted mb-1">원문</div>
+          <div>{{ selected.body }}</div>
+        </div>
+
+        <form method="post" action="/seller/cs/inbox/respond">
+          <input type="hidden" name="message_id" value="{{ selected.message_id }}">
+          <label class="form-label small">AI 제안 답변</label>
+          <textarea name="final_reply" class="form-control" rows="6">{{ selected.final_reply or selected.suggested_reply }}</textarea>
+          <div class="small text-muted mt-2">주문번호: {{ selected.order_no or '-' }} · SLA: {{ selected.sla_deadline or '-' }}</div>
+          <div class="d-flex gap-2 mt-3">
+            <button class="btn btn-primary btn-sm" name="action" value="send">발송</button>
+            <button class="btn btn-outline-warning btn-sm" name="action" value="hold">보류</button>
+            <button class="btn btn-outline-success btn-sm" name="action" value="resolve">해결</button>
+          </div>
+        </form>
+      </div>
+    </div>
     {% else %}
-      <div class="alert alert-secondary mb-0">추천 가능한 FAQ가 없습니다. <a href="/seller/cs/faq">FAQ를 먼저 등록</a>하세요.</div>
+    <div class="alert alert-secondary">선택된 메시지가 없습니다.</div>
     {% endif %}
   </div>
 </div>

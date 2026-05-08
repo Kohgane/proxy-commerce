@@ -359,6 +359,7 @@ def _render_diagnostics(issued_magic_link: str | None):
 
     # 섹션 6: 최근 24시간 알림 로그
     message_log = _build_message_log()
+    cs_bot_status = _build_cs_bot_status()
 
     return render_template_string(
         _DIAGNOSTICS_TEMPLATE,
@@ -370,6 +371,7 @@ def _render_diagnostics(issued_magic_link: str | None):
         market_health=market_health,
         pricing_status=pricing_status,
         message_log=message_log,
+        cs_bot_status=cs_bot_status,
         base_url=base_url,
     )
 
@@ -588,6 +590,74 @@ def _build_message_log() -> dict:
     except Exception as exc:
         logger.debug("message_log 로드 실패: %s", exc)
         return {"total": 0, "by_channel": {}, "top_errors": []}
+
+
+def _build_cs_bot_status() -> dict:
+    result = {
+        "faq_total": 0,
+        "faq_enabled": 0,
+        "new_24h": 0,
+        "unanswered": 0,
+        "urgent_unanswered": 0,
+        "avg_response_minutes": 0.0,
+        "response_rate": 0.0,
+        "ai_calls_24h": 0,
+        "budget_remaining_pct": 100.0,
+        "auto_send": os.getenv("CS_AUTO_SEND", "0") == "1",
+        "sla_nearing": 0,
+        "sla_overdue": 0,
+        "channels": [],
+    }
+    try:
+        from src.cs_bot.faq_store import FAQStore
+
+        faq_items = FAQStore().list_all(enabled_only=False)
+        result["faq_total"] = len(faq_items)
+        result["faq_enabled"] = len([x for x in faq_items if x.enabled])
+    except Exception as exc:
+        logger.debug("cs_bot FAQ 상태 조회 실패: %s", exc)
+
+    try:
+        from src.cs_bot.inbox_store import InboxStore
+
+        store = InboxStore()
+        stats = store.stats_24h()
+        result["new_24h"] = stats.get("new_24h", 0)
+        result["unanswered"] = stats.get("unanswered", 0)
+        result["urgent_unanswered"] = stats.get("urgent_unanswered", 0)
+        result["avg_response_minutes"] = stats.get("avg_response_minutes", 0.0)
+        result["response_rate"] = stats.get("response_rate", 0.0)
+        ai_calls = len([x for x in store.list_messages(limit=5000) if x.suggested_reply and x.received_at])
+        result["ai_calls_24h"] = ai_calls
+    except Exception as exc:
+        logger.debug("cs_bot Inbox 상태 조회 실패: %s", exc)
+
+    try:
+        from src.ai.budget import BudgetGuard
+
+        budget = BudgetGuard().summary()
+        result["budget_remaining_pct"] = max(0.0, round(100.0 - float(budget.get("pct", 0.0)), 1))
+    except Exception as exc:
+        logger.debug("cs_bot 예산 조회 실패: %s", exc)
+
+    try:
+        from src.cs_bot.channel_adapters import list_channel_adapters
+
+        result["channels"] = [adapter.status() for adapter in list_channel_adapters()]
+    except Exception as exc:
+        logger.debug("cs_bot 채널 상태 조회 실패: %s", exc)
+
+    try:
+        from src.cs_bot.inbox_store import InboxStore
+        from src.cs_bot.sla import classify_sla
+
+        summary = classify_sla(InboxStore().list_messages(limit=5000))
+        result["sla_nearing"] = summary.get("nearing_count", 0)
+        result["sla_overdue"] = summary.get("overdue_count", 0)
+    except Exception as exc:
+        logger.debug("cs_bot SLA 상태 조회 실패: %s", exc)
+
+    return result
 
 
 def _page_route_available(endpoint: str) -> bool:
@@ -1016,6 +1086,33 @@ _DIAGNOSTICS_TEMPLATE = """
           {% endfor %}
           </ul>
         {% endif %}
+      </div>
+    </div>
+
+    <!-- 섹션 7: CS 봇 -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">🤖 섹션 7 — CS 봇 (Phase 137)</div>
+      <div class="card-body">
+        <ul class="mb-3">
+          <li>FAQ 개수: {{ cs_bot_status.faq_total }}개 (활성 {{ cs_bot_status.faq_enabled }}개)</li>
+          <li>24h 신규: {{ cs_bot_status.new_24h }}건</li>
+          <li>미응답: {{ cs_bot_status.unanswered }}건 (긴급 {{ cs_bot_status.urgent_unanswered }}건)</li>
+          <li>평균 응답: {{ cs_bot_status.avg_response_minutes }}분 · 응답률 {{ cs_bot_status.response_rate }}%</li>
+          <li>AI 제안 호출: {{ cs_bot_status.ai_calls_24h }}건 (예산 잔여 {{ cs_bot_status.budget_remaining_pct }}%)</li>
+          <li>자동 발송: {% if cs_bot_status.auto_send %}<span class="badge bg-danger">ON</span>{% else %}<span class="badge bg-secondary">OFF</span>{% endif %}</li>
+          <li>SLA: 임박 {{ cs_bot_status.sla_nearing }}건 / 초과 {{ cs_bot_status.sla_overdue }}건</li>
+        </ul>
+        <div class="small text-muted mb-2">
+          채널: {% for ch in cs_bot_status.channels %}{{ ch.channel }}({{ ch.mode }}){% if not loop.last %}, {% endif %}{% endfor %}
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+          <a class="btn btn-outline-primary btn-sm" href="/seller/cs/inbox">Inbox 열기</a>
+          <a class="btn btn-outline-secondary btn-sm" href="/seller/cs/faq">FAQ 관리</a>
+          <button class="btn btn-outline-warning btn-sm"
+                  onclick="fetch('/admin/cs/check-sla',{method:'POST'}).then(r=>r.json()).then(d=>alert(JSON.stringify(d,null,2)))">
+            SLA 점검 실행
+          </button>
+        </div>
       </div>
     </div>
 
