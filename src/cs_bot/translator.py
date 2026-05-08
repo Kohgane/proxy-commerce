@@ -13,6 +13,9 @@ logger = logging.getLogger(__name__)
 _LANG_MAP = {"ko": "KO", "en": "EN", "ja": "JA", "zh": "ZH"}
 _PLACEHOLDER_RE = re.compile(r"\{\{[a-zA-Z0-9_]+\}\}")
 _FAIL_MARKER = "\n\n[번역 검수 필요]"
+_DEEPL_COST_PER_CHAR_DEFAULT = Decimal("0.000025")
+_OPENAI_INPUT_TOKEN_COST = Decimal("0.00000015")
+_OPENAI_OUTPUT_TOKEN_COST = Decimal("0.0000006")
 
 
 def translate_answer(answer_text: str, source_lang: str, target_lang: str) -> str:
@@ -117,7 +120,7 @@ def _call_deepl_translate(text: str, source_lang: str, target_lang: str) -> tupl
         return "", Decimal("0"), 0
     translated = str(translations[0].get("text") or "").strip()
     used_chars = len(text)
-    per_char_usd = Decimal(os.getenv("DEEPL_COST_PER_CHAR_USD", "0.000025"))
+    per_char_usd = Decimal(os.getenv("DEEPL_COST_PER_CHAR_USD", str(_DEEPL_COST_PER_CHAR_DEFAULT)))
     return translated, (per_char_usd * Decimal(str(used_chars))), used_chars
 
 
@@ -149,6 +152,6 @@ def _call_openai_translate(text: str, source_lang: str, target_lang: str) -> tup
     input_tokens = int(usage.get("prompt_tokens", 0) or 0)
     output_tokens = int(usage.get("completion_tokens", 0) or 0)
     total_tokens = int(usage.get("total_tokens", input_tokens + output_tokens) or 0)
-    cost_usd = Decimal(str(input_tokens)) * Decimal("0.00000015") + Decimal(str(output_tokens)) * Decimal("0.0000006")
+    cost_usd = Decimal(str(input_tokens)) * _OPENAI_INPUT_TOKEN_COST + Decimal(str(output_tokens)) * _OPENAI_OUTPUT_TOKEN_COST
     content = str(data.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
     return content, cost_usd, total_tokens

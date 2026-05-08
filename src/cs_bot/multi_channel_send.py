@@ -5,6 +5,9 @@ from dataclasses import dataclass
 
 from src.messaging.models import Recipient
 
+_SHORT_TEXT_LIMIT = 140
+_SHORT_TEXT_ELLIPSIS_LIMIT = 137
+
 
 @dataclass
 class Customer:
@@ -43,7 +46,7 @@ def adjust_tone(message: str, channel: str, language: str) -> str:
         return ""
     if channel in {"telegram", "sms"}:
         short = body.replace("\n", " ").strip()
-        return short if len(short) <= 140 else f"{short[:137]}..."
+        return short if len(short) <= _SHORT_TEXT_LIMIT else f"{short[:_SHORT_TEXT_ELLIPSIS_LIMIT]}..."
     if channel == "email":
         greet = "안녕하세요." if language == "ko" else "Hello,"
         sign = "감사합니다.\nKohgane CS팀" if language == "ko" else "Best regards,\nKohgane CS Team"

@@ -26,6 +26,7 @@ import os
 import re
 import uuid
 from typing import Any, Dict
+from difflib import SequenceMatcher
 
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
@@ -78,9 +79,9 @@ def _cs_role_allowed() -> bool:
 def _infer_customer_identity(msg) -> dict[str, str]:
     if not msg:
         return {}
-    raw = f"{msg.customer_id or ''} {msg.body or ''}"
-    email_match = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", raw)
-    phone_match = re.search(r"\+?\d[\d\-\s]{7,}\d", raw)
+    raw = f"{msg.customer_id or ''} {msg.body or ''}"[:1000]
+    email_match = re.search(r"[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,255}\.[A-Za-z]{2,24}", raw)
+    phone_match = re.search(r"\+?\d[\d\-\s]{7,20}\d", raw)
     return {
         "name": msg.customer_name or "",
         "email": email_match.group(0) if email_match else "",
@@ -1164,7 +1165,7 @@ def cs_inbox_respond():
     store.upsert(row)
     if action in {"send", "resolve", "multi_send"}:
         final_text = row.final_reply or final_reply or row.suggested_reply
-        accepted = bool(row.suggested_reply and final_text.strip() == row.suggested_reply.strip())
+        accepted = bool(row.suggested_reply and _text_similarity(final_text, row.suggested_reply) >= 0.95)
         log_reply_quality(row, row.suggested_reply, final_text, accepted)
     return redirect(f"/seller/cs/inbox?msg={row.message_id}")
 
@@ -1208,8 +1209,20 @@ def cs_quality():
         page="cs_bot",
         low_quality=low_quality,
         avg_response=round(sum(response_minutes) / len(response_minutes), 1) if response_minutes else 0.0,
-        p95_response=round(sorted(response_minutes)[int(len(response_minutes) * 0.95)] if response_minutes else 0.0, 1),
+        p95_response=round(_p95(response_minutes), 1),
     )
+
+
+def _text_similarity(a: str, b: str) -> float:
+    return SequenceMatcher(None, (a or "").strip(), (b or "").strip()).ratio()
+
+
+def _p95(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    idx = min(int(len(ordered) * 0.95), len(ordered) - 1)
+    return float(ordered[idx])
 
 
 @bp.get("/cs/sla")

@@ -15,7 +15,10 @@ def should_auto_send(msg: CSMessage, suggested: str, confidence: float) -> tuple
     if (msg.category or "general") not in set(allowed):
         return False, "category_not_allowed"
 
-    threshold = float(os.getenv("CS_AUTO_SEND_CONFIDENCE_THRESHOLD", "0.85") or 0.85)
+    try:
+        threshold = float(os.getenv("CS_AUTO_SEND_CONFIDENCE_THRESHOLD", "0.85"))
+    except Exception:
+        return False, "invalid_confidence_threshold"
     if float(confidence) < threshold:
         return False, "low_confidence"
 
@@ -24,7 +27,10 @@ def should_auto_send(msg: CSMessage, suggested: str, confidence: float) -> tuple
     if "{{" in suggested and "}}" in suggested:
         return False, "template_unresolved"
 
-    limit = int(os.getenv("CS_AUTO_SEND_DAILY_LIMIT", "20") or 20)
+    try:
+        limit = int(os.getenv("CS_AUTO_SEND_DAILY_LIMIT", "20"))
+    except Exception:
+        return False, "invalid_daily_limit"
     if _today_auto_sent_count() >= limit:
         return False, "daily_limit_exceeded"
 

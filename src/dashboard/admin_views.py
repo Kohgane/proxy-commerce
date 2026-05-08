@@ -651,6 +651,10 @@ def _build_message_log() -> dict:
 
 
 def _build_cs_bot_status() -> dict:
+    try:
+        auto_send_daily_limit = int(os.getenv("CS_AUTO_SEND_DAILY_LIMIT", "20"))
+    except Exception:
+        auto_send_daily_limit = 20
     result = {
         "faq_total": 0,
         "faq_enabled": 0,
@@ -669,7 +673,7 @@ def _build_cs_bot_status() -> dict:
         "budget_remaining_pct": 100.0,
         "auto_send": os.getenv("CS_AUTO_SEND", "0") == "1",
         "auto_send_categories": [x.strip() for x in os.getenv("CS_AUTO_SEND_CATEGORIES", "general,shipping").split(",") if x.strip()],
-        "auto_send_daily_limit": int(os.getenv("CS_AUTO_SEND_DAILY_LIMIT", "20") or 20),
+        "auto_send_daily_limit": auto_send_daily_limit,
         "auto_send_used_today": 0,
         "embedding_cached": "0/0",
         "sla_nearing": 0,

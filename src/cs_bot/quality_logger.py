@@ -122,7 +122,7 @@ def get_low_quality_faqs(threshold: float = 0.5, limit: int = 20) -> list[tuple[
         if avg < threshold:
             low.append((faq_map[faq_id], round(avg, 4)))
     low.sort(key=lambda x: x[1])
-    return low[: max(1, int(limit or 20))]
+    return low[: int(limit or 20)]
 
 
 def get_low_quality_records(threshold: float = 0.5, limit: int = 20) -> list[dict]:
@@ -153,7 +153,7 @@ def get_low_quality_records(threshold: float = 0.5, limit: int = 20) -> list[dic
             "last_final": state["last_final"],
         })
     out.sort(key=lambda x: x["score"])
-    return out[: max(1, int(limit or 20))]
+    return out[: int(limit or 20)]
 
 
 def _fallback_path() -> Path:

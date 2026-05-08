@@ -12,6 +12,7 @@ from src.cs_bot.inbox_store import CSMessage
 from src.cs_bot.translator import get_or_translate_faq
 
 logger = logging.getLogger(__name__)
+_CONFIDENCE_SCALE_FACTOR = 5.0
 
 
 def render_template(template: str, msg: CSMessage, order_info: dict | None) -> str:
@@ -59,7 +60,7 @@ def suggest_reply_details(msg: CSMessage, faq_store: FAQStore) -> tuple[str, flo
         template = get_or_translate_faq(selected, msg.language, faq_store)
     draft = render_template(template, msg, order_info={"order_no": msg.order_no})
     confidence = float(ranked[0][0]) if ranked else 0.0
-    confidence = max(0.0, min(1.0, confidence / 5.0))
+    confidence = max(0.0, min(1.0, confidence / _CONFIDENCE_SCALE_FACTOR))
     return _polish_with_ai(draft, msg.language), confidence, selected
 
 
