@@ -236,9 +236,9 @@ def redeem_token():
         payload = _verify_token(token)
     except ValueError as exc:
         logger.info("Diagnostic token 검증 실패: %s", exc)
-        return jsonify({"error": f"유효하지 않은 토큰: {exc}"}), 401
-    except RuntimeError as exc:
-        return jsonify({"error": str(exc)}), 503
+        return jsonify({"error": "유효하지 않은 토큰"}), 401
+    except RuntimeError:
+        return jsonify({"error": "토큰 검증 서버 설정 오류"}), 503
 
     nonce = str(payload.get("nonce", ""))
     if _is_used(nonce):

@@ -92,7 +92,6 @@ def collect(url: str) -> CollectorResult:
         url = "https://" + url
 
     # 미지원 도메인 경고
-    host = ""
     try:
         raw_host = urlparse(url).netloc.lower()
         host = raw_host[4:] if raw_host.startswith("www.") else raw_host
@@ -102,6 +101,7 @@ def collect(url: str) -> CollectorResult:
                 warn_msg = msg
                 break
     except Exception:
+        host = ""
         warn_msg = None
 
     collector = detect_collector(url)
