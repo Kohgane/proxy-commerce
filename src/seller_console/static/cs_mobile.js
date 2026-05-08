@@ -22,18 +22,7 @@ function toggleAI(msgId) {
   el.classList.toggle('expanded');
 }
 
-// 빠른 답변 버튼: AI 제안을 textarea에 붙여넣기
-document.querySelectorAll('.ai-suggestion').forEach(el => {
-  el.addEventListener('longpress', () => {
-    const msgId = el.id.replace('ai-', '');
-    const card = document.getElementById('card-' + msgId);
-    if (!card) return;
-    const ta = card.querySelector('textarea[name="final_reply"]');
-    if (ta) ta.value = el.textContent.trim().replace(/^💡\s*/, '');
-  });
-});
-
-// Long press simulation (mobile)
+// Long press simulation (mobile) — paste AI suggestion into textarea
 let pressTimer;
 document.querySelectorAll('.ai-suggestion').forEach(el => {
   el.addEventListener('touchstart', () => {

@@ -34,7 +34,7 @@ class CoupangQAAdapter(InboundChannelAdapter):
             return []
 
         # Coupang Wing API signature
-        dt_str = datetime.now(timezone.utc).strftime("%y%m%dT%H%M%SZ")
+        dt_str = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         method = "GET"
         uri = f"/v2/providers/seller_api/apis/api/v1/vendors/{vendor_id}/qnas"
         params = "pageNum=1&pageSize=50&answered=false"
@@ -82,7 +82,7 @@ class CoupangQAAdapter(InboundChannelAdapter):
             if not (vendor_id and ref):
                 return False
 
-            dt_str = datetime.now(timezone.utc).strftime("%y%m%dT%H%M%SZ")
+            dt_str = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
             method = "POST"
             uri = f"/v2/providers/seller_api/apis/api/v1/vendors/{vendor_id}/qnas/{ref}/answers"
             message_str = f"{dt_str}{method}{uri}"

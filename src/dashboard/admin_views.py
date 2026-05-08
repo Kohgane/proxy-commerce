@@ -444,7 +444,7 @@ def admin_cs_poll_now():
         return jsonify({"ok": True, "result": result})
     except Exception as exc:
         logger.warning("cs poll-now 오류: %s", exc)
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return jsonify({"ok": False, "error": "내부 오류가 발생했습니다"}), 500
 
 
 @admin_panel_bp.post("/cs/check-sla")
@@ -457,7 +457,7 @@ def admin_cs_check_sla():
         return jsonify({"ok": True, "nearing": result.get("nearing_count", 0), "overdue": result.get("overdue_count", 0)})
     except Exception as exc:
         logger.warning("cs check-sla 오류: %s", exc)
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return jsonify({"ok": False, "error": "내부 오류가 발생했습니다"}), 500
 
 
 @admin_panel_bp.post("/cs/rebuild-embeddings")
@@ -473,7 +473,7 @@ def admin_cs_rebuild_embeddings():
         return jsonify({"ok": True, "updated": updated})
     except Exception as exc:
         logger.warning("cs rebuild-embeddings 오류: %s", exc)
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return jsonify({"ok": False, "error": "내부 오류가 발생했습니다"}), 500
 
 
 @admin_panel_bp.get("/cs/stats")
@@ -487,7 +487,7 @@ def admin_cs_stats():
         return jsonify({"ok": True, "stats": stats})
     except Exception as exc:
         logger.warning("cs stats 오류: %s", exc)
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return jsonify({"ok": False, "error": "내부 오류가 발생했습니다"}), 500
 
 
 # ── 진단 헬퍼 함수 ────────────────────────────────────────────────────────
