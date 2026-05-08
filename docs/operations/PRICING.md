@@ -18,6 +18,11 @@
 | `PRICING_CRON_HOUR` | `3` | 일일 cron 실행 시각 (KST) |
 | `CRON_SECRET` | (없음) | `/cron/reprice` 인증 헤더 값 |
 | `PRICING_RULES_FALLBACK_PATH` | `data/pricing_rules.jsonl` | Sheets 미연결/오류 시 룰 JSONL 영구 저장 경로 |
+| `PRICING_AUTO_APPLY` | `0` | `1`이면 자동 적용 허용 (기본 OFF) |
+| `PRICING_AUTO_APPLY_THRESHOLD_PCT` | `5` | 자동 적용 허용 최대 변동폭 (%) |
+| `PRICING_FX_ALERT_THRESHOLD_PCT` | `2` | 환율 변동 경고 임계값 (%) |
+| `PRICING_MONITOR_INTERVAL_MINUTES` | `30` | 경쟁사 모니터링 주기 (분) |
+| `COMPETITOR_SCRAPE_FALLBACK_PATH` | `data/competitor_prices.jsonl` | 경쟁사 스크랩 이력 JSONL 폴백 경로 |
 
 ---
 
@@ -152,3 +157,11 @@ Render Cron Job 설정:
 1. `/auth/whoami`에서 로그인 상태 확인
 2. `GOOGLE_SHEET_ID`/자격증명 설정 확인
 3. fallback 파일 경로 쓰기 가능 여부 확인 (`data/pricing_rules.jsonl` 기본)
+
+---
+
+## Phase 140 운영 링크
+
+- `/seller/pricing/competitors` — 경쟁사 URL CRUD + 즉시 모니터링
+- `/seller/pricing/fx-impact` — 환율 영향 상품 조회 + 일괄 재가격(시뮬레이션)
+- `/admin/diagnostics` — 가격 자동화(룰/경쟁사/24h 변경/FX/자동 적용) 요약 카드

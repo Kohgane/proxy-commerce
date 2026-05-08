@@ -581,7 +581,7 @@ def _build_market_health() -> dict:
 
 
 def _build_pricing_status() -> dict:
-    """가격 엔진 상태."""
+    """가격 자동화 상태."""
     import os
     try:
         from src.pricing.rule import PricingRuleStore
@@ -597,6 +597,50 @@ def _build_pricing_status() -> dict:
         active_count = 0
         last_run = None
 
+    competitor_monitored = 0
+    competitor_24h = 0
+    try:
+        from src.pricing.competitor_monitor import CompetitorMonitor
+
+        summary = CompetitorMonitor().summary_24h()
+        competitor_monitored = int(summary.get("active_monitored", 0))
+        competitor_24h = int(summary.get("recent_changes", 0))
+    except Exception:
+        pass
+
+    own_24h = 0
+    margin_warn = 0
+    try:
+        from datetime import datetime, timedelta, timezone
+        from src.pricing.history_store import PriceHistoryStore
+
+        cutoff = datetime.now(tz=timezone.utc) - timedelta(hours=24)
+        rows = PriceHistoryStore().list_history(limit=5000)
+        for row in rows:
+            ts = str(row.get("applied_at") or "")
+            try:
+                dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                if dt >= cutoff:
+                    own_24h += 1
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    fx_summary = "정상"
+    try:
+        from src.pricing.fx_impact import FXImpactAnalyzer
+
+        changes = FXImpactAnalyzer().daily_changes()
+        bits = []
+        for currency in ("USD", "JPY"):
+            val = float(changes.get(currency, 0))
+            arrow = "↑" if val > 0 else ("↓" if val < 0 else "-")
+            bits.append(f"{currency} {abs(val):.1f}% {arrow}")
+        fx_summary = " / ".join(bits) if bits else "정상"
+    except Exception:
+        pass
+
     return {
         "active_rules": active_count,
         "dry_run": os.getenv("PRICING_DRY_RUN", "1") == "1",
@@ -604,6 +648,13 @@ def _build_pricing_status() -> dict:
         "last_run_at": last_run,
         "min_margin_pct": os.getenv("PRICING_MIN_MARGIN_PCT", "15"),
         "fx_trigger_pct": os.getenv("PRICING_FX_TRIGGER_PCT", "3"),
+        "competitor_monitored": competitor_monitored,
+        "own_changes_24h": own_24h,
+        "competitor_changes_24h": competitor_24h,
+        "margin_warnings": margin_warn,
+        "fx_summary": fx_summary,
+        "auto_apply": os.getenv("PRICING_AUTO_APPLY", "0") == "1",
+        "auto_apply_threshold_pct": os.getenv("PRICING_AUTO_APPLY_THRESHOLD_PCT", "5"),
     }
 
 
@@ -1140,36 +1191,22 @@ _DIAGNOSTICS_TEMPLATE = """
       </div>
     </div>
 
-    <!-- 섹션 5: 가격 엔진 상태 -->
+    <!-- 섹션 5: 가격 자동화 -->
     <div class="card mb-4">
-      <div class="card-header fw-bold">💰 섹션 5 — 가격 엔진 상태</div>
+      <div class="card-header fw-bold">💰 가격 자동화 (Phase 140)</div>
       <div class="card-body">
-        <div class="row g-3">
-          <div class="col-md-2">
-            <div class="text-muted small">활성 룰</div>
-            <div class="fs-4 fw-bold">{{ pricing_status.active_rules }}</div>
-          </div>
-          <div class="col-md-3">
-            <div class="text-muted small">DRY_RUN 모드</div>
-            <div class="fs-5">
-              {% if pricing_status.dry_run %}
-                <span class="badge bg-info">🔵 시뮬레이션 전용</span>
-              {% else %}
-                <span class="badge bg-success">🟢 실제 적용</span>
-              {% endif %}
-            </div>
-          </div>
-          <div class="col-md-3">
-            <div class="text-muted small">마지막 실행</div>
-            <div class="small">{{ pricing_status.last_run_at or '없음' }}</div>
-          </div>
-          <div class="col-md-2">
-            <div class="text-muted small">Cron 시각 (KST)</div>
-            <div>{{ pricing_status.cron_hour }}시</div>
-          </div>
-          <div class="col-md-2">
-            <a href="/seller/pricing/rules" class="btn btn-outline-primary btn-sm">룰 관리 →</a>
-          </div>
+        <ul class="mb-3">
+          <li>활성 룰: {{ pricing_status.active_rules }}개 / 모니터링 중인 경쟁사 상품: {{ pricing_status.competitor_monitored }}개</li>
+          <li>24h 가격 변경: 본사 {{ pricing_status.own_changes_24h }}건 / 경쟁사 {{ pricing_status.competitor_changes_24h }}건</li>
+          <li>마진 미달 경고: {{ pricing_status.margin_warnings }}건</li>
+          <li>환율 변동: {{ pricing_status.fx_summary }}{% if pricing_status.fx_summary == '정상' %} (정상){% endif %}</li>
+          <li>자동 적용: {% if pricing_status.auto_apply %}<span class="badge bg-danger">ON</span>{% else %}<span class="badge bg-secondary">OFF</span>{% endif %} ({{ pricing_status.auto_apply_threshold_pct }}% 이내만)</li>
+        </ul>
+        <div class="d-flex flex-wrap gap-2">
+          <a href="/seller/pricing/rules" class="btn btn-outline-primary btn-sm">룰 관리</a>
+          <a href="/seller/pricing/competitors" class="btn btn-outline-primary btn-sm">경쟁사</a>
+          <a href="/seller/pricing/fx-impact" class="btn btn-outline-primary btn-sm">환율 영향</a>
+          <a href="/seller/pricing/history" class="btn btn-outline-primary btn-sm">마진 점검</a>
         </div>
       </div>
     </div>

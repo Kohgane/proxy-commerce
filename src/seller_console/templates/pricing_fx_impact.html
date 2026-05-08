@@ -1,0 +1,65 @@
+{% extends "_base.html" %}
+{% block title %}환율 영향 분석{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="mb-1">💱 환율 영향 분석</h4>
+    <small class="text-muted">USD/JPY/CNY 변동이 임계치를 넘으면 영향 상품을 추출합니다.</small>
+  </div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-outline-primary btn-sm" onclick="location.reload()">새로고침</button>
+    <button class="btn btn-warning btn-sm" onclick="bulkReprice()">⚡ 일괄 재가격</button>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header">알림 임계값: ±{{ fx_data.threshold_pct }}%</div>
+  <div class="card-body">
+    {% if fx_data.alerts %}
+      <ul class="mb-3">
+      {% for alert in fx_data.alerts %}
+        <li>{{ alert.currency }}: {{ '%+.2f'|format(alert.change_pct) }}%</li>
+      {% endfor %}
+      </ul>
+    {% else %}
+      <div class="text-muted">현재 임계 초과 환율 변동 없음</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">영향 상품 ({{ fx_data.impacted|length }}개)</div>
+  <div class="card-body p-0">
+    <table class="table table-sm table-hover mb-0">
+      <thead><tr><th>SKU</th><th>통화</th><th>변동률</th><th>현재 판매가</th></tr></thead>
+      <tbody>
+      {% if fx_data.impacted %}
+        {% for row in fx_data.impacted %}
+        <tr>
+          <td>{{ row.sku }}</td>
+          <td>{{ row.buy_currency }}</td>
+          <td>{{ '%+.2f'|format(row.fx_change_pct) }}%</td>
+          <td>{{ '{:,}'.format(row.sell_price_krw) }}원</td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="4" class="text-center text-muted py-4">영향 상품이 없습니다.</td></tr>
+      {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function bulkReprice() {
+  if (!confirm('영향 상품 기준으로 재가격을 실행할까요?')) return;
+  const res = await fetch('/seller/pricing/fx-impact/reprice?dry_run=1', {method: 'POST'});
+  const d = await res.json();
+  if (!d.ok) return alert(d.error || '실패');
+  alert(`재가격 시뮬레이션 완료: 변경 ${d.results.changed}건`);
+}
+</script>
+{% endblock %}
