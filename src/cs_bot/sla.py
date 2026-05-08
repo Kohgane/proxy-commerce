@@ -15,7 +15,7 @@ class SLAPolicy:
     refund_hours: int = int(os.getenv("CS_SLA_REFUND_HOURS", "2"))
     shipping_hours: int = int(os.getenv("CS_SLA_SHIPPING_HOURS", "12"))
     size_hours: int = int(os.getenv("CS_SLA_SIZE_HOURS", "24"))
-    stock_hours: int = int(os.getenv("CS_SLA_SIZE_HOURS", "24"))
+    stock_hours: int = int(os.getenv("CS_SLA_STOCK_HOURS", os.getenv("CS_SLA_SIZE_HOURS", "24")))
     general_hours: int = int(os.getenv("CS_SLA_GENERAL_HOURS", "48"))
 
     def hours_for_category(self, category: str) -> int:

@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, session, url_for
 
 logger = logging.getLogger(__name__)
-_CS_FAQ_SUPPORTED_LOCALES = {"ko", "ja", "en", "zh", "zh-CN"}
+_CS_FAQ_SUPPORTED_LOCALES = {"ko", "ja", "en", "zh"}
 
 # Blueprint 정의
 bp = Blueprint(

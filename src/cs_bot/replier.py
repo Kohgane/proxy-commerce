@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import math
 import os
+from decimal import Decimal
 from typing import Optional
 
 from src.ai.budget import BudgetGuard
@@ -92,21 +93,21 @@ def _polish_with_ai(text: str, language: str) -> str:
 
     try:
         if openai_key:
-            polished = _call_openai_polish(text, language)
+            polished, cost_usd, tokens = _call_openai_polish(text, language)
             if polished:
-                guard.record(cost_usd=0, provider="openai", tokens=0, note="cs_bot_polish")
+                guard.record(cost_usd=cost_usd, provider="openai", tokens=tokens, note="cs_bot_polish")
                 return polished
         if deepl_key:
-            polished = _call_deepl_polish(text, language)
+            polished, cost_usd, chars = _call_deepl_polish(text, language)
             if polished:
-                guard.record(cost_usd=0, provider="deepl", tokens=0, note="cs_bot_polish")
+                guard.record(cost_usd=cost_usd, provider="deepl", tokens=chars, note="cs_bot_polish")
                 return polished
     except Exception as exc:
         logger.warning("CS AI 답변 다듬기 실패: %s", exc)
     return text
 
 
-def _call_openai_polish(text: str, language: str) -> str:
+def _call_openai_polish(text: str, language: str) -> tuple[str, Decimal, int]:
     import requests
 
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
@@ -129,17 +130,24 @@ def _call_openai_polish(text: str, language: str) -> str:
         timeout=8,
     )
     if not resp.ok:
-        return text
+        return text, Decimal("0"), 0
     data = resp.json()
-    return str(data.get("choices", [{}])[0].get("message", {}).get("content") or text).strip()
+    usage = data.get("usage", {}) or {}
+    input_tokens = int(usage.get("prompt_tokens", 0) or 0)
+    output_tokens = int(usage.get("completion_tokens", 0) or 0)
+    total_tokens = int(usage.get("total_tokens", input_tokens + output_tokens) or 0)
+    # gpt-4o-mini 기준(기존 copywriter와 동일 추정)
+    cost_usd = Decimal(str(input_tokens)) * Decimal("0.00000015") + Decimal(str(output_tokens)) * Decimal("0.0000006")
+    content = str(data.get("choices", [{}])[0].get("message", {}).get("content") or text).strip()
+    return content, cost_usd, total_tokens
 
 
-def _call_deepl_polish(text: str, language: str) -> str:
+def _call_deepl_polish(text: str, language: str) -> tuple[str, Decimal, int]:
     import requests
 
     key = os.getenv("DEEPL_API_KEY", "")
     if not key:
-        return text
+        return text, Decimal("0"), 0
     endpoint = "https://api-free.deepl.com/v2/translate" if key.endswith(":fx") else "https://api.deepl.com/v2/translate"
     target = {"ko": "KO", "en": "EN", "ja": "JA", "zh": "ZH"}.get(language, "KO")
     resp = requests.post(
@@ -148,9 +156,12 @@ def _call_deepl_polish(text: str, language: str) -> str:
         timeout=8,
     )
     if not resp.ok:
-        return text
+        return text, Decimal("0"), 0
     payload = resp.json()
     translations = payload.get("translations") or []
     if not translations:
-        return text
-    return str(translations[0].get("text") or text).strip()
+        return text, Decimal("0"), 0
+    translated = str(translations[0].get("text") or text).strip()
+    used_chars = len(text)
+    per_char_usd = Decimal(os.getenv("DEEPL_COST_PER_CHAR_USD", "0.000025"))
+    return translated, (per_char_usd * Decimal(str(used_chars))), used_chars

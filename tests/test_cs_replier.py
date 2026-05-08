@@ -51,5 +51,5 @@ def test_suggest_reply_ai_polish_mock(tmp_path, monkeypatch):
     store.create(FAQEntry(faq_id="f1", category="general", language="ko", question="문의", keywords=["문의"], answer_template="원문"))
     msg = CSMessage(message_id="m", channel="telegram", direction="inbound", customer_id="1", customer_name="김", body="문의", language="ko", category="general")
 
-    with patch("src.cs_bot.replier.BudgetGuard.can_spend", return_value=True), patch("src.cs_bot.replier._call_openai_polish", return_value="다듬은 답변"):
+    with patch("src.cs_bot.replier.BudgetGuard.can_spend", return_value=True), patch("src.cs_bot.replier._call_openai_polish", return_value=("다듬은 답변", 0, 0)):
         assert replier.suggest_reply(msg, store) == "다듬은 답변"
