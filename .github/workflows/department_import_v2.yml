@@ -1,0 +1,45 @@
+name: KOHGANE Department Store Import v2
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_from:
+        description: 'Start from row #'
+        required: true
+        default: '341'
+        type: string
+      end_at:
+        description: 'End at row # (max 1080)'
+        required: true
+        default: '1080'
+        type: string
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350  # 거의 6시간
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install deps
+        run: pip install requests
+      
+      - name: Run import
+        env:
+          WC_URL: ${{ secrets.WC_URL }}
+          WC_KEY: ${{ secrets.WC_KEY }}
+          WC_SECRET: ${{ secrets.WC_SECRET }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          CSV_PATH: ./automation/store_migration/store.csv
+          START_FROM: ${{ github.event.inputs.start_from }}
+          END_AT: ${{ github.event.inputs.end_at }}
+        run: |
+          python automation/department_store/import_department_v2.py
