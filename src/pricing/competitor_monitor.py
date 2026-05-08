@@ -370,7 +370,7 @@ class CompetitorMonitor:
         return 0
 
     @staticmethod
-    def _to_int(raw: str | None) -> Optional[int]:
+    def _to_int(raw: Optional[str]) -> Optional[int]:
         if raw is None:
             return None
         txt = str(raw)

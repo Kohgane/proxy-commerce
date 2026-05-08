@@ -16,6 +16,11 @@ class FXImpactAnalyzer:
         )
 
     def daily_changes(self) -> dict:
+        """전일 대비 변동률을 통화별로 반환한다.
+
+        Returns:
+            {"USD": Decimal(...), "JPY": Decimal(...), "CNY": Decimal(...)}
+        """
         out = {"USD": Decimal("0"), "JPY": Decimal("0"), "CNY": Decimal("0")}
         try:
             from src.fx.history import FXHistory
