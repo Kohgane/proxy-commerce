@@ -2554,9 +2554,12 @@ def sourcing_watches_add():
             max_price=float(data.get("max_price", 0) or 0),
         )
         return jsonify({"ok": True, "watch_id": watch.watch_id, "watch": watch.to_dict()})
+    except ValueError as exc:
+        logger.warning("sourcing_watches_add 입력 오류: %s", exc)
+        return jsonify({"ok": False, "error": "입력값이 올바르지 않습니다"}), 400
     except Exception as exc:
         logger.warning("sourcing_watches_add 오류: %s", exc)
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return jsonify({"ok": False, "error": "처리 중 오류가 발생했습니다"}), 500
 
 
 @bp.delete("/sourcing/watches/<watch_id>")
@@ -2583,7 +2586,8 @@ def sourcing_watches_run(watch_id: str):
         result = run_watch_cycle(watch_id)
         return jsonify({"ok": True, **result})
     except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 404
+        logger.debug("sourcing_watches_run ValueError: %s", exc)
+        return jsonify({"ok": False, "error": "watch_id를 찾을 수 없거나 비활성 상태입니다"}), 404
     except Exception as exc:
         logger.warning("sourcing_watches_run 오류: %s", exc)
         return jsonify({"ok": False, "error": "실행 중 오류가 발생했습니다"}), 500

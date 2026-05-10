@@ -106,7 +106,7 @@ class TestJaKoShoppingMap:
         result = _apply_ja_ko_shopping_map("한국어 텍스트")
         assert result == "한국어 텍스트"
 
-    def test_shirocukin_free_shipping(self):
+    def test_free_shipping_term(self):
         from src.ai.translator_quality import _apply_ja_ko_shopping_map
         result = _apply_ja_ko_shopping_map("送料無料！")
         assert "무료배송" in result
@@ -255,7 +255,7 @@ class TestConstants:
         from src.ai.translator_quality import _JA_KO_SHOPPING_MAP
         assert len(_JA_KO_SHOPPING_MAP) > 0
 
-    def test_seiru_mapping(self):
+    def test_sale_term_mapping(self):
         from src.ai.translator_quality import _JA_KO_SHOPPING_MAP
         assert _JA_KO_SHOPPING_MAP["セール"] == "세일"
 
