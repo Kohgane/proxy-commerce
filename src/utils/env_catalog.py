@@ -388,6 +388,7 @@ API_REGISTRY: list = [
             "PRICING_AUTO_APPLY_THRESHOLD_PCT",
             "PRICING_FX_ALERT_THRESHOLD_PCT",
             "PRICING_MONITOR_INTERVAL_MINUTES",
+            "PRICING_MONITOR_ENABLED",
             "COMPETITOR_SCRAPE_FALLBACK_PATH",
         ],
         purpose="자동 가격 조정 엔진 설정 (미설정 시 안전한 기본값 사용)",
@@ -429,10 +430,24 @@ API_REGISTRY: list = [
     ),
     ApiKey(
         name="cs_scheduler",
-        env_vars=["CS_SCHEDULER_ENABLED", "CS_POLL_INTERVAL_MINUTES", "CS_SLA_CHECK_INTERVAL_MINUTES"],
+        env_vars=[
+            "CS_SCHEDULER_ENABLED",
+            "CS_POLL_INTERVAL_MINUTES",
+            "CS_SLA_CHECK_INTERVAL_MINUTES",
+            "SCHEDULER_LEADER_TTL_SECONDS",
+            "SCHEDULER_HEARTBEAT_SECONDS",
+        ],
         purpose="CS 자동 cron 스케줄러 (APScheduler, 멀티워커 잠금)",
         docs_url="https://kohganepercentiii.com/docs/operations/CS_SCHEDULER.md",
         category=ApiCategory.CS_BOT,
+        optional=True,
+    ),
+    ApiKey(
+        name="analytics_bi",
+        env_vars=["ANALYTICS_CACHE_TTL_SECONDS", "ANALYTICS_FALLBACK_PATH"],
+        purpose="셀러 BI 대시보드 캐시 설정",
+        docs_url="https://kohganepercentiii.com/docs/operations/ANALYTICS.md",
+        category=ApiCategory.UTILITY,
         optional=True,
     ),
     ApiKey(

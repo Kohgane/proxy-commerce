@@ -208,6 +208,7 @@ def issue_token():
             redeem_url=redeem_url,
             ttl_minutes=TTL_SECONDS // 60,
             issuer_ip=request.remote_addr,
+            env=os.environ,
         )
 
     payload = {

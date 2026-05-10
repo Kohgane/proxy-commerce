@@ -176,6 +176,27 @@ def dashboard():
     return render_template("dashboard.html", widgets=widgets, page="dashboard")
 
 
+@bp.get("/analytics")
+def analytics_dashboard():
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+    force_refresh = request.args.get("force_refresh", "0") == "1"
+    try:
+        from src.analytics.bi_engine import BIEngine
+
+        data = BIEngine().build_dashboard(force_refresh=force_refresh)
+    except Exception as exc:
+        logger.warning("BI 대시보드 로드 실패: %s", exc)
+        data = {
+            "sales_summary": {"today_krw": 0, "week_krw": 0, "month_krw": 0, "channel_share": {}},
+            "top_products": [],
+            "inventory_alerts": {"low_stock": [], "over_stock": []},
+            "ad_roi": {"channels": [], "roas_threshold": 1.5},
+            "quality": {"unanswered_24h": 0, "delayed_shipping": 0, "refund_rate": 0.0},
+        }
+    return render_template("analytics.html", page="analytics", data=data)
+
+
 @bp.get("/collect")
 def collect():
     """수동 수집기 페이지 (Phase 128: API 상태 포함)."""
