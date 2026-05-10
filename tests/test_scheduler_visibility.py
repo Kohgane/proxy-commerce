@@ -24,3 +24,4 @@ def test_scheduler_status_exposes_jobs(monkeypatch, tmp_path):
     assert "jobs" in status
     ids = {j.get("id") for j in status.get("jobs", [])}
     assert {"cs_poll", "cs_sla", "pricing_monitor", "fx_alert"}.issubset(ids)
+    assert "scheduler_heartbeat" not in ids

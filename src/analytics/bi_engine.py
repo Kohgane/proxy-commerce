@@ -58,7 +58,7 @@ class BIEngine:
         low_stock = []
         over_stock = []
         for p in products:
-            stock_qty = int(float(p.get("stock_qty") or 0))
+            stock_qty = int(p.get("stock_qty") or 0)
             if stock_qty <= 5:
                 low_stock.append(p)
             if stock_qty >= 100:
