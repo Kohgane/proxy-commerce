@@ -22,7 +22,7 @@
 
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% for cat, msg in messages %}
-          <div class="alert alert-{{ cat }} py-2 small">{{ msg }}</div>
+          <div class="alert alert-{{ 'danger' if cat in ('danger', 'auth_email', 'auth_oauth') else ('warning' if cat in ('warning',) else ('success' if cat == 'success' else ('info' if cat == 'info' else cat))) }} py-2 small">{{ msg }}</div>
         {% endfor %}
       {% endwith %}
 
