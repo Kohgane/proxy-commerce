@@ -380,6 +380,10 @@ def _render_diagnostics(issued_magic_link: str | None):
     # Phase 143: 소싱 파이프라인 카드
     sourcing_pipeline_status = _build_sourcing_pipeline_status()
 
+    # Phase 144: 광고 자동 운영 + 라우트 점검 카드
+    ads_status = _build_ads_status()
+    route_check_status = _build_route_check_status()
+
     return render_template_string(
         _DIAGNOSTICS_TEMPLATE,
         env_matrix=env_matrix,
@@ -395,6 +399,8 @@ def _render_diagnostics(issued_magic_link: str | None):
         auto_reorder_status=auto_reorder_status,
         discount_campaign_status=discount_campaign_status,
         sourcing_pipeline_status=sourcing_pipeline_status,
+        ads_status=ads_status,
+        route_check_status=route_check_status,
         env=os.environ,
         base_url=base_url,
     )
@@ -993,6 +999,91 @@ def _build_sourcing_pipeline_status() -> dict:
     except Exception as exc:
         logger.debug("listing 상태 조회 실패: %s", exc)
     return result
+
+
+def _build_ads_status() -> dict:
+    """Phase 144: 광고 자동 운영 상태 카드 데이터."""
+    result = {
+        "enabled": os.getenv("ADS_AUTO_CAMPAIGN_ENABLED", "0") == "1",
+        "auto_launch": os.getenv("ADS_AUTO_CAMPAIGN_AUTO_LAUNCH", "0") == "1",
+        "daily_budget_krw": int(os.getenv("ADS_DAILY_BUDGET_KRW", "20000")),
+        "target_roas": float(os.getenv("ADS_TARGET_ROAS", "3.0")),
+        "bid_adjust_max_pct": float(os.getenv("ADS_BID_ADJUST_MAX_PCT", "20")),
+        "keyword_provider": os.getenv("KEYWORD_OPT_PROVIDER", "mock"),
+        "active_campaigns": 0,
+        "by_channel": {},
+        "cost_krw_24h": 0,
+        "revenue_krw_24h": 0,
+        "roas_24h": 0.0,
+        "pending_recs": 0,
+        "bid_adjustments_24h": 0,
+    }
+    try:
+        from src.ads.auto_campaign import ads_stats
+        stats = ads_stats()
+        result.update(stats)
+    except Exception as exc:
+        logger.debug("ads_status 조회 실패: %s", exc)
+    return result
+
+
+def _build_route_check_status() -> dict:
+    """Phase 144: 라우트 등록 점검 상태 데이터."""
+    # Phase별 핵심 라우트 화이트리스트
+    key_routes = [
+        ("seller_console.cs_inbox", "/seller/cs/inbox"),
+        ("seller_console.pricing_rules", "/seller/pricing/rules"),
+        ("seller_console.sourcing_watches", "/seller/sourcing/watches"),
+        ("seller_console.sourcing_candidates", "/seller/sourcing/candidates"),
+        ("seller_console.listing_history", "/seller/listing/history"),
+        ("seller_console.media_queue", "/seller/media/queue"),
+        ("seller_console.ads_campaigns", "/seller/ads/campaigns"),
+        ("seller_console.inventory_reorder", "/seller/inventory/reorder"),
+        ("seller_console.marketing_campaigns", "/seller/marketing/campaigns"),
+    ]
+
+    # 사이드바 링크 목록 (path → label)
+    sidebar_links = [
+        ("/seller/sourcing/watches", "🔎 소싱 watches"),
+        ("/seller/sourcing/candidates", "📥 후보 큐"),
+        ("/seller/listing/history", "📦 등록 이력"),
+        ("/seller/media/queue", "🖼️ 이미지 큐"),
+        ("/seller/ads/campaigns", "📣 광고 캠페인"),
+        ("/seller/pricing/rules", "💰 가격 정책 룰"),
+        ("/seller/cs/inbox", "🤖 CS 자동응답"),
+        ("/seller/analytics", "📈 BI 분석"),
+    ]
+
+    registered = []
+    missing = []
+    try:
+        from flask import current_app
+        view_funcs = current_app.view_functions
+        total = len(view_funcs)
+
+        for endpoint, url in key_routes:
+            if endpoint in view_funcs:
+                registered.append({"endpoint": endpoint, "url": url, "ok": True})
+            else:
+                missing.append({"endpoint": endpoint, "url": url, "ok": False})
+                logger.warning("라우트 미등록: %s → %s", endpoint, url)
+
+        return {
+            "total_routes": total,
+            "key_routes": registered + missing,
+            "missing_count": len(missing),
+            "sidebar_links": sidebar_links,
+            "ok": len(missing) == 0,
+        }
+    except Exception as exc:
+        logger.debug("route_check 실패: %s", exc)
+        return {
+            "total_routes": 0,
+            "key_routes": [],
+            "missing_count": -1,
+            "sidebar_links": sidebar_links,
+            "ok": False,
+        }
 
 
 def _page_route_available(endpoint: str) -> bool:
@@ -1623,6 +1714,92 @@ _DIAGNOSTICS_TEMPLATE = """
           <a class="btn btn-outline-primary btn-sm" href="/seller/sourcing/watches">🔗 Watch 관리</a>
           <a class="btn btn-outline-success btn-sm" href="/seller/sourcing/candidates">📋 후보 큐</a>
           <a class="btn btn-outline-secondary btn-sm" href="/seller/sourcing/candidates?status=listed">📦 등록 이력</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 144: 섹션 12 — 광고 자동 운영 -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">📣 섹션 12 — 광고 자동 운영 (Phase 144)</div>
+      <div class="card-body">
+        <ul class="mb-3">
+          <li>자동 운영:
+            {% if ads_status.enabled %}
+              <span class="badge bg-success">ON</span>
+            {% else %}
+              <span class="badge bg-secondary">OFF (ADS_AUTO_CAMPAIGN_ENABLED=0)</span>
+            {% endif %}
+          </li>
+          <li>Launch 모드:
+            {% if ads_status.auto_launch %}
+              <span class="badge bg-danger">자동 launch</span>
+            {% else %}
+              <span class="badge bg-secondary">수동 승인 (ADS_AUTO_CAMPAIGN_AUTO_LAUNCH=0)</span>
+            {% endif %}
+          </li>
+          <li>일일 예산: <strong>{{ "{:,}".format(ads_status.daily_budget_krw) }}원</strong></li>
+          <li>목표 ROAS: <strong>{{ ads_status.target_roas }}</strong></li>
+          <li>키워드 최적화 공급자: <code>{{ ads_status.keyword_provider }}</code></li>
+        </ul>
+        <h6 class="fw-semibold">24h 성과</h6>
+        <ul class="mb-3">
+          <li>활성 캠페인: <strong>{{ ads_status.active_campaigns }}개</strong>
+            {% for ch, cnt in ads_status.by_channel.items() %}
+              <span class="badge bg-primary">{{ ch }} {{ cnt }}</span>
+            {% endfor %}
+          </li>
+          <li>광고비: <strong>{{ "{:,}".format(ads_status.cost_krw_24h) }}원</strong>
+              / 매출: <strong>{{ "{:,}".format(ads_status.revenue_krw_24h) }}원</strong>
+              / ROAS: <strong>{{ ads_status.roas_24h }}</strong></li>
+          <li>추천 캠페인 대기: <span class="badge bg-warning text-dark">{{ ads_status.pending_recs }}건</span></li>
+        </ul>
+        <div class="d-flex gap-2 flex-wrap">
+          <a class="btn btn-outline-primary btn-sm" href="/seller/ads/campaigns">🔗 캠페인 관리</a>
+          <a class="btn btn-outline-secondary btn-sm" href="/seller/sourcing/watches">🔎 소싱 Watch</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 144: 섹션 13 — 라우트 점검 -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">
+        🛣️ 섹션 13 — 라우트 점검 (Phase 144 hotfix)
+        {% if route_check_status.ok %}
+          <span class="badge bg-success ms-2">정상</span>
+        {% else %}
+          <span class="badge bg-danger ms-2">{{ route_check_status.missing_count }}개 누락</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        <p class="mb-2">
+          등록된 라우트: <strong>{{ route_check_status.total_routes }}개</strong>
+          / 깨진 핵심 라우트: <strong class="{% if route_check_status.missing_count > 0 %}text-danger{% else %}text-success{% endif %}">{{ route_check_status.missing_count }}건</strong>
+        </p>
+        <div class="table-responsive mb-3">
+          <table class="table table-sm table-hover">
+            <thead><tr><th>엔드포인트</th><th>URL</th><th>상태</th></tr></thead>
+            <tbody>
+              {% for r in route_check_status.key_routes %}
+              <tr>
+                <td><code class="small">{{ r.endpoint }}</code></td>
+                <td><a href="{{ r.url }}" target="_blank">{{ r.url }}</a></td>
+                <td>
+                  {% if r.ok %}
+                    <span class="badge bg-success">✅ 등록됨</span>
+                  {% else %}
+                    <span class="badge bg-danger">❌ 누락</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <h6 class="fw-semibold">사이드바 링크</h6>
+        <div class="d-flex flex-wrap gap-2">
+          {% for link in route_check_status.sidebar_links %}
+            <a href="{{ link[0] }}" class="btn btn-outline-secondary btn-sm">{{ link[1] }}</a>
+          {% endfor %}
         </div>
       </div>
     </div>
