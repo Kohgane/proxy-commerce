@@ -52,11 +52,14 @@ def is_admin(user: "User") -> Tuple[bool, str]:
         pid = (account.get("provider_user_id", "") or "").strip().lower()
         if not pid:
             continue
-        if provider == "kakao" and _env_list("ADMIN_KAKAO_IDS") and pid in _env_list("ADMIN_KAKAO_IDS"):
+        kakao_ids = _env_list("ADMIN_KAKAO_IDS")
+        if provider == "kakao" and kakao_ids and pid in kakao_ids:
             return True, "ADMIN_KAKAO_IDS"
-        if provider == "google" and _env_list("ADMIN_GOOGLE_SUBS") and pid in _env_list("ADMIN_GOOGLE_SUBS"):
+        google_subs = _env_list("ADMIN_GOOGLE_SUBS")
+        if provider == "google" and google_subs and pid in google_subs:
             return True, "ADMIN_GOOGLE_SUBS"
-        if provider == "naver" and _env_list("ADMIN_NAVER_IDS") and pid in _env_list("ADMIN_NAVER_IDS"):
+        naver_ids = _env_list("ADMIN_NAVER_IDS")
+        if provider == "naver" and naver_ids and pid in naver_ids:
             return True, "ADMIN_NAVER_IDS"
 
     # 6. ADMIN_BOOTSTRAP_EMAIL (Phase 136 잔존 호환)

@@ -25,6 +25,13 @@ _MARGIN_FLOOR_PCT = int(os.getenv("DISCOUNT_CAMPAIGN_MARGIN_FLOOR_PCT", "10"))
 # 재고 과잉 기준: 판매 속도 대비 N일 이상의 재고
 _OVERSTOCK_DAYS_THRESHOLD = int(os.getenv("DISCOUNT_CAMPAIGN_OVERSTOCK_DAYS", "60"))
 
+# 할인율 계산 상수
+# 30일 기준(TARGET_STOCK_DAYS)으로 할인율 결정:
+# 재고일수가 TARGET_STOCK_DAYS보다 DISCOUNT_SCALING_FACTOR일 초과할 때마다 1% 추가 할인
+_TARGET_STOCK_DAYS = 30          # 재고 회전 목표 일수
+_DISCOUNT_SCALING_FACTOR = 10    # 재고일수 N일 초과당 1% 추가 할인
+_MIN_SALES_VELOCITY = 0.01       # 판매 속도 최솟값 (0 나누기 방지)
+
 
 @dataclass
 class DiscountCampaign:
@@ -116,7 +123,7 @@ class DiscountCampaignEngine:
             rows = sync._get_active_rows() if hasattr(sync, "_get_active_rows") else []
             for row in rows:
                 stock = int(row.get("stock") or row.get("quantity") or 0)
-                velocity = float(row.get("sales_velocity") or 0.01)
+                velocity = float(row.get("sales_velocity") or _MIN_SALES_VELOCITY)
                 days_left = stock / velocity if velocity > 0 else 9999
                 if days_left > _OVERSTOCK_DAYS_THRESHOLD:
                     result.append({
@@ -146,14 +153,19 @@ class DiscountCampaignEngine:
 
             # 최적 할인율: 재고 회전 목표(30일) 기준 산정
             days_of_stock = item.get("days_of_stock", 60)
-            # 재고일수가 길수록 더 많이 할인 (최대 MAX_PCT)
-            suggested_pct = min(_MAX_DISCOUNT_PCT, max(5, round((days_of_stock - 30) / 10)))
+            # 재고일수가 TARGET_STOCK_DAYS 초과할수록 더 많이 할인
+            # (재고일수 - TARGET_STOCK_DAYS) / DISCOUNT_SCALING_FACTOR % 추가 할인
+            # (최소 5%, 최대 MAX_PCT)
+            suggested_pct = min(
+                _MAX_DISCOUNT_PCT,
+                max(5, round((days_of_stock - _TARGET_STOCK_DAYS) / _DISCOUNT_SCALING_FACTOR)),
+            )
 
             discounted_price = int(sell_price * (1 - suggested_pct / 100))
             if buy_price > 0:
                 margin_after = round((discounted_price - buy_price) / discounted_price * 100, 1)
             else:
-                # 현재 마진에서 할인율만큼 차감 (근사)
+                # 현재 마진에서 할인율의 절반만큼 차감 (근사, buy_price 미확인 시)
                 margin_after = round(current_margin - suggested_pct * 0.5, 1)
 
             if margin_after < _MARGIN_FLOOR_PCT:

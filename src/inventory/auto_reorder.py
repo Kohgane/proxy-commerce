@@ -60,10 +60,11 @@ def _calc_recommended_qty(item: ReorderItem) -> int:
     """권장 발주량 계산.
 
     공식: (리드타임 + 안전재고일수) × 일평균 판매량 - 현재 재고
-    최소 1개, 음수면 0.
+    +1: 정수 반올림 오차에 대한 버퍼 단위
+    최소 0개 반환 (재고가 충분하면 0).
     """
     required = (item.lead_time_days + _SAFETY_DAYS) * item.sales_velocity_daily
-    qty = max(0, int(required - item.current_stock) + 1)
+    qty = max(0, int(required - item.current_stock) + 1)  # +1: 반올림 버퍼
     return qty
 
 
@@ -168,7 +169,7 @@ class AutoReorderEngine:
                 sheet_id = os.getenv("GOOGLE_SHEET_ID", "")
                 sync = InventorySync(sheet_id=sheet_id)
                 rows = sync._get_active_rows() if hasattr(sync, "_get_active_rows") else []
-                threshold = _SAFETY_DAYS * 0.5  # 반 안전재고 이하이면 재발주 필요
+                threshold = _SAFETY_DAYS * 0.5  # 안전재고의 50% 이하이면 재발주 필요
                 for row in rows:
                     stock = int(row.get("stock") or row.get("quantity") or 0)
                     velocity = float(row.get("sales_velocity") or 0.1)
