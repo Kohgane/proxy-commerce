@@ -2196,3 +2196,196 @@ def pricing_history_rollback(history_id: str):
     except Exception as exc:
         logger.warning("가격 롤백 오류: %s", exc)
         return jsonify({"ok": False, "error": "롤백 중 오류가 발생했습니다."}), 500
+
+
+# ---------------------------------------------------------------------------
+# Phase 142 — 자동 리오더 + 할인 캠페인 라우트
+# ---------------------------------------------------------------------------
+
+@bp.get("/inventory/reorder")
+def inventory_reorder():
+    """자동 리오더 권장 발주 목록 페이지 (Phase 142)."""
+    from src.auth.views import require_login
+    if not session.get("user_id"):
+        return redirect(url_for("auth.login", next=request.url))
+
+    try:
+        from src.inventory.auto_reorder import AutoReorderEngine
+        engine = AutoReorderEngine()
+        recommendations = engine.get_recommendations()
+        enabled = os.getenv("AUTO_REORDER_ENABLED", "0") == "1"
+        auto_place = os.getenv("AUTO_REORDER_AUTO_PLACE", "0") == "1"
+        daily_budget = int(os.getenv("AUTO_REORDER_DAILY_BUDGET_KRW", "500000"))
+    except Exception as exc:
+        logger.warning("auto_reorder 로드 실패: %s", exc)
+        recommendations = []
+        enabled = False
+        auto_place = False
+        daily_budget = 0
+
+    body_rows = ""
+    for item in recommendations:
+        est = item.get("estimated_cost_krw", 0)
+        body_rows += (
+            f"<tr>"
+            f"<td><code>{item['sku']}</code></td>"
+            f"<td>{item['title']}</td>"
+            f"<td>{item['vendor']}</td>"
+            f"<td class='text-center'>{item['current_stock']}</td>"
+            f"<td class='text-center'>{item['sales_velocity_daily']:.1f}/일</td>"
+            f"<td class='text-center fw-bold text-primary'>{item['recommended_qty']}</td>"
+            f"<td class='text-end'>₩{est:,}</td>"
+            f"<td><span class='badge bg-warning text-dark'>{item['status']}</span></td>"
+            f"</tr>"
+        )
+
+    total_cost = sum(i.get("estimated_cost_krw", 0) for i in recommendations)
+    status_badge = '<span class="badge bg-success">ON</span>' if enabled else '<span class="badge bg-secondary">OFF</span>'
+    auto_badge = '<span class="badge bg-danger">자동발주 ON</span>' if auto_place else '<span class="badge bg-secondary">승인 필요</span>'
+
+    from markupsafe import Markup
+    body = Markup(
+        f"<h4 class='mb-3'>📦 자동 리오더 — 권장 발주 목록</h4>"
+        f"<div class='mb-3 d-flex gap-2 align-items-center flex-wrap'>"
+        f"  자동 리오더: {status_badge}"
+        f"  발주 모드: {auto_badge}"
+        f"  일일 예산: ₩{daily_budget:,}"
+        f"</div>"
+        + (
+            f"<div class='alert alert-warning'>자동 리오더가 비활성화되어 있습니다. <code>AUTO_REORDER_ENABLED=1</code>로 설정하세요.</div>"
+            if not enabled else ""
+        )
+        + (
+            f"<div class='alert alert-info'>권장 발주 없음 — 재고가 안전 수준 이상입니다.</div>"
+            if not recommendations else
+            f"<div class='mb-2'>총 <strong>{len(recommendations)}</strong>건, 예상 비용 <strong>₩{total_cost:,}</strong></div>"
+            f"<div class='table-responsive'>"
+            f"<table class='table table-hover table-sm'>"
+            f"<thead><tr><th>SKU</th><th>상품명</th><th>소싱처</th><th>현재고</th><th>판매속도</th><th>권장발주량</th><th class='text-end'>예상비용</th><th>상태</th></tr></thead>"
+            f"<tbody>{body_rows}</tbody>"
+            f"</table>"
+            f"</div>"
+        )
+        + f"<div class='mt-3'><a href='/admin/diagnostics' class='btn btn-outline-secondary btn-sm'>← 진단 대시보드</a></div>"
+    )
+
+    from src.dashboard.admin_views import _render
+    return _render("자동 리오더", body)
+
+
+@bp.post("/inventory/reorder/approve")
+def inventory_reorder_approve():
+    """선택 SKU 발주 승인 (Phase 142)."""
+    if not session.get("user_id"):
+        return jsonify({"ok": False, "error": "로그인 필요"}), 401
+
+    skus = request.json.get("skus", []) if request.is_json else request.form.getlist("skus")
+    if not skus:
+        return jsonify({"ok": False, "error": "SKU를 선택하세요"}), 400
+
+    try:
+        from src.inventory.auto_reorder import AutoReorderEngine
+        engine = AutoReorderEngine()
+        result = engine.approve_and_place(skus)
+        return jsonify(result)
+    except Exception as exc:
+        logger.warning("reorder_approve 오류: %s", exc)
+        return jsonify({"ok": False, "error": "처리 중 오류가 발생했습니다"}), 500
+
+
+@bp.get("/marketing/campaigns")
+def marketing_campaigns():
+    """할인 캠페인 관리 페이지 (Phase 142)."""
+    if not session.get("user_id"):
+        return redirect(url_for("auth.login", next=request.url))
+
+    try:
+        from src.marketing.discount_campaign import DiscountCampaignEngine
+        engine = DiscountCampaignEngine()
+        recommendations = engine.get_recommendations()
+        active = engine.get_active_campaigns()
+        enabled = os.getenv("DISCOUNT_CAMPAIGN_ENABLED", "0") == "1"
+        max_pct = int(os.getenv("DISCOUNT_CAMPAIGN_MAX_PCT", "20"))
+        margin_floor = int(os.getenv("DISCOUNT_CAMPAIGN_MARGIN_FLOOR_PCT", "10"))
+    except Exception as exc:
+        logger.warning("discount_campaign 로드 실패: %s", exc)
+        recommendations = []
+        active = []
+        enabled = False
+        max_pct = 20
+        margin_floor = 10
+
+    def _campaign_rows(items: list) -> str:
+        rows = ""
+        for c in items:
+            margin_class = "text-success" if c.get("margin_pct_after", 0) >= margin_floor else "text-danger"
+            rows += (
+                f"<tr>"
+                f"<td><code>{c['sku']}</code></td>"
+                f"<td>{c['title']}</td>"
+                f"<td>{c['market']}</td>"
+                f"<td class='text-end'>₩{c['original_price_krw']:,}</td>"
+                f"<td class='text-center text-primary fw-bold'>{c['discount_pct']:.0f}%</td>"
+                f"<td class='text-end fw-bold'>₩{c['discounted_price_krw']:,}</td>"
+                f"<td class='text-center {margin_class}'>{c['margin_pct_after']:.1f}%</td>"
+                f"<td><span class='badge bg-{'warning text-dark' if c['status']=='recommended' else 'success'}'>{c['status']}</span></td>"
+                f"</tr>"
+            )
+        return rows
+
+    from markupsafe import Markup
+    status_badge = '<span class="badge bg-success">ON</span>' if enabled else '<span class="badge bg-secondary">OFF</span>'
+    body = Markup(
+        f"<h4 class='mb-3'>🎟️ 할인 캠페인 자동화 (Phase 142)</h4>"
+        f"<div class='mb-3 d-flex gap-2 align-items-center'>"
+        f"  활성화: {status_badge}"
+        f"  최대할인: {max_pct}%"
+        f"  마진하한: {margin_floor}%"
+        f"</div>"
+        + (
+            f"<div class='alert alert-warning'>할인 캠페인이 비활성화되어 있습니다. <code>DISCOUNT_CAMPAIGN_ENABLED=1</code>로 설정하세요.</div>"
+            if not enabled else ""
+        )
+        + f"<h5 class='mt-3'>추천 캠페인 ({len(recommendations)}건)</h5>"
+        + (
+            f"<div class='alert alert-info'>추천 캠페인 없음 — 재고 과잉 SKU가 없습니다.</div>"
+            if not recommendations else
+            f"<div class='table-responsive'><table class='table table-hover table-sm'>"
+            f"<thead><tr><th>SKU</th><th>상품명</th><th>마켓</th><th class='text-end'>원가</th><th>할인율</th><th class='text-end'>할인가</th><th>할인후마진</th><th>상태</th></tr></thead>"
+            f"<tbody>{_campaign_rows(recommendations)}</tbody></table></div>"
+        )
+        + f"<h5 class='mt-4'>활성 캠페인 ({len(active)}건)</h5>"
+        + (
+            f"<div class='alert alert-info'>활성 캠페인 없음</div>"
+            if not active else
+            f"<div class='table-responsive'><table class='table table-hover table-sm'>"
+            f"<thead><tr><th>SKU</th><th>상품명</th><th>마켓</th><th class='text-end'>원가</th><th>할인율</th><th class='text-end'>할인가</th><th>할인후마진</th><th>상태</th></tr></thead>"
+            f"<tbody>{_campaign_rows(active)}</tbody></table></div>"
+        )
+        + f"<div class='mt-3'><a href='/admin/diagnostics' class='btn btn-outline-secondary btn-sm'>← 진단 대시보드</a></div>"
+    )
+
+    from src.dashboard.admin_views import _render
+    return _render("할인 캠페인", body)
+
+
+@bp.post("/marketing/campaigns/approve")
+def marketing_campaigns_approve():
+    """캠페인 승인 (Phase 142)."""
+    if not session.get("user_id"):
+        return jsonify({"ok": False, "error": "로그인 필요"}), 401
+
+    data = request.json or {}
+    sku = data.get("sku", "")
+    market = data.get("market", "")
+    if not sku or not market:
+        return jsonify({"ok": False, "error": "sku와 market을 제공하세요"}), 400
+
+    try:
+        from src.marketing.discount_campaign import DiscountCampaignEngine
+        engine = DiscountCampaignEngine()
+        result = engine.approve_campaign(sku, market)
+        return jsonify(result)
+    except Exception as exc:
+        logger.warning("campaign_approve 오류: %s", exc)
+        return jsonify({"ok": False, "error": "처리 중 오류가 발생했습니다"}), 500

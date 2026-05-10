@@ -1,11 +1,14 @@
-"""src/seller_console/widgets.py — 셀러 대시보드 위젯 데이터 빌더 (Phase 122).
+"""src/seller_console/widgets.py — 셀러 대시보드 위젯 데이터 빌더 (Phase 122+142).
 
 각 위젯에 필요한 데이터를 data_aggregator에서 수집해 프론트엔드용 딕셔너리로 변환.
-모든 위젯은 graceful fallback: 오류 시 "준비 중" 반환.
+- 실제 데이터 있으면 status="real"
+- 데이터 0건 → status="empty" (mock 숨김)
+- store 오류 또는 DASHBOARD_SHOW_MOCK=1 시에만 → status="mock"
 """
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Dict, List
 
 from .data_aggregator import (
@@ -22,15 +25,33 @@ logger = logging.getLogger(__name__)
 
 _NOT_READY = {"status": "준비 중", "is_mock": True}
 
+# DASHBOARD_SHOW_MOCK=1 시에만 mock 데이터를 is_mock=True로 반환.
+# 기본값 0: 오류/빈 데이터 시 mock이 아닌 empty 상태 반환.
+_SHOW_MOCK = os.getenv("DASHBOARD_SHOW_MOCK", "0") == "1"
+
 
 def _safe_call(func, *args, **kwargs) -> Dict[str, Any]:
-    """함수 호출 시 예외 발생 시 _NOT_READY 반환."""
+    """함수 호출 시 예외 발생 시 _NOT_READY 반환.
+
+    DASHBOARD_SHOW_MOCK=0 (기본) 시: 오류 시 empty 상태 반환 (mock 숨김).
+    DASHBOARD_SHOW_MOCK=1 시: 기존 mock fallback 유지.
+    """
     try:
         result = func(*args, **kwargs)
-        return result if isinstance(result, dict) else _NOT_READY
+        if not isinstance(result, dict):
+            if _SHOW_MOCK:
+                return _NOT_READY
+            return {"status": "empty", "is_mock": False}
+        # 빈 데이터인지 확인 (is_mock=True이고 SHOW_MOCK=0이면 숨김)
+        if result.get("is_mock") and not _SHOW_MOCK:
+            # mock 데이터를 empty 상태로 변환
+            return {**result, "is_mock": False, "status": "empty"}
+        return result
     except Exception as exc:
         logger.warning("위젯 데이터 로드 실패 (%s): %s", func.__name__, exc)
-        return dict(_NOT_READY)
+        if _SHOW_MOCK:
+            return dict(_NOT_READY)
+        return {"status": "empty", "is_mock": False}
 
 
 def build_kpi_widget() -> Dict[str, Any]:

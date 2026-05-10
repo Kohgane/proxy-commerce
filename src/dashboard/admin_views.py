@@ -314,20 +314,31 @@ def admin_inventory():
 
 
 # ---------------------------------------------------------------------------
-# Phase 136: /admin/diagnostics — 운영 진단 대시보드
+# Phase 136+142: /admin/diagnostics — 운영 진단 대시보드
 # ---------------------------------------------------------------------------
+
+def _require_admin():
+    """admin 권한 확인 헬퍼. 거부 시 (response, code) 튜플 반환, 통과 시 None."""
+    from src.auth.admin_resolver import is_admin_session
+    if not session.get("user_id"):
+        return redirect("/auth/login?next=/admin/diagnostics"), None
+    admin_ok, _ = is_admin_session(session)
+    if not admin_ok:
+        return _render("접근 거부", "<div class='alert alert-danger'>관리자 권한이 필요합니다.</div>"), 403
+    return None, None
+
 
 @admin_panel_bp.route("/diagnostics")
 def admin_diagnostics():
-    """운영 진단 대시보드 (Phase 136).
+    """운영 진단 대시보드 (Phase 136+142).
 
-    admin 역할 필수.
+    admin 역할 필수 (admin_resolver 통해 ADMIN_EMAILS/ADMIN_KAKAO_IDS 등도 인정).
     """
-    # require_role("admin") 패턴 (auth Blueprint 데코레이터 사용 불가이므로 직접 구현)
-    user_role = session.get("user_role")
+    from src.auth.admin_resolver import is_admin_session
     if not session.get("user_id"):
         return redirect("/auth/login?next=/admin/diagnostics")
-    if user_role != "admin":
+    admin_ok, _ = is_admin_session(session)
+    if not admin_ok:
         return _render("접근 거부", "<div class='alert alert-danger'>관리자 권한이 필요합니다.</div>"), 403
 
     return _render_diagnostics(issued_magic_link=None)
@@ -361,6 +372,11 @@ def _render_diagnostics(issued_magic_link: str | None):
     message_log = _build_message_log()
     cs_bot_status = _build_cs_bot_status()
 
+    # Phase 142: 인증 상태 + 자동화 카드
+    auth_status = _build_auth_status()
+    auto_reorder_status = _build_auto_reorder_status()
+    discount_campaign_status = _build_discount_campaign_status()
+
     return render_template_string(
         _DIAGNOSTICS_TEMPLATE,
         env_matrix=env_matrix,
@@ -372,6 +388,9 @@ def _render_diagnostics(issued_magic_link: str | None):
         pricing_status=pricing_status,
         message_log=message_log,
         cs_bot_status=cs_bot_status,
+        auth_status=auth_status,
+        auto_reorder_status=auto_reorder_status,
+        discount_campaign_status=discount_campaign_status,
         env=os.environ,
         base_url=base_url,
     )
@@ -379,9 +398,11 @@ def _render_diagnostics(issued_magic_link: str | None):
 
 @admin_panel_bp.post("/diagnostics/issue-magic-link")
 def diagnostics_issue_magic_link():
+    from src.auth.admin_resolver import is_admin_session
     if not session.get("user_id"):
         return redirect("/auth/login?next=/admin/diagnostics")
-    if session.get("user_role") != "admin":
+    admin_ok, _ = is_admin_session(session)
+    if not admin_ok:
         return _render("접근 거부", "<div class='alert alert-danger'>관리자 권한이 필요합니다.</div>"), 403
 
     email = (request.form.get("email") or "").strip().lower()
@@ -399,9 +420,11 @@ def diagnostics_issue_magic_link():
 
 @admin_panel_bp.post("/diagnostics/expire-diagnostic-tokens")
 def diagnostics_expire_diagnostic_tokens():
+    from src.auth.admin_resolver import is_admin_session
     if not session.get("user_id"):
         return redirect("/auth/login?next=/admin/diagnostics")
-    if session.get("user_role") != "admin":
+    admin_ok, _ = is_admin_session(session)
+    if not admin_ok:
         return _render("접근 거부", "<div class='alert alert-danger'>관리자 권한이 필요합니다.</div>"), 403
     try:
         from src.auth.diagnostic_token import expire_all_tokens
@@ -853,6 +876,85 @@ def _build_cs_bot_status() -> dict:
     result.setdefault("scheduler_leader_pid", "-")
     result.setdefault("scheduler_leader_hostname", "-")
 
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Phase 142 — 진단 헬퍼: 인증 상태 / 자동 리오더 / 할인 캠페인
+# ---------------------------------------------------------------------------
+
+def _build_auth_status() -> dict:
+    """Phase 142: 인증 상태 카드 데이터."""
+    from src.auth.admin_resolver import is_admin_session, _env_list
+    admin_ok, admin_rule = is_admin_session(session)
+    user_email = session.get("user_email", "")
+    user_name = session.get("user_name", "")
+
+    # OAuth 제공자 상태 확인
+    base_url = _get_base_url()
+    google_client_id = os.getenv("GOOGLE_CLIENT_ID", "")
+    google_client_id_hint = ("..." + google_client_id[-8:]) if len(google_client_id) >= 8 else ("미설정" if not google_client_id else google_client_id)
+
+    return {
+        "user_email": user_email,
+        "user_name": user_name,
+        "is_admin": admin_ok,
+        "admin_rule": admin_rule,
+        "admin_emails_configured": bool(_env_list("ADMIN_EMAILS")),
+        "admin_kakao_configured": bool(_env_list("ADMIN_KAKAO_IDS")),
+        "admin_google_configured": bool(_env_list("ADMIN_GOOGLE_SUBS")),
+        "admin_naver_configured": bool(_env_list("ADMIN_NAVER_IDS")),
+        "kakao_oauth_active": bool(os.getenv("KAKAO_CLIENT_ID")),
+        "google_oauth_active": bool(google_client_id),
+        "naver_oauth_active": bool(os.getenv("NAVER_CLIENT_ID")),
+        "google_client_id_hint": google_client_id_hint,
+        "google_redirect_uri": f"{base_url}/auth/google/callback",
+        "flash_isolation_enabled": True,  # Phase 142 적용 완료
+    }
+
+
+def _build_auto_reorder_status() -> dict:
+    """Phase 142: 자동 리오더 상태 카드 데이터."""
+    result = {
+        "enabled": os.getenv("AUTO_REORDER_ENABLED", "0") == "1",
+        "auto_place": os.getenv("AUTO_REORDER_AUTO_PLACE", "0") == "1",
+        "daily_budget_krw": int(os.getenv("AUTO_REORDER_DAILY_BUDGET_KRW", "500000")),
+        "safety_days": int(os.getenv("AUTO_REORDER_SAFETY_DAYS", "14")),
+        "pending_count": 0,
+        "estimated_cost_krw": 0,
+        "last_checked_ago": "알 수 없음",
+    }
+    try:
+        from src.inventory.auto_reorder import AutoReorderEngine
+        engine = AutoReorderEngine()
+        summary = engine.summary()
+        result["pending_count"] = summary.get("pending_count", 0)
+        result["estimated_cost_krw"] = summary.get("estimated_cost_krw", 0)
+        result["last_checked_ago"] = summary.get("last_checked_ago", "알 수 없음")
+    except Exception as exc:
+        logger.debug("auto_reorder 상태 조회 실패: %s", exc)
+    return result
+
+
+def _build_discount_campaign_status() -> dict:
+    """Phase 142: 할인 캠페인 상태 카드 데이터."""
+    result = {
+        "enabled": os.getenv("DISCOUNT_CAMPAIGN_ENABLED", "0") == "1",
+        "max_pct": int(os.getenv("DISCOUNT_CAMPAIGN_MAX_PCT", "20")),
+        "margin_floor_pct": int(os.getenv("DISCOUNT_CAMPAIGN_MARGIN_FLOOR_PCT", "10")),
+        "recommended_count": 0,
+        "active_count": 0,
+        "overstocked_skus": 0,
+    }
+    try:
+        from src.marketing.discount_campaign import DiscountCampaignEngine
+        engine = DiscountCampaignEngine()
+        summary = engine.summary()
+        result["recommended_count"] = summary.get("recommended_count", 0)
+        result["active_count"] = summary.get("active_count", 0)
+        result["overstocked_skus"] = summary.get("overstocked_skus", 0)
+    except Exception as exc:
+        logger.debug("discount_campaign 상태 조회 실패: %s", exc)
     return result
 
 
@@ -1343,6 +1445,89 @@ _DIAGNOSTICS_TEMPLATE = """
             임베딩 재계산
           </button>
         </div>
+      </div>
+    </div>
+
+    <!-- Phase 142: 섹션 8 — 인증 상태 -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">🔐 섹션 8 — 인증 상태 (Phase 142)</div>
+      <div class="card-body">
+        <ul class="mb-3">
+          <li>현재 사용자: <strong>{{ auth_status.user_email or auth_status.user_name or '비로그인' }}</strong>
+            {% if auth_status.is_admin %}
+              <span class="badge bg-success">admin ✅ ({{ auth_status.admin_rule }})</span>
+            {% else %}
+              <span class="badge bg-secondary">비admin</span>
+            {% endif %}
+          </li>
+          <li>ADMIN_EMAILS: {% if auth_status.admin_emails_configured %}<span class="badge bg-success">✅ 설정됨</span>{% else %}<span class="badge bg-secondary">미설정</span>{% endif %}</li>
+          <li>ADMIN_KAKAO_IDS: {% if auth_status.admin_kakao_configured %}<span class="badge bg-success">✅ 설정됨</span>{% else %}<span class="badge bg-secondary">미설정</span>{% endif %}</li>
+          <li>ADMIN_GOOGLE_SUBS: {% if auth_status.admin_google_configured %}<span class="badge bg-success">✅ 설정됨</span>{% else %}<span class="badge bg-secondary">미설정</span>{% endif %}</li>
+          <li>ADMIN_NAVER_IDS: {% if auth_status.admin_naver_configured %}<span class="badge bg-success">✅ 설정됨</span>{% else %}<span class="badge bg-secondary">미설정</span>{% endif %}</li>
+        </ul>
+        <h6 class="fw-semibold">OAuth 제공자</h6>
+        <ul class="mb-3">
+          <li>카카오: {% if auth_status.kakao_oauth_active %}<span class="badge bg-success">✅ 설정됨</span>{% else %}<span class="badge bg-secondary">KAKAO_CLIENT_ID 미설정</span>{% endif %}</li>
+          <li>Google:
+            {% if auth_status.google_oauth_active %}
+              <span class="badge bg-success">✅ 설정됨</span>
+              <span class="small text-muted">CLIENT_ID: {{ auth_status.google_client_id_hint }}</span>
+            {% else %}
+              <span class="badge bg-secondary">GOOGLE_CLIENT_ID 미설정</span>
+            {% endif %}
+            <span class="ms-2"><a href="/admin/diagnostics/google-oauth-guide" class="small">[진단 가이드 →]</a></span>
+          </li>
+          <li>네이버: {% if auth_status.naver_oauth_active %}<span class="badge bg-success">✅ 설정됨</span>{% else %}<span class="badge bg-secondary">NAVER_CLIENT_ID 미설정</span>{% endif %}</li>
+        </ul>
+        <div class="alert alert-info small mb-0">
+          <div class="fw-semibold mb-1">Google OAuth "액세스 차단" 진단 체크리스트</div>
+          <ol class="mb-0 ps-3">
+            <li>Google Cloud Console &gt; APIs &amp; Services &gt; Credentials &gt; OAuth 2.0 Client IDs</li>
+            <li>Authorized redirect URIs에 추가: <code>{{ auth_status.google_redirect_uri }}</code>
+              <button class="btn btn-sm btn-outline-secondary ms-1 py-0 copy-btn"
+                      onclick="navigator.clipboard.writeText('{{ auth_status.google_redirect_uri }}').then(()=>this.textContent='✅')">📋</button>
+            </li>
+            <li>OAuth consent screen &gt; Testing 모드 → 본인 이메일을 Test users에 추가</li>
+            <li>또는 Publishing status를 In production으로 전환 (Google 검증 필요)</li>
+          </ol>
+          <a href="/docs/operations/GOOGLE_OAUTH_SETUP.md" class="small" target="_blank">📄 전체 가이드 보기</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 142: 섹션 9 — 자동 리오더 -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">📦 섹션 9 — 자동 리오더 (Phase 142)</div>
+      <div class="card-body">
+        <ul class="mb-3">
+          <li>활성화: {% if auto_reorder_status.enabled %}<span class="badge bg-success">ON</span>{% else %}<span class="badge bg-secondary">OFF</span>{% endif %}</li>
+          <li>자동 발주: {% if auto_reorder_status.auto_place %}<span class="badge bg-danger">AUTO ON</span>{% else %}<span class="badge bg-secondary">OFF (승인 필요)</span>{% endif %}</li>
+          <li>일일 예산: ₩{{ "{:,}".format(auto_reorder_status.daily_budget_krw) }}</li>
+          <li>안전 재고일: {{ auto_reorder_status.safety_days }}일</li>
+          <li>권장 발주: <strong>{{ auto_reorder_status.pending_count }}건</strong>
+            {% if auto_reorder_status.estimated_cost_krw > 0 %}
+              (예상 ₩{{ "{:,}".format(auto_reorder_status.estimated_cost_krw) }})
+            {% endif %}
+          </li>
+          <li>마지막 점검: {{ auto_reorder_status.last_checked_ago }}</li>
+        </ul>
+        <a href="/seller/inventory/reorder" class="btn btn-outline-primary btn-sm">📋 발주 목록 보기</a>
+      </div>
+    </div>
+
+    <!-- Phase 142: 섹션 10 — 할인 캠페인 -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">🎟️ 섹션 10 — 할인 캠페인 자동화 (Phase 142)</div>
+      <div class="card-body">
+        <ul class="mb-3">
+          <li>활성화: {% if discount_campaign_status.enabled %}<span class="badge bg-success">ON</span>{% else %}<span class="badge bg-secondary">OFF</span>{% endif %}</li>
+          <li>최대 할인율: {{ discount_campaign_status.max_pct }}%</li>
+          <li>마진 하한선: {{ discount_campaign_status.margin_floor_pct }}%</li>
+          <li>재고 과잉 SKU: <strong>{{ discount_campaign_status.overstocked_skus }}종</strong></li>
+          <li>추천 캠페인: <strong>{{ discount_campaign_status.recommended_count }}건</strong></li>
+          <li>활성 캠페인: <strong>{{ discount_campaign_status.active_count }}건</strong></li>
+        </ul>
+        <a href="/seller/marketing/campaigns" class="btn btn-outline-primary btn-sm">📣 캠페인 관리</a>
       </div>
     </div>
 

@@ -94,12 +94,10 @@ def _is_admin_email(email: str) -> bool:
     return email.lower() in admin_emails
 
 
-def _resolve_user_role(email: str) -> str:
-    """ADMIN_EMAILS 매칭 시 admin, 그 외 seller."""
-    if email and _is_admin_email(email):
-        logger.info("ADMIN_EMAILS 매칭 — admin role 부여: %s", email)
-        return "admin"
-    return "seller"
+def _resolve_user_role(email: str, provider: str = "", provider_user_id: str = "") -> str:
+    """admin_resolver를 통해 역할 결정. ADMIN_EMAILS / 소셜ID / BOOTSTRAP_EMAIL 모두 체크."""
+    from .admin_resolver import resolve_role_for_login
+    return resolve_role_for_login(email, provider=provider, provider_user_id=provider_user_id)
 
 
 def establish_session(user, role: Optional[str] = None) -> None:
@@ -337,7 +335,7 @@ def login_post():
     next_url = _safe_next_url(request.form.get("next", ""))
 
     if not email or not password:
-        flash("이메일과 비밀번호를 입력해주세요.", "danger")
+        flash("이메일과 비밀번호를 입력해주세요.", "auth_email")
         return redirect(url_for("auth.login"))
 
     try:
@@ -346,7 +344,7 @@ def login_post():
         user = store.find_by_email(email)
 
         if not user or not _verify_password(password, user.password_hash):
-            flash("이메일 또는 비밀번호가 올바르지 않습니다.", "danger")
+            flash("이메일 또는 비밀번호가 올바르지 않습니다.", "auth_email")
             return redirect(url_for("auth.login"))
 
         establish_session(user)
@@ -355,7 +353,7 @@ def login_post():
         return redirect(next_url)
     except Exception as exc:
         logger.warning("login_post 오류: %s", exc)
-        flash("로그인 중 오류가 발생했습니다.", "danger")
+        flash("로그인 중 오류가 발생했습니다.", "auth_email")
         return redirect(url_for("auth.login"))
 
 
@@ -389,32 +387,32 @@ def oauth_callback(provider: str):
     state_param = request.args.get("state", "")
     state_stored = session.pop(f"oauth_state_{provider}", "")
     if not state_param or not secrets.compare_digest(state_param, state_stored):
-        flash("보안 오류가 발생했습니다. 다시 시도해주세요.", "danger")
+        flash("보안 오류가 발생했습니다. 다시 시도해주세요.", "auth_oauth")
         return redirect(url_for("auth.login"))
 
     code = request.args.get("code", "")
     if not code:
         error = request.args.get("error", "알 수 없는 오류")
-        flash(f"로그인 취소 또는 오류: {error}", "warning")
+        flash(f"로그인 취소 또는 오류: {error}", "auth_oauth")
         return redirect(url_for("auth.login"))
 
     next_url = session.pop(f"oauth_next_{provider}", "/seller/dashboard")
 
     p = _get_provider(provider)
     if not p:
-        flash("프로바이더 오류", "danger")
+        flash("프로바이더 오류", "auth_oauth")
         return redirect(url_for("auth.login"))
 
     try:
         token_data = p.exchange_code(code=code, redirect_uri=_callback_uri(provider))
         if "error" in token_data:
-            flash("토큰 교환 실패: " + str(token_data.get("error", "")), "danger")
+            flash("토큰 교환 실패: " + str(token_data.get("error", "")), "auth_oauth")
             return redirect(url_for("auth.login"))
 
         access_token = token_data.get("access_token", "")
         user_info = p.get_user_info(access_token)
         if "error" in user_info:
-            flash("사용자 정보 조회 실패", "danger")
+            flash("사용자 정보 조회 실패", "auth_oauth")
             return redirect(url_for("auth.login"))
 
         provider_user_id = user_info.get("provider_user_id", "")
@@ -440,7 +438,7 @@ def oauth_callback(provider: str):
 
         if user is None:
             # 신규 가입
-            role = _resolve_user_role(email)
+            role = _resolve_user_role(email, provider=provider, provider_user_id=provider_user_id)
             user = User.new(email=email, name=name, avatar_url=avatar_url, role=role)
             user.email_verified = True  # 소셜 검증된 이메일
             user.social_accounts = [{
@@ -461,7 +459,7 @@ def oauth_callback(provider: str):
             except Exception:
                 pass
 
-        role = _resolve_user_role(email)
+        role = _resolve_user_role(email, provider=provider, provider_user_id=provider_user_id)
         if not email:
             flash("이메일 동의가 없어 일반 셀러 권한으로 로그인됩니다.", "warning")
         if user.role != role:
@@ -482,6 +480,8 @@ def oauth_callback(provider: str):
 @auth_bp.get("/whoami")
 def whoami():
     """현재 세션 디버그용. 로그인 상태/role/email 표시."""
+    from .admin_resolver import is_admin_session
+    admin_ok, admin_rule = is_admin_session(session)
     return jsonify({
         "logged_in": bool(session.get("user_id")),
         "user_id": session.get("user_id"),
@@ -489,7 +489,8 @@ def whoami():
         "user_role": session.get("user_role"),
         "user_name": session.get("user_name"),
         "admin_emails_configured": bool(os.getenv("ADMIN_EMAILS")),
-        "is_admin": session.get("user_role") == "admin",
+        "is_admin": admin_ok,
+        "admin_rule": admin_rule,
     })
 
 

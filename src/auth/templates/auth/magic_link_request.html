@@ -19,7 +19,9 @@
 
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% for cat, msg in messages %}
-          <div class="alert alert-{{ cat }} py-2 small">{{ msg }}</div>
+          {% if cat not in ('auth_email', 'auth_oauth') %}
+          <div class="alert alert-{{ 'danger' if cat in ('danger', 'auth_magic_link_err') else ('success' if cat in ('success', 'auth_magic_link_ok') else cat) }} py-2 small">{{ msg }}</div>
+          {% endif %}
         {% endfor %}
       {% endwith %}
 
