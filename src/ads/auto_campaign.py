@@ -33,6 +33,15 @@ _TARGET_ROAS = float(os.getenv("ADS_TARGET_ROAS", "3.0"))
 _BID_ADJUST_MAX_PCT = float(os.getenv("ADS_BID_ADJUST_MAX_PCT", "20"))
 _PROVIDER = os.getenv("KEYWORD_OPT_PROVIDER", "mock")
 
+# ROAS 추정 공식 상수
+_SEARCH_SCALE = 10000.0          # 검색량 정규화 기준 (10,000회 = 1.0)
+_SEARCH_FACTOR_CAP = 5.0         # 검색량 가중치 최대값
+_MARGIN_TO_ROAS_DIVISOR = 10.0   # 마진율(%) → ROAS 스케일 변환 계수
+
+# 예산 분배 상수
+_CAMPAIGNS_PER_BUDGET = 4        # 일일 예산을 몇 개 캠페인으로 분할
+_MAX_CAMPAIGN_BUDGET_KRW = 10000 # 캠페인당 최대 일일 예산 (원)
+
 # ---------------------------------------------------------------------------
 # 도메인 모델
 # ---------------------------------------------------------------------------
@@ -141,8 +150,10 @@ def recommend_campaigns(roas_target: float = _TARGET_ROAS) -> List[CampaignRec]:
     results: List[CampaignRec] = []
     for item in mock_skus:
         # 마진 + 검색량으로 잠재 ROAS 추정
-        search_factor = min(item["monthly_search"] / 10000, 5.0)
-        estimated_roas = (item["margin_pct"] / 10.0) * search_factor
+        # search_factor: 검색량을 _SEARCH_SCALE 기준으로 정규화, 최대 _SEARCH_FACTOR_CAP
+        # estimated_roas: 마진율을 _MARGIN_TO_ROAS_DIVISOR로 스케일하여 검색량 가중치 적용
+        search_factor = min(item["monthly_search"] / _SEARCH_SCALE, _SEARCH_FACTOR_CAP)
+        estimated_roas = (item["margin_pct"] / _MARGIN_TO_ROAS_DIVISOR) * search_factor
         if estimated_roas < roas_target * 0.5:
             continue  # 기대 ROAS 너무 낮으면 제외
 
@@ -154,7 +165,7 @@ def recommend_campaigns(roas_target: float = _TARGET_ROAS) -> List[CampaignRec]:
                 keywords=[item["name"].split()[0], item["name"]],
                 estimated_roas=round(estimated_roas, 2),
                 estimated_revenue_krw=round(item["monthly_search"] * 1.2),
-                daily_budget_krw=min(_DAILY_BUDGET_KRW // 4, 10000),
+                daily_budget_krw=min(_DAILY_BUDGET_KRW // _CAMPAIGNS_PER_BUDGET, _MAX_CAMPAIGN_BUDGET_KRW),
                 status="pending",
             )
             recs_store[rec.rec_id] = rec

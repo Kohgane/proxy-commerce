@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 _TARGET_ROAS = float(os.getenv("ADS_TARGET_ROAS", "3.0"))
 _PROVIDER = os.getenv("KEYWORD_OPT_PROVIDER", "mock")
 
+# 네거티브 키워드 기준: ROAS가 목표의 _NEGATIVE_KW_ROAS_RATIO 이하이면 네거티브 후보
+_NEGATIVE_KW_ROAS_RATIO = 0.1  # 목표 ROAS의 10% 이하 → 네거티브 제안
+
 # ---------------------------------------------------------------------------
 # 도메인 모델
 # ---------------------------------------------------------------------------
@@ -184,8 +187,8 @@ def suggest_negative_keywords(performance_data: List[Dict[str, Any]]) -> List[st
         # 비용 발생했는데 매출 0 → 네거티브 후보
         if cost > 0 and revenue == 0:
             negatives.append(keyword)
-        # ROAS < 0.3 (목표의 10% 이하) → 네거티브 후보
-        elif cost > 0 and (revenue / cost) < (_TARGET_ROAS * 0.1):
+        # ROAS < 목표의 _NEGATIVE_KW_ROAS_RATIO 이하 → 네거티브 후보
+        elif cost > 0 and (revenue / cost) < (_TARGET_ROAS * _NEGATIVE_KW_ROAS_RATIO):
             negatives.append(keyword)
 
     return list(set(negatives))
