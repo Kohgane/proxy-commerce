@@ -377,6 +377,9 @@ def _render_diagnostics(issued_magic_link: str | None):
     auto_reorder_status = _build_auto_reorder_status()
     discount_campaign_status = _build_discount_campaign_status()
 
+    # Phase 143: 소싱 파이프라인 카드
+    sourcing_pipeline_status = _build_sourcing_pipeline_status()
+
     return render_template_string(
         _DIAGNOSTICS_TEMPLATE,
         env_matrix=env_matrix,
@@ -391,6 +394,7 @@ def _render_diagnostics(issued_magic_link: str | None):
         auth_status=auth_status,
         auto_reorder_status=auto_reorder_status,
         discount_campaign_status=discount_campaign_status,
+        sourcing_pipeline_status=sourcing_pipeline_status,
         env=os.environ,
         base_url=base_url,
     )
@@ -955,6 +959,39 @@ def _build_discount_campaign_status() -> dict:
         result["overstocked_skus"] = summary.get("overstocked_skus", 0)
     except Exception as exc:
         logger.debug("discount_campaign 상태 조회 실패: %s", exc)
+    return result
+
+
+def _build_sourcing_pipeline_status() -> dict:
+    """Phase 143: 소싱 파이프라인 상태 카드 데이터."""
+    result = {
+        "active_watches": 0,
+        "total_watches": 0,
+        "candidates_24h": 0,
+        "pending_approval": 0,
+        "auto_listed": 0,
+        "avg_margin_pct": 0.0,
+        "watch_interval_minutes": int(os.getenv("SOURCING_WATCH_INTERVAL_MINUTES", "60")),
+        "min_margin_pct": float(os.getenv("SOURCING_AUTO_QUEUE_MIN_MARGIN_PCT", "15")),
+        "auto_publish_enabled": os.getenv("LISTING_AUTO_PUBLISH", "0") == "1",
+        "image_pipeline_enabled": os.getenv("IMAGE_PIPELINE_ENABLED", "1") == "1",
+        "image_inpaint_enabled": os.getenv("IMAGE_INPAINT_ENABLED", "1") == "1",
+        "translation_quality_tier": os.getenv("TRANSLATION_QUALITY_TIER", "high"),
+        "deepl_configured": bool(os.getenv("DEEPL_API_KEY")),
+    }
+    try:
+        from src.sourcing.pipeline import pipeline_stats
+        stats = pipeline_stats()
+        result.update(stats)
+    except Exception as exc:
+        logger.debug("sourcing_pipeline 상태 조회 실패: %s", exc)
+    try:
+        from src.listing.auto_publish import listing_stats
+        lst = listing_stats()
+        result["listings_24h"] = lst.get("listings_24h", 0)
+        result["image_success_pct"] = lst.get("image_success_pct", 0)
+    except Exception as exc:
+        logger.debug("listing 상태 조회 실패: %s", exc)
     return result
 
 
@@ -1528,6 +1565,65 @@ _DIAGNOSTICS_TEMPLATE = """
           <li>활성 캠페인: <strong>{{ discount_campaign_status.active_count }}건</strong></li>
         </ul>
         <a href="/seller/marketing/campaigns" class="btn btn-outline-primary btn-sm">📣 캠페인 관리</a>
+      </div>
+    </div>
+
+    <!-- Phase 143: 섹션 11 — 소싱 파이프라인 -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">🔎 섹션 11 — 소싱 파이프라인 (Phase 143)</div>
+      <div class="card-body">
+        <ul class="mb-3">
+          <li>활성 Watch: <strong>{{ sourcing_pipeline_status.active_watches }}개</strong> (전체 {{ sourcing_pipeline_status.total_watches }}개)</li>
+          <li>24h 후보: <strong>{{ sourcing_pipeline_status.candidates_24h }}건</strong>
+            / 승인 대기: <span class="badge bg-warning text-dark">{{ sourcing_pipeline_status.pending_approval }}건</span>
+            / 자동 등록: <span class="badge bg-primary">{{ sourcing_pipeline_status.auto_listed }}건</span>
+          </li>
+          <li>평균 마진 예상: <strong>{{ sourcing_pipeline_status.avg_margin_pct }}%</strong>
+            (기준: {{ sourcing_pipeline_status.min_margin_pct }}% 이상)
+          </li>
+          <li>Watch 주기: {{ sourcing_pipeline_status.watch_interval_minutes }}분</li>
+          <li>자동 등록:
+            {% if sourcing_pipeline_status.auto_publish_enabled %}
+              <span class="badge bg-danger">ON</span>
+            {% else %}
+              <span class="badge bg-secondary">OFF (LISTING_AUTO_PUBLISH=0)</span>
+            {% endif %}
+          </li>
+        </ul>
+        <h6 class="fw-semibold">이미지 파이프라인</h6>
+        <ul class="mb-3">
+          <li>파이프라인:
+            {% if sourcing_pipeline_status.image_pipeline_enabled %}
+              <span class="badge bg-success">ON</span>
+            {% else %}
+              <span class="badge bg-secondary">OFF</span>
+            {% endif %}
+          </li>
+          <li>Inpainting (워터마크 제거):
+            {% if sourcing_pipeline_status.image_inpaint_enabled %}
+              <span class="badge bg-success">ON</span>
+            {% else %}
+              <span class="badge bg-secondary">OFF</span>
+            {% endif %}
+          </li>
+          <li>처리 성공: {{ sourcing_pipeline_status.get('image_success_pct', 0) }}%</li>
+        </ul>
+        <h6 class="fw-semibold">번역</h6>
+        <ul class="mb-3">
+          <li>품질 티어: <strong>{{ sourcing_pipeline_status.translation_quality_tier }}</strong></li>
+          <li>DeepL:
+            {% if sourcing_pipeline_status.deepl_configured %}
+              <span class="badge bg-success">✅ 설정됨</span>
+            {% else %}
+              <span class="badge bg-secondary">DEEPL_API_KEY 미설정 (stub)</span>
+            {% endif %}
+          </li>
+        </ul>
+        <div class="d-flex gap-2 flex-wrap">
+          <a class="btn btn-outline-primary btn-sm" href="/seller/sourcing/watches">🔗 Watch 관리</a>
+          <a class="btn btn-outline-success btn-sm" href="/seller/sourcing/candidates">📋 후보 큐</a>
+          <a class="btn btn-outline-secondary btn-sm" href="/seller/sourcing/candidates?status=listed">📦 등록 이력</a>
+        </div>
       </div>
     </div>
 

@@ -2389,3 +2389,393 @@ def marketing_campaigns_approve():
     except Exception as exc:
         logger.warning("campaign_approve 오류: %s", exc)
         return jsonify({"ok": False, "error": "처리 중 오류가 발생했습니다"}), 500
+
+
+# ---------------------------------------------------------------------------
+# Phase 143: 소싱 파이프라인 — Watch CRUD + 후보 큐
+# ---------------------------------------------------------------------------
+
+def _sourcing_require_admin():
+    """소싱 페이지 관리자 권한 확인."""
+    from src.auth.admin_resolver import is_admin_session
+    if not session.get("user_id"):
+        return redirect(url_for("auth.login", next=request.url))
+    admin_ok, _ = is_admin_session(session)
+    if not admin_ok:
+        return jsonify({"ok": False, "error": "관리자 권한이 필요합니다"}), 403
+    return None
+
+
+@bp.get("/sourcing/watches")
+def sourcing_watches():
+    """소싱 Watch 목록 + 등록 페이지 (Phase 143)."""
+    guard = _sourcing_require_admin()
+    if guard is not None:
+        return guard
+
+    from src.sourcing.pipeline import get_watch_store
+    store = get_watch_store()
+    watches = store.list_all()
+
+    def _watch_rows(items):
+        rows = ""
+        for w in items:
+            active_badge = (
+                '<span class="badge bg-success">활성</span>'
+                if w.active else
+                '<span class="badge bg-secondary">비활성</span>'
+            )
+            last_checked = (w.last_checked_at or "-")[:19]
+            rows += (
+                f"<tr>"
+                f"<td><code>{w.watch_id}</code></td>"
+                f"<td>{w.platform}</td>"
+                f"<td>{w.keyword}</td>"
+                f"<td>{w.category or '-'}</td>"
+                f"<td>{w.currency}</td>"
+                f"<td>{int(w.min_price) if w.min_price else '-'} ~ {int(w.max_price) if w.max_price else '∞'}</td>"
+                f"<td>{active_badge}</td>"
+                f"<td>{last_checked}</td>"
+                f"<td>"
+                f"  <button class='btn btn-sm btn-outline-primary me-1' onclick=\"runWatch('{w.watch_id}')\">▶ 실행</button>"
+                f"  <button class='btn btn-sm btn-outline-danger' onclick=\"deleteWatch('{w.watch_id}')\">🗑</button>"
+                f"</td>"
+                f"</tr>"
+            )
+        return rows
+
+    from markupsafe import Markup
+    body = Markup(
+        "<h4 class='mb-3'>🔎 소싱 Watch 관리 (Phase 143)</h4>"
+        "<div class='row mb-4'>"
+        "  <div class='col-md-6'>"
+        "    <div class='card'>"
+        "      <div class='card-header fw-bold'>Watch 등록</div>"
+        "      <div class='card-body'>"
+        "        <form id='watchForm'>"
+        "          <div class='mb-2'>"
+        "            <label class='form-label small'>플랫폼</label>"
+        "            <select class='form-select form-select-sm' name='platform'>"
+        "              <option value='rakuten'>라쿠텐</option>"
+        "              <option value='amazon_jp'>아마존JP</option>"
+        "              <option value='yahoo_shopping'>Yahoo Shopping</option>"
+        "            </select>"
+        "          </div>"
+        "          <div class='mb-2'>"
+        "            <label class='form-label small'>키워드 *</label>"
+        "            <input type='text' class='form-control form-control-sm' name='keyword' placeholder='예: ユニクロ' required>"
+        "          </div>"
+        "          <div class='mb-2'>"
+        "            <label class='form-label small'>카테고리</label>"
+        "            <input type='text' class='form-control form-control-sm' name='category' placeholder='예: 패션'>"
+        "          </div>"
+        "          <div class='row mb-2'>"
+        "            <div class='col'>"
+        "              <label class='form-label small'>최소가 (JPY)</label>"
+        "              <input type='number' class='form-control form-control-sm' name='min_price' value='0' min='0'>"
+        "            </div>"
+        "            <div class='col'>"
+        "              <label class='form-label small'>최대가 (JPY, 0=제한없음)</label>"
+        "              <input type='number' class='form-control form-control-sm' name='max_price' value='0' min='0'>"
+        "            </div>"
+        "          </div>"
+        "          <button type='submit' class='btn btn-primary btn-sm'>Watch 등록</button>"
+        "        </form>"
+        "      </div>"
+        "    </div>"
+        "  </div>"
+        "</div>"
+        f"<h5>등록된 Watch ({len(watches)}개)</h5>"
+        + (
+            "<div class='alert alert-info'>등록된 Watch가 없습니다.</div>"
+            if not watches else
+            "<div class='table-responsive'>"
+            "<table class='table table-hover table-sm'>"
+            "<thead><tr><th>ID</th><th>플랫폼</th><th>키워드</th><th>카테고리</th><th>통화</th><th>가격 범위</th><th>상태</th><th>마지막 체크</th><th>액션</th></tr></thead>"
+            f"<tbody>{_watch_rows(watches)}</tbody></table></div>"
+        )
+        + "<div class='mt-3'><a href='/seller/sourcing/candidates' class='btn btn-outline-success btn-sm'>📋 후보 큐 보기</a></div>"
+        + """
+<script>
+document.getElementById('watchForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = Object.fromEntries(fd.entries());
+    body.min_price = parseFloat(body.min_price) || 0;
+    body.max_price = parseFloat(body.max_price) || 0;
+    const r = await fetch('/seller/sourcing/watches', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const d = await r.json();
+    if(d.ok) { alert('Watch 등록 완료: ' + d.watch_id); location.reload(); }
+    else { alert('오류: ' + (d.error || '알 수 없음')); }
+});
+async function runWatch(wid) {
+    if(!confirm('이 Watch를 지금 실행하시겠습니까?')) return;
+    const r = await fetch('/seller/sourcing/watches/' + wid + '/run', {method:'POST'});
+    const d = await r.json();
+    alert('발견: ' + d.discovered + '건 / 큐 적재: ' + d.queued + '건');
+    location.reload();
+}
+async function deleteWatch(wid) {
+    if(!confirm('Watch를 삭제하시겠습니까?')) return;
+    const r = await fetch('/seller/sourcing/watches/' + wid, {method:'DELETE'});
+    const d = await r.json();
+    if(d.ok) { location.reload(); }
+    else { alert('오류: ' + (d.error || '알 수 없음')); }
+}
+</script>"""
+    )
+
+    from src.dashboard.admin_views import _render
+    return _render("소싱 Watch", body)
+
+
+@bp.post("/sourcing/watches")
+def sourcing_watches_add():
+    """Watch 등록 API (Phase 143)."""
+    guard = _sourcing_require_admin()
+    if guard is not None:
+        return guard
+
+    data = request.get_json(force=True, silent=True) or {}
+    platform = (data.get("platform") or "").strip()
+    keyword = (data.get("keyword") or "").strip()
+    if not platform or not keyword:
+        return jsonify({"ok": False, "error": "platform과 keyword는 필수입니다"}), 400
+
+    try:
+        from src.sourcing.pipeline import get_watch_store
+        store = get_watch_store()
+        watch = store.add(
+            platform=platform,
+            keyword=keyword,
+            category=data.get("category", ""),
+            currency=data.get("currency", "JPY"),
+            min_price=float(data.get("min_price", 0) or 0),
+            max_price=float(data.get("max_price", 0) or 0),
+        )
+        return jsonify({"ok": True, "watch_id": watch.watch_id, "watch": watch.to_dict()})
+    except ValueError as exc:
+        logger.warning("sourcing_watches_add 입력 오류: %s", exc)
+        return jsonify({"ok": False, "error": "입력값이 올바르지 않습니다"}), 400
+    except Exception as exc:
+        logger.warning("sourcing_watches_add 오류: %s", exc)
+        return jsonify({"ok": False, "error": "처리 중 오류가 발생했습니다"}), 500
+
+
+@bp.delete("/sourcing/watches/<watch_id>")
+def sourcing_watches_delete(watch_id: str):
+    """Watch 삭제 API (Phase 143)."""
+    guard = _sourcing_require_admin()
+    if guard is not None:
+        return guard
+
+    from src.sourcing.pipeline import get_watch_store
+    ok = get_watch_store().delete(watch_id)
+    return jsonify({"ok": ok})
+
+
+@bp.post("/sourcing/watches/<watch_id>/run")
+def sourcing_watches_run(watch_id: str):
+    """Watch 즉시 실행 — 발견 + 마진시뮬 + 큐 적재 (Phase 143)."""
+    guard = _sourcing_require_admin()
+    if guard is not None:
+        return guard
+
+    try:
+        from src.sourcing.pipeline import run_watch_cycle
+        result = run_watch_cycle(watch_id)
+        return jsonify({"ok": True, **result})
+    except ValueError as exc:
+        logger.debug("sourcing_watches_run ValueError: %s", exc)
+        return jsonify({"ok": False, "error": "watch_id를 찾을 수 없거나 비활성 상태입니다"}), 404
+    except Exception as exc:
+        logger.warning("sourcing_watches_run 오류: %s", exc)
+        return jsonify({"ok": False, "error": "실행 중 오류가 발생했습니다"}), 500
+
+
+@bp.get("/sourcing/candidates")
+def sourcing_candidates():
+    """소싱 후보 큐 + 일괄 승인 페이지 (Phase 143)."""
+    guard = _sourcing_require_admin()
+    if guard is not None:
+        return guard
+
+    from src.sourcing.pipeline import get_candidate_queue
+    queue = get_candidate_queue()
+    status_filter = request.args.get("status", "pending")
+    candidates = queue.list_all(status=status_filter)
+    stats = queue.stats()
+
+    def _candidate_rows(items):
+        rows = ""
+        for c in items:
+            margin_class = "text-success" if c.estimated_margin_pct >= 20 else ("text-warning" if c.estimated_margin_pct >= 15 else "text-danger")
+            new_badge = '<span class="badge bg-info">신상품</span>' if c.is_new else ""
+            disc_badge = f'<span class="badge bg-danger">{c.discount_pct:.0f}% 할인</span>' if c.is_discounted else ""
+            status_colors = {"pending": "warning text-dark", "approved": "success", "rejected": "secondary", "listed": "primary"}
+            status_color = status_colors.get(c.status, "secondary")
+            rows += (
+                f"<tr>"
+                f"<td><small><code>{c.candidate_id}</code></small></td>"
+                f"<td>{c.platform}</td>"
+                f"<td>{c.product_name[:30]} {new_badge}{disc_badge}</td>"
+                f"<td class='text-end'>¥{c.source_price:,.0f}</td>"
+                f"<td class='text-end'>₩{c.estimated_selling_price_krw:,.0f}</td>"
+                f"<td class='text-center {margin_class} fw-bold'>{c.estimated_margin_pct:.1f}%</td>"
+                f"<td><span class='badge bg-{status_color}'>{c.status}</span></td>"
+                f"<td class='small'>{c.discovered_at[:16]}</td>"
+                f"<td>"
+                + (
+                    f"<button class='btn btn-sm btn-success me-1' onclick=\"approveCandidate('{c.candidate_id}')\">✅ 승인</button>"
+                    f"<button class='btn btn-sm btn-outline-danger' onclick=\"rejectCandidate('{c.candidate_id}')\">❌ 거절</button>"
+                    if c.status == "pending" else
+                    f"<button class='btn btn-sm btn-outline-primary' onclick=\"publishCandidate('{c.candidate_id}')\">📤 등록</button>"
+                    if c.status == "approved" else ""
+                )
+                + "</td>"
+                f"</tr>"
+            )
+        return rows
+
+    from markupsafe import Markup
+    stat_html = Markup(
+        f"<div class='row mb-3'>"
+        f"<div class='col'><div class='card text-center p-2'><div class='fs-4 fw-bold'>{stats['last_24h']}</div><small class='text-muted'>24h 후보</small></div></div>"
+        f"<div class='col'><div class='card text-center p-2'><div class='fs-4 fw-bold text-warning'>{stats['pending']}</div><small class='text-muted'>승인 대기</small></div></div>"
+        f"<div class='col'><div class='card text-center p-2'><div class='fs-4 fw-bold text-success'>{stats['approved']}</div><small class='text-muted'>승인됨</small></div></div>"
+        f"<div class='col'><div class='card text-center p-2'><div class='fs-4 fw-bold text-primary'>{stats['listed']}</div><small class='text-muted'>등록됨</small></div></div>"
+        f"<div class='col'><div class='card text-center p-2'><div class='fs-4 fw-bold'>{stats['avg_margin_pct']}%</div><small class='text-muted'>평균 마진</small></div></div>"
+        f"</div>"
+    )
+
+    filter_tabs = Markup(
+        "<div class='btn-group mb-3'>"
+        + "".join(
+            f"<a href='/seller/sourcing/candidates?status={s}' class='btn btn-sm {'btn-primary' if status_filter == s else 'btn-outline-secondary'}'>{l}</a>"
+            for s, l in [("pending", "대기"), ("approved", "승인"), ("rejected", "거절"), ("listed", "등록")]
+        )
+        + "</div>"
+    )
+
+    body = Markup(
+        "<h4 class='mb-3'>📋 소싱 후보 큐 (Phase 143)</h4>"
+    ) + stat_html + filter_tabs + Markup(
+        + (
+            "<div class='alert alert-info'>해당 상태의 후보가 없습니다.</div>"
+            if not candidates else
+            "<div class='table-responsive'>"
+            "<table class='table table-hover table-sm'>"
+            "<thead><tr><th>ID</th><th>플랫폼</th><th>상품명</th><th class='text-end'>소싱가</th><th class='text-end'>예상판매가</th><th>마진</th><th>상태</th><th>발견</th><th>액션</th></tr></thead>"
+            f"<tbody>{_candidate_rows(candidates)}</tbody></table></div>"
+        )
+        + "<div class='mt-3 d-flex gap-2'>"
+        + "<a href='/seller/sourcing/watches' class='btn btn-outline-secondary btn-sm'>← Watch 목록</a>"
+        + (
+            f"<button class='btn btn-success btn-sm' onclick=\"bulkApprove()\">✅ 전체 승인 ({stats['pending']}건)</button>"
+            if stats["pending"] > 0 else ""
+        )
+        + "</div>"
+        + """
+<script>
+async function approveCandidate(cid) {
+    const r = await fetch('/seller/sourcing/candidates/' + cid + '/approve', {method:'POST'});
+    const d = await r.json();
+    if(d.ok) location.reload();
+    else alert('오류: ' + (d.error || '알 수 없음'));
+}
+async function rejectCandidate(cid) {
+    const reason = prompt('거절 사유 (선택):', '');
+    if(reason === null) return;
+    const r = await fetch('/seller/sourcing/candidates/' + cid + '/reject', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({reason})});
+    const d = await r.json();
+    if(d.ok) location.reload();
+    else alert('오류: ' + (d.error || '알 수 없음'));
+}
+async function publishCandidate(cid) {
+    if(!confirm('이 후보를 자동 등록하시겠습니까?')) return;
+    const r = await fetch('/seller/sourcing/candidates/' + cid + '/publish', {method:'POST'});
+    const d = await r.json();
+    alert('등록 결과: ' + JSON.stringify(d, null, 2));
+    location.reload();
+}
+async function bulkApprove() {
+    if(!confirm('모든 대기 후보를 승인하시겠습니까?')) return;
+    const r = await fetch('/seller/sourcing/candidates/bulk-approve', {method:'POST'});
+    const d = await r.json();
+    alert('승인 완료: ' + d.approved_count + '건');
+    location.reload();
+}
+</script>"""
+    )
+
+    from src.dashboard.admin_views import _render
+    return _render("소싱 후보 큐", body)
+
+
+@bp.post("/sourcing/candidates/<candidate_id>/approve")
+def sourcing_candidate_approve(candidate_id: str):
+    """후보 승인 API (Phase 143)."""
+    guard = _sourcing_require_admin()
+    if guard is not None:
+        return guard
+
+    from src.sourcing.pipeline import get_candidate_queue
+    c = get_candidate_queue().approve(candidate_id)
+    if c is None:
+        return jsonify({"ok": False, "error": "후보를 찾을 수 없습니다"}), 404
+    return jsonify({"ok": True, "candidate": c.to_dict()})
+
+
+@bp.post("/sourcing/candidates/<candidate_id>/reject")
+def sourcing_candidate_reject(candidate_id: str):
+    """후보 거절 API (Phase 143)."""
+    guard = _sourcing_require_admin()
+    if guard is not None:
+        return guard
+
+    data = request.get_json(force=True, silent=True) or {}
+    reason = data.get("reason", "")
+    from src.sourcing.pipeline import get_candidate_queue
+    c = get_candidate_queue().reject(candidate_id, reason)
+    if c is None:
+        return jsonify({"ok": False, "error": "후보를 찾을 수 없습니다"}), 404
+    return jsonify({"ok": True, "candidate": c.to_dict()})
+
+
+@bp.post("/sourcing/candidates/bulk-approve")
+def sourcing_candidates_bulk_approve():
+    """대기 후보 일괄 승인 API (Phase 143)."""
+    guard = _sourcing_require_admin()
+    if guard is not None:
+        return guard
+
+    from src.sourcing.pipeline import get_candidate_queue
+    queue = get_candidate_queue()
+    pending = [c.candidate_id for c in queue.list_all(status="pending")]
+    approved = queue.bulk_approve(pending)
+    return jsonify({"ok": True, "approved_count": len(approved), "candidate_ids": [c.candidate_id for c in approved]})
+
+
+@bp.post("/sourcing/candidates/<candidate_id>/publish")
+def sourcing_candidate_publish(candidate_id: str):
+    """승인된 후보 자동 등록 트리거 (Phase 143)."""
+    guard = _sourcing_require_admin()
+    if guard is not None:
+        return guard
+
+    from src.sourcing.pipeline import get_candidate_queue
+    queue = get_candidate_queue()
+    c = queue.get(candidate_id)
+    if c is None:
+        return jsonify({"ok": False, "error": "후보를 찾을 수 없습니다"}), 404
+    if c.status not in ("approved", "pending"):
+        return jsonify({"ok": False, "error": f"현재 상태 '{c.status}'에서는 등록할 수 없습니다"}), 400
+
+    try:
+        from src.listing.auto_publish import auto_publish
+        result = auto_publish(c)
+        queue.mark_listed(candidate_id)
+        return jsonify({"ok": True, **result})
+    except Exception as exc:
+        logger.warning("sourcing_candidate_publish 오류: %s", exc)
+        return jsonify({"ok": False, "error": "등록 중 오류가 발생했습니다"}), 500
