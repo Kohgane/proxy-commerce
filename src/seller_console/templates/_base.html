@@ -137,8 +137,8 @@
         </div>
       {% else %}
         <div class="d-flex gap-2">
-          <a href="/auth/oauth/start" class="btn btn-outline-primary btn-sm">🔐 OAuth 로그인</a>
-          <a href="/auth/email/login" class="btn btn-outline-secondary btn-sm">📧 이메일 로그인</a>
+          <a href="/auth/login" class="btn btn-outline-primary btn-sm">🔐 OAuth 로그인</a>
+          <a href="/auth/magic-link" class="btn btn-outline-secondary btn-sm">📧 이메일 로그인</a>
           {% if diagnostic_reveal_enabled %}
           <a href="/auth/diagnostic-token/issue?reveal_safe=1&format=html" class="btn btn-warning btn-sm">🆘 비상 진입 (운영자)</a>
           {% endif %}
