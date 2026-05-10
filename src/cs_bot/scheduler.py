@@ -3,11 +3,14 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
 _scheduler = None
 _lock_fd = None
+_leader_lock_path = None
+_job_last_runs: dict[str, dict] = {}
 
 
 def start_scheduler(app):
@@ -15,14 +18,19 @@ def start_scheduler(app):
     if os.getenv("CS_SCHEDULER_ENABLED", "0") != "1":
         return
 
-    global _scheduler, _lock_fd
+    global _scheduler, _lock_fd, _leader_lock_path
     if _scheduler is not None:
         return  # 이미 실행 중
 
     lock_path = Path(os.getenv("CS_SCHEDULER_LOCK_PATH", "data/cs_scheduler.lock"))
-    _lock_fd = _try_acquire_lock(lock_path)
+    _leader_lock_path = lock_path
+    ttl_seconds = int(os.getenv("SCHEDULER_LEADER_TTL_SECONDS", "90"))
+    heartbeat_seconds = int(os.getenv("SCHEDULER_HEARTBEAT_SECONDS", "30"))
+    if heartbeat_seconds <= 0:
+        heartbeat_seconds = 30
+    _lock_fd = _try_acquire_leader(lock_path, ttl_seconds=ttl_seconds)
     if _lock_fd is None:
-        logger.info("CS 스케줄러 잠금 획득 실패 — 다른 워커가 실행 중. skip.")
+        logger.info("CS 스케줄러 리더 선출 실패 — 다른 워커가 실행 중. skip.")
         return
 
     try:
@@ -36,7 +44,7 @@ def start_scheduler(app):
 
     sched = BackgroundScheduler()
     sched.add_job(
-        lambda: _poll_all_channels_with_app(app),
+        lambda: _record_job_run("cs_poll", _poll_all_channels_with_app, app),
         "interval",
         minutes=poll_minutes,
         id="cs_poll",
@@ -44,10 +52,35 @@ def start_scheduler(app):
         coalesce=True,
     )
     sched.add_job(
-        lambda: _check_sla_with_app(app),
+        lambda: _record_job_run("cs_sla", _check_sla_with_app, app),
         "interval",
         minutes=sla_minutes,
         id="cs_sla",
+        max_instances=1,
+        coalesce=True,
+    )
+    pricing_minutes = int(os.getenv("PRICING_MONITOR_INTERVAL_MINUTES", "30"))
+    sched.add_job(
+        lambda: _record_job_run("pricing_monitor", _pricing_monitor_with_app, app),
+        "interval",
+        minutes=max(1, pricing_minutes),
+        id="pricing_monitor",
+        max_instances=1,
+        coalesce=True,
+    )
+    sched.add_job(
+        lambda: _record_job_run("fx_alert", _fx_alert_with_app, app),
+        "interval",
+        minutes=60,
+        id="fx_alert",
+        max_instances=1,
+        coalesce=True,
+    )
+    sched.add_job(
+        lambda: _renew_leader(lock_path, ttl_seconds=ttl_seconds),
+        "interval",
+        seconds=heartbeat_seconds,
+        id="scheduler_heartbeat",
         max_instances=1,
         coalesce=True,
     )
@@ -56,22 +89,42 @@ def start_scheduler(app):
     logger.info("CS 스케줄러 시작 — 폴링 %dm, SLA %dm", poll_minutes, sla_minutes)
 
 
-def _try_acquire_lock(lock_path: Path):
-    """fcntl 기반 비블로킹 잠금. 성공 시 fd 반환, 실패 시 None."""
+def _try_acquire_leader(lock_path: Path, ttl_seconds: int):
+    """파일 기반 리더 선출."""
     try:
-        import fcntl
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        fd = open(lock_path, "w")
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        fd.write(str(os.getpid()))
-        fd.flush()
-        return fd
-    except (IOError, OSError):
-        return None
-    except ImportError:
-        # Windows / 미지원 환경 — 잠금 없이 진행 (개발용)
-        logger.debug("fcntl 미지원 환경 — 잠금 없이 스케줄러 시작")
-        return True  # 잠금 없이 허용
+        from src.scheduler.leader_election import acquire_leadership
+
+        if acquire_leadership(lock_path, ttl_seconds=ttl_seconds):
+            return True
+    except Exception as exc:
+        logger.warning("리더 선출 실패: %s", exc)
+    return None
+
+
+def _renew_leader(lock_path: Path, ttl_seconds: int):
+    try:
+        from src.scheduler.leader_election import renew_leadership
+
+        renew_leadership(lock_path, ttl_seconds=ttl_seconds)
+    except Exception as exc:
+        logger.debug("리더 heartbeat 갱신 실패: %s", exc)
+
+
+def _record_job_run(job_id: str, fn, app):
+    status = "ok"
+    error = None
+    try:
+        fn(app)
+    except Exception as exc:
+        status = "error"
+        error = str(exc)
+        raise
+    finally:
+        _job_last_runs[job_id] = {
+            "last_run_at": datetime.now(timezone.utc).isoformat(),
+            "status": status,
+            "error": error,
+        }
 
 
 def poll_all_channels() -> dict:
@@ -183,6 +236,22 @@ def _check_sla_with_app(app) -> None:
         logger.error("CS SLA 점검 오류: %s", exc)
 
 
+def _pricing_monitor_with_app(app) -> None:
+    with app.app_context():
+        if os.getenv("PRICING_MONITOR_ENABLED", "1") != "1":
+            return
+        from src.pricing.competitor_monitor import CompetitorMonitor
+
+        CompetitorMonitor().monitor_now()
+
+
+def _fx_alert_with_app(app) -> None:
+    with app.app_context():
+        from src.pricing.fx_impact import FXImpactAnalyzer
+
+        FXImpactAnalyzer().detect_and_notify()
+
+
 def get_scheduler_status() -> dict:
     """스케줄러 상태 반환."""
     enabled = os.getenv("CS_SCHEDULER_ENABLED", "0") == "1"
@@ -199,6 +268,43 @@ def get_scheduler_status() -> dict:
                 next_sla = job_sla.next_run_time.isoformat()
         except Exception:
             pass
+    jobs = []
+    missed_24h = 0
+    if _scheduler is not None:
+        now = datetime.now(timezone.utc)
+        for job in _scheduler.get_jobs():
+            if job.id == "scheduler_heartbeat":
+                continue
+            meta = _job_last_runs.get(job.id, {})
+            last_run = meta.get("last_run_at")
+            if not last_run:
+                missed_24h += 1
+            else:
+                try:
+                    parsed = datetime.fromisoformat(str(last_run).replace("Z", "+00:00"))
+                    if parsed.tzinfo is None:
+                        parsed = parsed.replace(tzinfo=timezone.utc)
+                    if (now - parsed).total_seconds() > 86400:
+                        missed_24h += 1
+                except Exception:
+                    missed_24h += 1
+            jobs.append(
+                {
+                    "id": job.id,
+                    "next_run_time": job.next_run_time.isoformat() if job.next_run_time else None,
+                    "last_run_at": last_run,
+                    "last_status": meta.get("status", "unknown"),
+                }
+            )
+    leader_info = {}
+    try:
+        if _leader_lock_path:
+            from src.scheduler.leader_election import get_leader_info, is_leader
+
+            leader_info = get_leader_info(_leader_lock_path)
+            leader_info["is_leader"] = is_leader(_leader_lock_path)
+    except Exception:
+        leader_info = {}
     return {
         "enabled": enabled,
         "running": running,
@@ -206,4 +312,7 @@ def get_scheduler_status() -> dict:
         "sla_interval_minutes": int(os.getenv("CS_SLA_CHECK_INTERVAL_MINUTES", "15")),
         "next_poll": next_poll,
         "next_sla": next_sla,
+        "jobs": jobs,
+        "missed_jobs_24h": missed_24h,
+        "leader": leader_info,
     }

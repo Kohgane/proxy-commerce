@@ -88,6 +88,10 @@
         <a class="nav-link text-secondary {% if page == 'pricing_fx_impact' %}text-white fw-semibold{% endif %}"
            href="/seller/pricing/fx-impact">💱 환율 영향</a>
       </li>
+      <li class="nav-item">
+        <a class="nav-link text-secondary {% if page == 'analytics' %}text-white fw-semibold{% endif %}"
+           href="/seller/analytics">📈 BI 분석</a>
+      </li>
     </ul>
     <div class="mt-auto pt-3 border-top border-secondary">
       {% if session is defined and session.get('user_role') == 'admin' %}
@@ -105,7 +109,8 @@
       {% set _user_name = session.get('user_name') if session is defined else None %}
       {% set _user_email = session.get('user_email') if session is defined else None %}
       {% set _user_role = session.get('user_role') if session is defined else None %}
-      {% if _user_id %}
+      {% set _logged_in = (_user_id or _user_email) %}
+      {% if _logged_in %}
         <div class="dropdown">
           <button class="btn btn-link text-decoration-none p-0 d-flex align-items-center gap-2"
                   data-bs-toggle="dropdown" aria-expanded="false">

@@ -372,6 +372,7 @@ def _render_diagnostics(issued_magic_link: str | None):
         pricing_status=pricing_status,
         message_log=message_log,
         cs_bot_status=cs_bot_status,
+        env=os.environ,
         base_url=base_url,
     )
 
@@ -610,6 +611,7 @@ def _build_pricing_status() -> dict:
 
     own_24h = 0
     margin_warn = 0
+    persistence_health = []
     try:
         from datetime import datetime, timedelta, timezone
         from src.pricing.history_store import PriceHistoryStore
@@ -640,6 +642,18 @@ def _build_pricing_status() -> dict:
         fx_summary = " / ".join(bits) if bits else "정상"
     except Exception:
         pass
+    try:
+        from src.pricing.rule import PricingRuleStore
+
+        persistence_health.append(("PricingRuleStore", PricingRuleStore().health_check()))
+    except Exception:
+        pass
+    try:
+        from src.pricing.competitor_store import CompetitorStore
+
+        persistence_health.append(("CompetitorStore", CompetitorStore().health_check()))
+    except Exception:
+        pass
 
     return {
         "active_rules": active_count,
@@ -655,6 +669,7 @@ def _build_pricing_status() -> dict:
         "fx_summary": fx_summary,
         "auto_apply": os.getenv("PRICING_AUTO_APPLY", "0") == "1",
         "auto_apply_threshold_pct": os.getenv("PRICING_AUTO_APPLY_THRESHOLD_PCT", "5"),
+        "persistence_health": persistence_health,
     }
 
 
@@ -730,6 +745,10 @@ def _build_cs_bot_status() -> dict:
         "sla_nearing": 0,
         "sla_overdue": 0,
         "channels": [],
+        "scheduler_jobs": [],
+        "scheduler_missed_24h": 0,
+        "scheduler_leader_pid": "-",
+        "scheduler_leader_hostname": "-",
     }
     try:
         from src.cs_bot.faq_store import FAQStore
@@ -817,6 +836,11 @@ def _build_cs_bot_status() -> dict:
         result["scheduler_running"] = sched.get("running", False)
         result["scheduler_next_poll"] = sched.get("next_poll")
         result["scheduler_next_sla"] = sched.get("next_sla")
+        result["scheduler_jobs"] = sched.get("jobs", [])
+        result["scheduler_missed_24h"] = sched.get("missed_jobs_24h", 0)
+        leader = sched.get("leader", {}) or {}
+        result["scheduler_leader_pid"] = leader.get("pid", "-")
+        result["scheduler_leader_hostname"] = leader.get("hostname", "-")
     except Exception as exc:
         logger.debug("cs_bot 스케줄러 상태 조회 실패: %s", exc)
 
@@ -824,6 +848,10 @@ def _build_cs_bot_status() -> dict:
     result.setdefault("scheduler_running", False)
     result.setdefault("scheduler_next_poll", None)
     result.setdefault("scheduler_next_sla", None)
+    result.setdefault("scheduler_jobs", [])
+    result.setdefault("scheduler_missed_24h", 0)
+    result.setdefault("scheduler_leader_pid", "-")
+    result.setdefault("scheduler_leader_hostname", "-")
 
     return result
 
@@ -975,6 +1003,12 @@ _DIAGNOSTICS_TEMPLATE = """
   </nav>
   <main class="col-md-10 p-4">
     <h4 class="mb-4">🔍 운영 진단 대시보드</h4>
+    {% if env.DIAGNOSTIC_REVEAL == '1' %}
+    <div class="alert alert-warning">
+      ⚠️ <b>비상 진입 모드 ON</b> — 운영 안정화 완료 시
+      <code>DIAGNOSTIC_REVEAL=0</code>으로 되돌리는 것을 권장합니다.
+    </div>
+    {% endif %}
 
     <!-- 섹션 1: 환경변수 매트릭스 -->
     <div class="card mb-4">
@@ -1202,6 +1236,16 @@ _DIAGNOSTICS_TEMPLATE = """
           <li>환율 변동: {{ pricing_status.fx_summary }}{% if pricing_status.fx_summary == '정상' %} (정상){% endif %}</li>
           <li>자동 적용: {% if pricing_status.auto_apply %}<span class="badge bg-danger">ON</span>{% else %}<span class="badge bg-secondary">OFF</span>{% endif %} ({{ pricing_status.auto_apply_threshold_pct }}% 이내만)</li>
         </ul>
+        {% if pricing_status.persistence_health %}
+          <div class="alert alert-light border small">
+            <div class="fw-semibold mb-1">Store 영속성 점검</div>
+            <ul class="mb-0">
+              {% for name, st in pricing_status.persistence_health %}
+                <li>{{ name }}: Sheets {{ '✅' if st.sheets else '❌' }} + JSONL {{ '✅' if st.ok else '❌' }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% endif %}
         <div class="d-flex flex-wrap gap-2">
           <a href="/seller/pricing/rules" class="btn btn-outline-primary btn-sm">룰 관리</a>
           <a href="/seller/pricing/competitors" class="btn btn-outline-primary btn-sm">경쟁사</a>
@@ -1259,6 +1303,26 @@ _DIAGNOSTICS_TEMPLATE = """
           <li>임베딩 캐시: {{ cs_bot_status.get('embedding_cached', '0/0') }} ✅</li>
           <li>스케줄러: {% if cs_bot_status.scheduler_running %}<span class="badge bg-success">실행 중</span>{% elif cs_bot_status.scheduler_enabled %}<span class="badge bg-warning text-dark">활성/미실행</span>{% else %}<span class="badge bg-secondary">비활성</span>{% endif %}{% if cs_bot_status.scheduler_next_poll %} · 다음 폴링 {{ cs_bot_status.scheduler_next_poll[:19] }}{% endif %}</li>
         </ul>
+        <div class="border rounded p-3 bg-light mb-3">
+          <div class="fw-semibold mb-2">⏰ Scheduler (Phase 141)</div>
+          <div class="small mb-1">
+            상태:
+            {% if cs_bot_status.scheduler_running %}
+              ✅ Running (잠금 보유 PID {{ cs_bot_status.scheduler_leader_pid }}, hostname {{ cs_bot_status.scheduler_leader_hostname }})
+            {% elif cs_bot_status.scheduler_enabled %}
+              🟨 Enabled
+            {% else %}
+              ⬜ Disabled
+            {% endif %}
+          </div>
+          <div class="small mb-1">등록된 잡: {{ cs_bot_status.scheduler_jobs|length }}개</div>
+          <ul class="small mb-2">
+            {% for job in cs_bot_status.scheduler_jobs %}
+              <li>{{ job.id }} — 마지막 {{ job.last_run_at or '-' }} · 다음 {{ job.next_run_time or '-' }} · {{ '✅' if job.last_status == 'ok' else ('⚠️' if job.last_status == 'error' else '⬜') }}</li>
+            {% endfor %}
+          </ul>
+          <div class="small">미실행 잡 24h: {{ cs_bot_status.scheduler_missed_24h }}건</div>
+        </div>
         <div class="d-flex gap-2 flex-wrap">
           <a class="btn btn-outline-primary btn-sm" href="/seller/cs/inbox">Inbox 열기</a>
           <a class="btn btn-outline-secondary btn-sm" href="/seller/cs/faq">FAQ 관리</a>

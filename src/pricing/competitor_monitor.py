@@ -13,6 +13,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from src.pricing.competitor_store import CompetitorStore
+
 logger = logging.getLogger(__name__)
 
 _WORKSHEET = "competitor_prices"
@@ -80,13 +82,13 @@ class CompetitorMonitor:
         fallback_path = Path(os.getenv("COMPETITOR_SCRAPE_FALLBACK_PATH", "data/competitor_prices.jsonl"))
         self._history_path = fallback_path
         self._history_path.parent.mkdir(parents=True, exist_ok=True)
-        self._targets_path = fallback_path.with_name("competitor_targets.jsonl")
+        self._targets_store = CompetitorStore(fallback_path=fallback_path.with_name("competitor_targets.jsonl"))
         self._price_alert_threshold = Decimal(os.getenv("PRICING_NOTIFY_THRESHOLD_PCT", "5"))
 
     # ── Target CRUD ─────────────────────────────────────────────────────
 
     def list_targets(self, product_id: Optional[str] = None) -> List[CompetitorTarget]:
-        rows = self._read_jsonl(self._targets_path)
+        rows = self._targets_store.read_all()
         out = [CompetitorTarget.from_dict(row) for row in rows]
         if product_id:
             out = [x for x in out if x.product_id == product_id]
@@ -100,14 +102,14 @@ class CompetitorMonitor:
             }
         )
         with self._LOCK:
-            rows = self._read_jsonl(self._targets_path)
+            rows = self._targets_store.read_all()
             rows.append(target.to_dict())
-            self._write_jsonl(self._targets_path, rows)
+            self._targets_store.write_all(rows)
         return target
 
     def update_target(self, competitor_id: str, payload: dict) -> Optional[CompetitorTarget]:
         with self._LOCK:
-            rows = self._read_jsonl(self._targets_path)
+            rows = self._targets_store.read_all()
             updated: Optional[CompetitorTarget] = None
             for i, row in enumerate(rows):
                 if str(row.get("competitor_id")) != competitor_id:
@@ -120,16 +122,16 @@ class CompetitorMonitor:
                 break
             if updated is None:
                 return None
-            self._write_jsonl(self._targets_path, rows)
+            self._targets_store.write_all(rows)
             return updated
 
     def delete_target(self, competitor_id: str) -> bool:
         with self._LOCK:
-            rows = self._read_jsonl(self._targets_path)
+            rows = self._targets_store.read_all()
             filtered = [r for r in rows if str(r.get("competitor_id")) != competitor_id]
             if len(filtered) == len(rows):
                 return False
-            self._write_jsonl(self._targets_path, filtered)
+            self._targets_store.write_all(filtered)
             return True
 
     # ── Monitoring ──────────────────────────────────────────────────────
@@ -435,11 +437,21 @@ class CompetitorMonitor:
         return out
 
     def _write_jsonl(self, path: Path, rows: List[dict]) -> None:
-        tmp = path.with_suffix(".tmp")
-        with tmp.open("w", encoding="utf-8") as f:
-            for row in rows:
-                f.write(json.dumps(row, ensure_ascii=False) + "\n")
-        tmp.replace(path)
+        tmp = path.with_suffix(f"{path.suffix}.tmp.{os.getpid()}")
+        with self._LOCK:
+            try:
+                with tmp.open("w", encoding="utf-8") as f:
+                    for row in rows:
+                        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp, path)
+            finally:
+                if tmp.exists():
+                    try:
+                        tmp.unlink()
+                    except Exception:
+                        pass
 
     @staticmethod
     def _send_price_alert(

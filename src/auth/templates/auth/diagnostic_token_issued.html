@@ -8,6 +8,12 @@
 </head>
 <body class="bg-light">
 <main class="container py-5" style="max-width:900px;">
+  {% if env.get('DIAGNOSTIC_REVEAL') == '1' %}
+  <div class="alert alert-warning">
+    ⚠️ <b>비상 진입 모드 ON</b> — 운영 안정화 완료 시
+    <code>DIAGNOSTIC_REVEAL=0</code>으로 되돌리는 것을 권장합니다.
+  </div>
+  {% endif %}
   <div class="alert alert-danger fw-semibold fs-5">⚠️ 본인만 사용. 1회용. {{ ttl_minutes }}분 유효.</div>
   <div class="card shadow-sm">
     <div class="card-body p-4">
