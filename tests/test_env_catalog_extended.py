@@ -140,6 +140,7 @@ def test_get_api_status_apis_have_category():
         assert api["category"] in [
             "marketplace", "sourcing", "ai", "payment", "auth",
             "notification", "logistics", "self_mall", "utility", "infra", "cs_bot",
+            "ads",
         ]
 
 

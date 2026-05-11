@@ -2779,3 +2779,254 @@ def sourcing_candidate_publish(candidate_id: str):
     except Exception as exc:
         logger.warning("sourcing_candidate_publish 오류: %s", exc)
         return jsonify({"ok": False, "error": "등록 중 오류가 발생했습니다"}), 500
+
+
+# ---------------------------------------------------------------------------
+# Phase 144: 등록 이력 (/seller/listing/history)
+# ---------------------------------------------------------------------------
+
+@bp.get("/listing/history")
+def listing_history():
+    """등록 이력 페이지 (Phase 144)."""
+    guard = _sourcing_require_admin()
+    if guard is not None:
+        return guard
+
+    try:
+        from src.listing.auto_publish import listing_stats
+        stats = listing_stats()
+    except Exception:
+        stats = {}
+
+    from markupsafe import Markup
+
+    listings_24h = stats.get("listings_24h", 0)
+    image_success_pct = stats.get("image_success_pct", 0)
+
+    body = Markup(
+        "<h4 class='mb-3'>📦 등록 이력 (Phase 144)</h4>"
+        "<div class='row mb-4'>"
+        "  <div class='col-md-3'>"
+        "    <div class='card text-center'>"
+        "      <div class='card-body'>"
+        f"       <h2 class='fw-bold text-primary'>{listings_24h}</h2>"
+        "        <div class='text-muted small'>24h 등록</div>"
+        "      </div>"
+        "    </div>"
+        "  </div>"
+        "  <div class='col-md-3'>"
+        "    <div class='card text-center'>"
+        "      <div class='card-body'>"
+        f"       <h2 class='fw-bold text-success'>{image_success_pct}%</h2>"
+        "        <div class='text-muted small'>이미지 처리 성공률</div>"
+        "      </div>"
+        "    </div>"
+        "  </div>"
+        "</div>"
+        "<div class='alert alert-info'>"
+        "  📋 자동 등록된 상품 목록입니다. 쿠팡/스마트스토어/11번가 채널별 결과를 확인하세요."
+        "</div>"
+        "<div class='d-flex gap-2 mt-3'>"
+        "  <a href='/seller/sourcing/candidates' class='btn btn-outline-primary btn-sm'>📥 후보 큐</a>"
+        "  <a href='/seller/sourcing/watches' class='btn btn-outline-secondary btn-sm'>🔎 Watch 관리</a>"
+        "  <a href='/seller/media/queue' class='btn btn-outline-success btn-sm'>🖼️ 이미지 큐</a>"
+        "</div>"
+    )
+    from src.dashboard.admin_views import _render
+    return _render("📦 등록 이력", body)
+
+
+# ---------------------------------------------------------------------------
+# Phase 144: 이미지 큐 (/seller/media/queue)
+# ---------------------------------------------------------------------------
+
+@bp.get("/media/queue")
+def media_queue():
+    """이미지 처리 큐 페이지 (Phase 144)."""
+    guard = _sourcing_require_admin()
+    if guard is not None:
+        return guard
+
+    status = {
+        "enabled": os.getenv("IMAGE_PIPELINE_ENABLED", "1") == "1",
+        "inpaint_enabled": os.getenv("IMAGE_INPAINT_ENABLED", "1") == "1",
+        "provider": "pillow",
+        "queue_size": 0,
+    }
+
+    from markupsafe import Markup
+
+    enabled = status.get("enabled", True)
+    inpaint = status.get("inpaint_enabled", True)
+    provider = status.get("provider", "pillow")
+    queue_size = status.get("queue_size", 0)
+
+    enabled_badge = (
+        "<span class='badge bg-success'>ON</span>" if enabled
+        else "<span class='badge bg-secondary'>OFF</span>"
+    )
+    inpaint_badge = (
+        "<span class='badge bg-success'>ON</span>" if inpaint
+        else "<span class='badge bg-secondary'>OFF</span>"
+    )
+
+    body = Markup(
+        "<h4 class='mb-3'>🖼️ 이미지 처리 큐 (Phase 144)</h4>"
+        "<div class='row mb-4'>"
+        "  <div class='col-md-4'>"
+        "    <div class='card'>"
+        "      <div class='card-body'>"
+        "        <ul class='list-unstyled mb-0'>"
+        f"          <li>파이프라인: {enabled_badge}</li>"
+        f"          <li>Inpainting (워터마크 제거): {inpaint_badge}</li>"
+        f"          <li>Provider: <code>{provider}</code></li>"
+        f"          <li>대기 중: <strong>{queue_size}건</strong></li>"
+        "        </ul>"
+        "      </div>"
+        "    </div>"
+        "  </div>"
+        "</div>"
+        "<div class='alert alert-info'>"
+        "  🖼️ 소싱된 상품 이미지 자동 처리 현황입니다. 배경 제거·워터마크 인페인팅 결과를 확인하세요."
+        "</div>"
+        "<div class='d-flex gap-2 mt-3'>"
+        "  <a href='/seller/listing/history' class='btn btn-outline-primary btn-sm'>📦 등록 이력</a>"
+        "  <a href='/seller/sourcing/candidates' class='btn btn-outline-secondary btn-sm'>📥 후보 큐</a>"
+        "</div>"
+    )
+    from src.dashboard.admin_views import _render
+    return _render("🖼️ 이미지 큐", body)
+
+
+# ---------------------------------------------------------------------------
+# Phase 144: 광고 캠페인 (/seller/ads/campaigns)
+# ---------------------------------------------------------------------------
+
+@bp.get("/ads/campaigns")
+def ads_campaigns():
+    """광고 자동 운영 캠페인 페이지 (Phase 144)."""
+    guard = _sourcing_require_admin()
+    if guard is not None:
+        return guard
+
+    from src.ads.auto_campaign import recommend_campaigns, ads_stats, _active_campaigns, _campaign_recs
+    from markupsafe import Markup
+
+    stats = ads_stats()
+    recs = list(_campaign_recs.values())
+    active = list(_active_campaigns.values())
+
+    def _rec_rows(items):
+        if not items:
+            return "<tr><td colspan='7' class='text-center text-muted'>추천 캠페인 없음</td></tr>"
+        rows = ""
+        for r in items:
+            status_badge = {
+                "pending": "<span class='badge bg-warning text-dark'>대기</span>",
+                "approved": "<span class='badge bg-info'>승인</span>",
+                "launched": "<span class='badge bg-success'>활성</span>",
+                "paused": "<span class='badge bg-secondary'>일시정지</span>",
+            }.get(r.status, r.status)
+            rows += (
+                f"<tr>"
+                f"<td>{r.rec_id}</td>"
+                f"<td>{r.product_name}</td>"
+                f"<td>{r.channel}</td>"
+                f"<td>{', '.join(r.keywords[:2])}</td>"
+                f"<td>{r.estimated_roas:.2f}</td>"
+                f"<td>{r.daily_budget_krw:,}원</td>"
+                f"<td>{status_badge}</td>"
+                f"</tr>"
+            )
+        return rows
+
+    def _active_rows(items):
+        if not items:
+            return "<tr><td colspan='5' class='text-center text-muted'>활성 캠페인 없음</td></tr>"
+        rows = ""
+        for c in items:
+            status_badge = (
+                "<span class='badge bg-success'>활성</span>" if c.get("status") == "active"
+                else "<span class='badge bg-secondary'>일시정지</span>"
+            )
+            rows += (
+                f"<tr>"
+                f"<td><code>{c['campaign_id']}</code></td>"
+                f"<td>{c.get('product_name', '')}</td>"
+                f"<td>{c.get('channel', '')}</td>"
+                f"<td>{c.get('daily_budget_krw', 0):,}원</td>"
+                f"<td>{status_badge}</td>"
+                f"</tr>"
+            )
+        return rows
+
+    enabled_badge = (
+        "<span class='badge bg-success'>ON</span>" if stats["enabled"]
+        else "<span class='badge bg-secondary'>OFF</span>"
+    )
+    auto_launch_badge = (
+        "<span class='badge bg-danger'>자동 launch</span>" if stats["auto_launch"]
+        else "<span class='badge bg-secondary'>수동 승인</span>"
+    )
+
+    body = Markup(
+        f"<h4 class='mb-3'>📣 광고 자동 운영 (Phase 144)</h4>"
+        "<div class='row mb-4'>"
+        "  <div class='col-md-2'><div class='card text-center'><div class='card-body'>"
+        f"    <h3 class='fw-bold text-primary'>{stats['active_campaigns']}</h3>"
+        "    <div class='text-muted small'>활성 캠페인</div></div></div></div>"
+        "  <div class='col-md-2'><div class='card text-center'><div class='card-body'>"
+        f"    <h3 class='fw-bold text-success'>{stats['roas_24h']:.2f}</h3>"
+        "    <div class='text-muted small'>24h ROAS</div></div></div></div>"
+        "  <div class='col-md-2'><div class='card text-center'><div class='card-body'>"
+        f"    <h3 class='fw-bold text-warning'>{stats['pending_recs']}</h3>"
+        "    <div class='text-muted small'>추천 대기</div></div></div></div>"
+        "  <div class='col-md-3'><div class='card text-center'><div class='card-body'>"
+        f"    <h3 class='fw-bold'>{stats['cost_krw_24h']:,}원</h3>"
+        "    <div class='text-muted small'>24h 광고비</div></div></div></div>"
+        "  <div class='col-md-3'><div class='card text-center'><div class='card-body'>"
+        f"    <h3 class='fw-bold'>{stats['revenue_krw_24h']:,}원</h3>"
+        "    <div class='text-muted small'>24h 매출</div></div></div></div>"
+        "</div>"
+        "<div class='row mb-3'>"
+        "  <div class='col-md-12'>"
+        "    <div class='alert alert-light border mb-3'>"
+        f"      자동 운영: {enabled_badge} &nbsp; launch 모드: {auto_launch_badge} &nbsp; "
+        f"      일일 예산: <strong>{stats['daily_budget_krw']:,}원</strong> &nbsp; "
+        f"      목표 ROAS: <strong>{stats['target_roas']}</strong>"
+        "    </div>"
+        "  </div>"
+        "</div>"
+        f"<h5 class='mb-2'>추천 캠페인</h5>"
+        "<div class='table-responsive mb-4'>"
+        "<table class='table table-sm table-hover'>"
+        "<thead><tr><th>ID</th><th>상품</th><th>채널</th><th>키워드</th><th>예상 ROAS</th><th>일일 예산</th><th>상태</th></tr></thead>"
+        f"<tbody>{_rec_rows(recs)}</tbody></table></div>"
+        "<div class='mb-3'>"
+        "  <button class='btn btn-primary btn-sm' onclick=\"fetch('/seller/ads/recommend', {{method:'POST'}}).then(r=>r.json()).then(d=>location.reload())\">"
+        "    🔄 추천 갱신</button>"
+        "</div>"
+        f"<h5 class='mb-2'>활성 캠페인</h5>"
+        "<div class='table-responsive'>"
+        "<table class='table table-sm table-hover'>"
+        "<thead><tr><th>캠페인 ID</th><th>상품</th><th>채널</th><th>일일 예산</th><th>상태</th></tr></thead>"
+        f"<tbody>{_active_rows(active)}</tbody></table></div>"
+        "<div class='mt-3 d-flex gap-2'>"
+        "  <a href='/seller/sourcing/watches' class='btn btn-outline-secondary btn-sm'>🔎 소싱 Watch</a>"
+        "  <a href='/seller/sourcing/candidates' class='btn btn-outline-secondary btn-sm'>📥 후보 큐</a>"
+        "</div>"
+    )
+    from src.dashboard.admin_views import _render
+    return _render("📣 광고 캠페인", body)
+
+
+@bp.post("/ads/recommend")
+def ads_recommend():
+    """추천 캠페인 갱신 API (Phase 144)."""
+    guard = _sourcing_require_admin()
+    if guard is not None:
+        return guard
+
+    from src.ads.auto_campaign import recommend_campaigns
+    recs = recommend_campaigns()
+    return jsonify({"ok": True, "count": len(recs), "recs": [r.to_dict() for r in recs]})

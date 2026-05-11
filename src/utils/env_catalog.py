@@ -29,6 +29,7 @@ class ApiCategory(str, Enum):
     UTILITY = "utility"            # 환율/이미지
     INFRA = "infra"                # Google Sheets
     CS_BOT = "cs_bot"              # CS 자동응답 봇
+    ADS = "ads"                    # 광고 자동 운영
 
 
 # ---------------------------------------------------------------------------
@@ -464,6 +465,29 @@ API_REGISTRY: list = [
         purpose="CS FAQ 임베딩 매칭 (OpenAI text-embedding-3-small)",
         docs_url="https://kohganepercentiii.com/docs/operations/CS_CHANNELS.md",
         category=ApiCategory.CS_BOT,
+        optional=True,
+    ),
+    # Phase 144: 광고 자동 운영
+    ApiKey(
+        name="ads_auto_campaign",
+        env_vars=[
+            "ADS_AUTO_CAMPAIGN_ENABLED",
+            "ADS_AUTO_CAMPAIGN_AUTO_LAUNCH",
+            "ADS_DAILY_BUDGET_KRW",
+            "ADS_TARGET_ROAS",
+            "ADS_BID_ADJUST_MAX_PCT",
+        ],
+        purpose="광고 자동 운영 — SKU 추출/캠페인 생성/입찰가 조정 (Phase 144)",
+        docs_url="https://kohganepercentiii.com/docs/operations/ADS_AUTOMATION.md",
+        category=ApiCategory.ADS,
+        optional=True,
+    ),
+    ApiKey(
+        name="keyword_optimizer",
+        env_vars=["KEYWORD_OPT_PROVIDER"],
+        purpose="키워드 입찰 최적화 공급자 (mock | naver_searchad | coupang_ads)",
+        docs_url="https://kohganepercentiii.com/docs/operations/KEYWORD_OPTIMIZATION.md",
+        category=ApiCategory.ADS,
         optional=True,
     ),
 ]

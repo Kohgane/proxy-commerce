@@ -92,6 +92,26 @@
         <a class="nav-link text-secondary {% if page == 'analytics' %}text-white fw-semibold{% endif %}"
            href="/seller/analytics">📈 BI 분석</a>
       </li>
+      <li class="nav-item">
+        <a class="nav-link text-secondary {% if page == 'sourcing_watches' %}text-white fw-semibold{% endif %}"
+           href="/seller/sourcing/watches">🔎 소싱 watches</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link text-secondary {% if page == 'sourcing_candidates' %}text-white fw-semibold{% endif %}"
+           href="/seller/sourcing/candidates">📥 후보 큐</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link text-secondary {% if page == 'listing_history' %}text-white fw-semibold{% endif %}"
+           href="/seller/listing/history">📦 등록 이력</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link text-secondary {% if page == 'media_queue' %}text-white fw-semibold{% endif %}"
+           href="/seller/media/queue">🖼️ 이미지 큐</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link text-secondary {% if page == 'ads_campaigns' %}text-white fw-semibold{% endif %}"
+           href="/seller/ads/campaigns">📣 광고 캠페인</a>
+      </li>
     </ul>
     <div class="mt-auto pt-3 border-top border-secondary">
       {% if session is defined and session.get('user_role') == 'admin' %}
