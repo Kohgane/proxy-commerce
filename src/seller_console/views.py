@@ -3249,13 +3249,13 @@ def settlement_export_csv():
 
 @bp.get("/settlement/export.xlsx")
 def settlement_export_xlsx():
-    """정산 Excel 내보내기(간이 CSV 포맷)."""
+    """정산 Excel 내보내기(XML Spreadsheet)."""
     from src.settlement.reporter import SettlementReporter
 
     month = (request.args.get("month") or datetime.now().strftime("%Y-%m")).strip()
-    csv_text = SettlementReporter().export_csv(month, rows=[])
+    xml_text = SettlementReporter().export_excel_xml(month, rows=[])
     return Response(
-        csv_text,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename=settlement-{month}.xlsx"},
+        xml_text,
+        mimetype="application/vnd.ms-excel",
+        headers={"Content-Disposition": f"attachment; filename=settlement-{month}.xls"},
     )

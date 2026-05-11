@@ -31,7 +31,7 @@ class SettlementReporter:
                     "shipping_krw": shipping,
                     "refund_krw": refunds,
                     "expected_deposit_krw": net,
-                    "tax_invoice_krw": int(net * (self.tax_rate_pct / 100)),
+                    "tax_invoice_krw": round(net * (self.tax_rate_pct / 100)),
                     "card_sales_krw": gross,
                 }
             )
@@ -73,3 +73,41 @@ class SettlementReporter:
         for row in report["rows"]:
             writer.writerow(row)
         return buf.getvalue()
+
+    def export_excel_xml(self, month: str, rows: list[dict] | None = None) -> str:
+        report = self.monthly_report(month, rows=rows)
+        head = (
+            '<?xml version="1.0"?>'
+            '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" '
+            'xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">'
+            '<Worksheet ss:Name="settlement"><Table>'
+            "<Row>"
+            "<Cell><Data ss:Type=\"String\">month</Data></Cell>"
+            "<Cell><Data ss:Type=\"String\">channel</Data></Cell>"
+            "<Cell><Data ss:Type=\"String\">gross_sales_krw</Data></Cell>"
+            "<Cell><Data ss:Type=\"String\">fee_krw</Data></Cell>"
+            "<Cell><Data ss:Type=\"String\">ads_krw</Data></Cell>"
+            "<Cell><Data ss:Type=\"String\">shipping_krw</Data></Cell>"
+            "<Cell><Data ss:Type=\"String\">refund_krw</Data></Cell>"
+            "<Cell><Data ss:Type=\"String\">expected_deposit_krw</Data></Cell>"
+            "<Cell><Data ss:Type=\"String\">tax_invoice_krw</Data></Cell>"
+            "<Cell><Data ss:Type=\"String\">card_sales_krw</Data></Cell>"
+            "</Row>"
+        )
+        rows_xml = ""
+        for row in report["rows"]:
+            rows_xml += (
+                "<Row>"
+                f"<Cell><Data ss:Type=\"String\">{row['month']}</Data></Cell>"
+                f"<Cell><Data ss:Type=\"String\">{row['channel']}</Data></Cell>"
+                f"<Cell><Data ss:Type=\"Number\">{row['gross_sales_krw']}</Data></Cell>"
+                f"<Cell><Data ss:Type=\"Number\">{row['fee_krw']}</Data></Cell>"
+                f"<Cell><Data ss:Type=\"Number\">{row['ads_krw']}</Data></Cell>"
+                f"<Cell><Data ss:Type=\"Number\">{row['shipping_krw']}</Data></Cell>"
+                f"<Cell><Data ss:Type=\"Number\">{row['refund_krw']}</Data></Cell>"
+                f"<Cell><Data ss:Type=\"Number\">{row['expected_deposit_krw']}</Data></Cell>"
+                f"<Cell><Data ss:Type=\"Number\">{row['tax_invoice_krw']}</Data></Cell>"
+                f"<Cell><Data ss:Type=\"Number\">{row['card_sales_krw']}</Data></Cell>"
+                "</Row>"
+            )
+        return head + rows_xml + "</Table></Worksheet></Workbook>"
