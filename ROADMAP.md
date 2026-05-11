@@ -149,12 +149,13 @@
 | Phase 147 | 모바일 반응형 + PWA + Web Push 알림 + 옴니채널 재고 동기화 + 멀티워커 큐 안정화 | #PR | 2026-05-11 |
 | Phase 148 | /me/notifications hotfix + 버전 자동화 + VAPID 자동 생성 + B2B + 정기구독 | #PR | 2026-05-11 |
 | Phase 148.1 | 운영 복구 hotfix (f-string SyntaxError 수정 + 사이드바 라우트 매트릭스/자동 등록 안전망) | #PR | 2026-05-11 |
+| Phase 149 | AI 상품등록 자동화 (이미지 1장 → Vision 분석 → 멀티마켓 동시 등록) | #PR | 2026-05-11 |
 
 ## 📋 다음 큐
 
 | Phase | 내용 |
 |---|---|
-| Phase 149 | 모니터링 강화 (Sentry, Uptime) + Redis 큐 백엔드 + Push 알림 고도화 |
+| Phase 150 | 실제 마켓 어댑터 연결 (쿠팡/스마트스토어 AI listing 실 API) + 리뷰 수집 + 감정 분석 |
 | (2026 Q4) | SaaS 공개 준비 (약관/결제/랜딩) |
 
 ## 🚧 진행 중 Phase

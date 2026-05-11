@@ -14,6 +14,8 @@ SIDEBAR_LINKS = [
     ("/seller/pricing/rules", "가격"),
     ("/seller/cs/inbox", "CS"),
     ("/seller/analytics", "BI"),
+    # Phase 149
+    ("/seller/listing/ai-create", "AI 상품등록"),
 ]
 
 

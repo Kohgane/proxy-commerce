@@ -1,0 +1,231 @@
+# AI 상품등록 자동화 가이드 (Phase 149)
+
+## 개요
+
+Phase 149에서 추가된 AI 상품등록 자동화 기능은 이미지 1~5장을 업로드하면 AI가 자동으로 상품 정보를 추출하고, 여러 마켓에 동시에 등록해주는 기능입니다.
+
+## 핵심 플로우
+
+```
+이미지 업로드 (1~5장)
+        ↓
+Vision API 분석 (GPT-4o-mini / Claude Sonnet / mock)
+        ↓
+카테고리 / 브랜드 / 색상 / 소재 / 키워드 추출
+        ↓
+마켓별 제목 / 설명 / 카테고리 / 가격 / 태그 생성
+        ↓
+사용자 검토 & 인라인 편집
+        ↓
+선택한 마켓에 동시 등록 (coupang / smartstore / 11st / gmarket)
+        ↓
+등록 결과 카드 표시 (성공 / 실패 + 재시도)
+```
+
+## 진입점
+
+- **UI**: `/seller/listing/ai-create`
+- **사이드바**: 🤖 AI 상품등록 (카탈로그 그룹)
+
+## 환경변수
+
+| 변수명 | 기본값 | 설명 |
+|--------|--------|------|
+| `AI_LISTING_ENABLED` | `1` | 기능 활성화 (0=비활성) |
+| `AI_LISTING_VISION_PROVIDER` | `mock` | Vision 제공자: `openai` \| `claude` \| `mock` |
+| `AI_LISTING_VISION_MODEL` | `gpt-4o-mini` | OpenAI Vision 모델 |
+| `AI_LISTING_CLAUDE_MODEL` | `claude-3-5-sonnet-20241022` | Claude 모델 (claude 제공자 시) |
+| `AI_LISTING_MAX_IMAGES_PER_REQUEST` | `5` | 요청당 최대 이미지 수 |
+| `AI_LISTING_MAX_DAILY_PER_USER` | `50` | 사용자별 일일 최대 생성 건수 |
+| `AI_LISTING_CACHE_TTL_HOURS` | `24` | 이미지 분석 캐시 TTL (시간) |
+| `AI_LISTING_MARKETS_DEFAULT` | `coupang,smartstore` | 기본 등록 마켓 |
+| `AI_LISTING_LANG_DEFAULT` | `kr` | 기본 생성 언어 (`kr` \| `jp` \| `both`) |
+| `AI_LISTING_PRICE_MODE` | `auto` | 가격 모드 (`auto` \| `manual`) |
+
+## Vision 제공자 설정
+
+### OpenAI (gpt-4o-mini)
+
+```env
+AI_LISTING_VISION_PROVIDER=openai
+AI_LISTING_VISION_MODEL=gpt-4o-mini
+OPENAI_API_KEY=sk-...
+```
+
+### Claude Sonnet
+
+```env
+AI_LISTING_VISION_PROVIDER=claude
+AI_LISTING_CLAUDE_MODEL=claude-3-5-sonnet-20241022
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+### Mock (API 키 없음 / 개발용)
+
+```env
+AI_LISTING_VISION_PROVIDER=mock
+# OPENAI_API_KEY 미설정 시 자동으로 mock 동작
+```
+
+## API 레퍼런스
+
+### POST `/api/ai-listing/analyze`
+
+이미지 URL을 받아 Vision AI 분석 결과를 반환합니다.
+
+**Request:**
+```json
+{
+  "image_url": "https://example.com/product.jpg",
+  "language": "kr",
+  "markets": ["coupang", "smartstore"]
+}
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "listing_id": "uuid-...",
+  "analysis": {
+    "category": "패션",
+    "brand": null,
+    "colors": ["화이트", "블랙"],
+    "materials": ["면"],
+    "keywords": ["티셔츠", "기본", "데일리"],
+    "estimated_price_range": {"min": 15000, "max": 45000},
+    "product_type": "티셔츠",
+    "features": ["기본 라운드넥", "루즈핏"]
+  }
+}
+```
+
+### POST `/api/ai-listing/generate`
+
+분석 결과를 바탕으로 마켓별 제목/설명/태그/가격을 생성합니다.
+
+**Request:**
+```json
+{
+  "listing_id": "uuid-...",
+  "analysis": { ... },
+  "markets": ["coupang", "smartstore"],
+  "language": "kr",
+  "price_mode": "auto"
+}
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "markets": {
+    "coupang": {
+      "title": "기본 티셔츠 화이트/블랙 루즈핏",
+      "description": "✨ 티셔츠\n소재: 면\n✔ 기본 라운드넥",
+      "tags": ["티셔츠", "기본", "데일리", "루즈핏", "캐주얼"],
+      "category_code": "56139",
+      "suggested_price_krw": 29000,
+      "margin_pct": 22.0,
+      "fee_rate": 0.108
+    }
+  }
+}
+```
+
+### POST `/api/ai-listing/publish`
+
+여러 마켓에 동시 등록합니다. 부분 성공 허용.
+
+**Request:**
+```json
+{
+  "listing_id": "uuid-...",
+  "markets": ["coupang", "smartstore"],
+  "market_data": {
+    "coupang": {"title": "최종 제목", "price_krw": 29000},
+    "smartstore": {"title": "최종 제목 NS", "price_krw": 28000}
+  },
+  "analysis": { ... }
+}
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "results": {
+    "ai_listing_id": "uuid-...",
+    "success_count": 2,
+    "failed_count": 0,
+    "partial_success": false,
+    "markets": [
+      {"market": "coupang", "status": "success", "external_product_id": "MOCK-COUPANG-abc12345"},
+      {"market": "smartstore", "status": "success", "external_product_id": "MOCK-SMARTSTORE-def67890"}
+    ]
+  }
+}
+```
+
+## 비용 관리
+
+- **BudgetGuard 연동**: `src/ai/budget.py`의 `BudgetGuard` 사용. 월 예산 초과 시 Vision API 차단 후 mock 결과 반환.
+- **캐시**: 동일 이미지 해시(SHA-256) 기준 24h 캐시. 동일 이미지 재분석 비용 없음.
+- **일일 한도**: 사용자별 50건/일 (AI_LISTING_MAX_DAILY_PER_USER).
+
+## 비용 예시 (참고)
+
+| 제공자 | 모델 | 이미지 1장 추정 |
+|--------|------|----------------|
+| OpenAI | gpt-4o-mini | ~$0.001 |
+| Anthropic | claude-3-5-sonnet | ~$0.003 |
+| mock | - | $0 |
+
+## 마켓별 제목 글자수 제한
+
+| 마켓 | 최대 글자수 |
+|------|------------|
+| 쿠팡 | 50자 |
+| 스마트스토어 | 100자 |
+| 11번가 | 100자 |
+| G마켓 | 80자 |
+
+## 금칙어 필터
+
+각 마켓의 운영정책에 따른 금칙어 자동 제거:
+
+- **쿠팡**: 최저가, 100%, 무조건, 보장
+- **스마트스토어**: 최저가, 최고, 1위, 보장
+- **11번가**: 최저가, 보장, 무조건
+- **G마켓**: 최저가, 100%
+
+## Admin 진단 카드
+
+`/admin/diagnostics` → **🤖 AI 상품등록 자동화 (Phase 149)** 섹션:
+- 활성화 여부
+- Vision 제공자/모델
+- 기본 마켓
+- 일일 한도
+- 캐시 상태
+- 24h 등록 통계
+
+## 아키텍처
+
+```
+src/ai_listing/
+├── __init__.py           패키지 메타
+├── analyzer.py           Vision API 분석 + 캐시
+├── generator.py          제목/설명/태그 생성
+├── category_mapper.py    마켓별 카테고리 코드 매핑
+├── price_suggester.py    가격 제안 (Phase 140 연동)
+├── multi_publisher.py    멀티마켓 동시 등록 (ThreadPoolExecutor)
+├── templates_prompts.py  프롬프트 템플릿
+└── routes.py             Flask Blueprint
+```
+
+## Phase 150 계획
+
+- 실제 쿠팡/스마트스토어 API 어댑터 연결
+- 등록 이력 DB 영구 저장 (SQLite)
+- 이미지 파일 업로드 직접 처리 (form-data)
+- Phase 144 키워드 최적화 완전 연동

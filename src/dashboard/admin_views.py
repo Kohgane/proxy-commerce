@@ -432,6 +432,9 @@ def _render_diagnostics(issued_magic_link: str | None):
     wholesale_status = _build_wholesale_status()
     product_subscription_status = _build_product_subscription_status()
 
+    # Phase 149: AI 상품등록 자동화 카드
+    ai_listing_status = _build_ai_listing_status()
+
     return render_template_string(
         _DIAGNOSTICS_TEMPLATE,
         env_matrix=env_matrix,
@@ -464,6 +467,7 @@ def _render_diagnostics(issued_magic_link: str | None):
         version_display_status=version_display_status,
         wholesale_status=wholesale_status,
         product_subscription_status=product_subscription_status,
+        ai_listing_status=ai_listing_status,
         env=os.environ,
         base_url=base_url,
     )
@@ -1316,6 +1320,8 @@ SELLER_SIDEBAR_LINKS = [
     ("/seller/wholesale/applications", "📋 B2B 신청 큐"),
     ("/seller/subscriptions", "🔁 정기구독 관리"),
     ("/seller/me/subscriptions", "🔁 내 구독"),
+    # Phase 149
+    ("/seller/listing/ai-create", "🤖 AI 상품등록"),
 ]
 
 
@@ -1347,6 +1353,8 @@ def _build_route_check_status() -> dict:
         ("seller_console.wholesale_applications", "/seller/wholesale/applications"),
         ("seller_console.seller_subscriptions", "/seller/subscriptions"),
         ("seller_console.me_subscriptions", "/seller/me/subscriptions"),
+        # Phase 149
+        ("ai_listing.ai_listing_create", "/seller/listing/ai-create"),
     ]
 
     sidebar_links = SELLER_SIDEBAR_LINKS
@@ -1618,6 +1626,28 @@ def _build_product_subscription_status() -> dict:
             "failed_count": 0,
             "cancelled_count": 0,
             "total_count": 0,
+        }
+
+
+def _build_ai_listing_status() -> dict:
+    """Phase 149: AI 상품등록 자동화 상태."""
+    try:
+        from src.ai_listing.routes import ai_listing_stats
+        return ai_listing_stats()
+    except Exception as exc:
+        logger.debug("ai_listing 상태 조회 실패: %s", exc)
+        return {
+            "enabled": os.getenv("AI_LISTING_ENABLED", "1") == "1",
+            "vision_provider": os.getenv("AI_LISTING_VISION_PROVIDER", "mock"),
+            "vision_model": os.getenv("AI_LISTING_VISION_MODEL", "gpt-4o-mini"),
+            "max_daily_per_user": int(os.getenv("AI_LISTING_MAX_DAILY_PER_USER", "50")),
+            "default_markets": os.getenv("AI_LISTING_MARKETS_DEFAULT", "coupang,smartstore").split(","),
+            "cache_active": 0,
+            "cache_ttl_hours": int(os.getenv("AI_LISTING_CACHE_TTL_HOURS", "24")),
+            "attempts_24h": 0,
+            "success_24h": 0,
+            "failed_24h": 0,
+            "by_market": {},
         }
 
 
@@ -2590,6 +2620,25 @@ _DIAGNOSTICS_TEMPLATE = """
         <div class="d-flex gap-2 flex-wrap">
           <a class="btn btn-outline-primary btn-sm" href="/seller/subscriptions">🔁 구독 관리</a>
           <a class="btn btn-outline-secondary btn-sm" href="/seller/me/subscriptions">👤 내 구독</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 149: 섹션 — AI 상품등록 자동화 -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">🤖 AI 상품등록 자동화 (Phase 149)</div>
+      <div class="card-body">
+        <ul class="mb-3">
+          <li>활성화: {% if ai_listing_status.enabled %}<span class="badge bg-success">ON</span>{% else %}<span class="badge bg-secondary">OFF (AI_LISTING_ENABLED=0)</span>{% endif %}</li>
+          <li>Vision 제공자: <code>{{ ai_listing_status.vision_provider }}</code> / 모델: <code>{{ ai_listing_status.vision_model }}</code></li>
+          <li>기본 마켓: <strong>{{ ai_listing_status.default_markets | join(', ') }}</strong></li>
+          <li>일일 한도(사용자별): <strong>{{ ai_listing_status.max_daily_per_user }}</strong>건</li>
+          <li>캐시 활성: <strong>{{ ai_listing_status.cache_active }}</strong>건 / TTL: {{ ai_listing_status.cache_ttl_hours }}h</li>
+          <li>24h 등록 시도: <strong>{{ ai_listing_status.attempts_24h }}</strong>건 / 성공: <strong>{{ ai_listing_status.success_24h }}</strong>건 / 실패: <span class="{% if ai_listing_status.failed_24h > 0 %}text-danger fw-bold{% endif %}">{{ ai_listing_status.failed_24h }}건</span></li>
+        </ul>
+        <div class="d-flex gap-2 flex-wrap">
+          <a class="btn btn-outline-primary btn-sm" href="/seller/listing/ai-create">🤖 AI 상품등록 UI</a>
+          <a class="btn btn-outline-secondary btn-sm" href="/api/ai-listing/status/test">🔗 API 상태</a>
         </div>
       </div>
     </div>
