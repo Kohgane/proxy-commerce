@@ -591,6 +591,113 @@ def diagnostics_vapid_generate():
 
 
 # ---------------------------------------------------------------------------
+# Phase 150 — /admin/oauth-setup (OAuth 가이드 페이지)
+# ---------------------------------------------------------------------------
+
+@admin_panel_bp.get("/oauth-setup")
+def admin_oauth_setup():
+    """OAuth 설정 가이드 페이지 (Phase 150)."""
+    from src.auth.admin_resolver import is_admin_session
+
+    if not session.get("user_id"):
+        return redirect("/auth/login?next=/admin/oauth-setup")
+    admin_ok, _ = is_admin_session(session)
+    if not admin_ok:
+        return _render("접근 거부", "<div class='alert alert-danger'>관리자 권한이 필요합니다.</div>"), 403
+
+    base_url = os.getenv("BASE_URL", "https://kohganepercentiii.com").rstrip("/")
+    google_callback = f"{base_url}/auth/google/callback"
+    naver_callback = f"{base_url}/auth/naver/callback"
+    kakao_callback = f"{base_url}/auth/kakao/callback"
+
+    google_active = bool(os.getenv("GOOGLE_CLIENT_ID"))
+    naver_active = bool(os.getenv("NAVER_CLIENT_ID"))
+    kakao_active = bool(os.getenv("KAKAO_CLIENT_ID"))
+
+    def _badge(active: bool, ok_text: str, warn_text: str) -> str:
+        if active:
+            return f"<span class='badge bg-success ms-2'>✅ {ok_text}</span>"
+        return f"<span class='badge bg-warning text-dark ms-2'>⚠️ {warn_text}</span>"
+
+    body = (
+        "<h2>🔐 OAuth 설정 가이드 (Phase 150)</h2>"
+        "<p class='text-muted'>소셜 로그인 외부 콘솔 등록 단계별 가이드</p>"
+        "<div class='row g-4 mt-2'>"
+        # Google 카드
+        "<div class='col-12 col-lg-4'>"
+        "<div class='card h-100 border-primary'>"
+        f"<div class='card-header bg-primary text-white'><strong>🔵 Google OAuth</strong>"
+        f"{_badge(google_active, '키 설정됨', '키 없음')}</div>"
+        "<div class='card-body'>"
+        "<p class='small'>Google Cloud Console에서 OAuth 클라이언트를 설정해야 합니다.</p>"
+        "<ol class='small ps-3'>"
+        "<li><a href='https://console.cloud.google.com/apis/credentials' target='_blank'>console.cloud.google.com</a> 접속</li>"
+        "<li>\"OAuth 2.0 클라이언트 ID\" 선택 또는 생성</li>"
+        f"<li>앱 도메인: <code>{base_url}</code></li>"
+        f"<li>개인정보처리방침 URL: <code>{base_url}/privacy</code></li>"
+        "<li>승인된 리디렉션 URI:<br>"
+        f"<code class='d-block bg-light p-1 mt-1'>{google_callback}</code>"
+        f"<button class='btn btn-outline-secondary btn-sm mt-1' "
+        f"onclick=\"navigator.clipboard.writeText('{google_callback}');alert('복사됨!')\">📋 복사</button>"
+        "</li>"
+        "<li>OAuth 동의 화면 → \"앱 게시\" 또는 테스트 사용자 추가</li>"
+        "</ol>"
+        f"<a href='{base_url}/auth/google/start' class='btn btn-outline-primary btn-sm' target='_blank'>🔑 테스트 로그인</a>"
+        "</div></div></div>"
+        # Naver 카드
+        "<div class='col-12 col-lg-4'>"
+        "<div class='card h-100 border-success'>"
+        f"<div class='card-header bg-success text-white'><strong>🟢 Naver 로그인 OAuth</strong>"
+        f"{_badge(naver_active, '키 설정됨', '키 없음')}</div>"
+        "<div class='card-body'>"
+        "<div class='alert alert-warning p-2 small'>"
+        "⚠️ <strong>주의:</strong> <em>Naver Commerce API</em>와 헷갈리지 마세요!<br>"
+        "로그인용은 <strong>Naver Developers</strong>에서 등록합니다.<br>"
+        "(apicenter.commerce.naver.com ≠ 로그인 OAuth)"
+        "</div>"
+        "<ol class='small ps-3'>"
+        "<li><a href='https://developers.naver.com/apps' target='_blank'>developers.naver.com</a> 접속</li>"
+        "<li>\"애플리케이션 등록\" 또는 기존 앱 선택</li>"
+        "<li>API 설정 탭 → \"네이버 아이디로 로그인\" 사용 ON</li>"
+        f"<li>서비스 URL: <code>{base_url}</code></li>"
+        "<li>Callback URL:<br>"
+        f"<code class='d-block bg-light p-1 mt-1'>{naver_callback}</code>"
+        f"<button class='btn btn-outline-secondary btn-sm mt-1' "
+        f"onclick=\"navigator.clipboard.writeText('{naver_callback}');alert('복사됨!')\">📋 복사</button>"
+        "</li>"
+        "</ol>"
+        f"<a href='{base_url}/auth/naver/start' class='btn btn-outline-success btn-sm' target='_blank'>🔑 테스트 로그인</a>"
+        "</div></div></div>"
+        # Kakao 카드
+        "<div class='col-12 col-lg-4'>"
+        "<div class='card h-100 border-warning'>"
+        f"<div class='card-header bg-warning text-dark'><strong>🟡 Kakao OAuth</strong>"
+        f"{_badge(kakao_active, '정상', '키 없음')}</div>"
+        "<div class='card-body'>"
+        "<ol class='small ps-3'>"
+        "<li><a href='https://developers.kakao.com/console/app' target='_blank'>developers.kakao.com</a> 접속</li>"
+        "<li>내 애플리케이션 선택</li>"
+        "<li>카카오 로그인 → 활성화 ON</li>"
+        "<li>Redirect URI:<br>"
+        f"<code class='d-block bg-light p-1 mt-1'>{kakao_callback}</code>"
+        f"<button class='btn btn-outline-secondary btn-sm mt-1' "
+        f"onclick=\"navigator.clipboard.writeText('{kakao_callback}');alert('복사됨!')\">📋 복사</button>"
+        "</li>"
+        "<li>동의항목: 이메일(필수), 닉네임</li>"
+        "</ol>"
+        f"<a href='{base_url}/auth/kakao/start' class='btn btn-outline-warning btn-sm' target='_blank'>🔑 테스트 로그인</a>"
+        "</div></div></div>"
+        "</div>"
+        "<div class='mt-4'>"
+        "<a href='/admin/diagnostics' class='btn btn-secondary btn-sm'>← 진단 페이지로</a>"
+        "</div>"
+    )
+
+    from markupsafe import Markup
+    return _render("OAuth 설정 가이드", body)
+
+
+# ---------------------------------------------------------------------------
 # Phase 147 — /admin/jobs (잡 큐 관리)
 # ---------------------------------------------------------------------------
 

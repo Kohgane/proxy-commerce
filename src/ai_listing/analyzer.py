@@ -1,15 +1,16 @@
-"""src/ai_listing/analyzer.py — 이미지 Vision API 분석 (Phase 149).
+"""src/ai_listing/analyzer.py — 이미지 Vision API 분석 (Phase 149/150).
 
-입력: 이미지 URL 또는 업로드 bytes
+입력: 이미지 URL 또는 업로드 bytes, 선택적으로 상품 페이지 URL
 호출: OpenAI Vision (gpt-4o-mini) 또는 Claude Sonnet (fallback)
-출력: 카테고리, 색상, 소재, 추정 가격대, 키워드 리스트
+출력: 카테고리, 색상, 소재, 추정 가격대, 키워드 리스트 + 스크래핑 보강 필드
 캐시: 동일 이미지 해시 24h 재사용
 비용 가드: BudgetGuard 통과 필수
 
 환경변수:
-  AI_LISTING_VISION_PROVIDER  openai | claude | mock
-  AI_LISTING_VISION_MODEL     gpt-4o-mini
-  AI_LISTING_CACHE_TTL_HOURS  24
+  AI_LISTING_VISION_PROVIDER   openai | claude | mock
+  AI_LISTING_VISION_MODEL      gpt-4o-mini
+  AI_LISTING_CACHE_TTL_HOURS   24
+  AI_LISTING_PROMPT_VERSION    v1 | v2_explicit_fields (default: v2_explicit_fields)
 """
 from __future__ import annotations
 
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 _VISION_PROVIDER = os.getenv("AI_LISTING_VISION_PROVIDER", "mock")
 _VISION_MODEL = os.getenv("AI_LISTING_VISION_MODEL", "gpt-4o-mini")
 _CACHE_TTL_SEC = int(os.getenv("AI_LISTING_CACHE_TTL_HOURS", "24")) * 3600
+_PROMPT_VERSION = os.getenv("AI_LISTING_PROMPT_VERSION", "v2_explicit_fields")
 
 # 인메모리 캐시 (동일 프로세스 내)
 _analysis_cache: Dict[str, Dict[str, Any]] = {}
@@ -121,6 +123,7 @@ def analyze_image(
     image_bytes: bytes = b"",
     language: str = "kr",
     force_refresh: bool = False,
+    page_url: str = "",
 ) -> Dict[str, Any]:
     """이미지 분석 진입점.
 
@@ -129,14 +132,15 @@ def analyze_image(
         image_bytes:   업로드된 이미지 bytes (URL 대신 사용)
         language:      분석 언어 kr | jp | both
         force_refresh: True 시 캐시 무시
+        page_url:      상품 페이지 URL (Phase 150: HTML 스크래핑 후 Vision 프롬프트 보강)
 
     Returns:
         분석 결과 dict (category, brand, colors, materials, keywords 등)
     """
     from src.ai.budget import BudgetGuard, BudgetExceededError
 
-    if not image_url and not image_bytes:
-        return {"error": "이미지 URL 또는 bytes 필요", "category": "기타"}
+    if not image_url and not image_bytes and not page_url:
+        return {"error": "이미지 URL, bytes, 또는 페이지 URL 필요", "category": "기타"}
 
     img_hash = _compute_image_hash(image_url=image_url, image_bytes=image_bytes)
 
@@ -147,11 +151,33 @@ def analyze_image(
             logger.debug("이미지 분석 캐시 히트: %s", img_hash[:8])
             return cached["result"]
 
+    # ── URL 스크래핑 (Phase 150) ──────────────────────────────────────────
+    scrape_data: Optional[Dict[str, Any]] = None
+    if page_url:
+        try:
+            from src.ai_listing.url_scraper import scrape_product_page
+            scrape_data = scrape_product_page(page_url, force_refresh=force_refresh)
+            if not scrape_data.get("_scraped"):
+                logger.info("URL 스크래핑 실패 (이미지 분석만 진행): %s", scrape_data.get("_error"))
+                scrape_data = None
+        except Exception as exc:
+            logger.warning("url_scraper 호출 실패 (이미지 분석만 진행): %s", exc)
+            scrape_data = None
+
+        # 이미지 URL이 없으면 스크래핑 결과에서 첫 번째 이미지 사용
+        if not image_url and not image_bytes and scrape_data:
+            images = scrape_data.get("images", [])
+            if images:
+                image_url = images[0]
+
     # mock 모드
     if _VISION_PROVIDER == "mock" or (
         not os.getenv("OPENAI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY")
     ):
         result = _mock_analysis()
+        # 스크래핑 데이터로 mock 결과 보강
+        if scrape_data:
+            result = _merge_scrape_into_result(result, scrape_data)
         _analysis_cache[img_hash] = {"result": result, "_cached_at": time.time()}
         return result
 
@@ -161,13 +187,27 @@ def analyze_image(
         guard.check()
     except BudgetExceededError as exc:
         logger.warning("AI Vision 예산 초과 — mock 반환: %s", exc)
-        return {**_mock_analysis(), "_budget_exceeded": True}
+        result = {**_mock_analysis(), "_budget_exceeded": True}
+        if scrape_data:
+            result = _merge_scrape_into_result(result, scrape_data)
+        return result
     except Exception as exc:
         logger.debug("BudgetGuard 확인 실패 (무시): %s", exc)
 
-    from src.ai_listing.templates_prompts import VISION_ANALYSIS_PROMPT, VISION_ANALYSIS_PROMPT_JP
+    from src.ai_listing.templates_prompts import (
+        VISION_ANALYSIS_PROMPT,
+        VISION_ANALYSIS_PROMPT_JP,
+        build_v2_analysis_prompt,
+    )
 
-    prompt = VISION_ANALYSIS_PROMPT_JP if language == "jp" else VISION_ANALYSIS_PROMPT
+    # v2 프롬프트 (Phase 150: 명시적 필드 + 스크래핑 컨텍스트)
+    if _PROMPT_VERSION == "v2_explicit_fields":
+        prompt = build_v2_analysis_prompt(
+            language=language,
+            scrape_data=scrape_data,
+        )
+    else:
+        prompt = VISION_ANALYSIS_PROMPT_JP if language == "jp" else VISION_ANALYSIS_PROMPT
 
     # image_bytes → data URI 변환 (URL이 없으면)
     if image_bytes and not image_url:
@@ -175,33 +215,105 @@ def analyze_image(
         b64 = base64.b64encode(image_bytes).decode()
         image_url = f"data:image/jpeg;base64,{b64}"
 
-    result: Optional[Dict[str, Any]] = None
+    result_raw: Optional[Dict[str, Any]] = None
 
-    if _VISION_PROVIDER == "openai":
+    if not image_url:
+        # 이미지 없이 텍스트만으로 분석 (스크래핑 데이터 기반 mock)
+        result_raw = _mock_analysis()
+    elif _VISION_PROVIDER == "openai":
         try:
-            result = _call_openai_vision(image_url, prompt)
+            result_raw = _call_openai_vision(image_url, prompt)
         except Exception:
             if os.getenv("ANTHROPIC_API_KEY"):
                 try:
-                    result = _call_claude_vision(image_url, prompt)
+                    result_raw = _call_claude_vision(image_url, prompt)
                 except Exception:
                     pass
     elif _VISION_PROVIDER == "claude":
         try:
-            result = _call_claude_vision(image_url, prompt)
+            result_raw = _call_claude_vision(image_url, prompt)
         except Exception:
             if os.getenv("OPENAI_API_KEY"):
                 try:
-                    result = _call_openai_vision(image_url, prompt)
+                    result_raw = _call_openai_vision(image_url, prompt)
                 except Exception:
                     pass
 
-    if result is None:
-        result = _mock_analysis()
+    if result_raw is None:
+        result_raw = _mock_analysis()
+
+    # 스크래핑 데이터로 AI 결과 보강
+    if scrape_data:
+        result_raw = _merge_scrape_into_result(result_raw, scrape_data)
 
     # 캐시 저장
-    _analysis_cache[img_hash] = {"result": result, "_cached_at": time.time()}
-    return result
+    _analysis_cache[img_hash] = {"result": result_raw, "_cached_at": time.time()}
+    return result_raw
+
+
+def _merge_scrape_into_result(
+    result: Dict[str, Any],
+    scrape_data: Dict[str, Any],
+) -> Dict[str, Any]:
+    """스크래핑 데이터를 Vision 분석 결과에 병합.
+
+    스크래핑으로 얻은 구체적 값이 있으면 AI 추론값을 대체/보강.
+    """
+    merged = dict(result)
+
+    # 브랜드: 스크래핑 값 우선
+    brand_candidates = scrape_data.get("brand_candidates", [])
+    if brand_candidates and not merged.get("brand"):
+        merged["brand"] = brand_candidates[0]
+        merged["_brand_source"] = "scraping"
+
+    # 소재: 스크래핑 + AI 병합
+    scrape_materials = scrape_data.get("material_candidates", [])
+    ai_materials = merged.get("materials", [])
+    if scrape_materials:
+        combined = list(dict.fromkeys(scrape_materials + ai_materials))
+        merged["materials"] = combined[:10]
+
+    # 색상: 스크래핑 + AI 병합
+    scrape_colors = scrape_data.get("color_candidates", [])
+    ai_colors = merged.get("colors", [])
+    if scrape_colors:
+        combined = list(dict.fromkeys(scrape_colors + ai_colors))
+        merged["colors"] = combined[:10]
+
+    # 가격: 스크래핑 값 우선 (가장 신뢰)
+    price_candidates = scrape_data.get("price_candidates", [])
+    if price_candidates:
+        merged["price_candidates"] = price_candidates
+        if not merged.get("estimated_price_range"):
+            merged["estimated_price_range"] = {
+                "min": min(price_candidates),
+                "max": max(price_candidates),
+            }
+        merged["_price_source"] = "scraping"
+
+    # 사이즈
+    size_candidates = scrape_data.get("size_candidates", [])
+    if size_candidates:
+        merged["size_options"] = size_candidates[:10]
+
+    # 원산지
+    if scrape_data.get("origin_country"):
+        merged["origin_country"] = scrape_data["origin_country"]
+
+    # 타이틀 힌트 (AI가 제목 못 뽑을 경우 사용)
+    if scrape_data.get("title"):
+        merged["_scraped_title"] = scrape_data["title"]
+
+    # 이미지 목록 추가
+    if scrape_data.get("images"):
+        merged["scraped_images"] = scrape_data["images"]
+
+    # 스크래핑 메타
+    merged["_scrape_source"] = scrape_data.get("_source_url", "")
+    merged["_scraped"] = True
+
+    return merged
 
 
 def cache_stats() -> Dict[str, Any]:
