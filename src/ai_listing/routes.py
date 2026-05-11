@@ -126,7 +126,7 @@ _AI_CREATE_PAGE = """
                 onclick="runAnalysis()" {% if not enabled %}disabled{% endif %}>
           🤖 AI 자동 생성
         </button>
-        <small class="text-muted ms-3">일일 한도: {{ max_daily }}건 / 현재 비용 가드 활성</small>
+        <small class="text-muted ms-3">일일 한도: {{ max_daily }}건 / 현재 비용 가드가 활성</small>
       </div>
     </div>
   </div>
@@ -386,7 +386,7 @@ def api_analyze():
         return jsonify({"ok": True, "listing_id": listing_id, "analysis": analysis})
     except Exception as exc:
         logger.warning("AI 분석 오류: %s", exc)
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return jsonify({"ok": False, "error": "AI 분석 중 오류가 발생했습니다."}), 500
 
 
 @ai_api_bp.post("/generate")
@@ -427,7 +427,7 @@ def api_generate():
         return jsonify({"ok": True, "markets": result})
     except Exception as exc:
         logger.warning("AI 생성 오류: %s", exc)
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return jsonify({"ok": False, "error": "콘텐츠 생성 중 오류가 발생했습니다."}), 500
 
 
 @ai_api_bp.post("/publish")
@@ -464,7 +464,7 @@ def api_publish():
         return jsonify({"ok": True, "results": result.to_dict()})
     except Exception as exc:
         logger.warning("AI 등록 오류: %s", exc)
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return jsonify({"ok": False, "error": "마켓 등록 중 오류가 발생했습니다."}), 500
 
 
 @ai_api_bp.get("/status/<listing_id>")

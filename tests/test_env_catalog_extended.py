@@ -156,7 +156,7 @@ def test_get_api_status_apis_have_category():
             "marketplace", "sourcing", "ai", "payment", "auth",
             "notification", "logistics", "self_mall", "utility", "infra", "cs_bot",
             "ads",
-            # Phase 148
+            # Phase 148+149
             "wholesale", "subscription",
         ]
 

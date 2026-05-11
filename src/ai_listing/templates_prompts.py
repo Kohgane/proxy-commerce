@@ -101,7 +101,7 @@ def build_title_prompt(
     brand = analysis.get("brand") or ""
     forbidden = ", ".join(MARKET_FORBIDDEN_TERMS.get(market, []))
 
-    lang_instruction = "한국어로" if language in ("kr", "both") else "일본語で"
+    lang_instruction = "한국어로" if language in ("kr", "both") else "日本語で"
 
     return (
         f"{lang_instruction} {market} 마켓용 상품 제목을 생성하세요.\n"
@@ -128,7 +128,7 @@ def build_description_prompt(
     materials = ", ".join(analysis.get("materials", []))
     keywords = ", ".join(analysis.get("keywords", []))
 
-    lang_instruction = "한국어로" if language in ("kr", "both") else "일本語で"
+    lang_instruction = "한국어로" if language in ("kr", "both") else "日本語で"
 
     return (
         f"{lang_instruction} {market} 마켓용 상품 상세 설명을 500자 이내로 생성하세요.\n"
@@ -145,7 +145,7 @@ def build_tags_prompt(analysis: dict, language: str = "kr") -> str:
     """태그/키워드 최적화 프롬프트."""
     keywords = ", ".join(analysis.get("keywords", []))
     category = analysis.get("category", "")
-    lang_instruction = "한국어로" if language in ("kr", "both") else "일本語で"
+    lang_instruction = "한국어로" if language in ("kr", "both") else "日本語で"
     return (
         f"{lang_instruction} 상품 태그 10개를 쉼표로 구분해서 반환하세요.\n"
         f"- 카테고리: {category}\n"
