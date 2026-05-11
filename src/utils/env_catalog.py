@@ -625,6 +625,25 @@ API_REGISTRY: list = [
         category=ApiCategory.NOTIFICATION,
         optional=True,
     ),
+    # Phase 149 — AI 상품등록 자동화
+    ApiKey(
+        name="ai_listing",
+        env_vars=[
+            "AI_LISTING_ENABLED",
+            "AI_LISTING_VISION_PROVIDER",
+            "AI_LISTING_VISION_MODEL",
+            "AI_LISTING_MAX_IMAGES_PER_REQUEST",
+            "AI_LISTING_MAX_DAILY_PER_USER",
+            "AI_LISTING_CACHE_TTL_HOURS",
+            "AI_LISTING_MARKETS_DEFAULT",
+            "AI_LISTING_LANG_DEFAULT",
+            "AI_LISTING_PRICE_MODE",
+        ],
+        purpose="AI 상품등록 자동화 — Vision 분석 + 멀티마켓 동시 등록 (Phase 149)",
+        docs_url="https://kohganepercentiii.com/docs/operations/AI_LISTING.md",
+        category=ApiCategory.AI,
+        optional=True,
+    ),
 ]
 
 

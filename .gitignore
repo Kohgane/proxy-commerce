@@ -19,3 +19,5 @@ data/job_queue.jsonl
 data/job_dead_letter.jsonl
 data/push_subscriptions.jsonl
 data/omni_sync_log.jsonl
+# Phase 149: 런타임 캐시
+data/analytics_cache.jsonl

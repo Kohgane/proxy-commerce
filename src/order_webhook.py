@@ -46,6 +46,8 @@ _AUTO_BLUEPRINT_CANDIDATE_MODULES = (
     "src.api.status_routes",
     "src.discovery.routes",
     "src.bookmarklet.routes",
+    # Phase 149: AI 상품등록 자동화
+    "src.ai_listing.routes",
 )
 
 
@@ -1005,6 +1007,14 @@ else:
 
 _auto_registered_blueprints = _auto_register_blueprints(app)
 logger.info("자동 Blueprint 등록 완료: %d개", len(_auto_registered_blueprints))
+
+# Phase 149: AI 상품등록 API Blueprint (/api/ai-listing/*) 등록
+try:
+    from .ai_listing.routes import ai_api_bp as _ai_api_bp
+    app.register_blueprint(_ai_api_bp)
+    logger.info("AI listing API Blueprint 등록 완료 (/api/ai-listing/)")
+except Exception as _ai_api_bp_exc:
+    logger.warning("AI listing API Blueprint 등록 실패: %s", _ai_api_bp_exc)
 
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
