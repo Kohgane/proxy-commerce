@@ -99,10 +99,11 @@ def client(app):
         yield c
 
 
-def test_landing_page_footer_shows_phase_148(client):
-    """랜딩 페이지 푸터에 'Phase 148'이 표시되어야 한다."""
+def test_landing_page_footer_shows_current_phase(client):
+    """랜딩 페이지 푸터에 현재 Phase가 표시되어야 한다."""
+    from src.version import CURRENT_PHASE
     resp = client.get("/")
     html = resp.get_data(as_text=True)
-    assert "Phase 148" in html, (
-        f"랜딩 페이지 푸터에 'Phase 148'이 표시되지 않습니다. 실제 내용 (일부): {html[:500]}"
+    assert f"Phase {CURRENT_PHASE}" in html, (
+        f"랜딩 페이지 푸터에 'Phase {CURRENT_PHASE}'이 표시되지 않습니다. 실제 내용 (일부): {html[:500]}"
     )

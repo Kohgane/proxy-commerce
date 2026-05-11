@@ -176,9 +176,12 @@ class ProductSubscriptionManager:
                 next_dt = _parse_dt(s.next_billing_at)
                 if next_dt:
                     s.next_billing_at = (next_dt + timedelta(days=s.cycle.days)).isoformat()
-                s.skip_count += 1
-                self._save(subs)
-                return True
+                    s.skip_count += 1
+                    self._save(subs)
+                    return True
+                else:
+                    logger.error("skip_next: next_billing_at 날짜 파싱 실패 — subscription_id=%s", subscription_id)
+                    return False
         return False
 
     def list_for_user(self, user_id: str) -> List[ProductSubscription]:

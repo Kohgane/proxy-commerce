@@ -545,10 +545,15 @@ def diagnostics_vapid_generate():
         pub = keys.get("public", "")
         priv = keys.get("private", "")
         # Private Key 마스킹: 앞 4 + ... + 뒤 4 (보안: 평문 Private Key는 UI에 노출하지 않음)
-        if len(priv) >= 8:
+        # VAPID private key는 통상 87+ 문자 — 16자 미만은 생성 오류로 처리
+        if len(priv) >= 16:
             priv_masked = priv[:4] + "..." + priv[-4:]
+        elif priv.startswith("("):
+            # 생성 불가 stub 메시지
+            priv_masked = priv
         else:
-            priv_masked = "****"
+            logger.warning("VAPID Private Key가 비정상적으로 짧습니다 (length=%d)", len(priv))
+            priv_masked = "⚠️ 키 생성 오류 — 서버 로그 확인"
         already = vapid_configured()
         hint = keys.get("hint", "")
         # Private Key를 서버 로그에만 기록 (운영자가 직접 서버 로그에서 확인)
