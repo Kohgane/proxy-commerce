@@ -14,13 +14,17 @@ from __future__ import annotations
 import logging
 import os
 import pathlib
-import re
+import time
 
 from flask import Blueprint, current_app, redirect, render_template_string, request, session
+
+from src.utils.fstring_guard import FSTRING_BACKSLASH_IN_EXPR_PATTERN
 
 MAX_DISPLAY_ITEMS = 200
 
 logger = logging.getLogger(__name__)
+_FSTRING_SCAN_CACHE_TTL_SEC = 300
+_fstring_scan_cache = {"checked_at": 0.0, "offenders": 0}
 
 admin_panel_bp = Blueprint("admin_panel", __name__, url_prefix="/admin")
 
@@ -1392,15 +1396,21 @@ def _build_sidebar_nav_status() -> dict:
 
 
 def _count_fstring_backslash_offenders() -> int:
-    pattern = re.compile(r"""f["'][^"\n]*\{[^}\n]*\\[^}\n]*\}[^"\n]*["']""")
+    now = time.time()
+    if now - _fstring_scan_cache["checked_at"] < _FSTRING_SCAN_CACHE_TTL_SEC:
+        return int(_fstring_scan_cache["offenders"])
+
     src_root = pathlib.Path(__file__).resolve().parents[1]
     offenders = 0
     for path in src_root.rglob("*.py"):
         try:
             lines = path.read_text(encoding="utf-8").splitlines()
-        except Exception:
+        except (OSError, UnicodeDecodeError) as exc:
+            logger.debug("f-string 검사 중 파일 읽기 실패(%s): %s", path, exc)
             continue
-        offenders += sum(1 for line in lines if pattern.search(line))
+        offenders += sum(1 for line in lines if FSTRING_BACKSLASH_IN_EXPR_PATTERN.search(line))
+    _fstring_scan_cache["checked_at"] = now
+    _fstring_scan_cache["offenders"] = offenders
     return offenders
 
 
@@ -2348,7 +2358,7 @@ _DIAGNOSTICS_TEMPLATE = """
       <div class="card-body">
         <ul class="mb-3">
           <li>views.py f-string SyntaxError: {% if hotfix_1481_status.fstring_fixed %}✅ 수정{% else %}❌ 미해결{% endif %}</li>
-          <li>사이드바 깨진 링크: {{ hotfix_1481_status.sidebar_broken_links }}건{% if hotfix_1481_status.sidebar_broken_links == 0 %} (이전 24건) ✅{% endif %}</li>
+          <li>사이드바 깨진 링크: {{ hotfix_1481_status.sidebar_broken_links }}건{% if hotfix_1481_status.sidebar_broken_links == 0 %} ✅{% endif %}</li>
           <li>자동 blueprint 등록: {% if hotfix_1481_status.auto_blueprint_register_enabled %}활성{% else %}비활성{% endif %} ({{ hotfix_1481_status.auto_blueprint_registered_count }}개 자동 등록)</li>
           <li>f-string 백슬래시 검출: {{ hotfix_1481_status.fstring_backslash_offenders }}건{% if hotfix_1481_status.fstring_backslash_offenders == 0 %} ✅{% endif %}</li>
         </ul>

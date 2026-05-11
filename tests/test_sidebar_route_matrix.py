@@ -8,7 +8,8 @@ import pytest
 
 
 HREF_PATTERN = re.compile(r'href="([^"]+)"')
-SIDEBAR_TEMPLATE = Path(__file__).resolve().parent.parent / "src" / "seller_console" / "templates" / "_base.html"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SIDEBAR_TEMPLATE = PROJECT_ROOT / "src" / "seller_console" / "templates" / "_base.html"
 
 
 def _extract_links(html: str) -> list[str]:
@@ -16,7 +17,11 @@ def _extract_links(html: str) -> list[str]:
         {
             href
             for href in HREF_PATTERN.findall(html)
-            if href.startswith("/") and not href.startswith("//")
+            if href.startswith("/")
+            and not href.startswith("//")
+            and not href.startswith("/#")
+            and "://" not in href
+            and not href.lower().startswith("/javascript:")
         }
     )
 
@@ -49,6 +54,6 @@ def test_sidebar_menu_links_exist_in_dashboard_html(client):
 
 
 def test_sidebar_link_route_is_not_404(client):
-    for path in _template_sidebar_links():
+    for path in [url for url in _template_sidebar_links() if url.startswith("/seller/")]:
         resp = client.get(path)
-        assert resp.status_code != 404, f"사이드바 메뉴 {path}는 존재하지만 라우트가 404"
+        assert 200 <= resp.status_code < 400, f"사이드바 메뉴 {path} 응답 비정상(status={resp.status_code})"

@@ -3,7 +3,7 @@ import os
 import sys
 import time
 
-from flask import Flask, request, jsonify, redirect, render_template
+from flask import Flask, Blueprint, request, jsonify, redirect, render_template
 from flask_cors import CORS
 
 from .vendors.shopify_client import verify_webhook
@@ -69,17 +69,22 @@ def _auto_register_blueprints(flask_app: Flask, module_names: tuple[str, ...] | 
     for module_name in module_names or _AUTO_BLUEPRINT_CANDIDATE_MODULES:
         try:
             mod = importlib.import_module(module_name)
-        except Exception as exc:
+        except SyntaxError as exc:
+            logger.error("자동 등록 후보 구문 오류(%s): %s", module_name, exc)
+            raise
+        except (ImportError, ModuleNotFoundError) as exc:
             logger.debug("자동 등록 후보 import 실패(%s): %s", module_name, exc)
             continue
         bp_obj = getattr(mod, "bp", None) or getattr(mod, "blueprint", None)
-        if bp_obj is None or bp_obj.name in flask_app.blueprints:
+        if not isinstance(bp_obj, Blueprint):
+            continue
+        if bp_obj.name in flask_app.blueprints:
             continue
         try:
             flask_app.register_blueprint(bp_obj)
             registered.append(bp_obj.name)
             logger.info("[auto-register] %s (%s)", bp_obj.name, module_name)
-        except Exception as exc:
+        except (ValueError, AssertionError) as exc:
             logger.warning("[auto-register] Blueprint 등록 실패(%s): %s", module_name, exc)
     flask_app.config["AUTO_REGISTERED_BLUEPRINTS"] = registered
     return registered
