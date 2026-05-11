@@ -36,7 +36,7 @@ class UnifiedInbox:
         return "normal"
 
     def push(self, message: UnifiedMessage) -> UnifiedMessage:
-        if not message.priority:
+        if not message.priority or message.priority == "normal":
             message.priority = self.classify_priority(message.body)
         if not message.received_at:
             message.received_at = datetime.now(timezone.utc).isoformat()

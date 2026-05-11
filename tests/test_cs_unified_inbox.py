@@ -7,8 +7,8 @@ from src.cs.unified_inbox import UnifiedInbox, UnifiedMessage
 
 def test_unified_inbox_priority_and_filter():
     inbox = UnifiedInbox()
-    inbox.push(UnifiedMessage(message_id="m1", channel="email", body="환불 요청", priority="", status="open"))
-    inbox.push(UnifiedMessage(message_id="m2", channel="kakao", body="배송 문의", priority="", status="resolved"))
+    inbox.push(UnifiedMessage(message_id="m1", channel="email", body="환불 요청", status="open"))
+    inbox.push(UnifiedMessage(message_id="m2", channel="kakao", body="배송 문의", status="resolved"))
 
     high = inbox.list_messages(priority="high")
     assert len(high) == 1

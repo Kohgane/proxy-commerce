@@ -2858,7 +2858,7 @@ def listing_history():
     image_success_pct = stats.get("image_success_pct", 0)
 
     body = Markup(
-        "<h4 class='mb-3'>📦 등록 이력 (Phase 144)</h4>"
+        "<h4 class='mb-3'>📤 등록 이력 (Phase 144)</h4>"
         "<div class='row mb-4'>"
         "  <div class='col-md-3'>"
         "    <div class='card text-center'>"
@@ -2886,7 +2886,7 @@ def listing_history():
         "  <a href='/seller/media/queue' class='btn btn-outline-success btn-sm'>🖼️ 이미지 큐</a>"
         "</div>"
     )
-    return _render_seller_page("📦 등록 이력", body, page="listing_history")
+    return _render_seller_page("📤 등록 이력", body, page="listing_history")
 
 
 # ---------------------------------------------------------------------------
