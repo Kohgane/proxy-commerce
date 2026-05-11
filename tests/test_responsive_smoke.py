@@ -34,10 +34,12 @@ def test_base_html_has_drawer_sidebar():
 
 def test_seller_css_has_mobile_drawer():
     """seller.css에 모바일 drawer 스타일이 있어야 한다."""
+    import re
     with open("src/seller_console/static/seller.css", encoding="utf-8") as f:
         content = f.read()
     assert ".sidebar.show" in content
-    assert "max-width: 768px" in content or "max-width:768px" in content
+    # max-width 768px (allow whitespace variations)
+    assert re.search(r"max-width\s*:\s*768px", content)
 
 
 def test_seller_css_has_min_touch_target():

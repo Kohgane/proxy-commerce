@@ -546,12 +546,13 @@ def admin_jobs():
             return "<tr><td colspan='6' class='text-center text-muted'>없음</td></tr>"
         rows = ""
         for j in jobs:
+            badge_class = "bg-primary" if j.status == "running" else "bg-secondary"
             rows += (
                 f"<tr>"
                 f"<td><code class='small'>{j.job_id[:12]}...</code></td>"
                 f"<td><span class='badge bg-secondary'>{j.category}</span></td>"
                 f"<td>{j.priority}</td>"
-                f"<td><span class='badge {'bg-primary' if j.status=='running' else 'bg-secondary'}'>{j.status}</span></td>"
+                f"<td><span class='badge {badge_class}'>{j.status}</span></td>"
                 f"<td class='small text-muted'>{j.created_at[:19]}</td>"
                 f"<td class='small text-muted'>{j.worker_id or '-'}</td>"
                 f"</tr>"

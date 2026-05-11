@@ -3374,7 +3374,7 @@ def me_notifications():
             "<div class='card-body'>"
             "<div id='pushStatus' class='mb-2 text-muted small'>푸시 구독 상태 확인 중...</div>"
             "<button id='subscribeBtn' class='btn btn-primary me-2' style='min-height:44px' onclick='subscribePush()'>🔔 구독</button>"
-            "<button id='unsubscribeBtn' class='btn btn-outline-secondary' style='min-height:44px' onclick='unsubscribePush()' style='display:none'>🔕 구독 해제</button>"
+            "<button id='unsubscribeBtn' class='btn btn-outline-secondary' style='min-height:44px;display:none' onclick='unsubscribePush()'>🔕 구독 해제</button>"
             "</div>"
             "</div>"
             "<div class='card mb-3'>"

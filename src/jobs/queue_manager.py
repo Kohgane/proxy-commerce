@@ -109,10 +109,10 @@ class FileJobQueue:
                     if line:
                         try:
                             jobs.append(Job.from_dict(json.loads(line)))
-                        except Exception:
-                            pass
-        except OSError:
-            pass
+                        except Exception as exc:
+                            logger.debug("잡 큐 라인 파싱 실패 (%s): %s", path, exc)
+        except OSError as exc:
+            logger.warning("잡 큐 읽기 실패 (%s): %s", path, exc)
         return jobs
 
     def _write(self, path: str, jobs: list[Job]) -> None:

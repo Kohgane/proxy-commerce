@@ -162,7 +162,7 @@ def _build_adapters() -> list[ChannelStockAdapter]:
 class OmniSyncLog:
     def __init__(self, path: str = _OMNI_LOG_PATH):
         self._path = path
-        os.makedirs(os.path.dirname(self._path) if os.path.dirname(self._path) else ".", exist_ok=True)
+        os.makedirs(os.path.dirname(self._path) or ".", exist_ok=True)
 
     def append(self, event: OmniSyncEvent) -> None:
         try:

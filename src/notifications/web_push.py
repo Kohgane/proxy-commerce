@@ -98,7 +98,7 @@ class PushSubscriptionStore:
 
     def __init__(self, path: str = _SUBSCRIPTIONS_PATH):
         self._path = path
-        os.makedirs(os.path.dirname(self._path) if os.path.dirname(self._path) else ".", exist_ok=True)
+        os.makedirs(os.path.dirname(self._path) or ".", exist_ok=True)
 
     def _load(self) -> list[dict]:
         if not os.path.exists(self._path):
