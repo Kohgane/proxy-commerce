@@ -16,102 +16,63 @@
       <small class="text-secondary" style="font-size:0.7rem;">kohganepercentiii.com</small>
     </a>
     <ul class="nav flex-column gap-1 flex-grow-1">
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'dashboard' %}text-white fw-semibold{% endif %}"
-           href="/seller/dashboard">📊 대시보드</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'collect' %}text-white fw-semibold{% endif %}"
-           href="/seller/collect">🔍 수동 수집기</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'pricing' %}text-white fw-semibold{% endif %}"
-           href="/seller/pricing">💰 마진 계산기</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'market_status' %}text-white fw-semibold{% endif %}"
-           href="/seller/markets">🏪 마켓 현황</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'catalog' %}text-white fw-semibold{% endif %}"
-           href="/seller/catalog">📦 상품 카탈로그</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'orders' %}text-white fw-semibold{% endif %}"
-           href="/seller/orders">🛍 주문 관리</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'notifications' %}text-white fw-semibold{% endif %}"
-           href="/seller/notifications">🔔 알림 설정</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'messaging' %}text-white fw-semibold{% endif %}"
-           href="/seller/messaging">💬 고객 메시징</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'cs_bot' %}text-white fw-semibold{% endif %}"
-           href="/seller/cs/inbox">🤖 CS 자동응답</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'api_status' %}text-white fw-semibold{% endif %}"
-           href="/seller/api-status">🔑 API 상태</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'me' %}text-white fw-semibold{% endif %}"
-           href="/seller/me">👤 마이페이지</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'me' %}text-white fw-semibold{% endif %}"
-           href="/seller/me/tokens">🔐 API 토큰</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'bookmarklet' %}text-white fw-semibold{% endif %}"
-           href="/seller/bookmarklet">📌 북마클릿</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'discovery' %}text-white fw-semibold{% endif %}"
-           href="/seller/discovery">🔍 Discovery</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'collect_history' %}text-white fw-semibold{% endif %}"
-           href="/seller/collect/history">📦 수집 이력</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'pricing_rules' %}text-white fw-semibold{% endif %}"
-           href="/seller/pricing/rules">💰 가격 정책 룰</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'pricing_competitors' %}text-white fw-semibold{% endif %}"
-           href="/seller/pricing/competitors">🕵️ 경쟁사</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'pricing_fx_impact' %}text-white fw-semibold{% endif %}"
-           href="/seller/pricing/fx-impact">💱 환율 영향</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'analytics' %}text-white fw-semibold{% endif %}"
-           href="/seller/analytics">📈 BI 분석</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'sourcing_watches' %}text-white fw-semibold{% endif %}"
-           href="/seller/sourcing/watches">🔎 소싱 watches</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'sourcing_candidates' %}text-white fw-semibold{% endif %}"
-           href="/seller/sourcing/candidates">📥 후보 큐</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'listing_history' %}text-white fw-semibold{% endif %}"
-           href="/seller/listing/history">📦 등록 이력</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'media_queue' %}text-white fw-semibold{% endif %}"
-           href="/seller/media/queue">🖼️ 이미지 큐</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link text-secondary {% if page == 'ads_campaigns' %}text-white fw-semibold{% endif %}"
-           href="/seller/ads/campaigns">📣 광고 캠페인</a>
-      </li>
+      {% if sidebar_grouped %}
+      <li class="text-secondary small mt-2 mb-1">운영</li>
+      {% endif %}
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'dashboard' %}text-white fw-semibold{% endif %}" href="/seller/dashboard">📊 대시보드</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'collect' %}text-white fw-semibold{% endif %}" href="/seller/manual-collect">🔍 수동 수집기</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'pricing' %}text-white fw-semibold{% endif %}" href="/seller/margin">💰 마진 계산기</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'market_status' %}text-white fw-semibold{% endif %}" href="/seller/markets">🏪 마켓 현황</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'orders' %}text-white fw-semibold{% endif %}" href="/seller/orders">🚚 주문 관리</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'orders_auto' %}text-white fw-semibold{% endif %}" href="/seller/orders/auto">📦 주문 자동 처리</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'inventory_reorder' %}text-white fw-semibold{% endif %}" href="/seller/inventory/reorder">📦 자동 리오더</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'notifications' %}text-white fw-semibold{% endif %}" href="/seller/notifications">🔔 알림 설정</a></li>
+
+      {% if sidebar_grouped %}
+      <li class="text-secondary small mt-2 mb-1">카탈로그</li>
+      {% endif %}
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'catalog' %}text-white fw-semibold{% endif %}" href="/seller/catalog">📦 상품 카탈로그</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'sourcing_watches' %}text-white fw-semibold{% endif %}" href="/seller/sourcing/watches">🔎 소싱 watches</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'sourcing_candidates' %}text-white fw-semibold{% endif %}" href="/seller/sourcing/candidates">📥 후보 큐</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'listing_history' %}text-white fw-semibold{% endif %}" href="/seller/listing/history">📤 등록 이력</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'media_queue' %}text-white fw-semibold{% endif %}" href="/seller/media/queue">🖼️ 이미지 큐</a></li>
+
+      {% if sidebar_grouped %}
+      <li class="text-secondary small mt-2 mb-1">가격/경쟁</li>
+      {% endif %}
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'pricing_rules' %}text-white fw-semibold{% endif %}" href="/seller/pricing/rules">💵 가격 정책 룰</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'pricing_competitors' %}text-white fw-semibold{% endif %}" href="/seller/pricing/competitors">🕵️ 경쟁사</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'pricing_fx_impact' %}text-white fw-semibold{% endif %}" href="/seller/pricing/fx-impact">🔄 환율 영향</a></li>
+
+      {% if sidebar_grouped %}
+      <li class="text-secondary small mt-2 mb-1">마케팅</li>
+      {% endif %}
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'marketing_campaigns' %}text-white fw-semibold{% endif %}" href="/seller/marketing/campaigns">🎟️ 할인 캠페인</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'ads_campaigns' %}text-white fw-semibold{% endif %}" href="/seller/ads/campaigns">📣 광고 캠페인</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'ads_keywords' %}text-white fw-semibold{% endif %}" href="/seller/ads/keywords">🎯 키워드 최적화</a></li>
+
+      {% if sidebar_grouped %}
+      <li class="text-secondary small mt-2 mb-1">분석</li>
+      {% endif %}
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'analytics' %}text-white fw-semibold{% endif %}" href="/seller/analytics">📈 BI 분석</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'collect_history' %}text-white fw-semibold{% endif %}" href="/seller/collect-history">📜 수집 이력</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'shipping_tracking' %}text-white fw-semibold{% endif %}" href="/seller/shipping/tracking">🚚 배송 모니터링</a></li>
+
+      {% if sidebar_grouped %}
+      <li class="text-secondary small mt-2 mb-1">CS</li>
+      {% endif %}
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'messaging' %}text-white fw-semibold{% endif %}" href="/seller/cs/messaging">💬 고객 메시징</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'cs_bot' %}text-white fw-semibold{% endif %}" href="/seller/cs/autoreply">🤖 CS 자동응답</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'cs_bot' %}text-white fw-semibold{% endif %}" href="/seller/cs/inbox">📥 통합 인박스</a></li>
+
+      {% if sidebar_grouped %}
+      <li class="text-secondary small mt-2 mb-1">설정</li>
+      {% endif %}
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'api_status' %}text-white fw-semibold{% endif %}" href="/seller/api/status">🔑 API 상태</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'me' %}text-white fw-semibold{% endif %}" href="/seller/me">👤 마이페이지</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'me' %}text-white fw-semibold{% endif %}" href="/seller/api/tokens">🔐 API 토큰</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'bookmarklet' %}text-white fw-semibold{% endif %}" href="/seller/bookmarklet">📌 북마클릿</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'discovery' %}text-white fw-semibold{% endif %}" href="/seller/discovery">🔎 Discovery</a></li>
     </ul>
     <div class="mt-auto pt-3 border-top border-secondary">
       {% if session is defined and session.get('user_role') == 'admin' %}

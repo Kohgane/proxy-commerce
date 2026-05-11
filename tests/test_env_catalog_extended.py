@@ -61,6 +61,14 @@ def test_api_registry_has_new_keys():
     assert not missing, f"누락된 키: {missing}"
 
 
+def test_phase145_env_keys_registered():
+    from src.utils.env_catalog import API_REGISTRY
+
+    names = {k.name for k in API_REGISTRY}
+    for name in {"sidebar_grouping", "order_auto_processing", "shipping_tracker", "cs_unified_inbox"}:
+        assert name in names
+
+
 def test_api_key_has_category():
     """모든 ApiKey 인스턴스에 category 필드 존재."""
     from src.utils.env_catalog import API_REGISTRY, ApiCategory
