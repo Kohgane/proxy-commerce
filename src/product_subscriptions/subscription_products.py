@@ -218,9 +218,12 @@ class ProductSubscriptionManager:
         active = [s for s in subs if s.status == SubscriptionStatus.ACTIVE]
         now = datetime.now(timezone.utc)
         week_start = now - timedelta(days=7)
-        billed_this_week = [
-            s for s in subs if s.last_billed_at and _parse_dt(s.last_billed_at) and _parse_dt(s.last_billed_at) >= week_start  # type: ignore[operator]
-        ]
+        billed_this_week = []
+        for s in subs:
+            if s.last_billed_at:
+                billed_dt = _parse_dt(s.last_billed_at)
+                if billed_dt and billed_dt >= week_start:
+                    billed_this_week.append(s)
         failed = [s for s in active if s.payment_fail_count > 0]
         cancelled_30d = [
             s for s in subs

@@ -544,22 +544,26 @@ def diagnostics_vapid_generate():
         keys = generate_vapid_keys()
         pub = keys.get("public", "")
         priv = keys.get("private", "")
-        # 마스킹: 앞 4 + ... + 뒤 4
+        # Private Key 마스킹: 앞 4 + ... + 뒤 4 (보안: 평문 Private Key는 UI에 노출하지 않음)
         if len(priv) >= 8:
             priv_masked = priv[:4] + "..." + priv[-4:]
         else:
             priv_masked = "****"
         already = vapid_configured()
         hint = keys.get("hint", "")
+        # Private Key를 서버 로그에만 기록 (운영자가 직접 서버 로그에서 확인)
+        logger.info("VAPID 키 생성 완료 — Public: %s | Private: [서버 로그 전용]", pub)
+        logger.info("VAPID PRIVATE KEY (서버 로그): %s", priv)
         msg = (
             f"<div class='alert alert-{'warning' if already else 'success'}'>"
             + (f"⚠️ 이미 VAPID 키가 등록되어 있습니다. 교체하면 모든 사용자가 재구독해야 합니다.<br>" if already else "")
             + f"<strong>Public Key:</strong> <code>{pub}</code><br>"
             + f"<strong>Private Key (마스킹):</strong> <code>{priv_masked}</code><br>"
-            + f"<strong>실제 Private Key:</strong> <code>{priv}</code><br>"
+            + "<small class='text-muted'>⚠️ 보안 정책에 따라 Private Key는 서버 로그에서 확인하세요. "
+            + "Render Dashboard → Logs → 가장 최근 VAPID 생성 로그를 참조하세요.</small><br>"
             + f"<br>Render 환경변수에 추가하세요:<br>"
             + f"<code>WEB_PUSH_VAPID_PUBLIC={pub}</code><br>"
-            + f"<code>WEB_PUSH_VAPID_PRIVATE={priv}</code>"
+            + f"<code>WEB_PUSH_VAPID_PRIVATE=&lt;서버 로그에서 복사&gt;</code>"
             + (f"<br><small class='text-muted'>{hint}</small>" if hint else "")
             + "</div>"
         )

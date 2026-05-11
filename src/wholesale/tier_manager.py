@@ -126,7 +126,7 @@ class WholesaleTierManager:
         if qty < tier.moq:
             raise ValueError(f"최소 주문 수량(MOQ)은 {tier.moq}개 이상이어야 합니다.")
         multiplier = tier.price_multiplier(qty)
-        return round(base_price * multiplier, 0)
+        return int(base_price * multiplier)
 
     def moq_ok(self, level: PriceLevel | str, qty: int) -> bool:
         """MOQ 충족 여부."""

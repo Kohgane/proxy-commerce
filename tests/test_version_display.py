@@ -18,10 +18,16 @@ def test_current_phase_is_integer():
     assert CURRENT_PHASE > 0
 
 
-def test_current_phase_is_148():
-    """CURRENT_PHASE가 148이어야 한다 (Phase 148 PR 기준)."""
+def test_current_phase_is_at_least_148():
+    """CURRENT_PHASE가 148 이상이어야 한다 (Phase 148 이후 회귀 방지)."""
     from src.version import CURRENT_PHASE
-    assert CURRENT_PHASE == 148
+    assert CURRENT_PHASE >= 148, f"CURRENT_PHASE({CURRENT_PHASE})가 148 미만입니다"
+
+
+def test_get_current_phase_matches_constant():
+    """get_current_phase()가 CURRENT_PHASE 상수와 일치해야 한다."""
+    from src.version import CURRENT_PHASE, get_current_phase
+    assert get_current_phase() == CURRENT_PHASE
 
 
 def test_get_current_phase_returns_int():
