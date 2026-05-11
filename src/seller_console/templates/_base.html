@@ -57,6 +57,7 @@
       <li class="nav-item"><a class="nav-link text-secondary {% if page == 'analytics' %}text-white fw-semibold{% endif %}" href="/seller/analytics">📈 BI 분석</a></li>
       <li class="nav-item"><a class="nav-link text-secondary {% if page == 'collect_history' %}text-white fw-semibold{% endif %}" href="/seller/collect-history">📜 수집 이력</a></li>
       <li class="nav-item"><a class="nav-link text-secondary {% if page == 'shipping_tracking' %}text-white fw-semibold{% endif %}" href="/seller/shipping/tracking">🚚 배송 모니터링</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'settlement' %}text-white fw-semibold{% endif %}" href="/seller/settlement">💰 정산 리포트</a></li>
 
       {% if sidebar_grouped %}
       <li class="text-secondary small mt-2 mb-1">CS</li>
@@ -64,6 +65,7 @@
       <li class="nav-item"><a class="nav-link text-secondary {% if page == 'messaging' %}text-white fw-semibold{% endif %}" href="/seller/cs/messaging">💬 고객 메시징</a></li>
       <li class="nav-item"><a class="nav-link text-secondary {% if page == 'cs_bot' %}text-white fw-semibold{% endif %}" href="/seller/cs/autoreply">🤖 CS 자동응답</a></li>
       <li class="nav-item"><a class="nav-link text-secondary {% if page == 'cs_bot' %}text-white fw-semibold{% endif %}" href="/seller/cs/inbox">📥 통합 인박스</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'returns_inbox' %}text-white fw-semibold{% endif %}" href="/seller/returns/inbox">↩️ 반품/환불</a></li>
 
       {% if sidebar_grouped %}
       <li class="text-secondary small mt-2 mb-1">설정</li>
@@ -84,49 +86,7 @@
 
   <!-- 메인 콘텐츠 -->
   <div class="flex-grow-1 d-flex flex-column" style="background:#f5f7fa;">
-    <!-- 상단 헤더 (Phase 133: 사용자 아바타 + 드롭다운) -->
-    <header class="d-flex justify-content-end align-items-center px-4 py-2 bg-white border-bottom shadow-sm" style="min-height:52px;">
-      {% set _user_id = session.get('user_id') if session is defined else None %}
-      {% set _user_name = session.get('user_name') if session is defined else None %}
-      {% set _user_email = session.get('user_email') if session is defined else None %}
-      {% set _user_role = session.get('user_role') if session is defined else None %}
-      {% set _logged_in = (_user_id or _user_email) %}
-      {% if _logged_in %}
-        <div class="dropdown">
-          <button class="btn btn-link text-decoration-none p-0 d-flex align-items-center gap-2"
-                  data-bs-toggle="dropdown" aria-expanded="false">
-            <div class="rounded-circle bg-primary d-flex align-items-center justify-content-center text-white fw-bold"
-                 style="width:32px;height:32px;font-size:0.85rem;">
-              {{ (_user_name or '?')[0].upper() }}
-            </div>
-            <span class="text-dark small">{{ _user_email or _user_name or '' }}</span>
-            {% if _user_role == 'admin' %}
-              <span class="badge bg-danger" style="font-size:0.65rem;">관리자</span>
-            {% else %}
-              <span class="badge bg-primary" style="font-size:0.65rem;">셀러</span>
-            {% endif %}
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end">
-            <li><a class="dropdown-item" href="/seller/me">👤 마이페이지</a></li>
-            <li><hr class="dropdown-divider"></li>
-            <li>
-              <form method="post" action="/auth/logout" class="px-2">
-                <button type="submit" class="btn btn-outline-secondary btn-sm w-100">🚪 로그아웃</button>
-              </form>
-            </li>
-          </ul>
-        </div>
-      {% else %}
-        <div class="d-flex gap-2">
-          <a href="/auth/login" class="btn btn-outline-primary btn-sm">🔐 OAuth 로그인</a>
-          <a href="/auth/magic-link" class="btn btn-outline-secondary btn-sm">📧 이메일 로그인</a>
-          {% if diagnostic_reveal_enabled %}
-          <a href="/auth/diagnostic-token/issue?reveal_safe=1&format=html" class="btn btn-warning btn-sm">🆘 비상 진입 (운영자)</a>
-          {% endif %}
-          <a href="/auth/signup" class="btn btn-primary btn-sm">가입</a>
-        </div>
-      {% endif %}
-    </header>
+    {% include "partials/topnav.html" %}
 
     <main class="flex-grow-1 p-4">
       {% block content %}{% endblock %}
