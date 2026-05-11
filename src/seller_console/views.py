@@ -3207,7 +3207,7 @@ def settlement_report():
     """월별 정산 리포트 화면 (Phase 146)."""
     from src.settlement.reporter import SettlementReporter
 
-    month = (request.args.get("month") or datetime.now().strftime("%Y-%m")).strip()
+    month = (request.args.get("month") or datetime.now(timezone.utc).strftime("%Y-%m")).strip()
     reporter = SettlementReporter()
     report = reporter.monthly_report(month, rows=[])
     channels = "".join(
@@ -3238,7 +3238,7 @@ def settlement_export_csv():
     """정산 CSV 내보내기."""
     from src.settlement.reporter import SettlementReporter
 
-    month = (request.args.get("month") or datetime.now().strftime("%Y-%m")).strip()
+    month = (request.args.get("month") or datetime.now(timezone.utc).strftime("%Y-%m")).strip()
     csv_text = SettlementReporter().export_csv(month, rows=[])
     return Response(
         csv_text,
@@ -3252,7 +3252,7 @@ def settlement_export_xlsx():
     """정산 Excel 내보내기(XML Spreadsheet)."""
     from src.settlement.reporter import SettlementReporter
 
-    month = (request.args.get("month") or datetime.now().strftime("%Y-%m")).strip()
+    month = (request.args.get("month") or datetime.now(timezone.utc).strftime("%Y-%m")).strip()
     xml_text = SettlementReporter().export_excel_xml(month, rows=[])
     return Response(
         xml_text,

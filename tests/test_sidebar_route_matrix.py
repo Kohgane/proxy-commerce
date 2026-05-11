@@ -60,10 +60,10 @@ def client(app):
 def test_sidebar_menu_links_exist_in_dashboard_html(client):
     html = client.get("/seller/dashboard").get_data(as_text=True)
     for url in SIDEBAR_LINKS:
-        assert url in html, f"사이드바 메뉴에 {url} 누락"
+        assert url in html, f"사이드바 메뉴에 {url}이 누락"
 
 
 @pytest.mark.parametrize("path", SIDEBAR_LINKS)
 def test_sidebar_link_route_is_not_404(client, path):
     resp = client.get(path)
-    assert resp.status_code != 404, f"사이드바 메뉴 {path} 는 존재하지만 라우트가 404"
+    assert resp.status_code != 404, f"사이드바 메뉴 {path}는 존재하지만 라우트가 404"
