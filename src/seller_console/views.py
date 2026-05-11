@@ -31,7 +31,7 @@ from difflib import SequenceMatcher
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 
-from flask import Blueprint, abort, jsonify, redirect, render_template, request, session, url_for
+from flask import Blueprint, abort, jsonify, redirect, render_template, render_template_string, request, session, url_for
 
 logger = logging.getLogger(__name__)
 _CS_FAQ_SUPPORTED_LOCALES = {"ko", "ja", "en", "zh"}
@@ -56,7 +56,23 @@ _AUTH_ENABLED = os.getenv("SELLER_CONSOLE_AUTH", "0") == "1"
 def inject_seller_template_flags():
     return {
         "diagnostic_reveal_enabled": os.getenv("DIAGNOSTIC_REVEAL", "0") == "1",
+        "sidebar_grouped": os.getenv("SIDEBAR_GROUPED", "1") == "1",
     }
+
+
+def _render_seller_page(title: str, body: str, page: str = "dashboard") -> str:
+    from markupsafe import Markup
+
+    return render_template_string(
+        """
+{% extends "_base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}{{ body }}{% endblock %}
+        """,
+        title=title,
+        body=Markup(body),
+        page=page,
+    )
 
 
 def _check_auth() -> bool:
@@ -212,6 +228,12 @@ def collect():
         api_status = []
 
     return render_template("manual_collect.html", page="collect", api_status=api_status)
+
+
+@bp.get("/manual-collect")
+def manual_collect_alias():
+    """수동 수집기 별칭 경로 (Phase 145)."""
+    return redirect(url_for("seller_console.collect"))
 
 
 @bp.post("/collect/preview")
@@ -606,6 +628,12 @@ def api_status():
     )
 
 
+@bp.get("/api/status")
+def api_status_alias():
+    """API 상태 별칭 경로 (Phase 145)."""
+    return redirect(url_for("seller_console.api_status"))
+
+
 @bp.get("/api-status/json")
 def api_status_json():
     """API 상태 JSON 응답 (Phase 130: 구조화된 응답)."""
@@ -717,6 +745,12 @@ def pricing():
         default_currencies=["KRW", "USD", "JPY", "EUR", "CNY"],
         default_target_margin=22,
     )
+
+
+@bp.get("/margin")
+def margin_alias():
+    """마진 계산기 별칭 경로 (Phase 145)."""
+    return redirect(url_for("seller_console.pricing"))
 
 
 @bp.post("/pricing/calc")
@@ -1028,6 +1062,12 @@ def messaging():
     )
 
 
+@bp.get("/cs/messaging")
+def cs_messaging_alias():
+    """CS 메시징 별칭 경로 (Phase 145)."""
+    return redirect(url_for("seller_console.messaging"))
+
+
 @bp.get("/cs/inbox")
 def cs_inbox():
     if not _check_auth():
@@ -1074,6 +1114,12 @@ def cs_inbox():
         stats=stats,
         filters={"status": status, "channel": channel, "q": query},
     )
+
+
+@bp.get("/cs/autoreply")
+def cs_autoreply_alias():
+    """CS 자동응답 별칭 경로 (Phase 145)."""
+    return redirect(url_for("seller_console.cs_inbox"))
 
 
 @bp.route("/cs/faq", methods=["GET", "POST"])
@@ -1573,6 +1619,12 @@ def personal_tokens():
     )
 
 
+@bp.get("/api/tokens")
+def api_tokens_alias():
+    """API 토큰 별칭 경로 (Phase 145)."""
+    return redirect(url_for("seller_console.personal_tokens"))
+
+
 @bp.post("/me/tokens/generate")
 def personal_tokens_generate():
     """새 Personal Access Token 발급 (Phase 135).
@@ -1805,6 +1857,12 @@ def collect_history():
         domains=domains,
         filters={"domain": domain, "source": source, "days": days},
     )
+
+
+@bp.get("/collect-history")
+def collect_history_alias():
+    """수집 이력 별칭 경로 (Phase 145)."""
+    return redirect(url_for("seller_console.collect_history"))
 
 
 @bp.get("/collect/preview/<item_id>")
@@ -2269,8 +2327,7 @@ def inventory_reorder():
         + f"<div class='mt-3'><a href='/admin/diagnostics' class='btn btn-outline-secondary btn-sm'>← 진단 대시보드</a></div>"
     )
 
-    from src.dashboard.admin_views import _render
-    return _render("자동 리오더", body)
+    return _render_seller_page("자동 리오더", body, page="inventory_reorder")
 
 
 @bp.post("/inventory/reorder/approve")
@@ -2365,8 +2422,7 @@ def marketing_campaigns():
         + f"<div class='mt-3'><a href='/admin/diagnostics' class='btn btn-outline-secondary btn-sm'>← 진단 대시보드</a></div>"
     )
 
-    from src.dashboard.admin_views import _render
-    return _render("할인 캠페인", body)
+    return _render_seller_page("할인 캠페인", body, page="marketing_campaigns")
 
 
 @bp.post("/marketing/campaigns/approve")
@@ -2525,8 +2581,7 @@ async function deleteWatch(wid) {
 </script>"""
     )
 
-    from src.dashboard.admin_views import _render
-    return _render("소싱 Watch", body)
+    return _render_seller_page("소싱 Watch", body, page="sourcing_watches")
 
 
 @bp.post("/sourcing/watches")
@@ -2708,8 +2763,7 @@ async function bulkApprove() {
 </script>"""
     )
 
-    from src.dashboard.admin_views import _render
-    return _render("소싱 후보 큐", body)
+    return _render_seller_page("소싱 후보 큐", body, page="sourcing_candidates")
 
 
 @bp.post("/sourcing/candidates/<candidate_id>/approve")
@@ -2832,8 +2886,7 @@ def listing_history():
         "  <a href='/seller/media/queue' class='btn btn-outline-success btn-sm'>🖼️ 이미지 큐</a>"
         "</div>"
     )
-    from src.dashboard.admin_views import _render
-    return _render("📦 등록 이력", body)
+    return _render_seller_page("📦 등록 이력", body, page="listing_history")
 
 
 # ---------------------------------------------------------------------------
@@ -2894,8 +2947,7 @@ def media_queue():
         "  <a href='/seller/sourcing/candidates' class='btn btn-outline-secondary btn-sm'>📥 후보 큐</a>"
         "</div>"
     )
-    from src.dashboard.admin_views import _render
-    return _render("🖼️ 이미지 큐", body)
+    return _render_seller_page("🖼️ 이미지 큐", body, page="media_queue")
 
 
 # ---------------------------------------------------------------------------
@@ -3016,8 +3068,7 @@ def ads_campaigns():
         "  <a href='/seller/sourcing/candidates' class='btn btn-outline-secondary btn-sm'>📥 후보 큐</a>"
         "</div>"
     )
-    from src.dashboard.admin_views import _render
-    return _render("📣 광고 캠페인", body)
+    return _render_seller_page("📣 광고 캠페인", body, page="ads_campaigns")
 
 
 @bp.post("/ads/recommend")
@@ -3030,3 +3081,75 @@ def ads_recommend():
     from src.ads.auto_campaign import recommend_campaigns
     recs = recommend_campaigns()
     return jsonify({"ok": True, "count": len(recs), "recs": [r.to_dict() for r in recs]})
+
+
+@bp.get("/ads/keywords")
+def ads_keywords():
+    """키워드 최적화 화면 (Phase 145)."""
+    body = (
+        "<h4 class='mb-3'>🎯 키워드 최적화</h4>"
+        "<div class='alert alert-info'>"
+        "Phase 145 UI hotfix: 키워드 최적화 메뉴 진입 경로를 통일했습니다."
+        "</div>"
+    )
+    return _render_seller_page("🎯 키워드 최적화", body, page="ads_keywords")
+
+
+@bp.get("/orders/auto")
+def orders_auto():
+    """주문 자동 처리 대시보드 (Phase 145)."""
+    from src.orders.auto_processor import OrderAutoProcessor
+
+    processor = OrderAutoProcessor()
+    queue = processor.queue()
+    summary = processor.summary_24h()
+
+    rows = "".join(
+        (
+            "<tr>"
+            f"<td><code>{item['order_id']}</code></td>"
+            f"<td>{item['stage']}</td>"
+            f"<td>{'수동 개입 필요' if item['needs_manual'] else '자동 처리 가능'}</td>"
+            "</tr>"
+        )
+        for item in queue
+    )
+    if not rows:
+        rows = "<tr><td colspan='3' class='text-center text-muted'>대기 중인 주문이 없습니다.</td></tr>"
+
+    body = (
+        "<h4 class='mb-3'>📦 주문 자동 처리 큐</h4>"
+        "<div class='row mb-3'>"
+        f"<div class='col-md-3'><div class='card text-center'><div class='card-body'><h5>{summary['new_orders_24h']}</h5><small>24h 신규</small></div></div></div>"
+        f"<div class='col-md-3'><div class='card text-center'><div class='card-body'><h5>{summary['auto_processed_24h']}</h5><small>자동 처리</small></div></div></div>"
+        f"<div class='col-md-3'><div class='card text-center'><div class='card-body'><h5>{summary['manual_intervention_24h']}</h5><small>수동 개입</small></div></div></div>"
+        f"<div class='col-md-3'><div class='card text-center'><div class='card-body'><h5>{'ON' if summary['auto_place_po'] else 'OFF'}</h5><small>자동 발주</small></div></div></div>"
+        "</div>"
+        "<div class='d-flex gap-2 mb-2'>"
+        "<button class='btn btn-primary btn-sm' type='button'>일괄 발주</button>"
+        "<button class='btn btn-outline-secondary btn-sm' type='button'>일괄 송장 업로드</button>"
+        "</div>"
+        "<table class='table table-sm table-hover'><thead><tr><th>주문 ID</th><th>단계</th><th>처리 상태</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table>"
+    )
+    return _render_seller_page("📦 주문 자동 처리", body, page="orders_auto")
+
+
+@bp.get("/shipping/tracking")
+def shipping_tracking():
+    """배송 모니터링 화면 (Phase 145)."""
+    from src.shipping.tracker import ShippingMonitor
+
+    monitor = ShippingMonitor()
+    status = monitor.summary()
+    body = (
+        "<h4 class='mb-3'>🚚 배송 모니터링</h4>"
+        "<div class='row mb-3'>"
+        f"<div class='col-md-4'><div class='card text-center'><div class='card-body'><h5>{status['tracking_count']}</h5><small>추적 중</small></div></div></div>"
+        f"<div class='col-md-4'><div class='card text-center'><div class='card-body'><h5 class='text-warning'>{status['delay_suspected']}</h5><small>지연 의심</small></div></div></div>"
+        f"<div class='col-md-4'><div class='card text-center'><div class='card-body'><h5 class='text-danger'>{status['lost_suspected']}</h5><small>분실 의심</small></div></div></div>"
+        "</div>"
+        "<div class='alert alert-secondary'>택배사 API 연동 공급자: "
+        f"<code>{status['provider']}</code></div>"
+    )
+    return _render_seller_page("🚚 배송 모니터링", body, page="shipping_tracking")

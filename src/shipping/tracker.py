@@ -48,3 +48,53 @@ class ShipmentTracker:
     def get_all(self) -> List[ShipmentRecord]:
         """등록된 모든 배송 목록 반환."""
         return list(self._records.values())
+
+
+class ShippingMonitor:
+    """배송 단계 동기화/지연 감지/분실 의심 감지 (Phase 145)."""
+
+    def __init__(self) -> None:
+        import os
+
+        self.provider = os.getenv("SHIPPING_TRACKER_PROVIDER", "mock")
+        self.delay_alert_hours = int(os.getenv("SHIPPING_DELAY_ALERT_HOURS", "24"))
+        self._events: list[dict] = []
+
+    def track(self, order_id: str, carrier: str, tracking_number: str, stage: str = "입고") -> dict:
+        row = {
+            "order_id": order_id,
+            "carrier": carrier,
+            "tracking_number": tracking_number,
+            "stage": stage,
+            "updated_at": datetime.utcnow(),
+        }
+        self._events.append(row)
+        return row
+
+    def detect_delay(self, now: datetime | None = None) -> list[dict]:
+        now = now or datetime.utcnow()
+        delayed = []
+        for row in self._events:
+            elapsed = (now - row["updated_at"]).total_seconds() / 3600
+            if elapsed > self.delay_alert_hours:
+                delayed.append(row)
+        return delayed
+
+    def detect_lost(self, now: datetime | None = None) -> list[dict]:
+        now = now or datetime.utcnow()
+        lost = []
+        for row in self._events:
+            elapsed_days = (now - row["updated_at"]).total_seconds() / 86400
+            if elapsed_days >= 5:
+                lost.append(row)
+        return lost
+
+    def summary(self) -> dict:
+        delayed = self.detect_delay()
+        lost = self.detect_lost()
+        return {
+            "provider": self.provider,
+            "tracking_count": len(self._events),
+            "delay_suspected": len(delayed),
+            "lost_suspected": len(lost),
+        }

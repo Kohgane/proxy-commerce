@@ -490,6 +490,39 @@ API_REGISTRY: list = [
         category=ApiCategory.ADS,
         optional=True,
     ),
+    # Phase 145: 사이드바/주문/CS/배송 자동화
+    ApiKey(
+        name="sidebar_grouping",
+        env_vars=["SIDEBAR_GROUPED"],
+        purpose="셀러 콘솔 사이드바 그룹 표시 여부",
+        docs_url="https://kohganepercentiii.com/docs/operations/SIDEBAR.md",
+        category=ApiCategory.UTILITY,
+        optional=True,
+    ),
+    ApiKey(
+        name="order_auto_processing",
+        env_vars=["ORDER_AUTO_PROCESS_ENABLED", "ORDER_AUTO_PLACE_PO"],
+        purpose="주문 자동 검수/발주 자동화 설정 (기본 OFF)",
+        docs_url="https://kohganepercentiii.com/docs/operations/ORDER_AUTOMATION.md",
+        category=ApiCategory.UTILITY,
+        optional=True,
+    ),
+    ApiKey(
+        name="shipping_tracker",
+        env_vars=["SHIPPING_TRACKER_PROVIDER", "SHIPPING_DELAY_ALERT_HOURS"],
+        purpose="배송 모니터링 공급자/지연 알림 임계값",
+        docs_url="https://kohganepercentiii.com/docs/operations/SHIPPING_TRACKING.md",
+        category=ApiCategory.LOGISTICS,
+        optional=True,
+    ),
+    ApiKey(
+        name="cs_unified_inbox",
+        env_vars=["CS_UNIFIED_INBOX_ENABLED", "CS_AI_DRAFT_PROVIDER"],
+        purpose="CS 통합 인박스 + AI 초안 설정",
+        docs_url="https://kohganepercentiii.com/docs/operations/CS_UNIFIED_INBOX.md",
+        category=ApiCategory.CS_BOT,
+        optional=True,
+    ),
 ]
 
 
