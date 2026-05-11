@@ -414,6 +414,12 @@ def _render_diagnostics(issued_magic_link: str | None):
     returns_automation_status = _build_returns_automation_status()
     settlement_report_status = _build_settlement_report_status()
 
+    # Phase 147: PWA / Web Push / 옴니 재고 / 큐 카드
+    pwa_status = _build_pwa_status()
+    web_push_status = _build_web_push_status()
+    omni_sync_status = _build_omni_sync_status()
+    job_queue_status = _build_job_queue_status()
+
     return render_template_string(
         _DIAGNOSTICS_TEMPLATE,
         env_matrix=env_matrix,
@@ -438,6 +444,10 @@ def _render_diagnostics(issued_magic_link: str | None):
         header_branch_status=header_branch_status,
         returns_automation_status=returns_automation_status,
         settlement_report_status=settlement_report_status,
+        pwa_status=pwa_status,
+        web_push_status=web_push_status,
+        omni_sync_status=omni_sync_status,
+        job_queue_status=job_queue_status,
         env=os.environ,
         base_url=base_url,
     )
@@ -501,6 +511,133 @@ def diagnostics_telegram_health():
     from src.notifications.telegram import health_check
     from flask import jsonify
     return jsonify(health_check())
+
+
+# ---------------------------------------------------------------------------
+# Phase 147 — /admin/jobs (잡 큐 관리)
+# ---------------------------------------------------------------------------
+
+@admin_panel_bp.get("/jobs")
+def admin_jobs():
+    """잡 큐 관리 대시보드 (Phase 147)."""
+    from src.auth.admin_resolver import is_admin_session
+    if not session.get("user_id"):
+        return redirect("/auth/login?next=/admin/jobs")
+    admin_ok, _ = is_admin_session(session)
+    if not admin_ok:
+        return _render("접근 거부", "<div class='alert alert-danger'>관리자 권한이 필요합니다.</div>"), 403
+
+    try:
+        from src.jobs.queue_manager import get_queue
+        q = get_queue()
+        summary = q.summary()
+        queued_jobs = q.list_queue(status="queued")[:50]
+        running_jobs = q.list_queue(status="running")[:20]
+        dead_letters = q.list_dead_letters()[:50]
+    except Exception as exc:
+        logger.warning("잡 큐 로드 실패: %s", exc)
+        summary = {"queued": 0, "running": 0, "dead_letters": 0, "by_category": {}, "worker_distribution": {}, "backend": "db"}
+        queued_jobs = running_jobs = dead_letters = []
+
+    from markupsafe import Markup
+
+    def _job_rows(jobs):
+        if not jobs:
+            return "<tr><td colspan='6' class='text-center text-muted'>없음</td></tr>"
+        rows = ""
+        for j in jobs:
+            rows += (
+                f"<tr>"
+                f"<td><code class='small'>{j.job_id[:12]}...</code></td>"
+                f"<td><span class='badge bg-secondary'>{j.category}</span></td>"
+                f"<td>{j.priority}</td>"
+                f"<td><span class='badge {'bg-primary' if j.status=='running' else 'bg-secondary'}'>{j.status}</span></td>"
+                f"<td class='small text-muted'>{j.created_at[:19]}</td>"
+                f"<td class='small text-muted'>{j.worker_id or '-'}</td>"
+                f"</tr>"
+            )
+        return rows
+
+    def _dead_rows(jobs):
+        if not jobs:
+            return "<tr><td colspan='5' class='text-center text-muted'>없음</td></tr>"
+        rows = ""
+        for j in jobs:
+            rows += (
+                f"<tr>"
+                f"<td><code class='small'>{j.job_id[:12]}...</code></td>"
+                f"<td>{j.category}</td>"
+                f"<td>{j.attempts}</td>"
+                f"<td class='small text-danger'>{(j.error or '')[:60]}</td>"
+                f"<td>"
+                f"<form method='post' action='/admin/jobs/retry-dead' style='display:inline'>"
+                f"<input type='hidden' name='job_id' value='{j.job_id}'>"
+                f"<button class='btn btn-outline-primary btn-sm'>재시도</button>"
+                f"</form>"
+                f"</td>"
+                f"</tr>"
+            )
+        return rows
+
+    body = Markup(
+        "<h4 class='mb-3'>⚙️ 잡 큐 관리 (Phase 147)</h4>"
+        "<div class='row mb-3'>"
+        f"<div class='col-md-2'><div class='card text-center'><div class='card-body'><h5 class='text-warning'>{summary['queued']}</h5><small>대기 중</small></div></div></div>"
+        f"<div class='col-md-2'><div class='card text-center'><div class='card-body'><h5 class='text-primary'>{summary['running']}</h5><small>실행 중</small></div></div></div>"
+        f"<div class='col-md-2'><div class='card text-center'><div class='card-body'><h5 class='text-danger'>{summary['dead_letters']}</h5><small>데드레터</small></div></div></div>"
+        f"<div class='col-md-3'><div class='card text-center'><div class='card-body'><h5>{len(summary.get('worker_distribution', {}))}</h5><small>활성 워커</small></div></div></div>"
+        f"<div class='col-md-3'><div class='card text-center'><div class='card-body'><h5><code>{summary.get('backend', 'db')}</code></h5><small>백엔드</small></div></div></div>"
+        "</div>"
+        "<div class='row mb-3'>"
+        "<div class='col-md-6'>"
+        "<h6>카테고리별 대기</h6><ul class='small mb-0'>"
+        + "".join(f"<li>{cat}: {cnt}건</li>" for cat, cnt in summary.get("by_category", {}).items())
+        + ("" if summary.get("by_category") else "<li class='text-muted'>없음</li>")
+        + "</ul></div>"
+        "<div class='col-md-6'>"
+        "<h6>워커별 분포</h6><ul class='small mb-0'>"
+        + "".join(f"<li><code>{w}</code>: {cnt}건</li>" for w, cnt in summary.get("worker_distribution", {}).items())
+        + ("" if summary.get("worker_distribution") else "<li class='text-muted'>없음</li>")
+        + "</ul></div></div>"
+        "<h5 class='mb-2'>대기 중 작업</h5>"
+        "<div class='table-responsive mb-4'>"
+        "<table class='table table-sm table-hover'>"
+        "<thead><tr><th>Job ID</th><th>카테고리</th><th>우선순위</th><th>상태</th><th>생성</th><th>워커</th></tr></thead>"
+        f"<tbody>{_job_rows(queued_jobs)}</tbody></table></div>"
+        "<h5 class='mb-2'>실행 중 작업</h5>"
+        "<div class='table-responsive mb-4'>"
+        "<table class='table table-sm table-hover'>"
+        "<thead><tr><th>Job ID</th><th>카테고리</th><th>우선순위</th><th>상태</th><th>생성</th><th>워커</th></tr></thead>"
+        f"<tbody>{_job_rows(running_jobs)}</tbody></table></div>"
+        "<h5 class='mb-2'>데드레터 리스트</h5>"
+        "<div class='table-responsive mb-4'>"
+        "<table class='table table-sm table-hover'>"
+        "<thead><tr><th>Job ID</th><th>카테고리</th><th>재시도</th><th>오류</th><th>액션</th></tr></thead>"
+        f"<tbody>{_dead_rows(dead_letters)}</tbody></table></div>"
+    )
+    return _render("잡 큐 관리", body)
+
+
+@admin_panel_bp.post("/jobs/retry-dead")
+def admin_jobs_retry_dead():
+    """dead letter 재시도 (Phase 147)."""
+    from src.auth.admin_resolver import is_admin_session
+    if not session.get("user_id"):
+        return redirect("/auth/login?next=/admin/jobs")
+    admin_ok, _ = is_admin_session(session)
+    if not admin_ok:
+        return _render("접근 거부", "<div class='alert alert-danger'>관리자 권한이 필요합니다.</div>"), 403
+    from flask import jsonify
+    try:
+        from src.jobs.queue_manager import get_queue
+        job_id = (request.form.get("job_id") or "").strip()
+        if not job_id:
+            return redirect("/admin/jobs")
+        ok = get_queue().retry_dead(job_id)
+        return redirect("/admin/jobs")
+    except Exception as exc:
+        logger.warning("dead letter 재시도 오류: %s", exc)
+        return redirect("/admin/jobs")
 
 
 @admin_panel_bp.post("/cs/poll-now")
@@ -1097,6 +1234,9 @@ SELLER_SIDEBAR_LINKS = [
     ("/seller/settlement", "💰 정산 리포트"),
     ("/seller/cs/inbox", "📥 통합 인박스"),
     ("/seller/returns/inbox", "↩️ 반품/환불"),
+    # Phase 147
+    ("/seller/inventory/omni", "🔄 옴니채널 재고"),
+    ("/seller/me/notifications", "🔔 푸시 알림 설정"),
 ]
 
 
@@ -1119,6 +1259,10 @@ def _build_route_check_status() -> dict:
         ("seller_console.marketing_campaigns", "/seller/marketing/campaigns"),
         ("seller_console.returns_inbox", "/seller/returns/inbox"),
         ("seller_console.settlement_report", "/seller/settlement"),
+        # Phase 147
+        ("seller_console.inventory_omni", "/seller/inventory/omni"),
+        ("seller_console.me_notifications", "/seller/me/notifications"),
+        ("admin_panel.admin_jobs", "/admin/jobs"),
     ]
 
     sidebar_links = SELLER_SIDEBAR_LINKS
@@ -1240,6 +1384,59 @@ def _build_settlement_report_status() -> dict:
         }
     except Exception:
         return {"month_sales_krw": 0, "channel_share": {}, "next_settlement_date": "-"}
+
+
+# ---------------------------------------------------------------------------
+# Phase 147 — 진단 헬퍼
+# ---------------------------------------------------------------------------
+
+def _build_pwa_status() -> dict:
+    """Phase 147: PWA/모바일 상태 카드 데이터."""
+    pwa_enabled = os.getenv("PWA_ENABLED", "1") == "1"
+    return {
+        "pwa_enabled": pwa_enabled,
+        "viewport_meta": True,  # _base.html에 고정 포함
+        "manifest_linked": True,  # _base.html에 고정 포함
+        "sw_registered": True,   # _base.html JS에서 등록
+        "app_name": os.getenv("PWA_APP_NAME", "Proxy Commerce"),
+    }
+
+
+def _build_web_push_status() -> dict:
+    """Phase 147: Web Push 상태 카드 데이터."""
+    try:
+        from src.notifications.web_push import push_status
+        return push_status()
+    except Exception as exc:
+        logger.debug("web_push 상태 조회 실패: %s", exc)
+        return {"vapid_configured": False, "subscriber_count": 0, "vapid_public_hint": "오류"}
+
+
+def _build_omni_sync_status() -> dict:
+    """Phase 147: 옴니채널 재고 동기화 상태 카드 데이터."""
+    try:
+        from src.inventory.omni_sync import OmniInventorySyncer
+        return OmniInventorySyncer().summary()
+    except Exception as exc:
+        logger.debug("omni_sync 상태 조회 실패: %s", exc)
+        return {
+            "enabled": False, "mode": "common_pool", "configured_channels": [],
+            "channel_count": 0, "failure_24h": 0, "sync_interval_sec": 60,
+        }
+
+
+def _build_job_queue_status() -> dict:
+    """Phase 147: 멀티워커 큐 상태 카드 데이터."""
+    try:
+        from src.jobs.queue_manager import get_queue
+        return get_queue().summary()
+    except Exception as exc:
+        logger.debug("job_queue 상태 조회 실패: %s", exc)
+        return {
+            "backend": os.getenv("JOB_QUEUE_BACKEND", "db"),
+            "queued": 0, "running": 0, "dead_letters": 0,
+            "by_category": {}, "worker_distribution": {}, "max_retries": 3,
+        }
 
 
 def _page_route_available(endpoint: str) -> bool:
@@ -2014,6 +2211,95 @@ _DIAGNOSTICS_TEMPLATE = """
           <a class="btn btn-outline-secondary btn-sm" href="/seller/returns/inbox">↩️ 반품</a>
           <a class="btn btn-outline-secondary btn-sm" href="/seller/settlement">💰 정산</a>
           <a class="btn btn-outline-secondary btn-sm" href="/seller/dashboard">🔐 헤더 분기 테스트</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 147: 섹션 — 모바일/PWA -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">📱 모바일/PWA (Phase 147)</div>
+      <div class="card-body">
+        <ul class="mb-3">
+          <li>PWA 활성화: {% if pwa_status.pwa_enabled %}<span class="badge bg-success">ON</span>{% else %}<span class="badge bg-secondary">OFF (PWA_ENABLED=0)</span>{% endif %}</li>
+          <li>앱 이름: <strong>{{ pwa_status.app_name }}</strong></li>
+          <li>viewport 메타: {% if pwa_status.viewport_meta %}✅{% else %}❌{% endif %}</li>
+          <li>manifest 링크: {% if pwa_status.manifest_linked %}✅{% else %}❌{% endif %}</li>
+          <li>Service Worker: {% if pwa_status.sw_registered %}✅ 등록 스크립트 포함{% else %}❌{% endif %}</li>
+        </ul>
+        <div class="d-flex gap-2 flex-wrap">
+          <a class="btn btn-outline-primary btn-sm" href="/seller/static/manifest.json" target="_blank">📄 PWA 매니페스트</a>
+          <a class="btn btn-outline-secondary btn-sm" href="/seller/static/sw.js" target="_blank">⚙️ Service Worker</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 147: 섹션 — 푸시 알림 -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">🔔 푸시 알림 (Phase 147)</div>
+      <div class="card-body">
+        <ul class="mb-3">
+          <li>VAPID 키:
+            {% if web_push_status.vapid_configured %}
+              <span class="badge bg-success">✅ 등록됨</span>
+              <span class="small text-muted">({{ web_push_status.vapid_public_hint }})</span>
+            {% else %}
+              <span class="badge bg-warning text-dark">⚠️ 미설정</span>
+              <span class="small text-muted">— WEB_PUSH_VAPID_PUBLIC/PRIVATE 환경변수 설정 필요</span>
+            {% endif %}
+          </li>
+          <li>구독자: <strong>{{ web_push_status.subscriber_count }}</strong>명</li>
+        </ul>
+        <div class="d-flex gap-2 flex-wrap">
+          <a class="btn btn-outline-primary btn-sm" href="/seller/me/notifications">🔔 푸시 구독 페이지</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 147: 섹션 — 옴니채널 재고 -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">📦 옴니채널 재고 동기화 (Phase 147)</div>
+      <div class="card-body">
+        <ul class="mb-3">
+          <li>활성화: {% if omni_sync_status.enabled %}<span class="badge bg-success">ON</span>{% else %}<span class="badge bg-secondary">OFF (INVENTORY_OMNI_SYNC_ENABLED=0)</span>{% endif %}</li>
+          <li>모드: <code>{{ omni_sync_status.mode }}</code></li>
+          <li>연동 채널: <strong>{{ omni_sync_status.channel_count }}</strong>개
+            {% if omni_sync_status.configured_channels %}
+              ({{ omni_sync_status.configured_channels | join(', ') }})
+            {% else %}
+              <span class="text-muted small">— 쿠팡/스마트스토어 API 설정 시 표시</span>
+            {% endif %}
+          </li>
+          <li>동기화 주기: {{ omni_sync_status.sync_interval_sec }}초</li>
+          <li>24h 실패/지연:
+            <span class="{% if omni_sync_status.failure_24h > 0 %}text-danger fw-bold{% endif %}">{{ omni_sync_status.failure_24h }}건</span>
+          </li>
+        </ul>
+        <div class="d-flex gap-2 flex-wrap">
+          <a class="btn btn-outline-primary btn-sm" href="/seller/inventory/omni">📦 옴니 재고 관리</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 147: 섹션 — 큐/락 (멀티워커) -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">⚙️ 큐/락 멀티워커 (Phase 147)</div>
+      <div class="card-body">
+        <ul class="mb-3">
+          <li>백엔드: <code>{{ job_queue_status.backend }}</code></li>
+          <li>활성 워커: <strong>{{ job_queue_status.worker_distribution | length }}</strong>개</li>
+          <li>큐 대기: <strong>{{ job_queue_status.queued }}</strong>건 / 실행 중: <strong>{{ job_queue_status.running }}</strong>건</li>
+          <li>데드레터: <span class="{% if job_queue_status.dead_letters > 0 %}text-danger fw-bold{% endif %}">{{ job_queue_status.dead_letters }}건</span></li>
+          <li>최대 재시도: {{ job_queue_status.max_retries }}회</li>
+          {% if job_queue_status.by_category %}
+            <li>카테고리별:
+              {% for cat, cnt in job_queue_status.by_category.items() %}
+                <span class="badge bg-secondary">{{ cat }} {{ cnt }}</span>
+              {% endfor %}
+            </li>
+          {% endif %}
+        </ul>
+        <div class="d-flex gap-2 flex-wrap">
+          <a class="btn btn-outline-primary btn-sm" href="/admin/jobs">⚙️ 잡 큐 관리</a>
         </div>
       </div>
     </div>

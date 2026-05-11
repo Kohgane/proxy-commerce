@@ -1,4 +1,4 @@
-/* src/seller_console/static/seller.css — 셀러 콘솔 스타일 (Phase 122) */
+/* src/seller_console/static/seller.css — 셀러 콘솔 스타일 (Phase 122 + Phase 147 모바일 개선) */
 
 body {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -18,6 +18,10 @@ body {
   padding: 6px 10px;
   border-radius: 6px;
   transition: background 0.15s;
+  /* Phase 147: 최소 터치 영역 44px */
+  min-height: 44px;
+  display: flex;
+  align-items: center;
 }
 
 .sidebar .nav-link:hover,
@@ -56,6 +60,12 @@ body {
   vertical-align: middle;
 }
 
+/* Phase 147: 테이블 가로 스크롤 기본 래퍼 */
+.table-responsive {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* 범위 슬라이더 */
 input[type="range"] {
   accent-color: #0d6efd;
@@ -84,15 +94,59 @@ input[type="range"] {
   min-height: 200px;
 }
 
-/* 반응형 */
+/* Phase 147: 버튼 최소 터치 영역 44px */
+.btn {
+  min-height: 44px;
+  min-width: 44px;
+}
+.btn-sm {
+  min-height: 36px;
+  min-width: 36px;
+}
+
+/* Phase 147: 폼 인풋 모바일 최적화 */
+input[type="number"] {
+  -moz-appearance: textfield;
+  inputmode: numeric;
+}
+input[type="tel"] {
+  inputmode: tel;
+}
+
+/* Phase 147: 모바일 반응형 */
 @media (max-width: 768px) {
+  /* 모바일 사이드바 drawer */
   .sidebar {
-    width: 180px !important;
+    position: fixed !important;
+    top: 0;
+    left: -240px;
+    width: 240px !important;
+    height: 100vh;
+    z-index: 1050;
+    transition: left 0.25s ease;
+    overflow-y: auto;
+    padding-top: 56px !important;
+  }
+  .sidebar.show {
+    left: 0;
+    box-shadow: 4px 0 16px rgba(0,0,0,.4);
+  }
+  /* 메인 콘텐츠 패딩 조정 */
+  main.flex-grow-1 {
+    padding: 1rem !important;
+  }
+  /* 테이블 overflow */
+  table {
+    min-width: 600px;
   }
 }
 
-@media (max-width: 576px) {
-  .sidebar {
+@media (min-width: 769px) {
+  /* 데스크톱: 모바일 헤더 숨김 */
+  .mobile-topbar {
+    display: none !important;
+  }
+  .sidebar-overlay {
     display: none !important;
   }
 }

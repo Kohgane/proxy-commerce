@@ -4,13 +4,28 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}셀러 콘솔{% endblock %} — kohganepercentiii.com</title>
+  <link rel="manifest" href="{{ url_for('seller_console.static', filename='manifest.json') }}">
+  <meta name="theme-color" content="#1a1a2e">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="{{ url_for('seller_console.static', filename='seller.css') }}">
 </head>
 <body>
+<!-- 모바일 헤더 (햄버거 메뉴) -->
+<div class="mobile-topbar d-flex align-items-center justify-content-between px-3 py-2 d-md-none"
+     style="background:#1a1a2e;position:sticky;top:0;z-index:1030;">
+  <a href="/seller/" class="text-white text-decoration-none fw-bold">🛒 셀러 콘솔</a>
+  <button class="btn btn-sm btn-outline-light" id="sidebarToggle" aria-label="메뉴 열기"
+          style="min-width:44px;min-height:44px;"
+          onclick="document.getElementById('sidebarDrawer').classList.toggle('show')">☰</button>
+</div>
+<!-- 모바일 사이드바 오버레이 -->
+<div class="sidebar-overlay d-md-none" id="sidebarOverlay"
+     onclick="document.getElementById('sidebarDrawer').classList.remove('show');document.getElementById('sidebarOverlay').style.display='none';"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1040;"></div>
 <div class="d-flex" style="min-height:100vh;">
-  <!-- 사이드바 -->
-  <nav class="sidebar d-flex flex-column p-3" style="width:220px;min-height:100vh;background:#1a1a2e;flex-shrink:0;">
+  <!-- 사이드바 (데스크톱: 항상 표시 / 모바일: drawer) -->
+  <nav class="sidebar d-flex flex-column p-3" id="sidebarDrawer"
+       style="width:220px;min-height:100vh;background:#1a1a2e;flex-shrink:0;">
     <a href="/seller/" class="text-white text-decoration-none mb-4 d-block">
       <span class="fs-5 fw-bold">🛒 셀러 콘솔</span><br>
       <small class="text-secondary" style="font-size:0.7rem;">kohganepercentiii.com</small>
@@ -60,6 +75,11 @@
       <li class="nav-item"><a class="nav-link text-secondary {% if page == 'settlement' %}text-white fw-semibold{% endif %}" href="/seller/settlement">💰 정산 리포트</a></li>
 
       {% if sidebar_grouped %}
+      <li class="text-secondary small mt-2 mb-1">재고/옴니</li>
+      {% endif %}
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'inventory_omni' %}text-white fw-semibold{% endif %}" href="/seller/inventory/omni">🔄 옴니채널 재고</a></li>
+
+      {% if sidebar_grouped %}
       <li class="text-secondary small mt-2 mb-1">CS</li>
       {% endif %}
       <li class="nav-item"><a class="nav-link text-secondary {% if page == 'messaging' %}text-white fw-semibold{% endif %}" href="/seller/cs/messaging">💬 고객 메시징</a></li>
@@ -72,6 +92,7 @@
       {% endif %}
       <li class="nav-item"><a class="nav-link text-secondary {% if page == 'api_status' %}text-white fw-semibold{% endif %}" href="/seller/api/status">🔑 API 상태</a></li>
       <li class="nav-item"><a class="nav-link text-secondary {% if page == 'me' %}text-white fw-semibold{% endif %}" href="/seller/me">👤 마이페이지</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'push_notifications' %}text-white fw-semibold{% endif %}" href="/seller/me/notifications">🔔 푸시 알림 설정</a></li>
       <li class="nav-item"><a class="nav-link text-secondary {% if page == 'me' %}text-white fw-semibold{% endif %}" href="/seller/api/tokens">🔐 API 토큰</a></li>
       <li class="nav-item"><a class="nav-link text-secondary {% if page == 'bookmarklet' %}text-white fw-semibold{% endif %}" href="/seller/bookmarklet">📌 북마클릿</a></li>
       <li class="nav-item"><a class="nav-link text-secondary {% if page == 'discovery' %}text-white fw-semibold{% endif %}" href="/seller/discovery">🔎 Discovery</a></li>
@@ -96,6 +117,21 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="{{ url_for('seller_console.static', filename='seller.js') }}"></script>
+<script>
+// Phase 147: PWA Service Worker 등록
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('/seller/static/sw.js', { scope: '/seller/' })
+      .then(function(reg) { console.debug('[SW] 등록 성공', reg.scope); })
+      .catch(function(err) { console.debug('[SW] 등록 실패', err); });
+  });
+}
+// 모바일 사이드바 오버레이 처리
+document.getElementById('sidebarDrawer') && document.getElementById('sidebarDrawer').addEventListener('transitionend', function() {
+  var overlay = document.getElementById('sidebarOverlay');
+  if (overlay) overlay.style.display = this.classList.contains('show') ? 'block' : 'none';
+});
+</script>
 {% block extra_js %}{% endblock %}
 </body>
 </html>

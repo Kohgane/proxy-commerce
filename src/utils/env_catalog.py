@@ -544,6 +544,47 @@ API_REGISTRY: list = [
         category=ApiCategory.UTILITY,
         optional=True,
     ),
+    # Phase 147: PWA + Web Push + 옴니 재고 + 잡 큐
+    ApiKey(
+        name="pwa",
+        env_vars=["PWA_ENABLED", "PWA_APP_NAME"],
+        purpose="PWA 활성화 여부 + 앱 이름 (기본: Proxy Commerce)",
+        docs_url="https://kohganepercentiii.com/docs/operations/MOBILE_PWA.md",
+        category=ApiCategory.UTILITY,
+        optional=True,
+    ),
+    ApiKey(
+        name="web_push_vapid",
+        env_vars=["WEB_PUSH_VAPID_PUBLIC", "WEB_PUSH_VAPID_PRIVATE", "WEB_PUSH_CONTACT_EMAIL"],
+        purpose="Web Push VAPID 키쌍 + 관리자 연락처 이메일",
+        docs_url="https://kohganepercentiii.com/docs/operations/WEB_PUSH.md",
+        category=ApiCategory.NOTIFICATION,
+        optional=True,
+    ),
+    ApiKey(
+        name="inventory_omni_sync",
+        env_vars=[
+            "INVENTORY_OMNI_SYNC_MODE",
+            "INVENTORY_OMNI_SYNC_INTERVAL_SEC",
+            "INVENTORY_OMNI_SYNC_ENABLED",
+        ],
+        purpose="옴니채널 재고 동기화 모드/주기/활성화 (기본 OFF)",
+        docs_url="https://kohganepercentiii.com/docs/operations/INVENTORY_OMNI.md",
+        category=ApiCategory.UTILITY,
+        optional=True,
+    ),
+    ApiKey(
+        name="job_queue",
+        env_vars=[
+            "JOB_QUEUE_BACKEND",
+            "JOB_QUEUE_MAX_RETRIES",
+            "JOB_QUEUE_DEAD_LETTER_DAYS",
+        ],
+        purpose="멀티워커 잡 큐 백엔드/재시도/데드레터 보관 설정",
+        docs_url="https://kohganepercentiii.com/docs/operations/JOB_QUEUE.md",
+        category=ApiCategory.UTILITY,
+        optional=True,
+    ),
 ]
 
 
