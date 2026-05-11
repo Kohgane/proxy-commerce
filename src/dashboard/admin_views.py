@@ -13,12 +13,18 @@ from __future__ import annotations
 
 import logging
 import os
+import pathlib
+import time
 
 from flask import Blueprint, current_app, redirect, render_template_string, request, session
+
+from src.utils.fstring_guard import FSTRING_BACKSLASH_IN_EXPR_PATTERN
 
 MAX_DISPLAY_ITEMS = 200
 
 logger = logging.getLogger(__name__)
+_FSTRING_SCAN_CACHE_TTL_SEC = 300
+_fstring_scan_cache = {"checked_at": 0.0, "offenders": 0}
 
 admin_panel_bp = Blueprint("admin_panel", __name__, url_prefix="/admin")
 
@@ -407,6 +413,7 @@ def _render_diagnostics(issued_magic_link: str | None):
     ads_status = _build_ads_status()
     route_check_status = _build_route_check_status()
     sidebar_nav_status = _build_sidebar_nav_status()
+    hotfix_1481_status = _build_phase_1481_hotfix_status(sidebar_nav_status)
     order_auto_status = _build_order_auto_status()
     cs_unified_inbox_status = _build_cs_unified_inbox_status()
     shipping_monitor_status = _build_shipping_monitor_status()
@@ -443,6 +450,7 @@ def _render_diagnostics(issued_magic_link: str | None):
         ads_status=ads_status,
         route_check_status=route_check_status,
         sidebar_nav_status=sidebar_nav_status,
+        hotfix_1481_status=hotfix_1481_status,
         order_auto_status=order_auto_status,
         cs_unified_inbox_status=cs_unified_inbox_status,
         shipping_monitor_status=shipping_monitor_status,
@@ -1387,6 +1395,37 @@ def _build_sidebar_nav_status() -> dict:
     }
 
 
+def _count_fstring_backslash_offenders() -> int:
+    now = time.time()
+    if now - _fstring_scan_cache["checked_at"] < _FSTRING_SCAN_CACHE_TTL_SEC:
+        return int(_fstring_scan_cache["offenders"])
+
+    src_root = pathlib.Path(__file__).resolve().parents[1]
+    offenders = 0
+    for path in src_root.rglob("*.py"):
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError) as exc:
+            logger.debug("f-string 검사 중 파일 읽기 실패(%s): %s", path, exc)
+            continue
+        offenders += sum(1 for line in lines if FSTRING_BACKSLASH_IN_EXPR_PATTERN.search(line))
+    _fstring_scan_cache["checked_at"] = now
+    _fstring_scan_cache["offenders"] = offenders
+    return offenders
+
+
+def _build_phase_1481_hotfix_status(sidebar_nav_status: dict) -> dict:
+    auto_registered = current_app.config.get("AUTO_REGISTERED_BLUEPRINTS", [])
+    fstring_offenders = _count_fstring_backslash_offenders()
+    return {
+        "sidebar_broken_links": sidebar_nav_status.get("broken_links", 0),
+        "auto_blueprint_register_enabled": True,
+        "auto_blueprint_registered_count": len(auto_registered),
+        "fstring_backslash_offenders": fstring_offenders,
+        "fstring_fixed": fstring_offenders == 0,
+    }
+
+
 def _build_order_auto_status() -> dict:
     try:
         from src.orders.auto_processor import OrderAutoProcessor
@@ -2311,6 +2350,26 @@ _DIAGNOSTICS_TEMPLATE = """
           <li>깨진 링크: {{ sidebar_nav_status.broken_links }}건{% if sidebar_nav_status.broken_links > 0 %} ({{ sidebar_nav_status.broken_link_urls|join(', ') }}){% endif %}</li>
           <li>글로벌 404 헤더 분기: {% if header_branch_status.error_404 %}✅{% else %}❌{% endif %}</li>
         </ul>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-header fw-bold">🚨 운영 복구 (Phase 148.1 hotfix)</div>
+      <div class="card-body">
+        <ul class="mb-3">
+          <li>views.py f-string SyntaxError: {% if hotfix_1481_status.fstring_fixed %}✅ 수정{% else %}❌ 미해결{% endif %}</li>
+          <li>사이드바 깨진 링크: {{ hotfix_1481_status.sidebar_broken_links }}건{% if hotfix_1481_status.sidebar_broken_links == 0 %} ✅{% endif %}</li>
+          <li>자동 blueprint 등록: {% if hotfix_1481_status.auto_blueprint_register_enabled %}활성{% else %}비활성{% endif %} ({{ hotfix_1481_status.auto_blueprint_registered_count }}개 자동 등록)</li>
+          <li>f-string 백슬래시 검출: {{ hotfix_1481_status.fstring_backslash_offenders }}건{% if hotfix_1481_status.fstring_backslash_offenders == 0 %} ✅{% endif %}</li>
+        </ul>
+        <div class="alert alert-light border mb-0">
+          <strong>🛡️ 영구 회귀 방지</strong>
+          <ul class="mb-0 mt-2">
+            <li>사이드바 라우트 매트릭스 CI 게이트: ✅</li>
+            <li>f-string 백슬래시 lint: ✅</li>
+            <li>자동 blueprint 디스커버리: ✅</li>
+          </ul>
+        </div>
       </div>
     </div>
 

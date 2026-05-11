@@ -110,3 +110,12 @@ python3 -m pytest tests/test_route_registration.py tests/test_sidebar_links.py -
 - `TestPhase143RoutesFix` — Phase 143/144 hotfix 라우트 확인
 - `TestSidebarLinksPresent` — 사이드바 링크 존재 확인
 - `TestSidebarLinksMatchRoutes` — 사이드바 ↔ 라우트 매핑 일치 확인
+
+---
+
+## Phase 148.1 Hotfix 운영 규칙
+
+- `src/order_webhook.py`의 `_auto_register_blueprints()`가 누락된 blueprint 등록을 보조합니다.
+- 수동 `app.register_blueprint(...)`는 계속 유지하고, 자동 등록은 안전망으로만 사용합니다.
+- `tests/test_sidebar_route_matrix.py`는 셀러 사이드바 템플릿의 `href`를 기준으로 404 회귀를 차단합니다.
+- `tests/test_no_fstring_backslash.py`는 Python 3.11 이하에서 import 실패를 유발하는 f-string 표현식 백슬래시 패턴을 차단합니다.

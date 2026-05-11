@@ -1,52 +1,33 @@
 from __future__ import annotations
 
 import os
+import re
+from pathlib import Path
 
 import pytest
 
 
-SIDEBAR_LINKS = [
-    "/seller/dashboard",
-    "/seller/manual-collect",
-    "/seller/margin",
-    "/seller/markets",
-    "/seller/orders",
-    "/seller/orders/auto",
-    "/seller/inventory/reorder",
-    "/seller/notifications",
-    "/seller/catalog",
-    "/seller/sourcing/watches",
-    "/seller/sourcing/candidates",
-    "/seller/listing/history",
-    "/seller/media/queue",
-    "/seller/pricing/rules",
-    "/seller/pricing/competitors",
-    "/seller/pricing/fx-impact",
-    "/seller/marketing/campaigns",
-    "/seller/ads/campaigns",
-    "/seller/ads/keywords",
-    "/seller/analytics",
-    "/seller/collect-history",
-    "/seller/shipping/tracking",
-    "/seller/settlement",
-    "/seller/cs/messaging",
-    "/seller/cs/autoreply",
-    "/seller/cs/inbox",
-    "/seller/returns/inbox",
-    "/seller/api/status",
-    "/seller/me",
-    "/seller/api/tokens",
-    "/seller/bookmarklet",
-    "/seller/discovery",
-    # Phase 147
-    "/seller/me/notifications",
-    "/seller/inventory/omni",
-    # Phase 148
-    "/seller/wholesale/tiers",
-    "/seller/wholesale/applications",
-    "/seller/subscriptions",
-    "/seller/me/subscriptions",
-]
+HREF_PATTERN = re.compile(r'href="([^"]+)"')
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SIDEBAR_TEMPLATE = PROJECT_ROOT / "src" / "seller_console" / "templates" / "_base.html"
+
+
+def _extract_links(html: str) -> list[str]:
+    return sorted(
+        {
+            href
+            for href in HREF_PATTERN.findall(html)
+            if href.startswith("/")
+            and not href.startswith("//")
+            and not href.startswith("/#")
+            and "://" not in href
+            and not href.lower().startswith("/javascript:")
+        }
+    )
+
+
+def _template_sidebar_links() -> list[str]:
+    return _extract_links(SIDEBAR_TEMPLATE.read_text(encoding="utf-8"))
 
 
 @pytest.fixture(scope="module")
@@ -67,11 +48,12 @@ def client(app):
 
 def test_sidebar_menu_links_exist_in_dashboard_html(client):
     html = client.get("/seller/dashboard").get_data(as_text=True)
-    for url in SIDEBAR_LINKS:
+    expected = [url for url in _template_sidebar_links() if url.startswith("/seller/")]
+    for url in expected:
         assert url in html, f"사이드바 메뉴에 {url}이 누락"
 
 
-@pytest.mark.parametrize("path", SIDEBAR_LINKS)
-def test_sidebar_link_route_is_not_404(client, path):
-    resp = client.get(path)
-    assert resp.status_code != 404, f"사이드바 메뉴 {path}는 존재하지만 라우트가 404"
+def test_sidebar_link_route_is_not_404(client):
+    for path in [url for url in _template_sidebar_links() if url.startswith("/seller/")]:
+        resp = client.get(path)
+        assert 200 <= resp.status_code < 400, f"사이드바 메뉴 {path} 응답 비정상(status={resp.status_code})"
