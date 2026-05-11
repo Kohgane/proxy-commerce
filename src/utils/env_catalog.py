@@ -30,6 +30,8 @@ class ApiCategory(str, Enum):
     INFRA = "infra"                # Google Sheets
     CS_BOT = "cs_bot"              # CS 자동응답 봇
     ADS = "ads"                    # 광고 자동 운영
+    WHOLESALE = "wholesale"        # B2B 도매 (Phase 148)
+    SUBSCRIPTION = "subscription"  # 정기구독 상품 (Phase 148)
 
 
 # ---------------------------------------------------------------------------
@@ -583,6 +585,44 @@ API_REGISTRY: list = [
         purpose="멀티워커 잡 큐 백엔드/재시도/데드레터 보관 설정",
         docs_url="https://kohganepercentiii.com/docs/operations/JOB_QUEUE.md",
         category=ApiCategory.UTILITY,
+        optional=True,
+    ),
+    # Phase 148 — B2B 도매
+    ApiKey(
+        name="wholesale",
+        env_vars=[
+            "WHOLESALE_ENABLED",
+            "WHOLESALE_REQUIRE_BUSINESS_CERT",
+            "WHOLESALE_APPLICATIONS_PATH",
+        ],
+        purpose="B2B 도매 기능 활성화/사업자등록증 필수 여부/신청 저장 경로",
+        docs_url="https://kohganepercentiii.com/docs/operations/WHOLESALE.md",
+        category=ApiCategory.WHOLESALE,
+        optional=True,
+    ),
+    # Phase 148 — 정기구독 상품
+    ApiKey(
+        name="product_subscription",
+        env_vars=[
+            "SUBSCRIPTION_ENABLED",
+            "SUBSCRIPTION_PG_PROVIDER",
+            "SUBSCRIPTION_RETRY_DAYS",
+            "PRODUCT_SUBSCRIPTIONS_PATH",
+        ],
+        purpose="정기구독 기능 활성화/PG 제공사/재시도 간격/데이터 저장 경로",
+        docs_url="https://kohganepercentiii.com/docs/operations/SUBSCRIPTIONS.md",
+        category=ApiCategory.SUBSCRIPTION,
+        optional=True,
+    ),
+    # Phase 148 — VAPID 자동 생성
+    ApiKey(
+        name="vapid_auto_generate",
+        env_vars=[
+            "VAPID_AUTO_GENERATE",
+        ],
+        purpose="VAPID 키 자동 생성 허용 여부 (1=허용, 0=수동 설정만)",
+        docs_url="https://kohganepercentiii.com/docs/operations/WEB_PUSH.md",
+        category=ApiCategory.NOTIFICATION,
         optional=True,
     ),
 ]

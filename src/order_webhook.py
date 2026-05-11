@@ -1013,16 +1013,18 @@ def root():
         return redirect(_EXTERNAL_SHOP_URL, code=302)
 
     if redirect_target == "landing":
+        from src.version import get_current_phase
         version = os.getenv('APP_VERSION', 'dev')
-        return render_template('landing.html', version=version)
+        return render_template('landing.html', version=version, current_phase=get_current_phase())
 
     # 기본: "seller" (백워드 호환)
     try:
         from .seller_console.views import bp as _seller_bp  # noqa: F401
         return redirect('/seller/', code=302)
     except Exception:
+        from src.version import get_current_phase
         version = os.getenv('APP_VERSION', 'dev')
-        return render_template('landing.html', version=version)
+        return render_template('landing.html', version=version, current_phase=get_current_phase())
 
 
 @app.route("/shop")

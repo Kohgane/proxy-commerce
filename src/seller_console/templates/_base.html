@@ -96,6 +96,14 @@
       <li class="nav-item"><a class="nav-link text-secondary {% if page == 'me' %}text-white fw-semibold{% endif %}" href="/seller/api/tokens">🔐 API 토큰</a></li>
       <li class="nav-item"><a class="nav-link text-secondary {% if page == 'bookmarklet' %}text-white fw-semibold{% endif %}" href="/seller/bookmarklet">📌 북마클릿</a></li>
       <li class="nav-item"><a class="nav-link text-secondary {% if page == 'discovery' %}text-white fw-semibold{% endif %}" href="/seller/discovery">🔎 Discovery</a></li>
+
+      {% if sidebar_grouped %}
+      <li class="text-secondary small mt-2 mb-1">B2B/구독</li>
+      {% endif %}
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'wholesale_tiers' %}text-white fw-semibold{% endif %}" href="/seller/wholesale/tiers">🏢 도매 등급</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'wholesale_applications' %}text-white fw-semibold{% endif %}" href="/seller/wholesale/applications">📋 B2B 신청 큐</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'subscriptions' %}text-white fw-semibold{% endif %}" href="/seller/subscriptions">🔁 정기구독 관리</a></li>
+      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'me_subscriptions' %}text-white fw-semibold{% endif %}" href="/seller/me/subscriptions">🔁 내 구독</a></li>
     </ul>
     <div class="mt-auto pt-3 border-top border-secondary">
       {% if session is defined and session.get('user_role') == 'admin' %}

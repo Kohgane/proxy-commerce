@@ -107,3 +107,28 @@ VAPID 키가 없으면 stub 모드로 동작합니다:
 - `src/seller_console/static/sw.js` — Service Worker push/notificationclick 이벤트
 - `src/seller_console/templates/_base.html` — 구독 UI JS
 - `src/seller_console/views.py` — `/seller/me/notifications` 라우트
+
+---
+
+## Phase 148 업데이트: VAPID 자동 생성 UI
+
+### /admin/diagnostics VAPID 자동 생성
+
+Phase 148부터 `/admin/diagnostics` 페이지에서 직접 VAPID 키를 생성할 수 있습니다.
+
+1. `/admin/diagnostics` → "🔔 푸시 알림 (Phase 148 재확인)" 섹션
+2. "🔑 VAPID 키 자동 생성" 버튼 클릭
+3. 생성된 Public/Private Key가 화면에 표시됩니다
+4. **Private Key는 마스킹** (앞 4자리 + ... + 뒤 4자리)으로 표시됩니다
+5. 화면에 표시된 환경변수 값을 Render Dashboard → Environment에 복사하세요
+
+### ⚠️ 주의사항
+
+- **기존 VAPID 키가 있을 때 재생성하면 모든 사용자의 기존 푸시 구독이 무효화됩니다**
+- 재생성 후 모든 구독자가 `/seller/me/notifications`에서 재구독해야 합니다
+
+### 환경변수
+
+```env
+VAPID_AUTO_GENERATE=1          # 1=관리자 UI에서 자동 생성 허용 (기본 1)
+```

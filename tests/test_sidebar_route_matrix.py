@@ -38,6 +38,14 @@ SIDEBAR_LINKS = [
     "/seller/api/tokens",
     "/seller/bookmarklet",
     "/seller/discovery",
+    # Phase 147
+    "/seller/me/notifications",
+    "/seller/inventory/omni",
+    # Phase 148
+    "/seller/wholesale/tiers",
+    "/seller/wholesale/applications",
+    "/seller/subscriptions",
+    "/seller/me/subscriptions",
 ]
 
 
