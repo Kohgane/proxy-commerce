@@ -523,6 +523,27 @@ API_REGISTRY: list = [
         category=ApiCategory.CS_BOT,
         optional=True,
     ),
+    # Phase 146: 반품/정산 자동화
+    ApiKey(
+        name="returns_automation",
+        env_vars=[
+            "RETURNS_AUTO_APPROVE_ENABLED",
+            "RETURNS_AUTO_APPROVE_MAX_KRW",
+            "RETURNS_AUTO_APPROVE_REASONS",
+        ],
+        purpose="반품/환불 자동 승인 토글 + 금액 한도 + 사유 화이트리스트",
+        docs_url="https://kohganepercentiii.com/docs/operations/RETURNS_AUTOMATION.md",
+        category=ApiCategory.UTILITY,
+        optional=True,
+    ),
+    ApiKey(
+        name="settlement_report",
+        env_vars=["SETTLEMENT_TAX_RATE_PCT", "SETTLEMENT_REPORT_EMAIL"],
+        purpose="정산 리포트 세율/발송 이메일 설정",
+        docs_url="https://kohganepercentiii.com/docs/operations/SETTLEMENT.md",
+        category=ApiCategory.UTILITY,
+        optional=True,
+    ),
 ]
 
 

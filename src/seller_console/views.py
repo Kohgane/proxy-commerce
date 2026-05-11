@@ -31,7 +31,7 @@ from difflib import SequenceMatcher
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 
-from flask import Blueprint, abort, jsonify, redirect, render_template, render_template_string, request, session, url_for
+from flask import Blueprint, abort, jsonify, redirect, render_template, render_template_string, request, session, url_for, Response
 
 logger = logging.getLogger(__name__)
 _CS_FAQ_SUPPORTED_LOCALES = {"ko", "ja", "en", "zh"}
@@ -3153,3 +3153,109 @@ def shipping_tracking():
         f"<code>{status['provider']}</code></div>"
     )
     return _render_seller_page("🚚 배송 모니터링", body, page="shipping_tracking")
+
+
+@bp.get("/returns/inbox")
+def returns_inbox():
+    """반품/환불 자동화 인박스 (Phase 146)."""
+    from src.returns.auto_processor import ReturnsAutoProcessor
+
+    reason = (request.args.get("reason") or "").strip()
+    status = (request.args.get("status") or "").strip()
+    processor = ReturnsAutoProcessor()
+    processor.collect_market_requests([])
+    processor.process()
+    rows = processor.list_requests(reason=reason, status=status)
+    body_rows = "".join(
+        (
+            "<tr>"
+            f"<td><code>{x.get('request_id', '-')}</code></td>"
+            f"<td>{x.get('order_id', '-')}</td>"
+            f"<td>{x.get('reason', '-')}</td>"
+            f"<td><span class='badge {'bg-success' if x.get('status') == 'approved' else 'bg-secondary'}'>{x.get('status', '-')}</span></td>"
+            "</tr>"
+        )
+        for x in rows
+    )
+    if not body_rows:
+        body_rows = "<tr><td colspan='4' class='text-center text-muted'>반품 요청이 없습니다.</td></tr>"
+
+    body = (
+        "<h4 class='mb-3'>↩️ 반품/환불 인박스</h4>"
+        "<form class='row g-2 mb-3'>"
+        "<div class='col-auto'><input name='reason' class='form-control form-control-sm' placeholder='사유 필터(defective 등)' value='"
+        + reason
+        + "'></div>"
+        "<div class='col-auto'><input name='status' class='form-control form-control-sm' placeholder='상태 필터(approved 등)' value='"
+        + status
+        + "'></div>"
+        "<div class='col-auto'><button class='btn btn-sm btn-primary'>적용</button></div>"
+        "</form>"
+        "<div class='d-flex gap-2 mb-2'>"
+        "<button class='btn btn-success btn-sm' type='button'>일괄 승인</button>"
+        "<button class='btn btn-outline-primary btn-sm' type='button'>부분 환불</button>"
+        "<button class='btn btn-outline-danger btn-sm' type='button'>거부</button>"
+        "</div>"
+        "<table class='table table-sm table-hover'><thead><tr><th>요청 ID</th><th>주문</th><th>사유</th><th>상태</th></tr></thead>"
+        f"<tbody>{body_rows}</tbody></table>"
+    )
+    return _render_seller_page("↩️ 반품/환불 인박스", body, page="returns_inbox")
+
+
+@bp.get("/settlement")
+def settlement_report():
+    """월별 정산 리포트 화면 (Phase 146)."""
+    from src.settlement.reporter import SettlementReporter
+
+    month = (request.args.get("month") or datetime.now(timezone.utc).strftime("%Y-%m")).strip()
+    reporter = SettlementReporter()
+    report = reporter.monthly_report(month, rows=[])
+    channels = "".join(
+        f"<li>{ch}: {amt:,}원</li>" for ch, amt in report["by_channel"].items()
+    ) or "<li>-</li>"
+    body = (
+        "<h4 class='mb-3'>💰 월별 정산 리포트</h4>"
+        "<form class='row g-2 mb-3'>"
+        "<div class='col-auto'><input name='month' class='form-control form-control-sm' value='"
+        + month
+        + "'></div>"
+        "<div class='col-auto'><button class='btn btn-sm btn-primary'>조회</button></div>"
+        "</form>"
+        f"<div class='alert alert-light border'>이번달 매출(예정): <strong>{report['total_sales_krw']:,}원</strong><br>"
+        f"실 입금 예정액: <strong>{report['total_expected_deposit_krw']:,}원</strong><br>"
+        f"다음 정산일: {report['next_settlement_date']}</div>"
+        "<h6>채널별 순이익</h6><ul>" + channels + "</ul>"
+        "<div class='d-flex gap-2'>"
+        f"<a class='btn btn-outline-secondary btn-sm' href='/seller/settlement/export.csv?month={month}'>CSV 내보내기</a>"
+        f"<a class='btn btn-outline-secondary btn-sm' href='/seller/settlement/export.xlsx?month={month}'>Excel 내보내기</a>"
+        "</div>"
+    )
+    return _render_seller_page("💰 정산 리포트", body, page="settlement")
+
+
+@bp.get("/settlement/export.csv")
+def settlement_export_csv():
+    """정산 CSV 내보내기."""
+    from src.settlement.reporter import SettlementReporter
+
+    month = (request.args.get("month") or datetime.now(timezone.utc).strftime("%Y-%m")).strip()
+    csv_text = SettlementReporter().export_csv(month, rows=[])
+    return Response(
+        csv_text,
+        mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename=settlement-{month}.csv"},
+    )
+
+
+@bp.get("/settlement/export.xlsx")
+def settlement_export_xlsx():
+    """정산 Excel 내보내기(XML Spreadsheet)."""
+    from src.settlement.reporter import SettlementReporter
+
+    month = (request.args.get("month") or datetime.now(timezone.utc).strftime("%Y-%m")).strip()
+    xml_text = SettlementReporter().export_excel_xml(month, rows=[])
+    return Response(
+        xml_text,
+        mimetype="application/vnd.ms-excel",
+        headers={"Content-Disposition": f"attachment; filename=settlement-{month}.xls"},
+    )

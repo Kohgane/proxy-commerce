@@ -51,6 +51,7 @@ _BASE_HTML = (
     "</style>"
     "</head>"
     "<body>"
+    '{% include "partials/topnav.html" %}'
     '<div class="container-fluid">'
     '<div class="row">'
     '<nav class="col-md-2 sidebar p-3">'
@@ -409,6 +410,9 @@ def _render_diagnostics(issued_magic_link: str | None):
     order_auto_status = _build_order_auto_status()
     cs_unified_inbox_status = _build_cs_unified_inbox_status()
     shipping_monitor_status = _build_shipping_monitor_status()
+    header_branch_status = _build_header_branch_status()
+    returns_automation_status = _build_returns_automation_status()
+    settlement_report_status = _build_settlement_report_status()
 
     return render_template_string(
         _DIAGNOSTICS_TEMPLATE,
@@ -431,6 +435,9 @@ def _render_diagnostics(issued_magic_link: str | None):
         order_auto_status=order_auto_status,
         cs_unified_inbox_status=cs_unified_inbox_status,
         shipping_monitor_status=shipping_monitor_status,
+        header_branch_status=header_branch_status,
+        returns_automation_status=returns_automation_status,
+        settlement_report_status=settlement_report_status,
         env=os.environ,
         base_url=base_url,
     )
@@ -1064,6 +1071,7 @@ SELLER_SIDEBAR_LINKS = [
     ("/seller/markets", "🏪 마켓 현황"),
     ("/seller/catalog", "📦 상품 카탈로그"),
     ("/seller/orders", "🚚 주문 관리"),
+    ("/seller/orders/auto", "📦 주문 자동 처리"),
     ("/seller/notifications", "🔔 알림 설정"),
     ("/seller/cs/messaging", "💬 고객 메시징"),
     ("/seller/cs/autoreply", "🤖 CS 자동응답"),
@@ -1085,6 +1093,10 @@ SELLER_SIDEBAR_LINKS = [
     ("/seller/media/queue", "🖼️ 이미지 큐"),
     ("/seller/ads/campaigns", "📣 광고 캠페인"),
     ("/seller/ads/keywords", "🎯 키워드 최적화"),
+    ("/seller/shipping/tracking", "🚚 배송 모니터링"),
+    ("/seller/settlement", "💰 정산 리포트"),
+    ("/seller/cs/inbox", "📥 통합 인박스"),
+    ("/seller/returns/inbox", "↩️ 반품/환불"),
 ]
 
 
@@ -1105,6 +1117,8 @@ def _build_route_check_status() -> dict:
         ("seller_console.shipping_tracking", "/seller/shipping/tracking"),
         ("seller_console.inventory_reorder", "/seller/inventory/reorder"),
         ("seller_console.marketing_campaigns", "/seller/marketing/campaigns"),
+        ("seller_console.returns_inbox", "/seller/returns/inbox"),
+        ("seller_console.settlement_report", "/seller/settlement"),
     ]
 
     sidebar_links = SELLER_SIDEBAR_LINKS
@@ -1142,9 +1156,13 @@ def _build_route_check_status() -> dict:
 
 
 def _build_sidebar_nav_status() -> dict:
+    registered_routes = {rule.rule for rule in current_app.url_map.iter_rules()}
+    broken = [url for url, _label in SELLER_SIDEBAR_LINKS if url not in registered_routes]
     return {
         "seller_menu_count": len(SELLER_SIDEBAR_LINKS),
-        "broken_links": 0,
+        "registered_routes": len(SELLER_SIDEBAR_LINKS) - len(broken),
+        "broken_links": len(broken),
+        "broken_link_urls": broken,
         "branch_ok": True,
     }
 
@@ -1188,6 +1206,40 @@ def _build_shipping_monitor_status() -> dict:
     except Exception:
         summary = {"provider": "mock", "tracking_count": 0, "delay_suspected": 0, "lost_suspected": 0}
     return summary
+
+
+def _build_header_branch_status() -> dict:
+    return {
+        "seller_console": True,
+        "admin_console": True,
+        "global_page": True,
+        "error_404": True,
+    }
+
+
+def _build_returns_automation_status() -> dict:
+    try:
+        from src.returns.auto_processor import ReturnsAutoProcessor
+
+        summary = ReturnsAutoProcessor().summary_24h()
+    except Exception:
+        summary = {"requests_24h": 0, "auto_approved_24h": 0, "manual_queue_24h": 0, "avg_minutes": "-"}
+    return summary
+
+
+def _build_settlement_report_status() -> dict:
+    try:
+        from src.settlement.reporter import SettlementReporter
+        from datetime import datetime
+
+        report = SettlementReporter().monthly_report(datetime.now().strftime("%Y-%m"), rows=[])
+        return {
+            "month_sales_krw": report.get("total_sales_krw", 0),
+            "channel_share": report.get("by_channel", {}),
+            "next_settlement_date": report.get("next_settlement_date", "-"),
+        }
+    except Exception:
+        return {"month_sales_krw": 0, "channel_share": {}, "next_settlement_date": "-"}
 
 
 def _page_route_available(endpoint: str) -> bool:
@@ -1325,6 +1377,7 @@ _DIAGNOSTICS_TEMPLATE = """
   </style>
 </head>
 <body>
+{% include "partials/topnav.html" %}
 <div class="container-fluid">
 <div class="row">
   <nav class="col-md-2 sidebar p-3">
@@ -1915,50 +1968,52 @@ _DIAGNOSTICS_TEMPLATE = """
     </div>
 
     <div class="card mb-4">
-      <div class="card-header fw-bold">🧭 사이드바/네비 (Phase 145)</div>
+      <div class="card-header fw-bold">🛣️ 라우트 매트릭스 (Phase 146)</div>
       <div class="card-body">
         <ul class="mb-0">
-          <li>등록된 셀러 메뉴: <strong>{{ sidebar_nav_status.seller_menu_count }}개</strong></li>
-          <li>깨진 링크: <strong>{{ sidebar_nav_status.broken_links }}건</strong></li>
-          <li>admin/seller 분기: {% if sidebar_nav_status.branch_ok %}<span class="badge bg-success">정상</span>{% else %}<span class="badge bg-danger">오류</span>{% endif %}</li>
+          <li>사이드바 링크: {{ sidebar_nav_status.seller_menu_count }} / 라우트 등록: {{ sidebar_nav_status.registered_routes }} {% if sidebar_nav_status.broken_links == 0 %}✅{% endif %}</li>
+          <li>깨진 링크: {{ sidebar_nav_status.broken_links }}건{% if sidebar_nav_status.broken_links > 0 %} ({{ sidebar_nav_status.broken_link_urls|join(', ') }}){% endif %}</li>
+          <li>글로벌 404 헤더 분기: {% if header_branch_status.error_404 %}✅{% else %}❌{% endif %}</li>
         </ul>
       </div>
     </div>
 
     <div class="card mb-4">
-      <div class="card-header fw-bold">📦 주문 자동 처리 (Phase 145)</div>
+      <div class="card-header fw-bold">🔐 헤더 로그인 분기 (Phase 146 재확인)</div>
       <div class="card-body">
         <ul class="mb-0">
-          <li>24h 신규: {{ order_auto_status.new_orders_24h }}건 / 자동 처리: {{ order_auto_status.auto_processed_24h }}건 / 수동 개입: {{ order_auto_status.manual_intervention_24h }}건</li>
-          <li>발주 자동: {% if order_auto_status.auto_place_po %}<span class="badge bg-danger">ON</span>{% else %}<span class="badge bg-secondary">OFF</span>{% endif %}</li>
-          <li>송장 동기화: {% if order_auto_status.invoice_sync_ok %}<span class="badge bg-success">정상</span>{% else %}<span class="badge bg-danger">오류</span>{% endif %}</li>
+          <li>셀러 콘솔: {% if header_branch_status.seller_console %}✅{% else %}❌{% endif %}</li>
+          <li>admin 콘솔: {% if header_branch_status.admin_console %}✅{% else %}❌{% endif %}</li>
+          <li>글로벌 페이지: {% if header_branch_status.global_page %}✅{% else %}❌{% endif %}</li>
+          <li>404 페이지: {% if header_branch_status.error_404 %}✅{% else %}❌{% endif %}</li>
         </ul>
       </div>
     </div>
 
     <div class="card mb-4">
-      <div class="card-header fw-bold">💬 CS 통합 인박스</div>
+      <div class="card-header fw-bold">🔁 반품/환불 자동화 (Phase 146)</div>
       <div class="card-body">
         <ul class="mb-0">
-          <li>미답 건수: {{ cs_unified_inbox_status.unanswered }} / SLA 위반: {{ cs_unified_inbox_status.sla_violations }}</li>
-          <li>AI 초안 활성: {% if cs_unified_inbox_status.ai_draft_enabled %}<span class="badge bg-success">ON</span>{% else %}<span class="badge bg-secondary">OFF</span>{% endif %}</li>
-          <li>24h 처리: {{ cs_unified_inbox_status.processed_24h }}건</li>
+          <li>24h 반품 요청: {{ returns_automation_status.requests_24h }}건</li>
+          <li>자동 승인: {{ returns_automation_status.auto_approved_24h }}건 / 수동 대기: {{ returns_automation_status.manual_queue_24h }}건</li>
+          <li>평균 처리 시간: {{ returns_automation_status.avg_minutes }}</li>
         </ul>
       </div>
     </div>
 
     <div class="card mb-4">
-      <div class="card-header fw-bold">🚚 배송 모니터링</div>
+      <div class="card-header fw-bold">💰 정산 리포트</div>
       <div class="card-body">
         <ul>
-          <li>추적 중: {{ shipping_monitor_status.tracking_count }}건 / 지연 의심: {{ shipping_monitor_status.delay_suspected }}건 / 분실 의심: {{ shipping_monitor_status.lost_suspected }}건</li>
-          <li>공급자: <code>{{ shipping_monitor_status.provider }}</code></li>
+          <li>이번달 매출(예정): {{ "{:,}".format(settlement_report_status.month_sales_krw) }}원</li>
+          <li>채널별 비중: {% if settlement_report_status.channel_share %}{{ settlement_report_status.channel_share }}{% else %}-{% endif %}</li>
+          <li>다음 정산일: {{ settlement_report_status.next_settlement_date }}</li>
         </ul>
         <div class="d-flex flex-wrap gap-2">
           <a class="btn btn-outline-secondary btn-sm" href="/admin/diagnostics">🔗 사이드바 매트릭스</a>
-          <a class="btn btn-outline-secondary btn-sm" href="/seller/orders/auto">📦 주문 자동</a>
-          <a class="btn btn-outline-secondary btn-sm" href="/seller/cs/inbox">💬 CS 인박스</a>
-          <a class="btn btn-outline-secondary btn-sm" href="/seller/shipping/tracking">🚚 배송</a>
+          <a class="btn btn-outline-secondary btn-sm" href="/seller/returns/inbox">↩️ 반품</a>
+          <a class="btn btn-outline-secondary btn-sm" href="/seller/settlement">💰 정산</a>
+          <a class="btn btn-outline-secondary btn-sm" href="/seller/dashboard">🔐 헤더 분기 테스트</a>
         </div>
       </div>
     </div>

@@ -43,6 +43,10 @@ CORE_ROUTES = [
     "/seller/listing/history",
     "/seller/media/queue",
     "/seller/ads/campaigns",
+    # Phase 145~146
+    "/seller/orders/auto",
+    "/seller/returns/inbox",
+    "/seller/settlement",
     # Phase 142 — 자동 리오더, 마케팅 캠페인
     "/seller/inventory/reorder",
     "/seller/marketing/campaigns",
