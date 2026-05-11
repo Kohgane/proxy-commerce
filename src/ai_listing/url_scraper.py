@@ -230,6 +230,58 @@ def scrape_product_page(url: str, force_refresh: bool = False) -> Dict[str, Any]
         empty_result["_error"] = "유효하지 않은 URL"
         return empty_result
 
+    # SSRF 방지: 사설/내부 IP 주소 차단
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname or ""
+        # 빈 호스트 차단
+        if not hostname:
+            empty_result["_error"] = "유효하지 않은 URL (호스트 없음)"
+            return empty_result
+        # localhost 및 내부 주소 차단
+        blocked_hosts = (
+            "localhost",
+            "127.",
+            "0.",
+            "10.",
+            "172.16.",
+            "172.17.",
+            "172.18.",
+            "172.19.",
+            "172.20.",
+            "172.21.",
+            "172.22.",
+            "172.23.",
+            "172.24.",
+            "172.25.",
+            "172.26.",
+            "172.27.",
+            "172.28.",
+            "172.29.",
+            "172.30.",
+            "172.31.",
+            "192.168.",
+            "::1",
+            "[::1]",
+            "0.0.0.0",
+            "169.254.",  # link-local
+            "fd",  # IPv6 unique local prefix
+        )
+        hostname_lower = hostname.lower()
+        if any(
+            hostname_lower == blocked or hostname_lower.startswith(blocked)
+            for blocked in blocked_hosts
+        ):
+            empty_result["_error"] = f"내부 네트워크 URL 접근 차단: {hostname}"
+            return empty_result
+        # metadata URL 차단 (cloud provider metadata endpoints)
+        if hostname_lower in ("metadata.google.internal", "169.254.169.254"):
+            empty_result["_error"] = "메타데이터 URL 접근 차단"
+            return empty_result
+    except Exception:
+        empty_result["_error"] = "URL 파싱 실패"
+        return empty_result
+
     url_key = _url_hash(url)
 
     # 캐시 확인

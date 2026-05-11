@@ -72,5 +72,5 @@ class TestOAuthSetupPage:
     def test_oauth_setup_contains_naver_warning(self, admin_client):
         """Naver Commerce API와 혼동 주의 경고 포함."""
         html = admin_client.get("/admin/oauth-setup").get_data(as_text=True)
-        # Commerce API와 로그인 OAuth가 다르다는 경고
-        assert "Commerce" in html or "주의" in html or "developers.naver.com" in html
+        # Commerce API와 로그인 OAuth가 다르다는 경고 및 Naver Developers 링크 포함
+        assert "주의" in html or "apicenter.commerce.naver.com" in html
