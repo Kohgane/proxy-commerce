@@ -13,3 +13,9 @@ build/
 .coverage
 htmlcov/
 logs/*.jsonl
+
+# Phase 147: 런타임 데이터 파일
+data/job_queue.jsonl
+data/job_dead_letter.jsonl
+data/push_subscriptions.jsonl
+data/omni_sync_log.jsonl

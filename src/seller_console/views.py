@@ -3259,3 +3259,249 @@ def settlement_export_xlsx():
         mimetype="application/vnd.ms-excel",
         headers={"Content-Disposition": f"attachment; filename=settlement-{month}.xls"},
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 147 — 옴니채널 재고 동기화
+# ---------------------------------------------------------------------------
+
+@bp.get("/inventory/omni")
+def inventory_omni():
+    """옴니채널 재고 동기화 화면 (Phase 147)."""
+    from src.inventory.omni_sync import OmniInventorySyncer
+
+    syncer = OmniInventorySyncer()
+    summary = syncer.summary()
+    sku = (request.args.get("sku") or "").strip()
+    channel_stocks = []
+    if sku:
+        channel_stocks = [cs.to_dict() for cs in syncer.channel_stocks(sku)]
+
+    mode_badge = (
+        "<span class='badge bg-primary'>common_pool</span>"
+        if summary["mode"] == "common_pool"
+        else "<span class='badge bg-secondary'>per_channel</span>"
+    )
+    enabled_badge = (
+        "<span class='badge bg-success'>ON</span>"
+        if summary["enabled"]
+        else "<span class='badge bg-secondary'>OFF (INVENTORY_OMNI_SYNC_ENABLED=0)</span>"
+    )
+
+    stock_rows = ""
+    for cs in channel_stocks:
+        status_class = "success" if cs["sync_status"] == "ok" else ("warning" if cs["sync_status"] == "delayed" else "danger")
+        stock_rows += (
+            f"<tr>"
+            f"<td>{cs['channel']}</td>"
+            f"<td>{cs['stock']}</td>"
+            f"<td><span class='badge bg-{status_class}'>{cs['sync_status']}</span></td>"
+            f"<td class='small text-muted'>{cs.get('error', '')}</td>"
+            f"</tr>"
+        )
+
+    channels_html = ", ".join(summary["configured_channels"]) or "연동된 채널 없음"
+
+    body = (
+        "<h4 class='mb-3'>🔄 옴니채널 재고 동기화 (Phase 147)</h4>"
+        "<div class='row mb-3'>"
+        f"<div class='col-md-3'><div class='card text-center'><div class='card-body'><h5>{summary['channel_count']}</h5><small>연동 채널</small></div></div></div>"
+        f"<div class='col-md-3'><div class='card text-center'><div class='card-body'><h5 class='text-danger'>{summary['failure_24h']}</h5><small>24h 실패</small></div></div></div>"
+        f"<div class='col-md-3'><div class='card text-center'><div class='card-body'><h5>{summary['sync_interval_sec']}초</h5><small>동기화 주기</small></div></div></div>"
+        "</div>"
+        "<div class='alert alert-light border mb-3'>"
+        f"활성화: {enabled_badge} &nbsp; 모드: {mode_badge}<br>"
+        f"<small>연동 채널: {channels_html}</small>"
+        "</div>"
+        "<h5 class='mb-2'>SKU별 재고 조회</h5>"
+        "<form class='row g-2 mb-3'>"
+        f"<div class='col-auto'><input name='sku' class='form-control form-control-sm' placeholder='SKU 입력' value='{sku}'></div>"
+        "<div class='col-auto'><button class='btn btn-sm btn-primary' style='min-height:36px'>조회</button></div>"
+        "</form>"
+    )
+    if sku:
+        body += (
+            "<div class='table-responsive mb-3'>"
+            "<table class='table table-sm table-hover'>"
+            "<thead><tr><th>채널</th><th>재고</th><th>동기화 상태</th><th>오류</th></tr></thead>"
+            f"<tbody>{stock_rows or '<tr><td colspan=4 class=text-center>조회 결과 없음</td></tr>'}</tbody>"
+            "</table></div>"
+            "<form method='post' action='/seller/inventory/omni/sync' class='d-inline'>"
+            f"<input type='hidden' name='sku' value='{sku}'>"
+            "<button class='btn btn-outline-primary btn-sm' style='min-height:36px'>🔄 수동 동기화</button>"
+            "</form>"
+        )
+    return _render_seller_page("🔄 옴니채널 재고", body, page="inventory_omni")
+
+
+@bp.post("/inventory/omni/sync")
+def inventory_omni_sync():
+    """수동 동기화 트리거 (Phase 147)."""
+    from src.inventory.omni_sync import OmniInventorySyncer
+
+    sku = (request.form.get("sku") or "").strip()
+    if not sku:
+        return redirect(url_for("seller_console.inventory_omni"))
+    syncer = OmniInventorySyncer()
+    result = syncer.manual_sync(sku)
+    return redirect(url_for("seller_console.inventory_omni", sku=sku))
+
+
+# ---------------------------------------------------------------------------
+# Phase 147 — 푸시 알림 설정 (/me/notifications)
+# ---------------------------------------------------------------------------
+
+@bp.get("/me/notifications")
+def me_notifications():
+    """푸시 알림 구독/해제 + 카테고리별 설정 (Phase 147)."""
+    from src.notifications.web_push import push_status, get_vapid_public_key
+
+    status = push_status()
+    vapid_pub = get_vapid_public_key()
+
+    body = (
+        "<h4 class='mb-3'>🔔 푸시 알림 설정 (Phase 147)</h4>"
+        "<div class='alert alert-light border mb-3'>"
+        f"VAPID 공개키: {'<span class=\"badge bg-success\">✅ 설정됨</span>' if status['vapid_configured'] else '<span class=\"badge bg-warning\">⚠️ 미설정 (기능 제한)</span>'}<br>"
+        f"현재 구독자: <strong>{status['subscriber_count']}</strong>명"
+        "</div>"
+    )
+
+    if status['vapid_configured']:
+        body += (
+            "<div class='card mb-3'>"
+            "<div class='card-header fw-bold'>📱 이 기기 푸시 구독</div>"
+            "<div class='card-body'>"
+            "<div id='pushStatus' class='mb-2 text-muted small'>푸시 구독 상태 확인 중...</div>"
+            "<button id='subscribeBtn' class='btn btn-primary me-2' style='min-height:44px' onclick='subscribePush()'>🔔 구독</button>"
+            "<button id='unsubscribeBtn' class='btn btn-outline-secondary' style='min-height:44px;display:none' onclick='unsubscribePush()'>🔕 구독 해제</button>"
+            "</div>"
+            "</div>"
+            "<div class='card mb-3'>"
+            "<div class='card-header fw-bold'>📋 알림 카테고리 ON/OFF</div>"
+            "<div class='card-body'>"
+            "<form id='categoryForm'>"
+            "<div class='form-check form-switch mb-2'><input class='form-check-input' type='checkbox' id='cat_order' name='order' checked><label class='form-check-label' for='cat_order'>🛒 신규 주문</label></div>"
+            "<div class='form-check form-switch mb-2'><input class='form-check-input' type='checkbox' id='cat_cs' name='cs' checked><label class='form-check-label' for='cat_cs'>🚨 긴급 CS</label></div>"
+            "<div class='form-check form-switch mb-2'><input class='form-check-input' type='checkbox' id='cat_shipping' name='shipping' checked><label class='form-check-label' for='cat_shipping'>⚠️ 배송 지연</label></div>"
+            "<div class='form-check form-switch mb-2'><input class='form-check-input' type='checkbox' id='cat_ads' name='ads' checked><label class='form-check-label' for='cat_ads'>📊 ROAS 급변</label></div>"
+            "</form>"
+            "</div>"
+            "</div>"
+            "<div class='card mb-3'>"
+            "<div class='card-header fw-bold'>🔬 테스트 전송</div>"
+            "<div class='card-body'>"
+            "<button class='btn btn-outline-primary btn-sm' style='min-height:44px'"
+            "  onclick=\"fetch('/seller/me/notifications/test', {method:'POST'}).then(r=>r.json()).then(d=>alert(d.message||d.error))\">"
+            "  📤 테스트 알림 전송"
+            "</button>"
+            "</div>"
+            "</div>"
+        )
+        body += (
+            f"<script>"
+            f"const VAPID_PUB_KEY = '{vapid_pub}';"
+            """
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+}
+async function subscribePush() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    alert('이 브라우저는 Web Push를 지원하지 않습니다.'); return;
+  }
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(VAPID_PUB_KEY)
+  });
+  const resp = await fetch('/seller/me/notifications/subscribe', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({subscription: sub.toJSON()})
+  });
+  const data = await resp.json();
+  document.getElementById('pushStatus').textContent = data.ok ? '✅ 구독 완료' : '❌ 구독 실패: ' + data.error;
+}
+async function unsubscribePush() {
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription();
+  if (!sub) { alert('구독 중인 항목이 없습니다.'); return; }
+  await sub.unsubscribe();
+  await fetch('/seller/me/notifications/unsubscribe', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({endpoint: sub.endpoint})});
+  document.getElementById('pushStatus').textContent = '구독 해제됨';
+}
+navigator.serviceWorker && navigator.serviceWorker.ready.then(reg => {
+  reg.pushManager.getSubscription().then(sub => {
+    document.getElementById('pushStatus').textContent = sub ? '✅ 구독 중' : '구독 안 됨';
+  });
+});
+"""
+            f"</script>"
+        )
+    else:
+        body += (
+            "<div class='alert alert-warning'>"
+            "⚠️ VAPID 키가 설정되지 않았습니다. 환경변수 <code>WEB_PUSH_VAPID_PUBLIC</code>, <code>WEB_PUSH_VAPID_PRIVATE</code>를 설정하세요.<br>"
+            "<a href='/admin/diagnostics'>🛠️ /admin/diagnostics에서 생성 가이드 확인</a>"
+            "</div>"
+        )
+
+    return _render_seller_page("🔔 푸시 알림", body, page="push_notifications")
+
+
+@bp.post("/me/notifications/subscribe")
+def me_notifications_subscribe():
+    """Web Push 구독 등록 API (Phase 147)."""
+    from src.notifications.web_push import PushSubscription, PushSubscriptionStore
+
+    try:
+        data = request.get_json(force=True) or {}
+        sub_data = data.get("subscription", {})
+        keys = sub_data.get("keys", {})
+        user_id = session.get("user_id", "anonymous")
+        sub = PushSubscription(
+            user_id=user_id,
+            endpoint=sub_data.get("endpoint", ""),
+            p256dh=keys.get("p256dh", ""),
+            auth=keys.get("auth", ""),
+        )
+        if not sub.endpoint:
+            return jsonify({"ok": False, "error": "endpoint 필수"}), 400
+        PushSubscriptionStore().subscribe(sub)
+        return jsonify({"ok": True, "message": "구독 완료"})
+    except Exception as exc:
+        logger.warning("push subscribe 오류: %s", exc)
+        return jsonify({"ok": False, "error": "구독 처리 중 오류"}), 500
+
+
+@bp.post("/me/notifications/unsubscribe")
+def me_notifications_unsubscribe():
+    """Web Push 구독 해제 API (Phase 147)."""
+    from src.notifications.web_push import PushSubscriptionStore
+
+    try:
+        data = request.get_json(force=True) or {}
+        endpoint = data.get("endpoint", "")
+        if not endpoint:
+            return jsonify({"ok": False, "error": "endpoint 필수"}), 400
+        ok = PushSubscriptionStore().unsubscribe(endpoint)
+        return jsonify({"ok": ok})
+    except Exception as exc:
+        logger.warning("push unsubscribe 오류: %s", exc)
+        return jsonify({"ok": False, "error": "처리 중 오류"}), 500
+
+
+@bp.post("/me/notifications/test")
+def me_notifications_test():
+    """테스트 푸시 알림 전송 (Phase 147)."""
+    from src.notifications.web_push import PushSubscriptionStore, send_push
+
+    user_id = session.get("user_id", "anonymous")
+    subs = PushSubscriptionStore().list_for_user(user_id)
+    if not subs:
+        return jsonify({"ok": False, "error": "구독 중인 기기가 없습니다."})
+    results = [send_push(s, title="🔔 테스트 알림", body="Proxy Commerce 푸시 알림이 정상 작동 중입니다.") for s in subs]
+    return jsonify({"ok": any(results), "message": f"{sum(results)}/{len(results)} 기기에 전송 완료"})
+

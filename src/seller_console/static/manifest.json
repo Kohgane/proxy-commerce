@@ -1,12 +1,15 @@
 {
-  "name": "Kohgane CS",
-  "short_name": "CS",
-  "description": "코가네 CS 운영자 모바일 앱",
-  "start_url": "/seller/cs/mobile",
+  "name": "Proxy Commerce",
+  "short_name": "Percentiii",
+  "description": "kohganepercentiii.com 셀러 콘솔 — 옴니채널 상품 관리 플랫폼",
+  "start_url": "/seller/dashboard",
+  "scope": "/seller/",
   "display": "standalone",
-  "background_color": "#212529",
-  "theme_color": "#212529",
+  "background_color": "#1a1a2e",
+  "theme_color": "#1a1a2e",
   "lang": "ko",
+  "orientation": "portrait-primary",
+  "categories": ["business", "shopping"],
   "icons": [
     {
       "src": "/seller/static/icon-192.png",
@@ -19,6 +22,18 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "주문 관리",
+      "url": "/seller/orders",
+      "description": "주문 목록 바로가기"
+    },
+    {
+      "name": "CS 인박스",
+      "url": "/seller/cs/inbox",
+      "description": "고객 문의 인박스"
     }
   ]
 }
