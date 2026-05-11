@@ -147,12 +147,14 @@
 | Phase 145 | 사이드바/네비 통일 hotfix + 주문 자동 처리 + CS 통합 인박스 + 배송 모니터링 | #PR | 2026-05-11 |
 | Phase 146 | 주문 자동 라우트 hotfix + 헤더 로그인 분기 재확인 + 반품/환불 자동화 + 정산 리포트 | #PR | 2026-05-11 |
 | Phase 147 | 모바일 반응형 + PWA + Web Push 알림 + 옴니채널 재고 동기화 + 멀티워커 큐 안정화 | #PR | 2026-05-11 |
+| Phase 148 | /me/notifications hotfix + 버전 자동화 + VAPID 자동 생성 + B2B + 정기구독 | #PR | 2026-05-11 |
+| Phase 148.1 | 운영 복구 hotfix (f-string SyntaxError 수정 + 사이드바 라우트 매트릭스/자동 등록 안전망) | #PR | 2026-05-11 |
 
 ## 📋 다음 큐
 
 | Phase | 내용 |
 |---|---|
-| Phase 148 | 모니터링 강화 (Sentry, Uptime) + Redis 큐 백엔드 + Push 알림 고도화 |
+| Phase 149 | 모니터링 강화 (Sentry, Uptime) + Redis 큐 백엔드 + Push 알림 고도화 |
 | (2026 Q4) | SaaS 공개 준비 (약관/결제/랜딩) |
 
 ## 🚧 진행 중 Phase

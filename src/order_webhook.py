@@ -23,6 +23,31 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+_AUTO_BLUEPRINT_CANDIDATE_MODULES = (
+    "src.cs.inbox_routes",
+    "src.cs.messaging_routes",
+    "src.cs.autoreply_routes",
+    "src.returns.routes",
+    "src.settlement.routes",
+    "src.me.routes",
+    "src.orders.auto_routes",
+    "src.shipping.routes",
+    "src.inventory.omni_routes",
+    "src.inventory.reorder_routes",
+    "src.wholesale.routes",
+    "src.subscriptions.routes",
+    "src.marketing.routes",
+    "src.sourcing.routes",
+    "src.listing.routes",
+    "src.media.routes",
+    "src.ads.routes",
+    "src.pricing.routes",
+    "src.api.tokens_routes",
+    "src.api.status_routes",
+    "src.discovery.routes",
+    "src.bookmarklet.routes",
+)
+
 
 def _configure_logging() -> None:
     level_name = (os.getenv("GUNICORN_LOG_LEVEL") or os.getenv("LOG_LEVEL") or "INFO").upper()
@@ -34,6 +59,30 @@ def _configure_logging() -> None:
 
 
 _configure_logging()
+
+
+def _auto_register_blueprints(flask_app: Flask, module_names: tuple[str, ...] | None = None) -> list[str]:
+    """수동 등록 누락 대비용 블루프린트 자동 등록 안전망."""
+    import importlib
+
+    registered: list[str] = []
+    for module_name in module_names or _AUTO_BLUEPRINT_CANDIDATE_MODULES:
+        try:
+            mod = importlib.import_module(module_name)
+        except Exception as exc:
+            logger.debug("자동 등록 후보 import 실패(%s): %s", module_name, exc)
+            continue
+        bp_obj = getattr(mod, "bp", None) or getattr(mod, "blueprint", None)
+        if bp_obj is None or bp_obj.name in flask_app.blueprints:
+            continue
+        try:
+            flask_app.register_blueprint(bp_obj)
+            registered.append(bp_obj.name)
+            logger.info("[auto-register] %s (%s)", bp_obj.name, module_name)
+        except Exception as exc:
+            logger.warning("[auto-register] Blueprint 등록 실패(%s): %s", module_name, exc)
+    flask_app.config["AUTO_REGISTERED_BLUEPRINTS"] = registered
+    return registered
 
 # 대시보드 API Blueprint 등록 (DASHBOARD_API_ENABLED=1 시)
 if os.getenv("DASHBOARD_API_ENABLED", "1") == "1":
@@ -948,6 +997,9 @@ if os.getenv("ENABLE_INTERNAL_SHOP", "0") == "1":
         logger.warning("내부 /shop 블루프린트 등록 실패: %s", _shop_bp_exc)
 else:
     logger.info("내부 /shop 블루프린트 비활성 (기본). kohganemultishop.org가 자체몰.")
+
+_auto_registered_blueprints = _auto_register_blueprints(app)
+logger.info("자동 Blueprint 등록 완료: %d개", len(_auto_registered_blueprints))
 
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것

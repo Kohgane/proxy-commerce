@@ -3358,11 +3358,16 @@ def me_notifications():
 
     status = push_status()
     vapid_pub = get_vapid_public_key()
+    vapid_badge = (
+        '<span class="badge bg-success">✅ 설정됨</span>'
+        if status["vapid_configured"]
+        else '<span class="badge bg-warning">⚠️ 미설정 (기능 제한)</span>'
+    )
 
     body = (
         "<h4 class='mb-3'>🔔 푸시 알림 설정 (Phase 147)</h4>"
         "<div class='alert alert-light border mb-3'>"
-        f"VAPID 공개키: {'<span class=\"badge bg-success\">✅ 설정됨</span>' if status['vapid_configured'] else '<span class=\"badge bg-warning\">⚠️ 미설정 (기능 제한)</span>'}<br>"
+        f"VAPID 공개키: {vapid_badge}<br>"
         f"현재 구독자: <strong>{status['subscriber_count']}</strong>명"
         "</div>"
     )
@@ -3719,4 +3724,3 @@ def me_subscription_skip(subscription_id: str):
     from src.product_subscriptions.subscription_products import ProductSubscriptionManager
     ProductSubscriptionManager().skip_next(subscription_id)
     return redirect("/seller/me/subscriptions")
-
