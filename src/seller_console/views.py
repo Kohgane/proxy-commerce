@@ -3505,3 +3505,218 @@ def me_notifications_test():
     results = [send_push(s, title="🔔 테스트 알림", body="Proxy Commerce 푸시 알림이 정상 작동 중입니다.") for s in subs]
     return jsonify({"ok": any(results), "message": f"{sum(results)}/{len(results)} 기기에 전송 완료"})
 
+
+# ---------------------------------------------------------------------------
+# Phase 148 — B2B 도매 모드 (/seller/wholesale/*)
+# ---------------------------------------------------------------------------
+
+@bp.get("/wholesale/tiers")
+def wholesale_tiers():
+    """도매 등급/할인 룰 관리 (Phase 148)."""
+    from src.wholesale.tier_manager import WholesaleTierManager
+    mgr = WholesaleTierManager()
+    tiers = mgr.list_tiers()
+    body = (
+        "<h4 class='mb-4 fw-bold'>🏢 B2B 도매 등급 관리 <small class='text-muted fs-6'>Phase 148</small></h4>"
+        + ("<div class='alert alert-warning'>⚠️ 도매 기능이 비활성화되어 있습니다 (WHOLESALE_ENABLED=0).</div>" if not mgr.enabled else "")
+        + "<div class='table-responsive'><table class='table table-bordered table-hover'>"
+        + "<thead class='table-dark'><tr><th>등급</th><th>이름</th><th>MOQ</th><th>할인 구간</th><th>설명</th></tr></thead><tbody>"
+    )
+    for t in tiers:
+        brackets_html = " / ".join(
+            f"{b.min_qty}~{b.max_qty if b.max_qty else '∞'}개 × {b.multiplier}"
+            for b in t.brackets
+        )
+        body += (
+            f"<tr><td><code>{t.level.value}</code></td>"
+            f"<td><strong>{t.label}</strong></td>"
+            f"<td>{t.moq}개 이상</td>"
+            f"<td>{brackets_html}</td>"
+            f"<td class='text-muted'>{t.description}</td></tr>"
+        )
+    body += (
+        "</tbody></table></div>"
+        "<div class='alert alert-info mt-3'>"
+        "<strong>수량 구간 할인:</strong> 도매 1~9개 ❌ (MOQ 미달) · 10~49개 ×0.9 · 50개+ ×0.8 | VIP ×0.75"
+        "</div>"
+        "<a href='/seller/wholesale/applications' class='btn btn-outline-primary btn-sm'>📋 B2B 신청 목록</a>"
+    )
+    return _render_seller_page("🏢 도매 등급 관리", body, page="wholesale_tiers")
+
+
+@bp.get("/wholesale/applications")
+def wholesale_applications():
+    """B2B 가입 신청 승인 큐 (Phase 148)."""
+    from src.wholesale.application_manager import WholesaleApplicationManager, ApplicationStatus
+    mgr = WholesaleApplicationManager()
+    pending = mgr.list_applications(status=ApplicationStatus.PENDING)
+    approved = mgr.list_applications(status=ApplicationStatus.APPROVED)
+    body = (
+        "<h4 class='mb-4 fw-bold'>📋 B2B 신청 승인 큐 <small class='text-muted fs-6'>Phase 148</small></h4>"
+        f"<div class='mb-3'><span class='badge bg-warning text-dark me-2'>대기 {len(pending)}건</span>"
+        f"<span class='badge bg-success me-2'>승인 {len(approved)}건</span></div>"
+    )
+    if not pending:
+        body += "<div class='alert alert-secondary'>대기 중인 B2B 신청이 없습니다.</div>"
+    else:
+        body += (
+            "<div class='table-responsive'><table class='table table-hover'>"
+            "<thead class='table-light'><tr><th>신청 ID</th><th>회사명</th><th>사업자번호</th><th>연락처</th><th>신청일</th><th>조작</th></tr></thead><tbody>"
+        )
+        for a in pending:
+            body += (
+                f"<tr><td><small>{a.application_id[:8]}…</small></td>"
+                f"<td><strong>{a.business_name}</strong></td>"
+                f"<td>{a.business_reg_number}</td>"
+                f"<td>{a.contact_email}</td>"
+                f"<td><small>{a.submitted_at[:10]}</small></td>"
+                f"<td>"
+                f"<form method='post' action='/seller/wholesale/applications/{a.application_id}/approve' class='d-inline'>"
+                f"<button class='btn btn-success btn-sm me-1'>✅ 승인</button></form>"
+                f"<form method='post' action='/seller/wholesale/applications/{a.application_id}/reject' class='d-inline'>"
+                f"<button class='btn btn-danger btn-sm'>❌ 거절</button></form>"
+                f"</td></tr>"
+            )
+        body += "</tbody></table></div>"
+    body += "<a href='/seller/wholesale/tiers' class='btn btn-outline-secondary btn-sm mt-3'>← 등급 관리</a>"
+    return _render_seller_page("📋 B2B 신청 큐", body, page="wholesale_applications")
+
+
+@bp.post("/wholesale/applications/<application_id>/approve")
+def wholesale_application_approve(application_id: str):
+    """B2B 신청 승인 (Phase 148)."""
+    from src.wholesale.application_manager import WholesaleApplicationManager
+    WholesaleApplicationManager().approve(application_id, reviewer_note="관리자 승인")
+    return redirect("/seller/wholesale/applications")
+
+
+@bp.post("/wholesale/applications/<application_id>/reject")
+def wholesale_application_reject(application_id: str):
+    """B2B 신청 거절 (Phase 148)."""
+    from src.wholesale.application_manager import WholesaleApplicationManager
+    WholesaleApplicationManager().reject(application_id, reviewer_note="관리자 거절")
+    return redirect("/seller/wholesale/applications")
+
+
+# ---------------------------------------------------------------------------
+# Phase 148 — 정기구독 상품 (/seller/subscriptions, /seller/me/subscriptions)
+# ---------------------------------------------------------------------------
+
+@bp.get("/subscriptions")
+def seller_subscriptions():
+    """판매자 정기구독 관리 화면 (Phase 148)."""
+    from src.product_subscriptions.subscription_products import ProductSubscriptionManager
+    mgr = ProductSubscriptionManager()
+    summary = mgr.summary()
+    active_subs = mgr.list_active()
+    body = (
+        "<h4 class='mb-4 fw-bold'>🔁 정기구독 상품 관리 <small class='text-muted fs-6'>Phase 148</small></h4>"
+        + ("<div class='alert alert-warning'>⚠️ 구독 기능이 비활성화되어 있습니다 (SUBSCRIPTION_ENABLED=0).</div>" if not mgr.enabled else "")
+        + f"<div class='row g-3 mb-4'>"
+        + f"<div class='col-md-3'><div class='card text-center shadow-sm'><div class='card-body'><h6 class='text-muted'>활성 구독</h6><h3>{summary['active_count']}</h3></div></div></div>"
+        + f"<div class='col-md-3'><div class='card text-center shadow-sm'><div class='card-body'><h6 class='text-muted'>이번주 결제</h6><h3>{summary['billed_this_week']}</h3></div></div></div>"
+        + f"<div class='col-md-3'><div class='card text-center shadow-sm'><div class='card-body'><h6 class='text-muted'>결제 실패</h6><h3 class='text-danger'>{summary['failed_count']}</h3></div></div></div>"
+        + f"<div class='col-md-3'><div class='card text-center shadow-sm'><div class='card-body'><h6 class='text-muted'>PG 제공사</h6><h5><code>{summary['pg_provider']}</code></h5></div></div></div>"
+        + "</div>"
+    )
+    if not active_subs:
+        body += "<div class='alert alert-secondary'>활성 구독이 없습니다.</div>"
+    else:
+        body += (
+            "<div class='table-responsive'><table class='table table-hover'>"
+            "<thead class='table-light'><tr><th>구독 ID</th><th>사용자</th><th>상품</th><th>주기</th><th>단가</th><th>다음 결제일</th></tr></thead><tbody>"
+        )
+        for s in active_subs[:50]:
+            body += (
+                f"<tr><td><small>{s.subscription_id[:8]}…</small></td>"
+                f"<td>{s.user_id}</td>"
+                f"<td>{s.product_name or s.product_id}</td>"
+                f"<td>{s.cycle.label}</td>"
+                f"<td>₩{s.unit_price:,}</td>"
+                f"<td>{s.next_billing_at[:10] if s.next_billing_at else '-'}</td></tr>"
+            )
+        body += "</tbody></table></div>"
+    return _render_seller_page("🔁 정기구독 관리", body, page="subscriptions")
+
+
+@bp.get("/me/subscriptions")
+def me_subscriptions():
+    """사용자 자신의 구독 관리 (Phase 148)."""
+    from src.product_subscriptions.subscription_products import ProductSubscriptionManager, SubscriptionStatus
+    user_id = session.get("user_id", "anonymous")
+    mgr = ProductSubscriptionManager()
+    subs = mgr.list_for_user(user_id)
+    body = (
+        "<h4 class='mb-4 fw-bold'>🔁 내 구독 관리 <small class='text-muted fs-6'>Phase 148</small></h4>"
+    )
+    if not subs:
+        body += (
+            "<div class='alert alert-info'>"
+            "현재 구독 중인 상품이 없습니다. 상품 상세 페이지에서 '정기구독' 버튼을 눌러 구독을 시작하세요."
+            "</div>"
+        )
+    else:
+        body += (
+            "<div class='table-responsive'><table class='table table-hover'>"
+            "<thead class='table-light'><tr><th>상품</th><th>주기</th><th>단가</th><th>상태</th><th>다음 결제</th><th>조작</th></tr></thead><tbody>"
+        )
+        for s in subs:
+            status_badge = {
+                SubscriptionStatus.ACTIVE: "<span class='badge bg-success'>활성</span>",
+                SubscriptionStatus.PAUSED: "<span class='badge bg-warning text-dark'>일시정지</span>",
+                SubscriptionStatus.CANCELLED: "<span class='badge bg-secondary'>해지</span>",
+            }.get(s.status, s.status.value)
+            actions = ""
+            if s.status == SubscriptionStatus.ACTIVE:
+                actions = (
+                    f"<form method='post' action='/seller/me/subscriptions/{s.subscription_id}/pause' class='d-inline'>"
+                    "<button class='btn btn-outline-warning btn-sm me-1'>일시정지</button></form>"
+                    f"<form method='post' action='/seller/me/subscriptions/{s.subscription_id}/skip' class='d-inline'>"
+                    "<button class='btn btn-outline-secondary btn-sm me-1'>스킵</button></form>"
+                    f"<form method='post' action='/seller/me/subscriptions/{s.subscription_id}/cancel' class='d-inline'>"
+                    "<button class='btn btn-outline-danger btn-sm'>해지</button></form>"
+                )
+            elif s.status == SubscriptionStatus.PAUSED:
+                actions = (
+                    f"<form method='post' action='/seller/me/subscriptions/{s.subscription_id}/resume' class='d-inline'>"
+                    "<button class='btn btn-outline-success btn-sm'>재개</button></form>"
+                )
+            body += (
+                f"<tr><td>{s.product_name or s.product_id}</td>"
+                f"<td>{s.cycle.label}</td>"
+                f"<td>₩{s.unit_price:,}</td>"
+                f"<td>{status_badge}</td>"
+                f"<td>{s.next_billing_at[:10] if s.next_billing_at else '-'}</td>"
+                f"<td>{actions}</td></tr>"
+            )
+        body += "</tbody></table></div>"
+    return _render_seller_page("🔁 내 구독", body, page="me_subscriptions")
+
+
+@bp.post("/me/subscriptions/<subscription_id>/pause")
+def me_subscription_pause(subscription_id: str):
+    from src.product_subscriptions.subscription_products import ProductSubscriptionManager
+    ProductSubscriptionManager().pause(subscription_id)
+    return redirect("/seller/me/subscriptions")
+
+
+@bp.post("/me/subscriptions/<subscription_id>/resume")
+def me_subscription_resume(subscription_id: str):
+    from src.product_subscriptions.subscription_products import ProductSubscriptionManager
+    ProductSubscriptionManager().resume(subscription_id)
+    return redirect("/seller/me/subscriptions")
+
+
+@bp.post("/me/subscriptions/<subscription_id>/cancel")
+def me_subscription_cancel(subscription_id: str):
+    from src.product_subscriptions.subscription_products import ProductSubscriptionManager
+    ProductSubscriptionManager().cancel(subscription_id)
+    return redirect("/seller/me/subscriptions")
+
+
+@bp.post("/me/subscriptions/<subscription_id>/skip")
+def me_subscription_skip(subscription_id: str):
+    from src.product_subscriptions.subscription_products import ProductSubscriptionManager
+    ProductSubscriptionManager().skip_next(subscription_id)
+    return redirect("/seller/me/subscriptions")
+

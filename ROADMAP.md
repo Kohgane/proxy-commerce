@@ -1521,3 +1521,69 @@
 | Phase 129 | 신상품 자동 캐치 + 브랜드별 구독 알림 | P3 |
 | Phase 130 | 멀티테넌시 SaaS 활성화 (가입/요금제/공개) | P3 |
 | Phase 131 | 수입/수출 양방향 배송 자동화 (kohganemultishop.org 통합) | P3 |
+
+## Phase 148 — /me/notifications hotfix + 버전 자동화 + VAPID 자동 생성 + B2B + 정기구독 ✅ 완료
+
+### 산출물 1 — /seller/me/notifications 라우트 hotfix
+- Phase 147에서 정의된 `/seller/me/notifications` 라우트를 사이드바 매트릭스 테스트에 등록
+- `test_sidebar_route_matrix.py` SIDEBAR_LINKS에 Phase 147/148 신규 경로 추가
+- `tests/test_me_notifications_route.py` 전용 테스트 추가
+
+### 산출물 2 — 푸터 버전 자동화
+- `src/version.py`: `CURRENT_PHASE = 148` + `get_current_phase()` + `get_version_string()`
+- `src/templates/landing.html` 푸터: "Phase 123" 하드코딩 → `{{ current_phase }}` 동적 렌더
+- `order_webhook.py` 랜딩 뷰에 `current_phase=get_current_phase()` 주입
+- `tests/test_version_display.py`: 하드코딩 회귀 방지 + 동적 표시 확인
+
+### 산출물 3 — VAPID 자동 생성 UI
+- `POST /admin/diagnostics/vapid-generate`: 관리자 전용 VAPID 키 쌍 생성 엔드포인트
+- Private Key 마스킹 (앞 4 + ... + 뒤 4) 표시
+- 이미 등록됨 경고 + rotate 시 재구독 필요 경고
+- `tests/test_vapid_generate.py`
+
+### 산출물 4 — B2B 도매 모드
+- `src/wholesale/tier_manager.py`: WholesaleTierManager, WholesaleTier, PriceLevel
+  - 등급: retail(×1.0) / wholesale(10~49: ×0.9, 50+: ×0.8) / VIP(×0.75)
+  - MOQ 검증, 수량 구간 할인 계산
+- `src/wholesale/application_manager.py`: WholesaleApplicationManager, WholesaleApplication
+  - pending → approved / rejected 플로우
+  - 파일 기반 저장 (원자적 교체)
+- 셀러 라우트: `GET /seller/wholesale/tiers`, `GET /seller/wholesale/applications`
+- `tests/test_wholesale_tiers.py`
+- `docs/operations/WHOLESALE.md`
+
+### 산출물 5 — 정기구독 상품
+- `src/product_subscriptions/subscription_products.py`: ProductSubscriptionManager
+  - 주기: 1w/2w/4w/8w (7/14/28/56일)
+  - 구독/일시정지/재개/스킵/해지
+  - Mock 결제 처리
+  - 다음 결제 7일 전 목록 조회
+- 셀러 라우트: `GET /seller/subscriptions`, `GET /seller/me/subscriptions`
+- 사용자 조작: pause/resume/cancel/skip POST
+- `tests/test_product_subscriptions.py`
+- `docs/operations/SUBSCRIPTIONS.md`
+
+### 산출물 6 — Admin diagnostics Phase 148 카드
+- 🏷️ 버전 표시: 현재 Phase + CURRENT_PHASE 일치 여부
+- 🔔 푸시 알림 (재확인): 라우트 등록 + VAPID + 구독자 + VAPID 생성 버튼
+- 🏢 B2B 도매: 도매 회원 수 + 신청 대기 건수
+- 🔁 정기구독: 활성 구독 + 이번주 결제 + 실패 건수
+
+### 산출물 7 — 환경변수
+- `VAPID_AUTO_GENERATE=1`
+- `WHOLESALE_ENABLED=1`, `WHOLESALE_REQUIRE_BUSINESS_CERT=1`
+- `SUBSCRIPTION_ENABLED=1`, `SUBSCRIPTION_PG_PROVIDER=mock`, `SUBSCRIPTION_RETRY_DAYS=3`
+- `src/utils/env_catalog.py` 갱신 (wholesale/subscription 카테고리 신설)
+
+### 산출물 8 — 테스트
+- `tests/test_me_notifications_route.py` (7개)
+- `tests/test_version_display.py` (8개)
+- `tests/test_vapid_generate.py` (6개)
+- `tests/test_wholesale_tiers.py` (16개)
+- `tests/test_product_subscriptions.py` (14개)
+
+### 산출물 9 — 문서
+- `docs/operations/VERSIONING.md` (신규)
+- `docs/operations/WEB_PUSH.md` 갱신 (VAPID 자동 생성 UI 섹션 추가)
+- `docs/operations/WHOLESALE.md` (신규)
+- `docs/operations/SUBSCRIPTIONS.md` (신규)

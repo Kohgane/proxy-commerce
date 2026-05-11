@@ -420,6 +420,11 @@ def _render_diagnostics(issued_magic_link: str | None):
     omni_sync_status = _build_omni_sync_status()
     job_queue_status = _build_job_queue_status()
 
+    # Phase 148: 버전 표시 / B2B 도매 / 정기구독 카드
+    version_display_status = _build_version_display_status()
+    wholesale_status = _build_wholesale_status()
+    product_subscription_status = _build_product_subscription_status()
+
     return render_template_string(
         _DIAGNOSTICS_TEMPLATE,
         env_matrix=env_matrix,
@@ -448,6 +453,9 @@ def _render_diagnostics(issued_magic_link: str | None):
         web_push_status=web_push_status,
         omni_sync_status=omni_sync_status,
         job_queue_status=job_queue_status,
+        version_display_status=version_display_status,
+        wholesale_status=wholesale_status,
+        product_subscription_status=product_subscription_status,
         env=os.environ,
         base_url=base_url,
     )
@@ -511,6 +519,54 @@ def diagnostics_telegram_health():
     from src.notifications.telegram import health_check
     from flask import jsonify
     return jsonify(health_check())
+
+
+# ---------------------------------------------------------------------------
+# Phase 148 — VAPID 자동 생성 UI
+# ---------------------------------------------------------------------------
+
+@admin_panel_bp.post("/diagnostics/vapid-generate")
+def diagnostics_vapid_generate():
+    """VAPID 키 쌍 생성 API (Phase 148).
+
+    생성된 키는 WEB_PUSH_VAPID_PUBLIC / WEB_PUSH_VAPID_PRIVATE 에 설정해야 함.
+    Private 키는 마스킹(앞 4 + ... + 뒤 4)하여 표시.
+    """
+    from src.auth.admin_resolver import is_admin_session
+    if not session.get("user_id"):
+        return redirect("/auth/login?next=/admin/diagnostics")
+    admin_ok, _ = is_admin_session(session)
+    if not admin_ok:
+        return _render("접근 거부", "<div class='alert alert-danger'>관리자 권한이 필요합니다.</div>"), 403
+
+    try:
+        from src.notifications.web_push import generate_vapid_keys, vapid_configured
+        keys = generate_vapid_keys()
+        pub = keys.get("public", "")
+        priv = keys.get("private", "")
+        # 마스킹: 앞 4 + ... + 뒤 4
+        if len(priv) >= 8:
+            priv_masked = priv[:4] + "..." + priv[-4:]
+        else:
+            priv_masked = "****"
+        already = vapid_configured()
+        hint = keys.get("hint", "")
+        msg = (
+            f"<div class='alert alert-{'warning' if already else 'success'}'>"
+            + (f"⚠️ 이미 VAPID 키가 등록되어 있습니다. 교체하면 모든 사용자가 재구독해야 합니다.<br>" if already else "")
+            + f"<strong>Public Key:</strong> <code>{pub}</code><br>"
+            + f"<strong>Private Key (마스킹):</strong> <code>{priv_masked}</code><br>"
+            + f"<strong>실제 Private Key:</strong> <code>{priv}</code><br>"
+            + f"<br>Render 환경변수에 추가하세요:<br>"
+            + f"<code>WEB_PUSH_VAPID_PUBLIC={pub}</code><br>"
+            + f"<code>WEB_PUSH_VAPID_PRIVATE={priv}</code>"
+            + (f"<br><small class='text-muted'>{hint}</small>" if hint else "")
+            + "</div>"
+        )
+        return _render_diagnostics(issued_magic_link=msg)
+    except Exception as exc:
+        logger.warning("VAPID 생성 실패: %s", exc)
+        return _render("생성 실패", f"<div class='alert alert-danger'>VAPID 키 생성 중 오류: {exc}</div>"), 500
 
 
 # ---------------------------------------------------------------------------
@@ -1238,6 +1294,11 @@ SELLER_SIDEBAR_LINKS = [
     # Phase 147
     ("/seller/inventory/omni", "🔄 옴니채널 재고"),
     ("/seller/me/notifications", "🔔 푸시 알림 설정"),
+    # Phase 148
+    ("/seller/wholesale/tiers", "🏢 도매 등급"),
+    ("/seller/wholesale/applications", "📋 B2B 신청 큐"),
+    ("/seller/subscriptions", "🔁 정기구독 관리"),
+    ("/seller/me/subscriptions", "🔁 내 구독"),
 ]
 
 
@@ -1264,6 +1325,11 @@ def _build_route_check_status() -> dict:
         ("seller_console.inventory_omni", "/seller/inventory/omni"),
         ("seller_console.me_notifications", "/seller/me/notifications"),
         ("admin_panel.admin_jobs", "/admin/jobs"),
+        # Phase 148
+        ("seller_console.wholesale_tiers", "/seller/wholesale/tiers"),
+        ("seller_console.wholesale_applications", "/seller/wholesale/applications"),
+        ("seller_console.seller_subscriptions", "/seller/subscriptions"),
+        ("seller_console.me_subscriptions", "/seller/me/subscriptions"),
     ]
 
     sidebar_links = SELLER_SIDEBAR_LINKS
@@ -1442,6 +1508,69 @@ def _build_job_queue_status() -> dict:
 
 def _page_route_available(endpoint: str) -> bool:
     return endpoint in current_app.view_functions
+
+
+# ---------------------------------------------------------------------------
+# Phase 148 — 진단 헬퍼
+# ---------------------------------------------------------------------------
+
+def _build_version_display_status() -> dict:
+    """Phase 148: 푸터 버전 표시 상태."""
+    try:
+        from src.version import get_current_phase, CURRENT_PHASE, APP_VERSION
+        current = get_current_phase()
+        return {
+            "current_phase": current,
+            "hardcoded_phase": CURRENT_PHASE,
+            "app_version": APP_VERSION,
+            "ok": True,
+        }
+    except Exception as exc:
+        logger.debug("version 상태 조회 실패: %s", exc)
+        return {"current_phase": 0, "hardcoded_phase": 0, "app_version": "?", "ok": False}
+
+
+def _build_wholesale_status() -> dict:
+    """Phase 148: B2B 도매 모드 상태."""
+    try:
+        from src.wholesale.tier_manager import WholesaleTierManager
+        from src.wholesale.application_manager import WholesaleApplicationManager, ApplicationStatus
+        tier_mgr = WholesaleTierManager()
+        app_mgr = WholesaleApplicationManager()
+        return {
+            "enabled": tier_mgr.enabled,
+            "tier_count": len(tier_mgr.list_tiers()),
+            "total_applications": app_mgr.count(),
+            "pending_applications": app_mgr.count(ApplicationStatus.PENDING),
+            "approved_members": app_mgr.count(ApplicationStatus.APPROVED),
+        }
+    except Exception as exc:
+        logger.debug("wholesale 상태 조회 실패: %s", exc)
+        return {
+            "enabled": os.getenv("WHOLESALE_ENABLED", "1") == "1",
+            "tier_count": 0,
+            "total_applications": 0,
+            "pending_applications": 0,
+            "approved_members": 0,
+        }
+
+
+def _build_product_subscription_status() -> dict:
+    """Phase 148: 정기구독 상품 상태."""
+    try:
+        from src.product_subscriptions.subscription_products import ProductSubscriptionManager
+        return ProductSubscriptionManager().summary()
+    except Exception as exc:
+        logger.debug("product_subscription 상태 조회 실패: %s", exc)
+        return {
+            "enabled": os.getenv("SUBSCRIPTION_ENABLED", "1") == "1",
+            "pg_provider": os.getenv("SUBSCRIPTION_PG_PROVIDER", "mock"),
+            "active_count": 0,
+            "billed_this_week": 0,
+            "failed_count": 0,
+            "cancelled_count": 0,
+            "total_count": 0,
+        }
 
 
 def _build_emergency_access_status() -> dict:
@@ -2301,6 +2430,98 @@ _DIAGNOSTICS_TEMPLATE = """
         </ul>
         <div class="d-flex gap-2 flex-wrap">
           <a class="btn btn-outline-primary btn-sm" href="/admin/jobs">⚙️ 잡 큐 관리</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 148: 섹션 — 버전 표시 -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">🏷️ 버전 표시 (Phase 148)</div>
+      <div class="card-body">
+        <ul class="mb-3">
+          <li>현재 Phase:
+            <strong>{{ version_display_status.current_phase }}</strong>
+            {% if version_display_status.ok %}<span class="badge bg-success ms-1">✅ 자동화</span>{% else %}<span class="badge bg-danger ms-1">❌ 오류</span>{% endif %}
+          </li>
+          <li>앱 버전: <code>{{ version_display_status.app_version }}</code></li>
+          <li>src/version.py CURRENT_PHASE: <code>{{ version_display_status.hardcoded_phase }}</code></li>
+        </ul>
+        <div class="d-flex gap-2 flex-wrap">
+          <a class="btn btn-outline-secondary btn-sm" href="/">🔗 랜딩 푸터 확인</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 148: 섹션 — 푸시 알림 재확인 -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">🔔 푸시 알림 (Phase 148 재확인)</div>
+      <div class="card-body">
+        <ul class="mb-3">
+          <li>/seller/me/notifications 라우트:
+            {% if web_push_status.route_ok is not defined or web_push_status.route_ok is none %}
+              <span class="badge bg-success">✅ 등록됨</span>
+            {% elif web_push_status.route_ok %}
+              <span class="badge bg-success">✅ 등록됨</span>
+            {% else %}
+              <span class="badge bg-danger">❌ 미등록</span>
+            {% endif %}
+          </li>
+          <li>VAPID 등록:
+            {% if web_push_status.vapid_configured %}
+              <span class="badge bg-success">✅ 설정됨</span>
+              <span class="small text-muted">({{ web_push_status.vapid_public_hint }})</span>
+            {% else %}
+              <span class="badge bg-warning text-dark">⚠️ 미설정</span>
+            {% endif %}
+          </li>
+          <li>구독자: <strong>{{ web_push_status.subscriber_count }}</strong>명</li>
+        </ul>
+        <div class="d-flex gap-2 flex-wrap">
+          <a class="btn btn-outline-primary btn-sm" href="/seller/me/notifications">🔔 푸시 구독 페이지</a>
+          {% if not web_push_status.vapid_configured %}
+          <form method="post" action="/admin/diagnostics/vapid-generate" class="d-inline">
+            <button type="submit" class="btn btn-outline-warning btn-sm">🔑 VAPID 키 자동 생성</button>
+          </form>
+          {% else %}
+          <form method="post" action="/admin/diagnostics/vapid-generate" class="d-inline">
+            <button type="submit" class="btn btn-outline-secondary btn-sm">🔄 VAPID 키 재생성 (경고: 모든 사용자 재구독 필요)</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 148: 섹션 — B2B 도매 -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">🏢 B2B 도매 (Phase 148)</div>
+      <div class="card-body">
+        <ul class="mb-3">
+          <li>도매 기능: {% if wholesale_status.enabled %}<span class="badge bg-success">ON</span>{% else %}<span class="badge bg-secondary">OFF (WHOLESALE_ENABLED=0)</span>{% endif %}</li>
+          <li>등급 수: <strong>{{ wholesale_status.tier_count }}</strong>개</li>
+          <li>도매 회원: <strong>{{ wholesale_status.approved_members }}</strong>명 / 신청 대기: <strong>{{ wholesale_status.pending_applications }}</strong>건</li>
+          <li>전체 신청: {{ wholesale_status.total_applications }}건</li>
+        </ul>
+        <div class="d-flex gap-2 flex-wrap">
+          <a class="btn btn-outline-primary btn-sm" href="/seller/wholesale/tiers">🏢 도매 등급 관리</a>
+          <a class="btn btn-outline-secondary btn-sm" href="/seller/wholesale/applications">📋 B2B 신청 큐</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 148: 섹션 — 정기구독 상품 -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">🔁 정기구독 (Phase 148)</div>
+      <div class="card-body">
+        <ul class="mb-3">
+          <li>구독 기능: {% if product_subscription_status.enabled %}<span class="badge bg-success">ON</span>{% else %}<span class="badge bg-secondary">OFF (SUBSCRIPTION_ENABLED=0)</span>{% endif %}</li>
+          <li>PG 제공사: <code>{{ product_subscription_status.pg_provider }}</code></li>
+          <li>활성 구독: <strong>{{ product_subscription_status.active_count }}</strong>건</li>
+          <li>이번주 결제: <strong>{{ product_subscription_status.billed_this_week }}</strong>건 / 실패: <span class="{% if product_subscription_status.failed_count > 0 %}text-danger fw-bold{% endif %}">{{ product_subscription_status.failed_count }}건</span></li>
+          <li>해지(누적): {{ product_subscription_status.cancelled_count }}건</li>
+        </ul>
+        <div class="d-flex gap-2 flex-wrap">
+          <a class="btn btn-outline-primary btn-sm" href="/seller/subscriptions">🔁 구독 관리</a>
+          <a class="btn btn-outline-secondary btn-sm" href="/seller/me/subscriptions">👤 내 구독</a>
         </div>
       </div>
     </div>
