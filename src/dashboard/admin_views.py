@@ -434,6 +434,11 @@ def _render_diagnostics(issued_magic_link: str | None):
 
     # Phase 149: AI 상품등록 자동화 카드
     ai_listing_status = _build_ai_listing_status()
+    try:
+        from src.version import get_current_phase
+        current_phase = get_current_phase()
+    except Exception:
+        current_phase = 149
 
     return render_template_string(
         _DIAGNOSTICS_TEMPLATE,
@@ -468,6 +473,7 @@ def _render_diagnostics(issued_magic_link: str | None):
         wholesale_status=wholesale_status,
         product_subscription_status=product_subscription_status,
         ai_listing_status=ai_listing_status,
+        current_phase=current_phase,
         env=os.environ,
         base_url=base_url,
     )
@@ -1754,6 +1760,15 @@ def _build_ai_listing_status() -> dict:
             "attempts_24h": 0,
             "success_24h": 0,
             "failed_24h": 0,
+            "scraper_call_rate_pct": 0.0,
+            "scraper_http_200_rate_pct": 0.0,
+            "json_ld_extraction_rate_pct": 0.0,
+            "og_extraction_rate_pct": 0.0,
+            "avg_extracted_fields_10": 0.0,
+            "cache_hit_rate_pct": 0.0,
+            "prompt_distribution": {},
+            "prompt_v1_pct": 0.0,
+            "prompt_v2_pct": 0.0,
             "by_market": {},
         }
 
@@ -2731,16 +2746,24 @@ _DIAGNOSTICS_TEMPLATE = """
       </div>
     </div>
 
-    <!-- Phase 149: 섹션 — AI 상품등록 자동화 -->
+    <!-- AI 상품등록 진단 -->
     <div class="card mb-4">
-      <div class="card-header fw-bold">🤖 AI 상품등록 자동화 (Phase 149)</div>
+      <div class="card-header fw-bold">🤖 AI 상품등록 (Phase {{ current_phase }} 검증)</div>
       <div class="card-body">
         <ul class="mb-3">
           <li>활성화: {% if ai_listing_status.enabled %}<span class="badge bg-success">ON</span>{% else %}<span class="badge bg-secondary">OFF (AI_LISTING_ENABLED=0)</span>{% endif %}</li>
+          <li>24h 분석 시도: <strong>{{ ai_listing_status.attempts_24h }}</strong>건</li>
+          <li>스크래퍼 호출률: <strong>{{ ai_listing_status.scraper_call_rate_pct }}%</strong></li>
+          <li>스크래퍼 HTTP 200 성공률: <strong>{{ ai_listing_status.scraper_http_200_rate_pct }}%</strong></li>
+          <li>JSON-LD 추출률: <strong>{{ ai_listing_status.json_ld_extraction_rate_pct }}%</strong></li>
+          <li>OG tag 추출률: <strong>{{ ai_listing_status.og_extraction_rate_pct }}%</strong></li>
+          <li>평균 추출 필드 수 (10개 중): <strong>{{ ai_listing_status.avg_extracted_fields_10 }}</strong></li>
+          <li>캐시 적중률: <strong>{{ ai_listing_status.cache_hit_rate_pct }}%</strong></li>
+          <li>프롬프트 버전 분포: v1 <strong>{{ ai_listing_status.prompt_v1_pct }}%</strong> / v2 <strong>{{ ai_listing_status.prompt_v2_pct }}%</strong></li>
           <li>Vision 제공자: <code>{{ ai_listing_status.vision_provider }}</code> / 모델: <code>{{ ai_listing_status.vision_model }}</code></li>
           <li>기본 마켓: <strong>{{ ai_listing_status.default_markets | join(', ') }}</strong></li>
           <li>일일 한도(사용자별): <strong>{{ ai_listing_status.max_daily_per_user }}</strong>건</li>
-          <li>캐시 활성: <strong>{{ ai_listing_status.cache_active }}</strong>건 / TTL: {{ ai_listing_status.cache_ttl_hours }}h</li>
+          <li>캐시 활성: 분석 <strong>{{ ai_listing_status.cache_active }}</strong>건 / 스크래퍼 <strong>{{ ai_listing_status.scraper_cache_active }}</strong>건 / TTL: {{ ai_listing_status.cache_ttl_hours }}h</li>
           <li>24h 등록 시도: <strong>{{ ai_listing_status.attempts_24h }}</strong>건 / 성공: <strong>{{ ai_listing_status.success_24h }}</strong>건 / 실패: <span class="{% if ai_listing_status.failed_24h > 0 %}text-danger fw-bold{% endif %}">{{ ai_listing_status.failed_24h }}건</span></li>
         </ul>
         <div class="d-flex gap-2 flex-wrap">

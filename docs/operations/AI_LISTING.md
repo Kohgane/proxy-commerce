@@ -1,4 +1,4 @@
-# AI 상품등록 자동화 가이드 (Phase 149)
+# AI 상품등록 자동화 가이드 (Phase 150.1)
 
 ## 개요
 
@@ -41,6 +41,11 @@ Vision API 분석 (GPT-4o-mini / Claude Sonnet / mock)
 | `AI_LISTING_MARKETS_DEFAULT` | `coupang,smartstore` | 기본 등록 마켓 |
 | `AI_LISTING_LANG_DEFAULT` | `kr` | 기본 생성 언어 (`kr` \| `jp` \| `both`) |
 | `AI_LISTING_PRICE_MODE` | `auto` | 가격 모드 (`auto` \| `manual`) |
+| `AI_LISTING_URL_HEAD_CHECK` | `1` | 상품 URL 입력 시 HEAD 200 검증 |
+| `AI_LISTING_URL_HEAD_CHECK_GET_FALLBACK` | `0` | HEAD 403/405 시 GET fallback 허용 |
+| `AI_LISTING_FORCE_REFRESH_ALLOWED` | `1` | 다시 분석 시 캐시 무시 허용 |
+| `AI_LISTING_DEBUG_PANEL` | `1` | 결과 카드 원본 데이터 패널 표시 |
+| `AI_LISTING_PROMPT_VERSION` | `v2_explicit_fields` | 분석 프롬프트 버전 (기본 v2 강제) |
 
 ## Vision 제공자 설정
 
@@ -201,13 +206,11 @@ AI_LISTING_VISION_PROVIDER=mock
 
 ## Admin 진단 카드
 
-`/admin/diagnostics` → **🤖 AI 상품등록 자동화 (Phase 149)** 섹션:
+`/admin/diagnostics` → **🤖 AI 상품등록 (Phase 동적 검증)** 섹션:
 - 활성화 여부
-- Vision 제공자/모델
-- 기본 마켓
-- 일일 한도
-- 캐시 상태
-- 24h 등록 통계
+- 24h 분석 시도/스크래퍼 호출률/HTTP200 성공률
+- JSON-LD/OG 추출률, 평균 추출 필드 수(10개)
+- 캐시 적중률, 프롬프트 버전 분포(v1/v2)
 
 ## 아키텍처
 
@@ -223,9 +226,9 @@ src/ai_listing/
 └── routes.py             Flask Blueprint
 ```
 
-## Phase 150 계획
+## Phase 150.1 Hotfix
 
-- 실제 쿠팡/스마트스토어 API 어댑터 연결
-- 등록 이력 DB 영구 저장 (SQLite)
-- 이미지 파일 업로드 직접 처리 (form-data)
-- Phase 144 키워드 최적화 완전 연동
+- URL 입력 시 HEAD 200 검증 실패를 사용자에게 즉시 경고
+- "🔄 다시 분석 (캐시 무시)" 버튼으로 `force_refresh=1` 강제 재분석
+- 분석 카드에 신뢰도 배지(스크래핑 성공/AI 추론/빈 값) 노출
+- "📋 원본 데이터" 디버그 패널(HTTP 상태, 응답 크기, JSON-LD, OG, prompt_version, cache hit/miss)

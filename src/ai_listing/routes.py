@@ -13,14 +13,14 @@
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
-from flask import Blueprint, jsonify, redirect, render_template_string, request, session, url_for
+from flask import Blueprint, jsonify, render_template_string, request, session
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +33,16 @@ _DEFAULT_MARKETS = [
     if m.strip()
 ]
 _DEFAULT_LANG = os.getenv("AI_LISTING_LANG_DEFAULT", "kr")
+_URL_HEAD_CHECK_ENABLED = os.getenv("AI_LISTING_URL_HEAD_CHECK", "1") == "1"
+_FORCE_REFRESH_ALLOWED = os.getenv("AI_LISTING_FORCE_REFRESH_ALLOWED", "1") == "1"
+_DEBUG_PANEL_ENABLED = os.getenv("AI_LISTING_DEBUG_PANEL", "1") == "1"
+_PROMPT_VERSION = os.getenv("AI_LISTING_PROMPT_VERSION", "v2_explicit_fields")
 
 bp = Blueprint("ai_listing", __name__, url_prefix="/seller/listing")
 
 # 사용자별 일일 사용량 카운터 (인메모리)
 _daily_usage: Dict[str, Dict[str, Any]] = {}
+_analyze_events: list[Dict[str, Any]] = []
 
 
 def _check_daily_limit(user_id: str) -> bool:
@@ -56,6 +61,66 @@ def _user_id() -> str:
     return str(session.get("user_id", "anonymous"))
 
 
+def _truthy(val: Any) -> bool:
+    return str(val).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _is_force_refresh_requested(data: Dict[str, Any]) -> bool:
+    if not _FORCE_REFRESH_ALLOWED:
+        return False
+    return _truthy(request.args.get("force_refresh")) or _truthy(data.get("force_refresh"))
+
+
+def _build_confidence_badges(analysis: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
+    def _badge(value: Any, scraped: bool) -> Dict[str, str]:
+        has_value = bool(value)
+        if not has_value:
+            return {"level": "empty", "icon": "🔴", "label": "빈 값"}
+        if scraped:
+            return {"level": "scraped", "icon": "🟢", "label": "스크래핑 성공"}
+        return {"level": "ai", "icon": "🟡", "label": "AI 추론"}
+
+    scraped = bool(analysis.get("_scraped"))
+    return {
+        "category": _badge(analysis.get("category"), scraped),
+        "brand": _badge(analysis.get("brand"), analysis.get("_brand_source") == "scraping"),
+        "keywords": _badge(analysis.get("keywords"), scraped),
+        "estimated_price_range": _badge(analysis.get("estimated_price_range"), analysis.get("_price_source") == "scraping"),
+    }
+
+
+def _count_extracted_fields(analysis: Dict[str, Any]) -> int:
+    fields = [
+        analysis.get("category"),
+        analysis.get("brand"),
+        analysis.get("colors"),
+        analysis.get("materials"),
+        analysis.get("keywords"),
+        analysis.get("estimated_price_range"),
+        analysis.get("price_candidates"),
+        analysis.get("size_options"),
+        analysis.get("origin_country"),
+        analysis.get("scraped_images"),
+    ]
+    return sum(1 for f in fields if bool(f))
+
+
+def _record_analyze_event(analysis: Dict[str, Any], page_url: str, scraper_called: bool) -> None:
+    _analyze_events.append({
+        "at": datetime.now(timezone.utc),
+        "scraper_called": scraper_called,
+        "http_200": (analysis.get("_debug", {}) or {}).get("http_status") == 200,
+        "json_ld": bool((analysis.get("_debug", {}) or {}).get("json_ld")),
+        "og_tags": bool((analysis.get("_debug", {}) or {}).get("og_tags")),
+        "cache_hit": bool(analysis.get("_analysis_cache_hit") or (analysis.get("_debug", {}) or {}).get("scraper_cache_hit")),
+        "prompt_version": str(analysis.get("_prompt_version") or "unknown"),
+        "extracted_fields": _count_extracted_fields(analysis),
+        "page_url": bool(page_url),
+    })
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    _analyze_events[:] = [e for e in _analyze_events if e.get("at") and e["at"] >= cutoff]
+
+
 # ── 페이지 라우트 ────────────────────────────────────────────────────────────
 
 _AI_CREATE_PAGE = """
@@ -63,7 +128,7 @@ _AI_CREATE_PAGE = """
 {% block title %}🤖 AI 상품등록{% endblock %}
 {% block content %}
 <div class="container-fluid px-0">
-  <h4 class="mb-3 fw-bold">🤖 AI 상품등록 자동화 <small class="text-muted fs-6">Phase 149</small></h4>
+  <h4 class="mb-3 fw-bold">🤖 AI 상품등록 자동화 <small class="text-muted fs-6">Phase {{ current_phase }}</small></h4>
 
   {% if not enabled %}
   <div class="alert alert-warning">⚠️ AI 상품등록 기능이 비활성화되어 있습니다 (AI_LISTING_ENABLED=0).</div>
@@ -84,7 +149,13 @@ _AI_CREATE_PAGE = """
           <input type="url" id="imageUrl" class="form-control" placeholder="https://example.com/product.jpg">
           <small class="text-muted">URL 1개씩 입력하여 분석 가능</small>
         </div>
+        <div class="col-md-12">
+          <label class="form-label fw-semibold">상품 페이지 URL (선택)</label>
+          <input type="url" id="pageUrl" class="form-control" placeholder="https://example.com/products/item">
+          <small class="text-muted">URL 입력 시 접근 가능(HEAD 200) 확인 후 스크래핑 + AI 분석을 진행합니다.</small>
+        </div>
       </div>
+      <div id="analyzeWarning" class="alert alert-danger mt-3" style="display:none"></div>
     </div>
   </div>
 
@@ -170,36 +241,45 @@ _AI_CREATE_PAGE = """
 let _listingId = null;
 let _analysis = null;
 let _generated = null;
+const DEBUG_PANEL_ENABLED = {{ 'true' if debug_panel_enabled else 'false' }};
 
 async function runAnalysis() {
   const btn = document.getElementById('analyzeBtn');
+  const warning = document.getElementById('analyzeWarning');
+  warning.style.display = 'none';
+  warning.textContent = '';
   btn.disabled = true;
   btn.textContent = '🔄 분석 중...';
 
   const imageUrl = document.getElementById('imageUrl').value.trim();
+  const pageUrl = document.getElementById('pageUrl').value.trim();
   const markets = Array.from(document.querySelectorAll('input[name=markets]:checked')).map(e => e.value);
   const language = document.getElementById('language').value;
   const priceMode = document.getElementById('priceMode').value;
+  const hasExistingAnalysis = !!_analysis;
 
-  if (!imageUrl && !document.getElementById('imageFiles').files.length) {
-    alert('이미지 URL 또는 파일을 선택하세요.');
+  if (!imageUrl && !pageUrl && !document.getElementById('imageFiles').files.length) {
+    warning.textContent = '이미지 URL/파일 또는 상품 페이지 URL을 입력하세요.';
+    warning.style.display = '';
     btn.disabled = false;
     btn.textContent = '🤖 AI 자동 생성';
     return;
   }
 
   try {
+    const analyzeUrl = hasExistingAnalysis ? '/api/ai-listing/analyze?force_refresh=1' : '/api/ai-listing/analyze';
     // 분석 API 호출
-    const analyzeResp = await fetch('/api/ai-listing/analyze', {
+    const analyzeResp = await fetch(analyzeUrl, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({image_url: imageUrl, language, markets})
+      body: JSON.stringify({image_url: imageUrl, page_url: pageUrl, language, markets, force_refresh: hasExistingAnalysis ? 1 : 0})
     });
     const analyzeData = await analyzeResp.json();
     if (!analyzeData.ok) {
-      alert('분석 실패: ' + (analyzeData.error || '알 수 없는 오류'));
+      warning.textContent = analyzeData.error || '알 수 없는 오류';
+      warning.style.display = '';
       btn.disabled = false;
-      btn.textContent = '🤖 AI 자동 생성';
+      btn.textContent = _analysis ? '🔄 다시 분석 (캐시 무시)' : '🤖 AI 자동 생성';
       return;
     }
     _analysis = analyzeData.analysis;
@@ -214,17 +294,25 @@ async function runAnalysis() {
     _generated = await genResp.json();
 
     // 결과 표시
-    showResults(imageUrl, _analysis, _generated, markets);
+    showResults(
+      imageUrl || ((analyzeData.debug_panel || {}).image_urls || [])[0] || '',
+      _analysis,
+      _generated,
+      markets,
+      analyzeData.confidence_badges || {},
+      analyzeData.debug_panel || {}
+    );
 
   } catch (e) {
-    alert('오류: ' + e.message);
+    warning.textContent = '오류: ' + e.message;
+    warning.style.display = '';
   }
 
   btn.disabled = false;
-  btn.textContent = '🤖 다시 분석';
+  btn.textContent = '🔄 다시 분석 (캐시 무시)';
 }
 
-function showResults(imageUrl, analysis, generated, markets) {
+function showResults(imageUrl, analysis, generated, markets, confidenceBadges, debugPanel) {
   document.getElementById('resultsSection').style.display = '';
 
   // 이미지 미리보기
@@ -236,13 +324,34 @@ function showResults(imageUrl, analysis, generated, markets) {
 
   // 분석 결과 카드
   const card = document.getElementById('analysisCard');
+  const badge = (k) => {
+    const b = confidenceBadges[k] || {icon: '🔴', label: '빈 값'};
+    return ` <span class="badge text-bg-light border ms-1">${b.icon} ${b.label}</span>`;
+  };
   card.innerHTML = [
-    '<strong>카테고리</strong>: ' + (analysis.category || '-'),
-    '<strong>브랜드</strong>: ' + (analysis.brand || '-'),
+    '<strong>카테고리</strong>: ' + (analysis.category || '-') + badge('category'),
+    '<strong>브랜드</strong>: ' + (analysis.brand || '-') + badge('brand'),
     '<strong>색상</strong>: ' + (analysis.colors || []).join(', '),
-    '<strong>키워드</strong>: ' + (analysis.keywords || []).join(', '),
-    '<strong>추정 가격</strong>: ₩' + ((analysis.estimated_price_range||{}).min||'-') + ' ~ ₩' + ((analysis.estimated_price_range||{}).max||'-'),
+    '<strong>키워드</strong>: ' + (analysis.keywords || []).join(', ') + badge('keywords'),
+    '<strong>추정 가격</strong>: ₩' + ((analysis.estimated_price_range||{}).min||'-') + ' ~ ₩' + ((analysis.estimated_price_range||{}).max||'-') + badge('estimated_price_range'),
   ].map(s => '<div class="mb-1">' + s + '</div>').join('');
+  if (DEBUG_PANEL_ENABLED) {
+    card.innerHTML += `
+      <details class="mt-3">
+        <summary class="fw-semibold">📋 원본 데이터</summary>
+        <pre class="small bg-white border rounded p-2 mt-2 mb-0" style="white-space:pre-wrap">${JSON.stringify({
+          http_status: debugPanel.http_status,
+          response_size: debugPanel.response_size,
+          json_ld: debugPanel.json_ld,
+          og_tags: debugPanel.og_tags,
+          meta_description: debugPanel.meta_description,
+          image_urls: debugPanel.image_urls,
+          prompt_version: debugPanel.prompt_version,
+          cache: debugPanel.cache,
+        }, null, 2)}</pre>
+      </details>
+    `;
+  }
 
   // 마켓별 탭
   const tabs = document.getElementById('marketTabs');
@@ -336,6 +445,11 @@ function showPublishResults(data) {
 @bp.get("/ai-create")
 def ai_listing_create():
     """AI 상품등록 자동화 페이지 (Phase 149)."""
+    try:
+        from src.version import get_current_phase
+        current_phase = get_current_phase()
+    except Exception:
+        current_phase = 149
     all_markets = ["coupang", "smartstore", "11st", "gmarket"]
     return render_template_string(
         _AI_CREATE_PAGE,
@@ -345,6 +459,8 @@ def ai_listing_create():
         default_markets=_DEFAULT_MARKETS,
         all_markets=all_markets,
         default_lang=_DEFAULT_LANG,
+        current_phase=current_phase,
+        debug_panel_enabled=_DEBUG_PANEL_ENABLED,
         page="ai_listing_create",
     )
 
@@ -375,20 +491,63 @@ def api_analyze():
     image_url = str(data.get("image_url") or "").strip()
     page_url = str(data.get("page_url") or "").strip()
     language = str(data.get("language") or _DEFAULT_LANG)
+    force_refresh = _is_force_refresh_requested(data)
 
     if not image_url and not page_url:
         return jsonify({"ok": False, "error": "image_url 또는 page_url 필수"}), 400
 
     try:
         from src.ai_listing.analyzer import analyze_image
+        from src.ai_listing.url_scraper import head_check_url, scrape_product_page
+
+        if page_url and _URL_HEAD_CHECK_ENABLED:
+            head = head_check_url(page_url)
+            if not head.get("ok"):
+                status = head.get("status")
+                status_txt = f"HTTP {status}" if status is not None else "연결 실패"
+                return jsonify({
+                    "ok": False,
+                    "error": f"이 URL에 접근할 수 없습니다 ({status_txt}). URL을 확인해주세요.",
+                    "url_head_check": {
+                        "ok": False,
+                        "status": status,
+                    },
+                }), 400
+
+        scrape_data = None
+        if page_url:
+            scrape_data = scrape_product_page(page_url, force_refresh=force_refresh)
 
         analysis = analyze_image(
             image_url=image_url,
             language=language,
+            force_refresh=force_refresh,
             page_url=page_url,
+            prompt_version=_PROMPT_VERSION,
+            scrape_data=scrape_data,
+        )
+        confidence_badges = _build_confidence_badges(analysis)
+        debug_panel = {
+            **(analysis.get("_debug", {}) or {}),
+            "prompt_version": analysis.get("_prompt_version", _PROMPT_VERSION),
+            "cache": {
+                "analysis": "hit" if analysis.get("_analysis_cache_hit") else "miss",
+                "scraper": "hit" if (analysis.get("_debug", {}) or {}).get("scraper_cache_hit") else "miss",
+            },
+        }
+        _record_analyze_event(
+            analysis=analysis,
+            page_url=page_url,
+            scraper_called=bool(page_url),
         )
         listing_id = str(uuid.uuid4())
-        return jsonify({"ok": True, "listing_id": listing_id, "analysis": analysis})
+        return jsonify({
+            "ok": True,
+            "listing_id": listing_id,
+            "analysis": analysis,
+            "confidence_badges": confidence_badges,
+            "debug_panel": debug_panel,
+        })
     except Exception as exc:
         logger.warning("AI 분석 오류: %s", exc)
         return jsonify({"ok": False, "error": "AI 분석 중 오류가 발생했습니다."}), 500
@@ -487,9 +646,30 @@ def ai_listing_stats() -> Dict[str, Any]:
     """AI 등록 24h 통계."""
     from src.ai_listing.analyzer import cache_stats
     from src.ai_listing.multi_publisher import publisher_stats
+    from src.ai_listing.url_scraper import scraper_cache_stats
 
     cache = cache_stats()
+    scraper_cache = scraper_cache_stats()
     pub = publisher_stats()
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    events = [e for e in _analyze_events if e.get("at") and e["at"] >= cutoff]
+    attempts = len(events)
+    scraper_called = sum(1 for e in events if e.get("scraper_called"))
+    scraper_http_200 = sum(1 for e in events if e.get("http_200"))
+    json_ld_found = sum(1 for e in events if e.get("json_ld"))
+    og_found = sum(1 for e in events if e.get("og_tags"))
+    cache_hits = sum(1 for e in events if e.get("cache_hit"))
+    avg_fields = (
+        round(sum(int(e.get("extracted_fields", 0)) for e in events) / attempts, 2)
+        if attempts else 0.0
+    )
+    prompt_counts = Counter(str(e.get("prompt_version", "unknown")) for e in events)
+    v1_pct = round((prompt_counts.get("v1", 0) / attempts) * 100, 1) if attempts else 0.0
+    v2_pct = round((prompt_counts.get("v2_explicit_fields", 0) / attempts) * 100, 1) if attempts else 0.0
+
+    def _pct(num: int, den: int) -> float:
+        return round((num / den) * 100, 1) if den else 0.0
+
     return {
         "enabled": _ENABLED,
         "vision_provider": os.getenv("AI_LISTING_VISION_PROVIDER", "mock"),
@@ -498,5 +678,16 @@ def ai_listing_stats() -> Dict[str, Any]:
         "default_markets": _DEFAULT_MARKETS,
         "cache_active": cache.get("active", 0),
         "cache_ttl_hours": cache.get("ttl_hours", 24),
+        "attempts_24h": attempts,
+        "scraper_call_rate_pct": _pct(scraper_called, attempts),
+        "scraper_http_200_rate_pct": _pct(scraper_http_200, scraper_called),
+        "json_ld_extraction_rate_pct": _pct(json_ld_found, scraper_called),
+        "og_extraction_rate_pct": _pct(og_found, scraper_called),
+        "avg_extracted_fields_10": avg_fields,
+        "cache_hit_rate_pct": _pct(cache_hits, attempts),
+        "prompt_distribution": dict(prompt_counts),
+        "prompt_v1_pct": v1_pct,
+        "prompt_v2_pct": v2_pct,
+        "scraper_cache_active": scraper_cache.get("active", 0),
         **pub,
     }
