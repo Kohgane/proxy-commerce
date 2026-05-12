@@ -1847,7 +1847,7 @@ def _run_google_branding_check(force: bool = False) -> dict:
 
         # 홈 페이지 검사
         try:
-            home_resp = _req.get(base_url + "/", timeout=timeout, headers={"User-Agent": "GoogleBot/2.1"})
+            home_resp = _req.get(base_url + "/", timeout=timeout, headers={"User-Agent": "Googlebot/2.1"})
             result["home_status"] = home_resp.status_code
             if home_resp.status_code == 200:
                 soup = BeautifulSoup(home_resp.text, "html.parser")

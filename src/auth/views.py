@@ -73,7 +73,14 @@ def _async_notify(fn, *args, **kwargs):
             logger.exception("notify failed (sync mode)")
         return
     try:
-        _notify_pool.submit(fn, *args, **kwargs)
+        future = _notify_pool.submit(fn, *args, **kwargs)
+
+        def _log_exc(f):
+            exc = f.exception()
+            if exc:
+                logger.warning("async notify exception: %s", exc)
+
+        future.add_done_callback(_log_exc)
     except Exception:
         logger.exception("notify submit failed")
 
