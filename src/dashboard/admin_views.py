@@ -15,6 +15,8 @@ import logging
 import os
 import pathlib
 import re
+import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 
@@ -28,6 +30,7 @@ MAX_DISPLAY_ITEMS = 200
 logger = logging.getLogger(__name__)
 _FSTRING_SCAN_CACHE_TTL_SEC = 300
 _fstring_scan_cache = {"checked_at": 0.0, "offenders": 0}
+_pytest_collect_scan_cache = {"checked_at": 0.0, "errors": 0}
 _ai_listing_cache_last_cleared_at: str | None = None
 
 admin_panel_bp = Blueprint("admin_panel", __name__, url_prefix="/admin")
@@ -383,7 +386,7 @@ def _scan_merge_conflict_marker_count() -> int:
     root = pathlib.Path(__file__).resolve().parents[2]
     pattern = re.compile(r"^(<{7}|={7}|>{7})( |$)", re.MULTILINE)
     count = 0
-    for rel in ("src", "tests", "templates"):
+    for rel in ("src", "tests", "templates", "static"):
         base = root / rel
         if not base.exists():
             continue
@@ -413,6 +416,32 @@ def _scan_python_syntax_error_count() -> int:
             py_compile.compile(str(path), doraise=True)
         except py_compile.PyCompileError:
             errors += 1
+    return errors
+
+
+def _scan_pytest_collect_error_count() -> int:
+    now = time.time()
+    if now - float(_pytest_collect_scan_cache.get("checked_at", 0.0)) < 600:
+        return int(_pytest_collect_scan_cache.get("errors", 0))
+
+    root = pathlib.Path(__file__).resolve().parents[2]
+    errors = 0
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "pytest", "--collect-only", "-q"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env={**os.environ, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"},
+            check=False,
+        )
+        if proc.returncode != 0:
+            m = re.search(r"(\d+)\s+errors?\s+during\s+collection", (proc.stdout or "") + "\n" + (proc.stderr or ""), re.IGNORECASE)
+            errors = int(m.group(1)) if m else 1
+    except Exception:
+        errors = 1
+    _pytest_collect_scan_cache.update({"checked_at": now, "errors": errors})
     return errors
 
 
@@ -482,12 +511,13 @@ def _render_diagnostics(issued_magic_link: str | None):
     market_adapter_runtime_status = _build_market_adapter_runtime_status()
     merge_conflict_marker_count = _scan_merge_conflict_marker_count()
     python_syntax_error_count = _scan_python_syntax_error_count()
+    pytest_collect_error_count = _scan_pytest_collect_error_count()
     brand_name = get_brand_name()
     try:
         from src.version import get_current_phase
         current_phase = get_current_phase()
     except Exception:
-        current_phase = 151
+        current_phase = 153
 
     return render_template_string(
         _DIAGNOSTICS_TEMPLATE,
@@ -528,6 +558,7 @@ def _render_diagnostics(issued_magic_link: str | None):
         ai_listing_cache_last_cleared_at=_ai_listing_cache_last_cleared_at,
         merge_conflict_marker_count=merge_conflict_marker_count,
         python_syntax_error_count=python_syntax_error_count,
+        pytest_collect_error_count=pytest_collect_error_count,
         brand_name=brand_name,
         current_phase=current_phase,
         env=os.environ,
@@ -3011,7 +3042,7 @@ _DIAGNOSTICS_TEMPLATE = """
             <li>naver_commerce: {% if market_adapter_runtime_status.naver_commerce == 'live' %}✅ live{% else %}❌ mock{% endif %}</li>
             <li>11st: {% if market_adapter_runtime_status.elevenst == 'live' %}✅ live{% else %}❌ mock{% endif %}</li>
             <li>gmarket: ❌ mock</li>
-            <li>24h 등록 시도: 0건 (실제 연동은 Phase 152부터)</li>
+            <li>24h 등록 시도: 0건 (실제 연동은 Phase 153부터)</li>
           </ul>
         </div>
         <div class="border rounded p-3 bg-light mb-3">
@@ -3031,10 +3062,11 @@ _DIAGNOSTICS_TEMPLATE = """
           <a class="btn btn-outline-secondary btn-sm" target="_blank" href="https://console.cloud.google.com/auth/branding">콘솔 열기</a>
         </div>
         <div class="border rounded p-3 bg-light mb-3">
-          <div class="fw-semibold mb-2">🚨 운영 안전 (Phase 152 hotfix)</div>
+          <div class="fw-semibold mb-2">🚨 CI 안전 (Phase 153)</div>
           <ul class="mb-0">
             <li>머지 충돌 마커: {% if merge_conflict_marker_count == 0 %}<span class="badge bg-success">0건 ✅</span>{% else %}<span class="badge bg-danger">{{ merge_conflict_marker_count }}건</span>{% endif %}</li>
             <li>Python syntax errors: {% if python_syntax_error_count == 0 %}<span class="badge bg-success">0건 ✅</span>{% else %}<span class="badge bg-danger">{{ python_syntax_error_count }}건</span>{% endif %}</li>
+            <li>pytest collect errors: {% if pytest_collect_error_count == 0 %}<span class="badge bg-success">0건 ✅</span>{% else %}<span class="badge bg-danger">{{ pytest_collect_error_count }}건</span>{% endif %}</li>
           </ul>
         </div>
         <div class="border rounded p-3 bg-light mb-3">
@@ -3047,7 +3079,7 @@ _DIAGNOSTICS_TEMPLATE = """
           <small class="d-block text-muted mt-2">삭제 시 analysis + scraper 캐시를 함께 비웁니다.</small>
         </div>
         <div class="border rounded p-3 bg-light mb-3">
-          <div class="fw-semibold mb-2">💰 판매가 계산기 (Phase 152)</div>
+          <div class="fw-semibold mb-2">💰 가격 엔진 (Phase 153)</div>
           <ul class="mb-0">
             <li>활성: <span class="badge bg-success">ON</span></li>
             <li>24h 계산: <strong>{{ ai_listing_status.attempts_24h }}</strong>건</li>

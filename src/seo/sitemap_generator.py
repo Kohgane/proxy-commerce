@@ -53,6 +53,8 @@ class SitemapGenerator:
         today = self._today()
         return [
             {"loc": self.base_url + "/", "changefreq": "daily", "priority": 1.0, "lastmod": today},
+            {"loc": self.base_url + "/privacy", "changefreq": "monthly", "priority": 0.6, "lastmod": today},
+            {"loc": self.base_url + "/terms", "changefreq": "monthly", "priority": 0.6, "lastmod": today},
             {"loc": self.base_url + "/products", "changefreq": "daily", "priority": 0.9, "lastmod": today},
             {"loc": self.base_url + "/categories", "changefreq": "weekly", "priority": 0.8, "lastmod": today},
             {"loc": self.base_url + "/about", "changefreq": "monthly", "priority": 0.5, "lastmod": today},

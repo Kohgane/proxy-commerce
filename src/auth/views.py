@@ -31,6 +31,7 @@ from urllib.parse import urlparse
 
 from flask import (
     Blueprint,
+    Response,
     flash,
     g,
     jsonify,
@@ -155,6 +156,33 @@ def _safe_next_url(next_url: str, default: str = "/seller/dashboard") -> str:
         return candidate
     except Exception:
         return default
+
+
+def _oauth_default_next(provider: str) -> str:
+    """OAuth 프로바이더별 기본 이동 경로."""
+    provider = (provider or "").strip().lower()
+    if provider == "kakao":
+        return os.getenv("KAKAO_OAUTH_NEXT_DEFAULT", "/seller/dashboard").strip() or "/seller/dashboard"
+    if provider == "google":
+        return os.getenv("GOOGLE_OAUTH_NEXT_DEFAULT", "/seller/dashboard").strip() or "/seller/dashboard"
+    if provider == "naver":
+        return os.getenv("NAVER_OAUTH_NEXT_DEFAULT", "/seller/dashboard").strip() or "/seller/dashboard"
+    return "/seller/dashboard"
+
+
+def _popup_redirect_response(next_url: str) -> Response:
+    safe_next = _safe_next_url(next_url, default="/seller/dashboard")
+    html = f"""<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>OAuth 완료</title></head>
+<body><script>
+if (window.opener && !window.opener.closed) {{
+  window.opener.location.href = {safe_next!r};
+  window.close();
+}} else {{
+  window.location.href = {safe_next!r};
+}}
+</script></body></html>"""
+    return Response(html, mimetype="text/html; charset=utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -370,7 +398,10 @@ def oauth_start(provider: str):
 
     state = secrets.token_urlsafe(24)
     session[f"oauth_state_{provider}"] = state
-    session[f"oauth_next_{provider}"] = _safe_next_url(request.args.get("next", ""))
+    session[f"oauth_next_{provider}"] = _safe_next_url(
+        request.args.get("next", ""),
+        default=_oauth_default_next(provider),
+    )
 
     redirect_uri = _callback_uri(provider)
     auth_url = p.get_authorize_url(state=state, redirect_uri=redirect_uri)
@@ -396,7 +427,7 @@ def oauth_callback(provider: str):
         flash(f"로그인 취소 또는 오류: {error}", "auth_oauth")
         return redirect(url_for("auth.login"))
 
-    next_url = session.pop(f"oauth_next_{provider}", "/seller/dashboard")
+    next_url = session.pop(f"oauth_next_{provider}", _oauth_default_next(provider))
 
     p = _get_provider(provider)
     if not p:
@@ -469,6 +500,12 @@ def oauth_callback(provider: str):
         establish_session(user, role=role)
 
         store.update_last_login(user.user_id)
+        popup_mode = (
+            provider == "kakao"
+            and os.getenv("KAKAO_OAUTH_POPUP_MODE", "0") == "1"
+        ) or request.args.get("popup") == "1"
+        if popup_mode:
+            return _popup_redirect_response(next_url)
         return redirect(next_url)
 
     except Exception as exc:

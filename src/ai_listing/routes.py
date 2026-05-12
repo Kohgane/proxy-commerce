@@ -400,20 +400,26 @@ function showResults(imageUrl, analysis, generated, markets, confidenceBadges, d
       : '-';
     const pb = mdata.pricing_breakdown || null;
     const competitorItems = mdata.competitor_items || [];
+    const actualMarketItems = mdata.actual_market_items || [];
     const competitorPrices = competitorItems.map(x => x.price_krw || 0).filter(Boolean);
     const competitorMin = competitorPrices.length ? Math.min(...competitorPrices) : null;
     const competitorAvg = competitorPrices.length ? Math.round(competitorPrices.reduce((a, b) => a + b, 0) / competitorPrices.length) : null;
     const competitorMax = competitorPrices.length ? Math.max(...competitorPrices) : null;
+    const actualPrices = actualMarketItems.map(x => x.price_krw || 0).filter(Boolean).sort((a, b) => a - b);
+    const actualMedian = actualPrices.length ? actualPrices[Math.floor(actualPrices.length / 2)] : null;
     const pricingCard = pb ? `
       <div class="border rounded p-3 bg-light mb-3">
-        <div class="fw-semibold mb-2">💰 판매가 계산기</div>
+        <div class="fw-semibold mb-2">📊 시장가 분석</div>
+        ${actualMarketItems.length ? `<div class="small mb-2"><strong>실측 동일 상품</strong><br>${actualMarketItems.map(i => `• ${escapeHtml(i.title || i.market || 'market')} — ₩${(i.price_krw || 0).toLocaleString()}`).join('<br>')}</div>` : ''}
         <div class="small">원가(자동): ${escapeHtml(sourcePriceText)} = ₩${Math.round(pb.cost_krw || 0).toLocaleString()}</div>
         <div class="small">+ 국제배송비: ₩${Math.round(pb.shipping_krw || 0).toLocaleString()}</div>
         <div class="small">+ 관세: ₩${Math.round(pb.customs_krw || 0).toLocaleString()}</div>
         <div class="small">+ 부가세: ₩${Math.round(pb.vat_krw || 0).toLocaleString()}</div>
         <div class="small fw-semibold mt-1">랜디드 코스트: ₩${Math.round(pb.total_landed || 0).toLocaleString()}</div>
         <div class="small">자동 계산 판매가: ₩${Math.round(pb.calculated_price || 0).toLocaleString()}</div>
-        <div class="small">🎯 권장 판매가: <strong>₩${Math.round(pb.suggested_price || 0).toLocaleString()}</strong> (실제 마진 ${pb.margin_actual_pct || 0}%)</div>
+        <div class="small">🎯 권장 판매가: <strong>₩${Math.round(pb.suggested_price || 0).toLocaleString()}</strong> (${escapeHtml(pb.decision_source || 'calculated')})</div>
+        ${actualMedian ? `<div class="small text-muted">실측 중앙값: ₩${Math.round(actualMedian).toLocaleString()}</div>` : ''}
+        ${pb.loss_warning ? `<div class="small text-danger fw-semibold mt-1">⚠️ 이 가격은 적자 가능성이 있습니다. 최소 마진 가격: ₩${Math.round(pb.minimum_margin_price || 0).toLocaleString()}</div>` : ''}
       </div>` : '';
     const competitorCard = competitorItems.length ? `
       <div class="border rounded p-3 bg-light mb-3">
@@ -564,7 +570,7 @@ def ai_listing_create():
         from src.version import get_current_phase
         current_phase = get_current_phase()
     except Exception:
-        current_phase = 151
+        current_phase = 153
     all_markets = ["coupang", "smartstore", "11st", "gmarket"]
     default_weight_kg = float(os.getenv("PRICING_DEFAULT_WEIGHT_KG", "0.5"))
     return render_template_string(

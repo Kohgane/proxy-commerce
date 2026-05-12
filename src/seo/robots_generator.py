@@ -42,7 +42,7 @@ class RobotsGenerator:
         if extra_disallows:
             disallows.extend(extra_disallows)
 
-        allows = ["/products/", "/categories/"]
+        allows = ["/products/", "/categories/", "/privacy", "/terms"]
         if extra_allows:
             allows.extend(extra_allows)
 
