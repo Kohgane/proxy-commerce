@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import importlib
 import os
 import sys
 import time
@@ -22,20 +23,28 @@ def _mock_provider(monkeypatch):
     monkeypatch.setenv("AI_LISTING_VISION_PROVIDER", "mock")
 
 
-class TestMakeAnalysisCacheKey:
-    def test_key_contains_phase(self, monkeypatch):
-        """캐시 키에 Phase 번호가 포함되어야 한다."""
-        monkeypatch.setenv("CURRENT_PHASE_OVERRIDE", "151")
-        import importlib
-        import src.version as vmod
+@pytest.fixture
+def reset_version_module(monkeypatch):
+    """CURRENT_PHASE_OVERRIDE를 설정하고 사용 후 src.version을 재로드하는 헬퍼."""
+    import src.version as vmod
+
+    def _set_phase(phase: int):
+        monkeypatch.setenv("CURRENT_PHASE_OVERRIDE", str(phase))
         importlib.reload(vmod)
 
+    yield _set_phase
+
+    monkeypatch.delenv("CURRENT_PHASE_OVERRIDE", raising=False)
+    importlib.reload(vmod)
+
+
+class TestMakeAnalysisCacheKey:
+    def test_key_contains_phase(self, reset_version_module):
+        """캐시 키에 Phase 번호가 포함되어야 한다."""
+        reset_version_module(151)
         from src.ai_listing.analyzer import _make_analysis_cache_key
         key = _make_analysis_cache_key("abc123", "v2_explicit_fields")
         assert "phase=151" in key
-
-        monkeypatch.delenv("CURRENT_PHASE_OVERRIDE")
-        importlib.reload(vmod)
 
     def test_key_contains_prompt_version(self):
         """캐시 키에 prompt_version이 포함되어야 한다."""
@@ -45,23 +54,17 @@ class TestMakeAnalysisCacheKey:
         assert "prompt=v1" in key_v1
         assert "prompt=v2_explicit_fields" in key_v2
 
-    def test_different_phase_different_key(self, monkeypatch):
+    def test_different_phase_different_key(self, reset_version_module):
         """Phase가 다르면 다른 캐시 키가 생성되어야 한다."""
         from src.ai_listing.analyzer import _make_analysis_cache_key
-        import importlib, src.version as vmod
 
-        monkeypatch.setenv("CURRENT_PHASE_OVERRIDE", "149")
-        importlib.reload(vmod)
+        reset_version_module(149)
         key_149 = _make_analysis_cache_key("abc123", "v2_explicit_fields")
 
-        monkeypatch.setenv("CURRENT_PHASE_OVERRIDE", "151")
-        importlib.reload(vmod)
+        reset_version_module(151)
         key_151 = _make_analysis_cache_key("abc123", "v2_explicit_fields")
 
         assert key_149 != key_151
-
-        monkeypatch.delenv("CURRENT_PHASE_OVERRIDE")
-        importlib.reload(vmod)
 
     def test_different_prompt_version_different_key(self):
         """prompt_version이 다르면 다른 캐시 키가 생성되어야 한다."""
@@ -85,68 +88,50 @@ class TestMakeAnalysisCacheKey:
 
 
 class TestAnalyzeCacheUsesNewKey:
-    def test_analyze_image_stores_with_phase_key(self, monkeypatch):
+    def test_analyze_image_stores_with_phase_key(self, reset_version_module):
         """analyze_image가 새 Phase 포함 캐시 키로 저장해야 한다."""
-        monkeypatch.setenv("CURRENT_PHASE_OVERRIDE", "151")
-        import importlib, src.version as vmod
-        importlib.reload(vmod)
-
+        reset_version_module(151)
         from src.ai_listing import analyzer
         analyzer._analysis_cache.clear()
 
         analyzer.analyze_image(image_url="https://example.com/cache_key_test.jpg")
 
-        # 저장된 키에 phase=151이 포함되어야 함
         keys = list(analyzer._analysis_cache.keys())
         assert len(keys) == 1
         assert "phase=151" in keys[0]
         assert "prompt=" in keys[0]
 
-        monkeypatch.delenv("CURRENT_PHASE_OVERRIDE")
-        importlib.reload(vmod)
-
-    def test_phase_149_cache_not_hit_by_phase_151(self, monkeypatch):
+    def test_phase_149_cache_not_hit_by_phase_151(self, reset_version_module):
         """Phase 149 캐시가 Phase 151에서 재사용되지 않아야 한다."""
         from src.ai_listing import analyzer
         analyzer._analysis_cache.clear()
 
-        import importlib, src.version as vmod
-
-        # Phase 149로 캐싱
-        monkeypatch.setenv("CURRENT_PHASE_OVERRIDE", "149")
-        importlib.reload(vmod)
+        reset_version_module(149)
         r149 = analyzer.analyze_image(image_url="https://example.com/eight_ball.jpg")
         assert not r149.get("_analysis_cache_hit")
 
-        # Phase 151에서 같은 URL 요청 → 캐시 미스여야 함
-        monkeypatch.setenv("CURRENT_PHASE_OVERRIDE", "151")
-        importlib.reload(vmod)
+        reset_version_module(151)
         r151 = analyzer.analyze_image(image_url="https://example.com/eight_ball.jpg")
         assert not r151.get("_analysis_cache_hit"), "Phase 149 캐시가 Phase 151에서 히트되면 안 됩니다"
-
-        monkeypatch.delenv("CURRENT_PHASE_OVERRIDE")
-        importlib.reload(vmod)
 
 
 class TestEvictAnalysisCache:
     def test_evict_removes_all_img_entries(self, monkeypatch):
-        """_evict_analysis_cache_for_image가 동일 이미지의 모든 캐시 삭제."""
+        """_evict_analysis_cache_for_image_and_url가 동일 이미지의 모든 캐시 삭제."""
         from src.ai_listing import analyzer
-        from src.ai_listing.analyzer import _compute_image_hash, _evict_analysis_cache_for_image
-        import importlib, src.version as vmod
+        from src.ai_listing.analyzer import _compute_image_hash, _evict_analysis_cache_for_image_and_url
 
         analyzer._analysis_cache.clear()
         img_url = "https://example.com/evict_test.jpg"
         img_hash = _compute_image_hash(image_url=img_url)
 
-        # Phase 149/150/151로 캐싱된 척 직접 삽입
         analyzer._analysis_cache[f"phase=149:prompt=v1:url=nourl:img={img_hash}"] = {"result": {}, "_cached_at": time.time()}
         analyzer._analysis_cache[f"phase=150:prompt=v2_explicit_fields:url=nourl:img={img_hash}"] = {"result": {}, "_cached_at": time.time()}
         analyzer._analysis_cache[f"phase=151:prompt=v2_explicit_fields:url=nourl:img={img_hash}"] = {"result": {}, "_cached_at": time.time()}
         # 다른 이미지 캐시 (삭제되면 안 됨)
         analyzer._analysis_cache["phase=151:prompt=v2_explicit_fields:url=nourl:img=other_hash"] = {"result": {}, "_cached_at": time.time()}
 
-        deleted = _evict_analysis_cache_for_image(img_hash)
+        deleted = _evict_analysis_cache_for_image_and_url(img_hash)
         assert deleted == 3
         assert "phase=151:prompt=v2_explicit_fields:url=nourl:img=other_hash" in analyzer._analysis_cache
 

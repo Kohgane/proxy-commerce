@@ -59,7 +59,7 @@ def _make_analysis_cache_key(
     )
 
 
-def _evict_analysis_cache_for_image(img_hash: str, page_url: str = "") -> int:
+def _evict_analysis_cache_for_image_and_url(img_hash: str, page_url: str = "") -> int:
     """Phase 151.1: force_refresh 시 이미지/URL 기반 모든 캐시 항목 삭제.
 
     img_hash 또는 url_hash 매칭 키를 구버전 포함 모두 제거.
@@ -196,7 +196,7 @@ def analyze_image(
 
     if force_refresh:
         # Phase 151.1: 현재 이미지/URL의 모든 캐시 항목 삭제 (구버전 포함)
-        _evict_analysis_cache_for_image(img_hash, page_url=page_url)
+        _evict_analysis_cache_for_image_and_url(img_hash, page_url=page_url)
 
     # 캐시 확인
     if not force_refresh and cache_key in _analysis_cache:

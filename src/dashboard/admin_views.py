@@ -1838,10 +1838,31 @@ def _build_ai_listing_status() -> dict:
                 continue
             try:
                 text = path.read_text(encoding="utf-8", errors="replace")
-                # 주석/docstring의 Phase N은 허용 (if '#' or '"""' context)
+                in_docstring = False
+                docstring_delim = None
                 for line in text.splitlines():
                     stripped = line.strip()
-                    if stripped.startswith("#") or stripped.startswith('"""') or stripped.startswith("'''"):
+                    # 다중줄 docstring 상태 추적
+                    if not in_docstring:
+                        for delim in ('"""', "'''"):
+                            if stripped.startswith(delim):
+                                # 같은 줄에서 닫히는지 확인
+                                if stripped.count(delim) >= 2 and len(stripped) > len(delim):
+                                    break  # 단일줄 docstring - 건너뜀
+                                in_docstring = True
+                                docstring_delim = delim
+                                break
+                        if in_docstring:
+                            continue
+                    else:
+                        if docstring_delim and docstring_delim in stripped:
+                            in_docstring = False
+                        continue
+                    # Python/HTML/JS 주석
+                    if stripped.startswith("#") or stripped.startswith("<!--") or stripped.startswith("//"):
+                        continue
+                    # 동적 템플릿 변수 허용
+                    if "{{ current_phase" in line:
                         continue
                     if phase_pattern.search(line):
                         hardcoded_offenders.append(rel)
