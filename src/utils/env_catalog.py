@@ -643,8 +643,12 @@ API_REGISTRY: list = [
             "AI_LISTING_FORCE_REFRESH_ALLOWED",
             "AI_LISTING_DEBUG_PANEL",
             "AI_LISTING_PROMPT_VERSION",
+            # Phase 151.1 hotfix: 캐시 키 정상화
+            "AI_LISTING_CACHE_INCLUDE_PHASE",
+            "AI_LISTING_CACHE_INCLUDE_PROMPT_VERSION",
+            "AI_LISTING_FORCE_REFRESH_INVALIDATE_ANALYSIS",
         ],
-        purpose="AI 상품등록 자동화 — URL 검증/강제 재분석/debug 패널 포함 (Phase 150.1)",
+        purpose="AI 상품등록 자동화 — 캐시 키 Phase/prompt_version 포함, force_refresh 전체 무효화 (Phase 151.1)",
         docs_url="https://kohganepercentiii.com/docs/operations/AI_LISTING.md",
         category=ApiCategory.AI,
         optional=True,

@@ -14,6 +14,7 @@ def test_no_hardcoded_phase_in_ai_templates():
     forbidden_literals = [
         "Phase 149</small>",  # /seller/listing/ai-create 헤더
         "AI 상품등록 자동화 (Phase 149)",  # /admin/diagnostics AI 카드
+        "Phase 149 mock status",  # routes.py api_status 응답
     ]
     offenders: list[str] = []
     for path in targets:

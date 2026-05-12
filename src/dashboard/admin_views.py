@@ -626,7 +626,7 @@ def admin_oauth_setup():
         return f"<span class='badge bg-warning text-dark ms-2'>⚠️ {warn_text}</span>"
 
     body = (
-        "<h2>🔐 OAuth 설정 가이드 (Phase 150)</h2>"
+        "<h2>🔐 OAuth 설정 가이드</h2>"
         "<p class='text-muted'>소셜 로그인 외부 콘솔 등록 단계별 가이드</p>"
         "<div class='row g-4 mt-2'>"
         # Google 카드
@@ -701,6 +701,40 @@ def admin_oauth_setup():
 
     from markupsafe import Markup
     return _render("OAuth 설정 가이드", body)
+
+
+# ---------------------------------------------------------------------------
+# Phase 151.1 — /admin/diagnostics/ai-cache-clear (AI listing 캐시 전체 삭제)
+# ---------------------------------------------------------------------------
+
+@admin_panel_bp.post("/diagnostics/ai-cache-clear")
+def diagnostics_ai_cache_clear():
+    """AI listing 분석/스크래퍼 캐시 전체 삭제 (Phase 151.1 hotfix)."""
+    from src.auth.admin_resolver import is_admin_session
+
+    if not session.get("user_id"):
+        return redirect("/auth/login?next=/admin/diagnostics")
+    admin_ok, _ = is_admin_session(session)
+    if not admin_ok:
+        return _render("접근 거부", "<div class='alert alert-danger'>관리자 권한이 필요합니다.</div>"), 403
+
+    deleted_analysis = 0
+    deleted_scraper = 0
+    try:
+        from src.ai_listing.analyzer import clear_all_analysis_cache
+        deleted_analysis = clear_all_analysis_cache()
+    except Exception as exc:
+        logger.warning("analysis 캐시 삭제 실패: %s", exc)
+    try:
+        from src.ai_listing.url_scraper import _scraper_cache
+        deleted_scraper = len(_scraper_cache)
+        _scraper_cache.clear()
+    except Exception as exc:
+        logger.warning("scraper 캐시 삭제 실패: %s", exc)
+
+    logger.info("AI listing 캐시 전체 삭제: analysis=%d건, scraper=%d건", deleted_analysis, deleted_scraper)
+    msg = f"🗑️ AI listing 캐시 삭제 완료 — analysis: {deleted_analysis}건, scraper: {deleted_scraper}건"
+    return _render_diagnostics(issued_magic_link=msg)
 
 
 # ---------------------------------------------------------------------------
@@ -1743,13 +1777,13 @@ def _build_product_subscription_status() -> dict:
 
 
 def _build_ai_listing_status() -> dict:
-    """Phase 149: AI 상품등록 자동화 상태."""
+    """Phase 151.1: AI 상품등록 자동화 상태 (캐시 키 정상화 포함)."""
     try:
         from src.ai_listing.routes import ai_listing_stats
-        return ai_listing_stats()
+        stats = ai_listing_stats()
     except Exception as exc:
         logger.debug("ai_listing 상태 조회 실패: %s", exc)
-        return {
+        stats = {
             "enabled": os.getenv("AI_LISTING_ENABLED", "1") == "1",
             "vision_provider": os.getenv("AI_LISTING_VISION_PROVIDER", "mock"),
             "vision_model": os.getenv("AI_LISTING_VISION_MODEL", "gpt-4o-mini"),
@@ -1770,7 +1804,53 @@ def _build_ai_listing_status() -> dict:
             "prompt_v1_pct": 0.0,
             "prompt_v2_pct": 0.0,
             "by_market": {},
+            "scraper_cache_active": 0,
         }
+
+    # Phase 151.1: 캐시 키 정상화 여부 표시
+    try:
+        from src.ai_listing.analyzer import _make_analysis_cache_key
+        _make_analysis_cache_key("test", "v2_explicit_fields")
+        stats["cache_key_phase_included"] = True
+        stats["cache_key_prompt_included"] = True
+    except Exception:
+        stats["cache_key_phase_included"] = False
+        stats["cache_key_prompt_included"] = False
+
+    # Phase 151.1: Phase 하드코딩 가드 상태
+    import re, pathlib
+    WHITELIST_FILES = {"ROADMAP.md", "CHANGELOG.md", "src/version.py"}
+    WHITELIST_DIRS = {"docs/"}
+    root = pathlib.Path(__file__).parent.parent.parent
+    phase_pattern = re.compile(r'Phase\s+\d+', re.IGNORECASE)
+    hardcoded_offenders = []
+    for search_root in ["templates", "src/ai_listing", "static"]:
+        base = root / search_root
+        if not base.exists():
+            continue
+        for path in base.rglob("*"):
+            if not path.is_file():
+                continue
+            if path.suffix not in (".html", ".py", ".js", ".css"):
+                continue
+            rel = str(path.relative_to(root))
+            if path.name in WHITELIST_FILES or any(rel.startswith(d) for d in WHITELIST_DIRS):
+                continue
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+                # 주석/docstring의 Phase N은 허용 (if '#' or '"""' context)
+                for line in text.splitlines():
+                    stripped = line.strip()
+                    if stripped.startswith("#") or stripped.startswith('"""') or stripped.startswith("'''"):
+                        continue
+                    if phase_pattern.search(line):
+                        hardcoded_offenders.append(rel)
+                        break
+            except Exception:
+                pass
+    stats["phase_hardcode_offenders"] = hardcoded_offenders
+    stats["phase_hardcode_count"] = len(hardcoded_offenders)
+    return stats
 
 
 def _build_emergency_access_status() -> dict:
@@ -2766,9 +2846,24 @@ _DIAGNOSTICS_TEMPLATE = """
           <li>캐시 활성: 분석 <strong>{{ ai_listing_status.cache_active }}</strong>건 / 스크래퍼 <strong>{{ ai_listing_status.scraper_cache_active }}</strong>건 / TTL: {{ ai_listing_status.cache_ttl_hours }}h</li>
           <li>24h 등록 시도: <strong>{{ ai_listing_status.attempts_24h }}</strong>건 / 성공: <strong>{{ ai_listing_status.success_24h }}</strong>건 / 실패: <span class="{% if ai_listing_status.failed_24h > 0 %}text-danger fw-bold{% endif %}">{{ ai_listing_status.failed_24h }}건</span></li>
         </ul>
+        <hr class="my-2">
+        <p class="fw-semibold mb-1">🔑 캐시 키 정상화 (Phase 151.1 hotfix)</p>
+        <ul class="mb-3 small">
+          <li>캐시 키 Phase 포함: {% if ai_listing_status.cache_key_phase_included %}<span class="badge bg-success">✅</span>{% else %}<span class="badge bg-danger">❌</span>{% endif %}</li>
+          <li>캐시 키 prompt_version 포함: {% if ai_listing_status.cache_key_prompt_included %}<span class="badge bg-success">✅</span>{% else %}<span class="badge bg-danger">❌</span>{% endif %}</li>
+        </ul>
+        <p class="fw-semibold mb-1">📛 Phase 하드코딩 가드 (3차 강화)</p>
+        <ul class="mb-3 small">
+          <li>검출된 하드코딩: {% if ai_listing_status.phase_hardcode_count == 0 %}<span class="badge bg-success">0건</span>{% else %}<span class="badge bg-danger">{{ ai_listing_status.phase_hardcode_count }}건</span> — {{ ai_listing_status.phase_hardcode_offenders | join(', ') }}{% endif %}</li>
+          <li>화이트리스트: ROADMAP.md, CHANGELOG.md, docs/, src/version.py</li>
+        </ul>
         <div class="d-flex gap-2 flex-wrap">
           <a class="btn btn-outline-primary btn-sm" href="/seller/listing/ai-create">🤖 AI 상품등록 UI</a>
           <a class="btn btn-outline-secondary btn-sm" href="/api/ai-listing/status/test">🔗 API 상태</a>
+          <form method="POST" action="/admin/diagnostics/ai-cache-clear" style="display:inline"
+                onsubmit="return confirm('AI listing 캐시를 모두 삭제합니다. 계속하시겠습니까?')">
+            <button type="submit" class="btn btn-danger btn-sm">🗑️ AI listing 캐시 전체 삭제</button>
+          </form>
         </div>
       </div>
     </div>
