@@ -1,4 +1,4 @@
-# AI 상품등록 자동화 가이드 (Phase 150.1)
+# AI 상품등록 자동화 가이드 (Phase 151)
 
 ## 개요
 
@@ -46,6 +46,14 @@ Vision API 분석 (GPT-4o-mini / Claude Sonnet / mock)
 | `AI_LISTING_FORCE_REFRESH_ALLOWED` | `1` | 다시 분석 시 캐시 무시 허용 |
 | `AI_LISTING_DEBUG_PANEL` | `1` | 결과 카드 원본 데이터 패널 표시 |
 | `AI_LISTING_PROMPT_VERSION` | `v2_explicit_fields` | 분석 프롬프트 버전 (기본 v2 강제) |
+| `AI_LISTING_JSONLD_PRIORITY` | `1` | JSON-LD 명시값(name/brand/price/variants/description) 우선 사용 |
+| `AI_LISTING_VARIANT_AUTO_EXTRACT` | `1` | JSON-LD `hasVariant` 자동 분리 |
+| `AI_LISTING_PRICE_USE_JSONLD` | `1` | JSON-LD 가격을 환율 변환 가격의 기준값으로 사용 |
+| `AI_LISTING_TRANSLATE_DESCRIPTION` | `1` | 원문 설명 한국어 번역 시도 |
+| `FALLBACK_USD_KRW` | `1375` | USD 환율 fallback |
+| `FALLBACK_JPY_KRW` | `9.2` | JPY 환율 fallback |
+| `FALLBACK_EUR_KRW` | `1500` | EUR 환율 fallback |
+| `FALLBACK_CNY_KRW` | `190` | CNY 환율 fallback |
 
 ## Vision 제공자 설정
 
@@ -211,6 +219,20 @@ AI_LISTING_VISION_PROVIDER=mock
 - 24h 분석 시도/스크래퍼 호출률/HTTP200 성공률
 - JSON-LD/OG 추출률, 평균 추출 필드 수(10개)
 - 캐시 적중률, 프롬프트 버전 분포(v1/v2)
+
+## Phase 151 — JSON-LD 우선순위
+
+- 제목: `json_ld_normalized.name` → `og:title` → AI fallback
+- 브랜드: `json_ld_normalized.brand.name` 우선
+- 가격: `offers.price`/`hasVariant[].offers.price`를 환율 모듈로 KRW 변환
+- 변형: `hasVariant`에서 색상/사이즈/SKU/GTIN 자동 분리
+- 설명: JSON-LD 원문 + 한국어 번역 동시 표시
+
+## Phase 151 — 결과 카드
+
+- 원본가(통화) / 환산가(KRW) / 적용 환율 노출
+- 색상/사이즈 칩 + SKU/GTIN 테이블 노출
+- 신뢰도 배지: JSON-LD / AI 추론 / 빈 값 구분
 
 ## 아키텍처
 

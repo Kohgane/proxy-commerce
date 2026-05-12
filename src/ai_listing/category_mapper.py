@@ -93,6 +93,37 @@ _MARKET_CATEGORY_MAPS: Dict[str, Dict[str, str]] = {
     "gmarket": _GMARKET_CATEGORY_MAP,
 }
 
+_DISPLAY_CATEGORY_ALIASES: Dict[str, str] = {
+    "hoodies": "후드티",
+    "hoodie": "후드티",
+    "sweatshirts": "맨투맨",
+    "sweatshirt": "맨투맨",
+    "t-shirts": "티셔츠",
+    "t-shirt": "티셔츠",
+    "tees": "티셔츠",
+    "tee": "티셔츠",
+    "shirts": "셔츠",
+    "shirt": "셔츠",
+    "outerwear": "아우터",
+}
+
+
+def normalize_display_category(category: str) -> str:
+    value = str(category or "").strip()
+    if not value:
+        return ""
+    lowered = value.lower()
+    if lowered in _DISPLAY_CATEGORY_ALIASES:
+        return _DISPLAY_CATEGORY_ALIASES[lowered]
+    return value
+
+
+def _normalize_market_category(category: str) -> str:
+    display = normalize_display_category(category)
+    if display in {"후드티", "맨투맨", "티셔츠", "셔츠", "아우터"}:
+        return "패션"
+    return display
+
 
 def get_category_code(category: str, market: str) -> str:
     """범용 카테고리명 → 마켓 카테고리 코드 반환.
@@ -105,11 +136,12 @@ def get_category_code(category: str, market: str) -> str:
         마켓 카테고리 코드 (매핑 없으면 default)
     """
     market_map = _MARKET_CATEGORY_MAPS.get(market, {})
-    code = market_map.get(category) or market_map.get("default", "")
+    normalized = _normalize_market_category(category)
+    code = market_map.get(normalized) or market_map.get("default", "")
     if not code:
         # 부분 일치 시도
         for key, val in market_map.items():
-            if key != "default" and key in category:
+            if key != "default" and key in normalized:
                 return val
     return code or market_map.get("default", "")
 

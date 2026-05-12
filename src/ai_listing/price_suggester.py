@@ -51,9 +51,14 @@ def suggest_price(
           "mode": str,
         }
     """
-    price_range = analysis.get("estimated_price_range", {})
-    range_min = int(price_range.get("min") or 10000)
-    range_max = int(price_range.get("max") or range_min * 3)
+    source_price_krw = analysis.get("source_price_krw")
+    if source_price_krw:
+        range_min = int(source_price_krw)
+        range_max = int(source_price_krw)
+    else:
+        price_range = analysis.get("estimated_price_range", {})
+        range_min = int(price_range.get("min") or 10000)
+        range_max = int(price_range.get("max") or range_min * 3)
 
     fee_rate = _MARKET_FEE_RATES.get(market, _MARKET_FEE_RATES["default"])
 
@@ -98,6 +103,10 @@ def suggest_price(
         "margin_pct": round(margin_pct, 1),
         "fee_rate": fee_rate,
         "mode": mode,
+        "source_price_krw": int(source_price_krw) if source_price_krw else None,
+        "source_price": analysis.get("source_price"),
+        "fx_rate": analysis.get("fx_rate"),
+        "margin_guard_price_krw": max(target_price, range_min),
     }
 
 

@@ -283,12 +283,30 @@ def _merge_scrape_into_result(
     스크래핑으로 얻은 구체적 값이 있으면 AI 추론값을 대체/보강.
     """
     merged = dict(result)
+    json_ld_normalized = scrape_data.get("json_ld_normalized") or {}
 
     # 브랜드: 스크래핑 값 우선
     brand_candidates = scrape_data.get("brand_candidates", [])
-    if brand_candidates and not merged.get("brand"):
+    if brand_candidates:
         merged["brand"] = brand_candidates[0]
-        merged["_brand_source"] = "scraping"
+        merged["_brand_source"] = "jsonld" if json_ld_normalized.get("brand") else "scraping"
+
+    if json_ld_normalized:
+        merged["json_ld_normalized"] = json_ld_normalized
+        if json_ld_normalized.get("category"):
+            try:
+                from src.ai_listing.category_mapper import normalize_display_category
+
+                merged["category"] = normalize_display_category(json_ld_normalized.get("category", ""))
+            except Exception:
+                merged["category"] = json_ld_normalized.get("category", "")
+            merged["_category_source"] = "jsonld"
+        if json_ld_normalized.get("description"):
+            merged["source_description"] = json_ld_normalized["description"]
+            merged["_description_source"] = "jsonld"
+        if json_ld_normalized.get("name"):
+            merged["_scraped_title"] = json_ld_normalized["name"]
+            merged["_title_source"] = "jsonld"
 
     # 소재: 스크래핑 + AI 병합
     scrape_materials = scrape_data.get("material_candidates", [])
@@ -308,12 +326,11 @@ def _merge_scrape_into_result(
     price_candidates = scrape_data.get("price_candidates", [])
     if price_candidates:
         merged["price_candidates"] = price_candidates
-        if not merged.get("estimated_price_range"):
-            merged["estimated_price_range"] = {
-                "min": min(price_candidates),
-                "max": max(price_candidates),
-            }
-        merged["_price_source"] = "scraping"
+        merged["estimated_price_range"] = {
+            "min": min(price_candidates),
+            "max": max(price_candidates),
+        }
+        merged["_price_source"] = "jsonld" if scrape_data.get("source_price_krw") else "scraping"
 
     # 사이즈
     size_candidates = scrape_data.get("size_candidates", [])
@@ -331,6 +348,16 @@ def _merge_scrape_into_result(
     # 이미지 목록 추가
     if scrape_data.get("images"):
         merged["scraped_images"] = scrape_data["images"]
+
+    if scrape_data.get("variants"):
+        merged["variants"] = scrape_data["variants"]
+        merged["_variants_source"] = "jsonld"
+    if scrape_data.get("source_price"):
+        merged["source_price"] = scrape_data["source_price"]
+    if scrape_data.get("source_price_krw") is not None:
+        merged["source_price_krw"] = scrape_data["source_price_krw"]
+    if scrape_data.get("fx_rate") is not None:
+        merged["fx_rate"] = scrape_data["fx_rate"]
 
     # 스크래핑 메타
     merged["_scrape_source"] = scrape_data.get("_source_url", "")
@@ -362,9 +389,12 @@ def _attach_debug_metadata(
         "http_status": (scrape_data or {}).get("_http_status"),
         "response_size": (scrape_data or {}).get("_response_size", 0),
         "json_ld": (scrape_data or {}).get("_json_ld", []),
+        "json_ld_normalized": (scrape_data or {}).get("json_ld_normalized", {}),
         "og_tags": (scrape_data or {}).get("_og_tags", {}),
         "meta_description": (scrape_data or {}).get("_meta_description", ""),
         "image_urls": (scrape_data or {}).get("images", []),
+        "source_price": (scrape_data or {}).get("source_price"),
+        "variants": (scrape_data or {}).get("variants", []),
         "scraper_cache_hit": (scrape_data or {}).get("_cache_hit", False),
     }
     merged["_analysis_cache_hit"] = cache_hit

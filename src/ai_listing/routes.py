@@ -72,20 +72,27 @@ def _is_force_refresh_requested(data: Dict[str, Any]) -> bool:
 
 
 def _build_confidence_badges(analysis: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
-    def _badge(value: Any, scraped: bool) -> Dict[str, str]:
+    def _badge(value: Any, source: str = "") -> Dict[str, str]:
         has_value = bool(value)
         if not has_value:
             return {"level": "empty", "icon": "🔴", "label": "빈 값"}
-        if scraped:
+        if source == "jsonld":
+            return {"level": "jsonld", "icon": "🟢", "label": "JSON-LD"}
+        if source in {"scraping", "og"}:
             return {"level": "scraped", "icon": "🟢", "label": "스크래핑 성공"}
         return {"level": "ai", "icon": "🟡", "label": "AI 추론"}
 
-    scraped = bool(analysis.get("_scraped"))
     return {
-        "category": _badge(analysis.get("category"), scraped),
-        "brand": _badge(analysis.get("brand"), analysis.get("_brand_source") == "scraping"),
-        "keywords": _badge(analysis.get("keywords"), scraped),
-        "estimated_price_range": _badge(analysis.get("estimated_price_range"), analysis.get("_price_source") == "scraping"),
+        "title": _badge(
+            (analysis.get("json_ld_normalized") or {}).get("name") or analysis.get("_scraped_title"),
+            str(analysis.get("_title_source") or ""),
+        ),
+        "category": _badge(analysis.get("category"), str(analysis.get("_category_source") or "")),
+        "brand": _badge(analysis.get("brand"), str(analysis.get("_brand_source") or "")),
+        "description": _badge(analysis.get("source_description"), str(analysis.get("_description_source") or "")),
+        "keywords": _badge(analysis.get("keywords"), "ai"),
+        "estimated_price_range": _badge(analysis.get("estimated_price_range"), str(analysis.get("_price_source") or "")),
+        "variants": _badge(analysis.get("variants"), str(analysis.get("_variants_source") or "")),
     }
 
 
@@ -115,6 +122,9 @@ def _record_analyze_event(analysis: Dict[str, Any], page_url: str, scraper_calle
         "cache_hit": bool(analysis.get("_analysis_cache_hit") or (analysis.get("_debug", {}) or {}).get("scraper_cache_hit")),
         "prompt_version": str(analysis.get("_prompt_version") or "unknown"),
         "extracted_fields": _count_extracted_fields(analysis),
+        "price_extracted": bool(analysis.get("source_price_krw")),
+        "variants_count": len(analysis.get("variants") or []),
+        "fx_conversion_used": bool(analysis.get("fx_rate")),
         "page_url": bool(page_url),
     })
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
@@ -125,10 +135,11 @@ def _record_analyze_event(analysis: Dict[str, Any], page_url: str, scraper_calle
 
 _AI_CREATE_PAGE = """
 {% extends "_base.html" %}
+{% from "_macros.html" import phase_header %}
 {% block title %}🤖 AI 상품등록{% endblock %}
 {% block content %}
 <div class="container-fluid px-0">
-  <h4 class="mb-3 fw-bold">🤖 AI 상품등록 자동화 <small class="text-muted fs-6">Phase {{ current_phase }}</small></h4>
+  {{ phase_header("🤖 AI 상품등록 자동화", current_phase) }}
 
   {% if not enabled %}
   <div class="alert alert-warning">⚠️ AI 상품등록 기능이 비활성화되어 있습니다 (AI_LISTING_ENABLED=0).</div>
@@ -242,7 +253,13 @@ let _listingId = null;
 let _analysis = null;
 let _generated = null;
 const DEBUG_PANEL_ENABLED = {{ 'true' if debug_panel_enabled else 'false' }};
-
+const escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+ 
 async function runAnalysis() {
   const btn = document.getElementById('analyzeBtn');
   const warning = document.getElementById('analyzeWarning');
@@ -328,12 +345,22 @@ function showResults(imageUrl, analysis, generated, markets, confidenceBadges, d
     const b = confidenceBadges[k] || {icon: '🔴', label: '빈 값'};
     return ` <span class="badge text-bg-light border ms-1">${b.icon} ${b.label}</span>`;
   };
+  const sourceTitle = (analysis.json_ld_normalized || {}).name || analysis._scraped_title || '-';
+  const sourceDescription = analysis.source_description || '-';
+  const sourcePrice = analysis.source_price || {};
+  const sourcePriceDisplay = sourcePrice.amount && sourcePrice.currency
+    ? `${sourcePrice.amount} ${sourcePrice.currency} → ₩${(analysis.source_price_krw || 0).toLocaleString()}`
+    : '-';
   card.innerHTML = [
-    '<strong>카테고리</strong>: ' + (analysis.category || '-') + badge('category'),
+    '<strong>원본 제목</strong>: ' + escapeHtml(sourceTitle) + badge('title'),
+    '<strong>카테고리</strong>: ' + escapeHtml(analysis.category || '-') + badge('category'),
     '<strong>브랜드</strong>: ' + (analysis.brand || '-') + badge('brand'),
-    '<strong>색상</strong>: ' + (analysis.colors || []).join(', '),
+    '<strong>색상</strong>: ' + escapeHtml((analysis.colors || []).join(', ')),
+    '<strong>사이즈</strong>: ' + escapeHtml((analysis.size_options || []).join(', ')),
     '<strong>키워드</strong>: ' + (analysis.keywords || []).join(', ') + badge('keywords'),
-    '<strong>추정 가격</strong>: ₩' + ((analysis.estimated_price_range||{}).min||'-') + ' ~ ₩' + ((analysis.estimated_price_range||{}).max||'-') + badge('estimated_price_range'),
+    '<strong>가격</strong>: ' + escapeHtml(sourcePriceDisplay) + badge('estimated_price_range'),
+    '<strong>설명</strong>: ' + escapeHtml(sourceDescription) + badge('description'),
+    '<strong>변형</strong>: ' + ((analysis.variants || []).length || 0) + '개' + badge('variants'),
   ].map(s => '<div class="mb-1">' + s + '</div>').join('');
   if (DEBUG_PANEL_ENABLED) {
     card.innerHTML += `
@@ -343,9 +370,12 @@ function showResults(imageUrl, analysis, generated, markets, confidenceBadges, d
           http_status: debugPanel.http_status,
           response_size: debugPanel.response_size,
           json_ld: debugPanel.json_ld,
+          json_ld_normalized: debugPanel.json_ld_normalized,
           og_tags: debugPanel.og_tags,
           meta_description: debugPanel.meta_description,
           image_urls: debugPanel.image_urls,
+          source_price: debugPanel.source_price,
+          variants: debugPanel.variants,
           prompt_version: debugPanel.prompt_version,
           cache: debugPanel.cache,
         }, null, 2)}</pre>
@@ -362,27 +392,61 @@ function showResults(imageUrl, analysis, generated, markets, confidenceBadges, d
     const active = i === 0 ? 'active' : '';
     tabs.innerHTML += `<li class="nav-item"><a class="nav-link ${active}" data-bs-toggle="tab" href="#tab_${market}">${market}</a></li>`;
     const mdata = (generated.markets || {})[market] || {};
+    const variants = mdata.variants || [];
+    const variantRows = variants.map(v => `<tr><td>${escapeHtml(v.color || '-')}</td><td>${escapeHtml(v.size || '-')}</td><td>${escapeHtml(v.sku || '-')}</td><td>${escapeHtml(v.gtin || '-')}</td></tr>`).join('');
+    const sourcePriceText = mdata.source_price && mdata.source_price.amount
+      ? `${mdata.source_price.amount} ${mdata.source_price.currency}`
+      : '-';
     content.innerHTML += `
       <div class="tab-pane fade ${i===0?'show active':''}" id="tab_${market}">
         <div class="mb-2">
           <label class="fw-semibold small">제목 (${(mdata.title||'').length}자)</label>
-          <input class="form-control form-control-sm" id="title_${market}" value="${(mdata.title||'').replace(/"/g,'&quot;')}">
+          <input class="form-control form-control-sm" id="title_${market}" value="${escapeHtml(mdata.title||'')}">
+          <div class="form-text">원본 제목: ${escapeHtml((analysis.json_ld_normalized || {}).name || mdata.title || '-')}</div>
         </div>
         <div class="mb-2">
+          <label class="fw-semibold small">카테고리</label>
+          <input class="form-control form-control-sm mb-1" value="${escapeHtml(mdata.category_text||'')}" readonly>
           <label class="fw-semibold small">카테고리 코드</label>
           <input class="form-control form-control-sm" value="${mdata.category_code||''}" readonly>
         </div>
         <div class="mb-2">
           <label class="fw-semibold small">제안 가격 (원)</label>
           <input type="number" class="form-control form-control-sm" id="price_${market}" value="${mdata.suggested_price_krw||''}">
+          <div class="form-text">원본가: ${escapeHtml(sourcePriceText)} · 환산가: ₩${(mdata.source_price_krw||0).toLocaleString()} · 환율: ${escapeHtml(mdata.fx_rate || '-')} KRW/${escapeHtml((mdata.source_price||{}).currency || '')}</div>
+          <div class="form-text">마진 가드 후 제안가: ₩${(mdata.margin_guard_price_krw||mdata.suggested_price_krw||0).toLocaleString()}</div>
+        </div>
+        <div class="mb-2">
+          <label class="fw-semibold small">브랜드 / 소재</label>
+          <div class="form-control form-control-sm bg-light">${escapeHtml(mdata.brand || '-')} / ${escapeHtml(mdata.material || '-')}</div>
+        </div>
+        <div class="mb-2">
+          <label class="fw-semibold small">옵션 자동 분리 (${mdata.variant_count || 0}개 변형 감지)</label>
+          <div class="small mb-1">색상: ${(mdata.colors||[]).map(c => `<span class="badge text-bg-light border me-1">${escapeHtml(c)}</span>`).join('') || '-'}</div>
+          <div class="small mb-1">사이즈: ${(mdata.sizes||[]).map(s => `<span class="badge text-bg-light border me-1">${escapeHtml(s)}</span>`).join('') || '-'}</div>
+          <details class="small">
+            <summary>SKU / GTIN 보기</summary>
+            <div class="table-responsive mt-2">
+              <table class="table table-sm table-bordered">
+                <thead><tr><th>색상</th><th>사이즈</th><th>SKU</th><th>GTIN</th></tr></thead>
+                <tbody>${variantRows || '<tr><td colspan="4" class="text-muted">변형 없음</td></tr>'}</tbody>
+              </table>
+            </div>
+          </details>
         </div>
         <div class="mb-2">
           <label class="fw-semibold small">설명</label>
-          <textarea class="form-control form-control-sm" rows="3" id="desc_${market}">${mdata.description||''}</textarea>
+          <textarea class="form-control form-control-sm" rows="3" id="desc_${market}">${escapeHtml(mdata.description||'')}</textarea>
+          <details class="small mt-1">
+            <summary>원문/번역 보기</summary>
+            <div class="text-muted mt-1">번역 상태: ${escapeHtml(mdata.description_translation_status || 'unknown')}</div>
+            <div class="mt-2"><strong>원문</strong><div class="border rounded bg-light p-2">${escapeHtml(mdata.description_original || '-')}</div></div>
+            <div class="mt-2"><strong>한국어</strong><div class="border rounded bg-light p-2">${escapeHtml(mdata.description_kr || '-')}</div></div>
+          </details>
         </div>
         <div class="mb-2">
           <label class="fw-semibold small">태그</label>
-          <input class="form-control form-control-sm" value="${(mdata.tags||[]).join(', ')}">
+          <input class="form-control form-control-sm" value="${escapeHtml((mdata.tags||[]).join(', '))}">
         </div>
       </div>`;
   });
@@ -449,7 +513,7 @@ def ai_listing_create():
         from src.version import get_current_phase
         current_phase = get_current_phase()
     except Exception:
-        current_phase = 149
+        current_phase = 151
     all_markets = ["coupang", "smartstore", "11st", "gmarket"]
     return render_template_string(
         _AI_CREATE_PAGE,
@@ -571,6 +635,7 @@ def api_generate():
 
     try:
         from src.ai_listing.generator import (
+            build_listing_content,
             generate_title,
             generate_description,
             generate_tags,
@@ -580,11 +645,22 @@ def api_generate():
 
         result: Dict[str, Any] = {}
         for market in markets:
+            listing = build_listing_content(analysis, market, language)
             result[market] = {
                 "title": generate_title(analysis, market, language),
                 "description": generate_description(analysis, market, language),
+                "description_original": listing.get("description_original", ""),
+                "description_kr": listing.get("description_kr", ""),
+                "description_translation_status": listing.get("description_translation_status", ""),
                 "tags": generate_tags(analysis, language),
-                "category_code": get_category_code(analysis.get("category", ""), market),
+                "category_text": listing.get("category_text", ""),
+                "brand": listing.get("brand", ""),
+                "colors": listing.get("colors", []),
+                "sizes": listing.get("sizes", []),
+                "variants": listing.get("variants", []),
+                "material": listing.get("material", ""),
+                "variant_count": len(listing.get("variants", [])),
+                "category_code": get_category_code(listing.get("category_text", "") or analysis.get("category", ""), market),
                 **suggest_price(analysis, market, mode=price_mode),
             }
 
@@ -638,7 +714,7 @@ def api_status(listing_id: str):
         "ok": True,
         "listing_id": listing_id,
         "status": "done",
-        "message": "Phase 149 mock status",
+        "message": "mock status",
     })
 
 
@@ -659,6 +735,12 @@ def ai_listing_stats() -> Dict[str, Any]:
     json_ld_found = sum(1 for e in events if e.get("json_ld"))
     og_found = sum(1 for e in events if e.get("og_tags"))
     cache_hits = sum(1 for e in events if e.get("cache_hit"))
+    price_extracted = sum(1 for e in events if e.get("price_extracted"))
+    fx_conversion_used = sum(1 for e in events if e.get("fx_conversion_used"))
+    avg_variants = (
+        round(sum(int(e.get("variants_count", 0)) for e in events) / attempts, 2)
+        if attempts else 0.0
+    )
     avg_fields = (
         round(sum(int(e.get("extracted_fields", 0)) for e in events) / attempts, 2)
         if attempts else 0.0
@@ -685,6 +767,10 @@ def ai_listing_stats() -> Dict[str, Any]:
         "og_extraction_rate_pct": _pct(og_found, scraper_called),
         "avg_extracted_fields_10": avg_fields,
         "cache_hit_rate_pct": _pct(cache_hits, attempts),
+        "jsonld_priority_enabled": os.getenv("AI_LISTING_JSONLD_PRIORITY", "1") == "1",
+        "price_auto_extract_success_rate_pct": _pct(price_extracted, scraper_called),
+        "avg_variants_detected": avg_variants,
+        "fx_conversion_used_count": fx_conversion_used,
         "prompt_distribution": dict(prompt_counts),
         "prompt_v1_pct": v1_pct,
         "prompt_v2_pct": v2_pct,
