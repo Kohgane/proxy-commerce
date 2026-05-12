@@ -1,8 +1,14 @@
+<<<<<<< copilot/fix-phase-151-analysis-cache
+# AI 상품등록 자동화 가이드 (Phase 151.1)
+=======
 # AI 상품등록 자동화 가이드 (Phase 151)
+>>>>>>> main
 
 ## 개요
 
 Phase 149에서 추가된 AI 상품등록 자동화 기능은 이미지 1~5장을 업로드하면 AI가 자동으로 상품 정보를 추출하고, 여러 마켓에 동시에 등록해주는 기능입니다.
+
+Phase 151.1에서 **캐시 키 정상화**가 적용되었습니다: Phase 번호와 prompt_version을 캐시 키에 포함하여 Phase 업그레이드 시 자동으로 새 결과를 생성합니다.
 
 ## 핵심 플로우
 
@@ -46,6 +52,11 @@ Vision API 분석 (GPT-4o-mini / Claude Sonnet / mock)
 | `AI_LISTING_FORCE_REFRESH_ALLOWED` | `1` | 다시 분석 시 캐시 무시 허용 |
 | `AI_LISTING_DEBUG_PANEL` | `1` | 결과 카드 원본 데이터 패널 표시 |
 | `AI_LISTING_PROMPT_VERSION` | `v2_explicit_fields` | 분석 프롬프트 버전 (기본 v2 강제) |
+<<<<<<< copilot/fix-phase-151-analysis-cache
+| `AI_LISTING_CACHE_INCLUDE_PHASE` | `1` | 캐시 키에 Phase 번호 포함 (Phase 151.1, 코드 레벨 강제 적용) |
+| `AI_LISTING_CACHE_INCLUDE_PROMPT_VERSION` | `1` | 캐시 키에 prompt_version 포함 (Phase 151.1, 코드 레벨 강제 적용) |
+| `AI_LISTING_FORCE_REFRESH_INVALIDATE_ANALYSIS` | `1` | force_refresh 시 analysis 캐시도 함께 무효화 (Phase 151.1) |
+=======
 | `AI_LISTING_JSONLD_PRIORITY` | `1` | JSON-LD 명시값(name/brand/price/variants/description) 우선 사용 |
 | `AI_LISTING_VARIANT_AUTO_EXTRACT` | `1` | JSON-LD `hasVariant` 자동 분리 |
 | `AI_LISTING_PRICE_USE_JSONLD` | `1` | JSON-LD 가격을 환율 변환 가격의 기준값으로 사용 |
@@ -54,6 +65,7 @@ Vision API 분석 (GPT-4o-mini / Claude Sonnet / mock)
 | `FALLBACK_JPY_KRW` | `9.2` | JPY 환율 fallback |
 | `FALLBACK_EUR_KRW` | `1500` | EUR 환율 fallback |
 | `FALLBACK_CNY_KRW` | `190` | CNY 환율 fallback |
+>>>>>>> main
 
 ## Vision 제공자 설정
 
@@ -219,6 +231,9 @@ AI_LISTING_VISION_PROVIDER=mock
 - 24h 분석 시도/스크래퍼 호출률/HTTP200 성공률
 - JSON-LD/OG 추출률, 평균 추출 필드 수(10개)
 - 캐시 적중률, 프롬프트 버전 분포(v1/v2)
+- **Phase 151.1 추가**: 캐시 키 정상화 여부 (phase 포함 ✅/❌, prompt_version 포함 ✅/❌)
+- **Phase 151.1 추가**: Phase 하드코딩 가드 상태 (검출 건수)
+- **Phase 151.1 추가**: 🗑️ AI listing 캐시 전체 삭제 버튼 (POST /admin/diagnostics/ai-cache-clear)
 
 ## Phase 151 — JSON-LD 우선순위
 

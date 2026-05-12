@@ -1,9 +1,9 @@
-"""src/ai_listing/analyzer.py — 이미지 Vision API 분석 (Phase 149/150).
+"""src/ai_listing/analyzer.py — 이미지 Vision API 분석 (Phase 149/150/151).
 
 입력: 이미지 URL 또는 업로드 bytes, 선택적으로 상품 페이지 URL
 호출: OpenAI Vision (gpt-4o-mini) 또는 Claude Sonnet (fallback)
 출력: 카테고리, 색상, 소재, 추정 가격대, 키워드 리스트 + 스크래핑 보강 필드
-캐시: 동일 이미지 해시 24h 재사용
+캐시: 동일 이미지 해시 + Phase + prompt_version 24h 재사용 (Phase 151.1: 캐시 키 정상화)
 비용 가드: BudgetGuard 통과 필수
 
 환경변수:
@@ -29,6 +29,7 @@ _CACHE_TTL_SEC = int(os.getenv("AI_LISTING_CACHE_TTL_HOURS", "24")) * 3600
 _PROMPT_VERSION = os.getenv("AI_LISTING_PROMPT_VERSION", "v2_explicit_fields")
 
 # 인메모리 캐시 (동일 프로세스 내)
+# Phase 151.1: 캐시 키 = "phase=N:prompt=V:url=H:img=H" 형식으로 정상화
 _analysis_cache: Dict[str, Dict[str, Any]] = {}
 
 
@@ -37,6 +38,49 @@ def _compute_image_hash(image_url: str = "", image_bytes: bytes = b"") -> str:
     if image_bytes:
         return hashlib.sha256(image_bytes).hexdigest()
     return hashlib.sha256(image_url.encode()).hexdigest()
+
+
+def _make_analysis_cache_key(
+    img_hash: str,
+    prompt_version: str,
+    page_url: str = "",
+) -> str:
+    """Phase 151.1: Phase + prompt_version + url + image 포함 캐시 키 생성.
+
+    Phase 변경 또는 prompt_version 변경 시 자동으로 다른 키 → 옛 캐시 자동 무효화.
+    """
+    from src.version import get_current_phase
+    url_hash = hashlib.sha256(page_url.encode()).hexdigest() if page_url else "nourl"
+    return (
+        f"phase={get_current_phase()}"
+        f":prompt={prompt_version}"
+        f":url={url_hash}"
+        f":img={img_hash}"
+    )
+
+
+def _evict_analysis_cache_for_image_and_url(img_hash: str, page_url: str = "") -> int:
+    """Phase 151.1: force_refresh 시 이미지/URL 기반 모든 캐시 항목 삭제.
+
+    img_hash 또는 url_hash 매칭 키를 구버전 포함 모두 제거.
+    """
+    url_hash = hashlib.sha256(page_url.encode()).hexdigest() if page_url else None
+    to_delete = [
+        k for k in list(_analysis_cache.keys())
+        if f":img={img_hash}" in k or (url_hash and f":url={url_hash}" in k)
+    ]
+    for k in to_delete:
+        _analysis_cache.pop(k, None)
+    logger.debug("analysis 캐시 무효화: %d건 삭제 (img=%s)", len(to_delete), img_hash[:8])
+    return len(to_delete)
+
+
+def clear_all_analysis_cache() -> int:
+    """모든 analysis 캐시 항목 삭제 (운영자 전체 초기화용)."""
+    count = len(_analysis_cache)
+    _analysis_cache.clear()
+    logger.info("analysis 캐시 전체 삭제: %d건", count)
+    return count
 
 
 def _mock_analysis() -> Dict[str, Any]:
@@ -144,16 +188,21 @@ def analyze_image(
     if not image_url and not image_bytes and not page_url:
         return {"error": "이미지 URL, bytes, 또는 페이지 URL 필요", "category": "기타"}
 
+    # Phase 151.1: effective_prompt_version을 캐시 키 계산 전에 결정
+    effective_prompt_version = prompt_version or _PROMPT_VERSION
+
     img_hash = _compute_image_hash(image_url=image_url, image_bytes=image_bytes)
+    cache_key = _make_analysis_cache_key(img_hash, effective_prompt_version, page_url=page_url)
 
     if force_refresh:
-        _analysis_cache.pop(img_hash, None)
+        # Phase 151.1: 현재 이미지/URL의 모든 캐시 항목 삭제 (구버전 포함)
+        _evict_analysis_cache_for_image_and_url(img_hash, page_url=page_url)
 
     # 캐시 확인
-    if not force_refresh and img_hash in _analysis_cache:
-        cached = _analysis_cache[img_hash]
+    if not force_refresh and cache_key in _analysis_cache:
+        cached = _analysis_cache[cache_key]
         if time.time() - cached.get("_cached_at", 0) < _CACHE_TTL_SEC:
-            logger.debug("이미지 분석 캐시 히트: %s", img_hash[:8])
+            logger.debug("이미지 분석 캐시 히트: %s", cache_key[:40])
             return {**cached["result"], "_analysis_cache_hit": True}
 
     # ── URL 스크래핑 (Phase 150) ──────────────────────────────────────────
@@ -175,7 +224,6 @@ def analyze_image(
                 image_url = images[0]
 
     # mock 모드
-    effective_prompt_version = prompt_version or _PROMPT_VERSION
     if _VISION_PROVIDER == "mock" or (
         not os.getenv("OPENAI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY")
     ):
@@ -189,7 +237,7 @@ def analyze_image(
             scrape_data=scrape_data,
             cache_hit=False,
         )
-        _analysis_cache[img_hash] = {"result": result, "_cached_at": time.time()}
+        _analysis_cache[cache_key] = {"result": result, "_cached_at": time.time()}
         return result
 
     # 예산 가드
@@ -263,14 +311,14 @@ def analyze_image(
     if scrape_data:
         result_raw = _merge_scrape_into_result(result_raw, scrape_data)
 
-    # 캐시 저장
+    # 캐시 저장 (Phase 151.1: 정상화된 cache_key 사용)
     result_raw = _attach_debug_metadata(
         result=result_raw,
         prompt_version=effective_prompt_version,
         scrape_data=scrape_data,
         cache_hit=False,
     )
-    _analysis_cache[img_hash] = {"result": result_raw, "_cached_at": time.time()}
+    _analysis_cache[cache_key] = {"result": result_raw, "_cached_at": time.time()}
     return result_raw
 
 

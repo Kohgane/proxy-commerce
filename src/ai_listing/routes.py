@@ -1,4 +1,4 @@
-"""src/ai_listing/routes.py — AI 상품등록 Blueprint (Phase 149).
+"""src/ai_listing/routes.py — AI 상품등록 Blueprint (Phase 151.1).
 
 라우트:
   GET  /seller/listing/ai-create           — AI 등록 UI 메인 페이지
@@ -508,7 +508,7 @@ function showPublishResults(data) {
 
 @bp.get("/ai-create")
 def ai_listing_create():
-    """AI 상품등록 자동화 페이지 (Phase 149)."""
+    """AI 상품등록 자동화 페이지 (Phase 151.1)."""
     try:
         from src.version import get_current_phase
         current_phase = get_current_phase()
@@ -591,12 +591,19 @@ def api_analyze():
             scrape_data=scrape_data,
         )
         confidence_badges = _build_confidence_badges(analysis)
+        analysis_cache_hit = bool(analysis.get("_analysis_cache_hit"))
+        scraper_cache_hit = bool((analysis.get("_debug", {}) or {}).get("scraper_cache_hit"))
         debug_panel = {
             **(analysis.get("_debug", {}) or {}),
             "prompt_version": analysis.get("_prompt_version", _PROMPT_VERSION),
             "cache": {
-                "analysis": "hit" if analysis.get("_analysis_cache_hit") else "miss",
-                "scraper": "hit" if (analysis.get("_debug", {}) or {}).get("scraper_cache_hit") else "miss",
+                "analysis": "hit" if analysis_cache_hit else "miss",
+                "scraper": "hit" if scraper_cache_hit else "miss",
+            },
+            # Phase 151.1: 캐시 상태 뱃지 (UI 표시용)
+            "cache_badge": {
+                "label": "🟡 캐시 결과" if analysis_cache_hit else "🟢 새로 분석됨",
+                "level": "hit" if analysis_cache_hit else "miss",
             },
         }
         _record_analyze_event(

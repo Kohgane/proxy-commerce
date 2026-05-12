@@ -60,6 +60,7 @@ def test_force_refresh_replaces_analyzer_and_scraper_cache(monkeypatch):
     monkeypatch.setenv("AI_LISTING_VISION_PROVIDER", "mock")
     from src.ai_listing import analyzer
     from src.ai_listing import url_scraper
+    from src.ai_listing.analyzer import _make_analysis_cache_key
 
     analyzer._analysis_cache.clear()
     url_scraper._scraper_cache.clear()
@@ -69,7 +70,9 @@ def test_force_refresh_replaces_analyzer_and_scraper_cache(monkeypatch):
     image_hash = analyzer._compute_image_hash(image_url=image_url)
     url_hash = url_scraper._url_hash(page_url)
 
-    analyzer._analysis_cache[image_hash] = {"result": {"category": "old"}, "_cached_at": time.time()}
+    # Phase 151.1: 캐시 키는 composite 형식 (phase:prompt:url:img)
+    cache_key = _make_analysis_cache_key(image_hash, "v2_explicit_fields", page_url=page_url)
+    analyzer._analysis_cache[cache_key] = {"result": {"category": "old"}, "_cached_at": time.time()}
     url_scraper._scraper_cache[url_hash] = {"result": {"title": "old", "_cache_hit": False}, "_cached_at": time.time()}
 
     mock_resp = mock.MagicMock()
@@ -86,4 +89,5 @@ def test_force_refresh_replaces_analyzer_and_scraper_cache(monkeypatch):
 
     assert scraped.get("_cache_hit") is False
     assert analyzed.get("_analysis_cache_hit") is False
-    assert analyzer._analysis_cache[image_hash]["result"]["category"] != "old"
+    # 이전 캐시 항목이 삭제되고 새 항목이 저장됨
+    assert cache_key not in analyzer._analysis_cache or analyzer._analysis_cache.get(cache_key, {}).get("result", {}).get("category") != "old"

@@ -40,13 +40,25 @@ CI 파이프라인에서 ROADMAP.md 최신 Phase를 자동 추출하여 주입:
 export CURRENT_PHASE_OVERRIDE=$(grep -oP '## Phase \K\d+' ROADMAP.md | sort -n | tail -1)
 ```
 
-## 회귀 방지 (Phase 하드코딩 금지)
+## 회귀 방지 (Phase 하드코딩 금지) — Phase 151.1 3차 강화
 
 `tests/test_version_display.py`:
 - `current_phase` 동적 렌더 사용 확인
 
 `tests/test_no_hardcoded_phase.py`:
-- seller/admin AI 템플릿 영역에 `Phase\s+\d+` 하드코딩이 남아있으면 실패
+- seller/admin AI 템플릿 영역에 특정 `Phase NNN` 하드코딩 문자열이 남아있으면 실패
+
+`tests/test_no_hardcoded_phase_strict.py` (Phase 151.1 신규):
+- `templates/` HTML 파일 전체: HTML 주석 외 `Phase NNN` 하드코딩 금지
+- `src/ai_listing/` Python 파일: 따옴표 안 `Phase NNN` 문자열 리터럴 금지
+- `src/ai_listing/routes.py` API 응답 문자열 검사
+- `src/dashboard/admin_views.py` AI 카드 섹션 검사
+
+화이트리스트 (검사 제외):
+- `ROADMAP.md`, `CHANGELOG.md`, `src/version.py` (파일)
+- `docs/` (디렉터리)
+- Python docstring/주석 라인
+- `{{ current_phase }}` 동적 템플릿 변수
 
 ## Phase 업데이트 절차
 

@@ -1602,6 +1602,20 @@
 - `/admin/diagnostics` AI 카드에 스크래퍼/JSON-LD/OG/캐시/프롬프트 분포 지표 추가
 - `AI_LISTING_URL_HEAD_CHECK`, `AI_LISTING_FORCE_REFRESH_ALLOWED`, `AI_LISTING_DEBUG_PANEL`, `AI_LISTING_PROMPT_VERSION` 환경변수 카탈로그 반영
 
+<<<<<<< copilot/fix-phase-151-analysis-cache
+## Phase 151.1 — 캐시 키 정상화 + force_refresh 완전 무효화 Hotfix ✅
+
+- **analysis 캐시 키 정상화**: `phase={N}:prompt={V}:url={H}:img={H}` 형식으로 변경 → Phase 업그레이드 시 자동 무효화
+- **force_refresh 완전 무효화**: `force_refresh=1` 시 scraper + analysis 캐시 모두 무효화 (동일 이미지/URL의 모든 Phase/prompt 버전 포함)
+- **관리자 캐시 전체 삭제 버튼**: `/admin/diagnostics` AI 카드에 🗑️ 버튼 추가
+- **CURRENT_PHASE → 151**: `src/version.py` 업데이트
+- **Phase 하드코딩 봉쇄 3차**: routes.py "Phase 149 mock status" 제거, admin_views.py "Phase 150" 제거
+- **진단 카드 강화**: 캐시 키 정상화 여부 + Phase 하드코딩 가드 건수 표시
+- **캐시 상태 뱃지**: debug_panel에 `cache_badge` 추가 (🟢 새로 분석됨 / 🟡 캐시 결과)
+- **환경변수**: `AI_LISTING_CACHE_INCLUDE_PHASE`, `AI_LISTING_CACHE_INCLUDE_PROMPT_VERSION`, `AI_LISTING_FORCE_REFRESH_INVALIDATE_ANALYSIS`
+- **문서**: `docs/operations/AI_LISTING.md` 갱신, `docs/operations/CACHE_INVALIDATION.md` 신규
+- **테스트**: `tests/test_ai_listing_cache_key.py`, `tests/test_no_hardcoded_phase_strict.py`
+=======
 ## Phase 151 — JSON-LD 우선순위 + 가격/변형 정확 추출 ✅
 
 - `src/ai_listing/jsonld_parser.py` 추가 (`normalize_jsonld`, `extract_price_from_jsonld`, `extract_variants`, `extract_material`)
@@ -1610,3 +1624,4 @@
 - `/admin/diagnostics`에 JSON-LD 우선순위/가격 추출/변형/FX 사용 지표 추가
 - `src/markets/adapters/` 인터페이스 + mock/coupang/naver/11st scaffold 추가
 - `src/markets/adapters/naver_commerce_auth.py` 토큰 발급 헬퍼 추가
+>>>>>>> main
