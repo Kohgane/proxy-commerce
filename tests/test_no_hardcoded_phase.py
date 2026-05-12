@@ -6,6 +6,7 @@ import os
 import re
 
 PHASE_RE = re.compile(r"Phase\s+\d+", re.IGNORECASE)
+PHASE_CONTEXT_WINDOW = 40
 
 
 def _root() -> str:
@@ -38,7 +39,12 @@ def _html_visible_phase_strings(path: str) -> list[str]:
         content = f.read()
     content = re.sub(r"\{#.*?#\}", "", content, flags=re.DOTALL)
     content = re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL)
-    return [match.group(0) for match in PHASE_RE.finditer(content) if "current_phase" not in content[max(0, match.start()-40):match.end()+40]]
+    offenders: list[str] = []
+    for match in PHASE_RE.finditer(content):
+        context = content[max(0, match.start() - PHASE_CONTEXT_WINDOW):match.end() + PHASE_CONTEXT_WINDOW]
+        if "current_phase" not in context:
+            offenders.append(match.group(0))
+    return offenders
 
 
 def test_no_hardcoded_phase_in_runtime_ui_strings():

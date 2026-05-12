@@ -248,7 +248,10 @@ def get_exchange_rate_to_krw(currency: str) -> Decimal:
 
     env_name = f"FALLBACK_{code}_KRW"
     fallback = os.getenv(env_name) or _FALLBACK_RATE_DEFAULTS.get(code, "1")
-    return Decimal(str(fallback))
+    try:
+        return Decimal(str(fallback))
+    except InvalidOperation as exc:
+        raise ValueError(f"Invalid exchange rate config for {env_name}: {fallback}") from exc
 
 
 def convert_to_krw(amount: Decimal | int | float | str, currency: str) -> Dict[str, Any]:

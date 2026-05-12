@@ -24,7 +24,7 @@ class NaverCommerceAdapter(MarketAdapter):
         return ListingResult(ok=True, market=self.market, external_id="", message="Phase 152 pending", raw={"token_present": bool(token)})
 
     def update_inventory(self, sku: str, qty: int) -> bool:
-        return not not sku
+        return bool(sku)
 
     def get_order_status(self, external_order_id: str) -> OrderStatus:
         return OrderStatus(external_order_id=external_order_id, status="mock")
