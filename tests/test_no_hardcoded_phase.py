@@ -59,5 +59,7 @@ def test_no_hardcoded_phase_in_phase_macro_pages():
         os.path.join(root, "src", "templates", "_base_app.html"),
     ]
     offenders = {path: _html_visible_phase_strings(path) for path in targets}
+    # `_macros.html` is the single allowed template that intentionally contains
+    # the reusable dynamic `Phase {{ current_phase }}` markup for page headers.
     offenders = {path: matches for path, matches in offenders.items() if matches and not path.endswith("_macros.html")}
     assert not offenders, f"템플릿에 하드코딩 Phase 문구가 남아있습니다: {offenders}"

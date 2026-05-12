@@ -167,7 +167,9 @@ def extract_size_color_from_name(variant_name: str) -> Dict[str, str]:
     if not raw:
         return {"color": "", "size": ""}
 
-    segments = [seg.strip(" -/·•") for seg in re.split(r"\s*(?:/|·|•|-)\s*", raw) if seg.strip(" -/·•")]
+    normalized = raw.replace("·", "/").replace("•", "/")
+    normalized = re.sub(r"\s+-\s+", "/", normalized)
+    segments = [seg.strip(" -/") for seg in normalized.split("/") if seg.strip(" -/")]
     size = ""
     color = ""
     for segment in reversed(segments):
@@ -245,7 +247,7 @@ def get_exchange_rate_to_krw(currency: str) -> Decimal:
         pass
 
     env_name = f"FALLBACK_{code}_KRW"
-    fallback = os.getenv(env_name, _FALLBACK_RATE_DEFAULTS.get(code, "1"))
+    fallback = os.getenv(env_name) or _FALLBACK_RATE_DEFAULTS.get(code, "1")
     return Decimal(str(fallback))
 
 

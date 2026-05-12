@@ -439,6 +439,7 @@ function showResults(imageUrl, analysis, generated, markets, confidenceBadges, d
           <textarea class="form-control form-control-sm" rows="3" id="desc_${market}">${escapeHtml(mdata.description||'')}</textarea>
           <details class="small mt-1">
             <summary>원문/번역 보기</summary>
+            <div class="text-muted mt-1">번역 상태: ${escapeHtml(mdata.description_translation_status || 'unknown')}</div>
             <div class="mt-2"><strong>원문</strong><div class="border rounded bg-light p-2">${escapeHtml(mdata.description_original || '-')}</div></div>
             <div class="mt-2"><strong>한국어</strong><div class="border rounded bg-light p-2">${escapeHtml(mdata.description_kr || '-')}</div></div>
           </details>
@@ -650,6 +651,7 @@ def api_generate():
                 "description": generate_description(analysis, market, language),
                 "description_original": listing.get("description_original", ""),
                 "description_kr": listing.get("description_kr", ""),
+                "description_translation_status": listing.get("description_translation_status", ""),
                 "tags": generate_tags(analysis, language),
                 "category_text": listing.get("category_text", ""),
                 "brand": listing.get("brand", ""),

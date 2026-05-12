@@ -16,8 +16,10 @@
 - 요청 필드:
   - `client_id`
   - `timestamp` (ms)
-  - `client_secret_sign`
-  - `grant_type`
-  - `type`
+- `client_secret_sign`
+- `grant_type`
+- `type`
 
-토큰은 메모리 캐시에 저장되며 만료 직전 자동 갱신됩니다.
+`client_secret_sign` 생성 시 현재 helper는 bcrypt-formatted salt 형태의
+`NAVER_COMMERCE_CLIENT_SECRET`를 기대합니다. 토큰은 메모리 캐시에 저장되며
+만료 직전 자동 갱신됩니다.

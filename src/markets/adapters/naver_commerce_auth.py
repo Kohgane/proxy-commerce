@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import base64
 import os
+import re
 import time
 from typing import Any, Dict, Optional
 
 _TOKEN_CACHE: Dict[str, Any] = {}
+_BCRYPT_SALT_RE = re.compile(r"^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{22}")
 
 
 def _api_base() -> str:
@@ -20,6 +22,8 @@ def _token_url() -> str:
 def _build_client_secret_sign(client_id: str, client_secret: str, timestamp_ms: str) -> str:
     import bcrypt
 
+    if not _BCRYPT_SALT_RE.match(client_secret):
+        raise ValueError("NAVER_COMMERCE_CLIENT_SECRET must be a bcrypt-formatted salt")
     password = f"{client_id}_{timestamp_ms}".encode("utf-8")
     hashed = bcrypt.hashpw(password, client_secret.encode("utf-8"))
     return base64.b64encode(hashed).decode("utf-8")

@@ -40,13 +40,13 @@ def _trim_to_max_len(text: str, max_len: int) -> str:
     return text[:max_len].rstrip()
 
 
-def _translate_to_korean(text: str) -> str:
+def _translate_to_korean(text: str) -> tuple[str, str]:
     text = str(text or "").strip()
     if not text or not _TRANSLATE_DESCRIPTION:
-        return text
+        return text, "disabled"
     deepl_key = os.getenv("DEEPL_API_KEY")
     if not deepl_key:
-        return text
+        return text, "unavailable"
     try:
         import requests
 
@@ -59,10 +59,10 @@ def _translate_to_korean(text: str) -> str:
         resp.raise_for_status()
         translations = (resp.json() or {}).get("translations") or []
         if translations:
-            return str(translations[0].get("text") or text)
+            return str(translations[0].get("text") or text), "translated"
     except Exception as exc:
         logger.debug("DeepL 설명 번역 실패: %s", exc)
-    return text
+    return text, "fallback"
 
 
 def _json_ld(analysis: Dict[str, Any]) -> Dict[str, Any]:
@@ -95,7 +95,7 @@ def build_listing_content(
     description_source = str(
         json_ld.get("description") or analysis.get("source_description") or analysis.get("description") or ""
     ).strip()
-    description_kr = _translate_to_korean(description_source)
+    description_kr, translation_status = _translate_to_korean(description_source)
     title_source = str(
         json_ld.get("name") or og_tags.get("title") or analysis.get("_scraped_title") or analysis.get("title") or ""
     ).strip()
@@ -119,6 +119,7 @@ def build_listing_content(
         "material": material,
         "description_original": description_source,
         "description_kr": description_kr,
+        "description_translation_status": translation_status,
         "description": description_kr if language == "kr" else description_source,
         "tags": tags[:10],
         "title_source": "jsonld" if json_ld.get("name") else ("og" if og_tags.get("title") else "ai"),
