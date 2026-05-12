@@ -6,6 +6,11 @@ from unittest.mock import MagicMock, patch
 
 
 class TestBudgetGuard:
+    @pytest.fixture(autouse=True)
+    def _clear_dry_run(self, monkeypatch):
+        """각 테스트 전에 ADAPTER_DRY_RUN 제거. 테스트 후 복원 (monkeypatch 자동)."""
+        monkeypatch.delenv("ADAPTER_DRY_RUN", raising=False)
+
     def _make_guard(self, used_usd: float = 0.0, limit: float = 100.0):
         os.environ["AI_MONTHLY_BUDGET_USD"] = str(limit)
         from src.ai.budget import BudgetGuard

@@ -681,6 +681,20 @@ API_REGISTRY: list = [
         category=ApiCategory.AI,
         optional=True,
     ),
+    ApiKey(
+        name="Phase 154 — OAuth 비동기 알림 + Google 봇 검증 진단",
+        env_vars=[
+            "OAUTH_NOTIFY_ASYNC",
+            "OAUTH_NOTIFY_POOL_SIZE",
+            "GOOGLE_BRANDING_CHECK_ENABLED",
+            "GOOGLE_BRANDING_CHECK_URL",
+            "GOOGLE_BRANDING_CHECK_TIMEOUT_SEC",
+        ],
+        purpose="OAuth 콜백 텔레그램 알림 비동기화 + Google 봇 개인정보처리방침 링크 검증 (Phase 154)",
+        docs_url="https://kohganepercentiii.com/docs/operations/OAUTH_PERFORMANCE.md",
+        category=ApiCategory.AUTH,
+        optional=True,
+    ),
 ]
 
 
