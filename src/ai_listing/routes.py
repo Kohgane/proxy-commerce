@@ -409,7 +409,7 @@ function showResults(imageUrl, analysis, generated, markets, confidenceBadges, d
     const actualMedian = actualPrices.length ? actualPrices[Math.floor(actualPrices.length / 2)] : null;
     const pricingCard = pb ? `
       <div class="border rounded p-3 bg-light mb-3">
-        <div class="fw-semibold mb-2">📊 시장가 분석</div>
+        <div class="fw-semibold mb-2">시장가 분석</div>
         ${actualMarketItems.length ? `<div class="small mb-2"><strong>실측 동일 상품</strong><br>${actualMarketItems.map(i => `• ${escapeHtml(i.title || i.market || 'market')} — ₩${(i.price_krw || 0).toLocaleString()}`).join('<br>')}</div>` : ''}
         <div class="small">원가(자동): ${escapeHtml(sourcePriceText)} = ₩${Math.round(pb.cost_krw || 0).toLocaleString()}</div>
         <div class="small">+ 국제배송비: ₩${Math.round(pb.shipping_krw || 0).toLocaleString()}</div>
