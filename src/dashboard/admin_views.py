@@ -769,14 +769,15 @@ def diagnostics_ai_cache_clear():
     """AI listing 분석/스크래퍼 캐시 전체 삭제."""
     global _ai_listing_cache_last_cleared_at
     from src.auth.admin_resolver import is_admin_session
+    is_api_request = request.path.startswith("/admin/cache/")
 
     if not session.get("user_id"):
-        if request.path.startswith("/admin/cache/"):
+        if is_api_request:
             return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
         return redirect("/auth/login?next=/admin/diagnostics")
     admin_ok, _ = is_admin_session(session)
     if not admin_ok:
-        if request.path.startswith("/admin/cache/"):
+        if is_api_request:
             return jsonify({"ok": False, "error": "관리자 권한이 필요합니다."}), 403
         return _render("접근 거부", "<div class='alert alert-danger'>관리자 권한이 필요합니다.</div>"), 403
 
@@ -798,7 +799,7 @@ def diagnostics_ai_cache_clear():
     _ai_listing_cache_last_cleared_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     logger.info("AI listing 캐시 전체 삭제: analysis=%d건, scraper=%d건", deleted_analysis, deleted_scraper)
     msg = f"🗑️ AI listing 캐시 삭제 완료 — analysis: {deleted_analysis}건, scraper: {deleted_scraper}건"
-    if request.path.startswith("/admin/cache/"):
+    if is_api_request:
         return jsonify(
             {
                 "ok": True,

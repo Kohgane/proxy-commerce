@@ -135,7 +135,7 @@ def calculate_listing_price(
             suggested = candidate
 
     net_revenue = suggested * (1.0 - deduction)
-    margin_actual_pct = ((net_revenue - total_landed) / max(suggested, 1.0)) * 100.0
+    margin_actual_pct = ((net_revenue - total_landed) / max(net_revenue, 1.0)) * 100.0
 
     return PriceBreakdown(
         cost_krw=cost_krw,

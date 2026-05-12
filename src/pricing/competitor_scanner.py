@@ -14,7 +14,7 @@ def _cache_key(query: str, market: str, limit: int) -> str:
 
 def _filter_iqr(items: list[dict]) -> list[dict]:
     prices = [int(i["price_krw"]) for i in items if i.get("price_krw")]
-    if len(prices) < 4:
+    if len(prices) < 5:
         return items
     q1, _, q3 = quantiles(prices, n=4, method="inclusive")
     iqr = q3 - q1

@@ -253,6 +253,7 @@ let _listingId = null;
 let _analysis = null;
 let _generated = null;
 const DEBUG_PANEL_ENABLED = {{ 'true' if debug_panel_enabled else 'false' }};
+const DEFAULT_WEIGHT_KG = {{ default_weight_kg|tojson }};
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
   .replace(/</g, '&lt;')
@@ -448,7 +449,7 @@ function showResults(imageUrl, analysis, generated, markets, confidenceBadges, d
           <div id="pricingAdjust_${market}" class="border rounded p-2 mt-2 small" style="display:none">
             <div>목표 마진: ${pb ? (pb.target_margin_pct || 30) : 30}%</div>
             <div>광고 예산: ${pb ? (pb.ad_budget_pct || 5) : 5}%</div>
-            <div>상품 무게: ${escapeHtml((analysis.weight_kg || '0.5').toString())}kg</div>
+            <div>상품 무게: ${escapeHtml((analysis.weight_kg || DEFAULT_WEIGHT_KG).toString())}kg</div>
           </div>
         </div>
         <div class="mb-2">
@@ -565,6 +566,7 @@ def ai_listing_create():
     except Exception:
         current_phase = 151
     all_markets = ["coupang", "smartstore", "11st", "gmarket"]
+    default_weight_kg = float(os.getenv("PRICING_DEFAULT_WEIGHT_KG", "0.5"))
     return render_template_string(
         _AI_CREATE_PAGE,
         enabled=_ENABLED,
@@ -575,6 +577,7 @@ def ai_listing_create():
         default_lang=_DEFAULT_LANG,
         current_phase=current_phase,
         debug_panel_enabled=_DEBUG_PANEL_ENABLED,
+        default_weight_kg=default_weight_kg,
         page="ai_listing_create",
     )
 
