@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import secrets
@@ -172,14 +173,15 @@ def _oauth_default_next(provider: str) -> str:
 
 def _popup_redirect_response(next_url: str) -> Response:
     safe_next = _safe_next_url(next_url, default="/seller/dashboard")
+    safe_next_js = json.dumps(safe_next, ensure_ascii=False)
     html = f"""<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><title>OAuth 완료</title></head>
 <body><script>
 if (window.opener && !window.opener.closed) {{
-  window.opener.location.href = {safe_next!r};
+  window.opener.location.href = {safe_next_js};
   window.close();
 }} else {{
-  window.location.href = {safe_next!r};
+  window.location.href = {safe_next_js};
 }}
 </script></body></html>"""
     return Response(html, mimetype="text/html; charset=utf-8")

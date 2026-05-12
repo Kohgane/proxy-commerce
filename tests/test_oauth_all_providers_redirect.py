@@ -41,7 +41,7 @@ def client():
 
 @pytest.mark.parametrize("provider", ["google", "naver", "kakao"])
 def test_oauth_callback_redirects_for_all_providers(client, monkeypatch, provider):
-    monkeypatch.setattr("src.auth.views._get_provider", lambda p: _DummyProvider(provider))
+    monkeypatch.setattr("src.auth.views._get_provider", lambda p: _DummyProvider(p))
     with client.session_transaction() as sess:
         sess[f"oauth_state_{provider}"] = "ok-state"
         sess[f"oauth_next_{provider}"] = "/seller/dashboard"

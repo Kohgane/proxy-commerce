@@ -55,8 +55,8 @@ def find_actual_market_price(
 ) -> list[MarketPrice]:
     """동일/유사 상품의 KRW 실측가 목록을 반환한다.
 
-    현재 구현은 API 키 유무에 따라 source 라벨만 분기하고,
-    네트워크 호출 없이 안전한 mock 데이터를 반환한다.
+    현재 구현은 네트워크 호출 없이 안전한 mock 데이터를 반환한다.
+    API 키가 모두 설정된 경우에는 운영 가시성용으로 `source` 라벨만 `live`로 표기한다.
     """
     live = all(
         [
