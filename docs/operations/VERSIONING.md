@@ -1,18 +1,18 @@
-# VERSIONING.md — Phase 버전 자동화 (Phase 148)
+# VERSIONING.md — Phase 버전 자동화 가드
 
 ## 개요
 
-Phase 148부터 Proxy Commerce는 푸터 버전 번호를 자동으로 관리합니다.
-더 이상 `landing.html`에 "Phase NNN"을 하드코딩하지 않습니다.
+Proxy Commerce는 화면 템플릿에 `"Phase NNN"`을 하드코딩하지 않습니다.
+모든 페이지는 `current_phase` 변수를 사용해 동적으로 렌더링합니다.
 
 ## 구조
 
 ```
 src/version.py
-  CURRENT_PHASE = 148      ← Phase PR마다 이 줄만 변경
-  APP_VERSION = ...         ← APP_VERSION 환경변수 또는 'dev'
+  CURRENT_PHASE = ...       ← Phase PR마다 이 줄만 변경
+  APP_VERSION = ...
   get_current_phase()       ← CURRENT_PHASE_OVERRIDE env 우선
-  get_version_string()      ← 'Phase 148 · 1.0.0' 형식
+  get_version_string()      ← 'Phase N · x.y.z' 형식
 ```
 
 ## 템플릿 사용
@@ -40,12 +40,13 @@ CI 파이프라인에서 ROADMAP.md 최신 Phase를 자동 추출하여 주입:
 export CURRENT_PHASE_OVERRIDE=$(grep -oP '## Phase \K\d+' ROADMAP.md | sort -n | tail -1)
 ```
 
-## 회귀 방지
+## 회귀 방지 (Phase 하드코딩 금지)
 
 `tests/test_version_display.py`:
-- `CURRENT_PHASE == 148` 확인
-- `landing.html`에 "Phase 123" 하드코딩 없음 확인
-- 랜딩 페이지 응답에 "Phase 148" 표시 확인
+- `current_phase` 동적 렌더 사용 확인
+
+`tests/test_no_hardcoded_phase.py`:
+- seller/admin AI 템플릿 영역에 `Phase\s+\d+` 하드코딩이 남아있으면 실패
 
 ## Phase 업데이트 절차
 

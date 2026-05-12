@@ -41,7 +41,7 @@ class TestAIListingPageRoute:
         resp = client.get("/seller/listing/ai-create")
         assert resp.status_code == 200
         data = resp.data.decode("utf-8")
-        assert "Phase 149" in data or "ai-listing" in data.lower()
+        assert "Phase " in data or "ai-listing" in data.lower()
 
     def test_ai_create_page_has_upload_ui(self, client):
         resp = client.get("/seller/listing/ai-create")

@@ -79,6 +79,91 @@ def _url_hash(url: str) -> str:
     return hashlib.sha256(url.encode()).hexdigest()
 
 
+def _validate_public_url(url: str) -> str | None:
+    """URL 형식/SSRF 보호 검증. 통과 시 None, 실패 시 에러 문자열."""
+    if not url or not url.startswith(("http://", "https://")):
+        return "유효하지 않은 URL"
+
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname or ""
+        if not hostname:
+            return "유효하지 않은 URL (호스트 없음)"
+        blocked_hosts = (
+            "localhost",
+            "127.",
+            "0.",
+            "10.",
+            "172.16.",
+            "172.17.",
+            "172.18.",
+            "172.19.",
+            "172.20.",
+            "172.21.",
+            "172.22.",
+            "172.23.",
+            "172.24.",
+            "172.25.",
+            "172.26.",
+            "172.27.",
+            "172.28.",
+            "172.29.",
+            "172.30.",
+            "172.31.",
+            "192.168.",
+            "::1",
+            "[::1]",
+            "0.0.0.0",
+            "169.254.",
+            "fd",
+        )
+        hostname_lower = hostname.lower()
+        if any(
+            hostname_lower == blocked or hostname_lower.startswith(blocked)
+            for blocked in blocked_hosts
+        ):
+            return f"내부 네트워크 URL 접근 차단: {hostname}"
+        if hostname_lower in ("metadata.google.internal", "169.254.169.254"):
+            return "메타데이터 URL 접근 차단"
+    except Exception:
+        return "URL 파싱 실패"
+    return None
+
+
+def head_check_url(url: str, timeout_sec: int | None = None) -> Dict[str, Any]:
+    """URL HEAD 유효성 확인 (200 여부)."""
+    err = _validate_public_url(url)
+    if err:
+        return {"ok": False, "status": None, "error": err}
+
+    try:
+        import requests
+    except ImportError as exc:
+        return {"ok": False, "status": None, "error": f"의존성 미설치: {exc}"}
+
+    timeout = timeout_sec or _TIMEOUT_SEC
+    try:
+        resp = requests.head(
+            url,
+            timeout=timeout,
+            headers={"User-Agent": _USER_AGENT},
+            allow_redirects=True,
+        )
+        status = int(resp.status_code)
+        # 일부 사이트는 HEAD를 막음 → GET 최소 fallback
+        if status in (403, 405):
+            resp = requests.get(
+                url,
+                timeout=timeout,
+                headers={"User-Agent": _USER_AGENT, "Range": "bytes=0-1024"},
+                allow_redirects=True,
+            )
+            status = int(resp.status_code)
+        return {"ok": status == 200, "status": status, "error": None if status == 200 else f"HTTP {status}"}
+    except Exception as exc:
+        return {"ok": False, "status": None, "error": str(exc)}
+
+
 def _extract_json_ld(soup: Any) -> List[Dict[str, Any]]:
     """JSON-LD 스크립트 태그에서 구조화 데이터 추출."""
     results: List[Dict[str, Any]] = []
@@ -220,76 +305,34 @@ def scrape_product_page(url: str, force_refresh: bool = False) -> Dict[str, Any]
         "_source_url": url,
         "_scraped": False,
         "_error": None,
+        "_http_status": None,
+        "_response_size": 0,
+        "_json_ld": [],
+        "_og_tags": {},
+        "_meta_description": "",
+        "_cache_hit": False,
     }
 
     if not _SCRAPER_ENABLED:
         empty_result["_error"] = "scraper disabled"
         return empty_result
 
-    if not url or not url.startswith(("http://", "https://")):
-        empty_result["_error"] = "유효하지 않은 URL"
-        return empty_result
-
-    # SSRF 방지: 사설/내부 IP 주소 차단
-    try:
-        parsed = urlparse(url)
-        hostname = parsed.hostname or ""
-        # 빈 호스트 차단
-        if not hostname:
-            empty_result["_error"] = "유효하지 않은 URL (호스트 없음)"
-            return empty_result
-        # localhost 및 내부 주소 차단
-        blocked_hosts = (
-            "localhost",
-            "127.",
-            "0.",
-            "10.",
-            "172.16.",
-            "172.17.",
-            "172.18.",
-            "172.19.",
-            "172.20.",
-            "172.21.",
-            "172.22.",
-            "172.23.",
-            "172.24.",
-            "172.25.",
-            "172.26.",
-            "172.27.",
-            "172.28.",
-            "172.29.",
-            "172.30.",
-            "172.31.",
-            "192.168.",
-            "::1",
-            "[::1]",
-            "0.0.0.0",
-            "169.254.",  # link-local
-            "fd",  # IPv6 unique local prefix
-        )
-        hostname_lower = hostname.lower()
-        if any(
-            hostname_lower == blocked or hostname_lower.startswith(blocked)
-            for blocked in blocked_hosts
-        ):
-            empty_result["_error"] = f"내부 네트워크 URL 접근 차단: {hostname}"
-            return empty_result
-        # metadata URL 차단 (cloud provider metadata endpoints)
-        if hostname_lower in ("metadata.google.internal", "169.254.169.254"):
-            empty_result["_error"] = "메타데이터 URL 접근 차단"
-            return empty_result
-    except Exception:
-        empty_result["_error"] = "URL 파싱 실패"
+    err = _validate_public_url(url)
+    if err:
+        empty_result["_error"] = err
         return empty_result
 
     url_key = _url_hash(url)
+
+    if force_refresh:
+        _scraper_cache.pop(url_key, None)
 
     # 캐시 확인
     if not force_refresh and url_key in _scraper_cache:
         cached = _scraper_cache[url_key]
         if time.time() - cached.get("_cached_at", 0) < _CACHE_TTL_SEC:
             logger.debug("URL 스크래퍼 캐시 히트: %s", url_key[:8])
-            return cached["result"]
+            return {**cached["result"], "_cache_hit": True}
 
     try:
         import requests
@@ -308,8 +351,17 @@ def scrape_product_page(url: str, force_refresh: bool = False) -> Dict[str, Any]
             },
             allow_redirects=True,
         )
-        resp.raise_for_status()
-        html = resp.text
+        status_raw = getattr(resp, "status_code", 200)
+        status_code = status_raw if isinstance(status_raw, int) else 200
+        empty_result["_http_status"] = status_code
+        if status_code != 200:
+            empty_result["_error"] = f"HTTP {status_code}"
+            return empty_result
+        html = str(getattr(resp, "text", "") or "")
+        content_bytes = getattr(resp, "content", b"")
+        if not isinstance(content_bytes, (bytes, bytearray)):
+            content_bytes = html.encode("utf-8")
+        empty_result["_response_size"] = len(content_bytes)
     except Exception as exc:
         logger.warning("URL 스크래핑 실패 (%s): %s", url, exc)
         empty_result["_error"] = str(exc)
@@ -351,6 +403,11 @@ def scrape_product_page(url: str, force_refresh: bool = False) -> Dict[str, Any]
         title = og_title
     if og_desc and not description:
         description = og_desc
+    og_tags = {
+        "title": og_title,
+        "description": og_desc,
+        "image": og_image,
+    }
 
     # ── JSON-LD 추출 ──────────────────────────────────────────────────
     json_ld_items = _extract_json_ld(soup)
@@ -448,6 +505,12 @@ def scrape_product_page(url: str, force_refresh: bool = False) -> Dict[str, Any]
         "_source_url": url,
         "_scraped": True,
         "_error": None,
+        "_http_status": status_code,
+        "_response_size": empty_result["_response_size"],
+        "_json_ld": json_ld_items[:3],
+        "_og_tags": og_tags,
+        "_meta_description": description,
+        "_cache_hit": False,
     }
 
     _scraper_cache[url_key] = {"result": result, "_cached_at": time.time()}

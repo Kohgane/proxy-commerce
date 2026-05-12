@@ -1590,3 +1590,12 @@
 - `docs/operations/WEB_PUSH.md` 갱신 (VAPID 자동 생성 UI 섹션 추가)
 - `docs/operations/WHOLESALE.md` (신규)
 - `docs/operations/SUBSCRIPTIONS.md` (신규)
+
+## Phase 150.1 — AI 분석 적용 보강 Hotfix ✅
+
+- `/seller/listing/ai-create` 헤더를 `current_phase` 동적 표기로 변경
+- URL 입력 시 HEAD 200 검증 + 실패 시 사용자 경고 노출
+- `🔄 다시 분석 (캐시 무시)` 버튼(`force_refresh=1`) 추가
+- 분석 카드에 신뢰도 배지 + `📋 원본 데이터` 디버그 패널 추가
+- `/admin/diagnostics` AI 카드에 스크래퍼/JSON-LD/OG/캐시/프롬프트 분포 지표 추가
+- `AI_LISTING_URL_HEAD_CHECK`, `AI_LISTING_FORCE_REFRESH_ALLOWED`, `AI_LISTING_DEBUG_PANEL`, `AI_LISTING_PROMPT_VERSION` 환경변수 카탈로그 반영

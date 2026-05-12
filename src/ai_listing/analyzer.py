@@ -124,6 +124,8 @@ def analyze_image(
     language: str = "kr",
     force_refresh: bool = False,
     page_url: str = "",
+    prompt_version: str | None = None,
+    scrape_data: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """이미지 분석 진입점.
 
@@ -144,16 +146,18 @@ def analyze_image(
 
     img_hash = _compute_image_hash(image_url=image_url, image_bytes=image_bytes)
 
+    if force_refresh:
+        _analysis_cache.pop(img_hash, None)
+
     # 캐시 확인
     if not force_refresh and img_hash in _analysis_cache:
         cached = _analysis_cache[img_hash]
         if time.time() - cached.get("_cached_at", 0) < _CACHE_TTL_SEC:
             logger.debug("이미지 분석 캐시 히트: %s", img_hash[:8])
-            return cached["result"]
+            return {**cached["result"], "_analysis_cache_hit": True}
 
     # ── URL 스크래핑 (Phase 150) ──────────────────────────────────────────
-    scrape_data: Optional[Dict[str, Any]] = None
-    if page_url:
+    if page_url and scrape_data is None:
         try:
             from src.ai_listing.url_scraper import scrape_product_page
             scrape_data = scrape_product_page(page_url, force_refresh=force_refresh)
@@ -171,6 +175,7 @@ def analyze_image(
                 image_url = images[0]
 
     # mock 모드
+    effective_prompt_version = prompt_version or _PROMPT_VERSION
     if _VISION_PROVIDER == "mock" or (
         not os.getenv("OPENAI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY")
     ):
@@ -178,6 +183,12 @@ def analyze_image(
         # 스크래핑 데이터로 mock 결과 보강
         if scrape_data:
             result = _merge_scrape_into_result(result, scrape_data)
+        result = _attach_debug_metadata(
+            result=result,
+            prompt_version=effective_prompt_version,
+            scrape_data=scrape_data,
+            cache_hit=False,
+        )
         _analysis_cache[img_hash] = {"result": result, "_cached_at": time.time()}
         return result
 
@@ -190,6 +201,12 @@ def analyze_image(
         result = {**_mock_analysis(), "_budget_exceeded": True}
         if scrape_data:
             result = _merge_scrape_into_result(result, scrape_data)
+        result = _attach_debug_metadata(
+            result=result,
+            prompt_version=effective_prompt_version,
+            scrape_data=scrape_data,
+            cache_hit=False,
+        )
         return result
     except Exception as exc:
         logger.debug("BudgetGuard 확인 실패 (무시): %s", exc)
@@ -201,7 +218,7 @@ def analyze_image(
     )
 
     # v2 프롬프트 (Phase 150: 명시적 필드 + 스크래핑 컨텍스트)
-    if _PROMPT_VERSION == "v2_explicit_fields":
+    if effective_prompt_version == "v2_explicit_fields":
         prompt = build_v2_analysis_prompt(
             language=language,
             scrape_data=scrape_data,
@@ -247,6 +264,12 @@ def analyze_image(
         result_raw = _merge_scrape_into_result(result_raw, scrape_data)
 
     # 캐시 저장
+    result_raw = _attach_debug_metadata(
+        result=result_raw,
+        prompt_version=effective_prompt_version,
+        scrape_data=scrape_data,
+        cache_hit=False,
+    )
     _analysis_cache[img_hash] = {"result": result_raw, "_cached_at": time.time()}
     return result_raw
 
@@ -326,3 +349,25 @@ def cache_stats() -> Dict[str, Any]:
         if now - v.get("_cached_at", 0) < _CACHE_TTL_SEC
     )
     return {"total": total, "active": active, "ttl_hours": _CACHE_TTL_SEC // 3600}
+
+
+def _attach_debug_metadata(
+    result: Dict[str, Any],
+    prompt_version: str,
+    scrape_data: Optional[Dict[str, Any]],
+    cache_hit: bool,
+) -> Dict[str, Any]:
+    merged = dict(result)
+    debug_payload = {
+        "http_status": (scrape_data or {}).get("_http_status"),
+        "response_size": (scrape_data or {}).get("_response_size", 0),
+        "json_ld": (scrape_data or {}).get("_json_ld", []),
+        "og_tags": (scrape_data or {}).get("_og_tags", {}),
+        "meta_description": (scrape_data or {}).get("_meta_description", ""),
+        "image_urls": (scrape_data or {}).get("images", []),
+        "scraper_cache_hit": (scrape_data or {}).get("_cache_hit", False),
+    }
+    merged["_analysis_cache_hit"] = cache_hit
+    merged["_prompt_version"] = prompt_version
+    merged["_debug"] = debug_payload
+    return merged
