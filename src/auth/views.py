@@ -500,10 +500,10 @@ def oauth_callback(provider: str):
         establish_session(user, role=role)
 
         store.update_last_login(user.user_id)
-        popup_mode = (
-            provider == "kakao"
-            and os.getenv("KAKAO_OAUTH_POPUP_MODE", "0") == "1"
-        ) or request.args.get("popup") == "1"
+        popup_mode = provider == "kakao" and (
+            os.getenv("KAKAO_OAUTH_POPUP_MODE", "0") == "1"
+            or request.args.get("popup") == "1"
+        )
         if popup_mode:
             return _popup_redirect_response(next_url)
         return redirect(next_url)

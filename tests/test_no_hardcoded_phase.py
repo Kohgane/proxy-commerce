@@ -7,12 +7,6 @@ import re
 
 PHASE_RE = re.compile(r"Phase\s+\d+", re.IGNORECASE)
 PHASE_CONTEXT_WINDOW = 40
-WHITELIST_FILES = {
-    "ROADMAP.md",
-    "CHANGELOG.md",
-    "src/version.py",
-    "docs/",
-}
 
 
 def _root() -> str:
@@ -61,7 +55,7 @@ def test_no_hardcoded_phase_in_runtime_ui_strings():
     }
     offenders = {path: _python_ui_strings(path, hints) for path, hints in targets.items()}
     offenders = {path: matches for path, matches in offenders.items() if matches}
-    assert not offenders, f"런타임 UI 문자열에 하드코딩 Phase 문구가 남아있습니다: {offenders} (whitelist={sorted(WHITELIST_FILES)})"
+    assert not offenders, f"런타임 UI 문자열에 하드코딩 Phase 문구가 남아있습니다: {offenders}"
 
 
 def test_no_hardcoded_phase_in_phase_macro_pages():
