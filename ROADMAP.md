@@ -150,12 +150,14 @@
 | Phase 148 | /me/notifications hotfix + 버전 자동화 + VAPID 자동 생성 + B2B + 정기구독 | #PR | 2026-05-11 |
 | Phase 148.1 | 운영 복구 hotfix (f-string SyntaxError 수정 + 사이드바 라우트 매트릭스/자동 등록 안전망) | #PR | 2026-05-11 |
 | Phase 149 | AI 상품등록 자동화 (이미지 1장 → Vision 분석 → 멀티마켓 동시 등록) | #PR | 2026-05-11 |
+| Phase 150.1 | AI 분석 적용 보강 Hotfix (HEAD 검증 + debug 패널 + 강제 재분석) | #PR | 2026-05-12 |
+| Phase 151 | JSON-LD 우선순위 + 가격/변형 정확 추출 + 마켓 어댑터 인터페이스 착수 | #PR | 2026-05-12 |
 
 ## 📋 다음 큐
 
 | Phase | 내용 |
 |---|---|
-| Phase 150 | 실제 마켓 어댑터 연결 (쿠팡/스마트스토어 AI listing 실 API) + 리뷰 수집 + 감정 분석 |
+| Phase 152 | 실제 마켓 어댑터 등록 호출 + 리뷰 수집 + 감정 분석 |
 | (2026 Q4) | SaaS 공개 준비 (약관/결제/랜딩) |
 
 ## 🚧 진행 중 Phase
@@ -1599,3 +1601,12 @@
 - 분석 카드에 신뢰도 배지 + `📋 원본 데이터` 디버그 패널 추가
 - `/admin/diagnostics` AI 카드에 스크래퍼/JSON-LD/OG/캐시/프롬프트 분포 지표 추가
 - `AI_LISTING_URL_HEAD_CHECK`, `AI_LISTING_FORCE_REFRESH_ALLOWED`, `AI_LISTING_DEBUG_PANEL`, `AI_LISTING_PROMPT_VERSION` 환경변수 카탈로그 반영
+
+## Phase 151 — JSON-LD 우선순위 + 가격/변형 정확 추출 ✅
+
+- `src/ai_listing/jsonld_parser.py` 추가 (`normalize_jsonld`, `extract_price_from_jsonld`, `extract_variants`, `extract_material`)
+- AI generator/price_suggester가 JSON-LD title/brand/category/price/variants를 AI 추론보다 우선 사용
+- 결과 카드에 원본가/환산가/환율/변형(SKU/GTIN) 표시 추가
+- `/admin/diagnostics`에 JSON-LD 우선순위/가격 추출/변형/FX 사용 지표 추가
+- `src/markets/adapters/` 인터페이스 + mock/coupang/naver/11st scaffold 추가
+- `src/markets/adapters/naver_commerce_auth.py` 토큰 발급 헬퍼 추가

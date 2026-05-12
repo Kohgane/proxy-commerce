@@ -29,6 +29,14 @@ import time
 from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin, urlparse
 
+from src.ai_listing.jsonld_parser import (
+    convert_to_krw,
+    extract_material,
+    extract_price_from_jsonld,
+    extract_variants,
+    normalize_jsonld,
+)
+
 logger = logging.getLogger(__name__)
 
 _SCRAPER_ENABLED = os.getenv("AI_LISTING_URL_SCRAPER_ENABLED", "1") == "1"
@@ -309,6 +317,11 @@ def scrape_product_page(url: str, force_refresh: bool = False) -> Dict[str, Any]
         "_http_status": None,
         "_response_size": 0,
         "_json_ld": [],
+        "json_ld_normalized": {},
+        "variants": [],
+        "source_price": None,
+        "source_price_krw": None,
+        "fx_rate": None,
         "_og_tags": {},
         "_meta_description": "",
         "_cache_hit": False,
@@ -421,10 +434,16 @@ def scrape_product_page(url: str, force_refresh: bool = False) -> Dict[str, Any]
     # ── JSON-LD 추출 ──────────────────────────────────────────────────
     json_ld_items = _extract_json_ld(soup)
     product_schema = _find_product_schema(json_ld_items)
+    json_ld_normalized = normalize_jsonld(json_ld_items)
+    variants = extract_variants(json_ld_normalized.get("hasVariant", []))
+    price_info = extract_price_from_jsonld(json_ld_normalized)
 
     price_candidates: List[int] = []
     brand_candidates: List[str] = []
     origin_country: Optional[str] = None
+    source_price: Optional[Dict[str, Any]] = None
+    source_price_krw: Optional[int] = None
+    fx_rate = None
 
     if product_schema:
         # 제목 (스키마 우선)
@@ -456,6 +475,29 @@ def scrape_product_page(url: str, force_refresh: bool = False) -> Dict[str, Any]
         elif isinstance(country, str):
             origin_country = country or None
 
+    if json_ld_normalized.get("name"):
+        title = json_ld_normalized["name"][:200]
+    if json_ld_normalized.get("description") and not description:
+        description = str(json_ld_normalized["description"])[:500]
+    brand_name = (json_ld_normalized.get("brand") or {}).get("name", "")
+    if brand_name:
+        brand_candidates = [brand_name] + [b for b in brand_candidates if b != brand_name]
+    if price_info:
+        try:
+            converted = convert_to_krw(price_info["amount"], price_info["currency"])
+            source_price_krw = converted["amount_krw"]
+            fx_rate = converted["rate"]
+            source_price = {
+                "amount": str(price_info["amount"]),
+                "currency": price_info["currency"],
+                "amount_krw": source_price_krw,
+                "rate": str(converted["rate"]),
+                "source": price_info["source"],
+            }
+            price_candidates = [source_price_krw]
+        except Exception:
+            price_candidates = _extract_price_from_schema(product_schema) if product_schema else []
+
     # ── 이미지 목록 ───────────────────────────────────────────────────
     images: List[str] = []
     if og_image:
@@ -478,6 +520,7 @@ def scrape_product_page(url: str, force_refresh: bool = False) -> Dict[str, Any]
                 images.append(src)
         if len(images) >= 10:
             break
+    images = list(dict.fromkeys(json_ld_normalized.get("image_urls", []) + images))
 
     # ── 본문 텍스트 추출 ──────────────────────────────────────────────
     raw_text = _get_body_text(soup, max_chars=3000)
@@ -491,6 +534,16 @@ def scrape_product_page(url: str, force_refresh: bool = False) -> Dict[str, Any]
     material_candidates = _extract_candidates_from_text(combined_text, _MATERIAL_KEYWORDS)
     color_candidates = _extract_candidates_from_text(combined_text, _COLOR_KEYWORDS)
     size_candidates = _extract_sizes_from_text(combined_text)
+    material_from_desc = extract_material(json_ld_normalized.get("description", "") or description)
+    if material_from_desc:
+        material_candidates = [material_from_desc] + [m for m in material_candidates if m != material_from_desc]
+    for variant in variants:
+        color = str(variant.get("color") or "").strip()
+        size = str(variant.get("size") or "").strip()
+        if color and color not in color_candidates:
+            color_candidates.append(color)
+        if size and size not in size_candidates:
+            size_candidates.append(size)
 
     # OG/meta에서 브랜드 힌트
     for meta in soup.find_all("meta"):
@@ -511,6 +564,11 @@ def scrape_product_page(url: str, force_refresh: bool = False) -> Dict[str, Any]
         "origin_country": origin_country,
         "images": images[:10],
         "raw_text_truncated": raw_text[:2000],
+        "json_ld_normalized": json_ld_normalized,
+        "variants": variants,
+        "source_price": source_price,
+        "source_price_krw": source_price_krw,
+        "fx_rate": str(fx_rate) if fx_rate is not None else None,
         "_source_url": url,
         "_scraped": True,
         "_error": None,

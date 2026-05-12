@@ -12,9 +12,14 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
+from src.ai_listing.category_mapper import normalize_display_category
+from src.ai_listing.jsonld_parser import extract_material, extract_variants
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_LANGUAGE = os.getenv("AI_LISTING_LANG_DEFAULT", "kr")
+_JSONLD_PRIORITY = os.getenv("AI_LISTING_JSONLD_PRIORITY", "1") == "1"
+_TRANSLATE_DESCRIPTION = os.getenv("AI_LISTING_TRANSLATE_DESCRIPTION", "1") == "1"
 
 
 # ── 금칙어 필터 ──────────────────────────────────────────────────────────────
@@ -33,6 +38,92 @@ def _trim_to_max_len(text: str, max_len: int) -> str:
     if len(text) <= max_len:
         return text
     return text[:max_len].rstrip()
+
+
+def _translate_to_korean(text: str) -> str:
+    text = str(text or "").strip()
+    if not text or not _TRANSLATE_DESCRIPTION:
+        return text
+    deepl_key = os.getenv("DEEPL_API_KEY")
+    if not deepl_key:
+        return text
+    try:
+        import requests
+
+        resp = requests.post(
+            os.getenv("DEEPL_API_URL", "https://api-free.deepl.com/v2/translate"),
+            data={"text": text[:4000], "source_lang": "EN", "target_lang": "KO"},
+            headers={"Authorization": f"DeepL-Auth-Key {deepl_key}"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        translations = (resp.json() or {}).get("translations") or []
+        if translations:
+            return str(translations[0].get("text") or text)
+    except Exception as exc:
+        logger.debug("DeepL 설명 번역 실패: %s", exc)
+    return text
+
+
+def _json_ld(analysis: Dict[str, Any]) -> Dict[str, Any]:
+    if not _JSONLD_PRIORITY:
+        return {}
+    return analysis.get("json_ld_normalized") or {}
+
+
+def _sorted_unique(values: List[str]) -> List[str]:
+    return sorted(dict.fromkeys(v for v in values if v))
+
+
+def build_listing_content(
+    analysis: Dict[str, Any],
+    market: str,
+    language: str = _DEFAULT_LANGUAGE,
+) -> Dict[str, Any]:
+    json_ld = _json_ld(analysis)
+    og_tags = ((analysis.get("_debug") or {}).get("og_tags") or {})
+    variants = extract_variants(json_ld.get("hasVariant", [])) or analysis.get("variants") or []
+    colors = _sorted_unique(
+        [str(v.get("color") or "").strip() for v in variants] + list(analysis.get("colors") or [])
+    )
+    sizes = _sorted_unique(
+        [str(v.get("size") or "").strip() for v in variants] + list(analysis.get("size_options") or [])
+    )
+    category_text = normalize_display_category(
+        str(json_ld.get("category") or analysis.get("category") or "").strip()
+    )
+    description_source = str(
+        json_ld.get("description") or analysis.get("source_description") or analysis.get("description") or ""
+    ).strip()
+    description_kr = _translate_to_korean(description_source)
+    title_source = str(
+        json_ld.get("name") or og_tags.get("title") or analysis.get("_scraped_title") or analysis.get("title") or ""
+    ).strip()
+    if not title_source:
+        title_source = _generate_title_mock(analysis, market, 300, language)
+    brand_source = str(
+        (json_ld.get("brand") or {}).get("name") or analysis.get("brand") or ""
+    ).strip()
+    material = extract_material(description_source) or ", ".join(analysis.get("materials") or [])
+    tags = list(analysis.get("keywords") or [])
+    for extra in [category_text, brand_source, material] + colors + sizes:
+        if extra and extra not in tags and len(tags) < 10:
+            tags.append(extra)
+    return {
+        "title": title_source,
+        "brand": brand_source,
+        "category_text": category_text,
+        "variants": variants,
+        "colors": colors,
+        "sizes": sizes,
+        "material": material,
+        "description_original": description_source,
+        "description_kr": description_kr,
+        "description": description_kr if language == "kr" else description_source,
+        "tags": tags[:10],
+        "title_source": "jsonld" if json_ld.get("name") else ("og" if og_tags.get("title") else "ai"),
+        "description_source": "jsonld" if json_ld.get("description") else "ai",
+    }
 
 
 # ── AI 제목 생성 ─────────────────────────────────────────────────────────────
@@ -106,6 +197,13 @@ def generate_title(
     max_len = config.title_max_len
     forbidden = config.forbidden_terms
 
+    listing = build_listing_content(analysis, market, language)
+    if listing.get("title"):
+        return _filter_forbidden_terms(
+            _trim_to_max_len(str(listing["title"]), max_len),
+            forbidden,
+        )
+
     provider = os.getenv("AI_LISTING_VISION_PROVIDER", "mock")
     if provider != "mock" and (
         os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
@@ -136,6 +234,10 @@ def generate_description(
     language: str = _DEFAULT_LANGUAGE,
 ) -> str:
     """마켓별 상품 설명 생성."""
+    listing = build_listing_content(analysis, market, language)
+    if listing.get("description"):
+        return str(listing["description"])
+
     from src.ai_listing.templates_prompts import build_description_prompt
 
     provider = os.getenv("AI_LISTING_VISION_PROVIDER", "mock")
@@ -169,6 +271,10 @@ def generate_tags(
     max_tags: int = 10,
 ) -> List[str]:
     """태그/키워드 생성."""
+    listing = build_listing_content(analysis, "coupang", language)
+    if listing.get("tags"):
+        return list(listing["tags"])[:max_tags]
+
     keywords = analysis.get("keywords", [])
     category = analysis.get("category", "")
     product_type = analysis.get("product_type", "")
