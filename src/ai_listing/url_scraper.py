@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 _SCRAPER_ENABLED = os.getenv("AI_LISTING_URL_SCRAPER_ENABLED", "1") == "1"
 _TIMEOUT_SEC = int(os.getenv("AI_LISTING_URL_SCRAPER_TIMEOUT_SEC", "10"))
+_HEAD_GET_FALLBACK = os.getenv("AI_LISTING_URL_HEAD_CHECK_GET_FALLBACK", "0") == "1"
 _USER_AGENT = os.getenv(
     "AI_LISTING_URL_SCRAPER_USER_AGENT",
     "ProxyCommerceBot/1.0 (+https://kohganepercentiii.com/privacy)",
@@ -150,8 +151,8 @@ def head_check_url(url: str, timeout_sec: int | None = None) -> Dict[str, Any]:
             allow_redirects=True,
         )
         status = int(resp.status_code)
-        # 일부 사이트는 HEAD를 막음 → GET 최소 fallback
-        if status in (403, 405):
+        # 일부 사이트는 HEAD를 막음 → 선택적으로 GET 최소 fallback
+        if _HEAD_GET_FALLBACK and status in (403, 405):
             resp = requests.get(
                 url,
                 timeout=timeout,
@@ -360,8 +361,16 @@ def scrape_product_page(url: str, force_refresh: bool = False) -> Dict[str, Any]
         html = str(getattr(resp, "text", "") or "")
         content_bytes = getattr(resp, "content", b"")
         if not isinstance(content_bytes, (bytes, bytearray)):
-            content_bytes = html.encode("utf-8")
-        empty_result["_response_size"] = len(content_bytes)
+            content_length = str(getattr(resp, "headers", {}).get("Content-Length", "") or "").strip()
+            if content_length.isdigit():
+                empty_result["_response_size"] = int(content_length)
+            else:
+                enc_raw = getattr(resp, "encoding", None)
+                enc = enc_raw if isinstance(enc_raw, str) and enc_raw else "utf-8"
+                content_bytes = html.encode(enc, errors="ignore")
+                empty_result["_response_size"] = len(content_bytes)
+        else:
+            empty_result["_response_size"] = len(content_bytes)
     except Exception as exc:
         logger.warning("URL 스크래핑 실패 (%s): %s", url, exc)
         empty_result["_error"] = str(exc)

@@ -42,6 +42,7 @@ Vision API 분석 (GPT-4o-mini / Claude Sonnet / mock)
 | `AI_LISTING_LANG_DEFAULT` | `kr` | 기본 생성 언어 (`kr` \| `jp` \| `both`) |
 | `AI_LISTING_PRICE_MODE` | `auto` | 가격 모드 (`auto` \| `manual`) |
 | `AI_LISTING_URL_HEAD_CHECK` | `1` | 상품 URL 입력 시 HEAD 200 검증 |
+| `AI_LISTING_URL_HEAD_CHECK_GET_FALLBACK` | `0` | HEAD 403/405 시 GET fallback 허용 |
 | `AI_LISTING_FORCE_REFRESH_ALLOWED` | `1` | 다시 분석 시 캐시 무시 허용 |
 | `AI_LISTING_DEBUG_PANEL` | `1` | 결과 카드 원본 데이터 패널 표시 |
 | `AI_LISTING_PROMPT_VERSION` | `v2_explicit_fields` | 분석 프롬프트 버전 (기본 v2 강제) |

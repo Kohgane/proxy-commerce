@@ -255,7 +255,7 @@ async function runAnalysis() {
   const markets = Array.from(document.querySelectorAll('input[name=markets]:checked')).map(e => e.value);
   const language = document.getElementById('language').value;
   const priceMode = document.getElementById('priceMode').value;
-  const forceRefresh = !!_analysis;
+  const shouldBypassCache = !!_analysis;
 
   if (!imageUrl && !pageUrl && !document.getElementById('imageFiles').files.length) {
     warning.textContent = '이미지 URL/파일 또는 상품 페이지 URL을 입력하세요.';
@@ -266,12 +266,12 @@ async function runAnalysis() {
   }
 
   try {
-    const analyzeUrl = forceRefresh ? '/api/ai-listing/analyze?force_refresh=1' : '/api/ai-listing/analyze';
+    const analyzeUrl = shouldBypassCache ? '/api/ai-listing/analyze?force_refresh=1' : '/api/ai-listing/analyze';
     // 분석 API 호출
     const analyzeResp = await fetch(analyzeUrl, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({image_url: imageUrl, page_url: pageUrl, language, markets, force_refresh: forceRefresh ? 1 : 0})
+      body: JSON.stringify({image_url: imageUrl, page_url: pageUrl, language, markets, force_refresh: shouldBypassCache ? 1 : 0})
     });
     const analyzeData = await analyzeResp.json();
     if (!analyzeData.ok) {
@@ -503,11 +503,14 @@ def api_analyze():
             head = head_check_url(page_url)
             if not head.get("ok"):
                 status = head.get("status")
-                status_txt = status if status is not None else "연결 실패"
+                status_txt = f"HTTP {status}" if status is not None else "연결 실패"
                 return jsonify({
                     "ok": False,
-                    "error": f"이 URL에 접근할 수 없습니다 (HTTP {status_txt}). URL을 확인해주세요.",
-                    "url_head_check": head,
+                    "error": f"이 URL에 접근할 수 없습니다 ({status_txt}). URL을 확인해주세요.",
+                    "url_head_check": {
+                        "ok": False,
+                        "status": status,
+                    },
                 }), 400
 
         scrape_data = None
