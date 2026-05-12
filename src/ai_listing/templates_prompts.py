@@ -1,11 +1,12 @@
-"""src/ai_listing/templates_prompts.py — 프롬프트 템플릿 (Phase 149).
+"""src/ai_listing/templates_prompts.py — 프롬프트 템플릿 (Phase 149/150).
 
 마켓별 제목/설명 생성 제약조건 및 Vision 분석 프롬프트.
+Phase 150: v2 명시적 필드 추출 프롬프트 + 스크래핑 컨텍스트 주입.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
 # ── 마켓별 제목 글자수 제한 ──────────────────────────────────────────────────
@@ -83,6 +84,104 @@ VISION_ANALYSIS_PROMPT_JP = """
 
 JSONのみ返してください。
 """.strip()
+
+
+# ── v2 프롬프트 (Phase 150: 명시적 필드 + 스크래핑 컨텍스트) ────────────────
+
+VISION_ANALYSIS_PROMPT_V2 = """
+다음 정보를 JSON으로 추출하라:
+
+{{
+  "title": "상품 제목 (50자 이내, 마켓 등록용)",
+  "brand": "브랜드명 (없으면 빈 문자열)",
+  "material": "소재 (예: 면100%, 폴리에스터65%+면35%)",
+  "colors": ["색상 리스트"],
+  "size_options": ["사이즈 옵션 리스트"],
+  "origin_country": "원산지 (없으면 null)",
+  "category_path": "카테고리 경로 (예: 패션 > 남성의류 > 티셔츠)",
+  "target_audience": "타겟 고객 (예: 20-30대 남성)",
+  "suggested_price_krw": 추천 가격 정수 (원화),
+  "description": "상품 설명 200자 이내 마케팅 카피",
+  "keywords": ["검색 키워드 10개"],
+  "category": "상위 카테고리",
+  "estimated_price_range": {{"min": 최저가, "max": 최고가}},
+  "product_type": "상품 유형",
+  "features": ["주요 특징 3~5개"]
+}}
+
+스크래핑된 정보:
+{scraper_output}
+
+이미지: [첨부]
+
+응답은 JSON만 반환하세요.
+""".strip()
+
+VISION_ANALYSIS_PROMPT_V2_JP = """
+以下の情報をJSONで抽出してください:
+
+{{
+  "title": "商品タイトル（50文字以内）",
+  "brand": "ブランド名（なければ空文字）",
+  "material": "素材",
+  "colors": ["色リスト"],
+  "size_options": ["サイズオプション"],
+  "origin_country": "原産国（なければnull）",
+  "category_path": "カテゴリパス（例: ファッション > メンズ > Tシャツ）",
+  "target_audience": "ターゲット顧客",
+  "suggested_price_jpy": 推奨価格（整数、円）,
+  "description": "商品説明200文字以内",
+  "keywords": ["キーワード10個"],
+  "category": "上位カテゴリ",
+  "estimated_price_range": {{"min": 最低価格, "max": 最高価格}},
+  "product_type": "商品タイプ",
+  "features": ["主な特徴3~5個"]
+}}
+
+スクレイピング情報:
+{scraper_output}
+
+画像: [添付]
+
+JSONのみ返してください。
+""".strip()
+
+
+def build_v2_analysis_prompt(
+    language: str = "kr",
+    scrape_data: Optional[dict] = None,
+) -> str:
+    """v2 분석 프롬프트 생성 (스크래핑 컨텍스트 포함).
+
+    Args:
+        language:    분석 언어 kr | jp | both
+        scrape_data: url_scraper 결과 dict (없으면 빈 컨텍스트)
+
+    Returns:
+        완성된 프롬프트 문자열
+    """
+    import json as _json
+
+    if scrape_data:
+        # AI 프롬프트에 전달할 컨텍스트만 추려서 직렬화
+        context = {
+            "title": scrape_data.get("title", ""),
+            "description": scrape_data.get("description", ""),
+            "price_candidates": scrape_data.get("price_candidates", []),
+            "brand_candidates": scrape_data.get("brand_candidates", []),
+            "material_candidates": scrape_data.get("material_candidates", []),
+            "size_candidates": scrape_data.get("size_candidates", []),
+            "color_candidates": scrape_data.get("color_candidates", []),
+            "origin_country": scrape_data.get("origin_country"),
+            "raw_text": scrape_data.get("raw_text_truncated", "")[:1000],
+        }
+        scraper_output = _json.dumps(context, ensure_ascii=False, indent=2)
+    else:
+        scraper_output = "(스크래핑 없음 — 이미지만으로 분석)"
+
+    if language == "jp":
+        return VISION_ANALYSIS_PROMPT_V2_JP.format(scraper_output=scraper_output)
+    return VISION_ANALYSIS_PROMPT_V2.format(scraper_output=scraper_output)
 
 
 # ── 제목/설명 생성 프롬프트 ──────────────────────────────────────────────────

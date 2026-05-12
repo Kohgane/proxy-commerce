@@ -373,15 +373,20 @@ def api_analyze():
 
     data = request.get_json(force=True) or {}
     image_url = str(data.get("image_url") or "").strip()
+    page_url = str(data.get("page_url") or "").strip()
     language = str(data.get("language") or _DEFAULT_LANG)
 
-    if not image_url:
-        return jsonify({"ok": False, "error": "image_url 필수"}), 400
+    if not image_url and not page_url:
+        return jsonify({"ok": False, "error": "image_url 또는 page_url 필수"}), 400
 
     try:
         from src.ai_listing.analyzer import analyze_image
 
-        analysis = analyze_image(image_url=image_url, language=language)
+        analysis = analyze_image(
+            image_url=image_url,
+            language=language,
+            page_url=page_url,
+        )
         listing_id = str(uuid.uuid4())
         return jsonify({"ok": True, "listing_id": listing_id, "analysis": analysis})
     except Exception as exc:
