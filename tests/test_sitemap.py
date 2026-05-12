@@ -41,6 +41,8 @@ class TestSitemapGeneratorBasic:
     def test_contains_static_pages(self, gen):
         result = gen.generate()
         assert "<loc>https://example.com/</loc>" in result
+        assert "<loc>https://example.com/privacy</loc>" in result
+        assert "<loc>https://example.com/terms</loc>" in result
 
     def test_contains_product_urls(self, gen):
         result = gen.generate(products=SAMPLE_PRODUCTS)

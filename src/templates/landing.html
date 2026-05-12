@@ -2,6 +2,9 @@
 {% extends "_base_app.html" %}
 
 {% block title %}Proxy Commerce — Kohgane Percentii{% endblock %}
+{% block head %}
+<link rel="privacy-policy" href="/privacy">
+{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center mt-3">
@@ -74,6 +77,8 @@
     <hr>
     <span>Phase {{ current_phase }}</span> &nbsp;·&nbsp;
     <span>{{ version }}</span> &nbsp;·&nbsp;
+    <a href="/privacy" class="text-muted">개인정보처리방침</a> &nbsp;·&nbsp;
+    <a href="/terms" class="text-muted">이용약관</a> &nbsp;·&nbsp;
     <a href="https://github.com/Kohgane/proxy-commerce" class="text-muted" target="_blank" rel="noopener">
       <i class="bi bi-github"></i> GitHub
     </a>

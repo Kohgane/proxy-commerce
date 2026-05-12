@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import asdict, dataclass
-from statistics import mean
+from statistics import mean, median
 from typing import Iterable
 
 
@@ -78,6 +78,13 @@ class PriceBreakdown:
     calculated_price: float
     competitor_min: float | None
     competitor_avg: float | None
+    actual_market_min: float | None
+    actual_market_median: float | None
+    actual_market_max: float | None
+    decision_source: str
+    decision_detail: str
+    minimum_margin_price: int
+    loss_warning: bool
     suggested_price: int
     margin_actual_pct: float
 
@@ -95,6 +102,7 @@ def calculate_listing_price(
     target_margin_pct: float | None = None,
     ad_budget_pct: float | None = None,
     competitor_prices_krw: Iterable[float] | None = None,
+    actual_market_prices_krw: Iterable[float] | None = None,
 ) -> PriceBreakdown:
     target_margin_pct = float(
         target_margin_pct
@@ -112,6 +120,7 @@ def calculate_listing_price(
     intl_shipping_per_kg = _env_float("PRICING_INTL_SHIPPING_PER_KG_KRW", 18000.0)
     competitor_discount = _env_float("PRICING_COMPETITOR_DISCOUNT", 0.97)
     min_margin_guard_pct = _env_float("PRICING_MIN_MARGIN_GUARD_PCT", 15.0)
+    actual_discount = _env_float("PRICING_ACTUAL_DISCOUNT", 0.97)
 
     cost_krw = float(source_price) * _to_krw_rate(source_currency)
     shipping_krw = max(weight_kg, 0.0) * intl_shipping_per_kg
@@ -128,14 +137,31 @@ def calculate_listing_price(
     prices = [float(p) for p in (competitor_prices_krw or []) if p]
     competitor_min = min(prices) if prices else None
     competitor_avg = mean(prices) if prices else None
+    actual_prices = [float(p) for p in (actual_market_prices_krw or []) if p]
+    actual_market_min = min(actual_prices) if actual_prices else None
+    actual_market_median = median(actual_prices) if actual_prices else None
+    actual_market_max = max(actual_prices) if actual_prices else None
+
+    minimum_margin_price = total_landed * (1.0 + min_margin_guard_pct / 100.0)
     suggested = calculated_price
-    if competitor_min:
+    decision_source = "calculated"
+    decision_detail = "원가+비용+목표마진 계산값"
+
+    if actual_market_median:
+        candidate = actual_market_median * actual_discount
+        suggested = candidate
+        decision_source = "actual_market_median"
+        decision_detail = f"실측 시장가 중앙값의 {int(actual_discount * 100)}%"
+    elif competitor_min:
         candidate = competitor_min * competitor_discount
-        if candidate >= total_landed * (1.0 + min_margin_guard_pct / 100.0):
+        if candidate >= minimum_margin_price:
             suggested = candidate
+            decision_source = "competitor_distribution"
+            decision_detail = "경쟁사 최저가 기반 할인 적용"
 
     net_revenue = suggested * (1.0 - deduction)
     margin_actual_pct = ((net_revenue - total_landed) / max(net_revenue, 1.0)) * 100.0
+    loss_warning = bool(os.getenv("PRICING_LOSS_WARNING_ENABLED", "1") == "1" and margin_actual_pct < 0)
 
     return PriceBreakdown(
         cost_krw=cost_krw,
@@ -150,6 +176,13 @@ def calculate_listing_price(
         calculated_price=calculated_price,
         competitor_min=competitor_min,
         competitor_avg=competitor_avg,
+        actual_market_min=actual_market_min,
+        actual_market_median=actual_market_median,
+        actual_market_max=actual_market_max,
+        decision_source=decision_source,
+        decision_detail=decision_detail,
+        minimum_margin_price=int(round(minimum_margin_price / 100.0) * 100),
+        loss_warning=loss_warning,
         suggested_price=int(round(suggested / 100.0) * 100),
         margin_actual_pct=round(margin_actual_pct, 2),
     )

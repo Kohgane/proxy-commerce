@@ -70,15 +70,31 @@ def suggest_price(
             try:
                 from src.pricing.calculator import calculate_listing_price
                 from src.pricing.competitor_scanner import scan_competitor_prices
+                from src.pricing.market_price_finder import find_actual_market_price
 
                 category = analysis.get("category") or analysis.get("product_type") or "의류"
+                normalized = analysis.get("json_ld_normalized") or {}
+                variants = normalized.get("variants") or analysis.get("variants") or []
+                first_variant = variants[0] if variants and isinstance(variants[0], dict) else {}
+                gtin = str(first_variant.get("gtin") or normalized.get("gtin") or "")
+                sku = str(first_variant.get("sku") or normalized.get("sku") or "")
+                product_name = str(normalized.get("name") or analysis.get("_scraped_title") or "상품")
+                brand_name = str((analysis.get("brand") or {}).get("name") if isinstance(analysis.get("brand"), dict) else analysis.get("brand") or "")
+
                 competitors = scan_competitor_prices(
-                    product_name=(analysis.get("json_ld_normalized") or {}).get("name") or analysis.get("_scraped_title") or "상품",
-                    brand=str((analysis.get("brand") or {}).get("name") if isinstance(analysis.get("brand"), dict) else analysis.get("brand") or ""),
+                    product_name=product_name,
+                    brand=brand_name,
                     market=market,
                     limit=8,
                 )
                 competitor_prices = [int(x.get("price_krw", 0)) for x in competitors if x.get("price_krw")]
+                actual_market_items = find_actual_market_price(
+                    gtin=gtin,
+                    sku=sku,
+                    product_name=product_name,
+                    brand=brand_name,
+                )
+                actual_market_prices = [int(x.price_krw) for x in actual_market_items]
                 breakdown = calculate_listing_price(
                     source_price=float(source_amount),
                     source_currency=str(source_currency),
@@ -86,6 +102,7 @@ def suggest_price(
                     market=market,
                     category=str(category),
                     competitor_prices_krw=competitor_prices,
+                    actual_market_prices_krw=actual_market_prices,
                 )
                 return {
                     "market": market,
@@ -102,6 +119,11 @@ def suggest_price(
                     "pricing_breakdown": breakdown.to_dict(),
                     "competitor_items": competitors,
                     "competitor_count": len(competitors),
+                    "actual_market_items": [x.to_dict() for x in actual_market_items],
+                    "actual_market_count": len(actual_market_items),
+                    "price_decision_source": breakdown.decision_source,
+                    "loss_warning": breakdown.loss_warning,
+                    "minimum_margin_price_krw": breakdown.minimum_margin_price,
                 }
             except Exception as exc:
                 logger.debug("판매가 계산기 폴백: %s", exc)

@@ -405,6 +405,22 @@ API_REGISTRY: list = [
         optional=True,
     ),
     ApiKey(
+        name="market_price_finder",
+        env_vars=[
+            "NAVER_SHOPPING_SEARCH_CLIENT_ID",
+            "NAVER_SHOPPING_SEARCH_CLIENT_SECRET",
+            "COUPANG_SEARCH_API_KEY",
+            "GOOGLE_SHOPPING_API_KEY",
+            "PRICING_DECISION_PRIORITY",
+            "PRICING_ACTUAL_DISCOUNT",
+            "PRICING_LOSS_WARNING_ENABLED",
+        ],
+        purpose="실측 시장가 기반 가격 결정 우선순위/할인율/적자 경고 설정",
+        docs_url="https://kohganepercentiii.com/docs/operations/PRICING_MARKET_PRICE_FINDER.md",
+        category=ApiCategory.UTILITY,
+        optional=True,
+    ),
+    ApiKey(
         name="cs_bot",
         env_vars=[
             "CS_FAQ_FALLBACK_PATH",

@@ -1624,3 +1624,12 @@
 - `/admin/diagnostics`에 JSON-LD 우선순위/가격 추출/변형/FX 사용 지표 추가
 - `src/markets/adapters/` 인터페이스 + mock/coupang/naver/11st scaffold 추가
 - `src/markets/adapters/naver_commerce_auth.py` 토큰 발급 헬퍼 추가
+
+## Phase 153 — CI/OAuth/실측 시장가 Hotfix ✅
+
+- `CURRENT_PHASE`를 153으로 상향하고 진단 카드 문구를 153 기준으로 정리
+- CI 워크플로우(`.github/workflows/ci.yml`)에 충돌 마커/compileall/pytest collect 게이트 추가
+- 랜딩/공통 푸터에 `/privacy`, `/terms` 노출 강화 + 랜딩 `rel="privacy-policy"` 메타 링크 추가
+- `SitemapGenerator`, `RobotsGenerator`에 `/privacy`, `/terms` 경로 반영
+- OAuth callback 기본 next 경로/팝업 모드(`KAKAO_OAUTH_NEXT_DEFAULT`, `KAKAO_OAUTH_POPUP_MODE`) 지원
+- 가격 엔진에 실측 시장가 finder(`src/pricing/market_price_finder.py`)와 우선순위 의사결정(source/detail/loss warning) 반영

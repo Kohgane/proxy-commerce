@@ -11,7 +11,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # 하드코딩 상수 — Phase PR마다 이 줄만 변경
-CURRENT_PHASE: int = 151
+CURRENT_PHASE: int = 153
 
 APP_VERSION: str = os.getenv("APP_VERSION", "1.0.0")
 
