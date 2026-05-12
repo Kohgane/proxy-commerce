@@ -241,6 +241,7 @@ _AI_CREATE_PAGE = """
 let _listingId = null;
 let _analysis = null;
 let _generated = null;
+const DEBUG_PANEL_ENABLED = {{ 'true' if debug_panel_enabled else 'false' }};
 
 async function runAnalysis() {
   const btn = document.getElementById('analyzeBtn');
@@ -255,7 +256,7 @@ async function runAnalysis() {
   const markets = Array.from(document.querySelectorAll('input[name=markets]:checked')).map(e => e.value);
   const language = document.getElementById('language').value;
   const priceMode = document.getElementById('priceMode').value;
-  const shouldBypassCache = !!_analysis;
+  const hasExistingAnalysis = !!_analysis;
 
   if (!imageUrl && !pageUrl && !document.getElementById('imageFiles').files.length) {
     warning.textContent = '이미지 URL/파일 또는 상품 페이지 URL을 입력하세요.';
@@ -266,12 +267,12 @@ async function runAnalysis() {
   }
 
   try {
-    const analyzeUrl = shouldBypassCache ? '/api/ai-listing/analyze?force_refresh=1' : '/api/ai-listing/analyze';
+    const analyzeUrl = hasExistingAnalysis ? '/api/ai-listing/analyze?force_refresh=1' : '/api/ai-listing/analyze';
     // 분석 API 호출
     const analyzeResp = await fetch(analyzeUrl, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({image_url: imageUrl, page_url: pageUrl, language, markets, force_refresh: shouldBypassCache ? 1 : 0})
+      body: JSON.stringify({image_url: imageUrl, page_url: pageUrl, language, markets, force_refresh: hasExistingAnalysis ? 1 : 0})
     });
     const analyzeData = await analyzeResp.json();
     if (!analyzeData.ok) {
@@ -334,7 +335,7 @@ function showResults(imageUrl, analysis, generated, markets, confidenceBadges, d
     '<strong>키워드</strong>: ' + (analysis.keywords || []).join(', ') + badge('keywords'),
     '<strong>추정 가격</strong>: ₩' + ((analysis.estimated_price_range||{}).min||'-') + ' ~ ₩' + ((analysis.estimated_price_range||{}).max||'-') + badge('estimated_price_range'),
   ].map(s => '<div class="mb-1">' + s + '</div>').join('');
-  if ({{ 'true' if debug_panel_enabled else 'false' }}) {
+  if (DEBUG_PANEL_ENABLED) {
     card.innerHTML += `
       <details class="mt-3">
         <summary class="fw-semibold">📋 원본 데이터</summary>
