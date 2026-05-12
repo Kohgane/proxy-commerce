@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import os
 import pathlib
+import re
 import time
 
 from flask import Blueprint, current_app, redirect, render_template_string, request, session
@@ -432,13 +433,15 @@ def _render_diagnostics(issued_magic_link: str | None):
     wholesale_status = _build_wholesale_status()
     product_subscription_status = _build_product_subscription_status()
 
-    # Phase 149: AI 상품등록 자동화 카드
+    # Phase 151: AI 상품등록 자동화 카드
     ai_listing_status = _build_ai_listing_status()
+    phase_guard_status = _build_phase_guard_status()
+    market_adapter_runtime_status = _build_market_adapter_runtime_status()
     try:
         from src.version import get_current_phase
         current_phase = get_current_phase()
     except Exception:
-        current_phase = 149
+        current_phase = 151
 
     return render_template_string(
         _DIAGNOSTICS_TEMPLATE,
@@ -473,6 +476,8 @@ def _render_diagnostics(issued_magic_link: str | None):
         wholesale_status=wholesale_status,
         product_subscription_status=product_subscription_status,
         ai_listing_status=ai_listing_status,
+        phase_guard_status=phase_guard_status,
+        market_adapter_runtime_status=market_adapter_runtime_status,
         current_phase=current_phase,
         env=os.environ,
         base_url=base_url,
@@ -1777,7 +1782,11 @@ def _build_product_subscription_status() -> dict:
 
 
 def _build_ai_listing_status() -> dict:
+<<<<<<< copilot/fix-phase-151-analysis-cache
     """Phase 151.1: AI 상품등록 자동화 상태 (캐시 키 정상화 포함)."""
+=======
+    """Phase 151: AI 상품등록 자동화 상태."""
+>>>>>>> main
     try:
         from src.ai_listing.routes import ai_listing_stats
         stats = ai_listing_stats()
@@ -1800,6 +1809,10 @@ def _build_ai_listing_status() -> dict:
             "og_extraction_rate_pct": 0.0,
             "avg_extracted_fields_10": 0.0,
             "cache_hit_rate_pct": 0.0,
+            "jsonld_priority_enabled": os.getenv("AI_LISTING_JSONLD_PRIORITY", "1") == "1",
+            "price_auto_extract_success_rate_pct": 0.0,
+            "avg_variants_detected": 0.0,
+            "fx_conversion_used_count": 0,
             "prompt_distribution": {},
             "prompt_v1_pct": 0.0,
             "prompt_v2_pct": 0.0,
@@ -1872,6 +1885,48 @@ def _build_ai_listing_status() -> dict:
     stats["phase_hardcode_offenders"] = hardcoded_offenders
     stats["phase_hardcode_count"] = len(hardcoded_offenders)
     return stats
+
+
+def _build_market_adapter_runtime_status() -> dict:
+    default_mode = os.getenv("MARKET_ADAPTER_DEFAULT", "mock").strip().lower() or "mock"
+
+    def _adapter(env_names: list[str], live_label: str) -> str:
+        creds_ready = all(os.getenv(name) for name in env_names)
+        return live_label if creds_ready and default_mode == "live" else "mock"
+
+    return {
+        "default_mode": default_mode,
+        "coupang": _adapter(["COUPANG_VENDOR_ID", "COUPANG_ACCESS_KEY", "COUPANG_SECRET_KEY"], "live"),
+        "naver_commerce": _adapter(["NAVER_COMMERCE_CLIENT_ID", "NAVER_COMMERCE_CLIENT_SECRET"], "live"),
+        "elevenst": _adapter(["ELEVENST_API_KEY"], "live"),
+        "gmarket": "mock",
+    }
+
+
+def _build_phase_guard_status() -> dict:
+    root = pathlib.Path(__file__).resolve().parents[2]
+    targets = [
+        root / "src" / "ai_listing" / "routes.py",
+        root / "src" / "dashboard" / "admin_views.py",
+    ]
+    regex = re.compile(r"Phase\s+\d+")
+    offenders = 0
+    for path in targets:
+        try:
+            content = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for line in content.splitlines():
+            if not regex.search(line):
+                continue
+            if "current_phase" in line or "get_current_phase" in line:
+                continue
+            if "<" in line or "message" in line or "card-header" in line:
+                offenders += 1
+    return {
+        "hardcoded_phase_detected": offenders,
+        "macro_name": "phase_header",
+    }
 
 
 def _build_emergency_access_status() -> dict:
@@ -1987,6 +2042,7 @@ def _build_oauth_diagnostics(base_url: str, oauth_urls: dict) -> list[dict]:
 _DIAGNOSTICS_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="ko">
+{% from "_macros.html" import phase_header %}
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -2849,14 +2905,16 @@ _DIAGNOSTICS_TEMPLATE = """
 
     <!-- AI 상품등록 진단 -->
     <div class="card mb-4">
-      <div class="card-header fw-bold">🤖 AI 상품등록 (Phase {{ current_phase }} 검증)</div>
+      <div class="card-header fw-bold">🤖 AI 상품등록 (Phase {{ current_phase }})</div>
       <div class="card-body">
         <ul class="mb-3">
-          <li>활성화: {% if ai_listing_status.enabled %}<span class="badge bg-success">ON</span>{% else %}<span class="badge bg-secondary">OFF (AI_LISTING_ENABLED=0)</span>{% endif %}</li>
+          <li>JSON-LD 우선순위 적용: {% if ai_listing_status.jsonld_priority_enabled %}<span class="badge bg-success">✅</span>{% else %}<span class="badge bg-secondary">❌</span>{% endif %}</li>
           <li>24h 분석 시도: <strong>{{ ai_listing_status.attempts_24h }}</strong>건</li>
-          <li>스크래퍼 호출률: <strong>{{ ai_listing_status.scraper_call_rate_pct }}%</strong></li>
+          <li>24h 분석 중 JSON-LD 활용률: <strong>{{ ai_listing_status.json_ld_extraction_rate_pct }}%</strong></li>
+          <li>가격 자동 추출 성공률: <strong>{{ ai_listing_status.price_auto_extract_success_rate_pct }}%</strong></li>
+          <li>변형 자동 분리 평균 개수: <strong>{{ ai_listing_status.avg_variants_detected }}</strong></li>
+          <li>환율 변환 사용: <strong>{{ ai_listing_status.fx_conversion_used_count }}</strong>건</li>
           <li>스크래퍼 HTTP 200 성공률: <strong>{{ ai_listing_status.scraper_http_200_rate_pct }}%</strong></li>
-          <li>JSON-LD 추출률: <strong>{{ ai_listing_status.json_ld_extraction_rate_pct }}%</strong></li>
           <li>OG tag 추출률: <strong>{{ ai_listing_status.og_extraction_rate_pct }}%</strong></li>
           <li>평균 추출 필드 수 (10개 중): <strong>{{ ai_listing_status.avg_extracted_fields_10 }}</strong></li>
           <li>캐시 적중률: <strong>{{ ai_listing_status.cache_hit_rate_pct }}%</strong></li>
@@ -2867,6 +2925,7 @@ _DIAGNOSTICS_TEMPLATE = """
           <li>캐시 활성: 분석 <strong>{{ ai_listing_status.cache_active }}</strong>건 / 스크래퍼 <strong>{{ ai_listing_status.scraper_cache_active }}</strong>건 / TTL: {{ ai_listing_status.cache_ttl_hours }}h</li>
           <li>24h 등록 시도: <strong>{{ ai_listing_status.attempts_24h }}</strong>건 / 성공: <strong>{{ ai_listing_status.success_24h }}</strong>건 / 실패: <span class="{% if ai_listing_status.failed_24h > 0 %}text-danger fw-bold{% endif %}">{{ ai_listing_status.failed_24h }}건</span></li>
         </ul>
+<<<<<<< copilot/fix-phase-151-analysis-cache
         <hr class="my-2">
         <p class="fw-semibold mb-1">🔑 캐시 키 정상화 (Phase 151.1 hotfix)</p>
         <ul class="mb-3 small">
@@ -2878,6 +2937,25 @@ _DIAGNOSTICS_TEMPLATE = """
           <li>검출된 하드코딩: {% if ai_listing_status.phase_hardcode_count == 0 %}<span class="badge bg-success">0건</span>{% else %}<span class="badge bg-danger">{{ ai_listing_status.phase_hardcode_count }}건</span> — {{ ai_listing_status.phase_hardcode_offenders | join(', ') }}{% endif %}</li>
           <li>화이트리스트: ROADMAP.md, CHANGELOG.md, docs/, src/version.py</li>
         </ul>
+=======
+        <div class="border rounded p-3 bg-light mb-3">
+          <div class="fw-semibold mb-2">🏪 마켓 어댑터 (Phase {{ current_phase }})</div>
+          <ul class="mb-0">
+            <li>coupang: {% if market_adapter_runtime_status.coupang == 'live' %}✅ live{% else %}❌ mock{% endif %}</li>
+            <li>naver_commerce: {% if market_adapter_runtime_status.naver_commerce == 'live' %}✅ live{% else %}❌ mock{% endif %}</li>
+            <li>11st: {% if market_adapter_runtime_status.elevenst == 'live' %}✅ live{% else %}❌ mock{% endif %}</li>
+            <li>gmarket: ❌ mock</li>
+            <li>24h 등록 시도: 0건 (실제 연동은 Phase 152부터)</li>
+          </ul>
+        </div>
+        <div class="border rounded p-3 bg-light mb-3">
+          <div class="fw-semibold mb-2">📛 버전 표시 영구 가드</div>
+          <ul class="mb-0">
+            <li>하드코딩 Phase 검출: <strong>{{ phase_guard_status.hardcoded_phase_detected }}</strong>건</li>
+            <li>사용 매크로: <code>{{ phase_guard_status.macro_name }}</code></li>
+          </ul>
+        </div>
+>>>>>>> main
         <div class="d-flex gap-2 flex-wrap">
           <a class="btn btn-outline-primary btn-sm" href="/seller/listing/ai-create">🤖 AI 상품등록 UI</a>
           <a class="btn btn-outline-secondary btn-sm" href="/api/ai-listing/status/test">🔗 API 상태</a>

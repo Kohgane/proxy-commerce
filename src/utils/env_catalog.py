@@ -110,7 +110,12 @@ API_REGISTRY: list = [
     ),
     ApiKey(
         name="naver_commerce",
-        env_vars=["NAVER_COMMERCE_CLIENT_ID", "NAVER_COMMERCE_CLIENT_SECRET"],
+        env_vars=[
+            "NAVER_COMMERCE_CLIENT_ID",
+            "NAVER_COMMERCE_CLIENT_SECRET",
+            "NAVER_COMMERCE_API_BASE",
+            "MARKET_ADAPTER_DEFAULT",
+        ],
         purpose="네이버 커머스 API — 스마트스토어",
         docs_url="https://commerce.naver.com",
         category=ApiCategory.MARKETPLACE,
@@ -643,12 +648,25 @@ API_REGISTRY: list = [
             "AI_LISTING_FORCE_REFRESH_ALLOWED",
             "AI_LISTING_DEBUG_PANEL",
             "AI_LISTING_PROMPT_VERSION",
+<<<<<<< copilot/fix-phase-151-analysis-cache
             # Phase 151.1 hotfix: 캐시 키 정상화
             "AI_LISTING_CACHE_INCLUDE_PHASE",
             "AI_LISTING_CACHE_INCLUDE_PROMPT_VERSION",
             "AI_LISTING_FORCE_REFRESH_INVALIDATE_ANALYSIS",
         ],
         purpose="AI 상품등록 자동화 — 캐시 키 Phase/prompt_version 포함, force_refresh 전체 무효화 (Phase 151.1)",
+=======
+            "AI_LISTING_JSONLD_PRIORITY",
+            "AI_LISTING_VARIANT_AUTO_EXTRACT",
+            "AI_LISTING_PRICE_USE_JSONLD",
+            "AI_LISTING_TRANSLATE_DESCRIPTION",
+            "FALLBACK_USD_KRW",
+            "FALLBACK_JPY_KRW",
+            "FALLBACK_EUR_KRW",
+            "FALLBACK_CNY_KRW",
+        ],
+        purpose="AI 상품등록 자동화 — JSON-LD 우선순위/변형 추출/환율 반영 포함 (Phase 151)",
+>>>>>>> main
         docs_url="https://kohganepercentiii.com/docs/operations/AI_LISTING.md",
         category=ApiCategory.AI,
         optional=True,
