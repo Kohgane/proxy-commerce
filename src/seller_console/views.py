@@ -32,6 +32,7 @@ from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 
 from flask import Blueprint, abort, jsonify, redirect, render_template, render_template_string, request, session, url_for, Response
+from src.utils.branding import get_brand_name
 
 logger = logging.getLogger(__name__)
 _CS_FAQ_SUPPORTED_LOCALES = {"ko", "ja", "en", "zh"}
@@ -57,6 +58,7 @@ def inject_seller_template_flags():
     return {
         "diagnostic_reveal_enabled": os.getenv("DIAGNOSTIC_REVEAL", "0") == "1",
         "sidebar_grouped": os.getenv("SIDEBAR_GROUPED", "1") == "1",
+        "brand_name": get_brand_name(),
     }
 
 

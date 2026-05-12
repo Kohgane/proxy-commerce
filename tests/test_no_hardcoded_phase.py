@@ -9,13 +9,6 @@ PHASE_RE = re.compile(r"Phase\s+\d+", re.IGNORECASE)
 PHASE_CONTEXT_WINDOW = 40
 
 
-<<<<<<< copilot/fix-phase-151-analysis-cache
-    forbidden_literals = [
-        "Phase 149</small>",  # /seller/listing/ai-create 헤더
-        "AI 상품등록 자동화 (Phase 149)",  # /admin/diagnostics AI 카드
-        "Phase 149 mock status",  # routes.py api_status 응답
-    ]
-=======
 def _root() -> str:
     return os.path.dirname(os.path.dirname(__file__))
 
@@ -23,7 +16,6 @@ def _root() -> str:
 def _python_ui_strings(path: str, required_hints: tuple[str, ...]) -> list[str]:
     with open(path, encoding="utf-8") as f:
         tree = ast.parse(f.read(), filename=path)
->>>>>>> main
     offenders: list[str] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Constant) or not isinstance(node.value, str):

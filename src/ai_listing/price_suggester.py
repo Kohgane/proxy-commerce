@@ -52,6 +52,9 @@ def suggest_price(
         }
     """
     source_price_krw = analysis.get("source_price_krw")
+    source_price = analysis.get("source_price") or {}
+    source_amount = source_price.get("amount")
+    source_currency = source_price.get("currency") or "USD"
     if source_price_krw:
         range_min = int(source_price_krw)
         range_max = int(source_price_krw)
@@ -63,6 +66,46 @@ def suggest_price(
     fee_rate = _MARKET_FEE_RATES.get(market, _MARKET_FEE_RATES["default"])
 
     if mode == "auto":
+        if source_amount:
+            try:
+                from src.pricing.calculator import calculate_listing_price
+                from src.pricing.competitor_scanner import scan_competitor_prices
+
+                category = analysis.get("category") or analysis.get("product_type") or "의류"
+                competitors = scan_competitor_prices(
+                    product_name=(analysis.get("json_ld_normalized") or {}).get("name") or analysis.get("_scraped_title") or "상품",
+                    brand=str((analysis.get("brand") or {}).get("name") if isinstance(analysis.get("brand"), dict) else analysis.get("brand") or ""),
+                    market=market,
+                    limit=8,
+                )
+                competitor_prices = [int(x.get("price_krw", 0)) for x in competitors if x.get("price_krw")]
+                breakdown = calculate_listing_price(
+                    source_price=float(source_amount),
+                    source_currency=str(source_currency),
+                    weight_kg=float(os.getenv("PRICING_DEFAULT_WEIGHT_KG", "0.5")),
+                    market=market,
+                    category=str(category),
+                    competitor_prices_krw=competitor_prices,
+                )
+                return {
+                    "market": market,
+                    "suggested_price_krw": int(breakdown.suggested_price),
+                    "min_price_krw": int(round(breakdown.total_landed)),
+                    "max_price_krw": int(round(max(breakdown.calculated_price, breakdown.suggested_price))),
+                    "margin_pct": round(float(breakdown.margin_actual_pct), 1),
+                    "fee_rate": float(breakdown.market_fee_pct),
+                    "mode": mode,
+                    "source_price_krw": int(source_price_krw) if source_price_krw else int(round(breakdown.cost_krw)),
+                    "source_price": analysis.get("source_price"),
+                    "fx_rate": analysis.get("fx_rate"),
+                    "margin_guard_price_krw": int(breakdown.suggested_price),
+                    "pricing_breakdown": breakdown.to_dict(),
+                    "competitor_items": competitors,
+                    "competitor_count": len(competitors),
+                }
+            except Exception as exc:
+                logger.debug("판매가 계산기 폴백: %s", exc)
+
         # Phase 140 가격 룰 연동 시도
         try:
             from src.pricing.rules import PricingRuleStore

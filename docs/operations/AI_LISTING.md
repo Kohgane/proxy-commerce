@@ -1,8 +1,4 @@
-<<<<<<< copilot/fix-phase-151-analysis-cache
 # AI 상품등록 자동화 가이드 (Phase 151.1)
-=======
-# AI 상품등록 자동화 가이드 (Phase 151)
->>>>>>> main
 
 ## 개요
 
@@ -52,11 +48,9 @@ Vision API 분석 (GPT-4o-mini / Claude Sonnet / mock)
 | `AI_LISTING_FORCE_REFRESH_ALLOWED` | `1` | 다시 분석 시 캐시 무시 허용 |
 | `AI_LISTING_DEBUG_PANEL` | `1` | 결과 카드 원본 데이터 패널 표시 |
 | `AI_LISTING_PROMPT_VERSION` | `v2_explicit_fields` | 분석 프롬프트 버전 (기본 v2 강제) |
-<<<<<<< copilot/fix-phase-151-analysis-cache
 | `AI_LISTING_CACHE_INCLUDE_PHASE` | `1` | 캐시 키에 Phase 번호 포함 (Phase 151.1, 코드 레벨 강제 적용) |
 | `AI_LISTING_CACHE_INCLUDE_PROMPT_VERSION` | `1` | 캐시 키에 prompt_version 포함 (Phase 151.1, 코드 레벨 강제 적용) |
 | `AI_LISTING_FORCE_REFRESH_INVALIDATE_ANALYSIS` | `1` | force_refresh 시 analysis 캐시도 함께 무효화 (Phase 151.1) |
-=======
 | `AI_LISTING_JSONLD_PRIORITY` | `1` | JSON-LD 명시값(name/brand/price/variants/description) 우선 사용 |
 | `AI_LISTING_VARIANT_AUTO_EXTRACT` | `1` | JSON-LD `hasVariant` 자동 분리 |
 | `AI_LISTING_PRICE_USE_JSONLD` | `1` | JSON-LD 가격을 환율 변환 가격의 기준값으로 사용 |
@@ -65,7 +59,6 @@ Vision API 분석 (GPT-4o-mini / Claude Sonnet / mock)
 | `FALLBACK_JPY_KRW` | `9.2` | JPY 환율 fallback |
 | `FALLBACK_EUR_KRW` | `1500` | EUR 환율 fallback |
 | `FALLBACK_CNY_KRW` | `190` | CNY 환율 fallback |
->>>>>>> main
 
 ## Vision 제공자 설정
 
