@@ -18,10 +18,16 @@ from .middleware.security import SecurityMiddleware
 from .validation.order_validator import OrderValidator, DUPLICATE_ORDER_TAG
 from .audit.audit_logger import AuditLogger
 from .audit.event_types import EventType
+from .utils.branding import get_brand_name
 
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+
+@app.context_processor
+def inject_brand_name():
+    return {"brand_name": get_brand_name()}
 
 _AUTO_BLUEPRINT_CANDIDATE_MODULES = (
     "src.cs.inbox_routes",

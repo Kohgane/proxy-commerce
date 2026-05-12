@@ -397,8 +397,34 @@ function showResults(imageUrl, analysis, generated, markets, confidenceBadges, d
     const sourcePriceText = mdata.source_price && mdata.source_price.amount
       ? `${mdata.source_price.amount} ${mdata.source_price.currency}`
       : '-';
+    const pb = mdata.pricing_breakdown || null;
+    const competitorItems = mdata.competitor_items || [];
+    const competitorPrices = competitorItems.map(x => x.price_krw || 0).filter(Boolean);
+    const competitorMin = competitorPrices.length ? Math.min(...competitorPrices) : null;
+    const competitorAvg = competitorPrices.length ? Math.round(competitorPrices.reduce((a, b) => a + b, 0) / competitorPrices.length) : null;
+    const competitorMax = competitorPrices.length ? Math.max(...competitorPrices) : null;
+    const pricingCard = pb ? `
+      <div class="border rounded p-3 bg-light mb-3">
+        <div class="fw-semibold mb-2">💰 판매가 계산기</div>
+        <div class="small">원가(자동): ${escapeHtml(sourcePriceText)} = ₩${Math.round(pb.cost_krw || 0).toLocaleString()}</div>
+        <div class="small">+ 국제배송비: ₩${Math.round(pb.shipping_krw || 0).toLocaleString()}</div>
+        <div class="small">+ 관세: ₩${Math.round(pb.customs_krw || 0).toLocaleString()}</div>
+        <div class="small">+ 부가세: ₩${Math.round(pb.vat_krw || 0).toLocaleString()}</div>
+        <div class="small fw-semibold mt-1">랜디드 코스트: ₩${Math.round(pb.total_landed || 0).toLocaleString()}</div>
+        <div class="small">자동 계산 판매가: ₩${Math.round(pb.calculated_price || 0).toLocaleString()}</div>
+        <div class="small">🎯 권장 판매가: <strong>₩${Math.round(pb.suggested_price || 0).toLocaleString()}</strong> (실제 마진 ${pb.margin_actual_pct || 0}%)</div>
+      </div>` : '';
+    const competitorCard = competitorItems.length ? `
+      <div class="border rounded p-3 bg-light mb-3">
+        <div class="fw-semibold mb-2">⚖️ 경쟁사 분석</div>
+        <div class="small">검색된 유사 상품: ${competitorItems.length}개</div>
+        <div class="small">최저가: ₩${(competitorMin || 0).toLocaleString()} / 평균가: ₩${(competitorAvg || 0).toLocaleString()} / 최고가: ₩${(competitorMax || 0).toLocaleString()}</div>
+        <details class="small mt-1"><summary>경쟁사 상품 보기</summary>${competitorItems.map(i => `<div>• <a target="_blank" href="${escapeHtml(i.url || '#')}">${escapeHtml(i.title || i.market || 'item')}</a> — ₩${(i.price_krw || 0).toLocaleString()}</div>`).join('')}</details>
+      </div>` : '';
     content.innerHTML += `
       <div class="tab-pane fade ${i===0?'show active':''}" id="tab_${market}">
+        ${pricingCard}
+        ${competitorCard}
         <div class="mb-2">
           <label class="fw-semibold small">제목 (${(mdata.title||'').length}자)</label>
           <input class="form-control form-control-sm" id="title_${market}" value="${escapeHtml(mdata.title||'')}">
@@ -415,6 +441,15 @@ function showResults(imageUrl, analysis, generated, markets, confidenceBadges, d
           <input type="number" class="form-control form-control-sm" id="price_${market}" value="${mdata.suggested_price_krw||''}">
           <div class="form-text">원본가: ${escapeHtml(sourcePriceText)} · 환산가: ₩${(mdata.source_price_krw||0).toLocaleString()} · 환율: ${escapeHtml(mdata.fx_rate || '-')} KRW/${escapeHtml((mdata.source_price||{}).currency || '')}</div>
           <div class="form-text">마진 가드 후 제안가: ₩${(mdata.margin_guard_price_krw||mdata.suggested_price_krw||0).toLocaleString()}</div>
+          <div class="mt-2 d-flex gap-2">
+            <button type="button" class="btn btn-success btn-sm" onclick="applySuggestedPrice('${market}')">자동 적용</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="togglePricingAdjust('${market}')">수동 조정 ▼</button>
+          </div>
+          <div id="pricingAdjust_${market}" class="border rounded p-2 mt-2 small" style="display:none">
+            <div>목표 마진: ${pb ? (pb.target_margin_pct || 30) : 30}%</div>
+            <div>광고 예산: ${pb ? (pb.ad_budget_pct || 5) : 5}%</div>
+            <div>상품 무게: ${escapeHtml((analysis.weight_kg || '0.5').toString())}kg</div>
+          </div>
         </div>
         <div class="mb-2">
           <label class="fw-semibold small">브랜드 / 소재</label>
@@ -450,6 +485,21 @@ function showResults(imageUrl, analysis, generated, markets, confidenceBadges, d
         </div>
       </div>`;
   });
+}
+
+function applySuggestedPrice(market) {
+  const input = document.getElementById('price_' + market);
+  if (!input) return;
+  const tab = document.getElementById('tab_' + market);
+  if (!tab) return;
+  const suggestion = (_generated.markets || {})[market] || {};
+  input.value = suggestion.suggested_price_krw || input.value;
+}
+
+function togglePricingAdjust(market) {
+  const el = document.getElementById('pricingAdjust_' + market);
+  if (!el) return;
+  el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 
 async function publishToMarkets() {

@@ -45,10 +45,11 @@ _BASE_HTML = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="description" content="{{ description }}">
 <meta name="robots" content="noindex, nofollow">
-<meta property="og:title" content="{{ title }} — proxy-commerce">
+<meta property="og:site_name" content="{{ brand_name }}">
+<meta property="og:title" content="{{ brand_name }}">
 <meta property="og:description" content="{{ description }}">
 <meta property="og:type" content="website">
-<title>{{ title }} — proxy-commerce</title>
+<title>{{ title }} | {{ brand_name }}</title>
 <style>
   body { font-family: system-ui, sans-serif; margin: 0; background: #f5f7fa; color: #333; }
   header { background: #1a1a2e; color: #fff; padding: 12px 24px; display: flex; align-items: center; gap: 16px; }
@@ -100,7 +101,15 @@ _BASE_HTML = """<!DOCTYPE html>
 
 
 def _render(title: str, body: str, description: str = "proxy-commerce 관리 대시보드") -> str:
-    return render_template_string(_BASE_HTML, title=title, body=body, description=description)
+    from src.utils.branding import get_brand_name
+
+    return render_template_string(
+        _BASE_HTML,
+        title=title,
+        body=body,
+        description=description,
+        brand_name=get_brand_name(),
+    )
 
 
 # ---------------------------------------------------------------------------

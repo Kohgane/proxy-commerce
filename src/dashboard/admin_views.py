@@ -16,16 +16,19 @@ import os
 import pathlib
 import re
 import time
+from datetime import datetime, timezone
 
-from flask import Blueprint, current_app, redirect, render_template_string, request, session
+from flask import Blueprint, current_app, jsonify, redirect, render_template_string, request, session
 
 from src.utils.fstring_guard import FSTRING_BACKSLASH_IN_EXPR_PATTERN
+from src.utils.branding import get_brand_name
 
 MAX_DISPLAY_ITEMS = 200
 
 logger = logging.getLogger(__name__)
 _FSTRING_SCAN_CACHE_TTL_SEC = 300
 _fstring_scan_cache = {"checked_at": 0.0, "offenders": 0}
+_ai_listing_cache_last_cleared_at: str | None = None
 
 admin_panel_bp = Blueprint("admin_panel", __name__, url_prefix="/admin")
 
@@ -46,7 +49,9 @@ _BASE_HTML = (
     "<head>"
     '<meta charset="utf-8">'
     '<meta name="viewport" content="width=device-width,initial-scale=1">'
-    "<title>{{ title }} — Admin</title>"
+    "<title>{{ title }} | {{ brand_name }}</title>"
+    '<meta property="og:site_name" content="{{ brand_name }}">'
+    '<meta property="og:title" content="{{ brand_name }}">'
     + _BOOTSTRAP_CDN
     + "<style>"
     "body{background:#f8f9fa;}"
@@ -87,7 +92,7 @@ _BASE_HTML = (
 def _render(title: str, body: str) -> str:
     # body는 뷰에서 직접 조합한 신뢰할 수 있는 HTML 문자열이므로 Markup으로 전달
     from markupsafe import Markup
-    return render_template_string(_BASE_HTML, title=title, body=Markup(body))
+    return render_template_string(_BASE_HTML, title=title, body=Markup(body), brand_name=get_brand_name())
 
 
 # ---------------------------------------------------------------------------
@@ -374,6 +379,43 @@ def admin_diagnostics():
     return _render_diagnostics(issued_magic_link=None)
 
 
+def _scan_merge_conflict_marker_count() -> int:
+    root = pathlib.Path(__file__).resolve().parents[2]
+    pattern = re.compile(r"^(<{7}|={7}|>{7})( |$)", re.MULTILINE)
+    count = 0
+    for rel in ("src", "tests", "templates"):
+        base = root / rel
+        if not base.exists():
+            continue
+        for path in base.rglob("*"):
+            if not path.is_file():
+                continue
+            if path.suffix.lower() not in {".py", ".html", ".js", ".css", ".md", ".yml", ".yaml", ".toml"}:
+                continue
+            try:
+                text = path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            if pattern.search(text):
+                count += 1
+    return count
+
+
+def _scan_python_syntax_error_count() -> int:
+    import py_compile
+
+    root = pathlib.Path(__file__).resolve().parents[2] / "src"
+    errors = 0
+    if not root.exists():
+        return errors
+    for path in root.rglob("*.py"):
+        try:
+            py_compile.compile(str(path), doraise=True)
+        except py_compile.PyCompileError:
+            errors += 1
+    return errors
+
+
 def _render_diagnostics(issued_magic_link: str | None):
     # 섹션 1: 환경변수 매트릭스
     env_matrix = _build_env_matrix()
@@ -435,8 +477,12 @@ def _render_diagnostics(issued_magic_link: str | None):
 
     # Phase 151: AI 상품등록 자동화 카드
     ai_listing_status = _build_ai_listing_status()
+    ai_listing_cache_count = int(ai_listing_status.get("cache_active", 0)) + int(ai_listing_status.get("scraper_cache_active", 0))
     phase_guard_status = _build_phase_guard_status()
     market_adapter_runtime_status = _build_market_adapter_runtime_status()
+    merge_conflict_marker_count = _scan_merge_conflict_marker_count()
+    python_syntax_error_count = _scan_python_syntax_error_count()
+    brand_name = get_brand_name()
     try:
         from src.version import get_current_phase
         current_phase = get_current_phase()
@@ -478,6 +524,11 @@ def _render_diagnostics(issued_magic_link: str | None):
         ai_listing_status=ai_listing_status,
         phase_guard_status=phase_guard_status,
         market_adapter_runtime_status=market_adapter_runtime_status,
+        ai_listing_cache_count=ai_listing_cache_count,
+        ai_listing_cache_last_cleared_at=_ai_listing_cache_last_cleared_at,
+        merge_conflict_marker_count=merge_conflict_marker_count,
+        python_syntax_error_count=python_syntax_error_count,
+        brand_name=brand_name,
         current_phase=current_phase,
         env=os.environ,
         base_url=base_url,
@@ -713,14 +764,20 @@ def admin_oauth_setup():
 # ---------------------------------------------------------------------------
 
 @admin_panel_bp.post("/diagnostics/ai-cache-clear")
+@admin_panel_bp.post("/cache/ai_listing/clear")
 def diagnostics_ai_cache_clear():
-    """AI listing 분석/스크래퍼 캐시 전체 삭제 (Phase 151.1 hotfix)."""
+    """AI listing 분석/스크래퍼 캐시 전체 삭제."""
+    global _ai_listing_cache_last_cleared_at
     from src.auth.admin_resolver import is_admin_session
 
     if not session.get("user_id"):
+        if request.path.startswith("/admin/cache/"):
+            return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
         return redirect("/auth/login?next=/admin/diagnostics")
     admin_ok, _ = is_admin_session(session)
     if not admin_ok:
+        if request.path.startswith("/admin/cache/"):
+            return jsonify({"ok": False, "error": "관리자 권한이 필요합니다."}), 403
         return _render("접근 거부", "<div class='alert alert-danger'>관리자 권한이 필요합니다.</div>"), 403
 
     deleted_analysis = 0
@@ -737,8 +794,20 @@ def diagnostics_ai_cache_clear():
     except Exception as exc:
         logger.warning("scraper 캐시 삭제 실패: %s", exc)
 
+    total_deleted = int(deleted_analysis) + int(deleted_scraper)
+    _ai_listing_cache_last_cleared_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     logger.info("AI listing 캐시 전체 삭제: analysis=%d건, scraper=%d건", deleted_analysis, deleted_scraper)
     msg = f"🗑️ AI listing 캐시 삭제 완료 — analysis: {deleted_analysis}건, scraper: {deleted_scraper}건"
+    if request.path.startswith("/admin/cache/"):
+        return jsonify(
+            {
+                "ok": True,
+                "deleted_keys": total_deleted,
+                "deleted_analysis": int(deleted_analysis),
+                "deleted_scraper": int(deleted_scraper),
+                "last_cleared_at": _ai_listing_cache_last_cleared_at,
+            }
+        )
     return _render_diagnostics(issued_magic_link=msg)
 
 
@@ -1782,11 +1851,7 @@ def _build_product_subscription_status() -> dict:
 
 
 def _build_ai_listing_status() -> dict:
-<<<<<<< copilot/fix-phase-151-analysis-cache
     """Phase 151.1: AI 상품등록 자동화 상태 (캐시 키 정상화 포함)."""
-=======
-    """Phase 151: AI 상품등록 자동화 상태."""
->>>>>>> main
     try:
         from src.ai_listing.routes import ai_listing_stats
         stats = ai_listing_stats()
@@ -2046,7 +2111,9 @@ _DIAGNOSTICS_TEMPLATE = """
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>운영 진단 — Admin</title>
+  <title>운영 진단 | {{ brand_name }}</title>
+  <meta property="og:site_name" content="{{ brand_name }}">
+  <meta property="og:title" content="{{ brand_name }}">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <style>
     body { background: #f8f9fa; }
@@ -2925,7 +2992,6 @@ _DIAGNOSTICS_TEMPLATE = """
           <li>캐시 활성: 분석 <strong>{{ ai_listing_status.cache_active }}</strong>건 / 스크래퍼 <strong>{{ ai_listing_status.scraper_cache_active }}</strong>건 / TTL: {{ ai_listing_status.cache_ttl_hours }}h</li>
           <li>24h 등록 시도: <strong>{{ ai_listing_status.attempts_24h }}</strong>건 / 성공: <strong>{{ ai_listing_status.success_24h }}</strong>건 / 실패: <span class="{% if ai_listing_status.failed_24h > 0 %}text-danger fw-bold{% endif %}">{{ ai_listing_status.failed_24h }}건</span></li>
         </ul>
-<<<<<<< copilot/fix-phase-151-analysis-cache
         <hr class="my-2">
         <p class="fw-semibold mb-1">🔑 캐시 키 정상화 (Phase 151.1 hotfix)</p>
         <ul class="mb-3 small">
@@ -2937,7 +3003,6 @@ _DIAGNOSTICS_TEMPLATE = """
           <li>검출된 하드코딩: {% if ai_listing_status.phase_hardcode_count == 0 %}<span class="badge bg-success">0건</span>{% else %}<span class="badge bg-danger">{{ ai_listing_status.phase_hardcode_count }}건</span> — {{ ai_listing_status.phase_hardcode_offenders | join(', ') }}{% endif %}</li>
           <li>화이트리스트: ROADMAP.md, CHANGELOG.md, docs/, src/version.py</li>
         </ul>
-=======
         <div class="border rounded p-3 bg-light mb-3">
           <div class="fw-semibold mb-2">🏪 마켓 어댑터 (Phase {{ current_phase }})</div>
           <ul class="mb-0">
@@ -2955,14 +3020,43 @@ _DIAGNOSTICS_TEMPLATE = """
             <li>사용 매크로: <code>{{ phase_guard_status.macro_name }}</code></li>
           </ul>
         </div>
->>>>>>> main
+        <div class="border rounded p-3 bg-light mb-3">
+          <div class="fw-semibold mb-2">🔐 Google OAuth 브랜딩 일관성</div>
+          <ul class="mb-2">
+            <li>site brand_name: <code>{{ brand_name }}</code></li>
+            <li>og:site_name / og:title: <code>{{ brand_name }}</code></li>
+            <li>⚠️ Google OAuth 동의 화면 앱 이름을 정확히 <code>{{ brand_name }}</code>로 맞춰주세요.</li>
+          </ul>
+          <a class="btn btn-outline-secondary btn-sm" target="_blank" href="https://console.cloud.google.com/auth/branding">콘솔 열기</a>
+        </div>
+        <div class="border rounded p-3 bg-light mb-3">
+          <div class="fw-semibold mb-2">🚨 운영 안전 (Phase 152 hotfix)</div>
+          <ul class="mb-0">
+            <li>머지 충돌 마커: {% if merge_conflict_marker_count == 0 %}<span class="badge bg-success">0건 ✅</span>{% else %}<span class="badge bg-danger">{{ merge_conflict_marker_count }}건</span>{% endif %}</li>
+            <li>Python syntax errors: {% if python_syntax_error_count == 0 %}<span class="badge bg-success">0건 ✅</span>{% else %}<span class="badge bg-danger">{{ python_syntax_error_count }}건</span>{% endif %}</li>
+          </ul>
+        </div>
+        <div class="border rounded p-3 bg-light mb-3">
+          <div class="fw-semibold mb-2">🧹 캐시 관리</div>
+          <ul class="mb-2">
+            <li>ai_listing 키: <strong id="ai-listing-cache-count">{{ ai_listing_cache_count }}</strong>개</li>
+            <li>마지막 삭제: <span id="ai-listing-cache-last-cleared">{{ ai_listing_cache_last_cleared_at or '-' }}</span></li>
+          </ul>
+          <button id="ai-listing-cache-clear" class="btn btn-warning btn-sm">🗑️ AI listing 캐시 전체 삭제 ({{ ai_listing_cache_count }}개)</button>
+          <small class="d-block text-muted mt-2">삭제 시 analysis + scraper 캐시를 함께 비웁니다.</small>
+        </div>
+        <div class="border rounded p-3 bg-light mb-3">
+          <div class="fw-semibold mb-2">💰 판매가 계산기 (Phase 152)</div>
+          <ul class="mb-0">
+            <li>활성: <span class="badge bg-success">ON</span></li>
+            <li>24h 계산: <strong>{{ ai_listing_status.attempts_24h }}</strong>건</li>
+            <li>권장가 자동 적용/수동 조정: <strong>{{ ai_listing_status.success_24h }}</strong> / <strong>{{ ai_listing_status.failed_24h }}</strong></li>
+            <li>환경: 배송비 <code>{{ env.get('PRICING_INTL_SHIPPING_PER_KG_KRW', '18000') }}</code> / 결제수수료 <code>{{ env.get('PRICING_PAYMENT_FEE', '0.033') }}</code></li>
+          </ul>
+        </div>
         <div class="d-flex gap-2 flex-wrap">
           <a class="btn btn-outline-primary btn-sm" href="/seller/listing/ai-create">🤖 AI 상품등록 UI</a>
           <a class="btn btn-outline-secondary btn-sm" href="/api/ai-listing/status/test">🔗 API 상태</a>
-          <form method="POST" action="/admin/diagnostics/ai-cache-clear" style="display:inline"
-                onsubmit="return confirm('AI listing 캐시를 모두 삭제합니다. 계속하시겠습니까?')">
-            <button type="submit" class="btn btn-danger btn-sm">🗑️ AI listing 캐시 전체 삭제</button>
-          </form>
         </div>
       </div>
     </div>
@@ -2971,6 +3065,33 @@ _DIAGNOSTICS_TEMPLATE = """
 </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  (function () {
+    const btn = document.getElementById('ai-listing-cache-clear');
+    if (!btn) return;
+    btn.addEventListener('click', async function () {
+      if (!confirm('AI listing 캐시를 모두 삭제합니다. 계속하시겠습니까?')) return;
+      btn.disabled = true;
+      try {
+        const resp = await fetch('/admin/cache/ai_listing/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+        const data = await resp.json();
+        if (!resp.ok || !data.ok) {
+          alert('캐시 삭제 실패: ' + ((data && data.error) || resp.status));
+          return;
+        }
+        const cnt = document.getElementById('ai-listing-cache-count');
+        const last = document.getElementById('ai-listing-cache-last-cleared');
+        if (cnt) cnt.textContent = '0';
+        if (last) last.textContent = data.last_cleared_at || '-';
+        alert(`✅ ${data.deleted_keys || 0}개 키 삭제 완료`);
+      } catch (err) {
+        alert('캐시 삭제 실패: ' + err);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  })();
+</script>
 </body>
 </html>
 """

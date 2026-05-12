@@ -4,6 +4,7 @@
 
 | Phase | 내용 | PR | 완료일 |
 |---|---|---|---|
+| Phase 152 | CI hotfix(merge marker gate + python compile gate) + OAuth 브랜딩 일관성 + AI listing 캐시 삭제 UX + 판매가 계산기/경쟁사 스캔 통합 | #PR | 2026-05-12 |
 | Phase 1-13 | 기본 시스템 구축 (봇, API, 환율, 배송, 주문, 재고, 감사, 캐시, 알림 등) | #1-#28 | 2026-03 |
 | Phase 14 | 리뷰/프로모션/CRM | #29 | 2026-03-24 |
 | Phase 15 | 마케팅 자동화 + 리포팅 고도화 + SEO 최적화 + 통합 웹훅 허브 | #30 | 2026-03-24 |
@@ -1602,7 +1603,6 @@
 - `/admin/diagnostics` AI 카드에 스크래퍼/JSON-LD/OG/캐시/프롬프트 분포 지표 추가
 - `AI_LISTING_URL_HEAD_CHECK`, `AI_LISTING_FORCE_REFRESH_ALLOWED`, `AI_LISTING_DEBUG_PANEL`, `AI_LISTING_PROMPT_VERSION` 환경변수 카탈로그 반영
 
-<<<<<<< copilot/fix-phase-151-analysis-cache
 ## Phase 151.1 — 캐시 키 정상화 + force_refresh 완전 무효화 Hotfix ✅
 
 - **analysis 캐시 키 정상화**: `phase={N}:prompt={V}:url={H}:img={H}` 형식으로 변경 → Phase 업그레이드 시 자동 무효화
@@ -1615,7 +1615,7 @@
 - **환경변수**: `AI_LISTING_CACHE_INCLUDE_PHASE`, `AI_LISTING_CACHE_INCLUDE_PROMPT_VERSION`, `AI_LISTING_FORCE_REFRESH_INVALIDATE_ANALYSIS`
 - **문서**: `docs/operations/AI_LISTING.md` 갱신, `docs/operations/CACHE_INVALIDATION.md` 신규
 - **테스트**: `tests/test_ai_listing_cache_key.py`, `tests/test_no_hardcoded_phase_strict.py`
-=======
+
 ## Phase 151 — JSON-LD 우선순위 + 가격/변형 정확 추출 ✅
 
 - `src/ai_listing/jsonld_parser.py` 추가 (`normalize_jsonld`, `extract_price_from_jsonld`, `extract_variants`, `extract_material`)
@@ -1624,4 +1624,3 @@
 - `/admin/diagnostics`에 JSON-LD 우선순위/가격 추출/변형/FX 사용 지표 추가
 - `src/markets/adapters/` 인터페이스 + mock/coupang/naver/11st scaffold 추가
 - `src/markets/adapters/naver_commerce_auth.py` 토큰 발급 헬퍼 추가
->>>>>>> main

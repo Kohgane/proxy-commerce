@@ -328,6 +328,22 @@ class PricingEngine:
                 new_price = competitor_price + val
                 return max(new_price, Decimal("1")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
 
+        elif action == "landed_cost_margin":
+            cost_krw = self._calc_cost_krw(sku_row, fx_rates)
+            if cost_krw and cost_krw > 0:
+                margin_rate = val / 100
+                if margin_rate >= 1:
+                    return current_price
+                new_price = cost_krw * (1 + margin_rate)
+                return new_price.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+
+        elif action == "competitor_minus_pct":
+            competitor_price = self._get_competitor_min_price(sku_row.get("sku", ""))
+            if competitor_price:
+                pct = val / 100
+                new_price = competitor_price * (1 - pct)
+                return max(new_price, Decimal("1")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+
         elif action == "notify_only":
             return current_price  # 가격 변경 없음
 
