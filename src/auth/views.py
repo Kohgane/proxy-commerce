@@ -25,6 +25,7 @@ import logging
 import os
 import secrets
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from typing import Optional
@@ -51,6 +52,37 @@ auth_bp = Blueprint(
     url_prefix="/auth",
     template_folder="templates",
 )
+
+# ---------------------------------------------------------------------------
+# 백그라운드 알림 풀 (OAuth 응답을 블로킹하지 않음)
+# ---------------------------------------------------------------------------
+
+_notify_pool = ThreadPoolExecutor(
+    max_workers=int(os.getenv("OAUTH_NOTIFY_POOL_SIZE", "4")),
+    thread_name_prefix="oauth-notify",
+)
+
+
+def _async_notify(fn, *args, **kwargs):
+    """알림 함수를 백그라운드 스레드에서 실행. 에러는 로그만."""
+    if os.getenv("OAUTH_NOTIFY_ASYNC", "1") == "0":
+        # 동기 모드 (테스트용)
+        try:
+            fn(*args, **kwargs)
+        except Exception:
+            logger.exception("notify failed (sync mode)")
+        return
+    try:
+        future = _notify_pool.submit(fn, *args, **kwargs)
+
+        def _log_exc(f):
+            exc = f.exception()
+            if exc:
+                logger.warning("async notify exception: %s", exc)
+
+        future.add_done_callback(_log_exc)
+    except Exception:
+        logger.exception("notify submit failed")
 
 # ---------------------------------------------------------------------------
 # 헬퍼: 비밀번호 해시
@@ -339,10 +371,11 @@ def signup_post():
         except Exception as mail_exc:
             logger.warning("인증 메일 발송 실패 (가입은 완료됨): %s", mail_exc)
 
-        # 텔레그램 알림
+        # 텔레그램 알림 (백그라운드)
         try:
             from src.notifications.telegram import send_telegram
-            send_telegram(
+            _async_notify(
+                send_telegram,
                 f"🆕 신규 셀러 가입\n이메일: {email}\n이름: {name}\n경로: 이메일 가입",
                 urgency="info",
             )
@@ -481,11 +514,12 @@ def oauth_callback(provider: str):
             }]
             store.create(user)
 
-            # 텔레그램 알림
+            # 텔레그램 알림 (백그라운드)
             try:
                 from src.notifications.telegram import send_telegram
                 provider_label = {"kakao": "카카오", "google": "구글", "naver": "네이버"}.get(provider, provider)
-                send_telegram(
+                _async_notify(
+                    send_telegram,
                     f"🆕 신규 셀러 가입\n이메일: {email}\n이름: {name}\n경로: {provider_label} 로그인",
                     urgency="info",
                 )

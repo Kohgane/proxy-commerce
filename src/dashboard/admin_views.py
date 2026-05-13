@@ -32,6 +32,38 @@ _FSTRING_SCAN_CACHE_TTL_SEC = 300
 _fstring_scan_cache = {"checked_at": 0.0, "offenders": 0}
 _pytest_collect_scan_cache = {"checked_at": 0.0, "errors": 0}
 _ai_listing_cache_last_cleared_at: str | None = None
+_google_branding_check_cache: dict = {"checked_at": 0.0, "result": None}
+
+# Admin 전용 상단바 (seller 링크 없음 — test_admin_vs_seller_nav 요구사항)
+_ADMIN_TOPNAV_HTML = (
+    '<nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">'
+    '<div class="container-fluid">'
+    '<a class="navbar-brand fw-bold" href="/">Proxy Commerce</a>'
+    '<div class="ms-auto mt-2 mt-lg-0">'
+    "{% set _uid = session.get('user_id') if session is defined else None %}"
+    "{% if _uid %}"
+    '<div class="dropdown">'
+    '<button class="btn btn-outline-light btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">'
+    "{{ session.get('user_email') or session.get('user_name') or '사용자' }}"
+    "</button>"
+    '<ul class="dropdown-menu dropdown-menu-end">'
+    '<li><a class="dropdown-item" href="/seller/me">👤 마이페이지</a></li>'
+    "<li><hr class='dropdown-divider'></li>"
+    '<li><form method="post" action="/auth/logout" class="px-2">'
+    '<button type="submit" class="btn btn-outline-secondary btn-sm w-100">🚪 로그아웃</button>'
+    "</form></li>"
+    "</ul>"
+    "</div>"
+    "{% else %}"
+    '<div class="d-flex gap-2">'
+    '<a href="/auth/login" class="btn btn-outline-light btn-sm">🔐 OAuth 로그인</a>'
+    '<a href="/auth/magic-link" class="btn btn-outline-secondary btn-sm">📧 이메일 로그인</a>'
+    "</div>"
+    "{% endif %}"
+    "</div>"
+    "</div>"
+    "</nav>"
+)
 
 admin_panel_bp = Blueprint("admin_panel", __name__, url_prefix="/admin")
 
@@ -66,8 +98,8 @@ _BASE_HTML = (
     "</style>"
     "</head>"
     "<body>"
-    '{% include "partials/topnav.html" %}'
-    '<div class="container-fluid">'
+    + _ADMIN_TOPNAV_HTML
+    + '<div class="container-fluid">'
     '<div class="row">'
     '<nav class="col-md-2 sidebar p-3">'
     '<h5 class="text-white mb-3">🛒 Admin</h5>'
@@ -519,6 +551,9 @@ def _render_diagnostics(issued_magic_link: str | None):
     except Exception:
         current_phase = 153
 
+    # Phase 154: Google 봇 브랜딩 검증
+    google_branding_check = _run_google_branding_check()
+
     return render_template_string(
         _DIAGNOSTICS_TEMPLATE,
         env_matrix=env_matrix,
@@ -563,6 +598,7 @@ def _render_diagnostics(issued_magic_link: str | None):
         current_phase=current_phase,
         env=os.environ,
         base_url=base_url,
+        google_branding_check=google_branding_check,
     )
 
 
@@ -624,6 +660,13 @@ def diagnostics_telegram_health():
     from src.notifications.telegram import health_check
     from flask import jsonify
     return jsonify(health_check())
+
+
+@admin_panel_bp.post("/diagnostics/google-branding-check")
+def diagnostics_google_branding_check():
+    """Google 봇 브랜딩 검증 강제 갱신 (Phase 154)."""
+    result = _run_google_branding_check(force=True)
+    return jsonify(result)
 
 
 # ---------------------------------------------------------------------------
@@ -1763,8 +1806,94 @@ def _build_settlement_report_status() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Phase 147 — 진단 헬퍼
+# Phase 154 — Google bot 검증 헬퍼
 # ---------------------------------------------------------------------------
+
+def _run_google_branding_check(force: bool = False) -> dict:
+    """사이트 홈(/), /privacy, /terms 접근 검증. 결과 5분 캐시."""
+    now = time.time()
+    if not force and now - float(_google_branding_check_cache.get("checked_at", 0.0)) < 300:
+        cached = _google_branding_check_cache.get("result")
+        if cached is not None:
+            return cached
+
+    base_url = os.getenv("GOOGLE_BRANDING_CHECK_URL", os.getenv("SITE_BASE_URL", "")).rstrip("/")
+    timeout = int(os.getenv("GOOGLE_BRANDING_CHECK_TIMEOUT_SEC", "5"))
+    enabled = os.getenv("GOOGLE_BRANDING_CHECK_ENABLED", "1") == "1"
+
+    result: dict = {
+        "enabled": enabled,
+        "base_url": base_url,
+        "home_status": None,
+        "privacy_link_count": 0,
+        "terms_link_count": 0,
+        "privacy_status": None,
+        "privacy_body_len": 0,
+        "terms_status": None,
+        "terms_body_len": 0,
+        "overall": "unknown",
+        "error": None,
+    }
+
+    if not enabled or not base_url:
+        result["overall"] = "disabled"
+        result["error"] = "GOOGLE_BRANDING_CHECK_ENABLED=0 또는 SITE_BASE_URL 미설정"
+        _google_branding_check_cache.update({"checked_at": now, "result": result})
+        return result
+
+    try:
+        import requests as _req
+        from bs4 import BeautifulSoup
+
+        # 홈 페이지 검사
+        try:
+            home_resp = _req.get(base_url + "/", timeout=timeout, headers={"User-Agent": "Googlebot/2.1"})
+            result["home_status"] = home_resp.status_code
+            if home_resp.status_code == 200:
+                soup = BeautifulSoup(home_resp.text, "html.parser")
+                privacy_links = soup.find_all("a", href=lambda h: h and "privacy" in h.lower())
+                terms_links = soup.find_all("a", href=lambda h: h and "terms" in h.lower())
+                result["privacy_link_count"] = len(privacy_links)
+                result["terms_link_count"] = len(terms_links)
+        except Exception as exc:
+            result["home_status"] = 0
+            result["error"] = str(exc)
+
+        # /privacy 페이지
+        try:
+            priv_resp = _req.get(base_url + "/privacy", timeout=timeout)
+            result["privacy_status"] = priv_resp.status_code
+            if priv_resp.status_code == 200:
+                result["privacy_body_len"] = len(priv_resp.text)
+        except Exception:
+            result["privacy_status"] = 0
+
+        # /terms 페이지
+        try:
+            terms_resp = _req.get(base_url + "/terms", timeout=timeout)
+            result["terms_status"] = terms_resp.status_code
+            if terms_resp.status_code == 200:
+                result["terms_body_len"] = len(terms_resp.text)
+        except Exception:
+            result["terms_status"] = 0
+
+        # 종합 평가
+        ok = (
+            result["home_status"] == 200
+            and result["privacy_link_count"] > 0
+            and result["privacy_status"] == 200
+        )
+        result["overall"] = "pass" if ok else "fail"
+
+    except Exception as exc:
+        result["overall"] = "error"
+        result["error"] = str(exc)
+
+    _google_branding_check_cache.update({"checked_at": now, "result": result})
+    return result
+
+
+
 
 def _build_pwa_status() -> dict:
     """Phase 147: PWA/모바일 상태 카드 데이터."""
@@ -2160,7 +2289,33 @@ _DIAGNOSTICS_TEMPLATE = """
   </style>
 </head>
 <body>
-{% include "partials/topnav.html" %}
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">
+<div class="container-fluid">
+<a class="navbar-brand fw-bold" href="/">Proxy Commerce</a>
+<div class="ms-auto mt-2 mt-lg-0">
+{% set _uid = session.get('user_id') if session is defined else None %}
+{% if _uid %}
+<div class="dropdown">
+<button class="btn btn-outline-light btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+{{ session.get('user_email') or session.get('user_name') or '사용자' }}
+</button>
+<ul class="dropdown-menu dropdown-menu-end">
+<li><a class="dropdown-item" href="/seller/me">👤 마이페이지</a></li>
+<li><hr class="dropdown-divider"></li>
+<li><form method="post" action="/auth/logout" class="px-2">
+<button type="submit" class="btn btn-outline-secondary btn-sm w-100">🚪 로그아웃</button>
+</form></li>
+</ul>
+</div>
+{% else %}
+<div class="d-flex gap-2">
+<a href="/auth/login" class="btn btn-outline-light btn-sm">🔐 OAuth 로그인</a>
+<a href="/auth/magic-link" class="btn btn-outline-secondary btn-sm">📧 이메일 로그인</a>
+</div>
+{% endif %}
+</div>
+</div>
+</nav>
 <div class="container-fluid">
 <div class="row">
   <nav class="col-md-2 sidebar p-3">
@@ -3062,7 +3217,46 @@ _DIAGNOSTICS_TEMPLATE = """
           <a class="btn btn-outline-secondary btn-sm" target="_blank" href="https://console.cloud.google.com/auth/branding">콘솔 열기</a>
         </div>
         <div class="border rounded p-3 bg-light mb-3">
-          <div class="fw-semibold mb-2">🚨 CI 안전 (Phase 153)</div>
+          <div class="fw-semibold mb-2">🔐 Google 봇 검증 시뮬레이션 (Phase 154)</div>
+          {% set gbc = google_branding_check %}
+          {% if gbc.overall == 'disabled' %}
+            <div class="alert alert-secondary py-1 mb-1 small">비활성화됨: {{ gbc.error }}</div>
+          {% elif gbc.overall == 'error' %}
+            <div class="alert alert-danger py-1 mb-1 small">오류: {{ gbc.error }}</div>
+          {% else %}
+            <ul class="mb-2 small">
+              <li>대상 URL: <code>{{ gbc.base_url }}</code></li>
+              <li>홈 HTTP 상태:
+                {% if gbc.home_status == 200 %}<span class="badge bg-success">200 ✅</span>
+                {% else %}<span class="badge bg-danger">{{ gbc.home_status or '연결 불가' }}</span>{% endif %}
+              </li>
+              <li>/privacy 링크 (홈 HTML):
+                {% if gbc.privacy_link_count > 0 %}<span class="badge bg-success">✅ {{ gbc.privacy_link_count }}건</span>
+                {% else %}<span class="badge bg-danger">❌ 0건</span>{% endif %}
+              </li>
+              <li>/terms 링크 (홈 HTML):
+                {% if gbc.terms_link_count > 0 %}<span class="badge bg-success">✅ {{ gbc.terms_link_count }}건</span>
+                {% else %}<span class="badge bg-warning">⚠️ 0건</span>{% endif %}
+              </li>
+              <li>/privacy 직접 접근:
+                {% if gbc.privacy_status == 200 %}<span class="badge bg-success">200 ✅ ({{ gbc.privacy_body_len }}자)</span>
+                {% else %}<span class="badge bg-danger">{{ gbc.privacy_status or '연결 불가' }}</span>{% endif %}
+              </li>
+              <li>/terms 직접 접근:
+                {% if gbc.terms_status == 200 %}<span class="badge bg-success">200 ✅ ({{ gbc.terms_body_len }}자)</span>
+                {% else %}<span class="badge bg-warning">{{ gbc.terms_status or '연결 불가' }}</span>{% endif %}
+              </li>
+            </ul>
+            {% if gbc.overall == 'pass' %}
+              <div class="alert alert-success py-1 mb-2 small">✅ Google 봇 검증 통과 가능 상태입니다.<br>캐시가 남아있다면 Google Cloud Console에서 "문제를 해결함" 클릭 후 24~48h 대기.</div>
+            {% else %}
+              <div class="alert alert-danger py-1 mb-2 small">❌ 홈 페이지에 /privacy 링크가 없습니다. footer 템플릿 점검 필요.</div>
+            {% endif %}
+          {% endif %}
+          <button id="google-branding-recheck-btn" class="btn btn-outline-primary btn-sm">🔍 다시 검증</button>
+        </div>
+        <div class="border rounded p-3 bg-light mb-3">
+          <div class="fw-semibold mb-2">🚨 CI 안전 (Phase 154)</div>
           <ul class="mb-0">
             <li>머지 충돌 마커: {% if merge_conflict_marker_count == 0 %}<span class="badge bg-success">0건 ✅</span>{% else %}<span class="badge bg-danger">{{ merge_conflict_marker_count }}건</span>{% endif %}</li>
             <li>Python syntax errors: {% if python_syntax_error_count == 0 %}<span class="badge bg-success">0건 ✅</span>{% else %}<span class="badge bg-danger">{{ python_syntax_error_count }}건</span>{% endif %}</li>
@@ -3121,6 +3315,29 @@ _DIAGNOSTICS_TEMPLATE = """
         alert('캐시 삭제 실패: ' + err);
       } finally {
         btn.disabled = false;
+      }
+    });
+  })();
+  (function () {
+    const recheckBtn = document.getElementById('google-branding-recheck-btn');
+    if (!recheckBtn) return;
+    recheckBtn.addEventListener('click', async function () {
+      recheckBtn.disabled = true;
+      recheckBtn.textContent = '🔄 검증 중...';
+      try {
+        const resp = await fetch('/admin/diagnostics/google-branding-check', { method: 'POST' });
+        const data = await resp.json();
+        alert(
+          data.overall === 'pass'
+            ? '✅ Google 봇 검증 통과 가능!\n홈: ' + data.home_status + ' / /privacy 링크: ' + data.privacy_link_count + '건'
+            : '❌ 검증 실패\n홈: ' + data.home_status + ' / /privacy 링크: ' + data.privacy_link_count + '건\n' + (data.error || '')
+        );
+        location.reload();
+      } catch (err) {
+        alert('검증 실패: ' + err);
+      } finally {
+        recheckBtn.disabled = false;
+        recheckBtn.textContent = '🔍 다시 검증';
       }
     });
   })();

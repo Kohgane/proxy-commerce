@@ -49,9 +49,7 @@ def _safe_call(func, *args, **kwargs) -> Dict[str, Any]:
         return result
     except Exception as exc:
         logger.warning("위젯 데이터 로드 실패 (%s): %s", func.__name__, exc)
-        if _SHOW_MOCK:
-            return dict(_NOT_READY)
-        return {"status": "empty", "is_mock": False}
+        return dict(_NOT_READY)
 
 
 def build_kpi_widget() -> Dict[str, Any]:

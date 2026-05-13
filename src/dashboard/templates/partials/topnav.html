@@ -1,0 +1,69 @@
+{# 공통 상단 내비게이션 바 — Phase 123 #}
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">
+  <div class="container-fluid">
+    <a class="navbar-brand fw-bold" href="/">
+      <i class="bi bi-bag-check-fill text-teal me-1"></i>
+      Proxy Commerce
+      <small class="text-secondary fw-normal" style="font-size:.65rem;">Kohgane Percentiii</small>
+    </a>
+    <button class="navbar-toggler" type="button"
+            data-bs-toggle="collapse" data-bs-target="#topNav"
+            aria-controls="topNav" aria-expanded="false" aria-label="메뉴 열기">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="topNav">
+      <ul class="navbar-nav gap-1">
+        <li class="nav-item">
+          <a class="nav-link {% if request.path.startswith('/seller') %}active fw-semibold{% endif %}"
+             href="/seller/">🛒 셀러 콘솔</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link {% if request.path.startswith('/admin') %}active fw-semibold{% endif %}"
+             href="/admin/">🛠 관리자</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link {% if request.path.startswith('/api/docs') %}active fw-semibold{% endif %}"
+             href="/api/docs">📚 API 문서</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link {% if request.path == '/health/deep' %}active fw-semibold{% endif %}"
+             href="/health/deep">💚 시스템 상태</a>
+        </li>
+      </ul>
+      {% set _user_id = session.get('user_id') if session is defined else None %}
+      {% set _user_email = session.get('user_email') if session is defined else None %}
+      {% set _user_name = session.get('user_name') if session is defined else None %}
+      {% set _user_role = session.get('user_role') if session is defined else None %}
+      <div class="ms-auto mt-2 mt-lg-0">
+      {% if _user_id %}
+        <div class="dropdown">
+          <button class="btn btn-outline-light btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+            {{ _user_email or _user_name or '사용자' }}
+            {% if _user_role == 'admin' %}
+              <span class="badge bg-danger ms-1">관리자</span>
+            {% endif %}
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item" href="/seller/me">👤 마이페이지</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li>
+              <form method="post" action="/auth/logout" class="px-2">
+                <button type="submit" class="btn btn-outline-secondary btn-sm w-100">🚪 로그아웃</button>
+              </form>
+            </li>
+          </ul>
+        </div>
+      {% else %}
+        <div class="d-flex gap-2">
+          <a href="/auth/login" class="btn btn-outline-light btn-sm">🔐 OAuth 로그인</a>
+          <a href="/auth/magic-link" class="btn btn-outline-secondary btn-sm">📧 이메일 로그인</a>
+          {% if diagnostic_reveal_enabled %}
+            <a href="/auth/diagnostic-token/issue?reveal_safe=1&format=html" class="btn btn-warning btn-sm">🆘 비상 진입 (운영자)</a>
+          {% endif %}
+          <a href="/auth/signup" class="btn btn-primary btn-sm">가입</a>
+        </div>
+      {% endif %}
+      </div>
+    </div>
+  </div>
+</nav>

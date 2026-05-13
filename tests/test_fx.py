@@ -11,6 +11,12 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 
+@pytest.fixture(autouse=True)
+def _fx_enable_network(monkeypatch):
+    """FX 테스트는 requests.get을 mock하므로 네트워크 차단 해제."""
+    monkeypatch.setenv('FX_DISABLE_NETWORK', '0')
+
+
 # ──────────────────────────────────────────────────────────
 # FXProvider
 # ──────────────────────────────────────────────────────────

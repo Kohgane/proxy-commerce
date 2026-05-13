@@ -41,7 +41,7 @@ class TestSafeCallMockHandling:
         assert result.get("is_mock") is True
 
     def test_exception_returns_empty_when_show_mock_off(self, monkeypatch):
-        """DASHBOARD_SHOW_MOCK=0 시 예외 발생 → empty 상태 반환."""
+        """예외 발생 시 항상 '준비 중' 상태 반환 (DASHBOARD_SHOW_MOCK 무관)."""
         monkeypatch.setenv("DASHBOARD_SHOW_MOCK", "0")
         import importlib
         import src.seller_console.widgets as widgets_mod
@@ -51,8 +51,8 @@ class TestSafeCallMockHandling:
             raise RuntimeError("connection error")
 
         result = widgets_mod._safe_call(_fail_fn)
-        assert result.get("is_mock") is False
-        assert result.get("status") == "empty"
+        assert result.get("is_mock") is True
+        assert result.get("status") == "준비 중"
 
     def test_exception_returns_mock_when_show_mock_on(self, monkeypatch):
         """DASHBOARD_SHOW_MOCK=1 시 예외 발생 → mock 반환."""
