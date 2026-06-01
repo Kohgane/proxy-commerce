@@ -114,6 +114,67 @@ def get_worksheet(name: str, headers: Optional[List[str]] = None) -> Optional[gs
         return None
 
 
+def _is_duplicate_header_error(exc: Exception) -> bool:
+    """중복/비정상 헤더로 인한 get_all_records 예외인지 판별한다."""
+    if not isinstance(exc, (ValueError, gspread.exceptions.GSpreadException)):
+        return False
+    message = str(exc).lower()
+    return "not unique" in message or "header" in message
+
+
+def _dedupe_headers(headers: List[Any]) -> List[str]:
+    """헤더 행을 비어 있음/중복 없음 상태로 정규화한다."""
+    normalized: List[str] = []
+    seen: Dict[str, int] = {}
+
+    for index, header in enumerate(headers, start=1):
+        base = str(header or "").strip() or f"col_{index}"
+        count = seen.get(base, 0) + 1
+        seen[base] = count
+        normalized.append(base if count == 1 else f"{base}_{count}")
+
+    return normalized
+
+
+def get_all_records_safe(
+    ws: gspread.Worksheet,
+    expected_headers: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
+    """중복 헤더가 있어도 안전하게 워크시트 레코드 목록을 반환한다.
+
+    기본적으로는 gspread의 ``get_all_records()``를 그대로 사용한다.
+    다만 헤더 중복/비정상으로 인한 예외가 발생하면 raw 값을 읽어 첫 행 헤더를
+    자동 보정한 뒤 각 행을 dict로 매핑해 반환한다.
+    """
+    try:
+        if expected_headers is None:
+            return ws.get_all_records()
+        return ws.get_all_records(expected_headers=expected_headers)
+    except Exception as exc:
+        if not _is_duplicate_header_error(exc):
+            raise
+
+        logger.warning(
+            "중복 헤더 감지로 안전 로더 폴백 사용: worksheet=%s",
+            getattr(ws, "title", "<unknown>"),
+        )
+
+        values = ws.get_all_values()
+        if not values:
+            return []
+
+        raw_headers = values[0]
+        if not any(str(header or "").strip() for header in raw_headers):
+            return []
+
+        headers = _dedupe_headers(raw_headers)
+        records: List[Dict[str, Any]] = []
+        for row in values[1:]:
+            padded = list(row) + [""] * max(0, len(headers) - len(row))
+            record = {header: padded[index] for index, header in enumerate(headers)}
+            records.append(record)
+        return records
+
 
 def diagnose_sheets_connection() -> Dict[str, Any]:
     """Google Sheets 연결을 단계별로 진단하고 상세 결과를 반환한다.

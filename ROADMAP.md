@@ -4,6 +4,7 @@
 
 | Phase | 내용 | PR | 완료일 |
 |---|---|---|---|
+| Phase 155 | Inventory Sync 복구 hotfix — gspread 중복 헤더 방어(get_all_records_safe 중앙 래퍼) + 핵심 카탈로그/주문 로드부 적용 | #PR | 2026-06-01 |
 | Phase 152 | CI hotfix(merge marker gate + python compile gate) + OAuth 브랜딩 일관성 + AI listing 캐시 삭제 UX + 판매가 계산기/경쟁사 스캔 통합 | #PR | 2026-05-12 |
 | Phase 1-13 | 기본 시스템 구축 (봇, API, 환율, 배송, 주문, 재고, 감사, 캐시, 알림 등) | #1-#28 | 2026-03 |
 | Phase 14 | 리뷰/프로모션/CRM | #29 | 2026-03-24 |
@@ -158,7 +159,6 @@
 
 | Phase | 내용 |
 |---|---|
-| Phase 152 | 실제 마켓 어댑터 등록 호출 + 리뷰 수집 + 감정 분석 |
 | (2026 Q4) | SaaS 공개 준비 (약관/결제/랜딩) |
 
 ## 🚧 진행 중 Phase
