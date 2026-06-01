@@ -119,7 +119,9 @@ def _is_duplicate_header_error(exc: Exception) -> bool:
     if not isinstance(exc, (ValueError, gspread.exceptions.GSpreadException)):
         return False
     message = str(exc).lower()
-    return "not unique" in message or "header" in message
+    if "not unique" in message:
+        return True
+    return any(token in message for token in ("header row", "duplicate header", "duplicated header"))
 
 
 def _dedupe_headers(headers: List[Any]) -> List[str]:
