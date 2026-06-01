@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import List, Optional
 from uuid import uuid4
 
 
@@ -63,6 +63,7 @@ class CostRecord:
     customs: Decimal = Decimal('0')
     fx_rate_at_purchase: Decimal = Decimal('1')
     currency: str = 'KRW'
+    date: str = field(default_factory=lambda: datetime.now(timezone.utc).date().isoformat())
 
 
 @dataclass

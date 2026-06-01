@@ -1,4 +1,4 @@
-"""src/version.py — Phase 버전 자동화 (Phase 155).
+"""src/version.py — Phase 버전 자동화 (Phase 156).
 
 CURRENT_PHASE: ROADMAP.md 최신 Phase 번호 (수동 상수 + 파싱 fallback)
 """
@@ -11,7 +11,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # 하드코딩 상수 — Phase PR마다 이 줄만 변경
-CURRENT_PHASE: int = 155
+CURRENT_PHASE: int = 156
 
 APP_VERSION: str = os.getenv("APP_VERSION", "1.0.0")
 

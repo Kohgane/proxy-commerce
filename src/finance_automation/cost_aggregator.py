@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Dict, List
 
@@ -37,6 +38,10 @@ class CostAggregator:
         customs = Decimal(str(data.get('customs', 0)))
         fx_rate = Decimal(str(data.get('fx_rate_at_purchase', 1)))
         currency = data.get('currency', 'KRW')
+        purchase_date = data.get('date') or data.get('purchase_date')
+        if not purchase_date:
+            purchase_date = datetime.now(timezone.utc).date().isoformat()
+        purchase_date = str(purchase_date)
 
         record = CostRecord(
             purchase_id=purchase_id,
@@ -46,6 +51,7 @@ class CostAggregator:
             customs=customs,
             fx_rate_at_purchase=fx_rate,
             currency=currency,
+            date=purchase_date,
         )
         self._records[purchase_id] = record
 
@@ -83,6 +89,7 @@ class CostAggregator:
         ]:
             if amount > Decimal('0'):
                 entries.append(LedgerEntry(
+                    date=record.date,
                     account=account,
                     debit=amount,
                     credit=Decimal('0'),
@@ -96,6 +103,7 @@ class CostAggregator:
 
         if total > Decimal('0'):
             entries.append(LedgerEntry(
+                date=record.date,
                 account=AccountCode.AP.value,
                 debit=Decimal('0'),
                 credit=total,
