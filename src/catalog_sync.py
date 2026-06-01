@@ -1,7 +1,7 @@
 import os
 import time
 from decimal import Decimal
-from .utils.sheets import open_sheet
+from .utils.sheets import open_sheet, get_all_records_safe
 from .translate import ko_to_en_if_needed, ja_to_ko, fr_to_ko
 from .image_uploader import ensure_images
 from .price import calc_price, _build_fx_rates
@@ -83,7 +83,7 @@ def row_to_product(row):
 
 def sync_once():
     ws = open_sheet(SHEET_ID, WORKSHEET)
-    rows = ws.get_all_records()
+    rows = get_all_records_safe(ws)
     active_rows = [r for r in rows if (str(r.get('status', '')).strip().lower() == 'active')]
     for row in active_rows:
         s_prod, w_prod = row_to_product(row)

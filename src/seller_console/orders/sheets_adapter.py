@@ -92,10 +92,10 @@ class OrderSheetsAdapter:
             return 0
 
         try:
-            from src.utils.sheets import get_or_create_worksheet, open_sheet_object
+            from src.utils.sheets import get_all_records_safe, get_or_create_worksheet, open_sheet_object
             sh = open_sheet_object(self.sheet_id)
             ws = get_or_create_worksheet(sh, "orders", headers=ORDERS_HEADERS)
-            all_rows = ws.get_all_records()
+            all_rows = get_all_records_safe(ws)
 
             # (order_id, marketplace) → 행 인덱스 매핑 (헤더가 1행이므로 +2)
             existing: Dict[tuple, int] = {}
@@ -127,10 +127,10 @@ class OrderSheetsAdapter:
 
         filters = filters or {}
         try:
-            from src.utils.sheets import get_or_create_worksheet, open_sheet_object
+            from src.utils.sheets import get_all_records_safe, get_or_create_worksheet, open_sheet_object
             sh = open_sheet_object(self.sheet_id)
             ws = get_or_create_worksheet(sh, "orders", headers=ORDERS_HEADERS)
-            rows = ws.get_all_records()
+            rows = get_all_records_safe(ws)
         except Exception as exc:
             logger.warning("query: Sheets 읽기 실패: %s", exc)
             return []
@@ -174,10 +174,10 @@ class OrderSheetsAdapter:
             return False
 
         try:
-            from src.utils.sheets import get_or_create_worksheet, open_sheet_object
+            from src.utils.sheets import get_all_records_safe, get_or_create_worksheet, open_sheet_object
             sh = open_sheet_object(self.sheet_id)
             ws = get_or_create_worksheet(sh, "orders", headers=ORDERS_HEADERS)
-            rows = ws.get_all_records()
+            rows = get_all_records_safe(ws)
 
             courier_col = ORDERS_HEADERS.index("courier") + 1   # 1-based
             tracking_col = ORDERS_HEADERS.index("tracking_no") + 1
@@ -212,10 +212,10 @@ class OrderSheetsAdapter:
             return {**fallback, "source": "mock"}
 
         try:
-            from src.utils.sheets import get_or_create_worksheet, open_sheet_object
+            from src.utils.sheets import get_all_records_safe, get_or_create_worksheet, open_sheet_object
             sh = open_sheet_object(self.sheet_id)
             ws = get_or_create_worksheet(sh, "orders", headers=ORDERS_HEADERS)
-            rows = ws.get_all_records()
+            rows = get_all_records_safe(ws)
         except Exception as exc:
             logger.warning("kpi_summary: Sheets 읽기 실패: %s", exc)
             return fallback
@@ -346,10 +346,10 @@ class OrderSheetsAdapter:
         if not self.sheet_id:
             return []
         try:
-            from src.utils.sheets import get_or_create_worksheet, open_sheet_object
+            from src.utils.sheets import get_all_records_safe, get_or_create_worksheet, open_sheet_object
             sh = open_sheet_object(self.sheet_id)
             ws = get_or_create_worksheet(sh, "orders", headers=ORDERS_HEADERS)
-            return ws.get_all_records()
+            return get_all_records_safe(ws)
         except Exception as exc:
             logger.warning("get_all_rows 실패: %s", exc)
             return []
@@ -363,10 +363,10 @@ class OrderSheetsAdapter:
             logger.warning("upsert_row: GOOGLE_SHEET_ID 미설정")
             return False
         try:
-            from src.utils.sheets import get_or_create_worksheet, open_sheet_object
+            from src.utils.sheets import get_all_records_safe, get_or_create_worksheet, open_sheet_object
             sh = open_sheet_object(self.sheet_id)
             ws = get_or_create_worksheet(sh, "orders", headers=ORDERS_HEADERS)
-            all_rows = ws.get_all_records()
+            all_rows = get_all_records_safe(ws)
 
             order_id = str(row.get("order_id", ""))
             row_idx = None

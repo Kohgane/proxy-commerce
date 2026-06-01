@@ -74,10 +74,10 @@ class MarketStatusSheetsAdapter:
             return self._mock_fallback(reason="GOOGLE_SHEET_ID 미설정")
 
         try:
-            from src.utils.sheets import get_or_create_worksheet, open_sheet_object
+            from src.utils.sheets import get_all_records_safe, get_or_create_worksheet, open_sheet_object
             sh = open_sheet_object(self.sheet_id)
             ws = get_or_create_worksheet(sh, "catalog", headers=CATALOG_HEADERS)
-            rows = ws.get_all_records()
+            rows = get_all_records_safe(ws)
         except Exception as exc:
             logger.warning("Sheets catalog 읽기 실패 (mock 폴백): %s", exc)
             return self._mock_fallback(reason=str(exc))
@@ -106,10 +106,10 @@ class MarketStatusSheetsAdapter:
             return False
 
         try:
-            from src.utils.sheets import get_or_create_worksheet, open_sheet_object
+            from src.utils.sheets import get_all_records_safe, get_or_create_worksheet, open_sheet_object
             sh = open_sheet_object(self.sheet_id)
             ws = get_or_create_worksheet(sh, "catalog", headers=CATALOG_HEADERS)
-            all_rows = ws.get_all_records()
+            all_rows = get_all_records_safe(ws)
 
             row_data = self._item_to_row(item)
             # product_id + marketplace 로 기존 행 탐색
