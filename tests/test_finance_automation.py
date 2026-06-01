@@ -5,8 +5,6 @@ import json
 import os
 import sys
 from decimal import Decimal
-from unittest.mock import MagicMock, patch
-
 import pytest
 from flask import Flask
 
@@ -190,6 +188,7 @@ class TestModels:
         assert cost.shipping == Decimal('0')
         assert cost.customs == Decimal('0')
         assert cost.fx_rate_at_purchase == Decimal('1')
+        assert cost.date
 
     def test_settlement_batch_creation(self):
         batch = SettlementBatch(
@@ -477,6 +476,31 @@ class TestCostAggregator:
         customs_entries = ledger.query('customs_duty')
         assert len(shipping_entries) >= 1
         assert len(customs_entries) >= 1
+
+    def test_record_purchase_uses_explicit_date_for_record_and_entries(self, cost_agg, ledger):
+        record = cost_agg.record_purchase({
+            'purchase_id': 'PUR-004-DATE',
+            'source': 'test',
+            'date': '2026-05-01',
+            'cogs': '10000',
+            'customs': '1000',
+        })
+        assert record.date == '2026-05-01'
+        cogs_entries = ledger.query('cogs', '2026-05-01', '2026-05-01')
+        customs_entries = ledger.query('customs_duty', '2026-05-01', '2026-05-01')
+        assert any(e.reference_id == 'PUR-004-DATE' and e.date == '2026-05-01' for e in cogs_entries)
+        assert any(e.reference_id == 'PUR-004-DATE' and e.date == '2026-05-01' for e in customs_entries)
+
+    def test_record_purchase_accepts_purchase_date_alias(self, cost_agg, ledger):
+        record = cost_agg.record_purchase({
+            'purchase_id': 'PUR-004-ALIAS',
+            'source': 'test',
+            'purchase_date': '2026-05-02',
+            'cogs': '10000',
+        })
+        assert record.date == '2026-05-02'
+        cogs_entries = ledger.query('cogs', '2026-05-02', '2026-05-02')
+        assert any(e.reference_id == 'PUR-004-ALIAS' and e.date == '2026-05-02' for e in cogs_entries)
 
     def test_get_costs_by_period(self, cost_agg, ledger):
         cost_agg.record_purchase({
@@ -863,6 +887,7 @@ class TestTaxReporter:
         cost_agg.record_purchase({
             'purchase_id': 'PUR-TAX-001',
             'source': 'test',
+            'date': '2026-05-01',
             'cogs': str(cogs),
             'customs': '50000',
         })
@@ -879,6 +904,29 @@ class TestTaxReporter:
     def test_generate_report_empty_period(self, tax_reporter):
         report = tax_reporter.generate_report('2099-01')
         assert report.vat_payable == Decimal('0')
+
+    def test_generate_report_includes_only_target_period_customs(self, tax_reporter, ledger, cost_agg):
+        e1 = LedgerEntry(date='2026-05-01', account='ar', debit=Decimal('1000000'), credit=Decimal('0'))
+        e2 = LedgerEntry(date='2026-05-01', account='revenue', debit=Decimal('0'), credit=Decimal('1000000'))
+        ledger.post([e1, e2])
+        cost_agg.record_purchase({
+            'purchase_id': 'PUR-TAX-005',
+            'source': 'test',
+            'date': '2026-05-01',
+            'cogs': '600000',
+            'customs': '50000',
+        })
+        cost_agg.record_purchase({
+            'purchase_id': 'PUR-TAX-006',
+            'source': 'test',
+            'date': '2026-06-01',
+            'cogs': '600000',
+            'customs': '70000',
+        })
+        may_report = tax_reporter.generate_report('2026-05')
+        jun_report = tax_reporter.generate_report('2026-06')
+        assert may_report.customs_paid == Decimal('50000')
+        assert jun_report.customs_paid == Decimal('70000')
 
     def test_export_json(self, tax_reporter, ledger, cost_agg):
         self._populate(ledger, cost_agg)
