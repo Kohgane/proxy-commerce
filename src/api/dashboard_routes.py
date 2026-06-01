@@ -44,9 +44,9 @@ def _check_enabled():
 def _load_orders() -> list:
     """Google Sheets에서 주문 목록을 로드한다."""
     try:
-        from ..utils.sheets import open_sheet
+        from ..utils.sheets import get_all_records_safe, open_sheet
         ws = open_sheet(_SHEET_ID, os.getenv("ORDERS_WORKSHEET", "orders"))
-        return ws.get_all_records()
+        return get_all_records_safe(ws)
     except Exception as exc:
         logger.warning("주문 데이터 로드 실패: %s", exc)
         return []
@@ -55,9 +55,9 @@ def _load_orders() -> list:
 def _load_catalog() -> list:
     """Google Sheets에서 카탈로그 목록을 로드한다."""
     try:
-        from ..utils.sheets import open_sheet
+        from ..utils.sheets import get_all_records_safe, open_sheet
         ws = open_sheet(_SHEET_ID, os.getenv("WORKSHEET", "catalog"))
-        return ws.get_all_records()
+        return get_all_records_safe(ws)
     except Exception as exc:
         logger.warning("카탈로그 데이터 로드 실패: %s", exc)
         return []

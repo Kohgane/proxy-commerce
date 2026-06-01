@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from .stock_checker import StockChecker
 from .stock_alerts import StockAlertManager
-from ..utils.sheets import open_sheet
+from ..utils.sheets import get_all_records_safe, open_sheet
 
 logger = logging.getLogger(__name__)
 
@@ -211,7 +211,7 @@ class InventorySync:
         """Google Sheets 카탈로그의 재고 정보 업데이트."""
         try:
             ws = open_sheet(self._sheet_id, self._worksheet)
-            rows = ws.get_all_records()
+            rows = get_all_records_safe(ws)
             for i, row in enumerate(rows):
                 if str(row.get('sku', '')).strip() == sku:
                     row_num = i + 2  # 헤더 포함 1-indexed
@@ -376,7 +376,7 @@ class InventorySync:
     def _get_active_rows(self, vendor_filter: str = None) -> list:
         """Google Sheets에서 active 상품 목록 조회."""
         ws = open_sheet(self._sheet_id, self._worksheet)
-        rows = ws.get_all_records()
+        rows = get_all_records_safe(ws)
         active = [
             r for r in rows
             if str(r.get('status', '')).strip().lower() == 'active'

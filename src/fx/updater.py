@@ -7,7 +7,7 @@ from decimal import Decimal
 from .provider import FXProvider
 from .cache import FXCache
 from .history import FXHistory
-from ..utils.sheets import open_sheet
+from ..utils.sheets import get_all_records_safe, open_sheet
 
 logger = logging.getLogger(__name__)
 
@@ -120,14 +120,14 @@ class FXUpdater:
 
         try:
             ws = open_sheet(sheet_id, worksheet)
-            rows = ws.get_all_records()
+            rows = get_all_records_safe(ws)
         except Exception as exc:
             logger.error("recalculate_prices: sheet load failed: %s", exc)
             return []
 
         active_rows = [r for r in rows if str(r.get('status', '')).strip().lower() == 'active']
         headers = ws.row_values(1) if not dry_run else []
-        all_rows = ws.get_all_records() if not dry_run else []
+        all_rows = get_all_records_safe(ws) if not dry_run else []
 
         results = []
         for row in active_rows:
