@@ -48,10 +48,12 @@ class TestSellerConsoleViews:
         assert data["service"] == "seller_console"
         assert data["phase"] >= 122
 
-    def test_root_redirects_to_dashboard(self, client):
-        """GET /seller/ → 302 (대시보드 리다이렉트)."""
+    def test_root_returns_dashboard_home(self, client):
+        """GET /seller/ → 200 (통합 대시보드 홈)."""
         resp = client.get("/seller/")
-        assert resp.status_code in (301, 302)
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert 'data-testid="seller-console-shell"' in html
 
     def test_dashboard_returns_200(self, client):
         """GET /seller/dashboard → 200."""
@@ -242,7 +244,7 @@ class TestWidgets:
 
     def test_safe_call_returns_not_ready_on_exception(self):
         """_safe_call — 예외 시 '준비 중' 반환."""
-        from src.seller_console.widgets import _safe_call, _NOT_READY
+        from src.seller_console.widgets import _safe_call
 
         def bad_func():
             raise RuntimeError("test error")
