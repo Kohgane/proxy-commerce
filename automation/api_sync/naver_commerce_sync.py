@@ -19,12 +19,12 @@ KOHGANE - 네이버 커머스 API 직접 연동
 import os
 import sys
 import time
-import hashlib
 import bcrypt
 import base64
 import requests
 from datetime import datetime
 from collections import defaultdict
+from urllib.parse import urlparse
 
 # ===== 인증 정보 =====
 NAVER_CLIENT_ID = os.environ.get('NAVER_COMMERCE_CLIENT_ID', '')
@@ -35,6 +35,33 @@ WC_SECRET = os.environ.get('WC_SECRET', '')
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
 TELEGRAM_CHAT = os.environ.get('TELEGRAM_CHAT_ID', '')
 DRY_RUN = os.environ.get('DRY_RUN', 'true').lower() == 'true'
+NAVER_PROXY = (
+    os.environ.get('NAVER_HTTPS_PROXY')
+    or os.environ.get('QUOTAGUARD_URL')
+    or os.environ.get('HTTPS_PROXY')
+    or os.environ.get('https_proxy')
+    or ''
+)
+
+
+def get_naver_proxies():
+    if not NAVER_PROXY:
+        return None
+    return {'https': NAVER_PROXY, 'http': NAVER_PROXY}
+
+
+def mask_proxy_host(proxy_url):
+    if not proxy_url:
+        return ''
+    parsed = urlparse(proxy_url)
+    if parsed.hostname and parsed.port:
+        return f"{parsed.hostname}:{parsed.port}"
+    if parsed.hostname:
+        return parsed.hostname
+    if parsed.netloc:
+        return parsed.netloc.split('@')[-1]
+    return proxy_url
+
 
 if not all([NAVER_CLIENT_ID, NAVER_CLIENT_SECRET]):
     print("❌ NAVER_COMMERCE 인증 정보 없음")
@@ -143,6 +170,45 @@ UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/
 # ============================================
 
 NAVER_API_BASE = 'https://api.commerce.naver.com'
+LAST_TOKEN_ERROR_CODE = ''
+LAST_TOKEN_ERROR_MESSAGE = ''
+
+
+def parse_naver_error(resp):
+    code = ''
+    message = ''
+    try:
+        payload = resp.json()
+        code = str(payload.get('code') or '')
+        message = str(payload.get('message') or '')
+        invalid_inputs = payload.get('invalidInputs')
+        if isinstance(invalid_inputs, list):
+            for item in invalid_inputs:
+                if isinstance(item, dict) and item.get('name') == 'client_secret_sign':
+                    code = code or 'client_secret_sign'
+                    message = message or str(item.get('message') or '')
+                    break
+    except Exception:
+        pass
+
+    body = (resp.text or '')[:500]
+    if not code and 'client_secret_sign' in body:
+        code = 'client_secret_sign'
+    return code, message, body
+
+
+def get_outbound_ip():
+    try:
+        resp = requests.get(
+            'https://api.ipify.org',
+            proxies=get_naver_proxies(),
+            timeout=5,
+        )
+        if resp.status_code == 200 and resp.text:
+            return resp.text.strip()
+    except Exception:
+        return None
+    return None
 
 
 def get_naver_token():
@@ -151,15 +217,15 @@ def get_naver_token():
     bcrypt 시그니처 생성
     """
     timestamp = str(int(time.time() * 1000))
-    
+
     # 시그니처: bcrypt(client_id + "_" + timestamp, client_secret)
     password = f"{NAVER_CLIENT_ID}_{timestamp}".encode('utf-8')
     secret = NAVER_CLIENT_SECRET.encode('utf-8')
     hashed = bcrypt.hashpw(password, secret)
     signature = base64.b64encode(hashed).decode('utf-8')
-    
+
     url = f"{NAVER_API_BASE}/external/v1/oauth2/token"
-    
+
     data = {
         'client_id': NAVER_CLIENT_ID,
         'timestamp': timestamp,
@@ -167,30 +233,58 @@ def get_naver_token():
         'grant_type': 'client_credentials',
         'type': 'SELF',  # 본인 스토어
     }
-    
-    try:
-        resp = requests.post(url, data=data, timeout=15)
-        if resp.status_code == 200:
-            token_data = resp.json()
-            return token_data.get('access_token')
-        else:
+
+    global LAST_TOKEN_ERROR_CODE, LAST_TOKEN_ERROR_MESSAGE
+    LAST_TOKEN_ERROR_CODE = ''
+    LAST_TOKEN_ERROR_MESSAGE = ''
+
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        try:
+            resp = requests.post(url, data=data, timeout=15, proxies=get_naver_proxies())
+            if resp.status_code == 200:
+                token_data = resp.json()
+                return token_data.get('access_token')
+
+            code, message, body = parse_naver_error(resp)
+            LAST_TOKEN_ERROR_CODE = code or str(resp.status_code)
+            LAST_TOKEN_ERROR_MESSAGE = message or body[:200]
+
             print(f"❌ 토큰 발급 실패: {resp.status_code}")
-            print(f"   응답: {resp.text[:300]}")
-    except Exception as e:
-        print(f"❌ 토큰 요청 에러: {e}")
-    
+            if code:
+                print(f"   에러 코드: {code}")
+            print(f"   응답: {body[:300]}")
+
+            if code == 'GW.IP_NOT_ALLOWED':
+                print("   안내: 허용되지 않은 IP. 프록시(NAVER_HTTPS_PROXY/QUOTAGUARD_URL) 설정 또는 네이버 API 호출 IP 등록 확인 필요")
+            elif 'client_secret_sign' in code or 'client_secret_sign' in body:
+                print("   안내: client_secret(시크릿) 값/형식 확인 필요")
+            elif resp.status_code == 429 or code in ('GW.RATE_LIMIT', 'GW.QUOTA_LIMIT'):
+                if attempt < max_attempts:
+                    # 짧은 지수 백오프(1s, 2s, 4s)로 토큰 발급 재시도
+                    wait_sec = 2 ** (attempt - 1)
+                    print(f"   안내: 호출 한도 초과 가능성. {wait_sec}초 후 재시도 ({attempt}/{max_attempts})")
+                    time.sleep(wait_sec)
+                    continue
+                print("   안내: 호출 한도 초과 가능성. 잠시 후 재시도 필요")
+        except Exception as e:
+            LAST_TOKEN_ERROR_CODE = 'REQUEST_ERROR'
+            LAST_TOKEN_ERROR_MESSAGE = str(e)
+            print(f"❌ 토큰 요청 에러: {e}")
+        break
+
     return None
 
 
 def get_naver_products(token, page=1, size=100):
     """스마트스토어 상품 목록 조회"""
     url = f"{NAVER_API_BASE}/external/v1/products/search"
-    
+
     headers = {
         'Authorization': f'Bearer {token}',
         'Content-Type': 'application/json',
     }
-    
+
     payload = {
         'searchKeywordType': 'CHANNEL_PRODUCT_NO',
         'productStatusTypes': ['SALE'],
@@ -198,32 +292,32 @@ def get_naver_products(token, page=1, size=100):
         'size': size,
         'orderType': 'NO',
     }
-    
+
     try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=30)
+        resp = requests.post(url, headers=headers, json=payload, timeout=30, proxies=get_naver_proxies())
         if resp.status_code == 200:
             return resp.json()
     except Exception as e:
         print(f"❌ 상품 조회 에러: {e}")
-    
+
     return None
 
 
 def get_naver_product_detail(token, channel_product_no):
     """상품 상세 조회"""
     url = f"{NAVER_API_BASE}/external/v2/products/channel-products/{channel_product_no}"
-    
+
     headers = {
         'Authorization': f'Bearer {token}',
     }
-    
+
     try:
-        resp = requests.get(url, headers=headers, timeout=30)
+        resp = requests.get(url, headers=headers, timeout=30, proxies=get_naver_proxies())
         if resp.status_code == 200:
             return resp.json()
     except Exception:
         pass
-    
+
     return None
 
 
@@ -310,11 +404,11 @@ def get_or_create_wc_category(name, parent_id=0, slug=None):
     cache_key = f"{name}__{parent_id}"
     if cache_key in category_cache:
         return category_cache[cache_key]
-    
+
     payload = {'name': name, 'parent': parent_id}
     if slug:
         payload['slug'] = slug
-    
+
     try:
         resp = session.post(
             f"{WC_URL}/wp-json/wc/v3/products/categories",
@@ -341,11 +435,11 @@ def get_margin(big, mid, name):
     brand = detect_brand(name)
     if brand:
         return BRAND_MARGIN[brand], brand
-    
+
     floor = MID_TO_FLOOR.get(mid) or BIG_FALLBACK.get(big)
     if floor:
         return DEPARTMENT_FLOORS[floor]['margin'], 'floor'
-    
+
     return 1.10, 'default'
 
 
@@ -380,20 +474,34 @@ def main():
     print("🔄 KOHGANE 네이버 커머스 API 직접 동기화")
     print(f"   {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print(f"   DRY_RUN: {DRY_RUN}")
+    if NAVER_PROXY:
+        print(f"🌐 네이버 호출 프록시 사용: {mask_proxy_host(NAVER_PROXY)}")
+    outbound_ip = get_outbound_ip()
+    if outbound_ip:
+        print(f"🌍 현재 outbound IP: {outbound_ip}")
     print("=" * 60)
-    
+
     # 1. 네이버 토큰
     print("\n🔑 네이버 토큰 발급...")
     token = get_naver_token()
     if not token:
         print("❌ 토큰 발급 실패")
+        if LAST_TOKEN_ERROR_CODE or outbound_ip:
+            fail_msg = (
+                "❌ 네이버 토큰 발급 실패\n"
+                f"code: {LAST_TOKEN_ERROR_CODE or 'unknown'}\n"
+                f"outbound_ip: {outbound_ip or 'unknown'}\n"
+            )
+            if LAST_TOKEN_ERROR_MESSAGE:
+                fail_msg += f"message: {LAST_TOKEN_ERROR_MESSAGE[:200]}"
+            telegram_send(fail_msg)
         sys.exit(1)
     print(f"  ✅ 토큰 획득 (길이: {len(token)})")
-    
+
     # 2. WC 캐시
     preload_wc_categories()
     preload_wc_skus()
-    
+
     # 3. 백화점 층 확인/생성
     floor_ids = {}
     for floor_name, info in DEPARTMENT_FLOORS.items():
@@ -401,41 +509,41 @@ def main():
             name=floor_name, parent_id=0, slug=info['slug']
         )
         floor_ids[floor_name] = cat_id
-    
+
     # 4. 네이버 상품 조회 (페이지네이션)
     print("\n📥 스마트스토어 상품 가져오는 중...")
-    
+
     naver_products = []
     page = 1
-    
+
     while True:
         result = get_naver_products(token, page=page, size=100)
         if not result:
             break
-        
+
         contents = result.get('contents', []) or result.get('items', [])
         if not contents:
             break
-        
+
         naver_products.extend(contents)
         print(f"  페이지 {page}: {len(contents)}개 (누적: {len(naver_products)})")
-        
+
         total_elements = result.get('totalElements', 0)
         if len(naver_products) >= total_elements:
             break
-        
+
         page += 1
         time.sleep(0.5)
-    
+
     print(f"\n📦 총 {len(naver_products)}개 가져옴")
-    
+
     # 5. 신규 상품만 필터링 + 동기화
     print("\n🚀 신규 상품 동기화...")
-    
+
     stats = defaultdict(int)
     brand_stats = defaultdict(int)
     new_items = []
-    
+
     for i, item in enumerate(naver_products, 1):
         # 네이버 응답에서 정보 추출
         channel_no = item.get('channelProductNo') or item.get('originProductNo', '')
@@ -447,30 +555,30 @@ def main():
         category_path = item.get('wholeCategoryName', '').split('>')
         mid = category_path[1].strip() if len(category_path) > 1 else ''
         image_url = item.get('representativeImage', {}).get('url', '') if isinstance(item.get('representativeImage'), dict) else ''
-        
+
         if not name or not seller_code:
             stats['skipped'] += 1
             continue
-        
+
         sku = f"KGN-{seller_code[:20]}"
-        
+
         # 이미 있으면 스킵
         if sku in sku_cache:
             stats['exists'] += 1
             continue
-        
+
         # 백화점 층
         floor = map_to_floor(big, mid)
         if not floor:
             stats['unmapped'] += 1
             continue
-        
+
         floor_id = floor_ids.get(floor)
-        
+
         # 마진
         margin, source = get_margin(big, mid, name)
         brand_stats[source] += 1
-        
+
         # 카테고리
         category_ids = []
         if floor_id:
@@ -479,9 +587,9 @@ def main():
             sub_id = get_or_create_wc_category(name=mid, parent_id=floor_id)
             if sub_id:
                 category_ids.append({'id': sub_id})
-        
+
         new_price = calc_price(sale_price, margin)
-        
+
         product_data = {
             'name': name,
             'sku': sku,
@@ -495,14 +603,14 @@ def main():
             'categories': category_ids,
             'status': 'publish',
         }
-        
+
         if image_url and image_url.startswith('http'):
             product_data['images'] = [{'src': image_url}]
-        
+
         new_items.append({
             'name': name, 'floor': floor, 'price': new_price, 'source': source,
         })
-        
+
         if not DRY_RUN:
             success, new_id = create_wc_product(product_data)
             if success:
@@ -513,29 +621,29 @@ def main():
             time.sleep(0.1)
         else:
             stats['would_create'] += 1
-    
+
     # 6. 결과
     print("\n" + "=" * 60)
     if DRY_RUN:
-        print(f"🔵 DRY RUN 미리보기")
+        print("🔵 DRY RUN 미리보기")
         print(f"   기존: {stats['exists']}개")
         print(f"   신규(예정): {stats['would_create']}개")
         print(f"   매핑실패: {stats['unmapped']}개")
     else:
-        print(f"✅ 완료")
+        print("✅ 완료")
         print(f"   기존: {stats['exists']}개")
         print(f"   신규: {stats['created']}개")
         print(f"   실패: {stats['failed']}개")
-    
-    print(f"\n[브랜드 마진 분포]")
+
+    print("\n[브랜드 마진 분포]")
     for src, c in brand_stats.items():
         print(f"   {src}: {c}개")
-    
+
     if new_items:
-        print(f"\n[신규 - 처음 10개]")
+        print("\n[신규 - 처음 10개]")
         for item in new_items[:10]:
             print(f"   {item['floor'][:25]:<25} | {item['name'][:50]} | ₩{item['price']} | {item['source']}")
-    
+
     # 텔레그램
     if not DRY_RUN and stats['created'] > 0:
         msg = (

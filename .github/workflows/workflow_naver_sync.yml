@@ -33,6 +33,8 @@ jobs:
         env:
           NAVER_COMMERCE_CLIENT_ID: ${{ secrets.NAVER_COMMERCE_CLIENT_ID }}
           NAVER_COMMERCE_CLIENT_SECRET: ${{ secrets.NAVER_COMMERCE_CLIENT_SECRET }}
+          NAVER_HTTPS_PROXY: ${{ secrets.NAVER_HTTPS_PROXY }}
+          QUOTAGUARD_URL: ${{ secrets.QUOTAGUARD_URL }}
           WC_URL: ${{ secrets.WC_URL }}
           WC_KEY: ${{ secrets.WC_KEY }}
           WC_SECRET: ${{ secrets.WC_SECRET }}
