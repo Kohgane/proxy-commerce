@@ -1,0 +1,140 @@
+{% extends "_base.html" %}
+{% block title %}키워드 트렌드{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+      <h1 class="h4 mb-1">키워드/검색어 트렌드</h1>
+      <p class="text-muted mb-0">실시간·일·주·월·년 기준 검색량/경쟁도/추세를 비교합니다.</p>
+    </div>
+    <a href="/seller/sourcing{% if query_text %}?keyword={{ query_text|urlencode }}{% endif %}" class="btn btn-primary btn-sm">AI 소싱 허브 열기</a>
+  </div>
+
+  <form class="card console-card mb-3" method="get" action="/seller/keywords">
+    <div class="card-body">
+      <label for="kwInput" class="form-label fw-semibold">키워드 검색</label>
+      <div class="input-group mb-2">
+        <input id="kwInput" name="q" class="form-control" value="{{ query_text }}" placeholder="예: 유니클로, 에코백">
+        <input type="hidden" name="period" value="{{ period }}">
+        <button class="btn btn-primary" type="submit">분석</button>
+      </div>
+      <div class="d-flex flex-wrap gap-2">
+        {% for key, label in period_options.items() %}
+        <a class="btn btn-sm {{ 'btn-primary' if key == period else 'btn-outline-secondary' }}"
+           href="/seller/keywords?period={{ key }}{% if query_text %}&q={{ query_text|urlencode }}{% endif %}">{{ label }}</a>
+        {% endfor %}
+      </div>
+    </div>
+  </form>
+
+  <div class="small text-muted mb-2">
+    Provider: <code>{{ provider }}</code>
+    {% if fallback_active %}· 데이터/키 미설정 시 mock 시계열 fallback 적용{% endif %}
+  </div>
+
+  <div class="card console-card mb-3">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th>키워드</th>
+              <th class="text-end">검색량({{ period_label }})</th>
+              <th class="text-end">경쟁도</th>
+              <th class="text-end">경쟁상품</th>
+              <th class="text-end">추정 CPC</th>
+              <th class="text-end">추세</th>
+              <th>미니 추세</th>
+              <th class="text-end">액션</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+            <tr>
+              <td class="fw-semibold">{{ row.keyword }}</td>
+              <td class="text-end">{{ "{:,}".format(row.search_volume) }}</td>
+              <td class="text-end">{{ "%.2f"|format(row.competition) }}</td>
+              <td class="text-end">{{ "{:,}".format(row.product_count) }}</td>
+              <td class="text-end">{{ "{:,}".format(row.avg_cpc_krw) }}원</td>
+              <td class="text-end">
+                <span class="console-trend console-trend-{{ 'up' if row.trend_pct > 0 else ('down' if row.trend_pct < 0 else 'neutral') }}">
+                  {{ "%+.1f"|format(row.trend_pct) }}%
+                </span>
+              </td>
+              <td>
+                <div class="kw-mini-bars" aria-hidden="true">
+                  {% set maxv = (row.series|max) if row.series else 1 %}
+                  {% for point in row.series %}
+                  <span style="height: {{ ((point / (maxv or 1)) * 100)|round(0)|int }}%"></span>
+                  {% endfor %}
+                </div>
+              </td>
+              <td class="text-end">
+                <a class="btn btn-sm btn-outline-primary" href="/seller/sourcing?keyword={{ row.keyword|urlencode }}">이 키워드로 소싱</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-12 col-lg-4">
+      <div class="card console-card h-100">
+        <div class="card-body">
+          <h2 class="h6 mb-3">급상승(라이저) 키워드</h2>
+          {% if risers %}
+          <ul class="list-group list-group-flush">
+            {% for row in risers %}
+            <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
+              <a href="/seller/keywords?q={{ row.keyword|urlencode }}&period={{ period }}" class="text-decoration-none">{{ row.keyword }}</a>
+              <span class="badge text-bg-light">{{ "%+.1f"|format(row.trend_pct) }}%</span>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <div class="console-empty-state p-3">표시할 데이터가 없습니다.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-lg-4">
+      <div class="card console-card h-100">
+        <div class="card-body">
+          <h2 class="h6 mb-3">연관/확장 키워드</h2>
+          {% if related_keywords %}
+          <div class="d-flex flex-wrap gap-2">
+            {% for kw in related_keywords %}
+            <a href="/seller/keywords?q={{ kw|urlencode }}&period={{ period }}" class="badge rounded-pill text-bg-light text-decoration-none">{{ kw }}</a>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="console-empty-state p-3">연관 키워드가 없습니다.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-lg-4">
+      <div class="card console-card h-100">
+        <div class="card-body">
+          <h2 class="h6 mb-3">롱테일 키워드 제안</h2>
+          {% if long_tail_keywords %}
+          <ul class="list-group list-group-flush">
+            {% for kw in long_tail_keywords %}
+            <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
+              <span>{{ kw }}</span>
+              <a href="/seller/sourcing?keyword={{ kw|urlencode }}" class="btn btn-sm btn-outline-secondary">소싱</a>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <div class="console-empty-state p-3">롱테일 추천이 없습니다.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

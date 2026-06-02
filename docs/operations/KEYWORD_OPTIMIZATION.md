@@ -5,6 +5,9 @@
 키워드별 검색량/경쟁도/CPC 추정 → 상품-키워드 매칭 점수 →
 입찰가 추천 (목표 CPA 기반) + 네거티브 키워드 자동 제안.
 
+> 운영 화면: `/seller/keywords` (Phase 160 트렌드 대시보드)\
+> 상세 UI/기간 토글 가이드는 `docs/operations/KEYWORD_TRENDS.md` 참고.
+
 ---
 
 ## 환경변수

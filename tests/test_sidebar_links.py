@@ -12,6 +12,8 @@ SIDEBAR_LINKS = [
     ("/seller/media/queue", "이미지"),
     ("/seller/ads/campaigns", "광고"),
     ("/seller/pricing/rules", "가격"),
+    ("/seller/keywords", "키워드 트렌드"),
+    ("/seller/sourcing", "AI 소싱 허브"),
     ("/seller/cs/inbox", "CS"),
     ("/seller/analytics", "BI"),
     # Phase 149

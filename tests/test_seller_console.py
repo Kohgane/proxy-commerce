@@ -70,6 +70,20 @@ class TestSellerConsoleViews:
         assert "실시간 환율" in html
         assert "Proxy Commerce" in html
 
+    def test_keywords_page_renders_period_toggle(self, client):
+        resp = client.get("/seller/keywords?period=year&q=%EB%82%98%EC%9D%B4%ED%82%A4")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "실시간·일·주·월·년" in html
+        assert "키워드/검색어 트렌드" in html
+
+    def test_sourcing_hub_page_renders_one_click_collect(self, client):
+        resp = client.get("/seller/sourcing")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "원클릭 범용 수집" in html
+        assert "My Sources" in html
+
     def test_collect_returns_200(self, client):
         """GET /seller/collect → 200."""
         resp = client.get("/seller/collect")

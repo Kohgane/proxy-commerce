@@ -35,6 +35,14 @@ class TestGetKeywordMetrics:
         assert "roas" in d
         assert "match_score" in d
 
+    def test_naver_provider_without_keys_falls_back_to_mock(self, monkeypatch):
+        from src.ads.keyword_optimizer import get_keyword_metrics
+        monkeypatch.setenv("KEYWORD_OPT_PROVIDER", "naver_searchad")
+        monkeypatch.delenv("NAVER_SEARCHAD_API_KEY", raising=False)
+        monkeypatch.delenv("NAVER_SEARCHAD_API_SECRET", raising=False)
+        result = get_keyword_metrics(["유니클로"])
+        assert result[0].monthly_search >= 1
+
 
 class TestMatchKeywordsToProduct:
     def test_returns_sorted_by_match_score(self):

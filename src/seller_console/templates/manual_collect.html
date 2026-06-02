@@ -341,6 +341,12 @@ function uploadProduct() {
 document.addEventListener('DOMContentLoaded', function() {
   const input = document.getElementById('productUrl');
   if (input) {
+    const params = new URLSearchParams(window.location.search || '');
+    const prefUrl = params.get('url');
+    if (prefUrl) {
+      input.value = prefUrl;
+      extractProduct();
+    }
     input.addEventListener('keydown', function(e) {
       if (e.key === 'Enter') {
         e.preventDefault();

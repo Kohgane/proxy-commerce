@@ -53,6 +53,11 @@ yoga wear brand | yoga | 2026-05-06T00:00:00Z
 4. **거부** → 상태 = "rejected"
    - 이후 동일 도메인 재발견 시 skip
 
+### Phase 160 추가 연계
+- `/seller/sourcing`의 **My Sources 저장** 및 **원클릭 수집 성공** 시,
+  신규 도메인은 Discovery 후보(`discovery_candidates`)로 자동 등록을 시도합니다.
+- 대형 플랫폼/기등록 도메인은 자동 제외됩니다.
+
 ---
 
 ## 수동 실행

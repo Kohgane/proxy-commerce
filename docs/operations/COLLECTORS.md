@@ -2,6 +2,9 @@
 
 URL 붙여넣기 → 도메인 감지 → 적절한 collector → 상품 메타데이터 추출.
 
+Phase 160부터 `/seller/sourcing` 상단의 **원클릭 범용 수집 박스**에서도
+동일한 dispatcher/collector 체인을 사용한다.
+
 ---
 
 ## 수집기 종류
@@ -28,6 +31,9 @@ shop.lululemon.com / lululemon.com → LululemonCollector
 
 미지원 도메인 (OG 폴백 + 경고):
 - `1688.com`, `taobao.com`, `tmall.com`
+
+또한 셀러가 자주 쓰는 도메인은 `/seller/sourcing`의 **My Sources**에 저장해
+빠르게 재수집할 수 있다(새 도메인은 Discovery 후보 자동 등록 훅 연계).
 
 ---
 
