@@ -180,9 +180,32 @@ def _get_trust_checker():
 
 def _build_dashboard_home_context(widgets: list[dict[str, Any]]) -> dict[str, Any]:
     """통합 대시보드 홈 렌더링에 필요한 안전한 컨텍스트를 구성한다."""
+    def _to_int(value: Any, default: int = 0) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _to_float(value: Any) -> float | None:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _trend(delta: Any) -> dict[str, str]:
+        amount = _to_float(delta)
+        if amount is None:
+            return {"label": "전일 대비 데이터 없음", "direction": "neutral", "icon": "bi-dash"}
+        if amount > 0:
+            return {"label": f"전일 대비 +{amount:g}", "direction": "up", "icon": "bi-arrow-up-right"}
+        if amount < 0:
+            return {"label": f"전일 대비 {amount:g}", "direction": "down", "icon": "bi-arrow-down-right"}
+        return {"label": "전일 대비 변동 없음", "direction": "neutral", "icon": "bi-arrow-left-right"}
+
     kpi_data = {}
     queue_data = {}
     market_data = {}
+    fx_data = {}
     orders_data = {}
     alerts_data = {}
     for widget in widgets or []:
@@ -194,52 +217,292 @@ def _build_dashboard_home_context(widgets: list[dict[str, Any]]) -> dict[str, An
             queue_data = data
         elif widget_type == "market_status":
             market_data = data
+        elif widget_type == "fx":
+            fx_data = data
         elif widget_type == "orders_kpi":
             orders_data = data
         elif widget_type == "alerts":
             alerts_data = data
 
     market_rows = market_data.get("markets") or []
-    low_stock = 0
+    market_by_key: dict[str, dict[str, Any]] = {}
     for row in market_rows:
         if not isinstance(row, dict):
             continue
+        key = str(row.get("market") or row.get("id") or row.get("code") or "").strip().lower()
+        if key:
+            market_by_key[key] = row
+
+    market_name_map = {
+        "coupang": "쿠팡",
+        "smartstore": "스마트스토어",
+        "woocommerce": "WooCommerce",
+        "selfmall": "자체몰",
+        "naver": "네이버",
+    }
+    preferred_market_keys = list(market_name_map.keys())
+    extra_market_keys = [k for k in market_by_key.keys() if k not in preferred_market_keys]
+    market_keys = preferred_market_keys + extra_market_keys
+
+    low_stock = 0
+    for row in market_by_key.values():
         try:
             low_stock += int(row.get("out_of_stock") or 0)
         except (TypeError, ValueError):
             continue
+
     recent_orders = orders_data.get("today_orders")
     if recent_orders is None:
         recent_orders = kpi_data.get("order_count", 0)
 
     summary_cards = [
-        {"icon": "bi-bag-plus", "label": "오늘 수집 건수", "value": kpi_data.get("new_products_collected", 0)},
-        {"icon": "bi-hourglass-split", "label": "등록 대기", "value": queue_data.get("pending", 0)},
-        {"icon": "bi-exclamation-triangle", "label": "재고 부족", "value": low_stock},
-        {"icon": "bi-cart-check", "label": "오늘 주문 수", "value": recent_orders if recent_orders is not None else "—"},
+        {
+            "icon": "bi-bag-plus",
+            "label": "오늘 수집 건수",
+            "value": kpi_data.get("new_products_collected", 0),
+            "trend": _trend(kpi_data.get("new_products_collected_delta")),
+            "accent": "primary",
+            "href": "/seller/collect-history",
+        },
+        {
+            "icon": "bi-hourglass-split",
+            "label": "등록 대기",
+            "value": queue_data.get("pending", 0),
+            "trend": _trend(queue_data.get("pending_delta")),
+            "accent": "warning",
+            "href": "/seller/catalog",
+        },
+        {
+            "icon": "bi-exclamation-triangle",
+            "label": "재고 부족",
+            "value": low_stock,
+            "trend": _trend(market_data.get("out_of_stock_delta")),
+            "accent": "danger",
+            "href": "/seller/catalog?stock=low",
+        },
+        {
+            "icon": "bi-cart-check",
+            "label": "오늘 주문 수",
+            "value": recent_orders if recent_orders is not None else "—",
+            "trend": _trend(orders_data.get("today_orders_delta")),
+            "accent": "success",
+            "href": "/seller/orders",
+        },
     ]
     quick_actions = [
         {"label": "상품 수집하기", "href": "/seller/collect", "icon": "bi-search"},
         {"label": "마진 계산", "href": "/seller/pricing", "icon": "bi-calculator"},
         {"label": "마켓 동기화", "href": "/seller/markets", "icon": "bi-arrow-repeat"},
     ]
+
+    market_connection_badges = []
+    connected_count = 0
+    for market_key in market_keys:
+        row = market_by_key.get(market_key) or {}
+        connected = bool(
+            row.get("connected")
+            or _to_int(row.get("total")) > 0
+            or _to_int(row.get("active")) > 0
+            or _to_int(row.get("total_registered")) > 0
+        )
+        if connected:
+            connected_count += 1
+        market_connection_badges.append(
+            {
+                "label": market_name_map.get(market_key) or str(row.get("label") or market_key.upper()),
+                "connected": connected,
+            }
+        )
+    disconnected_count = max(0, len(market_connection_badges) - connected_count)
+    connection_banner = {
+        "title": "마켓 연동 상태",
+        "description": (
+            f"{connected_count}개 연결됨 · {disconnected_count}개 미연결"
+            if market_connection_badges
+            else "연동 정보가 아직 없습니다."
+        ),
+        "tone": "success" if disconnected_count == 0 else "warning",
+        "cta_label": "연동 관리" if disconnected_count == 0 else "지금 연동하기",
+        "cta_href": "/seller/markets",
+        "badges": market_connection_badges,
+    }
+
+    market_grid_rows = []
+    for market_key in market_keys:
+        row = market_by_key.get(market_key) or {}
+        market_grid_rows.append(
+            {
+                "market": market_name_map.get(market_key) or str(row.get("label") or market_key.upper()),
+                "today_registered": _to_int(
+                    row.get("today_registered") or row.get("today_uploaded") or row.get("uploaded_today")
+                ),
+                "today_synced": _to_int(row.get("today_synced") or row.get("synced_today")),
+                "total_registered": _to_int(row.get("total_registered") or row.get("total") or row.get("active")),
+                "total_synced": _to_int(row.get("total_synced") or row.get("active")),
+                "stock_alerts": _to_int(row.get("out_of_stock")) + _to_int(row.get("error")),
+            }
+        )
+
+    def _fx_change_pct(code: str) -> float | None:
+        changes = fx_data.get("changes")
+        if isinstance(changes, dict):
+            value = _to_float(changes.get(code))
+            if value is not None:
+                return value
+        return _to_float(fx_data.get(f"{code}_change_pct"))
+
+    fx_meta = {
+        "updated_at": fx_data.get("updated_at"),
+        "source": fx_data.get("source") or "default",
+        "is_mock": bool(fx_data.get("is_mock", True)),
+    }
+    fx_cards = []
+    for code, label, icon in [
+        ("USD", "미국 달러", "bi-currency-dollar"),
+        ("JPY", "일본 엔", "bi-currency-yen"),
+        ("CNY", "중국 위안", "bi-currency-exchange"),
+        ("EUR", "유로", "bi-currency-euro"),
+    ]:
+        rate = _to_float(fx_data.get(code))
+        change = _fx_change_pct(code)
+        if change is None:
+            trend = {"direction": "neutral", "label": "전일 대비 데이터 없음"}
+        elif change > 0:
+            trend = {"direction": "up", "label": f"+{change:.2f}%"}
+        elif change < 0:
+            trend = {"direction": "down", "label": f"{change:.2f}%"}
+        else:
+            trend = {"direction": "neutral", "label": "0.00%"}
+        fx_cards.append(
+            {
+                "code": code,
+                "label": label,
+                "icon": icon,
+                "rate": rate,
+                "trend": trend,
+            }
+        )
+
     recent_activities = []
     for alert in (alerts_data.get("alerts") or [])[:5]:
         if not isinstance(alert, dict):
             continue
+        severity = (alert.get("severity") or "info").lower()
+        type_key = (alert.get("type") or "activity").lower()
+        icon_map = {
+            "price_change": "bi-graph-up-arrow",
+            "out_of_stock": "bi-box-seam",
+            "new_product": "bi-stars",
+            "activity": "bi-clock-history",
+        }
+        severity_label_map = {
+            "error": "긴급",
+            "warning": "주의",
+            "info": "안내",
+        }
         recent_activities.append(
             {
                 "title": alert.get("label") or "활동",
                 "detail": alert.get("product") or "최근 활동 데이터가 없습니다.",
-                "severity": alert.get("severity") or "info",
+                "severity": severity,
+                "severity_label": severity_label_map.get(severity, "안내"),
+                "icon": icon_map.get(type_key, "bi-clock-history"),
+                "timestamp": alert.get("timestamp") or "방금 전",
             }
         )
+
+    recent_products = []
+    for alert in (alerts_data.get("alerts") or [])[:5]:
+        if not isinstance(alert, dict):
+            continue
+        product_name = alert.get("product")
+        if not product_name:
+            continue
+        recent_products.append(
+            {
+                "title": product_name,
+                "status": alert.get("label") or "활동",
+                "href": "/seller/catalog",
+            }
+        )
+        if len(recent_products) >= 5:
+            break
+
+    if not recent_products and queue_data.get("pending"):
+        recent_products.append(
+            {
+                "title": f"등록 대기 상품 {queue_data.get('pending')}건",
+                "status": "등록 대기",
+                "href": "/seller/catalog",
+            }
+        )
+
+    try:
+        from src.version import get_version_string
+        dashboard_version = get_version_string()
+    except Exception:
+        dashboard_version = "서비스 버전 확인 불가"
 
     return {
         "summary_cards": summary_cards,
         "quick_actions": quick_actions,
+        "connection_banner": connection_banner,
+        "market_grid_rows": market_grid_rows,
+        "market_grid_is_placeholder": not any(
+            row.get("today_registered")
+            or row.get("today_synced")
+            or row.get("total_registered")
+            or row.get("total_synced")
+            for row in market_grid_rows
+        ),
+        "fx_cards": fx_cards,
+        "fx_meta": fx_meta,
+        "info_cards": [
+            {
+                "title": "시스템/연동 요약",
+                "icon": "bi-diagram-3",
+                "items": [
+                    f"연동된 마켓 {connected_count}개",
+                    f"등록 대기 {queue_data.get('pending', 0)}건",
+                    f"재고 경고 {low_stock}건",
+                ],
+                "link_label": "연동/현황 보기",
+                "link_href": "/seller/markets",
+            },
+            {
+                "title": "공지 / 릴리스 노트",
+                "icon": "bi-megaphone",
+                "items": [
+                    "대시보드 홈 레이아웃과 정보 밀도를 개선했습니다.",
+                    "환율/마켓 현황 위젯은 데이터 미연동 시 안전한 0값으로 표시됩니다.",
+                    "신규 기능 없이 시각 품질과 사용성을 중심으로 리파인했습니다.",
+                ],
+                "link_label": "로드맵 보기",
+                "link_href": "/admin/diagnostics",
+            },
+            {
+                "title": "도움말 / 가이드",
+                "icon": "bi-question-circle",
+                "items": [
+                    "상품 수집 → 등록: 수집기에서 시작하세요.",
+                    "마진 계산: 환율/수수료를 반영해 판매가를 산출합니다.",
+                    "마켓 동기화: 연동 후 상태 표를 확인하세요.",
+                ],
+                "link_label": "도움말 바로가기",
+                "link_href": "/seller/cs/messaging",
+            },
+        ],
         "recent_activities": recent_activities,
-        "recent_products": [],
+        "recent_products": recent_products,
+        "dashboard_footer": {
+            "service_name": "Proxy Commerce",
+            "version": dashboard_version,
+            "policy_links": [
+                {"label": "이용약관", "href": "/terms"},
+                {"label": "개인정보처리방침", "href": "/privacy"},
+                {"label": "도움말", "href": "/seller/cs/messaging"},
+            ],
+        },
     }
 
 

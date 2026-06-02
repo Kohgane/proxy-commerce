@@ -107,9 +107,116 @@
   padding: 1rem;
 }
 
+.console-section-eyebrow {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--console-muted);
+}
+
 .console-stat-value {
   font-size: 1.6rem;
   font-weight: 700;
+}
+
+.console-status-banner {
+  border-radius: 14px;
+  border: 1px solid var(--console-border);
+  background: var(--console-surface);
+  padding: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.console-status-banner-success {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.console-status-banner-warning {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.console-kpi-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.console-kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(17, 24, 39, 0.08);
+}
+
+.console-kpi-card:active {
+  transform: translateY(-1px);
+}
+
+.console-kpi-card .card-body {
+  border-left: 4px solid transparent;
+}
+
+.console-kpi-primary .card-body {
+  border-left-color: #5b3df5;
+}
+
+.console-kpi-warning .card-body {
+  border-left-color: #f59e0b;
+}
+
+.console-kpi-danger .card-body {
+  border-left-color: #ef4444;
+}
+
+.console-kpi-success .card-body {
+  border-left-color: #10b981;
+}
+
+.console-kpi-icon {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #4338ca;
+  background: #eef2ff;
+}
+
+.console-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+}
+
+.console-trend-up {
+  color: #047857;
+}
+
+.console-trend-down {
+  color: #b91c1c;
+}
+
+.console-trend-neutral {
+  color: var(--console-muted);
+}
+
+.console-min-panel {
+  min-height: 300px;
+}
+
+.console-activity-list .list-group-item {
+  border-color: #f1f5f9;
+}
+
+.console-dashboard-footer {
+  border-top: 1px solid var(--console-border);
+  padding-top: 1rem;
+  margin-top: 1rem;
 }
 
 .console-empty-state {
@@ -156,5 +263,9 @@ button:focus,
 
   .console-content {
     padding: 0.85rem;
+  }
+
+  .console-min-panel {
+    min-height: auto;
   }
 }

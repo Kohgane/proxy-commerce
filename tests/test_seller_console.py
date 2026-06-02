@@ -60,6 +60,16 @@ class TestSellerConsoleViews:
         resp = client.get("/seller/dashboard")
         assert resp.status_code == 200
 
+    def test_dashboard_home_renders_phase_159_sections(self, client):
+        """대시보드 홈에 신규 리파인 섹션이 표시되어야 한다."""
+        resp = client.get("/seller/dashboard")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "마켓 연동 상태" in html
+        assert "마켓별 등록/동기화 현황" in html
+        assert "실시간 환율" in html
+        assert "Proxy Commerce" in html
+
     def test_collect_returns_200(self, client):
         """GET /seller/collect → 200."""
         resp = client.get("/seller/collect")
@@ -270,6 +280,20 @@ class TestWidgets:
         data = widget["data"]
         assert "USD" in data
         assert "JPY" in data
+
+
+class TestDashboardHomeContext:
+    """대시보드 홈 컨텍스트 구성 테스트."""
+
+    def test_dashboard_context_has_refined_sections_with_empty_widgets(self):
+        from src.seller_console.views import _build_dashboard_home_context
+
+        context = _build_dashboard_home_context([])
+        assert context["summary_cards"]
+        assert context["connection_banner"]["title"] == "마켓 연동 상태"
+        assert len(context["market_grid_rows"]) >= 5
+        assert context["fx_cards"]
+        assert context["dashboard_footer"]["service_name"] == "Proxy Commerce"
 
 
 # ---------------------------------------------------------------------------
