@@ -2,23 +2,48 @@
 {% block title %}대시보드{% endblock %}
 
 {% block content %}
-<section class="mb-3">
-  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+<section class="mb-4">
+  <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
     <div>
       <h1 class="h4 mb-1">통합 셀러 대시보드</h1>
       <p class="text-muted mb-0">오늘 핵심 지표와 주요 작업을 한 번에 확인하세요.</p>
     </div>
   </div>
 
+  <div class="console-status-banner console-status-banner-{{ connection_banner.tone }} mb-3">
+    <div>
+      <div class="console-section-eyebrow">연동 상태</div>
+      <div class="h6 mb-1">{{ connection_banner.title }}</div>
+      <p class="mb-0 text-muted">{{ connection_banner.description }}</p>
+    </div>
+    <div class="d-flex flex-wrap align-items-center justify-content-end gap-2">
+      {% for badge in connection_banner.badges %}
+      <span class="badge rounded-pill {{ 'text-bg-success' if badge.connected else 'text-bg-secondary' }}">
+        {{ badge.label }} · {{ '연결됨' if badge.connected else '미연결' }}
+      </span>
+      {% endfor %}
+      <a href="{{ connection_banner.cta_href }}" class="btn btn-sm btn-primary">{{ connection_banner.cta_label }}</a>
+    </div>
+  </div>
+
   <div class="row g-3 mb-4">
     {% for card in summary_cards %}
-    <div class="col-6 col-lg-3">
-      <div class="card console-card h-100">
-        <div class="card-body">
-          <div class="text-muted small mb-1"><i class="bi {{ card.icon }} me-1"></i>{{ card.label }}</div>
-          <div class="console-stat-value">{{ card.value if card.value is not none else '—' }}</div>
-        </div>
-      </div>
+    <div class="col-12 col-md-6 col-xl-3">
+      <a href="{{ card.href }}" class="text-decoration-none text-reset">
+        <article class="card console-card console-kpi-card h-100 console-kpi-{{ card.accent }}">
+          <div class="card-body">
+            <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
+              <div class="text-muted small fw-semibold">{{ card.label }}</div>
+              <span class="console-kpi-icon"><i class="bi {{ card.icon }}"></i></span>
+            </div>
+            <div class="console-stat-value">{{ card.value if card.value is not none else '—' }}</div>
+            <div class="console-trend console-trend-{{ card.trend.direction }} mt-2">
+              <i class="bi {{ card.trend.icon }}"></i>
+              <span>{{ card.trend.label }}</span>
+            </div>
+          </div>
+        </article>
+      </a>
     </div>
     {% endfor %}
   </div>
@@ -37,24 +62,132 @@
   </div>
 </section>
 
-<section class="row g-3">
+<section class="mb-4">
+  <div class="row g-3">
+    {% for card in info_cards %}
+    <div class="col-12 col-lg-4">
+      <div class="card console-card h-100">
+        <div class="card-body">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <i class="bi {{ card.icon }} text-primary"></i>
+            <h2 class="h6 mb-0">{{ card.title }}</h2>
+          </div>
+          <ul class="ps-3 small text-muted mb-3">
+            {% for item in card["items"] %}
+            <li class="mb-1">{{ item }}</li>
+            {% endfor %}
+          </ul>
+          <a class="btn btn-sm btn-outline-secondary" href="{{ card.link_href }}">{{ card.link_label }}</a>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="mb-4">
+  <div class="card console-card">
+    <div class="card-body">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <h2 class="h6 mb-0">마켓별 등록/동기화 현황</h2>
+        {% if market_grid_is_placeholder %}
+        <span class="badge text-bg-light">연동 시 표시</span>
+        {% endif %}
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th scope="col">마켓</th>
+              <th scope="col" class="text-end">오늘 등록</th>
+              <th scope="col" class="text-end">오늘 동기화</th>
+              <th scope="col" class="text-end">전체 등록</th>
+              <th scope="col" class="text-end">전체 동기화</th>
+              <th scope="col" class="text-end">재고/오류</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in market_grid_rows %}
+            <tr>
+              <td class="fw-semibold">{{ row.market }}</td>
+              <td class="text-end">{{ row.today_registered }}</td>
+              <td class="text-end">{{ row.today_synced }}</td>
+              <td class="text-end">{{ row.total_registered }}</td>
+              <td class="text-end">{{ row.total_synced }}</td>
+              <td class="text-end">{{ row.stock_alerts }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if market_grid_is_placeholder %}
+      <p class="small text-muted mb-0 mt-3">마켓 연동 후 오늘/전체 수치가 자동으로 집계됩니다.</p>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="mb-4">
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <h2 class="h6 mb-0">실시간 환율</h2>
+    <div class="small text-muted">
+      {{ fx_meta.source }} · {{ fx_meta.updated_at or '업데이트 정보 없음' }}
+    </div>
+  </div>
+  <div class="row g-3">
+    {% for card in fx_cards %}
+    <div class="col-12 col-md-6 col-xl-3">
+      <div class="card console-card h-100">
+        <div class="card-body">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="fw-semibold">{{ card.code }}</div>
+            <i class="bi {{ card.icon }} text-muted"></i>
+          </div>
+          <div class="small text-muted mb-1">{{ card.label }}</div>
+          <div class="h5 mb-2">{{ '{:,.2f}'.format(card.rate) if card.rate is not none else '—' }} KRW</div>
+          <div class="console-trend console-trend-{{ card.trend.direction }}">
+            <i class="bi {{ 'bi-arrow-up-right' if card.trend.direction == 'up' else ('bi-arrow-down-right' if card.trend.direction == 'down' else 'bi-arrow-left-right') }}"></i>
+            <span>{{ card.trend.label }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% if fx_meta.is_mock %}
+  <p class="small text-muted mt-2 mb-0">실시간 데이터 연결 전에는 기본 환율 값을 표시합니다.</p>
+  {% endif %}
+</section>
+
+<section class="row g-3 mb-4">
   <div class="col-12 col-lg-6">
-    <div class="card console-card h-100">
+    <div class="card console-card h-100 console-min-panel">
       <div class="card-body">
         <h2 class="h6 mb-3">최근 활동</h2>
         {% if recent_activities %}
-          <ul class="list-group list-group-flush">
+          <ul class="list-group list-group-flush console-activity-list">
             {% for item in recent_activities %}
             <li class="list-group-item px-0">
-              <div class="fw-semibold">{{ item.title }}</div>
-              <div class="small text-muted">{{ item.detail }}</div>
+              <div class="d-flex justify-content-between align-items-start gap-2">
+                <div>
+                  <div class="fw-semibold d-flex align-items-center gap-2">
+                    <i class="bi {{ item.icon }}"></i>
+                    <span>{{ item.title }}</span>
+                  </div>
+                  <div class="small text-muted">{{ item.detail }}</div>
+                </div>
+                <span class="badge rounded-pill text-bg-light">{{ item.severity_label }}</span>
+              </div>
+              <div class="small text-muted mt-1">{{ item.timestamp }}</div>
             </li>
             {% endfor %}
           </ul>
         {% else %}
           <div class="console-empty-state">
-            <div class="fs-4 mb-2">🗒️</div>
-            <div>최근 활동이 없습니다.</div>
+            <div class="fs-4 mb-2"><i class="bi bi-bell-slash"></i></div>
+            <div class="fw-semibold mb-1">최근 활동이 없습니다.</div>
+            <div class="small mb-2">알림이 생기면 유형별로 이 영역에 표시됩니다.</div>
+            <a href="/seller/notifications" class="btn btn-sm btn-outline-primary">알림 설정 보기</a>
           </div>
         {% endif %}
       </div>
@@ -62,22 +195,23 @@
   </div>
 
   <div class="col-12 col-lg-6">
-    <div class="card console-card h-100">
+    <div class="card console-card h-100 console-min-panel">
       <div class="card-body">
         <h2 class="h6 mb-3">최근 상품</h2>
         {% if recent_products %}
           <ul class="list-group list-group-flush">
             {% for item in recent_products %}
             <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
-              <span>{{ item.title }}</span>
+              <a href="{{ item.href or '/seller/catalog' }}" class="text-decoration-none">{{ item.title }}</a>
               <span class="badge text-bg-light">{{ item.status }}</span>
             </li>
             {% endfor %}
           </ul>
         {% else %}
           <div class="console-empty-state">
-            <div class="fs-4 mb-2">📦</div>
-            <div>표시할 상품이 없습니다. 먼저 상품을 수집해보세요.</div>
+            <div class="fs-4 mb-2"><i class="bi bi-box-seam"></i></div>
+            <div class="fw-semibold mb-1">표시할 최근 상품이 없습니다.</div>
+            <div class="small">먼저 상품을 수집하면 등록 대기/최근 상품이 여기에 나타납니다.</div>
             <a href="/seller/collect" class="btn btn-sm btn-primary mt-2">상품 수집하기</a>
           </div>
         {% endif %}
@@ -85,4 +219,19 @@
     </div>
   </div>
 </section>
+
+<footer class="console-dashboard-footer">
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+    <div class="small text-muted">
+      <strong>{{ dashboard_footer.service_name }}</strong>
+      <span class="mx-1">·</span>
+      <span>{{ dashboard_footer.version }}</span>
+    </div>
+    <div class="d-flex flex-wrap align-items-center gap-2 small">
+      {% for link in dashboard_footer.policy_links %}
+      <a href="{{ link.href }}" class="text-decoration-none text-muted">{{ link.label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+</footer>
 {% endblock %}
