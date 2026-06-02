@@ -4,6 +4,7 @@
 
 | Phase | 내용 | PR | 완료일 |
 |---|---|---|---|
+| Phase 157 | 퍼센티 스타일 통합 셀러 콘솔 UI/UX 리뉴얼 — 사이드바+상단바 셸, 통합 대시보드 홈, 수집→등록 플로우, 디자인 시스템 | #PR | 2026-06-02 |
 | Phase 156 | 사이트 본체 catalog_sync 중복 헤더 방어 — deploy.yml(Sync & Webhook) 실패 복구, get_all_records_safe 적용 + 누락 호출부 정리 | #PR | 2026-06-01 |
 | Phase 155.1 | finance_automation 시한폭탄 테스트 수정 — 매입일(purchase date) 원장 전파 + TaxReporter 기간 집계 결정성 확보 | #PR | 2026-06-01 |
 | Phase 155 | Inventory Sync 복구 hotfix — gspread 중복 헤더 방어(get_all_records_safe 중앙 래퍼) + 핵심 카탈로그/주문 로드부 적용 | #PR | 2026-06-01 |

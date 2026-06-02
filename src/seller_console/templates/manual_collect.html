@@ -1,183 +1,112 @@
 {% extends "_base.html" %}
-{% block title %}수동 수집기{% endblock %}
+{% block title %}수집기{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="mb-0 fw-bold">🔍 수동 수집기 (Phase 128)</h4>
-  <a href="/seller/api-status" class="btn btn-outline-secondary btn-sm">🔑 API 상태</a>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div>
+    <h1 class="h4 mb-1">상품 수집 → 등록</h1>
+    <p class="text-muted mb-0">URL 입력부터 마켓 업로드까지 한 화면에서 처리합니다.</p>
+  </div>
+  <a href="/seller/api/status" class="btn btn-outline-secondary btn-sm">API 상태</a>
 </div>
 
 {% if api_status %}
 {% set active_count = api_status | selectattr('status', 'equalto', 'active') | list | length %}
 {% if active_count == 0 %}
-<div class="alert alert-info mb-3 py-2">
-  <small>⚠️ API 키 미설정 — OG 메타 폴백 모드로 동작합니다.
-  <a href="/seller/api-status" class="alert-link">API 상태 확인 →</a></small>
-</div>
+<div class="alert alert-info" role="status">API 키가 미설정되어 일부 데이터는 비어 있을 수 있습니다.</div>
 {% endif %}
 {% endif %}
 
-<!-- URL 입력 -->
-<div class="card border-0 shadow-sm mb-4">
+<div class="d-flex flex-wrap gap-2 mb-3" aria-label="수집 등록 단계">
+  <span id="step-1" class="console-step active">1) URL 입력</span>
+  <span id="step-2" class="console-step">2) 미리보기</span>
+  <span id="step-3" class="console-step">3) 마켓 선택</span>
+  <span id="step-4" class="console-step">4) 업로드</span>
+</div>
+
+<div class="card console-step-card mb-3">
   <div class="card-body">
-    <label class="form-label fw-semibold">상품 URL 붙여넣기</label>
+    <label for="productUrl" class="form-label fw-semibold">상품 URL</label>
     <div class="input-group">
-      <input type="url" id="productUrl" class="form-control"
-             placeholder="https://www.amazon.com/... 또는 taobao, 1688, aloyoga, lululemon, rakuten 등"
-             autocomplete="off">
-      <button class="btn btn-primary" id="extractBtn" onclick="extractProduct()">
-        🔍 수집
-      </button>
+      <input type="url" id="productUrl" class="form-control console-focus" placeholder="https://..." autocomplete="off" required>
+      <button class="btn btn-primary" id="extractBtn" onclick="extractProduct()">미리보기</button>
     </div>
-    <div class="form-text mt-1">
-      지원 소싱처: Amazon US/JP (PA-API) · 라쿠텐 (WS API) · Alo Yoga · lululemon · 타오바오 · 1688 · 기타 (OG 메타)
-    </div>
+    <div class="form-text">Amazon/타오바오/1688 등 기존 수집기 엔드포인트를 그대로 사용합니다.</div>
+    <div id="urlError" class="text-danger small mt-2 d-none" role="alert"></div>
   </div>
 </div>
 
-<!-- 로딩 스피너 -->
-<div id="loadingSpinner" class="text-center py-4 d-none">
+<div id="loadingSpinner" class="text-center py-4 d-none" aria-live="polite">
   <div class="spinner-border text-primary" role="status"></div>
-  <div class="mt-2 text-muted">수집 중...</div>
+  <div class="mt-2 text-muted">상품 정보를 수집하고 있습니다...</div>
 </div>
 
-<!-- 오류 메시지 -->
 <div id="errorAlert" class="alert alert-danger d-none" role="alert"></div>
 
-<!-- 수집기 경고 배너 (소스 정보 포함) -->
-<div id="collectorWarnings" class="d-none mb-3">
-  <div id="warningsList"></div>
-</div>
-
-<!-- 타오바오 신뢰도 경고 배너 -->
-<div id="trustWarning" class="alert alert-warning d-none mb-3" role="alert">
-  <strong>⚠️ 셀러 신뢰도 주의</strong>
-  <div id="trustWarningDetail"></div>
-</div>
-
-<!-- 미리보기 카드 -->
 <div id="previewCard" class="d-none">
-  <div class="card border-0 shadow-sm mb-4">
+  <div class="card console-step-card mb-3">
     <div class="card-body">
-      <div class="row g-3">
-        <!-- 이미지 갤러리 (캐러셀 스타일) -->
-        <div class="col-md-4">
-          <div id="imageCarousel" class="position-relative">
-            <div id="imageGallery" class="d-flex flex-wrap gap-2">
-              <!-- 이미지 동적 삽입 -->
-            </div>
-          </div>
-        </div>
-
-        <!-- 상품 정보 -->
-        <div class="col-md-8">
-          <!-- 수집 소스 배지 -->
-          <div class="mb-2">
-            <span class="badge bg-secondary" id="sourceBadge"></span>
-            <span class="badge bg-info text-dark" id="asinBadge" style="display:none;"></span>
-          </div>
-
-          <div class="mb-3">
-            <label class="form-label fw-semibold">제목 (한국어)</label>
-            <input type="text" id="titleKo" class="form-control">
-          </div>
-          <div class="mb-3">
-            <label class="form-label text-muted small">원문 제목</label>
-            <input type="text" id="titleEn" class="form-control form-control-sm text-muted">
-          </div>
-          <div class="row g-2 mb-3">
-            <div class="col-4">
-              <label class="form-label fw-semibold">가격</label>
-              <div class="input-group">
-                <input type="number" id="priceOriginal" class="form-control" step="0.01">
-                <span class="input-group-text" id="currencyLabel">USD</span>
-              </div>
-            </div>
-            <div class="col-4">
-              <label class="form-label fw-semibold">브랜드</label>
-              <input type="text" id="brand" class="form-control">
-            </div>
-            <div class="col-4">
-              <label class="form-label fw-semibold">카테고리</label>
-              <input type="text" id="category" class="form-control">
-            </div>
-          </div>
-
-          <!-- 마진 슬라이더 -->
-          <div class="mb-3">
-            <label class="form-label fw-semibold">목표 마진율:
-              <span id="marginPctDisplay" class="text-primary">30</span>%
-            </label>
-            <input type="range" class="form-range" id="marginSlider"
-                   min="5" max="70" value="30" oninput="updateMarginDisplay(this.value)">
-          </div>
-
-          <!-- 옵션 테이블 -->
-          <div id="optionsSection" class="mb-3">
-            <label class="form-label fw-semibold">옵션</label>
-            <table class="table table-sm" id="optionsTable">
-              <thead><tr><th>옵션명</th><th>값</th></tr></thead>
-              <tbody id="optionsTableBody"></tbody>
-            </table>
-          </div>
-
-          <!-- 별점/리뷰 -->
-          <div class="d-flex gap-3 text-muted small">
-            <span id="ratingDisplay"></span>
-            <span id="reviewDisplay"></span>
-            <span id="mockBadge"></span>
-          </div>
-        </div>
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h2 class="h6 mb-0">추출된 상품</h2>
+        <span id="sourceBadge" class="badge text-bg-secondary"></span>
       </div>
 
-      <!-- 설명 -->
-      <div class="mt-3">
-        <label class="form-label fw-semibold">상품 설명</label>
-        <textarea id="description" class="form-control" rows="3"></textarea>
+      <div id="extractedCards" class="row g-2 mb-3"></div>
+
+      <div class="row g-2">
+        <div class="col-md-8">
+          <label class="form-label" for="titleKo">상품명</label>
+          <input type="text" id="titleKo" class="form-control console-focus">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label" for="priceOriginal">원가</label>
+          <div class="input-group">
+            <input type="number" id="priceOriginal" class="form-control console-focus" step="0.01" min="0">
+            <span id="currencyLabel" class="input-group-text">USD</span>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- Phase 128 액션 버튼 -->
-  <div class="card border-0 shadow-sm mb-4">
+  <div class="card console-step-card mb-3">
     <div class="card-body">
-      <h6 class="fw-semibold mb-3">💾 저장 / 등록</h6>
-      <div class="d-flex flex-wrap gap-2 mb-3">
-        <button class="btn btn-success" onclick="saveToSheets()">
-          📊 Sheets에 저장
-        </button>
-        <span id="saveStatus" class="align-self-center text-muted small"></span>
-      </div>
-      <hr class="my-3">
-      <h6 class="fw-semibold mb-3">📤 마켓 업로드 대상 선택</h6>
-      <div class="d-flex flex-wrap gap-3 mb-3">
-        <div class="form-check form-switch">
-          <input class="form-check-input" type="checkbox" id="chk_coupang" value="coupang">
-          <label class="form-check-label" for="chk_coupang">🛒 쿠팡</label>
+      <h2 class="h6 mb-3">등록할 마켓 선택</h2>
+      <div class="row g-2 mb-3">
+        <div class="col-6 col-md-3">
+          <label class="form-check border rounded p-2 w-100" for="chk_coupang">
+            <input class="form-check-input me-1" type="checkbox" id="chk_coupang" value="coupang"> 쿠팡
+          </label>
         </div>
-        <div class="form-check form-switch">
-          <input class="form-check-input" type="checkbox" id="chk_smartstore" value="smartstore">
-          <label class="form-check-label" for="chk_smartstore">🟢 스마트스토어</label>
+        <div class="col-6 col-md-3">
+          <label class="form-check border rounded p-2 w-100" for="chk_smartstore">
+            <input class="form-check-input me-1" type="checkbox" id="chk_smartstore" value="smartstore"> 스마트스토어
+          </label>
         </div>
-        <div class="form-check form-switch">
-          <input class="form-check-input" type="checkbox" id="chk_elevenst" value="elevenst">
-          <label class="form-check-label" for="chk_elevenst">1️⃣1️⃣ 11번가</label>
+        <div class="col-6 col-md-3">
+          <label class="form-check border rounded p-2 w-100" for="chk_elevenst">
+            <input class="form-check-input me-1" type="checkbox" id="chk_elevenst" value="elevenst"> 11번가
+          </label>
         </div>
-        <div class="form-check form-switch">
-          <input class="form-check-input" type="checkbox" id="chk_woocommerce" value="woocommerce">
-          <label class="form-check-label" for="chk_woocommerce">🌐 코가네멀티샵</label>
+        <div class="col-6 col-md-3">
+          <label class="form-check border rounded p-2 w-100" for="chk_woocommerce">
+            <input class="form-check-input me-1" type="checkbox" id="chk_woocommerce" value="woocommerce"> 코가네멀티샵
+          </label>
         </div>
       </div>
-      <button class="btn btn-primary" onclick="uploadProduct()">📤 선택 마켓에 업로드</button>
+
+      <div class="d-flex flex-wrap gap-2">
+        <button class="btn btn-outline-secondary" id="saveBtn" onclick="saveToSheets()">카탈로그 저장</button>
+        <button class="btn btn-primary" id="uploadBtn" onclick="uploadProduct()">선택 마켓 업로드</button>
+      </div>
     </div>
   </div>
 </div>
 
-<!-- 업로드 결과 토스트 -->
 <div class="toast-container position-fixed bottom-0 end-0 p-3">
   <div id="uploadToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
     <div class="toast-header">
-      <strong class="me-auto" id="toastTitle">결과</strong>
+      <strong class="me-auto" id="toastTitle">안내</strong>
       <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
     </div>
     <div class="toast-body" id="toastBody"></div>
@@ -187,230 +116,215 @@
 
 {% block extra_js %}
 <script>
-/* 현재 추출된 draft 저장 */
 let currentDraft = null;
+
+function setStep(step) {
+  [1,2,3,4].forEach((n) => {
+    const el = document.getElementById(`step-${n}`);
+    if (el) el.classList.toggle('active', n <= step);
+  });
+}
+
+function showToast(title, message, type='success') {
+  const toastEl = document.getElementById('uploadToast');
+  document.getElementById('toastTitle').textContent = title;
+  document.getElementById('toastBody').innerHTML = message;
+  toastEl.classList.remove('text-bg-danger', 'text-bg-success');
+  if (type === 'danger') toastEl.classList.add('text-bg-danger');
+  if (window.bootstrap) new bootstrap.Toast(toastEl, {delay: 3500}).show();
+}
+
+function validateUrlInput(url) {
+  const errEl = document.getElementById('urlError');
+  errEl.classList.add('d-none');
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('invalid protocol');
+    return true;
+  } catch (e) {
+    errEl.textContent = '유효한 http/https URL을 입력하세요.';
+    errEl.classList.remove('d-none');
+    return false;
+  }
+}
+
+function setLoading(flag) {
+  document.getElementById('loadingSpinner').classList.toggle('d-none', !flag);
+  document.getElementById('extractBtn').disabled = flag;
+  document.getElementById('extractBtn').textContent = flag ? '수집 중...' : '미리보기';
+}
 
 function extractProduct() {
   const url = document.getElementById('productUrl').value.trim();
-  if (!url) { alert('URL을 입력하세요.'); return; }
+  if (!url || !validateUrlInput(url)) return;
 
-  document.getElementById('loadingSpinner').classList.remove('d-none');
+  setLoading(true);
+  setStep(1);
   document.getElementById('previewCard').classList.add('d-none');
   document.getElementById('errorAlert').classList.add('d-none');
-  document.getElementById('trustWarning').classList.add('d-none');
-  document.getElementById('collectorWarnings').classList.add('d-none');
-  document.getElementById('extractBtn').disabled = true;
-  document.getElementById('saveStatus').textContent = '';
 
   fetch('/seller/collect/preview', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({url})
   })
-  .then(r => r.json())
-  .then(data => {
-    document.getElementById('loadingSpinner').classList.add('d-none');
-    document.getElementById('extractBtn').disabled = false;
-
-    if (!data.ok) {
-      const errEl = document.getElementById('errorAlert');
-      errEl.textContent = data.error || '오류가 발생했습니다.';
-      errEl.classList.remove('d-none');
-      return;
-    }
-
-    currentDraft = data.draft;
-    renderPreview(data.draft, data.source, data.warnings || []);
-
-    // 신뢰도 정보 표시
-    if (data.trust) {
-      renderTrustInfo(data.trust);
-    }
-  })
-  .catch(err => {
-    document.getElementById('loadingSpinner').classList.add('d-none');
-    document.getElementById('extractBtn').disabled = false;
-    document.getElementById('errorAlert').textContent = '네트워크 오류: ' + err;
-    document.getElementById('errorAlert').classList.remove('d-none');
-  });
+    .then((r) => r.json())
+    .then((data) => {
+      if (!data.ok) {
+        throw new Error(data.error || '미리보기 실패');
+      }
+      currentDraft = data.draft || {};
+      renderPreview(currentDraft, data.source || currentDraft.source || currentDraft.adapter_used || 'unknown');
+      setStep(2);
+      showToast('미리보기 완료', '상품 정보를 확인하고 마켓을 선택하세요.');
+    })
+    .catch((err) => {
+      const errorAlert = document.getElementById('errorAlert');
+      errorAlert.textContent = err.message || '요청 처리 중 오류가 발생했습니다.';
+      errorAlert.classList.remove('d-none');
+      showToast('오류', errorAlert.textContent, 'danger');
+    })
+    .finally(() => setLoading(false));
 }
 
-function renderPreview(draft, source, warnings) {
-  // Phase 128: 새 수집기 결과 형식 지원 (title 직접, 또는 title_ko)
+function renderPreview(draft, source) {
+  document.getElementById('sourceBadge').textContent = `소스: ${source}`;
   document.getElementById('titleKo').value = draft.title_ko || draft.title || '';
-  document.getElementById('titleEn').value = draft.title_en || draft.title || '';
   document.getElementById('priceOriginal').value = draft.price_original || draft.price || '';
   document.getElementById('currencyLabel').textContent = draft.currency || 'USD';
-  document.getElementById('brand').value = draft.brand || '';
-  document.getElementById('category').value = draft.category || '';
-  document.getElementById('description').value = draft.description || '';
 
-  // 수집 소스 배지
-  const sourceEl = document.getElementById('sourceBadge');
-  if (source || draft.source || draft.adapter_used) {
-    sourceEl.textContent = '소스: ' + (source || draft.source || draft.adapter_used);
-    sourceEl.style.display = '';
-  } else {
-    sourceEl.style.display = 'none';
-  }
+  const cards = document.getElementById('extractedCards');
+  cards.innerHTML = '';
+  const images = Array.isArray(draft.images) ? draft.images : [];
+  const primaryImage = images[0] || '';
 
-  // ASIN 배지
-  const asinEl = document.getElementById('asinBadge');
-  if (draft.asin) {
-    asinEl.textContent = 'ASIN: ' + draft.asin;
-    asinEl.style.display = '';
-  } else {
-    asinEl.style.display = 'none';
-  }
+  const col = document.createElement('div');
+  col.className = 'col-12 col-lg-8';
+  col.innerHTML = `
+    <div class="border rounded p-2 h-100 d-flex gap-2 align-items-start">
+      <img src="${primaryImage}" alt="상품 이미지" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;" onerror="this.style.display='none'">
+      <div class="min-w-0">
+        <div class="fw-semibold text-break">${(draft.title_ko || draft.title || '제목 없음')}</div>
+        <div class="text-muted small mt-1">${(draft.brand || '브랜드 미확인')} · ${(draft.category || '카테고리 미확인')}</div>
+        <div class="small mt-1">${draft.currency || 'USD'} ${(draft.price_original || draft.price || '—')}</div>
+      </div>
+    </div>
+  `;
+  cards.appendChild(col);
 
-  // 이미지 갤러리
-  const gallery = document.getElementById('imageGallery');
-  gallery.innerHTML = '';
-  (draft.images || []).slice(0, 8).forEach(imgUrl => {
-    const img = document.createElement('img');
-    img.src = imgUrl;
-    img.alt = '상품 이미지';
-    img.style.cssText = 'width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #ddd;cursor:pointer;';
-    img.onclick = function() {
-      document.querySelectorAll('#imageGallery img').forEach(i => i.style.borderColor = '#ddd');
-      this.style.borderColor = '#0d6efd';
-    };
-    img.onerror = function() { this.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="80" height="80"%3E%3Crect width="80" height="80" fill="%23eee"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%23aaa" font-size="12"%3E없음%3C/text%3E%3C/svg%3E'; };
-    gallery.appendChild(img);
-  });
-  if (!draft.images || !draft.images.length) {
-    gallery.innerHTML = '<div class="text-muted small p-3">이미지 없음</div>';
-  }
-
-  // 옵션 테이블
-  const tbody = document.getElementById('optionsTableBody');
-  tbody.innerHTML = '';
-  (draft.options || []).forEach(opt => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${opt.name}</td><td>${opt.values ? opt.values.join(', ') : ''}</td>`;
-    tbody.appendChild(tr);
-  });
-
-  // 별점/리뷰
-  document.getElementById('ratingDisplay').textContent = draft.rating ? `⭐ ${draft.rating}` : '';
-  document.getElementById('reviewDisplay').textContent = draft.review_count ? `리뷰 ${draft.review_count.toLocaleString()}개` : '';
-  document.getElementById('mockBadge').innerHTML = draft.is_mock ? '<span class="badge bg-warning text-dark">mock 데이터</span>' : '<span class="badge bg-success">실 데이터</span>';
-
-  // 경고 메시지
-  const warnContainer = document.getElementById('collectorWarnings');
-  const warnList = document.getElementById('warningsList');
-  if (warnings && warnings.length) {
-    warnList.innerHTML = warnings.map(w =>
-      `<div class="alert alert-warning py-2 mb-1"><small>⚠️ ${w}</small></div>`
-    ).join('');
-    warnContainer.classList.remove('d-none');
+  if (images.length > 1) {
+    const thumbs = document.createElement('div');
+    thumbs.className = 'col-12 col-lg-4';
+    thumbs.innerHTML = `<div class="d-flex flex-wrap gap-1">${images.slice(1, 5).map((src) =>
+      `<img src="${src}" alt="상품 썸네일" style="width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;" onerror="this.remove()">`
+    ).join('')}</div>`;
+    cards.appendChild(thumbs);
   }
 
   document.getElementById('previewCard').classList.remove('d-none');
 }
 
-function renderTrustInfo(trust) {
-  const warning = document.getElementById('trustWarning');
-  const detail = document.getElementById('trustWarningDetail');
-
-  const gradeColor = {A: 'success', B: 'info', C: 'warning', D: 'danger'}[trust.grade] || 'secondary';
-  let html = `<span class="badge bg-${gradeColor} me-2">${trust.grade}등급 (${trust.score}점)</span>`;
-
-  if (!trust.passed) {
-    warning.className = 'alert alert-danger mb-3';
-    html += '<strong>임계치 미달 항목:</strong><ul class="mb-0 mt-1">';
-    (trust.warnings || []).forEach(w => { html += `<li>${w}</li>`; });
-    html += '</ul>';
-    warning.classList.remove('d-none');
-  } else {
-    warning.className = 'alert alert-success mb-3';
-    html += '신뢰도 기준 통과';
-    warning.classList.remove('d-none');
-  }
-  detail.innerHTML = html;
+function selectedMarkets() {
+  return ['coupang', 'smartstore', 'elevenst', 'woocommerce'].filter((m) => {
+    const el = document.getElementById('chk_' + m);
+    return el && el.checked;
+  });
 }
 
-function updateMarginDisplay(val) {
-  document.getElementById('marginPctDisplay').textContent = val;
+function collectPayload() {
+  const payload = JSON.parse(JSON.stringify(currentDraft || {}));
+  payload.title_ko = document.getElementById('titleKo').value || payload.title_ko || payload.title || '';
+  payload.title = payload.title || payload.title_ko;
+  payload.price_original = document.getElementById('priceOriginal').value || payload.price_original || payload.price || '';
+  return payload;
 }
 
-/* Phase 128: Sheets에 저장 */
 function saveToSheets() {
-  if (!currentDraft) { alert('먼저 상품을 수집하세요.'); return; }
+  if (!currentDraft) {
+    showToast('안내', '먼저 URL 미리보기를 진행하세요.', 'danger');
+    return;
+  }
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true;
+  btn.textContent = '저장 중...';
 
-  const saveStatus = document.getElementById('saveStatus');
-  saveStatus.textContent = '저장 중...';
-
-  const payload = {
-    title: document.getElementById('titleKo').value || currentDraft.title || currentDraft.title_ko,
-    price: document.getElementById('priceOriginal').value || currentDraft.price || currentDraft.price_original,
-    currency: currentDraft.currency || 'USD',
-    sku: currentDraft.sku || currentDraft.asin,
-    asin: currentDraft.asin,
-    brand: document.getElementById('brand').value,
-    category: document.getElementById('category').value,
-    marketplace: 'collected',
-  };
-
+  const payload = collectPayload();
   fetch('/seller/collect/save', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(payload)
+    body: JSON.stringify({
+      title: payload.title_ko || payload.title,
+      price: payload.price_original || payload.price,
+      currency: payload.currency || 'USD',
+      sku: payload.sku || payload.asin,
+      asin: payload.asin,
+      brand: payload.brand,
+      category: payload.category,
+      marketplace: 'collected',
+    })
   })
-  .then(r => r.json())
-  .then(data => {
-    if (data.ok) {
-      saveStatus.textContent = '✅ Sheets에 저장됨';
-      saveStatus.style.color = 'green';
-    } else {
-      saveStatus.textContent = '❌ 저장 실패: ' + (data.error || '');
-      saveStatus.style.color = 'red';
-    }
-  })
-  .catch(err => {
-    saveStatus.textContent = '❌ 오류: ' + err;
-    saveStatus.style.color = 'red';
-  });
+    .then((r) => r.json())
+    .then((data) => {
+      if (!data.ok) throw new Error(data.error || '저장 실패');
+      showToast('저장 완료', '카탈로그 저장이 완료되었습니다.');
+    })
+    .catch((err) => showToast('저장 실패', err.message || '저장 중 오류가 발생했습니다.', 'danger'))
+    .finally(() => {
+      btn.disabled = false;
+      btn.textContent = '카탈로그 저장';
+    });
 }
 
 function uploadProduct() {
-  if (!currentDraft) { alert('먼저 상품을 수집하세요.'); return; }
+  if (!currentDraft) {
+    showToast('안내', '먼저 URL 미리보기를 진행하세요.', 'danger');
+    return;
+  }
+  const markets = selectedMarkets();
+  if (!markets.length) {
+    setStep(3);
+    showToast('안내', '업로드할 마켓을 선택하세요.', 'danger');
+    return;
+  }
 
-  const markets = [];
-  ['coupang', 'smartstore', 'elevenst', 'woocommerce'].forEach(m => {
-    if (document.getElementById('chk_' + m).checked) markets.push(m);
-  });
-  if (!markets.length) { alert('업로드할 마켓을 선택하세요.'); return; }
+  const btn = document.getElementById('uploadBtn');
+  btn.disabled = true;
+  btn.textContent = '업로드 중...';
+  setStep(4);
 
   fetch('/seller/collect/upload', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({product: currentDraft, markets})
+    body: JSON.stringify({product: collectPayload(), markets})
   })
-  .then(r => r.json())
-  .then(data => {
-    const toast = document.getElementById('uploadToast');
-    const body = document.getElementById('toastBody');
-    if (data.ok && data.result) {
-      const r = data.result;
-      body.innerHTML = `성공 ${r.succeeded || 0} / 큐적재 ${r.queued || 0} / 실패 ${r.failed || 0}<br>` +
-        (r.results || []).map(x => `${x.market_label || x.market}: ${x.message}`).join('<br>');
-    } else {
-      body.textContent = data.error || '업로드 오류';
-    }
-    new bootstrap.Toast(toast).show();
-  })
-  .catch(err => {
-    document.getElementById('toastBody').textContent = '업로드 오류: ' + err;
-    new bootstrap.Toast(document.getElementById('uploadToast')).show();
-  });
+    .then((r) => r.json())
+    .then((data) => {
+      if (!(data.ok && data.result)) {
+        throw new Error(data.error || '업로드 실패');
+      }
+      const result = data.result;
+      const detail = `성공 ${result.succeeded || 0} / 큐적재 ${result.queued || 0} / 실패 ${result.failed || 0}`;
+      showToast('업로드 완료', detail, 'success');
+    })
+    .catch((err) => {
+      showToast('업로드 실패', err.message || '업로드 중 오류가 발생했습니다.', 'danger');
+    })
+    .finally(() => {
+      btn.disabled = false;
+      btn.textContent = '선택 마켓 업로드';
+    });
 }
 
-// Enter 키로 수집 실행
 document.addEventListener('DOMContentLoaded', function() {
-  document.getElementById('productUrl').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') extractProduct();
-  });
+  const input = document.getElementById('productUrl');
+  if (input) {
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        extractProduct();
+      }
+    });
+  }
 });
 </script>
 {% endblock %}

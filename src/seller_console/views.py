@@ -1,7 +1,7 @@
 """src/seller_console/views.py — 셀러 콘솔 Flask Blueprint (Phase 127).
 
 라우트:
-  GET  /seller/              → 메인 대시보드 (리다이렉트)
+  GET  /seller/              → 메인 대시보드
   GET  /seller/dashboard     → 메인 대시보드
   GET  /seller/collect       → 수동 수집기 페이지
   POST /seller/collect/preview → URL → 메타데이터 추출 결과 (JSON)
@@ -178,20 +178,80 @@ def _get_trust_checker():
 # 라우트
 # ---------------------------------------------------------------------------
 
+def _build_dashboard_home_context(widgets: list[dict[str, Any]]) -> dict[str, Any]:
+    """통합 대시보드 홈 렌더링에 필요한 안전한 컨텍스트를 구성한다."""
+    kpi_data = {}
+    queue_data = {}
+    market_data = {}
+    orders_data = {}
+    alerts_data = {}
+    for widget in widgets or []:
+        widget_type = widget.get("type")
+        data = widget.get("data") or {}
+        if widget_type == "kpi":
+            kpi_data = data
+        elif widget_type == "queue":
+            queue_data = data
+        elif widget_type == "market_status":
+            market_data = data
+        elif widget_type == "orders_kpi":
+            orders_data = data
+        elif widget_type == "alerts":
+            alerts_data = data
+
+    market_rows = market_data.get("markets") or []
+    low_stock = sum(int(row.get("out_of_stock") or 0) for row in market_rows if isinstance(row, dict))
+    recent_orders = orders_data.get("today_orders")
+    if recent_orders is None:
+        recent_orders = kpi_data.get("order_count", 0)
+
+    summary_cards = [
+        {"icon": "bi-bag-plus", "label": "오늘 수집 건수", "value": kpi_data.get("new_products_collected", 0)},
+        {"icon": "bi-hourglass-split", "label": "등록 대기", "value": queue_data.get("pending", 0)},
+        {"icon": "bi-exclamation-triangle", "label": "재고 부족", "value": low_stock},
+        {"icon": "bi-cart-check", "label": "오늘 주문 수", "value": recent_orders if recent_orders is not None else "—"},
+    ]
+    quick_actions = [
+        {"label": "상품 수집하기", "href": "/seller/collect", "icon": "bi-search"},
+        {"label": "마진 계산", "href": "/seller/pricing", "icon": "bi-calculator"},
+        {"label": "마켓 동기화", "href": "/seller/markets", "icon": "bi-arrow-repeat"},
+    ]
+    recent_activities = []
+    for alert in (alerts_data.get("alerts") or [])[:5]:
+        if not isinstance(alert, dict):
+            continue
+        recent_activities.append(
+            {
+                "title": alert.get("label") or "활동",
+                "detail": alert.get("product") or "최근 활동 데이터가 없습니다.",
+                "severity": alert.get("severity") or "info",
+            }
+        )
+
+    return {
+        "summary_cards": summary_cards,
+        "quick_actions": quick_actions,
+        "recent_activities": recent_activities,
+        "recent_products": [],
+    }
+
+
+def _render_dashboard_home():
+    widgets = _get_widgets()
+    context = _build_dashboard_home_context(widgets)
+    return render_template("dashboard.html", widgets=widgets, page="dashboard", **context)
+
+
 @bp.get("/")
 def index():
-    """루트 → 대시보드 리다이렉트."""
-    return redirect(url_for("seller_console.dashboard"))
+    """통합 셀러 대시보드 홈."""
+    return _render_dashboard_home()
 
 
 @bp.get("/dashboard")
 def dashboard():
     """메인 셀러 대시보드."""
-    if not _check_auth():
-        return redirect(url_for("seller_console.index"))
-
-    widgets = _get_widgets()
-    return render_template("dashboard.html", widgets=widgets, page="dashboard")
+    return _render_dashboard_home()
 
 
 @bp.get("/analytics")
@@ -1358,7 +1418,6 @@ def cs_stats():
     ai_suggested = 0
     ai_used = 0
 
-    from datetime import datetime, timezone
     for row in rows:
         # 채널
         ch = row.channel or "unknown"
@@ -2265,7 +2324,6 @@ def pricing_history_rollback(history_id: str):
 @bp.get("/inventory/reorder")
 def inventory_reorder():
     """자동 리오더 권장 발주 목록 페이지 (Phase 142)."""
-    from src.auth.views import require_login
     if not session.get("user_id"):
         return redirect(url_for("auth.login", next=request.url))
 
@@ -2296,7 +2354,7 @@ def inventory_reorder():
             f"<td class='text-center fw-bold text-primary'>{item['recommended_qty']}</td>"
             f"<td class='text-end'>₩{est:,}</td>"
             f"<td><span class='badge bg-warning text-dark'>{item['status']}</span></td>"
-            f"</tr>"
+            "</tr>"
         )
 
     total_cost = sum(i.get("estimated_cost_krw", 0) for i in recommendations)
@@ -2312,11 +2370,11 @@ def inventory_reorder():
         f"  일일 예산: ₩{daily_budget:,}"
         f"</div>"
         + (
-            f"<div class='alert alert-warning'>자동 리오더가 비활성화되어 있습니다. <code>AUTO_REORDER_ENABLED=1</code>로 설정하세요.</div>"
+            "<div class='alert alert-warning'>자동 리오더가 비활성화되어 있습니다. <code>AUTO_REORDER_ENABLED=1</code>로 설정하세요.</div>"
             if not enabled else ""
         )
         + (
-            f"<div class='alert alert-info'>권장 발주 없음 — 재고가 안전 수준 이상입니다.</div>"
+            "<div class='alert alert-info'>권장 발주 없음 — 재고가 안전 수준 이상입니다.</div>"
             if not recommendations else
             f"<div class='mb-2'>총 <strong>{len(recommendations)}</strong>건, 예상 비용 <strong>₩{total_cost:,}</strong></div>"
             f"<div class='table-responsive'>"
@@ -2326,7 +2384,7 @@ def inventory_reorder():
             f"</table>"
             f"</div>"
         )
-        + f"<div class='mt-3'><a href='/admin/diagnostics' class='btn btn-outline-secondary btn-sm'>← 진단 대시보드</a></div>"
+        + "<div class='mt-3'><a href='/admin/diagnostics' class='btn btn-outline-secondary btn-sm'>← 진단 대시보드</a></div>"
     )
 
     return _render_seller_page("자동 리오더", body, page="inventory_reorder")
@@ -2387,8 +2445,8 @@ def marketing_campaigns():
                 f"<td class='text-center text-primary fw-bold'>{c['discount_pct']:.0f}%</td>"
                 f"<td class='text-end fw-bold'>₩{c['discounted_price_krw']:,}</td>"
                 f"<td class='text-center {margin_class}'>{c['margin_pct_after']:.1f}%</td>"
-                f"<td><span class='badge bg-{'warning text-dark' if c['status']=='recommended' else 'success'}'>{c['status']}</span></td>"
-                f"</tr>"
+                f"<td><span class='badge bg-{'warning text-dark' if c['status'] == 'recommended' else 'success'}'>{c['status']}</span></td>"
+                "</tr>"
             )
         return rows
 
@@ -2402,12 +2460,12 @@ def marketing_campaigns():
         f"  마진하한: {margin_floor}%"
         f"</div>"
         + (
-            f"<div class='alert alert-warning'>할인 캠페인이 비활성화되어 있습니다. <code>DISCOUNT_CAMPAIGN_ENABLED=1</code>로 설정하세요.</div>"
+            "<div class='alert alert-warning'>할인 캠페인이 비활성화되어 있습니다. <code>DISCOUNT_CAMPAIGN_ENABLED=1</code>로 설정하세요.</div>"
             if not enabled else ""
         )
         + f"<h5 class='mt-3'>추천 캠페인 ({len(recommendations)}건)</h5>"
         + (
-            f"<div class='alert alert-info'>추천 캠페인 없음 — 재고 과잉 SKU가 없습니다.</div>"
+            "<div class='alert alert-info'>추천 캠페인 없음 — 재고 과잉 SKU가 없습니다.</div>"
             if not recommendations else
             f"<div class='table-responsive'><table class='table table-hover table-sm'>"
             f"<thead><tr><th>SKU</th><th>상품명</th><th>마켓</th><th class='text-end'>원가</th><th>할인율</th><th class='text-end'>할인가</th><th>할인후마진</th><th>상태</th></tr></thead>"
@@ -2415,13 +2473,13 @@ def marketing_campaigns():
         )
         + f"<h5 class='mt-4'>활성 캠페인 ({len(active)}건)</h5>"
         + (
-            f"<div class='alert alert-info'>활성 캠페인 없음</div>"
+            "<div class='alert alert-info'>활성 캠페인 없음</div>"
             if not active else
             f"<div class='table-responsive'><table class='table table-hover table-sm'>"
             f"<thead><tr><th>SKU</th><th>상품명</th><th>마켓</th><th class='text-end'>원가</th><th>할인율</th><th class='text-end'>할인가</th><th>할인후마진</th><th>상태</th></tr></thead>"
             f"<tbody>{_campaign_rows(active)}</tbody></table></div>"
         )
-        + f"<div class='mt-3'><a href='/admin/diagnostics' class='btn btn-outline-secondary btn-sm'>← 진단 대시보드</a></div>"
+        + "<div class='mt-3'><a href='/admin/diagnostics' class='btn btn-outline-secondary btn-sm'>← 진단 대시보드</a></div>"
     )
 
     return _render_seller_page("할인 캠페인", body, page="marketing_campaigns")
@@ -2498,7 +2556,7 @@ def sourcing_watches():
                 f"  <button class='btn btn-sm btn-outline-primary me-1' onclick=\"runWatch('{w.watch_id}')\">▶ 실행</button>"
                 f"  <button class='btn btn-sm btn-outline-danger' onclick=\"deleteWatch('{w.watch_id}')\">🗑</button>"
                 f"</td>"
-                f"</tr>"
+                "</tr>"
             )
         return rows
 
@@ -2690,7 +2748,7 @@ def sourcing_candidates():
                     if c.status == "approved" else ""
                 )
                 + "</td>"
-                f"</tr>"
+                "</tr>"
             )
         return rows
 
@@ -2963,7 +3021,7 @@ def ads_campaigns():
     if guard is not None:
         return guard
 
-    from src.ads.auto_campaign import recommend_campaigns, ads_stats, _active_campaigns, _campaign_recs
+    from src.ads.auto_campaign import ads_stats, _active_campaigns, _campaign_recs
     from markupsafe import Markup
 
     stats = ads_stats()
@@ -2990,7 +3048,7 @@ def ads_campaigns():
                 f"<td>{r.estimated_roas:.2f}</td>"
                 f"<td>{r.daily_budget_krw:,}원</td>"
                 f"<td>{status_badge}</td>"
-                f"</tr>"
+                "</tr>"
             )
         return rows
 
@@ -3010,7 +3068,7 @@ def ads_campaigns():
                 f"<td>{c.get('channel', '')}</td>"
                 f"<td>{c.get('daily_budget_krw', 0):,}원</td>"
                 f"<td>{status_badge}</td>"
-                f"</tr>"
+                "</tr>"
             )
         return rows
 
@@ -3299,7 +3357,7 @@ def inventory_omni():
             f"<td>{cs['stock']}</td>"
             f"<td><span class='badge bg-{status_class}'>{cs['sync_status']}</span></td>"
             f"<td class='small text-muted'>{cs.get('error', '')}</td>"
-            f"</tr>"
+            "</tr>"
         )
 
     channels_html = ", ".join(summary["configured_channels"]) or "연동된 채널 없음"
@@ -3345,7 +3403,7 @@ def inventory_omni_sync():
     if not sku:
         return redirect(url_for("seller_console.inventory_omni"))
     syncer = OmniInventorySyncer()
-    result = syncer.manual_sync(sku)
+    syncer.manual_sync(sku)
     return redirect(url_for("seller_console.inventory_omni", sku=sku))
 
 
@@ -3619,7 +3677,7 @@ def seller_subscriptions():
     body = (
         "<h4 class='mb-4 fw-bold'>🔁 정기구독 상품 관리 <small class='text-muted fs-6'>Phase 148</small></h4>"
         + ("<div class='alert alert-warning'>⚠️ 구독 기능이 비활성화되어 있습니다 (SUBSCRIPTION_ENABLED=0).</div>" if not mgr.enabled else "")
-        + f"<div class='row g-3 mb-4'>"
+        + "<div class='row g-3 mb-4'>"
         + f"<div class='col-md-3'><div class='card text-center shadow-sm'><div class='card-body'><h6 class='text-muted'>활성 구독</h6><h3>{summary['active_count']}</h3></div></div></div>"
         + f"<div class='col-md-3'><div class='card text-center shadow-sm'><div class='card-body'><h6 class='text-muted'>이번주 결제</h6><h3>{summary['billed_this_week']}</h3></div></div></div>"
         + f"<div class='col-md-3'><div class='card text-center shadow-sm'><div class='card-body'><h6 class='text-muted'>결제 실패</h6><h3 class='text-danger'>{summary['failed_count']}</h3></div></div></div>"

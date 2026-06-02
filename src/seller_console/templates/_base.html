@@ -8,125 +8,135 @@
   <meta property="og:site_name" content="{{ _brand_name }}">
   <meta property="og:title" content="{{ _brand_name }}">
   <link rel="manifest" href="{{ url_for('seller_console.static', filename='manifest.json') }}">
-  <meta name="theme-color" content="#1a1a2e">
+  <meta name="theme-color" content="#5b3df5">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link rel="stylesheet" href="{{ url_for('seller_console.static', filename='seller.css') }}">
+  <link rel="stylesheet" href="{{ url_for('seller_console.static', filename='console.css') }}">
 </head>
-<body>
-<!-- 모바일 헤더 (햄버거 메뉴) -->
-<div class="mobile-topbar d-flex align-items-center justify-content-between px-3 py-2 d-md-none"
-     style="background:#1a1a2e;position:sticky;top:0;z-index:1030;">
-  <a href="/seller/" class="text-white text-decoration-none fw-bold">🛒 셀러 콘솔</a>
-  <button class="btn btn-sm btn-outline-light" id="sidebarToggle" aria-label="메뉴 열기"
-          style="min-width:44px;min-height:44px;"
-          onclick="document.getElementById('sidebarDrawer').classList.toggle('show')">☰</button>
+<body class="console-body">
+{% set _path = request.path if request is defined else '' %}
+{% set _user_id = session.get('user_id') if session is defined else None %}
+{% set _user_email = session.get('user_email') if session is defined else None %}
+{% set _user_name = session.get('user_name') if session is defined else None %}
+{% set _user_role = session.get('user_role') if session is defined else None %}
+
+<div class="mobile-topbar d-flex align-items-center justify-content-between px-3 py-2 d-md-none">
+  <a href="/seller/" class="text-decoration-none fw-bold">🛒 셀러 콘솔</a>
+  <button class="btn btn-sm btn-outline-secondary" id="sidebarToggle" aria-label="메뉴 열기" onclick="toggleSidebar()">☰</button>
 </div>
-<!-- 모바일 사이드바 오버레이 -->
-<div class="sidebar-overlay d-md-none" id="sidebarOverlay"
-     onclick="document.getElementById('sidebarDrawer').classList.remove('show');document.getElementById('sidebarOverlay').style.display='none';"
-     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1040;"></div>
-<div class="d-flex" style="min-height:100vh;">
-  <!-- 사이드바 (데스크톱: 항상 표시 / 모바일: drawer) -->
-  <nav class="sidebar d-flex flex-column p-3" id="sidebarDrawer"
-       style="width:220px;min-height:100vh;background:#1a1a2e;flex-shrink:0;">
-    <a href="/seller/" class="text-white text-decoration-none mb-4 d-block">
-      <span class="fs-5 fw-bold">🛒 셀러 콘솔</span><br>
-      <small class="text-secondary" style="font-size:0.7rem;">kohganepercentiii.com</small>
+<div class="sidebar-overlay d-md-none" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+<div class="console-shell" data-testid="seller-console-shell">
+  <nav class="sidebar console-sidebar d-flex flex-column p-3" id="sidebarDrawer" data-testid="seller-sidebar">
+    <a href="/seller/" class="console-brand text-decoration-none mb-3">
+      <div class="small text-light-emphasis">코가네 퍼센티</div>
+      <strong>🛒 셀러 콘솔 · {{ _brand_name }}</strong>
     </a>
+
     <ul class="nav flex-column gap-1 flex-grow-1">
-      {% if sidebar_grouped %}
-      <li class="text-secondary small mt-2 mb-1">운영</li>
-      {% endif %}
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'dashboard' %}text-white fw-semibold{% endif %}" href="/seller/dashboard">📊 대시보드</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'collect' %}text-white fw-semibold{% endif %}" href="/seller/manual-collect">🔍 수동 수집기</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'pricing' %}text-white fw-semibold{% endif %}" href="/seller/margin">💰 마진 계산기</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'market_status' %}text-white fw-semibold{% endif %}" href="/seller/markets">🏪 마켓 현황</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'orders' %}text-white fw-semibold{% endif %}" href="/seller/orders">🚚 주문 관리</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'orders_auto' %}text-white fw-semibold{% endif %}" href="/seller/orders/auto">📦 주문 자동 처리</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'inventory_reorder' %}text-white fw-semibold{% endif %}" href="/seller/inventory/reorder">📦 자동 리오더</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'notifications' %}text-white fw-semibold{% endif %}" href="/seller/notifications">🔔 알림 설정</a></li>
+      <li class="console-nav-group-title">대시보드</li>
+      <li><a class="console-nav-link {% if _path == '/seller/' or _path.startswith('/seller/dashboard') %}active{% endif %}" href="/seller/dashboard"><i class="bi bi-speedometer2"></i><span>대시보드(홈)</span></a></li>
 
-      {% if sidebar_grouped %}
-      <li class="text-secondary small mt-2 mb-1">카탈로그</li>
-      {% endif %}
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'catalog' %}text-white fw-semibold{% endif %}" href="/seller/catalog">📦 상품 카탈로그</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'ai_listing_create' %}text-white fw-semibold{% endif %}" href="/seller/listing/ai-create">🤖 AI 상품등록</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'sourcing_watches' %}text-white fw-semibold{% endif %}" href="/seller/sourcing/watches">🔎 소싱 watches</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'sourcing_candidates' %}text-white fw-semibold{% endif %}" href="/seller/sourcing/candidates">📥 후보 큐</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'listing_history' %}text-white fw-semibold{% endif %}" href="/seller/listing/history">📤 등록 이력</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'media_queue' %}text-white fw-semibold{% endif %}" href="/seller/media/queue">🖼️ 이미지 큐</a></li>
+      <li class="console-nav-group-title">상품</li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/collect') or _path.startswith('/seller/manual-collect') %}active{% endif %}" href="/seller/manual-collect"><i class="bi bi-search"></i><span>수집기</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/catalog') %}active{% endif %}" href="/seller/catalog"><i class="bi bi-box-seam"></i><span>카탈로그(상품관리)</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/listing/ai-create') %}active{% endif %}" href="/seller/listing/ai-create"><i class="bi bi-robot"></i><span>AI 상품등록</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/sourcing/watches') %}active{% endif %}" href="/seller/sourcing/watches"><i class="bi bi-binoculars"></i><span>소싱 watches</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/sourcing/candidates') %}active{% endif %}" href="/seller/sourcing/candidates"><i class="bi bi-inboxes"></i><span>후보 큐</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/listing/history') %}active{% endif %}" href="/seller/listing/history"><i class="bi bi-clock-history"></i><span>등록 이력</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/media/queue') %}active{% endif %}" href="/seller/media/queue"><i class="bi bi-image"></i><span>이미지 큐</span></a></li>
 
-      {% if sidebar_grouped %}
-      <li class="text-secondary small mt-2 mb-1">가격/경쟁</li>
-      {% endif %}
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'pricing_rules' %}text-white fw-semibold{% endif %}" href="/seller/pricing/rules">💵 가격 정책 룰</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'pricing_competitors' %}text-white fw-semibold{% endif %}" href="/seller/pricing/competitors">🕵️ 경쟁사</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'pricing_fx_impact' %}text-white fw-semibold{% endif %}" href="/seller/pricing/fx-impact">🔄 환율 영향</a></li>
+      <li class="console-nav-group-title">가격</li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/pricing') or _path.startswith('/seller/margin') %}active{% endif %}" href="/seller/margin"><i class="bi bi-calculator"></i><span>마진 계산기</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/pricing/rules') %}active{% endif %}" href="/seller/pricing/rules"><i class="bi bi-sliders"></i><span>가격 정책 룰</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/pricing/competitors') %}active{% endif %}" href="/seller/pricing/competitors"><i class="bi bi-people"></i><span>경쟁사</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/pricing/fx-impact') %}active{% endif %}" href="/seller/pricing/fx-impact"><i class="bi bi-currency-exchange"></i><span>환율 영향</span></a></li>
 
-      {% if sidebar_grouped %}
-      <li class="text-secondary small mt-2 mb-1">마케팅</li>
-      {% endif %}
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'marketing_campaigns' %}text-white fw-semibold{% endif %}" href="/seller/marketing/campaigns">🎟️ 할인 캠페인</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'ads_campaigns' %}text-white fw-semibold{% endif %}" href="/seller/ads/campaigns">📣 광고 캠페인</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'ads_keywords' %}text-white fw-semibold{% endif %}" href="/seller/ads/keywords">🎯 키워드 최적화</a></li>
+      <li class="console-nav-group-title">마켓</li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/markets') or _path.startswith('/seller/market-status') %}active{% endif %}" href="/seller/markets"><i class="bi bi-shop"></i><span>마켓 연동/현황</span></a></li>
 
-      {% if sidebar_grouped %}
-      <li class="text-secondary small mt-2 mb-1">분석</li>
-      {% endif %}
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'analytics' %}text-white fw-semibold{% endif %}" href="/seller/analytics">📈 BI 분석</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'collect_history' %}text-white fw-semibold{% endif %}" href="/seller/collect-history">📜 수집 이력</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'shipping_tracking' %}text-white fw-semibold{% endif %}" href="/seller/shipping/tracking">🚚 배송 모니터링</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'settlement' %}text-white fw-semibold{% endif %}" href="/seller/settlement">💰 정산 리포트</a></li>
+      <li class="console-nav-group-title">운영</li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/orders') %}active{% endif %}" href="/seller/orders"><i class="bi bi-receipt"></i><span>주문 관리</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/orders/auto') %}active{% endif %}" href="/seller/orders/auto"><i class="bi bi-box2-heart"></i><span>주문 자동 처리</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/notifications') %}active{% endif %}" href="/seller/notifications"><i class="bi bi-bell"></i><span>알림 설정</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/cs/messaging') %}active{% endif %}" href="/seller/cs/messaging"><i class="bi bi-chat-dots"></i><span>CS 메시징</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/cs/autoreply') %}active{% endif %}" href="/seller/cs/autoreply"><i class="bi bi-magic"></i><span>CS 자동응답</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/cs/inbox') %}active{% endif %}" href="/seller/cs/inbox"><i class="bi bi-inbox"></i><span>CS 통합 인박스</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/analytics') %}active{% endif %}" href="/seller/analytics"><i class="bi bi-graph-up-arrow"></i><span>BI 분석</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/ads/campaigns') %}active{% endif %}" href="/seller/ads/campaigns"><i class="bi bi-megaphone"></i><span>광고 캠페인</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/ads/keywords') %}active{% endif %}" href="/seller/ads/keywords"><i class="bi bi-bullseye"></i><span>키워드 최적화</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/marketing/campaigns') %}active{% endif %}" href="/seller/marketing/campaigns"><i class="bi bi-ticket-perforated"></i><span>할인 캠페인</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/inventory/reorder') %}active{% endif %}" href="/seller/inventory/reorder"><i class="bi bi-arrow-repeat"></i><span>자동 리오더</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/collect-history') %}active{% endif %}" href="/seller/collect-history"><i class="bi bi-journal-text"></i><span>수집 이력</span></a></li>
 
-      {% if sidebar_grouped %}
-      <li class="text-secondary small mt-2 mb-1">재고/옴니</li>
-      {% endif %}
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'inventory_omni' %}text-white fw-semibold{% endif %}" href="/seller/inventory/omni">🔄 옴니채널 재고</a></li>
-
-      {% if sidebar_grouped %}
-      <li class="text-secondary small mt-2 mb-1">CS</li>
-      {% endif %}
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'messaging' %}text-white fw-semibold{% endif %}" href="/seller/cs/messaging">💬 고객 메시징</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'cs_bot' %}text-white fw-semibold{% endif %}" href="/seller/cs/autoreply">🤖 CS 자동응답</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'cs_bot' %}text-white fw-semibold{% endif %}" href="/seller/cs/inbox">📥 통합 인박스</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'returns_inbox' %}text-white fw-semibold{% endif %}" href="/seller/returns/inbox">↩️ 반품/환불</a></li>
-
-      {% if sidebar_grouped %}
-      <li class="text-secondary small mt-2 mb-1">설정</li>
-      {% endif %}
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'api_status' %}text-white fw-semibold{% endif %}" href="/seller/api/status">🔑 API 상태</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'me' %}text-white fw-semibold{% endif %}" href="/seller/me">👤 마이페이지</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'push_notifications' %}text-white fw-semibold{% endif %}" href="/seller/me/notifications">🔔 푸시 알림 설정</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'me' %}text-white fw-semibold{% endif %}" href="/seller/api/tokens">🔐 API 토큰</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'bookmarklet' %}text-white fw-semibold{% endif %}" href="/seller/bookmarklet">📌 북마클릿</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'discovery' %}text-white fw-semibold{% endif %}" href="/seller/discovery">🔎 Discovery</a></li>
-
-      {% if sidebar_grouped %}
-      <li class="text-secondary small mt-2 mb-1">B2B/구독</li>
-      {% endif %}
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'wholesale_tiers' %}text-white fw-semibold{% endif %}" href="/seller/wholesale/tiers">🏢 도매 등급</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'wholesale_applications' %}text-white fw-semibold{% endif %}" href="/seller/wholesale/applications">📋 B2B 신청 큐</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'subscriptions' %}text-white fw-semibold{% endif %}" href="/seller/subscriptions">🔁 정기구독 관리</a></li>
-      <li class="nav-item"><a class="nav-link text-secondary {% if page == 'me_subscriptions' %}text-white fw-semibold{% endif %}" href="/seller/me/subscriptions">🔁 내 구독</a></li>
+      <li class="console-nav-group-title">설정</li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/api/status') or _path.startswith('/seller/api-status') %}active{% endif %}" href="/seller/api/status"><i class="bi bi-key"></i><span>API 상태</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/me') %}active{% endif %}" href="/seller/me"><i class="bi bi-gear"></i><span>설정·마이페이지</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/me/notifications') %}active{% endif %}" href="/seller/me/notifications"><i class="bi bi-broadcast"></i><span>푸시 알림 설정</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/api/tokens') or _path.startswith('/seller/me/tokens') %}active{% endif %}" href="/seller/api/tokens"><i class="bi bi-shield-lock"></i><span>API 토큰</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/bookmarklet') %}active{% endif %}" href="/seller/bookmarklet"><i class="bi bi-bookmark"></i><span>북마클릿</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/discovery') %}active{% endif %}" href="/seller/discovery"><i class="bi bi-compass"></i><span>Discovery</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/subscriptions') %}active{% endif %}" href="/seller/subscriptions"><i class="bi bi-arrow-repeat"></i><span>정기구독 관리</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/me/subscriptions') %}active{% endif %}" href="/seller/me/subscriptions"><i class="bi bi-person-check"></i><span>내 구독</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/wholesale/tiers') %}active{% endif %}" href="/seller/wholesale/tiers"><i class="bi bi-building"></i><span>도매 등급</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/wholesale/applications') %}active{% endif %}" href="/seller/wholesale/applications"><i class="bi bi-ui-checks"></i><span>B2B 신청 큐</span></a></li>
     </ul>
-    <div class="mt-auto pt-3 border-top border-secondary">
-      {% if session is defined and session.get('user_role') == 'admin' %}
-      <a class="nav-link text-secondary small" href="/admin/diagnostics">🛠️ 관리자 패널</a>
+
+    <div class="small text-secondary mt-3 pt-2 border-top">
+      {% if _user_role == 'admin' %}
+      <a class="d-block text-decoration-none mb-1" href="/admin/diagnostics">🛠️ 관리자 패널</a>
       {% endif %}
-      <a class="nav-link text-secondary small" href="/seller/health">🟢 헬스</a>
-      <div class="mt-2 px-2" style="font-size:0.72rem;">
-        <a href="/privacy" class="text-secondary text-decoration-none">개인정보처리방침</a>
-        <span class="text-secondary mx-1">|</span>
-        <a href="/terms" class="text-secondary text-decoration-none">이용약관</a>
-      </div>
+      <a href="/privacy" class="text-decoration-none text-secondary">개인정보처리방침</a>
+      <span class="mx-1">·</span>
+      <a href="/terms" class="text-decoration-none text-secondary">이용약관</a>
     </div>
   </nav>
 
-  <!-- 메인 콘텐츠 -->
-  <div class="flex-grow-1 d-flex flex-column" style="background:#f5f7fa;">
-    {% include "partials/topnav.html" %}
+  <div class="console-main">
+    <header class="console-topbar">
+      <div class="d-flex align-items-center gap-2">
+        <a href="/seller/" class="console-topbar-brand text-decoration-none"><strong>{{ _brand_name }}</strong></a>
+        {% if _user_role == 'seller' %}<span class="badge text-bg-primary">셀러</span>{% endif %}
+      </div>
 
-    <main class="flex-grow-1 p-4">
+      <div class="console-search-wrap">
+        <label for="consoleGlobalSearch" class="visually-hidden">전역 검색</label>
+        <div class="input-group input-group-sm">
+          <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+          <input id="consoleGlobalSearch" type="search" class="form-control" placeholder="전역 검색 (후속 PR)" aria-label="전역 검색">
+        </div>
+      </div>
+
+      <div>
+        {% if _user_id %}
+        <div class="dropdown">
+          <button class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+            {{ _user_email or _user_name or '사용자' }}
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item" href="/seller/me">👤 마이페이지</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li>
+              <form method="post" action="/auth/logout" class="px-2">
+                <button type="submit" class="btn btn-outline-secondary btn-sm w-100">🚪 로그아웃</button>
+              </form>
+            </li>
+          </ul>
+        </div>
+        {% else %}
+        <div class="d-flex flex-wrap justify-content-end gap-1">
+          <a href="/auth/login" class="btn btn-outline-secondary btn-sm">OAuth 로그인</a>
+          <a href="/auth/magic-link" class="btn btn-outline-secondary btn-sm">이메일 로그인</a>
+          {% if diagnostic_reveal_enabled %}
+          <a href="/auth/diagnostic-token/issue?reveal_safe=1&format=html" class="btn btn-warning btn-sm">🆘 비상 진입 (운영자)</a>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </header>
+
+    <main class="console-content">
       {% block content %}{% endblock %}
     </main>
   </div>
@@ -135,7 +145,21 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="{{ url_for('seller_console.static', filename='seller.js') }}"></script>
 <script>
-// Phase 147: PWA Service Worker 등록
+function toggleSidebar() {
+  var drawer = document.getElementById('sidebarDrawer');
+  var overlay = document.getElementById('sidebarOverlay');
+  if (!drawer) return;
+  drawer.classList.toggle('show');
+  if (overlay) overlay.style.display = drawer.classList.contains('show') ? 'block' : 'none';
+}
+
+function closeSidebar() {
+  var drawer = document.getElementById('sidebarDrawer');
+  var overlay = document.getElementById('sidebarOverlay');
+  if (drawer) drawer.classList.remove('show');
+  if (overlay) overlay.style.display = 'none';
+}
+
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
     navigator.serviceWorker.register('/seller/static/sw.js', { scope: '/seller/' })
@@ -143,11 +167,6 @@ if ('serviceWorker' in navigator) {
       .catch(function(err) { console.debug('[SW] 등록 실패', err); });
   });
 }
-// 모바일 사이드바 오버레이 처리
-document.getElementById('sidebarDrawer') && document.getElementById('sidebarDrawer').addEventListener('transitionend', function() {
-  var overlay = document.getElementById('sidebarOverlay');
-  if (overlay) overlay.style.display = this.classList.contains('show') ? 'block' : 'none';
-});
 </script>
 {% block extra_js %}{% endblock %}
 </body>
