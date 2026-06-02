@@ -200,24 +200,47 @@ function renderPreview(draft, source) {
 
   const col = document.createElement('div');
   col.className = 'col-12 col-lg-8';
-  col.innerHTML = `
-    <div class="border rounded p-2 h-100 d-flex gap-2 align-items-start">
-      <img src="${primaryImage}" alt="상품 이미지" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;" onerror="this.style.display='none'">
-      <div class="min-w-0">
-        <div class="fw-semibold text-break">${(draft.title_ko || draft.title || '제목 없음')}</div>
-        <div class="text-muted small mt-1">${(draft.brand || '브랜드 미확인')} · ${(draft.category || '카테고리 미확인')}</div>
-        <div class="small mt-1">${draft.currency || 'USD'} ${(draft.price_original || draft.price || '—')}</div>
-      </div>
-    </div>
-  `;
+  const cardWrap = document.createElement('div');
+  cardWrap.className = 'border rounded p-2 h-100 d-flex gap-2 align-items-start';
+  const img = document.createElement('img');
+  img.alt = '상품 이미지';
+  img.style.cssText = 'width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;';
+  img.onerror = function() { this.style.display = 'none'; };
+  if (primaryImage) img.setAttribute('src', primaryImage);
+  cardWrap.appendChild(img);
+
+  const textWrap = document.createElement('div');
+  textWrap.className = 'min-w-0';
+  const titleEl = document.createElement('div');
+  titleEl.className = 'fw-semibold text-break';
+  titleEl.textContent = draft.title_ko || draft.title || '제목 없음';
+  const metaEl = document.createElement('div');
+  metaEl.className = 'text-muted small mt-1';
+  metaEl.textContent = `${draft.brand || '브랜드 미확인'} · ${draft.category || '카테고리 미확인'}`;
+  const priceEl = document.createElement('div');
+  priceEl.className = 'small mt-1';
+  priceEl.textContent = `${draft.currency || 'USD'} ${draft.price_original || draft.price || '—'}`;
+  textWrap.appendChild(titleEl);
+  textWrap.appendChild(metaEl);
+  textWrap.appendChild(priceEl);
+  cardWrap.appendChild(textWrap);
+  col.appendChild(cardWrap);
   cards.appendChild(col);
 
   if (images.length > 1) {
     const thumbs = document.createElement('div');
     thumbs.className = 'col-12 col-lg-4';
-    thumbs.innerHTML = `<div class="d-flex flex-wrap gap-1">${images.slice(1, 5).map((src) =>
-      `<img src="${src}" alt="상품 썸네일" style="width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;" onerror="this.remove()">`
-    ).join('')}</div>`;
+    const thumbWrap = document.createElement('div');
+    thumbWrap.className = 'd-flex flex-wrap gap-1';
+    images.slice(1, 5).forEach((src) => {
+      const thumb = document.createElement('img');
+      thumb.alt = '상품 썸네일';
+      thumb.style.cssText = 'width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;';
+      thumb.onerror = function() { this.remove(); };
+      thumb.setAttribute('src', src);
+      thumbWrap.appendChild(thumb);
+    });
+    thumbs.appendChild(thumbWrap);
     cards.appendChild(thumbs);
   }
 

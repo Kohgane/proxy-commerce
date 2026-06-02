@@ -200,7 +200,14 @@ def _build_dashboard_home_context(widgets: list[dict[str, Any]]) -> dict[str, An
             alerts_data = data
 
     market_rows = market_data.get("markets") or []
-    low_stock = sum(int(row.get("out_of_stock") or 0) for row in market_rows if isinstance(row, dict))
+    low_stock = 0
+    for row in market_rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            low_stock += int(row.get("out_of_stock") or 0)
+        except (TypeError, ValueError):
+            continue
     recent_orders = orders_data.get("today_orders")
     if recent_orders is None:
         recent_orders = kpi_data.get("order_count", 0)
@@ -245,12 +252,16 @@ def _render_dashboard_home():
 @bp.get("/")
 def index():
     """통합 셀러 대시보드 홈."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
     return _render_dashboard_home()
 
 
 @bp.get("/dashboard")
 def dashboard():
     """메인 셀러 대시보드."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
     return _render_dashboard_home()
 
 
