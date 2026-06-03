@@ -104,13 +104,13 @@
                   </div>
                 </div>
                 <div class="d-flex gap-1 flex-shrink-0">
-                  <button type="button" class="btn btn-sm btn-outline-secondary registry-detail-btn" title="상세 보기" style="padding:1px 6px;">…</button>
-                  <button type="button" class="btn btn-sm btn-outline-primary registry-recollect-btn" data-domain="{{ source.domain }}" title="재수집" style="padding:1px 6px;">↺</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary registry-detail-btn" title="상세 보기" aria-label="상세 보기" style="padding:1px 6px;">…</button>
+                  <button type="button" class="btn btn-sm btn-outline-primary registry-recollect-btn" data-domain="{{ source.domain }}" title="재수집" aria-label="재수집" style="padding:1px 6px;">↺</button>
                   <form method="post" action="/seller/sourcing/my-sources" class="d-inline">
                     <input type="hidden" name="action" value="remove">
                     <input type="hidden" name="keyword" value="{{ keyword }}">
                     <input type="hidden" name="domain" value="{{ source.domain }}">
-                    <button class="btn btn-sm btn-outline-danger" type="submit" title="삭제" style="padding:1px 6px;">✕</button>
+                    <button class="btn btn-sm btn-outline-danger" type="submit" title="삭제" aria-label="삭제" style="padding:1px 6px;">✕</button>
                   </form>
                 </div>
               </div>
