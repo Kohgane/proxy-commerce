@@ -52,8 +52,8 @@ self.addEventListener('push', event => {
   const title = data.title || 'Proxy Commerce';
   const options = {
     body: data.body || '',
-    icon: data.icon || '/seller/static/icon-192.png',
-    badge: '/seller/static/icon-192.png',
+    icon: data.icon || undefined,
+    badge: undefined,
     data: { url: data.url || '/seller/dashboard' },
     requireInteraction: false,
   };
