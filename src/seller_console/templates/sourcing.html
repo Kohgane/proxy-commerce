@@ -1,0 +1,412 @@
+{% extends "_base.html" %}
+
+{% block title %}AI 소싱 허브{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 px-md-4 py-3">
+
+  {# ── 헤더 ── #}
+  <div class="d-flex align-items-center gap-2 mb-3">
+    <h4 class="mb-0 fw-bold">🤖 AI 소싱 허브</h4>
+    <span class="badge text-bg-primary">Phase 160</span>
+  </div>
+
+  {# ── 원클릭 범용 수집 박스 (전면 배치) ── #}
+  <div class="card shadow-sm mb-4 border-primary">
+    <div class="card-header bg-primary text-white py-2 d-flex align-items-center gap-2">
+      <i class="bi bi-lightning-charge-fill"></i>
+      <span class="fw-semibold">원클릭 범용 수집 — 내가 원하는 어떤 사이트든</span>
+    </div>
+    <div class="card-body">
+      <p class="text-muted small mb-3">
+        쿠팡·아마존만이 아닙니다. 좋아하는 브랜드몰, 소규모 쇼핑몰, 일본 직구 사이트…<br>
+        <strong>상품 URL만 붙여넣으면 바로 수집됩니다.</strong> 도메인을 자동으로 감지해 최적 수집기를 선택합니다.
+      </p>
+      <form id="collectForm" class="d-flex flex-wrap gap-2 align-items-end">
+        <div class="flex-grow-1" style="min-width:260px">
+          <label class="form-label small fw-semibold mb-1">상품 URL 붙여넣기</label>
+          <input type="url" class="form-control" id="collectUrl" name="url"
+                 placeholder="https://brand.com/product/..." required>
+        </div>
+        <div>
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-download me-1"></i>즉시 수집
+          </button>
+        </div>
+        <div>
+          <a href="/seller/manual-collect" class="btn btn-outline-secondary">
+            <i class="bi bi-search me-1"></i>고급 수집기
+          </a>
+        </div>
+      </form>
+      <div id="collectResult" class="mt-2" style="display:none"></div>
+
+      {# 확장/북마클릿 안내 #}
+      <div class="alert alert-info mt-3 mb-0 py-2 px-3 small">
+        <strong><i class="bi bi-puzzle me-1"></i>어느 쇼핑몰에서든 버튼 한 번으로 수집하세요:</strong>
+        <a href="/seller/bookmarklet" class="ms-2 text-info-emphasis fw-semibold">
+          북마클릿 설치 →
+        </a>
+        <span class="text-muted ms-2">|</span>
+        <a href="/seller/me/tokens" class="ms-2 text-info-emphasis fw-semibold">
+          API 토큰·크롬 확장 →
+        </a>
+      </div>
+    </div>
+  </div>
+
+  {# ── AI 소싱 추천 ── #}
+  <div class="card shadow-sm mb-4">
+    <div class="card-header py-2 d-flex align-items-center gap-2">
+      <i class="bi bi-stars text-warning"></i>
+      <span class="fw-semibold">AI 소싱 후보 추천</span>
+    </div>
+    <div class="card-body">
+      <form id="aiSourcingForm" class="d-flex flex-wrap gap-2 align-items-end mb-3">
+        <div class="flex-grow-1" style="min-width:220px">
+          <label class="form-label small fw-semibold mb-1">소싱 키워드</label>
+          <input type="text" class="form-control" id="aiKwInput" name="keyword"
+                 placeholder="예: 플리스 자켓, 아웃도어 가방"
+                 value="{{ keyword|default('', true) }}">
+        </div>
+        <div>
+          <button type="submit" class="btn btn-warning text-white">
+            <i class="bi bi-cpu me-1"></i>AI 추천 받기
+          </button>
+        </div>
+      </form>
+
+      <div id="aiRecommendResults">
+        {% if recommendations %}
+        <div class="table-responsive">
+          <table class="table table-hover table-sm align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>소싱 후보</th>
+                <th>출처</th>
+                <th>추천 사유</th>
+                <th class="text-end">예상 마진</th>
+                <th class="text-center">액션</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in recommendations %}
+              <tr>
+                <td class="fw-semibold">{{ r.name }}</td>
+                <td>
+                  <span class="badge
+                    {% if r.source == 'trend' %}bg-primary-subtle text-primary
+                    {% elif r.source == 'discovery' %}bg-success-subtle text-success
+                    {% else %}bg-secondary-subtle text-secondary
+                    {% endif %}">
+                    {{ r.source_label }}
+                  </span>
+                </td>
+                <td class="small text-muted">{{ r.reason }}</td>
+                <td class="text-end">
+                  {% if r.margin_hint %}
+                  <span class="fw-semibold text-success">{{ r.margin_hint }}</span>
+                  {% else %}
+                  <span class="text-muted">—</span>
+                  {% endif %}
+                </td>
+                <td class="text-center">
+                  <div class="d-flex gap-1 justify-content-center">
+                    {% if r.url %}
+                    <a href="/seller/sourcing/collect?url={{ r.url|urlencode }}"
+                       class="btn btn-outline-primary btn-sm"
+                       title="수집">
+                      <i class="bi bi-download"></i>
+                    </a>
+                    {% endif %}
+                    <a href="/seller/sourcing/candidates"
+                       class="btn btn-outline-success btn-sm"
+                       title="후보 큐에 추가">
+                      <i class="bi bi-inbox-fill"></i>
+                    </a>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% elif keyword %}
+        <div class="alert alert-warning mb-0">
+          <i class="bi bi-exclamation-triangle me-1"></i>
+          '<strong>{{ keyword }}</strong>'에 대한 소싱 후보를 찾지 못했습니다. 다른 키워드를 시도해보세요.
+        </div>
+        {% else %}
+        <div class="text-muted small text-center py-4">
+          <i class="bi bi-stars fs-2 d-block mb-2 opacity-50"></i>
+          키워드를 입력하면 AI가 소싱 후보를 추천합니다.<br>
+          트렌드 데이터, 신규 발견 쇼핑몰, 기존 후보 큐를 종합해 추천합니다.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-4">
+    {# ── My Sources 즐겨찾기 ── #}
+    <div class="col-12 col-lg-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-header py-2 d-flex align-items-center gap-2">
+          <i class="bi bi-star-fill text-warning"></i>
+          <span class="fw-semibold">My Sources — 즐겨찾기</span>
+          <button class="btn btn-outline-warning btn-sm ms-auto"
+                  data-bs-toggle="collapse" data-bs-target="#addSourceForm"
+                  aria-expanded="false">
+            <i class="bi bi-plus"></i> 추가
+          </button>
+        </div>
+        <div class="collapse px-3 pt-3" id="addSourceForm">
+          <form id="addSourceFormEl" class="d-flex flex-wrap gap-2 align-items-end mb-2">
+            <div class="flex-grow-1" style="min-width:160px">
+              <input type="text" class="form-control form-control-sm" name="domain"
+                     placeholder="brand.com 또는 URL" required>
+            </div>
+            <div style="min-width:120px">
+              <input type="text" class="form-control form-control-sm" name="label"
+                     placeholder="별칭(선택)">
+            </div>
+            <button type="submit" class="btn btn-warning btn-sm text-white">저장</button>
+          </form>
+          <div id="addSourceMsg" class="small mb-2" style="display:none"></div>
+        </div>
+        <div class="card-body p-0">
+          {% if my_sources %}
+          <ul class="list-group list-group-flush" id="mySourcesList">
+            {% for s in my_sources %}
+            <li class="list-group-item d-flex align-items-center py-2 px-3">
+              <i class="bi bi-globe text-muted me-2"></i>
+              <span class="flex-grow-1">
+                <span class="fw-semibold">{{ s.label|e }}</span>
+                <small class="text-muted d-block">{{ s.domain|e }}</small>
+              </span>
+              <a href="/seller/sourcing/collect?domain={{ s.domain|urlencode }}"
+                 class="btn btn-outline-primary btn-sm me-1" title="재수집">
+                <i class="bi bi-download"></i>
+              </a>
+              <button class="btn btn-outline-danger btn-sm"
+                      onclick="removeSource('{{ s.domain }}')" title="삭제">
+                <i class="bi bi-trash"></i>
+              </button>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <div class="text-muted small text-center py-4 px-3">
+            <i class="bi bi-star fs-2 d-block mb-2 opacity-50"></i>
+            자주 수집하는 사이트를 여기에 저장하세요.<br>
+            다음 번엔 버튼 한 번으로 재수집할 수 있습니다.
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# ── Discovery 신규 발견 ── #}
+    <div class="col-12 col-lg-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-header py-2 d-flex align-items-center gap-2">
+          <i class="bi bi-compass text-success"></i>
+          <span class="fw-semibold">Discovery — 신규 발견 쇼핑몰</span>
+          <a href="/seller/discovery" class="btn btn-outline-success btn-sm ms-auto">
+            모두 보기 →
+          </a>
+        </div>
+        <div class="card-body p-0">
+          {% if discovery_candidates %}
+          <ul class="list-group list-group-flush">
+            {% for c in discovery_candidates %}
+            <li class="list-group-item d-flex align-items-center py-2 px-3">
+              <i class="bi bi-globe2 text-muted me-2"></i>
+              <span class="flex-grow-1">
+                <span class="fw-semibold small">{{ c.domain }}</span>
+                {% if c.source_keyword %}
+                <small class="text-muted d-block">키워드: {{ c.source_keyword }}</small>
+                {% endif %}
+              </span>
+              <span class="badge
+                {% if c.status == 'pending' %}bg-warning text-dark
+                {% elif c.status == 'approved' %}bg-success
+                {% else %}bg-secondary{% endif %} me-2">
+                {{ c.status }}
+              </span>
+              <a href="/seller/sourcing/collect?domain={{ c.domain|urlencode }}"
+                 class="btn btn-outline-primary btn-sm" title="이 사이트 수집">
+                <i class="bi bi-download"></i>
+              </a>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <div class="text-muted small text-center py-4 px-3">
+            <i class="bi bi-compass fs-2 d-block mb-2 opacity-50"></i>
+            Discovery 봇이 신규 쇼핑몰을 발견하면 여기에 나타납니다.<br>
+            <a href="/seller/discovery/keywords" class="small">Discovery 키워드 관리 →</a>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── 빠른 링크 ── #}
+  <div class="row g-2">
+    <div class="col-auto">
+      <a href="/seller/sourcing/watches" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-binoculars me-1"></i>소싱 Watches
+      </a>
+    </div>
+    <div class="col-auto">
+      <a href="/seller/sourcing/candidates" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-inboxes me-1"></i>후보 큐
+      </a>
+    </div>
+    <div class="col-auto">
+      <a href="/seller/keywords" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-search me-1"></i>키워드 트렌드
+      </a>
+    </div>
+    <div class="col-auto">
+      <a href="/seller/listing/ai-create" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-robot me-1"></i>AI 상품등록
+      </a>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* AI 소싱 추천 AJAX */
+document.getElementById('aiSourcingForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const kw = document.getElementById('aiKwInput').value.trim();
+  if (!kw) return;
+  const btn = this.querySelector('button[type=submit]');
+  const resultsDiv = document.getElementById('aiRecommendResults');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>분석 중…';
+  resultsDiv.innerHTML = '';
+  try {
+    const resp = await fetch('/seller/sourcing/recommend', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({keyword: kw}),
+    });
+    const data = await resp.json();
+    if (data.ok && data.recommendations && data.recommendations.length > 0) {
+      let html = '<div class="table-responsive"><table class="table table-hover table-sm align-middle mb-0"><thead class="table-light"><tr><th>소싱 후보</th><th>출처</th><th>추천 사유</th><th class="text-end">예상 마진</th><th class="text-center">액션</th></tr></thead><tbody>';
+      for (const r of data.recommendations) {
+        const srcBadge = r.source === 'trend' ? 'bg-primary-subtle text-primary' :
+                         r.source === 'discovery' ? 'bg-success-subtle text-success' :
+                         'bg-secondary-subtle text-secondary';
+        html += `<tr>
+          <td class="fw-semibold">${r.name}</td>
+          <td><span class="badge ${srcBadge}">${r.source_label}</span></td>
+          <td class="small text-muted">${r.reason}</td>
+          <td class="text-end">${r.margin_hint ? '<span class="fw-semibold text-success">' + r.margin_hint + '</span>' : '<span class="text-muted">—</span>'}</td>
+          <td class="text-center"><div class="d-flex gap-1 justify-content-center">
+            ${r.url ? '<a href="/seller/sourcing/collect?url=' + encodeURIComponent(r.url) + '" class="btn btn-outline-primary btn-sm"><i class="bi bi-download"></i></a>' : ''}
+            <a href="/seller/sourcing/candidates" class="btn btn-outline-success btn-sm"><i class="bi bi-inbox-fill"></i></a>
+          </div></td>
+        </tr>`;
+      }
+      html += '</tbody></table></div>';
+      resultsDiv.innerHTML = html;
+    } else {
+      resultsDiv.innerHTML = '<div class="alert alert-warning"><i class="bi bi-exclamation-triangle me-1"></i>소싱 후보를 찾지 못했습니다. 다른 키워드를 시도해보세요.</div>';
+    }
+  } catch (err) {
+    resultsDiv.innerHTML = '<div class="alert alert-danger">오류가 발생했습니다. 잠시 후 다시 시도해주세요.</div>';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-cpu me-1"></i>AI 추천 받기';
+  }
+});
+
+/* 원클릭 수집 AJAX */
+document.getElementById('collectForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const url = document.getElementById('collectUrl').value.trim();
+  if (!url) return;
+  const btn = this.querySelector('button[type=submit]');
+  const resultDiv = document.getElementById('collectResult');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>수집 중…';
+  resultDiv.style.display = 'none';
+  try {
+    const resp = await fetch('/seller/sourcing/collect', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url}),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      resultDiv.className = 'alert alert-success mt-2';
+      let msg = `✅ 수집 완료: <strong>${data.title || url}</strong>`;
+      if (data.preview_url) msg += ` <a href="${data.preview_url}" class="ms-2">미리보기 →</a>`;
+      resultDiv.innerHTML = msg;
+    } else {
+      resultDiv.className = 'alert alert-warning mt-2';
+      resultDiv.innerHTML = `⚠️ ${data.error || '수집 실패'}`;
+    }
+    resultDiv.style.display = '';
+  } catch (err) {
+    resultDiv.className = 'alert alert-danger mt-2';
+    resultDiv.innerHTML = '수집 중 오류가 발생했습니다.';
+    resultDiv.style.display = '';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-download me-1"></i>즉시 수집';
+  }
+});
+
+/* My Sources 추가 */
+document.getElementById('addSourceFormEl').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const msg = document.getElementById('addSourceMsg');
+  msg.style.display = 'none';
+  try {
+    const resp = await fetch('/seller/sourcing/my-sources/add', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({domain: fd.get('domain'), label: fd.get('label')}),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      msg.className = 'small text-success mb-2';
+      msg.textContent = '✅ 저장됐습니다. 페이지를 새로고침하면 목록에 나타납니다.';
+      msg.style.display = '';
+      e.target.reset();
+    } else {
+      msg.className = 'small text-danger mb-2';
+      msg.textContent = '⚠️ ' + (data.error || '저장 실패');
+      msg.style.display = '';
+    }
+  } catch {
+    msg.className = 'small text-danger mb-2';
+    msg.textContent = '오류가 발생했습니다.';
+    msg.style.display = '';
+  }
+});
+
+/* My Sources 삭제 */
+async function removeSource(domain) {
+  if (!confirm(domain + '을(를) 즐겨찾기에서 삭제할까요?')) return;
+  try {
+    const resp = await fetch('/seller/sourcing/my-sources/remove', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({domain}),
+    });
+    const data = await resp.json();
+    if (data.ok) location.reload();
+    else alert('삭제 실패: ' + (data.error || ''));
+  } catch { alert('오류가 발생했습니다.'); }
+}
+</script>
+{% endblock %}

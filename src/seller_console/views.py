@@ -4058,3 +4058,325 @@ def me_subscription_skip(subscription_id: str):
     from src.product_subscriptions.subscription_products import ProductSubscriptionManager
     ProductSubscriptionManager().skip_next(subscription_id)
     return redirect("/seller/me/subscriptions")
+
+
+# ---------------------------------------------------------------------------
+# Phase 160 — 키워드 트렌드 대시보드
+# ---------------------------------------------------------------------------
+
+_PERIOD_LABELS = {
+    "realtime": "실시간(시간별)",
+    "day": "일별",
+    "week": "주별",
+    "month": "월별",
+    "year": "년별",
+}
+
+
+@bp.get("/keywords")
+def seller_keywords():
+    """키워드/검색어 트렌드 대시보드 (Phase 160).
+
+    기간 토글(실시간/일/주/월/년) + 검색량·경쟁도·추세 + 급상승/연관/롱테일 키워드.
+    """
+    query = (request.args.get("q") or "").strip()
+    period = request.args.get("period", "month")
+    if period not in ("realtime", "day", "week", "month", "year"):
+        period = "month"
+
+    metrics = []
+    related_kws = None
+
+    if query:
+        keywords = [k.strip() for k in query.replace(",", " ").split() if k.strip()]
+        if not keywords:
+            keywords = [query]
+        try:
+            from src.ads.keyword_optimizer import get_keyword_trends, get_related_keywords
+            metrics = get_keyword_trends(keywords, period)
+            related_kws = get_related_keywords(keywords[0]) if keywords else None
+        except Exception as exc:
+            logger.warning("키워드 트렌드 조회 실패: %s", exc)
+
+    try:
+        from src.ads.keyword_optimizer import get_rising_keywords
+        rising = get_rising_keywords()
+    except Exception as exc:
+        logger.warning("급상승 키워드 조회 실패: %s", exc)
+        rising = []
+
+    return render_template(
+        "keywords.html",
+        query=query,
+        period=period,
+        period_label=_PERIOD_LABELS.get(period, "월별"),
+        metrics=metrics,
+        rising=rising,
+        related_kws=related_kws,
+    )
+
+
+@bp.post("/keywords/search")
+def seller_keywords_search():
+    """키워드 트렌드 검색 API (JSON) — Phase 160."""
+    data = request.get_json(force=True, silent=True) or {}
+    keywords = data.get("keywords") or []
+    period = data.get("period", "month")
+    if isinstance(keywords, str):
+        keywords = [k.strip() for k in keywords.replace(",", " ").split() if k.strip()]
+    if period not in ("realtime", "day", "week", "month", "year"):
+        period = "month"
+    try:
+        from src.ads.keyword_optimizer import get_keyword_trends
+        metrics = get_keyword_trends(keywords, period)
+        return jsonify({"ok": True, "metrics": metrics, "period": period})
+    except Exception as exc:
+        logger.warning("키워드 검색 API 오류: %s", exc)
+        return jsonify({"ok": False, "error": "키워드 조회 중 오류가 발생했습니다."}), 500
+
+
+# ---------------------------------------------------------------------------
+# Phase 160 — AI 소싱 허브
+# ---------------------------------------------------------------------------
+
+
+def _build_sourcing_recommendations(keyword: str) -> list:
+    """키워드 기반 소싱 후보 추천 (트렌드 + Discovery + 후보 큐 종합).
+
+    LLM 없이 규칙 기반 추천. OPENAI_API_KEY 있으면 향후 LLM 강화 가능.
+    """
+    recommendations = []
+
+    # 1) 키워드 트렌드 기반 추천
+    try:
+        from src.ads.keyword_optimizer import get_keyword_metrics
+        metrics = get_keyword_metrics([keyword])
+        for m in metrics:
+            if m.monthly_search > 0:
+                recommendations.append({
+                    "name": f"{keyword} 관련 상품 소싱",
+                    "source": "trend",
+                    "source_label": "트렌드",
+                    "reason": f"월 검색량 {m.monthly_search:,}, 경쟁도 {m.competition:.0%}",
+                    "margin_hint": f"CPC ₩{m.avg_cpc_krw:,.0f} 기준 마진 추정",
+                    "url": None,
+                })
+    except Exception as exc:
+        logger.warning("트렌드 기반 소싱 추천 실패: %s", exc)
+
+    # 2) Discovery 후보 기반 추천
+    try:
+        from src.discovery.scout import DiscoveryScout
+        candidates = DiscoveryScout().get_candidates()
+        for c in (candidates or [])[:3]:
+            domain = getattr(c, "domain", str(c))
+            status = getattr(c, "status", "pending")
+            if status not in ("pending", "approved"):
+                continue
+            recommendations.append({
+                "name": f"{domain} — 신규 발견 쇼핑몰",
+                "source": "discovery",
+                "source_label": "Discovery",
+                "reason": "키워드 검색에서 새로 발견된 쇼핑몰",
+                "margin_hint": None,
+                "url": f"https://{domain}",
+            })
+    except Exception as exc:
+        logger.debug("Discovery 후보 조회 실패(무시): %s", exc)
+
+    # 3) 기존 소싱 후보 큐에서 키워드 매칭
+    try:
+        from src.sourcing.pipeline import get_candidate_store
+        store = get_candidate_store()
+        candidates_q = store.list() if hasattr(store, "list") else []
+        for c in (candidates_q or [])[:5]:
+            name = getattr(c, "product_name", "") or ""
+            if keyword.lower() in name.lower():
+                margin = getattr(c, "estimated_margin_pct", 0) or 0
+                recommendations.append({
+                    "name": name,
+                    "source": "queue",
+                    "source_label": "후보 큐",
+                    "reason": "기존 소싱 후보 큐에서 키워드 매칭",
+                    "margin_hint": f"예상 마진 {margin:.0f}%" if margin else None,
+                    "url": getattr(c, "source_url", None),
+                })
+    except Exception as exc:
+        logger.debug("후보 큐 매칭 실패(무시): %s", exc)
+
+    # 최소 1개는 보장 (mock fallback)
+    if not recommendations:
+        recommendations.append({
+            "name": f"'{keyword}' 연관 상품",
+            "source": "trend",
+            "source_label": "추천",
+            "reason": "키워드 분석 기반 소싱 추천",
+            "margin_hint": None,
+            "url": None,
+        })
+
+    return recommendations[:10]
+
+
+@bp.get("/sourcing")
+def seller_sourcing():
+    """AI 소싱 허브 (Phase 160).
+
+    키워드 입력 → 소싱 후보 추천 + 원클릭 수집 + My Sources 즐겨찾기.
+    """
+    keyword = (request.args.get("keyword") or "").strip()
+    recommendations = []
+    if keyword:
+        recommendations = _build_sourcing_recommendations(keyword)
+
+    # My Sources 즐겨찾기
+    try:
+        from src.seller_console.my_sources_store import MySourcesStore
+        my_sources = MySourcesStore().list()
+    except Exception as exc:
+        logger.warning("My Sources 조회 실패: %s", exc)
+        my_sources = []
+
+    # Discovery 신규 발견 (최근 5개)
+    discovery_candidates = []
+    try:
+        from src.discovery.scout import DiscoveryScout
+        raw = DiscoveryScout().get_candidates()
+        discovery_candidates = (raw or [])[:5]
+    except Exception as exc:
+        logger.debug("Discovery 후보 조회 실패(무시): %s", exc)
+
+    return render_template(
+        "sourcing.html",
+        keyword=keyword,
+        recommendations=recommendations,
+        my_sources=my_sources,
+        discovery_candidates=discovery_candidates,
+    )
+
+
+@bp.post("/sourcing/recommend")
+def seller_sourcing_recommend():
+    """AI 소싱 후보 추천 API (JSON) — Phase 160."""
+    data = request.get_json(force=True, silent=True) or {}
+    keyword = (data.get("keyword") or "").strip()
+    if not keyword:
+        return jsonify({"ok": False, "error": "keyword가 필요합니다."}), 400
+    try:
+        recs = _build_sourcing_recommendations(keyword)
+        return jsonify({"ok": True, "recommendations": recs})
+    except Exception as exc:
+        logger.warning("소싱 추천 API 오류: %s", exc)
+        return jsonify({"ok": False, "error": "소싱 추천 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/sourcing/collect")
+def seller_sourcing_collect():
+    """원클릭 범용 수집 API (JSON) — Phase 160.
+
+    JSON body: {"url": "https://..."}
+    신규 도메인 → Discovery candidates에 자동 등록.
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    url = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"ok": False, "error": "url이 필요합니다."}), 400
+
+    try:
+        from src.seller_console.collectors.dispatcher import collect
+        result = collect(url)
+    except Exception as exc:
+        logger.warning("범용 수집 실패: %s", exc)
+        return jsonify({"ok": False, "error": "수집 중 오류가 발생했습니다."}), 500
+
+    # 신규 도메인 → Discovery candidates 자동 등록
+    try:
+        from urllib.parse import urlparse
+        domain = urlparse(url).netloc.lower()
+        if domain.startswith("www."):
+            domain = domain[4:]
+        if domain:
+            from src.discovery.scout import DiscoveryScout
+            DiscoveryScout().add_candidate(domain, source_keyword="manual_collect")
+    except Exception as exc:
+        logger.debug("Discovery 후보 자동 등록 실패(무시): %s", exc)
+
+    if result and result.ok:
+        return jsonify({
+            "ok": True,
+            "title": result.title or "",
+            "price": str(result.price) if result.price else "",
+            "image_url": result.image_url or "",
+            "preview_url": f"/seller/collect/preview-result?url={url}",
+        })
+    else:
+        msg = getattr(result, "error", "수집 결과를 가져오지 못했습니다.")
+        return jsonify({"ok": False, "error": msg}), 400
+
+
+@bp.get("/sourcing/collect")
+def seller_sourcing_collect_get():
+    """GET /seller/sourcing/collect?url=... — URL 수집 후 미리보기로 리다이렉트 (Phase 160)."""
+    url = (request.args.get("url") or request.args.get("domain", "")).strip()
+    if not url:
+        return redirect("/seller/sourcing")
+    if not url.startswith(("http://", "https://")):
+        url = f"https://{url}"
+    # Validate URL before redirecting to prevent open redirect via injected schemes
+    from urllib.parse import urlparse, urlencode
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return redirect("/seller/sourcing")
+    safe_url = urlencode({"url": url})
+    return redirect(f"/seller/manual-collect?{safe_url}")
+
+
+# ---------------------------------------------------------------------------
+# Phase 160 — My Sources CRUD
+# ---------------------------------------------------------------------------
+
+
+@bp.post("/sourcing/my-sources/add")
+def sourcing_my_sources_add():
+    """My Sources 즐겨찾기 추가 (Phase 160)."""
+    data = request.get_json(force=True, silent=True) or {}
+    domain = (data.get("domain") or "").strip()
+    label = (data.get("label") or "").strip()
+    url_example = (data.get("url_example") or "").strip()
+    if not domain:
+        return jsonify({"ok": False, "error": "domain이 필요합니다."}), 400
+    try:
+        from src.seller_console.my_sources_store import MySourcesStore
+        entry = MySourcesStore().add(domain=domain, label=label, url_example=url_example)
+        return jsonify({"ok": True, "domain": entry.domain, "label": entry.label})
+    except Exception as exc:
+        logger.warning("My Sources 추가 실패: %s", exc)
+        return jsonify({"ok": False, "error": "즐겨찾기 추가 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/sourcing/my-sources/remove")
+def sourcing_my_sources_remove():
+    """My Sources 즐겨찾기 삭제 (Phase 160)."""
+    data = request.get_json(force=True, silent=True) or {}
+    domain = (data.get("domain") or "").strip()
+    if not domain:
+        return jsonify({"ok": False, "error": "domain이 필요합니다."}), 400
+    try:
+        from src.seller_console.my_sources_store import MySourcesStore
+        ok = MySourcesStore().remove(domain)
+        return jsonify({"ok": ok})
+    except Exception as exc:
+        logger.warning("My Sources 삭제 실패: %s", exc)
+        return jsonify({"ok": False, "error": "즐겨찾기 삭제 중 오류가 발생했습니다."}), 500
+
+
+@bp.get("/sourcing/my-sources")
+def sourcing_my_sources_list():
+    """My Sources 즐겨찾기 목록 API (JSON) — Phase 160."""
+    try:
+        from src.seller_console.my_sources_store import MySourcesStore
+        entries = [e.to_dict() for e in MySourcesStore().list()]
+        return jsonify({"ok": True, "sources": entries})
+    except Exception as exc:
+        logger.warning("My Sources 목록 조회 실패: %s", exc)
+        return jsonify({"ok": False, "error": "즐겨찾기 목록 조회 중 오류가 발생했습니다."}), 500
