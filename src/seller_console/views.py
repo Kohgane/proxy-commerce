@@ -3075,10 +3075,11 @@ def sourcing_hub():
         queue_candidates=queue_candidates,
     )
 
-    my_sources = []
+    # 소싱처 등록소 — 알파벳순 정렬 (Phase 162)
+    registry_sources = []
     try:
         from src.seller_console.my_sources_store import list_sources
-        my_sources = list_sources()
+        registry_sources = list_sources()
     except Exception as exc:
         logger.debug("My Sources 조회 스킵: %s", exc)
 
@@ -3090,7 +3091,8 @@ def sourcing_hub():
         period_options=_KEYWORD_PERIOD_LABELS,
         keyword_context=keyword_context,
         recommendations=recommendations,
-        my_sources=my_sources,
+        my_sources=registry_sources,
+        registry_sources=registry_sources,
         collect_url=(request.args.get("url") or "").strip(),
         notice=(request.args.get("notice") or "").strip(),
         admin_ok=_is_admin_user(),
@@ -3122,7 +3124,13 @@ def sourcing_my_sources():
                 note=(request.form.get("note") or "").strip(),
             )
             _register_discovery_candidate_from_collection(item.get("domain", ""), keyword_hint=keyword)
-            notice = "My Sources에 저장했습니다."
+            status = item.get("openness_status", "partial")
+            if status == "restricted":
+                notice = "소싱처로 저장했습니다. (수집 어려움 — 폐쇄/차단 가능성, 경고)"
+            elif status == "partial":
+                notice = "소싱처로 저장했습니다. (부분 수집 가능 — OG/JSON-LD 미확인)"
+            else:
+                notice = "소싱처로 저장했습니다. (수집 가능)"
     except ValueError as exc:
         notice = str(exc)
     except Exception as exc:
@@ -3136,6 +3144,92 @@ def sourcing_my_sources():
             notice=notice or None,
         )
     )
+
+
+@bp.post("/sourcing/registry/add")
+def sourcing_registry_add():
+    """소싱처 등록소 — JSON API 등록 엔드포인트 (Phase 162).
+
+    개방성 검증 후 소싱처로 등록, Discovery 후보 자동 연계.
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인 필요"}), 401
+
+    data = request.get_json(force=True, silent=True) or {}
+    value = (data.get("url") or data.get("domain") or "").strip()
+    label = (data.get("label") or "").strip()
+    note = (data.get("note") or "").strip()
+    keyword = (data.get("keyword") or "").strip()
+
+    if not value:
+        return jsonify({"ok": False, "error": "URL 또는 도메인을 입력해 주세요."}), 400
+
+    try:
+        from src.seller_console.my_sources_store import add_source, probe_collectability, normalize_domain
+        domain = normalize_domain(value)
+        if not domain:
+            return jsonify({"ok": False, "error": "도메인 형식이 올바르지 않습니다."}), 400
+
+        # 개방성 프로빙
+        probe = probe_collectability(value)
+        entry = add_source(
+            value,
+            label=label,
+            note=note,
+            openness_status=probe["status"],
+            adapter_name=probe["adapter_name"],
+        )
+
+        # Discovery 후보 자동 등록
+        _register_discovery_candidate_from_collection(domain, keyword_hint=keyword)
+
+        return jsonify({
+            "ok": True,
+            "domain": entry["domain"],
+            "label": entry["label"],
+            "openness_status": entry["openness_status"],
+            "adapter_name": entry["adapter_name"],
+            "probe_detail": probe.get("detail", ""),
+            "is_large_platform": probe.get("is_large_platform", False),
+        })
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        logger.warning("소싱처 등록 실패: %s", exc)
+        return jsonify({"ok": False, "error": "소싱처 등록 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/sourcing/registry/<path:domain>/recollect")
+def sourcing_registry_recollect(domain: str):
+    """등록된 소싱처 재수집 트리거 (Phase 162)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인 필요"}), 401
+
+    from src.seller_console.my_sources_store import normalize_domain, update_last_collect
+    clean_domain = normalize_domain(domain)
+    if not clean_domain:
+        return jsonify({"ok": False, "error": "올바르지 않은 도메인"}), 400
+
+    try:
+        from src.seller_console.collectors.dispatcher import collect
+        url = f"https://{clean_domain}"
+        result = collect(url)
+        summary = result.title or ("수집 성공" if result.success else "수집 실패")
+        if result.warnings:
+            summary += f" (경고: {result.warnings[0]})"
+        update_last_collect(clean_domain, summary[:200])
+        return jsonify({
+            "ok": True,
+            "domain": clean_domain,
+            "success": result.success,
+            "title": result.title or "",
+            "source": result.source or "",
+            "summary": summary,
+        })
+    except Exception as exc:
+        logger.warning("소싱처 재수집 실패 (%s): %s", domain, exc)
+        update_last_collect(clean_domain, f"오류: {str(exc)[:100]}")
+        return jsonify({"ok": False, "error": "재수집 중 오류가 발생했습니다."}), 500
 
 
 def _sourcing_require_admin():
