@@ -34,6 +34,8 @@ def client(app):
 CORE_ROUTES = [
     # Phase 136 — 가격 정책
     "/seller/pricing/rules",
+    "/seller/keywords",
+    "/seller/sourcing",
     # Phase 138+ — CS 자동응답
     "/seller/cs/inbox",
     # Phase 143 — 소싱 파이프라인

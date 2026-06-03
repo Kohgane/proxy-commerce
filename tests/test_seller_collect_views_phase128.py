@@ -76,6 +76,27 @@ def test_collect_preview_uses_dispatcher(client):
     assert data["draft"]["title"] == "테스트 상품"
 
 
+def test_collect_preview_registers_discovery_candidate(client):
+    """수집 성공 시 Discovery 후보 자동 등록 훅 호출."""
+    from src.seller_console.collectors.base import CollectorResult
+
+    mock_result = CollectorResult(
+        success=True,
+        url="https://example-brand.com/item/1",
+        source="generic_og",
+        title="브랜드 상품",
+    )
+    with patch("src.seller_console.collectors.dispatcher.collect", return_value=mock_result):
+        with patch("src.seller_console.views._register_discovery_candidate_from_collection") as mock_register:
+            resp = client.post(
+                "/seller/collect/preview",
+                data=json.dumps({"url": "https://example-brand.com/item/1", "keyword": "브랜드"}),
+                content_type="application/json",
+            )
+    assert resp.status_code == 200
+    mock_register.assert_called_once()
+
+
 def test_collect_preview_empty_url_returns_400(client):
     """빈 URL → 400."""
     resp = client.post(

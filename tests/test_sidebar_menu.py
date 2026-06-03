@@ -24,6 +24,8 @@ SELLER_MENU_LINKS = [
     "/seller/pricing/rules",
     "/seller/pricing/competitors",
     "/seller/pricing/fx-impact",
+    "/seller/keywords",
+    "/seller/sourcing",
     "/seller/analytics",
     "/seller/inventory/reorder",
     "/seller/marketing/campaigns",
