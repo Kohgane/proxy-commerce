@@ -2,10 +2,6 @@
 {% block title %}CS Mobile{% endblock %}
 
 {% block content %}
-<link rel="manifest" href="/seller/seller/static/manifest.json">
-<meta name="theme-color" content="#212529">
-<link rel="apple-touch-icon" href="/seller/seller/static/icon-192.png">
-
 <style>
   .msg-card { border-radius: 12px; cursor: pointer; transition: transform .1s; user-select: none; }
   .msg-card:active { transform: scale(.97); }
@@ -105,7 +101,7 @@
 <script src="/seller/static/cs_mobile.js"></script>
 <script>
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/seller/static/sw.js').catch(()=>{});
+    navigator.serviceWorker.register('{{ url_for("seller_console.static", filename="sw.js") }}').catch(()=>{});
   }
 </script>
 {% endblock %}

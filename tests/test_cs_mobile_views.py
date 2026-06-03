@@ -21,8 +21,7 @@ def test_cs_mobile_manifest_200(tmp_path, monkeypatch):
     from src.order_webhook import app
     app.config["TESTING"] = True
     with app.test_client() as client:
-        # Blueprint url_prefix + static_url_path = /seller/seller/static/
-        resp = client.get("/seller/seller/static/manifest.json")
+        resp = client.get("/seller/static/manifest.json")
         assert resp.status_code == 200
 
 
@@ -32,7 +31,7 @@ def test_cs_mobile_sw_200(tmp_path, monkeypatch):
     from src.order_webhook import app
     app.config["TESTING"] = True
     with app.test_client() as client:
-        resp = client.get("/seller/seller/static/sw.js")
+        resp = client.get("/seller/static/sw.js")
         assert resp.status_code == 200
 
 

@@ -20,7 +20,7 @@ Phase 147에서 셀러 콘솔이 모바일 반응형 및 PWA(Progressive Web App
 
 ### manifest.json 위치
 ```
-/seller/static/manifest.json  (→ /seller/seller/static/manifest.json)
+/seller/static/manifest.json
 ```
 
 ### 주요 설정값
@@ -31,7 +31,7 @@ Phase 147에서 셀러 콘솔이 모바일 반응형 및 PWA(Progressive Web App
 | short_name | Percentiii |
 | start_url | /seller/dashboard |
 | display | standalone |
-| theme_color | #1a1a2e |
+| theme_color | #0b132b |
 
 ### 환경변수
 
@@ -49,7 +49,7 @@ PWA_APP_NAME=Proxy Commerce  # 앱 이름 (manifest.json은 정적 파일로 별
 
 ### 위치
 ```
-src/seller_console/static/sw.js → /seller/seller/static/sw.js
+src/seller_console/static/sw.js → /seller/static/sw.js
 ```
 
 ### 캐시 전략
