@@ -225,6 +225,21 @@
   color: var(--console-muted);
 }
 
+.kw-mini-bars {
+  height: 30px;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.kw-mini-bars span {
+  width: 4px;
+  min-height: 4px;
+  border-radius: 2px;
+  background: #5b3df5;
+  opacity: 0.75;
+}
+
 .console-step {
   display: inline-flex;
   align-items: center;

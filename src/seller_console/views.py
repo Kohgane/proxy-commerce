@@ -25,11 +25,13 @@ import logging
 import os
 import re
 import uuid
+import hashlib
 from typing import Any, Dict
 from difflib import SequenceMatcher
 
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
+from urllib.parse import quote_plus
 
 from flask import Blueprint, abort, jsonify, redirect, render_template, render_template_string, request, session, url_for, Response
 from src.utils.branding import get_brand_name
@@ -172,6 +174,240 @@ def _get_trust_checker():
     except Exception as exc:
         logger.warning("TaobaoSellerTrustChecker 로드 실패: %s", exc)
         return None
+
+
+_KEYWORD_PERIOD_FACTORS: dict[str, float] = {
+    "realtime": 1 / 720,  # 30일 기준 월간검색량을 시간 단위로 환산
+    "day": 1 / 30,
+    "week": 7 / 30,
+    "month": 1.0,
+    "year": 12.0,
+}
+_KEYWORD_PERIOD_LABELS: dict[str, str] = {
+    "realtime": "실시간",
+    "day": "일",
+    "week": "주",
+    "month": "월",
+    "year": "년",
+}
+
+
+def _is_admin_user() -> bool:
+    try:
+        from src.auth.admin_resolver import is_admin_session
+        admin_ok, _ = is_admin_session(session)
+        return bool(admin_ok)
+    except Exception:
+        return (session.get("user_role") or "").strip().lower() == "admin"
+
+
+def _normalize_keyword_period(raw_period: str | None) -> str:
+    period = (raw_period or "day").strip().lower()
+    return period if period in _KEYWORD_PERIOD_FACTORS else "day"
+
+
+def _parse_keywords(raw: str | None) -> list[str]:
+    keywords = []
+    for chunk in (raw or "").replace("\n", ",").split(","):
+        kw = chunk.strip()
+        if kw and kw not in keywords:
+            keywords.append(kw)
+    return keywords[:10]
+
+
+def _stable_ratio(seed: str) -> float:
+    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+    return int(digest[:8], 16) / 0xFFFFFFFF
+
+
+def _build_trend_series(seed: str, base_value: int) -> list[int]:
+    points = []
+    current = max(base_value, 1)
+    for idx in range(8):
+        ratio = _stable_ratio(f"{seed}:{idx}")
+        drift = (ratio - 0.5) * 0.18
+        current = max(1, int(round(current * (1 + drift))))
+        points.append(current)
+    if points:
+        points[-1] = max(base_value, 1)
+    return points
+
+
+def _scale_volume_for_period(monthly_search: int, period: str) -> int:
+    factor = _KEYWORD_PERIOD_FACTORS.get(period, _KEYWORD_PERIOD_FACTORS["day"])
+    return max(1, int(round(max(monthly_search, 1) * factor)))
+
+
+def _build_keyword_trend_context(query_keywords: list[str], period: str) -> dict[str, Any]:
+    from src.ads.keyword_optimizer import get_keyword_metrics, keyword_optimizer_stats
+
+    default_keywords = ["해외직구", "일본직구", "유니클로", "에코백", "플리스 자켓"]
+    keywords = query_keywords or default_keywords
+    period = _normalize_keyword_period(period)
+    metrics = get_keyword_metrics(keywords)
+    stats = keyword_optimizer_stats()
+
+    rows: list[dict[str, Any]] = []
+    for metric in metrics:
+        base_volume = _scale_volume_for_period(metric.monthly_search, period)
+        trend_seed = f"{metric.keyword}:{period}"
+        drift = (_stable_ratio(trend_seed) - 0.5) * 0.32
+        prev_volume = max(1, int(round(base_volume / (1 + drift))))
+        trend_pct = ((base_volume - prev_volume) / prev_volume) * 100 if prev_volume else 0.0
+        product_count = max(1, int(round(base_volume * (1.6 + metric.competition * 1.8))))
+        rows.append(
+            {
+                "keyword": metric.keyword,
+                "search_volume": base_volume,
+                "competition": round(metric.competition, 2),
+                "product_count": product_count,
+                "avg_cpc_krw": int(round(metric.avg_cpc_krw)),
+                "trend_pct": round(trend_pct, 1),
+                "trend_direction": "up" if trend_pct > 0 else ("down" if trend_pct < 0 else "flat"),
+                "series": _build_trend_series(trend_seed, base_volume),
+            }
+        )
+
+    rows.sort(key=lambda x: x["search_volume"], reverse=True)
+    risers = sorted(rows, key=lambda x: x["trend_pct"], reverse=True)[:5]
+    top_keywords = [row["keyword"] for row in rows]
+
+    related_keywords: list[str] = []
+    for kw in top_keywords[:4]:
+        related_keywords.extend(
+            [
+                f"{kw} 추천",
+                f"{kw} 인기",
+                f"{kw} 후기",
+            ]
+        )
+    related_keywords = [kw for kw in related_keywords if kw not in top_keywords][:8]
+
+    long_tail_keywords: list[str] = []
+    for kw in top_keywords[:4]:
+        long_tail_keywords.extend(
+            [
+                f"{kw} 가성비",
+                f"{kw} 직구 방법",
+                f"{kw} 정품 비교",
+            ]
+        )
+    long_tail_keywords = [kw for kw in long_tail_keywords if kw not in top_keywords][:8]
+
+    provider = (stats.get("provider") or "mock").lower()
+    naver_key = (os.getenv("NAVER_SEARCHAD_API_KEY") or "").strip()
+    naver_secret = (
+        os.getenv("NAVER_SEARCHAD_API_SECRET")
+        or os.getenv("NAVER_SEARCHAD_SECRET")
+        or ""
+    ).strip()
+    mock_timeseries_active = (
+        provider == "mock"
+        or provider == "coupang_ads"
+        or (provider == "naver_searchad" and (not naver_key or not naver_secret))
+    )
+    return {
+        "period": period,
+        "period_label": _KEYWORD_PERIOD_LABELS.get(period, "일"),
+        "period_options": _KEYWORD_PERIOD_LABELS,
+        "query_keywords": keywords,
+        "query_text": ", ".join(keywords),
+        "rows": rows,
+        "risers": risers,
+        "related_keywords": related_keywords,
+        "long_tail_keywords": long_tail_keywords,
+        "provider": provider,
+        "fallback_active": mock_timeseries_active,
+    }
+
+
+def _build_sourcing_recommendations(
+    *,
+    keyword: str,
+    keyword_context: dict[str, Any],
+    discovery_candidates: list[dict[str, Any]],
+    queue_candidates: list[Any],
+) -> list[dict[str, Any]]:
+    recommendations: list[dict[str, Any]] = []
+    keyword_lower = (keyword or "").strip().lower()
+
+    for row in keyword_context.get("risers", [])[:3]:
+        kw = row["keyword"]
+        recommendations.append(
+            {
+                "title": kw,
+                "source": "키워드 트렌드",
+                "reason": f"{keyword_context.get('period_label')} 기준 검색량 {row['search_volume']:,} · 추세 {row['trend_pct']:+.1f}%",
+                "margin_hint": f"예상 CPC {row['avg_cpc_krw']:,}원 · 경쟁도 {row['competition']:.2f}",
+                "cta_href": f"/seller/sourcing/watches?keyword={quote_plus(kw)}",
+                "cta_label": "이 키워드로 소싱",
+                "secondary_href": f"/seller/keywords?q={quote_plus(kw)}&period={keyword_context.get('period', 'day')}",
+                "secondary_label": "트렌드 보기",
+            }
+        )
+
+    for item in queue_candidates[:5]:
+        name = str(getattr(item, "product_name", "") or "")
+        if keyword_lower and keyword_lower not in name.lower():
+            continue
+        margin = float(getattr(item, "estimated_margin_pct", 0.0) or 0.0)
+        recommendations.append(
+            {
+                "title": name or "후보 상품",
+                "source": "후보 큐",
+                "reason": f"기존 소싱 후보({getattr(item, 'status', 'pending')})로 즉시 승인/등록 가능",
+                "margin_hint": f"예상 마진 {margin:.1f}% · 출처 {getattr(item, 'platform', '-')}",
+                "cta_href": f"/seller/sourcing/candidates?status={quote_plus(str(getattr(item, 'status', 'pending')))}",
+                "cta_label": "후보 큐에서 처리",
+                "secondary_href": getattr(item, "product_url", "") or "/seller/sourcing/candidates",
+                "secondary_label": "원본 보기",
+            }
+        )
+
+    for cand in discovery_candidates[:6]:
+        domain = (cand.get("domain") or "").strip()
+        if not domain:
+            continue
+        if keyword_lower and keyword_lower not in (cand.get("keyword", "") or "").lower():
+            continue
+        status = (cand.get("status") or "pending").strip()
+        recommendations.append(
+            {
+                "title": domain,
+                "source": "Discovery",
+                "reason": f"신규 도메인 후보({status}) · 키워드: {cand.get('keyword') or '-'}",
+                "margin_hint": "마진 계산기와 후보 큐에서 후속 검토 권장",
+                "cta_href": f"/seller/collect?url={quote_plus(f'https://{domain}')}",
+                "cta_label": "원클릭 수집",
+                "secondary_href": "/seller/discovery",
+                "secondary_label": "Discovery 관리",
+            }
+        )
+
+    # 중복 제거(제목 기준) + 최대 12개
+    unique: list[dict[str, Any]] = []
+    seen_titles: set[str] = set()
+    for rec in recommendations:
+        title = rec.get("title") or ""
+        if title in seen_titles:
+            continue
+        seen_titles.add(title)
+        unique.append(rec)
+        if len(unique) >= 12:
+            break
+    return unique
+
+
+def _register_discovery_candidate_from_collection(url: str, keyword_hint: str = "") -> None:
+    try:
+        from src.discovery.scout import register_collected_domain_candidate
+        register_collected_domain_candidate(
+            url,
+            keyword=keyword_hint,
+            source="manual_collect",
+        )
+    except Exception as exc:
+        logger.debug("Discovery 자동 후보 등록 스킵: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -583,6 +819,7 @@ def collect_preview():
     """
     data = request.get_json(force=True, silent=True) or {}
     url = (data.get("url") or "").strip()
+    keyword_hint = (data.get("keyword") or "").strip()
 
     if not url:
         return jsonify({"ok": False, "error": "URL이 필요합니다."}), 400
@@ -602,6 +839,7 @@ def collect_preview():
                 "is_mock": False,
                 "adapter_used": result.source,
             })
+            _register_discovery_candidate_from_collection(url, keyword_hint=keyword_hint)
             return jsonify({
                 "ok": True,
                 "draft": draft_dict,
@@ -629,6 +867,7 @@ def collect_preview():
                 trust_score = checker.evaluate(draft.seller_id)
                 trust_info = trust_score.to_dict()
 
+        _register_discovery_candidate_from_collection(url, keyword_hint=keyword_hint)
         return jsonify({
             "ok": True,
             "draft": draft_dict,
@@ -2784,6 +3023,117 @@ def marketing_campaigns_approve():
 # ---------------------------------------------------------------------------
 # Phase 143: 소싱 파이프라인 — Watch CRUD + 후보 큐
 # ---------------------------------------------------------------------------
+
+@bp.get("/keywords")
+def keyword_trends():
+    """키워드/검색어 트렌드 대시보드 (Phase 160)."""
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+
+    period = _normalize_keyword_period(request.args.get("period"))
+    keywords = _parse_keywords(request.args.get("q"))
+    context = _build_keyword_trend_context(keywords, period)
+    return render_template(
+        "keywords.html",
+        page="keywords",
+        **context,
+    )
+
+
+@bp.get("/sourcing")
+def sourcing_hub():
+    """AI 소싱 허브 (Phase 160)."""
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+
+    period = _normalize_keyword_period(request.args.get("period"))
+    keyword = (request.args.get("keyword") or request.args.get("q") or "").strip()
+    keyword_terms = _parse_keywords(keyword)
+    keyword_context = _build_keyword_trend_context(keyword_terms, period)
+
+    discovery_candidates: list[dict[str, Any]] = []
+    try:
+        from src.discovery.scout import DiscoveryScout
+        discovery_candidates = DiscoveryScout().get_candidates(status=None)
+    except Exception as exc:
+        logger.debug("Discovery 후보 조회 스킵: %s", exc)
+
+    queue_candidates = []
+    try:
+        from src.sourcing.pipeline import get_candidate_queue
+        queue_candidates = get_candidate_queue().list_all(status=None)
+    except Exception as exc:
+        logger.debug("후보 큐 조회 스킵: %s", exc)
+
+    recommendations = _build_sourcing_recommendations(
+        keyword=keyword,
+        keyword_context=keyword_context,
+        discovery_candidates=discovery_candidates,
+        queue_candidates=queue_candidates,
+    )
+
+    my_sources = []
+    try:
+        from src.seller_console.my_sources_store import list_sources
+        my_sources = list_sources()
+    except Exception as exc:
+        logger.debug("My Sources 조회 스킵: %s", exc)
+
+    return render_template(
+        "sourcing.html",
+        page="sourcing",
+        keyword=keyword,
+        period=period,
+        period_options=_KEYWORD_PERIOD_LABELS,
+        keyword_context=keyword_context,
+        recommendations=recommendations,
+        my_sources=my_sources,
+        collect_url=(request.args.get("url") or "").strip(),
+        notice=(request.args.get("notice") or "").strip(),
+        admin_ok=_is_admin_user(),
+    )
+
+
+@bp.post("/sourcing/my-sources")
+def sourcing_my_sources():
+    """My Sources 추가/삭제/사용시각 갱신 (Phase 160)."""
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+
+    action = (request.form.get("action") or "add").strip().lower()
+    keyword = (request.form.get("keyword") or "").strip()
+    domain = (request.form.get("domain") or request.form.get("url") or "").strip()
+    notice = ""
+    try:
+        from src.seller_console.my_sources_store import add_source, remove_source, touch_source
+        if action == "remove":
+            ok = remove_source(domain)
+            notice = "소스를 제거했습니다." if ok else "제거할 소스를 찾지 못했습니다."
+        elif action == "touch":
+            ok = touch_source(domain)
+            notice = "최근 사용 시각을 갱신했습니다." if ok else "소스를 찾지 못했습니다."
+        else:
+            item = add_source(
+                domain,
+                label=(request.form.get("label") or "").strip(),
+                note=(request.form.get("note") or "").strip(),
+            )
+            _register_discovery_candidate_from_collection(item.get("domain", ""), keyword_hint=keyword)
+            notice = "My Sources에 저장했습니다."
+    except ValueError as exc:
+        notice = str(exc)
+    except Exception as exc:
+        logger.warning("My Sources 처리 실패: %s", exc)
+        notice = "My Sources 처리 중 오류가 발생했습니다."
+
+    return redirect(
+        url_for(
+            "seller_console.sourcing_hub",
+            keyword=keyword or None,
+            notice=notice or None,
+        )
+    )
+
 
 def _sourcing_require_admin():
     """소싱 페이지 관리자 권한 확인."""

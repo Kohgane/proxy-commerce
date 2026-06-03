@@ -1,163 +1,133 @@
-"""src/seller_console/my_sources_store.py — My Sources 즐겨찾기 저장소 (Phase 160).
-
-셀러가 자주 수집하는 사이트/도메인을 저장·조회·삭제한다.
-영속화: GOOGLE_SHEET_ID 설정 시 Sheets 'my_sources' 워크시트, 아니면 인메모리 fallback.
-
-스키마 (각 행):
-    domain    | label    | url_example            | added_at
-    --------- | -------- | ---------------------- | --------
-    brand.com | 브랜드몰  | https://brand.com/shop | 2026-06-01T00:00:00Z
-"""
+"""src/seller_console/my_sources_store.py — My Sources 저장소 (Phase 160)."""
 from __future__ import annotations
 
-import json
 import logging
 import os
-from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from typing import List, Optional
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
-_SHEET_ID = os.getenv("GOOGLE_SHEET_ID", "")
-_WORKSHEET_NAME = "my_sources"
+_SHEET_ID = os.getenv("GOOGLE_SHEET_ID")
+_WS_NAME = "my_sources"
+_HEADERS = ["domain", "label", "note", "created_at", "last_used_at"]
+_in_memory: dict[str, dict] = {}
 
 
-@dataclass
-class SourceEntry:
-    """즐겨찾기 소스 항목."""
-    domain: str
-    label: str = ""
-    url_example: str = ""
-    added_at: str = ""
-
-    def __post_init__(self) -> None:
-        if not self.added_at:
-            self.added_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        if not self.label:
-            self.label = self.domain
-
-    def to_dict(self) -> dict:
-        return asdict(self)
-
-    @staticmethod
-    def from_row(row: dict) -> "SourceEntry":
-        return SourceEntry(
-            domain=row.get("domain", ""),
-            label=row.get("label", ""),
-            url_example=row.get("url_example", ""),
-            added_at=row.get("added_at", ""),
-        )
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
-# ---------------------------------------------------------------------------
-# 인메모리 fallback 저장소
-# ---------------------------------------------------------------------------
-_MEM_STORE: List[SourceEntry] = []
+def normalize_domain(value: str) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+    host = (parsed.netloc or parsed.path or "").strip().lower()
+    if host.startswith("www."):
+        host = host[4:]
+    if ":" in host:
+        host = host.split(":", 1)[0]
+    return host if "." in host else ""
 
 
-class MySourcesStore:
-    """My Sources CRUD."""
-
-    # ------------------------------------------------------------------
-    # 공개 API
-    # ------------------------------------------------------------------
-
-    def list(self) -> List[SourceEntry]:
-        """저장된 모든 소스 반환."""
-        if _SHEET_ID:
-            try:
-                return self._sheet_list()
-            except Exception as exc:
-                logger.warning("my_sources 시트 조회 실패 → 인메모리: %s", exc)
-        return list(_MEM_STORE)
-
-    def add(self, domain: str, label: str = "", url_example: str = "") -> SourceEntry:
-        """새 소스 추가 (중복 도메인 무시)."""
-        domain = _normalize_domain(domain)
-        if not domain:
-            raise ValueError("domain이 비어있습니다.")
-
-        existing = self.list()
-        for e in existing:
-            if e.domain == domain:
-                return e  # 이미 존재
-
-        entry = SourceEntry(domain=domain, label=label or domain, url_example=url_example)
-        if _SHEET_ID:
-            try:
-                self._sheet_add(entry)
-                return entry
-            except Exception as exc:
-                logger.warning("my_sources 시트 추가 실패 → 인메모리: %s", exc)
-        _MEM_STORE.append(entry)
-        return entry
-
-    def remove(self, domain: str) -> bool:
-        """도메인 삭제. 성공 시 True."""
-        domain = _normalize_domain(domain)
-        if _SHEET_ID:
-            try:
-                return self._sheet_remove(domain)
-            except Exception as exc:
-                logger.warning("my_sources 시트 삭제 실패 → 인메모리: %s", exc)
-        global _MEM_STORE
-        before = len(_MEM_STORE)
-        _MEM_STORE = [e for e in _MEM_STORE if e.domain != domain]
-        return len(_MEM_STORE) < before
-
-    # ------------------------------------------------------------------
-    # Sheets 구현
-    # ------------------------------------------------------------------
-
-    def _get_worksheet(self):
-        """gspread 워크시트 반환. 없으면 생성."""
-        import gspread
-        from google.oauth2.service_account import Credentials
-
-        creds_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
-        if not creds_json:
-            raise EnvironmentError("GOOGLE_SERVICE_ACCOUNT_JSON 미설정")
-        info = json.loads(creds_json)
-        creds = Credentials.from_service_account_info(
-            info,
-            scopes=["https://www.googleapis.com/auth/spreadsheets"],
-        )
-        gc = gspread.authorize(creds)
-        sh = gc.open_by_key(_SHEET_ID)
-        try:
-            ws = sh.worksheet(_WORKSHEET_NAME)
-        except gspread.WorksheetNotFound:
-            ws = sh.add_worksheet(_WORKSHEET_NAME, rows=500, cols=4)
-            ws.append_row(["domain", "label", "url_example", "added_at"])
+def _sheet():
+    if not _SHEET_ID:
+        return None
+    try:
+        from src.utils.sheets import open_sheet
+        ws = open_sheet(_SHEET_ID, _WS_NAME)
+        first = ws.row_values(1)
+        if not first or first[0] != "domain":
+            ws.insert_row(_HEADERS, index=1)
         return ws
-
-    def _sheet_list(self) -> List[SourceEntry]:
-        ws = self._get_worksheet()
-        records = ws.get_all_records()
-        return [SourceEntry.from_row(r) for r in records if r.get("domain")]
-
-    def _sheet_add(self, entry: SourceEntry) -> None:
-        ws = self._get_worksheet()
-        ws.append_row([entry.domain, entry.label, entry.url_example, entry.added_at])
-
-    def _sheet_remove(self, domain: str) -> bool:
-        ws = self._get_worksheet()
-        cell = ws.find(domain)
-        if cell is None:
-            return False
-        ws.delete_rows(cell.row)
-        return True
+    except Exception as exc:
+        logger.debug("My Sources 워크시트 접근 실패: %s", exc)
+        return None
 
 
-def _normalize_domain(raw: str) -> str:
-    """URL 또는 도메인 문자열 → 정규화된 도메인."""
-    raw = raw.strip().lower()
-    if raw.startswith(("http://", "https://")):
-        from urllib.parse import urlparse
-        parsed = urlparse(raw)
-        raw = parsed.netloc or raw
-    # www. 제거
-    if raw.startswith("www."):
-        raw = raw[4:]
-    return raw
+def list_sources() -> list[dict]:
+    rows: list[dict] = []
+    ws = _sheet()
+    if ws is not None:
+        try:
+            rows = [r for r in ws.get_all_records() if (r.get("domain") or "").strip()]
+        except Exception as exc:
+            logger.debug("My Sources 목록 조회 실패: %s", exc)
+            rows = []
+    if not rows:
+        rows = list(_in_memory.values())
+    rows = [dict(r) for r in rows]
+    rows.sort(key=lambda r: (r.get("last_used_at") or r.get("created_at") or ""), reverse=True)
+    return rows
+
+
+def add_source(value: str, label: str = "", note: str = "") -> dict:
+    domain = normalize_domain(value)
+    if not domain:
+        raise ValueError("도메인 형식이 올바르지 않습니다.")
+    now = _utc_now()
+    entry = {
+        "domain": domain,
+        "label": (label or domain).strip()[:120],
+        "note": (note or "").strip()[:300],
+        "created_at": now,
+        "last_used_at": now,
+    }
+    _in_memory[domain] = entry
+
+    ws = _sheet()
+    if ws is not None:
+        try:
+            records = ws.get_all_records()
+            for idx, row in enumerate(records, start=2):
+                if normalize_domain(row.get("domain", "")) == domain:
+                    ws.update_cell(idx, 2, entry["label"])
+                    ws.update_cell(idx, 3, entry["note"])
+                    ws.update_cell(idx, 5, entry["last_used_at"])
+                    return entry
+            ws.append_row([entry[h] for h in _HEADERS])
+        except Exception as exc:
+            logger.debug("My Sources 저장 실패 (sheet): %s", exc)
+    return entry
+
+
+def touch_source(value: str) -> bool:
+    domain = normalize_domain(value)
+    if not domain:
+        return False
+    entry = _in_memory.get(domain)
+    now = _utc_now()
+    if entry:
+        entry["last_used_at"] = now
+
+    ws = _sheet()
+    if ws is not None:
+        try:
+            records = ws.get_all_records()
+            for idx, row in enumerate(records, start=2):
+                if normalize_domain(row.get("domain", "")) == domain:
+                    ws.update_cell(idx, 5, now)
+                    return True
+        except Exception as exc:
+            logger.debug("My Sources touch 실패 (sheet): %s", exc)
+    return domain in _in_memory
+
+
+def remove_source(value: str) -> bool:
+    domain = normalize_domain(value)
+    if not domain:
+        return False
+    removed = _in_memory.pop(domain, None) is not None
+
+    ws = _sheet()
+    if ws is not None:
+        try:
+            records = ws.get_all_records()
+            for idx, row in enumerate(records, start=2):
+                if normalize_domain(row.get("domain", "")) == domain:
+                    ws.delete_rows(idx)
+                    return True
+        except Exception as exc:
+            logger.debug("My Sources 삭제 실패 (sheet): %s", exc)
+    return removed

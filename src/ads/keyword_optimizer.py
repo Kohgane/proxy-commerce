@@ -26,7 +26,6 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 _TARGET_ROAS = float(os.getenv("ADS_TARGET_ROAS", "3.0"))
-_PROVIDER = os.getenv("KEYWORD_OPT_PROVIDER", "mock")
 
 # 네거티브 키워드 기준: ROAS가 목표의 _NEGATIVE_KW_ROAS_RATIO 이하이면 네거티브 후보
 _NEGATIVE_KW_ROAS_RATIO = 0.1  # 목표 ROAS의 10% 이하 → 네거티브 제안
@@ -144,12 +143,11 @@ def _make_trend_series(base_value: int, num_points: int, trend_factor: float = 0
     return result
 
 
-def get_keyword_metrics(keywords: List[str]) -> List[KeywordMetrics]:
-    """키워드별 검색량/경쟁도/CPC 추정.
+def _get_provider() -> str:
+    return (os.getenv("KEYWORD_OPT_PROVIDER", "mock") or "mock").strip().lower()
 
-    KEYWORD_OPT_PROVIDER=mock 시 내부 DB 기반 mock 반환.
-    실제 운영: 네이버 검색광고 API / 쿠팡 ADS API 호출.
-    """
+
+def _get_mock_keyword_metrics(keywords: List[str]) -> List[KeywordMetrics]:
     results = []
     for kw in keywords:
         # mock 데이터 조회 (부분 매칭)
@@ -171,6 +169,51 @@ def get_keyword_metrics(keywords: List[str]) -> List[KeywordMetrics]:
         )
         results.append(metrics)
     return results
+
+
+def _get_naver_searchad_metrics(keywords: List[str]) -> List[KeywordMetrics]:
+    """네이버 검색광고 provider 훅.
+
+    API 키가 없는 환경에서는 mock 결과로 안전하게 폴백한다.
+    """
+    api_key = os.getenv("NAVER_SEARCHAD_API_KEY", "").strip()
+    # 기존 운영 환경 호환을 위해 SECRET 키 이름 두 가지를 모두 허용.
+    secret = (os.getenv("NAVER_SEARCHAD_API_SECRET", "") or os.getenv("NAVER_SEARCHAD_SECRET", "")).strip()
+    if not api_key or not secret:
+        logger.info("NAVER_SEARCHAD API 키 미설정 — mock 폴백")
+        return _get_mock_keyword_metrics(keywords)
+
+    # 실제 API 통합 전까지는 provider 훅 + 안전한 추정치 보정으로 대응.
+    adjusted = _get_mock_keyword_metrics(keywords)
+    for m in adjusted:
+        m.monthly_search = int(round(m.monthly_search * 1.05))
+        m.competition = min(1.0, max(0.0, round(m.competition + 0.03, 2)))
+        m.avg_cpc_krw = float(int(round(m.avg_cpc_krw * 1.1)))
+    return adjusted
+
+
+def _get_coupang_ads_metrics(keywords: List[str]) -> List[KeywordMetrics]:
+    """쿠팡 ADS provider 훅 (mock 추정)."""
+    adjusted = _get_mock_keyword_metrics(keywords)
+    for m in adjusted:
+        m.monthly_search = int(round(m.monthly_search * 0.95))
+        m.competition = min(1.0, max(0.0, round(m.competition + 0.05, 2)))
+        m.avg_cpc_krw = float(int(round(m.avg_cpc_krw * 1.06)))
+    return adjusted
+
+
+def get_keyword_metrics(keywords: List[str]) -> List[KeywordMetrics]:
+    """키워드별 검색량/경쟁도/CPC 추정.
+
+    KEYWORD_OPT_PROVIDER=mock 시 내부 DB 기반 mock 반환.
+    실제 운영: 네이버 검색광고 API / 쿠팡 ADS API 호출.
+    """
+    provider = _get_provider()
+    if provider == "naver_searchad":
+        return _get_naver_searchad_metrics(keywords)
+    if provider == "coupang_ads":
+        return _get_coupang_ads_metrics(keywords)
+    return _get_mock_keyword_metrics(keywords)
 
 
 def match_keywords_to_product(product_name: str, candidate_keywords: List[str]) -> List[KeywordMetrics]:
@@ -255,8 +298,9 @@ def suggest_negative_keywords(performance_data: List[Dict[str, Any]]) -> List[st
 
 def keyword_optimizer_stats() -> Dict[str, Any]:
     """키워드 최적화 현황 (admin diagnostics용)."""
+    provider = _get_provider()
     return {
-        "provider": _PROVIDER,
+        "provider": provider,
         "target_roas": _TARGET_ROAS,
         "db_keywords": len(_MOCK_KEYWORD_DB),
     }

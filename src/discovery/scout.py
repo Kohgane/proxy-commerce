@@ -178,6 +178,36 @@ def _save_candidate(domain: str, keyword: str, source: str) -> None:
         logger.warning("후보 저장 실패 (%s): %s", domain, exc)
 
 
+def register_collected_domain_candidate(
+    domain_or_url: str,
+    *,
+    keyword: str = "",
+    source: str = "manual_collect",
+) -> bool:
+    """수집 과정에서 발견된 신규 도메인을 Discovery 후보로 등록.
+
+    Returns:
+        실제 신규 후보로 처리되면 True, 기존/제외 도메인이면 False
+    """
+    raw = (domain_or_url or "").strip()
+    if not raw:
+        return False
+    if "://" not in raw:
+        raw = f"https://{raw}"
+
+    domain = _extract_domain(raw)
+    if not domain:
+        return False
+    if domain in _KNOWN_PLATFORMS:
+        return False
+    if domain in _get_registered_domains():
+        return False
+
+    keyword_value = keyword.strip() if keyword else "manual_collect"
+    _save_candidate(domain=domain, keyword=keyword_value, source=source)
+    return True
+
+
 def _notify_telegram(msg: str) -> None:
     """텔레그램 알림 (실패 무시)."""
     try:

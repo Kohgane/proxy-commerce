@@ -19,6 +19,7 @@ from src.discovery.scout import (
     _extract_domain,
     _get_keywords_from_env,
     _KNOWN_PLATFORMS,
+    register_collected_domain_candidate,
 )
 
 
@@ -125,3 +126,14 @@ class TestDiscoveryScout:
 
         saved_domains = [r["domain"] for r in results]
         assert "aloyoga.com" not in saved_domains
+
+    def test_register_collected_domain_candidate_filters_and_saves(self):
+        with patch("src.discovery.scout._get_registered_domains", return_value=set()):
+            with patch("src.discovery.scout._save_candidate") as mock_save:
+                ok = register_collected_domain_candidate(
+                    "https://new-brand-example.com/p/1",
+                    keyword="요가",
+                    source="manual_collect",
+                )
+        assert ok is True
+        mock_save.assert_called_once()

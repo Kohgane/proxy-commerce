@@ -4,7 +4,7 @@
 
 | Phase | 내용 | PR | 완료일 |
 |---|---|---|---|
-| Phase 160 | 셀러 콘솔 소싱/키워드 역량 퍼센티 초월 — 키워드 트렌드 대시보드(/seller/keywords, 실시간·일·주·월·년), AI 소싱 허브(/seller/sourcing, Discovery 연계), 원클릭 범용 수집+My Sources 즐겨찾기 | #PR | 2026-06-03 |
+| Phase 160 | 키워드/검색어 트렌드 대시보드(실시간·일·주·월·년) + AI 소싱 허브 + 원클릭 범용 수집 전면화(My Sources/Discovery 연계) | #PR | 2026-06-02 |
 | Phase 159 | 셀러 대시보드 홈 비주얼 리파인 — KPI 카드 고도화, 연동 상태 배너, 마켓 TODAY/TOTAL 그리드, 환율 카드, 친화적 empty state, 푸터 추가 | #PR | 2026-06-02 |
 | Phase 158 | 네이버 커머스 동기화 고정 IP 프록시 경유 지원(QuotaGuard/HTTPS_PROXY) + 403 IP_NOT_ALLOWED 진단 강화 | #PR | 2026-06-02 |
 | Phase 157 | 퍼센티 스타일 통합 셀러 콘솔 UI/UX 리뉴얼 — 사이드바+상단바 셸, 통합 대시보드 홈, 수집→등록 플로우, 디자인 시스템 | #PR | 2026-06-02 |
