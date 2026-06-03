@@ -364,3 +364,23 @@ class DiscoveryScout:
         except Exception as exc:
             logger.warning("키워드 삭제 실패: %s", exc)
         return False
+
+    def add_candidate(self, domain: str, source_keyword: str = "") -> bool:
+        """수동 수집 등을 통해 발견된 도메인을 후보에 추가 (Phase 160).
+
+        이미 등록된 도메인은 중복 추가하지 않는다.
+        """
+        if not domain:
+            return False
+        if not _SHEET_ID:
+            return False
+        try:
+            existing = self.get_candidates(status=None)
+            existing_domains = {r.get("domain", "").strip().lower() for r in existing}
+            if domain.lower() in existing_domains:
+                return False  # 이미 존재
+            _save_candidate(domain, source_keyword, source="manual_collect")
+            return True
+        except Exception as exc:
+            logger.warning("후보 추가 실패 (%s): %s", domain, exc)
+            return False
