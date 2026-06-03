@@ -1,32 +1,31 @@
-"""tests/test_pwa_manifest.py — PWA 매니페스트 점검 (Phase 147)."""
+"""tests/test_pwa_manifest.py — PWA 매니페스트 점검 (Phase 164)."""
 import json
-import pytest
 
 
 def test_manifest_json_valid():
-    """manifest.json이 유효한 JSON이어야 한다."""
-    with open("src/seller_console/static/manifest.json", encoding="utf-8") as f:
+    """manifest.webmanifest이 유효한 JSON이어야 한다."""
+    with open("src/seller_console/static/manifest.webmanifest", encoding="utf-8") as f:
         manifest = json.load(f)
     assert isinstance(manifest, dict)
 
 
 def test_manifest_has_name():
-    """manifest.json에 name 필드가 있어야 한다 (Proxy Commerce)."""
-    with open("src/seller_console/static/manifest.json", encoding="utf-8") as f:
+    """manifest.webmanifest에 name 필드가 있어야 한다 (Proxy Commerce)."""
+    with open("src/seller_console/static/manifest.webmanifest", encoding="utf-8") as f:
         manifest = json.load(f)
     assert manifest.get("name") == "Proxy Commerce"
 
 
 def test_manifest_has_short_name():
-    """manifest.json에 short_name 필드가 있어야 한다 (Percentiii)."""
-    with open("src/seller_console/static/manifest.json", encoding="utf-8") as f:
+    """manifest.webmanifest에 short_name 필드가 있어야 한다 (Percentiii)."""
+    with open("src/seller_console/static/manifest.webmanifest", encoding="utf-8") as f:
         manifest = json.load(f)
     assert manifest.get("short_name") == "Percentiii"
 
 
 def test_manifest_has_icons():
-    """manifest.json에 icons 필드가 있어야 한다 (192/512)."""
-    with open("src/seller_console/static/manifest.json", encoding="utf-8") as f:
+    """manifest.webmanifest에 icons 필드가 있어야 한다 (192/512)."""
+    with open("src/seller_console/static/manifest.webmanifest", encoding="utf-8") as f:
         manifest = json.load(f)
     icons = manifest.get("icons", [])
     assert len(icons) >= 2
@@ -39,22 +38,22 @@ def test_manifest_has_icons():
 
 
 def test_manifest_has_theme_color():
-    """manifest.json에 theme_color가 있어야 한다."""
-    with open("src/seller_console/static/manifest.json", encoding="utf-8") as f:
+    """manifest.webmanifest에 theme_color가 있어야 한다."""
+    with open("src/seller_console/static/manifest.webmanifest", encoding="utf-8") as f:
         manifest = json.load(f)
-    assert "theme_color" in manifest
+    assert manifest.get("theme_color") == "#121856"
 
 
 def test_manifest_has_background_color():
-    """manifest.json에 background_color가 있어야 한다."""
-    with open("src/seller_console/static/manifest.json", encoding="utf-8") as f:
+    """manifest.webmanifest에 background_color가 있어야 한다."""
+    with open("src/seller_console/static/manifest.webmanifest", encoding="utf-8") as f:
         manifest = json.load(f)
-    assert "background_color" in manifest
+    assert manifest.get("background_color") == "#121856"
 
 
 def test_manifest_display_standalone():
-    """manifest.json의 display가 standalone이어야 한다."""
-    with open("src/seller_console/static/manifest.json", encoding="utf-8") as f:
+    """manifest.webmanifest의 display가 standalone이어야 한다."""
+    with open("src/seller_console/static/manifest.webmanifest", encoding="utf-8") as f:
         manifest = json.load(f)
     assert manifest.get("display") == "standalone"
 
@@ -84,10 +83,19 @@ def test_service_worker_handles_notification_click():
 
 
 def test_manifest_served_via_app():
-    """Flask 앱에서 manifest.json이 서빙되어야 한다."""
+    """Flask 앱에서 manifest.webmanifest이 서빙되어야 한다."""
     from src.order_webhook import app
     with app.test_client() as client:
-        resp = client.get("/seller/static/manifest.json")
+        resp = client.get("/seller/static/manifest.webmanifest")
         assert resp.status_code == 200
         data = json.loads(resp.data)
         assert data.get("name") == "Proxy Commerce"
+
+
+def test_legacy_manifest_json_matches_webmanifest():
+    """manifest.json 백워드 호환본이 manifest.webmanifest와 동기화되는지 확인."""
+    with open("src/seller_console/static/manifest.webmanifest", encoding="utf-8") as f:
+        canonical = json.load(f)
+    with open("src/seller_console/static/manifest.json", encoding="utf-8") as f:
+        legacy = json.load(f)
+    assert legacy == canonical

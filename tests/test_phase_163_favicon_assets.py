@@ -12,6 +12,7 @@ def test_seller_icon_assets_exist():
         "apple-touch-icon.png",
         "icon-192.png",
         "icon-512.png",
+        "manifest.webmanifest",
     ]:
         assert (base / name).exists()
 
@@ -28,13 +29,21 @@ def test_base_templates_include_favicon_links():
         assert "favicon.svg" in text
         assert "favicon.ico" in text
         assert 'rel="apple-touch-icon"' in text
+        assert "manifest.webmanifest" in text
+        assert '#121856' in text
+
+
+def test_favicon_svg_uses_k_symbol():
+    text = Path("src/seller_console/static/favicon.svg").read_text(encoding="utf-8")
+    assert ">K<" in text
+    assert "KP" not in text
 
 
 def test_manifest_icon_files_are_served():
     from src.order_webhook import app
 
     with app.test_client() as client:
-        manifest_resp = client.get("/seller/static/manifest.json")
+        manifest_resp = client.get("/seller/static/manifest.webmanifest")
         assert manifest_resp.status_code == 200
         manifest = json.loads(manifest_resp.data)
         for icon in manifest.get("icons", []):

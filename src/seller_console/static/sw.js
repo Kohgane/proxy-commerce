@@ -4,7 +4,7 @@ const STATIC_ASSETS = [
   '/seller/dashboard',
   '/seller/static/seller.css',
   '/seller/static/seller.js',
-  '/seller/static/manifest.json',
+  '/seller/static/manifest.webmanifest',
   '/seller/cs/mobile',
   '/seller/static/cs_mobile.js',
 ];

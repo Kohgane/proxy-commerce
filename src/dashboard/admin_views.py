@@ -2988,7 +2988,7 @@ _DIAGNOSTICS_TEMPLATE = """
           <li>Service Worker: {% if pwa_status.sw_registered %}✅ 등록 스크립트 포함{% else %}❌{% endif %}</li>
         </ul>
         <div class="d-flex gap-2 flex-wrap">
-          <a class="btn btn-outline-primary btn-sm" href="/seller/static/manifest.json" target="_blank">📄 PWA 매니페스트</a>
+          <a class="btn btn-outline-primary btn-sm" href="/seller/static/manifest.webmanifest" target="_blank">📄 PWA 매니페스트</a>
           <a class="btn btn-outline-secondary btn-sm" href="/seller/static/sw.js" target="_blank">⚙️ Service Worker</a>
         </div>
       </div>
