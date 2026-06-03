@@ -33,6 +33,9 @@ def test_manifest_has_icons():
     sizes = {icon["sizes"] for icon in icons}
     assert "192x192" in sizes
     assert "512x512" in sizes
+    srcs = {icon["src"] for icon in icons}
+    assert "/seller/static/icon-192.png" in srcs
+    assert "/seller/static/icon-512.png" in srcs
 
 
 def test_manifest_has_theme_color():
@@ -84,7 +87,7 @@ def test_manifest_served_via_app():
     """Flask 앱에서 manifest.json이 서빙되어야 한다."""
     from src.order_webhook import app
     with app.test_client() as client:
-        resp = client.get("/seller/seller/static/manifest.json")
+        resp = client.get("/seller/static/manifest.json")
         assert resp.status_code == 200
         data = json.loads(resp.data)
         assert data.get("name") == "Proxy Commerce"
