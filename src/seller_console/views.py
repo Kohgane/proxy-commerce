@@ -3193,7 +3193,8 @@ def sourcing_registry_add():
             "is_large_platform": probe.get("is_large_platform", False),
         })
     except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
+        logger.debug("소싱처 등록 입력 오류: %s", exc)
+        return jsonify({"ok": False, "error": "올바른 도메인 또는 URL을 입력해주세요."}), 400
     except Exception as exc:
         logger.warning("소싱처 등록 실패: %s", exc)
         return jsonify({"ok": False, "error": "소싱처 등록 중 오류가 발생했습니다."}), 500

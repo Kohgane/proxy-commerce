@@ -5,7 +5,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +111,10 @@ def probe_collectability(domain_or_url: str, timeout: float = 5.0) -> dict:
             "is_large_platform": is_large,
         }
 
+    # SSRF 방지: 검증된 컴포넌트로 URL 재조합 (taint chain 차단)
+    _parsed = urlparse(url)
+    safe_url = urlunparse((_parsed.scheme, _parsed.netloc, _parsed.path, _parsed.params, _parsed.query, ""))
+
     try:
         import requests as req
         headers = {"User-Agent": _PROBE_USER_AGENT}
@@ -118,7 +122,7 @@ def probe_collectability(domain_or_url: str, timeout: float = 5.0) -> dict:
         # 1단계: HEAD 요청
         head_status = None
         try:
-            r = req.head(url, headers=headers, timeout=timeout, allow_redirects=True)
+            r = req.head(safe_url, headers=headers, timeout=timeout, allow_redirects=True)
             head_status = r.status_code
         except Exception:
             head_status = None
@@ -142,7 +146,7 @@ def probe_collectability(domain_or_url: str, timeout: float = 5.0) -> dict:
 
         # 2단계: GET으로 OG/JSON-LD 탐지
         try:
-            rg = req.get(url, headers=headers, timeout=timeout, allow_redirects=True)
+            rg = req.get(safe_url, headers=headers, timeout=timeout, allow_redirects=True)
             html = rg.text[:200_000]
             has_og = 'property="og:title"' in html or "property='og:title'" in html
             has_og = has_og or 'og:title' in html
