@@ -75,5 +75,9 @@ src/seller_console/static/sw.js → /seller/static/sw.js
 
 - `src/seller_console/templates/_base.html` — manifest 링크, SW 등록, hamburger
 - `src/seller_console/static/seller.css` — 반응형 CSS
-- `src/seller_console/static/manifest.json` — PWA 매니페스트
+- `src/seller_console/static/manifest.webmanifest` — PWA 매니페스트
+- `src/seller_console/static/favicon.svg` — 파비콘 벡터 원본(source of truth)
+- `src/seller_console/static/favicon.ico` / `apple-touch-icon.png` / `icon-192.png` / `icon-512.png` — 사이즈별 파생 아이콘
 - `src/seller_console/static/sw.js` — Service Worker
+
+아이콘 리디자인(Phase 164) 이후 파생 PNG/ICO는 기존과 동일하게 Pillow 기반 생성 절차를 사용하며, 디자인 원본은 `favicon.svg` 기준으로 유지합니다.

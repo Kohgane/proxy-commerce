@@ -21,7 +21,7 @@ def test_cs_mobile_manifest_200(tmp_path, monkeypatch):
     from src.order_webhook import app
     app.config["TESTING"] = True
     with app.test_client() as client:
-        resp = client.get("/seller/static/manifest.json")
+        resp = client.get("/seller/static/manifest.webmanifest")
         assert resp.status_code == 200
 
 

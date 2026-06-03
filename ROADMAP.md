@@ -4,6 +4,7 @@
 
 | Phase | 내용 | PR | 완료일 |
 |---|---|---|---|
+| Phase 164 | 파비콘/앱 아이콘 브랜드 심볼 리디자인 — 인디고↔블루 그라데이션 라운드 사각형 + 육각 순환 링 + 중앙 K 적용, 소형(16/32/48)은 K 가독성 우선 단순화, `manifest.webmanifest` 도입 및 theme/background 컬러 갱신 | #PR | 2026-06-03 |
 | Phase 163 | KP 모노그램 파비콘/앱 아이콘 풀세트(svg/ico/apple-touch/192/512) 추가(Pillow 생성 스크립트로 재생성 가능), `/seller/static` 정적 경로 정렬, manifest 아이콘 경로 갱신, 공통/인증/법률/샵 헤드 favicon 연결, PWA 404(sw/icon) 정리 | #PR | 2026-06-03 |
 | Phase 162 | 소싱처 등록소(Source Registry) — 셀러가 임의의 개방형 몰을 직접 등록·관리. 개방성(open/partial/restricted) 자동 판정, 알파벳순 정렬, 재수집/삭제/상세/검색, 원클릭 수집→소싱처 저장, Discovery 후보 자동 연계 | #PR | 2026-06-03 |
 | Phase 161 | Hotfix — `/seller/sourcing` 500 수정(`_build_sourcing_recommendations` 시그니처 일치), 사이드바 중복 제거, PWA 정적파일 404 정리(icon-192.png/sw.js) | #PR | 2026-06-03 |
