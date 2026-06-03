@@ -324,10 +324,13 @@ def _build_keyword_trend_context(query_keywords: list[str], period: str) -> dict
 def _build_sourcing_recommendations(
     *,
     keyword: str,
-    keyword_context: dict[str, Any],
-    discovery_candidates: list[dict[str, Any]],
-    queue_candidates: list[Any],
+    keyword_context: "dict[str, Any] | None" = None,
+    discovery_candidates: "list[dict[str, Any]] | None" = None,
+    queue_candidates: "list[Any] | None" = None,
 ) -> list[dict[str, Any]]:
+    keyword_context = keyword_context or {}
+    discovery_candidates = discovery_candidates or []
+    queue_candidates = queue_candidates or []
     recommendations: list[dict[str, Any]] = []
     keyword_lower = (keyword or "").strip().lower()
 
@@ -4486,123 +4489,8 @@ def seller_keywords_search():
 
 
 # ---------------------------------------------------------------------------
-# Phase 160 — AI 소싱 허브
+# Phase 160 — AI 소싱 허브 추가 API
 # ---------------------------------------------------------------------------
-
-
-def _build_sourcing_recommendations(keyword: str) -> list:
-    """키워드 기반 소싱 후보 추천 (트렌드 + Discovery + 후보 큐 종합).
-
-    LLM 없이 규칙 기반 추천. OPENAI_API_KEY 있으면 향후 LLM 강화 가능.
-    """
-    recommendations = []
-
-    # 1) 키워드 트렌드 기반 추천
-    try:
-        from src.ads.keyword_optimizer import get_keyword_metrics
-        metrics = get_keyword_metrics([keyword])
-        for m in metrics:
-            if m.monthly_search > 0:
-                recommendations.append({
-                    "name": f"{keyword} 관련 상품 소싱",
-                    "source": "trend",
-                    "source_label": "트렌드",
-                    "reason": f"월 검색량 {m.monthly_search:,}, 경쟁도 {m.competition:.0%}",
-                    "margin_hint": f"CPC ₩{m.avg_cpc_krw:,.0f} 기준 마진 추정",
-                    "url": None,
-                })
-    except Exception as exc:
-        logger.warning("트렌드 기반 소싱 추천 실패: %s", exc)
-
-    # 2) Discovery 후보 기반 추천
-    try:
-        from src.discovery.scout import DiscoveryScout
-        candidates = DiscoveryScout().get_candidates()
-        for c in (candidates or [])[:3]:
-            domain = getattr(c, "domain", str(c))
-            status = getattr(c, "status", "pending")
-            if status not in ("pending", "approved"):
-                continue
-            recommendations.append({
-                "name": f"{domain} — 신규 발견 쇼핑몰",
-                "source": "discovery",
-                "source_label": "Discovery",
-                "reason": "키워드 검색에서 새로 발견된 쇼핑몰",
-                "margin_hint": None,
-                "url": f"https://{domain}",
-            })
-    except Exception as exc:
-        logger.debug("Discovery 후보 조회 실패(무시): %s", exc)
-
-    # 3) 기존 소싱 후보 큐에서 키워드 매칭
-    try:
-        from src.sourcing.pipeline import get_candidate_store
-        store = get_candidate_store()
-        candidates_q = store.list() if hasattr(store, "list") else []
-        for c in (candidates_q or [])[:5]:
-            name = getattr(c, "product_name", "") or ""
-            if keyword.lower() in name.lower():
-                margin = getattr(c, "estimated_margin_pct", 0) or 0
-                recommendations.append({
-                    "name": name,
-                    "source": "queue",
-                    "source_label": "후보 큐",
-                    "reason": "기존 소싱 후보 큐에서 키워드 매칭",
-                    "margin_hint": f"예상 마진 {margin:.0f}%" if margin else None,
-                    "url": getattr(c, "source_url", None),
-                })
-    except Exception as exc:
-        logger.debug("후보 큐 매칭 실패(무시): %s", exc)
-
-    # 최소 1개는 보장 (mock fallback)
-    if not recommendations:
-        recommendations.append({
-            "name": f"'{keyword}' 연관 상품",
-            "source": "trend",
-            "source_label": "추천",
-            "reason": "키워드 분석 기반 소싱 추천",
-            "margin_hint": None,
-            "url": None,
-        })
-
-    return recommendations[:10]
-
-
-@bp.get("/sourcing")
-def seller_sourcing():
-    """AI 소싱 허브 (Phase 160).
-
-    키워드 입력 → 소싱 후보 추천 + 원클릭 수집 + My Sources 즐겨찾기.
-    """
-    keyword = (request.args.get("keyword") or "").strip()
-    recommendations = []
-    if keyword:
-        recommendations = _build_sourcing_recommendations(keyword)
-
-    # My Sources 즐겨찾기
-    try:
-        from src.seller_console.my_sources_store import MySourcesStore
-        my_sources = MySourcesStore().list()
-    except Exception as exc:
-        logger.warning("My Sources 조회 실패: %s", exc)
-        my_sources = []
-
-    # Discovery 신규 발견 (최근 5개)
-    discovery_candidates = []
-    try:
-        from src.discovery.scout import DiscoveryScout
-        raw = DiscoveryScout().get_candidates()
-        discovery_candidates = (raw or [])[:5]
-    except Exception as exc:
-        logger.debug("Discovery 후보 조회 실패(무시): %s", exc)
-
-    return render_template(
-        "sourcing.html",
-        keyword=keyword,
-        recommendations=recommendations,
-        my_sources=my_sources,
-        discovery_candidates=discovery_candidates,
-    )
 
 
 @bp.post("/sourcing/recommend")
@@ -4613,7 +4501,7 @@ def seller_sourcing_recommend():
     if not keyword:
         return jsonify({"ok": False, "error": "keyword가 필요합니다."}), 400
     try:
-        recs = _build_sourcing_recommendations(keyword)
+        recs = _build_sourcing_recommendations(keyword=keyword)
         return jsonify({"ok": True, "recommendations": recs})
     except Exception as exc:
         logger.warning("소싱 추천 API 오류: %s", exc)

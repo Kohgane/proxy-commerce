@@ -4,6 +4,7 @@
 
 | Phase | 내용 | PR | 완료일 |
 |---|---|---|---|
+| Phase 161 | Hotfix — `/seller/sourcing` 500 수정(`_build_sourcing_recommendations` 시그니처 일치), 사이드바 중복 제거, PWA 정적파일 404 정리(icon-192.png/sw.js) | #PR | 2026-06-03 |
 | Phase 160 | 키워드/검색어 트렌드 대시보드(실시간·일·주·월·년) + AI 소싱 허브 + 원클릭 범용 수집 전면화(My Sources/Discovery 연계) | #PR | 2026-06-02 |
 | Phase 159 | 셀러 대시보드 홈 비주얼 리파인 — KPI 카드 고도화, 연동 상태 배너, 마켓 TODAY/TOTAL 그리드, 환율 카드, 친화적 empty state, 푸터 추가 | #PR | 2026-06-02 |
 | Phase 158 | 네이버 커머스 동기화 고정 IP 프록시 경유 지원(QuotaGuard/HTTPS_PROXY) + 403 IP_NOT_ALLOWED 진단 강화 | #PR | 2026-06-02 |

@@ -48,18 +48,14 @@
       <li class="console-nav-group-title">리서치/소싱</li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/keywords') %}active{% endif %}" href="/seller/keywords"><i class="bi bi-graph-up"></i><span>키워드 트렌드</span></a></li>
       <li><a class="console-nav-link {% if _path == '/seller/sourcing' or _path.startswith('/seller/sourcing/my-sources') or _path.startswith('/seller/sourcing/collect') or _path.startswith('/seller/sourcing/recommend') %}active{% endif %}" href="/seller/sourcing"><i class="bi bi-stars"></i><span>AI 소싱 허브</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/sourcing/watches') %}active{% endif %}" href="/seller/sourcing/watches"><i class="bi bi-binoculars"></i><span>소싱 watches</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/sourcing/candidates') %}active{% endif %}" href="/seller/sourcing/candidates"><i class="bi bi-inboxes"></i><span>후보 큐</span></a></li>
 
       <li class="console-nav-group-title">가격</li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/pricing') or _path.startswith('/seller/margin') %}active{% endif %}" href="/seller/margin"><i class="bi bi-calculator"></i><span>마진 계산기</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/pricing/rules') %}active{% endif %}" href="/seller/pricing/rules"><i class="bi bi-sliders"></i><span>가격 정책 룰</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/pricing/competitors') %}active{% endif %}" href="/seller/pricing/competitors"><i class="bi bi-people"></i><span>경쟁사</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/pricing/fx-impact') %}active{% endif %}" href="/seller/pricing/fx-impact"><i class="bi bi-currency-exchange"></i><span>환율 영향</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/keywords') %}active{% endif %}" href="/seller/keywords"><i class="bi bi-graph-up-arrow"></i><span>키워드 트렌드</span></a></li>
-
-      <li class="console-nav-group-title">리서치/소싱</li>
-      <li><a class="console-nav-link {% if _path == '/seller/sourcing' %}active{% endif %}" href="/seller/sourcing"><i class="bi bi-stars"></i><span>AI 소싱 허브</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/sourcing/watches') %}active{% endif %}" href="/seller/sourcing/watches"><i class="bi bi-binoculars"></i><span>소싱 watches</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/sourcing/candidates') %}active{% endif %}" href="/seller/sourcing/candidates"><i class="bi bi-inboxes"></i><span>후보 큐</span></a></li>
 
       <li class="console-nav-group-title">마켓</li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/markets') or _path.startswith('/seller/market-status') %}active{% endif %}" href="/seller/markets"><i class="bi bi-shop"></i><span>마켓 연동/현황</span></a></li>
