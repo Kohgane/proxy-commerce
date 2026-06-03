@@ -28,7 +28,7 @@
   </div>
 
   <div class="row g-3 mb-3">
-    <div class="col-12 col-lg-6">
+    <div class="col-12 col-lg-5">
       <div class="card console-card h-100">
         <div class="card-body">
           <h2 class="h6 mb-2">크롬 확장 / 북마클릿 연동</h2>
@@ -40,39 +40,88 @@
         </div>
       </div>
     </div>
-    <div class="col-12 col-lg-6">
+    <div class="col-12 col-lg-7">
+      <!-- 소싱처 등록소 (Source Registry) — Phase 162 -->
       <div class="card console-card h-100">
         <div class="card-body">
-          <h2 class="h6 mb-2">My Sources (즐겨찾기)</h2>
-          <form class="row g-2" method="post" action="/seller/sourcing/my-sources">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h2 class="h6 mb-0">소싱처 등록소</h2>
+            <span class="badge text-bg-secondary">{{ registry_sources|length }}개</span>
+          </div>
+          <p class="small text-muted mb-2">자사몰·소규모 브랜드몰 등 원하는 몰을 직접 등록하세요. 개방성이 자동으로 판정됩니다.</p>
+
+          <!-- 등록 폼 -->
+          <form class="row g-2 mb-3" method="post" action="/seller/sourcing/my-sources">
             <input type="hidden" name="action" value="add">
             <input type="hidden" name="keyword" value="{{ keyword }}">
-            <div class="col-12 col-md-5"><input class="form-control form-control-sm" name="domain" placeholder="example.com 또는 URL" required></div>
-            <div class="col-12 col-md-4"><input class="form-control form-control-sm" name="label" placeholder="표시 이름(선택)"></div>
-            <div class="col-12 col-md-3 d-grid"><button class="btn btn-sm btn-primary">저장</button></div>
+            <div class="col-12 col-md-5">
+              <input class="form-control form-control-sm" name="domain" id="registryDomainInput" placeholder="example.com 또는 URL" required autocomplete="off">
+            </div>
+            <div class="col-12 col-md-4">
+              <input class="form-control form-control-sm" name="label" id="registryLabelInput" placeholder="표시 이름(선택)">
+            </div>
+            <div class="col-12 col-md-3 d-grid">
+              <button class="btn btn-sm btn-primary" type="submit" id="registrySubmitBtn">등록</button>
+            </div>
           </form>
-          {% if my_sources %}
-          <ul class="list-group list-group-flush mt-3">
-            {% for source in my_sources %}
-            <li class="list-group-item px-0 d-flex flex-wrap justify-content-between align-items-center gap-2">
-              <div>
-                <div class="fw-semibold">{{ source.label or source.domain }}</div>
-                <div class="small text-muted">{{ source.domain }}</div>
-              </div>
-              <div class="d-flex gap-1">
-                <a class="btn btn-sm btn-outline-primary" href="/seller/collect?url={{ ('https://' + source.domain)|urlencode }}">재수집</a>
-                <form method="post" action="/seller/sourcing/my-sources" class="d-inline">
-                  <input type="hidden" name="action" value="remove">
-                  <input type="hidden" name="keyword" value="{{ keyword }}">
-                  <input type="hidden" name="domain" value="{{ source.domain }}">
-                  <button class="btn btn-sm btn-outline-danger" type="submit">삭제</button>
-                </form>
+
+          {% if registry_sources %}
+          <!-- 검색/필터 -->
+          <div class="mb-2">
+            <input class="form-control form-control-sm" id="registrySearchInput" type="search" placeholder="이름·도메인 검색…" autocomplete="off">
+          </div>
+          <ul class="list-group list-group-flush" id="registryList" style="max-height:340px;overflow-y:auto;">
+            {% for source in registry_sources %}
+            {% set openness = source.openness_status or 'partial' %}
+            {% set adapter = source.adapter_name or 'generic_og' %}
+            {% set is_large = adapter == 'large_platform' %}
+            <li class="list-group-item px-0 registry-item" data-name="{{ (source.label or source.domain)|lower }}" data-domain="{{ source.domain|lower }}">
+              <div class="d-flex flex-wrap justify-content-between align-items-start gap-1">
+                <div class="flex-grow-1" style="min-width:0;">
+                  <div class="d-flex flex-wrap align-items-center gap-1 mb-0">
+                    <span class="fw-semibold text-truncate">{{ source.label or source.domain }}</span>
+                    {% if openness == 'open' %}
+                    <span class="badge text-bg-success" title="OG/JSON-LD 확인 — 수집 가능">open</span>
+                    {% elif openness == 'restricted' %}
+                    <span class="badge text-bg-danger" title="접근 차단/폐쇄형 — 수집 어려움">restricted ⚠</span>
+                    {% else %}
+                    <span class="badge text-bg-warning text-dark" title="부분 수집 가능 — OG 미확인">partial</span>
+                    {% endif %}
+                    {% if is_large %}
+                    <span class="badge text-bg-info" title="전용 어댑터 보유 대형몰">대형몰</span>
+                    {% endif %}
+                  </div>
+                  <div class="small text-muted text-truncate">{{ source.domain }} · {{ adapter }}</div>
+                  <!-- 상세 정보 (접기/펼치기) -->
+                  <div class="registry-detail mt-1 d-none small text-muted">
+                    <div>등록일: {{ (source.created_at or '')[:10] or '-' }}</div>
+                    {% if source.last_collect_at %}
+                    <div>마지막 수집: {{ source.last_collect_at[:19] }} — {{ source.last_collect_result or '-' }}</div>
+                    {% endif %}
+                    {% if source.note %}
+                    <div>메모: {{ source.note }}</div>
+                    {% endif %}
+                  </div>
+                </div>
+                <div class="d-flex gap-1 flex-shrink-0">
+                  <button type="button" class="btn btn-sm btn-outline-secondary registry-detail-btn" title="상세 보기" aria-label="상세 보기" style="padding:1px 6px;">…</button>
+                  <button type="button" class="btn btn-sm btn-outline-primary registry-recollect-btn" data-domain="{{ source.domain }}" title="재수집" aria-label="재수집" style="padding:1px 6px;">↺</button>
+                  <form method="post" action="/seller/sourcing/my-sources" class="d-inline">
+                    <input type="hidden" name="action" value="remove">
+                    <input type="hidden" name="keyword" value="{{ keyword }}">
+                    <input type="hidden" name="domain" value="{{ source.domain }}">
+                    <button class="btn btn-sm btn-outline-danger" type="submit" title="삭제" aria-label="삭제" style="padding:1px 6px;">✕</button>
+                  </form>
+                </div>
               </div>
             </li>
             {% endfor %}
           </ul>
           {% else %}
-          <div class="console-empty-state p-3 mt-2">저장된 소스가 없습니다. 자주 쓰는 브랜드몰을 추가하세요.</div>
+          <div class="console-empty-state p-3">
+            <div class="fw-semibold mb-1">등록된 소싱처가 없습니다.</div>
+            <div class="small">자주 수집할 브랜드몰이나 자사몰을 위 폼에서 추가하세요.</div>
+          </div>
           {% endif %}
         </div>
       </div>
@@ -161,17 +210,52 @@ function renderQuickResult(data, url) {
   const draft = data.draft || {};
   const title = draft.title_ko || draft.title || '제목 없음';
   const source = data.source || draft.source || draft.adapter_used || 'collector';
+  const domain = (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch(e) { return url; } })();
   quickResult.classList.remove('d-none');
   quickResult.innerHTML = `
     <div class="border rounded-3 p-3 bg-light">
       <div class="fw-semibold mb-1">${title}</div>
       <div class="small text-muted mb-2">collector: ${source}</div>
-      <div class="d-flex gap-2">
+      <div class="d-flex flex-wrap gap-2">
         <a class="btn btn-sm btn-primary" href="/seller/collect?url=${encodeURIComponent(url)}">등록 플로우로 이동</a>
+        <button type="button" class="btn btn-sm btn-outline-success" id="saveToRegistryBtn" data-domain="${domain}" data-url="${url}">+ 소싱처로 저장</button>
         <button type="button" class="btn btn-sm btn-outline-secondary" onclick="quickResult.classList.add('d-none')">닫기</button>
       </div>
+      <div id="saveToRegistryResult" class="mt-2 d-none"></div>
     </div>
   `;
+  document.getElementById('saveToRegistryBtn')?.addEventListener('click', saveToRegistry);
+}
+
+async function saveToRegistry(e) {
+  const btn = e.currentTarget;
+  const domain = btn.dataset.domain;
+  const url = btn.dataset.url;
+  btn.disabled = true;
+  btn.textContent = '저장 중…';
+  const resultEl = document.getElementById('saveToRegistryResult');
+  try {
+    const resp = await fetch('/seller/sourcing/registry/add', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url, domain, keyword: {{ keyword|tojson }}})
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      const badges = {'open':'<span class="badge text-bg-success">open</span>','partial':'<span class="badge text-bg-warning text-dark">partial</span>','restricted':'<span class="badge text-bg-danger">restricted ⚠</span>'};
+      const badge = badges[data.openness_status] || '';
+      resultEl.classList.remove('d-none');
+      resultEl.innerHTML = `<div class="text-success small">소싱처로 저장됨: <strong>${data.domain}</strong> ${badge} — <a href="/seller/sourcing">목록 보기</a></div>`;
+      btn.textContent = '✓ 저장됨';
+    } else {
+      throw new Error(data.error || '저장 실패');
+    }
+  } catch(err) {
+    resultEl.classList.remove('d-none');
+    resultEl.innerHTML = `<div class="text-danger small">${err.message}</div>`;
+    btn.disabled = false;
+    btn.textContent = '+ 소싱처로 저장';
+  }
 }
 
 quickBtn?.addEventListener('click', async () => {
@@ -200,5 +284,56 @@ quickBtn?.addEventListener('click', async () => {
 if (quickInput?.value) {
   quickBtn?.click();
 }
+
+// 소싱처 등록소 — 검색/필터
+const registrySearch = document.getElementById('registrySearchInput');
+registrySearch?.addEventListener('input', () => {
+  const q = registrySearch.value.toLowerCase();
+  document.querySelectorAll('#registryList .registry-item').forEach(li => {
+    const name = li.dataset.name || '';
+    const domain = li.dataset.domain || '';
+    li.style.display = (!q || name.includes(q) || domain.includes(q)) ? '' : 'none';
+  });
+});
+
+// 소싱처 상세 보기 토글
+document.querySelectorAll('.registry-detail-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const detail = btn.closest('li')?.querySelector('.registry-detail');
+    if (detail) {
+      detail.classList.toggle('d-none');
+      btn.textContent = detail.classList.contains('d-none') ? '…' : '▲';
+    }
+  });
+});
+
+// 소싱처 재수집
+document.querySelectorAll('.registry-recollect-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const domain = btn.dataset.domain;
+    btn.disabled = true;
+    btn.textContent = '…';
+    try {
+      const resp = await fetch(`/seller/sourcing/registry/${encodeURIComponent(domain)}/recollect`, {method: 'POST'});
+      const data = await resp.json();
+      btn.textContent = data.ok ? '✓' : '!';
+      if (data.ok) {
+        const detail = btn.closest('li')?.querySelector('.registry-detail');
+        if (detail) {
+          const node = detail.querySelector('.last-collect-info') || document.createElement('div');
+          node.className = 'last-collect-info';
+          node.textContent = `마지막 수집: ${data.summary || '-'}`;
+          if (!detail.contains(node)) detail.appendChild(node);
+          detail.classList.remove('d-none');
+          btn.closest('li')?.querySelector('.registry-detail-btn')?.click();
+        }
+      }
+    } catch(e) {
+      btn.textContent = '!';
+    } finally {
+      setTimeout(() => { btn.disabled = false; btn.textContent = '↺'; }, 2000);
+    }
+  });
+});
 </script>
 {% endblock %}
