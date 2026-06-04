@@ -136,6 +136,19 @@ class TestSellerConsoleViews:
         assert "실시간·일·주·월·년" in html
         assert "키워드/검색어 트렌드" in html
 
+    def test_keywords_page_renders_empty_state_without_500(self, client):
+        resp = client.get("/seller/keywords?period=month")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "키워드/검색어 트렌드" in html
+
+    def test_ads_keywords_optimizer_generates_recommendations(self, client):
+        resp = client.get("/seller/ads/keywords?title=LOWRIDER+BEAR+T-SHIRT&tags=베어,반팔,스트리트")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "키워드 최적화" in html
+        assert "추천 입찰가" in html
+
     def test_sourcing_hub_page_renders_one_click_collect(self, client):
         resp = client.get("/seller/sourcing")
         assert resp.status_code == 200

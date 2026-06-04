@@ -22,19 +22,6 @@ def _filter_iqr(items: list[dict]) -> list[dict]:
     return [i for i in items if low <= int(i.get("price_krw", 0)) <= high]
 
 
-def _mock_items(query: str, market: str, limit: int) -> list[dict]:
-    base = 280000
-    return [
-        {
-            "market": market or "smartstore",
-            "title": f"{query} 유사상품 {idx + 1}",
-            "price_krw": base + (idx * 12000),
-            "url": f"https://example.com/{market or 'smartstore'}/{idx + 1}",
-        }
-        for idx in range(max(1, limit))
-    ]
-
-
 def scan_competitor_prices(
     *,
     product_name: str,
@@ -77,9 +64,10 @@ def scan_competitor_prices(
     except Exception:
         pass
 
-    # 3) fallback mock (API 키 미설정/실패 시)
+    # 3) 실데이터가 없으면 합성 가격을 만들지 않는다.
     if not items:
-        items = _mock_items(query, market, limit)
+        _CACHE[key] = {"items": [], "expires_at": now + _TTL_SEC}
+        return []
 
     items = _filter_iqr(items)[:limit]
     _CACHE[key] = {"items": items, "expires_at": now + _TTL_SEC}

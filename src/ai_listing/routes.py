@@ -398,6 +398,10 @@ function showResults(imageUrl, analysis, generated, markets, confidenceBadges, d
     const sourcePriceText = mdata.source_price && mdata.source_price.amount
       ? `${mdata.source_price.amount} ${mdata.source_price.currency}`
       : '-';
+    const sourcePriceLabel = (mdata.source_price || {}).source || '-';
+    const marketRef = mdata.source_market_price_krw || null;
+    const marketRefRegular = mdata.source_market_price_regular_krw || null;
+    const marketRefSource = mdata.source_market_price_source || '-';
     const pb = mdata.pricing_breakdown || null;
     const competitorItems = mdata.competitor_items || [];
     const actualMarketItems = mdata.actual_market_items || [];
@@ -409,25 +413,26 @@ function showResults(imageUrl, analysis, generated, markets, confidenceBadges, d
     const actualMedian = actualPrices.length ? actualPrices[Math.floor(actualPrices.length / 2)] : null;
     const pricingCard = pb ? `
       <div class="border rounded p-3 bg-light mb-3">
-        <div class="fw-semibold mb-2">시장가 분석</div>
-        ${actualMarketItems.length ? `<div class="small mb-2"><strong>실측 동일 상품</strong><br>${actualMarketItems.map(i => `• ${escapeHtml(i.title || i.market || 'market')} — ₩${(i.price_krw || 0).toLocaleString()}`).join('<br>')}</div>` : ''}
-        <div class="small">원가(자동): ${escapeHtml(sourcePriceText)} = ₩${Math.round(pb.cost_krw || 0).toLocaleString()}</div>
+        <div class="fw-semibold mb-2">가격 분해 (출처 라벨 포함)</div>
+        <div class="small">매입원가(계산): ${escapeHtml(sourcePriceText)} = ₩${Math.round(pb.cost_krw || 0).toLocaleString()} <span class="text-muted">[${escapeHtml(sourcePriceLabel)}]</span></div>
         <div class="small">+ 국제배송비: ₩${Math.round(pb.shipping_krw || 0).toLocaleString()}</div>
         <div class="small">+ 관세: ₩${Math.round(pb.customs_krw || 0).toLocaleString()}</div>
         <div class="small">+ 부가세: ₩${Math.round(pb.vat_krw || 0).toLocaleString()}</div>
         <div class="small fw-semibold mt-1">랜디드 코스트: ₩${Math.round(pb.total_landed || 0).toLocaleString()}</div>
-        <div class="small">자동 계산 판매가: ₩${Math.round(pb.calculated_price || 0).toLocaleString()}</div>
-        <div class="small">🎯 권장 판매가: <strong>₩${Math.round(pb.suggested_price || 0).toLocaleString()}</strong> (${escapeHtml(pb.decision_source || 'calculated')})</div>
+        <div class="small">목표 마진 기반 계산가: ₩${Math.round(pb.calculated_price || 0).toLocaleString()} <span class="text-muted">[calculated]</span></div>
+        <div class="small">🎯 권장 판매가: <strong>₩${Math.round(pb.suggested_price || 0).toLocaleString()}</strong> <span class="text-muted">(${escapeHtml(pb.decision_source || 'calculated')})</span></div>
+        ${marketRef ? `<div class="small text-muted">소스 표시 판매가(참고): ₩${Math.round(marketRef).toLocaleString()}${marketRefRegular ? ` / 정가 ₩${Math.round(marketRefRegular).toLocaleString()}` : ''} [${escapeHtml(marketRefSource)}]</div>` : `<div class="small text-muted">소스 표시 판매가(참고): 데이터 없음</div>`}
+        ${actualMarketItems.length ? `<div class="small mt-2"><strong>실측 동일 상품</strong> <span class="text-muted">[검증 데이터]</span><br>${actualMarketItems.map(i => `• ${escapeHtml(i.title || i.market || 'market')} — ₩${(i.price_krw || 0).toLocaleString()}`).join('<br>')}</div>` : `<div class="small mt-2 text-muted">실측 동일 상품: 데이터 없음 (미검증 수치 미사용)</div>`}
         ${actualMedian ? `<div class="small text-muted">실측 중앙값: ₩${Math.round(actualMedian).toLocaleString()}</div>` : ''}
         ${pb.loss_warning ? `<div class="small text-danger fw-semibold mt-1">⚠️ 이 가격은 적자 가능성이 있습니다. 최소 마진 가격: ₩${Math.round(pb.minimum_margin_price || 0).toLocaleString()}</div>` : ''}
       </div>` : '';
     const competitorCard = competitorItems.length ? `
       <div class="border rounded p-3 bg-light mb-3">
-        <div class="fw-semibold mb-2">⚖️ 경쟁사 분석</div>
+        <div class="fw-semibold mb-2">⚖️ 경쟁사 분석 <span class="text-muted">[수집 데이터]</span></div>
         <div class="small">검색된 유사 상품: ${competitorItems.length}개</div>
         <div class="small">최저가: ₩${(competitorMin || 0).toLocaleString()} / 평균가: ₩${(competitorAvg || 0).toLocaleString()} / 최고가: ₩${(competitorMax || 0).toLocaleString()}</div>
         <details class="small mt-1"><summary>경쟁사 상품 보기</summary>${competitorItems.map(i => `<div>• <a target="_blank" href="${escapeHtml(i.url || '#')}">${escapeHtml(i.title || i.market || 'item')}</a> — ₩${(i.price_krw || 0).toLocaleString()}</div>`).join('')}</details>
-      </div>` : '';
+      </div>` : `<div class="border rounded p-3 bg-light mb-3"><div class="small text-muted">경쟁사 분석: 데이터 없음 (미검증 합성 데이터 미사용)</div></div>`;
     content.innerHTML += `
       <div class="tab-pane fade ${i===0?'show active':''}" id="tab_${market}">
         ${pricingCard}

@@ -3,10 +3,9 @@ from __future__ import annotations
 from src.pricing.competitor_scanner import _filter_iqr, scan_competitor_prices
 
 
-def test_competitor_scanner_mock_returns_items():
+def test_competitor_scanner_returns_empty_without_verified_data():
     items = scan_competitor_prices(product_name="EIGHT BALL HOODIE", brand="MARKET", market="smartstore", limit=5)
-    assert len(items) == 5
-    assert all("price_krw" in i for i in items)
+    assert items == []
 
 
 def test_competitor_scanner_iqr_filters_outliers():

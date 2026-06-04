@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import random
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -101,18 +102,6 @@ _PERIOD_POINTS: Dict[str, int] = {
     "year": 5,        # 최근 5년 (연별)
 }
 
-# 급상승 키워드 mock (Phase 160)
-_RISING_KEYWORDS: List[Dict[str, Any]] = [
-    {"keyword": "플리스 집업", "change_pct": 142, "monthly_search": 22000, "competition": 0.42},
-    {"keyword": "고프코어 패션", "change_pct": 98, "monthly_search": 15000, "competition": 0.38},
-    {"keyword": "일본 브랜드 직구", "change_pct": 87, "monthly_search": 31000, "competition": 0.55},
-    {"keyword": "오버핏 코트", "change_pct": 76, "monthly_search": 28000, "competition": 0.60},
-    {"keyword": "캐주얼 슬랙스", "change_pct": 65, "monthly_search": 19000, "competition": 0.48},
-    {"keyword": "무인양품 가방", "change_pct": 54, "monthly_search": 12000, "competition": 0.35},
-    {"keyword": "아웃도어 러닝화", "change_pct": 48, "monthly_search": 24000, "competition": 0.62},
-    {"keyword": "데일리 크로스백", "change_pct": 41, "monthly_search": 17000, "competition": 0.45},
-]
-
 # 연관 키워드 확장 패턴 (Phase 160)
 _RELATED_EXPANSIONS: Dict[str, List[str]] = {
     "유니클로": ["유니클로 히트텍", "유니클로 플리스", "유니클로 세일", "유니클로 울트라라이트"],
@@ -145,6 +134,10 @@ def _make_trend_series(base_value: int, num_points: int, trend_factor: float = 0
 
 def _get_provider() -> str:
     return (os.getenv("KEYWORD_OPT_PROVIDER", "mock") or "mock").strip().lower()
+
+
+def _tokenize_keyword(keyword: str) -> List[str]:
+    return [tok for tok in re.split(r"[\s,/|]+", str(keyword or "").strip()) if tok]
 
 
 def _get_mock_keyword_metrics(keywords: List[str]) -> List[KeywordMetrics]:
@@ -484,7 +477,31 @@ def get_rising_keywords(limit: int = 8) -> List[Dict[str, Any]]:
     Returns:
         [{keyword, change_pct, monthly_search, competition}]
     """
-    return list(_RISING_KEYWORDS[:limit])
+    if limit <= 0:
+        return []
+    seed_keywords = list(dict.fromkeys(list(_MOCK_KEYWORD_DB.keys())))
+    trends = get_keyword_trends(seed_keywords, period="week")
+    rows = sorted(
+        [row for row in trends if float(row.get("trend_pct", 0.0)) > 0],
+        key=lambda row: float(row.get("trend_pct", 0.0)),
+        reverse=True,
+    )
+    if not rows:
+        rows = sorted(
+            trends,
+            key=lambda row: float(row.get("trend_pct", 0.0)),
+            reverse=True,
+        )
+    return [
+        {
+            "keyword": row["keyword"],
+            "change_pct": float(row.get("trend_pct", 0.0)),
+            "monthly_search": int(row.get("monthly_search", 0)),
+            "competition": float(row.get("competition", 0.0)),
+            "trend_pct": float(row.get("trend_pct", 0.0)),
+        }
+        for row in rows[:limit]
+    ]
 
 
 def get_related_keywords(keyword: str) -> Dict[str, List[str]]:
@@ -497,20 +514,34 @@ def get_related_keywords(keyword: str) -> Dict[str, List[str]]:
             "longtail": [...],   # 롱테일 키워드
         }
     """
-    related: List[str] = []
-    # 데이터베이스에서 부분 매칭 연관어
+    kw = str(keyword or "").strip()
+    if not kw:
+        return {"related": [], "expanded": [], "longtail": []}
+
+    kw_tokens = set(_tokenize_keyword(kw))
+    scores: List[Tuple[str, int]] = []
     for db_kw in _MOCK_KEYWORD_DB:
-        if db_kw != keyword and (db_kw in keyword or keyword in db_kw):
-            related.append(db_kw)
-    # 확장 패턴
+        if db_kw == kw:
+            continue
+        db_tokens = set(_tokenize_keyword(db_kw))
+        overlap = len(kw_tokens & db_tokens)
+        contains = 1 if (kw in db_kw or db_kw in kw) else 0
+        score = overlap * 2 + contains
+        if score > 0:
+            scores.append((db_kw, score))
+    scores.sort(key=lambda x: x[1], reverse=True)
+    related = [name for name, _ in scores[:6]]
+
     expanded: List[str] = []
     for key, expansions in _RELATED_EXPANSIONS.items():
-        if key in keyword or keyword in key:
+        if key in kw or kw in key:
             expanded.extend(expansions)
+    if not expanded:
+        expanded.extend([f"{kw} {s}" for s in ("남성", "여성", "신상", "후기", "사이즈")])
+    expanded = list(dict.fromkeys(expanded))[:6]
 
-    # 롱테일: "키워드 + 구매/추천/가격" 등 suffix 조합
     longtail_suffixes = ["추천", "구매", "가격", "할인", "인기", "직구", "브랜드"]
-    longtail = [f"{keyword} {s}" for s in longtail_suffixes]
+    longtail = [f"{kw} {s}" for s in longtail_suffixes]
 
     return {
         "related": related[:6],

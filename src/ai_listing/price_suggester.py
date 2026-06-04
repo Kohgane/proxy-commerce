@@ -94,6 +94,7 @@ def suggest_price(
                     product_name=product_name,
                     brand=brand_name,
                 )
+                actual_market_items = [x for x in actual_market_items if (x.source or "").lower() == "live"]
                 actual_market_prices = [int(x.price_krw) for x in actual_market_items]
                 breakdown = calculate_listing_price(
                     source_price=float(source_amount),
@@ -114,6 +115,10 @@ def suggest_price(
                     "mode": mode,
                     "source_price_krw": int(source_price_krw) if source_price_krw else int(round(breakdown.cost_krw)),
                     "source_price": analysis.get("source_price"),
+                    "source_price_raw": analysis.get("source_price_raw"),
+                    "source_market_price_krw": analysis.get("source_market_price_krw"),
+                    "source_market_price_regular_krw": analysis.get("source_market_price_regular_krw"),
+                    "source_market_price_source": analysis.get("source_market_price_source"),
                     "fx_rate": analysis.get("fx_rate"),
                     "margin_guard_price_krw": int(breakdown.suggested_price),
                     "pricing_breakdown": breakdown.to_dict(),
@@ -170,6 +175,10 @@ def suggest_price(
         "mode": mode,
         "source_price_krw": int(source_price_krw) if source_price_krw else None,
         "source_price": analysis.get("source_price"),
+        "source_price_raw": analysis.get("source_price_raw"),
+        "source_market_price_krw": analysis.get("source_market_price_krw"),
+        "source_market_price_regular_krw": analysis.get("source_market_price_regular_krw"),
+        "source_market_price_source": analysis.get("source_market_price_source"),
         "fx_rate": analysis.get("fx_rate"),
         "margin_guard_price_krw": max(target_price, range_min),
     }
