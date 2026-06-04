@@ -402,8 +402,16 @@ def _merge_scrape_into_result(
         merged["_variants_source"] = "jsonld"
     if scrape_data.get("source_price"):
         merged["source_price"] = scrape_data["source_price"]
+    if scrape_data.get("source_price_raw"):
+        merged["source_price_raw"] = scrape_data["source_price_raw"]
     if scrape_data.get("source_price_krw") is not None:
         merged["source_price_krw"] = scrape_data["source_price_krw"]
+    if scrape_data.get("source_market_price_krw") is not None:
+        merged["source_market_price_krw"] = scrape_data["source_market_price_krw"]
+    if scrape_data.get("source_market_price_regular_krw") is not None:
+        merged["source_market_price_regular_krw"] = scrape_data["source_market_price_regular_krw"]
+    if scrape_data.get("source_market_price_source"):
+        merged["source_market_price_source"] = scrape_data["source_market_price_source"]
     if scrape_data.get("fx_rate") is not None:
         merged["fx_rate"] = scrape_data["fx_rate"]
 

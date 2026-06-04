@@ -206,6 +206,71 @@ class TestOGTagExtraction:
         assert result["_error"] is not None
         assert result["title"] == ""
 
+    def test_display_krw_price_overrides_non_krw_jsonld(self):
+        from src.ai_listing.url_scraper import scrape_product_page
+        import unittest.mock as mock
+
+        html = """
+        <html>
+          <head>
+            <meta property="og:title" content="LOWRIDER BEAR T-SHIRT" />
+            <script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"Product","name":"LOWRIDER BEAR T-SHIRT",
+             "offers":{"@type":"Offer","price":"24.00","priceCurrency":"USD"},
+             "image":["https://example.com/a.jpg"]}
+            </script>
+          </head>
+          <body>
+            <div>Sale ₩43,300</div>
+            <div>Regular 86,500원</div>
+          </body>
+        </html>
+        """
+        mock_resp = mock.MagicMock()
+        mock_resp.text = html
+        mock_resp.raise_for_status = mock.MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.content = html.encode("utf-8")
+
+        with mock.patch("requests.get", return_value=mock_resp):
+            result = scrape_product_page("https://example.com/product", force_refresh=True)
+
+        assert result["source_price"]["currency"] == "KRW"
+        assert result["source_price_krw"] == 43300
+        assert result["source_market_price_regular_krw"] == 86500
+
+    def test_image_extraction_prefers_high_res_srcset_and_dedupes(self):
+        from src.ai_listing.url_scraper import scrape_product_page
+        import unittest.mock as mock
+
+        html = """
+        <html>
+          <head>
+            <meta property="og:image" content="https://img.example.com/og.jpg" />
+            <script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"Product","name":"Item",
+             "image":["https://img.example.com/p1.jpg","https://img.example.com/p2.jpg"]}
+            </script>
+          </head>
+          <body>
+            <img src="https://img.example.com/p1.jpg" srcset="https://img.example.com/p1_s.jpg 320w, https://img.example.com/p1_l.jpg 1200w" />
+            <img data-srcset="https://img.example.com/p3_s.jpg 320w, https://img.example.com/p3_l.jpg 1080w" />
+          </body>
+        </html>
+        """
+        mock_resp = mock.MagicMock()
+        mock_resp.text = html
+        mock_resp.raise_for_status = mock.MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.content = html.encode("utf-8")
+
+        with mock.patch("requests.get", return_value=mock_resp):
+            result = scrape_product_page("https://example.com/product-images", force_refresh=True)
+
+        assert "https://img.example.com/p1_l.jpg" in result["images"]
+        assert "https://img.example.com/p3_l.jpg" in result["images"]
+        assert len(result["images"]) == len(set(result["images"]))
+
 
 # ── 소재/색상/사이즈 후보 추출 ───────────────────────────────────────────────
 

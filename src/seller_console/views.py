@@ -3922,11 +3922,63 @@ def ads_recommend():
 
 @bp.get("/ads/keywords")
 def ads_keywords():
-    """키워드 최적화 화면 (Phase 145)."""
+    """키워드 최적화 화면 (실동작)."""
+    from markupsafe import escape
+
+    product_title = (request.args.get("title") or "").strip()
+    tags_raw = (request.args.get("tags") or "").strip()
+    candidates_raw = [x.strip() for x in re.split(r"[,/\n]+", tags_raw) if x.strip()]
+    if product_title:
+        candidates_raw.extend([x.strip() for x in product_title.split() if x.strip()])
+    candidate_keywords = list(dict.fromkeys(candidates_raw))[:20]
+
+    rec_rows = []
+    if product_title and candidate_keywords:
+        try:
+            from src.ads.keyword_optimizer import match_keywords_to_product, recommend_bids
+
+            metrics = match_keywords_to_product(product_title, candidate_keywords)
+            rec_rows = recommend_bids(metrics[:12])
+        except Exception as exc:
+            logger.warning("키워드 최적화 추천 실패: %s", exc)
+            rec_rows = []
+
+    rows_html = "".join(
+        (
+            "<tr>"
+            f"<td>{escape(r.get('keyword', ''))}</td>"
+            f"<td class='text-end'>{int(r.get('monthly_search') or 0):,}</td>"
+            f"<td class='text-end'>{float(r.get('competition') or 0):.2f}</td>"
+            f"<td class='text-end'>{int(r.get('avg_cpc_krw') or 0):,}원</td>"
+            f"<td class='text-end'>{int(r.get('recommended_bid_krw') or 0):,}원</td>"
+            f"<td class='text-end'>{float(r.get('match_score') or 0):.2f}</td>"
+            "</tr>"
+        )
+        for r in rec_rows
+    ) or "<tr><td colspan='6' class='text-center text-muted py-3'>상품명/태그를 입력하면 추천 키워드가 생성됩니다.</td></tr>"
+
     body = (
         "<h4 class='mb-3'>🎯 키워드 최적화</h4>"
-        "<div class='alert alert-info'>"
-        "Phase 145 UI hotfix: 키워드 최적화 메뉴 진입 경로를 통일했습니다."
+        "<form class='card mb-3' method='get' action='/seller/ads/keywords'>"
+        "  <div class='card-body'>"
+        "    <div class='row g-2'>"
+        "      <div class='col-md-5'><label class='form-label small'>상품명</label>"
+        f"        <input class='form-control form-control-sm' name='title' value='{escape(product_title)}' placeholder='예: LOWRIDER BEAR T-SHIRT'></div>"
+        "      <div class='col-md-5'><label class='form-label small'>태그/후보 키워드</label>"
+        f"        <input class='form-control form-control-sm' name='tags' value='{escape(tags_raw)}' placeholder='예: 스트리트, 베어, 반팔'></div>"
+        "      <div class='col-md-2 d-flex align-items-end'><button class='btn btn-primary btn-sm w-100' type='submit'>최적화</button></div>"
+        "    </div>"
+        "  </div>"
+        "</form>"
+        "<div class='card'>"
+        "  <div class='card-body p-0'>"
+        "    <div class='table-responsive'>"
+        "      <table class='table table-sm mb-0'>"
+        "        <thead><tr><th>키워드</th><th class='text-end'>월 검색량</th><th class='text-end'>경쟁도</th><th class='text-end'>평균 CPC</th><th class='text-end'>추천 입찰가</th><th class='text-end'>매칭점수</th></tr></thead>"
+        f"        <tbody>{rows_html}</tbody>"
+        "      </table>"
+        "    </div>"
+        "  </div>"
         "</div>"
     )
     return _render_seller_page("🎯 키워드 최적화", body, page="ads_keywords")
@@ -4588,18 +4640,18 @@ def seller_keywords():
         period = "month"
 
     metrics = []
-    related_kws = None
+    related_kws = {"related": [], "expanded": [], "longtail": []}
+    query_terms = [k.strip() for k in query.replace(",", " ").split() if k.strip()]
+    keywords = query_terms or ["해외직구", "일본직구", "유니클로", "에코백"]
 
-    if query:
-        keywords = [k.strip() for k in query.replace(",", " ").split() if k.strip()]
-        if not keywords:
-            keywords = [query]
-        try:
-            from src.ads.keyword_optimizer import get_keyword_trends, get_related_keywords
-            metrics = get_keyword_trends(keywords, period)
-            related_kws = get_related_keywords(keywords[0]) if keywords else None
-        except Exception as exc:
-            logger.warning("키워드 트렌드 조회 실패: %s", exc)
+    try:
+        from src.ads.keyword_optimizer import get_keyword_trends, get_related_keywords
+
+        metrics = get_keyword_trends(keywords, period)
+        if keywords:
+            related_kws = get_related_keywords(keywords[0]) or related_kws
+    except Exception as exc:
+        logger.warning("키워드 트렌드 조회 실패: %s", exc)
 
     try:
         from src.ads.keyword_optimizer import get_rising_keywords
@@ -4610,12 +4662,27 @@ def seller_keywords():
 
     return render_template(
         "keywords.html",
-        query=query,
+        query_text=query,
         period=period,
         period_label=_PERIOD_LABELS.get(period, "월별"),
-        metrics=metrics,
-        rising=rising,
-        related_kws=related_kws,
+        period_options=_PERIOD_LABELS,
+        provider=(os.getenv("KEYWORD_OPT_PROVIDER", "mock") or "mock").strip().lower(),
+        fallback_active=(os.getenv("KEYWORD_OPT_PROVIDER", "mock") or "mock").strip().lower() == "mock",
+        rows=[
+            {
+                "keyword": m.get("keyword"),
+                "search_volume": m.get("monthly_search", 0),
+                "competition": m.get("competition", 0),
+                "product_count": m.get("product_count", 0),
+                "avg_cpc_krw": m.get("avg_cpc_krw", 0),
+                "trend_pct": m.get("trend_pct", 0),
+                "series": m.get("series", []),
+            }
+            for m in metrics
+        ],
+        risers=rising,
+        related_keywords=list(dict.fromkeys((related_kws.get("related", []) + related_kws.get("expanded", []))))[:12],
+        long_tail_keywords=related_kws.get("longtail", []),
     )
 
 
@@ -4651,7 +4718,8 @@ def seller_sourcing_recommend():
     if not keyword:
         return jsonify({"ok": False, "error": "keyword가 필요합니다."}), 400
     try:
-        recs = _build_sourcing_recommendations(keyword=keyword)
+        keyword_context = _build_keyword_trend_context([keyword], "week")
+        recs = _build_sourcing_recommendations(keyword=keyword, keyword_context=keyword_context)
         return jsonify({"ok": True, "recommendations": recs})
     except Exception as exc:
         logger.warning("소싱 추천 API 오류: %s", exc)

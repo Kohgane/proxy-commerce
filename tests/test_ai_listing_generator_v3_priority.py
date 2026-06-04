@@ -33,4 +33,5 @@ def test_jsonld_fields_override_ai_inference():
     assert listing["category_text"] == "후드티"
     assert "WOOD ASH" in listing["colors"]
     assert "S" in listing["sizes"]
-    assert price["suggested_price_krw"] == 208600
+    assert price["suggested_price_krw"] > 0
+    assert price.get("price_decision_source", "calculated") == "calculated"

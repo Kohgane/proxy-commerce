@@ -26,7 +26,7 @@ import logging
 import os
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 from urllib.parse import urljoin, urlparse
 
 from src.ai_listing.jsonld_parser import (
@@ -57,6 +57,14 @@ _PRICE_RE = re.compile(
     r"([\d,]+)\s*(?:원|₩|엔|¥)",
     re.IGNORECASE,
 )
+_KRW_PRICE_RE = re.compile(
+    r"(?:₩|￦|KRW)\s*([\d,]+)|([\d,]+)\s*원",
+    re.IGNORECASE,
+)
+_MAX_REASONABLE_PRICE_KRW = 100_000_000
+_MAX_GALLERY_IMAGES = 30
+_MAX_PRICE_BODY_FALLBACK_CHARS = 3000
+_MAX_PRICE_TEXT_CHARS = 4000
 
 # 소재 키워드
 _MATERIAL_KEYWORDS = [
@@ -236,6 +244,131 @@ def _extract_prices_from_text(text: str) -> List[int]:
             except ValueError:
                 pass
     return list(set(prices))
+
+
+def _extract_krw_prices(text: str) -> List[int]:
+    prices: List[int] = []
+    for match in _KRW_PRICE_RE.finditer(text or ""):
+        raw = match.group(1) or match.group(2)
+        if not raw:
+            continue
+        try:
+            val = int(raw.replace(",", ""))
+        except ValueError:
+            continue
+        if 100 <= val <= _MAX_REASONABLE_PRICE_KRW:
+            prices.append(val)
+    return sorted(set(prices))
+
+
+def _to_absolute_url(raw: str, base_url: str) -> str:
+    src = str(raw or "").strip()
+    if not src:
+        return ""
+    if src.startswith("//"):
+        return f"https:{src}"
+    if src.startswith("/"):
+        return urljoin(base_url, src)
+    return src
+
+
+def _pick_best_srcset_url(srcset: str) -> str:
+    best_url = ""
+    best_score = -1
+    for part in (srcset or "").split(","):
+        chunk = part.strip()
+        if not chunk:
+            continue
+        bits = chunk.split()
+        url = bits[0]
+        descriptor = bits[1] if len(bits) > 1 else ""
+        score = 0
+        if descriptor.endswith("w"):
+            try:
+                score = int(descriptor[:-1])
+            except ValueError:
+                score = 0
+        elif descriptor.endswith("x"):
+            try:
+                score = int(float(descriptor[:-1]) * 1000)
+            except ValueError:
+                score = 0
+        if score >= best_score:
+            best_url = url
+            best_score = score
+    return best_url
+
+
+def _is_valid_image_url(url: str) -> bool:
+    u = str(url or "").strip()
+    if not u.startswith(("http://", "https://")):
+        return False
+    lowered = u.lower()
+    if lowered.startswith(("http://localhost", "https://localhost")):
+        return False
+    if lowered.endswith((".js", ".css", ".svg")):
+        return False
+    return True
+
+
+def _extract_image_urls(soup: Any, page_url: str, jsonld_urls: List[str], og_image: str) -> List[str]:
+    base_domain = f"{urlparse(page_url).scheme}://{urlparse(page_url).netloc}"
+    candidates: List[str] = []
+
+    if og_image:
+        candidates.append(_to_absolute_url(og_image, base_domain))
+    candidates.extend([_to_absolute_url(i, base_domain) for i in (jsonld_urls or [])])
+
+    for img_tag in soup.find_all("img"):
+        for attr in ("data-zoom-image", "data-large-image", "data-src", "src"):
+            raw = img_tag.get(attr)
+            if raw:
+                candidates.append(_to_absolute_url(raw, base_domain))
+        for srcset_attr in ("data-srcset", "srcset"):
+            best = _pick_best_srcset_url(str(img_tag.get(srcset_attr) or ""))
+            if best:
+                candidates.append(_to_absolute_url(best, base_domain))
+
+    deduped: List[str] = []
+    seen: Set[str] = set()
+    for candidate in candidates:
+        if not _is_valid_image_url(candidate):
+            continue
+        key = candidate.strip()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(key)
+    return deduped[:_MAX_GALLERY_IMAGES]
+
+
+def _extract_price_text(soup: Any, title: str, description: str) -> str:
+    chunks: List[str] = [title or "", description or ""]
+    seeded_len = len(chunks)
+    selectors = [
+        '[class*="price"]',
+        '[class*="cost"]',
+        '[id*="price"]',
+        '[id*="cost"]',
+        '[data-price]',
+        '[itemprop="price"]',
+    ]
+    for selector in selectors:
+        for node in soup.select(selector):
+            txt = node.get_text(separator=" ", strip=True)
+            if txt:
+                chunks.append(txt[:120])
+    for meta in soup.find_all("meta"):
+        prop = str(meta.get("property", "") or meta.get("name", "")).lower()
+        if "price" in prop or "cost" in prop:
+            content = str(meta.get("content", "")).strip()
+            if content:
+                chunks.append(content)
+    if len(chunks) == seeded_len:
+        body = soup.find("body")
+        if body:
+            chunks.append(body.get_text(separator=" ", strip=True)[:_MAX_PRICE_BODY_FALLBACK_CHARS])
+    return " ".join(chunks)[:_MAX_PRICE_TEXT_CHARS]
 
 
 def _extract_candidates_from_text(text: str, keywords: List[str]) -> List[str]:
@@ -442,7 +575,11 @@ def scrape_product_page(url: str, force_refresh: bool = False) -> Dict[str, Any]
     brand_candidates: List[str] = []
     origin_country: Optional[str] = None
     source_price: Optional[Dict[str, Any]] = None
+    source_price_raw: Optional[Dict[str, Any]] = None
     source_price_krw: Optional[int] = None
+    source_market_price_krw: Optional[int] = None
+    source_market_price_regular_krw: Optional[int] = None
+    source_market_price_source: Optional[str] = None
     fx_rate = None
 
     if product_schema:
@@ -494,33 +631,46 @@ def scrape_product_page(url: str, force_refresh: bool = False) -> Dict[str, Any]
                 "rate": str(converted["rate"]),
                 "source": price_info["source"],
             }
+            source_price_raw = dict(source_price)
             price_candidates = [source_price_krw]
         except Exception:
             price_candidates = _extract_price_from_schema(product_schema) if product_schema else []
 
-    # ── 이미지 목록 ───────────────────────────────────────────────────
-    images: List[str] = []
-    if og_image:
-        images.append(og_image)
+    # 페이지 표시 KRW 가격(세일/정가) 추출 우선
+    display_krw_prices = _extract_krw_prices(_extract_price_text(soup, title, description))
+    if display_krw_prices:
+        source_market_price_krw = min(display_krw_prices)
+        source_market_price_regular_krw = max(display_krw_prices)
+        if source_market_price_regular_krw == source_market_price_krw:
+            source_market_price_regular_krw = None
+        source_market_price_source = "display.krw"
+        if source_market_price_krw not in price_candidates:
+            price_candidates.append(source_market_price_krw)
+        if source_market_price_regular_krw and source_market_price_regular_krw not in price_candidates:
+            price_candidates.append(source_market_price_regular_krw)
 
-    base_domain = f"{urlparse(url).scheme}://{urlparse(url).netloc}"
-    for img_tag in soup.find_all("img"):
-        src = img_tag.get("src") or img_tag.get("data-src") or ""
-        if not src:
-            # srcset에서 첫 번째 URL 추출
-            srcset = img_tag.get("srcset", "")
-            if srcset:
-                src = srcset.split(",")[0].strip().split(" ")[0]
-        if src:
-            if src.startswith("//"):
-                src = "https:" + src
-            elif src.startswith("/"):
-                src = urljoin(base_domain, src)
-            if src.startswith("http") and src not in images:
-                images.append(src)
-        if len(images) >= 10:
-            break
-    images = list(dict.fromkeys(json_ld_normalized.get("image_urls", []) + images))
+        # JSON-LD 통화와 페이지 표시 통화가 불일치하면 로컬 표시 KRW를 우선 사용
+        if (
+            source_price is None
+            or str(source_price.get("currency", "")).upper() != "KRW"
+        ):
+            source_price_krw = source_market_price_krw
+            fx_rate = 1
+            source_price = {
+                "amount": str(source_market_price_krw),
+                "currency": "KRW",
+                "amount_krw": source_market_price_krw,
+                "rate": "1",
+                "source": "display.krw",
+            }
+
+    # ── 이미지 목록 ───────────────────────────────────────────────────
+    images = _extract_image_urls(
+        soup=soup,
+        page_url=url,
+        jsonld_urls=json_ld_normalized.get("image_urls", []) or [],
+        og_image=og_image,
+    )
 
     # ── 본문 텍스트 추출 ──────────────────────────────────────────────
     raw_text = _get_body_text(soup, max_chars=3000)
@@ -567,7 +717,11 @@ def scrape_product_page(url: str, force_refresh: bool = False) -> Dict[str, Any]
         "json_ld_normalized": json_ld_normalized,
         "variants": variants,
         "source_price": source_price,
+        "source_price_raw": source_price_raw,
         "source_price_krw": source_price_krw,
+        "source_market_price_krw": source_market_price_krw,
+        "source_market_price_regular_krw": source_market_price_regular_krw,
+        "source_market_price_source": source_market_price_source,
         "fx_rate": str(fx_rate) if fx_rate is not None else None,
         "_source_url": url,
         "_scraped": True,
