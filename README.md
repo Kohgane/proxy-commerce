@@ -39,6 +39,18 @@ python scripts/render_smoke.py https://kohganepercentiii.com
 
 ---
 
+## 🎯 파비콘/앱 아이콘 재생성 (Phase 166)
+
+운영 아이콘 source of truth는 `src/seller_console/static/favicon.svg` 입니다.
+
+```bash
+python scripts/gen_favicon_assets.py
+```
+
+위 명령으로 `favicon.ico`(16/32/48), `apple-touch-icon.png`(180), `icon-192.png`, `icon-512.png`를 같은 정적 경로에 재생성합니다.
+
+---
+
 ## 📚 운영 문서
 
 | 문서 | 내용 |
