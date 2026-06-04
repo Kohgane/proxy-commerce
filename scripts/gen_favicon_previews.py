@@ -31,7 +31,7 @@ class Canvas:
         if alpha <= 0:
             return
         idx = self._idx(x, y)
-        src_a = (color[3] / 255.0) * max(0.0, min(1.0, alpha))
+        src_a = (color[3] / 255.0) * clamp(alpha, 0.0, 1.0)
         if src_a <= 0:
             return
         dst_r, dst_g, dst_b, dst_a = self.data[idx:idx + 4]
@@ -73,8 +73,7 @@ class Canvas:
             for x in range(min_x, max_x + 1):
                 px = x + 0.5
                 py = y + 0.5
-                t = ((px - x0) * vx + (py - y0) * vy) / seg_len2
-                t = 0.0 if t < 0.0 else 1.0 if t > 1.0 else t
+                t = clamp(((px - x0) * vx + (py - y0) * vy) / seg_len2, 0.0, 1.0)
                 qx = x0 + t * vx
                 qy = y0 + t * vy
                 dx = px - qx
@@ -111,8 +110,17 @@ class Canvas:
                     self.blend(x, y, color, alpha)
 
 
+def clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
 def lerp(a: tuple[int, int, int, int], b: tuple[int, int, int, int], t: float) -> tuple[int, int, int, int]:
-    return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(4))
+    return (
+        int(a[0] + (b[0] - a[0]) * t),
+        int(a[1] + (b[1] - a[1]) * t),
+        int(a[2] + (b[2] - a[2]) * t),
+        int(a[3] + (b[3] - a[3]) * t),
+    )
 
 
 def in_rounded_rect(x: float, y: float, size: int, radius: float) -> bool:
@@ -218,7 +226,10 @@ def draw_candidate_d(canvas: Canvas) -> None:
 
 
 def png_chunk(chunk_type: bytes, payload: bytes) -> bytes:
-    return struct.pack(">I", len(payload)) + chunk_type + payload + struct.pack(">I", zlib.crc32(chunk_type + payload) & 0xFFFFFFFF)
+    length = struct.pack(">I", len(payload))
+    body = chunk_type + payload
+    crc = struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+    return length + body + crc
 
 
 def write_png(path: Path, width: int, height: int, rgba: bytes) -> None:
@@ -290,7 +301,12 @@ def paste(dest: Canvas, src: Canvas, x: int, y: int) -> None:
     for j in range(src.h):
         for i in range(src.w):
             idx = (j * src.w + i) * 4
-            rgba = tuple(src.data[idx:idx + 4])  # type: ignore[assignment]
+            rgba: tuple[int, int, int, int] = (
+                src.data[idx],
+                src.data[idx + 1],
+                src.data[idx + 2],
+                src.data[idx + 3],
+            )
             dest.blend(x + i, y + j, rgba, 1.0)
 
 

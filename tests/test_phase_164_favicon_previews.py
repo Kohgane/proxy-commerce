@@ -24,6 +24,9 @@ def test_phase_164_preview_assets_exist():
     ]
     for name in expected:
         assert (base / name).exists()
+
+
+def test_previews_root_index_exists():
     assert Path("src/seller_console/static/previews/index.html").exists()
 
 
