@@ -15,6 +15,28 @@ CYAN = (34, 211, 238, 255)     # #22d3ee
 WHITE = (255, 255, 255, 255)
 LIME = (163, 230, 53, 255)     # #a3e635
 GOLD = (251, 191, 36, 255)     # #fbbf24
+PHASE_INDEX_HTML = """<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><title>Phase 165 Orbit Favicon Previews</title>
+<style>body{background:#0b102b;color:#e2e8f0;font-family:system-ui;margin:24px}h1{margin:0 0 12px}section{margin:18px 0}img{border-radius:16px;background:#0f172a;padding:8px}code{color:#67e8f9}</style></head>
+<body>
+<h1>Phase 165 Orbit Favicon Previews</h1>
+<p>후보 A(딥 인디고 + 흰 지구본 + 시안 순환 화살표)에 공전 궤도선을 추가한 라임/골드 비교 미리보기입니다.</p>
+<p>배포 후 URL: <code>/seller/static/previews/phase165/index.html</code></p>
+<section><h2>Contact Sheet</h2><img src="phase165_contact_sheet.png" width="640" alt="phase165 contact sheet"></section>
+<section><h2>Orbit Lime (#a3e635)</h2><img src="orbit_lime_512.png" width="220" alt="orbit lime 512"> <img src="orbit_lime_32.png" width="64" alt="orbit lime 32"> <div><code>orbit_lime.svg</code></div></section>
+<section><h2>Orbit Gold (#fbbf24)</h2><img src="orbit_gold_512.png" width="220" alt="orbit gold 512"> <img src="orbit_gold_32.png" width="64" alt="orbit gold 32"> <div><code>orbit_gold.svg</code></div></section>
+</body></html>"""
+ROOT_INDEX_HTML = """<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><title>Favicon Previews</title></head>
+<body style="font-family:system-ui;background:#0b102b;color:#e2e8f0;padding:24px">
+<h1>Favicon Previews</h1>
+<ul>
+<li><a href="/seller/static/previews/phase164/index.html" style="color:#67e8f9">Phase 164 후보 보기</a></li>
+<li><a href="/seller/static/previews/phase165/index.html" style="color:#67e8f9">Phase 165 orbit 라임/골드 미리보기</a></li>
+</ul>
+</body></html>"""
 
 
 class Canvas:
@@ -306,28 +328,8 @@ def render_pngs() -> None:
 
 
 def write_indexes() -> None:
-    phase = """<!doctype html>
-<html lang=\"ko\"><meta charset=\"utf-8\"><title>Phase 165 Orbit Favicon Previews</title>
-<style>body{background:#0b102b;color:#e2e8f0;font-family:system-ui;margin:24px}h1{margin:0 0 12px}section{margin:18px 0}img{border-radius:16px;background:#0f172a;padding:8px}code{color:#67e8f9}</style>
-<h1>Phase 165 Orbit Favicon Previews</h1>
-<p>후보 A(딥 인디고 + 흰 지구본 + 시안 순환 화살표)에 공전 궤도선을 추가한 라임/골드 비교 미리보기입니다.</p>
-<p>배포 후 URL: <code>/seller/static/previews/phase165/index.html</code></p>
-<section><h2>Contact Sheet</h2><img src=\"phase165_contact_sheet.png\" width=\"640\" alt=\"phase165 contact sheet\"></section>
-<section><h2>Orbit Lime (#a3e635)</h2><img src=\"orbit_lime_512.png\" width=\"220\" alt=\"orbit lime 512\"> <img src=\"orbit_lime_32.png\" width=\"64\" alt=\"orbit lime 32\"> <div><code>orbit_lime.svg</code></div></section>
-<section><h2>Orbit Gold (#fbbf24)</h2><img src=\"orbit_gold_512.png\" width=\"220\" alt=\"orbit gold 512\"> <img src=\"orbit_gold_32.png\" width=\"64\" alt=\"orbit gold 32\"> <div><code>orbit_gold.svg</code></div></section>
-</html>"""
-    (OUT_DIR / "index.html").write_text(phase, encoding="utf-8")
-
-    root_index = """<!doctype html>
-<html lang=\"ko\"><meta charset=\"utf-8\"><title>Favicon Previews</title>
-<body style=\"font-family:system-ui;background:#0b102b;color:#e2e8f0;padding:24px\">
-<h1>Favicon Previews</h1>
-<ul>
-<li><a href=\"/seller/static/previews/phase164/index.html\" style=\"color:#67e8f9\">Phase 164 후보 보기</a></li>
-<li><a href=\"/seller/static/previews/phase165/index.html\" style=\"color:#67e8f9\">Phase 165 orbit 라임/골드 미리보기</a></li>
-</ul>
-</body></html>"""
-    (PREVIEWS_ROOT / "index.html").write_text(root_index, encoding="utf-8")
+    (OUT_DIR / "index.html").write_text(PHASE_INDEX_HTML, encoding="utf-8")
+    (PREVIEWS_ROOT / "index.html").write_text(ROOT_INDEX_HTML, encoding="utf-8")
 
 
 def main() -> None:
