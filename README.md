@@ -39,7 +39,7 @@ python scripts/render_smoke.py https://kohganepercentiii.com
 
 ---
 
-## 🎯 파비콘/앱 아이콘 재생성 (Phase 166)
+## 🎯 파비콘/앱 아이콘 재생성 (Phase 171)
 
 운영 아이콘 source of truth는 `src/seller_console/static/favicon.svg` 입니다.
 

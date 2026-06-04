@@ -41,14 +41,14 @@ def test_manifest_has_theme_color():
     """manifest.webmanifest에 theme_color가 있어야 한다."""
     with open("src/seller_console/static/manifest.webmanifest", encoding="utf-8") as f:
         manifest = json.load(f)
-    assert manifest.get("theme_color") == "#1e1b4b"
+    assert manifest.get("theme_color") == "#020010"
 
 
 def test_manifest_has_background_color():
     """manifest.webmanifest에 background_color가 있어야 한다."""
     with open("src/seller_console/static/manifest.webmanifest", encoding="utf-8") as f:
         manifest = json.load(f)
-    assert manifest.get("background_color") == "#1e1b4b"
+    assert manifest.get("background_color") == "#020010"
 
 
 def test_manifest_display_standalone():
