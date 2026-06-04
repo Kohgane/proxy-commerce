@@ -30,16 +30,18 @@ def test_base_templates_include_favicon_links():
         assert "favicon.ico" in text
         assert 'rel="apple-touch-icon"' in text
         assert "manifest.webmanifest" in text
-        assert ("?v=166" in text) or ("v='166'" in text)
+        assert ("?v=168" in text) or ("v='168'" in text)
         assert '#1e1b4b' in text
 
 
 def test_favicon_svg_uses_orbit_globe_design():
     text = Path("src/seller_console/static/favicon.svg").read_text(encoding="utf-8")
-    assert 'linearGradient id="g"' in text
-    assert 'clipPath id="top-clip"' in text
+    # v9: thick orbits (stroke-width 20), bright globe fill (#2a5aaa), top-half clip
+    assert 'linearGradient id="bg"' in text
+    assert 'clipPath id="top-half"' in text
     assert 'stroke="#fbbf24"' in text
     assert 'stroke="#a3e635"' in text
+    assert '#2a5aaa' in text
     assert ">K<" not in text
 
 
@@ -76,8 +78,8 @@ def test_public_templates_use_cache_busted_favicon_links():
     ]
     for path in targets:
         text = path.read_text(encoding="utf-8")
-        assert "favicon.svg?v=166" in text
-        assert "favicon.ico?v=166" in text
-        assert "apple-touch-icon.png?v=166" in text
-        assert "manifest.webmanifest?v=166" in text
+        assert "favicon.svg?v=168" in text
+        assert "favicon.ico?v=168" in text
+        assert "apple-touch-icon.png?v=168" in text
+        assert "manifest.webmanifest?v=168" in text
         assert 'content="#1e1b4b"' in text

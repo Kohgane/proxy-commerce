@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate seller favicon raster assets from source-of-truth SVG (Phase 166)."""
+"""Generate seller favicon raster assets from source-of-truth SVG (Phase 168)."""
 
 from __future__ import annotations
 
@@ -29,9 +29,11 @@ def _small_svg_variant(svg_text: str) -> str:
     small = re.sub(r"<filter id=\"sg\">.*?</filter>", "", small, flags=re.DOTALL)
     small = re.sub(r"\s*<g filter=\"url\(#sg\)\">.*?</g>\s*</svg>", "\n</svg>", small, flags=re.DOTALL)
     small = small.replace(' filter="url(#glow)"', "")
+    # v9: orbit stroke-width is 20 — keep slightly reduced for small sizes
+    small = small.replace('stroke-width="20"', 'stroke-width="16"')
+    small = small.replace('stroke-width="16"', 'stroke-width="12"')
     small = small.replace('stroke-width="12"', 'stroke-width="10"')
-    small = small.replace('stroke-width="10"', 'stroke-width="8"')
-    small = small.replace('r="10"', 'r="8"')
+    small = small.replace('r="14"', 'r="10"')
     return small
 
 

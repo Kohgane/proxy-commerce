@@ -1,58 +1,69 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#1e1b4b"/>
       <stop offset="100%" stop-color="#1d4ed8"/>
     </linearGradient>
-    <linearGradient id="gf" x1="0.2" y1="0" x2="0.9" y2="1">
-      <stop offset="0%" stop-color="#1e3a6e"/>
-      <stop offset="100%" stop-color="#152050"/>
-    </linearGradient>
+    <!-- 지구본 채움 — 배경보다 밝게 해서 파비콘에서 구분 -->
+    <radialGradient id="gf" cx="0.4" cy="0.35" r="0.65">
+      <stop offset="0%" stop-color="#2a5aaa"/>
+      <stop offset="100%" stop-color="#1a3060"/>
+    </radialGradient>
     <filter id="glow">
-      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feGaussianBlur stdDeviation="5" result="blur"/>
       <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
     <filter id="sg">
-      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feGaussianBlur stdDeviation="3" result="blur"/>
       <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
-    <clipPath id="top-clip">
-      <rect x="0" y="0" width="512" height="268"/>
+    <clipPath id="top-half">
+      <rect x="0" y="0" width="512" height="270"/>
     </clipPath>
   </defs>
 
-  <rect width="512" height="512" rx="112" fill="url(#g)"/>
+  <!-- 배경 -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
 
+  <!-- 1: 궤도선 전체 (타원 줄임 — 지구에 밀착) -->
   <g fill="none" stroke-linecap="round">
-    <path d="M 95 320 A 155 55 25 1 1 417 215 A 155 55 25 1 1 95 320" stroke="#fbbf24" stroke-width="10"/>
-    <path d="M 417 320 A 155 55 -25 1 1 95 215 A 155 55 -25 1 1 417 320" stroke="#a3e635" stroke-width="10"/>
+    <path d="M 115 310 A 130 48 22 1 1 397 220 A 130 48 22 1 1 115 310" stroke="#fbbf24" stroke-width="20"/>
+    <path d="M 397 310 A 130 48 -22 1 1 115 220 A 130 48 -22 1 1 397 310" stroke="#a3e635" stroke-width="20"/>
   </g>
 
+  <!-- 2: 지구 솔리드 (밝은 채움 — 파비콘에서 구분됨) -->
   <circle cx="256" cy="256" r="145" fill="url(#gf)"/>
 
-  <g fill="none" stroke="#ffffff" stroke-opacity="0.8" stroke-width="12" filter="url(#glow)">
+  <!-- 3: 지구 와이어프레임 — 굵게 -->
+  <g fill="none" stroke="#ffffff" stroke-opacity="0.9" stroke-width="16" filter="url(#glow)">
     <circle cx="256" cy="256" r="145"/>
-    <ellipse cx="256" cy="256" rx="145" ry="65"/>
-    <ellipse cx="256" cy="256" rx="75" ry="145"/>
+    <ellipse cx="256" cy="256" rx="145" ry="62"/>
+    <ellipse cx="256" cy="256" rx="72" ry="145"/>
   </g>
 
-  <g clip-path="url(#top-clip)" fill="none" stroke-linecap="round">
-    <path d="M 95 320 A 155 55 25 1 1 417 215 A 155 55 25 1 1 95 320" stroke="#fbbf24" stroke-width="10"/>
-    <path d="M 417 320 A 155 55 -25 1 1 95 215 A 155 55 -25 1 1 417 320" stroke="#a3e635" stroke-width="10"/>
+  <!-- 4: 궤도 윗부분 — 지구 앞 X자 교차 -->
+  <g clip-path="url(#top-half)" fill="none" stroke-linecap="round">
+    <path d="M 115 310 A 130 48 22 1 1 397 220 A 130 48 22 1 1 115 310" stroke="#fbbf24" stroke-width="20"/>
+    <path d="M 397 310 A 130 48 -22 1 1 115 220 A 130 48 -22 1 1 397 310" stroke="#a3e635" stroke-width="20"/>
   </g>
 
-  <circle cx="417" cy="215" r="10" fill="#fbbf24"/>
-  <circle cx="95" cy="215" r="10" fill="#a3e635"/>
+  <!-- dot -->
+  <circle cx="397" cy="220" r="14" fill="#fbbf24"/>
+  <circle cx="115" cy="220" r="14" fill="#a3e635"/>
 
+  <!-- 스파클 — 크게 -->
   <g filter="url(#sg)">
-    <g transform="translate(195,175)" fill="#fff">
-      <path d="M0,-9 2.2,-2.2 9,0 2.2,2.2 0,9 -2.2,2.2 -9,0 -2.2,-2.2Z" opacity=".9"/>
+    <g transform="translate(195,170)" fill="#fff">
+      <path d="M0,-14 3.5,-3.5 14,0 3.5,3.5 0,14 -3.5,3.5 -14,0 -3.5,-3.5Z" opacity=".95"/>
     </g>
-    <g transform="translate(335,195)" fill="#fff">
-      <path d="M0,-6 1.8,-1.8 6,0 1.8,1.8 0,6 -1.8,1.8 -6,0 -1.8,-1.8Z" opacity=".7"/>
+    <g transform="translate(335,190)" fill="#fff">
+      <path d="M0,-10 2.5,-2.5 10,0 2.5,2.5 0,10 -2.5,2.5 -10,0 -2.5,-2.5Z" opacity=".8"/>
     </g>
-    <g transform="translate(350,285)" fill="#fff">
-      <path d="M0,-7 2,-2 7,0 2,2 0,7 -2,2 -7,0 -2,-2Z" opacity=".8"/>
+    <g transform="translate(345,295)" fill="#fff">
+      <path d="M0,-11 2.8,-2.8 11,0 2.8,2.8 0,11 -2.8,2.8 -11,0 -2.8,-2.8Z" opacity=".85"/>
+    </g>
+    <g transform="translate(190,320)" fill="#fff">
+      <path d="M0,-7 1.8,-1.8 7,0 1.8,1.8 0,7 -1.8,1.8 -7,0 -1.8,-1.8Z" opacity=".65"/>
     </g>
   </g>
 </svg>
