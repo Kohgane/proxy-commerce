@@ -30,13 +30,17 @@ def test_base_templates_include_favicon_links():
         assert "favicon.ico" in text
         assert 'rel="apple-touch-icon"' in text
         assert "manifest.webmanifest" in text
-        assert '#121856' in text
+        assert ("?v=166" in text) or ("v='166'" in text)
+        assert '#1e1b4b' in text
 
 
-def test_favicon_svg_uses_k_symbol():
+def test_favicon_svg_uses_orbit_globe_design():
     text = Path("src/seller_console/static/favicon.svg").read_text(encoding="utf-8")
-    assert ">K<" in text
-    assert "KP" not in text
+    assert 'linearGradient id="g"' in text
+    assert 'clipPath id="top-clip"' in text
+    assert 'stroke="#fbbf24"' in text
+    assert 'stroke="#a3e635"' in text
+    assert ">K<" not in text
 
 
 def test_manifest_icon_files_are_served():
@@ -49,3 +53,31 @@ def test_manifest_icon_files_are_served():
         for icon in manifest.get("icons", []):
             icon_resp = client.get(icon["src"])
             assert icon_resp.status_code == 200
+
+
+def test_favicon_generation_script_exists():
+    text = Path("scripts/gen_favicon_assets.py").read_text(encoding="utf-8")
+    assert "cairosvg" in text
+    assert "favicon.svg" in text
+
+
+def test_public_templates_use_cache_busted_favicon_links():
+    targets = [
+        Path("src/auth/templates/auth/login.html"),
+        Path("src/auth/templates/auth/signup.html"),
+        Path("src/auth/templates/auth/magic_link_fallback.html"),
+        Path("src/auth/templates/auth/magic_link_request.html"),
+        Path("src/auth/templates/auth/diagnostic_token_issued.html"),
+        Path("src/auth/templates/auth/reset.html"),
+        Path("src/onboarding/templates/onboarding.html"),
+        Path("src/legal/templates/legal/privacy.html"),
+        Path("src/legal/templates/legal/terms.html"),
+        Path("src/shop/templates/shop/base.html"),
+    ]
+    for path in targets:
+        text = path.read_text(encoding="utf-8")
+        assert "favicon.svg?v=166" in text
+        assert "favicon.ico?v=166" in text
+        assert "apple-touch-icon.png?v=166" in text
+        assert "manifest.webmanifest?v=166" in text
+        assert 'content="#1e1b4b"' in text
