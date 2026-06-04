@@ -53,6 +53,8 @@ bp = Blueprint(
 # 인증 stub — Phase 24 OAuth 연결 전까지 환경변수로 제어
 # ---------------------------------------------------------------------------
 _AUTH_ENABLED = os.getenv("SELLER_CONSOLE_AUTH", "0") == "1"
+_ONBOARDING_DISMISS_COOKIE = "seller_onboarding_dismissed"
+_ONBOARDING_DISMISS_COOKIE_MAX_AGE = 60 * 60 * 24 * 180
 
 
 @bp.app_context_processor
@@ -417,7 +419,7 @@ def _register_discovery_candidate_from_collection(url: str, keyword_hint: str = 
 # 라우트
 # ---------------------------------------------------------------------------
 
-def _build_dashboard_home_context(widgets: list[dict[str, Any]]) -> dict[str, Any]:
+def _build_dashboard_home_context(widgets: list[dict[str, Any]], dismissed: bool = False) -> dict[str, Any]:
     """통합 대시보드 홈 렌더링에 필요한 안전한 컨텍스트를 구성한다."""
     def _to_int(value: Any, default: int = 0) -> int:
         try:
@@ -582,6 +584,35 @@ def _build_dashboard_home_context(widgets: list[dict[str, Any]]) -> dict[str, An
             }
         )
 
+    source_count = 0
+    try:
+        from src.seller_console.my_sources_store import list_sources
+        source_count = len(list_sources())
+    except Exception as exc:
+        logger.debug("온보딩 소싱처 수 조회 스킵: %s", exc)
+
+    product_count = sum(max(0, _to_int(row.get("total_registered"))) for row in market_grid_rows)
+    try:
+        from src.seller_console.onboarding import compute_onboarding_state
+        onboarding = compute_onboarding_state(
+            connected_markets=connected_count,
+            source_count=source_count,
+            product_count=product_count,
+            dismissed=dismissed,
+        )
+    except Exception as exc:
+        logger.debug("온보딩 상태 계산 실패: %s", exc)
+        onboarding = {
+            "steps": [],
+            "completed_steps": 0,
+            "total_steps": 3,
+            "progress_percent": 0,
+            "is_completed": False,
+            "dismissed": bool(dismissed),
+            "visible": not dismissed,
+            "show_completion_notice": False,
+        }
+
     def _fx_change_pct(code: str) -> float | None:
         changes = fx_data.get("changes")
         if isinstance(changes, dict):
@@ -686,6 +717,7 @@ def _build_dashboard_home_context(widgets: list[dict[str, Any]]) -> dict[str, An
         "summary_cards": summary_cards,
         "quick_actions": quick_actions,
         "connection_banner": connection_banner,
+        "onboarding": onboarding,
         "market_grid_rows": market_grid_rows,
         "market_grid_is_placeholder": not any(
             row.get("today_registered")
@@ -747,7 +779,9 @@ def _build_dashboard_home_context(widgets: list[dict[str, Any]]) -> dict[str, An
 
 def _render_dashboard_home():
     widgets = _get_widgets()
-    context = _build_dashboard_home_context(widgets)
+    dismissed = request.cookies.get(_ONBOARDING_DISMISS_COOKIE) == "1"
+    context = _build_dashboard_home_context(widgets, dismissed=dismissed)
+    context["onboarding"]["dismiss_href"] = url_for("seller_console.dismiss_onboarding", next=request.path)
     return render_template("dashboard.html", widgets=widgets, page="dashboard", **context)
 
 
@@ -765,6 +799,27 @@ def dashboard():
     if not _check_auth():
         return redirect(url_for("auth.login", next=request.url))
     return _render_dashboard_home()
+
+
+@bp.get("/onboarding/dismiss")
+def dismiss_onboarding():
+    """대시보드 온보딩 가이드 닫기."""
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+
+    next_url = (request.args.get("next") or url_for("seller_console.dashboard")).strip()
+    if not next_url.startswith("/seller"):
+        next_url = url_for("seller_console.dashboard")
+
+    response = redirect(next_url)
+    response.set_cookie(
+        _ONBOARDING_DISMISS_COOKIE,
+        "1",
+        max_age=_ONBOARDING_DISMISS_COOKIE_MAX_AGE,
+        httponly=True,
+        samesite="Lax",
+    )
+    return response
 
 
 @bp.get("/analytics")

@@ -225,6 +225,38 @@
   color: var(--console-muted);
 }
 
+.console-empty-state .console-empty-icon {
+  font-size: 1.8rem;
+  margin-bottom: 0.4rem;
+}
+
+.console-empty-state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.console-onboarding-card {
+  border-color: #d9d6ff;
+  background: linear-gradient(180deg, #ffffff 0%, #f7f6ff 100%);
+}
+
+.onboarding-step-card {
+  height: 100%;
+}
+
+.onboarding-step-card.onboarding-step-done {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.onboarding-step-card.onboarding-step-next {
+  border-color: #c7bfff;
+  box-shadow: 0 8px 18px rgba(91, 61, 245, 0.12);
+}
+
 .kw-mini-bars {
   height: 30px;
   display: flex;

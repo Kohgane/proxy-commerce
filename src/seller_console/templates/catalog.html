@@ -91,7 +91,17 @@
           {% else %}
           <tr>
             <td colspan="7" class="text-center text-muted py-4">
-              카탈로그가 비어있습니다. <a href="/seller/collect">수동 수집기</a>에서 상품을 추가하세요.
+              <div class="console-empty-state p-2">
+                <div class="console-empty-icon"><i class="bi bi-box-seam"></i></div>
+                <div class="fw-semibold mb-1">아직 등록된 상품이 없습니다.</div>
+                <div class="small mb-1"><strong>무엇을:</strong> 첫 상품 1개를 등록해 카탈로그를 시작하세요.</div>
+                <div class="small mb-1"><strong>왜:</strong> 상품이 있어야 주문/매출/동기화 데이터가 쌓입니다.</div>
+                <div class="small"><strong>어떻게:</strong> 수집기 또는 AI 상품등록으로 바로 생성할 수 있어요.</div>
+                <div class="console-empty-state-actions">
+                  <a href="/seller/collect" class="btn btn-sm btn-outline-primary">수집기 열기</a>
+                  <a href="/seller/listing/ai-create" class="btn btn-sm btn-primary">AI 상품등록</a>
+                </div>
+              </div>
             </td>
           </tr>
           {% endfor %}

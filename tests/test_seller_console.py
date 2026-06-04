@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sys
 import os
+from unittest.mock import patch
 
 import pytest
 
@@ -69,6 +70,64 @@ class TestSellerConsoleViews:
         assert "마켓별 등록/동기화 현황" in html
         assert "실시간 환율" in html
         assert "Proxy Commerce" in html
+
+    def test_dashboard_home_renders_onboarding_guide(self, client):
+        resp = client.get("/seller/dashboard")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "5분 시작 가이드" in html
+        assert "마켓 연동 → 첫 소싱 → 첫 상품 등록" in html
+
+    def test_onboarding_dismiss_sets_cookie(self, client):
+        resp = client.get("/seller/onboarding/dismiss?next=/seller/dashboard")
+        assert resp.status_code in (301, 302)
+        set_cookie = resp.headers.get("Set-Cookie", "")
+        assert "seller_onboarding_dismissed=1" in set_cookie
+
+    def test_dashboard_hides_onboarding_after_dismiss_cookie(self, client):
+        client.set_cookie("seller_onboarding_dismissed", "1")
+        resp = client.get("/seller/dashboard")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "5분 시작 가이드" not in html
+
+    def test_catalog_empty_state_shows_onboarding_actions(self, client):
+        class _Result:
+            items = []
+            source = "sheets"
+
+        with patch(
+            "src.seller_console.market_status_sheets.MarketStatusSheetsAdapter.fetch_all",
+            return_value=_Result(),
+        ):
+            resp = client.get("/seller/catalog")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "아직 등록된 상품이 없습니다." in html
+        assert "AI 상품등록" in html
+
+    def test_orders_empty_state_shows_onboarding_actions(self, client):
+        class _OrderSvc:
+            def list_orders(self, filters=None, limit=50, offset=0):
+                return []
+
+            def kpi_summary(self):
+                return {"today_new": 0, "pending_ship": 0, "shipped": 0, "returned_exchanged": 0, "source": "none"}
+
+        with patch("src.seller_console.views._get_order_sync_service", return_value=_OrderSvc()):
+            resp = client.get("/seller/orders")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "아직 주문이 없습니다." in html
+        assert "마켓 연동하기" in html
+
+    def test_sourcing_registry_empty_state_shows_guidance(self, client):
+        with patch("src.seller_console.my_sources_store.list_sources", return_value=[]):
+            resp = client.get("/seller/sourcing")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "등록된 소싱처가 없습니다." in html
+        assert "소싱처 등록 시작" in html
 
     def test_keywords_page_renders_period_toggle(self, client):
         resp = client.get("/seller/keywords?period=year&q=%EB%82%98%EC%9D%B4%ED%82%A4")
@@ -308,6 +367,29 @@ class TestDashboardHomeContext:
         assert len(context["market_grid_rows"]) >= 5
         assert context["fx_cards"]
         assert context["dashboard_footer"]["service_name"] == "Proxy Commerce"
+
+    def test_dashboard_context_onboarding_progress(self):
+        from src.seller_console.views import _build_dashboard_home_context
+
+        widgets = [
+            {
+                "type": "market_status",
+                "data": {
+                    "markets": [
+                        {"market": "coupang", "connected": True, "total_registered": 1},
+                        {"market": "naver", "connected": False, "total_registered": 0},
+                    ]
+                },
+            }
+        ]
+
+        with patch("src.seller_console.my_sources_store.list_sources", return_value=[]):
+            context = _build_dashboard_home_context(widgets)
+
+        onboarding = context["onboarding"]
+        assert onboarding["completed_steps"] == 2
+        assert onboarding["progress_percent"] == 66
+        assert onboarding["visible"] is True
 
 
 # ---------------------------------------------------------------------------
