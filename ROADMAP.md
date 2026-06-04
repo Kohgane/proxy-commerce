@@ -4,6 +4,7 @@
 
 | Phase | 내용 | PR | 완료일 |
 |---|---|---|---|
+| Phase 167 | 신규 셀러 온보딩 플로우 완성 — 대시보드 3단계 온보딩(마켓 연동→첫 소싱처→첫 상품등록) 진행률/CTA, dismiss 쿠키, 완료 자동 숨김, 소싱·카탈로그·주문 empty state 강화 및 바로가기 추가 | #PR | 2026-06-04 |
 | Phase 166 | 확정 파비콘 디자인(지구본 + 골드/라임 듀오 궤도선) 운영 반영 — `/seller/static/favicon.svg` 교체, ico/apple-touch/192/512 재생성, manifest theme/background `#1e1b4b` 갱신, 전 페이지 head 캐시버스팅(`?v=166`) 적용, 재생성 스크립트(`scripts/gen_favicon_assets.py`) 추가 | #PR | 2026-06-04 |
 | Phase 164 | 파비콘/앱 아이콘 브랜드 심볼 리디자인 — 인디고↔블루 그라데이션 라운드 사각형 + 육각 순환 링 + 중앙 K 적용, 소형(16/32/48)은 K 가독성 우선 단순화, `manifest.webmanifest` 도입 및 theme/background 컬러 갱신 | #PR | 2026-06-03 |
 | Phase 163 | KP 모노그램 파비콘/앱 아이콘 풀세트(svg/ico/apple-touch/192/512) 추가(Pillow 생성 스크립트로 재생성 가능), `/seller/static` 정적 경로 정렬, manifest 아이콘 경로 갱신, 공통/인증/법률/샵 헤드 favicon 연결, PWA 404(sw/icon) 정리 | #PR | 2026-06-03 |

@@ -45,7 +45,7 @@
       <div class="card console-card h-100">
         <div class="card-body">
           <div class="d-flex justify-content-between align-items-center mb-2">
-            <h2 class="h6 mb-0">소싱처 등록소</h2>
+            <h2 class="h6 mb-0">소싱처 등록소 (My Sources)</h2>
             <span class="badge text-bg-secondary">{{ registry_sources|length }}개</span>
           </div>
           <p class="small text-muted mb-2">자사몰·소규모 브랜드몰 등 원하는 몰을 직접 등록하세요. 개방성이 자동으로 판정됩니다.</p>
@@ -119,8 +119,14 @@
           </ul>
           {% else %}
           <div class="console-empty-state p-3">
+            <div class="console-empty-icon"><i class="bi bi-diagram-3"></i></div>
             <div class="fw-semibold mb-1">등록된 소싱처가 없습니다.</div>
-            <div class="small">자주 수집할 브랜드몰이나 자사몰을 위 폼에서 추가하세요.</div>
+            <div class="small mb-1"><strong>무엇을:</strong> 자주 소싱할 브랜드몰/자사몰 1곳을 먼저 등록하세요.</div>
+            <div class="small mb-1"><strong>왜:</strong> 등록소가 채워지면 재수집·추천 정확도가 더 빨라집니다.</div>
+            <div class="small"><strong>어떻게:</strong> 위 입력창에 URL 또는 도메인을 넣고 등록 버튼을 누르면 끝입니다.</div>
+            <div class="console-empty-state-actions">
+              <a href="#registryDomainInput" class="btn btn-sm btn-primary">소싱처 등록 시작</a>
+            </div>
           </div>
           {% endif %}
         </div>
