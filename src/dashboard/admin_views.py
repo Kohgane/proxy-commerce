@@ -483,10 +483,12 @@ def _render_diagnostics(issued_magic_link: str | None):
 
     # 섹션 2: OAuth 콜백 URL
     base_url = _get_base_url()
+    from src.auth.views import _callback_uri
+
     oauth_urls = {
-        "Google": f"{base_url}/auth/google/callback",
-        "Kakao": f"{base_url}/auth/kakao/callback",
-        "Naver": f"{base_url}/auth/naver/callback",
+        "Google": _callback_uri("google"),
+        "Kakao": _callback_uri("kakao"),
+        "Naver": _callback_uri("naver"),
     }
     emergency_access = _build_emergency_access_status()
     emergency_access["issued_magic_link"] = issued_magic_link
@@ -1080,30 +1082,9 @@ def _get_base_url() -> str:
     우선순위: OAUTH_REDIRECT_BASE_URL > APP_BASE_URL > 요청 컨텍스트 > 폴백.
     (src/auth/views.py 의 _resolve_oauth_base_url 과 동일한 우선순위)
     """
-    import os
-    from urllib.parse import urlparse
-    _fallback = "https://kohganepercentiii.com"
+    from src.auth.views import _resolve_oauth_base_url
 
-    base = os.getenv("OAUTH_REDIRECT_BASE_URL", "").strip().rstrip("/")
-    if not base:
-        base = os.getenv("APP_BASE_URL", "").strip().rstrip("/")
-    if not base:
-        try:
-            scheme = request.scheme
-            host = request.host
-            base = f"{scheme}://{host}"
-        except RuntimeError:
-            pass
-    if not base:
-        base = _fallback
-
-    parsed = urlparse(base)
-    host_lc = parsed.netloc.lower()
-    scheme = parsed.scheme or "https"
-    _local = host_lc.startswith("localhost") or host_lc.startswith("127.0.0.1")
-    if not _local and scheme != "https":
-        scheme = "https"
-    return f"{scheme}://{host_lc}"
+    return _resolve_oauth_base_url()
 
 
 def _build_env_matrix() -> list:
@@ -1471,14 +1452,14 @@ def _build_cs_bot_status() -> dict:
 def _build_auth_status() -> dict:
     """Phase 142: 인증 상태 카드 데이터."""
     from src.auth.admin_resolver import is_admin_session, _env_list
+    from src.auth.views import _oauth_runtime
+
     admin_ok, admin_rule = is_admin_session(session)
     user_email = session.get("user_email", "")
     user_name = session.get("user_name", "")
-
-    # OAuth 제공자 상태 확인
-    base_url = _get_base_url()
-    google_client_id = os.getenv("GOOGLE_CLIENT_ID", "")
-    google_client_id_hint = ("..." + google_client_id[-8:]) if len(google_client_id) >= 8 else ("미설정" if not google_client_id else google_client_id)
+    kakao_runtime = _oauth_runtime("kakao")
+    google_runtime = _oauth_runtime("google")
+    naver_runtime = _oauth_runtime("naver")
 
     return {
         "user_email": user_email,
@@ -1489,11 +1470,11 @@ def _build_auth_status() -> dict:
         "admin_kakao_configured": bool(_env_list("ADMIN_KAKAO_IDS")),
         "admin_google_configured": bool(_env_list("ADMIN_GOOGLE_SUBS")),
         "admin_naver_configured": bool(_env_list("ADMIN_NAVER_IDS")),
-        "kakao_oauth_active": bool(os.getenv("KAKAO_CLIENT_ID")),
-        "google_oauth_active": bool(google_client_id),
-        "naver_oauth_active": bool(os.getenv("NAVER_CLIENT_ID")),
-        "google_client_id_hint": google_client_id_hint,
-        "google_redirect_uri": f"{base_url}/auth/google/callback",
+        "kakao_oauth_active": kakao_runtime["configured"],
+        "google_oauth_active": google_runtime["configured"],
+        "naver_oauth_active": naver_runtime["configured"],
+        "google_client_id_hint": google_runtime["client_id"] or "미설정",
+        "google_redirect_uri": google_runtime["callback_url"],
         "flash_isolation_enabled": True,  # Phase 142 적용 완료
     }
 
@@ -2224,24 +2205,16 @@ def _build_emergency_access_status() -> dict:
 def _build_oauth_diagnostics(base_url: str, oauth_urls: dict) -> list[dict]:
     import os
     from urllib.parse import urlparse
+    from src.auth.views import _oauth_runtime
 
     domain = urlparse(base_url).netloc or base_url.replace("https://", "").replace("http://", "")
     privacy_url = f"{base_url}/privacy"
     terms_url = f"{base_url}/terms"
     privacy_ok = _page_route_available("legal.privacy")
     terms_ok = _page_route_available("legal.terms")
-
-    # Google: 표준 env vs 레거시 env 어느 쪽이 채워져 있는지 표시
-    _g_std_id = bool(os.getenv("GOOGLE_OAUTH_CLIENT_ID"))
-    _g_leg_id = bool(os.getenv("GOOGLE_CLIENT_ID"))
-    _g_std_sec = bool(os.getenv("GOOGLE_OAUTH_CLIENT_SECRET"))
-    _g_leg_sec = bool(os.getenv("GOOGLE_CLIENT_SECRET"))
-    _g_id_active_env = (
-        "GOOGLE_OAUTH_CLIENT_ID" if _g_std_id else ("GOOGLE_CLIENT_ID (레거시 폴백)" if _g_leg_id else "")
-    )
-    _g_sec_active_env = (
-        "GOOGLE_OAUTH_CLIENT_SECRET" if _g_std_sec else ("GOOGLE_CLIENT_SECRET (레거시 폴백)" if _g_leg_sec else "")
-    )
+    google_runtime = _oauth_runtime("google")
+    kakao_runtime = _oauth_runtime("kakao")
+    naver_runtime = _oauth_runtime("naver")
 
     # 베이스 URL 출처 표기
     _base_src = (
@@ -2251,21 +2224,21 @@ def _build_oauth_diagnostics(base_url: str, oauth_urls: dict) -> list[dict]:
 
     return [
         {
+            **google_runtime,
             "name": "Google OAuth",
-            "client_id_env": "GOOGLE_OAUTH_CLIENT_ID",
-            "client_secret_env": "GOOGLE_OAUTH_CLIENT_SECRET",
-            "client_id_set": _g_std_id or _g_leg_id,
-            "client_secret_set": _g_std_sec or _g_leg_sec,
-            "client_id_active_env": _g_id_active_env,
-            "client_secret_active_env": _g_sec_active_env,
-            "callback_url": oauth_urls["Google"],
             "base_url_source": _base_src,
+            "console_url": "https://console.cloud.google.com/apis/credentials",
+            "comparison_message": (
+                "이 client_id가 Google Cloud Console에서 redirect_uri를 등록한 그 OAuth 클라이언트 ID와 "
+                "정확히 일치하는지 직접 대조하세요."
+            ),
+            "brand_name_source": "BRAND_NAME env" if os.getenv("BRAND_NAME") else "기본값 Proxy Commerce",
             "checklist": [
                 {
                     "label": "승인된 리디렉션 URI 정확히 등록",
                     "done": None,
                     "details": [
-                        f"등록할 URI: {oauth_urls['Google']}",
+                        f"등록할 URI: {google_runtime['callback_url']}",
                         "Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client IDs",
                         "Authorized redirect URIs 항목에 위 URI 복붙 후 저장",
                         "저장 후 5~10분 대기 (Google 캐시)",
@@ -2278,6 +2251,7 @@ def _build_oauth_diagnostics(base_url: str, oauth_urls: dict) -> list[dict]:
                         "기본 스코프(openid email profile)로 미인증 상태여도 로그인 가능",
                         "민감 스코프 추가 or 100명 초과 시에만 브랜딩 인증 필요",
                         "'확인되지 않은 앱' 경고가 떠도 [고급] → [계속] 으로 진행 가능",
+                        f"동의화면 앱 이름은 표시용이며 redirect_uri_mismatch와 무관 (현재 출처: {('BRAND_NAME env' if os.getenv('BRAND_NAME') else '기본값 Proxy Commerce')})",
                     ],
                 },
                 {
@@ -2293,7 +2267,7 @@ def _build_oauth_diagnostics(base_url: str, oauth_urls: dict) -> list[dict]:
                 {"label": f"이용약관 URL: {terms_url}", "done": terms_ok},
                 {
                     "label": "환경변수 설정 확인",
-                    "done": _g_std_id or _g_leg_id,
+                    "done": google_runtime["client_id_set"],
                     "details": [
                         "표준: GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET",
                         "레거시 별칭(하위호환): GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET",
@@ -2302,24 +2276,12 @@ def _build_oauth_diagnostics(base_url: str, oauth_urls: dict) -> list[dict]:
             ],
         },
         {
+            **kakao_runtime,
             "name": "Kakao OAuth",
-            "client_id_env": "KAKAO_REST_API_KEY",
-            "client_secret_env": "KAKAO_CLIENT_SECRET",
-            "client_id_set": bool(os.getenv("KAKAO_REST_API_KEY") or os.getenv("KAKAO_OAUTH_CLIENT_ID")),
-            "client_secret_set": bool(os.getenv("KAKAO_CLIENT_SECRET") or os.getenv("KAKAO_OAUTH_CLIENT_SECRET")),
-            "client_id_active_env": (
-                "KAKAO_REST_API_KEY" if os.getenv("KAKAO_REST_API_KEY") else
-                ("KAKAO_OAUTH_CLIENT_ID (별칭 폴백)" if os.getenv("KAKAO_OAUTH_CLIENT_ID") else "")
-            ),
-            "client_secret_active_env": (
-                "KAKAO_CLIENT_SECRET" if os.getenv("KAKAO_CLIENT_SECRET") else
-                ("KAKAO_OAUTH_CLIENT_SECRET (별칭 폴백)" if os.getenv("KAKAO_OAUTH_CLIENT_SECRET") else "")
-            ),
-            "callback_url": oauth_urls["Kakao"],
             "base_url_source": _base_src,
             "checklist": [
                 {"label": f"Web 플랫폼 등록: {base_url}", "done": None},
-                {"label": f"Redirect URI 정확히 등록: {oauth_urls['Kakao']}", "done": None},
+                {"label": f"Redirect URI 정확히 등록: {kakao_runtime['callback_url']}", "done": None},
                 {"label": "카카오 로그인 활성화", "done": None},
                 {"label": "필수 동의 항목(이메일/닉네임) 확인", "done": None},
                 {"label": f"개인정보처리방침 URL: {privacy_url}", "done": privacy_ok},
@@ -2327,23 +2289,11 @@ def _build_oauth_diagnostics(base_url: str, oauth_urls: dict) -> list[dict]:
             ],
         },
         {
+            **naver_runtime,
             "name": "Naver OAuth",
-            "client_id_env": "NAVER_CLIENT_ID",
-            "client_secret_env": "NAVER_CLIENT_SECRET",
-            "client_id_set": bool(os.getenv("NAVER_CLIENT_ID") or os.getenv("NAVER_OAUTH_CLIENT_ID")),
-            "client_secret_set": bool(os.getenv("NAVER_CLIENT_SECRET") or os.getenv("NAVER_OAUTH_CLIENT_SECRET")),
-            "client_id_active_env": (
-                "NAVER_CLIENT_ID" if os.getenv("NAVER_CLIENT_ID") else
-                ("NAVER_OAUTH_CLIENT_ID (별칭 폴백)" if os.getenv("NAVER_OAUTH_CLIENT_ID") else "")
-            ),
-            "client_secret_active_env": (
-                "NAVER_CLIENT_SECRET" if os.getenv("NAVER_CLIENT_SECRET") else
-                ("NAVER_OAUTH_CLIENT_SECRET (별칭 폴백)" if os.getenv("NAVER_OAUTH_CLIENT_SECRET") else "")
-            ),
-            "callback_url": oauth_urls["Naver"],
             "base_url_source": _base_src,
             "checklist": [
-                {"label": f"서비스 URL/Callback URL 정확히 등록: {oauth_urls['Naver']}", "done": None},
+                {"label": f"서비스 URL/Callback URL 정확히 등록: {naver_runtime['callback_url']}", "done": None},
                 {
                     "label": "개발 중 상태: 등록된 멤버만 로그인 가능",
                     "done": None,
@@ -2553,38 +2503,63 @@ _DIAGNOSTICS_TEMPLATE = """
               <div style="min-width:0;flex:1">
                 <h5 class="mb-2">🔐 {{ item.name }}</h5>
                 <div class="small">
-                  <div>{{ item.client_id_env }}:
-                    {% if item.client_id_set %}
-                      <span class="badge bg-success">✅ 설정됨</span>
-                      {% if item.client_id_active_env and item.client_id_active_env != item.client_id_env %}
-                        <span class="badge bg-warning text-dark">{{ item.client_id_active_env }}</span>
-                      {% endif %}
+                  <div class="mt-1 d-flex align-items-start gap-1 flex-wrap">
+                    <span class="fw-semibold text-nowrap">사용 중 client_id:</span>
+                    {% if item.client_id_set and item.client_id is defined and item.client_id %}
+                      <code style="word-break:break-all;">{{ item.client_id }}</code>
+                      <button class="btn btn-outline-secondary btn-sm copy-btn py-0 px-1"
+                              onclick='navigator.clipboard.writeText({{ item.client_id|tojson }}).then(()=>this.textContent="✅")'>📋</button>
                     {% else %}
-                      <span class="badge bg-secondary">❌ 누락</span>
+                      <span class="text-muted">{{ item.client_id_missing_message if item.client_id_missing_message is defined else '미설정' }}</span>
                     {% endif %}
                   </div>
-                  <div class="mt-1">{{ item.client_secret_env }}:
+                  <div class="text-muted mt-1">읽은 client_id env:
+                    <span class="badge bg-light text-dark border">{{ item.client_id_active_env or item.client_id_env }}</span>
+                  </div>
+                  <div class="mt-2">
+                    <span class="fw-semibold">{{ item.client_secret_env }}:</span>
                     {% if item.client_secret_set %}
                       <span class="badge bg-success">✅ 설정됨</span>
-                      {% if item.client_secret_active_env and item.client_secret_active_env != item.client_secret_env %}
-                        <span class="badge bg-warning text-dark">{{ item.client_secret_active_env }}</span>
-                      {% endif %}
+                      <span class="text-muted">{{ item.client_secret_hint }}</span>
                     {% else %}
                       <span class="badge bg-secondary">❌ 누락</span>
+                      <span class="text-muted">{{ item.client_secret_missing_message }}</span>
                     {% endif %}
+                    <span class="ms-1 text-muted">env: {{ item.client_secret_active_env or item.client_secret_env }}</span>
                   </div>
                   <div class="mt-2 d-flex align-items-start gap-1 flex-wrap">
                     <span class="fw-semibold text-nowrap">콜백 URI (등록 필요):</span>
                     <code style="word-break:break-all;">{{ item.callback_url }}</code>
+                    <button class="btn btn-outline-secondary btn-sm copy-btn py-0 px-1"
+                            onclick='navigator.clipboard.writeText({{ item.callback_url|tojson }}).then(()=>this.textContent="✅")'>📋</button>
                   </div>
                   <div class="text-muted mt-1">URI 출처: <span class="badge bg-light text-dark border">{{ item.base_url_source }}</span></div>
                 </div>
               </div>
-              <button class="btn btn-outline-secondary btn-sm copy-btn flex-shrink-0"
-                      onclick="navigator.clipboard.writeText('{{ item.callback_url }}').then(()=>this.textContent='✅ 복사됨')">
-                📋 콜백 URI 복사
-              </button>
             </div>
+            {% if item.comparison_message %}
+              <div class="alert alert-info py-2 px-3 small mt-3 mb-0">
+                {{ item.comparison_message }}
+                {% if item.console_url %}
+                  <a href="{{ item.console_url }}" target="_blank" rel="noopener">콘솔 클라이언트 페이지 열기</a>
+                {% endif %}
+              </div>
+            {% endif %}
+            {% if item.provider == 'google' and item.client_id_mismatch %}
+              <div class="alert alert-warning py-2 px-3 small mt-3 mb-0">
+                ⚠️ <code>{{ item.client_id_env }}</code>와 <code>{{ item.legacy_client_id_env }}</code>가 서로 다릅니다.
+                현재 실제 사용값은 <code>{{ item.client_id }}</code>이며, 표준값은 <code>{{ item.standard_client_id }}</code>,
+                레거시값은 <code>{{ item.legacy_client_id }}</code>입니다. 하나만 남기고 정리하세요.
+              </div>
+            {% endif %}
+            {% if item.provider == 'google' and item.client_secret_mismatch %}
+              <div class="alert alert-warning py-2 px-3 small mt-3 mb-0">
+                ⚠️ <code>{{ item.client_secret_env }}</code>와 <code>{{ item.legacy_client_secret_env }}</code>가 서로 다릅니다.
+                현재 실제 사용 env는 <code>{{ item.client_secret_active_env or item.client_secret_env }}</code>이며,
+                표준 힌트는 <code>{{ item.standard_client_secret_hint }}</code>, 레거시 힌트는
+                <code>{{ item.legacy_client_secret_hint }}</code>입니다. secret 값은 노출하지 말고 하나만 남기세요.
+              </div>
+            {% endif %}
             <details class="mt-3">
               <summary class="fw-semibold">트러블슈팅 체크리스트</summary>
               <ul class="mt-2 mb-0 ps-3">
@@ -2818,13 +2793,13 @@ _DIAGNOSTICS_TEMPLATE = """
         </ul>
         <h6 class="fw-semibold">OAuth 제공자</h6>
         <ul class="mb-3">
-          <li>카카오: {% if auth_status.kakao_oauth_active %}<span class="badge bg-success">✅ 설정됨</span>{% else %}<span class="badge bg-secondary">KAKAO_CLIENT_ID 미설정</span>{% endif %}</li>
+          <li>카카오: {% if auth_status.kakao_oauth_active %}<span class="badge bg-success">✅ 설정됨</span>{% else %}<span class="badge bg-secondary">KAKAO_REST_API_KEY 미설정</span>{% endif %}</li>
           <li>Google:
             {% if auth_status.google_oauth_active %}
               <span class="badge bg-success">✅ 설정됨</span>
               <span class="small text-muted">CLIENT_ID: {{ auth_status.google_client_id_hint }}</span>
             {% else %}
-              <span class="badge bg-secondary">GOOGLE_CLIENT_ID 미설정</span>
+              <span class="badge bg-secondary">GOOGLE_OAUTH_CLIENT_ID 미설정</span>
             {% endif %}
             <span class="ms-2"><a href="/admin/diagnostics/google-oauth-guide" class="small">[진단 가이드 →]</a></span>
           </li>
@@ -3334,7 +3309,9 @@ _DIAGNOSTICS_TEMPLATE = """
           <ul class="mb-2">
             <li>site brand_name: <code>{{ brand_name }}</code></li>
             <li>og:site_name / og:title: <code>{{ brand_name }}</code></li>
-            <li>⚠️ Google OAuth 동의 화면 앱 이름을 정확히 <code>{{ brand_name }}</code>로 맞춰주세요.</li>
+            <li>동의 화면 앱 이름은 보이는 텍스트일 뿐이며 <strong>redirect_uri_mismatch 차단 원인은 아닙니다</strong>.</li>
+            <li>앱 이름 기대값 출처: <code>BRAND_NAME</code> env (미설정 시 기본값 <code>Proxy Commerce</code>)</li>
+            <li>브랜딩을 맞추려면 동의 화면 표시 이름을 <code>{{ brand_name }}</code>로 정리하세요.</li>
           </ul>
           <a class="btn btn-outline-secondary btn-sm" target="_blank" href="https://console.cloud.google.com/auth/branding">콘솔 열기</a>
         </div>

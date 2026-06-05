@@ -4,6 +4,7 @@
 
 | Phase | 내용 | PR | 완료일 |
 |---|---|---|---|
+| Phase 176 | OAuth client_id 진단 강화 — 로그인 화면/`/admin/diagnostics`에 실제 런타임 client_id 전체값+복사 버튼을 추가하고, Google 표준/레거시 env 엇갈림(client_id/secret)을 자동 경고하며, secret은 마지막 4자리 힌트만 노출하도록 마스킹, redirect_uri를 실제 로그인과 동일 소스로 통일 | #PR | 2026-06-05 |
 | Phase 174 | 로그인/콘솔 인터랙션 복구 — OAuth 프로바이더 환경변수 별칭(legacy/new) 호환으로 구글/네이버/카카오 로그인 경로 복구, 미설정 OAuth 버튼은 숨김 대신 비활성+설정 경로를 정직 표기, 카탈로그 동기화 버튼을 실제 API(`/seller/catalog/<market>/<product>/sync`)로 연결하고 mock 모드에서는 정직 503 안내, 카탈로그 검색/필터/정렬/페이지당 개수/초기화 동작 추가, 마켓 동기화 버튼 JS 응답 파싱 오류 수정 | #PR | 2026-06-05 |
 | Phase 173 | 셀러 콘솔 비동작 메뉴 실동작 보강(2차) — 주문 자동 처리에 실데이터 큐/정직한 시뮬레이션 모드/실행 API를 추가하고 결과 요약을 노출, BI 분석의 리오더·할인 캠페인 CTA를 실제 화면으로 연결, 광고 캠페인 추천 갱신 버튼 JS 오타 수정으로 동작 복구, 관련 주문 자동 처리 라우트 테스트 보강 | #PR | 2026-06-05 |
 | Phase 172 | 파비콘 v12 선명도 개선 교체(v11 대체) — 운영 `favicon.svg`를 글로우 정리 + 굵은 궤도선(28px) + 굵은 지구 와이어프레임(18px) + 별 축소 확정안으로 교체, `favicon.ico`(16/32/48 소형 단순화)·apple-touch·icon-192·icon-512 재생성, manifest/head theme-color `#020010` 및 캐시버스팅 `?v=172` 갱신 | #PR | 2026-06-05 |
@@ -1652,6 +1653,42 @@
 - OAuth callback 기본 next 경로/팝업 모드(`KAKAO_OAUTH_NEXT_DEFAULT`, `KAKAO_OAUTH_POPUP_MODE`) 지원
 - 가격 엔진에 실측 시장가 finder(`src/pricing/market_price_finder.py`)와 우선순위 의사결정(source/detail/loss warning) 반영
 
+## Phase 176 — OAuth client_id 진단 강화 + env 엇갈림 경고 ✅
+
+### 목표
+`redirect_uri`가 이미 맞더라도 실제 로그인에 쓰이는 `client_id`/`client_secret` 소스를 운영자가 즉시 대조할 수 있게 한다. 로그인 화면과 `/admin/diagnostics`가 동일한 런타임 소스를 보여주고, Google 표준/레거시 env 엇갈림을 자동 경고한다.
+
+### 변경 내역
+
+#### 1. OAuth 런타임 진단 단일 소스 (`src/auth/views.py`)
+- `_oauth_runtime(provider)` 헬퍼 추가
+- 각 프로바이더의 실제 런타임 `client_id`, active env, callback URI, secret 마스킹 힌트(끝 4자리), 표준/레거시 mismatch 플래그를 한 곳에서 계산
+- Google/Kakao/Naver 모두 로그인 화면과 `/admin/diagnostics`가 같은 소스를 사용
+
+#### 2. 로그인 화면 운영자 박스 강화 (`src/auth/templates/auth/login.html`)
+- 기존 접이식 운영자 박스에 각 프로바이더별 `redirect_uri` + `client_id` 전체값 + 📋 복사 버튼 추가
+- `client_id` 미설정 시 env 이름을 포함한 "미설정" 문구를 정직하게 표기
+- 일반 사용자 UX는 그대로 collapsed 기본 유지
+
+#### 3. `/admin/diagnostics` OAuth 카드 강화 (`src/dashboard/admin_views.py`)
+- 실제 사용 중인 `client_id` 전체값, 읽은 env 이름, `client_secret` 설정 여부 + 마지막 4자리 힌트, callback URI를 한 카드에서 노출
+- Google은 `GOOGLE_OAUTH_CLIENT_ID` vs `GOOGLE_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` vs `GOOGLE_CLIENT_SECRET`가 둘 다 있고 값이 다르면 눈에 띄는 경고 표시
+- Google Cloud Console Credentials 링크와 "이 client_id가 redirect_uri를 등록한 그 클라이언트인지 직접 대조" 문구 추가
+- 브랜딩 앱 이름은 로그인 차단과 무관하며, 이름 출처가 `BRAND_NAME` env(미설정 시 `Proxy Commerce`)임을 안내
+
+#### 4. 테스트 보강
+- `tests/test_callback_uri.py`: Google standard/legacy mismatch true/false, secret 힌트 마스킹, 로그인 화면 client_id 렌더 스모크 추가
+- `tests/test_diagnostics_view.py`: `/admin/diagnostics` HTML에 실제 runtime client_id가 보이고 secret 원문은 노출되지 않는지 검증
+
+#### 5. 문서 갱신
+- `docs/operations/GOOGLE_OAUTH_SETUP.md`: Phase 176 기준으로 client_id 대조, secret 마스킹, 표준/레거시 env 제거 체크리스트 추가
+
+### 운영자 액션 체크리스트 (배포 후)
+1. Render Environment에서 `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET`를 redirect_uri를 등록한 그 Google OAuth 클라이언트 값으로 맞춘다
+2. `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`가 따로 남아 값이 다르면 제거한다
+3. client_secret이 외부에 노출된 적이 있으면 Google Cloud Console에서 재발급(rotate) 후 교체한다
+4. 저장 → 재배포 → 5~10분 대기 후 `/admin/diagnostics`에서 `client_id` / `redirect_uri`를 직접 대조한다
+
 ## Phase 175 — OAuth redirect_uri 견고화 + 자가진단 ✅
 
 ### 목표
@@ -1704,4 +1741,3 @@
 4. 5~10분 대기 후 시크릿 창에서 구글 로그인 재시도
 5. 네이버: 개발 중 상태이면 [멤버 관리]에 네이버 로그인 ID(이메일 아님) 등록
 6. 향후 도메인 변경 시 `APP_BASE_URL` 또는 `OAUTH_REDIRECT_BASE_URL` env만 바꾸면 됨
-
