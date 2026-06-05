@@ -9,28 +9,21 @@
       <stop offset="40%" stop-color="#3a82e0"/>
       <stop offset="100%" stop-color="#1a3878"/>
     </radialGradient>
+    <!-- 지구본만 은은하게 글로우 -->
     <filter id="gg">
-      <feGaussianBlur stdDeviation="10" result="b"/>
-      <feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-    <filter id="og">
-      <feGaussianBlur stdDeviation="4" result="b"/>
-      <feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-    <filter id="sg">
-      <feGaussianBlur stdDeviation="3.5" result="b"/>
-      <feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
     <clipPath id="th">
       <rect x="0" y="0" width="512" height="272"/>
     </clipPath>
   </defs>
 
-  <!-- 배경 — 우주 (거의 검정) -->
+  <!-- 배경 — 우주 -->
   <rect width="512" height="512" rx="112" fill="url(#bg)"/>
 
-  <!-- 별들 — 연하게 -->
-  <g fill="#ffffff">
+  <!-- 별 -->
+  <g fill="#fff">
     <circle cx="45" cy="55" r="1.5" opacity=".4"/>
     <circle cx="120" cy="30" r="1" opacity=".3"/>
     <circle cx="200" cy="65" r="1.8" opacity=".35"/>
@@ -39,64 +32,55 @@
     <circle cx="460" cy="35" r="1.5" opacity=".4"/>
     <circle cx="70" cy="130" r="1" opacity=".25"/>
     <circle cx="440" cy="120" r="1.3" opacity=".35"/>
-    <circle cx="480" cy="180" r="1" opacity=".3"/>
     <circle cx="30" cy="200" r="1.2" opacity=".3"/>
-    <circle cx="485" cy="280" r="1" opacity=".25"/>
     <circle cx="25" cy="340" r="1.5" opacity=".35"/>
     <circle cx="55" cy="430" r="1" opacity=".3"/>
     <circle cx="130" cy="465" r="1.3" opacity=".4"/>
-    <circle cx="250" cy="480" r="1" opacity=".25"/>
     <circle cx="350" cy="470" r="1.5" opacity=".35"/>
     <circle cx="430" cy="450" r="1.2" opacity=".3"/>
     <circle cx="475" cy="400" r="1" opacity=".25"/>
-    <circle cx="490" cy="340" r="1.5" opacity=".3"/>
-    <circle cx="20" cy="270" r="1" opacity=".2"/>
-    <circle cx="160" cy="45" r="2" opacity=".3"/>
+    <circle cx="485" cy="180" r="1" opacity=".3"/>
     <circle cx="380" cy="475" r="1.8" opacity=".35"/>
-    <circle cx="80" cy="480" r="1.2" opacity=".25"/>
-    <circle cx="460" cy="460" r="1" opacity=".3"/>
   </g>
 
-  <!-- 1: 궤도선 전체 — 네온 + 글로우 -->
-  <g fill="none" stroke-linecap="round" filter="url(#og)">
-    <path d="M 125 305 A 120 44 22 1 1 387 225 A 120 44 22 1 1 125 305" stroke="#ffcc00" stroke-width="20"/>
-    <path d="M 387 305 A 120 44 -22 1 1 125 225 A 120 44 -22 1 1 387 305" stroke="#69ff2e" stroke-width="20"/>
+  <!-- 1: 궤도선 전체 — 굵고 선명, 글로우 없음 -->
+  <g fill="none" stroke-linecap="round">
+    <path d="M 125 305 A 120 44 22 1 1 387 225 A 120 44 22 1 1 125 305" stroke="#ffcc00" stroke-width="28"/>
+    <path d="M 387 305 A 120 44 -22 1 1 125 225 A 120 44 -22 1 1 387 305" stroke="#69ff2e" stroke-width="28"/>
   </g>
 
-  <!-- 2: 지구 솔리드 — 밝은 채움 + 트리플 글로우 -->
+  <!-- 2: 지구 솔리드 -->
   <circle cx="256" cy="256" r="150" fill="url(#gf)" filter="url(#gg)"/>
 
-  <!-- 3: 지구 와이어프레임 — 밝고 글로우 -->
-  <g fill="none" stroke="#ffffff" stroke-width="14" filter="url(#og)">
+  <!-- 3: 지구 와이어프레임 — 굵고 선명, 완전 불투명 -->
+  <g fill="none" stroke="#ffffff" stroke-width="18">
     <circle cx="256" cy="256" r="150"/>
     <ellipse cx="256" cy="256" rx="150" ry="64"/>
     <ellipse cx="256" cy="256" rx="76" ry="150"/>
   </g>
 
-  <!-- 4: 궤도 윗부분 — 지구 앞 X자 + 글로우 -->
-  <g clip-path="url(#th)" fill="none" stroke-linecap="round" filter="url(#og)">
-    <path d="M 125 305 A 120 44 22 1 1 387 225 A 120 44 22 1 1 125 305" stroke="#ffcc00" stroke-width="20"/>
-    <path d="M 387 305 A 120 44 -22 1 1 125 225 A 120 44 -22 1 1 387 305" stroke="#69ff2e" stroke-width="20"/>
+  <!-- 4: 궤도 윗부분 — 지구 앞, 굵고 선명 -->
+  <g clip-path="url(#th)" fill="none" stroke-linecap="round">
+    <path d="M 125 305 A 120 44 22 1 1 387 225 A 120 44 22 1 1 125 305" stroke="#ffcc00" stroke-width="28"/>
+    <path d="M 387 305 A 120 44 -22 1 1 125 225 A 120 44 -22 1 1 387 305" stroke="#69ff2e" stroke-width="28"/>
   </g>
 
-  <!-- dot — 글로우 -->
-  <g filter="url(#og)">
-    <circle cx="387" cy="225" r="15" fill="#ffcc00"/>
-    <circle cx="125" cy="225" r="15" fill="#69ff2e"/>
-  </g>
+  <!-- dot — 크고 선명 -->
+  <circle cx="387" cy="225" r="18" fill="#ffcc00"/>
+  <circle cx="125" cy="225" r="18" fill="#69ff2e"/>
 
-  <!-- 스파클 — 크고 강렬하게 -->
-  <g filter="url(#sg)">
-    <g transform="translate(192,162)" fill="#fff">
+  <!-- 스파클 — 선명하게 (글로우 약하게만) -->
+  <g>
+    <g transform="translate(192,158)" fill="#fff">
       <path d="M0,-18 4.5,-4.5 18,0 4.5,4.5 0,18 -4.5,4.5 -18,0 -4.5,-4.5Z"/>
     </g>
-    <g transform="translate(340,182)" fill="#fff">
+    <g transform="translate(340,178)" fill="#fff">
       <path d="M0,-13 3.2,-3.2 13,0 3.2,3.2 0,13 -3.2,3.2 -13,0 -3.2,-3.2Z" opacity=".9"/>
     </g>
-    <g transform="translate(352,302)" fill="#fff">
+    <g transform="translate(355,305)" fill="#fff">
       <path d="M0,-15 3.8,-3.8 15,0 3.8,3.8 0,15 -3.8,3.8 -15,0 -3.8,-3.8Z" opacity=".95"/>
     </g>
-    <g transform="translate(180,328)" fill="#fff">
+    <g transform="translate(178,330)" fill="#fff">
       <path d="M0,-10 2.5,-2.5 10,0 2.5,2.5 0,10 -2.5,2.5 -10,0 -2.5,-2.5Z" opacity=".8"/>
     </g>
   </g>
