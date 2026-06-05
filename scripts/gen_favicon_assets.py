@@ -25,9 +25,9 @@ def _png_from_svg(svg_text: str, size: int) -> Image.Image:
 
 
 def _small_svg_variant(svg_text: str) -> str:
-    small = re.sub(r"\s*<!-- 별.*?-->\s*<g fill=\"#fff\">.*?</g>", "", svg_text, flags=re.DOTALL)
+    small = re.sub(r"\s*<!-- 별 -->\s*<g fill=\"#fff\">.*?</g>", "", svg_text, flags=re.DOTALL)
     small = re.sub(
-        r"\s*<!-- 스파클.*?-->\s*<g>.*?</g>\s*</svg>",
+        r"\s*<!-- 스파클 — 선명하게 \(글로우 약하게만\) -->\s*<g>.*?</g>\s*</svg>",
         "\n</svg>",
         small,
         flags=re.DOTALL,
