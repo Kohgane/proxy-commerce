@@ -1027,6 +1027,7 @@ def catalog():
         result = adapter.fetch_all()
         all_items = result.items
         source = result.source
+        max_price_for_none = 10**15
         if marketplace_filter:
             all_items = [i for i in all_items if (i.marketplace or "") == marketplace_filter]
         if state_filter:
@@ -1045,7 +1046,7 @@ def catalog():
         elif sort == "price_desc":
             all_items = sorted(all_items, key=lambda i: i.price_krw or -1, reverse=True)
         elif sort == "price_asc":
-            all_items = sorted(all_items, key=lambda i: i.price_krw if i.price_krw is not None else 10**15)
+            all_items = sorted(all_items, key=lambda i: i.price_krw if i.price_krw is not None else max_price_for_none)
         elif sort == "title_asc":
             all_items = sorted(all_items, key=lambda i: (i.title or "").lower())
         else:
