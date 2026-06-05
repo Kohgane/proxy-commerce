@@ -2215,6 +2215,7 @@ def _build_oauth_diagnostics(base_url: str, oauth_urls: dict) -> list[dict]:
     google_runtime = _oauth_runtime("google")
     kakao_runtime = _oauth_runtime("kakao")
     naver_runtime = _oauth_runtime("naver")
+    brand_name_source = "BRAND_NAME env" if os.getenv("BRAND_NAME") else "기본값 Proxy Commerce"
 
     # 베이스 URL 출처 표기
     _base_src = (
@@ -2232,7 +2233,7 @@ def _build_oauth_diagnostics(base_url: str, oauth_urls: dict) -> list[dict]:
                 "이 client_id가 Google Cloud Console에서 redirect_uri를 등록한 그 OAuth 클라이언트 ID와 "
                 "정확히 일치하는지 직접 대조하세요."
             ),
-            "brand_name_source": "BRAND_NAME env" if os.getenv("BRAND_NAME") else "기본값 Proxy Commerce",
+            "brand_name_source": brand_name_source,
             "checklist": [
                 {
                     "label": "승인된 리디렉션 URI 정확히 등록",
@@ -2251,7 +2252,7 @@ def _build_oauth_diagnostics(base_url: str, oauth_urls: dict) -> list[dict]:
                         "기본 스코프(openid email profile)로 미인증 상태여도 로그인 가능",
                         "민감 스코프 추가 or 100명 초과 시에만 브랜딩 인증 필요",
                         "'확인되지 않은 앱' 경고가 떠도 [고급] → [계속] 으로 진행 가능",
-                        f"동의화면 앱 이름은 표시용이며 redirect_uri_mismatch와 무관 (현재 출처: {('BRAND_NAME env' if os.getenv('BRAND_NAME') else '기본값 Proxy Commerce')})",
+                        f"동의화면 앱 이름은 표시용이며 redirect_uri_mismatch와 무관 (현재 출처: {brand_name_source})",
                     ],
                 },
                 {
@@ -2508,7 +2509,8 @@ _DIAGNOSTICS_TEMPLATE = """
                     {% if item.client_id_set and item.client_id is defined and item.client_id %}
                       <code style="word-break:break-all;">{{ item.client_id }}</code>
                       <button class="btn btn-outline-secondary btn-sm copy-btn py-0 px-1"
-                              onclick='navigator.clipboard.writeText({{ item.client_id|tojson }}).then(()=>this.textContent="✅")'>📋</button>
+                              aria-label="{{ item.name }} client_id 복사"
+                              onclick='navigator.clipboard.writeText({{ item.client_id|tojson }}).then(()=>this.innerHTML="<span aria-hidden=\"true\">✅</span><span class=\"visually-hidden\">복사됨</span>")'><span aria-hidden="true">📋</span><span class="visually-hidden">복사</span></button>
                     {% else %}
                       <span class="text-muted">{{ item.client_id_missing_message if item.client_id_missing_message is defined else '미설정' }}</span>
                     {% endif %}
@@ -2531,7 +2533,8 @@ _DIAGNOSTICS_TEMPLATE = """
                     <span class="fw-semibold text-nowrap">콜백 URI (등록 필요):</span>
                     <code style="word-break:break-all;">{{ item.callback_url }}</code>
                     <button class="btn btn-outline-secondary btn-sm copy-btn py-0 px-1"
-                            onclick='navigator.clipboard.writeText({{ item.callback_url|tojson }}).then(()=>this.textContent="✅")'>📋</button>
+                            aria-label="{{ item.name }} 콜백 URI 복사"
+                            onclick='navigator.clipboard.writeText({{ item.callback_url|tojson }}).then(()=>this.innerHTML="<span aria-hidden=\"true\">✅</span><span class=\"visually-hidden\">복사됨</span>")'><span aria-hidden="true">📋</span><span class="visually-hidden">복사</span></button>
                   </div>
                   <div class="text-muted mt-1">URI 출처: <span class="badge bg-light text-dark border">{{ item.base_url_source }}</span></div>
                 </div>

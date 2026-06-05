@@ -169,6 +169,7 @@ class TestDiagnosticsView:
 
         html = resp.get_data(as_text=True)
         assert resp.status_code == 200
+        # runtime client_id는 보이되 secret 원문은 절대 노출되지 않아야 한다.
         assert "google-runtime-client-id" in html
         assert "설정됨 (끝 1234)" in html
         assert "standard-secret-1234" not in html

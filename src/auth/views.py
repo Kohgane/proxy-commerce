@@ -371,7 +371,7 @@ def _oauth_env_value(name: str) -> str:
     return os.getenv(name, "").strip()
 
 
-def _resolve_active_oauth_env(envs: list[tuple[str, str]]) -> tuple[str, str]:
+def _get_first_set_oauth_env(envs: list[tuple[str, str]]) -> tuple[str, str]:
     for env_name, label in envs:
         value = _oauth_env_value(env_name)
         if value:
@@ -383,8 +383,9 @@ def _secret_hint(secret: str) -> str:
     secret = (secret or "").strip()
     if not secret:
         return "미설정"
-    tail = secret[-4:] if len(secret) >= 4 else secret
-    return f"설정됨 (끝 {tail})"
+    if len(secret) < 4:
+        return "설정됨 (끝 ****)"
+    return f"설정됨 (끝 {secret[-4:]})"
 
 
 def _env_value_mismatch(primary_env: str, legacy_env: str) -> bool:
@@ -403,8 +404,8 @@ def _oauth_runtime(provider: str) -> dict:
     provider_instance = _get_provider(provider)
     runtime_client_id = (getattr(provider_instance, "client_id", "") or "").strip()
     runtime_client_secret = (getattr(provider_instance, "client_secret", "") or "").strip()
-    env_client_id, client_id_active_env = _resolve_active_oauth_env(client_id_envs)
-    env_client_secret, client_secret_active_env = _resolve_active_oauth_env(client_secret_envs)
+    env_client_id, client_id_active_env = _get_first_set_oauth_env(client_id_envs)
+    env_client_secret, client_secret_active_env = _get_first_set_oauth_env(client_secret_envs)
     primary_client_id_env = client_id_envs[0][0] if client_id_envs else ""
     primary_client_secret_env = client_secret_envs[0][0] if client_secret_envs else ""
     legacy_client_id_env = client_id_envs[1][0] if len(client_id_envs) > 1 else ""
