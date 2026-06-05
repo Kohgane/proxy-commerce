@@ -276,9 +276,56 @@ def _get_provider(provider: str):
     return None
 
 
+_OAUTH_FALLBACK_BASE = "https://kohganepercentiii.com"
+
+
+def _resolve_oauth_base_url() -> str:
+    """OAuth 콜백 베이스 URL을 결정한다.
+
+    우선순위:
+    1. OAUTH_REDIRECT_BASE_URL env (콜백 베이스 전용)
+    2. APP_BASE_URL env (앱 전반 베이스)
+    3. 현재 요청 컨텍스트 — request.scheme/host (ProxyFix 가 적용돼 있으므로
+       X-Forwarded-Proto/Host가 올바르게 반영된다)
+    4. 폴백 (https://kohganepercentiii.com)
+
+    정규화: host 소문자, 끝슬래시 제거, scheme 강제(https; localhost/127.0.0.1은 http 허용).
+    www 유무는 임의로 변경하지 않는다 — 운영자가 콘솔에 그 값을 등록하면 된다.
+    """
+    # 1. 명시적 콜백 전용 env
+    base = os.getenv("OAUTH_REDIRECT_BASE_URL", "").strip().rstrip("/")
+    # 2. 앱 공통 베이스 URL
+    if not base:
+        base = os.getenv("APP_BASE_URL", "").strip().rstrip("/")
+    # 3. 요청 컨텍스트에서 유도
+    if not base:
+        try:
+            scheme = request.scheme  # ProxyFix 적용 시 X-Forwarded-Proto 반영
+            host = request.host    # host(:port) 그대로
+            base = f"{scheme}://{host}"
+        except RuntimeError:
+            pass  # 요청 컨텍스트 없음 (배치/테스트)
+    # 4. 폴백
+    if not base:
+        base = _OAUTH_FALLBACK_BASE
+
+    # 정규화: host 소문자, scheme 강제
+    parsed = urlparse(base)
+    host_lc = parsed.netloc.lower()
+    scheme = parsed.scheme or "https"
+    _local = host_lc.startswith("localhost") or host_lc.startswith("127.0.0.1")
+    if not _local and scheme != "https":
+        scheme = "https"
+    return f"{scheme}://{host_lc}"
+
+
 def _callback_uri(provider: str) -> str:
-    """OAuth 콜백 URI 생성."""
-    base = os.getenv("APP_BASE_URL", "https://kohganepercentiii.com")
+    """OAuth 콜백 URI 생성 (단일 소스 — start/callback 공유).
+
+    _resolve_oauth_base_url() 의 우선순위·정규화 로직을 그대로 사용하여
+    oauth_start 와 oauth_callback 이 항상 동일한 URI 를 전달함을 보장한다.
+    """
+    base = _resolve_oauth_base_url()
     return f"{base}/auth/{provider}/callback"
 
 
@@ -316,12 +363,19 @@ def login():
     kakao_status = _provider_status("kakao")
     google_status = _provider_status("google")
     naver_status = _provider_status("naver")
+    # 운영자/진단용: 각 프로바이더별 실제 redirect_uri (복사 버튼용)
+    redirect_uris = {
+        "kakao": _callback_uri("kakao"),
+        "google": _callback_uri("google"),
+        "naver": _callback_uri("naver"),
+    }
     return render_template(
         "auth/login.html",
         next_url=next_url,
         kakao_status=kakao_status,
         google_status=google_status,
         naver_status=naver_status,
+        redirect_uris=redirect_uris,
     )
 
 
