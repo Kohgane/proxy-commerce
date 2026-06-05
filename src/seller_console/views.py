@@ -3892,7 +3892,7 @@ def ads_campaigns():
         "<thead><tr><th>ID</th><th>상품</th><th>채널</th><th>키워드</th><th>예상 ROAS</th><th>일일 예산</th><th>상태</th></tr></thead>"
         f"<tbody>{_rec_rows(recs)}</tbody></table></div>"
         "<div class='mb-3'>"
-        "  <button class='btn btn-primary btn-sm' onclick=\"fetch('/seller/ads/recommend', {{method:'POST'}}).then(r=>r.json()).then(d=>location.reload())\">"
+        "  <button class='btn btn-primary btn-sm' onclick=\"fetch('/seller/ads/recommend', {method:'POST'}).then(r=>r.json()).then(d=>location.reload())\">"
         "    🔄 추천 갱신</button>"
         "</div>"
         f"<h5 class='mb-2'>활성 캠페인</h5>"
@@ -3987,16 +3987,59 @@ def ads_keywords():
 @bp.get("/orders/auto")
 def orders_auto():
     """주문 자동 처리 대시보드 (Phase 145)."""
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+
     from src.orders.auto_processor import OrderAutoProcessor
 
     processor = OrderAutoProcessor()
-    queue = processor.queue()
-    summary = processor.summary_24h()
+    queue_source = "simulation"
+    queue = []
+    svc = _get_order_sync_service()
+    if svc is not None:
+        try:
+            raw_orders = svc.list_orders(limit=200, offset=0)
+            stage_map = {
+                "new": "신규",
+                "paid": "결제완료",
+                "preparing": "발주대기",
+                "shipped": "배송중",
+                "delivered": "완료",
+                "canceled": "취소",
+                "returned": "반품",
+                "exchanged": "교환",
+                "refund_requested": "환불요청",
+            }
+            for row in raw_orders:
+                status = str(getattr(row.status, "value", row.status) or "").strip().lower()
+                if status in {"delivered", "canceled", "returned", "exchanged"}:
+                    continue
+                queue.append({
+                    "order_id": row.order_id,
+                    "marketplace": row.marketplace,
+                    "stage": stage_map.get(status, status or "확인필요"),
+                    "needs_manual": status in {"refund_requested"} or not bool(row.items),
+                })
+            queue_source = "live"
+        except Exception as exc:
+            logger.warning("주문 자동 처리 큐 로드 실패: %s", exc)
+
+    if not queue:
+        queue = processor.queue()
+
+    summary = {
+        "new_orders_24h": len(queue),
+        "auto_processed_24h": len([item for item in queue if not item.get("needs_manual")]),
+        "manual_intervention_24h": len([item for item in queue if item.get("needs_manual")]),
+        "auto_place_po": processor.auto_place_po,
+        "source": queue_source,
+    }
 
     rows = "".join(
         (
             "<tr>"
             f"<td><code>{item['order_id']}</code></td>"
+            f"<td>{item.get('marketplace', '-')}</td>"
             f"<td>{item['stage']}</td>"
             f"<td>{'수동 개입 필요' if item['needs_manual'] else '자동 처리 가능'}</td>"
             "</tr>"
@@ -4004,24 +4047,132 @@ def orders_auto():
         for item in queue
     )
     if not rows:
-        rows = "<tr><td colspan='3' class='text-center text-muted'>대기 중인 주문이 없습니다.</td></tr>"
+        rows = "<tr><td colspan='4' class='text-center text-muted'>대기 중인 주문이 없습니다.</td></tr>"
+
+    source_badge = (
+        "<span class='badge bg-success'>실데이터</span>"
+        if queue_source == "live"
+        else "<span class='badge bg-secondary'>시뮬레이션</span>"
+    )
+    source_note = (
+        "주문 시트 기반 큐입니다."
+        if queue_source == "live"
+        else "연동 주문이 없어 시뮬레이션/대기 상태로 표시됩니다."
+    )
 
     body = (
         "<h4 class='mb-3'>📦 주문 자동 처리 큐</h4>"
         "<div class='row mb-3'>"
-        f"<div class='col-md-3'><div class='card text-center'><div class='card-body'><h5>{summary['new_orders_24h']}</h5><small>24h 신규</small></div></div></div>"
-        f"<div class='col-md-3'><div class='card text-center'><div class='card-body'><h5>{summary['auto_processed_24h']}</h5><small>자동 처리</small></div></div></div>"
+        f"<div class='col-md-3'><div class='card text-center'><div class='card-body'><h5>{summary['new_orders_24h']}</h5><small>처리 대상</small></div></div></div>"
+        f"<div class='col-md-3'><div class='card text-center'><div class='card-body'><h5>{summary['auto_processed_24h']}</h5><small>자동 처리 가능</small></div></div></div>"
         f"<div class='col-md-3'><div class='card text-center'><div class='card-body'><h5>{summary['manual_intervention_24h']}</h5><small>수동 개입</small></div></div></div>"
         f"<div class='col-md-3'><div class='card text-center'><div class='card-body'><h5>{'ON' if summary['auto_place_po'] else 'OFF'}</h5><small>자동 발주</small></div></div></div>"
         "</div>"
-        "<div class='d-flex gap-2 mb-2'>"
-        "<button class='btn btn-primary btn-sm' type='button'>일괄 발주</button>"
-        "<button class='btn btn-outline-secondary btn-sm' type='button'>일괄 송장 업로드</button>"
+        "<div class='alert alert-light border d-flex justify-content-between align-items-center flex-wrap gap-2'>"
+        f"<div>데이터 소스: {source_badge} · {source_note}</div>"
+        "<button class='btn btn-primary btn-sm' type='button' onclick='runOrderAutoProcess()'>자동 처리 실행</button>"
         "</div>"
-        "<table class='table table-sm table-hover'><thead><tr><th>주문 ID</th><th>단계</th><th>처리 상태</th></tr></thead>"
+        "<div id='order-auto-run-result' class='small text-muted mb-2'></div>"
+        "<table class='table table-sm table-hover'><thead><tr><th>주문 ID</th><th>마켓</th><th>단계</th><th>처리 상태</th></tr></thead>"
         f"<tbody>{rows}</tbody></table>"
+        "<script>"
+        "function runOrderAutoProcess(){"
+        "const box=document.getElementById('order-auto-run-result');"
+        "box.textContent='실행 중...';"
+        "fetch('/seller/orders/auto/process',{method:'POST'})"
+        ".then(r=>r.json().then(d=>({ok:r.ok,data:d})))"
+        ".then(({ok,data})=>{"
+        "if(!ok||!data.ok){throw new Error((data&&data.error)||'실행 실패');}"
+        "const summary=(data.summary||{});"
+        "box.innerHTML=`실행 완료 · 모드: <strong>${data.mode}</strong> · 자동처리 ${summary.auto_processed||0}건 / 수동개입 ${summary.manual_required||0}건 / 시뮬레이션 ${summary.simulation_pending||0}건`;"
+        "})"
+        ".catch(err=>{box.textContent='실행 실패: '+err.message;});"
+        "}"
+        "</script>"
     )
     return _render_seller_page("📦 주문 자동 처리", body, page="orders_auto")
+
+
+@bp.post("/orders/auto/process")
+def orders_auto_process():
+    """주문 자동 처리 실행 (실데이터/시뮬레이션 모두 정직 표기)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+
+    from src.orders.auto_processor import OrderAutoProcessor
+
+    processor = OrderAutoProcessor()
+    mode = "simulation"
+    results = []
+
+    svc = _get_order_sync_service()
+    orders_list = []
+    if svc is not None:
+        try:
+            orders_list = svc.list_orders(limit=200, offset=0)
+            mode = "live"
+        except Exception as exc:
+            logger.warning("주문 자동 처리 실행 전 주문 로드 실패: %s", exc)
+            orders_list = []
+
+    if not orders_list:
+        return jsonify({
+            "ok": True,
+            "mode": mode,
+            "results": [],
+            "summary": {"auto_processed": 0, "manual_required": 0, "simulation_pending": 0},
+        })
+
+    for row in orders_list:
+        status = str(getattr(row.status, "value", row.status) or "").strip().lower()
+        if status in {"delivered", "canceled", "returned", "exchanged"}:
+            continue
+
+        auto_order = processor.enqueue(
+            row.order_id,
+            supplier=str(row.marketplace),
+            stage=status or "new",
+            stock_ok=True,
+            address_ok=True,
+            payment_ok=status in {"paid", "preparing", "shipped"},
+        )
+        needs_manual = auto_order.needs_manual or status in {"refund_requested"} or not bool(row.items)
+        if needs_manual:
+            results.append({
+                "order_id": row.order_id,
+                "marketplace": row.marketplace,
+                "status": "manual_required",
+                "message": "수동 개입 필요",
+            })
+            continue
+
+        po_result = processor.create_purchase_order(auto_order)
+        if po_result.get("ok"):
+            outcome = "auto_processed"
+            message = "자동 발주 성공"
+        elif mode == "live":
+            outcome = "simulation_pending"
+            message = "자동 발주 비활성화(대기)"
+        else:
+            outcome = "simulation_pending"
+            message = "시뮬레이션 모드(외부 미연동)"
+        results.append({
+            "order_id": row.order_id,
+            "marketplace": row.marketplace,
+            "status": outcome,
+            "message": message,
+        })
+
+    return jsonify({
+        "ok": True,
+        "mode": mode,
+        "results": results,
+        "summary": {
+            "auto_processed": len([r for r in results if r["status"] == "auto_processed"]),
+            "manual_required": len([r for r in results if r["status"] == "manual_required"]),
+            "simulation_pending": len([r for r in results if r["status"] == "simulation_pending"]),
+        },
+    })
 
 
 @bp.get("/shipping/tracking")

@@ -25,7 +25,7 @@
               <td>{{ item.sku }}</td>
               <td>{{ item.qty }}</td>
               <td>{{ item.revenue|int }}원</td>
-              <td><button class="btn btn-outline-primary btn-sm" disabled>리오더</button></td>
+              <td><a class="btn btn-outline-primary btn-sm" href="/seller/inventory/reorder?sku={{ item.sku }}">리오더</a></td>
             </tr>
           {% endfor %}
           {% if not data.top_products %}
@@ -42,7 +42,7 @@
       <div class="card-body">
         <div class="mb-2 text-danger">재고 임박: {{ data.inventory_alerts.low_stock|length }}개</div>
         <div class="mb-2 text-warning">재고 과잉: {{ data.inventory_alerts.over_stock|length }}개</div>
-        <button class="btn btn-outline-warning btn-sm" disabled>할인 캠페인 자동 생성</button>
+        <a class="btn btn-outline-warning btn-sm" href="/seller/marketing/campaigns">할인 캠페인 보기</a>
       </div>
     </div>
   </div>
