@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate seller favicon raster assets from source-of-truth SVG (Phase 171)."""
+"""Generate seller favicon raster assets from source-of-truth SVG (Phase 172)."""
 
 from __future__ import annotations
 
@@ -25,20 +25,15 @@ def _png_from_svg(svg_text: str, size: int) -> Image.Image:
 
 
 def _small_svg_variant(svg_text: str) -> str:
-    small = re.sub(r"\s*<!-- 별들 — 연하게 -->\s*<g fill=\"#ffffff\">.*?</g>", "", svg_text, flags=re.DOTALL)
+    small = re.sub(r"\s*<!-- 별 -->\s*<g fill=\"#fff\">.*?</g>", "", svg_text, flags=re.DOTALL)
     small = re.sub(
-        r"\s*<!-- 스파클 — 크고 강렬하게 -->\s*<g filter=\"url\(#sg\)\">.*</g>\s*</svg>",
+        r"\s*<!-- 스파클 — 선명하게 \(글로우 약하게만\) -->\s*<g>.*?</g>\s*</svg>",
         "\n</svg>",
         small,
         flags=re.DOTALL,
     )
     small = small.replace(' filter="url(#gg)"', "")
-    small = small.replace(' filter="url(#og)"', "")
-    small = small.replace(' filter="url(#sg)"', "")
-    # v11: keep orbit + globe legible for 16/32 favicon sizes
-    small = small.replace('stroke-width="20"', 'stroke-width="16"')
-    small = small.replace('stroke-width="14"', 'stroke-width="10"')
-    small = small.replace('r="15"', 'r="11"')
+    # v12: keep orbit + globe legible for 16/32 favicon sizes
     return small
 
 

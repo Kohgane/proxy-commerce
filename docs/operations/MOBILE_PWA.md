@@ -81,3 +81,13 @@ src/seller_console/static/sw.js → /seller/static/sw.js
 - `src/seller_console/static/sw.js` — Service Worker
 
 아이콘 리디자인(Phase 164) 이후 파생 PNG/ICO는 기존과 동일하게 Pillow 기반 생성 절차를 사용하며, 디자인 원본은 `favicon.svg` 기준으로 유지합니다.
+
+### 파비콘 파생물 재생성 (Phase 172, v12)
+
+```bash
+python scripts/gen_favicon_assets.py
+```
+
+- source of truth: `src/seller_console/static/favicon.svg` (v12)
+- 생성 대상: `favicon.ico`(16/32/48), `apple-touch-icon.png`(180), `icon-192.png`, `icon-512.png`
+- `favicon.ico`는 작은 사이즈 가독성을 위해 별/스파클/글로우를 제거한 단순화 SVG를 사용합니다.
