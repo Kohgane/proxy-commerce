@@ -84,6 +84,7 @@ def _async_notify(fn, *args, **kwargs):
     except Exception:
         logger.exception("notify submit failed")
 
+
 # ---------------------------------------------------------------------------
 # 헬퍼: 비밀번호 해시
 # ---------------------------------------------------------------------------
@@ -329,6 +330,118 @@ def _callback_uri(provider: str) -> str:
     return f"{base}/auth/{provider}/callback"
 
 
+_OAUTH_PROVIDER_ENV_SPECS = {
+    "google": {
+        "display_name": "Google",
+        "client_id_envs": [
+            ("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_ID"),
+            ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_ID (레거시 폴백)"),
+        ],
+        "client_secret_envs": [
+            ("GOOGLE_OAUTH_CLIENT_SECRET", "GOOGLE_OAUTH_CLIENT_SECRET"),
+            ("GOOGLE_CLIENT_SECRET", "GOOGLE_CLIENT_SECRET (레거시 폴백)"),
+        ],
+    },
+    "kakao": {
+        "display_name": "Kakao",
+        "client_id_envs": [
+            ("KAKAO_REST_API_KEY", "KAKAO_REST_API_KEY"),
+            ("KAKAO_OAUTH_CLIENT_ID", "KAKAO_OAUTH_CLIENT_ID (별칭 폴백)"),
+        ],
+        "client_secret_envs": [
+            ("KAKAO_CLIENT_SECRET", "KAKAO_CLIENT_SECRET"),
+            ("KAKAO_OAUTH_CLIENT_SECRET", "KAKAO_OAUTH_CLIENT_SECRET (별칭 폴백)"),
+        ],
+    },
+    "naver": {
+        "display_name": "Naver",
+        "client_id_envs": [
+            ("NAVER_CLIENT_ID", "NAVER_CLIENT_ID"),
+            ("NAVER_OAUTH_CLIENT_ID", "NAVER_OAUTH_CLIENT_ID (별칭 폴백)"),
+        ],
+        "client_secret_envs": [
+            ("NAVER_CLIENT_SECRET", "NAVER_CLIENT_SECRET"),
+            ("NAVER_OAUTH_CLIENT_SECRET", "NAVER_OAUTH_CLIENT_SECRET (별칭 폴백)"),
+        ],
+    },
+}
+
+
+def _oauth_env_value(name: str) -> str:
+    return os.getenv(name, "").strip()
+
+
+def _get_first_set_oauth_env(envs: list[tuple[str, str]]) -> tuple[str, str]:
+    for env_name, label in envs:
+        value = _oauth_env_value(env_name)
+        if value:
+            return value, label
+    return "", ""
+
+
+def _secret_hint(secret: str) -> str:
+    secret = (secret or "").strip()
+    if not secret:
+        return "미설정"
+    if len(secret) < 4:
+        return "설정됨 (끝 ****)"
+    return f"설정됨 (끝 {secret[-4:]})"
+
+
+def _env_value_mismatch(primary_env: str, legacy_env: str) -> bool:
+    if not primary_env or not legacy_env:
+        return False
+    primary = _oauth_env_value(primary_env)
+    legacy = _oauth_env_value(legacy_env)
+    return bool(primary and legacy and primary != legacy)
+
+
+def _oauth_runtime(provider: str) -> dict:
+    provider = (provider or "").strip().lower()
+    spec = _OAUTH_PROVIDER_ENV_SPECS.get(provider, {})
+    client_id_envs = spec.get("client_id_envs", [])
+    client_secret_envs = spec.get("client_secret_envs", [])
+    provider_instance = _get_provider(provider)
+    runtime_client_id = (getattr(provider_instance, "client_id", "") or "").strip()
+    runtime_client_secret = (getattr(provider_instance, "client_secret", "") or "").strip()
+    env_client_id, client_id_active_env = _get_first_set_oauth_env(client_id_envs)
+    env_client_secret, client_secret_active_env = _get_first_set_oauth_env(client_secret_envs)
+    primary_client_id_env = client_id_envs[0][0] if client_id_envs else ""
+    primary_client_secret_env = client_secret_envs[0][0] if client_secret_envs else ""
+    legacy_client_id_env = client_id_envs[1][0] if len(client_id_envs) > 1 else ""
+    legacy_client_secret_env = client_secret_envs[1][0] if len(client_secret_envs) > 1 else ""
+    client_id = runtime_client_id or env_client_id
+    client_secret = runtime_client_secret or env_client_secret
+    client_id_env_help = " / ".join(env_name for env_name, _label in client_id_envs)
+    client_secret_env_help = " / ".join(env_name for env_name, _label in client_secret_envs)
+    return {
+        "provider": provider,
+        "display_name": spec.get("display_name", provider.title()),
+        "configured": bool(provider_instance and provider_instance.is_configured),
+        "callback_url": _callback_uri(provider),
+        "client_id": client_id,
+        "client_id_set": bool(client_id),
+        "client_id_env": primary_client_id_env,
+        "client_id_active_env": client_id_active_env,
+        "client_id_missing_message": f"미설정 — {client_id_env_help}" if client_id_env_help else "미설정",
+        "legacy_client_id_env": legacy_client_id_env,
+        "standard_client_id": _oauth_env_value(primary_client_id_env),
+        "legacy_client_id": _oauth_env_value(legacy_client_id_env),
+        "client_id_mismatch": _env_value_mismatch(primary_client_id_env, legacy_client_id_env),
+        "client_secret_set": bool(client_secret),
+        "client_secret_env": primary_client_secret_env,
+        "client_secret_active_env": client_secret_active_env,
+        "client_secret_missing_message": (
+            f"미설정 — {client_secret_env_help}" if client_secret_env_help else "미설정"
+        ),
+        "legacy_client_secret_env": legacy_client_secret_env,
+        "client_secret_hint": _secret_hint(client_secret),
+        "standard_client_secret_hint": _secret_hint(_oauth_env_value(primary_client_secret_env)),
+        "legacy_client_secret_hint": _secret_hint(_oauth_env_value(legacy_client_secret_env)),
+        "client_secret_mismatch": _env_value_mismatch(primary_client_secret_env, legacy_client_secret_env),
+    }
+
+
 def _provider_status(provider: str) -> dict:
     """로그인 화면용 프로바이더 상태."""
     provider = (provider or "").strip().lower()
@@ -363,11 +476,10 @@ def login():
     kakao_status = _provider_status("kakao")
     google_status = _provider_status("google")
     naver_status = _provider_status("naver")
-    # 운영자/진단용: 각 프로바이더별 실제 redirect_uri (복사 버튼용)
-    redirect_uris = {
-        "kakao": _callback_uri("kakao"),
-        "google": _callback_uri("google"),
-        "naver": _callback_uri("naver"),
+    oauth_runtime = {
+        "kakao": _oauth_runtime("kakao"),
+        "google": _oauth_runtime("google"),
+        "naver": _oauth_runtime("naver"),
     }
     return render_template(
         "auth/login.html",
@@ -375,7 +487,7 @@ def login():
         kakao_status=kakao_status,
         google_status=google_status,
         naver_status=naver_status,
-        redirect_uris=redirect_uris,
+        oauth_runtime=oauth_runtime,
     )
 
 

@@ -199,11 +199,49 @@ class TestGoogleEnvAliasFallback:
 
 
 # ---------------------------------------------------------------------------
-# 로그인 화면 smoke 테스트: redirect_uri 렌더 확인
+# OAuth 런타임 진단 테스트
+# ---------------------------------------------------------------------------
+
+class TestOAuthRuntimeDiagnostics:
+    def test_google_mismatch_flags_true_when_standard_and_legacy_differ(self, monkeypatch):
+        monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "standard-client-id")
+        monkeypatch.setenv("GOOGLE_CLIENT_ID", "legacy-client-id")
+        monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "standard-secret-1234")
+        monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "legacy-secret-9876")
+        from src.auth.views import _oauth_runtime
+
+        runtime = _oauth_runtime("google")
+
+        assert runtime["client_id"] == "standard-client-id"
+        assert runtime["client_id_mismatch"] is True
+        assert runtime["client_secret_mismatch"] is True
+        assert runtime["client_secret_hint"] == "설정됨 (끝 1234)"
+        assert "standard-secret-1234" not in runtime["client_secret_hint"]
+
+    def test_google_mismatch_flags_false_when_same_or_single_env(self, monkeypatch):
+        monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "same-client-id")
+        monkeypatch.setenv("GOOGLE_CLIENT_ID", "same-client-id")
+        monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "shared-secret-4321")
+        monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "shared-secret-4321")
+        from src.auth.views import _oauth_runtime
+
+        same_runtime = _oauth_runtime("google")
+        assert same_runtime["client_id_mismatch"] is False
+        assert same_runtime["client_secret_mismatch"] is False
+
+        monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
+        monkeypatch.delenv("GOOGLE_CLIENT_SECRET", raising=False)
+        single_runtime = _oauth_runtime("google")
+        assert single_runtime["client_id_mismatch"] is False
+        assert single_runtime["client_secret_mismatch"] is False
+
+
+# ---------------------------------------------------------------------------
+# 로그인 화면 smoke 테스트: redirect_uri / client_id 렌더 확인
 # ---------------------------------------------------------------------------
 
 class TestLoginPageRedirectUriSmoke:
-    """로그인 화면에 redirect_uri 가 렌더되는지 스모크 테스트."""
+    """로그인 화면에 redirect_uri / client_id 가 렌더되는지 스모크 테스트."""
 
     @pytest.fixture
     def client(self, monkeypatch, tmp_path):
@@ -223,3 +261,18 @@ class TestLoginPageRedirectUriSmoke:
         body = rv.data.decode("utf-8", errors="replace")
         # redirect_uris 섹션 또는 콜백 URI 문자열이 포함되어야 함
         assert "/auth/google/callback" in body or "smoke.example.com" in body
+
+    def test_login_page_contains_runtime_client_ids_and_missing_notice(self, client, monkeypatch):
+        monkeypatch.setenv("KAKAO_REST_API_KEY", "kakao-runtime-client-id")
+        monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "google-runtime-client-id")
+        monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "google-secret-1234")
+        monkeypatch.delenv("NAVER_CLIENT_ID", raising=False)
+        monkeypatch.delenv("NAVER_OAUTH_CLIENT_ID", raising=False)
+
+        rv = client.get("/auth/login")
+
+        assert rv.status_code == 200
+        body = rv.get_data(as_text=True)
+        assert "google-runtime-client-id" in body
+        assert "kakao-runtime-client-id" in body
+        assert "미설정 — NAVER_CLIENT_ID / NAVER_OAUTH_CLIENT_ID" in body

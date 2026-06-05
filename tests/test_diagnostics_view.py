@@ -131,6 +131,54 @@ class TestDiagnosticsView:
         assert "/privacy" in html
         assert "/terms" in html
 
+    def test_diagnostics_shows_runtime_client_id_and_masks_secret(self, monkeypatch):
+        app = _make_app()
+        monkeypatch.setenv("APP_BASE_URL", "https://kohganepercentiii.com")
+        monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "google-runtime-client-id")
+        monkeypatch.setenv("GOOGLE_CLIENT_ID", "legacy-google-client-id")
+        monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "standard-secret-1234")
+        monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "legacy-secret-9876")
+        with patch("src.dashboard.admin_views._build_env_matrix", return_value=[]), \
+             patch(
+                 "src.dashboard.admin_views._build_emergency_access_status",
+                 return_value={
+                     "magic_link_url": "/auth/magic-link",
+                     "bootstrap_configured": True,
+                     "bootstrap_url": "/auth/bootstrap?token=<TOKEN>&email=<ADMIN_EMAIL>",
+                     "admin_emails_configured": True,
+                     "issued_magic_link": None,
+                 },
+             ), \
+             patch("src.dashboard.admin_views._build_messenger_health", return_value={}), \
+             patch("src.dashboard.admin_views._build_market_health", return_value={}), \
+             patch("src.dashboard.admin_views._build_cs_bot_status",
+                   return_value={"faq_total": 0, "faq_enabled": 0, "new_24h": 0, "unanswered": 0,
+                                 "urgent_unanswered": 0, "avg_response_minutes": 0, "response_rate": 0,
+                                 "ai_calls_24h": 0, "budget_remaining_pct": 100, "auto_send": False,
+                                 "sla_nearing": 0, "sla_overdue": 0, "channels": []}), \
+             patch("src.dashboard.admin_views._build_pricing_status",
+                   return_value={"active_rules": 0, "dry_run": True, "cron_hour": "3",
+                                 "last_run_at": None, "min_margin_pct": "15", "fx_trigger_pct": "3"}), \
+             patch("src.dashboard.admin_views._build_message_log",
+                   return_value={"total": 0, "by_channel": {}, "top_errors": []}):
+            with app.test_client() as client:
+                with client.session_transaction() as sess:
+                    sess["user_id"] = "admin-001"
+                    sess["user_role"] = "admin"
+                resp = client.get("/admin/diagnostics")
+
+        html = resp.get_data(as_text=True)
+        assert resp.status_code == 200
+        # runtime client_id는 보이되 secret 원문은 절대 노출되지 않아야 한다.
+        assert "google-runtime-client-id" in html
+        assert "설정됨 (끝 1234)" in html
+        assert "standard-secret-1234" not in html
+        assert "legacy-secret-9876" not in html
+        assert "GOOGLE_OAUTH_CLIENT_ID" in html
+        assert "GOOGLE_CLIENT_ID" in html
+        assert "서로 다릅니다" in html
+        assert "https://console.cloud.google.com/apis/credentials" in html
+
     def test_telegram_health_endpoint(self):
         app = _make_app()
         with patch("src.notifications.telegram.health_check",
