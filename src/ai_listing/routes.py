@@ -572,11 +572,13 @@ async function retryMarket(market) {
   const titleEl = document.getElementById('title_' + market);
   const descEl = document.getElementById('desc_' + market);
   const priceEl = document.getElementById('price_' + market);
+  const parsedPrice = parseInt((priceEl || {}).value || '0', 10);
+  const safePrice = !Number.isNaN(parsedPrice) && parsedPrice > 0 ? parsedPrice : 0;
   const marketData = {
     [market]: {
       title: (titleEl || {}).value || '',
       description: (descEl || {}).value || '',
-      price_krw: parseInt((priceEl || {}).value || '0'),
+      price_krw: safePrice,
     }
   };
 

@@ -24,9 +24,9 @@ def client(app):
 
 def test_shop_footer_links_are_real_routes(client):
     template = Path("src/shop/templates/shop/base.html").read_text(encoding="utf-8")
-    assert 'href="/terms"' in template
-    assert 'href="/privacy"' in template
-    assert "href=\"#\"" not in template
+    assert '<li><a href="/terms" class="text-secondary text-decoration-none">이용약관</a></li>' in template
+    assert '<li><a href="/privacy" class="text-secondary text-decoration-none">개인정보처리방침</a></li>' in template
+    assert '<li><a href="/terms#shipping-returns" class="text-secondary text-decoration-none">배송/반품 안내</a></li>' in template
 
 
 def test_admin_sidebar_contains_core_pages(client):
