@@ -18,8 +18,14 @@ class KakaoProvider:
     _USERINFO_URL = "https://kapi.kakao.com/v2/user/me"
 
     def __init__(self) -> None:
-        self.client_id = os.getenv("KAKAO_REST_API_KEY", "")
-        self.client_secret = os.getenv("KAKAO_CLIENT_SECRET", "")
+        self.client_id = (
+            os.getenv("KAKAO_REST_API_KEY", "").strip()
+            or os.getenv("KAKAO_OAUTH_CLIENT_ID", "").strip()
+        )
+        self.client_secret = (
+            os.getenv("KAKAO_CLIENT_SECRET", "").strip()
+            or os.getenv("KAKAO_OAUTH_CLIENT_SECRET", "").strip()
+        )
 
     @property
     def is_configured(self) -> bool:

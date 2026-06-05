@@ -34,6 +34,13 @@ class TestKakaoProvider:
         p = KakaoProvider()
         assert p.is_configured
 
+    def test_configured_with_oauth_alias_key(self, monkeypatch):
+        monkeypatch.delenv("KAKAO_REST_API_KEY", raising=False)
+        monkeypatch.setenv("KAKAO_OAUTH_CLIENT_ID", "legacy_kakao_client_id")
+        from src.auth.providers.kakao import KakaoProvider
+        p = KakaoProvider()
+        assert p.is_configured
+
     def test_get_authorize_url(self, monkeypatch):
         """인증 URL 생성."""
         monkeypatch.setenv("KAKAO_REST_API_KEY", "kakao_test_key_abc123")
@@ -99,6 +106,14 @@ class TestGoogleProvider:
         from src.auth.providers.google import GoogleProvider
         assert GoogleProvider().is_configured
 
+    def test_configured_with_legacy_env_keys(self, monkeypatch):
+        monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
+        monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
+        monkeypatch.setenv("GOOGLE_CLIENT_ID", "legacy_google_client_id")
+        monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "legacy_google_client_secret")
+        from src.auth.providers.google import GoogleProvider
+        assert GoogleProvider().is_configured
+
     def test_get_authorize_url(self, monkeypatch):
         monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "google_client_id_12345")
         monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "google_client_secret_xyz")
@@ -153,6 +168,14 @@ class TestNaverProvider:
     def test_configured_with_keys(self, monkeypatch):
         monkeypatch.setenv("NAVER_CLIENT_ID", "naver_client_id_abc")
         monkeypatch.setenv("NAVER_CLIENT_SECRET", "naver_client_secret_xyz")
+        from src.auth.providers.naver import NaverProvider
+        assert NaverProvider().is_configured
+
+    def test_configured_with_oauth_alias_env_keys(self, monkeypatch):
+        monkeypatch.delenv("NAVER_CLIENT_ID", raising=False)
+        monkeypatch.delenv("NAVER_CLIENT_SECRET", raising=False)
+        monkeypatch.setenv("NAVER_OAUTH_CLIENT_ID", "naver_oauth_client_id")
+        monkeypatch.setenv("NAVER_OAUTH_CLIENT_SECRET", "naver_oauth_client_secret")
         from src.auth.providers.naver import NaverProvider
         assert NaverProvider().is_configured
 

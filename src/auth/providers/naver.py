@@ -17,8 +17,14 @@ class NaverProvider:
     _USERINFO_URL = "https://openapi.naver.com/v1/nid/me"
 
     def __init__(self) -> None:
-        self.client_id = os.getenv("NAVER_CLIENT_ID", "")
-        self.client_secret = os.getenv("NAVER_CLIENT_SECRET", "")
+        self.client_id = (
+            os.getenv("NAVER_CLIENT_ID", "").strip()
+            or os.getenv("NAVER_OAUTH_CLIENT_ID", "").strip()
+        )
+        self.client_secret = (
+            os.getenv("NAVER_CLIENT_SECRET", "").strip()
+            or os.getenv("NAVER_OAUTH_CLIENT_SECRET", "").strip()
+        )
 
     @property
     def is_configured(self) -> bool:

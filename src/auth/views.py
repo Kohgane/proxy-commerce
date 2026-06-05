@@ -282,6 +282,27 @@ def _callback_uri(provider: str) -> str:
     return f"{base}/auth/{provider}/callback"
 
 
+def _provider_status(provider: str) -> dict:
+    """로그인 화면용 프로바이더 상태."""
+    provider = (provider or "").strip().lower()
+    p = _get_provider(provider)
+    is_configured = bool(p and p.is_configured)
+    setup_url = "/admin/oauth-setup"
+    if is_configured:
+        return {"is_configured": True, "reason": "", "setup_url": setup_url}
+
+    reason_map = {
+        "kakao": "카카오 OAuth 설정이 없습니다.",
+        "google": "구글 OAuth 설정이 없습니다.",
+        "naver": "네이버 OAuth 설정이 없습니다.",
+    }
+    return {
+        "is_configured": False,
+        "reason": reason_map.get(provider, "OAuth 설정이 없습니다."),
+        "setup_url": setup_url,
+    }
+
+
 # ---------------------------------------------------------------------------
 # 라우트
 # ---------------------------------------------------------------------------
@@ -292,15 +313,15 @@ def login():
     if session.get("user_id"):
         return redirect("/seller/dashboard")
     next_url = _safe_next_url(request.args.get("next", ""))
-    kakao = _get_provider("kakao")
-    google = _get_provider("google")
-    naver = _get_provider("naver")
+    kakao_status = _provider_status("kakao")
+    google_status = _provider_status("google")
+    naver_status = _provider_status("naver")
     return render_template(
         "auth/login.html",
         next_url=next_url,
-        kakao_active=kakao.is_configured if kakao else False,
-        google_active=google.is_configured if google else False,
-        naver_active=naver.is_configured if naver else False,
+        kakao_status=kakao_status,
+        google_status=google_status,
+        naver_status=naver_status,
     )
 
 
@@ -309,14 +330,14 @@ def signup():
     """회원가입 페이지."""
     if session.get("user_id"):
         return redirect("/seller/dashboard")
-    kakao = _get_provider("kakao")
-    google = _get_provider("google")
-    naver = _get_provider("naver")
+    kakao_status = _provider_status("kakao")
+    google_status = _provider_status("google")
+    naver_status = _provider_status("naver")
     return render_template(
         "auth/signup.html",
-        kakao_active=kakao.is_configured if kakao else False,
-        google_active=google.is_configured if google else False,
-        naver_active=naver.is_configured if naver else False,
+        kakao_status=kakao_status,
+        google_status=google_status,
+        naver_status=naver_status,
     )
 
 

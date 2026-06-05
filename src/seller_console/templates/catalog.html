@@ -26,6 +26,54 @@
 {% endif %}
 
 <div class="card border-0 shadow-sm">
+  <div class="card-header bg-white">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-md-2">
+        <label class="form-label small mb-1">마켓</label>
+        <select name="marketplace" class="form-select form-select-sm">
+          <option value="">전체</option>
+          {% for mp in ['coupang', 'smartstore', '11st', 'kohganemultishop'] %}
+          <option value="{{ mp }}" {% if filters.marketplace == mp %}selected{% endif %}>{{ mp }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">상태</label>
+        <select name="state" class="form-select form-select-sm">
+          <option value="">전체</option>
+          {% for st in ['active', 'out_of_stock', 'error', 'price_anomaly', 'suspended'] %}
+          <option value="{{ st }}" {% if filters.state == st %}selected{% endif %}>{{ st }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1">검색</label>
+        <input type="text" name="search" class="form-control form-control-sm" value="{{ filters.search }}" placeholder="상품명/SKU/상품ID">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">정렬</label>
+        <select name="sort" class="form-select form-select-sm">
+          <option value="last_synced_desc" {% if filters.sort == 'last_synced_desc' %}selected{% endif %}>최근 동기화순</option>
+          <option value="last_synced_asc" {% if filters.sort == 'last_synced_asc' %}selected{% endif %}>오래된 동기화순</option>
+          <option value="price_desc" {% if filters.sort == 'price_desc' %}selected{% endif %}>가격 높은순</option>
+          <option value="price_asc" {% if filters.sort == 'price_asc' %}selected{% endif %}>가격 낮은순</option>
+          <option value="title_asc" {% if filters.sort == 'title_asc' %}selected{% endif %}>상품명순</option>
+        </select>
+      </div>
+      <div class="col-md-1">
+        <label class="form-label small mb-1">표시</label>
+        <select name="per_page" class="form-select form-select-sm">
+          {% for n in [20, 50, 100] %}
+          <option value="{{ n }}" {% if filters.per_page == n %}selected{% endif %}>{{ n }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2 d-flex gap-2">
+        <button type="submit" class="btn btn-outline-secondary btn-sm w-100">검색</button>
+        <a href="/seller/catalog" class="btn btn-light btn-sm w-100">초기화</a>
+      </div>
+    </form>
+  </div>
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-hover mb-0">
@@ -117,29 +165,61 @@
   <ul class="pagination pagination-sm justify-content-center">
     {% if current_page > 1 %}
     <li class="page-item">
-      <a class="page-link" href="?page={{ current_page - 1 }}">이전</a>
+      <a class="page-link" href="?page={{ current_page - 1 }}&marketplace={{ filters.marketplace }}&state={{ filters.state }}&search={{ filters.search }}&sort={{ filters.sort }}&per_page={{ filters.per_page }}">이전</a>
     </li>
     {% endif %}
     {% for p in range(1, total_pages + 1) %}
     <li class="page-item {% if p == current_page %}active{% endif %}">
-      <a class="page-link" href="?page={{ p }}">{{ p }}</a>
+      <a class="page-link" href="?page={{ p }}&marketplace={{ filters.marketplace }}&state={{ filters.state }}&search={{ filters.search }}&sort={{ filters.sort }}&per_page={{ filters.per_page }}">{{ p }}</a>
     </li>
     {% endfor %}
     {% if current_page < total_pages %}
     <li class="page-item">
-      <a class="page-link" href="?page={{ current_page + 1 }}">다음</a>
+      <a class="page-link" href="?page={{ current_page + 1 }}&marketplace={{ filters.marketplace }}&state={{ filters.state }}&search={{ filters.search }}&sort={{ filters.sort }}&per_page={{ filters.per_page }}">다음</a>
     </li>
     {% endif %}
   </ul>
 </nav>
 {% endif %}
+
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1080;">
+  <div id="catalogToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+    <div class="toast-header">
+      <strong class="me-auto">카탈로그</strong>
+      <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
+    <div class="toast-body" id="catalogToastBody"></div>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-function syncItem(productId, marketplace) {
-  // Phase 129에서 실연동
-  alert(`동기화: ${marketplace}/${productId} (Phase 129 예정)`);
+function showCatalogToast(message, type) {
+  const toastEl = document.getElementById('catalogToast');
+  const bodyEl = document.getElementById('catalogToastBody');
+  if (!toastEl || !bodyEl) return;
+  bodyEl.textContent = message;
+  toastEl.className = `toast text-bg-${type || 'secondary'} border-0`;
+  new bootstrap.Toast(toastEl, { delay: 2500 }).show();
+}
+
+async function syncItem(productId, marketplace) {
+  try {
+    const res = await fetch(`/seller/catalog/${encodeURIComponent(marketplace)}/${encodeURIComponent(productId)}/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showCatalogToast(`동기화 완료: ${marketplace}/${productId}`, 'success');
+      setTimeout(() => window.location.reload(), 800);
+      return;
+    }
+    showCatalogToast(data.error || '동기화에 실패했습니다.', 'warning');
+  } catch (err) {
+    showCatalogToast('동기화 요청 실패: ' + err.message, 'danger');
+  }
 }
 </script>
 {% endblock %}
