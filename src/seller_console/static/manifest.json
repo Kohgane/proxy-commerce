@@ -5,8 +5,8 @@
   "start_url": "/seller/dashboard",
   "scope": "/seller/",
   "display": "standalone",
-  "background_color": "#1e1b4b",
-  "theme_color": "#1e1b4b",
+  "background_color": "#020010",
+  "theme_color": "#020010",
   "lang": "ko",
   "orientation": "portrait-primary",
   "icons": [
