@@ -1651,3 +1651,57 @@
 - `SitemapGenerator`, `RobotsGenerator`에 `/privacy`, `/terms` 경로 반영
 - OAuth callback 기본 next 경로/팝업 모드(`KAKAO_OAUTH_NEXT_DEFAULT`, `KAKAO_OAUTH_POPUP_MODE`) 지원
 - 가격 엔진에 실측 시장가 finder(`src/pricing/market_price_finder.py`)와 우선순위 의사결정(source/detail/loss warning) 반영
+
+## Phase 175 — OAuth redirect_uri 견고화 + 자가진단 ✅
+
+### 목표
+`redirect_uri_mismatch`(Google 400) 재발 방지. redirect_uri를 실제 접속 host에서 생성하고, 로그인·진단 화면에서 그 값을 바로 확인·복사할 수 있게 한다.
+
+### 변경 내역
+
+#### 1. ProxyFix 적용 (`src/order_webhook.py`)
+- `werkzeug.middleware.proxy_fix.ProxyFix` 를 Flask 앱에 적용 (`x_for=1, x_proto=1, x_host=1, x_prefix=1`)
+- Render(프록시 뒤 HTTPS 종단) 환경에서 `request.scheme`가 https로 올바르게 잡힘
+
+#### 2. `_callback_uri` 완전 리팩터 (`src/auth/views.py`)
+- 새 헬퍼 `_resolve_oauth_base_url()` 도입. 우선순위:
+  1. `OAUTH_REDIRECT_BASE_URL` env (신규, 콜백 베이스 전용)
+  2. `APP_BASE_URL` env
+  3. 현재 요청 컨텍스트의 scheme/host (ProxyFix 반영 → X-Forwarded-Proto/Host 신뢰)
+  4. 폴백 (`https://kohganepercentiii.com`)
+- 정규화: host 소문자, 끝슬래시 제거, https 강제 (localhost/127.0.0.1는 http 허용)
+- `oauth_start` 와 `oauth_callback` 이 동일한 단일 소스 `_callback_uri()` 를 사용 → 코드 교환 시 mismatch 원천 차단
+- GitHub CI(env 없음)에서도 요청 컨텍스트 기반 생성 + 폴백으로 테스트 통과
+
+#### 3. 로그인 화면 redirect_uri 진단 (`src/auth/templates/auth/login.html`)
+- 접이식 "🔧 OAuth 콜백 URI 확인 (운영자용)" 섹션 추가
+- 각 프로바이더별 현재 redirect_uri 표시 + 📋 복사 버튼
+- 일반 사용자 UX 무해 (collapsed 기본)
+
+#### 4. `/admin/diagnostics` OAuth 카드 강화 (`src/dashboard/admin_views.py`)
+- `_get_base_url()`: `OAUTH_REDIRECT_BASE_URL` → `APP_BASE_URL` → 요청 컨텍스트 우선순위로 통일
+- `_build_oauth_diagnostics()` 강화:
+  - 실제 redirect_uri 전체 문자열 + 📋 복사 버튼 (클릭만 하면 콘솔에 붙여넣기 가능)
+  - URI 출처(어떤 env/요청 컨텍스트 사용 중인지) 배지 표시
+  - Google: "브랜딩 인증은 로그인과 무관" + 기본 스코프면 미인증 상태로도 로그인 가능 안내
+  - Naver: 개발 중 모드 멤버 등록(이메일 아닌 네이버 로그인 ID) 안내, 로그인 키 vs 커머스 API 키 혼동 경고
+  - 표준/레거시 env 어느 쪽이 채워져 있는지 배지로 표시
+
+#### 5. 문서 갱신
+- `docs/operations/GOOGLE_OAUTH_SETUP.md`: 표준 env `GOOGLE_OAUTH_CLIENT_ID/SECRET`, 레거시 `GOOGLE_CLIENT_ID/SECRET` 별칭 폴백 안내, redirect_uri 불일치 패턴표, 운영자 액션 체크리스트
+- 환경변수 `OAUTH_REDIRECT_BASE_URL` 신규 추가 안내
+
+#### 6. 단위 테스트 (`tests/test_callback_uri.py`)
+- `OAUTH_REDIRECT_BASE_URL` 최우선, `APP_BASE_URL` 폴백, 요청 컨텍스트 생성, 폴백
+- 정규화(끝슬래시·대소문자·scheme 강제) 검증
+- `oauth_start` / `oauth_callback` 동일 URI 보장 테스트
+- `GOOGLE_CLIENT_ID` 레거시 별칭 폴백 검증
+
+### 운영자 액션 체크리스트 (배포 후)
+1. Render 환경변수 `APP_BASE_URL=https://kohganepercentiii.com` 설정 확인
+2. `/admin/diagnostics` 섹션 2 → 각 프로바이더 📋 버튼으로 콜백 URI 복사
+3. Google Cloud Console → Authorized redirect URIs에 붙여넣기 → 저장
+4. 5~10분 대기 후 시크릿 창에서 구글 로그인 재시도
+5. 네이버: 개발 중 상태이면 [멤버 관리]에 네이버 로그인 ID(이메일 아님) 등록
+6. 향후 도메인 변경 시 `APP_BASE_URL` 또는 `OAUTH_REDIRECT_BASE_URL` env만 바꾸면 됨
+

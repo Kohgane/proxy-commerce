@@ -24,6 +24,14 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# 프록시(Render/nginx) 뒤에서 X-Forwarded-Proto/Host를 신뢰하여 scheme/host를 올바르게 반영
+# x_for=1, x_proto=1, x_host=1 — 단일 신뢰 프록시 환경(Render)에 맞춤
+try:
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+except ImportError:
+    pass  # 극히 오래된 Werkzeug 환경 예외 처리 (0.9 이상이면 지원)
+
 
 @app.context_processor
 def inject_brand_name():

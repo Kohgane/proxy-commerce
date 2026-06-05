@@ -22,6 +22,11 @@
 | `BASE_URL` | Magic Link 절대 URL 생성용 | 권장 |
 | `MAGIC_LINK_TOKENS_PATH` | Magic Link 토큰 저장 경로 | 선택 |
 | `APP_BASE_URL` | 앱 베이스 URL (콜백 URI 생성용) | 권장 |
+| `OAUTH_REDIRECT_BASE_URL` | OAuth 콜백 URI 전용 베이스 URL (APP_BASE_URL보다 우선 적용) | 선택 |
+
+> **레거시 별칭 (하위호환)**: `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` 는 `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` 의 별칭으로 폴백 지원됩니다. 표준 이름 사용을 권장합니다.
+
+> **주의**: `GOOGLE_SERVICE_JSON_B64` (Sheets·Drive 접근용), `NAVER_COMMERCE_CLIENT_ID/SECRET` (커머스 API용)은 로그인 키와 **완전히 별개**입니다.
 
 ---
 
