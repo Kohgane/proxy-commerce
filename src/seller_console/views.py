@@ -1006,8 +1006,14 @@ def catalog():
     if not _check_auth():
         return redirect(url_for("seller_console.index"))
 
-    page_num = request.args.get("page", 1, type=int)
-    per_page = 50
+    page_num = max(1, request.args.get("page", 1, type=int))
+    per_page = request.args.get("per_page", 50, type=int)
+    if per_page not in (20, 50, 100):
+        per_page = 50
+    marketplace_filter = (request.args.get("marketplace") or "").strip()
+    state_filter = (request.args.get("state") or "").strip()
+    search = (request.args.get("search") or "").strip().lower()
+    sort = (request.args.get("sort") or "last_synced_desc").strip()
 
     items = []
     total = 0
@@ -1016,10 +1022,36 @@ def catalog():
 
     try:
         from .market_status_sheets import MarketStatusSheetsAdapter
+        from datetime import datetime
         adapter = MarketStatusSheetsAdapter()
         result = adapter.fetch_all()
         all_items = result.items
         source = result.source
+        if marketplace_filter:
+            all_items = [i for i in all_items if (i.marketplace or "") == marketplace_filter]
+        if state_filter:
+            all_items = [i for i in all_items if (i.state or "") == state_filter]
+        if search:
+            all_items = [
+                i
+                for i in all_items
+                if search in ((i.title or "").lower())
+                or search in ((i.sku or "").lower())
+                or search in ((i.product_id or "").lower())
+            ]
+
+        if sort == "last_synced_asc":
+            all_items = sorted(all_items, key=lambda i: i.last_synced_at or datetime.min)
+        elif sort == "price_desc":
+            all_items = sorted(all_items, key=lambda i: i.price_krw or -1, reverse=True)
+        elif sort == "price_asc":
+            all_items = sorted(all_items, key=lambda i: i.price_krw if i.price_krw is not None else 10**15)
+        elif sort == "title_asc":
+            all_items = sorted(all_items, key=lambda i: (i.title or "").lower())
+        else:
+            sort = "last_synced_desc"
+            all_items = sorted(all_items, key=lambda i: i.last_synced_at or datetime.min, reverse=True)
+
         total = len(all_items)
         start = (page_num - 1) * per_page
         items = all_items[start:start + per_page]
@@ -1038,7 +1070,54 @@ def catalog():
         total=total,
         source=source,
         error_msg=error_msg,
+        filters={
+            "marketplace": marketplace_filter,
+            "state": state_filter,
+            "search": search,
+            "sort": sort,
+            "per_page": per_page,
+        },
     )
+
+
+@bp.post("/catalog/<marketplace>/<product_id>/sync")
+def catalog_sync_item(marketplace: str, product_id: str):
+    """카탈로그 단일 상품 동기화(정직 모드 포함)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+
+    try:
+        from datetime import datetime
+
+        from .market_status_sheets import MarketStatusSheetsAdapter
+
+        adapter = MarketStatusSheetsAdapter()
+        result = adapter.fetch_all()
+        if result.source == "mock":
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": "실연동 설정이 없어 동기화를 실행할 수 없습니다. /seller/markets에서 연동 상태를 확인하세요.",
+                }
+            ), 503
+
+        found = None
+        for item in result.items:
+            if (item.marketplace or "") == marketplace and str(item.product_id) == str(product_id):
+                found = item
+                break
+
+        if found is None:
+            return jsonify({"ok": False, "error": "상품을 찾을 수 없습니다."}), 404
+
+        found.last_synced_at = datetime.now()
+        if not adapter.upsert_item(found):
+            return jsonify({"ok": False, "error": "동기화 저장에 실패했습니다."}), 503
+
+        return jsonify({"ok": True, "marketplace": marketplace, "product_id": product_id})
+    except Exception as exc:
+        logger.warning("catalog_sync_item 오류 (%s/%s): %s", marketplace, product_id, exc)
+        return jsonify({"ok": False, "error": "동기화 중 오류가 발생했습니다."}), 500
 
 
 def _get_order_sync_service():

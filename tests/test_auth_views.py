@@ -33,6 +33,26 @@ class TestAuthRoutes:
         resp = client.get("/auth/signup")
         assert resp.status_code == 200
 
+    def test_login_page_shows_honest_disabled_oauth_buttons_when_unconfigured(self, client, monkeypatch):
+        monkeypatch.delenv("KAKAO_REST_API_KEY", raising=False)
+        monkeypatch.delenv("KAKAO_OAUTH_CLIENT_ID", raising=False)
+        monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
+        monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
+        monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
+        monkeypatch.delenv("GOOGLE_CLIENT_SECRET", raising=False)
+        monkeypatch.delenv("NAVER_CLIENT_ID", raising=False)
+        monkeypatch.delenv("NAVER_CLIENT_SECRET", raising=False)
+        monkeypatch.delenv("NAVER_OAUTH_CLIENT_ID", raising=False)
+        monkeypatch.delenv("NAVER_OAUTH_CLIENT_SECRET", raising=False)
+
+        resp = client.get("/auth/login")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "카카오 로그인 (설정 필요)" in html
+        assert "Google 로그인 (설정 필요)" in html
+        assert "네이버 로그인 (설정 필요)" in html
+        assert "/admin/oauth-setup" in html
+
     def test_logout_get_redirects(self, client):
         """로그아웃 GET → 로그인 리다이렉트."""
         resp = client.get("/auth/logout")

@@ -161,6 +161,47 @@ class TestSellerConsoleViews:
         resp = client.get("/seller/collect")
         assert resp.status_code == 200
 
+    def test_catalog_item_sync_returns_honest_503_in_mock_mode(self, client):
+        class _Result:
+            source = "mock"
+            items = []
+
+        with patch(
+            "src.seller_console.market_status_sheets.MarketStatusSheetsAdapter.fetch_all",
+            return_value=_Result(),
+        ):
+            resp = client.post("/seller/catalog/coupang/P001/sync")
+        assert resp.status_code == 503
+        data = resp.get_json()
+        assert data["ok"] is False
+
+    def test_catalog_item_sync_updates_item(self, client):
+        from src.seller_console.market_status import MarketStatusItem
+
+        class _Result:
+            source = "sheets"
+            items = [
+                MarketStatusItem(
+                    marketplace="coupang",
+                    product_id="P001",
+                    state="active",
+                    title="테스트 상품",
+                    sku="SKU-1",
+                )
+            ]
+
+        with patch(
+            "src.seller_console.market_status_sheets.MarketStatusSheetsAdapter.fetch_all",
+            return_value=_Result(),
+        ), patch(
+            "src.seller_console.market_status_sheets.MarketStatusSheetsAdapter.upsert_item",
+            return_value=True,
+        ):
+            resp = client.post("/seller/catalog/coupang/P001/sync")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is True
+
     def test_pricing_returns_200(self, client):
         """GET /seller/pricing → 200."""
         resp = client.get("/seller/pricing")

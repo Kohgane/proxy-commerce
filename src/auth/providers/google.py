@@ -17,8 +17,14 @@ class GoogleProvider:
     _USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
     def __init__(self) -> None:
-        self.client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
-        self.client_secret = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
+        self.client_id = (
+            os.getenv("GOOGLE_OAUTH_CLIENT_ID", "").strip()
+            or os.getenv("GOOGLE_CLIENT_ID", "").strip()
+        )
+        self.client_secret = (
+            os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
+            or os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
+        )
 
     @property
     def is_configured(self) -> bool:

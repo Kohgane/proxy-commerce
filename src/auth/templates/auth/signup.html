@@ -32,26 +32,41 @@
       {% endwith %}
 
       <!-- 소셜 가입 버튼 -->
-      {% if kakao_active %}
+      {% if kakao_status.is_configured %}
       <a href="/auth/kakao/start" class="btn w-100 social-btn mb-2"
          style="background:#FEE500;color:#000;border:none;">
         <img src="https://developers.kakao.com/assets/img/about/logos/kakaolink/kakaolink_btn_medium.png"
              height="20" class="me-2" alt="kakao">카카오로 가입
       </a>
+      {% else %}
+      <button type="button" class="btn w-100 social-btn mb-1" style="background:#f0f0f0;color:#666;border:none;" disabled>
+        카카오 가입 (설정 필요)
+      </button>
+      <div class="small text-muted mb-2">{{ kakao_status.reason }} <a href="{{ kakao_status.setup_url }}">설정 경로</a></div>
       {% endif %}
-      {% if google_active %}
+      {% if google_status.is_configured %}
       <a href="/auth/google/start" class="btn btn-outline-danger w-100 social-btn mb-2">
         Google로 가입
       </a>
+      {% else %}
+      <button type="button" class="btn btn-outline-secondary w-100 social-btn mb-1" disabled>
+        Google 가입 (설정 필요)
+      </button>
+      <div class="small text-muted mb-2">{{ google_status.reason }} <a href="{{ google_status.setup_url }}">설정 경로</a></div>
       {% endif %}
-      {% if naver_active %}
+      {% if naver_status.is_configured %}
       <a href="/auth/naver/start" class="btn w-100 social-btn mb-2"
          style="background:#03C75A;color:#fff;border:none;">
         <strong>N</strong>&nbsp;네이버로 가입
       </a>
+      {% else %}
+      <button type="button" class="btn w-100 social-btn mb-1" style="background:#eaf8ef;color:#666;border:none;" disabled>
+        네이버 가입 (설정 필요)
+      </button>
+      <div class="small text-muted mb-2">{{ naver_status.reason }} <a href="{{ naver_status.setup_url }}">설정 경로</a></div>
       {% endif %}
 
-      {% if kakao_active or google_active or naver_active %}
+      {% if kakao_status.is_configured or google_status.is_configured or naver_status.is_configured %}
       <div class="divider">또는 이메일로 가입</div>
       {% endif %}
 
