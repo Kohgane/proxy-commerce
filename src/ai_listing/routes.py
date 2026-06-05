@@ -563,6 +563,43 @@ function showPublishResults(data) {
   el.innerHTML = `<div class='card mb-4'><div class='card-header fw-bold'>📊 등록 결과</div>
     <div class='card-body'><ul class='list-group'>${rows || '<li class=list-group-item>결과 없음</li>'}</ul></div></div>`;
 }
+
+async function retryMarket(market) {
+  if (!_listingId) { alert('먼저 AI 분석을 실행하세요.'); return; }
+
+  const languageEl = document.getElementById('language');
+  const language = languageEl ? languageEl.value : 'ko';
+  const titleEl = document.getElementById('title_' + market);
+  const descEl = document.getElementById('desc_' + market);
+  const priceEl = document.getElementById('price_' + market);
+  const parsedPrice = parseInt((priceEl || {}).value || '0', 10);
+  const safePrice = !Number.isNaN(parsedPrice) && parsedPrice > 0 ? parsedPrice : 0;
+  const marketData = {
+    [market]: {
+      title: (titleEl || {}).value || '',
+      description: (descEl || {}).value || '',
+      price_krw: safePrice,
+    }
+  };
+
+  try {
+    const resp = await fetch('/api/ai-listing/publish', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        listing_id: _listingId,
+        markets: [market],
+        market_data: marketData,
+        language,
+        analysis: _analysis,
+      }),
+    });
+    const data = await resp.json();
+    showPublishResults(data);
+  } catch (e) {
+    alert('재시도 오류: ' + e.message);
+  }
+}
 </script>
 {% endblock %}
 """
