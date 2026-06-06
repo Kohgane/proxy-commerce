@@ -23,11 +23,10 @@ class LocalizationService:
     원문은 유지하고 번역본만 별도 결과로 반환한다.
     """
 
-    _cache: dict[tuple[str, str, str], str] = {}
-
     def __init__(self) -> None:
         self._openai = bool(os.getenv("OPENAI_API_KEY"))
         self._deepl = bool(os.getenv("DEEPL_API_KEY"))
+        self._cache: dict[tuple[str, str, str], str] = {}
 
     def is_configured(self) -> bool:
         return self._openai or self._deepl
