@@ -106,6 +106,12 @@ class TestSellerConsoleViews:
         assert "아직 등록된 상품이 없습니다." in html
         assert "AI 상품등록" in html
 
+    def test_catalog_renders_country_filter(self, client):
+        resp = client.get("/seller/catalog")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "국가" in html
+
     def test_orders_empty_state_shows_onboarding_actions(self, client):
         class _OrderSvc:
             def list_orders(self, filters=None, limit=50, offset=0):

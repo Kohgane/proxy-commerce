@@ -6,14 +6,95 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from decimal import Decimal
 from datetime import datetime
 from typing import List, Literal, Optional
 
 # 지원 마켓
-Marketplace = Literal["coupang", "smartstore", "11st", "kohganemultishop"]
+Marketplace = Literal[
+    "coupang",
+    "smartstore",
+    "11st",
+    "kohganemultishop",
+    "woocommerce",
+    "shopify",
+    "amazon",
+    "ebay",
+    "shopee",
+]
 
 # 상품 상태
 ProductState = Literal["active", "out_of_stock", "error", "price_anomaly", "suspended"]
+
+_CURRENCY_SYMBOLS = {
+    "KRW": "₩",
+    "USD": "$",
+    "JPY": "¥",
+    "EUR": "€",
+    "SGD": "S$",
+    "GBP": "£",
+    "CNY": "¥",
+}
+
+_CURRENCY_DECIMALS = {
+    "KRW": 0,
+    "JPY": 0,
+    "USD": 2,
+    "EUR": 2,
+    "SGD": 2,
+    "GBP": 2,
+    "CNY": 2,
+}
+
+
+def format_currency_amount(amount: Optional[float], currency: str) -> str:
+    """금액을 통화별 기본 표시 포맷으로 렌더링한다."""
+    if amount is None:
+        return "—"
+    cur = (currency or "KRW").upper()
+    decimals = _CURRENCY_DECIMALS.get(cur, 2)
+    symbol = _CURRENCY_SYMBOLS.get(cur, f"{cur} ")
+    return f"{symbol}{amount:,.{decimals}f}"
+
+
+def convert_amount(amount: float, from_currency: str, to_currency: str) -> tuple[Optional[float], bool]:
+    """환율 유틸을 사용해 금액을 변환한다.
+
+    Returns:
+        (변환금액, 성공여부). 환율 미가용 시 (None, False).
+    """
+    src = (from_currency or "KRW").upper()
+    dst = (to_currency or "KRW").upper()
+    if src == dst:
+        return float(amount), True
+    try:
+        from src.price import _build_fx_rates, _from_krw, _to_krw
+
+        amount_dec = Decimal(str(amount))
+        fx_rates = _build_fx_rates()
+        krw = _to_krw(amount_dec, src, fx_rates)
+        converted = _from_krw(krw, dst, fx_rates)
+        return float(converted), True
+    except Exception:
+        return None, False
+
+
+def marketplace_meta(marketplace: str) -> dict:
+    """마켓 코드에 대한 국가/통화/locale/region 메타를 반환한다."""
+    try:
+        from src.markets.adapters.base import get_marketplace_meta
+
+        return get_marketplace_meta(marketplace)
+    except Exception:
+        return {
+            "market": marketplace,
+            "label": marketplace,
+            "country": "KR",
+            "currency": "KRW",
+            "locale": "ko-KR",
+            "region": "동아시아",
+            "is_ready": True,
+        }
 
 
 @dataclass
@@ -25,9 +106,29 @@ class MarketStatusItem:
     state: str
     sku: Optional[str] = None
     title: Optional[str] = None
+    price: Optional[float] = None
+    currency: str = "KRW"
     price_krw: Optional[int] = None
     last_synced_at: Optional[datetime] = None
     error_message: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        self.currency = (self.currency or "KRW").upper()
+        if self.price is None and self.price_krw is not None:
+            self.price = float(self.price_krw)
+            self.currency = "KRW"
+        elif self.price is not None and self.price_krw is None:
+            converted, ok = convert_amount(float(self.price), self.currency, "KRW")
+            if ok and converted is not None:
+                self.price_krw = int(round(converted))
+        elif self.price is not None and self.price_krw is not None:
+            converted, ok = convert_amount(float(self.price), self.currency, "KRW")
+            if ok and converted is not None and int(round(converted)) != self.price_krw:
+                self.price_krw = int(round(converted))
+
+    @property
+    def price_display(self) -> str:
+        return format_currency_amount(self.price, self.currency)
 
 
 @dataclass
@@ -54,6 +155,11 @@ class MarketStatusSummary:
             "smartstore": "스마트스토어",
             "11st": "11번가",
             "kohganemultishop": "코가네멀티샵",
+            "woocommerce": "WooCommerce",
+            "shopify": "Shopify",
+            "amazon": "Amazon",
+            "ebay": "eBay",
+            "shopee": "Shopee",
         }
         return _map.get(self.marketplace, self.marketplace)
 
@@ -62,6 +168,10 @@ class MarketStatusSummary:
         return {
             "marketplace": self.marketplace,
             "label": self.label(),
+            "country": marketplace_meta(self.marketplace).get("country"),
+            "currency": marketplace_meta(self.marketplace).get("currency"),
+            "locale": marketplace_meta(self.marketplace).get("locale"),
+            "region": marketplace_meta(self.marketplace).get("region"),
             "active": self.active,
             "out_of_stock": self.out_of_stock,
             "error": self.error,

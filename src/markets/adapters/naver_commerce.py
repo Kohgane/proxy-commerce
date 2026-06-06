@@ -9,6 +9,10 @@ from .naver_commerce_auth import get_access_token
 
 class NaverCommerceAdapter(MarketAdapter):
     market = "naver_commerce"
+    country = "KR"
+    currency = "KRW"
+    locale = "ko-KR"
+    region = "동아시아"
 
     def _live_enabled(self) -> bool:
         return (
@@ -16,6 +20,9 @@ class NaverCommerceAdapter(MarketAdapter):
             and bool(os.getenv("NAVER_COMMERCE_CLIENT_ID"))
             and bool(os.getenv("NAVER_COMMERCE_CLIENT_SECRET"))
         )
+
+    def is_configured(self) -> bool:
+        return bool(os.getenv("NAVER_COMMERCE_CLIENT_ID")) and bool(os.getenv("NAVER_COMMERCE_CLIENT_SECRET"))
 
     def create_listing(self, payload: ListingPayload) -> ListingResult:
         if not self._live_enabled():

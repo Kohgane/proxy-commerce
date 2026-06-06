@@ -36,6 +36,8 @@ def sample_rows():
             "title": "쿠팡 테스트 상품",
             "marketplace": "coupang",
             "state": "active",
+            "price": "29900",
+            "currency": "KRW",
             "price_krw": "29900",
             "last_synced_at": "2026-05-03T10:00:00",
             "error_message": "",
@@ -46,6 +48,8 @@ def sample_rows():
             "title": "스마트스토어 품절 상품",
             "marketplace": "smartstore",
             "state": "out_of_stock",
+            "price": "15000",
+            "currency": "KRW",
             "price_krw": "15000",
             "last_synced_at": "2026-05-03T09:00:00",
             "error_message": "",
@@ -56,6 +60,8 @@ def sample_rows():
             "title": "11번가 오류 상품",
             "marketplace": "11st",
             "state": "error",
+            "price": "",
+            "currency": "KRW",
             "price_krw": "",
             "last_synced_at": "",
             "error_message": "API 인증 실패",
@@ -66,6 +72,8 @@ def sample_rows():
             "title": "쿠팡 품절 상품",
             "marketplace": "coupang",
             "state": "out_of_stock",
+            "price": "45000",
+            "currency": "KRW",
             "price_krw": "45000",
             "last_synced_at": "2026-05-03T08:00:00",
             "error_message": "",
@@ -175,6 +183,8 @@ class TestRowToItem:
             "title": "테스트 상품",
             "marketplace": "coupang",
             "state": "active",
+            "price": "59800",
+            "currency": "KRW",
             "price_krw": "59800",
             "last_synced_at": "2026-05-03T12:00:00",
             "error_message": "",
@@ -185,6 +195,8 @@ class TestRowToItem:
         assert item.sku == "SKU-100"
         assert item.marketplace == "coupang"
         assert item.state == "active"
+        assert item.price == 59800
+        assert item.currency == "KRW"
         assert item.price_krw == 59800
         assert item.last_synced_at == datetime(2026, 5, 3, 12, 0, 0)
 
@@ -224,6 +236,8 @@ class TestRowToItem:
             "product_id": "P400",
             "marketplace": "coupang",
             "state": "active",
+            "price": "",
+            "currency": "KRW",
             "price_krw": "",
             "sku": "",
             "title": "",
@@ -232,6 +246,25 @@ class TestRowToItem:
         }
         item = adapter._row_to_item(row)
         assert item.price_krw is None
+
+    def test_usd_price_row_is_converted_to_krw(self, adapter, monkeypatch):
+        monkeypatch.setenv("FX_USDKRW", "1400")
+        row = {
+            "product_id": "P401",
+            "marketplace": "amazon",
+            "state": "active",
+            "price": "12.5",
+            "currency": "USD",
+            "price_krw": "",
+            "sku": "",
+            "title": "",
+            "last_synced_at": "",
+            "error_message": "",
+        }
+        item = adapter._row_to_item(row)
+        assert item.price == 12.5
+        assert item.currency == "USD"
+        assert item.price_krw == 17500
 
 
 # ---------------------------------------------------------------------------

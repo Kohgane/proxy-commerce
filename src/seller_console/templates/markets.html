@@ -29,6 +29,10 @@
     <div class="card border-0 shadow-sm h-100">
       <div class="card-body">
         <h6 class="fw-semibold mb-2">{{ m.label }}</h6>
+        <div class="small text-muted mb-2">{{ m.country }}/{{ m.currency }} · {{ m.region }}</div>
+        {% if not m.is_ready %}
+        <span class="badge bg-dark mb-2">준비 중/미연동</span>
+        {% endif %}
         <div class="d-flex justify-content-between text-center">
           <div>
             <div class="text-success fw-bold fs-4">{{ m.active }}</div>
@@ -68,10 +72,15 @@
       <label class="form-label mb-0 small fw-semibold">필터:</label>
       <select class="form-select form-select-sm" id="filterMarket" style="width:auto;" onchange="filterTable()">
         <option value="">전체 마켓</option>
-        <option value="coupang">쿠팡</option>
-        <option value="smartstore">스마트스토어</option>
-        <option value="11st">11번가</option>
-        <option value="kohganemultishop">코가네멀티샵</option>
+        {% for market in marketplace_filters %}
+        <option value="{{ market.marketplace }}">{{ market.label }}{% if not market.is_ready %} (준비 중){% endif %}</option>
+        {% endfor %}
+      </select>
+      <select class="form-select form-select-sm" id="filterCountry" style="width:auto;" onchange="filterTable()">
+        <option value="">전체 국가</option>
+        {% for country in country_filters %}
+        <option value="{{ country }}">{{ country }}</option>
+        {% endfor %}
       </select>
       <select class="form-select form-select-sm" id="filterStatus" style="width:auto;" onchange="filterTable()">
         <option value="">전체 상태</option>
@@ -101,13 +110,20 @@
             <th>SKU</th>
             <th class="text-center">상태</th>
             <th class="text-end">가격</th>
+            <th>국가/통화</th>
             <th>마지막 동기화</th>
           </tr>
         </thead>
         <tbody id="productTableBody">
           {% if items %}
             {% for item in items %}
-            <tr data-market="{{ item.marketplace }}" data-status="{{ item.state }}">              <td><span class="badge bg-secondary">{{ item.marketplace_label }}</span></td>
+            <tr data-market="{{ item.marketplace }}" data-status="{{ item.state }}" data-country="{{ item.country }}">
+              <td>
+                <span class="badge bg-secondary">{{ item.marketplace_label }}</span>
+                {% if not item.is_ready %}
+                <span class="badge bg-dark ms-1">준비 중</span>
+                {% endif %}
+              </td>
               <td><code class="small">{{ item.product_id }}</code></td>
               <td>{{ item.title or '—' }}</td>
               <td><code class="small">{{ item.sku or '—' }}</code></td>
@@ -127,18 +143,22 @@
                 {% endif %}
               </td>
               <td class="text-end">
-                {% if item.price_krw %}₩{{ "{:,}".format(item.price_krw) }}{% else %}—{% endif %}
+                {{ item.price_display }}
+                {% if item.price_note %}
+                <div class="small text-muted">{{ item.price_note }}</div>
+                {% endif %}
               </td>
+              <td class="small text-muted">{{ item.country }}/{{ item.currency }} · {{ item.region }}</td>
               <td class="small text-muted">{{ item.last_synced_at or '—' }}</td>
             </tr>
             {% endfor %}
           {% else %}
             <!-- 시트에 데이터 없음 또는 mock 모드일 때 안내 메시지 표시 -->
             <tr>
-              <td colspan="7" class="text-center text-muted py-4">
+              <td colspan="8" class="text-center text-muted py-4">
                 {% if market_data.is_mock %}
                 <div>📋 <strong>Mock 모드</strong> — Google Sheets <code>catalog</code> 워크시트에 데이터를 추가하면 실 데이터가 표시됩니다.</div>
-                <div class="small mt-1">컬럼: product_id / sku / title / marketplace / state / price_krw / last_synced_at / error_message</div>
+                <div class="small mt-1">컬럼: product_id / sku / title / marketplace / state / price / currency / price_krw / last_synced_at / error_message</div>
                 {% else %}
                 <div>📭 상품 데이터가 없습니다. Google Sheets에 데이터를 추가해주세요.</div>
                 {% endif %}
@@ -223,6 +243,7 @@ function showToast(message, type='success') {
 // 테이블 필터링
 function filterTable() {
   const market = document.getElementById('filterMarket').value.toLowerCase();
+  const country = document.getElementById('filterCountry').value.toLowerCase();
   const status = document.getElementById('filterStatus').value.toLowerCase();
   const search = document.getElementById('filterSearch').value.toLowerCase();
   const rows = document.querySelectorAll('#productTableBody tr');
@@ -230,13 +251,15 @@ function filterTable() {
 
   rows.forEach(row => {
     const rowMarket = (row.dataset.market || '').toLowerCase();
+    const rowCountry = (row.dataset.country || '').toLowerCase();
     const rowStatus = (row.dataset.status || '').toLowerCase();
     const rowText = row.textContent.toLowerCase();
 
     const marketOk = !market || rowMarket.includes(market);
+    const countryOk = !country || rowCountry === country;
     const statusOk = !status || rowStatus === status;
     const searchOk = !search || rowText.includes(search);
-    const show = marketOk && statusOk && searchOk;
+    const show = marketOk && countryOk && statusOk && searchOk;
 
     row.style.display = show ? '' : 'none';
     if (show) visible++;

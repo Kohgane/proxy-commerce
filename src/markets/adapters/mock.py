@@ -6,6 +6,13 @@ from .base import ListingPayload, ListingResult, MarketAdapter, OrderStatus
 
 class MockMarketAdapter(MarketAdapter):
     market = "mock"
+    country = "KR"
+    currency = "KRW"
+    locale = "ko-KR"
+    region = "동아시아"
+
+    def is_configured(self) -> bool:
+        return True
 
     def create_listing(self, payload: ListingPayload) -> ListingResult:
         return self._mock_result(f"mock listing created: {payload.title}")

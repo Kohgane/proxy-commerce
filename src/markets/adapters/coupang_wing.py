@@ -6,6 +6,21 @@ from .base import ListingPayload, ListingResult, MarketAdapter, OrderStatus
 
 class CoupangWingAdapter(MarketAdapter):
     market = "coupang"
+    country = "KR"
+    currency = "KRW"
+    locale = "ko-KR"
+    region = "동아시아"
+
+    def is_configured(self) -> bool:
+        import os
+
+        return all(
+            (
+                os.getenv("COUPANG_VENDOR_ID"),
+                os.getenv("COUPANG_ACCESS_KEY"),
+                os.getenv("COUPANG_SECRET_KEY"),
+            )
+        )
 
     def create_listing(self, payload: ListingPayload) -> ListingResult:
         return self._mock_result("coupang mock mode")

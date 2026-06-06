@@ -32,8 +32,19 @@
         <label class="form-label small mb-1">마켓</label>
         <select name="marketplace" class="form-select form-select-sm">
           <option value="">전체</option>
-          {% for mp in ['coupang', 'smartstore', '11st', 'kohganemultishop'] %}
-          <option value="{{ mp }}" {% if filters.marketplace == mp %}selected{% endif %}>{{ mp }}</option>
+          {% for mp in marketplace_options %}
+          <option value="{{ mp.market }}" {% if filters.marketplace == mp.market %}selected{% endif %}>
+            {{ mp.label }}{% if not mp.is_ready %} (준비 중){% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-1">
+        <label class="form-label small mb-1">국가</label>
+        <select name="country" class="form-select form-select-sm">
+          <option value="">전체</option>
+          {% for country in country_options %}
+          <option value="{{ country }}" {% if filters.country == country %}selected{% endif %}>{{ country }}</option>
           {% endfor %}
         </select>
       </div>
@@ -82,7 +93,7 @@
             <th style="width:60px;">마켓</th>
             <th>상품명</th>
             <th>SKU</th>
-            <th>가격 (KRW)</th>
+            <th>가격</th>
             <th>상태</th>
             <th>마지막 동기화</th>
             <th style="width:120px;">액션</th>
@@ -93,20 +104,19 @@
           <tr>
             <td>
               <span class="badge bg-secondary" style="font-size:0.7rem;">
-                {% if item.marketplace == 'coupang' %}쿠팡
-                {% elif item.marketplace == 'smartstore' %}스스
-                {% elif item.marketplace == '11st' %}11번가
-                {% elif item.marketplace == 'kohganemultishop' %}코가네
-                {% else %}{{ item.marketplace }}{% endif %}
+                {{ item.marketplace_label }}
               </span>
+              {% if not item.is_ready %}
+              <span class="badge bg-dark ms-1" style="font-size:0.65rem;">준비 중</span>
+              {% endif %}
+              <div class="small text-muted">{{ item.country }}/{{ item.currency }}</div>
             </td>
             <td class="fw-semibold">{{ item.title or '(제목 없음)' }}</td>
             <td><code style="font-size:0.75rem;">{{ item.sku or '-' }}</code></td>
             <td>
-              {% if item.price_krw %}
-                ₩{{ "{:,}".format(item.price_krw) }}
-              {% else %}
-                <span class="text-muted">-</span>
+              {{ item.price_display }}
+              {% if item.price_note %}
+              <div class="small text-muted">{{ item.price_note }}</div>
               {% endif %}
             </td>
             <td>
@@ -165,17 +175,17 @@
   <ul class="pagination pagination-sm justify-content-center">
     {% if current_page > 1 %}
     <li class="page-item">
-      <a class="page-link" href="?page={{ current_page - 1 }}&marketplace={{ filters.marketplace }}&state={{ filters.state }}&search={{ filters.search }}&sort={{ filters.sort }}&per_page={{ filters.per_page }}">이전</a>
+      <a class="page-link" href="?page={{ current_page - 1 }}&marketplace={{ filters.marketplace }}&country={{ filters.country }}&state={{ filters.state }}&search={{ filters.search }}&sort={{ filters.sort }}&per_page={{ filters.per_page }}">이전</a>
     </li>
     {% endif %}
     {% for p in range(1, total_pages + 1) %}
     <li class="page-item {% if p == current_page %}active{% endif %}">
-      <a class="page-link" href="?page={{ p }}&marketplace={{ filters.marketplace }}&state={{ filters.state }}&search={{ filters.search }}&sort={{ filters.sort }}&per_page={{ filters.per_page }}">{{ p }}</a>
+      <a class="page-link" href="?page={{ p }}&marketplace={{ filters.marketplace }}&country={{ filters.country }}&state={{ filters.state }}&search={{ filters.search }}&sort={{ filters.sort }}&per_page={{ filters.per_page }}">{{ p }}</a>
     </li>
     {% endfor %}
     {% if current_page < total_pages %}
     <li class="page-item">
-      <a class="page-link" href="?page={{ current_page + 1 }}&marketplace={{ filters.marketplace }}&state={{ filters.state }}&search={{ filters.search }}&sort={{ filters.sort }}&per_page={{ filters.per_page }}">다음</a>
+      <a class="page-link" href="?page={{ current_page + 1 }}&marketplace={{ filters.marketplace }}&country={{ filters.country }}&state={{ filters.state }}&search={{ filters.search }}&sort={{ filters.sort }}&per_page={{ filters.per_page }}">다음</a>
     </li>
     {% endif %}
   </ul>

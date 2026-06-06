@@ -6,6 +6,15 @@ from .base import ListingPayload, ListingResult, MarketAdapter, OrderStatus
 
 class ElevenStAdapter(MarketAdapter):
     market = "11st"
+    country = "KR"
+    currency = "KRW"
+    locale = "ko-KR"
+    region = "동아시아"
+
+    def is_configured(self) -> bool:
+        import os
+
+        return bool(os.getenv("ELEVENST_API_KEY"))
 
     def create_listing(self, payload: ListingPayload) -> ListingResult:
         return self._mock_result("11st mock mode")

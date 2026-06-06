@@ -45,6 +45,7 @@ def test_api_registry_has_new_keys():
     names = {k.name for k in API_REGISTRY}
     required = {
         "coupang_wing", "naver_commerce", "elevenst",
+        "amazon_sp_api", "ebay_marketplace", "shopify_marketplace", "shopee_marketplace",
         "amazon_paapi", "rakuten",
         "openai", "deepl",
         "toss_payments", "paypal",

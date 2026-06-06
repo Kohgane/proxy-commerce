@@ -9,6 +9,10 @@
 - `coupang_wing.py` — 쿠팡 윙 scaffold
 - `naver_commerce.py` — 네이버 커머스 scaffold
 - `eleven_st.py` — 11번가 scaffold
+- `amazon.py` — Amazon SP-API scaffold (stub)
+- `ebay.py` — eBay scaffold (stub)
+- `shopify.py` — Shopify scaffold (stub)
+- `shopee.py` — Shopee scaffold (stub)
 - `mock.py` — 기본 mock
 
 ## 공통 인터페이스
@@ -16,3 +20,7 @@
 - `create_listing(payload)`
 - `update_inventory(sku, qty)`
 - `get_order_status(external_order_id)`
+- `is_configured()`
+- `validate_listing(payload)`
+- `upload_product(payload)`
+- `marketplace_meta()`

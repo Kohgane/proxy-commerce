@@ -857,7 +857,23 @@ def collect():
         logger.warning("API 상태 로드 실패: %s", exc)
         api_status = []
 
-    return render_template("manual_collect.html", page="collect", api_status=api_status)
+    marketplace_cards = [
+        {"code": "coupang", **_marketplace_meta("coupang")},
+        {"code": "smartstore", **_marketplace_meta("smartstore")},
+        {"code": "elevenst", **_marketplace_meta("11st")},
+        {"code": "woocommerce", **_marketplace_meta("woocommerce")},
+        {"code": "amazon", **_marketplace_meta("amazon")},
+        {"code": "ebay", **_marketplace_meta("ebay")},
+        {"code": "shopify", **_marketplace_meta("shopify")},
+        {"code": "shopee", **_marketplace_meta("shopee")},
+    ]
+
+    return render_template(
+        "manual_collect.html",
+        page="collect",
+        api_status=api_status,
+        marketplace_cards=marketplace_cards,
+    )
 
 
 @bp.get("/manual-collect")
@@ -984,13 +1000,22 @@ def collect_save():
         from datetime import datetime
 
         adapter = MarketStatusSheetsAdapter()
+        payload_currency = str(payload.get("currency") or "KRW").upper()
+        payload_price = None
+        if payload.get("price"):
+            try:
+                payload_price = float(payload["price"])
+            except (TypeError, ValueError):
+                return jsonify({"ok": False, "error": "가격은 숫자 형식이어야 합니다."}), 400
         item = MarketStatusItem(
             marketplace=payload.get("marketplace", "collected"),
             product_id=payload.get("sku") or payload.get("asin") or f"col_{int(datetime.now().timestamp())}",
             state="active",
             sku=payload.get("sku") or payload.get("asin"),
             title=payload.get("title"),
-            price_krw=int(float(payload["price"])) if payload.get("price") else None,
+            price=payload_price,
+            currency=payload_currency,
+            price_krw=int(payload_price) if payload_currency == "KRW" and payload_price is not None else None,
             last_synced_at=datetime.now(),
         )
         saved = adapter.upsert_item(item)
@@ -1011,6 +1036,7 @@ def catalog():
     if per_page not in (20, 50, 100):
         per_page = 50
     marketplace_filter = (request.args.get("marketplace") or "").strip()
+    country_filter = (request.args.get("country") or "").strip().upper()
     state_filter = (request.args.get("state") or "").strip()
     search = (request.args.get("search") or "").strip().lower()
     sort = (request.args.get("sort") or "last_synced_desc").strip()
@@ -1030,6 +1056,8 @@ def catalog():
         max_price_for_none = 10**15
         if marketplace_filter:
             all_items = [i for i in all_items if (i.marketplace or "") == marketplace_filter]
+        if country_filter:
+            all_items = [i for i in all_items if _marketplace_meta(i.marketplace).get("country") == country_filter]
         if state_filter:
             all_items = [i for i in all_items if (i.state or "") == state_filter]
         if search:
@@ -1061,10 +1089,46 @@ def catalog():
         error_msg = str(exc)
 
     total_pages = max(1, (total + per_page - 1) // per_page)
+    marketplace_options = [
+        {"market": m, **_marketplace_meta(m)}
+        for m in [
+            "coupang",
+            "smartstore",
+            "11st",
+            "kohganemultishop",
+            "amazon",
+            "ebay",
+            "shopify",
+            "shopee",
+        ]
+    ]
+    country_options = sorted({str(o["country"]).upper() for o in marketplace_options if o.get("country")})
+    view_items = []
+    for item in items:
+        meta = _marketplace_meta(item.marketplace)
+        market_price, price_note = _market_price_display(item, str(meta.get("currency") or "KRW"))
+        view_items.append(
+            {
+                "marketplace": item.marketplace,
+                "marketplace_label": _marketplace_label(item.marketplace),
+                "country": meta.get("country"),
+                "region": meta.get("region"),
+                "currency": meta.get("currency"),
+                "locale": meta.get("locale"),
+                "is_ready": bool(meta.get("is_ready", True)),
+                "product_id": item.product_id,
+                "sku": item.sku,
+                "title": item.title,
+                "state": item.state,
+                "price_display": market_price,
+                "price_note": price_note,
+                "last_synced_at": item.last_synced_at,
+            }
+        )
 
     return render_template(
         "catalog.html",
-        items=items,
+        items=view_items,
         page="catalog",
         current_page=page_num,
         total_pages=total_pages,
@@ -1073,11 +1137,14 @@ def catalog():
         error_msg=error_msg,
         filters={
             "marketplace": marketplace_filter,
+            "country": country_filter,
             "state": state_filter,
             "search": search,
             "sort": sort,
             "per_page": per_page,
         },
+        marketplace_options=marketplace_options,
+        country_options=country_options,
     )
 
 
@@ -1762,31 +1829,59 @@ def markets_overview():
         svc = MarketStatusService()
         result = svc.get_all()
         market_data = result.to_legacy_dict()
+        for market in market_data.get("markets", []):
+            meta = _marketplace_meta(market.get("marketplace", ""))
+            market["country"] = meta.get("country")
+            market["currency"] = meta.get("currency")
+            market["locale"] = meta.get("locale")
+            market["region"] = meta.get("region")
+            market["is_ready"] = bool(meta.get("is_ready", True))
         # items도 템플릿에 전달
-        items = [
+        items = []
+        for item in result.items:
+            meta = _marketplace_meta(item.marketplace)
+            price_display, price_note = _market_price_display(item, str(meta.get("currency") or "KRW"))
+            items.append(
+                {
+                    "marketplace": item.marketplace,
+                    "marketplace_label": _marketplace_label(item.marketplace),
+                    "country": meta.get("country"),
+                    "currency": meta.get("currency"),
+                    "region": meta.get("region"),
+                    "locale": meta.get("locale"),
+                    "is_ready": bool(meta.get("is_ready", True)),
+                    "product_id": item.product_id,
+                    "sku": item.sku or "",
+                    "title": item.title or "",
+                    "state": item.state,
+                    "price_display": price_display,
+                    "price_note": price_note,
+                    "last_synced_at": item.last_synced_at.isoformat() if item.last_synced_at else "",
+                    "error_message": item.error_message or "",
+                }
+            )
+        marketplace_filters = [
             {
-                "marketplace": item.marketplace,
-                "marketplace_label": _marketplace_label(item.marketplace),
-                "product_id": item.product_id,
-                "sku": item.sku or "",
-                "title": item.title or "",
-                "state": item.state,
-                "price_krw": item.price_krw,
-                "last_synced_at": item.last_synced_at.isoformat() if item.last_synced_at else "",
-                "error_message": item.error_message or "",
+                "marketplace": market_code,
+                **_marketplace_meta(market_code),
             }
-            for item in result.items
+            for market_code in ["coupang", "smartstore", "11st", "kohganemultishop", "amazon", "ebay", "shopify", "shopee"]
         ]
+        country_filters = sorted({str(m["country"]).upper() for m in marketplace_filters if m.get("country")})
     except Exception as exc:
         logger.warning("마켓 현황 데이터 로드 실패: %s", exc)
         from .data_aggregator import get_market_product_status
         market_data = get_market_product_status()
         items = []
+        marketplace_filters = []
+        country_filters = []
 
     return render_template(
         "markets.html",
         market_data=market_data,
         items=items,
+        marketplace_filters=marketplace_filters,
+        country_filters=country_filters,
         page="market_status",
     )
 
@@ -2349,12 +2444,69 @@ _MARKETPLACE_LABELS = {
     "coupang": "쿠팡",
     "smartstore": "스마트스토어",
     "11st": "11번가",
+    "elevenst": "11번가",
     "kohganemultishop": "코가네멀티샵",
+    "woocommerce": "WooCommerce",
+    "shopify": "Shopify",
+    "amazon": "Amazon",
+    "ebay": "eBay",
+    "shopee": "Shopee",
 }
 
 
 def _marketplace_label(marketplace: str) -> str:
+    try:
+        from src.markets.adapters.base import get_marketplace_meta
+
+        meta = get_marketplace_meta(marketplace)
+        if meta.get("label"):
+            return str(meta["label"])
+    except Exception:
+        pass
     return _MARKETPLACE_LABELS.get(marketplace, marketplace)
+
+
+def _marketplace_meta(marketplace: str) -> dict:
+    try:
+        from src.markets.adapters.base import get_marketplace_meta
+
+        return get_marketplace_meta(marketplace)
+    except Exception:
+        return {
+            "market": marketplace,
+            "label": _marketplace_label(marketplace),
+            "country": "KR",
+            "currency": "KRW",
+            "locale": "ko-KR",
+            "region": "동아시아",
+            "is_ready": True,
+        }
+
+
+def _market_price_display(item, target_currency: str) -> tuple[str, str]:
+    """마켓 기준 가격 표시 문자열을 생성한다.
+
+    Returns:
+        (formatted_price, conversion_note)
+    """
+    from .market_status import convert_amount, format_currency_amount
+
+    if item.price is None and item.price_krw is not None:
+        if target_currency == "KRW":
+            return format_currency_amount(float(item.price_krw), "KRW"), ""
+        converted, ok = convert_amount(float(item.price_krw), "KRW", target_currency)
+        if ok and converted is not None:
+            return format_currency_amount(converted, target_currency), "KRW 환산"
+        return f"{format_currency_amount(float(item.price_krw), 'KRW')} (미환산)", "환율 미가용"
+
+    if item.price is None:
+        return "—", ""
+
+    converted, ok = convert_amount(float(item.price), item.currency, target_currency)
+    if ok and converted is not None:
+        note = "" if item.currency == target_currency else f"{item.currency}→{target_currency} 환산"
+        return format_currency_amount(converted, target_currency), note
+    return f"{format_currency_amount(float(item.price), item.currency)} (미환산)", "환율 미가용"
 
 
 # ---------------------------------------------------------------------------
