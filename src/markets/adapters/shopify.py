@@ -34,13 +34,30 @@ class ShopifyAdapter(MarketAdapter):
         return raw.strip("/").lower()
 
     def _access_token(self) -> str:
-        return (os.getenv("SHOPIFY_ADMIN_TOKEN") or os.getenv("SHOPIFY_ACCESS_TOKEN") or "").strip()
+        return (
+            os.getenv("SHOPIFY_AUTO_TOKEN")
+            or os.getenv("SHOPIFY_ACCESS_TOKEN")
+            or os.getenv("SHOPIFY_ADMIN_TOKEN")
+            or ""
+        ).strip()
+
+    def _has_legacy_token(self) -> bool:
+        return bool((os.getenv("SHOPIFY_ACCESS_TOKEN") or os.getenv("SHOPIFY_ADMIN_TOKEN") or "").strip())
 
     def _api_version(self) -> str:
-        return (os.getenv("SHOPIFY_ADMIN_API_VERSION") or "2024-10").strip() or "2024-10"
+        return (os.getenv("SHOPIFY_API_VERSION") or os.getenv("SHOPIFY_ADMIN_API_VERSION") or "2026-04").strip() or "2026-04"
 
     def is_configured(self) -> bool:
         return bool(self._shop_domain()) and bool(self._access_token())
+
+    def _missing_config_env(self) -> list[str]:
+        missing = []
+        if not self._shop_domain():
+            missing.append("SHOPIFY_SHOP")
+        auto_token = (os.getenv("SHOPIFY_AUTO_TOKEN") or "").strip()
+        if not auto_token and not self._has_legacy_token():
+            missing.append("SHOPIFY_AUTO_TOKEN")
+        return missing
 
     def _base_url(self) -> str:
         return f"https://{self._shop_domain()}/admin/api/{self._api_version()}"
@@ -125,6 +142,71 @@ class ShopifyAdapter(MarketAdapter):
         return currency, locale
 
     @staticmethod
+    def _friendly_http_reason(status_code: int, summary: str, *, action: str) -> str:
+        if status_code == 401:
+            return f"{action} 인증에 실패했습니다. SHOPIFY_AUTO_TOKEN(atk_) 또는 하위호환 토큰 값을 확인하세요."
+        if status_code == 403:
+            return f"{action} 권한이 부족합니다. Shopify 앱 스코프(write_products/read_products 등)를 확인하세요."
+        if status_code == 404:
+            return f"{action} 대상 스토어를 찾지 못했습니다. SHOPIFY_SHOP 도메인을 확인하세요."
+        if status_code == 429:
+            return f"{action} 호출 한도를 초과했습니다. 잠시 후 다시 시도하세요."
+        if status_code >= 500:
+            return f"Shopify 서버 오류로 {action}에 실패했습니다. 잠시 후 다시 시도하세요."
+        if summary:
+            return summary
+        return "요청이 거절되었습니다."
+
+    def check_connection(self) -> Dict[str, Any]:
+        missing_env = self._missing_config_env()
+        if missing_env:
+            return {
+                "ok": False,
+                "status": "not_configured",
+                "message": "Shopify 연결 설정이 누락되었습니다.",
+                "missing_env": missing_env,
+                "required_env": ["SHOPIFY_CLIENT_ID", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_AUTO_TOKEN", "SHOPIFY_API_VERSION", "SHOPIFY_SHOP"],
+            }
+
+        try:
+            response = self._request_with_retry("GET", "/shop.json")
+            if not (200 <= response.status_code < 300):
+                summary = self._error_summary(response)
+                return {
+                    "ok": False,
+                    "status": "api_error",
+                    "http_status": response.status_code,
+                    "reason": summary,
+                    "message": self._friendly_http_reason(response.status_code, summary, action="Shopify 연결 확인"),
+                }
+
+            body = response.json()
+            shop = body.get("shop", {}) if isinstance(body, dict) else {}
+            return {
+                "ok": True,
+                "status": "connected",
+                "message": "Shopify 연결 확인 완료",
+                "shop_name": str(shop.get("name") or "").strip(),
+                "shop_domain": str(shop.get("myshopify_domain") or self._shop_domain()).strip(),
+                "currency": str(shop.get("currency") or "").strip(),
+                "plan_name": str(shop.get("plan_name") or "").strip(),
+                "email": str(shop.get("email") or "").strip(),
+                "primary_locale": str(shop.get("primary_locale") or "").strip(),
+            }
+        except requests.RequestException:
+            return {
+                "ok": False,
+                "status": "network_error",
+                "message": "Shopify API 연결 요청에 실패했습니다. 네트워크 상태를 확인 후 다시 시도하세요.",
+            }
+        except Exception:
+            return {
+                "ok": False,
+                "status": "internal_error",
+                "message": "Shopify 연결 확인 중 오류가 발생했습니다.",
+            }
+
+    @staticmethod
     def _to_float(value: Any) -> Optional[float]:
         try:
             return float(value)
@@ -202,11 +284,12 @@ class ShopifyAdapter(MarketAdapter):
     def validate_listing(self, payload: ListingPayload) -> ListingResult:
         if not self.is_configured():
             return self._mock_result(
-                "Shopify 설정이 없어 업로드를 실행할 수 없습니다. /admin/diagnostics 에서 SHOPIFY_SHOP/SHOPIFY_ACCESS_TOKEN(또는 SHOPIFY_ADMIN_TOKEN)을 설정하세요.",
+                "Shopify 설정이 없어 업로드를 실행할 수 없습니다. SHOPIFY_SHOP/SHOPIFY_AUTO_TOKEN을 확인하세요. (하위호환: SHOPIFY_ACCESS_TOKEN)",
                 ok=False,
                 raw={
                     "status": "not_configured",
-                    "required_env": ["SHOPIFY_SHOP", "SHOPIFY_ACCESS_TOKEN"],
+                    "required_env": ["SHOPIFY_SHOP", "SHOPIFY_AUTO_TOKEN"],
+                    "missing_env": self._missing_config_env(),
                     "simulated": False,
                 },
             )
@@ -370,14 +453,16 @@ class ShopifyAdapter(MarketAdapter):
 
             if not (200 <= response.status_code < 300):
                 summary = self._error_summary(response)
+                friendly = self._friendly_http_reason(response.status_code, summary, action="Shopify 상품 등록")
                 return ListingResult(
                     ok=False,
                     market=self.market,
-                    message=f"Shopify 업로드 실패 (HTTP {response.status_code}): {summary}",
+                    message=f"Shopify 업로드 실패 (HTTP {response.status_code}): {friendly}",
                     raw={
                         "status": "api_error",
                         "http_status": response.status_code,
                         "reason": summary,
+                        "friendly_reason": friendly,
                         "warnings": warnings,
                     },
                 )

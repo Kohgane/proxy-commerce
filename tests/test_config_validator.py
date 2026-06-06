@@ -95,29 +95,30 @@ class TestConfigValidatorDependency:
     """의존성 검증 테스트."""
 
     def test_validate_dependency_shopify_shop_without_token(self, monkeypatch):
-        """SHOPIFY_SHOP 설정 시 SHOPIFY_ACCESS_TOKEN 미설정이면 경고."""
+        """SHOPIFY_SHOP 설정 시 SHOPIFY_AUTO_TOKEN(또는 하위호환 토큰) 미설정이면 경고."""
         monkeypatch.setenv('GOOGLE_SERVICE_JSON_B64', 'dGVzdA==')
         monkeypatch.setenv('GOOGLE_SHEET_ID', 'test_id')
         monkeypatch.setenv('SHOPIFY_SHOP', 'mystore.myshopify.com')
+        monkeypatch.delenv('SHOPIFY_AUTO_TOKEN', raising=False)
         monkeypatch.delenv('SHOPIFY_ACCESS_TOKEN', raising=False)
 
         from src.config.validator import ConfigValidator
         validator = ConfigValidator()
         is_valid, warnings, errors = validator.validate()
 
-        assert any('SHOPIFY_ACCESS_TOKEN' in w for w in warnings)
+        assert any('SHOPIFY_AUTO_TOKEN' in w for w in warnings)
 
     def test_validate_dependency_satisfied(self, monkeypatch):
-        """SHOPIFY_SHOP + SHOPIFY_ACCESS_TOKEN 모두 설정 시 경고 없음."""
+        """SHOPIFY_SHOP + SHOPIFY_AUTO_TOKEN 설정 시 경고 없음."""
         monkeypatch.setenv('GOOGLE_SERVICE_JSON_B64', 'dGVzdA==')
         monkeypatch.setenv('GOOGLE_SHEET_ID', 'test_id')
         monkeypatch.setenv('SHOPIFY_SHOP', 'mystore.myshopify.com')
-        monkeypatch.setenv('SHOPIFY_ACCESS_TOKEN', 'shpat_test')
+        monkeypatch.setenv('SHOPIFY_AUTO_TOKEN', 'atk_test')
         monkeypatch.setenv('SHOPIFY_CLIENT_SECRET', 'secret')
 
         from src.config.validator import ConfigValidator
         validator = ConfigValidator()
         is_valid, warnings, errors = validator.validate()
 
-        shopify_warnings = [w for w in warnings if 'SHOPIFY_ACCESS_TOKEN' in w]
+        shopify_warnings = [w for w in warnings if 'SHOPIFY_AUTO_TOKEN' in w]
         assert len(shopify_warnings) == 0

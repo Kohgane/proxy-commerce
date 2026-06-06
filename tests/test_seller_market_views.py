@@ -81,6 +81,11 @@ class TestMarketsOverview:
         assert "전체 국가" in html
         assert "준비 중" in html
 
+    def test_markets_contains_shopify_connection_button(self, client):
+        resp = client.get("/seller/markets")
+        assert resp.status_code == 200
+        assert "Shopify 연결 확인" in resp.get_data(as_text=True)
+
 
 # ---------------------------------------------------------------------------
 # 테스트: GET /seller/market-status (리다이렉트)
@@ -202,6 +207,33 @@ class TestMarketsSyncApi:
         data = resp.get_json()
         for v in data.values():
             assert isinstance(v, int)
+
+
+class TestShopifyConnectionCheckApi:
+    def test_shopify_check_connection_not_configured(self, client, monkeypatch):
+        monkeypatch.delenv("SHOPIFY_SHOP", raising=False)
+        monkeypatch.delenv("SHOPIFY_AUTO_TOKEN", raising=False)
+        monkeypatch.delenv("SHOPIFY_ACCESS_TOKEN", raising=False)
+
+        resp = client.post("/seller/markets/shopify/check-connection", data=b"{}", content_type="application/json")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is False
+        assert data["status"] == "not_configured"
+
+    def test_shopify_check_connection_success(self, client, monkeypatch):
+        from src.markets.adapters.shopify import ShopifyAdapter
+
+        monkeypatch.setattr(
+            ShopifyAdapter,
+            "check_connection",
+            lambda self: {"ok": True, "status": "connected", "shop_domain": "catdyy-p0.myshopify.com"},
+        )
+        resp = client.post("/seller/markets/shopify/check-connection", data=b"{}", content_type="application/json")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert data["shop_domain"] == "catdyy-p0.myshopify.com"
 
 
 # ---------------------------------------------------------------------------

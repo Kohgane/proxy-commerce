@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 # 의존성 규칙: key가 존재하면 depends_on도 반드시 존재해야 함
 _DEPENDENCY_RULES = [
-    ("SHOPIFY_SHOP", "SHOPIFY_ACCESS_TOKEN"),
+    ("SHOPIFY_SHOP", "SHOPIFY_AUTO_TOKEN"),
     ("SHOPIFY_SHOP", "SHOPIFY_CLIENT_SECRET"),
     ("WOO_BASE_URL", "WOO_CK"),
     ("WOO_BASE_URL", "WOO_CS"),
@@ -73,6 +73,11 @@ class ConfigValidator:
         for key, depends_on in _DEPENDENCY_RULES:
             key_val = os.environ.get(key, "")
             dep_val = os.environ.get(depends_on, "")
+            if depends_on == "SHOPIFY_AUTO_TOKEN" and not dep_val:
+                dep_val = (
+                    os.environ.get("SHOPIFY_ACCESS_TOKEN", "")
+                    or os.environ.get("SHOPIFY_ADMIN_TOKEN", "")
+                )
             if key_val and not dep_val:
                 warnings.append(
                     f"의존성 경고: {key} 설정 시 {depends_on}도 필요합니다."

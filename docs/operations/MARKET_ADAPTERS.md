@@ -25,9 +25,11 @@
 - `upload_product(payload)`
 - `marketplace_meta()`
 
-## Shopify (Phase 183)
+## Shopify (Phase 184)
 
-- 필수 env: `SHOPIFY_SHOP`, `SHOPIFY_ACCESS_TOKEN`(또는 `SHOPIFY_ADMIN_TOKEN`)
-- 권장 env: `SHOPIFY_ADMIN_API_VERSION` (기본 `2024-10`)
+- Render 권장 env: `SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET`, `SHOPIFY_AUTO_TOKEN`, `SHOPIFY_API_VERSION`, `SHOPIFY_SHOP`
+- 인증 헤더: `X-Shopify-Access-Token: ${SHOPIFY_AUTO_TOKEN}` (하위호환: `SHOPIFY_ACCESS_TOKEN`/`SHOPIFY_ADMIN_TOKEN`)
+- API 버전: `SHOPIFY_API_VERSION` (미설정 시 어댑터 기본값 `2026-04`)
 - `SHOPIFY_CLIENT_SECRET`은 웹훅 검증 전용이며 상품 등록 토큰과 별개다.
 - 자격증명 미설정 시 절대 성공 위조 없이 `not_configured` 상태를 반환한다.
+- `/seller/markets`의 **Shopify 연결 확인** 버튼은 `GET /admin/api/{version}/shop.json` 진단 결과(스토어명/도메인/통화/플랜/실패 사유)를 표시한다.

@@ -1960,6 +1960,11 @@ def markets_overview():
             for market_code in ["coupang", "smartstore", "11st", "kohganemultishop", "amazon", "ebay", "shopify", "shopee"]
         ]
         country_filters = sorted({str(m["country"]).upper() for m in marketplace_filters if m.get("country")})
+        summary_by_market = {
+            str(m.get("marketplace") or ""): m
+            for m in market_data.get("markets", [])
+            if isinstance(m, dict)
+        }
     except Exception as exc:
         logger.warning("마켓 현황 데이터 로드 실패: %s", exc)
         from .data_aggregator import get_market_product_status
@@ -1967,6 +1972,39 @@ def markets_overview():
         items = []
         marketplace_filters = []
         country_filters = []
+        summary_by_market = {}
+
+    market_hub_cards = []
+    for market_code in ["shopify", "coupang", "smartstore", "11st", "amazon", "ebay", "shopee", "woocommerce"]:
+        meta = _marketplace_meta(market_code)
+        summary = summary_by_market.get(market_code, {})
+        configured = _market_is_configured(market_code)
+        status_label = "연결됨" if configured else "미연동"
+        status_style = "success" if configured else "secondary"
+        note = ""
+        if market_code == "woocommerce":
+            note = "kohganemultishop.org (WordPress/WooCommerce) — 별도 트랙, 연동 예정/별도 설정"
+            status_style = "warning"
+            status_label = "별도 트랙"
+        elif market_code in {"amazon", "ebay", "shopee"}:
+            note = "글로벌 확장 스텁 — 연동 예정"
+        elif not configured:
+            note = _market_required_env_hint(market_code)
+
+        market_hub_cards.append(
+            {
+                "marketplace": market_code,
+                "label": meta.get("label"),
+                "currency": meta.get("currency"),
+                "country": meta.get("country"),
+                "status_label": status_label,
+                "status_style": status_style,
+                "total": int(summary.get("total") or 0),
+                "active": int(summary.get("active") or 0),
+                "last_synced_at": market_data.get("fetched_at") or "",
+                "note": note,
+            }
+        )
 
     return render_template(
         "markets.html",
@@ -1974,6 +2012,7 @@ def markets_overview():
         items=items,
         marketplace_filters=marketplace_filters,
         country_filters=country_filters,
+        market_hub_cards=market_hub_cards,
         page="market_status",
     )
 
@@ -2016,6 +2055,28 @@ def markets_sync():
     except Exception as exc:
         logger.warning("markets_sync API 오류: %s", exc)
         return jsonify({"error": "동기화 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/markets/shopify/check-connection")
+def markets_shopify_check_connection():
+    """JSON: Shopify 연결 자가진단."""
+    if not _check_auth():
+        return jsonify({"ok": False, "status": "unauthorized", "message": "로그인이 필요합니다."}), 401
+
+    try:
+        from src.markets.adapters.shopify import ShopifyAdapter
+
+        result = ShopifyAdapter().check_connection()
+        return jsonify(result), 200
+    except Exception as exc:
+        logger.warning("markets_shopify_check_connection API 오류: %s", exc)
+        return jsonify(
+            {
+                "ok": False,
+                "status": "internal_error",
+                "message": "Shopify 연결 확인 중 오류가 발생했습니다.",
+            }
+        ), 500
 
 
 # ---------------------------------------------------------------------------
@@ -2573,6 +2634,41 @@ def _marketplace_meta(marketplace: str) -> dict:
             "region": "동아시아",
             "is_ready": True,
         }
+
+
+def _market_is_configured(marketplace: str) -> bool:
+    market = (marketplace or "").strip().lower()
+    if market == "shopify":
+        return bool((os.getenv("SHOPIFY_SHOP") or "").strip()) and bool(
+            (os.getenv("SHOPIFY_AUTO_TOKEN") or os.getenv("SHOPIFY_ACCESS_TOKEN") or os.getenv("SHOPIFY_ADMIN_TOKEN") or "").strip()
+        )
+    if market == "coupang":
+        return all(
+            bool((os.getenv(k) or "").strip())
+            for k in ["COUPANG_VENDOR_ID", "COUPANG_ACCESS_KEY", "COUPANG_SECRET_KEY"]
+        )
+    if market == "smartstore":
+        return all(
+            bool((os.getenv(k) or "").strip())
+            for k in ["NAVER_COMMERCE_CLIENT_ID", "NAVER_COMMERCE_CLIENT_SECRET"]
+        )
+    if market == "11st":
+        return bool((os.getenv("ELEVENST_API_KEY") or "").strip())
+    return False
+
+
+def _market_required_env_hint(marketplace: str) -> str:
+    market = (marketplace or "").strip().lower()
+    hints = {
+        "shopify": "필요 env: SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET, SHOPIFY_AUTO_TOKEN(atk_), SHOPIFY_API_VERSION, SHOPIFY_SHOP",
+        "coupang": "필요 env: COUPANG_VENDOR_ID, COUPANG_ACCESS_KEY, COUPANG_SECRET_KEY",
+        "smartstore": "필요 env: NAVER_COMMERCE_CLIENT_ID, NAVER_COMMERCE_CLIENT_SECRET",
+        "11st": "필요 env: ELEVENST_API_KEY",
+        "amazon": "필요 env: AMAZON_SP_CLIENT_ID, AMAZON_SP_CLIENT_SECRET, AMAZON_SP_REFRESH_TOKEN, AMAZON_SP_SELLER_ID",
+        "ebay": "필요 env: EBAY_CLIENT_ID, EBAY_CLIENT_SECRET, EBAY_REFRESH_TOKEN",
+        "shopee": "필요 env: SHOPEE_PARTNER_ID, SHOPEE_PARTNER_KEY, SHOPEE_SHOP_ID",
+    }
+    return hints.get(market, "")
 
 
 def _market_price_display(item, target_currency: str) -> tuple[str, str]:

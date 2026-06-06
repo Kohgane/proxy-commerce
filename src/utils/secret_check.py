@@ -15,7 +15,7 @@ REQUIRED_SECRETS = {
     ],
     'shopify': [
         'SHOPIFY_SHOP',
-        'SHOPIFY_ACCESS_TOKEN',
+        'SHOPIFY_AUTO_TOKEN',
         'SHOPIFY_CLIENT_SECRET',
     ],
     'woocommerce': [
@@ -51,6 +51,9 @@ def check_secrets(group: str = None) -> dict:
     for grp, keys in groups.items():
         set_keys = [k for k in keys if os.getenv(k)]
         missing_keys = [k for k in keys if not os.getenv(k)]
+        if grp == 'shopify' and 'SHOPIFY_AUTO_TOKEN' in missing_keys and os.getenv('SHOPIFY_ACCESS_TOKEN'):
+            missing_keys.remove('SHOPIFY_AUTO_TOKEN')
+            set_keys.append('SHOPIFY_ACCESS_TOKEN(legacy)')
         results[grp] = {'set': set_keys, 'missing': missing_keys}
 
         if missing_keys:

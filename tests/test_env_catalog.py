@@ -146,11 +146,14 @@ def test_shopify_marketplace_admin_version_key_registered(monkeypatch):
     from src.utils.env_catalog import get_api_key
 
     monkeypatch.setenv("SHOPIFY_SHOP", "phase183.myshopify.com")
-    monkeypatch.setenv("SHOPIFY_ACCESS_TOKEN", "shpat_test_token")
+    monkeypatch.setenv("SHOPIFY_CLIENT_ID", "client_id_value")
+    monkeypatch.setenv("SHOPIFY_CLIENT_SECRET", "shpss_test_secret")
+    monkeypatch.setenv("SHOPIFY_AUTO_TOKEN", "atk_test_token")
+    monkeypatch.setenv("SHOPIFY_API_VERSION", "2026-04")
     key = get_api_key("shopify_marketplace")
     assert key is not None
     assert key.status == "active"
 
     version_key = get_api_key("shopify_marketplace_api_version")
     assert version_key is not None
-    assert "SHOPIFY_ADMIN_API_VERSION" in version_key.env_vars
+    assert "SHOPIFY_API_VERSION" in version_key.env_vars
