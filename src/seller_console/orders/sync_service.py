@@ -94,6 +94,51 @@ class OrderSyncService:
             logger.warning("운송장 갱신 모두 실패: %s/%s", marketplace, order_id)
         return sheets_ok or api_ok
 
+    def update_status(
+        self,
+        order_id: str,
+        marketplace: str,
+        next_status: str,
+        *,
+        reason: str = "",
+    ) -> dict:
+        """주문 상태 변경 (외부 연동 실패 시 로컬 상태 우선 반영 + 정직 표기)."""
+        next_status = str(next_status or "").strip().lower()
+        if not next_status:
+            return {"ok": False, "error": "next_status가 필요합니다."}
+
+        adapter = self.adapters.get(marketplace)
+        adapter_result = {"applied": False, "simulated": True}
+
+        if adapter and hasattr(adapter, "update_status"):
+            try:
+                result = adapter.update_status(order_id, next_status, reason=reason)  # type: ignore[attr-defined]
+                if isinstance(result, dict):
+                    adapter_result["applied"] = bool(result.get("ok") or result.get("applied"))
+                    adapter_result["simulated"] = bool(result.get("simulated", not adapter_result["applied"]))
+                else:
+                    adapter_result["applied"] = bool(result)
+                    adapter_result["simulated"] = not bool(result)
+            except Exception as exc:
+                logger.warning("마켓 API 상태 변경 실패 [%s/%s]: %s", marketplace, order_id, exc)
+
+        note = f"status:{next_status}"
+        if reason:
+            note = f"{note} ({reason})"
+        if adapter_result["simulated"]:
+            note = f"{note} [simulation]"
+
+        sheets_ok = self.sheets.update_status(order_id, marketplace, next_status, note=note)
+        if not sheets_ok:
+            return {"ok": False, "error": "주문 상태 저장에 실패했습니다."}
+
+        return {
+            "ok": True,
+            "status": next_status,
+            "adapter": adapter_result,
+            "note": note,
+        }
+
     def list_orders(self, filters: dict = None, limit: int = 50, offset: int = 0):
         """Sheets에서 통합 주문 조회."""
         try:
