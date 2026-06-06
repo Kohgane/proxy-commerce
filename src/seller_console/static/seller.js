@@ -40,6 +40,44 @@ function showToast(message, type = 'info') {
   toast.show();
 }
 
+function showGlobalToast(message, type = 'info', options = {}) {
+  const toastEl = options.toastId
+    ? document.getElementById(options.toastId)
+    : (document.getElementById('catalogToast') || document.getElementById('toast') || document.getElementById('uploadToast'));
+  if (!toastEl) {
+    return;
+  }
+  const body = options.bodyId
+    ? document.getElementById(options.bodyId)
+    : (
+      document.getElementById('catalogToastBody')
+      || document.getElementById('toast-msg')
+      || document.getElementById('toastBody')
+    );
+  if (body) body.textContent = message;
+  const map = {success: 'success', danger: 'danger', warning: 'warning', error: 'danger', info: 'info'};
+  const tone = map[type] || 'info';
+  toastEl.className = `toast text-bg-${tone} border-0`;
+  new bootstrap.Toast(toastEl, {delay: 3000}).show();
+}
+
+function setButtonLoading(button, isLoading, loadingText = '처리 중…') {
+  if (!button) return;
+  if (isLoading) {
+    button.dataset.originalText = button.innerHTML;
+    button.classList.add('pc-btn-loading');
+    button.disabled = true;
+    button.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>${loadingText}`;
+    return;
+  }
+  if (button.dataset.originalText) {
+    button.innerHTML = button.dataset.originalText;
+    delete button.dataset.originalText;
+  }
+  button.classList.remove('pc-btn-loading');
+  button.disabled = false;
+}
+
 /**
  * API 호출 래퍼 (fetch + JSON 파싱 + 오류 처리)
  */

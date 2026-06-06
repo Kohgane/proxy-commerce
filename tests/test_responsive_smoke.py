@@ -1,5 +1,4 @@
 """tests/test_responsive_smoke.py — 모바일 반응형 점검 (Phase 147)."""
-import pytest
 
 
 def test_base_html_has_viewport_meta():
@@ -15,6 +14,12 @@ def test_base_html_has_manifest_link():
     with open("src/seller_console/templates/_base.html", encoding="utf-8") as f:
         content = f.read()
     assert 'rel="manifest"' in content
+
+
+def test_base_html_loads_shared_app_css():
+    with open("src/seller_console/templates/_base.html", encoding="utf-8") as f:
+        content = f.read()
+    assert "static', filename='app.css'" in content
 
 
 def test_base_html_has_hamburger_toggle():

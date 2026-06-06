@@ -20,9 +20,13 @@ function refreshOrders() {
 
 /** 동기화 버튼 핸들러 */
 async function syncNow() {
-  const btn = document.querySelector("button[onclick='syncNow()']");
+  const btn = document.getElementById("ordersSyncButton");
   const spinner = document.getElementById("sync-spinner");
-  if (btn) btn.disabled = true;
+  if (window.setButtonLoading) {
+    window.setButtonLoading(btn, true, "동기화 중…");
+  } else if (btn) {
+    btn.disabled = true;
+  }
   if (spinner) spinner.classList.remove("d-none");
 
   try {
@@ -43,7 +47,11 @@ async function syncNow() {
   } catch (e) {
     showToast("동기화 요청 실패: " + e.message, "danger");
   } finally {
-    if (btn) btn.disabled = false;
+    if (window.setButtonLoading) {
+      window.setButtonLoading(btn, false);
+    } else if (btn) {
+      btn.disabled = false;
+    }
     if (spinner) spinner.classList.add("d-none");
   }
 }
@@ -91,6 +99,10 @@ async function saveTracking() {
 
 /** 토스트 알림 헬퍼 */
 function showToast(message, type = "success") {
+  if (window.showGlobalToast) {
+    window.showGlobalToast(message, type, { toastId: "toast", bodyId: "toast-msg" });
+    return;
+  }
   const toastEl = document.getElementById("toast");
   const msgEl = document.getElementById("toast-msg");
   if (!toastEl || !msgEl) return;

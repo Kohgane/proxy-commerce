@@ -4,13 +4,13 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h4 class="mb-0 fw-bold">🛍 주문 관리</h4>
-  <button class="btn btn-primary btn-sm" onclick="syncNow()">
+  <button id="ordersSyncButton" class="btn btn-primary btn-sm" onclick="syncNow()" aria-label="주문 즉시 동기화">
     <span id="sync-spinner" class="spinner-border spinner-border-sm d-none" role="status"></span>
     ⟳ 지금 동기화
   </button>
 </div>
 
-<div class="alert alert-info py-2 small">
+<div class="pc-status pc-status-info small mb-3">
   Phase 129 주문 통합 화면입니다. 일부 마켓 기능은 준비 중일 수 있습니다.
 </div>
 
@@ -95,7 +95,7 @@
 </form>
 
 <!-- 주문 테이블 -->
-<div class="card border-0 shadow-sm">
+<div class="card border-0 shadow-sm pc-action-table">
   <div class="card-header bg-white d-flex justify-content-between align-items-center">
     <span class="fw-semibold">주문 목록</span>
     <a href="/seller/orders/export.csv" class="btn btn-outline-secondary btn-sm">CSV 내보내기</a>
@@ -202,7 +202,7 @@
 </div>
 
 <!-- 토스트 -->
-<div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999">
+<div class="position-fixed bottom-0 end-0 p-3 pc-toast-stack">
   <div id="toast" class="toast" role="alert">
     <div class="toast-header">
       <strong class="me-auto">알림</strong>

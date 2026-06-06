@@ -208,6 +208,31 @@ class TestSellerConsoleViews:
         data = resp.get_json()
         assert data["ok"] is True
 
+    def test_catalog_unready_market_shows_honest_disabled_action(self, client):
+        from src.seller_console.market_status import MarketStatusItem
+
+        class _Result:
+            source = "sheets"
+            items = [
+                MarketStatusItem(
+                    marketplace="shopify",
+                    product_id="S001",
+                    state="active",
+                    title="글로벌 상품",
+                    sku="SKU-S1",
+                )
+            ]
+
+        with patch(
+            "src.seller_console.market_status_sheets.MarketStatusSheetsAdapter.fetch_all",
+            return_value=_Result(),
+        ):
+            resp = client.get("/seller/catalog")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "연동 필요" in html
+        assert "aria-disabled=\"true\"" in html
+
     def test_pricing_returns_200(self, client):
         """GET /seller/pricing → 200."""
         resp = client.get("/seller/pricing")

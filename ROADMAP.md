@@ -4,6 +4,7 @@
 
 | Phase | 내용 | PR | 완료일 |
 |---|---|---|---|
+| Phase 182 | UX/UI 정비 + 실동작 보강 — 공통 디자인 토큰(`app.css`)과 상태/컴포넌트 스타일을 기준으로 seller/admin/login 화면 톤을 통일, 핵심 4화면(로그인/대시보드/카탈로그/주문)에서 버튼 로딩·토스트 피드백을 공통화하고 카탈로그 미연동 마켓 액션은 `연동 필요` 비활성으로 정직 표기, 기존 주문/카탈로그 엔드포인트 동작 회귀 없이 접근성(라벨/aria)·반응형 기초 유지 | #PR | 2026-06-06 |
 | Phase 181 | 현지화(Localization) 파이프라인 — `LocalizationService` 도입(기존 DeepL/OpenAI 호출 재사용, 캐시, API 미설정 시 정직 미번역), 상품 `localized`/`localization_status` 저장 확장, 마켓 locale 번역본 우선 사용·원문 폴백 표기, 셀러 수집 화면 현지화 버튼/locale 선택/번역본 미리보기·수정 추가, 관련 단위·통합 테스트 보강 | #PR | 2026-06-06 |
 | Phase 180 | 글로벌 멀티마켓 토대 — 마켓 country/currency/locale/region 메타 도입, `price+currency` 다통화 모델과 `price_krw` 하위호환, 어댑터 인터페이스 확장(`is_configured`/`validate_listing`/`upload_product`/`marketplace_meta`), Amazon/eBay/Shopify/Shopee 판매처 스텁 추가, env_catalog 글로벌 마켓 키 등록, 셀러 화면 국가/통화/준비중 배지 노출, `GLOBAL_ROADMAP.md` 문서화 | #PR | 2026-06-06 |
 | Phase 179 | 버튼 실기능 1차(P0) — 가격 계산 화면의 `이 가격으로 적용` 버튼을 실제 `/seller/pricing/apply` 저장 로직으로 연결(카탈로그 가격 반영 + 가격 이력 기록 + 외부 마켓 미연동 시 시뮬레이션 정직 표기), 주문 목록에 상태 전이 액션을 추가해 `/seller/orders/<market>/<order>/status`로 실제 상태 변경/검증을 수행하도록 구현 | #PR | 2026-06-06 |
