@@ -145,6 +145,8 @@
             <td>
               <button class="btn btn-outline-primary btn-sm py-0"
                 onclick="openTrackingModal('{{ o.marketplace }}', '{{ o.order_id }}')">운송장</button>
+              <button class="btn btn-outline-secondary btn-sm py-0"
+                onclick="openStatusPrompt('{{ o.marketplace }}', '{{ o.order_id }}', '{{ o.status }}')">상태</button>
             </td>
           </tr>
           {% endfor %}

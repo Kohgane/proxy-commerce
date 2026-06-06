@@ -1131,6 +1131,19 @@ def _get_order_sync_service():
         return None
 
 
+_ORDER_STATUS_TRANSITIONS: dict[str, set[str]] = {
+    "new": {"paid", "canceled"},
+    "paid": {"preparing", "canceled", "refund_requested"},
+    "preparing": {"shipped", "canceled"},
+    "shipped": {"delivered", "returned", "exchanged"},
+    "delivered": {"returned", "exchanged"},
+    "refund_requested": {"returned", "canceled"},
+    "returned": set(),
+    "exchanged": set(),
+    "canceled": set(),
+}
+
+
 @bp.get("/orders")
 def orders():
     """주문 관리 페이지 (Phase 129 — 실연동)."""
@@ -1187,6 +1200,43 @@ def orders_sync():
     except Exception as exc:
         logger.warning("orders_sync 오류: %s", exc)
         return jsonify({"ok": False, "error": "동기화 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/orders/<marketplace>/<order_id>/status")
+def order_update_status(marketplace: str, order_id: str):
+    """주문 상태 전이 처리."""
+    svc = _get_order_sync_service()
+    if svc is None:
+        return jsonify({"ok": False, "error": "서비스 준비 중입니다."}), 503
+
+    data = request.get_json(force=True, silent=True) or {}
+    next_status = str(data.get("next_status") or "").strip().lower()
+    reason = str(data.get("reason") or "").strip()
+    if not next_status:
+        return jsonify({"ok": False, "error": "변경할 상태를 선택하세요."}), 400
+
+    order_list = svc.list_orders(filters={"marketplace": marketplace, "search": order_id}, limit=10, offset=0)
+    order = next((o for o in order_list if str(o.order_id) == str(order_id)), None)
+    if order is None:
+        return jsonify({"ok": False, "error": "주문을 찾을 수 없습니다."}), 404
+
+    current_status = order.status.value if hasattr(order.status, "value") else str(order.status)
+    allowed_next = _ORDER_STATUS_TRANSITIONS.get(current_status, set())
+    if next_status == current_status:
+        return jsonify({"ok": True, "status": current_status, "unchanged": True})
+    if next_status not in allowed_next:
+        return jsonify(
+            {
+                "ok": False,
+                "error": f"허용되지 않은 상태 전이입니다: {current_status} → {next_status}",
+                "allowed": sorted(allowed_next),
+            }
+        ), 400
+
+    result = svc.update_status(order_id, marketplace, next_status, reason=reason)
+    if not result.get("ok"):
+        return jsonify(result), 500
+    return jsonify(result)
 
 
 @bp.get("/orders/<marketplace>/<order_id>")
@@ -1591,6 +1641,108 @@ def pricing_compare():
     except Exception as exc:
         logger.warning("마진 비교 계산 오류: %s", exc)
         return jsonify({"ok": False, "error": "계산 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/pricing/apply")
+def pricing_apply():
+    """계산된 판매가를 상품에 실제 반영(로컬 저장 + 가능 시 마켓 어댑터 적용)."""
+    data = request.get_json(force=True, silent=True) or {}
+    marketplace = str(data.get("marketplace") or "").strip()
+    product_id = str(data.get("product_id") or "").strip()
+    sku = str(data.get("sku") or "").strip()
+    note = str(data.get("note") or "").strip()
+    try:
+        new_price = int(Decimal(str(data.get("price"))))
+    except (InvalidOperation, TypeError, ValueError):
+        return jsonify({"ok": False, "error": "유효한 판매가를 입력하세요."}), 400
+    if new_price <= 0:
+        return jsonify({"ok": False, "error": "판매가는 1원 이상이어야 합니다."}), 400
+    if not marketplace:
+        return jsonify({"ok": False, "error": "marketplace가 필요합니다."}), 400
+
+    try:
+        from .market_status_sheets import MarketStatusSheetsAdapter
+        from .market_adapters.coupang_adapter import CoupangAdapter
+        from .market_adapters.smartstore_adapter import SmartStoreAdapter
+        from .market_adapters.eleven_adapter import ElevenAdapter
+        from .market_adapters.woocommerce_adapter import WooCommerceAdapter
+        from src.pricing.history_store import PriceHistoryStore
+    except Exception as exc:
+        logger.warning("pricing_apply 모듈 로드 실패: %s", exc)
+        return jsonify({"ok": False, "error": "가격 반영 모듈 준비 중입니다."}), 503
+
+    adapter = MarketStatusSheetsAdapter()
+    fetched = adapter.fetch_all()
+    target = None
+    for item in fetched.items:
+        if product_id and str(item.product_id) != product_id:
+            continue
+        if str(item.marketplace or "") != marketplace:
+            continue
+        if sku and str(item.sku or "") != sku:
+            continue
+        target = item
+        break
+    if target is None:
+        return jsonify({"ok": False, "error": "가격을 반영할 상품을 찾을 수 없습니다."}), 404
+
+    old_price = int(target.price_krw or 0)
+    target.price_krw = new_price
+    target.last_synced_at = datetime.now()
+    applied_local = adapter.upsert_item(target)
+    if not applied_local:
+        return jsonify({"ok": False, "error": "카탈로그 가격 저장에 실패했습니다."}), 500
+
+    adapter_map = {
+        "coupang": CoupangAdapter(),
+        "smartstore": SmartStoreAdapter(),
+        "11st": ElevenAdapter(),
+        "kohganemultishop": WooCommerceAdapter(),
+        "woocommerce": WooCommerceAdapter(),
+    }
+    market_adapter = adapter_map.get(marketplace)
+    market_result = {"applied": False, "simulated": True}
+    if market_adapter and hasattr(market_adapter, "update_price") and target.sku:
+        try:
+            result = market_adapter.update_price(target.sku, new_price)
+            market_result["applied"] = bool(result.get("updated") or result.get("ok"))
+            market_result["simulated"] = bool(result.get("_dry_run") or result.get("reason") == "missing_credentials")
+            market_result["detail"] = result
+        except Exception as exc:
+            logger.warning("마켓 가격 반영 실패 (%s/%s): %s", marketplace, target.sku, exc)
+            market_result["detail"] = {"error": str(exc)}
+    else:
+        market_result["detail"] = {"reason": "adapter_unavailable_or_sku_missing"}
+
+    try:
+        PriceHistoryStore().append(
+            sku=target.sku or target.product_id,
+            old_price_krw=old_price,
+            new_price_krw=new_price,
+            rules_applied=["manual_apply"],
+            applied_by="seller_console",
+        )
+    except Exception as exc:
+        logger.warning("가격 이력 저장 실패: %s", exc)
+
+    message = "가격이 저장되었습니다."
+    if market_result.get("simulated") and not market_result.get("applied"):
+        message = "가격이 로컬에 저장되었습니다. 외부 마켓은 미연동/시뮬레이션 상태입니다."
+    if note:
+        message = f"{message} ({note})"
+
+    return jsonify(
+        {
+            "ok": True,
+            "marketplace": marketplace,
+            "product_id": target.product_id,
+            "sku": target.sku,
+            "old_price": old_price,
+            "new_price": new_price,
+            "market_result": market_result,
+            "message": message,
+        }
+    )
 
 
 @bp.get("/market-status")

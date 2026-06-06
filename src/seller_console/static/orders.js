@@ -120,3 +120,56 @@ function setFilterState(state) {
   if (state.date_to) params.set("date_to", state.date_to);
   window.location.search = params.toString();
 }
+
+const STATUS_TRANSITIONS = {
+  new: ["paid", "canceled"],
+  paid: ["preparing", "canceled", "refund_requested"],
+  preparing: ["shipped", "canceled"],
+  shipped: ["delivered", "returned", "exchanged"],
+  delivered: ["returned", "exchanged"],
+  refund_requested: ["returned", "canceled"],
+};
+
+function openStatusPrompt(marketplace, orderId, currentStatus) {
+  const options = STATUS_TRANSITIONS[currentStatus] || [];
+  if (!options.length) {
+    showToast(`현재 상태(${currentStatus})에서는 변경 가능한 다음 상태가 없습니다.`, "warning");
+    return;
+  }
+  const answer = window.prompt(
+    `다음 상태를 입력하세요.\n가능 값: ${options.join(", ")}`,
+    options[0],
+  );
+  if (!answer) return;
+  const nextStatus = answer.trim().toLowerCase();
+  if (!options.includes(nextStatus)) {
+    showToast(`허용되지 않은 상태입니다: ${nextStatus}`, "warning");
+    return;
+  }
+  updateOrderStatus(marketplace, orderId, nextStatus);
+}
+
+async function updateOrderStatus(marketplace, orderId, nextStatus) {
+  try {
+    const resp = await fetch(`/seller/orders/${encodeURIComponent(marketplace)}/${encodeURIComponent(orderId)}/status`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ next_status: nextStatus }),
+    });
+    const data = await resp.json();
+    if (!data.ok) {
+      showToast(data.error || "상태 변경 실패", "danger");
+      return;
+    }
+    const simulated = !!(data.adapter && data.adapter.simulated && !data.adapter.applied);
+    showToast(
+      simulated
+        ? `상태 저장 완료(${nextStatus}) · 외부 연동 미설정으로 로컬 반영`
+        : `상태가 ${nextStatus}(으)로 변경되었습니다.`,
+      simulated ? "warning" : "success",
+    );
+    setTimeout(refreshOrders, 900);
+  } catch (e) {
+    showToast("상태 변경 요청 실패: " + e.message, "danger");
+  }
+}

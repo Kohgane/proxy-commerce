@@ -30,6 +30,19 @@
           <input type="number" id="qty" class="form-control" value="1" min="1" step="1">
         </div>
 
+        <div class="mb-3">
+          <label class="form-label">적용 대상 상품</label>
+          <div class="row g-2">
+            <div class="col-6">
+              <input type="text" id="productId" class="form-control" placeholder="상품 ID">
+            </div>
+            <div class="col-6">
+              <input type="text" id="sku" class="form-control" placeholder="SKU">
+            </div>
+          </div>
+          <div class="form-text">권장가 저장 시 상품 ID(또는 SKU)와 마켓이 일치해야 반영됩니다.</div>
+        </div>
+
         <!-- 배대지 수수료 -->
         <div class="mb-3">
           <label class="form-label">배대지 수수료 (KRW)</label>
@@ -338,11 +351,36 @@ function renderChart(results) {
 }
 
 // ─────────────────────────────────────────
-// "이 가격으로 적용" — 토스트 (다음 PR D에서 마켓 동기화 연결 예정)
+// "이 가격으로 적용" — 실제 저장 + 정직한 연동 표기
 // ─────────────────────────────────────────
-function applyPrice(marketplace, price) {
+async function applyPrice(marketplace, price) {
   const label = MARKETPLACE_LABELS[marketplace] || marketplace;
-  showToast(`${label} 권장 판매가 ₩${price.toLocaleString()} — 마켓 동기화는 Phase 126에서 연결 예정입니다.`);
+  const productId = (document.getElementById('productId')?.value || '').trim();
+  const sku = (document.getElementById('sku')?.value || '').trim();
+  if (!productId && !sku) {
+    showToast('저장할 상품 ID 또는 SKU를 입력하세요.');
+    return;
+  }
+  try {
+    const res = await fetch('/seller/pricing/apply', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        marketplace,
+        product_id: productId,
+        sku,
+        price,
+      }),
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      showToast(data.error || '가격 반영 실패');
+      return;
+    }
+    showToast(`${label} 권장 판매가 ₩${price.toLocaleString()} 저장 완료 · ${data.message || ''}`);
+  } catch (err) {
+    showToast(`가격 반영 요청 실패: ${err.message}`);
+  }
 }
 
 function showToast(msg) {
