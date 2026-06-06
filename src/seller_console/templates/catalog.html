@@ -111,7 +111,12 @@
               {% endif %}
               <div class="small text-muted">{{ item.country }}/{{ item.currency }}</div>
             </td>
-            <td class="fw-semibold">{{ item.title or '(제목 없음)' }}</td>
+            <td class="fw-semibold">
+              {{ item.title or '(제목 없음)' }}
+              {% if item.is_localization_fallback %}
+              <div class="small text-muted">미현지화(원문 표시)</div>
+              {% endif %}
+            </td>
             <td><code style="font-size:0.75rem;">{{ item.sku or '-' }}</code></td>
             <td>
               {{ item.price_display }}

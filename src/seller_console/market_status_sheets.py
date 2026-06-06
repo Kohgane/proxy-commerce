@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import json
 from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -23,6 +24,11 @@ CATALOG_HEADERS = [
     "product_id",
     "sku",
     "title",
+    "description",
+    "keywords",
+    "options",
+    "localized",
+    "localization_status",
     "marketplace",
     "state",
     "price",
@@ -176,12 +182,30 @@ class MarketStatusSheetsAdapter:
             except (ValueError, TypeError):
                 pass
 
+        def _json_load(value, default):
+            if value in (None, "", "None"):
+                return default
+            try:
+                loaded = json.loads(str(value))
+                return loaded if loaded is not None else default
+            except Exception:
+                return default
+
         return MarketStatusItem(
             marketplace=str(row.get("marketplace", "")).strip(),
             product_id=str(row.get("product_id", "")).strip(),
             state=state,
             sku=str(row.get("sku", "")).strip() or None,
             title=str(row.get("title", "")).strip() or None,
+            description=str(row.get("description", "")).strip() or None,
+            keywords=[str(x) for x in _json_load(row.get("keywords"), []) if str(x).strip()],
+            options=[x for x in _json_load(row.get("options"), []) if isinstance(x, dict)],
+            localized={
+                str(k): v
+                for k, v in _json_load(row.get("localized"), {}).items()
+                if isinstance(k, str) and isinstance(v, dict)
+            },
+            localization_status=str(row.get("localization_status", "not_localized")).strip() or "not_localized",
             price=price,
             currency=currency,
             price_krw=price_krw,
@@ -195,6 +219,11 @@ class MarketStatusSheetsAdapter:
             item.product_id,
             item.sku or "",
             item.title or "",
+            item.description or "",
+            json.dumps(item.keywords or [], ensure_ascii=False),
+            json.dumps(item.options or [], ensure_ascii=False),
+            json.dumps(item.localized or {}, ensure_ascii=False),
+            item.localization_status or "not_localized",
             item.marketplace,
             item.state,
             item.price if item.price is not None else "",

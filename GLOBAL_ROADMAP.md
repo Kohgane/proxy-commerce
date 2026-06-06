@@ -3,7 +3,7 @@
 ## 글로벌 확장 단계 (Phase 180~187)
 
 - **Phase 180 (이번 PR)**: 글로벌 기반 — 다통화 모델(price+currency + price_krw 하위호환), country/currency/locale/region 메타, 어댑터 인터페이스 확장, 글로벌 판매처 스텁(Amazon/eBay/Shopify/Shopee), 국가/통화 UI, 로드맵 문서화
-- **Phase 181**: 현지화 파이프라인 — 상품 제목/설명/키워드 번역·현지화(기존 번역 인프라 재사용)
+- **Phase 181 (진행중)**: 현지화 파이프라인 — LocalizationService(DeepL/OpenAI 재사용, 캐시, 미설정 시 정직 미번역), 상품 `localized` 저장/폴백, 셀러 콘솔 현지화 액션·locale 선택·번역본 미리보기/수정
 - **Phase 182**: Shopify 실연동 파일럿(end-to-end 등록)
 - **Phase 183**: eBay 어댑터 실연동
 - **Phase 184**: Amazon SP-API 실연동(US/EU/JP)

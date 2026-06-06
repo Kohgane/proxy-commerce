@@ -87,6 +87,35 @@
         {% endfor %}
       </div>
 
+      <div class="row g-2 mb-3 align-items-end">
+        <div class="col-md-8">
+          <label class="form-label">현지화 타깃 언어(locale)</label>
+          <select class="form-select form-select-sm" id="targetLocales" multiple size="4">
+            {% for locale in locale_options %}
+            <option value="{{ locale }}">{{ locale }}</option>
+            {% endfor %}
+          </select>
+          <div class="form-text">Ctrl/Cmd + 클릭으로 여러 locale 선택</div>
+        </div>
+        <div class="col-md-4">
+          <button
+            class="btn btn-outline-primary w-100"
+            id="localizeBtn"
+            onclick="localizeProduct()"
+            {% if not localization_configured %}disabled{% endif %}
+          >
+            🌐 현지화 실행
+          </button>
+          {% if not localization_configured %}
+          <div class="small text-muted mt-2">번역 API 미설정: /admin/diagnostics에서 설정하세요.</div>
+          {% else %}
+          <div class="small text-muted mt-2">기계번역 결과는 사람 검수 후 저장하세요.</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div id="localizedPreview" class="border rounded p-2 d-none"></div>
+
       <div class="d-flex flex-wrap gap-2">
         <button class="btn btn-outline-secondary" id="saveBtn" onclick="saveToSheets()">카탈로그 저장</button>
         <button class="btn btn-primary" id="uploadBtn" onclick="uploadProduct()">선택 마켓 업로드</button>
@@ -109,6 +138,7 @@
 {% block extra_js %}
 <script>
 let currentDraft = null;
+let localizedDrafts = {};
 
 function setStep(step) {
   [1,2,3,4].forEach((n) => {
@@ -180,6 +210,8 @@ function extractProduct() {
 }
 
 function renderPreview(draft, source) {
+  localizedDrafts = {};
+  renderLocalizedPreview();
   document.getElementById('sourceBadge').textContent = `소스: ${source}`;
   document.getElementById('titleKo').value = draft.title_ko || draft.title || '';
   document.getElementById('priceOriginal').value = draft.price_original || draft.price || '';
@@ -245,11 +277,99 @@ function selectedMarkets() {
 }
 
 function collectPayload() {
+  syncLocalizedEdits();
   const payload = JSON.parse(JSON.stringify(currentDraft || {}));
   payload.title_ko = document.getElementById('titleKo').value || payload.title_ko || payload.title || '';
   payload.title = payload.title || payload.title_ko;
   payload.price_original = document.getElementById('priceOriginal').value || payload.price_original || payload.price || '';
+   const hasLocalDrafts = localizedDrafts && Object.keys(localizedDrafts).length > 0;
+   payload.localized = hasLocalDrafts
+     ? { ...(payload.localized || {}), ...localizedDrafts }
+     : (payload.localized || {});
+   payload.localization_status = Object.keys(payload.localized || {}).length ? 'localized' : 'not_localized';
   return payload;
+}
+
+function selectedTargetLocales() {
+  const sel = document.getElementById('targetLocales');
+  if (!sel) return [];
+  return Array.from(sel.selectedOptions || []).map((x) => x.value).filter(Boolean);
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function renderLocalizedPreview() {
+  const box = document.getElementById('localizedPreview');
+  if (!box) return;
+  const entries = Object.entries(localizedDrafts || {});
+  if (!entries.length) {
+    box.classList.add('d-none');
+    box.innerHTML = '';
+    return;
+  }
+  box.classList.remove('d-none');
+  box.innerHTML = entries.map(([locale, row]) => `
+    <div class="mb-2 pb-2 border-bottom">
+      <div class="fw-semibold">${escapeHtml(locale)} <span class="badge bg-secondary">${escapeHtml(row.status || 'translated')}</span></div>
+      <input class="form-control form-control-sm mt-1 localized-title" data-locale="${escapeHtml(locale)}" value="${escapeHtml(row.title || '')}">
+      <textarea class="form-control form-control-sm mt-1 localized-description" data-locale="${escapeHtml(locale)}" rows="2">${escapeHtml(row.description || '')}</textarea>
+    </div>
+  `).join('');
+}
+
+function syncLocalizedEdits() {
+  document.querySelectorAll('.localized-title').forEach((el) => {
+    const locale = el.dataset.locale;
+    if (localizedDrafts[locale]) localizedDrafts[locale].title = el.value;
+  });
+  document.querySelectorAll('.localized-description').forEach((el) => {
+    const locale = el.dataset.locale;
+    if (localizedDrafts[locale]) localizedDrafts[locale].description = el.value;
+  });
+}
+
+function localizeProduct() {
+  if (!currentDraft) {
+    showToast('안내', '먼저 URL 미리보기를 진행하세요.', 'danger');
+    return;
+  }
+  const targetLocales = selectedTargetLocales();
+  if (!targetLocales.length) {
+    showToast('안내', '타깃 locale을 선택하세요.', 'danger');
+    return;
+  }
+  const btn = document.getElementById('localizeBtn');
+  btn.disabled = true;
+  btn.textContent = '현지화 중...';
+  fetch('/seller/collect/localize', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({product: collectPayload(), target_locales: targetLocales})
+  })
+    .then((r) => r.json())
+    .then((data) => {
+      if (!data.ok) throw new Error(data.error || '현지화 실패');
+      if (!data.configured) {
+        showToast('현지화 미설정', data.message || '번역 API 설정이 필요합니다.', 'danger');
+        return;
+      }
+      const item = (data.items || [])[0] || {};
+      localizedDrafts = item.localized || {};
+      renderLocalizedPreview();
+      showToast('현지화 완료', `성공 ${data.success || 0} · 캐시 ${data.cache_hits || 0} · 미번역 ${data.untranslated || 0}`, 'success');
+    })
+    .catch((err) => showToast('현지화 실패', err.message || '현지화 중 오류가 발생했습니다.', 'danger'))
+    .finally(() => {
+      btn.disabled = false;
+      btn.textContent = '🌐 현지화 실행';
+    });
 }
 
 function saveToSheets() {
@@ -262,6 +382,7 @@ function saveToSheets() {
   btn.textContent = '저장 중...';
 
   const payload = collectPayload();
+  syncLocalizedEdits();
   fetch('/seller/collect/save', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -273,6 +394,11 @@ function saveToSheets() {
       asin: payload.asin,
       brand: payload.brand,
       category: payload.category,
+      description: payload.description,
+      keywords: payload.keywords || [],
+      options: payload.options || [],
+      localized: payload.localized || {},
+      localization_status: payload.localization_status || 'not_localized',
       marketplace: 'collected',
     })
   })

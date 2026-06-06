@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import Decimal
 from datetime import datetime
-from typing import List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 # 지원 마켓
 Marketplace = Literal[
@@ -106,6 +106,11 @@ class MarketStatusItem:
     state: str
     sku: Optional[str] = None
     title: Optional[str] = None
+    description: Optional[str] = None
+    keywords: List[str] = field(default_factory=list)
+    options: List[Dict[str, Any]] = field(default_factory=list)
+    localized: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    localization_status: str = "not_localized"
     price: Optional[float] = None
     currency: str = "KRW"
     price_krw: Optional[int] = None
