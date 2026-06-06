@@ -1,7 +1,7 @@
 """src/seller_console/market_status_sheets.py — Google Sheets 기반 마켓 상태 어댑터 (Phase 127).
 
 시트 구조 (워크시트 `catalog`):
-| product_id | sku | title | marketplace | state | price_krw | last_synced_at | error_message |
+| product_id | sku | title | marketplace | state | price | currency | price_krw | last_synced_at | error_message |
 
 워크시트가 존재하지 않으면 AUTO_BOOTSTRAP_SHEETS=1 환경변수 설정 시 자동 생성 + 헤더 작성.
 시트를 열 수 없으면 mock 폴백으로 graceful 처리.
@@ -25,6 +25,8 @@ CATALOG_HEADERS = [
     "title",
     "marketplace",
     "state",
+    "price",
+    "currency",
     "price_krw",
     "last_synced_at",
     "error_message",
@@ -157,11 +159,20 @@ class MarketStatusSheetsAdapter:
                 except ValueError:
                     continue
 
-        price_raw = row.get("price_krw")
-        price_krw: Optional[int] = None
+        price_raw = row.get("price")
+        price: Optional[float] = None
         if price_raw not in (None, "", "None"):
             try:
-                price_krw = int(float(str(price_raw)))
+                price = float(str(price_raw))
+            except (ValueError, TypeError):
+                pass
+
+        currency = str(row.get("currency", "KRW")).strip().upper() or "KRW"
+        legacy_price_raw = row.get("price_krw")
+        price_krw: Optional[int] = None
+        if legacy_price_raw not in (None, "", "None"):
+            try:
+                price_krw = int(float(str(legacy_price_raw)))
             except (ValueError, TypeError):
                 pass
 
@@ -171,6 +182,8 @@ class MarketStatusSheetsAdapter:
             state=state,
             sku=str(row.get("sku", "")).strip() or None,
             title=str(row.get("title", "")).strip() or None,
+            price=price,
+            currency=currency,
             price_krw=price_krw,
             last_synced_at=last_synced,
             error_message=str(row.get("error_message", "")).strip() or None,
@@ -184,6 +197,8 @@ class MarketStatusSheetsAdapter:
             item.title or "",
             item.marketplace,
             item.state,
+            item.price if item.price is not None else "",
+            item.currency or "KRW",
             item.price_krw if item.price_krw is not None else "",
             item.last_synced_at.strftime("%Y-%m-%dT%H:%M:%S") if item.last_synced_at else "",
             item.error_message or "",

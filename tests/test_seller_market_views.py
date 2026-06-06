@@ -74,6 +74,13 @@ class TestMarketsOverview:
         data = resp.data.decode("utf-8")
         assert "마켓" in data or "상품" in data
 
+    def test_markets_contains_country_filter_and_honest_stub_badge(self, client):
+        resp = client.get("/seller/markets")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "전체 국가" in html
+        assert "준비 중" in html
+
 
 # ---------------------------------------------------------------------------
 # 테스트: GET /seller/market-status (리다이렉트)

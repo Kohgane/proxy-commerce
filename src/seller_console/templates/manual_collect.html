@@ -73,26 +73,18 @@
     <div class="card-body">
       <h2 class="h6 mb-3">등록할 마켓 선택</h2>
       <div class="row g-2 mb-3">
+        {% for market in marketplace_cards %}
         <div class="col-6 col-md-3">
-          <label class="form-check border rounded p-2 w-100" for="chk_coupang">
-            <input class="form-check-input me-1" type="checkbox" id="chk_coupang" value="coupang"> 쿠팡
+          <label class="form-check border rounded p-2 w-100" for="chk_{{ market.code }}">
+            <input class="form-check-input me-1 market-checkbox" type="checkbox" id="chk_{{ market.code }}" value="{{ market.code }}" {% if not market.is_ready %}disabled{% endif %}>
+            {{ market.label }}
+            <div class="small text-muted">{{ market.country }}/{{ market.currency }}</div>
+            {% if not market.is_ready %}
+            <div><span class="badge bg-dark">준비 중/미연동</span></div>
+            {% endif %}
           </label>
         </div>
-        <div class="col-6 col-md-3">
-          <label class="form-check border rounded p-2 w-100" for="chk_smartstore">
-            <input class="form-check-input me-1" type="checkbox" id="chk_smartstore" value="smartstore"> 스마트스토어
-          </label>
-        </div>
-        <div class="col-6 col-md-3">
-          <label class="form-check border rounded p-2 w-100" for="chk_elevenst">
-            <input class="form-check-input me-1" type="checkbox" id="chk_elevenst" value="elevenst"> 11번가
-          </label>
-        </div>
-        <div class="col-6 col-md-3">
-          <label class="form-check border rounded p-2 w-100" for="chk_woocommerce">
-            <input class="form-check-input me-1" type="checkbox" id="chk_woocommerce" value="woocommerce"> 코가네멀티샵
-          </label>
-        </div>
+        {% endfor %}
       </div>
 
       <div class="d-flex flex-wrap gap-2">
@@ -248,10 +240,8 @@ function renderPreview(draft, source) {
 }
 
 function selectedMarkets() {
-  return ['coupang', 'smartstore', 'elevenst', 'woocommerce'].filter((m) => {
-    const el = document.getElementById('chk_' + m);
-    return el && el.checked;
-  });
+  return Array.from(document.querySelectorAll('.market-checkbox:checked'))
+    .map((el) => el.value);
 }
 
 function collectPayload() {

@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, List, Literal, Optional
 
@@ -125,6 +125,39 @@ API_REGISTRY: list = [
         env_vars=["ELEVENST_API_KEY"],
         purpose="11번가 셀러 API",
         docs_url="https://soffice.11st.co.kr",
+        category=ApiCategory.MARKETPLACE,
+    ),
+    ApiKey(
+        name="amazon_sp_api",
+        env_vars=[
+            "AMAZON_SP_CLIENT_ID",
+            "AMAZON_SP_CLIENT_SECRET",
+            "AMAZON_SP_REFRESH_TOKEN",
+            "AMAZON_SP_SELLER_ID",
+        ],
+        purpose="Amazon Selling Partner API — 글로벌 판매 연동(US/EU/JP 예정)",
+        docs_url="https://developer-docs.amazon.com/sp-api",
+        category=ApiCategory.MARKETPLACE,
+    ),
+    ApiKey(
+        name="ebay_marketplace",
+        env_vars=["EBAY_CLIENT_ID", "EBAY_CLIENT_SECRET", "EBAY_REFRESH_TOKEN"],
+        purpose="eBay Sell API — 글로벌 판매 연동",
+        docs_url="https://developer.ebay.com/api-docs/sell/static/overview.html",
+        category=ApiCategory.MARKETPLACE,
+    ),
+    ApiKey(
+        name="shopify_marketplace",
+        env_vars=["SHOPIFY_SHOP", "SHOPIFY_ACCESS_TOKEN"],
+        purpose="Shopify Admin API — 글로벌 마켓 파일럿 판매 연동",
+        docs_url="https://shopify.dev/docs/api/admin",
+        category=ApiCategory.MARKETPLACE,
+    ),
+    ApiKey(
+        name="shopee_marketplace",
+        env_vars=["SHOPEE_PARTNER_ID", "SHOPEE_PARTNER_KEY", "SHOPEE_SHOP_ID"],
+        purpose="Shopee OpenAPI — 동남아 판매 연동",
+        docs_url="https://open.shopee.com",
         category=ApiCategory.MARKETPLACE,
     ),
     # ── 소싱 ─────────────────────────────────────────────────────────────
