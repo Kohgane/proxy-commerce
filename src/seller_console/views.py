@@ -867,12 +867,29 @@ def collect():
         {"code": "shopify", **_marketplace_meta("shopify")},
         {"code": "shopee", **_marketplace_meta("shopee")},
     ]
+    locale_options = []
+    seen_locales: set[str] = set()
+    for card in marketplace_cards:
+        locale = str(card.get("locale") or "").strip()
+        if locale and locale not in seen_locales:
+            seen_locales.add(locale)
+            locale_options.append(locale)
+    locale_options = sorted(locale_options)
+
+    try:
+        from .localization_service import LocalizationService
+
+        localization_configured = LocalizationService().is_configured()
+    except Exception:
+        localization_configured = False
 
     return render_template(
         "manual_collect.html",
         page="collect",
         api_status=api_status,
         marketplace_cards=marketplace_cards,
+        locale_options=locale_options,
+        localization_configured=localization_configured,
     )
 
 
@@ -983,6 +1000,74 @@ def collect_upload():
         return jsonify({"ok": False, "error": "업로드 중 오류가 발생했습니다."}), 500
 
 
+@bp.post("/collect/localize")
+def collect_localize():
+    """수집 상품/카탈로그 상품을 타깃 locale로 현지화한다."""
+    data = request.get_json(force=True, silent=True) or {}
+    products = data.get("products")
+    if products is None:
+        product = data.get("product") or {}
+        products = [product] if product else []
+    if not isinstance(products, list) or not products:
+        return jsonify({"ok": False, "error": "현지화할 상품이 필요합니다."}), 400
+
+    target_locales = data.get("target_locales") or data.get("locales") or []
+    if isinstance(target_locales, str):
+        target_locales = [x.strip() for x in target_locales.split(",") if x.strip()]
+    if not target_locales:
+        return jsonify({"ok": False, "error": "타깃 언어(locale)를 선택하세요."}), 400
+
+    from .localization_service import LocalizationService
+
+    service = LocalizationService()
+    if not service.is_configured():
+        return jsonify(
+            {
+                "ok": True,
+                "configured": False,
+                "message": "번역 API가 설정되지 않아 원문을 유지했습니다. /admin/diagnostics에서 API 키를 설정하세요.",
+                "total": len(products),
+                "success": 0,
+                "cache_hits": 0,
+                "untranslated": len(products) * len(target_locales),
+                "items": [],
+            }
+        )
+
+    output_items = []
+    translated_count = 0
+    untranslated_count = 0
+    cache_hits = 0
+
+    for product in products:
+        product_data = dict(product or {})
+        source_lang = str(product_data.get("source_lang") or product_data.get("language") or "ko-KR")
+        localized_map = product_data.get("localized") if isinstance(product_data.get("localized"), dict) else {}
+        for locale in target_locales:
+            result = service.localize_product(product_data, str(locale), source_lang=source_lang)
+            localized_map[result.locale] = result.translated
+            translated_count += result.translated_count
+            cache_hits += result.cache_hits
+            untranslated_count += int(result.untranslated)
+        product_data["localized"] = localized_map
+        product_data["localization_status"] = "localized" if localized_map else "not_localized"
+        output_items.append(product_data)
+
+    return jsonify(
+        {
+            "ok": True,
+            "configured": True,
+            "total": len(products),
+            "success": len(output_items),
+            "translated": translated_count,
+            "cache_hits": cache_hits,
+            "untranslated": untranslated_count,
+            "items": output_items,
+            "quality_notice": "기계번역 결과는 반드시 사람 검수 후 사용하세요.",
+        }
+    )
+
+
 @bp.post("/collect/save")
 def collect_save():
     """수집 결과를 Sheets catalog 워크시트에 저장 (Phase 128).
@@ -1013,6 +1098,11 @@ def collect_save():
             state="active",
             sku=payload.get("sku") or payload.get("asin"),
             title=payload.get("title"),
+            description=payload.get("description"),
+            keywords=payload.get("keywords") if isinstance(payload.get("keywords"), list) else [],
+            options=payload.get("options") if isinstance(payload.get("options"), list) else [],
+            localized=payload.get("localized") if isinstance(payload.get("localized"), dict) else {},
+            localization_status=str(payload.get("localization_status") or "not_localized"),
             price=payload_price,
             currency=payload_currency,
             price_krw=int(payload_price) if payload_currency == "KRW" and payload_price is not None else None,
@@ -1106,6 +1196,7 @@ def catalog():
     view_items = []
     for item in items:
         meta = _marketplace_meta(item.marketplace)
+        localized_title, is_fallback = _select_localized_field(item, str(meta.get("locale") or "ko-KR"), "title")
         market_price, price_note = _market_price_display(item, str(meta.get("currency") or "KRW"))
         view_items.append(
             {
@@ -1118,7 +1209,8 @@ def catalog():
                 "is_ready": bool(meta.get("is_ready", True)),
                 "product_id": item.product_id,
                 "sku": item.sku,
-                "title": item.title,
+                "title": localized_title,
+                "is_localization_fallback": is_fallback,
                 "state": item.state,
                 "price_display": market_price,
                 "price_note": price_note,
@@ -2507,6 +2599,31 @@ def _market_price_display(item, target_currency: str) -> tuple[str, str]:
         note = "" if item.currency == target_currency else f"{item.currency}→{target_currency} 환산"
         return format_currency_amount(converted, target_currency), note
     return f"{format_currency_amount(float(item.price), item.currency)} (미환산)", "환율 미가용"
+
+
+def _select_localized_field(item, target_locale: str, field_name: str) -> tuple[str, bool]:
+    """상품의 locale별 번역본을 우선 사용하고, 없으면 원문 폴백한다."""
+    localized_map = item.localized if isinstance(getattr(item, "localized", None), dict) else {}
+    locale = (target_locale or "ko-KR").strip()
+    language = locale.split("-")[0].lower() if locale else "ko"
+
+    candidate = localized_map.get(locale)
+    if isinstance(candidate, dict):
+        value = str(candidate.get(field_name) or "").strip()
+        if value:
+            return value, False
+
+    for key, row in localized_map.items():
+        if not isinstance(row, dict):
+            continue
+        if str(key).split("-")[0].lower() != language:
+            continue
+        value = str(row.get(field_name) or "").strip()
+        if value:
+            return value, False
+
+    original = str(getattr(item, field_name, "") or "").strip()
+    return original, bool(localized_map)
 
 
 # ---------------------------------------------------------------------------

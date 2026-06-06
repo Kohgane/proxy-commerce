@@ -4,6 +4,7 @@
 
 | Phase | 내용 | PR | 완료일 |
 |---|---|---|---|
+| Phase 181 | 현지화(Localization) 파이프라인 — `LocalizationService` 도입(기존 DeepL/OpenAI 호출 재사용, 캐시, API 미설정 시 정직 미번역), 상품 `localized`/`localization_status` 저장 확장, 마켓 locale 번역본 우선 사용·원문 폴백 표기, 셀러 수집 화면 현지화 버튼/locale 선택/번역본 미리보기·수정 추가, 관련 단위·통합 테스트 보강 | #PR | 2026-06-06 |
 | Phase 180 | 글로벌 멀티마켓 토대 — 마켓 country/currency/locale/region 메타 도입, `price+currency` 다통화 모델과 `price_krw` 하위호환, 어댑터 인터페이스 확장(`is_configured`/`validate_listing`/`upload_product`/`marketplace_meta`), Amazon/eBay/Shopify/Shopee 판매처 스텁 추가, env_catalog 글로벌 마켓 키 등록, 셀러 화면 국가/통화/준비중 배지 노출, `GLOBAL_ROADMAP.md` 문서화 | #PR | 2026-06-06 |
 | Phase 179 | 버튼 실기능 1차(P0) — 가격 계산 화면의 `이 가격으로 적용` 버튼을 실제 `/seller/pricing/apply` 저장 로직으로 연결(카탈로그 가격 반영 + 가격 이력 기록 + 외부 마켓 미연동 시 시뮬레이션 정직 표기), 주문 목록에 상태 전이 액션을 추가해 `/seller/orders/<market>/<order>/status`로 실제 상태 변경/검증을 수행하도록 구현 | #PR | 2026-06-06 |
 | Phase 178 | 전 페이지 버튼/인터랙션 감사 1차 — 자체몰 푸터의 `href="#"` 링크를 실제 `/terms`·`/privacy` 경로로 연결, admin 공통 사이드바에 진단/사용자/환경변수/로그 메뉴를 복구, AI 상품등록 결과의 `재시도` 버튼에 실제 재호출 핸들러(`retryMarket`)를 구현. 남은 비동작 후보는 외부연동 의존 액션(마켓 API/결제/메신저) 중심으로 후속 점검 | #PR | 2026-06-05 |

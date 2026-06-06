@@ -135,20 +135,56 @@ class UploadDispatcher:
         Returns:
             UploadResult
         """
+        market_payload, localized = self._payload_for_market(product_data, market)
         if market == "coupang":
-            return self._upload_coupang(product_data)
+            result = self._upload_coupang(market_payload)
         elif market == "smartstore":
-            return self._upload_smartstore(product_data)
+            result = self._upload_smartstore(market_payload)
         elif market == "elevenst":
-            return self._upload_elevenst(product_data)
+            result = self._upload_elevenst(market_payload)
         elif market == "woocommerce":
-            return self._upload_woocommerce(product_data)
+            result = self._upload_woocommerce(market_payload)
         else:
             return UploadResult(
                 market=market,
                 success=False,
                 message="알 수 없는 마켓",
             )
+        if not localized and result.success:
+            result.message = f"{result.message} (미현지화: 원문 사용)"
+        return result
+
+    @staticmethod
+    def _payload_for_market(product_data: Dict[str, Any], market: str) -> tuple[Dict[str, Any], bool]:
+        payload = dict(product_data or {})
+        localized_map = payload.get("localized") if isinstance(payload.get("localized"), dict) else {}
+        try:
+            from src.markets.adapters.base import get_marketplace_meta
+
+            locale = str(get_marketplace_meta(market).get("locale") or "ko-KR")
+        except Exception:
+            locale = "ko-KR"
+        language = locale.split("-")[0].lower()
+
+        localized = localized_map.get(locale)
+        if not isinstance(localized, dict):
+            localized = None
+            for key, row in localized_map.items():
+                if str(key).split("-")[0].lower() == language and isinstance(row, dict):
+                    localized = row
+                    break
+        if isinstance(localized, dict):
+            if localized.get("title"):
+                payload["title"] = localized.get("title")
+                payload["title_ko"] = localized.get("title")
+            if localized.get("description"):
+                payload["description"] = localized.get("description")
+            if isinstance(localized.get("keywords"), list):
+                payload["keywords"] = localized.get("keywords")
+            if isinstance(localized.get("options"), list):
+                payload["options"] = localized.get("options")
+            return payload, True
+        return payload, False
 
     def _upload_coupang(self, product_data: Dict[str, Any]) -> UploadResult:
         """쿠팡 업로드 (Phase 71/109 모듈 재사용)."""
