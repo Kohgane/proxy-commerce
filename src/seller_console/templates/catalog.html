@@ -25,7 +25,7 @@
 </div>
 {% endif %}
 
-<div class="card border-0 shadow-sm">
+<div class="card border-0 shadow-sm pc-action-table">
   <div class="card-header bg-white">
     <form method="get" class="row g-2 align-items-end">
       <div class="col-md-2">
@@ -145,10 +145,17 @@
               {% endif %}
             </td>
             <td>
+              {% if item.is_ready %}
               <button class="btn btn-outline-secondary btn-sm py-0"
-                      onclick="syncItem('{{ item.product_id }}', '{{ item.marketplace }}')">
+                      aria-label="상품 동기화"
+                      onclick="syncItem(this, '{{ item.product_id }}', '{{ item.marketplace }}')">
                 🔄 동기화
               </button>
+              {% else %}
+              <button class="btn btn-outline-secondary btn-sm py-0" disabled aria-disabled="true">
+                연동 필요
+              </button>
+              {% endif %}
             </td>
           </tr>
           {% else %}
@@ -197,7 +204,7 @@
 </nav>
 {% endif %}
 
-<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1080;">
+<div class="position-fixed bottom-0 end-0 p-3 pc-toast-stack">
   <div id="catalogToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
     <div class="toast-header">
       <strong class="me-auto">카탈로그</strong>
@@ -219,7 +226,10 @@ function showCatalogToast(message, type) {
   new bootstrap.Toast(toastEl, { delay: 2500 }).show();
 }
 
-async function syncItem(productId, marketplace) {
+async function syncItem(button, productId, marketplace) {
+  if (window.setButtonLoading) {
+    window.setButtonLoading(button, true, '동기화 중…');
+  }
   try {
     const res = await fetch(`/seller/catalog/${encodeURIComponent(marketplace)}/${encodeURIComponent(productId)}/sync`, {
       method: 'POST',
@@ -227,13 +237,24 @@ async function syncItem(productId, marketplace) {
     });
     const data = await res.json();
     if (data.ok) {
-      showCatalogToast(`동기화 완료: ${marketplace}/${productId}`, 'success');
+      if (window.showGlobalToast) {
+        window.showGlobalToast(`동기화 완료: ${marketplace}/${productId}`, 'success', {
+          toastId: 'catalogToast',
+          bodyId: 'catalogToastBody',
+        });
+      } else {
+        showCatalogToast(`동기화 완료: ${marketplace}/${productId}`, 'success');
+      }
       setTimeout(() => window.location.reload(), 800);
       return;
     }
     showCatalogToast(data.error || '동기화에 실패했습니다.', 'warning');
   } catch (err) {
     showCatalogToast('동기화 요청 실패: ' + err.message, 'danger');
+  } finally {
+    if (window.setButtonLoading) {
+      window.setButtonLoading(button, false);
+    }
   }
 }
 </script>

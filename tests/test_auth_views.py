@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import os
 import sys
-import unittest.mock as mock
 
 import pytest
 
@@ -27,6 +26,10 @@ class TestAuthRoutes:
         """로그인 페이지 GET 200."""
         resp = client.get("/auth/login")
         assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert '/static/app.css' in html
+        assert 'id="login-email"' in html
+        assert 'id="login-password"' in html
 
     def test_signup_page_returns_200(self, client):
         """가입 페이지 GET 200."""
@@ -88,7 +91,7 @@ class TestOAuthStart:
         """OAuth 시작 시 state가 세션에 저장됨."""
         monkeypatch.setenv("KAKAO_REST_API_KEY", "kakao_test_key_abc123")
         with client.session_transaction() as sess:
-            pass  # 세션 초기화
+            sess.clear()
         resp = client.get("/auth/kakao/start")
         assert resp.status_code in (302, 301)
 

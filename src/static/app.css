@@ -1,52 +1,119 @@
-/* app.css — 공통 스타일 (Phase 123) */
-
-/* ── 폰트: Pretendard (CDN) ── */
+/* app.css — 공통 디자인 토큰/컴포넌트 (Phase 182) */
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
 
-body {
-  font-family: 'Pretendard Variable', 'Pretendard', -apple-system,
-               BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background: #f5f7fa;
-  color: #1a1a2e;
-}
-
-/* ── 컬러 팔레트 ── */
 :root {
-  --color-seller: #0d9488;   /* 셀러 콘솔 — 청록 */
-  --color-admin:  #1e3a8a;   /* 관리자 패널 — 네이비 */
-  --color-error:  #dc2626;   /* 에러 — 빨강 */
-  --color-teal:   #0d9488;
+  --pc-color-bg: #020010;
+  --pc-color-bg-secondary: #090724;
+  --pc-color-surface: #ffffff;
+  --pc-color-surface-muted: #f4f5fb;
+  --pc-color-text: #0f172a;
+  --pc-color-text-muted: #64748b;
+  --pc-color-border: #dbe2f2;
+  --pc-color-primary: #6d52ff;
+  --pc-color-primary-strong: #5135ef;
+  --pc-color-accent-gold: #f5c542;
+  --pc-color-accent-lime: #c2f970;
+  --pc-color-success: #16a34a;
+  --pc-color-warning: #f59e0b;
+  --pc-color-danger: #dc2626;
+  --pc-color-info: #2563eb;
+  --pc-space-1: .25rem;
+  --pc-space-2: .5rem;
+  --pc-space-3: .75rem;
+  --pc-space-4: 1rem;
+  --pc-space-5: 1.5rem;
+  --pc-radius-sm: .5rem;
+  --pc-radius-md: .85rem;
+  --pc-radius-lg: 1rem;
+  --pc-shadow-sm: 0 2px 10px rgba(2, 0, 16, .08);
+  --pc-shadow-md: 0 14px 30px rgba(2, 0, 16, .12);
+  --pc-focus-ring: 0 0 0 .2rem rgba(109, 82, 255, .28);
+  --pc-z-toast: 1080;
+  --pc-transition: .18s ease;
 }
 
-/* ── 유틸리티 ── */
-.text-teal { color: var(--color-teal) !important; }
-.bg-teal   { background-color: var(--color-teal) !important; }
-
-/* ── 랜딩 카드 ── */
-.landing-card {
-  border-radius: 12px;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-.landing-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.12) !important;
+body {
+  font-family: 'Pretendard Variable', 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: radial-gradient(1200px 700px at 0% -10%, #181257, var(--pc-color-bg)) fixed;
+  color: var(--pc-color-text);
 }
 
-/* ── 상단 내비 ── */
+.pc-surface,
+.card,
+.modal-content,
+.dropdown-menu {
+  background-color: var(--pc-color-surface);
+  border-color: var(--pc-color-border);
+}
+
+.pc-empty-state {
+  padding: var(--pc-space-5);
+  border: 1px dashed var(--pc-color-border);
+  border-radius: var(--pc-radius-md);
+  text-align: center;
+  color: var(--pc-color-text-muted);
+}
+
+.pc-status {
+  border-radius: var(--pc-radius-sm);
+  border: 1px solid var(--pc-color-border);
+  padding: var(--pc-space-3) var(--pc-space-4);
+}
+.pc-status-info { background: #eff6ff; border-color: #bfdbfe; }
+.pc-status-warning { background: #fffbeb; border-color: #fde68a; }
+.pc-status-danger { background: #fef2f2; border-color: #fecaca; }
+
+.btn {
+  border-radius: var(--pc-radius-sm);
+  transition: transform var(--pc-transition), box-shadow var(--pc-transition), background-color var(--pc-transition);
+}
+.btn-primary {
+  background: linear-gradient(135deg, var(--pc-color-primary), var(--pc-color-primary-strong));
+  border-color: transparent;
+}
+.btn-outline-primary { border-color: var(--pc-color-primary); color: var(--pc-color-primary); }
+.btn-outline-primary:hover { background: var(--pc-color-primary); border-color: var(--pc-color-primary); }
+.btn:focus,
+.form-control:focus,
+.form-select:focus,
+.form-check-input:focus {
+  box-shadow: var(--pc-focus-ring);
+}
+
+.pc-btn-loading,
+.pc-btn-loading:hover {
+  pointer-events: none;
+  opacity: .72;
+}
+
+.pc-action-table .table thead th {
+  font-size: .78rem;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  color: var(--pc-color-text-muted);
+  background: var(--pc-color-surface-muted);
+}
+.pc-action-table .table tbody tr:hover {
+  background: #f8f8ff;
+}
+
+.pc-toast-stack {
+  z-index: var(--pc-z-toast);
+}
+
 .navbar-brand small {
   display: block;
   line-height: 1;
   margin-top: -2px;
 }
 
-/* ── 배지 (메서드) ── */
-.badge-get    { background: #22c55e; color: #fff; }
-.badge-post   { background: #3b82f6; color: #fff; }
-.badge-put    { background: #f97316; color: #fff; }
-.badge-patch  { background: #a855f7; color: #fff; }
+.text-teal { color: #0d9488 !important; }
+.bg-teal { background-color: #0d9488 !important; }
+.badge-get { background: #22c55e; color: #fff; }
+.badge-post { background: #3b82f6; color: #fff; }
+.badge-put { background: #f97316; color: #fff; }
+.badge-patch { background: #a855f7; color: #fff; }
 .badge-delete { background: #ef4444; color: #fff; }
-
-/* ── API 문서 ── */
 .endpoint-path {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: .85rem;
@@ -55,7 +122,3 @@ body {
   background: #e0f2fe;
   color: #0369a1;
 }
-
-/* ── 에러 페이지 ── */
-.display-1.text-danger  { text-shadow: 2px 4px 8px rgba(220,38,38,.15); }
-.display-1.text-warning { text-shadow: 2px 4px 8px rgba(245,158,11,.15); }

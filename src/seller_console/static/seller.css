@@ -2,7 +2,7 @@
 
 body {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  background: #f5f7fa;
+  background: var(--pc-color-bg-secondary, #090724);
 }
 
 /* 사이드바 */
@@ -31,7 +31,8 @@ body {
 
 /* 카드 공통 */
 .card {
-  border-radius: 10px;
+  border-radius: var(--pc-radius-md, 10px);
+  border-color: var(--pc-color-border, #dbe2f2);
 }
 
 /* KPI 값 */
@@ -74,6 +75,7 @@ input[type="range"] {
 /* 토스트 */
 .toast {
   min-width: 280px;
+  box-shadow: var(--pc-shadow-md, 0 14px 30px rgba(2, 0, 16, .12));
 }
 
 /* 이미지 갤러리 */

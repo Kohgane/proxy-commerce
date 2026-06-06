@@ -1,12 +1,12 @@
 :root {
-  --console-bg: #f6f8fc;
-  --console-surface: #ffffff;
-  --console-sidebar: #111827;
-  --console-primary: #5b3df5;
+  --console-bg: var(--pc-color-bg-secondary, #090724);
+  --console-surface: var(--pc-color-surface, #ffffff);
+  --console-sidebar: #0b1023;
+  --console-primary: var(--pc-color-primary, #6d52ff);
   --console-primary-weak: #ece8ff;
-  --console-text: #111827;
-  --console-muted: #6b7280;
-  --console-border: #e5e7eb;
+  --console-text: var(--pc-color-text, #111827);
+  --console-muted: var(--pc-color-text-muted, #64748b);
+  --console-border: var(--pc-color-border, #dbe2f2);
 }
 
 .console-body {
@@ -17,12 +17,12 @@
 .console-shell {
   min-height: 100vh;
   display: flex;
-  background: var(--console-bg);
+  background: transparent;
 }
 
 .console-sidebar {
   width: 260px;
-  border-right: 1px solid #202939;
+  border-right: 1px solid #1e2540;
   background: var(--console-sidebar);
   color: #fff;
 }
@@ -100,6 +100,7 @@
   background: var(--console-surface);
   border: 1px solid var(--console-border);
   border-radius: 14px;
+  box-shadow: var(--pc-shadow-sm, 0 2px 10px rgba(2, 0, 16, .08));
 }
 
 .console-card .card-body,
@@ -296,7 +297,7 @@ button:focus,
 .form-select:focus,
 .form-check-input:focus {
   outline: none;
-  box-shadow: 0 0 0 0.2rem rgba(91, 61, 245, 0.2);
+  box-shadow: var(--pc-focus-ring, 0 0 0 .2rem rgba(109, 82, 255, .28));
 }
 
 @media (max-width: 767.98px) {
