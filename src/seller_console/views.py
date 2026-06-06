@@ -1000,15 +1000,22 @@ def collect_save():
         from datetime import datetime
 
         adapter = MarketStatusSheetsAdapter()
+        payload_currency = str(payload.get("currency") or "KRW").upper()
+        payload_price = None
+        if payload.get("price"):
+            try:
+                payload_price = float(payload["price"])
+            except (TypeError, ValueError):
+                return jsonify({"ok": False, "error": "가격은 숫자 형식이어야 합니다."}), 400
         item = MarketStatusItem(
             marketplace=payload.get("marketplace", "collected"),
             product_id=payload.get("sku") or payload.get("asin") or f"col_{int(datetime.now().timestamp())}",
             state="active",
             sku=payload.get("sku") or payload.get("asin"),
             title=payload.get("title"),
-            price=float(payload["price"]) if payload.get("price") else None,
-            currency=str(payload.get("currency") or "USD"),
-            price_krw=int(float(payload["price"])) if str(payload.get("currency") or "USD").upper() == "KRW" and payload.get("price") else None,
+            price=payload_price,
+            currency=payload_currency,
+            price_krw=int(payload_price) if payload_currency == "KRW" and payload_price is not None else None,
             last_synced_at=datetime.now(),
         )
         saved = adapter.upsert_item(item)
@@ -1095,7 +1102,7 @@ def catalog():
             "shopee",
         ]
     ]
-    country_options = sorted({str(o.get("country") or "").upper() for o in marketplace_options if o.get("country")})
+    country_options = sorted({str(o["country"]).upper() for o in marketplace_options if o.get("country")})
     view_items = []
     for item in items:
         meta = _marketplace_meta(item.marketplace)
@@ -1860,7 +1867,7 @@ def markets_overview():
             }
             for market_code in ["coupang", "smartstore", "11st", "kohganemultishop", "amazon", "ebay", "shopify", "shopee"]
         ]
-        country_filters = sorted({str(m.get("country") or "").upper() for m in marketplace_filters if m.get("country")})
+        country_filters = sorted({str(m["country"]).upper() for m in marketplace_filters if m.get("country")})
     except Exception as exc:
         logger.warning("마켓 현황 데이터 로드 실패: %s", exc)
         from .data_aggregator import get_market_product_status
@@ -2477,6 +2484,11 @@ def _marketplace_meta(marketplace: str) -> dict:
 
 
 def _market_price_display(item, target_currency: str) -> tuple[str, str]:
+    """마켓 기준 가격 표시 문자열을 생성한다.
+
+    Returns:
+        (formatted_price, conversion_note)
+    """
     from .market_status import convert_amount, format_currency_amount
 
     if item.price is None and item.price_krw is not None:

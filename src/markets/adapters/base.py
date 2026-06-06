@@ -60,6 +60,12 @@ def get_marketplace_meta(market: str) -> Dict[str, Any]:
 
 @dataclass
 class ListingPayload:
+    """상품 등록 payload.
+
+    price/currency를 우선 값으로 간주하며, price_krw는 하위호환 필드다.
+    둘 다 입력되고 값이 불일치하면 price/currency 기준으로 price_krw를 정규화한다.
+    """
+
     title: str
     description: str
     price: Optional[float] = None
@@ -76,6 +82,10 @@ class ListingPayload:
             self.currency = "KRW"
         elif self.price is not None and self.price_krw is None:
             self.price_krw = _to_krw_amount(float(self.price), self.currency)
+        elif self.price is not None and self.price_krw is not None:
+            normalized = _to_krw_amount(float(self.price), self.currency)
+            if normalized is not None and normalized != self.price_krw:
+                self.price_krw = normalized
 
 
 @dataclass

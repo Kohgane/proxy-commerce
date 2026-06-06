@@ -48,6 +48,7 @@ _CURRENCY_DECIMALS = {
 
 
 def format_currency_amount(amount: Optional[float], currency: str) -> str:
+    """금액을 통화별 기본 표시 포맷으로 렌더링한다."""
     if amount is None:
         return "—"
     cur = (currency or "KRW").upper()
@@ -57,6 +58,11 @@ def format_currency_amount(amount: Optional[float], currency: str) -> str:
 
 
 def convert_amount(amount: float, from_currency: str, to_currency: str) -> tuple[Optional[float], bool]:
+    """환율 유틸을 사용해 금액을 변환한다.
+
+    Returns:
+        (변환금액, 성공여부). 환율 미가용 시 (None, False).
+    """
     src = (from_currency or "KRW").upper()
     dst = (to_currency or "KRW").upper()
     if src == dst:
@@ -74,6 +80,7 @@ def convert_amount(amount: float, from_currency: str, to_currency: str) -> tuple
 
 
 def marketplace_meta(marketplace: str) -> dict:
+    """마켓 코드에 대한 국가/통화/locale/region 메타를 반환한다."""
     try:
         from src.markets.adapters.base import get_marketplace_meta
 
@@ -113,6 +120,10 @@ class MarketStatusItem:
         elif self.price is not None and self.price_krw is None:
             converted, ok = convert_amount(float(self.price), self.currency, "KRW")
             if ok and converted is not None:
+                self.price_krw = int(round(converted))
+        elif self.price is not None and self.price_krw is not None:
+            converted, ok = convert_amount(float(self.price), self.currency, "KRW")
+            if ok and converted is not None and int(round(converted)) != self.price_krw:
                 self.price_krw = int(round(converted))
 
     @property
