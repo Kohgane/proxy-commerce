@@ -215,7 +215,7 @@ class TestSellerConsoleViews:
             source = "sheets"
             items = [
                 MarketStatusItem(
-                    marketplace="shopify",
+                    marketplace="amazon",
                     product_id="S001",
                     state="active",
                     title="글로벌 상품",

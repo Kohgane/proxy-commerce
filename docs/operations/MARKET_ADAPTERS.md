@@ -11,7 +11,7 @@
 - `eleven_st.py` — 11번가 scaffold
 - `amazon.py` — Amazon SP-API scaffold (stub)
 - `ebay.py` — eBay scaffold (stub)
-- `shopify.py` — Shopify scaffold (stub)
+- `shopify.py` — Shopify Admin API 실연동 (상품 생성/수정, 429 재시도, 멱등 업데이트)
 - `shopee.py` — Shopee scaffold (stub)
 - `mock.py` — 기본 mock
 
@@ -24,3 +24,10 @@
 - `validate_listing(payload)`
 - `upload_product(payload)`
 - `marketplace_meta()`
+
+## Shopify (Phase 183)
+
+- 필수 env: `SHOPIFY_SHOP`, `SHOPIFY_ACCESS_TOKEN`(또는 `SHOPIFY_ADMIN_TOKEN`)
+- 권장 env: `SHOPIFY_ADMIN_API_VERSION` (기본 `2024-10`)
+- `SHOPIFY_CLIENT_SECRET`은 웹훅 검증 전용이며 상품 등록 토큰과 별개다.
+- 자격증명 미설정 시 절대 성공 위조 없이 `not_configured` 상태를 반환한다.

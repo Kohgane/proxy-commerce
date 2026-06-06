@@ -41,7 +41,7 @@ MARKETPLACE_META: Dict[str, Dict[str, Any]] = {
     "elevenst": {"label": "11번가", "country": "KR", "currency": "KRW", "locale": "ko-KR", "region": "동아시아", "is_ready": True},
     "kohganemultishop": {"label": "코가네멀티샵", "country": "KR", "currency": "KRW", "locale": "ko-KR", "region": "동아시아", "is_ready": True},
     "woocommerce": {"label": "WooCommerce", "country": "KR", "currency": "KRW", "locale": "ko-KR", "region": "동아시아", "is_ready": True},
-    "shopify": {"label": "Shopify", "country": "US", "currency": "USD", "locale": "en-US", "region": "북미", "is_ready": False},
+    "shopify": {"label": "Shopify", "country": "US", "currency": "USD", "locale": "en-US", "region": "북미", "is_ready": True},
     "amazon": {"label": "Amazon", "country": "US", "currency": "USD", "locale": "en-US", "region": "북미", "is_ready": False},
     "ebay": {"label": "eBay", "country": "GB", "currency": "GBP", "locale": "en-GB", "region": "유럽", "is_ready": False},
     "shopee": {"label": "Shopee", "country": "SG", "currency": "SGD", "locale": "en-SG", "region": "동남아", "is_ready": False},
