@@ -185,14 +185,18 @@ SWEETTRACKER_API_KEY=xxxx
 
 ---
 
-### 10. Shopify
+### 10. Shopify (글로벌 마켓 등록 + 자체몰)
 
 **발급**: https://partners.shopify.com → Custom App → Admin API 접근 허용
 
 ```
-SHOPIFY_ACCESS_TOKEN=shpat_xxxx
 SHOPIFY_SHOP=myshop.myshopify.com
+SHOPIFY_ACCESS_TOKEN=shpat_xxxx   # 또는 SHOPIFY_ADMIN_TOKEN
+SHOPIFY_ADMIN_API_VERSION=2024-10 # 선택, 미설정 시 기본값 사용
 ```
+
+- 상품 등록/수정(Admin API): `SHOPIFY_SHOP` + `SHOPIFY_ACCESS_TOKEN`(또는 `SHOPIFY_ADMIN_TOKEN`)
+- 웹훅 검증: `SHOPIFY_CLIENT_SECRET` (별도 시크릿, 상품 등록 토큰과 역할 분리)
 
 ---
 
@@ -233,4 +237,3 @@ UNSPLASH_ACCESS_KEY=xxxx   # https://unsplash.com/developers
 | `FX_DISABLE_NETWORK=1` | 환율 네트워크 호출 비활성화 |
 
 > **중요**: API 키 없어도 모든 화면이 stub/mock 데이터로 동작합니다.
-

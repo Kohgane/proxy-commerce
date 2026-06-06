@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
 # 지원 마켓 코드
-SUPPORTED_MARKETS = ["coupang", "smartstore", "elevenst", "woocommerce"]
+SUPPORTED_MARKETS = ["coupang", "smartstore", "elevenst", "woocommerce", "shopify"]
 
 # 마켓 표시명
 MARKET_LABELS = {
@@ -21,6 +21,7 @@ MARKET_LABELS = {
     "smartstore": "스마트스토어",
     "elevenst": "11번가",
     "woocommerce": "코가네멀티샵(WC)",
+    "shopify": "Shopify",
 }
 
 
@@ -144,6 +145,8 @@ class UploadDispatcher:
             result = self._upload_elevenst(market_payload)
         elif market == "woocommerce":
             result = self._upload_woocommerce(market_payload)
+        elif market == "shopify":
+            result = self._upload_shopify(market_payload)
         else:
             return UploadResult(
                 market=market,
@@ -264,6 +267,66 @@ class UploadDispatcher:
         except Exception as exc:
             logger.warning("WooCommerce 업로드 오류: %s", exc)
             return UploadResult(market="woocommerce", success=False, message=f"오류: {exc}")
+
+    def _upload_shopify(self, product_data: Dict[str, Any]) -> UploadResult:
+        """Shopify 업로드 (Phase 183: src.markets.adapters.shopify 실연동 사용)."""
+        try:
+            from src.markets.adapters.base import ListingPayload
+            from src.markets.adapters.shopify import ShopifyAdapter
+
+            raw_price = product_data.get("price") or product_data.get("price_original")
+            try:
+                price = float(raw_price)
+            except (TypeError, ValueError):
+                price = None
+
+            payload = ListingPayload(
+                title=str(product_data.get("title") or product_data.get("title_ko") or "").strip(),
+                description=str(product_data.get("description") or "").strip(),
+                price=price,
+                currency=str(product_data.get("currency") or "USD").upper(),
+                sku=str(product_data.get("sku") or product_data.get("asin") or "").strip(),
+                qty=int(product_data.get("qty") or 0),
+                options={
+                    "images": product_data.get("images") if isinstance(product_data.get("images"), list) else [],
+                    "localized": product_data.get("localized") if isinstance(product_data.get("localized"), dict) else {},
+                    "product_type": str(product_data.get("category") or "").strip(),
+                    "vendor": str(product_data.get("brand") or "").strip(),
+                    "tags": product_data.get("keywords") if isinstance(product_data.get("keywords"), list) else [],
+                    "idempotency_key": product_data.get("idempotency_key")
+                    or product_data.get("sku")
+                    or product_data.get("asin")
+                    or product_data.get("url"),
+                },
+            )
+
+            adapter = ShopifyAdapter()
+            validation = adapter.validate_listing(payload)
+            if not validation.ok:
+                return UploadResult(
+                    market="shopify",
+                    success=False,
+                    message=validation.message,
+                )
+
+            result = adapter.upload_product(payload)
+            if not result.ok:
+                return UploadResult(
+                    market="shopify",
+                    success=False,
+                    message=result.message,
+                )
+
+            admin_url = str(result.raw.get("admin_url") or "").strip()
+            suffix = f" · 관리자: {admin_url}" if admin_url else ""
+            return UploadResult(
+                market="shopify",
+                success=True,
+                message=f"Shopify 업로드 성공 (ID: {result.external_id}){suffix}",
+            )
+        except Exception as exc:
+            logger.warning("Shopify 업로드 오류: %s", exc)
+            return UploadResult(market="shopify", success=False, message="오류: Shopify 업로드 처리 실패")
 
     @staticmethod
     def get_pending_queue() -> List[Dict[str, Any]]:

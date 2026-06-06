@@ -44,6 +44,7 @@ ENV_ALIASES: Dict[str, List[str]] = {
     "WC_URL": ["WC_URL", "WOO_BASE_URL"],
     "WC_KEY": ["WC_KEY", "WOO_CK"],
     "WC_SECRET": ["WC_SECRET", "WOO_CS"],
+    "SHOPIFY_ACCESS_TOKEN": ["SHOPIFY_ACCESS_TOKEN", "SHOPIFY_ADMIN_TOKEN"],
 }
 
 
@@ -149,9 +150,17 @@ API_REGISTRY: list = [
     ApiKey(
         name="shopify_marketplace",
         env_vars=["SHOPIFY_SHOP", "SHOPIFY_ACCESS_TOKEN"],
-        purpose="Shopify Admin API — 글로벌 마켓 파일럿 판매 연동",
-        docs_url="https://shopify.dev/docs/api/admin",
+        purpose="Shopify Admin API — 글로벌 마켓 상품 등록/수정(웹훅 시크릿과 별도)",
+        docs_url="https://shopify.dev/docs/api/admin-rest",
         category=ApiCategory.MARKETPLACE,
+    ),
+    ApiKey(
+        name="shopify_marketplace_api_version",
+        env_vars=["SHOPIFY_ADMIN_API_VERSION"],
+        purpose="Shopify Admin API 버전 고정 (선택, 미설정 시 어댑터 기본값 사용)",
+        docs_url="https://shopify.dev/docs/api/usage/versioning",
+        category=ApiCategory.MARKETPLACE,
+        optional=True,
     ),
     ApiKey(
         name="shopee_marketplace",
@@ -334,7 +343,7 @@ API_REGISTRY: list = [
     ApiKey(
         name="shopify",
         env_vars=["SHOPIFY_ACCESS_TOKEN", "SHOPIFY_SHOP"],
-        purpose="Shopify 자체몰",
+        purpose="Shopify 자체몰 기본 연동 (주문/스토어 연결)",
         docs_url="https://partners.shopify.com",
         category=ApiCategory.SELF_MALL,
     ),
@@ -379,7 +388,7 @@ API_REGISTRY: list = [
     ApiKey(
         name="shopify_webhook",
         env_vars=["SHOPIFY_CLIENT_SECRET"],
-        purpose="Shopify 웹훅 서명 검증",
+        purpose="Shopify 웹훅 서명 검증 (상품 등록 토큰과 분리)",
         docs_url="https://partners.shopify.com",
         category=ApiCategory.SELF_MALL,
     ),

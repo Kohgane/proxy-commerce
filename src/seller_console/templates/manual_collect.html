@@ -443,7 +443,11 @@ function uploadProduct() {
       }
       const result = data.result;
       const detail = `성공 ${result.succeeded || 0} / 큐적재 ${result.queued || 0} / 실패 ${result.failed || 0}`;
-      showToast('업로드 완료', detail, 'success');
+      const lines = (result.results || [])
+        .map((item) => `• ${escapeHtml(item.market_label || item.market)}: ${escapeHtml(item.message || (item.success ? '성공' : '실패'))}`)
+        .join('<br>');
+      const type = (result.failed || 0) > 0 ? 'danger' : 'success';
+      showToast('업로드 완료', `${detail}<br>${lines}`, type);
     })
     .catch((err) => {
       showToast('업로드 실패', err.message || '업로드 중 오류가 발생했습니다.', 'danger');
