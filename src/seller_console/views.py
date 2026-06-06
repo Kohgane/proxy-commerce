@@ -1688,7 +1688,7 @@ def pricing_apply():
 
     old_price = int(target.price_krw or 0)
     target.price_krw = new_price
-    target.last_synced_at = datetime.now()
+    target.last_synced_at = datetime.now(timezone.utc)
     applied_local = adapter.upsert_item(target)
     if not applied_local:
         return jsonify({"ok": False, "error": "카탈로그 가격 저장에 실패했습니다."}), 500

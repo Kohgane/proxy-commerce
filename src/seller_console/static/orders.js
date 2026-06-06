@@ -10,6 +10,7 @@
 
 // 5분 자동 폴링
 const POLL_INTERVAL = 5 * 60 * 1000;
+const REFRESH_DELAY_MS = 900;
 setInterval(refreshOrders, POLL_INTERVAL);
 
 /** 현재 URL 파라미터 유지하며 페이지 새로고침 */
@@ -168,7 +169,7 @@ async function updateOrderStatus(marketplace, orderId, nextStatus) {
         : `상태가 ${nextStatus}(으)로 변경되었습니다.`,
       simulated ? "warning" : "success",
     );
-    setTimeout(refreshOrders, 900);
+    setTimeout(refreshOrders, REFRESH_DELAY_MS);
   } catch (e) {
     showToast("상태 변경 요청 실패: " + e.message, "danger");
   }

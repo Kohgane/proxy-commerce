@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
@@ -26,7 +26,7 @@ def test_pricing_apply_updates_catalog_and_returns_simulation_notice(client):
         sku="SKU-001",
         title="테스트 상품",
         price_krw=10000,
-        last_synced_at=datetime.utcnow(),
+        last_synced_at=datetime.now(timezone.utc),
     )
     fetched = AllMarketStatus(summaries=[], items=[item], source="sheets")
 

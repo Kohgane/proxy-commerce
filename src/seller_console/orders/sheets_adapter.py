@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Dict, List, Optional
 
@@ -224,7 +224,7 @@ class OrderSheetsAdapter:
             status_col = ORDERS_HEADERS.index("status") + 1
             notes_col = ORDERS_HEADERS.index("notes") + 1
             last_synced_col = ORDERS_HEADERS.index("last_synced_at") + 1
-            updated_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
+            updated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
             for idx, row in enumerate(rows, start=2):
                 if (
@@ -234,7 +234,10 @@ class OrderSheetsAdapter:
                     ws.update_cell(idx, status_col, status)
                     if note:
                         prev_note = str(row.get("notes", "") or "").strip()
-                        ws.update_cell(idx, notes_col, f"{prev_note} | {note}".strip(" |"))
+                        combined_note = f"{prev_note} | {note}" if prev_note else note
+                        if len(combined_note) > 2000:
+                            combined_note = combined_note[-2000:]
+                        ws.update_cell(idx, notes_col, combined_note)
                     ws.update_cell(idx, last_synced_col, updated_at)
                     return True
             logger.warning("update_status: 주문 찾을 수 없음 (%s, %s)", order_id, marketplace)
