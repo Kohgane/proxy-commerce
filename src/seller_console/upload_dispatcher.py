@@ -176,7 +176,8 @@ class UploadDispatcher:
         if isinstance(localized, dict):
             if localized.get("title"):
                 payload["title"] = localized.get("title")
-                payload["title_ko"] = localized.get("title")
+                if language == "ko":
+                    payload["title_ko"] = localized.get("title")
             if localized.get("description"):
                 payload["description"] = localized.get("description")
             if isinstance(localized.get("keywords"), list):

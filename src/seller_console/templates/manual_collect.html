@@ -283,7 +283,9 @@ function collectPayload() {
   payload.title = payload.title || payload.title_ko;
   payload.price_original = document.getElementById('priceOriginal').value || payload.price_original || payload.price || '';
    const hasLocalDrafts = localizedDrafts && Object.keys(localizedDrafts).length > 0;
-   payload.localized = hasLocalDrafts ? localizedDrafts : (payload.localized || {});
+   payload.localized = hasLocalDrafts
+     ? { ...(payload.localized || {}), ...localizedDrafts }
+     : (payload.localized || {});
    payload.localization_status = Object.keys(payload.localized || {}).length ? 'localized' : 'not_localized';
   return payload;
 }
