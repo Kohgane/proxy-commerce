@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import threading
 import time
 from typing import Any, Dict, Optional, Tuple
 
@@ -18,6 +19,7 @@ class ShopifyAdapter(MarketAdapter):
     locale = "en-US"
     region = "북미"
     _idempotency_map: Dict[str, str] = {}
+    _idempotency_lock = threading.Lock()
 
     def __init__(self, session: Optional[requests.Session] = None, sleep_fn=None) -> None:
         self._session = session or requests.Session()
@@ -92,7 +94,7 @@ class ShopifyAdapter(MarketAdapter):
                 self._sleep(wait_sec)
                 continue
             return response
-        raise RuntimeError("shopify request retry exhausted")
+        raise RuntimeError("Shopify request retry limit exhausted")
 
     @staticmethod
     def _locale_region(locale: str, country: str) -> str:
@@ -351,11 +353,9 @@ class ShopifyAdapter(MarketAdapter):
 
             options = payload.options if isinstance(payload.options, dict) else {}
             idempotency_key = self._idempotency_key(payload)
-            existing_product_id = str(
-                options.get("shopify_product_id")
-                or self._idempotency_map.get(idempotency_key)
-                or ""
-            ).strip()
+            with self._idempotency_lock:
+                cached_product_id = self._idempotency_map.get(idempotency_key)
+            existing_product_id = str(options.get("shopify_product_id") or cached_product_id or "").strip()
 
             if existing_product_id:
                 response = self._request_with_retry(
@@ -386,7 +386,8 @@ class ShopifyAdapter(MarketAdapter):
             product = body.get("product", {}) if isinstance(body, dict) else {}
             external_id = str(product.get("id") or existing_product_id or "")
             if idempotency_key and external_id:
-                self._idempotency_map[idempotency_key] = external_id
+                with self._idempotency_lock:
+                    self._idempotency_map[idempotency_key] = external_id
             handle = str(product.get("handle") or "").strip()
             shop = self._shop_domain()
             admin_url = f"https://{shop}/admin/products/{external_id}" if external_id else ""
