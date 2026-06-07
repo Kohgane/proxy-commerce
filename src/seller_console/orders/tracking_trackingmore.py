@@ -14,27 +14,12 @@ from typing import Optional
 
 import requests
 
+from .courier_catalog import get_trackingmore_courier_map, lookup_trackingmore_code
+
 logger = logging.getLogger(__name__)
 
 # 한국 택배사 코드 매핑 (TrackingMore 코드)
-KOREA_COURIERS: dict = {
-    "CJ대한통운": "cj-korea",
-    "CJ": "cj-korea",
-    "한진택배": "hanjin",
-    "한진": "hanjin",
-    "롯데택배": "lotte",
-    "롯데": "lotte",
-    "우체국": "korea-post",
-    "epost": "korea-post",
-    "post": "korea-post",
-    "로젠택배": "logen",
-    "로젠": "logen",
-    "대신택배": "daesin",
-    "경동택배": "kdexp",
-    "일양로지스": "ilyanglogis",
-    "합동택배": "hapdong",
-    "천일택배": "chunil",
-}
+KOREA_COURIERS: dict = get_trackingmore_courier_map()
 
 
 class TrackingMoreClient:
@@ -164,4 +149,4 @@ class TrackingMoreClient:
 
 def get_courier_code(name: str) -> str:
     """택배사 이름 → TrackingMore 코드."""
-    return KOREA_COURIERS.get(name, "")
+    return lookup_trackingmore_code(name)

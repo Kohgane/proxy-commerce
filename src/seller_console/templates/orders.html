@@ -181,12 +181,27 @@
         <input type="hidden" id="tm-marketplace">
         <input type="hidden" id="tm-order-id">
         <div class="mb-3">
-          <label class="form-label">택배사</label>
-          <select id="tm-courier" class="form-select">
-            {% for c in couriers %}
-            <option value="{{ c }}">{{ c }}</option>
-            {% endfor %}
-          </select>
+          <label class="form-label" for="tm-courier">택배사</label>
+          <div class="position-relative">
+            <input
+              type="text"
+              id="tm-courier"
+              class="form-control"
+              placeholder="택배사 검색 또는 직접 입력"
+              autocomplete="off"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded="false"
+              aria-controls="tm-courier-listbox"
+            >
+            <div
+              id="tm-courier-listbox"
+              class="list-group position-absolute w-100 shadow-sm d-none"
+              role="listbox"
+              aria-label="택배사 자동완성"
+              style="z-index: 1060; max-height: 240px; overflow-y: auto;"
+            ></div>
+          </div>
         </div>
         <div class="mb-3">
           <label class="form-label">운송장 번호</label>
@@ -212,5 +227,6 @@
   </div>
 </div>
 
+<script id="tm-courier-catalog" type="application/json">{{ courier_catalog|tojson }}</script>
 <script src="/seller/static/orders.js"></script>
 {% endblock %}
