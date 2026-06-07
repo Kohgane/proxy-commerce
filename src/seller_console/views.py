@@ -1329,7 +1329,7 @@ def orders():
         order_list = svc.list_orders(filters=filters, limit=limit, offset=offset)
         kpi = svc.kpi_summary()
 
-    from .orders.tracking import COURIER_MAP
+    from .orders.courier_catalog import get_courier_catalog
     order_dicts = [o.to_dict() for o in order_list]
     return render_template(
         "orders.html",
@@ -1339,7 +1339,7 @@ def orders():
         filters=filters,
         limit=limit,
         offset=offset,
-        couriers=list(COURIER_MAP.keys()),
+        courier_catalog=get_courier_catalog(include_dynamic=True),
     )
 
 

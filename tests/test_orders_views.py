@@ -59,7 +59,11 @@ class TestOrdersViews:
         with patch("src.seller_console.views._get_order_sync_service", return_value=mock_sync_service):
             resp = client.get("/seller/orders")
         assert resp.status_code == 200
-        assert "주문 관리" in resp.data.decode("utf-8")
+        data = resp.data.decode("utf-8")
+        assert "주문 관리" in data
+        assert 'id="tm-courier"' in data
+        assert 'id="tm-courier-listbox"' in data
+        assert 'id="tm-courier-catalog"' in data
 
     def test_get_orders_has_kpi_data(self, client, mock_sync_service):
         """GET /seller/orders → KPI 카드 포함."""
@@ -111,6 +115,16 @@ class TestOrdersViews:
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["ok"] is True
+
+    def test_post_tracking_allows_free_text_courier(self, client, mock_sync_service):
+        """목록에 없는 택배사 입력도 저장 경로를 막지 않는다."""
+        with patch("src.seller_console.views._get_order_sync_service", return_value=mock_sync_service):
+            resp = client.post(
+                "/seller/orders/coupang/CP-001/tracking",
+                json={"courier": "신규택배", "tracking_no": "1234567890"},
+            )
+        assert resp.status_code == 200
+        mock_sync_service.update_tracking.assert_called_with("CP-001", "coupang", "신규택배", "1234567890")
 
     def test_post_tracking_missing_fields(self, client, mock_sync_service):
         """운송장 정보 누락 → 400."""

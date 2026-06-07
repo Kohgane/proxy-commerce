@@ -1,20 +1,19 @@
 """src/seller_console/orders/tracking.py — 운송장 추적 stub (Phase 129)."""
 from __future__ import annotations
 
-COURIER_MAP = {
-    "CJ": "04",
-    "한진": "05",
-    "롯데": "08",
-    "우체국": "01",
-    "로젠": "06",
-    "CJ대한통운": "04",
+from .courier_catalog import get_courier_catalog, get_sweet_courier_map, lookup_sweet_code
+
+COURIER_MAP = get_sweet_courier_map()
+COURIER_NAME_MAP = {
+    row["sweet_code"]: row["name"]
+    for row in get_courier_catalog(include_dynamic=False)
+    if row.get("sweet_code")
 }
-COURIER_NAME_MAP = {v: k for k, v in COURIER_MAP.items()}
 
 
 def get_courier_code(name: str) -> str:
     """택배사 이름 → 코드."""
-    return COURIER_MAP.get(name, "00")
+    return lookup_sweet_code(name)
 
 
 def track(courier_code: str, tracking_no: str) -> dict:

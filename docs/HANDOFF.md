@@ -33,7 +33,7 @@
 - **Shopify 시크릿 등록 (오너)**: Render/환경변수에 실제 시크릿 등록 완료. PR #185 머지됨.
 
 ### 진행 중
-- **택배사 검색형 UI**: 코딩 에이전트 작업 착수(아래 PR). 드롭다운 → 자동완성 + free text.
+- 없음
 
 ### 백로그 (오너 승인 대기 — 먼저 묻지 말 것)
 - SaaS 공개 준비 (약관/결제/랜딩) — 2026 Q4. **오너가 지시할 때까지 대기.**
@@ -53,3 +53,20 @@
 - `src/seller_console/orders/tracking_trackingmore.py` → `KOREA_COURIERS` (TrackingMore 코드 매핑)
 - `src/seller_console/orders/tracking.py` → `COURIER_MAP`
 - 동적 확장: TrackingMore `GET /v4/couriers/all`
+
+---
+
+## ✅ 이번 반영 완료 (2026-06-07)
+- 셀러 콘솔 주문관리 운송장 모달의 택배사 입력을 **검색형(typeahead) + 직접 입력**으로 교체.
+  - 키보드 지원: ↑/↓ 이동, Enter 선택, Esc 닫기
+  - 마우스 클릭 선택 지원
+  - 접근성: `role="combobox"` / `role="listbox"` / `aria-*` 속성 반영
+  - 택배사 선택 시 **운송장번호 입력 필드로 포커스 자동 이동**
+- 택배사 카탈로그를 `src/seller_console/orders/courier_catalog.py`로 통합.
+  - `tracking.py`의 `COURIER_MAP`
+  - `tracking_trackingmore.py`의 `KOREA_COURIERS`
+  - 한/영/약칭 별칭 검색: `CJ`, `씨제이`, `cj-korea`, `한진`, `hanjin`, `롯데`, `lotte`, `우체국`, `korea-post`, `로젠`, `logen`
+  - TrackingMore `/v4/couriers/all` 동적 확장 + 키 미설정/오프라인 시 내장 카탈로그 폴백(빈 목록 방지)
+- 저장 경로 유지:
+  - `POST /seller/orders/<marketplace>/<order_id>/tracking`
+  - `POST /seller/orders/bulk/tracking`

@@ -11,7 +11,167 @@
 // 5분 자동 폴링
 const POLL_INTERVAL = 5 * 60 * 1000;
 const REFRESH_DELAY_MS = 900;
+const TYPEAHEAD_DEBOUNCE_MS = 180;
+const BLUR_CLOSE_DELAY_MS = 120;
+const MODAL_FOCUS_DELAY_MS = 120;
+const TYPEAHEAD_LIMIT = 10;
 setInterval(refreshOrders, POLL_INTERVAL);
+const typeaheadState = {
+  activeIndex: -1,
+  suggestions: [],
+  debounceTimer: null,
+};
+
+function normalizeCourierText(value) {
+  // 검색 매칭을 위해 공백/하이픈/언더스코어를 제거한 정규화 문자열을 만든다.
+  return String(value || "").toLowerCase().trim().replace(/[\s_-]+/g, "");
+}
+
+function loadCourierCatalog() {
+  const scriptEl = document.getElementById("tm-courier-catalog");
+  if (!scriptEl) return [];
+  try {
+    const parsed = JSON.parse(scriptEl.textContent || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_error) {
+    return [];
+  }
+}
+
+const COURIER_CATALOG = loadCourierCatalog();
+
+function getCourierTypeaheadElements() {
+  return {
+    input: document.getElementById("tm-courier"),
+    listbox: document.getElementById("tm-courier-listbox"),
+    trackingInput: document.getElementById("tm-tracking-no"),
+  };
+}
+
+function renderCourierSuggestions() {
+  const { input, listbox } = getCourierTypeaheadElements();
+  if (!input || !listbox) return;
+
+  listbox.innerHTML = "";
+  const isOpen = typeaheadState.suggestions.length > 0;
+  listbox.classList.toggle("d-none", !isOpen);
+  input.setAttribute("aria-expanded", isOpen ? "true" : "false");
+
+  if (!isOpen) {
+    input.removeAttribute("aria-activedescendant");
+    return;
+  }
+
+  typeaheadState.suggestions.forEach((courier, index) => {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = `list-group-item list-group-item-action${index === typeaheadState.activeIndex ? " active" : ""}`;
+    option.id = `tm-courier-option-${index}`;
+    option.setAttribute("role", "option");
+    option.setAttribute("aria-selected", index === typeaheadState.activeIndex ? "true" : "false");
+    option.textContent = courier.name;
+    option.addEventListener("mousedown", (event) => event.preventDefault());
+    option.addEventListener("click", () => selectCourierSuggestion(index));
+    listbox.appendChild(option);
+  });
+
+  if (typeaheadState.activeIndex >= 0) {
+    input.setAttribute("aria-activedescendant", `tm-courier-option-${typeaheadState.activeIndex}`);
+  } else {
+    input.removeAttribute("aria-activedescendant");
+  }
+}
+
+function closeCourierSuggestions() {
+  typeaheadState.activeIndex = -1;
+  typeaheadState.suggestions = [];
+  renderCourierSuggestions();
+}
+
+function getCourierSuggestions(query) {
+  const normalizedQuery = normalizeCourierText(query);
+  const rows = COURIER_CATALOG.filter((courier) => {
+    const terms = Array.isArray(courier.search_terms) ? courier.search_terms : [];
+    return terms.some((term) => normalizeCourierText(term).includes(normalizedQuery));
+  });
+  rows.sort((a, b) => a.name.localeCompare(b.name, "ko-KR"));
+  return rows.slice(0, TYPEAHEAD_LIMIT);
+}
+
+function selectCourierSuggestion(index) {
+  const { input, trackingInput } = getCourierTypeaheadElements();
+  const selected = typeaheadState.suggestions[index];
+  if (!input || !selected) return;
+  input.value = selected.name;
+  closeCourierSuggestions();
+  trackingInput?.focus();
+}
+
+function scheduleCourierFilter() {
+  if (typeaheadState.debounceTimer) {
+    clearTimeout(typeaheadState.debounceTimer);
+  }
+  typeaheadState.debounceTimer = setTimeout(() => {
+    const { input } = getCourierTypeaheadElements();
+    const query = normalizeCourierText(input?.value || "");
+    if (!query) {
+      closeCourierSuggestions();
+      return;
+    }
+    typeaheadState.suggestions = getCourierSuggestions(query);
+    typeaheadState.activeIndex = typeaheadState.suggestions.length ? 0 : -1;
+    renderCourierSuggestions();
+  }, TYPEAHEAD_DEBOUNCE_MS);
+}
+
+function initCourierTypeahead() {
+  const { input, listbox } = getCourierTypeaheadElements();
+  if (!input || !listbox) return;
+
+  input.addEventListener("input", scheduleCourierFilter);
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      if (!typeaheadState.suggestions.length) {
+        scheduleCourierFilter();
+        return;
+      }
+      typeaheadState.activeIndex = (typeaheadState.activeIndex + 1) % typeaheadState.suggestions.length;
+      renderCourierSuggestions();
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!typeaheadState.suggestions.length) return;
+      typeaheadState.activeIndex =
+        (typeaheadState.activeIndex - 1 + typeaheadState.suggestions.length) % typeaheadState.suggestions.length;
+      renderCourierSuggestions();
+      return;
+    }
+    if (event.key === "Enter" && typeaheadState.activeIndex >= 0 && typeaheadState.suggestions.length) {
+      event.preventDefault();
+      selectCourierSuggestion(typeaheadState.activeIndex);
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeCourierSuggestions();
+    }
+  });
+  input.addEventListener("focus", () => {
+    if (normalizeCourierText(input.value)) {
+      scheduleCourierFilter();
+    }
+  });
+  input.addEventListener("blur", () => {
+    setTimeout(closeCourierSuggestions, BLUR_CLOSE_DELAY_MS);
+  });
+  document.addEventListener("click", (event) => {
+    if (!listbox.contains(event.target) && event.target !== input) {
+      closeCourierSuggestions();
+    }
+  });
+}
 
 /** 현재 URL 파라미터 유지하며 페이지 새로고침 */
 function refreshOrders() {
@@ -60,18 +220,26 @@ async function syncNow() {
 function openTrackingModal(marketplace, orderId) {
   document.getElementById("tm-marketplace").value = marketplace;
   document.getElementById("tm-order-id").value = orderId;
+  document.getElementById("tm-courier").value = "";
   document.getElementById("tm-tracking-no").value = "";
+  closeCourierSuggestions();
   const modal = new bootstrap.Modal(document.getElementById("trackingModal"));
   modal.show();
+  setTimeout(() => document.getElementById("tm-courier")?.focus(), MODAL_FOCUS_DELAY_MS);
 }
 
 /** 운송장 저장 */
 async function saveTracking() {
   const marketplace = document.getElementById("tm-marketplace").value;
   const orderId = document.getElementById("tm-order-id").value;
-  const courier = document.getElementById("tm-courier").value;
+  // 저장 시에는 사용자가 입력한 free text를 유지하되 앞뒤 공백만 제거한다.
+  const courier = document.getElementById("tm-courier").value.trim();
   const trackingNo = document.getElementById("tm-tracking-no").value.trim();
 
+  if (!courier) {
+    showToast("택배사를 입력하세요.", "warning");
+    return;
+  }
   if (!trackingNo) {
     showToast("운송장 번호를 입력하세요.", "warning");
     return;
@@ -186,3 +354,5 @@ async function updateOrderStatus(marketplace, orderId, nextStatus) {
     showToast("상태 변경 요청 실패: " + e.message, "danger");
   }
 }
+
+initCourierTypeahead();
