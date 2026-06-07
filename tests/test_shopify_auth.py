@@ -245,7 +245,7 @@ class TestSecretCheck:
         with patch.dict(os.environ, {}, clear=True):
             results = self.mod.check_secrets(group='shopify')
             assert set(results['shopify']['missing']) == {
-                'SHOPIFY_SHOP', 'SHOPIFY_ACCESS_TOKEN', 'SHOPIFY_CLIENT_SECRET'
+                'SHOPIFY_SHOP', 'SHOPIFY_AUTO_TOKEN', 'SHOPIFY_CLIENT_SECRET'
             }
 
     def test_check_all_returns_false_when_missing(self):
