@@ -17,8 +17,8 @@ def _mock_response(status_code: int, body: dict, headers: dict | None = None):
 @pytest.fixture
 def shopify_env(monkeypatch):
     monkeypatch.setenv("SHOPIFY_SHOP", "phase183-test.myshopify.com")
-    monkeypatch.setenv("SHOPIFY_ACCESS_TOKEN", "shpat_test_token")
-    monkeypatch.setenv("SHOPIFY_ADMIN_API_VERSION", "2024-10")
+    monkeypatch.setenv("SHOPIFY_AUTO_TOKEN", "atk_test_token")
+    monkeypatch.setenv("SHOPIFY_API_VERSION", "2026-04")
     monkeypatch.setenv("SHOPIFY_SHOP_CURRENCY", "USD")
     monkeypatch.setenv("SHOPIFY_SHOP_LOCALE", "en-US")
 
@@ -34,12 +34,76 @@ def test_is_configured(monkeypatch):
     from src.markets.adapters.shopify import ShopifyAdapter
 
     monkeypatch.delenv("SHOPIFY_SHOP", raising=False)
+    monkeypatch.delenv("SHOPIFY_AUTO_TOKEN", raising=False)
     monkeypatch.delenv("SHOPIFY_ACCESS_TOKEN", raising=False)
     assert ShopifyAdapter().is_configured() is False
 
     monkeypatch.setenv("SHOPIFY_SHOP", "test.myshopify.com")
+    monkeypatch.setenv("SHOPIFY_AUTO_TOKEN", "atk_token")
+    assert ShopifyAdapter().is_configured() is True
+
+
+def test_is_configured_with_legacy_token_fallback(monkeypatch):
+    from src.markets.adapters.shopify import ShopifyAdapter
+
+    monkeypatch.setenv("SHOPIFY_SHOP", "test.myshopify.com")
+    monkeypatch.delenv("SHOPIFY_AUTO_TOKEN", raising=False)
     monkeypatch.setenv("SHOPIFY_ACCESS_TOKEN", "shpat_token")
     assert ShopifyAdapter().is_configured() is True
+
+
+def test_access_token_prefers_auto_token_header(shopify_env, monkeypatch):
+    from src.markets.adapters.shopify import ShopifyAdapter
+
+    monkeypatch.setenv("SHOPIFY_ACCESS_TOKEN", "shpat_legacy")
+    session = Mock()
+    session.request.return_value = _mock_response(200, {"shop": {"name": "Phase184"}})
+
+    adapter = ShopifyAdapter(session=session, sleep_fn=lambda _: None)
+    result = adapter.check_connection()
+
+    assert result["ok"] is True
+    args, kwargs = session.request.call_args
+    assert kwargs["headers"]["X-Shopify-Access-Token"] == "atk_test_token"
+    assert "2026-04" in args[1]
+
+
+def test_check_connection_success(shopify_env):
+    from src.markets.adapters.shopify import ShopifyAdapter
+
+    session = Mock()
+    session.request.return_value = _mock_response(
+        200,
+        {
+            "shop": {
+                "name": "Catdyy",
+                "myshopify_domain": "phase183-test.myshopify.com",
+                "currency": "USD",
+                "plan_name": "development",
+                "email": "owner@example.com",
+                "primary_locale": "en-US",
+            }
+        },
+    )
+    result = ShopifyAdapter(session=session, sleep_fn=lambda _: None).check_connection()
+    assert result["ok"] is True
+    assert result["shop_name"] == "Catdyy"
+    assert result["currency"] == "USD"
+
+
+@pytest.mark.parametrize(
+    ("status_code", "expected"),
+    [(401, "인증"), (403, "권한"), (404, "스토어")],
+)
+def test_check_connection_http_errors(shopify_env, status_code, expected):
+    from src.markets.adapters.shopify import ShopifyAdapter
+
+    session = Mock()
+    session.request.return_value = _mock_response(status_code, {"errors": "fail"})
+    result = ShopifyAdapter(session=session, sleep_fn=lambda _: None).check_connection()
+    assert result["ok"] is False
+    assert result["http_status"] == status_code
+    assert expected in result["message"]
 
 
 def test_validate_listing_errors(shopify_env):

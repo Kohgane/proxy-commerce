@@ -4,6 +4,7 @@
 
 | Phase | 내용 | PR | 완료일 |
 |---|---|---|---|
+| Phase 184 | Shopify 운영 정합성 강화 — `SHOPIFY_AUTO_TOKEN(atk_)` 우선 인증(`X-Shopify-Access-Token`) + `SHOPIFY_SHOP` 기반 실스토어 타깃 정렬(하위호환 토큰 fallback 유지), `check_connection()`으로 `shop.json` 라이브 자가진단(스토어 요약/401·403·404 정직 사유), `/seller/markets`에 Shopify 연결 확인 버튼 및 마켓 연동 컨트롤 센터(연결 상태/필요 env/마지막 동기화) 추가, WooCommerce(`kohganemultishop.org`) 별도 트랙 정직 표기, env_catalog Shopify 키를 Render 실배포 5종(`CLIENT_ID/CLIENT_SECRET/AUTO_TOKEN/API_VERSION/SHOP`)으로 갱신, 운영 문서 업데이트 | #PR | 2026-06-06 |
 | Phase 183 | Shopify 글로벌 마켓 실연동 — `src/markets/adapters/shopify.py`를 Admin API 기반 생성/수정 어댑터로 구현(자격증명 검증, 사전 검증, 429 백오프 재시도, 네트워크 오류 처리, 멱등 업데이트), 다통화/현지화 연결(샵 통화 환산, locale 번역본 우선·원문 폴백 경고), 셀러 수집 업로드 플로우에서 Shopify 선택/실행 결과(외부 ID·관리자 링크·실패 사유) 노출, env_catalog Shopify 역할 분리 정리 및 운영 문서 보강 | #PR | 2026-06-06 |
 | Phase 182 | UX/UI 정비 + 실동작 보강 — 공통 디자인 토큰(`app.css`)과 상태/컴포넌트 스타일을 기준으로 seller/admin/login 화면 톤을 통일, 핵심 4화면(로그인/대시보드/카탈로그/주문)에서 버튼 로딩·토스트 피드백을 공통화하고 카탈로그 미연동 마켓 액션은 `연동 필요` 비활성으로 정직 표기, 기존 주문/카탈로그 엔드포인트 동작 회귀 없이 접근성(라벨/aria)·반응형 기초 유지 | #PR | 2026-06-06 |
 | Phase 181 | 현지화(Localization) 파이프라인 — `LocalizationService` 도입(기존 DeepL/OpenAI 호출 재사용, 캐시, API 미설정 시 정직 미번역), 상품 `localized`/`localization_status` 저장 확장, 마켓 locale 번역본 우선 사용·원문 폴백 표기, 셀러 수집 화면 현지화 버튼/locale 선택/번역본 미리보기·수정 추가, 관련 단위·통합 테스트 보강 | #PR | 2026-06-06 |

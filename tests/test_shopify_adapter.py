@@ -24,6 +24,7 @@ def test_marketplace_name():
 
 def test_health_check_missing(monkeypatch):
     """API 키 미설정 시 health_check missing."""
+    monkeypatch.delenv("SHOPIFY_AUTO_TOKEN", raising=False)
     monkeypatch.delenv("SHOPIFY_ACCESS_TOKEN", raising=False)
     monkeypatch.delenv("SHOPIFY_SHOP", raising=False)
     from src.seller_console.market_adapters.shopify_adapter import ShopifyAdapter
@@ -34,7 +35,7 @@ def test_health_check_missing(monkeypatch):
 
 def test_health_check_dry_run(monkeypatch):
     """ADAPTER_DRY_RUN=1 시 dry_run 반환."""
-    monkeypatch.setenv("SHOPIFY_ACCESS_TOKEN", "shpat_test_token_value")
+    monkeypatch.setenv("SHOPIFY_AUTO_TOKEN", "atk_test_token_value")
     monkeypatch.setenv("SHOPIFY_SHOP", "testshop.myshopify.com")
     monkeypatch.setenv("ADAPTER_DRY_RUN", "1")
     from src.seller_console.market_adapters.shopify_adapter import ShopifyAdapter
@@ -45,6 +46,7 @@ def test_health_check_dry_run(monkeypatch):
 
 def test_fetch_inventory_stub(monkeypatch):
     """API 키 미설정 시 빈 목록 반환."""
+    monkeypatch.delenv("SHOPIFY_AUTO_TOKEN", raising=False)
     monkeypatch.delenv("SHOPIFY_ACCESS_TOKEN", raising=False)
     monkeypatch.delenv("SHOPIFY_SHOP", raising=False)
     from src.seller_console.market_adapters.shopify_adapter import ShopifyAdapter
@@ -55,6 +57,7 @@ def test_fetch_inventory_stub(monkeypatch):
 
 def test_upload_product_stub(monkeypatch):
     """API 키 미설정 시 stub 반환."""
+    monkeypatch.delenv("SHOPIFY_AUTO_TOKEN", raising=False)
     monkeypatch.delenv("SHOPIFY_ACCESS_TOKEN", raising=False)
     monkeypatch.delenv("SHOPIFY_SHOP", raising=False)
     from src.seller_console.market_adapters.shopify_adapter import ShopifyAdapter
@@ -65,7 +68,7 @@ def test_upload_product_stub(monkeypatch):
 
 def test_upload_product_dry_run(monkeypatch):
     """ADAPTER_DRY_RUN=1 시 dry_run 반환."""
-    monkeypatch.setenv("SHOPIFY_ACCESS_TOKEN", "shpat_test_token_value")
+    monkeypatch.setenv("SHOPIFY_AUTO_TOKEN", "atk_test_token_value")
     monkeypatch.setenv("SHOPIFY_SHOP", "testshop.myshopify.com")
     monkeypatch.setenv("ADAPTER_DRY_RUN", "1")
     from src.seller_console.market_adapters.shopify_adapter import ShopifyAdapter

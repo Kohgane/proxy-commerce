@@ -1,16 +1,17 @@
 # Proxy Commerce Global Roadmap
 
-## 글로벌 확장 단계 (Phase 180~187)
+## 글로벌 확장 단계 (Phase 180~189)
 
 - **Phase 180 (이번 PR)**: 글로벌 기반 — 다통화 모델(price+currency + price_krw 하위호환), country/currency/locale/region 메타, 어댑터 인터페이스 확장, 글로벌 판매처 스텁(Amazon/eBay/Shopify/Shopee), 국가/통화 UI, 로드맵 문서화
 - **Phase 181 (완료)**: 현지화 파이프라인 — LocalizationService(DeepL/OpenAI 재사용, 캐시, 미설정 시 정직 미번역), 상품 `localized` 저장/폴백, 셀러 콘솔 현지화 액션·locale 선택·번역본 미리보기/수정
 - **Phase 182 (완료)**: UX/UI 정비 + 핵심 버튼 실동작
 - **Phase 183 (완료)**: Shopify 실연동 파일럿(end-to-end 등록/수정, 다통화·현지화·멱등·재시도)
-- **Phase 184**: eBay 어댑터 실연동
-- **Phase 185**: Amazon SP-API 실연동(US/EU/JP)
-- **Phase 186**: Shopee/Lazada 동남아 확장
-- **Phase 187**: 글로벌 주문·배송·통관 통합
-- **Phase 188**: 다통화 결제·정산 + 세금/관세
+- **Phase 184 (완료 예정)**: Shopify 자동화 토큰(`SHOPIFY_AUTO_TOKEN`) 실배포 포맷 정렬 + 라이브 연결 자가진단 + 마켓 연동 허브
+- **Phase 185**: eBay 어댑터 실연동
+- **Phase 186**: Amazon SP-API 실연동(US/EU/JP)
+- **Phase 187**: Shopee/Lazada 동남아 확장
+- **Phase 188**: 글로벌 주문·배송·통관 통합
+- **Phase 189**: 다통화 결제·정산 + 세금/관세
 
 ## 새 나라/새 마켓 추가 가이드
 

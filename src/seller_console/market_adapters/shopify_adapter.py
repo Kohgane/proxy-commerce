@@ -4,7 +4,8 @@ Admin API 2024-04 연동. 키 미설정 시 stub 모드.
 ADAPTER_DRY_RUN=1 시 실 API 호출 차단.
 
 환경변수:
-  SHOPIFY_ACCESS_TOKEN  — Admin API 액세스 토큰
+  SHOPIFY_AUTO_TOKEN    — Admin API 앱 자동화 토큰(atk_)
+  SHOPIFY_ACCESS_TOKEN  — 하위호환 토큰
   SHOPIFY_SHOP          — 숍 도메인 (예: myshop.myshopify.com)
 """
 from __future__ import annotations
@@ -18,11 +19,12 @@ from .base import MarketAdapter
 
 logger = logging.getLogger(__name__)
 
-_API_VERSION = "2024-04"
+def _access_token() -> str:
+    return (os.getenv("SHOPIFY_AUTO_TOKEN") or os.getenv("SHOPIFY_ACCESS_TOKEN") or os.getenv("SHOPIFY_ADMIN_TOKEN") or "").strip()
 
 
 def _api_active() -> bool:
-    return bool(os.getenv("SHOPIFY_ACCESS_TOKEN")) and bool(os.getenv("SHOPIFY_SHOP"))
+    return bool(_access_token()) and bool(os.getenv("SHOPIFY_SHOP"))
 
 
 def _dry_run() -> bool:
@@ -31,7 +33,8 @@ def _dry_run() -> bool:
 
 def _base_url() -> str:
     shop = os.getenv("SHOPIFY_SHOP", "")
-    return f"https://{shop}/admin/api/{_API_VERSION}"
+    api_version = os.getenv("SHOPIFY_API_VERSION", "2026-04")
+    return f"https://{shop}/admin/api/{api_version}"
 
 
 class ShopifyAdapter(MarketAdapter):
@@ -54,7 +57,7 @@ class ShopifyAdapter(MarketAdapter):
 
         try:
             import requests
-            token = os.getenv("SHOPIFY_ACCESS_TOKEN", "")
+            token = _access_token()
             resp = requests.get(
                 f"{_base_url()}/products.json",
                 headers={"X-Shopify-Access-Token": token, "Content-Type": "application/json"},
@@ -94,14 +97,14 @@ class ShopifyAdapter(MarketAdapter):
             등록 결과 dict
         """
         if not _api_active():
-            return {"status": "stub", "detail": "SHOPIFY_ACCESS_TOKEN/SHOPIFY_SHOP 미설정"}
+            return {"status": "stub", "detail": "SHOPIFY_AUTO_TOKEN/SHOPIFY_SHOP 미설정"}
 
         if _dry_run():
             return {"status": "dry_run", "detail": "ADAPTER_DRY_RUN=1 — API 호출 차단"}
 
         try:
             import requests
-            token = os.getenv("SHOPIFY_ACCESS_TOKEN", "")
+            token = _access_token()
             resp = requests.post(
                 f"{_base_url()}/products.json",
                 headers={"X-Shopify-Access-Token": token, "Content-Type": "application/json"},
@@ -119,7 +122,7 @@ class ShopifyAdapter(MarketAdapter):
         if not _api_active():
             return {
                 "status": "missing",
-                "detail": "SHOPIFY_ACCESS_TOKEN/SHOPIFY_SHOP 미설정",
+                "detail": "SHOPIFY_AUTO_TOKEN/SHOPIFY_SHOP 미설정",
                 "hint": "https://partners.shopify.com 에서 Private App 생성",
             }
 
@@ -128,7 +131,7 @@ class ShopifyAdapter(MarketAdapter):
 
         try:
             import requests
-            token = os.getenv("SHOPIFY_ACCESS_TOKEN", "")
+            token = _access_token()
             resp = requests.get(
                 f"{_base_url()}/shop.json",
                 headers={"X-Shopify-Access-Token": token},

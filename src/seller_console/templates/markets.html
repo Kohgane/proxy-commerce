@@ -18,7 +18,40 @@
     <button class="btn btn-outline-primary btn-sm" id="syncAllBtn" onclick="syncAllMarkets()">
       🔄 지금 동기화
     </button>
+    <button class="btn btn-outline-success btn-sm" id="shopifyCheckBtn" onclick="checkShopifyConnection()">
+      🔌 Shopify 연결 확인
+    </button>
     <button class="btn btn-outline-secondary btn-sm" onclick="location.reload()">새로고침</button>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-3">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div>
+        <div class="fw-semibold">마켓 연동 컨트롤 센터</div>
+        <div class="small text-muted">연동 상태/필요 env/마지막 동기화를 한눈에 확인하세요.</div>
+      </div>
+      <span class="badge text-bg-light" id="shopifyConnectionSummary">Shopify 연결 확인 대기</span>
+    </div>
+    <div class="row g-2 mt-2">
+      {% for hub in market_hub_cards %}
+      <div class="col-md-3">
+        <div class="border rounded-3 p-2 h-100">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <strong>{{ hub.label }}</strong>
+            <span class="badge bg-{{ hub.status_style }}">{{ hub.status_label }}</span>
+          </div>
+          <div class="small text-muted">{{ hub.country }}/{{ hub.currency }} · 활성 {{ hub.active }} / 전체 {{ hub.total }}</div>
+          {% if hub.note %}
+          <div class="small mt-1">{{ hub.note }}</div>
+          {% endif %}
+          <div class="small text-muted mt-1">마지막 동기화: {{ hub.last_synced_at or '—' }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <div id="shopifyConnectionDetail" class="small mt-2 text-muted"></div>
   </div>
 </div>
 
@@ -228,6 +261,49 @@ function syncMarket(marketplace) {
 
 function syncAllMarkets() {
   syncMarket('all');
+}
+
+function checkShopifyConnection() {
+  const btn = document.getElementById('shopifyCheckBtn');
+  const summary = document.getElementById('shopifyConnectionSummary');
+  const detail = document.getElementById('shopifyConnectionDetail');
+  btn.disabled = true;
+  btn.textContent = '⏳ 확인 중...';
+
+  fetch('/seller/markets/shopify/check-connection', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'}
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        summary.className = 'badge bg-success';
+        summary.textContent = `연결됨 · ${data.shop_domain || '-'}`;
+        detail.textContent = `스토어: ${data.shop_name || '-'} / 통화: ${data.currency || '-'} / 플랜: ${data.plan_name || '-'} / 이메일: ${data.email || '-'}`;
+        showToast('Shopify 연결 확인 완료');
+        return;
+      }
+
+      summary.className = 'badge bg-danger';
+      const status = data.http_status ? `HTTP ${data.http_status}` : (data.status || 'fail');
+      summary.textContent = `미연동 · ${status}`;
+      if (Array.isArray(data.missing_env) && data.missing_env.length) {
+        detail.textContent = `누락 env: ${data.missing_env.join(', ')}`;
+      } else {
+        detail.textContent = data.message || data.reason || 'Shopify 연결 확인 실패';
+      }
+      showToast(data.message || data.reason || 'Shopify 연결 확인 실패', 'danger');
+    })
+    .catch(err => {
+      summary.className = 'badge bg-danger';
+      summary.textContent = '미연동 · request_error';
+      detail.textContent = err.message;
+      showToast('Shopify 연결 확인 실패: ' + err.message, 'danger');
+    })
+    .finally(() => {
+      btn.disabled = false;
+      btn.textContent = '🔌 Shopify 연결 확인';
+    });
 }
 
 // 토스트 표시

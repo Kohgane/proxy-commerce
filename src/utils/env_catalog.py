@@ -45,6 +45,8 @@ ENV_ALIASES: Dict[str, List[str]] = {
     "WC_KEY": ["WC_KEY", "WOO_CK"],
     "WC_SECRET": ["WC_SECRET", "WOO_CS"],
     "SHOPIFY_ACCESS_TOKEN": ["SHOPIFY_ACCESS_TOKEN", "SHOPIFY_ADMIN_TOKEN"],
+    "SHOPIFY_AUTO_TOKEN": ["SHOPIFY_AUTO_TOKEN", "SHOPIFY_ACCESS_TOKEN", "SHOPIFY_ADMIN_TOKEN"],
+    "SHOPIFY_API_VERSION": ["SHOPIFY_API_VERSION", "SHOPIFY_ADMIN_API_VERSION"],
 }
 
 
@@ -149,14 +151,20 @@ API_REGISTRY: list = [
     ),
     ApiKey(
         name="shopify_marketplace",
-        env_vars=["SHOPIFY_SHOP", "SHOPIFY_ACCESS_TOKEN"],
-        purpose="Shopify Admin API — 글로벌 마켓 상품 등록/수정(웹훅 시크릿과 별도)",
+        env_vars=[
+            "SHOPIFY_CLIENT_ID",
+            "SHOPIFY_CLIENT_SECRET",
+            "SHOPIFY_AUTO_TOKEN",
+            "SHOPIFY_API_VERSION",
+            "SHOPIFY_SHOP",
+        ],
+        purpose="Shopify Admin API — 앱 자동화 토큰(atk_) 기반 글로벌 마켓 상품 등록/수정",
         docs_url="https://shopify.dev/docs/api/admin-rest",
         category=ApiCategory.MARKETPLACE,
     ),
     ApiKey(
         name="shopify_marketplace_api_version",
-        env_vars=["SHOPIFY_ADMIN_API_VERSION"],
+        env_vars=["SHOPIFY_API_VERSION"],
         purpose="Shopify Admin API 버전 고정 (선택, 미설정 시 어댑터 기본값 사용)",
         docs_url="https://shopify.dev/docs/api/usage/versioning",
         category=ApiCategory.MARKETPLACE,
@@ -342,8 +350,8 @@ API_REGISTRY: list = [
     # ── 자체몰 ───────────────────────────────────────────────────────────
     ApiKey(
         name="shopify",
-        env_vars=["SHOPIFY_ACCESS_TOKEN", "SHOPIFY_SHOP"],
-        purpose="Shopify 자체몰 기본 연동 (주문/스토어 연결)",
+        env_vars=["SHOPIFY_SHOP", "SHOPIFY_AUTO_TOKEN"],
+        purpose="Shopify 자체몰 기본 연동 (앱 자동화 토큰, 주문/스토어 연결)",
         docs_url="https://partners.shopify.com",
         category=ApiCategory.SELF_MALL,
     ),
