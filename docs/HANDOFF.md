@@ -56,17 +56,31 @@
 
 ---
 
-## ✅ 이번 반영 완료 (2026-06-07)
-- 셀러 콘솔 주문관리 운송장 모달의 택배사 입력을 **검색형(typeahead) + 직접 입력**으로 교체.
-  - 키보드 지원: ↑/↓ 이동, Enter 선택, Esc 닫기
-  - 마우스 클릭 선택 지원
-  - 접근성: `role="combobox"` / `role="listbox"` / `aria-*` 속성 반영
-  - 택배사 선택 시 **운송장번호 입력 필드로 포커스 자동 이동**
-- 택배사 카탈로그를 `src/seller_console/orders/courier_catalog.py`로 통합.
-  - `tracking.py`의 `COURIER_MAP`
-  - `tracking_trackingmore.py`의 `KOREA_COURIERS`
-  - 한/영/약칭 별칭 검색: `CJ`, `씨제이`, `cj-korea`, `한진`, `hanjin`, `롯데`, `lotte`, `우체국`, `korea-post`, `로젠`, `logen`
-  - TrackingMore `/v4/couriers/all` 동적 확장 + 키 미설정/오프라인 시 내장 카탈로그 폴백(빈 목록 방지)
-- 저장 경로 유지:
-  - `POST /seller/orders/<marketplace>/<order_id>/tracking`
-  - `POST /seller/orders/bulk/tracking`
+## ✅ 이번 반영 완료 (2026-06-07) — 죽은 버튼 실작동화 + UI/UX 정비
+
+### 감사 리포트
+`docs/operations/dead_button_audit.md` 생성 — 전수 감사 결과 표(위치/현재상태/목표동작/연결라우트) 포함.
+
+### 연결한 버튼 목록
+
+| 버튼 | 위치 | 이전 | 이후 |
+|------|------|------|------|
+| 일괄 승인 | `/seller/returns/inbox` | 죽은 버튼 (onclick 없음) | `POST /seller/returns/bulk-approve` 연결 |
+| 거부 | `/seller/returns/inbox` | 죽은 버튼 (onclick 없음) | `POST /seller/returns/bulk-reject` 연결 |
+| 부분 환불 | `/seller/returns/inbox` | 죽은 버튼 (onclick 없음) | disabled + 툴팁 "개별 요청을 직접 처리하세요" (honest UI) |
+
+### 행 선택 UX 추가
+- 반품 인박스 테이블에 체크박스 열 추가 (개별 선택 + 전체 선택 `chkAll`)
+- 체크한 항목만 일괄 승인/거부 처리
+- 처리할 항목이 없으면 버튼 자동 disabled (honest UI)
+
+### UX 개선 (alert → toast)
+- `/seller/sourcing/watches` — Watch 등록/실행/삭제 결과 `alert()` → 토스트 알림으로 교체
+- `/seller/sourcing/candidates` — 승인/거절/등록/전체승인 결과 `alert()` → 토스트 알림으로 교체
+
+### 신규 백엔드 라우트
+- `POST /seller/returns/bulk-approve` — 선택 요청 일괄 승인 (partial failure 허용, ok=true)
+- `POST /seller/returns/bulk-reject` — 선택 요청 일괄 거부
+
+### 회귀 테스트
+`tests/test_dead_buttons_fixed.py` — 17개 테스트 전원 통과

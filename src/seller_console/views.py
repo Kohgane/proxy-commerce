@@ -3987,6 +3987,16 @@ def sourcing_watches():
         + "<div class='mt-3'><a href='/seller/sourcing/candidates' class='btn btn-outline-success btn-sm'>📋 후보 큐 보기</a></div>"
         + """
 <script>
+function _watchToast(msg, type) {
+  if (window.showGlobalToast) { showGlobalToast(msg, type || 'success'); return; }
+  var el = document.getElementById('watchPageToast');
+  var body = document.getElementById('watchPageToastMsg');
+  if (!el || !body) return;
+  body.textContent = msg;
+  var map = {success:'bg-success',danger:'bg-danger',warning:'bg-warning text-dark'};
+  el.className = 'toast text-white border-0 ' + (map[type] || 'bg-success');
+  new bootstrap.Toast(el, {delay: 3500}).show();
+}
 document.getElementById('watchForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -3995,24 +4005,31 @@ document.getElementById('watchForm').addEventListener('submit', async function(e
     body.max_price = parseFloat(body.max_price) || 0;
     const r = await fetch('/seller/sourcing/watches', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
     const d = await r.json();
-    if(d.ok) { alert('Watch 등록 완료: ' + d.watch_id); location.reload(); }
-    else { alert('오류: ' + (d.error || '알 수 없음')); }
+    if(d.ok) { _watchToast('Watch 등록 완료: ' + d.watch_id, 'success'); setTimeout(() => location.reload(), 1200); }
+    else { _watchToast('오류: ' + (d.error || '알 수 없음'), 'danger'); }
 });
 async function runWatch(wid) {
     if(!confirm('이 Watch를 지금 실행하시겠습니까?')) return;
     const r = await fetch('/seller/sourcing/watches/' + wid + '/run', {method:'POST'});
     const d = await r.json();
-    alert('발견: ' + d.discovered + '건 / 큐 적재: ' + d.queued + '건');
-    location.reload();
+    _watchToast('발견: ' + d.discovered + '건 / 큐 적재: ' + d.queued + '건', 'success');
+    setTimeout(() => location.reload(), 1500);
 }
 async function deleteWatch(wid) {
     if(!confirm('Watch를 삭제하시겠습니까?')) return;
     const r = await fetch('/seller/sourcing/watches/' + wid, {method:'DELETE'});
     const d = await r.json();
     if(d.ok) { location.reload(); }
-    else { alert('오류: ' + (d.error || '알 수 없음')); }
+    else { _watchToast('오류: ' + (d.error || '알 수 없음'), 'danger'); }
 }
-</script>"""
+</script>
+<div class='position-fixed bottom-0 end-0 p-3 pc-toast-stack' style='z-index:1100'>
+  <div id='watchPageToast' class='toast' role='alert'>
+    <div class='toast-header'><strong class='me-auto'>알림</strong>
+    <button type='button' class='btn-close' data-bs-dismiss='toast'></button></div>
+    <div class='toast-body' id='watchPageToastMsg'></div>
+  </div>
+</div>"""
     )
 
     return _render_seller_page("소싱 Watch", body, page="sourcing_watches")
@@ -4149,7 +4166,7 @@ def sourcing_candidates():
     body = Markup(
         "<h4 class='mb-3'>📋 소싱 후보 큐 (Phase 143)</h4>"
     ) + stat_html + filter_tabs + Markup(
-        + (
+        (
             "<div class='alert alert-info'>해당 상태의 후보가 없습니다.</div>"
             if not candidates else
             "<div class='table-responsive'>"
@@ -4166,11 +4183,21 @@ def sourcing_candidates():
         + "</div>"
         + """
 <script>
+function _candidateToast(msg, type) {
+  if (window.showGlobalToast) { showGlobalToast(msg, type || 'success'); return; }
+  var el = document.getElementById('candidatePageToast');
+  var body = document.getElementById('candidatePageToastMsg');
+  if (!el || !body) return;
+  body.textContent = msg;
+  var map = {success:'bg-success',danger:'bg-danger',warning:'bg-warning text-dark'};
+  el.className = 'toast text-white border-0 ' + (map[type] || 'bg-success');
+  new bootstrap.Toast(el, {delay: 3500}).show();
+}
 async function approveCandidate(cid) {
     const r = await fetch('/seller/sourcing/candidates/' + cid + '/approve', {method:'POST'});
     const d = await r.json();
     if(d.ok) location.reload();
-    else alert('오류: ' + (d.error || '알 수 없음'));
+    else _candidateToast('오류: ' + (d.error || '알 수 없음'), 'danger');
 }
 async function rejectCandidate(cid) {
     const reason = prompt('거절 사유 (선택):', '');
@@ -4178,23 +4205,30 @@ async function rejectCandidate(cid) {
     const r = await fetch('/seller/sourcing/candidates/' + cid + '/reject', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({reason})});
     const d = await r.json();
     if(d.ok) location.reload();
-    else alert('오류: ' + (d.error || '알 수 없음'));
+    else _candidateToast('오류: ' + (d.error || '알 수 없음'), 'danger');
 }
 async function publishCandidate(cid) {
     if(!confirm('이 후보를 자동 등록하시겠습니까?')) return;
     const r = await fetch('/seller/sourcing/candidates/' + cid + '/publish', {method:'POST'});
     const d = await r.json();
-    alert('등록 결과: ' + JSON.stringify(d, null, 2));
-    location.reload();
+    if(d.ok) { _candidateToast('등록 완료: ' + (d.product_id || cid), 'success'); setTimeout(() => location.reload(), 1200); }
+    else { _candidateToast('등록 실패: ' + (d.error || '알 수 없음'), 'danger'); }
 }
 async function bulkApprove() {
     if(!confirm('모든 대기 후보를 승인하시겠습니까?')) return;
     const r = await fetch('/seller/sourcing/candidates/bulk-approve', {method:'POST'});
     const d = await r.json();
-    alert('승인 완료: ' + d.approved_count + '건');
-    location.reload();
+    _candidateToast('승인 완료: ' + d.approved_count + '건', 'success');
+    setTimeout(() => location.reload(), 1200);
 }
-</script>"""
+</script>
+<div class='position-fixed bottom-0 end-0 p-3 pc-toast-stack' style='z-index:1100'>
+  <div id='candidatePageToast' class='toast' role='alert'>
+    <div class='toast-header'><strong class='me-auto'>알림</strong>
+    <button type='button' class='btn-close' data-bs-dismiss='toast'></button></div>
+    <div class='toast-body' id='candidatePageToastMsg'></div>
+  </div>
+</div>"""
     )
 
     return _render_seller_page("소싱 후보 큐", body, page="sourcing_candidates")
@@ -4806,6 +4840,7 @@ def returns_inbox():
     body_rows = "".join(
         (
             "<tr>"
+            f"<td><input type='checkbox' class='return-row-chk' value='{x.get('request_id', '-')}'></td>"
             f"<td><code>{x.get('request_id', '-')}</code></td>"
             f"<td>{x.get('order_id', '-')}</td>"
             f"<td>{x.get('reason', '-')}</td>"
@@ -4815,8 +4850,10 @@ def returns_inbox():
         for x in rows
     )
     if not body_rows:
-        body_rows = "<tr><td colspan='4' class='text-center text-muted'>반품 요청이 없습니다.</td></tr>"
+        body_rows = "<tr><td colspan='5' class='text-center text-muted'>반품 요청이 없습니다.</td></tr>"
 
+    pending_count = sum(1 for x in rows if x.get("status") in ("requested", "manual_review"))
+    bulk_disabled = 'disabled title="처리할 요청이 없습니다"' if not pending_count else ""
     body = (
         "<h4 class='mb-3'>↩️ 반품/환불 인박스</h4>"
         "<form class='row g-2 mb-3'>"
@@ -4828,15 +4865,160 @@ def returns_inbox():
         + "'></div>"
         "<div class='col-auto'><button class='btn btn-sm btn-primary'>적용</button></div>"
         "</form>"
-        "<div class='d-flex gap-2 mb-2'>"
-        "<button class='btn btn-success btn-sm' type='button'>일괄 승인</button>"
-        "<button class='btn btn-outline-primary btn-sm' type='button'>부분 환불</button>"
-        "<button class='btn btn-outline-danger btn-sm' type='button'>거부</button>"
+        "<div class='d-flex gap-2 mb-2 align-items-center'>"
+        f"<button class='btn btn-success btn-sm' type='button' id='bulkApproveBtn' onclick='bulkApproveReturns()' {bulk_disabled}>일괄 승인</button>"
+        "<button class='btn btn-outline-primary btn-sm' type='button' disabled "
+        "title='부분 환불은 개별 요청을 직접 처리하세요'>부분 환불 (개별처리)</button>"
+        f"<button class='btn btn-outline-danger btn-sm' type='button' id='bulkRejectBtn' onclick='bulkRejectReturns()' {bulk_disabled}>거부</button>"
         "</div>"
-        "<table class='table table-sm table-hover'><thead><tr><th>요청 ID</th><th>주문</th><th>사유</th><th>상태</th></tr></thead>"
+        "<table class='table table-sm table-hover'>"
+        "<thead><tr>"
+        "<th><input type='checkbox' id='chkAll' title='전체 선택' onchange='toggleAllReturns(this)'></th>"
+        "<th>요청 ID</th><th>주문</th><th>사유</th><th>상태</th>"
+        "</tr></thead>"
         f"<tbody>{body_rows}</tbody></table>"
+        "<div class='position-fixed bottom-0 end-0 p-3 pc-toast-stack' style='z-index:1100'>"
+        "<div id='returnsToast' class='toast' role='alert'>"
+        "<div class='toast-header'><strong class='me-auto'>알림</strong>"
+        "<button type='button' class='btn-close' data-bs-dismiss='toast'></button></div>"
+        "<div class='toast-body' id='returnsToastMsg'></div></div></div>"
+        """<script>
+function _returnsToast(msg, type) {
+  var el = document.getElementById('returnsToast');
+  var body = document.getElementById('returnsToastMsg');
+  if (!el || !body) return;
+  body.textContent = msg;
+  var map = {success:'bg-success',danger:'bg-danger',warning:'bg-warning'};
+  el.className = 'toast text-white border-0 ' + (map[type] || 'bg-success');
+  new bootstrap.Toast(el, {delay: 3500}).show();
+}
+function toggleAllReturns(masterChk) {
+  document.querySelectorAll('.return-row-chk').forEach(c => { c.checked = masterChk.checked; });
+}
+function _getCheckedIds() {
+  return Array.from(document.querySelectorAll('.return-row-chk:checked')).map(c => c.value);
+}
+async function bulkApproveReturns() {
+  var ids = _getCheckedIds();
+  if (!ids.length) { _returnsToast('승인할 요청을 선택하세요.', 'warning'); return; }
+  var btn = document.getElementById('bulkApproveBtn');
+  if (btn) btn.disabled = true;
+  try {
+    var r = await fetch('/seller/returns/bulk-approve', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({request_ids: ids})
+    });
+    var d = await r.json();
+    if (d.ok) {
+      _returnsToast('승인 완료: ' + d.approved_count + '건', 'success');
+      setTimeout(() => location.reload(), 1200);
+    } else {
+      _returnsToast('오류: ' + (d.error || '알 수 없음'), 'danger');
+    }
+  } catch(e) {
+    _returnsToast('요청 실패: ' + e.message, 'danger');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+async function bulkRejectReturns() {
+  var ids = _getCheckedIds();
+  if (!ids.length) { _returnsToast('거부할 요청을 선택하세요.', 'warning'); return; }
+  if (!confirm(ids.length + '건을 거부하시겠습니까?')) return;
+  var btn = document.getElementById('bulkRejectBtn');
+  if (btn) btn.disabled = true;
+  try {
+    var r = await fetch('/seller/returns/bulk-reject', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({request_ids: ids})
+    });
+    var d = await r.json();
+    if (d.ok) {
+      _returnsToast('거부 완료: ' + d.rejected_count + '건', 'success');
+      setTimeout(() => location.reload(), 1200);
+    } else {
+      _returnsToast('오류: ' + (d.error || '알 수 없음'), 'danger');
+    }
+  } catch(e) {
+    _returnsToast('요청 실패: ' + e.message, 'danger');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+</script>"""
     )
     return _render_seller_page("↩️ 반품/환불 인박스", body, page="returns_inbox")
+
+
+@bp.post("/returns/bulk-approve")
+def returns_bulk_approve():
+    """반품/환불 일괄 승인 (선택된 요청 ID 목록).
+
+    Request body: {"request_ids": ["RET-001", ...]}
+    Response: {"ok": true, "approved_count": N, "results": [...]}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    request_ids: list[str] = [str(x) for x in (data.get("request_ids") or []) if x]
+    if not request_ids:
+        return jsonify({"ok": False, "error": "승인할 요청 ID가 없습니다."}), 400
+
+    results = []
+    approved_count = 0
+    try:
+        from src.returns_automation.automation_manager import ReturnsAutomationManager
+        mgr = ReturnsAutomationManager()
+        for rid in request_ids:
+            try:
+                req_obj = mgr.approve(rid, notes="셀러 콘솔 일괄 승인")
+                results.append({"request_id": rid, "ok": True, "status": req_obj.status.value if hasattr(req_obj.status, "value") else str(req_obj.status)})
+                approved_count += 1
+            except KeyError:
+                results.append({"request_id": rid, "ok": False, "error": "요청을 찾을 수 없습니다."})
+            except Exception as exc:
+                logger.warning("returns_bulk_approve 항목 오류 %s: %s", rid, exc)
+                results.append({"request_id": rid, "ok": False, "error": "처리 중 오류가 발생했습니다."})
+    except Exception as exc:
+        logger.error("returns_bulk_approve 서비스 오류: %s", exc)
+        return jsonify({"ok": False, "error": "서비스 준비 중입니다."}), 503
+
+    return jsonify({"ok": True, "approved_count": approved_count, "results": results})
+
+
+@bp.post("/returns/bulk-reject")
+def returns_bulk_reject():
+    """반품/환불 일괄 거부 (선택된 요청 ID 목록).
+
+    Request body: {"request_ids": ["RET-001", ...], "notes": "사유"}
+    Response: {"ok": true, "rejected_count": N, "results": [...]}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    request_ids: list[str] = [str(x) for x in (data.get("request_ids") or []) if x]
+    notes = str(data.get("notes") or "셀러 콘솔 일괄 거부")
+    if not request_ids:
+        return jsonify({"ok": False, "error": "거부할 요청 ID가 없습니다."}), 400
+
+    results = []
+    rejected_count = 0
+    try:
+        from src.returns_automation.automation_manager import ReturnsAutomationManager
+        mgr = ReturnsAutomationManager()
+        for rid in request_ids:
+            try:
+                req_obj = mgr.reject(rid, notes=notes)
+                results.append({"request_id": rid, "ok": True, "status": req_obj.status.value if hasattr(req_obj.status, "value") else str(req_obj.status)})
+                rejected_count += 1
+            except KeyError:
+                results.append({"request_id": rid, "ok": False, "error": "요청을 찾을 수 없습니다."})
+            except Exception as exc:
+                logger.warning("returns_bulk_reject 항목 오류 %s: %s", rid, exc)
+                results.append({"request_id": rid, "ok": False, "error": "처리 중 오류가 발생했습니다."})
+    except Exception as exc:
+        logger.error("returns_bulk_reject 서비스 오류: %s", exc)
+        return jsonify({"ok": False, "error": "서비스 준비 중입니다."}), 503
+
+    return jsonify({"ok": True, "rejected_count": rejected_count, "results": results})
 
 
 @bp.get("/settlement")
