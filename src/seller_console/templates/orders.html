@@ -96,9 +96,22 @@
 
 <!-- 주문 테이블 -->
 <div class="card border-0 shadow-sm pc-action-table">
-  <div class="card-header bg-white d-flex justify-content-between align-items-center">
-    <span class="fw-semibold">주문 목록</span>
-    <a href="/seller/orders/export.csv" class="btn btn-outline-secondary btn-sm">CSV 내보내기</a>
+  <div class="card-header bg-white">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <span class="fw-semibold">주문 목록</span>
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        {% if orders %}
+        <span id="bulkSelectionCount" class="badge text-bg-light">0건 선택</span>
+        <button id="bulkTrackingButton" type="button" class="btn btn-outline-primary btn-sm" onclick="openBulkTrackingModal()" disabled>일괄 운송장 등록</button>
+        <button id="bulkShipButton" type="button" class="btn btn-primary btn-sm" onclick="bulkUpdateSelectedStatus('shipped')" disabled>배송중 처리</button>
+        <button id="bulkStatusButton" type="button" class="btn btn-outline-secondary btn-sm" onclick="openBulkStatusModal()" disabled>일괄 상태 변경</button>
+        {% endif %}
+        <a href="/seller/orders/export.csv" class="btn btn-outline-secondary btn-sm">CSV 내보내기</a>
+      </div>
+    </div>
+    {% if orders %}
+    <div id="bulkActionHint" class="small text-muted mt-2">선택한 주문이 없어 일괄 액션을 사용할 수 없습니다.</div>
+    {% endif %}
   </div>
   <div class="card-body p-0">
     {% if orders %}
@@ -106,6 +119,9 @@
       <table class="table table-hover table-sm mb-0">
         <thead class="table-light">
           <tr>
+            <th class="text-center" style="width: 44px;">
+              <input type="checkbox" id="ordersSelectAll" title="전체 선택" aria-label="주문 전체 선택">
+            </th>
             <th>마켓</th>
             <th>주문번호</th>
             <th>주문일시</th>
@@ -119,6 +135,17 @@
         <tbody>
           {% for o in orders %}
           <tr>
+            <td class="text-center">
+              <input
+                type="checkbox"
+                class="order-row-chk"
+                value="{{ o.order_id }}"
+                data-order-id="{{ o.order_id }}"
+                data-marketplace="{{ o.marketplace }}"
+                data-status="{{ o.status }}"
+                aria-label="{{ o.order_id }} 주문 선택"
+              >
+            </td>
             <td>
               {% if o.marketplace == 'coupang' %}<span class="badge bg-warning text-dark">쿠팡</span>
               {% elif o.marketplace == 'smartstore' %}<span class="badge bg-success">스마트스토어</span>
@@ -211,6 +238,87 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
         <button type="button" class="btn btn-primary" onclick="saveTracking()">저장</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 일괄 운송장 입력 모달 -->
+<div class="modal fade" id="bulkTrackingModal" tabindex="-1" aria-labelledby="bulkTrackingModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="bulkTrackingModalLabel">선택 주문 일괄 운송장 등록</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+      </div>
+      <div class="modal-body">
+        <div class="small text-muted mb-3" id="bulkTrackingSelectionSummary">선택한 주문 정보를 확인하세요.</div>
+        <div class="mb-3">
+          <label class="form-label" for="btm-courier">택배사</label>
+          <input type="text" id="btm-courier" class="form-control" placeholder="선택 주문에 공통 적용할 택배사">
+        </div>
+        <div id="bulkTrackingRows" class="d-grid gap-2"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+        <button type="button" class="btn btn-primary" id="bulkTrackingSaveButton" onclick="saveBulkTracking()">저장</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 상태 변경 모달 -->
+<div class="modal fade" id="statusModal" tabindex="-1" aria-labelledby="statusModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="statusModalLabel">주문 상태 변경</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="sm-marketplace">
+        <input type="hidden" id="sm-order-id">
+        <div class="mb-3">
+          <label class="form-label" for="sm-next-status">다음 상태</label>
+          <select id="sm-next-status" class="form-select"></select>
+          <div class="form-text" id="sm-status-help"></div>
+        </div>
+        <div class="mb-0">
+          <label class="form-label" for="sm-reason">사유 (선택)</label>
+          <textarea id="sm-reason" class="form-control" rows="3" placeholder="메모가 필요하면 입력하세요."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+        <button type="button" class="btn btn-primary" id="statusSaveButton" onclick="submitStatusChange()">저장</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 일괄 상태 변경 모달 -->
+<div class="modal fade" id="bulkStatusModal" tabindex="-1" aria-labelledby="bulkStatusModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="bulkStatusModalLabel">선택 주문 일괄 상태 변경</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+      </div>
+      <div class="modal-body">
+        <div class="small text-muted mb-3" id="bulkStatusSelectionSummary">같은 상태 흐름을 공유하는 주문만 함께 변경할 수 있습니다.</div>
+        <div class="mb-3">
+          <label class="form-label" for="bsm-next-status">다음 상태</label>
+          <select id="bsm-next-status" class="form-select"></select>
+          <div class="form-text" id="bsm-status-help"></div>
+        </div>
+        <div class="mb-0">
+          <label class="form-label" for="bsm-reason">사유 (선택)</label>
+          <textarea id="bsm-reason" class="form-control" rows="3" placeholder="일괄 상태 변경 메모가 있으면 입력하세요."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+        <button type="button" class="btn btn-primary" id="bulkStatusSaveButton" onclick="submitBulkStatusChange()">저장</button>
       </div>
     </div>
   </div>

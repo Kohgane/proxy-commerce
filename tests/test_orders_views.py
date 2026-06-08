@@ -65,6 +65,24 @@ class TestOrdersViews:
         assert 'id="tm-courier-listbox"' in data
         assert 'id="tm-courier-catalog"' in data
 
+    def test_get_orders_has_bulk_action_ui(self, client, mock_sync_service):
+        """체크박스/일괄 액션/모달 UI가 렌더링된다."""
+        with patch("src.seller_console.views._get_order_sync_service", return_value=mock_sync_service):
+            resp = client.get("/seller/orders")
+        html = resp.get_data(as_text=True)
+        assert 'id="ordersSelectAll"' in html
+        assert "order-row-chk" in html
+        assert 'id="bulkTrackingButton"' in html
+        assert 'id="bulkStatusModal"' in html
+        assert 'id="statusModal"' in html
+
+    def test_get_orders_removes_prompt_based_status_change(self, client, mock_sync_service):
+        """주문 페이지에 window.prompt 기반 상태 변경이 남아 있지 않다."""
+        with patch("src.seller_console.views._get_order_sync_service", return_value=mock_sync_service):
+            resp = client.get("/seller/orders")
+        html = resp.get_data(as_text=True)
+        assert "prompt(" not in html
+
     def test_get_orders_has_kpi_data(self, client, mock_sync_service):
         """GET /seller/orders → KPI 카드 포함."""
         with patch("src.seller_console.views._get_order_sync_service", return_value=mock_sync_service):
@@ -157,6 +175,103 @@ class TestOrdersViews:
         with patch("src.seller_console.views._get_order_sync_service", return_value=mock_sync_service):
             resp = client.post("/seller/orders/bulk/tracking", json={"items": []})
         assert resp.status_code == 400
+
+    def test_post_bulk_tracking_service_unavailable(self, client):
+        """서비스 없음 → 503."""
+        with patch("src.seller_console.views._get_order_sync_service", return_value=None):
+            resp = client.post(
+                "/seller/orders/bulk/tracking",
+                json={"items": [{"order_id": "CP-001", "marketplace": "coupang", "courier": "CJ", "tracking_no": "111"}]},
+            )
+        assert resp.status_code == 503
+
+    def test_post_bulk_status_success(self, client, mock_sync_service):
+        """POST /seller/orders/bulk/status → 선택 주문 상태가 일괄 변경된다."""
+        from src.seller_console.orders.models import OrderStatus, UnifiedOrder
+        from datetime import datetime
+        from decimal import Decimal
+
+        mock_sync_service.list_orders.side_effect = [
+            [
+                UnifiedOrder(
+                    order_id="CP-001",
+                    marketplace="coupang",
+                    status=OrderStatus.PREPARING,
+                    placed_at=datetime(2024, 1, 15, 10, 0),
+                    total_krw=Decimal("39000"),
+                )
+            ],
+            [
+                UnifiedOrder(
+                    order_id="CP-002",
+                    marketplace="coupang",
+                    status=OrderStatus.PREPARING,
+                    placed_at=datetime(2024, 1, 15, 10, 5),
+                    total_krw=Decimal("41000"),
+                )
+            ],
+        ]
+        mock_sync_service.update_status.return_value = {"ok": True, "status": "shipped", "adapter": {"applied": True, "simulated": False}}
+
+        with patch("src.seller_console.views._get_order_sync_service", return_value=mock_sync_service):
+            resp = client.post(
+                "/seller/orders/bulk/status",
+                json={
+                    "items": [
+                        {"order_id": "CP-001", "marketplace": "coupang"},
+                        {"order_id": "CP-002", "marketplace": "coupang"},
+                    ],
+                    "next_status": "shipped",
+                    "reason": "일괄 출고",
+                },
+            )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert data["success_count"] == 2
+        assert data["failed_count"] == 0
+        assert mock_sync_service.update_status.call_count == 2
+
+    def test_post_bulk_status_empty_selection(self, client, mock_sync_service):
+        """선택 주문이 없으면 400."""
+        with patch("src.seller_console.views._get_order_sync_service", return_value=mock_sync_service):
+            resp = client.post("/seller/orders/bulk/status", json={"items": [], "next_status": "shipped"})
+        assert resp.status_code == 400
+
+    def test_post_bulk_status_service_unavailable(self, client):
+        """서비스 없음 → 503."""
+        with patch("src.seller_console.views._get_order_sync_service", return_value=None):
+            resp = client.post(
+                "/seller/orders/bulk/status",
+                json={"items": [{"order_id": "CP-001", "marketplace": "coupang"}], "next_status": "shipped"},
+            )
+        assert resp.status_code == 503
+
+    def test_post_bulk_status_rejects_invalid_transition(self, client, mock_sync_service):
+        """공통 상태 전이가 불가능한 주문은 실패로 반환된다."""
+        from src.seller_console.orders.models import OrderStatus, UnifiedOrder
+        from datetime import datetime
+        from decimal import Decimal
+
+        mock_sync_service.list_orders.return_value = [
+            UnifiedOrder(
+                order_id="CP-001",
+                marketplace="coupang",
+                status=OrderStatus.NEW,
+                placed_at=datetime(2024, 1, 15, 10, 0),
+                total_krw=Decimal("39000"),
+            )
+        ]
+
+        with patch("src.seller_console.views._get_order_sync_service", return_value=mock_sync_service):
+            resp = client.post(
+                "/seller/orders/bulk/status",
+                json={"items": [{"order_id": "CP-001", "marketplace": "coupang"}], "next_status": "shipped"},
+            )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is False
+        assert data["failed_count"] == 1
 
     def test_get_export_csv(self, client, mock_sync_service):
         """GET /seller/orders/export.csv → CSV 응답."""
