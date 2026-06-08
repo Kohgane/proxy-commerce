@@ -4931,6 +4931,7 @@ def shipping_tracking():
 @bp.get("/returns/inbox")
 def returns_inbox():
     """반품/환불 자동화 인박스 (Phase 146)."""
+    from html import escape
     from src.returns.auto_processor import ReturnsAutoProcessor
 
     reason = (request.args.get("reason") or "").strip()
@@ -4939,19 +4940,23 @@ def returns_inbox():
     processor.collect_market_requests([])
     processor.process()
     rows = processor.list_requests(reason=reason, status=status)
-    body_rows = "".join(
-        (
+    body_rows = ""
+    for x in rows:
+        request_id = escape(str(x.get("request_id", "-")), quote=True)
+        order_id = escape(str(x.get("order_id", "-")), quote=True)
+        reason_text = escape(str(x.get("reason", "-")))
+        status_text = escape(str(x.get("status", "-")))
+        badge_class = "bg-success" if x.get("status") == "approved" else "bg-secondary"
+        body_rows += (
             "<tr>"
-            f"<td><input type='checkbox' class='return-row-chk' value='{x.get('request_id', '-')}'></td>"
-            f"<td><code>{x.get('request_id', '-')}</code></td>"
-            f"<td>{x.get('order_id', '-')}</td>"
-            f"<td>{x.get('reason', '-')}</td>"
-            f"<td><span class='badge {'bg-success' if x.get('status') == 'approved' else 'bg-secondary'}'>{x.get('status', '-')}</span></td>"
-            f"<td><button class='btn btn-outline-primary btn-sm py-0' type='button' onclick=\"openPartialRefundModal('{x.get('request_id', '-')}', '{x.get('order_id', '-')}')\">부분 환불</button></td>"
+            f"<td><input type='checkbox' class='return-row-chk' value='{request_id}'></td>"
+            f"<td><code>{request_id}</code></td>"
+            f"<td>{order_id}</td>"
+            f"<td>{reason_text}</td>"
+            f"<td><span class='badge {badge_class}'>{status_text}</span></td>"
+            f"<td><button class='btn btn-outline-primary btn-sm py-0 js-partial-refund-btn' type='button' data-request-id='{request_id}' data-order-id='{order_id}'>부분 환불</button></td>"
             "</tr>"
         )
-        for x in rows
-    )
     if not body_rows:
         body_rows = "<tr><td colspan='6' class='text-center text-muted'>반품 요청이 없습니다.</td></tr>"
 
@@ -5014,6 +5019,11 @@ function toggleAllReturns(masterChk) {
 function _getCheckedIds() {
   return Array.from(document.querySelectorAll('.return-row-chk:checked')).map(c => c.value);
 }
+document.addEventListener('click', function(event) {
+  var btn = event.target.closest('.js-partial-refund-btn');
+  if (!btn) return;
+  openPartialRefundModal(btn.dataset.requestId || '', btn.dataset.orderId || '');
+});
 function openPartialRefundModal(requestId, orderId) {
   document.getElementById('partialRefundRequestId').value = requestId;
   document.getElementById('partialRefundOrderLabel').textContent = '주문 ' + orderId + ' / 요청 ' + requestId;
