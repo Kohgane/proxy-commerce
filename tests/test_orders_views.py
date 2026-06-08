@@ -65,7 +65,7 @@ class TestOrdersViews:
         assert 'id="tm-courier-listbox"' in data
         assert 'id="tm-courier-catalog"' in data
 
-    def test_get_orders_has_bulk_action_ui(self, client, mock_sync_service):
+    def test_get_orders_renders_bulk_action_ui_elements(self, client, mock_sync_service):
         """체크박스/일괄 액션/모달 UI가 렌더링된다."""
         with patch("src.seller_console.views._get_order_sync_service", return_value=mock_sync_service):
             resp = client.get("/seller/orders")

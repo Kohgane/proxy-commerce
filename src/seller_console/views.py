@@ -5203,11 +5203,8 @@ def returns_partial_refund(request_id: str):
         return jsonify({"ok": False, "error": "요청을 찾을 수 없습니다."}), 404
 
     try:
-        result = mgr._refund.process_partial_refund(req, amount, reason=reason)
-        try:
-            mgr.update_event(request_id, "partially_refunded")
-        except Exception:
-            pass
+        result = mgr.process_partial_refund(request_id, amount, reason=reason)
+        req = mgr.get_request_object(request_id) or req
         status_value = req.status.value if hasattr(req.status, "value") else str(req.status)
         return jsonify({"ok": True, "request_id": request_id, "refund_amount": str(amount), "status": status_value, "result": result})
     except Exception as exc:

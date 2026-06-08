@@ -296,6 +296,24 @@ class ReturnsAutomationManager:
             req.status = self._workflow.transition(req.status, ReturnStatus.refunded)
         return result
 
+    def process_partial_refund(
+        self,
+        request_id: str,
+        amount: Decimal,
+        reason: str = '',
+    ) -> dict:
+        """부분 환불 처리."""
+        req = self._requests.get(request_id)
+        if req is None:
+            raise KeyError(f'요청을 찾을 수 없습니다: {request_id}')
+
+        result = self._refund.process_partial_refund(req, amount, reason=reason)
+        try:
+            req.status = self._workflow.transition(req.status, ReturnStatus.partially_refunded)
+        except ValueError:
+            logger.info("[매니저] %s 부분 환불 후 상태 유지: %s", request_id, req.status.value)
+        return result
+
     def process_exchange_for_request(
         self,
         request_id: str,

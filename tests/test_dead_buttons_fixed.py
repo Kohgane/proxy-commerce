@@ -228,7 +228,7 @@ class TestReturnsPartialRefund:
         req.status.value = "partially_refunded"
         req.order_id = "ORD-001"
         mgr.get_request_object.return_value = req
-        mgr._refund.process_partial_refund.return_value = {"status": "success", "partial_refund": True}
+        mgr.process_partial_refund.return_value = {"status": "success", "partial_refund": True}
 
         with patch("src.returns_automation.automation_manager.ReturnsAutomationManager", return_value=mgr):
             resp = client.post(
@@ -240,7 +240,7 @@ class TestReturnsPartialRefund:
         data = resp.get_json()
         assert data["ok"] is True
         assert data["refund_amount"] == "15000"
-        mgr._refund.process_partial_refund.assert_called_once()
+        mgr.process_partial_refund.assert_called_once()
 
     def test_partial_refund_rejects_empty_amount(self, client):
         resp = client.post("/seller/returns/RET-001/partial-refund", json={"amount_krw": 0})
@@ -255,7 +255,7 @@ class TestReturnsPartialRefund:
         assert resp.status_code == 404
 
     def test_partial_refund_service_unavailable(self, client):
-        with patch("src.returns_automation.automation_manager.ReturnsAutomationManager", side_effect=RuntimeError("down")):
+        with patch("src.returns_automation.automation_manager.ReturnsAutomationManager", side_effect=RuntimeError("service unavailable")):
             resp = client.post("/seller/returns/RET-001/partial-refund", json={"amount_krw": 1000})
         assert resp.status_code == 503
 

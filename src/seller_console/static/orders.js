@@ -322,24 +322,26 @@ function openBulkTrackingModal() {
 
   summaryEl.textContent = `${selectedOrders.length}건의 주문에 공통 택배사를 적용합니다. 운송장 번호는 주문별로 입력하세요.`;
   courierInput.value = "";
-  rowsEl.innerHTML = selectedOrders
-    .map(
-      (order, index) => `
-        <div class="input-group input-group-sm">
-          <span class="input-group-text">${order.marketplace}/${order.orderId}</span>
-          <input
-            type="text"
-            class="form-control bulk-tracking-no"
-            data-order-id="${order.orderId}"
-            data-marketplace="${order.marketplace}"
-            placeholder="운송장 번호"
-            aria-label="${order.orderId} 운송장 번호"
-            ${index === 0 ? 'autofocus' : ''}
-          >
-        </div>
-      `,
-    )
-    .join("");
+  rowsEl.replaceChildren();
+  selectedOrders.forEach((order) => {
+    const group = document.createElement("div");
+    group.className = "input-group input-group-sm";
+
+    const label = document.createElement("span");
+    label.className = "input-group-text";
+    label.textContent = `${order.marketplace}/${order.orderId}`;
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "form-control bulk-tracking-no";
+    input.dataset.orderId = order.orderId;
+    input.dataset.marketplace = order.marketplace;
+    input.placeholder = "운송장 번호";
+    input.setAttribute("aria-label", `${order.orderId} 운송장 번호`);
+
+    group.append(label, input);
+    rowsEl.appendChild(group);
+  });
 
   const modal = new bootstrap.Modal(document.getElementById("bulkTrackingModal"));
   modal.show();
@@ -402,6 +404,11 @@ async function saveBulkTracking() {
     courier,
     tracking_no: input.value.trim(),
   }));
+  const invalidRows = items.filter((item) => !item.order_id || !item.marketplace);
+  if (invalidRows.length) {
+    showToast("선택 주문 정보가 올바르지 않아 일괄 운송장을 저장할 수 없습니다.", "danger");
+    return;
+  }
   const missing = items.filter((item) => !item.tracking_no);
   if (missing.length) {
     showToast(`운송장 번호가 비어 있는 주문이 ${missing.length}건 있습니다.`, "warning");
