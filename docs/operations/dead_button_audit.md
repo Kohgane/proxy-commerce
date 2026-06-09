@@ -1,6 +1,6 @@
 # 셀러 콘솔 — 죽은 버튼 전수 감사 리포트
 
-> 최종 갱신: 2026-06-08  
+> 최종 갱신: 2026-06-09  
 > 감사 범위: `src/seller_console/views.py`, `src/seller_console/templates/`, `src/seller_console/static/`  
 > 원칙: **honest UI** — 동작하지 않는 버튼/가짜 기능 노출 금지
 
@@ -59,6 +59,17 @@
 | 택배사 검색 typeahead | `orders.html` 모달 | 프론트엔드 전용(courier_catalog.py) |
 | 알림 테스트 | `notifications.html` | `POST /seller/notifications/test` |
 | 반품 부분 환불 | `returns/inbox` 개별 행 모달 | `POST /seller/returns/<request_id>/partial-refund` |
+
+---
+
+## 운영 실동작 검증 반영 (2026-06-09)
+
+- 주문 운영 핵심 루프(`/seller/orders` → 상태 변경 → 운송장 단건/일괄 → CSV export)를
+  `tests/test_orders_views.py` 시나리오 테스트로 재검증/보강했다.
+- 주문 화면에 **주문 운영 라우트 진단 블록**을 추가해 서비스 미가용(503) 시
+  `/admin/diagnostics`로 즉시 점검 경로를 안내한다.
+- 상태/운송장/일괄 처리 라우트의 경고/오류 로그를 `action`, `marketplace`, `order_id`, `reason`
+  필드 중심으로 통일해 운영 추적성을 보강했다.
 
 ---
 

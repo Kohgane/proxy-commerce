@@ -13,6 +13,14 @@
 <div class="pc-status pc-status-info small mb-3">
   Phase 129 주문 통합 화면입니다. 일부 마켓 기능은 준비 중일 수 있습니다.
 </div>
+<div class="pc-status {% if ops_health.service_available %}pc-status-success{% else %}pc-status-warning{% endif %} small mb-3">
+  <div class="fw-semibold mb-1">주문 운영 라우트 진단</div>
+  {% if ops_health.service_available %}
+  <div>주문/배송 핵심 라우트 상태: 정상. 운영 액션을 바로 진행할 수 있습니다.</div>
+  {% else %}
+  <div>주문 서비스가 일시적으로 준비되지 않았습니다(503). 잠시 후 다시 시도하거나 <a href="/admin/diagnostics">/admin/diagnostics</a>에서 점검하세요.</div>
+  {% endif %}
+</div>
 
 <!-- KPI 카드 -->
 <div class="row g-3 mb-4">
@@ -102,9 +110,9 @@
       <div class="d-flex align-items-center gap-2 flex-wrap">
         {% if orders %}
         <span id="bulkSelectionCount" class="badge text-bg-light">0건 선택</span>
-        <button id="bulkTrackingButton" type="button" class="btn btn-outline-primary btn-sm" onclick="openBulkTrackingModal()" disabled>일괄 운송장 등록</button>
-        <button id="bulkShipButton" type="button" class="btn btn-primary btn-sm" onclick="bulkUpdateSelectedStatus('shipped')" disabled>배송중 처리</button>
-        <button id="bulkStatusButton" type="button" class="btn btn-outline-secondary btn-sm" onclick="openBulkStatusModal()" disabled>일괄 상태 변경</button>
+        <button id="bulkTrackingButton" type="button" class="btn btn-outline-primary btn-sm" onclick="openBulkTrackingModal()" disabled title="주문을 선택하면 사용할 수 있습니다.">일괄 운송장 등록</button>
+        <button id="bulkShipButton" type="button" class="btn btn-primary btn-sm" onclick="bulkUpdateSelectedStatus('shipped')" disabled title="배송중으로 변경 가능한 주문을 선택하면 사용할 수 있습니다.">배송중 처리</button>
+        <button id="bulkStatusButton" type="button" class="btn btn-outline-secondary btn-sm" onclick="openBulkStatusModal()" disabled title="공통 상태 흐름이 있는 주문을 선택하면 사용할 수 있습니다.">일괄 상태 변경</button>
         {% endif %}
         <a href="/seller/orders/export.csv" class="btn btn-outline-secondary btn-sm">CSV 내보내기</a>
       </div>
@@ -237,7 +245,7 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
-        <button type="button" class="btn btn-primary" onclick="saveTracking()">저장</button>
+        <button type="button" class="btn btn-primary" id="trackingSaveButton" onclick="saveTracking()">저장</button>
       </div>
     </div>
   </div>

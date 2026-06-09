@@ -142,12 +142,21 @@ function updateBulkActionState() {
   }
   if (bulkTrackingButton) {
     bulkTrackingButton.disabled = selectedOrders.length === 0;
+    bulkTrackingButton.title = selectedOrders.length === 0
+      ? "주문을 1건 이상 선택하면 일괄 운송장 등록을 사용할 수 있습니다."
+      : "";
   }
   if (bulkShipButton) {
     bulkShipButton.disabled = !allowedStatuses.includes("shipped");
+    bulkShipButton.title = allowedStatuses.includes("shipped")
+      ? ""
+      : "선택한 주문에 배송중(shipped)으로 가능한 공통 상태 전이가 없습니다.";
   }
   if (bulkStatusButton) {
     bulkStatusButton.disabled = allowedStatuses.length === 0;
+    bulkStatusButton.title = allowedStatuses.length === 0
+      ? "공통 상태 흐름이 있는 주문을 선택하면 일괄 상태 변경을 사용할 수 있습니다."
+      : "";
   }
   if (hintEl) {
     if (!selectedOrders.length) {
@@ -258,6 +267,21 @@ function refreshOrders() {
   window.location.reload();
 }
 
+async function parseJsonSafe(response, context) {
+  try {
+    return await response.json();
+  } catch (error) {
+    console.warn(`${context} 응답 파싱 실패`, error);
+    return { ok: false, error: "응답 파싱에 실패했습니다." };
+  }
+}
+
+function getRetryHint(statusCode) {
+  if (statusCode === 503) return " 서비스가 준비되면 다시 시도하세요.";
+  if (statusCode >= 500) return " 내부 오류입니다. 잠시 후 다시 시도하세요.";
+  return "";
+}
+
 /** 동기화 버튼 핸들러 */
 async function syncNow() {
   const btn = document.getElementById("ordersSyncButton");
@@ -365,23 +389,35 @@ async function saveTracking() {
     return;
   }
 
+  const saveButton = document.getElementById("trackingSaveButton");
+  if (window.setButtonLoading && saveButton) {
+    window.setButtonLoading(saveButton, true, "저장 중…");
+  }
+
   try {
     const resp = await fetch(`/seller/orders/${encodeURIComponent(marketplace)}/${encodeURIComponent(orderId)}/tracking`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ courier, tracking_no: trackingNo }),
     });
-    const data = await resp.json();
+    const data = await parseJsonSafe(resp, "운송장 등록");
+    if (!resp.ok || !data.ok) {
+      const retryHint = getRetryHint(resp.status);
+      showToast("운송장 등록 실패: " + (data.error || "오류") + retryHint, "danger");
+      return;
+    }
     const modalEl = document.getElementById("trackingModal");
     bootstrap.Modal.getInstance(modalEl)?.hide();
     if (data.ok) {
       showToast("운송장이 등록되었습니다.");
       setTimeout(refreshOrders, 1000);
-    } else {
-      showToast("운송장 등록 실패: " + (data.error || "오류"), "danger");
     }
   } catch (e) {
-    showToast("요청 실패: " + e.message, "danger");
+    showToast("요청 실패: " + e.message + " (네트워크 상태를 확인하고 다시 시도하세요.)", "danger");
+  } finally {
+    if (window.setButtonLoading && saveButton) {
+      window.setButtonLoading(saveButton, false);
+    }
   }
 }
 
@@ -521,10 +557,11 @@ async function updateOrderStatus(marketplace, orderId, nextStatus, reason = "") 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ next_status: nextStatus, reason }),
     });
-    const data = await resp.json();
-    if (!data.ok) {
-      showToast(data.error || "상태 변경 실패", "danger");
-      return;
+    const data = await parseJsonSafe(resp, "상태 변경");
+    if (!resp.ok || !data.ok) {
+      const retryHint = getRetryHint(resp.status);
+      showToast((data.error || "상태 변경 실패") + retryHint, "danger");
+      return false;
     }
     const simulated = !!(data.adapter && data.adapter.simulated && !data.adapter.applied);
     showToast(
@@ -534,8 +571,10 @@ async function updateOrderStatus(marketplace, orderId, nextStatus, reason = "") 
       simulated ? "warning" : "success",
     );
     setTimeout(refreshOrders, REFRESH_DELAY_MS);
+    return true;
   } catch (e) {
-    showToast("상태 변경 요청 실패: " + e.message, "danger");
+    showToast("상태 변경 요청 실패: " + e.message + " (네트워크 확인 후 재시도하세요.)", "danger");
+    return false;
   }
 }
 
@@ -553,8 +592,10 @@ async function submitStatusChange() {
     window.setButtonLoading(saveButton, true, "저장 중…");
   }
   try {
-    await updateOrderStatus(marketplace, orderId, nextStatus, reason);
-    bootstrap.Modal.getInstance(document.getElementById("statusModal"))?.hide();
+    const ok = await updateOrderStatus(marketplace, orderId, nextStatus, reason);
+    if (ok) {
+      bootstrap.Modal.getInstance(document.getElementById("statusModal"))?.hide();
+    }
   } finally {
     if (window.setButtonLoading) {
       window.setButtonLoading(saveButton, false);
@@ -594,7 +635,7 @@ async function runBulkStatusChange(nextStatus, reason = "") {
   const selectedOrders = getSelectedOrders();
   if (!selectedOrders.length) {
     showToast("상태를 변경할 주문을 먼저 선택하세요.", "warning");
-    return;
+    return false;
   }
 
   const saveButton = document.getElementById("bulkStatusSaveButton");
@@ -615,7 +656,7 @@ async function runBulkStatusChange(nextStatus, reason = "") {
     const data = await resp.json();
     if (!resp.ok) {
       showToast(data.error || "일괄 상태 변경 실패", "danger");
-      return;
+      return false;
     }
     const successCount = data.success_count || 0;
     const failedCount = data.failed_count || 0;
@@ -626,8 +667,10 @@ async function runBulkStatusChange(nextStatus, reason = "") {
       showToast(`선택 주문 ${successCount}건을 ${nextStatus}(으)로 변경했습니다.`);
     }
     setTimeout(refreshOrders, REFRESH_DELAY_MS);
+    return true;
   } catch (error) {
     showToast("일괄 상태 변경 요청 실패: " + error.message, "danger");
+    return false;
   } finally {
     if (window.setButtonLoading && saveButton) {
       window.setButtonLoading(saveButton, false);

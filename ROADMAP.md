@@ -4,6 +4,7 @@
 
 | Phase | 내용 | PR | 완료일 |
 |---|---|---|---|
+| Phase 187 | 운영 안정화(실동작 검증) 1차 — `/seller/orders` 핵심 운영 루프(목록→상태변경→운송장 단건/일괄→CSV)를 회귀 테스트로 고정, 서비스 미가용(503)·입력오류(400)·내부오류(500)에서 정직한 실패 메시지/재시도 가능 UX를 보강, 주문 운영 라우트 진단 블록과 표준화된 운영 로그(`action/marketplace/order_id/reason`)를 반영 | #PR | 2026-06-09 |
 | Phase 186 | 죽은 버튼 감사 2차 — 주문 관리에 행 선택 체크박스/전체선택/일괄 운송장 등록/일괄 상태 변경 툴바를 추가하고 `POST /seller/orders/bulk/status`로 실제 상태 전환을 연결, 반품 인박스 개별 부분 환불 모달과 `POST /seller/returns/<request_id>/partial-refund` 라우트를 구현, 주문 상태 변경/소싱 후보 거절의 `prompt()`를 Bootstrap 모달로 교체, 로그인 화면 `href=\"#\"` 데드 링크 제거, 감사/핸드오프 문서와 회귀 테스트 보강 | #PR | 2026-06-08 |
 | Phase 185 | 주문관리 운송장 입력 UX 개선 — 배송준비중 운송장 모달의 택배사 입력을 드롭다운에서 검색형(typeahead) + 직접입력(free text)으로 교체, 키보드(↑/↓/Enter/Esc)+마우스 선택 및 aria 접근성 속성 추가, 선택 후 운송장번호 입력으로 포커스 자동 이동, `tracking.py`/`tracking_trackingmore.py` 매핑을 통합 카탈로그(`courier_catalog.py`)로 단일화하고 한/영 별칭 검색(CJ/씨제이/cj-korea/hanjin/lotte/korea-post/logen 등) 지원, TrackingMore `/v4/couriers/all` 동적 확장(키/네트워크 실패 시 내장 카탈로그 폴백) 적용, 관련 단위/회귀 테스트 보강 | #PR | 2026-06-07 |
 | Phase 184 | Shopify 운영 정합성 강화 — `SHOPIFY_AUTO_TOKEN(atk_)` 우선 인증(`X-Shopify-Access-Token`) + `SHOPIFY_SHOP` 기반 실스토어 타깃 정렬(하위호환 토큰 fallback 유지), `check_connection()`으로 `shop.json` 라이브 자가진단(스토어 요약/401·403·404 정직 사유), `/seller/markets`에 Shopify 연결 확인 버튼 및 마켓 연동 컨트롤 센터(연결 상태/필요 env/마지막 동기화) 추가, WooCommerce(`kohganemultishop.org`) 별도 트랙 정직 표기, env_catalog Shopify 키를 Render 실배포 5종(`CLIENT_ID/CLIENT_SECRET/AUTO_TOKEN/API_VERSION/SHOP`)으로 갱신, 운영 문서 업데이트 | #PR | 2026-06-06 |
