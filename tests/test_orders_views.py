@@ -91,6 +91,14 @@ class TestOrdersViews:
         data = resp.data.decode("utf-8")
         assert "발송대기" in data or "신규" in data
 
+    def test_get_orders_shows_service_unavailable_diagnostics_hint(self, client):
+        """서비스 미가용이면 운영 진단 안내를 노출한다."""
+        with patch("src.seller_console.views._get_order_sync_service", return_value=None):
+            resp = client.get("/seller/orders")
+        html = resp.get_data(as_text=True)
+        assert "주문 서비스가 일시적으로 준비되지 않았습니다(503)." in html
+        assert "/admin/diagnostics" in html
+
     def test_post_orders_sync_success(self, client, mock_sync_service):
         """POST /seller/orders/sync → {"ok": true, "results": {...}}."""
         with patch("src.seller_console.views._get_order_sync_service", return_value=mock_sync_service):
@@ -153,6 +161,80 @@ class TestOrdersViews:
             )
         assert resp.status_code == 400
 
+    def test_post_order_status_success(self, client, mock_sync_service):
+        """POST /seller/orders/<mp>/<id>/status → 상태 변경 성공."""
+        from src.seller_console.orders.models import OrderStatus, UnifiedOrder
+        from datetime import datetime
+        from decimal import Decimal
+
+        mock_sync_service.list_orders.return_value = [
+            UnifiedOrder(
+                order_id="CP-001",
+                marketplace="coupang",
+                status=OrderStatus.PREPARING,
+                placed_at=datetime(2024, 1, 15, 10, 0),
+                total_krw=Decimal("39000"),
+            )
+        ]
+        mock_sync_service.update_status.return_value = {"ok": True, "status": "shipped"}
+
+        with patch("src.seller_console.views._get_order_sync_service", return_value=mock_sync_service):
+            resp = client.post(
+                "/seller/orders/coupang/CP-001/status",
+                json={"next_status": "shipped", "reason": "출고 완료"},
+            )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert data["status"] == "shipped"
+
+    def test_post_order_status_invalid_transition(self, client, mock_sync_service):
+        """허용되지 않은 상태 전이는 400으로 거절한다."""
+        from src.seller_console.orders.models import OrderStatus, UnifiedOrder
+        from datetime import datetime
+        from decimal import Decimal
+
+        mock_sync_service.list_orders.return_value = [
+            UnifiedOrder(
+                order_id="CP-001",
+                marketplace="coupang",
+                status=OrderStatus.NEW,
+                placed_at=datetime(2024, 1, 15, 10, 0),
+                total_krw=Decimal("39000"),
+            )
+        ]
+
+        with patch("src.seller_console.views._get_order_sync_service", return_value=mock_sync_service):
+            resp = client.post(
+                "/seller/orders/coupang/CP-001/status",
+                json={"next_status": "shipped"},
+            )
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert data["ok"] is False
+
+    def test_post_order_status_service_unavailable(self, client):
+        """서비스 미가용 시 503을 반환한다."""
+        with patch("src.seller_console.views._get_order_sync_service", return_value=None):
+            resp = client.post(
+                "/seller/orders/coupang/CP-001/status",
+                json={"next_status": "shipped"},
+            )
+        assert resp.status_code == 503
+
+    def test_post_order_status_internal_error(self, client, mock_sync_service):
+        """상태 조회/변경 중 예외가 나면 500으로 복구한다."""
+        mock_sync_service.list_orders.side_effect = RuntimeError("boom")
+
+        with patch("src.seller_console.views._get_order_sync_service", return_value=mock_sync_service):
+            resp = client.post(
+                "/seller/orders/coupang/CP-001/status",
+                json={"next_status": "shipped"},
+            )
+        assert resp.status_code == 500
+        data = resp.get_json()
+        assert data["ok"] is False
+
     def test_post_bulk_tracking_success(self, client, mock_sync_service):
         """POST /seller/orders/bulk/tracking → 일괄 결과."""
         with patch("src.seller_console.views._get_order_sync_service", return_value=mock_sync_service):
@@ -169,6 +251,25 @@ class TestOrdersViews:
         data = resp.get_json()
         assert data["ok"] is True
         assert len(data["results"]) == 2
+
+    def test_post_bulk_tracking_partial_failure_on_empty_item(self, client, mock_sync_service):
+        """빈 항목이 섞이면 부분 실패로 처리한다."""
+        with patch("src.seller_console.views._get_order_sync_service", return_value=mock_sync_service):
+            resp = client.post(
+                "/seller/orders/bulk/tracking",
+                json={
+                    "items": [
+                        {"order_id": "CP-001", "marketplace": "coupang", "courier": "CJ", "tracking_no": "111"},
+                        {"order_id": "CP-002", "marketplace": "coupang", "courier": "CJ", "tracking_no": ""},
+                    ]
+                },
+            )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is False
+        assert data["success_count"] == 1
+        assert data["failed_count"] == 1
+        assert any((not row["ok"]) for row in data["results"])
 
     def test_post_bulk_tracking_empty(self, client, mock_sync_service):
         """빈 items → 400."""
@@ -274,9 +375,18 @@ class TestOrdersViews:
         assert data["failed_count"] == 1
 
     def test_get_export_csv(self, client, mock_sync_service):
-        """GET /seller/orders/export.csv → CSV 응답."""
+        """GET /seller/orders/export.csv → 기본 CSV 포맷을 반환한다."""
         with patch("src.seller_console.views._get_order_sync_service", return_value=mock_sync_service):
             resp = client.get("/seller/orders/export.csv")
         assert resp.status_code == 200
         assert "text/csv" in resp.content_type
-        assert b"order_id" in resp.data
+        rows = resp.get_data(as_text=True).splitlines()
+        assert rows[0] == "order_id,marketplace,status,placed_at,buyer_name_masked,total_krw,items_count,courier,tracking_no,notes"
+        assert "CP-001,coupang,paid" in rows[1]
+
+    def test_get_export_csv_service_unavailable(self, client):
+        """서비스 미가용 시 CSV 대신 503 안내를 반환한다."""
+        with patch("src.seller_console.views._get_order_sync_service", return_value=None):
+            resp = client.get("/seller/orders/export.csv")
+        assert resp.status_code == 503
+        assert "잠시 후 다시 시도" in resp.get_data(as_text=True)

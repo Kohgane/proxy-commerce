@@ -1303,6 +1303,15 @@ _ORDER_STATUS_TRANSITIONS: dict[str, set[str]] = {
 }
 
 
+def _log_order_op(level: str, action: str, marketplace: str = "-", order_id: str = "-", reason: str = "", exc: Exception | None = None) -> None:
+    """주문 운영 로그 표준화 헬퍼."""
+    message = "order_operation action=%s marketplace=%s order_id=%s reason=%s"
+    if level == "error":
+        logger.error(message, action, marketplace, order_id, reason, exc_info=exc)
+        return
+    logger.warning(message, action, marketplace, order_id, reason)
+
+
 @bp.get("/orders")
 def orders():
     """주문 관리 페이지 (Phase 129 — 실연동)."""
@@ -1325,6 +1334,16 @@ def orders():
     svc = _get_order_sync_service()
     order_list = []
     kpi = {"today_new": 0, "pending_ship": 0, "shipped": 0, "returned_exchanged": 0, "source": "none"}
+    ops_health = {
+        "service_available": bool(svc),
+        "routes": [
+            {"method": "GET", "path": "/seller/orders", "healthy": True},
+            {"method": "POST", "path": "/seller/orders/<marketplace>/<order_id>/status", "healthy": bool(svc)},
+            {"method": "POST", "path": "/seller/orders/<marketplace>/<order_id>/tracking", "healthy": bool(svc)},
+            {"method": "POST", "path": "/seller/orders/bulk/tracking", "healthy": bool(svc)},
+            {"method": "GET", "path": "/seller/orders/export.csv", "healthy": bool(svc)},
+        ],
+    }
     if svc:
         order_list = svc.list_orders(filters=filters, limit=limit, offset=offset)
         kpi = svc.kpi_summary()
@@ -1339,6 +1358,7 @@ def orders():
         filters=filters,
         limit=limit,
         offset=offset,
+        ops_health=ops_health,
         courier_catalog=get_courier_catalog(include_dynamic=True),
     )
 
@@ -1351,12 +1371,14 @@ def orders_sync():
     """
     svc = _get_order_sync_service()
     if svc is None:
+        _log_order_op("warning", "orders_sync", reason="service_unavailable")
         return jsonify({"ok": False, "error": "OrderSyncService 준비 중입니다."}), 503
 
     try:
         results = svc.sync_all()
         return jsonify({"ok": True, "results": results})
     except Exception as exc:
+        _log_order_op("warning", "orders_sync", reason="internal_error")
         logger.warning("orders_sync 오류: %s", exc)
         return jsonify({"ok": False, "error": "동기화 중 오류가 발생했습니다."}), 500
 
@@ -1366,36 +1388,51 @@ def order_update_status(marketplace: str, order_id: str):
     """주문 상태 전이 처리."""
     svc = _get_order_sync_service()
     if svc is None:
+        _log_order_op("warning", "status_update", marketplace=marketplace, order_id=order_id, reason="service_unavailable")
         return jsonify({"ok": False, "error": "서비스 준비 중입니다."}), 503
 
     data = request.get_json(force=True, silent=True) or {}
     next_status = str(data.get("next_status") or "").strip().lower()
     reason = str(data.get("reason") or "").strip()
     if not next_status:
+        _log_order_op("warning", "status_update", marketplace=marketplace, order_id=order_id, reason="missing_next_status")
         return jsonify({"ok": False, "error": "변경할 상태를 선택하세요."}), 400
 
-    order_list = svc.list_orders(filters={"marketplace": marketplace, "search": order_id}, limit=10, offset=0)
-    order = next((o for o in order_list if str(o.order_id) == str(order_id)), None)
-    if order is None:
-        return jsonify({"ok": False, "error": "주문을 찾을 수 없습니다."}), 404
+    try:
+        order_list = svc.list_orders(filters={"marketplace": marketplace, "search": order_id}, limit=10, offset=0)
+        order = next((o for o in order_list if str(o.order_id) == str(order_id)), None)
+        if order is None:
+            _log_order_op("warning", "status_update", marketplace=marketplace, order_id=order_id, reason="order_not_found")
+            return jsonify({"ok": False, "error": "주문을 찾을 수 없습니다."}), 404
 
-    current_status = order.status.value if hasattr(order.status, "value") else str(order.status)
-    allowed_next = _ORDER_STATUS_TRANSITIONS.get(current_status, set())
-    if next_status == current_status:
-        return jsonify({"ok": True, "status": current_status, "unchanged": True})
-    if next_status not in allowed_next:
-        return jsonify(
-            {
-                "ok": False,
-                "error": f"허용되지 않은 상태 전이입니다: {current_status} → {next_status}",
-                "allowed": sorted(allowed_next),
-            }
-        ), 400
+        current_status = order.status.value if hasattr(order.status, "value") else str(order.status)
+        allowed_next = _ORDER_STATUS_TRANSITIONS.get(current_status, set())
+        if next_status == current_status:
+            return jsonify({"ok": True, "status": current_status, "unchanged": True})
+        if next_status not in allowed_next:
+            _log_order_op(
+                "warning",
+                "status_update",
+                marketplace=marketplace,
+                order_id=order_id,
+                reason=f"invalid_transition:{current_status}->{next_status}",
+            )
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": f"허용되지 않은 상태 전이입니다: {current_status} → {next_status}",
+                    "allowed": sorted(allowed_next),
+                }
+            ), 400
 
-    result = svc.update_status(order_id, marketplace, next_status, reason=reason)
-    if not result.get("ok"):
-        return jsonify(result), 500
-    return jsonify(result)
+        result = svc.update_status(order_id, marketplace, next_status, reason=reason)
+        if not result.get("ok"):
+            _log_order_op("warning", "status_update", marketplace=marketplace, order_id=order_id, reason=result.get("error") or "update_failed")
+            return jsonify(result), 500
+        return jsonify(result)
+    except Exception as exc:
+        _log_order_op("error", "status_update", marketplace=marketplace, order_id=order_id, reason="internal_error", exc=exc)
+        return jsonify({"ok": False, "error": "상태 변경 중 오류가 발생했습니다."}), 500
 
 
 @bp.get("/orders/<marketplace>/<order_id>")
@@ -1434,16 +1471,19 @@ def order_tracking(marketplace: str, order_id: str):
     tracking_no = (data.get("tracking_no") or "").strip()
 
     if not courier or not tracking_no:
+        _log_order_op("warning", "tracking_update", marketplace=marketplace, order_id=order_id, reason="missing_fields")
         return jsonify({"ok": False, "error": "택배사와 운송장 번호를 입력하세요."}), 400
 
     svc = _get_order_sync_service()
     if svc is None:
+        _log_order_op("warning", "tracking_update", marketplace=marketplace, order_id=order_id, reason="service_unavailable")
         return jsonify({"ok": False, "error": "서비스 준비 중입니다."}), 503
 
     try:
         ok = svc.update_tracking(order_id, marketplace, courier, tracking_no)
         return jsonify({"ok": ok})
     except Exception as exc:
+        _log_order_op("error", "tracking_update", marketplace=marketplace, order_id=order_id, reason="internal_error", exc=exc)
         logger.warning("order_tracking 오류: %s", exc)
         return jsonify({"ok": False, "error": "운송장 등록 중 오류가 발생했습니다."}), 500
 
@@ -1459,27 +1499,49 @@ def orders_bulk_tracking():
     items = data.get("items") or []
 
     if not items:
+        _log_order_op("warning", "bulk_tracking_update", reason="empty_items")
         return jsonify({"ok": False, "error": "업데이트 항목이 없습니다."}), 400
 
     svc = _get_order_sync_service()
     if svc is None:
+        _log_order_op("warning", "bulk_tracking_update", reason="service_unavailable")
         return jsonify({"ok": False, "error": "서비스 준비 중입니다."}), 503
 
     results = []
+    success_count = 0
     for item in items:
+        order_id = str(item.get("order_id") or "").strip()
+        marketplace = str(item.get("marketplace") or "").strip()
+        courier = str(item.get("courier") or "").strip()
+        tracking_no = str(item.get("tracking_no") or "").strip()
+        if not order_id or not marketplace or not courier or not tracking_no:
+            _log_order_op("warning", "bulk_tracking_update", marketplace=marketplace or "-", order_id=order_id or "-", reason="missing_item_fields")
+            results.append(
+                {
+                    "order_id": order_id,
+                    "marketplace": marketplace,
+                    "ok": False,
+                    "error": "주문번호/마켓/택배사/운송장 번호를 모두 입력하세요.",
+                }
+            )
+            continue
         try:
             ok = svc.update_tracking(
-                item.get("order_id", ""),
-                item.get("marketplace", ""),
-                item.get("courier", ""),
-                item.get("tracking_no", ""),
+                order_id,
+                marketplace,
+                courier,
+                tracking_no,
             )
-            results.append({"order_id": item.get("order_id"), "ok": ok})
+            if ok:
+                success_count += 1
+            results.append({"order_id": order_id, "marketplace": marketplace, "ok": ok})
         except Exception as exc:
-            logger.warning("orders_bulk_tracking 항목 오류 %s: %s", item.get("order_id"), exc)
-            results.append({"order_id": item.get("order_id"), "ok": False, "error": "운송장 등록 중 오류가 발생했습니다."})
+            _log_order_op("error", "bulk_tracking_update", marketplace=marketplace, order_id=order_id, reason="internal_error", exc=exc)
+            logger.warning("orders_bulk_tracking 항목 오류 %s: %s", order_id, exc)
+            results.append({"order_id": order_id, "marketplace": marketplace, "ok": False, "error": "운송장 등록 중 오류가 발생했습니다."})
 
-    return jsonify({"ok": True, "results": results})
+    failed_count = len([x for x in results if not x.get("ok")])
+    return jsonify({"ok": failed_count == 0, "success_count": success_count, "failed_count": failed_count, "results": results})
 
 
 @bp.post("/orders/bulk/status")
@@ -1491,12 +1553,15 @@ def orders_bulk_status():
     reason = str(data.get("reason") or "").strip()
 
     if not items:
+        _log_order_op("warning", "bulk_status_update", reason="empty_items")
         return jsonify({"ok": False, "error": "상태를 변경할 주문이 없습니다."}), 400
     if not next_status:
+        _log_order_op("warning", "bulk_status_update", reason="missing_next_status")
         return jsonify({"ok": False, "error": "변경할 상태를 선택하세요."}), 400
 
     svc = _get_order_sync_service()
     if svc is None:
+        _log_order_op("warning", "bulk_status_update", reason="service_unavailable")
         return jsonify({"ok": False, "error": "서비스 준비 중입니다."}), 503
 
     results = []
@@ -1505,6 +1570,7 @@ def orders_bulk_status():
         order_id = str(item.get("order_id") or "").strip()
         marketplace = str(item.get("marketplace") or "").strip()
         if not order_id or not marketplace:
+            _log_order_op("warning", "bulk_status_update", marketplace=marketplace or "-", order_id=order_id or "-", reason="missing_item_fields")
             results.append({"order_id": order_id, "marketplace": marketplace, "ok": False, "error": "주문 식별자가 올바르지 않습니다."})
             continue
 
@@ -1512,6 +1578,7 @@ def orders_bulk_status():
             order_list = svc.list_orders(filters={"marketplace": marketplace, "search": order_id}, limit=10, offset=0)
             order = next((o for o in order_list if str(o.order_id) == str(order_id)), None)
             if order is None:
+                _log_order_op("warning", "bulk_status_update", marketplace=marketplace, order_id=order_id, reason="order_not_found")
                 results.append({"order_id": order_id, "marketplace": marketplace, "ok": False, "error": "주문을 찾을 수 없습니다."})
                 continue
 
@@ -1522,6 +1589,13 @@ def orders_bulk_status():
                 success_count += 1
                 continue
             if next_status not in allowed_next:
+                _log_order_op(
+                    "warning",
+                    "bulk_status_update",
+                    marketplace=marketplace,
+                    order_id=order_id,
+                    reason=f"invalid_transition:{current_status}->{next_status}",
+                )
                 results.append(
                     {
                         "order_id": order_id,
@@ -1547,8 +1621,10 @@ def orders_bulk_status():
                     }
                 )
             else:
+                _log_order_op("warning", "bulk_status_update", marketplace=marketplace, order_id=order_id, reason=result.get("error") or "update_failed")
                 results.append({"order_id": order_id, "marketplace": marketplace, "ok": False, "error": result.get("error") or "상태 변경 실패"})
         except Exception as exc:
+            _log_order_op("error", "bulk_status_update", marketplace=marketplace, order_id=order_id, reason="internal_error", exc=exc)
             logger.warning("orders_bulk_status 항목 오류 %s/%s: %s", marketplace, order_id, exc)
             results.append({"order_id": order_id, "marketplace": marketplace, "ok": False, "error": "상태 변경 중 오류가 발생했습니다."})
 
@@ -1561,9 +1637,26 @@ def orders_export_csv():
     """주문 목록 CSV 내보내기 (Phase 129)."""
     import csv
     import io
+    from flask import Response
 
     svc = _get_order_sync_service()
-    orders_list = svc.list_orders(limit=1000) if svc else []
+    if svc is None:
+        _log_order_op("warning", "orders_export_csv", reason="service_unavailable")
+        return Response(
+            "주문 서비스가 준비 중입니다. 잠시 후 다시 시도하세요.",
+            status=503,
+            mimetype="text/plain; charset=utf-8",
+        )
+
+    try:
+        orders_list = svc.list_orders(limit=1000)
+    except Exception as exc:
+        _log_order_op("error", "orders_export_csv", reason="internal_error", exc=exc)
+        return Response(
+            "주문 CSV 생성 중 오류가 발생했습니다. 잠시 후 다시 시도하세요.",
+            status=500,
+            mimetype="text/plain; charset=utf-8",
+        )
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -1585,7 +1678,6 @@ def orders_export_csv():
             o.notes or "",
         ])
 
-    from flask import Response
     return Response(
         output.getvalue(),
         mimetype="text/csv",
