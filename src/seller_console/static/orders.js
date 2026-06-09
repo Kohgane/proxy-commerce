@@ -267,6 +267,21 @@ function refreshOrders() {
   window.location.reload();
 }
 
+async function parseJsonSafe(response, context) {
+  try {
+    return await response.json();
+  } catch (error) {
+    console.warn(`${context} 응답 파싱 실패`, error);
+    return { ok: false, error: "응답 파싱에 실패했습니다." };
+  }
+}
+
+function getRetryHint(statusCode) {
+  if (statusCode === 503) return " 서비스가 준비되면 다시 시도하세요.";
+  if (statusCode >= 500) return " 내부 오류입니다. 잠시 후 다시 시도하세요.";
+  return "";
+}
+
 /** 동기화 버튼 핸들러 */
 async function syncNow() {
   const btn = document.getElementById("ordersSyncButton");
@@ -385,13 +400,9 @@ async function saveTracking() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ courier, tracking_no: trackingNo }),
     });
-    const data = await resp.json().catch(() => ({}));
+    const data = await parseJsonSafe(resp, "운송장 등록");
     if (!resp.ok || !data.ok) {
-      const retryHint = resp.status === 503
-        ? " 서비스가 준비되면 다시 시도하세요."
-        : resp.status >= 500
-          ? " 내부 오류입니다. 잠시 후 다시 시도하세요."
-          : "";
+      const retryHint = getRetryHint(resp.status);
       showToast("운송장 등록 실패: " + (data.error || "오류") + retryHint, "danger");
       return;
     }
@@ -546,13 +557,9 @@ async function updateOrderStatus(marketplace, orderId, nextStatus, reason = "") 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ next_status: nextStatus, reason }),
     });
-    const data = await resp.json().catch(() => ({}));
+    const data = await parseJsonSafe(resp, "상태 변경");
     if (!resp.ok || !data.ok) {
-      const retryHint = resp.status === 503
-        ? " 서비스가 준비되면 다시 시도하세요."
-        : resp.status >= 500
-          ? " 내부 오류입니다. 잠시 후 다시 시도하세요."
-          : "";
+      const retryHint = getRetryHint(resp.status);
       showToast((data.error || "상태 변경 실패") + retryHint, "danger");
       return false;
     }
@@ -628,7 +635,7 @@ async function runBulkStatusChange(nextStatus, reason = "") {
   const selectedOrders = getSelectedOrders();
   if (!selectedOrders.length) {
     showToast("상태를 변경할 주문을 먼저 선택하세요.", "warning");
-    return;
+    return false;
   }
 
   const saveButton = document.getElementById("bulkStatusSaveButton");
@@ -649,7 +656,7 @@ async function runBulkStatusChange(nextStatus, reason = "") {
     const data = await resp.json();
     if (!resp.ok) {
       showToast(data.error || "일괄 상태 변경 실패", "danger");
-      return;
+      return false;
     }
     const successCount = data.success_count || 0;
     const failedCount = data.failed_count || 0;
@@ -660,8 +667,10 @@ async function runBulkStatusChange(nextStatus, reason = "") {
       showToast(`선택 주문 ${successCount}건을 ${nextStatus}(으)로 변경했습니다.`);
     }
     setTimeout(refreshOrders, REFRESH_DELAY_MS);
+    return true;
   } catch (error) {
     showToast("일괄 상태 변경 요청 실패: " + error.message, "danger");
+    return false;
   } finally {
     if (window.setButtonLoading && saveButton) {
       window.setButtonLoading(saveButton, false);

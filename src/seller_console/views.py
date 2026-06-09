@@ -1304,7 +1304,16 @@ _ORDER_STATUS_TRANSITIONS: dict[str, set[str]] = {
 
 
 def _log_order_op(level: str, action: str, marketplace: str = "-", order_id: str = "-", reason: str = "", exc: Exception | None = None) -> None:
-    """주문 운영 로그 표준화 헬퍼."""
+    """주문 운영 로그 표준화 헬퍼.
+
+    Args:
+        level: "warning" 또는 "error". "error" 외 값은 warning으로 처리된다.
+        action: 수행한 동작 식별자(e.g. status_update, bulk_tracking_update).
+        marketplace: 대상 마켓 코드.
+        order_id: 대상 주문 ID.
+        reason: 실패/경고 원인 코드 또는 메시지.
+        exc: 예외 객체(선택). error 레벨 로그의 스택트레이스에 포함된다.
+    """
     message = "order_operation action=%s marketplace=%s order_id=%s reason=%s"
     if level == "error":
         logger.error(message, action, marketplace, order_id, reason, exc_info=exc)
@@ -1378,8 +1387,7 @@ def orders_sync():
         results = svc.sync_all()
         return jsonify({"ok": True, "results": results})
     except Exception as exc:
-        _log_order_op("warning", "orders_sync", reason="internal_error")
-        logger.warning("orders_sync 오류: %s", exc)
+        _log_order_op("error", "orders_sync", reason="internal_error", exc=exc)
         return jsonify({"ok": False, "error": "동기화 중 오류가 발생했습니다."}), 500
 
 
@@ -1484,7 +1492,6 @@ def order_tracking(marketplace: str, order_id: str):
         return jsonify({"ok": ok})
     except Exception as exc:
         _log_order_op("error", "tracking_update", marketplace=marketplace, order_id=order_id, reason="internal_error", exc=exc)
-        logger.warning("order_tracking 오류: %s", exc)
         return jsonify({"ok": False, "error": "운송장 등록 중 오류가 발생했습니다."}), 500
 
 
@@ -1537,7 +1544,6 @@ def orders_bulk_tracking():
             results.append({"order_id": order_id, "marketplace": marketplace, "ok": ok})
         except Exception as exc:
             _log_order_op("error", "bulk_tracking_update", marketplace=marketplace, order_id=order_id, reason="internal_error", exc=exc)
-            logger.warning("orders_bulk_tracking 항목 오류 %s: %s", order_id, exc)
             results.append({"order_id": order_id, "marketplace": marketplace, "ok": False, "error": "운송장 등록 중 오류가 발생했습니다."})
 
     failed_count = len([x for x in results if not x.get("ok")])
@@ -1625,7 +1631,6 @@ def orders_bulk_status():
                 results.append({"order_id": order_id, "marketplace": marketplace, "ok": False, "error": result.get("error") or "상태 변경 실패"})
         except Exception as exc:
             _log_order_op("error", "bulk_status_update", marketplace=marketplace, order_id=order_id, reason="internal_error", exc=exc)
-            logger.warning("orders_bulk_status 항목 오류 %s/%s: %s", marketplace, order_id, exc)
             results.append({"order_id": order_id, "marketplace": marketplace, "ok": False, "error": "상태 변경 중 오류가 발생했습니다."})
 
     failed_count = len([x for x in results if not x.get("ok")])

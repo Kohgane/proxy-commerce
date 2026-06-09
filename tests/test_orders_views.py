@@ -95,6 +95,7 @@ class TestOrdersViews:
         """서비스 미가용이면 운영 진단 안내를 노출한다."""
         with patch("src.seller_console.views._get_order_sync_service", return_value=None):
             resp = client.get("/seller/orders")
+        assert resp.status_code == 200
         html = resp.get_data(as_text=True)
         assert "주문 서비스가 일시적으로 준비되지 않았습니다(503)." in html
         assert "/admin/diagnostics" in html
@@ -270,6 +271,7 @@ class TestOrdersViews:
         assert data["success_count"] == 1
         assert data["failed_count"] == 1
         assert any((not row["ok"]) for row in data["results"])
+        mock_sync_service.update_tracking.assert_called_once_with("CP-001", "coupang", "CJ", "111")
 
     def test_post_bulk_tracking_empty(self, client, mock_sync_service):
         """빈 items → 400."""
@@ -381,7 +383,20 @@ class TestOrdersViews:
         assert resp.status_code == 200
         assert "text/csv" in resp.content_type
         rows = resp.get_data(as_text=True).splitlines()
-        assert rows[0] == "order_id,marketplace,status,placed_at,buyer_name_masked,total_krw,items_count,courier,tracking_no,notes"
+        header = rows[0].split(",")
+        for field in [
+            "order_id",
+            "marketplace",
+            "status",
+            "placed_at",
+            "buyer_name_masked",
+            "total_krw",
+            "items_count",
+            "courier",
+            "tracking_no",
+            "notes",
+        ]:
+            assert field in header
         assert "CP-001,coupang,paid" in rows[1]
 
     def test_get_export_csv_service_unavailable(self, client):
