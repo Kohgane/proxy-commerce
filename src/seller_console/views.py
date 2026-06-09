@@ -1482,6 +1482,80 @@ def orders_bulk_tracking():
     return jsonify({"ok": True, "results": results})
 
 
+@bp.post("/orders/bulk/status")
+def orders_bulk_status():
+    """선택 주문 일괄 상태 변경."""
+    data = request.get_json(force=True, silent=True) or {}
+    items = data.get("items") or []
+    next_status = str(data.get("next_status") or "").strip().lower()
+    reason = str(data.get("reason") or "").strip()
+
+    if not items:
+        return jsonify({"ok": False, "error": "상태를 변경할 주문이 없습니다."}), 400
+    if not next_status:
+        return jsonify({"ok": False, "error": "변경할 상태를 선택하세요."}), 400
+
+    svc = _get_order_sync_service()
+    if svc is None:
+        return jsonify({"ok": False, "error": "서비스 준비 중입니다."}), 503
+
+    results = []
+    success_count = 0
+    for item in items:
+        order_id = str(item.get("order_id") or "").strip()
+        marketplace = str(item.get("marketplace") or "").strip()
+        if not order_id or not marketplace:
+            results.append({"order_id": order_id, "marketplace": marketplace, "ok": False, "error": "주문 식별자가 올바르지 않습니다."})
+            continue
+
+        try:
+            order_list = svc.list_orders(filters={"marketplace": marketplace, "search": order_id}, limit=10, offset=0)
+            order = next((o for o in order_list if str(o.order_id) == str(order_id)), None)
+            if order is None:
+                results.append({"order_id": order_id, "marketplace": marketplace, "ok": False, "error": "주문을 찾을 수 없습니다."})
+                continue
+
+            current_status = order.status.value if hasattr(order.status, "value") else str(order.status)
+            allowed_next = _ORDER_STATUS_TRANSITIONS.get(current_status, set())
+            if next_status == current_status:
+                results.append({"order_id": order_id, "marketplace": marketplace, "ok": True, "status": current_status, "unchanged": True})
+                success_count += 1
+                continue
+            if next_status not in allowed_next:
+                results.append(
+                    {
+                        "order_id": order_id,
+                        "marketplace": marketplace,
+                        "ok": False,
+                        "error": f"허용되지 않은 상태 전이입니다: {current_status} → {next_status}",
+                        "allowed": sorted(allowed_next),
+                    }
+                )
+                continue
+
+            result = svc.update_status(order_id, marketplace, next_status, reason=reason)
+            if result.get("ok"):
+                success_count += 1
+                results.append(
+                    {
+                        "order_id": order_id,
+                        "marketplace": marketplace,
+                        "ok": True,
+                        "status": result.get("status") or next_status,
+                        "adapter": result.get("adapter"),
+                        "unchanged": result.get("unchanged", False),
+                    }
+                )
+            else:
+                results.append({"order_id": order_id, "marketplace": marketplace, "ok": False, "error": result.get("error") or "상태 변경 실패"})
+        except Exception as exc:
+            logger.warning("orders_bulk_status 항목 오류 %s/%s: %s", marketplace, order_id, exc)
+            results.append({"order_id": order_id, "marketplace": marketplace, "ok": False, "error": "상태 변경 중 오류가 발생했습니다."})
+
+    failed_count = len([x for x in results if not x.get("ok")])
+    return jsonify({"ok": failed_count == 0, "success_count": success_count, "failed_count": failed_count, "results": results})
+
+
 @bp.get("/orders/export.csv")
 def orders_export_csv():
     """주문 목록 CSV 내보내기 (Phase 129)."""
@@ -4199,12 +4273,21 @@ async function approveCandidate(cid) {
     if(d.ok) location.reload();
     else _candidateToast('오류: ' + (d.error || '알 수 없음'), 'danger');
 }
-async function rejectCandidate(cid) {
-    const reason = prompt('거절 사유 (선택):', '');
-    if(reason === null) return;
+function rejectCandidate(cid) {
+    document.getElementById('candidateRejectId').value = cid;
+    document.getElementById('candidateRejectReason').value = '';
+    new bootstrap.Modal(document.getElementById('candidateRejectModal')).show();
+    setTimeout(() => document.getElementById('candidateRejectReason')?.focus(), 120);
+}
+async function submitCandidateReject() {
+    const cid = document.getElementById('candidateRejectId').value;
+    const reason = document.getElementById('candidateRejectReason').value.trim();
     const r = await fetch('/seller/sourcing/candidates/' + cid + '/reject', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({reason})});
     const d = await r.json();
-    if(d.ok) location.reload();
+    if(d.ok) {
+      bootstrap.Modal.getInstance(document.getElementById('candidateRejectModal'))?.hide();
+      location.reload();
+    }
     else _candidateToast('오류: ' + (d.error || '알 수 없음'), 'danger');
 }
 async function publishCandidate(cid) {
@@ -4227,6 +4310,25 @@ async function bulkApprove() {
     <div class='toast-header'><strong class='me-auto'>알림</strong>
     <button type='button' class='btn-close' data-bs-dismiss='toast'></button></div>
     <div class='toast-body' id='candidatePageToastMsg'></div>
+  </div>
+</div>
+<div class='modal fade' id='candidateRejectModal' tabindex='-1' aria-hidden='true'>
+  <div class='modal-dialog'>
+    <div class='modal-content'>
+      <div class='modal-header'>
+        <h5 class='modal-title'>후보 거절</h5>
+        <button type='button' class='btn-close' data-bs-dismiss='modal'></button>
+      </div>
+      <div class='modal-body'>
+        <input type='hidden' id='candidateRejectId'>
+        <label class='form-label' for='candidateRejectReason'>거절 사유 (선택)</label>
+        <textarea id='candidateRejectReason' class='form-control' rows='3' placeholder='거절 사유를 입력하세요.'></textarea>
+      </div>
+      <div class='modal-footer'>
+        <button type='button' class='btn btn-secondary' data-bs-dismiss='modal'>취소</button>
+        <button type='button' class='btn btn-danger' onclick='submitCandidateReject()'>거절</button>
+      </div>
+    </div>
   </div>
 </div>"""
     )
@@ -4829,6 +4931,7 @@ def shipping_tracking():
 @bp.get("/returns/inbox")
 def returns_inbox():
     """반품/환불 자동화 인박스 (Phase 146)."""
+    from html import escape
     from src.returns.auto_processor import ReturnsAutoProcessor
 
     reason = (request.args.get("reason") or "").strip()
@@ -4837,20 +4940,25 @@ def returns_inbox():
     processor.collect_market_requests([])
     processor.process()
     rows = processor.list_requests(reason=reason, status=status)
-    body_rows = "".join(
-        (
+    body_rows = ""
+    for x in rows:
+        request_id = escape(str(x.get("request_id", "-")), quote=True)
+        order_id = escape(str(x.get("order_id", "-")), quote=True)
+        reason_text = escape(str(x.get("reason", "-")))
+        status_text = escape(str(x.get("status", "-")))
+        badge_class = "bg-success" if x.get("status") == "approved" else "bg-secondary"
+        body_rows += (
             "<tr>"
-            f"<td><input type='checkbox' class='return-row-chk' value='{x.get('request_id', '-')}'></td>"
-            f"<td><code>{x.get('request_id', '-')}</code></td>"
-            f"<td>{x.get('order_id', '-')}</td>"
-            f"<td>{x.get('reason', '-')}</td>"
-            f"<td><span class='badge {'bg-success' if x.get('status') == 'approved' else 'bg-secondary'}'>{x.get('status', '-')}</span></td>"
+            f"<td><input type='checkbox' class='return-row-chk' value='{request_id}'></td>"
+            f"<td><code>{request_id}</code></td>"
+            f"<td>{order_id}</td>"
+            f"<td>{reason_text}</td>"
+            f"<td><span class='badge {badge_class}'>{status_text}</span></td>"
+            f"<td><button class='btn btn-outline-primary btn-sm py-0 js-partial-refund-btn' type='button' data-request-id='{request_id}' data-order-id='{order_id}'>부분 환불</button></td>"
             "</tr>"
         )
-        for x in rows
-    )
     if not body_rows:
-        body_rows = "<tr><td colspan='5' class='text-center text-muted'>반품 요청이 없습니다.</td></tr>"
+        body_rows = "<tr><td colspan='6' class='text-center text-muted'>반품 요청이 없습니다.</td></tr>"
 
     pending_count = sum(1 for x in rows if x.get("status") in ("requested", "manual_review"))
     bulk_disabled = 'disabled title="처리할 요청이 없습니다"' if not pending_count else ""
@@ -4867,14 +4975,12 @@ def returns_inbox():
         "</form>"
         "<div class='d-flex gap-2 mb-2 align-items-center'>"
         f"<button class='btn btn-success btn-sm' type='button' id='bulkApproveBtn' onclick='bulkApproveReturns()' {bulk_disabled}>일괄 승인</button>"
-        "<button class='btn btn-outline-primary btn-sm' type='button' disabled "
-        "title='부분 환불은 개별 요청을 직접 처리하세요'>부분 환불 (개별처리)</button>"
         f"<button class='btn btn-outline-danger btn-sm' type='button' id='bulkRejectBtn' onclick='bulkRejectReturns()' {bulk_disabled}>거부</button>"
         "</div>"
         "<table class='table table-sm table-hover'>"
         "<thead><tr>"
         "<th><input type='checkbox' id='chkAll' title='전체 선택' onchange='toggleAllReturns(this)'></th>"
-        "<th>요청 ID</th><th>주문</th><th>사유</th><th>상태</th>"
+        "<th>요청 ID</th><th>주문</th><th>사유</th><th>상태</th><th>액션</th>"
         "</tr></thead>"
         f"<tbody>{body_rows}</tbody></table>"
         "<div class='position-fixed bottom-0 end-0 p-3 pc-toast-stack' style='z-index:1100'>"
@@ -4882,6 +4988,21 @@ def returns_inbox():
         "<div class='toast-header'><strong class='me-auto'>알림</strong>"
         "<button type='button' class='btn-close' data-bs-dismiss='toast'></button></div>"
         "<div class='toast-body' id='returnsToastMsg'></div></div></div>"
+        "<div class='modal fade' id='partialRefundModal' tabindex='-1' aria-hidden='true'>"
+        "<div class='modal-dialog'><div class='modal-content'>"
+        "<div class='modal-header'><h5 class='modal-title'>부분 환불 처리</h5>"
+        "<button type='button' class='btn-close' data-bs-dismiss='modal'></button></div>"
+        "<div class='modal-body'>"
+        "<input type='hidden' id='partialRefundRequestId'>"
+        "<div class='small text-muted mb-3' id='partialRefundOrderLabel'></div>"
+        "<div class='mb-3'><label class='form-label' for='partialRefundAmount'>환불 금액 (원)</label>"
+        "<input type='number' min='1' step='1' class='form-control' id='partialRefundAmount' placeholder='예: 15000'></div>"
+        "<div><label class='form-label' for='partialRefundReason'>사유 (선택)</label>"
+        "<textarea class='form-control' id='partialRefundReason' rows='3' placeholder='부분 환불 사유를 입력하세요.'></textarea></div>"
+        "</div>"
+        "<div class='modal-footer'><button type='button' class='btn btn-secondary' data-bs-dismiss='modal'>취소</button>"
+        "<button type='button' class='btn btn-primary' id='partialRefundSaveBtn' onclick='submitPartialRefund()'>환불 처리</button></div>"
+        "</div></div></div>"
         """<script>
 function _returnsToast(msg, type) {
   var el = document.getElementById('returnsToast');
@@ -4897,6 +5018,50 @@ function toggleAllReturns(masterChk) {
 }
 function _getCheckedIds() {
   return Array.from(document.querySelectorAll('.return-row-chk:checked')).map(c => c.value);
+}
+document.addEventListener('click', function(event) {
+  var btn = event.target.closest('.js-partial-refund-btn');
+  if (!btn) return;
+  openPartialRefundModal(btn.dataset.requestId || '', btn.dataset.orderId || '');
+});
+function openPartialRefundModal(requestId, orderId) {
+  document.getElementById('partialRefundRequestId').value = requestId;
+  document.getElementById('partialRefundOrderLabel').textContent = '주문 ' + orderId + ' / 요청 ' + requestId;
+  document.getElementById('partialRefundAmount').value = '';
+  document.getElementById('partialRefundReason').value = '';
+  var modal = new bootstrap.Modal(document.getElementById('partialRefundModal'));
+  modal.show();
+  setTimeout(() => document.getElementById('partialRefundAmount')?.focus(), 120);
+}
+async function submitPartialRefund() {
+  var requestId = document.getElementById('partialRefundRequestId').value;
+  var amount = document.getElementById('partialRefundAmount').value;
+  var reason = document.getElementById('partialRefundReason').value.trim();
+  if (!amount || Number(amount) <= 0) {
+    _returnsToast('환불 금액을 입력하세요.', 'warning');
+    return;
+  }
+  var btn = document.getElementById('partialRefundSaveBtn');
+  if (btn) btn.disabled = true;
+  try {
+    var r = await fetch('/seller/returns/' + encodeURIComponent(requestId) + '/partial-refund', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({amount_krw: amount, reason: reason})
+    });
+    var d = await r.json();
+    if (r.ok && d.ok) {
+      bootstrap.Modal.getInstance(document.getElementById('partialRefundModal'))?.hide();
+      _returnsToast('부분 환불 완료: ' + (d.refund_amount || amount) + '원', 'success');
+      setTimeout(() => location.reload(), 1200);
+    } else {
+      _returnsToast('오류: ' + (d.error || '알 수 없음'), 'danger');
+    }
+  } catch(e) {
+    _returnsToast('요청 실패: ' + e.message, 'danger');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 async function bulkApproveReturns() {
   var ids = _getCheckedIds();
@@ -5019,6 +5184,42 @@ def returns_bulk_reject():
         return jsonify({"ok": False, "error": "서비스 준비 중입니다."}), 503
 
     return jsonify({"ok": True, "rejected_count": rejected_count, "results": results})
+
+
+@bp.post("/returns/<request_id>/partial-refund")
+def returns_partial_refund(request_id: str):
+    """반품 요청 개별 부분 환불 처리."""
+    from decimal import Decimal, InvalidOperation
+
+    data = request.get_json(force=True, silent=True) or {}
+    raw_amount = data.get("amount_krw")
+    reason = str(data.get("reason") or "").strip()
+    try:
+        amount = Decimal(str(raw_amount))
+    except (InvalidOperation, TypeError, ValueError):
+        return jsonify({"ok": False, "error": "올바른 환불 금액을 입력하세요."}), 400
+    if amount <= 0:
+        return jsonify({"ok": False, "error": "환불 금액은 0보다 커야 합니다."}), 400
+
+    try:
+        from src.returns_automation.automation_manager import ReturnsAutomationManager
+        mgr = ReturnsAutomationManager()
+    except Exception as exc:
+        logger.error("returns_partial_refund 서비스 오류: %s", exc)
+        return jsonify({"ok": False, "error": "서비스 준비 중입니다."}), 503
+
+    req = mgr.get_request_object(request_id)
+    if req is None:
+        return jsonify({"ok": False, "error": "요청을 찾을 수 없습니다."}), 404
+
+    try:
+        result = mgr.process_partial_refund(request_id, amount, reason=reason)
+        req = mgr.get_request_object(request_id) or req
+        status_value = req.status.value if hasattr(req.status, "value") else str(req.status)
+        return jsonify({"ok": True, "request_id": request_id, "refund_amount": str(amount), "status": status_value, "result": result})
+    except Exception as exc:
+        logger.warning("returns_partial_refund 처리 오류 %s: %s", request_id, exc)
+        return jsonify({"ok": False, "error": "부분 환불 처리 중 오류가 발생했습니다."}), 500
 
 
 @bp.get("/settlement")

@@ -31,6 +31,13 @@ class TestAuthRoutes:
         assert 'id="login-email"' in html
         assert 'id="login-password"' in html
 
+    def test_login_page_has_no_dead_hash_link(self, client):
+        """로그인 페이지에 href=\"#\" 데드 링크가 남아 있지 않다."""
+        resp = client.get("/auth/login")
+        html = resp.get_data(as_text=True)
+        assert 'href="#"' not in html
+        assert "forgotForm" in html
+
     def test_signup_page_returns_200(self, client):
         """가입 페이지 GET 200."""
         resp = client.get("/auth/signup")

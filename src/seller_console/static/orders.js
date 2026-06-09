@@ -98,6 +98,70 @@ function getCourierSuggestions(query) {
   return rows.slice(0, TYPEAHEAD_LIMIT);
 }
 
+function getSelectedOrderCheckboxes() {
+  return Array.from(document.querySelectorAll(".order-row-chk:checked"));
+}
+
+function getSelectedOrders() {
+  return getSelectedOrderCheckboxes().map((checkbox) => ({
+    orderId: checkbox.dataset.orderId || checkbox.value || "",
+    marketplace: checkbox.dataset.marketplace || "",
+    status: checkbox.dataset.status || "",
+  }));
+}
+
+function getAllowedStatusesForSelection(selectedOrders) {
+  if (!selectedOrders.length) return [];
+  return selectedOrders.reduce((allowed, order, index) => {
+    const nextStatuses = STATUS_TRANSITIONS[order.status] || [];
+    if (index === 0) return [...nextStatuses];
+    return allowed.filter((status) => nextStatuses.includes(status));
+  }, []);
+}
+
+function syncOrdersSelectAllState() {
+  const selectAll = document.getElementById("ordersSelectAll");
+  const checkboxes = Array.from(document.querySelectorAll(".order-row-chk"));
+  if (!selectAll || !checkboxes.length) return;
+  const checkedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+  selectAll.checked = checkedCount > 0 && checkedCount === checkboxes.length;
+  selectAll.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+}
+
+function updateBulkActionState() {
+  const selectedOrders = getSelectedOrders();
+  const allowedStatuses = getAllowedStatusesForSelection(selectedOrders);
+  const selectionCountEl = document.getElementById("bulkSelectionCount");
+  const hintEl = document.getElementById("bulkActionHint");
+  const bulkTrackingButton = document.getElementById("bulkTrackingButton");
+  const bulkShipButton = document.getElementById("bulkShipButton");
+  const bulkStatusButton = document.getElementById("bulkStatusButton");
+
+  if (selectionCountEl) {
+    selectionCountEl.textContent = `${selectedOrders.length}건 선택`;
+  }
+  if (bulkTrackingButton) {
+    bulkTrackingButton.disabled = selectedOrders.length === 0;
+  }
+  if (bulkShipButton) {
+    bulkShipButton.disabled = !allowedStatuses.includes("shipped");
+  }
+  if (bulkStatusButton) {
+    bulkStatusButton.disabled = allowedStatuses.length === 0;
+  }
+  if (hintEl) {
+    if (!selectedOrders.length) {
+      hintEl.textContent = "선택한 주문이 없어 일괄 액션을 사용할 수 없습니다.";
+    } else if (!allowedStatuses.length) {
+      hintEl.textContent = "선택한 주문들의 현재 상태가 달라 공통으로 가능한 일괄 상태 변경이 없습니다.";
+    } else {
+      hintEl.textContent = `공통 상태 변경 가능: ${allowedStatuses.join(", ")}`;
+    }
+  }
+
+  syncOrdersSelectAllState();
+}
+
 function selectCourierSuggestion(index) {
   const { input, trackingInput } = getCourierTypeaheadElements();
   const selected = typeaheadState.suggestions[index];
@@ -173,6 +237,22 @@ function initCourierTypeahead() {
   });
 }
 
+function initOrderSelection() {
+  const selectAll = document.getElementById("ordersSelectAll");
+  if (selectAll) {
+    selectAll.addEventListener("change", () => {
+      document.querySelectorAll(".order-row-chk").forEach((checkbox) => {
+        checkbox.checked = selectAll.checked;
+      });
+      updateBulkActionState();
+    });
+  }
+  document.querySelectorAll(".order-row-chk").forEach((checkbox) => {
+    checkbox.addEventListener("change", updateBulkActionState);
+  });
+  updateBulkActionState();
+}
+
 /** 현재 URL 파라미터 유지하며 페이지 새로고침 */
 function refreshOrders() {
   window.location.reload();
@@ -228,6 +308,46 @@ function openTrackingModal(marketplace, orderId) {
   setTimeout(() => document.getElementById("tm-courier")?.focus(), MODAL_FOCUS_DELAY_MS);
 }
 
+function openBulkTrackingModal() {
+  const selectedOrders = getSelectedOrders();
+  if (!selectedOrders.length) {
+    showToast("운송장을 등록할 주문을 먼저 선택하세요.", "warning");
+    return;
+  }
+
+  const rowsEl = document.getElementById("bulkTrackingRows");
+  const summaryEl = document.getElementById("bulkTrackingSelectionSummary");
+  const courierInput = document.getElementById("btm-courier");
+  if (!rowsEl || !summaryEl || !courierInput) return;
+
+  summaryEl.textContent = `${selectedOrders.length}건의 주문에 공통 택배사를 적용합니다. 운송장 번호는 주문별로 입력하세요.`;
+  courierInput.value = "";
+  rowsEl.replaceChildren();
+  selectedOrders.forEach((order) => {
+    const group = document.createElement("div");
+    group.className = "input-group input-group-sm";
+
+    const label = document.createElement("span");
+    label.className = "input-group-text";
+    label.textContent = `${order.marketplace}/${order.orderId}`;
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "form-control bulk-tracking-no";
+    input.dataset.orderId = order.orderId;
+    input.dataset.marketplace = order.marketplace;
+    input.placeholder = "운송장 번호";
+    input.setAttribute("aria-label", `${order.orderId} 운송장 번호`);
+
+    group.append(label, input);
+    rowsEl.appendChild(group);
+  });
+
+  const modal = new bootstrap.Modal(document.getElementById("bulkTrackingModal"));
+  modal.show();
+  setTimeout(() => document.querySelector(".bulk-tracking-no")?.focus(), MODAL_FOCUS_DELAY_MS);
+}
+
 /** 운송장 저장 */
 async function saveTracking() {
   const marketplace = document.getElementById("tm-marketplace").value;
@@ -262,6 +382,69 @@ async function saveTracking() {
     }
   } catch (e) {
     showToast("요청 실패: " + e.message, "danger");
+  }
+}
+
+async function saveBulkTracking() {
+  const courier = document.getElementById("btm-courier")?.value.trim() || "";
+  if (!courier) {
+    showToast("택배사를 입력하세요.", "warning");
+    return;
+  }
+
+  const inputs = Array.from(document.querySelectorAll(".bulk-tracking-no"));
+  if (!inputs.length) {
+    showToast("선택된 주문이 없습니다.", "warning");
+    return;
+  }
+
+  const items = inputs.map((input) => ({
+    order_id: input.dataset.orderId || "",
+    marketplace: input.dataset.marketplace || "",
+    courier,
+    tracking_no: input.value.trim(),
+  }));
+  const invalidRows = items.filter((item) => !item.order_id || !item.marketplace);
+  if (invalidRows.length) {
+    showToast("선택 주문 정보가 올바르지 않아 일괄 운송장을 저장할 수 없습니다.", "danger");
+    return;
+  }
+  const missing = items.filter((item) => !item.tracking_no);
+  if (missing.length) {
+    showToast(`운송장 번호가 비어 있는 주문이 ${missing.length}건 있습니다.`, "warning");
+    return;
+  }
+
+  const saveButton = document.getElementById("bulkTrackingSaveButton");
+  if (window.setButtonLoading) {
+    window.setButtonLoading(saveButton, true, "저장 중…");
+  }
+
+  try {
+    const resp = await fetch("/seller/orders/bulk/tracking", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      showToast(data.error || "일괄 운송장 등록 실패", "danger");
+      return;
+    }
+    const failedCount = Array.isArray(data.results) ? data.results.filter((item) => !item.ok).length : 0;
+    bootstrap.Modal.getInstance(document.getElementById("bulkTrackingModal"))?.hide();
+    if (failedCount) {
+      showToast(`일괄 운송장 등록 완료 (${items.length - failedCount}/${items.length}건 성공)`, "warning");
+    } else {
+      showToast(`일괄 운송장 등록 완료 (${items.length}건)`);
+    }
+    setTimeout(refreshOrders, REFRESH_DELAY_MS);
+  } catch (error) {
+    showToast("일괄 운송장 등록 요청 실패: " + error.message, "danger");
+  } finally {
+    if (window.setButtonLoading) {
+      window.setButtonLoading(saveButton, false);
+    }
   }
 }
 
@@ -317,25 +500,26 @@ function openStatusPrompt(marketplace, orderId, currentStatus) {
     showToast(`현재 상태(${currentStatus})에서는 변경 가능한 다음 상태가 없습니다.`, "warning");
     return;
   }
-  const answer = window.prompt(
-    `다음 상태를 입력하세요.\n가능 값: ${options.join(", ")}`,
-    options[0],
-  );
-  if (!answer) return;
-  const nextStatus = answer.trim().toLowerCase();
-  if (!options.includes(nextStatus)) {
-    showToast(`허용되지 않은 상태입니다: ${nextStatus}`, "warning");
-    return;
-  }
-  updateOrderStatus(marketplace, orderId, nextStatus);
+  const statusSelect = document.getElementById("sm-next-status");
+  const reasonInput = document.getElementById("sm-reason");
+  const helpEl = document.getElementById("sm-status-help");
+  if (!statusSelect || !reasonInput || !helpEl) return;
+  document.getElementById("sm-marketplace").value = marketplace;
+  document.getElementById("sm-order-id").value = orderId;
+  statusSelect.innerHTML = options.map((status) => `<option value="${status}">${status}</option>`).join("");
+  reasonInput.value = "";
+  helpEl.textContent = `현재 상태: ${currentStatus} · 가능 값: ${options.join(", ")}`;
+  const modal = new bootstrap.Modal(document.getElementById("statusModal"));
+  modal.show();
+  setTimeout(() => statusSelect.focus(), MODAL_FOCUS_DELAY_MS);
 }
 
-async function updateOrderStatus(marketplace, orderId, nextStatus) {
+async function updateOrderStatus(marketplace, orderId, nextStatus, reason = "") {
   try {
     const resp = await fetch(`/seller/orders/${encodeURIComponent(marketplace)}/${encodeURIComponent(orderId)}/status`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ next_status: nextStatus }),
+      body: JSON.stringify({ next_status: nextStatus, reason }),
     });
     const data = await resp.json();
     if (!data.ok) {
@@ -355,4 +539,120 @@ async function updateOrderStatus(marketplace, orderId, nextStatus) {
   }
 }
 
+async function submitStatusChange() {
+  const marketplace = document.getElementById("sm-marketplace")?.value || "";
+  const orderId = document.getElementById("sm-order-id")?.value || "";
+  const nextStatus = document.getElementById("sm-next-status")?.value || "";
+  const reason = document.getElementById("sm-reason")?.value.trim() || "";
+  if (!nextStatus) {
+    showToast("변경할 상태를 선택하세요.", "warning");
+    return;
+  }
+  const saveButton = document.getElementById("statusSaveButton");
+  if (window.setButtonLoading) {
+    window.setButtonLoading(saveButton, true, "저장 중…");
+  }
+  try {
+    await updateOrderStatus(marketplace, orderId, nextStatus, reason);
+    bootstrap.Modal.getInstance(document.getElementById("statusModal"))?.hide();
+  } finally {
+    if (window.setButtonLoading) {
+      window.setButtonLoading(saveButton, false);
+    }
+  }
+}
+
+function openBulkStatusModal() {
+  const selectedOrders = getSelectedOrders();
+  const allowedStatuses = getAllowedStatusesForSelection(selectedOrders);
+  if (!selectedOrders.length) {
+    showToast("상태를 변경할 주문을 먼저 선택하세요.", "warning");
+    return;
+  }
+  if (!allowedStatuses.length) {
+    showToast("선택한 주문에 공통으로 적용할 수 있는 다음 상태가 없습니다.", "warning");
+    return;
+  }
+
+  const select = document.getElementById("bsm-next-status");
+  const reason = document.getElementById("bsm-reason");
+  const helpEl = document.getElementById("bsm-status-help");
+  const summaryEl = document.getElementById("bulkStatusSelectionSummary");
+  if (!select || !reason || !helpEl || !summaryEl) return;
+
+  select.innerHTML = allowedStatuses.map((status) => `<option value="${status}">${status}</option>`).join("");
+  reason.value = "";
+  summaryEl.textContent = `${selectedOrders.length}건 선택 · 공통으로 가능한 상태만 표시합니다.`;
+  helpEl.textContent = `가능 값: ${allowedStatuses.join(", ")}`;
+
+  const modal = new bootstrap.Modal(document.getElementById("bulkStatusModal"));
+  modal.show();
+  setTimeout(() => select.focus(), MODAL_FOCUS_DELAY_MS);
+}
+
+async function runBulkStatusChange(nextStatus, reason = "") {
+  const selectedOrders = getSelectedOrders();
+  if (!selectedOrders.length) {
+    showToast("상태를 변경할 주문을 먼저 선택하세요.", "warning");
+    return;
+  }
+
+  const saveButton = document.getElementById("bulkStatusSaveButton");
+  if (window.setButtonLoading && saveButton) {
+    window.setButtonLoading(saveButton, true, "저장 중…");
+  }
+
+  try {
+    const resp = await fetch("/seller/orders/bulk/status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items: selectedOrders.map((order) => ({ order_id: order.orderId, marketplace: order.marketplace })),
+        next_status: nextStatus,
+        reason,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      showToast(data.error || "일괄 상태 변경 실패", "danger");
+      return;
+    }
+    const successCount = data.success_count || 0;
+    const failedCount = data.failed_count || 0;
+    bootstrap.Modal.getInstance(document.getElementById("bulkStatusModal"))?.hide();
+    if (failedCount) {
+      showToast(`일괄 상태 변경 완료 (${successCount}/${successCount + failedCount}건 성공)`, "warning");
+    } else {
+      showToast(`선택 주문 ${successCount}건을 ${nextStatus}(으)로 변경했습니다.`);
+    }
+    setTimeout(refreshOrders, REFRESH_DELAY_MS);
+  } catch (error) {
+    showToast("일괄 상태 변경 요청 실패: " + error.message, "danger");
+  } finally {
+    if (window.setButtonLoading && saveButton) {
+      window.setButtonLoading(saveButton, false);
+    }
+  }
+}
+
+async function submitBulkStatusChange() {
+  const nextStatus = document.getElementById("bsm-next-status")?.value || "";
+  const reason = document.getElementById("bsm-reason")?.value.trim() || "";
+  if (!nextStatus) {
+    showToast("변경할 상태를 선택하세요.", "warning");
+    return;
+  }
+  await runBulkStatusChange(nextStatus, reason);
+}
+
+function bulkUpdateSelectedStatus(nextStatus) {
+  const allowedStatuses = getAllowedStatusesForSelection(getSelectedOrders());
+  if (!allowedStatuses.includes(nextStatus)) {
+    showToast("선택한 주문에 공통으로 적용할 수 없는 상태입니다.", "warning");
+    return;
+  }
+  runBulkStatusChange(nextStatus);
+}
+
 initCourierTypeahead();
+initOrderSelection();

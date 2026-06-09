@@ -59,18 +59,15 @@ class TestReturnsInboxUI:
         body = resp.data.decode("utf-8")
         assert "bulkRejectReturns" in body
 
-    def test_returns_inbox_partial_refund_disabled(self, client):
-        """부분 환불 버튼은 disabled 속성을 가진다 (honest UI)."""
+    def test_returns_inbox_partial_refund_modal_connected(self, client):
+        """부분 환불 버튼이 모달 액션으로 연결된다."""
         with patch("src.returns.auto_processor.ReturnsAutoProcessor", autospec=True) as MockProc:
             MockProc.return_value = self._mock_processor()
             resp = client.get("/seller/returns/inbox")
         body = resp.data.decode("utf-8")
-        # '부분 환불' 버튼이 disabled 처리되어 있는지 확인
         assert "부분 환불" in body
-        # disabled 속성이 부분 환불 버튼 근처에 있어야 함
-        idx = body.find("부분 환불")
-        context = body[max(0, idx - 100): idx + 50]
-        assert "disabled" in context
+        assert "openPartialRefundModal" in body
+        assert "partialRefundModal" in body
 
     def test_returns_inbox_has_checkboxes(self, client):
         """테이블 행에 체크박스가 있어야 한다."""
@@ -137,6 +134,7 @@ class TestReturnsBulkApprove:
         mgr = MagicMock()
         mock_req = MagicMock()
         mock_req.status.value = "approved"
+
         def _approve(rid, notes=""):
             if rid == "RET-999":
                 raise KeyError("not found")
@@ -204,6 +202,7 @@ class TestReturnsBulkReject:
         mgr = MagicMock()
         mock_req = MagicMock()
         mock_req.status.value = "rejected"
+
         def _reject(rid, notes=""):
             if rid == "RET-999":
                 raise KeyError("not found")
@@ -218,6 +217,47 @@ class TestReturnsBulkReject:
         data = resp.get_json()
         assert data["ok"] is True
         assert data["rejected_count"] == 1
+
+
+class TestReturnsPartialRefund:
+    """POST /seller/returns/<id>/partial-refund 라우트 테스트."""
+
+    def test_partial_refund_success(self, client):
+        mgr = MagicMock()
+        req = MagicMock()
+        req.status.value = "partially_refunded"
+        req.order_id = "ORD-001"
+        mgr.get_request_object.return_value = req
+        mgr.process_partial_refund.return_value = {"status": "success", "partial_refund": True}
+
+        with patch("src.returns_automation.automation_manager.ReturnsAutomationManager", return_value=mgr):
+            resp = client.post(
+                "/seller/returns/RET-001/partial-refund",
+                json={"amount_krw": 15000, "reason": "사용 흔적"},
+            )
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert data["refund_amount"] == "15000"
+        mgr.process_partial_refund.assert_called_once()
+
+    def test_partial_refund_rejects_empty_amount(self, client):
+        resp = client.post("/seller/returns/RET-001/partial-refund", json={"amount_krw": 0})
+        assert resp.status_code == 400
+        assert resp.get_json()["ok"] is False
+
+    def test_partial_refund_not_found(self, client):
+        mgr = MagicMock()
+        mgr.get_request_object.return_value = None
+        with patch("src.returns_automation.automation_manager.ReturnsAutomationManager", return_value=mgr):
+            resp = client.post("/seller/returns/RET-404/partial-refund", json={"amount_krw": 1000})
+        assert resp.status_code == 404
+
+    def test_partial_refund_service_unavailable(self, client):
+        with patch("src.returns_automation.automation_manager.ReturnsAutomationManager", side_effect=RuntimeError("service unavailable")):
+            resp = client.post("/seller/returns/RET-001/partial-refund", json={"amount_krw": 1000})
+        assert resp.status_code == 503
 
 
 # ─── 소싱 Watch alert() 제거 확인 ─────────────────────────────────────────────
@@ -278,3 +318,18 @@ class TestSourcingCandidatesNoAlert:
         if resp.status_code == 200:
             body = resp.data.decode("utf-8")
             assert "_candidateToast" in body or "candidatePageToast" in body
+
+    def test_sourcing_candidates_no_prompt(self, client):
+        """후보 거절은 prompt() 대신 모달을 사용한다."""
+        with patch("src.seller_console.views._sourcing_require_admin", return_value=None):
+            with patch("src.sourcing.pipeline.get_candidate_queue") as mock_queue:
+                mock_queue.return_value.list_all.return_value = []
+                mock_queue.return_value.stats.return_value = {
+                    "pending": 0, "approved": 0, "rejected": 0, "listed": 0,
+                    "last_24h": 0, "avg_margin_pct": 0,
+                }
+                resp = client.get("/seller/sourcing/candidates")
+        if resp.status_code == 200:
+            body = resp.data.decode("utf-8")
+            assert "prompt(" not in body
+            assert "candidateRejectModal" in body
