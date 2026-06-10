@@ -55,12 +55,15 @@
 
 ### 섹션 4: 마켓 어댑터 Health
 
-4개 마켓(쿠팡/스마트스토어/11번가/WooCommerce)의 API 연결 상태를 표시합니다.
+5개 마켓(쿠팡/스마트스토어/11번가/Shopify/WooCommerce)의 실연동 smoke 결과를 표시합니다.
 
-- `missing` — API 키 미설정
-- `dry_run` — ADAPTER_DRY_RUN=1 (실제 연결 안 함)
-- `ok` — 연결 성공
-- `fail` — 연결 실패 (상세 메시지 확인)
+- `connected` — 실제 read 연결 확인 + safe write dry-run 검증 완료
+- `token_missing` — 필수 환경변수/시크릿 누락
+- `token_expired` — 인증 토큰/키 재발급 필요
+- `scope_insufficient` — 앱 권한 부족
+- `api_error` — 네트워크, rate limit, 5xx 등 API 오류
+
+각 카드에는 필수 env / 필수 권한 / 확인 위치 / 단계별 결과(`read_connection`, `write_dry_run`)가 함께 표시됩니다.
 
 ### 섹션 5: 가격 엔진 상태
 
@@ -83,6 +86,6 @@
 1. `/admin/diagnostics` 접속
 2. 섹션 2: OAuth 콜백 URL 각 콘솔에 등록됐는지 확인
 3. 섹션 3: 텔레그램 테스트 → 메시지 수신 확인
-4. 섹션 4: 마켓 어댑터 최소 1개 이상 `ok` 상태 확인
+4. 섹션 4: 대상 마켓의 `connected` 또는 실패 원인(`token_missing`/`token_expired`/`scope_insufficient`/`api_error`) 확인
 5. 섹션 5: PRICING_DRY_RUN=1 상태 → 시뮬레이션 며칠 관찰
 6. 이상 없으면 PRICING_DRY_RUN=0 으로 전환

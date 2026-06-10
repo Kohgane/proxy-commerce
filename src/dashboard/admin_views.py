@@ -1151,23 +1151,12 @@ def _build_messenger_health() -> dict:
 
 def _build_market_health() -> dict:
     """마켓 어댑터 health 상태."""
-    health = {}
-    adapter_map = {
-        "coupang": ("src.seller_console.market_adapters.coupang_adapter", "CoupangAdapter"),
-        "smartstore": ("src.seller_console.market_adapters.smartstore_adapter", "SmartStoreAdapter"),
-        "11st": ("src.seller_console.market_adapters.eleven_adapter", "ElevenAdapter"),
-        "woocommerce": ("src.seller_console.market_adapters.woocommerce_adapter", "WooCommerceAdapter"),
-    }
-    for name, (module_path, class_name) in adapter_map.items():
-        try:
-            import importlib
-            module = importlib.import_module(module_path)
-            adapter_cls = getattr(module, class_name)
-            adapter = adapter_cls()
-            health[name] = adapter.health_check()
-        except Exception as exc:
-            health[name] = {"status": "error", "detail": str(exc)}
-    return health
+    try:
+        from src.seller_console.market_integration_diagnostics import run_all_market_diagnostics
+
+        return {item["market"]: item for item in run_all_market_diagnostics()}
+    except Exception as exc:
+        return {"market_diagnostics": {"status": "api_error", "detail": str(exc), "steps": []}}
 
 
 def _build_pricing_status() -> dict:
@@ -2646,8 +2635,30 @@ _DIAGNOSTICS_TEMPLATE = """
             <div class="col-md-3">
               <div class="card h-100">
                 <div class="card-body">
-                  <h6>{% if info.status == 'ok' %}✅{% elif info.status == 'missing' %}⬜{% else %}❌{% endif %} {{ market }}</h6>
-                  <p class="small text-muted mb-0">{{ info.detail or info.status }}</p>
+                  <h6>{{ info.label or market }} <span class="badge {{ info.ui.badge_class if info.ui else 'bg-secondary' }}">{{ info.status }}</span></h6>
+                  <p class="small mb-1">{{ info.summary or info.detail or info.status }}</p>
+                  {% if info.hint %}
+                    <p class="small text-muted mb-1">운영 가이드: {{ info.hint }}</p>
+                  {% endif %}
+                  {% if info.required_scopes %}
+                    <p class="small text-muted mb-1">필수 권한: {{ info.required_scopes|join(', ') }}</p>
+                  {% endif %}
+                  {% if info.required_env %}
+                    <p class="small text-muted mb-1">필수 env: {{ info.required_env|join(', ') }}</p>
+                  {% endif %}
+                  {% if info.check_locations %}
+                    <p class="small text-muted mb-1">확인 위치: {{ info.check_locations|join(' · ') }}</p>
+                  {% endif %}
+                  {% if info.docs_path %}
+                    <p class="small text-muted mb-1">가이드: <code>{{ info.docs_path }}</code></p>
+                  {% endif %}
+                  {% if info.steps %}
+                    <ul class="small text-muted mb-0 ps-3">
+                      {% for step in info.steps %}
+                        <li>{{ step.step }} — {{ 'ok' if step.ok else step.error_code }}{% if step.hint %}: {{ step.hint }}{% elif step.detail %}: {{ step.detail }}{% endif %}</li>
+                      {% endfor %}
+                    </ul>
+                  {% endif %}
                 </div>
               </div>
             </div>

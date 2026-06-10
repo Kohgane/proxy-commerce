@@ -18,8 +18,8 @@
     <button class="btn btn-outline-primary btn-sm" id="syncAllBtn" onclick="syncAllMarkets()">
       🔄 지금 동기화
     </button>
-    <button class="btn btn-outline-success btn-sm" id="shopifyCheckBtn" onclick="checkShopifyConnection()">
-      🔌 Shopify 연결 확인
+    <button class="btn btn-outline-success btn-sm" id="marketDiagnosticsBtn" onclick="refreshAllMarketDiagnostics()">
+      🔌 실연동 재진단
     </button>
     <button class="btn btn-outline-secondary btn-sm" onclick="location.reload()">새로고침</button>
   </div>
@@ -30,9 +30,9 @@
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
       <div>
         <div class="fw-semibold">마켓 연동 컨트롤 센터</div>
-        <div class="small text-muted">연동 상태/필요 env/마지막 동기화를 한눈에 확인하세요.</div>
+        <div class="small text-muted">실제 검증된 연동 상태와 운영자 조치 힌트를 함께 확인하세요.</div>
       </div>
-      <span class="badge text-bg-light" id="shopifyConnectionSummary">Shopify 연결 확인 대기</span>
+      <span class="badge text-bg-light" id="marketDiagnosticsSummary">실연동 진단 대기</span>
     </div>
     <div class="row g-2 mt-2">
       {% for hub in market_hub_cards %}
@@ -40,18 +40,37 @@
         <div class="border rounded-3 p-2 h-100">
           <div class="d-flex justify-content-between align-items-center mb-1">
             <strong>{{ hub.label }}</strong>
+            {% if hub.integration_supported %}
+            <span class="badge {{ hub.pending_badge_class }}" data-market-badge="{{ hub.marketplace }}">검사 중…</span>
+            {% else %}
             <span class="badge bg-{{ hub.status_style }}">{{ hub.status_label }}</span>
+            {% endif %}
           </div>
           <div class="small text-muted">{{ hub.country }}/{{ hub.currency }} · 활성 {{ hub.active }} / 전체 {{ hub.total }}</div>
           {% if hub.note %}
           <div class="small mt-1">{{ hub.note }}</div>
           {% endif %}
           <div class="small text-muted mt-1">마지막 동기화: {{ hub.last_synced_at or '—' }}</div>
+          {% if hub.integration_supported %}
+          <div class="small mt-2" data-market-summary="{{ hub.marketplace }}">실연동 검사를 불러오는 중…</div>
+          <div class="small text-muted mt-1" data-market-hint="{{ hub.marketplace }}">실제 성공 표시 전까지는 connected 상태를 보여주지 않습니다.</div>
+          <div class="small text-muted mt-1" data-market-disabled-reason="{{ hub.marketplace }}">초기 실연동 진단 실행 중…</div>
+          <div class="d-flex flex-wrap gap-1 mt-2">
+            <button class="btn btn-outline-primary btn-sm" type="button" data-market-action="connection" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'connection')">연결 확인</button>
+            <button class="btn btn-outline-secondary btn-sm" type="button" data-market-action="scope" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'scope')">권한 확인</button>
+            <button class="btn btn-outline-warning btn-sm" type="button" data-market-action="retry" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'retry')">재시도</button>
+          </div>
+          <div class="small text-muted mt-2">필수 권한: {{ hub.required_scopes|join(', ') }}</div>
+          <div class="small text-muted mt-1">필수 env: {{ hub.required_env|join(', ') }}</div>
+          <div class="small text-muted mt-1">확인 위치: {{ hub.check_locations|join(' · ') }}</div>
+          <div class="small text-muted mt-1">가이드: <code>{{ hub.docs_path }}</code></div>
+          <ul class="small mt-2 mb-0 ps-3" data-market-steps="{{ hub.marketplace }}"></ul>
+          {% endif %}
         </div>
       </div>
       {% endfor %}
     </div>
-    <div id="shopifyConnectionDetail" class="small mt-2 text-muted"></div>
+    <div id="marketDiagnosticsDetail" class="small mt-2 text-muted"></div>
   </div>
 </div>
 
@@ -263,46 +282,129 @@ function syncAllMarkets() {
   syncMarket('all');
 }
 
-function checkShopifyConnection() {
-  const btn = document.getElementById('shopifyCheckBtn');
-  const summary = document.getElementById('shopifyConnectionSummary');
-  const detail = document.getElementById('shopifyConnectionDetail');
-  btn.disabled = true;
-  btn.textContent = '⏳ 확인 중...';
+function setMarketButtonsDisabled(market, disabled, reason='') {
+  document.querySelectorAll(`[data-market="${market}"]`).forEach(btn => {
+    btn.disabled = disabled;
+    btn.title = disabled ? reason : '';
+  });
+  const disabledReason = document.querySelector(`[data-market-disabled-reason="${market}"]`);
+  if (disabledReason) {
+    disabledReason.textContent = reason;
+  }
+}
 
-  fetch('/seller/markets/shopify/check-connection', {
+function renderMarketDiagnostic(result, requestedAction='connection') {
+  const badge = document.querySelector(`[data-market-badge="${result.market}"]`);
+  const summary = document.querySelector(`[data-market-summary="${result.market}"]`);
+  const hint = document.querySelector(`[data-market-hint="${result.market}"]`);
+  const steps = document.querySelector(`[data-market-steps="${result.market}"]`);
+  const detail = document.getElementById('marketDiagnosticsDetail');
+
+  if (badge && result.ui) {
+    badge.className = `badge ${result.ui.badge_class}`;
+    badge.textContent = result.ui.badge_label;
+    badge.dataset.status = result.status || result.ui.badge_label;
+  }
+
+  if (summary) {
+    const technical = result.ui && result.ui.technical_detail ? ` · 원인: ${result.ui.technical_detail}` : '';
+    summary.textContent = `${result.summary || '연동 상태를 확인했습니다.'}${technical}`;
+  }
+
+  if (hint) {
+    const scopeGuide = requestedAction === 'scope' ? `필수 권한: ${(result.required_scopes || []).join(', ')}` : '';
+    hint.textContent = [result.hint || '', scopeGuide].filter(Boolean).join(' · ');
+  }
+
+  if (steps) {
+    steps.innerHTML = '';
+    (result.steps || []).forEach(step => {
+      const li = document.createElement('li');
+      li.textContent = `${step.step}: ${step.ok ? 'ok' : (step.error_code || 'api_error')} — ${step.hint || step.detail || '상세 없음'}`;
+      steps.appendChild(li);
+    });
+  }
+
+  if (detail) {
+    detail.textContent = `${result.label}: ${(result.check_locations || []).join(' · ')} / 가이드 ${result.docs_path}`;
+  }
+
+  const disabledReason = requestedAction === 'scope'
+    ? `권한 확인: ${(result.required_scopes || []).join(', ')}`
+    : ((result.ui && result.ui.disabled_reason) || '최신 진단 반영 완료');
+  setMarketButtonsDisabled(result.market, false, disabledReason);
+}
+
+function updateMarketDiagnosticsSummary(results) {
+  const summary = document.getElementById('marketDiagnosticsSummary');
+  if (!summary) return;
+  const connected = results.filter(result => result.status === 'connected').length;
+  const degraded = results.length - connected;
+  summary.className = `badge ${degraded ? 'bg-warning text-dark' : 'bg-success'}`;
+  summary.textContent = `connected ${connected} / 점검 필요 ${degraded}`;
+}
+
+function refreshAllMarketDiagnostics() {
+  const btn = document.getElementById('marketDiagnosticsBtn');
+  const detail = document.getElementById('marketDiagnosticsDetail');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ 진단 중...';
+  }
+  if (detail) {
+    detail.textContent = '마켓 실연동 smoke 검사를 실행 중입니다.';
+  }
+
+  fetch('/seller/markets/integration-diagnostics')
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) {
+        showToast(data.error || '마켓 연동 진단 실패', 'danger');
+        return;
+      }
+      (data.results || []).forEach(result => renderMarketDiagnostic(result));
+      updateMarketDiagnosticsSummary(data.results || []);
+      showToast('마켓 실연동 진단이 완료되었습니다.');
+    })
+    .catch(err => {
+      if (detail) detail.textContent = err.message;
+      showToast('마켓 연동 진단 실패: ' + err.message, 'danger');
+    })
+    .finally(() => {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = '🔌 실연동 재진단';
+      }
+    });
+}
+
+function runMarketDiagnostic(market, requestedAction) {
+  setMarketButtonsDisabled(market, true, `${requestedAction} 실행 중…`);
+  fetch('/seller/markets/integration-diagnostics', {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'}
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({market})
   })
     .then(r => r.json())
     .then(data => {
-      if (data.ok) {
-        summary.className = 'badge bg-success';
-        summary.textContent = `연결됨 · ${data.shop_domain || '-'}`;
-        detail.textContent = `스토어: ${data.shop_name || '-'} / 통화: ${data.currency || '-'} / 플랜: ${data.plan_name || '-'} / 이메일: ${data.email || '-'}`;
-        showToast('Shopify 연결 확인 완료');
-        return;
+      if (!data.ok) {
+        throw new Error(data.error || '마켓 연동 진단 실패');
       }
-
-      summary.className = 'badge bg-danger';
-      const status = data.http_status ? `HTTP ${data.http_status}` : (data.status || 'fail');
-      summary.textContent = `미연동 · ${status}`;
-      if (Array.isArray(data.missing_env) && data.missing_env.length) {
-        detail.textContent = `누락 env: ${data.missing_env.join(', ')}`;
+      renderMarketDiagnostic(data.result, requestedAction);
+      updateMarketDiagnosticsSummary(
+        Array.from(document.querySelectorAll('[data-market-badge]')).map(badge => ({
+          status: badge.dataset.status || badge.textContent
+        }))
+      );
+      if (data.result.ok) {
+        showToast(`${data.result.label} ${requestedAction === 'scope' ? '권한' : '연결'} 확인 완료`);
       } else {
-        detail.textContent = data.message || data.reason || 'Shopify 연결 확인 실패';
+        showToast(data.result.hint || `${data.result.label} 진단 실패`, 'danger');
       }
-      showToast(data.message || data.reason || 'Shopify 연결 확인 실패', 'danger');
     })
     .catch(err => {
-      summary.className = 'badge bg-danger';
-      summary.textContent = '미연동 · request_error';
-      detail.textContent = err.message;
-      showToast('Shopify 연결 확인 실패: ' + err.message, 'danger');
-    })
-    .finally(() => {
-      btn.disabled = false;
-      btn.textContent = '🔌 Shopify 연결 확인';
+      setMarketButtonsDisabled(market, false, `재시도 가능: ${err.message}`);
+      showToast(`${market} 진단 실패: ${err.message}`, 'danger');
     });
 }
 
@@ -364,5 +466,6 @@ function updateSyncAgo() {
 filterTable();
 updateSyncAgo();
 setInterval(updateSyncAgo, 10000);
+refreshAllMarketDiagnostics();
 </script>
 {% endblock %}

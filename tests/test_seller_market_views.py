@@ -81,10 +81,13 @@ class TestMarketsOverview:
         assert "전체 국가" in html
         assert "준비 중" in html
 
-    def test_markets_contains_shopify_connection_button(self, client):
+    def test_markets_contains_market_diagnostics_actions(self, client):
         resp = client.get("/seller/markets")
         assert resp.status_code == 200
-        assert "Shopify 연결 확인" in resp.get_data(as_text=True)
+        html = resp.get_data(as_text=True)
+        assert "연결 확인" in html
+        assert "권한 확인" in html
+        assert "재시도" in html
 
 
 # ---------------------------------------------------------------------------
@@ -186,7 +189,8 @@ class TestMarketsSyncApi:
         )
         assert resp.status_code == 200
         data = resp.get_json()
-        assert "coupang" in data
+        assert data["ok"] is True
+        assert "coupang" in data["results"]
 
     def test_sync_empty_body_defaults_to_all(self, client):
         """POST /seller/markets/sync (빈 body) → 200."""
@@ -205,7 +209,8 @@ class TestMarketsSyncApi:
             content_type="application/json",
         )
         data = resp.get_json()
-        for v in data.values():
+        assert data["ok"] is True
+        for v in data["results"].values():
             assert isinstance(v, int)
 
 
@@ -234,6 +239,83 @@ class TestShopifyConnectionCheckApi:
         data = resp.get_json()
         assert data["ok"] is True
         assert data["shop_domain"] == "catdyy-p0.myshopify.com"
+
+
+class TestMarketIntegrationDiagnosticsApi:
+    def test_market_diagnostics_requires_supported_market(self, client):
+        resp = client.post(
+            "/seller/markets/integration-diagnostics",
+            data=json.dumps({"market": "amazon"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 404
+
+    def test_market_diagnostics_single_market_format(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "src.seller_console.market_integration_diagnostics.run_market_diagnostic",
+            lambda market: {
+                "ok": True,
+                "market": market,
+                "label": "Shopify",
+                "status": "connected",
+                "summary": "read 연결 확인 + safe write dry-run 검증 완료",
+                "hint": "운영 확인 완료",
+                "docs_path": "docs/operations/SHOPIFY_MARKET.md",
+                "required_env": ["SHOPIFY_AUTO_TOKEN"],
+                "required_scopes": ["read_products"],
+                "check_locations": ["/admin/diagnostics", "/seller/markets"],
+                "steps": [
+                    {"ok": True, "market": market, "step": "read_connection", "error_code": "", "hint": "ok", "detail": "shop.json", "raw": {}},
+                    {"ok": True, "market": market, "step": "write_dry_run", "error_code": "", "hint": "ok", "detail": "dry_run", "raw": {}},
+                ],
+                "checked_at": "2026-06-10T00:00:00+00:00",
+                "ui": {"badge_label": "connected", "badge_class": "bg-success", "summary": "ok", "hint": "ok", "technical_detail": "", "disabled_reason": ""},
+            },
+        )
+
+        resp = client.post(
+            "/seller/markets/integration-diagnostics",
+            data=json.dumps({"market": "shopify"}),
+            content_type="application/json",
+        )
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert data["result"]["status"] == "connected"
+        assert data["result"]["steps"][0]["step"] == "read_connection"
+
+    def test_market_diagnostics_all_markets_format(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "src.seller_console.market_integration_diagnostics.run_all_market_diagnostics",
+            lambda: [
+                {
+                    "ok": False,
+                    "market": "coupang",
+                    "label": "Coupang",
+                    "status": "token_missing",
+                    "summary": "필수 env 누락",
+                    "hint": "환경변수 등록 필요",
+                    "docs_path": "docs/operations/COUPANG.md",
+                    "required_env": ["COUPANG_ACCESS_KEY"],
+                    "required_scopes": ["상품 조회"],
+                    "check_locations": ["/admin/diagnostics"],
+                    "steps": [
+                        {"ok": False, "market": "coupang", "step": "read_connection", "error_code": "token_missing", "hint": "env 누락", "detail": "missing", "raw": {}},
+                    ],
+                    "checked_at": "2026-06-10T00:00:00+00:00",
+                    "ui": {"badge_label": "token_missing", "badge_class": "bg-secondary", "summary": "missing", "hint": "env", "technical_detail": "missing", "disabled_reason": "필수 환경변수/시크릿을 먼저 등록하세요."},
+                }
+            ],
+        )
+
+        resp = client.get("/seller/markets/integration-diagnostics")
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert data["results"][0]["status"] == "token_missing"
+        assert data["results"][0]["steps"][0]["error_code"] == "token_missing"
 
 
 # ---------------------------------------------------------------------------
