@@ -1,14 +1,16 @@
-"""src/seller_console/upload_dispatcher.py — 마켓 업로드 디스패처 (Phase 122).
+"""src/seller_console/upload_dispatcher.py — 마켓 업로드 디스패처 (Phase 122/190).
 
 UploadDispatcher: 선택된 마켓들로 상품 업로드 요청을 디스패치.
 기존 Phase 71/109 모듈 재사용 (graceful import).
 모듈 미존재 시 큐에 적재만 수행.
+Phase 190: prevalidate(), external_product_id/url, error_code/hint 추가.
 """
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -24,15 +26,37 @@ MARKET_LABELS = {
     "shopify": "Shopify",
 }
 
+# 마켓별 필수 환경변수 (사전검증용)
+_MARKET_REQUIRED_ENVS: Dict[str, List[str]] = {
+    "coupang": ["COUPANG_ACCESS_KEY", "COUPANG_SECRET_KEY", "COUPANG_VENDOR_ID"],
+    "smartstore": ["NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET"],
+    "elevenst": ["ELEVENST_API_KEY"],
+    "woocommerce": ["WC_URL", "WC_CONSUMER_KEY", "WC_CONSUMER_SECRET"],
+    "shopify": ["SHOPIFY_SHOP"],
+}
+
+# 마켓별 업로드 힌트 (토큰/권한 미설정 시 안내)
+_MARKET_TOKEN_HINTS: Dict[str, str] = {
+    "coupang": "/admin/diagnostics 에서 COUPANG_ACCESS_KEY / SECRET_KEY / VENDOR_ID 를 설정하세요.",
+    "smartstore": "/admin/diagnostics 에서 NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 를 설정하세요.",
+    "elevenst": "/admin/diagnostics 에서 ELEVENST_API_KEY 를 설정하세요.",
+    "woocommerce": "/admin/diagnostics 에서 WC_URL / WC_CONSUMER_KEY / WC_CONSUMER_SECRET 를 설정하세요.",
+    "shopify": "/admin/diagnostics 에서 SHOPIFY_SHOP 및 SHOPIFY_AUTO_TOKEN 을 설정하세요.",
+}
+
 
 @dataclass
 class UploadResult:
-    """업로드 결과 항목."""
+    """업로드 결과 항목 (Phase 190: external_product_id/url, error_code, hint 추가)."""
 
     market: str
     success: bool
     message: str
-    queued: bool = False  # 모듈 없어 큐에만 적재된 경우
+    queued: bool = False                        # 모듈 없어 큐에만 적재된 경우
+    external_product_id: Optional[str] = None  # 마켓 등록 상품 ID
+    external_url: Optional[str] = None         # 마켓 상품 URL
+    error_code: Optional[str] = None           # 오류 코드 (token_missing, scope_insufficient 등)
+    hint: Optional[str] = None                 # 즉시 행동 가이드
 
 
 @dataclass
@@ -61,10 +85,25 @@ class DispatchResult:
                     "success": r.success,
                     "message": r.message,
                     "queued": r.queued,
+                    "external_product_id": r.external_product_id,
+                    "external_url": r.external_url,
+                    "error_code": r.error_code,
+                    "hint": r.hint,
                 }
                 for r in self.results
             ],
         }
+
+
+@dataclass
+class PrevalidationResult:
+    """사전검증 결과."""
+
+    market: str
+    ok: bool
+    error_code: Optional[str] = None
+    message: str = ""
+    hint: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -79,7 +118,105 @@ class UploadDispatcher:
     선택된 마켓 목록으로 ProductDraft를 업로드.
     각 마켓 업로더 모듈은 graceful import로 로드.
     모듈이 없으면 큐에 적재만 수행.
+    Phase 190: prevalidate() 추가 — 토큰/필수필드/이미지 사전검증.
     """
+
+    def prevalidate(
+        self,
+        product_data: Dict[str, Any],
+        markets: List[str],
+    ) -> List[PrevalidationResult]:
+        """마켓별 업로드 사전검증 (토큰/권한/필수필드/이미지 접근성).
+
+        Returns:
+            PrevalidationResult 목록 (마켓당 1개)
+        """
+        results = []
+        for market in markets:
+            results.append(self._prevalidate_market(product_data, market))
+        return results
+
+    def _prevalidate_market(
+        self,
+        product_data: Dict[str, Any],
+        market: str,
+    ) -> PrevalidationResult:
+        """단일 마켓 사전검증."""
+        if market not in SUPPORTED_MARKETS:
+            return PrevalidationResult(
+                market=market,
+                ok=False,
+                error_code="unsupported_market",
+                message=f"지원하지 않는 마켓: {market}",
+                hint="지원 마켓: " + ", ".join(SUPPORTED_MARKETS),
+            )
+
+        # 토큰/환경변수 검증
+        required_envs = _MARKET_REQUIRED_ENVS.get(market, [])
+        missing = [k for k in required_envs if not os.getenv(k)]
+
+        # Shopify: SHOPIFY_AUTO_TOKEN 또는 SHOPIFY_ACCESS_TOKEN 중 하나만 있어도 됨
+        # (required_envs에는 SHOPIFY_SHOP만 있어서 토큰 별도 체크 필요)
+        if market == "shopify":
+            has_token = bool(os.getenv("SHOPIFY_AUTO_TOKEN") or os.getenv("SHOPIFY_ACCESS_TOKEN"))
+            if not has_token:
+                missing.append("SHOPIFY_AUTO_TOKEN (또는 SHOPIFY_ACCESS_TOKEN)")
+
+        if missing:
+            return PrevalidationResult(
+                market=market,
+                ok=False,
+                error_code="token_missing",
+                message=f"필수 환경변수 미설정: {', '.join(missing)}",
+                hint=_MARKET_TOKEN_HINTS.get(market, "관리자에게 문의하세요."),
+            )
+
+        # 필수 필드 검증
+        title = str(product_data.get("title") or product_data.get("title_ko") or "").strip()
+        if not title:
+            return PrevalidationResult(
+                market=market,
+                ok=False,
+                error_code="missing_field",
+                message="상품명(title)이 없습니다.",
+                hint="수집 후 상품명을 직접 입력하거나 AI 카피 생성을 활용하세요.",
+            )
+
+        price_raw = product_data.get("price") or product_data.get("price_original")
+        try:
+            price = float(price_raw) if price_raw is not None else None
+        except (TypeError, ValueError):
+            price = None
+        if price is None or price <= 0:
+            return PrevalidationResult(
+                market=market,
+                ok=False,
+                error_code="missing_field",
+                message="판매가(price)가 0 이하이거나 없습니다.",
+                hint="마진 계산기에서 권장 판매가를 계산 후 적용하세요.",
+            )
+
+        # 이미지 URL 접근성 (첫 번째 이미지만 HEAD 체크, 타임아웃 3초)
+        images = product_data.get("images")
+        if images and isinstance(images, list) and images:
+            first_img = str(images[0]).strip()
+            if first_img.startswith("http"):
+                try:
+                    import urllib.request
+                    req = urllib.request.Request(first_img, method="HEAD")
+                    with urllib.request.urlopen(req, timeout=3):
+                        pass
+                except Exception as img_exc:
+                    logger.debug("이미지 HEAD 체크 실패(%s): %s", first_img, img_exc)
+                    return PrevalidationResult(
+                        market=market,
+                        ok=False,
+                        error_code="image_inaccessible",
+                        message=f"상품 이미지 URL에 접근할 수 없습니다: {first_img[:60]}",
+                        hint="마켓에서 접근 가능한 공개 이미지 URL을 사용하세요.",
+                    )
+
+        return PrevalidationResult(market=market, ok=True, message="사전검증 통과")
 
     def dispatch(
         self,
@@ -195,8 +332,19 @@ class UploadDispatcher:
         try:
             # graceful import: 모듈 존재 시 실제 업로드
             from src.channel_sync import coupang_uploader  # type: ignore
-            coupang_uploader.upload(product_data)
-            return UploadResult(market="coupang", success=True, message="쿠팡 업로드 성공")
+            upload_resp = coupang_uploader.upload(product_data)
+            ext_id = None
+            ext_url = None
+            if isinstance(upload_resp, dict):
+                ext_id = str(upload_resp.get("product_id") or upload_resp.get("id") or "").strip() or None
+                ext_url = str(upload_resp.get("url") or "").strip() or None
+            return UploadResult(
+                market="coupang",
+                success=True,
+                message="쿠팡 업로드 성공",
+                external_product_id=ext_id,
+                external_url=ext_url,
+            )
         except ImportError:
             # 모듈 없음 → 큐에 적재
             _pending_queue.append({"market": "coupang", "data": product_data})
@@ -206,17 +354,36 @@ class UploadDispatcher:
                 success=False,
                 queued=True,
                 message="큐에 적재됨 (쿠팡 업로더 모듈 준비 중)",
+                error_code="module_missing",
+                hint=_MARKET_TOKEN_HINTS.get("coupang"),
             )
         except Exception as exc:
             logger.warning("쿠팡 업로드 오류: %s", exc)
-            return UploadResult(market="coupang", success=False, message=f"오류: {exc}")
+            return UploadResult(
+                market="coupang",
+                success=False,
+                message=f"오류: {exc}",
+                error_code="api_error",
+                hint="오류 내용을 확인 후 재시도하거나 /admin/diagnostics 에서 자격증명을 점검하세요.",
+            )
 
     def _upload_smartstore(self, product_data: Dict[str, Any]) -> UploadResult:
         """스마트스토어 업로드 (Phase 71/109 모듈 재사용)."""
         try:
             from src.channel_sync import smartstore_uploader  # type: ignore
-            smartstore_uploader.upload(product_data)
-            return UploadResult(market="smartstore", success=True, message="스마트스토어 업로드 성공")
+            upload_resp = smartstore_uploader.upload(product_data)
+            ext_id = None
+            ext_url = None
+            if isinstance(upload_resp, dict):
+                ext_id = str(upload_resp.get("product_id") or upload_resp.get("id") or "").strip() or None
+                ext_url = str(upload_resp.get("url") or "").strip() or None
+            return UploadResult(
+                market="smartstore",
+                success=True,
+                message="스마트스토어 업로드 성공",
+                external_product_id=ext_id,
+                external_url=ext_url,
+            )
         except ImportError:
             _pending_queue.append({"market": "smartstore", "data": product_data})
             logger.info("스마트스토어 업로더 모듈 없음 — 큐에 적재 완료 (큐 크기: %d)", len(_pending_queue))
@@ -225,17 +392,36 @@ class UploadDispatcher:
                 success=False,
                 queued=True,
                 message="큐에 적재됨 (스마트스토어 업로더 모듈 준비 중)",
+                error_code="module_missing",
+                hint=_MARKET_TOKEN_HINTS.get("smartstore"),
             )
         except Exception as exc:
             logger.warning("스마트스토어 업로드 오류: %s", exc)
-            return UploadResult(market="smartstore", success=False, message=f"오류: {exc}")
+            return UploadResult(
+                market="smartstore",
+                success=False,
+                message=f"오류: {exc}",
+                error_code="api_error",
+                hint="오류 내용을 확인 후 재시도하거나 /admin/diagnostics 에서 자격증명을 점검하세요.",
+            )
 
     def _upload_elevenst(self, product_data: Dict[str, Any]) -> UploadResult:
         """11번가 업로드 (Phase 71/109 모듈 재사용)."""
         try:
             from src.channel_sync import elevenst_uploader  # type: ignore
-            elevenst_uploader.upload(product_data)
-            return UploadResult(market="elevenst", success=True, message="11번가 업로드 성공")
+            upload_resp = elevenst_uploader.upload(product_data)
+            ext_id = None
+            ext_url = None
+            if isinstance(upload_resp, dict):
+                ext_id = str(upload_resp.get("product_id") or upload_resp.get("id") or "").strip() or None
+                ext_url = str(upload_resp.get("url") or "").strip() or None
+            return UploadResult(
+                market="elevenst",
+                success=True,
+                message="11번가 업로드 성공",
+                external_product_id=ext_id,
+                external_url=ext_url,
+            )
         except ImportError:
             _pending_queue.append({"market": "elevenst", "data": product_data})
             logger.info("11번가 업로더 모듈 없음 — 큐에 적재 완료 (큐 크기: %d)", len(_pending_queue))
@@ -244,17 +430,36 @@ class UploadDispatcher:
                 success=False,
                 queued=True,
                 message="큐에 적재됨 (11번가 업로더 모듈 준비 중)",
+                error_code="module_missing",
+                hint=_MARKET_TOKEN_HINTS.get("elevenst"),
             )
         except Exception as exc:
             logger.warning("11번가 업로드 오류: %s", exc)
-            return UploadResult(market="elevenst", success=False, message=f"오류: {exc}")
+            return UploadResult(
+                market="elevenst",
+                success=False,
+                message=f"오류: {exc}",
+                error_code="api_error",
+                hint="오류 내용을 확인 후 재시도하거나 /admin/diagnostics 에서 자격증명을 점검하세요.",
+            )
 
     def _upload_woocommerce(self, product_data: Dict[str, Any]) -> UploadResult:
         """WooCommerce(코가네멀티샵) 업로드."""
         try:
             from src.vendors import woocommerce_client  # type: ignore
-            woocommerce_client.create_product(product_data)
-            return UploadResult(market="woocommerce", success=True, message="WooCommerce 업로드 성공")
+            upload_resp = woocommerce_client.create_product(product_data)
+            ext_id = None
+            ext_url = None
+            if isinstance(upload_resp, dict):
+                ext_id = str(upload_resp.get("id") or "").strip() or None
+                ext_url = str(upload_resp.get("permalink") or upload_resp.get("url") or "").strip() or None
+            return UploadResult(
+                market="woocommerce",
+                success=True,
+                message="WooCommerce 업로드 성공",
+                external_product_id=ext_id,
+                external_url=ext_url,
+            )
         except ImportError:
             _pending_queue.append({"market": "woocommerce", "data": product_data})
             logger.info("WooCommerce 클라이언트 없음 — 큐에 적재 완료 (큐 크기: %d)", len(_pending_queue))
@@ -263,13 +468,21 @@ class UploadDispatcher:
                 success=False,
                 queued=True,
                 message="큐에 적재됨 (WooCommerce 클라이언트 준비 중)",
+                error_code="module_missing",
+                hint=_MARKET_TOKEN_HINTS.get("woocommerce"),
             )
         except Exception as exc:
             logger.warning("WooCommerce 업로드 오류: %s", exc)
-            return UploadResult(market="woocommerce", success=False, message=f"오류: {exc}")
+            return UploadResult(
+                market="woocommerce",
+                success=False,
+                message=f"오류: {exc}",
+                error_code="api_error",
+                hint="오류 내용을 확인 후 재시도하거나 /admin/diagnostics 에서 자격증명을 점검하세요.",
+            )
 
     def _upload_shopify(self, product_data: Dict[str, Any]) -> UploadResult:
-        """Shopify 업로드 (Phase 183: src.markets.adapters.shopify 실연동 사용)."""
+        """Shopify 업로드 (Phase 183/190: src.markets.adapters.shopify 실연동 사용)."""
         try:
             from src.markets.adapters.base import ListingPayload
             from src.markets.adapters.shopify import ShopifyAdapter
@@ -307,6 +520,8 @@ class UploadDispatcher:
                     market="shopify",
                     success=False,
                     message=validation.message,
+                    error_code="validation_failed",
+                    hint="상품명, 가격, 이미지가 모두 채워졌는지 확인하세요.",
                 )
 
             result = adapter.upload_product(payload)
@@ -315,18 +530,29 @@ class UploadDispatcher:
                     market="shopify",
                     success=False,
                     message=result.message,
+                    error_code="api_error",
+                    hint="SHOPIFY_SHOP / SHOPIFY_AUTO_TOKEN 설정 및 Admin API 권한을 /admin/diagnostics 에서 확인하세요.",
                 )
 
             admin_url = str(result.raw.get("admin_url") or "").strip()
+            storefront_url = str(result.raw.get("storefront_url") or "").strip() or None
             suffix = f" · 관리자: {admin_url}" if admin_url else ""
             return UploadResult(
                 market="shopify",
                 success=True,
                 message=f"Shopify 업로드 성공 (ID: {result.external_id}){suffix}",
+                external_product_id=str(result.external_id) if result.external_id else None,
+                external_url=storefront_url or (admin_url if admin_url else None),
             )
         except Exception as exc:
             logger.warning("Shopify 업로드 오류: %s", exc)
-            return UploadResult(market="shopify", success=False, message="오류: Shopify 업로드 처리 실패")
+            return UploadResult(
+                market="shopify",
+                success=False,
+                message="오류: Shopify 업로드 처리 실패",
+                error_code="api_error",
+                hint="SHOPIFY_SHOP / SHOPIFY_AUTO_TOKEN 설정 및 Admin API 권한을 /admin/diagnostics 에서 확인하세요.",
+            )
 
     @staticmethod
     def get_pending_queue() -> List[Dict[str, Any]]:

@@ -92,3 +92,47 @@
 ## 🚚 택배사 데이터 소스
 - 통합 카탈로그: `src/seller_console/orders/courier_catalog.py` (`COURIER_MAP` + `KOREA_COURIERS` 병합)
 - 동적 확장: TrackingMore `GET /v4/couriers/all` (키 미설정/오프라인 시 내장 폴백)
+
+---
+
+## Phase 190 — 사용자 마진% 실반영 + 마켓 실제 업로드 완성 + 미구현 기능 마감 ✅ (2026-06-10)
+
+### 오너 지시 사항
+1. "마진%는 실사용자가 설정하는대로 바뀌어야 한다"
+2. "마켓에 올릴 수 있어야 한다"
+3. "여러 기능들 다 구현되어야 한다"
+
+### 작업 요약
+
+#### A. 마진% 실반영 (`target_margin_pct` 파이프라인)
+- `/seller/pricing` + `/seller/pricing/compare`: 목표 마진율 슬라이더가 debounce 300ms로 즉시 재계산 트리거 — 기존 동작 유지
+- `/seller/collect/upload`: `target_margin_pct` JSON 파라미터를 받아 `product_data`에 주입 → 업로드 payload에 마진율 포함
+
+#### B. 마켓 실제 업로드 완성
+- `UploadResult` 필드 추가: `external_product_id`, `external_url`, `error_code`, `hint`
+- `DispatchResult.to_dict()`에 신규 필드 직렬화 추가
+- Shopify: 성공 시 `storefront_url` → `external_url`, `external_id` → `external_product_id` 추출
+- 쿠팡/스마트스토어/11번가/WooCommerce: 응답 dict에서 id/url 추출 시도
+
+#### C. 사전검증 기능 신설 (`UploadDispatcher.prevalidate()`)
+- `POST /seller/collect/prevalidate`: 마켓별 토큰/필수필드/이미지 접근성 검증
+- `error_code`: `token_missing`, `missing_field`, `image_inaccessible`, `unsupported_market`
+- 각 오류 코드마다 즉시 행동 `hint` 포함
+
+#### D. collect_preview.html 반쪽 버튼 제거
+- "Phase 136 예정" disabled 버튼 → 실동작 "📤 마켓에 등록" 모달 플로우
+- 3단계 모달: 마켓 선택 + 마진율 → 사전검증 → 업로드 결과(성공 링크/실패 조치)
+- 중복 클릭 방지 스피너 추가
+
+### 테스트
+- `tests/test_phase190_upload_margin.py`: 29개 신규 테스트 (모두 통과)
+- 기존 237개 테스트 회귀 없음
+
+### 운영 메모
+- `SHOPIFY_AUTO_TOKEN` (우선) 또는 `SHOPIFY_ACCESS_TOKEN` 중 하나만 있어도 Shopify 업로드 가능
+- 쿠팡/스마트스토어/11번가는 `src.channel_sync.*_uploader` 모듈 미존재 시 큐에 적재 (queued=True)
+- 업로드 실패 시 `/admin/diagnostics`에서 자격증명 점검
+
+### 다음 단계 (백로그)
+- 쿠팡/스마트스토어/11번가 실 채널 업로더 모듈 연결 (현재 큐 적재 방식)
+- 등록 이력 DB 저장 및 재시도 큐 플로우 고도화
