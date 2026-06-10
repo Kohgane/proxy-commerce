@@ -303,6 +303,7 @@ function renderMarketDiagnostic(result, requestedAction='connection') {
   if (badge && result.ui) {
     badge.className = `badge ${result.ui.badge_class}`;
     badge.textContent = result.ui.badge_label;
+    badge.dataset.status = result.status || result.ui.badge_label;
   }
 
   if (summary) {
@@ -392,7 +393,7 @@ function runMarketDiagnostic(market, requestedAction) {
       renderMarketDiagnostic(data.result, requestedAction);
       updateMarketDiagnosticsSummary(
         Array.from(document.querySelectorAll('[data-market-badge]')).map(badge => ({
-          status: badge.textContent
+          status: badge.dataset.status || badge.textContent
         }))
       );
       if (data.result.ok) {
