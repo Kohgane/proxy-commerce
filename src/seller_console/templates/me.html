@@ -126,13 +126,13 @@ function confirmDeactivate() {
     .then(r => r.json())
     .then(d => {
       if (d.ok) {
-        alert('탈퇴되었습니다.');
-        window.location.href = '/auth/login';
+        pcToast('탈퇴되었습니다.', 'success');
+        setTimeout(() => { window.location.href = '/auth/login'; }, 1200);
       } else {
-        alert('오류: ' + (d.error || '알 수 없는 오류'));
+        pcToast('오류: ' + (d.error || '알 수 없는 오류'), 'error');
       }
     })
-    .catch(() => alert('요청 실패'));
+    .catch(() => pcToast('요청 실패', 'error'));
 }
 </script>
 {% endblock %}

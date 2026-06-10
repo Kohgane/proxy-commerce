@@ -61,6 +61,61 @@ function showGlobalToast(message, type = 'info', options = {}) {
   new bootstrap.Toast(toastEl, {delay: 3000}).show();
 }
 
+/**
+ * 전역 토스트 알림 (pcToast) — 페이지에 별도 토스트 엘리먼트가 없어도 동작한다.
+ * `_base.html`의 #pcToastContainer에 동적으로 토스트를 생성/표시/제거한다.
+ * 차단형 alert()를 대체하는 honest-UI 비차단 알림.
+ * @param {string} message - 표시할 메시지 (텍스트로 안전하게 삽입)
+ * @param {string} type - 'success' | 'error' | 'danger' | 'warning' | 'info'
+ */
+function pcToast(message, type = 'info') {
+  let container = document.getElementById('pcToastContainer');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'pcToastContainer';
+    container.className = 'toast-container position-fixed top-0 end-0 p-3';
+    container.style.zIndex = '1090';
+    container.setAttribute('aria-live', 'polite');
+    container.setAttribute('aria-atomic', 'true');
+    document.body.appendChild(container);
+  }
+  const toneMap = {success: 'success', error: 'danger', danger: 'danger', warning: 'warning', info: 'secondary'};
+  const iconMap = {success: '✅', error: '❌', danger: '❌', warning: '⚠️', info: 'ℹ️'};
+  const tone = toneMap[type] || 'secondary';
+
+  const toastEl = document.createElement('div');
+  toastEl.className = `toast align-items-center text-bg-${tone} border-0`;
+  toastEl.setAttribute('role', 'alert');
+  toastEl.setAttribute('aria-live', 'assertive');
+  toastEl.setAttribute('aria-atomic', 'true');
+
+  const flex = document.createElement('div');
+  flex.className = 'd-flex';
+  const body = document.createElement('div');
+  body.className = 'toast-body';
+  body.textContent = `${iconMap[type] || ''} ${message}`.trim();
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'btn-close btn-close-white me-2 m-auto';
+  closeBtn.setAttribute('data-bs-dismiss', 'toast');
+  closeBtn.setAttribute('aria-label', '닫기');
+  flex.appendChild(body);
+  flex.appendChild(closeBtn);
+  toastEl.appendChild(flex);
+  container.appendChild(toastEl);
+
+  const delay = (type === 'error' || type === 'danger') ? 6000 : 3500;
+  if (typeof bootstrap !== 'undefined' && bootstrap.Toast) {
+    const toast = new bootstrap.Toast(toastEl, {delay});
+    toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
+    toast.show();
+  } else {
+    // bootstrap 미로딩 폴백: 잠깐 보여주고 제거
+    toastEl.classList.add('show');
+    setTimeout(() => toastEl.remove(), delay);
+  }
+}
+
 function setButtonLoading(button, isLoading, loadingText = '처리 중…') {
   if (!button) return;
   if (isLoading) {

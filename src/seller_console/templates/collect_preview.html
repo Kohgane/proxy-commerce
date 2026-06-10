@@ -196,7 +196,7 @@ function getSelectedMarkets() {
 async function runPrevalidate() {
   const markets = getSelectedMarkets();
   if (markets.length === 0) {
-    alert('등록할 마켓을 하나 이상 선택하세요.');
+    pcToast('등록할 마켓을 하나 이상 선택하세요.', 'warning');
     return;
   }
   const btn = document.getElementById('btnPrevalidate');
@@ -214,7 +214,7 @@ async function runPrevalidate() {
     btn.textContent = '🔍 사전검증 →';
 
     if (!data.ok) {
-      alert(data.error || '사전검증 실패');
+      pcToast(data.error || '사전검증 실패', 'error');
       return;
     }
     renderPrevalidateResults(data.results);
@@ -222,7 +222,7 @@ async function runPrevalidate() {
   } catch (err) {
     btn.disabled = false;
     btn.textContent = '🔍 사전검증 →';
-    alert('사전검증 요청 실패: ' + err.message);
+    pcToast('사전검증 요청 실패: ' + err.message, 'error');
   }
 }
 

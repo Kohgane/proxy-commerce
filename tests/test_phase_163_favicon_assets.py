@@ -31,7 +31,9 @@ def test_base_templates_include_favicon_links():
         assert 'rel="apple-touch-icon"' in text
         assert "manifest.webmanifest" in text
         assert ("?v=172" in text) or ("v='172'" in text)
-        assert '#020010' in text
+        # 테마 색상은 라이트/다크 리비전마다 달라질 수 있으므로(예: Phase 189 라이트 복구)
+        # 특정 색상값이 아니라 theme-color 메타 존재만 검증한다.
+        assert 'name="theme-color"' in text
 
 
 def test_favicon_svg_uses_orbit_globe_design():

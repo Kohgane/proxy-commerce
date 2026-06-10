@@ -77,7 +77,25 @@
 
 | 항목 | 상태 |
 |------|------|
-| `src/seller_console/templates/bookmarklet.html` | `alert(...)` 다수 잔존 — 셀러 북마클릿 UX 별도 정비 후보 |
-| `src/seller_console/templates/me.html` | 회원 탈퇴/오류 처리 `alert(...)` 잔존 — 계정 설정 화면 후속 정비 필요 |
-| `src/seller_console/templates/personal_tokens.html` | 토큰 발급/복사/회수 `alert(...)` 잔존 — 토스트/모달 전환 후보 |
-| `src/seller_console/templates/pricing_*`, `discovery*.html` 일부 | 가격/디스커버리 서브페이지에 `alert(...)` 잔존 — 3차 감사 범위로 이관 |
+| `src/seller_console/templates/bookmarklet.html` | 콘솔 측 `alert(...)` → `pcToast`. 외부 사이트에서 실행되는 `javascript:` 북마클릿 코드 내부 `alert(...)`은 의도적 유지(콘솔 밖이라 pcToast 불가). → ✅ 3차 완료 |
+| `src/seller_console/templates/me.html` | 회원 탈퇴/오류 처리 `alert(...)` → `pcToast` (탈퇴 성공 시 토스트 후 1.2초 뒤 리다이렉트). → ✅ 3차 완료 |
+| `src/seller_console/templates/personal_tokens.html` | 토큰 발급/복사/회수 `alert(...)` → `pcToast`. → ✅ 3차 완료 |
+| `src/seller_console/templates/pricing_*`, `discovery*.html` | 가격/디스커버리 서브페이지 `alert(...)` → `pcToast`. → ✅ 3차 완료 |
+| `src/seller_console/templates/collect_preview.html` | 사전검증 경고/오류 `alert(...)` → `pcToast`. → ✅ 3차 완료 |
+
+---
+
+## 3차 감사 완료 (alert → 전역 pcToast 토스트)
+
+> 최종 갱신: 2026-06-10 · honest-UI: 차단형 `alert()` → 비차단 전역 토스트
+
+- **전역 토스트 인프라 신설**: `_base.html`에 `#pcToastContainer`(상단 우측, 모든 셀러 페이지 공용),
+  `seller.js`에 페이지 독립 `pcToast(message, type)` 헬퍼 추가.
+  - 메시지는 `textContent`로 삽입(XSS 방지), 타입별 색/아이콘(`success/error/danger/warning/info`),
+    error/danger는 6초·그 외 3.5초 후 자동 소멸, bootstrap 미로딩 시 폴백.
+- **교체 대상(8개 페이지)**: `pricing_rules`, `pricing_competitors`, `pricing_fx_impact`,
+  `pricing_history`, `discovery`, `discovery_keywords`, `me`, `personal_tokens`, `collect_preview`.
+  - 성공/실패 톤 구분, `location.reload()` 직전 성공 토스트는 1.2초 지연 후 새로고침으로 가시성 확보.
+- **유지(honest)**: 파괴적 동작의 `confirm(...)`은 의도적으로 유지(실제 동작하는 차단형 확인).
+  `bookmarklet.html`의 외부 실행 코드 내부 `alert(...)` 2건은 콘솔 밖 컨텍스트라 유지.
+- **회귀 테스트**: `tests/test_dead_buttons_phase191.py` 19개(전역 토스트 인프라 + 8개 페이지 alert 제거 검증).

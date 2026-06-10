@@ -63,8 +63,7 @@
   `/seller/markets` 결과를 대조해 마지막 실검증 시간을 남길 것.
 
 ### 백로그 (오너 승인 대기 — 먼저 묻지 말 것)
-- **죽은 버튼 감사 3차**: `dead_button_audit.md` 재스캔에서 남은 `bookmarklet`/`me`/`personal_tokens`/`pricing`/`discovery`
-  계열 `alert(...)` 정리.
+- **죽은 버튼 감사 3차**: → ✅ 완료 (2026-06-10, 오너 지시로 진행). 아래 Phase 191 참고.
 - SaaS 공개 준비 (약관/결제/랜딩) — 2026 Q4. **오너가 지시할 때까지 대기.**
 
 ---
@@ -136,3 +135,29 @@
 ### 다음 단계 (백로그)
 - 쿠팡/스마트스토어/11번가 실 채널 업로더 모듈 연결 (현재 큐 적재 방식)
 - 등록 이력 DB 저장 및 재시도 큐 플로우 고도화
+
+---
+
+## Phase 191 — UX/UI 디테일: 전역 토스트 + 죽은 버튼 감사 3차 ✅ (2026-06-10)
+
+### 오너 지시 사항
+- "UX/UI 디테일 세팅이랑 각 버튼들의 실동작 — 실제로 사이트/서비스가 돌아가게."
+
+### 작업 요약
+- **전역 토스트 인프라**: `_base.html`에 `#pcToastContainer`(모든 셀러 페이지 공용),
+  `seller.js`에 페이지 독립 `pcToast(message, type)` 헬퍼 추가.
+  - XSS 방지(textContent), 타입별 색/아이콘, error 6s·기타 3.5s 자동 소멸, bootstrap 미로딩 폴백.
+- **alert() → pcToast 전환(8개 페이지)**: `pricing_rules`, `pricing_competitors`, `pricing_fx_impact`,
+  `pricing_history`, `discovery`, `discovery_keywords`, `me`, `personal_tokens`, `collect_preview`.
+  - 성공/실패 톤 구분, reload 직전 성공 토스트는 1.2초 지연 후 새로고침으로 가시성 확보.
+- **honest 유지**: 파괴적 동작 `confirm(...)` 유지, `bookmarklet.html` 외부 실행 코드 내부 `alert(...)` 유지.
+- **stale 테스트 정리**: `test_phase_163_favicon_assets` — Phase 189 라이트 테마 복구로 `#020010`(다크)이
+  사라져 baseline에서 깨져 있던 assertion을 `theme-color` 메타 존재 검증으로 교체(향후 테마 변경에 견고).
+
+### 테스트
+- `tests/test_dead_buttons_phase191.py`: 19개 신규 (전역 토스트 인프라 + 8개 페이지 alert 제거).
+- 뷰/템플릿 범위 858개 통과, 회귀 없음.
+
+### 다음 단계 (백로그)
+- `confirm(...)` 차단형 확인 다이얼로그 → 스타일드 모달 전환(디테일 폴리시, 후속 후보).
+- `_base_app.html`/대시보드 등 셀러 콘솔 밖 화면의 토스트 통일.

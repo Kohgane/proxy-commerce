@@ -269,7 +269,7 @@ async function deleteRule(ruleId, name) {
   const r = await fetch(`/seller/pricing/rules/${ruleId}/delete`, {method:'POST'});
   const d = await r.json();
   if (d.ok) location.reload();
-  else alert('삭제 실패: ' + d.error);
+  else pcToast('삭제 실패: ' + d.error, 'error');
 }
 
 function editRule(rule) {
@@ -304,7 +304,7 @@ async function submitCreate() {
   }
   const d = await r.json();
   if (d.ok) location.reload();
-  else alert('생성 실패: ' + d.error);
+  else pcToast('생성 실패: ' + d.error, 'error');
 }
 
 async function submitEdit() {
@@ -317,7 +317,7 @@ async function submitEdit() {
   const r = await fetch(`/seller/pricing/rules/${ruleId}/edit`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
   const d = await r.json();
   if (d.ok) location.reload();
-  else alert('저장 실패: ' + d.error);
+  else pcToast('저장 실패: ' + d.error, 'error');
 }
 
 document.getElementById('btnSimulate').addEventListener('click', async () => {
@@ -353,8 +353,8 @@ document.getElementById('btnRunNow').addEventListener('click', async () => {
   if (!dryRun && !confirm(`주의: 마켓에 실제 가격이 변경됩니다.\n계속하시겠습니까?`)) return;
   const r = await fetch('/seller/pricing/run-now', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({dry_run: dryRun})});
   const d = await r.json();
-  if (d.ok) alert(`${label} 완료 — ${d.results.changed}건 변경`);
-  else alert('오류: ' + d.error);
+  if (d.ok) pcToast(`${label} 완료 — ${d.results.changed}건 변경`, 'success');
+  else pcToast('오류: ' + d.error, 'error');
 });
 </script>
 {% endblock %}

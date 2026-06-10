@@ -58,8 +58,8 @@ async function bulkReprice() {
   if (!confirm('영향 상품 기준으로 재가격을 실행할까요?')) return;
   const res = await fetch('/seller/pricing/fx-impact/reprice?dry_run=1', {method: 'POST'});
   const d = await res.json();
-  if (!d.ok) return alert(d.error || '실패');
-  alert(`재가격 시뮬레이션 완료: 변경 ${d.results.changed}건`);
+  if (!d.ok) return pcToast(d.error || '실패', 'error');
+  pcToast(`재가격 시뮬레이션 완료: 변경 ${d.results.changed}건`, 'success');
 }
 </script>
 {% endblock %}
