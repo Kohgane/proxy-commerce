@@ -7,19 +7,21 @@ body {
 
 .sidebar {
   min-height: 100vh;
-  background: #0b1023;
+  background: var(--pc-color-surface, #ffffff);
+  border-right: 1px solid var(--pc-color-border, #dbe2f2);
 }
 
 .sidebar .nav-link {
-  color: #adb5bd;
-  border-radius: 6px;
+  color: #334155;
+  border-radius: 10px;
   padding: 0.5rem 0.75rem;
+  font-weight: 500;
 }
 
 .sidebar .nav-link:hover,
 .sidebar .nav-link.active {
-  color: #fff;
-  background: rgba(109, 82, 255, 0.32);
+  color: var(--pc-color-text, #0f172a);
+  background: var(--pc-color-surface-muted, #f4f5fb);
 }
 
 .card-stat .card-body {

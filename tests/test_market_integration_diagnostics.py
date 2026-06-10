@@ -3,6 +3,37 @@ from __future__ import annotations
 from src.seller_console.market_integration_diagnostics import build_market_ui_state, run_market_diagnostic
 
 
+def test_run_market_diagnostic_normalizes_checked_at_timestamps(monkeypatch):
+    monkeypatch.setattr(
+        "src.seller_console.market_integration_diagnostics._adapter_health_step",
+        lambda market: {
+            "ok": True,
+            "market": market,
+            "step": "read_connection",
+            "error_code": "",
+            "hint": "실제 연결 확인 성공",
+            "detail": "연결 성공",
+            "raw": {},
+        },
+    )
+    monkeypatch.setattr(
+        "src.seller_console.market_integration_diagnostics._write_dry_run_step",
+        lambda market: {
+            "ok": True,
+            "market": market,
+            "step": "write_dry_run",
+            "error_code": "",
+            "hint": "실 쓰기 대신 안전 dry-run 검증 완료",
+            "detail": "dry_run",
+            "raw": {},
+        },
+    )
+
+    result = run_market_diagnostic("coupang")
+
+    assert result["checked_at"] == result["last_checked_at"]
+
+
 def test_run_market_diagnostic_maps_missing_credentials(monkeypatch):
     monkeypatch.setattr(
         "src.seller_console.market_integration_diagnostics._adapter_health_step",

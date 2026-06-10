@@ -26,7 +26,7 @@
 </div>
 
 <div class="pc-status pc-status-info small mb-3">
-  Phase 188 마켓 연동 운영 가시화 화면입니다. 상태 카드의 원인/조치 가이드를 먼저 확인한 뒤 연결 확인·권한 확인·재시도를 실행하세요.
+  Phase 189 마켓 연동 운영 안정화 화면입니다. 상태 카드의 원인/조치 가이드를 먼저 확인한 뒤 연결 확인·권한 확인·재시도를 실행하세요.
 </div>
 
 <div class="card border-0 shadow-sm mb-3">
@@ -59,6 +59,7 @@
           <div class="small mt-2 fw-semibold" data-market-summary="{{ hub.marketplace }}">실연동 검사를 불러오는 중…</div>
           <div class="small text-muted mt-1 pc-market-guide" data-market-hint="{{ hub.marketplace }}">원인: 초기 실연동 진단을 실행 중입니다. · 조치: 완료 후 가이드 문구를 확인하세요.</div>
           <div class="small text-muted mt-1" data-market-disabled-reason="{{ hub.marketplace }}">다음 액션: 초기 실연동 진단 실행 중…</div>
+          <div class="small text-muted mt-1" data-market-checked-at="{{ hub.marketplace }}">마지막 점검: 대기 중</div>
           <div class="d-flex flex-wrap gap-1 mt-2">
             <button class="btn btn-outline-primary btn-sm" type="button" data-market-action="connection" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'connection')">연결 확인</button>
             <button class="btn btn-outline-secondary btn-sm" type="button" data-market-action="scope" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'scope')">권한 확인</button>
@@ -328,10 +329,12 @@ function renderMarketDiagnostic(result, requestedAction='connection') {
   const badge = document.querySelector(`[data-market-badge="${result.market}"]`);
   const summary = document.querySelector(`[data-market-summary="${result.market}"]`);
   const hint = document.querySelector(`[data-market-hint="${result.market}"]`);
+  const checkedAt = document.querySelector(`[data-market-checked-at="${result.market}"]`);
   const steps = document.querySelector(`[data-market-steps="${result.market}"]`);
   const detail = document.getElementById('marketDiagnosticsDetail');
   const causeText = (result.ui && result.ui.cause_text) || result.summary || (result.ui && result.ui.technical_detail) || '상태를 확인하지 못했습니다.';
   const actionText = (result.ui && result.ui.action_text) || result.hint || '운영 가이드를 확인한 뒤 다시 시도하세요.';
+  const checkedAtText = result.last_checked_at || result.checked_at || '대기 중';
 
   if (card) {
     card.dataset.marketState = result.status || 'api_error';
@@ -353,6 +356,10 @@ function renderMarketDiagnostic(result, requestedAction='connection') {
     hint.textContent = formatMarketSupportMessage(causeText, actionText);
   }
 
+  if (checkedAt) {
+    checkedAt.textContent = `마지막 점검: ${checkedAtText}`;
+  }
+
   if (steps) {
     steps.innerHTML = '';
     (result.steps || []).forEach(step => {
@@ -364,10 +371,12 @@ function renderMarketDiagnostic(result, requestedAction='connection') {
 
   if (detail) {
     const technical = result.ui && result.ui.technical_detail ? ` / 세부: ${result.ui.technical_detail}` : '';
-    detail.textContent = `${result.label}: ${formatMarketSupportMessage(causeText, actionText)}${technical} / 확인 위치 ${(result.check_locations || []).join(' · ')} / 가이드 ${result.docs_path}`;
+    detail.textContent = `${result.label}: ${formatMarketSupportMessage(causeText, actionText)}${technical} / 마지막 점검 ${checkedAtText} / 확인 위치 ${(result.check_locations || []).join(' · ')} / 가이드 ${result.docs_path}`;
   }
 
-  const disabledReason = `다음 액션: ${actionText}`;
+  const disabledReason = result.ui && result.ui.disabled_reason
+    ? `주의: ${result.ui.disabled_reason}`
+    : `다음 액션: ${actionText}`;
   setMarketButtonsDisabled(result.market, false, disabledReason);
   setRecommendedMarketAction(result.market, (result.ui && result.ui.recommended_action) || requestedAction);
 }

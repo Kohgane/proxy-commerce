@@ -1,7 +1,7 @@
 :root {
-  --console-bg: var(--pc-color-bg-secondary, #090724);
+  --console-bg: var(--pc-color-bg, #f8fafc);
   --console-surface: var(--pc-color-surface, #ffffff);
-  --console-sidebar: #0b1023;
+  --console-sidebar: var(--pc-color-surface, #ffffff);
   --console-primary: var(--pc-color-primary, #6d52ff);
   --console-primary-weak: #ece8ff;
   --console-text: var(--pc-color-text, #111827);
@@ -22,19 +22,19 @@
 
 .console-sidebar {
   width: 260px;
-  border-right: 1px solid #1e2540;
+  border-right: 1px solid var(--console-border);
   background: var(--console-sidebar);
-  color: #fff;
+  color: var(--console-text);
 }
 
 .console-brand {
-  color: #f9fafb;
+  color: var(--console-text);
 }
 
 .console-nav-group-title {
   font-size: 0.72rem;
   font-weight: 700;
-  color: #9ca3af;
+  color: var(--console-muted);
   margin: 0.95rem 0 0.45rem;
   letter-spacing: 0.04em;
 }
@@ -43,7 +43,7 @@
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  color: #d1d5db;
+  color: #334155;
   text-decoration: none;
   border-radius: 10px;
   padding: 0.55rem 0.7rem;
@@ -53,8 +53,8 @@
 
 .console-nav-link:hover,
 .console-nav-link:focus {
-  color: #fff;
-  background: #1f2937;
+  color: var(--console-text);
+  background: var(--pc-color-surface-muted, #f4f5fb);
 }
 
 .console-nav-link.active {

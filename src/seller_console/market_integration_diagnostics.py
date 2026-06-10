@@ -191,6 +191,19 @@ def market_status_badge(status: str) -> dict[str, str]:
     return _STATUS_BADGES.get(status, _STATUS_BADGES["api_error"])
 
 
+def normalize_market_diagnostic_result(result: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(result or {})
+    raw_timestamp = normalized.get("last_checked_at") or normalized.get("checked_at") or ""
+    checked_at = str(raw_timestamp).strip()
+    if not checked_at:
+        checked_at = datetime.now(timezone.utc).isoformat()
+    normalized["checked_at"] = checked_at
+    normalized["last_checked_at"] = checked_at
+    if not normalized.get("ui") and normalized.get("status"):
+        normalized["ui"] = build_market_ui_state(normalized)
+    return normalized
+
+
 def build_market_ui_state(result: dict[str, Any]) -> dict[str, Any]:
     badge = market_status_badge(str(result.get("status") or "api_error"))
     steps = result.get("steps") or []
@@ -267,9 +280,8 @@ def run_market_diagnostic(market: str) -> dict[str, Any]:
         "steps": steps,
         "checked_at": datetime.now(timezone.utc).isoformat(),
     }
-    result["ui"] = build_market_ui_state(result)
-    return result
+    return normalize_market_diagnostic_result(result)
 
 
 def run_all_market_diagnostics() -> list[dict[str, Any]]:
-    return [run_market_diagnostic(market) for market in MARKET_GUIDES]
+    return [normalize_market_diagnostic_result(run_market_diagnostic(market)) for market in MARKET_GUIDES]

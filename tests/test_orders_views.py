@@ -70,7 +70,7 @@ class TestOrdersViews:
         with patch("src.seller_console.views._get_order_sync_service", return_value=mock_sync_service):
             resp = client.get("/seller/orders")
         html = resp.get_data(as_text=True)
-        assert "Phase 188" in html
+        assert "Phase 189" in html
         assert 'id="ordersSelectAll"' in html
         assert "order-row-chk" in html
         assert 'id="bulkTrackingButton"' in html
@@ -102,6 +102,8 @@ class TestOrdersViews:
         html = resp.get_data(as_text=True)
         assert "주문 서비스가 일시적으로 준비되지 않았습니다(503)." in html
         assert "/admin/diagnostics" in html
+        assert "CSV 내보내기 (서비스 준비 중)" in html
+        assert "disabled" in html
 
     def test_post_orders_sync_success(self, client, mock_sync_service):
         """POST /seller/orders/sync → {"ok": true, "results": {...}}."""

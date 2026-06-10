@@ -28,6 +28,10 @@
 ## 📌 현재 상태
 
 ### 완료
+- **Phase 189 — 라이트 테마 가독성 복구 + 마켓 실연동 재점검 + 비동작 플로우 재정렬 (2026-06-10)**:
+  seller 주문/배송·마켓 컨트롤 센터·admin diagnostics의 바탕색을 라이트 톤으로 되돌리고 전경 대비를 강화했다.
+  마켓 smoke 진단 결과에 `last_checked_at`를 구조적으로 추가해 seller/admin 화면 모두 마지막 점검 시각을 함께 노출하도록 맞췄다.
+  주문 서비스 미가용 시 CSV export를 비활성으로 정직 표기해 "보이지만 안 되는" 액션을 줄였고, 관련 회귀 테스트를 보강했다.
 - **테스트 픽스 (커밋 `d8efb7b`)**: Phase 184에서 `SHOPIFY_ACCESS_TOKEN → SHOPIFY_AUTO_TOKEN`으로
   바뀌었는데 `tests/test_shopify_auth.py::TestSecretCheck::test_secret_check_missing`가 옛 이름을
   기대해서 깨져 있었음(9668 passed, 1 failed). 기대값을 실제 코드에 맞춰 수정 → **CD – Staging 다시 그린(success)**.
@@ -54,7 +58,7 @@
   각 상태마다 원인/조치 문구와 추천 액션 강조를 노출하도록 보강.
 
 ### 진행 중
-- **Phase 188 후속 실연동 검증**: 실제 마켓 어댑터 연결 상태에서 부분 실패(특히 bulk 항목) 로그 품질 재검토 및 운영자 재시도 가이드 고도화.
+- **Phase 189 후속 실연동 검증**: 실제 마켓 어댑터 연결 상태에서 부분 실패(특히 bulk 항목) 로그 품질 재검토 및 운영자 재시도 가이드 고도화.
 - **마켓 실연동 후속 검증**: 운영 시크릿이 등록된 환경에서 각 마켓 판매자센터/Wing/Admin 화면과 `/admin/diagnostics`,
   `/seller/markets` 결과를 대조해 마지막 실검증 시간을 남길 것.
 
