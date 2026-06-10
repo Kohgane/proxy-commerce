@@ -2146,6 +2146,11 @@ def markets_overview():
         summary_by_market = {}
 
     market_hub_cards = []
+    try:
+        from .market_integration_diagnostics import MARKET_GUIDES, market_status_badge
+    except Exception:
+        MARKET_GUIDES = {}
+        market_status_badge = lambda status: {"label": status, "class_name": "bg-secondary"}  # type: ignore[assignment]
     for market_code in ["shopify", "coupang", "smartstore", "11st", "amazon", "ebay", "shopee", "woocommerce"]:
         meta = _marketplace_meta(market_code)
         summary = summary_by_market.get(market_code, {})
@@ -2162,6 +2167,8 @@ def markets_overview():
         elif not configured:
             note = _market_required_env_hint(market_code)
 
+        diagnostic_meta = MARKET_GUIDES.get(market_code, {})
+        pending_badge = market_status_badge("api_error") if diagnostic_meta else {"label": "", "class_name": "bg-secondary"}
         market_hub_cards.append(
             {
                 "marketplace": market_code,
@@ -2174,6 +2181,13 @@ def markets_overview():
                 "active": int(summary.get("active") or 0),
                 "last_synced_at": market_data.get("fetched_at") or "",
                 "note": note,
+                "integration_supported": bool(diagnostic_meta),
+                "docs_path": diagnostic_meta.get("docs_path", ""),
+                "required_env": diagnostic_meta.get("required_env", []),
+                "required_scopes": diagnostic_meta.get("required_scopes", []),
+                "check_locations": diagnostic_meta.get("check_locations", []),
+                "pending_badge_label": pending_badge.get("label", ""),
+                "pending_badge_class": pending_badge.get("class_name", "bg-secondary"),
             }
         )
 
@@ -2248,6 +2262,45 @@ def markets_shopify_check_connection():
                 "message": "Shopify 연결 확인 중 오류가 발생했습니다.",
             }
         ), 500
+
+
+@bp.get("/markets/integration-diagnostics")
+def markets_integration_diagnostics():
+    """JSON: 마켓 실연동 smoke 진단."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+
+    try:
+        from .market_integration_diagnostics import run_all_market_diagnostics
+
+        results = run_all_market_diagnostics()
+        return jsonify({"ok": True, "results": results}), 200
+    except Exception as exc:
+        logger.warning("markets_integration_diagnostics API 오류: %s", exc)
+        return jsonify({"ok": False, "error": "마켓 연동 진단 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/markets/integration-diagnostics")
+def markets_integration_diagnostics_refresh():
+    """JSON: 단일 마켓 smoke 진단 재실행."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+
+    data = request.get_json(force=True, silent=True) or {}
+    market = str(data.get("market") or "").strip().lower()
+    if not market:
+        return jsonify({"ok": False, "error": "market 값이 필요합니다."}), 400
+
+    try:
+        from .market_integration_diagnostics import run_market_diagnostic
+
+        result = run_market_diagnostic(market)
+        return jsonify({"ok": True, "result": result}), 200
+    except KeyError:
+        return jsonify({"ok": False, "error": "지원하지 않는 마켓입니다."}), 404
+    except Exception as exc:
+        logger.warning("markets_integration_diagnostics_refresh API 오류 (%s): %s", market, exc)
+        return jsonify({"ok": False, "error": "마켓 연동 진단 중 오류가 발생했습니다."}), 500
 
 
 # ---------------------------------------------------------------------------

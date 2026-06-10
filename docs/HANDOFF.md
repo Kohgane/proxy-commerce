@@ -2,7 +2,7 @@
 
 > 이 문서는 Kohgane(오너)의 지시사항과 진행 상태를 누적 기록한다.
 > **업데이트되는 내용이 생기면 이 파일에 바로바로 반영한다.**
-> 최종 갱신: 2026-06-09
+> 최종 갱신: 2026-06-10
 
 ---
 
@@ -42,13 +42,18 @@
   `/seller/orders` → 상태 변경 → 운송장(단건/일괄) → CSV export 플로우를 테스트로 고정.
   400/500/503 실패 응답을 정직하게 노출하도록 주문 화면/라우트 복구 UX 보강, 서비스 미가용 시 `/admin/diagnostics`
   연결 안내 추가, 주문 운영 로그에 `action/marketplace/order_id/reason` 필드 통일.
+- **마켓 연동 운영 가이드 + 실연동 smoke 진단 + UI/UX 보강 (2026-06-10)**:
+  `docs/operations/COUPANG.md`, `NAVER_SMARTSTORE.md`, `ELEVENST.md`, `SHOPIFY_MARKET.md`,
+  `WOOCOMMERCE_MARKET.md` 신설, `/seller/markets`와 `/admin/diagnostics`에 실제 read 연결 확인 +
+  safe write dry-run 결과를 `connected/token_missing/token_expired/scope_insufficient/api_error`로 구조화해 노출,
+  운영자용 `연결 확인/권한 확인/재시도` 액션과 기술 원인 + 행동 힌트 UX를 추가.
 
 ### 진행 중
 - **주문 운영 E2E 점검 2차**: 실제 마켓 어댑터 연결 상태에서 부분 실패(특히 bulk 항목) 로그 품질 재검토 및 운영자 재시도 가이드 고도화.
+- **마켓 실연동 후속 검증**: 운영 시크릿이 등록된 환경에서 각 마켓 판매자센터/Wing/Admin 화면과 `/admin/diagnostics`,
+  `/seller/markets` 결과를 대조해 마지막 실검증 시간을 남길 것.
 
 ### 백로그 (오너 승인 대기 — 먼저 묻지 말 것)
-- **Shopify 라이브 연결 실검증 ("2번" 마무리)**: 등록된 시크릿으로 실제 Admin API 연결 확인 +
-  `/admin/diagnostics` & 셀러 마켓 컨트롤 센터에 실제 연결상태(스토어명/스코프/토큰종류) 정직 노출.
 - **죽은 버튼 감사 3차**: `dead_button_audit.md` 재스캔에서 남은 `bookmarklet`/`me`/`personal_tokens`/`pricing`/`discovery`
   계열 `alert(...)` 정리.
 - SaaS 공개 준비 (약관/결제/랜딩) — 2026 Q4. **오너가 지시할 때까지 대기.**
@@ -66,6 +71,14 @@
 - 인증 헤더: `X-Shopify-Access-Token`
 - 어댑터: `src/markets/adapters/shopify.py` (Admin API 기반 생성/수정, 429 백오프)
 - 배포 후 확인 위치: `/admin/diagnostics`, 셀러 마켓 컨트롤 센터(Phase 184).
+- 운영 가이드: `docs/operations/SHOPIFY_MARKET.md`
+
+## 🏪 마켓 운영 가이드 링크
+- Coupang: `docs/operations/COUPANG.md`
+- Naver Smartstore: `docs/operations/NAVER_SMARTSTORE.md`
+- 11st: `docs/operations/ELEVENST.md`
+- Shopify: `docs/operations/SHOPIFY_MARKET.md`
+- WooCommerce: `docs/operations/WOOCOMMERCE_MARKET.md`
 
 ## 🚚 택배사 데이터 소스
 - 통합 카탈로그: `src/seller_console/orders/courier_catalog.py` (`COURIER_MAP` + `KOREA_COURIERS` 병합)

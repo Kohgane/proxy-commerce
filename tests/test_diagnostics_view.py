@@ -204,3 +204,42 @@ class TestDiagnosticsView:
                 resp = client.post("/admin/diagnostics/issue-magic-link", data={"email": "admin@example.com"})
                 assert resp.status_code == 200
                 assert "https://example.com/auth/magic-link/verify?token=x" in resp.get_data(as_text=True)
+
+    def test_diagnostics_shows_market_smoke_steps(self):
+        app = _make_app()
+        with patch("src.dashboard.admin_views._build_env_matrix", return_value=[]), \
+             patch("src.dashboard.admin_views._build_emergency_access_status", return_value={"magic_link_url": "/auth/magic-link", "bootstrap_configured": True, "bootstrap_url": "/auth/bootstrap", "admin_emails_configured": True, "issued_magic_link": None}), \
+             patch("src.dashboard.admin_views._build_oauth_diagnostics", return_value=[]), \
+             patch("src.dashboard.admin_views._build_messenger_health", return_value={}), \
+             patch("src.dashboard.admin_views._build_market_health", return_value={
+                 "shopify": {
+                     "market": "shopify",
+                     "label": "Shopify",
+                     "status": "scope_insufficient",
+                     "summary": "HTTP 403",
+                     "hint": "앱 스코프를 확인하세요.",
+                     "required_scopes": ["read_products", "write_products"],
+                     "required_env": ["SHOPIFY_AUTO_TOKEN"],
+                     "check_locations": ["/admin/diagnostics", "/seller/markets"],
+                     "docs_path": "docs/operations/SHOPIFY_MARKET.md",
+                     "steps": [
+                         {"ok": False, "step": "read_connection", "error_code": "scope_insufficient", "hint": "앱 스코프를 확인하세요.", "detail": "HTTP 403"},
+                         {"ok": True, "step": "write_dry_run", "error_code": "", "hint": "safe write ok", "detail": "dry_run"},
+                     ],
+                     "ui": {"badge_class": "bg-warning text-dark"},
+                 }
+             }), \
+             patch("src.dashboard.admin_views._build_pricing_status", return_value={"active_rules": 0, "dry_run": True, "cron_hour": "3", "last_run_at": None, "min_margin_pct": "15", "fx_trigger_pct": "3"}), \
+             patch("src.dashboard.admin_views._build_cs_bot_status", return_value={"faq_total": 0, "faq_enabled": 0, "new_24h": 0, "unanswered": 0, "urgent_unanswered": 0, "avg_response_minutes": 0, "response_rate": 0, "ai_calls_24h": 0, "budget_remaining_pct": 100, "auto_send": False, "sla_nearing": 0, "sla_overdue": 0, "channels": []}), \
+             patch("src.dashboard.admin_views._build_message_log", return_value={"total": 0, "by_channel": {}, "top_errors": []}):
+            with app.test_client() as client:
+                with client.session_transaction() as sess:
+                    sess["user_id"] = "admin-001"
+                    sess["user_role"] = "admin"
+                resp = client.get("/admin/diagnostics")
+
+        html = resp.get_data(as_text=True)
+        assert resp.status_code == 200
+        assert "scope_insufficient" in html
+        assert "read_connection" in html
+        assert "docs/operations/SHOPIFY_MARKET.md" in html
