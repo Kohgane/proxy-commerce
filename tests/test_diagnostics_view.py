@@ -75,8 +75,10 @@ class TestDiagnosticsView:
                     sess["user_role"] = "admin"
                 resp = client.get("/admin/diagnostics")
 
+        html = resp.get_data(as_text=True)
         assert resp.status_code == 200
         assert b"diagnostics" in resp.data.lower() or "진단".encode() in resp.data
+        assert 'content="#f8fafc"' in html
 
     def test_diagnostics_shows_emergency_access_links(self):
         app = _make_app()
@@ -222,6 +224,7 @@ class TestDiagnosticsView:
                      "required_env": ["SHOPIFY_AUTO_TOKEN"],
                      "check_locations": ["/admin/diagnostics", "/seller/markets"],
                      "docs_path": "docs/operations/SHOPIFY_MARKET.md",
+                     "last_checked_at": "2026-06-10T00:00:00+00:00",
                      "steps": [
                          {"ok": False, "step": "read_connection", "error_code": "scope_insufficient", "hint": "앱 스코프를 확인하세요.", "detail": "HTTP 403"},
                          {"ok": True, "step": "write_dry_run", "error_code": "", "hint": "safe write ok", "detail": "dry_run"},
@@ -243,3 +246,4 @@ class TestDiagnosticsView:
         assert "scope_insufficient" in html
         assert "read_connection" in html
         assert "docs/operations/SHOPIFY_MARKET.md" in html
+        assert "마지막 점검: 2026-06-10T00:00:00+00:00" in html

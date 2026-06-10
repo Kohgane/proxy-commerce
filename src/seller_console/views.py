@@ -2271,9 +2271,9 @@ def markets_integration_diagnostics():
         return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
 
     try:
-        from .market_integration_diagnostics import run_all_market_diagnostics
+        from .market_integration_diagnostics import normalize_market_diagnostic_result, run_all_market_diagnostics
 
-        results = run_all_market_diagnostics()
+        results = [normalize_market_diagnostic_result(item) for item in run_all_market_diagnostics()]
         return jsonify({"ok": True, "results": results}), 200
     except Exception as exc:
         logger.warning("markets_integration_diagnostics API 오류: %s", exc)
@@ -2292,9 +2292,9 @@ def markets_integration_diagnostics_refresh():
         return jsonify({"ok": False, "error": "market 값이 필요합니다."}), 400
 
     try:
-        from .market_integration_diagnostics import run_market_diagnostic
+        from .market_integration_diagnostics import normalize_market_diagnostic_result, run_market_diagnostic
 
-        result = run_market_diagnostic(market)
+        result = normalize_market_diagnostic_result(run_market_diagnostic(market))
         return jsonify({"ok": True, "result": result}), 200
     except KeyError:
         return jsonify({"ok": False, "error": "지원하지 않는 마켓입니다."}), 404

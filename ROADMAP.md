@@ -4,6 +4,7 @@
 
 | Phase | 내용 | PR | 완료일 |
 |---|---|---|---|
+| Phase 189 | 가독성(라이트 테마) 복구 + 마켓 실연동 재점검 + 비동작 플로우 전수 수정 — 공통 토큰/셀러 콘솔/admin diagnostics를 라이트 배경·진한 전경 기준으로 재정렬하고, 마켓 smoke 진단 결과에 `last_checked_at`를 추가해 seller/admin에서 마지막 점검 시각과 조치 힌트를 함께 노출, 주문 서비스 미가용 시 CSV export를 정직하게 비활성 표기하도록 보강하고 관련 회귀 테스트를 갱신 | #PR | 2026-06-10 |
 | Phase 188 | 주문 운영 UX + 마켓 연동 운영 가시화 2차 — `/seller/orders`에 선택 수 고정 액션 바·일괄 실행 확인 모달·행 단위 성공/실패 피드백·`원인/조치` 표준 메시지를 추가하고, `/seller/markets`·`/admin/diagnostics`에는 실제 read 연결 확인 + safe write dry-run 결과를 구조화(`connected/token_missing/token_expired/scope_insufficient/api_error`)해 상태 배지/추천 액션/운영 가이드를 일관되게 노출, 관련 UI 테스트를 보강 | #PR | 2026-06-10 |
 | Phase 187 | 운영 안정화(실동작 검증) 1차 — `/seller/orders` 핵심 운영 루프(목록→상태변경→운송장 단건/일괄→CSV)를 회귀 테스트로 고정, 서비스 미가용(503)·입력오류(400)·내부오류(500)에서 정직한 실패 메시지/재시도 가능 UX를 보강, 주문 운영 라우트 진단 블록과 표준화된 운영 로그(`action/marketplace/order_id/reason`)를 반영 | #PR | 2026-06-09 |
 | Phase 186 | 죽은 버튼 감사 2차 — 주문 관리에 행 선택 체크박스/전체선택/일괄 운송장 등록/일괄 상태 변경 툴바를 추가하고 `POST /seller/orders/bulk/status`로 실제 상태 전환을 연결, 반품 인박스 개별 부분 환불 모달과 `POST /seller/returns/<request_id>/partial-refund` 라우트를 구현, 주문 상태 변경/소싱 후보 거절의 `prompt()`를 Bootstrap 모달로 교체, 로그인 화면 `href=\"#\"` 데드 링크 제거, 감사/핸드오프 문서와 회귀 테스트 보강 | #PR | 2026-06-08 |

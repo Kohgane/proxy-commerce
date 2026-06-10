@@ -1152,9 +1152,9 @@ def _build_messenger_health() -> dict:
 def _build_market_health() -> dict:
     """마켓 어댑터 health 상태."""
     try:
-        from src.seller_console.market_integration_diagnostics import run_all_market_diagnostics
+        from src.seller_console.market_integration_diagnostics import normalize_market_diagnostic_result, run_all_market_diagnostics
 
-        return {item["market"]: item for item in run_all_market_diagnostics()}
+        return {item["market"]: normalize_market_diagnostic_result(item) for item in run_all_market_diagnostics()}
     except Exception as exc:
         return {"market_diagnostics": {"status": "api_error", "detail": str(exc), "steps": []}}
 
@@ -2319,12 +2319,11 @@ _DIAGNOSTICS_TEMPLATE = """
   <title>운영 진단 | {{ brand_name }}</title>
   <meta property="og:site_name" content="{{ brand_name }}">
   <meta property="og:title" content="{{ brand_name }}">
+  <meta name="theme-color" content="#f8fafc">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <link rel="stylesheet" href="/admin/static/css/style.css">
   <style>
-    body { background: #f8f9fa; }
-    .sidebar { min-height: 100vh; background: #212529; }
-    .sidebar .nav-link { color: #adb5bd; }
-    .sidebar .nav-link:hover { color: #fff; }
     .status-ok { color: #198754; }
     .status-fail { color: #dc3545; }
     .status-missing { color: #6c757d; }
@@ -2363,13 +2362,13 @@ _DIAGNOSTICS_TEMPLATE = """
 <div class="container-fluid">
 <div class="row">
   <nav class="col-md-2 sidebar p-3">
-    <h5 class="text-white mb-3">🛒 Admin</h5>
+    <h5 class="mb-3">🛒 Admin</h5>
     <ul class="nav flex-column">
       <li><a class="nav-link" href="/admin/">대시보드</a></li>
       <li><a class="nav-link" href="/admin/products">📋 상품 목록</a></li>
       <li><a class="nav-link" href="/admin/orders">📦 주문 목록</a></li>
       <li><a class="nav-link" href="/admin/inventory">📊 재고 현황</a></li>
-      <li><a class="nav-link text-white fw-bold" href="/admin/diagnostics">🔧 진단</a></li>
+      <li><a class="nav-link active fw-bold" href="/admin/diagnostics">🔧 진단</a></li>
       <li><a class="nav-link" href="/admin/users">👥 사용자 관리</a></li>
       <li><a class="nav-link" href="/admin/env">⚙️ 환경변수</a></li>
       <li><a class="nav-link" href="/admin/logs">📜 로그</a></li>
@@ -2635,8 +2634,9 @@ _DIAGNOSTICS_TEMPLATE = """
             <div class="col-md-3">
               <div class="card h-100">
                 <div class="card-body">
-                  <h6>{{ info.label or market }} <span class="badge {{ info.ui.badge_class if info.ui else 'bg-secondary' }}">{{ info.status }}</span></h6>
+                  <h6>{{ info.label or market }} <span class="{{ info.ui.badge_class if info.ui else 'badge bg-secondary' }}">{{ info.ui.badge_text if info.ui else info.status }}</span></h6>
                   <p class="small mb-1">{{ info.summary or info.detail or info.status }}</p>
+                  <p class="small text-muted mb-1">마지막 점검: {{ info.last_checked_at or info.checked_at or '—' }}</p>
                   {% if info.hint %}
                     <p class="small text-muted mb-1">운영 가이드: {{ info.hint }}</p>
                   {% endif %}

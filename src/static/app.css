@@ -2,8 +2,8 @@
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
 
 :root {
-  --pc-color-bg: #020010;
-  --pc-color-bg-secondary: #090724;
+  --pc-color-bg: #f8fafc;
+  --pc-color-bg-secondary: #eef2ff;
   --pc-color-surface: #ffffff;
   --pc-color-surface-muted: #f4f5fb;
   --pc-color-text: #0f172a;
@@ -34,8 +34,16 @@
 
 body {
   font-family: 'Pretendard Variable', 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background: radial-gradient(1200px 700px at 0% -10%, #181257, var(--pc-color-bg)) fixed;
+  background: linear-gradient(180deg, #ffffff 0%, var(--pc-color-bg-secondary) 100%) fixed;
   color: var(--pc-color-text);
+}
+
+a {
+  color: var(--pc-color-info);
+}
+
+a:hover {
+  color: #1d4ed8;
 }
 
 .pc-surface,
@@ -74,6 +82,36 @@ body {
 }
 .btn-outline-primary { border-color: var(--pc-color-primary); color: var(--pc-color-primary); }
 .btn-outline-primary:hover { background: var(--pc-color-primary); border-color: var(--pc-color-primary); }
+.btn:disabled,
+.btn.disabled {
+  opacity: 1;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.btn-primary:disabled,
+.btn-primary.disabled {
+  background: #c7bfff;
+  border-color: #c7bfff;
+  color: #312e81;
+}
+.btn-outline-primary:disabled,
+.btn-outline-primary.disabled {
+  background: #f5f3ff;
+  border-color: #c7bfff;
+  color: #5b21b6;
+}
+.btn-outline-secondary:disabled,
+.btn-outline-secondary.disabled {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+.btn-outline-warning:disabled,
+.btn-outline-warning.disabled {
+  background: #fffbeb;
+  border-color: #fcd34d;
+  color: #92400e;
+}
 .btn:focus,
 .form-control:focus,
 .form-select:focus,

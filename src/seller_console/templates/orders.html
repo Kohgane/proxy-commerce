@@ -11,7 +11,7 @@
 </div>
 
 <div class="pc-status pc-status-info small mb-3">
-  Phase 188 주문 운영 UX 고도화 화면입니다. 선택/확인/피드백 흐름을 먼저 점검한 뒤 실행하세요.
+  Phase 189 주문/배송 운영 안정화 화면입니다. 선택/확인/피드백 흐름을 먼저 점검한 뒤 실행하세요.
 </div>
 <div class="pc-status {% if ops_health.service_available %}pc-status-success{% else %}pc-status-warning{% endif %} small mb-3">
   <div class="fw-semibold mb-1">주문 운영 라우트 진단</div>
@@ -119,7 +119,11 @@
         <button id="bulkShipButton" type="button" class="btn btn-primary btn-sm" onclick="bulkUpdateSelectedStatus('shipped')" disabled title="배송중으로 변경 가능한 주문을 선택하면 사용할 수 있습니다.">배송중 처리</button>
         <button id="bulkStatusButton" type="button" class="btn btn-outline-secondary btn-sm" onclick="openBulkStatusModal()" disabled title="공통 상태 흐름이 있는 주문을 선택하면 사용할 수 있습니다.">일괄 상태 변경</button>
         {% endif %}
+        {% if ops_health.service_available %}
         <a href="/seller/orders/export.csv" class="btn btn-outline-secondary btn-sm">CSV 내보내기</a>
+        {% else %}
+        <button type="button" class="btn btn-outline-secondary btn-sm" disabled title="주문 서비스가 준비되면 CSV 내보내기를 다시 사용할 수 있습니다.">CSV 내보내기 (서비스 준비 중)</button>
+        {% endif %}
       </div>
     </div>
     {% if orders %}

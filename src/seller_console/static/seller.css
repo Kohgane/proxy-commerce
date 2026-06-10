@@ -2,7 +2,7 @@
 
 body {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  background: var(--pc-color-bg-secondary, #090724);
+  background: var(--pc-color-bg, #f8fafc);
 }
 
 /* 사이드바 */

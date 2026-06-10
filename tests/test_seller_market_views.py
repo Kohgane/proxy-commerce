@@ -85,11 +85,12 @@ class TestMarketsOverview:
         resp = client.get("/seller/markets")
         assert resp.status_code == 200
         html = resp.get_data(as_text=True)
-        assert "Phase 188" in html
+        assert "Phase 189" in html
         assert "연결 확인" in html
         assert "권한 확인" in html
         assert "재시도" in html
         assert "원인:" in html
+        assert "마지막 점검:" in html
 
 
 # ---------------------------------------------------------------------------
@@ -286,6 +287,7 @@ class TestMarketIntegrationDiagnosticsApi:
         assert data["ok"] is True
         assert data["result"]["status"] == "connected"
         assert data["result"]["steps"][0]["step"] == "read_connection"
+        assert data["result"]["last_checked_at"] == "2026-06-10T00:00:00+00:00"
 
     def test_market_diagnostics_all_markets_format(self, client, monkeypatch):
         monkeypatch.setattr(
@@ -318,6 +320,7 @@ class TestMarketIntegrationDiagnosticsApi:
         assert data["ok"] is True
         assert data["results"][0]["status"] == "token_missing"
         assert data["results"][0]["steps"][0]["error_code"] == "token_missing"
+        assert data["results"][0]["last_checked_at"] == "2026-06-10T00:00:00+00:00"
 
 
 # ---------------------------------------------------------------------------
