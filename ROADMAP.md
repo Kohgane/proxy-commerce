@@ -4,7 +4,7 @@
 
 | Phase | 내용 | PR | 완료일 |
 |---|---|---|---|
-| Phase 188 | 마켓 연동 운영 가이드 + 실연동 smoke 진단 + UI/UX 개선 — Coupang/Naver Smartstore/11st/Shopify/WooCommerce 운영 가이드 문서를 정비하고, `/seller/markets`·`/admin/diagnostics`에 실제 read 연결 확인 + safe write dry-run 결과를 구조화(`connected/token_missing/token_expired/scope_insufficient/api_error`)해 노출, 운영자용 `연결 확인/권한 확인/재시도` 액션과 오류 힌트를 추가, 관련 진단/UI 테스트를 보강 | #PR | 2026-06-10 |
+| Phase 188 | 주문 운영 UX + 마켓 연동 운영 가시화 2차 — `/seller/orders`에 선택 수 고정 액션 바·일괄 실행 확인 모달·행 단위 성공/실패 피드백·`원인/조치` 표준 메시지를 추가하고, `/seller/markets`·`/admin/diagnostics`에는 실제 read 연결 확인 + safe write dry-run 결과를 구조화(`connected/token_missing/token_expired/scope_insufficient/api_error`)해 상태 배지/추천 액션/운영 가이드를 일관되게 노출, 관련 UI 테스트를 보강 | #PR | 2026-06-10 |
 | Phase 187 | 운영 안정화(실동작 검증) 1차 — `/seller/orders` 핵심 운영 루프(목록→상태변경→운송장 단건/일괄→CSV)를 회귀 테스트로 고정, 서비스 미가용(503)·입력오류(400)·내부오류(500)에서 정직한 실패 메시지/재시도 가능 UX를 보강, 주문 운영 라우트 진단 블록과 표준화된 운영 로그(`action/marketplace/order_id/reason`)를 반영 | #PR | 2026-06-09 |
 | Phase 186 | 죽은 버튼 감사 2차 — 주문 관리에 행 선택 체크박스/전체선택/일괄 운송장 등록/일괄 상태 변경 툴바를 추가하고 `POST /seller/orders/bulk/status`로 실제 상태 전환을 연결, 반품 인박스 개별 부분 환불 모달과 `POST /seller/returns/<request_id>/partial-refund` 라우트를 구현, 주문 상태 변경/소싱 후보 거절의 `prompt()`를 Bootstrap 모달로 교체, 로그인 화면 `href=\"#\"` 데드 링크 제거, 감사/핸드오프 문서와 회귀 테스트 보강 | #PR | 2026-06-08 |
 | Phase 185 | 주문관리 운송장 입력 UX 개선 — 배송준비중 운송장 모달의 택배사 입력을 드롭다운에서 검색형(typeahead) + 직접입력(free text)으로 교체, 키보드(↑/↓/Enter/Esc)+마우스 선택 및 aria 접근성 속성 추가, 선택 후 운송장번호 입력으로 포커스 자동 이동, `tracking.py`/`tracking_trackingmore.py` 매핑을 통합 카탈로그(`courier_catalog.py`)로 단일화하고 한/영 별칭 검색(CJ/씨제이/cj-korea/hanjin/lotte/korea-post/logen 등) 지원, TrackingMore `/v4/couriers/all` 동적 확장(키/네트워크 실패 시 내장 카탈로그 폴백) 적용, 관련 단위/회귀 테스트 보강 | #PR | 2026-06-07 |

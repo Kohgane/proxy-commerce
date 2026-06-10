@@ -11,7 +11,7 @@
 </div>
 
 <div class="pc-status pc-status-info small mb-3">
-  Phase 129 주문 통합 화면입니다. 일부 마켓 기능은 준비 중일 수 있습니다.
+  Phase 188 주문 운영 UX 고도화 화면입니다. 선택/확인/피드백 흐름을 먼저 점검한 뒤 실행하세요.
 </div>
 <div class="pc-status {% if ops_health.service_available %}pc-status-success{% else %}pc-status-warning{% endif %} small mb-3">
   <div class="fw-semibold mb-1">주문 운영 라우트 진단</div>
@@ -105,8 +105,13 @@
 <!-- 주문 테이블 -->
 <div class="card border-0 shadow-sm pc-action-table">
   <div class="card-header bg-white">
-    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-      <span class="fw-semibold">주문 목록</span>
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 pc-bulk-toolbar px-1 py-1 rounded-3">
+      <div>
+        <span class="fw-semibold">주문 목록</span>
+        {% if orders %}
+        <div class="small text-muted">Phase 188 · 선택 수 고정 표시 · 실행 전 확인 · 행 단위 결과 피드백</div>
+        {% endif %}
+      </div>
       <div class="d-flex align-items-center gap-2 flex-wrap">
         {% if orders %}
         <span id="bulkSelectionCount" class="badge text-bg-light">0건 선택</span>
@@ -142,7 +147,7 @@
         </thead>
         <tbody>
           {% for o in orders %}
-          <tr>
+          <tr data-order-row="{{ o.marketplace }}::{{ o.order_id }}">
             <td class="text-center">
               <input
                 type="checkbox"
@@ -178,10 +183,13 @@
               {% else %}<span class="text-muted small">-</span>{% endif %}
             </td>
             <td>
-              <button class="btn btn-outline-primary btn-sm py-0"
-                onclick="openTrackingModal('{{ o.marketplace }}', '{{ o.order_id }}')">운송장</button>
-              <button class="btn btn-outline-secondary btn-sm py-0"
-                onclick="openStatusPrompt('{{ o.marketplace }}', '{{ o.order_id }}', '{{ o.status }}')">상태</button>
+              <div class="d-flex gap-1 flex-wrap">
+                <button class="btn btn-outline-primary btn-sm py-0"
+                  onclick="openTrackingModal('{{ o.marketplace }}', '{{ o.order_id }}')">운송장</button>
+                <button class="btn btn-outline-secondary btn-sm py-0"
+                  onclick="openStatusPrompt('{{ o.marketplace }}', '{{ o.order_id }}', '{{ o.status }}')">상태</button>
+              </div>
+              <div class="pc-inline-feedback d-none" data-order-feedback="{{ o.marketplace }}::{{ o.order_id }}" role="status" aria-live="polite"></div>
             </td>
           </tr>
           {% endfor %}
@@ -237,11 +245,14 @@
               style="z-index: 1060; max-height: 240px; overflow-y: auto;"
             ></div>
           </div>
+          <div class="form-text">택배사를 선택하거나 직접 입력하면 운송장 번호 입력으로 바로 이어집니다.</div>
         </div>
         <div class="mb-3">
           <label class="form-label">운송장 번호</label>
           <input type="text" id="tm-tracking-no" class="form-control" placeholder="운송장 번호 입력">
+          <div class="form-text">번호 입력 후 저장하면 주문 행에 결과가 표시됩니다.</div>
         </div>
+        <div id="trackingModalFeedback" class="pc-inline-feedback d-none" role="alert"></div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
@@ -266,6 +277,7 @@
           <input type="text" id="btm-courier" class="form-control" placeholder="선택 주문에 공통 적용할 택배사">
         </div>
         <div id="bulkTrackingRows" class="d-grid gap-2"></div>
+        <div id="bulkTrackingModalFeedback" class="pc-inline-feedback d-none mt-3" role="alert"></div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
@@ -295,6 +307,7 @@
           <label class="form-label" for="sm-reason">사유 (선택)</label>
           <textarea id="sm-reason" class="form-control" rows="3" placeholder="메모가 필요하면 입력하세요."></textarea>
         </div>
+        <div id="statusModalFeedback" class="pc-inline-feedback d-none mt-3" role="alert"></div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
@@ -323,10 +336,31 @@
           <label class="form-label" for="bsm-reason">사유 (선택)</label>
           <textarea id="bsm-reason" class="form-control" rows="3" placeholder="일괄 상태 변경 메모가 있으면 입력하세요."></textarea>
         </div>
+        <div id="bulkStatusModalFeedback" class="pc-inline-feedback d-none mt-3" role="alert"></div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
         <button type="button" class="btn btn-primary" id="bulkStatusSaveButton" onclick="submitBulkStatusChange()">저장</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 일괄 실행 확인 모달 -->
+<div class="modal fade" id="bulkActionConfirmModal" tabindex="-1" aria-labelledby="bulkActionConfirmLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="bulkActionConfirmLabel">선택 주문 실행 확인</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+      </div>
+      <div class="modal-body">
+        <div class="fw-semibold" id="bulkActionConfirmSummary">선택 주문에 액션을 실행합니다.</div>
+        <div class="small text-muted mt-2" id="bulkActionConfirmImpact">대상 수와 영향 범위를 확인하세요.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+        <button type="button" class="btn btn-primary" id="bulkActionConfirmButton" onclick="confirmBulkAction()">실행</button>
       </div>
     </div>
   </div>

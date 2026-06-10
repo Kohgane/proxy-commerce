@@ -67,6 +67,7 @@ def test_run_market_diagnostic_maps_scope_insufficient(monkeypatch):
     assert result["status"] == "scope_insufficient"
     assert result["hint"] == "앱 스코프를 확인하세요."
     assert result["ui"]["disabled_reason"] == "앱 권한을 보강한 뒤 다시 시도하세요."
+    assert result["ui"]["recommended_action"] == "scope"
 
 
 def test_run_market_diagnostic_connected_when_read_and_write_pass(monkeypatch):
@@ -100,6 +101,7 @@ def test_run_market_diagnostic_connected_when_read_and_write_pass(monkeypatch):
     assert result["ok"] is True
     assert result["status"] == "connected"
     assert result["steps"][1]["step"] == "write_dry_run"
+    assert result["ui"]["badge_text"] == "✅ 연결됨"
 
 
 def test_build_market_ui_state_exposes_technical_detail():
@@ -116,3 +118,4 @@ def test_build_market_ui_state_exposes_technical_detail():
 
     assert ui["badge_label"] == "api_error"
     assert ui["technical_detail"] == "HTTP 500"
+    assert ui["action_text"].startswith("재시도 버튼")

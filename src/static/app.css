@@ -59,6 +59,7 @@ body {
   border: 1px solid var(--pc-color-border);
   padding: var(--pc-space-3) var(--pc-space-4);
 }
+.pc-status-success { background: #ecfdf5; border-color: #86efac; }
 .pc-status-info { background: #eff6ff; border-color: #bfdbfe; }
 .pc-status-warning { background: #fffbeb; border-color: #fde68a; }
 .pc-status-danger { background: #fef2f2; border-color: #fecaca; }
@@ -97,6 +98,95 @@ body {
   background: #f8f8ff;
 }
 
+.pc-bulk-toolbar {
+  position: sticky;
+  top: var(--pc-space-3);
+  z-index: 5;
+  background: rgba(255, 255, 255, .96);
+  backdrop-filter: blur(12px);
+}
+
+.pc-inline-feedback {
+  margin-top: var(--pc-space-2);
+  padding: .35rem .55rem;
+  border-radius: var(--pc-radius-sm);
+  border: 1px solid transparent;
+  font-size: .74rem;
+  line-height: 1.4;
+}
+.pc-inline-feedback-success {
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #166534;
+}
+.pc-inline-feedback-warning {
+  background: #fffbeb;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+.pc-inline-feedback-danger {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+.pc-market-card {
+  border: 1px solid var(--pc-color-border);
+  transition: border-color var(--pc-transition), box-shadow var(--pc-transition), transform var(--pc-transition);
+}
+.pc-market-card[data-market-state="connected"] {
+  border-color: #86efac;
+  box-shadow: 0 10px 24px rgba(22, 163, 74, .08);
+}
+.pc-market-card[data-market-state="token_missing"] {
+  border-color: #cbd5e1;
+  box-shadow: 0 10px 24px rgba(100, 116, 139, .08);
+}
+.pc-market-card[data-market-state="token_expired"],
+.pc-market-card[data-market-state="scope_insufficient"] {
+  border-color: #fcd34d;
+  box-shadow: 0 10px 24px rgba(245, 158, 11, .08);
+}
+.pc-market-card[data-market-state="api_error"] {
+  border-color: #fca5a5;
+  box-shadow: 0 10px 24px rgba(220, 38, 38, .08);
+}
+
+.pc-market-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  padding: .35rem .6rem;
+  border-radius: 999px;
+  font-size: .78rem;
+  font-weight: 600;
+}
+.pc-market-badge-pending {
+  background: #e2e8f0;
+  color: #334155;
+}
+.pc-market-badge-connected {
+  background: #dcfce7;
+  color: #166534;
+}
+.pc-market-badge-token-missing {
+  background: #e2e8f0;
+  color: #334155;
+}
+.pc-market-badge-token-expired,
+.pc-market-badge-scope-insufficient {
+  background: #fef3c7;
+  color: #92400e;
+}
+.pc-market-badge-api-error {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.pc-market-guide {
+  min-height: 2.8rem;
+}
+
 .pc-toast-stack {
   z-index: var(--pc-z-toast);
 }
@@ -121,4 +211,20 @@ body {
 .api-accordion .accordion-button:not(.collapsed) {
   background: #e0f2fe;
   color: #0369a1;
+}
+
+@media (max-width: 767.98px) {
+  .pc-bulk-toolbar {
+    position: static;
+  }
+
+  .pc-bulk-toolbar .badge,
+  .pc-bulk-toolbar .small {
+    width: 100%;
+  }
+
+  .pc-bulk-toolbar .btn,
+  .pc-market-card .btn {
+    flex: 1 1 calc(50% - .25rem);
+  }
 }

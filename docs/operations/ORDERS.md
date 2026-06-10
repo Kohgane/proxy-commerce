@@ -1,9 +1,11 @@
-# Phase 129 — 주문 관리 통합 (Order Management Integration)
+# Phase 129 → Phase 188 — 주문 관리 통합 + 운영 UX 고도화 (Order Management Integration)
 
 ## 개요
 
 4개 마켓(쿠팡, 스마트스토어, 11번가, 코가네멀티샵)의 주문을 통합 관리하는 시스템.  
 Google Sheets `orders` 워크시트가 단일 진실의 원천(source of truth).
+
+Phase 188에서 운영자가 빠르게 실수 없이 처리할 수 있도록 선택 기반 일괄 처리, 실행 전 확인, 행 단위 피드백, 오류 메시지 포맷을 추가로 다듬었다.
 
 ---
 
@@ -148,7 +150,8 @@ API 키 없음 → 빈 목록 반환.
 - `syncNow()` — POST /seller/orders/sync 호출
 - `openTrackingModal(marketplace, orderId)` — 운송장 입력 모달
 - `saveTracking()` — POST /seller/orders/{mp}/{id}/tracking 호출
-- `showToast(message, type)` — Bootstrap 5 토스트 알림
+- `saveBulkTracking()` / `runBulkStatusChange()` — 일괄 실행 전 확인 모달 + 행 단위 결과 피드백
+- `showToast(message, type)` — Bootstrap 5 토스트 알림 (`원인: … / 조치: …` 포맷 사용)
 
 ---
 

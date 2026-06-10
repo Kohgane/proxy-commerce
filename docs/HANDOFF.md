@@ -47,9 +47,14 @@
   `WOOCOMMERCE_MARKET.md` 신설, `/seller/markets`와 `/admin/diagnostics`에 실제 read 연결 확인 +
   safe write dry-run 결과를 `connected/token_missing/token_expired/scope_insufficient/api_error`로 구조화해 노출,
   운영자용 `연결 확인/권한 확인/재시도` 액션과 기술 원인 + 행동 힌트 UX를 추가.
+- **Phase 188 — 주문 운영 UX/마켓 진단 2차 리파인 (2026-06-10)**:
+  `/seller/orders`에 Phase 188 배너, 선택 수 고정형 액션 바, 일괄 실행 전 확인 모달, 운송장/상태 저장 실패의
+  `원인: … / 조치: …` 표준 메시지, 주문 행 단위 성공/실패 피드백을 추가.
+  `/seller/markets`는 Phase 188 배너와 함께 상태 카드 배지/색상/아이콘을 표준화하고,
+  각 상태마다 원인/조치 문구와 추천 액션 강조를 노출하도록 보강.
 
 ### 진행 중
-- **주문 운영 E2E 점검 2차**: 실제 마켓 어댑터 연결 상태에서 부분 실패(특히 bulk 항목) 로그 품질 재검토 및 운영자 재시도 가이드 고도화.
+- **Phase 188 후속 실연동 검증**: 실제 마켓 어댑터 연결 상태에서 부분 실패(특히 bulk 항목) 로그 품질 재검토 및 운영자 재시도 가이드 고도화.
 - **마켓 실연동 후속 검증**: 운영 시크릿이 등록된 환경에서 각 마켓 판매자센터/Wing/Admin 화면과 `/admin/diagnostics`,
   `/seller/markets` 결과를 대조해 마지막 실검증 시간을 남길 것.
 

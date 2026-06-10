@@ -45,11 +45,11 @@ MARKET_GUIDES: dict[str, dict[str, Any]] = {
 }
 
 _STATUS_BADGES = {
-    "connected": {"label": "connected", "class_name": "bg-success"},
-    "token_missing": {"label": "token_missing", "class_name": "bg-secondary"},
-    "token_expired": {"label": "token_expired", "class_name": "bg-warning text-dark"},
-    "scope_insufficient": {"label": "scope_insufficient", "class_name": "bg-warning text-dark"},
-    "api_error": {"label": "api_error", "class_name": "bg-danger"},
+    "connected": {"label": "connected", "class_name": "pc-market-badge pc-market-badge-connected", "icon": "✅", "title": "연결됨"},
+    "token_missing": {"label": "token_missing", "class_name": "pc-market-badge pc-market-badge-token-missing", "icon": "🪪", "title": "토큰 없음"},
+    "token_expired": {"label": "token_expired", "class_name": "pc-market-badge pc-market-badge-token-expired", "icon": "⏰", "title": "토큰 만료"},
+    "scope_insufficient": {"label": "scope_insufficient", "class_name": "pc-market-badge pc-market-badge-scope-insufficient", "icon": "🔐", "title": "권한 부족"},
+    "api_error": {"label": "api_error", "class_name": "pc-market-badge pc-market-badge-api-error", "icon": "⚠️", "title": "API 오류"},
 }
 
 
@@ -195,18 +195,36 @@ def build_market_ui_state(result: dict[str, Any]) -> dict[str, Any]:
     badge = market_status_badge(str(result.get("status") or "api_error"))
     steps = result.get("steps") or []
     first_failure = next((step for step in steps if not step.get("ok")), None)
+    status = str(result.get("status") or "api_error")
+    cause_text = str(result.get("summary") or (first_failure or {}).get("detail") or (first_failure or {}).get("hint") or "상태를 확인하지 못했습니다.").strip()
     disabled_reason = ""
-    if result.get("status") == "token_missing":
+    action_text = "재시도 전에 운영 가이드를 확인하세요."
+    recommended_action = "retry"
+    if status == "connected":
+        action_text = "추가 조치 없이 마지막 성공 시간과 판매자센터 결과를 함께 점검하세요."
+        recommended_action = "connection"
+    elif status == "token_missing":
         disabled_reason = "필수 환경변수/시크릿을 먼저 등록하세요."
-    elif result.get("status") == "scope_insufficient":
+        action_text = "마켓 설정에서 필수 토큰/시크릿을 등록한 뒤 연결 확인을 다시 실행하세요."
+        recommended_action = "connection"
+    elif status == "scope_insufficient":
         disabled_reason = "앱 권한을 보강한 뒤 다시 시도하세요."
-    elif result.get("status") == "token_expired":
+        action_text = "권한 확인 버튼으로 필요한 scope를 대조하고 앱 권한을 보강하세요."
+        recommended_action = "scope"
+    elif status == "token_expired":
         disabled_reason = "토큰 재발급 후 다시 시도하세요."
+        action_text = "토큰을 재발급한 뒤 재시도 버튼으로 다시 점검하세요."
+    else:
+        action_text = "재시도 버튼으로 다시 점검하고 지속되면 diagnostics와 판매자센터 로그를 함께 확인하세요."
     return {
         "badge_label": badge["label"],
         "badge_class": badge["class_name"],
+        "badge_text": f'{badge["icon"]} {badge["title"]}',
         "summary": str(result.get("summary") or "").strip(),
         "hint": str(result.get("hint") or "").strip(),
+        "cause_text": cause_text,
+        "action_text": action_text,
+        "recommended_action": recommended_action,
         "technical_detail": str((first_failure or {}).get("detail") or "").strip(),
         "disabled_reason": disabled_reason,
     }

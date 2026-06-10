@@ -70,11 +70,14 @@ class TestOrdersViews:
         with patch("src.seller_console.views._get_order_sync_service", return_value=mock_sync_service):
             resp = client.get("/seller/orders")
         html = resp.get_data(as_text=True)
+        assert "Phase 188" in html
         assert 'id="ordersSelectAll"' in html
         assert "order-row-chk" in html
         assert 'id="bulkTrackingButton"' in html
         assert 'id="bulkStatusModal"' in html
         assert 'id="statusModal"' in html
+        assert 'id="bulkActionConfirmModal"' in html
+        assert 'data-order-feedback="coupang::CP-001"' in html
 
     def test_get_orders_removes_prompt_based_status_change(self, client, mock_sync_service):
         """주문 페이지에 window.prompt 기반 상태 변경이 남아 있지 않다."""
