@@ -193,7 +193,10 @@ def market_status_badge(status: str) -> dict[str, str]:
 
 def normalize_market_diagnostic_result(result: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(result or {})
-    checked_at = str(normalized.get("last_checked_at") or normalized.get("checked_at") or "").strip() or datetime.now(timezone.utc).isoformat()
+    raw_timestamp = normalized.get("last_checked_at") or normalized.get("checked_at") or ""
+    checked_at = str(raw_timestamp).strip()
+    if not checked_at:
+        checked_at = datetime.now(timezone.utc).isoformat()
     normalized["checked_at"] = checked_at
     normalized["last_checked_at"] = checked_at
     if not normalized.get("ui") and normalized.get("status"):

@@ -3,7 +3,7 @@ from __future__ import annotations
 from src.seller_console.market_integration_diagnostics import build_market_ui_state, run_market_diagnostic
 
 
-def test_run_market_diagnostic_exposes_last_checked_at(monkeypatch):
+def test_run_market_diagnostic_normalizes_checked_at_timestamps(monkeypatch):
     monkeypatch.setattr(
         "src.seller_console.market_integration_diagnostics._adapter_health_step",
         lambda market: {

@@ -334,7 +334,7 @@ function renderMarketDiagnostic(result, requestedAction='connection') {
   const detail = document.getElementById('marketDiagnosticsDetail');
   const causeText = (result.ui && result.ui.cause_text) || result.summary || (result.ui && result.ui.technical_detail) || '상태를 확인하지 못했습니다.';
   const actionText = (result.ui && result.ui.action_text) || result.hint || '운영 가이드를 확인한 뒤 다시 시도하세요.';
-  const checkedAtText = result.last_checked_at || result.checked_at || '—';
+  const checkedAtText = result.last_checked_at || result.checked_at || '대기 중';
 
   if (card) {
     card.dataset.marketState = result.status || 'api_error';
