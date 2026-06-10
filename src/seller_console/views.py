@@ -975,7 +975,7 @@ def collect_preview():
 def collect_upload():
     """마켓 업로드 트리거 (JSON).
 
-    Request body: {"product": {...}, "markets": ["coupang", "smartstore"]}
+    Request body: {"product": {...}, "markets": ["coupang", "smartstore"], "target_margin_pct": 22}
     Response: {"ok": true, "result": {...}}
     """
     data = request.get_json(force=True, silent=True) or {}
@@ -988,6 +988,14 @@ def collect_upload():
     if not markets:
         return jsonify({"ok": False, "error": "업로드 대상 마켓을 선택하세요."}), 400
 
+    # Phase 190: target_margin_pct를 payload에 반영 (마진율 실반영)
+    target_margin_pct = data.get("target_margin_pct")
+    if target_margin_pct is not None:
+        try:
+            product_data["target_margin_pct"] = float(target_margin_pct)
+        except (TypeError, ValueError):
+            pass
+
     dispatcher = _get_upload_dispatcher()
     if dispatcher is None:
         return jsonify({"ok": False, "error": "업로드 디스패처 준비 중입니다."}), 503
@@ -998,6 +1006,49 @@ def collect_upload():
     except Exception as exc:
         logger.warning("업로드 디스패처 오류: %s", exc)
         return jsonify({"ok": False, "error": "업로드 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/collect/prevalidate")
+def collect_prevalidate():
+    """마켓 업로드 사전검증 (Phase 190).
+
+    Request body: {"product": {...}, "markets": ["coupang", "shopify"]}
+    Response: {"ok": true, "results": [{"market": "shopify", "ok": true, ...}, ...]}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    product_data = data.get("product") or {}
+    markets = data.get("markets") or []
+
+    if not product_data:
+        return jsonify({"ok": False, "error": "상품 데이터가 필요합니다."}), 400
+    if not markets:
+        return jsonify({"ok": False, "error": "검증할 마켓을 선택하세요."}), 400
+
+    dispatcher = _get_upload_dispatcher()
+    if dispatcher is None:
+        return jsonify({"ok": False, "error": "업로드 디스패처 준비 중입니다."}), 503
+
+    try:
+        from .upload_dispatcher import MARKET_LABELS
+        results = dispatcher.prevalidate(product_data, markets)
+        return jsonify({
+            "ok": True,
+            "results": [
+                {
+                    "market": r.market,
+                    "market_label": MARKET_LABELS.get(r.market, r.market),
+                    "ok": r.ok,
+                    "error_code": r.error_code,
+                    "message": r.message,
+                    "hint": r.hint,
+                }
+                for r in results
+            ],
+            "all_ok": all(r.ok for r in results),
+        })
+    except Exception as exc:
+        logger.warning("사전검증 오류: %s", exc)
+        return jsonify({"ok": False, "error": "사전검증 중 오류가 발생했습니다."}), 500
 
 
 @bp.post("/collect/localize")

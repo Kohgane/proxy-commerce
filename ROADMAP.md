@@ -1753,3 +1753,55 @@
 4. 5~10분 대기 후 시크릿 창에서 구글 로그인 재시도
 5. 네이버: 개발 중 상태이면 [멤버 관리]에 네이버 로그인 ID(이메일 아님) 등록
 6. 향후 도메인 변경 시 `APP_BASE_URL` 또는 `OAUTH_REDIRECT_BASE_URL` env만 바꾸면 됨
+
+
+## Phase 190 — 사용자 마진% 실반영 + 마켓 실제 업로드 완성 + 미구현 기능 마감 ✅
+
+**목표**: 실사용 관점 가격 반영/업로드/완성도 달성.
+
+### 변경 내역
+
+#### 1. UploadResult / DispatchResult 구조화 (`src/seller_console/upload_dispatcher.py`)
+- `UploadResult`에 Phase 190 필드 추가: `external_product_id`, `external_url`, `error_code`, `hint`
+- `DispatchResult.to_dict()` 직렬화에 신규 필드 포함
+- `PrevalidationResult` 데이터클래스 신설
+- 마켓별 필수 환경변수 목록(`_MARKET_REQUIRED_ENVS`) 및 운영자 힌트(`_MARKET_TOKEN_HINTS`) 정의
+
+#### 2. 사전검증 기능 (`UploadDispatcher.prevalidate()`)
+- 토큰/환경변수 미설정 → `error_code="token_missing"` + 즉시 행동 힌트
+- 상품명/가격 누락 → `error_code="missing_field"` + 조치 안내
+- 첫 번째 이미지 HEAD 접근성 체크 → `error_code="image_inaccessible"`
+- Shopify: `SHOPIFY_AUTO_TOKEN` 또는 `SHOPIFY_ACCESS_TOKEN` 중 하나 있으면 통과
+
+#### 3. 마켓 업로드 결과 구조화
+- Shopify 성공 시 `storefront_url`을 `external_url`로, `external_id`를 `external_product_id`로 노출
+- 쿠팡/스마트스토어/11번가/WooCommerce: 응답 dict에서 `id`/`url` 추출
+- 모든 실패 경로에 `error_code` + `hint` 추가
+
+#### 4. 신규 API 라우트 (`src/seller_console/views.py`)
+- `POST /seller/collect/prevalidate`: 마켓별 사전검증, `{ok, results, all_ok}` 응답
+- `POST /seller/collect/upload`: `target_margin_pct` 파라미터 수신 → product_data에 반영
+
+#### 5. 수집 미리보기 마켓 등록 UI (`src/seller_console/templates/collect_preview.html`)
+- "Phase 136 예정" disabled 버튼 → 실동작 "📤 마켓에 등록" + "💰 마진 계산기" 링크
+- 3단계 모달: 마켓 선택 + 마진율 슬라이더 → 사전검증 결과 → 업로드 결과
+- 사전검증 실패: 원인 + 힌트 표시, 통과 마켓만 업로드
+- 업로드 성공: `external_product_id` + `external_url` 링크 노출
+- 업로드 실패: `error_code` + `hint` 표시 + 재시도 안내
+- 중복 클릭 방지(업로드 중 스피너 + 버튼 비활성)
+
+#### 6. 테스트 (`tests/test_phase190_upload_margin.py`)
+- UploadResult/DispatchResult 신규 필드 검증 (4개)
+- prevalidate() 단위 테스트 8개 (토큰 미설정, 필드 누락, 다중 마켓 등)
+- 마켓 payload + target_margin_pct 반영 테스트 2개
+- 업로드 실패 핸들링(error_code/hint) 3개
+- 마진 경계값 테스트 7개 (5%~50%, KRW 원화, 손익분기 등)
+- /seller/collect/prevalidate 엔드포인트 4개
+
+### 완료 기준 확인
+1. ✅ 사용자 마진율 변경이 가격/업로드 payload에 실반영 (`target_margin_pct` flow)
+2. ✅ prevalidate → dispatch 흐름으로 사전검증 후 실제 업로드 가능
+3. ✅ 실패 시 error_code + hint로 원인/조치 표시
+4. ✅ 성공 시 external_product_id + external_url 노출
+5. ✅ collect_preview.html 에서 "보이지만 안 되는" 버튼 제거
+6. ✅ 29개 신규 테스트 통과 + 기존 237개 테스트 회귀 없음

@@ -44,10 +44,9 @@
           <div class="d-flex gap-2 flex-wrap">
             <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer"
                class="btn btn-outline-secondary btn-sm">🔗 원본 페이지</a>
-            <button class="btn btn-primary btn-sm" disabled title="Phase 136 예정">
-              ✨ AI 카피 생성
-            </button>
-            <button class="btn btn-success btn-sm" disabled title="마켓 등록 — Phase 136 예정">
+            <a href="/seller/pricing" class="btn btn-outline-primary btn-sm">💰 마진 계산기</a>
+            <button class="btn btn-success btn-sm" id="btnOpenUploadModal"
+                    onclick="openUploadModal()">
               📤 마켓에 등록
             </button>
           </div>
@@ -72,4 +71,261 @@
   </div>
   {% endif %}
 </div>
+
+<!-- ── 마켓 등록 모달 (Phase 190) ───────────────────────────────── -->
+<div class="modal fade" id="uploadModal" tabindex="-1" aria-labelledby="uploadModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold" id="uploadModalLabel">📤 마켓 등록</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+      </div>
+      <div class="modal-body">
+
+        <!-- Step 1: 마켓 선택 + 마진율 설정 -->
+        <div id="stepSelect">
+          <h6 class="fw-semibold mb-3">1. 등록할 마켓 선택</h6>
+          <div class="row g-2 mb-4" id="marketCheckboxes">
+            <div class="col-6 col-md-4">
+              <div class="form-check border rounded p-2">
+                <input class="form-check-input market-upload-check" type="checkbox" value="shopify" id="chkShopify">
+                <label class="form-check-label fw-semibold" for="chkShopify">Shopify</label>
+              </div>
+            </div>
+            <div class="col-6 col-md-4">
+              <div class="form-check border rounded p-2">
+                <input class="form-check-input market-upload-check" type="checkbox" value="coupang" id="chkCoupang">
+                <label class="form-check-label fw-semibold" for="chkCoupang">쿠팡</label>
+              </div>
+            </div>
+            <div class="col-6 col-md-4">
+              <div class="form-check border rounded p-2">
+                <input class="form-check-input market-upload-check" type="checkbox" value="smartstore" id="chkSmartstore">
+                <label class="form-check-label fw-semibold" for="chkSmartstore">스마트스토어</label>
+              </div>
+            </div>
+            <div class="col-6 col-md-4">
+              <div class="form-check border rounded p-2">
+                <input class="form-check-input market-upload-check" type="checkbox" value="elevenst" id="chkElevenst">
+                <label class="form-check-label fw-semibold" for="chkElevenst">11번가</label>
+              </div>
+            </div>
+            <div class="col-6 col-md-4">
+              <div class="form-check border rounded p-2">
+                <input class="form-check-input market-upload-check" type="checkbox" value="woocommerce" id="chkWoo">
+                <label class="form-check-label fw-semibold" for="chkWoo">코가네멀티샵</label>
+              </div>
+            </div>
+          </div>
+
+          <h6 class="fw-semibold mb-2">2. 목표 마진율 설정</h6>
+          <div class="d-flex align-items-center gap-3 mb-3">
+            <label class="text-muted" for="uploadMarginPct">목표 마진율</label>
+            <input type="range" class="form-range" id="uploadMarginPct" min="5" max="50" value="22"
+                   style="max-width:200px;"
+                   oninput="document.getElementById('uploadMarginPctDisplay').textContent=this.value">
+            <span class="fw-bold text-primary" id="uploadMarginPctDisplay">22</span><span>%</span>
+          </div>
+
+          <div class="d-flex gap-2 mt-3">
+            <button class="btn btn-outline-secondary" data-bs-dismiss="modal">취소</button>
+            <button class="btn btn-primary" id="btnPrevalidate" onclick="runPrevalidate()">
+              🔍 사전검증 →
+            </button>
+          </div>
+        </div>
+
+        <!-- Step 2: 사전검증 결과 -->
+        <div id="stepPrevalidate" class="d-none">
+          <h6 class="fw-semibold mb-3">사전검증 결과</h6>
+          <div id="prevalidateResults"></div>
+          <div class="d-flex gap-2 mt-3">
+            <button class="btn btn-outline-secondary" onclick="goToStep('stepSelect')">← 다시 선택</button>
+            <button class="btn btn-success" id="btnConfirmUpload" onclick="runUpload()">
+              ✅ 통과 마켓에 업로드
+            </button>
+          </div>
+        </div>
+
+        <!-- Step 3: 업로드 진행 중 -->
+        <div id="stepUploading" class="d-none text-center py-4">
+          <div class="spinner-border text-primary mb-3" role="status"></div>
+          <div class="fw-semibold">업로드 중...</div>
+          <div class="text-muted small mt-1">잠시 기다려 주세요. 중복 클릭하지 마세요.</div>
+        </div>
+
+        <!-- Step 4: 업로드 결과 -->
+        <div id="stepResult" class="d-none">
+          <h6 class="fw-semibold mb-3">📋 등록 결과</h6>
+          <div id="uploadResults"></div>
+          <div class="d-flex gap-2 mt-3">
+            <button class="btn btn-outline-secondary" data-bs-dismiss="modal">닫기</button>
+            <button class="btn btn-outline-primary" onclick="goToStep('stepSelect')">다시 등록</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── 상품 데이터 (서버에서 주입) ──
+const _PRODUCT_DATA = {{ item | tojson }};
+
+let _validatedMarkets = [];
+
+function openUploadModal() {
+  const modal = new bootstrap.Modal(document.getElementById('uploadModal'));
+  goToStep('stepSelect');
+  modal.show();
+}
+
+function goToStep(stepId) {
+  ['stepSelect','stepPrevalidate','stepUploading','stepResult'].forEach(id => {
+    document.getElementById(id).classList.add('d-none');
+  });
+  document.getElementById(stepId).classList.remove('d-none');
+}
+
+function getSelectedMarkets() {
+  return Array.from(document.querySelectorAll('.market-upload-check:checked')).map(el => el.value);
+}
+
+// ── 사전검증 ──
+async function runPrevalidate() {
+  const markets = getSelectedMarkets();
+  if (markets.length === 0) {
+    alert('등록할 마켓을 하나 이상 선택하세요.');
+    return;
+  }
+  const btn = document.getElementById('btnPrevalidate');
+  btn.disabled = true;
+  btn.textContent = '⏳ 검증 중...';
+
+  try {
+    const resp = await fetch('/seller/collect/prevalidate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({product: _PRODUCT_DATA, markets}),
+    });
+    const data = await resp.json();
+    btn.disabled = false;
+    btn.textContent = '🔍 사전검증 →';
+
+    if (!data.ok) {
+      alert(data.error || '사전검증 실패');
+      return;
+    }
+    renderPrevalidateResults(data.results);
+    goToStep('stepPrevalidate');
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = '🔍 사전검증 →';
+    alert('사전검증 요청 실패: ' + err.message);
+  }
+}
+
+function renderPrevalidateResults(results) {
+  _validatedMarkets = results.filter(r => r.ok).map(r => r.market);
+  const el = document.getElementById('prevalidateResults');
+  const targetMarginPct = parseInt(document.getElementById('uploadMarginPct').value) || 22;
+
+  let html = `<div class="mb-2 text-muted small">목표 마진율: <strong class="text-primary">${targetMarginPct}%</strong></div>`;
+  html += '<div class="list-group mb-3">';
+  results.forEach(r => {
+    const badge = r.ok
+      ? '<span class="badge bg-success">통과</span>'
+      : '<span class="badge bg-danger">실패</span>';
+    html += `
+      <div class="list-group-item d-flex justify-content-between align-items-start">
+        <div>
+          <div class="fw-semibold">${r.market_label || r.market} ${badge}</div>
+          <div class="text-muted small">${r.message}</div>
+          ${r.hint ? `<div class="text-warning small mt-1">💡 ${r.hint}</div>` : ''}
+        </div>
+      </div>`;
+  });
+  html += '</div>';
+
+  if (_validatedMarkets.length === 0) {
+    html += '<div class="alert alert-warning">통과한 마켓이 없습니다. 설정을 확인하세요.</div>';
+    document.getElementById('btnConfirmUpload').disabled = true;
+  } else {
+    document.getElementById('btnConfirmUpload').disabled = false;
+    html += `<div class="alert alert-info">통과 마켓 <strong>${_validatedMarkets.length}개</strong>에 업로드합니다: ${_validatedMarkets.join(', ')}</div>`;
+  }
+  el.innerHTML = html;
+}
+
+// ── 실제 업로드 ──
+async function runUpload() {
+  if (_validatedMarkets.length === 0) return;
+  const targetMarginPct = parseInt(document.getElementById('uploadMarginPct').value) || 22;
+
+  goToStep('stepUploading');
+
+  try {
+    const resp = await fetch('/seller/collect/upload', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        product: _PRODUCT_DATA,
+        markets: _validatedMarkets,
+        target_margin_pct: targetMarginPct,
+      }),
+    });
+    const data = await resp.json();
+    renderUploadResults(data);
+    goToStep('stepResult');
+  } catch (err) {
+    document.getElementById('uploadResults').innerHTML =
+      `<div class="alert alert-danger">요청 실패: ${err.message}</div>`;
+    goToStep('stepResult');
+  }
+}
+
+function renderUploadResults(data) {
+  const el = document.getElementById('uploadResults');
+  if (!data.ok) {
+    el.innerHTML = `<div class="alert alert-danger">${data.error || '업로드 실패'}</div>`;
+    return;
+  }
+  const result = data.result;
+  const summary = `전체 ${result.total}개 · 성공 <strong class="text-success">${result.succeeded}</strong> · 실패 ${result.failed} · 큐 ${result.queued}`;
+  let html = `<div class="mb-3 text-muted small">${summary}</div>`;
+  html += '<div class="list-group mb-2">';
+  (result.results || []).forEach(r => {
+    if (r.success) {
+      const linkPart = r.external_url
+        ? ` · <a href="${r.external_url}" target="_blank" rel="noopener noreferrer">상품 페이지 열기</a>`
+        : '';
+      const idPart = r.external_product_id ? ` (ID: ${r.external_product_id})` : '';
+      html += `
+        <div class="list-group-item list-group-item-success">
+          <div class="fw-semibold">✅ ${r.market_label || r.market}${idPart} — 등록 성공${linkPart}</div>
+          <div class="small">${r.message}</div>
+        </div>`;
+    } else if (r.queued) {
+      html += `
+        <div class="list-group-item list-group-item-warning">
+          <div class="fw-semibold">⏳ ${r.market_label || r.market} — 큐에 적재됨</div>
+          <div class="small">${r.message}</div>
+          ${r.hint ? `<div class="text-muted small mt-1">💡 ${r.hint}</div>` : ''}
+        </div>`;
+    } else {
+      html += `
+        <div class="list-group-item list-group-item-danger">
+          <div class="fw-semibold">❌ ${r.market_label || r.market} — 실패</div>
+          <div class="small">${r.message}</div>
+          ${r.hint ? `<div class="text-warning small mt-1">💡 조치: ${r.hint}</div>` : ''}
+          ${r.error_code ? `<div class="text-muted small">오류코드: ${r.error_code}</div>` : ''}
+        </div>`;
+    }
+  });
+  html += '</div>';
+  el.innerHTML = html;
+}
+</script>
 {% endblock %}
+
