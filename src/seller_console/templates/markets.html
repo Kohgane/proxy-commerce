@@ -25,6 +25,10 @@
   </div>
 </div>
 
+<div class="pc-status pc-status-info small mb-3">
+  Phase 188 마켓 연동 운영 가시화 화면입니다. 상태 카드의 원인/조치 가이드를 먼저 확인한 뒤 연결 확인·권한 확인·재시도를 실행하세요.
+</div>
+
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body py-3">
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -37,11 +41,11 @@
     <div class="row g-2 mt-2">
       {% for hub in market_hub_cards %}
       <div class="col-md-3">
-        <div class="border rounded-3 p-2 h-100">
+        <div class="rounded-3 p-2 h-100 pc-market-card" data-market-card="{{ hub.marketplace }}" data-market-state="pending">
           <div class="d-flex justify-content-between align-items-center mb-1">
             <strong>{{ hub.label }}</strong>
             {% if hub.integration_supported %}
-            <span class="badge {{ hub.pending_badge_class }}" data-market-badge="{{ hub.marketplace }}">검사 중…</span>
+            <span class="pc-market-badge pc-market-badge-pending" data-market-badge="{{ hub.marketplace }}">⏳ 검사 중</span>
             {% else %}
             <span class="badge bg-{{ hub.status_style }}">{{ hub.status_label }}</span>
             {% endif %}
@@ -52,9 +56,9 @@
           {% endif %}
           <div class="small text-muted mt-1">마지막 동기화: {{ hub.last_synced_at or '—' }}</div>
           {% if hub.integration_supported %}
-          <div class="small mt-2" data-market-summary="{{ hub.marketplace }}">실연동 검사를 불러오는 중…</div>
-          <div class="small text-muted mt-1" data-market-hint="{{ hub.marketplace }}">실제 성공 표시 전까지는 connected 상태를 보여주지 않습니다.</div>
-          <div class="small text-muted mt-1" data-market-disabled-reason="{{ hub.marketplace }}">초기 실연동 진단 실행 중…</div>
+          <div class="small mt-2 fw-semibold" data-market-summary="{{ hub.marketplace }}">실연동 검사를 불러오는 중…</div>
+          <div class="small text-muted mt-1 pc-market-guide" data-market-hint="{{ hub.marketplace }}">원인: 초기 실연동 진단을 실행 중입니다. · 조치: 완료 후 가이드 문구를 확인하세요.</div>
+          <div class="small text-muted mt-1" data-market-disabled-reason="{{ hub.marketplace }}">다음 액션: 초기 실연동 진단 실행 중…</div>
           <div class="d-flex flex-wrap gap-1 mt-2">
             <button class="btn btn-outline-primary btn-sm" type="button" data-market-action="connection" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'connection')">연결 확인</button>
             <button class="btn btn-outline-secondary btn-sm" type="button" data-market-action="scope" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'scope')">권한 확인</button>
@@ -233,7 +237,7 @@
 {% endif %}
 
 <div class="text-muted small mt-2">
-  ℹ️ Phase 127: Google Sheets 기반 실연동. Phase 130에서 마켓 API 직접 연동 예정.
+  ℹ️ Phase 188: 연동 상태는 검증된 결과만 표시합니다. `connected`가 아니면 원인/조치 가이드를 먼저 확인하세요.
 </div>
 
 <!-- 토스트 알림 -->
@@ -293,27 +297,60 @@ function setMarketButtonsDisabled(market, disabled, reason='') {
   }
 }
 
+function formatMarketSupportMessage(cause, action) {
+  const parts = [];
+  if (cause) parts.push(`원인: ${cause}`);
+  if (action) parts.push(`조치: ${action}`);
+  return parts.join(' · ');
+}
+
+function setRecommendedMarketAction(market, action) {
+  document.querySelectorAll(`[data-market="${market}"][data-market-action]`).forEach((btn) => {
+    const isRecommended = btn.dataset.marketAction === action;
+    btn.classList.toggle('btn-primary', isRecommended);
+    btn.classList.toggle('btn-outline-primary', btn.dataset.marketAction === 'connection' && !isRecommended);
+    btn.classList.toggle('btn-outline-secondary', btn.dataset.marketAction === 'scope' && !isRecommended);
+    btn.classList.toggle('btn-outline-warning', btn.dataset.marketAction === 'retry' && !isRecommended);
+    if (btn.dataset.marketAction === 'retry' && isRecommended) {
+      btn.classList.add('btn-warning');
+      btn.classList.remove('btn-outline-warning');
+    } else if (btn.dataset.marketAction === 'retry') {
+      btn.classList.remove('btn-warning');
+    }
+    if (btn.dataset.marketAction === 'scope' && isRecommended) {
+      btn.classList.remove('btn-outline-secondary');
+    }
+  });
+}
+
 function renderMarketDiagnostic(result, requestedAction='connection') {
+  const card = document.querySelector(`[data-market-card="${result.market}"]`);
   const badge = document.querySelector(`[data-market-badge="${result.market}"]`);
   const summary = document.querySelector(`[data-market-summary="${result.market}"]`);
   const hint = document.querySelector(`[data-market-hint="${result.market}"]`);
   const steps = document.querySelector(`[data-market-steps="${result.market}"]`);
   const detail = document.getElementById('marketDiagnosticsDetail');
+  const causeText = (result.ui && result.ui.cause_text) || result.summary || (result.ui && result.ui.technical_detail) || '상태를 확인하지 못했습니다.';
+  const actionText = (result.ui && result.ui.action_text) || result.hint || '운영 가이드를 확인한 뒤 다시 시도하세요.';
+
+  if (card) {
+    card.dataset.marketState = result.status || 'api_error';
+  }
 
   if (badge && result.ui) {
-    badge.className = `badge ${result.ui.badge_class}`;
-    badge.textContent = result.ui.badge_label;
+    badge.className = result.ui.badge_class;
+    badge.textContent = result.ui.badge_text || result.ui.badge_label;
     badge.dataset.status = result.status || result.ui.badge_label;
   }
 
   if (summary) {
-    const technical = result.ui && result.ui.technical_detail ? ` · 원인: ${result.ui.technical_detail}` : '';
-    summary.textContent = `${result.summary || '연동 상태를 확인했습니다.'}${technical}`;
+    summary.textContent = result.status === 'connected'
+      ? `검증 완료: ${result.summary || '연동 상태를 확인했습니다.'}`
+      : `원인 요약: ${causeText}`;
   }
 
   if (hint) {
-    const scopeGuide = requestedAction === 'scope' ? `필수 권한: ${(result.required_scopes || []).join(', ')}` : '';
-    hint.textContent = [result.hint || '', scopeGuide].filter(Boolean).join(' · ');
+    hint.textContent = formatMarketSupportMessage(causeText, actionText);
   }
 
   if (steps) {
@@ -326,13 +363,13 @@ function renderMarketDiagnostic(result, requestedAction='connection') {
   }
 
   if (detail) {
-    detail.textContent = `${result.label}: ${(result.check_locations || []).join(' · ')} / 가이드 ${result.docs_path}`;
+    const technical = result.ui && result.ui.technical_detail ? ` / 세부: ${result.ui.technical_detail}` : '';
+    detail.textContent = `${result.label}: ${formatMarketSupportMessage(causeText, actionText)}${technical} / 확인 위치 ${(result.check_locations || []).join(' · ')} / 가이드 ${result.docs_path}`;
   }
 
-  const disabledReason = requestedAction === 'scope'
-    ? `권한 확인: ${(result.required_scopes || []).join(', ')}`
-    : ((result.ui && result.ui.disabled_reason) || '최신 진단 반영 완료');
+  const disabledReason = `다음 액션: ${actionText}`;
   setMarketButtonsDisabled(result.market, false, disabledReason);
+  setRecommendedMarketAction(result.market, (result.ui && result.ui.recommended_action) || requestedAction);
 }
 
 function updateMarketDiagnosticsSummary(results) {
@@ -341,7 +378,7 @@ function updateMarketDiagnosticsSummary(results) {
   const connected = results.filter(result => result.status === 'connected').length;
   const degraded = results.length - connected;
   summary.className = `badge ${degraded ? 'bg-warning text-dark' : 'bg-success'}`;
-  summary.textContent = `connected ${connected} / 점검 필요 ${degraded}`;
+  summary.textContent = `정상 연결 ${connected} / 조치 필요 ${degraded}`;
 }
 
 function refreshAllMarketDiagnostics() {
@@ -359,7 +396,7 @@ function refreshAllMarketDiagnostics() {
     .then(r => r.json())
     .then(data => {
       if (!data.ok) {
-        showToast(data.error || '마켓 연동 진단 실패', 'danger');
+        showToast(formatMarketSupportMessage(data.error || '마켓 연동 진단에 실패했습니다.', '재시도 버튼으로 다시 실행하세요.'), 'danger');
         return;
       }
       (data.results || []).forEach(result => renderMarketDiagnostic(result));
@@ -367,8 +404,9 @@ function refreshAllMarketDiagnostics() {
       showToast('마켓 실연동 진단이 완료되었습니다.');
     })
     .catch(err => {
-      if (detail) detail.textContent = err.message;
-      showToast('마켓 연동 진단 실패: ' + err.message, 'danger');
+      const message = formatMarketSupportMessage(err.message, '네트워크 상태를 확인한 뒤 재시도 버튼으로 다시 실행하세요.');
+      if (detail) detail.textContent = message;
+      showToast(message, 'danger');
     })
     .finally(() => {
       if (btn) {
@@ -399,12 +437,14 @@ function runMarketDiagnostic(market, requestedAction) {
       if (data.result.ok) {
         showToast(`${data.result.label} ${requestedAction === 'scope' ? '권한' : '연결'} 확인 완료`);
       } else {
-        showToast(data.result.hint || `${data.result.label} 진단 실패`, 'danger');
+        const causeText = (data.result.ui && data.result.ui.cause_text) || data.result.summary;
+        const actionText = (data.result.ui && data.result.ui.action_text) || data.result.hint;
+        showToast(formatMarketSupportMessage(causeText, actionText), 'danger');
       }
     })
     .catch(err => {
       setMarketButtonsDisabled(market, false, `재시도 가능: ${err.message}`);
-      showToast(`${market} 진단 실패: ${err.message}`, 'danger');
+      showToast(formatMarketSupportMessage(err.message, '재시도 버튼으로 다시 실행하세요.'), 'danger');
     });
 }
 

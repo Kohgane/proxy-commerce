@@ -85,9 +85,11 @@ class TestMarketsOverview:
         resp = client.get("/seller/markets")
         assert resp.status_code == 200
         html = resp.get_data(as_text=True)
+        assert "Phase 188" in html
         assert "연결 확인" in html
         assert "권한 확인" in html
         assert "재시도" in html
+        assert "원인:" in html
 
 
 # ---------------------------------------------------------------------------
@@ -269,7 +271,7 @@ class TestMarketIntegrationDiagnosticsApi:
                     {"ok": True, "market": market, "step": "write_dry_run", "error_code": "", "hint": "ok", "detail": "dry_run", "raw": {}},
                 ],
                 "checked_at": "2026-06-10T00:00:00+00:00",
-                "ui": {"badge_label": "connected", "badge_class": "bg-success", "summary": "ok", "hint": "ok", "technical_detail": "", "disabled_reason": ""},
+                "ui": {"badge_label": "connected", "badge_class": "pc-market-badge pc-market-badge-connected", "badge_text": "✅ 연결됨", "summary": "ok", "hint": "ok", "cause_text": "read 연결 확인 + safe write dry-run 검증 완료", "action_text": "추가 조치 없이 마지막 성공 시간과 판매자센터 결과를 함께 점검하세요.", "recommended_action": "connection", "technical_detail": "", "disabled_reason": ""},
             },
         )
 
@@ -304,7 +306,7 @@ class TestMarketIntegrationDiagnosticsApi:
                         {"ok": False, "market": "coupang", "step": "read_connection", "error_code": "token_missing", "hint": "env 누락", "detail": "missing", "raw": {}},
                     ],
                     "checked_at": "2026-06-10T00:00:00+00:00",
-                    "ui": {"badge_label": "token_missing", "badge_class": "bg-secondary", "summary": "missing", "hint": "env", "technical_detail": "missing", "disabled_reason": "필수 환경변수/시크릿을 먼저 등록하세요."},
+                    "ui": {"badge_label": "token_missing", "badge_class": "pc-market-badge pc-market-badge-token-missing", "badge_text": "🪪 토큰 없음", "summary": "missing", "hint": "env", "cause_text": "필수 env 누락", "action_text": "마켓 설정에서 필수 토큰/시크릿을 등록한 뒤 연결 확인을 다시 실행하세요.", "recommended_action": "connection", "technical_detail": "missing", "disabled_reason": "필수 환경변수/시크릿을 먼저 등록하세요."},
                 }
             ],
         )

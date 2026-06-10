@@ -21,6 +21,7 @@ const typeaheadState = {
   suggestions: [],
   debounceTimer: null,
 };
+let pendingBulkAction = null;
 
 function normalizeCourierText(value) {
   // 검색 매칭을 위해 공백/하이픈/언더스코어를 제거한 정규화 문자열을 만든다.
@@ -282,6 +283,80 @@ function getRetryHint(statusCode) {
   return "";
 }
 
+function formatOperatorGuidance(cause, action) {
+  const parts = [];
+  if (cause) parts.push(`원인: ${cause}`);
+  if (action) parts.push(`조치: ${action}`);
+  return parts.join(" · ");
+}
+
+function setInlineFeedback(element, tone, message) {
+  if (!element) return;
+  element.className = `pc-inline-feedback pc-inline-feedback-${tone}`;
+  element.textContent = message;
+  element.classList.remove("d-none");
+}
+
+function resetInlineFeedback(element) {
+  if (!element) return;
+  element.className = "pc-inline-feedback d-none";
+  element.textContent = "";
+}
+
+function getOrderFeedbackElement(marketplace, orderId) {
+  const key = `${marketplace}::${orderId}`;
+  return document.querySelector(`[data-order-feedback="${key}"]`);
+}
+
+function setOrderRowFeedback(marketplace, orderId, tone, message) {
+  setInlineFeedback(getOrderFeedbackElement(marketplace, orderId), tone, message);
+}
+
+function resetOrderRowFeedback(marketplace, orderId) {
+  resetInlineFeedback(getOrderFeedbackElement(marketplace, orderId));
+}
+
+function setModalFeedback(elementId, tone, message) {
+  setInlineFeedback(document.getElementById(elementId), tone, message);
+}
+
+function resetModalFeedback(elementId) {
+  resetInlineFeedback(document.getElementById(elementId));
+}
+
+function openBulkActionConfirm({ title, summary, impact, confirmText, onConfirm }) {
+  const modalEl = document.getElementById("bulkActionConfirmModal");
+  if (!modalEl) return;
+  const titleEl = document.getElementById("bulkActionConfirmLabel");
+  const summaryEl = document.getElementById("bulkActionConfirmSummary");
+  const impactEl = document.getElementById("bulkActionConfirmImpact");
+  const confirmButton = document.getElementById("bulkActionConfirmButton");
+  if (titleEl) titleEl.textContent = title || "선택 주문 실행 확인";
+  if (summaryEl) summaryEl.textContent = summary || "선택한 주문에 액션을 실행합니다.";
+  if (impactEl) impactEl.textContent = impact || "대상 수와 영향 범위를 확인하세요.";
+  if (confirmButton) confirmButton.textContent = confirmText || "실행";
+  pendingBulkAction = onConfirm;
+  new bootstrap.Modal(modalEl).show();
+}
+
+async function confirmBulkAction() {
+  if (!pendingBulkAction) return;
+  const confirmButton = document.getElementById("bulkActionConfirmButton");
+  const action = pendingBulkAction;
+  pendingBulkAction = null;
+  if (window.setButtonLoading) {
+    window.setButtonLoading(confirmButton, true, "실행 중…");
+  }
+  bootstrap.Modal.getInstance(document.getElementById("bulkActionConfirmModal"))?.hide();
+  try {
+    await action();
+  } finally {
+    if (window.setButtonLoading) {
+      window.setButtonLoading(confirmButton, false);
+    }
+  }
+}
+
 /** 동기화 버튼 핸들러 */
 async function syncNow() {
   const btn = document.getElementById("ordersSyncButton");
@@ -326,6 +401,8 @@ function openTrackingModal(marketplace, orderId) {
   document.getElementById("tm-order-id").value = orderId;
   document.getElementById("tm-courier").value = "";
   document.getElementById("tm-tracking-no").value = "";
+  resetModalFeedback("trackingModalFeedback");
+  resetOrderRowFeedback(marketplace, orderId);
   closeCourierSuggestions();
   const modal = new bootstrap.Modal(document.getElementById("trackingModal"));
   modal.show();
@@ -335,7 +412,7 @@ function openTrackingModal(marketplace, orderId) {
 function openBulkTrackingModal() {
   const selectedOrders = getSelectedOrders();
   if (!selectedOrders.length) {
-    showToast("운송장을 등록할 주문을 먼저 선택하세요.", "warning");
+    showToast(formatOperatorGuidance("선택된 주문이 없습니다.", "주문을 1건 이상 선택한 뒤 다시 시도하세요."), "warning");
     return;
   }
 
@@ -344,6 +421,7 @@ function openBulkTrackingModal() {
   const courierInput = document.getElementById("btm-courier");
   if (!rowsEl || !summaryEl || !courierInput) return;
 
+  resetModalFeedback("bulkTrackingModalFeedback");
   summaryEl.textContent = `${selectedOrders.length}건의 주문에 공통 택배사를 적용합니다. 운송장 번호는 주문별로 입력하세요.`;
   courierInput.value = "";
   rowsEl.replaceChildren();
@@ -379,13 +457,18 @@ async function saveTracking() {
   // 저장 시에는 사용자가 입력한 free text를 유지하되 앞뒤 공백만 제거한다.
   const courier = document.getElementById("tm-courier").value.trim();
   const trackingNo = document.getElementById("tm-tracking-no").value.trim();
+  resetModalFeedback("trackingModalFeedback");
 
   if (!courier) {
-    showToast("택배사를 입력하세요.", "warning");
+    const message = formatOperatorGuidance("택배사가 비어 있습니다.", "택배사를 입력한 뒤 다시 저장하세요.");
+    setModalFeedback("trackingModalFeedback", "warning", message);
+    showToast(message, "warning");
     return;
   }
   if (!trackingNo) {
-    showToast("운송장 번호를 입력하세요.", "warning");
+    const message = formatOperatorGuidance("운송장 번호가 비어 있습니다.", "번호를 입력한 뒤 다시 저장하세요.");
+    setModalFeedback("trackingModalFeedback", "warning", message);
+    showToast(message, "warning");
     return;
   }
 
@@ -403,17 +486,24 @@ async function saveTracking() {
     const data = await parseJsonSafe(resp, "운송장 등록");
     if (!resp.ok || !data.ok) {
       const retryHint = getRetryHint(resp.status);
-      showToast("운송장 등록 실패: " + (data.error || "오류") + retryHint, "danger");
+      const message = formatOperatorGuidance(data.error || "운송장 등록에 실패했습니다.", `입력값을 확인한 뒤 다시 시도하세요.${retryHint}`.trim());
+      setModalFeedback("trackingModalFeedback", "danger", message);
+      setOrderRowFeedback(marketplace, orderId, "danger", message);
+      showToast(message, "danger");
       return;
     }
     const modalEl = document.getElementById("trackingModal");
     bootstrap.Modal.getInstance(modalEl)?.hide();
     if (data.ok) {
+      setOrderRowFeedback(marketplace, orderId, "success", `운송장 저장 완료 · ${courier} ${trackingNo}`);
       showToast("운송장이 등록되었습니다.");
       setTimeout(refreshOrders, 1000);
     }
   } catch (e) {
-    showToast("요청 실패: " + e.message + " (네트워크 상태를 확인하고 다시 시도하세요.)", "danger");
+    const message = formatOperatorGuidance(e.message, "네트워크 상태를 확인한 뒤 저장 버튼으로 다시 시도하세요.");
+    setModalFeedback("trackingModalFeedback", "danger", message);
+    setOrderRowFeedback(marketplace, orderId, "danger", message);
+    showToast(message, "danger");
   } finally {
     if (window.setButtonLoading && saveButton) {
       window.setButtonLoading(saveButton, false);
@@ -421,16 +511,21 @@ async function saveTracking() {
   }
 }
 
-async function saveBulkTracking() {
+async function saveBulkTracking(confirmed = false) {
   const courier = document.getElementById("btm-courier")?.value.trim() || "";
+  resetModalFeedback("bulkTrackingModalFeedback");
   if (!courier) {
-    showToast("택배사를 입력하세요.", "warning");
+    const message = formatOperatorGuidance("공통 택배사가 비어 있습니다.", "택배사를 입력한 뒤 다시 저장하세요.");
+    setModalFeedback("bulkTrackingModalFeedback", "warning", message);
+    showToast(message, "warning");
     return;
   }
 
   const inputs = Array.from(document.querySelectorAll(".bulk-tracking-no"));
   if (!inputs.length) {
-    showToast("선택된 주문이 없습니다.", "warning");
+    const message = formatOperatorGuidance("선택된 주문이 없습니다.", "주문을 다시 선택한 뒤 재시도하세요.");
+    setModalFeedback("bulkTrackingModalFeedback", "warning", message);
+    showToast(message, "warning");
     return;
   }
 
@@ -442,12 +537,26 @@ async function saveBulkTracking() {
   }));
   const invalidRows = items.filter((item) => !item.order_id || !item.marketplace);
   if (invalidRows.length) {
-    showToast("선택 주문 정보가 올바르지 않아 일괄 운송장을 저장할 수 없습니다.", "danger");
+    const message = formatOperatorGuidance("선택 주문 정보가 올바르지 않습니다.", "주문 목록을 새로고침한 뒤 다시 시도하세요.");
+    setModalFeedback("bulkTrackingModalFeedback", "danger", message);
+    showToast(message, "danger");
     return;
   }
   const missing = items.filter((item) => !item.tracking_no);
   if (missing.length) {
-    showToast(`운송장 번호가 비어 있는 주문이 ${missing.length}건 있습니다.`, "warning");
+    const message = formatOperatorGuidance(`운송장 번호가 비어 있는 주문이 ${missing.length}건 있습니다.`, "누락된 번호를 입력한 뒤 다시 저장하세요.");
+    setModalFeedback("bulkTrackingModalFeedback", "warning", message);
+    showToast(message, "warning");
+    return;
+  }
+  if (!confirmed) {
+    openBulkActionConfirm({
+      title: "선택 주문 일괄 운송장 등록",
+      summary: `대상 ${items.length}건에 공통 택배사와 운송장 번호를 저장합니다.`,
+      impact: "저장 후 각 주문의 배송 정보가 즉시 갱신됩니다. 잘못 입력하면 운영 혼선이 생길 수 있습니다.",
+      confirmText: "운송장 저장 실행",
+      onConfirm: () => saveBulkTracking(true),
+    });
     return;
   }
 
@@ -462,21 +571,41 @@ async function saveBulkTracking() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ items }),
     });
-    const data = await resp.json();
+    const data = await parseJsonSafe(resp, "일괄 운송장 등록");
     if (!resp.ok) {
-      showToast(data.error || "일괄 운송장 등록 실패", "danger");
+      const message = formatOperatorGuidance(data.error || "일괄 운송장 등록에 실패했습니다.", "잠시 후 다시 시도하거나 diagnostics에서 주문 라우트 상태를 확인하세요.");
+      setModalFeedback("bulkTrackingModalFeedback", "danger", message);
+      showToast(message, "danger");
       return;
     }
+    const results = Array.isArray(data.results) ? data.results : [];
+    results.forEach((item) => {
+      if (item.ok) {
+        setOrderRowFeedback(item.marketplace, item.order_id, "success", "운송장 일괄 저장 완료");
+        return;
+      }
+      setOrderRowFeedback(
+        item.marketplace,
+        item.order_id,
+        "danger",
+        formatOperatorGuidance(item.error || "운송장 저장 실패", "행별 입력값을 확인한 뒤 다시 시도하세요."),
+      );
+    });
     const failedCount = Array.isArray(data.results) ? data.results.filter((item) => !item.ok).length : 0;
     bootstrap.Modal.getInstance(document.getElementById("bulkTrackingModal"))?.hide();
     if (failedCount) {
-      showToast(`일괄 운송장 등록 완료 (${items.length - failedCount}/${items.length}건 성공)`, "warning");
+      showToast(
+        formatOperatorGuidance(`${failedCount}건 저장에 실패했습니다.`, "행 단위 피드백을 확인하고 누락/오류를 수정한 뒤 다시 시도하세요."),
+        "warning",
+      );
     } else {
       showToast(`일괄 운송장 등록 완료 (${items.length}건)`);
+      setTimeout(refreshOrders, REFRESH_DELAY_MS);
     }
-    setTimeout(refreshOrders, REFRESH_DELAY_MS);
   } catch (error) {
-    showToast("일괄 운송장 등록 요청 실패: " + error.message, "danger");
+    const message = formatOperatorGuidance(error.message, "네트워크 상태를 확인한 뒤 다시 시도하세요.");
+    setModalFeedback("bulkTrackingModalFeedback", "danger", message);
+    showToast(message, "danger");
   } finally {
     if (window.setButtonLoading) {
       window.setButtonLoading(saveButton, false);
@@ -533,7 +662,10 @@ const STATUS_TRANSITIONS = {
 function openStatusPrompt(marketplace, orderId, currentStatus) {
   const options = STATUS_TRANSITIONS[currentStatus] || [];
   if (!options.length) {
-    showToast(`현재 상태(${currentStatus})에서는 변경 가능한 다음 상태가 없습니다.`, "warning");
+    showToast(
+      formatOperatorGuidance(`현재 상태(${currentStatus})에서는 가능한 다음 상태가 없습니다.`, "주문 상태를 다시 확인하고 다른 주문을 선택하세요."),
+      "warning",
+    );
     return;
   }
   const statusSelect = document.getElementById("sm-next-status");
@@ -542,6 +674,8 @@ function openStatusPrompt(marketplace, orderId, currentStatus) {
   if (!statusSelect || !reasonInput || !helpEl) return;
   document.getElementById("sm-marketplace").value = marketplace;
   document.getElementById("sm-order-id").value = orderId;
+  resetModalFeedback("statusModalFeedback");
+  resetOrderRowFeedback(marketplace, orderId);
   statusSelect.innerHTML = options.map((status) => `<option value="${status}">${status}</option>`).join("");
   reasonInput.value = "";
   helpEl.textContent = `현재 상태: ${currentStatus} · 가능 값: ${options.join(", ")}`;
@@ -560,10 +694,19 @@ async function updateOrderStatus(marketplace, orderId, nextStatus, reason = "") 
     const data = await parseJsonSafe(resp, "상태 변경");
     if (!resp.ok || !data.ok) {
       const retryHint = getRetryHint(resp.status);
-      showToast((data.error || "상태 변경 실패") + retryHint, "danger");
+      const message = formatOperatorGuidance(data.error || "상태 변경에 실패했습니다.", `주문 상태를 확인한 뒤 다시 시도하세요.${retryHint}`.trim());
+      setModalFeedback("statusModalFeedback", "danger", message);
+      setOrderRowFeedback(marketplace, orderId, "danger", message);
+      showToast(message, "danger");
       return false;
     }
     const simulated = !!(data.adapter && data.adapter.simulated && !data.adapter.applied);
+    setOrderRowFeedback(
+      marketplace,
+      orderId,
+      simulated ? "warning" : "success",
+      simulated ? `상태 저장 완료 · ${nextStatus} (외부 연동 미설정으로 로컬 반영)` : `상태 저장 완료 · ${nextStatus}`,
+    );
     showToast(
       simulated
         ? `상태 저장 완료(${nextStatus}) · 외부 연동 미설정으로 로컬 반영`
@@ -573,7 +716,10 @@ async function updateOrderStatus(marketplace, orderId, nextStatus, reason = "") 
     setTimeout(refreshOrders, REFRESH_DELAY_MS);
     return true;
   } catch (e) {
-    showToast("상태 변경 요청 실패: " + e.message + " (네트워크 확인 후 재시도하세요.)", "danger");
+    const message = formatOperatorGuidance(e.message, "네트워크를 확인한 뒤 저장 버튼으로 다시 시도하세요.");
+    setModalFeedback("statusModalFeedback", "danger", message);
+    setOrderRowFeedback(marketplace, orderId, "danger", message);
+    showToast(message, "danger");
     return false;
   }
 }
@@ -584,7 +730,9 @@ async function submitStatusChange() {
   const nextStatus = document.getElementById("sm-next-status")?.value || "";
   const reason = document.getElementById("sm-reason")?.value.trim() || "";
   if (!nextStatus) {
-    showToast("변경할 상태를 선택하세요.", "warning");
+    const message = formatOperatorGuidance("변경할 상태가 선택되지 않았습니다.", "다음 상태를 선택한 뒤 다시 저장하세요.");
+    setModalFeedback("statusModalFeedback", "warning", message);
+    showToast(message, "warning");
     return;
   }
   const saveButton = document.getElementById("statusSaveButton");
@@ -607,11 +755,14 @@ function openBulkStatusModal() {
   const selectedOrders = getSelectedOrders();
   const allowedStatuses = getAllowedStatusesForSelection(selectedOrders);
   if (!selectedOrders.length) {
-    showToast("상태를 변경할 주문을 먼저 선택하세요.", "warning");
+    showToast(formatOperatorGuidance("선택된 주문이 없습니다.", "주문을 1건 이상 선택한 뒤 다시 시도하세요."), "warning");
     return;
   }
   if (!allowedStatuses.length) {
-    showToast("선택한 주문에 공통으로 적용할 수 있는 다음 상태가 없습니다.", "warning");
+    showToast(
+      formatOperatorGuidance("공통으로 적용할 수 있는 다음 상태가 없습니다.", "같은 상태 흐름을 공유하는 주문만 함께 선택하세요."),
+      "warning",
+    );
     return;
   }
 
@@ -621,6 +772,7 @@ function openBulkStatusModal() {
   const summaryEl = document.getElementById("bulkStatusSelectionSummary");
   if (!select || !reason || !helpEl || !summaryEl) return;
 
+  resetModalFeedback("bulkStatusModalFeedback");
   select.innerHTML = allowedStatuses.map((status) => `<option value="${status}">${status}</option>`).join("");
   reason.value = "";
   summaryEl.textContent = `${selectedOrders.length}건 선택 · 공통으로 가능한 상태만 표시합니다.`;
@@ -631,10 +783,21 @@ function openBulkStatusModal() {
   setTimeout(() => select.focus(), MODAL_FOCUS_DELAY_MS);
 }
 
-async function runBulkStatusChange(nextStatus, reason = "") {
+async function runBulkStatusChange(nextStatus, reason = "", confirmed = false) {
   const selectedOrders = getSelectedOrders();
   if (!selectedOrders.length) {
-    showToast("상태를 변경할 주문을 먼저 선택하세요.", "warning");
+    showToast(formatOperatorGuidance("선택된 주문이 없습니다.", "주문을 다시 선택한 뒤 재시도하세요."), "warning");
+    return false;
+  }
+  resetModalFeedback("bulkStatusModalFeedback");
+  if (!confirmed) {
+    openBulkActionConfirm({
+      title: "선택 주문 일괄 상태 변경",
+      summary: `대상 ${selectedOrders.length}건을 ${nextStatus}(으)로 변경합니다.`,
+      impact: "상태 변경은 마켓 운영 흐름과 CS 처리에 직접 반영됩니다. 대상 주문과 영향을 다시 확인하세요.",
+      confirmText: "상태 변경 실행",
+      onConfirm: () => runBulkStatusChange(nextStatus, reason, true),
+    });
     return false;
   }
 
@@ -653,23 +816,46 @@ async function runBulkStatusChange(nextStatus, reason = "") {
         reason,
       }),
     });
-    const data = await resp.json();
+    const data = await parseJsonSafe(resp, "일괄 상태 변경");
     if (!resp.ok) {
-      showToast(data.error || "일괄 상태 변경 실패", "danger");
+      const message = formatOperatorGuidance(data.error || "일괄 상태 변경에 실패했습니다.", "잠시 후 다시 시도하거나 diagnostics에서 주문 라우트 상태를 확인하세요.");
+      setModalFeedback("bulkStatusModalFeedback", "danger", message);
+      showToast(message, "danger");
       return false;
     }
     const successCount = data.success_count || 0;
     const failedCount = data.failed_count || 0;
+    const results = Array.isArray(data.results) ? data.results : [];
+    results.forEach((item) => {
+      if (item.ok) {
+        setOrderRowFeedback(
+          item.marketplace,
+          item.order_id,
+          item.unchanged ? "warning" : "success",
+          item.unchanged ? `상태 유지 완료 · ${item.status || nextStatus}` : `상태 저장 완료 · ${item.status || nextStatus}`,
+        );
+        return;
+      }
+      const action = Array.isArray(item.allowed) && item.allowed.length
+        ? `허용 상태(${item.allowed.join(", ")}) 중 하나를 선택한 뒤 다시 시도하세요.`
+        : "현재 주문 상태와 마켓 권한을 확인한 뒤 다시 시도하세요.";
+      setOrderRowFeedback(item.marketplace, item.order_id, "danger", formatOperatorGuidance(item.error || "상태 변경 실패", action));
+    });
     bootstrap.Modal.getInstance(document.getElementById("bulkStatusModal"))?.hide();
     if (failedCount) {
-      showToast(`일괄 상태 변경 완료 (${successCount}/${successCount + failedCount}건 성공)`, "warning");
+      showToast(
+        formatOperatorGuidance(`${failedCount}건 상태 변경에 실패했습니다.`, "행 단위 피드백을 확인하고 상태 흐름을 조정한 뒤 다시 시도하세요."),
+        "warning",
+      );
     } else {
       showToast(`선택 주문 ${successCount}건을 ${nextStatus}(으)로 변경했습니다.`);
+      setTimeout(refreshOrders, REFRESH_DELAY_MS);
     }
-    setTimeout(refreshOrders, REFRESH_DELAY_MS);
     return true;
   } catch (error) {
-    showToast("일괄 상태 변경 요청 실패: " + error.message, "danger");
+    const message = formatOperatorGuidance(error.message, "네트워크 상태를 확인한 뒤 다시 시도하세요.");
+    setModalFeedback("bulkStatusModalFeedback", "danger", message);
+    showToast(message, "danger");
     return false;
   } finally {
     if (window.setButtonLoading && saveButton) {
@@ -682,20 +868,31 @@ async function submitBulkStatusChange() {
   const nextStatus = document.getElementById("bsm-next-status")?.value || "";
   const reason = document.getElementById("bsm-reason")?.value.trim() || "";
   if (!nextStatus) {
-    showToast("변경할 상태를 선택하세요.", "warning");
+    const message = formatOperatorGuidance("변경할 상태가 선택되지 않았습니다.", "다음 상태를 선택한 뒤 다시 시도하세요.");
+    setModalFeedback("bulkStatusModalFeedback", "warning", message);
+    showToast(message, "warning");
     return;
   }
-  await runBulkStatusChange(nextStatus, reason);
+  await runBulkStatusChange(nextStatus, reason, false);
 }
 
 function bulkUpdateSelectedStatus(nextStatus) {
   const allowedStatuses = getAllowedStatusesForSelection(getSelectedOrders());
   if (!allowedStatuses.includes(nextStatus)) {
-    showToast("선택한 주문에 공통으로 적용할 수 없는 상태입니다.", "warning");
+    showToast(
+      formatOperatorGuidance("선택한 주문에 공통으로 적용할 수 없는 상태입니다.", "같은 상태 흐름을 공유하는 주문만 선택한 뒤 다시 시도하세요."),
+      "warning",
+    );
     return;
   }
-  runBulkStatusChange(nextStatus);
+  runBulkStatusChange(nextStatus, "", false);
 }
 
 initCourierTypeahead();
 initOrderSelection();
+document.getElementById("tm-tracking-no")?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    document.getElementById("trackingSaveButton")?.focus();
+  }
+});
