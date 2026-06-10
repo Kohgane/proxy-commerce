@@ -477,6 +477,33 @@ class TestDashboardHomeContext:
         assert onboarding["visible"] is True
 
 
+class TestDashboardResilience:
+    """대시보드는 하위 위젯 서비스가 실패해도 500 없이 정직하게 degrade한다."""
+
+    def test_dashboard_200_when_widget_builder_raises(self, client):
+        """build_all_widgets()가 예외를 던져도 대시보드는 200으로 렌더된다."""
+        with patch(
+            "src.seller_console.widgets.build_all_widgets",
+            side_effect=RuntimeError("sheets unavailable"),
+        ):
+            resp = client.get("/seller/dashboard")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        # 위젯이 없어도 핵심 섹션 골격은 유지된다(빈 상태 degrade)
+        assert "마켓 연동 상태" in html
+        assert "마켓별 등록/동기화 현황" in html
+        assert "실시간 환율" in html
+
+    def test_dashboard_renders_empty_states_with_no_widgets(self, client):
+        """위젯이 비어도 최근 활동/최근 상품 영역의 빈 상태가 정직하게 표시된다."""
+        with patch("src.seller_console.widgets.build_all_widgets", return_value=[]):
+            resp = client.get("/seller/dashboard")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "최근 활동이 없습니다." in html
+        assert "표시할 최근 상품이 없습니다." in html
+
+
 # ---------------------------------------------------------------------------
 # 3. ManualCollectorService — 어댑터 라우팅 + 스키마 검증
 # ---------------------------------------------------------------------------
