@@ -262,7 +262,7 @@ function syncMarket(marketplace) {
   })
   .then(r => r.json())
   .then(data => {
-    if (data.error) {
+    if (data.ok === false || data.error) {
       showToast(data.error || '동기화 실패', 'danger');
       return;
     }
