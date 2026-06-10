@@ -198,7 +198,7 @@ class UploadDispatcher:
 
         # 이미지 URL 접근성 (첫 번째 이미지만 HEAD 체크, 타임아웃 3초)
         images = product_data.get("images")
-        if images and isinstance(images, list) and images:
+        if images and isinstance(images, list):
             first_img = str(images[0]).strip()
             if first_img.startswith("http"):
                 try:
