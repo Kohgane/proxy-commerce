@@ -96,6 +96,16 @@
 - **교체 대상(8개 페이지)**: `pricing_rules`, `pricing_competitors`, `pricing_fx_impact`,
   `pricing_history`, `discovery`, `discovery_keywords`, `me`, `personal_tokens`, `collect_preview`.
   - 성공/실패 톤 구분, `location.reload()` 직전 성공 토스트는 1.2초 지연 후 새로고침으로 가시성 확보.
-- **유지(honest)**: 파괴적 동작의 `confirm(...)`은 의도적으로 유지(실제 동작하는 차단형 확인).
-  `bookmarklet.html`의 외부 실행 코드 내부 `alert(...)` 2건은 콘솔 밖 컨텍스트라 유지.
-- **회귀 테스트**: `tests/test_dead_buttons_phase191.py` 19개(전역 토스트 인프라 + 8개 페이지 alert 제거 검증).
+- **`bookmarklet.html`의 외부 실행 코드 내부 `alert(...)` 2건은 콘솔 밖 컨텍스트라 유지.**
+- **회귀 테스트**: `tests/test_dead_buttons_phase191.py`(전역 토스트/확인 모달 인프라 + 페이지별 검증).
+
+### 추가: 네이티브 confirm() → 전역 확인 모달(pcConfirm)
+
+- **전역 확인 모달 인프라**: `_base.html`에 `#pcConfirmModal`, `seller.js`에 Promise 기반
+  `pcConfirm(message, {title, confirmLabel, cancelLabel, danger})` 추가.
+  - `await pcConfirm(...)` 형태로 사용, 개행(`\n`) 보존, XSS 방지(textContent),
+    bootstrap/모달 미존재 시 네이티브 `confirm` 폴백.
+- **전환 대상(11개 호출 / 7개 페이지)**: `pricing_rules`(룰 삭제·로그인 이동·가격 적용 dry/실변경 2단),
+  `pricing_competitors`(삭제), `pricing_fx_impact`(재가격), `pricing_history`(롤백),
+  `discovery_keywords`(삭제), `me`(탈퇴), `personal_tokens`(회수).
+  - 파괴적 동작은 `danger`(빨강 확인), 비파괴(재가격/롤백/로그인 이동)는 `danger:false`(파랑)로 톤 구분.

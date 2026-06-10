@@ -167,7 +167,7 @@ function copyToken() {
 
 document.querySelectorAll('.revoke-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
-    if (!confirm('이 토큰을 회수하시겠습니까? 회수 후 복구할 수 없습니다.')) return;
+    if (!(await pcConfirm('이 토큰을 회수하시겠습니까? 회수 후 복구할 수 없습니다.', {title: '토큰 회수', confirmLabel: '회수'}))) return;
     const hash = btn.dataset.hash;
     try {
       const resp = await fetch('/seller/me/tokens/revoke', {

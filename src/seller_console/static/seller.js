@@ -116,6 +116,55 @@ function pcToast(message, type = 'info') {
   }
 }
 
+/**
+ * 전역 확인 모달 (pcConfirm) — 차단형 네이티브 confirm()을 대체한다.
+ * Promise<boolean>을 반환하므로 `if (!(await pcConfirm('...'))) return;` 형태로 사용.
+ * `_base.html`의 #pcConfirmModal을 재사용하며, bootstrap/모달이 없으면 네이티브 confirm 폴백.
+ * @param {string} message - 본문 메시지 (개행 \n 지원, textContent로 안전 삽입)
+ * @param {object} [options] - {title, confirmLabel, cancelLabel, danger}
+ * @returns {Promise<boolean>}
+ */
+function pcConfirm(message, options = {}) {
+  return new Promise((resolve) => {
+    const modalEl = document.getElementById('pcConfirmModal');
+    if (!modalEl || typeof bootstrap === 'undefined' || !bootstrap.Modal) {
+      resolve(window.confirm(message));
+      return;
+    }
+    const titleEl = document.getElementById('pcConfirmTitle');
+    const bodyEl = document.getElementById('pcConfirmBody');
+    const okBtn = document.getElementById('pcConfirmOk');
+    const cancelBtn = document.getElementById('pcConfirmCancel');
+
+    if (titleEl) titleEl.textContent = options.title || '확인';
+    // 개행을 보존하면서 XSS 없이 삽입
+    if (bodyEl) {
+      bodyEl.textContent = '';
+      String(message).split('\n').forEach((line, idx) => {
+        if (idx > 0) bodyEl.appendChild(document.createElement('br'));
+        bodyEl.appendChild(document.createTextNode(line));
+      });
+    }
+    if (okBtn) {
+      okBtn.textContent = options.confirmLabel || '확인';
+      okBtn.className = 'btn btn-' + (options.danger === false ? 'primary' : 'danger');
+    }
+    if (cancelBtn) cancelBtn.textContent = options.cancelLabel || '취소';
+
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    let settled = false;
+    const onOk = () => { settled = true; cleanup(); modal.hide(); resolve(true); };
+    const onHide = () => { if (!settled) { cleanup(); resolve(false); } };
+    function cleanup() {
+      if (okBtn) okBtn.removeEventListener('click', onOk);
+      modalEl.removeEventListener('hidden.bs.modal', onHide);
+    }
+    if (okBtn) okBtn.addEventListener('click', onOk);
+    modalEl.addEventListener('hidden.bs.modal', onHide);
+    modal.show();
+  });
+}
+
 function setButtonLoading(button, isLoading, loadingText = '처리 중…') {
   if (!button) return;
   if (isLoading) {

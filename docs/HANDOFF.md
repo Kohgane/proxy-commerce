@@ -158,6 +158,23 @@
 - `tests/test_dead_buttons_phase191.py`: 19개 신규 (전역 토스트 인프라 + 8개 페이지 alert 제거).
 - 뷰/템플릿 범위 858개 통과, 회귀 없음.
 
+### 추가 작업 (오너 "나열한 순서대로" 지시 — 2026-06-10)
+
+**① 마켓 업로드 전체 경로(E2E) 검증 고정**
+- `/seller/collect/upload` → `UploadDispatcher.dispatch` → 실제 `_upload_shopify` 경로를 타되
+  라이브 연동 경계(`ShopifyAdapter`)만 목 처리하여 정합성 고정.
+  - 라이브 성공: result에 `external_product_id`/`external_url`, `succeeded` 집계 + UI가 "상품 페이지 열기" 링크 렌더.
+  - API 실패(401 등): `error_code=api_error` + 조치 hint(SHOPIFY_AUTO_TOKEN) → UI "💡 조치 / 오류코드" 렌더.
+  - 검증 실패: `error_code=validation_failed`. 업로드 중 예외도 500 없이 항목 단위 실패로 정직 보고.
+  - `tests/test_collect_upload_e2e.py` 5개 신규.
+  - ⚠️ 실 운영 시크릿 대조(라이브 실등록) 검증은 **운영 환경에서 오너가 `/admin/diagnostics`·셀러
+    마켓 센터로 별도 수행 필요** (CI엔 시크릿 없음).
+
+**② 네이티브 confirm() → 전역 확인 모달(pcConfirm)**
+- `_base.html` `#pcConfirmModal` + `seller.js` Promise 기반 `pcConfirm()`. 11개 호출/7개 페이지 전환.
+  파괴적 동작은 빨강 확인, 비파괴는 파랑으로 톤 구분. 상세는 `dead_button_audit.md`.
+
 ### 다음 단계 (백로그)
-- `confirm(...)` 차단형 확인 다이얼로그 → 스타일드 모달 전환(디테일 폴리시, 후속 후보).
-- `_base_app.html`/대시보드 등 셀러 콘솔 밖 화면의 토스트 통일.
+- ③ 셀러 대시보드 화면 정밀 점검 (빈 상태/로딩/에러/네비게이션 UX) — 진행 예정.
+- ④ 쿠팡/스마트스토어/11번가 실 채널 업로더 모듈 연결 (현재 큐 적재 방식).
+- `_base_app.html`/대시보드 등 셀러 콘솔 밖 화면의 토스트/확인 모달 통일.

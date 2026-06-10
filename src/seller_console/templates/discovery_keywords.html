@@ -74,7 +74,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 document.querySelectorAll('.remove-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
     const keyword = btn.dataset.keyword;
-    if (!confirm(`"${keyword}" 키워드를 삭제하시겠습니까?`)) return;
+    if (!(await pcConfirm(`"${keyword}" 키워드를 삭제하시겠습니까?`, {title: '키워드 삭제', confirmLabel: '삭제'}))) return;
     try {
       const resp = await fetch('/seller/discovery/keywords/remove', {
         method: 'POST',

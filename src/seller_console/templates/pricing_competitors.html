@@ -81,7 +81,7 @@ async function createTarget() {
 }
 
 async function removeTarget(id) {
-  if (!confirm('삭제할까요?')) return;
+  if (!(await pcConfirm('이 경쟁사 모니터링 대상을 삭제할까요?', {title: '경쟁사 삭제', confirmLabel: '삭제'}))) return;
   const res = await fetch(`/seller/pricing/competitors/${id}/delete`, {method: 'POST'});
   const d = await res.json();
   if (d.ok) location.reload();

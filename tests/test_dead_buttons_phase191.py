@@ -81,6 +81,59 @@ class TestPagesNoBlockingAlert:
         assert "pcToastContainer" in body, f"{path}에 전역 토스트 컨테이너가 없습니다"
 
 
+class TestGlobalConfirmInfra:
+    """전역 pcConfirm(모달) 인프라가 베이스 레이아웃/공통 스크립트에 존재한다."""
+
+    def test_base_template_has_confirm_modal(self):
+        path = os.path.join(ROOT, "src/seller_console/templates/_base.html")
+        with open(path, encoding="utf-8") as f:
+            base = f.read()
+        assert "pcConfirmModal" in base, "_base.html에 전역 확인 모달이 있어야 합니다"
+
+    def test_seller_js_defines_pcconfirm(self):
+        path = os.path.join(ROOT, "src/seller_console/static/seller.js")
+        with open(path, encoding="utf-8") as f:
+            js = f.read()
+        assert "function pcConfirm" in js
+        # Promise 기반이어야 await 사용 가능
+        assert "return new Promise" in js
+
+
+# 네이티브 confirm()이 제거되고 pcConfirm으로 전환되어야 하는 페이지들.
+CONFIRM_PAGES = [
+    "/seller/pricing/rules",
+    "/seller/pricing/competitors",
+    "/seller/pricing/fx-impact",
+    "/seller/pricing/history",
+    "/seller/discovery/keywords",
+    "/seller/me",
+    "/seller/me/tokens",
+]
+
+
+class TestPagesUsePcConfirm:
+    """대상 페이지가 차단형 네이티브 confirm() 대신 pcConfirm을 사용한다."""
+
+    @pytest.mark.parametrize("path", CONFIRM_PAGES)
+    def test_no_native_confirm_call(self, client, path):
+        resp = client.get(path)
+        if resp.status_code != 200:
+            pytest.skip(f"{path} → {resp.status_code} (환경 의존)")
+        body = resp.data.decode("utf-8")
+        # pcConfirm(은 허용, 단독 confirm( 호출은 금지.
+        leftover = body.replace("pcConfirm(", "")
+        assert "confirm(" not in leftover, f"{path}에 네이티브 confirm() 호출이 남아있습니다"
+        assert "pcConfirm(" in body, f"{path}가 pcConfirm으로 전환되어야 합니다"
+
+    @pytest.mark.parametrize("path", CONFIRM_PAGES)
+    def test_has_confirm_modal(self, client, path):
+        resp = client.get(path)
+        if resp.status_code != 200:
+            pytest.skip(f"{path} → {resp.status_code} (환경 의존)")
+        body = resp.data.decode("utf-8")
+        assert "pcConfirmModal" in body
+
+
 class TestBookmarkletKeepsExternalAlert:
     """북마클릿 페이지는 외부 실행 코드의 alert()를 유지하되 콘솔 UI는 pcToast를 쓴다."""
 

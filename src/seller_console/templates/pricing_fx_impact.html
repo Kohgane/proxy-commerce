@@ -55,7 +55,7 @@
 {% block extra_js %}
 <script>
 async function bulkReprice() {
-  if (!confirm('영향 상품 기준으로 재가격을 실행할까요?')) return;
+  if (!(await pcConfirm('영향 상품 기준으로 재가격을 실행할까요?', {title: '재가격 실행', confirmLabel: '실행', danger: false}))) return;
   const res = await fetch('/seller/pricing/fx-impact/reprice?dry_run=1', {method: 'POST'});
   const d = await res.json();
   if (!d.ok) return pcToast(d.error || '실패', 'error');

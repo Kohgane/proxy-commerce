@@ -120,8 +120,8 @@
 {% endif %}
 
 <script>
-function confirmDeactivate() {
-  if (!confirm('정말 탈퇴하시겠습니까? 계정이 비활성화됩니다.')) return;
+async function confirmDeactivate() {
+  if (!(await pcConfirm('정말 탈퇴하시겠습니까? 계정이 비활성화됩니다.', {title: '회원 탈퇴', confirmLabel: '탈퇴'}))) return;
   fetch('/seller/me/deactivate', {method: 'POST'})
     .then(r => r.json())
     .then(d => {
