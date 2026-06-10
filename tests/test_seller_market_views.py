@@ -189,7 +189,8 @@ class TestMarketsSyncApi:
         )
         assert resp.status_code == 200
         data = resp.get_json()
-        assert "coupang" in data
+        assert data["ok"] is True
+        assert "coupang" in data["results"]
 
     def test_sync_empty_body_defaults_to_all(self, client):
         """POST /seller/markets/sync (빈 body) → 200."""
@@ -208,7 +209,8 @@ class TestMarketsSyncApi:
             content_type="application/json",
         )
         data = resp.get_json()
-        for v in data.values():
+        assert data["ok"] is True
+        for v in data["results"].values():
             assert isinstance(v, int)
 
 

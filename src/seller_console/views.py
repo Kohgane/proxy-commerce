@@ -2236,7 +2236,7 @@ def markets_sync():
             results = {m: svc.sync_marketplace(m) for m in svc.live_adapters}
         else:
             results = {marketplace: svc.sync_marketplace(marketplace)}
-        return jsonify(results)
+        return jsonify({"ok": True, "results": results})
     except Exception as exc:
         logger.warning("markets_sync API 오류: %s", exc)
         return jsonify({"error": "동기화 중 오류가 발생했습니다."}), 500

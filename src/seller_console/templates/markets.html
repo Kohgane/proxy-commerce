@@ -262,11 +262,11 @@ function syncMarket(marketplace) {
   })
   .then(r => r.json())
   .then(data => {
-    if (data.ok === false || data.error) {
+    if (!data.ok) {
       showToast(data.error || '동기화 실패', 'danger');
       return;
     }
-    const results = data.results || data || {};
+    const results = data.results || {};
     const total = Object.values(results).reduce((a, b) => a + (Number(b) || 0), 0);
     showToast(`동기화 완료: ${total}개 항목 갱신`);
     setTimeout(() => location.reload(), 1500);
