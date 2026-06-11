@@ -62,7 +62,8 @@
       <li><a class="console-nav-link {% if _path.startswith('/seller/pricing/fx-impact') %}active{% endif %}" href="/seller/pricing/fx-impact"><i class="bi bi-currency-exchange"></i><span>환율 영향</span></a></li>
 
       <li class="console-nav-group-title">마켓</li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/markets') or _path.startswith('/seller/market-status') %}active{% endif %}" href="/seller/markets"><i class="bi bi-shop"></i><span>마켓 연동/현황</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/markets') and not _path.startswith('/seller/markets/connect') or _path.startswith('/seller/market-status') %}active{% endif %}" href="/seller/markets"><i class="bi bi-shop"></i><span>마켓 연동/현황</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/markets/connect') %}active{% endif %}" href="/seller/markets/connect"><i class="bi bi-plug"></i><span>마켓 연결(키 설정)</span></a></li>
 
       <li class="console-nav-group-title">운영</li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/orders') %}active{% endif %}" href="/seller/orders"><i class="bi bi-receipt"></i><span>주문 관리</span></a></li>

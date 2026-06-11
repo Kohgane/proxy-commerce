@@ -1,0 +1,173 @@
+{% extends "_base.html" %}
+{% block title %}마켓 연결{% endblock %}
+
+{% block content %}
+<section class="mb-4">
+  <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+    <div>
+      <h1 class="h4 mb-1">마켓 연결</h1>
+      <p class="text-muted mb-0">내 마켓 API 키를 직접 입력하고, 저장 전에 연결을 테스트할 수 있어요.</p>
+    </div>
+    <a href="/seller/markets" class="btn btn-outline-secondary btn-sm">← 마켓 현황으로</a>
+  </div>
+
+  <div class="alert alert-light border d-flex gap-2 align-items-start mb-4" role="note">
+    <i class="bi bi-shield-lock text-primary"></i>
+    <div class="small mb-0">
+      입력한 키는 <strong>암호화되어 저장</strong>됩니다(서버에 <code>MARKET_CRED_ENC_KEY</code> 설정 시).
+      <strong>연결 테스트</strong>는 실제 마켓에 읽기/안전한 빈 쓰기만 시도하며 상품을 등록하지 않습니다.
+    </div>
+  </div>
+
+  <div class="row g-3">
+    {% for m in market_statuses %}
+    <div class="col-12 col-lg-6">
+      <div class="card console-card h-100" data-market="{{ m.market }}">
+        <div class="card-body">
+          <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+            <h2 class="h6 mb-0">{{ m.label }}</h2>
+            <span class="badge rounded-pill {{ 'text-bg-success' if m.connected else 'text-bg-secondary' }}"
+                  data-role="status-badge">
+              {{ '✅ 연결됨' if m.connected else '🪪 미연결' }}
+            </span>
+          </div>
+
+          <form class="market-connect-form" data-market="{{ m.market }}" autocomplete="off">
+            {% for f in m.fields %}
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                {{ f.label }}
+                {% if f.required %}<span class="text-danger">*</span>{% endif %}
+                {% if f.from_global %}<span class="badge text-bg-light ms-1">서버 환경변수 사용 중</span>{% endif %}
+              </label>
+              <input
+                type="{{ 'password' if f.secret else 'text' }}"
+                class="form-control form-control-sm"
+                name="{{ f.env }}"
+                data-secret="{{ '1' if f.secret else '0' }}"
+                placeholder="{{ '저장됨 (' ~ f.display ~ ')' if (f.has_value and f.secret) else (f.display or f.env) }}"
+                value="{{ '' if f.secret else f.display }}"
+              >
+            </div>
+            {% endfor %}
+
+            <div class="d-flex flex-wrap gap-2 mt-3">
+              <button type="button" class="btn btn-outline-primary btn-sm" data-action="test">
+                <i class="bi bi-plug"></i> 연결 테스트
+              </button>
+              <button type="submit" class="btn btn-primary btn-sm" data-action="save">
+                <i class="bi bi-save"></i> 저장
+              </button>
+              {% if m.has_seller_credentials %}
+              <button type="button" class="btn btn-outline-danger btn-sm ms-auto" data-action="disconnect">
+                연결 해제
+              </button>
+              {% endif %}
+            </div>
+            <div class="small mt-2 d-none" data-role="test-result"></div>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <p class="text-muted small mt-3 mb-0">
+    각 키 발급 방법은 <code>docs/operations/LIVE_VERIFICATION_GUIDE.md</code> 를 참고하세요.
+  </p>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function collectValues(form) {
+  const values = {};
+  form.querySelectorAll('input[name]').forEach(input => {
+    const v = (input.value || '').trim();
+    if (v) values[input.name] = v;
+  });
+  return values;
+}
+
+async function postJson(url, payload) {
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload || {}),
+  });
+  const data = await resp.json().catch(() => ({}));
+  return {ok: resp.ok, data};
+}
+
+function renderTestResult(form, result) {
+  const box = form.querySelector('[data-role="test-result"]');
+  if (!box) return;
+  box.classList.remove('d-none', 'text-success', 'text-danger', 'text-warning');
+  if (result && result.status === 'connected') {
+    box.classList.add('text-success');
+    box.textContent = '✅ 연결 성공 — ' + (result.summary || '');
+  } else {
+    box.classList.add('text-warning');
+    const code = result ? (result.status || '실패') : '실패';
+    box.textContent = '⚠️ ' + code + ' — ' + ((result && (result.hint || result.summary)) || '연결을 확인하세요.');
+  }
+}
+
+function updateBadge(card, connected) {
+  const badge = card.querySelector('[data-role="status-badge"]');
+  if (!badge) return;
+  badge.className = 'badge rounded-pill ' + (connected ? 'text-bg-success' : 'text-bg-secondary');
+  badge.textContent = connected ? '✅ 연결됨' : '🪪 미연결';
+}
+
+document.querySelectorAll('.market-connect-form').forEach(form => {
+  const market = form.dataset.market;
+  const card = form.closest('[data-market]');
+
+  // 연결 테스트
+  form.querySelector('[data-action="test"]').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    setButtonLoading(btn, true, '테스트 중…');
+    try {
+      const {data} = await postJson(`/seller/markets/connect/${market}/test`, {values: collectValues(form)});
+      if (!data.ok) { pcToast(data.error || '연결 테스트 실패', 'error'); return; }
+      renderTestResult(form, data.result);
+    } catch (err) {
+      pcToast('연결 테스트 요청 실패: ' + err.message, 'error');
+    } finally {
+      setButtonLoading(btn, false);
+    }
+  });
+
+  // 저장
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector('[data-action="save"]');
+    setButtonLoading(btn, true, '저장 중…');
+    try {
+      const {data} = await postJson(`/seller/markets/connect/${market}`, {values: collectValues(form)});
+      if (!data.ok) { pcToast(data.error || '저장 실패', 'error'); return; }
+      updateBadge(card, data.status && data.status.connected);
+      pcToast(`${market} 자격증명을 저장했어요.`, 'success');
+    } catch (err) {
+      pcToast('저장 요청 실패: ' + err.message, 'error');
+    } finally {
+      setButtonLoading(btn, false);
+    }
+  });
+
+  // 연결 해제
+  const disconnectBtn = form.querySelector('[data-action="disconnect"]');
+  if (disconnectBtn) {
+    disconnectBtn.addEventListener('click', async () => {
+      if (!(await pcConfirm('저장된 자격증명을 삭제할까요? (서버 환경변수는 영향 없음)', {title: '연결 해제', confirmLabel: '삭제'}))) return;
+      const {data} = await postJson(`/seller/markets/connect/${market}/disconnect`, {});
+      if (!data.ok) { pcToast(data.error || '연결 해제 실패', 'error'); return; }
+      updateBadge(card, data.status && data.status.connected);
+      pcToast(`${market} 연결을 해제했어요.`, 'success');
+      setTimeout(() => location.reload(), 900);
+    });
+  }
+});
+</script>
+{% endblock %}

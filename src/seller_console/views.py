@@ -1001,7 +1001,10 @@ def collect_upload():
         return jsonify({"ok": False, "error": "업로드 디스패처 준비 중입니다."}), 503
 
     try:
-        result = dispatcher.dispatch(product_data, markets)
+        from . import market_credentials as mc
+
+        with mc.seller_market_env(_seller_id(), markets):
+            result = dispatcher.dispatch(product_data, markets)
         return jsonify({"ok": True, "result": result.to_dict()})
     except Exception as exc:
         logger.warning("업로드 디스패처 오류: %s", exc)
@@ -1030,7 +1033,10 @@ def collect_prevalidate():
 
     try:
         from .upload_dispatcher import MARKET_LABELS
-        results = dispatcher.prevalidate(product_data, markets)
+        from . import market_credentials as mc
+
+        with mc.seller_market_env(_seller_id(), markets):
+            results = dispatcher.prevalidate(product_data, markets)
         return jsonify({
             "ok": True,
             "results": [
@@ -2352,6 +2358,98 @@ def markets_integration_diagnostics_refresh():
     except Exception as exc:
         logger.warning("markets_integration_diagnostics_refresh API 오류 (%s): %s", market, exc)
         return jsonify({"ok": False, "error": "마켓 연동 진단 중 오류가 발생했습니다."}), 500
+
+
+# ---------------------------------------------------------------------------
+# 셀프서비스 마켓 연결 (SaaS 대비) — 셀러가 직접 키 입력/테스트/저장
+# ---------------------------------------------------------------------------
+
+def _seller_id() -> str:
+    """현재 셀러 식별자. 단일 테넌트(오너)에서는 'default'."""
+    return str(session.get("user_id") or session.get("user_email") or "default")
+
+
+def _diag_market_key(market: str) -> str:
+    """자격증명 마켓 키 → 진단 서브시스템 키 (11번가만 상이)."""
+    return "11st" if market == "elevenst" else market
+
+
+@bp.get("/markets/connect")
+def markets_connect():
+    """셀프서비스 마켓 연결 관리 화면."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
+    from . import market_credentials as mc
+
+    statuses = mc.all_status(_seller_id())
+    return render_template("markets_connect.html", page="markets", market_statuses=statuses)
+
+
+@bp.post("/markets/connect/<market>")
+def markets_connect_save(market):
+    """셀러 마켓 자격증명 저장 (JSON)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    from . import market_credentials as mc
+
+    market = (market or "").strip().lower()
+    if market not in mc.MARKET_CRED_FIELDS:
+        return jsonify({"ok": False, "error": "지원하지 않는 마켓입니다."}), 404
+
+    data = request.get_json(force=True, silent=True) or {}
+    values = data.get("values")
+    if not isinstance(values, dict):
+        return jsonify({"ok": False, "error": "values 형식이 올바르지 않습니다."}), 400
+
+    try:
+        mc.save(_seller_id(), market, values)
+        return jsonify({"ok": True, "status": mc.status(_seller_id(), market)})
+    except Exception as exc:
+        logger.warning("마켓 자격증명 저장 오류 (%s): %s", market, exc)
+        return jsonify({"ok": False, "error": "저장 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/markets/connect/<market>/test")
+def markets_connect_test(market):
+    """셀러 자격증명(저장값 + 입력 중 값)으로 라이브 연결 테스트."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    from . import market_credentials as mc
+    from .market_integration_diagnostics import normalize_market_diagnostic_result, run_market_diagnostic
+
+    market = (market or "").strip().lower()
+    if market not in mc.MARKET_CRED_FIELDS:
+        return jsonify({"ok": False, "error": "지원하지 않는 마켓입니다."}), 404
+
+    data = request.get_json(force=True, silent=True) or {}
+    pending = data.get("values") if isinstance(data.get("values"), dict) else {}
+    allowed = {f["env"] for f in mc.MARKET_CRED_FIELDS[market]}
+    extra = {k: str(v).strip() for k, v in pending.items() if k in allowed and str(v).strip()}
+
+    try:
+        with mc.seller_market_env(_seller_id(), market, extra=extra):
+            result = normalize_market_diagnostic_result(run_market_diagnostic(_diag_market_key(market)))
+        return jsonify({"ok": True, "result": result})
+    except KeyError:
+        return jsonify({"ok": False, "error": "지원하지 않는 마켓입니다."}), 404
+    except Exception as exc:
+        logger.warning("마켓 연결 테스트 오류 (%s): %s", market, exc)
+        return jsonify({"ok": False, "error": "연결 테스트 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/markets/connect/<market>/disconnect")
+def markets_connect_disconnect(market):
+    """셀러 마켓 자격증명 삭제(연결 해제)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    from . import market_credentials as mc
+
+    market = (market or "").strip().lower()
+    if market not in mc.MARKET_CRED_FIELDS:
+        return jsonify({"ok": False, "error": "지원하지 않는 마켓입니다."}), 404
+
+    removed = mc.delete(_seller_id(), market)
+    return jsonify({"ok": True, "removed": removed, "status": mc.status(_seller_id(), market)})
 
 
 # ---------------------------------------------------------------------------

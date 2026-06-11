@@ -221,3 +221,32 @@
 - **테스트**: `tests/test_verify_market_connections.py` 7개(별칭 env + 키매핑).
 - ⚠️ **실 API 라이브 등록 검증(상품이 실제로 올라가는지)은 여전히 운영 자격증명 필요** — 위 가이드의
   "5. 첫 테스트 업로드"로 오너가 직접 1건 등록해 "상품 페이지 열기" 링크까지 확인할 것.
+
+## Phase 192 — 셀프서비스 마켓 연결 (SaaS 대비) ✅ (2026-06-10)
+
+### 오너 지시
+- "SaaS 하게 되면 소비자가 쉽게쉽게 각 마켓에 연결할 수 있어야 한다 — UI/UX·백엔드 잘."
+
+### 작업 요약
+- **셀러별 자격증명 저장소**: `src/seller_console/market_credentials.py`
+  - `data/market_credentials/<seller_id>.json` Fernet 암호화 저장
+    (`MARKET_CRED_ENC_KEY` 우선 → `SECRET_KEY` 파생 → 없으면 평문+경고).
+  - `save/get/delete/is_connected/status(마스킹)/credential_env`,
+    `seller_market_env(seller, markets, extra=)` 컨텍스트로 표준 env에 일시 주입.
+  - 폴백: 셀러 저장값 없으면 전역 환경변수(오너 단일테넌트) 그대로 사용.
+- **셀프서비스 연결 화면**: `GET /seller/markets/connect` + `markets_connect.html`
+  - 마켓별 카드: 상태 배지, 키 입력 폼(비밀값 password/마스킹), [연결 테스트]/[저장]/[연결 해제].
+  - 사이드바에 "마켓 연결(키 설정)" 메뉴 추가.
+- **라우트**: `POST /connect/<m>`(저장), `POST /connect/<m>/test`(저장값+입력중값 라이브 테스트),
+  `POST /connect/<m>/disconnect`(삭제).
+- **업로드 연동**: `/collect/upload`·`/collect/prevalidate`를 `seller_market_env`로 감싸
+  셀러 저장 자격증명이 실제 업로드/사전검증을 구동하도록 연결.
+- **테스트**: `tests/test_market_credentials.py` 18개(저장/암호화/마스킹/주입/라우트).
+
+### 보안 메모
+- 운영에서 `MARKET_CRED_ENC_KEY`(Fernet 키) 설정 필수 권장(미설정 시 SECRET_KEY 파생).
+- ⚠️ 오너가 채팅에 `TOSS_SECRET_KEY`(test_sk_…) 평문 노출 → 토스 콘솔에서 재발급 권장.
+
+### 후속(백로그)
+- 셀러별 자격증명을 DB/암호화 시크릿 매니저로 이전(파일 → 멀티인스턴스 대비).
+- OAuth 방식 마켓(쿠팡/네이버)을 키 직접입력 대신 "연결 버튼" OAuth 플로우로 고도화.
