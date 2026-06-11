@@ -36,9 +36,13 @@ class NaverSmartStoreUploader(BaseUploader):
     _TOKEN_URL = 'https://api.commerce.naver.com/external/v1/oauth2/token'
 
     def __init__(self):
-        """Naver SmartStore 업로더 초기화. 환경변수에서 API 키를 읽는다."""
-        self.client_id = os.getenv('NAVER_CLIENT_ID', '')
-        self.client_secret = os.getenv('NAVER_CLIENT_SECRET', '')
+        """Naver SmartStore 업로더 초기화. 환경변수에서 API 키를 읽는다.
+
+        네이버 커머스 자격증명은 코드 경로에 따라 두 이름이 혼용되어 왔다.
+        업로드/읽기 진단이 같은 값을 쓰도록 NAVER_COMMERCE_* 를 폴백으로 허용한다.
+        """
+        self.client_id = os.getenv('NAVER_CLIENT_ID') or os.getenv('NAVER_COMMERCE_CLIENT_ID', '')
+        self.client_secret = os.getenv('NAVER_CLIENT_SECRET') or os.getenv('NAVER_COMMERCE_CLIENT_SECRET', '')
         self.channel_id = os.getenv('NAVER_CHANNEL_ID', '')
         if not self.client_id:
             logger.warning('NAVER_CLIENT_ID is not set')

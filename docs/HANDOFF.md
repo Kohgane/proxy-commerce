@@ -202,3 +202,22 @@
   `tests/test_channel_sync_uploaders.py`에 브리지/디스패처 통합 4개 추가.
 - ⚠️ 11번가는 배송 템플릿/카테고리 등 셀러별 설정값 필요 — 운영 시 `ELEVENST_DISP_CTGR_NO` 등
   계정 설정에 맞춰 카테고리/배송 코드 조정 후 라이브 검증 필요.
+
+### ⑤ 라이브 검증 도구 + 가이드 + env 정합성 수정 (2026-06-10)
+- **검증 도구 신설**: `scripts/verify_market_connections.py` — 5개 마켓 연결 진단 + 업로드 사전검증을
+  한 번에 실행해 사람이 읽는 표로 출력(`python -m scripts.verify_market_connections [market] [--json]`).
+  운영 데이터 변경 없음(읽기 + safe dry-run). 운영 셸에서 자격증명 넣고 실행하면 실제 연결 검증.
+- **가이드 신설**: `docs/operations/LIVE_VERIFICATION_GUIDE.md` — 키 발급→환경변수→연결확인→테스트
+  업로드까지 누구나 따라 하는 단계별 안내 + 상태코드/트러블슈팅/체크리스트/환경변수 표.
+- **라이브 검증으로 잡은 실 버그 3건 수정**:
+  1. **11번가 키 불일치**: 진단 키 `11st` vs 디스패처 키 `elevenst` → 검증 도구에서 별칭 매핑.
+  2. **WooCommerce env 불일치**: prevalidate가 `WC_CONSUMER_KEY`(어디와도 불일치)를 요구 →
+     실제 업로드 경로(`WOO_*`)와 진단(`WC_*`) **둘 다 허용**하도록 수정. (올바른 키를 넣어도
+     prevalidate가 잘못 막던 버그)
+  3. **네이버 env 이중 명명**: 업로드 `NAVER_CLIENT_*` vs 진단 `NAVER_COMMERCE_*` →
+     업로더/브리지/prevalidate가 **둘 다 허용**하도록 폴백 추가.
+- **검증 결과**: 자격증명 미설정 시 5개 마켓 모두 `token_missing` 정직 표기, 자격증명 주입 시
+  5개 마켓 prevalidate 전부 `✅ 통과`(업로드 경로 배선 완료 증명).
+- **테스트**: `tests/test_verify_market_connections.py` 7개(별칭 env + 키매핑).
+- ⚠️ **실 API 라이브 등록 검증(상품이 실제로 올라가는지)은 여전히 운영 자격증명 필요** — 위 가이드의
+  "5. 첫 테스트 업로드"로 오너가 직접 1건 등록해 "상품 페이지 열기" 링크까지 확인할 것.

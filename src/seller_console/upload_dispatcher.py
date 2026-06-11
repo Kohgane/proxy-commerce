@@ -34,11 +34,15 @@ MARKET_LABELS = {
 }
 
 # 마켓별 필수 환경변수 (사전검증용)
+# 마켓별 필수 환경변수. 별칭(둘 중 하나) 검증은 _prevalidate_market에서 특수 처리한다.
+#   shopify   : SHOPIFY_SHOP + (SHOPIFY_AUTO_TOKEN | SHOPIFY_ACCESS_TOKEN)
+#   smartstore: (NAVER_CLIENT_ID | NAVER_COMMERCE_CLIENT_ID) + (..._SECRET)
+#   woocommerce: (WC_URL | WOO_BASE_URL) + (WC_KEY | WOO_CK) + (WC_SECRET | WOO_CS)
 _MARKET_REQUIRED_ENVS: Dict[str, List[str]] = {
     "coupang": ["COUPANG_ACCESS_KEY", "COUPANG_SECRET_KEY", "COUPANG_VENDOR_ID"],
-    "smartstore": ["NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET"],
+    "smartstore": [],
     "elevenst": ["ELEVENST_API_KEY"],
-    "woocommerce": ["WC_URL", "WC_CONSUMER_KEY", "WC_CONSUMER_SECRET"],
+    "woocommerce": [],
     "shopify": ["SHOPIFY_SHOP"],
 }
 
@@ -47,7 +51,7 @@ _MARKET_TOKEN_HINTS: Dict[str, str] = {
     "coupang": "/admin/diagnostics 에서 COUPANG_ACCESS_KEY / SECRET_KEY / VENDOR_ID 를 설정하세요.",
     "smartstore": "/admin/diagnostics 에서 NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 를 설정하세요.",
     "elevenst": "/admin/diagnostics 에서 ELEVENST_API_KEY 를 설정하세요.",
-    "woocommerce": "/admin/diagnostics 에서 WC_URL / WC_CONSUMER_KEY / WC_CONSUMER_SECRET 를 설정하세요.",
+    "woocommerce": "/admin/diagnostics 에서 WC_URL / WC_KEY / WC_SECRET (또는 WOO_BASE_URL / WOO_CK / WOO_CS) 를 설정하세요.",
     "shopify": "/admin/diagnostics 에서 SHOPIFY_SHOP 및 SHOPIFY_AUTO_TOKEN 을 설정하세요.",
 }
 
@@ -168,6 +172,22 @@ class UploadDispatcher:
             has_token = bool(os.getenv("SHOPIFY_AUTO_TOKEN") or os.getenv("SHOPIFY_ACCESS_TOKEN"))
             if not has_token:
                 missing.append("SHOPIFY_AUTO_TOKEN (또는 SHOPIFY_ACCESS_TOKEN)")
+
+        # 스마트스토어: NAVER_CLIENT_* 또는 NAVER_COMMERCE_CLIENT_* 어느 쪽이든 허용
+        if market == "smartstore":
+            if not (os.getenv("NAVER_CLIENT_ID") or os.getenv("NAVER_COMMERCE_CLIENT_ID")):
+                missing.append("NAVER_CLIENT_ID (또는 NAVER_COMMERCE_CLIENT_ID)")
+            if not (os.getenv("NAVER_CLIENT_SECRET") or os.getenv("NAVER_COMMERCE_CLIENT_SECRET")):
+                missing.append("NAVER_CLIENT_SECRET (또는 NAVER_COMMERCE_CLIENT_SECRET)")
+
+        # WooCommerce: 실제 업로드 경로는 WOO_* 사용, 진단은 WC_* 사용 → 둘 다 허용
+        if market == "woocommerce":
+            if not (os.getenv("WC_URL") or os.getenv("WOO_BASE_URL")):
+                missing.append("WC_URL (또는 WOO_BASE_URL)")
+            if not (os.getenv("WC_KEY") or os.getenv("WOO_CK")):
+                missing.append("WC_KEY (또는 WOO_CK)")
+            if not (os.getenv("WC_SECRET") or os.getenv("WOO_CS")):
+                missing.append("WC_SECRET (또는 WOO_CS)")
 
         if missing:
             return PrevalidationResult(
