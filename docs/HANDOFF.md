@@ -175,6 +175,19 @@
   파괴적 동작은 빨강 확인, 비파괴는 파랑으로 톤 구분. 상세는 `dead_button_audit.md`.
 
 ### 다음 단계 (백로그)
-- ③ 셀러 대시보드 화면 정밀 점검 (빈 상태/로딩/에러/네비게이션 UX) — 진행 예정.
-- ④ 쿠팡/스마트스토어/11번가 실 채널 업로더 모듈 연결 (현재 큐 적재 방식).
+- ③ 셀러 대시보드 화면 정밀 점검 → ✅ (회복탄력성 테스트 고정, 이미 잘 구성됨 확인).
+- ④ 쿠팡/스마트스토어 실 채널 업로더 모듈 연결 → ✅ (아래 참고).
+- 11번가(elevenst) 실 업로더 모듈은 아직 없음 → 연결 시 큐 적재 유지(honest). 추후 작성 대상.
 - `_base_app.html`/대시보드 등 셀러 콘솔 밖 화면의 토스트/확인 모달 통일.
+
+### ④ 쿠팡/스마트스토어 실채널 업로더 연결 (2026-06-10)
+- **브리지 신설**: `src/channel_sync/_channel_bridge.py`(공통 변환/실행),
+  `coupang_uploader.py`·`smartstore_uploader.py`. 디스패처가 `from src.channel_sync import *_uploader`로
+  로드 → 기존 `src.uploaders.CoupangUploader`/`NaverSmartStoreUploader`(Phase 17-2) 재사용.
+- **가격 매핑**: 원화 판매가 = `sell_price_krw` → `recommended_price(_krw)` → `price_krw` →
+  (통화 KRW일 때) `price` 순 첫 양수. 비KRW 가격을 원화로 오용하지 않음. 원화가 0이면 업로드 차단.
+- **정직한 실패 표면화**: 자격증명 미설정 → `token_missing`(디스패처 매핑), API 실패/원화 0 → `api_error`.
+  성공 시 `external_product_id`/`external_url`을 응답·UI에 노출.
+- **테스트**: `tests/test_channel_sync_uploaders.py` 16개(매핑/자격증명/실패/성공/디스패처 통합, 목 API).
+- ⚠️ **실 API 라이브 검증은 운영 환경에서 오너가 COUPANG_*/NAVER_* 자격증명으로 별도 수행 필요**
+  (CI엔 자격증명 없음 → 목 검증까지만).

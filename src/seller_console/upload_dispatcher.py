@@ -14,6 +14,13 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# 채널 브리지 예외 (자격증명 미설정 식별용). 브리지 미존재 시 폴백 정의.
+try:
+    from src.channel_sync._channel_bridge import ChannelCredentialsMissing
+except Exception:  # pragma: no cover - 브리지 모듈 부재 시 안전 폴백
+    class ChannelCredentialsMissing(RuntimeError):
+        """채널 API 자격증명 미설정 (폴백 정의)."""
+
 # 지원 마켓 코드
 SUPPORTED_MARKETS = ["coupang", "smartstore", "elevenst", "woocommerce", "shopify"]
 
@@ -357,6 +364,15 @@ class UploadDispatcher:
                 error_code="module_missing",
                 hint=_MARKET_TOKEN_HINTS.get("coupang"),
             )
+        except ChannelCredentialsMissing as exc:
+            logger.info("쿠팡 자격증명 미설정: %s", exc)
+            return UploadResult(
+                market="coupang",
+                success=False,
+                message=str(exc),
+                error_code="token_missing",
+                hint=_MARKET_TOKEN_HINTS.get("coupang"),
+            )
         except Exception as exc:
             logger.warning("쿠팡 업로드 오류: %s", exc)
             return UploadResult(
@@ -393,6 +409,15 @@ class UploadDispatcher:
                 queued=True,
                 message="큐에 적재됨 (스마트스토어 업로더 모듈 준비 중)",
                 error_code="module_missing",
+                hint=_MARKET_TOKEN_HINTS.get("smartstore"),
+            )
+        except ChannelCredentialsMissing as exc:
+            logger.info("스마트스토어 자격증명 미설정: %s", exc)
+            return UploadResult(
+                market="smartstore",
+                success=False,
+                message=str(exc),
+                error_code="token_missing",
                 hint=_MARKET_TOKEN_HINTS.get("smartstore"),
             )
         except Exception as exc:
