@@ -250,3 +250,27 @@
 ### 후속(백로그)
 - 셀러별 자격증명을 DB/암호화 시크릿 매니저로 이전(파일 → 멀티인스턴스 대비).
 - OAuth 방식 마켓(쿠팡/네이버)을 키 직접입력 대신 "연결 버튼" OAuth 플로우로 고도화.
+
+## Phase 193 — 라이브 검증으로 드러난 어댑터 버그 수정 (2026-06-10)
+
+오너가 운영 자격증명 등록 후 `/seller/markets` 라이브 진단 → 5개 마켓 실패.
+실제 API 응답(404/500/406/토큰)을 보고 코드 버그 2건 수정 + 진단 메시지 강화.
+
+### 수정한 코드 버그
+- **스마트스토어 토큰 발급(진짜 버그)**: 네이버 커머스 OAuth2는 `client_secret` 평문이 아니라
+  **bcrypt 전자서명(`client_secret_sign`) + timestamp** 필요. `_naver_signature()` 추가 후
+  토큰 요청 페이로드 교정. (자격증명이 맞아도 실패하던 원인)
+- **WooCommerce HTTP 406**: WP 호스트 WAF가 User-Agent/Accept 없는 요청을 차단.
+  `_request_headers()`(UA+Accept) 추가, 모든 WC 요청(7곳)에 적용.
+
+### 진단 메시지 강화 (값 문제 식별 보조)
+- 쿠팡/11번가/우커머스 health_check 실패 시 **실제 응답 본문 일부 + 상태코드별 hint** 노출.
+
+### 오너 액션 필요 (값/계정 문제로 추정)
+- **Shopify token_expired**: `SHOPIFY_AUTO_TOKEN`(atk_/shpat_) 값이 유효한지 재확인(재발급).
+- **쿠팡 HTTP 404**: `COUPANG_VENDOR_ID` 형식(A+숫자) 재확인.
+- **11번가 HTTP 500**: 셀러오피스에서 OpenAPI 사용 승인 + `ELEVENST_API_KEY` 재확인.
+  (재배포 후 진단 화면의 응답 본문으로 정확한 원인 확인)
+
+### 테스트
+- `tests/test_market_adapter_live_fixes.py` 5개(네이버 서명/WC 헤더).

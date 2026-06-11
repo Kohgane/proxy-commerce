@@ -465,7 +465,13 @@ class CoupangAdapter(MarketAdapter):
             resp = requests.get(f"{_BASE_URL}{url_path}", headers=headers, timeout=5)
             if resp.status_code == 200:
                 return {"status": "ok", "detail": "쿠팡 API 연결 성공"}
-            return {"status": "fail", "detail": f"HTTP {resp.status_code}"}
+            body = (resp.text or "").strip().replace("\n", " ")[:200]
+            hint = ""
+            if resp.status_code == 404:
+                hint = "COUPANG_VENDOR_ID 값이 올바른지(A+숫자 형식) 확인하세요."
+            elif resp.status_code in (401, 403):
+                hint = "COUPANG_ACCESS_KEY/SECRET_KEY 가 올바른지 확인하세요."
+            return {"status": "fail", "detail": f"HTTP {resp.status_code}: {body}", "hint": hint}
         except Exception as exc:
             logger.warning("쿠팡 health_check 실패: %s", exc)
             return {"status": "fail", "detail": str(exc)}

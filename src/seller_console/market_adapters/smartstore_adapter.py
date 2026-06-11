@@ -32,6 +32,27 @@ def _api_active() -> bool:
     return all(os.getenv(v) for v in ["NAVER_COMMERCE_CLIENT_ID", "NAVER_COMMERCE_CLIENT_SECRET"])
 
 
+def _naver_signature(client_id: str, client_secret: str, timestamp_ms: str) -> Optional[str]:
+    """네이버 커머스 API 전자서명 생성.
+
+    규칙: bcrypt(password=f"{client_id}_{timestamp}", salt=client_secret) → base64.
+    client_secret 은 네이버가 발급한 bcrypt salt($2a$…) 그대로 사용한다.
+    """
+    try:
+        import base64
+        import bcrypt
+    except Exception as exc:  # pragma: no cover - bcrypt 미설치
+        logger.warning("bcrypt 임포트 실패 — 네이버 서명 불가: %s", exc)
+        return None
+    try:
+        password = f"{client_id}_{timestamp_ms}".encode("utf-8")
+        hashed = bcrypt.hashpw(password, client_secret.encode("utf-8"))
+        return base64.b64encode(hashed).decode("utf-8")
+    except Exception as exc:
+        logger.warning("네이버 전자서명 생성 실패(시크릿 형식 확인 필요): %s", exc)
+        return None
+
+
 def _dry_run() -> bool:
     return os.getenv("ADAPTER_DRY_RUN", "0") == "1"
 
@@ -46,6 +67,13 @@ def _get_access_token() -> Optional[str]:
     client_id = os.getenv("NAVER_COMMERCE_CLIENT_ID", "")
     client_secret = os.getenv("NAVER_COMMERCE_CLIENT_SECRET", "")
 
+    # 네이버 커머스 API는 client_secret 평문이 아니라 bcrypt 전자서명을 요구한다.
+    timestamp = str(int(now * 1000))
+    sign = _naver_signature(client_id, client_secret, timestamp)
+    if not sign:
+        logger.warning("스마트스토어 토큰 발급 실패: 전자서명 생성 불가(시크릿 형식 확인)")
+        return None
+
     try:
         import requests
         resp = requests.post(
@@ -53,9 +81,11 @@ def _get_access_token() -> Optional[str]:
             data={
                 "grant_type": "client_credentials",
                 "client_id": client_id,
-                "client_secret": client_secret,
+                "timestamp": timestamp,
+                "client_secret_sign": sign,
                 "type": "SELF",
             },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
             timeout=10,
         )
         resp.raise_for_status()

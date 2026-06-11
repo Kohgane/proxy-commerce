@@ -354,7 +354,9 @@ class ElevenAdapter(MarketAdapter):
             )
             if resp.status_code == 200:
                 return {"status": "ok", "detail": "11번가 API 연결 성공"}
-            return {"status": "fail", "detail": f"HTTP {resp.status_code}"}
+            body = (resp.text or "").strip().replace("\n", " ")[:200]
+            hint = "ELEVENST_API_KEY 가 올바른지, 11번가 셀러오피스에서 OpenAPI 사용이 승인되었는지 확인하세요."
+            return {"status": "fail", "detail": f"HTTP {resp.status_code}: {body}", "hint": hint}
         except Exception as exc:
             logger.warning("11번가 health_check 실패: %s", exc)
             return {"status": "fail", "detail": str(exc)}
