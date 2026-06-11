@@ -50,12 +50,33 @@ python -m scripts.verify_market_connections --json
 요약: 전체 5개 중 ✅ 연결됨 0개 · 미연결 5개
 ```
 
-### 웹 화면으로도 볼 수 있어요
+### 어디서 실행하나요? (쉬운 순서)
 
-- **`/admin/diagnostics`** — 운영자용 종합 진단 화면
-- **`/seller/markets`** — 셀러 콘솔의 마켓 컨트롤 센터
+#### 방법 A. 웹 화면 — **셸 필요 없음, 가장 쉬움** ⭐
+브라우저에서 로그인 후 아래 주소를 열기만 하면 됩니다. 명령어를 칠 필요가 없어요.
 
-세 가지(검증 도구 · admin · seller)는 같은 결과를 보여줍니다. 편한 걸 쓰세요.
+- **`https://(내도메인)/seller/markets/connect`** — 마켓별로 키 입력 + **[연결 테스트]** 버튼
+- **`https://(내도메인)/seller/markets`** — 마켓 현황 한눈에
+- **`https://(내도메인)/admin/diagnostics`** — 운영자용 종합 진단
+
+> 👉 키를 막 넣고 바로 확인하려면 **`/seller/markets/connect`** 에서 키를 넣고 **[연결 테스트]** 를 누르세요.
+
+#### 방법 B. Render Shell — 명령어로 한 번에 전체 확인
+1. [Render 대시보드](https://dashboard.render.com) → 해당 **웹 서비스** 클릭
+2. 상단/좌측 탭에서 **Shell** 클릭 (실행 중인 서비스에서 열림)
+3. 까만 터미널이 열리면 그대로 입력:
+   ```bash
+   python -m scripts.verify_market_connections
+   ```
+4. 5개 마켓 상태가 표로 출력됩니다. (환경변수는 Render 서비스에 이미 들어있어 자동 적용)
+
+> ⚠️ **Shell 탭이 안 보이면**: Render의 일부 무료 플랜은 Shell이 없습니다. 이때는 **방법 A(웹 화면)** 를 쓰세요. 결과는 동일합니다.
+> 📁 Shell은 기본적으로 프로젝트 루트(`scripts/` 폴더가 있는 위치)에서 열립니다. 혹시 아니면 `cd ~/project/src` 가 아니라 레포 최상위로 이동 후 실행하세요.
+
+#### 방법 C. 내 PC(로컬)
+레포를 받아둔 PC에서도 됩니다. 단, **로컬에는 키가 없으니** 같은 키들을 로컬 환경변수/`.env`에 넣어야 실제 검증이 됩니다(보통 방법 A·B를 권장).
+
+> 세 방법 모두 **같은 결과**를 보여줍니다. 편한 걸 쓰세요.
 
 ---
 
@@ -82,6 +103,30 @@ python -m scripts.verify_market_connections --json
 5. 저장하면 서비스가 자동으로 재배포됩니다(1~2분). 재배포 후 검증 도구를 다시 실행하세요.
 
 > ⚠️ 값을 붙여넣을 때 **앞뒤 공백/줄바꿈이 섞이지 않게** 주의하세요. 가장 흔한 실패 원인입니다.
+
+### 🔐 (중요) 암호화 키 `MARKET_CRED_ENC_KEY` 만들고 넣기
+
+셀러가 `/seller/markets/connect` 화면에서 입력한 마켓 키들은 **이 암호화 키로 잠가서** 저장됩니다.
+키가 없으면 평문 저장(개발용)이라, **운영에서는 반드시 넣어주세요.**
+
+**① 키 만들기** — 아무 데서나 1줄 실행 (Render Shell 또는 내 PC):
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+출력 예시(↓ 이건 예시일 뿐, **본인이 직접 생성한 값**을 쓰세요):
+```
+jiVxNw0coK-kfePqWIJfOnaUeCSOcsXkEl4FVSk12BM=
+```
+- 끝이 `=` 로 끝나는 **44글자** 문자열이면 정상입니다.
+
+**② 키 넣기** — Render 환경변수 등록(3번 섹션과 동일):
+- **Key**: `MARKET_CRED_ENC_KEY`
+- **Value**: 위에서 생성한 44글자 키
+- Save → 자동 재배포
+
+> 💡 별도 사이트에서 "받는" 게 아니라 **직접 생성**하는 값입니다(비밀번호처럼).
+> ⚠️ **한 번 정하면 바꾸지 마세요.** 키를 바꾸면 그 전에 저장된 셀러 키들을 복호화할 수 없습니다.
+> 안 넣어도 당장은 동작하지만(SECRET_KEY로 대체), 운영에서는 전용 키를 권장합니다.
 
 ---
 
