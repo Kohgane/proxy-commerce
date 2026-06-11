@@ -458,6 +458,15 @@ class UploadDispatcher:
                 error_code="module_missing",
                 hint=_MARKET_TOKEN_HINTS.get("elevenst"),
             )
+        except ChannelCredentialsMissing as exc:
+            logger.info("11번가 자격증명 미설정: %s", exc)
+            return UploadResult(
+                market="elevenst",
+                success=False,
+                message=str(exc),
+                error_code="token_missing",
+                hint=_MARKET_TOKEN_HINTS.get("elevenst"),
+            )
         except Exception as exc:
             logger.warning("11번가 업로드 오류: %s", exc)
             return UploadResult(

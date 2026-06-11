@@ -176,8 +176,7 @@
 
 ### 다음 단계 (백로그)
 - ③ 셀러 대시보드 화면 정밀 점검 → ✅ (회복탄력성 테스트 고정, 이미 잘 구성됨 확인).
-- ④ 쿠팡/스마트스토어 실 채널 업로더 모듈 연결 → ✅ (아래 참고).
-- 11번가(elevenst) 실 업로더 모듈은 아직 없음 → 연결 시 큐 적재 유지(honest). 추후 작성 대상.
+- ④ 쿠팡/스마트스토어/11번가 실 채널 업로더 모듈 연결 → ✅ (아래 참고).
 - `_base_app.html`/대시보드 등 셀러 콘솔 밖 화면의 토스트/확인 모달 통일.
 
 ### ④ 쿠팡/스마트스토어 실채널 업로더 연결 (2026-06-10)
@@ -191,3 +190,15 @@
 - **테스트**: `tests/test_channel_sync_uploaders.py` 16개(매핑/자격증명/실패/성공/디스패처 통합, 목 API).
 - ⚠️ **실 API 라이브 검증은 운영 환경에서 오너가 COUPANG_*/NAVER_* 자격증명으로 별도 수행 필요**
   (CI엔 자격증명 없음 → 목 검증까지만).
+
+### ④-b 11번가(11st) 실 업로더 신설 (2026-06-10)
+- **신규 업로더**: `src/uploaders/elevenst_uploader.py` — `ElevenStUploader`(11번가 OpenAPI XML 등록).
+  CoupangUploader/NaverSmartStoreUploader와 동일 인터페이스(`prepare_product`/`upload_product` →
+  `{success, product_id, url}`). 제목 `[해외직구]` 접두, 10원 단위 판매가, 카테고리 매핑, XML 이스케이프,
+  응답 코드/상품번호 파싱.
+- **브리지**: `src/channel_sync/elevenst_uploader.py`(REQUIRED: `ELEVENST_API_KEY`).
+  디스패처가 자격증명 미설정 → `token_missing`, OpenAPI 실패 → `api_error`로 표기.
+- **테스트**: `tests/test_elevenst_uploader.py` 12개(매핑/XML/파싱/성공/실패, requests 목) +
+  `tests/test_channel_sync_uploaders.py`에 브리지/디스패처 통합 4개 추가.
+- ⚠️ 11번가는 배송 템플릿/카테고리 등 셀러별 설정값 필요 — 운영 시 `ELEVENST_DISP_CTGR_NO` 등
+  계정 설정에 맞춰 카테고리/배송 코드 조정 후 라이브 검증 필요.

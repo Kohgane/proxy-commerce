@@ -153,6 +153,31 @@ class TestSmartstoreBridge:
         assert out["product_id"] == "NS1"
 
 
+class TestElevenstBridge:
+    def test_upload_success(self, monkeypatch):
+        import src.uploaders.elevenst_uploader as eu
+        monkeypatch.setenv("ELEVENST_API_KEY", "k")
+
+        class _FakeEleven:
+            def prepare_product(self, collected):
+                return collected
+
+            def upload_product(self, prepared):
+                return {"success": True, "product_id": "E1", "url": "https://11st/E1"}
+
+        monkeypatch.setattr(eu, "ElevenStUploader", _FakeEleven)
+        from src.channel_sync import elevenst_uploader
+        out = elevenst_uploader.upload({"title": "T", "sell_price_krw": 12000})
+        assert out["product_id"] == "E1"
+
+    def test_missing_creds_raises(self, monkeypatch):
+        monkeypatch.delenv("ELEVENST_API_KEY", raising=False)
+        from src.channel_sync import elevenst_uploader
+        from src.channel_sync._channel_bridge import ChannelCredentialsMissing
+        with pytest.raises(ChannelCredentialsMissing):
+            elevenst_uploader.upload({"title": "T", "sell_price_krw": 12000})
+
+
 # ─── 디스패처 통합 ────────────────────────────────────────────────────────────
 
 class TestDispatcherIntegration:
@@ -205,3 +230,27 @@ class TestDispatcherIntegration:
         result = UploadDispatcher()._upload_coupang({"title": "T", "sell_price_krw": 19900})
         assert result.success is False
         assert result.error_code == "api_error"
+
+    def test_elevenst_success_sets_external_fields(self, monkeypatch):
+        import src.uploaders.elevenst_uploader as eu
+        monkeypatch.setenv("ELEVENST_API_KEY", "k")
+
+        class _FakeEleven:
+            def prepare_product(self, collected):
+                return collected
+
+            def upload_product(self, prepared):
+                return {"success": True, "product_id": "E9", "url": "https://11st/E9"}
+
+        monkeypatch.setattr(eu, "ElevenStUploader", _FakeEleven)
+        from src.seller_console.upload_dispatcher import UploadDispatcher
+        result = UploadDispatcher()._upload_elevenst({"title": "T", "sell_price_krw": 12000})
+        assert result.success is True
+        assert result.external_product_id == "E9"
+
+    def test_elevenst_missing_creds_is_token_missing(self, monkeypatch):
+        monkeypatch.delenv("ELEVENST_API_KEY", raising=False)
+        from src.seller_console.upload_dispatcher import UploadDispatcher
+        result = UploadDispatcher()._upload_elevenst({"title": "T", "sell_price_krw": 12000})
+        assert result.success is False
+        assert result.error_code == "token_missing"
