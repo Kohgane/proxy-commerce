@@ -30,7 +30,8 @@ MARKET_GUIDE: List[Dict[str, Any]] = [
             {"env": "COUPANG_VENDOR_ID", "label": "Vendor ID(업체코드)", "where": "업체정보의 A+숫자 코드"},
         ],
         "tips": [
-            "404 오류가 나면 Vendor ID(A+숫자) 형식이 맞는지 가장 먼저 확인하세요.",
+            "‘Invalid signature(401)’가 뜨면 ACCESS KEY/SECRET KEY 값이 정확한지(공백·뒤바뀜 없이) 확인하세요.",
+            "404가 나면 Vendor ID(A+숫자) 형식이 맞는지 확인하세요.",
             "오픈API 사용은 일부 계정에서 사전 신청/승인이 필요할 수 있습니다.",
         ],
     },
@@ -54,6 +55,8 @@ MARKET_GUIDE: List[Dict[str, Any]] = [
         ],
         "tips": [
             "Client Secret은 반드시 ‘$2a$…’ 형태 전체를 복사하세요(전자서명 생성에 사용).",
+            "‘호출이 허용되지 않은 IP(GW.IP_NOT_ALLOWED)’가 뜨면 네이버 커머스 API센터 → 애플리케이션 설정 → "
+            "‘허용 IP’에 우리 서버 고정 IP를 등록하세요. (Render 고정 아웃바운드 IP를 추가)",
             "‘토큰 발급 실패’가 뜨면 ID/Secret 오타·공백을 확인하세요.",
         ],
     },
@@ -124,6 +127,76 @@ MARKET_GUIDE: List[Dict[str, Any]] = [
         "tips": [
             "HTTP 406이 뜨면 사이트 보안(WAF) 때문일 수 있습니다. URL이 https로 정확한지 확인하세요.",
             "권한을 꼭 ‘Read/Write’로 생성하세요(읽기 전용이면 등록 불가).",
+        ],
+    },
+    # ── 글로벌 확장 (어댑터 구현 예정) ─────────────────────────────────────────
+    {
+        "key": "amazon",
+        "label": "Amazon (SP-API)",
+        "icon": "🟧",
+        "status": "planned",
+        "official_url": "https://sellercentral.amazon.com",
+        "official_label": "Amazon 셀러 센트럴 열기",
+        "flow": ["셀러 가입/개발자 등록", "SP-API 앱 생성", "LWA + Refresh Token 발급", "여기에 저장"],
+        "steps": [
+            {"t": "Amazon 셀러 센트럴 가입 + 개발자 등록", "d": "Professional 셀러 계정과 개발자 등록이 필요합니다."},
+            {"t": "SP-API 애플리케이션 생성(자가 인증 앱)", "d": "App registration에서 SP-API 앱을 만듭니다."},
+            {"t": "LWA(클라이언트 ID/Secret) + Refresh Token 발급", "d": "OAuth 인증으로 Refresh Token을 받습니다."},
+            {"t": "판매 마켓플레이스(US/JP 등) ID 확인", "d": "마켓플레이스마다 ID가 다릅니다."},
+        ],
+        "fields": [
+            {"env": "AMAZON_LWA_CLIENT_ID", "label": "LWA Client ID", "where": "SP-API 앱의 LWA 클라이언트 ID"},
+            {"env": "AMAZON_LWA_CLIENT_SECRET", "label": "LWA Client Secret", "where": "LWA 클라이언트 시크릿"},
+            {"env": "AMAZON_REFRESH_TOKEN", "label": "Refresh Token", "where": "OAuth로 발급된 리프레시 토큰"},
+            {"env": "AMAZON_MARKETPLACE_ID", "label": "Marketplace ID", "where": "예: US=ATVPDKIKX0DER"},
+        ],
+        "tips": [
+            "Amazon SP-API는 자가 인증 앱 + Refresh Token 방식이 가장 단순합니다.",
+            "리스팅 등록은 카탈로그 매칭(GTIN/ASIN) 규칙이 까다로워 사전 준비가 필요합니다.",
+        ],
+    },
+    {
+        "key": "ebay",
+        "label": "eBay",
+        "icon": "🔵",
+        "status": "planned",
+        "official_url": "https://developer.ebay.com",
+        "official_label": "eBay 개발자 포털 열기",
+        "flow": ["개발자 가입", "앱 키셋 생성", "User OAuth 토큰 발급", "여기에 저장"],
+        "steps": [
+            {"t": "eBay 개발자 계정 가입", "d": "developer.ebay.com에서 가입합니다."},
+            {"t": "애플리케이션 키셋(App ID/Cert ID) 생성", "d": "Production 키셋을 만듭니다."},
+            {"t": "User OAuth 토큰(액세스/리프레시) 발급", "d": "RuName으로 사용자 동의 후 토큰을 받습니다."},
+        ],
+        "fields": [
+            {"env": "EBAY_CLIENT_ID", "label": "App ID (Client ID)", "where": "Production App ID"},
+            {"env": "EBAY_CLIENT_SECRET", "label": "Cert ID (Client Secret)", "where": "Production Cert ID"},
+            {"env": "EBAY_REFRESH_TOKEN", "label": "Refresh Token", "where": "User OAuth 리프레시 토큰"},
+        ],
+        "tips": [
+            "eBay는 Sandbox/Production 키가 분리되어 있습니다. Production 키를 사용하세요.",
+        ],
+    },
+    {
+        "key": "shopee",
+        "label": "Shopee",
+        "icon": "🟠",
+        "status": "planned",
+        "official_url": "https://open.shopee.com",
+        "official_label": "Shopee Open Platform 열기",
+        "flow": ["오픈플랫폼 가입", "앱 생성(partner_id/key)", "샵 인증(shop_id)", "여기에 저장"],
+        "steps": [
+            {"t": "Shopee Open Platform 가입", "d": "open.shopee.com에서 파트너 등록을 합니다."},
+            {"t": "앱 생성 → Partner ID / Partner Key 확인", "d": "앱마다 partner_id와 partner_key가 발급됩니다."},
+            {"t": "샵 인증(OAuth) → Shop ID 확인", "d": "판매하려는 샵을 앱에 연결합니다."},
+        ],
+        "fields": [
+            {"env": "SHOPEE_PARTNER_ID", "label": "Partner ID", "where": "오픈플랫폼 앱의 partner_id"},
+            {"env": "SHOPEE_PARTNER_KEY", "label": "Partner Key", "where": "앱의 partner_key(서명용)"},
+            {"env": "SHOPEE_SHOP_ID", "label": "Shop ID", "where": "샵 인증 후 발급된 shop_id"},
+        ],
+        "tips": [
+            "Shopee는 지역(SG/TH/VN 등)마다 도메인/규정이 다릅니다. 진출 지역을 먼저 정하세요.",
         ],
     },
 ]

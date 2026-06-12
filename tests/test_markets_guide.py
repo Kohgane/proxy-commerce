@@ -24,6 +24,14 @@ def test_guide_data_covers_all_connect_markets():
     assert set(SUPPORTED_MARKETS).issubset(keys)
 
 
+def test_guide_includes_global_expansion_markets():
+    from src.seller_console.market_guide import get_guide
+    keys = {g["key"] for g in get_guide()}
+    assert {"amazon", "ebay", "shopee"}.issubset(keys)
+    planned = {g["key"] for g in get_guide() if g.get("status") == "planned"}
+    assert planned == {"amazon", "ebay", "shopee"}
+
+
 def test_guide_entries_have_required_shape():
     from src.seller_console.market_guide import get_guide
     for g in get_guide():
