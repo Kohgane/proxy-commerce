@@ -36,7 +36,10 @@
         <div class="fw-semibold">마켓 연동 컨트롤 센터</div>
         <div class="small text-muted">실제 검증된 연동 상태와 운영자 조치 힌트를 함께 확인하세요.</div>
       </div>
-      <span class="badge text-bg-light" id="marketDiagnosticsSummary">실연동 진단 대기</span>
+      <div class="d-flex align-items-center gap-2">
+        <a href="/seller/markets/connect" class="btn btn-primary btn-sm">🔌 마켓 연결(키 입력)</a>
+        <span class="badge text-bg-light" id="marketDiagnosticsSummary">실연동 진단 대기</span>
+      </div>
     </div>
     <div class="row g-2 mt-2">
       {% for hub in market_hub_cards %}
@@ -64,6 +67,7 @@
             <button class="btn btn-outline-primary btn-sm" type="button" data-market-action="connection" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'connection')">연결 확인</button>
             <button class="btn btn-outline-secondary btn-sm" type="button" data-market-action="scope" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'scope')">권한 확인</button>
             <button class="btn btn-outline-warning btn-sm" type="button" data-market-action="retry" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'retry')">재시도</button>
+            <a class="btn btn-outline-primary btn-sm" href="/seller/markets/connect">🔑 키 입력</a>
           </div>
           <div class="small text-muted mt-2">필수 권한: {{ hub.required_scopes|join(', ') }}</div>
           <div class="small text-muted mt-1">필수 env: {{ hub.required_env|join(', ') }}</div>

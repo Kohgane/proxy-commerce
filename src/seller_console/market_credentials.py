@@ -182,6 +182,19 @@ def credential_env(seller_id: str, market: str) -> Dict[str, str]:
     return get(seller_id, market)
 
 
+def all_credential_env(seller_id: str) -> Dict[str, str]:
+    """셀러가 저장한 모든 마켓 자격증명을 하나로 합친 env dict.
+
+    마켓별 env 이름은 서로 겹치지 않으므로 단순 병합으로 안전하다.
+    진단/현황 화면이 셀러 저장 키를 반영하도록 주입할 때 사용.
+    """
+    merged: Dict[str, str] = {}
+    for market_values in _load_all(seller_id).values():
+        if isinstance(market_values, dict):
+            merged.update({k: v for k, v in market_values.items() if v})
+    return merged
+
+
 def is_connected(seller_id: str, market: str) -> bool:
     """필수 필드가 셀러 저장값 또는 전역 환경변수로 모두 채워졌는지."""
     if market not in MARKET_CRED_FIELDS:

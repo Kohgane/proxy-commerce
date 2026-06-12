@@ -2211,7 +2211,7 @@ def markets_overview():
     for market_code in ["shopify", "coupang", "smartstore", "11st", "amazon", "ebay", "shopee", "woocommerce"]:
         meta = _marketplace_meta(market_code)
         summary = summary_by_market.get(market_code, {})
-        configured = _market_is_configured(market_code)
+        configured = _market_configured_for_seller(market_code)
         status_label = "연결됨" if configured else "미연동"
         status_style = "success" if configured else "secondary"
         note = ""
@@ -2307,8 +2307,10 @@ def markets_shopify_check_connection():
 
     try:
         from src.markets.adapters.shopify import ShopifyAdapter
+        from . import market_credentials as mc
 
-        result = ShopifyAdapter().check_connection()
+        with mc.temp_env(mc.all_credential_env(_seller_id())):
+            result = ShopifyAdapter().check_connection()
         return jsonify(result), 200
     except Exception as exc:
         logger.warning("markets_shopify_check_connection API 오류: %s", exc)
@@ -2329,8 +2331,10 @@ def markets_integration_diagnostics():
 
     try:
         from .market_integration_diagnostics import normalize_market_diagnostic_result, run_all_market_diagnostics
+        from . import market_credentials as mc
 
-        results = [normalize_market_diagnostic_result(item) for item in run_all_market_diagnostics()]
+        with mc.temp_env(mc.all_credential_env(_seller_id())):
+            results = [normalize_market_diagnostic_result(item) for item in run_all_market_diagnostics()]
         return jsonify({"ok": True, "results": results}), 200
     except Exception as exc:
         logger.warning("markets_integration_diagnostics API 오류: %s", exc)
@@ -2350,8 +2354,10 @@ def markets_integration_diagnostics_refresh():
 
     try:
         from .market_integration_diagnostics import normalize_market_diagnostic_result, run_market_diagnostic
+        from . import market_credentials as mc
 
-        result = normalize_market_diagnostic_result(run_market_diagnostic(market))
+        with mc.temp_env(mc.all_credential_env(_seller_id())):
+            result = normalize_market_diagnostic_result(run_market_diagnostic(market))
         return jsonify({"ok": True, "result": result}), 200
     except KeyError:
         return jsonify({"ok": False, "error": "지원하지 않는 마켓입니다."}), 404
@@ -2365,8 +2371,11 @@ def markets_integration_diagnostics_refresh():
 # ---------------------------------------------------------------------------
 
 def _seller_id() -> str:
-    """현재 셀러 식별자. 단일 테넌트(오너)에서는 'default'."""
-    return str(session.get("user_id") or session.get("user_email") or "default")
+    """현재 셀러 식별자. 단일 테넌트(오너)/요청 컨텍스트 밖에서는 'default'."""
+    try:
+        return str(session.get("user_id") or session.get("user_email") or "default")
+    except Exception:
+        return "default"
 
 
 def _diag_market_key(market: str) -> str:
@@ -3007,6 +3016,13 @@ def _marketplace_meta(marketplace: str) -> dict:
             "region": "동아시아",
             "is_ready": True,
         }
+
+
+def _market_configured_for_seller(marketplace: str) -> bool:
+    """전역 환경변수 + 셀러 인앱 저장 자격증명을 함께 고려한 연결 설정 여부."""
+    from . import market_credentials as mc
+    with mc.temp_env(mc.all_credential_env(_seller_id())):
+        return _market_is_configured(marketplace)
 
 
 def _market_is_configured(marketplace: str) -> bool:

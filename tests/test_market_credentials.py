@@ -120,6 +120,36 @@ class TestEnvInjection:
         assert os.getenv("ELEVENST_API_KEY") is None
 
 
+class TestAllCredentialEnv:
+    def test_merges_all_markets(self, mc):
+        mc.save("s", "coupang", {"COUPANG_ACCESS_KEY": "ak", "COUPANG_SECRET_KEY": "sk", "COUPANG_VENDOR_ID": "A1"})
+        mc.save("s", "elevenst", {"ELEVENST_API_KEY": "ek"})
+        merged = mc.all_credential_env("s")
+        assert merged["COUPANG_ACCESS_KEY"] == "ak"
+        assert merged["ELEVENST_API_KEY"] == "ek"
+
+
+class TestSellerCredsReflectedInMarketsPage:
+    """인앱 저장 키가 마켓 현황 '연결됨' 판정에 반영된다 (Render env 없이도)."""
+
+    def test_market_configured_for_seller_uses_store(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("MARKET_CRED_DIR", str(tmp_path))
+        monkeypatch.setenv("SECRET_KEY", "x")
+        # 전역 환경변수는 비움
+        for k in ("COUPANG_ACCESS_KEY", "COUPANG_SECRET_KEY", "COUPANG_VENDOR_ID"):
+            monkeypatch.delenv(k, raising=False)
+        from src.seller_console import market_credentials as module
+        importlib.reload(module)
+        module.save("default", "coupang", {
+            "COUPANG_ACCESS_KEY": "ak", "COUPANG_SECRET_KEY": "sk", "COUPANG_VENDOR_ID": "A1"})
+
+        from src.seller_console import views
+        # 전역 env 기준으로는 미설정
+        assert views._market_is_configured("coupang") is False
+        # 셀러 인앱 저장 기준으로는 설정됨
+        assert views._market_configured_for_seller("coupang") is True
+
+
 class TestConnectRoutes:
     @pytest.fixture
     def client(self, tmp_path, monkeypatch):

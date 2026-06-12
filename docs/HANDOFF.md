@@ -274,3 +274,23 @@
 
 ### 테스트
 - `tests/test_market_adapter_live_fixes.py` 5개(네이버 서명/WC 헤더).
+
+## Phase 194 — 인앱 마켓 연결을 현황/진단에 완전 통합 (2026-06-10)
+
+오너 지시: "렌더에만 키 넣지 말고 사이트 안(퍼센티)에서도 세팅 가능하게. 다른 사용자/소비자도."
+
+- Phase 192의 `/seller/markets/connect`(셀러별 키 저장)를 **마켓 현황/진단 전 표면에 통합**.
+- `market_credentials.all_credential_env(seller)` 추가: 셀러 저장 키 전체 병합.
+- `/seller/markets` 라이브 진단 엔드포인트 3종(`integration-diagnostics` GET/POST,
+  `shopify/check-connection`)을 `temp_env(all_credential_env(seller))`로 감싸
+  **인앱 저장 키가 실제 연결 진단을 구동**(Render env 없이도). 검증: 저장 전 token_missing →
+  저장 후 실제 API 도달.
+- `_market_configured_for_seller()` 추가 — 현황 카드 '연결됨' 판정에 인앱 키 반영.
+- `/seller/markets` 헤더에 "🔌 마켓 연결(키 입력)" 버튼 + 각 카드에 "🔑 키 입력" 링크.
+- `_seller_id()` 요청 컨텍스트 밖 안전 처리.
+- 테스트: test_market_credentials.py에 통합 검증 3개 추가.
+
+### ⚠️ 배포 메모 (중요)
+- 이번 세션 전체 작업은 브랜치 `claude/magical-noether-oo4831`에 있음.
+  **운영(kohganepercentiii.com = main)에 반영하려면 main 머지 → Render 재배포 필요.**
+  오너가 보던 라이브 진단이 그대로였던 이유 = 브랜치 미배포.
