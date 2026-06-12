@@ -89,14 +89,14 @@
 {% block extra_js %}
 <script>
 async function rollback(historyId, sku, oldPrice) {
-  if (!confirm(`SKU "${sku}"를 ${oldPrice.toLocaleString()}원으로 롤백할까요?`)) return;
+  if (!(await pcConfirm(`SKU "${sku}"를 ${oldPrice.toLocaleString()}원으로 롤백할까요?`, {title: '가격 롤백', confirmLabel: '롤백', danger: false}))) return;
   const r = await fetch(`/seller/pricing/history/${historyId}/rollback`, {method:'POST'});
   const d = await r.json();
   if (d.ok) {
-    alert('롤백 완료');
-    location.reload();
+    pcToast('롤백 완료', 'success');
+    setTimeout(() => location.reload(), 1200);
   } else {
-    alert('롤백 실패: ' + d.error);
+    pcToast('롤백 실패: ' + d.error, 'error');
   }
 }
 </script>

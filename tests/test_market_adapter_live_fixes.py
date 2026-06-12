@@ -1,0 +1,94 @@
+"""tests/test_market_adapter_live_fixes.py — 라이브 검증에서 드러난 어댑터 버그 수정 검증.
+
+1) 스마트스토어: 네이버 커머스 OAuth2는 client_secret 평문이 아니라
+   bcrypt 전자서명(client_secret_sign)+timestamp를 요구한다.
+2) WooCommerce: 일부 WP 호스트가 User-Agent/Accept 없는 요청을 HTTP 406으로 막는다.
+"""
+from __future__ import annotations
+
+import base64
+import os
+import sys
+from unittest.mock import MagicMock, patch
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+
+class TestSmartstoreNaverSignature:
+    def test_signature_is_base64_of_bcrypt(self, monkeypatch):
+        import bcrypt
+        from src.seller_console.market_adapters import smartstore_adapter as ss
+
+        salt = bcrypt.gensalt().decode("utf-8")  # 네이버 client_secret 형태($2b$…)
+        sign = ss._naver_signature("client123", salt, "1700000000000")
+        assert sign
+        # base64 디코딩 가능해야 한다
+        decoded = base64.b64decode(sign)
+        assert decoded  # bcrypt 해시 바이트
+
+    def test_signature_invalid_secret_returns_none(self):
+        from src.seller_console.market_adapters import smartstore_adapter as ss
+        # bcrypt salt 형식이 아니면 None (정직 실패)
+        assert ss._naver_signature("c", "not-a-valid-bcrypt-salt", "123") is None
+
+    def test_token_request_sends_sign_not_plaintext_secret(self, monkeypatch):
+        import bcrypt
+        from src.seller_console.market_adapters import smartstore_adapter as ss
+
+        ss._token_cache.clear()
+        salt = bcrypt.gensalt().decode("utf-8")
+        monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "cid")
+        monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", salt)
+
+        captured = {}
+
+        def fake_post(url, data=None, headers=None, timeout=None):
+            captured["data"] = data
+            resp = MagicMock()
+            resp.raise_for_status.return_value = None
+            resp.json.return_value = {"access_token": "TOK", "expires_in": 3600}
+            return resp
+
+        with patch("requests.post", side_effect=fake_post):
+            token = ss._get_access_token()
+
+        assert token == "TOK"
+        data = captured["data"]
+        # 평문 시크릿을 보내면 안 되고, 전자서명/타임스탬프를 보내야 한다
+        assert "client_secret" not in data
+        assert "client_secret_sign" in data and data["client_secret_sign"]
+        assert "timestamp" in data
+        assert data["grant_type"] == "client_credentials"
+        ss._token_cache.clear()
+
+
+class TestWooCommerceHeaders:
+    def test_health_check_sends_user_agent_and_accept(self, monkeypatch):
+        from src.seller_console.market_adapters import woocommerce_adapter as wc
+
+        monkeypatch.setenv("WC_URL", "https://shop.example.com")
+        monkeypatch.setenv("WC_KEY", "ck_x")
+        monkeypatch.setenv("WC_SECRET", "cs_x")
+        monkeypatch.delenv("ADAPTER_DRY_RUN", raising=False)
+
+        captured = {}
+
+        def fake_get(url, auth=None, headers=None, params=None, timeout=None):
+            captured["headers"] = headers
+            resp = MagicMock()
+            resp.status_code = 200
+            return resp
+
+        with patch("requests.get", side_effect=fake_get):
+            result = wc.WooCommerceAdapter().health_check()
+
+        assert result["status"] == "ok"
+        headers = captured["headers"]
+        assert "User-Agent" in headers
+        assert headers.get("Accept") == "application/json"
+
+    def test_request_headers_helper(self):
+        from src.seller_console.market_adapters import woocommerce_adapter as wc
+        h = wc._request_headers()
+        assert h["User-Agent"]
+        assert h["Accept"] == "application/json"

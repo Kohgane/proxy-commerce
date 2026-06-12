@@ -1,0 +1,53 @@
+"""tests/test_markets_guide.py — 인앱 마켓 API 키 발급 가이드 검증."""
+from __future__ import annotations
+
+import os
+import sys
+
+import pytest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+
+@pytest.fixture
+def client():
+    from src.order_webhook import app
+    app.config["TESTING"] = True
+    with app.test_client() as c:
+        yield c
+
+
+def test_guide_data_covers_all_connect_markets():
+    from src.seller_console.market_guide import get_guide
+    from src.seller_console.market_credentials import SUPPORTED_MARKETS
+    keys = {g["key"] for g in get_guide()}
+    assert set(SUPPORTED_MARKETS).issubset(keys)
+
+
+def test_guide_entries_have_required_shape():
+    from src.seller_console.market_guide import get_guide
+    for g in get_guide():
+        assert g["official_url"].startswith("http")
+        assert g["flow"] and g["steps"] and g["fields"]
+        for fld in g["fields"]:
+            assert fld["env"] and fld["label"]
+
+
+class TestGuidePage:
+    def test_guide_page_200_with_image_and_sections(self, client):
+        resp = client.get("/seller/markets/guide")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "<svg" in html  # 개념 일러스트(이미지)
+        assert "guide-stepper" in html  # 시각 흐름
+        for key in ("coupang", "smartstore", "elevenst", "shopify", "woocommerce"):
+            assert f"guide-{key}" in html
+        assert "COUPANG_ACCESS_KEY" in html
+
+    def test_markets_page_has_guide_button(self, client):
+        html = client.get("/seller/markets").get_data(as_text=True)
+        assert "/seller/markets/guide" in html
+
+    def test_connect_page_has_guide_button(self, client):
+        html = client.get("/seller/markets/connect").get_data(as_text=True)
+        assert "/seller/markets/guide" in html

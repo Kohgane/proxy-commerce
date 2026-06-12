@@ -100,7 +100,7 @@ function buildBookmarkletCode(token) {
 function updateBookmarklet() {
   const rawToken = document.getElementById('tokenInput').value.trim();
   if (!rawToken) {
-    alert('토큰을 입력해주세요.');
+    pcToast('토큰을 입력해주세요.', 'warning');
     return;
   }
   // 토큰 값을 JSON-encode하여 특수 문자가 JS 코드에 삽입되지 않도록 처리
@@ -112,7 +112,7 @@ function updateBookmarklet() {
 
 function copyCode() {
   const code = document.getElementById('bookmarkletCode').textContent;
-  navigator.clipboard.writeText(code).then(() => alert('코드가 복사되었습니다.'));
+  navigator.clipboard.writeText(code).then(() => pcToast('코드가 복사되었습니다.', 'success'));
 }
 </script>
 {% endblock %}

@@ -265,11 +265,11 @@ async function toggleRule(ruleId, btn) {
 }
 
 async function deleteRule(ruleId, name) {
-  if (!confirm(`룰 "${name}"을 삭제할까요?`)) return;
+  if (!(await pcConfirm(`룰 "${name}"을 삭제할까요?`, {title: '룰 삭제', confirmLabel: '삭제'}))) return;
   const r = await fetch(`/seller/pricing/rules/${ruleId}/delete`, {method:'POST'});
   const d = await r.json();
   if (d.ok) location.reload();
-  else alert('삭제 실패: ' + d.error);
+  else pcToast('삭제 실패: ' + d.error, 'error');
 }
 
 function editRule(rule) {
@@ -297,14 +297,14 @@ async function submitCreate() {
   data.action_value = data.action_value || '0';
   const r = await fetch('/seller/pricing/rules', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
   if (r.status === 401) {
-    if (confirm('로그인이 필요합니다. 로그인 페이지로 이동할까요?')) {
+    if (await pcConfirm('로그인이 필요합니다. 로그인 페이지로 이동할까요?', {title: '로그인 필요', confirmLabel: '로그인', danger: false})) {
       location.href = '/auth/login?next=/seller/pricing/rules';
     }
     return;
   }
   const d = await r.json();
   if (d.ok) location.reload();
-  else alert('생성 실패: ' + d.error);
+  else pcToast('생성 실패: ' + d.error, 'error');
 }
 
 async function submitEdit() {
@@ -317,7 +317,7 @@ async function submitEdit() {
   const r = await fetch(`/seller/pricing/rules/${ruleId}/edit`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
   const d = await r.json();
   if (d.ok) location.reload();
-  else alert('저장 실패: ' + d.error);
+  else pcToast('저장 실패: ' + d.error, 'error');
 }
 
 document.getElementById('btnSimulate').addEventListener('click', async () => {
@@ -348,13 +348,13 @@ document.getElementById('btnSimulate').addEventListener('click', async () => {
 });
 
 document.getElementById('btnRunNow').addEventListener('click', async () => {
-  const dryRun = !confirm('실제로 가격을 변경할까요?\n취소하면 시뮬레이션(dry_run)으로 실행합니다.');
+  const dryRun = !(await pcConfirm('실제로 가격을 변경할까요?\n취소하면 시뮬레이션(dry_run)으로 실행합니다.', {title: '가격 적용', confirmLabel: '실제 변경', cancelLabel: '시뮬레이션'}));
   const label = dryRun ? '시뮬레이션' : '실제 적용';
-  if (!dryRun && !confirm(`주의: 마켓에 실제 가격이 변경됩니다.\n계속하시겠습니까?`)) return;
+  if (!dryRun && !(await pcConfirm('주의: 마켓에 실제 가격이 변경됩니다.\n계속하시겠습니까?', {title: '실제 가격 변경 확인', confirmLabel: '변경 계속'}))) return;
   const r = await fetch('/seller/pricing/run-now', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({dry_run: dryRun})});
   const d = await r.json();
-  if (d.ok) alert(`${label} 완료 — ${d.results.changed}건 변경`);
-  else alert('오류: ' + d.error);
+  if (d.ok) pcToast(`${label} 완료 — ${d.results.changed}건 변경`, 'success');
+  else pcToast('오류: ' + d.error, 'error');
 });
 </script>
 {% endblock %}

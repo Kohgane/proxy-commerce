@@ -62,7 +62,9 @@
       <li><a class="console-nav-link {% if _path.startswith('/seller/pricing/fx-impact') %}active{% endif %}" href="/seller/pricing/fx-impact"><i class="bi bi-currency-exchange"></i><span>환율 영향</span></a></li>
 
       <li class="console-nav-group-title">마켓</li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/markets') or _path.startswith('/seller/market-status') %}active{% endif %}" href="/seller/markets"><i class="bi bi-shop"></i><span>마켓 연동/현황</span></a></li>
+      <li><a class="console-nav-link {% if (_path.startswith('/seller/markets') and not _path.startswith('/seller/markets/connect') and not _path.startswith('/seller/markets/guide')) or _path.startswith('/seller/market-status') %}active{% endif %}" href="/seller/markets"><i class="bi bi-shop"></i><span>마켓 연동/현황</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/markets/connect') %}active{% endif %}" href="/seller/markets/connect"><i class="bi bi-plug"></i><span>마켓 연결(키 설정)</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/markets/guide') %}active{% endif %}" href="/seller/markets/guide"><i class="bi bi-journal-text"></i><span>API 키 발급 가이드</span></a></li>
 
       <li class="console-nav-group-title">운영</li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/orders') %}active{% endif %}" href="/seller/orders"><i class="bi bi-receipt"></i><span>주문 관리</span></a></li>
@@ -147,6 +149,26 @@
     <main class="console-content">
       {% block content %}{% endblock %}
     </main>
+  </div>
+</div>
+
+<!-- 전역 토스트 컨테이너 (pcToast) — 모든 셀러 페이지 공용 비차단 알림 -->
+<div id="pcToastContainer" class="toast-container position-fixed top-0 end-0 p-3" style="z-index:1090;" aria-live="polite" aria-atomic="true"></div>
+
+<!-- 전역 확인 모달 (pcConfirm) — 네이티브 confirm 다이얼로그 대체 -->
+<div class="modal fade" id="pcConfirmModal" tabindex="-1" aria-labelledby="pcConfirmTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="pcConfirmTitle">확인</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+      </div>
+      <div class="modal-body" id="pcConfirmBody"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" id="pcConfirmCancel">취소</button>
+        <button type="button" class="btn btn-danger" id="pcConfirmOk">확인</button>
+      </div>
+    </div>
   </div>
 </div>
 

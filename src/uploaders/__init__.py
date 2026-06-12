@@ -2,12 +2,14 @@
 
 from .base_uploader import BaseUploader
 from .coupang_uploader import CoupangUploader
+from .elevenst_uploader import ElevenStUploader
 from .naver_uploader import NaverSmartStoreUploader
 from .upload_manager import UploadManager
 
 __all__ = [
     'BaseUploader',
     'CoupangUploader',
+    'ElevenStUploader',
     'NaverSmartStoreUploader',
     'UploadManager',
 ]

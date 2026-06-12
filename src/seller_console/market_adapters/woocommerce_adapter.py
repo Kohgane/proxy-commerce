@@ -56,6 +56,17 @@ def _auth() -> tuple:
     )
 
 
+def _request_headers() -> dict:
+    """WP 호스트 WAF/보안플러그인이 막지 않도록 표준 헤더 포함.
+
+    User-Agent/Accept 미지정 시 일부 WordPress 호스트가 HTTP 406을 반환한다.
+    """
+    return {
+        "User-Agent": "ProxyCommerce/1.0 (+https://kohganemultishop.org)",
+        "Accept": "application/json",
+    }
+
+
 def _mask_name(name: str) -> str:
     """이름 마스킹 (첫 글자만 공개)."""
     if not name:
@@ -99,6 +110,7 @@ class WooCommerceAdapter(MarketAdapter):
                 resp = requests.get(
                     f"{_api_url()}/products",
                     auth=_auth(),
+                    headers=_request_headers(),
                     params={"per_page": 100, "status": "publish", "page": page},
                     timeout=15,
                 )
@@ -173,6 +185,7 @@ class WooCommerceAdapter(MarketAdapter):
             resp = requests.put(
                 f"{_api_url()}/products/{product_id}",
                 auth=_auth(),
+                headers=_request_headers(),
                 json={"regular_price": price_str, "sale_price": price_str},
                 timeout=10,
             )
@@ -192,6 +205,7 @@ class WooCommerceAdapter(MarketAdapter):
             resp = requests.get(
                 f"{_api_url()}/products",
                 auth=_auth(),
+                headers=_request_headers(),
                 params={"sku": sku, "per_page": 1},
                 timeout=10,
             )
@@ -232,6 +246,7 @@ class WooCommerceAdapter(MarketAdapter):
                 resp = requests.get(
                     f"{_api_url()}/orders",
                     auth=_auth(),
+                    headers=_request_headers(),
                     params=params,
                     timeout=15,
                 )
@@ -320,6 +335,7 @@ class WooCommerceAdapter(MarketAdapter):
             resp = requests.post(
                 f"{_api_url()}/products",
                 auth=_auth(),
+                headers=_request_headers(),
                 json=product,
                 timeout=15,
             )
@@ -349,6 +365,7 @@ class WooCommerceAdapter(MarketAdapter):
             resp = requests.post(
                 f"{_api_url()}/orders/{order_id}/notes",
                 auth=_auth(),
+                headers=_request_headers(),
                 json={"note": note, "customer_note": False},
                 timeout=15,
             )
@@ -377,6 +394,7 @@ class WooCommerceAdapter(MarketAdapter):
             resp = requests.get(
                 f"{_api_url()}/products",
                 auth=_auth(),
+                headers=_request_headers(),
                 params={"per_page": 1},
                 timeout=5,
             )
@@ -388,7 +406,13 @@ class WooCommerceAdapter(MarketAdapter):
                     "base_url": base_url,
                     "detail": "WooCommerce REST API 정상",
                 }
-            return {"status": "fail", "name": "woocommerce", "detail": f"HTTP {resp.status_code}"}
+            body = (resp.text or "").strip().replace("\n", " ")[:200]
+            hint = ""
+            if resp.status_code == 406:
+                hint = "호스트 보안(WAF)이 차단했을 수 있습니다. WC_URL이 https 정확한지, REST API가 활성인지 확인하세요."
+            elif resp.status_code in (401, 403):
+                hint = "WC_KEY/WC_SECRET(Read/Write 권한) 가 올바른지 확인하세요."
+            return {"status": "fail", "name": "woocommerce", "detail": f"HTTP {resp.status_code}: {body}", "hint": hint}
         except Exception as exc:
             logger.warning("WooCommerce health_check 실패: %s", exc)
             return {"status": "fail", "name": "woocommerce", "detail": str(exc)}

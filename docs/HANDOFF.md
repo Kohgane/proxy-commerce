@@ -63,8 +63,7 @@
   `/seller/markets` 결과를 대조해 마지막 실검증 시간을 남길 것.
 
 ### 백로그 (오너 승인 대기 — 먼저 묻지 말 것)
-- **죽은 버튼 감사 3차**: `dead_button_audit.md` 재스캔에서 남은 `bookmarklet`/`me`/`personal_tokens`/`pricing`/`discovery`
-  계열 `alert(...)` 정리.
+- **죽은 버튼 감사 3차**: → ✅ 완료 (2026-06-10, 오너 지시로 진행). 아래 Phase 191 참고.
 - SaaS 공개 준비 (약관/결제/랜딩) — 2026 Q4. **오너가 지시할 때까지 대기.**
 
 ---
@@ -136,3 +135,162 @@
 ### 다음 단계 (백로그)
 - 쿠팡/스마트스토어/11번가 실 채널 업로더 모듈 연결 (현재 큐 적재 방식)
 - 등록 이력 DB 저장 및 재시도 큐 플로우 고도화
+
+---
+
+## Phase 191 — UX/UI 디테일: 전역 토스트 + 죽은 버튼 감사 3차 ✅ (2026-06-10)
+
+### 오너 지시 사항
+- "UX/UI 디테일 세팅이랑 각 버튼들의 실동작 — 실제로 사이트/서비스가 돌아가게."
+
+### 작업 요약
+- **전역 토스트 인프라**: `_base.html`에 `#pcToastContainer`(모든 셀러 페이지 공용),
+  `seller.js`에 페이지 독립 `pcToast(message, type)` 헬퍼 추가.
+  - XSS 방지(textContent), 타입별 색/아이콘, error 6s·기타 3.5s 자동 소멸, bootstrap 미로딩 폴백.
+- **alert() → pcToast 전환(8개 페이지)**: `pricing_rules`, `pricing_competitors`, `pricing_fx_impact`,
+  `pricing_history`, `discovery`, `discovery_keywords`, `me`, `personal_tokens`, `collect_preview`.
+  - 성공/실패 톤 구분, reload 직전 성공 토스트는 1.2초 지연 후 새로고침으로 가시성 확보.
+- **honest 유지**: 파괴적 동작 `confirm(...)` 유지, `bookmarklet.html` 외부 실행 코드 내부 `alert(...)` 유지.
+- **stale 테스트 정리**: `test_phase_163_favicon_assets` — Phase 189 라이트 테마 복구로 `#020010`(다크)이
+  사라져 baseline에서 깨져 있던 assertion을 `theme-color` 메타 존재 검증으로 교체(향후 테마 변경에 견고).
+
+### 테스트
+- `tests/test_dead_buttons_phase191.py`: 19개 신규 (전역 토스트 인프라 + 8개 페이지 alert 제거).
+- 뷰/템플릿 범위 858개 통과, 회귀 없음.
+
+### 추가 작업 (오너 "나열한 순서대로" 지시 — 2026-06-10)
+
+**① 마켓 업로드 전체 경로(E2E) 검증 고정**
+- `/seller/collect/upload` → `UploadDispatcher.dispatch` → 실제 `_upload_shopify` 경로를 타되
+  라이브 연동 경계(`ShopifyAdapter`)만 목 처리하여 정합성 고정.
+  - 라이브 성공: result에 `external_product_id`/`external_url`, `succeeded` 집계 + UI가 "상품 페이지 열기" 링크 렌더.
+  - API 실패(401 등): `error_code=api_error` + 조치 hint(SHOPIFY_AUTO_TOKEN) → UI "💡 조치 / 오류코드" 렌더.
+  - 검증 실패: `error_code=validation_failed`. 업로드 중 예외도 500 없이 항목 단위 실패로 정직 보고.
+  - `tests/test_collect_upload_e2e.py` 5개 신규.
+  - ⚠️ 실 운영 시크릿 대조(라이브 실등록) 검증은 **운영 환경에서 오너가 `/admin/diagnostics`·셀러
+    마켓 센터로 별도 수행 필요** (CI엔 시크릿 없음).
+
+**② 네이티브 confirm() → 전역 확인 모달(pcConfirm)**
+- `_base.html` `#pcConfirmModal` + `seller.js` Promise 기반 `pcConfirm()`. 11개 호출/7개 페이지 전환.
+  파괴적 동작은 빨강 확인, 비파괴는 파랑으로 톤 구분. 상세는 `dead_button_audit.md`.
+
+### 다음 단계 (백로그)
+- ③ 셀러 대시보드 화면 정밀 점검 → ✅ (회복탄력성 테스트 고정, 이미 잘 구성됨 확인).
+- ④ 쿠팡/스마트스토어/11번가 실 채널 업로더 모듈 연결 → ✅ (아래 참고).
+- `_base_app.html`/대시보드 등 셀러 콘솔 밖 화면의 토스트/확인 모달 통일.
+
+### ④ 쿠팡/스마트스토어 실채널 업로더 연결 (2026-06-10)
+- **브리지 신설**: `src/channel_sync/_channel_bridge.py`(공통 변환/실행),
+  `coupang_uploader.py`·`smartstore_uploader.py`. 디스패처가 `from src.channel_sync import *_uploader`로
+  로드 → 기존 `src.uploaders.CoupangUploader`/`NaverSmartStoreUploader`(Phase 17-2) 재사용.
+- **가격 매핑**: 원화 판매가 = `sell_price_krw` → `recommended_price(_krw)` → `price_krw` →
+  (통화 KRW일 때) `price` 순 첫 양수. 비KRW 가격을 원화로 오용하지 않음. 원화가 0이면 업로드 차단.
+- **정직한 실패 표면화**: 자격증명 미설정 → `token_missing`(디스패처 매핑), API 실패/원화 0 → `api_error`.
+  성공 시 `external_product_id`/`external_url`을 응답·UI에 노출.
+- **테스트**: `tests/test_channel_sync_uploaders.py` 16개(매핑/자격증명/실패/성공/디스패처 통합, 목 API).
+- ⚠️ **실 API 라이브 검증은 운영 환경에서 오너가 COUPANG_*/NAVER_* 자격증명으로 별도 수행 필요**
+  (CI엔 자격증명 없음 → 목 검증까지만).
+
+### ④-b 11번가(11st) 실 업로더 신설 (2026-06-10)
+- **신규 업로더**: `src/uploaders/elevenst_uploader.py` — `ElevenStUploader`(11번가 OpenAPI XML 등록).
+  CoupangUploader/NaverSmartStoreUploader와 동일 인터페이스(`prepare_product`/`upload_product` →
+  `{success, product_id, url}`). 제목 `[해외직구]` 접두, 10원 단위 판매가, 카테고리 매핑, XML 이스케이프,
+  응답 코드/상품번호 파싱.
+- **브리지**: `src/channel_sync/elevenst_uploader.py`(REQUIRED: `ELEVENST_API_KEY`).
+  디스패처가 자격증명 미설정 → `token_missing`, OpenAPI 실패 → `api_error`로 표기.
+- **테스트**: `tests/test_elevenst_uploader.py` 12개(매핑/XML/파싱/성공/실패, requests 목) +
+  `tests/test_channel_sync_uploaders.py`에 브리지/디스패처 통합 4개 추가.
+- ⚠️ 11번가는 배송 템플릿/카테고리 등 셀러별 설정값 필요 — 운영 시 `ELEVENST_DISP_CTGR_NO` 등
+  계정 설정에 맞춰 카테고리/배송 코드 조정 후 라이브 검증 필요.
+
+### ⑤ 라이브 검증 도구 + 가이드 + env 정합성 수정 (2026-06-10)
+- **검증 도구 신설**: `scripts/verify_market_connections.py` — 5개 마켓 연결 진단 + 업로드 사전검증을
+  한 번에 실행해 사람이 읽는 표로 출력(`python -m scripts.verify_market_connections [market] [--json]`).
+  운영 데이터 변경 없음(읽기 + safe dry-run). 운영 셸에서 자격증명 넣고 실행하면 실제 연결 검증.
+- **가이드 신설**: `docs/operations/LIVE_VERIFICATION_GUIDE.md` — 키 발급→환경변수→연결확인→테스트
+  업로드까지 누구나 따라 하는 단계별 안내 + 상태코드/트러블슈팅/체크리스트/환경변수 표.
+- **라이브 검증으로 잡은 실 버그 3건 수정**:
+  1. **11번가 키 불일치**: 진단 키 `11st` vs 디스패처 키 `elevenst` → 검증 도구에서 별칭 매핑.
+  2. **WooCommerce env 불일치**: prevalidate가 `WC_CONSUMER_KEY`(어디와도 불일치)를 요구 →
+     실제 업로드 경로(`WOO_*`)와 진단(`WC_*`) **둘 다 허용**하도록 수정. (올바른 키를 넣어도
+     prevalidate가 잘못 막던 버그)
+  3. **네이버 env 이중 명명**: 업로드 `NAVER_CLIENT_*` vs 진단 `NAVER_COMMERCE_*` →
+     업로더/브리지/prevalidate가 **둘 다 허용**하도록 폴백 추가.
+- **검증 결과**: 자격증명 미설정 시 5개 마켓 모두 `token_missing` 정직 표기, 자격증명 주입 시
+  5개 마켓 prevalidate 전부 `✅ 통과`(업로드 경로 배선 완료 증명).
+- **테스트**: `tests/test_verify_market_connections.py` 7개(별칭 env + 키매핑).
+- ⚠️ **실 API 라이브 등록 검증(상품이 실제로 올라가는지)은 여전히 운영 자격증명 필요** — 위 가이드의
+  "5. 첫 테스트 업로드"로 오너가 직접 1건 등록해 "상품 페이지 열기" 링크까지 확인할 것.
+
+## Phase 192 — 셀프서비스 마켓 연결 (SaaS 대비) ✅ (2026-06-10)
+
+### 오너 지시
+- "SaaS 하게 되면 소비자가 쉽게쉽게 각 마켓에 연결할 수 있어야 한다 — UI/UX·백엔드 잘."
+
+### 작업 요약
+- **셀러별 자격증명 저장소**: `src/seller_console/market_credentials.py`
+  - `data/market_credentials/<seller_id>.json` Fernet 암호화 저장
+    (`MARKET_CRED_ENC_KEY` 우선 → `SECRET_KEY` 파생 → 없으면 평문+경고).
+  - `save/get/delete/is_connected/status(마스킹)/credential_env`,
+    `seller_market_env(seller, markets, extra=)` 컨텍스트로 표준 env에 일시 주입.
+  - 폴백: 셀러 저장값 없으면 전역 환경변수(오너 단일테넌트) 그대로 사용.
+- **셀프서비스 연결 화면**: `GET /seller/markets/connect` + `markets_connect.html`
+  - 마켓별 카드: 상태 배지, 키 입력 폼(비밀값 password/마스킹), [연결 테스트]/[저장]/[연결 해제].
+  - 사이드바에 "마켓 연결(키 설정)" 메뉴 추가.
+- **라우트**: `POST /connect/<m>`(저장), `POST /connect/<m>/test`(저장값+입력중값 라이브 테스트),
+  `POST /connect/<m>/disconnect`(삭제).
+- **업로드 연동**: `/collect/upload`·`/collect/prevalidate`를 `seller_market_env`로 감싸
+  셀러 저장 자격증명이 실제 업로드/사전검증을 구동하도록 연결.
+- **테스트**: `tests/test_market_credentials.py` 18개(저장/암호화/마스킹/주입/라우트).
+
+### 보안 메모
+- 운영에서 `MARKET_CRED_ENC_KEY`(Fernet 키) 설정 필수 권장(미설정 시 SECRET_KEY 파생).
+- ⚠️ 오너가 채팅에 `TOSS_SECRET_KEY`(test_sk_…) 평문 노출 → 토스 콘솔에서 재발급 권장.
+
+### 후속(백로그)
+- 셀러별 자격증명을 DB/암호화 시크릿 매니저로 이전(파일 → 멀티인스턴스 대비).
+- OAuth 방식 마켓(쿠팡/네이버)을 키 직접입력 대신 "연결 버튼" OAuth 플로우로 고도화.
+
+## Phase 193 — 라이브 검증으로 드러난 어댑터 버그 수정 (2026-06-10)
+
+오너가 운영 자격증명 등록 후 `/seller/markets` 라이브 진단 → 5개 마켓 실패.
+실제 API 응답(404/500/406/토큰)을 보고 코드 버그 2건 수정 + 진단 메시지 강화.
+
+### 수정한 코드 버그
+- **스마트스토어 토큰 발급(진짜 버그)**: 네이버 커머스 OAuth2는 `client_secret` 평문이 아니라
+  **bcrypt 전자서명(`client_secret_sign`) + timestamp** 필요. `_naver_signature()` 추가 후
+  토큰 요청 페이로드 교정. (자격증명이 맞아도 실패하던 원인)
+- **WooCommerce HTTP 406**: WP 호스트 WAF가 User-Agent/Accept 없는 요청을 차단.
+  `_request_headers()`(UA+Accept) 추가, 모든 WC 요청(7곳)에 적용.
+
+### 진단 메시지 강화 (값 문제 식별 보조)
+- 쿠팡/11번가/우커머스 health_check 실패 시 **실제 응답 본문 일부 + 상태코드별 hint** 노출.
+
+### 오너 액션 필요 (값/계정 문제로 추정)
+- **Shopify token_expired**: `SHOPIFY_AUTO_TOKEN`(atk_/shpat_) 값이 유효한지 재확인(재발급).
+- **쿠팡 HTTP 404**: `COUPANG_VENDOR_ID` 형식(A+숫자) 재확인.
+- **11번가 HTTP 500**: 셀러오피스에서 OpenAPI 사용 승인 + `ELEVENST_API_KEY` 재확인.
+  (재배포 후 진단 화면의 응답 본문으로 정확한 원인 확인)
+
+### 테스트
+- `tests/test_market_adapter_live_fixes.py` 5개(네이버 서명/WC 헤더).
+
+## Phase 194 — 인앱 마켓 연결을 현황/진단에 완전 통합 (2026-06-10)
+
+오너 지시: "렌더에만 키 넣지 말고 사이트 안(퍼센티)에서도 세팅 가능하게. 다른 사용자/소비자도."
+
+- Phase 192의 `/seller/markets/connect`(셀러별 키 저장)를 **마켓 현황/진단 전 표면에 통합**.
+- `market_credentials.all_credential_env(seller)` 추가: 셀러 저장 키 전체 병합.
+- `/seller/markets` 라이브 진단 엔드포인트 3종(`integration-diagnostics` GET/POST,
+  `shopify/check-connection`)을 `temp_env(all_credential_env(seller))`로 감싸
+  **인앱 저장 키가 실제 연결 진단을 구동**(Render env 없이도). 검증: 저장 전 token_missing →
+  저장 후 실제 API 도달.
+- `_market_configured_for_seller()` 추가 — 현황 카드 '연결됨' 판정에 인앱 키 반영.
+- `/seller/markets` 헤더에 "🔌 마켓 연결(키 입력)" 버튼 + 각 카드에 "🔑 키 입력" 링크.
+- `_seller_id()` 요청 컨텍스트 밖 안전 처리.
+- 테스트: test_market_credentials.py에 통합 검증 3개 추가.
+
+### ⚠️ 배포 메모 (중요)
+- 이번 세션 전체 작업은 브랜치 `claude/magical-noether-oo4831`에 있음.
+  **운영(kohganepercentiii.com = main)에 반영하려면 main 머지 → Render 재배포 필요.**
+  오너가 보던 라이브 진단이 그대로였던 이유 = 브랜치 미배포.

@@ -77,15 +77,15 @@ async function createTarget() {
   });
   const d = await res.json();
   if (d.ok) location.reload();
-  else alert(d.error || '저장 실패');
+  else pcToast(d.error || '저장 실패', 'error');
 }
 
 async function removeTarget(id) {
-  if (!confirm('삭제할까요?')) return;
+  if (!(await pcConfirm('이 경쟁사 모니터링 대상을 삭제할까요?', {title: '경쟁사 삭제', confirmLabel: '삭제'}))) return;
   const res = await fetch(`/seller/pricing/competitors/${id}/delete`, {method: 'POST'});
   const d = await res.json();
   if (d.ok) location.reload();
-  else alert(d.error || '삭제 실패');
+  else pcToast(d.error || '삭제 실패', 'error');
 }
 
 async function monitorNow(id) {
@@ -95,10 +95,10 @@ async function monitorNow(id) {
   });
   const d = await res.json();
   if (d.ok) {
-    alert(`모니터링 완료: ${d.result.captured}건 수집 / 알림 ${d.result.alerts}건`);
-    location.reload();
+    pcToast(`모니터링 완료: ${d.result.captured}건 수집 / 알림 ${d.result.alerts}건`, 'success');
+    setTimeout(() => location.reload(), 1200);
   } else {
-    alert(d.error || '모니터링 실패');
+    pcToast(d.error || '모니터링 실패', 'error');
   }
 }
 </script>

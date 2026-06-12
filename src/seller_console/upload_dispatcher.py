@@ -14,6 +14,13 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# 채널 브리지 예외 (자격증명 미설정 식별용). 브리지 미존재 시 폴백 정의.
+try:
+    from src.channel_sync._channel_bridge import ChannelCredentialsMissing
+except Exception:  # pragma: no cover - 브리지 모듈 부재 시 안전 폴백
+    class ChannelCredentialsMissing(RuntimeError):
+        """채널 API 자격증명 미설정 (폴백 정의)."""
+
 # 지원 마켓 코드
 SUPPORTED_MARKETS = ["coupang", "smartstore", "elevenst", "woocommerce", "shopify"]
 
@@ -27,11 +34,15 @@ MARKET_LABELS = {
 }
 
 # 마켓별 필수 환경변수 (사전검증용)
+# 마켓별 필수 환경변수. 별칭(둘 중 하나) 검증은 _prevalidate_market에서 특수 처리한다.
+#   shopify   : SHOPIFY_SHOP + (SHOPIFY_AUTO_TOKEN | SHOPIFY_ACCESS_TOKEN)
+#   smartstore: (NAVER_CLIENT_ID | NAVER_COMMERCE_CLIENT_ID) + (..._SECRET)
+#   woocommerce: (WC_URL | WOO_BASE_URL) + (WC_KEY | WOO_CK) + (WC_SECRET | WOO_CS)
 _MARKET_REQUIRED_ENVS: Dict[str, List[str]] = {
     "coupang": ["COUPANG_ACCESS_KEY", "COUPANG_SECRET_KEY", "COUPANG_VENDOR_ID"],
-    "smartstore": ["NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET"],
+    "smartstore": [],
     "elevenst": ["ELEVENST_API_KEY"],
-    "woocommerce": ["WC_URL", "WC_CONSUMER_KEY", "WC_CONSUMER_SECRET"],
+    "woocommerce": [],
     "shopify": ["SHOPIFY_SHOP"],
 }
 
@@ -40,7 +51,7 @@ _MARKET_TOKEN_HINTS: Dict[str, str] = {
     "coupang": "/admin/diagnostics 에서 COUPANG_ACCESS_KEY / SECRET_KEY / VENDOR_ID 를 설정하세요.",
     "smartstore": "/admin/diagnostics 에서 NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 를 설정하세요.",
     "elevenst": "/admin/diagnostics 에서 ELEVENST_API_KEY 를 설정하세요.",
-    "woocommerce": "/admin/diagnostics 에서 WC_URL / WC_CONSUMER_KEY / WC_CONSUMER_SECRET 를 설정하세요.",
+    "woocommerce": "/admin/diagnostics 에서 WC_URL / WC_KEY / WC_SECRET (또는 WOO_BASE_URL / WOO_CK / WOO_CS) 를 설정하세요.",
     "shopify": "/admin/diagnostics 에서 SHOPIFY_SHOP 및 SHOPIFY_AUTO_TOKEN 을 설정하세요.",
 }
 
@@ -161,6 +172,22 @@ class UploadDispatcher:
             has_token = bool(os.getenv("SHOPIFY_AUTO_TOKEN") or os.getenv("SHOPIFY_ACCESS_TOKEN"))
             if not has_token:
                 missing.append("SHOPIFY_AUTO_TOKEN (또는 SHOPIFY_ACCESS_TOKEN)")
+
+        # 스마트스토어: NAVER_CLIENT_* 또는 NAVER_COMMERCE_CLIENT_* 어느 쪽이든 허용
+        if market == "smartstore":
+            if not (os.getenv("NAVER_CLIENT_ID") or os.getenv("NAVER_COMMERCE_CLIENT_ID")):
+                missing.append("NAVER_CLIENT_ID (또는 NAVER_COMMERCE_CLIENT_ID)")
+            if not (os.getenv("NAVER_CLIENT_SECRET") or os.getenv("NAVER_COMMERCE_CLIENT_SECRET")):
+                missing.append("NAVER_CLIENT_SECRET (또는 NAVER_COMMERCE_CLIENT_SECRET)")
+
+        # WooCommerce: 실제 업로드 경로는 WOO_* 사용, 진단은 WC_* 사용 → 둘 다 허용
+        if market == "woocommerce":
+            if not (os.getenv("WC_URL") or os.getenv("WOO_BASE_URL")):
+                missing.append("WC_URL (또는 WOO_BASE_URL)")
+            if not (os.getenv("WC_KEY") or os.getenv("WOO_CK")):
+                missing.append("WC_KEY (또는 WOO_CK)")
+            if not (os.getenv("WC_SECRET") or os.getenv("WOO_CS")):
+                missing.append("WC_SECRET (또는 WOO_CS)")
 
         if missing:
             return PrevalidationResult(
@@ -357,6 +384,15 @@ class UploadDispatcher:
                 error_code="module_missing",
                 hint=_MARKET_TOKEN_HINTS.get("coupang"),
             )
+        except ChannelCredentialsMissing as exc:
+            logger.info("쿠팡 자격증명 미설정: %s", exc)
+            return UploadResult(
+                market="coupang",
+                success=False,
+                message=str(exc),
+                error_code="token_missing",
+                hint=_MARKET_TOKEN_HINTS.get("coupang"),
+            )
         except Exception as exc:
             logger.warning("쿠팡 업로드 오류: %s", exc)
             return UploadResult(
@@ -395,6 +431,15 @@ class UploadDispatcher:
                 error_code="module_missing",
                 hint=_MARKET_TOKEN_HINTS.get("smartstore"),
             )
+        except ChannelCredentialsMissing as exc:
+            logger.info("스마트스토어 자격증명 미설정: %s", exc)
+            return UploadResult(
+                market="smartstore",
+                success=False,
+                message=str(exc),
+                error_code="token_missing",
+                hint=_MARKET_TOKEN_HINTS.get("smartstore"),
+            )
         except Exception as exc:
             logger.warning("스마트스토어 업로드 오류: %s", exc)
             return UploadResult(
@@ -431,6 +476,15 @@ class UploadDispatcher:
                 queued=True,
                 message="큐에 적재됨 (11번가 업로더 모듈 준비 중)",
                 error_code="module_missing",
+                hint=_MARKET_TOKEN_HINTS.get("elevenst"),
+            )
+        except ChannelCredentialsMissing as exc:
+            logger.info("11번가 자격증명 미설정: %s", exc)
+            return UploadResult(
+                market="elevenst",
+                success=False,
+                message=str(exc),
+                error_code="token_missing",
                 hint=_MARKET_TOKEN_HINTS.get("elevenst"),
             )
         except Exception as exc:
