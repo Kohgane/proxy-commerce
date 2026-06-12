@@ -31,6 +31,16 @@ class TestSmartstoreNaverSignature:
         # bcrypt salt 형식이 아니면 None (정직 실패)
         assert ss._naver_signature("c", "not-a-valid-bcrypt-salt", "123") is None
 
+    def test_creds_fallback_to_naver_client_names(self, monkeypatch):
+        from src.seller_console.market_adapters import smartstore_adapter as ss
+        for k in ("NAVER_COMMERCE_CLIENT_ID", "NAVER_COMMERCE_CLIENT_SECRET"):
+            monkeypatch.delenv(k, raising=False)
+        # 인앱 연결이 저장하는 NAVER_CLIENT_* 도 인식해야 한다
+        monkeypatch.setenv("NAVER_CLIENT_ID", "cid")
+        monkeypatch.setenv("NAVER_CLIENT_SECRET", "csec")
+        assert ss._naver_creds() == ("cid", "csec")
+        assert ss._api_active() is True
+
     def test_token_request_sends_sign_not_plaintext_secret(self, monkeypatch):
         import bcrypt
         from src.seller_console.market_adapters import smartstore_adapter as ss
@@ -45,6 +55,7 @@ class TestSmartstoreNaverSignature:
         def fake_post(url, data=None, headers=None, timeout=None):
             captured["data"] = data
             resp = MagicMock()
+            resp.status_code = 200
             resp.raise_for_status.return_value = None
             resp.json.return_value = {"access_token": "TOK", "expires_in": 3600}
             return resp

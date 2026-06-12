@@ -459,10 +459,12 @@ class CoupangAdapter(MarketAdapter):
 
         try:
             vendor_id = os.getenv("COUPANG_VENDOR_ID", "")
-            url_path = f"/v2/providers/openapi/apis/api/v1/vendors/{vendor_id}"
+            # 인증/연결 확인용: 반품지 목록 조회(유효한 v4 엔드포인트, vendorId도 함께 검증).
+            url_path = f"/v2/providers/openapi/apis/api/v4/vendors/{vendor_id}/returnShippingCenters"
+            query = "pageNum=1&pageSize=10"
             import requests
-            headers = _hmac_sign("GET", url_path)
-            resp = requests.get(f"{_BASE_URL}{url_path}", headers=headers, timeout=5)
+            headers = _hmac_sign("GET", url_path, query)
+            resp = requests.get(f"{_BASE_URL}{url_path}?{query}", headers=headers, timeout=5)
             if resp.status_code == 200:
                 return {"status": "ok", "detail": "쿠팡 API 연결 성공"}
             body = (resp.text or "").strip().replace("\n", " ")[:200]
