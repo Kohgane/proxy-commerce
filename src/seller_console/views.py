@@ -2394,6 +2394,16 @@ def markets_connect():
     return render_template("markets_connect.html", page="markets", market_statuses=statuses)
 
 
+@bp.get("/markets/guide")
+def markets_guide():
+    """마켓 API 키 발급 가이드 (그림 포함, 인앱)."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
+    from .market_guide import get_guide
+
+    return render_template("markets_guide.html", page="markets", guide=get_guide())
+
+
 @bp.post("/markets/connect/<market>")
 def markets_connect_save(market):
     """셀러 마켓 자격증명 저장 (JSON)."""
