@@ -28,8 +28,20 @@ _NAVER_BASE_URL = "https://api.commerce.naver.com"
 _token_cache: dict = {}
 
 
+def _naver_creds() -> tuple[str, str]:
+    """네이버 커머스 자격증명(client_id, client_secret).
+
+    인앱 연결/Render 환경변수 명명 혼용을 흡수: NAVER_COMMERCE_* 우선,
+    없으면 NAVER_CLIENT_* 폴백.
+    """
+    client_id = os.getenv("NAVER_COMMERCE_CLIENT_ID") or os.getenv("NAVER_CLIENT_ID", "")
+    client_secret = os.getenv("NAVER_COMMERCE_CLIENT_SECRET") or os.getenv("NAVER_CLIENT_SECRET", "")
+    return client_id or "", client_secret or ""
+
+
 def _api_active() -> bool:
-    return all(os.getenv(v) for v in ["NAVER_COMMERCE_CLIENT_ID", "NAVER_COMMERCE_CLIENT_SECRET"])
+    client_id, client_secret = _naver_creds()
+    return bool(client_id and client_secret)
 
 
 def _naver_signature(client_id: str, client_secret: str, timestamp_ms: str) -> Optional[str]:
@@ -64,13 +76,13 @@ def _get_access_token() -> Optional[str]:
     if cached and cached.get("expires_at", 0) > now + 60:
         return cached["access_token"]
 
-    client_id = os.getenv("NAVER_COMMERCE_CLIENT_ID", "")
-    client_secret = os.getenv("NAVER_COMMERCE_CLIENT_SECRET", "")
+    client_id, client_secret = _naver_creds()
 
     # 네이버 커머스 API는 client_secret 평문이 아니라 bcrypt 전자서명을 요구한다.
     timestamp = str(int(now * 1000))
     sign = _naver_signature(client_id, client_secret, timestamp)
     if not sign:
+        _token_cache["last_error"] = "전자서명 생성 실패 — Client Secret이 '$2a$…' 형식인지 확인하세요."
         logger.warning("스마트스토어 토큰 발급 실패: 전자서명 생성 불가(시크릿 형식 확인)")
         return None
 
@@ -88,7 +100,11 @@ def _get_access_token() -> Optional[str]:
             headers={"Content-Type": "application/x-www-form-urlencoded"},
             timeout=10,
         )
-        resp.raise_for_status()
+        if resp.status_code != 200:
+            body = (resp.text or "").strip().replace("\n", " ")[:200]
+            _token_cache["last_error"] = f"HTTP {resp.status_code}: {body}"
+            logger.warning("스마트스토어 토큰 발급 실패 HTTP %s: %s", resp.status_code, body)
+            return None
         token_data = resp.json()
         access_token = token_data.get("access_token")
         expires_in = int(token_data.get("expires_in", 3600))
@@ -96,9 +112,11 @@ def _get_access_token() -> Optional[str]:
             "access_token": access_token,
             "expires_at": now + expires_in,
         }
+        _token_cache.pop("last_error", None)
         logger.info("스마트스토어 OAuth 토큰 발급 성공")
         return access_token
     except Exception as exc:
+        _token_cache["last_error"] = str(exc)
         logger.warning("스마트스토어 토큰 발급 실패: %s", exc)
         return None
 
@@ -406,4 +424,9 @@ class SmartStoreAdapter(MarketAdapter):
         token = _get_access_token()
         if token:
             return {"status": "ok", "detail": "스마트스토어 OAuth 토큰 발급 성공"}
-        return {"status": "fail", "detail": "토큰 발급 실패 — 클라이언트 ID/시크릿 확인 필요"}
+        last_error = _token_cache.get("last_error") or "클라이언트 ID/시크릿 확인 필요"
+        return {
+            "status": "fail",
+            "detail": f"토큰 발급 실패 — {last_error}",
+            "hint": "Client ID/Secret 값과 형식($2a$…)을 확인하세요. 네이버 커머스 API센터에서 발급한 값이어야 합니다.",
+        }
