@@ -61,11 +61,22 @@
   <div class="card console-card mb-4" id="guide-{{ g.key }}">
     <div class="card-body">
       <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-        <h2 class="h5 mb-0">{{ g.icon }} {{ g.label }}</h2>
+        <h2 class="h5 mb-0">
+          {{ g.icon }} {{ g.label }}
+          {% if g.status == 'planned' %}
+          <span class="badge text-bg-warning ms-2 align-middle">연동 준비 중</span>
+          {% endif %}
+        </h2>
         <a href="{{ g.official_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-primary btn-sm">
           🔗 {{ g.official_label }}
         </a>
       </div>
+      {% if g.status == 'planned' %}
+      <div class="alert alert-warning small py-2">
+        🌐 글로벌 확장 마켓입니다. 키 발급 방법을 미리 안내하며, 어댑터 실연동은 순차 적용 예정입니다.
+        지금 키를 준비해두면 연동 시 바로 사용할 수 있어요.
+      </div>
+      {% endif %}
 
       <!-- 시각 흐름 (스텝퍼) -->
       <div class="guide-stepper my-3">
@@ -109,7 +120,11 @@
       </div>
       {% endif %}
 
+      {% if g.status == 'planned' %}
+      <span class="text-muted small">🔧 어댑터 연동 적용 후 입력칸이 열립니다.</span>
+      {% else %}
       <a href="/seller/markets/connect" class="btn btn-success btn-sm">✅ {{ g.label }} 키 입력하러 가기</a>
+      {% endif %}
     </div>
   </div>
   {% endfor %}
