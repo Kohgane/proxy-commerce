@@ -229,6 +229,10 @@ def build_market_ui_state(result: dict[str, Any]) -> dict[str, Any]:
         action_text = "토큰을 재발급한 뒤 재시도 버튼으로 다시 점검하세요."
     else:
         action_text = "재시도 버튼으로 다시 점검하고 지속되면 diagnostics와 판매자센터 로그를 함께 확인하세요."
+    # 어댑터가 마켓별 정확한 조치 힌트를 제공하면 그것을 우선 노출(일반 상태 문구보다 정확).
+    result_hint = str(result.get("hint") or "").strip()
+    if result_hint:
+        action_text = result_hint
     return {
         "badge_label": badge["label"],
         "badge_class": badge["class_name"],
