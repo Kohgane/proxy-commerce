@@ -149,4 +149,18 @@ def test_build_market_ui_state_exposes_technical_detail():
 
     assert ui["badge_label"] == "api_error"
     assert ui["technical_detail"] == "HTTP 500"
-    assert ui["action_text"].startswith("재시도 버튼")
+    # 어댑터 힌트가 있으면 action_text로 우선 노출된다.
+    assert ui["action_text"] == "잠시 후 다시 시도하세요."
+
+
+def test_token_expired_uses_adapter_hint_not_generic_reissue():
+    """쿠팡 401처럼 토큰 재발급 개념이 없는 마켓은 어댑터 힌트가 action_text로 노출된다."""
+    from src.seller_console.market_integration_diagnostics import build_market_ui_state
+    ui = build_market_ui_state({
+        "status": "token_expired",
+        "summary": "HTTP 401: Invalid signature",
+        "hint": "COUPANG_ACCESS_KEY/SECRET_KEY 값을 확인하세요(앞뒤 공백 없이 정확히).",
+        "steps": [{"ok": False, "detail": "HTTP 401", "error_code": "token_expired"}],
+    })
+    assert "재발급" not in ui["action_text"]
+    assert "COUPANG" in ui["action_text"]
