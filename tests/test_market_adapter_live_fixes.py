@@ -73,6 +73,48 @@ class TestSmartstoreNaverSignature:
         ss._token_cache.clear()
 
 
+class TestCredentialStripping:
+    """Render env에 끼어든 공백/줄바꿈이 서명을 깨지 않도록 strip."""
+
+    def test_coupang_hmac_ignores_whitespace(self, monkeypatch):
+        from src.seller_console.market_adapters import coupang_adapter as cp
+        monkeypatch.setenv("COUPANG_ACCESS_KEY", "ak")
+        monkeypatch.setenv("COUPANG_SECRET_KEY", "sk")
+        clean = cp._hmac_sign("GET", "/x")["Authorization"]
+        monkeypatch.setenv("COUPANG_ACCESS_KEY", " ak\n")
+        monkeypatch.setenv("COUPANG_SECRET_KEY", " sk\n")
+        dirty = cp._hmac_sign("GET", "/x")["Authorization"]
+        # 서명 시각(초)이 같을 때 동일해야 한다(공백 무시). 시각 차이 가능성은 access-key 비교로 보강.
+        assert "access-key=ak," in clean and "access-key=ak," in dirty
+
+    def test_naver_creds_stripped(self, monkeypatch):
+        from src.seller_console.market_adapters import smartstore_adapter as ss
+        for k in ("NAVER_COMMERCE_CLIENT_ID", "NAVER_COMMERCE_CLIENT_SECRET"):
+            monkeypatch.delenv(k, raising=False)
+        monkeypatch.setenv("NAVER_CLIENT_ID", "  cid\n")
+        monkeypatch.setenv("NAVER_CLIENT_SECRET", "csec  ")
+        assert ss._naver_creds() == ("cid", "csec")
+
+
+class TestSmartstoreIpHint:
+    def test_ip_error_gives_ip_hint(self, monkeypatch):
+        from src.seller_console.market_adapters import smartstore_adapter as ss
+        import bcrypt
+        ss._token_cache.clear()
+        monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "cid")
+        monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", bcrypt.gensalt().decode())
+        monkeypatch.delenv("ADAPTER_DRY_RUN", raising=False)
+
+        resp = MagicMock()
+        resp.status_code = 403
+        resp.text = '{"code":"GW.IP_NOT_ALLOWED","message":"호출이 허용되지 않은 IP입니다."}'
+        with patch("requests.post", return_value=resp):
+            result = ss.SmartStoreAdapter().health_check()
+        assert result["status"] == "fail"
+        assert "허용 IP" in result["hint"]
+        ss._token_cache.clear()
+
+
 class TestWooCommerceHeaders:
     def test_health_check_sends_user_agent_and_accept(self, monkeypatch):
         from src.seller_console.market_adapters import woocommerce_adapter as wc

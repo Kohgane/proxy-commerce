@@ -36,7 +36,7 @@ def _naver_creds() -> tuple[str, str]:
     """
     client_id = os.getenv("NAVER_COMMERCE_CLIENT_ID") or os.getenv("NAVER_CLIENT_ID", "")
     client_secret = os.getenv("NAVER_COMMERCE_CLIENT_SECRET") or os.getenv("NAVER_CLIENT_SECRET", "")
-    return client_id or "", client_secret or ""
+    return (client_id or "").strip(), (client_secret or "").strip()
 
 
 def _api_active() -> bool:
@@ -425,8 +425,13 @@ class SmartStoreAdapter(MarketAdapter):
         if token:
             return {"status": "ok", "detail": "스마트스토어 OAuth 토큰 발급 성공"}
         last_error = _token_cache.get("last_error") or "클라이언트 ID/시크릿 확인 필요"
+        if "IP" in last_error:
+            hint = ("네이버 커머스 API센터 → 애플리케이션 설정 → ‘허용 IP’에 서버 고정 IP를 등록하세요"
+                    "(또는 IP 제한을 해제). 인증 자체는 성공한 상태입니다.")
+        else:
+            hint = "Client ID/Secret 값과 형식($2a$…)을 확인하세요. 네이버 커머스 API센터에서 발급한 값이어야 합니다."
         return {
             "status": "fail",
             "detail": f"토큰 발급 실패 — {last_error}",
-            "hint": "Client ID/Secret 값과 형식($2a$…)을 확인하세요. 네이버 커머스 API센터에서 발급한 값이어야 합니다.",
+            "hint": hint,
         }
