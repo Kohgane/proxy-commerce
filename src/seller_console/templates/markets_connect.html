@@ -143,13 +143,30 @@ function renderTestResult(form, result) {
   const box = form.querySelector('[data-role="test-result"]');
   if (!box) return;
   box.classList.remove('d-none', 'text-success', 'text-danger', 'text-warning');
+  box.innerHTML = '';
   if (result && result.status === 'connected') {
     box.classList.add('text-success');
     box.textContent = '✅ 연결 성공 — ' + (result.summary || '');
-  } else {
-    box.classList.add('text-warning');
-    const code = result ? (result.status || '실패') : '실패';
-    box.textContent = '⚠️ ' + code + ' — ' + ((result && (result.hint || result.summary)) || '연결을 확인하세요.');
+    return;
+  }
+  box.classList.add('text-warning');
+  const code = result ? (result.status || '실패') : '실패';
+  const head = document.createElement('div');
+  head.textContent = '⚠️ ' + code;
+  box.appendChild(head);
+  // 마켓이 보낸 원문 응답(디버깅용) — 그대로 표시
+  if (result && result.summary) {
+    const raw = document.createElement('div');
+    raw.className = 'text-muted mt-1';
+    raw.style.wordBreak = 'break-all';
+    raw.textContent = '마켓 응답: ' + result.summary;
+    box.appendChild(raw);
+  }
+  if (result && result.hint) {
+    const hint = document.createElement('div');
+    hint.className = 'mt-1';
+    hint.textContent = '💡 조치: ' + result.hint;
+    box.appendChild(hint);
   }
 }
 
