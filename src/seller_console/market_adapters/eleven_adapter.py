@@ -33,7 +33,7 @@ def _dry_run() -> bool:
 
 
 def _auth_headers() -> dict:
-    return {"openapikey": os.getenv("ELEVENST_API_KEY", "")}
+    return {"openapikey": os.getenv("ELEVENST_API_KEY", "").strip()}
 
 
 def _stub_response(action: str = "fetch_inventory") -> dict:

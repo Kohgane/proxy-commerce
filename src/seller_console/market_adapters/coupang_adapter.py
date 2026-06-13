@@ -42,8 +42,8 @@ def _hmac_sign(method: str, url_path: str, query: str = "") -> dict:
     Returns:
         Authorization 헤더를 포함한 dict
     """
-    access_key = os.getenv("COUPANG_ACCESS_KEY", "")
-    secret_key = os.getenv("COUPANG_SECRET_KEY", "")
+    access_key = os.getenv("COUPANG_ACCESS_KEY", "").strip()
+    secret_key = os.getenv("COUPANG_SECRET_KEY", "").strip()
 
     dt = datetime.now(tz=timezone.utc)
     # 쿠팡 윙 OpenAPI 규격: 2자리 연도 (%y) 사용 (예: 261023T143512Z)
@@ -458,7 +458,7 @@ class CoupangAdapter(MarketAdapter):
             return {"status": "dry_run", "detail": "ADAPTER_DRY_RUN=1"}
 
         try:
-            vendor_id = os.getenv("COUPANG_VENDOR_ID", "")
+            vendor_id = os.getenv("COUPANG_VENDOR_ID", "").strip()
             # 인증/연결 확인용: 반품지 목록 조회(유효한 v4 엔드포인트, vendorId도 함께 검증).
             url_path = f"/v2/providers/openapi/apis/api/v4/vendors/{vendor_id}/returnShippingCenters"
             query = "pageNum=1&pageSize=10"
