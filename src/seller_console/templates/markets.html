@@ -68,7 +68,7 @@
             <button class="btn btn-outline-primary btn-sm" type="button" data-market-action="connection" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'connection')">연결 확인</button>
             <button class="btn btn-outline-secondary btn-sm" type="button" data-market-action="scope" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'scope')">권한 확인</button>
             <button class="btn btn-outline-warning btn-sm" type="button" data-market-action="retry" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'retry')">재시도</button>
-            <a class="btn btn-outline-primary btn-sm" href="/seller/markets/connect">🔑 키 입력</a>
+            <a class="btn btn-outline-primary btn-sm" href="/seller/markets/connect/{{ hub.marketplace }}">🔑 키 입력</a>
           </div>
           <div class="small text-muted mt-2">필수 권한: {{ hub.required_scopes|join(', ') }}</div>
           <div class="small text-muted mt-1">필수 env: {{ hub.required_env|join(', ') }}</div>

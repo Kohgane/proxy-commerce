@@ -188,6 +188,23 @@ class TestConnectRoutes:
         assert resp.status_code == 200
         assert "result" in resp.get_json()
 
+    def test_per_market_page_renders(self, client):
+        resp = client.get("/seller/markets/connect/coupang")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "쿠팡 연결" in html
+        assert "키 발급 방법" in html  # 인라인 가이드
+        assert "전체 마켓 보기" in html
+
+    def test_per_market_11st_maps_to_elevenst(self, client):
+        resp = client.get("/seller/markets/connect/11st")
+        assert resp.status_code == 200
+        assert "11번가 연결" in resp.get_data(as_text=True)
+
+    def test_per_market_invalid_redirects(self, client):
+        resp = client.get("/seller/markets/connect/foobar")
+        assert resp.status_code in (301, 302)
+
     def test_disconnect(self, client):
         client.post("/seller/markets/connect/coupang", json={"values": {
             "COUPANG_ACCESS_KEY": "ak", "COUPANG_SECRET_KEY": "sk", "COUPANG_VENDOR_ID": "A1"}})
