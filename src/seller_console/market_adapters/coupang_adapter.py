@@ -467,12 +467,20 @@ class CoupangAdapter(MarketAdapter):
             resp = requests.get(f"{_BASE_URL}{url_path}?{query}", headers=headers, timeout=5)
             if resp.status_code == 200:
                 return {"status": "ok", "detail": "쿠팡 API 연결 성공"}
-            body = (resp.text or "").strip().replace("\n", " ")[:200]
+            body = (resp.text or "").strip().replace("\n", " ")[:300]
+            low = body.lower()
             hint = ""
             if resp.status_code == 401:
                 hint = "COUPANG_ACCESS_KEY/SECRET_KEY 값을 확인하세요(앞뒤 공백 없이 정확히)."
+            elif "ip address" in low and "not allowed" in low:
+                # 쿠팡 IP 허용목록 차단 — 서버 IP를 Wing에 등록해야 함
+                import re as _re
+                m = _re.search(r"ip address\s+([0-9.]+)", body, _re.IGNORECASE)
+                ip = m.group(1) if m else "이 서버 IP"
+                hint = (f"이 서버 IP({ip})가 쿠팡 허용목록에 없습니다. 쿠팡 Wing → 오픈API 발급/관리 →"
+                        f" 'API 호출 허용 IP'에 {ip} 를 등록하세요. (키는 정상)")
             elif resp.status_code == 403:
-                hint = "쿠팡 Wing에서 해당 API 권한이 켜져 있는지, Vendor ID가 이 키의 업체와 일치하는지 확인하세요."
+                hint = "쿠팡 Wing에서 해당 API 권한/허용 IP를 확인하세요. Vendor ID가 이 키의 업체와 일치하는지도 확인."
             elif resp.status_code == 404:
                 hint = "COUPANG_VENDOR_ID 값이 올바른지(A+숫자 형식) 확인하세요."
             return {"status": "fail", "detail": f"HTTP {resp.status_code}: {body}", "hint": hint}
