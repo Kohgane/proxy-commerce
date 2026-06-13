@@ -459,9 +459,9 @@ class CoupangAdapter(MarketAdapter):
 
         try:
             vendor_id = os.getenv("COUPANG_VENDOR_ID", "").strip()
-            # 인증/연결 확인용: 반품지 목록 조회(유효한 v4 엔드포인트, vendorId도 함께 검증).
-            url_path = f"/v2/providers/openapi/apis/api/v4/vendors/{vendor_id}/returnShippingCenters"
-            query = "pageNum=1&pageSize=10"
+            # 연결 확인용: 셀러 상품 목록 1건 조회(상품 등록 키가 가진 권한과 동일 — 권한 false-403 방지).
+            url_path = "/v2/providers/seller_api/apis/api/v1/marketplace/seller-products"
+            query = f"vendorId={vendor_id}&maxPerPage=1"
             import requests
             headers = _hmac_sign("GET", url_path, query)
             resp = requests.get(f"{_BASE_URL}{url_path}?{query}", headers=headers, timeout=5)
@@ -469,10 +469,12 @@ class CoupangAdapter(MarketAdapter):
                 return {"status": "ok", "detail": "쿠팡 API 연결 성공"}
             body = (resp.text or "").strip().replace("\n", " ")[:200]
             hint = ""
-            if resp.status_code == 404:
+            if resp.status_code == 401:
+                hint = "COUPANG_ACCESS_KEY/SECRET_KEY 값을 확인하세요(앞뒤 공백 없이 정확히)."
+            elif resp.status_code == 403:
+                hint = "쿠팡 Wing에서 해당 API 권한이 켜져 있는지, Vendor ID가 이 키의 업체와 일치하는지 확인하세요."
+            elif resp.status_code == 404:
                 hint = "COUPANG_VENDOR_ID 값이 올바른지(A+숫자 형식) 확인하세요."
-            elif resp.status_code in (401, 403):
-                hint = "COUPANG_ACCESS_KEY/SECRET_KEY 가 올바른지 확인하세요."
             return {"status": "fail", "detail": f"HTTP {resp.status_code}: {body}", "hint": hint}
         except Exception as exc:
             logger.warning("쿠팡 health_check 실패: %s", exc)
