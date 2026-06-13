@@ -162,9 +162,12 @@ def save(seller_id: str, market: str, values: Dict[str, str]) -> Dict[str, str]:
         if env in allowed and str(val).strip()
     }
     data = _load_all(seller_id)
-    data[market] = cleaned
+    # 병합: 입력한 필드만 갱신하고 나머지(예: 비워둔 비밀값)는 기존 값 유지.
+    existing = data.get(market) if isinstance(data.get(market), dict) else {}
+    merged = {**existing, **cleaned}
+    data[market] = merged
     _save_all(seller_id, data)
-    return cleaned
+    return merged
 
 
 def delete(seller_id: str, market: str) -> bool:

@@ -42,6 +42,16 @@ class TestStoreRoundtrip:
         })
         assert saved == {"ELEVENST_API_KEY": "key1"}
 
+    def test_save_merges_keeps_existing_secret(self, mc):
+        # 비밀값 포함 전체 저장
+        mc.save("s2", "coupang", {
+            "COUPANG_ACCESS_KEY": "ak", "COUPANG_SECRET_KEY": "sk", "COUPANG_VENDOR_ID": "A1"})
+        # 비밀값 칸을 비운 채 Vendor ID만 갱신 → 기존 비밀값 유지되어야 함
+        merged = mc.save("s2", "coupang", {"COUPANG_VENDOR_ID": "A2"})
+        assert merged["COUPANG_ACCESS_KEY"] == "ak"
+        assert merged["COUPANG_SECRET_KEY"] == "sk"
+        assert merged["COUPANG_VENDOR_ID"] == "A2"
+
     def test_delete(self, mc):
         mc.save("seller1", "coupang", {"COUPANG_ACCESS_KEY": "a", "COUPANG_SECRET_KEY": "b", "COUPANG_VENDOR_ID": "c"})
         assert mc.delete("seller1", "coupang") is True
