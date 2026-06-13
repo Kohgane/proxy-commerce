@@ -2383,15 +2383,48 @@ def _diag_market_key(market: str) -> str:
     return "11st" if market == "elevenst" else market
 
 
+def _connect_market_key(market: str) -> str:
+    """진단/URL 키 → 자격증명 저장 키 (11st → elevenst)."""
+    m = (market or "").strip().lower()
+    return "elevenst" if m == "11st" else m
+
+
 @bp.get("/markets/connect")
 def markets_connect():
-    """셀프서비스 마켓 연결 관리 화면."""
+    """셀프서비스 마켓 연결 관리 화면 (전체)."""
     if not _check_auth():
         return redirect(url_for("auth.login", next=request.url))
     from . import market_credentials as mc
 
-    statuses = mc.all_status(_seller_id())
-    return render_template("markets_connect.html", page="markets", market_statuses=statuses)
+    seller = _seller_id()
+    statuses = mc.all_status(seller)
+    chips = [{"market": s["market"], "label": s["label"], "connected": s["connected"]} for s in statuses]
+    return render_template(
+        "markets_connect.html", page="markets",
+        market_statuses=statuses, market_chips=chips, single_market=None, guide_entry=None,
+    )
+
+
+@bp.get("/markets/connect/<market>")
+def markets_connect_one(market):
+    """마켓별 단독 연결 페이지 (키 발급 안내 + 입력칸)."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
+    from . import market_credentials as mc
+    from .market_guide import get_guide
+
+    market = _connect_market_key(market)
+    if market not in mc.MARKET_CRED_FIELDS:
+        return redirect(url_for("seller_console.markets_connect"))
+
+    seller = _seller_id()
+    chips = [{"market": s["market"], "label": s["label"], "connected": s["connected"]} for s in mc.all_status(seller)]
+    guide_entry = next((g for g in get_guide() if g.get("key") == market), None)
+    return render_template(
+        "markets_connect.html", page="markets",
+        market_statuses=[mc.status(seller, market)], market_chips=chips,
+        single_market=market, guide_entry=guide_entry,
+    )
 
 
 @bp.get("/markets/guide")

@@ -5,13 +5,31 @@
 <section class="mb-4">
   <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
     <div>
+      {% if single_market %}
+      <h1 class="h4 mb-1">{{ market_statuses[0].label }} 연결</h1>
+      <p class="text-muted mb-0">{{ market_statuses[0].label }} API 키를 입력하고, 저장 전에 연결을 테스트하세요.</p>
+      {% else %}
       <h1 class="h4 mb-1">마켓 연결</h1>
       <p class="text-muted mb-0">내 마켓 API 키를 직접 입력하고, 저장 전에 연결을 테스트할 수 있어요.</p>
+      {% endif %}
     </div>
     <div class="d-flex gap-2">
+      {% if single_market %}
+      <a href="/seller/markets/connect" class="btn btn-outline-secondary btn-sm">전체 마켓 보기</a>
+      {% endif %}
       <a href="/seller/markets/guide" class="btn btn-outline-primary btn-sm">📖 발급 가이드</a>
       <a href="/seller/markets" class="btn btn-outline-secondary btn-sm">← 마켓 현황으로</a>
     </div>
+  </div>
+
+  <!-- 마켓 전환 칩 -->
+  <div class="d-flex flex-wrap gap-2 mb-3">
+    {% for chip in market_chips %}
+    <a href="/seller/markets/connect/{{ chip.market }}"
+       class="btn btn-sm {{ 'btn-primary' if single_market == chip.market else 'btn-outline-secondary' }}">
+      {{ chip.label }} {{ '✅' if chip.connected else '' }}
+    </a>
+    {% endfor %}
   </div>
 
   <div class="alert alert-light border d-flex gap-2 align-items-start mb-4" role="note">
@@ -22,9 +40,28 @@
     </div>
   </div>
 
+  {% if single_market and guide_entry %}
+  <div class="card console-card mb-3">
+    <div class="card-body">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+        <h2 class="h6 mb-0">📖 {{ guide_entry.label }} 키 발급 방법</h2>
+        <a href="{{ guide_entry.official_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-primary btn-sm">🔗 {{ guide_entry.official_label }}</a>
+      </div>
+      <ol class="small mb-0">
+        {% for s in guide_entry.steps %}
+        <li class="mb-1"><span class="fw-semibold">{{ s.t }}</span> — <span class="text-muted">{{ s.d }}</span></li>
+        {% endfor %}
+      </ol>
+      {% if guide_entry.tips %}
+      <div class="small text-muted mt-2">{% for tip in guide_entry.tips %}<div>💡 {{ tip }}</div>{% endfor %}</div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   <div class="row g-3">
     {% for m in market_statuses %}
-    <div class="col-12 col-lg-6">
+    <div class="{{ 'col-12' if single_market else 'col-12 col-lg-6' }}">
       <div class="card console-card h-100" data-market="{{ m.market }}">
         <div class="card-body">
           <div class="d-flex align-items-center justify-content-between gap-2 mb-3">

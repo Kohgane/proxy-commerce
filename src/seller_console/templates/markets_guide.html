@@ -123,7 +123,7 @@
       {% if g.status == 'planned' %}
       <span class="text-muted small">🔧 어댑터 연동 적용 후 입력칸이 열립니다.</span>
       {% else %}
-      <a href="/seller/markets/connect" class="btn btn-success btn-sm">✅ {{ g.label }} 키 입력하러 가기</a>
+      <a href="/seller/markets/connect/{{ g.key }}" class="btn btn-success btn-sm">✅ {{ g.label }} 키 입력하러 가기</a>
       {% endif %}
     </div>
   </div>
