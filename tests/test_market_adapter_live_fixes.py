@@ -145,3 +145,21 @@ class TestWooCommerceHeaders:
         h = wc._request_headers()
         assert h["User-Agent"]
         assert h["Accept"] == "application/json"
+
+
+class TestCoupangIpAllowlistHint:
+    def test_403_ip_not_allowed_gives_ip_hint(self, monkeypatch):
+        from src.seller_console.market_adapters import coupang_adapter as cp
+        monkeypatch.setenv("COUPANG_ACCESS_KEY", "ak")
+        monkeypatch.setenv("COUPANG_SECRET_KEY", "sk")
+        monkeypatch.setenv("COUPANG_VENDOR_ID", "A01381223")
+        monkeypatch.delenv("ADAPTER_DRY_RUN", raising=False)
+        resp = MagicMock()
+        resp.status_code = 403
+        resp.text = ('{"path":"/api/v1/marketplace/seller-products","error":"FORBIDDEN",'
+                     '"message":"Your ip address 74.220.49.7 is not allowed for this request."}')
+        with patch("requests.get", return_value=resp):
+            result = cp.CoupangAdapter().health_check()
+        assert result["status"] == "fail"
+        assert "74.220.49.7" in result["hint"]
+        assert "허용 IP" in result["hint"]

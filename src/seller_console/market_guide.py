@@ -30,9 +30,10 @@ MARKET_GUIDE: List[Dict[str, Any]] = [
             {"env": "COUPANG_VENDOR_ID", "label": "Vendor ID(업체코드)", "where": "업체정보의 A+숫자 코드"},
         ],
         "tips": [
+            "‘your ip address … is not allowed(403)’가 뜨면 서버 IP가 허용목록에 없는 것입니다. "
+            "쿠팡 Wing → 오픈API 발급/관리 → ‘API 호출 허용 IP’에 우리 서버 IP를 등록하세요(키는 정상).",
             "‘Invalid signature(401)’가 뜨면 ACCESS KEY/SECRET KEY 값이 정확한지(공백·뒤바뀜 없이) 확인하세요.",
             "404가 나면 Vendor ID(A+숫자) 형식이 맞는지 확인하세요.",
-            "오픈API 사용은 일부 계정에서 사전 신청/승인이 필요할 수 있습니다.",
         ],
     },
     {
