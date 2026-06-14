@@ -176,10 +176,11 @@ class ShopifyAdapter(MarketAdapter):
                 message = self._friendly_http_reason(response.status_code, summary, action="Shopify 연결 확인")
                 if response.status_code == 401:
                     token = self._access_token()
+                    token_prefix = (token.split("_")[0] + "_…") if (token and "_" in token) else (token[:4] + "…" if token else "(없음)")
+                    message += (f" [테스트한 상점: {self._shop_domain()} · 토큰 접두사: {token_prefix}]"
+                                " — 이 상점이 토큰을 발급한 상점과 같은지 확인하세요.")
                     if token and not token.startswith("shpat_"):
-                        prefix = token.split("_")[0] if "_" in token else token[:4]
-                        message += (f" ⚠️ 현재 토큰이 '{prefix}_…'로 시작합니다 — "
-                                    "Admin API access token은 'shpat_'로 시작해야 합니다(잘못된 값일 수 있음).")
+                        message += " ⚠️ 토큰이 'shpat_'로 시작하지 않습니다(Admin API access token이 맞는지 확인)."
                 return {
                     "ok": False,
                     "status": "api_error",
