@@ -173,12 +173,19 @@ class ShopifyAdapter(MarketAdapter):
             response = self._request_with_retry("GET", "/shop.json")
             if not (200 <= response.status_code < 300):
                 summary = self._error_summary(response)
+                message = self._friendly_http_reason(response.status_code, summary, action="Shopify 연결 확인")
+                if response.status_code == 401:
+                    token = self._access_token()
+                    if token and not token.startswith("shpat_"):
+                        prefix = token.split("_")[0] if "_" in token else token[:4]
+                        message += (f" ⚠️ 현재 토큰이 '{prefix}_…'로 시작합니다 — "
+                                    "Admin API access token은 'shpat_'로 시작해야 합니다(잘못된 값일 수 있음).")
                 return {
                     "ok": False,
                     "status": "api_error",
                     "http_status": response.status_code,
                     "reason": summary,
-                    "message": self._friendly_http_reason(response.status_code, summary, action="Shopify 연결 확인"),
+                    "message": message,
                 }
 
             body = response.json()
