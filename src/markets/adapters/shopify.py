@@ -231,9 +231,17 @@ class ShopifyAdapter(MarketAdapter):
         elif token and not token.startswith(valid_prefixes):
             message += " ⚠️ 토큰 종류 확인: Admin API access token(shpat_)이어야 합니다."
         elif token and token.startswith("atkn_"):
-            message += (" 사실: 이 토큰은 'atkn_'(앱 자동화 토큰)입니다. 401은 스코프 문제가 아니라 토큰 인증 거부 —"
-                        " Shopify가 이 토큰을 상점 Admin API 액세스 토큰으로 인식하지 않습니다."
-                        " Admin Develop apps에서 발급하는 'Admin API access token(shpat_)'을 사용하세요.")
+            cid, csec = self._client_credentials()
+            if not (cid and csec):
+                missing_cc = []
+                if not cid:
+                    missing_cc.append("SHOPIFY_CLIENT_ID")
+                if not csec:
+                    missing_cc.append("SHOPIFY_CLIENT_SECRET")
+                message += (f" 원인: {', '.join(missing_cc)} 미설정 → client_credentials 발급을 못 하고 atkn_로 폴백 중입니다."
+                            f" atkn_은 Admin API에서 거부됩니다. {', '.join(missing_cc)}를 설정하면 자동으로 shpat_를 발급해 연결됩니다.")
+            else:
+                message += " atkn_ 토큰 사용 중(client_credentials 발급 실패 가능) — CLIENT_ID/SECRET 값을 확인하세요."
         else:
             message += " 401은 스코프가 아니라 토큰 인증 거부입니다(Admin API access token이 맞는지/유효한지 확인)."
         return message
