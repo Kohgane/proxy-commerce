@@ -37,13 +37,16 @@ class ShopifyAdapter(MarketAdapter):
         return raw.strip("/").lower()
 
     def _direct_token(self) -> str:
-        """환경변수에 직접 저장된 액세스 토큰(in-admin custom app shpat_ 등)."""
-        return (
-            os.getenv("SHOPIFY_AUTO_TOKEN")
-            or os.getenv("SHOPIFY_ACCESS_TOKEN")
-            or os.getenv("SHOPIFY_ADMIN_TOKEN")
-            or ""
-        ).strip()
+        """환경변수에 직접 저장된 액세스 토큰.
+
+        atkn_(앱 자동화 토큰)은 Admin API에서 401로 거부되므로 직접 토큰으로 쓰지 않고 건너뛴다.
+        우선순위: SHOPIFY_AUTO_TOKEN → SHOPIFY_ACCESS_TOKEN → SHOPIFY_ADMIN_TOKEN.
+        """
+        for name in ("SHOPIFY_AUTO_TOKEN", "SHOPIFY_ACCESS_TOKEN", "SHOPIFY_ADMIN_TOKEN"):
+            val = (os.getenv(name) or "").strip()
+            if val and not val.startswith("atkn_"):
+                return val
+        return ""
 
     def _client_credentials(self) -> Tuple[str, str]:
         # Shopify에서 Client ID = API key. 명명 혼용을 흡수해 여러 이름을 허용한다.
