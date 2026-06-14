@@ -144,10 +144,9 @@ class ShopifyAdapter(MarketAdapter):
     @staticmethod
     def _friendly_http_reason(status_code: int, summary: str, *, action: str) -> str:
         if status_code == 401:
-            return (f"{action} 인증 실패. 'Admin API access token(shpat_…)'을 넣었는지 확인하세요"
-                    " (API key 아님). 토큰을 만든 상점과 SHOPIFY_SHOP 도메인이 같아야 합니다. (Shopify는 IP 제한 없음)")
+            return f"{action} 인증 실패(401)."
         if status_code == 403:
-            return f"{action} 권한이 부족합니다. Shopify 앱 스코프(write_products/read_products 등)를 확인하세요."
+            return f"{action} 권한 부족(403). Shopify 앱 스코프(read_products/write_products 등)를 확인하세요."
         if status_code == 404:
             return f"{action} 대상 스토어를 찾지 못했습니다. SHOPIFY_SHOP 도메인을 확인하세요."
         if status_code == 429:
@@ -157,6 +156,20 @@ class ShopifyAdapter(MarketAdapter):
         if summary:
             return summary
         return "요청이 거절되었습니다."
+
+    def _append_auth_diagnostics(self, message: str) -> str:
+        """401/인증 실패 시 테스트 상점·토큰 접두사·종류 진단을 덧붙인다."""
+        token = self._access_token()
+        token_prefix = (token.split("_")[0] + "_…") if (token and "_" in token) else (token[:4] + "…" if token else "(없음)")
+        message += f" [테스트한 상점: {self._shop_domain()} · 토큰 접두사: {token_prefix}]"
+        valid_prefixes = ("shpat_", "atkn_", "shpca_")
+        if token and token.startswith("shpss_"):
+            message += " ⚠️ 'shpss_'는 Client secret(암호)입니다 — 토큰칸엔 '앱 자동화 토큰(atkn_)' 또는 'shpat_'를 넣으세요."
+        elif token and not token.startswith(valid_prefixes):
+            message += " ⚠️ 토큰 종류 확인: '앱 자동화 토큰(atkn_)' 또는 'Admin API access token(shpat_)'이어야 합니다."
+        else:
+            message += " 토큰 형식은 정상입니다 → 앱 권한(scope)에 read_products 등이 포함됐는지, 도메인이 정확한지 확인하세요."
+        return message
 
     def check_connection(self) -> Dict[str, Any]:
         missing_env = self._missing_config_env()
@@ -170,23 +183,15 @@ class ShopifyAdapter(MarketAdapter):
             }
 
         try:
-            response = self._request_with_retry("GET", "/shop.json")
+            # GraphQL Admin API 사용(신규 개발자대시보드 앱은 REST가 막혀 GraphQL만 동작).
+            query = "{ shop { name myshopifyDomain currencyCode plan { displayName } } }"
+            response = self._request_with_retry("POST", "/graphql.json", json_body={"query": query})
+
             if not (200 <= response.status_code < 300):
                 summary = self._error_summary(response)
                 message = self._friendly_http_reason(response.status_code, summary, action="Shopify 연결 확인")
-                if response.status_code == 401:
-                    token = self._access_token()
-                    token_prefix = (token.split("_")[0] + "_…") if (token and "_" in token) else (token[:4] + "…" if token else "(없음)")
-                    message += f" [테스트한 상점: {self._shop_domain()} · 토큰 접두사: {token_prefix}]"
-                    # 유효한 Shopify 토큰 접두사: shpat_(Admin API access token), atkn_(앱 자동화 토큰), shpca_
-                    valid_prefixes = ("shpat_", "atkn_", "shpca_")
-                    if token and token.startswith("shpss_"):
-                        message += " ⚠️ 'shpss_'는 Client secret(암호)입니다 — 토큰칸엔 '앱 자동화 토큰(atkn_)' 또는 'shpat_'를 넣으세요."
-                    elif token and not token.startswith(valid_prefixes):
-                        message += " ⚠️ 토큰 종류 확인: '앱 자동화 토큰(atkn_)' 또는 'Admin API access token(shpat_)'이어야 합니다."
-                    else:
-                        message += (" 토큰 형식은 정상입니다 → 이 토큰을 발급한 앱이 '테스트한 상점'에 설치되어 있는지,"
-                                    " 상점 도메인이 정확한지 확인하세요(토큰은 설치된 그 상점에서만 동작).")
+                if response.status_code in (401, 403):
+                    message = self._append_auth_diagnostics(message)
                 return {
                     "ok": False,
                     "status": "api_error",
@@ -195,18 +200,37 @@ class ShopifyAdapter(MarketAdapter):
                     "message": message,
                 }
 
-            body = response.json()
-            shop = body.get("shop", {}) if isinstance(body, dict) else {}
+            try:
+                body = response.json()
+            except ValueError:
+                body = {}
+            errors = body.get("errors") if isinstance(body, dict) else None
+            shop = ((body.get("data") or {}).get("shop")) if isinstance(body, dict) else None
+
+            if errors or not isinstance(shop, dict):
+                err_msg = ""
+                if isinstance(errors, list) and errors:
+                    err_msg = str(errors[0].get("message") or "").strip()
+                message = self._append_auth_diagnostics(
+                    f"Shopify GraphQL 인증/권한 오류. {err_msg}".strip()
+                )
+                return {
+                    "ok": False,
+                    "status": "scope_insufficient" if "access" in err_msg.lower() or "scope" in err_msg.lower() else "api_error",
+                    "http_status": response.status_code,
+                    "reason": err_msg or "GraphQL shop 조회 실패",
+                    "message": message,
+                }
+
+            plan = shop.get("plan") if isinstance(shop.get("plan"), dict) else {}
             return {
                 "ok": True,
                 "status": "connected",
-                "message": "Shopify 연결 확인 완료",
+                "message": "Shopify 연결 확인 완료 (GraphQL)",
                 "shop_name": str(shop.get("name") or "").strip(),
-                "shop_domain": str(shop.get("myshopify_domain") or self._shop_domain()).strip(),
-                "currency": str(shop.get("currency") or "").strip(),
-                "plan_name": str(shop.get("plan_name") or "").strip(),
-                "email": str(shop.get("email") or "").strip(),
-                "primary_locale": str(shop.get("primary_locale") or "").strip(),
+                "shop_domain": str(shop.get("myshopifyDomain") or self._shop_domain()).strip(),
+                "currency": str(shop.get("currencyCode") or "").strip(),
+                "plan_name": str(plan.get("displayName") or "").strip(),
             }
         except requests.RequestException:
             return {
