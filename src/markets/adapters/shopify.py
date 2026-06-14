@@ -177,10 +177,16 @@ class ShopifyAdapter(MarketAdapter):
                 if response.status_code == 401:
                     token = self._access_token()
                     token_prefix = (token.split("_")[0] + "_…") if (token and "_" in token) else (token[:4] + "…" if token else "(없음)")
-                    message += (f" [테스트한 상점: {self._shop_domain()} · 토큰 접두사: {token_prefix}]"
-                                " — 이 상점이 토큰을 발급한 상점과 같은지 확인하세요.")
-                    if token and not token.startswith("shpat_"):
-                        message += " ⚠️ 토큰이 'shpat_'로 시작하지 않습니다(Admin API access token이 맞는지 확인)."
+                    message += f" [테스트한 상점: {self._shop_domain()} · 토큰 접두사: {token_prefix}]"
+                    # 유효한 Shopify 토큰 접두사: shpat_(Admin API access token), atkn_(앱 자동화 토큰), shpca_
+                    valid_prefixes = ("shpat_", "atkn_", "shpca_")
+                    if token and token.startswith("shpss_"):
+                        message += " ⚠️ 'shpss_'는 Client secret(암호)입니다 — 토큰칸엔 '앱 자동화 토큰(atkn_)' 또는 'shpat_'를 넣으세요."
+                    elif token and not token.startswith(valid_prefixes):
+                        message += " ⚠️ 토큰 종류 확인: '앱 자동화 토큰(atkn_)' 또는 'Admin API access token(shpat_)'이어야 합니다."
+                    else:
+                        message += (" 토큰 형식은 정상입니다 → 이 토큰을 발급한 앱이 '테스트한 상점'에 설치되어 있는지,"
+                                    " 상점 도메인이 정확한지 확인하세요(토큰은 설치된 그 상점에서만 동작).")
                 return {
                     "ok": False,
                     "status": "api_error",
