@@ -11,6 +11,9 @@ import requests
 
 from .base import ListingPayload, ListingResult, MarketAdapter, OrderStatus
 
+# client_credentials grant로 발급한 Admin API 액세스 토큰 캐시: key "{shop}:{client_id}" -> {token, expires_at}
+_cc_token_cache: Dict[str, Dict[str, Any]] = {}
+
 
 class ShopifyAdapter(MarketAdapter):
     market = "shopify"
@@ -33,13 +36,72 @@ class ShopifyAdapter(MarketAdapter):
             raw = raw[len("http://"):]
         return raw.strip("/").lower()
 
-    def _access_token(self) -> str:
+    def _direct_token(self) -> str:
+        """환경변수에 직접 저장된 액세스 토큰(in-admin custom app shpat_ 등)."""
         return (
             os.getenv("SHOPIFY_AUTO_TOKEN")
             or os.getenv("SHOPIFY_ACCESS_TOKEN")
             or os.getenv("SHOPIFY_ADMIN_TOKEN")
             or ""
         ).strip()
+
+    def _client_credentials(self) -> Tuple[str, str]:
+        return (os.getenv("SHOPIFY_CLIENT_ID") or "").strip(), (os.getenv("SHOPIFY_CLIENT_SECRET") or "").strip()
+
+    def _has_client_credentials(self) -> bool:
+        cid, csec = self._client_credentials()
+        return bool(cid and csec and self._shop_domain())
+
+    def fetch_token_via_client_credentials(self) -> Optional[str]:
+        """client_credentials grant로 Admin API 액세스 토큰(shpat_) 발급.
+
+        개발자 대시보드 앱은 atkn_(앱 자동화 토큰)이 Admin API 액세스 토큰으로 인식되지 않으므로,
+        client_id/client_secret으로 POST /admin/oauth/access_token (grant_type=client_credentials)
+        하여 shpat_ 토큰을 받아 캐시한다.
+        """
+        cid, csec = self._client_credentials()
+        shop = self._shop_domain()
+        if not (cid and csec and shop):
+            return None
+        key = f"{shop}:{cid}"
+        now = time.time()
+        cached = _cc_token_cache.get(key)
+        if cached and cached.get("expires_at", 0) > now + 30:
+            return cached["token"]
+        try:
+            resp = self._session.post(
+                f"https://{shop}/admin/oauth/access_token",
+                json={"client_id": cid, "client_secret": csec, "grant_type": "client_credentials"},
+                timeout=float(os.getenv("SHOPIFY_TIMEOUT_SEC", "10") or 10),
+            )
+            if resp.status_code != 200:
+                return None
+            data = resp.json() if callable(getattr(resp, "json", None)) else {}
+            token = str((data or {}).get("access_token") or "").strip()
+            if not token:
+                return None
+            try:
+                ttl = float(data.get("expires_in")) if data.get("expires_in") else 3600.0
+            except (TypeError, ValueError):
+                ttl = 3600.0
+            _cc_token_cache[key] = {"token": token, "expires_at": now + ttl}
+            return token
+        except requests.RequestException:
+            return None
+        except Exception:
+            return None
+
+    def _access_token(self) -> str:
+        """실제 요청에 사용할 Admin API 액세스 토큰.
+
+        client_id/secret이 있으면 client_credentials grant로 받은 shpat_ 토큰을 우선 사용,
+        실패하거나 미설정이면 환경변수의 직접 토큰으로 폴백.
+        """
+        if self._has_client_credentials():
+            token = self.fetch_token_via_client_credentials()
+            if token:
+                return token
+        return self._direct_token()
 
     def _has_legacy_token(self) -> bool:
         return bool((os.getenv("SHOPIFY_ACCESS_TOKEN") or os.getenv("SHOPIFY_ADMIN_TOKEN") or "").strip())
@@ -48,15 +110,16 @@ class ShopifyAdapter(MarketAdapter):
         return (os.getenv("SHOPIFY_API_VERSION") or os.getenv("SHOPIFY_ADMIN_API_VERSION") or "2026-04").strip() or "2026-04"
 
     def is_configured(self) -> bool:
-        return bool(self._shop_domain()) and bool(self._access_token())
+        # 네트워크 없이 자격증명 존재 여부만 확인 (client_credentials 또는 직접 토큰).
+        return bool(self._shop_domain()) and (self._has_client_credentials() or bool(self._direct_token()))
 
     def _missing_config_env(self) -> list[str]:
         missing = []
         if not self._shop_domain():
             missing.append("SHOPIFY_SHOP")
-        auto_token = (os.getenv("SHOPIFY_AUTO_TOKEN") or "").strip()
-        if not auto_token and not self._has_legacy_token():
-            missing.append("SHOPIFY_AUTO_TOKEN")
+        # client_id+secret(권장) 또는 직접 토큰 중 하나가 있어야 함
+        if not self._has_client_credentials() and not self._direct_token():
+            missing.append("SHOPIFY_CLIENT_ID/SECRET 또는 SHOPIFY_AUTO_TOKEN")
         return missing
 
     def _base_url(self) -> str:
@@ -185,6 +248,18 @@ class ShopifyAdapter(MarketAdapter):
                 "missing_env": missing_env,
                 "required_env": ["SHOPIFY_CLIENT_ID", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_AUTO_TOKEN", "SHOPIFY_API_VERSION", "SHOPIFY_SHOP"],
             }
+
+        # client_credentials grant 방식이면 토큰 발급부터 명확히 검증.
+        if self._has_client_credentials():
+            cc_token = self.fetch_token_via_client_credentials()
+            if not cc_token:
+                return {
+                    "ok": False,
+                    "status": "api_error",
+                    "message": ("client_credentials 토큰 발급 실패 — POST /admin/oauth/access_token이 거부됨."
+                                f" [상점: {self._shop_domain()}] SHOPIFY_CLIENT_ID/SECRET 값과 상점 도메인을 확인하세요"
+                                " (atkn_ 앱 자동화 토큰 대신 client_id/secret로 발급)."),
+                }
 
         try:
             # GraphQL Admin API 사용(신규 개발자대시보드 앱은 REST가 막혀 GraphQL만 동작).

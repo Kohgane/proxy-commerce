@@ -45,8 +45,9 @@ MARKET_CRED_FIELDS: Dict[str, List[Dict[str, Any]]] = {
     ],
     "shopify": [
         {"env": "SHOPIFY_SHOP", "label": "상점 도메인 (xxx.myshopify.com)", "secret": False, "required": True},
-        {"env": "SHOPIFY_AUTO_TOKEN", "label": "토큰 (앱 자동화 atkn_… 또는 shpat_…)", "secret": True, "required": True},
-        {"env": "SHOPIFY_CLIENT_SECRET", "label": "Client Secret (선택)", "secret": True, "required": False},
+        {"env": "SHOPIFY_CLIENT_ID", "label": "Client ID", "secret": False, "required": True},
+        {"env": "SHOPIFY_CLIENT_SECRET", "label": "Client Secret (shpss_…)", "secret": True, "required": True},
+        {"env": "SHOPIFY_AUTO_TOKEN", "label": "직접 토큰 (shpat_, 선택)", "secret": True, "required": False},
     ],
     "woocommerce": [
         {"env": "WC_URL", "label": "사이트 URL", "secret": False, "required": True},
