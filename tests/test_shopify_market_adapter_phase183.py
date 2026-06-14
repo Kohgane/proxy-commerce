@@ -57,7 +57,7 @@ def test_access_token_prefers_auto_token_header(shopify_env, monkeypatch):
 
     monkeypatch.setenv("SHOPIFY_ACCESS_TOKEN", "shpat_legacy")
     session = Mock()
-    session.request.return_value = _mock_response(200, {"shop": {"name": "Phase184"}})
+    session.request.return_value = _mock_response(200, {"data": {"shop": {"name": "Phase184"}}})
 
     adapter = ShopifyAdapter(session=session, sleep_fn=lambda _: None)
     result = adapter.check_connection()
@@ -72,16 +72,17 @@ def test_check_connection_success(shopify_env):
     from src.markets.adapters.shopify import ShopifyAdapter
 
     session = Mock()
+    # GraphQL Admin API 응답 형식
     session.request.return_value = _mock_response(
         200,
         {
-            "shop": {
-                "name": "Catdyy",
-                "myshopify_domain": "phase183-test.myshopify.com",
-                "currency": "USD",
-                "plan_name": "development",
-                "email": "owner@example.com",
-                "primary_locale": "en-US",
+            "data": {
+                "shop": {
+                    "name": "Catdyy",
+                    "myshopifyDomain": "phase183-test.myshopify.com",
+                    "currencyCode": "USD",
+                    "plan": {"displayName": "Developer Preview"},
+                }
             }
         },
     )
