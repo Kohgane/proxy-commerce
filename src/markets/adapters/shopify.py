@@ -164,11 +164,15 @@ class ShopifyAdapter(MarketAdapter):
         message += f" [테스트한 상점: {self._shop_domain()} · 토큰 접두사: {token_prefix}]"
         valid_prefixes = ("shpat_", "atkn_", "shpca_")
         if token and token.startswith("shpss_"):
-            message += " ⚠️ 'shpss_'는 Client secret(암호)입니다 — 토큰칸엔 '앱 자동화 토큰(atkn_)' 또는 'shpat_'를 넣으세요."
+            message += " ⚠️ 'shpss_'는 Client secret(암호)입니다 — 토큰칸엔 Admin API access token(shpat_)을 넣으세요."
         elif token and not token.startswith(valid_prefixes):
-            message += " ⚠️ 토큰 종류 확인: '앱 자동화 토큰(atkn_)' 또는 'Admin API access token(shpat_)'이어야 합니다."
+            message += " ⚠️ 토큰 종류 확인: Admin API access token(shpat_)이어야 합니다."
+        elif token and token.startswith("atkn_"):
+            message += (" 사실: 이 토큰은 'atkn_'(앱 자동화 토큰)입니다. 401은 스코프 문제가 아니라 토큰 인증 거부 —"
+                        " Shopify가 이 토큰을 상점 Admin API 액세스 토큰으로 인식하지 않습니다."
+                        " Admin Develop apps에서 발급하는 'Admin API access token(shpat_)'을 사용하세요.")
         else:
-            message += " 토큰 형식은 정상입니다 → 앱 권한(scope)에 read_products 등이 포함됐는지, 도메인이 정확한지 확인하세요."
+            message += " 401은 스코프가 아니라 토큰 인증 거부입니다(Admin API access token이 맞는지/유효한지 확인)."
         return message
 
     def check_connection(self) -> Dict[str, Any]:
