@@ -169,7 +169,9 @@ class UploadDispatcher:
         # Shopify: SHOPIFY_AUTO_TOKEN 또는 SHOPIFY_ACCESS_TOKEN 중 하나만 있어도 됨
         # (required_envs에는 SHOPIFY_SHOP만 있어서 토큰 별도 체크 필요)
         if market == "shopify":
-            has_client_creds = bool(os.getenv("SHOPIFY_CLIENT_ID") and os.getenv("SHOPIFY_CLIENT_SECRET"))
+            _sh_cid = os.getenv("SHOPIFY_CLIENT_ID") or os.getenv("SHOPIFY_API_KEY")
+            _sh_csec = os.getenv("SHOPIFY_CLIENT_SECRET") or os.getenv("SHOPIFY_API_SECRET_KEY")
+            has_client_creds = bool(_sh_cid and _sh_csec)
             has_token = bool(os.getenv("SHOPIFY_AUTO_TOKEN") or os.getenv("SHOPIFY_ACCESS_TOKEN") or has_client_creds)
             if not has_token:
                 missing.append("SHOPIFY_CLIENT_ID/SECRET (또는 SHOPIFY_AUTO_TOKEN)")
