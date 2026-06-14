@@ -46,7 +46,20 @@ class ShopifyAdapter(MarketAdapter):
         ).strip()
 
     def _client_credentials(self) -> Tuple[str, str]:
-        return (os.getenv("SHOPIFY_CLIENT_ID") or "").strip(), (os.getenv("SHOPIFY_CLIENT_SECRET") or "").strip()
+        # Shopify에서 Client ID = API key. 명명 혼용을 흡수해 여러 이름을 허용한다.
+        client_id = (
+            os.getenv("SHOPIFY_CLIENT_ID")
+            or os.getenv("SHOPIFY_API_KEY")
+            or os.getenv("SHOPIFY_APIKEY")
+            or ""
+        ).strip()
+        client_secret = (
+            os.getenv("SHOPIFY_CLIENT_SECRET")
+            or os.getenv("SHOPIFY_API_SECRET_KEY")
+            or os.getenv("SHOPIFY_API_SECRET")
+            or ""
+        ).strip()
+        return client_id, client_secret
 
     def _has_client_credentials(self) -> bool:
         cid, csec = self._client_credentials()
@@ -235,7 +248,7 @@ class ShopifyAdapter(MarketAdapter):
             if not (cid and csec):
                 missing_cc = []
                 if not cid:
-                    missing_cc.append("SHOPIFY_CLIENT_ID")
+                    missing_cc.append("SHOPIFY_CLIENT_ID(또는 SHOPIFY_API_KEY)")
                 if not csec:
                     missing_cc.append("SHOPIFY_CLIENT_SECRET")
                 message += (f" 원인: {', '.join(missing_cc)} 미설정 → client_credentials 발급을 못 하고 atkn_로 폴백 중입니다."
