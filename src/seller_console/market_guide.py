@@ -104,9 +104,10 @@ MARKET_GUIDE: List[Dict[str, Any]] = [
             {"env": "SHOPIFY_CLIENT_SECRET", "label": "Client Secret(선택)", "where": "shpss_… 웹훅 검증용(있으면 입력)"},
         ],
         "tips": [
+            "개발자 대시보드 앱은 ‘앱 자동화 토큰(atkn_)’이 Admin API에서 401납니다. 대신 Client ID/Secret을 넣으면 "
+            "시스템이 client_credentials로 shpat_ 토큰을 자동 발급해 사용합니다(권장).",
             "Shopify는 IP 허용목록이 없습니다 → 401은 IP가 아니라 토큰/상점 문제입니다.",
-            "유효 토큰: 앱 자동화 토큰(atkn_…) 또는 Admin API access token(shpat_…). Client secret(shpss_…)/API key는 토큰이 아닙니다.",
-            "토큰 형식이 맞는데도 401이면 → 그 앱이 ‘상점 도메인’의 상점에 설치돼 있는지, 도메인이 정확한지 확인하세요.",
+            "여전히 실패하면 → 그 앱이 ‘상점 도메인’의 상점에 설치돼 있는지, 도메인이 정확한지 확인하세요.",
         ],
     },
     {

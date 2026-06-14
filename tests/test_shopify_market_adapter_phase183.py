@@ -68,6 +68,63 @@ def test_access_token_prefers_auto_token_header(shopify_env, monkeypatch):
     assert "2026-04" in args[1]
 
 
+def test_client_credentials_grant_and_connect(monkeypatch):
+    """atkn_ 대신 client_id/secret으로 shpat_ 발급 → 그 토큰으로 GraphQL 연결."""
+    from src.markets.adapters import shopify as shopify_mod
+    from src.markets.adapters.shopify import ShopifyAdapter
+
+    shopify_mod._cc_token_cache.clear()
+    monkeypatch.setenv("SHOPIFY_SHOP", "catdyy-p0.myshopify.com")
+    monkeypatch.setenv("SHOPIFY_CLIENT_ID", "68aa23f31fbb")
+    monkeypatch.setenv("SHOPIFY_CLIENT_SECRET", "shpss_secret")
+    monkeypatch.setenv("SHOPIFY_API_VERSION", "2026-04")
+    monkeypatch.delenv("SHOPIFY_AUTO_TOKEN", raising=False)
+    monkeypatch.delenv("SHOPIFY_ACCESS_TOKEN", raising=False)
+
+    session = Mock()
+    session.post.return_value = _mock_response(200, {"access_token": "shpat_minted", "expires_in": 3600})
+    session.request.return_value = _mock_response(
+        200,
+        {"data": {"shop": {"name": "KOHGANE", "myshopifyDomain": "catdyy-p0.myshopify.com",
+                           "currencyCode": "KRW", "plan": {"displayName": "Basic"}}}},
+    )
+
+    adapter = ShopifyAdapter(session=session, sleep_fn=lambda _: None)
+    result = adapter.check_connection()
+
+    assert result["ok"] is True
+    assert result["shop_name"] == "KOHGANE"
+    # grant가 client_credentials였고
+    assert session.post.call_args.kwargs["json"]["grant_type"] == "client_credentials"
+    assert "/admin/oauth/access_token" in session.post.call_args.args[0]
+    # GraphQL 호출 헤더에 발급된 shpat_ 토큰 사용
+    _, kwargs = session.request.call_args
+    assert kwargs["headers"]["X-Shopify-Access-Token"] == "shpat_minted"
+    shopify_mod._cc_token_cache.clear()
+
+
+def test_client_credentials_grant_failure(monkeypatch):
+    from src.markets.adapters import shopify as shopify_mod
+    from src.markets.adapters.shopify import ShopifyAdapter
+
+    shopify_mod._cc_token_cache.clear()
+    monkeypatch.setenv("SHOPIFY_SHOP", "catdyy-p0.myshopify.com")
+    monkeypatch.setenv("SHOPIFY_CLIENT_ID", "cid")
+    monkeypatch.setenv("SHOPIFY_CLIENT_SECRET", "shpss_bad")
+    monkeypatch.delenv("SHOPIFY_AUTO_TOKEN", raising=False)
+    monkeypatch.delenv("SHOPIFY_ACCESS_TOKEN", raising=False)
+
+    session = Mock()
+    session.post.return_value = _mock_response(401, {"error": "invalid_client"})
+
+    adapter = ShopifyAdapter(session=session, sleep_fn=lambda _: None)
+    result = adapter.check_connection()
+
+    assert result["ok"] is False
+    assert "client_credentials 토큰 발급 실패" in result["message"]
+    shopify_mod._cc_token_cache.clear()
+
+
 def test_check_connection_success(shopify_env):
     from src.markets.adapters.shopify import ShopifyAdapter
 

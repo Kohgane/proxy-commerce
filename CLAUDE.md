@@ -14,11 +14,15 @@
 - **스마트스토어(네이버)**: 인증·서명 정상. 차단 원인 = **네이버 허용 IP(앱당 최대 3개)에 서버 IP 미등록**.
   bcrypt 전자서명(client_secret_sign) 필요(수정됨).
 - **11번가**: 997 "등록된 API 정보 없음" = 키/OpenAPI 승인 문제(IP 아님).
-- **Shopify** (검증된 팩트, 미해결):
-  - 토큰 `atkn_…` = 개발자 대시보드 '앱 자동화 토큰'. 앱 `kohgane-uploader5`가 상점 KOHGANE(`catdyy-p0.myshopify.com`)에 설치됨. scope에 read_products/write_products 포함. 토큰 만료 2026-11-29.
-  - **검증 결과**: 이 `atkn_` 토큰을 `X-Shopify-Access-Token`으로 REST(`/shop.json`)·GraphQL(`/graphql.json`) 둘 다 호출 시 **401 "Invalid API key or access token"**.
-  - **따라서**: 401은 스코프 문제 아님(스코프 정상). Shopify가 `atkn_` 토큰을 **상점 Admin API 액세스 토큰으로 인식하지 않음**.
-  - 다음 단계(미확정): 올바른 Admin API 액세스 토큰(보통 `shpat_`, in-admin Develop apps에서 발급) 확보 또는 atkn_ 토큰의 정식 사용법 확인. (이 환경은 egress 차단으로 Shopify 직접 호출/문서 접근 불가)
+- **Shopify** (해법 확정 — 오너 제공, 2026-06-14):
+  - `atkn_…`(앱 자동화 토큰)은 **Admin API 액세스 토큰으로 인식 안 됨** → 버린다.
+  - **해법**: 앱의 `SHOPIFY_CLIENT_ID`/`SHOPIFY_CLIENT_SECRET`(=암호 `shpss_…`)으로
+    `POST https://{shop}/admin/oauth/access_token` (grant_type=`client_credentials`) 호출 →
+    `shpat_…` 액세스 토큰 발급 → `X-Shopify-Access-Token`에 사용.
+  - 구현: `ShopifyAdapter.fetch_token_via_client_credentials()` (캐시), `_access_token()`이
+    client_id/secret 있으면 client_credentials 우선·없으면 직접 토큰 폴백. 연결확인은 GraphQL.
+  - 오너 액션: Render에 `SHOPIFY_CLIENT_ID`=`68aa23f3…`, `SHOPIFY_CLIENT_SECRET`=`shpss_…` 설정
+    (atkn_ SHOPIFY_AUTO_TOKEN은 없어도 됨).
 
 ## 🛠 인앱 마켓 연결 (셀프서비스)
 - `/seller/markets/connect`(+`/<market>` 단독) — 셀러별 Fernet 암호화 저장(`market_credentials.py`).

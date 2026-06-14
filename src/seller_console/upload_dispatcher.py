@@ -169,9 +169,10 @@ class UploadDispatcher:
         # Shopify: SHOPIFY_AUTO_TOKEN 또는 SHOPIFY_ACCESS_TOKEN 중 하나만 있어도 됨
         # (required_envs에는 SHOPIFY_SHOP만 있어서 토큰 별도 체크 필요)
         if market == "shopify":
-            has_token = bool(os.getenv("SHOPIFY_AUTO_TOKEN") or os.getenv("SHOPIFY_ACCESS_TOKEN"))
+            has_client_creds = bool(os.getenv("SHOPIFY_CLIENT_ID") and os.getenv("SHOPIFY_CLIENT_SECRET"))
+            has_token = bool(os.getenv("SHOPIFY_AUTO_TOKEN") or os.getenv("SHOPIFY_ACCESS_TOKEN") or has_client_creds)
             if not has_token:
-                missing.append("SHOPIFY_AUTO_TOKEN (또는 SHOPIFY_ACCESS_TOKEN)")
+                missing.append("SHOPIFY_CLIENT_ID/SECRET (또는 SHOPIFY_AUTO_TOKEN)")
 
         # 스마트스토어: NAVER_CLIENT_* 또는 NAVER_COMMERCE_CLIENT_* 어느 쪽이든 허용
         if market == "smartstore":
