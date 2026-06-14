@@ -50,6 +50,20 @@
     </div>
   </div>
 
+  <!-- IP 허용목록 안내 (한국 마켓 공통 관문) -->
+  <div class="alert alert-warning d-flex gap-2 align-items-start mb-4">
+    <i class="bi bi-shield-exclamation"></i>
+    <div class="small mb-0">
+      <strong>🚧 한국 마켓(쿠팡·네이버·11번가)은 ‘API 호출 허용 IP’ 등록이 필요할 수 있어요.</strong>
+      키가 정확해도 <code>your ip ... is not allowed(403)</code> / <code>GW.IP_NOT_ALLOWED</code> 가 뜨면
+      <strong>이 서버의 아웃바운드 IP</strong>를 각 마켓 판매자센터의 허용 IP에 등록하세요.
+      <ul class="mb-0 mt-1">
+        <li>서버 IP 확인: <strong>Render → 서비스 → Settings → “Outbound IP Addresses”</strong> (보통 3개 — <u>전부</u> 등록)</li>
+        <li>쿠팡: 여러 IP를 쉼표로 등록 가능 · 네이버: 최대 3개(슬롯 교체 필요)</li>
+      </ul>
+    </div>
+  </div>
+
   <!-- 마켓 바로가기 -->
   <div class="guide-jump d-flex flex-wrap gap-2 mb-4">
     {% for g in guide %}
