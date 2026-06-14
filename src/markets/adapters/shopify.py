@@ -144,7 +144,8 @@ class ShopifyAdapter(MarketAdapter):
     @staticmethod
     def _friendly_http_reason(status_code: int, summary: str, *, action: str) -> str:
         if status_code == 401:
-            return f"{action} 인증에 실패했습니다. SHOPIFY_AUTO_TOKEN(atk_) 또는 하위호환 토큰 값을 확인하세요."
+            return (f"{action} 인증 실패. 'Admin API access token(shpat_…)'을 넣었는지 확인하세요"
+                    " (API key 아님). 토큰을 만든 상점과 SHOPIFY_SHOP 도메인이 같아야 합니다. (Shopify는 IP 제한 없음)")
         if status_code == 403:
             return f"{action} 권한이 부족합니다. Shopify 앱 스코프(write_products/read_products 등)를 확인하세요."
         if status_code == 404:
