@@ -47,8 +47,12 @@
    얻으면 목업 대신 `manual_entry` 정직한 안내. stub 번역 시 원문 유지·더미카피 미노출.
    ※ 번역 실작동은 Render에 `OPENAI_API_KEY`(또는 `DEEPL_API_KEY`) 필요 — 없으면 원문 유지.
    ※ 벌크수집(`/collect/bulk`)은 아직 ManualCollectorService(목업) 사용 — 추후 동일 파이프라인 전환 필요.
-4. ⬜ **수집→확인·수정→업로드 중간 편집 페이지**: 현재 `collect_preview.html`은 읽기전용.
-   퍼센티식 편집(제목·가격·상세·이미지·옵션) 후 업로드.
+4. ✅ **수집→확인·수정→업로드 중간 편집 페이지** (완료): `collect_preview.html`을 편집형으로 교체.
+   제목·가격·통화·상세설명·이미지(추가/삭제)·옵션(색상/사이즈) 인라인 편집 → 💾저장
+   `POST /collect/preview/<id>/save`(`collect_history_store.update()` 신설, 셀러 격리·extra_json 머지)
+   → 같은 폼 데이터로 사전검증·업로드(buildProductData 단일화). 대표이미지 실시간 미리보기.
+   ※ Render 환경변수 정렬: AITranslator 모델=`OPENAI_MODEL`, 스크래퍼 UA=`SCRAPER_USER_AGENT`,
+     수집기 타임아웃=`SCRAPER_TIMEOUT_SEC` 반영(commit 후속).
 5. ⬜ **크롬확장 인페이지 '수집' 버튼 + 번역**: 확장 `extensions/chrome-collector/` 이미 존재
    (툴바/우클릭 방식, API `/api/v1/collect/extension`, 토큰 `kgp_`). 소싱페이지에 떠있는 수집버튼(content_script 주입)·수집시 번역 추가.
 

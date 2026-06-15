@@ -170,6 +170,55 @@ def get(item_id: str, seller_id: Optional[str] = None) -> Optional[dict]:
     return None
 
 
+def update(item_id: str, *, seller_id: Optional[str] = None, **fields) -> bool:
+    """수집 이력 단건의 필드를 갱신 (Phase 201 — 중간 편집 저장).
+
+    허용 필드: title, image_url, price, currency, status, extra_json.
+    seller_id 지정 시 해당 셀러 항목만 갱신(타 셀러 차단).
+
+    Returns:
+        갱신 성공 여부.
+    """
+    allowed = {"title", "image_url", "price", "currency", "status", "extra_json"}
+    updates = {k: ("" if v is None else str(v)) for k, v in fields.items() if k in allowed}
+    if not updates:
+        return False
+
+    if _SHEET_ID:
+        try:
+            ws = _get_worksheet()
+            _ensure_headers(ws)
+            values = ws.get_all_values()
+            if values:
+                header = values[0]
+                col_idx = {h: i for i, h in enumerate(header)}
+                id_i = col_idx.get("id")
+                sid_i = col_idx.get("seller_id")
+                for r, row in enumerate(values[1:], start=2):
+                    if id_i is None or id_i >= len(row) or row[id_i] != item_id:
+                        continue
+                    if seller_id is not None and sid_i is not None:
+                        row_sid = row[sid_i] if sid_i < len(row) else ""
+                        if str(row_sid or "") != str(seller_id):
+                            return False
+                    for field, val in updates.items():
+                        ci = col_idx.get(field)
+                        if ci is not None:
+                            ws.update_cell(r, ci + 1, val)
+                    logger.info("수집 이력 갱신: id=%s fields=%s", item_id, list(updates))
+                    return True
+        except Exception as exc:
+            logger.warning("수집 이력 Sheets 갱신 실패: %s", exc)
+
+    for row in _in_memory:
+        if row.get("id") == item_id:
+            if seller_id is not None and str(row.get("seller_id", "") or "") != str(seller_id):
+                return False
+            row.update(updates)
+            return True
+    return False
+
+
 def summary(days: int = 30, seller_id: Optional[str] = None) -> dict:
     """기간별 요약 통계."""
     items = list_items(days=days, seller_id=seller_id)

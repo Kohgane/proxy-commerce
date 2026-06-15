@@ -1,57 +1,91 @@
 {% extends "_base.html" %}
-{% block title %}상품 미리보기 — {{ item.title or item.id }}{% endblock %}
+{% block title %}상품 편집 — {{ item.title or item.id }}{% endblock %}
 {% block content %}
-<div class="container-fluid py-4" style="max-width:860px;">
-  <div class="mb-3">
+<div class="container-fluid py-4" style="max-width:880px;">
+  <div class="mb-3 d-flex justify-content-between align-items-center">
     <a href="/seller/collect/history" class="text-decoration-none text-muted small">← 수집 이력으로 돌아가기</a>
+    <span class="text-muted small">
+      🌐 <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.domain }}</a>
+      · {{ item.collected_at[:16] if item.collected_at else "" }}
+    </span>
   </div>
 
-  <div class="card mb-4">
+  <div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span class="fw-semibold">✏️ 수집 상품 편집</span>
+      {% if extra.edited %}<span class="badge bg-info text-dark">수정됨</span>{% endif %}
+      {% if extra.is_mock %}<span class="badge bg-warning text-dark">목업</span>{% endif %}
+    </div>
     <div class="card-body">
       <div class="row g-4">
-        {% if item.image_url %}
+        <!-- 대표 이미지 미리보기 -->
         <div class="col-md-4 text-center">
-          <img src="{{ item.image_url }}" alt="{{ item.title }}"
-               class="img-fluid rounded" style="max-height:260px;object-fit:contain;">
+          <img id="primaryImagePreview" alt="대표 이미지"
+               class="img-fluid rounded border" style="max-height:240px;object-fit:contain;"
+               onerror="this.style.visibility='hidden'">
+          <div class="text-muted small mt-1">대표 이미지(첫 번째)</div>
         </div>
-        {% endif %}
-        <div class="col-md-{% if item.image_url %}8{% else %}12{% endif %}">
-          <h2 class="h4 mb-2">{{ item.title or "(제목 없음)" }}</h2>
-          <p class="text-muted small mb-1">
-            🌐 <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.domain }}</a>
-          </p>
-          {% if item.price %}
-          <p class="fs-5 fw-bold mb-2">{{ item.price }} {{ item.currency }}</p>
-          {% endif %}
-          <div class="d-flex gap-2 flex-wrap mb-3">
-            {% if item.source in ("extension", "chrome_extension") %}
-              <span class="badge bg-primary">크롬 확장</span>
-            {% elif item.source == "bookmarklet" %}
-              <span class="badge bg-secondary">북마클릿</span>
-            {% elif item.source == "manual" %}
-              <span class="badge bg-info text-dark">수동</span>
-            {% elif item.source in ("bulk", "bulk_collect") %}
-              <span class="badge bg-warning text-dark">벌크</span>
-            {% else %}
-              <span class="badge bg-light text-dark">{{ item.source or "-" }}</span>
-            {% endif %}
-            <span class="badge bg-{% if item.status == 'ok' %}success{% else %}danger{% endif %}">
-              {{ item.status }}
-            </span>
-            <span class="text-muted small">{{ item.collected_at[:16] if item.collected_at else "" }}</span>
+
+        <div class="col-md-8">
+          <!-- 제목 -->
+          <div class="mb-3">
+            <label class="form-label small fw-semibold" for="editTitle">제목</label>
+            <input type="text" class="form-control" id="editTitle" placeholder="상품 제목">
           </div>
 
-          <div class="d-flex gap-2 flex-wrap">
-            <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer"
-               class="btn btn-outline-secondary btn-sm">🔗 원본 페이지</a>
-            <a href="/seller/pricing" class="btn btn-outline-primary btn-sm">💰 마진 계산기</a>
-            <button class="btn btn-success btn-sm" id="btnOpenUploadModal"
-                    onclick="openUploadModal()">
-              📤 마켓에 등록
-            </button>
+          <!-- 가격 + 통화 -->
+          <div class="row g-2 mb-3">
+            <div class="col-7">
+              <label class="form-label small fw-semibold" for="editPrice">가격(원가)</label>
+              <input type="number" step="0.01" min="0" class="form-control" id="editPrice" placeholder="0.00">
+            </div>
+            <div class="col-5">
+              <label class="form-label small fw-semibold" for="editCurrency">통화</label>
+              <select class="form-select" id="editCurrency">
+                {% for c in ["USD","JPY","CNY","EUR","GBP","KRW"] %}
+                <option value="{{ c }}">{{ c }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+
+          <!-- 상세설명 -->
+          <div class="mb-2">
+            <label class="form-label small fw-semibold" for="editDescription">상세 설명</label>
+            <textarea class="form-control" id="editDescription" rows="4" placeholder="상품 상세 설명"></textarea>
           </div>
         </div>
       </div>
+
+      <hr class="my-3">
+
+      <!-- 이미지 목록 -->
+      <div class="mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <label class="form-label small fw-semibold mb-0">이미지 URL (첫 번째 = 대표)</label>
+          <button type="button" class="btn btn-outline-secondary btn-sm py-0" onclick="addImageRow()">+ 이미지 추가</button>
+        </div>
+        <div id="imageRows" class="vstack gap-2"></div>
+      </div>
+
+      <!-- 옵션 목록 -->
+      <div class="mb-2">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <label class="form-label small fw-semibold mb-0">옵션 (예: 색상, 사이즈 — 값은 쉼표로 구분)</label>
+          <button type="button" class="btn btn-outline-secondary btn-sm py-0" onclick="addOptionRow()">+ 옵션 추가</button>
+        </div>
+        <div id="optionRows" class="vstack gap-2"></div>
+      </div>
+    </div>
+
+    <div class="card-footer d-flex gap-2 flex-wrap">
+      <button class="btn btn-primary btn-sm" id="btnSaveEdits" onclick="saveEdits()">💾 변경사항 저장</button>
+      <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer"
+         class="btn btn-outline-secondary btn-sm">🔗 원본 페이지</a>
+      <a href="/seller/pricing" class="btn btn-outline-primary btn-sm">💰 마진 계산기</a>
+      <button class="btn btn-success btn-sm ms-auto" id="btnOpenUploadModal" onclick="openUploadModal()">
+        📤 마켓에 등록
+      </button>
     </div>
   </div>
 
@@ -176,12 +210,140 @@
   .market-tile .market-upload-check { pointer-events: none; }
 </style>
 <script>
-// ── 상품 데이터 (서버에서 주입) ──
-const _PRODUCT_DATA = {{ item | tojson }};
+// ── 서버 주입 데이터 ──
+const _ITEM = {{ item | tojson }};
+const _EXTRA = {{ extra | tojson }};
+const _ITEM_ID = {{ item.id | tojson }};
+
+function _firstNonEmpty(...vals) {
+  for (const v of vals) {
+    if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+  }
+  return '';
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ── 초기값 세팅 ──
+function _initImages() {
+  let imgs = Array.isArray(_EXTRA.images) ? _EXTRA.images.slice() : [];
+  if (imgs.length === 0 && _ITEM.image_url) imgs = [_ITEM.image_url];
+  return imgs.filter(Boolean);
+}
+function _initOptions() {
+  if (!Array.isArray(_EXTRA.options)) return [];
+  return _EXTRA.options.map(o => ({
+    name: o.name || '',
+    values: Array.isArray(o.values) ? o.values.join(', ')
+          : (o.value !== undefined ? String(o.value) : ''),
+  }));
+}
+
+function addImageRow(url) {
+  const wrap = document.getElementById('imageRows');
+  const row = document.createElement('div');
+  row.className = 'input-group input-group-sm img-row';
+  row.innerHTML = `
+    <input type="url" class="form-control img-url" placeholder="https://..." value="${escapeHtml(url || '')}">
+    <button class="btn btn-outline-danger" type="button" title="삭제">✕</button>`;
+  row.querySelector('button').addEventListener('click', () => { row.remove(); refreshPrimaryImage(); });
+  row.querySelector('input').addEventListener('input', refreshPrimaryImage);
+  wrap.appendChild(row);
+}
+
+function addOptionRow(name, values) {
+  const wrap = document.getElementById('optionRows');
+  const row = document.createElement('div');
+  row.className = 'input-group input-group-sm opt-row';
+  row.innerHTML = `
+    <input type="text" class="form-control opt-name" style="max-width:160px;" placeholder="옵션명(예: 색상)" value="${escapeHtml(name || '')}">
+    <input type="text" class="form-control opt-values" placeholder="값들(쉼표 구분: Black, White)" value="${escapeHtml(values || '')}">
+    <button class="btn btn-outline-danger" type="button" title="삭제">✕</button>`;
+  row.querySelector('button').addEventListener('click', () => row.remove());
+  wrap.appendChild(row);
+}
+
+function refreshPrimaryImage() {
+  const first = document.querySelector('#imageRows .img-url');
+  const url = first ? first.value.trim() : '';
+  const img = document.getElementById('primaryImagePreview');
+  if (url) { img.src = url; img.style.visibility = 'visible'; }
+  else { img.removeAttribute('src'); img.style.visibility = 'hidden'; }
+}
+
+function initEditor() {
+  document.getElementById('editTitle').value =
+    _firstNonEmpty(_EXTRA.title_ko, _EXTRA.title, _ITEM.title);
+  document.getElementById('editPrice').value =
+    _firstNonEmpty(_EXTRA.price_original, _EXTRA.price, _ITEM.price);
+  const cur = _firstNonEmpty(_EXTRA.currency, _ITEM.currency, 'USD');
+  const curSel = document.getElementById('editCurrency');
+  if (![...curSel.options].some(o => o.value === cur)) {
+    curSel.add(new Option(cur, cur));
+  }
+  curSel.value = cur;
+  document.getElementById('editDescription').value =
+    _firstNonEmpty(_EXTRA.description_ko, _EXTRA.description);
+
+  _initImages().forEach(addImageRow);
+  if (document.querySelectorAll('#imageRows .img-row').length === 0) addImageRow('');
+  _initOptions().forEach(o => addOptionRow(o.name, o.values));
+  refreshPrimaryImage();
+}
+
+// ── 폼 → 상품 데이터 ──
+function buildProductData() {
+  const images = Array.from(document.querySelectorAll('#imageRows .img-url'))
+    .map(el => el.value.trim()).filter(Boolean);
+  const options = Array.from(document.querySelectorAll('#optionRows .opt-row')).map(row => ({
+    name: row.querySelector('.opt-name').value.trim(),
+    values: row.querySelector('.opt-values').value.split(',').map(v => v.trim()).filter(Boolean),
+  })).filter(o => o.name);
+
+  const title = document.getElementById('editTitle').value.trim();
+  const price = document.getElementById('editPrice').value.trim();
+  const currency = document.getElementById('editCurrency').value;
+  const description = document.getElementById('editDescription').value;
+
+  return {
+    title, title_ko: title, title_en: _EXTRA.title_en || title,
+    price, price_original: price, currency,
+    description, description_ko: description,
+    images, options,
+    url: _ITEM.url || _EXTRA.url || '',
+    source: _ITEM.source || _EXTRA.source || '',
+    brand: _EXTRA.brand || '', category: _EXTRA.category || '',
+  };
+}
+
+// ── 저장 ──
+async function saveEdits() {
+  const btn = document.getElementById('btnSaveEdits');
+  const data = buildProductData();
+  if (!data.title) { pcToast('제목을 입력하세요.', 'warning'); return; }
+  btn.disabled = true; btn.textContent = '⏳ 저장 중...';
+  try {
+    const resp = await fetch(`/seller/collect/preview/${_ITEM_ID}/save`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data),
+    });
+    const out = await resp.json();
+    if (!out.ok) { pcToast(out.error || '저장 실패', 'error'); }
+    else { pcToast('변경사항을 저장했습니다.', 'success'); }
+  } catch (err) {
+    pcToast('저장 요청 실패: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '💾 변경사항 저장';
+  }
+}
 
 let _validatedMarkets = [];
 
-// 타일 전체 클릭 = 체크박스 토글 + 선택 하이라이트
 function _syncMarketTile(input) {
   const tile = input.closest('.market-tile');
   if (tile) tile.classList.toggle('selected', input.checked);
@@ -223,7 +385,7 @@ async function runPrevalidate() {
     const resp = await fetch('/seller/collect/prevalidate', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({product: _PRODUCT_DATA, markets}),
+      body: JSON.stringify({product: buildProductData(), markets}),
     });
     const data = await resp.json();
     btn.disabled = false;
@@ -286,7 +448,7 @@ async function runUpload() {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
-        product: _PRODUCT_DATA,
+        product: buildProductData(),
         markets: _validatedMarkets,
         target_margin_pct: targetMarginPct,
       }),
@@ -342,6 +504,7 @@ function renderUploadResults(data) {
   html += '</div>';
   el.innerHTML = html;
 }
+
+document.addEventListener('DOMContentLoaded', initEditor);
 </script>
 {% endblock %}
-

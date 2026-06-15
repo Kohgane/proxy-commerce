@@ -3822,6 +3822,100 @@ def collect_preview_by_id(item_id: str):
     )
 
 
+@bp.post("/collect/preview/<item_id>/save")
+def collect_preview_save(item_id: str):
+    """수집 항목 중간 편집 저장 (Phase 201).
+
+    수집→확인·수정→업로드 흐름에서 제목·가격·통화·상세설명·이미지·옵션을
+    셀러가 편집한 뒤 저장한다. extra_json에 상세 필드를 머지해 보관한다.
+
+    Request body: {title, price, currency, description, images:[...], options:[{name,values}]}
+    Response: {"ok": true, "product": {...}}
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+
+    data = request.get_json(force=True, silent=True) or {}
+    from . import collect_history_store
+
+    item = collect_history_store.get(item_id, seller_id=_seller_id())
+    if not item:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+
+    try:
+        extra = json.loads(item.get("extra_json") or "{}")
+        if not isinstance(extra, dict):
+            extra = {}
+    except Exception:
+        extra = {}
+
+    title = (data.get("title") or "").strip()
+    price = (str(data.get("price")) if data.get("price") is not None else "").strip()
+    currency = (data.get("currency") or item.get("currency") or "").strip()
+    description = data.get("description")
+    images = data.get("images")
+    options = data.get("options")
+
+    # 이미지 정규화 (빈 항목 제거, 순서 유지)
+    if isinstance(images, list):
+        images = [str(u).strip() for u in images if str(u).strip()]
+    else:
+        images = None
+
+    # 옵션 정규화 [{name, values:[...]}]
+    if isinstance(options, list):
+        norm_opts = []
+        for opt in options:
+            if not isinstance(opt, dict):
+                continue
+            name = (opt.get("name") or "").strip()
+            if not name:
+                continue
+            vals = opt.get("values")
+            if isinstance(vals, str):
+                vals = [v.strip() for v in vals.split(",") if v.strip()]
+            elif isinstance(vals, list):
+                vals = [str(v).strip() for v in vals if str(v).strip()]
+            else:
+                vals = []
+            norm_opts.append({"name": name, "values": vals})
+        options = norm_opts
+    else:
+        options = None
+
+    # extra_json 머지 (수정된 값으로 갱신, 미수정 항목은 보존)
+    if title:
+        extra["title"] = title
+        extra["title_ko"] = title
+    if description is not None:
+        extra["description"] = description
+        extra["description_ko"] = description
+    if images is not None:
+        extra["images"] = images
+    if options is not None:
+        extra["options"] = options
+    if price:
+        extra["price"] = price
+        extra["price_original"] = price
+    if currency:
+        extra["currency"] = currency
+    extra["edited"] = True
+
+    ok = collect_history_store.update(
+        item_id,
+        seller_id=_seller_id(),
+        title=title or item.get("title") or "",
+        price=price or item.get("price") or "",
+        currency=currency or item.get("currency") or "",
+        image_url=(images[0] if images else item.get("image_url") or ""),
+        extra_json=json.dumps(extra, ensure_ascii=False),
+    )
+    if not ok:
+        return jsonify({"ok": False, "error": "저장에 실패했습니다."}), 500
+
+    return jsonify({"ok": True, "product": extra})
+
+
 # ---------------------------------------------------------------------------
 # Phase 136: 자동 가격 조정 룰 관리 + 이력 + cron
 # ---------------------------------------------------------------------------
