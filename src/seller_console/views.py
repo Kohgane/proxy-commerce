@@ -26,7 +26,7 @@ import os
 import re
 import uuid
 import hashlib
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from difflib import SequenceMatcher
 
 from decimal import Decimal, InvalidOperation
@@ -162,6 +162,156 @@ def _get_collector_service():
     except Exception as exc:
         logger.warning("ManualCollectorService 로드 실패: %s", exc)
         return None
+
+
+def _draft_is_meaningful(draft: Optional[dict]) -> bool:
+    """수집 결과가 실데이터로 쓸 만한지 판단.
+
+    제목·가격·이미지 중 하나라도 실제로 있으면 True (목업 폴백 방지용).
+    """
+    if not draft:
+        return False
+    title = (draft.get("title") or draft.get("title_en") or draft.get("title_ko") or "")
+    if title and str(title).strip():
+        return True
+    if draft.get("price") or draft.get("price_original"):
+        return True
+    if draft.get("images"):
+        return True
+    return False
+
+
+def _scraped_to_draft(scraped) -> dict:
+    """UniversalScraper.ScrapedProduct → collect_preview draft 형식으로 변환."""
+    options = []
+    for opt in (getattr(scraped, "options", None) or []):
+        if not isinstance(opt, dict):
+            continue
+        name = (opt.get("name") or "").strip()
+        if not name:
+            continue
+        if isinstance(opt.get("values"), list):
+            values = [str(v) for v in opt["values"] if v]
+        elif opt.get("value"):
+            values = [str(opt["value"])]
+        else:
+            values = []
+        options.append({"name": name, "values": values})
+
+    title = scraped.title or ""
+    method = scraped.extraction_method or "heuristic"
+    return {
+        "url": scraped.source_url,
+        "source": f"universal_{method}",
+        "title": title,
+        "title_en": title,
+        "title_ko": title,
+        "description": scraped.description or "",
+        "images": list(scraped.images or []),
+        "price": str(scraped.price) if scraped.price is not None else None,
+        "price_original": float(scraped.price) if scraped.price is not None else 0.0,
+        "currency": scraped.currency or "USD",
+        "brand": scraped.brand or "",
+        "sku": scraped.sku or "",
+        "category": "",
+        "options": options,
+        "in_stock": scraped.in_stock,
+        "confidence": scraped.confidence,
+        "extraction_method": method,
+        "is_mock": False,
+        "adapter_used": "universal_scraper",
+    }
+
+
+def _translate_draft(draft: dict) -> dict:
+    """수집 draft에 한국어 번역(title_ko/description_ko)·마켓 카피를 채운다.
+
+    번역 키(OPENAI/DEEPL) 미설정·실패 시 원문 유지(목업 생성 안 함).
+    """
+    title = (draft.get("title") or draft.get("title_en") or "").strip()
+    description = (draft.get("description") or "").strip()
+    if not title and not description:
+        return draft
+    try:
+        from .ai.translator import AITranslator
+
+        tr = AITranslator().translate_product({"title": title, "description": description})
+        provider = tr.get("provider", "stub")
+        draft["title_ko"] = (tr.get("title_ko") or "").strip() or title
+        draft["description_ko"] = (tr.get("description_ko") or "").strip() or description
+        draft["translation_provider"] = provider
+        # 실 번역기일 때만 마켓 카피 노출 (stub/fallback의 더미 카피는 숨김)
+        if provider not in ("stub", "openai-fallback", "deepl-fallback"):
+            draft["marketplace_copy"] = {
+                "coupang": tr.get("copy_coupang"),
+                "smartstore": tr.get("copy_smartstore"),
+                "11st": tr.get("copy_11st"),
+            }
+    except Exception as exc:
+        logger.warning("번역 실패, 원문 유지: %s", exc)
+        draft.setdefault("title_ko", title)
+        draft.setdefault("translation_provider", "none")
+    return draft
+
+
+def _collect_real_draft(url: str, translate: bool = True) -> Optional[dict]:
+    """실 수집 파이프라인 (Phase 200 — 목업 제거).
+
+    1) 도메인별 dispatcher (Amazon/Rakuten/Alo/Lululemon/OG·JSON-LD)
+    2) 범용 스크래퍼 (JSON-LD/OG/Microdata/Heuristic + 옵션·색상)
+    3) (옵션) 한국어 번역
+
+    실데이터를 못 얻으면 None 반환 — 호출부에서 정직한 에러로 처리(목업 금지).
+    """
+    draft: Optional[dict] = None
+    source: Optional[str] = None
+    warnings: list = []
+
+    # 1) 도메인 dispatcher
+    try:
+        from src.seller_console.collectors.dispatcher import collect as dispatcher_collect
+
+        result = dispatcher_collect(url)
+        if result.success:
+            cand = result.to_dict()
+            cand.update({
+                "title_en": result.title or "",
+                "title_ko": result.title or "",
+                "price_original": float(result.price) if result.price else 0.0,
+                "is_mock": False,
+                "adapter_used": result.source,
+            })
+            if _draft_is_meaningful(cand):
+                draft = cand
+                source = result.source
+                warnings = list(result.warnings or [])
+    except Exception as exc:
+        logger.debug("dispatcher 수집 실패: %s", exc)
+
+    # 2) 범용 스크래퍼 폴백
+    if draft is None:
+        try:
+            from src.collectors.universal_scraper import UniversalScraper
+
+            scraped = UniversalScraper().fetch(url)
+            cand = _scraped_to_draft(scraped)
+            if _draft_is_meaningful(cand):
+                draft = cand
+                source = cand["source"]
+                if scraped.confidence < 0.5:
+                    warnings.append("자동 추출 신뢰도가 낮습니다. 제목·가격·이미지를 확인·수정하세요.")
+        except Exception as exc:
+            logger.debug("universal_scraper 수집 실패: %s", exc)
+
+    if draft is None:
+        return None
+
+    draft["source"] = source or draft.get("source") or "unknown"
+    draft["warnings"] = warnings
+    draft.setdefault("title_ko", draft.get("title") or draft.get("title_en") or "")
+    if translate:
+        draft = _translate_draft(draft)
+    return draft
 
 
 def _get_upload_dispatcher():
@@ -909,72 +1059,47 @@ def manual_collect_alias():
 def collect_preview():
     """URL → 메타데이터 추출 결과 (JSON).
 
-    Phase 128: 실 수집기 우선 시도 → 기존 ManualCollectorService 폴백.
+    Phase 200: 실 스크래핑(도메인 dispatcher → 범용 스크래퍼)으로 상세설명·이미지·
+    가격·색상/옵션을 추출하고 한국어 번역을 채운다. 목업 폴백 제거 — 자동 추출
+    실패 시 정직한 에러를 반환하고 수동 입력을 안내한다.
 
-    Request body: {"url": "https://..."}
-    Response: {"ok": true, "draft": {...}}
+    Request body: {"url": "https://...", "keyword": "...", "translate": true}
+    Response: {"ok": true, "draft": {...}, "source": "...", "warnings": [...]}
     """
     data = request.get_json(force=True, silent=True) or {}
     url = (data.get("url") or "").strip()
     keyword_hint = (data.get("keyword") or "").strip()
+    translate = data.get("translate", True) is not False
 
     if not url:
         return jsonify({"ok": False, "error": "URL이 필요합니다."}), 400
 
-    # Phase 128: 실 수집기 dispatcher 우선 사용
     try:
-        from src.seller_console.collectors.dispatcher import collect as dispatcher_collect
-        result = dispatcher_collect(url)
-        if result.success:
-            # 기존 draft 형식과 호환되도록 변환
-            draft_dict = result.to_dict()
-            # 하위 호환 필드 추가
-            draft_dict.update({
-                "title_en": result.title or "",
-                "title_ko": result.title or "",
-                "price_original": float(result.price) if result.price else 0.0,
-                "is_mock": False,
-                "adapter_used": result.source,
-            })
-            _register_discovery_candidate_from_collection(url, keyword_hint=keyword_hint)
-            return jsonify({
-                "ok": True,
-                "draft": draft_dict,
-                "trust": None,
-                "source": result.source,
-                "warnings": result.warnings,
-            })
+        draft = _collect_real_draft(url, translate=translate)
     except Exception as exc:
-        logger.debug("실 수집기 실패, 기존 수집기로 폴백: %s", exc)
-
-    # 기존 ManualCollectorService 폴백
-    collector = _get_collector_service()
-    if collector is None:
-        return jsonify({"ok": False, "error": "수집기 모듈 준비 중입니다."}), 503
-
-    try:
-        draft = collector.extract(url)
-        draft_dict = draft.to_dict()
-
-        # 타오바오 URL인 경우 셀러 신뢰도 자동 추가
-        trust_info = None
-        if draft.seller_id and draft.source in ("taobao", "alibaba"):
-            checker = _get_trust_checker()
-            if checker and draft.seller_id:
-                trust_score = checker.evaluate(draft.seller_id)
-                trust_info = trust_score.to_dict()
-
-        _register_discovery_candidate_from_collection(url, keyword_hint=keyword_hint)
-        return jsonify({
-            "ok": True,
-            "draft": draft_dict,
-            "trust": trust_info,
-        })
-    except ValueError:
-        return jsonify({"ok": False, "error": "URL 형식이 올바르지 않습니다."}), 400
-    except Exception as exc:
-        logger.warning("수집기 오류: %s", exc)
+        logger.warning("수집 파이프라인 오류: %s", exc)
         return jsonify({"ok": False, "error": "추출 중 오류가 발생했습니다."}), 500
+
+    if draft is None:
+        # 목업 대신 정직한 안내 (로그인/봇 차단·비표준 페이지 등)
+        return jsonify({
+            "ok": False,
+            "manual_entry": True,
+            "error": (
+                "이 URL에서 상품 정보를 자동으로 추출하지 못했습니다. "
+                "페이지가 로그인·봇 차단이거나 표준 상품 메타(JSON-LD/OpenGraph)가 "
+                "없을 수 있습니다. 제목·가격·이미지를 직접 입력해 진행하세요."
+            ),
+        }), 200
+
+    _register_discovery_candidate_from_collection(url, keyword_hint=keyword_hint)
+    return jsonify({
+        "ok": True,
+        "draft": draft,
+        "trust": None,
+        "source": draft.get("source"),
+        "warnings": draft.get("warnings", []),
+    })
 
 
 @bp.post("/collect/upload")

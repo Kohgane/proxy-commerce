@@ -253,57 +253,73 @@ class TestSellerConsoleViews:
         assert data["ok"] is False
 
     def test_collect_preview_with_amazon_url(self, client):
-        """POST /seller/collect/preview — Amazon URL → 200 + draft."""
-        resp = client.post(
-            "/seller/collect/preview",
-            json={"url": "https://www.amazon.com/dp/B08N5WRWNW"},
-            content_type="application/json",
+        """POST /seller/collect/preview — 실 수집 성공 시 200 + 비목업 draft (Phase 200)."""
+        from src.seller_console.collectors.base import CollectorResult
+        from decimal import Decimal
+
+        mock_result = CollectorResult(
+            success=True,
+            url="https://www.amazon.com/dp/B08N5WRWNW",
+            source="amazon",
+            title="Echo Dot (4th Gen)",
+            description="Smart speaker with Alexa",
+            price=Decimal("49.99"),
+            currency="USD",
+            images=["https://m.media-amazon.com/echo.jpg"],
         )
+        with patch("src.seller_console.collectors.dispatcher.collect", return_value=mock_result):
+            resp = client.post(
+                "/seller/collect/preview",
+                json={"url": "https://www.amazon.com/dp/B08N5WRWNW"},
+                content_type="application/json",
+            )
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["ok"] is True
         draft = data["draft"]
         assert draft["source"] == "amazon"
         assert draft["title_ko"]
-        assert draft["is_mock"] is True
+        # 목업 제거 — 실 수집 결과는 is_mock=False
+        assert draft["is_mock"] is False
 
     def test_collect_preview_with_taobao_url(self, client):
-        """POST /seller/collect/preview — 타오바오 URL → trust 정보 포함."""
-        resp = client.post(
-            "/seller/collect/preview",
-            json={"url": "https://item.taobao.com/item.htm?id=12345"},
-            content_type="application/json",
+        """POST /seller/collect/preview — 타오바오 URL → source taobao + trust 키 포함."""
+        from src.seller_console.collectors.base import CollectorResult
+
+        mock_result = CollectorResult(
+            success=True,
+            url="https://item.taobao.com/item.htm?id=12345",
+            source="taobao",
+            title="淘宝商品",
+            images=["https://img.taobao.com/1.jpg"],
         )
+        with patch("src.seller_console.collectors.dispatcher.collect", return_value=mock_result):
+            resp = client.post(
+                "/seller/collect/preview",
+                json={"url": "https://item.taobao.com/item.htm?id=12345"},
+                content_type="application/json",
+            )
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["ok"] is True
         assert data["draft"]["source"] == "taobao"
-        # 타오바오는 trust 정보도 반환해야 함
+        # 응답에 trust 키가 존재해야 함
         assert "trust" in data
 
-    def test_collect_preview_with_tmall_url(self, client):
-        """POST /seller/collect/preview — tmall URL도 taobao로 식별."""
-        resp = client.post(
-            "/seller/collect/preview",
-            json={"url": "https://detail.tmall.com/item.htm?id=12345"},
-            content_type="application/json",
-        )
+    def test_collect_preview_failure_returns_manual_entry(self, client):
+        """자동 추출 실패 시 목업 대신 정직한 안내 반환 (Phase 200)."""
+        with patch("src.seller_console.views._collect_real_draft", return_value=None):
+            resp = client.post(
+                "/seller/collect/preview",
+                json={"url": "https://blocked.example.com/item"},
+                content_type="application/json",
+            )
         assert resp.status_code == 200
         data = resp.get_json()
-        assert data["ok"] is True
-        assert data["draft"]["source"] == "taobao"
-
-    def test_collect_preview_with_1688_url(self, client):
-        """POST /seller/collect/preview — 1688 URL은 generic_og/alibaba 중 하나."""
-        resp = client.post(
-            "/seller/collect/preview",
-            json={"url": "https://detail.1688.com/offer/12345.html"},
-            content_type="application/json",
-        )
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert data["ok"] is True
-        assert data["draft"]["source"] in ("generic_og", "alibaba")
+        assert data["ok"] is False
+        assert data.get("manual_entry") is True
+        # 목업($50/[Mock]) 흔적이 없어야 함
+        assert "Mock" not in (data.get("error") or "")
 
     def test_collect_upload_no_product_returns_400(self, client):
         """POST /seller/collect/upload — 상품 없으면 400."""

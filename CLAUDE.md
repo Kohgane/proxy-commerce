@@ -40,9 +40,13 @@
    - **오너 액션(durable)**: Render에 `SELLER_CONSOLE_AUTH=1` 설정해야 강제 활성화됨.
    - 수집 이력 `collect_history_store`에 `seller_id` 컬럼·필터 추가(사용자별 격리). 마켓 자격증명은 이미 셀러별.
 2. ✅ 마켓 선택 체크박스 → 타일 전체 클릭(commit b481db0).
-3. ⬜ **실 상세 추출**: `/collect/preview`가 예외 시 `ManualCollectorService`(전부 목업:
-   `manual_collector.py:442` `[Mock] {도메인} 상품`, $50)로 폴백 → 목업 제거하고 실 스크래핑
-   (`collectors/generic_og.py`, `universal_scraper.py`)로 상세설명·이미지·가격·색상/옵션 추출 + 번역(`ai/translator.py`) 연결.
+3. ✅ **실 상세 추출 + 번역** (완료): `/collect/preview`에서 목업(`ManualCollectorService`) 폴백 제거.
+   파이프라인 `_collect_real_draft()`(views.py) = 도메인 dispatcher(`collectors/dispatcher.py`) →
+   범용 스크래퍼(`collectors/universal_scraper.py`, JSON-LD/OG/Microdata/Heuristic + 색상·옵션) →
+   한국어 번역(`ai/translator.py` AITranslator: title_ko/description_ko/마켓카피). 실데이터 못
+   얻으면 목업 대신 `manual_entry` 정직한 안내. stub 번역 시 원문 유지·더미카피 미노출.
+   ※ 번역 실작동은 Render에 `OPENAI_API_KEY`(또는 `DEEPL_API_KEY`) 필요 — 없으면 원문 유지.
+   ※ 벌크수집(`/collect/bulk`)은 아직 ManualCollectorService(목업) 사용 — 추후 동일 파이프라인 전환 필요.
 4. ⬜ **수집→확인·수정→업로드 중간 편집 페이지**: 현재 `collect_preview.html`은 읽기전용.
    퍼센티식 편집(제목·가격·상세·이미지·옵션) 후 업로드.
 5. ⬜ **크롬확장 인페이지 '수집' 버튼 + 번역**: 확장 `extensions/chrome-collector/` 이미 존재
