@@ -87,34 +87,34 @@
           <h6 class="fw-semibold mb-3">1. 등록할 마켓 선택</h6>
           <div class="row g-2 mb-4" id="marketCheckboxes">
             <div class="col-6 col-md-4">
-              <div class="form-check border rounded p-2">
-                <input class="form-check-input market-upload-check" type="checkbox" value="shopify" id="chkShopify">
-                <label class="form-check-label fw-semibold" for="chkShopify">Shopify</label>
-              </div>
+              <label class="market-tile border rounded p-2 d-flex align-items-center gap-2 w-100 mb-0" for="chkShopify">
+                <input class="form-check-input market-upload-check m-0" type="checkbox" value="shopify" id="chkShopify">
+                <span class="fw-semibold">Shopify</span>
+              </label>
             </div>
             <div class="col-6 col-md-4">
-              <div class="form-check border rounded p-2">
-                <input class="form-check-input market-upload-check" type="checkbox" value="coupang" id="chkCoupang">
-                <label class="form-check-label fw-semibold" for="chkCoupang">쿠팡</label>
-              </div>
+              <label class="market-tile border rounded p-2 d-flex align-items-center gap-2 w-100 mb-0" for="chkCoupang">
+                <input class="form-check-input market-upload-check m-0" type="checkbox" value="coupang" id="chkCoupang">
+                <span class="fw-semibold">쿠팡</span>
+              </label>
             </div>
             <div class="col-6 col-md-4">
-              <div class="form-check border rounded p-2">
-                <input class="form-check-input market-upload-check" type="checkbox" value="smartstore" id="chkSmartstore">
-                <label class="form-check-label fw-semibold" for="chkSmartstore">스마트스토어</label>
-              </div>
+              <label class="market-tile border rounded p-2 d-flex align-items-center gap-2 w-100 mb-0" for="chkSmartstore">
+                <input class="form-check-input market-upload-check m-0" type="checkbox" value="smartstore" id="chkSmartstore">
+                <span class="fw-semibold">스마트스토어</span>
+              </label>
             </div>
             <div class="col-6 col-md-4">
-              <div class="form-check border rounded p-2">
-                <input class="form-check-input market-upload-check" type="checkbox" value="elevenst" id="chkElevenst">
-                <label class="form-check-label fw-semibold" for="chkElevenst">11번가</label>
-              </div>
+              <label class="market-tile border rounded p-2 d-flex align-items-center gap-2 w-100 mb-0" for="chkElevenst">
+                <input class="form-check-input market-upload-check m-0" type="checkbox" value="elevenst" id="chkElevenst">
+                <span class="fw-semibold">11번가</span>
+              </label>
             </div>
             <div class="col-6 col-md-4">
-              <div class="form-check border rounded p-2">
-                <input class="form-check-input market-upload-check" type="checkbox" value="woocommerce" id="chkWoo">
-                <label class="form-check-label fw-semibold" for="chkWoo">코가네멀티샵</label>
-              </div>
+              <label class="market-tile border rounded p-2 d-flex align-items-center gap-2 w-100 mb-0" for="chkWoo">
+                <input class="form-check-input market-upload-check m-0" type="checkbox" value="woocommerce" id="chkWoo">
+                <span class="fw-semibold">코가네멀티샵</span>
+              </label>
             </div>
           </div>
 
@@ -169,11 +169,27 @@
   </div>
 </div>
 
+<style>
+  .market-tile { cursor: pointer; transition: background-color .12s, border-color .12s, box-shadow .12s; }
+  .market-tile:hover { border-color: #6f42c1 !important; background-color: rgba(111,66,193,.06); }
+  .market-tile.selected { border-color: #6f42c1 !important; background-color: rgba(111,66,193,.12); box-shadow: 0 0 0 1px #6f42c1 inset; }
+  .market-tile .market-upload-check { pointer-events: none; }
+</style>
 <script>
 // ── 상품 데이터 (서버에서 주입) ──
 const _PRODUCT_DATA = {{ item | tojson }};
 
 let _validatedMarkets = [];
+
+// 타일 전체 클릭 = 체크박스 토글 + 선택 하이라이트
+function _syncMarketTile(input) {
+  const tile = input.closest('.market-tile');
+  if (tile) tile.classList.toggle('selected', input.checked);
+}
+document.querySelectorAll('.market-upload-check').forEach(input => {
+  input.addEventListener('change', () => _syncMarketTile(input));
+  _syncMarketTile(input);
+});
 
 function openUploadModal() {
   const modal = new bootstrap.Modal(document.getElementById('uploadModal'));
