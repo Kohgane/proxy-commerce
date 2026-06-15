@@ -265,6 +265,9 @@ class UploadDispatcher:
         url = product_data.get("url", "")
         result = DispatchResult(product_url=url)
 
+        # 원화 마켓용 sell_price_krw가 없으면 원문가+목표 마진율로 산정해 주입.
+        enriched = self._ensure_sell_price_krw(product_data)
+
         for market in markets:
             if market not in SUPPORTED_MARKETS:
                 result.results.append(
@@ -277,7 +280,7 @@ class UploadDispatcher:
                 result.failed += 1
                 continue
 
-            upload_result = self._upload_to_market(product_data, market)
+            upload_result = self._upload_to_market(enriched, market)
             result.results.append(upload_result)
             if upload_result.success:
                 result.succeeded += 1
@@ -288,6 +291,72 @@ class UploadDispatcher:
 
         result.total = len(markets)
         return result
+
+    @staticmethod
+    def _ensure_sell_price_krw(product_data: Dict[str, Any]) -> Dict[str, Any]:
+        """원화 마켓용 sell_price_krw 주입.
+
+        쿠팡/스마트스토어/11번가/WooCommerce는 원화 판매가가 필요하다.
+        이미 양수 KRW 판매가(sell_price_krw / recommended_price(_krw) / price_krw)가
+        있으면 그대로 둔다. 없고 원문가(외화 포함) + 통화가 있으면
+        목표 마진율(target_margin_pct, 없으면 IMPORT_MARGIN_PCT, 기본 25)로
+        landed cost 기반 원화 판매가를 산정해 주입한다.
+        (KRW 원문가는 브리지의 price_if_krw 경로가 처리하므로 별도 산정하지 않는다.
+         Shopify는 원문가/통화를 직접 사용하므로 영향받지 않는다.)
+        """
+        pd = dict(product_data or {})
+
+        # 이미 양수 KRW 판매가가 있으면 그대로 사용
+        for key in ("sell_price_krw", "recommended_price_krw", "recommended_price", "price_krw"):
+            try:
+                if float(pd.get(key)) > 0:
+                    return pd
+            except (TypeError, ValueError):
+                continue
+
+        currency = str(pd.get("currency") or "").upper()
+        if currency == "KRW":
+            # KRW 원문가는 to_collected의 price_if_krw 경로가 처리
+            return pd
+
+        raw_price = pd.get("price_original")
+        if raw_price is None:
+            raw_price = pd.get("price")
+        try:
+            price_orig = float(raw_price)
+        except (TypeError, ValueError):
+            price_orig = None
+        if not price_orig or price_orig <= 0:
+            return pd
+
+        margin_pct = pd.get("target_margin_pct")
+        try:
+            margin_pct = float(margin_pct)
+        except (TypeError, ValueError):
+            margin_pct = float(os.getenv("IMPORT_MARGIN_PCT", "25"))
+
+        try:
+            from src.price import calc_landed_cost, _build_fx_rates
+
+            fx_rates = _build_fx_rates()
+            sell_krw = float(
+                calc_landed_cost(
+                    buy_price=price_orig,
+                    buy_currency=currency,
+                    margin_pct=margin_pct,
+                    fx_rates=fx_rates,
+                )
+            )
+            if sell_krw > 0:
+                pd["sell_price_krw"] = int(round(sell_krw))
+                rate = fx_rates.get(f"{currency}KRW")
+                if rate:
+                    pd["price_krw"] = int(round(price_orig * float(rate)))
+        except Exception as exc:
+            # 통화 미지원/환율 실패 등 → 산정 불가. 다운스트림에서 honest 오류 처리.
+            logger.warning("원화 판매가 산정 실패(%s, %s): %s", price_orig, currency, exc)
+
+        return pd
 
     def _upload_to_market(
         self,
@@ -504,7 +573,41 @@ class UploadDispatcher:
         """WooCommerce(코가네멀티샵) 업로드."""
         try:
             from src.vendors import woocommerce_client  # type: ignore
-            upload_resp = woocommerce_client.create_product(product_data)
+            from src.channel_sync._channel_bridge import to_collected
+
+            # 공통 정규화(원화 판매가 포함) → WooCommerce catalog_row 매핑
+            collected = to_collected(product_data)
+            sell_price_krw = collected.get("sell_price_krw") or 0
+            if sell_price_krw <= 0:
+                return UploadResult(
+                    market="woocommerce",
+                    success=False,
+                    message="WooCommerce 업로드 불가: 원화 판매가(sell_price_krw)가 0입니다.",
+                    error_code="api_error",
+                    hint="마진 계산기에서 권장 판매가를 계산 후 적용하거나 목표 마진율을 설정하세요.",
+                )
+
+            catalog_row = {
+                "title_ko": collected.get("title_ko"),
+                "title_en": collected.get("title_original"),
+                "sku": collected.get("sku"),
+                "category": collected.get("category_code"),
+                "tags": ",".join(str(t) for t in (collected.get("tags") or [])),
+                "images": ",".join(str(i) for i in (collected.get("images") or [])),
+                "brand": collected.get("brand"),
+                "stock": product_data.get("stock") or product_data.get("qty") or 0,
+                "source_country": product_data.get("source_country")
+                or product_data.get("country")
+                or "",
+                "buy_price": product_data.get("price_original")
+                or product_data.get("price")
+                or "",
+                "buy_currency": product_data.get("currency") or "",
+                "vendor": product_data.get("vendor") or "",
+            }
+
+            prod = woocommerce_client.prepare_product_data(catalog_row, sell_price_krw)
+            upload_resp = woocommerce_client.upsert_product(prod)
             ext_id = None
             ext_url = None
             if isinstance(upload_resp, dict):

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from decimal import Decimal, InvalidOperation
 from typing import Optional
@@ -17,7 +18,9 @@ from .base import BaseCollector, CollectorResult
 
 logger = logging.getLogger(__name__)
 
-_USER_AGENT = "Mozilla/5.0 (compatible; KohganeBot/1.0; +https://kohganepercentiii.com)"
+_USER_AGENT = os.getenv(
+    "SCRAPER_USER_AGENT", "Mozilla/5.0 (compatible; KohganeBot/1.0; +https://kohganepercentiii.com)"
+)
 
 # HTML 파싱 최대 길이 (ReDoS 및 메모리 과다 사용 방지)
 _MAX_HTML_LENGTH = 500_000

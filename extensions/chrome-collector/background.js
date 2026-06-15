@@ -125,13 +125,17 @@ function extractMeta() {
     .map(s => { try { return JSON.parse(s.innerText || s.textContent); } catch { return null; } })
     .filter(Boolean);
 
+  const ogImage = getMeta("og:image") || getMeta("og:image:url") || "";
+
   return {
     url: location.href,
     title: getMeta("og:title") || document.title,
-    image: getMeta("og:image"),
+    image: ogImage,
+    images: ogImage ? [ogImage] : [],
     price: getMeta("product:price:amount"),
     currency: getMeta("product:price:currency") || "USD",
     description: getMeta("og:description") || getMeta("description"),
+    brand: getMeta("og:brand") || "",
     jsonld: jsonldScripts,
     collected_at: new Date().toISOString()
   };

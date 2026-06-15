@@ -26,7 +26,7 @@ import os
 import re
 import uuid
 import hashlib
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from difflib import SequenceMatcher
 
 from decimal import Decimal, InvalidOperation
@@ -82,11 +82,17 @@ def _render_seller_page(title: str, body: str, page: str = "dashboard") -> str:
 
 
 def _check_auth() -> bool:
-    """인증 확인 stub. SELLER_CONSOLE_AUTH=1 시 추후 실제 인증으로 교체."""
+    """인증 확인. SELLER_CONSOLE_AUTH=1 이면 실제 로그인 세션을 요구한다.
+
+    로그인 시스템(src.auth)이 세션에 user_id/user_email 을 채운다.
+    미설정(기본)일 때는 단일 테넌트(오너) 모드로 항상 통과한다.
+    """
     if not _AUTH_ENABLED:
         return True
-    # TODO: Phase 24 OAuth 미들웨어 연결
-    return True
+    try:
+        return bool(session.get("user_id") or session.get("user_email"))
+    except Exception:
+        return False
 
 
 def _cs_role_allowed() -> bool:
@@ -148,14 +154,154 @@ def _get_widgets() -> list:
         return []
 
 
-def _get_collector_service():
-    """ManualCollectorService 인스턴스 반환 (graceful import)."""
+def _draft_is_meaningful(draft: Optional[dict]) -> bool:
+    """수집 결과가 실데이터로 쓸 만한지 판단.
+
+    제목·가격·이미지 중 하나라도 실제로 있으면 True (목업 폴백 방지용).
+    """
+    if not draft:
+        return False
+    title = (draft.get("title") or draft.get("title_en") or draft.get("title_ko") or "")
+    if title and str(title).strip():
+        return True
+    if draft.get("price") or draft.get("price_original"):
+        return True
+    if draft.get("images"):
+        return True
+    return False
+
+
+def _scraped_to_draft(scraped) -> dict:
+    """UniversalScraper.ScrapedProduct → collect_preview draft 형식으로 변환."""
+    options = []
+    for opt in (getattr(scraped, "options", None) or []):
+        if not isinstance(opt, dict):
+            continue
+        name = (opt.get("name") or "").strip()
+        if not name:
+            continue
+        if isinstance(opt.get("values"), list):
+            values = [str(v) for v in opt["values"] if v]
+        elif opt.get("value"):
+            values = [str(opt["value"])]
+        else:
+            values = []
+        options.append({"name": name, "values": values})
+
+    title = scraped.title or ""
+    method = scraped.extraction_method or "heuristic"
+    return {
+        "url": scraped.source_url,
+        "source": f"universal_{method}",
+        "title": title,
+        "title_en": title,
+        "title_ko": title,
+        "description": scraped.description or "",
+        "images": list(scraped.images or []),
+        "price": str(scraped.price) if scraped.price is not None else None,
+        "price_original": float(scraped.price) if scraped.price is not None else 0.0,
+        "currency": scraped.currency or "USD",
+        "brand": scraped.brand or "",
+        "sku": scraped.sku or "",
+        "category": "",
+        "options": options,
+        "in_stock": scraped.in_stock,
+        "confidence": scraped.confidence,
+        "extraction_method": method,
+        "is_mock": False,
+        "adapter_used": "universal_scraper",
+    }
+
+
+def _translate_draft(draft: dict) -> dict:
+    """수집 draft에 한국어 번역(title_ko/description_ko)·마켓 카피를 채운다.
+
+    번역 키(OPENAI/DEEPL) 미설정·실패 시 원문 유지(목업 생성 안 함).
+    """
+    title = (draft.get("title") or draft.get("title_en") or "").strip()
+    description = (draft.get("description") or "").strip()
+    if not title and not description:
+        return draft
     try:
-        from .manual_collector import ManualCollectorService
-        return ManualCollectorService()
+        from .ai.translator import AITranslator
+
+        tr = AITranslator().translate_product({"title": title, "description": description})
+        provider = tr.get("provider", "stub")
+        draft["title_ko"] = (tr.get("title_ko") or "").strip() or title
+        draft["description_ko"] = (tr.get("description_ko") or "").strip() or description
+        draft["translation_provider"] = provider
+        # 실 번역기일 때만 마켓 카피 노출 (stub/fallback의 더미 카피는 숨김)
+        if provider not in ("stub", "openai-fallback", "deepl-fallback"):
+            draft["marketplace_copy"] = {
+                "coupang": tr.get("copy_coupang"),
+                "smartstore": tr.get("copy_smartstore"),
+                "11st": tr.get("copy_11st"),
+            }
     except Exception as exc:
-        logger.warning("ManualCollectorService 로드 실패: %s", exc)
+        logger.warning("번역 실패, 원문 유지: %s", exc)
+        draft.setdefault("title_ko", title)
+        draft.setdefault("translation_provider", "none")
+    return draft
+
+
+def _collect_real_draft(url: str, translate: bool = True) -> Optional[dict]:
+    """실 수집 파이프라인 (Phase 200 — 목업 제거).
+
+    1) 도메인별 dispatcher (Amazon/Rakuten/Alo/Lululemon/OG·JSON-LD)
+    2) 범용 스크래퍼 (JSON-LD/OG/Microdata/Heuristic + 옵션·색상)
+    3) (옵션) 한국어 번역
+
+    실데이터를 못 얻으면 None 반환 — 호출부에서 정직한 에러로 처리(목업 금지).
+    """
+    draft: Optional[dict] = None
+    source: Optional[str] = None
+    warnings: list = []
+
+    # 1) 도메인 dispatcher
+    try:
+        from src.seller_console.collectors.dispatcher import collect as dispatcher_collect
+
+        result = dispatcher_collect(url)
+        if result.success:
+            cand = result.to_dict()
+            cand.update({
+                "title_en": result.title or "",
+                "title_ko": result.title or "",
+                "price_original": float(result.price) if result.price else 0.0,
+                "is_mock": False,
+                "adapter_used": result.source,
+            })
+            if _draft_is_meaningful(cand):
+                draft = cand
+                source = result.source
+                warnings = list(result.warnings or [])
+    except Exception as exc:
+        logger.debug("dispatcher 수집 실패: %s", exc)
+
+    # 2) 범용 스크래퍼 폴백
+    if draft is None:
+        try:
+            from src.collectors.universal_scraper import UniversalScraper
+
+            scraped = UniversalScraper().fetch(url)
+            cand = _scraped_to_draft(scraped)
+            if _draft_is_meaningful(cand):
+                draft = cand
+                source = cand["source"]
+                if scraped.confidence < 0.5:
+                    warnings.append("자동 추출 신뢰도가 낮습니다. 제목·가격·이미지를 확인·수정하세요.")
+        except Exception as exc:
+            logger.debug("universal_scraper 수집 실패: %s", exc)
+
+    if draft is None:
         return None
+
+    draft["source"] = source or draft.get("source") or "unknown"
+    draft["warnings"] = warnings
+    draft.setdefault("title_ko", draft.get("title") or draft.get("title_en") or "")
+    if translate:
+        draft = _translate_draft(draft)
+    return draft
 
 
 def _get_upload_dispatcher():
@@ -903,72 +1049,47 @@ def manual_collect_alias():
 def collect_preview():
     """URL → 메타데이터 추출 결과 (JSON).
 
-    Phase 128: 실 수집기 우선 시도 → 기존 ManualCollectorService 폴백.
+    Phase 200: 실 스크래핑(도메인 dispatcher → 범용 스크래퍼)으로 상세설명·이미지·
+    가격·색상/옵션을 추출하고 한국어 번역을 채운다. 목업 폴백 제거 — 자동 추출
+    실패 시 정직한 에러를 반환하고 수동 입력을 안내한다.
 
-    Request body: {"url": "https://..."}
-    Response: {"ok": true, "draft": {...}}
+    Request body: {"url": "https://...", "keyword": "...", "translate": true}
+    Response: {"ok": true, "draft": {...}, "source": "...", "warnings": [...]}
     """
     data = request.get_json(force=True, silent=True) or {}
     url = (data.get("url") or "").strip()
     keyword_hint = (data.get("keyword") or "").strip()
+    translate = data.get("translate", True) is not False
 
     if not url:
         return jsonify({"ok": False, "error": "URL이 필요합니다."}), 400
 
-    # Phase 128: 실 수집기 dispatcher 우선 사용
     try:
-        from src.seller_console.collectors.dispatcher import collect as dispatcher_collect
-        result = dispatcher_collect(url)
-        if result.success:
-            # 기존 draft 형식과 호환되도록 변환
-            draft_dict = result.to_dict()
-            # 하위 호환 필드 추가
-            draft_dict.update({
-                "title_en": result.title or "",
-                "title_ko": result.title or "",
-                "price_original": float(result.price) if result.price else 0.0,
-                "is_mock": False,
-                "adapter_used": result.source,
-            })
-            _register_discovery_candidate_from_collection(url, keyword_hint=keyword_hint)
-            return jsonify({
-                "ok": True,
-                "draft": draft_dict,
-                "trust": None,
-                "source": result.source,
-                "warnings": result.warnings,
-            })
+        draft = _collect_real_draft(url, translate=translate)
     except Exception as exc:
-        logger.debug("실 수집기 실패, 기존 수집기로 폴백: %s", exc)
-
-    # 기존 ManualCollectorService 폴백
-    collector = _get_collector_service()
-    if collector is None:
-        return jsonify({"ok": False, "error": "수집기 모듈 준비 중입니다."}), 503
-
-    try:
-        draft = collector.extract(url)
-        draft_dict = draft.to_dict()
-
-        # 타오바오 URL인 경우 셀러 신뢰도 자동 추가
-        trust_info = None
-        if draft.seller_id and draft.source in ("taobao", "alibaba"):
-            checker = _get_trust_checker()
-            if checker and draft.seller_id:
-                trust_score = checker.evaluate(draft.seller_id)
-                trust_info = trust_score.to_dict()
-
-        _register_discovery_candidate_from_collection(url, keyword_hint=keyword_hint)
-        return jsonify({
-            "ok": True,
-            "draft": draft_dict,
-            "trust": trust_info,
-        })
-    except ValueError:
-        return jsonify({"ok": False, "error": "URL 형식이 올바르지 않습니다."}), 400
-    except Exception as exc:
-        logger.warning("수집기 오류: %s", exc)
+        logger.warning("수집 파이프라인 오류: %s", exc)
         return jsonify({"ok": False, "error": "추출 중 오류가 발생했습니다."}), 500
+
+    if draft is None:
+        # 목업 대신 정직한 안내 (로그인/봇 차단·비표준 페이지 등)
+        return jsonify({
+            "ok": False,
+            "manual_entry": True,
+            "error": (
+                "이 URL에서 상품 정보를 자동으로 추출하지 못했습니다. "
+                "페이지가 로그인·봇 차단이거나 표준 상품 메타(JSON-LD/OpenGraph)가 "
+                "없을 수 있습니다. 제목·가격·이미지를 직접 입력해 진행하세요."
+            ),
+        }), 200
+
+    _register_discovery_candidate_from_collection(url, keyword_hint=keyword_hint)
+    return jsonify({
+        "ok": True,
+        "draft": draft,
+        "trust": None,
+        "source": draft.get("source"),
+        "warnings": draft.get("warnings", []),
+    })
 
 
 @bp.post("/collect/upload")
@@ -1196,10 +1317,6 @@ def collect_bulk():
     if not urls:
         return jsonify({"ok": False, "error": "수집할 URL을 한 줄에 하나씩 입력하세요."}), 400
 
-    service = _get_collector_service()
-    if service is None:
-        return jsonify({"ok": False, "error": "수집기 준비 중입니다."}), 503
-
     from . import collect_history_store
 
     results = []
@@ -1209,18 +1326,22 @@ def collect_bulk():
             results.append({"url": url, "ok": False, "error": "http/https URL이 아닙니다."})
             continue
         try:
-            draft = service.extract(url)
-            d = draft.to_dict()
-            title = d.get("title_ko") or d.get("title_en") or "(제목 없음)"
+            # Phase 203: 목업 제거 — /collect/preview와 동일한 실 수집 파이프라인 사용
+            d = _collect_real_draft(url, translate=True)
+            if not d:
+                results.append({"url": url, "ok": False, "error": "자동 추출 실패 (수동 입력 필요)"})
+                continue
+            title = d.get("title_ko") or d.get("title") or d.get("title_en") or "(제목 없음)"
             images = d.get("images") if isinstance(d.get("images"), list) else []
             item_id = collect_history_store.append(
                 source="bulk",
                 url=url,
                 title=title,
                 image=images[0] if images else "",
-                price=str(d.get("price_original") or ""),
+                price=str(d.get("price_original") or d.get("price") or ""),
                 currency=d.get("currency") or "",
                 extra=d,
+                seller_id=_seller_id(),
             )
             results.append({
                 "url": url, "ok": True, "title": title,
@@ -1269,7 +1390,7 @@ def collect_bulk_upload():
     try:
         with mc.seller_market_env(_seller_id(), markets):
             for item_id in item_ids:
-                item = collect_history_store.get(item_id)
+                item = collect_history_store.get(item_id, seller_id=_seller_id())
                 if not item:
                     results.append({"id": item_id, "ok": False, "error": "수집 항목을 찾을 수 없습니다."})
                     continue
@@ -3634,9 +3755,10 @@ def collect_history():
     domains = []
     try:
         from .collect_history_store import list_items, summary, distinct_domains
-        items = list_items(domain=domain, source=source, days=days)
-        summ = summary(days=days)
-        domains = distinct_domains()
+        _sid = _seller_id()
+        items = list_items(domain=domain, source=source, days=days, seller_id=_sid)
+        summ = summary(days=days, seller_id=_sid)
+        domains = distinct_domains(seller_id=_sid)
     except Exception as exc:
         logger.warning("수집 이력 조회 실패: %s", exc)
 
@@ -3663,10 +3785,12 @@ def collect_history_alias():
 def collect_preview_by_id(item_id: str):
     """수집된 상품 미리보기 (Phase 135.2)."""
     from flask import abort
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
     item = None
     try:
         from .collect_history_store import get as history_get
-        item = history_get(item_id)
+        item = history_get(item_id, seller_id=_seller_id())
     except Exception as exc:
         logger.warning("미리보기 조회 실패: %s", exc)
 
@@ -3685,6 +3809,100 @@ def collect_preview_by_id(item_id: str):
         item=item,
         extra=extra,
     )
+
+
+@bp.post("/collect/preview/<item_id>/save")
+def collect_preview_save(item_id: str):
+    """수집 항목 중간 편집 저장 (Phase 201).
+
+    수집→확인·수정→업로드 흐름에서 제목·가격·통화·상세설명·이미지·옵션을
+    셀러가 편집한 뒤 저장한다. extra_json에 상세 필드를 머지해 보관한다.
+
+    Request body: {title, price, currency, description, images:[...], options:[{name,values}]}
+    Response: {"ok": true, "product": {...}}
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+
+    data = request.get_json(force=True, silent=True) or {}
+    from . import collect_history_store
+
+    item = collect_history_store.get(item_id, seller_id=_seller_id())
+    if not item:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+
+    try:
+        extra = json.loads(item.get("extra_json") or "{}")
+        if not isinstance(extra, dict):
+            extra = {}
+    except Exception:
+        extra = {}
+
+    title = (data.get("title") or "").strip()
+    price = (str(data.get("price")) if data.get("price") is not None else "").strip()
+    currency = (data.get("currency") or item.get("currency") or "").strip()
+    description = data.get("description")
+    images = data.get("images")
+    options = data.get("options")
+
+    # 이미지 정규화 (빈 항목 제거, 순서 유지)
+    if isinstance(images, list):
+        images = [str(u).strip() for u in images if str(u).strip()]
+    else:
+        images = None
+
+    # 옵션 정규화 [{name, values:[...]}]
+    if isinstance(options, list):
+        norm_opts = []
+        for opt in options:
+            if not isinstance(opt, dict):
+                continue
+            name = (opt.get("name") or "").strip()
+            if not name:
+                continue
+            vals = opt.get("values")
+            if isinstance(vals, str):
+                vals = [v.strip() for v in vals.split(",") if v.strip()]
+            elif isinstance(vals, list):
+                vals = [str(v).strip() for v in vals if str(v).strip()]
+            else:
+                vals = []
+            norm_opts.append({"name": name, "values": vals})
+        options = norm_opts
+    else:
+        options = None
+
+    # extra_json 머지 (수정된 값으로 갱신, 미수정 항목은 보존)
+    if title:
+        extra["title"] = title
+        extra["title_ko"] = title
+    if description is not None:
+        extra["description"] = description
+        extra["description_ko"] = description
+    if images is not None:
+        extra["images"] = images
+    if options is not None:
+        extra["options"] = options
+    if price:
+        extra["price"] = price
+        extra["price_original"] = price
+    if currency:
+        extra["currency"] = currency
+    extra["edited"] = True
+
+    ok = collect_history_store.update(
+        item_id,
+        seller_id=_seller_id(),
+        title=title or item.get("title") or "",
+        price=price or item.get("price") or "",
+        currency=currency or item.get("currency") or "",
+        image_url=(images[0] if images else item.get("image_url") or ""),
+        extra_json=json.dumps(extra, ensure_ascii=False),
+    )
+    if not ok:
+        return jsonify({"ok": False, "error": "저장에 실패했습니다."}), 500
+
+    return jsonify({"ok": True, "product": extra})
 
 
 # ---------------------------------------------------------------------------

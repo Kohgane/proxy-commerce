@@ -107,32 +107,39 @@ def test_collect_preview_empty_url_returns_400(client):
     assert resp.status_code == 400
 
 
-def test_collect_preview_fallback_on_dispatcher_failure(client):
-    """dispatcher 실패 시 기존 수집기 폴백."""
-    from src.seller_console.manual_collector import ManualCollectorService, ProductDraft
+def test_collect_preview_fallback_to_universal_scraper(client):
+    """dispatcher 실패 시 범용 스크래퍼로 실 폴백 (Phase 200 — 목업 제거)."""
+    from src.collectors.universal_scraper import ScrapedProduct
+    from decimal import Decimal
 
-    mock_draft = ProductDraft(
-        url="https://www.amazon.com/dp/B09XYZ0001",
-        source="amazon",
-        title_en="Fallback Product",
-        title_ko="폴백 상품",
-        price_original=29.99,
+    scraped = ScrapedProduct(
+        source_url="https://example-brand.com/item/1",
+        domain="example-brand.com",
+        title="Fallback Product",
+        description="real description",
+        images=["https://example-brand.com/img.jpg"],
+        price=Decimal("29.99"),
         currency="USD",
+        options=[{"name": "Color", "values": ["Black", "White"]}],
+        extraction_method="json-ld",
+        confidence=0.8,
     )
-    mock_service = MagicMock()
-    mock_service.extract.return_value = mock_draft
 
     with patch("src.seller_console.collectors.dispatcher.collect", side_effect=Exception("dispatcher error")):
-        with patch("src.seller_console.views._get_collector_service", return_value=mock_service):
+        with patch("src.collectors.universal_scraper.UniversalScraper.fetch", return_value=scraped):
             resp = client.post(
                 "/seller/collect/preview",
-                data=json.dumps({"url": "https://www.amazon.com/dp/B09XYZ0001"}),
+                data=json.dumps({"url": "https://example-brand.com/item/1"}),
                 content_type="application/json",
             )
 
     assert resp.status_code == 200
     data = json.loads(resp.data)
     assert data["ok"] is True
+    draft = data["draft"]
+    assert draft["is_mock"] is False
+    assert draft["title"] == "Fallback Product"
+    assert draft["options"] == [{"name": "Color", "values": ["Black", "White"]}]
 
 
 # ---------------------------------------------------------------------------

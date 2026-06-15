@@ -5,6 +5,7 @@ BaseCollector: 수집기 추상 기반 클래스
 """
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -57,7 +58,7 @@ class BaseCollector(ABC):
     """수집기 추상 기반 클래스."""
 
     name: str = "base"
-    timeout: float = 10.0
+    timeout: float = float(os.getenv("SCRAPER_TIMEOUT_SEC", "10"))
 
     @abstractmethod
     def collect(self, url: str) -> CollectorResult:

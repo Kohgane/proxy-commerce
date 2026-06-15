@@ -190,12 +190,14 @@
         <p class="small text-muted">선택한 <strong id="modalSelCount">0</strong>개 상품을 아래 마켓에 등록합니다.</p>
         <div class="mb-3">
           <div class="fw-semibold small mb-1">등록 마켓</div>
-          {% for m in upload_markets %}
-          <div class="form-check form-check-inline">
-            <input class="form-check-input bulk-market-chk" type="checkbox" id="bm_{{ m.code }}" value="{{ m.code }}">
-            <label class="form-check-label" for="bm_{{ m.code }}">{{ m.label }}</label>
+          <div class="d-flex flex-wrap gap-2">
+            {% for m in upload_markets %}
+            <label class="market-tile border rounded px-3 py-2 d-flex align-items-center gap-2 mb-0" for="bm_{{ m.code }}">
+              <input class="form-check-input bulk-market-chk m-0" type="checkbox" id="bm_{{ m.code }}" value="{{ m.code }}">
+              <span class="fw-semibold small">{{ m.label }}</span>
+            </label>
+            {% endfor %}
           </div>
-          {% endfor %}
         </div>
         <div class="mb-2">
           <label class="form-label small mb-1">목표 마진율 (%)</label>

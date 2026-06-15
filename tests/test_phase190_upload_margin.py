@@ -480,3 +480,116 @@ class TestPrevalidateEndpoint:
         )
         assert resp.status_code == 200
         assert captured.get("target_margin_pct") == 28.0
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 4. 원화 판매가 산정 — 외화 원문가 + 목표 마진율 → sell_price_krw 주입
+#    (회귀: 쿠팡/스마트스토어/11번가가 sell_price_krw=0 으로 실패하던 버그)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestEnsureSellPriceKrw:
+    """UploadDispatcher._ensure_sell_price_krw — 원화 판매가 주입."""
+
+    def _fx(self):
+        from decimal import Decimal
+        return {
+            "USDKRW": Decimal("1350"),
+            "JPYKRW": Decimal("9.0"),
+            "EURKRW": Decimal("1470"),
+            "CNYKRW": Decimal("190"),
+        }
+
+    def test_foreign_price_with_margin_yields_positive_krw(self, monkeypatch):
+        """외화(JPY) 원문가 + 목표 마진율 → 양수 sell_price_krw 주입."""
+        from src.seller_console.upload_dispatcher import UploadDispatcher
+        import src.price as price_mod
+
+        monkeypatch.setattr(price_mod, "_build_fx_rates", lambda *a, **k: self._fx())
+
+        pd = {"title": "T", "price": 10000, "currency": "JPY", "target_margin_pct": 22}
+        enriched = UploadDispatcher._ensure_sell_price_krw(pd)
+        assert enriched["sell_price_krw"] > 0
+        # 원가(마진 제외) KRW 도 채워짐: 10000 JPY * 9.0 = 90000
+        assert enriched["price_krw"] == 90000
+        # 원본은 변경되지 않음
+        assert "sell_price_krw" not in pd
+
+    def test_existing_krw_price_preserved(self):
+        """이미 양수 sell_price_krw 가 있으면 재산정하지 않는다."""
+        from src.seller_console.upload_dispatcher import UploadDispatcher
+
+        pd = {"title": "T", "sell_price_krw": 50000, "price": 10000, "currency": "JPY"}
+        enriched = UploadDispatcher._ensure_sell_price_krw(pd)
+        assert enriched["sell_price_krw"] == 50000
+
+    def test_krw_currency_left_for_bridge(self):
+        """KRW 통화 원문가는 브리지가 처리하므로 주입하지 않는다."""
+        from src.seller_console.upload_dispatcher import UploadDispatcher
+
+        pd = {"title": "T", "price": 29900, "currency": "KRW"}
+        enriched = UploadDispatcher._ensure_sell_price_krw(pd)
+        assert "sell_price_krw" not in enriched
+
+    def test_dispatch_injects_krw_before_market_upload(self, monkeypatch):
+        """dispatch() 가 마켓 업로드 전에 sell_price_krw 를 주입해 0 실패를 방지."""
+        from src.seller_console import upload_dispatcher as mod
+        import src.price as price_mod
+
+        monkeypatch.setattr(price_mod, "_build_fx_rates", lambda *a, **k: self._fx())
+
+        captured = {}
+
+        def fake_upload_to_market(self, product_data, market):
+            captured["sell_price_krw"] = product_data.get("sell_price_krw")
+            return mod.UploadResult(market=market, success=True, message="ok")
+
+        monkeypatch.setattr(mod.UploadDispatcher, "_upload_to_market", fake_upload_to_market)
+
+        product = {"title": "T", "price": 100, "currency": "USD", "target_margin_pct": 22}
+        result = mod.UploadDispatcher().dispatch(product, ["coupang"])
+        assert result.succeeded == 1
+        assert captured["sell_price_krw"] > 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 5. WooCommerce 업로드 — prepare_product_data + upsert_product 사용
+#    (회귀: create_product 속성 없음 오류)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestWooCommerceUploadPath:
+    """_upload_woocommerce — 모듈의 실제 API(prepare_product_data/upsert_product) 사용."""
+
+    def test_uses_prepare_and_upsert_not_create_product(self, monkeypatch):
+        from src.seller_console import upload_dispatcher as mod
+        from src.vendors import woocommerce_client as woo
+
+        calls = {}
+
+        def fake_prepare(catalog_row, sell_price_krw):
+            calls["prepare"] = {"row": catalog_row, "price": sell_price_krw}
+            return {"name": catalog_row.get("title_ko"), "regular_price": str(int(sell_price_krw))}
+
+        def fake_upsert(prod):
+            calls["upsert"] = prod
+            return {"id": 999, "permalink": "https://shop/p/999"}
+
+        monkeypatch.setattr(woo, "prepare_product_data", fake_prepare)
+        monkeypatch.setattr(woo, "upsert_product", fake_upsert)
+
+        product = {"title": "코가네백", "sell_price_krw": 88000, "sku": "SKU-1"}
+        result = mod.UploadDispatcher()._upload_woocommerce(product)
+        assert result.success is True
+        assert result.external_product_id == "999"
+        assert calls["prepare"]["price"] == 88000
+        assert calls["upsert"]["name"] == "코가네백"
+
+    def test_zero_krw_price_fails_honestly(self):
+        from src.seller_console import upload_dispatcher as mod
+
+        # 외화 원문가만 있고 KRW 판매가가 없으면 honest 실패
+        product = {"title": "T", "price": 19.9, "currency": "USD"}
+        result = mod.UploadDispatcher()._upload_woocommerce(product)
+        assert result.success is False
+        assert "원화 판매가" in result.message

@@ -86,6 +86,71 @@ class TestExtensionApiHistory:
         assert data["ok"] is True
         assert data["preview_url"] == "/seller/collect/preview/histxyz"
 
+    def test_collect_translates_and_stores_korean(self, client):
+        """수집 시 번역 → extra에 title_ko/description_ko 저장 (Phase 202)."""
+        fake_tr = {
+            "title_ko": "알로 레깅스",
+            "description_ko": "하이웨이스트 레깅스.",
+            "provider": "openai",
+        }
+        with patch("src.api.extension_api._require_token") as mock_auth, \
+             patch("src.api.extension_api._upsert_catalog", return_value="p1"), \
+             patch("src.seller_console.collect_history_store.append", return_value="h1") as mock_history, \
+             patch("src.seller_console.ai.translator.AITranslator.translate_product", return_value=fake_tr), \
+             patch("src.api.extension_api._notify_telegram"):
+            mock_auth.return_value = {"user_id": "u1", "scopes": ["collect.write"]}
+            resp = client.post(
+                "/api/v1/collect/extension",
+                data=json.dumps({
+                    "url": "https://aloyoga.com/products/legging",
+                    "title": "Alo Legging",
+                    "description": "High-waist legging.",
+                    "image": "https://aloyoga.com/l.jpg",
+                    "price": "98.00", "currency": "USD",
+                }),
+                content_type="application/json",
+                headers={"Authorization": "Bearer kgp_test"},
+            )
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert data["title_ko"] == "알로 레깅스"
+        assert data["translated"] is True
+
+        call_kwargs = mock_history.call_args[1]
+        # 이력 상위 title은 한국어
+        assert call_kwargs["title"] == "알로 레깅스"
+        extra = call_kwargs["extra"]
+        assert extra["title_ko"] == "알로 레깅스"
+        assert extra["title_en"] == "Alo Legging"
+        assert extra["description_ko"] == "하이웨이스트 레깅스."
+        assert extra["images"] == ["https://aloyoga.com/l.jpg"]
+        assert extra["translation_provider"] == "openai"
+
+    def test_collect_translate_disabled_keeps_original(self, client):
+        """translate=false면 번역 호출 없이 원문 유지."""
+        with patch("src.api.extension_api._require_token") as mock_auth, \
+             patch("src.api.extension_api._upsert_catalog", return_value="p1"), \
+             patch("src.seller_console.collect_history_store.append", return_value="h1") as mock_history, \
+             patch("src.seller_console.ai.translator.AITranslator.translate_product") as mock_tr, \
+             patch("src.api.extension_api._notify_telegram"):
+            mock_auth.return_value = {"user_id": "u1", "scopes": ["collect.write"]}
+            resp = client.post(
+                "/api/v1/collect/extension",
+                data=json.dumps({
+                    "url": "https://shop.example.com/p",
+                    "title": "Original Title", "translate": False,
+                }),
+                content_type="application/json",
+                headers={"Authorization": "Bearer kgp_test"},
+            )
+
+        assert resp.status_code == 200
+        mock_tr.assert_not_called()
+        call_kwargs = mock_history.call_args[1]
+        assert call_kwargs["title"] == "Original Title"
+
     def test_collect_history_failure_does_not_break_response(self, client):
         """history append 실패해도 수집 응답은 정상."""
         with patch("src.api.extension_api._require_token") as mock_auth, \
