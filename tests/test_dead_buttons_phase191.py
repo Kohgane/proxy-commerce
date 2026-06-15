@@ -146,3 +146,17 @@ class TestBookmarkletKeepsExternalAlert:
         assert "pcToast(" in body
         # 외부 북마클릿 코드 내부 alert은 의도적으로 유지 (사본이 2개)
         assert body.count("alert(") <= 2
+
+
+class TestGlobalSearchFunctional:
+    """전역 검색창이 실제로 카탈로그 검색으로 동작한다(죽은 입력 제거)."""
+
+    def test_search_box_submits_to_catalog(self, client):
+        html = client.get("/seller/dashboard").get_data(as_text=True)
+        assert 'action="/seller/catalog"' in html
+        assert 'name="search"' in html
+        assert "후속 PR" not in html  # 더 이상 '준비 중' 더미 아님
+
+    def test_catalog_accepts_search_query(self, client):
+        resp = client.get("/seller/catalog?search=test")
+        assert resp.status_code == 200

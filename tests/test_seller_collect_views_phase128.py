@@ -192,10 +192,12 @@ def test_orders_page_200(client):
 
 
 def test_orders_page_stub_notice(client):
-    """주문 관리 페이지에 Phase 129 예정 안내."""
+    """주문 관리 페이지가 실제 주문 운영 UI로 렌더된다(스텁 아님)."""
     resp = client.get("/seller/orders")
+    assert resp.status_code == 200
     html = resp.data.decode("utf-8")
-    assert "129" in html or "준비 중" in html
+    assert "주문 관리" in html
+    assert "운송장" in html
 
 
 # ---------------------------------------------------------------------------
