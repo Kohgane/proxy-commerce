@@ -53,8 +53,14 @@
    → 같은 폼 데이터로 사전검증·업로드(buildProductData 단일화). 대표이미지 실시간 미리보기.
    ※ Render 환경변수 정렬: AITranslator 모델=`OPENAI_MODEL`, 스크래퍼 UA=`SCRAPER_USER_AGENT`,
      수집기 타임아웃=`SCRAPER_TIMEOUT_SEC` 반영(commit 후속).
-5. ⬜ **크롬확장 인페이지 '수집' 버튼 + 번역**: 확장 `extensions/chrome-collector/` 이미 존재
-   (툴바/우클릭 방식, API `/api/v1/collect/extension`, 토큰 `kgp_`). 소싱페이지에 떠있는 수집버튼(content_script 주입)·수집시 번역 추가.
+5. ✅ **크롬확장 인페이지 '수집' 버튼 + 번역** (완료, v1.1.0):
+   - `content_script.js`: 상품페이지 휴리스틱(og:product/가격메타/JSON-LD Product) 통과 시
+     우하단 보라색 🛒 '수집' FAB 주입 → 클릭 시 메타추출 → background `collect` → 인페이지 토스트.
+     SPA URL변경 감지 재주입, iframe 제외.
+   - 서버 `/api/v1/collect/extension`: 수집 시 AITranslator로 한국어 번역(`_translate_payload`,
+     키 없으면 원문 유지) → 이력 `extra`에 title_ko/description_ko/images/brand/provider 저장 →
+     편집 페이지(④) 즉시 프리필. `translate:false`로 끌 수 있음. 이력 상위 title=한국어.
+   - manifest 1.0.0→1.1.0. README 사용법(방법3) 추가.
 
 ## 작업 방식
 - 브랜치 `claude/magical-noether-oo4831`에서 작업 → PR 생성·main 머지(오너 승인됨)로 배포.

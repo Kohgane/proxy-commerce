@@ -104,6 +104,28 @@ def _upsert_catalog(product_data: dict, source: str) -> Optional[str]:
     return product_id
 
 
+def _translate_payload(payload: dict) -> dict:
+    """수집 페이로드 제목/설명을 한국어로 번역 (Phase 202).
+
+    OPENAI/DEEPL 키 미설정·ADAPTER_DRY_RUN·실패 시 원문 유지(목업 없음).
+    """
+    title = (payload.get("title") or "").strip()
+    description = (payload.get("description") or "").strip()
+    out = {"title_ko": title, "description_ko": description, "provider": "none"}
+    if not title and not description:
+        return out
+    try:
+        from src.seller_console.ai.translator import AITranslator
+
+        tr = AITranslator().translate_product({"title": title, "description": description})
+        out["title_ko"] = (tr.get("title_ko") or "").strip() or title
+        out["description_ko"] = (tr.get("description_ko") or "").strip() or description
+        out["provider"] = tr.get("provider", "stub")
+    except Exception as exc:
+        logger.warning("확장 수집 번역 실패, 원문 유지: %s", exc)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # 라우트
 # ---------------------------------------------------------------------------
@@ -129,21 +151,46 @@ def collect_from_extension():
     title = payload.get("title") or ""
     source = "extension"
 
+    # 수집 시 한국어 번역 (키 없으면 원문 유지)
+    translate = payload.get("translate", True) is not False
+    tr = _translate_payload(payload) if translate else {
+        "title_ko": title, "description_ko": payload.get("description", ""), "provider": "none",
+    }
+    title_ko = tr.get("title_ko") or title
+
     product_id = _upsert_catalog(payload, source=source)
 
-    # 수집 이력 기록
+    # 이미지 목록 정규화 (편집 페이지에서 바로 쓰도록)
+    images = payload.get("images")
+    if not isinstance(images, list):
+        images = [payload.get("image")] if payload.get("image") else []
+    images = [str(i).strip() for i in images if str(i or "").strip()]
+
+    # 수집 이력 기록 (편집 페이지가 바로 프리필되도록 상세 필드 보관)
     try:
         from src.seller_console.collect_history_store import append as history_append
         item_id = history_append(
             source=source,
             url=url,
-            title=title,
-            image=payload.get("image", ""),
+            title=title_ko,
+            image=images[0] if images else payload.get("image", ""),
             price=payload.get("price", ""),
             currency=payload.get("currency", "USD"),
             status="ok",
-            extra={"jsonld": payload.get("jsonld", []),
-                   "description": payload.get("description", "")},
+            extra={
+                "jsonld": payload.get("jsonld", []),
+                "title": title,
+                "title_en": title,
+                "title_ko": title_ko,
+                "description": payload.get("description", ""),
+                "description_ko": tr.get("description_ko", ""),
+                "images": images,
+                "price": payload.get("price", ""),
+                "price_original": payload.get("price", ""),
+                "currency": payload.get("currency", "USD"),
+                "brand": payload.get("brand", ""),
+                "translation_provider": tr.get("provider", "none"),
+            },
             seller_id=str(user.get("user_id") or ""),
         )
         preview_url = f"/seller/collect/preview/{item_id}"
@@ -163,6 +210,8 @@ def collect_from_extension():
         "product_id": product_id,
         "preview_url": preview_url,
         "title": title,
+        "title_ko": title_ko,
+        "translated": tr.get("provider", "none") not in ("none", "stub"),
     })
 
 
