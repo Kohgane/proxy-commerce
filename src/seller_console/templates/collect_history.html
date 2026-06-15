@@ -98,11 +98,18 @@
   {% if items %}
   <div class="card">
     <div class="card-body p-0">
+      <div class="d-flex flex-wrap align-items-center gap-2 p-2 border-bottom bg-light">
+        <span class="small text-muted">선택 <strong id="selCount">0</strong>개</span>
+        <button type="button" class="btn btn-success btn-sm" id="bulkUploadBtn" onclick="openBulkUploadModal()" disabled>
+          📤 선택 상품 일괄 마켓 등록
+        </button>
+      </div>
       <div class="table-responsive">
         <table class="table table-hover mb-0">
           <thead class="table-light">
             <tr>
-              <th class="ps-3">수집 시각</th>
+              <th class="ps-3"><input type="checkbox" id="chkAll" title="전체 선택" aria-label="전체 선택"></th>
+              <th>수집 시각</th>
               <th>경로</th>
               <th>도메인</th>
               <th>제목</th>
@@ -114,7 +121,8 @@
           <tbody>
           {% for it in items %}
             <tr>
-              <td class="ps-3 text-muted small">{{ it.collected_at[:16] if it.collected_at else "-" }}</td>
+              <td class="ps-3"><input type="checkbox" class="row-chk" value="{{ it.id }}" data-title="{{ it.title or '(제목 없음)' }}" aria-label="선택"></td>
+              <td class="text-muted small">{{ it.collected_at[:16] if it.collected_at else "-" }}</td>
               <td>
                 {% if it.source in ("extension", "chrome_extension") %}
                   <span class="badge bg-primary">확장</span>
@@ -169,4 +177,96 @@
   </div>
   {% endif %}
 </div>
+
+<!-- 일괄 업로드 모달 -->
+<div class="modal fade" id="bulkUploadModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">선택 상품 일괄 마켓 등록</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted">선택한 <strong id="modalSelCount">0</strong>개 상품을 아래 마켓에 등록합니다.</p>
+        <div class="mb-3">
+          <div class="fw-semibold small mb-1">등록 마켓</div>
+          {% for m in upload_markets %}
+          <div class="form-check form-check-inline">
+            <input class="form-check-input bulk-market-chk" type="checkbox" id="bm_{{ m.code }}" value="{{ m.code }}">
+            <label class="form-check-label" for="bm_{{ m.code }}">{{ m.label }}</label>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="mb-2">
+          <label class="form-label small mb-1">목표 마진율 (%)</label>
+          <input type="number" id="bulkMargin" class="form-control form-control-sm" value="22" min="0" max="90" step="1">
+        </div>
+        <div id="bulkUploadResult" class="small mt-2 d-none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">닫기</button>
+        <button type="button" class="btn btn-success" id="bulkUploadConfirm" onclick="runBulkUpload()">📤 등록 실행</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function selectedItemIds() {
+  return Array.from(document.querySelectorAll('.row-chk:checked')).map(c => c.value);
+}
+function refreshSelCount() {
+  const n = selectedItemIds().length;
+  const el = document.getElementById('selCount');
+  if (el) el.textContent = n;
+  const btn = document.getElementById('bulkUploadBtn');
+  if (btn) btn.disabled = n === 0;
+}
+document.addEventListener('DOMContentLoaded', function () {
+  const all = document.getElementById('chkAll');
+  if (all) all.addEventListener('change', () => {
+    document.querySelectorAll('.row-chk').forEach(c => { c.checked = all.checked; });
+    refreshSelCount();
+  });
+  document.querySelectorAll('.row-chk').forEach(c => c.addEventListener('change', refreshSelCount));
+});
+function openBulkUploadModal() {
+  const ids = selectedItemIds();
+  if (!ids.length) { pcToast('상품을 먼저 선택하세요.', 'warning'); return; }
+  document.getElementById('modalSelCount').textContent = ids.length;
+  document.getElementById('bulkUploadResult').classList.add('d-none');
+  new bootstrap.Modal(document.getElementById('bulkUploadModal')).show();
+}
+async function runBulkUpload() {
+  const ids = selectedItemIds();
+  const markets = Array.from(document.querySelectorAll('.bulk-market-chk:checked')).map(c => c.value);
+  if (!markets.length) { pcToast('등록할 마켓을 선택하세요.', 'warning'); return; }
+  const margin = parseFloat(document.getElementById('bulkMargin').value) || null;
+  const btn = document.getElementById('bulkUploadConfirm');
+  setButtonLoading(btn, true, '등록 중…');
+  const box = document.getElementById('bulkUploadResult');
+  try {
+    const resp = await fetch('/seller/collect/bulk-upload', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({item_ids: ids, markets: markets, target_margin_pct: margin}),
+    });
+    const data = await resp.json();
+    if (!data.ok) { pcToast(data.error || '일괄 업로드 실패', 'error'); return; }
+    let html = `<div class="alert alert-info py-2">전체 ${data.total}개 · 성공 <strong>${data.succeeded}</strong> · 실패 ${data.total - data.succeeded}</div><ul class="list-group">`;
+    (data.results || []).forEach(r => {
+      const cls = r.ok ? 'list-group-item-success' : 'list-group-item-warning';
+      const icon = r.ok ? '✅' : '⚠️';
+      html += `<li class="list-group-item ${cls}"><span>${icon} ${(r.title || r.id)}</span></li>`;
+    });
+    html += '</ul>';
+    box.innerHTML = html;
+    box.classList.remove('d-none');
+    pcToast(`${data.succeeded}/${data.total}개 마켓 등록 완료`, 'success');
+  } catch (err) {
+    pcToast('일괄 업로드 요청 실패: ' + err.message, 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+</script>
 {% endblock %}

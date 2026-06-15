@@ -1234,6 +1234,74 @@ def collect_bulk():
     return jsonify({"ok": True, "total": len(urls), "success": success, "results": results})
 
 
+@bp.post("/collect/bulk-upload")
+def collect_bulk_upload():
+    """수집 이력의 여러 상품을 선택해 여러 마켓에 일괄 등록 (④ 일괄 업로드).
+
+    Request: {"item_ids": [...], "markets": [...], "target_margin_pct"?: float}
+    Response: {"ok": true, "total": N, "succeeded": M, "results": [{id, title, ok, result}]}
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+
+    data = request.get_json(force=True, silent=True) or {}
+    item_ids = data.get("item_ids") if isinstance(data.get("item_ids"), list) else []
+    item_ids = [str(i) for i in item_ids if str(i).strip()][:50]
+    markets = data.get("markets") if isinstance(data.get("markets"), list) else []
+    markets = [str(m).strip() for m in markets if str(m).strip()]
+    if not item_ids:
+        return jsonify({"ok": False, "error": "등록할 상품을 선택하세요."}), 400
+    if not markets:
+        return jsonify({"ok": False, "error": "등록할 마켓을 선택하세요."}), 400
+
+    target_margin_pct = data.get("target_margin_pct")
+
+    dispatcher = _get_upload_dispatcher()
+    if dispatcher is None:
+        return jsonify({"ok": False, "error": "업로드 디스패처 준비 중입니다."}), 503
+
+    import json as _json
+    from . import collect_history_store
+    from . import market_credentials as mc
+
+    results = []
+    succeeded = 0
+    try:
+        with mc.seller_market_env(_seller_id(), markets):
+            for item_id in item_ids:
+                item = collect_history_store.get(item_id)
+                if not item:
+                    results.append({"id": item_id, "ok": False, "error": "수집 항목을 찾을 수 없습니다."})
+                    continue
+                try:
+                    product = _json.loads(item.get("extra_json") or "{}")
+                except (TypeError, ValueError):
+                    product = {}
+                if not product:
+                    product = {"title": item.get("title"), "url": item.get("url"),
+                               "price": item.get("price"), "currency": item.get("currency")}
+                if target_margin_pct is not None:
+                    try:
+                        product["target_margin_pct"] = float(target_margin_pct)
+                    except (TypeError, ValueError):
+                        pass
+                dispatch_result = dispatcher.dispatch(product, markets)
+                ok = dispatch_result.succeeded > 0
+                if ok:
+                    succeeded += 1
+                results.append({
+                    "id": item_id,
+                    "title": item.get("title") or product.get("title") or "(제목 없음)",
+                    "ok": ok,
+                    "result": dispatch_result.to_dict(),
+                })
+    except Exception as exc:
+        logger.warning("일괄 업로드 오류: %s", exc)
+        return jsonify({"ok": False, "error": "일괄 업로드 중 오류가 발생했습니다."}), 500
+
+    return jsonify({"ok": True, "total": len(item_ids), "succeeded": succeeded, "results": results})
+
+
 @bp.get("/catalog")
 def catalog():
     """상품 카탈로그 페이지 (Phase 128) — Sheets catalog 워크시트 뷰."""
@@ -3572,6 +3640,8 @@ def collect_history():
     except Exception as exc:
         logger.warning("수집 이력 조회 실패: %s", exc)
 
+    from .upload_dispatcher import MARKET_LABELS, SUPPORTED_MARKETS
+    upload_markets = [{"code": m, "label": MARKET_LABELS.get(m, m)} for m in SUPPORTED_MARKETS]
     return render_template(
         "collect_history.html",
         page="collect_history",
@@ -3579,6 +3649,7 @@ def collect_history():
         summary=summ,
         domains=domains,
         filters={"domain": domain, "source": source, "days": days},
+        upload_markets=upload_markets,
     )
 
 

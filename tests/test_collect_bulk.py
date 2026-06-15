@@ -76,3 +76,51 @@ def test_bulk_per_url_error_isolated(client):
     data = resp.get_json()
     assert data["success"] == 1
     assert data["total"] == 2
+
+
+# ─── ④ 일괄 업로드 ────────────────────────────────────────────────────────────
+
+def test_bulk_upload_requires_items_and_markets(client):
+    assert client.post("/seller/collect/bulk-upload", json={"item_ids": [], "markets": ["shopify"]}).status_code == 400
+    assert client.post("/seller/collect/bulk-upload", json={"item_ids": ["a"], "markets": []}).status_code == 400
+
+
+def test_bulk_upload_dispatches_per_item(client):
+    disp = MagicMock()
+    dr = MagicMock()
+    dr.succeeded = 1
+    dr.to_dict.return_value = {"succeeded": 1, "failed": 0, "results": []}
+    disp.dispatch.return_value = dr
+    item = {"title": "샘플", "extra_json": '{"title":"샘플","sell_price_krw":19900}'}
+    with patch("src.seller_console.views._get_upload_dispatcher", return_value=disp), \
+         patch("src.seller_console.collect_history_store.get", return_value=item):
+        resp = client.post("/seller/collect/bulk-upload", json={
+            "item_ids": ["id1", "id2"], "markets": ["shopify", "coupang"], "target_margin_pct": 25})
+    data = resp.get_json()
+    assert data["ok"] is True
+    assert data["total"] == 2
+    assert data["succeeded"] == 2
+    assert disp.dispatch.call_count == 2
+    # 마진율이 product에 주입됐는지
+    called_product = disp.dispatch.call_args.args[0]
+    assert called_product.get("target_margin_pct") == 25.0
+
+
+def test_bulk_upload_missing_item_isolated(client):
+    disp = MagicMock()
+    dr = MagicMock()
+    dr.succeeded = 1
+    dr.to_dict.return_value = {"succeeded": 1}
+    disp.dispatch.return_value = dr
+
+    def _get(item_id):
+        return None if item_id == "missing" else {"title": "ok", "extra_json": "{}"}
+    with patch("src.seller_console.views._get_upload_dispatcher", return_value=disp), \
+         patch("src.seller_console.collect_history_store.get", side_effect=_get):
+        resp = client.post("/seller/collect/bulk-upload", json={
+            "item_ids": ["good", "missing"], "markets": ["shopify"]})
+    data = resp.get_json()
+    assert data["total"] == 2
+    assert data["succeeded"] == 1
+    by_ok = {r["ok"] for r in data["results"]}
+    assert False in by_ok and True in by_ok
