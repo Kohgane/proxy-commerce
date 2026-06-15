@@ -110,13 +110,13 @@
         {% if _user_role == 'seller' %}<span class="badge text-bg-primary">셀러</span>{% endif %}
       </div>
 
-      <div class="console-search-wrap">
-        <label for="consoleGlobalSearch" class="visually-hidden">전역 검색</label>
+      <form class="console-search-wrap" action="/seller/catalog" method="get" role="search">
+        <label for="consoleGlobalSearch" class="visually-hidden">상품 검색</label>
         <div class="input-group input-group-sm">
           <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-          <input id="consoleGlobalSearch" type="search" class="form-control" placeholder="전역 검색 (후속 PR)" aria-label="전역 검색 (준비 중)">
+          <input id="consoleGlobalSearch" name="search" type="search" class="form-control" placeholder="상품 검색 (상품명/SKU/상품ID)" aria-label="상품 검색">
         </div>
-      </div>
+      </form>
 
       <div>
         {% if _user_id %}
