@@ -122,7 +122,7 @@ class AITranslator:
                 '{"title_ko":"...","description_ko":"...","copy_coupang":"...","copy_smartstore":"...","copy_11st":"..."}'
             )
             payload = {
-                "model": "gpt-4o-mini",
+                "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.3,
                 "max_tokens": 800,
@@ -198,7 +198,7 @@ class AITranslator:
             api_key = os.getenv("OPENAI_API_KEY", "")
             prompt = f"상품명: {title}\n마켓: {marketplace}\n조건: {hint}\n광고 카피 1개만 작성."
             payload = {
-                "model": "gpt-4o-mini",
+                "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.5,
                 "max_tokens": 200,

@@ -28,7 +28,9 @@ from urllib.parse import urlparse, urljoin
 
 logger = logging.getLogger(__name__)
 
-_USER_AGENT = "KohganePercentiii/1.0 (+https://kohganepercentiii.com)"
+_USER_AGENT = os.getenv(
+    "SCRAPER_USER_AGENT", "KohganePercentiii/1.0 (+https://kohganepercentiii.com)"
+)
 _MAX_HTML_BYTES = 1_000_000  # 1MB
 _TIMEOUT = int(os.getenv("SCRAPER_TIMEOUT_SEC", "15"))
 _DRY_RUN = os.getenv("ADAPTER_DRY_RUN", "0") == "1"
