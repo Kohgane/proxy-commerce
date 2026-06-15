@@ -31,6 +31,23 @@
 - `/seller/markets/guide` — 그림 포함 발급 가이드.
 - `data/` 저장은 Render 재배포 시 초기화됨(ephemeral) → durable은 Render 환경변수.
 
+## 🧑‍🤝‍🧑 멀티유저(소비자 로그인) — 진행 로드맵 (오너 지시 2026-06-15, 위→아래 순서)
+오너 지시: 나(오너) 외 실제 사용자들도 로그인·마켓연동·수집·업로드 가능해야 함.
+퍼센티 벤치마킹하되 우리 색을 입히고 더 쉽게. 순서대로 진행:
+1. ✅ **멀티유저 로그인 enforce + 수집 이력 셀러별 격리** (완료, commit 68e5b3c)
+   - 로그인 시스템은 **이미 구현됨**: `src/auth/`(카카오/구글/네이버 OAuth + 이메일/비번,
+     bcrypt, 구글시트 `users`). 단 셀러 콘솔 `_check_auth()`가 stub이었음 → 실제 세션 체크로 교체.
+   - **오너 액션(durable)**: Render에 `SELLER_CONSOLE_AUTH=1` 설정해야 강제 활성화됨.
+   - 수집 이력 `collect_history_store`에 `seller_id` 컬럼·필터 추가(사용자별 격리). 마켓 자격증명은 이미 셀러별.
+2. ✅ 마켓 선택 체크박스 → 타일 전체 클릭(commit b481db0).
+3. ⬜ **실 상세 추출**: `/collect/preview`가 예외 시 `ManualCollectorService`(전부 목업:
+   `manual_collector.py:442` `[Mock] {도메인} 상품`, $50)로 폴백 → 목업 제거하고 실 스크래핑
+   (`collectors/generic_og.py`, `universal_scraper.py`)로 상세설명·이미지·가격·색상/옵션 추출 + 번역(`ai/translator.py`) 연결.
+4. ⬜ **수집→확인·수정→업로드 중간 편집 페이지**: 현재 `collect_preview.html`은 읽기전용.
+   퍼센티식 편집(제목·가격·상세·이미지·옵션) 후 업로드.
+5. ⬜ **크롬확장 인페이지 '수집' 버튼 + 번역**: 확장 `extensions/chrome-collector/` 이미 존재
+   (툴바/우클릭 방식, API `/api/v1/collect/extension`, 토큰 `kgp_`). 소싱페이지에 떠있는 수집버튼(content_script 주입)·수집시 번역 추가.
+
 ## 작업 방식
 - 브랜치 `claude/magical-noether-oo4831`에서 작업 → PR 생성·main 머지(오너 승인됨)로 배포.
 - 변경 후 전체 테스트(`python -m pytest tests/ -q`) 통과 확인.
