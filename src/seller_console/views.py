@@ -1172,6 +1172,136 @@ def collect_save():
         return jsonify({"ok": False, "error": "저장 중 오류가 발생했습니다."}), 500
 
 
+@bp.post("/collect/bulk")
+def collect_bulk():
+    """여러 소싱처 URL을 한 번에 수집해 수집 이력에 저장 (③ 일괄 수집).
+
+    Request: {"urls": "url1\nurl2..." 또는 ["url1", "url2"]}
+    Response: {"ok": true, "total": N, "success": M, "results": [{url, ok, title?, preview_url?, error?}]}
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+
+    data = request.get_json(force=True, silent=True) or {}
+    raw = data.get("urls")
+    if isinstance(raw, str):
+        urls = [u.strip() for u in raw.splitlines() if u.strip()]
+    elif isinstance(raw, list):
+        urls = [str(u).strip() for u in raw if str(u).strip()]
+    else:
+        urls = []
+    # 중복 제거(순서 유지) + 상한
+    seen = set()
+    urls = [u for u in urls if not (u in seen or seen.add(u))][:30]
+    if not urls:
+        return jsonify({"ok": False, "error": "수집할 URL을 한 줄에 하나씩 입력하세요."}), 400
+
+    service = _get_collector_service()
+    if service is None:
+        return jsonify({"ok": False, "error": "수집기 준비 중입니다."}), 503
+
+    from . import collect_history_store
+
+    results = []
+    success = 0
+    for url in urls:
+        if not (url.startswith("http://") or url.startswith("https://")):
+            results.append({"url": url, "ok": False, "error": "http/https URL이 아닙니다."})
+            continue
+        try:
+            draft = service.extract(url)
+            d = draft.to_dict()
+            title = d.get("title_ko") or d.get("title_en") or "(제목 없음)"
+            images = d.get("images") if isinstance(d.get("images"), list) else []
+            item_id = collect_history_store.append(
+                source="bulk",
+                url=url,
+                title=title,
+                image=images[0] if images else "",
+                price=str(d.get("price_original") or ""),
+                currency=d.get("currency") or "",
+                extra=d,
+            )
+            results.append({
+                "url": url, "ok": True, "title": title,
+                "id": item_id, "preview_url": f"/seller/collect/preview/{item_id}",
+            })
+            success += 1
+        except Exception as exc:
+            logger.warning("벌크 수집 실패 (%s): %s", url, exc)
+            results.append({"url": url, "ok": False, "error": "수집 실패 (URL/소싱처 확인)"})
+
+    return jsonify({"ok": True, "total": len(urls), "success": success, "results": results})
+
+
+@bp.post("/collect/bulk-upload")
+def collect_bulk_upload():
+    """수집 이력의 여러 상품을 선택해 여러 마켓에 일괄 등록 (④ 일괄 업로드).
+
+    Request: {"item_ids": [...], "markets": [...], "target_margin_pct"?: float}
+    Response: {"ok": true, "total": N, "succeeded": M, "results": [{id, title, ok, result}]}
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+
+    data = request.get_json(force=True, silent=True) or {}
+    item_ids = data.get("item_ids") if isinstance(data.get("item_ids"), list) else []
+    item_ids = [str(i) for i in item_ids if str(i).strip()][:50]
+    markets = data.get("markets") if isinstance(data.get("markets"), list) else []
+    markets = [str(m).strip() for m in markets if str(m).strip()]
+    if not item_ids:
+        return jsonify({"ok": False, "error": "등록할 상품을 선택하세요."}), 400
+    if not markets:
+        return jsonify({"ok": False, "error": "등록할 마켓을 선택하세요."}), 400
+
+    target_margin_pct = data.get("target_margin_pct")
+
+    dispatcher = _get_upload_dispatcher()
+    if dispatcher is None:
+        return jsonify({"ok": False, "error": "업로드 디스패처 준비 중입니다."}), 503
+
+    import json as _json
+    from . import collect_history_store
+    from . import market_credentials as mc
+
+    results = []
+    succeeded = 0
+    try:
+        with mc.seller_market_env(_seller_id(), markets):
+            for item_id in item_ids:
+                item = collect_history_store.get(item_id)
+                if not item:
+                    results.append({"id": item_id, "ok": False, "error": "수집 항목을 찾을 수 없습니다."})
+                    continue
+                try:
+                    product = _json.loads(item.get("extra_json") or "{}")
+                except (TypeError, ValueError):
+                    product = {}
+                if not product:
+                    product = {"title": item.get("title"), "url": item.get("url"),
+                               "price": item.get("price"), "currency": item.get("currency")}
+                if target_margin_pct is not None:
+                    try:
+                        product["target_margin_pct"] = float(target_margin_pct)
+                    except (TypeError, ValueError):
+                        pass
+                dispatch_result = dispatcher.dispatch(product, markets)
+                ok = dispatch_result.succeeded > 0
+                if ok:
+                    succeeded += 1
+                results.append({
+                    "id": item_id,
+                    "title": item.get("title") or product.get("title") or "(제목 없음)",
+                    "ok": ok,
+                    "result": dispatch_result.to_dict(),
+                })
+    except Exception as exc:
+        logger.warning("일괄 업로드 오류: %s", exc)
+        return jsonify({"ok": False, "error": "일괄 업로드 중 오류가 발생했습니다."}), 500
+
+    return jsonify({"ok": True, "total": len(item_ids), "succeeded": succeeded, "results": results})
+
+
 @bp.get("/catalog")
 def catalog():
     """상품 카탈로그 페이지 (Phase 128) — Sheets catalog 워크시트 뷰."""
@@ -3510,6 +3640,8 @@ def collect_history():
     except Exception as exc:
         logger.warning("수집 이력 조회 실패: %s", exc)
 
+    from .upload_dispatcher import MARKET_LABELS, SUPPORTED_MARKETS
+    upload_markets = [{"code": m, "label": MARKET_LABELS.get(m, m)} for m in SUPPORTED_MARKETS]
     return render_template(
         "collect_history.html",
         page="collect_history",
@@ -3517,6 +3649,7 @@ def collect_history():
         summary=summ,
         domains=domains,
         filters={"domain": domain, "source": source, "days": days},
+        upload_markets=upload_markets,
     )
 
 
