@@ -98,7 +98,7 @@ def _shopify_read_step() -> dict[str, Any]:
     raw = ShopifyAdapter().check_connection()
     if raw.get("ok"):
         detail = " / ".join(filter(None, [str(raw.get("shop_name") or "").strip(), str(raw.get("shop_domain") or "").strip(), str(raw.get("plan_name") or "").strip()]))
-        return _step(True, "shopify", "read_connection", hint="shop.json 조회 성공", detail=detail or "Shopify 연결 확인 완료", raw=raw)
+        return _step(True, "shopify", "read_connection", hint="GraphQL shop 조회 성공", detail=detail or "Shopify 연결 확인 완료", raw=raw)
 
     http_status = int(raw.get("http_status") or 0)
     error_code = "api_error"
