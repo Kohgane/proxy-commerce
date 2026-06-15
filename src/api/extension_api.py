@@ -144,6 +144,7 @@ def collect_from_extension():
             status="ok",
             extra={"jsonld": payload.get("jsonld", []),
                    "description": payload.get("description", "")},
+            seller_id=str(user.get("user_id") or ""),
         )
         preview_url = f"/seller/collect/preview/{item_id}"
     except Exception as exc:

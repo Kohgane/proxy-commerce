@@ -82,11 +82,17 @@ def _render_seller_page(title: str, body: str, page: str = "dashboard") -> str:
 
 
 def _check_auth() -> bool:
-    """인증 확인 stub. SELLER_CONSOLE_AUTH=1 시 추후 실제 인증으로 교체."""
+    """인증 확인. SELLER_CONSOLE_AUTH=1 이면 실제 로그인 세션을 요구한다.
+
+    로그인 시스템(src.auth)이 세션에 user_id/user_email 을 채운다.
+    미설정(기본)일 때는 단일 테넌트(오너) 모드로 항상 통과한다.
+    """
     if not _AUTH_ENABLED:
         return True
-    # TODO: Phase 24 OAuth 미들웨어 연결
-    return True
+    try:
+        return bool(session.get("user_id") or session.get("user_email"))
+    except Exception:
+        return False
 
 
 def _cs_role_allowed() -> bool:
@@ -1221,6 +1227,7 @@ def collect_bulk():
                 price=str(d.get("price_original") or ""),
                 currency=d.get("currency") or "",
                 extra=d,
+                seller_id=_seller_id(),
             )
             results.append({
                 "url": url, "ok": True, "title": title,
@@ -1269,7 +1276,7 @@ def collect_bulk_upload():
     try:
         with mc.seller_market_env(_seller_id(), markets):
             for item_id in item_ids:
-                item = collect_history_store.get(item_id)
+                item = collect_history_store.get(item_id, seller_id=_seller_id())
                 if not item:
                     results.append({"id": item_id, "ok": False, "error": "수집 항목을 찾을 수 없습니다."})
                     continue
@@ -3634,9 +3641,10 @@ def collect_history():
     domains = []
     try:
         from .collect_history_store import list_items, summary, distinct_domains
-        items = list_items(domain=domain, source=source, days=days)
-        summ = summary(days=days)
-        domains = distinct_domains()
+        _sid = _seller_id()
+        items = list_items(domain=domain, source=source, days=days, seller_id=_sid)
+        summ = summary(days=days, seller_id=_sid)
+        domains = distinct_domains(seller_id=_sid)
     except Exception as exc:
         logger.warning("수집 이력 조회 실패: %s", exc)
 
@@ -3663,10 +3671,12 @@ def collect_history_alias():
 def collect_preview_by_id(item_id: str):
     """수집된 상품 미리보기 (Phase 135.2)."""
     from flask import abort
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
     item = None
     try:
         from .collect_history_store import get as history_get
-        item = history_get(item_id)
+        item = history_get(item_id, seller_id=_seller_id())
     except Exception as exc:
         logger.warning("미리보기 조회 실패: %s", exc)
 

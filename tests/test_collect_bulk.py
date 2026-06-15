@@ -113,7 +113,7 @@ def test_bulk_upload_missing_item_isolated(client):
     dr.to_dict.return_value = {"succeeded": 1}
     disp.dispatch.return_value = dr
 
-    def _get(item_id):
+    def _get(item_id, seller_id=None):
         return None if item_id == "missing" else {"title": "ok", "extra_json": "{}"}
     with patch("src.seller_console.views._get_upload_dispatcher", return_value=disp), \
          patch("src.seller_console.collect_history_store.get", side_effect=_get):

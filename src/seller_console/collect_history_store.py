@@ -20,6 +20,7 @@ _WS_NAME = "collect_history"
 _HEADERS = [
     "id", "collected_at", "source", "domain", "url", "title",
     "image_url", "price", "currency", "status", "preview_url", "extra_json",
+    "seller_id",
 ]
 
 # 인메모리 폴백 저장소 (GOOGLE_SHEET_ID 없을 때)
@@ -36,6 +37,10 @@ def _ensure_headers(ws) -> None:
         first_row = ws.row_values(1)
         if not first_row or first_row[0] != "id":
             ws.insert_row(_HEADERS, index=1)
+        elif "seller_id" not in first_row:
+            # 컬럼 추가 마이그레이션 — seller_id 헤더를 끝에 덧붙인다.
+            # (기존 데이터 행은 seller_id 공란 = 레거시로 취급)
+            ws.update_cell(1, len(_HEADERS), "seller_id")
     except Exception:
         pass
 
@@ -51,8 +56,12 @@ def append(
     status: str = "ok",
     preview_url: str = "",
     extra: dict = None,
+    seller_id: str = "",
 ) -> str:
     """수집 이력 1건 추가.
+
+    Args:
+        seller_id: 수집한 셀러 식별자 (멀티유저 격리용). 빈 값이면 레거시/단일 테넌트.
 
     Returns:
         생성된 item_id (6바이트 hex)
@@ -73,6 +82,7 @@ def append(
         "status": status,
         "preview_url": preview_url or f"/seller/collect/preview/{item_id}",
         "extra_json": json.dumps(extra or {}, ensure_ascii=False),
+        "seller_id": seller_id or "",
     }
 
     if _SHEET_ID:
@@ -90,13 +100,16 @@ def append(
     return item_id
 
 
-def list_items(*, domain: str = "", source: str = "", days: int = 30) -> list[dict]:
+def list_items(
+    *, domain: str = "", source: str = "", days: int = 30, seller_id: Optional[str] = None
+) -> list[dict]:
     """수집 이력 목록 반환 (최신순).
 
     Args:
         domain: 도메인 필터 (빈 문자열 = 전체)
         source: 소스 필터 (extension/bookmarklet/manual/bulk, 빈 문자열 = 전체)
         days: 최근 N일
+        seller_id: 셀러 격리 필터. None이면 전체(레거시/단일 테넌트), 값이면 해당 셀러 항목만.
     """
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     rows: list[dict] = []
@@ -120,33 +133,46 @@ def list_items(*, domain: str = "", source: str = "", days: int = 30) -> list[di
             continue
         if source and row.get("source", "") != source:
             continue
+        if seller_id is not None and str(row.get("seller_id", "") or "") != str(seller_id):
+            continue
         result.append(dict(row))
 
     result.sort(key=lambda r: r.get("collected_at", ""), reverse=True)
     return result
 
 
-def get(item_id: str) -> Optional[dict]:
-    """ID로 단건 조회."""
+def get(item_id: str, seller_id: Optional[str] = None) -> Optional[dict]:
+    """ID로 단건 조회.
+
+    Args:
+        seller_id: 지정 시 해당 셀러의 항목만 반환(타 셀러 항목 접근 차단). None이면 검사 안 함.
+    """
+    def _match(row: dict) -> bool:
+        if row.get("id") != item_id:
+            return False
+        if seller_id is not None and str(row.get("seller_id", "") or "") != str(seller_id):
+            return False
+        return True
+
     if _SHEET_ID:
         try:
             ws = _get_worksheet()
             records = ws.get_all_records()
             for row in records:
-                if row.get("id") == item_id:
+                if _match(row):
                     return dict(row)
         except Exception as exc:
             logger.warning("수집 이력 단건 조회 실패: %s", exc)
     # 인메모리 폴백
     for row in _in_memory:
-        if row.get("id") == item_id:
+        if _match(row):
             return dict(row)
     return None
 
 
-def summary(days: int = 30) -> dict:
+def summary(days: int = 30, seller_id: Optional[str] = None) -> dict:
     """기간별 요약 통계."""
-    items = list_items(days=days)
+    items = list_items(days=days, seller_id=seller_id)
     by_source: dict[str, int] = {
         "extension": 0,
         "bookmarklet": 0,
@@ -182,8 +208,8 @@ def summary(days: int = 30) -> dict:
     }
 
 
-def distinct_domains(days: int = 90) -> list[str]:
+def distinct_domains(days: int = 90, seller_id: Optional[str] = None) -> list[str]:
     """최근 N일 내 수집된 도메인 목록 (중복 제거, 알파벳순)."""
-    items = list_items(days=days)
+    items = list_items(days=days, seller_id=seller_id)
     domains = sorted({item.get("domain", "") for item in items if item.get("domain")})
     return domains
