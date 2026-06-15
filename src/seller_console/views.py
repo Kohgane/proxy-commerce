@@ -154,16 +154,6 @@ def _get_widgets() -> list:
         return []
 
 
-def _get_collector_service():
-    """ManualCollectorService 인스턴스 반환 (graceful import)."""
-    try:
-        from .manual_collector import ManualCollectorService
-        return ManualCollectorService()
-    except Exception as exc:
-        logger.warning("ManualCollectorService 로드 실패: %s", exc)
-        return None
-
-
 def _draft_is_meaningful(draft: Optional[dict]) -> bool:
     """수집 결과가 실데이터로 쓸 만한지 판단.
 
@@ -1327,10 +1317,6 @@ def collect_bulk():
     if not urls:
         return jsonify({"ok": False, "error": "수집할 URL을 한 줄에 하나씩 입력하세요."}), 400
 
-    service = _get_collector_service()
-    if service is None:
-        return jsonify({"ok": False, "error": "수집기 준비 중입니다."}), 503
-
     from . import collect_history_store
 
     results = []
@@ -1340,16 +1326,19 @@ def collect_bulk():
             results.append({"url": url, "ok": False, "error": "http/https URL이 아닙니다."})
             continue
         try:
-            draft = service.extract(url)
-            d = draft.to_dict()
-            title = d.get("title_ko") or d.get("title_en") or "(제목 없음)"
+            # Phase 203: 목업 제거 — /collect/preview와 동일한 실 수집 파이프라인 사용
+            d = _collect_real_draft(url, translate=True)
+            if not d:
+                results.append({"url": url, "ok": False, "error": "자동 추출 실패 (수동 입력 필요)"})
+                continue
+            title = d.get("title_ko") or d.get("title") or d.get("title_en") or "(제목 없음)"
             images = d.get("images") if isinstance(d.get("images"), list) else []
             item_id = collect_history_store.append(
                 source="bulk",
                 url=url,
                 title=title,
                 image=images[0] if images else "",
-                price=str(d.get("price_original") or ""),
+                price=str(d.get("price_original") or d.get("price") or ""),
                 currency=d.get("currency") or "",
                 extra=d,
                 seller_id=_seller_id(),

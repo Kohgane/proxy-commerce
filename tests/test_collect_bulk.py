@@ -19,12 +19,10 @@ def client():
 
 
 def _fake_draft(title="샘플", url="https://x"):
-    d = MagicMock()
-    d.to_dict.return_value = {
-        "title_ko": title, "title_en": title, "price_original": 19.9,
-        "currency": "USD", "images": ["https://img/1.jpg"], "url": url,
+    return {
+        "title_ko": title, "title": title, "title_en": title, "price_original": 19.9,
+        "currency": "USD", "images": ["https://img/1.jpg"], "url": url, "is_mock": False,
     }
-    return d
 
 
 def test_bulk_empty_returns_400(client):
@@ -33,9 +31,7 @@ def test_bulk_empty_returns_400(client):
 
 
 def test_bulk_collects_and_saves_to_history(client):
-    svc = MagicMock()
-    svc.extract.side_effect = lambda url: _fake_draft(url=url)
-    with patch("src.seller_console.views._get_collector_service", return_value=svc), \
+    with patch("src.seller_console.views._collect_real_draft", side_effect=lambda url, **k: _fake_draft(url=url)), \
          patch("src.seller_console.collect_history_store.append", return_value="abc123") as mock_append:
         resp = client.post("/seller/collect/bulk", json={
             "urls": "https://www.amazon.com/dp/B1\nhttps://item.taobao.com/2"})
@@ -48,9 +44,7 @@ def test_bulk_collects_and_saves_to_history(client):
 
 
 def test_bulk_rejects_non_http_and_dedupes(client):
-    svc = MagicMock()
-    svc.extract.side_effect = lambda url: _fake_draft(url=url)
-    with patch("src.seller_console.views._get_collector_service", return_value=svc), \
+    with patch("src.seller_console.views._collect_real_draft", side_effect=lambda url, **k: _fake_draft(url=url)), \
          patch("src.seller_console.collect_history_store.append", return_value="x"):
         resp = client.post("/seller/collect/bulk", json={
             "urls": "ftp://bad\nhttps://ok.com/a\nhttps://ok.com/a"})  # 비http + 중복
@@ -62,20 +56,29 @@ def test_bulk_rejects_non_http_and_dedupes(client):
 
 
 def test_bulk_per_url_error_isolated(client):
-    svc = MagicMock()
-
-    def _extract(url):
+    def _collect(url, **k):
         if "bad" in url:
             raise RuntimeError("extract fail")
         return _fake_draft(url=url)
-    svc.extract.side_effect = _extract
-    with patch("src.seller_console.views._get_collector_service", return_value=svc), \
+    with patch("src.seller_console.views._collect_real_draft", side_effect=_collect), \
          patch("src.seller_console.collect_history_store.append", return_value="x"):
         resp = client.post("/seller/collect/bulk", json={
             "urls": "https://good.com/1\nhttps://bad.com/2"})
     data = resp.get_json()
     assert data["success"] == 1
     assert data["total"] == 2
+
+
+def test_bulk_no_mock_on_extract_failure(client):
+    """실 추출 실패(None) 시 목업 없이 실패로 기록 (Phase 203)."""
+    with patch("src.seller_console.views._collect_real_draft", return_value=None), \
+         patch("src.seller_console.collect_history_store.append") as mock_append:
+        resp = client.post("/seller/collect/bulk", json={"urls": "https://blocked.com/1"})
+    data = resp.get_json()
+    assert data["total"] == 1
+    assert data["success"] == 0
+    assert data["results"][0]["ok"] is False
+    mock_append.assert_not_called()
 
 
 # ─── ④ 일괄 업로드 ────────────────────────────────────────────────────────────
