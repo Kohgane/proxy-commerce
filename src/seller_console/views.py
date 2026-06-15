@@ -1172,6 +1172,68 @@ def collect_save():
         return jsonify({"ok": False, "error": "저장 중 오류가 발생했습니다."}), 500
 
 
+@bp.post("/collect/bulk")
+def collect_bulk():
+    """여러 소싱처 URL을 한 번에 수집해 수집 이력에 저장 (③ 일괄 수집).
+
+    Request: {"urls": "url1\nurl2..." 또는 ["url1", "url2"]}
+    Response: {"ok": true, "total": N, "success": M, "results": [{url, ok, title?, preview_url?, error?}]}
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+
+    data = request.get_json(force=True, silent=True) or {}
+    raw = data.get("urls")
+    if isinstance(raw, str):
+        urls = [u.strip() for u in raw.splitlines() if u.strip()]
+    elif isinstance(raw, list):
+        urls = [str(u).strip() for u in raw if str(u).strip()]
+    else:
+        urls = []
+    # 중복 제거(순서 유지) + 상한
+    seen = set()
+    urls = [u for u in urls if not (u in seen or seen.add(u))][:30]
+    if not urls:
+        return jsonify({"ok": False, "error": "수집할 URL을 한 줄에 하나씩 입력하세요."}), 400
+
+    service = _get_collector_service()
+    if service is None:
+        return jsonify({"ok": False, "error": "수집기 준비 중입니다."}), 503
+
+    from . import collect_history_store
+
+    results = []
+    success = 0
+    for url in urls:
+        if not (url.startswith("http://") or url.startswith("https://")):
+            results.append({"url": url, "ok": False, "error": "http/https URL이 아닙니다."})
+            continue
+        try:
+            draft = service.extract(url)
+            d = draft.to_dict()
+            title = d.get("title_ko") or d.get("title_en") or "(제목 없음)"
+            images = d.get("images") if isinstance(d.get("images"), list) else []
+            item_id = collect_history_store.append(
+                source="bulk",
+                url=url,
+                title=title,
+                image=images[0] if images else "",
+                price=str(d.get("price_original") or ""),
+                currency=d.get("currency") or "",
+                extra=d,
+            )
+            results.append({
+                "url": url, "ok": True, "title": title,
+                "id": item_id, "preview_url": f"/seller/collect/preview/{item_id}",
+            })
+            success += 1
+        except Exception as exc:
+            logger.warning("벌크 수집 실패 (%s): %s", url, exc)
+            results.append({"url": url, "ok": False, "error": "수집 실패 (URL/소싱처 확인)"})
+
+    return jsonify({"ok": True, "total": len(urls), "success": success, "results": results})
+
+
 @bp.get("/catalog")
 def catalog():
     """상품 카탈로그 페이지 (Phase 128) — Sheets catalog 워크시트 뷰."""
