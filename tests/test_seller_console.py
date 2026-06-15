@@ -3,7 +3,6 @@
 테스트 범위:
   - views: 라우트 응답 코드 (200/302)
   - widgets: graceful import 검증 (모듈 없을 때 "준비 중" 반환)
-  - ManualCollectorService: 도메인별 어댑터 라우팅, 추출 결과 스키마 검증
   - TaobaoSellerTrustChecker: 임계치 통과/실패 케이스
   - UploadDispatcher: 마켓 미존재 시 큐 적재 동작
   - 마진 계산기: 환율/관세/수수료 조합 케이스 5종
@@ -521,111 +520,12 @@ class TestDashboardResilience:
 
 
 # ---------------------------------------------------------------------------
-# 3. ManualCollectorService — 어댑터 라우팅 + 스키마 검증
+# 3. (제거됨) ManualCollectorService — 목업 수집기. Phase 200~203에서 실 수집
+#    파이프라인(_collect_real_draft: dispatcher → universal_scraper → 번역)으로
+#    완전 대체되어 모듈/테스트 삭제. 실 수집 검증은 아래 테스트로 대체:
+#    - tests/test_collect_preview_pipeline_phase200.py
+#    - tests/test_collect_bulk.py
 # ---------------------------------------------------------------------------
-
-class TestManualCollectorService:
-    """수동 수집기 서비스 테스트."""
-
-    @pytest.fixture
-    def service(self):
-        from src.seller_console.manual_collector import ManualCollectorService
-        return ManualCollectorService()
-
-    def test_amazon_url_uses_amazon_adapter(self, service):
-        """amazon.com URL → AmazonAdapter."""
-        draft = service.extract("https://www.amazon.com/dp/B08N5WRWNW")
-        assert draft.source == "amazon"
-        assert draft.adapter_used == "AmazonAdapter"
-
-    def test_amazon_jp_url(self, service):
-        """amazon.co.jp URL → AmazonAdapter + JPY."""
-        draft = service.extract("https://www.amazon.co.jp/dp/B08N5WRWNW")
-        assert draft.source == "amazon"
-        assert draft.currency == "JPY"
-
-    def test_taobao_url_uses_taobao_adapter(self, service):
-        """taobao.com URL → TaobaoAdapter."""
-        draft = service.extract("https://item.taobao.com/item.htm?id=12345")
-        assert draft.source == "taobao"
-        assert draft.adapter_used == "TaobaoAdapter"
-
-    def test_alibaba_1688_url(self, service):
-        """1688.com URL → AlibabaAdapter."""
-        draft = service.extract("https://detail.1688.com/offer/12345.html")
-        assert draft.source == "alibaba"
-
-    def test_porter_url(self, service):
-        """porter.jp URL → PorterAdapter."""
-        draft = service.extract("https://en.porter.jp/products/12345")
-        assert draft.source == "porter"
-        assert draft.currency == "JPY"
-
-    def test_memo_paris_url(self, service):
-        """memoparis.com URL → MemoAdapter."""
-        draft = service.extract("https://www.memoparis.com/en/ilha-do-mel")
-        assert draft.source == "memo"
-        assert draft.currency == "EUR"
-
-    def test_alo_yoga_url(self, service):
-        """aloyoga.com URL → AloAdapter."""
-        draft = service.extract("https://www.aloyoga.com/products/airlift-legging")
-        assert draft.source == "alo"
-        assert draft.brand == "Alo Yoga"
-
-    def test_lululemon_url(self, service):
-        """lululemon.com URL → LululemonAdapter."""
-        draft = service.extract("https://www.lululemon.com/en-us/p/align-pant")
-        assert draft.source == "lululemon"
-        assert draft.brand == "lululemon"
-
-    def test_nike_url_uses_premium_sports(self, service):
-        """nike.com URL → PremiumSportsAdapter."""
-        draft = service.extract("https://www.nike.com/t/air-max-270")
-        assert draft.source == "premium_sports"
-        assert draft.brand == "Nike"
-
-    def test_unknown_url_uses_generic(self, service):
-        """알 수 없는 URL → GenericAdapter."""
-        draft = service.extract("https://www.unknownshop.xyz/product/123")
-        assert draft.source == "generic"
-
-    def test_empty_url_raises_value_error(self, service):
-        """빈 URL → ValueError."""
-        with pytest.raises(ValueError):
-            service.extract("")
-
-    def test_draft_has_required_fields(self, service):
-        """ProductDraft 필수 필드 존재."""
-        draft = service.extract("https://www.amazon.com/dp/B08N5WRWNW")
-        assert draft.url
-        assert draft.source
-        assert draft.title_ko
-        assert draft.title_en
-        assert draft.currency
-        assert isinstance(draft.images, list)
-        assert isinstance(draft.options, list)
-
-    def test_draft_to_dict_serializable(self, service):
-        """to_dict() JSON 직렬화 가능."""
-        import json
-        draft = service.extract("https://www.amazon.com/dp/B08N5WRWNW")
-        d = draft.to_dict()
-        json_str = json.dumps(d)  # 예외 없으면 성공
-        assert isinstance(json_str, str)
-
-    def test_url_without_scheme_handled(self, service):
-        """스킴 없는 URL → 자동 보완."""
-        draft = service.extract("amazon.com/dp/B08N5WRWNW")
-        assert draft.url.startswith("https://")
-
-    def test_adapter_for_url_function(self):
-        """adapter_for_url() 함수 독립 테스트."""
-        from src.seller_console.manual_collector import adapter_for_url
-        assert adapter_for_url("https://www.amazon.com/dp/test").source_code == "amazon"
-        assert adapter_for_url("https://item.taobao.com/test").source_code == "taobao"
-        assert adapter_for_url("https://www.aloyoga.com/test").source_code == "alo"
-        assert adapter_for_url("https://www.lululemon.com/test").source_code == "lululemon"
 
 
 # ---------------------------------------------------------------------------

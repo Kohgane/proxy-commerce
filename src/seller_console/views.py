@@ -314,16 +314,6 @@ def _get_upload_dispatcher():
         return None
 
 
-def _get_trust_checker():
-    """TaobaoSellerTrustChecker 인스턴스 반환 (graceful import)."""
-    try:
-        from .seller_trust import TaobaoSellerTrustChecker
-        return TaobaoSellerTrustChecker()
-    except Exception as exc:
-        logger.warning("TaobaoSellerTrustChecker 로드 실패: %s", exc)
-        return None
-
-
 _KEYWORD_PERIOD_FACTORS: dict[str, float] = {
     "realtime": 1 / 720,  # 30일 기준 월간검색량을 시간 단위로 환산
     "day": 1 / 30,
