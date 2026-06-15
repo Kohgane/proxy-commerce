@@ -56,6 +56,12 @@ class ShopifyAdapter(MarketAdapter):
             or os.getenv("SHOPIFY_APIKEY")
             or ""
         ).strip()
+        if not client_id:
+            # 일부 설정은 client_id(=API key)를 SHOPIFY_ACCESS_TOKEN 변수에 보관한다.
+            # 값이 액세스 토큰 접두사(shpat_/shppa_/atkn_/shpca_)가 아니면 client_id로 간주.
+            acc = (os.getenv("SHOPIFY_ACCESS_TOKEN") or "").strip()
+            if acc and not acc.startswith(("shpat_", "shppa_", "atkn_", "shpca_")):
+                client_id = acc
         client_secret = (
             os.getenv("SHOPIFY_CLIENT_SECRET")
             or os.getenv("SHOPIFY_API_SECRET_KEY")
