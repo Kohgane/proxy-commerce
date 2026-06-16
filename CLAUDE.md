@@ -121,6 +121,18 @@
 - **남은 후속(이 지시)**: 실 가격 추출 개선 — yoshidakaban 등 일부 사이트 봇차단(403)으로 외부에서
   가격 마크업 확인 불가. 편집 페이지 환율 계산기로 외화/0 보정은 제공됨(#225). 사이트별 셀렉터는 별도 검토.
 
+## 🔧 UI/디테일 보완 2차 (오너 지시 2026-06-16, 라이브 스크린샷)
+1. ✅ **AI 수집기(`/seller/listing/ai-create`) 실발행 + 마켓 추가 + 마켓 링크** (Phase 211): `ai_listing/
+   multi_publisher.py`가 존재하지 않는 `publish_to_channel` import 실패 → 항상 가짜 `MOCK-COUPANG-…`
+   성공으로 폴백했음. → `_publish_to_market`을 수동 업로드와 동일한 `UploadDispatcher`(실 업로더)로 재배선.
+   `PublishJob.product_url` 추가 → 결과에 '마켓 페이지 열기' 링크. 마켓 목록에 shopify/woocommerce/
+   shopee/amazon 추가(쇼피/아마존은 미연동 시 정직한 실패). 11st→elevenst 코드 매핑. 자격증명 없으면
+   가짜 성공 대신 정직한 실패.
+- **남은 후속(이 지시)**: ① 봇 차단(403) 사이트 수집 — 크롬확장이 브라우저 DOM을 서버로 보내 파싱하는
+  경로 필요(any-site 수집). ② 편집 페이지 풀 편집(키워드/썸네일 선택) 보강. ③ Google 로그인 '안 눌림'은
+  코드 정상(=`/auth/google/start` 라우트·provider 정상) → 구글 콘솔 redirect_uri/client 설정 문제로 추정
+  (로그인 페이지 '🔧 OAuth 콜백 URI 확인' 펼치기로 자가진단). 순차 진행 예정.
+
 ## 작업 방식
 - 브랜치 `claude/magical-noether-oo4831`에서 작업 → PR 생성·main 머지(오너 승인됨)로 배포.
 - 변경 후 전체 테스트(`python -m pytest tests/ -q`) 통과 확인.

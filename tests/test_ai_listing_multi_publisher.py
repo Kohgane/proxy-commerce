@@ -53,7 +53,8 @@ class TestPublishToMarkets:
         job_markets = {j.market for j in result.jobs}
         assert job_markets == set(markets)
 
-    def test_mock_publish_success(self):
+    def test_no_credentials_is_honest_failure_not_mock(self):
+        """자격증명 미설정 시 가짜 MOCK 성공이 아니라 정직한 실패 (Phase 211)."""
         from src.ai_listing.multi_publisher import publish_to_markets
 
         result = publish_to_markets(
@@ -61,8 +62,45 @@ class TestPublishToMarkets:
             product_data=SAMPLE_PRODUCT,
             markets=["coupang"],
         )
-        # mock 모드에서는 성공해야 함
-        assert result.success_count >= 0  # 최소 실패가 없어야 함
+        # 가짜 MOCK 성공 ID를 만들지 않는다
+        for j in result.jobs:
+            assert not (j.external_product_id or "").startswith("MOCK-")
+        assert result.success_count + result.failed_count == len(result.jobs)
+
+    def test_unsupported_market_honest_failure(self):
+        """쇼피/아마존 등 미연동 마켓은 가짜 성공이 아니라 실패 + 사유."""
+        from src.ai_listing.multi_publisher import publish_to_markets
+
+        result = publish_to_markets(
+            ai_listing_id="test-004b",
+            product_data=SAMPLE_PRODUCT,
+            markets=["shopee"],
+        )
+        job = result.jobs[0]
+        assert job.status == "failed"
+        assert "미연동" in (job.error_message or "")
+
+    def test_real_dispatch_success_maps_url(self, monkeypatch):
+        """UploadDispatcher 성공 시 external_product_id + product_url 매핑."""
+        from unittest.mock import MagicMock
+        import src.ai_listing.multi_publisher as mp
+
+        fake_result = MagicMock()
+        fake_result.results = [MagicMock(success=True, queued=False,
+                                         external_product_id="CP-77",
+                                         external_url="https://coupang.com/vp/products/CP-77")]
+        fake_dispatcher = MagicMock()
+        fake_dispatcher.return_value.dispatch.return_value = fake_result
+        monkeypatch.setattr(
+            "src.seller_console.upload_dispatcher.UploadDispatcher", fake_dispatcher
+        )
+        result = mp.publish_to_markets(
+            ai_listing_id="test-004c", product_data=SAMPLE_PRODUCT, markets=["coupang"],
+        )
+        job = result.jobs[0]
+        assert job.status == "success"
+        assert job.external_product_id == "CP-77"
+        assert job.product_url == "https://coupang.com/vp/products/CP-77"
 
     def test_to_dict_structure(self):
         from src.ai_listing.multi_publisher import publish_to_markets
@@ -119,15 +157,3 @@ class TestPublishToMarkets:
         assert "success_24h" in stats
         assert "failed_24h" in stats
         assert "by_market" in stats
-
-
-class TestMockPublish:
-    def test_mock_publish_sets_success(self):
-        from src.ai_listing.multi_publisher import _mock_publish, PublishJob
-
-        job = PublishJob(ai_listing_id="x", market="coupang", product_data={})
-        result = _mock_publish(job)
-        assert result.status == "success"
-        assert result.external_product_id is not None
-        assert "MOCK" in result.external_product_id
-        assert result.published_at is not None
