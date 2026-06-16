@@ -286,3 +286,70 @@ class TestChannelUploadResult:
         assert d["success"] is True
         assert d["listing_id"] == "lid1"
         assert "uploaded_at" in d
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# _upload_to_channel — 실 업로더 연동 (Phase 208, 정직성)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestUploadToChannelReal:
+    def _listing(self, channel="coupang"):
+        from src.listing.auto_publish import ChannelListing
+        return ChannelListing(
+            channel=channel, product_id="p1", title="테스트 상품",
+            description="설명", price=55000, channel_category_id="56137",
+            image_urls=["https://example.com/a.jpg"], options=[],
+        )
+
+    def test_credentials_missing_is_honest_failure(self, monkeypatch):
+        """자격증명 미설정 시 가짜 성공이 아니라 success=False."""
+        for k in ("COUPANG_ACCESS_KEY", "COUPANG_SECRET_KEY", "COUPANG_VENDOR_ID"):
+            monkeypatch.delenv(k, raising=False)
+        from src.listing.auto_publish import _upload_to_channel
+        result = _upload_to_channel(self._listing("coupang"))
+        assert result.success is False
+        assert "자격증명" in (result.error or "")
+
+    def test_smartstore_no_fake_uuid(self, monkeypatch):
+        """스마트스토어도 더 이상 가짜 UUID 성공을 만들지 않음."""
+        for k in ("NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET",
+                  "NAVER_COMMERCE_CLIENT_ID", "NAVER_COMMERCE_CLIENT_SECRET"):
+            monkeypatch.delenv(k, raising=False)
+        from src.listing.auto_publish import _upload_to_channel
+        result = _upload_to_channel(self._listing("smartstore"))
+        assert result.success is False
+        assert result.listing_id is None
+
+    def test_unsupported_channel(self):
+        from src.listing.auto_publish import _upload_to_channel
+        result = _upload_to_channel(self._listing("amazon"))
+        assert result.success is False
+        assert "미지원" in (result.error or "")
+
+    def test_real_upload_success_mapped(self, monkeypatch):
+        """브리지가 성공 dict를 반환하면 listing_id에 product_id 매핑."""
+        import sys
+        from types import ModuleType
+        fake = ModuleType("src.channel_sync.coupang_uploader")
+        fake.upload = lambda product_data: {"product_id": "CP-999", "url": "https://coupang/CP-999"}
+        monkeypatch.setitem(sys.modules, "src.channel_sync.coupang_uploader", fake)
+        from src.listing.auto_publish import _upload_to_channel
+        result = _upload_to_channel(self._listing("coupang"))
+        assert result.success is True
+        assert result.listing_id == "CP-999"
+
+    def test_upload_error_mapped_to_failure(self, monkeypatch):
+        import sys
+        from types import ModuleType
+        from src.channel_sync._channel_bridge import ChannelUploadError
+
+        def _boom(product_data):
+            raise ChannelUploadError("쿠팡 업로드 실패: API 500")
+
+        fake = ModuleType("src.channel_sync.coupang_uploader")
+        fake.upload = _boom
+        monkeypatch.setitem(sys.modules, "src.channel_sync.coupang_uploader", fake)
+        from src.listing.auto_publish import _upload_to_channel
+        result = _upload_to_channel(self._listing("coupang"))
+        assert result.success is False
+        assert "API 500" in (result.error or "")

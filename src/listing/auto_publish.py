@@ -1,11 +1,17 @@
-"""src/listing/auto_publish.py — 상품 등록 자동화 (Phase 143).
+"""src/listing/auto_publish.py — 상품 등록 자동화 (Phase 143, 실 업로더 연동 Phase 208).
 
 후보 승인 → 이미지 처리 + 번역 + 채널 적응 → 쿠팡/스마트스토어/11번가 동시 업로드.
 부분 실패 허용 (일부 채널 실패해도 성공 채널 결과 반환).
 
+Phase 208: 기존 mock 퍼블리셔/가짜 UUID stub 제거 → 수동 업로드(UploadDispatcher)와 동일한
+실 업로더(`channel_sync.*_uploader` → `src.uploaders.*`)로 발행. 자격증명 미설정·API 실패 시
+가짜 성공이 아니라 정직하게 실패(success=False)로 기록한다.
+(Amazon/eBay/Shopee는 마켓 승인·OAuth 발급이 필요해 미연동 — 오너측 액션 대기.)
+
 환경변수:
-  LISTING_AUTO_PUBLISH=0                  자동 등록 활성화 (기본: 0, 비활성)
+  LISTING_AUTO_PUBLISH=0                  자동 등록 활성화 (기본: 0, 비활성=드라이런)
   LISTING_AUTO_PUBLISH_CHANNELS=coupang,smartstore  대상 채널
+  (실 발행은 각 채널 자격증명 필요: COUPANG_*, NAVER_CLIENT_ID/SECRET, ELEVENST_API_KEY)
 """
 from __future__ import annotations
 
@@ -232,38 +238,61 @@ def adapt_for_channel(product: Product, channel: str) -> ChannelListing:
     )
 
 
+# 자동발행 채널명 → 실 업로드 브리지 모듈 (수동 업로드 UploadDispatcher와 동일 경로)
+_CHANNEL_BRIDGE: Dict[str, str] = {
+    "coupang": "coupang_uploader",
+    "smartstore": "smartstore_uploader",
+    "11st": "elevenst_uploader",
+}
+
+
+def _listing_to_product_data(listing: ChannelListing) -> Dict[str, Any]:
+    """ChannelListing → 채널 브리지(_channel_bridge.to_collected)용 product_data."""
+    return {
+        "sku": listing.product_id,
+        "title_ko": listing.title,
+        "title": listing.title,
+        "sell_price_krw": listing.price,
+        "category_code": listing.channel_category_id,
+        "description": listing.description,
+        "images": listing.image_urls,
+        "options": listing.options,
+    }
+
+
 def _upload_to_channel(listing: ChannelListing) -> ChannelUploadResult:
-    """단일 채널 업로드. 실패해도 예외 미전파."""
+    """단일 채널 실 업로드. 실패해도 예외 미전파.
+
+    수동 업로드(UploadDispatcher)와 동일한 실 업로더(`channel_sync.*_uploader` →
+    `src.uploaders.*`)를 사용한다. 자격증명 미설정·API 실패 시 가짜 성공이 아니라
+    정직하게 success=False + 사유를 반환한다(거짓 발행 보고 금지).
+    """
     channel = listing.channel
+    bridge_name = _CHANNEL_BRIDGE.get(channel)
+    if not bridge_name:
+        return ChannelUploadResult(channel=channel, success=False, error=f"미지원 채널: {channel}")
+
+    import importlib
+    from src.channel_sync._channel_bridge import ChannelCredentialsMissing, ChannelUploadError
+
     try:
-        if channel == "coupang":
-            from src.channel_sync.publishers.coupang import CoupangPublisher
-            pub = CoupangPublisher()
-            result = pub.publish({
-                "product_id": listing.product_id,
-                "title": listing.title,
-                "price": listing.price,
-                "stock": 99,
-                "category": listing.channel_category_id,
-                "description": listing.description,
-            })
-            return ChannelUploadResult(
-                channel=channel,
-                success=result.success,
-                listing_id=result.listing_id,
-                channel_listing_id=result.listing_id,
-                error=result.error,
-            )
-        else:
-            # smartstore / 11st — stub (API 미연동)
-            mock_lid = f"{channel}-{uuid.uuid4().hex[:8]}"
-            logger.info("auto_publish stub: channel=%s product=%s listing_id=%s", channel, listing.product_id, mock_lid)
-            return ChannelUploadResult(
-                channel=channel,
-                success=True,
-                listing_id=mock_lid,
-                channel_listing_id=mock_lid,
-            )
+        bridge = importlib.import_module(f"src.channel_sync.{bridge_name}")
+        result = bridge.upload(_listing_to_product_data(listing))
+        product_id = (result or {}).get("product_id")
+        logger.info("auto_publish 실 업로드 성공: channel=%s product=%s id=%s",
+                    channel, listing.product_id, product_id)
+        return ChannelUploadResult(
+            channel=channel,
+            success=True,
+            listing_id=product_id,
+            channel_listing_id=product_id,
+        )
+    except ChannelCredentialsMissing as exc:
+        logger.info("auto_publish 자격증명 미설정: channel=%s — %s", channel, exc)
+        return ChannelUploadResult(channel=channel, success=False, error=f"자격증명 미설정: {exc}")
+    except ChannelUploadError as exc:
+        logger.warning("auto_publish 업로드 실패: channel=%s — %s", channel, exc)
+        return ChannelUploadResult(channel=channel, success=False, error=str(exc))
     except Exception as exc:
         logger.error("_upload_to_channel 오류: channel=%s error=%s", channel, exc)
         return ChannelUploadResult(channel=channel, success=False, error=str(exc))
