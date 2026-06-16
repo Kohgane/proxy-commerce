@@ -83,7 +83,15 @@
      `graphql()` 추가). `OrderSyncService.adapters`에 `"shopify"` 등록 → 4개 마켓처럼 풀 펀넬.
    - 정직성: GraphQL errors/userErrors/HTTP 오류·미설정 시 거짓 성공 금지(빈 리스트/False). dry-run 안전.
    - 오너 액션: 없음(Shopify는 이미 연결됨). 단 read_orders/write_fulfillments 스코프 필요할 수 있음.
-2. ⏳ **이미지 처리 실구현** (현재 stub) — 진행 예정.
+2. ✅ **이미지 처리 실구현** (완료, Phase 207): 파이프라인(`media/image_pipeline.py`)은 워터마크
+   감지·제거(OpenCV)·리사이즈/크롭·WebP(Pillow)까지 실제 처리했으나 **마지막 CDN 업로드가 stub**
+   (`processed_url = image_url`)이라 결과물을 버렸음. → `_upload_to_cdn()` 신설: 처리본 바이트를
+   Cloudinary(`cloudinary` 1.41.0 기존 의존성)에 업로드해 `secure_url` 발급, `processed_url`에 반영.
+   `ImageProcessResult.cdn_uploaded` 추가, stats에 `cdn_uploaded`/`cdn_configured` 노출.
+   - 정직성: `CLOUDINARY_*` 미설정·라이브러리 미설치·`ADAPTER_DRY_RUN=1`·업로드 실패 시 None →
+     **원본 URL 유지**(거짓 호스팅 URL 미보고). `IMAGE_CDN_UPLOAD_ENABLED`(기본1)로 토글.
+   - 오너 액션(durable): Render에 `CLOUDINARY_CLOUD_NAME`/`CLOUDINARY_API_KEY`/`CLOUDINARY_API_SECRET`
+     (+선택 `CLOUDINARY_FOLDER`) 설정해야 실제 재호스팅됨. 없으면 원본 URL 그대로 사용.
 3. ⏳ **신규 마켓 자동발행** — 일부 오너측 마켓 승인/IP 필요 — 진행 예정.
 
 ## 작업 방식
