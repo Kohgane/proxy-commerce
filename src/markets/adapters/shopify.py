@@ -198,6 +198,17 @@ class ShopifyAdapter(MarketAdapter):
             return response
         raise RuntimeError("Shopify request retry limit exhausted")
 
+    def graphql(self, query: str, variables: Optional[Dict[str, Any]] = None) -> requests.Response:
+        """GraphQL Admin API 호출 (검증된 토큰·재시도 로직 재사용).
+
+        신규 개발자대시보드 앱은 REST가 막혀 GraphQL만 동작하므로, 주문수집/배송추적 등
+        다른 모듈이 같은 토큰 발급(client_credentials)·재시도를 재사용하도록 공개 메서드로 제공한다.
+        """
+        body: Dict[str, Any] = {"query": query}
+        if variables is not None:
+            body["variables"] = variables
+        return self._request_with_retry("POST", "/graphql.json", json_body=body)
+
     @staticmethod
     def _locale_region(locale: str, country: str) -> str:
         normalized = (locale or "").strip()

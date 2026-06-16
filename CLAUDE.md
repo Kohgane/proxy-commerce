@@ -74,6 +74,18 @@
      편집 페이지(④) 즉시 프리필. `translate:false`로 끌 수 있음. 이력 상위 title=한국어.
    - manifest 1.0.0→1.1.0. README 사용법(방법3) 추가.
 
+## 🚀 로드맵 소진 후 — 후속 작업 (오너 지시 2026-06-16, "1,2,3 순서대로 가라")
+번호 로드맵(멀티유저 1~5) 전부 완료 후 후속 3건을 순서대로 진행:
+1. ✅ **Shopify 주문수집 + 배송추적** (완료, Phase 206): Shopify는 업로드만 됐고 주문/배송 미연동이었음.
+   - `seller_console/market_adapters/shopify_adapter.py`에 `fetch_orders`/`fetch_orders_unified`(GraphQL
+     orders 커서 페이지네이션 → 통합 주문 dict, 구매자 마스킹) + `update_tracking`(fulfillmentOrders 조회
+     → `fulfillmentCreateV2`) 추가. 토큰은 검증된 client_credentials 경로 재사용(markets 어댑터에 공개
+     `graphql()` 추가). `OrderSyncService.adapters`에 `"shopify"` 등록 → 4개 마켓처럼 풀 펀넬.
+   - 정직성: GraphQL errors/userErrors/HTTP 오류·미설정 시 거짓 성공 금지(빈 리스트/False). dry-run 안전.
+   - 오너 액션: 없음(Shopify는 이미 연결됨). 단 read_orders/write_fulfillments 스코프 필요할 수 있음.
+2. ⏳ **이미지 처리 실구현** (현재 stub) — 진행 예정.
+3. ⏳ **신규 마켓 자동발행** — 일부 오너측 마켓 승인/IP 필요 — 진행 예정.
+
 ## 작업 방식
 - 브랜치 `claude/magical-noether-oo4831`에서 작업 → PR 생성·main 머지(오너 승인됨)로 배포.
 - 변경 후 전체 테스트(`python -m pytest tests/ -q`) 통과 확인.
