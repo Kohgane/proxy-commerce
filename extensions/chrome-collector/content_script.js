@@ -60,6 +60,15 @@ function extractProductMeta() {
     }
   }
 
+  // 봇 차단(403) 사이트도 수집되도록 페이지 HTML을 함께 전송 → 서버가 파싱(가격/이미지/옵션 보강).
+  // 대용량 방지를 위해 상한(600KB)으로 자른다.
+  let pageHtml = "";
+  try {
+    pageHtml = (document.documentElement ? document.documentElement.outerHTML : "").slice(0, 600000);
+  } catch (e) {
+    pageHtml = "";
+  }
+
   return {
     url: location.href,
     title: getMeta("og:title") || document.title || "",
@@ -70,6 +79,7 @@ function extractProductMeta() {
     description: getMeta("og:description") || getMeta("description") || "",
     brand: getMeta("og:brand") || "",
     jsonld: jsonldScripts,
+    html: pageHtml,
     collected_at: new Date().toISOString()
   };
 }

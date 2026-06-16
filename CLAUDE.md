@@ -133,6 +133,16 @@
   코드 정상(=`/auth/google/start` 라우트·provider 정상) → 구글 콘솔 redirect_uri/client 설정 문제로 추정
   (로그인 페이지 '🔧 OAuth 콜백 URI 확인' 펼치기로 자가진단). 순차 진행 예정.
 
+### 나열순 후속 — 차례대로 진행 (오너 지시 2026-06-16)
+1. ✅ **봇 차단 사이트도 수집** (Phase 212): 서버 직접 fetch는 403 차단됨 → 크롬확장이 **브라우저 페이지
+   HTML(`document.documentElement.outerHTML`, 600KB 상한)을 함께 전송** → 서버가 `UniversalScraper.parse_html()`
+   (신설, 네트워크 fetch 없이 JSON-LD/OG/Microdata/Heuristic 파싱)로 가격/통화/이미지/제목/옵션 보강.
+   `/api/v1/collect/extension`이 `html` 수신 시 `_merge_scraped_into_payload`로 **빈 값·가격0만 보강**
+   (사용자 값 우선, 대용량 html은 이력에 미저장). 확장 manifest 1.1.0→1.2.0.
+   → 사용자가 브라우저로 볼 수 있는 어떤 사이트(봇차단 포함)든 인페이지 🛒'수집'으로 수집 가능.
+2. ⏳ 편집 페이지 풀 편집(키워드/썸네일) — 진행 예정.
+3. ⏳ Google 로그인(설정 진단) — 진행 예정.
+
 ## 작업 방식
 - 브랜치 `claude/magical-noether-oo4831`에서 작업 → PR 생성·main 머지(오너 승인됨)로 배포.
 - 변경 후 전체 테스트(`python -m pytest tests/ -q`) 통과 확인.

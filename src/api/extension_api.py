@@ -130,12 +130,52 @@ def _translate_payload(payload: dict) -> dict:
 # 라우트
 # ---------------------------------------------------------------------------
 
+def _merge_scraped_into_payload(payload: dict, scraped) -> dict:
+    """확장이 보낸 페이지 HTML을 서버 파싱한 결과로 payload의 빈 필드를 보강.
+
+    봇 차단 사이트도 브라우저 DOM 기반으로 수집되도록, 클라이언트가 못 채운 값을
+    범용 스크래퍼 추출값으로 채운다. 기존에 값이 있으면 사용자 값 우선(가격 0/빈 값만 보강).
+    """
+    out = dict(payload)
+
+    def _is_empty(v):
+        return v is None or str(v).strip() in ("", "0", "0.0")
+
+    if _is_empty(out.get("title")) and scraped.title:
+        out["title"] = scraped.title
+    if _is_empty(out.get("description")) and scraped.description:
+        out["description"] = scraped.description
+    if _is_empty(out.get("brand")) and getattr(scraped, "brand", None):
+        out["brand"] = scraped.brand
+
+    # 가격: payload 가격이 비었거나 0이면 스크래퍼 추출값으로 보강 (가격 0 문제 해결)
+    if _is_empty(out.get("price")) and scraped.price is not None:
+        out["price"] = str(scraped.price)
+        if scraped.currency:
+            out["currency"] = scraped.currency
+
+    # 이미지: payload에 없으면 스크래퍼 이미지 사용
+    p_imgs = out.get("images")
+    if not (isinstance(p_imgs, list) and any(str(i or "").strip() for i in p_imgs)):
+        if scraped.images:
+            out["images"] = list(scraped.images)
+            if _is_empty(out.get("image")) and scraped.images:
+                out["image"] = scraped.images[0]
+
+    # 옵션: payload에 없으면 스크래퍼 옵션 사용
+    if not out.get("options") and getattr(scraped, "options", None):
+        out["options"] = scraped.options
+
+    return out
+
+
 @extension_bp.post("/extension")
 def collect_from_extension():
     """크롬 확장 / 북마클릿에서 상품 메타 수신 + 카탈로그 저장.
 
     Request body:
-        {url, title, image, price, currency, description, jsonld, ...}
+        {url, title, image, price, currency, description, jsonld, html, ...}
+        html(선택): 브라우저 페이지 HTML — 봇 차단(403) 사이트도 서버 파싱으로 수집.
     Response:
         {ok: true, preview_url: "/seller/collect/preview/<id>"}
     """
@@ -147,6 +187,17 @@ def collect_from_extension():
     url = (payload.get("url") or "").strip()
     if not url:
         return jsonify({"ok": False, "error": "url 필드가 필요합니다."}), 400
+
+    # 봇 차단 사이트 대응: 확장이 보낸 페이지 HTML을 서버에서 파싱해 필드 보강 (네트워크 fetch 없음)
+    page_html = payload.get("html")
+    if page_html and isinstance(page_html, str):
+        try:
+            from src.collectors.universal_scraper import UniversalScraper
+            scraped = UniversalScraper().parse_html(page_html, url)
+            payload = _merge_scraped_into_payload(payload, scraped)
+        except Exception as exc:
+            logger.warning("확장 HTML 서버 파싱 실패(클라이언트 값 유지): %s", exc)
+    payload.pop("html", None)  # 대용량 HTML은 이력에 저장하지 않음
 
     title = payload.get("title") or ""
     source = "extension"

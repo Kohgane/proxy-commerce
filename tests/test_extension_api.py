@@ -64,6 +64,49 @@ class TestExtensionCollectAPI:
         assert "preview_url" in data
         assert data["product_id"] == "abc123"
 
+    def test_collect_html_server_parse_enriches_price(self, client):
+        """봇 차단 사이트: 확장이 보낸 HTML을 서버가 파싱해 가격 0 → 실가격 보강 (Phase 212)."""
+        jsonld_html = (
+            '<html><head><script type="application/ld+json">'
+            '{"@type":"Product","name":"Porter Backpack",'
+            '"image":["https://img.y.com/bag.jpg"],'
+            '"offers":{"price":"33000","priceCurrency":"JPY"}}'
+            '</script></head></html>'
+        )
+        captured = {}
+
+        def _fake_append(**kwargs):
+            captured.update(kwargs)
+            return "hist1"
+
+        with patch("src.api.extension_api._require_token") as mock_auth:
+            mock_auth.return_value = {"user_id": "u1", "scopes": ["collect.write"]}
+            with patch("src.api.extension_api._upsert_catalog", return_value="cat1"), \
+                 patch("src.api.extension_api._notify_telegram"), \
+                 patch("src.seller_console.collect_history_store.append", _fake_append):
+                resp = client.post(
+                    "/api/v1/collect/extension",
+                    data=json.dumps({
+                        "url": "https://www.yoshidakaban.com/ko/product/102492.html",
+                        "title": "",
+                        "price": "0",
+                        "currency": "USD",
+                        "translate": False,
+                        "html": jsonld_html,
+                    }),
+                    content_type="application/json",
+                    headers={"Authorization": "Bearer tok_test"},
+                )
+        assert resp.status_code == 200
+        # 서버 파싱으로 가격/통화/제목/이미지가 보강됨
+        assert str(captured.get("price")) == "33000"
+        assert captured.get("currency") == "JPY"
+        extra = captured.get("extra") or {}
+        assert extra.get("price_original") == "33000"
+        assert "https://img.y.com/bag.jpg" in (extra.get("images") or [])
+        # 대용량 html은 이력 extra에 저장하지 않음
+        assert "html" not in extra
+
     def test_collect_no_url_400(self, client):
         with patch("src.api.extension_api._require_token") as mock_auth:
             mock_auth.return_value = {"user_id": "test_user", "scopes": ["collect.write"]}
