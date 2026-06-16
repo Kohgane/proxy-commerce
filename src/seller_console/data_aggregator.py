@@ -35,31 +35,46 @@ def _safe_import(module_path: str, attr: str = None) -> Optional[Any]:
 def get_today_kpi() -> Dict[str, Any]:
     """오늘 KPI 카드 데이터 반환 (주문수, GMV, 마진, 신규 수집).
 
-    Phase 33/97 (pricing), Phase 114 (seller_report) 모듈 재사용.
+    실데이터 우선: 오늘 수집 건수는 collect_history_store(실 저장소)에서 집계.
+    GMV/마진/주문수는 seller_report 모듈이 있으면 사용, 없으면 0(가짜 값 금지).
+    Phase 209: 하드코딩 목업 제거 — 데이터 없으면 정직하게 0.
     """
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    mock_data = {
+    data: Dict[str, Any] = {
         "date": today,
-        "order_count": 12,
-        "gmv_krw": 1_850_000,
-        "margin_krw": 340_000,
-        "margin_pct": 18.4,
-        "new_products_collected": 5,
+        "order_count": 0,
+        "gmv_krw": 0,
+        "margin_krw": 0,
+        "margin_pct": 0.0,
+        "new_products_collected": 0,
         "is_mock": True,
     }
+    has_real = False
+
+    # 오늘 수집 건수 — 실 저장소(collect_history_store)에서 집계
+    try:
+        from .collect_history_store import summary as collect_summary
+        s = collect_summary(days=2)
+        if isinstance(s, dict):
+            data["new_products_collected"] = int(s.get("today", 0) or 0)
+            has_real = True
+    except Exception as exc:
+        logger.debug("collect_history 오늘 수집 집계 실패: %s", exc)
 
     try:
-        # Phase 114: seller_report 모듈에서 오늘 요약 조회 시도
+        # Phase 114: seller_report 모듈에서 오늘 요약 조회 시도 (GMV/마진/주문수)
         seller_report_mod = _safe_import("src.seller_report")
         if seller_report_mod and hasattr(seller_report_mod, "get_daily_summary"):
             summary = seller_report_mod.get_daily_summary(today)
             if summary:
-                mock_data.update(summary)
-                mock_data["is_mock"] = False
+                data.update(summary)
+                has_real = True
     except Exception as exc:
-        logger.debug("seller_report 데이터 조회 실패 (mock 사용): %s", exc)
+        logger.debug("seller_report 데이터 조회 실패: %s", exc)
 
-    return mock_data
+    if has_real:
+        data["is_mock"] = False
+    return data
 
 
 # ---------------------------------------------------------------------------
@@ -71,12 +86,13 @@ def get_collect_queue_status() -> Dict[str, Any]:
 
     Phase 17 (collectors) 모듈 재사용.
     """
-    mock_data = {
-        "pending": 3,
-        "translating": 1,
-        "reviewing": 2,
-        "uploaded": 8,
-        "total": 14,
+    # Phase 209: 하드코딩 목업(3/1/2/8) 제거 — 실 큐 모듈 없으면 정직하게 0.
+    data = {
+        "pending": 0,
+        "translating": 0,
+        "reviewing": 0,
+        "uploaded": 0,
+        "total": 0,
         "is_mock": True,
     }
 
@@ -85,12 +101,12 @@ def get_collect_queue_status() -> Dict[str, Any]:
         if collectors_mod and hasattr(collectors_mod, "get_queue_status"):
             status = collectors_mod.get_queue_status()
             if status:
-                mock_data.update(status)
-                mock_data["is_mock"] = False
+                data.update(status)
+                data["is_mock"] = False
     except Exception as exc:
-        logger.debug("collectors 큐 상태 조회 실패 (mock 사용): %s", exc)
+        logger.debug("collectors 큐 상태 조회 실패: %s", exc)
 
-    return mock_data
+    return data
 
 
 # ---------------------------------------------------------------------------
@@ -154,31 +170,10 @@ def get_sourcing_alerts() -> Dict[str, Any]:
 
     Phase 108 (source_monitor) 모듈 재사용.
     """
-    mock_data = {
-        "alerts": [
-            {
-                "type": "price_change",
-                "label": "가격 변동",
-                "product": "[Mock] Porter Tank — 가격 +12%",
-                "source": "porter",
-                "severity": "warning",
-            },
-            {
-                "type": "out_of_stock",
-                "label": "품절",
-                "product": "[Mock] Alo Yoga Legging XS — 재고 없음",
-                "source": "alo",
-                "severity": "error",
-            },
-            {
-                "type": "new_product",
-                "label": "신상품",
-                "product": "[Mock] Lululemon 2026 FW 신상 10종 감지",
-                "source": "lululemon",
-                "severity": "info",
-            },
-        ],
-        "count": 3,
+    # Phase 209: 가짜 [Mock] 알림 제거 — 실 source_monitor 알림 없으면 빈 목록(정직).
+    data: Dict[str, Any] = {
+        "alerts": [],
+        "count": 0,
         "is_mock": True,
     }
 
@@ -187,13 +182,13 @@ def get_sourcing_alerts() -> Dict[str, Any]:
         if source_monitor_mod and hasattr(source_monitor_mod, "get_recent_alerts"):
             alerts = source_monitor_mod.get_recent_alerts(limit=5)
             if alerts:
-                mock_data["alerts"] = alerts
-                mock_data["count"] = len(alerts)
-                mock_data["is_mock"] = False
+                data["alerts"] = alerts
+                data["count"] = len(alerts)
+                data["is_mock"] = False
     except Exception as exc:
-        logger.debug("source_monitor 알림 조회 실패 (mock 사용): %s", exc)
+        logger.debug("source_monitor 알림 조회 실패: %s", exc)
 
-    return mock_data
+    return data
 
 
 # ---------------------------------------------------------------------------

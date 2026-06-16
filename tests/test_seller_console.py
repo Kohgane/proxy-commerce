@@ -851,3 +851,30 @@ class TestDataAggregator:
         result = get_sourcing_alerts()
         assert "alerts" in result
         assert isinstance(result["alerts"], list)
+
+    def test_today_kpi_uses_real_collect_count(self):
+        """오늘 수집 건수는 collect_history_store 실 집계를 사용 (Phase 209)."""
+        from unittest.mock import patch
+        from src.seller_console.data_aggregator import get_today_kpi
+        with patch("src.seller_console.collect_history_store.summary",
+                   return_value={"today": 7, "total": 20, "domains": 2, "by_source": {}}):
+            result = get_today_kpi()
+        assert result["new_products_collected"] == 7
+        assert result["is_mock"] is False
+
+    def test_no_fabricated_mock_constants(self):
+        """하드코딩 목업(5/12/3/[Mock]) 제거 — 데이터 없으면 정직하게 0/빈 목록."""
+        from unittest.mock import patch
+        from src.seller_console.data_aggregator import (
+            get_today_kpi, get_collect_queue_status, get_sourcing_alerts,
+        )
+        # 수집 저장소가 비어있으면 오늘 수집 0 (가짜 5 아님)
+        with patch("src.seller_console.collect_history_store.summary",
+                   return_value={"today": 0, "total": 0, "domains": 0, "by_source": {}}):
+            kpi = get_today_kpi()
+        assert kpi["order_count"] == 0  # 가짜 12 아님
+        assert kpi["new_products_collected"] == 0
+        q = get_collect_queue_status()
+        assert q["pending"] == 0  # 가짜 3 아님
+        alerts = get_sourcing_alerts()
+        assert alerts["alerts"] == []  # 가짜 [Mock] 아님

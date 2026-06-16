@@ -102,6 +102,21 @@
    - **외부 승인에 막힌 항목(코드 아님, 오너측)**: Amazon SP-API / eBay / Shopee = 셀러 등록·OAuth 승인·
      키 발급 필요(`markets/adapters/{amazon,ebay,shopee}.py`는 스캐폴드 stub 유지). 승인 완료 후 실연동 착수.
 
+## 🔧 UI/디테일 보완 (오너 지시 2026-06-16, 라이브 화면 스크린샷 기반 — 퍼센티 벤치마킹)
+오너가 실제 화면(kohganepercentiii.com)을 보고 지적한 디테일들을 순차 처리:
+1. ✅ **쿠팡 업로드 NoneType 크래시** (PR #224): 쿠팡 응답 `data`가 sellerProductId 숫자(또는
+   거부 시 null)인데 `result.get('data',{}).get(...)`가 None/int에서 크래시. dict/int/str/None 안전
+   처리 + data=null·비성공코드는 가짜 성공 대신 정직한 실패. `get_categories`도 동일 수정.
+2. ✅ **편집 페이지 원화 환율 계산기 + 상세설명 확대** (PR #225): 수집가가 외화/0일 때 셀러가 원화
+   감 못 잡던 문제 → `collect_preview_by_id`에 `get_fx_rates()` 주입, '≈원화 약 N원' 실시간 표시 +
+   '↻원화로 환산' 버튼(가격×환율→KRW). KRW·미지원통화는 정직 안내. 상세설명 rows 4→14 전체폭+글자수.
+3. ✅ **대시보드 KPI 목업 제거 + 실데이터** (Phase 209): `data_aggregator.py`의 하드코딩 목업
+   (오늘수집 5/주문 12/등록대기 3/[Mock] 알림) 제거. 오늘 수집 건수는 `collect_history_store.summary().today`
+   실 집계, 주문수는 OrderSync:kpi(이미 실), 나머지는 실 모듈 없으면 정직하게 0/빈목록(가짜 값 금지).
+   ※ 마켓 등록/동기화 표·재고부족은 이미 Sheets catalog 실연동(미설정 시 0) — 그대로 유지.
+- **남은 후속(이 지시)**: 수집 페이지 '퍼센티 수집' 원클릭 버튼(④/⑤), 실 가격 추출 개선
+  (yoshidakaban 등 일부 사이트 봇차단 403 — 별도 검토). 진행 예정.
+
 ## 작업 방식
 - 브랜치 `claude/magical-noether-oo4831`에서 작업 → PR 생성·main 머지(오너 승인됨)로 배포.
 - 변경 후 전체 테스트(`python -m pytest tests/ -q`) 통과 확인.
