@@ -1019,6 +1019,20 @@ def collect():
     except Exception:
         localization_configured = False
 
+    # 원클릭 수집 지원 마켓 (퍼센티 벤치마킹) — 상품 페이지에서 크롬확장 🛒'수집' 버튼으로 수집
+    oneclick_markets = [
+        {"name": "타오바오", "url": "https://www.taobao.com", "emoji": "🛒"},
+        {"name": "T몰", "url": "https://www.tmall.com", "emoji": "🛍️"},
+        {"name": "알리익스프레스", "url": "https://www.aliexpress.com", "emoji": "📦"},
+        {"name": "1688", "url": "https://www.1688.com", "emoji": "🏭"},
+        {"name": "VVIC", "url": "https://www.vvic.com", "emoji": "👗"},
+        {"name": "라쿠텐", "url": "https://www.rakuten.co.jp", "emoji": "🎌"},
+        {"name": "ZOZOTOWN", "url": "https://zozo.jp", "emoji": "👕"},
+        {"name": "아마존", "url": "https://www.amazon.com", "emoji": "🅰️"},
+        {"name": "SHEIN", "url": "https://www.shein.com", "emoji": "✨"},
+        {"name": "요시다카반", "url": "https://www.yoshidakaban.com/ko/", "emoji": "🎒"},
+    ]
+
     return render_template(
         "manual_collect.html",
         page="collect",
@@ -1026,6 +1040,7 @@ def collect():
         marketplace_cards=marketplace_cards,
         locale_options=locale_options,
         localization_configured=localization_configured,
+        oneclick_markets=oneclick_markets,
     )
 
 

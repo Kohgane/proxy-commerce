@@ -24,6 +24,27 @@
   <span id="step-4" class="console-step">4) 업로드</span>
 </div>
 
+<!-- 원클릭 수집 지원 마켓 (퍼센티 벤치마킹) -->
+<div class="card console-card mb-3" id="oneclickCard">
+  <div class="card-body">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+      <label class="form-label fw-semibold mb-0">🛒 원클릭 수집 지원 마켓</label>
+      <span class="small text-muted">마켓을 열고 상품 페이지에서 <b class="text-primary">🛒 수집</b> 버튼을 누르세요</span>
+    </div>
+    <div class="d-flex flex-wrap gap-2" id="oneclickMarkets">
+      {% for m in oneclick_markets %}
+      <a href="{{ m.url }}" target="_blank" rel="noopener noreferrer"
+         class="btn btn-outline-primary btn-sm oneclick-market">{{ m.emoji }} {{ m.name }}</a>
+      {% endfor %}
+    </div>
+    <div class="alert alert-light border mt-3 mb-0 small" role="note">
+      <b class="text-primary">퍼센티식 인페이지 수집</b> — 크롬 확장(🛒 수집)을 설치하면 위 마켓의 상품
+      페이지 우하단에 보라색 <b>수집</b> 버튼이 떠서, 클릭 한 번으로 자동 수집·한국어 번역됩니다.
+      <a href="/seller/markets/guide" class="ms-1 text-decoration-none">설치/사용 가이드 →</a>
+    </div>
+  </div>
+</div>
+
 <div class="card console-step-card mb-3">
   <div class="card-body">
     <label for="productUrl" class="form-label fw-semibold">상품 URL</label>
