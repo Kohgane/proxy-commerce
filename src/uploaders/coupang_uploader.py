@@ -68,7 +68,19 @@ class CoupangUploader(BaseUploader):
             result = self._api_request('POST', path, data=payload)
             if 'error' in result:
                 return {'success': False, 'error': result['error'], 'sku': product.get('sku', '')}
-            product_id = str(result.get('data', {}).get('sellerProductId', ''))
+            # 쿠팡 응답의 data는 sellerProductId(숫자) 또는 {"sellerProductId": ...} 또는 null일 수 있다.
+            data = result.get('data')
+            if isinstance(data, dict):
+                product_id = str(data.get('sellerProductId') or '')
+            elif isinstance(data, (int, str)):
+                product_id = str(data)
+            else:
+                product_id = ''
+            code = str(result.get('code') or '').upper()
+            if not product_id and code and code not in ('SUCCESS', '200', 'OK'):
+                # data null + 비성공 코드 = 등록 거부 → 가짜 성공 금지(정직)
+                msg = result.get('message') or f'코드 {code}'
+                return {'success': False, 'error': f'쿠팡 등록 거부: {msg}', 'sku': product.get('sku', '')}
             url = f'https://www.coupang.com/vp/products/{product_id}' if product_id else ''
             return {'success': True, 'product_id': product_id, 'url': url, 'sku': product.get('sku', '')}
         except Exception as exc:
@@ -105,7 +117,7 @@ class CoupangUploader(BaseUploader):
             if 'error' in result:
                 logger.warning('get_categories failed: %s', result['error'])
                 return []
-            return result.get('data', [])
+            return result.get('data') or []
         except Exception as exc:
             logger.error('get_categories failed: %s', exc)
             return []

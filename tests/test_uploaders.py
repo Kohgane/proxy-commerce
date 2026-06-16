@@ -231,6 +231,29 @@ class TestCoupangUploadProduct:
             result = coupang_uploader.upload_product(prepared)
         assert result['success'] is False
 
+    def test_upload_product_data_is_number(self, coupang_uploader):
+        """쿠팡은 data를 sellerProductId 숫자로 직접 반환 — 크래시 없이 매핑."""
+        prepared = coupang_uploader.prepare_product(SAMPLE_COLLECTED)
+        with patch.object(coupang_uploader, '_api_request',
+                          return_value={'code': 'SUCCESS', 'data': 12345678}):
+            result = coupang_uploader.upload_product(prepared)
+        assert result['success'] is True
+        assert result['product_id'] == '12345678'
+
+    def test_upload_product_data_null_rejected(self, coupang_uploader):
+        """data=null + 비성공 코드 → 가짜 성공이 아니라 정직한 실패 (NoneType 크래시 금지)."""
+        prepared = coupang_uploader.prepare_product(SAMPLE_COLLECTED)
+        with patch.object(coupang_uploader, '_api_request',
+                          return_value={'code': 'ERROR', 'message': '카테고리 오류', 'data': None}):
+            result = coupang_uploader.upload_product(prepared)
+        assert result['success'] is False
+        assert '카테고리 오류' in result['error']
+
+    def test_get_categories_data_null(self, coupang_uploader):
+        """get_categories도 data=null 시 빈 리스트 (크래시 금지)."""
+        with patch.object(coupang_uploader, '_api_request', return_value={'code': 'SUCCESS', 'data': None}):
+            assert coupang_uploader.get_categories() == []
+
     def test_update_product(self, coupang_uploader):
         with patch.object(coupang_uploader, '_api_request', return_value={}):
             result = coupang_uploader.update_product('12345', {'salePrice': 9000})
