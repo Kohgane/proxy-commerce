@@ -1,12 +1,15 @@
-"""src/source_monitor/checkers.py — 소싱처 상품 상태 체커 (Phase 108).
+"""src/source_monitor/checkers.py — 소싱처 상품 상태 체커 (Phase 108 → 205 실연동).
 
-SourceChecker ABC + 마켓플레이스별 구현체 (모두 mock)
+SourceChecker ABC + 마켓플레이스별 구현체.
+가짜 랜덤 가격 시뮬레이션을 제거하고, source_url에서 범용 스크래퍼로 실 가격/재고를
+추출한다(키 불필요). 추출 실패·URL 없음·ADAPTER_DRY_RUN=1 시에는 가짜 변동 대신
+'변화 없음'으로 처리해 거짓 알림을 만들지 않는다.
 """
 from __future__ import annotations
 
 import logging
-import random
-from abc import ABC, abstractmethod
+import os
+from abc import ABC
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, Optional
@@ -45,11 +48,67 @@ class CheckResult:
 
 
 class SourceChecker(ABC):
-    """소싱처 상품 체커 추상 기반 클래스."""
+    """소싱처 상품 체커 기반 클래스.
 
-    @abstractmethod
+    하위 클래스는 `marketplace`(raw_data 태그)와 선택적으로 `_meta_tags()`만 정의한다.
+    실 가격/재고 추출은 공통 `check()`가 범용 스크래퍼로 수행한다.
+    """
+
+    marketplace: str = "custom"
+
     def check(self, product: SourceProduct) -> CheckResult:
-        """상품 상태 체크."""
+        """source_url에서 실 가격/재고를 조회해 상태를 평가한다."""
+        live = self._scrape_live(product)
+        raw: dict = {"marketplace": self.marketplace}
+        raw.update(self._meta_tags(product))
+
+        if live and live.get("price") is not None:
+            price = live["price"]
+            in_stock = live.get("in_stock")
+            if in_stock is None:
+                stock = product.stock_status
+            else:
+                stock = StockStatus.in_stock if in_stock else StockStatus.out_of_stock
+            raw["live"] = True
+            if live.get("method"):
+                raw["extraction_method"] = live["method"]
+        else:
+            # 실데이터 없음 → 가짜 변동 만들지 않고 현 상태 유지
+            price = product.current_price
+            stock = product.stock_status
+            raw["live"] = False
+
+        return self._build_result(
+            product,
+            is_alive=True,
+            price=price,
+            stock_status=stock,
+            seller_active=True,
+            raw_data=raw,
+        )
+
+    def _meta_tags(self, product: SourceProduct) -> dict:
+        """마켓플레이스별 raw_data 식별자(자식이 오버라이드)."""
+        return {}
+
+    def _scrape_live(self, product: SourceProduct) -> Optional[dict]:
+        """source_url에서 실 가격/재고 추출. 실패·URL없음·DRY_RUN 시 None."""
+        url = (getattr(product, "source_url", "") or "").strip()
+        if not url.startswith(("http://", "https://")):
+            return None
+        if os.getenv("ADAPTER_DRY_RUN") == "1":
+            return None
+        try:
+            from src.collectors.universal_scraper import UniversalScraper
+
+            sp = UniversalScraper().fetch(url)
+            price = float(sp.price) if sp.price is not None else None
+            if price is None and sp.in_stock is None:
+                return None
+            return {"price": price, "in_stock": sp.in_stock, "method": sp.extraction_method}
+        except Exception as exc:
+            logger.warning("소싱 실가격 조회 실패 (%s): %s", url[:80], exc)
+            return None
 
     def _build_result(
         self,
@@ -75,100 +134,54 @@ class SourceChecker(ABC):
 
 
 class AmazonSourceChecker(SourceChecker):
-    """Amazon US/JP 상품 상태 체크 mock."""
+    """Amazon US/JP 상품 상태 체크 (실 스크래핑)."""
 
-    def check(self, product: SourceProduct) -> CheckResult:
-        logger.debug("Amazon 체크: %s", product.source_product_id)
-        # mock: 가격 소폭 변동 시뮬레이션
-        mock_price = round(product.current_price * random.uniform(0.98, 1.02), 2)
-        mock_stock = random.choice([StockStatus.in_stock, StockStatus.in_stock, StockStatus.low_stock])
-        return self._build_result(
-            product,
-            is_alive=True,
-            price=mock_price,
-            stock_status=mock_stock,
-            seller_active=True,
-            raw_data={'marketplace': 'amazon', 'asin': product.metadata.get('asin', '')},
-        )
+    marketplace = "amazon"
+
+    def _meta_tags(self, product: SourceProduct) -> dict:
+        return {"asin": product.metadata.get("asin", "")}
 
 
 class TaobaoSourceChecker(SourceChecker):
-    """타오바오 상품 상태 체크 mock."""
+    """타오바오 상품 상태 체크 (실 스크래핑)."""
 
-    def check(self, product: SourceProduct) -> CheckResult:
-        logger.debug("타오바오 체크: %s", product.source_product_id)
-        mock_price = round(product.current_price * random.uniform(0.97, 1.03), 2)
-        return self._build_result(
-            product,
-            is_alive=True,
-            price=mock_price,
-            stock_status=StockStatus.in_stock,
-            seller_active=True,
-            raw_data={'marketplace': 'taobao', 'item_id': product.metadata.get('item_id', '')},
-        )
+    marketplace = "taobao"
+
+    def _meta_tags(self, product: SourceProduct) -> dict:
+        return {"item_id": product.metadata.get("item_id", "")}
 
 
 class Alibaba1688SourceChecker(SourceChecker):
-    """1688 상품 상태 체크 mock."""
+    """1688 상품 상태 체크 (실 스크래핑)."""
 
-    def check(self, product: SourceProduct) -> CheckResult:
-        logger.debug("1688 체크: %s", product.source_product_id)
-        mock_price = round(product.current_price * random.uniform(0.95, 1.05), 2)
-        return self._build_result(
-            product,
-            is_alive=True,
-            price=mock_price,
-            stock_status=StockStatus.in_stock,
-            seller_active=True,
-            raw_data={'marketplace': '1688', 'offer_id': product.metadata.get('offer_id', '')},
-        )
+    marketplace = "1688"
+
+    def _meta_tags(self, product: SourceProduct) -> dict:
+        return {"offer_id": product.metadata.get("offer_id", "")}
 
 
 class CoupangSourceChecker(SourceChecker):
-    """쿠팡 상품 상태 체크 mock."""
+    """쿠팡 상품 상태 체크 (실 스크래핑)."""
 
-    def check(self, product: SourceProduct) -> CheckResult:
-        logger.debug("쿠팡 체크: %s", product.source_product_id)
-        mock_price = round(product.current_price * random.uniform(0.99, 1.01), 2)
-        return self._build_result(
-            product,
-            is_alive=True,
-            price=mock_price,
-            stock_status=StockStatus.in_stock,
-            seller_active=True,
-            raw_data={'marketplace': 'coupang', 'item_id': product.metadata.get('item_id', '')},
-        )
+    marketplace = "coupang"
+
+    def _meta_tags(self, product: SourceProduct) -> dict:
+        return {"item_id": product.metadata.get("item_id", "")}
 
 
 class NaverSourceChecker(SourceChecker):
-    """네이버 상품 상태 체크 mock."""
+    """네이버 상품 상태 체크 (실 스크래핑)."""
 
-    def check(self, product: SourceProduct) -> CheckResult:
-        logger.debug("네이버 체크: %s", product.source_product_id)
-        mock_price = round(product.current_price * random.uniform(0.99, 1.01), 2)
-        return self._build_result(
-            product,
-            is_alive=True,
-            price=mock_price,
-            stock_status=StockStatus.in_stock,
-            seller_active=True,
-            raw_data={'marketplace': 'naver', 'product_id': product.metadata.get('product_id', '')},
-        )
+    marketplace = "naver"
+
+    def _meta_tags(self, product: SourceProduct) -> dict:
+        return {"product_id": product.metadata.get("product_id", "")}
 
 
 class CustomSourceChecker(SourceChecker):
-    """커스텀 소싱처 상품 상태 체크 mock."""
+    """커스텀 소싱처 상품 상태 체크 (실 스크래핑)."""
 
-    def check(self, product: SourceProduct) -> CheckResult:
-        logger.debug("커스텀 소싱처 체크: %s", product.source_product_id)
-        return self._build_result(
-            product,
-            is_alive=True,
-            price=product.current_price,
-            stock_status=StockStatus.in_stock,
-            seller_active=True,
-            raw_data={'marketplace': 'custom'},
-        )
+    marketplace = "custom"
 
 
 _CHECKER_MAP: Dict[SourceType, type] = {
