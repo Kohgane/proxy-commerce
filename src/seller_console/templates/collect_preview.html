@@ -76,7 +76,7 @@
       <!-- 이미지 목록 -->
       <div class="mb-3">
         <div class="d-flex justify-content-between align-items-center mb-2">
-          <label class="form-label small fw-semibold mb-0">이미지 URL (첫 번째 = 대표)</label>
+          <label class="form-label small fw-semibold mb-0">이미지 URL <span class="text-muted">(⭐ = 대표/썸네일, 맨 위가 대표)</span></label>
           <button type="button" class="btn btn-outline-secondary btn-sm py-0" onclick="addImageRow()">+ 이미지 추가</button>
         </div>
         <div id="imageRows" class="vstack gap-2"></div>
@@ -89,6 +89,14 @@
           <button type="button" class="btn btn-outline-secondary btn-sm py-0" onclick="addOptionRow()">+ 옵션 추가</button>
         </div>
         <div id="optionRows" class="vstack gap-2"></div>
+      </div>
+
+      <!-- 키워드 / 태그 -->
+      <div class="mb-2">
+        <label class="form-label small fw-semibold" for="editKeywords">키워드 / 태그
+          <span class="text-muted fw-normal">(쉼표로 구분 — 검색 노출·업로드 태그)</span></label>
+        <input type="text" class="form-control" id="editKeywords"
+               placeholder="예: 백팩, 데일리, 방수, 남녀공용">
       </div>
     </div>
 
@@ -264,11 +272,36 @@ function addImageRow(url) {
   const row = document.createElement('div');
   row.className = 'input-group input-group-sm img-row';
   row.innerHTML = `
+    <button class="btn btn-outline-warning btn-make-primary" type="button" title="대표 이미지로 지정">⭐</button>
     <input type="url" class="form-control img-url" placeholder="https://..." value="${escapeHtml(url || '')}">
-    <button class="btn btn-outline-danger" type="button" title="삭제">✕</button>`;
-  row.querySelector('button').addEventListener('click', () => { row.remove(); refreshPrimaryImage(); });
+    <button class="btn btn-outline-danger btn-del" type="button" title="삭제">✕</button>`;
+  row.querySelector('.btn-make-primary').addEventListener('click', () => {
+    wrap.insertBefore(row, wrap.firstChild);  // 맨 위로 = 대표
+    refreshPrimaryImage();
+    refreshImageBadges();
+  });
+  row.querySelector('.btn-del').addEventListener('click', () => {
+    row.remove(); refreshPrimaryImage(); refreshImageBadges();
+  });
   row.querySelector('input').addEventListener('input', refreshPrimaryImage);
   wrap.appendChild(row);
+  refreshImageBadges();
+}
+
+// 첫 번째(맨 위) 이미지가 대표/썸네일 — 버튼 상태 갱신
+function refreshImageBadges() {
+  const rows = document.querySelectorAll('#imageRows .img-row');
+  rows.forEach((row, i) => {
+    const btn = row.querySelector('.btn-make-primary');
+    if (!btn) return;
+    if (i === 0) {
+      btn.classList.add('btn-warning'); btn.classList.remove('btn-outline-warning');
+      btn.textContent = '⭐대표'; btn.disabled = true; btn.title = '현재 대표/썸네일';
+    } else {
+      btn.classList.add('btn-outline-warning'); btn.classList.remove('btn-warning');
+      btn.textContent = '⭐'; btn.disabled = false; btn.title = '대표 이미지로 지정';
+    }
+  });
 }
 
 function addOptionRow(name, values) {
@@ -365,10 +398,16 @@ function initEditor() {
   document.getElementById('editDescription').value =
     _firstNonEmpty(_EXTRA.description_ko, _EXTRA.description);
 
+  // 키워드/태그 (배열이면 쉼표 결합)
+  const kw = _EXTRA.keywords !== undefined ? _EXTRA.keywords : _EXTRA.tags;
+  document.getElementById('editKeywords').value =
+    Array.isArray(kw) ? kw.join(', ') : (kw || '');
+
   _initImages().forEach(addImageRow);
   if (document.querySelectorAll('#imageRows .img-row').length === 0) addImageRow('');
   _initOptions().forEach(o => addOptionRow(o.name, o.values));
   refreshPrimaryImage();
+  refreshImageBadges();
   updateKrwPreview();
   updateDescCount();
 }
@@ -386,12 +425,16 @@ function buildProductData() {
   const price = document.getElementById('editPrice').value.trim();
   const currency = document.getElementById('editCurrency').value;
   const description = document.getElementById('editDescription').value;
+  const keywords = (document.getElementById('editKeywords').value || '')
+    .split(',').map(k => k.trim()).filter(Boolean);
 
   return {
     title, title_ko: title, title_en: _EXTRA.title_en || title,
     price, price_original: price, currency,
     description, description_ko: description,
     images, options,
+    keywords, tags: keywords,
+    thumbnail: images[0] || '',   // 맨 위(대표) 이미지 = 썸네일
     url: _ITEM.url || _EXTRA.url || '',
     source: _ITEM.source || _EXTRA.source || '',
     brand: _EXTRA.brand || '', category: _EXTRA.category || '',

@@ -87,3 +87,13 @@ class TestCollectPreviewView:
         body = resp.data
         assert b'rows="14"' in body
         assert b"descCharCount" in body
+
+    def test_preview_has_keywords_and_thumbnail_controls(self, client):
+        """키워드/태그 입력 + 대표(썸네일) 지정 컨트롤이 포함됨 (Phase 213)."""
+        with patch("src.seller_console.collect_history_store.get", return_value=_MOCK_ITEM):
+            resp = client.get("/seller/collect/preview/abc123")
+        body = resp.data
+        assert b'id="editKeywords"' in body
+        assert "키워드 / 태그".encode() in body
+        assert b"btn-make-primary" in body       # 대표 이미지 지정 버튼
+        assert b"refreshImageBadges" in body

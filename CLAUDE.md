@@ -140,7 +140,10 @@
    `/api/v1/collect/extension`이 `html` 수신 시 `_merge_scraped_into_payload`로 **빈 값·가격0만 보강**
    (사용자 값 우선, 대용량 html은 이력에 미저장). 확장 manifest 1.1.0→1.2.0.
    → 사용자가 브라우저로 볼 수 있는 어떤 사이트(봇차단 포함)든 인페이지 🛒'수집'으로 수집 가능.
-2. ⏳ 편집 페이지 풀 편집(키워드/썸네일) — 진행 예정.
+2. ✅ **편집 페이지 풀 편집 — 키워드/태그 + 썸네일 선택** (Phase 213): `collect_preview.html`에
+   '키워드/태그'(쉼표구분) 입력 추가 → `buildProductData`/저장에 `keywords`+`tags` 반영(`extra` 머지).
+   이미지 행마다 '⭐대표' 버튼 → 클릭 시 해당 이미지를 맨 위(대표/썸네일)로 이동(`refreshImageBadges`).
+   `buildProductData.thumbnail`=대표이미지. (제목/가격/통화/상세/이미지/옵션은 이미 편집 가능)
 3. ⏳ Google 로그인(설정 진단) — 진행 예정.
 
 ## 작업 방식

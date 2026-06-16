@@ -92,6 +92,27 @@ def test_save_merges_extra_and_updates_item(client):
     assert captured["image_url"] == "https://shop.example.com/1.jpg"  # 첫 이미지 = 대표
 
 
+def test_save_persists_keywords(client):
+    """키워드/태그 저장 → extra에 keywords/tags 머지 (Phase 213)."""
+    item = {"id": "kw1", "url": "https://e.com/p", "title": "t", "extra_json": "{}", "seller_id": ""}
+    captured = {}
+    with patch("src.seller_console.collect_history_store.get", return_value=item), \
+         patch("src.seller_console.collect_history_store.update",
+               side_effect=lambda i, **k: captured.update(k) or True):
+        resp = client.post(
+            "/seller/collect/preview/kw1/save",
+            data=json.dumps({
+                "title": "키워드 상품",
+                "keywords": ["백팩", "데일리", "방수"],
+            }),
+            content_type="application/json",
+        )
+    assert resp.status_code == 200
+    extra = json.loads(captured["extra_json"])
+    assert extra["keywords"] == ["백팩", "데일리", "방수"]
+    assert extra["tags"] == ["백팩", "데일리", "방수"]
+
+
 def test_save_options_accepts_comma_string(client):
     item = {"id": "x1", "url": "https://e.com/p", "title": "t", "extra_json": "{}", "seller_id": ""}
     captured = {}

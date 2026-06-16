@@ -3911,6 +3911,17 @@ def collect_preview_save(item_id: str):
         extra["price_original"] = price
     if currency:
         extra["currency"] = currency
+
+    # 키워드/태그 정규화 (배열 또는 쉼표 문자열 허용)
+    keywords = data.get("keywords")
+    if keywords is None:
+        keywords = data.get("tags")
+    if isinstance(keywords, str):
+        keywords = [k.strip() for k in keywords.split(",") if k.strip()]
+    if isinstance(keywords, list):
+        keywords = [str(k).strip() for k in keywords if str(k).strip()]
+        extra["keywords"] = keywords
+        extra["tags"] = keywords
     extra["edited"] = True
 
     ok = collect_history_store.update(
