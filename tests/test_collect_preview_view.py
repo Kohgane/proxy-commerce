@@ -68,3 +68,22 @@ class TestCollectPreviewView:
             resp = client.get("/seller/collect/preview/abc123")
         assert b"98.00" in resp.data
         assert b"USD" in resp.data
+
+    def test_preview_injects_fx_and_krw_calculator(self, client):
+        """원화 환산 계산기(환율 주입 + 환산 버튼)가 페이지에 포함됨."""
+        with patch("src.seller_console.collect_history_store.get", return_value=_MOCK_ITEM):
+            resp = client.get("/seller/collect/preview/abc123")
+        body = resp.data
+        assert "원화로 환산".encode() in body
+        assert b"const _FX" in body
+        assert b"updateKrwPreview" in body
+        # 환율 맵에 KRW 기준(1.0) 포함
+        assert b'"KRW"' in body or b"'KRW'" in body
+
+    def test_preview_has_larger_description_editor(self, client):
+        """상세 설명 에디터가 확대됨(rows 14 + 글자수 카운터)."""
+        with patch("src.seller_console.collect_history_store.get", return_value=_MOCK_ITEM):
+            resp = client.get("/seller/collect/preview/abc123")
+        body = resp.data
+        assert b'rows="14"' in body
+        assert b"descCharCount" in body

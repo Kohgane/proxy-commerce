@@ -34,14 +34,14 @@
           </div>
 
           <!-- 가격 + 통화 -->
-          <div class="row g-2 mb-3">
+          <div class="row g-2 mb-2">
             <div class="col-7">
               <label class="form-label small fw-semibold" for="editPrice">가격(원가)</label>
-              <input type="number" step="0.01" min="0" class="form-control" id="editPrice" placeholder="0.00">
+              <input type="number" step="0.01" min="0" class="form-control" id="editPrice" placeholder="0.00" oninput="updateKrwPreview()">
             </div>
             <div class="col-5">
               <label class="form-label small fw-semibold" for="editCurrency">통화</label>
-              <select class="form-select" id="editCurrency">
+              <select class="form-select" id="editCurrency" onchange="updateKrwPreview()">
                 {% for c in ["USD","JPY","CNY","EUR","GBP","KRW"] %}
                 <option value="{{ c }}">{{ c }}</option>
                 {% endfor %}
@@ -49,12 +49,26 @@
             </div>
           </div>
 
-          <!-- 상세설명 -->
-          <div class="mb-2">
-            <label class="form-label small fw-semibold" for="editDescription">상세 설명</label>
-            <textarea class="form-control" id="editDescription" rows="4" placeholder="상품 상세 설명"></textarea>
+          <!-- 원화 환산 (환율 계산기) -->
+          <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+            <span class="fw-semibold" id="krwPreview" style="font-size:.95rem;">≈ 원화 —</span>
+            <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2" id="btnConvertKrw"
+                    onclick="convertToKrw()" title="환율을 적용해 가격을 원화(KRW)로 바꿉니다">↻ 원화로 환산</button>
           </div>
+          <div class="text-muted mb-3" id="fxNote" style="font-size:.74rem;"></div>
         </div>
+      </div>
+
+      <!-- 상세 설명 (전체 폭 · 확대 에디터) -->
+      <div class="mt-2">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <label class="form-label small fw-semibold mb-0" for="editDescription">상세 설명</label>
+          <span class="text-muted" style="font-size:.75rem;"><span id="descCharCount">0</span>자</span>
+        </div>
+        <textarea class="form-control" id="editDescription" rows="14"
+                  style="min-height:300px;font-size:.95rem;line-height:1.6;"
+                  placeholder="상품 상세 설명 — 마켓 상세페이지에 노출됩니다. 소재·사이즈·사용법 등 충분히 길게 작성할수록 전환율이 올라갑니다."
+                  oninput="updateDescCount()"></textarea>
       </div>
 
       <hr class="my-3">
@@ -214,6 +228,8 @@
 const _ITEM = {{ item | tojson }};
 const _EXTRA = {{ extra | tojson }};
 const _ITEM_ID = {{ item.id | tojson }};
+const _FX = {{ fx_rates | tojson }};            // {USD:1370.5, JPY:9.12, ..., KRW:1}
+const _FX_MOCK = {{ fx_is_mock | tojson }};      // 실시간 연결 전이면 true(기본값)
 
 function _firstNonEmpty(...vals) {
   for (const v of vals) {
@@ -275,6 +291,66 @@ function refreshPrimaryImage() {
   else { img.removeAttribute('src'); img.style.visibility = 'hidden'; }
 }
 
+// ── 원화 환산 (환율 계산기) ──
+function _fmtKrw(n) { return Math.round(n).toLocaleString('ko-KR'); }
+
+function _currentPriceCur() {
+  const price = parseFloat(document.getElementById('editPrice').value);
+  const cur = document.getElementById('editCurrency').value;
+  return { price: isNaN(price) ? 0 : price, cur };
+}
+
+function updateKrwPreview() {
+  const { price, cur } = _currentPriceCur();
+  const prevEl = document.getElementById('krwPreview');
+  const noteEl = document.getElementById('fxNote');
+  const btn = document.getElementById('btnConvertKrw');
+  const srcLabel = _FX_MOCK ? '기본값(실시간 연결 전)' : '실시간';
+
+  if (cur === 'KRW') {
+    prevEl.textContent = price > 0 ? `원화 ${_fmtKrw(price)}원` : '원화 입력';
+    prevEl.className = 'fw-semibold text-success';
+    noteEl.textContent = '이미 원화(KRW)입니다.';
+    btn.disabled = true;
+    return;
+  }
+  const rate = _FX[cur];
+  if (!rate) {
+    prevEl.textContent = '≈ 원화 — (환율 미지원 통화)';
+    prevEl.className = 'fw-semibold text-muted';
+    noteEl.textContent = `${cur}→KRW 환율이 없어 자동 환산할 수 없습니다. 직접 원화로 입력하세요.`;
+    btn.disabled = true;
+    return;
+  }
+  btn.disabled = !(price > 0);
+  if (price > 0) {
+    prevEl.textContent = `≈ 원화 약 ${_fmtKrw(price * rate)}원`;
+    prevEl.className = 'fw-semibold text-primary';
+  } else {
+    prevEl.textContent = '≈ 원화 —';
+    prevEl.className = 'fw-semibold text-muted';
+  }
+  noteEl.textContent = `적용 환율 1 ${cur} = ${rate.toLocaleString('ko-KR')}원 (${srcLabel})`;
+}
+
+function convertToKrw() {
+  const { price, cur } = _currentPriceCur();
+  if (cur === 'KRW' || !(price > 0)) return;
+  const rate = _FX[cur];
+  if (!rate) return;
+  document.getElementById('editPrice').value = Math.round(price * rate);
+  document.getElementById('editCurrency').value = 'KRW';
+  updateKrwPreview();
+  if (window.pcToast) pcToast(`${cur} → 원화로 환산했습니다.`, 'success');
+}
+
+// ── 상세 설명 글자수 ──
+function updateDescCount() {
+  const el = document.getElementById('editDescription');
+  const cnt = document.getElementById('descCharCount');
+  if (el && cnt) cnt.textContent = (el.value || '').length.toLocaleString('ko-KR');
+}
+
 function initEditor() {
   document.getElementById('editTitle').value =
     _firstNonEmpty(_EXTRA.title_ko, _EXTRA.title, _ITEM.title);
@@ -293,6 +369,8 @@ function initEditor() {
   if (document.querySelectorAll('#imageRows .img-row').length === 0) addImageRow('');
   _initOptions().forEach(o => addOptionRow(o.name, o.values));
   refreshPrimaryImage();
+  updateKrwPreview();
+  updateDescCount();
 }
 
 // ── 폼 → 상품 데이터 ──

@@ -3793,11 +3793,29 @@ def collect_preview_by_id(item_id: str):
     except Exception:
         pass
 
+    # 원화 환산용 환율 주입 (편집 페이지 환율 계산기). 실패해도 편집은 동작.
+    fx_rates: dict = {"KRW": 1.0}
+    fx_is_mock = True
+    fx_updated = ""
+    try:
+        from .data_aggregator import get_fx_rates
+        fxd = get_fx_rates() or {}
+        for code in ("USD", "JPY", "CNY", "EUR"):
+            if isinstance(fxd.get(code), (int, float)):
+                fx_rates[code] = float(fxd[code])
+        fx_is_mock = bool(fxd.get("is_mock", True))
+        fx_updated = str(fxd.get("updated_at") or "")
+    except Exception as exc:
+        logger.debug("FX 환율 주입 실패: %s", exc)
+
     return render_template(
         "collect_preview.html",
         page="collect_history",
         item=item,
         extra=extra,
+        fx_rates=fx_rates,
+        fx_is_mock=fx_is_mock,
+        fx_updated=fx_updated,
     )
 
 
