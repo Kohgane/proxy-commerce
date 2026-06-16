@@ -51,8 +51,14 @@
    ※ Phase 204(코드품질 정리): 죽은 목업 모듈 `manual_collector.py`(ManualCollectorService + `[Mock]`
      어댑터 9종, 호출처 0) **완전 삭제** + 해당 테스트(`TestManualCollectorService`) 제거,
      미사용 `_get_trust_checker` 헬퍼 제거. (TaobaoSellerTrustChecker 본체·테스트는 실구현이라 유지.)
-     ※ 감사결과 나머지 mock(마켓 어댑터/배송/소싱체커/data_aggregator)은 API 미연동 시 의도된
-       graceful 폴백 — 대시보드는 `DASHBOARD_SHOW_MOCK=0`(기본)에서 이미 숨김. 실구현은 외부 API·승인 필요(후속).
+     ※ 감사결과 나머지 mock(마켓 어댑터/배송/data_aggregator)은 API 미연동 시 의도된
+       graceful 폴백 — 대시보드는 `DASHBOARD_SHOW_MOCK=0`(기본)에서 이미 숨김.
+     ※ realtime API 정직성: `/api/v1/realtime/stream` 가짜 connected→정직한 501, `/metrics` is_demo 명시,
+       `/subscribe` persistent:false 명시. (백킹 모듈은 실 인메모리 구조라 유지.)
+     ※ Phase 205(소싱 모니터링 실연동): `source_monitor/checkers.py`의 가짜 랜덤 가격(`random.uniform`) 제거 →
+       `source_url`에서 범용 스크래퍼로 실 가격/재고 추출(키 불필요). 추출 실패·URL없음·`ADAPTER_DRY_RUN=1` 시
+       가짜 변동 대신 '변화 없음'으로 처리(거짓 알림 방지). 마켓 어댑터(쿠팡/11번가/네이버) `markets/adapters/`
+       스캐폴드는 실 업로드 경로(`channel_sync` 업로더) 아님 — 비대면 인터페이스 테스트용이라 사용자 영향 없음.
 4. ✅ **수집→확인·수정→업로드 중간 편집 페이지** (완료): `collect_preview.html`을 편집형으로 교체.
    제목·가격·통화·상세설명·이미지(추가/삭제)·옵션(색상/사이즈) 인라인 편집 → 💾저장
    `POST /collect/preview/<id>/save`(`collect_history_store.update()` 신설, 셀러 격리·extra_json 머지)

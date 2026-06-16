@@ -4,6 +4,9 @@ from __future__ import annotations
 import sys
 import os
 
+# 체커 실연동(Phase 205): 단위 테스트는 외부 HTTP를 타지 않도록 DRY_RUN 강제
+os.environ.setdefault("ADAPTER_DRY_RUN", "1")
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import pytest
@@ -333,6 +336,66 @@ class TestNaverSourceChecker:
         result = checker.check(self._product())
         assert result.source_product_id == 'nv-1'
         assert result.raw_data.get('marketplace') == 'naver'
+
+
+class TestLiveScraping:
+    """Phase 205: 가짜 랜덤 제거 + 실 스크래핑 경로 검증."""
+
+    def _product(self, price=5000.0):
+        from src.source_monitor.engine import SourceProduct, SourceType
+        return SourceProduct(
+            source_product_id='lv-1', source_type=SourceType.amazon_us,
+            source_url='https://shop.example.com/p',
+            seller_id='s1', seller_name='S', my_product_id='m1',
+            title='P', current_price=price, original_price=price,
+        )
+
+    def test_uses_real_scraped_price(self, monkeypatch):
+        from decimal import Decimal
+        from unittest.mock import patch
+        from src.collectors.universal_scraper import ScrapedProduct
+        from src.source_monitor.checkers import AmazonSourceChecker
+
+        monkeypatch.delenv("ADAPTER_DRY_RUN", raising=False)
+        scraped = ScrapedProduct(
+            source_url='https://shop.example.com/p', domain='shop.example.com',
+            title='P', description='', price=Decimal('4500.0'), currency='KRW',
+            in_stock=True, extraction_method='json-ld', confidence=0.9,
+        )
+        with patch("src.collectors.universal_scraper.UniversalScraper.fetch", return_value=scraped):
+            result = AmazonSourceChecker().check(self._product(price=5000.0))
+
+        assert result.price == 4500.0          # 실 스크래핑 가격 반영
+        assert result.changes_detected is True  # 5000 → 4500 변화 감지
+        assert result.raw_data.get('live') is True
+        assert result.raw_data.get('extraction_method') == 'json-ld'
+
+    def test_no_fake_change_when_unavailable(self, monkeypatch):
+        from unittest.mock import patch
+        from src.source_monitor.checkers import AmazonSourceChecker
+
+        monkeypatch.delenv("ADAPTER_DRY_RUN", raising=False)
+        # 추출 실패(빈 결과) → 가짜 변동 없이 현 상태 유지
+        from src.collectors.universal_scraper import ScrapedProduct
+        empty = ScrapedProduct(source_url='https://shop.example.com/p', domain='x',
+                               title='', description='', confidence=0.0)
+        with patch("src.collectors.universal_scraper.UniversalScraper.fetch", return_value=empty):
+            result = AmazonSourceChecker().check(self._product(price=5000.0))
+
+        assert result.price == 5000.0
+        assert result.changes_detected is False
+        assert result.raw_data.get('live') is False
+
+    def test_dry_run_skips_network(self, monkeypatch):
+        from unittest.mock import patch
+        from src.source_monitor.checkers import AmazonSourceChecker
+
+        monkeypatch.setenv("ADAPTER_DRY_RUN", "1")
+        with patch("src.collectors.universal_scraper.UniversalScraper.fetch") as mock_fetch:
+            result = AmazonSourceChecker().check(self._product(price=5000.0))
+        mock_fetch.assert_not_called()       # DRY_RUN: 네트워크 차단
+        assert result.price == 5000.0
+        assert result.raw_data.get('live') is False
 
 
 class TestGetChecker:
