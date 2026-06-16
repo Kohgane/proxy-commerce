@@ -183,6 +183,21 @@ class UploadDispatcher:
             if not (os.getenv("NAVER_CLIENT_SECRET") or os.getenv("NAVER_COMMERCE_CLIENT_SECRET")):
                 missing.append("NAVER_CLIENT_SECRET (또는 NAVER_COMMERCE_CLIENT_SECRET)")
 
+        # 쿠팡: API 키 외에 출고지/반품지(Wing 배송정보)도 필수 — 없으면 등록 거부됨
+        if market == "coupang":
+            _coupang_ship = {
+                "COUPANG_VENDOR_USER_ID": "Wing 로그인 ID",
+                "COUPANG_RETURN_CENTER_CODE": "반품지센터코드",
+                "COUPANG_OUTBOUND_SHIPPING_PLACE_CODE": "출고지코드",
+                "COUPANG_RETURN_ZIP_CODE": "반품지우편번호",
+                "COUPANG_RETURN_ADDRESS": "반품지주소",
+                "COUPANG_RETURN_CHARGE_NAME": "반품지담당자명",
+                "COUPANG_COMPANY_CONTACT_NUMBER": "반품지연락처",
+            }
+            for env, label in _coupang_ship.items():
+                if not os.getenv(env):
+                    missing.append(f"{env}({label})")
+
         # WooCommerce: 실제 업로드 경로는 WOO_* 사용, 진단은 WC_* 사용 → 둘 다 허용
         if market == "woocommerce":
             if not (os.getenv("WC_URL") or os.getenv("WOO_BASE_URL")):

@@ -41,11 +41,23 @@ logger = logging.getLogger(__name__)
 
 _SCRAPER_ENABLED = os.getenv("AI_LISTING_URL_SCRAPER_ENABLED", "1") == "1"
 _TIMEOUT_SEC = int(os.getenv("AI_LISTING_URL_SCRAPER_TIMEOUT_SEC", "10"))
-_HEAD_GET_FALLBACK = os.getenv("AI_LISTING_URL_HEAD_CHECK_GET_FALLBACK", "0") == "1"
+_HEAD_GET_FALLBACK = os.getenv("AI_LISTING_URL_HEAD_CHECK_GET_FALLBACK", "1") == "1"
 _USER_AGENT = os.getenv(
     "AI_LISTING_URL_SCRAPER_USER_AGENT",
     "ProxyCommerceBot/1.0 (+https://kohganepercentiii.com/privacy)",
 )
+# 접근성 프로브용 브라우저 UA — 봇 UA를 막는 사이트(yoshidakaban 등)에서
+# HEAD가 403/406/500을 반환해도 수집기(universal_scraper)처럼 GET으로 확인.
+_PROBE_USER_AGENT = os.getenv(
+    "AI_LISTING_URL_PROBE_USER_AGENT",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+)
+_PROBE_HEADERS = {
+    "User-Agent": _PROBE_USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8,ja;q=0.7",
+}
 _CACHE_TTL_SEC = int(os.getenv("AI_LISTING_CACHE_TTL_HOURS", "24")) * 3600
 
 # 인메모리 캐시
@@ -159,26 +171,44 @@ def head_check_url(url: str, timeout_sec: int | None = None) -> Dict[str, Any]:
         return {"ok": False, "status": None, "error": f"의존성 미설치: {exc}"}
 
     timeout = timeout_sec or _TIMEOUT_SEC
+    # 2xx/3xx(최종 200) = 접근 가능. 봇 UA를 막는 사이트가 많아 수집기와 동일한
+    # 브라우저 UA + Accept 헤더로 프로브하고, HEAD가 막히면 GET으로 재확인한다.
+    head_status: Optional[int] = None
     try:
         resp = requests.head(
             url,
             timeout=timeout,
-            headers={"User-Agent": _USER_AGENT},
+            headers=_PROBE_HEADERS,
             allow_redirects=True,
         )
-        status = int(resp.status_code)
-        # 일부 사이트는 HEAD를 막음 → 선택적으로 GET 최소 fallback
-        if _HEAD_GET_FALLBACK and status in (403, 405):
+        head_status = int(resp.status_code)
+        if head_status < 400:
+            return {"ok": True, "status": head_status, "error": None}
+    except Exception:
+        head_status = None
+
+    # HEAD가 실패/4xx/5xx → 실제 수집과 동일한 GET으로 재확인(많은 사이트가 GET만 허용)
+    if _HEAD_GET_FALLBACK:
+        try:
             resp = requests.get(
                 url,
                 timeout=timeout,
-                headers={"User-Agent": _USER_AGENT, "Range": "bytes=0-1024"},
+                headers={**_PROBE_HEADERS, "Range": "bytes=0-2048"},
                 allow_redirects=True,
+                stream=True,
             )
             status = int(resp.status_code)
-        return {"ok": status == 200, "status": status, "error": None if status == 200 else f"HTTP {status}"}
-    except Exception as exc:
-        return {"ok": False, "status": None, "error": str(exc)}
+            resp.close()
+            ok = status < 400
+            return {"ok": ok, "status": status, "error": None if ok else f"HTTP {status}"}
+        except Exception as exc:
+            return {"ok": False, "status": head_status, "error": str(exc)}
+
+    return {
+        "ok": False,
+        "status": head_status,
+        "error": f"HTTP {head_status}" if head_status is not None else "연결 실패",
+    }
 
 
 def _extract_json_ld(soup: Any) -> List[Dict[str, Any]]:
@@ -489,13 +519,12 @@ def scrape_product_page(url: str, force_refresh: bool = False) -> Dict[str, Any]
         return empty_result
 
     try:
+        # 수집기(universal_scraper)와 동일한 브라우저 헤더 사용 — 봇 UA를 막는
+        # 사이트(yoshidakaban 등)에서 500/403을 피하고 실제 수집과 동작을 일치시킨다.
         resp = requests.get(
             url,
             timeout=_TIMEOUT_SEC,
-            headers={
-                "User-Agent": _USER_AGENT,
-                "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
-            },
+            headers=_PROBE_HEADERS,
             allow_redirects=True,
         )
         status_raw = getattr(resp, "status_code", 200)

@@ -144,7 +144,33 @@
    '키워드/태그'(쉼표구분) 입력 추가 → `buildProductData`/저장에 `keywords`+`tags` 반영(`extra` 머지).
    이미지 행마다 '⭐대표' 버튼 → 클릭 시 해당 이미지를 맨 위(대표/썸네일)로 이동(`refreshImageBadges`).
    `buildProductData.thumbnail`=대표이미지. (제목/가격/통화/상세/이미지/옵션은 이미 편집 가능)
-3. ⏳ Google 로그인(설정 진단) — 진행 예정.
+3. ✅ Google 로그인 — 코드 정상 확인(라우트/provider OK), 구글 콘솔 redirect_uri 등록 안내(오너 설정 사안).
+
+## 🔧 등록/수집 오류 일괄 수정 (오너 지시 2026-06-16, 라이브 스크린샷 3종 — "저런 오류들도 다 잡자")
+오너 화면: ①AI상품등록(`/ai-create`)에서 yoshidakaban URL `HTTP 500` 접근불가(같은 URL이 수집기에선 성공)
+②쿠팡 등록 옵션·반품지 필수값 누락 대량 실패 ③WooCommerce `https:///` 빈 호스트 실패.
+1. ✅ **AI상품등록 URL 접근/스크래핑이 봇 UA로 차단** (Phase 214): `ai_listing/url_scraper.py`의
+   `head_check_url`이 **봇 UA(`ProxyCommerceBot/1.0`) + HEAD**로만 확인 → yoshidakaban 등이 403/406/500 반환.
+   → 수집기(universal_scraper)와 동일한 **브라우저 UA(`_PROBE_USER_AGENT`) + Accept 헤더**로 HEAD 시도,
+   막히면 **GET 폴백(기본 ON)** 으로 재확인하고 `<400`이면 접근 가능 판정. `scrape_product_page`의 실제
+   GET도 동일 `_PROBE_HEADERS`로 통일 → 접근확인과 실제 수집 동작 일치. (env `AI_LISTING_URL_PROBE_USER_AGENT`로 UA 조정)
+2. ✅ **쿠팡 등록 옵션/반품지 필수값 누락** (Phase 214): `uploaders/coupang_uploader.py` 페이로드가
+   옵션(items[]) 필수값(`taxType`/`adultOnly`/`unitCount`/`maximumBuyForPersonPeriod`/`overseasPurchased`/
+   `notices`(고시정보)/`contents`(상세)/이미지타입)을 null·빈값으로 둬서 쿠팡이 전부 거부. 이미지타입도
+   잘못된 `PRODUCT`였음(→ 첫 장 `REPRESENTATION`, 나머지 `DETAIL`). 상품 레벨 `unionDeliveryType`/
+   `remoteAreaDeliverable`/반품지(주소·우편번호·담당자·연락처·배송비)/출고지/`vendorUserId`도 누락.
+   → 표준값·고시정보 5항목·상세컨텐츠를 채우고, **셀러 고유 출고지/반품지/Wing ID는 추측 불가라 환경변수로
+   받음**. 미설정 시 가짜 성공 대신 **사전 차단+누락 env 안내**(정직). 사전검증(upload_dispatcher)에도 추가.
+   - 오너 액션(durable): Render에 Wing>업체정보>배송정보 값으로 `COUPANG_VENDOR_USER_ID`,
+     `COUPANG_RETURN_CENTER_CODE`, `COUPANG_OUTBOUND_SHIPPING_PLACE_CODE`, `COUPANG_RETURN_ZIP_CODE`,
+     `COUPANG_RETURN_ADDRESS`(+선택 `COUPANG_RETURN_ADDRESS_DETAIL`), `COUPANG_RETURN_CHARGE_NAME`,
+     `COUPANG_COMPANY_CONTACT_NUMBER`(+선택 `COUPANG_RETURN_CHARGE` 기본5000, `COUPANG_OVERSEAS_PURCHASED`) 설정.
+3. ✅ **WooCommerce `https:///` 빈 호스트 실패** (Phase 214): `vendors/woocommerce_client.py`가 ①모듈
+   import 시점에 `BASE` 고정 → seller_market_env 주입을 못 봄, ②`WOO_BASE_URL`만 읽고 셀러가 연결한
+   `WC_URL`은 무시, ③scheme 검증 없음 → `urljoin(None,…)`로 `/wp-json/...` 상대경로 → 'No scheme supplied'.
+   → `_woo_base()`/`_woo_ck()`/`_woo_cs()`/`_woo_endpoint()` **호출 시점 읽기**로 전환, `WC_URL`·`WOO_BASE_URL`
+   (키도 `WC_KEY`/`WOO_CK`, `WC_SECRET`/`WOO_CS`) 둘 다 지원, scheme 없으면 `https://` 보정, base 미설정 시
+   정직한 RuntimeError. → 인앱 `WC_URL`로 연결한 셀러도 실제 업로드 성공.
 
 ## 작업 방식
 - 브랜치 `claude/magical-noether-oo4831`에서 작업 → PR 생성·main 머지(오너 승인됨)로 배포.
