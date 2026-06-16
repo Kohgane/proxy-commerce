@@ -74,6 +74,11 @@
 
           <form class="market-connect-form" data-market="{{ m.market }}" autocomplete="off">
             {% for f in m.fields %}
+            {% if f.section %}
+            <div class="mt-3 mb-2 pt-2 border-top">
+              <div class="fw-semibold small text-primary">{{ f.section }}</div>
+            </div>
+            {% endif %}
             <div class="mb-2">
               <label class="form-label small mb-1">
                 {{ f.label }}
@@ -88,6 +93,7 @@
                 placeholder="{{ '저장됨 (' ~ f.display ~ ')' if (f.has_value and f.secret) else (f.display or f.env) }}"
                 value="{{ '' if f.secret else f.display }}"
               >
+              {% if f.help %}<div class="form-text small text-muted mt-1">{{ f.help }}</div>{% endif %}
             </div>
             {% endfor %}
 

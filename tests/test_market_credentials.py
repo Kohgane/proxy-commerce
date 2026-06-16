@@ -69,6 +69,42 @@ class TestStoreRoundtrip:
             mc.save("seller1", "gmarket", {"X": "y"})
 
 
+class TestCoupangShippingFields:
+    def test_coupang_form_includes_shipping_fields(self, mc):
+        """셀러가 인앱에서 출고지·반품지를 입력할 수 있게 필드가 노출된다."""
+        envs = {f["env"] for f in mc.MARKET_CRED_FIELDS["coupang"]}
+        for env in (
+            "COUPANG_VENDOR_USER_ID", "COUPANG_RETURN_CENTER_CODE",
+            "COUPANG_OUTBOUND_SHIPPING_PLACE_CODE", "COUPANG_RETURN_ZIP_CODE",
+            "COUPANG_RETURN_ADDRESS", "COUPANG_RETURN_CHARGE_NAME",
+            "COUPANG_COMPANY_CONTACT_NUMBER",
+        ):
+            assert env in envs
+
+    def test_shipping_fields_not_required_so_connection_unbroken(self, mc):
+        """배송정보는 form required=False → API 키만으로도 is_connected 유지(연결테스트 불변)."""
+        ship = {
+            "COUPANG_VENDOR_USER_ID", "COUPANG_RETURN_CENTER_CODE",
+            "COUPANG_OUTBOUND_SHIPPING_PLACE_CODE",
+        }
+        for f in mc.MARKET_CRED_FIELDS["coupang"]:
+            if f["env"] in ship:
+                assert f.get("required") is False
+        mc.save("s1", "coupang", {
+            "COUPANG_ACCESS_KEY": "ak", "COUPANG_SECRET_KEY": "sk", "COUPANG_VENDOR_ID": "A1"})
+        assert mc.is_connected("s1", "coupang") is True
+
+    def test_saved_shipping_value_injected_via_seller_env(self, mc, monkeypatch):
+        """셀러가 저장한 반품지센터코드가 seller_market_env로 주입된다."""
+        monkeypatch.delenv("COUPANG_RETURN_CENTER_CODE", raising=False)
+        mc.save("s2", "coupang", {
+            "COUPANG_ACCESS_KEY": "ak", "COUPANG_SECRET_KEY": "sk", "COUPANG_VENDOR_ID": "A1",
+            "COUPANG_RETURN_CENTER_CODE": "1000274592"})
+        import os as _os
+        with mc.seller_market_env("s2", "coupang"):
+            assert _os.getenv("COUPANG_RETURN_CENTER_CODE") == "1000274592"
+
+
 class TestEncryption:
     def test_secret_not_plaintext_on_disk(self, mc, tmp_path):
         mc.save("seller1", "shopify", {

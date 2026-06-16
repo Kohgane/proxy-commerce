@@ -18,3 +18,4 @@ fake-useragent>=1.4
 pydantic>=2.0
 APScheduler>=3.10
 bcrypt>=3.0,<5.0
+cryptography>=42.0,<49
