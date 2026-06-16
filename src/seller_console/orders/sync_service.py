@@ -17,6 +17,7 @@ class OrderSyncService:
         from src.seller_console.market_adapters.smartstore_adapter import SmartStoreAdapter
         from src.seller_console.market_adapters.eleven_adapter import ElevenAdapter
         from src.seller_console.market_adapters.woocommerce_adapter import WooCommerceAdapter
+        from src.seller_console.market_adapters.shopify_adapter import ShopifyAdapter
 
         self.sheets = OrderSheetsAdapter()
         self.adapters = {
@@ -25,6 +26,8 @@ class OrderSyncService:
             "11st": ElevenAdapter(),
             # Phase 132: kohganemultishop → woocommerce (kohganemultishop.org 실연동)
             "woocommerce": WooCommerceAdapter(),
+            # Phase 206: Shopify 주문수집·배송추적 (GraphQL + client_credentials)
+            "shopify": ShopifyAdapter(),
         }
 
     def sync_all(self, since: datetime = None) -> dict:
