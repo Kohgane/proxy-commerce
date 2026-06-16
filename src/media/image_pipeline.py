@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 _PIPELINE_ENABLED = os.getenv("IMAGE_PIPELINE_ENABLED", "1") == "1"
 _INPAINT_ENABLED = os.getenv("IMAGE_INPAINT_ENABLED", "1") == "1"
+# 처리본을 CDN(Cloudinary)에 업로드해 새 URL을 발급할지. 기본 on이지만 자격증명 없으면 자동 비활성.
+_CDN_UPLOAD_ENABLED = os.getenv("IMAGE_CDN_UPLOAD_ENABLED", "1") == "1"
 
 # 채널별 크롭 비율 (width : height)
 _CHANNEL_CROP_RATIOS: Dict[str, Tuple[int, int]] = {
@@ -57,7 +59,7 @@ class ImageProcessResult:
     """이미지 처리 결과."""
 
     original_url: str
-    processed_url: str        # 처리 완료 URL (stub: 원본 반환)
+    processed_url: str        # 처리 완료 URL (CDN 업로드 성공 시 호스팅 URL, 아니면 원본)
     processed_bytes: Optional[bytes] = None
     width: int = 0
     height: int = 0
@@ -66,6 +68,7 @@ class ImageProcessResult:
     watermark_removed: bool = False
     background_unified: bool = False
     webp_converted: bool = False
+    cdn_uploaded: bool = False   # 처리본을 CDN에 업로드해 새 URL을 발급했는지
     file_size_bytes: int = 0
     error: Optional[str] = None
     success: bool = True
@@ -81,6 +84,7 @@ class ImageProcessResult:
             "watermark_removed": self.watermark_removed,
             "background_unified": self.background_unified,
             "webp_converted": self.webp_converted,
+            "cdn_uploaded": self.cdn_uploaded,
             "file_size_bytes": self.file_size_bytes,
             "error": self.error,
             "success": self.success,
@@ -212,6 +216,57 @@ def _convert_to_webp(image_bytes: bytes, quality: int = 85) -> bytes:
 
 
 # ---------------------------------------------------------------------------
+# CDN 업로드 (Cloudinary graceful)
+# ---------------------------------------------------------------------------
+
+def _cloudinary_configured() -> bool:
+    """Cloudinary 자격증명(cloud_name/api_key/api_secret) 모두 존재하는지."""
+    return bool(
+        os.getenv("CLOUDINARY_CLOUD_NAME")
+        and os.getenv("CLOUDINARY_API_KEY")
+        and os.getenv("CLOUDINARY_API_SECRET")
+    )
+
+
+def _upload_to_cdn(image_bytes: bytes, *, prefer_webp: bool = False) -> Optional[str]:
+    """처리된 이미지 바이트를 Cloudinary에 업로드하고 보안 URL을 반환.
+
+    자격증명 미설정·라이브러리 미설치·업로드 실패 시 None을 반환(호출부는 원본 URL 유지).
+    거짓 성공을 보고하지 않기 위해 실패는 None으로 정직하게 전달한다.
+    """
+    if not _CDN_UPLOAD_ENABLED or not _cloudinary_configured() or not image_bytes:
+        return None
+    if os.getenv("ADAPTER_DRY_RUN", "0") == "1":
+        logger.info("ADAPTER_DRY_RUN=1 — CDN 업로드 차단")
+        return None
+    try:
+        import cloudinary
+        import cloudinary.uploader
+
+        cloudinary.config(
+            cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+            api_key=os.getenv("CLOUDINARY_API_KEY"),
+            api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+            secure=True,
+        )
+        folder = os.getenv("CLOUDINARY_FOLDER", "proxy-commerce")
+        opts: Dict[str, Any] = {"folder": folder, "resource_type": "image"}
+        if prefer_webp:
+            opts["format"] = "webp"
+        result = cloudinary.uploader.upload(io.BytesIO(image_bytes), **opts)
+        url = (result or {}).get("secure_url") or (result or {}).get("url")
+        if url:
+            return str(url)
+        return None
+    except ImportError:
+        logger.debug("cloudinary 미설치 — CDN 업로드 스킵")
+        return None
+    except Exception as exc:
+        logger.warning("CDN 업로드 실패: %s", exc)
+        return None
+
+
+# ---------------------------------------------------------------------------
 # 공개 API
 # ---------------------------------------------------------------------------
 
@@ -277,9 +332,10 @@ def process_image(
     except Exception:
         pass
 
-    # 실제 운영 시 처리된 이미지를 CDN에 업로드 후 URL 반환
-    # 현재는 원본 URL 반환 (stub)
-    processed_url = image_url
+    # 처리본을 CDN(Cloudinary)에 업로드해 새 URL 발급. 미설정/실패 시 원본 URL 유지(정직).
+    cdn_url = _upload_to_cdn(image_bytes, prefer_webp=webp_converted)
+    processed_url = cdn_url or image_url
+    cdn_uploaded = bool(cdn_url)
 
     return ImageProcessResult(
         original_url=image_url,
@@ -292,6 +348,7 @@ def process_image(
         watermark_removed=watermark_removed,
         background_unified=False,
         webp_converted=webp_converted,
+        cdn_uploaded=cdn_uploaded,
         file_size_bytes=len(image_bytes),
         success=True,
     )
@@ -323,6 +380,7 @@ def image_pipeline_stats(results: List[ImageProcessResult]) -> Dict[str, Any]:
     wm_detected = sum(1 for r in results if r.watermark_detected)
     wm_removed = sum(1 for r in results if r.watermark_removed)
     webp = sum(1 for r in results if r.webp_converted)
+    cdn_uploaded = sum(1 for r in results if r.cdn_uploaded)
     return {
         "total": total,
         "success": success,
@@ -330,6 +388,8 @@ def image_pipeline_stats(results: List[ImageProcessResult]) -> Dict[str, Any]:
         "watermark_detected": wm_detected,
         "watermark_removed": wm_removed,
         "webp_converted": webp,
+        "cdn_uploaded": cdn_uploaded,
         "pipeline_enabled": _PIPELINE_ENABLED,
         "inpaint_enabled": _INPAINT_ENABLED,
+        "cdn_configured": _cloudinary_configured(),
     }
