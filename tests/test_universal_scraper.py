@@ -309,3 +309,38 @@ class TestUniversalScraperFetch:
             result = scraper.fetch("https://example.com/p")
         assert result.title == "Test Item"
         assert result.extraction_method == "json-ld"
+
+
+class TestParseHtml:
+    """parse_html — 봇 차단 사이트 대응(제공 HTML 파싱, 네트워크 fetch 없음)."""
+
+    JSONLD_HTML = """
+    <html><head>
+    <script type="application/ld+json">
+    {"@type":"Product","name":"Porter Backpack","description":"bag",
+     "image":["https://img.yoshida.com/bag.jpg"],
+     "offers":{"price":"33000","priceCurrency":"JPY","availability":"https://schema.org/InStock"}}
+    </script>
+    </head></html>
+    """
+
+    def test_parse_html_extracts_without_network(self):
+        scraper = UniversalScraper()
+        result = scraper.parse_html(self.JSONLD_HTML, "https://www.yoshidakaban.com/ko/product/102492.html")
+        assert result.title == "Porter Backpack"
+        assert result.price == Decimal("33000")
+        assert result.currency == "JPY"
+        assert result.images == ["https://img.yoshida.com/bag.jpg"]
+
+    def test_parse_html_empty_returns_empty(self):
+        scraper = UniversalScraper()
+        result = scraper.parse_html("", "https://example.com/p")
+        assert result.title == ""
+        assert result.price is None
+
+    def test_fetch_delegates_to_parse_html(self):
+        scraper = UniversalScraper()
+        with patch("src.collectors.universal_scraper._fetch_html", return_value=self.JSONLD_HTML):
+            result = scraper.fetch("https://blocked-site.example/p")
+        assert result.title == "Porter Backpack"
+        assert result.currency == "JPY"

@@ -187,6 +187,15 @@ class UniversalScraper:
 
     def fetch(self, url: str) -> ScrapedProduct:
         """URL에서 상품 정보 수집. ADAPTER_DRY_RUN=1이면 빈 결과 반환."""
+        html = _fetch_html(url)
+        return self.parse_html(html, url)
+
+    def parse_html(self, html: Optional[str], url: str) -> ScrapedProduct:
+        """제공된 HTML에서 상품 정보 파싱 (네트워크 fetch 없음).
+
+        크롬확장이 사용자 브라우저의 페이지 HTML을 보내면, 서버가 직접 fetch할 수 없는
+        봇 차단(403) 사이트도 동일한 JSON-LD/OG/Microdata/Heuristic 파이프라인으로 수집한다.
+        """
         domain = _extract_domain(url)
         empty = ScrapedProduct(
             source_url=url,
@@ -197,7 +206,6 @@ class UniversalScraper:
             confidence=0.0,
         )
 
-        html = _fetch_html(url)
         if not html:
             return empty
 
