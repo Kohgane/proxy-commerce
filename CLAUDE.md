@@ -92,7 +92,15 @@
      **원본 URL 유지**(거짓 호스팅 URL 미보고). `IMAGE_CDN_UPLOAD_ENABLED`(기본1)로 토글.
    - 오너 액션(durable): Render에 `CLOUDINARY_CLOUD_NAME`/`CLOUDINARY_API_KEY`/`CLOUDINARY_API_SECRET`
      (+선택 `CLOUDINARY_FOLDER`) 설정해야 실제 재호스팅됨. 없으면 원본 URL 그대로 사용.
-3. ⏳ **신규 마켓 자동발행** — 일부 오너측 마켓 승인/IP 필요 — 진행 예정.
+3. ✅ **자동발행 실 업로더 연동** (코드-온리 부분 완료, Phase 208): `listing/auto_publish.py`의
+   `auto_publish()`가 쿠팡=**mock 퍼블리셔**(`CoupangPublisher`, 가짜 uuid), 스마트스토어/11번가=
+   **가짜 UUID stub**으로 발행을 흉내냈음(#2와 같은 '작업 버림' 패턴). → `_upload_to_channel`을
+   수동 업로드(UploadDispatcher)와 **동일한 실 업로더**(`channel_sync.{coupang,smartstore,elevenst}_uploader`
+   → `src.uploaders.*`)로 재배선. 자격증명 미설정·API 실패 시 가짜 성공 대신 **success=False+사유**(정직).
+   - 오너 액션(durable): 실 자동발행하려면 `LISTING_AUTO_PUBLISH=1` + 각 채널 자격증명
+     (`COUPANG_ACCESS_KEY/SECRET/VENDOR_ID`, `NAVER_CLIENT_ID/SECRET`(+네이버 허용IP), `ELEVENST_API_KEY`).
+   - **외부 승인에 막힌 항목(코드 아님, 오너측)**: Amazon SP-API / eBay / Shopee = 셀러 등록·OAuth 승인·
+     키 발급 필요(`markets/adapters/{amazon,ebay,shopee}.py`는 스캐폴드 stub 유지). 승인 완료 후 실연동 착수.
 
 ## 작업 방식
 - 브랜치 `claude/magical-noether-oo4831`에서 작업 → PR 생성·main 머지(오너 승인됨)로 배포.
