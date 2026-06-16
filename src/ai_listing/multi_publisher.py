@@ -33,6 +33,7 @@ class PublishJob:
     job_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     status: str = "queued"  # queued | publishing | success | failed
     external_product_id: Optional[str] = None
+    product_url: Optional[str] = None        # 마켓 실제 상품 페이지 URL
     error_message: Optional[str] = None
     published_at: Optional[str] = None
 
@@ -67,6 +68,7 @@ class PublishResult:
                     "market": j.market,
                     "status": j.status,
                     "external_product_id": j.external_product_id,
+                    "product_url": j.product_url,
                     "error_message": j.error_message,
                     "published_at": j.published_at,
                 }
@@ -75,40 +77,88 @@ class PublishResult:
         }
 
 
-# ── 마켓 어댑터 (mock) ────────────────────────────────────────────────────────
+# ── 실 업로더 연동 (수동 업로드와 동일한 UploadDispatcher 경로) ────────────────
 
-def _mock_publish(job: PublishJob) -> PublishJob:
-    """Mock 마켓 등록 (실제 API 미연결 시)."""
-    import time
-    time.sleep(0.05)  # 네트워크 지연 시뮬레이션
-    job.status = "success"
-    job.external_product_id = f"MOCK-{job.market.upper()}-{job.job_id[:8]}"
-    job.published_at = datetime.now(timezone.utc).isoformat()
-    logger.info("[mock] %s 등록 성공: %s", job.market, job.external_product_id)
-    return job
+# AI 페이지 마켓 코드 → UploadDispatcher 마켓 코드
+_MARKET_CODE_MAP = {
+    "coupang": "coupang",
+    "smartstore": "smartstore",
+    "11st": "elevenst",
+    "elevenst": "elevenst",
+    "woocommerce": "woocommerce",
+    "kohganemultishop": "woocommerce",
+    "shopify": "shopify",
+}
+
+
+def _build_dispatch_product(job: PublishJob) -> Dict[str, Any]:
+    """AI 분석/마켓별 데이터 → UploadDispatcher product_data 형식.
+
+    market_data[market] = {title, description, tags, category_code, suggested_price_krw}
+    analysis = 공통 분석(이미지/원문/브랜드 등).
+    """
+    pd = job.product_data or {}
+    analysis = pd.get("analysis") or {}
+    md = (pd.get("market_data") or {}).get(job.market) or {}
+
+    images = (
+        analysis.get("images")
+        or analysis.get("image_urls")
+        or analysis.get("processed_image_urls")
+        or []
+    )
+    price_krw = md.get("suggested_price_krw") or analysis.get("suggested_price_krw") or 0
+    title = md.get("title") or analysis.get("title_translated") or analysis.get("title") or ""
+    return {
+        "sku": pd.get("listing_id") or job.ai_listing_id or "",
+        "title": title,
+        "title_ko": title,
+        "sell_price_krw": price_krw,
+        "price_krw": price_krw,
+        "currency": "KRW",
+        "category_code": md.get("category_code") or analysis.get("category_code") or "",
+        "description": md.get("description") or analysis.get("description") or "",
+        "description_html": md.get("description") or analysis.get("description") or "",
+        "images": images if isinstance(images, list) else [],
+        "options": analysis.get("options") or {},
+        "keywords": md.get("tags") or analysis.get("keywords") or [],
+        "brand": analysis.get("brand") or "",
+        "url": analysis.get("source_url") or analysis.get("url") or "",
+    }
 
 
 def _publish_to_market(job: PublishJob) -> PublishJob:
-    """단일 마켓 등록 (어댑터 연동 또는 mock)."""
-    job.status = "publishing"
-    try:
-        # Phase 143 auto_publish 어댑터 연동 시도
-        from src.listing.auto_publish import publish_to_channel
+    """단일 마켓 실 등록 — 수동 업로드와 동일한 UploadDispatcher(실 업로더) 사용.
 
-        result = publish_to_channel(
-            channel=job.market,
-            product=job.product_data,
-        )
-        if result and result.get("ok"):
+    자격증명 미설정·API 실패 시 가짜 성공이 아니라 정직하게 실패/큐로 기록한다.
+    지원하지 않는 마켓(쇼피/아마존 등 미연동)은 실패 + 사유.
+    """
+    job.status = "publishing"
+    mapped = _MARKET_CODE_MAP.get(job.market)
+    if not mapped:
+        job.status = "failed"
+        job.error_message = f"{job.market}는 자동발행 미연동입니다(마켓 승인·연동 필요)."
+        return job
+    try:
+        from src.seller_console.upload_dispatcher import UploadDispatcher
+
+        product_data = _build_dispatch_product(job)
+        result = UploadDispatcher().dispatch(product_data, [mapped])
+        r = result.results[0] if result.results else None
+        if r is None:
+            job.status = "failed"
+            job.error_message = "업로드 결과가 비어 있습니다."
+        elif r.success:
             job.status = "success"
-            job.external_product_id = result.get("product_id", f"EXT-{job.job_id[:8]}")
+            job.external_product_id = r.external_product_id or f"EXT-{job.job_id[:8]}"
+            job.product_url = r.external_url
             job.published_at = datetime.now(timezone.utc).isoformat()
+        elif r.queued:
+            job.status = "failed"  # 실제 등록은 아직 안 됨 → 재시도 큐로
+            job.error_message = (r.message or "큐 적재됨") + (f" ({r.hint})" if r.hint else "")
         else:
             job.status = "failed"
-            job.error_message = result.get("error", "등록 실패") if result else "응답 없음"
-    except (ImportError, AttributeError):
-        # Phase 143 어댑터 미연결 → mock
-        job = _mock_publish(job)
+            job.error_message = (r.message or "등록 실패") + (f" ({r.hint})" if r.hint else "")
     except Exception as exc:
         job.status = "failed"
         job.error_message = str(exc)[:200]

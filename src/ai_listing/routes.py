@@ -555,8 +555,9 @@ function showPublishResults(data) {
   const rows = results.map(r => {
     const icon = r.status === 'success' ? '✅' : '❌';
     const retry = r.status === 'failed' ? `<button class='btn btn-xs btn-outline-danger ms-2 btn-sm' onclick='retryMarket("${r.market}")'>재시도</button>` : '';
+    const link = r.product_url ? ` · <a href="${r.product_url}" target="_blank" rel="noopener noreferrer">마켓 페이지 열기 →</a>` : '';
     return `<li class='list-group-item d-flex justify-content-between align-items-center'>
-      <span>${icon} <strong>${r.market}</strong> ${r.external_product_id ? '— ID: ' + r.external_product_id : ''}</span>
+      <span>${icon} <strong>${r.market}</strong> ${r.external_product_id ? '— ID: ' + r.external_product_id : ''}${link}</span>
       <span>${r.error_message ? '<span class=text-danger small>' + r.error_message + '</span>' : ''} ${retry}</span>
     </li>`;
   }).join('');
@@ -613,7 +614,8 @@ def ai_listing_create():
         current_phase = get_current_phase()
     except Exception:
         current_phase = 153
-    all_markets = ["coupang", "smartstore", "11st", "gmarket"]
+    # 실 업로더 연동 마켓(쿠팡/스마트스토어/11번가/Shopify/코가네멀티샵) + 미연동(쇼피/아마존=승인 필요)
+    all_markets = ["coupang", "smartstore", "11st", "shopify", "woocommerce", "gmarket", "shopee", "amazon"]
     default_weight_kg = float(os.getenv("PRICING_DEFAULT_WEIGHT_KG", "0.5"))
     return render_template_string(
         _AI_CREATE_PAGE,
