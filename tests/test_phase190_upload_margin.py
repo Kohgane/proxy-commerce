@@ -94,6 +94,20 @@ class TestPrevalidate:
         from src.seller_console.upload_dispatcher import UploadDispatcher
         return UploadDispatcher()
 
+    @staticmethod
+    def _set_coupang_envs(monkeypatch):
+        """쿠팡 등록에 필요한 API 키 + 출고지/반품지 env를 모두 설정."""
+        monkeypatch.setenv("COUPANG_ACCESS_KEY", "fake")
+        monkeypatch.setenv("COUPANG_SECRET_KEY", "fake")
+        monkeypatch.setenv("COUPANG_VENDOR_ID", "fake")
+        monkeypatch.setenv("COUPANG_VENDOR_USER_ID", "wing_user")
+        monkeypatch.setenv("COUPANG_RETURN_CENTER_CODE", "1000274592")
+        monkeypatch.setenv("COUPANG_OUTBOUND_SHIPPING_PLACE_CODE", "7437895")
+        monkeypatch.setenv("COUPANG_RETURN_ZIP_CODE", "06000")
+        monkeypatch.setenv("COUPANG_RETURN_ADDRESS", "서울시 강남구 1")
+        monkeypatch.setenv("COUPANG_RETURN_CHARGE_NAME", "반품담당")
+        monkeypatch.setenv("COUPANG_COMPANY_CONTACT_NUMBER", "02-1234-5678")
+
     def test_prevalidate_token_missing(self, monkeypatch):
         """필수 환경변수 미설정 시 token_missing 오류."""
         monkeypatch.delenv("COUPANG_ACCESS_KEY", raising=False)
@@ -110,9 +124,7 @@ class TestPrevalidate:
     def test_prevalidate_missing_title(self, monkeypatch):
         """상품명 없을 때 missing_field 오류."""
         # 환경변수 미리 채워둠
-        monkeypatch.setenv("COUPANG_ACCESS_KEY", "fake")
-        monkeypatch.setenv("COUPANG_SECRET_KEY", "fake")
-        monkeypatch.setenv("COUPANG_VENDOR_ID", "fake")
+        self._set_coupang_envs(monkeypatch)
 
         product = {"title": "", "price": 10000}
         results = self._dispatcher().prevalidate(product, ["coupang"])
@@ -121,9 +133,7 @@ class TestPrevalidate:
 
     def test_prevalidate_missing_price(self, monkeypatch):
         """가격 없을 때 missing_field 오류."""
-        monkeypatch.setenv("COUPANG_ACCESS_KEY", "fake")
-        monkeypatch.setenv("COUPANG_SECRET_KEY", "fake")
-        monkeypatch.setenv("COUPANG_VENDOR_ID", "fake")
+        self._set_coupang_envs(monkeypatch)
 
         product = {"title": "좋은 상품", "price": 0}
         results = self._dispatcher().prevalidate(product, ["coupang"])
@@ -132,9 +142,7 @@ class TestPrevalidate:
 
     def test_prevalidate_passes_when_fields_ok(self, monkeypatch):
         """필수 필드 + 환경변수 모두 있으면 통과."""
-        monkeypatch.setenv("COUPANG_ACCESS_KEY", "fake")
-        monkeypatch.setenv("COUPANG_SECRET_KEY", "fake")
-        monkeypatch.setenv("COUPANG_VENDOR_ID", "fake")
+        self._set_coupang_envs(monkeypatch)
 
         product = {"title": "좋은 상품", "price": 9900}
         results = self._dispatcher().prevalidate(product, ["coupang"])

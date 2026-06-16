@@ -6,15 +6,48 @@ import os
 import time
 
 import requests
-from urllib.parse import urljoin
 
 logger = logging.getLogger(__name__)
 
-BASE = os.getenv('WOO_BASE_URL')
-CK = os.getenv('WOO_CK')
-CS = os.getenv('WOO_CS')
 WOO_WEBHOOK_SECRET = os.getenv('WOO_WEBHOOK_SECRET', '')
 WOO_API_VERSION = os.getenv('WOO_API_VERSION', 'wc/v3')
+
+
+def _woo_base() -> str:
+    """WooCommerce 스토어 base URL을 호출 시점에 읽고 정규화한다.
+
+    - `WC_URL`(인앱 셀러 자격증명) / `WOO_BASE_URL`(레거시) 둘 다 지원.
+    - scheme 없으면 https:// 보정 → `https:///...` 빈 호스트 오류 방지.
+    - 모듈 import 시점이 아닌 호출 시점에 읽어 seller_market_env 주입을 반영.
+    """
+    raw = (os.getenv('WC_URL') or os.getenv('WOO_BASE_URL') or '').strip()
+    if not raw:
+        return ''
+    if not raw.startswith(('http://', 'https://')):
+        raw = 'https://' + raw
+    return raw.rstrip('/')
+
+
+def _woo_ck() -> str:
+    """Consumer Key — WOO_CK/WC_KEY 둘 다 지원, 호출 시점에 읽음."""
+    return os.getenv('WOO_CK') or os.getenv('WC_KEY') or ''
+
+
+def _woo_cs() -> str:
+    """Consumer Secret — WOO_CS/WC_SECRET 둘 다 지원, 호출 시점에 읽음."""
+    return os.getenv('WOO_CS') or os.getenv('WC_SECRET') or ''
+
+
+def _woo_endpoint(resource: str = '') -> str:
+    """WooCommerce REST 엔드포인트 절대 URL. base 미설정 시 정직하게 실패."""
+    base = _woo_base()
+    if not base:
+        raise RuntimeError(
+            "WooCommerce 스토어 URL이 설정되지 않았습니다 "
+            "(WC_URL 또는 WOO_BASE_URL). 마켓 연결(키 설정)에서 사이트 URL을 입력하세요."
+        )
+    suffix = f"/{resource.lstrip('/')}" if resource else ""
+    return f"{base}/wp-json/{WOO_API_VERSION}{suffix}"
 
 # WooCommerce 카테고리 매핑 (slug 기반)
 WOO_CATEGORY_MAP = {
@@ -30,7 +63,7 @@ _ORIGIN_MAP = {'JP': '일본', 'FR': '프랑스', 'US': '미국', 'KR': '한국'
 
 
 def _auth_params():
-    return {"consumer_key": CK, "consumer_secret": CS}
+    return {"consumer_key": _woo_ck(), "consumer_secret": _woo_cs()}
 
 
 def _request_with_retry(method: str, url: str, max_retries: int = 3, **kwargs) -> requests.Response:
@@ -70,7 +103,7 @@ def get_or_create_category(category_slug: str) -> int:
     WooCommerce 카테고리를 slug로 조회, 없으면 생성.
     카테고리 ID를 반환.
     """
-    url = urljoin(BASE, f"/wp-json/{WOO_API_VERSION}/products/categories")
+    url = _woo_endpoint("products/categories")
     r = _request_with_retry('GET', url, params={'slug': category_slug})
     categories = r.json()
 
@@ -87,7 +120,7 @@ def get_or_create_tag(tag_name: str) -> int:
     WooCommerce 태그를 이름으로 조회, 없으면 생성.
     태그 ID를 반환.
     """
-    url = urljoin(BASE, f"/wp-json/{WOO_API_VERSION}/products/tags")
+    url = _woo_endpoint("products/tags")
     r = _request_with_retry('GET', url, params={'search': tag_name})
     tags = r.json()
 
@@ -239,13 +272,13 @@ def verify_woo_webhook(payload: bytes, signature: str) -> bool:
 
 def get_store_info() -> dict:
     """WooCommerce 스토어 정보 조회 (연결 테스트용)."""
-    url = urljoin(BASE, f"/wp-json/{WOO_API_VERSION}")
+    url = _woo_endpoint()
     r = _request_with_retry('GET', url)
     return r.json()
 
 
 def _find_by_sku(sku: str):
-    url = urljoin(BASE, f"/wp-json/{WOO_API_VERSION}/products")
+    url = _woo_endpoint("products")
     r = _request_with_retry('GET', url, params={'sku': sku})
     lst = r.json()
     return lst[0] if lst else None
@@ -258,11 +291,11 @@ def upsert_product(prod: dict):
     if found:
         pid = found['id']
         logger.info("WooCommerce 상품 갱신: SKU=%s, ID=%s", sku, pid)
-        u = _request_with_retry('PUT', urljoin(BASE, f"/wp-json/{WOO_API_VERSION}/products/{pid}"), json=prod)
+        u = _request_with_retry('PUT', _woo_endpoint(f"products/{pid}"), json=prod)
         return u.json()
     else:
         logger.info("WooCommerce 상품 신규 등록: SKU=%s", sku)
-        c = _request_with_retry('POST', urljoin(BASE, f"/wp-json/{WOO_API_VERSION}/products"), json=prod)
+        c = _request_with_retry('POST', _woo_endpoint("products"), json=prod)
         return c.json()
 
 
@@ -271,7 +304,7 @@ def upsert_batch(products: list, batch_size: int = 10) -> dict:
     WooCommerce Batch API 활용한 대량 상품 처리.
     /products/batch 엔드포인트 사용.
     """
-    url = urljoin(BASE, f"/wp-json/{WOO_API_VERSION}/products/batch")
+    url = _woo_endpoint("products/batch")
     results = {'created': 0, 'updated': 0, 'errors': []}
 
     for i in range(0, len(products), batch_size):

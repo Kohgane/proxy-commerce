@@ -81,3 +81,62 @@ def test_allows_200_page_url(client):
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["ok"] is True
+
+
+# ──────────────────────────────────────────────────────────
+# head_check_url 단위 테스트 — 봇 차단 사이트 GET 폴백
+# ──────────────────────────────────────────────────────────
+
+
+class _Resp:
+    def __init__(self, status_code):
+        self.status_code = status_code
+
+    def close(self):
+        pass
+
+
+def test_head_check_falls_back_to_get_when_head_blocked():
+    """HEAD가 500(봇 차단)이어도 GET이 200이면 접근 가능으로 판정."""
+    from src.ai_listing import url_scraper
+
+    with (
+        mock.patch.object(url_scraper, "_HEAD_GET_FALLBACK", True),
+        mock.patch("requests.head", return_value=_Resp(500)),
+        mock.patch("requests.get", return_value=_Resp(200)) as mget,
+    ):
+        result = url_scraper.head_check_url("https://www.yoshidakaban.com/ko/product/102501.html")
+
+    assert result["ok"] is True
+    assert result["status"] == 200
+    mget.assert_called_once()
+
+
+def test_head_check_ok_on_head_200_without_get():
+    """HEAD가 바로 200이면 GET 폴백 없이 통과."""
+    from src.ai_listing import url_scraper
+
+    with (
+        mock.patch("requests.head", return_value=_Resp(200)),
+        mock.patch("requests.get") as mget,
+    ):
+        result = url_scraper.head_check_url("https://example.com/product")
+
+    assert result["ok"] is True
+    assert result["status"] == 200
+    mget.assert_not_called()
+
+
+def test_head_check_fails_when_both_blocked():
+    """HEAD/GET 모두 404면 정직하게 실패."""
+    from src.ai_listing import url_scraper
+
+    with (
+        mock.patch.object(url_scraper, "_HEAD_GET_FALLBACK", True),
+        mock.patch("requests.head", return_value=_Resp(404)),
+        mock.patch("requests.get", return_value=_Resp(404)),
+    ):
+        result = url_scraper.head_check_url("https://example.com/missing")
+
+    assert result["ok"] is False
+    assert result["status"] == 404

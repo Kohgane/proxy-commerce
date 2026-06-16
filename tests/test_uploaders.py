@@ -34,6 +34,14 @@ def coupang_uploader(monkeypatch):
     monkeypatch.setenv('COUPANG_ACCESS_KEY', 'test-access-key')
     monkeypatch.setenv('COUPANG_SECRET_KEY', 'test-secret-key')
     monkeypatch.setenv('COUPANG_VENDOR_ID', 'test-vendor')
+    # 출고지/반품지 Wing 배송정보(필수) — 등록 전 사전검증 통과용
+    monkeypatch.setenv('COUPANG_VENDOR_USER_ID', 'wing_user')
+    monkeypatch.setenv('COUPANG_RETURN_CENTER_CODE', '1000274592')
+    monkeypatch.setenv('COUPANG_OUTBOUND_SHIPPING_PLACE_CODE', '7437895')
+    monkeypatch.setenv('COUPANG_RETURN_ZIP_CODE', '06000')
+    monkeypatch.setenv('COUPANG_RETURN_ADDRESS', '서울시 강남구 테헤란로 1')
+    monkeypatch.setenv('COUPANG_RETURN_CHARGE_NAME', '반품담당')
+    monkeypatch.setenv('COUPANG_COMPANY_CONTACT_NUMBER', '02-1234-5678')
     from src.uploaders.coupang_uploader import CoupangUploader
     return CoupangUploader()
 
@@ -268,6 +276,56 @@ class TestCoupangUploadProduct:
         with patch.object(coupang_uploader, '_api_request', return_value={'data': [{'id': '1'}]}):
             cats = coupang_uploader.get_categories()
         assert cats == [{'id': '1'}]
+
+    def test_upload_blocked_when_shipping_config_missing(self, monkeypatch):
+        """출고지/반품지 미설정 시 가짜 성공이 아니라 정직한 실패 + 누락 env 안내."""
+        monkeypatch.setenv('COUPANG_ACCESS_KEY', 'ak')
+        monkeypatch.setenv('COUPANG_SECRET_KEY', 'sk')
+        monkeypatch.setenv('COUPANG_VENDOR_ID', 'vid')
+        for env in (
+            'COUPANG_VENDOR_USER_ID', 'COUPANG_RETURN_CENTER_CODE',
+            'COUPANG_OUTBOUND_SHIPPING_PLACE_CODE', 'COUPANG_RETURN_ZIP_CODE',
+            'COUPANG_RETURN_ADDRESS', 'COUPANG_RETURN_CHARGE_NAME',
+            'COUPANG_COMPANY_CONTACT_NUMBER',
+        ):
+            monkeypatch.delenv(env, raising=False)
+        from src.uploaders.coupang_uploader import CoupangUploader
+        u = CoupangUploader()
+        # API를 절대 호출하지 않아야 함(미리 차단)
+        with patch.object(u, '_api_request', side_effect=AssertionError('호출 금지')):
+            result = u.upload_product(u.prepare_product(SAMPLE_COLLECTED))
+        assert result['success'] is False
+        assert 'COUPANG_RETURN_CENTER_CODE' in result['error']
+        assert 'COUPANG_VENDOR_USER_ID' in result['error']
+
+    def test_payload_has_required_option_and_return_fields(self, coupang_uploader):
+        """페이로드에 옵션·반품지 필수 필드가 null 없이 모두 채워진다."""
+        prepared = coupang_uploader.prepare_product(SAMPLE_COLLECTED)
+        payload = coupang_uploader._build_product_payload(prepared)
+        item = payload['items'][0]
+        # 옵션 레벨 필수값 (등록 거부 원인이었던 필드들)
+        for key in (
+            'maximumBuyForPersonPeriod', 'taxType', 'unitCount', 'adultOnly',
+            'overseasPurchased', 'notices', 'contents', 'images',
+        ):
+            assert item.get(key) not in (None, ''), f'item.{key} 누락'
+        assert item['taxType'] == 'TAX'
+        assert item['adultOnly'] == 'EVERYONE'
+        assert item['notices'], '고시정보 비어있음'
+        assert item['contents'], '컨텐츠 비어있음'
+        # 대표 이미지 타입은 REPRESENTATION
+        assert item['images'][0]['imageType'] == 'REPRESENTATION'
+        assert all(img['imageType'] != 'PRODUCT' for img in item['images'])
+        # 상품 레벨 필수값 (묶음/도서산간/반품지/출고지/vendorUserId)
+        for key in (
+            'unionDeliveryType', 'remoteAreaDeliverable', 'returnCenterCode',
+            'returnChargeName', 'companyContactNumber', 'returnZipCode',
+            'returnAddress', 'returnAddressDetail', 'returnCharge',
+            'outboundShippingPlaceCode', 'vendorUserId',
+        ):
+            assert payload.get(key) not in (None, ''), f'root.{key} 누락'
+        assert payload['returnCenterCode'] == '1000274592'
+        assert payload['vendorUserId'] == 'wing_user'
 
 
 # ===========================================================================

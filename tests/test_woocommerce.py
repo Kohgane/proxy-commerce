@@ -96,8 +96,8 @@ class TestRequestWithRetry:
         """auth params와 추가 params가 함께 전달된다."""
         ok = _ok_response([])
         with patch('requests.request', return_value=ok) as mock_req:
-            with patch.object(self.mod, 'CK', 'ck_test'):
-                with patch.object(self.mod, 'CS', 'cs_test'):
+            with patch.object(self.mod, '_woo_ck', return_value='ck_test'):
+                with patch.object(self.mod, '_woo_cs', return_value='cs_test'):
                     self.mod._request_with_retry('GET', 'http://example.com', params={'sku': 'ABC'})
                     called_params = mock_req.call_args[1]['params']
                     assert called_params['consumer_key'] == 'ck_test'
@@ -356,10 +356,11 @@ class TestUpsertProductBackwardCompat:
         prod = {'name': 'Test', 'sku': 'TST-001', 'regular_price': '10000'}
         mock_resp = _ok_response({'id': 99, **prod})
 
-        with patch.object(self.mod, '_find_by_sku', return_value=None):
-            with patch.object(self.mod, '_request_with_retry', return_value=mock_resp):
-                result = self.mod.upsert_product(prod)
-                assert result['id'] == 99
+        with patch.object(self.mod, '_woo_base', return_value='https://example.com'):
+            with patch.object(self.mod, '_find_by_sku', return_value=None):
+                with patch.object(self.mod, '_request_with_retry', return_value=mock_resp):
+                    result = self.mod.upsert_product(prod)
+                    assert result['id'] == 99
 
     def test_upsert_product_backward_compat_update(self):
         """기존 상품 갱신 — 기존 시그니처 유지."""
@@ -367,10 +368,11 @@ class TestUpsertProductBackwardCompat:
         existing = {'id': 42}
         mock_resp = _ok_response({'id': 42, **prod})
 
-        with patch.object(self.mod, '_find_by_sku', return_value=existing):
-            with patch.object(self.mod, '_request_with_retry', return_value=mock_resp):
-                result = self.mod.upsert_product(prod)
-                assert result['id'] == 42
+        with patch.object(self.mod, '_woo_base', return_value='https://example.com'):
+            with patch.object(self.mod, '_find_by_sku', return_value=existing):
+                with patch.object(self.mod, '_request_with_retry', return_value=mock_resp):
+                    result = self.mod.upsert_product(prod)
+                    assert result['id'] == 42
 
 
 # ──────────────────────────────────────────────────────────
@@ -396,26 +398,29 @@ class TestUpsertBatch:
 
         batch_resp = _ok_response({'create': [{'id': 100}], 'update': [{'id': 55}]})
 
-        with patch.object(self.mod, '_find_by_sku', side_effect=mock_find_by_sku):
-            with patch.object(self.mod, '_request_with_retry', return_value=batch_resp):
-                result = self.mod.upsert_batch(products)
-                assert result['created'] == 1
-                assert result['updated'] == 1
-                assert result['errors'] == []
+        with patch.object(self.mod, '_woo_base', return_value='https://example.com'):
+            with patch.object(self.mod, '_find_by_sku', side_effect=mock_find_by_sku):
+                with patch.object(self.mod, '_request_with_retry', return_value=batch_resp):
+                    result = self.mod.upsert_batch(products)
+                    assert result['created'] == 1
+                    assert result['updated'] == 1
+                    assert result['errors'] == []
 
     def test_upsert_batch_error_handling(self):
         """배치 실패 시 errors 리스트에 추가."""
         products = [{'sku': 'ERR-001', 'name': 'Error Product'}]
 
-        with patch.object(self.mod, '_find_by_sku', return_value=None):
-            with patch.object(self.mod, '_request_with_retry', side_effect=RuntimeError("API failure")):
-                result = self.mod.upsert_batch(products)
-                assert len(result['errors']) == 1
-                assert 'API failure' in result['errors'][0]
+        with patch.object(self.mod, '_woo_base', return_value='https://example.com'):
+            with patch.object(self.mod, '_find_by_sku', return_value=None):
+                with patch.object(self.mod, '_request_with_retry', side_effect=RuntimeError("API failure")):
+                    result = self.mod.upsert_batch(products)
+                    assert len(result['errors']) == 1
+                    assert 'API failure' in result['errors'][0]
 
     def test_upsert_batch_empty(self):
         """빈 리스트 처리."""
-        result = self.mod.upsert_batch([])
+        with patch.object(self.mod, '_woo_base', return_value='https://example.com'):
+            result = self.mod.upsert_batch([])
         assert result == {'created': 0, 'updated': 0, 'errors': []}
 
 
@@ -432,7 +437,7 @@ class TestGetOrCreateCategory:
         """기존 카테고리 slug 조회 — ID 반환."""
         existing_resp = _ok_response([{'id': 7, 'slug': 'bag', 'name': '가방'}])
         with patch.object(self.mod, '_request_with_retry', return_value=existing_resp):
-            with patch.object(self.mod, 'BASE', 'https://example.com'):
+            with patch.object(self.mod, '_woo_base', return_value='https://example.com'):
                 cat_id = self.mod.get_or_create_category('bag')
                 assert cat_id == 7
 
@@ -442,7 +447,7 @@ class TestGetOrCreateCategory:
         create_resp = _ok_response({'id': 8, 'slug': 'bag', 'name': '가방'})
 
         with patch.object(self.mod, '_request_with_retry', side_effect=[empty_resp, create_resp]):
-            with patch.object(self.mod, 'BASE', 'https://example.com'):
+            with patch.object(self.mod, '_woo_base', return_value='https://example.com'):
                 cat_id = self.mod.get_or_create_category('bag')
                 assert cat_id == 8
 
@@ -452,7 +457,7 @@ class TestGetOrCreateCategory:
         create_resp = _ok_response({'id': 99, 'slug': 'mystery', 'name': 'mystery'})
 
         with patch.object(self.mod, '_request_with_retry', side_effect=[empty_resp, create_resp]):
-            with patch.object(self.mod, 'BASE', 'https://example.com'):
+            with patch.object(self.mod, '_woo_base', return_value='https://example.com'):
                 cat_id = self.mod.get_or_create_category('mystery')
                 assert cat_id == 99
 
@@ -470,7 +475,7 @@ class TestGetOrCreateTag:
         """기존 태그 이름 조회 — ID 반환."""
         tags_resp = _ok_response([{'id': 3, 'name': '가방'}])
         with patch.object(self.mod, '_request_with_retry', return_value=tags_resp):
-            with patch.object(self.mod, 'BASE', 'https://example.com'):
+            with patch.object(self.mod, '_woo_base', return_value='https://example.com'):
                 tag_id = self.mod.get_or_create_tag('가방')
                 assert tag_id == 3
 
@@ -478,7 +483,7 @@ class TestGetOrCreateTag:
         """태그 이름 대소문자 무관 비교."""
         tags_resp = _ok_response([{'id': 4, 'name': 'EDP'}])
         with patch.object(self.mod, '_request_with_retry', return_value=tags_resp):
-            with patch.object(self.mod, 'BASE', 'https://example.com'):
+            with patch.object(self.mod, '_woo_base', return_value='https://example.com'):
                 tag_id = self.mod.get_or_create_tag('edp')
                 assert tag_id == 4
 
@@ -488,6 +493,6 @@ class TestGetOrCreateTag:
         create_resp = _ok_response({'id': 5, 'name': 'NewTag'})
 
         with patch.object(self.mod, '_request_with_retry', side_effect=[search_resp, create_resp]):
-            with patch.object(self.mod, 'BASE', 'https://example.com'):
+            with patch.object(self.mod, '_woo_base', return_value='https://example.com'):
                 tag_id = self.mod.get_or_create_tag('NewTag')
                 assert tag_id == 5
