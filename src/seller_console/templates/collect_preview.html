@@ -91,6 +91,27 @@
         <div id="optionRows" class="vstack gap-2"></div>
       </div>
 
+      <!-- 카테고리 (자동 분류) -->
+      <div class="mb-2">
+        <label class="form-label small fw-semibold" for="editCategory">카테고리
+          <span class="text-muted fw-normal">(마켓 등록 시 각 마켓 카테고리로 매핑됩니다)</span></label>
+        <div class="input-group input-group-sm">
+          <select class="form-select" id="editCategory">
+            {% for opt in (category_options or []) %}
+            <option value="{{ opt.code }}" {{ 'selected' if (current_category == opt.code) or (not current_category and category_suggestion and category_suggestion.code == opt.code) else '' }}>{{ opt.label }}</option>
+            {% endfor %}
+          </select>
+          <button type="button" class="btn btn-outline-primary" id="btnAutoCategory" onclick="autoClassify()" title="상품명·키워드로 카테고리 자동 추천">🔮 자동 분류</button>
+        </div>
+        <div id="categoryHint" class="form-text">
+          {% if category_suggestion and category_suggestion.code != 'GEN' %}
+          🔮 ‘{{ category_suggestion.label }}’ 로 자동 추천됨 — 맞지 않으면 직접 바꾸세요.
+          {% else %}
+          상품명 기준으로 추천하려면 <b>자동 분류</b>를 누르세요.
+          {% endif %}
+        </div>
+      </div>
+
       <!-- 키워드 / 태그 -->
       <div class="mb-2">
         <label class="form-label small fw-semibold" for="editKeywords">키워드 / 태그
@@ -446,6 +467,8 @@ function buildProductData() {
   const keywords = (document.getElementById('editKeywords').value || '')
     .split(',').map(k => k.trim()).filter(Boolean);
 
+  const categoryCode = (document.getElementById('editCategory') || {}).value || _EXTRA.category_code || '';
+
   return {
     title, title_ko: title, title_en: _EXTRA.title_en || title,
     price, price_original: price, currency,
@@ -455,8 +478,40 @@ function buildProductData() {
     thumbnail: images[0] || '',   // 맨 위(대표) 이미지 = 썸네일
     url: _ITEM.url || _EXTRA.url || '',
     source: _ITEM.source || _EXTRA.source || '',
-    brand: _EXTRA.brand || '', category: _EXTRA.category || '',
+    brand: _EXTRA.brand || '',
+    category: categoryCode, category_code: categoryCode,
   };
+}
+
+// 카테고리 자동 분류 — 상품명·키워드로 추천
+async function autoClassify() {
+  const btn = document.getElementById('btnAutoCategory');
+  const hint = document.getElementById('categoryHint');
+  btn.disabled = true; btn.textContent = '분류 중…';
+  try {
+    const resp = await fetch('/seller/collect/classify', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        title: document.getElementById('editTitle').value || '',
+        description: document.getElementById('editDescription').value || '',
+        keywords: document.getElementById('editKeywords').value || '',
+      })
+    });
+    const d = await resp.json();
+    if (d.ok && d.code) {
+      const sel = document.getElementById('editCategory');
+      sel.value = d.code;
+      if (d.code === 'GEN') {
+        hint.innerHTML = '키워드가 약해 자동 추천이 어려워요 — 직접 선택해 주세요.';
+      } else {
+        hint.innerHTML = `🔮 ‘${d.label}’ 로 추천(신뢰도 ${Math.round((d.confidence||0)*100)}%). 맞지 않으면 직접 바꾸세요.`;
+      }
+    }
+  } catch (e) {
+    hint.textContent = '자동 분류 실패 — 직접 선택해 주세요.';
+  } finally {
+    btn.disabled = false; btn.textContent = '🔮 자동 분류';
+  }
 }
 
 // ── 저장 ──

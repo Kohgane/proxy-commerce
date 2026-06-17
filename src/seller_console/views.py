@@ -4144,6 +4144,17 @@ def collect_preview_by_id(item_id: str):
     except Exception as exc:
         logger.debug("마켓 연결 상태 조회 실패: %s", exc)
 
+    # 카테고리 자동 분류(현재값 없으면 제목/키워드로 제안)
+    from .category_classifier import CATEGORY_OPTIONS, classify as _classify
+    cur_cat = (extra.get("category_code") or extra.get("category") or "").strip()
+    cat_suggestion = {}
+    if not cur_cat:
+        cat_suggestion = _classify(
+            item.get("title") or extra.get("title_ko") or "",
+            extra.get("description_ko") or extra.get("description") or "",
+            ",".join(extra.get("keywords") or []) if isinstance(extra.get("keywords"), list) else (extra.get("keywords") or ""),
+        )
+
     return render_template(
         "collect_preview.html",
         page="collect_history",
@@ -4153,7 +4164,27 @@ def collect_preview_by_id(item_id: str):
         fx_is_mock=fx_is_mock,
         fx_updated=fx_updated,
         market_connected=market_connected,
+        category_options=CATEGORY_OPTIONS,
+        current_category=cur_cat,
+        category_suggestion=cat_suggestion,
     )
+
+
+@bp.post("/collect/classify")
+def collect_classify():
+    """상품명/설명으로 카테고리 자동 분류 (Phase 224).
+
+    Request: {"title": "...", "description": "...", "keywords": "..."}
+    Response: {"ok": true, "code": "BAG", "label": "가방/지갑", "confidence": 0.8, "matched": [...]}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    from .category_classifier import classify
+    res = classify(
+        str(data.get("title") or ""),
+        str(data.get("description") or ""),
+        str(data.get("keywords") or ""),
+    )
+    return jsonify({"ok": True, **res})
 
 
 @bp.post("/collect/preview/<item_id>/save")
@@ -4244,6 +4275,12 @@ def collect_preview_save(item_id: str):
         keywords = [str(k).strip() for k in keywords if str(k).strip()]
         extra["keywords"] = keywords
         extra["tags"] = keywords
+
+    # 카테고리(자동 분류 결과 또는 셀러 선택) 저장 — 각 마켓 업로더가 매핑
+    category_code = (data.get("category_code") or data.get("category") or "").strip()
+    if category_code:
+        extra["category_code"] = category_code
+        extra["category"] = category_code
     extra["edited"] = True
 
     ok = collect_history_store.update(

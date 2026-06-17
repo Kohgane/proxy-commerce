@@ -293,8 +293,14 @@
   shopify/coupang/smartstore/elevenst/woocommerce 연결 여부 계산 → 업로드 모달 ‘1. 마켓 선택’ 각 타일에
   **✅ 연결 / ❌ 미연결** 배지(미연결은 클릭 시 `/seller/markets/connect/<market>` 새 탭) + 상단 ‘연동 N/5’ 요약.
   연결 타일 초록 테두리, 미연결 흐리게 — 보이는 것 위주, 과하지 않게. (가격/썸네일/이미지/상세/옵션/키워드 편집은 이미 지원)
-- 후속 진행 예정: ② 마켓별 카테고리 선택 + 자동 분류(대형) ③ 구글/네이버 로그인 = 관리자 1회 OAuth 앱 등록을
-  화면에서 클릭만으로 따라하도록(소비자는 클릭만으로 로그인 — 키 없이 작동하는 코드는 OAuth상 불가, 등록은 1회).
+## 🔧 나열순 후속 ② 카테고리 자동 분류 + 편집 선택 (Phase 224)
+- ✅ **카테고리 자동 분류**: 신설 `category_classifier.py`(키워드 규칙 → 정규화 코드 BAG/CLO/BTY/FOD/ELC/DIG/
+  HOM/HLT/SPT/TOY/BBY/PET/OFC/GEN, confidence 포함, 미일치=GEN 정직). 편집 페이지에 **카테고리 드롭다운 +
+  🔮 자동 분류 버튼**(`POST /collect/classify`) 추가, 로드 시 제목/키워드로 자동 추천 표시. 저장 시 `category_code`를
+  extra_json에 보관 → 각 마켓 업로더가 매핑(coupang CATEGORY_MAP 등). ※ 마켓별 풀 카테고리 트리(퍼센티식 마켓별
+  드롭다운)는 각 마켓 카테고리 API 연동 필요(대형) — 정규화 코드+자동분류로 MVP, 트리 연동은 후속.
+- 후속 ③ 구글/네이버 로그인 = 관리자 1회 OAuth 앱 등록을 화면에서 클릭만으로 따라하도록(소비자는 클릭만으로
+  로그인 — 키 없이 작동하는 코드는 OAuth상 불가, 등록은 1회).
 
 ## 작업 방식
 - 브랜치 `claude/magical-noether-oo4831`에서 작업 → PR 생성·main 머지(오너 승인됨)로 배포.
