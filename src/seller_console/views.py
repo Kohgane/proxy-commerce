@@ -1065,6 +1065,7 @@ def collect_preview():
     url = (data.get("url") or "").strip()
     keyword_hint = (data.get("keyword") or "").strip()
     translate = data.get("translate", True) is not False
+    save = bool(data.get("save"))
 
     if not url:
         return jsonify({"ok": False, "error": "URL이 필요합니다."}), 400
@@ -1088,13 +1089,41 @@ def collect_preview():
         }), 200
 
     _register_discovery_candidate_from_collection(url, keyword_hint=keyword_hint)
-    return jsonify({
+
+    response = {
         "ok": True,
         "draft": draft,
         "trust": None,
         "source": draft.get("source"),
         "warnings": draft.get("warnings", []),
-    })
+    }
+
+    # Phase 215: save=true 면 수집 이력에 저장해 결과 위치(편집/이력)를 돌려준다.
+    # (소싱 허브 '즉시 수집'이 결과를 어디서 보는지 셀러가 바로 알 수 있게)
+    if save:
+        try:
+            from . import collect_history_store
+
+            images = draft.get("images") if isinstance(draft.get("images"), list) else []
+            title = draft.get("title_ko") or draft.get("title") or draft.get("title_en") or "(제목 없음)"
+            item_id = collect_history_store.append(
+                source="quick",
+                url=url,
+                title=title,
+                image=images[0] if images else "",
+                price=str(draft.get("price_original") or draft.get("price") or ""),
+                currency=draft.get("currency") or "",
+                extra=draft,
+                seller_id=_seller_id(),
+            )
+            response["id"] = item_id
+            response["preview_url"] = f"/seller/collect/preview/{item_id}"
+            response["history_url"] = "/seller/collect/history"
+        except Exception as exc:
+            logger.warning("수집 이력 저장 실패(%s): %s", url, exc)
+            response["save_error"] = "수집은 됐지만 이력 저장에 실패했습니다."
+
+    return jsonify(response)
 
 
 @bp.post("/collect/upload")
