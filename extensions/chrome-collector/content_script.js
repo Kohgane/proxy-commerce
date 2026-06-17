@@ -145,9 +145,19 @@ function setFabState(btn, state) {
   } else {
     btn.dataset.busy = "";
     btn.style.opacity = "1";
-    btn.querySelector(".kgp-fab-label").textContent = "수집";
+    btn.querySelector(".kgp-fab-label").textContent = "고가네 수집";
   }
 }
+
+// 고가네 퍼센티 브랜드 아이콘(글로브 + 주황/초록 궤도) — 파비콘과 동일 모티프.
+// 경쟁사(파란 막대형) 버튼과 구분되는 우리만의 식별 아이콘.
+const KGP_GLOBE_SVG =
+  '<svg width="20" height="20" viewBox="0 0 512 512" aria-hidden="true" style="display:block">' +
+  '<circle cx="256" cy="256" r="150" fill="#1e4fd1"/>' +
+  '<circle cx="256" cy="256" r="150" fill="none" stroke="#bcd6ff" stroke-width="10" opacity="0.5"/>' +
+  '<ellipse cx="256" cy="256" rx="210" ry="78" fill="none" stroke="#ff8a1e" stroke-width="22" transform="rotate(35 256 256)"/>' +
+  '<ellipse cx="256" cy="256" rx="210" ry="78" fill="none" stroke="#37d05a" stroke-width="22" transform="rotate(-35 256 256)"/>' +
+  '</svg>';
 
 function handleFabClick(btn) {
   if (btn.dataset.busy) return;
@@ -183,22 +193,39 @@ function injectCollectButton() {
   btn.id = KGP_BTN_ID;
   btn.type = "button";
   btn.innerHTML =
-    '<span style="font-size:18px;line-height:1">🛒</span>' +
-    '<span class="kgp-fab-label" style="font-weight:600">수집</span>';
-  btn.title = "코가네 퍼센티로 수집 (번역 포함)";
+    '<span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;' +
+    'background:#0a0a2a;border-radius:50%;flex-shrink:0">' + KGP_GLOBE_SVG + '</span>' +
+    '<span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1.1">' +
+    '<span class="kgp-fab-label" style="font-weight:700;font-size:14px">고가네 수집</span>' +
+    '<span style="font-size:10px;opacity:.85">번역까지 한 번에</span>' +
+    '</span>';
+  btn.title = "고가네 퍼센티로 수집 (한국어 번역 포함)";
+  // 브랜드 색(네이비 + 주황 포인트) — 경쟁사 파란 막대형 버튼과 구분되는 우리만의 식별.
   btn.style.cssText = [
     "position:fixed", "right:20px", "bottom:20px", "z-index:2147483646",
-    "display:flex", "align-items:center", "gap:8px",
-    "padding:10px 16px", "border:none", "border-radius:999px",
-    "background:linear-gradient(135deg,#6f42c1,#8b5cf6)", "color:#fff",
+    "display:flex", "align-items:center", "gap:10px",
+    "padding:9px 16px 9px 10px", "border:1.5px solid #ff8a1e", "border-radius:999px",
+    "background:linear-gradient(135deg,#0a1f5c,#13308f)", "color:#fff",
     "font:14px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
-    "cursor:pointer", "box-shadow:0 6px 18px rgba(111,66,193,.45)",
-    "transition:transform .12s,opacity .12s"
+    "cursor:pointer", "box-shadow:0 6px 20px rgba(10,31,92,.45)",
+    "transition:transform .12s,opacity .12s,box-shadow .12s"
   ].join(";");
-  btn.addEventListener("mouseenter", () => { btn.style.transform = "translateY(-2px)"; });
-  btn.addEventListener("mouseleave", () => { btn.style.transform = "none"; });
+  btn.addEventListener("mouseenter", () => {
+    btn.style.transform = "translateY(-2px)";
+    btn.style.boxShadow = "0 10px 26px rgba(255,138,30,.45)";
+  });
+  btn.addEventListener("mouseleave", () => {
+    btn.style.transform = "none";
+    btn.style.boxShadow = "0 6px 20px rgba(10,31,92,.45)";
+  });
   btn.addEventListener("click", () => handleFabClick(btn));
   document.body.appendChild(btn);
+
+  // 처음 등장 시 한 번 살짝 강조(인지성↑, 과하지 않게 1.2초)
+  btn.animate(
+    [{ transform: "scale(1)" }, { transform: "scale(1.06)" }, { transform: "scale(1)" }],
+    { duration: 600, iterations: 2, easing: "ease-in-out" }
+  );
 }
 
 // SPA 대응: 최초 + URL 변경 시 재시도
