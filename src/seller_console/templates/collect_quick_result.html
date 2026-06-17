@@ -1,0 +1,40 @@
+{% extends "_base.html" %}
+{% block title %}북마클릿 수집{% endblock %}
+{% block content %}
+<div class="container-fluid py-4" style="max-width:680px">
+  <div class="card console-card">
+    <div class="card-body text-center py-4">
+      {% if ok %}
+      <div class="display-6 mb-2">✅</div>
+      <h1 class="h5 mb-2">수집 완료</h1>
+      <p class="text-muted small mb-3">{{ message }}</p>
+      {% else %}
+      <div class="display-6 mb-2">⚠️</div>
+      <h1 class="h5 mb-2">자동 수집이 어려운 페이지예요</h1>
+      <p class="text-muted small mb-3">{{ message }}</p>
+      {% endif %}
+
+      {% if url %}
+      <div class="small text-muted text-truncate mb-3" title="{{ url }}">{{ url }}</div>
+      {% endif %}
+
+      <div class="d-flex flex-wrap gap-2 justify-content-center">
+        {% if url %}
+        <a class="btn btn-primary btn-sm" href="/seller/collect?url={{ url|urlencode }}">
+          <i class="bi bi-pencil"></i> 직접 입력으로 등록
+        </a>
+        {% endif %}
+        <a class="btn btn-outline-secondary btn-sm" href="/seller/bookmarklet">
+          <i class="bi bi-bookmark"></i> 북마클릿 다시 보기
+        </a>
+        <a class="btn btn-outline-secondary btn-sm" href="/seller/collect/history">수집 이력</a>
+      </div>
+
+      <div class="alert alert-light border small mt-4 mb-0 text-start">
+        💡 <strong>봇 차단이 강한 사이트</strong>(로그인 필요·강한 보호)는 <strong>크롬 확장(고가네 수집)</strong>을
+        쓰면 브라우저 화면 그대로 수집됩니다. <a href="/seller/markets/guide">설치 가이드 →</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

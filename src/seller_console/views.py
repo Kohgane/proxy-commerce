@@ -1028,7 +1028,19 @@ def collect():
         {"name": "VVIC", "url": "https://www.vvic.com", "emoji": "👗"},
         {"name": "라쿠텐", "url": "https://www.rakuten.co.jp", "emoji": "🎌"},
         {"name": "ZOZOTOWN", "url": "https://zozo.jp", "emoji": "👕"},
-        {"name": "아마존", "url": "https://www.amazon.com", "emoji": "🅰️"},
+        # 아마존은 국가별 사이트가 달라 드롭다운으로 선택(퍼센티 벤치마킹)
+        {"name": "아마존", "emoji": "🅰️", "countries": [
+            {"name": "미국 (.com)", "url": "https://www.amazon.com"},
+            {"name": "일본 (.co.jp)", "url": "https://www.amazon.co.jp"},
+            {"name": "독일 (.de)", "url": "https://www.amazon.de"},
+            {"name": "영국 (.co.uk)", "url": "https://www.amazon.co.uk"},
+            {"name": "프랑스 (.fr)", "url": "https://www.amazon.fr"},
+            {"name": "캐나다 (.ca)", "url": "https://www.amazon.ca"},
+            {"name": "이탈리아 (.it)", "url": "https://www.amazon.it"},
+            {"name": "스페인 (.es)", "url": "https://www.amazon.es"},
+            {"name": "호주 (.com.au)", "url": "https://www.amazon.com.au"},
+            {"name": "인도 (.in)", "url": "https://www.amazon.in"},
+        ]},
         {"name": "SHEIN", "url": "https://www.shein.com", "emoji": "✨"},
         {"name": "요시다카반", "url": "https://www.yoshidakaban.com/ko/", "emoji": "🎒"},
     ]
@@ -1124,6 +1136,86 @@ def collect_preview():
             response["save_error"] = "수집은 됐지만 이력 저장에 실패했습니다."
 
     return jsonify(response)
+
+
+@bp.get("/collect/quick")
+def collect_quick():
+    """북마클릿 '새 탭 네비게이션' 수집 (Phase 218 — 토큰 없이 로그인 세션으로 작동).
+
+    북마클릿이 `fetch` 대신 새 탭으로 이 URL을 열어 수집한다. 임의 쇼핑몰의 CSP가
+    `fetch`를 막아도(토큰 발급해도 수집 실패하던 원인) 페이지 '이동'은 막히지 않으므로
+    실제로 수집된다. 로그인 세션을 쓰므로 Personal Access Token이 필요 없다.
+
+    Query: u(상품URL, 필수), t(제목), img(이미지), p(가격), c(통화) — 페이지에서 읽은 메타.
+    """
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.full_path))
+
+    url = (request.args.get("u") or "").strip()
+    if not url.startswith(("http://", "https://")):
+        return render_template(
+            "collect_quick_result.html", ok=False,
+            message="올바른 상품 URL이 아닙니다. 상품 상세 페이지에서 북마클릿을 눌러주세요.",
+            url=url,
+        ), 400
+
+    # 1) 서버 수집 시도(접근 가능한 사이트는 상세/번역까지). 막히면 페이지 메타로 폴백.
+    draft = None
+    try:
+        draft = _collect_real_draft(url, translate=True)
+    except Exception as exc:
+        logger.warning("북마클릿 수집 파이프라인 오류(%s): %s", url[:80], exc)
+
+    used_meta = False
+    if not draft:
+        # 봇 차단 등으로 서버 수집 실패 → 북마클릿이 보낸 페이지 메타로 최소 수집(정직)
+        t = (request.args.get("t") or "").strip()
+        img = (request.args.get("img") or "").strip()
+        price = (request.args.get("p") or "").strip()
+        currency = (request.args.get("c") or "").strip() or "USD"
+        if t or img:
+            used_meta = True
+            draft = {
+                "title": t, "title_ko": t, "title_en": t,
+                "price_original": price, "price": price, "currency": currency,
+                "images": [img] if img else [], "image": img,
+                "description": "", "description_ko": "",
+                "source": "bookmarklet_meta",
+            }
+
+    if not draft:
+        # 메타조차 없으면 정직하게 직접입력으로 안내
+        return render_template(
+            "collect_quick_result.html", ok=False,
+            message=("이 페이지에서 상품 정보를 읽지 못했습니다. 상품 상세 페이지인지 확인하거나, "
+                     "봇 차단 사이트는 크롬 확장(고가네 수집)을 사용하세요."),
+            url=url,
+        )
+
+    images = draft.get("images") if isinstance(draft.get("images"), list) else []
+    title = draft.get("title_ko") or draft.get("title") or draft.get("title_en") or "(제목 없음)"
+    try:
+        from . import collect_history_store
+        item_id = collect_history_store.append(
+            source="bookmarklet",
+            url=url,
+            title=title,
+            image=images[0] if images else draft.get("image", ""),
+            price=str(draft.get("price_original") or draft.get("price") or ""),
+            currency=draft.get("currency") or "",
+            extra=draft,
+            seller_id=_seller_id(),
+        )
+    except Exception as exc:
+        logger.warning("북마클릿 수집 이력 저장 실패: %s", exc)
+        return render_template(
+            "collect_quick_result.html", ok=False,
+            message="수집은 됐지만 이력 저장에 실패했습니다. 다시 시도해주세요.", url=url,
+        )
+
+    _register_discovery_candidate_from_collection(url)
+    # 편집 페이지로 바로 이동(확인·수정·등록)
+    return redirect(f"/seller/collect/preview/{item_id}?from=bookmarklet&meta={'1' if used_meta else '0'}")
 
 
 @bp.post("/collect/upload")
