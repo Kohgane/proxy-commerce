@@ -1214,8 +1214,198 @@ def collect_quick():
         )
 
     _register_discovery_candidate_from_collection(url)
-    # 편집 페이지로 바로 이동(확인·수정·등록)
-    return redirect(f"/seller/collect/preview/{item_id}?from=bookmarklet&meta={'1' if used_meta else '0'}")
+    # 편집 페이지로 바로 보내지 않고 '수집됨'만 표시 — 내 계정의 수집 이력에서 확인.
+    return render_template(
+        "collect_quick_result.html", ok=True,
+        message="수집 이력에 저장했어요. 내 계정의 ‘수집 이력’에서 확인·편집할 수 있습니다.",
+        url=url, item_id=item_id,
+    )
+
+
+def _extract_reviews(html: str, limit: int = 20) -> list[dict]:
+    """페이지 HTML에서 리뷰를 best-effort 추출(JSON-LD 우선 + 보수적 휴리스틱).
+
+    추출 못 하면 빈 리스트(정직 — 가짜 리뷰 생성 금지).
+    """
+    reviews: list[dict] = []
+    if not html:
+        return reviews
+    try:
+        from bs4 import BeautifulSoup
+        import json as _json
+        soup = BeautifulSoup(html, "html.parser")
+
+        # 1) JSON-LD review (가장 신뢰도 높음)
+        for s in soup.find_all("script", type="application/ld+json"):
+            try:
+                data = _json.loads(s.string or s.get_text() or "")
+            except Exception:
+                continue
+            for obj in (data if isinstance(data, list) else [data]):
+                if not isinstance(obj, dict):
+                    continue
+                revs = obj.get("review") or obj.get("reviews")
+                if isinstance(revs, dict):
+                    revs = [revs]
+                if not isinstance(revs, list):
+                    continue
+                for r in revs:
+                    if not isinstance(r, dict):
+                        continue
+                    body = str(r.get("reviewBody") or r.get("description") or "").strip()
+                    if not body:
+                        continue
+                    rating = None
+                    rr = r.get("reviewRating")
+                    if isinstance(rr, dict):
+                        rating = rr.get("ratingValue")
+                    author = r.get("author")
+                    if isinstance(author, dict):
+                        author = author.get("name")
+                    reviews.append({"body": body[:500], "rating": rating,
+                                    "author": str(author or "")[:60]})
+
+        # 2) 보수적 휴리스틱(JSON-LD가 적을 때만): class에 review가 포함된 짧은 텍스트 블록
+        if len(reviews) < 3:
+            for el in soup.find_all(attrs={"class": True}):
+                cls = " ".join(el.get("class") or []).lower()
+                if "review" not in cls or "reviews" == cls:
+                    continue
+                txt = el.get_text(" ", strip=True)
+                if 15 <= len(txt) <= 400:
+                    reviews.append({"body": txt[:400], "rating": None, "author": ""})
+                if len(reviews) >= limit:
+                    break
+    except Exception as exc:
+        logger.debug("리뷰 추출 실패: %s", exc)
+
+    # 중복 제거
+    seen, out = set(), []
+    for r in reviews:
+        b = r.get("body", "")
+        if not b or b in seen:
+            continue
+        seen.add(b)
+        out.append(r)
+        if len(out) >= limit:
+            break
+    return out
+
+
+@bp.get("/collect/receiver")
+def collect_receiver():
+    """북마클릿 postMessage 수신 페이지 (Phase 219).
+
+    북마클릿이 새 탭으로 이 페이지를 열고(로그인 세션 → 인증), 페이지 HTML·이미지·메타를
+    postMessage로 전달한다. 이 페이지가 같은 출처로 `/seller/collect/receive`에 저장 요청 →
+    '수집됨'만 표시하고 편집 페이지로 이동하지 않는다(내 계정 수집 이력에서 확인).
+    """
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.full_path))
+    return render_template("collect_receiver.html")
+
+
+@bp.post("/collect/receive")
+def collect_receive():
+    """북마클릿이 보낸 페이지 데이터(HTML 포함)를 받아 이미지·상세·리뷰까지 수집·저장.
+
+    Request JSON: {url, title, price, currency, description, images[], html, translate}
+    Response: {ok, id, history_url}
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    url = (data.get("url") or "").strip()
+    if not url.startswith(("http://", "https://")):
+        return jsonify({"ok": False, "error": "올바른 상품 URL이 아닙니다."}), 400
+
+    translate = data.get("translate", True) is not False
+    html = data.get("html") if isinstance(data.get("html"), str) else ""
+    client_images = [str(i).strip() for i in (data.get("images") or []) if str(i or "").strip()]
+
+    # 1) 페이지 HTML 서버 파싱(이미지/상세/옵션) — 봇 차단 사이트도 브라우저 DOM 기반으로 수집
+    draft = None
+    if html:
+        try:
+            from src.collectors.universal_scraper import UniversalScraper
+            scraped = UniversalScraper().parse_html(html, url)
+            draft = _scraped_to_draft(scraped)
+        except Exception as exc:
+            logger.warning("receiver HTML 파싱 실패: %s", exc)
+
+    if draft is None:
+        draft = {
+            "url": url, "source": "bookmarklet_meta", "title": "", "title_en": "",
+            "title_ko": "", "description": "", "images": [], "price": None,
+            "price_original": 0.0, "currency": "USD", "options": [],
+        }
+
+    # 2) 클라이언트가 보낸 메타/이미지로 빈 값 보강(사용자가 본 화면 우선)
+    if not (draft.get("title") or "").strip() and data.get("title"):
+        draft["title"] = draft["title_en"] = draft["title_ko"] = str(data["title"])[:300]
+    if not (draft.get("description") or "").strip() and data.get("description"):
+        draft["description"] = str(data["description"])
+    if data.get("price") and not draft.get("price"):
+        draft["price"] = str(data["price"])
+        try:
+            draft["price_original"] = float(str(data["price"]).replace(",", ""))
+        except (TypeError, ValueError):
+            pass
+    if data.get("currency"):
+        draft["currency"] = str(data["currency"]) or draft.get("currency") or "USD"
+    # 이미지 병합(서버 파싱 + 클라이언트 DOM 이미지), 중복 제거·상한 30
+    merged_imgs, seen = [], set()
+    for src in list(draft.get("images") or []) + client_images:
+        s = str(src or "").strip()
+        if s and s not in seen and s.startswith(("http://", "https://")):
+            seen.add(s)
+            merged_imgs.append(s)
+    draft["images"] = merged_imgs[:30]
+
+    # 3) 리뷰 추출(best-effort)
+    reviews = _extract_reviews(html) if html else []
+    if reviews:
+        draft["reviews"] = reviews
+
+    # 의미있는 수집인지 확인
+    if not (draft.get("title") or draft.get("images")):
+        return jsonify({"ok": False, "error": "상품 정보를 읽지 못했습니다. 상품 상세 페이지인지 확인하세요."}), 200
+
+    draft.setdefault("title_ko", draft.get("title") or "")
+    if translate:
+        try:
+            draft = _translate_draft(draft)
+        except Exception as exc:
+            logger.warning("receiver 번역 실패(원문 유지): %s", exc)
+
+    images = draft.get("images") or []
+    title = draft.get("title_ko") or draft.get("title") or "(제목 없음)"
+    try:
+        from . import collect_history_store
+        item_id = collect_history_store.append(
+            source="bookmarklet",
+            url=url,
+            title=title,
+            image=images[0] if images else "",
+            price=str(draft.get("price_original") or draft.get("price") or ""),
+            currency=draft.get("currency") or "",
+            extra=draft,
+            seller_id=_seller_id(),
+        )
+    except Exception as exc:
+        logger.warning("receiver 수집 이력 저장 실패: %s", exc)
+        return jsonify({"ok": False, "error": "수집은 됐지만 이력 저장에 실패했습니다."}), 200
+
+    _register_discovery_candidate_from_collection(url)
+    return jsonify({
+        "ok": True, "id": item_id,
+        "title": title,
+        "image_count": len(images),
+        "review_count": len(reviews),
+        "translated": translate,
+        "history_url": "/seller/collect/history",
+        "edit_url": f"/seller/collect/preview/{item_id}",
+    })
 
 
 @bp.post("/collect/upload")
@@ -1439,7 +1629,7 @@ def collect_bulk():
         urls = []
     # 중복 제거(순서 유지) + 상한
     seen = set()
-    urls = [u for u in urls if not (u in seen or seen.add(u))][:30]
+    urls = [u for u in urls if not (u in seen or seen.add(u))][:1000]
     if not urls:
         return jsonify({"ok": False, "error": "수집할 URL을 한 줄에 하나씩 입력하세요."}), 400
 

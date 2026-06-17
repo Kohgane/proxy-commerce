@@ -28,11 +28,11 @@ def client(app):
 
 
 class TestBulkCollect:
-    def test_bulk_max_100_urls(self, client):
-        """URL 100개 초과 시 100개로 잘림."""
+    def test_bulk_max_1000_urls(self, client):
+        """URL 1000개 초과 시 1000개로 잘림(퍼센티 100 → 우리 1000)."""
         with patch("src.api.extension_api._require_token") as mock_auth:
             mock_auth.return_value = {"user_id": "u", "scopes": ["collect.write"]}
-            urls = [f"https://example.com/product/{i}" for i in range(150)]
+            urls = [f"https://example.com/product/{i}" for i in range(1100)]
             resp = client.post(
                 "/api/v1/collect/bulk",
                 data=json.dumps({"urls": urls}),
@@ -40,7 +40,7 @@ class TestBulkCollect:
                 headers={"Authorization": "Bearer tok_test"},
             )
         data = resp.get_json()
-        assert data["total"] == 100
+        assert data["total"] == 1000
 
     def test_bulk_job_polling(self, client):
         """잡 ID로 진행률 폴링."""

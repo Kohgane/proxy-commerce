@@ -238,6 +238,19 @@
 3. ✅ **수집 화면 파비콘 + 카피 갱신** (Phase 218): `/seller/collect` '인페이지 수집' 안내에 favicon.svg 노출 +
    '보라색 수집 버튼'→'고가네 퍼센티 아이콘+고가네 수집'으로 갱신, 북마클릿(토큰 불필요) 링크 추가.
 
+## 🔧 북마클릿 Percenty급 수집(이미지·상세·리뷰)+번역선택+일괄1000 (오너 지시 2026-06-17)
+1. ✅ **북마크 짧은 라벨** (Phase 219): 북마크바에 긴 js 코드 대신 한 단어 **‘고가네수집’**(드래그 링크 텍스트)로 표시.
+2. ✅ **클릭 시 편집페이지 새탭 X → ‘수집됨’만 표시** (Phase 219): 결과를 내 계정 **수집 이력**에서 확인.
+   `/collect/quick` 성공도 redirect 대신 confirmation 페이지(collect_quick_result ok=True).
+3. ✅ **이미지·상세설명·리뷰까지 수집** (Phase 219): 북마클릿을 **postMessage 방식**으로 — 새 탭
+   `/seller/collect/receiver`(로그인 세션 인증)를 열고 페이지 **HTML(800KB)·이미지·메타**를 postMessage 전달
+   → 같은 출처로 `POST /seller/collect/receive` 저장. 서버가 `UniversalScraper.parse_html`로 이미지/상세/옵션
+   추출 + `_extract_reviews`(JSON-LD review 우선 + 보수적 휴리스틱, 없으면 빈 리스트=정직) → 수집 이력 저장.
+   CSP가 fetch를 막는 사이트(Temu/아마존)도 동작(페이지 이동·postMessage는 CSP connect-src와 무관).
+4. ✅ **번역 사용자 선택** (Phase 219): 북마클릿 페이지에 ‘수집할 때 한국어 자동 번역’ 토글(기본 ON) → 북마클릿에
+   baked, `receive`가 `translate` 존중(off면 원문 유지·번역함수 미호출).
+5. ✅ **일괄수집 100→1000** (Phase 219): `/collect/bulk`(30→1000), `/api/v1/collect/bulk`(100→1000), UI 문구 갱신.
+
 ## 작업 방식
 - 브랜치 `claude/magical-noether-oo4831`에서 작업 → PR 생성·main 머지(오너 승인됨)로 배포.
 - 변경 후 전체 테스트(`python -m pytest tests/ -q`) 통과 확인.

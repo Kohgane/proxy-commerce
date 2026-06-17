@@ -12,8 +12,9 @@
         <div class="card-header"><strong>🔧 설치 방법 (2단계)</strong></div>
         <div class="card-body">
           <ol class="mb-2">
-            <li>아래 <strong>고가네 퍼센티 아이콘</strong>을 마우스로 드래그해 브라우저 북마크바에 놓으세요.</li>
-            <li>상품 페이지에서 그 북마크를 클릭하면 <strong>새 탭이 열리며 자동 수집</strong>되고, 바로 편집 화면으로 이동합니다.</li>
+            <li>아래 <strong>‘고가네수집’</strong> 버튼을 마우스로 드래그해 브라우저 북마크바에 놓으세요.</li>
+            <li>상품 페이지에서 그 북마크를 클릭하면 <strong>이미지·상세설명·리뷰까지 자동 수집</strong>되고
+                <strong>‘수집 완료’</strong>만 표시됩니다. 결과는 <strong>내 계정의 ‘수집 이력’</strong>에서 확인·편집하세요.</li>
           </ol>
           <div class="alert alert-success small mb-0">
             ✅ <strong>토큰이 필요 없습니다.</strong> 새 탭이 고가네 퍼센티(로그인된 내 계정)로 열려 안전하게 수집됩니다.
@@ -22,21 +23,31 @@
         </div>
       </div>
 
+      <!-- 수집 시 번역 선택 -->
+      <div class="card mb-4">
+        <div class="card-header"><strong>🌐 번역 설정</strong></div>
+        <div class="card-body">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="translateToggle" checked>
+            <label class="form-check-label" for="translateToggle">수집할 때 한국어로 자동 번역</label>
+          </div>
+          <div class="form-text">끄면 원문 그대로 수집됩니다(편집 화면에서 나중에 번역할 수도 있어요). 설정을 바꾸면 아래 북마클릿이 자동 갱신됩니다.</div>
+        </div>
+      </div>
+
       <!-- 북마클릿 버튼 -->
       <div class="card">
         <div class="card-header"><strong>📌 북마클릿 (드래그해서 북마크바에 추가)</strong></div>
         <div class="card-body text-center py-4">
-          <!-- 토큰 불필요: 새 탭으로 서버를 열어 로그인 세션으로 수집(CSP/CORS 우회). -->
+          <!-- 토큰 불필요: 새 탭(로그인 세션)으로 데이터를 보내 수집(CSP/CORS 우회).
+               북마크 이름은 짧은 단어 '고가네수집'으로 표시되도록 링크 텍스트를 지정. -->
           <a id="bookmarkletLink"
-             class="d-inline-flex align-items-center justify-content-center text-decoration-none"
-             style="cursor:grab;width:48px;height:48px;border-radius:12px;padding:4px;border:1px solid #dee2e6;background:#fff;"
-             title="이 아이콘을 북마크바로 드래그하세요 — 고가네 퍼센티 아이콘으로 표시됩니다"
-             aria-label="고가네 퍼센티 수집 북마클릿">
-            <img src="{{ url_for('seller_console.static', filename='favicon.svg') }}"
-                 alt="고가네퍼센티" style="width:100%;height:100%;border-radius:8px;" draggable="false">
-          </a>
-          <p class="mt-3 text-muted small mb-0">위 <strong>고가네 퍼센티 아이콘</strong>을 북마크바로 드래그하세요.</p>
-          <p class="text-muted small">북마크바에는 긴 이름 대신 <strong>고가네 퍼센티 파비콘</strong>으로 표시됩니다.</p>
+             class="d-inline-flex align-items-center gap-2 text-decoration-none px-3 py-2"
+             style="cursor:grab;border-radius:10px;border:1px solid #dee2e6;background:#fff;color:#0a1f5c;font-weight:700;"
+             title="이 버튼을 북마크바로 드래그하세요 — '고가네수집'으로 추가됩니다"
+             aria-label="고가네수집 북마클릿">고가네수집</a>
+          <p class="mt-3 text-muted small mb-0">위 <strong>고가네수집</strong> 버튼을 북마크바로 드래그하세요.</p>
+          <p class="text-muted small mb-0">북마크바에는 짧게 <strong>‘고가네수집’</strong> 한 단어로 표시됩니다.</p>
         </div>
       </div>
     </div>
@@ -55,11 +66,11 @@
         <div class="card-header"><strong>ℹ️ 동작 원리</strong></div>
         <div class="card-body small text-muted">
           <ol class="mb-2">
-            <li>상품 페이지의 메타(제목/이미지/가격)를 읽습니다.</li>
-            <li><strong>새 탭으로 고가네 퍼센티를 열어</strong> 상품 URL과 메타를 전달합니다.</li>
-            <li>서버가 상세·번역까지 수집해 <strong>수집 이력에 저장</strong>하고 편집 화면으로 이동합니다.</li>
+            <li>상품 페이지의 <strong>이미지·상세설명·리뷰·HTML</strong>을 읽습니다.</li>
+            <li><strong>새 탭으로 고가네 퍼센티(로그인된 내 계정)를 열어</strong> 그 데이터를 전달합니다.</li>
+            <li>서버가 이미지·상세·리뷰를 정리하고(선택 시 번역) <strong>내 수집 이력에 저장</strong>합니다 — ‘수집 완료’만 표시됩니다.</li>
           </ol>
-          <div>봇 차단이 강한 사이트는 <a href="/seller/markets/guide">크롬 확장(고가네 수집)</a>을 권장합니다.</div>
+          <div>봇 차단이 강한 사이트는 <a href="/seller/markets/guide">크롬 확장(고가네 수집)</a>도 사용할 수 있어요.</div>
         </div>
       </div>
     </div>
@@ -69,27 +80,39 @@
 <script>
 const SERVER_URL = "{{ request.host_url.rstrip('/') }}";
 
-// 토큰 불필요 — 새 탭으로 서버(/seller/collect/quick)를 열어 로그인 세션으로 수집.
-// 임의 쇼핑몰의 CSP가 fetch를 막아도 페이지 '이동'은 막히지 않아 실제로 수집된다.
-function buildBookmarkletCode() {
+// 토큰 불필요 — 새 탭(/seller/collect/receiver, 로그인 세션)을 열고 페이지 데이터(이미지/상세/HTML)를
+// postMessage로 전달해 수집한다. CSP가 fetch를 막는 사이트(Temu/아마존 등)에서도 동작하며,
+// 편집 페이지로 바로 가지 않고 '수집됨'만 표시한다(내 계정 수집 이력에서 확인).
+function buildBookmarkletCode(translate) {
   return "javascript:(function(){" +
     "var S='" + SERVER_URL + "';" +
     "function M(p){var e=document.querySelector('meta[property=\"'+p+'\"],meta[name=\"'+p+'\"]');return e?(e.content||''):''}" +
-    "var q=new URLSearchParams();" +
-    "q.set('u',location.href);" +
-    "q.set('t',(M('og:title')||document.title||'').slice(0,300));" +
-    "q.set('img',M('og:image')||M('og:image:url')||'');" +
-    "q.set('p',M('product:price:amount')||'');" +
-    "q.set('c',M('product:price:currency')||'');" +
-    "window.open(S+'/seller/collect/quick?'+q.toString(),'_blank');" +
+    "var imgs=[];if(M('og:image'))imgs.push(M('og:image'));" +
+    "try{[].forEach.call(document.images||[],function(im){if(im&&im.src&&(im.naturalWidth||0)>=200)imgs.push(im.src)})}catch(e){}" +
+    "var data={url:location.href," +
+    "title:(M('og:title')||document.title||'').slice(0,300)," +
+    "price:M('product:price:amount')||''," +
+    "currency:M('product:price:currency')||''," +
+    "description:M('og:description')||M('description')||''," +
+    "images:imgs.slice(0,30)," +
+    "html:(document.documentElement?document.documentElement.outerHTML:'').slice(0,800000)," +
+    "translate:" + (translate ? "true" : "false") + "};" +
+    "var w=window.open(S+'/seller/collect/receiver','_blank');" +
+    "if(!w){alert('팝업이 차단되었습니다. 이 사이트의 팝업을 허용해주세요.');return;}" +
+    "function H(e){if(e.source===w&&e.data&&e.data.kgp==='ready'){w.postMessage({kgp:'collect',data:data},S);window.removeEventListener('message',H);}}" +
+    "window.addEventListener('message',H);" +
     "})();";
 }
 
-(function initBookmarklet() {
-  const code = buildBookmarkletCode();
+function refreshBookmarklet() {
+  const translate = document.getElementById('translateToggle').checked;
+  const code = buildBookmarkletCode(translate);
   document.getElementById('bookmarkletLink').setAttribute('href', code);
   document.getElementById('bookmarkletCode').textContent = code;
-})();
+}
+
+document.getElementById('translateToggle').addEventListener('change', refreshBookmarklet);
+refreshBookmarklet();
 
 function copyCode() {
   const code = document.getElementById('bookmarkletCode').textContent;

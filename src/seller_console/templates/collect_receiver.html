@@ -1,0 +1,86 @@
+{% extends "_base.html" %}
+{% block title %}수집 중…{% endblock %}
+{% block content %}
+<div class="container-fluid py-5" style="max-width:560px">
+  <div class="card console-card">
+    <div class="card-body text-center py-5" id="recvBox">
+      <div class="spinner-border text-primary mb-3" role="status"></div>
+      <h1 class="h5 mb-1">상품을 수집하고 있어요…</h1>
+      <p class="text-muted small mb-0">잠시만 기다려주세요. 이미지·상세설명·리뷰를 가져오는 중입니다.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const SERVER_ORIGIN = window.location.origin;
+const box = document.getElementById('recvBox');
+let saved = false;
+
+function render(html) { box.innerHTML = html; }
+
+function showSuccess(d) {
+  saved = true;
+  const meta = [];
+  if (d.image_count) meta.push('이미지 ' + d.image_count + '장');
+  if (d.review_count) meta.push('리뷰 ' + d.review_count + '개');
+  meta.push(d.translated ? '한국어 번역 포함' : '원문');
+  render(
+    '<div class="display-6 mb-2">✅</div>' +
+    '<h1 class="h5 mb-1">수집 완료!</h1>' +
+    '<div class="fw-semibold text-truncate mb-1">' + (d.title || '') + '</div>' +
+    '<div class="small text-muted mb-3">' + meta.join(' · ') + '</div>' +
+    '<div class="small text-muted mb-3">내 계정의 <strong>수집 이력</strong>에서 확인·편집할 수 있어요.</div>' +
+    '<div class="d-flex gap-2 justify-content-center flex-wrap">' +
+      '<a class="btn btn-primary btn-sm" href="/seller/collect/history">수집 이력에서 보기</a>' +
+      '<a class="btn btn-outline-secondary btn-sm" href="' + (d.edit_url || '#') + '">바로 편집</a>' +
+      '<button class="btn btn-outline-secondary btn-sm" onclick="window.close()">창 닫기</button>' +
+    '</div>'
+  );
+}
+
+function showError(msg) {
+  render(
+    '<div class="display-6 mb-2">⚠️</div>' +
+    '<h1 class="h5 mb-2">자동 수집이 어려운 페이지예요</h1>' +
+    '<p class="text-muted small mb-3">' + (msg || '상품 정보를 읽지 못했습니다.') + '</p>' +
+    '<div class="d-flex gap-2 justify-content-center flex-wrap">' +
+      '<a class="btn btn-outline-secondary btn-sm" href="/seller/collect">직접 입력으로 등록</a>' +
+      '<button class="btn btn-outline-secondary btn-sm" onclick="window.close()">창 닫기</button>' +
+    '</div>'
+  );
+}
+
+async function save(data) {
+  if (saved) return;
+  try {
+    const resp = await fetch('/seller/collect/receive', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data)
+    });
+    const d = await resp.json();
+    if (d.ok) showSuccess(d); else showError(d.error);
+  } catch (e) {
+    showError('저장 중 오류가 발생했습니다: ' + e.message);
+  }
+}
+
+// 북마클릿(opener)에서 보낸 데이터 수신
+window.addEventListener('message', (e) => {
+  const m = e.data;
+  if (m && m.kgp === 'collect' && m.data) save(m.data);
+});
+
+// opener에게 '준비됨' 신호 → 데이터 전송 트리거
+if (window.opener) {
+  try { window.opener.postMessage({kgp: 'ready'}, '*'); } catch (err) {}
+}
+
+// 8초 내 데이터 안 오면 안내(팝업 직접 열림 등)
+setTimeout(() => {
+  if (!saved && box.querySelector('.spinner-border')) {
+    showError('상품 페이지에서 북마클릿(고가네수집)을 눌러 실행해주세요.');
+  }
+}, 8000);
+</script>
+{% endblock %}
