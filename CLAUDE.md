@@ -172,6 +172,20 @@
    (키도 `WC_KEY`/`WOO_CK`, `WC_SECRET`/`WOO_CS`) 둘 다 지원, scheme 없으면 `https://` 보정, base 미설정 시
    정직한 RuntimeError. → 인앱 `WC_URL`로 연결한 셀러도 실제 업로드 성공.
 
+### 후속 — 쿠팡 출고지/반품지 셀프 입력 + 가이드 + CI 수정 (오너 지시 2026-06-16 "안내를 잘 해야돼")
+- **CI 머지 실패 수정**: `test_market_credentials::test_secret_not_plaintext_on_disk`가 CI에서 실패 —
+  `cryptography`가 requirements.txt에 없어 CI 미설치 → `_fernet()` None → 자격증명 **평문 저장**(테스트 실패
+  이자 **실제 운영 보안버그**). → `requirements.txt`에 `cryptography>=42.0,<49` 추가(전 마켓 자격증명 실암호화).
+- **쿠팡 출고지/반품지 셀프서비스 입력**(멀티유저): `MARKET_CRED_FIELDS["coupang"]`에 7개 배송필드
+  (`COUPANG_VENDOR_USER_ID`/`OUTBOUND_SHIPPING_PLACE_CODE`/`RETURN_CENTER_CODE`/`RETURN_ZIP_CODE`/
+  `RETURN_ADDRESS`/`RETURN_CHARGE_NAME`/`COMPANY_CONTACT_NUMBER` + 선택 상세주소·반품배송비) 추가.
+  `required:False`(API키만으로 is_connected/연결테스트 불변) + `section`/`help`로 폼에 ‘📦 출고지·반품지’
+  구분선·도움말 렌더. 셀러가 인앱 저장 시 `seller_market_env`로 주입돼 사전검증·업로드 통과 → 오너 Render
+  설정 없이도 셀러별 등록 가능.
+- **발급 가이드 보강**(`market_guide.py`+`markets_guide.html`): 쿠팡 항목에 `shipping` 섹션 신설 —
+  ‘어디서 찾나(윙 5단계)’ + 입력칸/어디값/**예시**/env 표 + SVG 그림(윙 배송정보→코드 복사→입력칸). 누구나
+  한눈에 따라하도록. 사전검증/업로더 오류문구는 누락 env를 그대로 안내(정직).
+
 ## 작업 방식
 - 브랜치 `claude/magical-noether-oo4831`에서 작업 → PR 생성·main 머지(오너 승인됨)로 배포.
 - 변경 후 전체 테스트(`python -m pytest tests/ -q`) 통과 확인.

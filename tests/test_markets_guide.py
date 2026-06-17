@@ -52,6 +52,16 @@ class TestGuidePage:
             assert f"guide-{key}" in html
         assert "COUPANG_ACCESS_KEY" in html
 
+    def test_guide_page_shows_coupang_shipping_section(self, client):
+        """쿠팡 출고지·반품지 안내가 그림+예시와 함께 노출되어야 한다."""
+        html = client.get("/seller/markets/guide").get_data(as_text=True)
+        # 등록 거부 원인이었던 핵심 env들이 가이드에 예시와 함께 표시
+        assert "COUPANG_RETURN_CENTER_CODE" in html
+        assert "COUPANG_OUTBOUND_SHIPPING_PLACE_CODE" in html
+        assert "COUPANG_VENDOR_USER_ID" in html
+        assert "출고지" in html and "반품지" in html
+        assert "1000274592" in html  # 예시 코드
+
     def test_markets_page_has_guide_button(self, client):
         html = client.get("/seller/markets").get_data(as_text=True)
         assert "/seller/markets/guide" in html
