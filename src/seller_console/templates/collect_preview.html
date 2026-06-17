@@ -130,7 +130,14 @@
 
 <!-- ── 마켓 등록 모달 (Phase 190) ───────────────────────────────── -->
 <div class="modal fade" id="uploadModal" tabindex="-1" aria-labelledby="uploadModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
+  <style>
+    /* 긴 오류 URL/메시지가 창 밖으로 튀어나오지 않도록 박스 안에서 줄바꿈 */
+    #uploadResults .list-group-item { overflow:hidden; }
+    #uploadResults .umsg, #uploadResults .list-group-item .small, #uploadResults .list-group-item div {
+      word-break:break-all; overflow-wrap:anywhere; white-space:normal;
+    }
+  </style>
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title fw-bold" id="uploadModalLabel">📤 마켓 등록</h5>
@@ -270,11 +277,22 @@ function _initOptions() {
 function addImageRow(url) {
   const wrap = document.getElementById('imageRows');
   const row = document.createElement('div');
-  row.className = 'input-group input-group-sm img-row';
+  row.className = 'd-flex align-items-center gap-1 img-row';
   row.innerHTML = `
-    <button class="btn btn-outline-warning btn-make-primary" type="button" title="대표 이미지로 지정">⭐</button>
-    <input type="url" class="form-control img-url" placeholder="https://..." value="${escapeHtml(url || '')}">
-    <button class="btn btn-outline-danger btn-del" type="button" title="삭제">✕</button>`;
+    <button class="btn btn-outline-warning btn-sm btn-make-primary flex-shrink-0" type="button" title="대표 이미지로 지정">⭐</button>
+    <img class="img-thumb flex-shrink-0 rounded border" alt="" style="width:46px;height:46px;object-fit:cover;background:#f1f3f5;cursor:zoom-in"
+         title="클릭하면 원본 보기" onerror="this.style.visibility='hidden'">
+    <input type="url" class="form-control form-control-sm img-url" placeholder="https://..." value="${escapeHtml(url || '')}">
+    <button class="btn btn-outline-danger btn-sm btn-del flex-shrink-0" type="button" title="삭제">✕</button>`;
+  const input = row.querySelector('.img-url');
+  const thumb = row.querySelector('.img-thumb');
+  function syncThumb() {
+    const v = (input.value || '').trim();
+    if (v) { thumb.src = v; thumb.style.visibility = 'visible'; }
+    else { thumb.removeAttribute('src'); thumb.style.visibility = 'hidden'; }
+  }
+  syncThumb();
+  thumb.addEventListener('click', () => { const v = (input.value || '').trim(); if (v) window.open(v, '_blank'); });
   row.querySelector('.btn-make-primary').addEventListener('click', () => {
     wrap.insertBefore(row, wrap.firstChild);  // 맨 위로 = 대표
     refreshPrimaryImage();
@@ -283,7 +301,7 @@ function addImageRow(url) {
   row.querySelector('.btn-del').addEventListener('click', () => {
     row.remove(); refreshPrimaryImage(); refreshImageBadges();
   });
-  row.querySelector('input').addEventListener('input', refreshPrimaryImage);
+  input.addEventListener('input', () => { syncThumb(); refreshPrimaryImage(); });
   wrap.appendChild(row);
   refreshImageBadges();
 }

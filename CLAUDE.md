@@ -251,6 +251,21 @@
    baked, `receive`가 `translate` 존중(off면 원문 유지·번역함수 미호출).
 5. ✅ **일괄수집 100→1000** (Phase 219): `/collect/bulk`(30→1000), `/api/v1/collect/bulk`(100→1000), UI 문구 갱신.
 
+## 🔧 사람친화 수정: 편집 썸네일·오류창·파비콘·이미지필터·로그인 (오너 지시 2026-06-17, 편집/업로드 스샷)
+1. ✅ **편집 페이지 이미지 썸네일** (Phase 220): `collect_preview.html` 이미지 URL 행마다 46px **썸네일**(클릭 시 원본)
+   표시 — URL만 보이던 걸 사람이 이미지로 바로 확인(대표 선택 쉬움). `addImageRow` 썸네일+동기화.
+2. ✅ **마켓 등록 오류창 정리** (Phase 220): WC 406 등 긴 오류 URL(consumer_secret 포함)이 모달 밖으로 튀어나오던 문제
+   → `#uploadResults` word-break/overflow-wrap + `modal-dialog-scrollable`로 박스 안에서 줄바꿈.
+3. ✅ **북마클릿 파비콘 표시** (Phase 220): 북마크바에 글로브 파비콘만 작게(텍스트 라벨 제거). (hover 시 js URL 노출은
+   북마클릿 본질상 불가피 — 외부 스크립트 로딩은 CSP에 막혀 인라인 유지.)
+4. ✅ **북마클릿 이미지 필터** (Phase 220): `document.images`에서 logo/sprite/icon/avatar/banner/placeholder/300px미만
+   제외(`G()`) → 배너·로고 대신 상품 이미지 위주 수집.
+5. ✅ **북마클릿 로그인 튕김 방지** (Phase 220): `/seller/collect/receiver` 페이지 렌더의 인증 게이트 제거(저장 POST만 인증)
+   → 새 창이 로그인 폼으로 점프하지 않고, 미로그인 시 receiver 안에서 친절한 '로그인' 안내(401 처리).
+- **남은 후속(이 지시)**: ① **리스팅/검색 페이지에서 여러 상품 한 번에·취사선택 수집** — 북마클릿/페이지 한계로
+  **크롬 확장**(상품카드별 버튼 주입)이 정석. 다음 단계로 확장에 구현 예정. ② Temu 등 SPA의 가격/옵션/리뷰는
+  표준 메타(JSON-LD/OG)가 빈약해 추출이 제한적 — 사이트별 파서 보강 필요(별도 작업).
+
 ## 작업 방식
 - 브랜치 `claude/magical-noether-oo4831`에서 작업 → PR 생성·main 머지(오너 승인됨)로 배포.
 - 변경 후 전체 테스트(`python -m pytest tests/ -q`) 통과 확인.

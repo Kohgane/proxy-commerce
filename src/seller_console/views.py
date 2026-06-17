@@ -1296,13 +1296,14 @@ def _extract_reviews(html: str, limit: int = 20) -> list[dict]:
 def collect_receiver():
     """북마클릿 postMessage 수신 페이지 (Phase 219).
 
-    북마클릿이 새 탭으로 이 페이지를 열고(로그인 세션 → 인증), 페이지 HTML·이미지·메타를
+    북마클릿이 새 탭으로 이 페이지를 열고(로그인 세션), 페이지 HTML·이미지·메타를
     postMessage로 전달한다. 이 페이지가 같은 출처로 `/seller/collect/receive`에 저장 요청 →
     '수집됨'만 표시하고 편집 페이지로 이동하지 않는다(내 계정 수집 이력에서 확인).
+
+    ※ 로그인 페이지로 튕기지 않도록 페이지 렌더는 인증 게이트를 두지 않는다(저장 POST에서만
+    인증 확인). 미로그인 시 페이지 안에서 친절히 '로그인' 버튼을 보여준다.
     """
-    if not _check_auth():
-        return redirect(url_for("auth.login", next=request.full_path))
-    return render_template("collect_receiver.html")
+    return render_template("collect_receiver.html", authed=_check_auth())
 
 
 @bp.post("/collect/receive")
