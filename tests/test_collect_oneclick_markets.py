@@ -32,3 +32,10 @@ def test_collect_page_renders_oneclick_markets(client):
     # 퍼센티식 인페이지 수집(크롬확장) 안내
     assert "인페이지 수집" in html
     assert 'class="btn btn-outline-primary btn-sm oneclick-market"' in html
+
+
+def test_collect_page_mentions_listing_multi_collect(client):
+    """목록/검색 페이지 여러 상품 한 번에 수집(크롬확장 v1.4) 안내 노출."""
+    html = client.get("/seller/collect").get_data(as_text=True)
+    assert "검색·목록 페이지" in html
+    assert "여러 상품" in html
