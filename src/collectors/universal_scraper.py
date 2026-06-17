@@ -180,6 +180,74 @@ def _extract_domain(url: str) -> str:
         return ""
 
 
+# 상품 이미지가 아닌 것으로 보이는 URL 패턴(로고/아이콘/배너/플레이스홀더 등)
+_NON_PRODUCT_IMG_RE = re.compile(
+    r"(logo|sprite|icon|favicon|avatar|placeholder|loading|blank|pixel|spinner|"
+    r"banner|badge|button|arrow|star_|rating|flag_|emoji)",
+    re.IGNORECASE,
+)
+
+
+def _collect_dom_images(soup, base_url: str) -> list:
+    """페이지 DOM에서 상품 이미지를 최대한 수집한다.
+
+    - src + lazy-load 속성(data-src/data-original/data-lazy/data-srcset) + srcset(최대 해상도)
+    - data: URI, 로고/아이콘/배너/플레이스홀더 패턴 제외
+    - 상대경로 절대화, 순서 유지 중복 제거
+    """
+    out: list = []
+    seen = set()
+
+    def _abs(s: str) -> str:
+        s = (s or "").strip()
+        if not s or s.startswith("data:"):
+            return ""
+        if s.startswith("//"):
+            s = "https:" + s
+        elif s.startswith("/"):
+            s = urljoin(base_url, s)
+        return s if s.startswith("http") else ""
+
+    def _from_srcset(val: str) -> str:
+        # "url1 320w, url2 800w" → 가장 큰 후보(마지막) URL
+        best = ""
+        for part in (val or "").split(","):
+            cand = part.strip().split(" ")[0].strip()
+            if cand:
+                best = cand
+        return best
+
+    for img in soup.find_all("img"):
+        cand = ""
+        for attr in ("src", "data-src", "data-original", "data-lazy",
+                     "data-lazy-src", "data-image", "data-zoom-image"):
+            v = img.get(attr)
+            if v:
+                cand = v
+                break
+        if not cand:
+            ss = img.get("srcset") or img.get("data-srcset")
+            if ss:
+                cand = _from_srcset(ss)
+        url = _abs(cand)
+        if not url or url in seen:
+            continue
+        if _NON_PRODUCT_IMG_RE.search(url):
+            continue
+        seen.add(url)
+        out.append(url)
+
+    # <source srcset> (picture 요소) 도 수집
+    for src in soup.find_all("source"):
+        ss = src.get("srcset") or src.get("data-srcset")
+        url = _abs(_from_srcset(ss)) if ss else ""
+        if url and url not in seen and not _NON_PRODUCT_IMG_RE.search(url):
+            seen.add(url)
+            out.append(url)
+
+    return out
+
+
 class UniversalScraper:
     """범용 수집기 — 도메인 불문 상품 메타 추출."""
 
@@ -305,7 +373,7 @@ class UniversalScraper:
                         domain=domain,
                         title=title,
                         description=desc,
-                        images=images[:10],
+                        images=list(dict.fromkeys(list(images) + _collect_dom_images(soup, url)))[:40],
                         price=price_val,
                         currency=currency,
                         brand=brand or None,
@@ -390,7 +458,7 @@ class UniversalScraper:
             domain=domain,
             title=title,
             description=data.get("description", ""),
-            images=list(dict.fromkeys(images))[:10],
+            images=list(dict.fromkeys(images + _collect_dom_images(soup, url)))[:40],
             price=price_val,
             currency=currency,
             brand=data.get("brand"),
@@ -476,19 +544,9 @@ class UniversalScraper:
         if meta_desc:
             desc = meta_desc.get("content", "")
 
-        # 이미지 — og:image 없으면 페이지 최대 이미지
-        images: list = []
-        for img in soup.find_all("img", src=True):
-            src = img.get("src", "")
-            if not src or src.startswith("data:"):
-                continue
-            if src.startswith("//"):
-                src = "https:" + src
-            elif src.startswith("/"):
-                src = urljoin(url, src)
-            if src.startswith("http"):
-                images.append(src)
-        images = list(dict.fromkeys(images))[:5]
+        # 이미지 — og:image 없으면 페이지의 상품 이미지를 최대한 수집
+        # (src + lazy-load 속성 + srcset 최대해상도, 로고/배너/아이콘 제외)
+        images = _collect_dom_images(soup, url)[:40]
 
         # 가격 휴리스틱
         price_val: Optional[Decimal] = None
