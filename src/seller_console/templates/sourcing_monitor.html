@@ -8,7 +8,11 @@
       <p class="text-muted mb-0">내가 수집한 상품의 <strong>소싱처(원본 페이지)</strong>를 다시 확인해
         <strong>가격·품절·옵션/사이즈</strong> 변화를 알려줍니다.</p>
     </div>
-    <div class="d-flex gap-2">
+    <div class="d-flex gap-2 align-items-center">
+      <div class="form-check form-switch me-1" title="페이지를 열 때 아직 확인 안 한 상품을 자동으로 확인합니다">
+        <input class="form-check-input" type="checkbox" id="autoCheckToggle" checked>
+        <label class="form-check-label small" for="autoCheckToggle">자동 확인</label>
+      </div>
       <button id="checkAllBtn" class="btn btn-primary btn-sm" {% if not rows %}disabled{% endif %}>
         <i class="bi bi-arrow-repeat"></i> 전체 변화 확인
       </button>
@@ -19,9 +23,10 @@
   <div class="alert alert-light border small d-flex gap-2 align-items-start mb-3">
     <i class="bi bi-info-circle text-primary"></i>
     <div class="mb-0">
-      <strong>어떻게 동작하나요?</strong> ‘변화 확인’을 누르면 그 순간 소싱처 페이지를 실제로 다시 읽어
-      <strong>수집 당시 가격과 비교</strong>합니다. 추출이 막힌 사이트(로그인·봇 차단)는 거짓 알림 대신
-      <em>‘확인 불가’</em>로 정직하게 표시합니다. (정기 자동 확인은 추후 스케줄러로 확장 예정)
+      <strong>어떻게 동작하나요?</strong> 소싱처 페이지를 실제로 다시 읽어 <strong>수집 당시 가격·옵션과 비교</strong>합니다.
+      <strong>자동 확인</strong>이 켜져 있으면 이 페이지를 열 때 아직 확인 안 한 상품을 자동으로 확인합니다.
+      추출이 막힌 사이트(로그인·봇 차단)는 거짓 알림 대신 <em>‘확인 불가’</em>로 정직하게 표시합니다.
+      <span class="text-muted">서버 정기 자동확인은 <code>POST /cron/sourcing-monitor</code>(Render Cron)로 동작합니다.</span>
     </div>
   </div>
 
@@ -48,7 +53,7 @@
         </thead>
         <tbody>
           {% for r in rows %}
-          <tr data-id="{{ r.id }}">
+          <tr data-id="{{ r.id }}" data-checked="{{ '1' if r.monitor.checked_at else '0' }}">
             <td style="max-width:280px;">
               <div class="d-flex gap-2 align-items-center">
                 {% if r.image %}<img src="{{ r.image }}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0;" onerror="this.style.display='none'">{% endif %}
@@ -130,5 +135,25 @@ document.getElementById('checkAllBtn')?.addEventListener('click', async (e) => {
   btn.disabled = false; btn.innerHTML = '<i class="bi bi-arrow-repeat"></i> 전체 변화 확인';
   if (window.pcToast) pcToast('전체 소싱처 변화 확인 완료', 'success');
 });
+
+// 자동 확인 토글 상태 저장
+const autoToggle = document.getElementById('autoCheckToggle');
+if (autoToggle) {
+  const saved = localStorage.getItem('kgp_monitor_auto');
+  if (saved !== null) autoToggle.checked = saved === '1';
+  autoToggle.addEventListener('change', () => {
+    localStorage.setItem('kgp_monitor_auto', autoToggle.checked ? '1' : '0');
+  });
+}
+
+// 페이지 열 때: 자동 확인 ON이면 아직 확인 안 한 상품을 자동으로 확인(과부하 방지 상한 20)
+(async function autoCheckOnLoad() {
+  if (!autoToggle || !autoToggle.checked) return;
+  const pending = [...document.querySelectorAll('tr[data-id][data-checked="0"]')].slice(0, 20);
+  for (const row of pending) {
+    if (!autoToggle.checked) break;  // 도중 끄면 중단
+    await checkItem(row.dataset.id, row);
+  }
+})();
 </script>
 {% endblock %}

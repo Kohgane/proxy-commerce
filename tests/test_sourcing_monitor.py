@@ -93,3 +93,39 @@ def test_monitor_page_renders(client):
         resp = client.get("/seller/sourcing/monitor")
     assert resp.status_code == 200
     assert "소싱처 변화 모니터링" in resp.get_data(as_text=True)
+
+
+# 자동확인 — 배치 러너 + cron 엔드포인트
+def test_run_auto_monitor_skips_recent_and_counts_changes():
+    from src.seller_console import views
+    from datetime import datetime, timezone, timedelta
+    recent = datetime.now(timezone.utc).isoformat()
+    old = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
+    fresh_item = {"id": "fresh", "url": "https://x/1", "price": "100", "currency": "USD",
+                  "extra_json": json.dumps({"monitor": {"checked_at": recent, "change": "none"}})}
+    stale_item = {"id": "stale", "url": "https://x/2", "price": "100", "currency": "USD",
+                  "extra_json": json.dumps({"monitor": {"checked_at": old, "change": "none"}, "price_original": "100"})}
+    with patch("src.seller_console.collect_history_store.list_items", return_value=[fresh_item, stale_item]), \
+         patch("src.seller_console.collect_history_store.update", return_value=True), \
+         patch.object(views, "_check_source_change", return_value={"change": "price", "summary": "가격 ▲", "checked_at": "2026-06-17T00:00:00"}):
+        summary = views.run_auto_source_monitor(only_stale_hours=6)
+    assert summary["skipped"] == 1      # fresh 건너뜀
+    assert summary["checked"] == 1      # stale 확인
+    assert summary["changed"] == 1
+    assert summary["alerts"][0]["id"] == "stale"
+
+
+def test_cron_sourcing_monitor_route(client, monkeypatch):
+    monkeypatch.delenv("CRON_SECRET", raising=False)
+    with patch("src.seller_console.views.run_auto_source_monitor",
+               return_value={"total": 3, "checked": 2, "changed": 1, "skipped": 1, "alerts": []}):
+        resp = client.post("/cron/sourcing-monitor")
+    data = resp.get_json()
+    assert resp.status_code == 200 and data["ok"] is True
+    assert data["checked"] == 2 and data["changed"] == 1
+
+
+def test_cron_sourcing_monitor_requires_secret(client, monkeypatch):
+    monkeypatch.setenv("CRON_SECRET", "s3cret")
+    resp = client.post("/cron/sourcing-monitor")  # 헤더 없음 → 401
+    assert resp.status_code == 401

@@ -53,6 +53,41 @@ def reprice():
     return jsonify({"ok": True, "results": results})
 
 
+@cron_bp.post("/sourcing-monitor")
+def sourcing_monitor_cron():
+    """수집 상품 소싱처 변화 자동 확인 (Render Cron / 외부 스케줄러 훅).
+
+    헤더 ``X-Cron-Secret`` 이 ``CRON_SECRET`` 환경변수와 일치해야 실행.
+    (키 미설정 시 허용 — Render 크론에서 헤더 없이 호출 가능)
+
+    Query Params:
+        days, max_items, stale_hours — 확인 범위/주기 조정(선택).
+    """
+    cron_secret = os.getenv("CRON_SECRET")
+    if cron_secret:
+        if request.headers.get("X-Cron-Secret", "") != cron_secret:
+            return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+    def _int(name, default):
+        try:
+            return int(request.args.get(name, default))
+        except (TypeError, ValueError):
+            return default
+
+    try:
+        from src.seller_console.views import run_auto_source_monitor
+        summary = run_auto_source_monitor(
+            days=_int("days", 14),
+            max_items=_int("max_items", 200),
+            only_stale_hours=float(request.args.get("stale_hours", 6) or 6),
+        )
+    except Exception as exc:
+        logger.error("소싱처 자동확인 오류: %s", exc)
+        return jsonify({"ok": False, "error": "소싱처 자동확인 중 오류가 발생했습니다."}), 500
+
+    return jsonify({"ok": True, **summary})
+
+
 def _send_summary_notification(results: dict):
     """재가격 결과 요약을 텔레그램 + 이메일로 발송."""
     evaluated = results.get("evaluated", 0)

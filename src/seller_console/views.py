@@ -4844,6 +4844,42 @@ def _persist_monitor_result(item_id: str, seller_id: str, item: dict, mon: dict)
         logger.warning("모니터 결과 저장 실패(%s): %s", item_id, exc)
 
 
+def run_auto_source_monitor(*, days: int = 14, max_items: int = 200, only_stale_hours: float = 6.0,
+                            seller_id: Optional[str] = None) -> dict:
+    """모든(또는 특정 셀러) 최근 수집 상품의 소싱처를 자동 재확인한다.
+
+    Render Cron(`/cron/sourcing-monitor`) 또는 페이지 자동확인에서 호출.
+    최근 확인분(only_stale_hours 이내)은 건너뛰어 과도한 스크래핑을 방지한다.
+    """
+    from . import collect_history_store
+    from datetime import datetime as _dt
+
+    items = collect_history_store.list_items(days=days, seller_id=seller_id)
+    checked = changed = skipped = 0
+    alerts: list[dict] = []
+    for it in items[:max_items]:
+        extra = _parse_history_extra(it)
+        mon = extra.get("monitor") or {}
+        last = mon.get("checked_at")
+        if last and only_stale_hours:
+            try:
+                age_h = (datetime.now(timezone.utc) - _dt.fromisoformat(last)).total_seconds() / 3600.0
+                if age_h < only_stale_hours:
+                    skipped += 1
+                    continue
+            except Exception:
+                pass
+        sid = str(it.get("seller_id") or "") or None
+        res = _check_source_change(it)
+        _persist_monitor_result(it.get("id"), sid, it, res)
+        checked += 1
+        if res.get("change") not in ("none", "unknown", None):
+            changed += 1
+            alerts.append({"id": it.get("id"), "title": it.get("title"), "summary": res.get("summary")})
+    return {"total": len(items), "checked": checked, "changed": changed,
+            "skipped": skipped, "alerts": alerts[:50]}
+
+
 @bp.get("/sourcing/monitor")
 def sourcing_monitor():
     """수집한 상품의 소싱처 변화(품절/가격/옵션) 모니터링 페이지."""

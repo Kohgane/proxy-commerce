@@ -216,6 +216,15 @@
    `collect_history_store.update`로 extra_json에 저장(다음 방문 시 마지막 상태 표시). `POST /sourcing/monitor/check`
    단건/전체. ※ 현재는 온디맨드(버튼) 확인 — 정기 자동확인은 추후 스케줄러로 확장 예정.
 
+## 🔧 인페이지 수집버튼 직관화 + 소싱처 자동확인 (오너 지시 2026-06-17, Temu 스샷 — 퍼센티 벤치마킹 "똑같지 않게·바로")
+1. ✅ **확장 인페이지 수집 버튼 브랜딩/직관화** (Phase 217): `content_script.js` FAB를 🛒→**고가네 글로브
+   아이콘(네이비+주황/초록 궤도, 파비콘 모티프) + "고가네 수집/번역까지 한 번에"** 라벨, 네이비+주황테
+   pill로 강화(경쟁사 파란 막대형과 구분). 첫 등장 시 살짝 강조 애니메이션. manifest 1.2.0→1.3.0.
+2. ✅ **소싱처 변화 자동확인** (Phase 217): ①페이지 자동확인 — `/seller/sourcing/monitor` 열 때 '자동 확인'
+   토글(기본 ON, localStorage)로 미확인 상품 자동 점검(상한 20). ②서버 정기확인 — `run_auto_source_monitor()`
+   (최근 N일 수집상품 일괄 재확인, only_stale_hours 이내 스킵) + `POST /cron/sourcing-monitor`(X-Cron-Secret,
+   Render Cron). 변화건은 alerts로 요약. 정직성 유지(확인 불가는 변화 아님).
+
 ## 작업 방식
 - 브랜치 `claude/magical-noether-oo4831`에서 작업 → PR 생성·main 머지(오너 승인됨)로 배포.
 - 변경 후 전체 테스트(`python -m pytest tests/ -q`) 통과 확인.
