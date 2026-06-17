@@ -147,38 +147,38 @@
 
         <!-- Step 1: 마켓 선택 + 마진율 설정 -->
         <div id="stepSelect">
-          <h6 class="fw-semibold mb-3">1. 등록할 마켓 선택</h6>
+          <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+            <h6 class="fw-semibold mb-0">1. 등록할 마켓 선택</h6>
+            {% set conn = market_connected or {} %}
+            {% set total = conn|length %}
+            {% set okcnt = conn.values()|select|list|length %}
+            <span class="small {{ 'text-success' if okcnt == total and total else 'text-warning' }}">
+              연동 {{ okcnt }}/{{ total }}
+              <a href="/seller/markets/connect" target="_blank" class="ms-1 text-decoration-none">마켓 연결 →</a>
+            </span>
+          </div>
+          {% macro mtile(code, label, chkid) %}
+          {% set ok = (market_connected or {}).get(code) %}
+          <div class="col-6 col-md-4">
+            <label class="market-tile border rounded p-2 d-flex align-items-center gap-2 w-100 mb-0 {{ 'border-success' if ok else 'border-warning-subtle' }}"
+                   for="{{ chkid }}" style="{{ 'opacity:.7' if not ok else '' }}">
+              <input class="form-check-input market-upload-check m-0" type="checkbox" value="{{ code }}" id="{{ chkid }}">
+              <span class="fw-semibold flex-grow-1">{{ label }}</span>
+              {% if ok %}
+              <span class="badge text-bg-success" title="연결됨 — 바로 등록 가능">✅ 연결</span>
+              {% else %}
+              <a href="/seller/markets/connect/{{ code }}" target="_blank" class="badge text-bg-secondary text-decoration-none"
+                 title="아직 연결되지 않음 — 클릭해 연결" onclick="event.stopPropagation()">❌ 미연결</a>
+              {% endif %}
+            </label>
+          </div>
+          {% endmacro %}
           <div class="row g-2 mb-4" id="marketCheckboxes">
-            <div class="col-6 col-md-4">
-              <label class="market-tile border rounded p-2 d-flex align-items-center gap-2 w-100 mb-0" for="chkShopify">
-                <input class="form-check-input market-upload-check m-0" type="checkbox" value="shopify" id="chkShopify">
-                <span class="fw-semibold">Shopify</span>
-              </label>
-            </div>
-            <div class="col-6 col-md-4">
-              <label class="market-tile border rounded p-2 d-flex align-items-center gap-2 w-100 mb-0" for="chkCoupang">
-                <input class="form-check-input market-upload-check m-0" type="checkbox" value="coupang" id="chkCoupang">
-                <span class="fw-semibold">쿠팡</span>
-              </label>
-            </div>
-            <div class="col-6 col-md-4">
-              <label class="market-tile border rounded p-2 d-flex align-items-center gap-2 w-100 mb-0" for="chkSmartstore">
-                <input class="form-check-input market-upload-check m-0" type="checkbox" value="smartstore" id="chkSmartstore">
-                <span class="fw-semibold">스마트스토어</span>
-              </label>
-            </div>
-            <div class="col-6 col-md-4">
-              <label class="market-tile border rounded p-2 d-flex align-items-center gap-2 w-100 mb-0" for="chkElevenst">
-                <input class="form-check-input market-upload-check m-0" type="checkbox" value="elevenst" id="chkElevenst">
-                <span class="fw-semibold">11번가</span>
-              </label>
-            </div>
-            <div class="col-6 col-md-4">
-              <label class="market-tile border rounded p-2 d-flex align-items-center gap-2 w-100 mb-0" for="chkWoo">
-                <input class="form-check-input market-upload-check m-0" type="checkbox" value="woocommerce" id="chkWoo">
-                <span class="fw-semibold">코가네멀티샵</span>
-              </label>
-            </div>
+            {{ mtile('shopify', 'Shopify', 'chkShopify') }}
+            {{ mtile('coupang', '쿠팡', 'chkCoupang') }}
+            {{ mtile('smartstore', '스마트스토어', 'chkSmartstore') }}
+            {{ mtile('elevenst', '11번가', 'chkElevenst') }}
+            {{ mtile('woocommerce', '코가네멀티샵', 'chkWoo') }}
           </div>
 
           <h6 class="fw-semibold mb-2">2. 목표 마진율 설정</h6>
