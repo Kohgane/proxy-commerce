@@ -1,0 +1,134 @@
+{% extends "_base.html" %}
+{% block title %}소싱처 변화 모니터링{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+    <div>
+      <h1 class="h4 mb-1">📡 소싱처 변화 모니터링</h1>
+      <p class="text-muted mb-0">내가 수집한 상품의 <strong>소싱처(원본 페이지)</strong>를 다시 확인해
+        <strong>가격·품절·옵션/사이즈</strong> 변화를 알려줍니다.</p>
+    </div>
+    <div class="d-flex gap-2">
+      <button id="checkAllBtn" class="btn btn-primary btn-sm" {% if not rows %}disabled{% endif %}>
+        <i class="bi bi-arrow-repeat"></i> 전체 변화 확인
+      </button>
+      <a href="/seller/collect/history" class="btn btn-outline-secondary btn-sm">수집 이력</a>
+    </div>
+  </div>
+
+  <div class="alert alert-light border small d-flex gap-2 align-items-start mb-3">
+    <i class="bi bi-info-circle text-primary"></i>
+    <div class="mb-0">
+      <strong>어떻게 동작하나요?</strong> ‘변화 확인’을 누르면 그 순간 소싱처 페이지를 실제로 다시 읽어
+      <strong>수집 당시 가격과 비교</strong>합니다. 추출이 막힌 사이트(로그인·봇 차단)는 거짓 알림 대신
+      <em>‘확인 불가’</em>로 정직하게 표시합니다. (정기 자동 확인은 추후 스케줄러로 확장 예정)
+    </div>
+  </div>
+
+  {% if not rows %}
+  <div class="console-empty-state p-4">
+    <div class="console-empty-icon"><i class="bi bi-broadcast"></i></div>
+    <div class="fw-semibold mb-1">아직 수집한 상품이 없습니다.</div>
+    <div class="small mb-2">상품을 수집하면 이곳에서 소싱처 변화를 추적할 수 있어요.</div>
+    <a href="/seller/sourcing" class="btn btn-sm btn-primary">상품 수집하러 가기</a>
+  </div>
+  {% else %}
+  <div class="card console-card">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>상품</th>
+            <th>소싱처</th>
+            <th>수집가</th>
+            <th>마지막 확인</th>
+            <th>변화</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr data-id="{{ r.id }}">
+            <td style="max-width:280px;">
+              <div class="d-flex gap-2 align-items-center">
+                {% if r.image %}<img src="{{ r.image }}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0;" onerror="this.style.display='none'">{% endif %}
+                <a class="text-truncate d-inline-block" style="max-width:220px;" href="/seller/collect/preview/{{ r.id }}" title="{{ r.title }}">{{ r.title }}</a>
+              </div>
+            </td>
+            <td class="small text-muted">
+              {% if r.url %}<a href="{{ r.url }}" target="_blank" rel="noopener noreferrer">{{ r.domain or r.url }}</a>{% else %}-{% endif %}
+            </td>
+            <td class="small">{{ r.price }} {{ r.currency }}</td>
+            <td class="small text-muted mon-checked">{{ (r.monitor.checked_at or '')[:16]|replace('T',' ') or '미확인' }}</td>
+            <td class="mon-change">
+              {% set ch = r.monitor.change %}
+              {% if ch == 'out_of_stock' %}<span class="badge text-bg-danger">{{ r.monitor.summary }}</span>
+              {% elif ch == 'price' %}<span class="badge text-bg-warning text-dark">{{ r.monitor.summary }}</span>
+              {% elif ch == 'options' or ch == 'changed' %}<span class="badge text-bg-info">{{ r.monitor.summary }}</span>
+              {% elif ch == 'none' %}<span class="badge text-bg-success">변화 없음</span>
+              {% elif r.monitor.summary %}<span class="badge text-bg-secondary">{{ r.monitor.summary }}</span>
+              {% else %}<span class="text-muted small">미확인</span>{% endif %}
+            </td>
+            <td>
+              <button class="btn btn-sm btn-outline-primary mon-check-btn" data-id="{{ r.id }}">변화 확인</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function renderChange(td, mon) {
+  const ch = mon.change;
+  const s = mon.summary || '확인 불가';
+  let cls = 'text-bg-secondary', txt = s;
+  if (ch === 'out_of_stock') cls = 'text-bg-danger';
+  else if (ch === 'price') cls = 'text-bg-warning text-dark';
+  else if (ch === 'options' || ch === 'changed') cls = 'text-bg-info';
+  else if (ch === 'none') { cls = 'text-bg-success'; txt = '변화 없음'; }
+  td.innerHTML = `<span class="badge ${cls}">${txt}</span>`;
+}
+
+async function checkItem(id, row) {
+  const btn = row.querySelector('.mon-check-btn');
+  const changeTd = row.querySelector('.mon-change');
+  const checkedTd = row.querySelector('.mon-checked');
+  if (btn) { btn.disabled = true; btn.textContent = '확인 중…'; }
+  try {
+    const resp = await fetch('/seller/sourcing/monitor/check', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({item_id: id})
+    });
+    const data = await resp.json();
+    const mon = (data.results && data.results[0]) || {};
+    renderChange(changeTd, mon);
+    if (checkedTd && mon.checked_at) checkedTd.textContent = mon.checked_at.slice(0,16).replace('T',' ');
+  } catch (e) {
+    changeTd.innerHTML = `<span class="badge text-bg-secondary">확인 실패</span>`;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '변화 확인'; }
+  }
+}
+
+document.querySelectorAll('.mon-check-btn').forEach(btn => {
+  btn.addEventListener('click', () => checkItem(btn.dataset.id, btn.closest('tr')));
+});
+
+document.getElementById('checkAllBtn')?.addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true; btn.textContent = '전체 확인 중…';
+  const rows = [...document.querySelectorAll('tr[data-id]')];
+  for (const row of rows) {
+    await checkItem(row.dataset.id, row);
+  }
+  btn.disabled = false; btn.innerHTML = '<i class="bi bi-arrow-repeat"></i> 전체 변화 확인';
+  if (window.pcToast) pcToast('전체 소싱처 변화 확인 완료', 'success');
+});
+</script>
+{% endblock %}

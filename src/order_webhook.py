@@ -1033,7 +1033,17 @@ except Exception as _ai_api_bp_exc:
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')
-CORS(app, resources={r'/health/*': {'origins': _cors_origins}})
+CORS(app, resources={
+    r'/health/*': {'origins': _cors_origins},
+    # 북마클릿/크롬확장 수집 — 임의 쇼핑몰 페이지에서 크로스오리진 POST가 들어온다.
+    # Bearer 토큰 인증(쿠키 미사용)이라 origins '*' 안전. 미설정 시 브라우저가
+    # preflight를 막아 'Failed to fetch'로 수집이 실패하므로 명시적으로 허용한다.
+    r'/api/v1/collect/*': {
+        'origins': '*',
+        'methods': ['GET', 'POST', 'OPTIONS'],
+        'allow_headers': ['Content-Type', 'Authorization'],
+    },
+})
 
 # Rate Limiter 초기화
 limiter = create_limiter(app)
