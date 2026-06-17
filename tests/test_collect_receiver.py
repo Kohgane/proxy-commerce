@@ -105,3 +105,31 @@ def test_bulk_limit_raised_to_1000(client):
     with patch("src.seller_console.views._collect_real_draft", return_value=None):
         r = client.post("/seller/collect/bulk", json={"urls": urls})
     assert r.get_json()["total"] == 1000
+
+
+def test_receiver_does_not_redirect_to_login_when_unauth(monkeypatch):
+    """미로그인이어도 receiver는 로그인 페이지로 튕기지 않고 페이지 안에서 안내."""
+    monkeypatch.setenv("SELLER_CONSOLE_AUTH", "1")
+    import importlib
+    from src.seller_console import views as v
+    importlib.reload(v)  # _AUTH_ENABLED 재평가
+    try:
+        from src.order_webhook import app
+        app.config["TESTING"] = True
+        with app.test_client() as c:
+            r = c.get("/seller/collect/receiver")
+        assert r.status_code == 200          # redirect(302) 아님
+        assert "showLogin" in r.get_data(as_text=True)
+    finally:
+        monkeypatch.delenv("SELLER_CONSOLE_AUTH", raising=False)
+        importlib.reload(v)
+
+
+def test_edit_page_has_image_thumbnails(client):
+    """편집 페이지 이미지 행에 썸네일(사람이 보이게)."""
+    with patch("src.seller_console.collect_history_store.get",
+               return_value={"id": "x", "title": "t", "url": "https://u", "image_url": "https://i/1.jpg",
+                             "price": "10", "currency": "USD", "extra_json": "{}"}):
+        r = client.get("/seller/collect/preview/x")
+    html = r.get_data(as_text=True)
+    assert "img-thumb" in html
