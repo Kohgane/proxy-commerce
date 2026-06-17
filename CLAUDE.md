@@ -276,6 +276,18 @@
   ※ 목록 수집은 카드 정보(제목·이미지·가격·링크) 수준 — 상세·옵션·리뷰는 상세페이지 ‘고가네 수집’ 권장(README 방법4).
 - 인앱 `/seller/collect` 안내·확장 README에 ‘검색/목록 페이지 여러 상품 한 번에 수집’ 추가.
 
+## 🔧 상품 이미지 전체 수집 (오너 지시 2026-06-17 "모든 이미지 수집해야돼")
+- ✅ **이미지 전체 수집** (Phase 222): `universal_scraper`가 이미지를 `src`만·5개로만 받던 걸 →
+  신설 `_collect_dom_images()`로 `src`+lazy(`data-src`/`data-original`/`data-lazy`)+`srcset`/`<source>` 최대해상도까지
+  수집, 로고/아이콘/배너/플레이스홀더 패턴 제외, 상대경로 절대화·중복제거. JSON-LD/OG 경로도 갤러리 이미지를
+  머지(캡 10→40). 확장 `content_script.extractProductMeta`도 og 하나가 아니라 페이지의 모든 상품 이미지(≥250px,
+  로고/배너 제외) 수집. manifest 1.4.0→1.4.1.
+- **남은 후속(오너 화면, 코드 아닌 사안/대형 기능)**: ① 구글/네이버 로그인 = OAuth 키 미설정(카카오만 설정됨) —
+  로그인 페이지가 이미 ‘설정 경로/redirect_uri/client_id’ 진단 표시. 오너가 `GOOGLE_CLIENT_ID/SECRET`,
+  `NAVER_CLIENT_ID/SECRET` 설정 + 콘솔 redirect_uri 등록해야 활성화. ② 북마클릿 아이콘/hover URL = 브라우저가
+  `javascript:` 북마클릿에 강제하는 동작이라 커스터마이즈 불가 → 크롬 확장(브랜드 아이콘·hover 정상) 권장.
+  ③ 마켓별 카테고리 선택 + 자동 카테고리 분류 = 대형 기능(퍼센티 벤치마킹) — 별도 PR로 진행 예정.
+
 ## 작업 방식
 - 브랜치 `claude/magical-noether-oo4831`에서 작업 → PR 생성·main 머지(오너 승인됨)로 배포.
 - 변경 후 전체 테스트(`python -m pytest tests/ -q`) 통과 확인.

@@ -26,10 +26,27 @@ function extractProductMeta() {
     })
     .filter(Boolean);
 
-  // 이미지 후보: og:image 우선, 없으면 본문 큰 이미지
+  // 이미지: og:image 우선 + 페이지의 모든 상품 이미지(로고/배너/아이콘/작은 이미지 제외)
   const ogImage = getMeta("og:image") || getMeta("og:image:url") || "";
+  const _isProductImg = (s) =>
+    s && s.indexOf("data:") !== 0 &&
+    !/(logo|sprite|icon|favicon|avatar|placeholder|loading|blank|pixel|banner|badge|rating|star_|flag_|emoji)/i.test(s);
   const images = [];
-  if (ogImage) images.push(ogImage);
+  const _seenImg = new Set();
+  const _pushImg = (s) => { if (_isProductImg(s) && !_seenImg.has(s)) { _seenImg.add(s); images.push(s); } };
+  if (ogImage) _pushImg(ogImage);
+  try {
+    document.querySelectorAll("img").forEach((im) => {
+      let src = im.currentSrc || im.src || im.getAttribute("data-src") || im.getAttribute("data-original") || "";
+      if (!src && im.getAttribute("srcset")) {
+        const parts = im.getAttribute("srcset").split(",");
+        src = (parts[parts.length - 1] || "").trim().split(" ")[0];
+      }
+      const w = im.naturalWidth || im.width || 0;
+      const h = im.naturalHeight || im.height || 0;
+      if (src && w >= 250 && h >= 250) _pushImg(src);
+    });
+  } catch (e) { /* noop */ }
 
   // 가격 휴리스틱 (og:price 없을 때)
   let heuristicPrice = "";
