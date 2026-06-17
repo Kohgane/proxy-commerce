@@ -198,6 +198,24 @@
 - **버튼 실동작 확인**: 추천 CTA·소싱처·재수집·키워드/디스커버리 링크 타깃 라우트(`/collect`,`/me/tokens`,
   `/bookmarklet`,`/discovery`,`/keywords`,`/sourcing/{watches,candidates}`) 전부 존재 확인. 안내 카피 섬세화.
 
+## 🔧 수집 안 됨(CORS)·소싱처 변화 모니터링·인간친화 카피 (오너 지시 2026-06-17, 라이브 스크린샷)
+오너 지적: ①북마클릿 `Failed to fetch`로 수집 안 됨 ②"회수"같은 딱딱한 단어 ③토큰 설명 부재
+④북마클릿 버튼 큼 ⑤수집상품 소싱처 변화(품절/가격/사이즈/재고) 실시간 연동 희망.
+1. ✅ **북마클릿 수집 `Failed to fetch`** (Phase 216): CORS가 `/health/*`에만 설정돼 임의 쇼핑몰에서
+   `/api/v1/collect/extension`으로 보내는 크로스오리진 POST의 preflight가 막혀 수집 실패. → `order_webhook.py`
+   CORS에 `/api/v1/collect/*`(origins `*`, POST/OPTIONS, Content-Type/Authorization) 추가. Bearer 인증이라
+   `*` 안전. 북마클릿이 페이지 HTML도 함께 전송(600KB 상한)해 봇 차단 사이트도 서버 파싱으로 수집.
+2. ✅ **인간친화 카피** (Phase 216): 토큰 "회수"→**"삭제"**(badge/버튼/확인창/토스트). 고가네퍼센티는 인간친화 우선.
+3. ✅ **토큰 설명** (Phase 216): `personal_tokens.html`에 '토큰이 무엇이고 무슨 일을 하나'(①쓰는법 ②동작=Bearer
+   ③안전=해시저장·삭제로 무효화) 카드 + 스코프 뜻 안내.
+4. ✅ **북마클릿 버튼 → 고가네퍼센티 파비콘** (Phase 216): 🛒 이모지 대신 `favicon.svg`(글로브) 이미지 48×48
+   아이콘 버튼으로. 북마크바에 파비콘으로 표시.
+5. ✅ **수집상품 소싱처 변화 모니터링** (Phase 216): 신규 `/seller/sourcing/monitor`(+nav '소싱처 변화').
+   내 수집 이력 상품의 소싱처를 `UniversalScraper`로 재확인 → 수집 당시 가격/옵션과 비교해 **가격 ▲▼·품절·
+   옵션/사이즈 소진** 판정. 추출 불가(봇차단/네트워크)는 거짓 알림 대신 **'확인 불가'**(정직). 결과는
+   `collect_history_store.update`로 extra_json에 저장(다음 방문 시 마지막 상태 표시). `POST /sourcing/monitor/check`
+   단건/전체. ※ 현재는 온디맨드(버튼) 확인 — 정기 자동확인은 추후 스케줄러로 확장 예정.
+
 ## 작업 방식
 - 브랜치 `claude/magical-noether-oo4831`에서 작업 → PR 생성·main 머지(오너 승인됨)로 배포.
 - 변경 후 전체 테스트(`python -m pytest tests/ -q`) 통과 확인.

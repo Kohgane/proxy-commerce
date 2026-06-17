@@ -4731,6 +4731,175 @@ def sourcing_registry_recollect(domain: str):
         return jsonify({"ok": False, "error": "재수집 중 오류가 발생했습니다."}), 500
 
 
+def _parse_history_extra(item: dict) -> dict:
+    """수집 이력 항목의 extra_json을 dict로 파싱(실패 시 빈 dict)."""
+    raw = item.get("extra_json") or item.get("extra") or ""
+    if isinstance(raw, dict):
+        return raw
+    try:
+        import json as _json
+        parsed = _json.loads(raw) if raw else {}
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+def _check_source_change(item: dict) -> dict:
+    """수집 상품 1건의 소싱처를 재확인해 가격/재고/옵션 변화를 판정한다.
+
+    실 스크래핑(UniversalScraper)으로 현재 상태를 가져와 수집 당시 값과 비교.
+    추출 불가(봇 차단/네트워크)면 가짜 변화 대신 '확인 불가'로 정직하게 처리한다.
+    """
+    url = (item.get("url") or "").strip()
+    extra = _parse_history_extra(item)
+
+    def _to_float(v):
+        try:
+            return float(str(v).replace(",", "").strip())
+        except (TypeError, ValueError):
+            return None
+
+    base_price = _to_float(item.get("price")) or _to_float(extra.get("price_original")) or _to_float(extra.get("price"))
+    base_options = extra.get("options") or {}
+
+    result = {
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "current_price": None,
+        "currency": item.get("currency") or extra.get("currency") or "",
+        "in_stock": None,
+        "change": "unknown",
+        "summary": "확인 불가",
+        "method": "",
+    }
+    if not url.startswith(("http://", "https://")):
+        result["summary"] = "URL 없음 — 확인 불가"
+        return result
+
+    try:
+        from src.collectors.universal_scraper import UniversalScraper
+        sp = UniversalScraper().fetch(url)
+    except Exception as exc:
+        logger.warning("소싱처 변화 확인 실패(%s): %s", url[:80], exc)
+        sp = None
+
+    if sp is None or (getattr(sp, "price", None) is None and getattr(sp, "in_stock", None) is None):
+        # 추출 불가 — 거짓 변화 금지(정직)
+        result["summary"] = "확인 불가 (봇 차단/네트워크/비표준 페이지)"
+        return result
+
+    cur_price = _to_float(getattr(sp, "price", None))
+    in_stock = getattr(sp, "in_stock", None)
+    cur_options = getattr(sp, "options", None) or {}
+    result["current_price"] = cur_price
+    result["in_stock"] = in_stock
+    result["method"] = getattr(sp, "extraction_method", "") or ""
+    if getattr(sp, "currency", None):
+        result["currency"] = sp.currency
+
+    changes = []
+    if in_stock is False:
+        changes.append("품절")
+        result["change"] = "out_of_stock"
+    if base_price is not None and cur_price is not None and abs(cur_price - base_price) >= 0.01:
+        arrow = "▲" if cur_price > base_price else "▼"
+        pct = ((cur_price - base_price) / base_price * 100) if base_price else 0
+        changes.append(f"가격 {arrow} {base_price:g}→{cur_price:g} ({pct:+.0f}%)")
+        if result["change"] != "out_of_stock":
+            result["change"] = "price"
+    # 옵션/사이즈 변경 감지(값 집합 비교)
+    def _opt_values(opts):
+        vals = set()
+        if isinstance(opts, dict):
+            for v in opts.values():
+                if isinstance(v, (list, tuple)):
+                    vals.update(str(x).strip() for x in v if str(x).strip())
+        return vals
+    base_set, cur_set = _opt_values(base_options), _opt_values(cur_options)
+    if base_set and cur_set and base_set != cur_set:
+        removed = base_set - cur_set
+        if removed:
+            changes.append("옵션/사이즈 일부 소진/변경")
+            if result["change"] == "unknown":
+                result["change"] = "options"
+
+    if changes:
+        result["summary"] = " · ".join(changes)
+        if result["change"] == "unknown":
+            result["change"] = "changed"
+    else:
+        result["change"] = "none"
+        result["summary"] = "변화 없음"
+    return result
+
+
+def _persist_monitor_result(item_id: str, seller_id: str, item: dict, mon: dict) -> None:
+    """변화 확인 결과를 수집 이력 extra_json에 저장(다음 방문 시 마지막 상태 표시)."""
+    try:
+        from . import collect_history_store
+        import json as _json
+        extra = _parse_history_extra(item)
+        extra["monitor"] = mon
+        collect_history_store.update(item_id, seller_id=seller_id, extra_json=_json.dumps(extra, ensure_ascii=False))
+    except Exception as exc:
+        logger.warning("모니터 결과 저장 실패(%s): %s", item_id, exc)
+
+
+@bp.get("/sourcing/monitor")
+def sourcing_monitor():
+    """수집한 상품의 소싱처 변화(품절/가격/옵션) 모니터링 페이지."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
+    from . import collect_history_store
+    items = collect_history_store.list_items(days=90, seller_id=_seller_id())
+    rows = []
+    for it in items:
+        extra = _parse_history_extra(it)
+        mon = extra.get("monitor") or {}
+        rows.append({
+            "id": it.get("id"),
+            "title": it.get("title") or extra.get("title_ko") or extra.get("title") or "(제목 없음)",
+            "url": it.get("url") or "",
+            "domain": it.get("domain") or "",
+            "image": it.get("image_url") or (extra.get("images") or [""])[0] if extra.get("images") else it.get("image_url") or "",
+            "price": it.get("price") or extra.get("price_original") or "",
+            "currency": it.get("currency") or extra.get("currency") or "",
+            "monitor": mon,
+        })
+    return render_template("sourcing_monitor.html", rows=rows, total=len(rows))
+
+
+@bp.post("/sourcing/monitor/check")
+def sourcing_monitor_check():
+    """수집 상품의 소싱처 변화 확인 (단건 또는 다건).
+
+    Request: {"item_id": "..."} 또는 {"item_ids": [...]}
+    Response: {"ok": true, "results": [{id, summary, change, current_price, in_stock, checked_at}]}
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    ids = data.get("item_ids")
+    if not ids:
+        single = data.get("item_id")
+        ids = [single] if single else []
+    ids = [str(i) for i in ids if i][:30]
+    if not ids:
+        return jsonify({"ok": False, "error": "확인할 항목이 없습니다."}), 400
+
+    from . import collect_history_store
+    sid = _seller_id()
+    results = []
+    for item_id in ids:
+        item = collect_history_store.get(item_id, seller_id=sid)
+        if not item:
+            results.append({"id": item_id, "ok": False, "summary": "항목을 찾을 수 없습니다."})
+            continue
+        mon = _check_source_change(item)
+        _persist_monitor_result(item_id, sid, item, mon)
+        results.append({"id": item_id, "ok": True, **mon})
+    return jsonify({"ok": True, "results": results})
+
+
 def _sourcing_require_admin():
     """소싱 페이지 관리자 권한 확인."""
     from src.auth.admin_resolver import is_admin_session

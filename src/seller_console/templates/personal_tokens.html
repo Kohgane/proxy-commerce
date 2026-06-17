@@ -2,14 +2,52 @@
 {% block title %}Personal Access Token 관리{% endblock %}
 {% block content %}
 <div class="container-fluid py-4">
-  <div class="d-flex justify-content-between align-items-center mb-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
       <h1 class="h3 mb-0">🔑 Personal Access Token 관리</h1>
-      <small class="text-muted">크롬 확장 / 북마클릿 인증에 사용합니다.</small>
+      <small class="text-muted">크롬 확장 / 북마클릿이 “내 계정”으로 수집하도록 인증하는 열쇠입니다.</small>
     </div>
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#generateModal">
       ＋ 새 토큰 발급
     </button>
+  </div>
+
+  <!-- 토큰이 무엇인지 / 어떻게 동작하는지 설명 -->
+  <div class="card border-primary-subtle bg-primary-subtle mb-4">
+    <div class="card-body">
+      <h2 class="h6 mb-2">🔑 토큰이 무엇이고, 무슨 일을 하나요?</h2>
+      <p class="small mb-2">
+        Personal Access Token(개인 액세스 토큰)은 <strong>비밀번호 대신 쓰는 긴 열쇠 문자열</strong>입니다.
+        크롬 확장이나 북마클릿(🛒)으로 상품을 수집할 때, 이 토큰이 “이 수집은 <strong>당신 계정</strong>의 것”이라고
+        서버에 알려줍니다. 토큰이 없으면 수집 요청이 거부돼요.
+      </p>
+      <div class="row g-2 small">
+        <div class="col-md-4">
+          <div class="border rounded-3 p-2 h-100 bg-white">
+            <div class="fw-semibold">① 어떻게 쓰나</div>
+            토큰을 발급해 크롬 확장 옵션이나 북마클릿에 한 번 붙여넣으면 끝. 이후 자동으로 사용됩니다.
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="border rounded-3 p-2 h-100 bg-white">
+            <div class="fw-semibold">② 어떻게 동작하나</div>
+            수집 시 <code>Authorization: Bearer &lt;토큰&gt;</code> 형태로 전송돼 본인 확인 후
+            수집 이력에 저장됩니다. <strong>스코프</strong>로 권한 범위를 제한해요(예: 수집만).
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="border rounded-3 p-2 h-100 bg-white">
+            <div class="fw-semibold">③ 안전한가</div>
+            토큰은 발급 시 <strong>한 번만</strong> 보이고 서버엔 해시로만 저장됩니다. 새어나간 것 같으면
+            언제든 <strong>삭제</strong>하면 즉시 무효화돼요. 만료일도 정할 수 있습니다.
+          </div>
+        </div>
+      </div>
+      <div class="small text-muted mt-2">
+        스코프 뜻 — <code>collect.write</code>: 상품 수집 저장 · <code>catalog.read</code>: 카탈로그 조회 ·
+        <code>markets.write</code>: 마켓 업로드.
+      </div>
+    </div>
   </div>
 
   {% if tokens %}
@@ -41,7 +79,7 @@
             <td>{{ tok.expires_at[:10] if tok.expires_at else '-' }}</td>
             <td>
               {% if tok.revoked %}
-              <span class="badge bg-danger">회수됨</span>
+              <span class="badge bg-secondary">삭제됨</span>
               {% else %}
               <span class="badge bg-success">활성</span>
               {% endif %}
@@ -49,7 +87,7 @@
             <td>
               {% if not tok.revoked %}
               <button class="btn btn-sm btn-outline-danger revoke-btn"
-                      data-hash="{{ tok.token_hash }}">회수</button>
+                      data-hash="{{ tok.token_hash }}">삭제</button>
               {% endif %}
             </td>
           </tr>
@@ -167,7 +205,7 @@ function copyToken() {
 
 document.querySelectorAll('.revoke-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
-    if (!(await pcConfirm('이 토큰을 회수하시겠습니까? 회수 후 복구할 수 없습니다.', {title: '토큰 회수', confirmLabel: '회수'}))) return;
+    if (!(await pcConfirm('이 토큰을 삭제하시겠습니까? 삭제하면 즉시 무효화되며 복구할 수 없습니다.', {title: '토큰 삭제', confirmLabel: '삭제'}))) return;
     const hash = btn.dataset.hash;
     try {
       const resp = await fetch('/seller/me/tokens/revoke', {
@@ -179,7 +217,7 @@ document.querySelectorAll('.revoke-btn').forEach(btn => {
       if (data.ok) {
         location.reload();
       } else {
-        pcToast('회수 실패: ' + (data.error || '알 수 없는 오류'), 'error');
+        pcToast('삭제 실패: ' + (data.error || '알 수 없는 오류'), 'error');
       }
     } catch(e) {
       pcToast('오류: ' + e.message, 'error');
