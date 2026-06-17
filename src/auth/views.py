@@ -135,14 +135,18 @@ def _resolve_user_role(email: str, provider: str = "", provider_user_id: str = "
     return resolve_role_for_login(email, provider=provider, provider_user_id=provider_user_id)
 
 
-def establish_session(user, role: Optional[str] = None) -> None:
-    """사용자 세션 공통 설정."""
+def establish_session(user, role: Optional[str] = None, remember: bool = False) -> None:
+    """사용자 세션 공통 설정.
+
+    remember(자동 로그인) 또는 관리자일 때만 영구 세션(브라우저 닫아도 유지).
+    그 외 소비자는 브라우저 세션 쿠키 → 브라우저 종료/캐시 갱신 시 재로그인(개인정보 보호).
+    """
     resolved_role = role or getattr(user, "role", "seller")
     session["user_id"] = getattr(user, "user_id", "")
     session["user_email"] = getattr(user, "email", "")
     session["user_name"] = getattr(user, "name", "")
     session["user_role"] = resolved_role
-    session.permanent = True
+    session.permanent = bool(remember) or (resolved_role == "admin")
 
 
 # ---------------------------------------------------------------------------
@@ -597,7 +601,8 @@ def login_post():
             flash("이메일 또는 비밀번호가 올바르지 않습니다.", "auth_email")
             return redirect(url_for("auth.login"))
 
-        establish_session(user)
+        remember = str(request.form.get("remember", "")).lower() in ("1", "on", "true", "yes")
+        establish_session(user, remember=remember)
 
         store.update_last_login(user.user_id)
         return redirect(next_url)
@@ -624,6 +629,8 @@ def oauth_start(provider: str):
         request.args.get("next", ""),
         default=_oauth_default_next(provider),
     )
+    # 자동 로그인 선호를 콜백까지 전달
+    session[f"oauth_remember_{provider}"] = str(request.args.get("remember", "")).lower() in ("1", "on", "true", "yes")
 
     redirect_uri = _callback_uri(provider)
     auth_url = p.get_authorize_url(state=state, redirect_uri=redirect_uri)
@@ -720,7 +727,8 @@ def oauth_callback(provider: str):
             user.role = role
             store.update(user)
 
-        establish_session(user, role=role)
+        remember = bool(session.pop(f"oauth_remember_{provider}", False))
+        establish_session(user, role=role, remember=remember)
 
         store.update_last_login(user.user_id)
         popup_mode = provider == "kakao" and (
