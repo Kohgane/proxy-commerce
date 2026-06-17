@@ -225,6 +225,19 @@
    (최근 N일 수집상품 일괄 재확인, only_stale_hours 이내 스킵) + `POST /cron/sourcing-monitor`(X-Cron-Secret,
    Render Cron). 변화건은 alerts로 요약. 정직성 유지(확인 불가는 변화 아님).
 
+## 🔧 북마클릿 실작동(CSP 우회)+아마존 국가선택+수집화면 파비콘 (오너 지시 2026-06-17, /seller/collect 스샷)
+1. ✅ **북마클릿 토큰 발급해도 수집 안 됨 → 실작동** (Phase 218): 원인은 토큰이 아니라 **임의 쇼핑몰의 CSP**가
+   북마클릿 `fetch`(`/api/v1/collect/extension`)를 막은 것(Temu/아마존 등). → 북마클릿을 **fetch 대신 '새 탭
+   네비게이션'** 방식으로 교체: 페이지 메타(u/t/img/p/c)를 쿼리로 담아 `window.open('/seller/collect/quick?…')`.
+   새 탭은 **로그인 세션**으로 열려(토큰 불필요) CSP/CORS 영향 없음 → 실제 수집됨. 신설 `GET /seller/collect/quick`:
+   세션 인증 → `_collect_real_draft` 서버수집(상세·번역), 막히면 **페이지 메타로 폴백 수집**(정직) → 수집 이력
+   저장 → 편집 페이지로 redirect. 둘 다 실패 시 `collect_quick_result.html`로 직접입력/확장 안내. (구 토큰 fetch
+   북마클릿 제거. 크롬 확장은 그대로 — 봇 차단 사이트는 확장 권장.)
+2. ✅ **아마존 국가 드롭다운** (Phase 218): `oneclick_markets`의 아마존을 `countries`(미국/일본/독일/영국/프랑스/
+   캐나다/이탈리아/스페인/호주/인도) 드롭다운으로 — 국가별 사이트 선택 후 열기.
+3. ✅ **수집 화면 파비콘 + 카피 갱신** (Phase 218): `/seller/collect` '인페이지 수집' 안내에 favicon.svg 노출 +
+   '보라색 수집 버튼'→'고가네 퍼센티 아이콘+고가네 수집'으로 갱신, 북마클릿(토큰 불필요) 링크 추가.
+
 ## 작업 방식
 - 브랜치 `claude/magical-noether-oo4831`에서 작업 → PR 생성·main 머지(오너 승인됨)로 배포.
 - 변경 후 전체 테스트(`python -m pytest tests/ -q`) 통과 확인.
