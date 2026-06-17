@@ -947,6 +947,16 @@ if not app.secret_key:
 app.config.setdefault("SESSION_COOKIE_SECURE", os.getenv("SESSION_COOKIE_SECURE", "0") == "1")
 app.config.setdefault("SESSION_COOKIE_HTTPONLY", True)
 app.config.setdefault("SESSION_COOKIE_SAMESITE", "Lax")
+# '자동 로그인' 선택 시에만 영구 세션 유지 기간(기본 14일). 미선택 시 브라우저 세션 쿠키
+# (브라우저 종료 시 자동 로그아웃 → 공용 PC/개인정보 보호). establish_session()이 제어.
+try:
+    from datetime import timedelta as _td
+    app.config.setdefault(
+        "PERMANENT_SESSION_LIFETIME",
+        _td(days=int(os.getenv("SESSION_REMEMBER_DAYS", "14"))),
+    )
+except Exception:
+    pass
 
 try:
     from .auth.views import auth_bp
