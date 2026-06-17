@@ -228,12 +228,213 @@ function injectCollectButton() {
   );
 }
 
-// SPA 대응: 최초 + URL 변경 시 재시도
-injectCollectButton();
+// ---------------------------------------------------------------------------
+// 리스팅/검색 페이지 다중 상품 수집 (Phase 221)
+// 상품 카드마다 '수집' 체크 배지 + 상단 툴바(전체선택/선택수집/전체수집).
+// 확장 background가 토큰으로 서버에 전송하므로 페이지 CSP 영향 없음.
+// ---------------------------------------------------------------------------
+const KGP_TOOLBAR_ID = "kgp-listing-toolbar";
+const KGP_SELECTED = new Set();
+let _kgpCards = [];
+
+function _kgpPrice(text) {
+  const m = String(text || "").match(/([\d][\d.,]{1,})\s*원|(?:₩|\$|¥|€|£)\s*([\d][\d.,]{1,})/);
+  if (!m) return { price: "", currency: "" };
+  const raw = (m[1] || m[2] || "").replace(/,/g, "");
+  let cur = "";
+  if (/원|₩/.test(m[0])) cur = "KRW";
+  else if (/\$/.test(m[0])) cur = "USD";
+  else if (/¥/.test(m[0])) cur = "JPY";
+  else if (/€/.test(m[0])) cur = "EUR";
+  else if (/£/.test(m[0])) cur = "GBP";
+  return { price: raw, currency: cur };
+}
+
+function kgpFindCards() {
+  const cards = [];
+  const seen = {};
+  try {
+    const imgs = document.querySelectorAll("img");
+    for (let i = 0; i < imgs.length; i++) {
+      const img = imgs[i];
+      const w = img.naturalWidth || img.width || 0;
+      const h = img.naturalHeight || img.height || 0;
+      if (w < 120 || h < 120) continue;
+      const a = img.closest("a[href]");
+      if (!a || !a.href || a.href.indexOf("http") !== 0) continue;
+      const href = a.href.split("#")[0];
+      if (seen[href]) continue;
+      const card = a.closest("li,article,div") || a;
+      const text = (card.innerText || "").trim();
+      const pr = _kgpPrice(text);
+      if (!pr.price) continue;  // 가격 없는 블록은 상품 카드로 보지 않음(오탐 감소)
+      const titleEl = card.querySelector("h1,h2,h3,h4,[class*='title'],[class*='name']");
+      const title = (img.alt || "").trim() || (titleEl ? titleEl.innerText : "") || text;
+      seen[href] = 1;
+      cards.push({
+        url: href,
+        title: (title || "").trim().replace(/\s+/g, " ").slice(0, 200),
+        image: img.src, images: [img.src],
+        price: pr.price, currency: pr.currency, el: card,
+      });
+    }
+  } catch (e) { /* noop */ }
+  return cards;
+}
+
+function kgpCardBadgeStyle(selected) {
+  return [
+    "position:absolute", "top:6px", "left:6px", "z-index:2147483640",
+    "padding:3px 8px", "border-radius:7px", "cursor:pointer", "user-select:none",
+    "font:700 11px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+    selected ? "background:#ff8a1e" : "background:#0a1f5c", "color:#fff",
+    "border:1.5px solid " + (selected ? "#0a1f5c" : "#ff8a1e"),
+    "box-shadow:0 2px 8px rgba(0,0,0,.3)",
+  ].join(";");
+}
+
+function kgpToggleCard(idx, badge, el) {
+  if (KGP_SELECTED.has(idx)) {
+    KGP_SELECTED.delete(idx);
+    badge.textContent = "수집";
+    badge.style.cssText = kgpCardBadgeStyle(false);
+    el.style.outline = "";
+  } else {
+    KGP_SELECTED.add(idx);
+    badge.textContent = "✓ 선택";
+    badge.style.cssText = kgpCardBadgeStyle(true);
+    el.style.outline = "3px solid #ff8a1e";
+    el.style.outlineOffset = "-3px";
+  }
+  kgpUpdateToolbar();
+}
+
+function kgpSetStatus(msg) {
+  const s = document.getElementById("kgp-tb-status");
+  if (s) s.textContent = msg || "";
+}
+
+function kgpUpdateToolbar() {
+  const c = document.getElementById("kgp-tb-count");
+  if (c) c.textContent = `${_kgpCards.length}개 발견 · ${KGP_SELECTED.size}개 선택`;
+}
+
+async function kgpCollect(indices) {
+  if (!indices.length) { kgpSetStatus("선택된 상품이 없어요."); return; }
+  const items = indices.map(i => {
+    const c = _kgpCards[i];
+    return { url: c.url, title: c.title, image: c.image, images: c.images, price: c.price, currency: c.currency };
+  });
+  kgpSetStatus(`수집 중… (0/${items.length})`);
+  const btns = document.querySelectorAll(".kgp-tb-btn");
+  btns.forEach(b => b.disabled = true);
+  try {
+    chrome.runtime.sendMessage({ action: "collectBulk", items }, (resp) => {
+      btns.forEach(b => b.disabled = false);
+      if (chrome.runtime.lastError) { kgpSetStatus("확장 연결 실패: " + chrome.runtime.lastError.message); return; }
+      if (resp && resp.ok) {
+        kgpSetStatus(`✅ 수집 완료 — 성공 ${resp.success} / 실패 ${resp.failed}. 셀러 콘솔 수집 이력에서 확인하세요.`);
+      } else {
+        kgpSetStatus("❌ " + ((resp && resp.error) || "수집 실패"));
+      }
+    });
+  } catch (err) {
+    btns.forEach(b => b.disabled = false);
+    kgpSetStatus("❌ " + (err.message || "수집 실패"));
+  }
+}
+
+function kgpBuildToolbar() {
+  const bar = document.createElement("div");
+  bar.id = KGP_TOOLBAR_ID;
+  bar.style.cssText = [
+    "position:fixed", "top:12px", "left:50%", "transform:translateX(-50%)",
+    "z-index:2147483646", "display:flex", "align-items:center", "gap:10px",
+    "padding:8px 12px", "border-radius:999px", "border:1.5px solid #ff8a1e",
+    "background:linear-gradient(135deg,#0a1f5c,#13308f)", "color:#fff",
+    "font:13px/1.2 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+    "box-shadow:0 8px 24px rgba(10,31,92,.5)", "max-width:94vw", "flex-wrap:wrap",
+  ].join(";");
+  const btnCss = "padding:5px 10px;border-radius:8px;border:none;cursor:pointer;font-weight:700;font-size:12px;";
+  bar.innerHTML =
+    '<span style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;background:#0a0a2a;border-radius:50%">' + KGP_GLOBE_SVG + '</span>' +
+    '<strong>고가네 수집</strong>' +
+    '<span id="kgp-tb-count" style="opacity:.9"></span>' +
+    '<button class="kgp-tb-btn" data-act="all-sel" style="' + btnCss + 'background:#fff;color:#0a1f5c">전체 선택</button>' +
+    '<button class="kgp-tb-btn" data-act="clear" style="' + btnCss + 'background:#33406b;color:#fff">선택 해제</button>' +
+    '<button class="kgp-tb-btn" data-act="collect-sel" style="' + btnCss + 'background:#ff8a1e;color:#0a1f5c">선택 수집</button>' +
+    '<button class="kgp-tb-btn" data-act="collect-all" style="' + btnCss + 'background:#37d05a;color:#06310f">전체 수집</button>' +
+    '<span id="kgp-tb-status" style="opacity:.95;font-size:12px;max-width:360px"></span>' +
+    '<button data-act="close" title="닫기" style="' + btnCss + 'background:transparent;color:#fff;font-size:15px">✕</button>';
+  bar.addEventListener("click", (e) => {
+    const t = e.target.closest("[data-act]");
+    if (!t) return;
+    const act = t.dataset.act;
+    if (act === "all-sel") {
+      document.querySelectorAll(".kgp-card-chk").forEach((b) => {
+        const idx = parseInt(b.dataset.idx, 10);
+        if (!KGP_SELECTED.has(idx)) kgpToggleCard(idx, b, _kgpCards[idx].el);
+      });
+    } else if (act === "clear") {
+      [...KGP_SELECTED].forEach((idx) => {
+        const b = document.querySelector('.kgp-card-chk[data-idx="' + idx + '"]');
+        if (b) kgpToggleCard(idx, b, _kgpCards[idx].el);
+      });
+    } else if (act === "collect-sel") {
+      kgpCollect([...KGP_SELECTED]);
+    } else if (act === "collect-all") {
+      kgpCollect(_kgpCards.map((_, i) => i));
+    } else if (act === "close") {
+      bar.remove();
+      document.querySelectorAll(".kgp-card-chk").forEach((b) => b.remove());
+    }
+  });
+  document.body.appendChild(bar);
+}
+
+function kgpInjectListing() {
+  if (window.top !== window.self || !document.body) return;
+  const cards = kgpFindCards();
+  if (cards.length < 3) {                       // 리스팅 아님 → 정리
+    const ex = document.getElementById(KGP_TOOLBAR_ID);
+    if (ex) { ex.remove(); document.querySelectorAll(".kgp-card-chk").forEach((b) => b.remove()); }
+    return;
+  }
+  _kgpCards = cards;
+  KGP_SELECTED.clear();
+  // 기존 배지 제거 후 재주입(스크롤/동적 로딩 대응)
+  document.querySelectorAll(".kgp-card-chk").forEach((b) => b.remove());
+  cards.forEach((c, idx) => {
+    try {
+      if (getComputedStyle(c.el).position === "static") c.el.style.position = "relative";
+      const badge = document.createElement("div");
+      badge.className = "kgp-card-chk";
+      badge.dataset.idx = String(idx);
+      badge.textContent = "수집";
+      badge.style.cssText = kgpCardBadgeStyle(false);
+      badge.addEventListener("click", (e) => {
+        e.preventDefault(); e.stopPropagation();
+        kgpToggleCard(idx, badge, c.el);
+      });
+      c.el.appendChild(badge);
+    } catch (e) { /* noop */ }
+  });
+  if (!document.getElementById(KGP_TOOLBAR_ID)) kgpBuildToolbar();
+  kgpUpdateToolbar();
+}
+
+// SPA 대응: 최초 + URL 변경 시 재시도 (단일 상품 FAB + 리스팅 다중수집)
+function kgpRefresh() {
+  injectCollectButton();
+  kgpInjectListing();
+}
+kgpRefresh();
 let _kgpLastUrl = location.href;
 setInterval(() => {
   if (location.href !== _kgpLastUrl) {
     _kgpLastUrl = location.href;
-    setTimeout(injectCollectButton, 800);
+    setTimeout(kgpRefresh, 900);
   }
 }, 1500);
+// 동적 로딩(무한 스크롤) 대응: 주기적으로 리스팅 재스캔
+setInterval(kgpInjectListing, 4000);

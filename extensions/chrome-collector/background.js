@@ -27,6 +27,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     handleCollect(msg.meta, sendResponse);
     return true; // 비동기 응답
   }
+  if (msg.action === "collectBulk") {
+    handleCollectBulk(msg.items, sendResponse);
+    return true; // 비동기 응답
+  }
   if (msg.action === "getSettings") {
     chrome.storage.sync.get(["serverUrl", "token"], (data) => {
       sendResponse(data);
@@ -112,6 +116,48 @@ async function handleCollect(meta, sendResponse) {
       message: result.error
     });
   }
+}
+
+// 리스팅 다중 상품 일괄 수집 (Phase 221)
+// content_script가 보낸 상품 카드 메타 배열을 토큰으로 순차 전송한다.
+// background fetch라 페이지 CSP의 영향을 받지 않는다.
+async function handleCollectBulk(items, sendResponse) {
+  const settings = await chrome.storage.sync.get(["serverUrl", "token"]);
+  const serverUrl = settings.serverUrl || DEFAULT_SERVER_URL;
+  const token = settings.token || "";
+  items = Array.isArray(items) ? items : [];
+
+  if (!token) {
+    if (sendResponse) sendResponse({ ok: false, error: "토큰이 설정되지 않았습니다. 확장 옵션에서 토큰을 입력하세요." });
+    return;
+  }
+  if (!items.length) {
+    if (sendResponse) sendResponse({ ok: false, error: "수집할 상품이 없습니다." });
+    return;
+  }
+
+  let success = 0, failed = 0;
+  for (const meta of items) {
+    try {
+      const r = await fetch(`${serverUrl}/api/v1/collect/extension`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify(meta),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (d && d.ok) success++; else failed++;
+    } catch (e) {
+      failed++;
+    }
+  }
+
+  chrome.notifications.create({
+    type: "basic",
+    iconUrl: "icons/48.png",
+    title: success ? "고가네 퍼센티 ✅" : "고가네 퍼센티 ❌",
+    message: `일괄 수집: 성공 ${success} / 실패 ${failed} (총 ${items.length})`,
+  });
+  if (sendResponse) sendResponse({ ok: true, success, failed, total: items.length });
 }
 
 // content_script에서 호출할 메타 추출 함수 (executeScript용)
