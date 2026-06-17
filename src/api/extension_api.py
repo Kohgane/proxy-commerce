@@ -284,8 +284,8 @@ def collect_bulk():
     if not urls or not isinstance(urls, list):
         return jsonify({"ok": False, "error": "urls 배열이 필요합니다."}), 400
 
-    # URL 최대 100개 제한
-    urls = [u.strip() for u in urls if isinstance(u, str) and u.strip()][:100]
+    # URL 최대 1000개 제한
+    urls = [u.strip() for u in urls if isinstance(u, str) and u.strip()][:1000]
     if not urls:
         return jsonify({"ok": False, "error": "유효한 URL이 없습니다."}), 400
 

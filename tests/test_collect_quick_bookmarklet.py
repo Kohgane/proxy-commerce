@@ -25,12 +25,13 @@ def _draft(**over):
     return d
 
 
-def test_quick_collect_saves_and_redirects_to_edit(client):
+def test_quick_collect_saves_and_shows_confirmation(client):
+    """편집페이지로 redirect하지 않고 '수집됨' 확인만 표시(내 계정에서 확인)."""
     with patch("src.seller_console.views._collect_real_draft", return_value=_draft()), \
          patch("src.seller_console.collect_history_store.append", return_value="qid1"):
         r = client.get("/seller/collect/quick?u=https://shop.example/p/1")
-    assert r.status_code == 302
-    assert "/seller/collect/preview/qid1" in r.headers["Location"]
+    assert r.status_code == 200
+    assert "수집 완료" in r.get_data(as_text=True)
 
 
 def test_quick_collect_meta_fallback_when_server_blocked(client):
@@ -38,8 +39,8 @@ def test_quick_collect_meta_fallback_when_server_blocked(client):
     with patch("src.seller_console.views._collect_real_draft", return_value=None), \
          patch("src.seller_console.collect_history_store.append", return_value="qid2") as ap:
         r = client.get("/seller/collect/quick?u=https://shop.example/p/2&t=가방&img=https://i/x.jpg&p=99&c=USD")
-    assert r.status_code == 302
-    assert "/seller/collect/preview/qid2" in r.headers["Location"]
+    assert r.status_code == 200
+    assert "수집 완료" in r.get_data(as_text=True)
     # append가 메타 기반으로 호출됨
     assert ap.call_count == 1
     assert ap.call_args.kwargs["title"] == "가방"
@@ -60,9 +61,10 @@ def test_quick_collect_rejects_bad_url(client):
 
 def test_bookmarklet_page_is_token_free(client):
     html = client.get("/seller/bookmarklet").get_data(as_text=True)
-    assert "/seller/collect/quick" in html
-    assert "Bearer" not in html          # 토큰 fetch 방식 제거됨
+    assert "/seller/collect/receiver" in html   # postMessage 수신 페이지로 전송
+    assert "Bearer" not in html                 # 토큰 fetch 방식 제거됨
     assert "토큰이 필요 없습니다" in html
+    assert "고가네수집" in html                  # 짧은 단어 라벨
 
 
 def test_collect_page_amazon_dropdown_and_favicon(client):
