@@ -127,3 +127,28 @@ def test_bulk_upload_missing_item_isolated(client):
     assert data["succeeded"] == 1
     by_ok = {r["ok"] for r in data["results"]}
     assert False in by_ok and True in by_ok
+
+
+# Phase 215: /collect/preview save=true → 수집 이력 저장 + 위치 링크 반환
+def test_preview_save_persists_to_history_and_returns_location(client):
+    with patch("src.seller_console.views._collect_real_draft", side_effect=lambda url, **k: _fake_draft(url=url)), \
+         patch("src.seller_console.collect_history_store.append", return_value="hist42") as mock_append:
+        resp = client.post("/seller/collect/preview", json={
+            "url": "https://brand.example/product/1", "save": True})
+    data = resp.get_json()
+    assert data["ok"] is True
+    assert data["id"] == "hist42"
+    assert data["preview_url"] == "/seller/collect/preview/hist42"
+    assert data["history_url"] == "/seller/collect/history"
+    assert mock_append.call_count == 1
+
+
+def test_preview_without_save_does_not_persist(client):
+    with patch("src.seller_console.views._collect_real_draft", side_effect=lambda url, **k: _fake_draft(url=url)), \
+         patch("src.seller_console.collect_history_store.append", return_value="x") as mock_append:
+        resp = client.post("/seller/collect/preview", json={
+            "url": "https://brand.example/product/1"})
+    data = resp.get_json()
+    assert data["ok"] is True
+    assert "id" not in data
+    assert mock_append.call_count == 0
