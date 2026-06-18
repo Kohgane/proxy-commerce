@@ -313,6 +313,17 @@
 - **오너 액션(개인화 강제)**: 소비자 로그인 강제는 `SELLER_CONSOLE_AUTH=1`(Render)로 켜짐 — 켜야 콘솔이 로그인을
   요구하고 수집/마켓연동/소싱처가 셀러별 개인화됨(자격증명은 이미 셀러별, 수집이력 seller_id 격리).
 
+## 🔧 크롬 확장 실제 설치 + 모바일 수집 (오너 지시 2026-06-17 "설치가 실제로 되어야지, 모바일도")
+- ✅ **확장 다운로드 + 설치 가이드** (Phase 226): 앱에 확장 배포 경로가 없어 설치 불가였음 → 신설
+  `GET /seller/extension/download`(서버가 `extensions/chrome-collector`를 즉석 ZIP 패키징·`kohgane-collector/…`
+  구조로 내려줌) + `GET /seller/extension` **설치 가이드 페이지**(다운로드→압축풀기→`chrome://extensions`→개발자모드
+  ON→압축해제된 확장 로드→토큰 입력→수집버튼 등장, 단계별·복사버튼). 수집 페이지 안내에 ‘🧩 확장 설치하기’ 링크.
+  ※ 정석은 크롬 웹스토어 게시(오너 1회)지만, 그 전에도 ‘압축해제 로드’로 즉시 설치 가능.
+- ✅ **모바일 수집(PWA share_target)** (Phase 226): 모바일은 확장 미지원 → 앱 PWA 매니페스트(json+webmanifest 동기)에
+  `share_target`(GET `/seller/collect/quick`, params title/text/**u**) 추가 → 안드로이드에서 쇼핑앱 **공유 → 고가네
+  퍼센티**로 URL 전송 시 로그인 세션으로 수집. `/collect/quick`이 `u`/`url`/`text`(텍스트 내 URL 추출)도 허용.
+  설치 가이드에 ‘URL 붙여넣기/공유하기’ 모바일 방법 명시. (URL 붙여넣기 수집은 기존에도 모바일 동작)
+
 ## 작업 방식
 - 브랜치 `claude/magical-noether-oo4831`에서 작업 → PR 생성·main 머지(오너 승인됨)로 배포.
 - 변경 후 전체 테스트(`python -m pytest tests/ -q`) 통과 확인.

@@ -1151,7 +1151,13 @@ def collect_quick():
     if not _check_auth():
         return redirect(url_for("auth.login", next=request.full_path))
 
-    url = (request.args.get("u") or "").strip()
+    # u(북마클릿) 외에 url/text(모바일 PWA 공유 share_target)도 허용 — 공유 시 URL 추출
+    url = (request.args.get("u") or request.args.get("url") or "").strip()
+    if not url.startswith(("http://", "https://")):
+        shared = request.args.get("text") or request.args.get("title") or ""
+        m = re.search(r"https?://[^\s]+", shared)
+        if m:
+            url = m.group(0).strip()
     if not url.startswith(("http://", "https://")):
         return render_template(
             "collect_quick_result.html", ok=False,
@@ -3920,6 +3926,63 @@ def bookmarklet():
         page="bookmarklet",
         server_url=server_url,
         user_id=user_id,
+    )
+
+
+def _chrome_extension_dir() -> str:
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "extensions", "chrome-collector"))
+
+
+def _chrome_extension_version() -> str:
+    try:
+        with open(os.path.join(_chrome_extension_dir(), "manifest.json"), encoding="utf-8") as f:
+            return str(json.load(f).get("version", ""))
+    except Exception:
+        return ""
+
+
+@bp.get("/extension")
+def extension_install():
+    """크롬 확장 설치 가이드 + 다운로드 (Phase 226)."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
+    return render_template("extension_install.html", page="collect", version=_chrome_extension_version())
+
+
+@bp.get("/extension/download")
+def extension_download():
+    """크롬 확장(고가네 수집)을 ZIP으로 즉석 패키징해 내려준다 — 설치용."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
+    import io
+    import zipfile
+
+    ext_dir = _chrome_extension_dir()
+    if not os.path.isdir(ext_dir):
+        abort(404)
+    include = [
+        "manifest.json", "background.js", "content_script.js",
+        "popup.html", "popup.js", "options.html", "options.js", "README.md",
+    ]
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for name in include:
+            p = os.path.join(ext_dir, name)
+            if os.path.isfile(p):
+                z.write(p, arcname=f"kohgane-collector/{name}")
+        icons_dir = os.path.join(ext_dir, "icons")
+        if os.path.isdir(icons_dir):
+            for ic in sorted(os.listdir(icons_dir)):
+                fp = os.path.join(icons_dir, ic)
+                if os.path.isfile(fp):
+                    z.write(fp, arcname=f"kohgane-collector/icons/{ic}")
+    buf.seek(0)
+    version = _chrome_extension_version() or "1"
+    fname = f"kohgane-collector-v{version}.zip"
+    return Response(
+        buf.getvalue(),
+        mimetype="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
 
 
