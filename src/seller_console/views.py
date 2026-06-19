@@ -4145,6 +4145,26 @@ def collect_history():
     except Exception as exc:
         logger.warning("수집 이력 조회 실패: %s", exc)
 
+    # 각 항목에 썸네일 목록(최대 5장) 부착 — 대표이미지 + extra_json의 수집 이미지들.
+    # 사람이 이름 옆에서 이미지로 바로 확인할 수 있게(오너 요청).
+    for it in items:
+        thumbs: list[str] = []
+        rep = (it.get("image_url") or "").strip()
+        if rep:
+            thumbs.append(rep)
+        try:
+            ex = json.loads(it.get("extra_json") or "{}")
+            imgs = ex.get("images") if isinstance(ex.get("images"), list) else []
+            for u in imgs:
+                u = (str(u) or "").strip()
+                if u and u not in thumbs:
+                    thumbs.append(u)
+                if len(thumbs) >= 5:
+                    break
+        except Exception:
+            pass
+        it["thumbs"] = thumbs[:5]
+
     from .upload_dispatcher import MARKET_LABELS, SUPPORTED_MARKETS
     upload_markets = [{"code": m, "label": MARKET_LABELS.get(m, m)} for m in SUPPORTED_MARKETS]
     return render_template(

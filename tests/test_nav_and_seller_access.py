@@ -56,12 +56,42 @@ def test_admin_gated_pages_accessible_in_tests(client):
 
 
 def test_nav_has_quick_access_group_with_collect_history(client):
-    """좌측 nav 상단에 '자주 쓰는' 그룹 + 수집 이력 링크가 위쪽에 있다."""
+    """좌측 nav 상단 '자주 쓰는' 그룹에 수집 이력 링크가 위쪽에 있다."""
     html = client.get("/seller/dashboard").get_data(as_text=True)
     assert "자주 쓰는" in html
-    # '자주 쓰는' 그룹이 '운영' 그룹보다 먼저 등장(위쪽)
-    assert html.index("자주 쓰는") < html.index("/seller/collect-history")
-    assert html.index("/seller/collect-history") < html.index(">운영<") if ">운영<" in html else True
+    # '자주 쓰는' 그룹이 수집 이력 링크보다 먼저 등장(위쪽)
+    assert html.index("자주 쓰는") < html.index("/seller/collect/history")
+    # 수집 이력 링크가 nav 상단부(운영 그룹보다 위)에 있다
+    if "운영" in html:
+        assert html.index("/seller/collect/history") < html.rindex("운영")
+
+
+def test_nav_no_duplicate_collector_link(client):
+    """'수집기'/'상품 수집기' 중복 제거 — nav에는 '상품 수집기'만 남는다."""
+    html = client.get("/seller/dashboard").get_data(as_text=True)
+    assert "<span>상품 수집기</span>" in html
+    assert "<span>수집기</span>" not in html  # 중복 라벨 제거됨
+
+
+def test_collect_history_shows_thumbnails_and_bulk_select_all(client):
+    """수집 이력: 이름 옆 썸네일(여러 장) + 일괄 등록 모달 '전체 선택' 버튼."""
+    from unittest.mock import patch
+    rows = [{
+        "id": "abc123", "collected_at": "2026-06-19T12:00:00+00:00", "source": "extension",
+        "domain": "shop.example", "url": "https://shop.example/p/1", "title": "가방",
+        "image_url": "https://i/rep.jpg", "price": "100", "currency": "JPY", "status": "ok",
+        "preview_url": "/seller/collect/preview/abc123",
+        "extra_json": '{"images": ["https://i/rep.jpg", "https://i/2.jpg", "https://i/3.jpg"]}',
+        "seller_id": "",
+    }]
+    with patch("src.seller_console.collect_history_store.list_items", return_value=rows), \
+         patch("src.seller_console.collect_history_store.summary", return_value={"total": 1, "today": 1, "domains": 1, "by_source": {"extension": 1, "bookmarklet": 0, "manual": 0, "bulk": 0}}), \
+         patch("src.seller_console.collect_history_store.distinct_domains", return_value=["shop.example"]):
+        resp = client.get("/seller/collect/history")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "https://i/2.jpg" in html and "https://i/3.jpg" in html   # 추가 썸네일
+    assert "toggleAllBulkMarkets" in html                            # 모달 전체 선택
 
 
 def test_market_modal_has_select_all_button(client):

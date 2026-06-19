@@ -41,14 +41,12 @@
     <ul class="nav flex-column gap-1 flex-grow-1">
       <li class="console-nav-group-title">⭐ 자주 쓰는</li>
       <li><a class="console-nav-link {% if _path == '/seller/' or _path.startswith('/seller/dashboard') %}active{% endif %}" href="/seller/dashboard"><i class="bi bi-speedometer2"></i><span>대시보드(홈)</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/collect') or _path.startswith('/seller/manual-collect') %}active{% endif %}" href="/seller/manual-collect"><i class="bi bi-search"></i><span>상품 수집기</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/collect-history') %}active{% endif %}" href="/seller/collect-history"><i class="bi bi-journal-text"></i><span>수집 이력</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/manual-collect') or (_path.startswith('/seller/collect') and not _path.startswith('/seller/collect/history') and not _path.startswith('/seller/collect-history')) %}active{% endif %}" href="/seller/manual-collect"><i class="bi bi-search"></i><span>상품 수집기</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/collect/history') or _path.startswith('/seller/collect-history') %}active{% endif %}" href="/seller/collect/history"><i class="bi bi-journal-text"></i><span>수집 이력</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/catalog') %}active{% endif %}" href="/seller/catalog"><i class="bi bi-box-seam"></i><span>카탈로그(상품관리)</span></a></li>
       <li><a class="console-nav-link {% if (_path.startswith('/seller/markets') and not _path.startswith('/seller/markets/connect') and not _path.startswith('/seller/markets/guide')) or _path.startswith('/seller/market-status') %}active{% endif %}" href="/seller/markets"><i class="bi bi-shop"></i><span>마켓 연동/현황</span></a></li>
 
       <li class="console-nav-group-title">상품</li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/collect') or _path.startswith('/seller/manual-collect') %}active{% endif %}" href="/seller/manual-collect"><i class="bi bi-search"></i><span>수집기</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/catalog') %}active{% endif %}" href="/seller/catalog"><i class="bi bi-box-seam"></i><span>카탈로그(상품관리)</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/listing/ai-create') %}active{% endif %}" href="/seller/listing/ai-create"><i class="bi bi-robot"></i><span>AI 상품등록</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/listing/history') %}active{% endif %}" href="/seller/listing/history"><i class="bi bi-clock-history"></i><span>등록 이력</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/media/queue') %}active{% endif %}" href="/seller/media/queue"><i class="bi bi-image"></i><span>이미지 큐</span></a></li>
@@ -67,7 +65,6 @@
       <li><a class="console-nav-link {% if _path.startswith('/seller/pricing/fx-impact') %}active{% endif %}" href="/seller/pricing/fx-impact"><i class="bi bi-currency-exchange"></i><span>환율 영향</span></a></li>
 
       <li class="console-nav-group-title">마켓</li>
-      <li><a class="console-nav-link {% if (_path.startswith('/seller/markets') and not _path.startswith('/seller/markets/connect') and not _path.startswith('/seller/markets/guide')) or _path.startswith('/seller/market-status') %}active{% endif %}" href="/seller/markets"><i class="bi bi-shop"></i><span>마켓 연동/현황</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/markets/connect') %}active{% endif %}" href="/seller/markets/connect"><i class="bi bi-plug"></i><span>마켓 연결(키 설정)</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/markets/guide') %}active{% endif %}" href="/seller/markets/guide"><i class="bi bi-journal-text"></i><span>API 키 발급 가이드</span></a></li>
 
