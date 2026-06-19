@@ -251,8 +251,9 @@ function injectCollectButton() {
 // 확장 background가 토큰으로 서버에 전송하므로 페이지 CSP 영향 없음.
 // ---------------------------------------------------------------------------
 const KGP_TOOLBAR_ID = "kgp-listing-toolbar";
-const KGP_SELECTED = new Set();
+const KGP_SELECTED = new Set();   // 선택된 상품 url 집합(재스캔에도 유지)
 let _kgpCards = [];
+let _kgpCardByUrl = {};           // url → 카드 데이터(el 포함)
 
 function _kgpPrice(text) {
   const m = String(text || "").match(/([\d][\d.,]{1,})\s*원|(?:₩|\$|¥|€|£)\s*([\d][\d.,]{1,})/);
@@ -310,19 +311,20 @@ function kgpCardBadgeStyle(selected) {
   ].join(";");
 }
 
-function kgpToggleCard(idx, badge, el) {
-  if (KGP_SELECTED.has(idx)) {
-    KGP_SELECTED.delete(idx);
-    badge.textContent = "수집";
-    badge.style.cssText = kgpCardBadgeStyle(false);
-    el.style.outline = "";
+function kgpSetCardSelected(url, badge, el, selected) {
+  if (selected) {
+    KGP_SELECTED.add(url);
+    if (badge) { badge.textContent = "✓ 선택"; badge.style.cssText = kgpCardBadgeStyle(true); }
+    if (el) { el.style.outline = "3px solid #ff8a1e"; el.style.outlineOffset = "-3px"; }
   } else {
-    KGP_SELECTED.add(idx);
-    badge.textContent = "✓ 선택";
-    badge.style.cssText = kgpCardBadgeStyle(true);
-    el.style.outline = "3px solid #ff8a1e";
-    el.style.outlineOffset = "-3px";
+    KGP_SELECTED.delete(url);
+    if (badge) { badge.textContent = "수집"; badge.style.cssText = kgpCardBadgeStyle(false); }
+    if (el) { el.style.outline = ""; }
   }
+}
+
+function kgpToggleCard(url, badge, el) {
+  kgpSetCardSelected(url, badge, el, !KGP_SELECTED.has(url));
   kgpUpdateToolbar();
 }
 
@@ -336,12 +338,11 @@ function kgpUpdateToolbar() {
   if (c) c.textContent = `${_kgpCards.length}개 발견 · ${KGP_SELECTED.size}개 선택`;
 }
 
-async function kgpCollect(indices) {
-  if (!indices.length) { kgpSetStatus("선택된 상품이 없어요."); return; }
-  const items = indices.map(i => {
-    const c = _kgpCards[i];
-    return { url: c.url, title: c.title, image: c.image, images: c.images, price: c.price, currency: c.currency };
-  });
+async function kgpCollect(urls) {
+  const items = (urls || []).map(u => _kgpCardByUrl[u]).filter(Boolean).map(c => (
+    { url: c.url, title: c.title, image: c.image, images: c.images, price: c.price, currency: c.currency }
+  ));
+  if (!items.length) { kgpSetStatus("선택된 상품이 없어요. 상품의 ‘수집’ 배지를 눌러 선택하세요."); return; }
   kgpSetStatus(`수집 중… (0/${items.length})`);
   const btns = document.querySelectorAll(".kgp-tb-btn");
   btns.forEach(b => b.disabled = true);
@@ -389,18 +390,23 @@ function kgpBuildToolbar() {
     const act = t.dataset.act;
     if (act === "all-sel") {
       document.querySelectorAll(".kgp-card-chk").forEach((b) => {
-        const idx = parseInt(b.dataset.idx, 10);
-        if (!KGP_SELECTED.has(idx)) kgpToggleCard(idx, b, _kgpCards[idx].el);
+        const url = b.dataset.url;
+        const c = _kgpCardByUrl[url];
+        kgpSetCardSelected(url, b, c && c.el, true);
       });
+      kgpUpdateToolbar();
     } else if (act === "clear") {
-      [...KGP_SELECTED].forEach((idx) => {
-        const b = document.querySelector('.kgp-card-chk[data-idx="' + idx + '"]');
-        if (b) kgpToggleCard(idx, b, _kgpCards[idx].el);
+      document.querySelectorAll(".kgp-card-chk").forEach((b) => {
+        const url = b.dataset.url;
+        const c = _kgpCardByUrl[url];
+        kgpSetCardSelected(url, b, c && c.el, false);
       });
+      KGP_SELECTED.clear();
+      kgpUpdateToolbar();
     } else if (act === "collect-sel") {
       kgpCollect([...KGP_SELECTED]);
     } else if (act === "collect-all") {
-      kgpCollect(_kgpCards.map((_, i) => i));
+      kgpCollect(Object.keys(_kgpCardByUrl));
     } else if (act === "close") {
       bar.remove();
       document.querySelectorAll(".kgp-card-chk").forEach((b) => b.remove());
@@ -417,21 +423,32 @@ function kgpInjectListing() {
     if (ex) { ex.remove(); document.querySelectorAll(".kgp-card-chk").forEach((b) => b.remove()); }
     return;
   }
+  // 재스캔(무한스크롤/동적로딩)에도 선택을 지우지 않는다. url 기준으로 카드맵 갱신 +
+  // 배지 없는 카드에만 배지 주입(기존 선택 유지).
   _kgpCards = cards;
-  KGP_SELECTED.clear();
-  // 기존 배지 제거 후 재주입(스크롤/동적 로딩 대응)
-  document.querySelectorAll(".kgp-card-chk").forEach((b) => b.remove());
-  cards.forEach((c, idx) => {
+  _kgpCardByUrl = {};
+  cards.forEach((c) => { _kgpCardByUrl[c.url] = c; });
+  cards.forEach((c) => {
     try {
+      if (c.el.querySelector(":scope > .kgp-card-chk")) {
+        // 이미 배지 있음 — 선택 상태만 동기화
+        const b = c.el.querySelector(":scope > .kgp-card-chk");
+        const sel = KGP_SELECTED.has(c.url);
+        b.textContent = sel ? "✓ 선택" : "수집";
+        b.style.cssText = kgpCardBadgeStyle(sel);
+        return;
+      }
       if (getComputedStyle(c.el).position === "static") c.el.style.position = "relative";
       const badge = document.createElement("div");
       badge.className = "kgp-card-chk";
-      badge.dataset.idx = String(idx);
-      badge.textContent = "수집";
-      badge.style.cssText = kgpCardBadgeStyle(false);
+      badge.dataset.url = c.url;
+      const sel = KGP_SELECTED.has(c.url);
+      badge.textContent = sel ? "✓ 선택" : "수집";
+      badge.style.cssText = kgpCardBadgeStyle(sel);
+      if (sel) { c.el.style.outline = "3px solid #ff8a1e"; c.el.style.outlineOffset = "-3px"; }
       badge.addEventListener("click", (e) => {
         e.preventDefault(); e.stopPropagation();
-        kgpToggleCard(idx, badge, c.el);
+        kgpToggleCard(c.url, badge, c.el);
       });
       c.el.appendChild(badge);
     } catch (e) { /* noop */ }

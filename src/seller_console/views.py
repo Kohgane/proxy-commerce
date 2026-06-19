@@ -4210,16 +4210,18 @@ def collect_preview_by_id(item_id: str):
     except Exception as exc:
         logger.debug("마켓 연결 상태 조회 실패: %s", exc)
 
-    # 카테고리 자동 분류(현재값 없으면 제목/키워드로 제안)
-    from .category_classifier import CATEGORY_OPTIONS, classify as _classify
+    # 카테고리 자동 분류(현재값 없으면 제목/키워드로 제안) + 카테고리별 추천 키워드
+    from .category_classifier import CATEGORY_OPTIONS, classify as _classify, suggest_keywords as _suggest_kw
     cur_cat = (extra.get("category_code") or extra.get("category") or "").strip()
-    cat_suggestion = {}
-    if not cur_cat:
-        cat_suggestion = _classify(
-            item.get("title") or extra.get("title_ko") or "",
-            extra.get("description_ko") or extra.get("description") or "",
-            ",".join(extra.get("keywords") or []) if isinstance(extra.get("keywords"), list) else (extra.get("keywords") or ""),
-        )
+    _title_for_cat = item.get("title") or extra.get("title_ko") or ""
+    cat_suggestion = _classify(
+        _title_for_cat,
+        extra.get("description_ko") or extra.get("description") or "",
+        ",".join(extra.get("keywords") or []) if isinstance(extra.get("keywords"), list) else (extra.get("keywords") or ""),
+    )
+    # 이미 카테고리가 정해져 있으면 그 카테고리 기준 추천 키워드를 제공
+    if cur_cat:
+        cat_suggestion = {**cat_suggestion, "suggested_keywords": _suggest_kw(cur_cat, _title_for_cat)}
 
     return render_template(
         "collect_preview.html",

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "코가네 퍼센티 수집기",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "쇼핑 페이지를 한 클릭에 코가네 퍼센티로 수집 (인페이지 수집 + 리스팅 다중 선택 수집 + 자동 번역)",
   "permissions": ["activeTab", "storage", "contextMenus", "notifications", "scripting"],
   "host_permissions": ["<all_urls>"],

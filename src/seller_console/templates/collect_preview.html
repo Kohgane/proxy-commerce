@@ -104,7 +104,7 @@
           <button type="button" class="btn btn-outline-primary" id="btnAutoCategory" onclick="autoClassify()" title="상품명·키워드로 카테고리 자동 추천">🔮 자동 분류</button>
         </div>
         <div id="categoryHint" class="form-text">
-          {% if category_suggestion and category_suggestion.code != 'GEN' %}
+          {% if not current_category and category_suggestion and category_suggestion.code != 'GEN' %}
           🔮 ‘{{ category_suggestion.label }}’ 로 자동 추천됨 — 맞지 않으면 직접 바꾸세요.
           {% else %}
           상품명 기준으로 추천하려면 <b>자동 분류</b>를 누르세요.
@@ -118,6 +118,11 @@
           <span class="text-muted fw-normal">(쉼표로 구분 — 검색 노출·업로드 태그)</span></label>
         <input type="text" class="form-control" id="editKeywords"
                placeholder="예: 백팩, 데일리, 방수, 남녀공용">
+        <!-- 카테고리 기반 추천 키워드(칩) — 클릭해서 담기. 직접 입력도 가능. -->
+        <div class="d-flex flex-wrap align-items-center gap-1 mt-2" id="keywordChips">
+          <span class="small text-muted me-1">추천:</span>
+          <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" id="btnAddAllKw">＋ 전체 추가</button>
+        </div>
       </div>
     </div>
 
@@ -506,6 +511,7 @@ async function autoClassify() {
       } else {
         hint.innerHTML = `🔮 ‘${d.label}’ 로 추천(신뢰도 ${Math.round((d.confidence||0)*100)}%). 맞지 않으면 직접 바꾸세요.`;
       }
+      renderKeywordChips(d.suggested_keywords || []);
     }
   } catch (e) {
     hint.textContent = '자동 분류 실패 — 직접 선택해 주세요.';
@@ -513,6 +519,50 @@ async function autoClassify() {
     btn.disabled = false; btn.textContent = '🔮 자동 분류';
   }
 }
+
+// ── 추천 키워드 칩 ──
+let _kwSuggestions = {{ (category_suggestion.suggested_keywords if category_suggestion else []) | tojson }};
+
+function _currentKeywords() {
+  return (document.getElementById('editKeywords').value || '')
+    .split(',').map(k => k.trim()).filter(Boolean);
+}
+function addKeyword(kw) {
+  kw = (kw || '').trim();
+  if (!kw) return;
+  const cur = _currentKeywords();
+  if (cur.includes(kw)) return;
+  cur.push(kw);
+  document.getElementById('editKeywords').value = cur.join(', ');
+  // 담긴 칩은 흐리게
+  document.querySelectorAll('.kw-chip').forEach(c => {
+    if (c.dataset.kw === kw) { c.classList.add('active'); c.style.opacity = '.45'; }
+  });
+}
+function renderKeywordChips(list) {
+  _kwSuggestions = Array.isArray(list) ? list : [];
+  const box = document.getElementById('keywordChips');
+  if (!box) return;
+  // '추천:' 라벨 + 전체추가 버튼은 유지, 칩만 갱신
+  box.querySelectorAll('.kw-chip').forEach(c => c.remove());
+  const allBtn = document.getElementById('btnAddAllKw');
+  const cur = _currentKeywords();
+  _kwSuggestions.forEach(kw => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn btn-outline-primary btn-sm py-0 px-2 kw-chip';
+    b.dataset.kw = kw;
+    b.textContent = '＋ ' + kw;
+    if (cur.includes(kw)) { b.classList.add('active'); b.style.opacity = '.45'; }
+    b.addEventListener('click', () => addKeyword(kw));
+    box.insertBefore(b, allBtn);
+  });
+  box.style.display = _kwSuggestions.length ? '' : 'none';
+}
+document.getElementById('btnAddAllKw')?.addEventListener('click', () => {
+  (_kwSuggestions || []).forEach(addKeyword);
+});
+renderKeywordChips(_kwSuggestions);
 
 // ── 저장 ──
 async function saveEdits() {

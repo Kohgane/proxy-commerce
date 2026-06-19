@@ -71,3 +71,30 @@ def test_save_persists_category(client):
     import json as _json
     extra = _json.loads(saved["extra_json"])
     assert extra["category_code"] == "BAG"
+
+
+def test_classify_returns_suggested_keywords(client):
+    r = client.post("/seller/collect/classify", json={"title": "포터 가죽 백팩"})
+    d = r.get_json()
+    assert d["code"] == "BAG"
+    assert isinstance(d.get("suggested_keywords"), list) and len(d["suggested_keywords"]) >= 5
+    assert "가방" in d["suggested_keywords"]
+
+
+def test_suggest_keywords_per_category():
+    from src.seller_console.category_classifier import suggest_keywords
+    assert "선물세트" in suggest_keywords("FOD")
+    assert "데일리백" in suggest_keywords("BAG")
+    # 미지정/GEN도 일반 키워드 반환
+    assert len(suggest_keywords("GEN")) >= 5
+
+
+def test_edit_page_renders_keyword_chips(client):
+    item = {"id": "x", "title": "포터 백팩", "url": "https://u", "image_url": "",
+            "price": "10", "currency": "USD", "extra_json": "{}"}
+    with patch("src.seller_console.collect_history_store.get", return_value=item), \
+         patch("src.seller_console.market_credentials.is_connected", return_value=True):
+        html = client.get("/seller/collect/preview/x").get_data(as_text=True)
+    assert "keywordChips" in html
+    assert "전체 추가" in html
+    assert "renderKeywordChips" in html
