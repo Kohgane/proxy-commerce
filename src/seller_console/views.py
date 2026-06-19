@@ -5335,13 +5335,17 @@ def sourcing_monitor_check():
 
 
 def _sourcing_require_admin():
-    """소싱 페이지 관리자 권한 확인."""
-    from src.auth.admin_resolver import is_admin_session
+    """소싱/등록/이미지 페이지 접근 가드.
+
+    멀티유저 SaaS — 로그인한 셀러면 누구나 접근 가능(소싱 watches/후보 큐/등록 이력/
+    이미지 큐는 셀러 작업 화면이라 관리자 전용이 아님). 과거엔 관리자 전용이라
+    ADMIN_EMAILS 미설정 시 셀러가 403을 받아 좌측 메뉴가 '동작 안 함'으로 보였다.
+    인증 강제(_AUTH_ENABLED)가 켜져 있을 때만 로그인을 요구하고, 그 외(테스트/오픈)는 통과.
+    """
+    if not _AUTH_ENABLED:
+        return None
     if not session.get("user_id"):
         return redirect(url_for("auth.login", next=request.url))
-    admin_ok, _ = is_admin_session(session)
-    if not admin_ok:
-        return jsonify({"ok": False, "error": "관리자 권한이 필요합니다"}), 403
     return None
 
 

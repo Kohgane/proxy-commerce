@@ -253,7 +253,8 @@ function injectCollectButton() {
 const KGP_TOOLBAR_ID = "kgp-listing-toolbar";
 const KGP_SELECTED = new Set();   // 선택된 상품 url 집합(재스캔에도 유지)
 let _kgpCards = [];
-let _kgpCardByUrl = {};           // url → 카드 데이터(el 포함)
+let _kgpCardByUrl = {};           // url → 카드 데이터(el 포함) — 재스캔 시 '병합'(절대 비우지 않음)
+let _kgpClosed = false;           // 사용자가 툴바를 닫았으면 자동 재생성 안 함(같은 URL 동안)
 
 function _kgpPrice(text) {
   const m = String(text || "").match(/([\d][\d.,]{1,})\s*원|(?:₩|\$|¥|€|£)\s*([\d][\d.,]{1,})/);
@@ -315,11 +316,11 @@ function kgpSetCardSelected(url, badge, el, selected) {
   if (selected) {
     KGP_SELECTED.add(url);
     if (badge) { badge.textContent = "✓ 선택"; badge.style.cssText = kgpCardBadgeStyle(true); }
-    if (el) { el.style.outline = "3px solid #ff8a1e"; el.style.outlineOffset = "-3px"; }
+    if (el) { el.style.outline = "3px solid #ff8a1e"; el.style.outlineOffset = "-3px"; el.setAttribute("data-kgp-outline", "1"); }
   } else {
     KGP_SELECTED.delete(url);
     if (badge) { badge.textContent = "수집"; badge.style.cssText = kgpCardBadgeStyle(false); }
-    if (el) { el.style.outline = ""; }
+    if (el) { el.style.outline = ""; el.removeAttribute("data-kgp-outline"); }
   }
 }
 
@@ -408,8 +409,13 @@ function kgpBuildToolbar() {
     } else if (act === "collect-all") {
       kgpCollect(Object.keys(_kgpCardByUrl));
     } else if (act === "close") {
+      // 닫으면 같은 페이지에서 자동으로 다시 뜨지 않게 한다(URL 변경 시 초기화).
+      _kgpClosed = true;
       bar.remove();
       document.querySelectorAll(".kgp-card-chk").forEach((b) => b.remove());
+      document.querySelectorAll("[data-kgp-outline]").forEach((el) => {
+        el.style.outline = ""; el.removeAttribute("data-kgp-outline");
+      });
     }
   });
   document.body.appendChild(bar);
@@ -417,35 +423,36 @@ function kgpBuildToolbar() {
 
 function kgpInjectListing() {
   if (window.top !== window.self || !document.body) return;
+  if (_kgpClosed) return;                        // 사용자가 닫음 → 자동 재생성 안 함
   const cards = kgpFindCards();
-  if (cards.length < 3) {                       // 리스팅 아님 → 정리
+  if (cards.length < 3) {                        // 리스팅 아님 → 정리
     const ex = document.getElementById(KGP_TOOLBAR_ID);
     if (ex) { ex.remove(); document.querySelectorAll(".kgp-card-chk").forEach((b) => b.remove()); }
     return;
   }
-  // 재스캔(무한스크롤/동적로딩)에도 선택을 지우지 않는다. url 기준으로 카드맵 갱신 +
-  // 배지 없는 카드에만 배지 주입(기존 선택 유지).
+  // 재스캔(무한스크롤/동적로딩)에도 선택을 지우지 않는다.
+  // ★중요★ 카드맵을 비우지 않고 '병합'한다 — 비우면 선택된 url의 카드 데이터가 사라져
+  //   '선택 수집/전체 수집'이 '선택된 상품 없음'으로 실패하던 버그(오너 리포트) 방지.
   _kgpCards = cards;
-  _kgpCardByUrl = {};
   cards.forEach((c) => { _kgpCardByUrl[c.url] = c; });
   cards.forEach((c) => {
     try {
-      if (c.el.querySelector(":scope > .kgp-card-chk")) {
-        // 이미 배지 있음 — 선택 상태만 동기화
-        const b = c.el.querySelector(":scope > .kgp-card-chk");
-        const sel = KGP_SELECTED.has(c.url);
-        b.textContent = sel ? "✓ 선택" : "수집";
-        b.style.cssText = kgpCardBadgeStyle(sel);
+      const existing = c.el.querySelector(":scope > .kgp-card-chk");
+      const sel = KGP_SELECTED.has(c.url);
+      if (existing) {
+        // 이미 배지 있음 — 선택 상태만 동기화(선택을 풀지 않음)
+        existing.textContent = sel ? "✓ 선택" : "수집";
+        existing.style.cssText = kgpCardBadgeStyle(sel);
+        if (sel) { c.el.style.outline = "3px solid #ff8a1e"; c.el.style.outlineOffset = "-3px"; c.el.setAttribute("data-kgp-outline", "1"); }
         return;
       }
       if (getComputedStyle(c.el).position === "static") c.el.style.position = "relative";
       const badge = document.createElement("div");
       badge.className = "kgp-card-chk";
       badge.dataset.url = c.url;
-      const sel = KGP_SELECTED.has(c.url);
       badge.textContent = sel ? "✓ 선택" : "수집";
       badge.style.cssText = kgpCardBadgeStyle(sel);
-      if (sel) { c.el.style.outline = "3px solid #ff8a1e"; c.el.style.outlineOffset = "-3px"; }
+      if (sel) { c.el.style.outline = "3px solid #ff8a1e"; c.el.style.outlineOffset = "-3px"; c.el.setAttribute("data-kgp-outline", "1"); }
       badge.addEventListener("click", (e) => {
         e.preventDefault(); e.stopPropagation();
         kgpToggleCard(c.url, badge, c.el);
@@ -467,6 +474,10 @@ let _kgpLastUrl = location.href;
 setInterval(() => {
   if (location.href !== _kgpLastUrl) {
     _kgpLastUrl = location.href;
+    // 새 페이지로 이동 → 닫음 상태/선택 초기화(다른 상품 목록이므로).
+    _kgpClosed = false;
+    KGP_SELECTED.clear();
+    _kgpCardByUrl = {};
     setTimeout(kgpRefresh, 900);
   }
 }, 1500);

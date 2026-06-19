@@ -55,7 +55,11 @@
             <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2" id="btnConvertKrw"
                     onclick="convertToKrw()" title="환율을 적용해 가격을 원화(KRW)로 바꿉니다">↻ 원화로 환산</button>
           </div>
-          <div class="text-muted mb-3" id="fxNote" style="font-size:.74rem;"></div>
+          <div class="text-muted mb-1" id="fxNote" style="font-size:.74rem;"></div>
+          <div class="alert alert-warning py-1 px-2 mb-3 d-none" id="priceWarn" style="font-size:.8rem;">
+            ⚠️ <strong>판매가(가격)가 0이거나 비어 있습니다.</strong> 이 상태로는 마켓이 등록을 거부합니다
+            (“연결됨”이어도 업로드 실패). 위에 가격을 입력하거나 <strong>↻ 원화로 환산</strong>으로 채워주세요.
+          </div>
         </div>
       </div>
 
@@ -174,7 +178,11 @@
         <!-- Step 1: 마켓 선택 + 마진율 설정 -->
         <div id="stepSelect">
           <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-            <h6 class="fw-semibold mb-0">1. 등록할 마켓 선택</h6>
+            <div class="d-flex align-items-center gap-2">
+              <h6 class="fw-semibold mb-0">1. 등록할 마켓 선택</h6>
+              <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" id="btnSelectAllMarkets"
+                      onclick="toggleAllMarkets()">전체 선택</button>
+            </div>
             {% set conn = market_connected or {} %}
             {% set total = conn|length %}
             {% set okcnt = conn.values()|select|list|length %}
@@ -383,6 +391,10 @@ function updateKrwPreview() {
   const noteEl = document.getElementById('fxNote');
   const btn = document.getElementById('btnConvertKrw');
   const srcLabel = _FX_MOCK ? '기본값(실시간 연결 전)' : '실시간';
+
+  // 가격 0/빈값이면 경고 표시 — '연결됨'인데 업로드가 실패하는 가장 흔한 원인.
+  const warnEl = document.getElementById('priceWarn');
+  if (warnEl) warnEl.classList.toggle('d-none', price > 0);
 
   if (cur === 'KRW') {
     prevEl.textContent = price > 0 ? `원화 ${_fmtKrw(price)}원` : '원화 입력';
@@ -593,9 +605,25 @@ function _syncMarketTile(input) {
   if (tile) tile.classList.toggle('selected', input.checked);
 }
 document.querySelectorAll('.market-upload-check').forEach(input => {
-  input.addEventListener('change', () => _syncMarketTile(input));
+  input.addEventListener('change', () => { _syncMarketTile(input); _refreshSelectAllLabel(); });
   _syncMarketTile(input);
 });
+
+// '전체 선택' 토글 — 모두 선택돼 있으면 전체 해제, 아니면 전체 선택.
+function toggleAllMarkets() {
+  const boxes = Array.from(document.querySelectorAll('.market-upload-check'));
+  const allChecked = boxes.length > 0 && boxes.every(b => b.checked);
+  boxes.forEach(b => { b.checked = !allChecked; _syncMarketTile(b); });
+  _refreshSelectAllLabel();
+}
+function _refreshSelectAllLabel() {
+  const btn = document.getElementById('btnSelectAllMarkets');
+  if (!btn) return;
+  const boxes = Array.from(document.querySelectorAll('.market-upload-check'));
+  const allChecked = boxes.length > 0 && boxes.every(b => b.checked);
+  btn.textContent = allChecked ? '전체 해제' : '전체 선택';
+}
+_refreshSelectAllLabel();
 
 function openUploadModal() {
   const modal = new bootstrap.Modal(document.getElementById('uploadModal'));

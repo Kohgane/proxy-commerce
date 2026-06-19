@@ -39,8 +39,12 @@
     </a>
 
     <ul class="nav flex-column gap-1 flex-grow-1">
-      <li class="console-nav-group-title">대시보드</li>
+      <li class="console-nav-group-title">⭐ 자주 쓰는</li>
       <li><a class="console-nav-link {% if _path == '/seller/' or _path.startswith('/seller/dashboard') %}active{% endif %}" href="/seller/dashboard"><i class="bi bi-speedometer2"></i><span>대시보드(홈)</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/collect') or _path.startswith('/seller/manual-collect') %}active{% endif %}" href="/seller/manual-collect"><i class="bi bi-search"></i><span>상품 수집기</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/collect-history') %}active{% endif %}" href="/seller/collect-history"><i class="bi bi-journal-text"></i><span>수집 이력</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/catalog') %}active{% endif %}" href="/seller/catalog"><i class="bi bi-box-seam"></i><span>카탈로그(상품관리)</span></a></li>
+      <li><a class="console-nav-link {% if (_path.startswith('/seller/markets') and not _path.startswith('/seller/markets/connect') and not _path.startswith('/seller/markets/guide')) or _path.startswith('/seller/market-status') %}active{% endif %}" href="/seller/markets"><i class="bi bi-shop"></i><span>마켓 연동/현황</span></a></li>
 
       <li class="console-nav-group-title">상품</li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/collect') or _path.startswith('/seller/manual-collect') %}active{% endif %}" href="/seller/manual-collect"><i class="bi bi-search"></i><span>수집기</span></a></li>
@@ -79,7 +83,6 @@
       <li><a class="console-nav-link {% if _path.startswith('/seller/ads/keywords') %}active{% endif %}" href="/seller/ads/keywords"><i class="bi bi-bullseye"></i><span>키워드 최적화</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/marketing/campaigns') %}active{% endif %}" href="/seller/marketing/campaigns"><i class="bi bi-ticket-perforated"></i><span>할인 캠페인</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/inventory/reorder') %}active{% endif %}" href="/seller/inventory/reorder"><i class="bi bi-arrow-repeat"></i><span>자동 리오더</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/collect-history') %}active{% endif %}" href="/seller/collect-history"><i class="bi bi-journal-text"></i><span>수집 이력</span></a></li>
 
       <li class="console-nav-group-title">설정</li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/api/status') or _path.startswith('/seller/api-status') %}active{% endif %}" href="/seller/api/status"><i class="bi bi-key"></i><span>API 상태</span></a></li>
