@@ -36,10 +36,10 @@ def test_extension_download_zip(client):
     assert ".zip" in r.headers.get("Content-Disposition", "")
     z = zipfile.ZipFile(io.BytesIO(r.data))
     names = z.namelist()
-    for need in ("kohgane-collector/manifest.json", "kohgane-collector/content_script.js",
-                 "kohgane-collector/background.js"):
+    for need in ("manifest.json", "content_script.js",
+                 "background.js"):
         assert need in names
-    assert any(n.startswith("kohgane-collector/icons/") for n in names)
+    assert any(n.startswith("icons/") for n in names)
     assert z.testzip() is None
 
 
