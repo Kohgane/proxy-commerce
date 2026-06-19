@@ -18,6 +18,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+# 셀러 콘솔 인증 강제는 운영 기본 ON(SELLER_CONSOLE_AUTH 미설정 시 "1"). 단 테스트는
+# 세션 없이 페이지를 직접 호출하므로 OFF로 고정한다(모듈 로드 전에 설정해야 반영됨).
+os.environ.setdefault("SELLER_CONSOLE_AUTH", "0")
+
 
 # ──────────────────────────────────────────────────────────
 # 환경변수 fixture

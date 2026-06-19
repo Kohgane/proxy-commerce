@@ -109,11 +109,11 @@
           <thead class="table-light">
             <tr>
               <th class="ps-3"><input type="checkbox" id="chkAll" title="전체 선택" aria-label="전체 선택"></th>
-              <th>수집 시각</th>
-              <th>경로</th>
-              <th>도메인</th>
+              <th>이미지</th>
               <th>제목</th>
               <th>가격</th>
+              <th>경로</th>
+              <th>수집 시각</th>
               <th>상태</th>
               <th>미리보기·등록</th>
             </tr>
@@ -122,12 +122,34 @@
           {% for it in items %}
             <tr>
               <td class="ps-3"><input type="checkbox" class="row-chk" value="{{ it.id }}" data-title="{{ it.title or '(제목 없음)' }}" aria-label="선택"></td>
-              <td class="text-muted small">{{ it.collected_at[:16] if it.collected_at else "-" }}</td>
+              <td>
+                <a href="/seller/collect/preview/{{ it.id }}">
+                  {% if it.image_url %}
+                  <img src="{{ it.image_url }}" alt="" loading="lazy"
+                       style="width:52px;height:52px;object-fit:cover;border-radius:8px;background:#f1f3f5"
+                       onerror="this.style.visibility='hidden'">
+                  {% else %}
+                  <span class="d-inline-flex align-items-center justify-content-center text-muted"
+                        style="width:52px;height:52px;border-radius:8px;background:#f1f3f5;font-size:18px">🖼️</span>
+                  {% endif %}
+                </a>
+              </td>
+              <td style="max-width:360px">
+                <a href="/seller/collect/preview/{{ it.id }}" class="text-decoration-none fw-semibold text-dark d-block text-truncate" title="{{ it.title or '(제목 없음)' }}">
+                  {{ it.title or "(제목 없음)" }}
+                </a>
+                <a href="{{ it.url }}" target="_blank" rel="noopener noreferrer" class="text-muted small text-decoration-none d-block text-truncate">{{ it.domain or it.url }}</a>
+              </td>
+              <td class="small">
+                {% if it.price %}<span class="fw-semibold">{{ it.price }}</span> <span class="text-muted">{{ it.currency }}</span>{% else %}<span class="text-muted">-</span>{% endif %}
+              </td>
               <td>
                 {% if it.source in ("extension", "chrome_extension") %}
                   <span class="badge bg-primary">확장</span>
                 {% elif it.source == "bookmarklet" %}
                   <span class="badge bg-secondary">북마클릿</span>
+                {% elif it.source == "quick" %}
+                  <span class="badge bg-secondary">즉시</span>
                 {% elif it.source == "manual" %}
                   <span class="badge bg-info text-dark">수동</span>
                 {% elif it.source in ("bulk", "bulk_collect") %}
@@ -136,16 +158,7 @@
                   <span class="badge bg-light text-dark">{{ it.source or "-" }}</span>
                 {% endif %}
               </td>
-              <td class="text-muted small">{{ it.domain or "-" }}</td>
-              <td>
-                <a href="{{ it.url }}" target="_blank" rel="noopener noreferrer"
-                   class="text-decoration-none text-dark">
-                  {{ it.title or "(제목 없음)" }}
-                </a>
-              </td>
-              <td class="text-muted small">
-                {% if it.price %}{{ it.price }} {{ it.currency }}{% else %}-{% endif %}
-              </td>
+              <td class="text-muted small">{{ it.collected_at[:16] if it.collected_at else "-" }}</td>
               <td>
                 {% if it.status == "ok" %}
                   <span class="badge bg-success">✓</span>
@@ -153,9 +166,9 @@
                   <span class="badge bg-danger">{{ it.status }}</span>
                 {% endif %}
               </td>
-              <td>
+              <td class="text-nowrap">
                 <a href="/seller/collect/preview/{{ it.id }}"
-                   class="btn btn-success btn-sm py-0" title="미리보기 후 마켓에 등록">📤 미리보기·등록</a>
+                   class="btn btn-success btn-sm py-0" title="확인·수정 후 마켓에 등록">✏️ 편집·등록</a>
               </td>
             </tr>
           {% endfor %}

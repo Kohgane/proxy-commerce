@@ -121,7 +121,9 @@ def test_receiver_does_not_redirect_to_login_when_unauth(monkeypatch):
         assert r.status_code == 200          # redirect(302) 아님
         assert "showLogin" in r.get_data(as_text=True)
     finally:
-        monkeypatch.delenv("SELLER_CONSOLE_AUTH", raising=False)
+        # delenv가 아니라 "0"으로 복원해야 함 — 기본값이 ON이라 삭제 시 reload가
+        # _AUTH_ENABLED를 켜버려 이후 테스트가 오염됨.
+        monkeypatch.setenv("SELLER_CONSOLE_AUTH", "0")
         importlib.reload(v)
 
 

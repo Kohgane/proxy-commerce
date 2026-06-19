@@ -52,7 +52,8 @@ bp = Blueprint(
 # ---------------------------------------------------------------------------
 # 인증 stub — Phase 24 OAuth 연결 전까지 환경변수로 제어
 # ---------------------------------------------------------------------------
-_AUTH_ENABLED = os.getenv("SELLER_CONSOLE_AUTH", "0") == "1"
+# 기본 ON — 소비자별 로그인/개인화(수집·마켓·소싱처 격리). 끄려면 SELLER_CONSOLE_AUTH=0.
+_AUTH_ENABLED = os.getenv("SELLER_CONSOLE_AUTH", "1") == "1"
 _ONBOARDING_DISMISS_COOKIE = "seller_onboarding_dismissed"
 _ONBOARDING_DISMISS_COOKIE_MAX_AGE = 60 * 60 * 24 * 180
 
