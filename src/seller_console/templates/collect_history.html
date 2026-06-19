@@ -123,16 +123,20 @@
             <tr>
               <td class="ps-3"><input type="checkbox" class="row-chk" value="{{ it.id }}" data-title="{{ it.title or '(제목 없음)' }}" aria-label="선택"></td>
               <td>
+                {% if it.thumbs %}
+                <a href="/seller/collect/preview/{{ it.id }}" class="d-inline-flex align-items-center gap-1" title="확인·수정 후 등록">
+                  {% for t in it.thumbs %}
+                  <img src="{{ t }}" alt="" loading="lazy"
+                       style="width:{{ '52' if loop.first else '34' }}px;height:{{ '52' if loop.first else '34' }}px;object-fit:cover;border-radius:7px;background:#f1f3f5;border:1px solid #e9ecef"
+                       onerror="this.style.display='none'">
+                  {% endfor %}
+                </a>
+                {% else %}
                 <a href="/seller/collect/preview/{{ it.id }}">
-                  {% if it.image_url %}
-                  <img src="{{ it.image_url }}" alt="" loading="lazy"
-                       style="width:52px;height:52px;object-fit:cover;border-radius:8px;background:#f1f3f5"
-                       onerror="this.style.visibility='hidden'">
-                  {% else %}
                   <span class="d-inline-flex align-items-center justify-content-center text-muted"
                         style="width:52px;height:52px;border-radius:8px;background:#f1f3f5;font-size:18px">🖼️</span>
-                  {% endif %}
                 </a>
+                {% endif %}
               </td>
               <td style="max-width:360px">
                 <a href="/seller/collect/preview/{{ it.id }}" class="text-decoration-none fw-semibold text-dark d-block text-truncate" title="{{ it.title or '(제목 없음)' }}">
@@ -202,7 +206,11 @@
       <div class="modal-body">
         <p class="small text-muted">선택한 <strong id="modalSelCount">0</strong>개 상품을 아래 마켓에 등록합니다.</p>
         <div class="mb-3">
-          <div class="fw-semibold small mb-1">등록 마켓</div>
+          <div class="d-flex align-items-center justify-content-between mb-1">
+            <div class="fw-semibold small">등록 마켓</div>
+            <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" id="bulkSelectAllMarkets"
+                    onclick="toggleAllBulkMarkets()">전체 선택</button>
+          </div>
           <div class="d-flex flex-wrap gap-2">
             {% for m in upload_markets %}
             <label class="market-tile border rounded px-3 py-2 d-flex align-items-center gap-2 mb-0" for="bm_{{ m.code }}">
@@ -245,6 +253,14 @@ document.addEventListener('DOMContentLoaded', function () {
   });
   document.querySelectorAll('.row-chk').forEach(c => c.addEventListener('change', refreshSelCount));
 });
+// 모달 '전체 선택' — 모든 마켓 체크 토글(전체선택↔전체해제).
+function toggleAllBulkMarkets() {
+  const boxes = Array.from(document.querySelectorAll('.bulk-market-chk'));
+  const allChecked = boxes.length > 0 && boxes.every(b => b.checked);
+  boxes.forEach(b => { b.checked = !allChecked; });
+  const btn = document.getElementById('bulkSelectAllMarkets');
+  if (btn) btn.textContent = allChecked ? '전체 선택' : '전체 해제';
+}
 function openBulkUploadModal() {
   const ids = selectedItemIds();
   if (!ids.length) { pcToast('상품을 먼저 선택하세요.', 'warning'); return; }
@@ -265,6 +281,15 @@ async function runBulkUpload() {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({item_ids: ids, markets: markets, target_margin_pct: margin}),
     });
+    // 서버가 JSON이 아닌 HTML(오류/타임아웃 페이지)을 줄 수 있으므로 안전하게 처리.
+    const ctype = resp.headers.get('content-type') || '';
+    if (!ctype.includes('application/json')) {
+      const msg = resp.status === 504 || resp.status === 502
+        ? `서버 응답 지연(${resp.status}) — 한 번에 너무 많은 상품일 수 있어요. 상품 수를 줄여 다시 시도하세요.`
+        : `등록 요청 실패 (HTTP ${resp.status}). 잠시 후 다시 시도하세요.`;
+      pcToast(msg, 'error');
+      return;
+    }
     const data = await resp.json();
     if (!data.ok) { pcToast(data.error || '일괄 업로드 실패', 'error'); return; }
     let html = `<div class="alert alert-info py-2">전체 ${data.total}개 · 성공 <strong>${data.succeeded}</strong> · 실패 ${data.total - data.succeeded}</div><ul class="list-group">`;

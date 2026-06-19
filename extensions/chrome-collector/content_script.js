@@ -410,20 +410,47 @@ function kgpBuildToolbar() {
       kgpCollect(Object.keys(_kgpCardByUrl));
     } else if (act === "close") {
       // 닫으면 같은 페이지에서 자동으로 다시 뜨지 않게 한다(URL 변경 시 초기화).
+      // 대신 작은 '다시 열기' 알약을 남겨 사용자가 켜고 끌 수 있게 한다(선택은 유지).
       _kgpClosed = true;
       bar.remove();
       document.querySelectorAll(".kgp-card-chk").forEach((b) => b.remove());
-      document.querySelectorAll("[data-kgp-outline]").forEach((el) => {
-        el.style.outline = ""; el.removeAttribute("data-kgp-outline");
-      });
+      kgpShowReopenPill();
     }
   });
   document.body.appendChild(bar);
 }
 
+const KGP_REOPEN_ID = "kgp-listing-reopen";
+
+// 닫았을 때 화면 좌상단에 작은 '고가네 수집 열기' 알약을 남긴다 → 클릭 시 바를 다시 띄운다.
+function kgpShowReopenPill() {
+  if (document.getElementById(KGP_REOPEN_ID) || !document.body) return;
+  const pill = document.createElement("button");
+  pill.id = KGP_REOPEN_ID;
+  pill.type = "button";
+  pill.title = "고가네 수집 바 다시 열기";
+  pill.innerHTML =
+    '<span style="display:flex;align-items:center;justify-content:center;width:20px;height:20px;background:#0a0a2a;border-radius:50%">' + KGP_GLOBE_SVG + '</span>' +
+    '<span style="font-weight:700;font-size:12px">수집 열기</span>';
+  pill.style.cssText = [
+    "position:fixed", "top:12px", "left:12px", "z-index:2147483646",
+    "display:flex", "align-items:center", "gap:6px", "padding:5px 10px 5px 6px",
+    "border:1.5px solid #ff8a1e", "border-radius:999px",
+    "background:linear-gradient(135deg,#0a1f5c,#13308f)", "color:#fff",
+    "cursor:pointer", "box-shadow:0 4px 14px rgba(10,31,92,.45)",
+    "font:12px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+  ].join(";");
+  pill.addEventListener("click", () => {
+    pill.remove();
+    _kgpClosed = false;
+    kgpInjectListing();          // 바 + 배지 복원(선택 유지)
+  });
+  document.body.appendChild(pill);
+}
+
 function kgpInjectListing() {
   if (window.top !== window.self || !document.body) return;
-  if (_kgpClosed) return;                        // 사용자가 닫음 → 자동 재생성 안 함
+  if (_kgpClosed) return;                        // 사용자가 닫음 → 자동 재생성 안 함(알약으로만 재오픈)
   const cards = kgpFindCards();
   if (cards.length < 3) {                        // 리스팅 아님 → 정리
     const ex = document.getElementById(KGP_TOOLBAR_ID);
@@ -478,6 +505,8 @@ setInterval(() => {
     _kgpClosed = false;
     KGP_SELECTED.clear();
     _kgpCardByUrl = {};
+    const _pill = document.getElementById(KGP_REOPEN_ID);
+    if (_pill) _pill.remove();
     setTimeout(kgpRefresh, 900);
   }
 }, 1500);
