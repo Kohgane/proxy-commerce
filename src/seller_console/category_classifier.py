@@ -74,9 +74,42 @@ def classify(title: str, description: str = "", keywords: str = "") -> Dict[str,
             best = rule
             best_hits = hits
     if not best:
-        return {**DEFAULT, "matched": []}
+        return {**DEFAULT, "matched": [], "suggested_keywords": suggest_keywords("GEN", title)}
 
     # confidence: 매칭 키워드 수에 따라 0.5~0.95
     confidence = min(0.5 + 0.15 * len(best_hits), 0.95)
     return {"code": best["code"], "label": best["label"],
-            "confidence": round(confidence, 2), "matched": best_hits[:5]}
+            "confidence": round(confidence, 2), "matched": best_hits[:5],
+            "suggested_keywords": suggest_keywords(best["code"], title)}
+
+
+# 카테고리별 추천 키워드(검색 노출용 일반어). 자동분류 시 칩으로 제시 → 셀러가 골라 담는다.
+KEYWORD_SUGGESTIONS: Dict[str, List[str]] = {
+    "BAG": ["가방", "데일리백", "크로스백", "토트백", "백팩", "숄더백", "방수", "남녀공용", "수납", "여행"],
+    "CLO": ["데일리룩", "베이직", "남녀공용", "사계절", "오버핏", "캐주얼", "편한", "신상", "선물"],
+    "BTY": ["보습", "수분", "데일리", "민감성", "안티에이징", "지속력", "선물세트", "여행용", "휴대용"],
+    "FOD": ["선물세트", "건강", "프리미엄", "수제", "전통", "명절선물", "차선물", "휴대", "개별포장"],
+    "DIG": ["휴대용", "고속충전", "호환", "미니멀", "사무용", "게이밍", "필수템", "선물", "여행"],
+    "ELC": ["무선", "블루투스", "휴대용", "고음질", "저소음", "에너지절약", "선물", "신상"],
+    "HOM": ["인테리어", "북유럽", "원룸", "공간활용", "수납", "편안한", "거실", "주방", "선물", "1인용"],
+    "HLT": ["건강관리", "휴대용", "가정용", "선물", "데일리", "관리", "편안한"],
+    "SPT": ["홈트", "운동", "휴대용", "초보용", "캠핑", "아웃도어", "남녀공용", "선물"],
+    "TOY": ["선물", "교육용", "어린이", "취미", "인기", "조립", "수집"],
+    "BBY": ["유아", "신생아", "출산선물", "안전", "순한", "데일리", "휴대용"],
+    "PET": ["반려견", "반려묘", "간식", "용품", "데일리", "선물", "수제"],
+    "OFC": ["사무용", "데일리", "미니멀", "심플", "선물", "대용량"],
+    "GEN": ["데일리", "선물", "인기", "신상", "남녀공용", "실용적", "휴대용"],
+}
+
+
+def suggest_keywords(code: str, title: str = "") -> List[str]:
+    """카테고리 코드 기반 추천 키워드(+제목 단어 일부) 목록."""
+    base = list(KEYWORD_SUGGESTIONS.get(code, KEYWORD_SUGGESTIONS["GEN"]))
+    # 제목에서 의미있는 한글 단어 2개 정도 보강(중복 제외)
+    for w in (title or "").replace("|", " ").split():
+        w = w.strip()
+        if 2 <= len(w) <= 8 and w not in base and not any(ch.isdigit() for ch in w):
+            base.append(w)
+        if len(base) >= 16:
+            break
+    return base[:16]
