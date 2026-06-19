@@ -347,6 +347,14 @@
   ② 좌측 nav 일부 버튼 동작 점검 ③ 수집 상품 목록(퍼센티식 한눈에) 보강 ④ 마켓 등록 실패(자격증명/토큰 만료=오너측)
   ⑤ 모바일 수집버튼(PWA share_target 적용됨, 더 쉽게).
 
+## 🔧 나열순 ① 로그인 강제(개인화) 기본 ON (Phase 229)
+- ✅ `SELLER_CONSOLE_AUTH` 기본값 `0`→**`1`**(views.py `_AUTH_ENABLED`). 미설정 시 **로그인 강제** → 소비자별
+  로그인 + 수집/마켓/소싱처 개인화(seller_id 격리). 끄려면 `SELLER_CONSOLE_AUTH=0`. Phase 225(세션 비영구+자동로그인+
+  관리자예외)와 합쳐 ‘새 세션마다 재로그인, 자동로그인 옵션, 오너 예외’ 완성.
+- 테스트는 `tests/conftest.py`에서 `SELLER_CONSOLE_AUTH=0` 주입(세션 없이 페이지 직접 호출하므로). `test_collect_receiver`의
+  reload-after-delenv 오염(기본 ON이라 삭제 시 켜짐) → finally에서 `setenv "0"`으로 복원하도록 수정.
+- 후속: ② 수집 상품 목록(퍼센티식) ③ 좌측 nav 버튼 점검 ④ 모바일 수집 더 쉽게.
+
 ## 작업 방식
 - 브랜치 `claude/magical-noether-oo4831`에서 작업 → PR 생성·main 머지(오너 승인됨)로 배포.
 - 변경 후 전체 테스트(`python -m pytest tests/ -q`) 통과 확인.
