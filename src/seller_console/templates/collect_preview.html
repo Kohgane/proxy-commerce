@@ -174,7 +174,7 @@
             {% set total = conn|length %}
             {% set okcnt = conn.values()|select|list|length %}
             <span class="small {{ 'text-success' if okcnt == total and total else 'text-warning' }}">
-              연동 {{ okcnt }}/{{ total }}
+              키 설정 {{ okcnt }}/{{ total }}
               <a href="/seller/markets/connect" target="_blank" class="ms-1 text-decoration-none">마켓 연결 →</a>
             </span>
           </div>
@@ -186,10 +186,10 @@
               <input class="form-check-input market-upload-check m-0" type="checkbox" value="{{ code }}" id="{{ chkid }}">
               <span class="fw-semibold flex-grow-1">{{ label }}</span>
               {% if ok %}
-              <span class="badge text-bg-success" title="연결됨 — 바로 등록 가능">✅ 연결</span>
+              <span class="badge text-bg-success" title="API 키가 입력됨 — 실제 연결은 ‘사전검증/등록’에서 확인됩니다">✅ 키 설정됨</span>
               {% else %}
               <a href="/seller/markets/connect/{{ code }}" target="_blank" class="badge text-bg-secondary text-decoration-none"
-                 title="아직 연결되지 않음 — 클릭해 연결" onclick="event.stopPropagation()">❌ 미연결</a>
+                 title="API 키 미입력 — 클릭해 연결" onclick="event.stopPropagation()">❌ 미설정</a>
               {% endif %}
             </label>
           </div>

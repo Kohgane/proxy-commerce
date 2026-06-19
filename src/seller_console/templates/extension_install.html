@@ -19,14 +19,15 @@
       <ol class="mb-0">
         <li class="mb-2">
           위 <b>‘확장 다운로드’</b>를 눌러 <code>kohgane-collector-v{{ version }}.zip</code>을 받고
-          <b>압축을 풉니다</b>(폴더가 생깁니다).
+          <b>압축을 풉니다</b> → <code>manifest.json</code>이 들어있는 폴더가 생깁니다.
         </li>
         <li class="mb-2">
           크롬 주소창에 <code>chrome://extensions</code> 입력 → 엔터.
           <a href="#" onclick="navigator.clipboard.writeText('chrome://extensions');return false;" class="small">📋 복사</a>
         </li>
         <li class="mb-2">오른쪽 위 <b>‘개발자 모드’</b>를 <b>켭니다</b>(토글 ON).</li>
-        <li class="mb-2">왼쪽 위 <b>‘압축해제된 확장 프로그램 로드’</b> 클릭 → 방금 <b>압축 푼 폴더</b>(<code>kohgane-collector</code>) 선택.</li>
+        <li class="mb-2">왼쪽 위 <b>‘압축해제된 확장 프로그램 로드’</b> 클릭 → 방금 <b>압축 푼 폴더</b>(안에 <code>manifest.json</code>이 보이는 그 폴더)를 선택.
+          <span class="text-muted small">※ ‘매니페스트 없음’ 오류가 나면 한 단계 안쪽 폴더(<code>manifest.json</code>이 바로 보이는 폴더)를 고르세요.</span></li>
         <li class="mb-2"><b>‘코가네 퍼센티 수집기’</b>가 확장 목록에 나타나면 설치 완료 ✅</li>
         <li class="mb-2">
           확장의 <b>옵션</b>에 <b>개인 토큰</b>을 넣습니다(딱 1회).

@@ -3966,16 +3966,18 @@ def extension_download():
     ]
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        # manifest.json이 ZIP '루트'에 오게 한다(하위폴더 X). 그래야 압축 푼 폴더를
+        # 그대로 '압축해제된 확장 로드'로 선택했을 때 크롬이 manifest를 찾는다.
         for name in include:
             p = os.path.join(ext_dir, name)
             if os.path.isfile(p):
-                z.write(p, arcname=f"kohgane-collector/{name}")
+                z.write(p, arcname=name)
         icons_dir = os.path.join(ext_dir, "icons")
         if os.path.isdir(icons_dir):
             for ic in sorted(os.listdir(icons_dir)):
                 fp = os.path.join(icons_dir, ic)
                 if os.path.isfile(fp):
-                    z.write(fp, arcname=f"kohgane-collector/icons/{ic}")
+                    z.write(fp, arcname=f"icons/{ic}")
     buf.seek(0)
     version = _chrome_extension_version() or "1"
     fname = f"kohgane-collector-v{version}.zip"
