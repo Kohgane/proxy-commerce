@@ -24,6 +24,15 @@
     }
   ],
   "categories": ["business", "shopping"],
+  "share_target": {
+    "action": "/seller/collect/quick",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "u"
+    }
+  },
   "shortcuts": [
     {
       "name": "주문 관리",
