@@ -40,17 +40,17 @@
         <div class="card-header"><strong>📌 북마클릿 (드래그해서 북마크바에 추가)</strong></div>
         <div class="card-body text-center py-4">
           <!-- 토큰 불필요: 새 탭(로그인 세션)으로 데이터를 보내 수집(CSP/CORS 우회).
-               북마크바에는 고가네 퍼센티 파비콘(글로브)만 작게 표시된다. -->
+               북마크바에 '고가네수집' 이름으로 표시되도록 링크 텍스트를 넣는다(JS 코드 노출 방지). -->
           <a id="bookmarkletLink"
-             class="d-inline-flex align-items-center justify-content-center text-decoration-none"
-             style="cursor:grab;width:48px;height:48px;border-radius:12px;padding:4px;border:1px solid #dee2e6;background:#fff;"
-             title="이 아이콘을 북마크바로 드래그하세요 — 고가네 퍼센티 아이콘으로 표시됩니다"
-             aria-label="고가네수집 북마클릿">
-            <img src="{{ url_for('seller_console.static', filename='favicon.svg') }}"
-                 alt="고가네수집" style="width:100%;height:100%;border-radius:8px;" draggable="false">
-          </a>
-          <p class="mt-3 text-muted small mb-0">위 <strong>고가네 퍼센티 아이콘</strong>을 북마크바로 드래그하세요.</p>
-          <p class="text-muted small mb-0">북마크바에는 <strong>파비콘(아이콘)</strong>만 작게 표시됩니다.</p>
+             class="d-inline-flex align-items-center gap-2 text-decoration-none px-3 py-2"
+             style="cursor:grab;border-radius:10px;border:1px solid #dee2e6;background:#fff;color:#0a1f5c;font-weight:700;"
+             title="이 버튼을 북마크바로 드래그하세요 — '고가네수집'으로 추가됩니다"
+             aria-label="고가네수집 북마클릿"><img
+                 src="{{ url_for('seller_console.static', filename='favicon.svg') }}"
+                 alt="" style="width:20px;height:20px;border-radius:5px;" draggable="false">고가네수집</a>
+          <p class="mt-3 text-muted small mb-0">위 <strong>고가네수집</strong> 버튼을 북마크바로 드래그하세요.</p>
+          <p class="text-muted small mb-0">북마크바에는 <strong>‘고가네수집’</strong> 이름으로 표시됩니다.
+            <span class="text-muted">(아이콘은 브라우저가 정하는 기본 모양 — 커스텀 불가. 브랜드 아이콘은 <a href="/seller/extension">크롬 확장</a>에서 표시됩니다.)</span></p>
         </div>
       </div>
     </div>
@@ -89,6 +89,9 @@ const SERVER_URL = "{{ request.host_url.rstrip('/') }}";
 function buildBookmarkletCode(translate) {
   return "javascript:(function(){" +
     "var S='" + SERVER_URL + "';" +
+    // 목록/검색 페이지 감지 — 상품 링크(이미지 포함 a)가 많으면 경고. 북마클릿은 '상품 1개 상세'용.
+    "try{var _cards=0;document.querySelectorAll('a[href] img').forEach(function(i){if((i.naturalWidth||0)>=120)_cards++});" +
+    "if(_cards>=8){if(!confirm('\\u26A0\\uFE0F 이 페이지엔 상품이 여러 개 같아요.\\n북마클릿은 \\'상품 1개 상세 페이지\\' 수집용이라, 지금 누르면 이 페이지를 1개로만 수집합니다.\\n여러 상품을 골라 담으려면 크롬 확장(고가네 수집)을 쓰세요.\\n\\n그래도 이 페이지를 1개로 수집할까요?'))return;}}catch(e){}" +
     "function M(p){var e=document.querySelector('meta[property=\"'+p+'\"],meta[name=\"'+p+'\"]');return e?(e.content||''):''}" +
     "function G(s){if(!s||s.indexOf('data:')===0)return false;if(/(logo|sprite|icon|avatar|placeholder|loading|blank|pixel|banner|thumb_)/i.test(s))return false;return true;}" +
     "var imgs=[];var og=M('og:image');if(G(og))imgs.push(og);" +

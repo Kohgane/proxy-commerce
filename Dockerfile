@@ -25,6 +25,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application source
 COPY src/ ./src/
+# 크롬 확장 소스 — /seller/extension/download 가 런타임에 ZIP으로 패키징해 내려준다.
+COPY extensions/ ./extensions/
 COPY gunicorn.conf.py .
 COPY config.example.yml .
 
