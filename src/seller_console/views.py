@@ -4453,6 +4453,13 @@ def collect_history():
     domain = request.args.get("domain", "").strip()
     source = request.args.get("source", "").strip()
     days = int(request.args.get("days", "30"))
+    q = request.args.get("q", "").strip()
+    status_f = request.args.get("status", "").strip()          # ""=전체 / ok / archived
+    sort = (request.args.get("sort") or "newest").strip()
+    per_page = request.args.get("per_page", 50, type=int)
+    if per_page not in (20, 50, 100):
+        per_page = 50
+    page = max(1, request.args.get("page", 1, type=int))
 
     items = []
     summ = {"total": 0, "today": 0, "domains": 0, "by_source": {"extension": 0, "bookmarklet": 0, "manual": 0, "bulk": 0}}
@@ -4465,6 +4472,42 @@ def collect_history():
         domains = distinct_domains(seller_id=_sid)
     except Exception as exc:
         logger.warning("수집 이력 조회 실패: %s", exc)
+
+    # 상태 필터(활성/보관)
+    if status_f in ("ok", "archived"):
+        items = [it for it in items if (it.get("status") or "") == status_f]
+
+    # 검색(제목/도메인/URL 부분일치)
+    if q:
+        ql = q.lower()
+        items = [it for it in items
+                 if ql in (it.get("title") or "").lower()
+                 or ql in (it.get("domain") or "").lower()
+                 or ql in (it.get("url") or "").lower()]
+
+    # 정렬
+    def _price_num(it):
+        try:
+            return float(str(it.get("price") or "").replace(",", "").strip())
+        except (TypeError, ValueError):
+            return -1.0
+    if sort == "oldest":
+        items.sort(key=lambda r: r.get("collected_at", ""))
+    elif sort == "price_high":
+        items.sort(key=_price_num, reverse=True)
+    elif sort == "price_low":
+        items.sort(key=_price_num)
+    elif sort == "title":
+        items.sort(key=lambda r: (r.get("title") or "").lower())
+    else:  # newest (기본)
+        items.sort(key=lambda r: r.get("collected_at", ""), reverse=True)
+
+    # 페이지네이션
+    total_filtered = len(items)
+    total_pages = max(1, (total_filtered + per_page - 1) // per_page)
+    page = min(page, total_pages)
+    start = (page - 1) * per_page
+    items = items[start:start + per_page]
 
     # 각 항목에 썸네일 목록(최대 5장) 부착 — 대표이미지 + extra_json의 수집 이미지들.
     # 사람이 이름 옆에서 이미지로 바로 확인할 수 있게(오너 요청).
@@ -4495,7 +4538,10 @@ def collect_history():
         items=items,
         summary=summ,
         domains=domains,
-        filters={"domain": domain, "source": source, "days": days},
+        filters={"domain": domain, "source": source, "days": days,
+                 "q": q, "status": status_f, "sort": sort, "per_page": per_page},
+        pagination={"page": page, "per_page": per_page, "total": total_filtered,
+                    "total_pages": total_pages},
         upload_markets=upload_markets,
         category_options=CATEGORY_OPTIONS,
     )
