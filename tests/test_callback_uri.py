@@ -256,7 +256,8 @@ class TestLoginPageRedirectUriSmoke:
             yield c
 
     def test_login_page_contains_callback_uri(self, client):
-        rv = client.get("/auth/login")
+        # 진단(콜백 URI/client_id)은 운영자용 — ?diag=1 일 때만 렌더(브리프 §2.4).
+        rv = client.get("/auth/login?diag=1")
         assert rv.status_code == 200
         body = rv.data.decode("utf-8", errors="replace")
         # redirect_uris 섹션 또는 콜백 URI 문자열이 포함되어야 함
@@ -269,10 +270,17 @@ class TestLoginPageRedirectUriSmoke:
         monkeypatch.delenv("NAVER_CLIENT_ID", raising=False)
         monkeypatch.delenv("NAVER_OAUTH_CLIENT_ID", raising=False)
 
-        rv = client.get("/auth/login")
+        rv = client.get("/auth/login?diag=1")
 
         assert rv.status_code == 200
         body = rv.get_data(as_text=True)
         assert "google-runtime-client-id" in body
         assert "kakao-runtime-client-id" in body
         assert "미설정 — NAVER_CLIENT_ID / NAVER_OAUTH_CLIENT_ID" in body
+
+    def test_login_page_hides_diagnostics_for_general_users(self, client):
+        # 일반 사용자(미관리자·diag 없음) 첫 화면엔 운영자 진단 텍스트가 없어야 한다.
+        rv = client.get("/auth/login")
+        assert rv.status_code == 200
+        body = rv.get_data(as_text=True)
+        assert "OAuth 콜백 URI" not in body

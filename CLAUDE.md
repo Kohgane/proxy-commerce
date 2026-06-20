@@ -21,8 +21,12 @@
     - ✅ §2 chunk1 — 디자인 토큰·폰트(Phase 234): `app.css` 토큰을 먹(#1a1714)/한지(#f5efe3)/금(#c9a24b) + **청록 Primary(#0f9d8c)**로
       교체, Noto Serif KR(디스플레이)·Pretendard(본문) 로드, h1/디스플레이=세리프. `console.css`가 토큰 상속(콘솔=한지 라이트).
       ※ CSS만 — 브랜드 문자열/템플릿 구조 미변경(다음 chunk). 랜딩/로그인 먹 다크 vault도 다음 chunk.
-    - ⏳ 다음: §2 chunk2 공통 셸/로그인·랜딩(먹+금 다크) → chunk3 리브랜딩 문자열(코고가네/KOHgogane,
-      `branding.py` 기본값+하드코딩 30곳+테스트 5곳) → §3 일괄관리 …
+    - ✅ §2 chunk2 — 로그인·랜딩 먹+금 다크 vault(Phase 235): `auth/login.html`·`templates/landing.html`을
+      먹(#1a1714) 다크 + 금빛 글로우 + 한지 텍스트 + 청록 CTA로. 로그인 운영자 OAuth 진단은 일반 첫 화면에서
+      숨김 → `?diag=1` 또는 관리자 세션에서만(`login()` 게이트). theme-color 순흑#020010→먹#1a1714.
+      landing은 _base_app 공유(에러페이지)라 다크는 landing head에 스코프. 랜딩에 Beta 배지.
+    - ⏳ 다음: §2 chunk3 리브랜딩 문자열(코고가네/KOHgogane — `branding.py` 기본값+하드코딩 30곳+테스트 5곳) +
+      공통 셸 마감 → §3 수집상품 일괄관리(퍼센티 동등 버튼) …
 
 
 ## 📌 마켓 연동 — 검증된 팩트 (2026-06-14)

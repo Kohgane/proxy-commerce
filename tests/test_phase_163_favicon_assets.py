@@ -87,4 +87,5 @@ def test_public_templates_use_cache_busted_favicon_links():
         assert "favicon.ico?v=172" in text
         assert "apple-touch-icon.png?v=172" in text
         assert "manifest.webmanifest?v=172" in text
-        assert 'content="#020010"' in text
+        # 다크 테마 컬러 — 순흑 #020010 폐기(KOHgogane 브리프 §2.2) → 따뜻한 먹(#1a1714)도 허용.
+        assert ('content="#020010"' in text) or ('content="#1a1714"' in text)

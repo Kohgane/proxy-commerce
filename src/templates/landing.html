@@ -1,19 +1,52 @@
-{# 랜딩 페이지 — Phase 148 #}
+{# 랜딩 페이지 — 먹+금 다크 vault (KOHgogane 브리프 §2.2 / Phase 235) #}
 {% extends "_base_app.html" %}
 
-{% block title %}Proxy Commerce — Kohgane Percentii{% endblock %}
+{% block title %}{{ brand_name|default('Proxy Commerce', true) }} — Kohgane Percentii{% endblock %}
 {% block head %}
 <link rel="privacy-policy" href="/privacy">
+<style>
+  /* 입구(랜딩)는 먹 다크 vault — 금빛 글로우 + 한지 텍스트 + 청록 CTA. 작업 화면은 한지 라이트. */
+  body.bg-light {
+    background:
+      radial-gradient(1100px 460px at 50% -6%, rgba(201,162,75,.18), transparent 60%),
+      linear-gradient(180deg, #1a1714 0%, #211c17 55%, #14110e 100%) fixed !important;
+    color: #f5efe3;
+  }
+  .vault-hero h1 { font-family: var(--pc-font-display, 'Noto Serif KR', serif); color: #ecdcb0; }
+  .vault-hero .lead { color: #c9bda6; }
+  .vault-rule { height: 1px; width: 120px; margin: 1.25rem auto; background: linear-gradient(90deg, transparent, #c9a24b, transparent); }
+  .vault-card {
+    background: #241f1a;
+    border: 1px solid rgba(201,162,75,.30) !important;
+    color: #f5efe3;
+    transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease;
+  }
+  .vault-card:hover {
+    border-color: #0f9d8c !important;
+    transform: translateY(-3px);
+    box-shadow: 0 18px 40px rgba(0,0,0,.45);
+  }
+  .vault-card .card-title { color: #ecdcb0; }
+  .vault-card .card-text { color: #c0b49d !important; }
+  .vault-foot, .vault-foot a { color: #b7a98c !important; }
+  .vault-foot a:hover { color: #ecdcb0 !important; }
+  .vault-foot hr { border-color: rgba(201,162,75,.25); }
+  .vault-beta {
+    display: inline-block; font-size: .7rem; letter-spacing: .12em; text-transform: uppercase;
+    color: #1a1714; background: #c9a24b; border-radius: 999px; padding: .12rem .6rem; font-weight: 700;
+    vertical-align: middle; margin-left: .4rem;
+  }
+</style>
 {% endblock %}
 
 {% block content %}
-<div class="row justify-content-center mt-3">
+<div class="row justify-content-center mt-4 vault-hero">
   <div class="col-lg-8 text-center">
     <h1 class="display-5 fw-bold mb-2">
-      <i class="bi bi-bag-check-fill text-teal"></i>
-      Proxy Commerce
+      {{ brand_name|default('Proxy Commerce', true) }}<span class="vault-beta">Beta</span>
     </h1>
-    <p class="lead text-muted mb-5">퍼센티 스타일 셀러 자동화 SaaS — Kohgane Percentii</p>
+    <div class="vault-rule"></div>
+    <p class="lead mb-5">수집부터 등록까지 — 한 곳에서. 퍼센티 스타일 셀러 자동화 SaaS.</p>
   </div>
 </div>
 
@@ -21,11 +54,11 @@
   {# 셀러 콘솔 카드 #}
   <div class="col-sm-6 col-lg-3">
     <a href="/seller/" class="text-decoration-none">
-      <div class="card h-100 shadow-sm border-0 landing-card">
+      <div class="card h-100 shadow-sm vault-card landing-card">
         <div class="card-body text-center py-4">
           <div class="fs-1 mb-3">🛒</div>
           <h5 class="card-title fw-bold">셀러 콘솔</h5>
-          <p class="card-text text-muted small">상품 수집 · 마진 계산 · 마켓 업로드</p>
+          <p class="card-text small">상품 수집 · 마진 계산 · 마켓 업로드</p>
         </div>
       </div>
     </a>
@@ -34,11 +67,11 @@
   {# 관리자 패널 카드 #}
   <div class="col-sm-6 col-lg-3">
     <a href="/admin/" class="text-decoration-none">
-      <div class="card h-100 shadow-sm border-0 landing-card">
+      <div class="card h-100 shadow-sm vault-card landing-card">
         <div class="card-body text-center py-4">
           <div class="fs-1 mb-3">🛠</div>
           <h5 class="card-title fw-bold">관리자 패널</h5>
-          <p class="card-text text-muted small">주문 · 재고 · 매출 대시보드</p>
+          <p class="card-text small">주문 · 재고 · 매출 대시보드</p>
         </div>
       </div>
     </a>
@@ -47,11 +80,11 @@
   {# API 문서 카드 #}
   <div class="col-sm-6 col-lg-3">
     <a href="/api/docs" class="text-decoration-none">
-      <div class="card h-100 shadow-sm border-0 landing-card">
+      <div class="card h-100 shadow-sm vault-card landing-card">
         <div class="card-body text-center py-4">
           <div class="fs-1 mb-3">📚</div>
           <h5 class="card-title fw-bold">API 문서</h5>
-          <p class="card-text text-muted small">200+ 엔드포인트 · 검색 · 그룹화</p>
+          <p class="card-text small">200+ 엔드포인트 · 검색 · 그룹화</p>
         </div>
       </div>
     </a>
@@ -60,11 +93,11 @@
   {# 시스템 상태 카드 #}
   <div class="col-sm-6 col-lg-3">
     <a href="/health/deep" class="text-decoration-none">
-      <div class="card h-100 shadow-sm border-0 landing-card">
+      <div class="card h-100 shadow-sm vault-card landing-card">
         <div class="card-body text-center py-4">
           <div class="fs-1 mb-3">💚</div>
           <h5 class="card-title fw-bold">시스템 상태</h5>
-          <p class="card-text text-muted small">헬스체크 · 의존성 · 업타임</p>
+          <p class="card-text small">헬스체크 · 의존성 · 업타임</p>
         </div>
       </div>
     </a>
@@ -72,14 +105,14 @@
 </div>
 
 {# 푸터 #}
-<div class="row mt-5">
-  <div class="col text-center text-muted small">
+<div class="row mt-5 vault-foot">
+  <div class="col text-center small">
     <hr>
     <span>Phase {{ current_phase }}</span> &nbsp;·&nbsp;
     <span>{{ version }}</span> &nbsp;·&nbsp;
-    <a href="/privacy" class="text-muted">개인정보처리방침</a> &nbsp;·&nbsp;
-    <a href="/terms" class="text-muted">이용약관</a> &nbsp;·&nbsp;
-    <a href="https://github.com/Kohgane/proxy-commerce" class="text-muted" target="_blank" rel="noopener">
+    <a href="/privacy">개인정보처리방침</a> &nbsp;·&nbsp;
+    <a href="/terms">이용약관</a> &nbsp;·&nbsp;
+    <a href="https://github.com/Kohgane/proxy-commerce" target="_blank" rel="noopener">
       <i class="bi bi-github"></i> GitHub
     </a>
   </div>
