@@ -1774,6 +1774,63 @@ def collect_bulk_delete():
     return jsonify({"ok": True, "deleted": deleted})
 
 
+@bp.post("/collect/bulk-category")
+def collect_bulk_category():
+    """수집 이력 여러 항목에 카테고리를 일괄 지정 (셀러 격리).
+
+    Request: {"item_ids": [...], "category_code": "BAG"}  또는  {"item_ids": [...], "auto": true}
+      - auto=true 면 각 항목 제목/키워드로 category_classifier.classify 자동 분류.
+    Response: {"ok": true, "updated": N, "results": [{id, ok, category_code}]}
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+
+    data = request.get_json(force=True, silent=True) or {}
+    item_ids = data.get("item_ids") if isinstance(data.get("item_ids"), list) else []
+    item_ids = [str(i) for i in item_ids if str(i).strip()][:1000]
+    category_code = str(data.get("category_code") or "").strip().upper()
+    auto = bool(data.get("auto"))
+    if not item_ids:
+        return jsonify({"ok": False, "error": "상품을 선택하세요."}), 400
+    if not auto and not category_code:
+        return jsonify({"ok": False, "error": "카테고리를 선택하거나 자동 분류를 켜세요."}), 400
+
+    import json as _json
+    from . import collect_history_store
+    from .category_classifier import classify as _classify
+    sid = _seller_id()
+    updated = 0
+    results = []
+    try:
+        for item_id in item_ids:
+            item = collect_history_store.get(item_id, seller_id=sid)
+            if not item:
+                results.append({"id": item_id, "ok": False, "error": "항목 없음"})
+                continue
+            try:
+                extra = _json.loads(item.get("extra_json") or "{}")
+            except (TypeError, ValueError):
+                extra = {}
+            code = category_code
+            if auto:
+                title = item.get("title") or extra.get("title_ko") or ""
+                kws = extra.get("keywords")
+                kw = ",".join(kws) if isinstance(kws, list) else (kws or "")
+                code = _classify(title, extra.get("description_ko") or extra.get("description") or "", kw).get("code", "GEN")
+            extra["category_code"] = code
+            ok = collect_history_store.update(
+                item_id, seller_id=sid, extra_json=_json.dumps(extra, ensure_ascii=False)
+            )
+            if ok:
+                updated += 1
+            results.append({"id": item_id, "ok": bool(ok), "category_code": code})
+    except Exception as exc:
+        logger.warning("일괄 카테고리 오류: %s", exc)
+        return jsonify({"ok": False, "error": "일괄 카테고리 지정 중 오류가 발생했습니다."}), 500
+
+    return jsonify({"ok": True, "updated": updated, "results": results})
+
+
 @bp.get("/catalog")
 def catalog():
     """상품 카탈로그 페이지 (Phase 128) — Sheets catalog 워크시트 뷰."""
@@ -4194,6 +4251,7 @@ def collect_history():
 
     from .upload_dispatcher import MARKET_LABELS, SUPPORTED_MARKETS
     upload_markets = [{"code": m, "label": MARKET_LABELS.get(m, m)} for m in SUPPORTED_MARKETS]
+    from .category_classifier import CATEGORY_OPTIONS
     return render_template(
         "collect_history.html",
         page="collect_history",
@@ -4202,6 +4260,7 @@ def collect_history():
         domains=domains,
         filters={"domain": domain, "source": source, "days": days},
         upload_markets=upload_markets,
+        category_options=CATEGORY_OPTIONS,
     )
 
 

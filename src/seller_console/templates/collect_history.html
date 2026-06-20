@@ -103,6 +103,9 @@
         <button type="button" class="btn btn-success btn-sm" id="bulkUploadBtn" onclick="openBulkUploadModal()" disabled>
           📤 선택 상품 일괄 마켓 등록
         </button>
+        <button type="button" class="btn btn-outline-primary btn-sm" id="bulkCategoryBtn" onclick="openBulkCategoryModal()" disabled>
+          🏷 카테고리 지정
+        </button>
         <button type="button" class="btn btn-outline-danger btn-sm" id="bulkDeleteBtn" onclick="openBulkDeleteModal()" disabled>
           🗑 선택 삭제
         </button>
@@ -237,6 +240,35 @@
   </div>
 </div>
 
+<!-- 일괄 카테고리 지정 모달 -->
+<div class="modal fade" id="bulkCategoryModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">🏷 카테고리 일괄 지정</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted">선택한 <strong id="catSelCount">0</strong>개 상품에 카테고리를 지정합니다. 각 마켓 업로더가 이 코드를 자기 마켓 카테고리로 매핑합니다.</p>
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" id="bulkCatAuto" onchange="document.getElementById('bulkCatSelect').disabled=this.checked">
+          <label class="form-check-label" for="bulkCatAuto">🔮 자동 분류 (제목·키워드로 각 상품 자동 판정)</label>
+        </div>
+        <label class="form-label small mb-1" for="bulkCatSelect">카테고리</label>
+        <select id="bulkCatSelect" class="form-select form-select-sm">
+          {% for c in category_options %}
+          <option value="{{ c.code }}">{{ c.label }} ({{ c.code }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">취소</button>
+        <button type="button" class="btn btn-primary" id="bulkCategoryConfirm" onclick="runBulkCategory()">적용</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- 일괄 삭제 확인 모달 -->
 <div class="modal fade" id="bulkDeleteModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
@@ -269,6 +301,8 @@ function refreshSelCount() {
   if (btn) btn.disabled = n === 0;
   const del = document.getElementById('bulkDeleteBtn');
   if (del) del.disabled = n === 0;
+  const cat = document.getElementById('bulkCategoryBtn');
+  if (cat) cat.disabled = n === 0;
 }
 document.addEventListener('DOMContentLoaded', function () {
   const all = document.getElementById('chkAll');
@@ -278,6 +312,37 @@ document.addEventListener('DOMContentLoaded', function () {
   });
   document.querySelectorAll('.row-chk').forEach(c => c.addEventListener('change', refreshSelCount));
 });
+function openBulkCategoryModal() {
+  const ids = selectedItemIds();
+  if (!ids.length) { pcToast('상품을 먼저 선택하세요.', 'warning'); return; }
+  document.getElementById('catSelCount').textContent = ids.length;
+  new bootstrap.Modal(document.getElementById('bulkCategoryModal')).show();
+}
+async function runBulkCategory() {
+  const ids = selectedItemIds();
+  if (!ids.length) return;
+  const auto = document.getElementById('bulkCatAuto').checked;
+  const code = document.getElementById('bulkCatSelect').value;
+  const btn = document.getElementById('bulkCategoryConfirm');
+  setButtonLoading(btn, true, '적용 중…');
+  try {
+    const resp = await fetch('/seller/collect/bulk-category', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({item_ids: ids, category_code: auto ? '' : code, auto: auto}),
+    });
+    const ctype = resp.headers.get('content-type') || '';
+    if (!ctype.includes('application/json')) { pcToast(`요청 실패 (HTTP ${resp.status}).`, 'error'); return; }
+    const data = await resp.json();
+    if (!data.ok) { pcToast(data.error || '카테고리 지정 실패', 'error'); return; }
+    bootstrap.Modal.getInstance(document.getElementById('bulkCategoryModal'))?.hide();
+    pcToast(`${data.updated}개 상품에 카테고리를 지정했습니다.`, 'success');
+  } catch (err) {
+    pcToast('요청 실패: ' + err.message, 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
 function openBulkDeleteModal() {
   const ids = selectedItemIds();
   if (!ids.length) { pcToast('삭제할 상품을 먼저 선택하세요.', 'warning'); return; }
