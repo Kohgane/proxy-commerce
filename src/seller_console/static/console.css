@@ -1,10 +1,10 @@
 :root {
-  --console-bg: var(--pc-color-bg, #f8fafc);
-  --console-surface: var(--pc-color-surface, #ffffff);
-  --console-sidebar: var(--pc-color-surface, #ffffff);
-  --console-primary: var(--pc-color-primary, #6d52ff);
-  --console-primary-weak: #ece8ff;
-  --console-text: var(--pc-color-text, #111827);
+  --console-bg: var(--pc-color-bg, #f5efe3);
+  --console-surface: var(--pc-color-surface, #fffdf8);
+  --console-sidebar: var(--pc-color-surface, #fffdf8);
+  --console-primary: var(--pc-color-primary, #0f9d8c);
+  --console-primary-weak: #e3f4f1;
+  --console-text: var(--pc-color-text, #1a1714);
   --console-muted: var(--pc-color-text-muted, #64748b);
   --console-border: var(--pc-color-border, #dbe2f2);
 }
