@@ -3,7 +3,7 @@ import os
 import sys
 import time
 
-from flask import Flask, Blueprint, request, jsonify, redirect, render_template
+from flask import Flask, Blueprint, request, jsonify, redirect, render_template, session
 from flask_cors import CORS
 
 from .vendors.shopify_client import verify_webhook
@@ -1119,13 +1119,19 @@ def root():
         return render_template('landing.html', version=version, current_phase=get_current_phase())
 
     # 기본: "seller" (백워드 호환)
-    try:
-        from .seller_console.views import bp as _seller_bp  # noqa: F401
-        return redirect('/seller/', code=302)
-    except Exception:
-        from src.version import get_current_phase
-        version = os.getenv('APP_VERSION', 'dev')
-        return render_template('landing.html', version=version, current_phase=get_current_phase())
+    # 단, 미로그인 방문자에게는 랜딩 페이지(개인정보처리방침 링크 포함)를 직접 렌더한다.
+    # 루트(/)가 곧장 302로 /seller/ 로 튕기면 구글 OAuth 브랜딩 검증이
+    # "홈페이지 URL에 개인정보처리방침 링크가 없습니다"로 실패한다(검증 크롤러가
+    # 리다이렉트 체인을 따라가지 않음). 로그인 사용자는 기존대로 콘솔로 보낸다.
+    if session.get("user_id"):
+        try:
+            from .seller_console.views import bp as _seller_bp  # noqa: F401
+            return redirect('/seller/', code=302)
+        except Exception:
+            pass
+    from src.version import get_current_phase
+    version = os.getenv('APP_VERSION', 'dev')
+    return render_template('landing.html', version=version, current_phase=get_current_phase())
 
 
 @app.route("/shop")

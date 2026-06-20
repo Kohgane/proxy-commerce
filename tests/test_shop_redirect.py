@@ -84,13 +84,33 @@ def test_root_redirect_shop_legacy(monkeypatch):
 # ROOT_REDIRECT=seller (기본)
 # ---------------------------------------------------------------------------
 
-def test_root_redirect_seller_default(monkeypatch):
-    """ROOT_REDIRECT 미설정 → / → /seller/ redirect."""
+def test_root_redirect_seller_default_logged_in(monkeypatch):
+    """ROOT_REDIRECT 미설정 + 로그인 → / → /seller/ redirect."""
+    monkeypatch.delenv("ROOT_REDIRECT", raising=False)
+    from src.order_webhook import app
+    app.config["TESTING"] = True
+    app.secret_key = "test-root-redirect"
+    with app.test_client() as c:
+        with c.session_transaction() as sess:
+            sess["user_id"] = "u-1"
+        resp = c.get("/")
+    assert resp.status_code == 302
+    location = resp.headers.get("Location", "")
+    assert "/seller" in location or "kohganemultishop.org" not in location
+
+
+def test_root_seller_default_anonymous_serves_landing_with_privacy(monkeypatch):
+    """ROOT_REDIRECT 미설정 + 미로그인 → / → 랜딩(개인정보처리방침 링크 노출).
+
+    루트가 곧장 302로 튕기면 구글 OAuth 브랜딩 검증이 '홈페이지에 개인정보처리방침
+    링크 없음'으로 실패하므로, 미로그인 방문자에게는 랜딩을 직접 렌더한다.
+    """
     monkeypatch.delenv("ROOT_REDIRECT", raising=False)
     from src.order_webhook import app
     app.config["TESTING"] = True
     with app.test_client() as c:
         resp = c.get("/")
-    assert resp.status_code == 302
-    location = resp.headers.get("Location", "")
-    assert "/seller" in location or "kohganemultishop.org" not in location
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'href="/privacy"' in html
+    assert 'href="/seller/"' in html
