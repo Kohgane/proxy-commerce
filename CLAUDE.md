@@ -45,7 +45,10 @@
       - ✅ chunk4 — 일괄 가격/마진(Phase 240): `POST /seller/collect/bulk-price`(target_margin_pct→extra 저장,
         price_multiplier→수집가 배수 적용, 둘 중 1+). 비숫자 가격은 가격 건너뛰고 마진만 적용(정직). UI '💰 가격/마진'
         모달(마진율·배수 입력) → 행 가격 즉시 갱신. 범위 검증(마진 0~90, 배수>0).
-      - ⏳ 다음: 일괄 상태변경/복제 + 검색/정렬/페이지당.
+      - ✅ chunk5 — 일괄 상태변경/복제(Phase 241): `POST /seller/collect/bulk-status`(ok/archived),
+        `POST /seller/collect/bulk-duplicate`(복제본 새 항목+'(복제)' 접미). UI '📦 상태'(활성/보관 모달)·'📋 복제'
+        버튼. archived 배지(📦 보관) 렌더. (셀러 격리)
+      - ⏳ 다음(§3 마지막): 검색/정렬/페이지당 개수.
 
 
 ## 📌 마켓 연동 — 검증된 팩트 (2026-06-14)
