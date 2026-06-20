@@ -112,6 +112,12 @@
         <button type="button" class="btn btn-outline-primary btn-sm" id="bulkPriceBtn" onclick="openBulkPriceModal()" disabled>
           💰 가격/마진
         </button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="bulkStatusBtn" onclick="openBulkStatusModal()" disabled>
+          📦 상태
+        </button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="bulkDuplicateBtn" onclick="runBulkDuplicate()" disabled>
+          📋 복제
+        </button>
         <button type="button" class="btn btn-outline-danger btn-sm" id="bulkDeleteBtn" onclick="openBulkDeleteModal()" disabled>
           🗑 선택 삭제
         </button>
@@ -178,6 +184,8 @@
               <td>
                 {% if it.status == "ok" %}
                   <span class="badge bg-success">✓</span>
+                {% elif it.status == "archived" %}
+                  <span class="badge bg-secondary">📦 보관</span>
                 {% else %}
                   <span class="badge bg-danger">{{ it.status }}</span>
                 {% endif %}
@@ -241,6 +249,25 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">닫기</button>
         <button type="button" class="btn btn-success" id="bulkUploadConfirm" onclick="runBulkUpload()">📤 등록 실행</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 일괄 상태변경 모달 -->
+<div class="modal fade" id="bulkStatusModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">📦 상태 변경</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted">선택한 <strong id="statusSelCount">0</strong>개 상품의 상태를 바꿉니다. ‘보관’은 작업이 끝난 상품을 정리할 때 사용합니다(삭제 아님).</p>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-success flex-grow-1" onclick="runBulkStatus('ok')">✓ 활성</button>
+          <button type="button" class="btn btn-secondary flex-grow-1" onclick="runBulkStatus('archived')">📦 보관</button>
+        </div>
       </div>
     </div>
   </div>
@@ -342,6 +369,10 @@ function refreshSelCount() {
   if (tr) tr.disabled = n === 0;
   const pr = document.getElementById('bulkPriceBtn');
   if (pr) pr.disabled = n === 0;
+  const st = document.getElementById('bulkStatusBtn');
+  if (st) st.disabled = n === 0;
+  const dup = document.getElementById('bulkDuplicateBtn');
+  if (dup) dup.disabled = n === 0;
 }
 document.addEventListener('DOMContentLoaded', function () {
   const all = document.getElementById('chkAll');
@@ -351,6 +382,64 @@ document.addEventListener('DOMContentLoaded', function () {
   });
   document.querySelectorAll('.row-chk').forEach(c => c.addEventListener('change', refreshSelCount));
 });
+function openBulkStatusModal() {
+  const ids = selectedItemIds();
+  if (!ids.length) { pcToast('상품을 먼저 선택하세요.', 'warning'); return; }
+  document.getElementById('statusSelCount').textContent = ids.length;
+  new bootstrap.Modal(document.getElementById('bulkStatusModal')).show();
+}
+async function runBulkStatus(status) {
+  const ids = selectedItemIds();
+  if (!ids.length) return;
+  try {
+    const resp = await fetch('/seller/collect/bulk-status', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({item_ids: ids, status: status}),
+    });
+    const ctype = resp.headers.get('content-type') || '';
+    if (!ctype.includes('application/json')) { pcToast(`요청 실패 (HTTP ${resp.status}).`, 'error'); return; }
+    const data = await resp.json();
+    if (!data.ok) { pcToast(data.error || '상태 변경 실패', 'error'); return; }
+    // 상태 배지 갱신
+    const badge = status === 'archived'
+      ? '<span class="badge bg-secondary">📦 보관</span>'
+      : '<span class="badge bg-success">✓</span>';
+    ids.forEach(id => {
+      const chk = document.querySelector(`.row-chk[value="${id}"]`);
+      const tr = chk && chk.closest('tr');
+      const tds = tr && tr.querySelectorAll('td');
+      if (tds && tds.length >= 7) tds[6].innerHTML = badge;  // 상태 컬럼(7번째)
+    });
+    bootstrap.Modal.getInstance(document.getElementById('bulkStatusModal'))?.hide();
+    pcToast(`${data.updated}개 상품 상태를 변경했습니다.`, 'success');
+  } catch (err) {
+    pcToast('요청 실패: ' + err.message, 'error');
+  }
+}
+async function runBulkDuplicate() {
+  const ids = selectedItemIds();
+  if (!ids.length) { pcToast('상품을 먼저 선택하세요.', 'warning'); return; }
+  if (!confirm(`선택한 ${ids.length}개 상품을 복제할까요? 복제본이 새 항목으로 추가됩니다.`)) return;
+  const btn = document.getElementById('bulkDuplicateBtn');
+  setButtonLoading(btn, true, '복제 중…');
+  try {
+    const resp = await fetch('/seller/collect/bulk-duplicate', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({item_ids: ids}),
+    });
+    const ctype = resp.headers.get('content-type') || '';
+    if (!ctype.includes('application/json')) { pcToast(`요청 실패 (HTTP ${resp.status}).`, 'error'); return; }
+    const data = await resp.json();
+    if (!data.ok) { pcToast(data.error || '복제 실패', 'error'); return; }
+    pcToast(`${data.duplicated}개 복제했습니다. 목록을 새로고침합니다.`, 'success');
+    setTimeout(() => location.reload(), 800);
+  } catch (err) {
+    pcToast('요청 실패: ' + err.message, 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
 function openBulkPriceModal() {
   const ids = selectedItemIds();
   if (!ids.length) { pcToast('상품을 먼저 선택하세요.', 'warning'); return; }

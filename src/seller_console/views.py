@@ -1984,6 +1984,90 @@ def collect_bulk_price():
     return jsonify({"ok": True, "updated": updated, "results": results})
 
 
+# 일괄 상태변경 허용 값 (활성/보관)
+_BULK_STATUS_ALLOWED = {"ok", "archived"}
+
+
+@bp.post("/collect/bulk-status")
+def collect_bulk_status():
+    """수집 이력 여러 항목의 상태를 일괄 변경 (활성 ok / 보관 archived). 셀러 격리.
+
+    Request: {"item_ids": [...], "status": "archived"}
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+
+    data = request.get_json(force=True, silent=True) or {}
+    item_ids = data.get("item_ids") if isinstance(data.get("item_ids"), list) else []
+    item_ids = [str(i) for i in item_ids if str(i).strip()][:1000]
+    status = str(data.get("status") or "").strip()
+    if not item_ids:
+        return jsonify({"ok": False, "error": "상품을 선택하세요."}), 400
+    if status not in _BULK_STATUS_ALLOWED:
+        return jsonify({"ok": False, "error": "상태값이 올바르지 않습니다."}), 400
+
+    from . import collect_history_store
+    sid = _seller_id()
+    updated = 0
+    try:
+        for item_id in item_ids:
+            if collect_history_store.update(item_id, seller_id=sid, status=status):
+                updated += 1
+    except Exception as exc:
+        logger.warning("일괄 상태변경 오류: %s", exc)
+        return jsonify({"ok": False, "error": "일괄 상태변경 중 오류가 발생했습니다."}), 500
+
+    return jsonify({"ok": True, "updated": updated, "status": status})
+
+
+@bp.post("/collect/bulk-duplicate")
+def collect_bulk_duplicate():
+    """수집 이력 여러 항목을 복제 (셀러 격리). 새 항목으로 추가.
+
+    Request: {"item_ids": [...]}
+    Response: {"ok": true, "duplicated": N, "new_ids": [...]}
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+
+    data = request.get_json(force=True, silent=True) or {}
+    item_ids = data.get("item_ids") if isinstance(data.get("item_ids"), list) else []
+    item_ids = [str(i) for i in item_ids if str(i).strip()][:200]
+    if not item_ids:
+        return jsonify({"ok": False, "error": "상품을 선택하세요."}), 400
+
+    import json as _json
+    from . import collect_history_store
+    sid = _seller_id()
+    new_ids = []
+    try:
+        for item_id in item_ids:
+            item = collect_history_store.get(item_id, seller_id=sid)
+            if not item:
+                continue
+            try:
+                extra = _json.loads(item.get("extra_json") or "{}")
+            except (TypeError, ValueError):
+                extra = {}
+            new_id = collect_history_store.append(
+                source=item.get("source") or "manual",
+                url=item.get("url") or "",
+                title=((item.get("title") or "") + " (복제)").strip(),
+                image=item.get("image_url") or "",
+                price=item.get("price") or "",
+                currency=item.get("currency") or "",
+                status="ok",
+                extra=extra,
+                seller_id=sid,
+            )
+            new_ids.append(new_id)
+    except Exception as exc:
+        logger.warning("일괄 복제 오류: %s", exc)
+        return jsonify({"ok": False, "error": "일괄 복제 중 오류가 발생했습니다."}), 500
+
+    return jsonify({"ok": True, "duplicated": len(new_ids), "new_ids": new_ids})
+
+
 @bp.get("/catalog")
 def catalog():
     """상품 카탈로그 페이지 (Phase 128) — Sheets catalog 워크시트 뷰."""
