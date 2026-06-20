@@ -1748,6 +1748,32 @@ def collect_bulk_upload():
     return jsonify({"ok": True, "total": len(item_ids), "succeeded": succeeded, "results": results})
 
 
+@bp.post("/collect/bulk-delete")
+def collect_bulk_delete():
+    """수집 이력의 여러 항목을 일괄 삭제 (셀러 격리).
+
+    Request: {"item_ids": [...]}
+    Response: {"ok": true, "deleted": N}
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+
+    data = request.get_json(force=True, silent=True) or {}
+    item_ids = data.get("item_ids") if isinstance(data.get("item_ids"), list) else []
+    item_ids = [str(i) for i in item_ids if str(i).strip()][:1000]
+    if not item_ids:
+        return jsonify({"ok": False, "error": "삭제할 상품을 선택하세요."}), 400
+
+    try:
+        from . import collect_history_store
+        deleted = collect_history_store.delete(item_ids, seller_id=_seller_id())
+    except Exception as exc:
+        logger.warning("일괄 삭제 오류: %s", exc)
+        return jsonify({"ok": False, "error": "일괄 삭제 중 오류가 발생했습니다."}), 500
+
+    return jsonify({"ok": True, "deleted": deleted})
+
+
 @bp.get("/catalog")
 def catalog():
     """상품 카탈로그 페이지 (Phase 128) — Sheets catalog 워크시트 뷰."""
