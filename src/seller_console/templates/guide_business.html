@@ -1,0 +1,126 @@
+{% extends "_base.html" %}
+{% block title %}사업자 등록 가이드{% endblock %}
+{% block content %}
+<div class="container-fluid py-4" style="max-width: 920px;">
+  <div class="mb-4">
+    <h1 class="h3 mb-1">🪪 사업자 등록 가이드</h1>
+    <p class="text-muted mb-0">구매대행 셀러로 시작하려면 보통 <strong>사업자등록 → 통신판매업 신고</strong> 순서로 진행합니다. 아래 단계를 하나씩 따라가세요.</p>
+  </div>
+
+  <!-- 면책 (브리프 §4.3) -->
+  <div class="alert alert-warning small mb-4">
+    ⚠️ <strong>안내 면책:</strong> 아래는 일반적인 절차 안내이며 법령·세무·수수료·신고 요건은 <strong>수시로 바뀝니다</strong>.
+    실제 신고 전 <strong>관할 세무서·지자체·세무 전문가</strong>에게 최신 요건을 꼭 확인하세요. 공식 사이트의 절차/메뉴 위치도 변경될 수 있습니다.
+  </div>
+
+  <!-- STEP 1 -->
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="d-flex align-items-start gap-3">
+        <span class="badge bg-primary rounded-pill fs-6">1</span>
+        <div class="flex-grow-1">
+          <h5 class="fw-bold mb-1">사업자 등록</h5>
+          <p class="text-muted small mb-2">국세청 홈택스에서 온라인으로 사업자등록을 신청합니다(방문 신청도 가능). 구매대행은 보통 <strong>통신판매·전자상거래 소매업</strong> 업종으로 등록합니다. 초기에는 <strong>간이과세자</strong>로 시작하는 경우가 많지만, 매출 규모·요건에 따라 다르니 확인이 필요합니다.</p>
+          <ul class="small text-muted mb-3">
+            <li>준비물: 신분증, (필요 시) 임대차계약서 등 — 요건은 관할서 확인</li>
+            <li>업종코드/과세유형은 본인 상황에 맞게 — 모르면 세무서에 문의</li>
+          </ul>
+          <a href="https://www.hometax.go.kr" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">🔗 홈택스 열기(사업자등록)</a>
+          <a href="https://www.gov.kr" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary btn-sm">정부24</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="d-flex align-items-start gap-3">
+        <span class="badge bg-primary rounded-pill fs-6">2</span>
+        <div class="flex-grow-1">
+          <h5 class="fw-bold mb-1">통신판매업 신고</h5>
+          <p class="text-muted small mb-2">온라인으로 물건을 파는 경우 대부분 <strong>통신판매업 신고</strong>가 필요합니다(거래 횟수·금액 등 일부 면제 기준이 있을 수 있음 — 확인 필요). 보통 사업자등록 후, 구매안전서비스(에스크로) 이용확인증을 갖춰 <strong>정부24</strong>에서 신고합니다.</p>
+          <ul class="small text-muted mb-3">
+            <li>준비물: 사업자등록증, 구매안전서비스 이용확인증(결제대행/오픈마켓 발급) 등</li>
+            <li>신고 후 발급되는 <strong>통신판매업 신고번호</strong>는 쇼핑몰·상세페이지에 표기</li>
+          </ul>
+          <a href="https://www.gov.kr" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">🔗 정부24 열기(통신판매업 신고)</a>
+          <a href="https://www.ftc.go.kr" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary btn-sm">공정위(사업자 정보공개)</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="d-flex align-items-start gap-3">
+        <span class="badge bg-primary rounded-pill fs-6">3</span>
+        <div class="flex-grow-1">
+          <h5 class="fw-bold mb-1">구매대행 유의사항</h5>
+          <p class="text-muted small mb-2">해외 구매대행은 <strong>관세·부가세, 통관(개인통관고유부호), 원산지·지식재산권(짝퉁 금지), 전안법 등 안전인증</strong> 이슈가 있습니다. 품목에 따라 수입 요건이 다르니 사전 확인이 중요합니다.</p>
+          <ul class="small text-muted mb-3">
+            <li>구매대행 vs 사입(직접 수입)은 세무·통관 처리가 다릅니다 — 본인 모델 확인</li>
+            <li>전자제품·화장품·식품 등은 별도 인증/신고가 필요할 수 있음</li>
+            <li>상표권·디자인권 침해 상품 판매 금지</li>
+          </ul>
+          <a href="https://www.customs.go.kr" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">🔗 관세청(해외직구/통관)</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 체크리스트 -->
+  <div class="card mb-3">
+    <div class="card-header"><strong>✅ 시작 전 체크리스트</strong></div>
+    <div class="card-body">
+      <div class="row">
+        {% for label in [
+          "사업자등록 완료(업종·과세유형 확인)",
+          "구매안전서비스 이용확인증 발급",
+          "통신판매업 신고 + 신고번호 확보",
+          "개인통관고유부호 발급(고객 안내용)",
+          "판매 품목 수입 요건/인증 확인",
+          "마켓 계정 + API 키 발급(마켓 연동 가이드)",
+        ] %}
+        <div class="col-md-6 mb-2">
+          <div class="form-check">
+            <input class="form-check-input biz-check" type="checkbox" id="biz{{ loop.index }}">
+            <label class="form-check-label small" for="biz{{ loop.index }}">{{ label }}</label>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="small text-muted mt-2"><span id="bizDone">0</span>/6 완료 — 체크는 이 브라우저에만 저장됩니다.</div>
+    </div>
+  </div>
+
+  <div class="d-flex flex-wrap gap-2">
+    <a href="/seller/markets/guide" class="btn btn-outline-primary btn-sm">다음: 마켓 API 키 발급 가이드 →</a>
+    <a href="/seller/extension" class="btn btn-outline-secondary btn-sm">🧩 크롬 확장 설치</a>
+  </div>
+</div>
+
+<script>
+(function () {
+  const KEY = 'kgp_biz_checklist';
+  const boxes = Array.from(document.querySelectorAll('.biz-check'));
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) {}
+  function refresh() {
+    const done = boxes.filter(b => b.checked).length;
+    const el = document.getElementById('bizDone');
+    if (el) el.textContent = done;
+  }
+  boxes.forEach(b => {
+    if (saved[b.id]) b.checked = true;
+    b.addEventListener('change', () => {
+      saved[b.id] = b.checked;
+      try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) {}
+      refresh();
+    });
+  });
+  refresh();
+})();
+</script>
+{% endblock %}

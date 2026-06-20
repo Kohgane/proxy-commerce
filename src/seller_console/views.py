@@ -3333,6 +3333,18 @@ def markets_guide():
     return render_template("markets_guide.html", page="markets", guide=get_guide())
 
 
+@bp.get("/guide/business")
+def guide_business():
+    """사업자등록 · 통신판매업 신고 · 구매대행 유의 클릭-스루 가이드 (Phase 243, 브리프 §4.3).
+
+    공식 사이트 딥링크 + 단계 설명 + 체크리스트 + 면책(법·세무는 변동되며 최종은
+    관할 세무서/전문가 확인 — 단정 금지).
+    """
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
+    return render_template("guide_business.html", page="guide_business")
+
+
 @bp.post("/markets/connect/<market>")
 def markets_connect_save(market):
     """셀러 마켓 자격증명 저장 (JSON)."""
