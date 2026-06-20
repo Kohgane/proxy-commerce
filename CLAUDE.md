@@ -39,7 +39,10 @@
       - ✅ chunk2 — 일괄 카테고리 지정(Phase 238): `POST /seller/collect/bulk-category`(item_ids + category_code,
         또는 auto=자동분류 category_classifier). 각 항목 extra_json에 category_code 머지(셀러 격리). UI '🏷 카테고리
         지정' 버튼+모달(드롭다운 CATEGORY_OPTIONS + 🔮자동분류 체크).
-      - ⏳ 다음: 일괄 번역 → 일괄 가격/마진 → 일괄 상태변경/복제 + 검색/정렬/페이지당.
+      - ✅ chunk3 — 일괄 번역(Phase 239): `POST /seller/collect/bulk-translate`(AITranslator 재사용,
+        제목/설명 한국어 → extra_json title_ko/description_ko, 실번역 시 표시 제목 갱신). 정직성: 키 미설정
+        (stub/none) 시 원문 유지 + 안내 메시지(가짜 번역 없음). UI '🌐 한국어 번역' 버튼 → 행 제목 즉시 갱신.
+      - ⏳ 다음: 일괄 가격/마진 → 일괄 상태변경/복제 + 검색/정렬/페이지당.
 
 
 ## 📌 마켓 연동 — 검증된 팩트 (2026-06-14)
