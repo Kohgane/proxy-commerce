@@ -36,7 +36,10 @@
       - ✅ chunk1 — 일괄 삭제(Phase 237): `collect_history_store.delete(item_ids, seller_id)`(셀러 격리, 시트/메모리),
         `POST /seller/collect/bulk-delete`, collect_history.html에 '🗑 선택 삭제' 버튼+확인 모달+행 즉시 제거,
         액션바 sticky(pc-bulk-toolbar). (일괄 마켓 등록·전체선택은 기존)
-      - ⏳ 다음: 일괄 카테고리 지정 → 일괄 번역 → 일괄 가격/마진 → 일괄 상태변경/복제 + 검색/정렬/페이지당.
+      - ✅ chunk2 — 일괄 카테고리 지정(Phase 238): `POST /seller/collect/bulk-category`(item_ids + category_code,
+        또는 auto=자동분류 category_classifier). 각 항목 extra_json에 category_code 머지(셀러 격리). UI '🏷 카테고리
+        지정' 버튼+모달(드롭다운 CATEGORY_OPTIONS + 🔮자동분류 체크).
+      - ⏳ 다음: 일괄 번역 → 일괄 가격/마진 → 일괄 상태변경/복제 + 검색/정렬/페이지당.
 
 
 ## 📌 마켓 연동 — 검증된 팩트 (2026-06-14)
