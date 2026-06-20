@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 from urllib.parse import quote_plus
 
 from flask import Blueprint, abort, jsonify, redirect, render_template, render_template_string, request, session, url_for, Response
-from src.utils.branding import get_brand_name
+from src.utils.branding import get_brand_name, get_brand_name_ko
 
 logger = logging.getLogger(__name__)
 _CS_FAQ_SUPPORTED_LOCALES = {"ko", "ja", "en", "zh"}
@@ -64,6 +64,7 @@ def inject_seller_template_flags():
         "diagnostic_reveal_enabled": os.getenv("DIAGNOSTIC_REVEAL", "0") == "1",
         "sidebar_grouped": os.getenv("SIDEBAR_GROUPED", "1") == "1",
         "brand_name": get_brand_name(),
+        "brand_name_ko": get_brand_name_ko(),
     }
 
 
@@ -903,7 +904,7 @@ def _build_dashboard_home_context(widgets: list[dict[str, Any]], dismissed: bool
         "recent_activities": recent_activities,
         "recent_products": recent_products,
         "dashboard_footer": {
-            "service_name": "Proxy Commerce",
+            "service_name": get_brand_name(),
             "version": dashboard_version,
             "policy_links": [
                 {"label": "이용약관", "href": "/terms"},
@@ -6926,7 +6927,7 @@ def me_notifications_test():
     subs = PushSubscriptionStore().list_for_user(user_id)
     if not subs:
         return jsonify({"ok": False, "error": "구독 중인 기기가 없습니다."})
-    results = [send_push(s, title="🔔 테스트 알림", body="Proxy Commerce 푸시 알림이 정상 작동 중입니다.") for s in subs]
+    results = [send_push(s, title="🔔 테스트 알림", body=f"{get_brand_name_ko()} 푸시 알림이 정상 작동 중입니다.") for s in subs]
     return jsonify({"ok": any(results), "message": f"{sum(results)}/{len(results)} 기기에 전송 완료"})
 
 

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  {% set _brand_name = brand_name|default('Proxy Commerce', true) %}
+  {% set _brand_name = brand_name|default('KOHgogane', true) %}
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}셀러 콘솔{% endblock %} | {{ _brand_name }}</title>
@@ -34,7 +34,7 @@
 <div class="console-shell" data-testid="seller-console-shell">
   <nav class="sidebar console-sidebar d-flex flex-column p-3" id="sidebarDrawer" data-testid="seller-sidebar">
     <a href="/seller/" class="console-brand text-decoration-none mb-3">
-      <div class="small text-secondary">코가네 퍼센티</div>
+      <div class="small text-secondary">{{ brand_name_ko|default('코고가네', true) }}</div>
       <strong>🛒 셀러 콘솔 · {{ _brand_name }}</strong>
     </a>
 

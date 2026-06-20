@@ -25,8 +25,14 @@
       먹(#1a1714) 다크 + 금빛 글로우 + 한지 텍스트 + 청록 CTA로. 로그인 운영자 OAuth 진단은 일반 첫 화면에서
       숨김 → `?diag=1` 또는 관리자 세션에서만(`login()` 게이트). theme-color 순흑#020010→먹#1a1714.
       landing은 _base_app 공유(에러페이지)라 다크는 landing head에 스코프. 랜딩에 Beta 배지.
-    - ⏳ 다음: §2 chunk3 리브랜딩 문자열(코고가네/KOHgogane — `branding.py` 기본값+하드코딩 30곳+테스트 5곳) +
-      공통 셸 마감 → §3 수집상품 일괄관리(퍼센티 동등 버튼) …
+    - ✅ §2 chunk3 — 리브랜딩 문자열(Phase 236): `branding.py` 기본값 `Proxy Commerce`→**`KOHgogane`** +
+      신설 `get_brand_name_ko()`→**`코고가네`**(context processor에 `brand_name_ko` 주입). 사용자노출
+      문자열 전수 교체: _base/_base_app/topnav(×3)/auth(login·signup·reset·magic) 타이틀·브랜드,
+      manifest(.json/.webmanifest) name, sw.js, 이메일 제목(코고가네), service_name, push, 확장 가이드,
+      markets_guide SVG, admin navbar, api docs title. 테스트 갱신(pwa·seller_console). 전체 10015 passed.
+      ※ 남은 잔재(비-UI, env override 가능, 후속): CLI 설명·slack/discord bot username·grafana json·
+        SEO_SITE_NAME·SMTP_FROM_NAME·export_manager sender 등 13곳(.py) — 사용자 화면 아님.
+    - ⏳ 다음: §3 수집상품 일괄관리(퍼센티 동등 — 일괄 업로드/삭제/카테고리/가격/번역/복제 + 다중선택·액션바·행별결과) …
 
 
 ## 📌 마켓 연동 — 검증된 팩트 (2026-06-14)

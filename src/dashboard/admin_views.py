@@ -38,7 +38,7 @@ _google_branding_check_cache: dict = {"checked_at": 0.0, "result": None}
 _ADMIN_TOPNAV_HTML = (
     '<nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">'
     '<div class="container-fluid">'
-    '<a class="navbar-brand fw-bold" href="/">Proxy Commerce</a>'
+    '<a class="navbar-brand fw-bold" href="/">{{ brand_name }}</a>'
     '<div class="ms-auto mt-2 mt-lg-0">'
     "{% set _uid = session.get('user_id') if session is defined else None %}"
     "{% if _uid %}"
@@ -1900,7 +1900,7 @@ def _build_pwa_status() -> dict:
         "viewport_meta": True,  # _base.html에 고정 포함
         "manifest_linked": True,  # _base.html에 고정 포함
         "sw_registered": True,   # _base.html JS에서 등록
-        "app_name": os.getenv("PWA_APP_NAME", "Proxy Commerce"),
+        "app_name": os.getenv("PWA_APP_NAME", "KOHgogane"),
     }
 
 
@@ -2204,7 +2204,7 @@ def _build_oauth_diagnostics(base_url: str, oauth_urls: dict) -> list[dict]:
     google_runtime = _oauth_runtime("google")
     kakao_runtime = _oauth_runtime("kakao")
     naver_runtime = _oauth_runtime("naver")
-    brand_name_source = "BRAND_NAME env" if os.getenv("BRAND_NAME") else "기본값 Proxy Commerce"
+    brand_name_source = "BRAND_NAME env" if os.getenv("BRAND_NAME") else "기본값 KOHgogane"
 
     # 베이스 URL 출처 표기
     _base_src = (
@@ -2334,7 +2334,7 @@ _DIAGNOSTICS_TEMPLATE = """
 <body>
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">
 <div class="container-fluid">
-<a class="navbar-brand fw-bold" href="/">Proxy Commerce</a>
+<a class="navbar-brand fw-bold" href="/">{{ brand_name }}</a>
 <div class="ms-auto mt-2 mt-lg-0">
 {% set _uid = session.get('user_id') if session is defined else None %}
 {% if _uid %}
@@ -3324,7 +3324,7 @@ _DIAGNOSTICS_TEMPLATE = """
             <li>site brand_name: <code>{{ brand_name }}</code></li>
             <li>og:site_name / og:title: <code>{{ brand_name }}</code></li>
             <li>동의 화면 앱 이름은 보이는 텍스트일 뿐이며 <strong>redirect_uri_mismatch 차단 원인은 아닙니다</strong>.</li>
-            <li>앱 이름 기대값 출처: <code>BRAND_NAME</code> env (미설정 시 기본값 <code>Proxy Commerce</code>)</li>
+            <li>앱 이름 기대값 출처: <code>BRAND_NAME</code> env (미설정 시 기본값 <code>KOHgogane</code>)</li>
             <li>브랜딩을 맞추려면 동의 화면 표시 이름을 <code>{{ brand_name }}</code>로 정리하세요.</li>
           </ul>
           <a class="btn btn-outline-secondary btn-sm" target="_blank" href="https://console.cloud.google.com/auth/branding">콘솔 열기</a>
