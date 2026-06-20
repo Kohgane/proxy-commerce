@@ -219,6 +219,60 @@ def update(item_id: str, *, seller_id: Optional[str] = None, **fields) -> bool:
     return False
 
 
+def delete(item_ids, *, seller_id: Optional[str] = None) -> int:
+    """수집 이력에서 여러 항목을 삭제 (일괄 삭제 — Phase 237).
+
+    seller_id 지정 시 해당 셀러 항목만 삭제(타 셀러 차단).
+
+    Returns:
+        삭제된 건수.
+    """
+    ids = {str(i) for i in (item_ids or []) if str(i).strip()}
+    if not ids:
+        return 0
+
+    if _SHEET_ID:
+        try:
+            ws = _get_worksheet()
+            _ensure_headers(ws)
+            values = ws.get_all_values()
+            deleted = 0
+            if values:
+                header = values[0]
+                col_idx = {h: i for i, h in enumerate(header)}
+                id_i = col_idx.get("id")
+                sid_i = col_idx.get("seller_id")
+                # 행 번호가 밀리지 않도록 아래에서 위로 삭제.
+                to_delete = []
+                for r, row in enumerate(values[1:], start=2):
+                    if id_i is None or id_i >= len(row) or row[id_i] not in ids:
+                        continue
+                    if seller_id is not None and sid_i is not None:
+                        row_sid = row[sid_i] if sid_i < len(row) else ""
+                        if str(row_sid or "") != str(seller_id):
+                            continue
+                    to_delete.append(r)
+                for r in sorted(to_delete, reverse=True):
+                    ws.delete_rows(r)
+                    deleted += 1
+            if deleted:
+                logger.info("수집 이력 삭제: %d건", deleted)
+            return deleted
+        except Exception as exc:
+            logger.warning("수집 이력 Sheets 삭제 실패: %s", exc)
+
+    before = len(_in_memory)
+    kept = []
+    for row in _in_memory:
+        if row.get("id") in ids and (
+            seller_id is None or str(row.get("seller_id", "") or "") == str(seller_id)
+        ):
+            continue
+        kept.append(row)
+    _in_memory[:] = kept
+    return before - len(_in_memory)
+
+
 def summary(days: int = 30, seller_id: Optional[str] = None) -> dict:
     """기간별 요약 통계."""
     items = list_items(days=days, seller_id=seller_id)

@@ -32,7 +32,11 @@
       markets_guide SVG, admin navbar, api docs title. 테스트 갱신(pwa·seller_console). 전체 10015 passed.
       ※ 남은 잔재(비-UI, env override 가능, 후속): CLI 설명·slack/discord bot username·grafana json·
         SEO_SITE_NAME·SMTP_FROM_NAME·export_manager sender 등 13곳(.py) — 사용자 화면 아님.
-    - ⏳ 다음: §3 수집상품 일괄관리(퍼센티 동등 — 일괄 업로드/삭제/카테고리/가격/번역/복제 + 다중선택·액션바·행별결과) …
+    - ⏳ §3 수집상품 일괄관리(퍼센티 동등) 진행 중:
+      - ✅ chunk1 — 일괄 삭제(Phase 237): `collect_history_store.delete(item_ids, seller_id)`(셀러 격리, 시트/메모리),
+        `POST /seller/collect/bulk-delete`, collect_history.html에 '🗑 선택 삭제' 버튼+확인 모달+행 즉시 제거,
+        액션바 sticky(pc-bulk-toolbar). (일괄 마켓 등록·전체선택은 기존)
+      - ⏳ 다음: 일괄 카테고리 지정 → 일괄 번역 → 일괄 가격/마진 → 일괄 상태변경/복제 + 검색/정렬/페이지당.
 
 
 ## 📌 마켓 연동 — 검증된 팩트 (2026-06-14)
