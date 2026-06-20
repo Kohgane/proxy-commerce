@@ -480,11 +480,22 @@ def login():
     kakao_status = _provider_status("kakao")
     google_status = _provider_status("google")
     naver_status = _provider_status("naver")
-    oauth_runtime = {
-        "kakao": _oauth_runtime("kakao"),
-        "google": _oauth_runtime("google"),
-        "naver": _oauth_runtime("naver"),
-    }
+    # 운영자용 OAuth 진단(콜백 URI/client_id)은 일반 사용자 첫 화면에 노출하지 않는다
+    # (KOHgogane 브리프 §2.4). 관리자 세션이거나 ?diag=1 일 때만 렌더한다.
+    show_diag = request.args.get("diag") == "1"
+    if not show_diag:
+        try:
+            from .admin_resolver import is_admin_session
+            show_diag = is_admin_session(session)[0]
+        except Exception:
+            show_diag = False
+    oauth_runtime = None
+    if show_diag:
+        oauth_runtime = {
+            "kakao": _oauth_runtime("kakao"),
+            "google": _oauth_runtime("google"),
+            "naver": _oauth_runtime("naver"),
+        }
     return render_template(
         "auth/login.html",
         next_url=next_url,
