@@ -10,10 +10,10 @@ def test_manifest_json_valid():
 
 
 def test_manifest_has_name():
-    """manifest.webmanifest에 name 필드가 있어야 한다 (Proxy Commerce)."""
+    """manifest.webmanifest에 name 필드가 있어야 한다 (KOHgogane)."""
     with open("src/seller_console/static/manifest.webmanifest", encoding="utf-8") as f:
         manifest = json.load(f)
-    assert manifest.get("name") == "Proxy Commerce"
+    assert manifest.get("name") == "KOHgogane"
 
 
 def test_manifest_has_short_name():
@@ -89,7 +89,7 @@ def test_manifest_served_via_app():
         resp = client.get("/seller/static/manifest.webmanifest")
         assert resp.status_code == 200
         data = json.loads(resp.data)
-        assert data.get("name") == "Proxy Commerce"
+        assert data.get("name") == "KOHgogane"
 
 
 def test_legacy_manifest_json_matches_webmanifest():
