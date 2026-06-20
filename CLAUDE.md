@@ -42,7 +42,10 @@
       - ✅ chunk3 — 일괄 번역(Phase 239): `POST /seller/collect/bulk-translate`(AITranslator 재사용,
         제목/설명 한국어 → extra_json title_ko/description_ko, 실번역 시 표시 제목 갱신). 정직성: 키 미설정
         (stub/none) 시 원문 유지 + 안내 메시지(가짜 번역 없음). UI '🌐 한국어 번역' 버튼 → 행 제목 즉시 갱신.
-      - ⏳ 다음: 일괄 가격/마진 → 일괄 상태변경/복제 + 검색/정렬/페이지당.
+      - ✅ chunk4 — 일괄 가격/마진(Phase 240): `POST /seller/collect/bulk-price`(target_margin_pct→extra 저장,
+        price_multiplier→수집가 배수 적용, 둘 중 1+). 비숫자 가격은 가격 건너뛰고 마진만 적용(정직). UI '💰 가격/마진'
+        모달(마진율·배수 입력) → 행 가격 즉시 갱신. 범위 검증(마진 0~90, 배수>0).
+      - ⏳ 다음: 일괄 상태변경/복제 + 검색/정렬/페이지당.
 
 
 ## 📌 마켓 연동 — 검증된 팩트 (2026-06-14)

@@ -109,6 +109,9 @@
         <button type="button" class="btn btn-outline-primary btn-sm" id="bulkTranslateBtn" onclick="runBulkTranslate()" disabled>
           🌐 한국어 번역
         </button>
+        <button type="button" class="btn btn-outline-primary btn-sm" id="bulkPriceBtn" onclick="openBulkPriceModal()" disabled>
+          💰 가격/마진
+        </button>
         <button type="button" class="btn btn-outline-danger btn-sm" id="bulkDeleteBtn" onclick="openBulkDeleteModal()" disabled>
           🗑 선택 삭제
         </button>
@@ -243,6 +246,35 @@
   </div>
 </div>
 
+<!-- 일괄 가격/마진 모달 -->
+<div class="modal fade" id="bulkPriceModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">💰 가격/마진 일괄 적용</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted">선택한 <strong id="priceSelCount">0</strong>개 상품에 적용합니다. 둘 중 하나만 입력해도 됩니다.</p>
+        <div class="mb-3">
+          <label class="form-label small mb-1" for="bulkMarginPct">목표 마진율 (%)</label>
+          <input type="number" id="bulkMarginPct" class="form-control form-control-sm" placeholder="예: 25" min="0" max="90" step="1">
+          <div class="form-text">업로드 시 판매가 계산에 사용됩니다(각 상품에 저장).</div>
+        </div>
+        <div class="mb-1">
+          <label class="form-label small mb-1" for="bulkPriceMult">수집가(원가) 배수 (×)</label>
+          <input type="number" id="bulkPriceMult" class="form-control form-control-sm" placeholder="예: 1.1 = +10%" min="0" step="0.01">
+          <div class="form-text">저장된 수집가에 배수를 곱합니다. 가격이 숫자가 아니면 그 항목은 건너뜁니다.</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">취소</button>
+        <button type="button" class="btn btn-primary" id="bulkPriceConfirm" onclick="runBulkPrice()">적용</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- 일괄 카테고리 지정 모달 -->
 <div class="modal fade" id="bulkCategoryModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
@@ -308,6 +340,8 @@ function refreshSelCount() {
   if (cat) cat.disabled = n === 0;
   const tr = document.getElementById('bulkTranslateBtn');
   if (tr) tr.disabled = n === 0;
+  const pr = document.getElementById('bulkPriceBtn');
+  if (pr) pr.disabled = n === 0;
 }
 document.addEventListener('DOMContentLoaded', function () {
   const all = document.getElementById('chkAll');
@@ -317,6 +351,51 @@ document.addEventListener('DOMContentLoaded', function () {
   });
   document.querySelectorAll('.row-chk').forEach(c => c.addEventListener('change', refreshSelCount));
 });
+function openBulkPriceModal() {
+  const ids = selectedItemIds();
+  if (!ids.length) { pcToast('상품을 먼저 선택하세요.', 'warning'); return; }
+  document.getElementById('priceSelCount').textContent = ids.length;
+  document.getElementById('bulkMarginPct').value = '';
+  document.getElementById('bulkPriceMult').value = '';
+  new bootstrap.Modal(document.getElementById('bulkPriceModal')).show();
+}
+async function runBulkPrice() {
+  const ids = selectedItemIds();
+  if (!ids.length) return;
+  const marginRaw = document.getElementById('bulkMarginPct').value.trim();
+  const multRaw = document.getElementById('bulkPriceMult').value.trim();
+  if (!marginRaw && !multRaw) { pcToast('마진율 또는 가격 배수를 입력하세요.', 'warning'); return; }
+  const body = {item_ids: ids};
+  if (marginRaw) body.target_margin_pct = parseFloat(marginRaw);
+  if (multRaw) body.price_multiplier = parseFloat(multRaw);
+  const btn = document.getElementById('bulkPriceConfirm');
+  setButtonLoading(btn, true, '적용 중…');
+  try {
+    const resp = await fetch('/seller/collect/bulk-price', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
+    });
+    const ctype = resp.headers.get('content-type') || '';
+    if (!ctype.includes('application/json')) { pcToast(`요청 실패 (HTTP ${resp.status}).`, 'error'); return; }
+    const data = await resp.json();
+    if (!data.ok) { pcToast(data.error || '적용 실패', 'error'); return; }
+    // 변경된 가격을 행에 반영
+    (data.results || []).forEach(r => {
+      if (r.ok && r.price != null) {
+        const chk = document.querySelector(`.row-chk[value="${r.id}"]`);
+        const tr = chk && chk.closest('tr');
+        const priceEl = tr && tr.querySelector('td.small .fw-semibold');
+        if (priceEl) priceEl.textContent = r.price;
+      }
+    });
+    bootstrap.Modal.getInstance(document.getElementById('bulkPriceModal'))?.hide();
+    pcToast(`${data.updated}개 상품에 적용했습니다.`, 'success');
+  } catch (err) {
+    pcToast('요청 실패: ' + err.message, 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
 async function runBulkTranslate() {
   const ids = selectedItemIds();
   if (!ids.length) { pcToast('상품을 먼저 선택하세요.', 'warning'); return; }

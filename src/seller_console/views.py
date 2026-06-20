@@ -1907,6 +1907,83 @@ def collect_bulk_translate():
                     "total": len(item_ids), "message": message, "results": results})
 
 
+@bp.post("/collect/bulk-price")
+def collect_bulk_price():
+    """수집 이력 여러 항목에 목표 마진율/원가 배수를 일괄 적용 (셀러 격리).
+
+    Request: {"item_ids": [...], "target_margin_pct"?: float, "price_multiplier"?: float}
+      - target_margin_pct: 각 항목 extra_json.target_margin_pct 에 저장(업로드 시 사용).
+      - price_multiplier: 저장된 수집가(원가)에 배수 적용(예 1.1 = +10%). >0 필요.
+    Response: {"ok": true, "updated": N, "results": [...]}
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+
+    data = request.get_json(force=True, silent=True) or {}
+    item_ids = data.get("item_ids") if isinstance(data.get("item_ids"), list) else []
+    item_ids = [str(i) for i in item_ids if str(i).strip()][:1000]
+    if not item_ids:
+        return jsonify({"ok": False, "error": "상품을 선택하세요."}), 400
+
+    margin = data.get("target_margin_pct")
+    multiplier = data.get("price_multiplier")
+    try:
+        margin = None if margin in (None, "") else float(margin)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "마진율이 올바르지 않습니다."}), 400
+    try:
+        multiplier = None if multiplier in (None, "") else float(multiplier)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "가격 배수가 올바르지 않습니다."}), 400
+    if margin is None and multiplier is None:
+        return jsonify({"ok": False, "error": "목표 마진율 또는 가격 배수 중 하나는 입력하세요."}), 400
+    if margin is not None and not (0 <= margin <= 90):
+        return jsonify({"ok": False, "error": "마진율은 0~90% 범위여야 합니다."}), 400
+    if multiplier is not None and not (multiplier > 0):
+        return jsonify({"ok": False, "error": "가격 배수는 0보다 커야 합니다."}), 400
+
+    import json as _json
+    from . import collect_history_store
+    sid = _seller_id()
+    updated = 0
+    results = []
+    try:
+        for item_id in item_ids:
+            item = collect_history_store.get(item_id, seller_id=sid)
+            if not item:
+                results.append({"id": item_id, "ok": False, "error": "항목 없음"})
+                continue
+            try:
+                extra = _json.loads(item.get("extra_json") or "{}")
+            except (TypeError, ValueError):
+                extra = {}
+            fields = {}
+            if margin is not None:
+                extra["target_margin_pct"] = margin
+                fields["extra_json"] = _json.dumps(extra, ensure_ascii=False)
+            new_price = None
+            if multiplier is not None:
+                try:
+                    cur = float(str(item.get("price") or "").replace(",", "").strip())
+                    new_price = round(cur * multiplier, 2)
+                    fields["price"] = str(new_price)
+                except (TypeError, ValueError):
+                    # 가격이 숫자가 아니면 가격 변경은 건너뛰되 마진은 적용(정직).
+                    pass
+            if not fields:
+                results.append({"id": item_id, "ok": False, "error": "적용할 변경 없음(가격 비숫자)"})
+                continue
+            ok = collect_history_store.update(item_id, seller_id=sid, **fields)
+            if ok:
+                updated += 1
+            results.append({"id": item_id, "ok": bool(ok), "price": new_price})
+    except Exception as exc:
+        logger.warning("일괄 가격/마진 오류: %s", exc)
+        return jsonify({"ok": False, "error": "일괄 가격/마진 적용 중 오류가 발생했습니다."}), 500
+
+    return jsonify({"ok": True, "updated": updated, "results": results})
+
+
 @bp.get("/catalog")
 def catalog():
     """상품 카탈로그 페이지 (Phase 128) — Sheets catalog 워크시트 뷰."""
