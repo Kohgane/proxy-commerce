@@ -1831,6 +1831,82 @@ def collect_bulk_category():
     return jsonify({"ok": True, "updated": updated, "results": results})
 
 
+@bp.post("/collect/bulk-translate")
+def collect_bulk_translate():
+    """수집 이력 여러 항목의 제목/설명을 한국어로 일괄 번역 (셀러 격리).
+
+    Request: {"item_ids": [...]}
+    Response: {"ok": true, "updated": N, "translated": M, "total": T, "message"?: str}
+    정직성: OPENAI/DEEPL 키 미설정(stub) 시 원문 유지 + 안내(가짜 번역 없음).
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+
+    data = request.get_json(force=True, silent=True) or {}
+    item_ids = data.get("item_ids") if isinstance(data.get("item_ids"), list) else []
+    item_ids = [str(i) for i in item_ids if str(i).strip()][:300]
+    if not item_ids:
+        return jsonify({"ok": False, "error": "상품을 선택하세요."}), 400
+
+    import json as _json
+    from . import collect_history_store
+    try:
+        from .ai.translator import AITranslator
+        translator = AITranslator()
+    except Exception as exc:
+        logger.warning("번역기 로드 실패: %s", exc)
+        translator = None
+
+    sid = _seller_id()
+    updated = 0
+    translated = 0
+    results = []
+    try:
+        for item_id in item_ids:
+            item = collect_history_store.get(item_id, seller_id=sid)
+            if not item:
+                results.append({"id": item_id, "ok": False, "error": "항목 없음"})
+                continue
+            try:
+                extra = _json.loads(item.get("extra_json") or "{}")
+            except (TypeError, ValueError):
+                extra = {}
+            title = item.get("title") or extra.get("title_ko") or ""
+            desc = extra.get("description") or extra.get("description_ko") or ""
+            title_ko, desc_ko, provider = title, desc, "none"
+            if translator is not None and (title or desc):
+                try:
+                    out = translator.translate_product({"title": title, "description": desc})
+                    title_ko = (out.get("title_ko") or "").strip() or title
+                    desc_ko = (out.get("description_ko") or "").strip() or desc
+                    provider = out.get("provider", "stub")
+                except Exception as exc:
+                    logger.debug("번역 실패(원문 유지): %s", exc)
+            real = provider not in ("none", "stub", "")
+            extra["title_ko"] = title_ko
+            extra["description_ko"] = desc_ko
+            fields = {"extra_json": _json.dumps(extra, ensure_ascii=False)}
+            # 실제 번역된 경우에만 표시 제목을 한국어로 갱신(가짜 번역으로 덮어쓰지 않음).
+            if real and title_ko and title_ko != item.get("title"):
+                fields["title"] = title_ko
+            ok = collect_history_store.update(item_id, seller_id=sid, **fields)
+            if ok:
+                updated += 1
+            if real:
+                translated += 1
+            results.append({"id": item_id, "ok": bool(ok), "translated": real,
+                            "title": fields.get("title", item.get("title"))})
+    except Exception as exc:
+        logger.warning("일괄 번역 오류: %s", exc)
+        return jsonify({"ok": False, "error": "일괄 번역 중 오류가 발생했습니다."}), 500
+
+    message = None
+    if translated == 0:
+        message = "번역기(OPENAI_API_KEY 또는 DEEPL_API_KEY)가 설정되지 않아 원문을 유지했습니다."
+    return jsonify({"ok": True, "updated": updated, "translated": translated,
+                    "total": len(item_ids), "message": message, "results": results})
+
+
 @bp.get("/catalog")
 def catalog():
     """상품 카탈로그 페이지 (Phase 128) — Sheets catalog 워크시트 뷰."""

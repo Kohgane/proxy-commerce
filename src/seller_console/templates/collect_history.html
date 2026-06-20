@@ -106,6 +106,9 @@
         <button type="button" class="btn btn-outline-primary btn-sm" id="bulkCategoryBtn" onclick="openBulkCategoryModal()" disabled>
           🏷 카테고리 지정
         </button>
+        <button type="button" class="btn btn-outline-primary btn-sm" id="bulkTranslateBtn" onclick="runBulkTranslate()" disabled>
+          🌐 한국어 번역
+        </button>
         <button type="button" class="btn btn-outline-danger btn-sm" id="bulkDeleteBtn" onclick="openBulkDeleteModal()" disabled>
           🗑 선택 삭제
         </button>
@@ -303,6 +306,8 @@ function refreshSelCount() {
   if (del) del.disabled = n === 0;
   const cat = document.getElementById('bulkCategoryBtn');
   if (cat) cat.disabled = n === 0;
+  const tr = document.getElementById('bulkTranslateBtn');
+  if (tr) tr.disabled = n === 0;
 }
 document.addEventListener('DOMContentLoaded', function () {
   const all = document.getElementById('chkAll');
@@ -312,6 +317,41 @@ document.addEventListener('DOMContentLoaded', function () {
   });
   document.querySelectorAll('.row-chk').forEach(c => c.addEventListener('change', refreshSelCount));
 });
+async function runBulkTranslate() {
+  const ids = selectedItemIds();
+  if (!ids.length) { pcToast('상품을 먼저 선택하세요.', 'warning'); return; }
+  const btn = document.getElementById('bulkTranslateBtn');
+  setButtonLoading(btn, true, '번역 중…');
+  try {
+    const resp = await fetch('/seller/collect/bulk-translate', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({item_ids: ids}),
+    });
+    const ctype = resp.headers.get('content-type') || '';
+    if (!ctype.includes('application/json')) { pcToast(`요청 실패 (HTTP ${resp.status}).`, 'error'); return; }
+    const data = await resp.json();
+    if (!data.ok) { pcToast(data.error || '번역 실패', 'error'); return; }
+    // 번역된 제목으로 행 갱신
+    (data.results || []).forEach(r => {
+      if (r.translated && r.title) {
+        const chk = document.querySelector(`.row-chk[value="${r.id}"]`);
+        const tr = chk && chk.closest('tr');
+        const a = tr && tr.querySelector('td a.fw-semibold');
+        if (a) { a.textContent = r.title; a.title = r.title; }
+      }
+    });
+    if (data.translated > 0) {
+      pcToast(`${data.translated}/${data.total}개 한국어로 번역했습니다.`, 'success');
+    } else {
+      pcToast(data.message || '번역기가 설정되지 않아 원문을 유지했습니다.', 'warning');
+    }
+  } catch (err) {
+    pcToast('요청 실패: ' + err.message, 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
 function openBulkCategoryModal() {
   const ids = selectedItemIds();
   if (!ids.length) { pcToast('상품을 먼저 선택하세요.', 'warning'); return; }
