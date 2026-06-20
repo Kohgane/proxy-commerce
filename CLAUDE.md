@@ -14,6 +14,20 @@
   - `GOOGLE_OAUTH_CLIENT_ID` = 설정됨, `GOOGLE_OAUTH_CLIENT_SECRET` = 설정됨 (둘 다, 2026-06-20 오너 확인).
     → 구글 로그인 `is_configured`는 True여야 정상. 그런데도 일반유저 로그인 실패 보고됨 → 콜백/콘솔 redirect_uri 쪽 조사 필요(아래 진행).
   - 카카오·네이버 OAuth = 설정됨(로그인 창 정상으로 뜸). 카카오만 되던 과거 상태에서 진전됨.
+- **KOHgogane 브리프 v3/v4 추가분 (오너 제공 2026-06-20):** v2 로드맵에 이어붙이는 추가 작업.
+  - **v3:** P0-1 로그인 튕김(SECRET_KEY 멀티워커 안정), P0-2 "수집 N" vs "이력 0" 불일치(seller_id 격리),
+    P1-3 CTA 가시성(청록 Primary/금 Secondary 위계), P1-4 번역 무료 20회+이후 구독/토큰, P1-5 퍼센티 기능 포팅
+    (엑셀 일괄수집·그룹관리·금지어/치환·이미지편집 UI·통관고유부호·장부·애널리틱스 노출·직원계정), P1-6 모바일 PWA(수집+주문).
+  - **v4:** P0 가짜성공 박멸(확장 수집 토스트 정직화+저장 자기검증+seller_id 단일키+단일/리스팅 판별), P1 수집버튼 리디자인
+    (먹+금+청록 글로브, 단일 FAB 우측상단부 이동, 네이비+주황 폐기).
+  - **진행 상황(P0 우선):**
+    - ✅ v3 P0-2 + v4 P0(Phase 244): 대시보드 '오늘 수집' KPI를 seller_id로 격리(`get_today_kpi(seller_id)`→
+      `build_kpi_widget`/`build_all_widgets`/`_get_widgets(_seller_id())`) → 이력 리스트와 카운트 일치(가짜 카운트 박멸).
+      확장 수집(`/api/v1/collect/extension`) 저장 자기검증(append 후 같은 seller_id로 get 재조회) → 실제 저장됐을 때만
+      ok=true, 실패 시 502 정직(가짜 성공 금지). 응답에 item_id 추가. v3 P0-1 로그인 튕김: SECRET_KEY 미설정 시
+      워커마다 다른 임시키→세션 무효화였음 → 컨테이너-로컬 파일(`/tmp/kohgogane_session_secret`, O_EXCL)로 모든 워커가
+      동일 키 공유(즉시 튕김 방지). **영구 고정은 오너가 Render에 `SECRET_KEY` 설정 권장.**
+    - ⏳ 다음: 멀티워커 인메모리 수집이력 영구화(파일/Sheet 폴백 — 옵트인), CTA 가시성, 번역 과금, 퍼센티 포팅, 모바일.
 - **KOHgogane 브리프 v2 (전면 리디자인 로드맵, 오너 제공 2026-06-20):** 코가네 퍼센티→**코고가네/KOHgogane** 리브랜딩 +
   catdyy식 디자인 토큰(먹/한지/금 + 청록 Primary) + Pretendard/Noto Serif KR + 수집상품 일괄관리(퍼센티 동등) +
   온보딩 위저드 + 게임화 + 구독 + PWA/베타. 순서: 디자인→일괄관리→온보딩→게임화→구독→앱. (대형 — 덩어리별 PR)

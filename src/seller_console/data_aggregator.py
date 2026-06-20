@@ -32,12 +32,14 @@ def _safe_import(module_path: str, attr: str = None) -> Optional[Any]:
 # 오늘 KPI 데이터
 # ---------------------------------------------------------------------------
 
-def get_today_kpi() -> Dict[str, Any]:
+def get_today_kpi(seller_id: Any = None) -> Dict[str, Any]:
     """오늘 KPI 카드 데이터 반환 (주문수, GMV, 마진, 신규 수집).
 
     실데이터 우선: 오늘 수집 건수는 collect_history_store(실 저장소)에서 집계.
     GMV/마진/주문수는 seller_report 모듈이 있으면 사용, 없으면 0(가짜 값 금지).
     Phase 209: 하드코딩 목업 제거 — 데이터 없으면 정직하게 0.
+    Phase 244(v3 P0-2): seller_id를 받아 '오늘 수집'을 해당 셀러로 격리 집계 →
+    대시보드 카운트가 수집 이력 리스트(같은 seller_id 필터)와 항상 일치(가짜 카운트 박멸).
     """
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     data: Dict[str, Any] = {
@@ -51,10 +53,10 @@ def get_today_kpi() -> Dict[str, Any]:
     }
     has_real = False
 
-    # 오늘 수집 건수 — 실 저장소(collect_history_store)에서 집계
+    # 오늘 수집 건수 — 실 저장소(collect_history_store)에서 셀러별 집계(이력 리스트와 동일 필터)
     try:
         from .collect_history_store import summary as collect_summary
-        s = collect_summary(days=2)
+        s = collect_summary(days=2, seller_id=seller_id)
         if isinstance(s, dict):
             data["new_products_collected"] = int(s.get("today", 0) or 0)
             has_real = True

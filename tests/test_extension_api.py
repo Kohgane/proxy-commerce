@@ -83,7 +83,8 @@ class TestExtensionCollectAPI:
             mock_auth.return_value = {"user_id": "u1", "scopes": ["collect.write"]}
             with patch("src.api.extension_api._upsert_catalog", return_value="cat1"), \
                  patch("src.api.extension_api._notify_telegram"), \
-                 patch("src.seller_console.collect_history_store.append", _fake_append):
+                 patch("src.seller_console.collect_history_store.append", _fake_append), \
+                 patch("src.seller_console.collect_history_store.get", return_value={"id": "hist1"}):
                 resp = client.post(
                     "/api/v1/collect/extension",
                     data=json.dumps({
