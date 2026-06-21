@@ -32,6 +32,37 @@ def _get_worksheet():
     return open_sheet(_SHEET_ID, _WS_NAME)
 
 
+def _read_sheet_records():
+    """시트 전체 records — 같은 요청 내 중복 read 제거(요청 범위 캐시, v8 속도).
+
+    한 페이지 렌더에서 list_items/summary/distinct_domains가 같은 시트를 3번 읽던 것을
+    요청당 1회로 줄인다. 요청 컨텍스트가 없으면(배치/테스트) 매번 직접 read(스테일 없음).
+    """
+    ws = _get_worksheet()
+    try:
+        from flask import g, has_request_context
+        if has_request_context():
+            cached = getattr(g, "_kgp_ch_rows", None)
+            if cached is not None:
+                return cached
+            recs = ws.get_all_records()
+            g._kgp_ch_rows = recs
+            return recs
+    except Exception:
+        pass
+    return ws.get_all_records()
+
+
+def _invalidate_cache():
+    """쓰기 후 요청 범위 캐시 무효화(같은 요청 내 후속 read가 최신을 보게)."""
+    try:
+        from flask import g, has_request_context
+        if has_request_context() and hasattr(g, "_kgp_ch_rows"):
+            delattr(g, "_kgp_ch_rows")
+    except Exception:
+        pass
+
+
 def _ensure_headers(ws) -> None:
     try:
         first_row = ws.row_values(1)
@@ -90,6 +121,7 @@ def append(
             ws = _get_worksheet()
             _ensure_headers(ws)
             ws.append_row([row_data[h] for h in _HEADERS])
+            _invalidate_cache()
             logger.info("수집 이력 저장: id=%s source=%s domain=%s", item_id, source, domain)
         except Exception as exc:
             logger.warning("수집 이력 Sheets 저장 실패: %s", exc)
@@ -116,9 +148,7 @@ def list_items(
 
     if _SHEET_ID:
         try:
-            ws = _get_worksheet()
-            records = ws.get_all_records()
-            rows = records
+            rows = _read_sheet_records()
         except Exception as exc:
             logger.warning("수집 이력 조회 실패: %s", exc)
             rows = list(_in_memory)
@@ -156,9 +186,7 @@ def get(item_id: str, seller_id: Optional[str] = None) -> Optional[dict]:
 
     if _SHEET_ID:
         try:
-            ws = _get_worksheet()
-            records = ws.get_all_records()
-            for row in records:
+            for row in _read_sheet_records():
                 if _match(row):
                     return dict(row)
         except Exception as exc:
@@ -205,6 +233,7 @@ def update(item_id: str, *, seller_id: Optional[str] = None, **fields) -> bool:
                         ci = col_idx.get(field)
                         if ci is not None:
                             ws.update_cell(r, ci + 1, val)
+                    _invalidate_cache()
                     logger.info("수집 이력 갱신: id=%s fields=%s", item_id, list(updates))
                     return True
         except Exception as exc:
@@ -256,6 +285,7 @@ def delete(item_ids, *, seller_id: Optional[str] = None) -> int:
                     ws.delete_rows(r)
                     deleted += 1
             if deleted:
+                _invalidate_cache()
                 logger.info("수집 이력 삭제: %d건", deleted)
             return deleted
         except Exception as exc:
