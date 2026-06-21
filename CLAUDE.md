@@ -42,9 +42,25 @@
     설정+대상마켓일 때 Bluehost 릴레이로 POST, 미설정/비대상은 직접 호출 폴백. Bearer+HMAC). 쿠팡/네이버
     uploader의 `requests.request`를 relay_request(market=coupang/smartstore)로 교체. 배포물 `relay/market_relay_server_v8.py`
     (무상태 포워딩, host 화이트리스트, 키 미저장/미로깅) + README. 오너: Bluehost에 릴레이 올리고 그 IP를 쿠팡/네이버
-    허용IP+SERVER_OUTBOUND_IP에. ⏳ 다음: ③북마클릿 이모지+코고가네 파비콘.
+    허용IP+SERVER_OUTBOUND_IP에.
+  - ✅ v8 ③ 북마클릿 이모지 이름 + 확장 아이콘 코고가네 마크(Phase 269): bookmarklet.html 북마크 이름을
+    '고가네 수집' 텍스트→**🧤 한 글자**(52px 정사각 버튼, 텍스트 없이 아이콘처럼)로. 정직 주석 — Chrome 특성상
+    javascript: 북마클릿엔 기본 지구본이 뜰 수 있어 완전 브랜드 아이콘은 확장 권장. 확장 액션 아이콘
+    16/32/48/128 PNG를 **글러브 모노그램(먹 #1a1714 배경+금 #c9a24b 글러브+청록 #119a8e 소맷동/궤도)**으로 재생성
+    (신설 `scripts/gen_extension_icons.py`, 4x 슈퍼샘플) — 🧤·디자인토큰 통일. manifest 1.4.6→1.4.7.
+    ※ 사이트 favicon.svg는 기존 오빗-글로브가 이미 코고가네 마크(test_phase_163이 색/디자인 핀)→유지(불변).
+    → v8 큰 줄기 완료(속도·시트캐시·릴레이·북마클릿/아이콘). ⏳ 다음: v7 확장 UX.
 - **v7:** 확장 상단바 토글/접힘 배지(끄면 구석 작게·청록/금 펄스·개수, 위치/상태 기억, 팝업 on/off), 단일 FAB
   우측 중앙 이동+드래그/기억, '전체 일괄수집' 코치마크 1회, 따라하기 재미(수집 도장/카운트업·위트카피·마일스톤).
+  - ✅ v7 확장 UX(Phase 270): content_script.js에 공통 유틸 추가 — `kgpLSget/set`(위치·설정 localStorage),
+    `KGP_RM`(prefers-reduced-motion), `kgpMakeDraggable`(드래그 이동+위치기억+클릭억제), `kgpEnsureStyles`
+    (펄스/도장 keyframes, RM이면 미주입), `kgpCelebrate`(수집 누적 카운트업+마일스톤 10/50/100/300/500/1000 배지
+    +위트카피, RM이면 토스트만). ①FAB 우측 '중앙'(top:120px→calc(50%-24px))+드래그/기억(kgp_fab_pos), 등장모션 RM 생략.
+    ②리스팅 바: 접기(✕)→구석 '수집 열기' 배지(선택개수·청록 펄스, kgp_bar_pos 기억), `📌 자동/수동` 토글
+    (kgp_bar_auto — 수동이면 새 목록 페이지는 배지로만 시작), 바도 드래그 이동(grip만, 버튼 제외). ③'전체 수집'
+    1회 코치마크(kgp_coach_all). ④실제 성공(FAB resp.ok·bulk success>0)에만 도장+카운트업(가짜 축하 금지).
+    manifest 1.4.7→1.4.8. README 방법4에 v7 사용법. node --check 통과, 확장 테스트 45 passed.
+  → v7 완료. v8/v7 둘 다 큰 줄기 소진.
 
 ## 🟧 오너 최우선 원칙 (2026-06-21): "무조건 쉽고 간편"
 - 결제·버튼·모든 UX가 쉽고 간편·간결·직관적이어야 함. 복잡/개발자틱 금지.
