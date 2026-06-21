@@ -2104,6 +2104,43 @@ def collect_bulk_clean():
     return jsonify({"ok": True, "updated": updated, "results": results})
 
 
+@bp.post("/media/process-image")
+def media_process_image():
+    """이미지 1장 정제(워터마크 제거·리사이즈·WebP·CDN 재호스팅) — image_pipeline 연결 (v3 P1-5).
+
+    Request: {"image_url": "...", "channel"?: "..."}
+    Response: {ok, processed_url, cdn_uploaded, watermark_removed, success, message}
+    정직성: CDN(CLOUDINARY_*) 미설정/처리 미적용 시 원본 URL 유지 + 안내(가짜 호스팅 URL 금지).
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    image_url = str(data.get("image_url") or "").strip()
+    if not image_url or not image_url.lower().startswith("http"):
+        return jsonify({"ok": False, "error": "유효한 이미지 URL이 필요합니다."}), 400
+    try:
+        from src.media.image_pipeline import process_image
+        res = process_image(image_url, channel=str(data.get("channel") or "default"))
+        d = res.to_dict()
+    except Exception as exc:
+        logger.warning("이미지 처리 오류: %s", exc)
+        return jsonify({"ok": False, "error": "이미지 처리 중 오류가 발생했습니다."}), 500
+    processed = d.get("processed_url") or image_url
+    cdn = bool(d.get("cdn_uploaded"))
+    message = None
+    if not cdn and processed == image_url:
+        message = ("이미지 처리 결과를 호스팅할 CDN(CLOUDINARY_*)이 설정되지 않았거나 처리가 적용되지 "
+                   "않아 원본 URL을 유지했습니다.")
+    return jsonify({
+        "ok": True,
+        "processed_url": processed,
+        "cdn_uploaded": cdn,
+        "watermark_removed": bool(d.get("watermark_removed")),
+        "success": bool(d.get("success", True)),
+        "message": message,
+    })
+
+
 @bp.post("/collect/bulk-price")
 def collect_bulk_price():
     """수집 이력 여러 항목에 목표 마진율/원가 배수를 일괄 적용 (셀러 격리).
