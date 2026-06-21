@@ -7,6 +7,20 @@
 - 코드/문서/로그/실제 응답 등 **확인 가능한 근거**가 있을 때만 단정적으로 답한다.
 - 헛다리(추측 기반 단정) 반복 금지. 화면·응답 원문 등 증거를 우선한다.
 
+## 🟥 v9 브리프 (오너 2026-06-21 — "수집 성공인데 이력에 없음, 추적으로 끝장. 고친 척 금지")
+- **P0 수집 추적(Phase 266):** 거짓 성공/추측 금지 → 상관관계 ID로 한 건 끝까지 추적.
+  - 확장 `/api/v1/collect/extension`에 corr_id 로깅(수신 token_user_id·url → 저장 seller_id·item_id →
+    자기검증 saved → 실패 시 502). collect_history 뷰에 식별자/총건수 로그.
+  - **관용 식별자 매칭(핵심 수정):** 저장 seller_id가 user_id면 user_id로, email이면 email로 어긋나도 본인
+    이력에 보이게 — `_seller_identities()`={user_id,email,기본키}로 list_items/summary/distinct/get + KPI 필터
+    (collect_history_store에 seller_ids set 파라미터 추가). 타 셀러 누출 없음(전부 본인 값).
+  - **재현 테스트(가드):** 확장 수집(token user_id=u1) → 세션 user_id=u1 이력에 +1 노출 보장 +
+    email/user_id 별칭 관용 + 타셀러 미노출. 전체 10120 passed.
+  - ※ 원인 확정은 오너 다음 수집 시 corr_id 로그로 어느 홉인지 증거 확보(현재 코드상 GOOGLE_SHEET_ID 있으면
+    저장=조회 동일 시트, seller_id 별칭만이 유력 — 관용 매칭으로 방어). P1: 애플홈 '제대로'·외국인 지역배너.
+- **v9 남음:** P1 애플 홈 규격 재적용(거대 헤드라인 clamp(40,6vw,72)·알약 CTA·밝다/어둡다), P1 외국인 지역/언어 배너
+  (Accept-Language 외국인만, i18n 실전환, 쿠키 기억, 한국인 미노출).
+
 ## 🟦 v7/v8 추가 브리프 (오너 2026-06-21 — "렌더 env 다 했음, 나열순, v8 우선")
 - **v8(우선):** ①속도(타이밍 측정→시트 캐시/배치, gunicorn gthread/gzip/에셋) ②마켓호출 Bluehost 릴레이
   (쿠팡/네이버 고정IP 경유, MARKET_RELAY_URL/TOKEN, 연결테스트 동일경로, Shopify/Woo는 직접) ③북마클릿 이모지
