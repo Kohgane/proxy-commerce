@@ -1864,7 +1864,14 @@ def collect_bulk_translate():
     _limit = translation_usage.free_limit()
     _used_before = translation_usage.get_used(sid)
     _remaining = max(0, _limit - _used_before)
-    _unlimited = os.getenv("TRANSLATION_UNLIMITED", "0") == "1"  # 구독/무제한 훅(추후 구독 연동)
+    # 무제한 = env 훅 또는 활성 유료 플랜(Plus/Pro). 유료 활성은 실제 결제 시에만(가짜 금지).
+    _unlimited = os.getenv("TRANSLATION_UNLIMITED", "0") == "1"
+    try:
+        from . import billing_store
+        if billing_store.is_unlimited(sid):
+            _unlimited = True
+    except Exception:
+        pass
 
     updated = 0
     translated = 0
@@ -3655,6 +3662,44 @@ def mobile_home():
         logger.debug("모바일 주문 조회 실패: %s", exc)
 
     return render_template("mobile_home.html", recent=recent, kpi=kpi, orders=orders)
+
+
+@bp.get("/billing")
+def billing_page():
+    """요금제·충전 — 쉽고 간편(v6). 무료/Plus/Pro 카드 + 토큰 잔액."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
+    from . import billing_store, translation_usage
+    sid = _seller_id()
+    acc = billing_store.get_account(sid)
+    pay_ready = bool(os.getenv("TOSS_CLIENT_KEY")) and bool(os.getenv("TOSS_SECRET_KEY"))
+    return render_template("billing.html", account=acc, plans=billing_store.PLANS,
+                           pay_ready=pay_ready,
+                           free_remaining=translation_usage.remaining(sid),
+                           free_limit=translation_usage.free_limit())
+
+
+@bp.post("/billing/select")
+def billing_select():
+    """플랜 선택. free=즉시 적용. 유료=결제 연동 시에만 활성(가짜 활성 금지)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    plan = str(data.get("plan") or "").strip()
+    from . import billing_store
+    if plan not in billing_store.PLANS:
+        return jsonify({"ok": False, "error": "알 수 없는 플랜입니다."}), 400
+    if plan == "free":
+        billing_store.set_plan(_seller_id(), "free")
+        return jsonify({"ok": True, "plan": "free", "message": "무료 플랜으로 전환했습니다."})
+    # 유료: 결제 연동 필요 — 미설정이면 정직 안내(활성 안 함)
+    pay_ready = bool(os.getenv("TOSS_CLIENT_KEY")) and bool(os.getenv("TOSS_SECRET_KEY"))
+    if not pay_ready:
+        return jsonify({"ok": False, "pay_unconfigured": True,
+                        "error": "결제 연동(토스페이먼츠)이 준비 중입니다. 운영자에게 문의하면 바로 열어드려요."}), 200
+    # 결제 설정됨 — 결제창 연결(자리). 실제 승인 후 set_plan은 결제 콜백에서.
+    return jsonify({"ok": True, "checkout": True, "plan": plan,
+                    "message": "결제창으로 이동합니다."})
 
 
 @bp.get("/about")
