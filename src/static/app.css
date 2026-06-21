@@ -106,12 +106,50 @@ a:hover {
   border-radius: var(--pc-radius-sm);
   transition: transform var(--pc-transition), box-shadow var(--pc-transition), background-color var(--pc-transition);
 }
+/* CTA 위계(브리프 v3 P1-3) — "은은하되 확실히".
+   Primary(청록 채움)=화면당 1개, 그 화면의 핵심 행동. 굵게 + hover lift + 청록 글로우. */
 .btn-primary {
   background: linear-gradient(135deg, var(--pc-color-primary), var(--pc-color-primary-strong));
   border-color: transparent;
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 6px 16px rgba(15, 157, 140, .26);
 }
-.btn-outline-primary { border-color: var(--pc-color-primary); color: var(--pc-color-primary); }
-.btn-outline-primary:hover { background: var(--pc-color-primary); border-color: var(--pc-color-primary); }
+.btn-primary:hover,
+.btn-primary:focus {
+  background: linear-gradient(135deg, #12a897, var(--pc-color-primary-strong));
+  border-color: transparent;
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(15, 157, 140, .34);
+}
+.btn-outline-primary { border-color: var(--pc-color-primary); color: var(--pc-color-primary-strong); font-weight: 600; }
+.btn-outline-primary:hover { background: var(--pc-color-primary); border-color: var(--pc-color-primary); color: #fff; }
+/* Secondary(금 아웃라인) — Primary보다 한 단계 약하게. 명시적으로 .btn-gold. */
+.btn-gold {
+  background: transparent;
+  border: 1.5px solid var(--pc-color-accent-gold);
+  color: #8a6d22;
+  font-weight: 600;
+}
+.btn-gold:hover,
+.btn-gold:focus {
+  background: rgba(201, 162, 75, .12);
+  border-color: var(--pc-color-accent-gold);
+  color: #6f561a;
+}
+/* Tertiary(고스트) — 보조 동작. */
+.btn-ghost {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--pc-color-text-muted);
+  font-weight: 600;
+}
+.btn-ghost:hover,
+.btn-ghost:focus {
+  background: var(--pc-color-surface-muted);
+  color: var(--pc-color-text);
+}
 .btn:disabled,
 .btn.disabled {
   opacity: 1;
