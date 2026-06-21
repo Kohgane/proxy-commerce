@@ -1,0 +1,43 @@
+{% extends "_base.html" %}
+{% block title %}코고가네란?{% endblock %}
+{% block content %}
+<div class="container py-5" style="max-width: 760px;">
+
+  <div class="text-center mb-5">
+    <div style="font-size:3.4rem;">🛒</div>
+    <h1 class="display-5 fw-bold mb-2">코고가네</h1>
+    <p class="lead text-muted">해외 상품을 수집하고, 한국어로 다듬고, 우리 마켓에 등록까지.<br>구매대행 셀러를 위한 가장 쉬운 길.</p>
+    <a href="/seller/start" class="btn btn-cta btn-lg mt-2">✨ 처음이신가요? 시작하기</a>
+  </div>
+
+  <div class="row g-4 text-center mb-5">
+    <div class="col-md-4">
+      <div class="fs-1 mb-2">🔎</div>
+      <h5 class="fw-bold">수집</h5>
+      <p class="text-muted small">타오바오·아마존·알리 등 어떤 상품이든 버튼 한 번으로 가져와요. 크롬 확장·모바일 공유·붙여넣기까지.</p>
+    </div>
+    <div class="col-md-4">
+      <div class="fs-1 mb-2">🌐</div>
+      <h5 class="fw-bold">다듬기</h5>
+      <p class="text-muted small">제목·설명을 한국어로 번역하고, 금지어를 정리하고, 가격·마진을 한 번에 맞춰요.</p>
+    </div>
+    <div class="col-md-4">
+      <div class="fs-1 mb-2">🚀</div>
+      <h5 class="fw-bold">등록</h5>
+      <p class="text-muted small">쿠팡·스마트스토어·11번가 등 여러 마켓에 한 번에 올리고, 주문·정산까지 한곳에서.</p>
+    </div>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-body">
+      <h5 class="fw-bold mb-2">누구를 위한 건가요?</h5>
+      <p class="text-muted mb-0">처음 구매대행을 시작하는 분, 여러 마켓을 함께 운영하는 셀러, 반복 작업을 줄이고 싶은 분. 전문 용어 없이, 클릭만으로 따라올 수 있게 만들었어요.</p>
+    </div>
+  </div>
+
+  <div class="text-center">
+    <a href="/seller/start" class="btn btn-cta btn-lg">시작하기</a>
+    <a href="/seller/dashboard" class="btn btn-ghost btn-lg">대시보드로</a>
+  </div>
+</div>
+{% endblock %}

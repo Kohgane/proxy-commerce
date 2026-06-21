@@ -102,6 +102,7 @@
       <li><a class="console-nav-link {% if _path.startswith('/seller/me/subscriptions') %}active{% endif %}" href="/seller/me/subscriptions"><i class="bi bi-person-check"></i><span>내 구독</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/wholesale/tiers') %}active{% endif %}" href="/seller/wholesale/tiers"><i class="bi bi-building"></i><span>도매 등급</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/wholesale/applications') %}active{% endif %}" href="/seller/wholesale/applications"><i class="bi bi-ui-checks"></i><span>B2B 신청 큐</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/about') %}active{% endif %}" href="/seller/about"><i class="bi bi-info-circle"></i><span>코고가네란?(소개)</span></a></li>
     </ul>
     </details>
     </div>
@@ -207,6 +208,15 @@ function closeSidebar() {
 (function () {
   var adv = document.getElementById('advNav');
   if (adv && adv.querySelector('.console-nav-link.active')) adv.open = true;
+})();
+
+// "?" 도움말 툴팁 초기화 — 개발자 문구를 본문에서 숨기고 클릭/hover 시에만(v5).
+(function () {
+  try {
+    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
+      new bootstrap.Tooltip(el);
+    });
+  } catch (e) { /* bootstrap 미로드 시 무시 */ }
 })();
 
 if ('serviceWorker' in navigator) {

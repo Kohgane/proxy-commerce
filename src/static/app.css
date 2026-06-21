@@ -322,6 +322,16 @@ a:hover {
   margin-top: -2px;
 }
 
+/* "?" 도움말 토글 — 개발자/내부 문구를 본문에서 숨기고 팝오버로만(v5) */
+.pc-help {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--pc-color-surface-muted); color: var(--pc-color-text-muted);
+  border: 1px solid var(--pc-color-border);
+  font-size: 11px; font-weight: 700; cursor: help; vertical-align: middle; line-height: 1;
+}
+.pc-help:hover, .pc-help:focus { background: var(--pc-color-primary); color: #fff; border-color: var(--pc-color-primary); outline: none; }
+
 .text-teal { color: #0d9488 !important; }
 .bg-teal { background-color: #0d9488 !important; }
 .badge-get { background: #22c55e; color: #fff; }
