@@ -12,7 +12,7 @@
         <div class="card-header"><strong>🔧 설치 방법 (2단계)</strong></div>
         <div class="card-body">
           <ol class="mb-2">
-            <li>아래 <strong>‘고가네 수집’</strong> 버튼을 마우스로 드래그해 브라우저 북마크바에 놓으세요.</li>
+            <li>아래 <strong>🧤 버튼</strong>을 마우스로 드래그해 브라우저 북마크바에 놓으세요.</li>
             <li>상품 페이지에서 그 북마크를 클릭하면 <strong>이미지·상세설명·리뷰까지 자동 수집</strong>되고
                 <strong>‘수집 완료’</strong>만 표시됩니다. 결과는 <strong>내 계정의 ‘수집 이력’</strong>에서 확인·편집하세요.</li>
           </ol>
@@ -40,17 +40,15 @@
         <div class="card-header"><strong>📌 북마클릿 (드래그해서 북마크바에 추가)</strong></div>
         <div class="card-body text-center py-4">
           <!-- 토큰 불필요: 새 탭(로그인 세션)으로 데이터를 보내 수집(CSP/CORS 우회).
-               북마크바에 '고가네 수집' 이름으로 표시되도록 링크 텍스트를 넣는다(JS 코드 노출 방지). -->
+               북마크바에 이모지 1글자(🧤)만 이름으로 들어가 아이콘처럼 보이게 한다(긴 JS 코드 노출 방지). -->
           <a id="bookmarkletLink"
-             class="d-inline-flex align-items-center gap-2 text-decoration-none px-3 py-2"
-             style="cursor:grab;border-radius:10px;border:1px solid #dee2e6;background:#fff;color:#0a1f5c;font-weight:700;"
-             title="이 버튼을 북마크바로 드래그하세요 — '고가네 수집'으로 추가됩니다"
-             aria-label="고가네 수집 북마클릿"><img
-                 src="{{ url_for('seller_console.static', filename='favicon.svg') }}"
-                 alt="" style="width:20px;height:20px;border-radius:5px;" draggable="false">고가네 수집</a>
-          <p class="mt-3 text-muted small mb-0">위 <strong>고가네 수집</strong> 버튼을 북마크바로 드래그하세요.</p>
-          <p class="text-muted small mb-0">북마크바에는 <strong>‘고가네 수집’</strong> 이름으로 표시됩니다.
-            <span class="text-muted">(아이콘은 브라우저가 정하는 기본 모양 — 커스텀 불가. 브랜드 아이콘은 <a href="/seller/extension">크롬 확장</a>에서 표시됩니다.)</span></p>
+             class="d-inline-flex align-items-center justify-content-center text-decoration-none"
+             style="cursor:grab;border-radius:12px;border:1px solid #dee2e6;background:#fff;color:#1a1714;font-weight:700;font-size:1.6rem;line-height:1;width:52px;height:52px;"
+             title="이 버튼을 북마크바로 드래그하세요 — 🧤 한 글자로 추가됩니다"
+             aria-label="코고가네 수집 북마클릿">🧤</a>
+          <p class="mt-3 text-muted small mb-0">위 <strong>🧤</strong> 버튼을 북마크바로 드래그하세요. 북마크바에는 <strong>🧤</strong> 한 글자로 깔끔하게 표시됩니다.</p>
+          <p class="text-muted small mb-0">
+            <span class="text-muted">※ Chrome 특성상 북마클릿(주소가 <code>javascript:</code>인 북마크)엔 기본 지구본 아이콘이 표시될 수 있어요. 완전한 브랜드 아이콘은 <a href="/seller/extension">크롬 확장 프로그램</a> 버전을 쓰세요.</span></p>
         </div>
       </div>
     </div>
