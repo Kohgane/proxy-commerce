@@ -59,7 +59,8 @@
 
 .console-nav-link.active {
   color: #fff;
-  background: linear-gradient(135deg, var(--console-primary), #7c4dff);
+  background: linear-gradient(135deg, var(--console-primary), var(--pc-color-primary-strong, #0b7e72));
+  font-weight: 600;
 }
 
 .console-main {
@@ -317,3 +318,15 @@ button:focus,
     min-height: auto;
   }
 }
+
+/* 고급 기능 접이식 네비(v5 — 비기너 과부하 방지) */
+.adv-nav { margin-top: .4rem; border-top: 1px solid var(--console-border); padding-top: .4rem; }
+.console-nav-adv-summary {
+  list-style: none; cursor: pointer; user-select: none;
+  font-size: .8rem; font-weight: 700; color: var(--console-muted);
+  padding: .5rem .7rem; border-radius: .5rem; display: flex; align-items: center; gap: .4rem;
+}
+.console-nav-adv-summary::-webkit-details-marker { display: none; }
+.console-nav-adv-summary::after { content: "▾"; margin-left: auto; transition: transform .15s ease; }
+details[open] > .console-nav-adv-summary::after { transform: rotate(180deg); }
+.console-nav-adv-summary:hover { background: var(--console-primary-weak); color: var(--console-primary); }

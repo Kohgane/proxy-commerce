@@ -25,6 +25,9 @@
 
   /* 금(antique gold) — 보조 악센트(선/아이콘/강조) */
   --pc-color-accent-gold: #c9a24b;
+  /* 주황(invite) — 큰/환영 CTA 전용(For Beginners·시작하기·구글로 시작·연동하기). 절제. (v5) */
+  --pc-color-cta: #ef7a22;
+  --pc-color-cta-strong: #d9651a;
   --pc-color-ink: #1a1714;           /* 먹 — 다크 무드/시그니처용 */
   --pc-color-hanji: #f5efe3;         /* 한지 — 다크 위 텍스트/배경용 */
   --pc-color-accent-lime: #c2f970;   /* (레거시 호환) */
@@ -137,6 +140,22 @@ a:hover {
   background: rgba(201, 162, 75, .12);
   border-color: var(--pc-color-accent-gold);
   color: #6f561a;
+}
+/* 초대 CTA(주황 채움) — "큰 행동"(For Beginners·시작하기·구글로 시작). 화면당 절제 사용. (v5) */
+.btn-cta {
+  background: linear-gradient(135deg, var(--pc-color-cta), var(--pc-color-cta-strong));
+  border-color: transparent;
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 6px 16px rgba(239, 122, 34, .28);
+}
+.btn-cta:hover,
+.btn-cta:focus {
+  background: linear-gradient(135deg, #f5871f, var(--pc-color-cta-strong));
+  border-color: transparent;
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(239, 122, 34, .38);
 }
 /* Tertiary(고스트) — 보조 동작. */
 .btn-ghost {

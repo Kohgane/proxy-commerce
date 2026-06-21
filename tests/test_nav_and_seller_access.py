@@ -55,22 +55,22 @@ def test_admin_gated_pages_accessible_in_tests(client):
         assert resp.status_code == 200, f"{path} → {resp.status_code}"
 
 
-def test_nav_has_quick_access_group_with_collect_history(client):
-    """좌측 nav 상단 '자주 쓰는' 그룹에 수집 이력 링크가 위쪽에 있다."""
+def test_nav_core_links_visible_and_advanced_collapsed(client):
+    """핵심 메뉴는 상단 노출, 나머지는 '고급 기능' 접이식 안에 있다(v5 간소화)."""
     html = client.get("/seller/dashboard").get_data(as_text=True)
-    assert "자주 쓰는" in html
-    # '자주 쓰는' 그룹이 수집 이력 링크보다 먼저 등장(위쪽)
-    assert html.index("자주 쓰는") < html.index("/seller/collect/history")
-    # 수집 이력 링크가 nav 상단부(운영 그룹보다 위)에 있다
-    if "운영" in html:
-        assert html.index("/seller/collect/history") < html.rindex("운영")
+    # 핵심 메뉴(수집 이력)는 '고급 기능' 토글보다 위(상단부)
+    assert "고급 기능 더보기" in html
+    assert "/seller/collect/history" in html
+    assert html.index("/seller/collect/history") < html.index("고급 기능 더보기")
+    # 고급 기능 안의 링크(설정·마이페이지 등)는 토글보다 아래
+    assert html.index("고급 기능 더보기") < html.index("/seller/wholesale/applications")
 
 
 def test_nav_no_duplicate_collector_link(client):
-    """'수집기'/'상품 수집기' 중복 제거 — nav에는 '상품 수집기'만 남는다."""
+    """'수집기'/'상품 수집기' 중복 라벨 없음 — 핵심 메뉴 '상품 수집'만."""
     html = client.get("/seller/dashboard").get_data(as_text=True)
-    assert "<span>상품 수집기</span>" in html
-    assert "<span>수집기</span>" not in html  # 중복 라벨 제거됨
+    assert "<span>상품 수집</span>" in html
+    assert "<span>수집기</span>" not in html  # 옛 중복 라벨 제거됨
 
 
 def test_collect_history_shows_thumbnails_and_bulk_select_all(client):
