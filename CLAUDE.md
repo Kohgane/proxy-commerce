@@ -18,8 +18,12 @@
     email/user_id 별칭 관용 + 타셀러 미노출. 전체 10120 passed.
   - ※ 원인 확정은 오너 다음 수집 시 corr_id 로그로 어느 홉인지 증거 확보(현재 코드상 GOOGLE_SHEET_ID 있으면
     저장=조회 동일 시트, seller_id 별칭만이 유력 — 관용 매칭으로 방어). P1: 애플홈 '제대로'·외국인 지역배너.
-- **v9 남음:** P1 애플 홈 규격 재적용(거대 헤드라인 clamp(40,6vw,72)·알약 CTA·밝다/어둡다), P1 외국인 지역/언어 배너
-  (Accept-Language 외국인만, i18n 실전환, 쿠키 기억, 한국인 미노출).
+- **P1 애플홈 '제대로'(Phase 267):** landing.html을 애플 규격으로 재작성 — 미니멀 중앙 내비(로고+소수항목+시작
+  알약), 풀폭 scene 섹션 5개(한 섹션=한 메시지, 밝다 한지↔어둡다 먹 번갈아), 거대 세리프 헤드라인
+  clamp(40px,6vw,72px) 자간 좁게, 한 줄 회색 서브, 큰 비주얼(이모지), 알약 CTA(주황 채움/청록 라인) 헤드라인
+  바로 아래 중앙, IntersectionObserver 등장 페이드(prefers-reduced-motion 존중). 4-타일 그리드 폐기→섹션별 1메시지.
+  보존: privacy/terms/seller/about/start·privacy-policy meta·For Beginners.
+- **v9 남음:** P1 외국인 지역/언어 배너(Accept-Language 외국인만, i18n 실전환, 쿠키 기억, 한국인 미노출).
 
 ## 🟦 v7/v8 추가 브리프 (오너 2026-06-21 — "렌더 env 다 했음, 나열순, v8 우선")
 - **v8(우선):** ①속도(타이밍 측정→시트 캐시/배치, gunicorn gthread/gzip/에셋) ②마켓호출 Bluehost 릴레이

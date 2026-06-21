@@ -1,80 +1,133 @@
-{# 랜딩 — 애플홈 + 퍼센티 감성 (KOHgogane 브리프 v6 P1 / Phase 262) #}
+{# 랜딩 — 애플 홈 규격 '제대로' (KOHgogane 브리프 v9 P1 / Phase 267) #}
 {% extends "_base_app.html" %}
 
 {% block title %}{{ brand_name|default('KOHgogane', true) }} — 코고가네 셀러 SaaS{% endblock %}
 {% block head %}
 <link rel="privacy-policy" href="/privacy">
 <style>
-  body.bg-light { background: var(--pc-color-bg) !important; color: var(--pc-color-text); }
-  .lp { max-width: 980px; margin: 0 auto; padding: 0 1rem; }
-  /* 풀블리드 섹션 — 밝다(한지) ↔ 어둡다(먹) 번갈아 */
-  .lp-sec { padding: 5rem 0; }
-  .lp-dark { background:
-      radial-gradient(900px 380px at 50% -10%, rgba(201,162,75,.16), transparent 60%),
-      linear-gradient(180deg, #1a1714, #14110e); color: #f5efe3; }
-  .lp-cream { background: var(--pc-color-bg); color: var(--pc-color-text); }
-  .lp-hero h1 { font-family: var(--pc-font-display, serif); font-weight: 700; font-size: clamp(2.2rem, 6vw, 3.8rem); line-height: 1.1; letter-spacing: -.01em; }
-  .lp-hero .sub { color: #c9bda6; font-size: 1.15rem; max-width: 540px; margin: 1rem auto 2rem; }
-  .lp-beta { font-size:.66rem; letter-spacing:.14em; background:#c9a24b; color:#1a1714; border-radius:999px; padding:.15rem .55rem; font-weight:700; vertical-align: middle; }
-  .lp-eyebrow { font-size:.8rem; letter-spacing:.16em; text-transform:uppercase; color:#119a8e; font-weight:700; }
-  .lp-sec h2 { font-family: var(--pc-font-display, serif); font-weight:700; font-size: clamp(1.8rem,4vw,2.6rem); }
-  .lp-tile { background: var(--pc-color-surface); border:1px solid var(--pc-color-border); border-radius:18px; padding:2rem 1.6rem; height:100%; transition: transform .15s, box-shadow .15s; }
-  .lp-tile:hover { transform: translateY(-3px); box-shadow: var(--pc-shadow-md); }
-  .lp-tile .ico { font-size:2.4rem; }
-  .lp-cta-line { border:1.5px solid #119a8e; color:#9fe7df !important; background:transparent; }
-  .lp-foot a { color: var(--pc-color-text-muted); }
+  body.bg-light { background: var(--pc-color-bg) !important; color: var(--pc-color-text); margin: 0; }
+  /* 미니멀 중앙 내비 */
+  .lpnav { position: sticky; top: 0; z-index: 50; backdrop-filter: blur(12px);
+    background: rgba(245,239,227,.82); border-bottom: 1px solid var(--pc-color-border); }
+  .lpnav .inner { max-width: 1040px; margin: 0 auto; display: flex; align-items: center; gap: 1rem; padding: .6rem 1rem; }
+  .lpnav .logo { font-family: var(--pc-font-display, serif); font-weight: 700; font-size: 1.05rem; color: var(--pc-color-text); text-decoration: none; }
+  .lpnav a.navlink { color: var(--pc-color-text-muted); text-decoration: none; font-size: .85rem; }
+  .lpnav a.navlink:hover { color: var(--pc-color-text); }
+  /* 풀폭 섹션 — 한 섹션 = 한 메시지. 밝음(한지) ↔ 어두움(먹) 번갈아 */
+  .scene { min-height: 78vh; display: flex; align-items: center; justify-content: center; text-align: center; padding: 5rem 1rem; }
+  .scene .wrap { max-width: 720px; }
+  .scene.dark { background: radial-gradient(1000px 420px at 50% -8%, rgba(201,162,75,.16), transparent 60%), linear-gradient(180deg,#1a1714,#14110e); color: #f5efe3; }
+  .scene.cream { background: var(--pc-color-bg); color: var(--pc-color-text); }
+  .eyebrow { font-size: .82rem; letter-spacing: .18em; text-transform: uppercase; font-weight: 700; color: #119a8e; margin-bottom: .8rem; }
+  .scene h1, .scene h2 { font-family: var(--pc-font-display, serif); font-weight: 700; letter-spacing: -.02em; line-height: 1.05;
+    font-size: clamp(40px, 6vw, 72px); margin: 0 0 1rem; }
+  .scene .sub { font-size: clamp(1rem, 2.2vw, 1.3rem); color: var(--pc-color-text-muted); margin: 0 auto 2rem; max-width: 520px; }
+  .scene.dark .sub { color: #c9bda6; }
+  .scene .visual { font-size: clamp(4rem, 12vw, 8rem); line-height: 1; margin-bottom: 1.4rem; }
+  /* 알약 CTA — 주황 채움(주) / 청록 라인(보조) */
+  .pill { display: inline-flex; align-items: center; gap: .4rem; border-radius: 999px; padding: .8rem 1.8rem; font-weight: 700;
+    font-size: 1.02rem; text-decoration: none; transition: transform .15s ease, box-shadow .15s ease; }
+  .pill-fill { background: linear-gradient(135deg, var(--pc-color-cta,#ef7a22), var(--pc-color-cta-strong,#d9651a)); color: #fff; box-shadow: 0 8px 22px rgba(239,122,34,.32); }
+  .pill-fill:hover { transform: translateY(-2px); color: #fff; }
+  .pill-line { border: 1.5px solid #119a8e; color: #0f9d8c; }
+  .scene.dark .pill-line { color: #9fe7df; }
+  .pill-line:hover { background: rgba(17,154,142,.12); }
+  .beta { font-size:.62rem; letter-spacing:.14em; background:#c9a24b; color:#1a1714; border-radius:999px; padding:.12rem .5rem; font-weight:700; vertical-align: super; }
+  /* 등장 모션(가벼움) — reduced-motion 존중 */
+  .reveal { opacity: 0; transform: translateY(18px); transition: opacity .6s ease, transform .6s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; transition: none; } }
+  .lpfoot { background: var(--pc-color-bg); color: var(--pc-color-text-muted); text-align: center; padding: 2.5rem 1rem; font-size: .82rem; }
+  .lpfoot a { color: var(--pc-color-text-muted); }
 </style>
 {% endblock %}
 
 {% block content %}
-<!-- 히어로 (어두움) -->
-<section class="lp-sec lp-dark lp-hero text-center">
-  <div class="lp">
-    <div class="mb-3" style="font-size:2.6rem;">🛒 <span class="lp-beta">Beta</span></div>
-    <h1>수 집 부 터<br>등 록 까 지</h1>
+<nav class="lpnav">
+  <div class="inner">
+    <a href="/" class="logo">🛒 코고가네</a>
+    <div class="ms-auto d-flex align-items-center gap-3">
+      <a href="/seller/about" class="navlink d-none d-sm-inline">소개</a>
+      <a href="/seller/" class="navlink d-none d-sm-inline">둘러보기</a>
+      <a href="/seller/start" class="pill pill-fill" style="padding:.45rem 1.1rem;font-size:.9rem;">시작하기</a>
+    </div>
+  </div>
+</nav>
+
+<!-- 1. 히어로 (어두움) -->
+<section class="scene dark">
+  <div class="wrap reveal">
+    <h1>수 집 부 터<br>등 록 까 지<span class="beta">Beta</span></h1>
     <p class="sub">해외 상품을 수집하고, 한국어로 다듬고, 우리 마켓에 등록까지. 클릭 몇 번이면 끝.</p>
     <div class="d-flex flex-wrap gap-2 justify-content-center">
-      <a href="/seller/start" class="btn btn-cta btn-lg">✨ 처음이신가요?</a>
-      <a href="/seller/" class="btn btn-lg lp-cta-line">둘러보기</a>
+      <a href="/seller/start" class="pill pill-fill">처음이신가요?</a>
+      <a href="/seller/" class="pill pill-line">둘러보기</a>
     </div>
   </div>
 </section>
 
-<!-- 기능 타일 (밝음) -->
-<section class="lp-sec lp-cream">
-  <div class="lp text-center mb-5">
-    <div class="lp-eyebrow mb-2">한 곳에서, 한 번에</div>
-    <h2>반복 작업은 코고가네가</h2>
-  </div>
-  <div class="lp">
-    <div class="row g-3">
-      <div class="col-md-6"><div class="lp-tile"><div class="ico mb-2">🔎</div><h5 class="fw-bold">수집</h5><p class="text-muted mb-0">타오바오·아마존·알리 등 어떤 상품이든 버튼 한 번. 크롬 확장·모바일 공유·붙여넣기까지.</p></div></div>
-      <div class="col-md-6"><div class="lp-tile"><div class="ico mb-2">🌐</div><h5 class="fw-bold">다듬기</h5><p class="text-muted mb-0">제목·설명 한국어 번역, 금지어 정리, 가격·마진 일괄 적용. 이미지 워터마크 제거까지.</p></div></div>
-      <div class="col-md-6"><div class="lp-tile"><div class="ico mb-2">🚀</div><h5 class="fw-bold">등록</h5><p class="text-muted mb-0">쿠팡·스마트스토어·11번가 등 여러 마켓에 한 번에. 발급부터 연결까지 클릭으로.</p></div></div>
-      <div class="col-md-6"><div class="lp-tile"><div class="ico mb-2">📦</div><h5 class="fw-bold">주문</h5><p class="text-muted mb-0">주문·배송·정산을 한 화면에서. 모바일 앱으로 어디서나 확인하고 처리.</p></div></div>
-    </div>
+<!-- 2. 수집 (밝음) -->
+<section class="scene cream">
+  <div class="wrap reveal">
+    <div class="visual">🔎</div>
+    <div class="eyebrow">수집</div>
+    <h2>버튼 한 번이면<br>담깁니다</h2>
+    <p class="sub">타오바오·아마존·알리… 어떤 상품이든. 크롬 확장·모바일 공유·붙여넣기까지.</p>
+    <a href="/seller/start" class="pill pill-fill">수집 시작하기</a>
   </div>
 </section>
 
-<!-- For Beginners 밴드 (어두움) -->
-<section class="lp-sec lp-dark text-center">
-  <div class="lp">
-    <h2 class="mb-3">처음이어도 괜찮아요</h2>
-    <p class="sub mx-auto">큰 버튼을 따라 누르기만 하면, 로그인부터 첫 등록까지 끝납니다.</p>
-    <a href="/seller/start" class="btn btn-cta btn-lg">✨ For Beginners · 시작하기</a>
-    <div class="mt-3"><a href="/seller/about" class="text-decoration-none" style="color:#c9bda6">코고가네란? →</a></div>
+<!-- 3. 다듬기 (어두움) -->
+<section class="scene dark">
+  <div class="wrap reveal">
+    <div class="visual">🌐</div>
+    <div class="eyebrow">다듬기</div>
+    <h2>한국어로,<br>깔끔하게</h2>
+    <p class="sub">제목·설명 번역, 금지어 정리, 가격·마진 일괄. 이미지 워터마크 제거까지.</p>
+    <a href="/seller/about" class="pill pill-line">자세히 보기</a>
   </div>
 </section>
 
-<!-- 푸터 -->
-<section class="lp-sec lp-cream lp-foot" style="padding:2.5rem 0;">
-  <div class="lp text-center small">
-    <hr>
-    <span class="text-muted">Phase {{ current_phase }} · {{ version }}</span> &nbsp;·&nbsp;
-    <a href="/seller/about">코고가네란?</a> &nbsp;·&nbsp;
-    <a href="/privacy">개인정보처리방침</a> &nbsp;·&nbsp;
-    <a href="/terms">이용약관</a> &nbsp;·&nbsp;
-    <a href="https://github.com/Kohgane/proxy-commerce" target="_blank" rel="noopener"><i class="bi bi-github"></i> GitHub</a>
+<!-- 4. 등록 (밝음) -->
+<section class="scene cream">
+  <div class="wrap reveal">
+    <div class="visual">🚀</div>
+    <div class="eyebrow">등록</div>
+    <h2>여러 마켓에<br>한 번에</h2>
+    <p class="sub">쿠팡·스마트스토어·11번가… 발급부터 연결, 등록까지 클릭으로.</p>
+    <a href="/seller/markets/connect" class="pill pill-fill">마켓 연동하기</a>
   </div>
 </section>
+
+<!-- 5. For Beginners (어두움) -->
+<section class="scene dark">
+  <div class="wrap reveal">
+    <div class="visual">✨</div>
+    <h2>처음이어도<br>괜찮아요</h2>
+    <p class="sub">큰 버튼을 따라 누르기만 하면, 로그인부터 첫 등록까지 끝납니다.</p>
+    <a href="/seller/start" class="pill pill-fill">For Beginners · 시작하기</a>
+  </div>
+</section>
+
+<footer class="lpfoot">
+  <span>Phase {{ current_phase }} · {{ version }}</span> &nbsp;·&nbsp;
+  <a href="/seller/about">코고가네란?</a> &nbsp;·&nbsp;
+  <a href="/privacy">개인정보처리방침</a> &nbsp;·&nbsp;
+  <a href="/terms">이용약관</a> &nbsp;·&nbsp;
+  <a href="https://github.com/Kohgane/proxy-commerce" target="_blank" rel="noopener"><i class="bi bi-github"></i> GitHub</a>
+</footer>
+
+<script>
+(function () {
+  var els = document.querySelectorAll('.reveal');
+  if (!('IntersectionObserver' in window) || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } });
+  }, { threshold: 0.15 });
+  els.forEach(function (e) { io.observe(e); });
+})();
+</script>
 {% endblock %}
