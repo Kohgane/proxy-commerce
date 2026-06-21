@@ -32,11 +32,13 @@
     {% endfor %}
   </div>
 
-  <div class="alert alert-light border d-flex gap-2 align-items-start mb-4" role="note">
+  <div class="alert alert-light border d-flex gap-2 align-items-center mb-4" role="note">
     <i class="bi bi-shield-lock text-primary"></i>
     <div class="small mb-0">
-      입력한 키는 <strong>암호화되어 저장</strong>됩니다(서버에 <code>MARKET_CRED_ENC_KEY</code> 설정 시).
-      <strong>연결 테스트</strong>는 실제 마켓에 읽기/안전한 빈 쓰기만 시도하며 상품을 등록하지 않습니다.
+      🔒 입력한 키는 <strong>안전하게 암호화</strong>되어 보관돼요.
+      <span class="pc-help" tabindex="0" role="button" aria-label="자세히"
+            data-bs-toggle="tooltip" data-bs-html="true"
+            data-bs-title="서버에 <code>MARKET_CRED_ENC_KEY</code> 설정 시 키를 암호화 저장합니다. ‘연결 테스트’는 실제 마켓에 읽기/안전한 빈 쓰기만 시도하며 상품을 등록하지 않습니다.">?</span>
     </div>
   </div>
 

@@ -3614,6 +3614,12 @@ def markets_guide():
     return render_template("markets_guide.html", page="markets", guide=get_guide())
 
 
+@bp.get("/about")
+def about_page():
+    """소개 — '코고가네란?' (애플 톤, v5). 로그인 없이도 볼 수 있음."""
+    return render_template("about.html")
+
+
 @bp.get("/start")
 def onboarding_wizard():
     """For Beginners 키노트형 온보딩 위저드 (v5).

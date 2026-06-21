@@ -30,7 +30,11 @@
     /auth/google/start)→마켓 연동(실제 /markets/connect)→확장 설치(실제 /extension)→첫 수집(/manual-collect).
     각 단계 실제 동작 링크(가이드 아님), localStorage 진행저장·재진입, 로그인/마켓연결 자동 완료판정. 미로그인도 진입.
     대시보드+랜딩에 '✨ For Beginners·처음이신가요?'(주황 .btn-cta) 진입버튼.
-  - ⏳ 다음: 개발자 문구 "?" 팝오버 숨김 → About 소개 → 주황 CTA 추가 적용. (P0 실구글로그인=오너 콘솔 게시 사안)
+  - ✅ "?" 개발자문구 숨김 + About 소개(Phase 254): `.pc-help`("?" 원형) + _base.html 전역 Bootstrap 툴팁 init.
+    markets_connect 기술문구(MARKET_CRED_ENC_KEY·연결테스트 원리)를 본문→'?' 툴팁으로(본문은 '🔒 안전하게 암호화' 한 줄).
+    신설 `/seller/about`(about.html, 애플톤 수집/다듬기/등록 3카드 + 누구를 위한 건가 + 시작하기 CTA), 랜딩 푸터+고급nav 링크.
+  - ⏳ 다음(v5 남음): 주황 CTA 더 적용(로그인 구글버튼 등), For Beginners 서버측 진행저장(현재 localStorage). 
+    (P0 실구글로그인 계정선택=오너 콘솔 '프로덕션 게시' 사안.) — v5 큰 줄기 거의 완료.
 
 ## 🔑 검증된 환경/핸드오프 (오너 제공 — 누적, 두 번 묻지 말 것 / 2026-06-20)
 > 오너 지시(2026-06-20): "업데이트되는 정보는 핸드오프에 저장하고 두 번 일 시키지 마라."
