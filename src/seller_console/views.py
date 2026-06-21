@@ -3579,6 +3579,7 @@ def markets_connect():
     if not _check_auth():
         return redirect(url_for("auth.login", next=request.url))
     from . import market_credentials as mc
+    from .market_guide import guide_map
 
     seller = _seller_id()
     statuses = mc.all_status(seller)
@@ -3586,7 +3587,40 @@ def markets_connect():
     return render_template(
         "markets_connect.html", page="markets",
         market_statuses=statuses, market_chips=chips, single_market=None, guide_entry=None,
+        guide_map=guide_map(), server_ip=_server_outbound_ip(),
     )
+
+
+# 서버 아웃바운드 IP 캐시(쿠팡/네이버 허용 IP 등록용 — 화면에 복사 제공)
+_SERVER_IP_CACHE = {"ip": None, "tried": False}
+
+
+def _server_outbound_ip() -> str:
+    """서버 아웃바운드 IP. env SERVER_OUTBOUND_IP 우선, 없으면 1회 조회·캐시(실패 시 '')."""
+    env_ip = (os.getenv("SERVER_OUTBOUND_IP") or "").strip()
+    if env_ip:
+        return env_ip
+    if _SERVER_IP_CACHE["ip"] is not None:
+        return _SERVER_IP_CACHE["ip"]
+    if _SERVER_IP_CACHE["tried"]:
+        return ""
+    _SERVER_IP_CACHE["tried"] = True
+    ip = ""
+    try:
+        import urllib.request
+        for svc in ("https://api.ipify.org", "https://checkip.amazonaws.com"):
+            try:
+                with urllib.request.urlopen(svc, timeout=3) as r:
+                    cand = (r.read().decode("utf-8") or "").strip()
+                    if cand and len(cand) <= 45:
+                        ip = cand
+                        break
+            except Exception:
+                continue
+    except Exception:
+        ip = ""
+    _SERVER_IP_CACHE["ip"] = ip
+    return ip
 
 
 @bp.get("/markets/connect/<market>")
@@ -3595,7 +3629,7 @@ def markets_connect_one(market):
     if not _check_auth():
         return redirect(url_for("auth.login", next=request.url))
     from . import market_credentials as mc
-    from .market_guide import get_guide
+    from .market_guide import get_guide, guide_map
 
     market = _connect_market_key(market)
     if market not in mc.MARKET_CRED_FIELDS:
@@ -3608,6 +3642,7 @@ def markets_connect_one(market):
         "markets_connect.html", page="markets",
         market_statuses=[mc.status(seller, market)], market_chips=chips,
         single_market=market, guide_entry=guide_entry,
+        guide_map=guide_map(), server_ip=_server_outbound_ip(),
     )
 
 

@@ -32,6 +32,16 @@
     {% endfor %}
   </div>
 
+  {% if server_ip %}
+  <div class="alert alert-warning d-flex flex-wrap gap-2 align-items-center mb-3" role="note">
+    <i class="bi bi-hdd-network"></i>
+    <span class="small mb-0">쿠팡·네이버는 <strong>서버 IP를 허용 목록에 등록</strong>해야 연결돼요. 이 IP를 복사해 넣으세요:</span>
+    <code id="serverIp" class="ms-1">{{ server_ip }}</code>
+    <button type="button" class="btn btn-gold btn-sm py-0" onclick="copyServerIp(this)">복사</button>
+    <span class="pc-help" data-bs-toggle="tooltip" data-bs-title="마켓의 'API 호출 허용 IP'(쿠팡 Wing)/'호출 IP 등록'(네이버, 최대 3개)에 이 IP를 추가하세요.">?</span>
+  </div>
+  {% endif %}
+
   <div class="alert alert-light border d-flex gap-2 align-items-center mb-4" role="note">
     <i class="bi bi-shield-lock text-primary"></i>
     <div class="small mb-0">
@@ -66,13 +76,19 @@
     <div class="{{ 'col-12' if single_market else 'col-12 col-lg-6' }}">
       <div class="card console-card h-100" data-market="{{ m.market }}">
         <div class="card-body">
-          <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+          <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
             <h2 class="h6 mb-0">{{ m.label }}</h2>
             <span class="badge rounded-pill {{ 'text-bg-success' if m.connected else 'text-bg-secondary' }}"
                   data-role="status-badge">
               {{ '✅ 연결됨' if m.connected else '🪪 미연결' }}
             </span>
           </div>
+          {% set _g = (guide_map or {}).get(m.market) %}
+          {% if _g and _g.official_url %}
+          <a href="{{ _g.official_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-cta btn-sm w-100 mb-3">
+            🔗 {{ _g.official_label or '발급 페이지 열기' }} <span class="small">(새 탭)</span>
+          </a>
+          {% endif %}
 
           <form class="market-connect-form" data-market="{{ m.market }}" autocomplete="off">
             {% for f in m.fields %}
@@ -128,6 +144,14 @@
 
 {% block extra_js %}
 <script>
+function copyServerIp(btn) {
+  var ip = (document.getElementById('serverIp') || {}).textContent || '';
+  if (!ip) return;
+  navigator.clipboard.writeText(ip.trim()).then(function () {
+    if (window.pcToast) pcToast('서버 IP를 복사했어요. 마켓 허용 IP에 붙여넣으세요.', 'success');
+    if (btn) { var o = btn.textContent; btn.textContent = '복사됨 ✓'; setTimeout(function(){ btn.textContent = o; }, 1500); }
+  });
+}
 function collectValues(form) {
   const values = {};
   form.querySelectorAll('input[name]').forEach(input => {
