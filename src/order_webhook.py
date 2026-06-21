@@ -932,40 +932,65 @@ if not app.secret_key:
     if _sk:
         app.secret_key = _sk
     else:
-        # SECRET_KEY 미설정 — 멀티워커(GUNICORN_WORKERS>1)에서 워커마다 다른 임시 키를 쓰면
-        # 세션 서명이 어긋나 로그인 직후 튕긴다(v3 P0-1). 같은 컨테이너의 모든 워커가 동일 키를
-        # 쓰도록 컨테이너-로컬 파일에 한 번만 생성·공유한다(O_EXCL 원자적 생성으로 레이스 방지).
-        # 재시작 시 회전은 감수 — 영구 고정은 SECRET_KEY env가 최선(권장).
+        # SECRET_KEY 미설정 — 로그인 직후 튕김의 주원인은 '세션 서명 키가 바뀜'(워커마다/재시작마다
+        # 다른 임시 키). 아래 우선순위로 '한 번 정해진 키를 모두가, 재시작 뒤에도' 쓰게 한다:
+        #   1) Google Sheets app_config(있으면 영속 — 재배포/재시작에도 동일, 오너 추가설정 불필요)
+        #   2) 컨테이너 공유 파일(/tmp) — 워커 간 공유(재시작 시엔 회전)
+        # 영구 100% 고정은 SECRET_KEY env가 최선.
         import secrets as _sec_mod
-        import tempfile
-        import warnings
-        _key_file = os.getenv(
-            "SESSION_SECRET_FILE",
-            os.path.join(tempfile.gettempdir(), "kohgogane_session_secret"),
-        )
         _dev_key = None
-        try:
-            if os.path.exists(_key_file):
-                with open(_key_file, encoding="utf-8") as _f:
-                    _dev_key = (_f.read() or "").strip() or None
-            if not _dev_key:
-                _dev_key = _sec_mod.token_hex(32)
+
+        _sheet_id = os.getenv("GOOGLE_SHEET_ID")
+        if _sheet_id:
+            try:
+                from src.utils.sheets import open_sheet
+                _ws = open_sheet(_sheet_id, "app_config")
                 try:
-                    _fd = os.open(_key_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-                    with os.fdopen(_fd, "w") as _f:
-                        _f.write(_dev_key)
-                except FileExistsError:
-                    # 다른 워커가 먼저 생성 → 그 키를 읽어 공유
+                    if not _ws.row_values(1):
+                        _ws.insert_row(["key", "value"], index=1)
+                except Exception:
+                    pass
+                for _r in _ws.get_all_records():
+                    if str(_r.get("key", "")) == "session_secret" and str(_r.get("value", "")).strip():
+                        _dev_key = str(_r.get("value")).strip()
+                        break
+                if not _dev_key:
+                    _dev_key = _sec_mod.token_hex(32)
+                    _ws.append_row(["session_secret", _dev_key])
+                    logger.info("세션 서명 키를 Sheets(app_config)에 영속 생성 — 재시작에도 세션 유지")
+            except Exception as _exc:
+                logger.warning("Sheets 세션키 영속 실패(파일 폴백): %s", _exc)
+                _dev_key = None
+
+        if not _dev_key:
+            import tempfile
+            _key_file = os.getenv(
+                "SESSION_SECRET_FILE",
+                os.path.join(tempfile.gettempdir(), "kohgogane_session_secret"),
+            )
+            try:
+                if os.path.exists(_key_file):
                     with open(_key_file, encoding="utf-8") as _f:
-                        _dev_key = (_f.read() or "").strip() or _dev_key
-        except Exception:
-            _dev_key = _dev_key or _sec_mod.token_hex(32)
-        warnings.warn(
-            "SECRET_KEY 환경변수가 설정되지 않았습니다. "
-            "프로덕션에서는 반드시 SECRET_KEY를 설정하세요. "
-            "현재 컨테이너 공유 임시 키 사용 (재배포/재시작 시 세션 만료).",
-            stacklevel=1,
-        )
+                        _dev_key = (_f.read() or "").strip() or None
+                if not _dev_key:
+                    _dev_key = _sec_mod.token_hex(32)
+                    try:
+                        _fd = os.open(_key_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                        with os.fdopen(_fd, "w") as _f:
+                            _f.write(_dev_key)
+                    except FileExistsError:
+                        with open(_key_file, encoding="utf-8") as _f:
+                            _dev_key = (_f.read() or "").strip() or _dev_key
+            except Exception:
+                _dev_key = _dev_key or _sec_mod.token_hex(32)
+            if not _sheet_id:
+                import warnings
+                warnings.warn(
+                    "SECRET_KEY 환경변수가 설정되지 않았습니다. "
+                    "프로덕션에서는 SECRET_KEY(또는 GOOGLE_SHEET_ID)를 설정하세요. "
+                    "현재 컨테이너 공유 임시 키 사용 (재배포/재시작 시 세션 만료).",
+                    stacklevel=1,
+                )
         app.secret_key = _dev_key
 
 # 세션 쿠키 보안 설정
