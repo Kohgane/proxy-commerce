@@ -1,6 +1,6 @@
 /**
  * content_script.js — 페이지 컨텍스트에서 메타 추출 + 인페이지 '수집' 버튼 (Phase 202)
- * 코가네 퍼센티 수집기
+ * 코고가네 수집기
  *
  * 1) 백그라운드/팝업에서 "extractMeta" 메시지 요청 시 메타 응답.
  * 2) 상품 페이지로 판단되면 우하단에 떠 있는 '수집' 버튼을 주입한다.
@@ -162,18 +162,19 @@ function setFabState(btn, state) {
   } else {
     btn.dataset.busy = "";
     btn.style.opacity = "1";
-    btn.querySelector(".kgp-fab-label").textContent = "고가네 수집";
+    btn.querySelector(".kgp-fab-label").textContent = "코고가네 수집";
   }
 }
 
-// 고가네 퍼센티 브랜드 아이콘(글로브 + 주황/초록 궤도) — 파비콘과 동일 모티프.
-// 경쟁사(파란 막대형) 버튼과 구분되는 우리만의 식별 아이콘.
+// 코고가네 글로브 모노그램(먹 글로브 + 금 링 + 청록 궤도) — 코고가네 디자인 토큰.
+// 네이비+주황 폐기(v4). 우아·세련·은은하되 금 링/청록으로 식별.
 const KGP_GLOBE_SVG =
   '<svg width="20" height="20" viewBox="0 0 512 512" aria-hidden="true" style="display:block">' +
-  '<circle cx="256" cy="256" r="150" fill="#1e4fd1"/>' +
-  '<circle cx="256" cy="256" r="150" fill="none" stroke="#bcd6ff" stroke-width="10" opacity="0.5"/>' +
-  '<ellipse cx="256" cy="256" rx="210" ry="78" fill="none" stroke="#ff8a1e" stroke-width="22" transform="rotate(35 256 256)"/>' +
-  '<ellipse cx="256" cy="256" rx="210" ry="78" fill="none" stroke="#37d05a" stroke-width="22" transform="rotate(-35 256 256)"/>' +
+  '<circle cx="256" cy="256" r="150" fill="#1a1714"/>' +
+  '<circle cx="256" cy="256" r="150" fill="none" stroke="#c9a24b" stroke-width="12"/>' +
+  '<ellipse cx="256" cy="256" rx="210" ry="76" fill="none" stroke="#c9a24b" stroke-width="16" opacity="0.55" transform="rotate(32 256 256)"/>' +
+  '<ellipse cx="256" cy="256" rx="210" ry="76" fill="none" stroke="#119a8e" stroke-width="20" transform="rotate(-32 256 256)"/>' +
+  '<circle cx="256" cy="256" r="40" fill="#119a8e"/>' +
   '</svg>';
 
 function handleFabClick(btn) {
@@ -211,29 +212,30 @@ function injectCollectButton() {
   btn.type = "button";
   btn.innerHTML =
     '<span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;' +
-    'background:#0a0a2a;border-radius:50%;flex-shrink:0">' + KGP_GLOBE_SVG + '</span>' +
-    '<span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1.1">' +
-    '<span class="kgp-fab-label" style="font-weight:700;font-size:14px">고가네 수집</span>' +
-    '<span style="font-size:10px;opacity:.85">번역까지 한 번에</span>' +
+    'background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%;flex-shrink:0">' + KGP_GLOBE_SVG + '</span>' +
+    '<span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1.12">' +
+    '<span class="kgp-fab-label" style="font-weight:700;font-size:14px;color:#f5efe3">코고가네 수집</span>' +
+    '<span style="font-size:10px;color:#c9a24b;font-family:Georgia,\'Times New Roman\',serif">번역까지 한 번에</span>' +
     '</span>';
-  btn.title = "고가네 퍼센티로 수집 (한국어 번역 포함)";
-  // 브랜드 색(네이비 + 주황 포인트) — 경쟁사 파란 막대형 버튼과 구분되는 우리만의 식별.
+  btn.title = "코고가네로 수집 (한국어 번역 포함)";
+  // 코고가네 토큰: 먹 매트 pill + 금 얇은 링 + 청록 미세 악센트. (네이비+주황 폐기, v4)
+  // 위치: 우측 가장자리 상단부(콘텐츠 안 가리게 살짝 안쪽).
   btn.style.cssText = [
-    "position:fixed", "right:20px", "bottom:20px", "z-index:2147483646",
+    "position:fixed", "right:16px", "top:120px", "z-index:2147483646",
     "display:flex", "align-items:center", "gap:10px",
-    "padding:9px 16px 9px 10px", "border:1.5px solid #ff8a1e", "border-radius:999px",
-    "background:linear-gradient(135deg,#0a1f5c,#13308f)", "color:#fff",
+    "padding:9px 16px 9px 10px", "border:1px solid #c9a24b", "border-radius:999px",
+    "background:#1a1714", "color:#f5efe3",
     "font:14px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
-    "cursor:pointer", "box-shadow:0 6px 20px rgba(10,31,92,.45)",
+    "cursor:pointer", "box-shadow:0 6px 20px rgba(0,0,0,.4),0 0 0 4px rgba(17,154,142,.10)",
     "transition:transform .12s,opacity .12s,box-shadow .12s"
   ].join(";");
   btn.addEventListener("mouseenter", () => {
     btn.style.transform = "translateY(-2px)";
-    btn.style.boxShadow = "0 10px 26px rgba(255,138,30,.45)";
+    btn.style.boxShadow = "0 10px 26px rgba(0,0,0,.5),0 0 0 5px rgba(17,154,142,.18)";
   });
   btn.addEventListener("mouseleave", () => {
     btn.style.transform = "none";
-    btn.style.boxShadow = "0 6px 20px rgba(10,31,92,.45)";
+    btn.style.boxShadow = "0 6px 20px rgba(0,0,0,.4),0 0 0 4px rgba(17,154,142,.10)";
   });
   btn.addEventListener("click", () => handleFabClick(btn));
   document.body.appendChild(btn);
@@ -306,9 +308,9 @@ function kgpCardBadgeStyle(selected) {
     "position:absolute", "top:6px", "left:6px", "z-index:2147483640",
     "padding:3px 8px", "border-radius:7px", "cursor:pointer", "user-select:none",
     "font:700 11px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
-    selected ? "background:#ff8a1e" : "background:#0a1f5c", "color:#fff",
-    "border:1.5px solid " + (selected ? "#0a1f5c" : "#ff8a1e"),
-    "box-shadow:0 2px 8px rgba(0,0,0,.3)",
+    selected ? "background:#119a8e" : "background:#1a1714", "color:#fff",
+    "border:1.5px solid " + (selected ? "#0f8c80" : "#c9a24b"),
+    "box-shadow:0 2px 8px rgba(0,0,0,.35)",
   ].join(";");
 }
 
@@ -316,7 +318,7 @@ function kgpSetCardSelected(url, badge, el, selected) {
   if (selected) {
     KGP_SELECTED.add(url);
     if (badge) { badge.textContent = "✓ 선택"; badge.style.cssText = kgpCardBadgeStyle(true); }
-    if (el) { el.style.outline = "3px solid #ff8a1e"; el.style.outlineOffset = "-3px"; el.setAttribute("data-kgp-outline", "1"); }
+    if (el) { el.style.outline = "3px solid #119a8e"; el.style.outlineOffset = "-3px"; el.setAttribute("data-kgp-outline", "1"); }
   } else {
     KGP_SELECTED.delete(url);
     if (badge) { badge.textContent = "수집"; badge.style.cssText = kgpCardBadgeStyle(false); }
@@ -369,22 +371,27 @@ function kgpBuildToolbar() {
   bar.style.cssText = [
     "position:fixed", "top:12px", "left:50%", "transform:translateX(-50%)",
     "z-index:2147483646", "display:flex", "align-items:center", "gap:10px",
-    "padding:8px 12px", "border-radius:999px", "border:1.5px solid #ff8a1e",
-    "background:linear-gradient(135deg,#0a1f5c,#13308f)", "color:#fff",
+    "padding:8px 14px", "border-radius:999px", "border:1px solid #c9a24b",
+    "background:#1a1714", "color:#f5efe3",
     "font:13px/1.2 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
-    "box-shadow:0 8px 24px rgba(10,31,92,.5)", "max-width:94vw", "flex-wrap:wrap",
+    "box-shadow:0 8px 24px rgba(0,0,0,.45)", "max-width:94vw", "flex-wrap:wrap",
   ].join(";");
-  const btnCss = "padding:5px 10px;border-radius:8px;border:none;cursor:pointer;font-weight:700;font-size:12px;";
+  // 버튼 위계: 전체 수집=청록 채움(Primary), 선택 수집=금 아웃라인(Secondary), 전체선택/해제=고스트.
+  const btnBase = "padding:5px 11px;border-radius:8px;cursor:pointer;font-weight:700;font-size:12px;";
+  const ghost = btnBase + "background:transparent;color:#e7ddc9;border:1px solid #4a4234;";
+  const gold = btnBase + "background:transparent;color:#e8d6a8;border:1.5px solid #c9a24b;";
+  const teal = btnBase + "background:#119a8e;color:#fff;border:1px solid #0f8c80;";
   bar.innerHTML =
-    '<span style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;background:#0a0a2a;border-radius:50%">' + KGP_GLOBE_SVG + '</span>' +
-    '<strong>고가네 수집</strong>' +
-    '<span id="kgp-tb-count" style="opacity:.9"></span>' +
-    '<button class="kgp-tb-btn" data-act="all-sel" style="' + btnCss + 'background:#fff;color:#0a1f5c">전체 선택</button>' +
-    '<button class="kgp-tb-btn" data-act="clear" style="' + btnCss + 'background:#33406b;color:#fff">선택 해제</button>' +
-    '<button class="kgp-tb-btn" data-act="collect-sel" style="' + btnCss + 'background:#ff8a1e;color:#0a1f5c">선택 수집</button>' +
-    '<button class="kgp-tb-btn" data-act="collect-all" style="' + btnCss + 'background:#37d05a;color:#06310f">전체 수집</button>' +
+    '<span style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%">' + KGP_GLOBE_SVG + '</span>' +
+    '<strong style="color:#ecdcb0">코고가네 수집</strong>' +
+    '<span id="kgp-tb-count" style="opacity:.85"></span>' +
+    '<span style="width:1px;height:18px;background:#4a4234"></span>' +
+    '<button class="kgp-tb-btn" data-act="all-sel" style="' + ghost + '">전체 선택</button>' +
+    '<button class="kgp-tb-btn" data-act="clear" style="' + ghost + '">선택 해제</button>' +
+    '<button class="kgp-tb-btn" data-act="collect-sel" style="' + gold + '">선택 수집</button>' +
+    '<button class="kgp-tb-btn" data-act="collect-all" style="' + teal + '">전체 수집</button>' +
     '<span id="kgp-tb-status" style="opacity:.95;font-size:12px;max-width:360px"></span>' +
-    '<button data-act="close" title="닫기" style="' + btnCss + 'background:transparent;color:#fff;font-size:15px">✕</button>';
+    '<button data-act="close" title="닫기" style="' + btnBase + 'background:transparent;color:#c9bda6;border:none;font-size:15px">✕</button>';
   bar.addEventListener("click", (e) => {
     const t = e.target.closest("[data-act]");
     if (!t) return;
@@ -422,21 +429,21 @@ function kgpBuildToolbar() {
 
 const KGP_REOPEN_ID = "kgp-listing-reopen";
 
-// 닫았을 때 화면 좌상단에 작은 '고가네 수집 열기' 알약을 남긴다 → 클릭 시 바를 다시 띄운다.
+// 닫았을 때 화면 좌상단에 작은 '코고가네 수집 열기' 알약 → 클릭 시 바를 다시 띄운다.
 function kgpShowReopenPill() {
   if (document.getElementById(KGP_REOPEN_ID) || !document.body) return;
   const pill = document.createElement("button");
   pill.id = KGP_REOPEN_ID;
   pill.type = "button";
-  pill.title = "고가네 수집 바 다시 열기";
+  pill.title = "코고가네 수집 바 다시 열기";
   pill.innerHTML =
-    '<span style="display:flex;align-items:center;justify-content:center;width:20px;height:20px;background:#0a0a2a;border-radius:50%">' + KGP_GLOBE_SVG + '</span>' +
+    '<span style="display:flex;align-items:center;justify-content:center;width:20px;height:20px;background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%">' + KGP_GLOBE_SVG + '</span>' +
     '<span style="font-weight:700;font-size:12px">수집 열기</span>';
   pill.style.cssText = [
     "position:fixed", "top:12px", "left:12px", "z-index:2147483646",
     "display:flex", "align-items:center", "gap:6px", "padding:5px 10px 5px 6px",
-    "border:1.5px solid #ff8a1e", "border-radius:999px",
-    "background:linear-gradient(135deg,#0a1f5c,#13308f)", "color:#fff",
+    "border:1px solid #c9a24b", "border-radius:999px",
+    "background:#1a1714", "color:#f5efe3",
     "cursor:pointer", "box-shadow:0 4px 14px rgba(10,31,92,.45)",
     "font:12px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
   ].join(";");
@@ -470,7 +477,7 @@ function kgpInjectListing() {
         // 이미 배지 있음 — 선택 상태만 동기화(선택을 풀지 않음)
         existing.textContent = sel ? "✓ 선택" : "수집";
         existing.style.cssText = kgpCardBadgeStyle(sel);
-        if (sel) { c.el.style.outline = "3px solid #ff8a1e"; c.el.style.outlineOffset = "-3px"; c.el.setAttribute("data-kgp-outline", "1"); }
+        if (sel) { c.el.style.outline = "3px solid #119a8e"; c.el.style.outlineOffset = "-3px"; c.el.setAttribute("data-kgp-outline", "1"); }
         return;
       }
       if (getComputedStyle(c.el).position === "static") c.el.style.position = "relative";
@@ -479,7 +486,7 @@ function kgpInjectListing() {
       badge.dataset.url = c.url;
       badge.textContent = sel ? "✓ 선택" : "수집";
       badge.style.cssText = kgpCardBadgeStyle(sel);
-      if (sel) { c.el.style.outline = "3px solid #ff8a1e"; c.el.style.outlineOffset = "-3px"; c.el.setAttribute("data-kgp-outline", "1"); }
+      if (sel) { c.el.style.outline = "3px solid #119a8e"; c.el.style.outlineOffset = "-3px"; c.el.setAttribute("data-kgp-outline", "1"); }
       badge.addEventListener("click", (e) => {
         e.preventDefault(); e.stopPropagation();
         kgpToggleCard(c.url, badge, c.el);
