@@ -43,13 +43,23 @@
 {% endblock %}
 
 {% block content %}
+{% set EN = (lang == 'en') %}
+{% if show_region_banner %}
+<!-- 외국인 전용 지역/언어 배너 (한국인 미노출) -->
+<div style="background:#1a1714;color:#f5efe3;font-size:.85rem;padding:.5rem 1rem;display:flex;align-items:center;justify-content:center;gap:.8rem;flex-wrap:wrap;">
+  <span>🌏 Shopping from outside Korea? Choose your language.</span>
+  <a href="/i18n/set?lang=en&next=/" style="color:#1a1714;background:#c9a24b;border-radius:999px;padding:.15rem .8rem;text-decoration:none;font-weight:700;">English</a>
+  <a href="/i18n/set?lang=ko&next=/" style="color:#f5efe3;border:1px solid #57503f;border-radius:999px;padding:.15rem .8rem;text-decoration:none;">한국어</a>
+  <a href="/i18n/dismiss?next=/" aria-label="close" style="color:#c9bda6;text-decoration:none;">✕</a>
+</div>
+{% endif %}
 <nav class="lpnav">
   <div class="inner">
     <a href="/" class="logo">🛒 코고가네</a>
     <div class="ms-auto d-flex align-items-center gap-3">
-      <a href="/seller/about" class="navlink d-none d-sm-inline">소개</a>
-      <a href="/seller/" class="navlink d-none d-sm-inline">둘러보기</a>
-      <a href="/seller/start" class="pill pill-fill" style="padding:.45rem 1.1rem;font-size:.9rem;">시작하기</a>
+      <a href="/seller/about" class="navlink d-none d-sm-inline">{{ 'About' if EN else '소개' }}</a>
+      <a href="/seller/" class="navlink d-none d-sm-inline">{{ 'Explore' if EN else '둘러보기' }}</a>
+      <a href="/seller/start" class="pill pill-fill" style="padding:.45rem 1.1rem;font-size:.9rem;">{{ 'Get started' if EN else '시작하기' }}</a>
     </div>
   </div>
 </nav>
@@ -57,12 +67,21 @@
 <!-- 1. 히어로 (어두움) -->
 <section class="scene dark">
   <div class="wrap reveal">
+    {% if EN %}
+    <h1>From sourcing<br>to listing<span class="beta">Beta</span></h1>
+    <p class="sub">Source overseas products, polish them in Korean, and list to marketplaces — in a few clicks.</p>
+    <div class="d-flex flex-wrap gap-2 justify-content-center">
+      <a href="/seller/start" class="pill pill-fill">New here?</a>
+      <a href="/seller/" class="pill pill-line">Explore</a>
+    </div>
+    {% else %}
     <h1>수 집 부 터<br>등 록 까 지<span class="beta">Beta</span></h1>
     <p class="sub">해외 상품을 수집하고, 한국어로 다듬고, 우리 마켓에 등록까지. 클릭 몇 번이면 끝.</p>
     <div class="d-flex flex-wrap gap-2 justify-content-center">
       <a href="/seller/start" class="pill pill-fill">처음이신가요?</a>
       <a href="/seller/" class="pill pill-line">둘러보기</a>
     </div>
+    {% endif %}
   </div>
 </section>
 
@@ -70,10 +89,13 @@
 <section class="scene cream">
   <div class="wrap reveal">
     <div class="visual">🔎</div>
-    <div class="eyebrow">수집</div>
-    <h2>버튼 한 번이면<br>담깁니다</h2>
+    <div class="eyebrow">{{ 'Collect' if EN else '수집' }}</div>
+    {% if EN %}<h2>One click<br>to collect</h2>
+    <p class="sub">Taobao, Amazon, AliExpress… any product. Chrome extension, mobile share, or paste.</p>
+    <a href="/seller/start" class="pill pill-fill">Start collecting</a>
+    {% else %}<h2>버튼 한 번이면<br>담깁니다</h2>
     <p class="sub">타오바오·아마존·알리… 어떤 상품이든. 크롬 확장·모바일 공유·붙여넣기까지.</p>
-    <a href="/seller/start" class="pill pill-fill">수집 시작하기</a>
+    <a href="/seller/start" class="pill pill-fill">수집 시작하기</a>{% endif %}
   </div>
 </section>
 
@@ -81,10 +103,13 @@
 <section class="scene dark">
   <div class="wrap reveal">
     <div class="visual">🌐</div>
-    <div class="eyebrow">다듬기</div>
-    <h2>한국어로,<br>깔끔하게</h2>
+    <div class="eyebrow">{{ 'Polish' if EN else '다듬기' }}</div>
+    {% if EN %}<h2>Clean,<br>in Korean</h2>
+    <p class="sub">Translate titles/descriptions, filter banned words, set prices/margins, remove watermarks.</p>
+    <a href="/seller/about" class="pill pill-line">Learn more</a>
+    {% else %}<h2>한국어로,<br>깔끔하게</h2>
     <p class="sub">제목·설명 번역, 금지어 정리, 가격·마진 일괄. 이미지 워터마크 제거까지.</p>
-    <a href="/seller/about" class="pill pill-line">자세히 보기</a>
+    <a href="/seller/about" class="pill pill-line">자세히 보기</a>{% endif %}
   </div>
 </section>
 
@@ -92,10 +117,13 @@
 <section class="scene cream">
   <div class="wrap reveal">
     <div class="visual">🚀</div>
-    <div class="eyebrow">등록</div>
-    <h2>여러 마켓에<br>한 번에</h2>
+    <div class="eyebrow">{{ 'List' if EN else '등록' }}</div>
+    {% if EN %}<h2>Many markets,<br>at once</h2>
+    <p class="sub">Coupang, SmartStore, 11st… from key issuance to connect and list, all by click.</p>
+    <a href="/seller/markets/connect" class="pill pill-fill">Connect markets</a>
+    {% else %}<h2>여러 마켓에<br>한 번에</h2>
     <p class="sub">쿠팡·스마트스토어·11번가… 발급부터 연결, 등록까지 클릭으로.</p>
-    <a href="/seller/markets/connect" class="pill pill-fill">마켓 연동하기</a>
+    <a href="/seller/markets/connect" class="pill pill-fill">마켓 연동하기</a>{% endif %}
   </div>
 </section>
 
@@ -103,15 +131,18 @@
 <section class="scene dark">
   <div class="wrap reveal">
     <div class="visual">✨</div>
-    <h2>처음이어도<br>괜찮아요</h2>
+    {% if EN %}<h2>New?<br>No problem</h2>
+    <p class="sub">Just follow the big buttons — from sign-in to your first listing.</p>
+    <a href="/seller/start" class="pill pill-fill">For Beginners · Start</a>
+    {% else %}<h2>처음이어도<br>괜찮아요</h2>
     <p class="sub">큰 버튼을 따라 누르기만 하면, 로그인부터 첫 등록까지 끝납니다.</p>
-    <a href="/seller/start" class="pill pill-fill">For Beginners · 시작하기</a>
+    <a href="/seller/start" class="pill pill-fill">For Beginners · 시작하기</a>{% endif %}
   </div>
 </section>
 
 <footer class="lpfoot">
   <span>Phase {{ current_phase }} · {{ version }}</span> &nbsp;·&nbsp;
-  <a href="/seller/about">코고가네란?</a> &nbsp;·&nbsp;
+  <a href="/seller/about">{{ "About KOHgogane" if EN else "코고가네란?" }}</a> &nbsp;·&nbsp;
   <a href="/privacy">개인정보처리방침</a> &nbsp;·&nbsp;
   <a href="/terms">이용약관</a> &nbsp;·&nbsp;
   <a href="https://github.com/Kohgane/proxy-commerce" target="_blank" rel="noopener"><i class="bi bi-github"></i> GitHub</a>
