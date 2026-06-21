@@ -25,6 +25,11 @@
   - ✅ v6 모바일 설치형 PWA(Phase 261): manifest(webmanifest+json) short_name 코고가네, 색 순흑#020010→먹#1a1714,
     start_url /seller/m, 상품수집/수집이력 shortcut. mobile_home에 '📲 앱 설치' 버튼(beforeinstallprompt, 안드로이드)
     + SW 등록. iOS는 더보기의 '홈 화면에 추가' 안내. 테스트 갱신(short_name/color).
+  - ✅ v6 P1 애플홈 랜딩 리디자인(Phase 262): landing.html을 풀블리드 섹션(밝다 한지↔어둡다 먹 번갈아) +
+    큰 명조 히어로(띄어쓴 한글 "수 집 부 터/등 록 까 지")+서브+CTA2(처음이신가요 주황/둘러보기 청록라인) +
+    2열 기능 타일(수집/다듬기/등록/주문) + For Beginners 밴드 + 푸터. **개발자 카드(관리자/API/시스템) 제거**
+    (일반 유저 랜딩에서 숨김). 보존: /privacy·/terms·/seller/·/seller/about·/seller/start·privacy-policy meta.
+    → v6 큰 줄기 완료(로그인·결제·마켓연동·죽은버튼가드·설치형PWA·애플홈 랜딩).
 - **쉽고 간편 결제(Phase 258):** 신설 `billing_store.py`(셀러 plan free/plus/pro + token_balance) +
   `/seller/billing`(요금제·충전 페이지, 깔끔 카드 + 1버튼 주황 CTA). free=즉시 전환, 유료=토스 결제
   (TOSS_CLIENT_KEY/SECRET_KEY) 설정 시에만 활성(가짜 활성 금지, 미설정 시 정직 안내). 활성 Plus/Pro면
