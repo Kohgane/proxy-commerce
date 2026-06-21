@@ -46,6 +46,13 @@ def test_mobile_home_shows_recent_collect(client):
     assert "https://i/a.jpg" in html
 
 
+def test_mobile_home_has_install_pwa(client):
+    """설치형 PWA — '앱 설치' 버튼 + beforeinstallprompt + manifest 링크."""
+    html = client.get("/seller/m").get_data(as_text=True)
+    assert "installBtn" in html and "beforeinstallprompt" in html
+    assert "manifest.webmanifest" in html
+
+
 def test_mobile_home_orders_kpi_real(client):
     fake = {"today_new": 4, "pending_ship": 2, "shipped": 9, "returned_exchanged": 1}
     with patch("src.seller_console.orders.sync_service.OrderSyncService") as MockSvc:

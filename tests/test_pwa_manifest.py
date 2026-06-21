@@ -17,10 +17,10 @@ def test_manifest_has_name():
 
 
 def test_manifest_has_short_name():
-    """manifest.webmanifest에 short_name 필드가 있어야 한다 (Percentiii)."""
+    """manifest.webmanifest에 short_name 필드가 있어야 한다 (코고가네)."""
     with open("src/seller_console/static/manifest.webmanifest", encoding="utf-8") as f:
         manifest = json.load(f)
-    assert manifest.get("short_name") == "Percentiii"
+    assert manifest.get("short_name") == "코고가네"
 
 
 def test_manifest_has_icons():
@@ -41,14 +41,14 @@ def test_manifest_has_theme_color():
     """manifest.webmanifest에 theme_color가 있어야 한다."""
     with open("src/seller_console/static/manifest.webmanifest", encoding="utf-8") as f:
         manifest = json.load(f)
-    assert manifest.get("theme_color") == "#020010"
+    assert manifest.get("theme_color") == "#1a1714"
 
 
 def test_manifest_has_background_color():
     """manifest.webmanifest에 background_color가 있어야 한다."""
     with open("src/seller_console/static/manifest.webmanifest", encoding="utf-8") as f:
         manifest = json.load(f)
-    assert manifest.get("background_color") == "#020010"
+    assert manifest.get("background_color") == "#1a1714"
 
 
 def test_manifest_display_standalone():

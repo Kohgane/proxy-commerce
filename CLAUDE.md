@@ -22,6 +22,9 @@
   - ✅ v6 P0 죽은 버튼 가드(Phase 260): `tests/test_no_dead_buttons.py` — 시드 핵심페이지(대시보드/수집이력/
     마켓/연결/요금제/About/start/가이드/모바일) 크롤 → 내부 링크 404/500 0 + 핸들러 없는 빈 앵커 0 (CI 가드).
     감사 결과 기존 죽은 버튼 0 확인(템플릿 href='#' 1건도 실 핸들러 보유).
+  - ✅ v6 모바일 설치형 PWA(Phase 261): manifest(webmanifest+json) short_name 코고가네, 색 순흑#020010→먹#1a1714,
+    start_url /seller/m, 상품수집/수집이력 shortcut. mobile_home에 '📲 앱 설치' 버튼(beforeinstallprompt, 안드로이드)
+    + SW 등록. iOS는 더보기의 '홈 화면에 추가' 안내. 테스트 갱신(short_name/color).
 - **쉽고 간편 결제(Phase 258):** 신설 `billing_store.py`(셀러 plan free/plus/pro + token_balance) +
   `/seller/billing`(요금제·충전 페이지, 깔끔 카드 + 1버튼 주황 CTA). free=즉시 전환, 유료=토스 결제
   (TOSS_CLIENT_KEY/SECRET_KEY) 설정 시에만 활성(가짜 활성 금지, 미설정 시 정직 안내). 활성 Plus/Pro면
