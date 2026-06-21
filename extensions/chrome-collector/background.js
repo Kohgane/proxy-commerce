@@ -1,6 +1,6 @@
 /**
  * background.js — Service Worker (Manifest V3)
- * 코가네 퍼센티 수집기 백그라운드 서비스
+ * 코고가네 수집기 백그라운드 서비스
  */
 
 const DEFAULT_SERVER_URL = "https://kohganepercentiii.com";
@@ -9,7 +9,7 @@ const DEFAULT_SERVER_URL = "https://kohganepercentiii.com";
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: "kohgane-collect",
-    title: "코가네 퍼센티에 보내기",
+    title: "코고가네에 보내기",
     contexts: ["page"]
   });
 });
@@ -54,7 +54,7 @@ async function collectFromTab(tab) {
     chrome.notifications.create({
       type: "basic",
       iconUrl: "icons/48.png",
-      title: "코가네 퍼센티",
+      title: "코고가네",
       message: "수집 실패: " + (err.message || "알 수 없는 오류")
     });
   }
@@ -71,7 +71,7 @@ async function handleCollect(meta, sendResponse) {
     chrome.notifications.create({
       type: "basic",
       iconUrl: "icons/48.png",
-      title: "코가네 퍼센티",
+      title: "코고가네",
       message: result.error
     });
     return;
@@ -95,14 +95,14 @@ async function handleCollect(meta, sendResponse) {
       chrome.notifications.create({
         type: "basic",
         iconUrl: "icons/48.png",
-        title: "코가네 퍼센티 ✅",
+        title: "코고가네 ✅",
         message: `수집 완료: ${meta.title || meta.url}`
       });
     } else {
       chrome.notifications.create({
         type: "basic",
         iconUrl: "icons/48.png",
-        title: "코가네 퍼센티 ❌",
+        title: "코고가네 ❌",
         message: data.error || "수집 실패"
       });
     }
@@ -112,7 +112,7 @@ async function handleCollect(meta, sendResponse) {
     chrome.notifications.create({
       type: "basic",
       iconUrl: "icons/48.png",
-      title: "코가네 퍼센티 ❌",
+      title: "코고가네 ❌",
       message: result.error
     });
   }
@@ -154,7 +154,7 @@ async function handleCollectBulk(items, sendResponse) {
   chrome.notifications.create({
     type: "basic",
     iconUrl: "icons/48.png",
-    title: success ? "고가네 퍼센티 ✅" : "고가네 퍼센티 ❌",
+    title: success ? "코고가네 ✅" : "코고가네 ❌",
     message: `일괄 수집: 성공 ${success} / 실패 ${failed} (총 ${items.length})`,
   });
   if (sendResponse) sendResponse({ ok: true, success, failed, total: items.length });
