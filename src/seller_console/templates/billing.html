@@ -1,0 +1,59 @@
+{% extends "_base.html" %}
+{% block title %}요금제·충전{% endblock %}
+{% block content %}
+<div class="container py-4" style="max-width: 880px;">
+  <h1 class="h3 mb-1">💳 요금제 · 충전</h1>
+  <p class="text-muted">쉽고 간편하게. 지금 플랜: <strong>{{ plans[account.plan].label }}</strong>
+    · 무료 번역 <strong>{{ free_remaining }}</strong>/{{ free_limit }}회 남음
+    {% if account.token_balance %}· 토큰 <strong>{{ account.token_balance }}</strong>{% endif %}</p>
+
+  {% if not pay_ready %}
+  <div class="alert alert-light border small">🔒 결제 연동(토스페이먼츠)이 아직 켜지지 않았어요. Free는 바로 쓰실 수 있고,
+    유료 플랜은 결제가 열리면 한 번에 결제됩니다. <span class="pc-help" data-bs-toggle="tooltip" data-bs-title="Render에 TOSS_CLIENT_KEY/TOSS_SECRET_KEY 설정 시 결제가 활성화됩니다.">?</span></div>
+  {% endif %}
+
+  <div class="row g-3 mt-1">
+    {% for code, p in plans.items() %}
+    <div class="col-md-4">
+      <div class="card h-100 {{ 'border-primary' if account.plan == code else '' }}">
+        <div class="card-body d-flex flex-column text-center">
+          {% if account.plan == code %}<span class="badge text-bg-primary mb-2 align-self-center">현재 플랜</span>{% endif %}
+          <h4 class="fw-bold">{{ p.label }}</h4>
+          <div class="display-6 fw-bold mb-1">{% if p.price_krw %}₩{{ '{:,}'.format(p.price_krw) }}{% else %}무료{% endif %}</div>
+          {% if p.price_krw %}<div class="small text-muted mb-2">/월</div>{% endif %}
+          <p class="text-muted small flex-grow-1">{{ p.desc }}</p>
+          {% if account.plan == code %}
+          <button class="btn btn-outline-secondary" disabled>이용 중</button>
+          {% elif code == 'free' %}
+          <button class="btn btn-ghost" onclick="selectPlan('free')">무료로 전환</button>
+          {% else %}
+          <button class="btn btn-cta" onclick="selectPlan('{{ code }}')">{{ p.label }} 시작하기</button>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <p class="text-muted small mt-3">결제·환불은 관련 법규를 따릅니다. 구독은 언제든 해지할 수 있어요.</p>
+</div>
+
+<script>
+async function selectPlan(plan) {
+  if (plan !== 'free' && !confirm(plan.toUpperCase() + ' 플랜을 시작할까요?')) return;
+  try {
+    const resp = await fetch('/seller/billing/select', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({plan: plan}),
+    });
+    const data = await resp.json();
+    if (data.pay_unconfigured) { pcToast(data.error, 'warning'); return; }
+    if (!data.ok) { pcToast(data.error || '처리 실패', 'error'); return; }
+    pcToast(data.message || '완료', 'success');
+    setTimeout(() => location.reload(), 800);
+  } catch (err) {
+    pcToast('요청 실패: ' + err.message, 'error');
+  }
+}
+</script>
+{% endblock %}

@@ -11,6 +11,12 @@
 - 결제·버튼·모든 UX가 쉽고 간편·간결·직관적이어야 함. 복잡/개발자틱 금지.
 - 로그인 튕김은 절대 안 됨(아래 P0). 모바일 앱도 만들 예정 — 준비.
 - 진행: 위에서부터 순서대로. 계획 짜서 실행.
+- **계획(2026-06-21):** ①로그인 튕김(✅ Phase 257) → ②쉽고 간편 결제·버튼(✅ Phase 258 요금제·충전) →
+  ③모바일 앱 준비(설치형 PWA + 모바일 주문 액션).
+- **쉽고 간편 결제(Phase 258):** 신설 `billing_store.py`(셀러 plan free/plus/pro + token_balance) +
+  `/seller/billing`(요금제·충전 페이지, 깔끔 카드 + 1버튼 주황 CTA). free=즉시 전환, 유료=토스 결제
+  (TOSS_CLIENT_KEY/SECRET_KEY) 설정 시에만 활성(가짜 활성 금지, 미설정 시 정직 안내). 활성 Plus/Pro면
+  번역 무제한(bulk-translate가 billing_store.is_unlimited 확인). nav '요금제·충전' 추가.
 - **로그인 튕김 근본해결(Phase 257):** SECRET_KEY 미설정 시 세션 서명 키가 워커/재시작마다 바뀌어 튕김.
   → 키 영속 우선순위 = ①SECRET_KEY env ②**Google Sheets `app_config`(GOOGLE_SHEET_ID 있으면 재시작에도
   동일 키 — 오너 추가설정 불필요)** ③컨테이너 /tmp 공유. Sheets 있으면 재배포해도 세션 유지 → 튕김 해결.
