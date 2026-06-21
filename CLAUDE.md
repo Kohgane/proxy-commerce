@@ -47,7 +47,10 @@
     - ✅ v3 P1-5 포팅 #4 통관고유부호(Phase 250): 신설 `pccc_store.py`(셀러별 고객 PCCC CRUD+검색, Sheets+인메모리,
       P+12자리 형식검증). 페이지 `/seller/customs/pccc`(+nav '통관고유부호') 입력폼·검색·목록·삭제. 형식 안 맞으면
       저장은 하되 경고(정직). 개인정보 주의 안내.
-    - ⏳ 다음: 퍼센티 포팅 #5 장부/애널 노출 → 직원계정. 그리고 멀티워커 이력 영구화(옵트인), 모바일, 수집버튼 리디자인.
+    - ✅ v3 P1-5 포팅 #5 장부/애널 노출(Phase 251): 기존 settlement_report(`/seller/settlement`)를 '장부·정산'으로
+      프레이밍 + nav 노출(운영 그룹). 실 주문 KPI(OrderSyncService.kpi_summary, 미연동 0 정직) 추가 + BI 분석/마진
+      계산기/CSV·Excel 링크. (BI 분석 /seller/analytics는 이미 nav에 있음.)
+    - ⏳ 다음: 퍼센티 포팅 직원계정(후순위). 그리고 멀티워커 이력 영구화(옵트인), 모바일(P1-6), 수집버튼 리디자인(v4 P1).
 - **KOHgogane 브리프 v2 (전면 리디자인 로드맵, 오너 제공 2026-06-20):** 코가네 퍼센티→**코고가네/KOHgogane** 리브랜딩 +
   catdyy식 디자인 토큰(먹/한지/금 + 청록 Primary) + Pretendard/Noto Serif KR + 수집상품 일괄관리(퍼센티 동등) +
   온보딩 위저드 + 게임화 + 구독 + PWA/베타. 순서: 디자인→일괄관리→온보딩→게임화→구독→앱. (대형 — 덩어리별 PR)
