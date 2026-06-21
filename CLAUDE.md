@@ -23,7 +23,10 @@
   clamp(40px,6vw,72px) 자간 좁게, 한 줄 회색 서브, 큰 비주얼(이모지), 알약 CTA(주황 채움/청록 라인) 헤드라인
   바로 아래 중앙, IntersectionObserver 등장 페이드(prefers-reduced-motion 존중). 4-타일 그리드 폐기→섹션별 1메시지.
   보존: privacy/terms/seller/about/start·privacy-policy meta·For Beginners.
-- **v9 남음:** P1 외국인 지역/언어 배너(Accept-Language 외국인만, i18n 실전환, 쿠키 기억, 한국인 미노출).
+- **P1 외국인 지역/언어 배너(Phase 268):** order_webhook `_show_region_banner()`(Accept-Language 첫 언어가 ko가
+  아니고 미선택·미닫힘일 때만), `_visitor_lang()`(kgp_lang 쿠키=en이면 en, 아니면 ko 기본). `/i18n/set?lang=`·
+  `/i18n/dismiss` 라우트(쿠키 1년 기억). 랜딩 상단 슬림 배너(English/한국어/✕) — 외국인만, 한국인 미노출.
+  랜딩 카피 EN/KO 실전환(가짜 드롭다운 아님 — 고른 값이 실제 EN 카피로 반영). → v9 완료(수집추적·애플홈·지역배너).
 
 ## 🟦 v7/v8 추가 브리프 (오너 2026-06-21 — "렌더 env 다 했음, 나열순, v8 우선")
 - **v8(우선):** ①속도(타이밍 측정→시트 캐시/배치, gunicorn gthread/gzip/에셋) ②마켓호출 Bluehost 릴레이

@@ -1184,6 +1184,63 @@ _EXTERNAL_SHOP_URL = os.getenv("EXTERNAL_SHOP_URL", "https://kohganemultishop.or
 # Phase 123 — 루트 라우트 + 에러 핸들러
 # ---------------------------------------------------------------------------
 
+def _visitor_lang() -> str:
+    """방문자 언어 — kgp_lang 쿠키로 명시 선택했으면 그 값, 아니면 한국어(기본)."""
+    try:
+        return "en" if request.cookies.get("kgp_lang") == "en" else "ko"
+    except Exception:
+        return "ko"
+
+
+def _show_region_banner() -> bool:
+    """외국인 방문자에게만 지역/언어 배너 노출(한국인 미노출).
+
+    조건: 닫지 않았고 + 언어 미선택 + Accept-Language 첫 언어가 한국어가 아님.
+    """
+    try:
+        if request.cookies.get("kgp_region_dismissed") == "1":
+            return False
+        if request.cookies.get("kgp_lang"):
+            return False
+        al = (request.headers.get("Accept-Language", "") or "").strip().lower()
+        return bool(al) and not al.startswith("ko")
+    except Exception:
+        return False
+
+
+def _render_landing():
+    from src.version import get_current_phase
+    version = os.getenv('APP_VERSION', 'dev')
+    return render_template('landing.html', version=version, current_phase=get_current_phase(),
+                           lang=_visitor_lang(), show_region_banner=_show_region_banner())
+
+
+@app.get('/i18n/set')
+def i18n_set():
+    """언어 선택 적용(쿠키 기억) — 외국인 지역 배너의 'Continue'/드롭다운. 가짜 아님."""
+    lang = (request.args.get("lang") or "ko").strip().lower()
+    if lang not in ("ko", "en"):
+        lang = "ko"
+    nxt = request.args.get("next", "/")
+    if not nxt.startswith("/"):
+        nxt = "/"
+    resp = redirect(nxt, code=302)
+    resp.set_cookie("kgp_lang", lang, max_age=60 * 60 * 24 * 365, samesite="Lax")
+    resp.set_cookie("kgp_region_dismissed", "1", max_age=60 * 60 * 24 * 365, samesite="Lax")
+    return resp
+
+
+@app.get('/i18n/dismiss')
+def i18n_dismiss():
+    """지역 배너 닫기(쿠키 기억)."""
+    nxt = request.args.get("next", "/")
+    if not nxt.startswith("/"):
+        nxt = "/"
+    resp = redirect(nxt, code=302)
+    resp.set_cookie("kgp_region_dismissed", "1", max_age=60 * 60 * 24 * 365, samesite="Lax")
+    return resp
+
+
 @app.get('/')
 def root():
     """루트 라우트 — ROOT_REDIRECT 환경변수로 동작 제어 (Phase 132).
@@ -1212,9 +1269,7 @@ def root():
         return redirect(_EXTERNAL_SHOP_URL, code=302)
 
     if redirect_target == "landing":
-        from src.version import get_current_phase
-        version = os.getenv('APP_VERSION', 'dev')
-        return render_template('landing.html', version=version, current_phase=get_current_phase())
+        return _render_landing()
 
     # 기본: "seller" (백워드 호환)
     # 단, 미로그인 방문자에게는 랜딩 페이지(개인정보처리방침 링크 포함)를 직접 렌더한다.
@@ -1227,9 +1282,7 @@ def root():
             return redirect('/seller/', code=302)
         except Exception:
             pass
-    from src.version import get_current_phase
-    version = os.getenv('APP_VERSION', 'dev')
-    return render_template('landing.html', version=version, current_phase=get_current_phase())
+    return _render_landing()
 
 
 @app.route("/shop")
