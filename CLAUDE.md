@@ -19,6 +19,9 @@
   - ✅ v6 P0 마켓 원클릭 연동(Phase 259): markets_connect 각 카드에 발급 페이지 딥링크(주황 btn-cta 새탭,
     market_guide.guide_map — 네이버 apicenter/11번가 openapi URL 갱신) + 서버 아웃바운드 IP 복사 블록
     (SERVER_OUTBOUND_IP env 또는 ipify 1회조회·캐시, 쿠팡/네이버 허용IP용) + '?' 툴팁.
+  - ✅ v6 P0 죽은 버튼 가드(Phase 260): `tests/test_no_dead_buttons.py` — 시드 핵심페이지(대시보드/수집이력/
+    마켓/연결/요금제/About/start/가이드/모바일) 크롤 → 내부 링크 404/500 0 + 핸들러 없는 빈 앵커 0 (CI 가드).
+    감사 결과 기존 죽은 버튼 0 확인(템플릿 href='#' 1건도 실 핸들러 보유).
 - **쉽고 간편 결제(Phase 258):** 신설 `billing_store.py`(셀러 plan free/plus/pro + token_balance) +
   `/seller/billing`(요금제·충전 페이지, 깔끔 카드 + 1버튼 주황 CTA). free=즉시 전환, 유료=토스 결제
   (TOSS_CLIENT_KEY/SECRET_KEY) 설정 시에만 활성(가짜 활성 금지, 미설정 시 정직 안내). 활성 Plus/Pro면
