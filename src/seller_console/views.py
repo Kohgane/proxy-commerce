@@ -1858,8 +1858,17 @@ def collect_bulk_translate():
         translator = None
 
     sid = _seller_id()
+    # 번역 무료 사용량 미터(v3 P1-4): 무료 한도 내에서만 실제 번역, 초과 시 차단(구독/충전 안내).
+    # 정직성: 무료 차감은 '실제 번역된 건'만(stub/키 없음은 차감·차단하지 않음).
+    from . import translation_usage
+    _limit = translation_usage.free_limit()
+    _used_before = translation_usage.get_used(sid)
+    _remaining = max(0, _limit - _used_before)
+    _unlimited = os.getenv("TRANSLATION_UNLIMITED", "0") == "1"  # 구독/무제한 훅(추후 구독 연동)
+
     updated = 0
     translated = 0
+    blocked = 0
     results = []
     try:
         for item_id in item_ids:
@@ -1873,8 +1882,10 @@ def collect_bulk_translate():
                 extra = {}
             title = item.get("title") or extra.get("title_ko") or ""
             desc = extra.get("description") or extra.get("description_ko") or ""
+            # 무료 한도 도달 시(실 번역기 있음) 이후 항목은 번역 차단 — 원문 유지.
+            allow = _unlimited or (translated < _remaining)
             title_ko, desc_ko, provider = title, desc, "none"
-            if translator is not None and (title or desc):
+            if allow and translator is not None and (title or desc):
                 try:
                     out = translator.translate_product({"title": title, "description": desc})
                     title_ko = (out.get("title_ko") or "").strip() or title
@@ -1883,6 +1894,9 @@ def collect_bulk_translate():
                 except Exception as exc:
                     logger.debug("번역 실패(원문 유지): %s", exc)
             real = provider not in ("none", "stub", "")
+            # 실 번역기가 있는데 무료 한도로 막힌 경우만 '차단'으로 집계(stub은 차단 아님).
+            if (not allow) and translator is not None and (title or desc):
+                blocked += 1
             extra["title_ko"] = title_ko
             extra["description_ko"] = desc_ko
             fields = {"extra_json": _json.dumps(extra, ensure_ascii=False)}
@@ -1900,11 +1914,25 @@ def collect_bulk_translate():
         logger.warning("일괄 번역 오류: %s", exc)
         return jsonify({"ok": False, "error": "일괄 번역 중 오류가 발생했습니다."}), 500
 
+    # 실제 번역된 건수만큼만 무료 사용량 차감(정직).
+    if translated > 0 and not _unlimited:
+        try:
+            translation_usage.increment(sid, translated)
+        except Exception as exc:
+            logger.warning("번역 사용량 증가 실패: %s", exc)
+    new_remaining = _limit if _unlimited else max(0, _limit - (_used_before + translated))
+
     message = None
-    if translated == 0:
+    if translated == 0 and blocked == 0:
         message = "번역기(OPENAI_API_KEY 또는 DEEPL_API_KEY)가 설정되지 않아 원문을 유지했습니다."
+    elif blocked > 0:
+        message = (f"무료 번역 {_limit}회를 모두 사용했습니다. {blocked}개는 번역하지 못했어요 — "
+                   "구독하거나 토큰을 충전하면 계속 번역할 수 있습니다(결제 미설정 시 운영자 문의).")
     return jsonify({"ok": True, "updated": updated, "translated": translated,
-                    "total": len(item_ids), "message": message, "results": results})
+                    "total": len(item_ids), "blocked": blocked,
+                    "free_limit": _limit, "free_used": _used_before + translated,
+                    "free_remaining": new_remaining, "unlimited": _unlimited,
+                    "message": message, "results": results})
 
 
 @bp.post("/collect/bulk-price")
@@ -4544,6 +4572,17 @@ def collect_history():
     from .upload_dispatcher import MARKET_LABELS, SUPPORTED_MARKETS
     upload_markets = [{"code": m, "label": MARKET_LABELS.get(m, m)} for m in SUPPORTED_MARKETS]
     from .category_classifier import CATEGORY_OPTIONS
+    # 번역 무료 사용량(v3 P1-4) — UI에 '무료 N/한도 남음' 표시
+    try:
+        from . import translation_usage
+        _sid2 = _seller_id()
+        translation_free = {
+            "limit": translation_usage.free_limit(),
+            "used": translation_usage.get_used(_sid2),
+            "remaining": translation_usage.remaining(_sid2),
+        }
+    except Exception:
+        translation_free = {"limit": 20, "used": 0, "remaining": 20}
     return render_template(
         "collect_history.html",
         page="collect_history",
@@ -4556,6 +4595,7 @@ def collect_history():
                     "total_pages": total_pages},
         upload_markets=upload_markets,
         category_options=CATEGORY_OPTIONS,
+        translation_free=translation_free,
     )
 
 

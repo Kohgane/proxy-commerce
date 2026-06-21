@@ -30,7 +30,11 @@
     - ✅ v3 P1-3 CTA 가시성(Phase 245): `app.css` 버튼 위계 토큰 강화 — `.btn-primary`=청록 채움+굵게(700)+
       hover lift+청록 글로우(화면당 1개 핵심행동), `.btn-outline-primary` 진한 청록, 신설 `.btn-gold`(금 아웃라인
       Secondary)·`.btn-ghost`(Tertiary). CSS만 — 전 화면 .btn-primary 자동 강조.
-    - ⏳ 다음: 멀티워커 인메모리 수집이력 영구화(파일/Sheet 폴백 — 옵트인), 번역 무료20+과금, 퍼센티 포팅, 모바일, 수집버튼 리디자인.
+    - ✅ v3 P1-4 번역 무료20+과금(Phase 246): 신설 `translation_usage.py`(셀러별 free_used 카운터, Sheets+인메모리,
+      `TRANSLATION_FREE_LIMIT` 기본20). `/seller/collect/bulk-translate`가 무료 한도 내에서만 실 번역, 초과분은
+      차단(blocked)+구독/충전 안내. 정직: 실제 번역된 건만 차감(stub/키없음은 차감·차단 안 함). `TRANSLATION_UNLIMITED=1`
+      훅(추후 구독 연동). 수집이력 UI에 '무료 번역 N/한도 남음' 표시. ※ 토큰 차감/결제는 미연동(정직 안내)—후속.
+    - ⏳ 다음: 멀티워커 인메모리 수집이력 영구화(파일/Sheet 폴백 — 옵트인), 퍼센티 포팅, 모바일, 수집버튼 리디자인.
 - **KOHgogane 브리프 v2 (전면 리디자인 로드맵, 오너 제공 2026-06-20):** 코가네 퍼센티→**코고가네/KOHgogane** 리브랜딩 +
   catdyy식 디자인 토큰(먹/한지/금 + 청록 Primary) + Pretendard/Noto Serif KR + 수집상품 일괄관리(퍼센티 동등) +
   온보딩 위저드 + 게임화 + 구독 + PWA/베타. 순서: 디자인→일괄관리→온보딩→게임화→구독→앱. (대형 — 덩어리별 PR)

@@ -137,6 +137,12 @@
         <button type="button" class="btn btn-outline-primary btn-sm" id="bulkTranslateBtn" onclick="runBulkTranslate()" disabled>
           🌐 한국어 번역
         </button>
+        {% if translation_free %}
+        <span class="small {{ 'text-muted' if translation_free.remaining > 0 else 'text-danger' }}" id="translFree"
+              title="무료 번역은 실제 번역된 건수만 차감됩니다(번역기 미설정 시 차감 없음).">
+          무료 번역 <strong id="translRemain">{{ translation_free.remaining }}</strong>/{{ translation_free.limit }}회 남음
+        </span>
+        {% endif %}
         <button type="button" class="btn btn-outline-primary btn-sm" id="bulkPriceBtn" onclick="openBulkPriceModal()" disabled>
           💰 가격/마진
         </button>
@@ -555,8 +561,17 @@ async function runBulkTranslate() {
         if (a) { a.textContent = r.title; a.title = r.title; }
       }
     });
-    if (data.translated > 0) {
-      pcToast(`${data.translated}/${data.total}개 한국어로 번역했습니다.`, 'success');
+    // 무료 잔여 갱신
+    if (typeof data.free_remaining === 'number') {
+      const rem = document.getElementById('translRemain');
+      if (rem) rem.textContent = data.free_remaining;
+      const wrap = document.getElementById('translFree');
+      if (wrap) wrap.className = 'small ' + (data.free_remaining > 0 ? 'text-muted' : 'text-danger');
+    }
+    if (data.blocked > 0) {
+      pcToast(data.message || `무료 번역 한도 소진 — ${data.blocked}개 번역 못 함.`, 'warning');
+    } else if (data.translated > 0) {
+      pcToast(`${data.translated}/${data.total}개 한국어로 번역했습니다. (무료 ${data.free_remaining}회 남음)`, 'success');
     } else {
       pcToast(data.message || '번역기가 설정되지 않아 원문을 유지했습니다.', 'warning');
     }
