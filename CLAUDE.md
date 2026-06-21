@@ -13,6 +13,12 @@
 - 진행: 위에서부터 순서대로. 계획 짜서 실행.
 - **계획(2026-06-21):** ①로그인 튕김(✅ Phase 257) → ②쉽고 간편 결제·버튼(✅ Phase 258 요금제·충전) →
   ③모바일 앱 준비(설치형 PWA + 모바일 주문 액션).
+- **v6 마스터 브리프(2026-06-21):** "쉽고 편함 최우선"(3클릭 이내·화면당 버튼 1~2). P0=①모든 버튼 실동작 감사
+  (죽은/가짜 버튼 0, 테스트 가드) ②일반유저 실제 API연동(발급 URL 딥링크 새탭+서버 IP 복사+실연결테스트)
+  ③실 구글 로그인. P1=애플홈+퍼센티 디자인, For Beginners(✅v5), "?"숨김/네비간소화/About(✅v5).
+  - ✅ v6 P0 마켓 원클릭 연동(Phase 259): markets_connect 각 카드에 발급 페이지 딥링크(주황 btn-cta 새탭,
+    market_guide.guide_map — 네이버 apicenter/11번가 openapi URL 갱신) + 서버 아웃바운드 IP 복사 블록
+    (SERVER_OUTBOUND_IP env 또는 ipify 1회조회·캐시, 쿠팡/네이버 허용IP용) + '?' 툴팁.
 - **쉽고 간편 결제(Phase 258):** 신설 `billing_store.py`(셀러 plan free/plus/pro + token_balance) +
   `/seller/billing`(요금제·충전 페이지, 깔끔 카드 + 1버튼 주황 CTA). free=즉시 전환, 유료=토스 결제
   (TOSS_CLIENT_KEY/SECRET_KEY) 설정 시에만 활성(가짜 활성 금지, 미설정 시 정직 안내). 활성 Plus/Pro면

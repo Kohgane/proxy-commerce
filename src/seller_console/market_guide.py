@@ -79,7 +79,7 @@ MARKET_GUIDE: List[Dict[str, Any]] = [
         "key": "smartstore",
         "label": "스마트스토어 (네이버)",
         "icon": "🟢",
-        "official_url": "https://commerce.naver.com",
+        "official_url": "https://apicenter.commerce.naver.com/ko/basic/main",
         "official_label": "네이버 커머스 API센터 열기",
         "flow": ["커머스 API센터 로그인", "애플리케이션 등록", "ID/Secret 발급", "여기에 붙여넣기"],
         "steps": [
@@ -104,7 +104,7 @@ MARKET_GUIDE: List[Dict[str, Any]] = [
         "key": "elevenst",
         "label": "11번가",
         "icon": "🔴",
-        "official_url": "https://soffice.11st.co.kr",
+        "official_url": "https://openapi.11st.co.kr/",
         "official_label": "11번가 셀러오피스 열기",
         "flow": ["셀러오피스 로그인", "오픈API 신청", "API Key 발급", "여기에 붙여넣기"],
         "steps": [
@@ -247,3 +247,10 @@ MARKET_GUIDE: List[Dict[str, Any]] = [
 
 def get_guide() -> List[Dict[str, Any]]:
     return MARKET_GUIDE
+
+
+def guide_map():
+    """key → {official_url, official_label} 빠른 조회(연동 카드 딥링크용)."""
+    return {g.get("key"): {"official_url": g.get("official_url", ""),
+                            "official_label": g.get("official_label", "발급 페이지 열기")}
+            for g in MARKET_GUIDE}
