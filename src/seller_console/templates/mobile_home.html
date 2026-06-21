@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>코고가네 · 모바일</title>
+  <link rel="icon" type="image/svg+xml" href="/seller/static/favicon.svg?v=172">
+  <link rel="manifest" href="/seller/static/manifest.webmanifest?v=172">
+  <meta name="theme-color" content="#1a1714">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <style>
+    body { background: var(--pc-color-bg); color: var(--pc-color-text); padding-bottom: 76px; }
+    .m-top { background: #1a1714; color: #f5efe3; padding: .9rem 1rem; display:flex; align-items:center; gap:.5rem; }
+    .m-top .brand { font-family: var(--pc-font-display, serif); font-weight: 700; color:#ecdcb0; }
+    .m-beta { font-size:.62rem; letter-spacing:.1em; background:#c9a24b; color:#1a1714; border-radius:999px; padding:.1rem .45rem; font-weight:700; }
+    .m-tabpane { display:none; padding: 1rem; }
+    .m-tabpane.active { display:block; }
+    .m-card { background: var(--pc-color-surface); border:1px solid var(--pc-color-border); border-radius:14px; }
+    .m-tabbar { position: fixed; bottom:0; left:0; right:0; background:#1a1714; display:flex;
+      padding: .35rem .25rem calc(.35rem + env(safe-area-inset-bottom)); z-index:1030; }
+    .m-tab { flex:1; background:none; border:none; color:#9a8f7c; font-size:.7rem; padding:.4rem; display:flex; flex-direction:column; align-items:center; gap:2px; }
+    .m-tab i { font-size:1.25rem; }
+    .m-tab.active { color:#119a8e; }
+    .m-kpi { background: var(--pc-color-surface); border:1px solid var(--pc-color-border); border-radius:12px; text-align:center; padding:.7rem .2rem; }
+    .m-kpi .v { font-size:1.4rem; font-weight:700; }
+  </style>
+</head>
+<body>
+<div class="m-top">
+  <span style="font-size:1.3rem">🛒</span>
+  <span class="brand">코고가네</span>
+  <span class="m-beta">BETA</span>
+  <a href="/seller/dashboard" class="ms-auto text-decoration-none small" style="color:#c9bda6">데스크톱 →</a>
+</div>
+
+<!-- 수집 탭 -->
+<section class="m-tabpane active" id="pane-collect">
+  <h2 class="h5 fw-bold mb-2">상품 수집</h2>
+  <p class="text-muted small">상품 링크를 붙여넣거나, 쇼핑 앱에서 <strong>공유 → 코고가네</strong>로 보내면 바로 수집돼요.</p>
+  <form action="/seller/collect/quick" method="get" class="m-card p-3 mb-3">
+    <label class="form-label small fw-semibold" for="mUrl">상품 URL</label>
+    <input id="mUrl" name="u" type="url" class="form-control mb-2" placeholder="https://..." required inputmode="url">
+    <button type="submit" class="btn btn-cta w-100">📥 수집하기</button>
+  </form>
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h3 class="h6 fw-bold mb-0">최근 수집</h3>
+    <a href="/seller/collect/history" class="small text-decoration-none">전체 보기 →</a>
+  </div>
+  {% if recent %}
+  <div class="vstack gap-2">
+    {% for it in recent %}
+    <a href="/seller/collect/preview/{{ it.id }}" class="m-card p-2 d-flex align-items-center gap-2 text-decoration-none text-dark">
+      {% if it.thumb %}<img src="{{ it.thumb }}" alt="" style="width:48px;height:48px;object-fit:cover;border-radius:8px;background:#eee" onerror="this.style.visibility='hidden'">
+      {% else %}<span class="d-inline-flex align-items-center justify-content-center" style="width:48px;height:48px;border-radius:8px;background:#f1f3f5">🖼️</span>{% endif %}
+      <span class="flex-grow-1 text-truncate">
+        <span class="d-block text-truncate fw-semibold">{{ it.title }}</span>
+        <span class="small text-muted">{% if it.price %}{{ it.price }} {{ it.currency }}{% else %}{{ it.domain }}{% endif %}</span>
+      </span>
+      <i class="bi bi-pencil-square text-muted"></i>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="m-card p-4 text-center text-muted small">아직 수집한 상품이 없어요. 위에 링크를 붙여넣어 보세요.</div>
+  {% endif %}
+</section>
+
+<!-- 주문 탭 -->
+<section class="m-tabpane" id="pane-orders">
+  <h2 class="h5 fw-bold mb-2">주문</h2>
+  <div class="row g-2 mb-3">
+    <div class="col-3"><div class="m-kpi"><div class="v">{{ kpi.today_new }}</div><div class="small text-muted">신규</div></div></div>
+    <div class="col-3"><div class="m-kpi"><div class="v text-warning">{{ kpi.pending_ship }}</div><div class="small text-muted">배송대기</div></div></div>
+    <div class="col-3"><div class="m-kpi"><div class="v text-success">{{ kpi.shipped }}</div><div class="small text-muted">배송완료</div></div></div>
+    <div class="col-3"><div class="m-kpi"><div class="v text-danger">{{ kpi.returned_exchanged }}</div><div class="small text-muted">반품</div></div></div>
+  </div>
+  {% if orders %}
+  <div class="vstack gap-2">
+    {% for o in orders %}
+    <div class="m-card p-2">
+      <div class="d-flex justify-content-between"><span class="fw-semibold text-truncate">{{ o.get('product_name') or o.get('order_id') or '주문' }}</span>
+        <span class="small text-muted">{{ o.get('status') or '' }}</span></div>
+      <div class="small text-muted">{{ o.get('marketplace') or o.get('channel') or '' }} · {{ o.get('order_id') or '' }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="m-card p-4 text-center text-muted small">표시할 주문이 없어요. 마켓을 연동하면 주문이 모여요.<br><a href="/seller/markets/connect">마켓 연동하기 →</a></div>
+  {% endif %}
+  <a href="/seller/orders" class="btn btn-ghost w-100 mt-2">주문 전체 관리 →</a>
+</section>
+
+<!-- 더보기 탭 -->
+<section class="m-tabpane" id="pane-more">
+  <h2 class="h5 fw-bold mb-3">더보기</h2>
+  <div class="vstack gap-2">
+    <a href="/seller/start" class="m-card p-3 text-decoration-none text-dark">✨ For Beginners · 시작 가이드</a>
+    <a href="/seller/markets/connect" class="m-card p-3 text-decoration-none text-dark">🛍️ 마켓 연동</a>
+    <a href="/seller/dashboard" class="m-card p-3 text-decoration-none text-dark">🖥️ 데스크톱 전체 콘솔</a>
+    <a href="/seller/about" class="m-card p-3 text-decoration-none text-dark">ℹ️ 코고가네란?</a>
+  </div>
+  <div class="m-card p-3 mt-3 small text-muted">
+    📲 <strong>홈 화면에 추가</strong>하면 앱처럼 쓸 수 있어요. iOS: 공유 → ‘홈 화면에 추가’, 안드로이드: 메뉴 → ‘앱 설치’.
+    <br>대량 편집·마켓 설정 등 풀기능은 데스크톱에서 더 편해요.
+  </div>
+</section>
+
+<!-- 하단 탭바 -->
+<nav class="m-tabbar">
+  <button class="m-tab active" data-pane="collect"><i class="bi bi-plus-square"></i>수집</button>
+  <button class="m-tab" data-pane="orders"><i class="bi bi-receipt"></i>주문</button>
+  <button class="m-tab" data-pane="more"><i class="bi bi-grid"></i>더보기</button>
+</nav>
+
+<script>
+document.querySelectorAll('.m-tab').forEach(function (t) {
+  t.addEventListener('click', function () {
+    var pane = t.getAttribute('data-pane');
+    document.querySelectorAll('.m-tab').forEach(x => x.classList.toggle('active', x === t));
+    document.querySelectorAll('.m-tabpane').forEach(p => p.classList.toggle('active', p.id === 'pane-' + pane));
+    window.scrollTo(0, 0);
+  });
+});
+</script>
+</body>
+</html>

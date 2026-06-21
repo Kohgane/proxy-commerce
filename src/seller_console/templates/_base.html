@@ -27,7 +27,10 @@
 
 <div class="mobile-topbar d-flex align-items-center justify-content-between px-3 py-2 d-md-none">
   <a href="/seller/" class="text-decoration-none fw-bold">🛒 셀러 콘솔</a>
-  <button class="btn btn-sm btn-outline-secondary" id="sidebarToggle" aria-label="메뉴 열기" onclick="toggleSidebar()">☰</button>
+  <div class="d-flex align-items-center gap-2">
+    <a href="/seller/m" class="btn btn-sm btn-cta py-1">📱 모바일 앱</a>
+    <button class="btn btn-sm btn-outline-secondary" id="sidebarToggle" aria-label="메뉴 열기" onclick="toggleSidebar()">☰</button>
+  </div>
 </div>
 <div class="sidebar-overlay d-md-none" id="sidebarOverlay" onclick="closeSidebar()"></div>
 
