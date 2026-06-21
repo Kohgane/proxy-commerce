@@ -35,6 +35,7 @@ class TestExtensionApiHistory:
         with patch("src.api.extension_api._require_token") as mock_auth, \
              patch("src.api.extension_api._upsert_catalog") as mock_catalog, \
              patch("src.seller_console.collect_history_store.append") as mock_history, \
+             patch("src.seller_console.collect_history_store.get", return_value={"id": "hist456"}), \
              patch("src.api.extension_api._notify_telegram"):
             mock_auth.return_value = {"user_id": "test_user", "scopes": ["collect.write"]}
             mock_catalog.return_value = "prod123"
@@ -67,6 +68,7 @@ class TestExtensionApiHistory:
         with patch("src.api.extension_api._require_token") as mock_auth, \
              patch("src.api.extension_api._upsert_catalog") as mock_catalog, \
              patch("src.seller_console.collect_history_store.append") as mock_history, \
+             patch("src.seller_console.collect_history_store.get", return_value={"id": "histxyz"}), \
              patch("src.api.extension_api._notify_telegram"):
             mock_auth.return_value = {"user_id": "test_user", "scopes": ["collect.write"]}
             mock_catalog.return_value = "prod123"
@@ -96,6 +98,7 @@ class TestExtensionApiHistory:
         with patch("src.api.extension_api._require_token") as mock_auth, \
              patch("src.api.extension_api._upsert_catalog", return_value="p1"), \
              patch("src.seller_console.collect_history_store.append", return_value="h1") as mock_history, \
+             patch("src.seller_console.collect_history_store.get", return_value={"id": "h1"}), \
              patch("src.seller_console.ai.translator.AITranslator.translate_product", return_value=fake_tr), \
              patch("src.api.extension_api._notify_telegram"):
             mock_auth.return_value = {"user_id": "u1", "scopes": ["collect.write"]}
@@ -133,6 +136,7 @@ class TestExtensionApiHistory:
         with patch("src.api.extension_api._require_token") as mock_auth, \
              patch("src.api.extension_api._upsert_catalog", return_value="p1"), \
              patch("src.seller_console.collect_history_store.append", return_value="h1") as mock_history, \
+             patch("src.seller_console.collect_history_store.get", return_value={"id": "h1"}), \
              patch("src.seller_console.ai.translator.AITranslator.translate_product") as mock_tr, \
              patch("src.api.extension_api._notify_telegram"):
             mock_auth.return_value = {"user_id": "u1", "scopes": ["collect.write"]}
@@ -151,8 +155,8 @@ class TestExtensionApiHistory:
         call_kwargs = mock_history.call_args[1]
         assert call_kwargs["title"] == "Original Title"
 
-    def test_collect_history_failure_does_not_break_response(self, client):
-        """history append 실패해도 수집 응답은 정상."""
+    def test_collect_history_failure_returns_honest_error(self, client):
+        """history append 실패 시 가짜 성공 금지 — 정직한 실패(502 ok=false) 반환 (v4 P0)."""
         with patch("src.api.extension_api._require_token") as mock_auth, \
              patch("src.api.extension_api._upsert_catalog") as mock_catalog, \
              patch("src.seller_console.collect_history_store.append",
@@ -171,6 +175,6 @@ class TestExtensionApiHistory:
                 headers={"Authorization": "Bearer kgp_test"},
             )
 
-        assert resp.status_code == 200
+        assert resp.status_code == 502
         data = resp.get_json()
-        assert data["ok"] is True
+        assert data["ok"] is False

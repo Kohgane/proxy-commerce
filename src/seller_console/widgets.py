@@ -52,9 +52,9 @@ def _safe_call(func, *args, **kwargs) -> Dict[str, Any]:
         return dict(_NOT_READY)
 
 
-def build_kpi_widget() -> Dict[str, Any]:
-    """오늘 KPI 카드 위젯 데이터."""
-    data = _safe_call(get_today_kpi)
+def build_kpi_widget(seller_id: Any = None) -> Dict[str, Any]:
+    """오늘 KPI 카드 위젯 데이터 (seller_id로 '오늘 수집' 셀러 격리)."""
+    data = _safe_call(get_today_kpi, seller_id)
     return {
         "title": "오늘 KPI",
         "type": "kpi",
@@ -157,10 +157,10 @@ def build_orders_kpi_widget() -> Dict[str, Any]:
     }
 
 
-def build_all_widgets() -> List[Dict[str, Any]]:
-    """모든 대시보드 위젯 데이터 목록 반환."""
+def build_all_widgets(seller_id: Any = None) -> List[Dict[str, Any]]:
+    """모든 대시보드 위젯 데이터 목록 반환 (seller_id로 셀러 격리 KPI)."""
     return [
-        build_kpi_widget(),
+        build_kpi_widget(seller_id),
         build_collect_queue_widget(),
         build_market_status_widget(),
         build_sourcing_alerts_widget(),

@@ -932,13 +932,38 @@ if not app.secret_key:
     if _sk:
         app.secret_key = _sk
     else:
+        # SECRET_KEY 미설정 — 멀티워커(GUNICORN_WORKERS>1)에서 워커마다 다른 임시 키를 쓰면
+        # 세션 서명이 어긋나 로그인 직후 튕긴다(v3 P0-1). 같은 컨테이너의 모든 워커가 동일 키를
+        # 쓰도록 컨테이너-로컬 파일에 한 번만 생성·공유한다(O_EXCL 원자적 생성으로 레이스 방지).
+        # 재시작 시 회전은 감수 — 영구 고정은 SECRET_KEY env가 최선(권장).
         import secrets as _sec_mod
+        import tempfile
         import warnings
-        _dev_key = _sec_mod.token_hex(32)
+        _key_file = os.getenv(
+            "SESSION_SECRET_FILE",
+            os.path.join(tempfile.gettempdir(), "kohgogane_session_secret"),
+        )
+        _dev_key = None
+        try:
+            if os.path.exists(_key_file):
+                with open(_key_file, encoding="utf-8") as _f:
+                    _dev_key = (_f.read() or "").strip() or None
+            if not _dev_key:
+                _dev_key = _sec_mod.token_hex(32)
+                try:
+                    _fd = os.open(_key_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                    with os.fdopen(_fd, "w") as _f:
+                        _f.write(_dev_key)
+                except FileExistsError:
+                    # 다른 워커가 먼저 생성 → 그 키를 읽어 공유
+                    with open(_key_file, encoding="utf-8") as _f:
+                        _dev_key = (_f.read() or "").strip() or _dev_key
+        except Exception:
+            _dev_key = _dev_key or _sec_mod.token_hex(32)
         warnings.warn(
             "SECRET_KEY 환경변수가 설정되지 않았습니다. "
             "프로덕션에서는 반드시 SECRET_KEY를 설정하세요. "
-            "현재 임시 키 사용 중 (재시작 시 모든 세션 만료).",
+            "현재 컨테이너 공유 임시 키 사용 (재배포/재시작 시 세션 만료).",
             stacklevel=1,
         )
         app.secret_key = _dev_key

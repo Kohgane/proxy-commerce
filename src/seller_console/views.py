@@ -146,11 +146,11 @@ def _find_cross_channel_messages(messages: list, identity: dict[str, str]) -> li
 # 헬퍼 — graceful import
 # ---------------------------------------------------------------------------
 
-def _get_widgets() -> list:
-    """위젯 데이터 목록 조회 (graceful import)."""
+def _get_widgets(seller_id=None) -> list:
+    """위젯 데이터 목록 조회 (graceful import). seller_id로 KPI 셀러 격리."""
     try:
         from .widgets import build_all_widgets
-        return build_all_widgets()
+        return build_all_widgets(seller_id)
     except Exception as exc:
         logger.warning("위젯 로드 실패: %s", exc)
         return []
@@ -916,7 +916,7 @@ def _build_dashboard_home_context(widgets: list[dict[str, Any]], dismissed: bool
 
 
 def _render_dashboard_home():
-    widgets = _get_widgets()
+    widgets = _get_widgets(_seller_id())
     dismissed = request.cookies.get(_ONBOARDING_DISMISS_COOKIE) == "1"
     context = _build_dashboard_home_context(widgets, dismissed=dismissed)
     context["onboarding"]["dismiss_href"] = url_for("seller_console.dismiss_onboarding", next=request.path)
@@ -3331,6 +3331,18 @@ def markets_guide():
     from .market_guide import get_guide
 
     return render_template("markets_guide.html", page="markets", guide=get_guide())
+
+
+@bp.get("/guide/business")
+def guide_business():
+    """사업자등록 · 통신판매업 신고 · 구매대행 유의 클릭-스루 가이드 (Phase 243, 브리프 §4.3).
+
+    공식 사이트 딥링크 + 단계 설명 + 체크리스트 + 면책(법·세무는 변동되며 최종은
+    관할 세무서/전문가 확인 — 단정 금지).
+    """
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
+    return render_template("guide_business.html", page="guide_business")
 
 
 @bp.post("/markets/connect/<market>")

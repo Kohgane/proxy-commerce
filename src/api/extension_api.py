@@ -218,8 +218,13 @@ def collect_from_extension():
     images = [str(i).strip() for i in images if str(i or "").strip()]
 
     # 수집 이력 기록 (편집 페이지가 바로 프리필되도록 상세 필드 보관)
+    # v4 P0: 저장 자기검증 — append 직후 같은 seller_id로 재조회해 실제 저장됐을 때만 성공.
+    #        저장 실패면 가짜 성공(낙관적 토스트) 대신 정직한 실패를 반환한다.
+    seller_id_val = str(user.get("user_id") or "")
+    item_id = None
+    saved = False
     try:
-        from src.seller_console.collect_history_store import append as history_append
+        from src.seller_console.collect_history_store import append as history_append, get as history_get
         item_id = history_append(
             source=source,
             url=url,
@@ -242,22 +247,31 @@ def collect_from_extension():
                 "brand": payload.get("brand", ""),
                 "translation_provider": tr.get("provider", "none"),
             },
-            seller_id=str(user.get("user_id") or ""),
+            seller_id=seller_id_val,
         )
-        preview_url = f"/seller/collect/preview/{item_id}"
+        try:
+            saved = history_get(item_id, seller_id=seller_id_val) is not None
+        except Exception:
+            saved = bool(item_id)
     except Exception as exc:
         logger.warning("수집 이력 기록 실패: %s", exc)
-        item_id = product_id
-        preview_url = f"/seller/collect/preview/{product_id}"
+
+    if not item_id or not saved:
+        # 가짜 성공 금지(v4 P0): 실제 저장 안 됐으면 정직한 실패로 토스트가 사유를 표시하게.
+        logger.warning("확장 수집 저장 검증 실패: url=%s user=%s saved=%s", url[:80], seller_id_val, saved)
+        return jsonify({"ok": False, "error": "수집 항목을 저장하지 못했습니다. 잠시 후 다시 시도하세요."}), 502
+
+    preview_url = f"/seller/collect/preview/{item_id}"
 
     # 텔레그램 알림
     msg = f"🛒 [확장] {title or url} 수집됨 (by {user.get('user_id', '?')})"
     _notify_telegram(msg)
 
-    logger.info("확장 수집 완료: url=%s user=%s", url[:80], user.get("user_id"))
+    logger.info("확장 수집 완료: url=%s user=%s id=%s", url[:80], seller_id_val, item_id)
 
     return jsonify({
         "ok": True,
+        "item_id": item_id,
         "product_id": product_id,
         "preview_url": preview_url,
         "title": title,
