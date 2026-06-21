@@ -1015,6 +1015,54 @@ try:
 except Exception as _auth_bp_exc:
     logger.warning("인증 시스템 Blueprint 등록 실패: %s", _auth_bp_exc)
 
+
+# ---------------------------------------------------------------------------
+# v8 속도 — gzip 응답 압축 + 정적 에셋 장기 캐시(전송량·왕복 감소, 체감 속도↑)
+# ---------------------------------------------------------------------------
+_GZIP_TYPES = ("text/html", "text/css", "application/javascript",
+               "application/json", "image/svg+xml", "text/plain",
+               "application/manifest+json")
+_GZIP_MIN_BYTES = int(os.getenv("GZIP_MIN_BYTES", "600"))
+
+
+@app.after_request
+def _perf_after_request(response):
+    try:
+        # 정적 에셋 장기 캐시(쿼리 v=로 버전 구분 → 안전). Flask 기본 no-cache를 덮어쓴다.
+        path = request.path or ""
+        if "/static/" in path and response.status_code == 200:
+            response.headers["Cache-Control"] = "public, max-age=604800"
+    except Exception:
+        pass
+    try:
+        # gzip — 텍스트류 응답만, 일정 크기 이상, 이미 인코딩 안 됐고 클라이언트가 허용할 때.
+        if (response.direct_passthrough
+                or response.status_code < 200 or response.status_code >= 300
+                or "Content-Encoding" in response.headers):
+            return response
+        ctype = (response.content_type or "").split(";")[0].strip()
+        if ctype not in _GZIP_TYPES:
+            return response
+        accept = request.headers.get("Accept-Encoding", "")
+        if "gzip" not in accept.lower():
+            return response
+        data = response.get_data()
+        if data is None or len(data) < _GZIP_MIN_BYTES:
+            return response
+        import gzip as _gzip
+        compressed = _gzip.compress(data, compresslevel=6)
+        if len(compressed) >= len(data):
+            return response
+        response.set_data(compressed)
+        response.headers["Content-Encoding"] = "gzip"
+        response.headers["Content-Length"] = str(len(compressed))
+        vary = response.headers.get("Vary")
+        response.headers["Vary"] = (vary + ", Accept-Encoding") if vary and "Accept-Encoding" not in vary else (vary or "Accept-Encoding")
+    except Exception:
+        pass
+    return response
+
+
 try:
     from .auth.magic_link import magic_link_bp
     app.register_blueprint(magic_link_bp)
