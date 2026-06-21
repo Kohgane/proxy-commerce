@@ -86,6 +86,17 @@
             <option value="archived" {% if filters.status == "archived" %}selected{% endif %}>📦 보관</option>
           </select>
         </div>
+        {% if groups %}
+        <div class="col-6 col-md-2">
+          <label class="form-label small text-muted mb-1">그룹</label>
+          <select name="group" class="form-select form-select-sm">
+            <option value="">전체 그룹</option>
+            {% for g in groups %}
+            <option value="{{ g.id }}" {% if g.id == filters.group %}selected{% endif %}>🗂 {{ g.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
         <div class="col-6 col-md-2">
           <label class="form-label small text-muted mb-1">정렬</label>
           <select name="sort" class="form-select form-select-sm">
@@ -133,6 +144,9 @@
         </button>
         <button type="button" class="btn btn-outline-primary btn-sm" id="bulkCategoryBtn" onclick="openBulkCategoryModal()" disabled>
           🏷 카테고리 지정
+        </button>
+        <button type="button" class="btn btn-outline-primary btn-sm" id="bulkGroupBtn" onclick="openBulkGroupModal()" disabled>
+          🗂 그룹 지정
         </button>
         <button type="button" class="btn btn-outline-primary btn-sm" id="bulkTranslateBtn" onclick="runBulkTranslate()" disabled>
           🌐 한국어 번역
@@ -234,7 +248,7 @@
         </table>
       </div>
       {% if pagination and pagination.total_pages > 1 %}
-      {% set _qs = '&q=' ~ filters.q ~ '&domain=' ~ filters.domain ~ '&source=' ~ filters.source ~ '&status=' ~ filters.status ~ '&sort=' ~ filters.sort ~ '&days=' ~ filters.days ~ '&per_page=' ~ filters.per_page %}
+      {% set _qs = '&q=' ~ filters.q ~ '&domain=' ~ filters.domain ~ '&source=' ~ filters.source ~ '&status=' ~ filters.status ~ '&group=' ~ filters.group ~ '&sort=' ~ filters.sort ~ '&days=' ~ filters.days ~ '&per_page=' ~ filters.per_page %}
       <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 p-2 border-top">
         <span class="small text-muted">전체 {{ pagination.total }}개 · {{ pagination.page }}/{{ pagination.total_pages }} 페이지</span>
         <nav><ul class="pagination pagination-sm mb-0">
@@ -252,7 +266,7 @@
   {% else %}
   <div class="card">
     <div class="card-body text-center py-5">
-      {% if filters.q or filters.domain or filters.source or filters.status %}
+      {% if filters.q or filters.domain or filters.source or filters.status or filters.group %}
       <p class="text-muted mb-3">조건에 맞는 수집 항목이 없습니다.</p>
       <a href="/seller/collect/history" class="btn btn-outline-secondary btn-sm">필터 초기화</a>
       {% else %}
@@ -355,6 +369,47 @@
   </div>
 </div>
 
+<!-- 일괄 그룹 지정 모달 -->
+<div class="modal fade" id="bulkGroupModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">🗂 그룹 지정</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted">선택한 <strong id="groupSelCount">0</strong>개 상품을 그룹에 묶습니다. 그룹별로 필터·일괄작업할 수 있어요.</p>
+        <label class="form-label small mb-1" for="bulkGroupSelect">기존 그룹</label>
+        <select id="bulkGroupSelect" class="form-select form-select-sm mb-2">
+          <option value="">(그룹 없음 / 해제)</option>
+          {% for g in groups %}
+          <option value="{{ g.id }}">🗂 {{ g.name }}</option>
+          {% endfor %}
+        </select>
+        <label class="form-label small mb-1" for="bulkGroupNew">또는 새 그룹 만들기</label>
+        <input type="text" id="bulkGroupNew" class="form-control form-control-sm" placeholder="새 그룹 이름(입력 시 우선)">
+        {% if groups %}
+        <div class="mt-3">
+          <div class="small text-muted mb-1">그룹 관리</div>
+          <ul class="list-group list-group-flush" id="groupManageList">
+            {% for g in groups %}
+            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-1" data-gid="{{ g.id }}">
+              <span class="small">🗂 {{ g.name }}</span>
+              <button type="button" class="btn btn-ghost btn-sm py-0" onclick="deleteGroup('{{ g.id }}', this)">삭제</button>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">취소</button>
+        <button type="button" class="btn btn-primary" id="bulkGroupConfirm" onclick="runBulkGroup()">적용</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- 일괄 카테고리 지정 모달 -->
 <div class="modal fade" id="bulkCategoryModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
@@ -418,6 +473,8 @@ function refreshSelCount() {
   if (del) del.disabled = n === 0;
   const cat = document.getElementById('bulkCategoryBtn');
   if (cat) cat.disabled = n === 0;
+  const grp = document.getElementById('bulkGroupBtn');
+  if (grp) grp.disabled = n === 0;
   const tr = document.getElementById('bulkTranslateBtn');
   if (tr) tr.disabled = n === 0;
   const pr = document.getElementById('bulkPriceBtn');
@@ -579,6 +636,53 @@ async function runBulkTranslate() {
     pcToast('요청 실패: ' + err.message, 'error');
   } finally {
     setButtonLoading(btn, false);
+  }
+}
+
+function openBulkGroupModal() {
+  const ids = selectedItemIds();
+  if (!ids.length) { pcToast('상품을 먼저 선택하세요.', 'warning'); return; }
+  document.getElementById('groupSelCount').textContent = ids.length;
+  new bootstrap.Modal(document.getElementById('bulkGroupModal')).show();
+}
+async function runBulkGroup() {
+  const ids = selectedItemIds();
+  if (!ids.length) return;
+  const groupId = document.getElementById('bulkGroupSelect').value;
+  const groupName = document.getElementById('bulkGroupNew').value.trim();
+  const btn = document.getElementById('bulkGroupConfirm');
+  setButtonLoading(btn, true, '적용 중…');
+  try {
+    const resp = await fetch('/seller/collect/bulk-group', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({item_ids: ids, group_id: groupName ? '' : groupId, group_name: groupName}),
+    });
+    const ctype = resp.headers.get('content-type') || '';
+    if (!ctype.includes('application/json')) { pcToast(`요청 실패 (HTTP ${resp.status}).`, 'error'); return; }
+    const data = await resp.json();
+    if (!data.ok) { pcToast(data.error || '그룹 지정 실패', 'error'); return; }
+    bootstrap.Modal.getInstance(document.getElementById('bulkGroupModal'))?.hide();
+    pcToast(`${data.updated}개 상품을 그룹에 배정했습니다.`, 'success');
+    if (groupName) setTimeout(() => location.reload(), 700);  // 새 그룹이 필터에 보이도록
+  } catch (err) {
+    pcToast('요청 실패: ' + err.message, 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+async function deleteGroup(gid, el) {
+  if (!confirm('이 그룹을 삭제할까요? (상품은 삭제되지 않고 그룹만 해제됩니다)')) return;
+  try {
+    const resp = await fetch('/seller/collect/groups/delete', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({id: gid}),
+    });
+    const data = await resp.json();
+    if (!data.ok) { pcToast('그룹 삭제 실패', 'error'); return; }
+    const li = el.closest('li'); if (li) li.remove();
+    pcToast('그룹을 삭제했습니다.', 'success');
+  } catch (err) {
+    pcToast('요청 실패: ' + err.message, 'error');
   }
 }
 

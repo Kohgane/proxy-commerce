@@ -1935,6 +1935,96 @@ def collect_bulk_translate():
                     "message": message, "results": results})
 
 
+@bp.post("/collect/groups/create")
+def collect_group_create():
+    """상품 그룹 생성 (셀러 격리). Request: {"name": "..."}"""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    name = str(data.get("name") or "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "그룹 이름을 입력하세요."}), 400
+    try:
+        from . import collect_groups
+        g = collect_groups.create_group(_seller_id(), name)
+    except Exception as exc:
+        logger.warning("그룹 생성 오류: %s", exc)
+        return jsonify({"ok": False, "error": "그룹 생성 중 오류가 발생했습니다."}), 500
+    if not g:
+        return jsonify({"ok": False, "error": "그룹 이름이 올바르지 않습니다."}), 400
+    return jsonify({"ok": True, "group": g})
+
+
+@bp.post("/collect/groups/delete")
+def collect_group_delete():
+    """상품 그룹 삭제 (셀러 격리). Request: {"id": "..."}"""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    gid = str(data.get("id") or "").strip()
+    if not gid:
+        return jsonify({"ok": False, "error": "그룹 id가 필요합니다."}), 400
+    try:
+        from . import collect_groups
+        ok = collect_groups.delete_group(_seller_id(), gid)
+    except Exception as exc:
+        logger.warning("그룹 삭제 오류: %s", exc)
+        return jsonify({"ok": False, "error": "그룹 삭제 중 오류가 발생했습니다."}), 500
+    return jsonify({"ok": bool(ok)})
+
+
+@bp.post("/collect/bulk-group")
+def collect_bulk_group():
+    """선택 상품을 그룹에 일괄 배정 (셀러 격리). group_id="" 면 그룹 해제.
+
+    Request: {"item_ids": [...], "group_id": "..."} (또는 "group_name" 신규 생성)
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    item_ids = data.get("item_ids") if isinstance(data.get("item_ids"), list) else []
+    item_ids = [str(i) for i in item_ids if str(i).strip()][:1000]
+    if not item_ids:
+        return jsonify({"ok": False, "error": "상품을 선택하세요."}), 400
+    group_id = str(data.get("group_id") or "").strip()
+    group_name = str(data.get("group_name") or "").strip()
+
+    import json as _json
+    from . import collect_history_store
+    sid = _seller_id()
+    group_obj = None
+    if group_name and not group_id:
+        try:
+            from . import collect_groups
+            group_obj = collect_groups.create_group(sid, group_name)
+            group_id = (group_obj or {}).get("id", "")
+        except Exception as exc:
+            logger.warning("그룹 생성(배정 중) 오류: %s", exc)
+
+    updated = 0
+    try:
+        for item_id in item_ids:
+            item = collect_history_store.get(item_id, seller_id=sid)
+            if not item:
+                continue
+            try:
+                extra = _json.loads(item.get("extra_json") or "{}")
+            except (TypeError, ValueError):
+                extra = {}
+            if group_id:
+                extra["group_id"] = group_id
+            else:
+                extra.pop("group_id", None)  # 그룹 해제
+            if collect_history_store.update(item_id, seller_id=sid,
+                                            extra_json=_json.dumps(extra, ensure_ascii=False)):
+                updated += 1
+    except Exception as exc:
+        logger.warning("일괄 그룹 배정 오류: %s", exc)
+        return jsonify({"ok": False, "error": "그룹 배정 중 오류가 발생했습니다."}), 500
+
+    return jsonify({"ok": True, "updated": updated, "group": group_obj, "group_id": group_id})
+
+
 @bp.post("/collect/bulk-price")
 def collect_bulk_price():
     """수집 이력 여러 항목에 목표 마진율/원가 배수를 일괄 적용 (셀러 격리).
@@ -4495,6 +4585,7 @@ def collect_history():
     days = int(request.args.get("days", "30"))
     q = request.args.get("q", "").strip()
     status_f = request.args.get("status", "").strip()          # ""=전체 / ok / archived
+    group_f = request.args.get("group", "").strip()            # 그룹 id 필터
     sort = (request.args.get("sort") or "newest").strip()
     per_page = request.args.get("per_page", 50, type=int)
     if per_page not in (20, 50, 100):
@@ -4516,6 +4607,15 @@ def collect_history():
     # 상태 필터(활성/보관)
     if status_f in ("ok", "archived"):
         items = [it for it in items if (it.get("status") or "") == status_f]
+
+    # 그룹 필터 (extra_json.group_id)
+    if group_f:
+        def _grp(it):
+            try:
+                return (json.loads(it.get("extra_json") or "{}") or {}).get("group_id") or ""
+            except Exception:
+                return ""
+        items = [it for it in items if _grp(it) == group_f]
 
     # 검색(제목/도메인/URL 부분일치)
     if q:
@@ -4583,6 +4683,12 @@ def collect_history():
         }
     except Exception:
         translation_free = {"limit": 20, "used": 0, "remaining": 20}
+    # 상품 그룹(v3 P1-5)
+    try:
+        from . import collect_groups
+        groups = collect_groups.list_groups(_seller_id())
+    except Exception:
+        groups = []
     return render_template(
         "collect_history.html",
         page="collect_history",
@@ -4590,12 +4696,13 @@ def collect_history():
         summary=summ,
         domains=domains,
         filters={"domain": domain, "source": source, "days": days,
-                 "q": q, "status": status_f, "sort": sort, "per_page": per_page},
+                 "q": q, "status": status_f, "group": group_f, "sort": sort, "per_page": per_page},
         pagination={"page": page, "per_page": per_page, "total": total_filtered,
                     "total_pages": total_pages},
         upload_markets=upload_markets,
         category_options=CATEGORY_OPTIONS,
         translation_free=translation_free,
+        groups=groups,
     )
 
 
