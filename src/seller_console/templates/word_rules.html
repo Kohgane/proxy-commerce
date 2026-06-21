@@ -1,0 +1,70 @@
+{% extends "_base.html" %}
+{% block title %}금지어·치환 규칙{% endblock %}
+{% block content %}
+<div class="container-fluid py-4" style="max-width: 820px;">
+  <h1 class="h3 mb-1">🚫 금지어 · 단어 치환 규칙</h1>
+  <p class="text-muted mb-4">상품명에서 빼야 할 <strong>금지어</strong>와, 바꿔 쓸 <strong>치환 규칙</strong>을 설정하세요. 수집 이력에서 <strong>‘✨ 상품명 정제’</strong>로 선택 상품에 일괄 적용됩니다.</p>
+
+  <div class="card mb-3">
+    <div class="card-header"><strong>🚫 금지어</strong> <span class="text-muted small">— 제목에 있으면 제거됩니다</span></div>
+    <div class="card-body">
+      <textarea id="bannedInput" class="form-control" rows="5"
+                placeholder="한 줄에 하나씩 또는 쉼표로 구분&#10;예) 정품&#10;최저가&#10;특가">{{ rules.banned | join('\n') }}</textarea>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span><strong>🔁 치환 규칙</strong> <span class="text-muted small">— A를 B로 바꿉니다</span></span>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="addSubRow()">＋ 행 추가</button>
+    </div>
+    <div class="card-body">
+      <div id="subRows"></div>
+      <div class="text-muted small mt-1">예) <code>정품</code> → <code>(공백)</code>, <code>나이키</code> → <code>NIKE</code></div>
+    </div>
+  </div>
+
+  <button type="button" class="btn btn-primary" id="saveBtn" onclick="saveRules()">💾 규칙 저장</button>
+  <a href="/seller/collect/history" class="btn btn-outline-secondary">수집 이력으로</a>
+</div>
+
+<script>
+const INIT_SUBS = {{ rules.subs | tojson }};
+
+function addSubRow(frm, to) {
+  const wrap = document.getElementById('subRows');
+  const row = document.createElement('div');
+  row.className = 'row g-2 align-items-center mb-2 sub-row';
+  row.innerHTML =
+    '<div class="col"><input class="form-control form-control-sm sub-from" placeholder="찾을 단어" value="' + (frm ? frm.replace(/"/g,'&quot;') : '') + '"></div>' +
+    '<div class="col-auto">→</div>' +
+    '<div class="col"><input class="form-control form-control-sm sub-to" placeholder="바꿀 단어(비우면 삭제)" value="' + (to ? to.replace(/"/g,'&quot;') : '') + '"></div>' +
+    '<div class="col-auto"><button type="button" class="btn btn-ghost btn-sm" onclick="this.closest(\'.sub-row\').remove()">✕</button></div>';
+  wrap.appendChild(row);
+}
+(INIT_SUBS && INIT_SUBS.length ? INIT_SUBS : [{}]).forEach(s => addSubRow(s.from, s.to));
+
+async function saveRules() {
+  const banned = document.getElementById('bannedInput').value;
+  const subs = Array.from(document.querySelectorAll('.sub-row')).map(r => ({
+    from: r.querySelector('.sub-from').value.trim(),
+    to: r.querySelector('.sub-to').value.trim(),
+  })).filter(s => s.from);
+  const btn = document.getElementById('saveBtn');
+  setButtonLoading(btn, true, '저장 중…');
+  try {
+    const resp = await fetch('/seller/listing/word-rules/save', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({banned: banned, subs: subs}),
+    });
+    const data = await resp.json();
+    if (!data.ok) { pcToast(data.error || '저장 실패', 'error'); return; }
+    pcToast('규칙을 저장했습니다.', 'success');
+  } catch (err) {
+    pcToast('요청 실패: ' + err.message, 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+</script>
+{% endblock %}
