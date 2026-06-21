@@ -13,7 +13,10 @@
   이름(🧤만)+익스텐션/사이트 파비콘 코고가네 마크 교체.
   - ✅ v8 ①-a 응답 속도(Phase 263): gunicorn `gthread`+threads(I/O 동시성), gzip 응답 압축(after_request,
     텍스트류 600B↑, Accept-Encoding gzip시만 → 기존 테스트 안전), 정적 에셋 Cache-Control max-age=604800.
-    요청 타이밍 로그는 기존(request_logger elapsed_ms). ⏳ 다음: 시트 read 캐시(TTL)/배치.
+    요청 타이밍 로그는 기존(request_logger elapsed_ms).
+  - ✅ v8 ①-b 시트 왕복 감소(Phase 264): collect_history_store에 요청 범위 read 캐시(flask.g, has_request_context).
+    한 페이지에서 list+summary+distinct가 같은 시트 3회 읽던 걸 요청당 1회로. 쓰기(append/update/delete) 후
+    _invalidate_cache로 무효화(요청 내 스테일 방지). 요청 컨텍스트 밖/인메모리는 직접 read. ⏳ 다음: ②Bluehost 릴레이.
 - **v7:** 확장 상단바 토글/접힘 배지(끄면 구석 작게·청록/금 펄스·개수, 위치/상태 기억, 팝업 on/off), 단일 FAB
   우측 중앙 이동+드래그/기억, '전체 일괄수집' 코치마크 1회, 따라하기 재미(수집 도장/카운트업·위트카피·마일스톤).
 
