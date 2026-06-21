@@ -27,7 +27,10 @@
       ok=true, 실패 시 502 정직(가짜 성공 금지). 응답에 item_id 추가. v3 P0-1 로그인 튕김: SECRET_KEY 미설정 시
       워커마다 다른 임시키→세션 무효화였음 → 컨테이너-로컬 파일(`/tmp/kohgogane_session_secret`, O_EXCL)로 모든 워커가
       동일 키 공유(즉시 튕김 방지). **영구 고정은 오너가 Render에 `SECRET_KEY` 설정 권장.**
-    - ⏳ 다음: 멀티워커 인메모리 수집이력 영구화(파일/Sheet 폴백 — 옵트인), CTA 가시성, 번역 과금, 퍼센티 포팅, 모바일.
+    - ✅ v3 P1-3 CTA 가시성(Phase 245): `app.css` 버튼 위계 토큰 강화 — `.btn-primary`=청록 채움+굵게(700)+
+      hover lift+청록 글로우(화면당 1개 핵심행동), `.btn-outline-primary` 진한 청록, 신설 `.btn-gold`(금 아웃라인
+      Secondary)·`.btn-ghost`(Tertiary). CSS만 — 전 화면 .btn-primary 자동 강조.
+    - ⏳ 다음: 멀티워커 인메모리 수집이력 영구화(파일/Sheet 폴백 — 옵트인), 번역 무료20+과금, 퍼센티 포팅, 모바일, 수집버튼 리디자인.
 - **KOHgogane 브리프 v2 (전면 리디자인 로드맵, 오너 제공 2026-06-20):** 코가네 퍼센티→**코고가네/KOHgogane** 리브랜딩 +
   catdyy식 디자인 토큰(먹/한지/금 + 청록 Primary) + Pretendard/Noto Serif KR + 수집상품 일괄관리(퍼센티 동등) +
   온보딩 위저드 + 게임화 + 구독 + PWA/베타. 순서: 디자인→일괄관리→온보딩→게임화→구독→앱. (대형 — 덩어리별 PR)
