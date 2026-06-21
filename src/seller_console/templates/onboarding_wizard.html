@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>처음이신가요? · 코고가네</title>
+  <link rel="icon" type="image/svg+xml" href="/seller/static/favicon.svg?v=172">
+  <meta name="theme-color" content="#1a1714">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <style>
+    body { background: var(--pc-color-bg); color: var(--pc-color-text); }
+    .ob-shell { min-height: 100vh; display: flex; }
+    .ob-steps { width: 280px; flex-shrink: 0; background: #1a1714; color: #f5efe3; padding: 2rem 1.25rem; }
+    .ob-brand { font-family: var(--pc-font-display, serif); color: #ecdcb0; font-size: 1.4rem; font-weight: 700; }
+    .ob-step { display: flex; align-items: center; gap: .7rem; padding: .7rem .6rem; border-radius: 10px; color: #c9bda6; cursor: pointer; }
+    .ob-step .num { width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid #57503f; display: flex; align-items: center; justify-content: center; font-size: .85rem; flex-shrink: 0; }
+    .ob-step.active { background: rgba(15,157,140,.16); color: #fff; }
+    .ob-step.active .num { border-color: var(--pc-color-primary); color: #fff; background: var(--pc-color-primary); }
+    .ob-step.done .num { border-color: #37d05a; color: #37d05a; }
+    .ob-main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 2rem; }
+    .ob-panel { max-width: 560px; width: 100%; text-align: center; }
+    .ob-panel h1 { font-family: var(--pc-font-display, serif); font-weight: 700; margin-bottom: .6rem; }
+    .ob-panel .lead { color: var(--pc-color-text-muted); margin-bottom: 1.6rem; }
+    .ob-emoji { font-size: 3.2rem; margin-bottom: .6rem; }
+    .ob-actions .btn { padding: .7rem 1.6rem; font-size: 1.05rem; }
+    .ob-skip { color: var(--pc-color-text-muted); }
+    @media (max-width: 767.98px) { .ob-steps { display: none; } }
+  </style>
+</head>
+<body>
+{% set _logged_in = 'true' if logged_in else 'false' %}
+{% set _markets = markets_connected or 0 %}
+<div class="ob-shell">
+  <!-- 좌측 스텝퍼 -->
+  <aside class="ob-steps">
+    <div class="ob-brand mb-4">🛒 코고가네</div>
+    <div class="small text-uppercase" style="letter-spacing:.1em;color:#8a7f6c;">시작하기</div>
+    <div id="stepper" class="mt-2"></div>
+    <div class="mt-4 pt-3" style="border-top:1px solid #38322a;">
+      <a href="/seller/dashboard" class="ob-skip small text-decoration-none">나중에 하기 · 대시보드로 →</a>
+    </div>
+  </aside>
+
+  <!-- 우측 큰 화면 -->
+  <main class="ob-main">
+    <div class="ob-panel" id="panel"></div>
+  </main>
+</div>
+
+<script>
+const LOGGED_IN = {{ _logged_in }};
+const MARKETS = {{ _markets }};
+const STEPS = [
+  { key: 'intro', title: '코고가네에 오신 걸 환영해요', emoji: '👋',
+    lead: '해외 상품을 수집하고, 번역하고, 우리 마켓에 등록까지 — 한 곳에서. 클릭 몇 번이면 됩니다.',
+    primary: { label: '시작하기', cls: 'btn-cta', act: 'next' } },
+  { key: 'business', title: '사업자 등록부터', emoji: '🪪',
+    lead: '구매대행은 보통 사업자등록 → 통신판매업 신고가 필요해요. 가이드를 보고 천천히 준비하세요.',
+    primary: { label: '사업자 가이드 열기', cls: 'btn-primary', href: '/seller/guide/business', blank: true, markDone: true },
+    secondary: { label: '나중에 · 다음', cls: 'btn-ghost', act: 'next' } },
+  { key: 'google', title: '구글로 시작하기', emoji: '🔑',
+    lead: '구글 계정으로 1초 만에 로그인하세요. 내 수집·마켓·주문이 안전하게 개인화됩니다.',
+    primary: LOGGED_IN
+      ? { label: '로그인 완료 · 다음', cls: 'btn-primary', act: 'next' }
+      : { label: '구글로 시작', cls: 'btn-cta', href: '/auth/google/start?next=/seller/start' },
+    autoDone: LOGGED_IN },
+  { key: 'market', title: '마켓 연동하기', emoji: '🛍️',
+    lead: '쿠팡·스마트스토어·11번가 등 판매할 마켓을 연결하세요. 키를 붙여넣고 연결 테스트까지 한 번에.',
+    primary: { label: '마켓 연결하기', cls: 'btn-cta', href: '/seller/markets/connect', blank: true, markDone: true },
+    secondary: { label: '다음', cls: 'btn-ghost', act: 'next' },
+    autoDone: MARKETS > 0 },
+  { key: 'extension', title: '크롬 확장 설치', emoji: '🧩',
+    lead: '상품 페이지에서 버튼 한 번으로 수집되는 확장을 설치하세요. 모바일은 공유로 수집해요.',
+    primary: { label: '확장 설치 안내', cls: 'btn-primary', href: '/seller/extension', blank: true, markDone: true },
+    secondary: { label: '다음', cls: 'btn-ghost', act: 'next' } },
+  { key: 'first', title: '첫 상품 수집하기 🎉', emoji: '🚀',
+    lead: '이제 상품을 수집해 보세요. 수집 → 편집 → 마켓 등록까지, 여기서 다 됩니다.',
+    primary: { label: '상품 수집 시작', cls: 'btn-cta', href: '/seller/manual-collect', markDone: true },
+    secondary: { label: '대시보드로', cls: 'btn-ghost', href: '/seller/dashboard' } },
+];
+
+const KEY = 'kgp_onboarding_done';
+let done = {};
+try { done = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) {}
+STEPS.forEach(s => { if (s.autoDone) done[s.key] = true; });
+
+let cur = STEPS.findIndex(s => !done[s.key]);
+if (cur < 0) cur = STEPS.length - 1;
+
+function saveDone(key) { done[key] = true; try { localStorage.setItem(KEY, JSON.stringify(done)); } catch (e) {} }
+
+function renderStepper() {
+  const el = document.getElementById('stepper');
+  el.innerHTML = STEPS.map((s, i) => {
+    const cls = i === cur ? 'active' : (done[s.key] ? 'done' : '');
+    const num = done[s.key] ? '<i class="bi bi-check-lg"></i>' : (i + 1);
+    return `<div class="ob-step ${cls}" onclick="goStep(${i})"><span class="num">${num}</span><span>${s.title}</span></div>`;
+  }).join('');
+}
+
+function btnHtml(b, role) {
+  if (!b) return '';
+  return `<button type="button" class="btn ${b.cls} ${role}" data-role="${role}">${b.label}</button>`;
+}
+
+function renderPanel() {
+  const s = STEPS[cur];
+  document.getElementById('panel').innerHTML =
+    `<div class="ob-emoji">${s.emoji}</div>
+     <h1>${s.title}</h1>
+     <p class="lead">${s.lead}</p>
+     <div class="ob-actions d-flex flex-wrap gap-2 justify-content-center">
+       ${btnHtml(s.primary, 'primary')}
+       ${btnHtml(s.secondary, 'secondary')}
+     </div>`;
+  document.querySelectorAll('#panel [data-role]').forEach(btn => {
+    const role = btn.getAttribute('data-role');
+    const b = role === 'primary' ? s.primary : s.secondary;
+    btn.addEventListener('click', () => handleBtn(s, b));
+  });
+}
+
+function handleBtn(step, b) {
+  if (b.markDone) saveDone(step.key);
+  if (b.href) {
+    if (b.blank) { window.open(b.href, '_blank'); saveDone(step.key); render(); }
+    else { window.location.href = b.href; }
+    return;
+  }
+  if (b.act === 'next') { saveDone(step.key); next(); }
+}
+
+function next() { if (cur < STEPS.length - 1) { cur++; render(); } }
+function goStep(i) { cur = i; render(); }
+function render() { renderStepper(); renderPanel(); }
+render();
+</script>
+</body>
+</html>
