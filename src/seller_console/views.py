@@ -3614,6 +3614,28 @@ def markets_guide():
     return render_template("markets_guide.html", page="markets", guide=get_guide())
 
 
+@bp.get("/start")
+def onboarding_wizard():
+    """For Beginners 키노트형 온보딩 위저드 (v5).
+
+    풀스크린 + 좌측 스텝퍼 + 화면당 1~2버튼. 각 단계는 실제 동작(구글 로그인/마켓 연결/
+    확장 설치/첫 수집)으로 이어진다. 로그인 없이도 진입 가능(구글 로그인 단계가 첫 관문).
+    """
+    logged_in = bool(session.get("user_id"))
+    # 마켓 연결 여부(로그인 시) — 단계 완료 자동 판정
+    markets_connected = 0
+    if logged_in:
+        try:
+            from . import market_credentials as mc
+            sid = _seller_id()
+            markets_connected = sum(1 for m in ("shopify", "coupang", "smartstore", "elevenst", "woocommerce")
+                                    if mc.is_connected(sid, m))
+        except Exception:
+            markets_connected = 0
+    return render_template("onboarding_wizard.html",
+                           logged_in=logged_in, markets_connected=markets_connected)
+
+
 @bp.get("/guide/business")
 def guide_business():
     """사업자등록 · 통신판매업 신고 · 구매대행 유의 클릭-스루 가이드 (Phase 243, 브리프 §4.3).
