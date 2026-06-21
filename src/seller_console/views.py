@@ -3614,6 +3614,49 @@ def markets_guide():
     return render_template("markets_guide.html", page="markets", guide=get_guide())
 
 
+@bp.get("/m")
+def mobile_home():
+    """모바일 앱 셸 — '간단 수집 + 주문처리'에 집중(PWA, v3 P1-6).
+
+    하단 탭(수집/주문/더보기) + 코고가네 토큰 + BETA. 풀기능은 데스크톱 안내.
+    """
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
+    sid = _seller_id()
+    recent = []
+    try:
+        from .collect_history_store import list_items
+        items = list_items(days=14, seller_id=sid)[:8]
+        for it in items:
+            thumb = (it.get("image_url") or "").strip()
+            if not thumb:
+                try:
+                    ex = json.loads(it.get("extra_json") or "{}")
+                    imgs = ex.get("images") if isinstance(ex.get("images"), list) else []
+                    thumb = (imgs[0] if imgs else "") or ""
+                except Exception:
+                    thumb = ""
+            recent.append({"id": it.get("id"), "title": it.get("title") or "(제목 없음)",
+                           "price": it.get("price"), "currency": it.get("currency"),
+                           "thumb": thumb, "domain": it.get("domain")})
+    except Exception as exc:
+        logger.debug("모바일 최근 수집 조회 실패: %s", exc)
+
+    kpi = {"today_new": 0, "pending_ship": 0, "shipped": 0, "returned_exchanged": 0}
+    orders = []
+    try:
+        from .orders.sync_service import OrderSyncService
+        svc = OrderSyncService()
+        k = svc.kpi_summary() or {}
+        for key in kpi:
+            kpi[key] = int(k.get(key, 0) or 0)
+        orders = (svc.list_orders(limit=10) or [])[:10]
+    except Exception as exc:
+        logger.debug("모바일 주문 조회 실패: %s", exc)
+
+    return render_template("mobile_home.html", recent=recent, kpi=kpi, orders=orders)
+
+
 @bp.get("/about")
 def about_page():
     """소개 — '코고가네란?' (애플 톤, v5). 로그인 없이도 볼 수 있음."""
