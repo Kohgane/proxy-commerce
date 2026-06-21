@@ -1,0 +1,92 @@
+{% extends "_base.html" %}
+{% block title %}통관고유부호 관리{% endblock %}
+{% block content %}
+<div class="container-fluid py-4" style="max-width: 900px;">
+  <h1 class="h3 mb-1">🛃 개인통관고유부호(PCCC) 관리</h1>
+  <p class="text-muted mb-4">해외 구매대행 통관 시 구매자의 <strong>개인통관고유부호(P+12자리)</strong>가 필요합니다. 고객별로 입력·검색·조회하세요.</p>
+
+  <div class="alert alert-warning small">⚠️ 통관고유부호는 개인정보입니다. 본인(셀러) 계정에만 저장되며, 목적 외 사용·외부 공유에 주의하세요. 고객은 <a href="https://unipass.customs.go.kr" target="_blank" rel="noopener">관세청 UNI-PASS</a>에서 발급받을 수 있습니다.</p>
+
+  <!-- 추가 폼 -->
+  <div class="card mb-3">
+    <div class="card-header"><strong>＋ 통관고유부호 추가</strong></div>
+    <div class="card-body">
+      <div class="row g-2">
+        <div class="col-sm-3"><input id="pcName" class="form-control form-control-sm" placeholder="고객 이름*"></div>
+        <div class="col-sm-3"><input id="pcCode" class="form-control form-control-sm" placeholder="통관고유부호* (P012345678901)"></div>
+        <div class="col-sm-3"><input id="pcPhone" class="form-control form-control-sm" placeholder="연락처(선택)"></div>
+        <div class="col-sm-2"><input id="pcMemo" class="form-control form-control-sm" placeholder="메모(선택)"></div>
+        <div class="col-sm-1"><button class="btn btn-primary btn-sm w-100" id="pcAddBtn" onclick="addPccc()">추가</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 검색 -->
+  <form method="get" class="row g-2 mb-3">
+    <div class="col-sm-4"><input name="q" value="{{ q }}" class="form-control form-control-sm" placeholder="이름·연락처·번호 검색"></div>
+    <div class="col-sm-2"><button class="btn btn-outline-secondary btn-sm w-100">검색</button></div>
+  </form>
+
+  <!-- 목록 -->
+  <div class="card">
+    <div class="card-body p-0">
+      <table class="table table-hover mb-0">
+        <thead class="table-light"><tr>
+          <th class="ps-3">이름</th><th>통관고유부호</th><th>연락처</th><th>메모</th><th>등록</th><th></th>
+        </tr></thead>
+        <tbody id="pcTbody">
+          {% for r in records %}
+          <tr data-id="{{ r.id }}">
+            <td class="ps-3">{{ r.name }}</td>
+            <td><code>{{ r.pccc }}</code></td>
+            <td class="small text-muted">{{ r.phone }}</td>
+            <td class="small text-muted">{{ r.memo }}</td>
+            <td class="small text-muted">{{ r.created_at[:10] if r.created_at else '' }}</td>
+            <td><button class="btn btn-ghost btn-sm py-0" onclick="delPccc('{{ r.id }}', this)">삭제</button></td>
+          </tr>
+          {% else %}
+          <tr id="pcEmpty"><td colspan="6" class="text-center text-muted py-4">등록된 통관고유부호가 없습니다.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+async function addPccc() {
+  const name = document.getElementById('pcName').value.trim();
+  const pccc = document.getElementById('pcCode').value.trim();
+  if (!name || !pccc) { pcToast('이름과 통관고유부호를 입력하세요.', 'warning'); return; }
+  const btn = document.getElementById('pcAddBtn');
+  setButtonLoading(btn, true);
+  try {
+    const resp = await fetch('/seller/customs/pccc/add', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: name, pccc: pccc,
+        phone: document.getElementById('pcPhone').value.trim(),
+        memo: document.getElementById('pcMemo').value.trim()}),
+    });
+    const data = await resp.json();
+    if (!data.ok) { pcToast(data.error || '추가 실패', 'error'); return; }
+    pcToast(data.message || '추가했습니다.', data.valid_format ? 'success' : 'warning');
+    setTimeout(() => location.reload(), 700);
+  } catch (err) {
+    pcToast('요청 실패: ' + err.message, 'error');
+  } finally { setButtonLoading(btn, false); }
+}
+async function delPccc(id, el) {
+  if (!confirm('이 통관고유부호를 삭제할까요?')) return;
+  try {
+    const resp = await fetch('/seller/customs/pccc/delete', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({id: id}),
+    });
+    const data = await resp.json();
+    if (!data.ok) { pcToast('삭제 실패', 'error'); return; }
+    const tr = el.closest('tr'); if (tr) tr.remove();
+    pcToast('삭제했습니다.', 'success');
+  } catch (err) { pcToast('요청 실패: ' + err.message, 'error'); }
+}
+</script>
+{% endblock %}

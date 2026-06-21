@@ -2025,6 +2025,53 @@ def collect_bulk_group():
     return jsonify({"ok": True, "updated": updated, "group": group_obj, "group_id": group_id})
 
 
+@bp.get("/customs/pccc")
+def pccc_page():
+    """개인통관고유부호(PCCC) 입력·조회 페이지 (v3 P1-5)."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
+    from . import pccc_store
+    q = request.args.get("q", "").strip()
+    records = pccc_store.list_records(_seller_id(), q=q)
+    return render_template("pccc.html", page="pccc", records=records, q=q)
+
+
+@bp.post("/customs/pccc/add")
+def pccc_add():
+    """PCCC 추가. Request: {name, pccc, phone?, memo?}"""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    name = str(data.get("name") or "").strip()
+    pccc = str(data.get("pccc") or "").strip()
+    if not name or not pccc:
+        return jsonify({"ok": False, "error": "이름과 통관고유부호를 입력하세요."}), 400
+    from . import pccc_store
+    valid = pccc_store.is_valid_pccc(pccc)
+    try:
+        rec = pccc_store.add(_seller_id(), name=name, pccc=pccc,
+                             phone=str(data.get("phone") or ""), memo=str(data.get("memo") or ""))
+    except Exception as exc:
+        logger.warning("PCCC 추가 오류: %s", exc)
+        return jsonify({"ok": False, "error": "저장 중 오류가 발생했습니다."}), 500
+    # 형식이 P+12자리가 아니면 저장은 하되 경고(정직).
+    msg = None if valid else "형식이 'P+12자리 숫자'와 달라요. 한 번 더 확인하세요(저장은 됨)."
+    return jsonify({"ok": True, "record": rec, "valid_format": valid, "message": msg})
+
+
+@bp.post("/customs/pccc/delete")
+def pccc_delete():
+    """PCCC 삭제. Request: {id}"""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    rid = str(data.get("id") or "").strip()
+    if not rid:
+        return jsonify({"ok": False, "error": "id가 필요합니다."}), 400
+    from . import pccc_store
+    return jsonify({"ok": bool(pccc_store.delete(_seller_id(), rid))})
+
+
 @bp.get("/listing/word-rules")
 def word_rules_page():
     """금지어/치환 규칙 설정 페이지 (v3 P1-5)."""
