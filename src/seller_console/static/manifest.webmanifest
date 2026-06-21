@@ -1,12 +1,12 @@
 {
   "name": "KOHgogane",
-  "short_name": "Percentiii",
+  "short_name": "코고가네",
   "description": "kohganepercentiii.com 셀러 콘솔 — 옴니채널 상품 관리 플랫폼",
-  "start_url": "/seller/dashboard",
+  "start_url": "/seller/m",
   "scope": "/seller/",
   "display": "standalone",
-  "background_color": "#020010",
-  "theme_color": "#020010",
+  "background_color": "#1a1714",
+  "theme_color": "#1a1714",
   "lang": "ko",
   "orientation": "portrait-primary",
   "icons": [
@@ -23,7 +23,10 @@
       "purpose": "any maskable"
     }
   ],
-  "categories": ["business", "shopping"],
+  "categories": [
+    "business",
+    "shopping"
+  ],
   "share_target": {
     "action": "/seller/collect/quick",
     "method": "GET",
@@ -34,6 +37,16 @@
     }
   },
   "shortcuts": [
+    {
+      "name": "상품 수집",
+      "url": "/seller/m",
+      "description": "링크 붙여넣어 바로 수집"
+    },
+    {
+      "name": "수집 이력",
+      "url": "/seller/collect/history",
+      "description": "수집한 상품"
+    },
     {
       "name": "주문 관리",
       "url": "/seller/orders",

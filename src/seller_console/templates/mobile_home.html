@@ -95,6 +95,7 @@
 <!-- 더보기 탭 -->
 <section class="m-tabpane" id="pane-more">
   <h2 class="h5 fw-bold mb-3">더보기</h2>
+  <button id="installBtn" class="btn btn-cta w-100 mb-2 d-none" onclick="installApp()">📲 코고가네 앱 설치</button>
   <div class="vstack gap-2">
     <a href="/seller/start" class="m-card p-3 text-decoration-none text-dark">✨ For Beginners · 시작 가이드</a>
     <a href="/seller/markets/connect" class="m-card p-3 text-decoration-none text-dark">🛍️ 마켓 연동</a>
@@ -115,6 +116,27 @@
 </nav>
 
 <script>
+// 설치형 PWA — 안드로이드: beforeinstallprompt로 '앱 설치' 버튼 노출. iOS: 공유→홈 화면에 추가 안내(더보기).
+let _deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', function (e) {
+  e.preventDefault();
+  _deferredPrompt = e;
+  var b = document.getElementById('installBtn');
+  if (b) b.classList.remove('d-none');
+});
+function installApp() {
+  if (!_deferredPrompt) return;
+  _deferredPrompt.prompt();
+  _deferredPrompt.userChoice.finally(function () {
+    _deferredPrompt = null;
+    var b = document.getElementById('installBtn'); if (b) b.classList.add('d-none');
+  });
+}
+// 서비스워커 등록(설치 가능 조건)
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/seller/static/sw.js', { scope: '/seller/' }).catch(function () {});
+}
+
 document.querySelectorAll('.m-tab').forEach(function (t) {
   t.addEventListener('click', function () {
     var pane = t.getAttribute('data-pane');
