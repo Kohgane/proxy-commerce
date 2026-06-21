@@ -40,8 +40,12 @@
     - ✅ v3 P1-5 포팅 #2 금지어/치환(Phase 248): 신설 `word_rules.py`(셀러별 banned[]+subs[{from,to}], Sheets+인메모리),
       설정 페이지 `/seller/listing/word-rules`(+nav), 저장 `/word-rules/save`, 일괄 `/collect/bulk-clean`
       (선택 제목에 치환→금지어제거 적용, 규칙 없으면 400+안내). 수집이력 '✨ 상품명 정제' 버튼.
-    - ⏳ 다음: 퍼센티 포팅 #3 이미지편집UI → #4 통관고유부호(PCCC) → #5 장부/애널 노출 → 직원계정. 그리고
-      멀티워커 이력 영구화(옵트인), 모바일, 수집버튼 리디자인.
+    - ✅ v3 P1-5 포팅 #3 이미지편집UI(Phase 249): `POST /seller/media/process-image`로 image_pipeline.process_image
+      연결(워터마크 제거·리사이즈·WebP·CDN 재호스팅). 편집 페이지 이미지 행마다 '🧹' 정제 버튼→처리 URL로 교체.
+      정직: CLOUDINARY_* 미설정/처리 미적용 시 원본 유지+안내(가짜 호스팅 URL 금지). ※실제 재호스팅은 오너가
+      Render에 CLOUDINARY_* 설정해야 동작(Phase 207).
+    - ⏳ 다음: 퍼센티 포팅 #4 통관고유부호(PCCC) → #5 장부/애널 노출 → 직원계정. 그리고 멀티워커 이력
+      영구화(옵트인), 모바일, 수집버튼 리디자인.
 - **KOHgogane 브리프 v2 (전면 리디자인 로드맵, 오너 제공 2026-06-20):** 코가네 퍼센티→**코고가네/KOHgogane** 리브랜딩 +
   catdyy식 디자인 토큰(먹/한지/금 + 청록 Primary) + Pretendard/Noto Serif KR + 수집상품 일괄관리(퍼센티 동등) +
   온보딩 위저드 + 게임화 + 구독 + PWA/베타. 순서: 디자인→일괄관리→온보딩→게임화→구독→앱. (대형 — 덩어리별 PR)

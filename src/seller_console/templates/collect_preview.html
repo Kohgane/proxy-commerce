@@ -317,6 +317,7 @@ function addImageRow(url) {
     <img class="img-thumb flex-shrink-0 rounded border" alt="" style="width:46px;height:46px;object-fit:cover;background:#f1f3f5;cursor:zoom-in"
          title="클릭하면 원본 보기" onerror="this.style.visibility='hidden'">
     <input type="url" class="form-control form-control-sm img-url" placeholder="https://..." value="${escapeHtml(url || '')}">
+    <button class="btn btn-outline-primary btn-sm btn-clean-img flex-shrink-0" type="button" title="워터마크 제거·정제(CDN 설정 시 재호스팅)">🧹</button>
     <button class="btn btn-outline-danger btn-sm btn-del flex-shrink-0" type="button" title="삭제">✕</button>`;
   const input = row.querySelector('.img-url');
   const thumb = row.querySelector('.img-thumb');
@@ -334,6 +335,29 @@ function addImageRow(url) {
   });
   row.querySelector('.btn-del').addEventListener('click', () => {
     row.remove(); refreshPrimaryImage(); refreshImageBadges();
+  });
+  row.querySelector('.btn-clean-img').addEventListener('click', async (e) => {
+    const v = (input.value || '').trim();
+    if (!v) { pcToast('이미지 URL이 비어 있습니다.', 'warning'); return; }
+    const b = e.currentTarget; const old = b.textContent; b.disabled = true; b.textContent = '…';
+    try {
+      const resp = await fetch('/seller/media/process-image', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({image_url: v}),
+      });
+      const data = await resp.json();
+      if (!data.ok) { pcToast(data.error || '이미지 처리 실패', 'error'); return; }
+      if (data.processed_url && data.processed_url !== v) {
+        input.value = data.processed_url; syncThumb(); refreshPrimaryImage();
+        pcToast(data.watermark_removed ? '워터마크 제거·정제 완료.' : '이미지 정제 완료.', 'success');
+      } else {
+        pcToast(data.message || '처리할 변화가 없어 원본을 유지했습니다.', 'warning');
+      }
+    } catch (err) {
+      pcToast('요청 실패: ' + err.message, 'error');
+    } finally {
+      b.disabled = false; b.textContent = old;
+    }
   });
   input.addEventListener('input', () => { syncThumb(); refreshPrimaryImage(); });
   wrap.appendChild(row);
