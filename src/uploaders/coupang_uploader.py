@@ -372,7 +372,10 @@ class CoupangUploader(BaseUploader):
         }
         for attempt in range(3):
             try:
-                resp = requests.request(method, url, json=data, headers=headers, timeout=30)
+                # 고정 IP 릴레이 경유(MARKET_RELAY_URL 설정 시) — 쿠팡 호출 IP 화이트리스트 대응(v8).
+                # 미설정이면 직접 호출(폴백). 서명은 위에서 이미 끝났고 릴레이는 포워딩만.
+                from src.market_relay import relay_request
+                resp = relay_request(method, url, json=data, headers=headers, timeout=30, market="coupang")
                 if resp.status_code == 429:
                     logger.warning('Coupang rate limit hit, retrying in %ds (attempt %d)', 5, attempt + 1)
                     time.sleep(5 * (attempt + 1))

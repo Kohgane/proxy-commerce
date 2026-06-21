@@ -236,7 +236,9 @@ class NaverSmartStoreUploader(BaseUploader):
         }
         for attempt in range(3):
             try:
-                resp = requests.request(method, url, json=data, headers=headers, timeout=30)
+                # 고정 IP 릴레이 경유(MARKET_RELAY_URL 설정 시) — 네이버 호출 IP 화이트리스트 대응(v8).
+                from src.market_relay import relay_request
+                resp = relay_request(method, url, json=data, headers=headers, timeout=30, market="smartstore")
                 if resp.status_code == 429:
                     logger.warning('Naver rate limit hit, retrying in %ds (attempt %d)', 5, attempt + 1)
                     time.sleep(5 * (attempt + 1))

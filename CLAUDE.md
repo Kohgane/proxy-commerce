@@ -16,7 +16,12 @@
     요청 타이밍 로그는 기존(request_logger elapsed_ms).
   - ✅ v8 ①-b 시트 왕복 감소(Phase 264): collect_history_store에 요청 범위 read 캐시(flask.g, has_request_context).
     한 페이지에서 list+summary+distinct가 같은 시트 3회 읽던 걸 요청당 1회로. 쓰기(append/update/delete) 후
-    _invalidate_cache로 무효화(요청 내 스테일 방지). 요청 컨텍스트 밖/인메모리는 직접 read. ⏳ 다음: ②Bluehost 릴레이.
+    _invalidate_cache로 무효화(요청 내 스테일 방지). 요청 컨텍스트 밖/인메모리는 직접 read.
+  - ✅ v8 ② 마켓 고정IP 릴레이(Phase 265): 신설 `src/market_relay.py`(relay_request — MARKET_RELAY_URL+TOKEN
+    설정+대상마켓일 때 Bluehost 릴레이로 POST, 미설정/비대상은 직접 호출 폴백. Bearer+HMAC). 쿠팡/네이버
+    uploader의 `requests.request`를 relay_request(market=coupang/smartstore)로 교체. 배포물 `relay/market_relay_server_v8.py`
+    (무상태 포워딩, host 화이트리스트, 키 미저장/미로깅) + README. 오너: Bluehost에 릴레이 올리고 그 IP를 쿠팡/네이버
+    허용IP+SERVER_OUTBOUND_IP에. ⏳ 다음: ③북마클릿 이모지+코고가네 파비콘.
 - **v7:** 확장 상단바 토글/접힘 배지(끄면 구석 작게·청록/금 펄스·개수, 위치/상태 기억, 팝업 on/off), 단일 FAB
   우측 중앙 이동+드래그/기억, '전체 일괄수집' 코치마크 1회, 따라하기 재미(수집 도장/카운트업·위트카피·마일스톤).
 
