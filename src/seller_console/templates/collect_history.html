@@ -151,6 +151,10 @@
         <button type="button" class="btn btn-outline-primary btn-sm" id="bulkTranslateBtn" onclick="runBulkTranslate()" disabled>
           🌐 한국어 번역
         </button>
+        <button type="button" class="btn btn-outline-primary btn-sm" id="bulkCleanBtn" onclick="runBulkClean()" disabled
+                title="설정한 금지어 제거 + 단어 치환을 제목에 적용">
+          ✨ 상품명 정제
+        </button>
         {% if translation_free %}
         <span class="small {{ 'text-muted' if translation_free.remaining > 0 else 'text-danger' }}" id="translFree"
               title="무료 번역은 실제 번역된 건수만 차감됩니다(번역기 미설정 시 차감 없음).">
@@ -477,6 +481,8 @@ function refreshSelCount() {
   if (grp) grp.disabled = n === 0;
   const tr = document.getElementById('bulkTranslateBtn');
   if (tr) tr.disabled = n === 0;
+  const cl = document.getElementById('bulkCleanBtn');
+  if (cl) cl.disabled = n === 0;
   const pr = document.getElementById('bulkPriceBtn');
   if (pr) pr.disabled = n === 0;
   const st = document.getElementById('bulkStatusBtn');
@@ -588,6 +594,43 @@ async function runBulkPrice() {
     });
     bootstrap.Modal.getInstance(document.getElementById('bulkPriceModal'))?.hide();
     pcToast(`${data.updated}개 상품에 적용했습니다.`, 'success');
+  } catch (err) {
+    pcToast('요청 실패: ' + err.message, 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
+async function runBulkClean() {
+  const ids = selectedItemIds();
+  if (!ids.length) { pcToast('상품을 먼저 선택하세요.', 'warning'); return; }
+  const btn = document.getElementById('bulkCleanBtn');
+  setButtonLoading(btn, true, '정제 중…');
+  try {
+    const resp = await fetch('/seller/collect/bulk-clean', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({item_ids: ids}),
+    });
+    const ctype = resp.headers.get('content-type') || '';
+    if (!ctype.includes('application/json')) { pcToast(`요청 실패 (HTTP ${resp.status}).`, 'error'); return; }
+    const data = await resp.json();
+    if (!data.ok) {
+      if (data.no_rules) {
+        pcToast('금지어/치환 규칙이 없습니다. 규칙 설정으로 이동합니다.', 'warning');
+        setTimeout(() => { location.href = '/seller/listing/word-rules'; }, 900);
+      } else { pcToast(data.error || '정제 실패', 'error'); }
+      return;
+    }
+    // 변경된 제목으로 행 갱신
+    (data.results || []).forEach(r => {
+      if (r.changed && r.title != null) {
+        const chk = document.querySelector(`.row-chk[value="${r.id}"]`);
+        const tr = chk && chk.closest('tr');
+        const a = tr && tr.querySelector('td a.fw-semibold');
+        if (a) { a.textContent = r.title; a.title = r.title; }
+      }
+    });
+    pcToast(`${data.updated}개 상품명을 정제했습니다.`, 'success');
   } catch (err) {
     pcToast('요청 실패: ' + err.message, 'error');
   } finally {

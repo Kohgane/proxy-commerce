@@ -37,8 +37,11 @@
     - ✅ v3 P1-5 퍼센티 포팅 #1 그룹관리(Phase 247): 신설 `collect_groups.py`(셀러별 그룹 CRUD, Sheets+인메모리).
       라우트 `/collect/groups/create|delete`, `/collect/bulk-group`(item_ids→extra.group_id, group_name 신규생성/해제).
       수집이력에 그룹 필터(?group=) + '🗂 그룹 지정' 버튼/모달(기존선택·새그룹·관리삭제). 셀러 격리.
-    - ⏳ 다음: 퍼센티 포팅 #2 금지어/치환 → 이미지편집UI → 통관고유부호 → 장부/애널 노출. 그리고 멀티워커 이력
-      영구화(옵트인), 모바일, 수집버튼 리디자인.
+    - ✅ v3 P1-5 포팅 #2 금지어/치환(Phase 248): 신설 `word_rules.py`(셀러별 banned[]+subs[{from,to}], Sheets+인메모리),
+      설정 페이지 `/seller/listing/word-rules`(+nav), 저장 `/word-rules/save`, 일괄 `/collect/bulk-clean`
+      (선택 제목에 치환→금지어제거 적용, 규칙 없으면 400+안내). 수집이력 '✨ 상품명 정제' 버튼.
+    - ⏳ 다음: 퍼센티 포팅 #3 이미지편집UI → #4 통관고유부호(PCCC) → #5 장부/애널 노출 → 직원계정. 그리고
+      멀티워커 이력 영구화(옵트인), 모바일, 수집버튼 리디자인.
 - **KOHgogane 브리프 v2 (전면 리디자인 로드맵, 오너 제공 2026-06-20):** 코가네 퍼센티→**코고가네/KOHgogane** 리브랜딩 +
   catdyy식 디자인 토큰(먹/한지/금 + 청록 Primary) + Pretendard/Noto Serif KR + 수집상품 일괄관리(퍼센티 동등) +
   온보딩 위저드 + 게임화 + 구독 + PWA/베타. 순서: 디자인→일괄관리→온보딩→게임화→구독→앱. (대형 — 덩어리별 PR)

@@ -2025,6 +2025,85 @@ def collect_bulk_group():
     return jsonify({"ok": True, "updated": updated, "group": group_obj, "group_id": group_id})
 
 
+@bp.get("/listing/word-rules")
+def word_rules_page():
+    """금지어/치환 규칙 설정 페이지 (v3 P1-5)."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
+    from . import word_rules
+    rules = word_rules.get_rules(_seller_id())
+    return render_template("word_rules.html", page="word_rules", rules=rules)
+
+
+@bp.post("/listing/word-rules/save")
+def word_rules_save():
+    """규칙 저장. Request: {"banned": "..." or [...], "subs": [{from,to}...]}"""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    try:
+        from . import word_rules
+        norm = word_rules.save_rules(_seller_id(), data.get("banned"), data.get("subs"))
+    except Exception as exc:
+        logger.warning("규칙 저장 오류: %s", exc)
+        return jsonify({"ok": False, "error": "규칙 저장 중 오류가 발생했습니다."}), 500
+    return jsonify({"ok": True, "rules": norm})
+
+
+@bp.post("/collect/bulk-clean")
+def collect_bulk_clean():
+    """선택 상품의 제목에 금지어/치환 규칙을 일괄 적용 (셀러 격리).
+
+    Request: {"item_ids": [...]}
+    Response: {"ok": true, "updated": N, "results": [{id, title, changed}]}
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    item_ids = data.get("item_ids") if isinstance(data.get("item_ids"), list) else []
+    item_ids = [str(i) for i in item_ids if str(i).strip()][:1000]
+    if not item_ids:
+        return jsonify({"ok": False, "error": "상품을 선택하세요."}), 400
+
+    import json as _json
+    from . import collect_history_store, word_rules
+    sid = _seller_id()
+    rules = word_rules.get_rules(sid)
+    if not rules.get("banned") and not rules.get("subs"):
+        return jsonify({"ok": False, "error": "설정된 금지어/치환 규칙이 없습니다. 먼저 규칙을 저장하세요.",
+                        "no_rules": True}), 400
+
+    updated = 0
+    results = []
+    try:
+        for item_id in item_ids:
+            item = collect_history_store.get(item_id, seller_id=sid)
+            if not item:
+                continue
+            title = item.get("title") or ""
+            res = word_rules.apply_rules(title, sid, rules=rules)
+            if not res["changed"]:
+                results.append({"id": item_id, "title": title, "changed": False})
+                continue
+            # extra_json의 title_ko도 함께 정제(표시 일관성)
+            try:
+                extra = _json.loads(item.get("extra_json") or "{}")
+            except (TypeError, ValueError):
+                extra = {}
+            extra["title_ko"] = res["text"]
+            ok = collect_history_store.update(item_id, seller_id=sid, title=res["text"],
+                                              extra_json=_json.dumps(extra, ensure_ascii=False))
+            if ok:
+                updated += 1
+            results.append({"id": item_id, "title": res["text"], "changed": True,
+                            "removed": res["removed"], "substituted": res["substituted"]})
+    except Exception as exc:
+        logger.warning("상품명 정제 오류: %s", exc)
+        return jsonify({"ok": False, "error": "상품명 정제 중 오류가 발생했습니다."}), 500
+
+    return jsonify({"ok": True, "updated": updated, "results": results})
+
+
 @bp.post("/collect/bulk-price")
 def collect_bulk_price():
     """수집 이력 여러 항목에 목표 마진율/원가 배수를 일괄 적용 (셀러 격리).
