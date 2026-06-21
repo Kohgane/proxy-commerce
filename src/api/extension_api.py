@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import secrets
 import threading
 import time
 import uuid
@@ -179,12 +180,16 @@ def collect_from_extension():
     Response:
         {ok: true, preview_url: "/seller/collect/preview/<id>"}
     """
+    # v9 P0 — 수집 1건 끝까지 추적(상관관계 ID). 어느 홉에서 사라지는지 로그로 본다.
+    _corr = secrets.token_hex(4)
     user = _require_token(scopes=["collect.write"])
     if not user:
+        logger.warning("[collect %s] 인증 실패(토큰 없음/무효)", _corr)
         return jsonify({"ok": False, "error": "인증이 필요합니다. Personal Access Token을 설정해주세요."}), 401
 
     payload = request.get_json(force=True, silent=True) or {}
     url = (payload.get("url") or "").strip()
+    logger.info("[collect %s] 수신 token_user_id=%r url=%s", _corr, user.get("user_id"), url[:80])
     if not url:
         return jsonify({"ok": False, "error": "url 필드가 필요합니다."}), 400
 
@@ -249,16 +254,19 @@ def collect_from_extension():
             },
             seller_id=seller_id_val,
         )
+        logger.info("[collect %s] 저장 시도 seller_id=%r item_id=%s", _corr, seller_id_val, item_id)
         try:
             saved = history_get(item_id, seller_id=seller_id_val) is not None
         except Exception:
             saved = bool(item_id)
+        logger.info("[collect %s] 저장 자기검증 saved=%s (같은 seller_id=%r로 재조회)", _corr, saved, seller_id_val)
     except Exception as exc:
-        logger.warning("수집 이력 기록 실패: %s", exc)
+        logger.warning("[collect %s] 수집 이력 기록 실패: %s", _corr, exc)
 
     if not item_id or not saved:
         # 가짜 성공 금지(v4 P0): 실제 저장 안 됐으면 정직한 실패로 토스트가 사유를 표시하게.
-        logger.warning("확장 수집 저장 검증 실패: url=%s user=%s saved=%s", url[:80], seller_id_val, saved)
+        logger.warning("[collect %s] 저장 검증 실패 → 502 정직 실패: url=%s seller_id=%r saved=%s",
+                       _corr, url[:80], seller_id_val, saved)
         return jsonify({"ok": False, "error": "수집 항목을 저장하지 못했습니다. 잠시 후 다시 시도하세요."}), 502
 
     preview_url = f"/seller/collect/preview/{item_id}"

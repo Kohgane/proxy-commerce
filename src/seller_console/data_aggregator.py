@@ -32,7 +32,7 @@ def _safe_import(module_path: str, attr: str = None) -> Optional[Any]:
 # 오늘 KPI 데이터
 # ---------------------------------------------------------------------------
 
-def get_today_kpi(seller_id: Any = None) -> Dict[str, Any]:
+def get_today_kpi(seller_id: Any = None, seller_ids: Any = None) -> Dict[str, Any]:
     """오늘 KPI 카드 데이터 반환 (주문수, GMV, 마진, 신규 수집).
 
     실데이터 우선: 오늘 수집 건수는 collect_history_store(실 저장소)에서 집계.
@@ -56,7 +56,8 @@ def get_today_kpi(seller_id: Any = None) -> Dict[str, Any]:
     # 오늘 수집 건수 — 실 저장소(collect_history_store)에서 셀러별 집계(이력 리스트와 동일 필터)
     try:
         from .collect_history_store import summary as collect_summary
-        s = collect_summary(days=2, seller_id=seller_id)
+        # 이력 리스트와 동일 필터 — 식별자 집합(user_id+email)이 있으면 그걸로(관용 매칭, v9).
+        s = collect_summary(days=2, seller_id=seller_id, seller_ids=seller_ids)
         if isinstance(s, dict):
             data["new_products_collected"] = int(s.get("today", 0) or 0)
             has_real = True

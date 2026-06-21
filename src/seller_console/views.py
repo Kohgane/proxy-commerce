@@ -146,11 +146,11 @@ def _find_cross_channel_messages(messages: list, identity: dict[str, str]) -> li
 # 헬퍼 — graceful import
 # ---------------------------------------------------------------------------
 
-def _get_widgets(seller_id=None) -> list:
-    """위젯 데이터 목록 조회 (graceful import). seller_id로 KPI 셀러 격리."""
+def _get_widgets(seller_id=None, seller_ids=None) -> list:
+    """위젯 데이터 목록 조회 (graceful import). seller_id/식별자집합으로 KPI 셀러 격리."""
     try:
         from .widgets import build_all_widgets
-        return build_all_widgets(seller_id)
+        return build_all_widgets(seller_id, seller_ids)
     except Exception as exc:
         logger.warning("위젯 로드 실패: %s", exc)
         return []
@@ -916,7 +916,7 @@ def _build_dashboard_home_context(widgets: list[dict[str, Any]], dismissed: bool
 
 
 def _render_dashboard_home():
-    widgets = _get_widgets(_seller_id())
+    widgets = _get_widgets(_seller_id(), _seller_identities())
     dismissed = request.cookies.get(_ONBOARDING_DISMISS_COOKIE) == "1"
     context = _build_dashboard_home_context(widgets, dismissed=dismissed)
     context["onboarding"]["dismiss_href"] = url_for("seller_console.dismiss_onboarding", next=request.path)
@@ -3562,6 +3562,22 @@ def _seller_id() -> str:
         return "default"
 
 
+def _seller_identities() -> set:
+    """현재 사용자의 식별자 집합(user_id + email + 기본키) — 수집 저장 seller_id와
+    이력 필터 seller_id가 별칭(user_id vs email)으로 어긋날 때도 본인 항목을 보이게
+    하는 관용 매칭용(v9 P0). 모두 '본인' 값이라 타 셀러 누출 없음.
+    """
+    ids = set()
+    try:
+        for v in (session.get("user_id"), session.get("user_email")):
+            if v:
+                ids.add(str(v))
+    except Exception:
+        pass
+    ids.add(_seller_id())
+    return ids
+
+
 def _diag_market_key(market: str) -> str:
     """자격증명 마켓 키 → 진단 서브시스템 키 (11번가만 상이)."""
     return "11st" if market == "elevenst" else market
@@ -4912,9 +4928,12 @@ def collect_history():
     try:
         from .collect_history_store import list_items, summary, distinct_domains
         _sid = _seller_id()
-        items = list_items(domain=domain, source=source, days=days, seller_id=_sid)
-        summ = summary(days=days, seller_id=_sid)
-        domains = distinct_domains(seller_id=_sid)
+        _ids = _seller_identities()
+        items = list_items(domain=domain, source=source, days=days, seller_ids=_ids)
+        summ = summary(days=days, seller_ids=_ids)
+        domains = distinct_domains(seller_ids=_ids)
+        # v9 P0 추적: 이력 필터 식별자 + 결과 건수(어느 seller_id로 조회하는지 증거).
+        logger.info("[collect-history] seller_id=%s identities=%s total=%s", _sid, sorted(_ids), summ.get("total"))
     except Exception as exc:
         logger.warning("수집 이력 조회 실패: %s", exc)
 

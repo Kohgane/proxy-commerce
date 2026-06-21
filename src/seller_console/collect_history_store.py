@@ -133,7 +133,8 @@ def append(
 
 
 def list_items(
-    *, domain: str = "", source: str = "", days: int = 30, seller_id: Optional[str] = None
+    *, domain: str = "", source: str = "", days: int = 30, seller_id: Optional[str] = None,
+    seller_ids: Optional[set] = None,
 ) -> list[dict]:
     """수집 이력 목록 반환 (최신순).
 
@@ -163,7 +164,11 @@ def list_items(
             continue
         if source and row.get("source", "") != source:
             continue
-        if seller_id is not None and str(row.get("seller_id", "") or "") != str(seller_id):
+        _rsid = str(row.get("seller_id", "") or "")
+        if seller_ids is not None:
+            if _rsid not in seller_ids:
+                continue
+        elif seller_id is not None and _rsid != str(seller_id):
             continue
         result.append(dict(row))
 
@@ -171,16 +176,20 @@ def list_items(
     return result
 
 
-def get(item_id: str, seller_id: Optional[str] = None) -> Optional[dict]:
+def get(item_id: str, seller_id: Optional[str] = None, seller_ids: Optional[set] = None) -> Optional[dict]:
     """ID로 단건 조회.
 
     Args:
         seller_id: 지정 시 해당 셀러의 항목만 반환(타 셀러 항목 접근 차단). None이면 검사 안 함.
+        seller_ids: 사용자의 식별자 집합(user_id+email) — 별칭 불일치 대비 관용 매칭.
     """
     def _match(row: dict) -> bool:
         if row.get("id") != item_id:
             return False
-        if seller_id is not None and str(row.get("seller_id", "") or "") != str(seller_id):
+        _rsid = str(row.get("seller_id", "") or "")
+        if seller_ids is not None:
+            return _rsid in seller_ids
+        if seller_id is not None and _rsid != str(seller_id):
             return False
         return True
 
@@ -303,9 +312,9 @@ def delete(item_ids, *, seller_id: Optional[str] = None) -> int:
     return before - len(_in_memory)
 
 
-def summary(days: int = 30, seller_id: Optional[str] = None) -> dict:
+def summary(days: int = 30, seller_id: Optional[str] = None, seller_ids: Optional[set] = None) -> dict:
     """기간별 요약 통계."""
-    items = list_items(days=days, seller_id=seller_id)
+    items = list_items(days=days, seller_id=seller_id, seller_ids=seller_ids)
     by_source: dict[str, int] = {
         "extension": 0,
         "bookmarklet": 0,
@@ -341,8 +350,8 @@ def summary(days: int = 30, seller_id: Optional[str] = None) -> dict:
     }
 
 
-def distinct_domains(days: int = 90, seller_id: Optional[str] = None) -> list[str]:
+def distinct_domains(days: int = 90, seller_id: Optional[str] = None, seller_ids: Optional[set] = None) -> list[str]:
     """최근 N일 내 수집된 도메인 목록 (중복 제거, 알파벳순)."""
-    items = list_items(days=days, seller_id=seller_id)
+    items = list_items(days=days, seller_id=seller_id, seller_ids=seller_ids)
     domains = sorted({item.get("domain", "") for item in items if item.get("domain")})
     return domains
