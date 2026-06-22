@@ -29,9 +29,10 @@ function extractProductMeta() {
 
   // 이미지: og:image 우선 + 페이지의 모든 상품 이미지(로고/배너/아이콘/작은 이미지 제외)
   const ogImage = getMeta("og:image") || getMeta("og:image:url") || "";
+  // v11 P0: 무관 이미지(플래그·태그·픽셀·문서아이콘·화살표 등) 제외 — 서버 블랙리스트와 동일.
   const _isProductImg = (s) =>
     s && s.indexOf("data:") !== 0 &&
-    !/(logo|sprite|icon|favicon|avatar|placeholder|loading|blank|pixel|banner|badge|rating|star_|flag_|emoji)/i.test(s);
+    !/(logo|sprite|icon|favicon|avatar|placeholder|loading|blank|pixel|spinner|banner|badge|button|arrow|chevron|caret|rating|star_|flags?|emoji|openingemail|supplier-public-tag|public-tag|\.slim\.|tracking|beacon|watermark|qr[-_]?code|coupon|nav_|\/pdf|pdf[-_]|\.pdf|\.doc|doc[-_]icon|\/doc\/|1x1|transparent\.|spacer)/i.test(s);
   const images = [];
   const _seenImg = new Set();
   const _pushImg = (s) => { if (_isProductImg(s) && !_seenImg.has(s)) { _seenImg.add(s); images.push(s); } };

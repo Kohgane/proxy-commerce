@@ -180,19 +180,46 @@ def _extract_domain(url: str) -> str:
         return ""
 
 
-# 상품 이미지가 아닌 것으로 보이는 URL 패턴(로고/아이콘/배너/플레이스홀더 등)
+# 상품 이미지가 아닌 것으로 보이는 URL 패턴(로고/아이콘/배너/플래그/추적픽셀/문서아이콘 등)
+# v11 P0: 무관 이미지(태극기 flags·openingemail·supplier-public-tag·*.slim.png·pdf/doc·화살표 등) 제외.
 _NON_PRODUCT_IMG_RE = re.compile(
     r"(logo|sprite|icon|favicon|avatar|placeholder|loading|blank|pixel|spinner|"
-    r"banner|badge|button|arrow|star_|rating|flag_|emoji)",
+    r"banner|badge|button|arrow|chevron|caret|star_|rating|flags?|emoji|"
+    r"openingemail|supplier-public-tag|public-tag|\.slim\.|tracking|beacon|"
+    r"watermark|qr[-_]?code|coupon|thumb_nav|nav_|/pdf|pdf[-_]|\.pdf|"
+    r"\.doc|doc[-_]icon|/doc/|/document/|1x1|transparent\.|spacer)",
     re.IGNORECASE,
 )
+
+
+def is_product_image(url: str) -> bool:
+    """상품 이미지로 보이는 URL인가? (data:/빈값/블랙리스트 패턴 제외)"""
+    s = (url or "").strip()
+    if not s or s.startswith("data:"):
+        return False
+    if not s.startswith("http") and not s.startswith("//"):
+        return False
+    return not _NON_PRODUCT_IMG_RE.search(s)
+
+
+def filter_product_images(urls) -> list:
+    """이미지 URL 목록에서 무관 이미지를 제거하고 순서 유지·중복 제거(첫 번째=대표)."""
+    out, seen = [], set()
+    for u in (urls or []):
+        s = str(u or "").strip()
+        if not s or s in seen or not is_product_image(s):
+            continue
+        seen.add(s)
+        out.append(s)
+    return out
 
 
 def _collect_dom_images(soup, base_url: str) -> list:
     """페이지 DOM에서 상품 이미지를 최대한 수집한다.
 
     - src + lazy-load 속성(data-src/data-original/data-lazy/data-srcset) + srcset(최대 해상도)
-    - data: URI, 로고/아이콘/배너/플레이스홀더 패턴 제외
+    - data: URI, 로고/아이콘/배너/플레이스홀더/플래그/추적픽셀/문서 패턴 제외
+    - width/height 속성이 명시돼 있고 작으면(아이콘/픽셀) 제외
     - 상대경로 절대화, 순서 유지 중복 제거
     """
     out: list = []
@@ -217,6 +244,17 @@ def _collect_dom_images(soup, base_url: str) -> list:
                 best = cand
         return best
 
+    def _too_small(img) -> bool:
+        # width/height 속성이 명시돼 있고 둘 중 하나가 작으면 아이콘/픽셀로 보고 제외.
+        for attr in ("width", "height"):
+            v = (img.get(attr) or "").strip().replace("px", "")
+            try:
+                if v and float(v) < 100:
+                    return True
+            except (TypeError, ValueError):
+                pass
+        return False
+
     for img in soup.find_all("img"):
         cand = ""
         for attr in ("src", "data-src", "data-original", "data-lazy",
@@ -234,6 +272,8 @@ def _collect_dom_images(soup, base_url: str) -> list:
             continue
         if _NON_PRODUCT_IMG_RE.search(url):
             continue
+        if _too_small(img):
+            continue
         seen.add(url)
         out.append(url)
 
@@ -246,6 +286,88 @@ def _collect_dom_images(soup, base_url: str) -> list:
             out.append(url)
 
     return out
+
+
+# 옵션 그룹 라벨로 인정할 키워드(한/영) — 색상·사이즈·수량·규격·스타일·변형 등.
+_OPTION_LABEL_RE = re.compile(
+    r"(색상|컬러|색깔|사이즈|크기|치수|규격|용량|수량|개수|스타일|종류|타입|모델|구성|"
+    r"옵션|선택|color|colour|size|quantity|qty|variant|variation|style|type|model|spec)",
+    re.IGNORECASE,
+)
+# 옵션 값으로 보기 어려운 잡텍스트(가격/안내문 등) — 너무 길거나 가격 문자열은 제외.
+_OPTION_VALUE_BAD_RE = re.compile(r"(원|₩|\$|¥|€|£|장바구니|구매|cart|add to|배송|리뷰|review)", re.IGNORECASE)
+
+
+def _collect_dom_options(soup) -> list:
+    """렌더된 DOM에서 옵션(색상/사이즈/수량 등)을 보수적으로 수집.
+
+    1) <select> 드롭다운 → {name, values}(placeholder 제외).
+    2) 라벨 텍스트가 옵션 키워드인 그룹의 클릭 가능 자식(버튼/스와치/li/img[alt]) 값.
+    확신 없으면 비움(거짓 데이터 금지). 값은 짧은 텍스트만, 캡 적용.
+    """
+    options: list = []
+    seen_names = set()
+
+    def _clean(v: str) -> str:
+        return re.sub(r"\s+", " ", (v or "")).strip()
+
+    def _add(name: str, values: list) -> None:
+        name = _clean(name)[:40] or "옵션"
+        vals, seenv = [], set()
+        for v in values:
+            cv = _clean(v)
+            if not cv or len(cv) > 40 or _OPTION_VALUE_BAD_RE.search(cv):
+                continue
+            if cv in seenv:
+                continue
+            seenv.add(cv)
+            vals.append(cv)
+            if len(vals) >= 40:
+                break
+        key = name.lower()
+        if len(vals) >= 2 and key not in seen_names:   # 값이 2개 이상일 때만 옵션으로 인정
+            seen_names.add(key)
+            options.append({"name": name, "values": vals})
+
+    # 1) <select>
+    try:
+        for sel in soup.find_all("select"):
+            opts = [o.get_text() for o in sel.find_all("option")
+                    if (o.get_text() or "").strip() and not o.get("disabled")]
+            # placeholder("선택하세요" 류) 첫 항목 제거 추정
+            if opts and re.search(r"(선택|choose|select|please)", opts[0], re.IGNORECASE):
+                opts = opts[1:]
+            name = sel.get("aria-label") or sel.get("name") or sel.get("id") or "옵션"
+            _add(name, opts)
+    except Exception:
+        pass
+
+    # 2) 라벨된 스와치 그룹
+    try:
+        for lab in soup.find_all(["label", "h2", "h3", "h4", "span", "div", "dt"]):
+            txt = _clean(lab.get_text())
+            if not txt or len(txt) > 24 or not _OPTION_LABEL_RE.search(txt):
+                continue
+            # 라벨 다음 형제/부모 내에서 클릭 가능 후보 텍스트 수집
+            group = lab.find_next_sibling() or lab.parent
+            if not group:
+                continue
+            cands = group.find_all(["button", "li", "a"], limit=60)
+            values = []
+            for c in cands:
+                v = _clean(c.get_text()) or _clean(c.get("aria-label") or "")
+                if not v:
+                    img = c.find("img")
+                    if img:
+                        v = _clean(img.get("alt") or "")
+                if v:
+                    values.append(v)
+            if values:
+                _add(txt, values)
+    except Exception:
+        pass
+
+    return options[:8]   # 옵션 그룹 과다 방지
 
 
 class UniversalScraper:
@@ -284,23 +406,28 @@ class UniversalScraper:
             logger.warning("beautifulsoup4 미설치 — 범용 수집기 제한 모드")
             return empty
 
-        # 1. JSON-LD
-        result = self._parse_jsonld(soup, url, domain)
-        if result:
-            return result
+        # 1~4: JSON-LD → OG → Microdata → Heuristic (순서대로 첫 성공 사용)
+        result = (
+            self._parse_jsonld(soup, url, domain)
+            or self._parse_opengraph(soup, url, domain)
+            or self._parse_microdata(soup, url, domain)
+            or self._heuristic(soup, url, domain)
+        )
 
-        # 2. Open Graph
-        result = self._parse_opengraph(soup, url, domain)
-        if result:
-            return result
-
-        # 3. Microdata
-        result = self._parse_microdata(soup, url, domain)
-        if result:
-            return result
-
-        # 4. Heuristic
-        return self._heuristic(soup, url, domain)
+        # v11 P0 후처리: 옵션이 비었으면 렌더된 DOM에서 보수적으로 보강(색상/사이즈/수량 등),
+        #               이미지는 무관 패턴을 한 번 더 필터(첫 번째=대표 유지).
+        if result is not None:
+            try:
+                if not getattr(result, "options", None):
+                    result.options = _collect_dom_options(soup)
+            except Exception:
+                pass
+            try:
+                if getattr(result, "images", None):
+                    result.images = filter_product_images(result.images)
+            except Exception:
+                pass
+        return result
 
     def _parse_jsonld(self, soup, url: str, domain: str) -> Optional[ScrapedProduct]:
         """JSON-LD schema.org Product 파싱."""

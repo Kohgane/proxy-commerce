@@ -28,6 +28,20 @@
   `/i18n/dismiss` 라우트(쿠키 1년 기억). 랜딩 상단 슬림 배너(English/한국어/✕) — 외국인만, 한국인 미노출.
   랜딩 카피 EN/KO 실전환(가짜 드롭다운 아님 — 고른 값이 실제 EN 카피로 반영). → v9 완료(수집추적·애플홈·지역배너).
 
+## 🟩 v11 브리프 (오너 2026-06-22 — "아이콘 단일화·페이지별 버튼·정확 수집·업로드 실패 진단")
+- 절대원칙: 거짓 성공 금지(특히 업로드)·정직 데이터·회귀 금지·경량. 일반유저는 코드/URL/env 몰라도 됨.
+- ✅ **P0 수집 정확도(Phase 273):** ①무관 이미지 제거 — universal_scraper `_NON_PRODUCT_IMG_RE` 확장
+  (flags/openingemail/supplier-public-tag/`.slim.`/pdf/doc/arrow/chevron/tracking/beacon/1x1 등) + `is_product_image`/
+  `filter_product_images` 헬퍼 + width/height<100 아이콘 제외. content_script `_isProductImg` 동일 블랙리스트.
+  extension_api 최종 이미지에 `filter_product_images` 적용(어떤 소스든 정제, 첫=대표). ②옵션 전부 — `_collect_dom_options`
+  (보수적: `<select>` + 라벨 키워드(색상/사이즈/수량/color/size…) 스와치 그룹, 값 2+일 때만, 확신 없으면 빈값=정직)
+  → parse_html 후처리로 options 비었으면 보강. extension_api extra에 `options` 저장(편집 프리필). ③가격 — merge가
+  price 0/빈값일 때 스크래퍼 추출가로 보강(기존). 가드 `tests/test_collect_accuracy_v11.py` 4.
+- ⏳ **P0 버튼 자동 전환:** 목록=중앙 바만/상세=우측 FAB만(동시노출 0, URL패턴 dp·item.htm·g-·offer/detail + 단일제품 휴리스틱).
+- ⏳ **P0 지구본 제거·단일 아이콘:** 북마클릿 일반플로우 완전 제거(v10서 강등됨), 확장 글러브 단일아이콘(v8③ 적용됨) 확인.
+- ⏳ **P1 깔끔 유저뷰 + 업로드 실패 정직 진단:** 편집뷰 이미지·가격·상세·옵션만(raw URL 고급숨김), 업로드 프리플라이트
+  (가격0 차단·앱 마켓키 미입력 안내·쿠팡/네이버 릴레이IP·필수필드·실 API에러 패스스루, env키 vs 앱키 구분).
+
 ## 🟪 v10 브리프 (오너 2026-06-22 — "지정 소싱처에서만·실제 제품만·선택정상화·개발자 노출 제거")
 - 제0원칙: 일반 유저는 코드/북마클릿/env 몰라도 됨. "쓰기 편한가/보기 좋은가"만. 보이는 게 전부.
 - ✅ **P0 지정 소싱처에서만 노출 + 실제 제품만 + 선택 정상화(Phase 271):** content_script.js —
