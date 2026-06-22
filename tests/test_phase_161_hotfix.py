@@ -163,10 +163,10 @@ class TestSourcingHubView:
 
 class TestSidebarNoDuplicate:
     def test_research_sourcing_group_appears_once(self, sidebar_html):
-        """'리서치/소싱' 그룹 제목이 사이드바에 정확히 한 번만 나타난다."""
-        count = sidebar_html.count("리서치/소싱")
+        """v12: 'AI 소싱·등록' 그룹 제목이 사이드바에 정확히 한 번만 나타난다."""
+        count = sidebar_html.count("console-nav-group-title\">AI 소싱·등록")
         assert count == 1, (
-            f"'리서치/소싱' 그룹 제목이 {count}번 나타남 — 중복 제거 필요"
+            f"'AI 소싱·등록' 그룹 제목이 {count}번 나타남 — 중복 제거 필요"
         )
 
     def test_keyword_trend_menu_appears_once(self, sidebar_html):
@@ -177,10 +177,10 @@ class TestSidebarNoDuplicate:
         )
 
     def test_ai_sourcing_hub_menu_appears_once(self, sidebar_html):
-        """'AI 소싱 허브' 메뉴가 사이드바에 정확히 한 번만 나타난다."""
-        count = sidebar_html.count("AI 소싱 허브")
+        """v12: AI 소싱 허브(/seller/sourcing) 진입 메뉴가 정확히 한 번만 나타난다."""
+        count = sidebar_html.count('href="/seller/sourcing"')
         assert count == 1, (
-            f"'AI 소싱 허브' 메뉴가 {count}번 나타남 — 중복 제거 필요"
+            f"'/seller/sourcing' href가 {count}번 나타남 — 중복 제거 필요"
         )
 
     def test_sourcing_watches_present(self, sidebar_html):

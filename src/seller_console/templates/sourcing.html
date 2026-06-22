@@ -2,16 +2,20 @@
 {% block title %}AI 소싱 허브{% endblock %}
 {% block content %}
 <div class="container-fluid py-3">
-  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
     <div>
-      <h1 class="h4 mb-1">AI 소싱 허브</h1>
-      <p class="text-muted mb-0">키워드 트렌드 + Discovery + 후보 큐를 합쳐 소싱 우선순위를 제안합니다.</p>
+      <h1 class="h4 mb-1">AI 소싱·등록</h1>
+      <p class="text-muted mb-0">키워드 → 국내에서 뭐가 팔리나 → 비슷한 소싱처 상품 찾기 → 바로 수집·등록.</p>
     </div>
     <div class="d-flex gap-2">
-      <a href="/seller/sourcing/monitor" class="btn btn-outline-success btn-sm"><i class="bi bi-broadcast"></i> 소싱처 변화</a>
-      <a href="/seller/keywords{% if keyword %}?q={{ keyword|urlencode }}&period={{ period }}{% endif %}" class="btn btn-outline-primary btn-sm">키워드 트렌드 보기</a>
+      <a href="/seller/sourcing/monitor" class="btn btn-outline-success btn-sm"><i class="bi bi-broadcast"></i> 소싱처 변동 알림</a>
     </div>
   </div>
+  <!-- 두 가지 AI 모드: 발굴(이 화면) / 등록 -->
+  <ul class="nav nav-pills gap-2 mb-3">
+    <li class="nav-item"><span class="nav-link active"><i class="bi bi-stars"></i> AI 소싱(상품 발굴)</span></li>
+    <li class="nav-item"><a class="nav-link" href="/seller/listing/ai-create"><i class="bi bi-robot"></i> AI 상품등록(자동 생성)</a></li>
+  </ul>
 
   {% if notice %}
   <div class="alert alert-info py-2">{{ notice }}</div>
@@ -148,13 +152,14 @@
     </div>
   </div>
 
-  <form class="card console-card mb-3" method="get" action="/seller/sourcing">
+  <!-- 메인 CTA: 키워드 → AI 상품 추천(콘텐츠 중앙 전면) -->
+  <form class="card console-card mb-3 border-primary" method="get" action="/seller/sourcing">
     <div class="card-body">
-      <label for="keywordInput" class="form-label fw-semibold">키워드 기반 소싱 추천</label>
-      <div class="input-group mb-2">
-        <input id="keywordInput" class="form-control" name="keyword" value="{{ keyword }}" placeholder="예: 요가 레깅스, porter bag">
+      <label for="keywordInput" class="form-label fw-semibold mb-1">🔎 무슨 상품을 팔까요? 키워드를 넣어보세요</label>
+      <div class="input-group input-group-lg mb-2">
+        <input id="keywordInput" class="form-control" name="keyword" value="{{ keyword }}" placeholder="예: 요가 레깅스, 보틀, 강아지 장난감">
         <input type="hidden" name="period" value="{{ period }}">
-        <button class="btn btn-primary" type="submit">추천 받기</button>
+        <button class="btn btn-cta" type="submit">AI 상품 추천받기</button>
       </div>
       <div class="d-flex flex-wrap gap-2">
         {% for key, label in period_options.items() %}
@@ -163,6 +168,81 @@
       </div>
     </div>
   </form>
+
+  {% if keyword %}
+  <!-- 국내에서 실제 팔리는 상품(네이버 쇼핑 실데이터) -->
+  <div class="card console-card mb-3">
+    <div class="card-body">
+      <h2 class="h6 mb-1">국내에서 팔리는 상품 <span class="text-muted fw-normal">· “{{ keyword }}”</span></h2>
+      {% if domestic_products %}
+      <p class="text-muted small mb-3">아래는 네이버 쇼핑 기준 실제 판매 중인 상품이에요. 마음에 들면 <strong>소싱처에서 비슷한 상품을 찾아</strong> 바로 수집하세요.</p>
+      <div class="row g-3">
+        {% for p in domestic_products %}
+        <div class="col-6 col-md-4 col-lg-3">
+          <div class="card h-100">
+            {% if p.image %}<img src="{{ p.image }}" class="card-img-top" alt="" loading="lazy" style="height:130px;object-fit:cover" onerror="this.style.display='none'">{% endif %}
+            <div class="card-body p-2 d-flex flex-column">
+              <a href="{{ p.link }}" target="_blank" rel="noopener" class="small fw-semibold text-decoration-none text-truncate-2" title="{{ p.title }}">{{ p.title }}</a>
+              <div class="mt-1">{% if p.price %}<span class="fw-bold text-primary">₩{{ "{:,}".format(p.price) }}</span>{% else %}<span class="text-muted small">가격 정보 없음</span>{% endif %}
+                {% if p.mall %}<span class="text-muted small d-block">{{ p.mall }}</span>{% endif %}</div>
+              <details class="mt-2">
+                <summary class="btn btn-sm btn-cta w-100" style="list-style:none">소싱처에서 찾기</summary>
+                <div class="d-grid gap-1 mt-2">
+                  {% for s in sourcing_search_links %}
+                  <a class="btn btn-sm btn-outline-secondary" href="{{ s.url.split('=')[0] }}={{ p.title|urlencode }}" target="_blank" rel="noopener">{{ s.emoji }} {{ s.name }}에서 검색</a>
+                  {% endfor %}
+                </div>
+              </details>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% elif not domestic_enabled %}
+      <div class="alert alert-light border small mb-0">
+        <strong>국내 베스트셀러 데이터가 아직 연결되지 않았어요.</strong> (네이버 쇼핑 검색 API 키 <code>NAVER_SEARCH_CLIENT_ID/SECRET</code> 미설정)
+        키가 연결되면 여기에 실제 판매 상품이 표시됩니다. <span class="text-muted">— 가짜 수치는 표시하지 않습니다.</span>
+      </div>
+      {% else %}
+      <div class="alert alert-light border small mb-0">이 키워드로 국내 판매 상품을 찾지 못했어요. 다른 키워드를 시도해보세요.</div>
+      {% endif %}
+
+      <!-- 키워드로 소싱처 바로 검색(딥링크) -->
+      {% if sourcing_search_links %}
+      <hr>
+      <div class="small fw-semibold mb-2">소싱처에서 “{{ keyword }}” 바로 검색</div>
+      <div class="d-flex flex-wrap gap-2">
+        {% for s in sourcing_search_links %}
+        <a class="btn btn-sm btn-outline-primary" href="{{ s.url }}" target="_blank" rel="noopener">{{ s.emoji }} {{ s.name }}</a>
+        {% endfor %}
+      </div>
+      <div class="form-text">소싱처가 열리면 <strong>코고가네 크롬 확장</strong>으로 마음에 드는 상품을 바로 수집하세요.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- 분석 패널 — 계산 가능한 것만 실데이터, 없으면 '데이터 없음' -->
+  <div class="card console-card mb-3">
+    <div class="card-body">
+      <h2 class="h6 mb-3">분석</h2>
+      <div class="row g-2">
+        {% for m in analysis.metrics %}
+        <div class="col-6 col-md-4">
+          <div class="border rounded p-2 h-100">
+            <div class="text-muted small">{{ m.label }}</div>
+            {% if m.value is not none %}
+            <div class="fw-bold">{{ m.value }}</div>
+            {% else %}
+            <div class="text-muted">데이터 없음</div>
+            {% endif %}
+            <div class="text-muted" style="font-size:.7rem">{{ m.note }}</div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
   <div class="row g-3">
     <div class="col-12 col-lg-8">

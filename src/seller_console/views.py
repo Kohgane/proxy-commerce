@@ -461,6 +461,67 @@ def _build_keyword_trend_context(query_keywords: list[str], period: str) -> dict
     }
 
 
+def _sourcing_search_links(query: str) -> "list[dict[str, str]]":
+    """국내 상품명/키워드를 소싱처(타오바오/1688/알리/테무/아마존)에서 바로 검색하는 딥링크.
+
+    실제 검색 URL로 연결한다(가짜 상품 카드 날조 금지). 사용자가 그 사이트에서
+    크롬 확장 '코고가네 수집'으로 바로 수집할 수 있다.
+    """
+    q = quote_plus((query or "").strip())
+    if not q:
+        return []
+    return [
+        {"name": "타오바오", "emoji": "🛒", "url": f"https://s.taobao.com/search?q={q}"},
+        {"name": "1688", "emoji": "🏭", "url": f"https://s.1688.com/selloffer/offer_search.htm?keywords={q}"},
+        {"name": "알리익스프레스", "emoji": "🌏", "url": f"https://www.aliexpress.com/wholesale?SearchText={q}"},
+        {"name": "테무", "emoji": "🟠", "url": f"https://www.temu.com/search_result.html?search_key={q}"},
+        {"name": "아마존", "emoji": "📦", "url": f"https://www.amazon.com/s?k={q}"},
+    ]
+
+
+def _build_sourcing_analysis(domestic_products: "list[dict[str, Any]]",
+                             keyword_context: "dict[str, Any] | None",
+                             keyword: str) -> "dict[str, Any]":
+    """소싱 분석 패널 — 계산 가능한 것만 실데이터, 불가하면 None('데이터 없음').
+
+    날조 금지: 해외직구 비율·리뷰 지수 등 우리가 계산 못 하는 지표는 None으로 두고
+    템플릿이 '데이터 없음'으로 표시한다.
+    """
+    metrics: "list[dict[str, Any]]" = []
+    products = domestic_products or []
+    prices = [p["price"] for p in products if isinstance(p.get("price"), int) and p["price"] > 0]
+
+    # 국내 판매 상품 수(네이버 쇼핑 실데이터)
+    metrics.append({"label": "국내 판매 상품 수", "value": (f"{len(products)}개" if products else None),
+                    "note": "네이버 쇼핑 검색 결과"})
+    # 최저가 / 평균가(실데이터 계산)
+    metrics.append({"label": "국내 최저가", "value": (f"₩{min(prices):,}" if prices else None), "note": "검색 결과 기준"})
+    metrics.append({"label": "국내 평균가", "value": (f"₩{round(sum(prices) / len(prices)):,}" if prices else None), "note": "검색 결과 기준"})
+
+    # 검색 관심도·경쟁도(네이버 검색광고 실데이터 — 있을 때만)
+    kw_lower = (keyword or "").strip().lower()
+    riser = None
+    for row in ((keyword_context or {}).get("risers") or []):
+        if kw_lower and str(row.get("keyword", "")).strip().lower() == kw_lower:
+            riser = row
+            break
+    if riser is None:
+        risers = (keyword_context or {}).get("risers") or []
+        riser = risers[0] if risers else None
+    metrics.append({"label": "검색 관심도(검색량)",
+                    "value": (f"{riser['search_volume']:,}" if riser and riser.get("search_volume") is not None else None),
+                    "note": "네이버 검색광고"})
+    metrics.append({"label": "경쟁도",
+                    "value": (f"{riser['competition']:.2f}" if riser and riser.get("competition") is not None else None),
+                    "note": "0=낮음·1=높음"})
+
+    # 우리가 계산 못 하는 지표(날조 금지 → 데이터 없음)
+    for label in ("해외직구 비율", "리뷰 지수", "실구매 리뷰"):
+        metrics.append({"label": label, "value": None, "note": "데이터 연동 전"})
+
+    return {"metrics": metrics, "has_any": any(m["value"] is not None for m in metrics)}
+
+
 def _build_sourcing_recommendations(
     *,
     keyword: str,
@@ -5861,6 +5922,18 @@ def sourcing_hub():
     except Exception as exc:
         logger.debug("My Sources 조회 스킵: %s", exc)
 
+    # v12: 국내 베스트셀러(네이버 쇼핑 실데이터) + 소싱처 검색 딥링크 + 분석(실데이터/없으면 '데이터 없음')
+    domestic_products: list[dict[str, Any]] = []
+    domestic_enabled = False
+    try:
+        from src.sourcing import naver_shopping
+        domestic_enabled = naver_shopping.is_configured()
+        if keyword and domestic_enabled:
+            domestic_products = naver_shopping.search_domestic_products(keyword, limit=12)
+    except Exception as exc:
+        logger.debug("국내 베스트셀러 조회 스킵: %s", exc)
+    analysis = _build_sourcing_analysis(domestic_products, keyword_context, keyword)
+
     return render_template(
         "sourcing.html",
         page="sourcing",
@@ -5871,6 +5944,10 @@ def sourcing_hub():
         recommendations=recommendations,
         my_sources=registry_sources,
         registry_sources=registry_sources,
+        domestic_products=domestic_products,
+        domestic_enabled=domestic_enabled,
+        sourcing_search_links=_sourcing_search_links(keyword),
+        analysis=analysis,
         collect_url=(request.args.get("url") or "").strip(),
         notice=(request.args.get("notice") or "").strip(),
         admin_ok=_is_admin_user(),
