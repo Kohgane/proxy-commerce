@@ -28,6 +28,27 @@
   `/i18n/dismiss` 라우트(쿠키 1년 기억). 랜딩 상단 슬림 배너(English/한국어/✕) — 외국인만, 한국인 미노출.
   랜딩 카피 EN/KO 실전환(가짜 드롭다운 아님 — 고른 값이 실제 EN 카피로 반영). → v9 완료(수집추적·애플홈·지역배너).
 
+## 🟩 v11 브리프 (오너 2026-06-22 — "아이콘 단일화·페이지별 버튼·정확 수집·업로드 실패 진단")
+- 절대원칙: 거짓 성공 금지(특히 업로드)·정직 데이터·회귀 금지·경량. 일반유저는 코드/URL/env 몰라도 됨.
+- ✅ **P0 수집 정확도(Phase 273):** ①무관 이미지 제거 — universal_scraper `_NON_PRODUCT_IMG_RE` 확장
+  (flags/openingemail/supplier-public-tag/`.slim.`/pdf/doc/arrow/chevron/tracking/beacon/1x1 등) + `is_product_image`/
+  `filter_product_images` 헬퍼 + width/height<100 아이콘 제외. content_script `_isProductImg` 동일 블랙리스트.
+  extension_api 최종 이미지에 `filter_product_images` 적용(어떤 소스든 정제, 첫=대표). ②옵션 전부 — `_collect_dom_options`
+  (보수적: `<select>` + 라벨 키워드(색상/사이즈/수량/color/size…) 스와치 그룹, 값 2+일 때만, 확신 없으면 빈값=정직)
+  → parse_html 후처리로 options 비었으면 보강. extension_api extra에 `options` 저장(편집 프리필). ③가격 — merge가
+  price 0/빈값일 때 스크래퍼 추출가로 보강(기존). 가드 `tests/test_collect_accuracy_v11.py` 4.
+- ✅ **P0 버튼 자동 전환(Phase 274):** content_script kgpRefresh를 모드 오케스트레이터로 — kgpFindCards 카드 3+면
+  목록(중앙 바만, kgpRemoveFab으로 FAB 숨김), 아니면 상세(kgpRemoveListing으로 바/배지 숨김, FAB만). 동시노출 0.
+  kgpIsDetailUrl(/dp//gp/product/item.htm/offer/detail/g-/product/)로 메타없는 상세도 FAB. 4초 인터벌이 kgpRefresh로
+  모드 재평가. manifest 1.5.0→1.5.1. ※지구본: 북마클릿 일반플로우서 제거됨(v10P1)+드래그아이콘 🧤(v8③), 확장 글러브
+  단일아이콘(v8③) → 지구본 노출 0. 가드 test_extension_button_switch_v11(4).
+- ✅ **P1 깔끔 유저뷰 + 업로드 정직 진단(Phase 275):** collect_preview에 깔끔 갤러리(#imageGallery 대표+썸네일, renderGallery)
+  + raw 이미지 URL 편집은 `<details>고급`으로 숨김(옵션 표시 유지). 업로드 진단: token_missing 메시지를 '내 마켓 키를
+  마켓연동 화면에 입력'(env MARKET_CRED_ENC_KEY와 구분 명시)로, 가격0 메시지 정직+원화환산 유도, collect_upload
+  except가 실 사유 패스스루(가짜 일반실패 폐기). markets_connect에 '내 마켓 키 vs env' 안내 배너. dispatch는 이미
+  per-market 실 API에러 패스스루(e2e가 핀). 가드 test_upload_diag_v11(4). 전체 10143 passed.
+- → v11 완료(수집정확도·버튼전환·지구본0·깔끔뷰·업로드 정직진단).
+
 ## 🟪 v10 브리프 (오너 2026-06-22 — "지정 소싱처에서만·실제 제품만·선택정상화·개발자 노출 제거")
 - 제0원칙: 일반 유저는 코드/북마클릿/env 몰라도 됨. "쓰기 편한가/보기 좋은가"만. 보이는 게 전부.
 - ✅ **P0 지정 소싱처에서만 노출 + 실제 제품만 + 선택 정상화(Phase 271):** content_script.js —

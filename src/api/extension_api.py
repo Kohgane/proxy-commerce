@@ -216,11 +216,16 @@ def collect_from_extension():
 
     product_id = _upsert_catalog(payload, source=source)
 
-    # 이미지 목록 정규화 (편집 페이지에서 바로 쓰도록)
+    # 이미지 목록 정규화 + 무관 이미지 제거 (편집 페이지에서 바로 쓰도록)
+    # v11 P0: 어떤 소스(확장/서버파싱)든 최종 단계에서 플래그·태그·픽셀·문서 등 무관 이미지 제거.
     images = payload.get("images")
     if not isinstance(images, list):
         images = [payload.get("image")] if payload.get("image") else []
-    images = [str(i).strip() for i in images if str(i or "").strip()]
+    try:
+        from src.collectors.universal_scraper import filter_product_images
+        images = filter_product_images(images)
+    except Exception:
+        images = [str(i).strip() for i in images if str(i or "").strip()]
 
     # 수집 이력 기록 (편집 페이지가 바로 프리필되도록 상세 필드 보관)
     # v4 P0: 저장 자기검증 — append 직후 같은 seller_id로 재조회해 실제 저장됐을 때만 성공.
@@ -250,6 +255,7 @@ def collect_from_extension():
                 "price_original": payload.get("price", ""),
                 "currency": payload.get("currency", "USD"),
                 "brand": payload.get("brand", ""),
+                "options": payload.get("options", []),
                 "translation_provider": tr.get("provider", "none"),
             },
             seller_id=seller_id_val,

@@ -29,9 +29,10 @@ function extractProductMeta() {
 
   // 이미지: og:image 우선 + 페이지의 모든 상품 이미지(로고/배너/아이콘/작은 이미지 제외)
   const ogImage = getMeta("og:image") || getMeta("og:image:url") || "";
+  // v11 P0: 무관 이미지(플래그·태그·픽셀·문서아이콘·화살표 등) 제외 — 서버 블랙리스트와 동일.
   const _isProductImg = (s) =>
     s && s.indexOf("data:") !== 0 &&
-    !/(logo|sprite|icon|favicon|avatar|placeholder|loading|blank|pixel|banner|badge|rating|star_|flag_|emoji)/i.test(s);
+    !/(logo|sprite|icon|favicon|avatar|placeholder|loading|blank|pixel|spinner|banner|badge|button|arrow|chevron|caret|rating|star_|flags?|emoji|openingemail|supplier-public-tag|public-tag|\.slim\.|tracking|beacon|watermark|qr[-_]?code|coupon|nav_|\/pdf|pdf[-_]|\.pdf|\.doc|doc[-_]icon|\/doc\/|1x1|transparent\.|spacer)/i.test(s);
   const images = [];
   const _seenImg = new Set();
   const _pushImg = (s) => { if (_isProductImg(s) && !_seenImg.has(s)) { _seenImg.add(s); images.push(s); } };
@@ -321,7 +322,7 @@ function injectCollectButton() {
   if (document.getElementById(KGP_BTN_ID)) return;
   if (window.top !== window.self) return;       // iframe 안에서는 표시 안 함
   if (!document.body) return;
-  if (!looksLikeProductPage()) return;
+  if (!looksLikeProductPage() && !kgpIsDetailUrl()) return;   // 상세 페이지(메타 또는 URL 패턴)
 
   const btn = document.createElement("button");
   btn.id = KGP_BTN_ID;
@@ -783,11 +784,35 @@ function kgpTeardown() {
   } catch (e) { /* noop */ }
 }
 
-// SPA 대응: 최초 + URL 변경 시 재시도 (단일 상품 FAB + 리스팅 다중수집)
+// 상세 페이지로 보이는 URL 패턴(아마존 /dp//gp/product, 타오바오 item.htm, 1688 offer/detail, Temu g-, 일반 /product//goods/).
+function kgpIsDetailUrl() {
+  return /(\/dp\/|\/gp\/product\/|item\.htm|offer\/detail|\/g-?\d|\/goods\/|\/product\/)/i.test(location.href);
+}
+
+// FAB(우측)만 제거 / 리스팅(중앙 바·배지·구석배지)만 제거 — 모드 전환 시 상호배타.
+function kgpRemoveFab() {
+  const fab = document.getElementById(KGP_BTN_ID);
+  if (fab) fab.remove();
+}
+function kgpRemoveListing() {
+  const bar = document.getElementById(KGP_TOOLBAR_ID); if (bar) bar.remove();
+  const pill = document.getElementById(KGP_REOPEN_ID); if (pill) pill.remove();
+  document.querySelectorAll(".kgp-card-chk").forEach((b) => b.remove());
+  document.querySelectorAll('[data-kgp-outline="1"]').forEach((e) => { e.style.outline = ""; e.removeAttribute("data-kgp-outline"); });
+}
+
+// SPA 대응 + v11 P0: 페이지 종류에 따라 버튼 자동 전환(목록=중앙 바만, 상세=우측 FAB만 — 동시 노출 0).
 function kgpRefresh() {
   if (!kgpHostAllowed()) { kgpTeardown(); return; }   // 지정 소싱처에서만 노출(v10 P0)
-  injectCollectButton();
-  kgpInjectListing();
+  const cards = kgpFindCards();
+  const isList = cards.length >= 3;                   // 제품 그리드(여러 제품) = 목록
+  if (isList) {
+    kgpRemoveFab();                                   // 목록: 우측 FAB 숨김
+    kgpInjectListing();                               // 중앙 바만
+  } else {
+    kgpRemoveListing();                               // 상세: 중앙 바/배지 숨김
+    injectCollectButton();                            // 우측 FAB만(looksLikeProductPage/디테일 URL 가드)
+  }
 }
 
 // 설정 로드 후 첫 렌더. 설정 바뀌면(소싱처 추가/삭제·토글) 즉시 반영.
@@ -823,5 +848,5 @@ setInterval(() => {
     setTimeout(kgpRefresh, 900);
   }
 }, 1500);
-// 동적 로딩(무한 스크롤) 대응: 주기적으로 리스팅 재스캔(지정 소싱처에서만).
-setInterval(() => { if (kgpHostAllowed()) kgpInjectListing(); }, 4000);
+// 동적 로딩(무한 스크롤)·지연 렌더 대응: 주기적으로 모드 재평가(목록↔상세 자동 전환).
+setInterval(() => { if (kgpHostAllowed()) kgpRefresh(); }, 4000);
