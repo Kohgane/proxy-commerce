@@ -38,17 +38,17 @@
     <div class="col-12 col-lg-5">
       <div class="card console-card h-100">
         <div class="card-body">
-          <h2 class="h6 mb-2">크롬 확장 / 북마클릿 연동</h2>
+          <h2 class="h6 mb-2">크롬 확장으로 수집</h2>
           <p class="small text-muted mb-2">
-            로그인·봇 차단 사이트도 <strong>브라우저에서 클릭 한 번</strong>으로 수집합니다.
-            먼저 ① 토큰을 발급하고 ② 북마클릿을 북마크바에 드래그해 두세요.
+            <strong>지정 소싱처</strong>(타오바오·아마존 등)에서 <strong>클릭 한 번</strong>으로 수집·번역됩니다.
+            크롬 확장을 설치하면 끝 — 코드나 설정은 필요 없어요.
           </p>
           <div class="d-flex flex-wrap gap-2">
-            <a href="/seller/me/tokens" class="btn btn-sm btn-outline-secondary" title="개인 액세스 토큰 발급">
-              <i class="bi bi-key"></i> 토큰 발급
+            <a href="/seller/extension" class="btn btn-sm btn-primary" title="크롬 확장 설치">
+              <i class="bi bi-puzzle"></i> 확장 설치하기
             </a>
-            <a href="/seller/bookmarklet" class="btn btn-sm btn-outline-secondary" title="북마클릿 설치">
-              <i class="bi bi-bookmark-plus"></i> 북마클릿 설치
+            <a href="/seller/bookmarklet" class="btn btn-sm btn-link text-muted small" title="확장을 못 쓸 때(고급)">
+              고급: 북마클릿
             </a>
           </div>
         </div>
@@ -288,7 +288,7 @@ function renderQuickFailure(data, url) {
         </ul>
       </div>
       <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-sm btn-outline-primary" href="/seller/bookmarklet"><i class="bi bi-puzzle"></i> 확장/북마클릿 설치</a>
+        <a class="btn btn-sm btn-outline-primary" href="/seller/extension"><i class="bi bi-puzzle"></i> 크롬 확장 설치</a>
         <a class="btn btn-sm btn-outline-secondary" href="/seller/collect?url=${encodeURIComponent(url)}"><i class="bi bi-pencil"></i> 직접 입력으로 등록</a>
         <button type="button" class="btn btn-sm btn-link text-muted" onclick="quickResult.classList.add('d-none')">닫기</button>
       </div>
