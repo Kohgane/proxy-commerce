@@ -44,9 +44,10 @@
     <div class="flex-grow-1">
     <!-- 핵심 메뉴(항상 노출) — 비기너 과부하 방지(v5). 나머지는 '고급 기능'으로 접음. -->
     <ul class="nav flex-column gap-1">
-      <li><a class="console-nav-link {% if _path == '/seller/' or _path.startswith('/seller/dashboard') %}active{% endif %}" href="/seller/dashboard"><i class="bi bi-speedometer2"></i><span>대시보드(홈)</span></a></li>
+      <li><a class="console-nav-link {% if _path == '/seller/' or _path.startswith('/seller/dashboard') %}active{% endif %}" href="/seller/dashboard"><i class="bi bi-speedometer2"></i><span>홈(대시보드)</span></a></li>
+      <li><a class="console-nav-link {% if _path == '/seller/sourcing' or _path.startswith('/seller/sourcing/my-sources') or _path.startswith('/seller/sourcing/collect') or _path.startswith('/seller/sourcing/recommend') %}active{% endif %}" href="/seller/sourcing"><i class="bi bi-stars"></i><span>AI 소싱·등록</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/manual-collect') or (_path.startswith('/seller/collect') and not _path.startswith('/seller/collect/history') and not _path.startswith('/seller/collect-history')) %}active{% endif %}" href="/seller/manual-collect"><i class="bi bi-search"></i><span>상품 수집</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/collect/history') or _path.startswith('/seller/collect-history') %}active{% endif %}" href="/seller/collect/history"><i class="bi bi-journal-text"></i><span>수집 이력</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/collect/history') or _path.startswith('/seller/collect-history') %}active{% endif %}" href="/seller/collect/history"><i class="bi bi-journal-text"></i><span>수집한 상품</span></a></li>
       <li><a class="console-nav-link {% if _path == '/seller/orders' or (_path.startswith('/seller/orders') and not _path.startswith('/seller/orders/auto')) %}active{% endif %}" href="/seller/orders"><i class="bi bi-receipt"></i><span>주문 관리</span></a></li>
       <li><a class="console-nav-link {% if (_path.startswith('/seller/markets') and not _path.startswith('/seller/markets/connect') and not _path.startswith('/seller/markets/guide')) or _path.startswith('/seller/market-status') %}active{% endif %}" href="/seller/markets"><i class="bi bi-shop"></i><span>마켓 연동</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/guide/business') %}active{% endif %}" href="/seller/guide/business"><i class="bi bi-question-circle"></i><span>도움말·가이드</span></a></li>
@@ -56,56 +57,57 @@
     <details class="adv-nav" id="advNav">
       <summary class="console-nav-adv-summary"><i class="bi bi-sliders2"></i> 고급 기능 더보기</summary>
     <ul class="nav flex-column gap-1 mt-1">
-      <li class="console-nav-group-title">상품</li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/catalog') %}active{% endif %}" href="/seller/catalog"><i class="bi bi-box-seam"></i><span>카탈로그(상품관리)</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/listing/ai-create') %}active{% endif %}" href="/seller/listing/ai-create"><i class="bi bi-robot"></i><span>AI 상품등록</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/listing/history') %}active{% endif %}" href="/seller/listing/history"><i class="bi bi-clock-history"></i><span>등록 이력</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/listing/word-rules') %}active{% endif %}" href="/seller/listing/word-rules"><i class="bi bi-slash-circle"></i><span>금지어·치환 규칙</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/media/queue') %}active{% endif %}" href="/seller/media/queue"><i class="bi bi-image"></i><span>이미지 큐</span></a></li>
-
-      <li class="console-nav-group-title">리서치/소싱</li>
+      <li class="console-nav-group-title">AI 소싱·등록</li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/listing/ai-create') %}active{% endif %}" href="/seller/listing/ai-create"><i class="bi bi-robot"></i><span>AI 상품등록(자동 생성)</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/keywords') %}active{% endif %}" href="/seller/keywords"><i class="bi bi-graph-up"></i><span>키워드 트렌드</span></a></li>
-      <li><a class="console-nav-link {% if _path == '/seller/sourcing' or _path.startswith('/seller/sourcing/my-sources') or _path.startswith('/seller/sourcing/collect') or _path.startswith('/seller/sourcing/recommend') %}active{% endif %}" href="/seller/sourcing"><i class="bi bi-stars"></i><span>AI 소싱 허브</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/sourcing/monitor') %}active{% endif %}" href="/seller/sourcing/monitor"><i class="bi bi-broadcast"></i><span>소싱처 변화</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/sourcing/watches') %}active{% endif %}" href="/seller/sourcing/watches"><i class="bi bi-binoculars"></i><span>소싱 watches</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/sourcing/candidates') %}active{% endif %}" href="/seller/sourcing/candidates"><i class="bi bi-inboxes"></i><span>후보 큐</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/sourcing/watches') %}active{% endif %}" href="/seller/sourcing/watches"><i class="bi bi-binoculars"></i><span>소싱 관심목록</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/sourcing/candidates') %}active{% endif %}" href="/seller/sourcing/candidates"><i class="bi bi-inboxes"></i><span>수집 대기목록</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/sourcing/monitor') %}active{% endif %}" href="/seller/sourcing/monitor"><i class="bi bi-broadcast"></i><span>소싱처 변동 알림</span></a></li>
+
+      <li class="console-nav-group-title">내 상품</li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/catalog') %}active{% endif %}" href="/seller/catalog"><i class="bi bi-box-seam"></i><span>내 상품(카탈로그)</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/listing/history') %}active{% endif %}" href="/seller/listing/history"><i class="bi bi-clock-history"></i><span>마켓 등록 이력</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/listing/word-rules') %}active{% endif %}" href="/seller/listing/word-rules"><i class="bi bi-slash-circle"></i><span>금지어·단어 바꾸기</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/media/queue') %}active{% endif %}" href="/seller/media/queue"><i class="bi bi-image"></i><span>이미지 처리 대기</span></a></li>
 
       <li class="console-nav-group-title">가격</li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/pricing') or _path.startswith('/seller/margin') %}active{% endif %}" href="/seller/margin"><i class="bi bi-calculator"></i><span>마진 계산기</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/pricing/rules') %}active{% endif %}" href="/seller/pricing/rules"><i class="bi bi-sliders"></i><span>가격 정책 룰</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/pricing/competitors') %}active{% endif %}" href="/seller/pricing/competitors"><i class="bi bi-people"></i><span>경쟁사</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/pricing/fx-impact') %}active{% endif %}" href="/seller/pricing/fx-impact"><i class="bi bi-currency-exchange"></i><span>환율 영향</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/pricing/rules') %}active{% endif %}" href="/seller/pricing/rules"><i class="bi bi-sliders"></i><span>가격 자동 규칙</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/pricing/competitors') %}active{% endif %}" href="/seller/pricing/competitors"><i class="bi bi-people"></i><span>경쟁사 가격</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/pricing/fx-impact') %}active{% endif %}" href="/seller/pricing/fx-impact"><i class="bi bi-currency-exchange"></i><span>환율 반영 보기</span></a></li>
 
       <li class="console-nav-group-title">마켓</li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/markets/connect') %}active{% endif %}" href="/seller/markets/connect"><i class="bi bi-plug"></i><span>마켓 연결(키 설정)</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/markets/guide') %}active{% endif %}" href="/seller/markets/guide"><i class="bi bi-journal-text"></i><span>API 키 발급 가이드</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/markets/connect') %}active{% endif %}" href="/seller/markets/connect"><i class="bi bi-plug"></i><span>마켓 연동(API 키 입력)</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/markets/guide') %}active{% endif %}" href="/seller/markets/guide"><i class="bi bi-journal-text"></i><span>API 키 발급 방법</span></a></li>
 
-      <li class="console-nav-group-title">운영</li>
+      <li class="console-nav-group-title">주문·CS</li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/orders/auto') %}active{% endif %}" href="/seller/orders/auto"><i class="bi bi-box2-heart"></i><span>주문 자동 처리</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/customs/pccc') %}active{% endif %}" href="/seller/customs/pccc"><i class="bi bi-shield-check"></i><span>통관고유부호</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/customs/pccc') %}active{% endif %}" href="/seller/customs/pccc"><i class="bi bi-shield-check"></i><span>통관고유부호(PCCC) 조회</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/cs/messaging') %}active{% endif %}" href="/seller/cs/messaging"><i class="bi bi-chat-dots"></i><span>고객 메시지</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/cs/autoreply') %}active{% endif %}" href="/seller/cs/autoreply"><i class="bi bi-magic"></i><span>자동 답변</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/cs/inbox') %}active{% endif %}" href="/seller/cs/inbox"><i class="bi bi-inbox"></i><span>문의 통합함</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/notifications') %}active{% endif %}" href="/seller/notifications"><i class="bi bi-bell"></i><span>알림 설정</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/cs/messaging') %}active{% endif %}" href="/seller/cs/messaging"><i class="bi bi-chat-dots"></i><span>CS 메시징</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/cs/autoreply') %}active{% endif %}" href="/seller/cs/autoreply"><i class="bi bi-magic"></i><span>CS 자동응답</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/cs/inbox') %}active{% endif %}" href="/seller/cs/inbox"><i class="bi bi-inbox"></i><span>CS 통합 인박스</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/analytics') %}active{% endif %}" href="/seller/analytics"><i class="bi bi-graph-up-arrow"></i><span>BI 분석</span></a></li>
+
+      <li class="console-nav-group-title">분석·정산</li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/analytics') %}active{% endif %}" href="/seller/analytics"><i class="bi bi-graph-up-arrow"></i><span>판매 분석</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/settlement') %}active{% endif %}" href="/seller/settlement"><i class="bi bi-cash-coin"></i><span>장부·정산</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/ads/campaigns') %}active{% endif %}" href="/seller/ads/campaigns"><i class="bi bi-megaphone"></i><span>광고 캠페인</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/ads/keywords') %}active{% endif %}" href="/seller/ads/keywords"><i class="bi bi-bullseye"></i><span>키워드 최적화</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/ads/keywords') %}active{% endif %}" href="/seller/ads/keywords"><i class="bi bi-bullseye"></i><span>광고 키워드</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/marketing/campaigns') %}active{% endif %}" href="/seller/marketing/campaigns"><i class="bi bi-ticket-perforated"></i><span>할인 캠페인</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/inventory/reorder') %}active{% endif %}" href="/seller/inventory/reorder"><i class="bi bi-arrow-repeat"></i><span>자동 리오더</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/inventory/reorder') %}active{% endif %}" href="/seller/inventory/reorder"><i class="bi bi-arrow-repeat"></i><span>재고 자동주문</span></a></li>
 
       <li class="console-nav-group-title">설정</li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/api/status') or _path.startswith('/seller/api-status') %}active{% endif %}" href="/seller/api/status"><i class="bi bi-key"></i><span>API 상태</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/me') %}active{% endif %}" href="/seller/me"><i class="bi bi-gear"></i><span>설정·마이페이지</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/api/status') or _path.startswith('/seller/api-status') %}active{% endif %}" href="/seller/api/status"><i class="bi bi-key"></i><span>API 연결 상태</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/me') %}active{% endif %}" href="/seller/me"><i class="bi bi-gear"></i><span>내 정보·설정</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/me/notifications') %}active{% endif %}" href="/seller/me/notifications"><i class="bi bi-broadcast"></i><span>푸시 알림 설정</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/api/tokens') or _path.startswith('/seller/me/tokens') %}active{% endif %}" href="/seller/api/tokens"><i class="bi bi-shield-lock"></i><span>API 토큰</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/bookmarklet') %}active{% endif %}" href="/seller/bookmarklet"><i class="bi bi-bookmark"></i><span>북마클릿</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/discovery') %}active{% endif %}" href="/seller/discovery"><i class="bi bi-compass"></i><span>Discovery</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/bookmarklet') %}active{% endif %}" href="/seller/bookmarklet"><i class="bi bi-bookmark"></i><span>북마클릿(고급)</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/discovery') %}active{% endif %}" href="/seller/discovery"><i class="bi bi-compass"></i><span>트렌드 발굴</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/billing') %}active{% endif %}" href="/seller/billing"><i class="bi bi-credit-card"></i><span>요금제·충전</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/subscriptions') %}active{% endif %}" href="/seller/subscriptions"><i class="bi bi-arrow-repeat"></i><span>정기구독 관리</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/me/subscriptions') %}active{% endif %}" href="/seller/me/subscriptions"><i class="bi bi-person-check"></i><span>내 구독</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/wholesale/tiers') %}active{% endif %}" href="/seller/wholesale/tiers"><i class="bi bi-building"></i><span>도매 등급</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/wholesale/applications') %}active{% endif %}" href="/seller/wholesale/applications"><i class="bi bi-ui-checks"></i><span>B2B 신청 큐</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/wholesale/applications') %}active{% endif %}" href="/seller/wholesale/applications"><i class="bi bi-ui-checks"></i><span>B2B 신청함</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/about') %}active{% endif %}" href="/seller/about"><i class="bi bi-info-circle"></i><span>코고가네란?(소개)</span></a></li>
     </ul>
     </details>
