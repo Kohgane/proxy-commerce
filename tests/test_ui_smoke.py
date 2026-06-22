@@ -68,7 +68,18 @@ class TestRootRoute:
 # ---------------------------------------------------------------------------
 
 class TestAdminPanel:
-    """GET /admin/ 테스트."""
+    """GET /admin/ 테스트 — v13 P0: admin 전용 게이트라 admin 세션으로 접근."""
+
+    @pytest.fixture
+    def client(self):
+        import src.order_webhook as wh
+        wh.app.config["TESTING"] = True
+        c = wh.app.test_client()
+        with c.session_transaction() as sess:
+            sess["user_id"] = "admin1"
+            sess["user_role"] = "admin"
+            sess["user_email"] = "admin@example.com"
+        return c
 
     def test_admin_returns_200(self, client):
         resp = client.get("/admin/")

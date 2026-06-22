@@ -398,6 +398,22 @@ def _require_admin():
     return None, None
 
 
+@admin_panel_bp.before_request
+def _admin_panel_gate():
+    """v13 P0: 모든 /admin/* 라우트를 admin 전용으로 일괄 보호(단일 게이트).
+
+    일반 로그인 유저가 URL로 직접 와도 차단 — 미로그인은 로그인으로, 비-admin은 403.
+    개별 라우트가 빠뜨려도 여기서 막힌다(누락 방지).
+    """
+    from src.auth.admin_resolver import is_admin_session
+    if not session.get("user_id"):
+        return redirect("/auth/login?next=" + request.path)
+    admin_ok, _ = is_admin_session(session)
+    if not admin_ok:
+        return _render("접근 거부", "<div class='alert alert-danger'>관리자 권한이 필요합니다.</div>"), 403
+    return None
+
+
 @admin_panel_bp.route("/diagnostics")
 def admin_diagnostics():
     """운영 진단 대시보드 (Phase 136+142).

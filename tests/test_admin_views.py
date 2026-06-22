@@ -15,13 +15,20 @@ def admin_app(mock_env):
 
     app = Flask(__name__)
     app.config["TESTING"] = True
+    app.secret_key = "test-secret"   # session_transaction(admin 세션)용
     app.register_blueprint(admin_panel_bp)
     return app
 
 
 @pytest.fixture
 def client(admin_app):
-    return admin_app.test_client()
+    c = admin_app.test_client()
+    # v13 P0: /admin/* 는 admin 전용 게이트 → 테스트는 admin 세션으로 접근.
+    with c.session_transaction() as sess:
+        sess["user_id"] = "admin1"
+        sess["user_role"] = "admin"
+        sess["user_email"] = "admin@example.com"
+    return c
 
 
 def test_admin_dashboard_returns_200(client):

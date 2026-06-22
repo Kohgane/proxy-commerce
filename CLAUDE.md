@@ -28,6 +28,22 @@
   `/i18n/dismiss` 라우트(쿠키 1년 기억). 랜딩 상단 슬림 배너(English/한국어/✕) — 외국인만, 한국인 미노출.
   랜딩 카피 EN/KO 실전환(가짜 드롭다운 아님 — 고른 값이 실제 EN 카피로 반영). → v9 완료(수집추적·애플홈·지역배너).
 
+## ⬛ v13 브리프 (오너 2026-06-22 — "관리자전용·재로그인버그·속도·모바일앱·글로벌·프로디자인·파비콘")
+- 버전 충돌 시 v13 우선. 디자인 최우선('학교 과제물'→프로). 정직 데이터·회귀 금지.
+- ✅ **P0 관리자 전용 게이팅(Phase 278):** admin_views.py에 `@admin_panel_bp.before_request` 단일 게이트 —
+  모든 /admin/* (대시보드·products·orders·inventory·users·env·logs·diagnostics·**/admin/cs/***)가 미로그인=로그인
+  리다이렉트·비admin=403. 기존엔 diagnostics만 보호되고 나머지·/admin/cs/*는 무방비였음(보안홀 수정). is_admin_session
+  (user_role==admin 또는 ADMIN_EMAILS) 사용. 영향 테스트(admin_views/ui_smoke/cs_stats) admin 세션으로 갱신.
+- ✅ **P0 재로그인 버그 가드(Phase 278):** 셀러 콘솔은 이미 단일 가드 `_check_auth()`(user_id/email) 일관 사용
+  (establish_session이 동일 키 설정). 가드 테스트 추가 — 유효 세션으로 보호 페이지 10종 순회 시 로그인 리다이렉트 0.
+  ※ 영구 고정은 오너가 Render `SECRET_KEY` 설정(미설정 시 재시작마다 세션 무효 — 이미 Sheets 영속 폴백 있음).
+- ✅ **P0 파비콘 글러브·지구본 제거(Phase 278):** favicon.svg를 오빗-글로브→**글러브 모노그램**(먹#1a1714+금#c9a24b+
+  청록#119a8e)로 교체, favicon.ico/apple-touch/icon-192/512 Pillow 재생성(신설 scripts/gen_favicon_glove.py).
+  캐시버스트 v172→v173(전 템플릿). test_phase_163 글러브로 갱신. 기본 소싱처는 이미 대형마켓만(요시다카반 등 니치 제외, v10).
+  - 가드 `test_admin_gating_v13`(4). 전체 10153 passed.
+- ⏳ 남은 v13: 속도(부분내비/캐시/스켈레톤) · 프로 디자인 시스템(에디토리얼·이모지/Phase표식 제거·확장 FAB 글러브) ·
+  글로벌 i18n+외국셀러 온보딩 · 모바일 PWA 스토어 패키징. (단계별 후속 PR)
+
 ## 🟫 v12 브리프 (오너 2026-06-22 — "AI 소싱 허브·AI 통합·라벨 가독성·근거기반 내비")
 - 제0원칙: 디자인 최우선, 라벨 하나도 '이게 뭐지?' 들면 실패. 분석지표 날조 금지(없으면 '데이터 없음').
 - ✅ **P1 라벨 가독성 + AI 두 기능 통합 + 내비 재편(Phase 276):** _base.html 사이드바 전면 리네임(직관 1~2단어):

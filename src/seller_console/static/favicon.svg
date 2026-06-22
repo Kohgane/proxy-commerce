@@ -1,87 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#020010"/>
-      <stop offset="100%" stop-color="#080830"/>
-    </linearGradient>
-    <radialGradient id="gf" cx="0.35" cy="0.3" r="0.6">
-      <stop offset="0%" stop-color="#6db3ff"/>
-      <stop offset="40%" stop-color="#3a82e0"/>
-      <stop offset="100%" stop-color="#1a3878"/>
-    </radialGradient>
-    <!-- 지구본만 은은하게 글로우 -->
-    <filter id="gg">
-      <feGaussianBlur stdDeviation="6" result="b"/>
-      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-    <clipPath id="th">
-      <rect x="0" y="0" width="512" height="272"/>
-    </clipPath>
-  </defs>
-
-  <!-- 배경 — 우주 -->
-  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
-
-  <!-- 별 -->
-  <g fill="#fff">
-    <circle cx="45" cy="55" r="1.5" opacity=".4"/>
-    <circle cx="120" cy="30" r="1" opacity=".3"/>
-    <circle cx="200" cy="65" r="1.8" opacity=".35"/>
-    <circle cx="310" cy="40" r="1.2" opacity=".45"/>
-    <circle cx="400" cy="60" r="1" opacity=".3"/>
-    <circle cx="460" cy="35" r="1.5" opacity=".4"/>
-    <circle cx="70" cy="130" r="1" opacity=".25"/>
-    <circle cx="440" cy="120" r="1.3" opacity=".35"/>
-    <circle cx="30" cy="200" r="1.2" opacity=".3"/>
-    <circle cx="25" cy="340" r="1.5" opacity=".35"/>
-    <circle cx="55" cy="430" r="1" opacity=".3"/>
-    <circle cx="130" cy="465" r="1.3" opacity=".4"/>
-    <circle cx="350" cy="470" r="1.5" opacity=".35"/>
-    <circle cx="430" cy="450" r="1.2" opacity=".3"/>
-    <circle cx="475" cy="400" r="1" opacity=".25"/>
-    <circle cx="485" cy="180" r="1" opacity=".3"/>
-    <circle cx="380" cy="475" r="1.8" opacity=".35"/>
-  </g>
-
-  <!-- 1: 궤도선 전체 — 굵고 선명, 글로우 없음 -->
-  <g fill="none" stroke-linecap="round">
-    <path d="M 125 305 A 120 44 22 1 1 387 225 A 120 44 22 1 1 125 305" stroke="#ffcc00" stroke-width="28"/>
-    <path d="M 387 305 A 120 44 -22 1 1 125 225 A 120 44 -22 1 1 387 305" stroke="#69ff2e" stroke-width="28"/>
-  </g>
-
-  <!-- 2: 지구 솔리드 -->
-  <circle cx="256" cy="256" r="150" fill="url(#gf)" filter="url(#gg)"/>
-
-  <!-- 3: 지구 와이어프레임 — 굵고 선명, 완전 불투명 -->
-  <g fill="none" stroke="#ffffff" stroke-width="18">
-    <circle cx="256" cy="256" r="150"/>
-    <ellipse cx="256" cy="256" rx="150" ry="64"/>
-    <ellipse cx="256" cy="256" rx="76" ry="150"/>
-  </g>
-
-  <!-- 4: 궤도 윗부분 — 지구 앞, 굵고 선명 -->
-  <g clip-path="url(#th)" fill="none" stroke-linecap="round">
-    <path d="M 125 305 A 120 44 22 1 1 387 225 A 120 44 22 1 1 125 305" stroke="#ffcc00" stroke-width="28"/>
-    <path d="M 387 305 A 120 44 -22 1 1 125 225 A 120 44 -22 1 1 387 305" stroke="#69ff2e" stroke-width="28"/>
-  </g>
-
-  <!-- dot — 크고 선명 -->
-  <circle cx="387" cy="225" r="18" fill="#ffcc00"/>
-  <circle cx="125" cy="225" r="18" fill="#69ff2e"/>
-
-  <!-- 스파클 — 선명하게 (글로우 약하게만) -->
-  <g>
-    <g transform="translate(192,158)" fill="#fff">
-      <path d="M0,-18 4.5,-4.5 18,0 4.5,4.5 0,18 -4.5,4.5 -18,0 -4.5,-4.5Z"/>
-    </g>
-    <g transform="translate(340,178)" fill="#fff">
-      <path d="M0,-13 3.2,-3.2 13,0 3.2,3.2 0,13 -3.2,3.2 -13,0 -3.2,-3.2Z" opacity=".9"/>
-    </g>
-    <g transform="translate(355,305)" fill="#fff">
-      <path d="M0,-15 3.8,-3.8 15,0 3.8,3.8 0,15 -3.8,3.8 -15,0 -3.8,-3.8Z" opacity=".95"/>
-    </g>
-    <g transform="translate(178,330)" fill="#fff">
-      <path d="M0,-10 2.5,-2.5 10,0 2.5,2.5 0,10 -2.5,2.5 -10,0 -2.5,-2.5Z" opacity=".8"/>
-    </g>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="코고가네 글러브 마크">
+  <!-- v13: 브랜드 마크 = 글러브 모노그램(먹 배경 + 금 글러브 + 청록 소맷동/궤도). 지구본 폐기. -->
+  <rect width="512" height="512" rx="112" fill="#1a1714"/>
+  <!-- 청록 궤도 악센트 -->
+  <path d="M104 158 A206 206 0 0 1 410 386" fill="none" stroke="#119a8e" stroke-width="18" stroke-linecap="round" opacity="0.85"/>
+  <!-- 글러브(미튼): 엄지 + 손등 + 하이라이트 + 청록 소맷동 -->
+  <ellipse cx="172" cy="242" rx="52" ry="64" fill="#c9a24b"/>
+  <rect x="188" y="112" width="190" height="220" rx="74" fill="#c9a24b"/>
+  <rect x="196" y="120" width="168" height="86" rx="60" fill="#e0bc6e"/>
+  <rect x="178" y="320" width="210" height="74" rx="26" fill="#119a8e"/>
 </svg>
