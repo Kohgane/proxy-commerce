@@ -79,11 +79,17 @@
 
       <!-- 이미지 목록 -->
       <div class="mb-3">
-        <div class="d-flex justify-content-between align-items-center mb-2">
-          <label class="form-label small fw-semibold mb-0">이미지 URL <span class="text-muted">(⭐ = 대표/썸네일, 맨 위가 대표)</span></label>
-          <button type="button" class="btn btn-outline-secondary btn-sm py-0" onclick="addImageRow()">+ 이미지 추가</button>
-        </div>
-        <div id="imageRows" class="vstack gap-2"></div>
+        <label class="form-label small fw-semibold mb-2 d-block">상품 이미지 <span class="text-muted">(맨 앞이 대표)</span></label>
+        <!-- v11 P1: 깔끔한 갤러리(대표+썸네일). raw URL 편집은 아래 '고급'으로 숨김. -->
+        <div id="imageGallery" class="d-flex flex-wrap gap-2 mb-2"></div>
+        <details class="small">
+          <summary class="text-muted" style="cursor:pointer">고급: 이미지 URL 직접 편집/추가</summary>
+          <div class="d-flex justify-content-end mb-2 mt-2">
+            <button type="button" class="btn btn-outline-secondary btn-sm py-0" onclick="addImageRow()">+ 이미지 추가</button>
+          </div>
+          <div id="imageRows" class="vstack gap-2"></div>
+          <div class="form-text">⭐ = 대표/썸네일(맨 위가 대표). 보통은 위 갤러리만 보면 됩니다.</div>
+        </details>
       </div>
 
       <!-- 옵션 목록 -->
@@ -359,12 +365,12 @@ function addImageRow(url) {
       b.disabled = false; b.textContent = old;
     }
   });
-  input.addEventListener('input', () => { syncThumb(); refreshPrimaryImage(); });
+  input.addEventListener('input', () => { syncThumb(); refreshPrimaryImage(); renderGallery(); });
   wrap.appendChild(row);
   refreshImageBadges();
 }
 
-// 첫 번째(맨 위) 이미지가 대표/썸네일 — 버튼 상태 갱신
+// 첫 번째(맨 위) 이미지가 대표/썸네일 — 버튼 상태 갱신 + 깔끔 갤러리 갱신
 function refreshImageBadges() {
   const rows = document.querySelectorAll('#imageRows .img-row');
   rows.forEach((row, i) => {
@@ -377,6 +383,32 @@ function refreshImageBadges() {
       btn.classList.add('btn-outline-warning'); btn.classList.remove('btn-warning');
       btn.textContent = '⭐'; btn.disabled = false; btn.title = '대표 이미지로 지정';
     }
+  });
+  renderGallery();
+}
+
+// v11 P1: 현재 이미지 URL들로 깔끔한 갤러리(대표 크게 + 썸네일) 렌더 — 클릭 시 원본 열기.
+function renderGallery() {
+  const g = document.getElementById('imageGallery');
+  if (!g) return;
+  const urls = Array.from(document.querySelectorAll('#imageRows .img-url'))
+    .map(i => (i.value || '').trim()).filter(Boolean);
+  g.innerHTML = '';
+  if (!urls.length) {
+    g.innerHTML = '<span class="text-muted small">이미지가 없습니다. 아래 ‘고급’에서 추가할 수 있어요.</span>';
+    return;
+  }
+  urls.forEach((u, i) => {
+    const a = document.createElement('a');
+    a.href = u; a.target = '_blank'; a.rel = 'noopener'; a.title = (i === 0 ? '대표 이미지' : '갤러리 이미지');
+    const sz = i === 0 ? 84 : 56;
+    a.style.cssText = 'display:inline-block;position:relative;border-radius:8px;overflow:hidden;border:' +
+      (i === 0 ? '2px solid #119a8e' : '1px solid #e3dac8') + ';flex-shrink:0';
+    a.innerHTML = '<img src="' + u.replace(/"/g, '&quot;') + '" alt="" loading="lazy" ' +
+      'style="width:' + sz + 'px;height:' + sz + 'px;object-fit:cover;display:block" ' +
+      'onerror="this.parentElement.style.display=\'none\'">' +
+      (i === 0 ? '<span style="position:absolute;left:0;bottom:0;background:#119a8e;color:#fff;font-size:9px;padding:1px 5px;border-top-right-radius:6px">대표</span>' : '');
+    g.appendChild(a);
   });
 }
 

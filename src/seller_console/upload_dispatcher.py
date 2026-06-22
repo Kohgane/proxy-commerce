@@ -212,8 +212,10 @@ class UploadDispatcher:
                 market=market,
                 ok=False,
                 error_code="token_missing",
-                message=f"필수 환경변수 미설정: {', '.join(missing)}",
-                hint=_MARKET_TOKEN_HINTS.get(market, "관리자에게 문의하세요."),
+                message="이 마켓의 API 키(또는 배송정보)가 아직 입력되지 않았어요.",
+                hint=("‘마켓 연동’ 화면에서 이 마켓의 키를 입력하세요 (/seller/markets/connect/" + market + "). "
+                      "이 키는 앱에 입력하는 ‘내 마켓 키’이며, 서버 환경변수(MARKET_CRED_ENC_KEY 등 인프라 키)와는 다릅니다. "
+                      "누락: " + ", ".join(missing)),
             )
 
         # 필수 필드 검증
@@ -237,8 +239,8 @@ class UploadDispatcher:
                 market=market,
                 ok=False,
                 error_code="missing_field",
-                message="판매가(price)가 0 이하이거나 없습니다.",
-                hint="마진 계산기에서 권장 판매가를 계산 후 적용하세요.",
+                message="판매가가 0이거나 비어 있어 마켓이 등록을 거부합니다.",
+                hint="편집 화면에서 판매가를 입력하세요(외화면 ‘원화로 환산’ 버튼으로 원화 판매가를 채울 수 있어요).",
             )
 
         # 이미지 URL 접근성 (첫 번째 이미지만 HEAD 체크, 타임아웃 3초)

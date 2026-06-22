@@ -37,10 +37,17 @@
   (보수적: `<select>` + 라벨 키워드(색상/사이즈/수량/color/size…) 스와치 그룹, 값 2+일 때만, 확신 없으면 빈값=정직)
   → parse_html 후처리로 options 비었으면 보강. extension_api extra에 `options` 저장(편집 프리필). ③가격 — merge가
   price 0/빈값일 때 스크래퍼 추출가로 보강(기존). 가드 `tests/test_collect_accuracy_v11.py` 4.
-- ⏳ **P0 버튼 자동 전환:** 목록=중앙 바만/상세=우측 FAB만(동시노출 0, URL패턴 dp·item.htm·g-·offer/detail + 단일제품 휴리스틱).
-- ⏳ **P0 지구본 제거·단일 아이콘:** 북마클릿 일반플로우 완전 제거(v10서 강등됨), 확장 글러브 단일아이콘(v8③ 적용됨) 확인.
-- ⏳ **P1 깔끔 유저뷰 + 업로드 실패 정직 진단:** 편집뷰 이미지·가격·상세·옵션만(raw URL 고급숨김), 업로드 프리플라이트
-  (가격0 차단·앱 마켓키 미입력 안내·쿠팡/네이버 릴레이IP·필수필드·실 API에러 패스스루, env키 vs 앱키 구분).
+- ✅ **P0 버튼 자동 전환(Phase 274):** content_script kgpRefresh를 모드 오케스트레이터로 — kgpFindCards 카드 3+면
+  목록(중앙 바만, kgpRemoveFab으로 FAB 숨김), 아니면 상세(kgpRemoveListing으로 바/배지 숨김, FAB만). 동시노출 0.
+  kgpIsDetailUrl(/dp//gp/product/item.htm/offer/detail/g-/product/)로 메타없는 상세도 FAB. 4초 인터벌이 kgpRefresh로
+  모드 재평가. manifest 1.5.0→1.5.1. ※지구본: 북마클릿 일반플로우서 제거됨(v10P1)+드래그아이콘 🧤(v8③), 확장 글러브
+  단일아이콘(v8③) → 지구본 노출 0. 가드 test_extension_button_switch_v11(4).
+- ✅ **P1 깔끔 유저뷰 + 업로드 정직 진단(Phase 275):** collect_preview에 깔끔 갤러리(#imageGallery 대표+썸네일, renderGallery)
+  + raw 이미지 URL 편집은 `<details>고급`으로 숨김(옵션 표시 유지). 업로드 진단: token_missing 메시지를 '내 마켓 키를
+  마켓연동 화면에 입력'(env MARKET_CRED_ENC_KEY와 구분 명시)로, 가격0 메시지 정직+원화환산 유도, collect_upload
+  except가 실 사유 패스스루(가짜 일반실패 폐기). markets_connect에 '내 마켓 키 vs env' 안내 배너. dispatch는 이미
+  per-market 실 API에러 패스스루(e2e가 핀). 가드 test_upload_diag_v11(4). 전체 10143 passed.
+- → v11 완료(수집정확도·버튼전환·지구본0·깔끔뷰·업로드 정직진단).
 
 ## 🟪 v10 브리프 (오너 2026-06-22 — "지정 소싱처에서만·실제 제품만·선택정상화·개발자 노출 제거")
 - 제0원칙: 일반 유저는 코드/북마클릿/env 몰라도 됨. "쓰기 편한가/보기 좋은가"만. 보이는 게 전부.

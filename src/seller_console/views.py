@@ -1453,8 +1453,9 @@ def collect_upload():
             result = dispatcher.dispatch(product_data, markets)
         return jsonify({"ok": True, "result": result.to_dict()})
     except Exception as exc:
+        # v11 P0: 가짜 일반 실패 금지 — 실제 사유를 패스스루로 노출.
         logger.warning("업로드 디스패처 오류: %s", exc)
-        return jsonify({"ok": False, "error": "업로드 중 오류가 발생했습니다."}), 500
+        return jsonify({"ok": False, "error": f"업로드 중 오류: {exc}"}), 500
 
 
 @bp.post("/collect/prevalidate")

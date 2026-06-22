@@ -22,6 +22,13 @@
     </div>
   </div>
 
+  <div class="alert alert-light border small d-flex gap-2 align-items-start mb-3" role="note">
+    <span style="font-size:1.1rem">🔑</span>
+    <div>여기에 넣는 건 <strong>‘내 마켓 키’</strong>(쿠팡·네이버 등에서 발급받은 본인 API 키)예요.
+      서버 환경변수(<code>MARKET_CRED_ENC_KEY</code> 같은 인프라 키)와는 다릅니다 —
+      <strong>그건 운영자가 관리하고, 여기엔 입력하지 않아도 됩니다.</strong></div>
+  </div>
+
   <!-- 마켓 전환 칩 -->
   <div class="d-flex flex-wrap gap-2 mb-3">
     {% for chip in market_chips %}
