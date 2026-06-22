@@ -168,15 +168,15 @@ function setFabState(btn, state) {
   }
 }
 
-// 코고가네 글로브 모노그램(먹 글로브 + 금 링 + 청록 궤도) — 코고가네 디자인 토큰.
-// 네이비+주황 폐기(v4). 우아·세련·은은하되 금 링/청록으로 식별.
-const KGP_GLOBE_SVG =
+// 코고가네 글러브 모노그램(금 글러브 + 청록 소맷동/궤도) — 파비콘과 동일 마크.
+// v13: 지구본(오빗-글로브) 폐기 → 글러브로 통일.
+const KGP_GLOVE_SVG =
   '<svg width="20" height="20" viewBox="0 0 512 512" aria-hidden="true" style="display:block">' +
-  '<circle cx="256" cy="256" r="150" fill="#1a1714"/>' +
-  '<circle cx="256" cy="256" r="150" fill="none" stroke="#c9a24b" stroke-width="12"/>' +
-  '<ellipse cx="256" cy="256" rx="210" ry="76" fill="none" stroke="#c9a24b" stroke-width="16" opacity="0.55" transform="rotate(32 256 256)"/>' +
-  '<ellipse cx="256" cy="256" rx="210" ry="76" fill="none" stroke="#119a8e" stroke-width="20" transform="rotate(-32 256 256)"/>' +
-  '<circle cx="256" cy="256" r="40" fill="#119a8e"/>' +
+  '<path d="M104 158 A206 206 0 0 1 410 386" fill="none" stroke="#119a8e" stroke-width="20" stroke-linecap="round" opacity="0.85"/>' +
+  '<ellipse cx="172" cy="248" rx="50" ry="62" fill="#c9a24b"/>' +
+  '<rect x="190" y="118" width="186" height="214" rx="72" fill="#c9a24b"/>' +
+  '<rect x="198" y="126" width="166" height="84" rx="58" fill="#e0bc6e"/>' +
+  '<rect x="180" y="320" width="206" height="70" rx="24" fill="#119a8e"/>' +
   '</svg>';
 
 // ---------------------------------------------------------------------------
@@ -329,7 +329,7 @@ function injectCollectButton() {
   btn.type = "button";
   btn.innerHTML =
     '<span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;' +
-    'background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%;flex-shrink:0">' + KGP_GLOBE_SVG + '</span>' +
+    'background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%;flex-shrink:0">' + KGP_GLOVE_SVG + '</span>' +
     '<span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1.12">' +
     '<span class="kgp-fab-label" style="font-weight:700;font-size:14px;color:#f5efe3">코고가네 수집</span>' +
     '<span style="font-size:10px;color:#c9a24b;font-family:Georgia,\'Times New Roman\',serif">번역까지 한 번에</span>' +
@@ -590,7 +590,7 @@ function kgpBuildToolbar() {
   const autoOn = kgpLSget("kgp_bar_auto", "1") !== "0";
   bar.innerHTML =
     '<span id="kgp-tb-grip" style="display:flex;align-items:center;gap:7px">' +
-    '<span style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%">' + KGP_GLOBE_SVG + '</span>' +
+    '<span style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%">' + KGP_GLOVE_SVG + '</span>' +
     '<strong style="color:#ecdcb0">코고가네 수집</strong></span>' +
     '<span id="kgp-tb-count" style="opacity:.85"></span>' +
     '<span style="width:1px;height:18px;background:#4a4234"></span>' +
@@ -672,7 +672,7 @@ function kgpShowReopenPill() {
   pill.type = "button";
   pill.title = "코고가네 수집 바 열기";
   pill.innerHTML =
-    '<span style="display:flex;align-items:center;justify-content:center;width:20px;height:20px;background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%">' + KGP_GLOBE_SVG + '</span>' +
+    '<span style="display:flex;align-items:center;justify-content:center;width:20px;height:20px;background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%">' + KGP_GLOVE_SVG + '</span>' +
     '<span style="font-weight:700;font-size:12px">수집 열기</span>' +
     '<span class="kgp-pill-count" style="display:' + (sel ? "inline-block" : "none") + ';background:#119a8e;color:#fff;border-radius:999px;padding:1px 7px;font-size:11px;font-weight:800">' + (sel || "") + '</span>';
   pill.style.cssText = [

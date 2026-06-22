@@ -41,7 +41,11 @@
   청록#119a8e)로 교체, favicon.ico/apple-touch/icon-192/512 Pillow 재생성(신설 scripts/gen_favicon_glove.py).
   캐시버스트 v172→v173(전 템플릿). test_phase_163 글러브로 갱신. 기본 소싱처는 이미 대형마켓만(요시다카반 등 니치 제외, v10).
   - 가드 `test_admin_gating_v13`(4). 전체 10153 passed.
-- ⏳ 남은 v13: 속도(부분내비/캐시/스켈레톤) · 프로 디자인 시스템(에디토리얼·이모지/Phase표식 제거·확장 FAB 글러브) ·
+- ✅ **P1 프로 디자인 #1 — 개발 표식 제거 + 지구본 완전 제거(Phase 279):** 사용자 화면 'Phase NNN' 노출 제거
+  (orders/markets/messaging 부제·landing 푸터 → 사용자 카피로, 관련 테스트 갱신). 확장 FAB/바/배지/알약 마크를
+  오빗-글로브(KGP_GLOBE_SVG)→**글러브(KGP_GLOVE_SVG)**로 통일(파비콘과 동일) → 지구본 노출 0. manifest 1.5.1→1.5.2.
+  가드 test_pro_design_v13(3). 전체 10154 passed.
+- ⏳ 남은 v13: 속도(부분내비/캐시/스켈레톤) · 프로 디자인 #2(에디토리얼 토큰·KPI 스트립·이모지 정리) ·
   글로벌 i18n+외국셀러 온보딩 · 모바일 PWA 스토어 패키징. (단계별 후속 PR)
 
 ## 🟫 v12 브리프 (오너 2026-06-22 — "AI 소싱 허브·AI 통합·라벨 가독성·근거기반 내비")

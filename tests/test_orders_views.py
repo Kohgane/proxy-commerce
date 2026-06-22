@@ -70,7 +70,7 @@ class TestOrdersViews:
         with patch("src.seller_console.views._get_order_sync_service", return_value=mock_sync_service):
             resp = client.get("/seller/orders")
         html = resp.get_data(as_text=True)
-        assert "Phase 189" in html
+        assert "주문·배송 관리 화면" in html          # v13: 개발 표식(Phase NNN) 제거, 사용자 카피
         assert 'id="ordersSelectAll"' in html
         assert "order-row-chk" in html
         assert 'id="bulkTrackingButton"' in html
