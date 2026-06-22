@@ -71,15 +71,15 @@ def test_landing_html_no_hardcoded_old_phase():
     )
 
 
-def test_landing_html_uses_dynamic_phase():
-    """landing.html 푸터가 {{ current_phase }} 동적 템플릿 변수를 사용해야 한다."""
+def test_landing_html_no_dev_phase_marker():
+    """v13: 랜딩 푸터에서 개발 표식(Phase NNN / current_phase)을 제거한다(사용자 화면)."""
     landing_path = os.path.join(
         os.path.dirname(__file__), "..", "src", "templates", "landing.html"
     )
     with open(landing_path, encoding="utf-8") as f:
         content = f.read()
-    assert "current_phase" in content, (
-        "landing.html 푸터에 {{ current_phase }} 변수가 없습니다."
+    assert "current_phase" not in content, (
+        "landing.html에 개발 표식(current_phase)이 남아 있습니다 — v13에서 사용자 화면 노출 제거."
     )
 
 
@@ -99,11 +99,11 @@ def client(app):
         yield c
 
 
-def test_landing_page_footer_shows_current_phase(client):
-    """랜딩 페이지 푸터에 현재 Phase가 표시되어야 한다."""
+def test_landing_page_footer_hides_dev_phase(client):
+    """v13: 랜딩 페이지 푸터에 개발 표식 'Phase NNN'이 노출되지 않아야 한다."""
     from src.version import CURRENT_PHASE
     resp = client.get("/")
     html = resp.get_data(as_text=True)
-    assert f"Phase {CURRENT_PHASE}" in html, (
-        f"랜딩 페이지 푸터에 'Phase {CURRENT_PHASE}'이 표시되지 않습니다. 실제 내용 (일부): {html[:500]}"
+    assert f"Phase {CURRENT_PHASE}" not in html, (
+        "랜딩 페이지 푸터에 개발 표식 'Phase NNN'이 노출됩니다 — v13에서 제거 대상."
     )
