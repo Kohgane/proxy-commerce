@@ -21,6 +21,8 @@ def test_admin_cs_stats_json(tmp_path, monkeypatch):
     from src.order_webhook import app
     app.config["TESTING"] = True
     with app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess["user_id"] = "admin"; sess["user_role"] = "admin"
         resp = client.get("/admin/cs/stats")
         assert resp.status_code == 200
         data = resp.get_json()
@@ -34,6 +36,8 @@ def test_admin_cs_check_sla(tmp_path, monkeypatch):
     from src.order_webhook import app
     app.config["TESTING"] = True
     with app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess["user_id"] = "admin"; sess["user_role"] = "admin"
         resp = client.post("/admin/cs/check-sla")
         assert resp.status_code == 200
         data = resp.get_json()
@@ -48,7 +52,7 @@ def test_admin_cs_rebuild_embeddings_disabled(tmp_path, monkeypatch):
     app.config["TESTING"] = True
     with app.test_client() as client:
         with client.session_transaction() as sess:
-            sess["user_id"] = "admin"
+            sess["user_id"] = "admin"; sess["user_role"] = "admin"
         resp = client.post("/admin/cs/rebuild-embeddings")
         assert resp.status_code == 200
         data = resp.get_json()
@@ -68,7 +72,7 @@ def test_admin_cs_poll_now_no_active_channels(tmp_path, monkeypatch):
     app.config["TESTING"] = True
     with app.test_client() as client:
         with client.session_transaction() as sess:
-            sess["user_id"] = "admin"
+            sess["user_id"] = "admin"; sess["user_role"] = "admin"
         resp = client.post("/admin/cs/poll-now")
         assert resp.status_code == 200
         data = resp.get_json()

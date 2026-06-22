@@ -17,7 +17,7 @@ def client():
         yield c
 
 
-@pytest.mark.parametrize("path", ["/", "/seller/dashboard", "/admin/", "/seller/orders/auto", "/not-found-phase146"])
+@pytest.mark.parametrize("path", ["/", "/seller/dashboard", "/seller/about", "/seller/orders/auto", "/not-found-phase146"])
 def test_header_branch_logged_out_shows_guest_actions(client, path):
     resp = client.get(path, follow_redirects=True)
     html = resp.get_data(as_text=True)
@@ -27,7 +27,7 @@ def test_header_branch_logged_out_shows_guest_actions(client, path):
     assert "이메일 로그인" in html
 
 
-@pytest.mark.parametrize("path", ["/", "/seller/dashboard", "/admin/", "/seller/orders/auto", "/not-found-phase146"])
+@pytest.mark.parametrize("path", ["/", "/seller/dashboard", "/seller/about", "/seller/orders/auto", "/not-found-phase146"])
 def test_header_branch_logged_in_shows_user_menu(client, path):
     with client.session_transaction() as sess:
         sess["user_id"] = "u-phase146"
