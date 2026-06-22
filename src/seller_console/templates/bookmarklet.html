@@ -2,8 +2,17 @@
 {% block title %}북마클릿 설치{% endblock %}
 {% block content %}
 <div class="container-fluid py-4">
-  <h1 class="h3 mb-1">📌 북마클릿 설치</h1>
-  <p class="text-muted mb-4">쇼핑 페이지에서 클릭 한 번으로 상품을 수집합니다. <strong>토큰 없이</strong> 바로 작동해요(로그인만 되어 있으면 됩니다).</p>
+  <h1 class="h3 mb-1">📌 북마클릿 (고급)</h1>
+  <p class="text-muted mb-3">쇼핑 페이지에서 클릭 한 번으로 상품을 수집합니다. <strong>토큰 없이</strong> 바로 작동해요(로그인만 되어 있으면 됩니다).</p>
+
+  <div class="alert alert-primary d-flex align-items-center gap-2 mb-4" role="note">
+    <span style="font-size:1.3rem">🧩</span>
+    <div class="small">
+      <strong>대부분의 분께는 크롬 확장을 권장해요.</strong> 더 깔끔하고, 지정 소싱처에서 자동으로 수집 버튼이 떠요.
+      <a href="/seller/extension" class="fw-semibold text-decoration-none ms-1">확장 설치하기 →</a><br>
+      북마클릿은 확장을 못 쓰는 경우를 위한 <strong>대체(고급)</strong> 수단입니다.
+    </div>
+  </div>
 
   <div class="row g-4">
     <!-- 설치 안내 -->
@@ -56,10 +65,13 @@
     <!-- 코드 보기 / 동작 원리 -->
     <div class="col-lg-5">
       <div class="card">
-        <div class="card-header"><strong>📄 북마클릿 코드</strong></div>
         <div class="card-body">
-          <pre class="bg-light p-3 rounded" style="font-size:0.72rem;overflow-x:auto;white-space:pre-wrap;" id="bookmarkletCode">코드 로딩 중…</pre>
-          <button class="btn btn-sm btn-outline-secondary mt-2" onclick="copyCode()">코드 복사</button>
+          <details>
+            <summary class="text-muted small" style="cursor:pointer">고급: 북마클릿 코드 보기 (개발용)</summary>
+            <p class="text-muted small mt-2 mb-2">대부분의 분은 이걸 볼 필요가 없어요. 위 <strong>🧤</strong> 버튼만 드래그하면 됩니다.</p>
+            <pre class="bg-light p-3 rounded" style="font-size:0.72rem;overflow-x:auto;white-space:pre-wrap;" id="bookmarkletCode">코드 로딩 중…</pre>
+            <button class="btn btn-sm btn-outline-secondary mt-2" onclick="copyCode()">코드 복사</button>
+          </details>
         </div>
       </div>
 
