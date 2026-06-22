@@ -3,120 +3,103 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>코가네 퍼센티 수집기 — 설정</title>
+  <title>코고가네 수집기 — 설정</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: 14px;
-      background: #f0f2f5;
-      padding: 24px;
-      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Pretendard", sans-serif;
+      font-size: 14px; background: #f5efe3; color: #1a1714; padding: 24px; min-height: 100vh;
     }
-    .container { max-width: 520px; margin: 0 auto; }
-    .card {
-      background: white;
-      border-radius: 12px;
-      padding: 24px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-      margin-bottom: 16px;
-    }
-    h1 { font-size: 20px; color: #333; margin-bottom: 4px; }
-    .subtitle { color: #888; font-size: 13px; margin-bottom: 20px; }
-    h2 { font-size: 16px; color: #444; margin-bottom: 12px; }
-    label {
-      display: block;
-      font-weight: 600;
-      color: #555;
-      margin-bottom: 6px;
-      font-size: 13px;
-    }
+    .container { max-width: 540px; margin: 0 auto; }
+    .card { background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 2px 10px rgba(26,23,20,0.08); margin-bottom: 16px; }
+    h1 { font-size: 20px; color: #1a1714; margin-bottom: 4px; }
+    .subtitle { color: #8a8170; font-size: 13px; margin-bottom: 20px; }
+    h2 { font-size: 16px; color: #2a2620; margin-bottom: 6px; }
+    .sect-hint { color: #8a8170; font-size: 12.5px; margin-bottom: 14px; }
+    label { display: block; font-weight: 600; color: #4a4234; margin-bottom: 6px; font-size: 13px; }
     input[type="text"], input[type="url"], input[type="password"] {
-      width: 100%;
-      padding: 10px 12px;
-      border: 1.5px solid #ddd;
-      border-radius: 8px;
-      font-size: 14px;
-      outline: none;
-      transition: border-color 0.2s;
+      width: 100%; padding: 10px 12px; border: 1.5px solid #e3dac8; border-radius: 9px;
+      font-size: 14px; outline: none; transition: border-color 0.2s; background: #fffdf9;
     }
-    input:focus { border-color: #667eea; }
+    input:focus { border-color: #119a8e; }
     .form-group { margin-bottom: 16px; }
-    .hint { font-size: 12px; color: #999; margin-top: 4px; }
-    .btn {
-      padding: 10px 20px;
-      border: none;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity 0.2s;
-    }
-    .btn-primary {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-    }
-    .btn-primary:hover { opacity: 0.9; }
-    .btn-danger { background: #dc3545; color: white; margin-left: 8px; }
-    .status-msg {
-      padding: 10px 12px;
-      border-radius: 8px;
-      font-size: 13px;
-      margin-top: 12px;
-      display: none;
-    }
-    .status-msg.success { background: #d4edda; color: #155724; }
+    .hint { font-size: 12px; color: #a39a87; margin-top: 4px; }
+    .btn { padding: 10px 18px; border: none; border-radius: 9px; font-size: 14px; font-weight: 700; cursor: pointer; transition: opacity 0.15s, transform .1s; }
+    .btn:hover { transform: translateY(-1px); }
+    .btn-primary { background: #119a8e; color: #fff; }
+    .btn-cta { background: #ef7a22; color: #fff; }
+    .btn-ghost { background: transparent; color: #4a4234; border: 1px solid #d9cfb8; }
+    .btn-danger { background: #d9534f; color: #fff; margin-left: 8px; }
+    .status-msg { padding: 10px 12px; border-radius: 9px; font-size: 13px; margin-top: 12px; display: none; }
+    .status-msg.success { background: #d9f0ec; color: #0c5a52; }
     .status-msg.error { background: #f8d7da; color: #721c24; }
-    .token-row {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
+    .token-row { display: flex; gap: 8px; align-items: center; }
     .token-row input { flex: 1; }
-    a { color: #667eea; }
+    a { color: #119a8e; }
+    /* 소싱처 관리 */
+    .src-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid #f0e9d9; }
+    .src-row:last-child { border-bottom: none; }
+    .src-name { font-weight: 600; color: #2a2620; }
+    .src-host { font-size: 11.5px; color: #a39a87; margin-left: 6px; font-weight: 400; }
+    .switch { position: relative; width: 42px; height: 24px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; inset: 0; background: #ccc; border-radius: 999px; transition: .2s; cursor: pointer; }
+    .slider::before { content: ""; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+    .switch input:checked + .slider { background: #119a8e; }
+    .switch input:checked + .slider::before { transform: translateX(18px); }
+    .add-row { display: flex; gap: 8px; margin-top: 14px; }
+    .add-row input { flex: 1; }
+    .rm-btn { background: transparent; border: none; color: #d9534f; cursor: pointer; font-size: 13px; font-weight: 700; }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="card">
-      <h1>⚙️ 코가네 퍼센티 수집기</h1>
-      <p class="subtitle">서버 URL과 Personal Access Token을 설정하세요.</p>
+      <h1>⚙️ 코고가네 수집기</h1>
+      <p class="subtitle">서버 주소와 액세스 토큰을 설정하세요.</p>
 
       <div class="form-group">
-        <label for="serverUrl">서버 URL</label>
+        <label for="serverUrl">서버 주소</label>
         <input type="url" id="serverUrl" placeholder="https://kohganepercentiii.com">
-        <div class="hint">Kohgane Percentiii 서버 주소 (기본: https://kohganepercentiii.com)</div>
+        <div class="hint">코고가네 서버 주소 (기본: https://kohganepercentiii.com)</div>
       </div>
 
       <div class="form-group">
-        <label for="token">Personal Access Token</label>
+        <label for="token">액세스 토큰</label>
         <div class="token-row">
           <input type="password" id="token" placeholder="tok_xxxxxxxxxxxxxxxxxxxx">
-          <button class="btn btn-primary" id="toggleToken" title="토큰 표시/숨기기">👁</button>
+          <button class="btn btn-ghost" id="toggleToken" title="토큰 표시/숨기기">👁</button>
         </div>
         <div class="hint">
-          <a href="#" id="getTokenLink">→ 토큰 발급하기</a>
-          (서버 로그인 후 /seller/me/tokens에서 발급)
+          <a href="#" id="getTokenLink">→ 토큰 발급하기</a> (로그인 후 발급)
         </div>
       </div>
 
       <button class="btn btn-primary" id="saveBtn">💾 저장</button>
       <button class="btn btn-danger" id="clearBtn">🗑 초기화</button>
-
       <div class="status-msg" id="statusMsg"></div>
+    </div>
+
+    <!-- v10 P0: 소싱처 관리 -->
+    <div class="card">
+      <h2>🌐 소싱처 관리</h2>
+      <p class="sect-hint">여기에 켠 사이트에서만 수집 버튼이 떠요. 그 외 사이트에선 아무것도 표시되지 않습니다.</p>
+      <div id="defaultSources"><!-- 기본 소싱처 토글 --></div>
+      <div id="customSources" style="margin-top:6px"><!-- 사용자 추가 도메인 --></div>
+      <div class="add-row">
+        <input type="text" id="customHost" placeholder="직접 추가 (예: vvic.com)">
+        <button class="btn btn-cta" id="addHostBtn">＋ 추가</button>
+      </div>
+      <div class="status-msg" id="srcStatus"></div>
     </div>
 
     <div class="card">
       <h2>💡 사용 방법</h2>
-      <ol style="padding-left: 20px; line-height: 2;">
-        <li>쇼핑몰 상품 페이지로 이동</li>
-        <li>브라우저 상단의 확장 아이콘 클릭</li>
-        <li>"이 상품 수집하기" 버튼 클릭</li>
-        <li>수집 완료 알림 확인</li>
+      <ol style="padding-left: 20px; line-height: 2; color:#4a4234">
+        <li>지정한 소싱처(타오바오·아마존 등) 상품/목록 페이지로 이동</li>
+        <li>화면에 뜬 <b>코고가네 수집</b> 버튼/바로 수집</li>
+        <li>코고가네 <b>수집 이력</b>에서 확인·편집·등록</li>
       </ol>
-      <p style="margin-top: 12px; color: #888; font-size: 12px;">
-        우클릭 → "코가네 퍼센티에 보내기" 로도 수집 가능합니다.
-      </p>
     </div>
   </div>
 

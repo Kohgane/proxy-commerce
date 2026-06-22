@@ -3,97 +3,52 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>코가네 퍼센티 수집기</title>
+  <title>코고가네 수집기</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      width: 320px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: 14px;
-      background: #fff;
-    }
-    .header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      padding: 16px;
-      text-align: center;
-    }
+    body { width: 320px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Pretendard", sans-serif; font-size: 14px; background: #fff; color: #1a1714; }
+    .header { background: linear-gradient(135deg, #1a1714 0%, #2a2620 100%); color: #f5efe3; padding: 16px; text-align: center; border-bottom: 2px solid #c9a24b; }
     .header h1 { font-size: 16px; font-weight: 700; }
-    .header p { font-size: 12px; opacity: 0.85; margin-top: 4px; }
+    .header p { font-size: 12px; opacity: 0.8; margin-top: 4px; color: #c9a24b; }
     .content { padding: 16px; }
-    .page-info {
-      background: #f8f9fa;
-      border-radius: 8px;
-      padding: 12px;
-      margin-bottom: 12px;
-      font-size: 12px;
-      color: #555;
-      word-break: break-all;
-    }
-    .page-info .url { color: #667eea; font-weight: 500; }
-    .btn-collect {
-      width: 100%;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      border: none;
-      border-radius: 8px;
-      padding: 12px;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity 0.2s;
-    }
-    .btn-collect:hover { opacity: 0.9; }
+    .src-badge { display: flex; align-items: center; gap: 8px; border-radius: 9px; padding: 9px 12px; margin-bottom: 12px; font-size: 12.5px; font-weight: 600; }
+    .src-badge.on { background: #d9f0ec; color: #0c5a52; }
+    .src-badge.off { background: #f4efe2; color: #8a8170; }
+    .page-info { background: #f8f6f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; font-size: 11.5px; color: #8a8170; word-break: break-all; }
+    .page-info .url { color: #119a8e; font-weight: 500; }
+    .btn-collect { width: 100%; background: #119a8e; color: #fff; border: none; border-radius: 9px; padding: 12px; font-size: 15px; font-weight: 700; cursor: pointer; transition: opacity 0.15s; }
+    .btn-collect:hover { opacity: 0.92; }
     .btn-collect:disabled { opacity: 0.6; cursor: not-allowed; }
-    .status {
-      margin-top: 12px;
-      padding: 10px;
-      border-radius: 8px;
-      font-size: 13px;
-      display: none;
-    }
-    .status.success { background: #d4edda; color: #155724; }
+    .status { margin-top: 12px; padding: 10px; border-radius: 8px; font-size: 13px; display: none; }
+    .status.success { background: #d9f0ec; color: #0c5a52; }
     .status.error { background: #f8d7da; color: #721c24; }
-    .status.loading { background: #d1ecf1; color: #0c5460; }
-    .preview-link {
-      display: block;
-      margin-top: 8px;
-      color: #667eea;
-      text-decoration: none;
-      font-size: 12px;
-    }
-    .footer {
-      padding: 8px 16px;
-      border-top: 1px solid #eee;
-      display: flex;
-      justify-content: space-between;
-      font-size: 11px;
-      color: #aaa;
-    }
-    .footer a { color: #667eea; text-decoration: none; }
+    .status.loading { background: #fdf0e2; color: #8a5a1a; }
+    .preview-link { display: block; margin-top: 8px; color: #119a8e; text-decoration: none; font-size: 12px; }
+    .footer { padding: 8px 16px; border-top: 1px solid #f0e9d9; display: flex; justify-content: space-between; font-size: 11px; color: #a39a87; }
+    .footer a { color: #119a8e; text-decoration: none; cursor: pointer; }
   </style>
 </head>
 <body>
   <div class="header">
-    <h1>🛍️ 코가네 퍼센티 수집기</h1>
-    <p>한 클릭으로 상품 정보 수집</p>
+    <h1>🧤 코고가네 수집기</h1>
+    <p>지정 소싱처에서 한 번에 수집</p>
   </div>
 
   <div class="content">
+    <div class="src-badge off" id="srcBadge">확인 중…</div>
+
     <div class="page-info">
       <div class="url" id="pageUrl">페이지 로딩 중...</div>
     </div>
 
-    <button class="btn-collect" id="btnCollect">
-      📦 이 상품 수집하기
-    </button>
+    <button class="btn-collect" id="btnCollect">📦 이 상품 수집하기</button>
 
     <div class="status" id="status"></div>
   </div>
 
   <div class="footer">
-    <span id="statusText">준비됨</span>
-    <a href="#" id="optionsLink">⚙️ 설정</a>
+    <a id="manageLink">🌐 소싱처 관리</a>
+    <a id="optionsLink">⚙️ 설정</a>
   </div>
 
   <script src="popup.js"></script>
