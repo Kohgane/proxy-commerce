@@ -1,10 +1,11 @@
 /**
- * content_script.js — 페이지 컨텍스트에서 메타 추출 + 인페이지 '수집' 버튼 (Phase 202)
+ * content_script.js — 페이지 컨텍스트에서 메타 추출 + 인페이지 '수집' 버튼 (Phase 202+)
  * 코고가네 수집기
  *
  * 1) 백그라운드/팝업에서 "extractMeta" 메시지 요청 시 메타 응답.
- * 2) 상품 페이지로 판단되면 우하단에 떠 있는 '수집' 버튼을 주입한다.
- *    버튼 클릭 → 메타 추출 → background로 전송(번역은 서버에서 수행) → 인페이지 토스트.
+ * 2) v10: '지정 소싱처' 도메인에서만 수집 UI(FAB/리스팅 바)를 주입한다(그 외 사이트엔 아무것도 안 그림).
+ *    소싱처는 기본셋 + 사용자 지정(chrome.storage.local의 kgp_sources)로 관리, 런타임 즉시 반영.
+ * 3) 리스팅은 사이트 어댑터(아마존 등) + 엄격 휴리스틱으로 '실제 제품 카드만' 감지(추천/푸터/썸네일 제외).
  */
 
 function extractProductMeta() {
@@ -316,6 +317,7 @@ function handleFabClick(btn) {
 }
 
 function injectCollectButton() {
+  if (!kgpHostAllowed()) return;                // 지정 소싱처에서만(v10 P0)
   if (document.getElementById(KGP_BTN_ID)) return;
   if (window.top !== window.self) return;       // iframe 안에서는 표시 안 함
   if (!document.body) return;
@@ -388,35 +390,120 @@ function _kgpPrice(text) {
   return { price: raw, currency: cur };
 }
 
-function kgpFindCards() {
-  const cards = [];
-  const seen = {};
+// ---------------------------------------------------------------------------
+// v10 P0 — 지정 소싱처에서만 노출 (아무 사이트 ✕).
+//   기본셋(ON) + 사용자 지정 도메인(옵션에서 추가/삭제). 비매치 사이트엔 아무것도 안 그림.
+// ---------------------------------------------------------------------------
+const KGP_DEFAULT_SOURCES = [
+  { id: "taobao", label: "타오바오", test: (h) => /(^|\.)taobao\.com$/.test(h) },
+  { id: "tmall", label: "티몰", test: (h) => /(^|\.)tmall\.com$/.test(h) },
+  { id: "1688", label: "1688", test: (h) => /(^|\.)1688\.com$/.test(h) },
+  { id: "temu", label: "테무", test: (h) => /(^|\.)temu\.com$/.test(h) },
+  { id: "amazon", label: "아마존", test: (h) => /(^|\.)amazon\.[a-z.]+$/.test(h) },
+  { id: "aliexpress", label: "알리익스프레스", test: (h) => /(^|\.)aliexpress\.(com|us)$/.test(h) },
+];
+let KGP_SOURCES = null;   // chrome.storage의 사용자 설정 { defaults:{id:bool}, custom:[{host,on}] }
+
+function _kgpHostMatch(host, domain) {
+  domain = String(domain || "").toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^www\./, "");
+  if (!domain) return false;
+  return host === domain || host.endsWith("." + domain);
+}
+
+// 현재 사이트가 '지정 소싱처'인가? (기본셋 토글 + 커스텀 도메인)
+function kgpHostAllowed() {
+  const host = (location.hostname || "").toLowerCase();
+  if (!host) return false;
+  const s = KGP_SOURCES || {};
+  const defs = s.defaults || {};
+  for (const src of KGP_DEFAULT_SOURCES) {
+    if (defs[src.id] !== false && src.test(host)) return true;   // 기본 ON(명시적 false만 끔)
+  }
+  for (const c of (s.custom || [])) {
+    if (c && c.on !== false && _kgpHostMatch(host, c.host)) return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// v10 P0 — 실제 제품만 감지. 사이트 어댑터(정확) + 엄격 휴리스틱(폴백).
+//   썸네일·추천레일·"본 적 있음"·캐러셀·푸터·광고 제외. "N개 발견" = 실제 수집 가능 수.
+// ---------------------------------------------------------------------------
+// 카드가 추천/푸터/캐러셀/광고 같은 '제품 그리드 아님' 영역에 속하면 제외.
+function _kgpInBadRegion(el) {
+  let n = el;
+  for (let i = 0; n && i < 9; i++, n = n.parentElement) {
+    let cls = "";
+    try { cls = (typeof n.className === "string" ? n.className : (n.getAttribute && n.getAttribute("class")) || ""); } catch (e) { cls = ""; }
+    const tag = (n.tagName || "").toLowerCase();
+    const meta = ((n.id || "") + " " + cls + " " + ((n.getAttribute && (n.getAttribute("aria-label") || n.getAttribute("data-component-type"))) || "")).toLowerCase();
+    if (tag === "footer" || tag === "header" || tag === "nav") return true;
+    if (/(footer|recommend|related|carousel|slider|sponsor|advert|\bads?\b|viewed|recently|history|also-?viewed|also-?bought|similar|banner|promo|deal-?strip|rcmd)/.test(meta)) return true;
+  }
+  return false;
+}
+
+// 아마존 검색결과 어댑터 — 실제 제품 카드 컨테이너만.
+function _kgpAmazonCards() {
+  const cards = [], seen = {};
+  document.querySelectorAll('[data-component-type="s-search-result"]').forEach((el) => {
+    try {
+      if (_kgpInBadRegion(el)) return;
+      const a = el.querySelector('a.a-link-normal[href*="/dp/"], h2 a, a.a-link-normal.s-no-outline');
+      const href = a && a.href ? a.href.split("?")[0].split("#")[0] : "";
+      if (!href || href.indexOf("http") !== 0 || seen[href]) return;
+      const img = el.querySelector("img.s-image") || el.querySelector("img");
+      const titleEl = el.querySelector("h2 span") || el.querySelector("h2");
+      const priceEl = el.querySelector(".a-price .a-offscreen") || el.querySelector(".a-price");
+      const pr = _kgpPrice(priceEl ? priceEl.textContent : (el.innerText || ""));
+      if (!img || !titleEl || !pr.price) return;            // 제목+가격+링크+이미지 모두 있어야 제품
+      seen[href] = 1;
+      cards.push({
+        url: href, title: (titleEl.innerText || titleEl.textContent || "").trim().slice(0, 200),
+        image: img.src, images: [img.src], price: pr.price, currency: pr.currency || "USD", el: el,
+      });
+    } catch (e) { /* noop */ }
+  });
+  return cards;
+}
+
+// 엄격 폴백 휴리스틱 — 제목+가격+제품링크+충분히 큰 이미지를 '모두' 가질 때만 제품.
+function _kgpGenericCards() {
+  const cards = [], seen = {};
   try {
     const imgs = document.querySelectorAll("img");
     for (let i = 0; i < imgs.length; i++) {
       const img = imgs[i];
       const w = img.naturalWidth || img.width || 0;
       const h = img.naturalHeight || img.height || 0;
-      if (w < 120 || h < 120) continue;
+      if (w < 140 || h < 140) continue;                    // 작은 썸네일/아이콘 제외
       const a = img.closest("a[href]");
       if (!a || !a.href || a.href.indexOf("http") !== 0) continue;
       const href = a.href.split("#")[0];
       if (seen[href]) continue;
       const card = a.closest("li,article,div") || a;
+      if (_kgpInBadRegion(card)) continue;                 // 추천/푸터/캐러셀 제외
       const text = (card.innerText || "").trim();
       const pr = _kgpPrice(text);
-      if (!pr.price) continue;  // 가격 없는 블록은 상품 카드로 보지 않음(오탐 감소)
+      if (!pr.price) continue;                             // 가격 필수
       const titleEl = card.querySelector("h1,h2,h3,h4,[class*='title'],[class*='name']");
-      const title = (img.alt || "").trim() || (titleEl ? titleEl.innerText : "") || text;
+      const title = ((img.alt || "").trim()) || (titleEl ? titleEl.innerText : "") || text;
+      if (!title || title.trim().length < 4) continue;     // 제목 필수
       seen[href] = 1;
       cards.push({
-        url: href,
-        title: (title || "").trim().replace(/\s+/g, " ").slice(0, 200),
-        image: img.src, images: [img.src],
-        price: pr.price, currency: pr.currency, el: card,
+        url: href, title: title.trim().replace(/\s+/g, " ").slice(0, 200),
+        image: img.src, images: [img.src], price: pr.price, currency: pr.currency, el: card,
       });
     }
   } catch (e) { /* noop */ }
+  return cards;
+}
+
+function kgpFindCards() {
+  const host = (location.hostname || "").toLowerCase();
+  let cards = [];
+  try { if (/(^|\.)amazon\.[a-z.]+$/.test(host)) cards = _kgpAmazonCards(); } catch (e) { cards = []; }
+  if (!cards.length) { try { cards = _kgpGenericCards(); } catch (e) { cards = []; } }
   return cards;
 }
 
@@ -610,6 +697,7 @@ let _kgpAutoApplied = false;       // 이 페이지에서 '수동(auto off)' 초
 
 function kgpInjectListing() {
   if (window.top !== window.self || !document.body) return;
+  if (!kgpHostAllowed()) { kgpTeardown(); return; }   // 지정 소싱처에서만(v10 P0)
   const cards = kgpFindCards();
   if (cards.length < 3) {                        // 리스팅 아님 → 정리(배지/바/배지펄스 제거)
     const ex = document.getElementById(KGP_TOOLBAR_ID);
@@ -684,12 +772,43 @@ function kgpMaybeCoach() {
   setTimeout(close, 7000);
 }
 
+// 비-소싱처(또는 설정으로 꺼진 사이트)에선 모든 UI 제거(경량, DOM 손 안 댐).
+function kgpTeardown() {
+  try {
+    const fab = document.getElementById(KGP_BTN_ID); if (fab) fab.remove();
+    const bar = document.getElementById(KGP_TOOLBAR_ID); if (bar) bar.remove();
+    const pill = document.getElementById(KGP_REOPEN_ID); if (pill) pill.remove();
+    document.querySelectorAll(".kgp-card-chk").forEach((b) => b.remove());
+    document.querySelectorAll('[data-kgp-outline="1"]').forEach((e) => { e.style.outline = ""; e.removeAttribute("data-kgp-outline"); });
+  } catch (e) { /* noop */ }
+}
+
 // SPA 대응: 최초 + URL 변경 시 재시도 (단일 상품 FAB + 리스팅 다중수집)
 function kgpRefresh() {
+  if (!kgpHostAllowed()) { kgpTeardown(); return; }   // 지정 소싱처에서만 노출(v10 P0)
   injectCollectButton();
   kgpInjectListing();
 }
-kgpRefresh();
+
+// 설정 로드 후 첫 렌더. 설정 바뀌면(소싱처 추가/삭제·토글) 즉시 반영.
+function kgpLoadSourcesThen(cb) {
+  try {
+    chrome.storage.local.get("kgp_sources", (r) => {
+      KGP_SOURCES = (r && r.kgp_sources) || {};
+      cb && cb();
+    });
+  } catch (e) { KGP_SOURCES = {}; cb && cb(); }
+}
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (changes && changes.kgp_sources) {
+      KGP_SOURCES = changes.kgp_sources.newValue || {};
+      kgpRefresh();                                   // 런타임 즉시 반영
+    }
+  });
+} catch (e) { /* noop */ }
+
+kgpLoadSourcesThen(kgpRefresh);
 let _kgpLastUrl = location.href;
 setInterval(() => {
   if (location.href !== _kgpLastUrl) {
@@ -704,5 +823,5 @@ setInterval(() => {
     setTimeout(kgpRefresh, 900);
   }
 }, 1500);
-// 동적 로딩(무한 스크롤) 대응: 주기적으로 리스팅 재스캔
-setInterval(kgpInjectListing, 4000);
+// 동적 로딩(무한 스크롤) 대응: 주기적으로 리스팅 재스캔(지정 소싱처에서만).
+setInterval(() => { if (kgpHostAllowed()) kgpInjectListing(); }, 4000);

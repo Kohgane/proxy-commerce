@@ -1,33 +1,71 @@
 /**
  * popup.js — 팝업 UI 로직
- * 코가네 퍼센티 수집기
+ * 코고가네 수집기
  */
 
 const btnCollect = document.getElementById("btnCollect");
 const statusEl = document.getElementById("status");
 const pageUrlEl = document.getElementById("pageUrl");
-const statusText = document.getElementById("statusText");
 const optionsLink = document.getElementById("optionsLink");
+const manageLink = document.getElementById("manageLink");
+const srcBadge = document.getElementById("srcBadge");
 
-// 현재 탭 URL 표시
+// 기본 소싱처(content_script.js와 동일하게 유지).
+const DEFAULT_SOURCE_TESTS = [
+  { id: "taobao", label: "타오바오", test: (h) => /(^|\.)taobao\.com$/.test(h) },
+  { id: "tmall", label: "티몰", test: (h) => /(^|\.)tmall\.com$/.test(h) },
+  { id: "1688", label: "1688", test: (h) => /(^|\.)1688\.com$/.test(h) },
+  { id: "temu", label: "테무", test: (h) => /(^|\.)temu\.com$/.test(h) },
+  { id: "amazon", label: "아마존", test: (h) => /(^|\.)amazon\.[a-z.]+$/.test(h) },
+  { id: "aliexpress", label: "알리익스프레스", test: (h) => /(^|\.)aliexpress\.(com|us)$/.test(h) },
+];
+
+function hostMatch(host, domain) {
+  domain = String(domain || "").toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^www\./, "");
+  return !!domain && (host === domain || host.endsWith("." + domain));
+}
+
+// 현재 탭이 지정 소싱처인지 표시.
+function updateSourceBadge(url) {
+  let host = "";
+  try { host = new URL(url).hostname.toLowerCase(); } catch (e) { host = ""; }
+  chrome.storage.local.get("kgp_sources", (r) => {
+    const s = (r && r.kgp_sources) || {};
+    const defs = s.defaults || {};
+    let label = "";
+    for (const src of DEFAULT_SOURCE_TESTS) {
+      if (defs[src.id] !== false && src.test(host)) { label = src.label; break; }
+    }
+    if (!label) {
+      for (const c of (s.custom || [])) { if (c && c.on !== false && hostMatch(host, c.host)) { label = c.host; break; } }
+    }
+    if (label) {
+      srcBadge.className = "src-badge on";
+      srcBadge.textContent = `✅ 지정 소싱처 (${label}) — 수집 버튼이 표시돼요`;
+    } else {
+      srcBadge.className = "src-badge off";
+      srcBadge.textContent = "여긴 지정 소싱처가 아니에요. ‘소싱처 관리’에서 추가할 수 있어요.";
+    }
+  });
+}
+
+// 현재 탭 URL 표시 + 소싱처 배지
 chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
   if (tabs[0]) {
     const url = tabs[0].url || "";
     pageUrlEl.textContent = url.length > 60 ? url.slice(0, 57) + "..." : url;
+    updateSourceBadge(url);
   }
 });
 
-// 설정 페이지 열기
-optionsLink.addEventListener("click", (e) => {
-  e.preventDefault();
-  chrome.runtime.openOptionsPage();
-});
+// 설정/소싱처 관리 → 옵션 페이지 열기
+optionsLink.addEventListener("click", (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); });
+manageLink.addEventListener("click", (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); });
 
 // 수집 버튼 클릭
 btnCollect.addEventListener("click", async () => {
   btnCollect.disabled = true;
   showStatus("loading", "⏳ 상품 정보를 수집하는 중...");
-  statusText.textContent = "수집 중...";
 
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -108,15 +146,12 @@ btnCollect.addEventListener("click", async () => {
         link.textContent = "→ 미리보기";
         statusEl.appendChild(link);
       }
-      statusText.textContent = "수집 완료";
     } else {
       const errMsg = (response && response.error) || "수집 실패";
       showStatus("error", `❌ ${errMsg}`);
-      statusText.textContent = "오류 발생";
     }
   } catch (err) {
     showStatus("error", `❌ ${err.message || "오류가 발생했습니다"}`);
-    statusText.textContent = "오류 발생";
   } finally {
     btnCollect.disabled = false;
   }
