@@ -322,7 +322,7 @@ function injectCollectButton() {
   if (document.getElementById(KGP_BTN_ID)) return;
   if (window.top !== window.self) return;       // iframe 안에서는 표시 안 함
   if (!document.body) return;
-  if (!looksLikeProductPage()) return;
+  if (!looksLikeProductPage() && !kgpIsDetailUrl()) return;   // 상세 페이지(메타 또는 URL 패턴)
 
   const btn = document.createElement("button");
   btn.id = KGP_BTN_ID;
@@ -784,11 +784,35 @@ function kgpTeardown() {
   } catch (e) { /* noop */ }
 }
 
-// SPA 대응: 최초 + URL 변경 시 재시도 (단일 상품 FAB + 리스팅 다중수집)
+// 상세 페이지로 보이는 URL 패턴(아마존 /dp//gp/product, 타오바오 item.htm, 1688 offer/detail, Temu g-, 일반 /product//goods/).
+function kgpIsDetailUrl() {
+  return /(\/dp\/|\/gp\/product\/|item\.htm|offer\/detail|\/g-?\d|\/goods\/|\/product\/)/i.test(location.href);
+}
+
+// FAB(우측)만 제거 / 리스팅(중앙 바·배지·구석배지)만 제거 — 모드 전환 시 상호배타.
+function kgpRemoveFab() {
+  const fab = document.getElementById(KGP_BTN_ID);
+  if (fab) fab.remove();
+}
+function kgpRemoveListing() {
+  const bar = document.getElementById(KGP_TOOLBAR_ID); if (bar) bar.remove();
+  const pill = document.getElementById(KGP_REOPEN_ID); if (pill) pill.remove();
+  document.querySelectorAll(".kgp-card-chk").forEach((b) => b.remove());
+  document.querySelectorAll('[data-kgp-outline="1"]').forEach((e) => { e.style.outline = ""; e.removeAttribute("data-kgp-outline"); });
+}
+
+// SPA 대응 + v11 P0: 페이지 종류에 따라 버튼 자동 전환(목록=중앙 바만, 상세=우측 FAB만 — 동시 노출 0).
 function kgpRefresh() {
   if (!kgpHostAllowed()) { kgpTeardown(); return; }   // 지정 소싱처에서만 노출(v10 P0)
-  injectCollectButton();
-  kgpInjectListing();
+  const cards = kgpFindCards();
+  const isList = cards.length >= 3;                   // 제품 그리드(여러 제품) = 목록
+  if (isList) {
+    kgpRemoveFab();                                   // 목록: 우측 FAB 숨김
+    kgpInjectListing();                               // 중앙 바만
+  } else {
+    kgpRemoveListing();                               // 상세: 중앙 바/배지 숨김
+    injectCollectButton();                            // 우측 FAB만(looksLikeProductPage/디테일 URL 가드)
+  }
 }
 
 // 설정 로드 후 첫 렌더. 설정 바뀌면(소싱처 추가/삭제·토글) 즉시 반영.
@@ -824,5 +848,5 @@ setInterval(() => {
     setTimeout(kgpRefresh, 900);
   }
 }, 1500);
-// 동적 로딩(무한 스크롤) 대응: 주기적으로 리스팅 재스캔(지정 소싱처에서만).
-setInterval(() => { if (kgpHostAllowed()) kgpInjectListing(); }, 4000);
+// 동적 로딩(무한 스크롤)·지연 렌더 대응: 주기적으로 모드 재평가(목록↔상세 자동 전환).
+setInterval(() => { if (kgpHostAllowed()) kgpRefresh(); }, 4000);
