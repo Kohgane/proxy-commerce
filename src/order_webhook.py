@@ -1241,6 +1241,40 @@ def i18n_dismiss():
     return resp
 
 
+# ---------------------------------------------------------------------------
+# v15 모바일 양대 스토어 패키징 — TWA(구글 플레이) Digital Asset Links + iOS 앱 연동(AASA).
+# 둘 다 도메인 루트의 /.well-known/ 에 있어야 한다. env 미설정 시 가짜 연동 대신 '빈' 응답(정직).
+#   - 구글 플레이(TWA): TWA_PACKAGE_NAME + TWA_SHA256_FINGERPRINTS(콤마구분)
+#   - App Store(iOS):  IOS_APP_ID = "TEAMID.com.bundle.id"
+# ---------------------------------------------------------------------------
+@app.get('/.well-known/assetlinks.json')
+def well_known_assetlinks():
+    """Android TWA(코고가네 플레이스토어 앱) ↔ 웹사이트 연동 검증용 Digital Asset Links."""
+    pkg = os.getenv("TWA_PACKAGE_NAME", "").strip()
+    fps = [f.strip() for f in os.getenv("TWA_SHA256_FINGERPRINTS", "").split(",") if f.strip()]
+    statements = []
+    if pkg and fps:
+        statements.append({
+            "relation": ["delegate_permission/common.handle_all_urls"],
+            "target": {
+                "namespace": "android_app",
+                "package_name": pkg,
+                "sha256_cert_fingerprints": fps,
+            },
+        })
+    # 미설정 시 빈 배열(가짜 연동 금지). 설정하면 TWA 검증 통과.
+    return jsonify(statements)
+
+
+@app.get('/.well-known/apple-app-site-association')
+def well_known_aasa():
+    """iOS(코고가네 App Store 앱) Universal Links 연동(apple-app-site-association). 확장자 없음·application/json."""
+    app_id = os.getenv("IOS_APP_ID", "").strip()
+    details = [{"appID": app_id, "paths": ["/seller/*", "/auth/*"]}] if app_id else []
+    payload = {"applinks": {"apps": [], "details": details}}
+    return jsonify(payload)
+
+
 @app.get('/')
 def root():
     """루트 라우트 — ROOT_REDIRECT 환경변수로 동작 제어 (Phase 132).

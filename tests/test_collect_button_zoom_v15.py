@@ -27,4 +27,7 @@ def test_sources_show_favicon():
 
 def test_manifest_version_bumped():
     mf = Path("extensions/chrome-collector/manifest.json").read_text(encoding="utf-8")
-    assert '"version": "1.5.3"' in mf
+    # 1.5.3 이상으로 bump됨(v15에서 누적 증가)
+    import re
+    m = re.search(r'"version":\s*"1\.5\.(\d+)"', mf)
+    assert m and int(m.group(1)) >= 3

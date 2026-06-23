@@ -432,6 +432,12 @@ const KGP_DEFAULT_SOURCES = [
   { id: "temu", label: "테무", test: (h) => /(^|\.)temu\.com$/.test(h) },
   { id: "amazon", label: "아마존", test: (h) => /(^|\.)amazon\.[a-z.]+$/.test(h) },
   { id: "aliexpress", label: "알리익스프레스", test: (h) => /(^|\.)aliexpress\.(com|us)$/.test(h) },
+  // v15: 대형 크로스보더 마켓 디폴트 확장(도메인 검증된 것만). 니치/브랜드(요시다카반 등)는 유저 추가 전용.
+  { id: "iherb", label: "아이허브", test: (h) => /(^|\.)iherb\.com$/.test(h) },
+  { id: "dhgate", label: "DHgate", test: (h) => /(^|\.)dhgate\.com$/.test(h) },
+  { id: "qoo10", label: "큐텐", test: (h) => /(^|\.)qoo10\.[a-z.]+$/.test(h) },
+  { id: "mercari", label: "메루카리", test: (h) => /(^|\.)mercari\.com$/.test(h) },
+  { id: "rakuten", label: "라쿠텐(Rakuten Fashion 포함)", test: (h) => /(^|\.)rakuten\.(co\.jp|com)$/.test(h) },
 ];
 let KGP_SOURCES = null;   // chrome.storage의 사용자 설정 { defaults:{id:bool}, custom:[{host,on}] }
 

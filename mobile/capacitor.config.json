@@ -1,0 +1,14 @@
+{
+  "_comment": "코고가네 iOS(App Store) Capacitor 셸 설정. server.url이 우리 HTTPS 사이트를 가리켜 웹앱을 그대로 띄운다. 도메인은 배포에 맞게 교체.",
+  "appId": "com.kohgane.app",
+  "appName": "코고가네",
+  "webDir": "www",
+  "server": {
+    "url": "https://kohganepercentiii.com/seller/m",
+    "cleartext": false
+  },
+  "ios": {
+    "contentInset": "automatic"
+  },
+  "backgroundColor": "#1a1714"
+}

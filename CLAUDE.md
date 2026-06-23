@@ -15,7 +15,23 @@
 - ✅ **P0-3 확장설치 '고가수집기'(Phase 284):** 다운로드 파일명 kohgane-collector→**gogasujipgi-v{ver}.zip**, 설치 페이지
   제목·단계 '고가수집기'. '왜 설치/왜 토큰' 초친절 비유 카드(도우미/열쇠). 페이지당 버튼 1개(v14 유지). '기존 수집기
   엔드포인트' 문구는 v14에서 이미 제거(전 템플릿 0 확인). 가드 test_ext_install_gogasujipgi_v15(4). 전체 10196 passed.
-- ⏳ 남은 v15: For Beginners(v14완료·재확인)·다크 스테퍼 완료표시·로고클릭 홈 / 디폴트 마켓 확장 / i18n·토큰·스토어.
+- ✅ **P1 로고클릭 홈·다크 스테퍼 완료표시(이미 v14 충족, 재확인):** 사이드바/탑바 브랜드는 이미 `/seller/`(→대시보드)
+  링크. 온보딩 스테퍼는 renderStepper가 done[s.key]면 ✓(bi-check-lg)·.ob-step.done 녹색, done은 실제상태(autoDone:
+  LOGGED_IN / MARKETS>0)로만 채움(가짜 체크 없음). → 추가 작업 불필요.
+- ✅ **P1 디폴트 마켓 확장(Phase 285):** 확장 디폴트 소싱처에 대형 크로스보더 마켓 추가 — 아이허브(iherb.com)·DHgate·
+  큐텐(qoo10)·메루카리(mercari.com)·라쿠텐(rakuten.co.jp, Rakuten Fashion 포함). content_script KGP_DEFAULT_SOURCES +
+  options DEFAULT_SOURCES 동기화 + manual_collect 원클릭 행(파비콘). 어댑터 불필요(universal_scraper 휴리스틱 폴백).
+  manifest 1.5.3→1.5.4. ※Taoworld·OPLE는 도메인 미검증이라 미추가(날조 금지) — 오너 정확한 URL 주면 추가.
+  니치/브랜드(요시다카반·ZOZO·VVIC·SHEIN)는 유저 추가 전용 유지. 가드 test_default_markets_v15(3). 전체 10199 passed.
+- ✅ **디자인 토큰 단일소스(이미 충족):** src/static/app.css :root에 75개 --pc-* 변수(색·간격·라운드·그림자·포커스·폰트,
+  Phase 234). 추가 작업 불필요.
+- ✅ **모바일 양대 스토어 패키징 경로(Phase 286 — 오너 "국내용 먼저"):** 도메인 루트 `/.well-known/assetlinks.json`
+  (구글 플레이 TWA Digital Asset Links — env TWA_PACKAGE_NAME+TWA_SHA256_FINGERPRINTS, 미설정 시 [] 정직) +
+  `/.well-known/apple-app-site-association`(iOS Universal Links — env IOS_APP_ID, 미설정 시 빈 details). 신설 mobile/
+  (README 한국어 단계별 가이드: PWABuilder/Bubblewrap TWA→Play, Capacitor→App Store + twa-manifest.json·capacitor.config.json).
+  PWA 매니페스트는 이미 스토어 요건 충족(아이콘192·512 maskable·standalone·share_target·shortcuts). 가드
+  test_mobile_store_packaging_v15(4). 전체 10203 passed.
+- ⏳ 남은 v15: i18n 영어 1급(글로벌 — 국내용 다음, 오너 지시 순서). 디자인토큰은 이미 충족.
 - ⏳ P1: For Beginners 크게·고정·on/off(v14 완료, 재확인) · 다크 스테퍼 단계별 완료표시(실제기준) · 로고 클릭→대시보드 ·
   소셜4종(v14 완료) · 디폴트 마켓 추가(Taoworld·iHerb·TEMU·OPLE·Rakuten Fashion…+아이콘, 니치는 유저추가) ·
   i18n 영어1급 · 디자인토큰 단일소스 · 모바일 양대 스토어 패키징.
