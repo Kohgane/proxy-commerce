@@ -4,7 +4,7 @@
 <div class="container-fluid py-4">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
-      <h1 class="h3 mb-0">🔑 Personal Access Token 관리</h1>
+      <h1 class="h3 mb-0"><i class="bi bi-key"></i> Personal Access Token 관리</h1>
       <small class="text-muted">크롬 확장 / 북마클릿이 “내 계정”으로 수집하도록 인증하는 열쇠입니다.</small>
     </div>
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#generateModal">
@@ -15,10 +15,10 @@
   <!-- 토큰이 무엇인지 / 어떻게 동작하는지 설명 -->
   <div class="card border-primary-subtle bg-primary-subtle mb-4">
     <div class="card-body">
-      <h2 class="h6 mb-2">🔑 토큰이 무엇이고, 무슨 일을 하나요?</h2>
+      <h2 class="h6 mb-2"><i class="bi bi-key"></i> 토큰이 무엇이고, 무슨 일을 하나요?</h2>
       <p class="small mb-2">
         Personal Access Token(개인 액세스 토큰)은 <strong>비밀번호 대신 쓰는 긴 열쇠 문자열</strong>입니다.
-        크롬 확장이나 북마클릿(🛒)으로 상품을 수집할 때, 이 토큰이 “이 수집은 <strong>당신 계정</strong>의 것”이라고
+        크롬 확장이나 북마클릿(<i class="bi bi-cart"></i>)으로 상품을 수집할 때, 이 토큰이 “이 수집은 <strong>당신 계정</strong>의 것”이라고
         서버에 알려줍니다. 토큰이 없으면 수집 요청이 거부돼요.
       </p>
       <div class="row g-2 small">
@@ -104,7 +104,7 @@
 
   <!-- 사용 가이드 -->
   <div class="card">
-    <div class="card-header"><strong>📋 사용 방법</strong></div>
+    <div class="card-header"><strong><i class="bi bi-card-list"></i> 사용 방법</strong></div>
     <div class="card-body">
       <h6>크롬 확장에서</h6>
       <ol>
@@ -151,7 +151,7 @@
         </div>
         <div id="tokenResult" class="d-none">
           <div class="alert alert-warning">
-            ⚠️ 이 토큰은 <strong>지금 한 번만</strong> 표시됩니다. 안전한 곳에 복사해두세요.
+            <i class="bi bi-exclamation-triangle"></i> 이 토큰은 <strong>지금 한 번만</strong> 표시됩니다. 안전한 곳에 복사해두세요.
           </div>
           <div class="input-group">
             <input type="text" class="form-control font-monospace" id="rawToken" readonly>
@@ -185,7 +185,7 @@ document.getElementById('generateBtn').addEventListener('click', async () => {
       document.getElementById('rawToken').value = data.raw_token;
       document.getElementById('tokenResult').classList.remove('d-none');
       btn.classList.replace('btn-primary', 'btn-success');
-      btn.textContent = '✅ 발급 완료';
+      btn.textContent = '발급 완료';
     } else {
       pcToast('토큰 발급 실패: ' + (data.error || '알 수 없는 오류'), 'error');
       btn.disabled = false;
