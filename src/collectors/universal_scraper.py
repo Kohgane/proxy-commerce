@@ -288,12 +288,43 @@ def extract_reviews(html: str, limit: int = 20) -> list:
     return reviews
 
 
+# v16 P0: '현재 상품(PDD)'이 아닌 영역 — 추천/연관/함께 본/스폰서/랭킹/최근 본/푸터 등.
+# 이런 컨테이너 안의 이미지·가격은 '다른 상품' 것이므로 수집에서 제외해 혼입을 막는다(class/id 의미 기반).
+_NON_PRODUCT_REGION_RE = re.compile(
+    r"(recommend|related|similar|also[-_ ]?(bought|viewed|like)|you[-_ ]?may|"
+    r"frequently[-_ ]?bought|sponsored|advert|promotion|ranking|best[-_ ]?seller|"
+    r"recently[-_ ]?viewed|history|carousel|slider|cross[-_ ]?sell|up[-_ ]?sell|"
+    r"comparison|footer|site[-_ ]?footer|navbar|header[-_ ]?nav|breadcrumb|"
+    r"more[-_ ]?to[-_ ]?explore|other[-_ ]?products|popular|trending)",
+    re.IGNORECASE,
+)
+
+
+def _in_non_product_region(node, max_depth: int = 8) -> bool:
+    """노드의 조상 중 추천/연관/푸터 등 '다른 상품' 영역이 있으면 True (최대 max_depth 단계)."""
+    cur = getattr(node, "parent", None)
+    depth = 0
+    while cur is not None and depth < max_depth:
+        try:
+            tokens = " ".join(
+                (cur.get("class") or []) + [cur.get("id") or "", cur.get("data-section") or ""]
+            )
+        except Exception:
+            tokens = ""
+        if tokens and _NON_PRODUCT_REGION_RE.search(tokens):
+            return True
+        cur = getattr(cur, "parent", None)
+        depth += 1
+    return False
+
+
 def _collect_dom_images(soup, base_url: str) -> list:
     """페이지 DOM에서 상품 이미지를 최대한 수집한다.
 
     - src + lazy-load 속성(data-src/data-original/data-lazy/data-srcset) + srcset(최대 해상도)
     - data: URI, 로고/아이콘/배너/플레이스홀더/플래그/추적픽셀/문서 패턴 제외
     - width/height 속성이 명시돼 있고 작으면(아이콘/픽셀) 제외
+    - v16: 추천/연관/함께 본/스폰서/푸터 등 '다른 상품' 영역의 이미지는 제외(PDD 스코프, 혼입 방지)
     - 상대경로 절대화, 순서 유지 중복 제거
     """
     out: list = []
@@ -347,6 +378,8 @@ def _collect_dom_images(soup, base_url: str) -> list:
         if _NON_PRODUCT_IMG_RE.search(url):
             continue
         if _too_small(img):
+            continue
+        if _in_non_product_region(img):    # v16: 추천/연관/푸터 영역의 다른 상품 이미지 제외
             continue
         seen.add(url)
         out.append(url)

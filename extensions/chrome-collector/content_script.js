@@ -36,6 +36,17 @@ function extractProductMeta() {
   const images = [];
   const _seenImg = new Set();
   const _pushImg = (s) => { if (_isProductImg(s) && !_seenImg.has(s)) { _seenImg.add(s); images.push(s); } };
+  // v16 P0: 추천/연관/함께 본/스폰서/푸터 등 '다른 상품' 영역의 이미지는 제외(PDD 스코프, 혼입 방지).
+  const _kgpNonProductRe = /(recommend|related|similar|also[-_ ]?(bought|viewed|like)|you[-_ ]?may|frequently[-_ ]?bought|sponsored|advert|promotion|ranking|best[-_ ]?seller|recently[-_ ]?viewed|carousel|slider|cross[-_ ]?sell|up[-_ ]?sell|comparison|footer|navbar|breadcrumb|other[-_ ]?products|popular|trending)/i;
+  const _kgpInNonProductRegion = (el) => {
+    let cur = el && el.parentElement, depth = 0;
+    while (cur && depth < 8) {
+      const tok = (cur.className && cur.className.baseVal !== undefined ? cur.className.baseVal : (cur.className || "")) + " " + (cur.id || "");
+      if (tok && _kgpNonProductRe.test(tok)) return true;
+      cur = cur.parentElement; depth++;
+    }
+    return false;
+  };
   if (ogImage) _pushImg(ogImage);
   try {
     document.querySelectorAll("img").forEach((im) => {
@@ -46,7 +57,7 @@ function extractProductMeta() {
       }
       const w = im.naturalWidth || im.width || 0;
       const h = im.naturalHeight || im.height || 0;
-      if (src && w >= 250 && h >= 250) _pushImg(src);
+      if (src && w >= 250 && h >= 250 && !_kgpInNonProductRegion(im)) _pushImg(src);
     });
   } catch (e) { /* noop */ }
 

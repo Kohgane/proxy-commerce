@@ -32,6 +32,11 @@
   등) '?' 툴팁 뒤로 + 본문 쉬운말, 권한 배지 한글화(상품 수집/카탈로그 조회/마켓 업로드, raw는 title). 가드 추가.
 - → **v16 완료**(P0 수집정확도·FAB에러·관리자 / P1 OG브랜딩·퍼센티/proxy정리·FAB on-off·소싱처메뉴·잔여문구·토큰).
   전체 10222 passed. ※사이트별 PDD 정밀 어댑터(라이브 검증 필요)만 후속.
+- ✅ **v16 후속 — PDD 스코프 혼입 방지(Phase 290):** 추측 금지로 사이트별 셀렉터는 미하드코딩하되, 의미기반
+  영역 제외 휴리스틱으로 '다른 상품' 혼입 차단. universal_scraper `_in_non_product_region()`(조상 class/id가
+  recommend/related/also-bought/sponsored/footer 등이면 제외, 최대 8단계) → `_collect_dom_images`에서 추천/연관/
+  푸터 영역 이미지 스킵. content_script도 동일 `_kgpInNonProductRegion`로 확장 추출서 제외. manifest 1.5.6→1.5.7.
+  가드 test_pdd_scope_v16(3). 전체 10225 passed. (Temu/타오바오 동적클래스 정밀 셀렉터는 여전히 라이브 검증 후속.)
 - (확인) 수집한 상품 클릭 404 = 해결됨 → 회귀 가드만 유지.
 
 ## 🟦 v15 브리프 (오너 2026-06-23 — "수집기 노출·마켓연결·확장설치 친절화 + 글로벌")
