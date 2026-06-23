@@ -37,6 +37,9 @@
   recommend/related/also-bought/sponsored/footer 등이면 제외, 최대 8단계) → `_collect_dom_images`에서 추천/연관/
   푸터 영역 이미지 스킵. content_script도 동일 `_kgpInNonProductRegion`로 확장 추출서 제외. manifest 1.5.6→1.5.7.
   가드 test_pdd_scope_v16(3). 전체 10225 passed. (Temu/타오바오 동적클래스 정밀 셀렉터는 여전히 라이브 검증 후속.)
+- ✅ **i18n 화면 확장 #1(Phase 290):** STRINGS에 주문(마켓/상태/검색/일괄운송장/CSV…)·마켓(현황/동기화/가이드/연결/연결확인)
+  키 ko/en 추가 + orders.html·markets.html 라벨 t() 외부화. en 쿠키 시 주문·마켓 화면 영어. ko 기본 동일(무회귀).
+  가드 test_i18n_screens_v16(4). 전체 10229 passed.
 - (확인) 수집한 상품 클릭 404 = 해결됨 → 회귀 가드만 유지.
 
 ## 🟦 v15 브리프 (오너 2026-06-23 — "수집기 노출·마켓연결·확장설치 친절화 + 글로벌")
