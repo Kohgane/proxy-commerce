@@ -28,7 +28,7 @@ STRINGS: dict[str, dict[str, str]] = {
     "action.prev": {"ko": "이전", "en": "Back"},
     "action.logout": {"ko": "로그아웃", "en": "Log out"},
     # For Beginners 고정 버튼
-    "fb.cta": {"ko": "✨ 처음이신가요?", "en": "✨ New here?"},
+    "fb.cta": {"ko": "처음이신가요?", "en": "New here?"},
     "fb.hide": {"ko": "가이드 버튼 숨기기", "en": "Hide guide button"},
     # 언어 토글
     "lang.korean": {"ko": "한국어", "en": "한국어"},

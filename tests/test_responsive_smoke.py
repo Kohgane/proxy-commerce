@@ -27,7 +27,7 @@ def test_base_html_has_hamburger_toggle():
     with open("src/seller_console/templates/_base.html", encoding="utf-8") as f:
         content = f.read()
     assert "sidebarToggle" in content
-    assert "☰" in content
+    assert "bi-list" in content   # v18: 햄버거 = 아이콘셋(bi-*)
 
 
 def test_base_html_has_drawer_sidebar():

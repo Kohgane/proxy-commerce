@@ -27,7 +27,7 @@ def test_seller_route_uses_seller_sidebar(client):
         sess["user_role"] = "admin"
     resp = client.get("/seller/sourcing/watches")
     html = resp.get_data(as_text=True)
-    assert "🛒 셀러 콘솔" in html
+    assert "셀러 콘솔" in html and "bi-shop" in html
     assert "/seller/sourcing/watches" in html
     assert "/admin/products" not in html
 
@@ -40,4 +40,4 @@ def test_admin_route_uses_admin_sidebar(client):
     html = resp.get_data(as_text=True)
     assert "🛒 Admin" in html
     assert "/admin/products" in html
-    assert "🛒 셀러 콘솔" not in html
+    assert "셀러 콘솔 · " not in html

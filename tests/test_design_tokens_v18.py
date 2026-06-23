@@ -58,3 +58,12 @@ def test_component_baseline_uses_tokens():
     assert "rgba(17, 154, 142" in CSS          # 청록 포커스 링
     assert "box-shadow: var(--shadow-sm)" in CSS
     # 하드코딩 0 원칙: 베이스라인 섹션은 토큰만(focus 링 rgba는 teal 동일색 허용)
+
+
+def test_base_chrome_uses_icon_set_not_emoji():
+    # v18 §8: 사이드바/탑바 등 영속 chrome은 이모지 아이콘 0, 단일 아이콘셋(bi-*) 사용.
+    base = Path("src/seller_console/templates/_base.html").read_text(encoding="utf-8")
+    for ic in ("bi-shop", "bi-phone", "bi-list", "bi-person", "bi-box-arrow-right", "bi-tools"):
+        assert ic in base, f"{ic} 아이콘 누락"
+    for em in ("🛒", "👤", "🚪", "📱", "🛠️", "🆘"):
+        assert em not in base, f"chrome에 이모지 {em} 잔존"

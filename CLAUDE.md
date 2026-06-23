@@ -42,6 +42,14 @@
   .pc-body*/.pc-caption, opt-in 점진적용)·8px 스택 유틸(.pc-stack-2~5)·버튼 radius var(--radius)·청록 포커스 링(focus-visible)
   ·입력 토큰 radius+teal 포커스·카드 얕은 그림자(두꺼운 보더 대신). CSS 단일소스라 화면별 수정 없이 전 화면 적용·저회귀.
   가드 보강. 전체 10247 passed. ※이모지 아이콘 전면 제거·단일 아이콘셋 교체는 화면 단위 후속(회귀 관리).
+- ✅ **v18 이모지→아이콘셋 #1 영속 chrome(Phase 295):** _base.html 사이드바/탑바/드롭다운의 이모지(🛒📱☰👤🚪🛠️🆘✨)를
+  단일 아이콘셋 bi-*(bi-shop/phone/list/person/box-arrow-right/tools/life-preserver/stars)로 교체. fb.cta i18n에서 ✨ 제거
+  (버튼이 bi-stars 사용). 영향 테스트(admin_vs_seller_nav·emergency_header·responsive 햄버거) 아이콘 기준 갱신.
+  가드 test_base_chrome_uses_icon_set_not_emoji. 전체 10248 passed. ※나머지 화면 이모지는 차근차근 후속.
+- ✅ **v18 이모지→아이콘셋 #2 수집·마켓(Phase 295):** manual_collect.html(🛒📥🧩🌐✅📤⚠️→bi-cart/download/puzzle/
+  globe/check-circle/box-arrow-up-right/exclamation-triangle, JS textContent는 텍스트만)·markets.html(🏪🔄🔌📖🔑✅⚠️❌💰🚫📋📭
+  →bi-*, <option>은 아이콘 불가라 텍스트만, JS textContent 텍스트만) 이모지 0. 전체 10248 passed.
+  ※collect_history/collect_preview/messaging/market_status/notifications 등은 차근차근 후속.
 
 ## 🟪 v16 브리프 (오너 2026-06-23 — "수집 정확도·공유 미리보기·토큰/관리자/소싱처")
 - 절대원칙: 추측 금지(에러·누락은 재현/로그)·거짓성공/가짜필러 금지·회귀 금지·정직·토큰 단일소스·경량. 버전충돌 시 v16 우선.
