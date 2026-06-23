@@ -98,7 +98,9 @@
       <li><a class="console-nav-link {% if _path.startswith('/seller/inventory/reorder') %}active{% endif %}" href="/seller/inventory/reorder"><i class="bi bi-arrow-repeat"></i><span>재고 자동주문</span></a></li>
 
       <li class="console-nav-group-title">설정</li>
+      {% if _user_role == 'admin' %}
       <li><a class="console-nav-link {% if _path.startswith('/seller/api/status') or _path.startswith('/seller/api-status') %}active{% endif %}" href="/seller/api/status"><i class="bi bi-key"></i><span>API 연결 상태</span></a></li>
+      {% endif %}
       <li><a class="console-nav-link {% if _path.startswith('/seller/me') %}active{% endif %}" href="/seller/me"><i class="bi bi-gear"></i><span>내 정보·설정</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/me/notifications') %}active{% endif %}" href="/seller/me/notifications"><i class="bi bi-broadcast"></i><span>푸시 알림 설정</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/api/tokens') or _path.startswith('/seller/me/tokens') %}active{% endif %}" href="/seller/api/tokens"><i class="bi bi-shield-lock"></i><span>API 토큰</span></a></li>

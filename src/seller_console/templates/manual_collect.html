@@ -11,7 +11,9 @@
       <span class="pc-help" data-bs-toggle="tooltip" data-bs-title="상품 페이지 주소를 붙여넣거나, 크롬 확장으로 버튼 한 번에 가져올 수 있어요. 가져온 상품은 ‘수집한 상품’에서 편집·등록합니다.">?</span>
     </p>
   </div>
+  {% if _user_role == 'admin' %}
   <a href="/seller/api/status" class="btn btn-outline-secondary btn-sm">API 상태</a>
+  {% endif %}
 </div>
 
 {% if api_status %}
@@ -35,26 +37,34 @@
       <label class="form-label fw-semibold mb-0">🛒 원클릭 수집 지원 마켓</label>
       <span class="small text-muted">마켓을 열고 상품 페이지에서 <b class="text-primary">🛒 수집</b> 버튼을 누르세요</span>
     </div>
+    {# v17 P0: 앱에서 마켓 진입 시 도착 페이지에 수집기가 무조건 뜨도록 마커(kgpsrc=app) 부여 #}
+    {% macro mk(u) %}{{ u }}{{ '&' if '?' in u else '?' }}kgpsrc=app{% endmacro %}
+    {% macro favicon(dom) %}{% if dom %}<img src="https://www.google.com/s2/favicons?domain={{ dom }}&sz=32" alt="" width="18" height="18" style="border-radius:3px;vertical-align:-3px" loading="lazy" onerror="this.style.display='none'"> {% endif %}{% endmacro %}
     <div class="d-flex flex-wrap gap-2" id="oneclickMarkets">
       {% for m in oneclick_markets %}
-      {% set _logo %}{% if m.domain %}<img src="https://www.google.com/s2/favicons?domain={{ m.domain }}&sz=32" alt="" width="18" height="18" style="border-radius:3px;vertical-align:-3px" loading="lazy" onerror="this.style.display='none'"> {% endif %}{% endset %}
       {% if m.countries %}
       <div class="dropdown oneclick-market">
         <button class="btn btn-outline-primary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="{{ m.name }}">
-          {{ _logo|safe }}{{ m.name }}
+          {{ favicon(m.domain) }}{{ m.name }}
         </button>
         <ul class="dropdown-menu">
           <li><h6 class="dropdown-header">국가 선택</h6></li>
           {% for ctry in m.countries %}
-          <li><a class="dropdown-item" href="{{ ctry.url }}" target="_blank" rel="noopener noreferrer">{{ ctry.name }}</a></li>
+          <li><a class="dropdown-item" href="{{ mk(ctry.url) }}" target="_blank" rel="noopener noreferrer">{{ ctry.name }}</a></li>
           {% endfor %}
         </ul>
       </div>
       {% else %}
-      <a href="{{ m.url }}" target="_blank" rel="noopener noreferrer" title="{{ m.name }}"
-         class="btn btn-outline-primary btn-sm oneclick-market">{{ _logo|safe }}{{ m.name }}</a>
+      <a href="{{ mk(m.url) }}" target="_blank" rel="noopener noreferrer" title="{{ m.name }}"
+         class="btn btn-outline-primary btn-sm oneclick-market">{{ favicon(m.domain) }}{{ m.name }}</a>
       {% endif %}
       {% endfor %}
+      {# v17 P1: 유저가 등록한 소싱처(My Sources) 칩 — 파비콘 + 표시 이름, 클릭 시 진입 보장 #}
+      {% for s in (my_sources or []) %}
+      <a href="{{ mk(s.url) }}" target="_blank" rel="noopener noreferrer" title="{{ s.name }} (내 소싱처)"
+         class="btn btn-outline-secondary btn-sm oneclick-market my-source-chip">{{ favicon(s.domain) }}{{ s.name }}</a>
+      {% endfor %}
+      <a href="/seller/sourcing/my-sources" class="btn btn-sm btn-ghost oneclick-market" title="소싱처 등록 관리">＋ 소싱처 추가</a>
     </div>
     <div class="alert alert-light border mt-3 mb-0 small d-flex gap-2 align-items-start" role="note">
       <img src="{{ url_for('seller_console.static', filename='favicon.svg') }}" alt="코고가네"
@@ -64,6 +74,7 @@
         ①상품 <b>상세 페이지</b>의 <b>“코고가네 수집”</b> 버튼으로 한 번에, ②<b>검색·목록 페이지</b>에서는 상품마다 뜨는
         <b>‘수집’ 배지</b>와 상단 <b>전체/선택 수집</b> 바로 <b>여러 상품을 한 번에</b> 수집·한국어 번역됩니다.
         <a href="/seller/extension" class="ms-1 fw-semibold text-decoration-none">🧩 확장 설치하기 →</a>
+        <div class="mt-1">확장을 설치하기 어려운 환경이면 <a href="/seller/bookmarklet" class="fw-semibold text-decoration-none">북마클릿(보조) →</a> 으로도 수집할 수 있어요.</div>
       </div>
     </div>
   </div>

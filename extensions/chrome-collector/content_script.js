@@ -390,8 +390,9 @@ function handleFabClick(btn) {
 }
 
 function injectCollectButton() {
-  if (!KGP_FAB_ENABLED) { kgpRemoveFab(); return; }   // v16 P1: FAB off면 표시 안 함
-  if (!kgpHostAllowed()) return;                // 지정 소싱처에서만(v10 P0)
+  // v16 P1: FAB off면 표시 안 함 — 단, v17: 앱에서 띄운 진입 세션이면 강제 노출.
+  if (!KGP_FAB_ENABLED && !kgpEntrySession()) { kgpRemoveFab(); return; }
+  if (!kgpHostAllowed() && !kgpEntrySession()) return;   // 지정 소싱처 또는 앱 진입 세션(v10/v17)
   if (document.getElementById(KGP_BTN_ID)) return;
   if (window.top !== window.self) return;       // iframe 안에서는 표시 안 함
   if (!document.body) return;
@@ -484,6 +485,15 @@ const KGP_DEFAULT_SOURCES = [
 ];
 let KGP_SOURCES = null;   // chrome.storage의 사용자 설정 { defaults:{id:bool}, custom:[{host,on}] }
 let KGP_FAB_ENABLED = true;   // v16 P1: 인페이지 수집 버튼(FAB) on/off (popup 토글, 기본 ON)
+
+// v17 P0: 우리 앱에서 띄운 마켓/소싱처 진입이면(URL 마커 kgpsrc=app) 그 탭 세션 동안 수집기를
+// 강제 노출한다(유저가 FAB를 off 했어도 진입 세션엔 보장). 마커는 sessionStorage로 SPA 이동에도 유지.
+function kgpEntrySession() {
+  try {
+    if (/[?&]kgpsrc=app\b/.test(location.search || "")) sessionStorage.setItem("kgp_entry", "1");
+    return sessionStorage.getItem("kgp_entry") === "1";
+  } catch (e) { return false; }
+}
 
 function _kgpHostMatch(host, domain) {
   domain = String(domain || "").toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^www\./, "");
@@ -769,7 +779,7 @@ let _kgpAutoApplied = false;       // 이 페이지에서 '수동(auto off)' 초
 
 function kgpInjectListing() {
   if (window.top !== window.self || !document.body) return;
-  if (!kgpHostAllowed()) { kgpTeardown(); return; }   // 지정 소싱처에서만(v10 P0)
+  if (!kgpHostAllowed() && !kgpEntrySession()) { kgpTeardown(); return; }   // 지정 소싱처 또는 앱 진입(v10/v17)
   const cards = kgpFindCards();
   if (cards.length < 3) {                        // 리스팅 아님 → 정리(배지/바/배지펄스 제거)
     const ex = document.getElementById(KGP_TOOLBAR_ID);
@@ -874,7 +884,7 @@ function kgpRemoveListing() {
 
 // SPA 대응 + v11 P0: 페이지 종류에 따라 버튼 자동 전환(목록=중앙 바만, 상세=우측 FAB만 — 동시 노출 0).
 function kgpRefresh() {
-  if (!kgpHostAllowed()) { kgpTeardown(); return; }   // 지정 소싱처에서만 노출(v10 P0)
+  if (!kgpHostAllowed() && !kgpEntrySession()) { kgpTeardown(); return; }   // 지정 소싱처 또는 앱 진입(v10/v17)
   const cards = kgpFindCards();
   const isList = cards.length >= 3;                   // 제품 그리드(여러 제품) = 목록
   if (isList) {

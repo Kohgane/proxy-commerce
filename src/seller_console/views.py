@@ -1120,6 +1120,18 @@ def collect():
         ]},
     ]
 
+    # v17 P1: 유저가 등록한 소싱처(My Sources)를 수집 페이지 '원클릭 마켓' 줄에 칩으로 표시.
+    my_sources = []
+    try:
+        from src.seller_console.my_sources_store import list_sources as _list_my_sources
+        for s in _list_my_sources():
+            dom = (s.get("domain") or "").strip()
+            if dom:
+                my_sources.append({"name": s.get("label") or dom, "domain": dom,
+                                   "url": "https://" + dom})
+    except Exception as exc:
+        logger.debug("My Sources 칩 로드 실패: %s", exc)
+
     return render_template(
         "manual_collect.html",
         page="collect",
@@ -1128,6 +1140,7 @@ def collect():
         locale_options=locale_options,
         localization_configured=localization_configured,
         oneclick_markets=oneclick_markets,
+        my_sources=my_sources,
     )
 
 
@@ -3007,8 +3020,10 @@ def orders_export_csv():
 
 @bp.get("/api-status")
 def api_status():
-    """API 상태 페이지 (Phase 130: 카테고리 그루핑)."""
+    """API 상태 페이지 (관리자 전용 — v17: 일반 유저에게 개발 안내 비노출)."""
     if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+    if not _is_admin_user():
         return redirect(url_for("seller_console.index"))
 
     try:
@@ -3044,7 +3059,9 @@ def api_status_alias():
 
 @bp.get("/api-status/json")
 def api_status_json():
-    """API 상태 JSON 응답 (Phase 130: 구조화된 응답)."""
+    """API 상태 JSON 응답 (관리자 전용 — v17)."""
+    if not _check_auth() or not _is_admin_user():
+        return jsonify({"ok": False, "error": "권한이 없습니다."}), 403
     try:
         from src.utils.env_catalog import get_api_status as _get_api_status
         data = _get_api_status()
