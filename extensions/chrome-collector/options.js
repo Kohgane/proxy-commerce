@@ -81,13 +81,26 @@ function saveSources(msg) {
   });
 }
 
-function _row(name, hostText, checked, onToggle, onRemove) {
+function _row(name, hostText, checked, onToggle, onRemove, faviconHost) {
   const row = document.createElement("div");
   row.className = "src-row";
   const left = document.createElement("div");
-  left.innerHTML = '<span class="src-name"></span><span class="src-host"></span>';
-  left.querySelector(".src-name").textContent = name;
-  left.querySelector(".src-host").textContent = hostText;
+  left.style.cssText = "display:flex;align-items:center;gap:8px";
+  // v15: 등록 소싱처를 사이트 아이콘(파비콘)으로 — 칩처럼 깔끔히. 실패 시 자동 숨김.
+  if (faviconHost) {
+    const ico = document.createElement("img");
+    const fh = String(faviconHost).replace(/\.\*$/, ".com").replace(/\*/g, "");  // amazon.* → amazon.com
+    ico.src = "https://www.google.com/s2/favicons?domain=" + encodeURIComponent(fh) + "&sz=32";
+    ico.width = 18; ico.height = 18; ico.alt = "";
+    ico.style.cssText = "border-radius:4px;flex-shrink:0";
+    ico.onerror = function () { ico.style.display = "none"; };
+    left.appendChild(ico);
+  }
+  const txt = document.createElement("div");
+  txt.innerHTML = '<span class="src-name"></span><span class="src-host"></span>';
+  txt.querySelector(".src-name").textContent = name;
+  txt.querySelector(".src-host").textContent = hostText;
+  left.appendChild(txt);
   const right = document.createElement("div");
   right.style.cssText = "display:flex;align-items:center;gap:10px";
   const sw = document.createElement("label");
@@ -115,7 +128,7 @@ function renderSources() {
     defaultSourcesEl.appendChild(_row(src.label, src.host, on, (val) => {
       _sources.defaults[src.id] = val;
       saveSources(val ? `${src.label} 켜짐` : `${src.label} 꺼짐`);
-    }, null));
+    }, null, src.host));
   });
   customSourcesEl.innerHTML = "";
   (_sources.custom || []).forEach((c, idx) => {
@@ -123,7 +136,7 @@ function renderSources() {
       _sources.custom[idx].on = val; saveSources(val ? "켜짐" : "꺼짐");
     }, () => {
       _sources.custom.splice(idx, 1); saveSources("삭제됨"); renderSources();
-    }));
+    }, c.host));
   });
 }
 
