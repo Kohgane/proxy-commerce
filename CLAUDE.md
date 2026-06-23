@@ -37,8 +37,15 @@
   ①새 탭(window.open _blank) 제거 → 같은 탭 이동 ②링크 클릭만으로 가짜 완료(markDone) 제거 → 완료는 실제 상태
   (autoDone: LOGGED_IN / MARKETS>0)로만 자동 체크 ③localStorage KEY v2로 옛 가짜-완료 폐기 ④intro에 '마켓 연동이란?'
   쉬운 설명 추가. 가드 test_v14_onboarding_drawer(5). 전체 10165 passed.
-- ⏳ 남은 v14: 소셜 로그인 4종(구글·네이버·카카오·애플) · 마켓연동 순차 스테퍼+키발급안내(쿠팡 출고지 스코프) ·
-  확장 설치 단계별+빨간문구/복사버튼 · For Beginners 고정/토글/확대 · 친절카피+CTA · 아이콘표시 · 퍼센티/개발문구 전역제거.
+- ✅ **소셜 로그인 4종(Phase 282):** 신설 apple.py(Sign in with Apple — ES256 JWT client_secret, form_post 콜백,
+  id_token 디코드; 키 미설정 시 비활성). views.py 4 provider 등록 + 콜백 GET+POST(request.values). login.html·온보딩에
+  구글·네이버·카카오·애플 4버튼. 오너: 네이버·카카오·애플 콘솔 OAuth 등록. 가드 test_social_login_v14(6).
+- ✅ **마켓연동 순차 스테퍼(Phase 282):** markets_connect에 '한 마켓씩' 순차 진행 스테퍼(연결되면 ✓ 자동체크,
+  prev/next, '전체 보기' 토글, JS show/hide). 섹션(쿠팡 출고지 등)에 '이 항목은 {마켓}에만 필요' 스코프 명시(쿠팡 전용
+  오해 해소). 개발 문서경로(LIVE_VERIFICATION_GUIDE) 노출 제거. 키 발급 딥링크·필드설명·필수표시는 기존 유지.
+  가드 test_market_connect_stepper_v14(4). 전체 10175 passed.
+- ⏳ 남은 v14: 확장 설치 단계별+빨간문구/복사버튼 · For Beginners 고정/토글/확대 · 친절카피+CTA · 아이콘표시 ·
+  퍼센티/개발문구 전역제거.
 
 ## ⬛ v13 브리프 (오너 2026-06-22 — "관리자전용·재로그인버그·속도·모바일앱·글로벌·프로디자인·파비콘")
 - 버전 충돌 시 v13 우선. 디자인 최우선('학교 과제물'→프로). 정직 데이터·회귀 금지.

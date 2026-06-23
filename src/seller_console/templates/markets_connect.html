@@ -78,9 +78,23 @@
   </div>
   {% endif %}
 
-  <div class="row g-3">
+  {% if not single_market and market_statuses|length > 1 %}
+  <!-- v14: 한 마켓씩 순차 진행 스테퍼(연결되면 자동 체크). '전체 보기'로 한눈에도 가능. -->
+  <div class="card console-card mb-3" id="mcStepperCard">
+    <div class="card-body">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+        <div class="fw-semibold">한 마켓씩 순서대로 연결하기</div>
+        <button type="button" class="btn btn-ghost btn-sm" id="mcToggleAll">전체 보기</button>
+      </div>
+      <div id="mcStepper" class="d-flex flex-wrap gap-2"></div>
+      <div class="small text-muted mt-2">연결을 마치면 ✓ 로 자동 체크돼요. 천천히 하나씩 하면 됩니다.</div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="row g-3" id="mcMarketRow">
     {% for m in market_statuses %}
-    <div class="{{ 'col-12' if single_market else 'col-12 col-lg-6' }}">
+    <div class="{{ 'col-12' if single_market else 'col-12 col-lg-6' }} mc-market-col" data-market="{{ m.market }}" data-label="{{ m.label }}" data-connected="{{ '1' if m.connected else '0' }}">
       <div class="card console-card h-100" data-market="{{ m.market }}">
         <div class="card-body">
           <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
@@ -102,6 +116,7 @@
             {% if f.section %}
             <div class="mt-3 mb-2 pt-2 border-top">
               <div class="fw-semibold small text-primary">{{ f.section }}</div>
+              <div class="small text-muted">이 항목은 <strong>{{ m.label }}</strong>에만 필요해요. (다른 마켓엔 없어요.)</div>
             </div>
             {% endif %}
             <div class="mb-2">
@@ -143,8 +158,16 @@
     {% endfor %}
   </div>
 
+  {% if not single_market and market_statuses|length > 1 %}
+  <div class="d-flex justify-content-between align-items-center mt-3" id="mcNav">
+    <button type="button" class="btn btn-ghost btn-sm" id="mcPrev">← 이전 마켓</button>
+    <span class="small text-muted" id="mcProgress"></span>
+    <button type="button" class="btn btn-cta btn-sm" id="mcNext">다음 마켓 →</button>
+  </div>
+  {% endif %}
+
   <p class="text-muted small mt-3 mb-0">
-    각 키 발급 방법은 <code>docs/operations/LIVE_VERIFICATION_GUIDE.md</code> 를 참고하세요.
+    어려운 용어는 옆의 <span class="pc-help" data-bs-toggle="tooltip" data-bs-title="물음표에 마우스를 올리면 쉬운 설명이 나와요.">?</span> 에 설명이 있어요. 키 발급은 각 마켓의 <strong>발급 페이지 열기</strong> 버튼을 누르세요.
   </p>
 </section>
 {% endblock %}
@@ -265,5 +288,42 @@ document.querySelectorAll('.market-connect-form').forEach(form => {
     });
   }
 });
+
+// v14: 한 마켓씩 순차 진행(연결되면 ✓ 자동 체크). '전체 보기'로 그리드 전환.
+(function () {
+  const cols = Array.from(document.querySelectorAll('.mc-market-col'));
+  const stepper = document.getElementById('mcStepper');
+  if (!cols.length || !stepper) return;
+  let showAll = false;
+  // 시작 위치 = 첫 '미연결' 마켓(전부 연결이면 0)
+  let cur = cols.findIndex(c => c.dataset.connected !== '1');
+  if (cur < 0) cur = 0;
+
+  function renderStepper() {
+    stepper.innerHTML = cols.map((c, i) => {
+      const on = c.dataset.connected === '1';
+      const active = i === cur && !showAll;
+      const cls = active ? 'btn-primary' : (on ? 'btn-outline-success' : 'btn-outline-secondary');
+      const mark = on ? '✓ ' : (i + 1) + '. ';
+      return `<button type="button" class="btn btn-sm ${cls} mc-step" data-i="${i}">${mark}${c.dataset.label}</button>`;
+    }).join('');
+    stepper.querySelectorAll('.mc-step').forEach(b => b.addEventListener('click', () => { showAll = false; cur = parseInt(b.dataset.i, 10); apply(); }));
+  }
+  function apply() {
+    cols.forEach((c, i) => { c.style.display = (showAll || i === cur) ? '' : 'none'; });
+    const nav = document.getElementById('mcNav');
+    if (nav) nav.style.display = showAll ? 'none' : '';
+    const prog = document.getElementById('mcProgress');
+    if (prog) prog.textContent = `${cur + 1} / ${cols.length} 마켓`;
+    const prev = document.getElementById('mcPrev'); if (prev) prev.disabled = cur <= 0;
+    const next = document.getElementById('mcNext'); if (next) next.disabled = cur >= cols.length - 1;
+    const tgl = document.getElementById('mcToggleAll'); if (tgl) tgl.textContent = showAll ? '한 마켓씩 보기' : '전체 보기';
+    renderStepper();
+  }
+  const prevB = document.getElementById('mcPrev'); if (prevB) prevB.addEventListener('click', () => { if (cur > 0) { cur--; apply(); } });
+  const nextB = document.getElementById('mcNext'); if (nextB) nextB.addEventListener('click', () => { if (cur < cols.length - 1) { cur++; apply(); } });
+  const tglB = document.getElementById('mcToggleAll'); if (tglB) tglB.addEventListener('click', () => { showAll = !showAll; apply(); });
+  apply();
+})();
 </script>
 {% endblock %}
