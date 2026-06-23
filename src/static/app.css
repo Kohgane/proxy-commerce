@@ -363,3 +363,19 @@ a:hover {
     flex: 1 1 calc(50% - .25rem);
   }
 }
+
+/* v13 속도: 스켈레톤 로더(체감 속도). prefers-reduced-motion이면 셔머 정지. */
+.skeleton {
+  background: linear-gradient(90deg, rgba(26,23,20,.06) 25%, rgba(26,23,20,.12) 37%, rgba(26,23,20,.06) 63%);
+  background-size: 400% 100%;
+  animation: pc-skeleton 1.2s ease-in-out infinite;
+  border-radius: 8px;
+  min-height: 1em;
+}
+.skeleton-text { height: .85em; margin: .35em 0; }
+.skeleton-line-2 { width: 80%; }
+.skeleton-line-3 { width: 60%; }
+@keyframes pc-skeleton { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; background: rgba(26,23,20,.08); }
+}

@@ -232,6 +232,55 @@ if ('serviceWorker' in navigator) {
       .catch(function(err) { console.debug('[SW] 등록 실패', err); });
   });
 }
+
+// v13 속도: 상단 진행바(체감 속도 피드백) + 내부 링크 프리패치(hover/포커스 → 다음 페이지 즉시).
+//   prefers-reduced-motion 존중(진행바 애니메이션 생략). 경량·같은 출처만.
+(function () {
+  var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var bar = document.createElement('div');
+  bar.id = 'kgp-progress';
+  bar.style.cssText = 'position:fixed;top:0;left:0;height:3px;width:0;z-index:3000;background:linear-gradient(90deg,#119a8e,#c9a24b);transition:width .2s ease,opacity .3s ease;opacity:0;pointer-events:none';
+  var timer;
+  function start() {
+    if (RM || !document.body) return;
+    if (!bar.parentNode) document.body.appendChild(bar);
+    clearInterval(timer);
+    bar.style.opacity = '1'; bar.style.width = '8%';
+    var w = 8;
+    timer = setInterval(function () { w = Math.min(90, w + (90 - w) * 0.12); bar.style.width = w + '%'; }, 200);
+  }
+  function done() {
+    clearInterval(timer);
+    if (!bar.parentNode) return;
+    bar.style.width = '100%';
+    setTimeout(function () { bar.style.opacity = '0'; bar.style.width = '0'; }, 250);
+  }
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a[href]');
+    if (!a) return;
+    var href = a.getAttribute('href') || '';
+    if (a.target === '_blank' || href.charAt(0) === '#' || href.indexOf('javascript:') === 0 || a.hasAttribute('download')) return;
+    if (a.origin && a.origin !== location.origin) return;
+    start();
+  }, true);
+  window.addEventListener('pageshow', done);
+  window.addEventListener('beforeunload', start);
+
+  var prefetched = {};
+  function prefetch(url) {
+    if (!url || prefetched[url] || url.charAt(0) !== '/') return;
+    prefetched[url] = 1;
+    var l = document.createElement('link');
+    l.rel = 'prefetch'; l.href = url;
+    document.head.appendChild(l);
+  }
+  ['mouseover', 'focusin', 'touchstart'].forEach(function (ev) {
+    document.addEventListener(ev, function (e) {
+      var a = e.target.closest && e.target.closest('a[href^="/"]');
+      if (a && a.target !== '_blank') prefetch(a.getAttribute('href'));
+    }, { passive: true });
+  });
+})();
 </script>
 {% block extra_js %}{% endblock %}
 </body>
