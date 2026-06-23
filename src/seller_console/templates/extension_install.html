@@ -11,14 +11,14 @@
   <div class="row g-2 mb-3">
     <div class="col-md-6">
       <div class="card console-card h-100"><div class="card-body py-3">
-        <div class="fw-semibold mb-1">🧤 고가수집기가 뭐예요?</div>
+        <div class="fw-semibold mb-1"><i class="bi bi-box-seam"></i> 고가수집기가 뭐예요?</div>
         <div class="small text-muted">쇼핑몰 상품 페이지에서 <b>제목·가격·이미지를 한 번에 가져오는 도우미</b>예요.
           하나하나 복사할 필요 없이 버튼 한 번이면 끝나요.</div>
       </div></div>
     </div>
     <div class="col-md-6">
       <div class="card console-card h-100"><div class="card-body py-3">
-        <div class="fw-semibold mb-1">🔑 토큰은 왜 넣어요?</div>
+        <div class="fw-semibold mb-1"><i class="bi bi-key"></i> 토큰은 왜 넣어요?</div>
         <div class="small text-muted">토큰은 <b>“이 수집기가 내 계정 것”임을 알려주는 열쇠</b>예요.
           딱 <b>한 번만</b> 넣으면, 가져온 상품이 내 계정으로 쏙 들어와요.</div>
       </div></div>
@@ -61,28 +61,28 @@ const MANAGE_URL = "chrome://extensions";
 
 // 각 단계: 한 화면 = 한 메시지 + 버튼 1개(주 행동). 다음/이전은 하단 고정.
 const STEPS = [
-  { emoji: "📥", title: "1) 고가수집기 받기",
+  { icon: "bi-download", title: "1) 고가수집기 받기",
     body: "먼저 <b>고가수집기</b> 파일을 내려받아요(<b>gogasujipgi</b> 파일). 받은 파일은 <b>압축을 풀어</b> 두세요.",
     btn: { label: "고가수집기 다운로드", href: DL } },
-  { emoji: "🗂️", title: "2) 압축 풀기",
+  { icon: "bi-file-zip", title: "2) 압축 풀기",
     body: "받은 zip 파일을 <b>마우스 오른쪽 → 압축 풀기</b> 하세요. 폴더 하나가 만들어져요.",
     btn: { label: "압축 풀었어요 · 다음", act: "next" } },
-  { emoji: "🧭", title: "3) 확장 관리 화면 열기",
+  { icon: "bi-compass", title: "3) 확장 관리 화면 열기",
     body: "크롬 주소창에 아래 주소를 붙여넣고 엔터를 누르세요. (복사 버튼을 쓰면 편해요.)",
     code: MANAGE_URL,
     btn: { label: "주소 복사하기", act: "copy", value: MANAGE_URL } },
-  { emoji: "🛠️", title: "4) ‘개발자 모드’ 켜기",
+  { icon: "bi-tools", title: "4) ‘개발자 모드’ 켜기",
     body: "확장 관리 화면 <b>오른쪽 위</b>의 <b>‘개발자 모드’</b> 스위치를 <b>켜기</b>로 바꾸세요.",
     btn: { label: "켰어요 · 다음", act: "next" } },
-  { emoji: "📂", title: "5) 압축 푼 폴더 불러오기",
+  { icon: "bi-folder2-open", title: "5) 압축 푼 폴더 불러오기",
     body: "왼쪽 위 <b>‘압축해제된 확장 프로그램 로드’</b>를 누르고, 방금 <b>압축 푼 폴더</b>를 고르세요. " +
           "‘코고가네 수집기’가 목록에 뜨면 설치 완료예요.",
     btn: { label: "설치됐어요 · 다음", act: "next" } },
-  { emoji: "🔑", title: "6) 토큰 한 번 넣기",
+  { icon: "bi-key", title: "6) 토큰 한 번 넣기",
     body: "확장이 내 계정과 연결되도록 <b>토큰</b>을 한 번만 넣어요. 토큰을 발급받아 확장 <b>옵션</b>에 붙여넣으세요. " +
           "<span class='pc-help' data-bs-toggle='tooltip' data-bs-title='확장 아이콘을 오른쪽 클릭 → 옵션 → 서버 주소와 토큰을 붙여넣기. 서버 주소는 자동으로 채워져 있어요.'>?</span>",
     btn: { label: "토큰 발급받기", href: TOKENS } },
-  { emoji: "🎉", title: "7) 다 됐어요!",
+  { icon: "bi-check-circle", title: "7) 다 됐어요!",
     body: "이제 지정 소싱처(타오바오·아마존 등) 상품 페이지에서 <b>코고가네 수집</b> 버튼이, 목록 페이지엔 카드마다 <b>수집 배지</b>가 떠요.",
     btn: { label: "상품 수집하러 가기", href: COLLECT } },
 ];
@@ -93,7 +93,7 @@ function render() {
   document.getElementById("extProgress").textContent = `설치 단계 ${cur + 1} / ${STEPS.length}`;
   document.getElementById("extProgressBar").style.width = Math.round((cur + 1) / STEPS.length * 100) + "%";
   document.getElementById("extStepNo").textContent = `${cur + 1} / ${STEPS.length}`;
-  let html = `<div style="font-size:3rem">${s.emoji}</div><h2 class="h5 mt-2">${s.title}</h2>` +
+  let html = `<div style="font-size:3rem"><i class="bi ${s.icon}"></i></div><h2 class="h5 mt-2">${s.title}</h2>` +
              `<p class="text-muted mt-2 mb-3">${s.body}</p>`;
   if (s.code) {
     html += `<div class="d-flex justify-content-center mb-3"><span class="px-3 py-2 rounded" style="background:#f5f1e6;font-family:monospace">${s.code}</span></div>`;
