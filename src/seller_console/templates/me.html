@@ -3,7 +3,7 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="mb-0 fw-bold">👤 마이페이지</h4>
+  <h4 class="mb-0 fw-bold"><i class="bi bi-person"></i> 마이페이지</h4>
   {% if user and user.role == 'admin' %}
     <span class="badge bg-danger px-3 py-2 fs-6">⭐ Admin</span>
   {% endif %}
@@ -64,14 +64,14 @@
 <!-- 연결된 소셜 계정 -->
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body">
-    <h6 class="fw-semibold mb-3">🔗 연결된 소셜 계정</h6>
+    <h6 class="fw-semibold mb-3"><i class="bi bi-link-45deg"></i> 연결된 소셜 계정</h6>
     {% set providers = ['kakao', 'google', 'naver'] %}
     {% set linked_providers = user.social_accounts | map(attribute='provider') | list %}
     {% for prov in providers %}
       {% set label = {'kakao': '카카오', 'google': '구글', 'naver': '네이버'}[prov] %}
       <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-2">
         <span>
-          {% if prov == 'kakao' %}🟡{% elif prov == 'google' %}🔴{% else %}🟢{% endif %}
+          {% if prov == 'kakao' %}<i class="bi bi-chat-fill text-warning"></i>{% elif prov == 'google' %}<i class="bi bi-google text-danger"></i>{% else %}<i class="bi bi-circle-fill text-success"></i>{% endif %}
           {{ label }}
         </span>
         {% if prov in linked_providers %}
@@ -87,9 +87,9 @@
 <!-- 알림 설정 -->
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body">
-    <h6 class="fw-semibold mb-3">🔔 알림 채널</h6>
+    <h6 class="fw-semibold mb-3"><i class="bi bi-bell"></i> 알림 채널</h6>
     <div class="d-flex justify-content-between align-items-center mb-2">
-      <span>📨 텔레그램</span>
+      <span><i class="bi bi-telegram"></i> 텔레그램</span>
       {% if telegram_active %}
         <span class="badge bg-success">활성</span>
       {% else %}
@@ -97,7 +97,7 @@
       {% endif %}
     </div>
     <div class="d-flex justify-content-between align-items-center">
-      <span>📧 이메일 (Resend)</span>
+      <span><i class="bi bi-envelope"></i> 이메일 (Resend)</span>
       {% if resend_active %}
         <span class="badge bg-success">활성</span>
       {% else %}
@@ -110,11 +110,11 @@
 <!-- 계정 관리 -->
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body">
-    <h6 class="fw-semibold mb-3">⚙️ 계정 관리</h6>
+    <h6 class="fw-semibold mb-3"><i class="bi bi-gear"></i> 계정 관리</h6>
     <form method="post" action="/auth/logout" class="d-inline">
-      <button type="submit" class="btn btn-outline-secondary btn-sm">🚪 로그아웃</button>
+      <button type="submit" class="btn btn-outline-secondary btn-sm"><i class="bi bi-box-arrow-right"></i> 로그아웃</button>
     </form>
-    <button class="btn btn-outline-danger btn-sm ms-2" onclick="confirmDeactivate()">🗑 탈퇴</button>
+    <button class="btn btn-outline-danger btn-sm ms-2" onclick="confirmDeactivate()"><i class="bi bi-trash"></i> 탈퇴</button>
   </div>
 </div>
 {% endif %}

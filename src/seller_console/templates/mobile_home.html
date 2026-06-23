@@ -29,7 +29,7 @@
 </head>
 <body>
 <div class="m-top">
-  <span style="font-size:1.3rem">🛒</span>
+  <span style="font-size:1.3rem"><i class="bi bi-bag-check"></i></span>
   <span class="brand">코고가네</span>
   <span class="m-beta">BETA</span>
   <a href="/seller/dashboard" class="ms-auto text-decoration-none small" style="color:#c9bda6">데스크톱 →</a>
@@ -42,7 +42,7 @@
   <form action="/seller/collect/quick" method="get" class="m-card p-3 mb-3">
     <label class="form-label small fw-semibold" for="mUrl">상품 URL</label>
     <input id="mUrl" name="u" type="url" class="form-control mb-2" placeholder="https://..." required inputmode="url">
-    <button type="submit" class="btn btn-cta w-100">📥 수집하기</button>
+    <button type="submit" class="btn btn-cta w-100"><i class="bi bi-download"></i> 수집하기</button>
   </form>
   <div class="d-flex justify-content-between align-items-center mb-2">
     <h3 class="h6 fw-bold mb-0">최근 수집</h3>
@@ -53,7 +53,7 @@
     {% for it in recent %}
     <a href="/seller/collect/preview/{{ it.id }}" class="m-card p-2 d-flex align-items-center gap-2 text-decoration-none text-dark">
       {% if it.thumb %}<img src="{{ it.thumb }}" alt="" style="width:48px;height:48px;object-fit:cover;border-radius:8px;background:#eee" onerror="this.style.visibility='hidden'">
-      {% else %}<span class="d-inline-flex align-items-center justify-content-center" style="width:48px;height:48px;border-radius:8px;background:#f1f3f5">🖼️</span>{% endif %}
+      {% else %}<span class="d-inline-flex align-items-center justify-content-center" style="width:48px;height:48px;border-radius:8px;background:#f1f3f5"><i class="bi bi-image"></i></span>{% endif %}
       <span class="flex-grow-1 text-truncate">
         <span class="d-block text-truncate fw-semibold">{{ it.title }}</span>
         <span class="small text-muted">{% if it.price %}{{ it.price }} {{ it.currency }}{% else %}{{ it.domain }}{% endif %}</span>
@@ -95,15 +95,15 @@
 <!-- 더보기 탭 -->
 <section class="m-tabpane" id="pane-more">
   <h2 class="h5 fw-bold mb-3">더보기</h2>
-  <button id="installBtn" class="btn btn-cta w-100 mb-2 d-none" onclick="installApp()">📲 코고가네 앱 설치</button>
+  <button id="installBtn" class="btn btn-cta w-100 mb-2 d-none" onclick="installApp()"><i class="bi bi-phone"></i> 코고가네 앱 설치</button>
   <div class="vstack gap-2">
-    <a href="/seller/start" class="m-card p-3 text-decoration-none text-dark">✨ For Beginners · 시작 가이드</a>
-    <a href="/seller/markets/connect" class="m-card p-3 text-decoration-none text-dark">🛍️ 마켓 연동</a>
-    <a href="/seller/dashboard" class="m-card p-3 text-decoration-none text-dark">🖥️ 데스크톱 전체 콘솔</a>
+    <a href="/seller/start" class="m-card p-3 text-decoration-none text-dark"><i class="bi bi-stars"></i> For Beginners · 시작 가이드</a>
+    <a href="/seller/markets/connect" class="m-card p-3 text-decoration-none text-dark"><i class="bi bi-shop"></i> 마켓 연동</a>
+    <a href="/seller/dashboard" class="m-card p-3 text-decoration-none text-dark"><i class="bi bi-display"></i> 데스크톱 전체 콘솔</a>
     <a href="/seller/about" class="m-card p-3 text-decoration-none text-dark">ℹ️ 코고가네란?</a>
   </div>
   <div class="m-card p-3 mt-3 small text-muted">
-    📲 <strong>홈 화면에 추가</strong>하면 앱처럼 쓸 수 있어요. iOS: 공유 → ‘홈 화면에 추가’, 안드로이드: 메뉴 → ‘앱 설치’.
+    <i class="bi bi-phone"></i> <strong>홈 화면에 추가</strong>하면 앱처럼 쓸 수 있어요. iOS: 공유 → ‘홈 화면에 추가’, 안드로이드: 메뉴 → ‘앱 설치’.
     <br>대량 편집·마켓 설정 등 풀기능은 데스크톱에서 더 편해요.
   </div>
 </section>
