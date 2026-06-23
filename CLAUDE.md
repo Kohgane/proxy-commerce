@@ -44,8 +44,13 @@
   prev/next, '전체 보기' 토글, JS show/hide). 섹션(쿠팡 출고지 등)에 '이 항목은 {마켓}에만 필요' 스코프 명시(쿠팡 전용
   오해 해소). 개발 문서경로(LIVE_VERIFICATION_GUIDE) 노출 제거. 키 발급 딥링크·필드설명·필수표시는 기존 유지.
   가드 test_market_connect_stepper_v14(4). 전체 10175 passed.
-- ⏳ 남은 v14: 확장 설치 단계별+빨간문구/복사버튼 · For Beginners 고정/토글/확대 · 친절카피+CTA · 아이콘표시 ·
-  퍼센티/개발문구 전역제거.
+- ✅ **확장 설치 단계화 + 퍼센티 제거(Phase 282):** extension_install.html을 키노트식 단계 위저드로 재작성
+  (한 화면=한 단계, 단계당 버튼 1개, 이전/다음, 진행바). 복사 버튼 실동작(navigator.clipboard + pcToast 피드백,
+  실패 시 안내). 빨간 날것 표기(chrome://extensions/manifest는 안내에 최소화·'?'·details로). '퍼센티' 전역 제거
+  (collect_receiver/manual_collect/bookmarklet 카피 + woocommerce 운송장 노트 [코고가네]). manual_collect '기존 수집기
+  엔드포인트' 개발노트 → 사용자 카피. ※channels/percenty.py는 실제 퍼센티 채널 연동이라 유지.
+  가드 test_ext_install_wizard_v14(6). 전체 10180 passed.
+- ⏳ 남은 v14: For Beginners 고정/토글/확대 · 친절카피("상품 수집이란?")+CTA 강조 · 기본 마켓/소싱처 아이콘 표시.
 
 ## ⬛ v13 브리프 (오너 2026-06-22 — "관리자전용·재로그인버그·속도·모바일앱·글로벌·프로디자인·파비콘")
 - 버전 충돌 시 v13 우선. 디자인 최우선('학교 과제물'→프로). 정직 데이터·회귀 금지.

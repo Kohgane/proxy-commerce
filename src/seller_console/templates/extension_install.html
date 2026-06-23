@@ -1,60 +1,107 @@
 {% extends "_base.html" %}
 {% block title %}크롬 확장 설치{% endblock %}
 {% block content %}
-<div class="container-fluid py-3" style="max-width:860px">
-  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-    <div>
-      <h1 class="h4 mb-1">🧩 고가네 수집 — 크롬 확장 설치</h1>
-      <p class="text-muted mb-0">설치하면 쇼핑몰 상품/검색 페이지에 <b>‘고가네 수집’ 버튼</b>이 떠서 클릭 한 번에 수집됩니다.</p>
-    </div>
-    <a href="/seller/extension/download" class="btn btn-primary">
-      <i class="bi bi-download"></i> 확장 다운로드 (v{{ version or '—' }})
-    </a>
+<div class="container-fluid py-3" style="max-width:720px">
+  <div class="text-center mb-3">
+    <h1 class="h4 mb-1">코고가네 수집 — 크롬 확장 설치</h1>
+    <p class="text-muted mb-0">설치하면 쇼핑몰에서 <b>버튼 한 번</b>으로 상품이 담겨요. 한 단계씩 따라오면 1~2분이면 끝나요.</p>
   </div>
 
-  <!-- 단계 가이드 -->
-  <div class="card console-card mb-3">
-    <div class="card-body">
-      <h2 class="h6 mb-3">설치 방법 (1~2분)</h2>
-      <ol class="mb-0">
-        <li class="mb-2">
-          위 <b>‘확장 다운로드’</b>를 눌러 <code>kohgane-collector-v{{ version }}.zip</code>을 받고
-          <b>압축을 풉니다</b> → <code>manifest.json</code>이 들어있는 폴더가 생깁니다.
-        </li>
-        <li class="mb-2">
-          크롬 주소창에 <code>chrome://extensions</code> 입력 → 엔터.
-          <a href="#" onclick="navigator.clipboard.writeText('chrome://extensions');return false;" class="small">📋 복사</a>
-        </li>
-        <li class="mb-2">오른쪽 위 <b>‘개발자 모드’</b>를 <b>켭니다</b>(토글 ON).</li>
-        <li class="mb-2">왼쪽 위 <b>‘압축해제된 확장 프로그램 로드’</b> 클릭 → 방금 <b>압축 푼 폴더</b>(안에 <code>manifest.json</code>이 보이는 그 폴더)를 선택.
-          <span class="text-muted small">※ ‘매니페스트 없음’ 오류가 나면 한 단계 안쪽 폴더(<code>manifest.json</code>이 바로 보이는 폴더)를 고르세요.</span></li>
-        <li class="mb-2"><b>‘코고가네 수집기’</b>가 확장 목록에 나타나면 설치 완료 ✅</li>
-        <li class="mb-2">
-          확장의 <b>옵션</b>에 <b>개인 토큰</b>을 넣습니다(딱 1회).
-          <a href="/seller/me/tokens" target="_blank">토큰 발급 →</a>
-          <div class="small text-muted">확장 아이콘 우클릭 → ‘옵션’ → 서버 URL <code>{{ request.host_url.rstrip('/') }}</code> + 토큰 붙여넣기</div>
-        </li>
-        <li>쇼핑몰 상품 페이지로 가면 우하단에 <b>고가네 수집</b> 버튼이, 검색/목록 페이지엔 카드마다 <b>수집 배지</b>가 뜹니다.</li>
-      </ol>
-    </div>
-  </div>
-
-  <div class="alert alert-light border small mb-3">
-    <i class="bi bi-info-circle text-primary"></i>
-    버튼이 안 보이면: ① 확장이 <b>켜져 있는지</b>(파란 토글) ② <code>chrome://extensions</code>에서 <b>새로고침(↻)</b>
-    ③ 상품 <b>상세 페이지</b>인지(목록 페이지는 카드 배지) ④ 옵션에 <b>토큰</b>이 들어갔는지 확인하세요.
-  </div>
-
-  <!-- 모바일 안내 -->
+  <!-- 키노트식 단계 카드: 한 화면에 한 단계, 버튼 1개 + 다음/이전 -->
   <div class="card console-card">
-    <div class="card-body">
-      <h2 class="h6 mb-2">📱 모바일에서 수집하기</h2>
-      <p class="small text-muted mb-2">모바일 브라우저는 크롬 확장을 지원하지 않습니다. 대신 두 가지 방법이 있어요.</p>
-      <ol class="small mb-0">
-        <li class="mb-2"><b>URL 붙여넣기</b>: 상품 페이지에서 주소 복사 → 고가네 <a href="/seller/collect">수집기</a>에 붙여넣고 <b>즉시 수집</b>.</li>
-        <li><b>공유하기(안드로이드)</b>: 고가네 퍼센티를 홈 화면에 추가(앱처럼 설치)하면, 쇼핑 앱에서 <b>공유 → 고가네 퍼센티</b>로 보내 바로 수집됩니다.</li>
-      </ol>
+    <div class="card-body text-center" style="min-height:340px">
+      <div class="small text-muted mb-2" id="extProgress"></div>
+      <div class="progress mb-4" style="height:6px;background:#eee">
+        <div class="progress-bar" id="extProgressBar" style="width:0%;background:var(--pc-color-primary)"></div>
+      </div>
+      <div id="extPanel"></div>
+    </div>
+    <div class="card-footer d-flex justify-content-between align-items-center bg-transparent">
+      <button type="button" class="btn btn-ghost btn-sm" id="extPrev">← 이전</button>
+      <span class="small text-muted" id="extStepNo"></span>
+      <button type="button" class="btn btn-ghost btn-sm" id="extNext">다음 →</button>
     </div>
   </div>
+
+  <details class="mt-3">
+    <summary class="text-muted small" style="cursor:pointer">잘 안 되나요? (자세한 도움말)</summary>
+    <div class="small text-muted mt-2">
+      버튼이 안 보이면: ① 확장이 <b>켜져 있는지</b> ② 확장 관리 화면에서 <b>새로고침(↻)</b>
+      ③ 지정 소싱처의 상품/목록 페이지인지 ④ 확장 <b>옵션</b>에 토큰이 들어갔는지 확인하세요.
+      모바일은 크롬 확장을 지원하지 않아요 — 상품 주소를 복사해 <a href="/seller/collect">수집기</a>에 붙여넣거나,
+      앱을 홈 화면에 추가한 뒤 쇼핑 앱에서 <b>공유 → 코고가네</b>로 보내면 됩니다.
+    </div>
+  </details>
 </div>
+
+<script>
+const HOST = "{{ request.host_url.rstrip('/') }}";
+const DL = "/seller/extension/download";
+const TOKENS = "/seller/me/tokens";
+const COLLECT = "/seller/manual-collect";
+const MANAGE_URL = "chrome://extensions";
+
+// 각 단계: 한 화면 = 한 메시지 + 버튼 1개(주 행동). 다음/이전은 하단 고정.
+const STEPS = [
+  { emoji: "📥", title: "1) 확장 파일 받기",
+    body: "먼저 확장 파일(zip)을 내려받아요. 받은 파일은 <b>압축을 풀어</b> 두세요.",
+    btn: { label: "확장 다운로드", href: DL } },
+  { emoji: "🗂️", title: "2) 압축 풀기",
+    body: "받은 zip 파일을 <b>마우스 오른쪽 → 압축 풀기</b> 하세요. 폴더 하나가 만들어져요.",
+    btn: { label: "압축 풀었어요 · 다음", act: "next" } },
+  { emoji: "🧭", title: "3) 확장 관리 화면 열기",
+    body: "크롬 주소창에 아래 주소를 붙여넣고 엔터를 누르세요. (복사 버튼을 쓰면 편해요.)",
+    code: MANAGE_URL,
+    btn: { label: "주소 복사하기", act: "copy", value: MANAGE_URL } },
+  { emoji: "🛠️", title: "4) ‘개발자 모드’ 켜기",
+    body: "확장 관리 화면 <b>오른쪽 위</b>의 <b>‘개발자 모드’</b> 스위치를 <b>켜기</b>로 바꾸세요.",
+    btn: { label: "켰어요 · 다음", act: "next" } },
+  { emoji: "📂", title: "5) 압축 푼 폴더 불러오기",
+    body: "왼쪽 위 <b>‘압축해제된 확장 프로그램 로드’</b>를 누르고, 방금 <b>압축 푼 폴더</b>를 고르세요. " +
+          "‘코고가네 수집기’가 목록에 뜨면 설치 완료예요.",
+    btn: { label: "설치됐어요 · 다음", act: "next" } },
+  { emoji: "🔑", title: "6) 토큰 한 번 넣기",
+    body: "확장이 내 계정과 연결되도록 <b>토큰</b>을 한 번만 넣어요. 토큰을 발급받아 확장 <b>옵션</b>에 붙여넣으세요. " +
+          "<span class='pc-help' data-bs-toggle='tooltip' data-bs-title='확장 아이콘을 오른쪽 클릭 → 옵션 → 서버 주소와 토큰을 붙여넣기. 서버 주소는 자동으로 채워져 있어요.'>?</span>",
+    btn: { label: "토큰 발급받기", href: TOKENS } },
+  { emoji: "🎉", title: "7) 다 됐어요!",
+    body: "이제 지정 소싱처(타오바오·아마존 등) 상품 페이지에서 <b>코고가네 수집</b> 버튼이, 목록 페이지엔 카드마다 <b>수집 배지</b>가 떠요.",
+    btn: { label: "상품 수집하러 가기", href: COLLECT } },
+];
+
+let cur = 0;
+function render() {
+  const s = STEPS[cur];
+  document.getElementById("extProgress").textContent = `설치 단계 ${cur + 1} / ${STEPS.length}`;
+  document.getElementById("extProgressBar").style.width = Math.round((cur + 1) / STEPS.length * 100) + "%";
+  document.getElementById("extStepNo").textContent = `${cur + 1} / ${STEPS.length}`;
+  let html = `<div style="font-size:3rem">${s.emoji}</div><h2 class="h5 mt-2">${s.title}</h2>` +
+             `<p class="text-muted mt-2 mb-3">${s.body}</p>`;
+  if (s.code) {
+    html += `<div class="d-flex justify-content-center mb-3"><span class="px-3 py-2 rounded" style="background:#f5f1e6;font-family:monospace">${s.code}</span></div>`;
+  }
+  html += `<div class="d-grid gap-2 mx-auto" style="max-width:300px"><button type="button" class="btn btn-cta" id="extPrimary">${s.btn.label}</button></div>`;
+  document.getElementById("extPanel").innerHTML = html;
+  document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => { try { new bootstrap.Tooltip(el); } catch (e) {} });
+  document.getElementById("extPrimary").addEventListener("click", () => handle(s.btn));
+  document.getElementById("extPrev").disabled = cur === 0;
+  document.getElementById("extNext").disabled = cur === STEPS.length - 1;
+}
+function handle(btn) {
+  if (btn.act === "copy") {
+    navigator.clipboard.writeText(btn.value).then(
+      () => { if (window.pcToast) pcToast("주소를 복사했어요. 크롬 주소창에 붙여넣고 엔터!", "success"); next(); },
+      () => { if (window.pcToast) pcToast("복사가 안 됐어요. 주소를 직접 입력해 주세요: " + btn.value, "warning"); }
+    );
+    return;
+  }
+  if (btn.href) { window.location.href = btn.href; return; }
+  if (btn.act === "next") next();
+}
+function next() { if (cur < STEPS.length - 1) { cur++; render(); } }
+function prev() { if (cur > 0) { cur--; render(); } }
+document.getElementById("extNext").addEventListener("click", next);
+document.getElementById("extPrev").addEventListener("click", prev);
+render();
+</script>
 {% endblock %}
