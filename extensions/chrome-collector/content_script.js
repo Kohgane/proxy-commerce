@@ -242,6 +242,36 @@ function kgpMakeDraggable(el, storeKey, opts) {
     }
     down = false;
   });
+  kgpRegisterFixed(el);   // v15: 줌/리사이즈 시 화면 안으로 재보정
+}
+
+// v15 P0: 페이지 줌(Ctrl+휠)·창 리사이즈 시 고정 오버레이가 화면 밖으로 나가거나
+// 가장자리에서 겹치지 않도록 뷰포트 안으로 다시 끌어들인다. (left/top으로 배치된 요소만 보정 —
+// right/bottom 앵커는 본래 뷰포트 상대라 안전.) 카운트업/배지 등 일회성 요소는 등록하지 않는다.
+const KGP_FIXED_ELS = [];
+function kgpRegisterFixed(el) { if (el && KGP_FIXED_ELS.indexOf(el) < 0) KGP_FIXED_ELS.push(el); }
+function kgpClampFixed(el) {
+  if (!el || !el.isConnected) return;
+  if (!el.style.left || el.style.left === "auto") return;
+  const w = el.offsetWidth, h = el.offsetHeight;
+  const l = parseFloat(el.style.left) || 0, t = parseFloat(el.style.top) || 0;
+  el.style.left = Math.max(4, Math.min(Math.max(4, window.innerWidth - w - 4), l)) + "px";
+  el.style.top = Math.max(4, Math.min(Math.max(4, window.innerHeight - h - 4), t)) + "px";
+}
+let _kgpResizeT = null;
+function kgpOnViewportChange() {
+  if (_kgpResizeT) return;
+  _kgpResizeT = setTimeout(() => {
+    _kgpResizeT = null;
+    for (let i = KGP_FIXED_ELS.length - 1; i >= 0; i--) {
+      if (!KGP_FIXED_ELS[i].isConnected) { KGP_FIXED_ELS.splice(i, 1); continue; }
+      kgpClampFixed(KGP_FIXED_ELS[i]);
+    }
+  }, 120);
+}
+if (!window.__kgpViewportBound) {
+  window.addEventListener("resize", kgpOnViewportChange);
+  window.__kgpViewportBound = true;
 }
 
 // 수집 누적 카운트 + 마일스톤 축하(실제 성공 시에만 호출).
@@ -339,7 +369,7 @@ function injectCollectButton() {
   // 위치: 우측 '중앙'(v7) — 콘텐츠 안 가리게. 드래그로 옮기면 위치 기억(kgp_fab_pos).
   btn.style.cssText = [
     "position:fixed", "right:16px", "top:calc(50% - 24px)", "z-index:2147483646",
-    "display:flex", "align-items:center", "gap:10px",
+    "display:flex", "align-items:center", "gap:10px", "max-width:min(82vw,300px)", "box-sizing:border-box",
     "padding:9px 16px 9px 10px", "border:1px solid #c9a24b", "border-radius:999px",
     "background:#1a1714", "color:#f5efe3",
     "font:14px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",

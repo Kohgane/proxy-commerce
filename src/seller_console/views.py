@@ -4822,7 +4822,8 @@ def extension_download():
                     z.write(fp, arcname=f"icons/{ic}")
     buf.seek(0)
     version = _chrome_extension_version() or "1"
-    fname = f"kohgane-collector-v{version}.zip"
+    # v15: 일반 유저 친화 파일명 '고가수집기'(gogasujipgi). 받자마자 무엇인지 알게.
+    fname = f"gogasujipgi-v{version}.zip"
     return Response(
         buf.getvalue(),
         mimetype="application/zip",
