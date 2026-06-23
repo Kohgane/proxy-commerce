@@ -19,6 +19,11 @@ const DEFAULT_SOURCES = [
   { id: "temu", label: "테무", host: "temu.com" },
   { id: "amazon", label: "아마존", host: "amazon.*" },
   { id: "aliexpress", label: "알리익스프레스", host: "aliexpress.com" },
+  { id: "iherb", label: "아이허브", host: "iherb.com" },
+  { id: "dhgate", label: "DHgate", host: "dhgate.com" },
+  { id: "qoo10", label: "큐텐", host: "qoo10.com" },
+  { id: "mercari", label: "메루카리", host: "mercari.com" },
+  { id: "rakuten", label: "라쿠텐(Rakuten Fashion 포함)", host: "rakuten.co.jp" },
 ];
 
 // ---- 서버/토큰 (chrome.storage.sync) ----

@@ -1091,6 +1091,12 @@ def collect():
         {"name": "1688", "url": "https://www.1688.com", "domain": "1688.com"},
         {"name": "테무", "url": "https://www.temu.com", "domain": "temu.com"},
         {"name": "알리익스프레스", "url": "https://www.aliexpress.com", "domain": "aliexpress.com"},
+        # v15: 대형 크로스보더 마켓 디폴트 확장(도메인 검증된 것만).
+        {"name": "아이허브", "url": "https://www.iherb.com", "domain": "iherb.com"},
+        {"name": "DHgate", "url": "https://www.dhgate.com", "domain": "dhgate.com"},
+        {"name": "큐텐", "url": "https://www.qoo10.com", "domain": "qoo10.com"},
+        {"name": "메루카리", "url": "https://jp.mercari.com", "domain": "mercari.com"},
+        {"name": "라쿠텐", "url": "https://www.rakuten.co.jp", "domain": "rakuten.co.jp"},
         # 아마존은 국가별 사이트가 달라 드롭다운으로 선택
         {"name": "아마존", "domain": "amazon.com", "countries": [
             {"name": "미국 (.com)", "url": "https://www.amazon.com"},
