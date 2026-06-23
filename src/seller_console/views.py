@@ -1083,16 +1083,16 @@ def collect():
         localization_configured = False
 
     # 원클릭 수집 지원 마켓 (퍼센티 벤치마킹) — 상품 페이지에서 크롬확장 🛒'수집' 버튼으로 수집
+    # 기본 소싱처 = 대형 크로스보더 마켓만(v13 P1: 요시다카반 등 니치는 제외 — 확장 '소싱처 관리'에서 직접 추가).
+    # 각 항목에 domain을 넣어 사이트 로고(파비콘) 아이콘으로 표시.
     oneclick_markets = [
-        {"name": "타오바오", "url": "https://www.taobao.com", "emoji": "🛒"},
-        {"name": "T몰", "url": "https://www.tmall.com", "emoji": "🛍️"},
-        {"name": "알리익스프레스", "url": "https://www.aliexpress.com", "emoji": "📦"},
-        {"name": "1688", "url": "https://www.1688.com", "emoji": "🏭"},
-        {"name": "VVIC", "url": "https://www.vvic.com", "emoji": "👗"},
-        {"name": "라쿠텐", "url": "https://www.rakuten.co.jp", "emoji": "🎌"},
-        {"name": "ZOZOTOWN", "url": "https://zozo.jp", "emoji": "👕"},
-        # 아마존은 국가별 사이트가 달라 드롭다운으로 선택(퍼센티 벤치마킹)
-        {"name": "아마존", "emoji": "🅰️", "countries": [
+        {"name": "타오바오", "url": "https://www.taobao.com", "domain": "taobao.com"},
+        {"name": "T몰", "url": "https://www.tmall.com", "domain": "tmall.com"},
+        {"name": "1688", "url": "https://www.1688.com", "domain": "1688.com"},
+        {"name": "테무", "url": "https://www.temu.com", "domain": "temu.com"},
+        {"name": "알리익스프레스", "url": "https://www.aliexpress.com", "domain": "aliexpress.com"},
+        # 아마존은 국가별 사이트가 달라 드롭다운으로 선택
+        {"name": "아마존", "domain": "amazon.com", "countries": [
             {"name": "미국 (.com)", "url": "https://www.amazon.com"},
             {"name": "일본 (.co.jp)", "url": "https://www.amazon.co.jp"},
             {"name": "독일 (.de)", "url": "https://www.amazon.de"},
@@ -1104,8 +1104,6 @@ def collect():
             {"name": "호주 (.com.au)", "url": "https://www.amazon.com.au"},
             {"name": "인도 (.in)", "url": "https://www.amazon.in"},
         ]},
-        {"name": "SHEIN", "url": "https://www.shein.com", "emoji": "✨"},
-        {"name": "요시다카반", "url": "https://www.yoshidakaban.com/ko/", "emoji": "🎒"},
     ]
 
     return render_template(
