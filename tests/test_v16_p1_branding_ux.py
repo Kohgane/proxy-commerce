@@ -60,3 +60,20 @@ def test_dev_jargon_removed(client):
 def test_bookmarklet_explainer(client):
     html = client.get("/seller/bookmarklet").get_data(as_text=True)
     assert "북마클릿이 뭔가요?" in html and "언제 쓰나요?" in html
+
+
+def test_token_page_jargon_behind_tooltips():
+    tpl = Path("src/seller_console/templates/personal_tokens.html").read_text(encoding="utf-8")
+    # 본문은 쉬운 말 + 날것 표기는 '?' 툴팁 뒤로
+    assert "‘내 계정 것’임을 자동 확인" in tpl
+    assert tpl.count("pc-help") >= 3
+    assert "collect.write = 상품 수집 저장" in tpl      # 스코프 뜻은 툴팁 안
+    assert "_scope_ko" in tpl                           # 권한 배지 한글화
+
+
+def test_token_list_is_per_user():
+    # 본인 전용 — list_tokens/revoke_token이 user_id로 격리
+    import inspect
+    from src.auth import personal_tokens as pt
+    assert "user_id" in inspect.signature(pt.list_tokens).parameters
+    assert "user_id" in inspect.signature(pt.revoke_token).parameters

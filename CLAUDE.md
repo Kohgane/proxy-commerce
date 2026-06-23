@@ -27,7 +27,11 @@
   링크(/seller/sourcing/my-sources). 'GenericOgCollector 자동 사용' 등 개발문구 일반 카피화. 북마클릿 '뭔가요/언제'
   친절설명. manifest 1.5.5→1.5.6. 가드 test_v16_p1_branding_ux(6).
   ※shopify metafield namespace 'proxy_commerce'(내부 스키마)·api_status Render 서비스명(정확 안내)은 유지.
-- ⏳ P1 남음: 토큰 발급이력+마스킹+본인전용+'?'툴팁(후속).
+- ✅ **P1 토큰 페이지(Phase 289):** list_tokens(user_id)/revoke_token(user_id)로 본인 전용·마스킹(해시 앞부분)·
+  발급일·마지막사용·스코프·상태(폐기 포함)는 이미 구현됨(확인). 추가: 날것 표기(Authorization: Bearer, collect.write
+  등) '?' 툴팁 뒤로 + 본문 쉬운말, 권한 배지 한글화(상품 수집/카탈로그 조회/마켓 업로드, raw는 title). 가드 추가.
+- → **v16 완료**(P0 수집정확도·FAB에러·관리자 / P1 OG브랜딩·퍼센티/proxy정리·FAB on-off·소싱처메뉴·잔여문구·토큰).
+  전체 10222 passed. ※사이트별 PDD 정밀 어댑터(라이브 검증 필요)만 후속.
 - (확인) 수집한 상품 클릭 404 = 해결됨 → 회귀 가드만 유지.
 
 ## 🟦 v15 브리프 (오너 2026-06-23 — "수집기 노출·마켓연결·확장설치 친절화 + 글로벌")
