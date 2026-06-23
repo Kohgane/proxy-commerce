@@ -60,11 +60,19 @@ _ONBOARDING_DISMISS_COOKIE_MAX_AGE = 60 * 60 * 24 * 180
 
 @bp.app_context_processor
 def inject_seller_template_flags():
+    # v15 i18n: kgp_lang 쿠키(ko|en) 기반 현지화. t('key')로 템플릿에서 사용(영어 1급).
+    from .i18n import normalize_lang, t as _t
+    try:
+        _lang = normalize_lang(request.cookies.get("kgp_lang"))
+    except Exception:
+        _lang = "ko"
     return {
         "diagnostic_reveal_enabled": os.getenv("DIAGNOSTIC_REVEAL", "0") == "1",
         "sidebar_grouped": os.getenv("SIDEBAR_GROUPED", "1") == "1",
         "brand_name": get_brand_name(),
         "brand_name_ko": get_brand_name_ko(),
+        "current_lang": _lang,
+        "t": (lambda key, lang=_lang: _t(key, lang)),
     }
 
 

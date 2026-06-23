@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="{{ current_lang|default('ko', true) }}">
 <head>
   {% set _brand_name = brand_name|default('KOHgogane', true) %}
   <meta charset="utf-8">
@@ -44,18 +44,18 @@
     <div class="flex-grow-1">
     <!-- 핵심 메뉴(항상 노출) — 비기너 과부하 방지(v5). 나머지는 '고급 기능'으로 접음. -->
     <ul class="nav flex-column gap-1">
-      <li><a class="console-nav-link {% if _path == '/seller/' or _path.startswith('/seller/dashboard') %}active{% endif %}" href="/seller/dashboard"><i class="bi bi-speedometer2"></i><span>홈(대시보드)</span></a></li>
+      <li><a class="console-nav-link {% if _path == '/seller/' or _path.startswith('/seller/dashboard') %}active{% endif %}" href="/seller/dashboard"><i class="bi bi-speedometer2"></i><span>{{ t('nav.home') }}</span></a></li>
       <li><a class="console-nav-link {% if _path == '/seller/sourcing' or _path.startswith('/seller/sourcing/my-sources') or _path.startswith('/seller/sourcing/collect') or _path.startswith('/seller/sourcing/recommend') %}active{% endif %}" href="/seller/sourcing"><i class="bi bi-stars"></i><span>AI 소싱·등록</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/manual-collect') or (_path.startswith('/seller/collect') and not _path.startswith('/seller/collect/history') and not _path.startswith('/seller/collect-history')) %}active{% endif %}" href="/seller/manual-collect"><i class="bi bi-search"></i><span>상품 수집</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/manual-collect') or (_path.startswith('/seller/collect') and not _path.startswith('/seller/collect/history') and not _path.startswith('/seller/collect-history')) %}active{% endif %}" href="/seller/manual-collect"><i class="bi bi-search"></i><span>{{ t('nav.collect') }}</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/collect/history') or _path.startswith('/seller/collect-history') %}active{% endif %}" href="/seller/collect/history"><i class="bi bi-journal-text"></i><span>수집한 상품</span></a></li>
-      <li><a class="console-nav-link {% if _path == '/seller/orders' or (_path.startswith('/seller/orders') and not _path.startswith('/seller/orders/auto')) %}active{% endif %}" href="/seller/orders"><i class="bi bi-receipt"></i><span>주문 관리</span></a></li>
-      <li><a class="console-nav-link {% if (_path.startswith('/seller/markets') and not _path.startswith('/seller/markets/connect') and not _path.startswith('/seller/markets/guide')) or _path.startswith('/seller/market-status') %}active{% endif %}" href="/seller/markets"><i class="bi bi-shop"></i><span>마켓 연동</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/guide/business') %}active{% endif %}" href="/seller/guide/business"><i class="bi bi-question-circle"></i><span>도움말·가이드</span></a></li>
+      <li><a class="console-nav-link {% if _path == '/seller/orders' or (_path.startswith('/seller/orders') and not _path.startswith('/seller/orders/auto')) %}active{% endif %}" href="/seller/orders"><i class="bi bi-receipt"></i><span>{{ t('nav.orders') }}</span></a></li>
+      <li><a class="console-nav-link {% if (_path.startswith('/seller/markets') and not _path.startswith('/seller/markets/connect') and not _path.startswith('/seller/markets/guide')) or _path.startswith('/seller/market-status') %}active{% endif %}" href="/seller/markets"><i class="bi bi-shop"></i><span>{{ t('nav.markets') }}</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/guide/business') %}active{% endif %}" href="/seller/guide/business"><i class="bi bi-question-circle"></i><span>{{ t('nav.help') }}</span></a></li>
     </ul>
 
     <!-- 고급 기능(접이식, 기본 닫힘 — 현재 위치가 안에 있으면 JS가 자동으로 펼침) -->
     <details class="adv-nav" id="advNav">
-      <summary class="console-nav-adv-summary"><i class="bi bi-sliders2"></i> 고급 기능 더보기</summary>
+      <summary class="console-nav-adv-summary"><i class="bi bi-sliders2"></i> {{ t('nav.advanced') }}</summary>
     <ul class="nav flex-column gap-1 mt-1">
       <li class="console-nav-group-title">AI 소싱·등록</li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/listing/ai-create') %}active{% endif %}" href="/seller/listing/ai-create"><i class="bi bi-robot"></i><span>AI 상품등록(자동 생성)</span></a></li>
@@ -138,7 +138,14 @@
         </div>
       </form>
 
-      <div>
+      <div class="d-flex align-items-center gap-2">
+        {# v15 i18n: 언어 토글(한국어/English) — 기존 /i18n/set 쿠키 단일소스 #}
+        <div class="btn-group btn-group-sm" role="group" aria-label="{{ t('lang.label') }}">
+          <a href="/i18n/set?lang=ko&next={{ request.full_path|urlencode }}"
+             class="btn {{ 'btn-primary' if current_lang == 'ko' else 'btn-outline-secondary' }}">한국어</a>
+          <a href="/i18n/set?lang=en&next={{ request.full_path|urlencode }}"
+             class="btn {{ 'btn-primary' if current_lang == 'en' else 'btn-outline-secondary' }}">EN</a>
+        </div>
         {% if _user_id %}
         <div class="dropdown">
           <button class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
@@ -196,9 +203,9 @@
 <div id="fbWrap" style="position:fixed;right:18px;bottom:18px;z-index:1035;display:flex;flex-direction:column;align-items:flex-end;gap:3px">
   <a href="/seller/start" id="fbBtn" class="btn btn-cta"
      style="border-radius:999px;font-weight:800;font-size:1rem;padding:.7rem 1.4rem;box-shadow:0 8px 22px rgba(239,122,34,.35)">
-     ✨ 처음이신가요?
+     {{ t('fb.cta') }}
   </a>
-  <button type="button" id="fbHide" class="btn btn-link p-0 text-muted" style="font-size:.68rem;text-decoration:none">가이드 버튼 숨기기</button>
+  <button type="button" id="fbHide" class="btn btn-link p-0 text-muted" style="font-size:.68rem;text-decoration:none">{{ t('fb.hide') }}</button>
 </div>
 <button type="button" id="fbReopen" class="btn btn-cta" title="처음이신가요? 가이드 열기"
         style="display:none;position:fixed;right:18px;bottom:18px;z-index:1035;border-radius:999px;width:44px;height:44px;font-size:1.1rem;box-shadow:0 6px 18px rgba(239,122,34,.35)">✨</button>

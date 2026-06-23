@@ -31,7 +31,12 @@
   (README 한국어 단계별 가이드: PWABuilder/Bubblewrap TWA→Play, Capacitor→App Store + twa-manifest.json·capacitor.config.json).
   PWA 매니페스트는 이미 스토어 요건 충족(아이콘192·512 maskable·standalone·share_target·shortcuts). 가드
   test_mobile_store_packaging_v15(4). 전체 10203 passed.
-- ⏳ 남은 v15: i18n 영어 1급(글로벌 — 국내용 다음, 오너 지시 순서). 디자인토큰은 이미 충족.
+- ✅ **i18n 영어 1급 1차(Phase 287):** 신설 `src/seller_console/i18n.py`(t(key,lang)+STRINGS ko/en, 누락키=키반환 정직,
+  미지원언어=ko 폴백). 컨텍스트 프로세서가 t·current_lang 주입(kgp_lang 쿠키 단일소스, 기존 /i18n/set 재사용).
+  _base.html: `<html lang>` 동적, 탑바 언어 토글(한국어/EN), For Beginners 버튼·6 핵심 내비 라벨 t()로 외부화.
+  → en 쿠키 시 핵심 화면 영어 1급 동작. 나머지 화면 문자열은 STRINGS에 ko/en 추가하며 점진 확장. 가드
+  test_i18n_seller_console_v15(3). 전체 10206 passed. → v15 큰 줄기 완료(P0·P1·국내스토어·i18n 1차).
+- ⏳ i18n 점진 확장: 대시보드/주문/마켓/온보딩 등 화면별 문자열 STRINGS에 추가(후속, 화면 단위 PR).
 - ⏳ P1: For Beginners 크게·고정·on/off(v14 완료, 재확인) · 다크 스테퍼 단계별 완료표시(실제기준) · 로고 클릭→대시보드 ·
   소셜4종(v14 완료) · 디폴트 마켓 추가(Taoworld·iHerb·TEMU·OPLE·Rakuten Fashion…+아이콘, 니치는 유저추가) ·
   i18n 영어1급 · 디자인토큰 단일소스 · 모바일 양대 스토어 패키징.
