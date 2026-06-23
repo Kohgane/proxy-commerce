@@ -26,10 +26,10 @@
 {% set _user_role = session.get('user_role') if session is defined else None %}
 
 <div class="mobile-topbar d-flex align-items-center justify-content-between px-3 py-2 d-md-none">
-  <a href="/seller/" class="text-decoration-none fw-bold">🛒 셀러 콘솔</a>
+  <a href="/seller/" class="text-decoration-none fw-bold"><i class="bi bi-shop"></i> 셀러 콘솔</a>
   <div class="d-flex align-items-center gap-2">
-    <a href="/seller/m" class="btn btn-sm btn-cta py-1">📱 모바일 앱</a>
-    <button class="btn btn-sm btn-outline-secondary" id="sidebarToggle" aria-label="메뉴 열기" onclick="toggleSidebar()">☰</button>
+    <a href="/seller/m" class="btn btn-sm btn-cta py-1"><i class="bi bi-phone"></i> 모바일 앱</a>
+    <button class="btn btn-sm btn-outline-secondary" id="sidebarToggle" aria-label="메뉴 열기" onclick="toggleSidebar()"><i class="bi bi-list"></i></button>
   </div>
 </div>
 <div class="sidebar-overlay d-md-none" id="sidebarOverlay" onclick="closeSidebar()"></div>
@@ -38,7 +38,7 @@
   <nav class="sidebar console-sidebar d-flex flex-column p-3" id="sidebarDrawer" data-testid="seller-sidebar">
     <a href="/seller/" class="console-brand text-decoration-none mb-3">
       <div class="small text-secondary">{{ brand_name_ko|default('코고가네', true) }}</div>
-      <strong>🛒 셀러 콘솔 · {{ _brand_name }}</strong>
+      <strong><i class="bi bi-shop"></i> 셀러 콘솔 · {{ _brand_name }}</strong>
     </a>
 
     <div class="flex-grow-1">
@@ -118,7 +118,7 @@
 
     <div class="small text-secondary mt-3 pt-2 border-top">
       {% if _user_role == 'admin' %}
-      <a class="d-block text-decoration-none mb-1" href="/admin/diagnostics">🛠️ 관리자 패널</a>
+      <a class="d-block text-decoration-none mb-1" href="/admin/diagnostics"><i class="bi bi-tools"></i> 관리자 패널</a>
       {% endif %}
       <a href="/privacy" class="text-decoration-none text-secondary">개인정보처리방침</a>
       <span class="mx-1">·</span>
@@ -161,11 +161,11 @@
             {{ _user_email or _user_name or '사용자' }}
           </button>
           <ul class="dropdown-menu dropdown-menu-end">
-            <li><a class="dropdown-item" href="/seller/me">👤 마이페이지</a></li>
+            <li><a class="dropdown-item" href="/seller/me"><i class="bi bi-person"></i> 마이페이지</a></li>
             <li><hr class="dropdown-divider"></li>
             <li>
               <form method="post" action="/auth/logout" class="px-2">
-                <button type="submit" class="btn btn-outline-secondary btn-sm w-100">🚪 로그아웃</button>
+                <button type="submit" class="btn btn-outline-secondary btn-sm w-100"><i class="bi bi-box-arrow-right"></i> 로그아웃</button>
               </form>
             </li>
           </ul>
@@ -175,7 +175,7 @@
           <a href="/auth/login" class="btn btn-outline-secondary btn-sm">OAuth 로그인</a>
           <a href="/auth/magic-link" class="btn btn-outline-secondary btn-sm">이메일 로그인</a>
           {% if diagnostic_reveal_enabled %}
-          <a href="/auth/diagnostic-token/issue?reveal_safe=1&format=html" class="btn btn-warning btn-sm">🆘 비상 진입 (운영자)</a>
+          <a href="/auth/diagnostic-token/issue?reveal_safe=1&format=html" class="btn btn-warning btn-sm"><i class="bi bi-life-preserver"></i> 비상 진입 (운영자)</a>
           {% endif %}
         </div>
         {% endif %}
@@ -212,12 +212,12 @@
 <div id="fbWrap" style="position:fixed;right:18px;bottom:18px;z-index:1035;display:flex;flex-direction:column;align-items:flex-end;gap:3px">
   <a href="/seller/start" id="fbBtn" class="btn btn-cta"
      style="border-radius:999px;font-weight:800;font-size:1rem;padding:.7rem 1.4rem;box-shadow:0 8px 22px rgba(239,122,34,.35)">
-     {{ t('fb.cta') }}
+     <i class="bi bi-stars"></i> {{ t('fb.cta') }}
   </a>
   <button type="button" id="fbHide" class="btn btn-link p-0 text-muted" style="font-size:.68rem;text-decoration:none">{{ t('fb.hide') }}</button>
 </div>
 <button type="button" id="fbReopen" class="btn btn-cta" title="처음이신가요? 가이드 열기"
-        style="display:none;position:fixed;right:18px;bottom:18px;z-index:1035;border-radius:999px;width:44px;height:44px;font-size:1.1rem;box-shadow:0 6px 18px rgba(239,122,34,.35)">✨</button>
+        style="display:none;position:fixed;right:18px;bottom:18px;z-index:1035;border-radius:999px;width:44px;height:44px;font-size:1.1rem;box-shadow:0 6px 18px rgba(239,122,34,.35)"><i class="bi bi-stars"></i></button>
 <script>
 (function () {
   var wrap = document.getElementById('fbWrap');
