@@ -3,7 +3,7 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="fw-bold mb-0">🏪 {{ t('markets.title') }}</h4>
+  <h4 class="fw-bold mb-0"><i class="bi bi-shop"></i> {{ t('markets.title') }}</h4>
   <div class="d-flex gap-2 align-items-center">
     {% if market_data.is_mock %}
     <span class="badge bg-warning text-dark">mock 데이터</span>
@@ -16,10 +16,10 @@
     </span>
     {% endif %}
     <button class="btn btn-outline-primary btn-sm" id="syncAllBtn" onclick="syncAllMarkets()">
-      🔄 지금 동기화
+      <i class="bi bi-arrow-clockwise"></i> 지금 동기화
     </button>
     <button class="btn btn-outline-success btn-sm" id="marketDiagnosticsBtn" onclick="refreshAllMarketDiagnostics()">
-      🔌 실연동 재진단
+      <i class="bi bi-plug"></i> 실연동 재진단
     </button>
     <button class="btn btn-outline-secondary btn-sm" onclick="location.reload()">{{ t('markets.refresh') }}</button>
   </div>
@@ -37,8 +37,8 @@
         <div class="small text-muted">실제 검증된 연동 상태와 운영자 조치 힌트를 함께 확인하세요.</div>
       </div>
       <div class="d-flex align-items-center gap-2">
-        <a href="/seller/markets/guide" class="btn btn-outline-primary btn-sm">📖 {{ t('markets.guide') }}</a>
-        <a href="/seller/markets/connect" class="btn btn-primary btn-sm">🔌 {{ t('markets.connect') }}</a>
+        <a href="/seller/markets/guide" class="btn btn-outline-primary btn-sm"><i class="bi bi-book"></i> {{ t('markets.guide') }}</a>
+        <a href="/seller/markets/connect" class="btn btn-primary btn-sm"><i class="bi bi-plug"></i> {{ t('markets.connect') }}</a>
         <span class="badge text-bg-light" id="marketDiagnosticsSummary">실연동 진단 대기</span>
       </div>
     </div>
@@ -68,7 +68,7 @@
             <button class="btn btn-outline-primary btn-sm" type="button" data-market-action="connection" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'connection')">{{ t('markets.check_connection') }}</button>
             <button class="btn btn-outline-secondary btn-sm" type="button" data-market-action="scope" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'scope')">권한 확인</button>
             <button class="btn btn-outline-warning btn-sm" type="button" data-market-action="retry" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'retry')">재시도</button>
-            <a class="btn btn-outline-primary btn-sm" href="/seller/markets/connect/{{ hub.marketplace }}">🔑 키 입력</a>
+            <a class="btn btn-outline-primary btn-sm" href="/seller/markets/connect/{{ hub.marketplace }}"><i class="bi bi-key"></i> 키 입력</a>
           </div>
           <div class="small text-muted mt-2">필수 권한: {{ hub.required_scopes|join(', ') }}</div>
           <div class="small text-muted mt-1">필수 env: {{ hub.required_env|join(', ') }}</div>
@@ -117,7 +117,7 @@
         <div class="mt-2">
           <button class="btn btn-outline-secondary btn-sm w-100"
                   onclick="syncMarket('{{ m.marketplace }}')">
-            🔄 동기화
+            <i class="bi bi-arrow-clockwise"></i> 동기화
           </button>
         </div>
         {% endif %}
@@ -146,11 +146,11 @@
       </select>
       <select class="form-select form-select-sm" id="filterStatus" style="width:auto;" onchange="filterTable()">
         <option value="">전체 상태</option>
-        <option value="active">활성 ✅</option>
-        <option value="out_of_stock">품절 ⚠️</option>
-        <option value="error">오류 ❌</option>
-        <option value="price_anomaly">가격이상 💰</option>
-        <option value="suspended">정지 🚫</option>
+        <option value="active">활성</option>
+        <option value="out_of_stock">품절</option>
+        <option value="error">오류</option>
+        <option value="price_anomaly">가격이상</option>
+        <option value="suspended">정지</option>
       </select>
       <input type="text" class="form-control form-control-sm" id="filterSearch"
              placeholder="상품명/SKU 검색..." style="width:200px;" oninput="filterTable()">
@@ -191,15 +191,15 @@
               <td><code class="small">{{ item.sku or '—' }}</code></td>
               <td class="text-center">
                 {% if item.state == "active" %}
-                <span class="badge bg-success">✅ 활성</span>
+                <span class="badge bg-success"><i class="bi bi-check-circle"></i> 활성</span>
                 {% elif item.state == "out_of_stock" %}
-                <span class="badge bg-warning text-dark">⚠️ 품절</span>
+                <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> 품절</span>
                 {% elif item.state == "error" %}
-                <span class="badge bg-danger" title="{{ item.error_message }}">❌ 오류</span>
+                <span class="badge bg-danger" title="{{ item.error_message }}"><i class="bi bi-x-circle"></i> 오류</span>
                 {% elif item.state == "price_anomaly" %}
-                <span class="badge bg-info text-dark">💰 가격이상</span>
+                <span class="badge bg-info text-dark"><i class="bi bi-cash-coin"></i> 가격이상</span>
                 {% elif item.state == "suspended" %}
-                <span class="badge bg-dark">🚫 정지</span>
+                <span class="badge bg-dark"><i class="bi bi-slash-circle"></i> 정지</span>
                 {% else %}
                 <span class="badge bg-secondary">{{ item.state }}</span>
                 {% endif %}
@@ -219,10 +219,10 @@
             <tr>
               <td colspan="8" class="text-center text-muted py-4">
                 {% if market_data.is_mock %}
-                <div>📋 <strong>Mock 모드</strong> — Google Sheets <code>catalog</code> 워크시트에 데이터를 추가하면 실 데이터가 표시됩니다.</div>
+                <div><i class="bi bi-clipboard"></i> <strong>Mock 모드</strong> — Google Sheets <code>catalog</code> 워크시트에 데이터를 추가하면 실 데이터가 표시됩니다.</div>
                 <div class="small mt-1">컬럼: product_id / sku / title / marketplace / state / price / currency / price_krw / last_synced_at / error_message</div>
                 {% else %}
-                <div>📭 상품 데이터가 없습니다. Google Sheets에 데이터를 추가해주세요.</div>
+                <div><i class="bi bi-inbox"></i> 상품 데이터가 없습니다. Google Sheets에 데이터를 추가해주세요.</div>
                 {% endif %}
               </td>
             </tr>
@@ -284,7 +284,7 @@ function syncMarket(marketplace) {
   .catch(err => showToast('동기화 실패: ' + err.message, 'danger'))
   .finally(() => {
     btn.disabled = false;
-    btn.textContent = '🔄 지금 동기화';
+    btn.textContent = '지금 동기화';
   });
 }
 
@@ -425,7 +425,7 @@ function refreshAllMarketDiagnostics() {
     .finally(() => {
       if (btn) {
         btn.disabled = false;
-        btn.textContent = '🔌 실연동 재진단';
+        btn.textContent = '실연동 재진단';
       }
     });
 }

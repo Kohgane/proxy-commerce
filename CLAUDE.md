@@ -46,6 +46,10 @@
   단일 아이콘셋 bi-*(bi-shop/phone/list/person/box-arrow-right/tools/life-preserver/stars)로 교체. fb.cta i18n에서 ✨ 제거
   (버튼이 bi-stars 사용). 영향 테스트(admin_vs_seller_nav·emergency_header·responsive 햄버거) 아이콘 기준 갱신.
   가드 test_base_chrome_uses_icon_set_not_emoji. 전체 10248 passed. ※나머지 화면 이모지는 차근차근 후속.
+- ✅ **v18 이모지→아이콘셋 #2 수집·마켓(Phase 295):** manual_collect.html(🛒📥🧩🌐✅📤⚠️→bi-cart/download/puzzle/
+  globe/check-circle/box-arrow-up-right/exclamation-triangle, JS textContent는 텍스트만)·markets.html(🏪🔄🔌📖🔑✅⚠️❌💰🚫📋📭
+  →bi-*, <option>은 아이콘 불가라 텍스트만, JS textContent 텍스트만) 이모지 0. 전체 10248 passed.
+  ※collect_history/collect_preview/messaging/market_status/notifications 등은 차근차근 후속.
 
 ## 🟪 v16 브리프 (오너 2026-06-23 — "수집 정확도·공유 미리보기·토큰/관리자/소싱처")
 - 절대원칙: 추측 금지(에러·누락은 재현/로그)·거짓성공/가짜필러 금지·회귀 금지·정직·토큰 단일소스·경량. 버전충돌 시 v16 우선.
