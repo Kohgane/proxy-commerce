@@ -73,4 +73,4 @@ def test_history_page_has_status_and_duplicate_buttons(client):
         html = client.get("/seller/collect/history").get_data(as_text=True)
     assert "bulkStatusBtn" in html and "bulkDuplicateBtn" in html
     assert "runBulkDuplicate" in html
-    assert "📦 보관" in html  # archived 배지 렌더
+    assert "보관" in html and "bi-archive" in html  # archived 배지(v18 아이콘셋)
