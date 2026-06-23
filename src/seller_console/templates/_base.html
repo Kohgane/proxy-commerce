@@ -142,6 +142,12 @@
       </form>
 
       <div class="d-flex align-items-center gap-2">
+        {# v18 PART A: 운영 방식(수입형/수출형) 표시 + 전환(설정에서 언제든) #}
+        {% if lane %}
+        <a href="/lane" class="btn btn-sm btn-outline-secondary" title="운영 방식 전환 (수입형/수출형)">
+          {{ lane.title_ko }} ▾
+        </a>
+        {% endif %}
         {# v15 i18n: 언어 토글(한국어/English) — 기존 /i18n/set 쿠키 단일소스 #}
         <div class="btn-group btn-group-sm" role="group" aria-label="{{ t('lang.label') }}">
           <a href="/i18n/set?lang=ko&next={{ request.full_path|urlencode }}"

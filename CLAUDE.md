@@ -32,9 +32,12 @@
   (8px그리드 --space-1~9)·라운드/그림자(--radius-*/--shadow-*)·레이아웃(--sidebar-w 264/--content-max 1200)·모션(--dur-*/--ease).
   기존 --pc-* 는 v18 토큰을 var()로 참조(단일소스, 하위호환) → 전 화면 에디토리얼 럭셔리 팔레트 자동 반영(teal/orange 미세
   보정). 가드 test_design_tokens_v18(5). 전체 10240 passed. ※이모지아이콘 제거·타입스케일 화면별 적용·단일아이콘셋은 점진 후속.
-- ⏳ PART A 게이트: '운영 방식 선택' 2카드 — 수입형(해외→국내,한국어·KRW,타깃 쿠팡/네이버/11번가)/수출형(국내→해외,
-  영어1급·USD,타깃 Shopify/아마존US/쇼피/이베이). 레인=소싱↔타깃 방향·언어·통화·온보딩 구성. 외국방문자=수출/영어 기본,
-  한국=수입/한국어 기본, 둘다 선택·기억·설정전환. 가짜분기 금지.
+- ✅ **PART A 양방향 게이트(Phase 293):** 신설 src/lane.py(LANES import/export 단일소스 — title/arrow/desc·lang·currency·
+  sourcing·target_markets, default_lane_for(Accept-Language 비-ko=export·ko=import), get_lane(쿠키 우선)). order_webhook:
+  `_current_lane()`+context_processor(current_lane·lane 전 템플릿 주입), `/lane`(게이트 2카드 — 추천 강조), `/lane/set`
+  (레인+lang+currency 쿠키 실제 전환, 가짜분기 아님). lane_gate.html(v18 토큰만 사용). _base.html 탑바 '운영 방식 전환'
+  링크, landing 히어로 '운영 방식 선택(수입/수출)' CTA. 가드 test_lane_gate_v18(6). 전체 10246 passed.
+  → **v18 완료**(PART B 토큰 단일소스 + PART A 수입/수출 게이트). ※이모지/타입스케일 화면 스윕은 점진 후속.
 
 ## 🟪 v16 브리프 (오너 2026-06-23 — "수집 정확도·공유 미리보기·토큰/관리자/소싱처")
 - 절대원칙: 추측 금지(에러·누락은 재현/로그)·거짓성공/가짜필러 금지·회귀 금지·정직·토큰 단일소스·경량. 버전충돌 시 v16 우선.

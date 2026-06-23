@@ -1,0 +1,36 @@
+{% extends "_base_app.html" %}
+{% block title %}운영 방식 선택{% endblock %}
+{% block og_title %}코고가네 — 수입형/수출형 선택{% endblock %}
+{% block content %}
+<div style="max-width:var(--content-max);margin:0 auto;padding:var(--space-7) var(--space-5)">
+  <div style="text-align:center;margin-bottom:var(--space-7)">
+    <h1 style="font-family:var(--font-display);font-size:var(--h1-size);line-height:var(--h1-lh);color:var(--text-strong);letter-spacing:-.01em">
+      운영할 방식을 선택하세요</h1>
+    <p style="color:var(--text-muted);font-size:var(--body-lg);margin-top:var(--space-2)">Choose how you operate — 언제든 설정에서 바꿀 수 있어요.</p>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:var(--space-5)">
+    {% for key, l in lanes.items() %}
+    <a href="/lane/set?lane={{ l.id }}&next=/seller/"
+       class="lane-card"
+       style="display:block;text-decoration:none;background:var(--surface);border:1px solid var(--border);
+              border-radius:var(--radius-lg);padding:var(--space-6);box-shadow:var(--shadow);
+              transition:transform var(--dur) var(--ease),box-shadow var(--dur) var(--ease);
+              {% if l.id == suggested %}outline:2px solid var(--teal);outline-offset:2px;{% endif %}">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);margin-bottom:var(--space-3)">
+        <span style="font-family:var(--font-display);font-size:var(--h2-size);color:var(--text-strong)">{{ l.title_ko }}</span>
+        {% if l.id == suggested %}<span style="font-size:var(--caption);font-weight:var(--w-semi);color:var(--teal);background:rgba(17,154,142,.10);padding:var(--space-1) var(--space-3);border-radius:var(--radius-pill)">추천</span>{% endif %}
+      </div>
+      <div style="font-size:var(--body);color:var(--text-muted);margin-bottom:var(--space-2)">{{ l.title_en }} · {{ l.arrow_ko }}</div>
+      <p style="font-size:var(--body);line-height:var(--line);color:var(--text);margin-bottom:var(--space-5)">{{ l.desc_ko }}</p>
+      <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;margin-bottom:var(--space-5);font-size:var(--small);color:var(--text-muted)">
+        <span style="border:1px solid var(--border);border-radius:var(--radius-pill);padding:var(--space-1) var(--space-3)">언어 {{ '한국어' if l.lang == 'ko' else 'English' }}</span>
+        <span style="border:1px solid var(--border);border-radius:var(--radius-pill);padding:var(--space-1) var(--space-3)">통화 {{ l.currency }}</span>
+      </div>
+      <span style="display:block;text-align:center;background:var(--orange);color:#fff;font-weight:var(--w-semi);
+                   border-radius:var(--radius);padding:var(--space-3);min-height:40px">이 방식으로 시작</span>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
