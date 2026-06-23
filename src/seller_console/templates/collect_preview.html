@@ -5,14 +5,14 @@
   <div class="mb-3 d-flex justify-content-between align-items-center">
     <a href="/seller/collect/history" class="text-decoration-none text-muted small">← 수집 이력으로 돌아가기</a>
     <span class="text-muted small">
-      🌐 <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.domain }}</a>
+      <i class="bi bi-globe"></i> <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.domain }}</a>
       · {{ item.collected_at[:16] if item.collected_at else "" }}
     </span>
   </div>
 
   <div class="card mb-3">
     <div class="card-header d-flex justify-content-between align-items-center">
-      <span class="fw-semibold">✏️ 수집 상품 편집</span>
+      <span class="fw-semibold"><i class="bi bi-pencil-square"></i> 수집 상품 편집</span>
       {% if extra.edited %}<span class="badge bg-info text-dark">수정됨</span>{% endif %}
       {% if extra.is_mock %}<span class="badge bg-warning text-dark">목업</span>{% endif %}
     </div>
@@ -38,7 +38,7 @@
             <div class="col-7">
               <label class="form-label small fw-semibold" for="editPrice">가격(원가)</label>
               <input type="number" step="0.01" min="0" class="form-control" id="editPrice" placeholder="0.00" oninput="updateKrwPreview()">
-              <div id="priceNeedsCheck" class="form-text small text-warning d-none">⚠️ 페이지에서 가격을 자동으로 읽지 못했어요. <b>가격 확인 필요</b> — 실제 가격을 입력해 주세요.</div>
+              <div id="priceNeedsCheck" class="form-text small text-warning d-none"><i class="bi bi-exclamation-triangle"></i> 페이지에서 가격을 자동으로 읽지 못했어요. <b>가격 확인 필요</b> — 실제 가격을 입력해 주세요.</div>
             </div>
             <div class="col-5">
               <label class="form-label small fw-semibold" for="editCurrency">통화</label>
@@ -58,7 +58,7 @@
           </div>
           <div class="text-muted mb-1" id="fxNote" style="font-size:.74rem;"></div>
           <div class="alert alert-warning py-1 px-2 mb-3 d-none" id="priceWarn" style="font-size:.8rem;">
-            ⚠️ <strong>판매가(가격)가 0이거나 비어 있습니다.</strong> 이 상태로는 마켓이 등록을 거부합니다
+            <i class="bi bi-exclamation-triangle"></i> <strong>판매가(가격)가 0이거나 비어 있습니다.</strong> 이 상태로는 마켓이 등록을 거부합니다
             (“연결됨”이어도 업로드 실패). 위에 가격을 입력하거나 <strong>↻ 원화로 환산</strong>으로 채워주세요.
           </div>
         </div>
@@ -89,7 +89,7 @@
             <button type="button" class="btn btn-outline-secondary btn-sm py-0" onclick="addImageRow()">+ 이미지 추가</button>
           </div>
           <div id="imageRows" class="vstack gap-2"></div>
-          <div class="form-text">⭐ = 대표/썸네일(맨 위가 대표). 보통은 위 갤러리만 보면 됩니다.</div>
+          <div class="form-text"><i class="bi bi-star-fill text-warning"></i> = 대표/썸네일(맨 위가 대표). 보통은 위 갤러리만 보면 됩니다.</div>
         </details>
       </div>
 
@@ -112,11 +112,11 @@
             <option value="{{ opt.code }}" {{ 'selected' if (current_category == opt.code) or (not current_category and category_suggestion and category_suggestion.code == opt.code) else '' }}>{{ opt.label }}</option>
             {% endfor %}
           </select>
-          <button type="button" class="btn btn-outline-primary" id="btnAutoCategory" onclick="autoClassify()" title="상품명·키워드로 카테고리 자동 추천">🔮 자동 분류</button>
+          <button type="button" class="btn btn-outline-primary" id="btnAutoCategory" onclick="autoClassify()" title="상품명·키워드로 카테고리 자동 추천"><i class="bi bi-magic"></i> 자동 분류</button>
         </div>
         <div id="categoryHint" class="form-text">
           {% if not current_category and category_suggestion and category_suggestion.code != 'GEN' %}
-          🔮 ‘{{ category_suggestion.label }}’ 로 자동 추천됨 — 맞지 않으면 직접 바꾸세요.
+          <i class="bi bi-magic"></i> ‘{{ category_suggestion.label }}’ 로 자동 추천됨 — 맞지 않으면 직접 바꾸세요.
           {% else %}
           상품명 기준으로 추천하려면 <b>자동 분류</b>를 누르세요.
           {% endif %}
@@ -138,12 +138,12 @@
     </div>
 
     <div class="card-footer d-flex gap-2 flex-wrap">
-      <button class="btn btn-primary btn-sm" id="btnSaveEdits" onclick="saveEdits()">💾 변경사항 저장</button>
+      <button class="btn btn-primary btn-sm" id="btnSaveEdits" onclick="saveEdits()"><i class="bi bi-save"></i> 변경사항 저장</button>
       <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer"
-         class="btn btn-outline-secondary btn-sm">🔗 원본 페이지</a>
-      <a href="/seller/pricing" class="btn btn-outline-primary btn-sm">💰 마진 계산기</a>
+         class="btn btn-outline-secondary btn-sm"><i class="bi bi-link-45deg"></i> 원본 페이지</a>
+      <a href="/seller/pricing" class="btn btn-outline-primary btn-sm"><i class="bi bi-cash-coin"></i> 마진 계산기</a>
       <button class="btn btn-success btn-sm ms-auto" id="btnOpenUploadModal" onclick="openUploadModal()">
-        📤 마켓에 등록
+        <i class="bi bi-box-arrow-up-right"></i> 마켓에 등록
       </button>
     </div>
   </div>
@@ -152,7 +152,7 @@
   {% if extra %}
   <div class="card">
     <div class="card-header d-flex justify-content-between align-items-center">
-      <span class="small fw-semibold">🔍 수집된 원본 메타</span>
+      <span class="small fw-semibold"><i class="bi bi-search"></i> 수집된 원본 메타</span>
       <button class="btn btn-outline-secondary btn-sm py-0"
               onclick="this.closest('.card').querySelector('pre').classList.toggle('d-none')">
         펼치기/접기
@@ -177,7 +177,7 @@
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title fw-bold" id="uploadModalLabel">📤 마켓 등록</h5>
+        <h5 class="modal-title fw-bold" id="uploadModalLabel"><i class="bi bi-box-arrow-up-right"></i> 마켓 등록</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
       </div>
       <div class="modal-body">
@@ -206,10 +206,10 @@
               <input class="form-check-input market-upload-check m-0" type="checkbox" value="{{ code }}" id="{{ chkid }}">
               <span class="fw-semibold flex-grow-1">{{ label }}</span>
               {% if ok %}
-              <span class="badge text-bg-success" title="API 키가 입력됨 — 실제 연결은 ‘사전검증/등록’에서 확인됩니다">✅ 키 설정됨</span>
+              <span class="badge text-bg-success" title="API 키가 입력됨 — 실제 연결은 ‘사전검증/등록’에서 확인됩니다"><i class="bi bi-check-circle"></i> 키 설정됨</span>
               {% else %}
               <a href="/seller/markets/connect/{{ code }}" target="_blank" class="badge text-bg-secondary text-decoration-none"
-                 title="API 키 미입력 — 클릭해 연결" onclick="event.stopPropagation()">❌ 미설정</a>
+                 title="API 키 미입력 — 클릭해 연결" onclick="event.stopPropagation()"><i class="bi bi-x-circle"></i> 미설정</a>
               {% endif %}
             </label>
           </div>
@@ -234,7 +234,7 @@
           <div class="d-flex gap-2 mt-3">
             <button class="btn btn-outline-secondary" data-bs-dismiss="modal">취소</button>
             <button class="btn btn-primary" id="btnPrevalidate" onclick="runPrevalidate()">
-              🔍 사전검증 →
+              <i class="bi bi-search"></i> 사전검증 →
             </button>
           </div>
         </div>
@@ -246,7 +246,7 @@
           <div class="d-flex gap-2 mt-3">
             <button class="btn btn-outline-secondary" onclick="goToStep('stepSelect')">← 다시 선택</button>
             <button class="btn btn-success" id="btnConfirmUpload" onclick="runUpload()">
-              ✅ 통과 마켓에 업로드
+              <i class="bi bi-check-circle"></i> 통과 마켓에 업로드
             </button>
           </div>
         </div>
@@ -260,7 +260,7 @@
 
         <!-- Step 4: 업로드 결과 -->
         <div id="stepResult" class="d-none">
-          <h6 class="fw-semibold mb-3">📋 등록 결과</h6>
+          <h6 class="fw-semibold mb-3"><i class="bi bi-clipboard"></i> 등록 결과</h6>
           <div id="uploadResults"></div>
           <div class="d-flex gap-2 mt-3">
             <button class="btn btn-outline-secondary" data-bs-dismiss="modal">닫기</button>
@@ -324,8 +324,8 @@ function addImageRow(url) {
     <img class="img-thumb flex-shrink-0 rounded border" alt="" style="width:46px;height:46px;object-fit:cover;background:#f1f3f5;cursor:zoom-in"
          title="클릭하면 원본 보기" onerror="this.style.visibility='hidden'">
     <input type="url" class="form-control form-control-sm img-url" placeholder="https://..." value="${escapeHtml(url || '')}">
-    <button class="btn btn-outline-primary btn-sm btn-clean-img flex-shrink-0" type="button" title="워터마크 제거·정제(CDN 설정 시 재호스팅)">🧹</button>
-    <button class="btn btn-outline-danger btn-sm btn-del flex-shrink-0" type="button" title="삭제">✕</button>`;
+    <button class="btn btn-outline-primary btn-sm btn-clean-img flex-shrink-0" type="button" title="워터마크 제거·정제(CDN 설정 시 재호스팅)"><i class="bi bi-eraser"></i></button>
+    <button class="btn btn-outline-danger btn-sm btn-del flex-shrink-0" type="button" title="삭제"><i class="bi bi-x-lg"></i></button>`;
   const input = row.querySelector('.img-url');
   const thumb = row.querySelector('.img-thumb');
   function syncThumb() {
@@ -379,10 +379,10 @@ function refreshImageBadges() {
     if (!btn) return;
     if (i === 0) {
       btn.classList.add('btn-warning'); btn.classList.remove('btn-outline-warning');
-      btn.textContent = '⭐대표'; btn.disabled = true; btn.title = '현재 대표/썸네일';
+      btn.textContent = '대표'; btn.disabled = true; btn.title = '현재 대표/썸네일';
     } else {
       btn.classList.add('btn-outline-warning'); btn.classList.remove('btn-warning');
-      btn.textContent = '⭐'; btn.disabled = false; btn.title = '대표 이미지로 지정';
+      btn.textContent = '지정'; btn.disabled = false; btn.title = '대표 이미지로 지정';
     }
   });
   renderGallery();
@@ -420,7 +420,7 @@ function addOptionRow(name, values) {
   row.innerHTML = `
     <input type="text" class="form-control opt-name" style="max-width:160px;" placeholder="옵션명(예: 색상)" value="${escapeHtml(name || '')}">
     <input type="text" class="form-control opt-values" placeholder="값들(쉼표 구분: Black, White)" value="${escapeHtml(values || '')}">
-    <button class="btn btn-outline-danger" type="button" title="삭제">✕</button>`;
+    <button class="btn btn-outline-danger" type="button" title="삭제"><i class="bi bi-x-lg"></i></button>`;
   row.querySelector('button').addEventListener('click', () => row.remove());
   wrap.appendChild(row);
 }
@@ -585,14 +585,14 @@ async function autoClassify() {
       if (d.code === 'GEN') {
         hint.innerHTML = '키워드가 약해 자동 추천이 어려워요 — 직접 선택해 주세요.';
       } else {
-        hint.innerHTML = `🔮 ‘${d.label}’ 로 추천(신뢰도 ${Math.round((d.confidence||0)*100)}%). 맞지 않으면 직접 바꾸세요.`;
+        hint.innerHTML = `<i class="bi bi-magic"></i> ‘${d.label}’ 로 추천(신뢰도 ${Math.round((d.confidence||0)*100)}%). 맞지 않으면 직접 바꾸세요.`;
       }
       renderKeywordChips(d.suggested_keywords || []);
     }
   } catch (e) {
     hint.textContent = '자동 분류 실패 — 직접 선택해 주세요.';
   } finally {
-    btn.disabled = false; btn.textContent = '🔮 자동 분류';
+    btn.disabled = false; btn.textContent = '자동 분류';
   }
 }
 
@@ -658,7 +658,7 @@ async function saveEdits() {
   } catch (err) {
     pcToast('저장 요청 실패: ' + err.message, 'error');
   } finally {
-    btn.disabled = false; btn.textContent = '💾 변경사항 저장';
+    btn.disabled = false; btn.textContent = '변경사항 저장';
   }
 }
 
@@ -725,7 +725,7 @@ async function runPrevalidate() {
     });
     const data = await resp.json();
     btn.disabled = false;
-    btn.textContent = '🔍 사전검증 →';
+    btn.textContent = '사전검증 →';
 
     if (!data.ok) {
       pcToast(data.error || '사전검증 실패', 'error');
@@ -735,7 +735,7 @@ async function runPrevalidate() {
     goToStep('stepPrevalidate');
   } catch (err) {
     btn.disabled = false;
-    btn.textContent = '🔍 사전검증 →';
+    btn.textContent = '사전검증 →';
     pcToast('사전검증 요청 실패: ' + err.message, 'error');
   }
 }
@@ -756,7 +756,7 @@ function renderPrevalidateResults(results) {
         <div>
           <div class="fw-semibold">${r.market_label || r.market} ${badge}</div>
           <div class="text-muted small">${r.message}</div>
-          ${r.hint ? `<div class="text-warning small mt-1">💡 ${r.hint}</div>` : ''}
+          ${r.hint ? `<div class="text-warning small mt-1"><i class="bi bi-lightbulb"></i> ${r.hint}</div>` : ''}
         </div>
       </div>`;
   });
@@ -817,7 +817,7 @@ function renderUploadResults(data) {
       const idPart = r.external_product_id ? ` (ID: ${r.external_product_id})` : '';
       html += `
         <div class="list-group-item list-group-item-success">
-          <div class="fw-semibold">✅ ${r.market_label || r.market}${idPart} — 등록 성공${linkPart}</div>
+          <div class="fw-semibold"><i class="bi bi-check-circle text-success"></i> ${r.market_label || r.market}${idPart} — 등록 성공${linkPart}</div>
           <div class="small">${r.message}</div>
         </div>`;
     } else if (r.queued) {
@@ -825,14 +825,14 @@ function renderUploadResults(data) {
         <div class="list-group-item list-group-item-warning">
           <div class="fw-semibold">⏳ ${r.market_label || r.market} — 큐에 적재됨</div>
           <div class="small">${r.message}</div>
-          ${r.hint ? `<div class="text-muted small mt-1">💡 ${r.hint}</div>` : ''}
+          ${r.hint ? `<div class="text-muted small mt-1"><i class="bi bi-lightbulb"></i> ${r.hint}</div>` : ''}
         </div>`;
     } else {
       html += `
         <div class="list-group-item list-group-item-danger">
-          <div class="fw-semibold">❌ ${r.market_label || r.market} — 실패</div>
+          <div class="fw-semibold"><i class="bi bi-x-circle text-danger"></i> ${r.market_label || r.market} — 실패</div>
           <div class="small">${r.message}</div>
-          ${r.hint ? `<div class="text-warning small mt-1">💡 조치: ${r.hint}</div>` : ''}
+          ${r.hint ? `<div class="text-warning small mt-1"><i class="bi bi-lightbulb"></i> 조치: ${r.hint}</div>` : ''}
           ${r.error_code ? `<div class="text-muted small">오류코드: ${r.error_code}</div>` : ''}
         </div>`;
     }
