@@ -26,6 +26,12 @@
 - ⏳ PART B 디자인 토큰: app.css 단일소스 — 컬러(--ink/cream/gold/teal/orange/text-*/bg/surface/border/상태/vault)·타이포
   (Noto Serif KR/Pretendard+Inter, --display clamp·h1~3·body)·간격(8px --space-1~9)·라운드/그림자·레이아웃(--sidebar-w 264)·
   모션. 화면당 강조1·이모지0·두꺼운보더0(여백+얕은그림자)·단일 아이콘셋(20px). 하드코딩 hex/px→토큰.
+- ✅ **PART B 디자인 토큰 단일소스(Phase 292):** app.css :root에 v18 스펙 토큰 정의 — 컬러(--ink #1A1714/--cream/--gold
+  #C9A24B/--teal #119A8E/--orange #F5821F/--text-*/--bg/--surface/--border/--success·warn·danger/--vault-*)·타이포
+  (--font-display Noto Serif KR/--font-ui Pretendard+Inter, --display-size clamp(40,6vw,72)/--h1~3/--body/--caption)·간격
+  (8px그리드 --space-1~9)·라운드/그림자(--radius-*/--shadow-*)·레이아웃(--sidebar-w 264/--content-max 1200)·모션(--dur-*/--ease).
+  기존 --pc-* 는 v18 토큰을 var()로 참조(단일소스, 하위호환) → 전 화면 에디토리얼 럭셔리 팔레트 자동 반영(teal/orange 미세
+  보정). 가드 test_design_tokens_v18(5). 전체 10240 passed. ※이모지아이콘 제거·타입스케일 화면별 적용·단일아이콘셋은 점진 후속.
 - ⏳ PART A 게이트: '운영 방식 선택' 2카드 — 수입형(해외→국내,한국어·KRW,타깃 쿠팡/네이버/11번가)/수출형(국내→해외,
   영어1급·USD,타깃 Shopify/아마존US/쇼피/이베이). 레인=소싱↔타깃 방향·언어·통화·온보딩 구성. 외국방문자=수출/영어 기본,
   한국=수입/한국어 기본, 둘다 선택·기억·설정전환. 가짜분기 금지.
