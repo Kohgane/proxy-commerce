@@ -2,13 +2,13 @@
 {% block title %}요금제·충전{% endblock %}
 {% block content %}
 <div class="container py-4" style="max-width: 880px;">
-  <h1 class="h3 mb-1">💳 요금제 · 충전</h1>
+  <h1 class="h3 mb-1"><i class="bi bi-credit-card"></i> 요금제 · 충전</h1>
   <p class="text-muted">쉽고 간편하게. 지금 플랜: <strong>{{ plans[account.plan].label }}</strong>
     · 무료 번역 <strong>{{ free_remaining }}</strong>/{{ free_limit }}회 남음
     {% if account.token_balance %}· 토큰 <strong>{{ account.token_balance }}</strong>{% endif %}</p>
 
   {% if not pay_ready %}
-  <div class="alert alert-light border small">🔒 결제 연동(토스페이먼츠)이 아직 켜지지 않았어요. Free는 바로 쓰실 수 있고,
+  <div class="alert alert-light border small"><i class="bi bi-shield-lock"></i> 결제 연동(토스페이먼츠)이 아직 켜지지 않았어요. Free는 바로 쓰실 수 있고,
     유료 플랜은 결제가 열리면 한 번에 결제됩니다. <span class="pc-help" data-bs-toggle="tooltip" data-bs-title="Render에 TOSS_CLIENT_KEY/TOSS_SECRET_KEY 설정 시 결제가 활성화됩니다.">?</span></div>
   {% endif %}
 

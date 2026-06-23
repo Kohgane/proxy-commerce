@@ -2,14 +2,14 @@
 {% block title %}마진 계산기{% endblock %}
 
 {% block content %}
-<h4 class="fw-bold mb-4">💰 마진 계산기</h4>
+<h4 class="fw-bold mb-4"><i class="bi bi-cash-coin"></i> 마진 계산기</h4>
 
 <div class="row g-4">
   <!-- 입력 패널 (좌측) -->
   <div class="col-md-5">
     <div class="card border-0 shadow-sm">
       <div class="card-body">
-        <h6 class="fw-semibold mb-3">📥 입력</h6>
+        <h6 class="fw-semibold mb-3"><i class="bi bi-download"></i> 입력</h6>
 
         <!-- 매입가 + 통화 -->
         <div class="mb-3">
@@ -114,7 +114,7 @@
           </div>
         </div>
 
-        <button class="btn btn-primary w-100" id="calcBtn" onclick="runCompare()">🧮 비교 계산</button>
+        <button class="btn btn-primary w-100" id="calcBtn" onclick="runCompare()"><i class="bi bi-calculator"></i> 비교 계산</button>
       </div>
     </div>
   </div>
@@ -136,7 +136,7 @@
     <!-- 비교 차트 -->
     <div class="card border-0 shadow-sm mb-3" id="chartCard" style="display:none!important;">
       <div class="card-body">
-        <h6 class="fw-semibold mb-3">📊 마진율 비교</h6>
+        <h6 class="fw-semibold mb-3"><i class="bi bi-bar-chart"></i> 마진율 비교</h6>
         <canvas id="marginChart" height="120"></canvas>
       </div>
     </div>
@@ -144,7 +144,7 @@
     <!-- 랜딩 코스트 요약 -->
     <div class="card border-0 shadow-sm" id="landedCostCard" style="display:none!important;">
       <div class="card-body">
-        <h6 class="fw-semibold mb-2">📦 원가 상세</h6>
+        <h6 class="fw-semibold mb-2"><i class="bi bi-box-seam"></i> 원가 상세</h6>
         <div id="landedCostDetail"></div>
       </div>
     </div>
@@ -228,7 +228,7 @@ function runCompare() {
   .then(r => r.json())
   .then(data => {
     btn.disabled = false;
-    btn.textContent = '🧮 비교 계산';
+    btn.textContent = '비교 계산';
     if (!data.ok) {
       showError(data.error);
       return;
@@ -237,7 +237,7 @@ function runCompare() {
   })
   .catch(err => {
     btn.disabled = false;
-    btn.textContent = '🧮 비교 계산';
+    btn.textContent = '비교 계산';
     showError('서버 오류가 발생했습니다.');
   });
 }
@@ -257,7 +257,7 @@ function renderResults(results, targetMarginPct) {
     const currency = document.getElementById('currency').value;
     const rate = fxInfo[currency] || '';
     const badge = document.getElementById('fxBadgeText');
-    badge.innerHTML = `💱 환율 출처: <strong>${srcLabel}</strong>${rate ? ` &nbsp;|&nbsp; 1 ${currency} = ₩${parseFloat(rate).toLocaleString()}` : ''}`;
+    badge.innerHTML = `<i class="bi bi-currency-exchange"></i> 환율 출처: <strong>${srcLabel}</strong>${rate ? ` &nbsp;|&nbsp; 1 ${currency} = ₩${parseFloat(rate).toLocaleString()}` : ''}`;
     document.getElementById('fxBadgeRow').classList.remove('d-none');
   }
 
@@ -301,7 +301,7 @@ function renderResults(results, targetMarginPct) {
               <div class="fw-semibold">₩${r.breakeven_price.toLocaleString()}</div>
             </div>
           </div>
-          ${r.warnings && r.warnings.length > 0 ? `<div class="text-warning small mb-2">⚠️ ${r.warnings.join(' ')}</div>` : ''}
+          ${r.warnings && r.warnings.length > 0 ? `<div class="text-warning small mb-2"><i class="bi bi-exclamation-triangle"></i> ${r.warnings.join(' ')}</div>` : ''}
           <button class="btn btn-outline-secondary btn-sm w-100"
             onclick="applyPrice('${r.marketplace}', ${r.recommended_price})">
             이 가격으로 적용

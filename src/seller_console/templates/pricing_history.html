@@ -4,7 +4,7 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
   <div>
-    <h4 class="mb-1">📜 가격 변동 이력</h4>
+    <h4 class="mb-1"><i class="bi bi-clock-history"></i> 가격 변동 이력</h4>
     <small class="text-muted">자동/수동 가격 변경 이력을 조회하고 롤백하세요.</small>
   </div>
   <div class="d-flex gap-2">
@@ -24,7 +24,7 @@
     <input type="date" class="form-control form-control-sm" name="date_to" value="{{ filters.date_to }}" placeholder="종료일">
   </div>
   <div class="col-md-3">
-    <button type="submit" class="btn btn-primary btn-sm">🔍 조회</button>
+    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search"></i> 조회</button>
     <a href="/seller/pricing/history" class="btn btn-outline-secondary btn-sm">초기화</a>
   </div>
 </form>
@@ -80,7 +80,7 @@
 </div>
 {% else %}
 <div class="text-center py-5 text-muted">
-  <div style="font-size: 3rem">📜</div>
+  <div style="font-size: 3rem"><i class="bi bi-clock-history"></i></div>
   <p class="mt-2">가격 변동 이력이 없습니다.</p>
 </div>
 {% endif %}

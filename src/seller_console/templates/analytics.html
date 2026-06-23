@@ -2,7 +2,7 @@
 {% block title %}BI 분석{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <h3 class="mb-0">📈 재고/판매 분석 BI</h3>
+  <h3 class="mb-0"><i class="bi bi-graph-up-arrow"></i> 재고/판매 분석 BI</h3>
   <a href="/seller/analytics?force_refresh=1" class="btn btn-sm btn-outline-secondary">새로고침</a>
 </div>
 
@@ -15,7 +15,7 @@
 <div class="row g-3">
   <div class="col-12 col-lg-6">
     <div class="card h-100">
-      <div class="card-header fw-semibold">🏆 베스트셀러 TOP 20</div>
+      <div class="card-header fw-semibold"><i class="bi bi-trophy"></i> 베스트셀러 TOP 20</div>
       <div class="card-body p-0">
         <table class="table table-sm mb-0">
           <thead><tr><th>SKU</th><th>판매량</th><th>매출</th><th></th></tr></thead>
@@ -38,7 +38,7 @@
   </div>
   <div class="col-12 col-lg-6">
     <div class="card h-100">
-      <div class="card-header fw-semibold">📦 재고 알림</div>
+      <div class="card-header fw-semibold"><i class="bi bi-box-seam"></i> 재고 알림</div>
       <div class="card-body">
         <div class="mb-2 text-danger">재고 임박: {{ data.inventory_alerts.low_stock|length }}개</div>
         <div class="mb-2 text-warning">재고 과잉: {{ data.inventory_alerts.over_stock|length }}개</div>
@@ -50,10 +50,10 @@
 
 <div class="row g-3 mt-1">
   <div class="col-12 col-lg-6">
-    <div class="card h-100"><div class="card-header fw-semibold">📢 광고 ROI</div><div class="card-body">ROAS 임계값: {{ data.ad_roi.roas_threshold }}</div></div>
+    <div class="card h-100"><div class="card-header fw-semibold"><i class="bi bi-megaphone"></i>  광고 ROI</div><div class="card-body">ROAS 임계값: {{ data.ad_roi.roas_threshold }}</div></div>
   </div>
   <div class="col-12 col-lg-6">
-    <div class="card h-100"><div class="card-header fw-semibold">🚚 CS/배송 품질</div><div class="card-body">
+    <div class="card h-100"><div class="card-header fw-semibold"><i class="bi bi-truck"></i>  CS/배송 품질</div><div class="card-body">
       <div>24h 미응답: {{ data.quality.unanswered_24h }}건</div>
       <div>배송 지연: {{ data.quality.delayed_shipping }}건</div>
       <div>환불률: {{ data.quality.refund_rate }}%</div>

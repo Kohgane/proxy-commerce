@@ -25,7 +25,7 @@ function showSuccess(d) {
   if (d.review_count) meta.push('리뷰 ' + d.review_count + '개');
   meta.push(d.translated ? '한국어 번역 포함' : '원문');
   render(
-    '<div class="display-6 mb-2">✅</div>' +
+    '<div class="display-6 mb-2"><i class="bi bi-check-circle text-success"></i></div>' +
     '<h1 class="h5 mb-1">수집 완료!</h1>' +
     '<div class="fw-semibold text-truncate mb-1">' + (d.title || '') + '</div>' +
     '<div class="small text-muted mb-3">' + meta.join(' · ') + '</div>' +
@@ -40,7 +40,7 @@ function showSuccess(d) {
 
 function showError(msg) {
   render(
-    '<div class="display-6 mb-2">⚠️</div>' +
+    '<div class="display-6 mb-2"><i class="bi bi-exclamation-triangle text-warning"></i></div>' +
     '<h1 class="h5 mb-2">자동 수집이 어려운 페이지예요</h1>' +
     '<p class="text-muted small mb-3">' + (msg || '상품 정보를 읽지 못했습니다.') + '</p>' +
     '<div class="d-flex gap-2 justify-content-center flex-wrap">' +
@@ -53,7 +53,7 @@ function showError(msg) {
 function showLogin() {
   // 로그인 페이지로 튕기지 않고, 이 창 안에서 친절히 로그인 안내
   render(
-    '<div class="display-6 mb-2">🔒</div>' +
+    '<div class="display-6 mb-2"><i class="bi bi-shield-lock"></i></div>' +
     '<h1 class="h5 mb-2">코고가네 로그인이 필요해요</h1>' +
     '<p class="text-muted small mb-3">로그인 후 다시 상품 페이지에서 북마클릿을 누르면 바로 수집됩니다.</p>' +
     '<div class="d-flex gap-2 justify-content-center flex-wrap">' +
