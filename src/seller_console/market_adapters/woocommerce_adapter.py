@@ -361,7 +361,7 @@ class WooCommerceAdapter(MarketAdapter):
 
         try:
             import requests
-            note = f"[퍼센티] 운송장 등록: {courier} / {tracking_no}"
+            note = f"[코고가네] 운송장 등록: {courier} / {tracking_no}"
             resp = requests.post(
                 f"{_api_url()}/orders/{order_id}/notes",
                 auth=_auth(),

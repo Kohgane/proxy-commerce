@@ -5,7 +5,11 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
   <div>
     <h1 class="h4 mb-1">상품 수집 → 등록</h1>
-    <p class="text-muted mb-0">URL 입력부터 마켓 업로드까지 한 화면에서 처리합니다.</p>
+    <p class="text-muted mb-0">
+      <strong>상품 수집이란?</strong> 해외 쇼핑몰의 상품 정보(제목·가격·이미지)를 코고가네로 가져오는 거예요.
+      가져온 상품은 다듬어서 내 마켓에 올릴 수 있어요.
+      <span class="pc-help" data-bs-toggle="tooltip" data-bs-title="상품 페이지 주소를 붙여넣거나, 크롬 확장으로 버튼 한 번에 가져올 수 있어요. 가져온 상품은 ‘수집한 상품’에서 편집·등록합니다.">?</span>
+    </p>
   </div>
   <a href="/seller/api/status" class="btn btn-outline-secondary btn-sm">API 상태</a>
 </div>
@@ -24,7 +28,7 @@
   <span id="step-4" class="console-step">4) 업로드</span>
 </div>
 
-<!-- 원클릭 수집 지원 마켓 (퍼센티 벤치마킹) -->
+<!-- 원클릭 수집 지원 마켓 -->
 <div class="card console-card mb-3" id="oneclickCard">
   <div class="card-body">
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
@@ -52,7 +56,7 @@
       {% endfor %}
     </div>
     <div class="alert alert-light border mt-3 mb-0 small d-flex gap-2 align-items-start" role="note">
-      <img src="{{ url_for('seller_console.static', filename='favicon.svg') }}" alt="고가네퍼센티"
+      <img src="{{ url_for('seller_console.static', filename='favicon.svg') }}" alt="코고가네"
            style="width:34px;height:34px;border-radius:8px;flex-shrink:0">
       <div>
         <b class="text-primary">코고가네 인페이지 수집</b> — 크롬 확장을 설치하면 <b>지정 소싱처</b>(타오바오·아마존 등)에서
@@ -71,7 +75,7 @@
       <input type="url" id="productUrl" class="form-control console-focus" placeholder="https://..." autocomplete="off" required>
       <button class="btn btn-primary" id="extractBtn" onclick="extractProduct()">미리보기</button>
     </div>
-    <div class="form-text">Amazon/타오바오/1688 등 기존 수집기 엔드포인트를 그대로 사용합니다.</div>
+    <div class="form-text">타오바오·아마존·1688 등 상품 페이지 주소를 붙여넣으면 제목·가격·이미지를 자동으로 가져와요.</div>
     <div id="urlError" class="text-danger small mt-2 d-none" role="alert"></div>
   </div>
 </div>

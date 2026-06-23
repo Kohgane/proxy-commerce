@@ -205,6 +205,8 @@ def _oauth_default_next(provider: str) -> str:
         return os.getenv("GOOGLE_OAUTH_NEXT_DEFAULT", "/seller/dashboard").strip() or "/seller/dashboard"
     if provider == "naver":
         return os.getenv("NAVER_OAUTH_NEXT_DEFAULT", "/seller/dashboard").strip() or "/seller/dashboard"
+    if provider == "apple":
+        return os.getenv("APPLE_OAUTH_NEXT_DEFAULT", "/seller/dashboard").strip() or "/seller/dashboard"
     return "/seller/dashboard"
 
 
@@ -261,6 +263,7 @@ _PROVIDER_MAP = {
     "kakao": None,
     "google": None,
     "naver": None,
+    "apple": None,
 }
 
 
@@ -276,6 +279,9 @@ def _get_provider(provider: str):
         elif provider == "naver":
             from .providers.naver import NaverProvider
             return NaverProvider()
+        elif provider == "apple":
+            from .providers.apple import AppleProvider
+            return AppleProvider()
     except Exception as exc:
         logger.warning("프로바이더 로드 실패 (%s): %s", provider, exc)
     return None
@@ -366,6 +372,16 @@ _OAUTH_PROVIDER_ENV_SPECS = {
         "client_secret_envs": [
             ("NAVER_CLIENT_SECRET", "NAVER_CLIENT_SECRET"),
             ("NAVER_OAUTH_CLIENT_SECRET", "NAVER_OAUTH_CLIENT_SECRET (별칭 폴백)"),
+        ],
+    },
+    "apple": {
+        "display_name": "Apple",
+        "client_id_envs": [
+            ("APPLE_CLIENT_ID", "APPLE_CLIENT_ID (Services ID)"),
+        ],
+        "client_secret_envs": [
+            ("APPLE_CLIENT_SECRET", "APPLE_CLIENT_SECRET (또는 .p8: APPLE_TEAM_ID/KEY_ID/PRIVATE_KEY)"),
+            ("APPLE_PRIVATE_KEY", "APPLE_PRIVATE_KEY (.p8)"),
         ],
     },
 }
@@ -480,6 +496,7 @@ def login():
     kakao_status = _provider_status("kakao")
     google_status = _provider_status("google")
     naver_status = _provider_status("naver")
+    apple_status = _provider_status("apple")
     # 운영자용 OAuth 진단(콜백 URI/client_id)은 일반 사용자 첫 화면에 노출하지 않는다
     # (KOHgogane 브리프 §2.4). 관리자 세션이거나 ?diag=1 일 때만 렌더한다.
     show_diag = request.args.get("diag") == "1"
@@ -502,6 +519,7 @@ def login():
         kakao_status=kakao_status,
         google_status=google_status,
         naver_status=naver_status,
+        apple_status=apple_status,
         oauth_runtime=oauth_runtime,
     )
 
@@ -623,10 +641,13 @@ def login_post():
         return redirect(url_for("auth.login"))
 
 
+_OAUTH_PROVIDERS = ("kakao", "google", "naver", "apple")
+
+
 @auth_bp.get("/<provider>/start")
 def oauth_start(provider: str):
     """OAuth 시작 — state 생성 + 프로바이더로 리다이렉트."""
-    if provider not in ("kakao", "google", "naver"):
+    if provider not in _OAUTH_PROVIDERS:
         return jsonify({"error": "지원하지 않는 프로바이더입니다."}), 400
 
     p = _get_provider(provider)
@@ -648,22 +669,25 @@ def oauth_start(provider: str):
     return redirect(auth_url)
 
 
-@auth_bp.get("/<provider>/callback")
+@auth_bp.route("/<provider>/callback", methods=["GET", "POST"])
 def oauth_callback(provider: str):
-    """OAuth 콜백 — 코드 교환 + 사용자 생성/로그인."""
-    if provider not in ("kakao", "google", "naver"):
+    """OAuth 콜백 — 코드 교환 + 사용자 생성/로그인.
+
+    Apple은 response_mode=form_post로 콜백을 POST로 보낸다 → request.values(args+form)로 통일.
+    """
+    if provider not in _OAUTH_PROVIDERS:
         return jsonify({"error": "지원하지 않는 프로바이더입니다."}), 400
 
-    # CSRF 방어: state 파라미터 검증
-    state_param = request.args.get("state", "")
+    # CSRF 방어: state 파라미터 검증 (GET=query, POST(form_post)=form)
+    state_param = request.values.get("state", "")
     state_stored = session.pop(f"oauth_state_{provider}", "")
     if not state_param or not secrets.compare_digest(state_param, state_stored):
         flash("보안 오류가 발생했습니다. 다시 시도해주세요.", "auth_oauth")
         return redirect(url_for("auth.login"))
 
-    code = request.args.get("code", "")
+    code = request.values.get("code", "")
     if not code:
-        error = request.args.get("error", "알 수 없는 오류")
+        error = request.values.get("error", "알 수 없는 오류")
         flash(f"로그인 취소 또는 오류: {error}", "auth_oauth")
         return redirect(url_for("auth.login"))
 

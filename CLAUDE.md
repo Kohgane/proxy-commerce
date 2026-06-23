@@ -37,8 +37,23 @@
   ①새 탭(window.open _blank) 제거 → 같은 탭 이동 ②링크 클릭만으로 가짜 완료(markDone) 제거 → 완료는 실제 상태
   (autoDone: LOGGED_IN / MARKETS>0)로만 자동 체크 ③localStorage KEY v2로 옛 가짜-완료 폐기 ④intro에 '마켓 연동이란?'
   쉬운 설명 추가. 가드 test_v14_onboarding_drawer(5). 전체 10165 passed.
-- ⏳ 남은 v14: 소셜 로그인 4종(구글·네이버·카카오·애플) · 마켓연동 순차 스테퍼+키발급안내(쿠팡 출고지 스코프) ·
-  확장 설치 단계별+빨간문구/복사버튼 · For Beginners 고정/토글/확대 · 친절카피+CTA · 아이콘표시 · 퍼센티/개발문구 전역제거.
+- ✅ **소셜 로그인 4종(Phase 282):** 신설 apple.py(Sign in with Apple — ES256 JWT client_secret, form_post 콜백,
+  id_token 디코드; 키 미설정 시 비활성). views.py 4 provider 등록 + 콜백 GET+POST(request.values). login.html·온보딩에
+  구글·네이버·카카오·애플 4버튼. 오너: 네이버·카카오·애플 콘솔 OAuth 등록. 가드 test_social_login_v14(6).
+- ✅ **마켓연동 순차 스테퍼(Phase 282):** markets_connect에 '한 마켓씩' 순차 진행 스테퍼(연결되면 ✓ 자동체크,
+  prev/next, '전체 보기' 토글, JS show/hide). 섹션(쿠팡 출고지 등)에 '이 항목은 {마켓}에만 필요' 스코프 명시(쿠팡 전용
+  오해 해소). 개발 문서경로(LIVE_VERIFICATION_GUIDE) 노출 제거. 키 발급 딥링크·필드설명·필수표시는 기존 유지.
+  가드 test_market_connect_stepper_v14(4). 전체 10175 passed.
+- ✅ **확장 설치 단계화 + 퍼센티 제거(Phase 282):** extension_install.html을 키노트식 단계 위저드로 재작성
+  (한 화면=한 단계, 단계당 버튼 1개, 이전/다음, 진행바). 복사 버튼 실동작(navigator.clipboard + pcToast 피드백,
+  실패 시 안내). 빨간 날것 표기(chrome://extensions/manifest는 안내에 최소화·'?'·details로). '퍼센티' 전역 제거
+  (collect_receiver/manual_collect/bookmarklet 카피 + woocommerce 운송장 노트 [코고가네]). manual_collect '기존 수집기
+  엔드포인트' 개발노트 → 사용자 카피. ※channels/percenty.py는 실제 퍼센티 채널 연동이라 유지.
+  가드 test_ext_install_wizard_v14(6). 전체 10180 passed.
+- ✅ **For Beginners 고정 버튼 + 친절 카피(Phase 282):** _base.html에 모든 페이지 우하단 고정 '✨ 처음이신가요?'
+  큰 알약(주황 btn-cta) + 바로 밑 작은 '가이드 버튼 숨기기' on/off(localStorage kgp_fb_hidden, 숨기면 작은 ✨ 재오픈
+  버튼). manual_collect에 '상품 수집이란?' 한 줄 풀이 + '?' 툴팁. 가드 test_for_beginners_v14(3). 전체 10183 passed.
+- ⏳ 남은 v14: 기본 마켓/소싱처 사이트 아이콘(로고) 표시(현재 이모지 아이콘) — 후속.
 
 ## ⬛ v13 브리프 (오너 2026-06-22 — "관리자전용·재로그인버그·속도·모바일앱·글로벌·프로디자인·파비콘")
 - 버전 충돌 시 v13 우선. 디자인 최우선('학교 과제물'→프로). 정직 데이터·회귀 금지.

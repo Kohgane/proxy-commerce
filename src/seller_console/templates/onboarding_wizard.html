@@ -62,11 +62,10 @@ const STEPS = [
     lead: '구매대행은 보통 사업자등록 → 통신판매업 신고가 필요해요. 가이드를 보고 천천히 준비하세요.',
     primary: { label: '사업자 가이드 보기', cls: 'btn-primary', href: '/seller/guide/business' },
     secondary: { label: '나중에 · 다음', cls: 'btn-ghost', act: 'next' } },
-  { key: 'google', title: '구글로 시작하기', emoji: '🔑',
-    lead: '구글 계정으로 1초 만에 로그인하세요. 내 수집·마켓·주문이 안전하게 개인화됩니다.',
-    primary: LOGGED_IN
-      ? { label: '로그인 완료 · 다음', cls: 'btn-primary', act: 'next' }
-      : { label: '구글로 시작', cls: 'btn-cta', href: '/auth/google/start?next=/seller/start' },
+  { key: 'google', title: '소셜 계정으로 시작', emoji: '🔑',
+    lead: '구글·네이버·카카오·애플 중 편한 걸로 1초 로그인하세요. 내 수집·마켓·주문이 안전하게 개인화됩니다.',
+    social: !LOGGED_IN,
+    primary: LOGGED_IN ? { label: '로그인 완료 · 다음', cls: 'btn-primary', act: 'next' } : null,
     autoDone: LOGGED_IN },
   { key: 'market', title: '마켓 연동하기', emoji: '🛍️',
     lead: '쿠팡·스마트스토어·11번가 등 판매할 마켓을 연결하세요. 키를 붙여넣고 연결 테스트까지 한 번에. <b>연결을 마치면 이 단계가 자동으로 체크됩니다.</b>',
@@ -107,13 +106,27 @@ function btnHtml(b, role) {
   return `<button type="button" class="btn ${b.cls} ${role}" data-role="${role}">${b.label}</button>`;
 }
 
+// v14: 소셜 로그인 4종(구글·네이버·카카오·애플) — 각 실제 /auth/<provider>/start 로 동작.
+const SOCIAL = [
+  { href: '/auth/google/start?next=/seller/start', label: '구글로 시작', style: 'background:#fff;color:#222;border:1px solid #ddd;' },
+  { href: '/auth/naver/start?next=/seller/start',  label: '네이버로 시작', style: 'background:#03C75A;color:#fff;border:none;' },
+  { href: '/auth/kakao/start?next=/seller/start',  label: '카카오로 시작', style: 'background:#FEE500;color:#191600;border:none;' },
+  { href: '/auth/apple/start?next=/seller/start',  label: 'Apple로 시작', style: 'background:#000;color:#fff;border:none;' },
+];
+function socialHtml() {
+  return '<div class="d-grid gap-2 mx-auto" style="max-width:320px">' +
+    SOCIAL.map(s => `<a class="btn" style="${s.style}" href="${s.href}">${s.label}</a>`).join('') +
+    '</div>';
+}
+
 function renderPanel() {
   const s = STEPS[cur];
   document.getElementById('panel').innerHTML =
     `<div class="ob-emoji">${s.emoji}</div>
      <h1>${s.title}</h1>
      <p class="lead">${s.lead}</p>
-     <div class="ob-actions d-flex flex-wrap gap-2 justify-content-center">
+     ${s.social ? socialHtml() : ''}
+     <div class="ob-actions d-flex flex-wrap gap-2 justify-content-center mt-2">
        ${btnHtml(s.primary, 'primary')}
        ${btnHtml(s.secondary, 'secondary')}
      </div>`;
