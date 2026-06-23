@@ -197,10 +197,17 @@
 <script>
 function toggleSidebar() {
   var drawer = document.getElementById('sidebarDrawer');
+  if (!drawer) return;
+  if (drawer.classList.contains('show')) { closeSidebar(); } else { openSidebar(); }
+}
+
+function openSidebar() {
+  var drawer = document.getElementById('sidebarDrawer');
   var overlay = document.getElementById('sidebarOverlay');
   if (!drawer) return;
-  drawer.classList.toggle('show');
-  if (overlay) overlay.style.display = drawer.classList.contains('show') ? 'block' : 'none';
+  drawer.classList.add('show');
+  if (overlay) overlay.style.display = 'block';
+  document.body.classList.add('kgp-drawer-open');   // 배경 스크롤 잠금
 }
 
 function closeSidebar() {
@@ -208,7 +215,27 @@ function closeSidebar() {
   var overlay = document.getElementById('sidebarOverlay');
   if (drawer) drawer.classList.remove('show');
   if (overlay) overlay.style.display = 'none';
+  document.body.classList.remove('kgp-drawer-open');
 }
+
+// v14 P0: ESC + 왼쪽 스와이프로도 드로어 닫기(바깥 탭은 오버레이 onclick으로 처리).
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') closeSidebar();
+});
+(function () {
+  var sx = 0, sy = 0;
+  document.addEventListener('touchstart', function (e) {
+    if (!e.touches || !e.touches[0]) return;
+    sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+  }, { passive: true });
+  document.addEventListener('touchend', function (e) {
+    var drawer = document.getElementById('sidebarDrawer');
+    if (!drawer || !drawer.classList.contains('show')) return;
+    var t = (e.changedTouches && e.changedTouches[0]); if (!t) return;
+    var dx = t.clientX - sx, dy = t.clientY - sy;
+    if (dx < -45 && Math.abs(dx) > Math.abs(dy)) closeSidebar();   // 왼쪽 스와이프
+  }, { passive: true });
+})();
 
 // 고급 기능: 현재 페이지가 안에 있으면 자동으로 펼친다(현재 위치 보이게).
 (function () {

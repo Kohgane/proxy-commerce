@@ -28,6 +28,18 @@
   `/i18n/dismiss` 라우트(쿠키 1년 기억). 랜딩 상단 슬림 배너(English/한국어/✕) — 외국인만, 한국인 미노출.
   랜딩 카피 EN/KO 실전환(가짜 드롭다운 아님 — 고른 값이 실제 EN 카피로 반영). → v9 완료(수집추적·애플홈·지역배너).
 
+## ⬛ v14 브리프 (오너 2026-06-22 — "온보딩·마켓연동·확장설치 UX 정밀화+친절화, 퍼센티 전역제거")
+- 제0원칙: 일반 유저는 아무것도 모른다 가정, 하나하나 세세히. 버전 충돌 시 v14 우선.
+- ✅ **P0 모바일 드로어 닫기(Phase 281):** `.sidebar-overlay`에 base 규칙 없어(위치/배경 X) 바깥 탭이 안 먹던 버그
+  → seller.css에 `position:fixed;inset:0;background;z-index:1040` + `body.kgp-drawer-open{overflow:hidden}`(스크롤 잠금).
+  _base.html JS: openSidebar/closeSidebar 분리 + 오버레이 onclick 닫기 + ESC 닫기 + 왼쪽 스와이프 닫기.
+- ✅ **P0 온보딩 정직화(Phase 281):** onboarding_wizard 이미 in-place(스텝퍼 고정·#panel 교체)였음. 버그 수정:
+  ①새 탭(window.open _blank) 제거 → 같은 탭 이동 ②링크 클릭만으로 가짜 완료(markDone) 제거 → 완료는 실제 상태
+  (autoDone: LOGGED_IN / MARKETS>0)로만 자동 체크 ③localStorage KEY v2로 옛 가짜-완료 폐기 ④intro에 '마켓 연동이란?'
+  쉬운 설명 추가. 가드 test_v14_onboarding_drawer(5). 전체 10165 passed.
+- ⏳ 남은 v14: 소셜 로그인 4종(구글·네이버·카카오·애플) · 마켓연동 순차 스테퍼+키발급안내(쿠팡 출고지 스코프) ·
+  확장 설치 단계별+빨간문구/복사버튼 · For Beginners 고정/토글/확대 · 친절카피+CTA · 아이콘표시 · 퍼센티/개발문구 전역제거.
+
 ## ⬛ v13 브리프 (오너 2026-06-22 — "관리자전용·재로그인버그·속도·모바일앱·글로벌·프로디자인·파비콘")
 - 버전 충돌 시 v13 우선. 디자인 최우선('학교 과제물'→프로). 정직 데이터·회귀 금지.
 - ✅ **P0 관리자 전용 게이팅(Phase 278):** admin_views.py에 `@admin_panel_bp.before_request` 단일 게이트 —

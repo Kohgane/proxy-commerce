@@ -54,11 +54,13 @@ const LOGGED_IN = {{ _logged_in }};
 const MARKETS = {{ _markets }};
 const STEPS = [
   { key: 'intro', title: '코고가네에 오신 걸 환영해요', emoji: '👋',
-    lead: '해외 상품을 수집하고, 번역하고, 우리 마켓에 등록까지 — 한 곳에서. 클릭 몇 번이면 됩니다.',
+    lead: '해외 상품을 <b>수집</b> → 한국어로 <b>다듬기</b> → 쿠팡·스마트스토어 같은 우리 마켓에 <b>등록</b>까지 한 곳에서 해요.<br><br>' +
+          '<b>‘마켓 연동’이란?</b> 내가 파는 쇼핑몰(쿠팡·네이버 등)에 코고가네를 연결하는 거예요. 연결해 두면 수집한 상품을 ' +
+          '그 쇼핑몰에 <b>자동으로 올릴 수</b> 있어요. 그래서 꼭 한 번은 연결이 필요해요 — 차근차근 같이 해봐요.',
     primary: { label: '시작하기', cls: 'btn-cta', act: 'next' } },
   { key: 'business', title: '사업자 등록부터', emoji: '🪪',
     lead: '구매대행은 보통 사업자등록 → 통신판매업 신고가 필요해요. 가이드를 보고 천천히 준비하세요.',
-    primary: { label: '사업자 가이드 열기', cls: 'btn-primary', href: '/seller/guide/business', blank: true, markDone: true },
+    primary: { label: '사업자 가이드 보기', cls: 'btn-primary', href: '/seller/guide/business' },
     secondary: { label: '나중에 · 다음', cls: 'btn-ghost', act: 'next' } },
   { key: 'google', title: '구글로 시작하기', emoji: '🔑',
     lead: '구글 계정으로 1초 만에 로그인하세요. 내 수집·마켓·주문이 안전하게 개인화됩니다.',
@@ -67,21 +69,21 @@ const STEPS = [
       : { label: '구글로 시작', cls: 'btn-cta', href: '/auth/google/start?next=/seller/start' },
     autoDone: LOGGED_IN },
   { key: 'market', title: '마켓 연동하기', emoji: '🛍️',
-    lead: '쿠팡·스마트스토어·11번가 등 판매할 마켓을 연결하세요. 키를 붙여넣고 연결 테스트까지 한 번에.',
-    primary: { label: '마켓 연결하기', cls: 'btn-cta', href: '/seller/markets/connect', blank: true, markDone: true },
+    lead: '쿠팡·스마트스토어·11번가 등 판매할 마켓을 연결하세요. 키를 붙여넣고 연결 테스트까지 한 번에. <b>연결을 마치면 이 단계가 자동으로 체크됩니다.</b>',
+    primary: { label: '마켓 연결하러 가기', cls: 'btn-cta', href: '/seller/markets/connect' },
     secondary: { label: '다음', cls: 'btn-ghost', act: 'next' },
     autoDone: MARKETS > 0 },
   { key: 'extension', title: '크롬 확장 설치', emoji: '🧩',
     lead: '상품 페이지에서 버튼 한 번으로 수집되는 확장을 설치하세요. 모바일은 공유로 수집해요.',
-    primary: { label: '확장 설치 안내', cls: 'btn-primary', href: '/seller/extension', blank: true, markDone: true },
+    primary: { label: '확장 설치 안내 보기', cls: 'btn-primary', href: '/seller/extension' },
     secondary: { label: '다음', cls: 'btn-ghost', act: 'next' } },
   { key: 'first', title: '첫 상품 수집하기 🎉', emoji: '🚀',
     lead: '이제 상품을 수집해 보세요. 수집 → 편집 → 마켓 등록까지, 여기서 다 됩니다.',
-    primary: { label: '상품 수집 시작', cls: 'btn-cta', href: '/seller/manual-collect', markDone: true },
+    primary: { label: '상품 수집 시작', cls: 'btn-cta', href: '/seller/manual-collect' },
     secondary: { label: '대시보드로', cls: 'btn-ghost', href: '/seller/dashboard' } },
 ];
 
-const KEY = 'kgp_onboarding_done';
+const KEY = 'kgp_onboarding_done_v2';   // v14: 옛 가짜-완료(localStorage) 폐기 → 정직 상태로 초기화
 let done = {};
 try { done = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) {}
 STEPS.forEach(s => { if (s.autoDone) done[s.key] = true; });
@@ -123,12 +125,9 @@ function renderPanel() {
 }
 
 function handleBtn(step, b) {
-  if (b.markDone) saveDone(step.key);
-  if (b.href) {
-    if (b.blank) { window.open(b.href, '_blank'); saveDone(step.key); render(); }
-    else { window.location.href = b.href; }
-    return;
-  }
+  // v14: 같은 탭 이동(새 창/새 탭 금지). 링크 클릭만으로 '완료' 처리하지 않음(가짜 완료 금지) —
+  //      완료는 실제 상태(로그인/마켓연결)로 자동 체크되거나, 사용자가 '다음'을 눌러 진행할 때만.
+  if (b.href) { window.location.href = b.href; return; }
   if (b.act === 'next') { saveDone(step.key); next(); }
 }
 

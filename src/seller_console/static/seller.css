@@ -117,6 +117,15 @@ input[type="tel"] {
 
 /* Phase 147: 모바일 반응형 */
 @media (max-width: 768px) {
+  /* v14 P0: 드로어 오버레이 — 바깥 영역을 실제로 덮어 탭하면 닫히게(기존엔 위치/배경 없어 클릭 안 먹힘) */
+  .sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, .45);
+    z-index: 1040;
+    display: none;
+  }
+  body.kgp-drawer-open { overflow: hidden; }   /* 드로어 열림 시 배경 스크롤 잠금 */
   /* 모바일 사이드바 drawer */
   .sidebar {
     position: fixed !important;
