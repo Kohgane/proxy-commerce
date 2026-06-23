@@ -2,6 +2,29 @@
 
 > 이 파일은 매 세션 시작 시 로드된다. 오너(Kohgane) 지시·검증된 팩트를 누적 기록한다.
 
+## 🟪 v16 브리프 (오너 2026-06-23 — "수집 정확도·공유 미리보기·토큰/관리자/소싱처")
+- 절대원칙: 추측 금지(에러·누락은 재현/로그)·거짓성공/가짜필러 금지·회귀 금지·정직·토큰 단일소스·경량. 버전충돌 시 v16 우선.
+- **진행 순서:** ①P0 수집 정확도(확장 인페이지 실값 추출·제품 스코프 한정·가격/이미지/상세/리뷰 실값, 필러0)
+  ②P0 FAB JS에러(sendMessage) + 퍼센티 전역제거 + 관리자 패널 숨김(403) ③P1 OG 공유 브랜딩·토큰 이력·북마클릿설명·
+  FAB on/off·소싱처 좌측메뉴·잔여 개발문구.
+- ✅ **P0-1 수집정확도 1차(Phase 288):** 원인=og:description 등 사이트 공통 '마케팅 필러'가 상품 설명으로 저장·번역됨
+  (Temu "쇼핑하여 절약을 시작하세요"). universal_scraper에 `is_filler_description()`(보수적·알려진 카피만, 오탐 최소)
+  + OG/meta 설명 파싱에서 필러 제외 + `extract_reviews(html)`(JSON-LD Product.review 우선, 없으면 빈 리스트=가짜 금지).
+  extension_api: 클라/스크래퍼 description 필러 제거(html 없어도), 리뷰 추출 저장, 가격 0/빈값 → `price_status:needs_check`
+  (가짜 0원 금지). content_script extractProductMeta: 설명 섹션 요소 우선 + 필러 og 미전송. collect_preview에 '⚠️ 가격
+  확인 필요' 정직 표기. 가드 test_collect_accuracy_v16(8). ※사이트별 어댑터 셀렉터(Temu/타오바오 PDD 정밀 스코프)는
+  라이브 검증 필요 → 후속(추측 금지로 미하드코딩). manifest 1.5.4→1.5.5.
+- ✅ **P0-2 FAB JS에러+퍼센티(Phase 288):** content_script에 `kgpExtAlive()`(chrome.runtime.id 유효성)+`kgpSendMessage()`
+  가드 헬퍼 — MV3 확장 업데이트/재로딩 시 context invalidated로 "Cannot read properties of undefined (reading
+  'sendMessage')" 나던 것 → 새로고침 안내로 정직 처리. handleFabClick·collectBulk 직접 호출을 헬퍼로 일원화.
+  확장 전역 "퍼센티" 제거(README/build → 코고가네).
+- ✅ **P0-3 관리자 패널(이미 충족·회귀가드):** 사이드바 링크는 이미 `_user_role=='admin'` 가드, 라우트는 v13 Phase 278
+  before_request로 미로그인=로그인·비admin=403. 회귀 가드 추가(seller 세션 /admin/* 403 + 링크 미노출). 전체 10214 passed.
+- ⏳ P1: OG(og:site_name 코고가네·title·desc·image 브랜드마크)+트위터카드, "proxy-commerce"→코고가네 전역. 토큰 발급이력+
+  마스킹+본인전용+'?'툴팁. 북마클릿 친절설명(메인=확장·보조=북마클릿). FAB on/off(For Beginners 패턴). 소싱처등록 좌측메뉴.
+  "GenericOgCollector 자동 사용" 등 내부표기 숨김.
+- (확인) 수집한 상품 클릭 404 = 해결됨 → 회귀 가드만 유지.
+
 ## 🟦 v15 브리프 (오너 2026-06-23 — "수집기 노출·마켓연결·확장설치 친절화 + 글로벌")
 - 제0원칙: 일반 유저는 아무것도 모른다 가정. 거짓 성공/날조 금지·회귀 금지·정직·토큰 단일소스·경량. 버전 충돌 시 v15 우선.
 - **진행 순서:** ①P0(수집버튼 소싱처한정+줌대응+아이콘화 / 마켓연결 인페이지 / 확장설치 정리) ②For Beginners·스테퍼·로고+소셜4종

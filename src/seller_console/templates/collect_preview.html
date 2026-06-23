@@ -38,6 +38,7 @@
             <div class="col-7">
               <label class="form-label small fw-semibold" for="editPrice">가격(원가)</label>
               <input type="number" step="0.01" min="0" class="form-control" id="editPrice" placeholder="0.00" oninput="updateKrwPreview()">
+              <div id="priceNeedsCheck" class="form-text small text-warning d-none">⚠️ 페이지에서 가격을 자동으로 읽지 못했어요. <b>가격 확인 필요</b> — 실제 가격을 입력해 주세요.</div>
             </div>
             <div class="col-5">
               <label class="form-label small fw-semibold" for="editCurrency">통화</label>
@@ -501,6 +502,13 @@ function initEditor() {
     _firstNonEmpty(_EXTRA.title_ko, _EXTRA.title, _ITEM.title);
   document.getElementById('editPrice').value =
     _firstNonEmpty(_EXTRA.price_original, _EXTRA.price, _ITEM.price);
+  // v16 P0: 가격을 자동으로 못 읽었으면(0/빈값 또는 needs_check) 정직하게 '가격 확인 필요' 안내.
+  try {
+    const pv = parseFloat(document.getElementById('editPrice').value || '0');
+    if (_EXTRA.price_status === 'needs_check' || !(pv > 0)) {
+      document.getElementById('priceNeedsCheck').classList.remove('d-none');
+    }
+  } catch (e) { /* noop */ }
   const cur = _firstNonEmpty(_EXTRA.currency, _ITEM.currency, 'USD');
   const curSel = document.getElementById('editCurrency');
   if (![...curSel.options].some(o => o.value === cur)) {

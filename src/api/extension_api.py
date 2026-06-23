@@ -144,7 +144,15 @@ def _merge_scraped_into_payload(payload: dict, scraped) -> dict:
 
     if _is_empty(out.get("title")) and scraped.title:
         out["title"] = scraped.title
-    if _is_empty(out.get("description")) and scraped.description:
+    # v16 P0: 클라이언트가 보낸 description이 사이트 공통 마케팅 필러면 버리고(상품 설명 아님),
+    # 스크래퍼가 찾은 실제 설명으로 대체. 둘 다 없으면 빈 값(정직 — 가짜 필러 저장 금지).
+    try:
+        from src.collectors.universal_scraper import is_filler_description as _is_filler
+    except Exception:
+        _is_filler = lambda *a, **k: False
+    if _is_filler(out.get("description"), out.get("url", "")):
+        out["description"] = ""
+    if _is_empty(out.get("description")) and scraped.description and not _is_filler(scraped.description):
         out["description"] = scraped.description
     if _is_empty(out.get("brand")) and getattr(scraped, "brand", None):
         out["brand"] = scraped.brand
@@ -202,6 +210,26 @@ def collect_from_extension():
             payload = _merge_scraped_into_payload(payload, scraped)
         except Exception as exc:
             logger.warning("확장 HTML 서버 파싱 실패(클라이언트 값 유지): %s", exc)
+
+    # v16 P0: 사이트 공통 마케팅 필러는 상품 설명으로 저장하지 않는다(html 없어도 적용).
+    # 리뷰(해당 제품)는 best-effort 추출(없으면 빈 리스트 — 가짜 리뷰 금지).
+    try:
+        from src.collectors.universal_scraper import is_filler_description, extract_reviews
+        if is_filler_description(payload.get("description"), url):
+            payload["description"] = ""
+        if not payload.get("reviews") and isinstance(page_html, str) and page_html:
+            _revs = extract_reviews(page_html)
+            if _revs:
+                payload["reviews"] = _revs
+    except Exception as exc:
+        logger.warning("[collect %s] 필러/리뷰 처리 실패: %s", _corr, exc)
+
+    # v16 P0: 가격이 비었거나 0이면 가짜 0원 대신 '확인 필요'로 정직 표기.
+    def _price_empty(v):
+        return v is None or str(v).strip() in ("", "0", "0.0", "0.00")
+    if _price_empty(payload.get("price")):
+        payload["price_status"] = "needs_check"
+
     payload.pop("html", None)  # 대용량 HTML은 이력에 저장하지 않음
 
     title = payload.get("title") or ""
@@ -256,6 +284,8 @@ def collect_from_extension():
                 "currency": payload.get("currency", "USD"),
                 "brand": payload.get("brand", ""),
                 "options": payload.get("options", []),
+                "reviews": payload.get("reviews", []),
+                "price_status": payload.get("price_status", ""),
                 "translation_provider": tr.get("provider", "none"),
             },
             seller_id=seller_id_val,
