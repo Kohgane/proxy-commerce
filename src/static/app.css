@@ -415,3 +415,35 @@ a:hover {
 @media (prefers-reduced-motion: reduce) {
   .skeleton { animation: none; background: rgba(26,23,20,.08); }
 }
+
+/* ========================================================================
+   v18 컴포넌트 베이스라인 — 토큰 적용("과제물 → 프로"). 모두 토큰 참조(하드코딩 0).
+   타입 스케일은 유틸리티(opt-in)로 제공해 점진 적용(레이아웃 회귀 방지).
+   ======================================================================== */
+/* 타입 스케일 유틸 */
+.pc-display { font-family: var(--font-display); font-size: var(--display-size); line-height: var(--display-lh); letter-spacing: -.02em; font-weight: var(--w-semi); }
+.pc-h1 { font-family: var(--font-display); font-size: var(--h1-size); line-height: var(--h1-lh); letter-spacing: -.01em; font-weight: var(--w-semi); }
+.pc-h2 { font-size: var(--h2-size); line-height: var(--h2-lh); font-weight: var(--w-semi); }
+.pc-h3 { font-size: var(--h3-size); line-height: var(--h3-lh); font-weight: var(--w-semi); }
+.pc-body-lg { font-size: var(--body-lg); line-height: var(--line); }
+.pc-body { font-size: var(--body); line-height: var(--line); }
+.pc-small { font-size: var(--small); }
+.pc-caption { font-size: var(--caption); line-height: var(--caption-lh, 1.4); color: var(--text-muted); }
+/* 8px 그리드 스택(세로 간격) 유틸 */
+.pc-stack-2 > * + * { margin-top: var(--space-2); }
+.pc-stack-3 > * + * { margin-top: var(--space-3); }
+.pc-stack-4 > * + * { margin-top: var(--space-4); }
+.pc-stack-5 > * + * { margin-top: var(--space-5); }
+
+/* 버튼: 스펙 radius(12) + 터치 타깃 + 토큰 포커스 링(청록) */
+.btn { border-radius: var(--radius); }
+.btn-lg { min-height: 44px; }
+.btn:focus-visible,
+.form-control:focus-visible,
+.form-select:focus-visible,
+a:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(17, 154, 142, .35); }
+/* 입력: 토큰 radius + 가는 보더 */
+.form-control, .form-select { border-radius: var(--radius); border-color: var(--border); }
+.form-control:focus, .form-select:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(17, 154, 142, .18); }
+/* 카드: 두꺼운 보더 대신 얕은 그림자 + 1px 가는 구분선(여백 우선) */
+.console-card, .card { box-shadow: var(--shadow-sm); }
