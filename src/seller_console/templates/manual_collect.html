@@ -263,7 +263,7 @@ async function bulkCollect() {
       body: JSON.stringify({urls: raw}),
     });
     const data = await resp.json();
-    if (!data.ok) { showToast('오류', data.error || '일괄 수집 실패', 'danger'); return; }
+    if (!data.ok) { kgpInlineError('bulkResult', data, { retry: () => bulkCollect() }); return; }
     let html = `<div class="alert alert-info py-2">전체 ${data.total}개 · 성공 <strong>${data.success}</strong> · 실패 ${data.total - data.success}</div>`;
     html += '<ul class="list-group">';
     (data.results || []).forEach(r => {
@@ -272,7 +272,7 @@ async function bulkCollect() {
           <span><i class="bi bi-check-circle text-success"></i> ${escapeHtml(r.title)}</span>
           <a href="${r.preview_url}" class="btn btn-sm btn-success py-0"><i class="bi bi-box-arrow-up-right"></i> 미리보기·등록</a></li>`;
       } else {
-        html += `<li class="list-group-item list-group-item-warning"><span class="small"><i class="bi bi-exclamation-triangle"></i> ${escapeHtml(r.url)} — ${escapeHtml(r.error || '실패')}</span></li>`;
+        html += `<li class="list-group-item list-group-item-warning"><span class="small"><i class="bi bi-exclamation-triangle"></i> ${escapeHtml(r.url)} — ${escapeHtml(kgpFriendlyError(r.error || '실패'))}</span></li>`;
       }
     });
     html += '</ul>';
@@ -280,7 +280,7 @@ async function bulkCollect() {
     box.classList.remove('d-none');
     showToast('일괄 수집 완료', `${data.success}개 수집됨 → 수집 이력/아래에서 등록하세요.`);
   } catch (err) {
-    showToast('오류', '일괄 수집 요청 실패: ' + err.message, 'danger');
+    kgpInlineError('bulkResult', err, { retry: () => bulkCollect() });
   } finally {
     btn.disabled = false; btn.innerHTML = orig;
   }
@@ -311,10 +311,8 @@ function extractProduct() {
       showToast('미리보기 완료', '상품 정보를 확인하고 마켓을 선택하세요.');
     })
     .catch((err) => {
-      const errorAlert = document.getElementById('errorAlert');
-      errorAlert.textContent = err.message || '요청 처리 중 오류가 발생했습니다.';
-      errorAlert.classList.remove('d-none');
-      showToast('오류', errorAlert.textContent, 'danger');
+      // v19: 실패 그 자리에 쉬운 안내 + 재시도(개발 메시지 비노출)
+      kgpInlineError('errorAlert', err, { retry: () => extractProduct(), help: '/seller/extension' });
     })
     .finally(() => setLoading(false));
 }
@@ -475,7 +473,7 @@ function localizeProduct() {
       renderLocalizedPreview();
       showToast('현지화 완료', `성공 ${data.success || 0} · 캐시 ${data.cache_hits || 0} · 미번역 ${data.untranslated || 0}`, 'success');
     })
-    .catch((err) => showToast('현지화 실패', err.message || '현지화 중 오류가 발생했습니다.', 'danger'))
+    .catch((err) => showToast('오류', kgpFriendlyError(err), 'danger'))
     .finally(() => {
       btn.disabled = false;
       btn.textContent = '현지화 실행';
@@ -517,7 +515,7 @@ function saveToSheets() {
       if (!data.ok) throw new Error(data.error || '저장 실패');
       showToast('저장 완료', '카탈로그 저장이 완료되었습니다.');
     })
-    .catch((err) => showToast('저장 실패', err.message || '저장 중 오류가 발생했습니다.', 'danger'))
+    .catch((err) => showToast('오류', kgpFriendlyError(err), 'danger'))
     .finally(() => {
       btn.disabled = false;
       btn.textContent = '카탈로그 저장';
@@ -560,7 +558,7 @@ function uploadProduct() {
       showToast('업로드 완료', `${detail}<br>${lines}`, type);
     })
     .catch((err) => {
-      showToast('업로드 실패', err.message || '업로드 중 오류가 발생했습니다.', 'danger');
+      showToast('오류', kgpFriendlyError(err), 'danger');
     })
     .finally(() => {
       btn.disabled = false;

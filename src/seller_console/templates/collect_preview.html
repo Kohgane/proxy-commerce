@@ -353,7 +353,7 @@ function addImageRow(url) {
         body: JSON.stringify({image_url: v}),
       });
       const data = await resp.json();
-      if (!data.ok) { pcToast(data.error || '이미지 처리 실패', 'error'); return; }
+      if (!data.ok) { pcToast(kgpFriendlyError(data), 'error'); return; }
       if (data.processed_url && data.processed_url !== v) {
         input.value = data.processed_url; syncThumb(); refreshPrimaryImage();
         pcToast(data.watermark_removed ? '워터마크 제거·정제 완료.' : '이미지 정제 완료.', 'success');
@@ -361,7 +361,7 @@ function addImageRow(url) {
         pcToast(data.message || '처리할 변화가 없어 원본을 유지했습니다.', 'warning');
       }
     } catch (err) {
-      pcToast('요청 실패: ' + err.message, 'error');
+      pcToast(kgpFriendlyError(err), 'error');
     } finally {
       b.disabled = false; b.textContent = old;
     }
@@ -653,10 +653,10 @@ async function saveEdits() {
       body: JSON.stringify(data),
     });
     const out = await resp.json();
-    if (!out.ok) { pcToast(out.error || '저장 실패', 'error'); }
+    if (!out.ok) { pcToast(kgpFriendlyError(out), 'error'); }
     else { pcToast('변경사항을 저장했습니다.', 'success'); }
   } catch (err) {
-    pcToast('저장 요청 실패: ' + err.message, 'error');
+    pcToast(kgpFriendlyError(err), 'error');
   } finally {
     btn.disabled = false; btn.textContent = '변경사항 저장';
   }
@@ -728,7 +728,7 @@ async function runPrevalidate() {
     btn.textContent = '사전검증 →';
 
     if (!data.ok) {
-      pcToast(data.error || '사전검증 실패', 'error');
+      pcToast(kgpFriendlyError(data), 'error');
       return;
     }
     renderPrevalidateResults(data.results);
@@ -736,7 +736,7 @@ async function runPrevalidate() {
   } catch (err) {
     btn.disabled = false;
     btn.textContent = '사전검증 →';
-    pcToast('사전검증 요청 실패: ' + err.message, 'error');
+    pcToast(kgpFriendlyError(err), 'error');
   }
 }
 
@@ -794,7 +794,7 @@ async function runUpload() {
     goToStep('stepResult');
   } catch (err) {
     document.getElementById('uploadResults').innerHTML =
-      `<div class="alert alert-danger">요청 실패: ${err.message}</div>`;
+      `<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> ${kgpEscapeForHtml(kgpFriendlyError(err))}</div>`;
     goToStep('stepResult');
   }
 }
@@ -802,7 +802,7 @@ async function runUpload() {
 function renderUploadResults(data) {
   const el = document.getElementById('uploadResults');
   if (!data.ok) {
-    el.innerHTML = `<div class="alert alert-danger">${data.error || '업로드 실패'}</div>`;
+    el.innerHTML = `<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> ${kgpEscapeForHtml(kgpFriendlyError(data))}</div>`;
     return;
   }
   const result = data.result;

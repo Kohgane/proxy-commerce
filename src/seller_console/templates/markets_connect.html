@@ -221,23 +221,20 @@ function renderTestResult(form, result) {
     return;
   }
   box.classList.add('text-warning');
-  const code = result ? (result.status || '실패') : '실패';
+  // v19: 실패는 쉬운 말로(무엇+왜+다음 행동). 코드/원문 응답은 '고급'으로 숨김(개발 메시지 비노출).
   const head = document.createElement('div');
-  head.textContent = code;
+  head.className = 'd-flex align-items-center gap-1';
+  head.innerHTML = '<i class="bi bi-exclamation-triangle"></i> <span>' +
+    kgpEscapeForHtml(kgpFriendlyError((result && (result.hint || result.status)) || '연결 테스트 실패')) + '</span>';
   box.appendChild(head);
-  // 마켓이 보낸 원문 응답(디버깅용) — 그대로 표시
-  if (result && result.summary) {
-    const raw = document.createElement('div');
-    raw.className = 'text-muted mt-1';
-    raw.style.wordBreak = 'break-all';
-    raw.textContent = '마켓 응답: ' + result.summary;
-    box.appendChild(raw);
-  }
-  if (result && result.hint) {
-    const hint = document.createElement('div');
-    hint.className = 'mt-1';
-    hint.textContent = '조치: ' + result.hint;
-    box.appendChild(hint);
+  // 마켓 원문 응답/상태 코드는 디버깅용 → 기본 숨김(필요 시 펼쳐보기).
+  if (result && (result.summary || result.status)) {
+    const det = document.createElement('details');
+    det.className = 'small text-muted mt-1';
+    det.innerHTML = '<summary style="cursor:pointer">자세히(고급)</summary>' +
+      '<div class="mt-1" style="word-break:break-all">' +
+      kgpEscapeForHtml('상태: ' + (result.status || '-') + (result.summary ? ' · 응답: ' + result.summary : '')) + '</div>';
+    box.appendChild(det);
   }
 }
 
@@ -258,10 +255,10 @@ document.querySelectorAll('.market-connect-form').forEach(form => {
     setButtonLoading(btn, true, '테스트 중…');
     try {
       const {data} = await postJson(`/seller/markets/connect/${market}/test`, {values: collectValues(form)});
-      if (!data.ok) { pcToast(data.error || '연결 테스트 실패', 'error'); return; }
+      if (!data.ok) { pcToast(kgpFriendlyError(data), 'error'); return; }
       renderTestResult(form, data.result);
     } catch (err) {
-      pcToast('연결 테스트 요청 실패: ' + err.message, 'error');
+      pcToast(kgpFriendlyError(err), 'error');
     } finally {
       setButtonLoading(btn, false);
     }
@@ -274,11 +271,11 @@ document.querySelectorAll('.market-connect-form').forEach(form => {
     setButtonLoading(btn, true, '저장 중…');
     try {
       const {data} = await postJson(`/seller/markets/connect/${market}`, {values: collectValues(form)});
-      if (!data.ok) { pcToast(data.error || '저장 실패', 'error'); return; }
+      if (!data.ok) { pcToast(kgpFriendlyError(data), 'error'); return; }
       updateBadge(card, data.status && data.status.connected);
       pcToast(`${market} 자격증명을 저장했어요.`, 'success');
     } catch (err) {
-      pcToast('저장 요청 실패: ' + err.message, 'error');
+      pcToast(kgpFriendlyError(err), 'error');
     } finally {
       setButtonLoading(btn, false);
     }
@@ -290,7 +287,7 @@ document.querySelectorAll('.market-connect-form').forEach(form => {
     disconnectBtn.addEventListener('click', async () => {
       if (!(await pcConfirm('저장된 자격증명을 삭제할까요? (서버 환경변수는 영향 없음)', {title: '연결 해제', confirmLabel: '삭제'}))) return;
       const {data} = await postJson(`/seller/markets/connect/${market}/disconnect`, {});
-      if (!data.ok) { pcToast(data.error || '연결 해제 실패', 'error'); return; }
+      if (!data.ok) { pcToast(kgpFriendlyError(data), 'error'); return; }
       updateBadge(card, data.status && data.status.connected);
       pcToast(`${market} 연결을 해제했어요.`, 'success');
       setTimeout(() => location.reload(), 900);
