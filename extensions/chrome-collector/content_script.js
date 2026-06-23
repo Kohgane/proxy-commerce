@@ -379,6 +379,7 @@ function handleFabClick(btn) {
 }
 
 function injectCollectButton() {
+  if (!KGP_FAB_ENABLED) { kgpRemoveFab(); return; }   // v16 P1: FAB off면 표시 안 함
   if (!kgpHostAllowed()) return;                // 지정 소싱처에서만(v10 P0)
   if (document.getElementById(KGP_BTN_ID)) return;
   if (window.top !== window.self) return;       // iframe 안에서는 표시 안 함
@@ -471,6 +472,7 @@ const KGP_DEFAULT_SOURCES = [
   { id: "rakuten", label: "라쿠텐(Rakuten Fashion 포함)", test: (h) => /(^|\.)rakuten\.(co\.jp|com)$/.test(h) },
 ];
 let KGP_SOURCES = null;   // chrome.storage의 사용자 설정 { defaults:{id:bool}, custom:[{host,on}] }
+let KGP_FAB_ENABLED = true;   // v16 P1: 인페이지 수집 버튼(FAB) on/off (popup 토글, 기본 ON)
 
 function _kgpHostMatch(host, domain) {
   domain = String(domain || "").toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^www\./, "");
@@ -873,21 +875,26 @@ function kgpRefresh() {
   }
 }
 
-// 설정 로드 후 첫 렌더. 설정 바뀌면(소싱처 추가/삭제·토글) 즉시 반영.
+// 설정 로드 후 첫 렌더. 설정 바뀌면(소싱처 추가/삭제·토글·FAB on/off) 즉시 반영.
 function kgpLoadSourcesThen(cb) {
   try {
-    chrome.storage.local.get("kgp_sources", (r) => {
+    chrome.storage.local.get(["kgp_sources", "kgp_fab_enabled"], (r) => {
       KGP_SOURCES = (r && r.kgp_sources) || {};
+      KGP_FAB_ENABLED = !(r && r.kgp_fab_enabled === false);   // 기본 ON
       cb && cb();
     });
   } catch (e) { KGP_SOURCES = {}; cb && cb(); }
 }
 try {
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (changes && changes.kgp_sources) {
-      KGP_SOURCES = changes.kgp_sources.newValue || {};
-      kgpRefresh();                                   // 런타임 즉시 반영
+    let changed = false;
+    if (changes && changes.kgp_sources) { KGP_SOURCES = changes.kgp_sources.newValue || {}; changed = true; }
+    if (changes && changes.kgp_fab_enabled) {
+      KGP_FAB_ENABLED = changes.kgp_fab_enabled.newValue !== false;
+      if (!KGP_FAB_ENABLED) kgpRemoveFab();             // 끄면 즉시 제거
+      changed = true;
     }
+    if (changed) kgpRefresh();                          // 런타임 즉시 반영
   });
 } catch (e) { /* noop */ }
 

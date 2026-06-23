@@ -3077,7 +3077,7 @@ def notifications_test():
     """텔레그램 테스트 메시지 전송 (Phase 130)."""
     try:
         from src.notifications.telegram import send_telegram
-        ok = send_telegram("✅ proxy-commerce 알림 테스트 메시지입니다.", urgency="info")
+        ok = send_telegram("✅ 코고가네 알림 테스트 메시지입니다.", urgency="info")
         if ok:
             return jsonify({"ok": True, "message": "텔레그램 메시지 전송 성공"})
         return jsonify({"ok": False, "message": "TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID 미설정 — 알림 비활성"}), 200

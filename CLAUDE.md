@@ -20,9 +20,14 @@
   확장 전역 "퍼센티" 제거(README/build → 코고가네).
 - ✅ **P0-3 관리자 패널(이미 충족·회귀가드):** 사이드바 링크는 이미 `_user_role=='admin'` 가드, 라우트는 v13 Phase 278
   before_request로 미로그인=로그인·비admin=403. 회귀 가드 추가(seller 세션 /admin/* 403 + 링크 미노출). 전체 10214 passed.
-- ⏳ P1: OG(og:site_name 코고가네·title·desc·image 브랜드마크)+트위터카드, "proxy-commerce"→코고가네 전역. 토큰 발급이력+
-  마스킹+본인전용+'?'툴팁. 북마클릿 친절설명(메인=확장·보조=북마클릿). FAB on/off(For Beginners 패턴). 소싱처등록 좌측메뉴.
-  "GenericOgCollector 자동 사용" 등 내부표기 숨김.
+- ✅ **P1 공유 브랜딩+UX(Phase 289):** _base_app.html OG/트위터 정비 — og:description·og:image(icon-512 브랜드마크)·
+  og:url·twitter:card 추가(공유 카드가 이름·소개·이미지로 뜸). 알림/봇 기본 표기 'Proxy Commerce'→KOHgogane/코고가네
+  (export_manager·international_router·email_sender·slack·discord·bot/commands·telegram 테스트). FAB on/off — content_script
+  KGP_FAB_ENABLED(chrome.storage.kgp_fab_enabled, onChanged 즉시반영) + popup 토글. 소싱처 등록(My Sources) 사이드바
+  링크(/seller/sourcing/my-sources). 'GenericOgCollector 자동 사용' 등 개발문구 일반 카피화. 북마클릿 '뭔가요/언제'
+  친절설명. manifest 1.5.5→1.5.6. 가드 test_v16_p1_branding_ux(6).
+  ※shopify metafield namespace 'proxy_commerce'(내부 스키마)·api_status Render 서비스명(정확 안내)은 유지.
+- ⏳ P1 남음: 토큰 발급이력+마스킹+본인전용+'?'툴팁(후속).
 - (확인) 수집한 상품 클릭 404 = 해결됨 → 회귀 가드만 유지.
 
 ## 🟦 v15 브리프 (오너 2026-06-23 — "수집기 노출·마켓연결·확장설치 친절화 + 글로벌")

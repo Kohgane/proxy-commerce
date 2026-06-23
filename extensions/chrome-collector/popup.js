@@ -62,6 +62,17 @@ chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
 optionsLink.addEventListener("click", (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); });
 manageLink.addEventListener("click", (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); });
 
+// v16 P1: 인페이지 '수집' 버튼(FAB) on/off 토글 — 상태 기억(chrome.storage.local.kgp_fab_enabled, 기본 ON).
+const fabToggle = document.getElementById("fabToggle");
+if (fabToggle) {
+  chrome.storage.local.get("kgp_fab_enabled", (r) => {
+    fabToggle.checked = !(r && r.kgp_fab_enabled === false);
+  });
+  fabToggle.addEventListener("change", () => {
+    chrome.storage.local.set({ kgp_fab_enabled: fabToggle.checked });   // content_script가 onChanged로 즉시 반영
+  });
+}
+
 // 수집 버튼 클릭
 btnCollect.addEventListener("click", async () => {
   btnCollect.disabled = true;
