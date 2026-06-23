@@ -101,7 +101,7 @@
                     {% if openness == 'open' %}
                     <span class="badge text-bg-success" title="OG/JSON-LD 확인 — 수집 가능">open</span>
                     {% elif openness == 'restricted' %}
-                    <span class="badge text-bg-danger" title="접근 차단/폐쇄형 — 수집 어려움">restricted ⚠</span>
+                    <span class="badge text-bg-danger" title="접근 차단/폐쇄형 — 수집 어려움">restricted <i class="bi bi-exclamation-triangle"></i></span>
                     {% else %}
                     <span class="badge text-bg-warning text-dark" title="부분 수집 가능 — OG 미확인">partial</span>
                     {% endif %}
@@ -128,7 +128,7 @@
                     <input type="hidden" name="action" value="remove">
                     <input type="hidden" name="keyword" value="{{ keyword }}">
                     <input type="hidden" name="domain" value="{{ source.domain }}">
-                    <button class="btn btn-sm btn-outline-danger" type="submit" title="삭제" aria-label="삭제" style="padding:1px 6px;">✕</button>
+                    <button class="btn btn-sm btn-outline-danger" type="submit" title="삭제" aria-label="삭제" style="padding:1px 6px;"><i class="bi bi-x-lg"></i></button>
                   </form>
                 </div>
               </div>
@@ -155,7 +155,7 @@
   <!-- 메인 CTA: 키워드 → AI 상품 추천(콘텐츠 중앙 전면) -->
   <form class="card console-card mb-3 border-primary" method="get" action="/seller/sourcing">
     <div class="card-body">
-      <label for="keywordInput" class="form-label fw-semibold mb-1">🔎 무슨 상품을 팔까요? 키워드를 넣어보세요</label>
+      <label for="keywordInput" class="form-label fw-semibold mb-1"><i class="bi bi-search"></i> 무슨 상품을 팔까요? 키워드를 넣어보세요</label>
       <div class="input-group input-group-lg mb-2">
         <input id="keywordInput" class="form-control" name="keyword" value="{{ keyword }}" placeholder="예: 요가 레깅스, 보틀, 강아지 장난감">
         <input type="hidden" name="period" value="{{ period }}">
@@ -357,13 +357,13 @@ function renderQuickFailure(data, url) {
   quickResult.classList.remove('d-none');
   quickResult.innerHTML = `
     <div class="border rounded-3 p-3 ${manual ? 'border-warning bg-warning-subtle' : 'border-danger bg-danger-subtle'}">
-      <div class="fw-semibold mb-1">${manual ? '⚠️ 자동 수집이 어려운 페이지예요' : '❌ 수집 실패'}</div>
+      <div class="fw-semibold mb-1">${manual ? '<i class="bi bi-exclamation-triangle"></i> 자동 수집이 어려운 페이지예요' : '<i class="bi bi-x-circle"></i> 수집 실패'}</div>
       <div class="small mb-2">${msg}</div>
       <div class="small text-muted mb-2">
         <strong>다음 중 하나로 진행하세요</strong>
         <ul class="mb-0 mt-1">
           <li>상품 <em>상세 페이지</em> 주소가 맞는지 확인하고 다시 시도(목록·검색 페이지는 수집되지 않습니다).</li>
-          <li>로그인·봇 차단 사이트라면 <strong>크롬 확장 🛒 수집</strong>으로 브라우저에서 직접 수집하세요.</li>
+          <li>로그인·봇 차단 사이트라면 <strong>크롬 확장 수집</strong>으로 브라우저에서 직접 수집하세요.</li>
           <li>그래도 안 되면 <strong>직접 입력</strong>으로 제목·가격·이미지를 넣어 등록하세요.</li>
         </ul>
       </div>
@@ -391,11 +391,11 @@ async function saveToRegistry(e) {
     });
     const data = await resp.json();
     if (data.ok) {
-      const badges = {'open':'<span class="badge text-bg-success">open</span>','partial':'<span class="badge text-bg-warning text-dark">partial</span>','restricted':'<span class="badge text-bg-danger">restricted ⚠</span>'};
+      const badges = {'open':'<span class="badge text-bg-success">open</span>','partial':'<span class="badge text-bg-warning text-dark">partial</span>','restricted':'<span class="badge text-bg-danger">restricted <i class="bi bi-exclamation-triangle"></i></span>'};
       const badge = badges[data.openness_status] || '';
       resultEl.classList.remove('d-none');
       resultEl.innerHTML = `<div class="text-success small">소싱처로 저장됨: <strong>${data.domain}</strong> ${badge} — <a href="/seller/sourcing">목록 보기</a></div>`;
-      btn.textContent = '✓ 저장됨';
+      btn.textContent = '저장됨';
     } else {
       throw new Error(data.error || '저장 실패');
     }
@@ -471,7 +471,7 @@ document.querySelectorAll('.registry-recollect-btn').forEach(btn => {
     try {
       const resp = await fetch(`/seller/sourcing/registry/${encodeURIComponent(domain)}/recollect`, {method: 'POST'});
       const data = await resp.json();
-      btn.textContent = data.ok ? '✓' : '!';
+      btn.textContent = data.ok ? '저장됨' : '!';
       if (data.ok) {
         const detail = btn.closest('li')?.querySelector('.registry-detail');
         if (detail) {

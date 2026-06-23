@@ -19,7 +19,7 @@
 
 <div class="container-sm py-3" style="max-width:520px">
   <div class="d-flex justify-content-between align-items-center mb-3">
-    <h5 class="mb-0">📱 CS Mobile</h5>
+    <h5 class="mb-0"><i class="bi bi-phone"></i> CS Mobile</h5>
     <div class="d-flex gap-2">
       <a class="btn btn-outline-secondary btn-sm" href="/seller/cs/inbox">PC 버전</a>
       <button class="btn btn-outline-primary btn-sm" id="install-banner" onclick="installPWA()">홈화면 추가</button>
@@ -70,7 +70,7 @@
            id="ai-{{ msg.message_id }}"
            ontouchstart=""
            onclick="toggleAI('{{ msg.message_id }}')">
-        💡 {{ msg.suggested_reply }}
+        <i class="bi bi-lightbulb"></i> {{ msg.suggested_reply }}
       </div>
       {% endif %}
 
@@ -81,18 +81,18 @@
                   placeholder="답변 입력 (비워두면 AI 제안 사용)"></textarea>
         <div class="d-flex gap-2 action-btns">
           <button type="submit" name="action" value="send"
-                  class="btn btn-success flex-fill">✅ 발송</button>
+                  class="btn btn-success flex-fill"><i class="bi bi-send"></i> 발송</button>
           <button type="submit" name="action" value="hold"
                   class="btn btn-outline-warning flex-fill">⏸ 보류</button>
           <button type="submit" name="action" value="resolve"
-                  class="btn btn-outline-secondary flex-fill">✔ 해결</button>
+                  class="btn btn-outline-secondary flex-fill"><i class="bi bi-check-lg"></i> 해결</button>
         </div>
       </form>
     </div>
   </div>
   {% else %}
   <div class="text-center text-muted py-5">
-    <div style="font-size:2rem">🎉</div>
+    <div style="font-size:2rem"><i class="bi bi-emoji-smile"></i></div>
     <div>미응답 메시지 없음</div>
   </div>
   {% endfor %}

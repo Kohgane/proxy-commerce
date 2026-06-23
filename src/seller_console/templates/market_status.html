@@ -3,12 +3,12 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="fw-bold mb-0">🏪 마켓 상품 현황</h4>
+  <h4 class="fw-bold mb-0"><i class="bi bi-shop"></i> 마켓 상품 현황</h4>
   <div class="d-flex gap-2 align-items-center">
     {% if market_data.is_mock %}
     <span class="badge bg-warning text-dark">mock 데이터</span>
     {% endif %}
-    <button class="btn btn-outline-secondary btn-sm" onclick="location.reload()">🔄 새로고침</button>
+    <button class="btn btn-outline-secondary btn-sm" onclick="location.reload()"><i class="bi bi-arrow-clockwise"></i> 새로고침</button>
   </div>
 </div>
 
@@ -56,9 +56,9 @@
       </select>
       <select class="form-select form-select-sm" id="filterStatus" style="width:auto;" onchange="filterTable()">
         <option value="">전체 상태</option>
-        <option value="active">활성 ✅</option>
-        <option value="out_of_stock">품절 ⚠️</option>
-        <option value="error">오류 ❌</option>
+        <option value="active">활성</option>
+        <option value="out_of_stock">품절</option>
+        <option value="error">오류</option>
       </select>
       <input type="text" class="form-control form-control-sm" id="filterSearch"
              placeholder="상품명 검색..." style="width:200px;" oninput="filterTable()">
@@ -86,41 +86,41 @@
           <tr data-market="coupang smartstore elevenst" data-status="active">
             <td><code>ALO-LGG-001</code></td>
             <td>[Mock] Alo Yoga 에어리프트 레깅스 블랙 M</td>
-            <td class="text-center"><span class="badge bg-success">✅ 활성</span></td>
-            <td class="text-center"><span class="badge bg-success">✅ 활성</span></td>
-            <td class="text-center"><span class="badge bg-success">✅ 활성</span></td>
+            <td class="text-center"><span class="badge bg-success"><i class="bi bi-check-circle"></i> 활성</span></td>
+            <td class="text-center"><span class="badge bg-success"><i class="bi bi-check-circle"></i> 활성</span></td>
+            <td class="text-center"><span class="badge bg-success"><i class="bi bi-check-circle"></i> 활성</span></td>
             <td>aloyoga.com</td>
           </tr>
           <tr data-market="coupang" data-status="out_of_stock">
             <td><code>LUL-ALN-002</code></td>
             <td>[Mock] lululemon Align 팬츠 28" 네이비 6</td>
-            <td class="text-center"><span class="badge bg-warning text-dark">⚠️ 품절</span></td>
-            <td class="text-center"><span class="badge bg-success">✅ 활성</span></td>
-            <td class="text-center"><span class="badge bg-success">✅ 활성</span></td>
+            <td class="text-center"><span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> 품절</span></td>
+            <td class="text-center"><span class="badge bg-success"><i class="bi bi-check-circle"></i> 활성</span></td>
+            <td class="text-center"><span class="badge bg-success"><i class="bi bi-check-circle"></i> 활성</span></td>
             <td>lululemon.com</td>
           </tr>
           <tr data-market="smartstore elevenst" data-status="error">
             <td><code>PTR-TNK-003</code></td>
             <td>[Mock] Porter Tank 나일론 숄더백 블랙</td>
             <td class="text-center"><span class="badge bg-secondary">-</span></td>
-            <td class="text-center"><span class="badge bg-danger">❌ 오류</span></td>
-            <td class="text-center"><span class="badge bg-success">✅ 활성</span></td>
+            <td class="text-center"><span class="badge bg-danger"><i class="bi bi-x-circle"></i> 오류</span></td>
+            <td class="text-center"><span class="badge bg-success"><i class="bi bi-check-circle"></i> 활성</span></td>
             <td>porter.jp</td>
           </tr>
           <tr data-market="coupang smartstore" data-status="active">
             <td><code>MMP-EDP-004</code></td>
             <td>[Mock] Memo Paris 일라 두 멜 75ml</td>
-            <td class="text-center"><span class="badge bg-success">✅ 활성</span></td>
-            <td class="text-center"><span class="badge bg-success">✅ 활성</span></td>
+            <td class="text-center"><span class="badge bg-success"><i class="bi bi-check-circle"></i> 활성</span></td>
+            <td class="text-center"><span class="badge bg-success"><i class="bi bi-check-circle"></i> 활성</span></td>
             <td class="text-center"><span class="badge bg-secondary">-</span></td>
             <td>memoparis.com</td>
           </tr>
           <tr data-market="elevenst" data-status="out_of_stock">
             <td><code>AMZ-SHO-005</code></td>
             <td>[Mock] Nike 러닝화 260 블랙</td>
-            <td class="text-center"><span class="badge bg-warning text-dark">⚠️ 품절</span></td>
-            <td class="text-center"><span class="badge bg-warning text-dark">⚠️ 품절</span></td>
-            <td class="text-center"><span class="badge bg-warning text-dark">⚠️ 품절</span></td>
+            <td class="text-center"><span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> 품절</span></td>
+            <td class="text-center"><span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> 품절</span></td>
+            <td class="text-center"><span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> 품절</span></td>
             <td>amazon.co.jp</td>
           </tr>
         </tbody>

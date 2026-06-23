@@ -17,13 +17,13 @@
       {% if single_market %}
       <a href="/seller/markets/connect" class="btn btn-outline-secondary btn-sm">전체 마켓 보기</a>
       {% endif %}
-      <a href="/seller/markets/guide" class="btn btn-outline-primary btn-sm">📖 발급 가이드</a>
+      <a href="/seller/markets/guide" class="btn btn-outline-primary btn-sm"><i class="bi bi-book"></i> 발급 가이드</a>
       <a href="/seller/markets" class="btn btn-outline-secondary btn-sm">← 마켓 현황으로</a>
     </div>
   </div>
 
   <div class="alert alert-light border small d-flex gap-2 align-items-start mb-3" role="note">
-    <span style="font-size:1.1rem">🔑</span>
+    <span style="font-size:1.1rem"><i class="bi bi-key"></i></span>
     <div>여기에 넣는 건 <strong>‘내 마켓 키’</strong>(쿠팡·네이버 등에서 발급받은 본인 API 키)예요.
       서버 환경변수(<code>MARKET_CRED_ENC_KEY</code> 같은 인프라 키)와는 다릅니다 —
       <strong>그건 운영자가 관리하고, 여기엔 입력하지 않아도 됩니다.</strong></div>
@@ -34,7 +34,7 @@
     {% for chip in market_chips %}
     <a href="/seller/markets/connect/{{ chip.market }}"
        class="btn btn-sm {{ 'btn-primary' if single_market == chip.market else 'btn-outline-secondary' }}">
-      {{ chip.label }} {{ '✅' if chip.connected else '' }}
+      {{ chip.label }} {% if chip.connected %}<i class="bi bi-check-circle text-success"></i>{% endif %}
     </a>
     {% endfor %}
   </div>
@@ -52,7 +52,7 @@
   <div class="alert alert-light border d-flex gap-2 align-items-center mb-4" role="note">
     <i class="bi bi-shield-lock text-primary"></i>
     <div class="small mb-0">
-      🔒 입력한 키는 <strong>안전하게 암호화</strong>되어 보관돼요.
+      <i class="bi bi-shield-lock"></i> 입력한 키는 <strong>안전하게 암호화</strong>되어 보관돼요.
       <span class="pc-help" tabindex="0" role="button" aria-label="자세히"
             data-bs-toggle="tooltip" data-bs-html="true"
             data-bs-title="서버에 <code>MARKET_CRED_ENC_KEY</code> 설정 시 키를 암호화 저장합니다. ‘연결 테스트’는 실제 마켓에 읽기/안전한 빈 쓰기만 시도하며 상품을 등록하지 않습니다.">?</span>
@@ -63,8 +63,8 @@
   <div class="card console-card mb-3">
     <div class="card-body">
       <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-        <h2 class="h6 mb-0">📖 {{ guide_entry.label }} 키 발급 방법</h2>
-        <a href="{{ guide_entry.official_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-primary btn-sm">🔗 {{ guide_entry.official_label }}</a>
+        <h2 class="h6 mb-0"><i class="bi bi-book"></i> {{ guide_entry.label }} 키 발급 방법</h2>
+        <a href="{{ guide_entry.official_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-primary btn-sm"><i class="bi bi-box-arrow-up-right"></i> {{ guide_entry.official_label }}</a>
       </div>
       <ol class="small mb-0">
         {% for s in guide_entry.steps %}
@@ -72,7 +72,7 @@
         {% endfor %}
       </ol>
       {% if guide_entry.tips %}
-      <div class="small text-muted mt-2">{% for tip in guide_entry.tips %}<div>💡 {{ tip }}</div>{% endfor %}</div>
+      <div class="small text-muted mt-2">{% for tip in guide_entry.tips %}<div><i class="bi bi-lightbulb"></i>  {{ tip }}</div>{% endfor %}</div>
       {% endif %}
     </div>
   </div>
@@ -101,7 +101,7 @@
             <h2 class="h6 mb-0">{{ m.label }}</h2>
             <span class="badge rounded-pill {{ 'text-bg-success' if m.connected else 'text-bg-secondary' }}"
                   data-role="status-badge">
-              {{ '✅ 연결됨' if m.connected else '🪪 미연결' }}
+              {% if m.connected %}<i class="bi bi-check-circle"></i> 연결됨{% else %}<i class="bi bi-dash-circle"></i> 미연결{% endif %}
             </span>
           </div>
           <div class="small text-muted mb-2">
@@ -111,7 +111,7 @@
           <div class="fw-semibold small mb-1">① 키 발급받기</div>
           {% if _g and _g.official_url %}
           <a href="{{ _g.official_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-cta btn-sm w-100 mb-1">
-            🔗 {{ _g.official_label or '발급 페이지 열기' }}
+            <i class="bi bi-box-arrow-up-right"></i> {{ _g.official_label or '발급 페이지 열기' }}
           </a>
           <div class="small text-muted mb-3">↑ 이 버튼만 마켓 사이트가 새 탭으로 열려요(로그인 필요). 키를 받은 뒤 이 화면으로 돌아오세요.</div>
           {% else %}
@@ -217,13 +217,13 @@ function renderTestResult(form, result) {
   box.innerHTML = '';
   if (result && result.status === 'connected') {
     box.classList.add('text-success');
-    box.textContent = '✅ 연결 성공 — ' + (result.summary || '');
+    box.textContent = '연결 성공 — ' + (result.summary || '');
     return;
   }
   box.classList.add('text-warning');
   const code = result ? (result.status || '실패') : '실패';
   const head = document.createElement('div');
-  head.textContent = '⚠️ ' + code;
+  head.textContent = code;
   box.appendChild(head);
   // 마켓이 보낸 원문 응답(디버깅용) — 그대로 표시
   if (result && result.summary) {
@@ -236,7 +236,7 @@ function renderTestResult(form, result) {
   if (result && result.hint) {
     const hint = document.createElement('div');
     hint.className = 'mt-1';
-    hint.textContent = '💡 조치: ' + result.hint;
+    hint.textContent = '조치: ' + result.hint;
     box.appendChild(hint);
   }
 }
@@ -245,7 +245,7 @@ function updateBadge(card, connected) {
   const badge = card.querySelector('[data-role="status-badge"]');
   if (!badge) return;
   badge.className = 'badge rounded-pill ' + (connected ? 'text-bg-success' : 'text-bg-secondary');
-  badge.textContent = connected ? '✅ 연결됨' : '🪪 미연결';
+  badge.textContent = connected ? '연결됨' : '미연결';
 }
 
 document.querySelectorAll('.market-connect-form').forEach(form => {
