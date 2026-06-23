@@ -4,6 +4,12 @@
 
 ## ★ 작업 기본 헤더 (v20 운영 규칙 — 오너 2026-06-23, 모든 후속 작업에 상시 적용)
 > "무엇을 만들지"가 아니라 "어떤 도구를 켜고 작업할지". 절대원칙: 거짓성공/회귀 금지·정직·토큰 단일소스·경량·개발표기 비노출.
+- **(design-sync 관련, 2026-06-23):** proxy-commerce는 컴포넌트 라이브러리가 아니라 Flask+Jinja+Bootstrap+app.css라
+  /design-sync(컴파일 컴포넌트 업로드)는 그대로 안 맞음. 오너 결정="v18 토큰만 styles/tokens로, React 전환 금지,
+  app.css :root 단일소스, 하드코딩 hex/px 금지, 회귀 없이". → app.css :root에 브랜드 음영 토큰(--teal-strong/hover·
+  --orange-strong/hover·--gold-ink(-strong)·--on-accent) 추가, 컴포넌트 규칙의 브랜드 hex를 전부 var(--*)로 치환(값 동일,
+  무회귀). 상태/회색 유틸색은 v18 브랜드토큰 범위 밖이라 유지. 가드 test_design_tokens_v18(브랜드 hex :root 밖 0).
+  ※ DesignSync MCP 도구는 세션에 미로드(끊김) — 붙으면 토큰 styles.css 업로드 가능.
 - **상시 디폴트 3종(해당 상황이면 자동 적용):**
   1. UI/프론트엔드 작업 → **frontend-design** 스킬 + v18 디자인 토큰 스펙. "제네릭 AI/과제물 룩" 제거(화면당 강조1·8px 그리드·이모지0).
   2. API/외부연동(쿠팡 WING·네이버 커머스API·Shopee·Shopify 등) 코드 작성/수정 → **context7**로 최신 실제 문서 대조 후 코딩(낡은 지식 추측 금지).
