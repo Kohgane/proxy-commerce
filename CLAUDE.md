@@ -2,6 +2,38 @@
 
 > 이 파일은 매 세션 시작 시 로드된다. 오너(Kohgane) 지시·검증된 팩트를 누적 기록한다.
 
+## 🟪 v16 브리프 (오너 2026-06-23 — "수집 정확도·공유 미리보기·토큰/관리자/소싱처")
+- 절대원칙: 추측 금지(에러·누락은 재현/로그)·거짓성공/가짜필러 금지·회귀 금지·정직·토큰 단일소스·경량. 버전충돌 시 v16 우선.
+- **진행 순서:** ①P0 수집 정확도(확장 인페이지 실값 추출·제품 스코프 한정·가격/이미지/상세/리뷰 실값, 필러0)
+  ②P0 FAB JS에러(sendMessage) + 퍼센티 전역제거 + 관리자 패널 숨김(403) ③P1 OG 공유 브랜딩·토큰 이력·북마클릿설명·
+  FAB on/off·소싱처 좌측메뉴·잔여 개발문구.
+- ✅ **P0-1 수집정확도 1차(Phase 288):** 원인=og:description 등 사이트 공통 '마케팅 필러'가 상품 설명으로 저장·번역됨
+  (Temu "쇼핑하여 절약을 시작하세요"). universal_scraper에 `is_filler_description()`(보수적·알려진 카피만, 오탐 최소)
+  + OG/meta 설명 파싱에서 필러 제외 + `extract_reviews(html)`(JSON-LD Product.review 우선, 없으면 빈 리스트=가짜 금지).
+  extension_api: 클라/스크래퍼 description 필러 제거(html 없어도), 리뷰 추출 저장, 가격 0/빈값 → `price_status:needs_check`
+  (가짜 0원 금지). content_script extractProductMeta: 설명 섹션 요소 우선 + 필러 og 미전송. collect_preview에 '⚠️ 가격
+  확인 필요' 정직 표기. 가드 test_collect_accuracy_v16(8). ※사이트별 어댑터 셀렉터(Temu/타오바오 PDD 정밀 스코프)는
+  라이브 검증 필요 → 후속(추측 금지로 미하드코딩). manifest 1.5.4→1.5.5.
+- ✅ **P0-2 FAB JS에러+퍼센티(Phase 288):** content_script에 `kgpExtAlive()`(chrome.runtime.id 유효성)+`kgpSendMessage()`
+  가드 헬퍼 — MV3 확장 업데이트/재로딩 시 context invalidated로 "Cannot read properties of undefined (reading
+  'sendMessage')" 나던 것 → 새로고침 안내로 정직 처리. handleFabClick·collectBulk 직접 호출을 헬퍼로 일원화.
+  확장 전역 "퍼센티" 제거(README/build → 코고가네).
+- ✅ **P0-3 관리자 패널(이미 충족·회귀가드):** 사이드바 링크는 이미 `_user_role=='admin'` 가드, 라우트는 v13 Phase 278
+  before_request로 미로그인=로그인·비admin=403. 회귀 가드 추가(seller 세션 /admin/* 403 + 링크 미노출). 전체 10214 passed.
+- ✅ **P1 공유 브랜딩+UX(Phase 289):** _base_app.html OG/트위터 정비 — og:description·og:image(icon-512 브랜드마크)·
+  og:url·twitter:card 추가(공유 카드가 이름·소개·이미지로 뜸). 알림/봇 기본 표기 'Proxy Commerce'→KOHgogane/코고가네
+  (export_manager·international_router·email_sender·slack·discord·bot/commands·telegram 테스트). FAB on/off — content_script
+  KGP_FAB_ENABLED(chrome.storage.kgp_fab_enabled, onChanged 즉시반영) + popup 토글. 소싱처 등록(My Sources) 사이드바
+  링크(/seller/sourcing/my-sources). 'GenericOgCollector 자동 사용' 등 개발문구 일반 카피화. 북마클릿 '뭔가요/언제'
+  친절설명. manifest 1.5.5→1.5.6. 가드 test_v16_p1_branding_ux(6).
+  ※shopify metafield namespace 'proxy_commerce'(내부 스키마)·api_status Render 서비스명(정확 안내)은 유지.
+- ✅ **P1 토큰 페이지(Phase 289):** list_tokens(user_id)/revoke_token(user_id)로 본인 전용·마스킹(해시 앞부분)·
+  발급일·마지막사용·스코프·상태(폐기 포함)는 이미 구현됨(확인). 추가: 날것 표기(Authorization: Bearer, collect.write
+  등) '?' 툴팁 뒤로 + 본문 쉬운말, 권한 배지 한글화(상품 수집/카탈로그 조회/마켓 업로드, raw는 title). 가드 추가.
+- → **v16 완료**(P0 수집정확도·FAB에러·관리자 / P1 OG브랜딩·퍼센티/proxy정리·FAB on-off·소싱처메뉴·잔여문구·토큰).
+  전체 10222 passed. ※사이트별 PDD 정밀 어댑터(라이브 검증 필요)만 후속.
+- (확인) 수집한 상품 클릭 404 = 해결됨 → 회귀 가드만 유지.
+
 ## 🟦 v15 브리프 (오너 2026-06-23 — "수집기 노출·마켓연결·확장설치 친절화 + 글로벌")
 - 제0원칙: 일반 유저는 아무것도 모른다 가정. 거짓 성공/날조 금지·회귀 금지·정직·토큰 단일소스·경량. 버전 충돌 시 v15 우선.
 - **진행 순서:** ①P0(수집버튼 소싱처한정+줌대응+아이콘화 / 마켓연결 인페이지 / 확장설치 정리) ②For Beginners·스테퍼·로고+소셜4종

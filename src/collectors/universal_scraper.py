@@ -214,6 +214,80 @@ def filter_product_images(urls) -> list:
     return out
 
 
+# v16 P0: og:description 등에 들어오는 '사이트 공통 마케팅 필러'(상품 설명 아님) 탐지.
+# Temu/알리/쇼핑몰 공통 카피를 실제 상품 설명으로 저장/번역하지 않기 위함. 보수적(알려진 카피만).
+_FILLER_DESC_RE = re.compile(
+    r"("
+    r"절약을\s*시작|쇼핑하여\s*절약|에서\s*쇼핑하여|최저가로\s*쇼핑|지금\s*쇼핑하세요|"
+    r"여기를\s*눌러|링크를\s*확인하세요|"
+    r"smarter\s+shopping,?\s*better\s+living|"
+    r"start\s+saving|save\s+big\b|shop\b.{0,30}\band\s+save\b|"
+    r"free\s+shipping\s+on\s+(all\s+)?orders|"
+    r"latest\s+.{0,24}(styles|trends|fashion).{0,24}(best|low(est)?)\s+price|"
+    r"discover\s+(quality|amazing)\s+products\s+at"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def is_filler_description(text: str, url: str = "") -> bool:
+    """상품 설명이 아니라 사이트 공통 마케팅 필러인가? (알려진 카피만 — 보수적, 오탐 최소화)"""
+    t = (text or "").strip()
+    if not t:
+        return False
+    return bool(_FILLER_DESC_RE.search(t))
+
+
+def extract_reviews(html: str, limit: int = 20) -> list:
+    """페이지 HTML에서 해당 상품 리뷰(별점·본문·작성자)를 best-effort 추출. JSON-LD Product.review 우선.
+
+    없으면 빈 리스트(가짜 리뷰 생성 금지). 추천/연관 상품 리뷰 혼입을 줄이기 위해 JSON-LD를 우선한다.
+    """
+    reviews: list = []
+    if not html:
+        return reviews
+    try:
+        import json as _json
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+        for sc in soup.find_all("script", attrs={"type": "application/ld+json"}):
+            try:
+                obj = _json.loads(sc.string or sc.get_text() or "")
+            except Exception:
+                continue
+            nodes = obj if isinstance(obj, list) else [obj]
+            for node in nodes:
+                if not isinstance(node, dict):
+                    continue
+                revs = node.get("review") or node.get("reviews")
+                if isinstance(revs, dict):
+                    revs = [revs]
+                if not isinstance(revs, list):
+                    continue
+                for r in revs:
+                    if not isinstance(r, dict):
+                        continue
+                    body = str(r.get("reviewBody") or r.get("description") or "").strip()
+                    rating = None
+                    rr = r.get("reviewRating") or {}
+                    if isinstance(rr, dict):
+                        try:
+                            rating = float(rr.get("ratingValue"))
+                        except (TypeError, ValueError):
+                            rating = None
+                    author = r.get("author")
+                    if isinstance(author, dict):
+                        author = author.get("name", "")
+                    if body or rating is not None:
+                        reviews.append({"body": body[:500], "rating": rating,
+                                        "author": str(author or "")[:60]})
+                    if len(reviews) >= limit:
+                        return reviews
+    except Exception:
+        return reviews
+    return reviews
+
+
 def _collect_dom_images(soup, base_url: str) -> list:
     """페이지 DOM에서 상품 이미지를 최대한 수집한다.
 
@@ -528,7 +602,9 @@ class UniversalScraper:
             if prop == "og:title":
                 data["title"] = content
             elif prop == "og:description":
-                data["description"] = content
+                # v16 P0: 사이트 공통 마케팅 필러는 상품 설명으로 저장하지 않는다(정직).
+                if not is_filler_description(content):
+                    data["description"] = content
             elif prop in ("og:image", "og:image:url"):
                 images.append(content)
             elif prop == "product:price:amount":
@@ -665,11 +741,13 @@ class UniversalScraper:
             if h1_text and len(h1_text) < len(title):
                 title = h1_text
 
-        # 설명
+        # 설명 — 사이트 공통 마케팅 필러는 제외(정직, v16 P0)
         desc = ""
         meta_desc = soup.find("meta", attrs={"name": "description"})
         if meta_desc:
-            desc = meta_desc.get("content", "")
+            _d = meta_desc.get("content", "")
+            if not is_filler_description(_d):
+                desc = _d
 
         # 이미지 — og:image 없으면 페이지의 상품 이미지를 최대한 수집
         # (src + lazy-load 속성 + srcset 최대해상도, 로고/배너/아이콘 제외)

@@ -31,8 +31,9 @@
         <div class="col-md-4">
           <div class="border rounded-3 p-2 h-100 bg-white">
             <div class="fw-semibold">② 어떻게 동작하나</div>
-            수집 시 <code>Authorization: Bearer &lt;토큰&gt;</code> 형태로 전송돼 본인 확인 후
-            수집 이력에 저장됩니다. <strong>스코프</strong>로 권한 범위를 제한해요(예: 수집만).
+            수집할 때 이 토큰으로 <strong>‘내 계정 것’임을 자동 확인</strong>하고 내 수집 이력에 저장해요.
+            <span class="pc-help" data-bs-toggle="tooltip" data-bs-title="기술적으로는 요청 헤더에 Authorization: Bearer &lt;토큰&gt; 형태로 전송됩니다.">?</span>
+            권한 범위는 <strong>스코프</strong>로 제한해요(예: 수집만).
           </div>
         </div>
         <div class="col-md-4">
@@ -44,8 +45,8 @@
         </div>
       </div>
       <div class="small text-muted mt-2">
-        스코프 뜻 — <code>collect.write</code>: 상품 수집 저장 · <code>catalog.read</code>: 카탈로그 조회 ·
-        <code>markets.write</code>: 마켓 업로드.
+        권한(스코프)은 <strong>상품 수집 저장 · 카탈로그 조회 · 마켓 업로드</strong> 중에서 고를 수 있어요.
+        <span class="pc-help" data-bs-toggle="tooltip" data-bs-title="collect.write = 상품 수집 저장, catalog.read = 카탈로그 조회, markets.write = 마켓 업로드">?</span>
       </div>
     </div>
   </div>
@@ -56,8 +57,8 @@
       <table class="table table-hover mb-0">
         <thead class="table-light">
           <tr>
-            <th>토큰 해시 (앞8자리)</th>
-            <th>스코프</th>
+            <th>토큰 <span class="pc-help" data-bs-toggle="tooltip" data-bs-title="보안을 위해 토큰 원문은 발급 때 한 번만 보이고, 여기엔 식별용 앞부분만 표시돼요(해시).">?</span></th>
+            <th>권한</th>
             <th>발급일</th>
             <th>마지막 사용</th>
             <th>만료일</th>
@@ -69,9 +70,10 @@
           {% for tok in tokens %}
           <tr>
             <td><code>{{ tok.token_hash_prefix }}</code></td>
+            {% set _scope_ko = {'collect.write': '상품 수집', 'catalog.read': '카탈로그 조회', 'markets.write': '마켓 업로드'} %}
             <td>
               {% for scope in tok.scopes %}
-              <span class="badge bg-secondary me-1">{{ scope }}</span>
+              <span class="badge bg-secondary me-1" data-bs-toggle="tooltip" title="{{ scope }}">{{ _scope_ko.get(scope, scope) }}</span>
               {% endfor %}
             </td>
             <td>{{ tok.created_at[:10] if tok.created_at else '-' }}</td>

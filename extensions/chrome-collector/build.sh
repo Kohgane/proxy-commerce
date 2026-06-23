@@ -9,7 +9,7 @@ ZIP_NAME="kohgane-chrome-collector-v$(grep '"version"' "${SCRIPT_DIR}/manifest.j
 
 mkdir -p "${OUTPUT_DIR}"
 
-echo "📦 코가네 퍼센티 수집기 빌드 시작..."
+echo "📦 코고가네 수집기 빌드 시작..."
 
 cd "${SCRIPT_DIR}"
 zip -r "${OUTPUT_DIR}/${ZIP_NAME}" \

@@ -88,6 +88,24 @@ function extractProductMeta() {
     pageHtml = "";
   }
 
+  // v16 P0: 사이트 공통 마케팅 필러(상품 설명 아님)는 보내지 않는다 — 서버 필러 가드와 동일 취지.
+  const _kgpFiller = /(절약을\s*시작|쇼핑하여\s*절약|에서\s*쇼핑하여|최저가로\s*쇼핑|지금\s*쇼핑하세요|여기를\s*눌러|링크를\s*확인하세요|smarter\s+shopping|start\s+saving|save\s+big|free\s+shipping\s+on\s+(all\s+)?orders)/i;
+  // 실제 상품 설명 우선: 설명 섹션 요소 텍스트 → 없으면 필러 아닌 og:description.
+  function _kgpRealDescription() {
+    const sel = ["#productDescription", "#feature-bullets", "#description",
+      ".product-description", "[class*='product-detail']", "[class*='description']",
+      "[id*='description']"];
+    for (const s of sel) {
+      try {
+        const el = document.querySelector(s);
+        const txt = el && (el.innerText || el.textContent || "").trim();
+        if (txt && txt.length >= 30 && !_kgpFiller.test(txt)) return txt.slice(0, 4000);
+      } catch (e) { /* noop */ }
+    }
+    const og = getMeta("og:description") || getMeta("description") || "";
+    return _kgpFiller.test(og) ? "" : og;
+  }
+
   return {
     url: location.href,
     title: getMeta("og:title") || document.title || "",
@@ -95,7 +113,7 @@ function extractProductMeta() {
     images: images,
     price: getMeta("product:price:amount") || heuristicPrice,
     currency: getMeta("product:price:currency") || heuristicCurrency || "USD",
-    description: getMeta("og:description") || getMeta("description") || "",
+    description: _kgpRealDescription(),
     brand: getMeta("og:brand") || "",
     jsonld: jsonldScripts,
     html: pageHtml,
@@ -111,6 +129,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   return false;
 });
+
+// v16 P0: MV3 — 확장이 업데이트/재로딩되면 기존 탭의 content script는 chrome.runtime이 끊겨
+// (extension context invalidated) sendMessage가 "Cannot read properties of undefined (reading 'sendMessage')"
+// 를 던진다. 컨텍스트 유효성(chrome.runtime.id)을 먼저 확인하고, 끊겼으면 raw 에러 대신 새로고침 안내로 정직 처리.
+function kgpExtAlive() {
+  try { return !!(chrome && chrome.runtime && chrome.runtime.id); } catch (e) { return false; }
+}
+function kgpSendMessage(msg, cb) {
+  if (!kgpExtAlive()) {
+    cb && cb({ ok: false, error: "확장이 업데이트되었어요. 페이지를 새로고침(F5)한 뒤 다시 시도하세요.", _invalidated: true });
+    return;
+  }
+  try {
+    chrome.runtime.sendMessage(msg, (resp) => {
+      const err = (chrome.runtime && chrome.runtime.lastError) ? chrome.runtime.lastError.message : "";
+      if (err) { cb && cb({ ok: false, error: err }); return; }
+      cb && cb(resp);
+    });
+  } catch (e) {
+    cb && cb({ ok: false, error: (e && e.message) || "확장 연결 실패", _invalidated: true });
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 인페이지 '수집' 버튼 (Phase 202)
@@ -326,28 +366,20 @@ function handleFabClick(btn) {
   if (btn._kgpDragged || btn.dataset.busy) return;
   setFabState(btn, "loading");
   const meta = extractProductMeta();
-  try {
-    chrome.runtime.sendMessage({ action: "collect", meta }, (resp) => {
-      setFabState(btn, "idle");
-      if (chrome.runtime.lastError) {
-        kgpToast("확장 연결 실패: " + chrome.runtime.lastError.message, false);
-        return;
-      }
-      if (resp && resp.ok) {
-        kgpCelebrate(1);          // 실제 성공 시에만 도장+카운트업(따라하기 재미)
-        const tk = resp.title_ko && resp.title_ko !== resp.title ? `\n→ ${resp.title_ko}` : "";
-        if (tk) kgpToast(`✅ 수집 완료${tk}\n셀러 콘솔에서 확인·편집하세요.`, true);
-      } else {
-        kgpToast("❌ " + ((resp && resp.error) || "수집 실패"), false);
-      }
-    });
-  } catch (err) {
+  kgpSendMessage({ action: "collect", meta }, (resp) => {
     setFabState(btn, "idle");
-    kgpToast("❌ " + (err.message || "수집 실패"), false);
-  }
+    if (!resp || resp.ok !== true) {
+      kgpToast("❌ " + ((resp && resp.error) || "수집 실패"), false);
+      return;
+    }
+    kgpCelebrate(1);          // 실제 성공 시에만 도장+카운트업(따라하기 재미)
+    const tk = resp.title_ko && resp.title_ko !== resp.title ? `\n→ ${resp.title_ko}` : "";
+    if (tk) kgpToast(`✅ 수집 완료${tk}\n셀러 콘솔에서 확인·편집하세요.`, true);
+  });
 }
 
 function injectCollectButton() {
+  if (!KGP_FAB_ENABLED) { kgpRemoveFab(); return; }   // v16 P1: FAB off면 표시 안 함
   if (!kgpHostAllowed()) return;                // 지정 소싱처에서만(v10 P0)
   if (document.getElementById(KGP_BTN_ID)) return;
   if (window.top !== window.self) return;       // iframe 안에서는 표시 안 함
@@ -440,6 +472,7 @@ const KGP_DEFAULT_SOURCES = [
   { id: "rakuten", label: "라쿠텐(Rakuten Fashion 포함)", test: (h) => /(^|\.)rakuten\.(co\.jp|com)$/.test(h) },
 ];
 let KGP_SOURCES = null;   // chrome.storage의 사용자 설정 { defaults:{id:bool}, custom:[{host,on}] }
+let KGP_FAB_ENABLED = true;   // v16 P1: 인페이지 수집 버튼(FAB) on/off (popup 토글, 기본 ON)
 
 function _kgpHostMatch(host, domain) {
   domain = String(domain || "").toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^www\./, "");
@@ -590,21 +623,12 @@ async function kgpCollect(urls) {
   kgpSetStatus(`수집 중… (0/${items.length})`);
   const btns = document.querySelectorAll(".kgp-tb-btn");
   btns.forEach(b => b.disabled = true);
-  try {
-    chrome.runtime.sendMessage({ action: "collectBulk", items }, (resp) => {
-      btns.forEach(b => b.disabled = false);
-      if (chrome.runtime.lastError) { kgpSetStatus("확장 연결 실패: " + chrome.runtime.lastError.message); return; }
-      if (resp && resp.ok) {
-        if (resp.success > 0) kgpCelebrate(resp.success);   // 실제 성공 건수만 축하
-        kgpSetStatus(`✅ 수집 완료 — 성공 ${resp.success} / 실패 ${resp.failed}. 셀러 콘솔 수집 이력에서 확인하세요.`);
-      } else {
-        kgpSetStatus("❌ " + ((resp && resp.error) || "수집 실패"));
-      }
-    });
-  } catch (err) {
+  kgpSendMessage({ action: "collectBulk", items }, (resp) => {
     btns.forEach(b => b.disabled = false);
-    kgpSetStatus("❌ " + (err.message || "수집 실패"));
-  }
+    if (!resp || resp.ok !== true) { kgpSetStatus("❌ " + ((resp && resp.error) || "수집 실패")); return; }
+    if (resp.success > 0) kgpCelebrate(resp.success);   // 실제 성공 건수만 축하
+    kgpSetStatus(`✅ 수집 완료 — 성공 ${resp.success} / 실패 ${resp.failed}. 셀러 콘솔 수집 이력에서 확인하세요.`);
+  });
 }
 
 function kgpBuildToolbar() {
@@ -851,21 +875,26 @@ function kgpRefresh() {
   }
 }
 
-// 설정 로드 후 첫 렌더. 설정 바뀌면(소싱처 추가/삭제·토글) 즉시 반영.
+// 설정 로드 후 첫 렌더. 설정 바뀌면(소싱처 추가/삭제·토글·FAB on/off) 즉시 반영.
 function kgpLoadSourcesThen(cb) {
   try {
-    chrome.storage.local.get("kgp_sources", (r) => {
+    chrome.storage.local.get(["kgp_sources", "kgp_fab_enabled"], (r) => {
       KGP_SOURCES = (r && r.kgp_sources) || {};
+      KGP_FAB_ENABLED = !(r && r.kgp_fab_enabled === false);   // 기본 ON
       cb && cb();
     });
   } catch (e) { KGP_SOURCES = {}; cb && cb(); }
 }
 try {
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (changes && changes.kgp_sources) {
-      KGP_SOURCES = changes.kgp_sources.newValue || {};
-      kgpRefresh();                                   // 런타임 즉시 반영
+    let changed = false;
+    if (changes && changes.kgp_sources) { KGP_SOURCES = changes.kgp_sources.newValue || {}; changed = true; }
+    if (changes && changes.kgp_fab_enabled) {
+      KGP_FAB_ENABLED = changes.kgp_fab_enabled.newValue !== false;
+      if (!KGP_FAB_ENABLED) kgpRemoveFab();             // 끄면 즉시 제거
+      changed = true;
     }
+    if (changed) kgpRefresh();                          // 런타임 즉시 반영
   });
 } catch (e) { /* noop */ }
 

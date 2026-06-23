@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # 발송인 기본 정보 (환경변수로 오버라이드 가능)
 _DEFAULT_SENDER = {
-    'name': os.getenv('SENDER_NAME', 'Proxy Commerce'),
+    'name': os.getenv('SENDER_NAME', 'KOHgogane'),
     'address': os.getenv('SENDER_ADDRESS', 'Seoul, Korea'),
     'phone': os.getenv('SENDER_PHONE', ''),
     'email': os.getenv('SENDER_EMAIL', ''),
