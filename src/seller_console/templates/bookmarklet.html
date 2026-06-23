@@ -2,11 +2,11 @@
 {% block title %}북마클릿 설치{% endblock %}
 {% block content %}
 <div class="container-fluid py-4">
-  <h1 class="h3 mb-1">📌 북마클릿 (고급)</h1>
+  <h1 class="h3 mb-1"><i class="bi bi-bookmark-star"></i> 북마클릿 (고급)</h1>
   <p class="text-muted mb-3">쇼핑 페이지에서 클릭 한 번으로 상품을 수집합니다. <strong>토큰 없이</strong> 바로 작동해요(로그인만 되어 있으면 됩니다).</p>
 
   <div class="alert alert-primary d-flex align-items-center gap-2 mb-4" role="note">
-    <span style="font-size:1.3rem">🧩</span>
+    <span style="font-size:1.3rem"><i class="bi bi-puzzle"></i></span>
     <div class="small">
       <strong>북마클릿이 뭔가요?</strong> 북마크바에 두고 누르면 그 페이지의 상품을 수집하는 작은 버튼이에요.
       <strong>언제 쓰나요?</strong> 크롬 확장을 설치하기 어려운 환경(회사·공용 PC, 일부 모바일 브라우저)에서 쓰는 <strong>보조 수단</strong>입니다.<br>
@@ -17,11 +17,11 @@
 
   <!-- v17 P1: 확장 vs 북마클릿 차이 표 -->
   <div class="card mb-4">
-    <div class="card-header"><strong>🔍 크롬 확장 vs 북마클릿 — 무엇을 쓸까요?</strong></div>
+    <div class="card-header"><strong><i class="bi bi-search"></i> 크롬 확장 vs 북마클릿 — 무엇을 쓸까요?</strong></div>
     <div class="table-responsive">
       <table class="table table-sm mb-0 align-middle">
         <thead class="table-light">
-          <tr><th>비교</th><th>🧩 크롬 확장 <span class="badge text-bg-success">메인·권장</span></th><th>📌 북마클릿 <span class="badge text-bg-secondary">보조</span></th></tr>
+          <tr><th>비교</th><th><i class="bi bi-puzzle"></i> 크롬 확장 <span class="badge text-bg-success">메인·권장</span></th><th><i class="bi bi-bookmark"></i> 북마클릿 <span class="badge text-bg-secondary">보조</span></th></tr>
         </thead>
         <tbody>
           <tr><td>설치</td><td>한 번 설치(고가수집기)</td><td>설치 불필요 — 북마크바에 주소만 등록</td></tr>
@@ -39,7 +39,7 @@
     <!-- 설치 안내 -->
     <div class="col-lg-7">
       <div class="card mb-4">
-        <div class="card-header"><strong>🔧 설치 방법 (2단계)</strong></div>
+        <div class="card-header"><strong><i class="bi bi-wrench"></i> 설치 방법 (2단계)</strong></div>
         <div class="card-body">
           <ol class="mb-2">
             <li>아래 <strong>🧤 버튼</strong>을 마우스로 드래그해 브라우저 북마크바에 놓으세요.</li>
@@ -47,7 +47,7 @@
                 <strong>‘수집 완료’</strong>만 표시됩니다. 결과는 <strong>내 계정의 ‘수집 이력’</strong>에서 확인·편집하세요.</li>
           </ol>
           <div class="alert alert-success small mb-0">
-            ✅ <strong>토큰이 필요 없습니다.</strong> 새 탭이 코고가네(로그인된 내 계정)로 열려 안전하게 수집됩니다.
+            <i class="bi bi-check-circle text-success"></i> <strong>토큰이 필요 없습니다.</strong> 새 탭이 코고가네(로그인된 내 계정)로 열려 안전하게 수집됩니다.
             (예전 토큰 방식은 일부 사이트의 보안정책(CSP)에 막혀 작동하지 않았어요 — 이 방식은 그 문제가 없습니다.)
           </div>
         </div>
@@ -55,7 +55,7 @@
 
       <!-- 수집 시 번역 선택 -->
       <div class="card mb-4">
-        <div class="card-header"><strong>🌐 번역 설정</strong></div>
+        <div class="card-header"><strong><i class="bi bi-globe"></i> 번역 설정</strong></div>
         <div class="card-body">
           <div class="form-check form-switch">
             <input class="form-check-input" type="checkbox" id="translateToggle" checked>
@@ -67,7 +67,7 @@
 
       <!-- 북마클릿 버튼 -->
       <div class="card">
-        <div class="card-header"><strong>📌 북마클릿 (드래그해서 북마크바에 추가)</strong></div>
+        <div class="card-header"><strong><i class="bi bi-bookmark-plus"></i> 북마클릿 (드래그해서 북마크바에 추가)</strong></div>
         <div class="card-body text-center py-4">
           <!-- 토큰 불필요: 새 탭(로그인 세션)으로 데이터를 보내 수집(CSP/CORS 우회).
                북마크바에 이모지 1글자(🧤)만 이름으로 들어가 아이콘처럼 보이게 한다(긴 JS 코드 노출 방지). -->
@@ -97,7 +97,7 @@
       </div>
 
       <div class="card mt-3">
-        <div class="card-header"><strong>ℹ️ 동작 원리</strong></div>
+        <div class="card-header"><strong><i class="bi bi-info-circle"></i> 동작 원리</strong></div>
         <div class="card-body small text-muted">
           <ol class="mb-2">
             <li>상품 페이지의 <strong>이미지·상세설명·리뷰·HTML</strong>을 읽습니다.</li>

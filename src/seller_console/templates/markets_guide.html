@@ -17,10 +17,10 @@
 <section class="mb-4">
   <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
     <div>
-      <h1 class="h4 mb-1">📖 마켓 API 키 발급 가이드</h1>
+      <h1 class="h4 mb-1"><i class="bi bi-book"></i> 마켓 API 키 발급 가이드</h1>
       <p class="text-muted mb-0">각 마켓에서 키를 받아 → 우리 사이트에 붙여넣기만 하면 연결됩니다.</p>
     </div>
-    <a href="/seller/markets/connect" class="btn btn-primary btn-sm">🔌 키 입력 화면으로</a>
+    <a href="/seller/markets/connect" class="btn btn-primary btn-sm"><i class="bi bi-plug"></i> 키 입력 화면으로</a>
   </div>
 
   <!-- 개념 일러스트 (이미지) -->
@@ -54,7 +54,7 @@
   <div class="alert alert-warning d-flex gap-2 align-items-start mb-4">
     <i class="bi bi-shield-exclamation"></i>
     <div class="small mb-0">
-      <strong>🚧 한국 마켓(쿠팡·네이버·11번가)은 ‘API 호출 허용 IP’ 등록이 필요할 수 있어요.</strong>
+      <strong><i class="bi bi-cone-striped"></i> 한국 마켓(쿠팡·네이버·11번가)은 ‘API 호출 허용 IP’ 등록이 필요할 수 있어요.</strong>
       키가 정확해도 <code>your ip ... is not allowed(403)</code> / <code>GW.IP_NOT_ALLOWED</code> 가 뜨면
       <strong>이 서버의 아웃바운드 IP</strong>를 각 마켓 판매자센터의 허용 IP에 등록하세요.
       <ul class="mb-0 mt-1">
@@ -82,12 +82,12 @@
           {% endif %}
         </h2>
         <a href="{{ g.official_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-primary btn-sm">
-          🔗 {{ g.official_label }}
+          <i class="bi bi-box-arrow-up-right"></i> {{ g.official_label }}
         </a>
       </div>
       {% if g.status == 'planned' %}
       <div class="alert alert-warning small py-2">
-        🌐 글로벌 확장 마켓입니다. 키 발급 방법을 미리 안내하며, 어댑터 실연동은 순차 적용 예정입니다.
+        <i class="bi bi-globe"></i> 글로벌 확장 마켓입니다. 키 발급 방법을 미리 안내하며, 어댑터 실연동은 순차 적용 예정입니다.
         지금 키를 준비해두면 연동 시 바로 사용할 수 있어요.
       </div>
       {% endif %}
@@ -130,12 +130,12 @@
 
       {% if g.tips %}
       <div class="alert alert-light border small mb-3">
-        {% for tip in g.tips %}<div>💡 {{ tip }}</div>{% endfor %}
+        {% for tip in g.tips %}<div><i class="bi bi-lightbulb"></i> {{ tip }}</div>{% endfor %}
       </div>
       {% endif %}
 
       {% if g.shipping %}
-      <!-- 📦 출고지·반품지 (쿠팡 상품 등록 필수) — 그림 + 단계 + 예시 -->
+      <!-- 출고지·반품지 (쿠팡 상품 등록 필수) — 그림 + 단계 + 예시 -->
       <div class="card border-warning mb-3">
         <div class="card-body">
           <h3 class="h6 text-warning-emphasis mb-2">{{ g.shipping.title }}</h3>
@@ -195,7 +195,7 @@
           {% endif %}
           {% if g.shipping.tips %}
           <div class="alert alert-light border small mb-0">
-            {% for tip in g.shipping.tips %}<div>💡 {{ tip }}</div>{% endfor %}
+            {% for tip in g.shipping.tips %}<div><i class="bi bi-lightbulb"></i> {{ tip }}</div>{% endfor %}
           </div>
           {% endif %}
         </div>
@@ -203,9 +203,9 @@
       {% endif %}
 
       {% if g.status == 'planned' %}
-      <span class="text-muted small">🔧 어댑터 연동 적용 후 입력칸이 열립니다.</span>
+      <span class="text-muted small"><i class="bi bi-wrench"></i> 어댑터 연동 적용 후 입력칸이 열립니다.</span>
       {% else %}
-      <a href="/seller/markets/connect/{{ g.key }}" class="btn btn-success btn-sm">✅ {{ g.label }} 키 입력하러 가기</a>
+      <a href="/seller/markets/connect/{{ g.key }}" class="btn btn-success btn-sm"><i class="bi bi-check-circle"></i> {{ g.label }} 키 입력하러 가기</a>
       {% endif %}
     </div>
   </div>
