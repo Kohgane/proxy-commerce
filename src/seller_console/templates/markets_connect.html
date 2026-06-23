@@ -104,13 +104,21 @@
               {{ '✅ 연결됨' if m.connected else '🪪 미연결' }}
             </span>
           </div>
+          <div class="small text-muted mb-2">
+            <strong>연결 3단계</strong> — ① 키 발급받기 · ② 아래에 붙여넣기 · ③ 연결 테스트. <em>모두 이 화면에서 진행돼요.</em>
+          </div>
           {% set _g = (guide_map or {}).get(m.market) %}
+          <div class="fw-semibold small mb-1">① 키 발급받기</div>
           {% if _g and _g.official_url %}
-          <a href="{{ _g.official_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-cta btn-sm w-100 mb-3">
-            🔗 {{ _g.official_label or '발급 페이지 열기' }} <span class="small">(새 탭)</span>
+          <a href="{{ _g.official_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-cta btn-sm w-100 mb-1">
+            🔗 {{ _g.official_label or '발급 페이지 열기' }}
           </a>
+          <div class="small text-muted mb-3">↑ 이 버튼만 마켓 사이트가 새 탭으로 열려요(로그인 필요). 키를 받은 뒤 이 화면으로 돌아오세요.</div>
+          {% else %}
+          <div class="small text-muted mb-3">마켓 사이트에서 API 키를 발급받아 아래에 입력하세요.</div>
           {% endif %}
 
+          <div class="fw-semibold small mb-1">② 받은 키 붙여넣기</div>
           <form class="market-connect-form" data-market="{{ m.market }}" autocomplete="off">
             {% for f in m.fields %}
             {% if f.section %}
@@ -137,12 +145,13 @@
             </div>
             {% endfor %}
 
-            <div class="d-flex flex-wrap gap-2 mt-3">
-              <button type="button" class="btn btn-outline-primary btn-sm" data-action="test">
-                <i class="bi bi-plug"></i> 연결 테스트
-              </button>
+            <div class="fw-semibold small mt-3 mb-1">③ 저장하고 연결 테스트</div>
+            <div class="d-flex flex-wrap gap-2">
               <button type="submit" class="btn btn-primary btn-sm" data-action="save">
                 <i class="bi bi-save"></i> 저장
+              </button>
+              <button type="button" class="btn btn-outline-primary btn-sm" data-action="test">
+                <i class="bi bi-plug"></i> 연결 테스트
               </button>
               {% if m.has_seller_credentials %}
               <button type="button" class="btn btn-outline-danger btn-sm ms-auto" data-action="disconnect">
