@@ -40,6 +40,24 @@ STRINGS: dict[str, dict[str, str]] = {
         "ko": "상품 수집이란?",
         "en": "What is product collection?",
     },
+    # 주문 페이지
+    "orders.market": {"ko": "마켓", "en": "Market"},
+    "orders.status": {"ko": "상태", "en": "Status"},
+    "orders.start_date": {"ko": "시작일", "en": "Start date"},
+    "orders.end_date": {"ko": "종료일", "en": "End date"},
+    "orders.search": {"ko": "검색", "en": "Search"},
+    "orders.sync_now": {"ko": "주문 즉시 동기화", "en": "Sync orders now"},
+    "orders.bulk_tracking": {"ko": "일괄 운송장 등록", "en": "Bulk add tracking"},
+    "orders.bulk_ship": {"ko": "배송중 처리", "en": "Mark as shipping"},
+    "orders.bulk_status": {"ko": "일괄 상태 변경", "en": "Bulk status change"},
+    "orders.export_csv": {"ko": "CSV 내보내기", "en": "Export CSV"},
+    # 마켓 페이지
+    "markets.title": {"ko": "마켓 상품 현황", "en": "Market product status"},
+    "markets.sync_all": {"ko": "전체 동기화", "en": "Sync all"},
+    "markets.refresh": {"ko": "새로고침", "en": "Refresh"},
+    "markets.guide": {"ko": "발급 가이드", "en": "Issuance guide"},
+    "markets.connect": {"ko": "마켓 연결(키 입력)", "en": "Connect market (enter keys)"},
+    "markets.check_connection": {"ko": "연결 확인", "en": "Check connection"},
 }
 
 

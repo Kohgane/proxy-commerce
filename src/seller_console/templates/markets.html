@@ -3,7 +3,7 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="fw-bold mb-0">🏪 마켓 상품 현황</h4>
+  <h4 class="fw-bold mb-0">🏪 {{ t('markets.title') }}</h4>
   <div class="d-flex gap-2 align-items-center">
     {% if market_data.is_mock %}
     <span class="badge bg-warning text-dark">mock 데이터</span>
@@ -21,7 +21,7 @@
     <button class="btn btn-outline-success btn-sm" id="marketDiagnosticsBtn" onclick="refreshAllMarketDiagnostics()">
       🔌 실연동 재진단
     </button>
-    <button class="btn btn-outline-secondary btn-sm" onclick="location.reload()">새로고침</button>
+    <button class="btn btn-outline-secondary btn-sm" onclick="location.reload()">{{ t('markets.refresh') }}</button>
   </div>
 </div>
 
@@ -37,8 +37,8 @@
         <div class="small text-muted">실제 검증된 연동 상태와 운영자 조치 힌트를 함께 확인하세요.</div>
       </div>
       <div class="d-flex align-items-center gap-2">
-        <a href="/seller/markets/guide" class="btn btn-outline-primary btn-sm">📖 발급 가이드</a>
-        <a href="/seller/markets/connect" class="btn btn-primary btn-sm">🔌 마켓 연결(키 입력)</a>
+        <a href="/seller/markets/guide" class="btn btn-outline-primary btn-sm">📖 {{ t('markets.guide') }}</a>
+        <a href="/seller/markets/connect" class="btn btn-primary btn-sm">🔌 {{ t('markets.connect') }}</a>
         <span class="badge text-bg-light" id="marketDiagnosticsSummary">실연동 진단 대기</span>
       </div>
     </div>
@@ -65,7 +65,7 @@
           <div class="small text-muted mt-1" data-market-disabled-reason="{{ hub.marketplace }}">다음 액션: 초기 실연동 진단 실행 중…</div>
           <div class="small text-muted mt-1" data-market-checked-at="{{ hub.marketplace }}">마지막 점검: 대기 중</div>
           <div class="d-flex flex-wrap gap-1 mt-2">
-            <button class="btn btn-outline-primary btn-sm" type="button" data-market-action="connection" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'connection')">연결 확인</button>
+            <button class="btn btn-outline-primary btn-sm" type="button" data-market-action="connection" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'connection')">{{ t('markets.check_connection') }}</button>
             <button class="btn btn-outline-secondary btn-sm" type="button" data-market-action="scope" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'scope')">권한 확인</button>
             <button class="btn btn-outline-warning btn-sm" type="button" data-market-action="retry" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'retry')">재시도</button>
             <a class="btn btn-outline-primary btn-sm" href="/seller/markets/connect/{{ hub.marketplace }}">🔑 키 입력</a>

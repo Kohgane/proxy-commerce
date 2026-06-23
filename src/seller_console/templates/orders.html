@@ -63,7 +63,7 @@
   <div class="card-body">
     <div class="row g-2 align-items-end">
       <div class="col-md-3">
-        <label class="form-label small mb-1">마켓</label>
+        <label class="form-label small mb-1">{{ t('orders.market') }}</label>
         <div class="d-flex gap-2 flex-wrap">
           {% for mp in ["coupang", "smartstore", "11st", "kohganemultishop"] %}
           <div class="form-check form-check-inline">
@@ -75,7 +75,7 @@
         </div>
       </div>
       <div class="col-md-2">
-        <label class="form-label small mb-1">상태</label>
+        <label class="form-label small mb-1">{{ t('orders.status') }}</label>
         <select name="status" class="form-select form-select-sm">
           <option value="">전체</option>
           {% for s in ["new","paid","preparing","shipped","delivered","canceled","returned","exchanged","refund_requested"] %}
@@ -84,19 +84,19 @@
         </select>
       </div>
       <div class="col-md-2">
-        <label class="form-label small mb-1">시작일</label>
+        <label class="form-label small mb-1">{{ t('orders.start_date') }}</label>
         <input type="date" name="date_from" class="form-control form-control-sm" value="{{ filters.get('date_from', '') }}">
       </div>
       <div class="col-md-2">
-        <label class="form-label small mb-1">종료일</label>
+        <label class="form-label small mb-1">{{ t('orders.end_date') }}</label>
         <input type="date" name="date_to" class="form-control form-control-sm" value="{{ filters.get('date_to', '') }}">
       </div>
       <div class="col-md-2">
-        <label class="form-label small mb-1">검색</label>
+        <label class="form-label small mb-1">{{ t('orders.search') }}</label>
         <input type="text" name="search" class="form-control form-control-sm" placeholder="주문번호/구매자" value="{{ filters.get('search', '') }}">
       </div>
       <div class="col-md-1">
-        <button type="submit" class="btn btn-outline-secondary btn-sm w-100">검색</button>
+        <button type="submit" class="btn btn-outline-secondary btn-sm w-100">{{ t('orders.search') }}</button>
       </div>
     </div>
   </div>
@@ -115,12 +115,12 @@
       <div class="d-flex align-items-center gap-2 flex-wrap">
         {% if orders %}
         <span id="bulkSelectionCount" class="badge text-bg-light">0건 선택</span>
-        <button id="bulkTrackingButton" type="button" class="btn btn-outline-primary btn-sm" onclick="openBulkTrackingModal()" disabled title="주문을 선택하면 사용할 수 있습니다.">일괄 운송장 등록</button>
-        <button id="bulkShipButton" type="button" class="btn btn-primary btn-sm" onclick="bulkUpdateSelectedStatus('shipped')" disabled title="배송중으로 변경 가능한 주문을 선택하면 사용할 수 있습니다.">배송중 처리</button>
-        <button id="bulkStatusButton" type="button" class="btn btn-outline-secondary btn-sm" onclick="openBulkStatusModal()" disabled title="공통 상태 흐름이 있는 주문을 선택하면 사용할 수 있습니다.">일괄 상태 변경</button>
+        <button id="bulkTrackingButton" type="button" class="btn btn-outline-primary btn-sm" onclick="openBulkTrackingModal()" disabled title="주문을 선택하면 사용할 수 있습니다.">{{ t('orders.bulk_tracking') }}</button>
+        <button id="bulkShipButton" type="button" class="btn btn-primary btn-sm" onclick="bulkUpdateSelectedStatus('shipped')" disabled title="배송중으로 변경 가능한 주문을 선택하면 사용할 수 있습니다.">{{ t('orders.bulk_ship') }}</button>
+        <button id="bulkStatusButton" type="button" class="btn btn-outline-secondary btn-sm" onclick="openBulkStatusModal()" disabled title="공통 상태 흐름이 있는 주문을 선택하면 사용할 수 있습니다.">{{ t('orders.bulk_status') }}</button>
         {% endif %}
         {% if ops_health.service_available %}
-        <a href="/seller/orders/export.csv" class="btn btn-outline-secondary btn-sm">CSV 내보내기</a>
+        <a href="/seller/orders/export.csv" class="btn btn-outline-secondary btn-sm">{{ t('orders.export_csv') }}</a>
         {% else %}
         <button type="button" class="btn btn-outline-secondary btn-sm" disabled title="주문 서비스가 준비되면 CSV 내보내기를 다시 사용할 수 있습니다.">CSV 내보내기 (서비스 준비 중)</button>
         {% endif %}
