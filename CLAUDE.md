@@ -50,7 +50,10 @@
   (collect_receiver/manual_collect/bookmarklet 카피 + woocommerce 운송장 노트 [코고가네]). manual_collect '기존 수집기
   엔드포인트' 개발노트 → 사용자 카피. ※channels/percenty.py는 실제 퍼센티 채널 연동이라 유지.
   가드 test_ext_install_wizard_v14(6). 전체 10180 passed.
-- ⏳ 남은 v14: For Beginners 고정/토글/확대 · 친절카피("상품 수집이란?")+CTA 강조 · 기본 마켓/소싱처 아이콘 표시.
+- ✅ **For Beginners 고정 버튼 + 친절 카피(Phase 282):** _base.html에 모든 페이지 우하단 고정 '✨ 처음이신가요?'
+  큰 알약(주황 btn-cta) + 바로 밑 작은 '가이드 버튼 숨기기' on/off(localStorage kgp_fb_hidden, 숨기면 작은 ✨ 재오픈
+  버튼). manual_collect에 '상품 수집이란?' 한 줄 풀이 + '?' 툴팁. 가드 test_for_beginners_v14(3). 전체 10183 passed.
+- ⏳ 남은 v14: 기본 마켓/소싱처 사이트 아이콘(로고) 표시(현재 이모지 아이콘) — 후속.
 
 ## ⬛ v13 브리프 (오너 2026-06-22 — "관리자전용·재로그인버그·속도·모바일앱·글로벌·프로디자인·파비콘")
 - 버전 충돌 시 v13 우선. 디자인 최우선('학교 과제물'→프로). 정직 데이터·회귀 금지.

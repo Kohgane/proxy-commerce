@@ -192,6 +192,35 @@
   </div>
 </div>
 
+<!-- v14: For Beginners 진입 버튼 — 모든 페이지 고정 + 바로 밑 작은 on/off(상태 기억) -->
+<div id="fbWrap" style="position:fixed;right:18px;bottom:18px;z-index:1035;display:flex;flex-direction:column;align-items:flex-end;gap:3px">
+  <a href="/seller/start" id="fbBtn" class="btn btn-cta"
+     style="border-radius:999px;font-weight:800;font-size:1rem;padding:.7rem 1.4rem;box-shadow:0 8px 22px rgba(239,122,34,.35)">
+     ✨ 처음이신가요?
+  </a>
+  <button type="button" id="fbHide" class="btn btn-link p-0 text-muted" style="font-size:.68rem;text-decoration:none">가이드 버튼 숨기기</button>
+</div>
+<button type="button" id="fbReopen" class="btn btn-cta" title="처음이신가요? 가이드 열기"
+        style="display:none;position:fixed;right:18px;bottom:18px;z-index:1035;border-radius:999px;width:44px;height:44px;font-size:1.1rem;box-shadow:0 6px 18px rgba(239,122,34,.35)">✨</button>
+<script>
+(function () {
+  var wrap = document.getElementById('fbWrap');
+  var reopen = document.getElementById('fbReopen');
+  var hide = document.getElementById('fbHide');
+  if (!wrap || !reopen || !hide) return;
+  function get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
+  function set(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
+  function apply() {
+    var hidden = get('kgp_fb_hidden') === '1';
+    wrap.style.display = hidden ? 'none' : 'flex';
+    reopen.style.display = hidden ? 'flex' : 'none';
+  }
+  hide.addEventListener('click', function(){ set('kgp_fb_hidden','1'); apply(); });
+  reopen.addEventListener('click', function(){ set('kgp_fb_hidden','0'); apply(); });
+  apply();
+})();
+</script>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="{{ url_for('seller_console.static', filename='seller.js') }}"></script>
 <script>
