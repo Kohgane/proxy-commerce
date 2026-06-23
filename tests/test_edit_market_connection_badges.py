@@ -28,8 +28,8 @@ def test_edit_page_shows_connection_badges(client):
          patch("src.seller_console.market_credentials.is_connected",
                side_effect=lambda sid, m: m in ("shopify", "coupang")):
         html = client.get("/seller/collect/preview/x").get_data(as_text=True)
-    assert "✅ 키 설정됨" in html          # 연결된 마켓
-    assert "❌ 미설정" in html         # 미연결 마켓
+    assert "키 설정됨" in html and "bi-check-circle" in html   # 연결된 마켓(v18 아이콘셋)
+    assert "미설정" in html and "bi-x-circle" in html         # 미연결 마켓
     assert "키 설정 2/5" in html          # 요약
     assert "/seller/markets/connect/smartstore" in html  # 미연결 → 연결 링크
 
@@ -39,4 +39,4 @@ def test_edit_page_all_connected_shows_full(client):
          patch("src.seller_console.market_credentials.is_connected", return_value=True):
         html = client.get("/seller/collect/preview/x").get_data(as_text=True)
     assert "키 설정 5/5" in html
-    assert "❌ 미설정" not in html
+    assert "미설정</a>" not in html  # 미설정 배지 없음
