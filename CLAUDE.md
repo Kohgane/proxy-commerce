@@ -2,6 +2,24 @@
 
 > 이 파일은 매 세션 시작 시 로드된다. 오너(Kohgane) 지시·검증된 팩트를 누적 기록한다.
 
+## ★ 작업 기본 헤더 (v20 운영 규칙 — 오너 2026-06-23, 모든 후속 작업에 상시 적용)
+> "무엇을 만들지"가 아니라 "어떤 도구를 켜고 작업할지". 절대원칙: 거짓성공/회귀 금지·정직·토큰 단일소스·경량·개발표기 비노출.
+- **상시 디폴트 3종(해당 상황이면 자동 적용):**
+  1. UI/프론트엔드 작업 → **frontend-design** 스킬 + v18 디자인 토큰 스펙. "제네릭 AI/과제물 룩" 제거(화면당 강조1·8px 그리드·이모지0).
+  2. API/외부연동(쿠팡 WING·네이버 커머스API·Shopee·Shopify 등) 코드 작성/수정 → **context7**로 최신 실제 문서 대조 후 코딩(낡은 지식 추측 금지).
+  3. 산출물(보고서·P&L·핸드오프·문서) → **doc skills**(Word/PDF/Excel/PPT)로 실제 파일 생성.
+- **콘텐츠·마케팅:** claude-seo(리스팅/블로그/네이버 키워드+AEO, 금지어·광고규정 준수) · humanizer(로봇 톤 제거, 과장·허위효능 금지) ·
+  social-media-skills/marketingskills(HIKOCO·브랜드 SNS, 채널 톤).
+- **지식·자동화:** ai-second-brain/notebooklm(브리프 v2~ 위키화·검색) · agent-browser(WING/네이버/Shopee 포털 수작업 대행 —
+  **단 로그인/API키/결제 등 민감화면은 사람이 직접, 자동입력 금지·확인 후 진행**) · higgsfield MCP(제품컷·광고 이미지/영상) ·
+  notion(선택, 운영문서만).
+- **제외/보류(검증 전 미설치):** caveman·slack·granola·perplexity·zapier·codex-plugin-cc·financial-services·claude-for-legal·
+  gstack·superpowers·claude-skills(도메인 불일치/커뮤니티 임의코드 위험). 커뮤니티/서드파티 스킬은 검증 전 설치 금지.
+- **⚠️ 현재 CLI 환경 가용성(정직 확인 2026-06-23):** frontend-design·context7·claude-seo·humanizer·doc skills·ai-second-brain·
+  agent-browser 등 위 명명 스킬은 **이 Claude Code CLI 세션엔 미설치**(Unknown skill). higgsfield MCP는 연결됐다가 끊김.
+  → 스킬이 설치되기 전까지는 **그 의도를 수동으로** 적용한다: UI=v18 토큰 직접 준수, API=문서 정밀 확인 후 코딩(추측 금지),
+  산출물=실제 파일 생성. 명명 스킬을 켠 척(거짓 성공) 하지 않는다. 설치/가용해지면 자동 적용.
+
 ## 🟩 v19 브리프 (오너 2026-06-23 — "오류 안내 친절화 + 지구본 박멸·아이콘 단일화")
 - 절대원칙: 추측 금지·거짓성공 금지·회귀 금지·정직·토큰 단일소스·경량·개발표기 비노출. 버전충돌 시 최신 우선.
 - **진행 순서:** ①오류 안내 공통 처리기(수집/연동/업로드 — 쉬운 문장·인라인·재시도) ②지구본 제거+아이콘 단일화.
