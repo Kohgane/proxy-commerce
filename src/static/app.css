@@ -10,48 +10,84 @@
 @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;600;700&display=swap');
 
 :root {
-  /* 베이스 — 한지 크림 라이트(작업 화면) */
-  --pc-color-bg: #f5efe3;            /* 한지 크림 */
-  --pc-color-bg-secondary: #efe7d6;  /* 한지 음영 */
-  --pc-color-surface: #fffdf8;       /* 카드/표면(한지 위 살짝 밝게) */
-  --pc-color-surface-muted: #f3ecdd; /* 표면 음영 */
-  --pc-color-text: #1a1714;          /* 먹(ink) — 순흑 금지, 따뜻한 차콜 */
-  --pc-color-text-muted: #7a6f5e;    /* 먹 흐림(따뜻한 무채) */
-  --pc-color-border: #e3d9c6;        /* 얇은 한지/금 디바이더 톤 */
+  /* ========================================================================
+     v18 디자인 토큰 — 단일 소스(에디토리얼 럭셔리). 전 화면이 이 토큰만 참조.
+     하드코딩 hex/px 금지. 화면당 강조색 1개(주황=주요행동, 청록=브랜드/링크, 금=얕은 악센트).
+     ======================================================================== */
+  /* 컬러 */
+  --ink: #1A1714;        /* 먹: 최강 텍스트/다크 표면 */
+  --cream: #F5EFE3;      /* 한지: 기본 배경 */
+  --gold: #C9A24B;       /* 금: 절제된 프리미엄 악센트/구분 */
+  --teal: #119A8E;       /* 브랜드/보조 액션/링크/현재위치 */
+  --orange: #F5821F;     /* 주요 행동 CTA 전용 */
+  --text-strong: #1A1714; --text: #3A352F; --text-muted: #7A726A;
+  --bg: #F7F2E8; --surface: #FFFFFF; --surface-warm: #FBF8F1; --border: #E7DECC;
+  --success: #2E7D5B; --warn: #C9821F; --danger: #C2503C;
+  /* 다크 'vault'(랜딩/로그인) */
+  --vault-bg: #1A1714; --vault-surface: #241F1A; --vault-text: #F5EFE3; --vault-gold: #C9A24B;
 
-  /* 청록 Primary — "진짜 눌러야 할 행동"에만 절제 사용 */
-  --pc-color-primary: #0f9d8c;
-  --pc-color-primary-strong: #0b7e72;
+  /* 타이포 — 디스플레이 Noto Serif KR, 본문/UI Pretendard(KR)+Inter(EN) */
+  --font-display: "Noto Serif KR", 'Nanum Myeongjo', Georgia, 'Times New Roman', serif;
+  --font-ui: "Pretendard", "Pretendard Variable", "Inter", -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --display-size: clamp(40px, 6vw, 72px); --display-lh: 1.1;
+  --h1-size: 32px; --h1-lh: 1.2; --h2-size: 26px; --h2-lh: 1.25; --h3-size: 20px; --h3-lh: 1.3;
+  --body-lg: 17px; --body: 15px; --small: 13px; --caption: 12px; --line: 1.6;
+  --w-reg: 400; --w-med: 500; --w-semi: 600;
 
-  /* 금(antique gold) — 보조 악센트(선/아이콘/강조) */
-  --pc-color-accent-gold: #c9a24b;
-  /* 주황(invite) — 큰/환영 CTA 전용(For Beginners·시작하기·구글로 시작·연동하기). 절제. (v5) */
-  --pc-color-cta: #ef7a22;
-  --pc-color-cta-strong: #d9651a;
-  --pc-color-ink: #1a1714;           /* 먹 — 다크 무드/시그니처용 */
-  --pc-color-hanji: #f5efe3;         /* 한지 — 다크 위 텍스트/배경용 */
-  --pc-color-accent-lime: #c2f970;   /* (레거시 호환) */
+  /* 간격 — 8px 그리드(모든 패딩/마진/갭은 이 배수만) */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px;
+  --space-6: 32px; --space-7: 48px; --space-8: 64px; --space-9: 96px;
 
-  --pc-color-success: #16a34a;
-  --pc-color-warning: #c98a1e;
-  --pc-color-danger: #c0392b;
-  --pc-color-info: #0f7d72;          /* 링크 — 청록 계열로 통일 */
-  --pc-space-1: .25rem;
-  --pc-space-2: .5rem;
-  --pc-space-3: .75rem;
-  --pc-space-4: 1rem;
-  --pc-space-5: 1.5rem;
-  --pc-radius-sm: .5rem;
-  --pc-radius-md: .85rem;
-  --pc-radius-lg: 1rem;
-  --pc-shadow-sm: 0 2px 10px rgba(26, 23, 20, .06);
-  --pc-shadow-md: 0 14px 30px rgba(26, 23, 20, .10);
-  --pc-focus-ring: 0 0 0 .2rem rgba(15, 157, 140, .28);
+  /* 라운드 / 그림자 — 두꺼운 보더 대신 여백 + 얕은 그림자 + 1px 가는 구분선 */
+  --radius-sm: 8px; --radius: 12px; --radius-lg: 16px; --radius-pill: 999px;
+  --shadow-sm: 0 1px 2px rgba(26, 23, 20, .06);
+  --shadow: 0 4px 16px rgba(26, 23, 20, .08);
+  --shadow-lg: 0 12px 32px rgba(26, 23, 20, .10);
+
+  /* 레이아웃 */
+  --sidebar-w: 264px; --nav-item-h: 36px; --content-max: 1200px;
+
+  /* 모션 (prefers-reduced-motion 존중) */
+  --dur-fast: 120ms; --dur: 200ms; --dur-slow: 320ms; --ease: cubic-bezier(.2, .8, .2, 1);
+
+  /* ========================================================================
+     하위호환 별칭: 기존 --pc-* 는 v18 토큰을 가리킨다(단일 소스 유지).
+     ※ 신규 코드는 v18 토큰을 직접 쓰고, --pc-* 는 점진적으로 정리.
+     ======================================================================== */
+  --pc-color-bg: var(--bg);
+  --pc-color-bg-secondary: var(--surface-warm);
+  --pc-color-surface: var(--surface);
+  --pc-color-surface-muted: var(--surface-warm);
+  --pc-color-text: var(--text-strong);
+  --pc-color-text-muted: var(--text-muted);
+  --pc-color-border: var(--border);
+  --pc-color-primary: var(--teal);
+  --pc-color-primary-strong: #0E8A7C;   /* teal 짙은 단계(hover) */
+  --pc-color-accent-gold: var(--gold);
+  --pc-color-cta: var(--orange);
+  --pc-color-cta-strong: #DA7012;        /* orange 짙은 단계(hover) */
+  --pc-color-ink: var(--ink);
+  --pc-color-hanji: var(--cream);
+  --pc-color-accent-lime: #C2F970;       /* (레거시 호환) */
+  --pc-color-success: var(--success);
+  --pc-color-warning: var(--warn);
+  --pc-color-danger: var(--danger);
+  --pc-color-info: var(--teal);          /* 링크 — 청록 */
+  --pc-space-1: var(--space-1);          /* 4px(=.25rem) */
+  --pc-space-2: var(--space-2);          /* 8px */
+  --pc-space-3: var(--space-3);          /* 12px */
+  --pc-space-4: var(--space-4);          /* 16px */
+  --pc-space-5: var(--space-5);          /* 24px */
+  --pc-radius-sm: var(--radius-sm);
+  --pc-radius-md: var(--radius);
+  --pc-radius-lg: var(--radius-lg);
+  --pc-shadow-sm: var(--shadow-sm);
+  --pc-shadow-md: var(--shadow);
+  --pc-focus-ring: 0 0 0 .2rem rgba(17, 154, 142, .28);
   --pc-z-toast: 1080;
-  --pc-transition: .18s ease;
-  /* 폰트 토큰 */
-  --pc-font-body: 'Pretendard Variable', 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --pc-font-display: 'Noto Serif KR', 'Nanum Myeongjo', Georgia, 'Times New Roman', serif;
+  --pc-transition: var(--dur) var(--ease);
+  --pc-font-body: var(--font-ui);
+  --pc-font-display: var(--font-display);
 }
 
 body {
@@ -379,3 +415,35 @@ a:hover {
 @media (prefers-reduced-motion: reduce) {
   .skeleton { animation: none; background: rgba(26,23,20,.08); }
 }
+
+/* ========================================================================
+   v18 컴포넌트 베이스라인 — 토큰 적용("과제물 → 프로"). 모두 토큰 참조(하드코딩 0).
+   타입 스케일은 유틸리티(opt-in)로 제공해 점진 적용(레이아웃 회귀 방지).
+   ======================================================================== */
+/* 타입 스케일 유틸 */
+.pc-display { font-family: var(--font-display); font-size: var(--display-size); line-height: var(--display-lh); letter-spacing: -.02em; font-weight: var(--w-semi); }
+.pc-h1 { font-family: var(--font-display); font-size: var(--h1-size); line-height: var(--h1-lh); letter-spacing: -.01em; font-weight: var(--w-semi); }
+.pc-h2 { font-size: var(--h2-size); line-height: var(--h2-lh); font-weight: var(--w-semi); }
+.pc-h3 { font-size: var(--h3-size); line-height: var(--h3-lh); font-weight: var(--w-semi); }
+.pc-body-lg { font-size: var(--body-lg); line-height: var(--line); }
+.pc-body { font-size: var(--body); line-height: var(--line); }
+.pc-small { font-size: var(--small); }
+.pc-caption { font-size: var(--caption); line-height: var(--caption-lh, 1.4); color: var(--text-muted); }
+/* 8px 그리드 스택(세로 간격) 유틸 */
+.pc-stack-2 > * + * { margin-top: var(--space-2); }
+.pc-stack-3 > * + * { margin-top: var(--space-3); }
+.pc-stack-4 > * + * { margin-top: var(--space-4); }
+.pc-stack-5 > * + * { margin-top: var(--space-5); }
+
+/* 버튼: 스펙 radius(12) + 터치 타깃 + 토큰 포커스 링(청록) */
+.btn { border-radius: var(--radius); }
+.btn-lg { min-height: 44px; }
+.btn:focus-visible,
+.form-control:focus-visible,
+.form-select:focus-visible,
+a:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(17, 154, 142, .35); }
+/* 입력: 토큰 radius + 가는 보더 */
+.form-control, .form-select { border-radius: var(--radius); border-color: var(--border); }
+.form-control:focus, .form-select:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(17, 154, 142, .18); }
+/* 카드: 두꺼운 보더 대신 얕은 그림자 + 1px 가는 구분선(여백 우선) */
+.console-card, .card { box-shadow: var(--shadow-sm); }

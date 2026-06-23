@@ -1208,6 +1208,54 @@ def _show_region_banner() -> bool:
         return False
 
 
+# v18 PART A — 거래 방향 레인(수입형/수출형)
+def _current_lane() -> str:
+    try:
+        from src.lane import get_lane
+        return get_lane(request.cookies.get("kgp_lane", ""),
+                        request.headers.get("Accept-Language", ""))
+    except Exception:
+        return "import"
+
+
+@app.context_processor
+def _inject_lane():
+    """모든 템플릿에 현재 레인 정보 주입(가짜 분기 금지 — 실제 언어/통화/타깃 마켓)."""
+    try:
+        from src.lane import lane_info
+        lid = _current_lane()
+        return {"current_lane": lid, "lane": lane_info(lid)}
+    except Exception:
+        return {"current_lane": "import", "lane": None}
+
+
+@app.get('/lane/set')
+def lane_set():
+    """레인 선택 적용 — 레인 + 그에 맞는 언어/통화를 쿠키로 기억(실제 컨텍스트 전환)."""
+    from src.lane import normalize_lane, lane_info
+    lane = normalize_lane(request.args.get("lane", "")) or "import"
+    info = lane_info(lane)
+    nxt = request.args.get("next", "/seller/")
+    if not nxt.startswith("/"):
+        nxt = "/seller/"
+    resp = redirect(nxt, code=302)
+    yr = 60 * 60 * 24 * 365
+    resp.set_cookie("kgp_lane", lane, max_age=yr, samesite="Lax")
+    # 레인이 언어·통화를 실제로 구성(유저가 이후 개별 전환 가능)
+    resp.set_cookie("kgp_lang", info["lang"], max_age=yr, samesite="Lax")
+    resp.set_cookie("kgp_currency", info["currency"], max_age=yr, samesite="Lax")
+    resp.set_cookie("kgp_region_dismissed", "1", max_age=yr, samesite="Lax")
+    return resp
+
+
+@app.get('/lane')
+def lane_gate():
+    """운영 방식 선택 게이트(수입형/수출형). 외국인=수출 강조, 한국=수입 강조."""
+    from src.lane import LANES
+    return render_template('lane_gate.html', lanes=LANES,
+                           suggested=_current_lane(), lang=_visitor_lang())
+
+
 def _render_landing():
     from src.version import get_current_phase
     version = os.getenv('APP_VERSION', 'dev')

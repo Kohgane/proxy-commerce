@@ -49,6 +49,9 @@ def app():
 
 
 def test_seller_dashboard_contains_phase_links(client):
+    # v17: 일부 링크(api-status)는 관리자 전용 가드 → 관리자 세션에서 전체 메뉴 노출 확인.
+    with client.session_transaction() as sess:
+        sess["user_id"] = "admin-user"; sess["user_email"] = "a@x.com"; sess["user_role"] = "admin"
     resp = client.get("/seller/dashboard")
     html = resp.get_data(as_text=True)
     for url in SELLER_MENU_LINKS:

@@ -20,7 +20,7 @@ def test_content_script_has_sourcing_gate():
     # 허용목록 게이팅 함수 + 렌더 경로에서 호출
     assert "function kgpHostAllowed" in cs
     assert "function kgpTeardown" in cs
-    assert "if (!kgpHostAllowed())" in cs
+    assert "if (!kgpHostAllowed()" in cs   # v17: 진입 세션 예외가 붙어도 호스트 게이팅 유지
     # 설정 로드 + 런타임 즉시 반영
     assert "kgp_sources" in cs
     assert "chrome.storage.onChanged" in cs

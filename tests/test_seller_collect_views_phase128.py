@@ -211,14 +211,22 @@ def test_orders_page_stub_notice(client):
 # GET /seller/api-status
 # ---------------------------------------------------------------------------
 
+def _as_admin(client):
+    # v17: api-status는 관리자 전용 — 테스트에서 관리자 세션 부여.
+    with client.session_transaction() as s:
+        s["user_id"] = "admin1"; s["user_email"] = "admin@x.com"; s["user_role"] = "admin"
+
+
 def test_api_status_page_200(client):
-    """GET /seller/api-status → 200."""
+    """GET /seller/api-status → 200 (관리자)."""
+    _as_admin(client)
     resp = client.get("/seller/api-status")
     assert resp.status_code == 200
 
 
 def test_api_status_page_shows_apis(client):
-    """API 상태 페이지에 API 이름 포함."""
+    """API 상태 페이지에 API 이름 포함 (관리자)."""
+    _as_admin(client)
     resp = client.get("/seller/api-status")
     html = resp.data.decode("utf-8")
     # 최소 하나 이상의 API 이름이 표시되어야 함
@@ -226,7 +234,8 @@ def test_api_status_page_shows_apis(client):
 
 
 def test_api_status_json_200(client):
-    """GET /seller/api-status/json → 200 + JSON."""
+    """GET /seller/api-status/json → 200 + JSON (관리자)."""
+    _as_admin(client)
     resp = client.get("/seller/api-status/json")
     assert resp.status_code == 200
     data = json.loads(resp.data)
@@ -236,7 +245,8 @@ def test_api_status_json_200(client):
 
 
 def test_api_status_json_schema(client):
-    """api-status/json 응답 스키마 확인."""
+    """api-status/json 응답 스키마 확인 (관리자)."""
+    _as_admin(client)
     resp = client.get("/seller/api-status/json")
     data = json.loads(resp.data)
     for api in data["apis"]:

@@ -2,6 +2,47 @@
 
 > 이 파일은 매 세션 시작 시 로드된다. 오너(Kohgane) 지시·검증된 팩트를 누적 기록한다.
 
+## 🟧 v17 브리프 (오너 2026-06-23 — "개발안내 숨김·등록소싱처 칩·북마클릿 복원·진입 시 수집기 보장")
+- 절대원칙: 거짓성공/회귀 금지·정직·토큰 단일소스·경량·**일반 유저에게 개발 내용 비노출**. 버전충돌 시 최신 우선.
+- **진행 순서:** ①P0 api-status/개발안내 일반유저 제거(관리자 이동/숨김)+proxy-commerce 표기 제거 ②P0 앱에서 마켓 진입 시
+  고가수집기 무조건 노출 보장 ③P1 등록 소싱처 칩 표시 + 북마클릿 복원/안내 페이지.
+- ⏳ P0-1: api_status 화면/문구(GitHub/Render/Manual Deploy/JSON/25·67)는 개발용 → 일반유저 제거(관리자 전용 or 숨김),
+  대시보드 등 api-status 링크 제거, proxy-commerce 표기 0.
+- ⏳ P0-2: 수집 페이지 마켓/소싱처 칩 클릭→마켓 이동 시 도착 페이지에 수집기 보장(①도메인 허용목록 보장 ②진입 마커로
+  유저 off여도 그 세션 노출 ③미설치 시 설치/북마클릿 유도). 유저 설정 소싱처 한정 원칙(v15) 유지.
+- ✅ **P0-1 api-status 관리자 전용(Phase 291):** /api-status·/api-status/json·nav '/api/status'·manual_collect 'API 상태'
+  버튼을 `_is_admin_user()`로 게이팅(비관리자=대시보드 리다이렉트/403/링크 미노출). api_status.html 'proxy-commerce →
+  Environment' → '내 서비스 →'(표기 제거). 일반 유저 화면 개발안내 0.
+- ✅ **P0-2 진입 시 수집기 보장(Phase 291):** 수집 페이지 마켓/소싱처 칩 href에 마커 `?kgpsrc=app`. content_script
+  `kgpEntrySession()`(URL 마커→sessionStorage kgp_entry, SPA 이동에도 유지) → injectCollectButton/리스팅 게이트가
+  진입 세션이면 FAB off·호스트 허용목록 무시하고 노출(앱이 띄운 마켓 한정). 미설치 시 북마클릿(보조) 유도. manifest 1.5.7→1.5.8.
+- ✅ **P1 소싱처 칩+북마클릿(Phase 291):** manual_collect에 My Sources(list_sources) 칩(파비콘+이름, 마커 부착, '＋소싱처
+  추가') 즉시 반영. bookmarklet.html에 '확장 vs 북마클릿' 비교표(설치/자동버튼/대량/적합환경) + 메인=확장 명시.
+  가드 test_v17_collector_access(6). 영향테스트(phase128·sidebar·v10게이트) 관리자세션/게이트 갱신. 전체 10235 passed.
+
+## 🟨 v18 브리프 (오너 2026-06-23 — "양방향 게이트 + 디자인 토큰 스펙 확정")
+- 절대원칙: 거짓성공/회귀 금지·정직·**토큰 단일소스(하드코딩 hex/px 금지)**·경량. 버전충돌 시 최신 우선.
+- **진행 순서:** ①PART B 디자인 토큰(app.css 단일소스) → 전 화면 적용 ②PART A 게이트(수입/수출 레인).
+- ⏳ PART B 디자인 토큰: app.css 단일소스 — 컬러(--ink/cream/gold/teal/orange/text-*/bg/surface/border/상태/vault)·타이포
+  (Noto Serif KR/Pretendard+Inter, --display clamp·h1~3·body)·간격(8px --space-1~9)·라운드/그림자·레이아웃(--sidebar-w 264)·
+  모션. 화면당 강조1·이모지0·두꺼운보더0(여백+얕은그림자)·단일 아이콘셋(20px). 하드코딩 hex/px→토큰.
+- ✅ **PART B 디자인 토큰 단일소스(Phase 292):** app.css :root에 v18 스펙 토큰 정의 — 컬러(--ink #1A1714/--cream/--gold
+  #C9A24B/--teal #119A8E/--orange #F5821F/--text-*/--bg/--surface/--border/--success·warn·danger/--vault-*)·타이포
+  (--font-display Noto Serif KR/--font-ui Pretendard+Inter, --display-size clamp(40,6vw,72)/--h1~3/--body/--caption)·간격
+  (8px그리드 --space-1~9)·라운드/그림자(--radius-*/--shadow-*)·레이아웃(--sidebar-w 264/--content-max 1200)·모션(--dur-*/--ease).
+  기존 --pc-* 는 v18 토큰을 var()로 참조(단일소스, 하위호환) → 전 화면 에디토리얼 럭셔리 팔레트 자동 반영(teal/orange 미세
+  보정). 가드 test_design_tokens_v18(5). 전체 10240 passed. ※이모지아이콘 제거·타입스케일 화면별 적용·단일아이콘셋은 점진 후속.
+- ✅ **PART A 양방향 게이트(Phase 293):** 신설 src/lane.py(LANES import/export 단일소스 — title/arrow/desc·lang·currency·
+  sourcing·target_markets, default_lane_for(Accept-Language 비-ko=export·ko=import), get_lane(쿠키 우선)). order_webhook:
+  `_current_lane()`+context_processor(current_lane·lane 전 템플릿 주입), `/lane`(게이트 2카드 — 추천 강조), `/lane/set`
+  (레인+lang+currency 쿠키 실제 전환, 가짜분기 아님). lane_gate.html(v18 토큰만 사용). _base.html 탑바 '운영 방식 전환'
+  링크, landing 히어로 '운영 방식 선택(수입/수출)' CTA. 가드 test_lane_gate_v18(6). 전체 10246 passed.
+  → **v18 완료**(PART B 토큰 단일소스 + PART A 수입/수출 게이트). ※이모지/타입스케일 화면 스윕은 점진 후속.
+- ✅ **v18 §7 컴포넌트 베이스라인(Phase 294):** app.css에 토큰 기반 베이스라인 추가 — 타입 스케일 유틸(.pc-display/.pc-h1~3/
+  .pc-body*/.pc-caption, opt-in 점진적용)·8px 스택 유틸(.pc-stack-2~5)·버튼 radius var(--radius)·청록 포커스 링(focus-visible)
+  ·입력 토큰 radius+teal 포커스·카드 얕은 그림자(두꺼운 보더 대신). CSS 단일소스라 화면별 수정 없이 전 화면 적용·저회귀.
+  가드 보강. 전체 10247 passed. ※이모지 아이콘 전면 제거·단일 아이콘셋 교체는 화면 단위 후속(회귀 관리).
+
 ## 🟪 v16 브리프 (오너 2026-06-23 — "수집 정확도·공유 미리보기·토큰/관리자/소싱처")
 - 절대원칙: 추측 금지(에러·누락은 재현/로그)·거짓성공/가짜필러 금지·회귀 금지·정직·토큰 단일소스·경량. 버전충돌 시 v16 우선.
 - **진행 순서:** ①P0 수집 정확도(확장 인페이지 실값 추출·제품 스코프 한정·가격/이미지/상세/리뷰 실값, 필러0)
