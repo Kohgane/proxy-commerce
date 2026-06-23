@@ -104,7 +104,19 @@
       <div class="small text-muted mb-2">{{ naver_status.reason }} <a href="{{ naver_status.setup_url }}">설정 경로</a></div>
       {% endif %}
 
-      {% if kakao_status.is_configured or google_status.is_configured or naver_status.is_configured %}
+      {% if apple_status.is_configured %}
+      <a href="/auth/apple/start?next={{ next_url }}" class="btn w-100 social-btn mb-2 social-login-link"
+         style="background:#000;color:#fff;border:none;">
+         Apple로 로그인
+      </a>
+      {% else %}
+      <button type="button" class="btn w-100 social-btn mb-1" style="background:#f0f0f0;color:#666;border:none;" disabled>
+        Apple 로그인 (설정 필요)
+      </button>
+      <div class="small text-muted mb-2">{{ apple_status.reason }} <a href="{{ apple_status.setup_url }}">설정 경로</a></div>
+      {% endif %}
+
+      {% if kakao_status.is_configured or google_status.is_configured or naver_status.is_configured or apple_status.is_configured %}
       <div class="divider">또는</div>
       {% endif %}
 
