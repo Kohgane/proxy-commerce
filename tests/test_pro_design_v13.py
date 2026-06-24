@@ -35,6 +35,7 @@ def test_extension_uses_glove_not_globe():
     assert "rotate(32 256 256)" not in cs and "rotate(-32 256 256)" not in cs
 
 
-def test_favicon_and_icons_are_glove():
-    svg = Path("src/seller_console/static/favicon.svg").read_text(encoding="utf-8")
-    assert "글러브" in svg and "#020010" not in svg
+def test_favicon_and_icons_are_gateway():
+    # v21/v22: 글러브 → 공식 게이트웨이(B) 마크. 지구본/순흑 잔재 없음.
+    svg = Path("src/seller_console/static/favicon.svg").read_text(encoding="utf-8").lower()
+    assert "gateway" in svg and "#020010" not in svg

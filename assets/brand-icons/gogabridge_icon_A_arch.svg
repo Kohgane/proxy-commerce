@@ -1,0 +1,17 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" aria-label="Goga Bridj icon A arch">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E2BE68"/><stop offset="1" stop-color="#C9A24B"/></linearGradient></defs>
+  <rect width="512" height="512" rx="112" fill="#1A1714"/>
+  <rect x="8" y="8" width="496" height="496" rx="106" fill="none" stroke="#C9A24B" stroke-opacity="0.22" stroke-width="2"/>
+  <!-- deck -->
+  <rect x="84" y="196" width="344" height="18" rx="9" fill="url(#g)"/>
+  <!-- three arches -->
+  <g fill="none" stroke="url(#g)" stroke-width="14" stroke-linecap="round">
+    <path d="M103 304 L103 256 A50 50 0 0 1 203 256 L203 304"/>
+    <path d="M206 304 L206 256 A50 50 0 0 1 306 256 L306 304"/>
+    <path d="M309 304 L309 256 A50 50 0 0 1 409 256 L409 304"/>
+  </g>
+  <!-- water (teal) -->
+  <path d="M96 330 q20 -12 40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0" fill="none" stroke="#119A8E" stroke-width="9" stroke-linecap="round"/>
+  <!-- spark -->
+  <circle cx="256" cy="180" r="13" fill="#F5821F" stroke="#1A1714" stroke-width="3"/>
+</svg>
