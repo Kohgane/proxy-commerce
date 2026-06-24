@@ -58,7 +58,7 @@
 }
 
 .console-nav-link.active {
-  color: #fff;
+  color: var(--on-accent);
   background: linear-gradient(135deg, var(--console-primary), var(--pc-color-primary-strong, #0b7e72));
   font-weight: 600;
 }
@@ -242,7 +242,7 @@
 
 .console-onboarding-card {
   border-color: #d9d6ff;
-  background: linear-gradient(180deg, #ffffff 0%, #f7f6ff 100%);
+  background: linear-gradient(180deg, var(--on-accent) 0%, #f7f6ff 100%);
 }
 
 .onboarding-step-card {
@@ -282,7 +282,7 @@
   padding: 0.3rem 0.7rem;
   border: 1px solid var(--console-border);
   font-size: 0.85rem;
-  background: #fff;
+  background: var(--on-accent);
 }
 
 .console-step.active {

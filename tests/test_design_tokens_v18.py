@@ -67,3 +67,38 @@ def test_base_chrome_uses_icon_set_not_emoji():
         assert ic in base, f"{ic} 아이콘 누락"
     for em in ("🛒", "👤", "🚪", "📱", "🛠️", "🆘"):
         assert em not in base, f"chrome에 이모지 {em} 잔존"
+
+
+def _app_css_outside_root():
+    import re
+    css = CSS
+    spans = []
+    for m in re.finditer(r":root\s*\{", css):
+        i = m.end(); d = 1
+        while i < len(css) and d > 0:
+            if css[i] == "{": d += 1
+            elif css[i] == "}": d -= 1
+            i += 1
+        spans.append((m.start(), i))
+    out, p = "", 0
+    for a, b in spans:
+        out += css[p:a]; p = b
+    out += css[p:]
+    return out
+
+
+def test_brand_shade_tokens_defined():
+    # 브랜드 음영/온악센트 단일소스 토큰
+    for tok in ("--teal-strong", "--teal-hover", "--orange-strong", "--orange-hover",
+                "--gold-ink", "--gold-ink-strong", "--on-accent"):
+        assert f"{tok}:" in CSS, f"{tok} 누락"
+    assert "--pc-color-primary-strong: var(--teal-strong)" in CSS
+    assert "--pc-color-cta-strong: var(--orange-strong)" in CSS
+
+
+def test_brand_hex_not_hardcoded_outside_root():
+    # 단일소스: 브랜드 팔레트 hex가 :root 밖(컴포넌트 규칙)에 하드코딩되지 않음 → var(--*)만.
+    body = _app_css_outside_root().lower()
+    for hx in ("#1a1714", "#f5efe3", "#c9a24b", "#119a8e", "#0f9d8c",
+               "#f5821f", "#ef7a22", "#12a897", "#f5871f", "#8a6d22", "#6f561a"):
+        assert hx not in body, f"브랜드 hex {hx} 가 :root 밖에 하드코딩됨(토큰 var()로 치환 필요)"

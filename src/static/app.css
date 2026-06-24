@@ -23,6 +23,11 @@
   --text-strong: #1A1714; --text: #3A352F; --text-muted: #7A726A;
   --bg: #F7F2E8; --surface: #FFFFFF; --surface-warm: #FBF8F1; --border: #E7DECC;
   --success: #2E7D5B; --warn: #C9821F; --danger: #C2503C;
+  /* 브랜드 음영(hover/텍스트) 단일소스 — 컴포넌트에서 하드코딩 금지 */
+  --teal-strong: #0E8A7C; --teal-hover: #12A897;
+  --orange-strong: #DA7012; --orange-hover: #F5871F;
+  --gold-ink: #8A6D22; --gold-ink-strong: #6F561A;
+  --on-accent: #FFFFFF;
   /* 다크 'vault'(랜딩/로그인) */
   --vault-bg: #1A1714; --vault-surface: #241F1A; --vault-text: #F5EFE3; --vault-gold: #C9A24B;
 
@@ -62,10 +67,10 @@
   --pc-color-text-muted: var(--text-muted);
   --pc-color-border: var(--border);
   --pc-color-primary: var(--teal);
-  --pc-color-primary-strong: #0E8A7C;   /* teal 짙은 단계(hover) */
+  --pc-color-primary-strong: var(--teal-strong);   /* teal 짙은 단계(hover) */
   --pc-color-accent-gold: var(--gold);
   --pc-color-cta: var(--orange);
-  --pc-color-cta-strong: #DA7012;        /* orange 짙은 단계(hover) */
+  --pc-color-cta-strong: var(--orange-strong);        /* orange 짙은 단계(hover) */
   --pc-color-ink: var(--ink);
   --pc-color-hanji: var(--cream);
   --pc-color-accent-lime: #C2F970;       /* (레거시 호환) */
@@ -92,7 +97,7 @@
 
 body {
   font-family: var(--pc-font-body);
-  background: linear-gradient(180deg, #fbf8f1 0%, var(--pc-color-bg) 100%) fixed;
+  background: linear-gradient(180deg, var(--surface-warm) 0%, var(--pc-color-bg) 100%) fixed;
   color: var(--pc-color-text);
 }
 
@@ -150,46 +155,46 @@ a:hover {
 .btn-primary {
   background: linear-gradient(135deg, var(--pc-color-primary), var(--pc-color-primary-strong));
   border-color: transparent;
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 700;
   box-shadow: 0 6px 16px rgba(15, 157, 140, .26);
 }
 .btn-primary:hover,
 .btn-primary:focus {
-  background: linear-gradient(135deg, #12a897, var(--pc-color-primary-strong));
+  background: linear-gradient(135deg, var(--teal-hover), var(--pc-color-primary-strong));
   border-color: transparent;
-  color: #fff;
+  color: var(--on-accent);
   transform: translateY(-1px);
   box-shadow: 0 10px 22px rgba(15, 157, 140, .34);
 }
 .btn-outline-primary { border-color: var(--pc-color-primary); color: var(--pc-color-primary-strong); font-weight: 600; }
-.btn-outline-primary:hover { background: var(--pc-color-primary); border-color: var(--pc-color-primary); color: #fff; }
+.btn-outline-primary:hover { background: var(--pc-color-primary); border-color: var(--pc-color-primary); color: var(--on-accent); }
 /* Secondary(금 아웃라인) — Primary보다 한 단계 약하게. 명시적으로 .btn-gold. */
 .btn-gold {
   background: transparent;
   border: 1.5px solid var(--pc-color-accent-gold);
-  color: #8a6d22;
+  color: var(--gold-ink);
   font-weight: 600;
 }
 .btn-gold:hover,
 .btn-gold:focus {
   background: rgba(201, 162, 75, .12);
   border-color: var(--pc-color-accent-gold);
-  color: #6f561a;
+  color: var(--gold-ink-strong);
 }
 /* 초대 CTA(주황 채움) — "큰 행동"(For Beginners·시작하기·구글로 시작). 화면당 절제 사용. (v5) */
 .btn-cta {
   background: linear-gradient(135deg, var(--pc-color-cta), var(--pc-color-cta-strong));
   border-color: transparent;
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 700;
   box-shadow: 0 6px 16px rgba(239, 122, 34, .28);
 }
 .btn-cta:hover,
 .btn-cta:focus {
-  background: linear-gradient(135deg, #f5871f, var(--pc-color-cta-strong));
+  background: linear-gradient(135deg, var(--orange-hover), var(--pc-color-cta-strong));
   border-color: transparent;
-  color: #fff;
+  color: var(--on-accent);
   transform: translateY(-1px);
   box-shadow: 0 10px 24px rgba(239, 122, 34, .38);
 }
@@ -366,15 +371,15 @@ a:hover {
   border: 1px solid var(--pc-color-border);
   font-size: 11px; font-weight: 700; cursor: help; vertical-align: middle; line-height: 1;
 }
-.pc-help:hover, .pc-help:focus { background: var(--pc-color-primary); color: #fff; border-color: var(--pc-color-primary); outline: none; }
+.pc-help:hover, .pc-help:focus { background: var(--pc-color-primary); color: var(--on-accent); border-color: var(--pc-color-primary); outline: none; }
 
 .text-teal { color: #0d9488 !important; }
 .bg-teal { background-color: #0d9488 !important; }
-.badge-get { background: #22c55e; color: #fff; }
-.badge-post { background: #3b82f6; color: #fff; }
-.badge-put { background: #f97316; color: #fff; }
-.badge-patch { background: #a855f7; color: #fff; }
-.badge-delete { background: #ef4444; color: #fff; }
+.badge-get { background: #22c55e; color: var(--on-accent); }
+.badge-post { background: #3b82f6; color: var(--on-accent); }
+.badge-put { background: #f97316; color: var(--on-accent); }
+.badge-patch { background: #a855f7; color: var(--on-accent); }
+.badge-delete { background: #ef4444; color: var(--on-accent); }
 .endpoint-path {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: .85rem;
