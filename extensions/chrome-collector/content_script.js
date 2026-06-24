@@ -219,16 +219,13 @@ function setFabState(btn, state) {
   }
 }
 
-// 고가브릿지 게이트웨이 마크(금 아치 + 주황 키스톤) — 파비콘 B마크와 동일.
-// v21: 글러브/지구본 폐기 → 게이트웨이로 통일. (어두운 원형 배지 위 배치라 통로 컷은 배지색 #0f0d0b)
+// 고가브릿지 게이트웨이(B) 마크 — 공식 브랜드 자산과 동일(금 아치 + 청록 다리 + 주황 키스톤).
+// v21/v22: 글러브/지구본 폐기. (어두운 원형 배지 위 배치라 fill 없는 스트로크 아치)
 const KGP_GLOVE_SVG =
   '<svg width="20" height="20" viewBox="0 0 512 512" aria-hidden="true" style="display:block">' +
-  '<rect x="136" y="246" width="240" height="114" fill="#c9a24b"/>' +
-  '<circle cx="256" cy="246" r="120" fill="#c9a24b"/>' +
-  '<rect x="186" y="246" width="140" height="114" fill="#0f0d0b"/>' +
-  '<circle cx="256" cy="246" r="70" fill="#0f0d0b"/>' +
-  '<rect x="150" y="360" width="212" height="30" rx="10" fill="#c9a24b"/>' +
-  '<polygon points="230,112 282,112 274,180 238,180" fill="#f5821f"/>' +
+  '<path d="M180 372 L180 240 A76 76 0 0 1 332 240 L332 372" fill="none" stroke="#c9a24b" stroke-width="26" stroke-linecap="round"/>' +
+  '<line x1="150" y1="380" x2="362" y2="380" stroke="#119a8e" stroke-width="16" stroke-linecap="round"/>' +
+  '<circle cx="256" cy="164" r="20" fill="#f5821f"/>' +
   '</svg>';
 
 // ---------------------------------------------------------------------------

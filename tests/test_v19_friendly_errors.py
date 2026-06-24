@@ -56,12 +56,12 @@ def test_key_flows_use_friendly_handler():
 
 # ---- P0-2: 지구본 박멸 — v21 게이트웨이(B) 단일 아이콘 ----
 def test_favicon_is_gateway_not_globe():
-    svg = Path("src/seller_console/static/favicon.svg").read_text(encoding="utf-8")
-    assert "게이트웨이" in svg       # v21 브랜드 마크 = 게이트웨이 아치 + 주황 키스톤
-    assert "#f5821f" in svg          # 주황 키스톤 존재
-    # 지구본(globe) 마크업 없음(주석의 '지구본 폐기'는 허용)
-    assert "<title>지구본" not in svg
-    assert "globe" not in svg.lower()
+    low = Path("src/seller_console/static/favicon.svg").read_text(encoding="utf-8").lower()
+    assert "gateway" in low          # v21/v22 공식 마크 = 게이트웨이 아치 + 주황 키스톤
+    assert "#f5821f" in low          # 주황 키스톤 존재
+    # 지구본(globe) 마크업 없음
+    assert "<title>지구본" not in low
+    assert "globe" not in low
 
 
 def test_extension_uses_glove_icon():

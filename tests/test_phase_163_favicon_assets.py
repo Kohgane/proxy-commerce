@@ -37,17 +37,17 @@ def test_base_templates_include_favicon_links():
 
 
 def test_favicon_svg_uses_gateway_brand_mark():
-    text = Path("src/seller_console/static/favicon.svg").read_text(encoding="utf-8")
-    # v21: 브랜드 마크 = 게이트웨이 아치(먹/금 vault + 주황 키스톤). 글러브/지구본 폐기.
-    assert "#1a1714" in text          # 먹 vault 배경
-    assert "#c9a24b" in text          # 금 게이트웨이 아치
-    assert "#f5821f" in text          # 주황 키스톤
-    assert "게이트웨이" in text        # 마크 설명
-    # 글러브/지구본 잔재 없음(청록 글러브·순흑·별 그라데이션 폐기)
-    assert "#119a8e" not in text      # 청록(글러브) 제거
-    assert "#020010" not in text
-    assert 'linearGradient id="bg"' not in text
-    assert ">K<" not in text
+    # v21/v22: 공식 게이트웨이(B) 마크 = 먹/금 vault + 청록 다리 + 주황 키스톤. 글러브/지구본 폐기.
+    low = Path("src/seller_console/static/favicon.svg").read_text(encoding="utf-8").lower()
+    assert "#1a1714" in low           # 먹 vault 배경
+    assert "#c9a24b" in low           # 금 게이트웨이 아치
+    assert "#f5821f" in low           # 주황 키스톤
+    assert "#119a8e" in low           # 청록 다리(span)
+    assert "gateway" in low           # 게이트웨이 마크
+    # 옛 지구본/순흑/별 그라데이션 잔재 없음
+    assert "#020010" not in low
+    assert "globe" not in low
+    assert ">k<" not in low
 
 
 def test_manifest_icon_files_are_served():

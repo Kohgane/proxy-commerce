@@ -25,11 +25,20 @@ def test_pwa_manifest_rebranded():
 
 
 def test_favicon_is_gateway_mark():
-    svg = Path("src/seller_console/static/favicon.svg").read_text(encoding="utf-8")
-    assert "게이트웨이" in svg
-    assert "#f5821f" in svg            # 주황 키스톤
-    assert "#119a8e" not in svg        # 청록 글러브 제거
-    assert "globe" not in svg.lower()
+    # 공식 게이트웨이(B): 금 아치 + 청록 다리(span) + 주황 키스톤
+    low = Path("src/seller_console/static/favicon.svg").read_text(encoding="utf-8").lower()
+    assert "gateway" in low
+    assert "#f5821f" in low            # 주황 키스톤
+    assert "#119a8e" in low            # 청록 다리
+    assert "globe" not in low
+
+
+def test_official_brand_assets_vendored():
+    # 공식 자산 단일소스(재현 가능) — 직접 그린 게 아니라 오너 제공 자산
+    src = Path("assets/brand-icons")
+    assert (src / "gogabridge_icon_B_gateway.svg").exists()
+    for px in ("16", "32", "48", "128", "180", "192", "512", "1024"):
+        assert (src / f"icon-{px}.png").exists(), f"공식 icon-{px}.png 누락"
 
 
 def test_gateway_icon_generator_exists():
