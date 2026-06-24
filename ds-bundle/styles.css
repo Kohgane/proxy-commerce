@@ -1,0 +1,102 @@
+/* 코고가네(KOHgogane) — v18 디자인 토큰 단일소스 (app.css :root에서 추출).
+   Claude Design이 렌더하는 디자인이 이 토큰(팔레트·폰트·간격·라운드)을 그대로 쓰게 한다.
+   에디토리얼 럭셔리: 먹/한지/금 + 청록(브랜드/링크) + 주황(주요 행동). 화면당 강조 1개·이모지 0. */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;600;700&display=swap');
+
+:root {
+  /* ========================================================================
+     v18 디자인 토큰 — 단일 소스(에디토리얼 럭셔리). 전 화면이 이 토큰만 참조.
+     하드코딩 hex/px 금지. 화면당 강조색 1개(주황=주요행동, 청록=브랜드/링크, 금=얕은 악센트).
+     ======================================================================== */
+  /* 컬러 */
+  --ink: #1A1714;        /* 먹: 최강 텍스트/다크 표면 */
+  --cream: #F5EFE3;      /* 한지: 기본 배경 */
+  --gold: #C9A24B;       /* 금: 절제된 프리미엄 악센트/구분 */
+  --teal: #119A8E;       /* 브랜드/보조 액션/링크/현재위치 */
+  --orange: #F5821F;     /* 주요 행동 CTA 전용 */
+  --text-strong: #1A1714; --text: #3A352F; --text-muted: #7A726A;
+  --bg: #F7F2E8; --surface: #FFFFFF; --surface-warm: #FBF8F1; --border: #E7DECC;
+  --success: #2E7D5B; --warn: #C9821F; --danger: #C2503C;
+  /* 브랜드 음영(hover/텍스트) 단일소스 — 컴포넌트에서 하드코딩 금지 */
+  --teal-strong: #0E8A7C; --teal-hover: #12A897;
+  --orange-strong: #DA7012; --orange-hover: #F5871F;
+  --gold-ink: #8A6D22; --gold-ink-strong: #6F561A;
+  --on-accent: #FFFFFF;
+  /* 다크 'vault'(랜딩/로그인) */
+  --vault-bg: #1A1714; --vault-surface: #241F1A; --vault-text: #F5EFE3; --vault-gold: #C9A24B;
+
+  /* 타이포 — 디스플레이 Noto Serif KR, 본문/UI Pretendard(KR)+Inter(EN) */
+  --font-display: "Noto Serif KR", 'Nanum Myeongjo', Georgia, 'Times New Roman', serif;
+  --font-ui: "Pretendard", "Pretendard Variable", "Inter", -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --display-size: clamp(40px, 6vw, 72px); --display-lh: 1.1;
+  --h1-size: 32px; --h1-lh: 1.2; --h2-size: 26px; --h2-lh: 1.25; --h3-size: 20px; --h3-lh: 1.3;
+  --body-lg: 17px; --body: 15px; --small: 13px; --caption: 12px; --line: 1.6;
+  --w-reg: 400; --w-med: 500; --w-semi: 600;
+
+  /* 간격 — 8px 그리드(모든 패딩/마진/갭은 이 배수만) */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px;
+  --space-6: 32px; --space-7: 48px; --space-8: 64px; --space-9: 96px;
+
+  /* 라운드 / 그림자 — 두꺼운 보더 대신 여백 + 얕은 그림자 + 1px 가는 구분선 */
+  --radius-sm: 8px; --radius: 12px; --radius-lg: 16px; --radius-pill: 999px;
+  --shadow-sm: 0 1px 2px rgba(26, 23, 20, .06);
+  --shadow: 0 4px 16px rgba(26, 23, 20, .08);
+  --shadow-lg: 0 12px 32px rgba(26, 23, 20, .10);
+
+  /* 레이아웃 */
+  --sidebar-w: 264px; --nav-item-h: 36px; --content-max: 1200px;
+
+  /* 모션 (prefers-reduced-motion 존중) */
+  --dur-fast: 120ms; --dur: 200ms; --dur-slow: 320ms; --ease: cubic-bezier(.2, .8, .2, 1);
+
+  /* ========================================================================
+     하위호환 별칭: 기존 --pc-* 는 v18 토큰을 가리킨다(단일 소스 유지).
+     ※ 신규 코드는 v18 토큰을 직접 쓰고, --pc-* 는 점진적으로 정리.
+     ======================================================================== */
+  --pc-color-bg: var(--bg);
+  --pc-color-bg-secondary: var(--surface-warm);
+  --pc-color-surface: var(--surface);
+  --pc-color-surface-muted: var(--surface-warm);
+  --pc-color-text: var(--text-strong);
+  --pc-color-text-muted: var(--text-muted);
+  --pc-color-border: var(--border);
+  --pc-color-primary: var(--teal);
+  --pc-color-primary-strong: var(--teal-strong);   /* teal 짙은 단계(hover) */
+  --pc-color-accent-gold: var(--gold);
+  --pc-color-cta: var(--orange);
+  --pc-color-cta-strong: var(--orange-strong);        /* orange 짙은 단계(hover) */
+  --pc-color-ink: var(--ink);
+  --pc-color-hanji: var(--cream);
+  --pc-color-accent-lime: #C2F970;       /* (레거시 호환) */
+  --pc-color-success: var(--success);
+  --pc-color-warning: var(--warn);
+  --pc-color-danger: var(--danger);
+  --pc-color-info: var(--teal);          /* 링크 — 청록 */
+  --pc-space-1: var(--space-1);          /* 4px(=.25rem) */
+  --pc-space-2: var(--space-2);          /* 8px */
+  --pc-space-3: var(--space-3);          /* 12px */
+  --pc-space-4: var(--space-4);          /* 16px */
+  --pc-space-5: var(--space-5);          /* 24px */
+  --pc-radius-sm: var(--radius-sm);
+  --pc-radius-md: var(--radius);
+  --pc-radius-lg: var(--radius-lg);
+  --pc-shadow-sm: var(--shadow-sm);
+  --pc-shadow-md: var(--shadow);
+  --pc-focus-ring: 0 0 0 .2rem rgba(17, 154, 142, .28);
+  --pc-z-toast: 1080;
+  --pc-transition: var(--dur) var(--ease);
+  --pc-font-body: var(--font-ui);
+  --pc-font-display: var(--font-display);
+}
+
+/* 토큰을 실제로 적용하는 베이스(디자인 에이전트 산출물의 기본 룩) */
+body { font-family: var(--font-ui); background: var(--bg); color: var(--text); line-height: var(--line); }
+h1,h2,h3 { font-family: var(--font-display); color: var(--text-strong); letter-spacing: -.01em; }
+h1 { font-size: var(--h1-size); line-height: var(--h1-lh); }
+h2 { font-size: var(--h2-size); line-height: var(--h2-lh); }
+h3 { font-size: var(--h3-size); line-height: var(--h3-lh); }
+a { color: var(--teal); }
+.btn-primary{background:var(--orange);color:var(--on-accent);border:none;border-radius:var(--radius);min-height:40px;padding:0 var(--space-5);font-weight:var(--w-semi);}
+.btn-secondary{background:transparent;color:var(--teal);border:1.5px solid var(--teal);border-radius:var(--radius);min-height:40px;padding:0 var(--space-5);font-weight:var(--w-semi);}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow);padding:var(--space-6);}
