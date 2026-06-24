@@ -28,7 +28,7 @@ def _clear():
 
 def test_mobile_home_renders_tabs(client):
     html = client.get("/seller/m").get_data(as_text=True)
-    assert "코고가네" in html and "BETA" in html
+    assert "고가브릿지" in html and "BETA" in html
     # 하단 3탭(수집/주문/더보기)
     assert 'data-pane="collect"' in html
     assert 'data-pane="orders"' in html

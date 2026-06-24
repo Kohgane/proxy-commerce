@@ -13,14 +13,14 @@ def test_manifest_has_name():
     """manifest.webmanifest에 name 필드가 있어야 한다 (KOHgogane)."""
     with open("src/seller_console/static/manifest.webmanifest", encoding="utf-8") as f:
         manifest = json.load(f)
-    assert manifest.get("name") == "KOHgogane"
+    assert manifest.get("name") == "Goga Bridj"
 
 
 def test_manifest_has_short_name():
     """manifest.webmanifest에 short_name 필드가 있어야 한다 (코고가네)."""
     with open("src/seller_console/static/manifest.webmanifest", encoding="utf-8") as f:
         manifest = json.load(f)
-    assert manifest.get("short_name") == "코고가네"
+    assert manifest.get("short_name") == "고가브릿지"
 
 
 def test_manifest_has_icons():
@@ -89,7 +89,7 @@ def test_manifest_served_via_app():
         resp = client.get("/seller/static/manifest.webmanifest")
         assert resp.status_code == 200
         data = json.loads(resp.data)
-        assert data.get("name") == "KOHgogane"
+        assert data.get("name") == "Goga Bridj"
 
 
 def test_legacy_manifest_json_matches_webmanifest():

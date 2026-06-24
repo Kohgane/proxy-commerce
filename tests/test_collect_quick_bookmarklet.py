@@ -64,7 +64,7 @@ def test_bookmarklet_page_is_token_free(client):
     assert "/seller/collect/receiver" in html   # postMessage 수신 페이지로 전송
     assert "Bearer" not in html                 # 토큰 fetch 방식 제거됨
     assert "토큰이 필요 없습니다" in html
-    assert "고가네 수집" in html                  # 라벨
+    assert "고가수집기" in html                  # 라벨
 
 
 def test_collect_page_amazon_dropdown_and_favicon(client):

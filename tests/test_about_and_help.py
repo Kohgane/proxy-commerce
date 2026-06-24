@@ -19,7 +19,7 @@ def client():
 
 def test_about_page_renders(client):
     html = client.get("/seller/about").get_data(as_text=True)
-    assert "코고가네" in html
+    assert "고가브릿지" in html
     assert "수집" in html and "등록" in html
     assert "/seller/start" in html  # 시작하기 CTA
 

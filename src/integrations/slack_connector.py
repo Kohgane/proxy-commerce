@@ -33,7 +33,7 @@ class SlackConnector(IntegrationConnector):
         return {"ok": True, "message": msg}
 
     def sync(self) -> dict:
-        result = self.send_message("#status", "✅ Proxy Commerce 시스템 정상")
+        result = self.send_message("#status", "✅ 고가브릿지 시스템 정상")
         return {"synced": True, "message_sent": result}
 
     def get_messages(self) -> List[dict]:

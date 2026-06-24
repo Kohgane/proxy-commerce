@@ -1,7 +1,7 @@
 {# 랜딩 — 애플 홈 규격 '제대로' (KOHgogane 브리프 v9 P1 / Phase 267) #}
 {% extends "_base_app.html" %}
 
-{% block title %}{{ brand_name|default('KOHgogane', true) }} — 코고가네 셀러 SaaS{% endblock %}
+{% block title %}{{ brand_name|default('GOGA BRIDJ', true) }} — 고가브릿지 셀러 SaaS{% endblock %}
 {% block head %}
 <link rel="privacy-policy" href="/privacy">
 <style>
@@ -55,7 +55,7 @@
 {% endif %}
 <nav class="lpnav">
   <div class="inner">
-    <a href="/" class="logo">🛒 코고가네</a>
+    <a href="/" class="logo">🛒 고가브릿지</a>
     <div class="ms-auto d-flex align-items-center gap-3">
       <a href="/seller/about" class="navlink d-none d-sm-inline">{{ 'About' if EN else '소개' }}</a>
       <a href="/seller/" class="navlink d-none d-sm-inline">{{ 'Explore' if EN else '둘러보기' }}</a>
@@ -143,8 +143,8 @@
 </section>
 
 <footer class="lpfoot">
-  <span>{{ brand_name|default('KOHgogane', true) }}</span> &nbsp;·&nbsp;
-  <a href="/seller/about">{{ "About KOHgogane" if EN else "코고가네란?" }}</a> &nbsp;·&nbsp;
+  <span>{{ brand_name|default('GOGA BRIDJ', true) }}</span> &nbsp;·&nbsp;
+  <a href="/seller/about">{{ "About GOGA BRIDJ" if EN else "고가브릿지란?" }}</a> &nbsp;·&nbsp;
   <a href="/privacy">개인정보처리방침</a> &nbsp;·&nbsp;
   <a href="/terms">이용약관</a> &nbsp;·&nbsp;
   <a href="https://github.com/Kohgane/proxy-commerce" target="_blank" rel="noopener"><i class="bi bi-github"></i> GitHub</a>

@@ -1,4 +1,4 @@
-// sw.js — Phase 147 Service Worker (KOHgogane PWA)
+// sw.js — Phase 147 Service Worker (Goga Bridj PWA)
 const CACHE_NAME = 'proxy-commerce-v147';
 const STATIC_ASSETS = [
   '/seller/dashboard',
@@ -49,7 +49,7 @@ self.addEventListener('push', event => {
   if (!event.data) return;
   let data = {};
   try { data = event.data.json(); } catch (e) { data = { title: '알림', body: event.data.text() }; }
-  const title = data.title || 'KOHgogane';
+  const title = data.title || 'Goga Bridj';
   const options = {
     body: data.body || '',
     icon: data.icon || undefined,

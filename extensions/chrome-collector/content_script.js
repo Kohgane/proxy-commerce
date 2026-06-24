@@ -1,6 +1,6 @@
 /**
  * content_script.js — 페이지 컨텍스트에서 메타 추출 + 인페이지 '수집' 버튼 (Phase 202+)
- * 코고가네 수집기
+ * 고가수집기
  *
  * 1) 백그라운드/팝업에서 "extractMeta" 메시지 요청 시 메타 응답.
  * 2) v10: '지정 소싱처' 도메인에서만 수집 UI(FAB/리스팅 바)를 주입한다(그 외 사이트엔 아무것도 안 그림).
@@ -215,19 +215,20 @@ function setFabState(btn, state) {
   } else {
     btn.dataset.busy = "";
     btn.style.opacity = "1";
-    btn.querySelector(".kgp-fab-label").textContent = "코고가네 수집";
+    btn.querySelector(".kgp-fab-label").textContent = "고가수집기 수집";
   }
 }
 
-// 코고가네 글러브 모노그램(금 글러브 + 청록 소맷동/궤도) — 파비콘과 동일 마크.
-// v13: 지구본(오빗-글로브) 폐기 → 글러브로 통일.
+// 고가브릿지 게이트웨이 마크(금 아치 + 주황 키스톤) — 파비콘 B마크와 동일.
+// v21: 글러브/지구본 폐기 → 게이트웨이로 통일. (어두운 원형 배지 위 배치라 통로 컷은 배지색 #0f0d0b)
 const KGP_GLOVE_SVG =
   '<svg width="20" height="20" viewBox="0 0 512 512" aria-hidden="true" style="display:block">' +
-  '<path d="M104 158 A206 206 0 0 1 410 386" fill="none" stroke="#119a8e" stroke-width="20" stroke-linecap="round" opacity="0.85"/>' +
-  '<ellipse cx="172" cy="248" rx="50" ry="62" fill="#c9a24b"/>' +
-  '<rect x="190" y="118" width="186" height="214" rx="72" fill="#c9a24b"/>' +
-  '<rect x="198" y="126" width="166" height="84" rx="58" fill="#e0bc6e"/>' +
-  '<rect x="180" y="320" width="206" height="70" rx="24" fill="#119a8e"/>' +
+  '<rect x="136" y="246" width="240" height="114" fill="#c9a24b"/>' +
+  '<circle cx="256" cy="246" r="120" fill="#c9a24b"/>' +
+  '<rect x="186" y="246" width="140" height="114" fill="#0f0d0b"/>' +
+  '<circle cx="256" cy="246" r="70" fill="#0f0d0b"/>' +
+  '<rect x="150" y="360" width="212" height="30" rx="10" fill="#c9a24b"/>' +
+  '<polygon points="230,112 282,112 274,180 238,180" fill="#f5821f"/>' +
   '</svg>';
 
 // ---------------------------------------------------------------------------
@@ -405,11 +406,11 @@ function injectCollectButton() {
     '<span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;' +
     'background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%;flex-shrink:0">' + KGP_GLOVE_SVG + '</span>' +
     '<span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1.12">' +
-    '<span class="kgp-fab-label" style="font-weight:700;font-size:14px;color:#f5efe3">코고가네 수집</span>' +
+    '<span class="kgp-fab-label" style="font-weight:700;font-size:14px;color:#f5efe3">고가수집기 수집</span>' +
     '<span style="font-size:10px;color:#c9a24b;font-family:Georgia,\'Times New Roman\',serif">번역까지 한 번에</span>' +
     '</span>';
-  btn.title = "코고가네로 수집 (한국어 번역 포함)";
-  // 코고가네 토큰: 먹 매트 pill + 금 얇은 링 + 청록 미세 악센트. (네이비+주황 폐기, v4)
+  btn.title = "고가브릿지로 수집 (한국어 번역 포함)";
+  // 고가브릿지 토큰: 먹 매트 pill + 금 얇은 링 + 청록 미세 악센트. (네이비+주황 폐기, v4)
   // 위치: 우측 '중앙'(v7) — 콘텐츠 안 가리게. 드래그로 옮기면 위치 기억(kgp_fab_pos).
   btn.style.cssText = [
     "position:fixed", "right:16px", "top:calc(50% - 24px)", "z-index:2147483646",
@@ -672,7 +673,7 @@ function kgpBuildToolbar() {
   bar.innerHTML =
     '<span id="kgp-tb-grip" style="display:flex;align-items:center;gap:7px">' +
     '<span style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%">' + KGP_GLOVE_SVG + '</span>' +
-    '<strong style="color:#ecdcb0">코고가네 수집</strong></span>' +
+    '<strong style="color:#ecdcb0">고가수집기 수집</strong></span>' +
     '<span id="kgp-tb-count" style="opacity:.85"></span>' +
     '<span style="width:1px;height:18px;background:#4a4234"></span>' +
     '<button class="kgp-tb-btn" data-act="all-sel" style="' + ghost + '">전체 선택</button>' +
@@ -751,7 +752,7 @@ function kgpShowReopenPill() {
   pill = document.createElement("button");
   pill.id = KGP_REOPEN_ID;
   pill.type = "button";
-  pill.title = "코고가네 수집 바 열기";
+  pill.title = "고가수집기 수집 바 열기";
   pill.innerHTML =
     '<span style="display:flex;align-items:center;justify-content:center;width:20px;height:20px;background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%">' + KGP_GLOVE_SVG + '</span>' +
     '<span style="font-weight:700;font-size:12px">수집 열기</span>' +

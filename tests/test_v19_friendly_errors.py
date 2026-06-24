@@ -54,12 +54,14 @@ def test_key_flows_use_friendly_handler():
         assert "+ err.message" not in s, f"{tpl}에 raw err.message 노출 잔존"
 
 
-# ---- P0-2: 지구본 박멸 — 글러브 단일 아이콘 ----
-def test_favicon_is_glove_not_globe():
+# ---- P0-2: 지구본 박멸 — v21 게이트웨이(B) 단일 아이콘 ----
+def test_favicon_is_gateway_not_globe():
     svg = Path("src/seller_console/static/favicon.svg").read_text(encoding="utf-8")
-    assert "글러브" in svg          # 브랜드 마크 = 글러브 모노그램
-    # 활성 선언에 지구본(globe) 마크업 없음(주석의 '지구본 폐기'는 허용)
+    assert "게이트웨이" in svg       # v21 브랜드 마크 = 게이트웨이 아치 + 주황 키스톤
+    assert "#f5821f" in svg          # 주황 키스톤 존재
+    # 지구본(globe) 마크업 없음(주석의 '지구본 폐기'는 허용)
     assert "<title>지구본" not in svg
+    assert "globe" not in svg.lower()
 
 
 def test_extension_uses_glove_icon():

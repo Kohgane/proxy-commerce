@@ -34,7 +34,7 @@ class DiscordNotifier:
         self._webhook_url = webhook_url or DISCORD_WEBHOOK_URL
         self._enabled = enabled if enabled is not None else DISCORD_ENABLED
 
-    def send(self, content: str = '', embeds: list = None, username: str = 'KOHgogane') -> bool:
+    def send(self, content: str = '', embeds: list = None, username: str = 'Goga Bridj') -> bool:
         """Discord 메시지 발송.
 
         Args:

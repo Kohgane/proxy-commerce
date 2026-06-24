@@ -47,7 +47,7 @@
                 <strong>‘수집 완료’</strong>만 표시됩니다. 결과는 <strong>내 계정의 ‘수집 이력’</strong>에서 확인·편집하세요.</li>
           </ol>
           <div class="alert alert-success small mb-0">
-            <i class="bi bi-check-circle text-success"></i> <strong>토큰이 필요 없습니다.</strong> 새 탭이 코고가네(로그인된 내 계정)로 열려 안전하게 수집됩니다.
+            <i class="bi bi-check-circle text-success"></i> <strong>토큰이 필요 없습니다.</strong> 새 탭이 고가브릿지(로그인된 내 계정)로 열려 안전하게 수집됩니다.
             (예전 토큰 방식은 일부 사이트의 보안정책(CSP)에 막혀 작동하지 않았어요 — 이 방식은 그 문제가 없습니다.)
           </div>
         </div>
@@ -75,7 +75,7 @@
              class="d-inline-flex align-items-center justify-content-center text-decoration-none"
              style="cursor:grab;border-radius:12px;border:1px solid #dee2e6;background:#fff;color:#1a1714;font-weight:700;font-size:1.6rem;line-height:1;width:52px;height:52px;"
              title="이 버튼을 북마크바로 드래그하세요 — 🧤 한 글자로 추가됩니다"
-             aria-label="코고가네 수집 북마클릿">🧤</a>
+             aria-label="고가수집기 북마클릿">🧤</a>
           <p class="mt-3 text-muted small mb-0">위 <strong>🧤</strong> 버튼을 북마크바로 드래그하세요. 북마크바에는 <strong>🧤</strong> 한 글자로 깔끔하게 표시됩니다.</p>
           <p class="text-muted small mb-0">
             <span class="text-muted">※ Chrome 특성상 북마클릿(주소가 <code>javascript:</code>인 북마크)엔 기본 지구본 아이콘이 표시될 수 있어요. 완전한 브랜드 아이콘은 <a href="/seller/extension">크롬 확장 프로그램</a> 버전을 쓰세요.</span></p>
@@ -101,10 +101,10 @@
         <div class="card-body small text-muted">
           <ol class="mb-2">
             <li>상품 페이지의 <strong>이미지·상세설명·리뷰·HTML</strong>을 읽습니다.</li>
-            <li><strong>새 탭으로 코고가네(로그인된 내 계정)를 열어</strong> 그 데이터를 전달합니다.</li>
+            <li><strong>새 탭으로 고가브릿지(로그인된 내 계정)를 열어</strong> 그 데이터를 전달합니다.</li>
             <li>서버가 이미지·상세·리뷰를 정리하고(선택 시 번역) <strong>내 수집 이력에 저장</strong>합니다 — ‘수집 완료’만 표시됩니다.</li>
           </ol>
-          <div>봇 차단이 강한 사이트는 <a href="/seller/markets/guide">크롬 확장(고가네 수집)</a>도 사용할 수 있어요.</div>
+          <div>봇 차단이 강한 사이트는 <a href="/seller/markets/guide">크롬 확장(고가수집기)</a>도 사용할 수 있어요.</div>
         </div>
       </div>
     </div>
@@ -122,7 +122,7 @@ function buildBookmarkletCode(translate) {
     "var S='" + SERVER_URL + "';" +
     // 목록/검색 페이지 감지 — 상품 링크(이미지 포함 a)가 많으면 경고. 북마클릿은 '상품 1개 상세'용.
     "try{var _cards=0;document.querySelectorAll('a[href] img').forEach(function(i){if((i.naturalWidth||0)>=120)_cards++});" +
-    "if(_cards>=8){if(!confirm('\\u26A0\\uFE0F 이 페이지엔 상품이 여러 개 같아요.\\n북마클릿은 \\'상품 1개 상세 페이지\\' 수집용이라, 지금 누르면 이 페이지를 1개로만 수집합니다.\\n여러 상품을 골라 담으려면 크롬 확장(고가네 수집)을 쓰세요.\\n\\n그래도 이 페이지를 1개로 수집할까요?'))return;}}catch(e){}" +
+    "if(_cards>=8){if(!confirm('\\u26A0\\uFE0F 이 페이지엔 상품이 여러 개 같아요.\\n북마클릿은 \\'상품 1개 상세 페이지\\' 수집용이라, 지금 누르면 이 페이지를 1개로만 수집합니다.\\n여러 상품을 골라 담으려면 크롬 확장(고가수집기)을 쓰세요.\\n\\n그래도 이 페이지를 1개로 수집할까요?'))return;}}catch(e){}" +
     "function M(p){var e=document.querySelector('meta[property=\"'+p+'\"],meta[name=\"'+p+'\"]');return e?(e.content||''):''}" +
     "function G(s){if(!s||s.indexOf('data:')===0)return false;if(/(logo|sprite|icon|avatar|placeholder|loading|blank|pixel|banner|thumb_)/i.test(s))return false;return true;}" +
     "var imgs=[];var og=M('og:image');if(G(og))imgs.push(og);" +

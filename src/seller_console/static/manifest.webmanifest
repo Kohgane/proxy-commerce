@@ -1,7 +1,7 @@
 {
-  "name": "KOHgogane",
-  "short_name": "코고가네",
-  "description": "kohganepercentiii.com 셀러 콘솔 — 옴니채널 상품 관리 플랫폼",
+  "name": "Goga Bridj",
+  "short_name": "고가브릿지",
+  "description": "고가브릿지 셀러 콘솔 — 옴니채널 상품 관리 플랫폼",
   "start_url": "/seller/m",
   "scope": "/seller/",
   "display": "standalone",

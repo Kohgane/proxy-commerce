@@ -19,7 +19,7 @@ def client():
 
 def test_wizard_page_renders_steps(client):
     html = client.get("/seller/start").get_data(as_text=True)
-    assert "코고가네" in html
+    assert "고가브릿지" in html
     # 좌측 스텝퍼 + 단계 키워드(실제 동작으로 이어지는 단계들)
     for kw in ("구글로 시작", "마켓 연동", "확장", "첫 상품", "사업자"):
         assert kw in html

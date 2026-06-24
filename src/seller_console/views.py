@@ -473,7 +473,7 @@ def _sourcing_search_links(query: str) -> "list[dict[str, str]]":
     """국내 상품명/키워드를 소싱처(타오바오/1688/알리/테무/아마존)에서 바로 검색하는 딥링크.
 
     실제 검색 URL로 연결한다(가짜 상품 카드 날조 금지). 사용자가 그 사이트에서
-    크롬 확장 '코고가네 수집'으로 바로 수집할 수 있다.
+    크롬 확장 '고가수집기'로 바로 수집할 수 있다.
     """
     q = quote_plus((query or "").strip())
     if not q:
@@ -1090,7 +1090,7 @@ def collect():
     except Exception:
         localization_configured = False
 
-    # 원클릭 수집 지원 마켓 (퍼센티 벤치마킹) — 상품 페이지에서 크롬확장 🛒'수집' 버튼으로 수집
+    # 원클릭 수집 지원 마켓 — 상품 페이지에서 크롬확장 🛒'수집' 버튼으로 수집
     # 기본 소싱처 = 대형 크로스보더 마켓만(v13 P1: 요시다카반 등 니치는 제외 — 확장 '소싱처 관리'에서 직접 추가).
     # 각 항목에 domain을 넣어 사이트 로고(파비콘) 아이콘으로 표시.
     oneclick_markets = [
@@ -3094,7 +3094,7 @@ def notifications_test():
     """텔레그램 테스트 메시지 전송 (Phase 130)."""
     try:
         from src.notifications.telegram import send_telegram
-        ok = send_telegram("✅ 코고가네 알림 테스트 메시지입니다.", urgency="info")
+        ok = send_telegram("✅ 고가브릿지 알림 테스트 메시지입니다.", urgency="info")
         if ok:
             return jsonify({"ok": True, "message": "텔레그램 메시지 전송 성공"})
         return jsonify({"ok": False, "message": "TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID 미설정 — 알림 비활성"}), 200
@@ -3767,7 +3767,7 @@ def markets_guide():
 def mobile_home():
     """모바일 앱 셸 — '간단 수집 + 주문처리'에 집중(PWA, v3 P1-6).
 
-    하단 탭(수집/주문/더보기) + 코고가네 토큰 + BETA. 풀기능은 데스크톱 안내.
+    하단 탭(수집/주문/더보기) + 고가브릿지 토큰 + BETA. 풀기능은 데스크톱 안내.
     """
     if not _check_auth():
         return redirect(url_for("auth.login", next=request.url))
@@ -3846,7 +3846,7 @@ def billing_select():
 
 @bp.get("/about")
 def about_page():
-    """소개 — '코고가네란?' (애플 톤, v5). 로그인 없이도 볼 수 있음."""
+    """소개 — '고가브릿지란?' (애플 톤, v5). 로그인 없이도 볼 수 있음."""
     return render_template("about.html")
 
 

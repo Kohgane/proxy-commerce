@@ -1297,7 +1297,7 @@ def i18n_dismiss():
 # ---------------------------------------------------------------------------
 @app.get('/.well-known/assetlinks.json')
 def well_known_assetlinks():
-    """Android TWA(코고가네 플레이스토어 앱) ↔ 웹사이트 연동 검증용 Digital Asset Links."""
+    """Android TWA(고가브릿지 플레이스토어 앱) ↔ 웹사이트 연동 검증용 Digital Asset Links."""
     pkg = os.getenv("TWA_PACKAGE_NAME", "").strip()
     fps = [f.strip() for f in os.getenv("TWA_SHA256_FINGERPRINTS", "").split(",") if f.strip()]
     statements = []
@@ -1316,7 +1316,7 @@ def well_known_assetlinks():
 
 @app.get('/.well-known/apple-app-site-association')
 def well_known_aasa():
-    """iOS(코고가네 App Store 앱) Universal Links 연동(apple-app-site-association). 확장자 없음·application/json."""
+    """iOS(고가브릿지 App Store 앱) Universal Links 연동(apple-app-site-association). 확장자 없음·application/json."""
     app_id = os.getenv("IOS_APP_ID", "").strip()
     details = [{"appID": app_id, "paths": ["/seller/*", "/auth/*"]}] if app_id else []
     payload = {"applinks": {"apps": [], "details": details}}

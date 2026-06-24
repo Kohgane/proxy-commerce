@@ -161,7 +161,7 @@ def cmd_customers(sub: str = 'summary') -> str:
 def cmd_help() -> str:
     """/help — 도움말."""
     return (
-        "*🤖 코고가네 봇 도움말*\n\n"
+        "*🤖 고가브릿지 봇 도움말*\n\n"
         "사용 가능한 커맨드:\n\n"
         "📦 `/status` — 미완료 주문 현황 요약\n"
         "💰 `/revenue [today|week|month]` — 매출 요약\n"

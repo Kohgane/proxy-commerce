@@ -1,16 +1,16 @@
 <!DOCTYPE html>
 <html lang="{{ current_lang|default('ko', true) }}">
 <head>
-  {% set _brand_name = brand_name|default('KOHgogane', true) %}
+  {% set _brand_name = brand_name|default('GOGA BRIDJ', true) %}
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}셀러 콘솔{% endblock %} | {{ _brand_name }}</title>
   <meta property="og:site_name" content="{{ _brand_name }}">
   <meta property="og:title" content="{{ _brand_name }}">
-  <link rel="icon" type="image/svg+xml" href="{{ url_for('seller_console.static', filename='favicon.svg', v='173') }}">
-  <link rel="icon" type="image/x-icon" href="{{ url_for('seller_console.static', filename='favicon.ico', v='173') }}">
-  <link rel="apple-touch-icon" href="{{ url_for('seller_console.static', filename='apple-touch-icon.png', v='173') }}">
-  <link rel="manifest" href="{{ url_for('seller_console.static', filename='manifest.webmanifest', v='173') }}">
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('seller_console.static', filename='favicon.svg', v='174') }}">
+  <link rel="icon" type="image/x-icon" href="{{ url_for('seller_console.static', filename='favicon.ico', v='174') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('seller_console.static', filename='apple-touch-icon.png', v='174') }}">
+  <link rel="manifest" href="{{ url_for('seller_console.static', filename='manifest.webmanifest', v='174') }}">
   <meta name="theme-color" content="#f8fafc">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
@@ -37,7 +37,7 @@
 <div class="console-shell" data-testid="seller-console-shell">
   <nav class="sidebar console-sidebar d-flex flex-column p-3" id="sidebarDrawer" data-testid="seller-sidebar">
     <a href="/seller/" class="console-brand text-decoration-none mb-3">
-      <div class="small text-secondary">{{ brand_name_ko|default('코고가네', true) }}</div>
+      <div class="small text-secondary">{{ brand_name_ko|default('고가브릿지', true) }}</div>
       <strong><i class="bi bi-shop"></i> 셀러 콘솔 · {{ _brand_name }}</strong>
     </a>
 
@@ -111,7 +111,7 @@
       <li><a class="console-nav-link {% if _path.startswith('/seller/me/subscriptions') %}active{% endif %}" href="/seller/me/subscriptions"><i class="bi bi-person-check"></i><span>내 구독</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/wholesale/tiers') %}active{% endif %}" href="/seller/wholesale/tiers"><i class="bi bi-building"></i><span>도매 등급</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/wholesale/applications') %}active{% endif %}" href="/seller/wholesale/applications"><i class="bi bi-ui-checks"></i><span>B2B 신청함</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/about') %}active{% endif %}" href="/seller/about"><i class="bi bi-info-circle"></i><span>코고가네란?(소개)</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/about') %}active{% endif %}" href="/seller/about"><i class="bi bi-info-circle"></i><span>고가브릿지란?(소개)</span></a></li>
     </ul>
     </details>
     </div>

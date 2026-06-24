@@ -68,7 +68,7 @@ class TestSellerConsoleViews:
         assert "마켓 연동 상태" in html
         assert "마켓별 등록/동기화 현황" in html
         assert "실시간 환율" in html
-        assert "KOHgogane" in html
+        assert "Goga Bridj" in html
 
     def test_dashboard_home_renders_onboarding_guide(self, client):
         resp = client.get("/seller/dashboard")
@@ -466,7 +466,7 @@ class TestDashboardHomeContext:
         assert context["connection_banner"]["title"] == "마켓 연동 상태"
         assert len(context["market_grid_rows"]) >= 5
         assert context["fx_cards"]
-        assert context["dashboard_footer"]["service_name"] == "KOHgogane"
+        assert context["dashboard_footer"]["service_name"] == "Goga Bridj"
 
     def test_dashboard_context_onboarding_progress(self):
         from src.seller_console.views import _build_dashboard_home_context
