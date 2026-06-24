@@ -1,11 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="코고가네 글러브 마크">
-  <!-- v13: 브랜드 마크 = 글러브 모노그램(먹 배경 + 금 글러브 + 청록 소맷동/궤도). 지구본 폐기. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="고가브릿지 게이트웨이 마크">
+  <!-- v21: 브랜드 마크 = 게이트웨이 아치(먹/금 vault + 주황 키스톤). 글러브/지구본 폐기. -->
   <rect width="512" height="512" rx="112" fill="#1a1714"/>
-  <!-- 청록 궤도 악센트 -->
-  <path d="M104 158 A206 206 0 0 1 410 386" fill="none" stroke="#119a8e" stroke-width="18" stroke-linecap="round" opacity="0.85"/>
-  <!-- 글러브(미튼): 엄지 + 손등 + 하이라이트 + 청록 소맷동 -->
-  <ellipse cx="172" cy="242" rx="52" ry="64" fill="#c9a24b"/>
-  <rect x="188" y="112" width="190" height="220" rx="74" fill="#c9a24b"/>
-  <rect x="196" y="120" width="168" height="86" rx="60" fill="#e0bc6e"/>
-  <rect x="178" y="320" width="210" height="74" rx="26" fill="#119a8e"/>
+  <!-- 금 키라인 보더(프리미엄) -->
+  <rect x="24" y="24" width="464" height="464" rx="92" fill="none" stroke="#c9a24b" stroke-width="6" opacity="0.35"/>
+  <!-- 게이트웨이 몸체(금): 사각 기둥 + 반원 아치 -->
+  <rect x="113" y="236" width="286" height="174" fill="#c9a24b"/>
+  <circle cx="256" cy="236" r="143" fill="#c9a24b"/>
+  <!-- 통로(먹): 안쪽을 파내 균일한 아치 밴드를 남김 -->
+  <rect x="171" y="236" width="170" height="174" fill="#1a1714"/>
+  <circle cx="256" cy="236" r="85" fill="#1a1714"/>
+  <!-- 지반/다리 상판(금) -->
+  <rect x="82" y="410" width="348" height="38" rx="12" fill="#c9a24b"/>
+  <!-- 키스톤(주황): 아치 정점을 잇는 쐐기 = 두 마켓을 잇는 다리의 핵심돌 -->
+  <polygon points="225,79 287,79 276,172 236,172" fill="#f5821f"/>
 </svg>

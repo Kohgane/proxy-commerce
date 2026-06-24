@@ -11,7 +11,7 @@ class APIDocGenerator:
     """Flask Blueprint들을 스캔하여 OpenAPI 3.0 스펙 자동 생성."""
 
     def __init__(self,
-                 title: str = "KOHgogane API",
+                 title: str = "Goga Bridj API",
                  version: str = "1.0.0",
                  description: str = "") -> None:
         self.title = title

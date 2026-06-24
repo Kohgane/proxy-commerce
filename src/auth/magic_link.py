@@ -143,7 +143,7 @@ def magic_link_send():
 
         sent_ok = send_email(
             to=email,
-            subject="[코고가네] 로그인 링크",
+            subject="[고가브릿지] 로그인 링크",
             html=(
                 "<h2>로그인 링크</h2>"
                 "<p>아래 버튼을 클릭하면 로그인됩니다 (15분 유효, 1회용).</p>"

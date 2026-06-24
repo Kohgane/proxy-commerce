@@ -163,7 +163,7 @@ class ExportManager:
         return {
             'invoice_number': f"INV-{order.order_id[:8].upper()}",
             'date': datetime.now().strftime('%Y-%m-%d'),
-            'seller': {'name': 'KOHgogane', 'country': order.source_country},
+            'seller': {'name': 'Goga Bridj', 'country': order.source_country},
             'buyer': {'name': order.customer_name, 'address': order.customer_address},
             'items': [{
                 'description': order.product_name,

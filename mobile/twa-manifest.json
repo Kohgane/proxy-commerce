@@ -1,9 +1,9 @@
 {
-  "_comment": "코고가네 구글 플레이 TWA 패키징 설정 템플릿(Bubblewrap/PWABuilder 참고용). 실제 패키지명/지문은 빌드 시 확정.",
+  "_comment": "고가브릿지 구글 플레이 TWA 패키징 설정 템플릿(Bubblewrap/PWABuilder 참고용). 실제 패키지명/지문은 빌드 시 확정.",
   "packageId": "com.kohgane.collector",
   "host": "kohganepercentiii.com",
-  "name": "코고가네",
-  "launcherName": "코고가네",
+  "name": "고가브릿지",
+  "launcherName": "고가브릿지",
   "display": "standalone",
   "themeColor": "#1a1714",
   "navigationColor": "#1a1714",

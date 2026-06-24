@@ -4,7 +4,7 @@ JSON-LD 형식의 Schema.org 구조화 데이터를 생성한다.
 
 환경변수:
   SEO_ENABLED    — SEO 기능 활성화 여부 (기본 "0")
-  SEO_SITE_NAME  — 사이트 이름 (기본 "Proxy Commerce")
+  SEO_SITE_NAME  — 사이트 이름 (기본 "Goga Bridj")
   SEO_SITE_URL   — 사이트 URL (기본 "https://example.com")
 """
 
@@ -12,7 +12,7 @@ import os
 from typing import Any, Dict, List
 
 _ENABLED = os.getenv("SEO_ENABLED", "0") == "1"
-_SITE_NAME = os.getenv("SEO_SITE_NAME", "Proxy Commerce")
+_SITE_NAME = os.getenv("SEO_SITE_NAME", "Goga Bridj")
 _SITE_URL = os.getenv("SEO_SITE_URL", "https://example.com")
 
 

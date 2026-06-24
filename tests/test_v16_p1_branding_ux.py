@@ -32,9 +32,9 @@ def test_brand_default_names_not_proxy_commerce():
     em = importlib.import_module("src.global_commerce.trade.export_manager")
     src = Path("src/orders/international_router.py").read_text(encoding="utf-8")
     assert "'Proxy Commerce'" not in Path("src/notifications/email_sender.py").read_text(encoding="utf-8")
-    assert "KOHgogane" in src or "SENDER_NAME" in src
+    assert "Goga Bridj" in src or "SENDER_NAME" in src
     # 봇 도움말/알림 기본 표기
-    assert "코고가네 봇 도움말" in Path("src/bot/commands.py").read_text(encoding="utf-8")
+    assert "고가브릿지 봇 도움말" in Path("src/bot/commands.py").read_text(encoding="utf-8")
 
 
 def test_fab_on_off_toggle():

@@ -5,11 +5,11 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR="${SCRIPT_DIR}/../../dist"
-ZIP_NAME="kohgane-chrome-collector-v$(grep '"version"' "${SCRIPT_DIR}/manifest.json" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+').zip"
+ZIP_NAME="goga-collector-v$(grep '"version"' "${SCRIPT_DIR}/manifest.json" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+').zip"
 
 mkdir -p "${OUTPUT_DIR}"
 
-echo "📦 코고가네 수집기 빌드 시작..."
+echo "📦 고가수집기 빌드 시작..."
 
 cd "${SCRIPT_DIR}"
 zip -r "${OUTPUT_DIR}/${ZIP_NAME}" \

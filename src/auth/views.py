@@ -498,7 +498,7 @@ def login():
     naver_status = _provider_status("naver")
     apple_status = _provider_status("apple")
     # 운영자용 OAuth 진단(콜백 URI/client_id)은 일반 사용자 첫 화면에 노출하지 않는다
-    # (KOHgogane 브리프 §2.4). 관리자 세션이거나 ?diag=1 일 때만 렌더한다.
+    # (Goga Bridj 브리프 §2.4). 관리자 세션이거나 ?diag=1 일 때만 렌더한다.
     show_diag = request.args.get("diag") == "1"
     if not show_diag:
         try:
@@ -582,7 +582,7 @@ def signup_post():
             verify_url = f"{os.getenv('APP_BASE_URL', 'https://kohganepercentiii.com')}/auth/verify-email?token={verify_token}"
             send_email(
                 to=email,
-                subject="[코고가네] 이메일 인증",
+                subject="[고가브릿지] 이메일 인증",
                 html=f"<p>안녕하세요, {name}님!</p>"
                      f"<p>아래 링크를 클릭하여 이메일을 인증해주세요:</p>"
                      f"<p><a href='{verify_url}'>이메일 인증하기</a></p>",
@@ -865,7 +865,7 @@ def forgot():
             reset_url = f"{os.getenv('APP_BASE_URL', 'https://kohganepercentiii.com')}/auth/reset?token={token}"
             send_email(
                 to=email,
-                subject="[코고가네] 비밀번호 재설정",
+                subject="[고가브릿지] 비밀번호 재설정",
                 html=f"<p>비밀번호 재설정 링크입니다 (1시간 유효):</p>"
                      f"<p><a href='{reset_url}'>비밀번호 재설정하기</a></p>",
                 text=f"비밀번호 재설정: {reset_url}",

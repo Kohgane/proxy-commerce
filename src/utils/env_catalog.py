@@ -621,7 +621,7 @@ API_REGISTRY: list = [
     ApiKey(
         name="pwa",
         env_vars=["PWA_ENABLED", "PWA_APP_NAME"],
-        purpose="PWA 활성화 여부 + 앱 이름 (기본: Proxy Commerce)",
+        purpose="PWA 활성화 여부 + 앱 이름 (기본: Goga Bridj)",
         docs_url="https://kohganepercentiii.com/docs/operations/MOBILE_PWA.md",
         category=ApiCategory.UTILITY,
         optional=True,

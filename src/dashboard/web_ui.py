@@ -84,7 +84,7 @@ _BASE_HTML = """<!DOCTYPE html>
 </head>
 <body>
 <header>
-  <h1>🛒 proxy-commerce</h1>
+  <h1>🛒 고가브릿지</h1>
   <nav>
     <a href="/dashboard/">대시보드</a>
     <a href="/dashboard/products">상품 수집</a>
@@ -100,7 +100,7 @@ _BASE_HTML = """<!DOCTYPE html>
 </html>"""
 
 
-def _render(title: str, body: str, description: str = "proxy-commerce 관리 대시보드") -> str:
+def _render(title: str, body: str, description: str = "고가브릿지 관리 대시보드") -> str:
     from src.utils.branding import get_brand_name
 
     return render_template_string(

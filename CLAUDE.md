@@ -2,6 +2,25 @@
 
 > 이 파일은 매 세션 시작 시 로드된다. 오너(Kohgane) 지시·검증된 팩트를 누적 기록한다.
 
+## 🟫 v21 브리프 (오너 2026-06-24 — "일괄 리브랜딩: 고가브릿지/Goga Bridj + 게이트웨이 아이콘")
+- ★ 명칭 잠금: **서비스명=고가브릿지 / 영문 정식=Goga Bridj(e 없음) / 단축형=Bridj / 수집도구=고가수집기(Goga Collector)**.
+  워드마크 GOGA BRIDJ(Noto Serif KR, 대문자·자간 넓게). 절대원칙: 거짓성공/회귀 금지·정직·**내부 식별자 함부로 변경 금지**.
+- ✅ **P0 사용자 노출 문자열 일괄 치환(Phase 297):** 코고가네/KOHgogane→고가브릿지/Goga Bridj, 퍼센티→제거/고가브릿지,
+  proxy-commerce(표기)→고가브릿지, 수집도구→고가수집기. 중앙 단일소스 `utils/branding.py` 기본값 교체(KOHgogane/코고가네
+  →Goga Bridj/고가브릿지)로 brand_name 주입 전역 자동 전환 + 하드코딩 리터럴 스윕(템플릿 20+·확장 12·py 13). 확장 zip명
+  kohgane-collector→**goga-collector**, manifest 1.5.8→1.5.9. PWA manifest name/short_name·sw push 제목·OG/워드마크·이메일
+  제목·봇·SEO_SITE_NAME·API docs·export seller명·slack 상태 등 외부 노출까지 정리. **안전수칙 준수(내부 식별자 보존):**
+  channels/percenty.py(실 PercentyExporter 채널)·proxy_commerce 네임스페이스(shopify metafield·logger)·order_webhook
+  `"service":"proxy-commerce"`(health json)·env_catalog Render 서비스명·github.com/Kohgane URL·실도메인 kohganepercentiii.com
+  ·kgp_*/KGP_* 스토리지키·DOM id·라우트·com.kohgane.* 번들ID는 **그대로 유지**. (dev CLI 설명·grafana ops 대시보드 제목은
+  비-유저 내부툴이라 보류.)
+- ✅ **P0 아이콘=게이트웨이(B) 적용 + 지구본/글러브 폐기(Phase 297):** 신규 `scripts/gen_gateway_icons.py`(cairosvg 미설치라
+  Pillow로 favicon.svg와 동일 기하 4x 슈퍼샘플) — **먹(#1A1714) vault + 금(#C9A24B) 게이트웨이 아치 + 주황(#F5821F)
+  키스톤**. favicon.svg(벡터 직접 작성)·favicon.ico(16/32/48)·apple-touch-180·icon-192/512·**icon-1024(App Store)**·확장
+  16/32/48/128 PNG 전부 B마크로 재생성. 확장 인페이지 FAB 마크(KGP_GLOVE_SVG, 상수명 유지)도 글러브→게이트웨이로 교체.
+  파비콘 캐시버스트 v=173→174(15개 템플릿). ※오너 제공 SVG 파일(gateway_icon_B/A)은 업로드에 없어 **브리프 스펙대로 직접
+  제도**(정직). 보조 A(아치교)·글러브 C는 미사용. 가드 test_v21_rebrand(9) + 기존 favicon/pwa 가드 갱신. 전체 10265 passed.
+
 ## ★ 작업 기본 헤더 (v20 운영 규칙 — 오너 2026-06-23, 모든 후속 작업에 상시 적용)
 > "무엇을 만들지"가 아니라 "어떤 도구를 켜고 작업할지". 절대원칙: 거짓성공/회귀 금지·정직·토큰 단일소스·경량·개발표기 비노출.
 - **(design-sync 관련, 2026-06-23):** proxy-commerce는 컴포넌트 라이브러리가 아니라 Flask+Jinja+Bootstrap+app.css라

@@ -1,6 +1,6 @@
 /**
  * popup.js — 팝업 UI 로직
- * 코고가네 수집기
+ * 고가수집기
  */
 
 const btnCollect = document.getElementById("btnCollect");

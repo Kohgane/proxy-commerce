@@ -30,20 +30,21 @@ def test_base_templates_include_favicon_links():
         assert "favicon.ico" in text
         assert 'rel="apple-touch-icon"' in text
         assert "manifest.webmanifest" in text
-        assert ("?v=173" in text) or ("v='173'" in text)
+        assert ("?v=174" in text) or ("v='174'" in text)
         # 테마 색상은 라이트/다크 리비전마다 달라질 수 있으므로(예: Phase 189 라이트 복구)
         # 특정 색상값이 아니라 theme-color 메타 존재만 검증한다.
         assert 'name="theme-color"' in text
 
 
-def test_favicon_svg_uses_glove_brand_mark():
+def test_favicon_svg_uses_gateway_brand_mark():
     text = Path("src/seller_console/static/favicon.svg").read_text(encoding="utf-8")
-    # v13: 브랜드 마크 = 글러브 모노그램(먹/금/청록). 지구본 폐기.
-    assert "#1a1714" in text          # 먹 배경
-    assert "#c9a24b" in text          # 금 글러브
-    assert "#119a8e" in text          # 청록 소맷동/궤도
-    assert "글러브" in text            # 마크 설명
-    # 옛 지구본 잔재 없음(지구본/순흑/별 그라데이션 폐기)
+    # v21: 브랜드 마크 = 게이트웨이 아치(먹/금 vault + 주황 키스톤). 글러브/지구본 폐기.
+    assert "#1a1714" in text          # 먹 vault 배경
+    assert "#c9a24b" in text          # 금 게이트웨이 아치
+    assert "#f5821f" in text          # 주황 키스톤
+    assert "게이트웨이" in text        # 마크 설명
+    # 글러브/지구본 잔재 없음(청록 글러브·순흑·별 그라데이션 폐기)
+    assert "#119a8e" not in text      # 청록(글러브) 제거
     assert "#020010" not in text
     assert 'linearGradient id="bg"' not in text
     assert ">K<" not in text
@@ -82,9 +83,9 @@ def test_public_templates_use_cache_busted_favicon_links():
     ]
     for path in targets:
         text = path.read_text(encoding="utf-8")
-        assert "favicon.svg?v=173" in text
-        assert "favicon.ico?v=173" in text
-        assert "apple-touch-icon.png?v=173" in text
-        assert "manifest.webmanifest?v=173" in text
+        assert "favicon.svg?v=174" in text
+        assert "favicon.ico?v=174" in text
+        assert "apple-touch-icon.png?v=174" in text
+        assert "manifest.webmanifest?v=174" in text
         # 다크 테마 컬러 — 순흑 #020010 폐기(KOHgogane 브리프 §2.2) → 따뜻한 먹(#1a1714)도 허용.
         assert ('content="#020010"' in text) or ('content="#1a1714"' in text)
