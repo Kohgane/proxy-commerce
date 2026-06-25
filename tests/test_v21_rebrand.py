@@ -25,20 +25,19 @@ def test_pwa_manifest_rebranded():
 
 
 def test_favicon_is_gateway_mark():
-    # 공식 게이트웨이(B): 금 아치 + 청록 다리(span) + 주황 키스톤
+    # v23 마스터(브릿지+게이트웨이) 래스터 임베드
     low = Path("src/seller_console/static/favicon.svg").read_text(encoding="utf-8").lower()
-    assert "gateway" in low
-    assert "#f5821f" in low            # 주황 키스톤
-    assert "#119a8e" in low            # 청록 다리
+    assert "gateway" in low or "bridge" in low
+    assert "data:image/png;base64," in low
     assert "globe" not in low
 
 
 def test_official_brand_assets_vendored():
-    # 공식 자산 단일소스(재현 가능) — 직접 그린 게 아니라 오너 제공 자산
+    # v23 단일소스 = 마스터 한 장(오너 제공) → 전 사이즈 파생(재현 가능)
     src = Path("assets/brand-icons")
-    assert (src / "gogabridge_icon_B_gateway.svg").exists()
+    assert (src / "icon-master-1024.png").exists(), "마스터 아이콘 누락"
     for px in ("16", "32", "48", "128", "180", "192", "512", "1024"):
-        assert (src / f"icon-{px}.png").exists(), f"공식 icon-{px}.png 누락"
+        assert (src / f"icon-{px}.png").exists(), f"파생 icon-{px}.png 누락"
 
 
 def test_gateway_icon_generator_exists():
@@ -49,7 +48,8 @@ def test_gateway_icon_generator_exists():
 
 def test_store_and_extension_icon_assets_exist():
     base = Path("src/seller_console/static")
-    for n in ("favicon.ico", "apple-touch-icon.png", "icon-192.png", "icon-512.png", "icon-1024.png"):
+    for n in ("favicon.ico", "favicon-16.png", "favicon-32.png", "apple-touch-icon.png",
+              "icon-192.png", "icon-512.png", "icon-1024.png"):
         assert (base / n).exists(), f"{n} 누락"
     ext = Path("extensions/chrome-collector/icons")
     for px in ("16", "32", "48", "128"):

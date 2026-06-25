@@ -57,8 +57,9 @@ def test_key_flows_use_friendly_handler():
 # ---- P0-2: 지구본 박멸 — v21 게이트웨이(B) 단일 아이콘 ----
 def test_favicon_is_gateway_not_globe():
     low = Path("src/seller_console/static/favicon.svg").read_text(encoding="utf-8").lower()
-    assert "gateway" in low          # v21/v22 공식 마크 = 게이트웨이 아치 + 주황 키스톤
-    assert "#f5821f" in low          # 주황 키스톤 존재
+    # v23 마스터(브릿지+게이트웨이) 래스터 임베드
+    assert "gateway" in low or "bridge" in low
+    assert "data:image/png;base64," in low
     # 지구본(globe) 마크업 없음
     assert "<title>지구본" not in low
     assert "globe" not in low
