@@ -30,24 +30,21 @@ def test_base_templates_include_favicon_links():
         assert "favicon.ico" in text
         assert 'rel="apple-touch-icon"' in text
         assert "manifest.webmanifest" in text
-        assert ("?v=174" in text) or ("v='174'" in text)
+        assert ("?v=175" in text) or ("v='175'" in text)
         # 테마 색상은 라이트/다크 리비전마다 달라질 수 있으므로(예: Phase 189 라이트 복구)
         # 특정 색상값이 아니라 theme-color 메타 존재만 검증한다.
         assert 'name="theme-color"' in text
 
 
-def test_favicon_svg_uses_gateway_brand_mark():
-    # v21/v22: 공식 게이트웨이(B) 마크 = 먹/금 vault + 청록 다리 + 주황 키스톤. 글러브/지구본 폐기.
+def test_favicon_svg_embeds_master_bridge_mark():
+    # v23: favicon.svg = 마스터 래스터(브릿지+게이트웨이+키스톤) 임베드. 단일소스 한 장에서 파생.
     low = Path("src/seller_console/static/favicon.svg").read_text(encoding="utf-8").lower()
-    assert "#1a1714" in low           # 먹 vault 배경
-    assert "#c9a24b" in low           # 금 게이트웨이 아치
-    assert "#f5821f" in low           # 주황 키스톤
-    assert "#119a8e" in low           # 청록 다리(span)
-    assert "gateway" in low           # 게이트웨이 마크
-    # 옛 지구본/순흑/별 그라데이션 잔재 없음
-    assert "#020010" not in low
+    assert "data:image/png;base64," in low   # 마스터 래스터 임베드
+    assert "<image" in low
+    assert "gateway" in low or "bridge" in low  # aria-label = 브릿지 게이트웨이 마크
+    # 지구본/구마크 잔재 없음
     assert "globe" not in low
-    assert ">k<" not in low
+    assert "#020010" not in low
 
 
 def test_manifest_icon_files_are_served():
@@ -83,9 +80,9 @@ def test_public_templates_use_cache_busted_favicon_links():
     ]
     for path in targets:
         text = path.read_text(encoding="utf-8")
-        assert "favicon.svg?v=174" in text
-        assert "favicon.ico?v=174" in text
-        assert "apple-touch-icon.png?v=174" in text
-        assert "manifest.webmanifest?v=174" in text
+        assert "favicon.svg?v=175" in text
+        assert "favicon.ico?v=175" in text
+        assert "apple-touch-icon.png?v=175" in text
+        assert "manifest.webmanifest?v=175" in text
         # 다크 테마 컬러 — 순흑 #020010 폐기(KOHgogane 브리프 §2.2) → 따뜻한 먹(#1a1714)도 허용.
         assert ('content="#020010"' in text) or ('content="#1a1714"' in text)

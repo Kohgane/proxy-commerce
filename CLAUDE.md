@@ -25,6 +25,13 @@
   `scripts/gen_gateway_icons.py`가 favicon.svg/ico(공식 16/32/48 멀티사이즈 합성)·icon-192/512/1024·apple-touch·확장
   16/32/48/128에 적용. FAB도 공식 마크(청록 다리 복귀)로. favicon 가드는 공식 마크 기준(청록 #119a8e 존재·aria
   'gateway'·대문자hex 소문자비교)으로 갱신. 전체 10266 passed.
+- ✅ **v23 마스터 아이콘 전면 교체(오너 확정 마스터):** B 게이트웨이를 **신규 마스터(현수교 + 게이트웨이 아치 +
+  주황 키스톤, 먹/금/청록)**로 확정 교체. **단일소스 한 장** `assets/brand-icons/icon-master-1024.png`에서 `scripts/
+  gen_gateway_icons.py`가 전 사이즈 파생 — favicon.ico(16/32/48)·**favicon-16/32.png**·apple-touch-180·icon-192/512/
+  1024·확장 16/32/48/128. favicon.svg는 마스터 래스터(128px) data-URI 임베드(스케일러블 선언 유지, 14KB 경량). _base/
+  _base_app head에 PNG favicon 링크(16/32) 추가, 캐시버스트 v=174→175(전 템플릿), 확장 manifest 1.5.9→1.5.10. og:image는
+  icon-512(=마스터) 자동 반영. 구 B/A svg 벤더 제거(단일소스=마스터). favicon 가드는 임베드 기준(data:image/png·aria
+  bridge/gateway·globe 0)으로 갱신. 지구본 0. 전체 10266 passed.
 
 ## ★ 작업 기본 헤더 (v20 운영 규칙 — 오너 2026-06-23, 모든 후속 작업에 상시 적용)
 > "무엇을 만들지"가 아니라 "어떤 도구를 켜고 작업할지". 절대원칙: 거짓성공/회귀 금지·정직·토큰 단일소스·경량·개발표기 비노출.
