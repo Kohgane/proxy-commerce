@@ -5,9 +5,7 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h4 class="fw-bold mb-0"><i class="bi bi-shop"></i> {{ t('markets.title') }}</h4>
   <div class="d-flex gap-2 align-items-center">
-    {% if market_data.is_mock %}
-    <span class="badge bg-warning text-dark">mock 데이터</span>
-    {% else %}
+    {% if not market_data.is_mock %}
     <span class="badge bg-success">실 데이터 ({{ market_data.source }})</span>
     {% endif %}
     {% if market_data.fetched_at %}
@@ -54,7 +52,7 @@
             <span class="badge bg-{{ hub.status_style }}">{{ hub.status_label }}</span>
             {% endif %}
           </div>
-          <div class="small text-muted">{{ hub.country }}/{{ hub.currency }} · 활성 {{ hub.active }} / 전체 {{ hub.total }}</div>
+          <div class="small text-muted">{{ hub.country }}/{{ hub.currency }}{% if not market_data.is_mock %} · 활성 {{ hub.active }} / 전체 {{ hub.total }}{% endif %}</div>
           {% if hub.note %}
           <div class="small mt-1">{{ hub.note }}</div>
           {% endif %}
@@ -84,7 +82,19 @@
   </div>
 </div>
 
-<!-- 마켓별 KPI 카드 -->
+<!-- 마켓별 상품 등록·동기화 현황 -->
+<h5 class="fw-bold mb-1 mt-2"><i class="bi bi-bar-chart"></i> 마켓별 상품 등록·동기화 현황</h5>
+<div class="small text-muted mb-2">어떤 마켓에 내 상품이 몇 개 올라가 있고 상태가 어떤지 보여줘요.</div>
+{% if market_data.is_mock %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body text-center text-muted py-5">
+    <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+    <div class="fw-semibold">아직 등록된 상품이 없어요</div>
+    <div class="small mt-1">상품을 마켓에 업로드하면 여기에 마켓별 등록·동기화 현황이 표시돼요.</div>
+    <a href="/seller/collect/history" class="btn btn-primary btn-sm mt-3"><i class="bi bi-box-arrow-up"></i> 수집한 상품에서 업로드하기</a>
+  </div>
+</div>
+{% else %}
 <div class="row g-3 mb-4">
   {% for m in market_data.markets %}
   <div class="col-md-3">
@@ -126,6 +136,7 @@
   </div>
   {% endfor %}
 </div>
+{% endif %}
 
 <!-- 필터 바 -->
 <div class="card border-0 shadow-sm mb-3">
@@ -177,7 +188,7 @@
           </tr>
         </thead>
         <tbody id="productTableBody">
-          {% if items %}
+          {% if items and not market_data.is_mock %}
             {% for item in items %}
             <tr data-market="{{ item.marketplace }}" data-status="{{ item.state }}" data-country="{{ item.country }}">
               <td>
@@ -215,14 +226,13 @@
             </tr>
             {% endfor %}
           {% else %}
-            <!-- 시트에 데이터 없음 또는 mock 모드일 때 안내 메시지 표시 -->
+            <!-- 빈 상태: 일반 유저에게 Mock·개발 표기 비노출(친절 안내만) -->
             <tr>
               <td colspan="8" class="text-center text-muted py-4">
-                {% if market_data.is_mock %}
-                <div><i class="bi bi-clipboard"></i> <strong>Mock 모드</strong> — Google Sheets <code>catalog</code> 워크시트에 데이터를 추가하면 실 데이터가 표시됩니다.</div>
-                <div class="small mt-1">컬럼: product_id / sku / title / marketplace / state / price / currency / price_krw / last_synced_at / error_message</div>
-                {% else %}
-                <div><i class="bi bi-inbox"></i> 상품 데이터가 없습니다. Google Sheets에 데이터를 추가해주세요.</div>
+                <div><i class="bi bi-inbox"></i> 아직 등록된 상품이 없어요 — 상품을 업로드하면 여기 현황이 표시돼요.</div>
+                <a href="/seller/collect/history" class="btn btn-outline-primary btn-sm mt-2"><i class="bi bi-box-arrow-up-right"></i> 수집한 상품 보기</a>
+                {% if session.get('user_role') == 'admin' %}
+                <div class="small mt-2 text-muted">관리자: <code>catalog</code> 시트 컬럼 — product_id / sku / title / marketplace / state / price / currency / price_krw / last_synced_at / error_message</div>
                 {% endif %}
               </td>
             </tr>

@@ -9,6 +9,14 @@
     </div>
   </div>
 
+  {% if summary.total and summary.total > 0 %}
+  <!-- 초보 흐름: 다음 할 일 한 줄(happy path) -->
+  <div class="pc-status pc-status-info small mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <span><i class="bi bi-signpost-2"></i> <strong>다음 할 일:</strong> 상품을 눌러 확인·편집한 뒤, 마켓에 업로드하세요.</span>
+    <a href="/seller/markets/connect" class="btn btn-primary btn-sm"><i class="bi bi-shop"></i> 마켓 연동하기</a>
+  </div>
+  {% endif %}
+
   <!-- 요약 카드 -->
   <div class="row g-3 mb-4">
     <div class="col-6 col-md-3">
