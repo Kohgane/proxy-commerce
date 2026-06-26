@@ -2,6 +2,15 @@
 
 > 이 파일은 매 세션 시작 시 로드된다. 오너(Kohgane) 지시·검증된 팩트를 누적 기록한다.
 
+## 🟩 v25~v27 통합 마스터 (오너 2026-06-26 — 순서: v24✅→v25P0→v27→v25P1→v26)
+- ✅ **v25 P0 아마존 '전체 수집' 실제 상품만 (Phase 299):** 증상=전체선택 시 Amazon Music·광고(스폰서)·미디어
+  카드까지 선택됨. 원인=어댑터가 s-search-result+/dp/+가격만 보고 스폰서/비-ASIN 위젯도 통과. **수정:**
+  `_kgpAmazonCards`에 **유효 ASIN(`/^[A-Z0-9]{10}$/`, data-asin) 필수** + `_kgpAmazonSponsored()`(s-sponsored-label-text/
+  sp-sponsored-result 등 클래스 기반) 제외 → 뮤직/앱/프로모(ASIN 없음)·광고 0 선택. 툴바에 정직한 '전체 N개 중 상품
+  M개' 표기(`_kgpScannedCount`). manifest 1.5.11→1.5.12. 가드 test_extension_amazon_products_v25(ASIN 정규식 node 실검증).
+  전체 10276 passed.
+- ⏳ 다음: v27(네이버 검색 API 실데이터/미설정=빈상태) → v25 P1(아마존 국가선택·초보 활성화) → v26(네오-클래식 디자인).
+
 ## 🟦 v24 브리프 (오너 2026-06-25 — "수집 이력 버그 · 마켓 Mock 정리 · 초보 흐름 · 아이콘 최종")
 - ✅ **아이콘 최종본 적용:** 오너 최종 마스터(현수교 2선 다리)로 교체, v=176/확장 1.5.11(아래 v23 파이프라인 재실행).
 - ✅ **P0 수집 성공인데 이력 0 (Phase 298):** 원인=`collect_history_store.append`가 시트 쓰기 실패 시 `_in_memory`로

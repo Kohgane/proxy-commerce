@@ -448,6 +448,7 @@ const KGP_TOOLBAR_ID = "kgp-listing-toolbar";
 const KGP_SELECTED = new Set();   // 선택된 상품 url 집합(재스캔에도 유지)
 let _kgpCards = [];
 let _kgpCardByUrl = {};           // url → 카드 데이터(el 포함) — 재스캔 시 '병합'(절대 비우지 않음)
+let _kgpScannedCount = 0;         // 마지막 스캔에서 본 후보 카드 총수(상품 M개 / 전체 N개 표기용)
 let _kgpClosed = false;           // 사용자가 툴바를 닫았으면 자동 재생성 안 함(같은 URL 동안)
 
 function _kgpPrice(text) {
@@ -532,12 +533,29 @@ function _kgpInBadRegion(el) {
   return false;
 }
 
-// 아마존 검색결과 어댑터 — 실제 제품 카드 컨테이너만.
+// 스폰서(광고) 카드 판별 — 클래스/라벨 기반(보수적, 오탐 최소).
+function _kgpAmazonSponsored(el) {
+  try {
+    if (el.querySelector('.s-sponsored-label-text, .puis-sponsored-label-text, [data-component-type="sp-sponsored-result"], [aria-label*="Sponsored"], [data-component-type="s-sponsored-label-info-icon"]')) {
+      return true;
+    }
+  } catch (e) { /* noop */ }
+  return false;
+}
+
+// 아마존 검색결과 어댑터 — 실제 '상품' 카드만(유효 ASIN + 가격 + 상품URL). 스폰서/뮤직/앱/미디어 제외.
+// v25 P0: 전체선택 시 광고·미디어 카드까지 잡히던 문제 → data-asin(10자) 필수 + 스폰서 제외.
 function _kgpAmazonCards() {
   const cards = [], seen = {};
-  document.querySelectorAll('[data-component-type="s-search-result"]').forEach((el) => {
+  const all = document.querySelectorAll('[data-component-type="s-search-result"]');
+  _kgpScannedCount = all.length;                          // '전체 N개' (상품/비상품 합)
+  all.forEach((el) => {
     try {
       if (_kgpInBadRegion(el)) return;
+      // 유효 ASIN(B0… 등 10자 영숫자)만 = 실제 상품. 뮤직/앱/프로모 위젯은 ASIN이 없거나 비정상.
+      const asin = (el.getAttribute("data-asin") || "").trim();
+      if (!/^[A-Z0-9]{10}$/.test(asin)) return;
+      if (_kgpAmazonSponsored(el)) return;                 // 스폰서(광고) 제외
       const a = el.querySelector('a.a-link-normal[href*="/dp/"], h2 a, a.a-link-normal.s-no-outline');
       const href = a && a.href ? a.href.split("?")[0].split("#")[0] : "";
       if (!href || href.indexOf("http") !== 0 || seen[href]) return;
@@ -545,7 +563,7 @@ function _kgpAmazonCards() {
       const titleEl = el.querySelector("h2 span") || el.querySelector("h2");
       const priceEl = el.querySelector(".a-price .a-offscreen") || el.querySelector(".a-price");
       const pr = _kgpPrice(priceEl ? priceEl.textContent : (el.innerText || ""));
-      if (!img || !titleEl || !pr.price) return;            // 제목+가격+링크+이미지 모두 있어야 제품
+      if (!img || !titleEl || !pr.price) return;            // 제목+가격+링크+이미지 모두 있어야 상품
       seen[href] = 1;
       cards.push({
         url: href, title: (titleEl.innerText || titleEl.textContent || "").trim().slice(0, 200),
@@ -590,6 +608,7 @@ function _kgpGenericCards() {
 
 function kgpFindCards() {
   const host = (location.hostname || "").toLowerCase();
+  _kgpScannedCount = 0;            // 매 스캔 초기화(어댑터가 '전체 N개'를 설정)
   let cards = [];
   try { if (/(^|\.)amazon\.[a-z.]+$/.test(host)) cards = _kgpAmazonCards(); } catch (e) { cards = []; }
   if (!cards.length) { try { cards = _kgpGenericCards(); } catch (e) { cards = []; } }
@@ -631,7 +650,13 @@ function kgpSetStatus(msg) {
 
 function kgpUpdateToolbar() {
   const c = document.getElementById("kgp-tb-count");
-  if (c) c.textContent = `${_kgpCards.length}개 발견 · ${KGP_SELECTED.size}개 선택`;
+  if (!c) return;
+  // 광고·미디어를 걸러냈을 때 정직하게 '전체 N개 중 상품 M개'로 표기.
+  if (_kgpScannedCount > _kgpCards.length) {
+    c.textContent = `전체 ${_kgpScannedCount}개 중 상품 ${_kgpCards.length}개 · ${KGP_SELECTED.size}개 선택`;
+  } else {
+    c.textContent = `${_kgpCards.length}개 발견 · ${KGP_SELECTED.size}개 선택`;
+  }
 }
 
 async function kgpCollect(urls) {
