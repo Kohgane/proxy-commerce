@@ -16,6 +16,12 @@
   {% endif %}
 </div>
 
+<!-- 초보 흐름: 다음 할 일 한 줄(happy path) -->
+<div class="pc-status pc-status-info small mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <span><i class="bi bi-signpost-2"></i> <strong>다음 할 일:</strong> 수집하면 ‘수집한 상품’에서 확인·편집한 뒤 마켓에 업로드해요.</span>
+  <a href="/seller/collect/history" class="btn btn-outline-primary btn-sm"><i class="bi bi-box-seam"></i> 수집한 상품 보기</a>
+</div>
+
 {% if api_status %}
 {% set active_count = api_status | selectattr('status', 'equalto', 'active') | list | length %}
 {% if active_count == 0 %}

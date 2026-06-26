@@ -63,6 +63,35 @@ def _invalidate_cache():
         pass
 
 
+def _all_rows() -> list[dict]:
+    """현재 워커가 볼 수 있는 모든 행 = 시트 + 인메모리 합집합(id 기준 dedup).
+
+    핵심(v24 P0): 시트가 설정돼 있어도 append가 시트 쓰기에 실패하면 행이 _in_memory로
+    떨어지는데, 기존 list_items/get은 시트만 읽어 그 행을 못 봤다 → '수집 완료' 토스트는
+    뜨는데 이력은 0(가짜 성공처럼 보임). 합집합으로 조회하면 저장 위치(시트/메모리)와
+    무관하게 같은 워커에서 즉시 보인다. 시트 읽기 실패 시에도 인메모리로 폴백.
+    """
+    rows: list[dict] = []
+    seen: set = set()
+    if _SHEET_ID:
+        try:
+            for r in _read_sheet_records():
+                rows.append(r)
+                rid = r.get("id")
+                if rid:
+                    seen.add(rid)
+        except Exception as exc:
+            logger.warning("수집 이력 조회 실패: %s", exc)
+    for r in _in_memory:
+        rid = r.get("id")
+        if rid and rid in seen:
+            continue
+        rows.append(r)
+        if rid:
+            seen.add(rid)
+    return rows
+
+
 def _ensure_headers(ws) -> None:
     try:
         first_row = ws.row_values(1)
@@ -145,16 +174,7 @@ def list_items(
         seller_id: 셀러 격리 필터. None이면 전체(레거시/단일 테넌트), 값이면 해당 셀러 항목만.
     """
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    rows: list[dict] = []
-
-    if _SHEET_ID:
-        try:
-            rows = _read_sheet_records()
-        except Exception as exc:
-            logger.warning("수집 이력 조회 실패: %s", exc)
-            rows = list(_in_memory)
-    else:
-        rows = list(_in_memory)
+    rows = _all_rows()
 
     result = []
     for row in rows:
@@ -193,15 +213,7 @@ def get(item_id: str, seller_id: Optional[str] = None, seller_ids: Optional[set]
             return False
         return True
 
-    if _SHEET_ID:
-        try:
-            for row in _read_sheet_records():
-                if _match(row):
-                    return dict(row)
-        except Exception as exc:
-            logger.warning("수집 이력 단건 조회 실패: %s", exc)
-    # 인메모리 폴백
-    for row in _in_memory:
+    for row in _all_rows():
         if _match(row):
             return dict(row)
     return None
