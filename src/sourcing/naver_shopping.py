@@ -32,20 +32,21 @@ def _strip_tags(s: str) -> str:
     return _TAG_RE.sub("", s or "").strip()
 
 
-def search_domestic_products(keyword: str, *, limit: int = 12, sort: str = "sim") -> List[Dict[str, Any]]:
-    """키워드로 국내 판매 상품을 검색해 카드용 dict 리스트로 반환.
+def search_domestic(keyword: str, *, limit: int = 12, sort: str = "sim") -> Dict[str, Any]:
+    """키워드로 국내 판매 상품 검색 — items + total(전국 검색 결과 수)을 함께 반환.
 
-    반환 각 항목: {title, image, price(int KRW), mall, link, brand}.
-    키 미설정/실패/dry-run → [] (정직).
-    sort: sim(정확도)·date·asc·dsc(가격). 베스트셀러 느낌은 'sim'(기본) 또는 별도 정렬.
+    반환: {"items": [{title, image, price(int KRW), mall, link, brand}, ...], "total": int|None}.
+    키 미설정/실패/dry-run → {"items": [], "total": None} (정직·날조 금지).
+    total = 네이버 쇼핑 '검색' API의 전국 검색 결과 수 = 시장 규모/노출량 실데이터 신호.
     """
+    empty = {"items": [], "total": None}
     kw = (keyword or "").strip()
     if not kw:
-        return []
+        return dict(empty)
     if os.getenv("ADAPTER_DRY_RUN") == "1":
-        return []
+        return dict(empty)
     if not is_configured():
-        return []
+        return dict(empty)
 
     cid = os.getenv("NAVER_SEARCH_CLIENT_ID", "").strip()
     csec = os.getenv("NAVER_SEARCH_CLIENT_SECRET", "").strip()
@@ -55,17 +56,18 @@ def search_domestic_products(keyword: str, *, limit: int = 12, sort: str = "sim"
         display = 12
 
     qs = urllib.parse.urlencode({"query": kw, "display": display, "sort": sort})
+    # 인증 헤더는 env에서만 — 키는 로그에 남기지 않는다(키워드만 기록).
     req = urllib.request.Request(_ENDPOINT + "?" + qs, headers={
         "X-Naver-Client-Id": cid,
         "X-Naver-Client-Secret": csec,
-        "User-Agent": "KOHgogane/1.0",
+        "User-Agent": "Goga Bridj/1.0",
     })
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:
         logger.warning("네이버 쇼핑 검색 실패(키워드=%r): %s", kw, exc)
-        return []
+        return dict(empty)
 
     out: List[Dict[str, Any]] = []
     for it in (data.get("items") or []):
@@ -84,4 +86,13 @@ def search_domestic_products(keyword: str, *, limit: int = 12, sort: str = "sim"
             "brand": (it.get("brand") or it.get("maker") or "").strip(),
             "link": (it.get("link") or "").strip(),
         })
-    return out
+    try:
+        total = int(data.get("total")) if data.get("total") is not None else None
+    except (TypeError, ValueError):
+        total = None
+    return {"items": out, "total": total}
+
+
+def search_domestic_products(keyword: str, *, limit: int = 12, sort: str = "sim") -> List[Dict[str, Any]]:
+    """하위호환 래퍼 — items만 반환(기존 호출부용)."""
+    return search_domestic(keyword, limit=limit, sort=sort)["items"]

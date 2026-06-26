@@ -489,22 +489,31 @@ def _sourcing_search_links(query: str) -> "list[dict[str, str]]":
 
 def _build_sourcing_analysis(domestic_products: "list[dict[str, Any]]",
                              keyword_context: "dict[str, Any] | None",
-                             keyword: str) -> "dict[str, Any]":
+                             keyword: str,
+                             domestic_total: "int | None" = None) -> "dict[str, Any]":
     """소싱 분석 패널 — 계산 가능한 것만 실데이터, 불가하면 None('데이터 없음').
 
     날조 금지: 해외직구 비율·리뷰 지수 등 우리가 계산 못 하는 지표는 None으로 두고
-    템플릿이 '데이터 없음'으로 표시한다.
+    템플릿이 '데이터 없음'으로 표시한다. domestic_total = 네이버 '검색' API 전국 결과 수(실데이터).
     """
     metrics: "list[dict[str, Any]]" = []
     products = domestic_products or []
     prices = [p["price"] for p in products if isinstance(p.get("price"), int) and p["price"] > 0]
 
-    # 국내 판매 상품 수(네이버 쇼핑 실데이터)
+    # 전국 검색 결과 수(네이버 쇼핑 '검색' API total — 시장 규모/노출량 실데이터)
+    metrics.append({"label": "국내 검색 결과 수",
+                    "value": (f"{domestic_total:,}개" if isinstance(domestic_total, int) and domestic_total > 0 else None),
+                    "note": "네이버 쇼핑 전국 검색"})
+    # 국내 판매 상품 수(이번 조회 표본)
     metrics.append({"label": "국내 판매 상품 수", "value": (f"{len(products)}개" if products else None),
                     "note": "네이버 쇼핑 검색 결과"})
     # 최저가 / 평균가(실데이터 계산)
     metrics.append({"label": "국내 최저가", "value": (f"₩{min(prices):,}" if prices else None), "note": "검색 결과 기준"})
     metrics.append({"label": "국내 평균가", "value": (f"₩{round(sum(prices) / len(prices)):,}" if prices else None), "note": "검색 결과 기준"})
+    # 판매처(쇼핑몰) 수 — 검색 결과의 고유 몰 수 = 경쟁 강도 실데이터 신호
+    _malls = {(p.get("mall") or "").strip() for p in products if (p.get("mall") or "").strip()}
+    metrics.append({"label": "판매처(쇼핑몰) 수", "value": (f"{len(_malls)}곳" if _malls else None),
+                    "note": "검색 결과 기준"})
 
     # 검색 관심도·경쟁도(네이버 검색광고 실데이터 — 있을 때만)
     kw_lower = (keyword or "").strip().lower()
@@ -5955,14 +5964,18 @@ def sourcing_hub():
     # v12: 국내 베스트셀러(네이버 쇼핑 실데이터) + 소싱처 검색 딥링크 + 분석(실데이터/없으면 '데이터 없음')
     domestic_products: list[dict[str, Any]] = []
     domestic_enabled = False
+    domestic_total: int | None = None
     try:
         from src.sourcing import naver_shopping
         domestic_enabled = naver_shopping.is_configured()
         if keyword and domestic_enabled:
-            domestic_products = naver_shopping.search_domestic_products(keyword, limit=12)
+            _res = naver_shopping.search_domestic(keyword, limit=12)
+            domestic_products = _res.get("items") or []
+            domestic_total = _res.get("total")
     except Exception as exc:
         logger.debug("국내 베스트셀러 조회 스킵: %s", exc)
-    analysis = _build_sourcing_analysis(domestic_products, keyword_context, keyword)
+    analysis = _build_sourcing_analysis(domestic_products, keyword_context, keyword,
+                                        domestic_total=domestic_total)
 
     return render_template(
         "sourcing.html",
