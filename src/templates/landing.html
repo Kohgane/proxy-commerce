@@ -19,8 +19,10 @@
   .scene.dark { background: radial-gradient(1000px 420px at 50% -8%, rgba(201,162,75,.16), transparent 60%), linear-gradient(180deg,#1a1714,#14110e); color: #f5efe3; }
   .scene.cream { background: var(--pc-color-bg); color: var(--pc-color-text); }
   .eyebrow { font-size: .82rem; letter-spacing: .18em; text-transform: uppercase; font-weight: 700; color: #119a8e; margin-bottom: .8rem; }
-  .scene h1, .scene h2 { font-family: var(--pc-font-display, serif); font-weight: 700; letter-spacing: -.02em; line-height: 1.05;
-    font-size: clamp(40px, 6vw, 72px); margin: 0 0 1rem; }
+  /* v26: 대형 세리프 헤드라인 — 디자인 토큰 단일소스(clamp 44~84·자간 -.025em) */
+  .scene h1, .scene h2 { font-family: var(--pc-font-display, serif); font-weight: 700;
+    letter-spacing: var(--display-tracking, -.025em); line-height: var(--display-2-lh, 1.05);
+    font-size: var(--display-2-size, clamp(44px, 7vw, 84px)); margin: 0 0 1rem; }
   .scene .sub { font-size: clamp(1rem, 2.2vw, 1.3rem); color: var(--pc-color-text-muted); margin: 0 auto 2rem; max-width: 520px; }
   .scene.dark .sub { color: #c9bda6; }
   .scene .visual { font-size: clamp(4rem, 12vw, 8rem); line-height: 1; margin-bottom: 1.4rem; }
