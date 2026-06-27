@@ -5,11 +5,13 @@
 <section class="mb-4">
   <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
     <div>
+      <div class="console-kpi-label mb-1">대시보드</div>
       <h1 class="h4 mb-1">통합 셀러 대시보드</h1>
       <p class="text-muted mb-0">오늘 핵심 지표와 주요 작업을 한 번에 확인하세요.</p>
     </div>
     <a href="/seller/start" class="btn btn-cta btn-lg"><i class="bi bi-stars"></i> For Beginners · 처음이신가요?</a>
   </div>
+  <hr class="pc-hairline mt-0 mb-4">
 
   {% if onboarding.show_completion_notice %}
   <div class="alert alert-success d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3" role="status">
@@ -102,7 +104,7 @@
         <article class="card console-card console-kpi-card h-100 console-kpi-{{ card.accent }}">
           <div class="card-body">
             <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
-              <div class="text-muted small fw-semibold">{{ card.label }}</div>
+              <div class="console-kpi-label">{{ card.label }}</div>
               <span class="console-kpi-icon"><i class="bi {{ card.icon }}"></i></span>
             </div>
             <div class="console-stat-value">{{ card.value if card.value is not none else '—' }}</div>

@@ -117,9 +117,22 @@
   color: var(--console-muted);
 }
 
+/* v26 PART3: 잡지 통계식 세리프 대형 KPI 숫자(단일소스 토큰). */
 .console-stat-value {
-  font-size: 1.6rem;
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 4vw, 2.7rem);
   font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  color: var(--text-strong);
+}
+/* 오버라인 라벨(대문자 자간·금) — 에디토리얼 키커 */
+.console-kpi-label {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--gold-ink);
 }
 
 .console-status-banner {
@@ -150,32 +163,27 @@
 
 .console-kpi-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 12px 28px rgba(17, 24, 39, 0.08);
+  box-shadow: var(--shadow-lg);
 }
 
 .console-kpi-card:active {
   transform: translateY(-1px);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .console-kpi-card { transition: none; }
+  .console-kpi-card:hover, .console-kpi-card:active { transform: none; }
+}
+
+/* 두꺼운 보더 금지(v26) → 얇은 2px 토큰 악센트만 */
 .console-kpi-card .card-body {
-  border-left: 4px solid transparent;
+  border-left: 2px solid transparent;
 }
 
-.console-kpi-primary .card-body {
-  border-left-color: #5b3df5;
-}
-
-.console-kpi-warning .card-body {
-  border-left-color: #f59e0b;
-}
-
-.console-kpi-danger .card-body {
-  border-left-color: #ef4444;
-}
-
-.console-kpi-success .card-body {
-  border-left-color: #10b981;
-}
+.console-kpi-primary .card-body { border-left-color: var(--teal); }
+.console-kpi-warning .card-body { border-left-color: var(--warn); }
+.console-kpi-danger .card-body { border-left-color: var(--danger); }
+.console-kpi-success .card-body { border-left-color: var(--success); }
 
 .console-kpi-icon {
   width: 2rem;
@@ -184,8 +192,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #4338ca;
-  background: #eef2ff;
+  color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 12%, transparent);
 }
 
 .console-trend {
@@ -270,7 +278,7 @@
   width: 4px;
   min-height: 4px;
   border-radius: 2px;
-  background: #5b3df5;
+  background: var(--teal);
   opacity: 0.75;
 }
 
