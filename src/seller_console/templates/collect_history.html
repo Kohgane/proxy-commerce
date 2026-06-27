@@ -20,32 +20,33 @@
   <!-- 요약 카드 -->
   <div class="row g-3 mb-4">
     <div class="col-6 col-md-3">
-      <div class="card text-center">
-        <div class="card-body py-3">
-          <div class="fs-4 fw-bold text-primary">{{ summary.total }}</div>
-          <div class="small text-muted">총 수집</div>
+      <div class="card console-card console-kpi-card console-kpi-primary h-100">
+        <div class="card-body">
+          <div class="console-kpi-label mb-1">총 수집</div>
+          <div class="console-stat-value">{{ summary.total }}</div>
         </div>
       </div>
     </div>
     <div class="col-6 col-md-3">
-      <div class="card text-center">
-        <div class="card-body py-3">
-          <div class="fs-4 fw-bold text-success">{{ summary.today }}</div>
-          <div class="small text-muted">오늘</div>
+      <div class="card console-card console-kpi-card console-kpi-success h-100">
+        <div class="card-body">
+          <div class="console-kpi-label mb-1">오늘</div>
+          <div class="console-stat-value">{{ summary.today }}</div>
         </div>
       </div>
     </div>
     <div class="col-6 col-md-3">
-      <div class="card text-center">
-        <div class="card-body py-3">
-          <div class="fs-4 fw-bold text-info">{{ summary.domains }}</div>
-          <div class="small text-muted">도메인</div>
+      <div class="card console-card console-kpi-card console-kpi-warning h-100">
+        <div class="card-body">
+          <div class="console-kpi-label mb-1">도메인</div>
+          <div class="console-stat-value">{{ summary.domains }}</div>
         </div>
       </div>
     </div>
     <div class="col-6 col-md-3">
-      <div class="card text-center">
-        <div class="card-body py-3">
+      <div class="card console-card h-100">
+        <div class="card-body">
+          <div class="console-kpi-label mb-2">수집 경로</div>
           <div class="small">
             확장 <strong>{{ summary.by_source.extension }}</strong> /
             북마클릿 <strong>{{ summary.by_source.bookmarklet }}</strong>

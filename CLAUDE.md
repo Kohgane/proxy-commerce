@@ -27,7 +27,8 @@
   헤어라인, `⟳` 글리프→bi-arrow-clockwise(단일 아이콘셋). markets 헤더 오버라인 라벨. 가드 test_design_console_v32_part3b(2).
   전체 10328 passed. ※소싱 분석은 오너가 네이버 검색키 Render 설정 완료 — 단 변수명은 검색용 `NAVER_SEARCH_CLIENT_ID/SECRET`
   (로그인 OAuth `NAVER_CLIENT_ID/SECRET`과 다름) 확인 필요.
-- → **v32 완주**(PART1 삭제영속·일괄버튼 / PART2 출시필수 버튼 실동작 / PART3 콘솔 디자인 실집행, 화면별 점진 확장 중). 남은 건 오너 콘솔 액션.
+- ✅ **PART3 #3 수집이력 summary 격상 (Phase 312):** 수집이력 summary 카드 4종(총수집/오늘/도메인=세리프 대형 KPI+오버라인+토큰 좌악센트, 수집경로=오버라인 라벨)도 대시보드/orders와 동일 에디토리얼로. 가드 test_design_console_v32_part3b 확장(3). 전체 10330 passed.
+- → **v32 완주**(PART1 삭제영속·일괄버튼 / PART2 출시필수 버튼 실동작 / PART3 콘솔 디자인 실집행: 대시보드·orders·markets·수집이력 격상, settlement/sourcing 등 점진 확장 중). 남은 건 오너 콘솔 액션.
 
 ## 🟧 v29~v31 묶음 (오너 2026-06-27 — 순서: v30 404→v31 P0 실값/메타→v29 토큰/디자인)
 - ✅ **v30 P0 수집한 상품 클릭 404 회귀 (Phase 304):** 원인=목록(list_items)은 관용 식별자(seller_ids=user_id+email)로
