@@ -29,3 +29,18 @@ def test_orders_kpi_editorial_upgrade(client):
 def test_markets_header_overline(client):
     html = client.get("/seller/markets").get_data(as_text=True)
     assert "console-kpi-label" in html   # 오버라인 라벨(에디토리얼 키커)
+
+
+def test_collect_history_summary_editorial(client):
+    from src.seller_console import collect_history_store as store
+    store._in_memory[:] = []
+    store.append(source="extension", url="https://x.com/p", title="t", seller_id="u1")
+    try:
+        with client.session_transaction() as s:
+            s["user_id"] = "u1"
+        html = client.get("/seller/collect/history").get_data(as_text=True)
+        assert "console-stat-value" in html      # 세리프 대형 KPI
+        assert "console-kpi-label" in html        # 오버라인 라벨
+        assert "fs-4 fw-bold" not in html         # 옛 마크업 제거
+    finally:
+        store._in_memory[:] = []
