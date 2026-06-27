@@ -9,7 +9,13 @@
   sp-sponsored-result 등 클래스 기반) 제외 → 뮤직/앱/프로모(ASIN 없음)·광고 0 선택. 툴바에 정직한 '전체 N개 중 상품
   M개' 표기(`_kgpScannedCount`). manifest 1.5.11→1.5.12. 가드 test_extension_amazon_products_v25(ASIN 정규식 node 실검증).
   전체 10276 passed.
-- ⏳ 다음: v27(네이버 검색 API 실데이터/미설정=빈상태) → v25 P1(아마존 국가선택·초보 활성화) → v26(네오-클래식 디자인).
+- ✅ **v27 네이버 검색 API 실데이터 (Phase 300):** 소싱 분석 '데이터 없음'을 **검색 API만으로** 실데이터화.
+  `naver_shopping.search_domestic()`(items+total 동시 반환, 키 env 전용·미설정/실패=`{items:[],total:None}`·키 로그 0).
+  `_build_sourcing_analysis`에 실데이터 2종 추가 — **국내 검색 결과 수**(전국 total) + **판매처(쇼핑몰) 수**(고유 몰=경쟁
+  강도). 상품수/최저·평균가(기존 실데이터)와 함께. 검색광고(관심도/경쟁도)·해외직구·리뷰는 검색 API로 못 구해 None 유지
+  (날조 금지). 미연결 시 전 수치 None(가짜 0 금지). 가드 test_v27_naver_sourcing(미설정 빈상태/실데이터 매핑/페이지 렌더).
+  전체 10280 passed. 오너 액션: developers.naver.com 앱(검색) → NAVER_SEARCH_CLIENT_ID/SECRET을 Render Env에.
+- ⏳ 다음: v25 P1(아마존 국가선택·초보 활성화) → v26(네오-클래식 디자인).
 
 ## 🟦 v24 브리프 (오너 2026-06-25 — "수집 이력 버그 · 마켓 Mock 정리 · 초보 흐름 · 아이콘 최종")
 - ✅ **아이콘 최종본 적용:** 오너 최종 마스터(현수교 2선 다리)로 교체, v=176/확장 1.5.11(아래 v23 파이프라인 재실행).
