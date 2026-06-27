@@ -4,7 +4,8 @@
 <div class="container-fluid py-3">
   <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
     <div>
-      <h1 class="h4 mb-1">AI 소싱·등록</h1>
+      <div class="console-kpi-label mb-1">AI 소싱·등록</div>
+      <h1 class="h4 mb-1">무엇을 팔지, 데이터로</h1>
       <p class="text-muted mb-0">키워드 → 국내에서 뭐가 팔리나 → 비슷한 소싱처 상품 찾기 → 바로 수집·등록.</p>
     </div>
     <div class="d-flex gap-2">
@@ -224,18 +225,19 @@
   <!-- 분석 패널 — 계산 가능한 것만 실데이터, 없으면 '데이터 없음' -->
   <div class="card console-card mb-3">
     <div class="card-body">
-      <h2 class="h6 mb-3">분석</h2>
+      <div class="console-kpi-label mb-1">소싱 분석</div>
+      <h2 class="h6 mb-3">국내 시장 한눈에</h2>
       <div class="row g-2">
         {% for m in analysis.metrics %}
         <div class="col-6 col-md-4">
-          <div class="border rounded p-2 h-100">
-            <div class="text-muted small">{{ m.label }}</div>
+          <div class="rounded p-3 h-100" style="border:1px solid var(--border);">
+            <div class="console-kpi-label mb-1">{{ m.label }}</div>
             {% if m.value is not none %}
-            <div class="fw-bold">{{ m.value }}</div>
+            <div style="font-family:var(--font-display);font-size:1.45rem;font-weight:700;letter-spacing:-.01em;line-height:1.1;">{{ m.value }}</div>
             {% else %}
             <div class="text-muted">데이터 없음</div>
             {% endif %}
-            <div class="text-muted" style="font-size:.7rem">{{ m.note }}</div>
+            <div class="text-muted mt-1" style="font-size:.7rem">{{ m.note }}</div>
           </div>
         </div>
         {% endfor %}
