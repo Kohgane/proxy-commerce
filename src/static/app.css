@@ -514,3 +514,33 @@ body::before {
   .pc-lift:hover { transform: none; }
   body::before { display: none; }
 }
+
+/* ============================================================================
+   v33 3-3 토스트 — 네오-클래식(먹 배경·한지 텍스트·금 보더·유형 좌악센트·라인 아이콘).
+   이모지 0, 토큰 단일소스, reduced-motion 존중.
+   ============================================================================ */
+.pc-toast {
+  display: flex; align-items: flex-start; gap: .55rem;
+  min-width: 260px; max-width: 380px;
+  background: var(--vault-surface); color: var(--vault-text);
+  border: 1px solid color-mix(in srgb, var(--gold) 30%, transparent);
+  border-left: 3px solid var(--teal);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: .7rem .85rem;
+  font-family: var(--font-ui);
+  animation: pcToastIn var(--dur) var(--ease) both;
+}
+.pc-toast .pc-toast-ic { color: var(--teal); font-size: 1.05rem; line-height: 1.35; flex-shrink: 0; }
+.pc-toast .pc-toast-msg { flex: 1; font-size: .9rem; line-height: 1.45; }
+.pc-toast .pc-toast-x {
+  background: none; border: 0; cursor: pointer; padding: 0 .15rem; line-height: 1;
+  color: color-mix(in srgb, var(--cream) 65%, transparent); font-size: 1rem;
+}
+.pc-toast .pc-toast-x:hover { color: var(--cream); }
+.pc-toast-success { border-left-color: var(--teal); }    .pc-toast-success .pc-toast-ic { color: var(--teal); }
+.pc-toast-warning { border-left-color: var(--orange); }  .pc-toast-warning .pc-toast-ic { color: var(--orange); }
+.pc-toast-danger  { border-left-color: var(--danger); }  .pc-toast-danger .pc-toast-ic  { color: var(--danger); }
+.pc-toast-info    { border-left-color: var(--gold); }    .pc-toast-info .pc-toast-ic    { color: var(--gold); }
+@keyframes pcToastIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .pc-toast { animation: none; } }
