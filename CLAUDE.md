@@ -22,7 +22,13 @@
   _base_app.html og:image/twitter:image를 og-card.png**?v=2**(캐시 bump)로 교체. 옛 글러브 생성 스크립트
   (gen_favicon_glove.py·gen_extension_icons.py) 제거(잔재 0). 가드 test_v28_og_image(1200×630·메타·서빙·글러브 스크립트 0).
   전체 10284 passed.
-- ⏳ 다음: v25 P1(아마존 국가선택·초보 활성화) → v26(네오-클래식 디자인).
+- ✅ **v25 P1 아마존 국가선택 확장 + 초보 활성화 퍼널 (Phase 302):** ①아마존 칩 드롭다운 10→**14개국**(싱가포르.sg/
+  멕시코.com.mx/UAE.ae/브라질.com.br 추가) + 각 국가 **통화 표기**(USD/JPY/SGD/BRL…) + **선택 기억**(localStorage
+  kgp_amazon_country — 마지막 국가를 버튼 라벨 '아마존 · 미국' + 메뉴 상단으로). ②활성화 퍼널: `compute_onboarding_state`에
+  `collected_count` 옵션 추가(하위호환 — None이면 기존 3단계) → **수집→연동→소싱처→첫 업로드(🎯 아하-모먼트)** 4단계.
+  대시보드가 본인 스코프 collect summary로 collected_count 주입. 거짓 성공 금지(편집은 추적 불가라 별도 단계로 안 만들고
+  수집 설명에 '확인·편집' 포함). 가드 test_v25_p1_amazon_activation(국가/통화/기억 + 퍼널 4단계/아하/하위호환). 전체 10289 passed.
+- ⏳ 다음: v26(네오-클래식 에디토리얼 디자인 리프레시).
 
 ## 🟦 v24 브리프 (오너 2026-06-25 — "수집 이력 버그 · 마켓 Mock 정리 · 초보 흐름 · 아이콘 최종")
 - ✅ **아이콘 최종본 적용:** 오너 최종 마스터(현수교 2선 다리)로 교체, v=176/확장 1.5.11(아래 v23 파이프라인 재실행).

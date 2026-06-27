@@ -808,12 +808,20 @@ def _build_dashboard_home_context(widgets: list[dict[str, Any]], dismissed: bool
         logger.debug("온보딩 소싱처 수 조회 스킵: %s", exc)
 
     product_count = sum(max(0, _to_int(row.get("total_registered"))) for row in market_grid_rows)
+    # v25 P1: 활성화 퍼널 첫 단계 = 상품 수집(실데이터). 본인 스코프로 집계.
+    collected_count = 0
+    try:
+        from src.seller_console import collect_history_store as _chs
+        collected_count = _to_int(_chs.summary(seller_ids=_seller_identities()).get("total"))
+    except Exception as exc:
+        logger.debug("온보딩 수집 수 조회 스킵: %s", exc)
     try:
         from src.seller_console.onboarding import compute_onboarding_state
         onboarding = compute_onboarding_state(
             connected_markets=connected_count,
             source_count=source_count,
             product_count=product_count,
+            collected_count=collected_count,
             dismissed=dismissed,
         )
     except Exception as exc:
@@ -1114,18 +1122,22 @@ def collect():
         {"name": "큐텐", "url": "https://www.qoo10.com", "domain": "qoo10.com"},
         {"name": "메루카리", "url": "https://jp.mercari.com", "domain": "mercari.com"},
         {"name": "라쿠텐", "url": "https://www.rakuten.co.jp", "domain": "rakuten.co.jp"},
-        # 아마존은 국가별 사이트가 달라 드롭다운으로 선택
+        # 아마존은 국가별 사이트가 달라 드롭다운으로 선택(v25 P1: 주요국 확장 + 통화 표기)
         {"name": "아마존", "domain": "amazon.com", "countries": [
-            {"name": "미국 (.com)", "url": "https://www.amazon.com"},
-            {"name": "일본 (.co.jp)", "url": "https://www.amazon.co.jp"},
-            {"name": "독일 (.de)", "url": "https://www.amazon.de"},
-            {"name": "영국 (.co.uk)", "url": "https://www.amazon.co.uk"},
-            {"name": "프랑스 (.fr)", "url": "https://www.amazon.fr"},
-            {"name": "캐나다 (.ca)", "url": "https://www.amazon.ca"},
-            {"name": "이탈리아 (.it)", "url": "https://www.amazon.it"},
-            {"name": "스페인 (.es)", "url": "https://www.amazon.es"},
-            {"name": "호주 (.com.au)", "url": "https://www.amazon.com.au"},
-            {"name": "인도 (.in)", "url": "https://www.amazon.in"},
+            {"name": "미국 (.com)", "url": "https://www.amazon.com", "currency": "USD"},
+            {"name": "일본 (.co.jp)", "url": "https://www.amazon.co.jp", "currency": "JPY"},
+            {"name": "영국 (.co.uk)", "url": "https://www.amazon.co.uk", "currency": "GBP"},
+            {"name": "독일 (.de)", "url": "https://www.amazon.de", "currency": "EUR"},
+            {"name": "프랑스 (.fr)", "url": "https://www.amazon.fr", "currency": "EUR"},
+            {"name": "이탈리아 (.it)", "url": "https://www.amazon.it", "currency": "EUR"},
+            {"name": "스페인 (.es)", "url": "https://www.amazon.es", "currency": "EUR"},
+            {"name": "캐나다 (.ca)", "url": "https://www.amazon.ca", "currency": "CAD"},
+            {"name": "호주 (.com.au)", "url": "https://www.amazon.com.au", "currency": "AUD"},
+            {"name": "싱가포르 (.sg)", "url": "https://www.amazon.sg", "currency": "SGD"},
+            {"name": "멕시코 (.com.mx)", "url": "https://www.amazon.com.mx", "currency": "MXN"},
+            {"name": "인도 (.in)", "url": "https://www.amazon.in", "currency": "INR"},
+            {"name": "UAE (.ae)", "url": "https://www.amazon.ae", "currency": "AED"},
+            {"name": "브라질 (.com.br)", "url": "https://www.amazon.com.br", "currency": "BRL"},
         ]},
     ]
 
