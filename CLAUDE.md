@@ -2,6 +2,16 @@
 
 > 이 파일은 매 세션 시작 시 로드된다. 오너(Kohgane) 지시·검증된 팩트를 누적 기록한다.
 
+## 🟥 v32 브리프 (오너 2026-06-27 — "버튼 전수조사 + 삭제 영속성 + 벤치마크 + 디자인 실집행")
+- ✅ **PART1 P0 일괄 삭제 영속성(재진입 부활) + 일괄 버튼 가짜성공 (Phase 308):** v30과 동형 — 삭제/일괄수정이
+  exact `seller_id=_seller_id()`로만 매칭 → 별칭(user_id↔email) 불일치 시 **삭제 0건·수정 무변경**인데 낙관적 UI로
+  성공처럼 보이고 재진입하면 부활. **수정:** ①`collect_history_store.delete`에 seller_ids(관용집합) 지원 + 시트·인메모리
+  **양쪽** 삭제(시트 분기 early-return로 폴백행 못 지우던 것도 수정) ②`update`에 seller_ids 지원(스코프 헬퍼) ③7개 일괄
+  버튼(카테고리/번역/그룹/정제/가격/상태/복제)의 get·update를 전부 `seller_ids=_seller_identities()`로(복제 새 행 append는
+  본인 sid 유지) ④삭제 JS를 낙관적 제거→**서버 재조회(location.reload)**+삭제 0건 정직 경고(가짜 성공 0). E2E 가드
+  test_v32_delete_persist(별칭 삭제 영속·타셀러 보존·인메모리 폴백·일괄수정 실반영) — CI 게이트. 전체 10319 passed.
+- ⏳ 다음: PART2(상품명/카테고리/번역/금지어/마진 버튼 실동작 점검) → PART3(콘솔 디자인 실집행).
+
 ## 🟧 v29~v31 묶음 (오너 2026-06-27 — 순서: v30 404→v31 P0 실값/메타→v29 토큰/디자인)
 - ✅ **v30 P0 수집한 상품 클릭 404 회귀 (Phase 304):** 원인=목록(list_items)은 관용 식별자(seller_ids=user_id+email)로
   보여주는데 상세(`collect_preview_by_id`)·저장(`collect_preview_save`)은 **exact `seller_id=_seller_id()`**로 조회 →

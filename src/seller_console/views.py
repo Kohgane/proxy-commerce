@@ -1874,7 +1874,8 @@ def collect_bulk_delete():
 
     try:
         from . import collect_history_store
-        deleted = collect_history_store.delete(item_ids, seller_id=_seller_id())
+        # v32: 목록과 동일한 관용 스코프로 삭제 → 별칭 불일치로 삭제 0건(재진입 부활) 방지.
+        deleted = collect_history_store.delete(item_ids, seller_ids=_seller_identities())
     except Exception as exc:
         logger.warning("일괄 삭제 오류: %s", exc)
         return jsonify({"ok": False, "error": "일괄 삭제 중 오류가 발생했습니다."}), 500
@@ -1911,7 +1912,7 @@ def collect_bulk_category():
     results = []
     try:
         for item_id in item_ids:
-            item = collect_history_store.get(item_id, seller_id=sid)
+            item = collect_history_store.get(item_id, seller_ids=_seller_identities())
             if not item:
                 results.append({"id": item_id, "ok": False, "error": "항목 없음"})
                 continue
@@ -1927,7 +1928,7 @@ def collect_bulk_category():
                 code = _classify(title, extra.get("description_ko") or extra.get("description") or "", kw).get("code", "GEN")
             extra["category_code"] = code
             ok = collect_history_store.update(
-                item_id, seller_id=sid, extra_json=_json.dumps(extra, ensure_ascii=False)
+                item_id, seller_ids=_seller_identities(), extra_json=_json.dumps(extra, ensure_ascii=False)
             )
             if ok:
                 updated += 1
@@ -1987,7 +1988,7 @@ def collect_bulk_translate():
     results = []
     try:
         for item_id in item_ids:
-            item = collect_history_store.get(item_id, seller_id=sid)
+            item = collect_history_store.get(item_id, seller_ids=_seller_identities())
             if not item:
                 results.append({"id": item_id, "ok": False, "error": "항목 없음"})
                 continue
@@ -2018,7 +2019,7 @@ def collect_bulk_translate():
             # 실제 번역된 경우에만 표시 제목을 한국어로 갱신(가짜 번역으로 덮어쓰지 않음).
             if real and title_ko and title_ko != item.get("title"):
                 fields["title"] = title_ko
-            ok = collect_history_store.update(item_id, seller_id=sid, **fields)
+            ok = collect_history_store.update(item_id, seller_ids=_seller_identities(), **fields)
             if ok:
                 updated += 1
             if real:
@@ -2119,7 +2120,7 @@ def collect_bulk_group():
     updated = 0
     try:
         for item_id in item_ids:
-            item = collect_history_store.get(item_id, seller_id=sid)
+            item = collect_history_store.get(item_id, seller_ids=_seller_identities())
             if not item:
                 continue
             try:
@@ -2130,7 +2131,7 @@ def collect_bulk_group():
                 extra["group_id"] = group_id
             else:
                 extra.pop("group_id", None)  # 그룹 해제
-            if collect_history_store.update(item_id, seller_id=sid,
+            if collect_history_store.update(item_id, seller_ids=_seller_identities(),
                                             extra_json=_json.dumps(extra, ensure_ascii=False)):
                 updated += 1
     except Exception as exc:
@@ -2239,7 +2240,7 @@ def collect_bulk_clean():
     results = []
     try:
         for item_id in item_ids:
-            item = collect_history_store.get(item_id, seller_id=sid)
+            item = collect_history_store.get(item_id, seller_ids=_seller_identities())
             if not item:
                 continue
             title = item.get("title") or ""
@@ -2253,7 +2254,7 @@ def collect_bulk_clean():
             except (TypeError, ValueError):
                 extra = {}
             extra["title_ko"] = res["text"]
-            ok = collect_history_store.update(item_id, seller_id=sid, title=res["text"],
+            ok = collect_history_store.update(item_id, seller_ids=_seller_identities(), title=res["text"],
                                               extra_json=_json.dumps(extra, ensure_ascii=False))
             if ok:
                 updated += 1
@@ -2345,7 +2346,7 @@ def collect_bulk_price():
     results = []
     try:
         for item_id in item_ids:
-            item = collect_history_store.get(item_id, seller_id=sid)
+            item = collect_history_store.get(item_id, seller_ids=_seller_identities())
             if not item:
                 results.append({"id": item_id, "ok": False, "error": "항목 없음"})
                 continue
@@ -2369,7 +2370,7 @@ def collect_bulk_price():
             if not fields:
                 results.append({"id": item_id, "ok": False, "error": "적용할 변경 없음(가격 비숫자)"})
                 continue
-            ok = collect_history_store.update(item_id, seller_id=sid, **fields)
+            ok = collect_history_store.update(item_id, seller_ids=_seller_identities(), **fields)
             if ok:
                 updated += 1
             results.append({"id": item_id, "ok": bool(ok), "price": new_price})
@@ -2407,7 +2408,7 @@ def collect_bulk_status():
     updated = 0
     try:
         for item_id in item_ids:
-            if collect_history_store.update(item_id, seller_id=sid, status=status):
+            if collect_history_store.update(item_id, seller_ids=_seller_identities(), status=status):
                 updated += 1
     except Exception as exc:
         logger.warning("일괄 상태변경 오류: %s", exc)
@@ -2438,7 +2439,7 @@ def collect_bulk_duplicate():
     new_ids = []
     try:
         for item_id in item_ids:
-            item = collect_history_store.get(item_id, seller_id=sid)
+            item = collect_history_store.get(item_id, seller_ids=_seller_identities())
             if not item:
                 continue
             try:
@@ -6349,7 +6350,7 @@ def sourcing_monitor_check():
     sid = _seller_id()
     results = []
     for item_id in ids:
-        item = collect_history_store.get(item_id, seller_id=sid)
+        item = collect_history_store.get(item_id, seller_ids=_seller_identities())
         if not item:
             results.append({"id": item_id, "ok": False, "summary": "항목을 찾을 수 없습니다."})
             continue
