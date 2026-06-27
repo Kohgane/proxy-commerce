@@ -487,8 +487,10 @@ class TestDashboardHomeContext:
             context = _build_dashboard_home_context(widgets)
 
         onboarding = context["onboarding"]
+        # v25 P1: 활성화 퍼널 4단계(수집·연동·소싱처·업로드). 연동+업로드 완료, 수집/소싱처 미완 → 2/4=50%.
         assert onboarding["completed_steps"] == 2
-        assert onboarding["progress_percent"] == 66
+        assert onboarding["total_steps"] == 4
+        assert onboarding["progress_percent"] == 50
         assert onboarding["visible"] is True
 
 

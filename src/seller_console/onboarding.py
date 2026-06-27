@@ -16,14 +16,31 @@ def compute_onboarding_state(
     source_count: Any,
     product_count: Any,
     *,
+    collected_count: Any = None,
     dismissed: bool = False,
 ) -> dict[str, Any]:
-    """마켓 연동 → 소싱처 등록 → 상품 등록 온보딩 진행 상태를 계산한다."""
+    """활성화 퍼널 진행 상태를 계산한다.
+
+    collected_count 제공 시(v25 P1) '상품 수집'을 첫 단계로 prepend해
+    수집 → 마켓 연동 → 소싱처 → 첫 업로드(아하-모먼트) 퍼널을 만든다.
+    None이면(레거시) 기존 마켓 연동 → 소싱처 → 상품 등록 3단계.
+    """
     connected_count = _safe_count(connected_markets)
     sources = _safe_count(source_count)
     products = _safe_count(product_count)
 
-    steps = [
+    steps = []
+    if collected_count is not None:
+        collected = _safe_count(collected_count)
+        steps.append({
+            "key": "collect",
+            "title": "첫 상품 수집",
+            "description": "고가수집기로 해외 상품을 가져오고 ‘수집한 상품’에서 확인·편집하세요.",
+            "href": "/seller/collect",
+            "cta_label": "상품 수집하기",
+            "completed": collected > 0,
+        })
+    steps += [
         {
             "key": "market",
             "title": "마켓 연동",
@@ -42,10 +59,10 @@ def compute_onboarding_state(
         },
         {
             "key": "product",
-            "title": "첫 상품 등록",
-            "description": "AI 상품등록으로 첫 상품을 마켓에 올려보세요.",
-            "href": "/seller/listing/ai-create",
-            "cta_label": "AI 상품등록 열기",
+            "title": "🎯 첫 마켓 업로드",
+            "description": "수집한 상품을 내 마켓에 올리면 끝! (가장 중요한 한 걸음)",
+            "href": "/seller/collect/history",
+            "cta_label": "수집한 상품 업로드",
             "completed": products > 0,
         },
     ]
