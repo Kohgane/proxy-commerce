@@ -3690,6 +3690,21 @@ def _seller_identities() -> set:
     return ids
 
 
+def _get_owned_item(item_id: str) -> "dict | None":
+    """수집 항목 단건 — 목록과 동일한 관용 식별자 스코프로 조회(v30 단일소스).
+
+    목록(list_items)은 seller_ids 집합으로 보여주는데 상세/저장이 exact seller_id로
+    조회하면 별칭(user_id vs email) 불일치 시 목록엔 보이는데 클릭하면 404가 났다(v30 회귀).
+    같은 스코프(seller_ids)로 통일해 재발을 막는다.
+    """
+    try:
+        from .collect_history_store import get as history_get
+        return history_get(item_id, seller_ids=_seller_identities())
+    except Exception as exc:
+        logger.warning("수집 항목 조회 실패(id=%s): %s", item_id, exc)
+        return None
+
+
 def _diag_market_key(market: str) -> str:
     """자격증명 마켓 키 → 진단 서브시스템 키 (11번가만 상이)."""
     return "11st" if market == "elevenst" else market
@@ -5164,13 +5179,8 @@ def collect_preview_by_id(item_id: str):
     from flask import abort
     if not _check_auth():
         return redirect(url_for("auth.login", next=request.url))
-    item = None
-    try:
-        from .collect_history_store import get as history_get
-        item = history_get(item_id, seller_id=_seller_id())
-    except Exception as exc:
-        logger.warning("미리보기 조회 실패: %s", exc)
-
+    # v30: 목록과 동일한 관용 스코프로 조회 → 별칭 불일치 404 회귀 방지.
+    item = _get_owned_item(item_id)
     if not item:
         abort(404)
 
@@ -5265,7 +5275,7 @@ def collect_preview_save(item_id: str):
     data = request.get_json(force=True, silent=True) or {}
     from . import collect_history_store
 
-    item = collect_history_store.get(item_id, seller_id=_seller_id())
+    item = _get_owned_item(item_id)        # v30: 목록과 동일 스코프
     if not item:
         return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
 
@@ -5347,7 +5357,8 @@ def collect_preview_save(item_id: str):
 
     ok = collect_history_store.update(
         item_id,
-        seller_id=_seller_id(),
+        # v30: 저장 항목의 실제 seller_id로 쓰기 가드 일치(별칭 불일치로 저장 실패 방지)
+        seller_id=item.get("seller_id") or _seller_id(),
         title=title or item.get("title") or "",
         price=price or item.get("price") or "",
         currency=currency or item.get("currency") or "",
