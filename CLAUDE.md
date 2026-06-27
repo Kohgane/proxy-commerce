@@ -28,7 +28,14 @@
   `collected_count` 옵션 추가(하위호환 — None이면 기존 3단계) → **수집→연동→소싱처→첫 업로드(🎯 아하-모먼트)** 4단계.
   대시보드가 본인 스코프 collect summary로 collected_count 주입. 거짓 성공 금지(편집은 추적 불가라 별도 단계로 안 만들고
   수집 설명에 '확인·편집' 포함). 가드 test_v25_p1_amazon_activation(국가/통화/기억 + 퍼널 4단계/아하/하위호환). 전체 10289 passed.
-- ⏳ 다음: v26(네오-클래식 에디토리얼 디자인 리프레시).
+- ✅ **v26 네오-클래식 디자인 리프레시 (Phase 303):** "디지털 한지 위의 금속활자" — app.css :root에 v26 토큰 단일소스
+  확장: 깊이(`--ink-2`/`--gold-soft`)·대형 세리프(`--display-2-size` clamp(44,7vw,84)/-0.025em)·`--space-10`(128)·금
+  헤어라인(`--hairline-color`)·미세 그레인(`--grain-opacity` .035). opt-in 유틸 추가(.pc-display-2/overline/hairline/
+  num/section/lift/link/enter) + **전역 미세 그레인**(body::before SVG fractalNoise, 이미지 의존 0) + 진입 페이드.
+  prefers-reduced-motion에서 그레인·모션 전부 정지. 랜딩 히어로 헤드라인을 v26 토큰(대형 세리프)으로 교체(쇼케이스).
+  기존 v18 --display-size(40/6vw/72)는 불변(회귀 0). 하드코딩 hex 0(토큰 var만). 가드 test_design_tokens_v26.
+  전체 10294 passed. ※이모지 제거·화면별 적용은 v18 선례대로 점진 후속(저회귀).
+- → **v24~v27 통합 마스터 완주**(v24 P0·v25 P0/P1·v27·v26 + v28 OG). 남은 건 오너 콘솔 액션(네이버 검색키·스마트스토어 IP·11번가 키).
 
 ## 🟦 v24 브리프 (오너 2026-06-25 — "수집 이력 버그 · 마켓 Mock 정리 · 초보 흐름 · 아이콘 최종")
 - ✅ **아이콘 최종본 적용:** 오너 최종 마스터(현수교 2선 다리)로 교체, v=176/확장 1.5.11(아래 v23 파이프라인 재실행).

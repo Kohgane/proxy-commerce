@@ -56,6 +56,18 @@
   --dur-fast: 120ms; --dur: 200ms; --dur-slow: 320ms; --ease: cubic-bezier(.2, .8, .2, 1);
 
   /* ========================================================================
+     v26 네오-클래식 리프레시 — "디지털 한지 위의 금속활자". 단일 소스 토큰만 확장.
+     깊이(--ink-2/--gold-soft) · 대형 세리프(--display-2) · 128 여백 · 금 헤어라인 · 미세 그레인.
+     ======================================================================== */
+  --ink-2: #2A241E;                       /* 레이어드 다크(깊이) */
+  --gold-soft: #E0C588;                   /* 부드러운 금(헤어라인/하이라이트) */
+  --display-2-size: clamp(44px, 7vw, 84px); --display-2-lh: 1.05; --display-tracking: -0.025em;
+  --space-10: 128px;                      /* 대형 섹션 여백 */
+  --hairline-color: rgba(201, 162, 75, .28);   /* 금 헤어라인(절제) */
+  --grain-opacity: 0.035;                 /* 미세 그레인 2~4% */
+  --lift: translateY(-2px);               /* 카드 호버 상승 */
+
+  /* ========================================================================
      하위호환 별칭: 기존 --pc-* 는 v18 토큰을 가리킨다(단일 소스 유지).
      ※ 신규 코드는 v18 토큰을 직접 쓰고, --pc-* 는 점진적으로 정리.
      ======================================================================== */
@@ -452,3 +464,53 @@ a:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(17, 154, 142, .35); 
 .form-control:focus, .form-select:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(17, 154, 142, .18); }
 /* 카드: 두꺼운 보더 대신 얕은 그림자 + 1px 가는 구분선(여백 우선) */
 .console-card, .card { box-shadow: var(--shadow-sm); }
+
+/* ============================================================================
+   v26 네오-클래식 유틸리티 — 토큰 기반(하드코딩 0). opt-in 클래스라 저회귀.
+   "디지털 한지 위의 금속활자": 대형 세리프 · 오버라인 라벨 · 금 헤어라인 · 미세 그레인 · 모션.
+   ============================================================================ */
+/* 대형 디스플레이(랜딩 히어로 등) */
+.pc-display-2 {
+  font-family: var(--font-display); font-weight: var(--w-semi);
+  font-size: var(--display-2-size); line-height: var(--display-2-lh);
+  letter-spacing: var(--display-tracking); color: var(--text-strong);
+}
+/* 오버라인 라벨 — 대문자 + 자간(에디토리얼 키커) */
+.pc-overline {
+  font-family: var(--font-ui); text-transform: uppercase;
+  letter-spacing: .18em; font-size: var(--caption); font-weight: var(--w-semi);
+  color: var(--gold-ink);
+}
+/* 금 헤어라인 디바이더(두꺼운 보더 대신) */
+.pc-hairline { border: 0; border-top: 1px solid var(--hairline-color); margin: var(--space-6) 0; }
+/* 대형 세리프 숫자(대시보드 KPI) */
+.pc-num { font-family: var(--font-display); font-weight: var(--w-semi); letter-spacing: -.01em; line-height: 1; }
+/* 대형 섹션 여백(럭셔리한 공간) */
+.pc-section { padding-top: var(--space-9); padding-bottom: var(--space-9); }
+@media (min-width: 992px) { .pc-section { padding-top: var(--space-10); padding-bottom: var(--space-10); } }
+/* 카드 호버 상승 + 얕은 3단 그림자(opt-in) */
+.pc-lift { transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
+.pc-lift:hover { transform: var(--lift); box-shadow: var(--shadow-lg); }
+/* 링크 밑줄 슬라이드(opt-in) */
+.pc-link { position: relative; text-decoration: none; color: var(--teal); }
+.pc-link::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 1px;
+  background: currentColor; transform: scaleX(0); transform-origin: left;
+  transition: transform var(--dur) var(--ease);
+}
+.pc-link:hover::after { transform: scaleX(1); }
+/* 진입 페이드 + 8px(절제) */
+.pc-enter { animation: pcEnter var(--dur-slow) var(--ease) both; }
+@keyframes pcEnter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+/* 미세 그레인 — 디지털 한지 질감(2~4%, 전역 오버레이·클릭 통과) */
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+/* 모션 최소화 존중 — 모든 v26 모션/그레인 정지 */
+@media (prefers-reduced-motion: reduce) {
+  .pc-lift, .pc-link::after, .pc-enter { transition: none; animation: none; }
+  .pc-lift:hover { transform: none; }
+  body::before { display: none; }
+}
