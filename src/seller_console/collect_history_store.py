@@ -219,11 +219,13 @@ def get(item_id: str, seller_id: Optional[str] = None, seller_ids: Optional[set]
     return None
 
 
-def update(item_id: str, *, seller_id: Optional[str] = None, **fields) -> bool:
+def update(item_id: str, *, seller_id: Optional[str] = None,
+           seller_ids: Optional[set] = None, **fields) -> bool:
     """수집 이력 단건의 필드를 갱신 (Phase 201 — 중간 편집 저장).
 
     허용 필드: title, image_url, price, currency, status, extra_json.
-    seller_id 지정 시 해당 셀러 항목만 갱신(타 셀러 차단).
+    seller_id/seller_ids로 본인 항목만 갱신(타 셀러 차단). v32: seller_ids(관용 식별자
+    집합)를 주면 별칭(user_id↔email) 불일치로 갱신 0건(가짜 성공)되던 일괄 버튼 버그 방지.
 
     Returns:
         갱신 성공 여부.
@@ -232,6 +234,14 @@ def update(item_id: str, *, seller_id: Optional[str] = None, **fields) -> bool:
     updates = {k: ("" if v is None else str(v)) for k, v in fields.items() if k in allowed}
     if not updates:
         return False
+
+    def _scope_ok(row_sid) -> bool:
+        rsid = str(row_sid or "")
+        if seller_ids is not None:
+            return rsid in seller_ids
+        if seller_id is not None:
+            return rsid == str(seller_id)
+        return True
 
     if _SHEET_ID:
         try:
@@ -246,9 +256,9 @@ def update(item_id: str, *, seller_id: Optional[str] = None, **fields) -> bool:
                 for r, row in enumerate(values[1:], start=2):
                     if id_i is None or id_i >= len(row) or row[id_i] != item_id:
                         continue
-                    if seller_id is not None and sid_i is not None:
+                    if sid_i is not None:
                         row_sid = row[sid_i] if sid_i < len(row) else ""
-                        if str(row_sid or "") != str(seller_id):
+                        if not _scope_ok(row_sid):
                             return False
                     for field, val in updates.items():
                         ci = col_idx.get(field)
@@ -262,17 +272,19 @@ def update(item_id: str, *, seller_id: Optional[str] = None, **fields) -> bool:
 
     for row in _in_memory:
         if row.get("id") == item_id:
-            if seller_id is not None and str(row.get("seller_id", "") or "") != str(seller_id):
+            if not _scope_ok(row.get("seller_id", "")):
                 return False
             row.update(updates)
             return True
     return False
 
 
-def delete(item_ids, *, seller_id: Optional[str] = None) -> int:
+def delete(item_ids, *, seller_id: Optional[str] = None, seller_ids: Optional[set] = None) -> int:
     """수집 이력에서 여러 항목을 삭제 (일괄 삭제 — Phase 237).
 
-    seller_id 지정 시 해당 셀러 항목만 삭제(타 셀러 차단).
+    seller_id/seller_ids로 본인 항목만 삭제(타 셀러 차단). v32: seller_ids(관용 식별자
+    집합)를 주면 별칭(user_id↔email) 불일치로 삭제 0건 → 재진입 시 부활하던 버그 방지.
+    시트와 인메모리(시트 쓰기 실패 폴백분) 양쪽에서 삭제한다.
 
     Returns:
         삭제된 건수.
@@ -281,12 +293,21 @@ def delete(item_ids, *, seller_id: Optional[str] = None) -> int:
     if not ids:
         return 0
 
+    def _scope_ok(row_sid) -> bool:
+        rsid = str(row_sid or "")
+        if seller_ids is not None:
+            return rsid in seller_ids
+        if seller_id is not None:
+            return rsid == str(seller_id)
+        return True
+
+    deleted = 0
+    # 1) 시트에서 삭제(설정 시)
     if _SHEET_ID:
         try:
             ws = _get_worksheet()
             _ensure_headers(ws)
             values = ws.get_all_values()
-            deleted = 0
             if values:
                 header = values[0]
                 col_idx = {h: i for i, h in enumerate(header)}
@@ -297,31 +318,27 @@ def delete(item_ids, *, seller_id: Optional[str] = None) -> int:
                 for r, row in enumerate(values[1:], start=2):
                     if id_i is None or id_i >= len(row) or row[id_i] not in ids:
                         continue
-                    if seller_id is not None and sid_i is not None:
-                        row_sid = row[sid_i] if sid_i < len(row) else ""
-                        if str(row_sid or "") != str(seller_id):
-                            continue
+                    row_sid = row[sid_i] if (sid_i is not None and sid_i < len(row)) else ""
+                    if not _scope_ok(row_sid):
+                        continue
                     to_delete.append(r)
                 for r in sorted(to_delete, reverse=True):
                     ws.delete_rows(r)
                     deleted += 1
             if deleted:
                 _invalidate_cache()
-                logger.info("수집 이력 삭제: %d건", deleted)
-            return deleted
         except Exception as exc:
             logger.warning("수집 이력 Sheets 삭제 실패: %s", exc)
 
+    # 2) 인메모리에서도 삭제(시트 쓰기 실패 폴백분 포함 — v24 합집합과 짝)
     before = len(_in_memory)
-    kept = []
-    for row in _in_memory:
-        if row.get("id") in ids and (
-            seller_id is None or str(row.get("seller_id", "") or "") == str(seller_id)
-        ):
-            continue
-        kept.append(row)
-    _in_memory[:] = kept
-    return before - len(_in_memory)
+    _in_memory[:] = [row for row in _in_memory
+                     if not (str(row.get("id")) in ids and _scope_ok(row.get("seller_id", "")))]
+    deleted += before - len(_in_memory)
+
+    if deleted:
+        logger.info("수집 이력 삭제: %d건", deleted)
+    return deleted
 
 
 def summary(days: int = 30, seller_id: Optional[str] = None, seller_ids: Optional[set] = None) -> dict:
