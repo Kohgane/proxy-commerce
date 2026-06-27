@@ -2,13 +2,17 @@
 {% block title %}주문 관리{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="mb-0 fw-bold"><i class="bi bi-bag"></i> 주문 관리</h4>
+<div class="d-flex justify-content-between align-items-start mb-2">
+  <div>
+    <div class="console-kpi-label mb-1">주문</div>
+    <h4 class="mb-0 fw-bold"><i class="bi bi-bag"></i> 주문 관리</h4>
+  </div>
   <button id="ordersSyncButton" class="btn btn-primary btn-sm" onclick="syncNow()" aria-label="주문 즉시 동기화">
     <span id="sync-spinner" class="spinner-border spinner-border-sm d-none" role="status"></span>
-    ⟳ 지금 동기화
+    <i class="bi bi-arrow-clockwise"></i> 지금 동기화
   </button>
 </div>
+<hr class="pc-hairline mt-0 mb-4">
 
 <div class="pc-status pc-status-info small mb-3">
   주문·배송 관리 화면이에요. 선택·확인·피드백 흐름을 먼저 점검한 뒤 실행하세요.
@@ -22,37 +26,37 @@
   {% endif %}
 </div>
 
-<!-- KPI 카드 -->
+<!-- KPI 카드 (v32 PART3: 대시보드와 동일한 에디토리얼 — 세리프 대형·오버라인·토큰 악센트) -->
 <div class="row g-3 mb-4">
   <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center">
-      <div class="card-body py-3">
-        <div class="fs-2 fw-bold text-primary">{{ kpi.today_new }}</div>
-        <div class="small text-muted">신규(오늘)</div>
+    <div class="card console-card console-kpi-card console-kpi-primary h-100">
+      <div class="card-body">
+        <div class="console-kpi-label mb-1">신규(오늘)</div>
+        <div class="console-stat-value">{{ kpi.today_new }}</div>
       </div>
     </div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center">
-      <div class="card-body py-3">
-        <div class="fs-2 fw-bold text-warning">{{ kpi.pending_ship }}</div>
-        <div class="small text-muted">발송대기</div>
+    <div class="card console-card console-kpi-card console-kpi-warning h-100">
+      <div class="card-body">
+        <div class="console-kpi-label mb-1">발송대기</div>
+        <div class="console-stat-value">{{ kpi.pending_ship }}</div>
       </div>
     </div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center">
-      <div class="card-body py-3">
-        <div class="fs-2 fw-bold text-success">{{ kpi.shipped }}</div>
-        <div class="small text-muted">발송중</div>
+    <div class="card console-card console-kpi-card console-kpi-success h-100">
+      <div class="card-body">
+        <div class="console-kpi-label mb-1">발송중</div>
+        <div class="console-stat-value">{{ kpi.shipped }}</div>
       </div>
     </div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center">
-      <div class="card-body py-3">
-        <div class="fs-2 fw-bold text-danger">{{ kpi.returned_exchanged }}</div>
-        <div class="small text-muted">반품/교환</div>
+    <div class="card console-card console-kpi-card console-kpi-danger h-100">
+      <div class="card-body">
+        <div class="console-kpi-label mb-1">반품/교환</div>
+        <div class="console-stat-value">{{ kpi.returned_exchanged }}</div>
       </div>
     </div>
   </div>

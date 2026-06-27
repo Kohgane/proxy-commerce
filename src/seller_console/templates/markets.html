@@ -2,8 +2,11 @@
 {% block title %}마켓 현황{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="fw-bold mb-0"><i class="bi bi-shop"></i> {{ t('markets.title') }}</h4>
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <div class="console-kpi-label mb-1">마켓</div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-shop"></i> {{ t('markets.title') }}</h4>
+  </div>
   <div class="d-flex gap-2 align-items-center">
     {% if not market_data.is_mock %}
     <span class="badge bg-success">실 데이터 ({{ market_data.source }})</span>

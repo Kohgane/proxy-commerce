@@ -22,7 +22,12 @@
   토큰화. 편집 폼은 이미 2열(col-md-8 에디터+이미지 사이드바)이라 구조 유지. 하드코딩 hex 0(토큰 var만). before/after
   명확(1.6rem 굵은숫자→세리프 대형·금 악센트). 가드 test_design_console_v32_part3(5). 전체 10328 passed.
   ※orders/markets 등 화면별 동일 격상은 v18 선례대로 점진 후속(저회귀).
-- → **v32 완주**(PART1 삭제영속·일괄버튼 / PART2 출시필수 버튼 실동작 / PART3 콘솔 디자인 실집행). 남은 건 오너 콘솔 액션.
+- ✅ **PART3 #2 orders/markets 디자인 격상 (Phase 311):** 대시보드와 동일 에디토리얼 패턴 확장 — orders KPI 4종을
+  `console-kpi-card`(세리프 대형 숫자·오버라인 금 라벨·얇은 토큰 좌악센트 teal/warn/success/danger) + 헤더 오버라인·금
+  헤어라인, `⟳` 글리프→bi-arrow-clockwise(단일 아이콘셋). markets 헤더 오버라인 라벨. 가드 test_design_console_v32_part3b(2).
+  전체 10328 passed. ※소싱 분석은 오너가 네이버 검색키 Render 설정 완료 — 단 변수명은 검색용 `NAVER_SEARCH_CLIENT_ID/SECRET`
+  (로그인 OAuth `NAVER_CLIENT_ID/SECRET`과 다름) 확인 필요.
+- → **v32 완주**(PART1 삭제영속·일괄버튼 / PART2 출시필수 버튼 실동작 / PART3 콘솔 디자인 실집행, 화면별 점진 확장 중). 남은 건 오너 콘솔 액션.
 
 ## 🟧 v29~v31 묶음 (오너 2026-06-27 — 순서: v30 404→v31 P0 실값/메타→v29 토큰/디자인)
 - ✅ **v30 P0 수집한 상품 클릭 404 회귀 (Phase 304):** 원인=목록(list_items)은 관용 식별자(seller_ids=user_id+email)로
