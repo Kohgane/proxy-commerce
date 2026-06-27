@@ -15,6 +15,13 @@
   강도). 상품수/최저·평균가(기존 실데이터)와 함께. 검색광고(관심도/경쟁도)·해외직구·리뷰는 검색 API로 못 구해 None 유지
   (날조 금지). 미연결 시 전 수치 None(가짜 0 금지). 가드 test_v27_naver_sourcing(미설정 빈상태/실데이터 매핑/페이지 렌더).
   전체 10280 passed. 오너 액션: developers.naver.com 앱(검색) → NAVER_SEARCH_CLIENT_ID/SECRET을 Render Env에.
+- ✅ **v28 OG 공유 카드 이미지 교체 (Phase 301):** 증상=공유 카드 텍스트는 정상인데 og:image가 옛 글러브로
+  보임(실제 og:image는 v23부터 icon-512=브릿지였으나 정사각이라 소셜에 부적합 + 카카오/페북 캐시 잔존). **수정:**
+  신규 `scripts/gen_og_card.py`로 **1200×630 OG 카드**(먹 vault + 브릿지 마크 + 'GOGA BRIDJ' 세리프 워드마크,
+  마스터 단일소스에서 파생) → `src/seller_console/static/og-card.png` + 벤더 `assets/og/og-card-1200x630.png`.
+  _base_app.html og:image/twitter:image를 og-card.png**?v=2**(캐시 bump)로 교체. 옛 글러브 생성 스크립트
+  (gen_favicon_glove.py·gen_extension_icons.py) 제거(잔재 0). 가드 test_v28_og_image(1200×630·메타·서빙·글러브 스크립트 0).
+  전체 10284 passed.
 - ⏳ 다음: v25 P1(아마존 국가선택·초보 활성화) → v26(네오-클래식 디자인).
 
 ## 🟦 v24 브리프 (오너 2026-06-25 — "수집 이력 버그 · 마켓 Mock 정리 · 초보 흐름 · 아이콘 최종")
