@@ -168,12 +168,31 @@
 </div>
 
 <script>
-document.getElementById('generateBtn').addEventListener('click', async () => {
+const _genModalEl = document.getElementById('generateModal');
+const _genBtn = document.getElementById('generateBtn');
+
+function _closeGenerateModal() {
+  try {
+    const m = (window.bootstrap && bootstrap.Modal.getInstance(_genModalEl)) || (window.bootstrap && new bootstrap.Modal(_genModalEl));
+    if (m) m.hide();
+  } catch (e) { /* noop */ }
+  // 새 토큰이 목록·이력에 마스킹 값으로 보이도록 갱신(상시 이력)
+  location.reload();
+}
+
+_genBtn.addEventListener('click', async () => {
+  // 발급 후 = '닫기' 모드(죽은 '발급 완료' 버튼 수정) — 저장 확인 후 닫고 목록 갱신
+  if (_genBtn.dataset.mode === 'done') {
+    if (await pcConfirm('토큰을 안전한 곳에 복사·저장하셨나요? 이 전체 값은 다시 볼 수 없어요(분실 시 폐기 후 재발급).',
+                        {title: '발급 완료', confirmLabel: '저장했어요 · 닫기', danger: false})) {
+      _closeGenerateModal();
+    }
+    return;
+  }
   const scopes = [...document.querySelectorAll('.scope-check:checked')].map(el => el.value);
   const expiresDays = parseInt(document.getElementById('expiresDays').value);
-  const btn = document.getElementById('generateBtn');
-  btn.disabled = true;
-  btn.textContent = '발급 중...';
+  _genBtn.disabled = true;
+  _genBtn.textContent = '발급 중...';
   try {
     const resp = await fetch('/seller/me/tokens/generate', {
       method: 'POST',
@@ -184,25 +203,47 @@ document.getElementById('generateBtn').addEventListener('click', async () => {
     if (data.ok) {
       document.getElementById('rawToken').value = data.raw_token;
       document.getElementById('tokenResult').classList.remove('d-none');
-      btn.classList.replace('btn-primary', 'btn-success');
-      btn.textContent = '발급 완료';
+      _genBtn.classList.replace('btn-primary', 'btn-success');
+      _genBtn.textContent = '발급 완료 · 닫기';
+      _genBtn.dataset.mode = 'done';
+      _genBtn.disabled = false;            // 재활성화 — 클릭 시 닫힘(죽은 버튼 0)
     } else {
       pcToast('토큰 발급 실패: ' + (data.error || '알 수 없는 오류'), 'error');
-      btn.disabled = false;
-      btn.textContent = '발급하기';
+      _genBtn.disabled = false;
+      _genBtn.textContent = '발급하기';
     }
   } catch(e) {
     pcToast('오류: ' + e.message, 'error');
-    btn.disabled = false;
-    btn.textContent = '발급하기';
+    _genBtn.disabled = false;
+    _genBtn.textContent = '발급하기';
   }
 });
 
-function copyToken() {
+// 모달을 다시 열면 상태 초기화(이전 토큰 값 비표시, 버튼 발급 모드로)
+if (_genModalEl) _genModalEl.addEventListener('show.bs.modal', () => {
+  document.getElementById('tokenResult').classList.add('d-none');
+  document.getElementById('rawToken').value = '';
+  _genBtn.classList.replace('btn-success', 'btn-primary');
+  _genBtn.textContent = '발급하기';
+  _genBtn.dataset.mode = '';
+  _genBtn.disabled = false;
+});
+
+async function copyToken() {
   const input = document.getElementById('rawToken');
-  input.select();
-  document.execCommand('copy');
-  pcToast('토큰이 클립보드에 복사되었습니다.', 'success');
+  const val = input.value || '';
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(val);
+    } else {
+      input.select();
+      if (!document.execCommand('copy')) throw new Error('execCommand 실패');
+    }
+    pcToast('토큰이 클립보드에 복사되었습니다.', 'success');
+  } catch (e) {
+    input.select();
+    pcToast('자동 복사가 안 됐어요. 선택된 토큰을 Ctrl/Cmd+C로 복사하세요.', 'warning');
+  }
 }
 
 document.querySelectorAll('.revoke-btn').forEach(btn => {
