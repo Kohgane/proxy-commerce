@@ -2,6 +2,14 @@
 
 > 이 파일은 매 세션 시작 시 로드된다. 오너(Kohgane) 지시·검증된 팩트를 누적 기록한다.
 
+## 🟧 v29~v31 묶음 (오너 2026-06-27 — 순서: v30 404→v31 P0 실값/메타→v29 토큰/디자인)
+- ✅ **v30 P0 수집한 상품 클릭 404 회귀 (Phase 304):** 원인=목록(list_items)은 관용 식별자(seller_ids=user_id+email)로
+  보여주는데 상세(`collect_preview_by_id`)·저장(`collect_preview_save`)은 **exact `seller_id=_seller_id()`**로 조회 →
+  별칭(user_id↔email) 불일치 시 목록엔 보이는데 클릭하면 404. **수정:** 신규 `_get_owned_item(item_id)`(목록과 동일
+  seller_ids 스코프) 단일소스로 상세·저장 통일 + 저장 update 쓰기가드를 항목의 실제 stored seller_id로 일치. 타 셀러
+  404(누출 0) 유지. E2E 가드 test_v30_collected_detail(별칭 200/타셀러 404/4경로/저장) — CI 게이트(pytest) 등록. 전체 10301 passed.
+- ⏳ 다음: v31 P0(상세·가격 실값+빈값 환산 금지, 원본 메타/플레이스홀더 숨김) → v29(토큰 본인전용·상시이력·죽은버튼) → 랜딩 전면 재설계.
+
 ## 🟩 v25~v27 통합 마스터 (오너 2026-06-26 — 순서: v24✅→v25P0→v27→v25P1→v26)
 - ✅ **v25 P0 아마존 '전체 수집' 실제 상품만 (Phase 299):** 증상=전체선택 시 Amazon Music·광고(스폰서)·미디어
   카드까지 선택됨. 원인=어댑터가 s-search-result+/dp/+가격만 보고 스폰서/비-ASIN 위젯도 통과. **수정:**
