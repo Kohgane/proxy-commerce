@@ -21,7 +21,15 @@
   전환(재활성화)** + 클릭 시 `pcConfirm`(네이티브 confirm 금지 가드 준수)로 '저장했나요?' 확인 후 모달 닫고 `location.reload`
   (새 토큰이 마스킹 값으로 이력에 즉시 보임). 모달 재오픈 시 상태 초기화. 복사 버튼은 `navigator.clipboard.writeText` +
   execCommand 폴백 + 실패 시 정직 안내(Ctrl/Cmd+C). 가드 test_v29_tokens(5). 전체 10310 passed.
-- ⏳ 다음: 랜딩 전면 재설계(v29 PART2 = Apple식 스크롤 내러티브 + 네오-클래식, 대형 — 회귀 관리하며 신중히).
+- ✅ **v29 PART2 랜딩 전면 재설계 (Phase 307):** "학생 과제물 → 진짜배기" — landing.html을 Apple식 스크롤 내러티브
+  9섹션으로 재작성(히어로 다크 vault→문제·해결→작동 3스텝[데스크톱 sticky 핀]→기능 쇼케이스 4카드→수입/수출 레인→
+  지원 마켓 증거→요금/무료시작→FAQ→최종 CTA→푸터). **이모지 0**(전부 bi-* 아이콘), **CSS 브라우저 프레임 목업**(평면
+  텍스트 탈출), 스티키 블러 내비(스크롤 축소), IntersectionObserver 리빌+8px, 카드 호버, 토큰 단일소스(var(--*)·
+  color-mix), reduced-motion 전부 정지. **정직성:** 사회적 증거는 지원 마켓명만(가짜 셀러/수집 수치 0), 요금은 '무료로
+  시작'+요금제 보기(가짜 혜택 0). 보존: 외국인 지역배너(Choose your language·i18n/set), i18n EN/KO, /privacy·/terms·
+  privacy-policy, For Beginners·/seller/start, '수집부터 마켓 등록'(title). 가드 test_v29_landing_redesign(이모지0·섹션·
+  실데이터증거·CTA·토큰). 전체 10315 passed. ※Playwright 미설치로 라이브 스샷은 못 떴고 렌더200·구조·테스트로 검증(정직).
+- → **v29~v31 묶음 완주**(v30 404·v31 P0 실값/메타·v29 토큰/디자인 전면). 남은 건 오너 콘솔 액션(스마트스토어 IP·11번가 키·WC 키).
 
 ## 🟩 v25~v27 통합 마스터 (오너 2026-06-26 — 순서: v24✅→v25P0→v27→v25P1→v26)
 - ✅ **v25 P0 아마존 '전체 수집' 실제 상품만 (Phase 299):** 증상=전체선택 시 Amazon Music·광고(스폰서)·미디어
