@@ -15,7 +15,14 @@
   (target_margin_pct 저장 + price_multiplier 실반영 100→110, 빈값 환산 금지 v31) ③카테고리 자동분류(실 code 반환).
   전부 별칭 스코프(저장 email·세션 user_id)에서도 실반영(가짜 성공 0). 가드 test_v32_part2_buttons(4). 전체 10323 passed.
   ※금칙어 사전 대량 확장(3천+)·번역 무료 N회 표기는 기존 정직 처리 유지, 사전 확장은 후속 데이터 작업.
-- ⏳ 다음: PART3(콘솔 디자인 실집행 — 세리프 KPI·오버라인·금 헤어라인·편집 폼 2열, before/after 명확).
+- ✅ **PART3 콘솔 디자인 실집행 #1 대시보드 KPI 격상 (Phase 310):** "토큰만 바꾸지 말고 화면에 보이게" — 대시보드 KPI를
+  **세리프 대형 숫자**(console-stat-value: var(--font-display)·clamp(2~2.7rem)·잡지 통계) + **오버라인 라벨**(console-kpi-label:
+  대문자 자간·금) + **두꺼운 4px 보더→얇은 2px 토큰 악센트**(보라/인디고 하드코딩 → var(--teal/warn/danger/success)) +
+  토큰 그림자(var(--shadow-lg)) + 헤더 아래 **금 헤어라인**(pc-hairline) + reduced-motion 가드. kw-mini-bars 잔여 보라도
+  토큰화. 편집 폼은 이미 2열(col-md-8 에디터+이미지 사이드바)이라 구조 유지. 하드코딩 hex 0(토큰 var만). before/after
+  명확(1.6rem 굵은숫자→세리프 대형·금 악센트). 가드 test_design_console_v32_part3(5). 전체 10328 passed.
+  ※orders/markets 등 화면별 동일 격상은 v18 선례대로 점진 후속(저회귀).
+- → **v32 완주**(PART1 삭제영속·일괄버튼 / PART2 출시필수 버튼 실동작 / PART3 콘솔 디자인 실집행). 남은 건 오너 콘솔 액션.
 
 ## 🟧 v29~v31 묶음 (오너 2026-06-27 — 순서: v30 404→v31 P0 실값/메타→v29 토큰/디자인)
 - ✅ **v30 P0 수집한 상품 클릭 404 회귀 (Phase 304):** 원인=목록(list_items)은 관용 식별자(seller_ids=user_id+email)로
