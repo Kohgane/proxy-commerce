@@ -2,6 +2,14 @@
 
 > 이 파일은 매 세션 시작 시 로드된다. 오너(Kohgane) 지시·검증된 팩트를 누적 기록한다.
 
+## 🟪 v33/마스터 브리프 (오너 2026-06-27 — v24~v33 통합 마스터, 1달 출시 로드맵)
+- (1~4주차 대부분은 이번 세션에서 v24~v32로 완료됨 — 404·삭제영속·이력·토큰·전체수집·메타숨김·Mock·네이버·디자인·랜딩·버튼·아마존·활성화.)
+- ✅ **2주차 2-1 이미지 PDP 스코프 한정 (Phase 313):** 엉뚱한 이미지(추천·리뷰·푸터·타 상품) 혼입 차단 강화 —
+  `_NON_PRODUCT_REGION_RE`에 review/comment/reply/qna/feedback/testimonial 추가, 신규 `_find_product_scope`
+  (itemtype Product·product-detail/goods 컨테이너로 이미지 수집 스코프 한정, **보수적**: 이미지 2장+ & 비-상품영역 아닐 때만
+  채택→ recall 보존, 못 찾으면 전체 폴백). `_collect_dom_images`가 스코프 내 img/source만 수집. 확장 `_kgpNonProductRe`도
+  리뷰/댓글 추가, manifest 1.5.12→1.5.13. 가드 test_v33_image_scope(컨테이너 한정·추천/리뷰/푸터 0·폴백·보수적). 전체 10335 passed.
+
 ## 🟥 v32 브리프 (오너 2026-06-27 — "버튼 전수조사 + 삭제 영속성 + 벤치마크 + 디자인 실집행")
 - ✅ **PART1 P0 일괄 삭제 영속성(재진입 부활) + 일괄 버튼 가짜성공 (Phase 308):** v30과 동형 — 삭제/일괄수정이
   exact `seller_id=_seller_id()`로만 매칭 → 별칭(user_id↔email) 불일치 시 **삭제 0건·수정 무변경**인데 낙관적 UI로
