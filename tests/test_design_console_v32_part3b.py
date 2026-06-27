@@ -44,3 +44,10 @@ def test_collect_history_summary_editorial(client):
         assert "fs-4 fw-bold" not in html         # 옛 마크업 제거
     finally:
         store._in_memory[:] = []
+
+
+def test_sourcing_hub_editorial(client):
+    html = client.get("/seller/sourcing?keyword=에코백").get_data(as_text=True)
+    assert "console-kpi-label" in html       # 헤더/분석 오버라인
+    assert "var(--font-display)" in html      # 분석 수치 세리프
+    assert "AI 소싱·등록" in html              # 기존 식별 문구 보존(무회귀)
