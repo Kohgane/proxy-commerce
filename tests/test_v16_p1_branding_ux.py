@@ -21,7 +21,7 @@ def client(monkeypatch):
 
 def test_og_share_card_branding(client):
     html = client.get("/").get_data(as_text=True)
-    for needle in ('property="og:description"', 'property="og:image"', 'icon-512.png',
+    for needle in ('property="og:description"', 'property="og:image"', 'og-card.png',
                    'name="twitter:card"', 'property="og:site_name"'):
         assert needle in html, f"공유 카드 메타 누락: {needle}"
     assert "수집부터 마켓 등록" in html        # 브랜드+한 줄 소개
