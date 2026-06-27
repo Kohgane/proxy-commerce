@@ -295,9 +295,43 @@ _NON_PRODUCT_REGION_RE = re.compile(
     r"frequently[-_ ]?bought|sponsored|advert|promotion|ranking|best[-_ ]?seller|"
     r"recently[-_ ]?viewed|history|carousel|slider|cross[-_ ]?sell|up[-_ ]?sell|"
     r"comparison|footer|site[-_ ]?footer|navbar|header[-_ ]?nav|breadcrumb|"
-    r"more[-_ ]?to[-_ ]?explore|other[-_ ]?products|popular|trending)",
+    r"more[-_ ]?to[-_ ]?explore|other[-_ ]?products|popular|trending|"
+    # v33: 리뷰/문의/댓글 영역의 썸네일도 '상품 이미지' 아님 → 제외
+    r"review|comment|reply|\bqna\b|q[-_ ]?and[-_ ]?a|feedback|testimonial)",
     re.IGNORECASE,
 )
+
+# v33: 상품 상세(PDP) 메인 컨테이너 후보 — 여기로 이미지 수집 스코프를 좁혀 '엉뚱한' 이미지 차단.
+_PRODUCT_SCOPE_SELECTORS = (
+    '[itemtype*="Product"]', '[itemtype*="product"]',
+    '#productDetail', '#product-detail', '#productInfo', '#goods_detail',
+    '.product-detail', '.product-info', '.product-gallery', '.product-images',
+    '.goods-detail', '.goodsDetail', '.pdp', '.detail-gallery',
+    '[class*="product-detail"]', '[class*="productDetail"]', '[class*="goodsView"]',
+)
+
+
+def _find_product_scope(soup):
+    """상품 상세 메인 컨테이너를 찾으면 그걸 반환(이미지 수집 스코프 한정), 못 찾으면 soup 전체.
+
+    보수적: 컨테이너가 비-상품 영역이 아니고 이미지를 2장 이상 가질 때만 스코프로 채택
+    (recall 손실 방지 — 명확할 때만 좁힌다).
+    """
+    for sel in _PRODUCT_SCOPE_SELECTORS:
+        try:
+            el = soup.select_one(sel)
+        except Exception:
+            el = None
+        if el is None:
+            continue
+        try:
+            if _in_non_product_region(el, max_depth=4):
+                continue
+            if len(el.find_all("img")) >= 2:
+                return el
+        except Exception:
+            continue
+    return soup
 
 
 def _in_non_product_region(node, max_depth: int = 8) -> bool:
@@ -329,6 +363,7 @@ def _collect_dom_images(soup, base_url: str) -> list:
     """
     out: list = []
     seen = set()
+    scope = _find_product_scope(soup)   # v33: PDP 컨테이너로 스코프 한정(엉뚱 이미지 차단)
 
     def _abs(s: str) -> str:
         s = (s or "").strip()
@@ -360,7 +395,7 @@ def _collect_dom_images(soup, base_url: str) -> list:
                 pass
         return False
 
-    for img in soup.find_all("img"):
+    for img in scope.find_all("img"):
         cand = ""
         for attr in ("src", "data-src", "data-original", "data-lazy",
                      "data-lazy-src", "data-image", "data-zoom-image"):
@@ -384,8 +419,8 @@ def _collect_dom_images(soup, base_url: str) -> list:
         seen.add(url)
         out.append(url)
 
-    # <source srcset> (picture 요소) 도 수집
-    for src in soup.find_all("source"):
+    # <source srcset> (picture 요소) 도 수집 — 동일 PDP 스코프
+    for src in scope.find_all("source"):
         ss = src.get("srcset") or src.get("data-srcset")
         url = _abs(_from_srcset(ss)) if ss else ""
         if url and url not in seen and not _NON_PRODUCT_IMG_RE.search(url):
