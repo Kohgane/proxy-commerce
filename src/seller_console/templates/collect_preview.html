@@ -72,7 +72,7 @@
         </div>
         <textarea class="form-control" id="editDescription" rows="14"
                   style="min-height:300px;font-size:.95rem;line-height:1.6;"
-                  placeholder="상품 상세 설명 — 마켓 상세페이지에 노출됩니다. 소재·사이즈·사용법 등 충분히 길게 작성할수록 전환율이 올라갑니다."
+                  placeholder="상품 상세 설명을 입력하세요 (소재·사이즈·사용법 등). 비워두면 저장되지 않아요."
                   oninput="updateDescCount()"></textarea>
       </div>
 
@@ -148,11 +148,11 @@
     </div>
   </div>
 
-  <!-- RAW 메타 JSON -->
-  {% if extra %}
+  <!-- RAW 메타 JSON — v31: 개발용 원본 메타는 관리자 전용(일반 유저 비노출) -->
+  {% if extra and session.get('user_role') == 'admin' %}
   <div class="card">
     <div class="card-header d-flex justify-content-between align-items-center">
-      <span class="small fw-semibold"><i class="bi bi-search"></i> 수집된 원본 메타</span>
+      <span class="small fw-semibold"><i class="bi bi-search"></i> 수집된 원본 메타 <span class="badge bg-secondary">관리자</span></span>
       <button class="btn btn-outline-secondary btn-sm py-0"
               onclick="this.closest('.card').querySelector('pre').classList.toggle('d-none')">
         펼치기/접기
@@ -500,13 +500,18 @@ function updateDescCount() {
 function initEditor() {
   document.getElementById('editTitle').value =
     _firstNonEmpty(_EXTRA.title_ko, _EXTRA.title, _ITEM.title);
-  document.getElementById('editPrice').value =
-    _firstNonEmpty(_EXTRA.price_original, _EXTRA.price, _ITEM.price);
-  // v16 P0: 가격을 자동으로 못 읽었으면(0/빈값 또는 needs_check) 정직하게 '가격 확인 필요' 안내.
+  // v31 P0: 실제 추출 가격만 채운다. 못 읽었으면(needs_check/빈값) 빈칸 + '가격 확인 필요'.
+  //   빈 값을 임의 숫자/환산으로 채우지 않는다(가짜 가격 금지). 실제 가격 우선(price → item.price).
   try {
-    const pv = parseFloat(document.getElementById('editPrice').value || '0');
-    if (_EXTRA.price_status === 'needs_check' || !(pv > 0)) {
+    // 실제 추출 가격만 사용(price/item.price). price_original은 파생값이라 프리필에서 제외
+    // — 빈 USD가 KRW로 둔갑하던 원인(v31).
+    const _rawPrice = _firstNonEmpty(_EXTRA.price, _ITEM.price);
+    const _pv = parseFloat(_rawPrice || '0');
+    if (_EXTRA.price_status === 'needs_check' || !(_pv > 0)) {
+      document.getElementById('editPrice').value = '';                         // 빈칸 — 가짜 환산 금지
       document.getElementById('priceNeedsCheck').classList.remove('d-none');
+    } else {
+      document.getElementById('editPrice').value = _rawPrice;
     }
   } catch (e) { /* noop */ }
   const cur = _firstNonEmpty(_EXTRA.currency, _ITEM.currency, 'USD');
