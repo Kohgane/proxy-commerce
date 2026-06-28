@@ -16,7 +16,10 @@
   이미지 `referrerpolicy="no-referrer"`(네이버 핫링크 우회) + 실패 시 **박스 유지·아이콘 플레이스홀더**(bi-image, 박스 안 숨김)
   + 카드 `overflow:hidden`(버튼 넘침 방지). 가드 test_v35_sourcing_grid(4) + test_v33_card_status·ai_sourcing_hub 갱신.
   전체 10411 passed. before/after: docs/screens/v35/sourcing-grid-{before,after}.png.
-- ⏳ 다음: P1 검색창 크게·글자 다듬기.
+- ✅ **P1 검색창 크게·넓게 + 글자 위계 (Phase 323):** 소싱 키워드 검색창을 — 오버라인 '상품 발굴' 키커 + 큰 질문 라벨
+  (1.12rem) + **돋보기 아이콘 프리픽스**(input-group-text bi-search) + **큰 입력**(min-height:54px·1.08rem 또렷) + CTA(54px)
+  + 토큰 보더(제네릭 border-primary 파랑 제거). 가드 test_v35_search_box(2). 전체 10413 passed.
+  before/after: docs/screens/v35/search-{before,after}.png. → **v35 완주**(랜딩 상단·소싱 그리드·검색창).
 
 ## 🟦 v34 브리프 (오너 2026-06-28 — "소싱 카드 확대·개인화·디자인 실집행 + before/after 캡처 의무")
 - ★ **검수 규칙(상시): 앞으로 모든 PR에 before/after 스크린샷 첨부.** Playwright 미설치였으나 `pip install playwright`로 해결
