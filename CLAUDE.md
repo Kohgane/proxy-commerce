@@ -22,7 +22,13 @@
   free=업그레이드 CTA/유료=관리), 소셜/알림/계정 배지도 토큰화(bootstrap 컬러배지 제거). 라우트에 plan·token_balance·
   markets_connected/total·sources_count·collected_count 주입(전부 본인, 가짜 0 금지). 가드 test_v34_my_workspace(3).
   전체 10401 passed. before/after: docs/screens/v34/me-{before,after}.png.
-- ⏳ 다음: 디자인 실집행 추가 · 랜딩 검수(before/after 캡처).
+- ✅ **디자인 실집행 — BI 분석 에디토리얼 격상 (Phase 320):** /seller/analytics를 제네릭(h3 'BI'·sans fs-4 매출 숫자·
+  회색헤더 보더카드)에서 **대시보드/주문과 동형 에디토리얼**로 — 오버라인 '분석·BI'+세리프 '재고·판매 분석'+금
+  헤어라인, **매출 3종 세리프 대형 KPI**(console-stat-value·토큰 좌악센트 teal/success/warn, '원' 단위 작게), 섹션
+  카드(TOP20·재고알림·광고ROI·CS배송)도 border-0 shadow-sm+오버라인 금 라벨, 재고/품질 수치 토큰색(danger/warn).
+  하드코딩 색 0(토큰 var만). 가드 test_v34_analytics_editorial(2). 전체 10403 passed.
+  before/after: docs/screens/v34/analytics-{before,after}.png.
+- ⏳ 다음: 디자인 실집행 추가(catalog·notifications 등 잔여 화면) · 랜딩 검수(before/after 캡처).
 
 ## 🟪 v33/마스터 브리프 (오너 2026-06-27 — v24~v33 통합 마스터, 1달 출시 로드맵)
 - (1~4주차 대부분은 이번 세션에서 v24~v32로 완료됨 — 404·삭제영속·이력·토큰·전체수집·메타숨김·Mock·네이버·디자인·랜딩·버튼·아마존·활성화.)
