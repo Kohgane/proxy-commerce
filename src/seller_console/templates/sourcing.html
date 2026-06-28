@@ -153,14 +153,18 @@
     </div>
   </div>
 
-  <!-- 메인 CTA: 키워드 → AI 상품 추천(콘텐츠 중앙 전면) -->
-  <form class="card console-card mb-3 border-primary" method="get" action="/seller/sourcing">
+  <!-- 메인 CTA: 키워드 → AI 상품 추천 (v35 P1: 검색창 크게·넓게·돋보기·또렷한 플레이스홀더) -->
+  <form class="card console-card mb-3" method="get" action="/seller/sourcing" style="border:1px solid var(--border);">
     <div class="card-body">
-      <label for="keywordInput" class="form-label fw-semibold mb-1"><i class="bi bi-search"></i> 무슨 상품을 팔까요? 키워드를 넣어보세요</label>
-      <div class="input-group input-group-lg mb-2">
-        <input id="keywordInput" class="form-control" name="keyword" value="{{ keyword }}" placeholder="예: 요가 레깅스, 보틀, 강아지 장난감">
+      <div class="console-kpi-label mb-1">상품 발굴</div>
+      <label for="keywordInput" class="d-block fw-semibold mb-2" style="font-size:1.12rem;line-height:1.4;">무슨 상품을 팔까요? 키워드로 시작하세요</label>
+      <div class="input-group input-group-lg mb-2 src-search">
+        <span class="input-group-text" style="background:var(--surface);border-right:0;color:var(--text-muted);"><i class="bi bi-search"></i></span>
+        <input id="keywordInput" class="form-control" name="keyword" value="{{ keyword }}"
+               placeholder="예: 요가 레깅스, 보틀, 강아지 장난감"
+               style="min-height:54px;font-size:1.08rem;border-left:0;padding-left:.4rem;" autocomplete="off">
         <input type="hidden" name="period" value="{{ period }}">
-        <button class="btn btn-cta" type="submit">AI 상품 추천받기</button>
+        <button class="btn btn-cta px-4" type="submit" style="min-height:54px;font-size:1.05rem;white-space:nowrap;">AI 상품 추천받기</button>
       </div>
       <div class="d-flex flex-wrap gap-2">
         {% for key, label in period_options.items() %}
