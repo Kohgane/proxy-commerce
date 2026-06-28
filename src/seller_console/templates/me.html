@@ -1,18 +1,23 @@
 {% extends "_base.html" %}
-{% block title %}마이페이지{% endblock %}
+{% block title %}내 작업공간{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="mb-0 fw-bold"><i class="bi bi-person"></i> 마이페이지</h4>
+<!-- v34 P0: 개인 전용 작업공간 — 에디토리얼 헤더 + 내 실데이터(플랜·토큰·연동·소싱처·수집) -->
+<div class="d-flex justify-content-between align-items-end mb-2">
+  <div>
+    <div class="console-kpi-label">MY WORKSPACE</div>
+    <h2 class="pc-display-2 mb-0" style="font-size:clamp(1.9rem,4vw,2.6rem);">내 작업공간</h2>
+  </div>
   {% if user and user.role == 'admin' %}
-    <span class="badge bg-danger px-3 py-2 fs-6"><i class="bi bi-star-fill"></i> Admin</span>
+    <span class="badge px-3 py-2" style="background:var(--danger);color:#fff;"><i class="bi bi-star-fill"></i> 관리자</span>
   {% endif %}
 </div>
+<hr class="pc-hairline mt-2 mb-4">
 
 {% if not user %}
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body text-center py-5">
-    <p class="text-muted mb-3">로그인이 필요합니다.</p>
+    <p class="text-muted mb-3">내 작업공간은 로그인한 사람만 볼 수 있어요. (개인 정보·수집 내역은 본인만)</p>
     <a href="/auth/login" class="btn btn-primary">로그인</a>
     &nbsp;
     <a href="/auth/signup" class="btn btn-outline-secondary">회원가입</a>
@@ -21,43 +26,94 @@
 {% else %}
 
 <!-- 프로필 카드 -->
-<div class="card border-0 shadow-sm mb-3">
+<div class="card border-0 shadow-sm mb-4">
   <div class="card-body">
-    <div class="d-flex align-items-center gap-3 mb-3">
+    <div class="d-flex align-items-center gap-3">
       {% if user.avatar_url %}
-        <img src="{{ user.avatar_url }}" class="rounded-circle" width="56" height="56" alt="avatar"
+        <img src="{{ user.avatar_url }}" class="rounded-circle" width="60" height="60" alt="avatar"
              onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
       {% endif %}
-      <div class="rounded-circle bg-primary d-flex align-items-center justify-content-center text-white fw-bold"
-           style="width:56px;height:56px;font-size:1.5rem;{% if user.avatar_url %}display:none;{% endif %}">
+      <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold"
+           style="width:60px;height:60px;font-size:1.6rem;background:var(--teal);color:#fff;{% if user.avatar_url %}display:none;{% endif %}">
         {{ (user.name or user.email)[0].upper() }}
       </div>
-      <div>
-        <h5 class="mb-0 fw-semibold">{{ user.name or '이름 없음' }}</h5>
-        <p class="text-muted small mb-0">{{ user.email }}</p>
+      <div class="flex-grow-1">
+        <h5 class="mb-0 fw-semibold" style="font-family:var(--font-display);">{{ user.name or '이름 없음' }}</h5>
+        <p class="mb-1 small" style="color:var(--text-muted);">{{ user.email }}</p>
         {% if not user.email_verified %}
-          <span class="badge bg-warning text-dark small">이메일 미인증</span>
+          <span class="badge text-dark small" style="background:color-mix(in srgb,var(--warn) 22%,transparent);">이메일 미인증</span>
         {% else %}
-          <span class="badge bg-success small">이메일 인증 완료</span>
+          <span class="badge small" style="background:color-mix(in srgb,var(--success) 18%,transparent);color:var(--success);">이메일 인증 완료</span>
         {% endif %}
       </div>
+      <div class="text-end small d-none d-sm-block" style="color:var(--text-muted);">
+        <div><span class="fw-semibold">가입</span> {{ (user.created_at or '-')[:10] }}</div>
+        <div><span class="fw-semibold">최근 접속</span> {{ (user.last_login_at or '-')[:10] }}</div>
+      </div>
     </div>
-    <div class="row g-2 text-muted small">
-      <div class="col-6">
-        <span class="fw-semibold">역할:</span>
-        {% if user.role == 'admin' %}
-          <span class="text-danger fw-bold">관리자</span>
-        {% else %}
-          셀러
+  </div>
+</div>
+
+<!-- 작업공간 KPI 스트립(내 실데이터 — 가짜 0 금지) -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <a href="/seller/collect/history" class="text-decoration-none">
+      <div class="card border-0 shadow-sm console-kpi-card console-kpi-primary h-100">
+        <div class="card-body">
+          <div class="console-kpi-label">수집 상품</div>
+          <div class="console-stat-value">{{ collected_count }}</div>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-lg-3">
+    <a href="/seller/markets/connect" class="text-decoration-none">
+      <div class="card border-0 shadow-sm console-kpi-card console-kpi-success h-100">
+        <div class="card-body">
+          <div class="console-kpi-label">연동 마켓</div>
+          <div class="console-stat-value">{{ markets_connected }}<span style="font-size:1.1rem;color:var(--text-muted);font-family:var(--font-ui);">/{{ markets_total }}</span></div>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-lg-3">
+    <a href="/seller/sourcing/my-sources" class="text-decoration-none">
+      <div class="card border-0 shadow-sm console-kpi-card console-kpi-warning h-100">
+        <div class="card-body">
+          <div class="console-kpi-label">내 소싱처</div>
+          <div class="console-stat-value">{{ sources_count }}</div>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-lg-3">
+    <a href="/seller/me/tokens" class="text-decoration-none">
+      <div class="card border-0 shadow-sm console-kpi-card console-kpi-danger h-100">
+        <div class="card-body">
+          <div class="console-kpi-label">보유 토큰</div>
+          <div class="console-stat-value">{{ token_balance }}</div>
+        </div>
+      </div>
+    </a>
+  </div>
+</div>
+
+<!-- 요금제(플랜) -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-3">
+    <div>
+      <div class="console-kpi-label">내 요금제</div>
+      <div class="d-flex align-items-baseline gap-2">
+        <span style="font-family:var(--font-display);font-size:1.5rem;font-weight:700;color:var(--text-strong);">{{ plan_meta.label }}</span>
+        {% if plan in ('plus','pro') %}
+          <span class="badge small" style="background:color-mix(in srgb,var(--teal) 16%,transparent);color:var(--teal);">활성</span>
         {% endif %}
       </div>
-      <div class="col-6">
-        <span class="fw-semibold">가입일:</span> {{ (user.created_at or '-')[:10] }}
-      </div>
-      <div class="col-6">
-        <span class="fw-semibold">마지막 로그인:</span> {{ (user.last_login_at or '-')[:10] }}
-      </div>
+      <p class="mb-0 small" style="color:var(--text-muted);">{{ plan_meta.desc }}</p>
     </div>
+    <a href="/seller/billing" class="btn {% if plan == 'free' %}btn-cta{% else %}btn-ghost{% endif %}">
+      {% if plan == 'free' %}<i class="bi bi-arrow-up-circle"></i> 업그레이드{% else %}요금제 관리{% endif %}
+    </a>
   </div>
 </div>
 
@@ -71,11 +127,11 @@
       {% set label = {'kakao': '카카오', 'google': '구글', 'naver': '네이버'}[prov] %}
       <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-2">
         <span>
-          {% if prov == 'kakao' %}<i class="bi bi-chat-fill text-warning"></i>{% elif prov == 'google' %}<i class="bi bi-google text-danger"></i>{% else %}<i class="bi bi-circle-fill text-success"></i>{% endif %}
+          {% if prov == 'kakao' %}<i class="bi bi-chat-fill" style="color:var(--gold);"></i>{% elif prov == 'google' %}<i class="bi bi-google" style="color:var(--danger);"></i>{% else %}<i class="bi bi-translate" style="color:var(--success);"></i>{% endif %}
           {{ label }}
         </span>
         {% if prov in linked_providers %}
-          <span class="badge bg-success">연결됨</span>
+          <span class="badge" style="background:color-mix(in srgb,var(--success) 18%,transparent);color:var(--success);">연결됨</span>
         {% else %}
           <a href="/auth/{{ prov }}/start" class="btn btn-outline-secondary btn-sm">연결</a>
         {% endif %}
@@ -91,17 +147,17 @@
     <div class="d-flex justify-content-between align-items-center mb-2">
       <span><i class="bi bi-telegram"></i> 텔레그램</span>
       {% if telegram_active %}
-        <span class="badge bg-success">활성</span>
+        <span class="badge" style="background:color-mix(in srgb,var(--success) 18%,transparent);color:var(--success);">활성</span>
       {% else %}
-        <span class="badge bg-secondary">미설정</span>
+        <span class="badge" style="background:color-mix(in srgb,var(--text-muted) 14%,transparent);color:var(--text-muted);">미설정</span>
       {% endif %}
     </div>
     <div class="d-flex justify-content-between align-items-center">
       <span><i class="bi bi-envelope"></i> 이메일 (Resend)</span>
       {% if resend_active %}
-        <span class="badge bg-success">활성</span>
+        <span class="badge" style="background:color-mix(in srgb,var(--success) 18%,transparent);color:var(--success);">활성</span>
       {% else %}
-        <span class="badge bg-secondary">미설정</span>
+        <span class="badge" style="background:color-mix(in srgb,var(--text-muted) 14%,transparent);color:var(--text-muted);">미설정</span>
       {% endif %}
     </div>
   </div>

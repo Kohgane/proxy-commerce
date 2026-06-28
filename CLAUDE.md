@@ -15,6 +15,13 @@
   표시명/이메일·'내 작업공간 · {플랜}'(무료/플러스/프로). 컨텍스트 프로세서에 `account_plan`(billing_store.get_account,
   로그인 시에만·경량) 주입. 비로그인은 미노출. 데이터는 이미 user 스코프(인증 게이트 v29). before/after:
   docs/screens/v34/console-account-{before,after}.png. 가드 test_v34_account_header(3). 전체 10396 passed.
+- ✅ **P0 개인 전용 작업공간(마이페이지 격상) (Phase 319):** /seller/me를 제네릭 부트스트랩(파랑 bg-primary 아바타·h4
+  '마이페이지'·플랜/지표 0)에서 **에디토리얼 개인 작업공간**으로 — 오버라인 'MY WORKSPACE'+세리프 '내 작업공간'+금
+  헤어라인, **청록 토큰 아바타**, **작업공간 KPI 스트립**(수집 상품/연동 마켓 N·M/내 소싱처/보유 토큰 — 전부 본인 스코프
+  실데이터, 세리프 대형 console-stat-value+토큰 좌악센트, 각 카드 해당 화면 링크), **내 요금제 카드**(플랜 라벨·설명·
+  free=업그레이드 CTA/유료=관리), 소셜/알림/계정 배지도 토큰화(bootstrap 컬러배지 제거). 라우트에 plan·token_balance·
+  markets_connected/total·sources_count·collected_count 주입(전부 본인, 가짜 0 금지). 가드 test_v34_my_workspace(3).
+  전체 10401 passed. before/after: docs/screens/v34/me-{before,after}.png.
 - ⏳ 다음: 디자인 실집행 추가 · 랜딩 검수(before/after 캡처).
 
 ## 🟪 v33/마스터 브리프 (오너 2026-06-27 — v24~v33 통합 마스터, 1달 출시 로드맵)
