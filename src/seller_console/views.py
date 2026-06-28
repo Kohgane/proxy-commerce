@@ -66,6 +66,14 @@ def inject_seller_template_flags():
         _lang = normalize_lang(request.cookies.get("kgp_lang"))
     except Exception:
         _lang = "ko"
+    # v34: 개인화 헤더용 내 플랜(로그인 시에만, 경량 — 인메모리/시트 1회 조회)
+    _plan = None
+    try:
+        if session.get("user_id") or session.get("user_email"):
+            from . import billing_store
+            _plan = (billing_store.get_account(_seller_id()) or {}).get("plan", "free")
+    except Exception:
+        _plan = None
     return {
         "diagnostic_reveal_enabled": os.getenv("DIAGNOSTIC_REVEAL", "0") == "1",
         "sidebar_grouped": os.getenv("SIDEBAR_GROUPED", "1") == "1",
@@ -73,6 +81,7 @@ def inject_seller_template_flags():
         "brand_name_ko": get_brand_name_ko(),
         "current_lang": _lang,
         "t": (lambda key, lang=_lang: _t(key, lang)),
+        "account_plan": _plan,
     }
 
 
