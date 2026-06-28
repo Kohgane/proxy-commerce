@@ -177,7 +177,7 @@
 <div class="card border-0 shadow-sm">
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-hover mb-0" id="productTable">
+      <table class="table table-hover mb-0 table-cards" id="productTable">
         <thead class="table-light">
           <tr>
             <th>마켓</th>
@@ -194,16 +194,16 @@
           {% if items and not market_data.is_mock %}
             {% for item in items %}
             <tr data-market="{{ item.marketplace }}" data-status="{{ item.state }}" data-country="{{ item.country }}">
-              <td>
+              <td class="cardcell-img">
                 <span class="badge bg-secondary">{{ item.marketplace_label }}</span>
                 {% if not item.is_ready %}
                 <span class="badge bg-dark ms-1">준비 중</span>
                 {% endif %}
               </td>
-              <td><code class="small">{{ item.product_id }}</code></td>
-              <td>{{ item.title or '—' }}</td>
-              <td><code class="small">{{ item.sku or '—' }}</code></td>
-              <td class="text-center">
+              <td data-label="상품 ID"><code class="small">{{ item.product_id }}</code></td>
+              <td class="cardcell-title">{{ item.title or '—' }}</td>
+              <td data-label="SKU"><code class="small">{{ item.sku or '—' }}</code></td>
+              <td class="text-center" data-label="상태">
                 {% if item.state == "active" %}
                 <span class="badge bg-success"><i class="bi bi-check-circle"></i> 활성</span>
                 {% elif item.state == "out_of_stock" %}
@@ -218,14 +218,14 @@
                 <span class="badge bg-secondary">{{ item.state }}</span>
                 {% endif %}
               </td>
-              <td class="text-end">
+              <td class="text-end" data-label="가격">
                 {{ item.price_display }}
                 {% if item.price_note %}
                 <div class="small text-muted">{{ item.price_note }}</div>
                 {% endif %}
               </td>
-              <td class="small text-muted">{{ item.country }}/{{ item.currency }} · {{ item.region }}</td>
-              <td class="small text-muted">{{ item.last_synced_at or '—' }}</td>
+              <td class="small text-muted" data-label="국가/통화">{{ item.country }}/{{ item.currency }} · {{ item.region }}</td>
+              <td class="small text-muted" data-label="마지막 동기화">{{ item.last_synced_at or '—' }}</td>
             </tr>
             {% endfor %}
           {% else %}
