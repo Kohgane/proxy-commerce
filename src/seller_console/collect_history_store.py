@@ -117,14 +117,19 @@ def append(
     preview_url: str = "",
     extra: dict = None,
     seller_id: str = "",
-) -> str:
+    return_durable: bool = False,
+):
     """수집 이력 1건 추가.
 
     Args:
         seller_id: 수집한 셀러 식별자 (멀티유저 격리용). 빈 값이면 레거시/단일 테넌트.
+        return_durable: True면 (item_id, durable) 튜플 반환. durable=False는
+            **시트가 설정됐는데 쓰기에 실패해 인메모리로만 폴백**된 경우(멀티워커에서
+            다른 워커·새로고침엔 안 보임 → '가짜 성공' 위험). v38 P0: 호출자가 이걸 보고
+            정직한 실패를 반환할 수 있게 한다.
 
     Returns:
-        생성된 item_id (6바이트 hex)
+        생성된 item_id (6바이트 hex), 또는 return_durable=True면 (item_id, durable).
     """
     item_id = secrets.token_hex(6)
     domain = urlparse(url).netloc
@@ -145,6 +150,7 @@ def append(
         "seller_id": seller_id or "",
     }
 
+    durable = True
     if _SHEET_ID:
         try:
             ws = _get_worksheet()
@@ -153,11 +159,15 @@ def append(
             _invalidate_cache()
             logger.info("수집 이력 저장: id=%s source=%s domain=%s", item_id, source, domain)
         except Exception as exc:
-            logger.warning("수집 이력 Sheets 저장 실패: %s", exc)
+            logger.warning("수집 이력 Sheets 저장 실패(인메모리 폴백 — 비영속): %s", exc)
             _in_memory.append(row_data)
+            durable = False   # v38 P0: 시트 설정됐는데 폴백 = 멀티워커서 안 보임(가짜성공 위험)
     else:
+        # 시트 미설정 = 단일 테넌트/개발 의도(인메모리가 저장소). 영속으로 간주.
         _in_memory.append(row_data)
 
+    if return_durable:
+        return item_id, durable
     return item_id
 
 
