@@ -1,5 +1,5 @@
-// sw.js — Phase 147 Service Worker (Goga Bridj PWA)
-const CACHE_NAME = 'proxy-commerce-v147';
+// sw.js — Phase 147 Service Worker (Goga Bridj PWA) · v36 캐시 갱신
+const CACHE_NAME = 'goga-bridj-v36';
 const STATIC_ASSETS = [
   '/seller/dashboard',
   '/seller/static/seller.css',

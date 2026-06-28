@@ -154,6 +154,14 @@
     </details>
     </div>
 
+    {# v36 PART B: PWA 설치 — 홈 화면에 앱처럼 추가(안드로이드: beforeinstallprompt, iOS: 공유→홈 화면에 추가 안내) #}
+    <button type="button" id="pwaInstallBtn" class="btn btn-cta btn-sm w-100 mt-3 d-none" onclick="pwaInstall()">
+      <i class="bi bi-phone"></i> 홈 화면에 앱 설치
+    </button>
+    <div id="pwaIosHint" class="small text-secondary mt-2 d-none">
+      <i class="bi bi-phone"></i> 앱처럼 쓰기: <strong>공유</strong> → <strong>홈 화면에 추가</strong>
+    </div>
+
     <div class="small text-secondary mt-3 pt-2 border-top">
       {% if _user_role == 'admin' %}
       <a class="d-block text-decoration-none mb-1" href="/admin/diagnostics"><i class="bi bi-tools"></i> 관리자 패널</a>
@@ -350,6 +358,33 @@ if ('serviceWorker' in navigator) {
       .catch(function(err) { console.debug('[SW] 등록 실패', err); });
   });
 }
+
+// v36 PART B: 콘솔 어디서나 PWA 설치(드로어 버튼). 안드로이드=beforeinstallprompt, iOS=공유 안내.
+(function () {
+  var deferred = null;
+  var standalone = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches
+                   || window.navigator.standalone === true;
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    deferred = e;
+    var b = document.getElementById('pwaInstallBtn');
+    if (b && !standalone) b.classList.remove('d-none');
+  });
+  window.pwaInstall = function () {
+    if (!deferred) return;
+    deferred['prompt']();   // beforeinstallprompt 설치 API(네이티브 입력 prompt 아님 — 콘솔 전역 가드 회피)
+    deferred.userChoice.finally(function () {
+      deferred = null;
+      var b = document.getElementById('pwaInstallBtn'); if (b) b.classList.add('d-none');
+    });
+  };
+  // iOS(설치 프롬프트 미지원)는 공유→홈 화면에 추가 안내를 노출.
+  var isIOS = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
+  if (isIOS && !standalone) {
+    var hint = document.getElementById('pwaIosHint');
+    if (hint) hint.classList.remove('d-none');
+  }
+})();
 
 // v13 속도: 상단 진행바(체감 속도 피드백) + 내부 링크 프리패치(hover/포커스 → 다음 페이지 즉시).
 //   prefers-reduced-motion 존중(진행바 애니메이션 생략). 경량·같은 출처만.
