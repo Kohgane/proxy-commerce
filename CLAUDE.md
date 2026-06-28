@@ -4,6 +4,10 @@
 
 ## 🟪 v33/마스터 브리프 (오너 2026-06-27 — v24~v33 통합 마스터, 1달 출시 로드맵)
 - (1~4주차 대부분은 이번 세션에서 v24~v32로 완료됨 — 404·삭제영속·이력·토큰·전체수집·메타숨김·Mock·네이버·디자인·랜딩·버튼·아마존·활성화.)
+- ✅ **3주차 3-3 토스트 비주얼 시스템 (Phase 314):** pcToast 전면 재설계 — bootstrap 컬러배경+이모지(✅❌⚠️ℹ️)를
+  **네오-클래식**(먹 vault 배경·한지 텍스트·금 보더·유형 좌악센트 teal/orange/danger·**라인 아이콘 bi-***)으로. 우상단
+  슬라이드-인(pcToastIn)+자동/수동 닫기, reduced-motion 정지. app.css `.pc-toast`(토큰 단일소스), 이모지 0. 버튼 위계는
+  기존 토큰 컴포넌트(.btn-primary/.btn-cta/.btn-gold/.btn-ghost·로딩 setButtonLoading) 유지. 가드 test_v33_toast(4). 전체 10339 passed.
 - ✅ **2주차 2-1 이미지 PDP 스코프 한정 (Phase 313):** 엉뚱한 이미지(추천·리뷰·푸터·타 상품) 혼입 차단 강화 —
   `_NON_PRODUCT_REGION_RE`에 review/comment/reply/qna/feedback/testimonial 추가, 신규 `_find_product_scope`
   (itemtype Product·product-detail/goods 컨테이너로 이미지 수집 스코프 한정, **보수적**: 이미지 2장+ & 비-상품영역 아닐 때만

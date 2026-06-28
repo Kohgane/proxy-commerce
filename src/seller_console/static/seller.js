@@ -79,41 +79,46 @@ function pcToast(message, type = 'info') {
     container.setAttribute('aria-atomic', 'true');
     document.body.appendChild(container);
   }
-  const toneMap = {success: 'success', error: 'danger', danger: 'danger', warning: 'warning', info: 'secondary'};
-  const iconMap = {success: '✅', error: '❌', danger: '❌', warning: '⚠️', info: 'ℹ️'};
-  const tone = toneMap[type] || 'secondary';
+  // v33 3-3: 네오-클래식 토스트 — 먹 배경·한지 텍스트·금 보더·유형 좌악센트·라인 아이콘(이모지 0).
+  const toneMap = {success: 'success', error: 'danger', danger: 'danger', warning: 'warning', info: 'info'};
+  const iconMap = {success: 'bi-check-circle', error: 'bi-x-circle', danger: 'bi-x-circle',
+                   warning: 'bi-exclamation-triangle', info: 'bi-info-circle'};
+  const tone = toneMap[type] || 'info';
 
   const toastEl = document.createElement('div');
-  toastEl.className = `toast align-items-center text-bg-${tone} border-0`;
+  toastEl.className = `pc-toast pc-toast-${tone}`;
   toastEl.setAttribute('role', 'alert');
-  toastEl.setAttribute('aria-live', 'assertive');
+  toastEl.setAttribute('aria-live', tone === 'danger' ? 'assertive' : 'polite');
   toastEl.setAttribute('aria-atomic', 'true');
 
-  const flex = document.createElement('div');
-  flex.className = 'd-flex';
-  const body = document.createElement('div');
-  body.className = 'toast-body';
-  body.textContent = `${iconMap[type] || ''} ${message}`.trim();
+  const ic = document.createElement('i');
+  ic.className = `bi ${iconMap[type] || 'bi-info-circle'} pc-toast-ic`;
+  ic.setAttribute('aria-hidden', 'true');
+  const msg = document.createElement('div');
+  msg.className = 'pc-toast-msg';
+  msg.textContent = String(message == null ? '' : message);
   const closeBtn = document.createElement('button');
   closeBtn.type = 'button';
-  closeBtn.className = 'btn-close btn-close-white me-2 m-auto';
-  closeBtn.setAttribute('data-bs-dismiss', 'toast');
+  closeBtn.className = 'pc-toast-x';
   closeBtn.setAttribute('aria-label', '닫기');
-  flex.appendChild(body);
-  flex.appendChild(closeBtn);
-  toastEl.appendChild(flex);
+  closeBtn.innerHTML = '<i class="bi bi-x-lg" aria-hidden="true"></i>';
+
+  toastEl.appendChild(ic);
+  toastEl.appendChild(msg);
+  toastEl.appendChild(closeBtn);
   container.appendChild(toastEl);
 
+  let timer = null;
+  const dismiss = () => {
+    if (timer) { clearTimeout(timer); timer = null; }
+    toastEl.style.transition = 'opacity .2s, transform .2s';
+    toastEl.style.opacity = '0';
+    toastEl.style.transform = 'translateX(16px)';
+    setTimeout(() => toastEl.remove(), 220);
+  };
+  closeBtn.addEventListener('click', dismiss);     // 수동 닫기
   const delay = (type === 'error' || type === 'danger') ? 6000 : 3500;
-  if (typeof bootstrap !== 'undefined' && bootstrap.Toast) {
-    const toast = new bootstrap.Toast(toastEl, {delay});
-    toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
-    toast.show();
-  } else {
-    // bootstrap 미로딩 폴백: 잠깐 보여주고 제거
-    toastEl.classList.add('show');
-    setTimeout(() => toastEl.remove(), delay);
-  }
+  timer = setTimeout(dismiss, delay);              // 자동 닫기
 }
 
 /**
