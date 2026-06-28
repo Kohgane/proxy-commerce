@@ -15,19 +15,19 @@
       <ul class="navbar-nav gap-1">
         <li class="nav-item">
           <a class="nav-link {% if request.path.startswith('/seller') %}active fw-semibold{% endif %}"
-             href="/seller/">🛒 셀러 콘솔</a>
+             href="/seller/"><i class="bi bi-shop"></i> 셀러 콘솔</a>
         </li>
         <li class="nav-item">
           <a class="nav-link {% if request.path.startswith('/admin') %}active fw-semibold{% endif %}"
-             href="/admin/">🛠 관리자</a>
+             href="/admin/"><i class="bi bi-tools"></i> 관리자</a>
         </li>
         <li class="nav-item">
           <a class="nav-link {% if request.path.startswith('/api/docs') %}active fw-semibold{% endif %}"
-             href="/api/docs">📚 API 문서</a>
+             href="/api/docs"><i class="bi bi-book"></i> API 문서</a>
         </li>
         <li class="nav-item">
           <a class="nav-link {% if request.path == '/health/deep' %}active fw-semibold{% endif %}"
-             href="/health/deep">💚 시스템 상태</a>
+             href="/health/deep"><i class="bi bi-heart-pulse"></i> 시스템 상태</a>
         </li>
       </ul>
       {% set _user_id = session.get('user_id') if session is defined else None %}
@@ -44,21 +44,21 @@
             {% endif %}
           </button>
           <ul class="dropdown-menu dropdown-menu-end">
-            <li><a class="dropdown-item" href="/seller/me">👤 마이페이지</a></li>
+            <li><a class="dropdown-item" href="/seller/me"><i class="bi bi-person"></i> 마이페이지</a></li>
             <li><hr class="dropdown-divider"></li>
             <li>
               <form method="post" action="/auth/logout" class="px-2">
-                <button type="submit" class="btn btn-outline-secondary btn-sm w-100">🚪 로그아웃</button>
+                <button type="submit" class="btn btn-outline-secondary btn-sm w-100"><i class="bi bi-box-arrow-right"></i> 로그아웃</button>
               </form>
             </li>
           </ul>
         </div>
       {% else %}
         <div class="d-flex gap-2">
-          <a href="/auth/login" class="btn btn-outline-light btn-sm">🔐 OAuth 로그인</a>
-          <a href="/auth/magic-link" class="btn btn-outline-secondary btn-sm">📧 이메일 로그인</a>
+          <a href="/auth/login" class="btn btn-outline-light btn-sm"><i class="bi bi-shield-lock"></i> OAuth 로그인</a>
+          <a href="/auth/magic-link" class="btn btn-outline-secondary btn-sm"><i class="bi bi-envelope"></i> 이메일 로그인</a>
           {% if diagnostic_reveal_enabled %}
-            <a href="/auth/diagnostic-token/issue?reveal_safe=1&format=html" class="btn btn-warning btn-sm">🆘 비상 진입 (운영자)</a>
+            <a href="/auth/diagnostic-token/issue?reveal_safe=1&format=html" class="btn btn-warning btn-sm"><i class="bi bi-life-preserver"></i> 비상 진입 (운영자)</a>
           {% endif %}
           <a href="/auth/signup" class="btn btn-primary btn-sm">가입</a>
         </div>

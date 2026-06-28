@@ -29,8 +29,9 @@ def test_mutual_exclusion_in_refresh():
     assert "!looksLikeProductPage() && !kgpIsDetailUrl()" in CS
 
 
-def test_single_glove_icon_no_globe_image_in_bookmarklet_button():
+def test_bookmarklet_button_no_emoji_no_globe():
     bm = Path("src/seller_console/templates/bookmarklet.html").read_text(encoding="utf-8")
-    # 북마클릿 드래그 버튼은 🧤 한 글자(파비콘 글로브 이미지 미사용)
-    assert "🧤" in bm
+    # v33: 북마클릿 드래그 버튼 이름은 짧은 텍스트('수집') — 이모지 0, 글러브/지구본 0
+    assert ">수집</a>" in bm
+    assert "🧤" not in bm and "globe" not in bm.lower()
     assert "filename='favicon.svg'" not in bm and 'filename="favicon.svg"' not in bm

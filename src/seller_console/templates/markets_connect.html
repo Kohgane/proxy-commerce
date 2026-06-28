@@ -87,7 +87,7 @@
         <button type="button" class="btn btn-ghost btn-sm" id="mcToggleAll">전체 보기</button>
       </div>
       <div id="mcStepper" class="d-flex flex-wrap gap-2"></div>
-      <div class="small text-muted mt-2">연결을 마치면 ✓ 로 자동 체크돼요. 천천히 하나씩 하면 됩니다.</div>
+      <div class="small text-muted mt-2">연결을 마치면 <i class="bi bi-check-lg"></i> 로 자동 체크돼요. 천천히 하나씩 하면 됩니다.</div>
     </div>
   </div>
   {% endif %}
@@ -188,7 +188,7 @@ function copyServerIp(btn) {
   if (!ip) return;
   navigator.clipboard.writeText(ip.trim()).then(function () {
     if (window.pcToast) pcToast('서버 IP를 복사했어요. 마켓 허용 IP에 붙여넣으세요.', 'success');
-    if (btn) { var o = btn.textContent; btn.textContent = '복사됨 ✓'; setTimeout(function(){ btn.textContent = o; }, 1500); }
+    if (btn) { var o = btn.textContent; btn.textContent = '복사됨'; setTimeout(function(){ btn.textContent = o; }, 1500); }
   });
 }
 function collectValues(form) {
@@ -295,7 +295,7 @@ document.querySelectorAll('.market-connect-form').forEach(form => {
   }
 });
 
-// v14: 한 마켓씩 순차 진행(연결되면 ✓ 자동 체크). '전체 보기'로 그리드 전환.
+// v14: 한 마켓씩 순차 진행(연결되면 자동 체크). '전체 보기'로 그리드 전환.
 (function () {
   const cols = Array.from(document.querySelectorAll('.mc-market-col'));
   const stepper = document.getElementById('mcStepper');
@@ -310,7 +310,7 @@ document.querySelectorAll('.market-connect-form').forEach(form => {
       const on = c.dataset.connected === '1';
       const active = i === cur && !showAll;
       const cls = active ? 'btn-primary' : (on ? 'btn-outline-success' : 'btn-outline-secondary');
-      const mark = on ? '✓ ' : (i + 1) + '. ';
+      const mark = on ? '● ' : (i + 1) + '. ';
       return `<button type="button" class="btn btn-sm ${cls} mc-step" data-i="${i}">${mark}${c.dataset.label}</button>`;
     }).join('');
     stepper.querySelectorAll('.mc-step').forEach(b => b.addEventListener('click', () => { showAll = false; cur = parseInt(b.dataset.i, 10); apply(); }));

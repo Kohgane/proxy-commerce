@@ -4,6 +4,11 @@
 
 ## 🟪 v33/마스터 브리프 (오너 2026-06-27 — v24~v33 통합 마스터, 1달 출시 로드맵)
 - (1~4주차 대부분은 이번 세션에서 v24~v32로 완료됨 — 404·삭제영속·이력·토큰·전체수집·메타숨김·Mock·네이버·디자인·랜딩·버튼·아마존·활성화.)
+- ✅ **3주차 3-4 전역 이모지·지구본 박멸 (Phase 315):** 셀러 콘솔/에러/파셜 전 사용자 템플릿의 이모지(🛒🛠📚💚👤🚪🔐📧🆘⭐ℹ️❌🧤✓)를
+  **단일 라인 아이콘셋 bi-***(shop/tools/book/heart-pulse/person/box-arrow-right/shield-lock/envelope/life-preserver/star-fill/info-circle…)로 교체.
+  topnav×2·404/500·markets_connect/guide·catalog·notifications·me·mobile_home·market_status·collect_preview·bookmarklet 전수.
+  북마클릿 드래그 버튼 🧤→**'수집' 텍스트**(이모지 없는 북마크 이름). **bi-globe(지구본) 아이콘 7개 → bi-translate**(지구본 0).
+  가드 test_v33_emoji_sweep(전 사용자 템플릿 이모지 0 파라미터화 + 핵심 chrome 라인아이콘). 전체 10392 passed.
 - ✅ **3주차 3-3 토스트 비주얼 시스템 (Phase 314):** pcToast 전면 재설계 — bootstrap 컬러배경+이모지(✅❌⚠️ℹ️)를
   **네오-클래식**(먹 vault 배경·한지 텍스트·금 보더·유형 좌악센트 teal/orange/danger·**라인 아이콘 bi-***)으로. 우상단
   슬라이드-인(pcToastIn)+자동/수동 닫기, reduced-motion 정지. app.css `.pc-toast`(토큰 단일소스), 이모지 0. 버튼 위계는
