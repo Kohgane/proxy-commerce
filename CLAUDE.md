@@ -11,7 +11,11 @@
   버튼 ≥44px("소싱처에서 비슷한 상품 찾기"). 마켓 검색은 타오바오/1688/알리/테무 단일버튼 + **아마존 국가 드롭다운**
   (미국~인도 10개국, `_AMAZON_SEARCH_COUNTRIES`). `_sourcing_search_links` 이모지 필드 제거. 가드 갱신(card v34·amazon countries).
   전체 10396 passed. before/after: docs/screens/v34/sourcing-{before,after}.png.
-- ⏳ 다음: 개인화 헤더(내 계정/플랜/소싱처 칩) · 디자인 실집행 추가 · 랜딩 검수.
+- ✅ **P0 개인화 헤더 '내 작업공간' (Phase 318):** 콘솔 사이드바 브랜드 아래 **로그인 계정 패널** 추가 — 아바타(이니셜)·
+  표시명/이메일·'내 작업공간 · {플랜}'(무료/플러스/프로). 컨텍스트 프로세서에 `account_plan`(billing_store.get_account,
+  로그인 시에만·경량) 주입. 비로그인은 미노출. 데이터는 이미 user 스코프(인증 게이트 v29). before/after:
+  docs/screens/v34/console-account-{before,after}.png. 가드 test_v34_account_header(3). 전체 10396 passed.
+- ⏳ 다음: 디자인 실집행 추가 · 랜딩 검수(before/after 캡처).
 
 ## 🟪 v33/마스터 브리프 (오너 2026-06-27 — v24~v33 통합 마스터, 1달 출시 로드맵)
 - (1~4주차 대부분은 이번 세션에서 v24~v32로 완료됨 — 404·삭제영속·이력·토큰·전체수집·메타숨김·Mock·네이버·디자인·랜딩·버튼·아마존·활성화.)

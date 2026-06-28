@@ -43,6 +43,23 @@
       <strong><i class="bi bi-shop"></i> 셀러 콘솔 · {{ _brand_name }}</strong>
     </a>
 
+    {# v34 P0: 개인화 헤더 — "내 작업공간"(로그인 계정·플랜) #}
+    {% if _user_email or _user_name %}
+    {% set _plan_label = {'free':'무료','plus':'플러스','pro':'프로'} %}
+    <a href="/seller/me" class="console-account text-decoration-none d-flex align-items-center gap-2 mb-3 p-2 rounded-3"
+       style="background:color-mix(in srgb, var(--gold) 8%, transparent);border:1px solid var(--hairline-color);">
+      <span class="d-inline-flex align-items-center justify-content-center flex-shrink-0"
+            style="width:34px;height:34px;border-radius:50%;background:var(--teal);color:#fff;font-weight:700;">
+        {{ (_user_name or _user_email or '나')[:1]|upper }}
+      </span>
+      <span class="flex-grow-1 text-truncate">
+        <span class="d-block text-truncate fw-semibold" style="font-size:.9rem;color:var(--text-strong);">{{ _user_name or _user_email }}</span>
+        <span class="console-kpi-label" style="font-size:.62rem;">내 작업공간 · {{ _plan_label.get(account_plan, '무료') }}{% if account_plan in ('plus','pro') %} 활성{% endif %}</span>
+      </span>
+      <i class="bi bi-chevron-right text-muted small"></i>
+    </a>
+    {% endif %}
+
     <div class="flex-grow-1">
     <!-- 핵심 메뉴(항상 노출) — 비기너 과부하 방지(v5). 나머지는 '고급 기능'으로 접음. -->
     <ul class="nav flex-column gap-1">
