@@ -177,15 +177,19 @@
       <h2 class="h6 mb-1">국내에서 팔리는 상품 <span class="text-muted fw-normal">· “{{ keyword }}”</span></h2>
       {% if domestic_products %}
       <p class="text-muted small mb-3">아래는 네이버 쇼핑 기준 실제 판매 중인 상품이에요. 마음에 들면 <strong>소싱처에서 비슷한 상품을 찾아</strong> 바로 수집하세요.</p>
-      <div class="row g-3">
+      {# v35 P0: Bootstrap col → CSS Grid(auto-fill)로 다열 복원(세로 일렬 방지, 뷰포트 무관).
+         이미지: 네이버 쇼핑 핫링크 차단 우회(referrerpolicy=no-referrer) + 실패 시 박스 유지·아이콘 플레이스홀더(빈 색 박스 금지). #}
+      <div class="src-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem;">
         {% for p in domestic_products %}
-        <div class="col-12 col-sm-6 col-lg-4">
-          <div class="card console-card h-100 pc-lift">
-            {% if p.image %}
-            <div style="height:240px;background:var(--surface-warm);display:flex;align-items:center;justify-content:center;border-radius:var(--radius-lg) var(--radius-lg) 0 0;overflow:hidden;">
-              <img src="{{ p.image }}" alt="" loading="lazy" style="max-height:100%;max-width:100%;object-fit:contain;" onerror="this.parentElement.style.display='none'">
+        <div class="card console-card h-100 pc-lift" style="overflow:hidden;">
+            <div style="height:210px;background:var(--surface-warm);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;">
+              <i class="bi bi-image" style="position:absolute;color:var(--text-muted);font-size:2.2rem;opacity:.35;" aria-hidden="true"></i>
+              {% if p.image %}
+              <img src="{{ p.image }}" alt="" loading="lazy" referrerpolicy="no-referrer"
+                   style="position:relative;max-height:100%;max-width:100%;object-fit:contain;"
+                   onerror="this.style.display='none'">
+              {% endif %}
             </div>
-            {% endif %}
             <div class="card-body p-3 d-flex flex-column">
               <a href="{{ p.link }}" target="_blank" rel="noopener" class="fw-semibold text-decoration-none text-truncate-2"
                  style="font-size:1.12rem;line-height:1.4;min-height:3.1em;" title="{{ p.title }}">{{ p.title }}</a>
@@ -208,7 +212,6 @@
                 </div>
               </details>
             </div>
-          </div>
         </div>
         {% endfor %}
       </div>

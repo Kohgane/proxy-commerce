@@ -10,7 +10,13 @@
   랜딩 헤더에 통합 **로그인** 링크 추가(브리프 '로그인/무료 시작'). topnav의 관리자·API문서·시스템상태는 `user_role=='admin'`
   게이팅(일반 유저 비노출). 가드 test_v35_landing_chrome(4) + test_header_login_branch 갱신(랜딩=통합 로그인). 전체 10407 passed.
   before/after: docs/screens/v35/landing-top-{before,after}.png.
-- ⏳ 다음: P0 소싱 카드 그리드 복원(다열·이미지 깨짐 수정) · P1 검색창 크게·글자 다듬기.
+- ✅ **P0 소싱 카드 그리드 복원 + 이미지 깨짐 (Phase 322):** v34에서 Bootstrap `col-12 col-sm-6 col-lg-4`가 뷰포트/컨테이너에
+  따라 **세로 일렬**로 무너지고, 네이버 쇼핑 이미지가 핫링크 차단으로 깨지면 `onerror`가 **박스 통째로 숨겨**(빈 색 박스/카드
+  붕괴) 정렬이 깨지던 것 수정. **CSS Grid `repeat(auto-fill,minmax(280px,1fr))`**로 다열 복원(뷰포트 무관, col 의존 제거) +
+  이미지 `referrerpolicy="no-referrer"`(네이버 핫링크 우회) + 실패 시 **박스 유지·아이콘 플레이스홀더**(bi-image, 박스 안 숨김)
+  + 카드 `overflow:hidden`(버튼 넘침 방지). 가드 test_v35_sourcing_grid(4) + test_v33_card_status·ai_sourcing_hub 갱신.
+  전체 10411 passed. before/after: docs/screens/v35/sourcing-grid-{before,after}.png.
+- ⏳ 다음: P1 검색창 크게·글자 다듬기.
 
 ## 🟦 v34 브리프 (오너 2026-06-28 — "소싱 카드 확대·개인화·디자인 실집행 + before/after 캡처 의무")
 - ★ **검수 규칙(상시): 앞으로 모든 PR에 before/after 스크린샷 첨부.** Playwright 미설치였으나 `pip install playwright`로 해결
