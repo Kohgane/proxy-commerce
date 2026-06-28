@@ -11,7 +11,12 @@
   입력** + **계정 아바타**(이니셜→/seller/me) + 햄버거, 전부 **44×44 터치 타깃**). 드로어에 언어 토글(한국어/EN) 추가(공통
   topbar 숨김 보완). '모바일 앱'(bi-phone) 버튼은 콘솔 반응형화로 제거(/seller/m 라우트는 유지). 가드 test_v36_mobile_header(3)
   + test_design_tokens_v18 아이콘셋 갱신(bi-phone→bi-search). 전체 10415 passed. before/after: docs/screens/v36/mobile-header-{before,after}.png.
-- ⏳ 다음: PART A #2 표→카드(수집목록·주문·마켓) · 플로팅 버튼 겹침 · PART B PWA 설치형 + 관리자 모바일 액션.
+- ✅ **PART A #2 넓은 표→모바일 카드 + 플로팅 버튼 겹침 (Phase 325):** 수집 이력(8열 표)이 모바일에서 `table{min-width:600px}`로
+  **가로 스크롤**(3열만 보이고 제목 잘림)되던 것 수정. 전역 강제 min-width 제거 + **`.table-cards` 반응형 CSS**(모바일에서 thead
+  숨김·각 행을 카드로 스택·셀에 `data-label`로 가격/경로/시각/상태 라벨·액션 버튼 풀폭 ≥44px). collect_history 표에 클래스+
+  data-label 적용. '처음이신가요?' For Beginners 플로팅 버튼이 본문 가리던 것 → 모바일에서 **아이콘 FAB로 축소**(라벨 숨김)
+  +본문 하단 여백(84px). 가드 test_v36_tables_cards(5). 전체 10421 passed. before/after: docs/screens/v36/tables-cards-{before,after}.png.
+- ⏳ 다음: PART A 표→카드 잔여(주문·마켓) · PART B PWA 설치형 + 관리자 모바일 액션.
 
 ## 🟩 v35 브리프 (오너 2026-06-28 — "랜딩 상단 정리·소싱 그리드 복원·검색창 + before/after 의무")
 - 대전제: "보이는 게 다." 원칙: 거짓성공/회귀 금지(pytest/CI)·토큰 단일소스·frontend-design. **완료=before/after 캡처.**
