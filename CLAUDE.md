@@ -42,7 +42,12 @@
   연동). **CSP가 fetch를 막으면 새 창 대신 인페이지로 안내**(확장 권장). 잔여 '새 탭/토큰 없이' 카피 정리. 가드
   test_v38_bookmarklet_inpage(4) + test_collect_quick_bookmarklet 갱신(token-free→인페이지). 전체 10453 passed.
   before/after: docs/screens/v38/bookmarklet-page-{before,after}.png + bookmarklet-inpage-toast.png(새 창 0·인페이지 토스트).
-- ⏳ 다음: 6.토큰 정리(폐기 토큰 목록 분리) 7.전역 회귀 점검.
+- ✅ **6. 폐기 토큰 목록 정리(활성/이력 분리) (Phase 335):** 증상=삭제(폐기)된 토큰들이 메인 목록에 '삭제됨' 행으로
+  누적돼 어지러움. 수정: personal_tokens 라우트가 list_tokens를 **활성/폐기로 분리** → 메인 표엔 **활성 토큰만**(삭제 버튼),
+  폐기 토큰은 **'발급·폐기 이력 N건'(기본 접힘 details)** 으로 분리(이력 보관, v29 상시이력 호환). 폐기 0이면 이력 섹션
+  미노출. 본인 전용·마스킹·발급 1회는 유지. 가드 test_v38_token_history_split(2) + v29_tokens 호환. 전체 10455 passed.
+  before/after: docs/screens/v38/tokens-{before,after}.png(삭제됨 행 누적 → 활성만+이력 접힘).
+- ⏳ 다음: 7.전역 회귀 점검(가짜성공·스코프·죽은버튼·표기·아이콘 전수).
 
 ## 🟦 v37 브리프 (오너 2026-06-28 — "한글 표기 통일: 고가 브릿지 → 고가브릿지")
 - P1 한글 서비스명 붙여쓰기('고가브릿지') 통일 / 영문 'Goga Bridj'(띄어쓰기) 유지 / 내부 식별자 변경 0.
