@@ -310,8 +310,9 @@ button:focus,
 }
 
 @media (max-width: 767.98px) {
+  /* v36 PART A: 공통 topbar(검색/수출형/언어/계정 나열) 숨김 → 모바일 단일 헤더로 압축 */
   .console-topbar {
-    grid-template-columns: auto auto;
+    display: none;
   }
 
   .console-search-wrap {
@@ -325,6 +326,33 @@ button:focus,
   .console-min-panel {
     min-height: auto;
   }
+}
+
+/* v36 PART A: 모바일 단일 헤더(스티키) + 44px 터치 타깃 */
+.mobile-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 1030;
+  min-height: 52px;
+  background: var(--console-surface);
+  border-bottom: 1px solid var(--console-border);
+}
+.mobile-topbar-brand { color: var(--text-strong); font-size: 1.02rem; }
+.mobile-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; padding: 0;
+  border: 1px solid var(--console-border); border-radius: .6rem;
+  background: var(--console-surface); color: var(--text-strong); font-size: 1.15rem;
+}
+.mobile-icon-btn:active { background: var(--console-primary-weak); }
+.mobile-account-avatar {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; border-radius: 50%;
+  background: var(--teal); color: #fff; font-weight: 700; text-decoration: none; font-size: 1.05rem;
+}
+.mobile-search {
+  position: sticky; top: 52px; z-index: 1029;
+  background: var(--console-surface); border-bottom: 1px solid var(--console-border);
 }
 
 /* 고급 기능 접이식 네비(v5 — 비기너 과부하 방지) */
