@@ -2,6 +2,17 @@
 
 > 이 파일은 매 세션 시작 시 로드된다. 오너(Kohgane) 지시·검증된 팩트를 누적 기록한다.
 
+## 🟦 v34 브리프 (오너 2026-06-28 — "소싱 카드 확대·개인화·디자인 실집행 + before/after 캡처 의무")
+- ★ **검수 규칙(상시): 앞으로 모든 PR에 before/after 스크린샷 첨부.** Playwright 미설치였으나 `pip install playwright`로 해결
+  (브라우저는 /opt/pw-browsers 사전설치). 단 Bootstrap CDN은 에이전트 프록시가 403 차단 → 샌드박스 캡처는 npm으로 받은
+  로컬 bootstrap.min.css를 페이지에 add_style_tag 주입해 실제 스타일로 촬영(앱 무변경). 스샷은 docs/screens/<ver>/.
+- ✅ **P0 소싱 카드 확대 + P1 아마존 국가 드롭다운 (Phase 317):** AI소싱 국내 베스트셀러 카드 — 이미지 **원본비율
+  contain**(240px warm-bg 박스, 잘림 0) + **데스크톱 3열**(col-lg-4, 큰 카드) + 제목 1.12rem(≥17px)·가격 1.32rem·
+  버튼 ≥44px("소싱처에서 비슷한 상품 찾기"). 마켓 검색은 타오바오/1688/알리/테무 단일버튼 + **아마존 국가 드롭다운**
+  (미국~인도 10개국, `_AMAZON_SEARCH_COUNTRIES`). `_sourcing_search_links` 이모지 필드 제거. 가드 갱신(card v34·amazon countries).
+  전체 10396 passed. before/after: docs/screens/v34/sourcing-{before,after}.png.
+- ⏳ 다음: 개인화 헤더(내 계정/플랜/소싱처 칩) · 디자인 실집행 추가 · 랜딩 검수.
+
 ## 🟪 v33/마스터 브리프 (오너 2026-06-27 — v24~v33 통합 마스터, 1달 출시 로드맵)
 - (1~4주차 대부분은 이번 세션에서 v24~v32로 완료됨 — 404·삭제영속·이력·토큰·전체수집·메타숨김·Mock·네이버·디자인·랜딩·버튼·아마존·활성화.)
 - ✅ **3주차 3-5 소싱 카드 확대 + 상태값 한글화 (Phase 316):** 소싱 허브 국내 베스트셀러 카드 — 이미지 130→**180px**,

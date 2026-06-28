@@ -478,13 +478,28 @@ def _sourcing_search_links(query: str) -> "list[dict[str, str]]":
     q = quote_plus((query or "").strip())
     if not q:
         return []
+    # v34: 단일 버튼 마켓만(아마존은 국가 선택이라 템플릿 드롭다운). 이모지 0.
     return [
-        {"name": "타오바오", "emoji": "🛒", "url": f"https://s.taobao.com/search?q={q}"},
-        {"name": "1688", "emoji": "🏭", "url": f"https://s.1688.com/selloffer/offer_search.htm?keywords={q}"},
-        {"name": "알리익스프레스", "emoji": "🌏", "url": f"https://www.aliexpress.com/wholesale?SearchText={q}"},
-        {"name": "테무", "emoji": "🟠", "url": f"https://www.temu.com/search_result.html?search_key={q}"},
-        {"name": "아마존", "emoji": "📦", "url": f"https://www.amazon.com/s?k={q}"},
+        {"name": "타오바오", "url": f"https://s.taobao.com/search?q={q}"},
+        {"name": "1688", "url": f"https://s.1688.com/selloffer/offer_search.htm?keywords={q}"},
+        {"name": "알리익스프레스", "url": f"https://www.aliexpress.com/wholesale?SearchText={q}"},
+        {"name": "테무", "url": f"https://www.temu.com/search_result.html?search_key={q}"},
     ]
+
+
+# v34 P1: 아마존 국가별 검색 도메인(주요국부터) — 소싱 카드 '아마존에서 검색' 드롭다운.
+_AMAZON_SEARCH_COUNTRIES = [
+    {"name": "미국", "tld": "com", "currency": "USD"},
+    {"name": "일본", "tld": "co.jp", "currency": "JPY"},
+    {"name": "영국", "tld": "co.uk", "currency": "GBP"},
+    {"name": "독일", "tld": "de", "currency": "EUR"},
+    {"name": "프랑스", "tld": "fr", "currency": "EUR"},
+    {"name": "캐나다", "tld": "ca", "currency": "CAD"},
+    {"name": "호주", "tld": "com.au", "currency": "AUD"},
+    {"name": "싱가포르", "tld": "sg", "currency": "SGD"},
+    {"name": "멕시코", "tld": "com.mx", "currency": "MXN"},
+    {"name": "인도", "tld": "in", "currency": "INR"},
+]
 
 
 def _build_sourcing_analysis(domestic_products: "list[dict[str, Any]]",
@@ -6014,6 +6029,7 @@ def sourcing_hub():
         domestic_products=domestic_products,
         domestic_enabled=domestic_enabled,
         sourcing_search_links=_sourcing_search_links(keyword),
+        amazon_search_countries=_AMAZON_SEARCH_COUNTRIES,
         analysis=analysis,
         collect_url=(request.args.get("url") or "").strip(),
         notice=(request.args.get("notice") or "").strip(),

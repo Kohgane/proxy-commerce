@@ -52,8 +52,17 @@ def test_sourcing_search_links():
     from src.seller_console.views import _sourcing_search_links
     links = _sourcing_search_links("요가 레깅스")
     names = {l["name"] for l in links}
-    assert {"타오바오", "1688", "알리익스프레스", "테무", "아마존"} <= names
-    assert all(l["url"].startswith("http") for l in links)
+    # v34: 단일 버튼 마켓만(아마존은 국가 드롭다운으로 분리). 이모지 필드 제거.
+    assert {"타오바오", "1688", "알리익스프레스", "테무"} <= names
+    assert "아마존" not in names
+    assert all(l["url"].startswith("http") and "emoji" not in l for l in links)
+
+
+def test_amazon_search_countries_present():
+    from src.seller_console.views import _AMAZON_SEARCH_COUNTRIES
+    names = {c["name"] for c in _AMAZON_SEARCH_COUNTRIES}
+    assert {"미국", "일본", "영국", "독일", "싱가포르"} <= names
+    assert all(c.get("tld") and c.get("currency") for c in _AMAZON_SEARCH_COUNTRIES)
 
 
 # ---- 허브 렌더(키워드 시 섹션 노출, 키 없으면 정직 안내) ----
