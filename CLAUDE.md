@@ -35,7 +35,14 @@
   (사이트 재렌더로 FAB 날아가도 복구) + **history pushState/replaceState/popstate 후킹**(SPA 라우팅 즉시 재주입). 목록=중앙
   바/상세=FAB 상호배타 유지. manifest 1.5.14→1.5.15. 헤드리스 주입 검증(상품 메타 0 페이지에서 FAB 없음→있음). 가드
   test_v38_fab_always_on_sourcing(4) + 영향 테스트 갱신. 전체 10449 passed. before/after: docs/screens/v38/fab-always-{before,after}.png.
-- ⏳ 다음: 5.북마클릿 인페이지 6.토큰 정리 7.전역 점검.
+- ✅ **5. 북마클릿 새 창 금지 → 인페이지 소형 알림 (Phase 334):** 기존 북마클릿은 `window.open(/seller/collect/receiver)`로
+  **새 탭**을 열어 postMessage 수집(오너 불만). 수정: **새 창/팝업 0** — '내 북마클릿 만들기' 버튼이 `/seller/me/tokens/generate`로
+  내 collect.write 토큰 발급→북마클릿에 baked → 클릭 시 **백그라운드 fetch**(`/api/v1/collect/extension`, Bearer, v17 CORS '*')로
+  수집하고 **인페이지 소형 토스트**(고가수집기 위치 우하단)로만 결과 표시. 서버 영속 저장 확인 시에만 ok(가짜 성공 0, v38 #1
+  연동). **CSP가 fetch를 막으면 새 창 대신 인페이지로 안내**(확장 권장). 잔여 '새 탭/토큰 없이' 카피 정리. 가드
+  test_v38_bookmarklet_inpage(4) + test_collect_quick_bookmarklet 갱신(token-free→인페이지). 전체 10453 passed.
+  before/after: docs/screens/v38/bookmarklet-page-{before,after}.png + bookmarklet-inpage-toast.png(새 창 0·인페이지 토스트).
+- ⏳ 다음: 6.토큰 정리(폐기 토큰 목록 분리) 7.전역 회귀 점검.
 
 ## 🟦 v37 브리프 (오너 2026-06-28 — "한글 표기 통일: 고가 브릿지 → 고가브릿지")
 - P1 한글 서비스명 붙여쓰기('고가브릿지') 통일 / 영문 'Goga Bridj'(띄어쓰기) 유지 / 내부 식별자 변경 0.

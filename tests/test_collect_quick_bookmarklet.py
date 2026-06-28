@@ -59,11 +59,12 @@ def test_quick_collect_rejects_bad_url(client):
     assert r.status_code == 400
 
 
-def test_bookmarklet_page_is_token_free(client):
+def test_bookmarklet_page_inpage_no_new_window(client):
+    # v38 #5: 새 창 금지 → 내 토큰 백그라운드 fetch + 인페이지 토스트로 전환.
     html = client.get("/seller/bookmarklet").get_data(as_text=True)
-    assert "/seller/collect/receiver" in html   # postMessage 수신 페이지로 전송
-    assert "Bearer" not in html                 # 토큰 fetch 방식 제거됨
-    assert "토큰이 필요 없습니다" in html
+    assert "window.open" not in html            # 새 창/팝업 0
+    assert "/api/v1/collect/extension" in html  # 백그라운드 fetch
+    assert "Bearer" in html                     # 내 토큰 인증
     assert "고가수집기" in html                  # 라벨
 
 
