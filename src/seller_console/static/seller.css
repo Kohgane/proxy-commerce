@@ -146,9 +146,10 @@ input[type="tel"] {
   main.flex-grow-1 {
     padding: 1rem !important;
   }
-  /* 테이블 overflow */
-  table {
-    min-width: 600px;
+  /* v36 PART A: 표는 .table-cards(콘솔 CSS)로 카드화 — 전역 강제 min-width(가로 스크롤) 제거.
+     .table-cards가 아닌 표만 .table-responsive 컨테이너 안에서 자체 스크롤되도록 가벼운 하한. */
+  .table-responsive > table:not(.table-cards) {
+    min-width: 560px;
   }
 }
 

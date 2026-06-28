@@ -355,6 +355,47 @@ button:focus,
   background: var(--console-surface); border-bottom: 1px solid var(--console-border);
 }
 
+/* v36 PART A: 넓은 표 → 모바일 카드 스택(가로 스크롤 대신). .table-cards 표에만 적용. */
+@media (max-width: 767.98px) {
+  .table-responsive:has(> .table-cards) { overflow: visible; }
+  table.table-cards { min-width: 0 !important; width: 100%; }
+  table.table-cards > thead { display: none; }
+  table.table-cards, table.table-cards > tbody { display: block; width: 100%; }
+  table.table-cards > tbody > tr {
+    display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .6rem;
+    border: 1px solid var(--console-border); border-radius: 12px;
+    padding: .65rem .8rem; margin-bottom: .7rem; background: var(--console-surface);
+  }
+  table.table-cards > tbody > tr > td {
+    border: none !important; padding: .2rem 0; min-height: 0;
+    display: flex; align-items: center; gap: .5rem; font-size: .95rem;
+  }
+  table.table-cards > tbody > tr > td[data-label]::before {
+    content: attr(data-label); font-weight: 600; color: var(--text-muted);
+    font-size: .78rem; min-width: 60px; flex: 0 0 60px;
+  }
+  /* 상단 한 줄: 체크박스 + 썸네일 + 제목 */
+  table.table-cards td.cardcell-check { flex: 0 0 auto; }
+  table.table-cards td.cardcell-img { flex: 0 0 auto; }
+  table.table-cards td.cardcell-title { flex: 1 1 55%; max-width: none !important; min-width: 0; }
+  /* 라벨이 있는 메타(가격·경로·시각·상태)는 각자 한 줄 */
+  table.table-cards td[data-label] { flex: 1 1 100%; }
+  /* 액션 버튼 풀폭(≥44px 터치) */
+  table.table-cards td.cardcell-actions { flex: 1 1 100%; padding-top: .4rem; }
+  table.table-cards td.cardcell-actions .btn {
+    width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: center;
+  }
+
+  /* v36 PART A: For Beginners 플로팅 버튼이 본문을 가리지 않게 — 아이콘 FAB로 축소 + 본문 하단 여백 */
+  #fbWrap #fbBtn {
+    width: 48px; height: 48px; padding: 0; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center; font-size: 1.3rem;
+  }
+  #fbWrap #fbBtn .fb-label { display: none; }
+  #fbWrap #fbHide { display: none; }
+  .console-content { padding-bottom: 84px; }
+}
+
 /* 고급 기능 접이식 네비(v5 — 비기너 과부하 방지) */
 .adv-nav { margin-top: .4rem; border-top: 1px solid var(--console-border); padding-top: .4rem; }
 .console-nav-adv-summary {
