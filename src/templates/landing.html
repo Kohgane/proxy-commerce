@@ -2,7 +2,7 @@
    이모지 0 · 단일 아이콘셋(bi-*) · 토큰 단일소스 · 실데이터만(가짜 수치/혜택 0) · reduced-motion 존중. #}
 {% extends "_base_app.html" %}
 
-{% block title %}{{ brand_name|default('GOGA BRIDJ', true) }} — 해외 상품 수집부터 마켓 등록까지{% endblock %}
+{% block title %}{{ brand_name|default('gogabridj', true) }} — 해외 상품 수집부터 마켓 등록까지{% endblock %}
 {% block head %}
 <link rel="privacy-policy" href="/privacy">
 <style>
@@ -113,7 +113,7 @@
 
 <nav class="lpnav" id="lpnav">
   <div class="inner">
-    <a href="/" class="logo"><img src="/seller/static/favicon.svg?v=176" alt=""> {{ brand_name|default('GOGA BRIDJ', true) }}</a>
+    <a href="/" class="logo"><img src="/seller/static/favicon.svg?v=176" alt=""> {{ brand_name|default('gogabridj', true) }}</a>
     <div class="ms-auto d-flex align-items-center gap-3">
       <a href="#features" class="navlink d-none d-md-inline">{{ 'Features' if EN else '기능' }}</a>
       <a href="#how" class="navlink d-none d-md-inline">{{ 'How it works' if EN else '작동 방식' }}</a>
@@ -166,7 +166,7 @@
       </div>
       <div class="reveal">
         <hr class="hairline d-md-none">
-        <div class="overline">{{ 'With Goga Bridj' if EN else '고가브릿지라면' }}</div>
+        <div class="overline">{{ 'With gogabridj' if EN else '고가브릿지라면' }}</div>
         <h2 class="disp">{{ 'All in one flow' if EN else '한 번에, 흐름대로' }}</h2>
         <p class="lead">{{ 'Collect with one click, auto-translate, set prices in bulk, and list to many markets at once.' if EN else '한 번에 수집·자동 번역·일괄 가격, 그리고 여러 마켓에 한 번에 등록. 다리(Bridj)처럼 이어줍니다.' }}</p>
       </div>
@@ -287,7 +287,7 @@
 
 <footer class="lpfoot">
   <div class="inner">
-    <span class="fw-semibold" style="color:var(--text);">{{ brand_name|default('GOGA BRIDJ', true) }}</span>
+    <span class="fw-semibold" style="color:var(--text);">{{ brand_name|default('gogabridj', true) }}</span>
     <a href="/seller/about">{{ "About" if EN else "소개" }}</a>
     <a href="/seller/start">{{ "Get started" if EN else "시작하기" }}</a>
     <a href="/privacy">개인정보처리방침</a>

@@ -58,8 +58,8 @@ def main() -> None:
     mark = Image.open(MASTER).convert("RGBA").resize((430, 430), Image.LANCZOS)
     card.alpha_composite(mark, (96, (H - 430) // 2))
 
-    # 워드마크 GOGA BRIDJ — 세리프 금, 자간 넓게. 우측 영역에 맞춰 자동 축소.
-    word = "GOGA BRIDJ"
+    # 워드마크 gogabridj (v38: 전부 소문자·붙임) — 세리프 금, 자간 넓게. 우측 영역에 맞춰 자동 축소.
+    word = "gogabridj"
     wx = 575
     avail = W - wx - 48                       # 우측 여백
     size, tracking = 96, 6

@@ -13,7 +13,7 @@ SMTP_HOST = os.getenv('SMTP_HOST', 'smtp.gmail.com')
 SMTP_PORT = int(os.getenv('SMTP_PORT', '587'))
 SMTP_USER = os.getenv('SMTP_USER', '')
 SMTP_PASS = os.getenv('SMTP_PASS', '')
-SMTP_FROM_NAME = os.getenv('SMTP_FROM_NAME', 'Goga Bridj')
+SMTP_FROM_NAME = os.getenv('SMTP_FROM_NAME', 'gogabridj')
 SMTP_FROM_EMAIL = os.getenv('SMTP_FROM_EMAIL', '')
 
 MAX_RETRIES = 3

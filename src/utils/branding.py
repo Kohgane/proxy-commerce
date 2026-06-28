@@ -3,14 +3,14 @@ from __future__ import annotations
 import os
 import re
 
-# 고가브릿지(Goga Bridj) — 셀러용 크로스보더 커머스 SaaS. 수집→등록 사이를 잇는 '다리(Bridj)'.
-# ※ 영문 정식 표기는 'Goga Bridj'(e 없음, 띄어쓰기 유지). 한글 정식 표기는 '고가브릿지'(붙여쓰기, v37).
-_DEFAULT_BRAND_EN = "Goga Bridj"
+# 고가브릿지(gogabridj) — 셀러용 크로스보더 커머스 SaaS. 수집→등록 사이를 잇는 '다리(Bridj)'.
+# ※ v38 확정 표기: 영문 'gogabridj'(전부 소문자·붙임), 한글 '고가브릿지'(붙여쓰기). 띄어쓴 옛 표기 폐기.
+_DEFAULT_BRAND_EN = "gogabridj"
 _DEFAULT_BRAND_KO = "고가브릿지"
 
 
 def get_brand_name() -> str:
-    """영문 브랜드명 (기본 Goga Bridj). BRAND_NAME env로 override."""
+    """영문 브랜드명 (기본 gogabridj). BRAND_NAME env로 override."""
     return (os.getenv("BRAND_NAME") or _DEFAULT_BRAND_EN).strip() or _DEFAULT_BRAND_EN
 
 

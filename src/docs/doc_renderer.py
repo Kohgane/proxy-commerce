@@ -134,7 +134,7 @@ class DocRenderer:
 <nav class="navbar navbar-dark bg-dark">
   <div class="container-fluid">
     <a class="navbar-brand fw-bold" href="/">
-      <i class="bi bi-bag-check-fill text-success me-1"></i> Goga Bridj
+      <i class="bi bi-bag-check-fill text-success me-1"></i> gogabridj
     </a>
     <div class="d-flex gap-2">
       <a href="/" class="btn btn-sm btn-outline-light">🏠 홈</a>
