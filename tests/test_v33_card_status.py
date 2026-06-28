@@ -18,12 +18,14 @@ def client():
 
 
 def test_sourcing_card_enlarged_and_no_emoji():
-    # 상품 카드 이미지 큼직 + 글자 상향 + 버튼 패딩, 검색 링크 이모지 제거
-    assert "height:180px" in SOURCING            # 큰 이미지
-    assert "font-size:1.06rem" in SOURCING        # 제목 ≥17px
-    assert "font-size:1.15rem" in SOURCING        # 가격 강조
-    assert "btn btn-cta w-100 py-2" in SOURCING   # 버튼 패딩
-    assert "{{ s.emoji }}" not in SOURCING        # 이모지 제거
+    # v34: 이미지 원본비율 크게(contain) + 3열 그리드 + 글자/버튼 확대 + 아마존 국가 드롭다운
+    assert "height:240px" in SOURCING and "object-fit:contain" in SOURCING   # 잘림 없이 크게
+    assert "col-12 col-sm-6 col-lg-4" in SOURCING                            # 데스크톱 3열(큰 카드)
+    assert "font-size:1.12rem" in SOURCING                                    # 제목 ≥17px
+    assert "font-size:1.32rem" in SOURCING                                    # 가격 강조
+    assert "min-height:44px" in SOURCING                                      # 버튼 ≥40px
+    assert "아마존에서 검색 (국가)" in SOURCING                                # 아마존 국가 드롭다운
+    assert "{{ s.emoji }}" not in SOURCING                                    # 이모지 제거
 
 
 def test_orders_status_korean_on_ko(client):
