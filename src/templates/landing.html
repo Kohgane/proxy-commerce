@@ -93,6 +93,12 @@
 </style>
 {% endblock %}
 
+{# v35 P0: 랜딩은 자체 헤더(.lpnav)·푸터(.lpfoot)를 가지므로 공통 topnav/푸터/메인 패딩을 제거
+   → 상단 중복 메뉴·흰 여백 0(히어로 다크 vault가 상단에 바로 붙음). #}
+{% block topnav %}{% endblock %}
+{% block main_class %}{% endblock %}
+{% block app_footer %}{% endblock %}
+
 {% block content %}
 {% set EN = (lang == 'en') %}
 <div class="lp">
@@ -112,6 +118,7 @@
       <a href="#features" class="navlink d-none d-md-inline">{{ 'Features' if EN else '기능' }}</a>
       <a href="#how" class="navlink d-none d-md-inline">{{ 'How it works' if EN else '작동 방식' }}</a>
       <a href="#pricing" class="navlink d-none d-sm-inline">{{ 'Pricing' if EN else '요금' }}</a>
+      <a href="/auth/login" class="navlink">{{ 'Log in' if EN else '로그인' }}</a>
       <a href="/seller/start" class="pill pill-fill" style="padding:.45rem 1.1rem;font-size:.9rem;">{{ 'Start free' if EN else '무료로 시작' }}</a>
     </div>
   </div>

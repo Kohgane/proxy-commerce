@@ -2,6 +2,16 @@
 
 > 이 파일은 매 세션 시작 시 로드된다. 오너(Kohgane) 지시·검증된 팩트를 누적 기록한다.
 
+## 🟩 v35 브리프 (오너 2026-06-28 — "랜딩 상단 정리·소싱 그리드 복원·검색창 + before/after 의무")
+- 대전제: "보이는 게 다." 원칙: 거짓성공/회귀 금지(pytest/CI)·토큰 단일소스·frontend-design. **완료=before/after 캡처.**
+- ✅ **P0 랜딩 최상단 정리 (Phase 321):** 랜딩이 공통 dark topnav(셀러콘솔/관리자/API문서/시스템상태/OAuth로그인/가입)를
+  자체 헤더(.lpnav) **위에 중복** 렌더 + `<main container-fluid py-4>` 흰 여백이 히어로 위에 끼던 것 수정. `_base_app.html`에
+  오버라이드 블록(`topnav`/`main_class`/`app_footer`) 신설 → landing이 셋 다 비워 **공통 chrome 제거**(자체 헤더·푸터 단일).
+  랜딩 헤더에 통합 **로그인** 링크 추가(브리프 '로그인/무료 시작'). topnav의 관리자·API문서·시스템상태는 `user_role=='admin'`
+  게이팅(일반 유저 비노출). 가드 test_v35_landing_chrome(4) + test_header_login_branch 갱신(랜딩=통합 로그인). 전체 10407 passed.
+  before/after: docs/screens/v35/landing-top-{before,after}.png.
+- ⏳ 다음: P0 소싱 카드 그리드 복원(다열·이미지 깨짐 수정) · P1 검색창 크게·글자 다듬기.
+
 ## 🟦 v34 브리프 (오너 2026-06-28 — "소싱 카드 확대·개인화·디자인 실집행 + before/after 캡처 의무")
 - ★ **검수 규칙(상시): 앞으로 모든 PR에 before/after 스크린샷 첨부.** Playwright 미설치였으나 `pip install playwright`로 해결
   (브라우저는 /opt/pw-browsers 사전설치). 단 Bootstrap CDN은 에이전트 프록시가 403 차단 → 샌드박스 캡처는 npm으로 받은

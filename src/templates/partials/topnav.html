@@ -11,12 +11,15 @@
             aria-controls="topNav" aria-expanded="false" aria-label="메뉴 열기">
       <span class="navbar-toggler-icon"></span>
     </button>
+    {# v35 P0: 관리자·API 문서·시스템 상태는 운영용 → 관리자에게만 노출(일반 유저 비노출). #}
+    {% set _nav_role = session.get('user_role') if session is defined else None %}
     <div class="collapse navbar-collapse" id="topNav">
       <ul class="navbar-nav gap-1">
         <li class="nav-item">
           <a class="nav-link {% if request.path.startswith('/seller') %}active fw-semibold{% endif %}"
              href="/seller/"><i class="bi bi-shop"></i> 셀러 콘솔</a>
         </li>
+        {% if _nav_role == 'admin' %}
         <li class="nav-item">
           <a class="nav-link {% if request.path.startswith('/admin') %}active fw-semibold{% endif %}"
              href="/admin/"><i class="bi bi-tools"></i> 관리자</a>
@@ -29,6 +32,7 @@
           <a class="nav-link {% if request.path == '/health/deep' %}active fw-semibold{% endif %}"
              href="/health/deep"><i class="bi bi-heart-pulse"></i> 시스템 상태</a>
         </li>
+        {% endif %}
       </ul>
       {% set _user_id = session.get('user_id') if session is defined else None %}
       {% set _user_email = session.get('user_email') if session is defined else None %}
