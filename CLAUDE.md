@@ -35,7 +35,12 @@
   패턴 적용(클래스+`data-label`+`cardcell-title/img/actions`) — 모바일에서 가로 스크롤·세로 문자깨짐 제거, 각 주문/상품이
   카드로 스택(마켓 배지+번호 헤더·라벨 필드·풀폭 운송장/상태 버튼 ≥44px). 가드 test_v36_orders_markets_cards(3).
   전체 10432 passed. before/after: docs/screens/v36/orders-cards-{before,after}.png.
-- ⏳ 다음: PART B 관리자 모바일 액션 흐름 점검(URL수집→편집→업로드→주문→CS) · catalog 등 잔여 표.
+- ✅ **PART B #2 관리자 모바일 액션 흐름 검증 + catalog 표→카드 (Phase 329):** 폰(390px)에서 핵심 액션 흐름
+  **URL 수집(manual-collect)→편집(collect_preview)→마켓 업로드 모달→주문→CS** 전부 **가로 스크롤 0·정상 동작** 확인
+  (PART A 헤더 압축·표→카드 덕분). 캡처 증거: docs/screens/v36/mobile-flow-{edit,upload-modal}.png. 남은 넓은 표
+  **catalog(내 상품, 7열)**도 `.table-cards` 패턴 적용(클래스+data-label+cardcell-*). 가드 test_v36_catalog_cards_flow(2:
+  catalog 카드화·액션 라우트 200). 전체 10434 passed. → **v36 PART A·B 큰 줄기 완주**(반응형 헤더·표→카드 4화면·
+  플로팅 버튼·PWA 설치형·액션 흐름 검증). PART C(네이티브 래핑)는 추후 옵션.
 
 ## 🟩 v35 브리프 (오너 2026-06-28 — "랜딩 상단 정리·소싱 그리드 복원·검색창 + before/after 의무")
 - 대전제: "보이는 게 다." 원칙: 거짓성공/회귀 금지(pytest/CI)·토큰 단일소스·frontend-design. **완료=before/after 캡처.**
