@@ -3166,12 +3166,50 @@ def my_page():
         except Exception as exc:
             logger.warning("마이페이지 사용자 조회 실패: %s", exc)
 
+    # v34 P0: 개인 전용 작업공간 — 내 플랜·토큰·연동 마켓·소싱처·수집 수(전부 본인 스코프, 가짜 0 금지)
+    sid = _seller_id()
+    plan, token_balance = "free", 0
+    try:
+        from . import billing_store
+        _acc = billing_store.get_account(sid) or {}
+        plan = _acc.get("plan", "free")
+        token_balance = int(_acc.get("token_balance", 0) or 0)
+    except Exception:
+        pass
+    markets_connected, markets_total = 0, 0
+    try:
+        from . import market_credentials as _mc
+        markets_total = len(_mc.SUPPORTED_MARKETS)
+        markets_connected = sum(1 for m in _mc.SUPPORTED_MARKETS if _mc.is_connected(sid, m))
+    except Exception:
+        pass
+    sources_count = 0
+    try:
+        from .my_sources_store import list_sources as _list_my_sources
+        sources_count = len(_list_my_sources())
+    except Exception:
+        pass
+    collected_count = 0
+    try:
+        collected_count = int((collect_history_store.summary(seller_ids=_seller_identities()) or {}).get("total", 0))
+    except Exception:
+        pass
+    from . import billing_store as _bs
+    plan_meta = _bs.PLANS.get(plan, _bs.PLANS["free"])
+
     return render_template(
         "me.html",
         page="me",
         user=user,
         telegram_active=bool(os.getenv("TELEGRAM_BOT_TOKEN")),
         resend_active=bool(os.getenv("RESEND_API_KEY")),
+        plan=plan,
+        plan_meta=plan_meta,
+        token_balance=token_balance,
+        markets_connected=markets_connected,
+        markets_total=markets_total,
+        sources_count=sources_count,
+        collected_count=collected_count,
     )
 
 
