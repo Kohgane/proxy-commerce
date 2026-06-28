@@ -23,8 +23,13 @@ def test_header_branch_logged_out_shows_guest_actions(client, path):
     html = resp.get_data(as_text=True)
     if path == "/not-found-phase146":
         assert resp.status_code == 404
-    assert "OAuth 로그인" in html
-    assert "이메일 로그인" in html
+    if path == "/":
+        # v35: 랜딩은 공통 topnav 대신 자체 헤더(통합 로그인 + 무료 시작 CTA)
+        assert 'href="/auth/login"' in html and "로그인" in html
+        assert "/seller/start" in html
+    else:
+        assert "OAuth 로그인" in html
+        assert "이메일 로그인" in html
 
 
 @pytest.mark.parametrize("path", ["/", "/seller/dashboard", "/seller/about", "/seller/orders/auto", "/not-found-phase146"])
