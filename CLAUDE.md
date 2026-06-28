@@ -28,7 +28,14 @@
   스탬프를 **브릿지 마크(KGP_BRIDGE_SVG, 옛 KGP_GLOVE_SVG 개명)**로, 토스트는 색으로 성패 표시(이모지 0). 📌💡도 제거.
   바깥 javascript: 북마클릿 지구본은 Chrome 강제(불가피, 안내 명시) — 확장 권장. 가드 test_v38_icons_bridge_only(4) +
   영향 테스트 갱신(favicon v177·KGP_BRIDGE_SVG). 전체 10445 passed. before/after: docs/screens/v38/icon-mark-before-after.png.
-- ⏳ 다음: 4.수집기 노출+중앙버튼 5.북마클릿 인페이지 6.토큰 정리 7.전역 점검.
+- ✅ **4. 고가수집기 버튼 소싱처 항상 노출 + 진입점 복원 (Phase 333):** 원인=injectCollectButton이 host 게이트 외에도
+  `looksLikeProductPage()/kgpIsDetailUrl()` **상품 페이지 휴리스틱 가드**를 둬서, SPA(Temu)·카테고리·검색·홈처럼 메타가
+  빈약한 화면에선 버튼이 **안 떴음**("어떤 창은 안 뜸"·"예전 중앙에 뜨던 버튼도 안 뜸"). 수정: 이미 host 게이트로 소싱처에
+  한정되므로 **휴리스틱 가드 제거 → 소싱처(또는 앱 진입)면 항상 노출**(우측-중앙 FAB 진입점 복원). + **MutationObserver**
+  (사이트 재렌더로 FAB 날아가도 복구) + **history pushState/replaceState/popstate 후킹**(SPA 라우팅 즉시 재주입). 목록=중앙
+  바/상세=FAB 상호배타 유지. manifest 1.5.14→1.5.15. 헤드리스 주입 검증(상품 메타 0 페이지에서 FAB 없음→있음). 가드
+  test_v38_fab_always_on_sourcing(4) + 영향 테스트 갱신. 전체 10449 passed. before/after: docs/screens/v38/fab-always-{before,after}.png.
+- ⏳ 다음: 5.북마클릿 인페이지 6.토큰 정리 7.전역 점검.
 
 ## 🟦 v37 브리프 (오너 2026-06-28 — "한글 표기 통일: 고가 브릿지 → 고가브릿지")
 - P1 한글 서비스명 붙여쓰기('고가브릿지') 통일 / 영문 'Goga Bridj'(띄어쓰기) 유지 / 내부 식별자 변경 0.

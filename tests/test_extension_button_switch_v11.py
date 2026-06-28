@@ -25,8 +25,10 @@ def test_mutual_exclusion_in_refresh():
     assert "const isList = cards.length >= 3" in CS
     assert "kgpRemoveFab();" in CS
     assert "kgpRemoveListing();" in CS
-    # FAB 가드가 상세 URL도 허용
-    assert "!looksLikeProductPage() && !kgpIsDetailUrl()" in CS
+    # v38 #4: FAB는 더 이상 상품 페이지 휴리스틱으로 막지 않음(소싱처면 항상 노출).
+    #         host 게이트만 유지(소싱처/앱 진입 한정).
+    assert "if (!looksLikeProductPage() && !kgpIsDetailUrl()) return;" not in CS
+    assert "if (!kgpHostAllowed() && !kgpEntrySession()) return;" in CS
 
 
 def test_bookmarklet_button_no_emoji_no_globe():
