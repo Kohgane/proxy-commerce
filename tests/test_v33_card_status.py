@@ -18,9 +18,9 @@ def client():
 
 
 def test_sourcing_card_enlarged_and_no_emoji():
-    # v34: 이미지 원본비율 크게(contain) + 3열 그리드 + 글자/버튼 확대 + 아마존 국가 드롭다운
-    assert "height:240px" in SOURCING and "object-fit:contain" in SOURCING   # 잘림 없이 크게
-    assert "col-12 col-sm-6 col-lg-4" in SOURCING                            # 데스크톱 3열(큰 카드)
+    # v35: CSS Grid 다열 복원 + 이미지 원본비율(contain) + 글자/버튼 확대 + 아마존 국가 드롭다운
+    assert "object-fit:contain" in SOURCING                                  # 잘림 없이
+    assert "repeat(auto-fill,minmax(280px,1fr))" in SOURCING                 # 다열 그리드(세로 일렬 방지)
     assert "font-size:1.12rem" in SOURCING                                    # 제목 ≥17px
     assert "font-size:1.32rem" in SOURCING                                    # 가격 강조
     assert "min-height:44px" in SOURCING                                      # 버튼 ≥40px

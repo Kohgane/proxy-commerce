@@ -12,12 +12,13 @@ def _img(w, h, color, label):
     b = io.BytesIO(); im.save(b, "PNG")
     return "data:image/png;base64," + base64.b64encode(b.getvalue()).decode()
 
-# 다양한 비율(세로/가로/정사각) → object-fit 차이가 보이게
+# 일부는 정상 이미지(다양한 비율), 일부는 로드 실패 URL → 깨짐 처리(플레이스홀더 vs 박스 붕괴) 대비가 보이게
+_BROKEN = "http://127.0.0.1:9/nope.jpg"  # 연결 거부 → onerror 발동(네이버 핫링크 차단 상황 모사)
 SAMPLE = [
     {"title":"베이직 에코백 캔버스 데일리 숄더백 대용량","price":12900,"mall":"스토어A","link":"#","image":_img(600,800,(180,120,90),"세로형")},
-    {"title":"프리미엄 가죽 토트백","price":89000,"mall":"스토어B","link":"#","image":_img(900,500,(90,120,150),"가로형")},
+    {"title":"프리미엄 가죽 토트백","price":89000,"mall":"스토어B","link":"#","image":_BROKEN},
     {"title":"캐주얼 크로스백 미니","price":23500,"mall":"스토어C","link":"#","image":_img(700,700,(120,150,90),"정사각")},
-    {"title":"방수 백팩 노트북 수납 남녀공용","price":45000,"mall":"스토어D","link":"#","image":_img(560,840,(150,90,120),"세로형2")},
+    {"title":"방수 백팩 노트북 수납 남녀공용","price":45000,"mall":"스토어D","link":"#","image":_BROKEN},
     {"title":"빈티지 메신저백","price":31000,"mall":"스토어E","link":"#","image":_img(800,600,(110,110,110),"가로형2")},
     {"title":"나일론 버킷백","price":18900,"mall":"스토어F","link":"#","image":_img(700,700,(90,140,140),"정사각2")},
 ]
