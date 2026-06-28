@@ -3,7 +3,7 @@
 {% block content %}
 <div class="container-fluid py-4">
   <h1 class="h3 mb-1"><i class="bi bi-bookmark-star"></i> 북마클릿 (고급)</h1>
-  <p class="text-muted mb-3">쇼핑 페이지에서 클릭 한 번으로 상품을 수집합니다. <strong>토큰 없이</strong> 바로 작동해요(로그인만 되어 있으면 됩니다).</p>
+  <p class="text-muted mb-3">쇼핑 페이지에서 클릭 한 번으로 상품을 수집합니다. <strong>새 창 없이 그 자리에서</strong> ‘수집 완료’가 떠요(아래에서 내 북마클릿을 한 번만 만들면 됩니다).</p>
 
   <div class="alert alert-primary d-flex align-items-center gap-2 mb-4" role="note">
     <span style="font-size:1.3rem"><i class="bi bi-puzzle"></i></span>
@@ -47,8 +47,8 @@
                 <strong>‘수집 완료’</strong>만 표시됩니다. 결과는 <strong>내 계정의 ‘수집 이력’</strong>에서 확인·편집하세요.</li>
           </ol>
           <div class="alert alert-success small mb-0">
-            <i class="bi bi-check-circle text-success"></i> <strong>토큰이 필요 없습니다.</strong> 새 탭이 고가브릿지(로그인된 내 계정)로 열려 안전하게 수집됩니다.
-            (예전 토큰 방식은 일부 사이트의 보안정책(CSP)에 막혀 작동하지 않았어요 — 이 방식은 그 문제가 없습니다.)
+            <i class="bi bi-check-circle text-success"></i> <strong>새 창 없이 그 자리에서</strong> 백그라운드로 수집하고, 서버에 <strong>실제 저장이 확인되면</strong> 인페이지 ‘수집 완료’ 토스트만 띄웁니다(가짜 성공 0).
+            이 사이트의 보안정책(CSP)으로 직접 수집이 막히면 인페이지로 안내해요 — 그때는 크롬 확장을 쓰세요.
           </div>
         </div>
       </div>
@@ -69,16 +69,22 @@
       <div class="card">
         <div class="card-header"><strong><i class="bi bi-bookmark-plus"></i> 북마클릿 (드래그해서 북마크바에 추가)</strong></div>
         <div class="card-body text-center py-4">
-          <!-- 토큰 불필요: 새 탭(로그인 세션)으로 데이터를 보내 수집(CSP/CORS 우회).
-               북마크바에 짧은 이름(수집)만 들어가게 한다(긴 JS 코드 노출 방지). -->
-          <a id="bookmarkletLink"
-             class="d-inline-flex align-items-center justify-content-center text-decoration-none"
-             style="cursor:grab;border-radius:12px;border:1px solid #dee2e6;background:#fff;color:#1a1714;font-weight:700;font-size:0.95rem;line-height:1;width:52px;height:52px;"
-             title="이 버튼을 북마크바로 드래그하세요 — ‘수집’ 이름으로 추가됩니다"
-             aria-label="고가수집기 북마클릿">수집</a>
-          <p class="mt-3 text-muted small mb-0">위 <strong>수집</strong> 버튼을 북마크바로 드래그하세요. 북마크바에 <strong>수집</strong> 이름으로 깔끔하게 표시됩니다.</p>
-          <p class="text-muted small mb-0">
-            <span class="text-muted">※ Chrome 특성상 북마클릿(주소가 <code>javascript:</code>인 북마크)엔 기본 지구본 아이콘이 표시될 수 있어요. 완전한 브랜드 아이콘은 <a href="/seller/extension">크롬 확장 프로그램</a> 버전을 쓰세요.</span></p>
+          <!-- v38 #5: 새 창/팝업 금지 → 인페이지 소형 토스트. 백그라운드 fetch(내 토큰)로 수집,
+               서버 커밋(영속) 성공 시에만 '수집 완료' 표시. CSP가 막는 사이트는 인페이지로 안내(새 창 0). -->
+          <button id="makeBtn" class="btn btn-cta" type="button" onclick="issueAndBuild()">
+            <i class="bi bi-magic"></i> 내 북마클릿 만들기
+          </button>
+          <div id="makeHint" class="text-muted small mt-2">버튼을 누르면 내 전용 수집 토큰을 발급해 북마클릿을 만들어요(1회).</div>
+
+          <div id="bmReady" class="mt-3" style="display:none">
+            <a id="bookmarkletLink"
+               class="d-inline-flex align-items-center justify-content-center text-decoration-none"
+               style="cursor:grab;border-radius:12px;border:1px solid #dee2e6;background:#fff;color:#1a1714;font-weight:700;font-size:0.95rem;line-height:1;width:52px;height:52px;"
+               title="이 버튼을 북마크바로 드래그하세요 — ‘수집’ 이름으로 추가됩니다"
+               aria-label="고가수집기 북마클릿">수집</a>
+            <p class="mt-3 text-muted small mb-0">위 <strong>수집</strong> 버튼을 북마크바로 드래그하세요. 상품 페이지에서 누르면 <strong>새 창 없이 그 자리에서 ‘수집 완료’</strong>가 뜹니다.</p>
+            <p class="text-muted small mb-0"><span class="text-muted">※ 이 북마클릿엔 내 토큰이 들어 있어요(남과 공유 금지). 브라우저가 javascript: 북마크엔 기본 지구본 아이콘을 표시할 수 있어요 — 브랜드 아이콘은 <a href="/seller/extension">크롬 확장</a> 권장.</span></p>
+          </div>
         </div>
       </div>
     </div>
@@ -100,11 +106,11 @@
         <div class="card-header"><strong><i class="bi bi-info-circle"></i> 동작 원리</strong></div>
         <div class="card-body small text-muted">
           <ol class="mb-2">
-            <li>상품 페이지의 <strong>이미지·상세설명·리뷰·HTML</strong>을 읽습니다.</li>
-            <li><strong>새 탭으로 고가브릿지(로그인된 내 계정)를 열어</strong> 그 데이터를 전달합니다.</li>
-            <li>서버가 이미지·상세·리뷰를 정리하고(선택 시 번역) <strong>내 수집 이력에 저장</strong>합니다 — ‘수집 완료’만 표시됩니다.</li>
+            <li>상품 페이지의 <strong>이미지·상세설명·HTML</strong>을 읽습니다.</li>
+            <li><strong>새 창 없이 백그라운드로</strong> 내 토큰으로 서버에 보냅니다(인페이지 진행 표시).</li>
+            <li>서버가 정리·저장(선택 시 번역)하고 <strong>영속 저장이 확인되면</strong> 그 자리에서 ‘수집 완료’ 토스트만 띄웁니다(가짜 성공 0).</li>
           </ol>
-          <div>봇 차단이 강한 사이트는 <a href="/seller/markets/guide">크롬 확장(고가수집기)</a>도 사용할 수 있어요.</div>
+          <div>이 사이트의 보안정책(CSP)으로 직접 수집이 막히면 인페이지로 안내합니다 — 그때는 <a href="/seller/extension">크롬 확장(고가수집기)</a>을 쓰세요.</div>
         </div>
       </div>
     </div>
@@ -113,16 +119,18 @@
 
 <script>
 const SERVER_URL = "{{ request.host_url.rstrip('/') }}";
+let KGP_TOKEN = null;   // v38 #5: 내 수집 토큰(발급 후 북마클릿에 baked)
 
-// 토큰 불필요 — 새 탭(/seller/collect/receiver, 로그인 세션)을 열고 페이지 데이터(이미지/상세/HTML)를
-// postMessage로 전달해 수집한다. CSP가 fetch를 막는 사이트(Temu/아마존 등)에서도 동작하며,
-// 편집 페이지로 바로 가지 않고 '수집됨'만 표시한다(내 계정 수집 이력에서 확인).
+// v38 #5: 새 창/팝업 금지 — 백그라운드 fetch(/api/v1/collect/extension, 내 토큰)로 수집하고
+// 결과를 '인페이지 소형 토스트'로만 표시한다. 서버는 영속 저장 확인 시에만 ok(가짜 성공 0, v38 #1).
+// CSP가 fetch를 막으면 새 창 대신 인페이지로 안내(크롬 확장 권장).
 function buildBookmarkletCode(translate) {
+  if (!KGP_TOKEN) return "javascript:void(0)";
   return "javascript:(function(){" +
-    "var S='" + SERVER_URL + "';" +
+    "var S='" + SERVER_URL + "',T='" + KGP_TOKEN + "';" +
     // 목록/검색 페이지 감지 — 상품 링크(이미지 포함 a)가 많으면 경고. 북마클릿은 '상품 1개 상세'용.
-    "try{var _cards=0;document.querySelectorAll('a[href] img').forEach(function(i){if((i.naturalWidth||0)>=120)_cards++});" +
-    "if(_cards>=8){if(!confirm('\\u26A0\\uFE0F 이 페이지엔 상품이 여러 개 같아요.\\n북마클릿은 \\'상품 1개 상세 페이지\\' 수집용이라, 지금 누르면 이 페이지를 1개로만 수집합니다.\\n여러 상품을 골라 담으려면 크롬 확장(고가수집기)을 쓰세요.\\n\\n그래도 이 페이지를 1개로 수집할까요?'))return;}}catch(e){}" +
+    "try{var _c=0;document.querySelectorAll('a[href] img').forEach(function(i){if((i.naturalWidth||0)>=120)_c++});" +
+    "if(_c>=8){if(!confirm('이 페이지엔 상품이 여러 개 같아요. 북마클릿은 상품 1개 상세용입니다. 여러 상품은 크롬 확장을 쓰세요. 이 페이지를 1개로 수집할까요?'))return;}}catch(e){}" +
     "function M(p){var e=document.querySelector('meta[property=\"'+p+'\"],meta[name=\"'+p+'\"]');return e?(e.content||''):''}" +
     "function G(s){if(!s||s.indexOf('data:')===0)return false;if(/(logo|sprite|icon|avatar|placeholder|loading|blank|pixel|banner|thumb_)/i.test(s))return false;return true;}" +
     "var imgs=[];var og=M('og:image');if(G(og))imgs.push(og);" +
@@ -135,18 +143,45 @@ function buildBookmarkletCode(translate) {
     "images:imgs.slice(0,30)," +
     "html:(document.documentElement?document.documentElement.outerHTML:'').slice(0,800000)," +
     "translate:" + (translate ? "true" : "false") + "};" +
-    "var w=window.open(S+'/seller/collect/receiver','_blank');" +
-    "if(!w){alert('팝업이 차단되었습니다. 이 사이트의 팝업을 허용해주세요.');return;}" +
-    "function H(e){if(e.source===w&&e.data&&e.data.kgp==='ready'){w.postMessage({kgp:'collect',data:data},S);window.removeEventListener('message',H);}}" +
-    "window.addEventListener('message',H);" +
+    // 인페이지 소형 토스트(새 창 0) — 고가수집기 위치(우하단)에 살짝.
+    "function K(m,ok){var t=document.getElementById('kgpbm');if(!t){t=document.createElement('div');t.id='kgpbm';t.style.cssText='position:fixed;right:20px;bottom:84px;z-index:2147483647;max-width:280px;padding:10px 14px;border-radius:10px;font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.3);white-space:pre-wrap';document.body.appendChild(t);}t.style.background=ok?'#16a34a':'#dc2626';t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0'},4500);}" +
+    "K('수집 중…',true);" +
+    "fetch(S+'/api/v1/collect/extension',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+T},body:JSON.stringify(data)})" +
+    ".then(function(r){return r.json().catch(function(){return{}})})" +
+    ".then(function(d){if(d&&d.ok){K('수집 완료 \\u00B7 셀러 콘솔 \\u2018수집한 상품\\u2019에서 확인',true);}else{K('수집 실패: '+((d&&d.error)||'잠시 후 다시 시도'),false);}})" +
+    ".catch(function(){K('이 사이트는 보안정책(CSP)으로 직접 수집이 막혀요.\\n크롬 확장(고가수집기)을 쓰세요.',false);});" +
     "})();";
 }
 
 function refreshBookmarklet() {
   const translate = document.getElementById('translateToggle').checked;
   const code = buildBookmarkletCode(translate);
-  document.getElementById('bookmarkletLink').setAttribute('href', code);
-  document.getElementById('bookmarkletCode').textContent = code;
+  const link = document.getElementById('bookmarkletLink');
+  if (link) link.setAttribute('href', code);
+  const codeEl = document.getElementById('bookmarkletCode');
+  if (codeEl) codeEl.textContent = KGP_TOKEN ? code : "‘내 북마클릿 만들기’를 먼저 누르세요.";
+}
+
+async function issueAndBuild() {
+  const btn = document.getElementById('makeBtn');
+  const hint = document.getElementById('makeHint');
+  btn.disabled = true; btn.textContent = '발급 중…';
+  try {
+    const r = await fetch('/seller/me/tokens/generate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scopes: ['collect.write'] })
+    });
+    const d = await r.json();
+    if (!d.ok || !d.raw_token) throw new Error(d.error || '토큰 발급 실패');
+    KGP_TOKEN = d.raw_token;
+    refreshBookmarklet();
+    document.getElementById('bmReady').style.display = '';
+    btn.style.display = 'none';
+    hint.textContent = '북마클릿이 준비됐어요. 아래 ‘수집’을 북마크바로 드래그하세요.';
+  } catch (e) {
+    btn.disabled = false; btn.innerHTML = '<i class="bi bi-magic"></i> 내 북마클릿 만들기';
+    if (typeof pcToast === 'function') pcToast('발급 실패: ' + (e.message || '다시 시도'), 'error');
+  }
 }
 
 document.getElementById('translateToggle').addEventListener('change', refreshBookmarklet);
