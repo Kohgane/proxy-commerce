@@ -1,4 +1,4 @@
-// sw.js — Phase 147 Service Worker (Goga Bridj PWA) · v36 캐시 갱신
+// sw.js — Phase 147 Service Worker (gogabridj PWA) · v36 캐시 갱신
 const CACHE_NAME = 'goga-bridj-v36';
 const STATIC_ASSETS = [
   '/seller/dashboard',
@@ -49,7 +49,7 @@ self.addEventListener('push', event => {
   if (!event.data) return;
   let data = {};
   try { data = event.data.json(); } catch (e) { data = { title: '알림', body: event.data.text() }; }
-  const title = data.title || 'Goga Bridj';
+  const title = data.title || 'gogabridj';
   const options = {
     body: data.body || '',
     icon: data.icon || undefined,

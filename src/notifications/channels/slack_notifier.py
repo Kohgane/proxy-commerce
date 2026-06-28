@@ -24,7 +24,7 @@ class SlackNotifier:
         self._webhook_url = webhook_url or SLACK_WEBHOOK_URL
         self._enabled = enabled if enabled is not None else SLACK_ENABLED
 
-    def send(self, text: str, blocks: list = None, username: str = 'Goga Bridj Bot') -> bool:
+    def send(self, text: str, blocks: list = None, username: str = 'gogabridj Bot') -> bool:
         """Slack 메시지 발송.
 
         Args:

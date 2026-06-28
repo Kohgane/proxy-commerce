@@ -22,7 +22,7 @@ def client():
 
 
 def test_manifest_installable_criteria():
-    assert MANIFEST["name"] == "Goga Bridj"
+    assert MANIFEST["name"] == "gogabridj"
     assert MANIFEST["display"] == "standalone"
     assert MANIFEST["start_url"] == "/seller/dashboard"          # 설치 앱은 전체 콘솔로 시작
     assert MANIFEST["orientation"].startswith("portrait")

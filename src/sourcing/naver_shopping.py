@@ -60,7 +60,7 @@ def search_domestic(keyword: str, *, limit: int = 12, sort: str = "sim") -> Dict
     req = urllib.request.Request(_ENDPOINT + "?" + qs, headers={
         "X-Naver-Client-Id": cid,
         "X-Naver-Client-Secret": csec,
-        "User-Agent": "Goga Bridj/1.0",
+        "User-Agent": "gogabridj/1.0",
     })
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:

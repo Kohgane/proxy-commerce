@@ -26,10 +26,10 @@ def test_brand_ko_normalizes_spaced_env(monkeypatch):
         importlib.reload(branding)
 
 
-def test_brand_en_keeps_space():
-    # 영문 정식 표기는 띄어쓰기 유지
+def test_brand_en_is_gogabridj():
+    # v38: 영문 정식 표기는 'gogabridj'(전부 소문자·붙임)
     from src.utils.branding import get_brand_name
-    assert get_brand_name() == "Goga Bridj"
+    assert get_brand_name() == "gogabridj"
 
 
 def test_no_spaced_korean_brand_in_source():

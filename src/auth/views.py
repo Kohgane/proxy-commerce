@@ -498,7 +498,7 @@ def login():
     naver_status = _provider_status("naver")
     apple_status = _provider_status("apple")
     # 운영자용 OAuth 진단(콜백 URI/client_id)은 일반 사용자 첫 화면에 노출하지 않는다
-    # (Goga Bridj 브리프 §2.4). 관리자 세션이거나 ?diag=1 일 때만 렌더한다.
+    # (gogabridj 브리프 §2.4). 관리자 세션이거나 ?diag=1 일 때만 렌더한다.
     show_diag = request.args.get("diag") == "1"
     if not show_diag:
         try:

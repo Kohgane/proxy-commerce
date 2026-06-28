@@ -15,7 +15,7 @@ def _get_services():
         from ..docs.api_doc_generator import APIDocGenerator
         from ..docs.doc_renderer import DocRenderer
         _generator = APIDocGenerator(
-            title="Goga Bridj API",
+            title="gogabridj API",
             version="1.0.0",
             description="Phase 1~54 API 문서",
         )

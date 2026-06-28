@@ -2,10 +2,10 @@
 {# 공통 베이스 템플릿 #}
 <html lang="ko">
 <head>
-  {% set _brand_name = brand_name|default('GOGA BRIDJ', true) %}
+  {% set _brand_name = brand_name|default('gogabridj', true) %}
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}GOGA BRIDJ{% endblock %} | {{ _brand_name }}</title>
+  <title>{% block title %}gogabridj{% endblock %} | {{ _brand_name }}</title>
   {# v16 P1: 링크 공유 카드 브랜딩 — 이름·소개·이미지가 제대로 뜨도록 OG/트위터 정비 #}
   {% set _og_base = (request.url_root.rstrip('/') if request else '') %}
   <meta name="description" content="{{ self.og_description() }}">
@@ -13,12 +13,12 @@
   <meta property="og:type" content="website">
   <meta property="og:title" content="{% block og_title %}{{ _brand_name }} — 해외 상품 수집부터 마켓 등록까지 한 번에{% endblock %}">
   <meta property="og:description" content="{% block og_description %}해외 상품을 수집·번역·다듬어 내 마켓에 올리는 구매대행 올인원. 고가브릿지.{% endblock %}">
-  <meta property="og:image" content="{% block og_image %}{{ _og_base }}/seller/static/og-card.png?v=2{% endblock %}">
+  <meta property="og:image" content="{% block og_image %}{{ _og_base }}/seller/static/og-card.png?v=3{% endblock %}">
   <meta property="og:url" content="{{ request.url if request else _og_base }}">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="{{ self.og_title() }}">
   <meta name="twitter:description" content="{{ self.og_description() }}">
-  <meta name="twitter:image" content="{{ _og_base }}/seller/static/og-card.png?v=2">
+  <meta name="twitter:image" content="{{ _og_base }}/seller/static/og-card.png?v=3">
   <link rel="icon" type="image/svg+xml" href="/seller/static/favicon.svg?v=176">
   <link rel="icon" type="image/x-icon" href="/seller/static/favicon.ico?v=176">
   <link rel="icon" type="image/png" sizes="32x32" href="/seller/static/favicon-32.png?v=176">

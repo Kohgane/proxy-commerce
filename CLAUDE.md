@@ -14,7 +14,14 @@
   수정(이력 append 추가, durable 확인). E2E CI게이트 test_v38_collect_no_fake_success(3: 동일유저 목록 반영/비영속=502/
   durable 플래그). append 단일값 모킹 하위호환(튜플 아니면 durable 간주). 전체 10437 passed.
   before/after(확장 수집 라운드트립): docs/screens/v38/collect-fakesuccess-{before,after}.png(빈 목록→수집 즉시 1건 반영).
-- ⏳ 다음: 2.표기(Goga Bridj→gogabridj) 3.아이콘 단독 4.수집기 노출+중앙버튼 5.북마클릿 인페이지 6.토큰 정리 7.전역 점검.
+- ✅ **2. 표기 동시반영 Goga Bridj→gogabridj (Phase 331):** 영문 정식 표기를 **'gogabridj'(전부 소문자·붙임)**으로 확정,
+  띄어쓴 'Goga Bridj'·'GOGA BRIDJ' **전수 교체**(사용자 노출만, 내부 식별자·repo·도메인 보존). `branding.py` 기본값
+  `_DEFAULT_BRAND_EN`='gogabridj' + 하드코딩 리터럴 스윕(py/html/js/svg/css 23+곳: 콘솔 헤더·title·OG·랜딩·토스트·푸터·
+  이메일/알림·sw push 제목·favicon aria·매니페스트 name). 매니페스트 양쪽 name='gogabridj'. OG 카드 워드마크
+  'GOGA BRIDJ'→'gogabridj' 재생성 + og:image 캐시 ?v=2→?v=3. 영향 테스트 갱신(pwa/rebrand/v36/v37/og/seller_console).
+  가드 test_v38_brand_gogabridj(4: 기본/소스 잔존0/매니페스트/콘솔렌더). 전체 10441 passed.
+  before/after: docs/screens/v38/naming-{before,after}.png('셀러 콘솔 · Goga Bridj'→'gogabridj').
+- ⏳ 다음: 3.아이콘 단독 4.수집기 노출+중앙버튼 5.북마클릿 인페이지 6.토큰 정리 7.전역 점검.
 
 ## 🟦 v37 브리프 (오너 2026-06-28 — "한글 표기 통일: 고가 브릿지 → 고가브릿지")
 - P1 한글 서비스명 붙여쓰기('고가브릿지') 통일 / 영문 'Goga Bridj'(띄어쓰기) 유지 / 내부 식별자 변경 0.
