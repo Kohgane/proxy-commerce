@@ -261,9 +261,11 @@ def collect_from_extension():
     seller_id_val = str(user.get("user_id") or "")
     item_id = None
     saved = False
+    durable = True
     try:
         from src.seller_console.collect_history_store import append as history_append, get as history_get
-        item_id = history_append(
+        _ret = history_append(
+            return_durable=True,
             source=source,
             url=url,
             title=title_ko,
@@ -290,19 +292,28 @@ def collect_from_extension():
             },
             seller_id=seller_id_val,
         )
+        # return_durable=True면 (item_id, durable) 튜플. 단, 일부 테스트가 append를 단일값으로
+        # 모킹하므로 두 형태 모두 허용(모킹은 영속으로 간주).
+        if isinstance(_ret, tuple) and len(_ret) == 2:
+            item_id, durable = _ret
+        else:
+            item_id, durable = _ret, True
         logger.info("[collect %s] 저장 시도 seller_id=%r item_id=%s", _corr, seller_id_val, item_id)
         try:
             saved = history_get(item_id, seller_id=seller_id_val) is not None
         except Exception:
             saved = bool(item_id)
-        logger.info("[collect %s] 저장 자기검증 saved=%s (같은 seller_id=%r로 재조회)", _corr, saved, seller_id_val)
+        logger.info("[collect %s] 저장 자기검증 saved=%s durable=%s (같은 seller_id=%r로 재조회)",
+                    _corr, saved, durable, seller_id_val)
     except Exception as exc:
         logger.warning("[collect %s] 수집 이력 기록 실패: %s", _corr, exc)
 
-    if not item_id or not saved:
-        # 가짜 성공 금지(v4 P0): 실제 저장 안 됐으면 정직한 실패로 토스트가 사유를 표시하게.
-        logger.warning("[collect %s] 저장 검증 실패 → 502 정직 실패: url=%s seller_id=%r saved=%s",
-                       _corr, url[:80], seller_id_val, saved)
+    if not item_id or not saved or not durable:
+        # 가짜 성공 금지(v4/v38 P0): 실제 저장 안 됐거나(saved=False) 영속 저장소(시트)에 못 들어가
+        # 인메모리로만 폴백(durable=False)된 경우 — 멀티워커/새로고침엔 안 보임 → 정직한 실패로
+        # 토스트가 사유를 표시하고 재시도하게 한다(가짜 성공 절대 금지).
+        logger.warning("[collect %s] 저장 검증 실패 → 502 정직 실패: url=%s seller_id=%r saved=%s durable=%s",
+                       _corr, url[:80], seller_id_val, saved, durable)
         return jsonify({"ok": False, "error": "수집 항목을 저장하지 못했습니다. 잠시 후 다시 시도하세요."}), 502
 
     preview_url = f"/seller/collect/preview/{item_id}"
@@ -415,20 +426,34 @@ def _run_bulk_job(job_id: str, urls: list) -> None:
         scraper = UniversalScraper()
         dispatcher_collect = scraper.fetch
 
+    seller_id_val = str(job.get("user_id") or "")
+
     def process_url(url: str) -> dict:
         try:
             result = dispatcher_collect(url)
-            product_id = _upsert_catalog(
-                {
-                    "url": url,
-                    "title": getattr(result, "title", ""),
-                    "price": str(getattr(result, "price", "") or ""),
-                    "currency": getattr(result, "currency", "USD"),
-                    "image": (getattr(result, "images", []) or [""])[0],
-                },
+            title = getattr(result, "title", "") or ""
+            images = list(getattr(result, "images", []) or [])
+            price = str(getattr(result, "price", "") or "")
+            currency = getattr(result, "currency", "USD")
+            _upsert_catalog(
+                {"url": url, "title": title, "price": price, "currency": currency,
+                 "image": images[0] if images else ""},
                 source="bulk_collect",
             )
-            return {"url": url, "ok": True, "product_id": product_id}
+            # v38 P0: 벌크도 '수집 이력'에 실제 저장(이전엔 catalog만 써서 수집품목에 안 보였음).
+            #         영속 저장(durable) 확인된 경우에만 성공 처리(가짜 성공 금지).
+            from src.seller_console.collect_history_store import append as history_append
+            _ret = history_append(
+                return_durable=True, source="bulk", url=url, title=title,
+                image=images[0] if images else "", price=price, currency=currency,
+                status="ok", seller_id=seller_id_val,
+                extra={"title": title, "title_ko": title, "images": images,
+                       "price": price, "currency": currency},
+            )
+            item_id, durable = _ret if (isinstance(_ret, tuple) and len(_ret) == 2) else (_ret, True)
+            if not item_id or not durable:
+                return {"url": url, "ok": False, "error": "저장 영속화 실패(재시도 필요)"}
+            return {"url": url, "ok": True, "item_id": item_id}
         except Exception as exc:
             logger.warning("벌크 URL 처리 실패: %s — %s", url[:60], exc)
             return {"url": url, "ok": False, "error": str(exc)[:100]}
