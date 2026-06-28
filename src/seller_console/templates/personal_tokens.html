@@ -99,7 +99,40 @@
     </div>
   </div>
   {% else %}
-  <div class="alert alert-info">아직 발급된 토큰이 없습니다. 새 토큰을 발급하세요.</div>
+  <div class="alert alert-info">활성 토큰이 없습니다. 새 토큰을 발급하세요.{% if revoked_tokens %} (지난 발급/폐기 내역은 아래 ‘발급·폐기 이력’에서 볼 수 있어요.){% endif %}</div>
+  {% endif %}
+
+  {# v38 #6: 폐기(삭제)된 토큰은 메인 목록을 어지럽히지 않게 '발급·폐기 이력'으로 분리(기본 접힘). #}
+  {% if revoked_tokens %}
+  <div class="card mb-4">
+    <div class="card-body">
+      <details>
+        <summary class="text-muted small" style="cursor:pointer">
+          <i class="bi bi-clock-history"></i> 발급·폐기 이력 ({{ revoked_tokens|length }}건) — 삭제된 토큰 보기
+        </summary>
+        <div class="table-responsive mt-2">
+          <table class="table table-sm mb-0">
+            <thead class="table-light">
+              <tr><th>토큰</th><th>권한</th><th>발급일</th><th>마지막 사용</th><th>상태</th></tr>
+            </thead>
+            <tbody>
+              {% set _scope_ko2 = {'collect.write': '상품 수집', 'catalog.read': '카탈로그 조회', 'markets.write': '마켓 업로드'} %}
+              {% for tok in revoked_tokens %}
+              <tr class="text-muted">
+                <td><code>{{ tok.token_hash_prefix }}</code></td>
+                <td>{% for scope in tok.scopes %}<span class="badge bg-light text-dark me-1" title="{{ scope }}">{{ _scope_ko2.get(scope, scope) }}</span>{% endfor %}</td>
+                <td>{{ tok.created_at[:10] if tok.created_at else '-' }}</td>
+                <td>{{ tok.last_used_at[:10] if tok.last_used_at else '미사용' }}</td>
+                <td><span class="badge bg-secondary">삭제됨</span></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <p class="text-muted small mt-2 mb-0">삭제된 토큰은 즉시 무효화되어 더 이상 인증에 쓸 수 없어요. 이력은 보안 확인용으로만 보관됩니다.</p>
+      </details>
+    </div>
+  </div>
   {% endif %}
 
   <!-- 사용 가이드 -->

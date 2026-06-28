@@ -4818,10 +4818,16 @@ def personal_tokens():
     except Exception as exc:
         logger.warning("토큰 목록 조회 실패: %s", exc)
 
+    # v38 #6: 활성 토큰만 메인 목록에, 폐기(삭제)된 토큰은 '발급/폐기 이력'으로 분리(목록 어지럽힘 방지).
+    active_tokens = [t for t in tokens if not t.get("revoked")]
+    revoked_tokens = [t for t in tokens if t.get("revoked")]
+
     return render_template(
         "personal_tokens.html",
         page="me",
-        tokens=tokens,
+        tokens=active_tokens,
+        active_tokens=active_tokens,
+        revoked_tokens=revoked_tokens,
         valid_scopes=["collect.write", "catalog.read", "markets.write"],
     )
 
