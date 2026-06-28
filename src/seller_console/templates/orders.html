@@ -80,10 +80,13 @@
       </div>
       <div class="col-md-2">
         <label class="form-label small mb-1">{{ t('orders.status') }}</label>
+        {# v33 3-5: 주문 상태값 한글화(EN 화면은 영문 유지) #}
+        {% set _status_ko = {"new":"신규접수","paid":"결제완료","preparing":"상품준비중","shipped":"배송중","delivered":"배송완료","canceled":"취소","returned":"반품","exchanged":"교환","refund_requested":"환불요청"} %}
+        {% set _en_orders = (current_lang == 'en') %}
         <select name="status" class="form-select form-select-sm">
           <option value="">전체</option>
           {% for s in ["new","paid","preparing","shipped","delivered","canceled","returned","exchanged","refund_requested"] %}
-          <option value="{{ s }}" {% if filters.get('status') == s %}selected{% endif %}>{{ s }}</option>
+          <option value="{{ s }}" {% if filters.get('status') == s %}selected{% endif %}>{{ s if _en_orders else _status_ko.get(s, s) }}</option>
           {% endfor %}
         </select>
       </div>
@@ -184,7 +187,7 @@
             <td class="text-end"><small>{{ "{:,}".format(o.total_krw|int) }}원</small></td>
             <td>
               {% set status_colors = {"new":"secondary","paid":"primary","preparing":"info","shipped":"warning","delivered":"success","canceled":"dark","returned":"danger","exchanged":"danger","refund_requested":"danger"} %}
-              <span class="badge bg-{{ status_colors.get(o.status, 'secondary') }}">{{ o.status }}</span>
+              <span class="badge bg-{{ status_colors.get(o.status, 'secondary') }}">{{ o.status if _en_orders else _status_ko.get(o.status, o.status) }}</span>
             </td>
             <td>
               {% if o.tracking_no %}<small class="font-monospace">{{ o.courier }} {{ o.tracking_no }}</small>

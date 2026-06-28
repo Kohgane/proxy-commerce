@@ -4,6 +4,12 @@
 
 ## 🟪 v33/마스터 브리프 (오너 2026-06-27 — v24~v33 통합 마스터, 1달 출시 로드맵)
 - (1~4주차 대부분은 이번 세션에서 v24~v32로 완료됨 — 404·삭제영속·이력·토큰·전체수집·메타숨김·Mock·네이버·디자인·랜딩·버튼·아마존·활성화.)
+- ✅ **3주차 3-5 소싱 카드 확대 + 상태값 한글화 (Phase 316):** 소싱 허브 국내 베스트셀러 카드 — 이미지 130→**180px**,
+  제목 small→**1.06rem**(≥17px), 가격 **1.15rem**, 버튼 py-2 패딩·pc-lift 호버, 검색 링크 `{{ s.emoji }}` 2곳 제거(이모지 0).
+  주문 상태값 **한글화**(orders.html: new→신규접수/paid→결제완료/preparing→상품준비중/shipped→배송중/delivered→배송완료/
+  canceled→취소/returned→반품/exchanged→교환/refund_requested→환불요청), **EN 화면(current_lang=en)은 영문 유지**. CS 상태
+  (cs_inbox/mobile/stats)는 이미 한글. 가드 test_v33_card_status(카드 확대·이모지0·KO/EN 분기). 전체 10395 passed.
+- → **v24~v33 통합 마스터 완주.** 남은 건 오너 콘솔/키 작업(Render Starter·네이버 검색키·스마트스토어 IP·11번가·WC 키)·점진 디자인 확장.
 - ✅ **3주차 3-4 전역 이모지·지구본 박멸 (Phase 315):** 셀러 콘솔/에러/파셜 전 사용자 템플릿의 이모지(🛒🛠📚💚👤🚪🔐📧🆘⭐ℹ️❌🧤✓)를
   **단일 라인 아이콘셋 bi-***(shop/tools/book/heart-pulse/person/box-arrow-right/shield-lock/envelope/life-preserver/star-fill/info-circle…)로 교체.
   topnav×2·404/500·markets_connect/guide·catalog·notifications·me·mobile_home·market_status·collect_preview·bookmarklet 전수.
