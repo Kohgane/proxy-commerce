@@ -27,12 +27,23 @@
 {% set _user_name = session.get('user_name') if session is defined else None %}
 {% set _user_role = session.get('user_role') if session is defined else None %}
 
-<div class="mobile-topbar d-flex align-items-center justify-content-between px-3 py-2 d-md-none">
-  <a href="/seller/" class="text-decoration-none fw-bold"><i class="bi bi-shop"></i> 셀러 콘솔</a>
-  <div class="d-flex align-items-center gap-2">
-    <a href="/seller/m" class="btn btn-sm btn-cta py-1"><i class="bi bi-phone"></i> 모바일 앱</a>
-    <button class="btn btn-sm btn-outline-secondary" id="sidebarToggle" aria-label="메뉴 열기" onclick="toggleSidebar()"><i class="bi bi-list"></i></button>
+{# v36 PART A: 모바일 단일 헤더(압축) — 로고 + 검색 아이콘(확장) + 내 계정 아바타 + 햄버거.
+   공통 console-topbar(검색/수출형/언어/계정 나열)는 모바일에서 숨김(CSS) → 맨텍스트 나열 제거. #}
+<div class="mobile-topbar d-flex align-items-center justify-content-between px-3 d-md-none">
+  <a href="/seller/" class="text-decoration-none fw-bold mobile-topbar-brand"><i class="bi bi-shop"></i> 셀러 콘솔</a>
+  <div class="d-flex align-items-center gap-1">
+    <button class="mobile-icon-btn" aria-label="상품 검색" onclick="toggleMobileSearch()"><i class="bi bi-search"></i></button>
+    <a href="/seller/me" class="mobile-account-avatar" aria-label="내 계정">{{ (_user_name or _user_email or '나')[:1]|upper }}</a>
+    <button class="mobile-icon-btn" id="sidebarToggle" aria-label="메뉴 열기" onclick="toggleSidebar()"><i class="bi bi-list"></i></button>
   </div>
+</div>
+<div class="mobile-search d-md-none" id="mobileSearch" hidden>
+  <form action="/seller/catalog" method="get" role="search" class="px-3 pb-2">
+    <div class="input-group">
+      <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+      <input name="search" type="search" class="form-control" placeholder="상품 검색 (상품명/SKU/상품ID)" aria-label="상품 검색" autocomplete="off">
+    </div>
+  </form>
 </div>
 <div class="sidebar-overlay d-md-none" id="sidebarOverlay" onclick="closeSidebar()"></div>
 
@@ -59,6 +70,14 @@
       <i class="bi bi-chevron-right text-muted small"></i>
     </a>
     {% endif %}
+
+    {# v36 PART A: 모바일 드로어에서도 언어 전환 가능(공통 topbar가 모바일에서 숨겨지므로) #}
+    <div class="btn-group btn-group-sm w-100 mb-3 d-md-none" role="group" aria-label="{{ t('lang.label') }}">
+      <a href="/i18n/set?lang=ko&next={{ request.full_path|urlencode }}"
+         class="btn {{ 'btn-primary' if current_lang == 'ko' else 'btn-outline-secondary' }}">한국어</a>
+      <a href="/i18n/set?lang=en&next={{ request.full_path|urlencode }}"
+         class="btn {{ 'btn-primary' if current_lang == 'en' else 'btn-outline-secondary' }}">EN</a>
+    </div>
 
     <div class="flex-grow-1">
     <!-- 핵심 메뉴(항상 노출) — 비기너 과부하 방지(v5). 나머지는 '고급 기능'으로 접음. -->
@@ -263,6 +282,14 @@ function toggleSidebar() {
   var drawer = document.getElementById('sidebarDrawer');
   if (!drawer) return;
   if (drawer.classList.contains('show')) { closeSidebar(); } else { openSidebar(); }
+}
+
+// v36 PART A: 모바일 헤더 검색 아이콘 → 검색 입력 확장(토글).
+function toggleMobileSearch() {
+  var box = document.getElementById('mobileSearch');
+  if (!box) return;
+  box.hidden = !box.hidden;
+  if (!box.hidden) { var i = box.querySelector('input'); if (i) i.focus(); }
 }
 
 function openSidebar() {

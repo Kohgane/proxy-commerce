@@ -2,6 +2,17 @@
 
 > 이 파일은 매 세션 시작 시 로드된다. 오너(Kohgane) 지시·검증된 팩트를 누적 기록한다.
 
+## 🟧 v36 브리프 (오너 2026-06-28 — "모바일 반응형 전면 + PWA 앱 + 관리자 모바일 액션")
+- 대전제: "보이는 게 다." 모바일에서 **실제 액션 가능**해야 함. 원칙: 거짓성공/회귀 금지·토큰 단일소스. **완료=모바일 뷰포트 캡처.**
+- 진행: PART A 반응형(레이아웃·터치타깃·표→카드) → PART B PWA+관리자 액션 → (나중) PART C 네이티브 래핑.
+- ✅ **PART A #1 모바일 단일 헤더 압축 (Phase 324):** 모바일에서 `.mobile-topbar`(셀러콘솔+모바일앱+햄버거)와 `.console-topbar`
+  (Goga Bridj+검색+수출형 ▾+한국어/EN+계정)가 **이중 헤더로 쌓여** 맨텍스트 나열·세로 공간 낭비되던 것 수정. 모바일에서
+  공통 console-topbar **CSS 숨김**(`@media max-767.98`) + mobile-topbar를 **단일 헤더**로 재구성(로고 + **검색 아이콘→확장
+  입력** + **계정 아바타**(이니셜→/seller/me) + 햄버거, 전부 **44×44 터치 타깃**). 드로어에 언어 토글(한국어/EN) 추가(공통
+  topbar 숨김 보완). '모바일 앱'(bi-phone) 버튼은 콘솔 반응형화로 제거(/seller/m 라우트는 유지). 가드 test_v36_mobile_header(3)
+  + test_design_tokens_v18 아이콘셋 갱신(bi-phone→bi-search). 전체 10415 passed. before/after: docs/screens/v36/mobile-header-{before,after}.png.
+- ⏳ 다음: PART A #2 표→카드(수집목록·주문·마켓) · 플로팅 버튼 겹침 · PART B PWA 설치형 + 관리자 모바일 액션.
+
 ## 🟩 v35 브리프 (오너 2026-06-28 — "랜딩 상단 정리·소싱 그리드 복원·검색창 + before/after 의무")
 - 대전제: "보이는 게 다." 원칙: 거짓성공/회귀 금지(pytest/CI)·토큰 단일소스·frontend-design. **완료=before/after 캡처.**
 - ✅ **P0 랜딩 최상단 정리 (Phase 321):** 랜딩이 공통 dark topnav(셀러콘솔/관리자/API문서/시스템상태/OAuth로그인/가입)를
