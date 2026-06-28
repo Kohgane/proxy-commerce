@@ -31,7 +31,11 @@
   버튼**(beforeinstallprompt 안드로이드, iOS=공유→홈 화면 안내) 전역 추가. sw 캐시 goga-bridj-v36 갱신. 설치 API
   `deferred['prompt']()`(네이티브 입력 prompt 가드 회피). 가드 test_v36_pwa_install(4). 전체 10425 passed.
   before/after: docs/screens/v36/pwa-install-{before,after}.png.
-- ⏳ 다음: PART A 표→카드 잔여(주문·마켓) · PART B 관리자 모바일 액션 흐름 점검(URL수집→편집→업로드→주문→CS).
+- ✅ **PART A #3 주문·마켓 표→모바일 카드 (Phase 328):** 주문 목록(9열)·마켓 상품현황(8열) 표에 v36 `.table-cards`
+  패턴 적용(클래스+`data-label`+`cardcell-title/img/actions`) — 모바일에서 가로 스크롤·세로 문자깨짐 제거, 각 주문/상품이
+  카드로 스택(마켓 배지+번호 헤더·라벨 필드·풀폭 운송장/상태 버튼 ≥44px). 가드 test_v36_orders_markets_cards(3).
+  전체 10432 passed. before/after: docs/screens/v36/orders-cards-{before,after}.png.
+- ⏳ 다음: PART B 관리자 모바일 액션 흐름 점검(URL수집→편집→업로드→주문→CS) · catalog 등 잔여 표.
 
 ## 🟩 v35 브리프 (오너 2026-06-28 — "랜딩 상단 정리·소싱 그리드 복원·검색창 + before/after 의무")
 - 대전제: "보이는 게 다." 원칙: 거짓성공/회귀 금지(pytest/CI)·토큰 단일소스·frontend-design. **완료=before/after 캡처.**

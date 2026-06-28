@@ -140,7 +140,7 @@
   <div class="card-body p-0">
     {% if orders %}
     <div class="table-responsive">
-      <table class="table table-hover table-sm mb-0">
+      <table class="table table-hover table-sm mb-0 table-cards">
         <thead class="table-light">
           <tr>
             <th class="text-center" style="width: 44px;">
@@ -159,7 +159,7 @@
         <tbody>
           {% for o in orders %}
           <tr data-order-row="{{ o.marketplace }}::{{ o.order_id }}">
-            <td class="text-center">
+            <td class="text-center cardcell-check">
               <input
                 type="checkbox"
                 class="order-row-chk"
@@ -170,30 +170,30 @@
                 aria-label="{{ o.order_id }} 주문 선택"
               >
             </td>
-            <td>
+            <td class="cardcell-img">
               {% if o.marketplace == 'coupang' %}<span class="badge bg-warning text-dark">쿠팡</span>
               {% elif o.marketplace == 'smartstore' %}<span class="badge bg-success">스마트스토어</span>
               {% elif o.marketplace == '11st' %}<span class="badge bg-danger">11번가</span>
               {% else %}<span class="badge bg-secondary">{{ o.marketplace }}</span>{% endif %}
             </td>
-            <td><small class="font-monospace">{{ o.order_id }}</small></td>
-            <td><small>{{ (o.placed_at or '')[:16] }}</small></td>
-            <td>
+            <td class="cardcell-title"><small class="font-monospace">{{ o.order_id }}</small></td>
+            <td data-label="주문일시"><small>{{ (o.placed_at or '')[:16] }}</small></td>
+            <td data-label="상품">
               {% if o["items"] %}
                 <small>{{ o["items"][0]["title"][:20] }}{% if o["items"][0]["title"]|length > 20 %}…{% endif %}</small>
                 {% if o["items"]|length > 1 %}<span class="badge bg-light text-dark">+{{ o["items"]|length - 1 }}</span>{% endif %}
               {% endif %}
             </td>
-            <td class="text-end"><small>{{ "{:,}".format(o.total_krw|int) }}원</small></td>
-            <td>
+            <td class="text-end" data-label="금액"><small>{{ "{:,}".format(o.total_krw|int) }}원</small></td>
+            <td data-label="상태">
               {% set status_colors = {"new":"secondary","paid":"primary","preparing":"info","shipped":"warning","delivered":"success","canceled":"dark","returned":"danger","exchanged":"danger","refund_requested":"danger"} %}
               <span class="badge bg-{{ status_colors.get(o.status, 'secondary') }}">{{ o.status if _en_orders else _status_ko.get(o.status, o.status) }}</span>
             </td>
-            <td>
+            <td data-label="운송장">
               {% if o.tracking_no %}<small class="font-monospace">{{ o.courier }} {{ o.tracking_no }}</small>
               {% else %}<span class="text-muted small">-</span>{% endif %}
             </td>
-            <td>
+            <td class="cardcell-actions">
               <div class="d-flex gap-1 flex-wrap">
                 <button class="btn btn-outline-primary btn-sm py-0"
                   onclick="openTrackingModal('{{ o.marketplace }}', '{{ o.order_id }}')">운송장</button>
