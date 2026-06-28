@@ -29,7 +29,7 @@ def test_no_visible_phase_markers_in_user_templates():
 
 def test_extension_uses_glove_not_globe():
     cs = Path("extensions/chrome-collector/content_script.js").read_text(encoding="utf-8")
-    assert "KGP_GLOVE_SVG" in cs
+    assert "KGP_BRIDGE_SVG" in cs
     assert "KGP_GLOBE_SVG" not in cs          # 지구본 변수 폐기
     # 오빗-글로브 잔재(회전 궤도 ellipse 2개) 없음
     assert "rotate(32 256 256)" not in cs and "rotate(-32 256 256)" not in cs

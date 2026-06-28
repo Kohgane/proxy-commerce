@@ -220,8 +220,8 @@ function setFabState(btn, state) {
 }
 
 // 고가브릿지 게이트웨이(B) 마크 — 공식 브랜드 자산과 동일(금 아치 + 청록 다리 + 주황 키스톤).
-// v21/v22: 글러브/지구본 폐기. (어두운 원형 배지 위 배치라 fill 없는 스트로크 아치)
-const KGP_GLOVE_SVG =
+// v21/v22/v38: 옛 마크·이모지 폐기 — 확정 브릿지 마크 단독(어두운 원형 배지 위 스트로크 아치).
+const KGP_BRIDGE_SVG =
   '<svg width="20" height="20" viewBox="0 0 512 512" aria-hidden="true" style="display:block">' +
   '<path d="M180 372 L180 240 A76 76 0 0 1 332 240 L332 372" fill="none" stroke="#c9a24b" stroke-width="26" stroke-linecap="round"/>' +
   '<line x1="150" y1="380" x2="362" y2="380" stroke="#119a8e" stroke-width="16" stroke-linecap="round"/>' +
@@ -330,8 +330,8 @@ function kgpBumpCount(n) {
   return c;
 }
 const KGP_WIT = [
-  "오늘도 한 건 +1 🧤", "담았습니다. 다음 상품 가시죠 🚀", "착! 도장 쾅 🟢",
-  "글러브 장착, 수집 완료 🧤", "마진은 셀러님 몫 💰",
+  "오늘도 한 건 +1", "담았습니다. 다음 상품 가시죠", "착! 도장 쾅",
+  "수집 완료, 다음 상품으로", "마진은 셀러님 몫",
 ];
 function kgpCelebrate(added) {
   added = Math.max(1, added || 1);
@@ -341,7 +341,7 @@ function kgpCelebrate(added) {
   let milestone = 0;
   for (const m of milestones) { if (prev < m && total >= m) milestone = m; }
   if (KGP_RM) {
-    kgpToast(`✅ 수집 완료 · 누적 ${total}건` + (milestone ? `\n🏅 ${milestone}건 달성!` : ""), true);
+    kgpToast(`수집 완료 · 누적 ${total}건` + (milestone ? `\n${milestone}건 달성!` : ""), true);
     return total;
   }
   kgpEnsureStyles();
@@ -349,7 +349,7 @@ function kgpCelebrate(added) {
   ov.style.cssText = "position:fixed;right:24px;bottom:96px;z-index:2147483647;pointer-events:none;display:flex;flex-direction:column;align-items:flex-end;gap:6px";
   const stamp = document.createElement("div");
   stamp.style.cssText = "display:flex;align-items:center;gap:8px;padding:10px 16px;border-radius:14px;background:#1a1714;border:2px solid #c9a24b;color:#f5efe3;font:700 14px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.45);animation:kgpStampIn .5s ease-out both";
-  stamp.innerHTML = '<span style="font-size:20px">🧤</span><span>' + KGP_WIT[Math.floor(Math.random() * KGP_WIT.length)] + "</span>";
+  stamp.innerHTML = '<span style="display:inline-flex;width:22px;height:22px;align-items:center;justify-content:center">' + KGP_BRIDGE_SVG + '</span><span>' + KGP_WIT[Math.floor(Math.random() * KGP_WIT.length)] + "</span>";
   ov.appendChild(stamp);
   const counter = document.createElement("div");
   counter.style.cssText = "padding:5px 12px;border-radius:999px;background:#119a8e;color:#fff;font:700 12px/1 -apple-system,sans-serif;animation:kgpStampIn .5s ease-out both";
@@ -357,7 +357,7 @@ function kgpCelebrate(added) {
   if (milestone) {
     const badge = document.createElement("div");
     badge.style.cssText = "padding:6px 14px;border-radius:999px;background:#c9a24b;color:#1a1714;font:800 13px/1 -apple-system,sans-serif;animation:kgpStampIn .55s ease-out both";
-    badge.textContent = "🏅 " + milestone + "건 달성!";
+    badge.textContent = milestone + "건 달성!";
     ov.appendChild(badge);
   }
   document.body.appendChild(ov);
@@ -378,12 +378,12 @@ function handleFabClick(btn) {
   kgpSendMessage({ action: "collect", meta }, (resp) => {
     setFabState(btn, "idle");
     if (!resp || resp.ok !== true) {
-      kgpToast("❌ " + ((resp && resp.error) || "수집 실패"), false);
+      kgpToast(((resp && resp.error) || "수집 실패"), false);
       return;
     }
     kgpCelebrate(1);          // 실제 성공 시에만 도장+카운트업(따라하기 재미)
     const tk = resp.title_ko && resp.title_ko !== resp.title ? `\n→ ${resp.title_ko}` : "";
-    if (tk) kgpToast(`✅ 수집 완료${tk}\n셀러 콘솔에서 확인·편집하세요.`, true);
+    if (tk) kgpToast(`수집 완료${tk}\n셀러 콘솔에서 확인·편집하세요.`, true);
   });
 }
 
@@ -401,7 +401,7 @@ function injectCollectButton() {
   btn.type = "button";
   btn.innerHTML =
     '<span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;' +
-    'background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%;flex-shrink:0">' + KGP_GLOVE_SVG + '</span>' +
+    'background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%;flex-shrink:0">' + KGP_BRIDGE_SVG + '</span>' +
     '<span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1.12">' +
     '<span class="kgp-fab-label" style="font-weight:700;font-size:14px;color:#f5efe3">고가수집기 수집</span>' +
     '<span style="font-size:10px;color:#c9a24b;font-family:Georgia,\'Times New Roman\',serif">번역까지 한 번에</span>' +
@@ -669,9 +669,9 @@ async function kgpCollect(urls) {
   btns.forEach(b => b.disabled = true);
   kgpSendMessage({ action: "collectBulk", items }, (resp) => {
     btns.forEach(b => b.disabled = false);
-    if (!resp || resp.ok !== true) { kgpSetStatus("❌ " + ((resp && resp.error) || "수집 실패")); return; }
+    if (!resp || resp.ok !== true) { kgpSetStatus(((resp && resp.error) || "수집 실패")); return; }
     if (resp.success > 0) kgpCelebrate(resp.success);   // 실제 성공 건수만 축하
-    kgpSetStatus(`✅ 수집 완료 — 성공 ${resp.success} / 실패 ${resp.failed}. 셀러 콘솔 수집 이력에서 확인하세요.`);
+    kgpSetStatus(`수집 완료 — 성공 ${resp.success} / 실패 ${resp.failed}. 셀러 콘솔 수집 이력에서 확인하세요.`);
   });
 }
 
@@ -694,7 +694,7 @@ function kgpBuildToolbar() {
   const autoOn = kgpLSget("kgp_bar_auto", "1") !== "0";
   bar.innerHTML =
     '<span id="kgp-tb-grip" style="display:flex;align-items:center;gap:7px">' +
-    '<span style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%">' + KGP_GLOVE_SVG + '</span>' +
+    '<span style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%">' + KGP_BRIDGE_SVG + '</span>' +
     '<strong style="color:#ecdcb0">고가수집기 수집</strong></span>' +
     '<span id="kgp-tb-count" style="opacity:.85"></span>' +
     '<span style="width:1px;height:18px;background:#4a4234"></span>' +
@@ -703,7 +703,7 @@ function kgpBuildToolbar() {
     '<button class="kgp-tb-btn" data-act="collect-sel" style="' + gold + '">선택 수집</button>' +
     '<button class="kgp-tb-btn" data-act="collect-all" style="' + teal + '">전체 수집</button>' +
     '<span id="kgp-tb-status" style="opacity:.95;font-size:12px;max-width:360px"></span>' +
-    '<button class="kgp-tb-btn" data-act="auto" title="새 목록 페이지에서 자동으로 열지 여부" style="' + ghost + '">' + (autoOn ? '📌 자동' : '📌 수동') + '</button>' +
+    '<button class="kgp-tb-btn" data-act="auto" title="새 목록 페이지에서 자동으로 열지 여부" style="' + ghost + '">' + (autoOn ? '자동' : '수동') + '</button>' +
     '<button data-act="close" title="접기(구석 배지로)" style="' + btnBase + 'background:transparent;color:#c9bda6;border:none;font-size:15px">✕</button>';
   bar.addEventListener("click", (e) => {
     const t = e.target.closest("[data-act]");
@@ -732,7 +732,7 @@ function kgpBuildToolbar() {
       // 팝업 자동표시 on/off(v7). 끄면 지금 접고, 이후 목록 페이지는 구석 배지로만 시작.
       const next = kgpLSget("kgp_bar_auto", "1") === "0" ? "1" : "0";
       kgpLSset("kgp_bar_auto", next);
-      t.textContent = next === "0" ? "📌 수동" : "📌 자동";
+      t.textContent = next === "0" ? "수동" : "자동";
       if (next === "0") {
         _kgpClosed = true;
         bar.remove();
@@ -776,7 +776,7 @@ function kgpShowReopenPill() {
   pill.type = "button";
   pill.title = "고가수집기 수집 바 열기";
   pill.innerHTML =
-    '<span style="display:flex;align-items:center;justify-content:center;width:20px;height:20px;background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%">' + KGP_GLOVE_SVG + '</span>' +
+    '<span style="display:flex;align-items:center;justify-content:center;width:20px;height:20px;background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%">' + KGP_BRIDGE_SVG + '</span>' +
     '<span style="font-weight:700;font-size:12px">수집 열기</span>' +
     '<span class="kgp-pill-count" style="display:' + (sel ? "inline-block" : "none") + ';background:#119a8e;color:#fff;border-radius:999px;padding:1px 7px;font-size:11px;font-weight:800">' + (sel || "") + '</span>';
   pill.style.cssText = [
@@ -869,7 +869,7 @@ function kgpMaybeCoach() {
   tip.style.cssText = "position:fixed;z-index:2147483647;max-width:248px;padding:11px 14px;border-radius:12px;background:#119a8e;color:#fff;font:600 12.5px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;box-shadow:0 10px 28px rgba(0,0,0,.45)";
   tip.style.top = (r.bottom + 12) + "px";
   tip.style.left = Math.max(8, Math.min(window.innerWidth - 256, r.left - 90)) + "px";
-  tip.innerHTML = '💡 <b>전체 수집</b>으로 이 페이지의 상품을 한 번에 담을 수 있어요.' +
+  tip.innerHTML = '<b>전체 수집</b>으로 이 페이지의 상품을 한 번에 담을 수 있어요.' +
     '<div style="margin-top:8px;text-align:right"><span id="kgp-coach-x" style="cursor:pointer;text-decoration:underline;opacity:.92">알겠어요</span></div>';
   document.body.appendChild(tip);
   const close = () => { try { tip.remove(); } catch (e) { /* noop */ } };
