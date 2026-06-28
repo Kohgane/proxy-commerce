@@ -30,7 +30,7 @@ def test_base_templates_include_favicon_links():
         assert "favicon.ico" in text
         assert 'rel="apple-touch-icon"' in text
         assert "manifest.webmanifest" in text
-        assert ("?v=176" in text) or ("v='176'" in text)
+        assert ("?v=177" in text) or ("v='177'" in text)
         # 테마 색상은 라이트/다크 리비전마다 달라질 수 있으므로(예: Phase 189 라이트 복구)
         # 특정 색상값이 아니라 theme-color 메타 존재만 검증한다.
         assert 'name="theme-color"' in text
@@ -80,9 +80,9 @@ def test_public_templates_use_cache_busted_favicon_links():
     ]
     for path in targets:
         text = path.read_text(encoding="utf-8")
-        assert "favicon.svg?v=176" in text
-        assert "favicon.ico?v=176" in text
-        assert "apple-touch-icon.png?v=176" in text
-        assert "manifest.webmanifest?v=176" in text
+        assert "favicon.svg?v=177" in text
+        assert "favicon.ico?v=177" in text
+        assert "apple-touch-icon.png?v=177" in text
+        assert "manifest.webmanifest?v=177" in text
         # 다크 테마 컬러 — 순흑 #020010 폐기(KOHgogane 브리프 §2.2) → 따뜻한 먹(#1a1714)도 허용.
         assert ('content="#020010"' in text) or ('content="#1a1714"' in text)

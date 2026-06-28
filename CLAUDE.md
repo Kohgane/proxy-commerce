@@ -21,7 +21,14 @@
   'GOGA BRIDJ'→'gogabridj' 재생성 + og:image 캐시 ?v=2→?v=3. 영향 테스트 갱신(pwa/rebrand/v36/v37/og/seller_console).
   가드 test_v38_brand_gogabridj(4: 기본/소스 잔존0/매니페스트/콘솔렌더). 전체 10441 passed.
   before/after: docs/screens/v38/naming-{before,after}.png('셀러 콘솔 · Goga Bridj'→'gogabridj').
-- ⏳ 다음: 3.아이콘 단독 4.수집기 노출+중앙버튼 5.북마클릿 인페이지 6.토큰 정리 7.전역 점검.
+- ✅ **3. 아이콘 단독화(브릿지 마크·이모지 0·캐시 갱신) (Phase 332):** 점검결과 favicon/apple-touch/매니페스트/확장
+  16·32·48·128 아이콘은 **이미 브릿지 마크**(지구본 아님). 오너의 '트레이 지구본'은 **캐시된 옛 확장**이 유력 →
+  manifest 1.5.13→**1.5.14**로 bump(재로딩 유도) + favicon 캐시 `v=176→v=177`(전 템플릿, 탭 아이콘 갱신). 실제 코드
+  버그: 인페이지 FAB 수집 축하가 **🧤 글러브 이모지 + 위트/마일스톤 이모지(🧤🚀🟢💰🏅)·✅❌** 사용 → **전부 제거**,
+  스탬프를 **브릿지 마크(KGP_BRIDGE_SVG, 옛 KGP_GLOVE_SVG 개명)**로, 토스트는 색으로 성패 표시(이모지 0). 📌💡도 제거.
+  바깥 javascript: 북마클릿 지구본은 Chrome 강제(불가피, 안내 명시) — 확장 권장. 가드 test_v38_icons_bridge_only(4) +
+  영향 테스트 갱신(favicon v177·KGP_BRIDGE_SVG). 전체 10445 passed. before/after: docs/screens/v38/icon-mark-before-after.png.
+- ⏳ 다음: 4.수집기 노출+중앙버튼 5.북마클릿 인페이지 6.토큰 정리 7.전역 점검.
 
 ## 🟦 v37 브리프 (오너 2026-06-28 — "한글 표기 통일: 고가 브릿지 → 고가브릿지")
 - P1 한글 서비스명 붙여쓰기('고가브릿지') 통일 / 영문 'Goga Bridj'(띄어쓰기) 유지 / 내부 식별자 변경 0.

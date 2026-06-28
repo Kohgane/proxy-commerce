@@ -67,7 +67,7 @@ def test_favicon_is_gateway_not_globe():
 
 def test_extension_uses_glove_icon():
     cs = Path("extensions/chrome-collector/content_script.js").read_text(encoding="utf-8")
-    assert "KGP_GLOVE_SVG" in cs
+    assert "KGP_BRIDGE_SVG" in cs
     mf = json.loads(Path("extensions/chrome-collector/manifest.json").read_text(encoding="utf-8"))
     assert mf["icons"]["128"].endswith(".png")        # 코고가네 아이콘 PNG 단독
 
