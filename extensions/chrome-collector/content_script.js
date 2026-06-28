@@ -394,7 +394,9 @@ function injectCollectButton() {
   if (document.getElementById(KGP_BTN_ID)) return;
   if (window.top !== window.self) return;       // iframe 안에서는 표시 안 함
   if (!document.body) return;
-  if (!looksLikeProductPage() && !kgpIsDetailUrl()) return;   // 상세 페이지(메타 또는 URL 패턴)
+  // v38 #4: 지정 소싱처(또는 앱 진입)에서는 상품 페이지 휴리스틱과 무관하게 '항상' 노출.
+  //   기존엔 looksLikeProductPage/디테일 URL 가드 때문에 SPA(Temu)·카테고리·검색·홈에서 버튼이 안 떠
+  //   "어떤 창은 안 뜸"이 발생. 이미 host 게이트(위)로 소싱처에 한정되므로 추가 가드는 제거한다.
 
   const btn = document.createElement("button");
   btn.id = KGP_BTN_ID;
@@ -959,3 +961,33 @@ setInterval(() => {
 }, 1500);
 // 동적 로딩(무한 스크롤)·지연 렌더 대응: 주기적으로 모드 재평가(목록↔상세 자동 전환).
 setInterval(() => { if (kgpHostAllowed()) kgpRefresh(); }, 4000);
+
+// v38 #4: MutationObserver로 SPA 라우팅/사이트 재렌더에도 버튼을 일관 유지(재주입).
+//   사이트가 본문을 갈아끼우며 우리 FAB/바를 날려도, 또는 늦게 렌더되는 SPA에서도 즉시 복구.
+//   URL 변경(history.pushState) 감지도 겸해 setTimeout 디바운스로 과도호출 방지.
+(function () {
+  let _t = null;
+  function _scheduleRefresh() {
+    if (_t) return;
+    _t = setTimeout(() => { _t = null; try { if (kgpHostAllowed() || kgpEntrySession()) kgpRefresh(); } catch (e) {} }, 400);
+  }
+  try {
+    const obs = new MutationObserver((muts) => {
+      // 우리 오버레이가 사라졌거나(사이트 재렌더) 본문이 크게 바뀌면 재주입.
+      const fabGone = !document.getElementById(KGP_BTN_ID) && !document.getElementById(KGP_TOOLBAR_ID) && !document.getElementById(KGP_REOPEN_ID);
+      if (fabGone || muts.some(m => m.addedNodes && m.addedNodes.length)) _scheduleRefresh();
+    });
+    const _start = () => { if (document.body) obs.observe(document.body, { childList: true, subtree: true }); else setTimeout(_start, 300); };
+    _start();
+  } catch (e) { /* MutationObserver 미지원 환경 무시 */ }
+  // SPA: history API 후킹(pushState/replaceState/popstate) → 라우팅 즉시 재평가.
+  try {
+    ["pushState", "replaceState"].forEach((fn) => {
+      const orig = history[fn];
+      if (typeof orig === "function") {
+        history[fn] = function () { const r = orig.apply(this, arguments); _scheduleRefresh(); return r; };
+      }
+    });
+    window.addEventListener("popstate", _scheduleRefresh, { passive: true });
+  } catch (e) { /* noop */ }
+})();
