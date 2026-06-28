@@ -16,7 +16,13 @@
   숨김·각 행을 카드로 스택·셀에 `data-label`로 가격/경로/시각/상태 라벨·액션 버튼 풀폭 ≥44px). collect_history 표에 클래스+
   data-label 적용. '처음이신가요?' For Beginners 플로팅 버튼이 본문 가리던 것 → 모바일에서 **아이콘 FAB로 축소**(라벨 숨김)
   +본문 하단 여백(84px). 가드 test_v36_tables_cards(5). 전체 10421 passed. before/after: docs/screens/v36/tables-cards-{before,after}.png.
-- ⏳ 다음: PART A 표→카드 잔여(주문·마켓) · PART B PWA 설치형 + 관리자 모바일 액션.
+- ✅ **PART B #1 PWA 설치형(콘솔 어디서나) (Phase 326):** manifest는 이미 양호(Goga Bridj·브릿지 아이콘 192/512 maskable·
+  먹 splash·standalone·portrait·share_target·shortcuts) — `start_url`을 제한적 `/seller/m`에서 **`/seller/dashboard`(전체
+  반응형 콘솔)**로 변경(양 manifest 동기). 설치 프롬프트가 `/seller/m`에만 있던 것 → **콘솔 드로어에 '홈 화면에 앱 설치'
+  버튼**(beforeinstallprompt 안드로이드, iOS=공유→홈 화면 안내) 전역 추가. sw 캐시 goga-bridj-v36 갱신. 설치 API
+  `deferred['prompt']()`(네이티브 입력 prompt 가드 회피). 가드 test_v36_pwa_install(4). 전체 10425 passed.
+  before/after: docs/screens/v36/pwa-install-{before,after}.png.
+- ⏳ 다음: PART A 표→카드 잔여(주문·마켓) · PART B 관리자 모바일 액션 흐름 점검(URL수집→편집→업로드→주문→CS).
 
 ## 🟩 v35 브리프 (오너 2026-06-28 — "랜딩 상단 정리·소싱 그리드 복원·검색창 + before/after 의무")
 - 대전제: "보이는 게 다." 원칙: 거짓성공/회귀 금지(pytest/CI)·토큰 단일소스·frontend-design. **완료=before/after 캡처.**
