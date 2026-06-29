@@ -215,7 +215,7 @@ function setFabState(btn, state) {
   } else {
     btn.dataset.busy = "";
     btn.style.opacity = "1";
-    btn.querySelector(".kgp-fab-label").textContent = "고가수집기 수집";
+    btn.querySelector(".kgp-fab-label").textContent = "고가수집기";
   }
 }
 
@@ -405,7 +405,7 @@ function injectCollectButton() {
     '<span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;' +
     'background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%;flex-shrink:0">' + KGP_BRIDGE_SVG + '</span>' +
     '<span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1.12">' +
-    '<span class="kgp-fab-label" style="font-weight:700;font-size:14px;color:#f5efe3">고가수집기 수집</span>' +
+    '<span class="kgp-fab-label" style="font-weight:700;font-size:14px;color:#f5efe3">고가수집기</span>' +
     '<span style="font-size:10px;color:#c9a24b;font-family:Georgia,\'Times New Roman\',serif">번역까지 한 번에</span>' +
     '</span>';
   btn.title = "고가브릿지로 수집 (한국어 번역 포함)";
@@ -697,7 +697,7 @@ function kgpBuildToolbar() {
   bar.innerHTML =
     '<span id="kgp-tb-grip" style="display:flex;align-items:center;gap:7px">' +
     '<span style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%">' + KGP_BRIDGE_SVG + '</span>' +
-    '<strong style="color:#ecdcb0">고가수집기 수집</strong></span>' +
+    '<strong style="color:#ecdcb0">고가수집기</strong></span>' +
     '<span id="kgp-tb-count" style="opacity:.85"></span>' +
     '<span style="width:1px;height:18px;background:#4a4234"></span>' +
     '<button class="kgp-tb-btn" data-act="all-sel" style="' + ghost + '">전체 선택</button>' +
@@ -776,7 +776,7 @@ function kgpShowReopenPill() {
   pill = document.createElement("button");
   pill.id = KGP_REOPEN_ID;
   pill.type = "button";
-  pill.title = "고가수집기 수집 바 열기";
+  pill.title = "고가수집기 바 열기";
   pill.innerHTML =
     '<span style="display:flex;align-items:center;justify-content:center;width:20px;height:20px;background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%">' + KGP_BRIDGE_SVG + '</span>' +
     '<span style="font-weight:700;font-size:12px">수집 열기</span>' +
