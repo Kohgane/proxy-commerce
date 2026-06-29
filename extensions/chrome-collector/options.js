@@ -36,8 +36,8 @@ chrome.storage.sync.get(["serverUrl", "token"], (data) => {
 });
 
 toggleToken.addEventListener("click", () => {
-  if (tokenInput.type === "password") { tokenInput.type = "text"; toggleToken.textContent = "🙈"; }
-  else { tokenInput.type = "password"; toggleToken.textContent = "👁"; }
+  if (tokenInput.type === "password") { tokenInput.type = "text"; toggleToken.textContent = "숨김"; }
+  else { tokenInput.type = "password"; toggleToken.textContent = "표시"; }
 });
 
 serverUrlInput.addEventListener("input", () => {
@@ -50,7 +50,7 @@ saveBtn.addEventListener("click", () => {
   const serverUrl = serverUrlInput.value.trim();
   const token = tokenInput.value.trim();
   if (!token) { showStatus(statusMsg, "error", "액세스 토큰을 입력해주세요."); return; }
-  chrome.storage.sync.set({ serverUrl, token }, () => showStatus(statusMsg, "success", "✅ 설정이 저장되었습니다."));
+  chrome.storage.sync.set({ serverUrl, token }, () => showStatus(statusMsg, "success", "설정이 저장되었습니다."));
 });
 
 clearBtn.addEventListener("click", () => {

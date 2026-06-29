@@ -551,13 +551,13 @@ def _format_translate(data: dict, **kwargs) -> str:
     req_id = data.get('request_id', '')[:8]
     status = data.get('status', '')
     translated = data.get('translated_text', '')
-    return f'🌐 번역 요청 완료\nID: {req_id}…\n상태: {status}\n번역: {translated}'
+    return f'번역 요청 완료\nID: {req_id}…\n상태: {status}\n번역: {translated}'
 
 
 def _format_translation_status(data: list, **kwargs) -> str:
     if not data:
-        return '🌐 번역 요청: 없음'
-    lines = [f'🌐 번역 요청 목록 — {len(data)}건']
+        return '번역 요청: 없음'
+    lines = [f'번역 요청 목록 — {len(data)}건']
     for req in data[:5]:
         req_id = req.get('request_id', '')[:8]
         status = req.get('status', '')
