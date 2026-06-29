@@ -25,7 +25,7 @@ def test_no_spaced_english_brand_in_source():
 def test_manifest_name_is_gogabridj():
     for fn in ("manifest.json", "manifest.webmanifest"):
         m = json.loads(Path(f"src/seller_console/static/{fn}").read_text(encoding="utf-8"))
-        assert m["name"] == "gogabridj", fn
+        assert m["name"] == "고가브릿지", fn
 
 
 def test_console_sidebar_shows_gogabridj():

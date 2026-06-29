@@ -18,7 +18,7 @@ def test_branding_defaults_are_goga_bridj():
 def test_pwa_manifest_rebranded():
     for name in ("manifest.json", "manifest.webmanifest"):
         m = json.loads(Path(f"src/seller_console/static/{name}").read_text(encoding="utf-8"))
-        assert m["name"] == "gogabridj"
+        assert m["name"] == "고가브릿지"
         assert m["short_name"] == "고가브릿지"
         assert "코고가네" not in json.dumps(m, ensure_ascii=False)
         assert "KOHgogane" not in json.dumps(m, ensure_ascii=False)

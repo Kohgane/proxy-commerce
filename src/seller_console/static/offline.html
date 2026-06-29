@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>오프라인 · 고가브릿지</title>
+  <meta name="theme-color" content="#1a1714">
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      background: #f5efe3; color: #1a1714;
+      font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo", sans-serif;
+      padding: 24px; text-align: center;
+    }
+    .card { max-width: 360px; }
+    .mark { width: 72px; height: 72px; margin: 0 auto 16px; display: block; }
+    h1 { font-size: 1.25rem; margin: 0 0 8px; }
+    p { font-size: .95rem; line-height: 1.5; color: #5a534a; margin: 0 0 20px; }
+    button {
+      appearance: none; border: 0; border-radius: 10px; padding: 12px 20px;
+      background: #119a8e; color: #fff; font-size: 1rem; font-weight: 600; cursor: pointer;
+      min-height: 44px; width: 100%;
+    }
+    .hint { margin-top: 14px; font-size: .8rem; color: #8a8175; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <svg class="mark" viewBox="0 0 512 512" aria-hidden="true">
+      <rect x="23" y="23" width="466" height="466" rx="112" fill="#fff" stroke="#111" stroke-width="26"/>
+      <circle cx="256" cy="205" r="92" fill="none" stroke="#c9a24b" stroke-width="40"/>
+      <line x1="67" y1="338" x2="445" y2="338" stroke="#119a8e" stroke-width="40" stroke-linecap="round"/>
+      <line x1="67" y1="381" x2="445" y2="381" stroke="#119a8e" stroke-width="40" stroke-linecap="round"/>
+      <circle cx="256" cy="113" r="44" fill="#f5821f"/>
+    </svg>
+    <h1>오프라인 상태예요</h1>
+    <p>인터넷 연결이 끊겨 화면을 불러올 수 없어요. 연결을 확인하고 다시 시도해 주세요.<br>
+       <strong>저장된 데이터는 보여드리지 않아요</strong> — 항상 실시간 정보만 표시합니다.</p>
+    <button type="button" onclick="location.reload()">다시 시도</button>
+    <div class="hint">연결되면 자동으로 최신 화면이 표시됩니다.</div>
+  </div>
+</body>
+</html>
