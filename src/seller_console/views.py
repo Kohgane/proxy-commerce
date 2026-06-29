@@ -320,6 +320,14 @@ def _collect_real_draft(url: str, translate: bool = True) -> Optional[dict]:
     draft.setdefault("title_ko", draft.get("title") or draft.get("title_en") or "")
     if translate:
         draft = _translate_draft(draft)
+    # v39 D: 소스 미치환 플레이스홀더 토큰({REGION_NAME...} 등)을 사용자 노출 필드에서 제거(가짜값 금지).
+    try:
+        from src.collectors.universal_scraper import strip_placeholder_tokens as _strip_ph
+        for _k in ("title", "title_en", "title_ko", "description", "description_ko"):
+            if draft.get(_k):
+                draft[_k] = _strip_ph(draft[_k])
+    except Exception:
+        pass
     return draft
 
 
@@ -5258,6 +5266,17 @@ def collect_preview_by_id(item_id: str):
     extra = {}
     try:
         extra = json.loads(item.get("extra_json") or "{}")
+    except Exception:
+        pass
+
+    # v39 D: 과거 수집분에 남아있을 수 있는 플레이스홀더 토큰을 편집 프리필 직전에 제거(렌더 안전망).
+    try:
+        from src.collectors.universal_scraper import strip_placeholder_tokens as _strip_ph
+        if item.get("title"):
+            item = dict(item); item["title"] = _strip_ph(item["title"])
+        for _k in ("title", "title_ko", "title_en", "description", "description_ko"):
+            if extra.get(_k):
+                extra[_k] = _strip_ph(extra[_k])
     except Exception:
         pass
 

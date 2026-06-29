@@ -124,6 +124,13 @@ def _translate_payload(payload: dict) -> dict:
         out["provider"] = tr.get("provider", "stub")
     except Exception as exc:
         logger.warning("확장 수집 번역 실패, 원문 유지: %s", exc)
+    # v39 D: 번역본에도 플레이스홀더 토큰이 남지 않도록 정리(가짜값 금지).
+    try:
+        from src.collectors.universal_scraper import strip_placeholder_tokens as _strip_ph
+        out["title_ko"] = _strip_ph(out["title_ko"])
+        out["description_ko"] = _strip_ph(out["description_ko"])
+    except Exception:
+        pass
     return out
 
 
@@ -231,6 +238,14 @@ def collect_from_extension():
         payload["price_status"] = "needs_check"
 
     payload.pop("html", None)  # 대용량 HTML은 이력에 저장하지 않음
+
+    # v39 D: 소스 사이트가 미치환한 플레이스홀더 토큰({REGION_NAME...} 등)을 제목/상세에서 제거(가짜값 금지).
+    try:
+        from src.collectors.universal_scraper import strip_placeholder_tokens as _strip_ph
+        payload["title"] = _strip_ph(payload.get("title") or "")
+        payload["description"] = _strip_ph(payload.get("description") or "")
+    except Exception:
+        pass
 
     title = payload.get("title") or ""
     source = "extension"

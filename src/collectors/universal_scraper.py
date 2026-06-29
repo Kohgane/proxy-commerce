@@ -238,6 +238,29 @@ def is_filler_description(text: str, url: str = "") -> bool:
     return bool(_FILLER_DESC_RE.search(t))
 
 
+# v39 D: 치환 실패 플레이스홀더 토큰 — 소스 사이트가 미치환한 템플릿 변수가 제목/상세에 그대로 노출되는 것 방지.
+#   예: "{REGION_NAME - Temu Republic of Korea}", "{site_name}", "{{title}}", "%PRODUCT_NAME%".
+#   보수적: CAPS 식별자(REGION_NAME 등) 또는 명백한 템플릿 토큰만 제거 — 정상 텍스트 오탐 최소.
+_PLACEHOLDER_RE = re.compile(
+    r"\{\{[^{}]*\}\}"                       # {{ ... }} 이중 중괄호 템플릿
+    r"|\{[^{}]*[A-Z][A-Z0-9_]{2,}[^{}]*\}"  # { ... CAPS_TOKEN ... } (REGION_NAME 등 포함)
+    r"|%[A-Z][A-Z0-9_]{2,}%"               # %PRODUCT_NAME% 류
+    r"|\$\{[^{}]*\}"                        # ${...}
+)
+
+
+def strip_placeholder_tokens(text: str) -> str:
+    """사용자 노출 제목/상세에서 치환 실패 플레이스홀더 토큰을 제거(가짜값 대체 금지 — 그냥 빼고 공백 정리)."""
+    t = text or ""
+    if not t or ("{" not in t and "%" not in t):
+        return t
+    t = _PLACEHOLDER_RE.sub(" ", t)
+    # 토큰 제거 후 남은 군더더기 정리: 연속 공백·고립 구분자(- · | ,) 다듬기.
+    t = re.sub(r"\s{2,}", " ", t)
+    t = re.sub(r"^[\s\-·|,]+|[\s\-·|,]+$", "", t)
+    return t.strip()
+
+
 def extract_reviews(html: str, limit: int = 20) -> list:
     """페이지 HTML에서 해당 상품 리뷰(별점·본문·작성자)를 best-effort 추출. JSON-LD Product.review 우선.
 
