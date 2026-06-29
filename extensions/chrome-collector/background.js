@@ -95,14 +95,14 @@ async function handleCollect(meta, sendResponse) {
       chrome.notifications.create({
         type: "basic",
         iconUrl: "icons/48.png",
-        title: "고가브릿지 ✅",
+        title: "고가브릿지",
         message: `수집 완료: ${meta.title || meta.url}`
       });
     } else {
       chrome.notifications.create({
         type: "basic",
         iconUrl: "icons/48.png",
-        title: "고가브릿지 ❌",
+        title: "고가브릿지",
         message: data.error || "수집 실패"
       });
     }
@@ -112,7 +112,7 @@ async function handleCollect(meta, sendResponse) {
     chrome.notifications.create({
       type: "basic",
       iconUrl: "icons/48.png",
-      title: "고가브릿지 ❌",
+      title: "고가브릿지",
       message: result.error
     });
   }
@@ -154,7 +154,7 @@ async function handleCollectBulk(items, sendResponse) {
   chrome.notifications.create({
     type: "basic",
     iconUrl: "icons/48.png",
-    title: success ? "고가브릿지 ✅" : "고가브릿지 ❌",
+    title: success ? "고가브릿지" : "고가브릿지",
     message: `일괄 수집: 성공 ${success} / 실패 ${failed} (총 ${items.length})`,
   });
   if (sendResponse) sendResponse({ ok: true, success, failed, total: items.length });

@@ -41,7 +41,7 @@ function updateSourceBadge(url) {
     }
     if (label) {
       srcBadge.className = "src-badge on";
-      srcBadge.textContent = `✅ 지정 소싱처 (${label}) — 수집 버튼이 표시돼요`;
+      srcBadge.textContent = `지정 소싱처 (${label}) — 수집 버튼이 표시돼요`;
     } else {
       srcBadge.className = "src-badge off";
       srcBadge.textContent = "여긴 지정 소싱처가 아니에요. ‘소싱처 관리’에서 추가할 수 있어요.";
@@ -76,7 +76,7 @@ if (fabToggle) {
 // 수집 버튼 클릭
 btnCollect.addEventListener("click", async () => {
   btnCollect.disabled = true;
-  showStatus("loading", "⏳ 상품 정보를 수집하는 중...");
+  showStatus("loading", "상품 정보를 수집하는 중...");
 
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -144,7 +144,7 @@ btnCollect.addEventListener("click", async () => {
     });
 
     if (response && response.ok) {
-      showStatus("success", `✅ 수집 완료!<br><small>${meta.title || meta.url}</small>`);
+      showStatus("success", `수집 완료!<br><small>${meta.title || meta.url}</small>`);
       if (response.preview_url) {
         const settings = await new Promise(resolve =>
           chrome.storage.sync.get(["serverUrl"], resolve)
@@ -159,10 +159,10 @@ btnCollect.addEventListener("click", async () => {
       }
     } else {
       const errMsg = (response && response.error) || "수집 실패";
-      showStatus("error", `❌ ${errMsg}`);
+      showStatus("error", `${errMsg}`);
     }
   } catch (err) {
-    showStatus("error", `❌ ${err.message || "오류가 발생했습니다"}`);
+    showStatus("error", `${err.message || "오류가 발생했습니다"}`);
   } finally {
     btnCollect.disabled = false;
   }
