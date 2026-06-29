@@ -28,7 +28,14 @@
   `frame-ancestors 'self'`(그 외 전 경로 DENY 유지=클릭재킹 방어). 모바일은 풀스크린 시트(v39-M 연동). 헤드리스 검증
   (클릭→URL 불변·새 창 0·드로어 편집폼 로드). 가드 test_v39_c_edit_drawer(4) + dead-anchor 가드 호환. 전체 10474 passed.
   before/after: docs/screens/v39/C-drawer-{before,after}.png(목록 클릭 이탈 → 인페이지 편집 드로어).
-- ⏳ 다음: D 추출/번역 · E 라벨 · F 404 · G 전수 / v39-M.
+- ✅ **D. 가격 정직 표기 + 한국어 번역 온디맨드 (Phase 340):** 증상=가격 '-' 빔·번역 전혀 안 됨. 점검: 가격 needs_check는
+  이미 정직 처리(빈값/needs_check면 임의 환산 0 + '가격 확인 필요'). **번역 누락 근본:** AITranslator가 OPENAI/DEEPL 키
+  없으면 stub→원문 유지(조용히). 수정: 편집 페이지(드로어)에 **'한국어로 번역' 버튼** 추가 → `/collect/bulk-translate`(단일,
+  무료 카운터 연동) 호출. 실제 번역되면 title_ko/description_ko 반영(리로드), **키 미설정이면 가짜 번역 0 + 정직 안내**
+  (OPENAI_API_KEY 설정 요청). **원문 보존**: title_en로 '원문: … 원문으로 되돌리기' 토글. 가드 test_v39_d_price_translate(4).
+  전체 10478 passed. before/after: docs/screens/v39/D-translate-{before,after}.png(원문 일본어 → 한국어 번역+원문 토글, 가격 확인 필요 유지).
+  ※오너 액션: 실제 번역 작동하려면 Render에 OPENAI_API_KEY(또는 DEEPL_API_KEY) 설정 — 없으면 정직 안내만(가짜 0).
+- ⏳ 다음: E 라벨 · F 404 · G 전수 / v39-M.
 
 ## 🟥 v38 브리프 (오너 2026-06-28 — "가짜성공 박멸·표기·아이콘·수집기·북마클릿·토큰·전역점검")
 - 대전제: **"적용함" 보고 금지 — 실제 화면 캡처(before/after)로만 완료 인정.** 못 보여주면 미완·다음 못 넘어감.
