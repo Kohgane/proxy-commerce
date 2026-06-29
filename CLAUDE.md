@@ -35,7 +35,11 @@
   (OPENAI_API_KEY 설정 요청). **원문 보존**: title_en로 '원문: … 원문으로 되돌리기' 토글. 가드 test_v39_d_price_translate(4).
   전체 10478 passed. before/after: docs/screens/v39/D-translate-{before,after}.png(원문 일본어 → 한국어 번역+원문 토글, 가격 확인 필요 유지).
   ※오너 액션: 실제 번역 작동하려면 Render에 OPENAI_API_KEY(또는 DEEPL_API_KEY) 설정 — 없으면 정직 안내만(가짜 0).
-- ⏳ 다음: E 라벨 · F 404 · G 전수 / v39-M.
+- ✅ **E. 수집기 버튼 라벨 '고가수집기 수집'→'고가수집기' (Phase 341):** 인페이지 FAB 라벨의 중복 '수집' 제거 →
+  '고가수집기'(content_script FAB 218·408, 리스팅 바 700, 핀 779, options/README 동기). 브릿지 마크·'번역까지 한 번에'
+  부제 유지. v38#4 항상-노출 게이트(휴리스틱 가드 제거·host 게이트만) 재확인. manifest 1.5.16→1.5.17. 가드
+  test_v39_e_fab_label(3) + v38 버전핀 갱신. before/after: docs/screens/v39/E-fab-label-before-after.png.
+- ⏳ 다음: F 404 박멸 · G 전수 / v39-M.
 
 ## 🟥 v38 브리프 (오너 2026-06-28 — "가짜성공 박멸·표기·아이콘·수집기·북마클릿·토큰·전역점검")
 - 대전제: **"적용함" 보고 금지 — 실제 화면 캡처(before/after)로만 완료 인정.** 못 보여주면 미완·다음 못 넘어감.
