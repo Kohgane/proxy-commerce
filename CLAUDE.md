@@ -51,6 +51,46 @@
   확장 globe 0 (f)404 박멸=미존재 200 '수집 실패'. UI 변화 없는 가드 추가라 캡처 없음(정직) — 감사 6 PASSED가 산출물.
   전체 10487 passed. → **v39 A~G 완주.** 다음: v39-M 모바일(M1 PWA·M2 공유수집·M3 반응형 드로어).
 
+### 🟧 v39 개정 브리프 (오너 2026-06-29 — 신규 아이콘 이미지 2장 첨부 "자 얘도 가라" + v39-M)
+- 오너가 v39+v39-M을 **확정 신규 마크 이미지 2장**과 함께 재전송. 개정점: A=신규 아이콘 전량 교체, D+플레이스홀더 박멸,
+  G=마켓등록 카드 레이아웃(신규), H=전수감사. v39-M: M1 PWA설치·M2 공유수집·M3 모바일 드로어.
+- ✅ **A(개정). 신규 브릿지 마크 전량 교체 (#358):** 오너 첨부 확정본=**흰 배경+검정 라운드 보더+금 게이트 링+주황 키스톤+
+  청록 데크(2줄+금 타이)**. (uploads의 zip은 옛 어두운 마스터라 미사용 — 첨부 이미지를 PIL로 재현.) 신설
+  `scripts/gen_bridge_icon_v39.py` 단일소스에서 파생: favicon-16/32/48·favicon.ico·favicon.svg(임베드)·icon-180/192/512/1024·
+  apple-touch·확장 16/32/48/128·마스터·OG. 소형(≤48)=단순 변형(타워 생략·굵게), 대형=풀 디테일. 확장 FAB SVG
+  (KGP_BRIDGE_SVG)·popup 헤더 아이콘도 신규 마크(흰 배경/링). 캐시 v=178→179·OG ?v=3→4·확장 1.5.17→1.5.18. 가드
+  test_v39_a2_new_bridge_icon(5, 흰바탕+금/주황/청록 픽셀·FAB SVG, PIL 지연import로 CI collect-only 안전). 전체 10497 passed.
+  before/after: docs/screens/v39/icon-replace-{before,after}.png·icon-fab-after.png.
+  ※CI(python-guard)는 `pytest --collect-only`만 — Pillow 미설치라 **PIL은 함수 내 지연 import 필수**(top-level import 시 수집 에러).
+- ✅ **D(개정). 플레이스홀더 토큰 박멸 (#359):** 제목에 '{REGION_NAME - Temu Republic of Korea}' 류 미치환 치환 토큰 노출.
+  `universal_scraper.strip_placeholder_tokens()` 신설(보수적: {{...}}·{ ...CAPS_TOKEN... }·%CAPS%·${...}만 제거, 정상 텍스트
+  오탐 최소). 적용 전수: 확장 수집(extension_api 저장 직전+번역본)·URL/북마클릿/quick(_collect_real_draft 반환 직전)·편집
+  프리필(collect_preview_by_id 렌더 안전망). 치환 실패=토큰 제거(가짜값 0). 가드 test_v39_d2_placeholder_kill(5). 전체 10502.
+  before/after: docs/screens/v39/placeholder-kill-{before,after}.png(제목 토큰 제거·가격 '확인 필요').
+- ✅ **G(개정). 마켓 등록 카드 레이아웃 (#360):** 편집 드로어 좁은 폭서 '스마트스토어·코가네멀티샵' 라벨이 **세로 한 글자씩
+  쪼개짐**(원인=col-6 col-md-4 + nowrap 부재). 수정: 마켓 카드 그리드를 **균등 폭 CSS Grid**(minmax(170px,1fr))로, 마켓명
+  white-space:nowrap+ellipsis, 배지는 flex-wrap. 하드코딩 보라(#6f42c1)→var(--teal/success/warn) 토큰. 가드
+  test_v39_g2_market_cards(4). 전체 10506. before/after: docs/screens/v39/market-cards-{before,after}.png(290px 드로어).
+- ✅ **H. 전수 점검 v39 신규유형 횡단 (#364):** test_v39_h_audit(8) — (a)플레이스홀더 (b)좁은칸 세로쪼개짐 (c)새 창 이탈
+  (d)아이콘/globe (e)PWA (f)모바일 바텀시트 (g)404. 횡단 결과 (b) 추가 인스턴스 0 확인(markets_connect/preview break-all은
+  긴 URL/에러용, sourcing col-6은 KPI 카드 — 안전). 감사 8 PASSED가 산출물(캡처 없음 정직). 전체 10533 passed.
+- ✅ **v39-M M1. 설치형 PWA (#361):** manifest name 'gogabridj'→**'고가브릿지'**(설치 타이틀)·bg #1A1714→**#F5EFE3**(한지
+  splash)·theme #1A1714 유지·standalone·192/512 maskable. iOS 메타(apple-mobile-web-app-capable/-title 고가브릿지) 추가.
+  **SW 정직화**: 앱셸(정적)만 캐시, 동적 데이터 페이지 캐시 금지(스테일 가짜 0), 네비=네트워크 우선, 오프라인=신규
+  offline.html('저장 데이터 미노출' 명시). CACHE goga-bridj-v36→gogabridj-v39. (beforeinstallprompt 버튼은 v36서 연결됨.)
+  가드 test_v39_m1_pwa_install(9)+영향핀(v36/pwa/v21/v38 name·bg). 전체 10515. before/after: docs/screens/v39/m1-pwa-install.png.
+  ※latest-wins: v38이 manifest name=gogabridj였으나 v39-M 최신 브리프가 '고가브릿지' 명시 → 교체(콘솔 헤더 brand는 gogabridj 유지).
+- ✅ **v39-M M2. 공유로 수집(Web Share Target) (#362):** 신규 `/seller/collect/share` — 공유 title/text/url에서 URL 추출→
+  로그인 세션 수집(_quick_collect 공통 코어)→성공 시 **편집 화면 drawer 모드로 redirect**(?drawer=1&from=share). manifest
+  share_target.action /collect/quick→/collect/share(양). 북마클릿 /collect/quick은 '수집됨' 확인 유지(흐름 분리). 봇차단
+  실패=가짜성공 0+'PC 확장 권장'. 가드 test_v39_m2_share_target(5)+extension_install 핀. 전체 10519.
+  before/after: docs/screens/v39/m2-share-collect.png(확인만 → 편집 드로어 진입).
+- ✅ **v39-M M3. 모바일 반응형 드로어 (#363):** 수집이력 편집 드로어가 모바일(≤767.98px)서 **아래→위 풀스크린 바텀시트**
+  (92dvh·둥근 상단·그랩 핸들·닫기 44px·'원본 보기' 아이콘만). 편집기 drawer 모드에 **하단 고정 액션바**(.kgp-action-bar sticky,
+  저장/등록 ≥44px·풀폭)+가로 스크롤 0(overflow-x:hidden). 가드 test_v39_m3_mobile_drawer(5). 헤드리스 scrollWidth==clientWidth.
+  전체 10525. before/after: docs/screens/v39/m3-mobile-drawer.png. → **v39 개정(A·D·G·H)+v39-M(M1·M2·M3) 완주.**
+  ※오너 액션: 확장은 1.5.18로 재로딩(폐기 캐시), Render에 OPENAI/DEEPL 키 설정 시 실제 번역 작동(없으면 정직 안내).
+
 ## 🟥 v38 브리프 (오너 2026-06-28 — "가짜성공 박멸·표기·아이콘·수집기·북마클릿·토큰·전역점검")
 - 대전제: **"적용함" 보고 금지 — 실제 화면 캡처(before/after)로만 완료 인정.** 못 보여주면 미완·다음 못 넘어감.
   원칙: 추측 금지·거짓성공/가짜수치 금지·회귀 금지(pytest+CI)·정직 데이터·토큰 단일소스. 언급 안 한 동일유형 버그도 전수 점검.
