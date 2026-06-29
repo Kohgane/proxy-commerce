@@ -39,7 +39,13 @@
   '고가수집기'(content_script FAB 218·408, 리스팅 바 700, 핀 779, options/README 동기). 브릿지 마크·'번역까지 한 번에'
   부제 유지. v38#4 항상-노출 게이트(휴리스틱 가드 제거·host 게이트만) 재확인. manifest 1.5.16→1.5.17. 가드
   test_v39_e_fab_label(3) + v38 버전핀 갱신. before/after: docs/screens/v39/E-fab-label-before-after.png.
-- ⏳ 다음: F 404 박멸 · G 전수 / v39-M.
+- ✅ **F. 수집 상세 404 박멸 → '수집 실패' 빈 상태 (Phase 342):** collect_preview_by_id가 _get_owned_item None일 때
+  `abort(404)` → 드로어에 404 페이지가 떠 신뢰 깨짐. 수정: **404 금지 → 200 '수집 실패' 빈 상태**(신설
+  collect_preview_missing.html, 드로어 모드 chrome 숨김) + '다시 수집하기'(/seller/collect)·'수집 이력으로'(드로어 닫기
+  postMessage). 같은 user 스코프 유지(타인 항목도 데이터 누출 0 — 편집폼 미노출). 영향 테스트(v30/preview_view/v38_audit)를
+  404→200+수집실패+누출0으로 갱신. E2E: 확장 수집→상세 200. 가드 test_v39_f_no_404(4). 전체 10485 passed.
+  before/after: docs/screens/v39/F-404-{before,after}.png(드로어 안 404 페이지 → '수집 실패' 빈 상태).
+- ⏳ 다음: G 전수 점검 / v39-M(M1 PWA·M2 공유수집·M3 반응형).
 
 ## 🟥 v38 브리프 (오너 2026-06-28 — "가짜성공 박멸·표기·아이콘·수집기·북마클릿·토큰·전역점검")
 - 대전제: **"적용함" 보고 금지 — 실제 화면 캡처(before/after)로만 완료 인정.** 못 보여주면 미완·다음 못 넘어감.

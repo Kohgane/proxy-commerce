@@ -535,6 +535,7 @@ document.addEventListener('click', function (e) {
 document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeItemDrawer(); });
 window.addEventListener('message', function (e) {
   if (e.data && e.data.kgp === 'preview-saved') _kgpDrawerDirty = true;
+  if (e.data && e.data.kgp === 'drawer-close') closeItemDrawer();   // v39 F: 수집 실패 빈 상태 '수집 이력으로'
 });
 
 function selectedItemIds() {

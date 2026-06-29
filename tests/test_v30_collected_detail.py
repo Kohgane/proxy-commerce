@@ -55,13 +55,16 @@ def test_detail_200_for_every_collect_source(client, source):
 
 
 def test_other_sellers_item_not_leaked(client):
-    # 타 셀러 항목은 404(누출 0) — 권한 분리 유지
+    # v39 F: 타 셀러 항목 접근 → 404 페이지 대신 '수집 실패' 빈 상태(200)지만 데이터 누출은 0.
     item_id = _collect("someone-else@example.com")
     with client.session_transaction() as s:
         s["user_id"] = "u1"
         s["user_email"] = "u1@example.com"
     r = client.get(f"/seller/collect/preview/{item_id}")
-    assert r.status_code == 404
+    body = r.get_data(as_text=True)
+    assert r.status_code == 200
+    assert "수집 실패" in body                       # 정직 빈 상태(404 페이지 아님)
+    assert "수집 상품 편집" not in body              # 타인 항목 편집폼 미노출(누출 0)
 
 
 def test_save_200_across_alias(client):

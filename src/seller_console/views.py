@@ -5245,13 +5245,15 @@ def collect_history_alias():
 @bp.get("/collect/preview/<item_id>")
 def collect_preview_by_id(item_id: str):
     """수집된 상품 미리보기 (Phase 135.2)."""
-    from flask import abort
     if not _check_auth():
         return redirect(url_for("auth.login", next=request.url))
     # v30: 목록과 동일한 관용 스코프로 조회 → 별칭 불일치 404 회귀 방지.
     item = _get_owned_item(item_id)
     if not item:
-        abort(404)
+        # v39 F: 404 페이지(신뢰 깨짐) 금지 → 드로어/페이지 안에서 '수집 실패' 빈 상태(200, 정직).
+        logger.info("[collect-preview] 항목 없음 → 수집 실패 빈 상태: id=%s seller=%s", item_id, _seller_id())
+        return render_template("collect_preview_missing.html", page="collect_history",
+                               item_id=item_id, drawer=bool(request.args.get("drawer")))
 
     extra = {}
     try:

@@ -1,0 +1,35 @@
+{% extends "_base.html" %}
+{% block title %}수집 실패{% endblock %}
+{% block content %}
+{# v39 F: 수집 상세를 못 찾을 때 404 대신 '수집 실패' 빈 상태(200, 정직). 드로어(?drawer=1)에서도 깔끔히 표시. #}
+{% if drawer %}
+<style>
+  .console-sidebar, .mobile-topbar, .mobile-search, .console-topbar, .sidebar-overlay,
+  #fbWrap, #fbReopen, #kgp-progress { display: none !important; }
+  .console-shell { display: block !important; }
+  .console-main { margin: 0 !important; }
+  .console-content { padding: .75rem !important; }
+  body.console-body { background: var(--surface, #fff) !important; }
+</style>
+{% endif %}
+<div class="container-fluid py-5" style="max-width:640px;">
+  <div class="card border-0 shadow-sm">
+    <div class="card-body text-center py-5">
+      <div class="mb-3" style="font-size:2.4rem;color:var(--warn,#e8772e);"><i class="bi bi-exclamation-triangle"></i></div>
+      <h4 class="fw-bold mb-2">수집 실패</h4>
+      <p class="text-muted mb-1">이 상품을 수집 이력에서 찾지 못했어요.</p>
+      <p class="text-muted small mb-4">
+        수집이 도중에 끊겼거나(서버 저장 미완), 다른 계정의 항목일 수 있어요.
+        같은 상품 페이지에서 <b>고가수집기</b>로 다시 수집해 주세요.
+      </p>
+      <div class="d-flex flex-wrap gap-2 justify-content-center">
+        <a href="/seller/collect" class="btn btn-cta"><i class="bi bi-arrow-repeat"></i> 다시 수집하기</a>
+        <a href="/seller/collect/history" class="btn btn-outline-secondary" {% if drawer %}onclick="if(window.parent&&window.parent!==window){window.parent.postMessage({kgp:'drawer-close'},'*');return false;}"{% endif %}>
+          <i class="bi bi-journal-text"></i> 수집 이력으로
+        </a>
+      </div>
+      <p class="text-muted small mt-3 mb-0">항목 ID: <code>{{ item_id }}</code></p>
+    </div>
+  </div>
+</div>
+{% endblock %}
