@@ -22,13 +22,13 @@ def client():
 
 
 def test_manifest_installable_criteria():
-    assert MANIFEST["name"] == "gogabridj"
+    assert MANIFEST["name"] == "고가브릿지"
     assert MANIFEST["display"] == "standalone"
     assert MANIFEST["start_url"] == "/seller/dashboard"          # 설치 앱은 전체 콘솔로 시작
     assert MANIFEST["orientation"].startswith("portrait")
     sizes = {i["sizes"] for i in MANIFEST["icons"]}
     assert "192x192" in sizes and "512x512" in sizes             # 브릿지 아이콘 192/512
-    assert MANIFEST["background_color"] == "#1a1714"             # 먹 splash
+    assert MANIFEST["background_color"] == "#f5efe3"             # 한지 splash(#F5EFE3)
     # 두 매니페스트 파일 동기화
     assert MANIFEST_JSON["start_url"] == MANIFEST["start_url"]
 
@@ -49,7 +49,7 @@ def test_service_worker_and_manifest_served(client):
     assert client.get("/seller/static/icon-192.png").status_code == 200
     assert client.get("/seller/static/icon-512.png").status_code == 200
     # 캐시 버전 갱신(클라 SW 새로고침)
-    assert "goga-bridj-v36" in SW
+    assert "gogabridj-v39" in SW
 
 
 def test_dashboard_links_manifest_and_registers_sw(client):
