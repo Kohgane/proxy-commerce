@@ -221,11 +221,18 @@ function setFabState(btn, state) {
 
 // 고가브릿지 게이트웨이(B) 마크 — 공식 브랜드 자산과 동일(금 아치 + 청록 다리 + 주황 키스톤).
 // v21/v22/v38: 옛 마크·이모지 폐기 — 확정 브릿지 마크 단독(어두운 원형 배지 위 스트로크 아치).
+// v39 신규 브릿지 마크 — 흰 배경 + 검정 라운드 보더 + 금 게이트 링(아치) + 주황 키스톤 + 청록 데크 2줄 + 금 타이.
+// 파비콘/확장/PWA 아이콘과 동일 디자인(단일 소스). 소형 표시에 맞춰 스트로크 굵게.
 const KGP_BRIDGE_SVG =
-  '<svg width="20" height="20" viewBox="0 0 512 512" aria-hidden="true" style="display:block">' +
-  '<path d="M180 372 L180 240 A76 76 0 0 1 332 240 L332 372" fill="none" stroke="#c9a24b" stroke-width="26" stroke-linecap="round"/>' +
-  '<line x1="150" y1="380" x2="362" y2="380" stroke="#119a8e" stroke-width="16" stroke-linecap="round"/>' +
-  '<circle cx="256" cy="164" r="20" fill="#f5821f"/>' +
+  '<svg width="22" height="22" viewBox="0 0 512 512" aria-hidden="true" style="display:block">' +
+  '<rect x="23" y="23" width="466" height="466" rx="112" fill="#ffffff" stroke="#111111" stroke-width="26"/>' +
+  '<circle cx="256" cy="205" r="92" fill="none" stroke="#c9a24b" stroke-width="40"/>' +
+  '<line x1="67" y1="338" x2="445" y2="338" stroke="#119a8e" stroke-width="40" stroke-linecap="round"/>' +
+  '<line x1="67" y1="381" x2="445" y2="381" stroke="#119a8e" stroke-width="40" stroke-linecap="round"/>' +
+  '<line x1="130" y1="338" x2="130" y2="381" stroke="#c9a24b" stroke-width="16"/>' +
+  '<line x1="256" y1="338" x2="256" y2="381" stroke="#c9a24b" stroke-width="16"/>' +
+  '<line x1="382" y1="338" x2="382" y2="381" stroke="#c9a24b" stroke-width="16"/>' +
+  '<circle cx="256" cy="113" r="44" fill="#f5821f"/>' +
   '</svg>';
 
 // ---------------------------------------------------------------------------
@@ -403,7 +410,7 @@ function injectCollectButton() {
   btn.type = "button";
   btn.innerHTML =
     '<span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;' +
-    'background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%;flex-shrink:0">' + KGP_BRIDGE_SVG + '</span>' +
+    'background:transparent;border:0;flex-shrink:0">' + KGP_BRIDGE_SVG + '</span>' +
     '<span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1.12">' +
     '<span class="kgp-fab-label" style="font-weight:700;font-size:14px;color:#f5efe3">고가수집기</span>' +
     '<span style="font-size:10px;color:#c9a24b;font-family:Georgia,\'Times New Roman\',serif">번역까지 한 번에</span>' +
@@ -696,7 +703,7 @@ function kgpBuildToolbar() {
   const autoOn = kgpLSget("kgp_bar_auto", "1") !== "0";
   bar.innerHTML =
     '<span id="kgp-tb-grip" style="display:flex;align-items:center;gap:7px">' +
-    '<span style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%">' + KGP_BRIDGE_SVG + '</span>' +
+    '<span style="display:flex;align-items:center;justify-content:center;width:26px;height:26px;background:transparent;border:0">' + KGP_BRIDGE_SVG + '</span>' +
     '<strong style="color:#ecdcb0">고가수집기</strong></span>' +
     '<span id="kgp-tb-count" style="opacity:.85"></span>' +
     '<span style="width:1px;height:18px;background:#4a4234"></span>' +
@@ -778,7 +785,7 @@ function kgpShowReopenPill() {
   pill.type = "button";
   pill.title = "고가수집기 바 열기";
   pill.innerHTML =
-    '<span style="display:flex;align-items:center;justify-content:center;width:20px;height:20px;background:#0f0d0b;border:1px solid #c9a24b;border-radius:50%">' + KGP_BRIDGE_SVG + '</span>' +
+    '<span style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;background:transparent;border:0">' + KGP_BRIDGE_SVG + '</span>' +
     '<span style="font-weight:700;font-size:12px">수집 열기</span>' +
     '<span class="kgp-pill-count" style="display:' + (sel ? "inline-block" : "none") + ';background:#119a8e;color:#fff;border-radius:999px;padding:1px 7px;font-size:11px;font-weight:800">' + (sel || "") + '</span>';
   pill.style.cssText = [
