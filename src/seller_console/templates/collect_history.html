@@ -487,18 +487,32 @@
     border-bottom: 1px solid var(--console-border, #e6e0d3); flex-shrink: 0; }
   .kgp-drawer-title { font-weight: 700; flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .kgp-drawer-iframe { flex-grow: 1; width: 100%; border: 0; }
-  .kgp-drawer-x { width: 40px; height: 40px; border: 0; background: transparent; font-size: 1.4rem; cursor: pointer; border-radius: 8px; color: var(--text-muted, #777); }
+  .kgp-drawer-x { width: 44px; height: 44px; border: 0; background: transparent; font-size: 1.4rem; cursor: pointer; border-radius: 8px; color: var(--text-muted, #777); }
   .kgp-drawer-x:hover { background: var(--console-primary-weak, #eee); }
-  @media (max-width: 767.98px) {   /* v39-M 연동: 모바일은 풀스크린 시트 */
-    .kgp-drawer { width: 100vw; }
+  .kgp-drawer-grip { display: none; }
+  /* v39-M M3: 모바일은 아래에서 올라오는 풀스크린 바텀시트(한 손 조작). */
+  @media (max-width: 767.98px) {
+    .kgp-drawer {
+      width: 100vw; left: 0; right: 0; top: auto; bottom: 0;
+      height: 92dvh; height: 92vh;        /* 동적 뷰포트 우선, 폴백 vh */
+      border-radius: 16px 16px 0 0;
+      transform: translateY(100%);
+      box-shadow: 0 -8px 30px rgba(0,0,0,.28);
+    }
+    .kgp-drawer.show { transform: translateY(0); }
+    .kgp-drawer-head { padding: .85rem 1rem; }
+    .kgp-drawer-grip { display: block; width: 40px; height: 4px; border-radius: 999px;
+      background: var(--console-border, #d9d2c4); margin: 8px auto 2px; flex-shrink: 0; }
+    .kgp-drawer-origin-txt { display: none; }   /* 좁은 폭: '원본 보기' 라벨 숨기고 아이콘만 */
   }
   body.kgp-drawer-open { overflow: hidden; }
 </style>
 <div class="kgp-drawer-backdrop" id="kgpDrawerBackdrop" onclick="closeItemDrawer()"></div>
 <aside class="kgp-drawer" id="kgpDrawer" role="dialog" aria-modal="true" aria-label="상품 편집">
+  <div class="kgp-drawer-grip" aria-hidden="true"></div>
   <div class="kgp-drawer-head">
     <span class="kgp-drawer-title" id="kgpDrawerTitle">상품 편집</span>
-    <a id="kgpDrawerOrigin" href="javascript:void(0)" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary btn-sm">원본 보기 <i class="bi bi-box-arrow-up-right"></i></a>
+    <a id="kgpDrawerOrigin" href="javascript:void(0)" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary btn-sm"><span class="kgp-drawer-origin-txt">원본 보기 </span><i class="bi bi-box-arrow-up-right"></i></a>
     <button type="button" class="kgp-drawer-x" onclick="closeItemDrawer()" aria-label="닫기"><i class="bi bi-x-lg"></i></button>
   </div>
   <iframe class="kgp-drawer-iframe" id="kgpDrawerFrame" title="상품 편집" referrerpolicy="no-referrer"></iframe>

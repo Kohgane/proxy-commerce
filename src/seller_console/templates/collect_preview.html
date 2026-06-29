@@ -8,9 +8,23 @@
   #fbWrap, #fbReopen, #kgp-progress { display: none !important; }
   .console-shell { display: block !important; }
   .console-main { margin: 0 !important; }
-  .console-content { padding: .75rem !important; }
+  .console-content { padding: .75rem !important; overflow-x: hidden; }
   body.console-body { background: var(--surface, #fff) !important; }
   .drawer-hide { display: none !important; }   /* 드로어 헤더가 대신 제공 */
+  /* v39-M M3: 모바일 드로어 — 가로 스크롤 0 + 하단 고정 액션바(엄지존, 저장/등록 ≥44px). */
+  .container-fluid { max-width: 100% !important; }
+  img, table, pre { max-width: 100%; }
+  @media (max-width: 767.98px) {
+    .kgp-action-bar {
+      position: sticky; bottom: 0; z-index: 6;
+      background: var(--surface, #fff);
+      border-top: 1px solid var(--console-border, #e6e0d3);
+      box-shadow: 0 -4px 14px rgba(0,0,0,.08);
+      padding: .6rem .7rem;
+    }
+    .kgp-action-bar .btn { min-height: 44px; display: inline-flex; align-items: center; }
+    #btnSaveEdits, #btnOpenUploadModal { flex: 1 1 auto; justify-content: center; }
+  }
 </style>
 {% endif %}
 <div class="container-fluid py-4" style="max-width:880px;">
@@ -157,7 +171,7 @@
       </div>
     </div>
 
-    <div class="card-footer d-flex gap-2 flex-wrap">
+    <div class="card-footer d-flex gap-2 flex-wrap kgp-action-bar">
       <button class="btn btn-primary btn-sm" id="btnSaveEdits" onclick="saveEdits()"><i class="bi bi-save"></i> 변경사항 저장</button>
       <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer"
          class="btn btn-outline-secondary btn-sm"><i class="bi bi-link-45deg"></i> 원본 페이지</a>
