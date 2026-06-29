@@ -54,10 +54,13 @@ def test_b_collected_detail_scope_isolation():
     c = app.test_client()
     r = c.post("/api/v1/collect/extension", json={"url": "https://x.com/p", "title": "내 상품"})
     item_id = r.get_json().get("item_id")
-    # 다른 셀러 세션으로 상세 접근 → 404
+    # v39 F: 다른 셀러 세션으로 상세 접근 → 404 대신 '수집 실패' 빈 상태(200)지만 데이터 누출 0
     with c.session_transaction() as s:
         s["user_id"] = "intruder9"
-    assert c.get(f"/seller/collect/preview/{item_id}").status_code == 404
+    rr = c.get(f"/seller/collect/preview/{item_id}")
+    body = rr.get_data(as_text=True)
+    assert rr.status_code == 200 and "수집 실패" in body
+    assert "수집 상품 편집" not in body   # 타인 항목 편집폼 미노출(데이터 누출 0)
 
 
 # ---------------------------------------------------------------------------

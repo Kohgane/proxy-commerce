@@ -56,11 +56,13 @@ class TestCollectPreviewView:
             resp = client.get("/seller/collect/preview/abc123")
         assert b"Alo Legging" in resp.data
 
-    def test_preview_nonexistent_id_404(self, client):
-        """존재하지 않는 ID → 404."""
+    def test_preview_nonexistent_id_shows_failure_state(self, client):
+        """v39 F: 존재하지 않는 ID → 404 아님, '수집 실패' 빈 상태(200)."""
         with patch("src.seller_console.collect_history_store.get", return_value=None):
             resp = client.get("/seller/collect/preview/nonexistent999")
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        assert "수집 실패".encode() in resp.data
+        assert "다시 수집하기".encode() in resp.data
 
     def test_preview_shows_price(self, client):
         """가격 정보가 표시됨."""
