@@ -30,7 +30,7 @@ def test_extension_version_bumped_for_icon_refresh():
 
 
 def test_favicon_cache_bumped():
-    assert "v='177'" in BASE                    # 탭 아이콘 캐시 갱신(브릿지)
+    assert "v='178'" in BASE                    # 탭 아이콘 캐시 갱신(브릿지)
     assert "v='176'" not in BASE
     assert "bridge gateway mark" in FAVICON_SVG  # favicon = 브릿지 게이트웨이
     assert "globe" not in FAVICON_SVG.lower()
