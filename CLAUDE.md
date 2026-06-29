@@ -18,7 +18,17 @@
   교체 + favicon-48 신설 + favicon.ico(16/32/48 멀티) 재생성. 캐시 v=177→v=178(전 템플릿). 가드 test_v39_b_small_icons(4:
   16/32px에 청록·주황 픽셀 실존=뭉개짐0) + 영향 테스트 v178 갱신. 전체 10470 passed. before/after(1:1+확대):
   docs/screens/v39/B-smallicon-{before,after}.png(어두운 덩어리 → 아치+주황 점 식별).
-- ⏳ 다음: C 편집 드로어(핵심) · D 추출/번역 · E 라벨 · F 404 · G 전수 / v39-M.
+- ✅ **C. 수집품목 클릭 → 인페이지 편집 드로어 (Phase 339, 핵심):** 기존엔 수집 이력에서 행/제목/도메인 클릭 시 편집
+  페이지로 라우트 이동하거나 **도메인 링크가 원본 사이트(yoshidakaban 등)로 새 탭** 이탈. 수정: 썸네일·제목·편집 버튼을
+  **`.kgp-open-drawer`(data-id/url/title)**로 바꿔 클릭 시 **우측 슬라이드 편집 드로어**(같은 페이지 위 오버레이, **URL 변화·
+  새 창 0**) 오픈. 드로어는 기존 편집 페이지(`/collect/preview/{id}?drawer=1`)를 **same-origin iframe**으로 임베드(전체 편집
+  기능 재사용 — 제목·가격·통화·원화환산·상세·이미지·카테고리·키워드·업로드). `?drawer=1`은 콘솔 chrome 숨김. 드로어 헤더에
+  제목 + **'원본 보기 ↗'(여기만 새 탭)** + 닫기. 도메인은 비-링크 텍스트로(원본 이탈 0). iframe 저장 시 postMessage→닫을 때
+  목록 새로고침. **보안:** security 미들웨어가 `/seller/collect/preview/` 한정 `X-Frame-Options: SAMEORIGIN`+CSP
+  `frame-ancestors 'self'`(그 외 전 경로 DENY 유지=클릭재킹 방어). 모바일은 풀스크린 시트(v39-M 연동). 헤드리스 검증
+  (클릭→URL 불변·새 창 0·드로어 편집폼 로드). 가드 test_v39_c_edit_drawer(4) + dead-anchor 가드 호환. 전체 10474 passed.
+  before/after: docs/screens/v39/C-drawer-{before,after}.png(목록 클릭 이탈 → 인페이지 편집 드로어).
+- ⏳ 다음: D 추출/번역 · E 라벨 · F 404 · G 전수 / v39-M.
 
 ## 🟥 v38 브리프 (오너 2026-06-28 — "가짜성공 박멸·표기·아이콘·수집기·북마클릿·토큰·전역점검")
 - 대전제: **"적용함" 보고 금지 — 실제 화면 캡처(before/after)로만 완료 인정.** 못 보여주면 미완·다음 못 넘어감.

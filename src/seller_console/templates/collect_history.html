@@ -202,26 +202,27 @@
             <tr>
               <td class="ps-3 cardcell-check"><input type="checkbox" class="row-chk" value="{{ it.id }}" data-title="{{ it.title or '(제목 없음)' }}" aria-label="선택"></td>
               <td class="cardcell-img">
+                {# v39 C: 클릭 = 인페이지 편집 드로어(새 창/원본 이동 0). #}
+                <a href="javascript:void(0)" class="kgp-open-drawer d-inline-flex align-items-center gap-1" role="button"
+                   data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title or '(제목 없음)' }}" title="클릭하면 편집 드로어가 열려요">
                 {% if it.thumbs %}
-                <a href="/seller/collect/preview/{{ it.id }}" class="d-inline-flex align-items-center gap-1" title="확인·수정 후 등록">
                   {% for t in it.thumbs %}
                   <img src="{{ t }}" alt="" loading="lazy"
                        style="width:{{ '52' if loop.first else '34' }}px;height:{{ '52' if loop.first else '34' }}px;object-fit:cover;border-radius:7px;background:#f1f3f5;border:1px solid #e9ecef"
                        onerror="this.style.display='none'">
                   {% endfor %}
-                </a>
                 {% else %}
-                <a href="/seller/collect/preview/{{ it.id }}">
                   <span class="d-inline-flex align-items-center justify-content-center text-muted"
                         style="width:52px;height:52px;border-radius:8px;background:#f1f3f5;font-size:18px"><i class="bi bi-image"></i></span>
-                </a>
                 {% endif %}
+                </a>
               </td>
               <td style="max-width:360px" class="cardcell-title">
-                <a href="/seller/collect/preview/{{ it.id }}" class="text-decoration-none fw-semibold text-dark d-block text-truncate" title="{{ it.title or '(제목 없음)' }}">
+                <a href="javascript:void(0)" class="kgp-open-drawer text-decoration-none fw-semibold text-dark d-block text-truncate" role="button"
+                   data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title or '(제목 없음)' }}" title="{{ it.title or '(제목 없음)' }}">
                   {{ it.title or "(제목 없음)" }}
                 </a>
-                <a href="{{ it.url }}" target="_blank" rel="noopener noreferrer" class="text-muted small text-decoration-none d-block text-truncate">{{ it.domain or it.url }}</a>
+                <span class="text-muted small d-block text-truncate" title="{{ it.url }}">{{ it.domain or it.url }}</span>
               </td>
               <td class="small" data-label="가격">
                 {% if it.price %}<span class="fw-semibold">{{ it.price }}</span> <span class="text-muted">{{ it.currency }}</span>{% else %}<span class="text-muted">-</span>{% endif %}
@@ -252,8 +253,9 @@
                 {% endif %}
               </td>
               <td class="text-nowrap cardcell-actions">
-                <a href="/seller/collect/preview/{{ it.id }}"
-                   class="btn btn-success btn-sm py-0" title="확인·수정 후 마켓에 등록"><i class="bi bi-pencil-square"></i> 편집·등록</a>
+                <button type="button" class="kgp-open-drawer btn btn-success btn-sm py-0"
+                        data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title or '(제목 없음)' }}"
+                        title="확인·수정 후 마켓에 등록"><i class="bi bi-pencil-square"></i> 편집·등록</button>
               </td>
             </tr>
           {% endfor %}
@@ -471,7 +473,70 @@
   </div>
 </div>
 
+{# v39 C: 인페이지 편집 드로어 — 클릭 시 우측 슬라이드(같은 페이지 위 오버레이, 새 창/라우트 이동 0).
+   기존 편집 페이지(/collect/preview/{id})를 iframe(drawer 모드)로 임베드해 전체 편집 기능 재사용. #}
+<style>
+  .kgp-drawer-backdrop { position: fixed; inset: 0; background: rgba(20,18,16,.45); z-index: 1080;
+    opacity: 0; pointer-events: none; transition: opacity .2s ease; }
+  .kgp-drawer-backdrop.show { opacity: 1; pointer-events: auto; }
+  .kgp-drawer { position: fixed; top: 0; right: 0; height: 100vh; width: min(960px, 96vw);
+    background: var(--surface, #fff); z-index: 1081; box-shadow: -8px 0 30px rgba(0,0,0,.25);
+    transform: translateX(100%); transition: transform .26s cubic-bezier(.4,0,.2,1); display: flex; flex-direction: column; }
+  .kgp-drawer.show { transform: translateX(0); }
+  .kgp-drawer-head { display: flex; align-items: center; gap: .75rem; padding: .7rem 1rem;
+    border-bottom: 1px solid var(--console-border, #e6e0d3); flex-shrink: 0; }
+  .kgp-drawer-title { font-weight: 700; flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kgp-drawer-iframe { flex-grow: 1; width: 100%; border: 0; }
+  .kgp-drawer-x { width: 40px; height: 40px; border: 0; background: transparent; font-size: 1.4rem; cursor: pointer; border-radius: 8px; color: var(--text-muted, #777); }
+  .kgp-drawer-x:hover { background: var(--console-primary-weak, #eee); }
+  @media (max-width: 767.98px) {   /* v39-M 연동: 모바일은 풀스크린 시트 */
+    .kgp-drawer { width: 100vw; }
+  }
+  body.kgp-drawer-open { overflow: hidden; }
+</style>
+<div class="kgp-drawer-backdrop" id="kgpDrawerBackdrop" onclick="closeItemDrawer()"></div>
+<aside class="kgp-drawer" id="kgpDrawer" role="dialog" aria-modal="true" aria-label="상품 편집">
+  <div class="kgp-drawer-head">
+    <span class="kgp-drawer-title" id="kgpDrawerTitle">상품 편집</span>
+    <a id="kgpDrawerOrigin" href="javascript:void(0)" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary btn-sm">원본 보기 <i class="bi bi-box-arrow-up-right"></i></a>
+    <button type="button" class="kgp-drawer-x" onclick="closeItemDrawer()" aria-label="닫기"><i class="bi bi-x-lg"></i></button>
+  </div>
+  <iframe class="kgp-drawer-iframe" id="kgpDrawerFrame" title="상품 편집" referrerpolicy="no-referrer"></iframe>
+</aside>
+
 <script>
+// v39 C: 편집 드로어 — 목록 클릭을 라우트 이동/새 창에서 인페이지 오버레이로 교체.
+let _kgpDrawerDirty = false;   // iframe에서 저장 발생 시 닫을 때 목록 새로고침
+function openItemDrawer(id, title, url) {
+  const fr = document.getElementById('kgpDrawerFrame');
+  fr.src = '/seller/collect/preview/' + encodeURIComponent(id) + '?drawer=1';
+  document.getElementById('kgpDrawerTitle').textContent = title || '상품 편집';
+  const orig = document.getElementById('kgpDrawerOrigin');
+  if (url) { orig.href = url; orig.style.display = ''; } else { orig.style.display = 'none'; }
+  document.getElementById('kgpDrawer').classList.add('show');
+  document.getElementById('kgpDrawerBackdrop').classList.add('show');
+  document.body.classList.add('kgp-drawer-open');
+}
+function closeItemDrawer() {
+  document.getElementById('kgpDrawer').classList.remove('show');
+  document.getElementById('kgpDrawerBackdrop').classList.remove('show');
+  document.body.classList.remove('kgp-drawer-open');
+  if (_kgpDrawerDirty) { _kgpDrawerDirty = false; window.location.reload(); }   // 저장 반영
+  setTimeout(() => { const fr = document.getElementById('kgpDrawerFrame'); if (fr) fr.src = 'about:blank'; }, 300);
+}
+// 위임 클릭: .kgp-open-drawer (썸네일/제목/편집 버튼)
+document.addEventListener('click', function (e) {
+  const el = e.target.closest('.kgp-open-drawer');
+  if (!el) return;
+  e.preventDefault();
+  openItemDrawer(el.getAttribute('data-id'), el.getAttribute('data-title'), el.getAttribute('data-url'));
+});
+// ESC로 닫기 + iframe 저장 알림 수신(저장 시 목록 새로고침 플래그)
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeItemDrawer(); });
+window.addEventListener('message', function (e) {
+  if (e.data && e.data.kgp === 'preview-saved') _kgpDrawerDirty = true;
+});
+
 function selectedItemIds() {
   return Array.from(document.querySelectorAll('.row-chk:checked')).map(c => c.value);
 }

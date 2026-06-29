@@ -1,8 +1,20 @@
 {% extends "_base.html" %}
 {% block title %}상품 편집 — {{ item.title or item.id }}{% endblock %}
 {% block content %}
+{# v39 C: 편집 드로어(iframe) 임베드 모드 — ?drawer=1이면 콘솔 chrome 숨겨 깔끔히 표시(같은 페이지 위 오버레이). #}
+{% if request.args.get('drawer') %}
+<style>
+  .console-sidebar, .mobile-topbar, .mobile-search, .console-topbar, .sidebar-overlay,
+  #fbWrap, #fbReopen, #kgp-progress { display: none !important; }
+  .console-shell { display: block !important; }
+  .console-main { margin: 0 !important; }
+  .console-content { padding: .75rem !important; }
+  body.console-body { background: var(--surface, #fff) !important; }
+  .drawer-hide { display: none !important; }   /* 드로어 헤더가 대신 제공 */
+</style>
+{% endif %}
 <div class="container-fluid py-4" style="max-width:880px;">
-  <div class="mb-3 d-flex justify-content-between align-items-center">
+  <div class="mb-3 d-flex justify-content-between align-items-center {% if request.args.get('drawer') %}drawer-hide{% endif %}">
     <a href="/seller/collect/history" class="text-decoration-none text-muted small">← 수집 이력으로 돌아가기</a>
     <span class="text-muted small">
       <i class="bi bi-translate"></i> <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.domain }}</a>
@@ -659,7 +671,11 @@ async function saveEdits() {
     });
     const out = await resp.json();
     if (!out.ok) { pcToast(kgpFriendlyError(out), 'error'); }
-    else { pcToast('변경사항을 저장했습니다.', 'success'); }
+    else {
+      pcToast('변경사항을 저장했습니다.', 'success');
+      // v39 C: 편집 드로어(iframe)에서 저장 시 부모 목록에 알려 닫을 때 새로고침.
+      try { if (window.parent && window.parent !== window) window.parent.postMessage({ kgp: 'preview-saved' }, '*'); } catch (e) {}
+    }
   } catch (err) {
     pcToast(kgpFriendlyError(err), 'error');
   } finally {
