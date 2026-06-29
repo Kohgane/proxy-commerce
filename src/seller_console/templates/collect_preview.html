@@ -220,21 +220,18 @@
           </div>
           {% macro mtile(code, label, chkid) %}
           {% set ok = (market_connected or {}).get(code) %}
-          <div class="col-6 col-md-4">
-            <label class="market-tile border rounded p-2 d-flex align-items-center gap-2 w-100 mb-0 {{ 'border-success' if ok else 'border-warning-subtle' }}"
-                   for="{{ chkid }}" style="{{ 'opacity:.7' if not ok else '' }}">
-              <input class="form-check-input market-upload-check m-0" type="checkbox" value="{{ code }}" id="{{ chkid }}">
-              <span class="fw-semibold flex-grow-1">{{ label }}</span>
-              {% if ok %}
-              <span class="badge text-bg-success" title="API 키가 입력됨 — 실제 연결은 ‘사전검증/등록’에서 확인됩니다"><i class="bi bi-check-circle"></i> 키 설정됨</span>
-              {% else %}
-              <a href="/seller/markets/connect/{{ code }}" target="_blank" class="badge text-bg-secondary text-decoration-none"
-                 title="API 키 미입력 — 클릭해 연결" onclick="event.stopPropagation()"><i class="bi bi-x-circle"></i> 미설정</a>
-              {% endif %}
-            </label>
-          </div>
+          <label class="market-tile {{ 'is-on' if ok else 'is-off' }}" for="{{ chkid }}">
+            <input class="form-check-input market-upload-check m-0" type="checkbox" value="{{ code }}" id="{{ chkid }}">
+            <span class="market-name">{{ label }}</span>
+            {% if ok %}
+            <span class="market-badge on" title="API 키가 입력됨 — 실제 연결은 ‘사전검증/등록’에서 확인됩니다"><i class="bi bi-check-circle"></i> 키 설정됨</span>
+            {% else %}
+            <a href="/seller/markets/connect/{{ code }}" target="_blank" class="market-badge off text-decoration-none"
+               title="API 키 미입력 — 클릭해 연결" onclick="event.stopPropagation()"><i class="bi bi-x-circle"></i> 미설정</a>
+            {% endif %}
+          </label>
           {% endmacro %}
-          <div class="row g-2 mb-4" id="marketCheckboxes">
+          <div class="market-grid mb-4" id="marketCheckboxes">
             {{ mtile('shopify', 'Shopify', 'chkShopify') }}
             {{ mtile('coupang', '쿠팡', 'chkCoupang') }}
             {{ mtile('smartstore', '스마트스토어', 'chkSmartstore') }}
@@ -294,10 +291,56 @@
 </div>
 
 <style>
-  .market-tile { cursor: pointer; transition: background-color .12s, border-color .12s, box-shadow .12s; }
-  .market-tile:hover { border-color: #6f42c1 !important; background-color: rgba(111,66,193,.06); }
-  .market-tile.selected { border-color: #6f42c1 !important; background-color: rgba(111,66,193,.12); box-shadow: 0 0 0 1px #6f42c1 inset; }
-  .market-tile .market-upload-check { pointer-events: none; }
+  /* v39 G: 마켓 선택 카드 — 균등 폭 그리드(좁은 드로어서도 라벨 세로 한 글자씩 쪼개짐 0).
+     토큰 단일소스(하드코딩 보라 hex 제거 → var(--teal)). */
+  .market-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: var(--space-2, .5rem);
+  }
+  .market-tile {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;            /* 배지가 안 들어가면 줄바꿈(글자 단위 세로 쪼개짐 금지) */
+    gap: var(--space-2, .5rem);
+    width: 100%;
+    margin: 0;
+    padding: var(--space-2, .5rem);
+    border: 1px solid var(--border, #e5e0d8);
+    border-radius: var(--radius, 10px);
+    cursor: pointer;
+    transition: background-color .12s, border-color .12s, box-shadow .12s;
+  }
+  .market-tile.is-on  { border-color: var(--success, #2f9e44); }
+  .market-tile.is-off { border-color: var(--warn, #e8a13a); opacity: .8; }
+  .market-tile:hover  { border-color: var(--teal, #119a8e); background-color: color-mix(in srgb, var(--teal, #119a8e) 6%, transparent); }
+  .market-tile.selected {
+    border-color: var(--teal, #119a8e) !important;
+    background-color: color-mix(in srgb, var(--teal, #119a8e) 12%, transparent);
+    box-shadow: 0 0 0 1px var(--teal, #119a8e) inset;
+  }
+  .market-tile .market-upload-check { pointer-events: none; flex: 0 0 auto; }
+  /* 마켓명: 가로 한 줄 고정(세로 쪼개짐 0), 넘치면 … 처리 */
+  .market-tile .market-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .market-tile .market-badge {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+    font-size: .72rem;
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+  .market-tile .market-badge.on  { background: var(--success, #2f9e44); color: #fff; }
+  .market-tile .market-badge.off { background: var(--surface-2, #efeae1); color: var(--text-2, #6b6258); }
 </style>
 <script>
 // ── 서버 주입 데이터 ──
