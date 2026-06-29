@@ -39,6 +39,11 @@ _CSP_HTML_PAGES = (
     "frame-ancestors 'none'"
 )
 
+# v39 C: 편집 드로어(iframe)용 — 같은 출처(self) 프레이밍만 허용(외부 프레이밍은 여전히 차단=클릭재킹 방어 유지).
+_CSP_HTML_SELFFRAME = _CSP_HTML_PAGES.replace("frame-ancestors 'none'", "frame-ancestors 'self'")
+# 자기 출처 iframe 임베드를 허용할 경로(우리 편집 페이지를 우리 목록 위 드로어로 띄움).
+_SELF_FRAME_PREFIXES = ("/seller/collect/preview/",)
+
 # API/웹훅 응답용 CSP — strict (리소스 로드 불필요)
 _CSP_API = (
     "default-src 'none'; "
@@ -91,16 +96,22 @@ class SecurityMiddleware:
         from flask import request
         path = request.path
 
+        # v39 C: 편집 드로어 — 우리 편집 페이지를 우리 목록 위 same-origin iframe으로 띄우려면
+        #         self 프레이밍 허용(외부 프레이밍은 여전히 차단). 그 외 전 경로는 DENY 유지.
+        self_frame = path.startswith(_SELF_FRAME_PREFIXES)
+
         # /api/docs 는 HTML 문서이므로 먼저 확인 → HTML 정책 적용
         if path.startswith(_API_DOCS_PREFIX):
             csp = _CSP_HTML_PAGES
         elif path.startswith(_API_PREFIXES):
             csp = _CSP_API
+        elif self_frame:
+            csp = _CSP_HTML_SELFFRAME
         else:
             csp = _CSP_HTML_PAGES
 
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
-        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN" if self_frame else "DENY")
         response.headers.setdefault("X-XSS-Protection", "1; mode=block")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("Content-Security-Policy", csp)
