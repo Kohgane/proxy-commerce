@@ -1279,94 +1279,115 @@ def collect_preview():
     return jsonify(response)
 
 
-@bp.get("/collect/quick")
-def collect_quick():
-    """북마클릿 '새 탭 네비게이션' 수집 (Phase 218 — 토큰 없이 로그인 세션으로 작동).
+def _quick_collect(url: str, source: str = "bookmarklet") -> dict:
+    """공통 수집 코어 — 로그인 세션으로 URL 수집해 이력에 저장.
 
-    북마클릿이 `fetch` 대신 새 탭으로 이 URL을 열어 수집한다. 임의 쇼핑몰의 CSP가
-    `fetch`를 막아도(토큰 발급해도 수집 실패하던 원인) 페이지 '이동'은 막히지 않으므로
-    실제로 수집된다. 로그인 세션을 쓰므로 Personal Access Token이 필요 없다.
-
-    Query: u(상품URL, 필수), t(제목), img(이미지), p(가격), c(통화) — 페이지에서 읽은 메타.
+    Returns: {ok, item_id, message, status} (status=HTTP 코드). 북마클릿/공유(Share Target) 공용.
     """
-    if not _check_auth():
-        return redirect(url_for("auth.login", next=request.full_path))
-
-    # u(북마클릿) 외에 url/text(모바일 PWA 공유 share_target)도 허용 — 공유 시 URL 추출
-    url = (request.args.get("u") or request.args.get("url") or "").strip()
     if not url.startswith(("http://", "https://")):
-        shared = request.args.get("text") or request.args.get("title") or ""
-        m = re.search(r"https?://[^\s]+", shared)
-        if m:
-            url = m.group(0).strip()
-    if not url.startswith(("http://", "https://")):
-        return render_template(
-            "collect_quick_result.html", ok=False,
-            message="올바른 상품 URL이 아닙니다. 상품 상세 페이지에서 북마클릿을 눌러주세요.",
-            url=url,
-        ), 400
+        return {"ok": False, "item_id": None, "status": 400,
+                "message": "올바른 상품 URL이 아닙니다. 상품 상세 페이지에서 다시 시도해주세요."}
 
-    # 1) 서버 수집 시도(접근 가능한 사이트는 상세/번역까지). 막히면 페이지 메타로 폴백.
     draft = None
     try:
         draft = _collect_real_draft(url, translate=True)
     except Exception as exc:
-        logger.warning("북마클릿 수집 파이프라인 오류(%s): %s", url[:80], exc)
+        logger.warning("빠른 수집 파이프라인 오류(%s): %s", url[:80], exc)
 
-    used_meta = False
     if not draft:
-        # 봇 차단 등으로 서버 수집 실패 → 북마클릿이 보낸 페이지 메타로 최소 수집(정직)
         t = (request.args.get("t") or "").strip()
         img = (request.args.get("img") or "").strip()
         price = (request.args.get("p") or "").strip()
         currency = (request.args.get("c") or "").strip() or "USD"
         if t or img:
-            used_meta = True
             draft = {
                 "title": t, "title_ko": t, "title_en": t,
                 "price_original": price, "price": price, "currency": currency,
                 "images": [img] if img else [], "image": img,
                 "description": "", "description_ko": "",
-                "source": "bookmarklet_meta",
+                "source": f"{source}_meta",
             }
 
     if not draft:
-        # 메타조차 없으면 정직하게 직접입력으로 안내
-        return render_template(
-            "collect_quick_result.html", ok=False,
-            message=("이 페이지에서 상품 정보를 읽지 못했습니다. 상품 상세 페이지인지 확인하거나, "
-                     "봇 차단 사이트는 크롬 확장(고가네 수집)을 사용하세요."),
-            url=url,
-        )
+        return {"ok": False, "item_id": None, "status": 200,
+                "message": ("이 페이지에서 상품 정보를 읽지 못했습니다. 상품 상세 페이지인지 확인하거나, "
+                            "봇 차단 사이트(Temu·Amazon 등)는 PC 크롬 확장(고가수집기)에서 더 정확합니다.")}
 
     images = draft.get("images") if isinstance(draft.get("images"), list) else []
     title = draft.get("title_ko") or draft.get("title") or draft.get("title_en") or "(제목 없음)"
     try:
         from . import collect_history_store
         item_id = collect_history_store.append(
-            source="bookmarklet",
-            url=url,
-            title=title,
+            source=source, url=url, title=title,
             image=images[0] if images else draft.get("image", ""),
             price=str(draft.get("price_original") or draft.get("price") or ""),
             currency=draft.get("currency") or "",
-            extra=draft,
-            seller_id=_seller_id(),
+            extra=draft, seller_id=_seller_id(),
         )
     except Exception as exc:
-        logger.warning("북마클릿 수집 이력 저장 실패: %s", exc)
-        return render_template(
-            "collect_quick_result.html", ok=False,
-            message="수집은 됐지만 이력 저장에 실패했습니다. 다시 시도해주세요.", url=url,
-        )
+        logger.warning("빠른 수집 이력 저장 실패: %s", exc)
+        return {"ok": False, "item_id": None, "status": 200,
+                "message": "수집은 됐지만 이력 저장에 실패했습니다. 다시 시도해주세요."}
 
     _register_discovery_candidate_from_collection(url)
-    # 편집 페이지로 바로 보내지 않고 '수집됨'만 표시 — 내 계정의 수집 이력에서 확인.
+    return {"ok": True, "item_id": item_id, "status": 200,
+            "message": "수집 이력에 저장했어요. 내 계정의 ‘수집 이력’에서 확인·편집할 수 있습니다."}
+
+
+@bp.get("/collect/quick")
+def collect_quick():
+    """북마클릿 '새 탭 네비게이션' 수집 (Phase 218 — 토큰 없이 로그인 세션으로 작동).
+
+    북마클릿이 `fetch` 대신 새 탭으로 이 URL을 열어 수집한다. 임의 쇼핑몰의 CSP가
+    `fetch`를 막아도 페이지 '이동'은 막히지 않으므로 실제로 수집된다. 로그인 세션을 쓴다.
+
+    Query: u(상품URL, 필수), t(제목), img(이미지), p(가격), c(통화) — 페이지에서 읽은 메타.
+    """
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.full_path))
+
+    url = (request.args.get("u") or request.args.get("url") or "").strip()
+    if not url.startswith(("http://", "https://")):
+        shared = request.args.get("text") or request.args.get("title") or ""
+        m = re.search(r"https?://[^\s]+", shared)
+        if m:
+            url = m.group(0).strip()
+
+    res = _quick_collect(url, source="bookmarklet")
+    # 북마클릿은 편집 페이지로 바로 안 보내고 '수집됨'만 표시(오너 결정, Phase 219).
     return render_template(
-        "collect_quick_result.html", ok=True,
-        message="수집 이력에 저장했어요. 내 계정의 ‘수집 이력’에서 확인·편집할 수 있습니다.",
-        url=url, item_id=item_id,
-    )
+        "collect_quick_result.html", ok=res["ok"], message=res["message"],
+        url=url, item_id=res.get("item_id"),
+    ), res["status"]
+
+
+@bp.get("/collect/share")
+def collect_share():
+    """v39-M M2: 모바일 PWA 공유(Web Share Target) 수집 → 성공 시 편집 드로어로 바로 진입.
+
+    manifest share_target.action = 이 라우트. 공유된 title/text/url에서 상품 URL을 뽑아 수집하고,
+    성공하면 편집 화면(드로어 모드)으로 redirect — 한 손으로 공유→수집→편집까지.
+    (북마클릿 /collect/quick은 '수집됨' 확인만 표시하던 흐름 유지.)
+    """
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.full_path))
+
+    url = (request.args.get("url") or request.args.get("u") or "").strip()
+    if not url.startswith(("http://", "https://")):
+        shared = request.args.get("text") or request.args.get("title") or ""
+        m = re.search(r"https?://[^\s]+", shared)
+        if m:
+            url = m.group(0).strip()
+
+    res = _quick_collect(url, source="share")
+    if res["ok"] and res.get("item_id"):
+        # 성공 → 편집 화면(모바일 풀스크린 드로어 모드)으로 바로 진입
+        return redirect(url_for("seller_console.collect_preview_by_id",
+                                item_id=res["item_id"]) + "?drawer=1&from=share")
+    # 실패 → 정직한 안내(모바일: 확장 권장 등)
+    return render_template(
+        "collect_quick_result.html", ok=False, message=res["message"], url=url,
+    ), res["status"]
 
 
 def _extract_reviews(html: str, limit: int = 20) -> list[dict]:

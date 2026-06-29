@@ -48,7 +48,7 @@ def test_pwa_manifest_has_share_target():
     with open("src/seller_console/static/manifest.webmanifest", encoding="utf-8") as f:
         m = json.load(f)
     st = m.get("share_target")
-    assert st and st["action"] == "/seller/collect/quick"
+    assert st and st["action"] == "/seller/collect/share"   # v39-M M2: 공유→수집→편집 드로어
     assert st["params"]["url"] == "u"
 
 

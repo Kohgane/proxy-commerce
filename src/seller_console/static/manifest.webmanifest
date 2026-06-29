@@ -28,7 +28,7 @@
     "shopping"
   ],
   "share_target": {
-    "action": "/seller/collect/quick",
+    "action": "/seller/collect/share",
     "method": "GET",
     "params": {
       "title": "title",
