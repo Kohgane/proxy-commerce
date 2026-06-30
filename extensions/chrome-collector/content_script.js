@@ -8,6 +8,50 @@
  * 3) 리스팅은 사이트 어댑터(아마존 등) + 엄격 휴리스틱으로 '실제 제품 카드만' 감지(추천/푸터/썸네일 제외).
  */
 
+// v39-E2 #1: PDP 가격 노드에서 '현재가(판매가)'를 읽는다(취소선·추천/리뷰 영역 제외).
+//   서버 스코프 추출(_extract_scoped_price)과 동일 취지의 인페이지 판.
+const _KGP_ORIG_PRICE_RE = /(original|was[-_ ]?price|strike|line[-_]?through|regular|list[-_]?price|old[-_]?price|compare[-_]?at|정가|원가|할인전)/i;
+const _KGP_NONPROD_RE = /(recommend|related|similar|also[-_ ]?(bought|viewed)|sponsored|advert|ranking|recently[-_ ]?viewed|carousel|cross[-_ ]?sell|up[-_ ]?sell|footer|review|comment)/i;
+function _kgpPriceIsOriginal(el) {
+  let cur = el, depth = 0;
+  while (cur && depth < 4) {
+    const tag = (cur.tagName || "").toLowerCase();
+    if (tag === "del" || tag === "s" || tag === "strike") return true;
+    const tok = ((cur.className && cur.className.baseVal !== undefined ? cur.className.baseVal : (cur.className || "")) + " " + (cur.id || ""));
+    if (tok && _KGP_ORIG_PRICE_RE.test(tok)) return true;
+    try { if ((getComputedStyle(cur).textDecorationLine || "").indexOf("line-through") >= 0) return true; } catch (e) { /* noop */ }
+    cur = cur.parentElement; depth++;
+  }
+  return false;
+}
+function _kgpInNonProd(el) {
+  let cur = el && el.parentElement, depth = 0;
+  while (cur && depth < 6) {
+    const tok = ((cur.className && cur.className.baseVal !== undefined ? cur.className.baseVal : (cur.className || "")) + " " + (cur.id || ""));
+    if (tok && _KGP_NONPROD_RE.test(tok)) return true;
+    cur = cur.parentElement; depth++;
+  }
+  return false;
+}
+function _kgpScopedPrice() {
+  const re = /([\$＄€£¥￥₩￦])\s*([\d,]+(?:\.\d{1,2})?)|([\d,]+(?:\.\d{1,2})?)\s*(USD|EUR|GBP|JPY|KRW|CNY)/i;
+  const symMap = { "$": "USD", "＄": "USD", "€": "EUR", "£": "GBP", "¥": "JPY", "￥": "JPY", "₩": "KRW", "￦": "KRW" };
+  let nodes = [];
+  try {
+    nodes = Array.from(document.querySelectorAll('[class*="price" i],[class*="Price"],[itemprop="price"],[data-price],[class*="amount" i]'));
+  } catch (e) { nodes = []; }
+  for (const el of nodes) {
+    if (_kgpInNonProd(el) || _kgpPriceIsOriginal(el)) continue;
+    const raw = el.getAttribute("content") || el.getAttribute("data-price") || (el.textContent || "").trim();
+    const m = (raw || "").match(re);
+    if (!m) continue;
+    const sym = m[1] || "", num = (m[2] || m[3] || "").replace(/,/g, ""), code = m[4] || "";
+    if (!num) continue;
+    return { price: num, currency: code ? code.toUpperCase() : (symMap[sym] || "") };
+  }
+  return { price: "", currency: "" };
+}
+
 function extractProductMeta() {
   const getMeta = (prop) => {
     const el = document.querySelector(
@@ -65,27 +109,35 @@ function extractProductMeta() {
   let heuristicPrice = "";
   let heuristicCurrency = "";
   if (!getMeta("product:price:amount")) {
-    const pricePatterns = [
-      /[¥￥]\s*([\d,]+)/,
-      /\$([\d,]+(?:\.\d{1,2})?)/,
-      /€\s*([\d,]+(?:\.\d{1,2})?)/,
-      /₩\s*([\d,]+)/
-    ];
-    const bodyText = document.body ? document.body.innerText.slice(0, 3000) : "";
-    for (const pattern of pricePatterns) {
-      const m = bodyText.match(pattern);
-      if (m) {
-        heuristicPrice = m[1].replace(/,/g, "");
-        if (pattern.source.includes("¥") || pattern.source.includes("￥")) {
-          heuristicCurrency = "JPY";
-        } else if (pattern.source.includes("\\$")) {
-          heuristicCurrency = "USD";
-        } else if (pattern.source.includes("€")) {
-          heuristicCurrency = "EUR";
-        } else if (pattern.source.includes("₩")) {
-          heuristicCurrency = "KRW";
+    // v39-E2 #1: 먼저 PDP 가격 노드(클래스 price/amount, itemprop=price)에서 '현재가'를 읽는다.
+    //   취소선(할인전·정가)·추천/리뷰 영역 제외 → 렌더된 판매가 우선.
+    const scoped = _kgpScopedPrice();
+    if (scoped.price) {
+      heuristicPrice = scoped.price;
+      heuristicCurrency = scoped.currency || "";
+    } else {
+      const pricePatterns = [
+        /[¥￥]\s*([\d,]+)/,
+        /\$([\d,]+(?:\.\d{1,2})?)/,
+        /€\s*([\d,]+(?:\.\d{1,2})?)/,
+        /₩\s*([\d,]+)/
+      ];
+      const bodyText = document.body ? document.body.innerText.slice(0, 3000) : "";
+      for (const pattern of pricePatterns) {
+        const m = bodyText.match(pattern);
+        if (m) {
+          heuristicPrice = m[1].replace(/,/g, "");
+          if (pattern.source.includes("¥") || pattern.source.includes("￥")) {
+            heuristicCurrency = "JPY";
+          } else if (pattern.source.includes("\\$")) {
+            heuristicCurrency = "USD";
+          } else if (pattern.source.includes("€")) {
+            heuristicCurrency = "EUR";
+          } else if (pattern.source.includes("₩")) {
+            heuristicCurrency = "KRW";
+          }
+          break;
         }
-        break;
       }
     }
   }

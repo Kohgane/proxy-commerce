@@ -323,6 +323,103 @@ def extract_detail_description(html: Optional[str], url: str = "") -> dict:
     return out
 
 
+# v39-E2 #1: 가격 노드 후보 / 할인전(취소선·원가) 표식.
+_PRICE_NODE_RE = re.compile(r"(price|amount|cost|sale[-_]?price|current[-_]?price)", re.IGNORECASE)
+_ORIG_PRICE_RE = re.compile(
+    r"(original|was[-_ ]?price|strike|line[-_]?through|regular|list[-_]?price|"
+    r"old[-_]?price|del|compare[-_]?at|before|정가|원가|할인전)",
+    re.IGNORECASE,
+)
+_PRICE_TEXT_RE = re.compile(
+    r"([\$＄€£¥￥₩￦])\s*([\d,]+(?:\.\d{1,2})?)"
+    r"|([\d,]+(?:\.\d{1,2})?)\s*(USD|EUR|GBP|JPY|KRW|CNY|원)",
+    re.IGNORECASE,
+)
+
+
+def _node_is_original_price(el) -> bool:
+    """이 노드(또는 조상)가 '할인전/정가'(취소선) 표식인가 → 현재가 아님(제외)."""
+    cur = el
+    depth = 0
+    while cur is not None and depth < 4:
+        try:
+            if cur.name in ("del", "s", "strike"):
+                return True
+            tok = " ".join((cur.get("class") or []) + [cur.get("id") or ""])
+            if tok and _ORIG_PRICE_RE.search(tok):
+                return True
+            style = (cur.get("style") or "").lower()
+            if "line-through" in style:
+                return True
+        except Exception:
+            pass
+        cur = getattr(cur, "parent", None)
+        depth += 1
+    return False
+
+
+def _extract_scoped_price(soup, base_url: str = ""):
+    """PDP 컨테이너 안에서 '현재가(판매가)'를 추출. 추천/리뷰 영역·취소선(할인전) 제외.
+
+    Returns: (Decimal|None, currency_str). 못 찾으면 (None, "")  — 호출부가 정직 폴백.
+    """
+    try:
+        scope = _find_product_scope(soup)
+    except Exception:
+        scope = soup
+    if scope is None:
+        return (None, "")
+
+    def _parse_from(text):
+        m = _PRICE_TEXT_RE.search(text or "")
+        if not m:
+            return (None, "")
+        sym = m.group(1) or ""
+        num = m.group(2) or m.group(3) or ""
+        code = m.group(4) or ""
+        val = _parse_price(num)
+        if not val:
+            return (None, "")
+        cur = code.upper() if code else _CURRENCY_SYMBOLS.get(sym, "USD")
+        if cur == "원" or sym in ("₩", "￦"):
+            cur = "KRW"
+        return (val, cur)
+
+    # 가격 클래스/속성을 가진 노드 후보 — 현재가(취소선 아님) 우선.
+    candidates = []
+    try:
+        nodes = scope.select(
+            '[class*="price" i], [class*="Price"], [itemprop="price"], [data-price], '
+            '[class*="amount" i]'
+        )
+    except Exception:
+        nodes = []
+    for el in nodes:
+        try:
+            if _in_non_product_region(el, max_depth=6) or _node_is_original_price(el):
+                continue
+            # 컨테이너성 노드(자식에 가격노드/취소선 포함)는 스킵 → 리프 현재가 노드 우선.
+            if el.find(["del", "s", "strike"]) or el.select_one('[class*="price" i], [itemprop="price"]'):
+                continue
+            # 알려진 가격 속성(itemprop=price content / data-price)은 통화기호 없는 bare 숫자도 허용.
+            attr = el.get("content") or el.get("data-price")
+            if attr:
+                val = _parse_price(str(attr))
+                if val is not None:
+                    _, cur = _parse_from(el.get_text(" ", strip=True))
+                    candidates.append((val, cur or "USD"))
+                    continue
+            val, cur = _parse_from(el.get_text(" ", strip=True))
+            if val is not None:
+                candidates.append((val, cur))
+        except Exception:
+            continue
+
+    if candidates:
+        return candidates[0]   # DOM 순서상 첫 현재가(메인 PDP 가격 영역)
+    return (None, "")
+
+
 # v39 D: 치환 실패 플레이스홀더 토큰 — 소스 사이트가 미치환한 템플릿 변수가 제목/상세에 그대로 노출되는 것 방지.
 #   예: "{REGION_NAME - Temu Republic of Korea}", "{site_name}", "{{title}}", "%PRODUCT_NAME%".
 #   보수적: CAPS 식별자(REGION_NAME 등) 또는 명백한 템플릿 토큰만 제거 — 정상 텍스트 오탐 최소.
@@ -1024,6 +1121,7 @@ class UniversalScraper:
 
     def _heuristic(self, soup, url: str, domain: str) -> ScrapedProduct:
         """Heuristic: <title> + <h1> + 가격 패턴 + 이미지."""
+        scoped = _extract_scoped_price(soup, url)   # v39-E2 #1: PDP 현재가 우선(추천/리뷰·취소선 제외)
         # 제목
         title = ""
         title_tag = soup.find("title")
@@ -1056,21 +1154,26 @@ class UniversalScraper:
             r"|(\d[\d,]*(?:\.\d{1,2})?)\s*(USD|EUR|GBP|JPY|KRW|CNY)",
             re.IGNORECASE,
         )
-        page_text = soup.get_text(" ", strip=True)[:5000]
-        for m in _price_pattern.finditer(page_text):
-            sym = m.group(1) or ""
-            num = m.group(2) or m.group(3) or ""
-            cur_code = m.group(4) or ""
-            if not num:
-                continue
-            val = _parse_price(num)
-            if val:
-                price_val = val
-                if cur_code:
-                    currency = cur_code.upper()
-                elif sym:
-                    currency = _CURRENCY_SYMBOLS.get(sym, "USD")
-                break
+        # v39-E2 #1: PDP 컨테이너 스코프 현재가(판매가) 우선 — 추천/리뷰·취소선(할인전) 제외.
+        if scoped[0] is not None:
+            price_val = scoped[0]
+            currency = scoped[1] or currency
+        else:
+            page_text = soup.get_text(" ", strip=True)[:5000]
+            for m in _price_pattern.finditer(page_text):
+                sym = m.group(1) or ""
+                num = m.group(2) or m.group(3) or ""
+                cur_code = m.group(4) or ""
+                if not num:
+                    continue
+                val = _parse_price(num)
+                if val:
+                    price_val = val
+                    if cur_code:
+                        currency = cur_code.upper()
+                    elif sym:
+                        currency = _CURRENCY_SYMBOLS.get(sym, "USD")
+                    break
 
         confidence = 0.1
         if title:
