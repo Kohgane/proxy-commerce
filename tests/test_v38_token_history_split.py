@@ -19,7 +19,7 @@ _SAMPLE = [
 def client(monkeypatch):
     os.environ["SELLER_CONSOLE_AUTH"] = "0"
     import src.auth.personal_tokens as pt
-    monkeypatch.setattr(pt, "list_tokens", lambda user_id: [dict(t) for t in _SAMPLE])
+    monkeypatch.setattr(pt, "list_tokens", lambda user_id, **kw: [dict(t) for t in _SAMPLE])
     from src.order_webhook import app
     with app.test_client() as c:
         yield c
@@ -41,7 +41,7 @@ def test_active_in_main_revoked_in_history(client):
 
 def test_history_hidden_when_no_revoked(client, monkeypatch):
     import src.auth.personal_tokens as pt
-    monkeypatch.setattr(pt, "list_tokens", lambda user_id: [dict(_SAMPLE[0])])  # 활성 1개만
+    monkeypatch.setattr(pt, "list_tokens", lambda user_id, **kw: [dict(_SAMPLE[0])])  # 활성 1개만
     with client.session_transaction() as s:
         s["user_id"] = "u1"
     html = client.get("/seller/me/tokens").get_data(as_text=True)
