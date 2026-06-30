@@ -11,6 +11,9 @@
   <link rel="icon" type="image/x-icon" href="{{ url_for('seller_console.static', filename='favicon.ico', v='179') }}">
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('seller_console.static', filename='favicon-32.png', v='179') }}">
   <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('seller_console.static', filename='favicon-16.png', v='179') }}">
+  {# v39-B: 48px PNG + shortcut icon = 브릿지 마크 — 크롬이 북마클릿 드래그 시 이 페이지 파비콘을 북마크에 상속(핵심). #}
+  <link rel="icon" type="image/png" sizes="48x48" href="{{ url_for('seller_console.static', filename='favicon-48.png', v='179') }}">
+  <link rel="shortcut icon" href="{{ url_for('seller_console.static', filename='favicon.ico', v='179') }}">
   <link rel="apple-touch-icon" href="{{ url_for('seller_console.static', filename='apple-touch-icon.png', v='179') }}">
   <link rel="manifest" href="{{ url_for('seller_console.static', filename='manifest.webmanifest', v='179') }}">
   <meta name="theme-color" content="#f8fafc">

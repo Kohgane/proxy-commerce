@@ -23,20 +23,33 @@ def client():
         yield c
 
 
-def test_install_page_favicon_is_new_bridge_mark(client):
-    # 설치 페이지는 _base.html 상속 → 신규 브릿지 파비콘(v=179), globe 0
+def test_install_page_favicon_inheritance_links(client):
+    # v39-B 핵심: 설치 페이지 파비콘 = 브릿지 마크(48px PNG + shortcut icon) → 크롬 드래그 상속
     with client.session_transaction() as s:
         s["user_id"] = "u1"
     html = client.get("/seller/bookmarklet").get_data(as_text=True)
-    assert "favicon.ico?v=179" in html or "favicon.svg?v=179" in html
+    assert 'sizes="48x48"' in html and "favicon-48.png" in html
+    assert 'rel="shortcut icon"' in html and "favicon.ico" in html
+    assert "favicon.svg?v=179" in html
     assert "globe" not in BASE.lower()
 
 
-def test_drag_anchor_text_is_gogasujipgi_with_mark():
-    # 드래그 앵커 = '고가수집기' 텍스트 + 우리 마크 이미지(북마크 이름 상속)
+def test_drag_anchor_icon_only_zero_width_title():
+    # v39-B: 북마크바엔 '아이콘만' — title 제로폭(&#8203;)으로 북마크 이름 비움
+    assert 'title="&#8203;"' in TPL
+    assert "draggable=\"true\"" in TPL
+    # 보이는 칩 라벨 '고가수집기' + 마크 img는 유지(UI용)
     assert ">고가수집기</a>" in TPL
-    assert 'favicon-32.png?v=179' in TPL          # 앵커/토스트에 우리 마크
+    assert "favicon-48.png?v=179" in TPL          # 앵커 마크
+    assert 'favicon-32.png?v=179' in TPL          # 토스트 마크
     assert ">수집</a>" not in TPL                  # 옛 '수집' 단독 라벨 폐기
+
+
+def test_drag_path_enforcement_copy():
+    # '이 페이지에서 끌어야' + '누르지 마세요' 드래그 경로 강제 안내
+    assert "이 페이지에서" in TPL
+    assert "북마크바" in TPL
+    assert "아이콘만" in TPL                        # 글자 없이 아이콘만
 
 
 def test_injected_toast_carries_our_mark():
