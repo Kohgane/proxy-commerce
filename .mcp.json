@@ -1,0 +1,24 @@
+{
+  "_comment": "레포 루트에 .mcp.json 으로 저장. 원격 OAuth 커넥터(Shopify·Supabase·WordPress·Mercury 등)는 Claude Code 커넥터 탭에서 OAuth로 연결하는 게 안전하다. 아래는 구조 예시 + 셀프호스트/로컬 MCP용. 시크릿은 절대 여기 적지 말고 환경변수로.",
+  "mcpServers": {
+    "apify": {
+      "type": "url",
+      "url": "https://mcp.apify.com",
+      "_note": "웹 스크레이핑 — 수집 엔진 보강. 커넥터 탭에서 OAuth 연결 권장."
+    },
+    "cloudinary": {
+      "type": "url",
+      "url": "https://asset-management.mcp.cloudinary.com",
+      "_note": "상품 이미지 변환/관리."
+    }
+  },
+  "_connect_via_directory": [
+    "Shopify (글로벌몰)",
+    "Supabase (실시간 DB)",
+    "WordPress.com (멀티샵·블로그)",
+    "Mercury (USD 뱅킹)",
+    "Semrush / Ahrefs (SEO·AEO)",
+    "Canva (디자인)",
+    "Figma (디자인→코드 핸드오프)"
+  ]
+}
