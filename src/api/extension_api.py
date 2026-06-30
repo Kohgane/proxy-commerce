@@ -105,6 +105,16 @@ def _upsert_catalog(product_data: dict, source: str) -> Optional[str]:
     return product_id
 
 
+def _bucket_filter(bucket, fallback) -> list:
+    """v39-E2 #2: 이미지 버킷(갤러리/상세)을 무관 이미지 제거·중복 제거. 비었으면 fallback(이미 정제됨)."""
+    try:
+        from src.collectors.universal_scraper import filter_product_images
+        out = filter_product_images(bucket) if isinstance(bucket, list) else []
+    except Exception:
+        out = [str(i).strip() for i in (bucket or []) if str(i or "").strip()]
+    return out if out else list(fallback or [])
+
+
 def _translate_payload(payload: dict) -> dict:
     """수집 페이로드 제목/설명을 한국어로 번역 (Phase 202).
 
@@ -181,6 +191,16 @@ def _merge_scraped_into_payload(payload: dict, scraped) -> dict:
     # 옵션: payload에 없으면 스크래퍼 옵션 사용
     if not out.get("options") and getattr(scraped, "options", None):
         out["options"] = scraped.options
+
+    # v39-E2 #2: 갤러리(대표) vs 상세(본문) 이미지 버킷 — 스크래퍼가 분리했으면 payload로 전달.
+    try:
+        rm = getattr(scraped, "raw_meta", None) or {}
+        if not out.get("gallery_images") and rm.get("gallery_images"):
+            out["gallery_images"] = list(rm["gallery_images"])
+        if not out.get("detail_images") and rm.get("detail_images"):
+            out["detail_images"] = list(rm["detail_images"])
+    except Exception:
+        pass
 
     return out
 
@@ -296,6 +316,8 @@ def collect_from_extension():
                 "description": payload.get("description", ""),
                 "description_ko": tr.get("description_ko", ""),
                 "images": images,
+                "gallery_images": _bucket_filter(payload.get("gallery_images"), images),
+                "detail_images": _bucket_filter(payload.get("detail_images"), []),
                 "price": payload.get("price", ""),
                 "price_original": payload.get("price", ""),
                 "currency": payload.get("currency", "USD"),

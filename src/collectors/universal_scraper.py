@@ -453,6 +453,115 @@ def _collect_dom_images(soup, base_url: str) -> list:
     return out
 
 
+# v39-E2 #2: 갤러리(대표·썸네일) vs 상세(본문) 이미지 영역 선택자.
+_GALLERY_SCOPE_SELECTORS = (
+    '.product-gallery', '.product-images', '.product-image', '.image-gallery',
+    '[class*="gallery"]', '[class*="thumbnail"]', '[class*="thumb"]',
+    '[class*="carousel"]', '[class*="swiper"]', '[class*="main-image"]',
+    '[class*="mainImage"]', '[class*="productImage"]', '[data-gallery]',
+)
+_DETAIL_SCOPE_SELECTORS = (
+    '#description', '#productDescription', '#detail', '#goods_detail', '#detailArea',
+    '.product-description', '.description', '.detail-content', '.detail',
+    '[class*="detail-content"]', '[class*="detailContent"]', '[class*="description"]',
+    '[class*="goods-detail"]', '[class*="goodsDetail"]', '[id*="description"]',
+)
+
+
+def _imgs_from_root(root, base_url: str, seen: set) -> list:
+    """주어진 컨테이너 안의 상품 이미지를 추출(무관/소형/비-상품영역 제외, 중복 제거). seen은 누적 공유."""
+    out: list = []
+    if root is None:
+        return out
+
+    def _abs(s: str) -> str:
+        s = (s or "").strip()
+        if not s or s.startswith("data:"):
+            return ""
+        if s.startswith("//"):
+            s = "https:" + s
+        elif s.startswith("/"):
+            s = urljoin(base_url, s)
+        return s if s.startswith("http") else ""
+
+    def _from_srcset(val: str) -> str:
+        best = ""
+        for part in (val or "").split(","):
+            cand = part.strip().split(" ")[0].strip()
+            if cand:
+                best = cand
+        return best
+
+    def _too_small(img) -> bool:
+        for attr in ("width", "height"):
+            v = (img.get(attr) or "").strip().replace("px", "")
+            try:
+                if v and float(v) < 100:
+                    return True
+            except (TypeError, ValueError):
+                pass
+        return False
+
+    for img in root.find_all("img"):
+        cand = ""
+        for attr in ("src", "data-src", "data-original", "data-lazy",
+                     "data-lazy-src", "data-image", "data-zoom-image"):
+            if img.get(attr):
+                cand = img.get(attr)
+                break
+        if not cand:
+            ss = img.get("srcset") or img.get("data-srcset")
+            if ss:
+                cand = _from_srcset(ss)
+        url = _abs(cand)
+        if not url or url in seen or _NON_PRODUCT_IMG_RE.search(url) or _too_small(img):
+            continue
+        if _in_non_product_region(img):
+            continue
+        seen.add(url)
+        out.append(url)
+    return out
+
+
+def collect_image_buckets(html: Optional[str], url: str) -> dict:
+    """이미지를 갤러리(대표·썸네일)와 상세(본문) 두 버킷으로 분리.
+
+    - 갤러리: PDP 상단 메인 이미지 캐러셀/썸네일 = 마켓 대표·상품 이미지(첫 번째=대표).
+    - 상세: 상세설명(description/detail) 영역 안의 이미지 = 상세페이지 본문용.
+    - 양쪽 모두 로고·아이콘·배너·추천/리뷰 영역 이미지 제외. 중복은 갤러리 우선(대표).
+    못 찾으면 빈 리스트(가짜 생성 0). 둘 다 비면 호출부가 기존 통합 이미지로 폴백.
+    """
+    result = {"gallery": [], "detail": []}
+    if not html:
+        return result
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+    except Exception:
+        return result
+
+    seen: set = set()
+    # 갤러리 먼저(대표 우선 → seen 선점)
+    for sel in _GALLERY_SCOPE_SELECTORS:
+        try:
+            for el in soup.select(sel):
+                if _in_non_product_region(el, max_depth=4):
+                    continue
+                result["gallery"].extend(_imgs_from_root(el, url, seen))
+        except Exception:
+            continue
+    # 상세(본문)
+    for sel in _DETAIL_SCOPE_SELECTORS:
+        try:
+            for el in soup.select(sel):
+                if _in_non_product_region(el, max_depth=4):
+                    continue
+                result["detail"].extend(_imgs_from_root(el, url, seen))
+        except Exception:
+            continue
+    return result
+
+
 # 옵션 그룹 라벨로 인정할 키워드(한/영) — 색상·사이즈·수량·규격·스타일·변형 등.
 _OPTION_LABEL_RE = re.compile(
     r"(색상|컬러|색깔|사이즈|크기|치수|규격|용량|수량|개수|스타일|종류|타입|모델|구성|"
@@ -590,6 +699,16 @@ class UniversalScraper:
             try:
                 if getattr(result, "images", None):
                     result.images = filter_product_images(result.images)
+            except Exception:
+                pass
+            # v39-E2 #2: 갤러리(대표) vs 상세(본문) 이미지 버킷 분리 → raw_meta에 저장(호출부가 분리 표시).
+            try:
+                buckets = collect_image_buckets(html, url)
+                gal = filter_product_images(buckets.get("gallery") or [])[:40]
+                det = filter_product_images(buckets.get("detail") or [])[:40]
+                if gal or det:
+                    result.raw_meta["gallery_images"] = gal
+                    result.raw_meta["detail_images"] = det
             except Exception:
                 pass
         return result
