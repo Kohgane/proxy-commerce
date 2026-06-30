@@ -207,7 +207,8 @@
                    data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title or '(제목 없음)' }}" title="클릭하면 편집 드로어가 열려요">
                 {% if it.thumbs %}
                   {% for t in it.thumbs %}
-                  <img src="{{ t }}" alt="" loading="lazy"
+                  <img src="{{ t }}" alt="" loading="lazy" decoding="async"
+                       width="{{ '52' if loop.first else '34' }}" height="{{ '52' if loop.first else '34' }}"
                        style="width:{{ '52' if loop.first else '34' }}px;height:{{ '52' if loop.first else '34' }}px;object-fit:cover;border-radius:7px;background:#f1f3f5;border:1px solid #e9ecef"
                        onerror="this.style.display='none'">
                   {% endfor %}

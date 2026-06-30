@@ -1031,7 +1031,11 @@ def _perf_after_request(response):
         # 정적 에셋 장기 캐시(쿼리 v=로 버전 구분 → 안전). Flask 기본 no-cache를 덮어쓴다.
         path = request.path or ""
         if "/static/" in path and response.status_code == 200:
-            response.headers["Cache-Control"] = "public, max-age=604800"
+            # v40-B 속도: 버전드 에셋(?v=)은 내용 불변 → 1년 immutable(재검증 왕복 0). 비버전드는 1주.
+            if request.args.get("v"):
+                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            else:
+                response.headers["Cache-Control"] = "public, max-age=604800"
     except Exception:
         pass
     try:
