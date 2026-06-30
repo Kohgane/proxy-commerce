@@ -143,6 +143,46 @@
         <div class="form-text">상세설명 영역에서 수집된 이미지예요. 갤러리(대표)와 섞이지 않습니다.</div>
       </div>
 
+      <!-- v40-C: 마켓별 상세페이지 꾸미기 (블록 에디터 + 마켓 프리셋 + 미리보기) -->
+      <details class="mb-3" id="detailPageBuilder">
+        <summary class="form-label small fw-semibold mb-0" style="cursor:pointer">
+          <i class="bi bi-layout-text-window"></i> 상세페이지 꾸미기 <span class="text-muted fw-normal">(마켓별 — 블록으로 구성)</span>
+        </summary>
+        <div class="mt-2">
+          <!-- 마켓 프리셋 선택 -->
+          <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+            <span class="small text-muted">마켓 프리셋:</span>
+            <div class="btn-group btn-group-sm" role="group" id="dpMarketPresets">
+              <button type="button" class="btn btn-outline-secondary active" data-market="common" onclick="dpSelectMarket('common')">공통</button>
+              <button type="button" class="btn btn-outline-secondary" data-market="coupang" onclick="dpSelectMarket('coupang')">쿠팡</button>
+              <button type="button" class="btn btn-outline-secondary" data-market="smartstore" onclick="dpSelectMarket('smartstore')">스마트스토어</button>
+              <button type="button" class="btn btn-outline-secondary" data-market="shopify" onclick="dpSelectMarket('shopify')">Shopify</button>
+              <button type="button" class="btn btn-outline-secondary" data-market="woocommerce" onclick="dpSelectMarket('woocommerce')">코가네멀티샵</button>
+            </div>
+          </div>
+          <div id="dpMarketNote" class="form-text mb-2"></div>
+          <div class="row g-2">
+            <!-- 에디터 -->
+            <div class="col-12 col-md-6">
+              <div class="d-flex flex-wrap gap-1 mb-2">
+                <button type="button" class="btn btn-outline-primary btn-sm py-0" onclick="dpAddBlock('text')"><i class="bi bi-fonts"></i> 텍스트</button>
+                <button type="button" class="btn btn-outline-primary btn-sm py-0" onclick="dpAddBlock('image')"><i class="bi bi-image"></i> 이미지</button>
+                <button type="button" class="btn btn-outline-primary btn-sm py-0" onclick="dpAddBlock('highlight')"><i class="bi bi-star"></i> 강조박스</button>
+                <button type="button" class="btn btn-outline-primary btn-sm py-0" onclick="dpAddBlock('divider')"><i class="bi bi-dash-lg"></i> 구분선</button>
+              </div>
+              <div id="dpBlocks" class="vstack gap-2"></div>
+              <div id="dpWarn" class="small text-warning mt-2" style="display:none;"></div>
+            </div>
+            <!-- 미리보기 -->
+            <div class="col-12 col-md-6">
+              <div class="small text-muted mb-1">미리보기 <span id="dpPreviewMarket"></span></div>
+              <div id="dpPreview" class="border rounded p-2 bg-white" style="min-height:120px;max-height:340px;overflow:auto;"></div>
+            </div>
+          </div>
+          <div class="form-text mt-1">기본(공통)으로 만들고, 마켓을 골라 일부만 덮어쓸 수 있어요. 마켓 규칙 위반(금지어·과대광고)은 저장·등록 전 경고합니다.</div>
+        </div>
+      </details>
+
       <!-- 옵션 목록 -->
       <div class="mb-2">
         <div class="d-flex justify-content-between align-items-center mb-2">
@@ -529,6 +569,121 @@ function renderDetailGallery() {
   });
 }
 
+// ── v40-C: 마켓별 상세페이지 블록 에디터 ──
+// 데이터 모델: dpData = { common: [block...], coupang: [block...], ... }. block = {type, content}.
+// 공통(common)이 기본, 마켓 키가 있으면 그 마켓에서 오버라이드(없으면 공통 사용).
+const DP_MARKET_NOTES = {
+  common: '모든 마켓 공통 기본 상세입니다. 아래 마켓을 고르면 그 마켓만 따로 덮어쓸 수 있어요.',
+  coupang: '쿠팡: 상세 권장 폭 약 780px. 외부 링크·연락처·타 마켓 유도 금지. 이미지 위주 권장.',
+  smartstore: '스마트스토어: 상단/하단 안내문 중복 금지. 과대광고·최상급 표현 주의.',
+  shopify: 'Shopify: 반응형이라 폭 제약 적음. 영문 병기 권장(글로벌).',
+  woocommerce: '코가네멀티샵: 멀티샵 공통 템플릿 사용. 마켓별 금지요소는 등록 전 점검됩니다.',
+};
+// 마켓 규칙 위반 후보(과대광고·금지 표현) — 클라 1차 경고(서버 word_rules가 최종).
+const DP_BANNED = ['최고', '최상', '유일', '100%', '완벽', '무조건', '강력 추천', '의학적', '치료', '효능 보장'];
+let dpData = {};
+let dpMarket = 'common';
+
+function _dpClone(arr) { return (arr || []).map(b => ({ type: b.type, content: b.content || '' })); }
+function dpActiveBlocks() {
+  // 현재 마켓에 오버라이드가 있으면 그걸, 없으면 공통.
+  if (dpMarket !== 'common' && Array.isArray(dpData[dpMarket])) return dpData[dpMarket];
+  return dpData.common || (dpData.common = []);
+}
+function dpSelectMarket(m) {
+  dpMarket = m;
+  document.querySelectorAll('#dpMarketPresets [data-market]').forEach(b =>
+    b.classList.toggle('active', b.dataset.market === m));
+  const note = document.getElementById('dpMarketNote');
+  if (note) {
+    note.textContent = DP_MARKET_NOTES[m] || '';
+    if (m !== 'common' && !Array.isArray(dpData[m])) {
+      note.textContent += ' (현재 공통을 사용 중 — 블록을 편집하면 이 마켓 전용으로 분리됩니다.)';
+    }
+  }
+  const pm = document.getElementById('dpPreviewMarket');
+  if (pm) pm.textContent = m === 'common' ? '· 공통' : '· ' + (document.querySelector('#dpMarketPresets [data-market="'+m+'"]')?.textContent || m);
+  dpRender();
+}
+function _dpEnsureOverride() {
+  // 비-공통 마켓 편집 시작 시 공통을 복제해 오버라이드 생성(공통은 보존).
+  if (dpMarket !== 'common' && !Array.isArray(dpData[dpMarket])) {
+    dpData[dpMarket] = _dpClone(dpData.common);
+    dpSelectMarket(dpMarket);
+  }
+}
+function dpAddBlock(type) {
+  _dpEnsureOverride();
+  dpActiveBlocks().push({ type: type, content: '' });
+  dpRender();
+}
+function dpRender() {
+  const wrap = document.getElementById('dpBlocks');
+  if (!wrap) return;
+  const blocks = dpActiveBlocks();
+  wrap.innerHTML = '';
+  if (!blocks.length) {
+    wrap.innerHTML = '<div class="text-muted small">블록을 추가해 상세페이지를 구성하세요.</div>';
+  }
+  blocks.forEach((b, i) => {
+    const row = document.createElement('div');
+    row.className = 'border rounded p-2';
+    let inner = '<div class="d-flex justify-content-between align-items-center mb-1">' +
+      '<span class="badge text-bg-light">' + ({text:'텍스트',image:'이미지',highlight:'강조박스',divider:'구분선'}[b.type] || b.type) + '</span>' +
+      '<span class="btn-group btn-group-sm">' +
+      '<button type="button" class="btn btn-outline-secondary py-0" data-act="up">↑</button>' +
+      '<button type="button" class="btn btn-outline-secondary py-0" data-act="down">↓</button>' +
+      '<button type="button" class="btn btn-outline-danger py-0" data-act="del">삭제</button></span></div>';
+    if (b.type === 'text' || b.type === 'highlight') {
+      inner += '<textarea class="form-control form-control-sm dp-content" rows="2" placeholder="내용을 입력하세요">' + escapeHtml(b.content) + '</textarea>';
+    } else if (b.type === 'image') {
+      inner += '<input type="url" class="form-control form-control-sm dp-content" placeholder="이미지 URL" value="' + escapeHtml(b.content) + '">';
+    } else {
+      inner += '<div class="text-muted small">— 구분선 —</div>';
+    }
+    row.innerHTML = inner;
+    const c = row.querySelector('.dp-content');
+    if (c) c.addEventListener('input', () => { b.content = c.value; dpPreview(); dpCheckRules(); });
+    row.querySelector('[data-act="up"]').onclick = () => { if (i>0){ blocks.splice(i-1,0,blocks.splice(i,1)[0]); dpRender(); } };
+    row.querySelector('[data-act="down"]').onclick = () => { if (i<blocks.length-1){ blocks.splice(i+1,0,blocks.splice(i,1)[0]); dpRender(); } };
+    row.querySelector('[data-act="del"]').onclick = () => { blocks.splice(i,1); dpRender(); };
+    wrap.appendChild(row);
+  });
+  dpPreview(); dpCheckRules();
+}
+function dpPreview() {
+  const pv = document.getElementById('dpPreview');
+  if (!pv) return;
+  const blocks = dpActiveBlocks();
+  let html = '';
+  blocks.forEach(b => {
+    if (b.type === 'text') html += '<p style="font-size:.9rem;white-space:pre-wrap;margin:0 0 .6rem">' + escapeHtml(b.content) + '</p>';
+    else if (b.type === 'highlight') html += '<div style="background:#fff8e6;border:1px solid #f0d68a;border-radius:8px;padding:8px 10px;font-size:.88rem;margin:0 0 .6rem;white-space:pre-wrap">' + escapeHtml(b.content) + '</div>';
+    else if (b.type === 'image' && b.content) html += '<img src="' + escapeHtml(b.content) + '" style="max-width:100%;border-radius:6px;margin:0 0 .6rem" onerror="this.style.display=\'none\'">';
+    else if (b.type === 'divider') html += '<hr style="margin:.6rem 0">';
+  });
+  pv.innerHTML = html || '<span class="text-muted small">미리보기가 여기 표시됩니다.</span>';
+}
+function dpCheckRules() {
+  const warn = document.getElementById('dpWarn');
+  if (!warn) return;
+  const text = dpActiveBlocks().filter(b => b.type==='text'||b.type==='highlight').map(b => b.content||'').join(' ');
+  const hits = DP_BANNED.filter(w => text.indexOf(w) >= 0);
+  if (hits.length) {
+    warn.style.display = '';
+    warn.innerHTML = '<i class="bi bi-exclamation-triangle"></i> 마켓 규칙 주의(과대광고 가능): ' + hits.map(escapeHtml).join(', ') + ' — 등록 거부될 수 있어요.';
+  } else { warn.style.display = 'none'; warn.textContent = ''; }
+}
+function dpInit() {
+  // 저장된 detail_blocks 로드(공통 + 마켓 오버라이드). 없으면 빈 공통.
+  try {
+    const saved = _EXTRA.detail_blocks;
+    if (saved && typeof saved === 'object') dpData = JSON.parse(JSON.stringify(saved));
+  } catch (e) { dpData = {}; }
+  if (!Array.isArray(dpData.common)) dpData.common = [];
+  dpSelectMarket('common');
+}
+
 function addOptionRow(name, values) {
   const wrap = document.getElementById('optionRows');
   const row = document.createElement('div');
@@ -731,6 +886,7 @@ function initEditor() {
   refreshPrimaryImage();
   refreshImageBadges();
   renderDetailGallery();   // v39-E2 #2: 상세설명 이미지(본문) 분리 표시
+  dpInit();                // v40-C: 마켓별 상세페이지 블록 에디터
   updateKrwPreview();
   updateDescCount();
 }
@@ -766,6 +922,7 @@ function buildProductData() {
     category: categoryCode, category_code: categoryCode,
     gallery_images: images,                 // v39-E2 #2: 갤러리(대표) = 편집된 상품 이미지
     detail_images: detailImgs,              // 상세설명 이미지(본문) 보존
+    detail_blocks: dpData,                  // v40-C: 마켓별 상세페이지 블록(공통 + 마켓 오버라이드)
   };
 }
 
