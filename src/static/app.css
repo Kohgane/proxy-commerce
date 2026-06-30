@@ -65,6 +65,9 @@
   --paper: #FBF8F1;                       /* 따뜻한 종이톤(랜딩 본문 배경) = surface-warm */
   --teal-bright: #0FC2C0;                 /* 밝은 청록(현재위치 점·강조) */
   --radius-xl: 18px;                      /* 큰 카드 라운드(목업 --r) */
+  /* v40 디자인목업 — 다크 히어로 + 다리 라인아트 시그니처 */
+  --gold-bright: #D4AF57;                 /* 다크 배경 위 밝은 금(히어로 CTA·라인아트) */
+  --cream-on-dark: #EFE7D6;               /* 먹 배경 위 한지 텍스트 */
   --display-2-size: clamp(44px, 7vw, 84px); --display-2-lh: 1.05; --display-tracking: -0.025em;
   --space-10: 128px;                      /* 대형 섹션 여백 */
   --hairline-color: rgba(201, 162, 75, .28);   /* 금 헤어라인(절제) */

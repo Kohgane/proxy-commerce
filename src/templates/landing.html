@@ -1,62 +1,66 @@
-{# 랜딩 — v39-D 디자인 시스템 재작성: "디지털 한지 위의 금속활자" (Apple식 대형 타이포 + 네오클래식 에디토리얼).
-   기준 = 디자인목업_v39.html(1:1 대조). 이모지 0(데코는 bi-*/세리프 글리프) · 토큰 단일소스(app.css) · 하드코딩 hex/px 금지
-   · 실데이터만(가짜 후기/수치 0) · reduced-motion 존중. i18n(EN/KO)·지역배너·법적 링크·For Beginners 보존. #}
+{# 랜딩 — v40 디자인 시스템: 다크 히어로 + 다리(현수교) 라인아트 시그니처 + 한지/먹 교차.
+   기준 = 디자인목업_v40.html(1:1 대조). 이모지 0(데코 bi-*/세리프 글리프) · 토큰 단일소스(app.css) · 하드코딩 hex/px 금지
+   · 실데이터(가짜 후기/수치 0) · reduced-motion 존중. i18n(EN/KO)·지역배너·법적 링크·For Beginners 보존. #}
 {% extends "_base_app.html" %}
 
 {% block title %}{{ brand_name|default('gogabridj', true) }} — 해외 상품 수집부터 멀티마켓 등록까지{% endblock %}
 {% block head %}
 <link rel="privacy-policy" href="/privacy">
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700;900&display=swap" rel="stylesheet">
 <style>
-  /* ── 토큰만 사용(app.css 단일소스). 목업과 1:1 ── */
-  body.bg-light { background: var(--paper) !important; color: var(--ink); margin: 0; line-height: 1.6; }
+  body.bg-light { background: var(--paper) !important; color: var(--ink); margin: 0; line-height: 1.62; }
   .lp { --maxw: 1180px; }
   .lp .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 28px; }
   .lp .serif { font-family: var(--font-display); }
 
-  /* NAV — Apple식 슬림 글래스 고정 바 */
-  .lpnav { position: sticky; top: 0; z-index: 50; background: color-mix(in srgb, var(--paper) 82%, transparent);
-    backdrop-filter: saturate(180%) blur(20px); border-bottom: 1px solid var(--border); }
-  .lpnav .inner { display: flex; align-items: center; justify-content: space-between; height: 60px; max-width: var(--maxw); margin: 0 auto; padding: 0 28px; }
-  .lpnav .brand { display: flex; align-items: center; gap: 11px; font-weight: 800; font-size: 19px; letter-spacing: -.02em; color: var(--ink); text-decoration: none; }
-  .lpnav .brand img { width: 34px; height: 34px; border-radius: 9px; box-shadow: var(--shadow-sm); }
-  .lpnav .nav-links { display: flex; gap: 30px; font-size: .9rem; color: var(--text); }
-  .lpnav .nav-links a { text-decoration: none; color: inherit; font-weight: 500; transition: color var(--dur) var(--ease); }
-  .lpnav .nav-links a:hover { color: var(--teal); }
+  /* NAV — 다크 글래스 */
+  .lpnav { position: sticky; top: 0; z-index: 50; background: color-mix(in srgb, var(--ink) 72%, transparent);
+    backdrop-filter: saturate(160%) blur(18px); border-bottom: 1px solid color-mix(in srgb, var(--gold-bright) 18%, transparent); }
+  .lpnav .inner { display: flex; align-items: center; justify-content: space-between; height: 62px; max-width: var(--maxw); margin: 0 auto; padding: 0 28px; }
+  .lpnav .brand { display: flex; align-items: center; gap: 11px; font-weight: 800; font-size: 19px; letter-spacing: -.02em; color: var(--cream-on-dark); text-decoration: none; }
+  .lpnav .brand img { width: 34px; height: 34px; border-radius: 9px; }
+  .lpnav .nav-links { display: flex; gap: 30px; font-size: .9rem; }
+  .lpnav .nav-links a { text-decoration: none; color: color-mix(in srgb, var(--cream-on-dark) 78%, transparent); font-weight: 500; transition: color var(--dur) var(--ease); }
+  .lpnav .nav-links a:hover { color: var(--gold-bright); }
   .lpnav .nav-cta { background: var(--orange); color: var(--on-accent); border: none; padding: 9px 18px; border-radius: var(--radius-pill);
-    font-weight: 700; font-size: .875rem; text-decoration: none; box-shadow: 0 4px 14px color-mix(in srgb, var(--orange) 32%, transparent); }
+    font-weight: 700; font-size: .875rem; text-decoration: none; box-shadow: 0 6px 18px color-mix(in srgb, var(--orange) 36%, transparent); }
 
-  /* HERO — 대형 세리프 + 스크롤 내러티브(밝은 한지 위) */
-  .hero { text-align: center; padding: 104px 0 72px; position: relative; overflow: hidden; }
-  .hero::before { content: ""; position: absolute; inset: 0; pointer-events: none;
-    background: radial-gradient(1100px 460px at 50% -8%, color-mix(in srgb, var(--teal) 10%, transparent), transparent 60%); }
+  /* HERO — 다크 + 다리 시그니처 */
+  .hero { background: radial-gradient(120% 90% at 50% 0%, var(--ink-2) 0%, var(--ink) 60%); color: var(--cream-on-dark);
+    padding: 96px 0 0; text-align: center; position: relative; overflow: hidden; }
   .hero .wrap { position: relative; }
-  .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: .8rem; font-weight: 700; color: var(--teal);
-    letter-spacing: .04em; border: 1px solid var(--border); background: var(--surface); padding: 7px 15px; border-radius: var(--radius-pill); box-shadow: var(--shadow-sm); }
+  .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: .8rem; font-weight: 700; color: var(--gold-bright);
+    border: 1px solid color-mix(in srgb, var(--gold-bright) 30%, transparent); background: color-mix(in srgb, var(--gold-bright) 6%, transparent); padding: 7px 16px; border-radius: var(--radius-pill); }
   .eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--orange); }
-  .hero h1 { font-size: clamp(40px, 6.4vw, 76px); line-height: 1.04; letter-spacing: -.035em; margin: 26px 0 0; font-weight: 900; }
-  .hero h1 .accent { color: var(--teal); }
-  .hero .sub { font-size: clamp(17px, 2vw, 21px); color: var(--text); max-width: 620px; margin: 24px auto 0; }
-  .hero-cta { display: flex; gap: 13px; justify-content: center; margin-top: 38px; flex-wrap: wrap; }
-  .btn-ink { background: var(--ink); color: var(--on-accent); border: none; padding: 15px 30px; border-radius: var(--radius-pill);
-    font-weight: 700; font-size: 1rem; text-decoration: none; transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease); box-shadow: var(--shadow-sm); }
-  .btn-ink:hover { transform: var(--lift); color: var(--on-accent); box-shadow: 0 12px 28px color-mix(in srgb, var(--ink) 22%, transparent); }
-  .btn-ghost { background: var(--surface); color: var(--ink); border: 1px solid var(--border); padding: 15px 30px; border-radius: var(--radius-pill);
-    font-weight: 700; font-size: 1rem; text-decoration: none; transition: transform var(--dur) var(--ease); }
-  .btn-ghost:hover { transform: var(--lift); color: var(--ink); }
-  .trust { margin-top: 30px; font-size: .85rem; color: var(--text-muted); }
+  .hero h1 { font-size: clamp(42px, 6.6vw, 82px); line-height: 1.02; letter-spacing: -.04em; margin: 26px 0 0; font-weight: 900; color: #fff; }
+  .hero h1 .g { color: var(--gold-bright); }
+  .hero h1 .t { color: var(--teal-bright); }
+  .hero .sub { font-size: clamp(17px, 2vw, 21px); color: color-mix(in srgb, var(--cream-on-dark) 80%, transparent); max-width: 600px; margin: 22px auto 0; }
+  .hero-cta { display: flex; gap: 13px; justify-content: center; margin-top: 36px; flex-wrap: wrap; }
+  .btn-gold { background: var(--gold-bright); color: var(--ink); border: none; padding: 15px 30px; border-radius: var(--radius-pill);
+    font-weight: 800; font-size: 1rem; text-decoration: none; box-shadow: 0 10px 28px color-mix(in srgb, var(--gold-bright) 28%, transparent); transition: transform var(--dur) var(--ease); }
+  .btn-gold:hover { transform: var(--lift); color: var(--ink); }
+  .btn-line { background: transparent; color: var(--cream-on-dark); border: 1px solid color-mix(in srgb, var(--cream-on-dark) 35%, transparent);
+    padding: 15px 30px; border-radius: var(--radius-pill); font-weight: 700; font-size: 1rem; text-decoration: none; transition: transform var(--dur) var(--ease); }
+  .btn-line:hover { transform: var(--lift); color: var(--cream-on-dark); }
+  .trust { margin-top: 26px; font-size: .8rem; color: color-mix(in srgb, var(--cream-on-dark) 50%, transparent); }
+  .trust a { color: var(--gold-bright); }
+  .bridge-art { margin: 46px auto 0; max-width: 1000px; padding: 0 20px; }
+  .hero-fade { height: 60px; background: linear-gradient(var(--ink), var(--paper)); }
 
-  /* HERO PRODUCT SHOT — 콘솔 미리보기(풀블리드 카드, "제품이 곧 데모") */
-  .shot { margin: 58px auto 0; max-width: 1000px; border-radius: 26px; background: var(--surface); border: 1px solid var(--border);
-    box-shadow: 0 30px 80px color-mix(in srgb, var(--ink) 16%, transparent); overflow: hidden; }
+  /* CONSOLE SHOT (밝음, 다크 히어로 위로 겹침) */
+  .shot-sec { background: var(--paper); padding: 0 0 90px; }
+  .shot { margin: -40px auto 0; max-width: 1000px; border-radius: 24px; background: var(--surface); border: 1px solid var(--border);
+    box-shadow: 0 34px 80px color-mix(in srgb, var(--ink) 22%, transparent); overflow: hidden; position: relative; z-index: 2; }
   .shot-bar { display: flex; align-items: center; gap: 8px; padding: 13px 18px; background: var(--cream); border-bottom: 1px solid var(--border); }
   .shot-bar i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; background: var(--border); }
   .shot-bar .addr { margin-left: 12px; font-size: .78rem; color: var(--text-muted); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 4px 12px; }
   .shot-body { display: grid; grid-template-columns: 200px 1fr; min-height: 300px; }
   .shot .side { background: var(--paper); border-right: 1px solid var(--border); padding: 18px 14px; }
   .shot .side .si { display: flex; align-items: center; gap: 9px; padding: 9px 11px; border-radius: 11px; font-size: .84rem; color: var(--text); font-weight: 500; margin-bottom: 3px; }
-  .shot .side .si.on { background: var(--ink); color: var(--on-accent); }
+  .shot .side .si.on { background: var(--ink); color: var(--cream-on-dark); }
   .shot .side .si .ic { width: 16px; height: 16px; border-radius: 5px; background: var(--gold); opacity: .85; }
   .shot .side .si.on .ic { background: var(--teal-bright); }
   .shot .main { padding: 24px 26px; text-align: left; }
@@ -73,13 +77,21 @@
   .tag { font-size: .72rem; font-weight: 700; padding: 5px 11px; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--teal) 12%, transparent); color: var(--teal); }
   .tag.warn { background: color-mix(in srgb, var(--orange) 14%, transparent); color: var(--orange-strong); }
 
-  /* SECTION — 네오클래식 에디토리얼 */
-  .block { padding: 96px 0; border-top: 1px solid var(--border); }
-  .sec-head { text-align: center; max-width: 680px; margin: 0 auto 56px; }
-  .sec-head .kick { font-size: .8rem; font-weight: 800; color: var(--gold-ink); letter-spacing: .08em; text-transform: uppercase; }
+  /* 다리 디바이더 (섹션 잇기 — 시그니처 반복) */
+  .divider { padding: 0; background: var(--paper); }
+  .divider svg { display: block; width: 100%; height: 70px; opacity: .5; }
+
+  /* SECTIONS */
+  .block { padding: 92px 0; }
+  .block.dark { background: var(--ink); color: var(--cream-on-dark); }
+  .sec-head { text-align: center; max-width: 680px; margin: 0 auto 52px; }
+  .sec-head .kick { font-size: .8rem; font-weight: 800; color: var(--gold-ink); letter-spacing: .1em; text-transform: uppercase; }
+  .dark .sec-head .kick { color: var(--gold-bright); }
   .sec-head h2 { font-size: clamp(28px, 4vw, 46px); letter-spacing: -.03em; margin-top: 12px; font-weight: 900; line-height: 1.12; }
-  .sec-head p { font-size: 1.06rem; color: var(--text); margin-top: 16px; }
-  .feat { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .dark .sec-head h2 { color: #fff; }
+  .sec-head p { font-size: 1.06rem; color: var(--text); margin-top: 14px; }
+  .dark .sec-head p { color: color-mix(in srgb, var(--cream-on-dark) 72%, transparent); }
+  .feat { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
   .fcard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl); padding: 30px 26px; box-shadow: var(--shadow);
     transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
   .fcard:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
@@ -88,38 +100,35 @@
   .fcard p { font-size: .9rem; color: var(--text); margin-top: 9px; }
   .fcard .ln { height: 3px; width: 34px; border-radius: 3px; background: var(--teal); margin-top: 18px; }
   .steps5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
-  .steps5 .fcard { text-align: center; padding: 24px 14px; }
-  .steps5 .n { font-family: var(--font-display); font-size: 26px; font-weight: 900; color: var(--gold-ink); }
-  .steps5 .n.teal { color: var(--teal); } .steps5 .n.orange { color: var(--orange); }
-  .steps5 h4 { font-size: 1rem; margin-top: 8px; } .steps5 p { font-size: .8rem; margin-top: 6px; }
+  .scard { background: color-mix(in srgb, var(--ink-2) 80%, var(--ink)); border: 1px solid color-mix(in srgb, var(--gold-bright) 16%, transparent); border-radius: 16px; padding: 24px 14px; text-align: center; }
+  .scard .n { font-family: var(--font-display); font-size: 26px; font-weight: 900; color: var(--gold-bright); }
+  .scard .n.teal { color: var(--teal-bright); } .scard .n.orange { color: var(--orange); }
+  .scard h4 { font-size: 1rem; margin-top: 8px; color: #fff; } .scard p { font-size: .8rem; color: color-mix(in srgb, var(--cream-on-dark) 60%, transparent); margin-top: 6px; }
 
-  /* WIDE EDITORIAL split */
+  /* SPLIT */
   .split { display: grid; grid-template-columns: 1.05fr .95fr; gap: 50px; align-items: center; }
-  .split .copy .kick { font-size: .8rem; font-weight: 800; color: var(--gold-ink); letter-spacing: .08em; text-transform: uppercase; }
-  .split .copy h2 { font-size: clamp(26px, 3.4vw, 40px); letter-spacing: -.03em; margin-top: 12px; font-weight: 900; line-height: 1.14; }
-  .split .copy p { font-size: 1rem; color: var(--text); margin-top: 16px; }
-  .split .copy .list { margin-top: 22px; display: flex; flex-direction: column; gap: 13px; }
-  .split .copy .li { display: flex; gap: 12px; font-size: .94rem; align-items: flex-start; }
-  .split .copy .li .ck { width: 22px; height: 22px; border-radius: 7px; background: var(--teal); color: var(--on-accent); display: grid; place-items: center; font-size: .8rem; flex: none; font-weight: 800; }
-  .visual { border-radius: 22px; background: linear-gradient(160deg, var(--ink), var(--ink-2)); min-height: 340px; position: relative; overflow: hidden; box-shadow: 0 24px 60px color-mix(in srgb, var(--ink) 22%, transparent); }
-  .visual .gate { position: absolute; inset: 0; display: grid; place-items: center; }
-  .visual .gate img { width: 140px; height: 140px; border-radius: 30px; box-shadow: 0 18px 50px rgba(0,0,0,.4); }
-  .visual .cap { position: absolute; bottom: 22px; left: 24px; color: var(--cream); font-family: var(--font-display); font-size: .94rem; opacity: .85; }
+  .split .kick { font-size: .8rem; font-weight: 800; color: var(--gold-ink); letter-spacing: .1em; text-transform: uppercase; }
+  .split h2 { font-size: clamp(26px, 3.4vw, 40px); letter-spacing: -.03em; margin-top: 12px; font-weight: 900; line-height: 1.14; }
+  .split p { font-size: 1rem; color: var(--text); margin-top: 16px; }
+  .split .li { display: flex; gap: 12px; font-size: .94rem; align-items: flex-start; margin-top: 13px; }
+  .split .li .ck { width: 22px; height: 22px; border-radius: 7px; background: var(--teal); color: var(--on-accent); display: grid; place-items: center; font-size: .8rem; flex: none; font-weight: 800; }
+  .visual { border-radius: 22px; background: linear-gradient(160deg, var(--ink), var(--ink-2)); min-height: 340px; position: relative; overflow: hidden; box-shadow: 0 24px 60px color-mix(in srgb, var(--ink) 24%, transparent); display: grid; place-items: center; }
+  .visual img { width: 150px; height: 150px; border-radius: 32px; box-shadow: 0 20px 50px rgba(0,0,0,.45); }
+  .visual .cap { position: absolute; bottom: 22px; left: 24px; color: var(--cream-on-dark); font-family: var(--font-display); font-size: .94rem; opacity: .82; }
 
-  /* CTA band */
-  .band { margin: 0 auto; max-width: 1100px; background: linear-gradient(135deg, var(--ink), var(--ink-2)); border-radius: 30px; padding: 64px 40px;
-    text-align: center; color: var(--on-accent); box-shadow: 0 30px 70px color-mix(in srgb, var(--ink) 28%, transparent); }
+  /* GOLD CTA BAND */
+  .band { margin: 0 auto; max-width: 1100px; background: linear-gradient(135deg, var(--gold-bright), var(--gold-ink)); border-radius: 30px; padding: 62px 40px;
+    text-align: center; color: var(--ink); box-shadow: 0 30px 70px color-mix(in srgb, var(--gold-bright) 28%, transparent); }
   .band h2 { font-size: clamp(28px, 4vw, 42px); letter-spacing: -.03em; font-weight: 900; }
-  .band p { color: color-mix(in srgb, var(--cream) 78%, transparent); margin-top: 14px; font-size: 1.06rem; }
-  .band .btn-ink { background: var(--orange); margin-top: 30px; box-shadow: 0 10px 30px color-mix(in srgb, var(--orange) 40%, transparent); }
+  .band p { margin-top: 12px; font-size: 1.06rem; opacity: .85; }
+  .band .btn-ink { display: inline-block; background: var(--ink); color: var(--on-accent); border: none; padding: 15px 32px; border-radius: var(--radius-pill); font-weight: 800; font-size: 1rem; margin-top: 28px; text-decoration: none; }
 
-  .lpfoot { padding: 50px 0 70px; border-top: 1px solid var(--border); margin-top: 90px; color: var(--text-muted); font-size: .85rem; }
+  .lpfoot { padding: 50px 0; background: var(--ink); color: color-mix(in srgb, var(--cream-on-dark) 55%, transparent); font-size: .85rem; }
   .lpfoot .inner { max-width: var(--maxw); margin: 0 auto; padding: 0 28px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 18px; }
-  .lpfoot .foot-brand { display: flex; align-items: center; gap: 10px; font-weight: 800; color: var(--ink); font-size: 1rem; }
+  .lpfoot .foot-brand { display: flex; align-items: center; gap: 10px; font-weight: 800; color: var(--cream-on-dark); font-size: 1rem; }
   .lpfoot .foot-brand img { width: 28px; height: 28px; border-radius: 8px; }
-  .lpfoot a { color: var(--text-muted); text-decoration: none; } .lpfoot a:hover { color: var(--ink); }
+  .lpfoot a { color: color-mix(in srgb, var(--cream-on-dark) 60%, transparent); text-decoration: none; } .lpfoot a:hover { color: var(--gold-bright); }
 
-  /* 등장 모션 */
   .reveal { opacity: 0; transform: translateY(18px); transition: opacity .6s var(--ease), transform .6s var(--ease); }
   .reveal.in { opacity: 1; transform: none; }
 
@@ -127,16 +136,15 @@
     .lpnav .nav-links { display: none; }
     .shot-body { grid-template-columns: 1fr; } .shot .side { display: none; }
     .shot .kpis { grid-template-columns: 1fr 1fr; } .feat { grid-template-columns: 1fr; }
-    .steps5 { grid-template-columns: 1fr 1fr; } .split { grid-template-columns: 1fr; gap: 32px; }
+    .steps5 { grid-template-columns: 1fr 1fr; } .split { grid-template-columns: 1fr; gap: 30px; }
   }
   @media (prefers-reduced-motion: reduce) {
     .reveal { opacity: 1; transform: none; transition: none; }
-    .fcard:hover, .btn-ink:hover, .btn-ghost:hover { transform: none; }
+    .fcard:hover, .btn-gold:hover, .btn-line:hover { transform: none; }
   }
 </style>
 {% endblock %}
 
-{# 랜딩은 자체 nav/footer를 가지므로 공통 chrome 제거(상단 중복 메뉴·흰 여백 0). #}
 {% block topnav %}{% endblock %}
 {% block main_class %}{% endblock %}
 {% block app_footer %}{% endblock %}
@@ -145,6 +153,21 @@
 {% set EN = (lang == 'en') %}
 {% set BRAND = brand_name|default('gogabridj', true) %}
 {% set ICON = '/seller/static/favicon.svg?v=179' %}
+{# 다리(현수교) 라인아트 시그니처 — 히어로·섹션 디바이더에 반복. #}
+{% macro bridge_art() %}
+<svg viewBox="0 0 1200 240" fill="none" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet" style="width:100%;height:auto;display:block" aria-hidden="true">
+  <line x1="0" y1="186" x2="1200" y2="186" stroke="var(--teal)" stroke-width="3" opacity=".55"/>
+  <line x1="0" y1="196" x2="1200" y2="196" stroke="var(--teal-bright)" stroke-width="2" opacity=".4"/>
+  <path d="M0 96 Q 300 40 420 150 Q 540 60 600 60 Q 660 60 780 150 Q 900 40 1200 96" stroke="var(--gold-bright)" stroke-width="3.5" opacity=".95"/>
+  <circle cx="600" cy="118" r="58" stroke="var(--gold-bright)" stroke-width="5" fill="none"/>
+  <circle cx="600" cy="60" r="9" fill="var(--orange)"/>
+  <line x1="420" y1="186" x2="420" y2="70" stroke="var(--gold-bright)" stroke-width="5"/>
+  <line x1="780" y1="186" x2="780" y2="70" stroke="var(--gold-bright)" stroke-width="5"/>
+  {% for x in [120,180,240,300,360,480,520,680,720,840,900,960,1020,1080] %}
+  <line x1="{{ x }}" y1="186" x2="{{ x }}" y2="116" stroke="var(--gold-bright)" stroke-width="1.6" opacity=".55"/>
+  {% endfor %}
+</svg>
+{% endmacro %}
 <div class="lp">
 {% if show_region_banner %}
 <div style="background:var(--ink);color:var(--cream);font-size:.85rem;padding:.5rem 1rem;display:flex;align-items:center;justify-content:center;gap:.8rem;flex-wrap:wrap;">
@@ -169,26 +192,30 @@
   </div>
 </nav>
 
-<!-- HERO -->
+<!-- HERO (다크 + 다리 라인아트) -->
 <header class="hero"><div class="wrap reveal">
-  <span class="eyebrow"><span class="dot"></span>{{ '1-minute start · sourcing to multi-market in one bridge' if EN else '1분 만에 시작 · 해외 수집부터 멀티마켓 등록까지 다리 하나로' }}</span>
+  <span class="eyebrow"><span class="dot"></span>{{ '1-minute start · overseas↔home, one bridge' if EN else '1분 만에 시작 · 해외에서 국내·국내에서 해외, 다리 하나로' }}</span>
   {% if EN %}
-  <h1 class="serif">Sold or not,<br><span class="accent">just list it.</span></h1>
-  <p class="sub">A bridge for solo sellers — collect overseas products, translate & edit, and list to markets at home and abroad in one go.</p>
+  <h1 class="serif">Cross over.<br>From <span class="g">collect</span> to <span class="t">sell</span>.</h1>
+  <p class="sub">A solo seller's bridge — collect overseas products, translate & edit, and list to many markets at once.</p>
   {% else %}
-  <h1 class="serif">팔리든 말든,<br><span class="accent">올려두면</span> 됩니다.</h1>
-  <p class="sub">해외 상품을 수집하고, 번역·편집해서, 국내외 마켓에 한 번에 올리는 1인 셀러용 다리.</p>
+  <h1 class="serif">건너세요.<br><span class="g">수집</span>에서 <span class="t">판매</span>까지.</h1>
+  <p class="sub">해외 상품을 수집하고, 번역·편집해서, 멀티마켓에 한 번에 올리는 1인 셀러의 다리.</p>
   {% endif %}
   <div class="hero-cta">
-    <a href="/seller/start" class="btn-ink">{{ 'Start free now' if EN else '지금 무료로 시작하기' }}</a>
-    <a href="/seller/" class="btn-ghost">{{ 'See the collector →' if EN else '고가수집기 둘러보기 →' }}</a>
+    <a href="/seller/start" class="btn-gold">{{ 'Start free now' if EN else '지금 무료로 시작' }}</a>
+    <a href="/seller/" class="btn-line">{{ 'See the collector →' if EN else '고가수집기 둘러보기 →' }}</a>
   </div>
-  <div class="trust">{{ 'No card needed · Coupang · SmartStore · Shopify · Multishop' if EN else '신용카드 없이 시작 · 쿠팡 · 스마트스토어 · Shopify · 멀티샵 연동' }}
-    · <a href="/seller/start" style="color:var(--gold-ink);">{{ 'For Beginners' if EN else 'For Beginners · 처음이신가요?' }}</a></div>
+  <div class="trust">{{ 'No card · Coupang · SmartStore · Shopify · Multishop' if EN else '신용카드 없이 시작 · 쿠팡 · 스마트스토어 · Shopify · 멀티샵' }}
+    · <a href="/seller/start">{{ 'For Beginners' if EN else 'For Beginners · 처음이신가요?' }}</a></div>
+  <div class="bridge-art">{{ bridge_art() }}</div>
+</div></header>
+<div class="hero-fade"></div>
 
-  <!-- 콘솔 미리보기(제품이 곧 데모) -->
-  <div class="shot" aria-hidden="true">
-    <div class="shot-bar"><i></i><i></i><i></i><span class="addr">{{ BRAND }} · {{ brand_name_ko|default('고가브릿지', true) }} 셀러 콘솔</span></div>
+<!-- CONSOLE SHOT -->
+<section class="shot-sec"><div class="wrap">
+  <div class="shot reveal" aria-hidden="true">
+    <div class="shot-bar"><i></i><i></i><i></i><span class="addr">{{ brand_name_ko|default('고가브릿지', true) }} · 셀러 콘솔</span></div>
     <div class="shot-body">
       <div class="side">
         <div class="si"><span class="ic"></span>{{ 'Home' if EN else '홈(대시보드)' }}</div>
@@ -211,35 +238,38 @@
       </div>
     </div>
   </div>
-</div></header>
+</div></section>
 
 <!-- 3-FEATURE -->
 <section class="block" id="features"><div class="wrap">
   <div class="sec-head reveal">
     <div class="kick">One Bridge, Every Market</div>
     <h2 class="serif">{{ 'Collect → edit → list.<br>The flow never breaks.' | safe if EN else '수집 → 편집 → 등록.<br>흐름이 끊기지 않습니다.' | safe }}</h2>
-    <p>{{ 'Fast to collect, tidy like Apple, readable like a magazine — three markets in one console.' if EN else '수집은 빠르게, 화면은 애플처럼 단정하게, 잡지처럼 읽히게. 세 마켓을 한 콘솔에서.' }}</p>
+    <p>{{ 'Fast to collect, tidy like Apple, readable like a magazine.' if EN else '수집은 빠르게, 화면은 애플처럼 단정하게, 잡지처럼 읽히게.' }}</p>
   </div>
   <div class="feat">
-    <div class="fcard reveal"><div class="badge"><i class="bi bi-box-arrow-in-down"></i></div><h4 class="serif">{{ 'Goga Collector' if EN else '고가수집기' }}</h4><p>{{ 'Extension · bookmarklet · URL instant-collect. Pull any site’s product onto the bridge.' if EN else '확장·북마클릿·URL 즉시수집. 어느 사이트든 상품을 다리 위로 끌어옵니다.' }}</p><div class="ln"></div></div>
-    <div class="fcard reveal"><div class="badge"><i class="bi bi-arrow-left-right"></i></div><h4 class="serif">{{ 'Translate & edit drawer' if EN else '번역·편집 드로어' }}</h4><p>{{ 'Right there, no new window. Polish title, price, details and images in Korean, then list.' if EN else '새 창 없이 그 자리에서. 제목·가격·상세·이미지를 한국어로 다듬어 바로 등록.' }}</p><div class="ln"></div></div>
-    <div class="fcard reveal"><div class="badge"><i class="bi bi-box-arrow-up-right"></i></div><h4 class="serif">{{ 'Multi-market bulk' if EN else '멀티마켓 일괄' }}</h4><p>{{ 'Coupang · SmartStore · Shopify · Multishop. Category and margin in one push.' if EN else '쿠팡·스마트스토어·Shopify·멀티샵. 카테고리·마진까지 한 번에 태웁니다.' }}</p><div class="ln"></div></div>
+    <div class="fcard reveal"><div class="badge"><i class="bi bi-box-arrow-in-down"></i></div><h4 class="serif">{{ 'Goga Collector' if EN else '고가수집기' }}</h4><p>{{ 'Extension · bookmarklet · URL instant-collect. Any site’s product onto the bridge.' if EN else '확장·북마클릿·URL 즉시수집. 어느 사이트든 상품을 다리 위로.' }}</p><div class="ln"></div></div>
+    <div class="fcard reveal"><div class="badge"><i class="bi bi-arrow-left-right"></i></div><h4 class="serif">{{ 'Translate & edit drawer' if EN else '번역·편집 드로어' }}</h4><p>{{ 'Right there, no new window. Polish title, price, details, images, then list.' if EN else '새 창 없이 그 자리에서. 제목·가격·상세·이미지를 다듬어 바로 등록.' }}</p><div class="ln"></div></div>
+    <div class="fcard reveal"><div class="badge"><i class="bi bi-box-arrow-up-right"></i></div><h4 class="serif">{{ 'Multi-market bulk' if EN else '멀티마켓 일괄' }}</h4><p>{{ 'Coupang · Store · Shopify · Multishop. Category and margin in one push.' if EN else '쿠팡·스토어·Shopify·멀티샵. 카테고리·마진까지 한 번에.' }}</p><div class="ln"></div></div>
   </div>
 </div></section>
 
-<!-- 5-STEP PIPELINE -->
-<section class="block" id="markets" style="background:linear-gradient(180deg,var(--cream),var(--paper));"><div class="wrap">
+<!-- 다리 디바이더 -->
+<div class="divider">{{ bridge_art() }}</div>
+
+<!-- 5-STEP (다크) -->
+<section class="block dark" id="markets"><div class="wrap">
   <div class="sec-head reveal">
     <div class="kick">5 Steps</div>
     <h2 class="serif">{{ 'We carry the hassle,<br>you keep the profit.' | safe if EN else '막막함은 우리가,<br>수익은 사장님이.' | safe }}</h2>
-    <p>{{ 'Sign-up to first upload in a minute. The bridge crosses the tedious middle for you.' if EN else '가입부터 첫 업로드까지 1분. 복잡한 중간 업무는 다리가 건너드립니다.' }}</p>
+    <p>{{ 'Sign-up to first upload in a minute. The bridge crosses the tedious middle.' if EN else '가입부터 첫 업로드까지 1분. 중간 업무는 다리가 건너드립니다.' }}</p>
   </div>
   <div class="steps5">
-    <div class="fcard reveal"><div class="n">01</div><h4 class="serif">{{ 'Collect' if EN else '수집' }}</h4><p>{{ 'Grab overseas products with the collector' if EN else '고가수집기로 해외 상품 가져오기' }}</p></div>
-    <div class="fcard reveal"><div class="n">02</div><h4 class="serif">{{ 'Translate' if EN else '번역' }}</h4><p>{{ 'Title · details · options into Korean' if EN else '제목·상세·옵션 자동 한국어화' }}</p></div>
-    <div class="fcard reveal"><div class="n teal">03</div><h4 class="serif">{{ 'Edit' if EN else '편집' }}</h4><p>{{ 'Tidy images & margin in the drawer' if EN else '드로어에서 그 자리 이미지·마진 다듬기' }}</p></div>
-    <div class="fcard reveal"><div class="n">04</div><h4 class="serif">{{ 'List' if EN else '등록' }}</h4><p>{{ 'Coupang · Store · Shopify bulk upload' if EN else '쿠팡·스토어·Shopify 일괄 업로드' }}</p></div>
-    <div class="fcard reveal"><div class="n orange">05</div><h4 class="serif">{{ 'Orders · CS' if EN else '주문·CS' }}</h4><p>{{ 'Handle incoming orders in one place' if EN else '들어온 주문 한 곳에서 처리' }}</p></div>
+    <div class="scard reveal"><div class="n">01</div><h4 class="serif">{{ 'Collect' if EN else '수집' }}</h4><p>{{ 'Grab overseas products' if EN else '해외 상품 가져오기' }}</p></div>
+    <div class="scard reveal"><div class="n">02</div><h4 class="serif">{{ 'Translate' if EN else '번역' }}</h4><p>{{ 'Title · details into Korean' if EN else '제목·상세 한국어화' }}</p></div>
+    <div class="scard reveal"><div class="n teal">03</div><h4 class="serif">{{ 'Edit' if EN else '편집' }}</h4><p>{{ 'Right in the drawer' if EN else '드로어에서 그 자리' }}</p></div>
+    <div class="scard reveal"><div class="n">04</div><h4 class="serif">{{ 'List' if EN else '등록' }}</h4><p>{{ 'Multi-market bulk' if EN else '멀티마켓 일괄' }}</p></div>
+    <div class="scard reveal"><div class="n orange">05</div><h4 class="serif">{{ 'Orders · CS' if EN else '주문·CS' }}</h4><p>{{ 'Handle in one place' if EN else '한 곳에서 처리' }}</p></div>
   </div>
 </div></section>
 
@@ -248,17 +278,15 @@
   <div class="copy reveal">
     <div class="kick">In-page Editing</div>
     <h2 class="serif">{{ 'Click, and it opens<br>right there.' | safe if EN else '클릭하면<br>그 자리에서 열립니다.' | safe }}</h2>
-    <p>{{ 'No more bouncing out to the source site. The edit drawer slides in from the right — save, and straight to market.' if EN else '상품을 누르면 원본 사이트로 튕겨 나가는 일은 없습니다. 우측에서 편집 드로어가 미끄러져 들어오고, 저장하면 바로 마켓으로.' }}</p>
-    <div class="list">
-      <div class="li"><span class="ck"><i class="bi bi-check-lg"></i></span><span>{{ 'Zero new windows / page jumps — an overlay over the current screen' if EN else '새 창·페이지 이동 0 — 현재 화면 위 오버레이' }}</span></div>
-      <div class="li"><span class="ck"><i class="bi bi-check-lg"></i></span><span>{{ 'Empty price shows “check needed”, never a made-up conversion' if EN else '가격 빈값이면 임의 환산 대신 “확인 필요” 정직 표기' }}</span></div>
-      <div class="li"><span class="ck"><i class="bi bi-check-lg"></i></span><span>{{ 'Original/translation toggle kept; details, specs, images filled' if EN else '원문/번역 토글 보존, 상세·스펙·이미지까지 채움' }}</span></div>
-    </div>
+    <p>{{ 'No bouncing out to the source site. The edit drawer slides in — save, straight to market.' if EN else '원본 사이트로 튕겨 나가지 않습니다. 우측 드로어가 미끄러져 들어오고, 저장하면 바로 마켓으로.' }}</p>
+    <div class="li"><span class="ck"><i class="bi bi-check-lg"></i></span><span>{{ 'Zero new windows / page jumps — an overlay' if EN else '새 창·페이지 이동 0 — 현재 화면 위 오버레이' }}</span></div>
+    <div class="li"><span class="ck"><i class="bi bi-check-lg"></i></span><span>{{ 'Empty price shows “check needed”, never a made-up conversion' if EN else '가격 빈값이면 임의 환산 대신 “확인 필요” 정직 표기' }}</span></div>
+    <div class="li"><span class="ck"><i class="bi bi-check-lg"></i></span><span>{{ 'No detail? AI writes a human-like draft (review before listing)' if EN else '상세 없으면 AI가 사람처럼 써 드립니다(승인 후 등록)' }}</span></div>
   </div>
-  <div class="visual reveal"><div class="gate"><img src="{{ ICON }}" alt=""></div><div class="cap">{{ 'Metal type on digital hanji' if EN else '디지털 한지 위의 금속활자' }}</div></div>
+  <div class="visual reveal"><img src="{{ ICON }}" alt=""><div class="cap">{{ 'Metal type on digital hanji' if EN else '디지털 한지 위의 금속활자' }}</div></div>
 </div></section>
 
-<!-- SUPPORTED MARKETS (실데이터 — 지원 마켓명만, 가짜 수치 0) -->
+<!-- SUPPORTED MARKETS -->
 <section class="block"><div class="wrap">
   <div class="sec-head reveal">
     <div class="kick">Connects with</div>
@@ -277,15 +305,15 @@
   <div class="sec-head reveal">
     <div class="kick">Pricing</div>
     <h2 class="serif">{{ 'Start free' if EN else '무료로 시작하세요' }}</h2>
-    <p>{{ 'Sign up and start collecting for free. Paid plans unlock more — see plans inside.' if EN else '가입하고 수집을 무료로 시작하세요. 더 필요한 기능은 요금제에서 확인할 수 있어요.' }}</p>
+    <p>{{ 'Sign up and collect free. Paid plans unlock more — see plans inside.' if EN else '가입하고 수집을 무료로 시작하세요. 더 필요한 기능은 요금제에서.' }}</p>
   </div>
   <div style="text-align:center;">
-    <a href="/seller/start" class="btn-ink">{{ 'Start free' if EN else '무료로 시작하기' }}</a>
-    <a href="/seller/billing" class="btn-ghost" style="margin-left:10px;">{{ 'See plans' if EN else '요금제 보기' }}</a>
+    <a href="/seller/start" class="btn-gold">{{ 'Start free' if EN else '무료로 시작하기' }}</a>
+    <a href="/seller/billing" class="btn-line" style="color:var(--ink);border-color:var(--border);margin-left:10px;">{{ 'See plans' if EN else '요금제 보기' }}</a>
   </div>
 </div></section>
 
-<!-- CTA BAND -->
+<!-- GOLD CTA BAND -->
 <section class="block"><div class="wrap">
   <div class="band reveal">
     <h2 class="serif">{{ 'Ready to bridge?' if EN else '다리를 놓을 준비가 되셨나요?' }}</h2>

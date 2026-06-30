@@ -26,7 +26,7 @@ def client():
 def test_mockup_structure_present(client):
     html = client.get("/").get_data(as_text=True)
     # 목업 핵심 섹션/카피
-    for needle in ("팔리든 말든", "올려두면", "막막함은 우리가", "수익은 사장님이",
+    for needle in ("건너세요", "수집", "판매", "막막함은 우리가", "수익은 사장님이",
                    "디지털 한지 위의 금속활자", "One Bridge, Every Market", "5 Steps", "In-page Editing"):
         assert needle in html, f"목업 섹션 누락: {needle}"
 
@@ -34,7 +34,7 @@ def test_mockup_structure_present(client):
 def test_console_shot_and_pipeline(client):
     html = client.get("/").get_data(as_text=True)
     # 콘솔 미리보기 샷(브라우저 크롬 바 + 사이드 + KPI + 행)
-    assert 'class="shot"' in html and 'class="shot-bar"' in html
+    assert 'class="shot ' in html and 'class="shot-bar"' in html
     assert 'class="kpis"' in html and 'class="prow"' in html
     # 5단계 파이프라인
     assert 'class="steps5"' in html
