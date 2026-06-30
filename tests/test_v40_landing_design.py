@@ -40,6 +40,20 @@ def test_bridge_lineart_signature_repeated():
     assert 'stroke="var(--teal)"' in TPL                     # 청록 강
 
 
+def test_impeccable_polish_signature_and_a11y():
+    # 5단계 '다리를 건너는 흐름'(skill 시그니처): 데크 커넥터 + 주황 키스톤
+    assert "steps5-wrap" in TPL and 'class="keystone"' in TPL
+    assert ".steps5-wrap::before" in TPL
+    # 피처 배지 = 금 링(제네릭 사각 탈피)
+    assert "border-radius: 50%" in TPL.split(".fcard .badge", 1)[1][:200]
+    # 요금 섹션 = 카드(얇은 default 탈피) + 키스톤 포인트
+    assert "price-card" in TPL and ".price-card::before" in TPL
+    # 접근성(Chanel): 키보드 포커스 링(:focus-visible)
+    assert ":focus-visible" in TPL and "outline:" in TPL
+    # 폰트는 우리 토큰 고정(impeccable이 Inter 밀어도 우리 정체성 유지)
+    assert "Noto+Serif+KR" in TPL and "var(--font-display)" in TPL   # 세리프 로드 + 토큰 적용
+
+
 def test_gold_cta_band_and_dark_sections():
     assert "class=\"band reveal\"" in TPL
     assert "linear-gradient(135deg, var(--gold-bright)" in TPL   # 금 CTA 밴드

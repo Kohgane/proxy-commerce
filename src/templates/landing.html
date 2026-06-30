@@ -95,15 +95,22 @@
   .fcard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl); padding: 30px 26px; box-shadow: var(--shadow);
     transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
   .fcard:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
-  .fcard .badge { width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center; font-size: 1.25rem; color: var(--teal); background: var(--cream); border: 1px solid var(--border); }
+  /* 피처 배지 — 금 링 + 청록 아이콘(다리 게이트 모티프, 제네릭 사각 탈피) */
+  .fcard .badge { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; font-size: 1.2rem; color: var(--teal);
+    background: var(--surface); border: 2px solid color-mix(in srgb, var(--gold) 55%, var(--border)); box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--gold) 10%, transparent); }
   .fcard h4 { font-size: 1.19rem; margin-top: 18px; letter-spacing: -.02em; font-weight: 800; }
   .fcard p { font-size: .9rem; color: var(--text); margin-top: 9px; }
   .fcard .ln { height: 3px; width: 34px; border-radius: 3px; background: var(--teal); margin-top: 18px; }
-  .steps5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
-  .scard { background: color-mix(in srgb, var(--ink-2) 80%, var(--ink)); border: 1px solid color-mix(in srgb, var(--gold-bright) 16%, transparent); border-radius: 16px; padding: 24px 14px; text-align: center; }
-  .scard .n { font-family: var(--font-display); font-size: 26px; font-weight: 900; color: var(--gold-bright); }
+  /* 5단계 — '다리를 건너는 흐름'(skill 시그니처): 카드 위로 금 데크 라인 + 중앙 주황 키스톤. */
+  .steps5-wrap { position: relative; }
+  .steps5-wrap::before { content: ""; position: absolute; left: 8%; right: 8%; top: 30px; height: 2px;
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--gold-bright) 70%, transparent) 12%, color-mix(in srgb, var(--gold-bright) 70%, transparent) 88%, transparent); }
+  .steps5-wrap .keystone { position: absolute; left: 50%; top: 22px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--orange); box-shadow: 0 0 0 4px color-mix(in srgb, var(--orange) 22%, transparent); }
+  .steps5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; position: relative; }
+  .scard { background: color-mix(in srgb, var(--ink-2) 82%, var(--ink)); border: 1px solid color-mix(in srgb, var(--gold-bright) 18%, transparent); border-radius: 16px; padding: 26px 14px 22px; text-align: center; position: relative; }
+  .scard .n { font-family: var(--font-display); font-size: 32px; font-weight: 900; color: var(--gold-bright); line-height: 1; }
   .scard .n.teal { color: var(--teal-bright); } .scard .n.orange { color: var(--orange); }
-  .scard h4 { font-size: 1rem; margin-top: 8px; color: #fff; } .scard p { font-size: .8rem; color: color-mix(in srgb, var(--cream-on-dark) 60%, transparent); margin-top: 6px; }
+  .scard h4 { font-size: 1.02rem; margin-top: 10px; color: #fff; } .scard p { font-size: .8rem; color: color-mix(in srgb, var(--cream-on-dark) 62%, transparent); margin-top: 6px; line-height: 1.45; }
 
   /* SPLIT */
   .split { display: grid; grid-template-columns: 1.05fr .95fr; gap: 50px; align-items: center; }
@@ -115,6 +122,19 @@
   .visual { border-radius: 22px; background: linear-gradient(160deg, var(--ink), var(--ink-2)); min-height: 340px; position: relative; overflow: hidden; box-shadow: 0 24px 60px color-mix(in srgb, var(--ink) 24%, transparent); display: grid; place-items: center; }
   .visual img { width: 150px; height: 150px; border-radius: 32px; box-shadow: 0 20px 50px rgba(0,0,0,.45); }
   .visual .cap { position: absolute; bottom: 22px; left: 24px; color: var(--cream-on-dark); font-family: var(--font-display); font-size: .94rem; opacity: .82; }
+
+  /* PRICING 카드 — 얇은 default 탈피: 한지 위 흰 카드 + 상단 주황 키스톤 포인트(화면당 1개 원칙은 밴드와 분리 섹션) */
+  .price-card { max-width: 640px; margin: 0 auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl);
+    box-shadow: var(--shadow); padding: 40px 32px; text-align: center; position: relative; }
+  .price-card::before { content: ""; position: absolute; top: -7px; left: 50%; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%;
+    background: var(--orange); box-shadow: 0 0 0 5px color-mix(in srgb, var(--orange) 18%, transparent); }
+  .price-card .kick { font-size: .8rem; font-weight: 800; color: var(--gold-ink); letter-spacing: .1em; text-transform: uppercase; }
+  .price-card h2 { font-family: var(--font-display); font-size: clamp(26px, 3.6vw, 40px); letter-spacing: -.03em; margin-top: 10px; font-weight: 900; }
+  .price-card p { font-size: 1rem; color: var(--text); margin-top: 12px; }
+  .price-card .pts { display: flex; flex-wrap: wrap; gap: 8px 18px; justify-content: center; margin: 18px 0 22px; font-size: .9rem; color: var(--text); }
+  .price-card .pts span { display: inline-flex; align-items: center; gap: 6px; }
+  .price-card .pts i { color: var(--teal); }
+  .price-card .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 
   /* GOLD CTA BAND */
   .band { margin: 0 auto; max-width: 1100px; background: linear-gradient(135deg, var(--gold-bright), var(--gold-ink)); border-radius: 30px; padding: 62px 40px;
@@ -132,6 +152,11 @@
   .reveal { opacity: 0; transform: translateY(18px); transition: opacity .6s var(--ease), transform .6s var(--ease); }
   .reveal.in { opacity: 1; transform: none; }
 
+  /* 접근성(Chanel 규칙) — 키보드 포커스 또렷한 청록 링. 마우스 클릭엔 안 뜸(:focus-visible). */
+  .lp a:focus-visible, .lp button:focus-visible, .lpnav .nav-cta:focus-visible,
+  .btn-gold:focus-visible, .btn-line:focus-visible, .band .btn-ink:focus-visible {
+    outline: 3px solid var(--teal-bright); outline-offset: 3px; border-radius: var(--radius-pill); }
+
   @media (max-width: 860px) {
     .lpnav .nav-links { display: none; }
     .shot-body { grid-template-columns: 1fr; } .shot .side { display: none; }
@@ -140,8 +165,9 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .reveal { opacity: 1; transform: none; transition: none; }
-    .fcard:hover, .btn-gold:hover, .btn-line:hover { transform: none; }
+    .fcard:hover, .btn-gold:hover, .btn-line:hover { transform: none; transition: none; }
   }
+  @media (max-width: 860px) { .steps5-wrap::before, .steps5-wrap .keystone { display: none; } }
 </style>
 {% endblock %}
 
@@ -264,12 +290,15 @@
     <h2 class="serif">{{ 'We carry the hassle,<br>you keep the profit.' | safe if EN else '막막함은 우리가,<br>수익은 사장님이.' | safe }}</h2>
     <p>{{ 'Sign-up to first upload in a minute. The bridge crosses the tedious middle.' if EN else '가입부터 첫 업로드까지 1분. 중간 업무는 다리가 건너드립니다.' }}</p>
   </div>
-  <div class="steps5">
-    <div class="scard reveal"><div class="n">01</div><h4 class="serif">{{ 'Collect' if EN else '수집' }}</h4><p>{{ 'Grab overseas products' if EN else '해외 상품 가져오기' }}</p></div>
-    <div class="scard reveal"><div class="n">02</div><h4 class="serif">{{ 'Translate' if EN else '번역' }}</h4><p>{{ 'Title · details into Korean' if EN else '제목·상세 한국어화' }}</p></div>
-    <div class="scard reveal"><div class="n teal">03</div><h4 class="serif">{{ 'Edit' if EN else '편집' }}</h4><p>{{ 'Right in the drawer' if EN else '드로어에서 그 자리' }}</p></div>
-    <div class="scard reveal"><div class="n">04</div><h4 class="serif">{{ 'List' if EN else '등록' }}</h4><p>{{ 'Multi-market bulk' if EN else '멀티마켓 일괄' }}</p></div>
-    <div class="scard reveal"><div class="n orange">05</div><h4 class="serif">{{ 'Orders · CS' if EN else '주문·CS' }}</h4><p>{{ 'Handle in one place' if EN else '한 곳에서 처리' }}</p></div>
+  <div class="steps5-wrap">
+    <span class="keystone" aria-hidden="true"></span>
+    <div class="steps5">
+      <div class="scard reveal"><div class="n">01</div><h4 class="serif">{{ 'Collect' if EN else '수집' }}</h4><p>{{ 'Grab overseas products' if EN else '해외 상품 가져오기' }}</p></div>
+      <div class="scard reveal"><div class="n">02</div><h4 class="serif">{{ 'Translate' if EN else '번역' }}</h4><p>{{ 'Title · details into Korean' if EN else '제목·상세 한국어화' }}</p></div>
+      <div class="scard reveal"><div class="n teal">03</div><h4 class="serif">{{ 'Edit' if EN else '편집' }}</h4><p>{{ 'Right in the drawer' if EN else '드로어에서 그 자리' }}</p></div>
+      <div class="scard reveal"><div class="n">04</div><h4 class="serif">{{ 'List' if EN else '등록' }}</h4><p>{{ 'Multi-market bulk' if EN else '멀티마켓 일괄' }}</p></div>
+      <div class="scard reveal"><div class="n orange">05</div><h4 class="serif">{{ 'Orders · CS' if EN else '주문·CS' }}</h4><p>{{ 'Handle in one place' if EN else '한 곳에서 처리' }}</p></div>
+    </div>
   </div>
 </div></section>
 
@@ -302,14 +331,19 @@
 
 <!-- PRICING -->
 <section class="block" id="pricing" style="background:var(--cream);"><div class="wrap">
-  <div class="sec-head reveal">
+  <div class="price-card reveal">
     <div class="kick">Pricing</div>
-    <h2 class="serif">{{ 'Start free' if EN else '무료로 시작하세요' }}</h2>
-    <p>{{ 'Sign up and collect free. Paid plans unlock more — see plans inside.' if EN else '가입하고 수집을 무료로 시작하세요. 더 필요한 기능은 요금제에서.' }}</p>
-  </div>
-  <div style="text-align:center;">
-    <a href="/seller/start" class="btn-gold">{{ 'Start free' if EN else '무료로 시작하기' }}</a>
-    <a href="/seller/billing" class="btn-line" style="color:var(--ink);border-color:var(--border);margin-left:10px;">{{ 'See plans' if EN else '요금제 보기' }}</a>
+    <h2>{{ 'Start free' if EN else '무료로 시작하세요' }}</h2>
+    <p>{{ 'Sign up and collect for free. Pay only when you need more — no card to start.' if EN else '가입하고 수집을 무료로 시작하세요. 신용카드 없이, 더 필요할 때만 요금제로.' }}</p>
+    <div class="pts">
+      <span><i class="bi bi-check-lg"></i> {{ 'Free to collect' if EN else '수집 무료 시작' }}</span>
+      <span><i class="bi bi-check-lg"></i> {{ 'No card needed' if EN else '신용카드 없이' }}</span>
+      <span><i class="bi bi-check-lg"></i> {{ 'Your own market keys' if EN else '내 마켓 키로 연동' }}</span>
+    </div>
+    <div class="cta">
+      <a href="/seller/start" class="btn-gold">{{ 'Start free' if EN else '무료로 시작하기' }}</a>
+      <a href="/seller/billing" class="btn-line" style="color:var(--ink);border-color:var(--border);">{{ 'See plans' if EN else '요금제 보기' }}</a>
+    </div>
   </div>
 </div></section>
 
