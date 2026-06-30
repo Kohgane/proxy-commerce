@@ -1015,6 +1015,14 @@ try:
 except Exception as _auth_bp_exc:
     logger.warning("인증 시스템 Blueprint 등록 실패: %s", _auth_bp_exc)
 
+try:
+    # v40-D: 패스키(WebAuthn) 등록·인증
+    from .auth.passkey import passkey_bp
+    app.register_blueprint(passkey_bp)
+    logger.info("패스키(WebAuthn) Blueprint 등록 완료 (/auth/passkey/)")
+except Exception as _pk_bp_exc:
+    logger.warning("패스키 Blueprint 등록 실패: %s", _pk_bp_exc)
+
 
 # ---------------------------------------------------------------------------
 # v8 속도 — gzip 응답 압축 + 정적 에셋 장기 캐시(전송량·왕복 감소, 체감 속도↑)
