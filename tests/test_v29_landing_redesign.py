@@ -26,16 +26,16 @@ def test_landing_has_no_emoji():
 
 def test_landing_scroll_narrative_sections(client):
     html = client.get("/").get_data(as_text=True)
-    # 한 섹션 한 메시지 챕터: 작동방식·기능·요금·FAQ·푸터
-    for needle in ("작동 방식", "핵심 기능", "요금", "자주 묻는 질문",
-                   "개인정보처리방침", "이용약관"):
+    # v39-D 에디토리얼 섹션: 3-피처·5단계·인페이지 편집·요금·법적 링크
+    for needle in ("One Bridge, Every Market", "5 Steps", "In-page Editing",
+                   "Pricing", "개인정보처리방침", "이용약관"):
         assert needle in html, f"섹션/링크 {needle} 누락"
-    # 스티키 블러 내비 + 등장 리빌 + reduced-motion 존중
-    assert 'id="lpnav"' in TPL and "backdrop-filter: blur" in TPL
+    # 슬림 글래스 내비 + 등장 리빌 + reduced-motion 존중
+    assert 'class="lpnav"' in TPL and "backdrop-filter: saturate" in TPL
     assert "IntersectionObserver" in TPL
     assert "prefers-reduced-motion" in TPL
-    # 브라우저 프레임 목업(평면 금지)
-    assert 'class="frame"' in TPL
+    # 콘솔 미리보기 샷(평면 금지 — 제품이 곧 데모)
+    assert 'class="shot"' in TPL
 
 
 def test_landing_social_proof_real_no_fake_numbers(client):
