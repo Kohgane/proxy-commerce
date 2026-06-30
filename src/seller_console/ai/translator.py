@@ -102,6 +102,62 @@ class AITranslator:
 
         return self._copy_template(title, marketplace)
 
+    def generate_description(self, product: dict) -> dict:
+        """v39-E2 #3: 상세설명이 없거나 빈약할 때 한국어 상세 '초안'을 생성.
+
+        입력: {title, category, specs:[(label,value)], keywords, brand}
+        출력: {"text": str, "provider": "openai"|"stub", "is_draft": True}
+        - 큐레이터 톤(건방지지만 공손한 높임말). 없는 수치·허위 스펙 지어내기 금지(확인된 정보만).
+        - OPENAI 키 미설정/dry-run/실패 시 provider="stub" — 가짜 상세 생성 금지, 확인된 정보만 구조화.
+        """
+        title = (product.get("title") or "").strip()
+        category = (product.get("category") or "").strip()
+        keywords = product.get("keywords") or []
+        if isinstance(keywords, str):
+            keywords = [k.strip() for k in keywords.split(",") if k.strip()]
+        specs = product.get("specs") or []
+        brand = (product.get("brand") or "").strip()
+
+        if self.provider == "openai" and not _dry_run():
+            try:
+                return self._describe_openai(title, category, specs, keywords, brand)
+            except Exception as exc:
+                logger.warning("AI 상세 생성 실패, 정직 구조화로 폴백: %s", exc)
+
+        # 정직 폴백: 확인된 정보(제목/스펙)만 구조화 — 없는 수치 날조 0.
+        lines = []
+        if title:
+            lines.append(title)
+        for label, value in specs[:20]:
+            lines.append(f"- {label}: {value}")
+        if not specs:
+            lines.append("· 확인된 상세 정보가 부족합니다. 소재·사이즈·용도 등을 직접 입력해 주세요.")
+        return {"text": "\n".join(lines).strip(), "provider": "stub", "is_draft": True}
+
+    def _describe_openai(self, title, category, specs, keywords, brand) -> dict:
+        import requests as _req
+        api_key = os.getenv("OPENAI_API_KEY", "")
+        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        spec_txt = "\n".join(f"- {l}: {v}" for l, v in specs[:20]) or "(스펙 표 없음)"
+        kw_txt = ", ".join(keywords[:15]) or "(없음)"
+        prompt = (
+            "다음 상품의 한국어 상세설명 '초안'을 작성하세요. 큐레이터 톤(공손하지만 군더더기 없는 높임말). "
+            "확인된 정보만 사용하고, 없는 수치·소재·인증 등은 절대 지어내지 마세요. "
+            "구성: 도입 1문장 → 특징 3~5(불릿) → 사용/주의 1~2 → 마무리 1문장. "
+            "마켓 금지어(최고/최상/100%/의학효능 등) 회피.\n\n"
+            f"상품명: {title}\n브랜드: {brand or '(미상)'}\n카테고리: {category or '(미상)'}\n"
+            f"스펙:\n{spec_txt}\n키워드: {kw_txt}\n"
+        )
+        resp = _req.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.5},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        text = resp.json()["choices"][0]["message"]["content"].strip()
+        return {"text": text, "provider": "openai", "is_draft": True}
+
     # ------------------------------------------------------------------
     # 내부 구현
     # ------------------------------------------------------------------

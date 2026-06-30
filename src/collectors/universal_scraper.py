@@ -219,6 +219,7 @@ def filter_product_images(urls) -> list:
 _FILLER_DESC_RE = re.compile(
     r"("
     r"절약을\s*시작|쇼핑하여\s*절약|에서\s*쇼핑하여|최저가로\s*쇼핑|지금\s*쇼핑하세요|"
+    r"가장\s*저렴한\s*가격으로|최저가로\s*구매|에서\s*구매하세요|"   # v39-E2 #3: Temu 류 한 줄 템플릿 필러
     r"여기를\s*눌러|링크를\s*확인하세요|"
     r"smarter\s+shopping,?\s*better\s+living|"
     r"start\s+saving|save\s+big\b|shop\b.{0,30}\band\s+save\b|"
@@ -236,6 +237,90 @@ def is_filler_description(text: str, url: str = "") -> bool:
     if not t:
         return False
     return bool(_FILLER_DESC_RE.search(t))
+
+
+# v39-E2 #3: PDP 상세 영역에서 본문 텍스트 + 스펙/속성 표를 추출(광고/리뷰/네비 제외).
+def extract_detail_description(html: Optional[str], url: str = "") -> dict:
+    """상세설명 영역의 ① 본문 텍스트 ② 스펙/속성 표를 추출.
+
+    Returns: {"text": str, "specs": [(label, value), ...]}
+    못 찾거나 필러뿐이면 빈값(가짜 생성 0 — 호출부가 AI 초안으로 폴백).
+    """
+    out = {"text": "", "specs": []}
+    if not html:
+        return out
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+    except Exception:
+        return out
+
+    # 상세 영역 컨테이너 후보
+    root = None
+    for sel in _DETAIL_SCOPE_SELECTORS:
+        try:
+            el = soup.select_one(sel)
+        except Exception:
+            el = None
+        if el is not None and not _in_non_product_region(el, max_depth=4):
+            root = el
+            break
+    if root is None:
+        return out
+
+    # ① 스펙/속성 표: <table> th/td, <dl> dt/dd, '라벨: 값' li
+    specs: list = []
+    seen_lbl = set()
+
+    def _add_spec(label, value):
+        label = re.sub(r"\s+", " ", str(label or "")).strip(" :·-")
+        value = re.sub(r"\s+", " ", str(value or "")).strip()
+        if not label or not value or len(label) > 40 or len(value) > 200:
+            return
+        key = label.lower()
+        if key in seen_lbl:
+            return
+        seen_lbl.add(key)
+        specs.append((label, value))
+
+    try:
+        for tr in root.find_all("tr"):
+            cells = tr.find_all(["th", "td"])
+            if len(cells) >= 2:
+                _add_spec(cells[0].get_text(" ", strip=True), cells[1].get_text(" ", strip=True))
+        for dl in root.find_all("dl"):
+            dts, dds = dl.find_all("dt"), dl.find_all("dd")
+            for dt, dd in zip(dts, dds):
+                _add_spec(dt.get_text(" ", strip=True), dd.get_text(" ", strip=True))
+    except Exception:
+        pass
+
+    # ② 본문 텍스트: 단락/리스트(스펙 행 제외), 필러 제외, 너무 짧은 조각 제외
+    parts: list = []
+    try:
+        for node in root.find_all(["p", "li", "span", "div"], recursive=True):
+            if node.find(["p", "li", "table", "dl"]):   # 컨테이너성 노드 스킵(중복 방지)
+                continue
+            txt = node.get_text(" ", strip=True)
+            if not txt or len(txt) < 8 or is_filler_description(txt):
+                continue
+            if ":" in txt and len(txt) < 60:            # 스펙 라인은 specs로 이미 처리
+                continue
+            parts.append(txt)
+            if len(" ".join(parts)) > 4000:
+                break
+    except Exception:
+        pass
+
+    # 중복 제거(순서 유지)
+    uniq, seen_t = [], set()
+    for t in parts:
+        if t not in seen_t:
+            seen_t.add(t)
+            uniq.append(t)
+    out["text"] = "\n".join(uniq)[:4000]
+    out["specs"] = specs[:30]
+    return out
 
 
 # v39 D: 치환 실패 플레이스홀더 토큰 — 소스 사이트가 미치환한 템플릿 변수가 제목/상세에 그대로 노출되는 것 방지.

@@ -237,6 +237,17 @@ def collect_from_extension():
             payload = _merge_scraped_into_payload(payload, scraped)
         except Exception as exc:
             logger.warning("확장 HTML 서버 파싱 실패(클라이언트 값 유지): %s", exc)
+        # v39-E2 #3: 상세설명 실추출(본문 텍스트 + 스펙 표). 설명이 비었거나 빈약하면 본문으로 채움.
+        try:
+            from src.collectors.universal_scraper import extract_detail_description
+            det = extract_detail_description(page_html, url)
+            cur = (payload.get("description") or "").strip()
+            if det.get("text") and len(cur) < 30:
+                payload["description"] = det["text"]
+            if det.get("specs"):
+                payload["detail_specs"] = [list(s) for s in det["specs"]]
+        except Exception as exc:
+            logger.debug("상세설명 추출 실패: %s", exc)
 
     # v16 P0: 사이트 공통 마케팅 필러는 상품 설명으로 저장하지 않는다(html 없어도 적용).
     # 리뷰(해당 제품)는 best-effort 추출(없으면 빈 리스트 — 가짜 리뷰 금지).
@@ -324,6 +335,7 @@ def collect_from_extension():
                 "brand": payload.get("brand", ""),
                 "options": payload.get("options", []),
                 "reviews": payload.get("reviews", []),
+                "detail_specs": payload.get("detail_specs", []),
                 "price_status": payload.get("price_status", ""),
                 "translation_provider": tr.get("provider", "none"),
             },
