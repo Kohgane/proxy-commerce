@@ -5495,6 +5495,19 @@ def collect_preview_save(item_id: str):
     _di = data.get("detail_images")
     if isinstance(_di, list):
         extra["detail_images"] = [str(u).strip() for u in _di if str(u).strip()]
+    # v40-C: 마켓별 상세페이지 블록(공통 + 마켓 오버라이드) 보존.
+    _db = data.get("detail_blocks")
+    if isinstance(_db, dict):
+        clean = {}
+        for mkey, blocks in _db.items():
+            if not isinstance(blocks, list):
+                continue
+            norm = []
+            for b in blocks:
+                if isinstance(b, dict) and b.get("type") in ("text", "image", "highlight", "divider"):
+                    norm.append({"type": b["type"], "content": str(b.get("content") or "")[:5000]})
+            clean[str(mkey)[:20]] = norm
+        extra["detail_blocks"] = clean
     if options is not None:
         extra["options"] = options
     if price:
