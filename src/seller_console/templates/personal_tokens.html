@@ -12,6 +12,23 @@
     </button>
   </div>
 
+  <!-- v40-D: 패스키(WebAuthn) — 이 기기에 지문·Face·PIN 로그인 등록 -->
+  <div class="card mb-4" id="passkeyCard">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+        <div>
+          <h2 class="h6 mb-1"><i class="bi bi-fingerprint"></i> 패스키 (지문·Face·PIN 로그인)</h2>
+          <p class="small text-muted mb-0">비밀번호 대신 이 기기에 저장된 패스키로 로그인해요. 피싱·유출에 강하고, 다음부턴 지문·얼굴·PIN만으로 들어옵니다. <span id="passkeyUnsupported" class="text-warning" style="display:none;">— 이 기기는 패스키를 지원하지 않아 구글·이메일을 쓰세요.</span></p>
+        </div>
+        <button type="button" id="passkeyRegBtn" class="btn btn-dark btn-sm" onclick="kgpPasskeyRegister()" style="display:none;">
+          <i class="bi bi-plus-lg"></i> 이 기기에 패스키 등록
+        </button>
+      </div>
+      <div id="passkeyMsg" class="small mt-2" style="display:none;"></div>
+      <ul id="passkeyList" class="list-group list-group-flush mt-2 small"></ul>
+    </div>
+  </div>
+
   <!-- 토큰이 무엇인지 / 어떻게 동작하는지 설명 -->
   <div class="card border-primary-subtle bg-primary-subtle mb-4">
     <div class="card-body">
@@ -300,5 +317,69 @@ document.querySelectorAll('.revoke-btn').forEach(btn => {
     }
   });
 });
+</script>
+<script src="/seller/static/passkey.js"></script>
+<script>
+// v40-D: 패스키 등록·목록·삭제.
+(function () {
+  if (window.kgpPasskey && window.kgpPasskey.supported()) {
+    var b = document.getElementById('passkeyRegBtn'); if (b) b.style.display = '';
+  } else {
+    var u = document.getElementById('passkeyUnsupported'); if (u) u.style.display = '';
+  }
+  kgpLoadPasskeys();
+})();
+function _pkMsg(text, ok) {
+  var m = document.getElementById('passkeyMsg');
+  if (!m) return;
+  m.style.display = ''; m.textContent = text;
+  m.className = 'small mt-2 ' + (ok ? 'text-success' : 'text-danger');
+}
+async function kgpPasskeyRegister() {
+  var btn = document.getElementById('passkeyRegBtn');
+  if (typeof setButtonLoading === 'function') setButtonLoading(btn, true, '등록 중…');
+  try {
+    await window.kgpPasskey.register('이 기기');
+    _pkMsg('패스키가 등록됐어요. 다음부턴 지문·Face·PIN으로 로그인하세요.', true);
+    kgpLoadPasskeys();
+  } catch (e) {
+    _pkMsg((e && e.message) || '패스키 등록 실패', false);
+  } finally {
+    if (typeof setButtonLoading === 'function') setButtonLoading(btn, false);
+  }
+}
+async function kgpLoadPasskeys() {
+  var ul = document.getElementById('passkeyList');
+  if (!ul) return;
+  try {
+    var resp = await fetch('/auth/passkey/list');
+    var d = await resp.json();
+    ul.innerHTML = '';
+    if (!d.ok || !(d.passkeys || []).length) {
+      ul.innerHTML = '<li class="list-group-item px-0 text-muted">아직 등록된 패스키가 없어요.</li>';
+      return;
+    }
+    d.passkeys.forEach(function (p) {
+      var li = document.createElement('li');
+      li.className = 'list-group-item px-0 d-flex justify-content-between align-items-center';
+      var when = (p.created_at || '').slice(0, 10);
+      li.innerHTML = '<span><i class="bi bi-fingerprint"></i> ' + (p.label || '패스키') +
+        ' <span class="text-muted">· ' + when + '</span></span>';
+      var del = document.createElement('button');
+      del.className = 'btn btn-sm btn-outline-danger py-0'; del.textContent = '삭제';
+      del.onclick = function () { kgpDeletePasskey(p.credential_id); };
+      li.appendChild(del); ul.appendChild(li);
+    });
+  } catch (e) { /* noop */ }
+}
+async function kgpDeletePasskey(cid) {
+  if (typeof pcConfirm === 'function' && !(await pcConfirm('이 패스키를 삭제할까요? 이 기기로는 더 이상 패스키 로그인이 안 됩니다.', {title: '패스키 삭제', confirmLabel: '삭제'}))) return;
+  try {
+    var resp = await fetch('/auth/passkey/delete', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({credential_id: cid})});
+    var d = await resp.json();
+    if (d.ok) { _pkMsg('패스키를 삭제했어요.', true); kgpLoadPasskeys(); }
+    else _pkMsg(d.error || '삭제 실패', false);
+  } catch (e) { _pkMsg('삭제 오류', false); }
+}
 </script>
 {% endblock %}
