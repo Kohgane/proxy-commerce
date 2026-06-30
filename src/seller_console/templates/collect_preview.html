@@ -100,14 +100,23 @@
 
       <!-- 상세 설명 (전체 폭 · 확대 에디터) -->
       <div class="mt-2">
-        <div class="d-flex justify-content-between align-items-center mb-1">
-          <label class="form-label small fw-semibold mb-0" for="editDescription">상세 설명</label>
-          <span class="text-muted" style="font-size:.75rem;"><span id="descCharCount">0</span>자</span>
+        <div class="d-flex justify-content-between align-items-center mb-1 flex-wrap gap-1">
+          <label class="form-label small fw-semibold mb-0" for="editDescription">상세 설명
+            <span id="aiDraftBadge" class="badge" style="display:none;background:color-mix(in srgb,var(--teal,#119a8e) 16%,transparent);color:var(--teal,#119a8e);font-size:.68rem;"><i class="bi bi-stars"></i> AI 초안 · 검토·편집 후 저장</span>
+          </label>
+          <div class="d-flex align-items-center gap-2">
+            <!-- v39-E2 #3: 상세 없거나 빈약하면 AI 초안 생성(자동 확정 금지 — 편집/승인). 키 없으면 정직 구조화. -->
+            <button type="button" class="btn btn-outline-secondary btn-sm py-0" id="btnAiDescribe" onclick="aiDescribe()">
+              <i class="bi bi-stars"></i> AI 상세 초안 생성
+            </button>
+            <span class="text-muted" style="font-size:.75rem;"><span id="descCharCount">0</span>자</span>
+          </div>
         </div>
         <textarea class="form-control" id="editDescription" rows="14"
                   style="min-height:300px;font-size:.95rem;line-height:1.6;"
                   placeholder="상품 상세 설명을 입력하세요 (소재·사이즈·사용법 등). 비워두면 저장되지 않아요."
-                  oninput="updateDescCount()"></textarea>
+                  oninput="updateDescCount(); hideAiDraftBadge();"></textarea>
+        <div id="aiDescHint" class="form-text" style="display:none;"></div>
       </div>
 
       <hr class="my-3">
@@ -602,6 +611,45 @@ function updateDescCount() {
   const el = document.getElementById('editDescription');
   const cnt = document.getElementById('descCharCount');
   if (el && cnt) cnt.textContent = (el.value || '').length.toLocaleString('ko-KR');
+}
+
+function hideAiDraftBadge() {
+  const b = document.getElementById('aiDraftBadge');
+  if (b) b.style.display = 'none';   // 사용자가 직접 편집하면 'AI 초안' 딱지 해제(승인 간주)
+}
+
+// v39-E2 #3: 상세설명 AI 초안 생성(자동 확정 금지). 키 없으면 정직 구조화(가짜 상세 0).
+async function aiDescribe() {
+  const ta = document.getElementById('editDescription');
+  const hint = document.getElementById('aiDescHint');
+  const badge = document.getElementById('aiDraftBadge');
+  const btn = document.getElementById('btnAiDescribe');
+  if (ta && ta.value.trim().length > 20 &&
+      !(await pcConfirm('이미 상세설명이 있어요. AI 초안으로 대체할까요? (원문은 사라집니다)', {title: 'AI 초안 생성', confirmLabel: '대체'}))) return;
+  setButtonLoading(btn, true, '생성 중…');
+  try {
+    const cat = (document.getElementById('editCategory') || {}).value || '';
+    const kw = (document.getElementById('editKeywords') || {}).value || '';
+    const title = (document.getElementById('editTitle') || {}).value || '';
+    const resp = await fetch(`/seller/collect/preview/${encodeURIComponent(_ITEM_ID)}/ai-description`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({title, category: cat, keywords: kw}),
+    });
+    const data = await resp.json();
+    if (!data.ok) { pcToast(data.error || 'AI 상세 생성 실패', 'error'); return; }
+    if (data.text) { ta.value = data.text; updateDescCount(); }
+    if (badge) badge.style.display = '';
+    if (hint) {
+      hint.style.display = '';
+      hint.textContent = (data.provider === 'openai')
+        ? 'AI가 생성한 초안이에요. 사실과 다른 부분은 직접 고쳐 주세요(자동 확정 안 됨).'
+        : 'AI 키가 설정되지 않아 확인된 정보(제목·옵션)만 구조화했어요. OPENAI_API_KEY 설정 시 자연스러운 초안이 생성됩니다.';
+    }
+  } catch (e) {
+    pcToast('AI 상세 생성 오류: ' + e.message, 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
 }
 
 // v39 D: 제목·상세 한국어 번역(온디맨드). 무료 카운터 연동. 키 미설정이면 정직 안내(원문 유지·가짜 번역 0).

@@ -5374,6 +5374,50 @@ def collect_classify():
     return jsonify({"ok": True, **res})
 
 
+@bp.post("/collect/preview/<item_id>/ai-description")
+def collect_ai_description(item_id: str):
+    """v39-E2 #3: 상세설명이 없거나 빈약할 때 AI 상세 '초안' 생성(자동 확정 금지 — 사용자 편집/승인).
+
+    Request: {"title": "...", "category": "...", "keywords": "...", optional specs}
+    Response: {"ok": true, "text": "...", "provider": "openai"|"stub", "is_draft": true}
+    키 미설정/dry-run/실패 = provider "stub"(가짜 상세 생성 0, 확인된 정보만 구조화).
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 200
+
+    extra = {}
+    try:
+        extra = json.loads(item.get("extra_json") or "{}")
+    except Exception:
+        pass
+
+    data = request.get_json(force=True, silent=True) or {}
+    title = (data.get("title") or item.get("title") or extra.get("title_ko") or "").strip()
+    category = (data.get("category") or extra.get("category_code") or "").strip()
+    keywords = data.get("keywords") or extra.get("keywords") or []
+    specs = extra.get("detail_specs") or []
+    # 옵션도 스펙 힌트로(예: 색상/사이즈) — 확인된 정보만
+    for opt in (extra.get("options") or []):
+        if isinstance(opt, dict) and opt.get("name") and opt.get("values"):
+            specs = list(specs) + [[opt["name"], ", ".join(map(str, opt["values"][:8]))]]
+
+    try:
+        from .ai.translator import AITranslator
+        res = AITranslator().generate_description({
+            "title": title, "category": category, "keywords": keywords,
+            "specs": specs, "brand": extra.get("brand") or "",
+        })
+    except Exception as exc:
+        logger.warning("AI 상세 생성 오류: %s", exc)
+        return jsonify({"ok": False, "error": "AI 상세 생성 중 오류가 발생했습니다."}), 500
+
+    return jsonify({"ok": True, "text": res.get("text", ""),
+                    "provider": res.get("provider", "stub"), "is_draft": True})
+
+
 @bp.post("/collect/preview/<item_id>/save")
 def collect_preview_save(item_id: str):
     """수집 항목 중간 편집 저장 (Phase 201).
