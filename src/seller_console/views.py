@@ -5444,6 +5444,13 @@ def collect_preview_save(item_id: str):
         extra["description_ko"] = description
     if images is not None:
         extra["images"] = images
+    # v39-E2 #2: 갤러리(대표)·상세설명 이미지 버킷 보존(분리 저장).
+    _gi = data.get("gallery_images")
+    if isinstance(_gi, list):
+        extra["gallery_images"] = [str(u).strip() for u in _gi if str(u).strip()]
+    _di = data.get("detail_images")
+    if isinstance(_di, list):
+        extra["detail_images"] = [str(u).strip() for u in _di if str(u).strip()]
     if options is not None:
         extra["options"] = options
     if price:

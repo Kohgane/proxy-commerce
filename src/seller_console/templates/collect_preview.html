@@ -112,9 +112,9 @@
 
       <hr class="my-3">
 
-      <!-- 이미지 목록 -->
+      <!-- 이미지 목록 — v39-E2 #2: 대표·갤러리 vs 상세설명 이미지 분리 -->
       <div class="mb-3">
-        <label class="form-label small fw-semibold mb-2 d-block">상품 이미지 <span class="text-muted">(맨 앞이 대표)</span></label>
+        <label class="form-label small fw-semibold mb-2 d-block">상품 이미지 <span class="text-muted">(대표·갤러리 — 맨 앞이 대표)</span></label>
         <!-- v11 P1: 깔끔한 갤러리(대표+썸네일). raw URL 편집은 아래 '고급'으로 숨김. -->
         <div id="imageGallery" class="d-flex flex-wrap gap-2 mb-2"></div>
         <details class="small">
@@ -125,6 +125,13 @@
           <div id="imageRows" class="vstack gap-2"></div>
           <div class="form-text"><i class="bi bi-star-fill text-warning"></i> = 대표/썸네일(맨 위가 대표). 보통은 위 갤러리만 보면 됩니다.</div>
         </details>
+      </div>
+
+      <!-- v39-E2 #2: 상세설명 이미지(본문) — 갤러리와 분리. 상세페이지 본문용. -->
+      <div class="mb-3" id="detailImagesBlock" style="display:none">
+        <label class="form-label small fw-semibold mb-2 d-block">상세설명 이미지 <span class="text-muted">(상세페이지 본문용 — 갤러리와 분리)</span></label>
+        <div id="detailGallery" class="d-flex flex-wrap gap-2 mb-1"></div>
+        <div class="form-text">상세설명 영역에서 수집된 이미지예요. 갤러리(대표)와 섞이지 않습니다.</div>
       </div>
 
       <!-- 옵션 목록 -->
@@ -379,7 +386,10 @@ function escapeHtml(s) {
 
 // ── 초기값 세팅 ──
 function _initImages() {
-  let imgs = Array.isArray(_EXTRA.images) ? _EXTRA.images.slice() : [];
+  // v39-E2 #2: 대표·갤러리 버킷이 있으면 그걸 갤러리에(상세 본문 이미지와 분리). 없으면 통합 images.
+  let imgs = (Array.isArray(_EXTRA.gallery_images) && _EXTRA.gallery_images.length)
+    ? _EXTRA.gallery_images.slice()
+    : (Array.isArray(_EXTRA.images) ? _EXTRA.images.slice() : []);
   if (imgs.length === 0 && _ITEM.image_url) imgs = [_ITEM.image_url];
   return imgs.filter(Boolean);
 }
@@ -486,6 +496,26 @@ function renderGallery() {
       'style="width:' + sz + 'px;height:' + sz + 'px;object-fit:cover;display:block" ' +
       'onerror="this.parentElement.style.display=\'none\'">' +
       (i === 0 ? '<span style="position:absolute;left:0;bottom:0;background:#119a8e;color:#fff;font-size:9px;padding:1px 5px;border-top-right-radius:6px">대표</span>' : '');
+    g.appendChild(a);
+  });
+}
+
+// v39-E2 #2: 상세설명 이미지(본문) 버킷 — 갤러리와 분리 표시. _EXTRA.detail_images 단일소스.
+let detailImgs = Array.isArray(_EXTRA.detail_images) ? _EXTRA.detail_images.slice() : [];
+function renderDetailGallery() {
+  const block = document.getElementById('detailImagesBlock');
+  const g = document.getElementById('detailGallery');
+  if (!block || !g) return;
+  const urls = detailImgs.map(u => (u || '').trim()).filter(Boolean);
+  if (!urls.length) { block.style.display = 'none'; return; }
+  block.style.display = '';
+  g.innerHTML = '';
+  urls.forEach((u) => {
+    const a = document.createElement('a');
+    a.href = u; a.target = '_blank'; a.rel = 'noopener'; a.title = '상세설명 이미지';
+    a.style.cssText = 'display:inline-block;border-radius:8px;overflow:hidden;border:1px solid #e3dac8;flex-shrink:0';
+    a.innerHTML = '<img src="' + u.replace(/"/g, '&quot;') + '" alt="" loading="lazy" ' +
+      'style="width:56px;height:56px;object-fit:cover;display:block" onerror="this.parentElement.style.display=\'none\'">';
     g.appendChild(a);
   });
 }
@@ -652,6 +682,7 @@ function initEditor() {
   _initOptions().forEach(o => addOptionRow(o.name, o.values));
   refreshPrimaryImage();
   refreshImageBadges();
+  renderDetailGallery();   // v39-E2 #2: 상세설명 이미지(본문) 분리 표시
   updateKrwPreview();
   updateDescCount();
 }
@@ -685,6 +716,8 @@ function buildProductData() {
     source: _ITEM.source || _EXTRA.source || '',
     brand: _EXTRA.brand || '',
     category: categoryCode, category_code: categoryCode,
+    gallery_images: images,                 // v39-E2 #2: 갤러리(대표) = 편집된 상품 이미지
+    detail_images: detailImgs,              // 상세설명 이미지(본문) 보존
   };
 }
 
