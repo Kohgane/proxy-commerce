@@ -1374,6 +1374,25 @@ def shop_external_redirect():
     return redirect(_EXTERNAL_SHOP_URL, code=302)
 
 
+@app.get("/favicon.ico")
+def root_favicon():
+    """v40-A: 도메인 루트 파비콘 = 브릿지 마크. 크롬이 북마클릿 드래그 시 이 파비콘을 상속하므로
+    루트 /favicon.ico가 404(회색)면 안 된다 → 브릿지 마크 favicon.ico를 서빙(상속 보강)."""
+    import os as _os
+    from flask import send_file
+    path = _os.path.join(_os.path.dirname(__file__), "seller_console", "static", "favicon.ico")
+    if _os.path.exists(path):
+        return send_file(path, mimetype="image/x-icon", max_age=86400)
+    return ("", 404)
+
+
+@app.get("/bm/install")
+def bm_install():
+    """v40-A: 북마클릿 설치 페이지 단축 경로 → 셀러 북마클릿 페이지(파비콘=브릿지 마크, 글자 없이 아이콘만).
+    이 페이지에서 드래그하면 브릿지 파비콘이 북마크에 상속된다(v39-B)."""
+    return redirect("/seller/bookmarklet", code=302)
+
+
 @app.errorhandler(404)
 def not_found(e):
     """404 — 커스텀 에러 페이지."""
