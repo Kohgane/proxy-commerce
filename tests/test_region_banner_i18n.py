@@ -40,7 +40,7 @@ def test_set_lang_en_sets_cookie_and_redirects(client):
 def test_landing_renders_english_when_lang_cookie_en(client):
     client.set_cookie("kgp_lang", "en")
     html = client.get("/").get_data(as_text=True)
-    assert "just list it." in html          # 실제 EN 카피로 전환(가짜 아님, v39-D)
+    assert "Cross over." in html             # 실제 EN 카피로 전환(가짜 아님, v40)
     assert "Start free" in html
     # 이미 선택 → 배너 안 뜸
     assert "Choose your language" not in html

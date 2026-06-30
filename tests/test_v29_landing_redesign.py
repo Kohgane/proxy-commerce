@@ -35,7 +35,7 @@ def test_landing_scroll_narrative_sections(client):
     assert "IntersectionObserver" in TPL
     assert "prefers-reduced-motion" in TPL
     # 콘솔 미리보기 샷(평면 금지 — 제품이 곧 데모)
-    assert 'class="shot"' in TPL
+    assert 'class="shot ' in TPL
 
 
 def test_landing_social_proof_real_no_fake_numbers(client):
