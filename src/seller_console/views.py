@@ -4843,7 +4843,8 @@ def personal_tokens():
     tokens = []
     try:
         from src.auth.personal_tokens import list_tokens
-        tokens = list_tokens(user_id)
+        # v39 C: 별칭(user_id↔email)으로 발급된 토큰도 본인 목록에 보이게(표시·삭제 스코프 일치 → 부활 방지).
+        tokens = list_tokens(user_id, user_ids=_seller_identities())
     except Exception as exc:
         logger.warning("토큰 목록 조회 실패: %s", exc)
 
@@ -4908,7 +4909,10 @@ def personal_tokens_revoke():
 
     try:
         from src.auth.personal_tokens import revoke_token
-        ok = revoke_token(token_hash=token_hash, user_id=user_id)
+        # v39 C: 별칭으로 발급된 토큰도 삭제되게 관용 식별자 매칭(삭제 0건 → 부활 방지). 실제 커밋 시에만 ok.
+        ok = revoke_token(token_hash=token_hash, user_id=user_id, user_ids=_seller_identities())
+        if not ok:
+            return jsonify({"ok": False, "error": "삭제할 토큰을 찾지 못했어요(이미 삭제됐거나 권한 없음). 새로고침 후 확인해 주세요."}), 200
         return jsonify({"ok": ok})
     except Exception as exc:
         logger.warning("토큰 회수 실패: %s", exc)

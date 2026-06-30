@@ -200,24 +200,34 @@ def _check_scopes(user_scopes: list, required_scopes: list) -> bool:
     return all(s in user_scopes for s in required_scopes)
 
 
-def revoke_token(token_hash: str, user_id: str) -> bool:
-    """토큰 회수.
+def _identity_set(user_id, user_ids) -> set:
+    """관용 식별자 집합 — 토큰이 별칭(user_id↔email)으로 발급돼도 본인 것으로 매칭(부활 방지)."""
+    ids = set()
+    if user_ids:
+        ids |= {str(u) for u in user_ids if str(u or "").strip()}
+    if user_id is not None and str(user_id).strip():
+        ids.add(str(user_id))
+    return ids
 
-    Args:
-        token_hash: 토큰 해시
-        user_id: 요청자 사용자 ID (본인 또는 관리자만)
+
+def revoke_token(token_hash: str, user_id: str, *, user_ids=None) -> bool:
+    """토큰 회수(삭제).
+
+    v39 C: user_ids(관용 식별자 집합)를 주면 별칭(user_id↔email) 불일치로 삭제 0건 →
+    재진입 시 부활하던 버그를 방지(시트 revoked=true 영속 커밋). user_ids 미지정 시 exact user_id.
 
     Returns:
-        성공 여부
+        성공 여부(실제 시트 커밋됐을 때만 True — 가짜 성공 0).
     """
     if not _SHEET_ID:
         return False
 
+    id_set = _identity_set(user_id, user_ids)
     try:
         ws = _get_worksheet()
         records = ws.get_all_records()
         for i, row in enumerate(records):
-            if row.get("token_hash") == token_hash and row.get("user_id") == user_id:
+            if row.get("token_hash") == token_hash and str(row.get("user_id", "")) in id_set:
                 row_idx = i + 2
                 ws.update_cell(row_idx, 7, "true")  # revoked 컬럼
                 # 캐시에서 제거
@@ -230,8 +240,11 @@ def revoke_token(token_hash: str, user_id: str) -> bool:
     return False
 
 
-def list_tokens(user_id: str) -> list:
+def list_tokens(user_id: str, *, user_ids=None) -> list:
     """사용자의 토큰 목록 반환 (raw 값 미포함).
+
+    v39 C: user_ids(관용 식별자 집합)를 주면 별칭으로 발급된 토큰도 본인 목록에 보인다
+    (보여야 삭제도 가능 — 삭제/표시 스코프 일치로 부활 방지). 미지정 시 exact user_id.
 
     Returns:
         [{token_hash_prefix, scopes, created_at, last_used_at, expires_at, revoked}]
@@ -239,12 +252,13 @@ def list_tokens(user_id: str) -> list:
     if not _SHEET_ID:
         return []
 
+    id_set = _identity_set(user_id, user_ids)
     result = []
     try:
         ws = _get_worksheet()
         records = ws.get_all_records()
         for row in records:
-            if row.get("user_id") != user_id:
+            if str(row.get("user_id", "")) not in id_set:
                 continue
             token_hash = row.get("token_hash", "")
             result.append({
