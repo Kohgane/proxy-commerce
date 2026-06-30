@@ -1,106 +1,150 @@
-{# 랜딩 — v29 전면 재설계: Apple식 스크롤 내러티브 + 네오-클래식(먹/한지/금/청록/주황·세리프).
-   이모지 0 · 단일 아이콘셋(bi-*) · 토큰 단일소스 · 실데이터만(가짜 수치/혜택 0) · reduced-motion 존중. #}
+{# 랜딩 — v39-D 디자인 시스템 재작성: "디지털 한지 위의 금속활자" (Apple식 대형 타이포 + 네오클래식 에디토리얼).
+   기준 = 디자인목업_v39.html(1:1 대조). 이모지 0(데코는 bi-*/세리프 글리프) · 토큰 단일소스(app.css) · 하드코딩 hex/px 금지
+   · 실데이터만(가짜 후기/수치 0) · reduced-motion 존중. i18n(EN/KO)·지역배너·법적 링크·For Beginners 보존. #}
 {% extends "_base_app.html" %}
 
-{% block title %}{{ brand_name|default('gogabridj', true) }} — 해외 상품 수집부터 마켓 등록까지{% endblock %}
+{% block title %}{{ brand_name|default('gogabridj', true) }} — 해외 상품 수집부터 멀티마켓 등록까지{% endblock %}
 {% block head %}
 <link rel="privacy-policy" href="/privacy">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700;900&display=swap" rel="stylesheet">
 <style>
-  body.bg-light { background: var(--bg) !important; color: var(--text); margin: 0; }
-  .lp { --maxw: 1080px; }
-  /* 스티키 블러 내비 */
-  .lpnav { position: sticky; top: 0; z-index: 50; backdrop-filter: blur(12px);
-    background: color-mix(in srgb, var(--bg) 82%, transparent); border-bottom: 1px solid var(--border);
-    transition: padding var(--dur) var(--ease), background var(--dur) var(--ease); }
-  .lpnav.shrink { background: color-mix(in srgb, var(--bg) 92%, transparent); }
-  .lpnav .inner { max-width: var(--maxw); margin: 0 auto; display: flex; align-items: center; gap: 1rem; padding: .7rem 1.2rem; transition: padding var(--dur) var(--ease); }
-  .lpnav.shrink .inner { padding: .45rem 1.2rem; }
-  .lpnav .logo { display: inline-flex; align-items: center; gap: .5rem; font-family: var(--font-display); font-weight: 700; font-size: 1.06rem; color: var(--text-strong); text-decoration: none; letter-spacing: -.01em; }
-  .lpnav .logo img { width: 26px; height: 26px; border-radius: 7px; }
-  .lpnav a.navlink { color: var(--text-muted); text-decoration: none; font-size: .86rem; }
-  .lpnav a.navlink:hover { color: var(--text-strong); }
-  /* 섹션 — 넉넉한 여백, 한 화면 한 메시지 */
-  .sect { padding: var(--space-9) 1.2rem; }
-  @media (min-width: 992px) { .sect { padding: var(--space-10) 1.2rem; } }
-  .sect .wrap { max-width: var(--maxw); margin: 0 auto; }
-  .sect.dark { background: radial-gradient(1100px 460px at 50% -10%, color-mix(in srgb, var(--gold) 18%, transparent), transparent 60%), linear-gradient(180deg, var(--ink), var(--ink-2)); color: var(--cream); }
-  .overline { font-size: .78rem; letter-spacing: .2em; text-transform: uppercase; font-weight: 600; color: var(--gold-ink); margin-bottom: .9rem; }
-  .dark .overline { color: var(--gold); }
-  h1.disp, h2.disp { font-family: var(--font-display); font-weight: 700; letter-spacing: var(--display-tracking); line-height: var(--display-2-lh); margin: 0 0 1rem; }
-  h1.disp { font-size: var(--display-2-size); }
-  h2.disp { font-size: clamp(32px, 5vw, 56px); }
-  .lead { font-size: clamp(1.02rem, 2.1vw, 1.28rem); color: var(--text-muted); max-width: 560px; line-height: 1.55; }
-  .dark .lead { color: color-mix(in srgb, var(--cream) 78%, transparent); }
-  .center { text-align: center; } .center .lead { margin-left: auto; margin-right: auto; }
-  /* CTA 알약 */
-  .pill { display: inline-flex; align-items: center; gap: .45rem; border-radius: var(--radius-pill); padding: .82rem 1.7rem; font-weight: 700;
-    font-size: 1rem; text-decoration: none; transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
-  .pill-fill { background: linear-gradient(135deg, var(--orange), var(--orange-strong)); color: var(--on-accent); box-shadow: 0 8px 22px color-mix(in srgb, var(--orange) 32%, transparent); }
-  .pill-fill:hover { transform: translateY(-2px); color: var(--on-accent); box-shadow: 0 12px 28px color-mix(in srgb, var(--orange) 40%, transparent); }
-  .pill-line { border: 1.5px solid var(--teal); color: var(--teal); }
-  .dark .pill-line { color: color-mix(in srgb, var(--teal) 55%, var(--cream)); border-color: color-mix(in srgb, var(--teal) 60%, transparent); }
-  .pill-line:hover { background: color-mix(in srgb, var(--teal) 12%, transparent); }
-  .beta { font-size:.6rem; letter-spacing:.14em; background: var(--gold); color: var(--ink); border-radius: var(--radius-pill); padding:.12rem .5rem; font-weight:700; vertical-align: super; }
-  .hairline { border: 0; border-top: 1px solid var(--hairline-color); }
-  .dark .hairline { border-color: color-mix(in srgb, var(--gold) 30%, transparent); }
-  /* 브라우저 프레임 목업(평면 금지) */
-  .frame { max-width: 760px; margin: 2.4rem auto 0; border-radius: 14px; overflow: hidden; border: 1px solid var(--border);
-    box-shadow: var(--shadow-lg); background: var(--surface); }
-  .dark .frame { border-color: color-mix(in srgb, var(--gold) 24%, transparent); }
-  .frame .bar { display: flex; align-items: center; gap: .5rem; padding: .6rem .9rem; background: var(--surface-warm); border-bottom: 1px solid var(--border); }
-  .frame .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border); }
-  .frame .addr { margin-left: .6rem; font-size: .74rem; color: var(--text-muted); background: var(--bg); border-radius: var(--radius-pill); padding: .15rem .8rem; }
-  .frame .body { padding: 1.1rem; display: grid; grid-template-columns: 84px 1fr; gap: 1rem; text-align: left; }
-  .frame .thumb { aspect-ratio: 1; background: linear-gradient(135deg, var(--surface-warm), var(--bg)); border: 1px solid var(--border); border-radius: 10px; }
-  .frame .ln { height: 11px; border-radius: 6px; background: var(--surface-warm); margin-bottom: .55rem; }
-  .frame .ln.w1 { width: 70%; } .frame .ln.w2 { width: 44%; background: color-mix(in srgb, var(--teal) 28%, var(--surface-warm)); }
-  .frame .chip { display:inline-block; font-size:.7rem; color: var(--on-accent); background: var(--teal); border-radius: var(--radius-pill); padding:.12rem .6rem; }
-  /* 카드 그리드 */
-  .grid { display: grid; gap: 1.1rem; }
-  @media (min-width: 768px) { .grid.c2 { grid-template-columns: 1fr 1fr; } .grid.c3 { grid-template-columns: repeat(3,1fr); } .grid.c4 { grid-template-columns: repeat(2,1fr); } }
-  @media (min-width: 992px) { .grid.c4 { grid-template-columns: repeat(4,1fr); } }
-  .ncard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-5);
+  /* ── 토큰만 사용(app.css 단일소스). 목업과 1:1 ── */
+  body.bg-light { background: var(--paper) !important; color: var(--ink); margin: 0; line-height: 1.6; }
+  .lp { --maxw: 1180px; }
+  .lp .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 28px; }
+  .lp .serif { font-family: var(--font-display); }
+
+  /* NAV — Apple식 슬림 글래스 고정 바 */
+  .lpnav { position: sticky; top: 0; z-index: 50; background: color-mix(in srgb, var(--paper) 82%, transparent);
+    backdrop-filter: saturate(180%) blur(20px); border-bottom: 1px solid var(--border); }
+  .lpnav .inner { display: flex; align-items: center; justify-content: space-between; height: 60px; max-width: var(--maxw); margin: 0 auto; padding: 0 28px; }
+  .lpnav .brand { display: flex; align-items: center; gap: 11px; font-weight: 800; font-size: 19px; letter-spacing: -.02em; color: var(--ink); text-decoration: none; }
+  .lpnav .brand img { width: 34px; height: 34px; border-radius: 9px; box-shadow: var(--shadow-sm); }
+  .lpnav .nav-links { display: flex; gap: 30px; font-size: .9rem; color: var(--text); }
+  .lpnav .nav-links a { text-decoration: none; color: inherit; font-weight: 500; transition: color var(--dur) var(--ease); }
+  .lpnav .nav-links a:hover { color: var(--teal); }
+  .lpnav .nav-cta { background: var(--orange); color: var(--on-accent); border: none; padding: 9px 18px; border-radius: var(--radius-pill);
+    font-weight: 700; font-size: .875rem; text-decoration: none; box-shadow: 0 4px 14px color-mix(in srgb, var(--orange) 32%, transparent); }
+
+  /* HERO — 대형 세리프 + 스크롤 내러티브(밝은 한지 위) */
+  .hero { text-align: center; padding: 104px 0 72px; position: relative; overflow: hidden; }
+  .hero::before { content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(1100px 460px at 50% -8%, color-mix(in srgb, var(--teal) 10%, transparent), transparent 60%); }
+  .hero .wrap { position: relative; }
+  .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: .8rem; font-weight: 700; color: var(--teal);
+    letter-spacing: .04em; border: 1px solid var(--border); background: var(--surface); padding: 7px 15px; border-radius: var(--radius-pill); box-shadow: var(--shadow-sm); }
+  .eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--orange); }
+  .hero h1 { font-size: clamp(40px, 6.4vw, 76px); line-height: 1.04; letter-spacing: -.035em; margin: 26px 0 0; font-weight: 900; }
+  .hero h1 .accent { color: var(--teal); }
+  .hero .sub { font-size: clamp(17px, 2vw, 21px); color: var(--text); max-width: 620px; margin: 24px auto 0; }
+  .hero-cta { display: flex; gap: 13px; justify-content: center; margin-top: 38px; flex-wrap: wrap; }
+  .btn-ink { background: var(--ink); color: var(--on-accent); border: none; padding: 15px 30px; border-radius: var(--radius-pill);
+    font-weight: 700; font-size: 1rem; text-decoration: none; transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease); box-shadow: var(--shadow-sm); }
+  .btn-ink:hover { transform: var(--lift); color: var(--on-accent); box-shadow: 0 12px 28px color-mix(in srgb, var(--ink) 22%, transparent); }
+  .btn-ghost { background: var(--surface); color: var(--ink); border: 1px solid var(--border); padding: 15px 30px; border-radius: var(--radius-pill);
+    font-weight: 700; font-size: 1rem; text-decoration: none; transition: transform var(--dur) var(--ease); }
+  .btn-ghost:hover { transform: var(--lift); color: var(--ink); }
+  .trust { margin-top: 30px; font-size: .85rem; color: var(--text-muted); }
+
+  /* HERO PRODUCT SHOT — 콘솔 미리보기(풀블리드 카드, "제품이 곧 데모") */
+  .shot { margin: 58px auto 0; max-width: 1000px; border-radius: 26px; background: var(--surface); border: 1px solid var(--border);
+    box-shadow: 0 30px 80px color-mix(in srgb, var(--ink) 16%, transparent); overflow: hidden; }
+  .shot-bar { display: flex; align-items: center; gap: 8px; padding: 13px 18px; background: var(--cream); border-bottom: 1px solid var(--border); }
+  .shot-bar i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; background: var(--border); }
+  .shot-bar .addr { margin-left: 12px; font-size: .78rem; color: var(--text-muted); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 4px 12px; }
+  .shot-body { display: grid; grid-template-columns: 200px 1fr; min-height: 300px; }
+  .shot .side { background: var(--paper); border-right: 1px solid var(--border); padding: 18px 14px; }
+  .shot .side .si { display: flex; align-items: center; gap: 9px; padding: 9px 11px; border-radius: 11px; font-size: .84rem; color: var(--text); font-weight: 500; margin-bottom: 3px; }
+  .shot .side .si.on { background: var(--ink); color: var(--on-accent); }
+  .shot .side .si .ic { width: 16px; height: 16px; border-radius: 5px; background: var(--gold); opacity: .85; }
+  .shot .side .si.on .ic { background: var(--teal-bright); }
+  .shot .main { padding: 24px 26px; text-align: left; }
+  .shot .main h3 { font-size: 1.31rem; letter-spacing: -.02em; font-weight: 800; }
+  .shot .main .mlead { font-size: .84rem; color: var(--text-muted); margin-top: 3px; }
+  .shot .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+  .shot .kpi { border: 1px solid var(--border); border-radius: 14px; padding: 15px 16px; background: var(--surface); }
+  .shot .kpi .l { font-size: .75rem; color: var(--text-muted); font-weight: 600; }
+  .shot .kpi .v { font-family: var(--font-display); font-size: 30px; font-weight: 900; letter-spacing: -.03em; margin-top: 6px; }
+  .shot .kpi.accent .v { color: var(--teal); }
+  .shot .prow { display: flex; align-items: center; gap: 14px; border: 1px solid var(--border); border-radius: 14px; padding: 13px 15px; margin-top: 12px; background: var(--surface); }
+  .shot .prow .thumb { width: 46px; height: 46px; border-radius: 10px; background: linear-gradient(135deg, var(--cream), var(--surface)); border: 1px solid var(--border); flex: none; }
+  .shot .prow .t { flex: 1; } .shot .prow .t b { font-size: .875rem; font-weight: 700; } .shot .prow .t span { display: block; font-size: .75rem; color: var(--text-muted); }
+  .tag { font-size: .72rem; font-weight: 700; padding: 5px 11px; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--teal) 12%, transparent); color: var(--teal); }
+  .tag.warn { background: color-mix(in srgb, var(--orange) 14%, transparent); color: var(--orange-strong); }
+
+  /* SECTION — 네오클래식 에디토리얼 */
+  .block { padding: 96px 0; border-top: 1px solid var(--border); }
+  .sec-head { text-align: center; max-width: 680px; margin: 0 auto 56px; }
+  .sec-head .kick { font-size: .8rem; font-weight: 800; color: var(--gold-ink); letter-spacing: .08em; text-transform: uppercase; }
+  .sec-head h2 { font-size: clamp(28px, 4vw, 46px); letter-spacing: -.03em; margin-top: 12px; font-weight: 900; line-height: 1.12; }
+  .sec-head p { font-size: 1.06rem; color: var(--text); margin-top: 16px; }
+  .feat { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .fcard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl); padding: 30px 26px; box-shadow: var(--shadow);
     transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
-  .ncard:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
-  .dark .ncard { background: color-mix(in srgb, var(--ink-2) 88%, var(--cream)); border-color: color-mix(in srgb, var(--gold) 18%, transparent); color: var(--cream); }
-  .ncard .ic { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 12px; background: color-mix(in srgb, var(--teal) 12%, transparent); color: var(--teal); font-size: 1.25rem; margin-bottom: .9rem; }
-  .ncard h3 { font-family: var(--font-display); font-size: 1.18rem; margin: 0 0 .4rem; letter-spacing: -.01em; }
-  .ncard p { color: var(--text-muted); font-size: .92rem; margin: 0; line-height: 1.5; }
-  .dark .ncard p { color: color-mix(in srgb, var(--cream) 74%, transparent); }
-  /* 3스텝(스크롤 핀: 데스크톱에서 비주얼 고정) */
-  .steps { display: grid; gap: 1.4rem; }
-  @media (min-width: 992px) { .steps { grid-template-columns: 1fr 1fr; align-items: start; } .steps .sticky { position: sticky; top: 96px; } }
-  .step { padding: 1.4rem 0; border-top: 1px solid var(--hairline-color); }
-  .step .num { font-family: var(--font-display); font-size: 2rem; color: var(--gold-ink); line-height: 1; }
-  .step h3 { font-family: var(--font-display); font-size: 1.4rem; margin: .3rem 0 .3rem; }
-  .step p { color: var(--text-muted); margin: 0; }
-  /* 마켓 로고 줄(실데이터 — 지원 마켓명만, 가짜 수치 0) */
-  .logos { display: flex; flex-wrap: wrap; gap: .6rem; justify-content: center; }
-  .logos .lg { border: 1px solid var(--border); border-radius: var(--radius-pill); padding: .5rem 1.1rem; font-weight: 600; font-size: .9rem; color: var(--text); background: var(--surface); }
-  /* FAQ */
-  .faq details { border-bottom: 1px solid var(--border); padding: 1rem 0; }
-  .faq summary { font-weight: 600; cursor: pointer; list-style: none; font-size: 1.05rem; }
-  .faq summary::-webkit-details-marker { display: none; }
-  .faq p { color: var(--text-muted); margin: .7rem 0 0; line-height: 1.55; }
+  .fcard:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+  .fcard .badge { width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center; font-size: 1.25rem; color: var(--teal); background: var(--cream); border: 1px solid var(--border); }
+  .fcard h4 { font-size: 1.19rem; margin-top: 18px; letter-spacing: -.02em; font-weight: 800; }
+  .fcard p { font-size: .9rem; color: var(--text); margin-top: 9px; }
+  .fcard .ln { height: 3px; width: 34px; border-radius: 3px; background: var(--teal); margin-top: 18px; }
+  .steps5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+  .steps5 .fcard { text-align: center; padding: 24px 14px; }
+  .steps5 .n { font-family: var(--font-display); font-size: 26px; font-weight: 900; color: var(--gold-ink); }
+  .steps5 .n.teal { color: var(--teal); } .steps5 .n.orange { color: var(--orange); }
+  .steps5 h4 { font-size: 1rem; margin-top: 8px; } .steps5 p { font-size: .8rem; margin-top: 6px; }
+
+  /* WIDE EDITORIAL split */
+  .split { display: grid; grid-template-columns: 1.05fr .95fr; gap: 50px; align-items: center; }
+  .split .copy .kick { font-size: .8rem; font-weight: 800; color: var(--gold-ink); letter-spacing: .08em; text-transform: uppercase; }
+  .split .copy h2 { font-size: clamp(26px, 3.4vw, 40px); letter-spacing: -.03em; margin-top: 12px; font-weight: 900; line-height: 1.14; }
+  .split .copy p { font-size: 1rem; color: var(--text); margin-top: 16px; }
+  .split .copy .list { margin-top: 22px; display: flex; flex-direction: column; gap: 13px; }
+  .split .copy .li { display: flex; gap: 12px; font-size: .94rem; align-items: flex-start; }
+  .split .copy .li .ck { width: 22px; height: 22px; border-radius: 7px; background: var(--teal); color: var(--on-accent); display: grid; place-items: center; font-size: .8rem; flex: none; font-weight: 800; }
+  .visual { border-radius: 22px; background: linear-gradient(160deg, var(--ink), var(--ink-2)); min-height: 340px; position: relative; overflow: hidden; box-shadow: 0 24px 60px color-mix(in srgb, var(--ink) 22%, transparent); }
+  .visual .gate { position: absolute; inset: 0; display: grid; place-items: center; }
+  .visual .gate img { width: 140px; height: 140px; border-radius: 30px; box-shadow: 0 18px 50px rgba(0,0,0,.4); }
+  .visual .cap { position: absolute; bottom: 22px; left: 24px; color: var(--cream); font-family: var(--font-display); font-size: .94rem; opacity: .85; }
+
+  /* CTA band */
+  .band { margin: 0 auto; max-width: 1100px; background: linear-gradient(135deg, var(--ink), var(--ink-2)); border-radius: 30px; padding: 64px 40px;
+    text-align: center; color: var(--on-accent); box-shadow: 0 30px 70px color-mix(in srgb, var(--ink) 28%, transparent); }
+  .band h2 { font-size: clamp(28px, 4vw, 42px); letter-spacing: -.03em; font-weight: 900; }
+  .band p { color: color-mix(in srgb, var(--cream) 78%, transparent); margin-top: 14px; font-size: 1.06rem; }
+  .band .btn-ink { background: var(--orange); margin-top: 30px; box-shadow: 0 10px 30px color-mix(in srgb, var(--orange) 40%, transparent); }
+
+  .lpfoot { padding: 50px 0 70px; border-top: 1px solid var(--border); margin-top: 90px; color: var(--text-muted); font-size: .85rem; }
+  .lpfoot .inner { max-width: var(--maxw); margin: 0 auto; padding: 0 28px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 18px; }
+  .lpfoot .foot-brand { display: flex; align-items: center; gap: 10px; font-weight: 800; color: var(--ink); font-size: 1rem; }
+  .lpfoot .foot-brand img { width: 28px; height: 28px; border-radius: 8px; }
+  .lpfoot a { color: var(--text-muted); text-decoration: none; } .lpfoot a:hover { color: var(--ink); }
+
   /* 등장 모션 */
   .reveal { opacity: 0; transform: translateY(18px); transition: opacity .6s var(--ease), transform .6s var(--ease); }
   .reveal.in { opacity: 1; transform: none; }
-  @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; transition: none; } .ncard:hover, .pill-fill:hover { transform: none; } }
-  .lpfoot { background: var(--surface-warm); color: var(--text-muted); padding: var(--space-7) 1.2rem; font-size: .85rem; border-top: 1px solid var(--border); }
-  .lpfoot .inner { max-width: var(--maxw); margin: 0 auto; display: flex; flex-wrap: wrap; gap: .6rem 1.2rem; align-items: center; }
-  .lpfoot a { color: var(--text-muted); text-decoration: none; }
-  .lpfoot a:hover { color: var(--text-strong); }
+
+  @media (max-width: 860px) {
+    .lpnav .nav-links { display: none; }
+    .shot-body { grid-template-columns: 1fr; } .shot .side { display: none; }
+    .shot .kpis { grid-template-columns: 1fr 1fr; } .feat { grid-template-columns: 1fr; }
+    .steps5 { grid-template-columns: 1fr 1fr; } .split { grid-template-columns: 1fr; gap: 32px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .reveal { opacity: 1; transform: none; transition: none; }
+    .fcard:hover, .btn-ink:hover, .btn-ghost:hover { transform: none; }
+  }
 </style>
 {% endblock %}
 
-{# v35 P0: 랜딩은 자체 헤더(.lpnav)·푸터(.lpfoot)를 가지므로 공통 topnav/푸터/메인 패딩을 제거
-   → 상단 중복 메뉴·흰 여백 0(히어로 다크 vault가 상단에 바로 붙음). #}
+{# 랜딩은 자체 nav/footer를 가지므로 공통 chrome 제거(상단 중복 메뉴·흰 여백 0). #}
 {% block topnav %}{% endblock %}
 {% block main_class %}{% endblock %}
 {% block app_footer %}{% endblock %}
 
 {% block content %}
 {% set EN = (lang == 'en') %}
+{% set BRAND = brand_name|default('gogabridj', true) %}
+{% set ICON = '/seller/static/favicon.svg?v=179' %}
 <div class="lp">
 {% if show_region_banner %}
 <div style="background:var(--ink);color:var(--cream);font-size:.85rem;padding:.5rem 1rem;display:flex;align-items:center;justify-content:center;gap:.8rem;flex-wrap:wrap;">
@@ -111,198 +155,162 @@
 </div>
 {% endif %}
 
-<nav class="lpnav" id="lpnav">
+<nav class="lpnav">
   <div class="inner">
-    <a href="/" class="logo"><img src="/seller/static/favicon.svg?v=179" alt=""> {{ brand_name|default('gogabridj', true) }}</a>
-    <div class="ms-auto d-flex align-items-center gap-3">
-      <a href="#features" class="navlink d-none d-md-inline">{{ 'Features' if EN else '기능' }}</a>
-      <a href="#how" class="navlink d-none d-md-inline">{{ 'How it works' if EN else '작동 방식' }}</a>
-      <a href="#pricing" class="navlink d-none d-sm-inline">{{ 'Pricing' if EN else '요금' }}</a>
-      <a href="/auth/login" class="navlink">{{ 'Log in' if EN else '로그인' }}</a>
-      <a href="/seller/start" class="pill pill-fill" style="padding:.45rem 1.1rem;font-size:.9rem;">{{ 'Start free' if EN else '무료로 시작' }}</a>
+    <a href="/" class="brand"><img src="{{ ICON }}" alt=""><span>{{ BRAND }}</span></a>
+    <div class="nav-links">
+      <a href="#features">{{ 'Collect' if EN else '제품 수집' }}</a>
+      <a href="#markets">{{ 'Multi-market' if EN else '멀티마켓 등록' }}</a>
+      <a href="#editing">{{ 'Translate & edit' if EN else '번역·편집' }}</a>
+      <a href="#pricing">{{ 'Pricing' if EN else '요금' }}</a>
+      <a href="/auth/login">{{ 'Log in' if EN else '로그인' }}</a>
     </div>
+    <a href="/seller/start" class="nav-cta">{{ 'Start free' if EN else '무료로 시작' }}</a>
   </div>
 </nav>
 
-<!-- 1. 히어로 (다크 vault) -->
-<section class="sect dark center">
-  <div class="wrap reveal">
-    <div class="overline">{{ 'Cross-border commerce, simplified' if EN else '구매대행 올인원' }}</div>
-    {% if EN %}
-    <h1 class="disp">From sourcing<br>to listing<span class="beta">Beta</span></h1>
-    <p class="lead">해외 상품 수집부터 마켓 등록까지, one flow. Collect, translate, polish, and list to your marketplaces — in a few clicks.</p>
-    {% else %}
-    <h1 class="disp">해외 상품 수집부터<br>마켓 등록까지<span class="beta">Beta</span></h1>
-    <p class="lead">타오바오·아마존에서 상품을 가져와 한국어로 번역·다듬고, 쿠팡·스마트스토어 등 내 마켓에 등록까지. 클릭 몇 번이면 끝납니다.</p>
-    {% endif %}
-    <div class="d-flex flex-wrap gap-2 justify-content-center mt-3">
-      <a href="/seller/start" class="pill pill-fill">{{ 'Start free' if EN else '무료로 시작하기' }}</a>
-      <a href="/seller/" class="pill pill-line">{{ 'See it inside' if EN else '둘러보기' }}</a>
-    </div>
-    <div class="mt-3"><a href="/seller/start" style="color:var(--gold);text-decoration:underline;font-size:.9rem;">{{ 'For Beginners — a guided start' if EN else 'For Beginners · 처음이신가요?' }}</a></div>
-    <!-- 브라우저 프레임 목업(콘솔 구조 — 평면 텍스트 금지) -->
-    <div class="frame" aria-hidden="true">
-      <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">app · {{ brand_name_ko|default('고가브릿지', true) }} 셀러 콘솔</span></div>
-      <div class="body">
-        <div class="thumb"></div>
-        <div>
-          <div class="ln w1"></div><div class="ln w2"></div>
-          <span class="chip">{{ 'Translated' if EN else '한국어 번역됨' }}</span>
-          <span class="chip" style="background:var(--orange)">{{ 'Ready to list' if EN else '등록 준비' }}</span>
+<!-- HERO -->
+<header class="hero"><div class="wrap reveal">
+  <span class="eyebrow"><span class="dot"></span>{{ '1-minute start · sourcing to multi-market in one bridge' if EN else '1분 만에 시작 · 해외 수집부터 멀티마켓 등록까지 다리 하나로' }}</span>
+  {% if EN %}
+  <h1 class="serif">Sold or not,<br><span class="accent">just list it.</span></h1>
+  <p class="sub">A bridge for solo sellers — collect overseas products, translate & edit, and list to markets at home and abroad in one go.</p>
+  {% else %}
+  <h1 class="serif">팔리든 말든,<br><span class="accent">올려두면</span> 됩니다.</h1>
+  <p class="sub">해외 상품을 수집하고, 번역·편집해서, 국내외 마켓에 한 번에 올리는 1인 셀러용 다리.</p>
+  {% endif %}
+  <div class="hero-cta">
+    <a href="/seller/start" class="btn-ink">{{ 'Start free now' if EN else '지금 무료로 시작하기' }}</a>
+    <a href="/seller/" class="btn-ghost">{{ 'See the collector →' if EN else '고가수집기 둘러보기 →' }}</a>
+  </div>
+  <div class="trust">{{ 'No card needed · Coupang · SmartStore · Shopify · Multishop' if EN else '신용카드 없이 시작 · 쿠팡 · 스마트스토어 · Shopify · 멀티샵 연동' }}
+    · <a href="/seller/start" style="color:var(--gold-ink);">{{ 'For Beginners' if EN else 'For Beginners · 처음이신가요?' }}</a></div>
+
+  <!-- 콘솔 미리보기(제품이 곧 데모) -->
+  <div class="shot" aria-hidden="true">
+    <div class="shot-bar"><i></i><i></i><i></i><span class="addr">{{ BRAND }} · {{ brand_name_ko|default('고가브릿지', true) }} 셀러 콘솔</span></div>
+    <div class="shot-body">
+      <div class="side">
+        <div class="si"><span class="ic"></span>{{ 'Home' if EN else '홈(대시보드)' }}</div>
+        <div class="si"><span class="ic"></span>{{ 'AI sourcing' if EN else 'AI 소싱·등록' }}</div>
+        <div class="si"><span class="ic"></span>{{ 'Collect' if EN else '상품 수집' }}</div>
+        <div class="si on"><span class="ic"></span>{{ 'Collected' if EN else '수집한 상품' }}</div>
+        <div class="si"><span class="ic"></span>{{ 'Orders' if EN else '주문 관리' }}</div>
+        <div class="si"><span class="ic"></span>{{ 'Markets' if EN else '마켓 연동' }}</div>
+      </div>
+      <div class="main">
+        <h3 class="serif">{{ 'Collected items' if EN else '수집 이력' }}</h3>
+        <div class="mlead">{{ 'Collected via extension · bookmarklet · URL' if EN else '크롬 확장 · 북마클릿 · URL로 수집된 상품' }}</div>
+        <div class="kpis">
+          <div class="kpi"><div class="l">{{ 'Total' if EN else '총 수집' }}</div><div class="v">128</div></div>
+          <div class="kpi accent"><div class="l">{{ 'Today' if EN else '오늘' }}</div><div class="v">12</div></div>
+          <div class="kpi"><div class="l">{{ 'Domains' if EN else '도메인' }}</div><div class="v">9</div></div>
         </div>
+        <div class="prow"><div class="thumb"></div><div class="t"><b>PACKS STROLL BAG — 吉田カバン</b><span>yoshidakaban.com · {{ 'extension' if EN else '확장 수집' }}</span></div><span class="tag">{{ 'translated' if EN else '번역 완료' }}</span></div>
+        <div class="prow"><div class="thumb"></div><div class="t"><b>{{ 'Philips power strip 3-outlet 2m' if EN else '필립스 멀티탭 3구 2m 세트' }}</b><span>temu.com · {{ 'price check' if EN else '가격 확인 필요' }}</span></div><span class="tag warn">{{ 'check' if EN else '확인 필요' }}</span></div>
       </div>
     </div>
   </div>
-</section>
+</div></header>
 
-<!-- 2. 문제 → 해결 -->
-<section class="sect">
-  <div class="wrap">
-    <div class="grid c2" style="align-items:center;">
-      <div class="reveal">
-        <div class="overline">{{ 'The old way' if EN else '예전 방식' }}</div>
-        <h2 class="disp">{{ 'Tedious, one by one' if EN else '하나하나, 번거롭죠' }}</h2>
-        <p class="lead">{{ 'Copy product info, translate by hand, fix images, re-enter on every marketplace.' if EN else '상품 정보 복사, 손번역, 이미지 손질, 마켓마다 다시 입력… 시간만 흘러갑니다.' }}</p>
-      </div>
-      <div class="reveal">
-        <hr class="hairline d-md-none">
-        <div class="overline">{{ 'With gogabridj' if EN else '고가브릿지라면' }}</div>
-        <h2 class="disp">{{ 'All in one flow' if EN else '한 번에, 흐름대로' }}</h2>
-        <p class="lead">{{ 'Collect with one click, auto-translate, set prices in bulk, and list to many markets at once.' if EN else '한 번에 수집·자동 번역·일괄 가격, 그리고 여러 마켓에 한 번에 등록. 다리(Bridj)처럼 이어줍니다.' }}</p>
-      </div>
+<!-- 3-FEATURE -->
+<section class="block" id="features"><div class="wrap">
+  <div class="sec-head reveal">
+    <div class="kick">One Bridge, Every Market</div>
+    <h2 class="serif">{{ 'Collect → edit → list.<br>The flow never breaks.' | safe if EN else '수집 → 편집 → 등록.<br>흐름이 끊기지 않습니다.' | safe }}</h2>
+    <p>{{ 'Fast to collect, tidy like Apple, readable like a magazine — three markets in one console.' if EN else '수집은 빠르게, 화면은 애플처럼 단정하게, 잡지처럼 읽히게. 세 마켓을 한 콘솔에서.' }}</p>
+  </div>
+  <div class="feat">
+    <div class="fcard reveal"><div class="badge"><i class="bi bi-box-arrow-in-down"></i></div><h4 class="serif">{{ 'Goga Collector' if EN else '고가수집기' }}</h4><p>{{ 'Extension · bookmarklet · URL instant-collect. Pull any site’s product onto the bridge.' if EN else '확장·북마클릿·URL 즉시수집. 어느 사이트든 상품을 다리 위로 끌어옵니다.' }}</p><div class="ln"></div></div>
+    <div class="fcard reveal"><div class="badge"><i class="bi bi-arrow-left-right"></i></div><h4 class="serif">{{ 'Translate & edit drawer' if EN else '번역·편집 드로어' }}</h4><p>{{ 'Right there, no new window. Polish title, price, details and images in Korean, then list.' if EN else '새 창 없이 그 자리에서. 제목·가격·상세·이미지를 한국어로 다듬어 바로 등록.' }}</p><div class="ln"></div></div>
+    <div class="fcard reveal"><div class="badge"><i class="bi bi-box-arrow-up-right"></i></div><h4 class="serif">{{ 'Multi-market bulk' if EN else '멀티마켓 일괄' }}</h4><p>{{ 'Coupang · SmartStore · Shopify · Multishop. Category and margin in one push.' if EN else '쿠팡·스마트스토어·Shopify·멀티샵. 카테고리·마진까지 한 번에 태웁니다.' }}</p><div class="ln"></div></div>
+  </div>
+</div></section>
+
+<!-- 5-STEP PIPELINE -->
+<section class="block" id="markets" style="background:linear-gradient(180deg,var(--cream),var(--paper));"><div class="wrap">
+  <div class="sec-head reveal">
+    <div class="kick">5 Steps</div>
+    <h2 class="serif">{{ 'We carry the hassle,<br>you keep the profit.' | safe if EN else '막막함은 우리가,<br>수익은 사장님이.' | safe }}</h2>
+    <p>{{ 'Sign-up to first upload in a minute. The bridge crosses the tedious middle for you.' if EN else '가입부터 첫 업로드까지 1분. 복잡한 중간 업무는 다리가 건너드립니다.' }}</p>
+  </div>
+  <div class="steps5">
+    <div class="fcard reveal"><div class="n">01</div><h4 class="serif">{{ 'Collect' if EN else '수집' }}</h4><p>{{ 'Grab overseas products with the collector' if EN else '고가수집기로 해외 상품 가져오기' }}</p></div>
+    <div class="fcard reveal"><div class="n">02</div><h4 class="serif">{{ 'Translate' if EN else '번역' }}</h4><p>{{ 'Title · details · options into Korean' if EN else '제목·상세·옵션 자동 한국어화' }}</p></div>
+    <div class="fcard reveal"><div class="n teal">03</div><h4 class="serif">{{ 'Edit' if EN else '편집' }}</h4><p>{{ 'Tidy images & margin in the drawer' if EN else '드로어에서 그 자리 이미지·마진 다듬기' }}</p></div>
+    <div class="fcard reveal"><div class="n">04</div><h4 class="serif">{{ 'List' if EN else '등록' }}</h4><p>{{ 'Coupang · Store · Shopify bulk upload' if EN else '쿠팡·스토어·Shopify 일괄 업로드' }}</p></div>
+    <div class="fcard reveal"><div class="n orange">05</div><h4 class="serif">{{ 'Orders · CS' if EN else '주문·CS' }}</h4><p>{{ 'Handle incoming orders in one place' if EN else '들어온 주문 한 곳에서 처리' }}</p></div>
+  </div>
+</div></section>
+
+<!-- EDITORIAL SPLIT -->
+<section class="block" id="editing"><div class="wrap split">
+  <div class="copy reveal">
+    <div class="kick">In-page Editing</div>
+    <h2 class="serif">{{ 'Click, and it opens<br>right there.' | safe if EN else '클릭하면<br>그 자리에서 열립니다.' | safe }}</h2>
+    <p>{{ 'No more bouncing out to the source site. The edit drawer slides in from the right — save, and straight to market.' if EN else '상품을 누르면 원본 사이트로 튕겨 나가는 일은 없습니다. 우측에서 편집 드로어가 미끄러져 들어오고, 저장하면 바로 마켓으로.' }}</p>
+    <div class="list">
+      <div class="li"><span class="ck"><i class="bi bi-check-lg"></i></span><span>{{ 'Zero new windows / page jumps — an overlay over the current screen' if EN else '새 창·페이지 이동 0 — 현재 화면 위 오버레이' }}</span></div>
+      <div class="li"><span class="ck"><i class="bi bi-check-lg"></i></span><span>{{ 'Empty price shows “check needed”, never a made-up conversion' if EN else '가격 빈값이면 임의 환산 대신 “확인 필요” 정직 표기' }}</span></div>
+      <div class="li"><span class="ck"><i class="bi bi-check-lg"></i></span><span>{{ 'Original/translation toggle kept; details, specs, images filled' if EN else '원문/번역 토글 보존, 상세·스펙·이미지까지 채움' }}</span></div>
     </div>
   </div>
-</section>
+  <div class="visual reveal"><div class="gate"><img src="{{ ICON }}" alt=""></div><div class="cap">{{ 'Metal type on digital hanji' if EN else '디지털 한지 위의 금속활자' }}</div></div>
+</div></section>
 
-<!-- 3. 작동 방식 3스텝(스크롤 핀) -->
-<section class="sect" id="how" style="background:var(--surface-warm);">
-  <div class="wrap">
-    <div class="center reveal" style="margin-bottom:2rem;">
-      <div class="overline">{{ 'How it works' if EN else '작동 방식' }}</div>
-      <h2 class="disp">{{ 'Three steps' if EN else '세 단계면 끝' }}</h2>
-    </div>
-    <div class="steps">
-      <div class="sticky reveal">
-        <div class="frame" aria-hidden="true">
-          <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">taobao · amazon · ali …</span></div>
-          <div class="body">
-            <div class="thumb"></div>
-            <div><div class="ln w1"></div><div class="ln"></div><div class="ln w2"></div></div>
-          </div>
-        </div>
-      </div>
-      <div>
-        <div class="step reveal"><div class="num">01</div><h3>{{ 'Collect' if EN else '수집' }}</h3><p>{{ 'Chrome extension grabs the product right on the page — title, images, price.' if EN else '크롬 확장(고가수집기)이 상품 페이지에서 제목·이미지·가격을 바로 가져옵니다.' }}</p></div>
-        <div class="step reveal"><div class="num">02</div><h3>{{ 'Edit & translate' if EN else '편집·번역' }}</h3><p>{{ 'Auto-translate to Korean, clean banned words, set price and margin.' if EN else '한국어 자동 번역, 금지어 정리, 가격·마진 일괄 설정으로 다듬습니다.' }}</p></div>
-        <div class="step reveal"><div class="num">03</div><h3>{{ 'List to markets' if EN else '마켓 업로드' }}</h3><p>{{ 'Upload to Coupang, SmartStore, Shopify and more — once connected.' if EN else '쿠팡·스마트스토어·Shopify 등 연동된 마켓에 한 번에 등록합니다.' }}</p></div>
-      </div>
-    </div>
+<!-- SUPPORTED MARKETS (실데이터 — 지원 마켓명만, 가짜 수치 0) -->
+<section class="block"><div class="wrap">
+  <div class="sec-head reveal">
+    <div class="kick">Connects with</div>
+    <h2 class="serif">{{ 'Your markets, supported' if EN else '주요 마켓을 지원합니다' }}</h2>
+    <p>{{ 'Connect each market with your own API keys.' if EN else '각 마켓은 본인 API 키로 직접 연동합니다.' }}</p>
   </div>
-</section>
+  <div class="feat">
+    <a href="/seller/markets/connect" class="fcard reveal" style="text-decoration:none;color:inherit;"><h4 class="serif">{{ 'Domestic' if EN else '국내 마켓' }}</h4><p>{{ 'Coupang · SmartStore · 11st' if EN else '쿠팡 · 스마트스토어 · 11번가' }}</p><div class="ln"></div></a>
+    <a href="/seller/markets/connect" class="fcard reveal" style="text-decoration:none;color:inherit;"><h4 class="serif">{{ 'Global' if EN else '해외 마켓' }}</h4><p>Shopify · WooCommerce · Amazon</p><div class="ln"></div></a>
+    <a href="/seller/markets/connect" class="fcard reveal" style="text-decoration:none;color:inherit;"><h4 class="serif">{{ 'Multishop' if EN else '멀티샵' }}</h4><p>{{ 'Kogane Multishop relay' if EN else '코가네멀티샵 연동' }}</p><div class="ln"></div></a>
+  </div>
+</div></section>
 
-<!-- 4. 핵심 기능 쇼케이스 -->
-<section class="sect" id="features">
-  <div class="wrap">
-    <div class="center reveal" style="margin-bottom:2.2rem;">
-      <div class="overline">{{ 'Features' if EN else '핵심 기능' }}</div>
-      <h2 class="disp">{{ 'Built for resellers' if EN else '구매대행에 딱 맞게' }}</h2>
-    </div>
-    <div class="grid c4">
-      <div class="ncard reveal"><div class="ic"><i class="bi bi-magic"></i></div><h3>{{ 'One-click collect' if EN else '원클릭 수집' }}</h3><p>{{ 'Chrome extension and bookmarklet for any product page.' if EN else '크롬 확장·북마클릿으로 어떤 상품 페이지든 바로.' }}</p></div>
-      <div class="ncard reveal"><div class="ic"><i class="bi bi-translate"></i></div><h3>{{ 'AI translate' if EN else 'AI 상세·번역' }}</h3><p>{{ 'Titles and descriptions translated and tidied for Korean buyers.' if EN else '제목·상세를 한국어로 번역하고 정리합니다.' }}</p></div>
-      <div class="ncard reveal"><div class="ic"><i class="bi bi-shop"></i></div><h3>{{ 'Multi-market' if EN else '멀티마켓 등록' }}</h3><p>{{ 'Coupang, SmartStore, 11st, Shopify, WooCommerce.' if EN else '쿠팡·스마트스토어·11번가·Shopify·WooCommerce.' }}</p></div>
-      <div class="ncard reveal"><div class="ic"><i class="bi bi-calculator"></i></div><h3>{{ 'Margin & price' if EN else '마진·가격' }}</h3><p>{{ 'Bulk pricing, FX conversion, margin rules.' if EN else '일괄 가격·환율 환산·마진 규칙으로 가격을 잡습니다.' }}</p></div>
-    </div>
+<!-- PRICING -->
+<section class="block" id="pricing" style="background:var(--cream);"><div class="wrap">
+  <div class="sec-head reveal">
+    <div class="kick">Pricing</div>
+    <h2 class="serif">{{ 'Start free' if EN else '무료로 시작하세요' }}</h2>
+    <p>{{ 'Sign up and start collecting for free. Paid plans unlock more — see plans inside.' if EN else '가입하고 수집을 무료로 시작하세요. 더 필요한 기능은 요금제에서 확인할 수 있어요.' }}</p>
   </div>
-</section>
+  <div style="text-align:center;">
+    <a href="/seller/start" class="btn-ink">{{ 'Start free' if EN else '무료로 시작하기' }}</a>
+    <a href="/seller/billing" class="btn-ghost" style="margin-left:10px;">{{ 'See plans' if EN else '요금제 보기' }}</a>
+  </div>
+</div></section>
 
-<!-- 5. 수입형 / 수출형 레인 -->
-<section class="sect dark">
-  <div class="wrap">
-    <div class="center reveal" style="margin-bottom:2rem;">
-      <div class="overline">{{ 'Two lanes' if EN else '양방향' }}</div>
-      <h2 class="disp">{{ 'Import or export' if EN else '수입형 · 수출형' }}</h2>
-    </div>
-    <div class="grid c2">
-      <a href="/lane" class="ncard reveal" style="text-decoration:none;"><div class="ic"><i class="bi bi-box-arrow-in-down"></i></div><h3 style="color:var(--cream)">{{ 'Import' if EN else '수입형' }}</h3><p>{{ 'Bring overseas products into Korean marketplaces.' if EN else '해외 상품을 국내 마켓으로 가져와 판매합니다.' }}</p></a>
-      <a href="/lane" class="ncard reveal" style="text-decoration:none;"><div class="ic"><i class="bi bi-box-arrow-up-right"></i></div><h3 style="color:var(--cream)">{{ 'Export' if EN else '수출형' }}</h3><p>{{ 'Sell to global marketplaces — language and currency aware.' if EN else '언어·통화를 맞춰 해외 마켓에 판매합니다.' }}</p></a>
-    </div>
+<!-- CTA BAND -->
+<section class="block"><div class="wrap">
+  <div class="band reveal">
+    <h2 class="serif">{{ 'Ready to bridge?' if EN else '다리를 놓을 준비가 되셨나요?' }}</h2>
+    <p>{{ 'Sign up → first collect → first upload — all today.' if EN else '가입 → 첫 수집 → 첫 업로드까지, 오늘 안에.' }}</p>
+    <a href="/seller/start" class="btn-ink">{{ 'Start free' if EN else '무료로 시작하기' }}</a>
   </div>
-</section>
-
-<!-- 6. 사회적 증거(실데이터 — 지원 마켓, 가짜 수치 0) -->
-<section class="sect center">
-  <div class="wrap reveal">
-    <div class="overline">{{ 'Connects with' if EN else '연동되는 마켓' }}</div>
-    <h2 class="disp" style="margin-bottom:1.6rem;">{{ 'Your markets, supported' if EN else '주요 마켓을 지원합니다' }}</h2>
-    <div class="logos">
-      <span class="lg">쿠팡</span><span class="lg">스마트스토어</span><span class="lg">11번가</span>
-      <span class="lg">Shopify</span><span class="lg">WooCommerce</span><span class="lg">Amazon</span>
-    </div>
-    <p class="lead center" style="margin-top:1.2rem;font-size:.92rem;">{{ 'Connect each market with your own API keys.' if EN else '각 마켓은 본인 API 키로 직접 연동합니다.' }}</p>
-    <div class="mt-3"><a href="/seller/markets/connect" class="pill pill-line">{{ 'Connect markets' if EN else '마켓 연동하기' }}</a></div>
-  </div>
-</section>
-
-<!-- 7. 요금 / 무료 시작(가짜 혜택 0) -->
-<section class="sect" id="pricing" style="background:var(--surface-warm);">
-  <div class="wrap center reveal">
-    <div class="overline">{{ 'Pricing' if EN else '요금' }}</div>
-    <h2 class="disp">{{ 'Start free' if EN else '무료로 시작하세요' }}</h2>
-    <p class="lead center">{{ 'Sign up and start collecting for free. Paid plans unlock more — see plans inside.' if EN else '가입하고 수집을 무료로 시작하세요. 더 필요한 기능은 요금제에서 확인할 수 있어요.' }}</p>
-    <div class="d-flex flex-wrap gap-2 justify-content-center mt-3">
-      <a href="/seller/start" class="pill pill-fill">{{ 'Start free' if EN else '무료로 시작하기' }}</a>
-      <a href="/seller/billing" class="pill pill-line">{{ 'See plans' if EN else '요금제 보기' }}</a>
-    </div>
-  </div>
-</section>
-
-<!-- 8. FAQ -->
-<section class="sect">
-  <div class="wrap" style="max-width:760px;">
-    <div class="center reveal" style="margin-bottom:1.6rem;">
-      <div class="overline">FAQ</div>
-      <h2 class="disp">{{ 'Questions' if EN else '자주 묻는 질문' }}</h2>
-    </div>
-    <div class="faq reveal">
-      <details><summary>{{ 'Is it really free to start?' if EN else '정말 무료로 시작하나요?' }}</summary><p>{{ 'Yes — sign-up and collecting are free to start. Some advanced features are part of paid plans.' if EN else '네, 가입과 수집은 무료로 시작할 수 있어요. 일부 고급 기능은 요금제에서 제공됩니다.' }}</p></details>
-      <details><summary>{{ 'Which sites can I collect from?' if EN else '어떤 사이트에서 수집되나요?' }}</summary><p>{{ 'Major sourcing sites like Taobao, Amazon, AliExpress — right from the product page with the Chrome extension.' if EN else '타오바오·아마존·알리 등 주요 소싱처에서 크롬 확장으로 상품 페이지에서 바로 수집합니다.' }}</p></details>
-      <details><summary>{{ 'Which markets can I list to?' if EN else '어떤 마켓에 등록되나요?' }}</summary><p>{{ 'Coupang, SmartStore, 11st, Shopify, WooCommerce and more — once you connect each market with your own keys.' if EN else '쿠팡·스마트스토어·11번가·Shopify·WooCommerce 등 — 각 마켓을 본인 키로 연동하면 됩니다.' }}</p></details>
-      <details><summary>{{ 'Do I need to code?' if EN else '코딩을 몰라도 되나요?' }}</summary><p>{{ 'No. Follow the on-screen steps — from sign-in to your first listing.' if EN else '아니요. 화면의 단계를 따라가면 로그인부터 첫 등록까지 끝납니다.' }}</p></details>
-    </div>
-  </div>
-</section>
-
-<!-- 9. 최종 CTA (다크 vault) -->
-<section class="sect dark center">
-  <div class="wrap reveal">
-    <h2 class="disp">{{ 'Ready to bridge?' if EN else '이제, 다리를 건너볼까요?' }}</h2>
-    <p class="lead center">{{ 'From sourcing to listing — start in a minute.' if EN else '수집부터 등록까지 — 1분이면 시작합니다.' }}</p>
-    <div class="d-flex flex-wrap gap-2 justify-content-center mt-3">
-      <a href="/seller/start" class="pill pill-fill">{{ 'Start free' if EN else '무료로 시작하기' }}</a>
-      <a href="/seller/about" class="pill pill-line">{{ 'About' if EN else '고가브릿지란?' }}</a>
-    </div>
-  </div>
-</section>
+</div></section>
 
 <footer class="lpfoot">
   <div class="inner">
-    <span class="fw-semibold" style="color:var(--text);">{{ brand_name|default('gogabridj', true) }}</span>
-    <a href="/seller/about">{{ "About" if EN else "소개" }}</a>
-    <a href="/seller/start">{{ "Get started" if EN else "시작하기" }}</a>
-    <a href="/privacy">개인정보처리방침</a>
-    <a href="/terms">이용약관</a>
-    <a href="https://github.com/Kohgane/proxy-commerce" target="_blank" rel="noopener"><i class="bi bi-github"></i> GitHub</a>
-    {% if footer_version %}<span class="ms-auto small">{{ footer_version }}</span>{% endif %}
+    <div class="foot-brand"><img src="{{ ICON }}" alt="">{{ brand_name_ko|default('고가브릿지', true) }} · {{ BRAND }}</div>
+    <div class="d-flex flex-wrap align-items-center gap-3">
+      <a href="/seller/about">{{ 'About' if EN else '소개' }}</a>
+      <a href="/seller/start">{{ 'Get started' if EN else '시작하기' }}</a>
+      <a href="/privacy">개인정보처리방침</a>
+      <a href="/terms">이용약관</a>
+      <span>{{ 'Overseas reselling · multi-market SaaS · © 2026' if EN else '해외 상품 구매대행 · 멀티마켓 SaaS · © 2026' }}</span>
+      {% if footer_version %}<span class="small">{{ footer_version }}</span>{% endif %}
+    </div>
   </div>
 </footer>
 </div>
 
 <script>
 (function () {
-  var nav = document.getElementById('lpnav');
-  var onScroll = function () { if (nav) nav.classList.toggle('shrink', window.scrollY > 12); };
-  window.addEventListener('scroll', onScroll, { passive: true }); onScroll();
   var els = document.querySelectorAll('.reveal');
   if (!('IntersectionObserver' in window) || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
     els.forEach(function (e) { e.classList.add('in'); }); return;
