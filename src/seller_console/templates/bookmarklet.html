@@ -78,12 +78,12 @@
 
           <div id="bmReady" class="mt-3" style="display:none">
             <a id="bookmarkletLink"
-               class="d-inline-flex align-items-center justify-content-center text-decoration-none"
-               style="cursor:grab;border-radius:12px;border:1px solid #dee2e6;background:#fff;color:#1a1714;font-weight:700;font-size:0.95rem;line-height:1;width:52px;height:52px;"
-               title="이 버튼을 북마크바로 드래그하세요 — ‘수집’ 이름으로 추가됩니다"
-               aria-label="고가수집기 북마클릿">수집</a>
-            <p class="mt-3 text-muted small mb-0">위 <strong>수집</strong> 버튼을 북마크바로 드래그하세요. 상품 페이지에서 누르면 <strong>새 창 없이 그 자리에서 ‘수집 완료’</strong>가 뜹니다.</p>
-            <p class="text-muted small mb-0"><span class="text-muted">※ 이 북마클릿엔 내 토큰이 들어 있어요(남과 공유 금지). 브라우저가 javascript: 북마크엔 기본 지구본 아이콘을 표시할 수 있어요 — 브랜드 아이콘은 <a href="/seller/extension">크롬 확장</a> 권장.</span></p>
+               class="d-inline-flex align-items-center justify-content-center gap-2 text-decoration-none"
+               style="cursor:grab;border-radius:12px;border:1px solid var(--border,#dee2e6);background:var(--surface,#fff);color:var(--ink,#1a1714);font-weight:700;font-size:0.95rem;line-height:1;padding:12px 18px;"
+               title="이 버튼을 북마크바로 드래그하세요 — ‘고가수집기’ 이름으로 추가됩니다"
+               aria-label="고가수집기 북마클릿"><img src="/seller/static/favicon-32.png?v=179" alt="" style="width:22px;height:22px;border-radius:6px;">고가수집기</a>
+            <p class="mt-3 text-muted small mb-0">위 <strong>고가수집기</strong> 버튼을 북마크바로 드래그하세요. 상품 페이지에서 누르면 <strong>새 창 없이 그 자리에서 ‘수집 완료’</strong>가 뜹니다(토스트에 브릿지 마크 표시).</p>
+            <p class="text-muted small mb-0"><span class="text-muted">※ 이 북마클릿엔 내 토큰이 들어 있어요(남과 공유 금지). 이 페이지의 아이콘은 새 브릿지 마크예요 — 드래그하면 브라우저가 이 아이콘을 물어가기도 합니다. 다만 크롬은 <code>javascript:</code> 북마크에 <strong>회색(기본) 아이콘</strong>을 붙일 수 있어요. <strong>회색으로 보이면</strong> 브랜드 아이콘이 항상 뜨는 <a href="/seller/extension">고가수집기 확장</a>을 권장합니다.</span></p>
           </div>
         </div>
       </div>
@@ -143,8 +143,8 @@ function buildBookmarkletCode(translate) {
     "images:imgs.slice(0,30)," +
     "html:(document.documentElement?document.documentElement.outerHTML:'').slice(0,800000)," +
     "translate:" + (translate ? "true" : "false") + "};" +
-    // 인페이지 소형 토스트(새 창 0) — 고가수집기 위치(우하단)에 살짝.
-    "function K(m,ok){var t=document.getElementById('kgpbm');if(!t){t=document.createElement('div');t.id='kgpbm';t.style.cssText='position:fixed;right:20px;bottom:84px;z-index:2147483647;max-width:280px;padding:10px 14px;border-radius:10px;font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.3);white-space:pre-wrap';document.body.appendChild(t);}t.style.background=ok?'#16a34a':'#dc2626';t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0'},4500);}" +
+    // 인페이지 소형 토스트(새 창 0) — 고가수집기 위치(우하단)에 살짝. B-1: 토스트에 우리 브릿지 마크 고정(우리가 DOM을 그리므로 100% 우리 아이콘).
+    "function K(m,ok){var t=document.getElementById('kgpbm');if(!t){t=document.createElement('div');t.id='kgpbm';t.style.cssText='position:fixed;right:20px;bottom:84px;z-index:2147483647;display:flex;align-items:center;gap:8px;max-width:300px;padding:10px 14px;border-radius:10px;font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.3)';var ic=document.createElement('img');ic.src=S+'/seller/static/favicon-32.png?v=179';ic.alt='';ic.style.cssText='width:20px;height:20px;border-radius:5px;flex:none;background:#fff';t.appendChild(ic);var tx=document.createElement('span');tx.id='kgpbmx';tx.style.whiteSpace='pre-wrap';t.appendChild(tx);document.body.appendChild(t);}t.style.background=ok?'#16a34a':'#dc2626';var x=document.getElementById('kgpbmx');if(x)x.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0'},4500);}" +
     "K('수집 중…',true);" +
     "fetch(S+'/api/v1/collect/extension',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+T},body:JSON.stringify(data)})" +
     ".then(function(r){return r.json().catch(function(){return{}})})" +
@@ -177,7 +177,7 @@ async function issueAndBuild() {
     refreshBookmarklet();
     document.getElementById('bmReady').style.display = '';
     btn.style.display = 'none';
-    hint.textContent = '북마클릿이 준비됐어요. 아래 ‘수집’을 북마크바로 드래그하세요.';
+    hint.textContent = '북마클릿이 준비됐어요. 아래 ‘고가수집기’를 북마크바로 드래그하세요.';
   } catch (e) {
     btn.disabled = false; btn.innerHTML = '<i class="bi bi-magic"></i> 내 북마클릿 만들기';
     if (typeof pcToast === 'function') pcToast('발급 실패: ' + (e.message || '다시 시도'), 'error');
