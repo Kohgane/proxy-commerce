@@ -15,7 +15,7 @@ HTML = Path("src/seller_console/templates/markets_connect.html").read_text(encod
 def test_sequential_stepper_present():
     assert "mcStepper" in HTML
     assert "한 마켓씩" in HTML
-    assert "전체 보기" in HTML
+    assert "mc-market-nav" in HTML          # v40-C 2단 좌 마켓 내비
     assert "mc-market-col" in HTML
     assert 'data-connected="{{' in HTML            # 연결 상태로 자동 체크
 

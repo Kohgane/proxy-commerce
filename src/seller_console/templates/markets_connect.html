@@ -2,183 +2,211 @@
 {% block title %}마켓 연결{% endblock %}
 
 {% block content %}
+{# v40-C: 2단(좌 마켓 리스트 + 우 상세) + 원클릭 설정 드로어. gogabridj-design 토큰(먹/한지/금/청록).
+   정직: 연동 상태는 실제 자격증명 유무로만, 자격증명 마스킹·서버 저장. 가짜 '연동완료' 0. 새 창 0(발급 링크만 새 탭). #}
+<style>
+  .mc-wrap { display: grid; grid-template-columns: 260px 1fr; gap: var(--space-4, 16px); align-items: start; }
+  .mc-nav { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+  .mc-nav .mc-nav-head { padding: 12px 14px; border-bottom: 1px solid var(--border); font-weight: 700; font-size: .9rem; }
+  .mc-nav-item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 0; background: transparent;
+    padding: 12px 14px; font-size: .92rem; color: var(--text); cursor: pointer; border-bottom: 1px solid var(--border); }
+  .mc-nav-item:last-child { border-bottom: 0; }
+  .mc-nav-item:hover { background: var(--surface-warm); }
+  .mc-nav-item.active { background: var(--ink); color: var(--cream-on-dark, #efe7d6); }
+  .mc-nav-item.active .mc-dot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 30%, transparent); }
+  .mc-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .mc-dot.on { background: var(--teal); } .mc-dot.off { background: var(--muted, #8a8275); } .mc-dot.err { background: var(--orange); }
+  .mc-nav-item .mc-nm { flex: 1; }
+  .mc-panel { display: none; }
+  .mc-panel.active { display: block; }
+  .mc-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
+  /* 상태 뱃지 공통 컴포넌트(수집 화면과 동일 규칙): 청록=연동완료, 회색=미연동, 주황=주의 */
+  .mc-badge { display: inline-flex; align-items: center; gap: 6px; font-size: .78rem; font-weight: 700; padding: 5px 11px; border-radius: 999px; }
+  .mc-badge.on { background: color-mix(in srgb, var(--teal) 14%, transparent); color: var(--teal); }
+  .mc-badge.off { background: color-mix(in srgb, var(--muted, #8a8275) 16%, transparent); color: var(--text-muted); }
+  .mc-kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+  .mc-kv .kv { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: var(--surface-warm); }
+  .mc-kv .kv .k { font-size: .72rem; color: var(--text-muted); font-weight: 600; }
+  .mc-kv .kv .v { font-size: .9rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  /* 원클릭 설정 드로어(우측 슬라이드 오버레이 — 새 창·라우트 이동 0) */
+  .mc-drawer-overlay { position: fixed; inset: 0; background: rgba(26,23,20,.4); z-index: 1050; display: none; }
+  .mc-drawer-overlay.open { display: block; }
+  .mc-drawer { position: fixed; top: 0; right: 0; height: 100vh; width: min(480px, 94vw); background: var(--surface);
+    box-shadow: -12px 0 40px rgba(26,23,20,.2); z-index: 1060; transform: translateX(100%); transition: transform .24s var(--ease, ease); display: flex; flex-direction: column; }
+  .mc-drawer.open { transform: none; }
+  .mc-drawer .dh { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--border); }
+  .mc-drawer .db { padding: 18px; overflow: auto; flex: 1; }
+  @media (max-width: 860px) {
+    .mc-wrap { grid-template-columns: 1fr; }
+    .mc-nav { display: flex; overflow-x: auto; } .mc-nav .mc-nav-head { display: none; }
+    .mc-nav-item { border-bottom: 0; border-right: 1px solid var(--border); white-space: nowrap; }
+    .mc-drawer { width: 100vw; }
+  }
+  @media (prefers-reduced-motion: reduce) { .mc-drawer { transition: none; } }
+</style>
 <section class="mb-4">
   <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
     <div>
-      {% if single_market %}
-      <h1 class="h4 mb-1">{{ market_statuses[0].label }} 연결</h1>
-      <p class="text-muted mb-0">{{ market_statuses[0].label }} API 키를 입력하고, 저장 전에 연결을 테스트하세요.</p>
+      <div class="overline" style="font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--gold-ink);font-weight:700;">마켓 연동</div>
+      {% if single_market and market_statuses %}
+      <h1 class="h4 mb-1 mt-1">{{ market_statuses[0].label }} 연결</h1>
+      <p class="text-muted mb-0"><strong>{{ market_statuses[0].label }}</strong> API 키를 입력하고 ‘인증하기’로 확인하세요. <em>모두 이 화면에서 진행돼요.</em></p>
       {% else %}
-      <h1 class="h4 mb-1">마켓 연결</h1>
-      <p class="text-muted mb-0">내 마켓 API 키를 직접 입력하고, 저장 전에 연결을 테스트할 수 있어요.</p>
+      <h1 class="h4 mb-1 mt-1">마켓 연결</h1>
+      <p class="text-muted mb-0">왼쪽에서 마켓을 고르고 <strong>‘계정 설정’</strong>을 누르면, 이 화면 위에서 바로 연동해요. <em>모두 이 화면에서 진행돼요.</em></p>
       {% endif %}
     </div>
-    <div class="d-flex gap-2">
-      {% if single_market %}
-      <a href="/seller/markets/connect" class="btn btn-outline-secondary btn-sm">전체 마켓 보기</a>
-      {% endif %}
-      <a href="/seller/markets/guide" class="btn btn-outline-primary btn-sm"><i class="bi bi-book"></i> 발급 가이드</a>
-      <a href="/seller/markets" class="btn btn-outline-secondary btn-sm">← 마켓 현황으로</a>
+    <div class="d-flex gap-2 flex-wrap">
+      <button type="button" class="btn btn-cta btn-sm" id="mcNewMarket"><i class="bi bi-plus-lg"></i> 신규 마켓 연동</button>
+      <a href="/seller/markets/guide" class="btn btn-outline-primary btn-sm"><i class="bi bi-book"></i> 연동 가이드</a>
+      <a href="/seller/markets" class="btn btn-outline-secondary btn-sm">← 마켓 현황</a>
     </div>
   </div>
+
+  {% if single_market %}
+  <a href="/seller/markets/connect" class="btn btn-outline-secondary btn-sm mb-3">← 전체 마켓 보기</a>
+  {% endif %}
 
   <div class="alert alert-light border small d-flex gap-2 align-items-start mb-3" role="note">
-    <span style="font-size:1.1rem"><i class="bi bi-key"></i></span>
+    <span style="font-size:1.05rem"><i class="bi bi-key"></i></span>
     <div>여기에 넣는 건 <strong>‘내 마켓 키’</strong>(쿠팡·네이버 등에서 발급받은 본인 API 키)예요.
-      서버 환경변수(<code>MARKET_CRED_ENC_KEY</code> 같은 인프라 키)와는 다릅니다 —
-      <strong>그건 운영자가 관리하고, 여기엔 입력하지 않아도 됩니다.</strong></div>
-  </div>
-
-  <!-- 마켓 전환 칩 -->
-  <div class="d-flex flex-wrap gap-2 mb-3">
-    {% for chip in market_chips %}
-    <a href="/seller/markets/connect/{{ chip.market }}"
-       class="btn btn-sm {{ 'btn-primary' if single_market == chip.market else 'btn-outline-secondary' }}">
-      {{ chip.label }} {% if chip.connected %}<i class="bi bi-check-circle text-success"></i>{% endif %}
-    </a>
-    {% endfor %}
+      서버 환경변수와는 다릅니다 — <strong>그건 운영자가 관리하고 여기엔 입력하지 않아도 됩니다.</strong>
+      입력한 키는 <strong>안전하게 암호화</strong>되어 보관돼요.
+      <span class="pc-help" tabindex="0" role="button" data-bs-toggle="tooltip" data-bs-html="true"
+            data-bs-title="입력 키는 <code>MARKET_CRED_ENC_KEY</code> 설정 시 암호화 저장. ‘인증하기’는 실제 마켓에 읽기/안전한 빈 쓰기만 시도하며 상품을 등록하지 않습니다.">?</span>
+    </div>
   </div>
 
   {% if server_ip %}
   <div class="alert alert-warning d-flex flex-wrap gap-2 align-items-center mb-3" role="note">
     <i class="bi bi-hdd-network"></i>
-    <span class="small mb-0">쿠팡·네이버는 <strong>서버 IP를 허용 목록에 등록</strong>해야 연결돼요. 이 IP를 복사해 넣으세요:</span>
+    <span class="small mb-0">쿠팡·네이버는 <strong>서버 IP를 허용 목록에 등록</strong>해야 연결돼요:</span>
     <code id="serverIp" class="ms-1">{{ server_ip }}</code>
     <button type="button" class="btn btn-gold btn-sm py-0" onclick="copyServerIp(this)">복사</button>
     <span class="pc-help" data-bs-toggle="tooltip" data-bs-title="마켓의 'API 호출 허용 IP'(쿠팡 Wing)/'호출 IP 등록'(네이버, 최대 3개)에 이 IP를 추가하세요.">?</span>
   </div>
   {% endif %}
 
-  <div class="alert alert-light border d-flex gap-2 align-items-center mb-4" role="note">
-    <i class="bi bi-shield-lock text-primary"></i>
-    <div class="small mb-0">
-      <i class="bi bi-shield-lock"></i> 입력한 키는 <strong>안전하게 암호화</strong>되어 보관돼요.
-      <span class="pc-help" tabindex="0" role="button" aria-label="자세히"
-            data-bs-toggle="tooltip" data-bs-html="true"
-            data-bs-title="서버에 <code>MARKET_CRED_ENC_KEY</code> 설정 시 키를 암호화 저장합니다. ‘연결 테스트’는 실제 마켓에 읽기/안전한 빈 쓰기만 시도하며 상품을 등록하지 않습니다.">?</span>
+  <!-- 2단: 좌 마켓 리스트 + 우 상세 -->
+  <div class="mc-wrap">
+    <!-- 좌: 마켓 내비(연동 상태 한눈에) -->
+    <div class="mc-nav" id="mcStepper" role="tablist" aria-label="마켓 목록">
+      <div class="mc-nav-head">마켓 <span class="text-muted fw-normal small">한 마켓씩 골라 연동</span></div>
+      {% for m in market_statuses %}
+      <button type="button" class="mc-nav-item mc-market-nav" role="tab"
+              data-market="{{ m.market }}" data-label="{{ m.label }}" data-connected="{{ '1' if m.connected else '0' }}">
+        <span class="mc-dot {{ 'on' if m.connected else 'off' }}"></span>
+        <span class="mc-nm">{{ m.label }}</span>
+        <span class="small" style="opacity:.7">{{ '연동완료' if m.connected else '미연동' }}</span>
+      </button>
+      {% endfor %}
     </div>
-  </div>
 
-  {% if single_market and guide_entry %}
-  <div class="card console-card mb-3">
-    <div class="card-body">
-      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-        <h2 class="h6 mb-0"><i class="bi bi-book"></i> {{ guide_entry.label }} 키 발급 방법</h2>
-        <a href="{{ guide_entry.official_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-primary btn-sm"><i class="bi bi-box-arrow-up-right"></i> {{ guide_entry.official_label }}</a>
-      </div>
-      <ol class="small mb-0">
-        {% for s in guide_entry.steps %}
-        <li class="mb-1"><span class="fw-semibold">{{ s.t }}</span> — <span class="text-muted">{{ s.d }}</span></li>
-        {% endfor %}
-      </ol>
-      {% if guide_entry.tips %}
-      <div class="small text-muted mt-2">{% for tip in guide_entry.tips %}<div><i class="bi bi-lightbulb"></i>  {{ tip }}</div>{% endfor %}</div>
-      {% endif %}
-    </div>
-  </div>
-  {% endif %}
-
-  {% if not single_market and market_statuses|length > 1 %}
-  <!-- v14: 한 마켓씩 순차 진행 스테퍼(연결되면 자동 체크). '전체 보기'로 한눈에도 가능. -->
-  <div class="card console-card mb-3" id="mcStepperCard">
-    <div class="card-body">
-      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-        <div class="fw-semibold">한 마켓씩 순서대로 연결하기</div>
-        <button type="button" class="btn btn-ghost btn-sm" id="mcToggleAll">전체 보기</button>
-      </div>
-      <div id="mcStepper" class="d-flex flex-wrap gap-2"></div>
-      <div class="small text-muted mt-2">연결을 마치면 <i class="bi bi-check-lg"></i> 로 자동 체크돼요. 천천히 하나씩 하면 됩니다.</div>
-    </div>
-  </div>
-  {% endif %}
-
-  <div class="row g-3" id="mcMarketRow">
-    {% for m in market_statuses %}
-    <div class="{{ 'col-12' if single_market else 'col-12 col-lg-6' }} mc-market-col" data-market="{{ m.market }}" data-label="{{ m.label }}" data-connected="{{ '1' if m.connected else '0' }}">
-      <div class="card console-card h-100" data-market="{{ m.market }}">
-        <div class="card-body">
-          <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
-            <h2 class="h6 mb-0">{{ m.label }}</h2>
-            <span class="badge rounded-pill {{ 'text-bg-success' if m.connected else 'text-bg-secondary' }}"
-                  data-role="status-badge">
-              {% if m.connected %}<i class="bi bi-check-circle"></i> 연결됨{% else %}<i class="bi bi-dash-circle"></i> 미연결{% endif %}
+    <!-- 우: 선택 마켓 상세 -->
+    <div class="mc-detail" id="mcDetail">
+      {% for m in market_statuses %}
+      {% set _g = (guide_map or {}).get(m.market) %}
+      <div class="mc-panel mc-market-col" data-market="{{ m.market }}" data-label="{{ m.label }}" data-connected="{{ '1' if m.connected else '0' }}">
+        <div class="mc-card p-3 p-md-4">
+          <div class="d-flex align-items-center justify-content-between gap-2 mb-2 flex-wrap">
+            <h2 class="h5 mb-0">{{ m.label }}</h2>
+            <span class="mc-badge {{ 'on' if m.connected else 'off' }}" data-role="status-badge">
+              {% if m.connected %}<span class="mc-dot on"></span> 연동완료{% else %}<span class="mc-dot off"></span> 미연동{% endif %}
             </span>
           </div>
-          <div class="small text-muted mb-2">
-            <strong>연결 3단계</strong> — ① 키 발급받기 · ② 아래에 붙여넣기 · ③ 연결 테스트. <em>모두 이 화면에서 진행돼요.</em>
-          </div>
-          {% set _g = (guide_map or {}).get(m.market) %}
-          <div class="fw-semibold small mb-1">① 키 발급받기</div>
-          {% if _g and _g.official_url %}
-          <a href="{{ _g.official_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-cta btn-sm w-100 mb-1">
-            <i class="bi bi-box-arrow-up-right"></i> {{ _g.official_label or '발급 페이지 열기' }}
-          </a>
-          <div class="small text-muted mb-3">↑ 이 버튼만 마켓 사이트가 새 탭으로 열려요(로그인 필요). 키를 받은 뒤 이 화면으로 돌아오세요.</div>
-          {% else %}
-          <div class="small text-muted mb-3">마켓 사이트에서 API 키를 발급받아 아래에 입력하세요.</div>
-          {% endif %}
 
-          <div class="fw-semibold small mb-1">② 받은 키 붙여넣기</div>
-          <form class="market-connect-form" data-market="{{ m.market }}" autocomplete="off">
+          <!-- 마스킹된 연동 정보 요약(민감정보 마스킹) -->
+          {% set _shown = [] %}
+          <div class="mc-kv mb-3">
             {% for f in m.fields %}
-            {% if f.section %}
-            <div class="mt-3 mb-2 pt-2 border-top">
-              <div class="fw-semibold small text-primary">{{ f.section }}</div>
-              <div class="small text-muted">이 항목은 <strong>{{ m.label }}</strong>에만 필요해요. (다른 마켓엔 없어요.)</div>
-            </div>
-            {% endif %}
-            <div class="mb-2">
-              <label class="form-label small mb-1">
-                {{ f.label }}
-                {% if f.required %}<span class="text-danger">*</span>{% endif %}
-                {% if f.from_global %}<span class="badge text-bg-light ms-1">서버 환경변수 사용 중</span>{% endif %}
-              </label>
-              <input
-                type="{{ 'password' if f.secret else 'text' }}"
-                class="form-control form-control-sm"
-                name="{{ f.env }}"
-                data-secret="{{ '1' if f.secret else '0' }}"
-                placeholder="{{ '저장됨 (' ~ f.display ~ ')' if (f.has_value and f.secret) else (f.display or f.env) }}"
-                value="{{ '' if f.secret else f.display }}"
-              >
-              {% if f.help %}<div class="form-text small text-muted mt-1">{{ f.help }}</div>{% endif %}
-            </div>
-            {% endfor %}
-
-            <div class="fw-semibold small mt-3 mb-1">③ 저장하고 연결 테스트</div>
-            <div class="d-flex flex-wrap gap-2">
-              <button type="submit" class="btn btn-primary btn-sm" data-action="save">
-                <i class="bi bi-save"></i> 저장
-              </button>
-              <button type="button" class="btn btn-outline-primary btn-sm" data-action="test">
-                <i class="bi bi-plug"></i> 연결 테스트
-              </button>
-              {% if m.has_seller_credentials %}
-              <button type="button" class="btn btn-outline-danger btn-sm ms-auto" data-action="disconnect">
-                연결 해제
-              </button>
+              {% if f.has_value and not f.section and _shown|length < 4 %}
+              <div class="kv"><div class="k">{{ f.label }}</div><div class="v">{{ f.display or '설정됨' }}</div></div>
+              {% set _ = _shown.append(1) %}
               {% endif %}
+            {% endfor %}
+            {% if _shown|length == 0 %}
+            <div class="text-muted small">아직 연동 정보가 없어요. ‘계정 설정’을 눌러 API 키를 입력하세요.</div>
+            {% endif %}
+          </div>
+
+          <div class="d-flex gap-2 flex-wrap">
+            <button type="button" class="btn btn-primary btn-sm mc-open-drawer" data-market="{{ m.market }}">
+              <i class="bi bi-gear"></i> {{ '연동 정보 변경' if m.connected else '계정 설정' }}
+            </button>
+            {% if _g and _g.official_url %}
+            <a href="{{ _g.official_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-cta btn-sm">
+              <i class="bi bi-box-arrow-up-right"></i> {{ _g.official_label or '키 발급 페이지' }}
+            </a>
+            {% endif %}
+          </div>
+          <div class="small text-muted mt-2">↑ ‘{{ _g.official_label or '키 발급 페이지' if _g else '키 발급 페이지' }}’ 버튼만 마켓 사이트가 새 탭으로 열려요(로그인 필요). 그 외는 이 화면에서 진행돼요.</div>
+
+          <!-- 배송 프로필 카드(있는 마켓만 — 키-값 한 줄, 세로 쪼개짐 0) -->
+          {% set _ship = [] %}
+          {% for f in m.fields %}{% if f.section %}{% set _ = _ship.append(f) %}{% endif %}{% endfor %}
+          {% if _ship %}
+          <div class="mt-3 pt-3 border-top">
+            <div class="fw-semibold small mb-2"><i class="bi bi-truck"></i> 배송 프로필 <span class="text-muted fw-normal">— 이 항목은 {{ m.label }}에만 필요해요</span></div>
+            <div class="mc-kv">
+              {% for f in _ship %}
+              <div class="kv"><div class="k">{{ f.label }}</div><div class="v">{{ f.display if f.has_value else '미설정' }}</div></div>
+              {% endfor %}
             </div>
-            <div class="small mt-2 d-none" data-role="test-result"></div>
-          </form>
+          </div>
+          {% endif %}
         </div>
       </div>
+      {% endfor %}
     </div>
+  </div>
+</section>
+
+<!-- 원클릭 설정 드로어(마켓별 폼) -->
+<div class="mc-drawer-overlay" id="mcDrawerOverlay" onclick="mcCloseDrawer()"></div>
+<aside class="mc-drawer" id="mcDrawer" aria-hidden="true" aria-label="마켓 계정 설정">
+  <div class="dh">
+    <div><div class="overline" style="font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;color:var(--gold-ink);font-weight:700;">계정 설정</div>
+      <div class="fw-bold" id="mcDrawerTitle">마켓 연동</div></div>
+    <button type="button" class="btn btn-ghost btn-sm" onclick="mcCloseDrawer()" aria-label="닫기"><i class="bi bi-x-lg"></i></button>
+  </div>
+  <div class="db" id="mcDrawerBody">
+    {% for m in market_statuses %}
+    {% set _g = (guide_map or {}).get(m.market) %}
+    <form class="market-connect-form mc-drawer-form" data-market="{{ m.market }}" autocomplete="off" style="display:none;">
+      <div class="small text-muted mb-2">① 키 발급받기 · ② 아래에 붙여넣기 · ③ 인증하기. <em>모두 이 화면에서 진행돼요.</em></div>
+      {% if _g and _g.official_url %}
+      <a href="{{ _g.official_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-cta btn-sm w-100 mb-3">
+        <i class="bi bi-box-arrow-up-right"></i> {{ _g.official_label or '발급 페이지 열기' }}</a>
+      {% endif %}
+      {% for f in m.fields %}
+      {% if f.section %}
+      <div class="mt-3 mb-2 pt-2 border-top">
+        <div class="fw-semibold small text-primary">{{ f.section }}</div>
+        <div class="small text-muted">이 항목은 <strong>{{ m.label }}</strong>에만 필요해요. (다른 마켓엔 없어요.)</div>
+      </div>
+      {% endif %}
+      <div class="mb-2">
+        <label class="form-label small mb-1">{{ f.label }}{% if f.required %} <span class="text-danger">*</span>{% endif %}
+          {% if f.from_global %}<span class="badge text-bg-light ms-1">서버 환경변수 사용 중</span>{% endif %}</label>
+        <input type="{{ 'password' if f.secret else 'text' }}" class="form-control form-control-sm" name="{{ f.env }}"
+               data-secret="{{ '1' if f.secret else '0' }}"
+               placeholder="{{ '저장됨 (' ~ f.display ~ ')' if (f.has_value and f.secret) else (f.display or f.env) }}"
+               value="{{ '' if f.secret else f.display }}">
+        {% if f.help %}<div class="form-text small text-muted mt-1">{{ f.help }}</div>{% endif %}
+      </div>
+      {% endfor %}
+      <div class="d-flex flex-wrap gap-2 mt-3">
+        <button type="button" class="btn btn-outline-primary btn-sm" data-action="test"><i class="bi bi-plug"></i> 인증하기</button>
+        <button type="submit" class="btn btn-primary btn-sm" data-action="save"><i class="bi bi-save"></i> 저장</button>
+        {% if m.has_seller_credentials %}
+        <button type="button" class="btn btn-outline-danger btn-sm ms-auto" data-action="disconnect">연결 해제</button>
+        {% endif %}
+      </div>
+      <div class="small mt-2 d-none" data-role="test-result"></div>
+    </form>
     {% endfor %}
   </div>
-
-  {% if not single_market and market_statuses|length > 1 %}
-  <div class="d-flex justify-content-between align-items-center mt-3" id="mcNav">
-    <button type="button" class="btn btn-ghost btn-sm" id="mcPrev">← 이전 마켓</button>
-    <span class="small text-muted" id="mcProgress"></span>
-    <button type="button" class="btn btn-cta btn-sm" id="mcNext">다음 마켓 →</button>
-  </div>
-  {% endif %}
-
-  <p class="text-muted small mt-3 mb-0">
-    어려운 용어는 옆의 <span class="pc-help" data-bs-toggle="tooltip" data-bs-title="물음표에 마우스를 올리면 쉬운 설명이 나와요.">?</span> 에 설명이 있어요. 키 발급은 각 마켓의 <strong>발급 페이지 열기</strong> 버튼을 누르세요.
-  </p>
-</section>
+</aside>
 {% endblock %}
 
 {% block extra_js %}
@@ -187,149 +215,111 @@ function copyServerIp(btn) {
   var ip = (document.getElementById('serverIp') || {}).textContent || '';
   if (!ip) return;
   navigator.clipboard.writeText(ip.trim()).then(function () {
-    if (window.pcToast) pcToast('서버 IP를 복사했어요. 마켓 허용 IP에 붙여넣으세요.', 'success');
-    if (btn) { var o = btn.textContent; btn.textContent = '복사됨'; setTimeout(function(){ btn.textContent = o; }, 1500); }
+    if (typeof pcToast === 'function') pcToast('서버 IP를 복사했어요.', 'success');
   });
 }
 function collectValues(form) {
   const values = {};
-  form.querySelectorAll('input[name]').forEach(input => {
-    const v = (input.value || '').trim();
-    if (v) values[input.name] = v;
-  });
+  form.querySelectorAll('input[name]').forEach(input => { const v = (input.value || '').trim(); if (v) values[input.name] = v; });
   return values;
 }
-
 async function postJson(url, payload) {
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(payload || {}),
-  });
+  const resp = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload || {})});
   const data = await resp.json().catch(() => ({}));
   return {ok: resp.ok, data};
 }
-
 function renderTestResult(form, result) {
   const box = form.querySelector('[data-role="test-result"]');
   if (!box) return;
   box.classList.remove('d-none', 'text-success', 'text-danger', 'text-warning');
   box.innerHTML = '';
   if (result && result.status === 'connected') {
-    box.classList.add('text-success');
-    box.textContent = '연결 성공 — ' + (result.summary || '');
-    return;
+    box.classList.add('text-success'); box.textContent = '인증 성공 — ' + (result.summary || ''); return;
   }
   box.classList.add('text-warning');
-  // v19: 실패는 쉬운 말로(무엇+왜+다음 행동). 코드/원문 응답은 '고급'으로 숨김(개발 메시지 비노출).
-  const head = document.createElement('div');
-  head.className = 'd-flex align-items-center gap-1';
+  const head = document.createElement('div'); head.className = 'd-flex align-items-center gap-1';
   head.innerHTML = '<i class="bi bi-exclamation-triangle"></i> <span>' +
-    kgpEscapeForHtml(kgpFriendlyError((result && (result.hint || result.status)) || '연결 테스트 실패')) + '</span>';
+    kgpEscapeForHtml(kgpFriendlyError((result && (result.hint || result.status)) || '인증 실패 — ID를 확인하세요')) + '</span>';
   box.appendChild(head);
-  // 마켓 원문 응답/상태 코드는 디버깅용 → 기본 숨김(필요 시 펼쳐보기).
   if (result && (result.summary || result.status)) {
-    const det = document.createElement('details');
-    det.className = 'small text-muted mt-1';
-    det.innerHTML = '<summary style="cursor:pointer">자세히(고급)</summary>' +
-      '<div class="mt-1" style="word-break:break-all">' +
+    const det = document.createElement('details'); det.className = 'small text-muted mt-1';
+    det.innerHTML = '<summary style="cursor:pointer">자세히(고급)</summary><div class="mt-1" style="word-break:break-all">' +
       kgpEscapeForHtml('상태: ' + (result.status || '-') + (result.summary ? ' · 응답: ' + result.summary : '')) + '</div>';
     box.appendChild(det);
   }
 }
-
-function updateBadge(card, connected) {
-  const badge = card.querySelector('[data-role="status-badge"]');
-  if (!badge) return;
-  badge.className = 'badge rounded-pill ' + (connected ? 'text-bg-success' : 'text-bg-secondary');
-  badge.textContent = connected ? '연결됨' : '미연결';
+function updateBadge(market, connected) {
+  document.querySelectorAll('.mc-market-col[data-market="' + market + '"] [data-role="status-badge"]').forEach(function (badge) {
+    badge.className = 'mc-badge ' + (connected ? 'on' : 'off');
+    badge.innerHTML = connected ? '<span class="mc-dot on"></span> 연동완료' : '<span class="mc-dot off"></span> 미연동';
+  });
+  const nav = document.querySelector('.mc-market-nav[data-market="' + market + '"]');
+  if (nav) { nav.dataset.connected = connected ? '1' : '0'; const d = nav.querySelector('.mc-dot'); if (d) d.className = 'mc-dot ' + (connected ? 'on' : 'off'); }
 }
 
+// 폼 동작(인증하기/저장/연결해제) — 드로어 안 폼에 바인딩
 document.querySelectorAll('.market-connect-form').forEach(form => {
   const market = form.dataset.market;
-  const card = form.closest('[data-market]');
-
-  // 연결 테스트
   form.querySelector('[data-action="test"]').addEventListener('click', async (e) => {
-    const btn = e.currentTarget;
-    setButtonLoading(btn, true, '테스트 중…');
+    const btn = e.currentTarget; setButtonLoading(btn, true, '인증 중…');
     try {
       const {data} = await postJson(`/seller/markets/connect/${market}/test`, {values: collectValues(form)});
       if (!data.ok) { pcToast(kgpFriendlyError(data), 'error'); return; }
       renderTestResult(form, data.result);
-    } catch (err) {
-      pcToast(kgpFriendlyError(err), 'error');
-    } finally {
-      setButtonLoading(btn, false);
-    }
+    } catch (err) { pcToast(kgpFriendlyError(err), 'error'); } finally { setButtonLoading(btn, false); }
   });
-
-  // 저장
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const btn = form.querySelector('[data-action="save"]');
-    setButtonLoading(btn, true, '저장 중…');
+    const btn = form.querySelector('[data-action="save"]'); setButtonLoading(btn, true, '저장 중…');
     try {
       const {data} = await postJson(`/seller/markets/connect/${market}`, {values: collectValues(form)});
       if (!data.ok) { pcToast(kgpFriendlyError(data), 'error'); return; }
-      updateBadge(card, data.status && data.status.connected);
-      pcToast(`${market} 자격증명을 저장했어요.`, 'success');
-    } catch (err) {
-      pcToast(kgpFriendlyError(err), 'error');
-    } finally {
-      setButtonLoading(btn, false);
-    }
+      updateBadge(market, data.status && data.status.connected);
+      pcToast(`${market} 연동 정보를 저장했어요.`, 'success');
+    } catch (err) { pcToast(kgpFriendlyError(err), 'error'); } finally { setButtonLoading(btn, false); }
   });
-
-  // 연결 해제
-  const disconnectBtn = form.querySelector('[data-action="disconnect"]');
-  if (disconnectBtn) {
-    disconnectBtn.addEventListener('click', async () => {
-      if (!(await pcConfirm('저장된 자격증명을 삭제할까요? (서버 환경변수는 영향 없음)', {title: '연결 해제', confirmLabel: '삭제'}))) return;
-      const {data} = await postJson(`/seller/markets/connect/${market}/disconnect`, {});
-      if (!data.ok) { pcToast(kgpFriendlyError(data), 'error'); return; }
-      updateBadge(card, data.status && data.status.connected);
-      pcToast(`${market} 연결을 해제했어요.`, 'success');
-      setTimeout(() => location.reload(), 900);
-    });
-  }
+  const dc = form.querySelector('[data-action="disconnect"]');
+  if (dc) dc.addEventListener('click', async () => {
+    if (!(await pcConfirm('저장된 자격증명을 삭제할까요? (서버 환경변수는 영향 없음)', {title: '연결 해제', confirmLabel: '삭제'}))) return;
+    const {data} = await postJson(`/seller/markets/connect/${market}/disconnect`, {});
+    if (!data.ok) { pcToast(kgpFriendlyError(data), 'error'); return; }
+    updateBadge(market, false); pcToast(`${market} 연결을 해제했어요.`, 'success'); mcCloseDrawer();
+  });
 });
 
-// v14: 한 마켓씩 순차 진행(연결되면 자동 체크). '전체 보기'로 그리드 전환.
+// 좌 마켓 내비 → 우 상세 전환(새 창·라우트 이동 0)
+const mcPanels = Array.from(document.querySelectorAll('.mc-panel'));
+const mcNavs = Array.from(document.querySelectorAll('.mc-market-nav'));
+function mcSelect(market) {
+  mcPanels.forEach(p => p.classList.toggle('active', p.dataset.market === market));
+  mcNavs.forEach(n => n.classList.toggle('active', n.dataset.market === market));
+}
+mcNavs.forEach(n => n.addEventListener('click', () => mcSelect(n.dataset.market)));
+// 시작 = 첫 미연동(전부 연동이면 첫 마켓)
 (function () {
-  const cols = Array.from(document.querySelectorAll('.mc-market-col'));
-  const stepper = document.getElementById('mcStepper');
-  if (!cols.length || !stepper) return;
-  let showAll = false;
-  // 시작 위치 = 첫 '미연결' 마켓(전부 연결이면 0)
-  let cur = cols.findIndex(c => c.dataset.connected !== '1');
-  if (cur < 0) cur = 0;
-
-  function renderStepper() {
-    stepper.innerHTML = cols.map((c, i) => {
-      const on = c.dataset.connected === '1';
-      const active = i === cur && !showAll;
-      const cls = active ? 'btn-primary' : (on ? 'btn-outline-success' : 'btn-outline-secondary');
-      const mark = on ? '● ' : (i + 1) + '. ';
-      return `<button type="button" class="btn btn-sm ${cls} mc-step" data-i="${i}">${mark}${c.dataset.label}</button>`;
-    }).join('');
-    stepper.querySelectorAll('.mc-step').forEach(b => b.addEventListener('click', () => { showAll = false; cur = parseInt(b.dataset.i, 10); apply(); }));
-  }
-  function apply() {
-    cols.forEach((c, i) => { c.style.display = (showAll || i === cur) ? '' : 'none'; });
-    const nav = document.getElementById('mcNav');
-    if (nav) nav.style.display = showAll ? 'none' : '';
-    const prog = document.getElementById('mcProgress');
-    if (prog) prog.textContent = `${cur + 1} / ${cols.length} 마켓`;
-    const prev = document.getElementById('mcPrev'); if (prev) prev.disabled = cur <= 0;
-    const next = document.getElementById('mcNext'); if (next) next.disabled = cur >= cols.length - 1;
-    const tgl = document.getElementById('mcToggleAll'); if (tgl) tgl.textContent = showAll ? '한 마켓씩 보기' : '전체 보기';
-    renderStepper();
-  }
-  const prevB = document.getElementById('mcPrev'); if (prevB) prevB.addEventListener('click', () => { if (cur > 0) { cur--; apply(); } });
-  const nextB = document.getElementById('mcNext'); if (nextB) nextB.addEventListener('click', () => { if (cur < cols.length - 1) { cur++; apply(); } });
-  const tglB = document.getElementById('mcToggleAll'); if (tglB) tglB.addEventListener('click', () => { showAll = !showAll; apply(); });
-  apply();
+  const first = mcNavs.find(n => n.dataset.connected !== '1') || mcNavs[0];
+  if (first) mcSelect(first.dataset.market);
 })();
+
+// 원클릭 설정 드로어
+function mcOpenDrawer(market) {
+  document.querySelectorAll('.mc-drawer-form').forEach(f => f.style.display = f.dataset.market === market ? '' : 'none');
+  const nav = document.querySelector('.mc-market-nav[data-market="' + market + '"]');
+  document.getElementById('mcDrawerTitle').textContent = (nav ? nav.dataset.label : market) + ' 계정 설정';
+  document.getElementById('mcDrawer').classList.add('open');
+  document.getElementById('mcDrawer').setAttribute('aria-hidden', 'false');
+  document.getElementById('mcDrawerOverlay').classList.add('open');
+  document.body.classList.add('kgp-drawer-open');
+}
+function mcCloseDrawer() {
+  document.getElementById('mcDrawer').classList.remove('open');
+  document.getElementById('mcDrawer').setAttribute('aria-hidden', 'true');
+  document.getElementById('mcDrawerOverlay').classList.remove('open');
+  document.body.classList.remove('kgp-drawer-open');
+}
+document.querySelectorAll('.mc-open-drawer').forEach(b => b.addEventListener('click', () => mcOpenDrawer(b.dataset.market)));
+document.addEventListener('keydown', e => { if (e.key === 'Escape') mcCloseDrawer(); });
+const mcNew = document.getElementById('mcNewMarket');
+if (mcNew) mcNew.addEventListener('click', () => { const f = mcNavs.find(n => n.dataset.connected !== '1') || mcNavs[0]; if (f) { mcSelect(f.dataset.market); mcOpenDrawer(f.dataset.market); } });
 </script>
 {% endblock %}
