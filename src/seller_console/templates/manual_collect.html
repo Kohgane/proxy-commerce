@@ -73,7 +73,7 @@
       <a href="{{ mk(s.url) }}" target="_blank" rel="noopener noreferrer" title="{{ s.name }} (내 소싱처)"
          class="btn btn-outline-secondary btn-sm oneclick-market my-source-chip">{{ favicon(s.domain) }}{{ s.name }}</a>
       {% endfor %}
-      <a href="/seller/sourcing/my-sources" class="btn btn-sm btn-ghost oneclick-market" title="소싱처 등록 관리">＋ 소싱처 추가</a>
+      <a href="/seller/sourcing#registryDomainInput" class="btn btn-sm btn-ghost oneclick-market" title="소싱처 등록 관리">＋ 소싱처 추가</a>
     </div>
     <div class="alert alert-light border mt-3 mb-0 small d-flex gap-2 align-items-start" role="note">
       <img src="{{ url_for('seller_console.static', filename='favicon.svg') }}" alt="고가브릿지"

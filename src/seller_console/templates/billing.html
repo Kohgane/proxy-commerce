@@ -7,9 +7,16 @@
     · 무료 번역 <strong>{{ free_remaining }}</strong>/{{ free_limit }}회 남음
     {% if account.token_balance %}· 토큰 <strong>{{ account.token_balance }}</strong>{% endif %}</p>
 
+  {% if notice %}
+  <div class="alert alert-success py-2"><i class="bi bi-check-circle"></i> {{ notice }}</div>
+  {% endif %}
+  {% if error %}
+  <div class="alert alert-warning py-2"><i class="bi bi-exclamation-triangle"></i> {{ error }}</div>
+  {% endif %}
+
   {% if not pay_ready %}
   <div class="alert alert-light border small"><i class="bi bi-shield-lock"></i> 결제 연동(토스페이먼츠)이 아직 켜지지 않았어요. Free는 바로 쓰실 수 있고,
-    유료 플랜은 결제가 열리면 한 번에 결제됩니다. <span class="pc-help" data-bs-toggle="tooltip" data-bs-title="Render에 TOSS_CLIENT_KEY/TOSS_SECRET_KEY 설정 시 결제가 활성화됩니다.">?</span></div>
+    유료 플랜은 준비가 끝나는 즉시 결제창이 열립니다.</div>
   {% endif %}
 
   <div class="row g-3 mt-1">
@@ -27,7 +34,11 @@
           {% elif code == 'free' %}
           <button class="btn btn-ghost" onclick="selectPlan('free')">무료로 전환</button>
           {% else %}
-          <button class="btn btn-cta" onclick="selectPlan('{{ code }}')">{{ p.label }} 시작하기</button>
+          {% if pay_ready %}
+          <button class="btn btn-cta" onclick="selectPlan('{{ code }}', true)">{{ p.label }} 시작하기</button>
+          {% else %}
+          <button class="btn btn-outline-secondary" onclick="selectPlan('{{ code }}', false)">{{ p.label }} 준비 중</button>
+          {% endif %}
           {% endif %}
         </div>
       </div>
@@ -39,7 +50,13 @@
 </div>
 
 <script>
-async function selectPlan(plan) {
+const TOSS_CLIENT_KEY = {{ toss_client_key|tojson }};
+
+async function selectPlan(plan, payReady=true) {
+  if (plan !== 'free' && !payReady) {
+    pcToast('결제 준비 중입니다 — 곧 열립니다.', 'warning');
+    return;
+  }
   if (plan !== 'free' && !confirm(plan.toUpperCase() + ' 플랜을 시작할까요?')) return;
   try {
     const resp = await fetch('/seller/billing/select', {
@@ -49,11 +66,35 @@ async function selectPlan(plan) {
     const data = await resp.json();
     if (data.pay_unconfigured) { pcToast(data.error, 'warning'); return; }
     if (!data.ok) { pcToast(data.error || '처리 실패', 'error'); return; }
+    if (data.checkout && data.checkout_payload) {
+      openTossCheckout(data.checkout_payload);
+      return;
+    }
     pcToast(data.message || '완료', 'success');
-    setTimeout(() => location.reload(), 800);
+    setTimeout(() => location.reload(), 500);
   } catch (err) {
-    pcToast('요청 실패: ' + err.message, 'error');
+    pcToast('요청 처리 중 문제가 생겼어요. 잠시 후 다시 시도해주세요.', 'error');
   }
 }
+
+function openTossCheckout(payload) {
+  const clientKey = payload.client_key || TOSS_CLIENT_KEY;
+  if (!clientKey || typeof TossPayments === 'undefined') {
+    pcToast('결제창을 불러오지 못했어요. 잠시 후 다시 시도해주세요.', 'error');
+    return;
+  }
+  const toss = TossPayments(clientKey);
+  toss.requestPayment('카드', {
+    amount: payload.amount,
+    orderId: payload.order_id,
+    orderName: payload.order_name,
+    customerName: payload.customer_name || '고객',
+    successUrl: payload.success_url,
+    failUrl: payload.fail_url,
+  }).catch(() => {
+    pcToast('결제를 시작하지 못했어요. 다시 시도해주세요.', 'error');
+  });
+}
 </script>
+<script src="https://js.tosspayments.com/v1/payment"></script>
 {% endblock %}

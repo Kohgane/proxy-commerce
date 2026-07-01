@@ -332,7 +332,7 @@ class TestSourcingRoutes:
         assert resp.status_code == 400
 
     def test_my_sources_list_api(self, client):
-        resp = client.get("/seller/sourcing/my-sources")
+        resp = client.get("/seller/sourcing/my-sources?format=json")
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["ok"] is True

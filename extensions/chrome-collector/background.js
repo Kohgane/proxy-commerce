@@ -5,6 +5,21 @@
 
 const DEFAULT_SERVER_URL = "https://kohganepercentiii.com";
 
+async function getSettings() {
+  let syncData = {};
+  let localData = {};
+  try {
+    syncData = await chrome.storage.sync.get(["serverUrl", "token"]);
+  } catch (_) {}
+  try {
+    localData = await chrome.storage.local.get(["serverUrl", "token"]);
+  } catch (_) {}
+  return {
+    serverUrl: syncData.serverUrl || localData.serverUrl || DEFAULT_SERVER_URL,
+    token: syncData.token || localData.token || "",
+  };
+}
+
 // 컨텍스트 메뉴 생성
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
@@ -32,9 +47,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // 비동기 응답
   }
   if (msg.action === "getSettings") {
-    chrome.storage.sync.get(["serverUrl", "token"], (data) => {
-      sendResponse(data);
-    });
+    getSettings().then((data) => sendResponse(data));
     return true;
   }
 });
@@ -61,9 +74,9 @@ async function collectFromTab(tab) {
 }
 
 async function handleCollect(meta, sendResponse) {
-  const settings = await chrome.storage.sync.get(["serverUrl", "token"]);
-  const serverUrl = settings.serverUrl || DEFAULT_SERVER_URL;
-  const token = settings.token || "";
+  const settings = await getSettings();
+  const serverUrl = settings.serverUrl;
+  const token = settings.token;
 
   if (!token) {
     const result = { ok: false, error: "토큰이 설정되지 않았습니다. 옵션 페이지에서 토큰을 입력해주세요." };
@@ -122,9 +135,9 @@ async function handleCollect(meta, sendResponse) {
 // content_script가 보낸 상품 카드 메타 배열을 토큰으로 순차 전송한다.
 // background fetch라 페이지 CSP의 영향을 받지 않는다.
 async function handleCollectBulk(items, sendResponse) {
-  const settings = await chrome.storage.sync.get(["serverUrl", "token"]);
-  const serverUrl = settings.serverUrl || DEFAULT_SERVER_URL;
-  const token = settings.token || "";
+  const settings = await getSettings();
+  const serverUrl = settings.serverUrl;
+  const token = settings.token;
   items = Array.isArray(items) ? items : [];
 
   if (!token) {
