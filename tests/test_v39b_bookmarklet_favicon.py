@@ -35,12 +35,14 @@ def test_install_page_favicon_inheritance_links(client):
 
 
 def test_drag_anchor_icon_only_zero_width_title():
-    # v39-B: 북마크바엔 '아이콘만' — title 제로폭(&#8203;)으로 북마크 이름 비움
+    # v40-B: 북마크바엔 '아이콘만' — 앵커 안 텍스트 노드 0(아이콘=CSS background) + title 제로폭(URL 폴백 방지)
     assert 'title="&#8203;"' in TPL
     assert "draggable=\"true\"" in TPL
-    # 보이는 칩 라벨 '고가수집기' + 마크 img는 유지(UI용)
-    assert ">고가수집기</a>" in TPL
-    assert "favicon-48.png?v=179" in TPL          # 앵커 마크
+    # 드래그 앵커는 '고가수집기' 텍스트를 품지 않는다(그게 북마크 title이 되어 글자가 남았던 원인)
+    assert ">고가수집기</a>" not in TPL
+    assert 'id="bookmarkletLink"' in TPL and "></a>" in TPL    # 앵커 내부 비어 있음
+    assert 'aria-label="고가수집기"' in TPL                    # a11y 이름은 aria-label로만
+    assert "favicon-48.png?v=179" in TPL          # 앵커 마크(CSS background)
     assert 'favicon-32.png?v=179' in TPL          # 토스트 마크
     assert ">수집</a>" not in TPL                  # 옛 '수집' 단독 라벨 폐기
 

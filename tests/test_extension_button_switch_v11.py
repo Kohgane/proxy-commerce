@@ -33,7 +33,9 @@ def test_mutual_exclusion_in_refresh():
 
 def test_bookmarklet_button_no_emoji_no_globe():
     bm = Path("src/seller_console/templates/bookmarklet.html").read_text(encoding="utf-8")
-    # v39 B: 북마클릿 드래그 버튼 이름 = '고가수집기'(+브릿지 마크 img) — 이모지 0, 글러브/지구본 0
-    assert ">고가수집기</a>" in bm
+    # v40 B: 드래그 앵커는 '글자 0'(텍스트 노드 없음·아이콘 CSS background). '고가수집기' 라벨은 앵커 밖 형제.
+    assert "></a>" in bm                         # 앵커 내부 텍스트 노드 0
+    assert ">고가수집기</a>" not in bm            # 옛 텍스트-인-앵커 폐기
+    assert 'aria-label="고가수집기"' in bm        # a11y 이름은 aria-label로만
     assert "🧤" not in bm and "globe" not in bm.lower()
     assert "filename='favicon.svg'" not in bm and 'filename="favicon.svg"' not in bm
