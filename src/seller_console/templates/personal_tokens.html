@@ -19,6 +19,7 @@
         <div>
           <h2 class="h6 mb-1"><i class="bi bi-fingerprint"></i> 패스키 (지문·Face·PIN 로그인)</h2>
           <p class="small text-muted mb-0">비밀번호 대신 이 기기에 저장된 패스키로 로그인해요. 피싱·유출에 강하고, 다음부턴 지문·얼굴·PIN만으로 들어옵니다. <span id="passkeyUnsupported" class="text-warning" style="display:none;">— 이 기기는 패스키를 지원하지 않아 구글·이메일을 쓰세요.</span></p>
+          <p class="small mb-0 mt-1" style="color:var(--teal,#119a8e);"><i class="bi bi-shield-lock"></i> <strong>개인정보 보호:</strong> 지문·얼굴 같은 생체정보는 <strong>이 기기에만</strong> 있고 서버로 전송되지 않아요. 서버엔 <strong>공개키</strong>만 저장됩니다(비밀번호·생체정보 평문 저장 0).</p>
         </div>
         <button type="button" id="passkeyRegBtn" class="btn btn-dark btn-sm" onclick="kgpPasskeyRegister()" style="display:none;">
           <i class="bi bi-plus-lg"></i> 이 기기에 패스키 등록
