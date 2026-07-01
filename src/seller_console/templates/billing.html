@@ -79,8 +79,12 @@ async function selectPlan(plan, payReady=true) {
 
 function openTossCheckout(payload) {
   const clientKey = payload.client_key || TOSS_CLIENT_KEY;
-  if (!clientKey || typeof TossPayments === 'undefined') {
-    pcToast('결제창을 불러오지 못했어요. 잠시 후 다시 시도해주세요.', 'error');
+  if (!clientKey) {
+    pcToast('결제 설정이 올바르지 않아 결제를 시작할 수 없어요. 잠시 후 다시 시도해주세요.', 'error');
+    return;
+  }
+  if (typeof TossPayments === 'undefined') {
+    pcToast('결제 시스템 로딩 중 문제가 생겼어요. 잠시 후 다시 시도해주세요.', 'error');
     return;
   }
   const toss = TossPayments(clientKey);
