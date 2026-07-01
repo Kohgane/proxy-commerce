@@ -1,0 +1,1427 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>마켓 연결 | gogabridj</title>
+  <meta property="og:site_name" content="gogabridj">
+  <meta property="og:title" content="gogabridj">
+  <link rel="icon" type="image/svg+xml" href="/seller/static/favicon.svg?v=179">
+  <link rel="icon" type="image/x-icon" href="/seller/static/favicon.ico?v=179">
+  <link rel="icon" type="image/png" sizes="32x32" href="/seller/static/favicon-32.png?v=179">
+  <link rel="icon" type="image/png" sizes="16x16" href="/seller/static/favicon-16.png?v=179">
+  
+  <link rel="icon" type="image/png" sizes="48x48" href="/seller/static/favicon-48.png?v=179">
+  <link rel="shortcut icon" href="/seller/static/favicon.ico?v=179">
+  <link rel="apple-touch-icon" href="/seller/static/apple-touch-icon.png?v=179">
+  <link rel="manifest" href="/seller/static/manifest.webmanifest?v=179">
+  <meta name="theme-color" content="#f8fafc">
+  
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="고가브릿지">
+  
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/seller/static/seller.css">
+  <link rel="stylesheet" href="/seller/static/console.css">
+</head>
+<body class="console-body">
+
+
+
+
+
+
+
+<div class="mobile-topbar d-flex align-items-center justify-content-between px-3 d-md-none">
+  <a href="/seller/" class="text-decoration-none fw-bold mobile-topbar-brand"><i class="bi bi-shop"></i> 셀러 콘솔</a>
+  <div class="d-flex align-items-center gap-1">
+    <button class="mobile-icon-btn" aria-label="상품 검색" onclick="toggleMobileSearch()"><i class="bi bi-search"></i></button>
+    <a href="/seller/me" class="mobile-account-avatar" aria-label="내 계정">나</a>
+    <button class="mobile-icon-btn" id="sidebarToggle" aria-label="메뉴 열기" onclick="toggleSidebar()"><i class="bi bi-list"></i></button>
+  </div>
+</div>
+<div class="mobile-search d-md-none" id="mobileSearch" hidden>
+  <form action="/seller/catalog" method="get" role="search" class="px-3 pb-2">
+    <div class="input-group">
+      <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+      <input name="search" type="search" class="form-control" placeholder="상품 검색 (상품명/SKU/상품ID)" aria-label="상품 검색" autocomplete="off">
+    </div>
+  </form>
+</div>
+<div class="sidebar-overlay d-md-none" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+<div class="console-shell" data-testid="seller-console-shell">
+  <nav class="sidebar console-sidebar d-flex flex-column p-3" id="sidebarDrawer" data-testid="seller-sidebar">
+    <a href="/seller/" class="console-brand text-decoration-none mb-3">
+      <div class="small text-secondary">고가브릿지</div>
+      <strong><i class="bi bi-shop"></i> 셀러 콘솔 · gogabridj</strong>
+    </a>
+
+    
+    
+
+    
+    <div class="btn-group btn-group-sm w-100 mb-3 d-md-none" role="group" aria-label="언어">
+      <a href="/i18n/set?lang=ko&next=/seller/markets/connect%3F"
+         class="btn btn-primary">한국어</a>
+      <a href="/i18n/set?lang=en&next=/seller/markets/connect%3F"
+         class="btn btn-outline-secondary">EN</a>
+    </div>
+
+    <div class="flex-grow-1">
+    <!-- 핵심 메뉴(항상 노출) — 비기너 과부하 방지(v5). 나머지는 '고급 기능'으로 접음. -->
+    <ul class="nav flex-column gap-1">
+      <li><a class="console-nav-link " href="/seller/dashboard"><i class="bi bi-speedometer2"></i><span>홈(대시보드)</span></a></li>
+      <li><a class="console-nav-link " href="/seller/sourcing"><i class="bi bi-stars"></i><span>AI 소싱·등록</span></a></li>
+      <li><a class="console-nav-link " href="/seller/manual-collect"><i class="bi bi-search"></i><span>상품 수집</span></a></li>
+      <li><a class="console-nav-link " href="/seller/collect/history"><i class="bi bi-journal-text"></i><span>수집한 상품</span></a></li>
+      <li><a class="console-nav-link " href="/seller/orders"><i class="bi bi-receipt"></i><span>주문 관리</span></a></li>
+      <li><a class="console-nav-link " href="/seller/markets"><i class="bi bi-shop"></i><span>마켓 연동</span></a></li>
+      <li><a class="console-nav-link " href="/seller/guide/business"><i class="bi bi-question-circle"></i><span>도움말·가이드</span></a></li>
+    </ul>
+
+    <!-- 고급 기능(접이식, 기본 닫힘 — 현재 위치가 안에 있으면 JS가 자동으로 펼침) -->
+    <details class="adv-nav" id="advNav">
+      <summary class="console-nav-adv-summary"><i class="bi bi-sliders2"></i> 고급 기능 더보기</summary>
+    <ul class="nav flex-column gap-1 mt-1">
+      <li class="console-nav-group-title">AI 소싱·등록</li>
+      <li><a class="console-nav-link " href="/seller/listing/ai-create"><i class="bi bi-robot"></i><span>AI 상품등록(자동 생성)</span></a></li>
+      <li><a class="console-nav-link " href="/seller/keywords"><i class="bi bi-graph-up"></i><span>키워드 트렌드</span></a></li>
+      <li><a class="console-nav-link " href="/seller/sourcing/my-sources"><i class="bi bi-shop-window"></i><span>소싱처 등록(My Sources)</span></a></li>
+      <li><a class="console-nav-link " href="/seller/sourcing/watches"><i class="bi bi-binoculars"></i><span>소싱 관심목록</span></a></li>
+      <li><a class="console-nav-link " href="/seller/sourcing/candidates"><i class="bi bi-inboxes"></i><span>수집 대기목록</span></a></li>
+      <li><a class="console-nav-link " href="/seller/sourcing/monitor"><i class="bi bi-broadcast"></i><span>소싱처 변동 알림</span></a></li>
+
+      <li class="console-nav-group-title">내 상품</li>
+      <li><a class="console-nav-link " href="/seller/catalog"><i class="bi bi-box-seam"></i><span>내 상품(카탈로그)</span></a></li>
+      <li><a class="console-nav-link " href="/seller/listing/history"><i class="bi bi-clock-history"></i><span>마켓 등록 이력</span></a></li>
+      <li><a class="console-nav-link " href="/seller/listing/word-rules"><i class="bi bi-slash-circle"></i><span>금지어·단어 바꾸기</span></a></li>
+      <li><a class="console-nav-link " href="/seller/media/queue"><i class="bi bi-image"></i><span>이미지 처리 대기</span></a></li>
+
+      <li class="console-nav-group-title">가격</li>
+      <li><a class="console-nav-link " href="/seller/margin"><i class="bi bi-calculator"></i><span>마진 계산기</span></a></li>
+      <li><a class="console-nav-link " href="/seller/pricing/rules"><i class="bi bi-sliders"></i><span>가격 자동 규칙</span></a></li>
+      <li><a class="console-nav-link " href="/seller/pricing/competitors"><i class="bi bi-people"></i><span>경쟁사 가격</span></a></li>
+      <li><a class="console-nav-link " href="/seller/pricing/fx-impact"><i class="bi bi-currency-exchange"></i><span>환율 반영 보기</span></a></li>
+
+      <li class="console-nav-group-title">마켓</li>
+      <li><a class="console-nav-link active" href="/seller/markets/connect"><i class="bi bi-plug"></i><span>마켓 연동(API 키 입력)</span></a></li>
+      <li><a class="console-nav-link " href="/seller/markets/guide"><i class="bi bi-journal-text"></i><span>API 키 발급 방법</span></a></li>
+
+      <li class="console-nav-group-title">주문·CS</li>
+      <li><a class="console-nav-link " href="/seller/orders/auto"><i class="bi bi-box2-heart"></i><span>주문 자동 처리</span></a></li>
+      <li><a class="console-nav-link " href="/seller/customs/pccc"><i class="bi bi-shield-check"></i><span>통관고유부호(PCCC) 조회</span></a></li>
+      <li><a class="console-nav-link " href="/seller/cs/messaging"><i class="bi bi-chat-dots"></i><span>고객 메시지</span></a></li>
+      <li><a class="console-nav-link " href="/seller/cs/autoreply"><i class="bi bi-magic"></i><span>자동 답변</span></a></li>
+      <li><a class="console-nav-link " href="/seller/cs/inbox"><i class="bi bi-inbox"></i><span>문의 통합함</span></a></li>
+      <li><a class="console-nav-link " href="/seller/notifications"><i class="bi bi-bell"></i><span>알림 설정</span></a></li>
+
+      <li class="console-nav-group-title">분석·정산</li>
+      <li><a class="console-nav-link " href="/seller/analytics"><i class="bi bi-graph-up-arrow"></i><span>판매 분석</span></a></li>
+      <li><a class="console-nav-link " href="/seller/settlement"><i class="bi bi-cash-coin"></i><span>장부·정산</span></a></li>
+      <li><a class="console-nav-link " href="/seller/ads/campaigns"><i class="bi bi-megaphone"></i><span>광고 캠페인</span></a></li>
+      <li><a class="console-nav-link " href="/seller/ads/keywords"><i class="bi bi-bullseye"></i><span>광고 키워드</span></a></li>
+      <li><a class="console-nav-link " href="/seller/marketing/campaigns"><i class="bi bi-ticket-perforated"></i><span>할인 캠페인</span></a></li>
+      <li><a class="console-nav-link " href="/seller/inventory/reorder"><i class="bi bi-arrow-repeat"></i><span>재고 자동주문</span></a></li>
+
+      <li class="console-nav-group-title">설정</li>
+      
+      <li><a class="console-nav-link " href="/seller/me"><i class="bi bi-gear"></i><span>내 정보·설정</span></a></li>
+      <li><a class="console-nav-link " href="/seller/me/notifications"><i class="bi bi-broadcast"></i><span>푸시 알림 설정</span></a></li>
+      <li><a class="console-nav-link " href="/seller/api/tokens"><i class="bi bi-shield-lock"></i><span>API 토큰</span></a></li>
+      <li><a class="console-nav-link " href="/seller/bookmarklet"><i class="bi bi-bookmark"></i><span>북마클릿(고급)</span></a></li>
+      <li><a class="console-nav-link " href="/seller/discovery"><i class="bi bi-compass"></i><span>트렌드 발굴</span></a></li>
+      <li><a class="console-nav-link " href="/seller/billing"><i class="bi bi-credit-card"></i><span>요금제·충전</span></a></li>
+      <li><a class="console-nav-link " href="/seller/subscriptions"><i class="bi bi-arrow-repeat"></i><span>정기구독 관리</span></a></li>
+      <li><a class="console-nav-link " href="/seller/me/subscriptions"><i class="bi bi-person-check"></i><span>내 구독</span></a></li>
+      <li><a class="console-nav-link " href="/seller/wholesale/tiers"><i class="bi bi-building"></i><span>도매 등급</span></a></li>
+      <li><a class="console-nav-link " href="/seller/wholesale/applications"><i class="bi bi-ui-checks"></i><span>B2B 신청함</span></a></li>
+      <li><a class="console-nav-link " href="/seller/about"><i class="bi bi-info-circle"></i><span>고가브릿지란?(소개)</span></a></li>
+    </ul>
+    </details>
+    </div>
+
+    
+    <button type="button" id="pwaInstallBtn" class="btn btn-cta btn-sm w-100 mt-3 d-none" onclick="pwaInstall()">
+      <i class="bi bi-phone"></i> 홈 화면에 앱 설치
+    </button>
+    <div id="pwaIosHint" class="small text-secondary mt-2 d-none">
+      <i class="bi bi-phone"></i> 앱처럼 쓰기: <strong>공유</strong> → <strong>홈 화면에 추가</strong>
+    </div>
+
+    <div class="small text-secondary mt-3 pt-2 border-top">
+      
+      <a href="/privacy" class="text-decoration-none text-secondary">개인정보처리방침</a>
+      <span class="mx-1">·</span>
+      <a href="/terms" class="text-decoration-none text-secondary">이용약관</a>
+    </div>
+  </nav>
+
+  <div class="console-main">
+    <header class="console-topbar">
+      <div class="d-flex align-items-center gap-2">
+        <a href="/seller/" class="console-topbar-brand text-decoration-none"><strong>gogabridj</strong></a>
+        
+      </div>
+
+      <form class="console-search-wrap" action="/seller/catalog" method="get" role="search">
+        <label for="consoleGlobalSearch" class="visually-hidden">상품 검색</label>
+        <div class="input-group input-group-sm">
+          <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+          <input id="consoleGlobalSearch" name="search" type="search" class="form-control" placeholder="상품 검색 (상품명/SKU/상품ID)" aria-label="상품 검색">
+        </div>
+      </form>
+
+      <div class="d-flex align-items-center gap-2">
+        
+        
+        <a href="/lane" class="btn btn-sm btn-outline-secondary" title="운영 방식 전환 (수입형/수출형)">
+          수입형 ▾
+        </a>
+        
+        
+        <div class="btn-group btn-group-sm" role="group" aria-label="언어">
+          <a href="/i18n/set?lang=ko&next=/seller/markets/connect%3F"
+             class="btn btn-primary">한국어</a>
+          <a href="/i18n/set?lang=en&next=/seller/markets/connect%3F"
+             class="btn btn-outline-secondary">EN</a>
+        </div>
+        
+        <div class="dropdown">
+          <button class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+            사용자
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item" href="/seller/me"><i class="bi bi-person"></i> 마이페이지</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li>
+              <form method="post" action="/auth/logout" class="px-2">
+                <button type="submit" class="btn btn-outline-secondary btn-sm w-100"><i class="bi bi-box-arrow-right"></i> 로그아웃</button>
+              </form>
+            </li>
+          </ul>
+        </div>
+        
+      </div>
+    </header>
+
+    <main class="console-content">
+      
+<style>
+/* v40-C: 퍼센티식 2열 레이아웃 ─ 토큰 단일소스 */
+.mc-layout{display:flex;gap:var(--space-4,24px);align-items:flex-start;}
+.mc-sidebar{
+  flex:0 0 200px;width:200px;
+  background:var(--hanji,#F5EFE3);
+  border:1px solid var(--line,#E6DECB);
+  border-radius:var(--radius-md,12px);
+  overflow:hidden;
+  position:sticky;top:76px;
+}
+.mc-sidebar-head{
+  padding:10px 14px 6px;
+  font-size:.7rem;
+  font-weight:700;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:var(--muted,#8A8275);
+  border-bottom:1px solid var(--line,#E6DECB);
+}
+.mc-sidebar-item{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  padding:9px 14px;
+  cursor:pointer;
+  font-size:.85rem;
+  color:var(--ink,#1A1714);
+  border-bottom:1px solid var(--line,#E6DECB);
+  transition:background .15s;
+}
+.mc-sidebar-item:last-child{border-bottom:none;}
+.mc-sidebar-item:hover{background:var(--paper,#FBF8F1);}
+.mc-sidebar-item.active{
+  background:var(--ink,#1A1714);
+  color:#fff;
+}
+.mc-sidebar-item.active .badge{background:rgba(255,255,255,.2)!important;color:#fff!important;}
+.mc-sidebar-market-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.mc-detail{flex:1;min-width:0;}
+@media(max-width:767.98px){
+  .mc-layout{flex-direction:column;}
+  .mc-sidebar{position:static;width:100%;flex:none;display:flex;flex-direction:row;flex-wrap:wrap;border-radius:var(--radius-md,12px);}
+  .mc-sidebar-head{flex:0 0 100%;border-bottom:1px solid var(--line,#E6DECB);}
+  .mc-sidebar-item{flex:0 0 calc(50% - 1px);border-bottom:none;border-right:1px solid var(--line,#E6DECB);}
+}
+</style>
+<div class="mc-layout">
+<!-- 좌 사이드바: 마켓 목록 (페이지 이탈 0 — JS 전환) -->
+<aside class="mc-sidebar">
+  <div class="mc-sidebar-head">마켓 목록</div>
+  
+  <div class="mc-sidebar-item active"
+       data-mc-select="coupang" role="button" tabindex="0"
+       aria-label="쿠팡 선택">
+    <span class="mc-sidebar-market-name">쿠팡</span>
+    <span class="badge rounded-pill text-bg-secondary"
+          data-role="status-badge">
+      미설정
+    </span>
+  </div>
+  
+  <div class="mc-sidebar-item"
+       data-mc-select="smartstore" role="button" tabindex="0"
+       aria-label="스마트스토어 선택">
+    <span class="mc-sidebar-market-name">스마트스토어</span>
+    <span class="badge rounded-pill text-bg-secondary"
+          data-role="status-badge">
+      미설정
+    </span>
+  </div>
+  
+  <div class="mc-sidebar-item"
+       data-mc-select="elevenst" role="button" tabindex="0"
+       aria-label="11번가 선택">
+    <span class="mc-sidebar-market-name">11번가</span>
+    <span class="badge rounded-pill text-bg-secondary"
+          data-role="status-badge">
+      미설정
+    </span>
+  </div>
+  
+  <div class="mc-sidebar-item"
+       data-mc-select="shopify" role="button" tabindex="0"
+       aria-label="Shopify 선택">
+    <span class="mc-sidebar-market-name">Shopify</span>
+    <span class="badge rounded-pill text-bg-secondary"
+          data-role="status-badge">
+      미설정
+    </span>
+  </div>
+  
+  <div class="mc-sidebar-item"
+       data-mc-select="woocommerce" role="button" tabindex="0"
+       aria-label="WooCommerce 선택">
+    <span class="mc-sidebar-market-name">WooCommerce</span>
+    <span class="badge rounded-pill text-bg-secondary"
+          data-role="status-badge">
+      미설정
+    </span>
+  </div>
+  
+</aside>
+<!-- 우 상세 패널 -->
+<section class="mc-detail mb-4">
+  <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+    <div>
+      
+      <h1 class="h4 mb-1">마켓 연결</h1>
+      <p class="text-muted mb-0">내 마켓 API 키를 직접 입력하고, 저장 전에 연결을 테스트할 수 있어요.</p>
+      
+    </div>
+    <div class="d-flex gap-2">
+      
+      <a href="/seller/markets/guide" class="btn btn-outline-primary btn-sm"><i class="bi bi-book"></i> 발급 가이드</a>
+      <a href="/seller/markets" class="btn btn-outline-secondary btn-sm">← 마켓 현황으로</a>
+    </div>
+  </div>
+
+  <div class="alert alert-light border small d-flex gap-2 align-items-start mb-3" role="note">
+    <span style="font-size:1.1rem"><i class="bi bi-key"></i></span>
+    <div>여기에 넣는 건 <strong>‘내 마켓 키’</strong>(쿠팡·네이버 등에서 발급받은 본인 API 키)예요.
+      서버 환경변수(<code>MARKET_CRED_ENC_KEY</code> 같은 인프라 키)와는 다릅니다 —
+      <strong>그건 운영자가 관리하고, 여기엔 입력하지 않아도 됩니다.</strong></div>
+  </div>
+
+  <!-- 마켓 칩 전환은 좌 사이드바(JS)로 대체됨 -->
+  
+
+  <div class="alert alert-light border d-flex gap-2 align-items-center mb-4" role="note">
+    <i class="bi bi-shield-lock text-primary"></i>
+    <div class="small mb-0">
+      <i class="bi bi-shield-lock"></i> 입력한 키는 <strong>안전하게 암호화</strong>되어 보관돼요.
+      <span class="pc-help" tabindex="0" role="button" aria-label="자세히"
+            data-bs-toggle="tooltip" data-bs-html="true"
+            data-bs-title="서버에 <code>MARKET_CRED_ENC_KEY</code> 설정 시 키를 암호화 저장합니다. ‘연결 테스트’는 실제 마켓에 읽기/안전한 빈 쓰기만 시도하며 상품을 등록하지 않습니다.">?</span>
+    </div>
+  </div>
+
+  
+
+  
+  <!-- v14: 한 마켓씩 순차 진행 스테퍼(연결되면 자동 체크). '전체 보기'로 한눈에도 가능. -->
+  <div class="card console-card mb-3" id="mcStepperCard">
+    <div class="card-body">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+        <div class="fw-semibold">한 마켓씩 순서대로 연결하기</div>
+        <button type="button" class="btn btn-ghost btn-sm" id="mcToggleAll">전체 보기</button>
+      </div>
+      <div id="mcStepper" class="d-flex flex-wrap gap-2"></div>
+      <div class="small text-muted mt-2">연결을 마치면 <i class="bi bi-check-lg"></i> 로 자동 체크돼요. 천천히 하나씩 하면 됩니다.</div>
+    </div>
+  </div>
+  
+
+  <div class="row g-3" id="mcMarketRow">
+    
+    <div class="col-12 col-lg-6 mc-market-col" data-market="coupang" data-label="쿠팡" data-connected="0">
+      <div class="card console-card h-100" data-market="coupang">
+        <div class="card-body">
+          <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+            <h2 class="h6 mb-0">쿠팡</h2>
+            <span class="badge rounded-pill text-bg-secondary"
+                  data-role="status-badge">
+              <i class="bi bi-dash-circle"></i> 미연결
+            </span>
+          </div>
+          <div class="small text-muted mb-2">
+            <strong>연결 3단계</strong> — ① 키 발급받기 · ② 아래에 붙여넣기 · ③ 연결 테스트. <em>모두 이 화면에서 진행돼요.</em>
+          </div>
+          
+          <div class="fw-semibold small mb-1">① 키 발급받기</div>
+          
+          <a href="https://wing.coupang.com" target="_blank" rel="noopener noreferrer" class="btn btn-cta btn-sm w-100 mb-1">
+            <i class="bi bi-box-arrow-up-right"></i> 쿠팡 윙(Wing) 열기
+          </a>
+          <div class="small text-muted mb-3">↑ 이 버튼만 마켓 사이트가 새 탭으로 열려요(로그인 필요). 키를 받은 뒤 이 화면으로 돌아오세요.</div>
+          
+
+          <div class="fw-semibold small mb-1">② 받은 키 붙여넣기</div>
+          <form class="market-connect-form" data-market="coupang" autocomplete="off">
+            
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                Access Key
+                <span class="text-danger">*</span>
+                
+              </label>
+              
+              <input type="password"
+                class="form-control form-control-sm"
+                name="COUPANG_ACCESS_KEY"
+                data-secret="1"
+                placeholder="COUPANG_ACCESS_KEY"
+                value="">
+              
+              
+            </div>
+            
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                Secret Key
+                <span class="text-danger">*</span>
+                
+              </label>
+              
+              <input type="password"
+                class="form-control form-control-sm"
+                name="COUPANG_SECRET_KEY"
+                data-secret="1"
+                placeholder="COUPANG_SECRET_KEY"
+                value="">
+              
+              
+            </div>
+            
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                Vendor ID
+                <span class="text-danger">*</span>
+                
+              </label>
+              
+              <input type="text"
+                class="form-control form-control-sm"
+                name="COUPANG_VENDOR_ID"
+                data-secret="0"
+                placeholder="COUPANG_VENDOR_ID"
+                value="">
+              
+              
+            </div>
+            
+            
+            <div class="mt-3 mb-2 pt-2 border-top">
+              <div class="fw-semibold small text-primary d-flex align-items-center gap-2">
+                📦 출고지·반품지 정보 — 상품 등록에 필수 (한 번만 입력하면 모든 등록에 자동 사용)
+                <span class="badge text-bg-light fw-normal">배송프로필</span>
+              </div>
+              <div class="small text-muted">이 항목은 <strong>쿠팡</strong>에만 필요해요. (다른 마켓엔 없어요.)</div>
+            </div>
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                Wing 로그인 ID
+                
+                
+              </label>
+              
+              <input type="text"
+                class="form-control form-control-sm"
+                name="COUPANG_VENDOR_USER_ID"
+                data-secret="0"
+                placeholder="COUPANG_VENDOR_USER_ID"
+                value="">
+              
+              <div class="form-text small text-muted mt-1">쿠팡 윙에 로그인할 때 쓰는 아이디(이메일/ID). Vendor ID(A+숫자)와 다릅니다.</div>
+            </div>
+            
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                출고지 코드
+                
+                
+              </label>
+              
+              <input type="text"
+                class="form-control form-control-sm"
+                name="COUPANG_OUTBOUND_SHIPPING_PLACE_CODE"
+                data-secret="0"
+                placeholder="COUPANG_OUTBOUND_SHIPPING_PLACE_CODE"
+                value="">
+              
+              <div class="form-text small text-muted mt-1">쿠팡 윙 → 판매자정보 → 배송정보(출고지/반품지) → ‘출고지’의 코드(숫자). 예: 7437895</div>
+            </div>
+            
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                반품지센터코드
+                
+                
+              </label>
+              
+              <input type="text"
+                class="form-control form-control-sm"
+                name="COUPANG_RETURN_CENTER_CODE"
+                data-secret="0"
+                placeholder="COUPANG_RETURN_CENTER_CODE"
+                value="">
+              
+              <div class="form-text small text-muted mt-1">쿠팡 윙 → 배송정보 → ‘반품지’의 센터코드(숫자). 예: 1000274592</div>
+            </div>
+            
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                반품지 우편번호
+                
+                
+              </label>
+              
+              <input type="text"
+                class="form-control form-control-sm"
+                name="COUPANG_RETURN_ZIP_CODE"
+                data-secret="0"
+                placeholder="COUPANG_RETURN_ZIP_CODE"
+                value="">
+              
+              <div class="form-text small text-muted mt-1">반품지 주소의 우편번호 5자리. 예: 06236</div>
+            </div>
+            
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                반품지 주소
+                
+                
+              </label>
+              
+              <input type="text"
+                class="form-control form-control-sm"
+                name="COUPANG_RETURN_ADDRESS"
+                data-secret="0"
+                placeholder="COUPANG_RETURN_ADDRESS"
+                value="">
+              
+              <div class="form-text small text-muted mt-1">반품을 받을 기본주소. 예: 서울특별시 강남구 테헤란로 123</div>
+            </div>
+            
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                반품지 상세주소 (선택)
+                
+                
+              </label>
+              
+              <input type="text"
+                class="form-control form-control-sm"
+                name="COUPANG_RETURN_ADDRESS_DETAIL"
+                data-secret="0"
+                placeholder="COUPANG_RETURN_ADDRESS_DETAIL"
+                value="">
+              
+              <div class="form-text small text-muted mt-1">동·호수 등 상세주소. 예: 4층 101호</div>
+            </div>
+            
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                반품지 담당자명
+                
+                
+              </label>
+              
+              <input type="text"
+                class="form-control form-control-sm"
+                name="COUPANG_RETURN_CHARGE_NAME"
+                data-secret="0"
+                placeholder="COUPANG_RETURN_CHARGE_NAME"
+                value="">
+              
+              <div class="form-text small text-muted mt-1">반품을 받는 담당자명 또는 상호. 예: 코가네CS</div>
+            </div>
+            
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                반품지 연락처
+                
+                
+              </label>
+              
+              <input type="text"
+                class="form-control form-control-sm"
+                name="COUPANG_COMPANY_CONTACT_NUMBER"
+                data-secret="0"
+                placeholder="COUPANG_COMPANY_CONTACT_NUMBER"
+                value="">
+              
+              <div class="form-text small text-muted mt-1">반품 문의 전화번호. 예: 02-123-4567</div>
+            </div>
+            
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                반품배송비 (선택, 기본 5000원)
+                
+                
+              </label>
+              
+              <input type="text"
+                class="form-control form-control-sm"
+                name="COUPANG_RETURN_CHARGE"
+                data-secret="0"
+                placeholder="COUPANG_RETURN_CHARGE"
+                value="">
+              
+              <div class="form-text small text-muted mt-1">편도 반품배송비(원). 비워두면 5000원으로 자동 설정됩니다.</div>
+            </div>
+            
+
+            <div class="fw-semibold small mt-3 mb-1">③ 저장하고 연결 테스트</div>
+            <div class="d-flex flex-wrap gap-2">
+              <button type="submit" class="btn btn-primary btn-sm" data-action="save">
+                <i class="bi bi-save"></i> 저장
+              </button>
+              <button type="button" class="btn btn-outline-primary btn-sm" data-action="test">
+                <i class="bi bi-plug"></i> 연결 테스트
+              </button>
+              
+            </div>
+            <div class="small mt-2 d-none" data-role="test-result"></div>
+          </form>
+        </div>
+      </div>
+    </div>
+    
+    <div class="col-12 col-lg-6 mc-market-col" data-market="smartstore" data-label="스마트스토어" data-connected="0">
+      <div class="card console-card h-100" data-market="smartstore">
+        <div class="card-body">
+          <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+            <h2 class="h6 mb-0">스마트스토어</h2>
+            <span class="badge rounded-pill text-bg-secondary"
+                  data-role="status-badge">
+              <i class="bi bi-dash-circle"></i> 미연결
+            </span>
+          </div>
+          <div class="small text-muted mb-2">
+            <strong>연결 3단계</strong> — ① 키 발급받기 · ② 아래에 붙여넣기 · ③ 연결 테스트. <em>모두 이 화면에서 진행돼요.</em>
+          </div>
+          
+          <div class="fw-semibold small mb-1">① 키 발급받기</div>
+          
+          <a href="https://apicenter.commerce.naver.com/ko/basic/main" target="_blank" rel="noopener noreferrer" class="btn btn-cta btn-sm w-100 mb-1">
+            <i class="bi bi-box-arrow-up-right"></i> 네이버 커머스 API센터 열기
+          </a>
+          <div class="small text-muted mb-3">↑ 이 버튼만 마켓 사이트가 새 탭으로 열려요(로그인 필요). 키를 받은 뒤 이 화면으로 돌아오세요.</div>
+          
+
+          <div class="fw-semibold small mb-1">② 받은 키 붙여넣기</div>
+          <form class="market-connect-form" data-market="smartstore" autocomplete="off">
+            
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                Client ID
+                <span class="text-danger">*</span>
+                
+              </label>
+              
+              <input type="text"
+                class="form-control form-control-sm"
+                name="NAVER_CLIENT_ID"
+                data-secret="0"
+                placeholder="NAVER_CLIENT_ID"
+                value="">
+              
+              
+            </div>
+            
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                Client Secret
+                <span class="text-danger">*</span>
+                
+              </label>
+              
+              <input type="password"
+                class="form-control form-control-sm"
+                name="NAVER_CLIENT_SECRET"
+                data-secret="1"
+                placeholder="NAVER_CLIENT_SECRET"
+                value="">
+              
+              
+            </div>
+            
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                Channel ID (선택)
+                
+                
+              </label>
+              
+              <input type="text"
+                class="form-control form-control-sm"
+                name="NAVER_CHANNEL_ID"
+                data-secret="0"
+                placeholder="NAVER_CHANNEL_ID"
+                value="">
+              
+              
+            </div>
+            
+
+            <div class="fw-semibold small mt-3 mb-1">③ 저장하고 연결 테스트</div>
+            <div class="d-flex flex-wrap gap-2">
+              <button type="submit" class="btn btn-primary btn-sm" data-action="save">
+                <i class="bi bi-save"></i> 저장
+              </button>
+              <button type="button" class="btn btn-outline-primary btn-sm" data-action="test">
+                <i class="bi bi-plug"></i> 연결 테스트
+              </button>
+              
+            </div>
+            <div class="small mt-2 d-none" data-role="test-result"></div>
+          </form>
+        </div>
+      </div>
+    </div>
+    
+    <div class="col-12 col-lg-6 mc-market-col" data-market="elevenst" data-label="11번가" data-connected="0">
+      <div class="card console-card h-100" data-market="elevenst">
+        <div class="card-body">
+          <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+            <h2 class="h6 mb-0">11번가</h2>
+            <span class="badge rounded-pill text-bg-secondary"
+                  data-role="status-badge">
+              <i class="bi bi-dash-circle"></i> 미연결
+            </span>
+          </div>
+          <div class="small text-muted mb-2">
+            <strong>연결 3단계</strong> — ① 키 발급받기 · ② 아래에 붙여넣기 · ③ 연결 테스트. <em>모두 이 화면에서 진행돼요.</em>
+          </div>
+          
+          <div class="fw-semibold small mb-1">① 키 발급받기</div>
+          
+          <a href="https://openapi.11st.co.kr/" target="_blank" rel="noopener noreferrer" class="btn btn-cta btn-sm w-100 mb-1">
+            <i class="bi bi-box-arrow-up-right"></i> 11번가 셀러오피스 열기
+          </a>
+          <div class="small text-muted mb-3">↑ 이 버튼만 마켓 사이트가 새 탭으로 열려요(로그인 필요). 키를 받은 뒤 이 화면으로 돌아오세요.</div>
+          
+
+          <div class="fw-semibold small mb-1">② 받은 키 붙여넣기</div>
+          <form class="market-connect-form" data-market="elevenst" autocomplete="off">
+            
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                API Key
+                <span class="text-danger">*</span>
+                
+              </label>
+              
+              <input type="password"
+                class="form-control form-control-sm"
+                name="ELEVENST_API_KEY"
+                data-secret="1"
+                placeholder="ELEVENST_API_KEY"
+                value="">
+              
+              
+            </div>
+            
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                기본 카테고리 번호 (선택)
+                
+                
+              </label>
+              
+              <input type="text"
+                class="form-control form-control-sm"
+                name="ELEVENST_DISP_CTGR_NO"
+                data-secret="0"
+                placeholder="ELEVENST_DISP_CTGR_NO"
+                value="">
+              
+              
+            </div>
+            
+
+            <div class="fw-semibold small mt-3 mb-1">③ 저장하고 연결 테스트</div>
+            <div class="d-flex flex-wrap gap-2">
+              <button type="submit" class="btn btn-primary btn-sm" data-action="save">
+                <i class="bi bi-save"></i> 저장
+              </button>
+              <button type="button" class="btn btn-outline-primary btn-sm" data-action="test">
+                <i class="bi bi-plug"></i> 연결 테스트
+              </button>
+              
+            </div>
+            <div class="small mt-2 d-none" data-role="test-result"></div>
+          </form>
+        </div>
+      </div>
+    </div>
+    
+    <div class="col-12 col-lg-6 mc-market-col" data-market="shopify" data-label="Shopify" data-connected="0">
+      <div class="card console-card h-100" data-market="shopify">
+        <div class="card-body">
+          <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+            <h2 class="h6 mb-0">Shopify</h2>
+            <span class="badge rounded-pill text-bg-secondary"
+                  data-role="status-badge">
+              <i class="bi bi-dash-circle"></i> 미연결
+            </span>
+          </div>
+          <div class="small text-muted mb-2">
+            <strong>연결 3단계</strong> — ① 키 발급받기 · ② 아래에 붙여넣기 · ③ 연결 테스트. <em>모두 이 화면에서 진행돼요.</em>
+          </div>
+          
+          <div class="fw-semibold small mb-1">① 키 발급받기</div>
+          
+          <a href="https://www.shopify.com/admin" target="_blank" rel="noopener noreferrer" class="btn btn-cta btn-sm w-100 mb-1">
+            <i class="bi bi-box-arrow-up-right"></i> Shopify Admin 열기
+          </a>
+          <div class="small text-muted mb-3">↑ 이 버튼만 마켓 사이트가 새 탭으로 열려요(로그인 필요). 키를 받은 뒤 이 화면으로 돌아오세요.</div>
+          
+
+          <div class="fw-semibold small mb-1">② 받은 키 붙여넣기</div>
+          <form class="market-connect-form" data-market="shopify" autocomplete="off">
+            
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                상점 도메인 (xxx.myshopify.com)
+                <span class="text-danger">*</span>
+                
+              </label>
+              
+              <input type="text"
+                class="form-control form-control-sm"
+                name="SHOPIFY_SHOP"
+                data-secret="0"
+                placeholder="SHOPIFY_SHOP"
+                value="">
+              
+              
+            </div>
+            
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                Client ID
+                <span class="text-danger">*</span>
+                
+              </label>
+              
+              <input type="text"
+                class="form-control form-control-sm"
+                name="SHOPIFY_CLIENT_ID"
+                data-secret="0"
+                placeholder="SHOPIFY_CLIENT_ID"
+                value="">
+              
+              
+            </div>
+            
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                Client Secret (shpss_…)
+                <span class="text-danger">*</span>
+                
+              </label>
+              
+              <input type="password"
+                class="form-control form-control-sm"
+                name="SHOPIFY_CLIENT_SECRET"
+                data-secret="1"
+                placeholder="SHOPIFY_CLIENT_SECRET"
+                value="">
+              
+              
+            </div>
+            
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                직접 토큰 (shpat_, 선택)
+                
+                
+              </label>
+              
+              <input type="password"
+                class="form-control form-control-sm"
+                name="SHOPIFY_AUTO_TOKEN"
+                data-secret="1"
+                placeholder="SHOPIFY_AUTO_TOKEN"
+                value="">
+              
+              
+            </div>
+            
+
+            <div class="fw-semibold small mt-3 mb-1">③ 저장하고 연결 테스트</div>
+            <div class="d-flex flex-wrap gap-2">
+              <button type="submit" class="btn btn-primary btn-sm" data-action="save">
+                <i class="bi bi-save"></i> 저장
+              </button>
+              <button type="button" class="btn btn-outline-primary btn-sm" data-action="test">
+                <i class="bi bi-plug"></i> 연결 테스트
+              </button>
+              
+            </div>
+            <div class="small mt-2 d-none" data-role="test-result"></div>
+          </form>
+        </div>
+      </div>
+    </div>
+    
+    <div class="col-12 col-lg-6 mc-market-col" data-market="woocommerce" data-label="WooCommerce" data-connected="0">
+      <div class="card console-card h-100" data-market="woocommerce">
+        <div class="card-body">
+          <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+            <h2 class="h6 mb-0">WooCommerce</h2>
+            <span class="badge rounded-pill text-bg-secondary"
+                  data-role="status-badge">
+              <i class="bi bi-dash-circle"></i> 미연결
+            </span>
+          </div>
+          <div class="small text-muted mb-2">
+            <strong>연결 3단계</strong> — ① 키 발급받기 · ② 아래에 붙여넣기 · ③ 연결 테스트. <em>모두 이 화면에서 진행돼요.</em>
+          </div>
+          
+          <div class="fw-semibold small mb-1">① 키 발급받기</div>
+          
+          <a href="https://kohganemultishop.org/wp-admin" target="_blank" rel="noopener noreferrer" class="btn btn-cta btn-sm w-100 mb-1">
+            <i class="bi bi-box-arrow-up-right"></i> WordPress 관리자 열기
+          </a>
+          <div class="small text-muted mb-3">↑ 이 버튼만 마켓 사이트가 새 탭으로 열려요(로그인 필요). 키를 받은 뒤 이 화면으로 돌아오세요.</div>
+          
+
+          <div class="fw-semibold small mb-1">② 받은 키 붙여넣기</div>
+          <form class="market-connect-form" data-market="woocommerce" autocomplete="off">
+            
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                사이트 URL
+                <span class="text-danger">*</span>
+                
+              </label>
+              
+              <input type="text"
+                class="form-control form-control-sm"
+                name="WC_URL"
+                data-secret="0"
+                placeholder="WC_URL"
+                value="">
+              
+              
+            </div>
+            
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                Consumer Key
+                <span class="text-danger">*</span>
+                
+              </label>
+              
+              <input type="password"
+                class="form-control form-control-sm"
+                name="WC_KEY"
+                data-secret="1"
+                placeholder="WC_KEY"
+                value="">
+              
+              
+            </div>
+            
+            
+            <div class="mb-2">
+              <label class="form-label small mb-1">
+                Consumer Secret
+                <span class="text-danger">*</span>
+                
+              </label>
+              
+              <input type="password"
+                class="form-control form-control-sm"
+                name="WC_SECRET"
+                data-secret="1"
+                placeholder="WC_SECRET"
+                value="">
+              
+              
+            </div>
+            
+
+            <div class="fw-semibold small mt-3 mb-1">③ 저장하고 연결 테스트</div>
+            <div class="d-flex flex-wrap gap-2">
+              <button type="submit" class="btn btn-primary btn-sm" data-action="save">
+                <i class="bi bi-save"></i> 저장
+              </button>
+              <button type="button" class="btn btn-outline-primary btn-sm" data-action="test">
+                <i class="bi bi-plug"></i> 연결 테스트
+              </button>
+              
+            </div>
+            <div class="small mt-2 d-none" data-role="test-result"></div>
+          </form>
+        </div>
+      </div>
+    </div>
+    
+  </div>
+
+  
+  <div class="d-flex justify-content-between align-items-center mt-3" id="mcNav">
+    <button type="button" class="btn btn-ghost btn-sm" id="mcPrev">← 이전 마켓</button>
+    <span class="small text-muted" id="mcProgress"></span>
+    <button type="button" class="btn btn-cta btn-sm" id="mcNext">다음 마켓 →</button>
+  </div>
+  
+
+  <p class="text-muted small mt-3 mb-0">
+    어려운 용어는 옆의 <span class="pc-help" data-bs-toggle="tooltip" data-bs-title="물음표에 마우스를 올리면 쉬운 설명이 나와요.">?</span> 에 설명이 있어요. 키 발급은 각 마켓의 <strong>발급 페이지 열기</strong> 버튼을 누르세요.
+  </p>
+</section><!-- /mc-detail -->
+</div><!-- /mc-layout -->
+
+    </main>
+  </div>
+</div>
+
+<!-- 전역 토스트 컨테이너 (pcToast) — 모든 셀러 페이지 공용 비차단 알림 -->
+<div id="pcToastContainer" class="toast-container position-fixed top-0 end-0 p-3" style="z-index:1090;" aria-live="polite" aria-atomic="true"></div>
+
+<!-- 전역 확인 모달 (pcConfirm) — 네이티브 confirm 다이얼로그 대체 -->
+<div class="modal fade" id="pcConfirmModal" tabindex="-1" aria-labelledby="pcConfirmTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="pcConfirmTitle">확인</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+      </div>
+      <div class="modal-body" id="pcConfirmBody"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" id="pcConfirmCancel">취소</button>
+        <button type="button" class="btn btn-danger" id="pcConfirmOk">확인</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- v14: For Beginners 진입 버튼 — 모든 페이지 고정 + 바로 밑 작은 on/off(상태 기억) -->
+<div id="fbWrap" style="position:fixed;right:18px;bottom:18px;z-index:1035;display:flex;flex-direction:column;align-items:flex-end;gap:3px">
+  <a href="/seller/start" id="fbBtn" class="btn btn-cta"
+     style="border-radius:999px;font-weight:800;font-size:1rem;padding:.7rem 1.4rem;box-shadow:0 8px 22px rgba(239,122,34,.35)">
+     <i class="bi bi-stars"></i> <span class="fb-label">처음이신가요?</span>
+  </a>
+  <button type="button" id="fbHide" class="btn btn-link p-0 text-muted" style="font-size:.68rem;text-decoration:none">가이드 버튼 숨기기</button>
+</div>
+<button type="button" id="fbReopen" class="btn btn-cta" title="처음이신가요? 가이드 열기"
+        style="display:none;position:fixed;right:18px;bottom:18px;z-index:1035;border-radius:999px;width:44px;height:44px;font-size:1.1rem;box-shadow:0 6px 18px rgba(239,122,34,.35)"><i class="bi bi-stars"></i></button>
+<script>
+(function () {
+  var wrap = document.getElementById('fbWrap');
+  var reopen = document.getElementById('fbReopen');
+  var hide = document.getElementById('fbHide');
+  if (!wrap || !reopen || !hide) return;
+  function get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
+  function set(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
+  function apply() {
+    var hidden = get('kgp_fb_hidden') === '1';
+    wrap.style.display = hidden ? 'none' : 'flex';
+    reopen.style.display = hidden ? 'flex' : 'none';
+  }
+  hide.addEventListener('click', function(){ set('kgp_fb_hidden','1'); apply(); });
+  reopen.addEventListener('click', function(){ set('kgp_fb_hidden','0'); apply(); });
+  apply();
+})();
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/seller/static/seller.js"></script>
+<script>
+function toggleSidebar() {
+  var drawer = document.getElementById('sidebarDrawer');
+  if (!drawer) return;
+  if (drawer.classList.contains('show')) { closeSidebar(); } else { openSidebar(); }
+}
+
+// v36 PART A: 모바일 헤더 검색 아이콘 → 검색 입력 확장(토글).
+function toggleMobileSearch() {
+  var box = document.getElementById('mobileSearch');
+  if (!box) return;
+  box.hidden = !box.hidden;
+  if (!box.hidden) { var i = box.querySelector('input'); if (i) i.focus(); }
+}
+
+function openSidebar() {
+  var drawer = document.getElementById('sidebarDrawer');
+  var overlay = document.getElementById('sidebarOverlay');
+  if (!drawer) return;
+  drawer.classList.add('show');
+  if (overlay) overlay.style.display = 'block';
+  document.body.classList.add('kgp-drawer-open');   // 배경 스크롤 잠금
+}
+
+function closeSidebar() {
+  var drawer = document.getElementById('sidebarDrawer');
+  var overlay = document.getElementById('sidebarOverlay');
+  if (drawer) drawer.classList.remove('show');
+  if (overlay) overlay.style.display = 'none';
+  document.body.classList.remove('kgp-drawer-open');
+}
+
+// v14 P0: ESC + 왼쪽 스와이프로도 드로어 닫기(바깥 탭은 오버레이 onclick으로 처리).
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') closeSidebar();
+});
+(function () {
+  var sx = 0, sy = 0;
+  document.addEventListener('touchstart', function (e) {
+    if (!e.touches || !e.touches[0]) return;
+    sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+  }, { passive: true });
+  document.addEventListener('touchend', function (e) {
+    var drawer = document.getElementById('sidebarDrawer');
+    if (!drawer || !drawer.classList.contains('show')) return;
+    var t = (e.changedTouches && e.changedTouches[0]); if (!t) return;
+    var dx = t.clientX - sx, dy = t.clientY - sy;
+    if (dx < -45 && Math.abs(dx) > Math.abs(dy)) closeSidebar();   // 왼쪽 스와이프
+  }, { passive: true });
+})();
+
+// 고급 기능: 현재 페이지가 안에 있으면 자동으로 펼친다(현재 위치 보이게).
+(function () {
+  var adv = document.getElementById('advNav');
+  if (adv && adv.querySelector('.console-nav-link.active')) adv.open = true;
+})();
+
+// "?" 도움말 툴팁 초기화 — 개발자 문구를 본문에서 숨기고 클릭/hover 시에만(v5).
+(function () {
+  try {
+    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
+      new bootstrap.Tooltip(el);
+    });
+  } catch (e) { /* bootstrap 미로드 시 무시 */ }
+})();
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('/seller/static/sw.js', { scope: '/seller/' })
+      .then(function(reg) { console.debug('[SW] 등록 성공', reg.scope); })
+      .catch(function(err) { console.debug('[SW] 등록 실패', err); });
+  });
+}
+
+// v36 PART B: 콘솔 어디서나 PWA 설치(드로어 버튼). 안드로이드=beforeinstallprompt, iOS=공유 안내.
+(function () {
+  var deferred = null;
+  var standalone = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches
+                   || window.navigator.standalone === true;
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    deferred = e;
+    var b = document.getElementById('pwaInstallBtn');
+    if (b && !standalone) b.classList.remove('d-none');
+  });
+  window.pwaInstall = function () {
+    if (!deferred) return;
+    deferred['prompt']();   // beforeinstallprompt 설치 API(네이티브 입력 prompt 아님 — 콘솔 전역 가드 회피)
+    deferred.userChoice.finally(function () {
+      deferred = null;
+      var b = document.getElementById('pwaInstallBtn'); if (b) b.classList.add('d-none');
+    });
+  };
+  // iOS(설치 프롬프트 미지원)는 공유→홈 화면에 추가 안내를 노출.
+  var isIOS = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
+  if (isIOS && !standalone) {
+    var hint = document.getElementById('pwaIosHint');
+    if (hint) hint.classList.remove('d-none');
+  }
+})();
+
+// v13 속도: 상단 진행바(체감 속도 피드백) + 내부 링크 프리패치(hover/포커스 → 다음 페이지 즉시).
+//   prefers-reduced-motion 존중(진행바 애니메이션 생략). 경량·같은 출처만.
+(function () {
+  var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var bar = document.createElement('div');
+  bar.id = 'kgp-progress';
+  bar.style.cssText = 'position:fixed;top:0;left:0;height:3px;width:0;z-index:3000;background:linear-gradient(90deg,#119a8e,#c9a24b);transition:width .2s ease,opacity .3s ease;opacity:0;pointer-events:none';
+  var timer;
+  function start() {
+    if (RM || !document.body) return;
+    if (!bar.parentNode) document.body.appendChild(bar);
+    clearInterval(timer);
+    bar.style.opacity = '1'; bar.style.width = '8%';
+    var w = 8;
+    timer = setInterval(function () { w = Math.min(90, w + (90 - w) * 0.12); bar.style.width = w + '%'; }, 200);
+  }
+  function done() {
+    clearInterval(timer);
+    if (!bar.parentNode) return;
+    bar.style.width = '100%';
+    setTimeout(function () { bar.style.opacity = '0'; bar.style.width = '0'; }, 250);
+  }
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a[href]');
+    if (!a) return;
+    var href = a.getAttribute('href') || '';
+    if (a.target === '_blank' || href.charAt(0) === '#' || href.indexOf('javascript:') === 0 || a.hasAttribute('download')) return;
+    if (a.origin && a.origin !== location.origin) return;
+    start();
+  }, true);
+  window.addEventListener('pageshow', done);
+  window.addEventListener('beforeunload', start);
+
+  var prefetched = {};
+  function prefetch(url) {
+    if (!url || prefetched[url] || url.charAt(0) !== '/') return;
+    prefetched[url] = 1;
+    var l = document.createElement('link');
+    l.rel = 'prefetch'; l.href = url;
+    document.head.appendChild(l);
+  }
+  ['mouseover', 'focusin', 'touchstart'].forEach(function (ev) {
+    document.addEventListener(ev, function (e) {
+      var a = e.target.closest && e.target.closest('a[href^="/"]');
+      if (a && a.target !== '_blank') prefetch(a.getAttribute('href'));
+    }, { passive: true });
+  });
+})();
+</script>
+
+<script>
+function copyServerIp(btn) {
+  var ip = (document.getElementById('serverIp') || {}).textContent || '';
+  if (!ip) return;
+  navigator.clipboard.writeText(ip.trim()).then(function () {
+    if (window.pcToast) pcToast('서버 IP를 복사했어요. 마켓 허용 IP에 붙여넣으세요.', 'success');
+    if (btn) { var o = btn.textContent; btn.textContent = '복사됨'; setTimeout(function(){ btn.textContent = o; }, 1500); }
+  });
+}
+function collectValues(form) {
+  const values = {};
+  form.querySelectorAll('input[name]').forEach(input => {
+    const v = (input.value || '').trim();
+    if (v) values[input.name] = v;
+  });
+  return values;
+}
+
+async function postJson(url, payload) {
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload || {}),
+  });
+  const data = await resp.json().catch(() => ({}));
+  return {ok: resp.ok, data};
+}
+
+function renderTestResult(form, result) {
+  const box = form.querySelector('[data-role="test-result"]');
+  if (!box) return;
+  box.classList.remove('d-none', 'text-success', 'text-danger', 'text-warning');
+  box.innerHTML = '';
+  if (result && result.status === 'connected') {
+    box.classList.add('text-success');
+    box.textContent = '연결 성공 — ' + (result.summary || '');
+    return;
+  }
+  box.classList.add('text-warning');
+  // v19: 실패는 쉬운 말로(무엇+왜+다음 행동). 코드/원문 응답은 '고급'으로 숨김(개발 메시지 비노출).
+  const head = document.createElement('div');
+  head.className = 'd-flex align-items-center gap-1';
+  head.innerHTML = '<i class="bi bi-exclamation-triangle"></i> <span>' +
+    kgpEscapeForHtml(kgpFriendlyError((result && (result.hint || result.status)) || '연결 테스트 실패')) + '</span>';
+  box.appendChild(head);
+  // 마켓 원문 응답/상태 코드는 디버깅용 → 기본 숨김(필요 시 펼쳐보기).
+  if (result && (result.summary || result.status)) {
+    const det = document.createElement('details');
+    det.className = 'small text-muted mt-1';
+    det.innerHTML = '<summary style="cursor:pointer">자세히(고급)</summary>' +
+      '<div class="mt-1" style="word-break:break-all">' +
+      kgpEscapeForHtml('상태: ' + (result.status || '-') + (result.summary ? ' · 응답: ' + result.summary : '')) + '</div>';
+    box.appendChild(det);
+  }
+}
+
+function updateBadge(card, connected) {
+  const badge = card.querySelector('[data-role="status-badge"]');
+  if (!badge) return;
+  badge.className = 'badge rounded-pill ' + (connected ? 'text-bg-success' : 'text-bg-secondary');
+  badge.textContent = connected ? '연결됨' : '미연결';
+}
+
+document.querySelectorAll('.market-connect-form').forEach(form => {
+  const market = form.dataset.market;
+  const card = form.closest('[data-market]');
+
+  // 연결 테스트
+  form.querySelector('[data-action="test"]').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    setButtonLoading(btn, true, '테스트 중…');
+    try {
+      const {data} = await postJson(`/seller/markets/connect/${market}/test`, {values: collectValues(form)});
+      if (!data.ok) { pcToast(kgpFriendlyError(data), 'error'); return; }
+      renderTestResult(form, data.result);
+    } catch (err) {
+      pcToast(kgpFriendlyError(err), 'error');
+    } finally {
+      setButtonLoading(btn, false);
+    }
+  });
+
+  // 저장
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector('[data-action="save"]');
+    setButtonLoading(btn, true, '저장 중…');
+    try {
+      const {data} = await postJson(`/seller/markets/connect/${market}`, {values: collectValues(form)});
+      if (!data.ok) { pcToast(kgpFriendlyError(data), 'error'); return; }
+      updateBadge(card, data.status && data.status.connected);
+      pcToast(`${market} 자격증명을 저장했어요.`, 'success');
+    } catch (err) {
+      pcToast(kgpFriendlyError(err), 'error');
+    } finally {
+      setButtonLoading(btn, false);
+    }
+  });
+
+  // 연결 해제
+  const disconnectBtn = form.querySelector('[data-action="disconnect"]');
+  if (disconnectBtn) {
+    disconnectBtn.addEventListener('click', async () => {
+      if (!(await pcConfirm('저장된 자격증명을 삭제할까요? (서버 환경변수는 영향 없음)', {title: '연결 해제', confirmLabel: '삭제'}))) return;
+      const {data} = await postJson(`/seller/markets/connect/${market}/disconnect`, {});
+      if (!data.ok) { pcToast(kgpFriendlyError(data), 'error'); return; }
+      updateBadge(card, data.status && data.status.connected);
+      pcToast(`${market} 연결을 해제했어요.`, 'success');
+      setTimeout(() => location.reload(), 900);
+    });
+  }
+});
+
+// v14: 한 마켓씩 순차 진행(연결되면 자동 체크). '전체 보기'로 그리드 전환.
+(function () {
+  const cols = Array.from(document.querySelectorAll('.mc-market-col'));
+  const stepper = document.getElementById('mcStepper');
+  if (!cols.length || !stepper) return;
+  let showAll = false;
+  // 시작 위치 = 첫 '미연결' 마켓(전부 연결이면 0)
+  let cur = cols.findIndex(c => c.dataset.connected !== '1');
+  if (cur < 0) cur = 0;
+
+  function renderStepper() {
+    stepper.innerHTML = cols.map((c, i) => {
+      const on = c.dataset.connected === '1';
+      const active = i === cur && !showAll;
+      const cls = active ? 'btn-primary' : (on ? 'btn-outline-success' : 'btn-outline-secondary');
+      const mark = on ? '● ' : (i + 1) + '. ';
+      return `<button type="button" class="btn btn-sm ${cls} mc-step" data-i="${i}">${mark}${c.dataset.label}</button>`;
+    }).join('');
+    stepper.querySelectorAll('.mc-step').forEach(b => b.addEventListener('click', () => { showAll = false; cur = parseInt(b.dataset.i, 10); apply(); }));
+  }
+  function apply() {
+    cols.forEach((c, i) => { c.style.display = (showAll || i === cur) ? '' : 'none'; });
+    const nav = document.getElementById('mcNav');
+    if (nav) nav.style.display = showAll ? 'none' : '';
+    const prog = document.getElementById('mcProgress');
+    if (prog) prog.textContent = `${cur + 1} / ${cols.length} 마켓`;
+    const prev = document.getElementById('mcPrev'); if (prev) prev.disabled = cur <= 0;
+    const next = document.getElementById('mcNext'); if (next) next.disabled = cur >= cols.length - 1;
+    const tgl = document.getElementById('mcToggleAll'); if (tgl) tgl.textContent = showAll ? '한 마켓씩 보기' : '전체 보기';
+    renderStepper();
+  }
+  const prevB = document.getElementById('mcPrev'); if (prevB) prevB.addEventListener('click', () => { if (cur > 0) { cur--; apply(); } });
+  const nextB = document.getElementById('mcNext'); if (nextB) nextB.addEventListener('click', () => { if (cur < cols.length - 1) { cur++; apply(); } });
+  const tglB = document.getElementById('mcToggleAll'); if (tglB) tglB.addEventListener('click', () => { showAll = !showAll; apply(); });
+  apply();
+})();
+
+// v40-C: 사이드바 마켓 선택 (data-mc-select) — 페이지 이탈 0
+(function () {
+  const sidebarItems = document.querySelectorAll('[data-mc-select]');
+  if (!sidebarItems.length) return;
+  function mcSelect(market) {
+    // 사이드바 활성 표시
+    sidebarItems.forEach(el => {
+      el.classList.toggle('active', el.dataset.mcSelect === market);
+    });
+    // 기존 mc-market-col 전환(스테퍼와 공유)
+    const cols = Array.from(document.querySelectorAll('.mc-market-col'));
+    const idx = cols.findIndex(c => c.dataset.market === market);
+    if (idx >= 0) {
+      // 스테퍼 cur 동기화는 내부 mc-step 클릭으로 위임
+      const step = document.querySelector(`.mc-step[data-i="${idx}"]`);
+      if (step) { step.click(); return; }
+      // 스테퍼 미렌더 상태면 직접 전환
+      cols.forEach((c, i) => { c.style.display = i === idx ? '' : 'none'; });
+    }
+  }
+  sidebarItems.forEach(el => {
+    el.addEventListener('click', () => mcSelect(el.dataset.mcSelect));
+    el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); mcSelect(el.dataset.mcSelect); }});
+  });
+})();
+</script>
+
+</body>
+</html>

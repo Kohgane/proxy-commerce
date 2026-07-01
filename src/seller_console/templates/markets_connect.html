@@ -2,7 +2,72 @@
 {% block title %}마켓 연결{% endblock %}
 
 {% block content %}
-<section class="mb-4">
+<style>
+/* v40-C: 퍼센티식 2열 레이아웃 ─ 토큰 단일소스 */
+.mc-layout{display:flex;gap:var(--space-4,24px);align-items:flex-start;}
+.mc-sidebar{
+  flex:0 0 200px;width:200px;
+  background:var(--hanji,#F5EFE3);
+  border:1px solid var(--line,#E6DECB);
+  border-radius:var(--radius-md,12px);
+  overflow:hidden;
+  position:sticky;top:76px;
+}
+.mc-sidebar-head{
+  padding:10px 14px 6px;
+  font-size:.7rem;
+  font-weight:700;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:var(--muted,#8A8275);
+  border-bottom:1px solid var(--line,#E6DECB);
+}
+.mc-sidebar-item{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  padding:9px 14px;
+  cursor:pointer;
+  font-size:.85rem;
+  color:var(--ink,#1A1714);
+  border-bottom:1px solid var(--line,#E6DECB);
+  transition:background .15s;
+}
+.mc-sidebar-item:last-child{border-bottom:none;}
+.mc-sidebar-item:hover{background:var(--paper,#FBF8F1);}
+.mc-sidebar-item.active{
+  background:var(--ink,#1A1714);
+  color:#fff;
+}
+.mc-sidebar-item.active .badge{background:rgba(255,255,255,.2)!important;color:#fff!important;}
+.mc-sidebar-market-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.mc-detail{flex:1;min-width:0;}
+@media(max-width:767.98px){
+  .mc-layout{flex-direction:column;}
+  .mc-sidebar{position:static;width:100%;flex:none;display:flex;flex-direction:row;flex-wrap:wrap;border-radius:var(--radius-md,12px);}
+  .mc-sidebar-head{flex:0 0 100%;border-bottom:1px solid var(--line,#E6DECB);}
+  .mc-sidebar-item{flex:0 0 calc(50% - 1px);border-bottom:none;border-right:1px solid var(--line,#E6DECB);}
+}
+</style>
+<div class="mc-layout">
+<!-- 좌 사이드바: 마켓 목록 (페이지 이탈 0 — JS 전환) -->
+<aside class="mc-sidebar">
+  <div class="mc-sidebar-head">마켓 목록</div>
+  {% for m in market_statuses %}
+  <div class="mc-sidebar-item{{ ' active' if (single_market == m.market) or (not single_market and loop.first) }}"
+       data-mc-select="{{ m.market }}" role="button" tabindex="0"
+       aria-label="{{ m.label }} 선택">
+    <span class="mc-sidebar-market-name">{{ m.label }}</span>
+    <span class="badge rounded-pill {{ 'text-bg-success' if m.connected else 'text-bg-secondary' }}"
+          data-role="status-badge">
+      {% if m.connected %}연결됨{% else %}미설정{% endif %}
+    </span>
+  </div>
+  {% endfor %}
+</aside>
+<!-- 우 상세 패널 -->
+<section class="mc-detail mb-4">
   <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
     <div>
       {% if single_market %}
@@ -29,16 +94,7 @@
       <strong>그건 운영자가 관리하고, 여기엔 입력하지 않아도 됩니다.</strong></div>
   </div>
 
-  <!-- 마켓 전환 칩 -->
-  <div class="d-flex flex-wrap gap-2 mb-3">
-    {% for chip in market_chips %}
-    <a href="/seller/markets/connect/{{ chip.market }}"
-       class="btn btn-sm {{ 'btn-primary' if single_market == chip.market else 'btn-outline-secondary' }}">
-      {{ chip.label }} {% if chip.connected %}<i class="bi bi-check-circle text-success"></i>{% endif %}
-    </a>
-    {% endfor %}
-  </div>
-
+  <!-- 마켓 칩 전환은 좌 사이드바(JS)로 대체됨 -->
   {% if server_ip %}
   <div class="alert alert-warning d-flex flex-wrap gap-2 align-items-center mb-3" role="note">
     <i class="bi bi-hdd-network"></i>
@@ -123,7 +179,10 @@
             {% for f in m.fields %}
             {% if f.section %}
             <div class="mt-3 mb-2 pt-2 border-top">
-              <div class="fw-semibold small text-primary">{{ f.section }}</div>
+              <div class="fw-semibold small text-primary d-flex align-items-center gap-2">
+                {{ f.section }}
+                {% if '출고지' in f.section or '배송' in f.section %}<span class="badge text-bg-light fw-normal">배송프로필</span>{% endif %}
+              </div>
               <div class="small text-muted">이 항목은 <strong>{{ m.label }}</strong>에만 필요해요. (다른 마켓엔 없어요.)</div>
             </div>
             {% endif %}
@@ -133,14 +192,21 @@
                 {% if f.required %}<span class="text-danger">*</span>{% endif %}
                 {% if f.from_global %}<span class="badge text-bg-light ms-1">서버 환경변수 사용 중</span>{% endif %}
               </label>
-              <input
-                type="{{ 'password' if f.secret else 'text' }}"
+              {% if f.secret %}
+              <input type="password"
                 class="form-control form-control-sm"
                 name="{{ f.env }}"
-                data-secret="{{ '1' if f.secret else '0' }}"
-                placeholder="{{ '저장됨 (' ~ f.display ~ ')' if (f.has_value and f.secret) else (f.display or f.env) }}"
-                value="{{ '' if f.secret else f.display }}"
-              >
+                data-secret="1"
+                placeholder="{{ '저장됨 (' ~ f.display ~ ')' if f.has_value else (f.display or f.env) }}"
+                value="">
+              {% else %}
+              <input type="text"
+                class="form-control form-control-sm"
+                name="{{ f.env }}"
+                data-secret="0"
+                placeholder="{{ f.display or f.env }}"
+                value="{{ f.display }}">
+              {% endif %}
               {% if f.help %}<div class="form-text small text-muted mt-1">{{ f.help }}</div>{% endif %}
             </div>
             {% endfor %}
@@ -178,7 +244,8 @@
   <p class="text-muted small mt-3 mb-0">
     어려운 용어는 옆의 <span class="pc-help" data-bs-toggle="tooltip" data-bs-title="물음표에 마우스를 올리면 쉬운 설명이 나와요.">?</span> 에 설명이 있어요. 키 발급은 각 마켓의 <strong>발급 페이지 열기</strong> 버튼을 누르세요.
   </p>
-</section>
+</section><!-- /mc-detail -->
+</div><!-- /mc-layout -->
 {% endblock %}
 
 {% block extra_js %}
@@ -330,6 +397,32 @@ document.querySelectorAll('.market-connect-form').forEach(form => {
   const nextB = document.getElementById('mcNext'); if (nextB) nextB.addEventListener('click', () => { if (cur < cols.length - 1) { cur++; apply(); } });
   const tglB = document.getElementById('mcToggleAll'); if (tglB) tglB.addEventListener('click', () => { showAll = !showAll; apply(); });
   apply();
+})();
+
+// v40-C: 사이드바 마켓 선택 (data-mc-select) — 페이지 이탈 0
+(function () {
+  const sidebarItems = document.querySelectorAll('[data-mc-select]');
+  if (!sidebarItems.length) return;
+  function mcSelect(market) {
+    // 사이드바 활성 표시
+    sidebarItems.forEach(el => {
+      el.classList.toggle('active', el.dataset.mcSelect === market);
+    });
+    // 기존 mc-market-col 전환(스테퍼와 공유)
+    const cols = Array.from(document.querySelectorAll('.mc-market-col'));
+    const idx = cols.findIndex(c => c.dataset.market === market);
+    if (idx >= 0) {
+      // 스테퍼 cur 동기화는 내부 mc-step 클릭으로 위임
+      const step = document.querySelector(`.mc-step[data-i="${idx}"]`);
+      if (step) { step.click(); return; }
+      // 스테퍼 미렌더 상태면 직접 전환
+      cols.forEach((c, i) => { c.style.display = i === idx ? '' : 'none'; });
+    }
+  }
+  sidebarItems.forEach(el => {
+    el.addEventListener('click', () => mcSelect(el.dataset.mcSelect));
+    el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); mcSelect(el.dataset.mcSelect); }});
+  });
 })();
 </script>
 {% endblock %}
