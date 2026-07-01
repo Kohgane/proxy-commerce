@@ -20,6 +20,18 @@ const DEFAULT_SOURCE_TESTS = [
   { id: "aliexpress", label: "알리익스프레스", test: (h) => /(^|\.)aliexpress\.(com|us)$/.test(h) },
 ];
 
+function getSettings() {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ action: "getSettings" }, (resp) => {
+      if (chrome.runtime.lastError) {
+        resolve({});
+        return;
+      }
+      resolve(resp || {});
+    });
+  });
+}
+
 function hostMatch(host, domain) {
   domain = String(domain || "").toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^www\./, "");
   return !!domain && (host === domain || host.endsWith("." + domain));
@@ -146,9 +158,7 @@ btnCollect.addEventListener("click", async () => {
     if (response && response.ok) {
       showStatus("success", `수집 완료!<br><small>${meta.title || meta.url}</small>`);
       if (response.preview_url) {
-        const settings = await new Promise(resolve =>
-          chrome.storage.sync.get(["serverUrl"], resolve)
-        );
+        const settings = await getSettings();
         const serverUrl = settings.serverUrl || "https://kohganepercentiii.com";
         const link = document.createElement("a");
         link.href = serverUrl + response.preview_url;

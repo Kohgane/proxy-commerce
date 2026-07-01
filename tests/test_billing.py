@@ -49,7 +49,51 @@ def test_select_paid_without_payment_is_honest(client, monkeypatch):
     r = client.post("/seller/billing/select", json={"plan": "plus"})
     data = r.get_json()
     assert data.get("pay_unconfigured") is True
+    assert "준비 중" in (data.get("error") or "")
     assert bs.get_account("default")["plan"] == "free"  # 활성 안 됨
+
+
+def test_select_paid_with_payment_returns_checkout_payload(client, monkeypatch):
+    monkeypatch.setenv("TOSS_CLIENT_KEY", "test_ck")
+    monkeypatch.setenv("TOSS_SECRET_KEY", "test_sk")
+    r = client.post("/seller/billing/select", json={"plan": "plus"})
+    data = r.get_json()
+    assert data["ok"] is True
+    assert data["checkout"] is True
+    payload = data.get("checkout_payload") or {}
+    assert payload.get("order_id", "").startswith("BILL-")
+    assert payload.get("amount") == 19000
+    assert payload.get("order_name")
+    assert payload.get("success_url", "").endswith("/seller/billing/success")
+    assert payload.get("fail_url", "").endswith("/seller/billing/fail")
+
+
+def test_billing_success_confirms_and_activates_plan(client, monkeypatch):
+    from src.seller_console import billing_store as bs
+    monkeypatch.setenv("TOSS_CLIENT_KEY", "test_ck")
+    monkeypatch.setenv("TOSS_SECRET_KEY", "test_sk")
+    created = client.post("/seller/billing/select", json={"plan": "pro"}).get_json()["checkout_payload"]
+    with patch("src.payments.toss.confirm_payment") as mocked_confirm:
+        mocked_confirm.return_value = {"ok": True, "status": "DONE"}
+        resp = client.get(
+            f"/seller/billing/success?paymentKey=pk_test&orderId={created['order_id']}&amount={created['amount']}"
+        )
+    assert resp.status_code == 302
+    assert bs.get_account("default")["plan"] == "pro"
+
+
+def test_billing_success_does_not_activate_on_failed_confirm(client, monkeypatch):
+    from src.seller_console import billing_store as bs
+    monkeypatch.setenv("TOSS_CLIENT_KEY", "test_ck")
+    monkeypatch.setenv("TOSS_SECRET_KEY", "test_sk")
+    created = client.post("/seller/billing/select", json={"plan": "plus"}).get_json()["checkout_payload"]
+    with patch("src.payments.toss.confirm_payment") as mocked_confirm:
+        mocked_confirm.return_value = {"ok": False, "status": "FAILED"}
+        resp = client.get(
+            f"/seller/billing/success?paymentKey=pk_test&orderId={created['order_id']}&amount={created['amount']}"
+        )
+    assert resp.status_code == 302
+    assert bs.get_account("default")["plan"] == "free"
 
 
 def test_paid_plan_unlocks_unlimited_translation():

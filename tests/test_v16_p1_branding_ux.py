@@ -48,9 +48,9 @@ def test_fab_on_off_toggle():
 
 def test_my_sources_in_sidebar(client):
     html = client.get("/seller/dashboard").get_data(as_text=True)
-    assert "/seller/sourcing/my-sources" in html
+    assert "/seller/sourcing#registryDomainInput" in html
     assert "소싱처 등록(My Sources)" in html
-    assert client.get("/seller/sourcing/my-sources").status_code == 200
+    assert client.get("/seller/sourcing/my-sources").status_code in (301, 302)
 
 
 def test_dev_jargon_removed(client):

@@ -26,8 +26,42 @@ const DEFAULT_SOURCES = [
   { id: "rakuten", label: "라쿠텐(Rakuten Fashion 포함)", host: "rakuten.co.jp" },
 ];
 
-// ---- 서버/토큰 (chrome.storage.sync) ----
-chrome.storage.sync.get(["serverUrl", "token"], (data) => {
+// ---- 서버/토큰 (sync 우선 + local 폴백) ----
+function readSettings(callback) {
+  chrome.storage.sync.get(["serverUrl", "token"], (syncData) => {
+    const syncErr = chrome.runtime.lastError;
+    chrome.storage.local.get(["serverUrl", "token"], (localData) => {
+      const localErr = chrome.runtime.lastError;
+      const merged = {
+        serverUrl: (syncData && syncData.serverUrl) || (localData && localData.serverUrl) || "",
+        token: (syncData && syncData.token) || (localData && localData.token) || "",
+      };
+      callback(merged, syncErr, localErr);
+    });
+  });
+}
+
+function writeSettings(settings, callback) {
+  chrome.storage.sync.set(settings, () => {
+    const syncErr = chrome.runtime.lastError;
+    chrome.storage.local.set(settings, () => {
+      const localErr = chrome.runtime.lastError;
+      callback(syncErr, localErr);
+    });
+  });
+}
+
+function removeSettings(callback) {
+  chrome.storage.sync.remove(["serverUrl", "token"], () => {
+    const syncErr = chrome.runtime.lastError;
+    chrome.storage.local.remove(["serverUrl", "token"], () => {
+      const localErr = chrome.runtime.lastError;
+      callback(syncErr, localErr);
+    });
+  });
+}
+
+readSettings((data) => {
   if (data.serverUrl) serverUrlInput.value = data.serverUrl;
   if (data.token) tokenInput.value = data.token;
   const server = data.serverUrl || "https://kohganepercentiii.com";
@@ -50,12 +84,26 @@ saveBtn.addEventListener("click", () => {
   const serverUrl = serverUrlInput.value.trim();
   const token = tokenInput.value.trim();
   if (!token) { showStatus(statusMsg, "error", "액세스 토큰을 입력해주세요."); return; }
-  chrome.storage.sync.set({ serverUrl, token }, () => showStatus(statusMsg, "success", "설정이 저장되었습니다."));
+  writeSettings({ serverUrl, token }, (syncErr, localErr) => {
+    if (syncErr && localErr) {
+      showStatus(statusMsg, "error", "저장 실패: 브라우저 저장소에 접근하지 못했어요.");
+      return;
+    }
+    if (syncErr && !localErr) {
+      showStatus(statusMsg, "success", "이 기기에 저장되었습니다. 동기화는 잠시 후 다시 시도해주세요.");
+      return;
+    }
+    showStatus(statusMsg, "success", "설정이 저장되었습니다.");
+  });
 });
 
 clearBtn.addEventListener("click", () => {
   if (confirm("서버/토큰 설정을 초기화하시겠습니까?")) {
-    chrome.storage.sync.remove(["serverUrl", "token"], () => {
+    removeSettings((syncErr, localErr) => {
+      if (syncErr && localErr) {
+        showStatus(statusMsg, "error", "초기화 실패: 저장소 접근 오류");
+        return;
+      }
       serverUrlInput.value = ""; tokenInput.value = "";
       showStatus(statusMsg, "success", "초기화되었습니다.");
     });

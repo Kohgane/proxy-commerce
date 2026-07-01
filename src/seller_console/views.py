@@ -3943,8 +3943,14 @@ def billing_page():
     sid = _seller_id()
     acc = billing_store.get_account(sid)
     pay_ready = bool(os.getenv("TOSS_CLIENT_KEY")) and bool(os.getenv("TOSS_SECRET_KEY"))
+    notice = (request.args.get("notice") or "").strip()
+    error = (request.args.get("error") or "").strip()
+    toss_client_key = os.getenv("TOSS_CLIENT_KEY", "") if pay_ready else ""
     return render_template("billing.html", account=acc, plans=billing_store.PLANS,
                            pay_ready=pay_ready,
+                           toss_client_key=toss_client_key,
+                           notice=notice,
+                           error=error,
                            free_remaining=translation_usage.remaining(sid),
                            free_limit=translation_usage.free_limit())
 
@@ -3966,10 +3972,81 @@ def billing_select():
     pay_ready = bool(os.getenv("TOSS_CLIENT_KEY")) and bool(os.getenv("TOSS_SECRET_KEY"))
     if not pay_ready:
         return jsonify({"ok": False, "pay_unconfigured": True,
-                        "error": "결제 연동(토스페이먼츠)이 준비 중입니다. 운영자에게 문의하면 바로 열어드려요."}), 200
-    # 결제 설정됨 — 결제창 연결(자리). 실제 승인 후 set_plan은 결제 콜백에서.
-    return jsonify({"ok": True, "checkout": True, "plan": plan,
-                    "message": "결제창으로 이동합니다."})
+                        "error": "결제 준비 중입니다 — 곧 열립니다."}), 200
+    # 결제 설정됨 — 실제 결제 요청 정보 생성(활성 반영은 성공 콜백 승인 후에만).
+    sid = _seller_id()
+    amount = int(billing_store.PLANS[plan]["price_krw"] or 0)
+    order_id = f"BILL-{uuid.uuid4().hex[:20]}"
+    order_name = f"{billing_store.PLANS[plan]['label']} 월 구독"
+    billing_store.create_pending_payment(
+        seller_id=sid,
+        plan=plan,
+        order_id=order_id,
+        amount=amount,
+    )
+    return jsonify({
+        "ok": True,
+        "checkout": True,
+        "plan": plan,
+        "message": "결제창을 여는 중입니다.",
+        "checkout_payload": {
+            "client_key": os.getenv("TOSS_CLIENT_KEY", ""),
+            "amount": amount,
+            "order_id": order_id,
+            "order_name": order_name,
+            "success_url": url_for("seller_console.billing_success", _external=True),
+            "fail_url": url_for("seller_console.billing_fail", _external=True),
+            "customer_name": (session.get("user_name") or session.get("user_email") or "고객"),
+        },
+    })
+
+
+@bp.get("/billing/success")
+def billing_success():
+    """토스 결제 성공 콜백 — 승인 확인 후 플랜 반영(가짜 활성 금지)."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
+    payment_key = (request.args.get("paymentKey") or "").strip()
+    order_id = (request.args.get("orderId") or "").strip()
+    amount_raw = (request.args.get("amount") or "0").strip()
+    try:
+        amount = int(amount_raw)
+    except (TypeError, ValueError):
+        amount = 0
+
+    from . import billing_store
+    pending = billing_store.get_pending_payment(order_id)
+    sid = _seller_id()
+    if not pending or pending.get("seller_id") != sid:
+        return redirect(url_for("seller_console.billing_page", error="결제 확인 정보를 찾지 못했어요. 다시 시도해주세요."))
+    if int(pending.get("amount") or 0) != amount:
+        return redirect(url_for("seller_console.billing_page", error="결제 금액이 일치하지 않아 확인에 실패했어요."))
+    if not payment_key:
+        return redirect(url_for("seller_console.billing_page", error="결제 확인 키가 없어 결제를 완료하지 못했어요."))
+
+    from src.payments.toss import confirm_payment
+    result = confirm_payment(payment_key=payment_key, order_id=order_id, amount=amount) or {}
+    if not result.get("ok"):
+        return redirect(url_for("seller_console.billing_page", error="결제 승인 확인에 실패했어요. 잠시 후 다시 확인해주세요."))
+    if str(result.get("status") or "").upper() != "DONE":
+        return redirect(url_for("seller_console.billing_page", error="결제 상태를 완료로 확인하지 못했어요."))
+
+    paid = billing_store.pop_pending_payment(order_id) or pending
+    plan = str(paid.get("plan") or "free")
+    billing_store.set_plan(sid, plan)
+    label = billing_store.PLANS.get(plan, {}).get("label", plan)
+    return redirect(url_for("seller_console.billing_page", notice=f"{label} 플랜 결제가 완료되었습니다."))
+
+
+@bp.get("/billing/fail")
+def billing_fail():
+    """토스 결제 실패 콜백 — 정직 안내."""
+    code = (request.args.get("code") or "").strip()
+    message = (request.args.get("message") or "").strip()
+    reason = message or "결제가 완료되지 않았어요."
+    if code:
+        reason = f"{reason} (사유: {code})"
+    return redirect(url_for("seller_console.billing_page", error=reason))
 
 
 @bp.get("/about")
@@ -8564,7 +8641,16 @@ def sourcing_my_sources_remove():
 
 @bp.get("/sourcing/my-sources")
 def sourcing_my_sources_list():
-    """My Sources 즐겨찾기 목록 API (JSON) — Phase 160."""
+    """My Sources 진입(화면) + 목록 API(JSON, format=json) — Phase 160."""
+    wants_json = (request.args.get("format") or "").strip().lower() == "json"
+    if not wants_json:
+        return redirect(
+            url_for(
+                "seller_console.sourcing_hub",
+                notice="자사몰·소규모 브랜드몰 등 원하는 몰을 직접 등록하세요.",
+                _anchor="registryDomainInput",
+            )
+        )
     try:
         from src.seller_console.my_sources_store import MySourcesStore
         entries = [e.to_dict() for e in MySourcesStore().list()]

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timezone
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,7 @@ _WS_NAME = "billing"
 _HEADERS = ["seller_id", "plan", "token_balance"]
 
 _in_memory: dict[str, dict] = {}
+_pending_payments: dict[str, dict] = {}
 
 PLANS = {
     "free": {"label": "Free", "price_krw": 0, "translate_unlimited": False,
@@ -107,3 +109,27 @@ def _save(sid: str, acc: dict) -> None:
         except Exception as exc:
             logger.warning("billing 저장 실패(인메모리 폴백): %s", exc)
     _in_memory[sid] = {"plan": acc["plan"], "token_balance": acc["token_balance"]}
+
+
+def create_pending_payment(*, seller_id: Optional[str], plan: str, order_id: str, amount: int) -> dict:
+    """결제 대기 주문 저장(결제 승인 콜백 검증용)."""
+    sid = str(seller_id or "")
+    payload = {
+        "seller_id": sid,
+        "plan": plan if plan in PLANS else "free",
+        "order_id": str(order_id or ""),
+        "amount": int(amount or 0),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _pending_payments[payload["order_id"]] = payload
+    return payload
+
+
+def get_pending_payment(order_id: str) -> Optional[dict]:
+    item = _pending_payments.get(str(order_id or ""))
+    return dict(item) if item else None
+
+
+def pop_pending_payment(order_id: str) -> Optional[dict]:
+    item = _pending_payments.pop(str(order_id or ""), None)
+    return dict(item) if item else None
