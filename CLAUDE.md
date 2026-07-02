@@ -173,7 +173,16 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   검토·편집 후 저장', 자동 확정 금지) 노출. 플레이스홀더 제거는 strip_placeholder_tokens(v39 D) 유지. 가드
   test_v42_1_6_filler(6: 템플릿 필러 3 + 실상세 오탐 0 + 서버 필러 빈값 E2E + 편집 AI초안 뱃지). 전체 10727 passed.
   before/after: docs/screens/v42/1-6-filler-before-after.png(상세 'Temu에서 이…' → 빈 상세 + AI 상세 초안 생성).
-- ⏳ PHASE 1 남음(내 몫): E-3 호버수집 / 1-2 이미지·상세 스코프 추가 강화(로고 제외).
+- ✅ **E-3 목록 호버 즉시 수집 버튼 (#401):** 목록 카드 hover 시 썸네일 중앙에 브릿지+'수집' 알약(먹 배경+금
+  테). 클릭→해당 상품 1건 즉시 수집(collectBulk[1])→성공/중복이면 '수집됨 ✓'(청록, kgpCelebrate는 새 수집만).
+  터치기기(pointer:coarse)=우상단 상시 소형. **이미 수집된 건 처음부터 '수집됨 ✓'**: 신규 `POST /api/v1/collect/exists`
+  (Bearer→urls 중 정규화키(1-3)로 이미 수집된 것 반환)를 background(collectExists)로 조회해 선표시(중복 방지 연동).
+  기존 좌상단 '선택' 배지(다중 선택)와 공존. 리스팅 아님/접힘 시 kgp-card-quick도 정리. manifest 1.5.28→1.5.29.
+  ※rebrand 가드 회피: 주석에서 '퍼센티' 제거. 가드 test_v42_e3_hover_collect(5: 소스계약 hover/터치/수집됨 +
+  /exists 정규화키 매칭·401). 전체 10732 passed. 캡처: docs/screens/v42/e3-hover-collect.png(기본 숨김/호버 '수집'/
+  '수집됨 ✓' 3상태, 실제 kgpQuickBtnStyle).
+  → **v42-E 확장(E-1~E-5) + PHASE 1 핵심(1-1·1-3·1-6) 완주.** (Copilot=1-7 죽은버튼.)
+- ⏳ 후속: 1-2 이미지·상세 스코프 추가 강화(판매자 로고 제외) / PHASE 2 속도 / PHASE 3~5.
 - ⏳ 후속: PHASE 2 속도, STEP 3 JSON제거·UX / 4-1 라벨 '다리 너머, 오늘의 발굴' / STEP 5 디자인.
 
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)
