@@ -33,9 +33,23 @@ function _kgpInNonProd(el) {
   }
   return false;
 }
+// v42 1-1: 통화 감지에 한국어/일본어/중국어 접미어(원·엔·위안·元) 포함 — Temu KR은 '₩' 또는 '61,144원'.
+const _KGP_SYM_MAP = { "$": "USD", "＄": "USD", "€": "EUR", "£": "GBP", "¥": "JPY", "￥": "JPY", "₩": "KRW", "￦": "KRW" };
+const _KGP_CODE_MAP = {
+  "USD": "USD", "EUR": "EUR", "GBP": "GBP", "JPY": "JPY", "KRW": "KRW", "CNY": "CNY",
+  "원": "KRW", "엔": "JPY", "위안": "CNY", "元": "CNY",
+};
+const _KGP_PRICE_RE = /([\$＄€£¥￥₩￦])\s*([\d,]+(?:\.\d{1,2})?)|([\d,]+(?:\.\d{1,2})?)\s*(USD|EUR|GBP|JPY|KRW|CNY|원|엔|위안|元)/i;
+function _kgpParsePrice(raw) {
+  const m = (raw || "").match(_KGP_PRICE_RE);
+  if (!m) return null;
+  const sym = m[1] || "", num = (m[2] || m[3] || "").replace(/,/g, ""), code = m[4] || "";
+  if (!num) return null;
+  const cur = code ? (_KGP_CODE_MAP[code] || _KGP_CODE_MAP[code.toUpperCase()] || code.toUpperCase())
+                   : (_KGP_SYM_MAP[sym] || "");
+  return { price: num, currency: cur };
+}
 function _kgpScopedPrice() {
-  const re = /([\$＄€£¥￥₩￦])\s*([\d,]+(?:\.\d{1,2})?)|([\d,]+(?:\.\d{1,2})?)\s*(USD|EUR|GBP|JPY|KRW|CNY)/i;
-  const symMap = { "$": "USD", "＄": "USD", "€": "EUR", "£": "GBP", "¥": "JPY", "￥": "JPY", "₩": "KRW", "￦": "KRW" };
   let nodes = [];
   try {
     nodes = Array.from(document.querySelectorAll('[class*="price" i],[class*="Price"],[itemprop="price"],[data-price],[class*="amount" i]'));
@@ -43,11 +57,8 @@ function _kgpScopedPrice() {
   for (const el of nodes) {
     if (_kgpInNonProd(el) || _kgpPriceIsOriginal(el)) continue;
     const raw = el.getAttribute("content") || el.getAttribute("data-price") || (el.textContent || "").trim();
-    const m = (raw || "").match(re);
-    if (!m) continue;
-    const sym = m[1] || "", num = (m[2] || m[3] || "").replace(/,/g, ""), code = m[4] || "";
-    if (!num) continue;
-    return { price: num, currency: code ? code.toUpperCase() : (symMap[sym] || "") };
+    const p = _kgpParsePrice(raw);
+    if (p) return p;
   }
   return { price: "", currency: "" };
 }
@@ -105,41 +116,29 @@ function extractProductMeta() {
     });
   } catch (e) { /* noop */ }
 
-  // 가격 휴리스틱 (og:price 없을 때)
+  // v42 1-1: 클릭 시점 렌더된 DOM의 '현재가'를 최우선으로 읽는다.
+  //   SPA(Temu 등)의 og:price는 스테일하거나 USD 오값이 흔함 → 화면에 렌더된 판매가가 진실.
+  //   순서: ①스코프 DOM 현재가(취소선·추천/리뷰 제외) → ②og:price 메타 → ③본문 텍스트 휴리스틱.
+  //   통화 못 얻으면 빈 값(기본값 USD 금지) → 서버가 '가격 확인 필요' 정직 처리.
   let heuristicPrice = "";
   let heuristicCurrency = "";
-  if (!getMeta("product:price:amount")) {
-    // v39-E2 #1: 먼저 PDP 가격 노드(클래스 price/amount, itemprop=price)에서 '현재가'를 읽는다.
-    //   취소선(할인전·정가)·추천/리뷰 영역 제외 → 렌더된 판매가 우선.
-    const scoped = _kgpScopedPrice();
-    if (scoped.price) {
-      heuristicPrice = scoped.price;
-      heuristicCurrency = scoped.currency || "";
-    } else {
-      const pricePatterns = [
-        /[¥￥]\s*([\d,]+)/,
-        /\$([\d,]+(?:\.\d{1,2})?)/,
-        /€\s*([\d,]+(?:\.\d{1,2})?)/,
-        /₩\s*([\d,]+)/
-      ];
-      const bodyText = document.body ? document.body.innerText.slice(0, 3000) : "";
-      for (const pattern of pricePatterns) {
-        const m = bodyText.match(pattern);
-        if (m) {
-          heuristicPrice = m[1].replace(/,/g, "");
-          if (pattern.source.includes("¥") || pattern.source.includes("￥")) {
-            heuristicCurrency = "JPY";
-          } else if (pattern.source.includes("\\$")) {
-            heuristicCurrency = "USD";
-          } else if (pattern.source.includes("€")) {
-            heuristicCurrency = "EUR";
-          } else if (pattern.source.includes("₩")) {
-            heuristicCurrency = "KRW";
-          }
-          break;
-        }
-      }
+  const _scoped = _kgpScopedPrice();
+  if (_scoped.price) {
+    heuristicPrice = _scoped.price;
+    heuristicCurrency = _scoped.currency || "";
+  }
+  if (!heuristicPrice) {
+    const metaAmt = getMeta("product:price:amount");
+    if (metaAmt) {
+      heuristicPrice = String(metaAmt).replace(/[^\d.,]/g, "").replace(/,/g, "");
+      heuristicCurrency = (getMeta("product:price:currency") || "").toUpperCase();
     }
+  }
+  if (!heuristicPrice) {
+    // 본문 텍스트 폴백 — 원/₩/¥/$/€ (Temu KR '61,144원' 포함).
+    const bodyText = document.body ? document.body.innerText.slice(0, 4000) : "";
+    const _bp = _kgpParsePrice(bodyText);
+    if (_bp) { heuristicPrice = _bp.price; heuristicCurrency = _bp.currency || ""; }
   }
 
   // 봇 차단(403) 사이트도 수집되도록 페이지 HTML을 함께 전송 → 서버가 파싱(가격/이미지/옵션 보강).
@@ -174,8 +173,8 @@ function extractProductMeta() {
     title: getMeta("og:title") || document.title || "",
     image: ogImage,
     images: images,
-    price: getMeta("product:price:amount") || heuristicPrice,
-    currency: getMeta("product:price:currency") || heuristicCurrency || "USD",
+    price: heuristicPrice,                 // v42 1-1: 렌더 DOM 현재가 우선(위에서 scoped→meta→본문 순 해결)
+    currency: heuristicCurrency,           // 기본값 USD 금지 — 못 얻으면 빈 값 → 서버 '가격 확인 필요'
     description: _kgpRealDescription(),
     brand: getMeta("og:brand") || "",
     jsonld: jsonldScripts,
@@ -653,7 +652,7 @@ function _kgpAmazonCards() {
       const bimg = _kgpBestImg(img);                        // v41 X-1: lazy placeholder 대신 실제 이미지
       cards.push({
         url: href, title: (titleEl.innerText || titleEl.textContent || "").trim().slice(0, 200),
-        image: bimg, images: bimg ? [bimg] : [], price: pr.price, currency: pr.currency || "USD", el: el,
+        image: bimg, images: bimg ? [bimg] : [], price: pr.price, currency: pr.currency, el: el,   /* v42 1-1: USD 기본값 금지 */
       });
     } catch (e) { /* noop */ }
   });

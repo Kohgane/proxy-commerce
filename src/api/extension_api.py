@@ -265,7 +265,11 @@ def collect_from_extension():
     # v16 P0: 가격이 비었거나 0이면 가짜 0원 대신 '확인 필요'로 정직 표기.
     def _price_empty(v):
         return v is None or str(v).strip() in ("", "0", "0.0", "0.00")
+    _cur = str(payload.get("currency") or "").strip().upper()
     if _price_empty(payload.get("price")):
+        payload["price_status"] = "needs_check"
+    elif not _cur:
+        # v42 1-1: 가격은 있는데 통화 미상 → USD 임의 확정 금지, '가격 확인 필요' 정직.
         payload["price_status"] = "needs_check"
 
     payload.pop("html", None)  # 대용량 HTML은 이력에 저장하지 않음
@@ -317,7 +321,7 @@ def collect_from_extension():
             title=title_ko,
             image=images[0] if images else payload.get("image", ""),
             price=payload.get("price", ""),
-            currency=payload.get("currency", "USD"),
+            currency=payload.get("currency") or "",   # v42 1-1: USD 기본값 금지(통화 미상은 빈 값)
             status="ok",
             extra={
                 "jsonld": payload.get("jsonld", []),
@@ -331,7 +335,7 @@ def collect_from_extension():
                 "detail_images": _bucket_filter(payload.get("detail_images"), []),
                 "price": payload.get("price", ""),
                 "price_original": payload.get("price", ""),
-                "currency": payload.get("currency", "USD"),
+                "currency": payload.get("currency") or "",   # v42 1-1: USD 기본값 금지
                 "brand": payload.get("brand", ""),
                 "options": payload.get("options", []),
                 "reviews": payload.get("reviews", []),
