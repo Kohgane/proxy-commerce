@@ -129,7 +129,18 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   읽어, append를 목킹하는 test_extension_api_history가 다른 파일이 남긴 aloyoga 행에 dedup되던 것 → 클래스 autouse
   `_clean_store`로 저장소 비움. 가드 test_v42_1_3_dedup(6). 전체 10702 passed. before/after:
   docs/screens/v42/1-3-dedup-before-after.png(같은 상품 2회 → BEFORE 총수집 2 / AFTER 총수집 1 + 안내).
-- ⏳ PHASE 1 남음(내 몫): 1-2 이미지·상세·리뷰 스코프(로고 제외 강화) / 1-6 상세 필러·AI초안.
+- **addendum v42-E 편입(오너 2026-07-02):** 확장 = 퍼센티식(설치 후 상시 수집). 판정순서 E-1→E-5→E-4→E-2→E-3.
+  가격(1-1)은 통과 확인. 이미지·상세(1-2,1-6)도 마저.
+- ✅ **E-1 토큰 영속 + 연결 상태 (#396):** 증상=토큰 넣었는데 페이지마다 '인증이 필요합니다…' 반복(= collect 401 토스트).
+  점검: 토큰은 이미 chrome.storage.sync+local 저장·background가 매 요청 헤더 첨부·로드시 리셋 로직 없음(영속 정상).
+  근본 UX 결함=사용자가 **연결됐는지 확인할 방법이 없어** 혼란 + 미인증/실패 토스트가 안내 부족. **수리:** 신규
+  `GET /api/v1/collect/me`(Bearer→{ok,email,name}/401, CORS 기허용) → 옵션 페이지가 로드·저장 직후 호출해 **'연결됨 ✓
+  (계정)'** 배너 표시(401=만료·재발급 안내, 네트워크실패=확인 불가 정직). background: 미인증 시 자동 notification 남발
+  제거(반환만, FAB 클릭 때만 안내) + 401 응답에 `authRequired` 플래그(재프롬프트는 401일 때만). 옵션 '초기화'→'재설정'.
+  manifest 1.5.24→1.5.25. 가드 test_v42_e1_token_persist(7: /me 200·401·CORS + background 무-자동알림·401플래그 + 옵션
+  연결배너·리셋없음). 전체 10709 passed. before/after: docs/screens/v42/e1-token-before-after.png(상태표시 없음 →
+  '연결됨 ✓ · demo@goga.kr' + 재설정) + e1-token-connected.png.
+- ⏳ PHASE 1 남음(내 몫): E-5 벌크 저장 영속 / E-4 전체선택 정확도 / E-2 상시버튼 / E-3 호버수집 / 1-2 이미지·상세 스코프 / 1-6 상세 필러·AI초안.
 - ⏳ 후속: PHASE 2 속도, STEP 3 JSON제거·UX / 4-1 라벨 '다리 너머, 오늘의 발굴' / STEP 5 디자인.
 
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)

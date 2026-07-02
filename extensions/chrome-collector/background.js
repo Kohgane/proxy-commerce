@@ -79,14 +79,10 @@ async function handleCollect(meta, sendResponse) {
   const token = settings.token;
 
   if (!token) {
-    const result = { ok: false, error: "토큰이 설정되지 않았습니다. 옵션 페이지에서 토큰을 입력해주세요." };
+    // v42 E-1: 미인증 자동 토스트 남발 금지 — 알림 만들지 않고 호출부(FAB 클릭)에만 안내 반환.
+    const result = { ok: false, authRequired: true,
+                     error: "토큰이 설정되지 않았습니다. 확장 옵션에서 토큰을 설정해주세요." };
     if (sendResponse) sendResponse(result);
-    chrome.notifications.create({
-      type: "basic",
-      iconUrl: "icons/48.png",
-      title: "고가브릿지",
-      message: result.error
-    });
     return;
   }
 
@@ -101,6 +97,8 @@ async function handleCollect(meta, sendResponse) {
     });
 
     const data = await response.json();
+    // v42 E-1: 재프롬프트는 401(만료·무효)일 때만. 호출부가 '재설정' 안내를 띄운다.
+    if (response.status === 401) data.authRequired = true;
 
     if (sendResponse) sendResponse(data);
 
@@ -141,7 +139,8 @@ async function handleCollectBulk(items, sendResponse) {
   items = Array.isArray(items) ? items : [];
 
   if (!token) {
-    if (sendResponse) sendResponse({ ok: false, error: "토큰이 설정되지 않았습니다. 확장 옵션에서 토큰을 입력하세요." });
+    if (sendResponse) sendResponse({ ok: false, authRequired: true,
+      error: "토큰이 설정되지 않았습니다. 확장 옵션에서 토큰을 설정하세요." });
     return;
   }
   if (!items.length) {
