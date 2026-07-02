@@ -550,6 +550,9 @@ const KGP_DEFAULT_SOURCES = [
   { id: "qoo10", label: "큐텐", test: (h) => /(^|\.)qoo10\.[a-z.]+$/.test(h) },
   { id: "mercari", label: "메루카리", test: (h) => /(^|\.)mercari\.com$/.test(h) },
   { id: "rakuten", label: "라쿠텐(Rakuten Fashion 포함)", test: (h) => /(^|\.)rakuten\.(co\.jp|com)$/.test(h) },
+  // v42 E-2: 오너 지정 어댑터 도메인 상시 노출(야후쇼핑 재팬·요시다카반).
+  { id: "yahoo", label: "야후쇼핑(재팬)", test: (h) => /(shopping\.yahoo\.co\.jp|paypaymall\.yahoo\.co\.jp)$/.test(h) },
+  { id: "yoshida", label: "요시다카반", test: (h) => /(^|\.)yoshidakaban\.com$/.test(h) },
 ];
 let KGP_SOURCES = null;   // chrome.storage의 사용자 설정 { defaults:{id:bool}, custom:[{host,on}] }
 let KGP_FAB_ENABLED = true;   // v16 P1: 인페이지 수집 버튼(FAB) on/off (popup 토글, 기본 ON)
