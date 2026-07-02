@@ -231,7 +231,9 @@
             {{ _user_email or _user_name or '사용자' }}
           </button>
           <ul class="dropdown-menu dropdown-menu-end">
-            <li><a class="dropdown-item" href="/seller/me"><i class="bi bi-person"></i> 마이페이지</a></li>
+            <li><a class="dropdown-item" href="/seller/me"><i class="bi bi-person-circle"></i> 내 프로필</a></li>
+            <li><a class="dropdown-item" href="/seller/me/notifications"><i class="bi bi-gear"></i> 설정</a></li>
+            <li><a class="dropdown-item" href="/seller/me/tokens"><i class="bi bi-fingerprint"></i> 패스키</a></li>
             <li><hr class="dropdown-divider"></li>
             <li>
               <form method="post" action="/auth/logout" class="px-2">
