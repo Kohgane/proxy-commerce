@@ -43,7 +43,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // 비동기 응답
   }
   if (msg.action === "collectBulk") {
-    handleCollectBulk(msg.items, sendResponse);
+    handleCollectBulk(msg.items, sendResponse, sender && sender.tab && sender.tab.id);
     return true; // 비동기 응답
   }
   if (msg.action === "getSettings") {
@@ -132,7 +132,7 @@ async function handleCollect(meta, sendResponse) {
 // 리스팅 다중 상품 일괄 수집 (Phase 221)
 // content_script가 보낸 상품 카드 메타 배열을 토큰으로 순차 전송한다.
 // background fetch라 페이지 CSP의 영향을 받지 않는다.
-async function handleCollectBulk(items, sendResponse) {
+async function handleCollectBulk(items, sendResponse, tabId) {
   const settings = await getSettings();
   const serverUrl = settings.serverUrl;
   const token = settings.token;
@@ -148,8 +148,12 @@ async function handleCollectBulk(items, sendResponse) {
     return;
   }
 
-  let success = 0, failed = 0;
-  for (const meta of items) {
+  // v42 E-5: 항목별 서버 커밋(+ID 회신) 후에만 성공 카운트. 중복/실패 분리 집계 + 실패 항목 반환(재시도).
+  //   순차 처리(동시 폭주로 인한 유실 방지) + 1건마다 진행률을 탭에 전송(bulkProgress).
+  let success = 0, failed = 0, duplicate = 0;
+  const failedItems = [];
+  for (let i = 0; i < items.length; i++) {
+    const meta = items[i];
     try {
       const r = await fetch(`${serverUrl}/api/v1/collect/extension`, {
         method: "POST",
@@ -157,19 +161,25 @@ async function handleCollectBulk(items, sendResponse) {
         body: JSON.stringify(meta),
       });
       const d = await r.json().catch(() => ({}));
-      if (d && d.ok) success++; else failed++;
+      if (d && d.ok && d.duplicate) duplicate++;      // 이미 수집(중복) — '완료'로 부풀리지 않음
+      else if (d && d.ok) success++;                  // 서버 커밋 성공(STEP 1-0 write-then-verify)
+      else { failed++; failedItems.push(meta); }      // 502 등 정직 실패 → 재시도 대상
     } catch (e) {
-      failed++;
+      failed++; failedItems.push(meta);
+    }
+    if (tabId != null) {
+      try { chrome.tabs.sendMessage(tabId, { action: "bulkProgress", done: i + 1, total: items.length }); } catch (_) {}
     }
   }
 
+  const parts = [`완료 ${success}`];
+  if (duplicate) parts.push(`중복 ${duplicate}`);
+  if (failed) parts.push(`실패 ${failed}`);
   chrome.notifications.create({
-    type: "basic",
-    iconUrl: "icons/48.png",
-    title: success ? "고가브릿지" : "고가브릿지",
-    message: `일괄 수집: 성공 ${success} / 실패 ${failed} (총 ${items.length})`,
+    type: "basic", iconUrl: "icons/48.png", title: "고가브릿지",
+    message: `일괄 수집 (총 ${items.length}): ${parts.join(" · ")}`,
   });
-  if (sendResponse) sendResponse({ ok: true, success, failed, total: items.length });
+  if (sendResponse) sendResponse({ ok: true, success, failed, duplicate, total: items.length, failedItems });
 }
 
 // content_script에서 호출할 메타 추출 함수 (executeScript용)
