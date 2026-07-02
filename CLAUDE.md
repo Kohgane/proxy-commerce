@@ -119,7 +119,17 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   "USD"→""(2곳). manifest 1.5.22→1.5.23. 가드 test_v42_1_1_price_at_click(6: 소스계약 + node로 ₩/원→KRW 실증 +
   서버 KRW저장·통화미상 needs_check). 전체 10696 passed. before/after: docs/screens/v42/1-1-price-before-after.png
   (렌더 61,144원 → BEFORE og:price 0.00 USD / AFTER 렌더DOM 61144 KRW) + 1-1-drawer-krw.png(실제 드로어 61,144 KRW).
-- ⏳ PHASE 1 남음(내 몫): 1-2 이미지·상세·리뷰 스코프(로고 제외 강화) / 1-3 중복수집(goods ID 키) / 1-6 상세 필러·AI초안.
+- ✅ **1-3 중복 수집 방지 (goods ID 정규화 키) (#395):** 같은 상품 두 번 수집→목록 2건 쌓이던 문제. 신규
+  `src/collectors/product_key.py::normalize_product_key(url)` — 도메인별 상품 고유키(Temu `g-<digits>`/`goods_id`,
+  아마존 ASIN(마켓플레이스별), 타오바오/티몰/1688 `id`, 알리 `/item/<id>`), 그 외 host+path(쿼리 트래킹 `_oak_mp_inf`
+  등 제거·끝슬래시 정규화). `collect_history_store.find_by_product_key(url, seller_ids)` — 각 행 url을 그때 정규화해
+  비교(예전 행도 매칭)·셀러 격리·최근 것 반환. extension_api·`_quick_collect`(북마클릿/공유) append 전 dedup →
+  기존 있으면 `{ok:true, duplicate:true, item_id, message:'이미 수집한 상품입니다'}`로 새 행 안 만듦. content_script
+  FAB가 duplicate면 축하 대신 안내 토스트. manifest 1.5.23→1.5.24. **테스트 격리 수정**: dedup이 실 `_in_memory`를
+  읽어, append를 목킹하는 test_extension_api_history가 다른 파일이 남긴 aloyoga 행에 dedup되던 것 → 클래스 autouse
+  `_clean_store`로 저장소 비움. 가드 test_v42_1_3_dedup(6). 전체 10702 passed. before/after:
+  docs/screens/v42/1-3-dedup-before-after.png(같은 상품 2회 → BEFORE 총수집 2 / AFTER 총수집 1 + 안내).
+- ⏳ PHASE 1 남음(내 몫): 1-2 이미지·상세·리뷰 스코프(로고 제외 강화) / 1-6 상세 필러·AI초안.
 - ⏳ 후속: PHASE 2 속도, STEP 3 JSON제거·UX / 4-1 라벨 '다리 너머, 오늘의 발굴' / STEP 5 디자인.
 
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)
