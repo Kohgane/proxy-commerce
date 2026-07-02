@@ -55,6 +55,8 @@ const DEFAULT_SOURCES = [
   { id: "qoo10", label: "큐텐", host: "qoo10.com" },
   { id: "mercari", label: "메루카리", host: "mercari.com" },
   { id: "rakuten", label: "라쿠텐(Rakuten Fashion 포함)", host: "rakuten.co.jp" },
+  { id: "yahoo", label: "야후쇼핑(재팬)", host: "shopping.yahoo.co.jp" },
+  { id: "yoshida", label: "요시다카반", host: "yoshidakaban.com" },
 ];
 
 // ---- 서버/토큰 (sync 우선 + local 폴백) ----

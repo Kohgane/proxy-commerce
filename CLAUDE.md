@@ -157,7 +157,15 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   manifest 1.5.26→1.5.27. 가드 test_v42_e4_selectall(5: 소스계약 + **node로 실제 어댑터 실행 — 26개(16유가+8무가+
   2광고)→상품 24 인식·광고 2 제외·유가 16**). 전체 10718 passed. before/after: docs/screens/v42/e4-selectall-before-after.png
   (실제 _kgpAmazonCards: 상품 16 → 24 + 제외 2).
-- ⏳ PHASE 1 남음(내 몫): E-2 상시버튼 / E-3 호버수집 / 1-2 이미지·상세 스코프 / 1-6 상세 필러·AI초안.
+- ✅ **E-2 퍼센티식 상시 수집 버튼 (#399):** 점검=인프라 이미 완비(manifest matches `<all_urls>`·FAB는 인증
+  무관 상시[토큰은 클릭 때만]·SPA pushState/replaceState/popstate 후킹·MutationObserver·v38#4 상품페이지 휴리스틱
+  게이트 제거). 갭=오너 지정 어댑터 도메인(야후쇼핑 재팬·요시다카반)이 기본 소싱처에 없어 그 사이트에서 버튼
+  미표시. **수리:** KGP_DEFAULT_SOURCES + options DEFAULT_SOURCES에 yahoo(shopping/paypaymall.yahoo.co.jp)·
+  yoshida(yoshidakaban.com) 추가(기본 ON). manifest 1.5.27→1.5.28. 가드 test_v42_e2_always_on(5: matches all_urls·
+  injectCollectButton 인증게이트 0·SPA훅·지정도메인 포함·**node로 kgpHostAllowed가 temu/amazon/yahoo/yoshida True,
+  무관 사이트 False**). 전체 10723 passed. before/after(정직: 상시 표시가 산출물): docs/screens/v42/e2-always-on-button.png
+  (Temu·Amazon 진입 → 고가수집기 버튼 상시, 인증 무관). ※미인증 클릭 안내는 E-1 연동.
+- ⏳ PHASE 1 남음(내 몫): E-3 호버수집 / 1-2 이미지·상세 스코프 / 1-6 상세 필러·AI초안.
 - ⏳ 후속: PHASE 2 속도, STEP 3 JSON제거·UX / 4-1 라벨 '다리 너머, 오늘의 발굴' / STEP 5 디자인.
 
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)
