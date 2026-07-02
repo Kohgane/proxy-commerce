@@ -83,6 +83,12 @@ def inject_seller_template_flags():
         "t": (lambda key, lang=_lang: _t(key, lang)),
         "account_plan": _plan,
         "_auth_enabled": _AUTH_ENABLED,
+        # True when the full console sidebar should be rendered:
+        # • always when auth is OFF (dev/test mode — matches pre-existing behaviour)
+        # • when auth is ON and a user session exists
+        "_show_console_nav": (not _AUTH_ENABLED) or bool(
+            session.get("user_id") or session.get("user_email")
+        ),
     }
 
 
@@ -113,6 +119,18 @@ def _check_auth() -> bool:
         return bool(session.get("user_id") or session.get("user_email"))
     except Exception:
         return False
+
+
+def _current_user_id() -> str | None:
+    """현재 세션의 user_id(또는 user_email)를 반환한다. 없으면 None.
+
+    _check_auth() 통과 후에 호출할 것 — 인증 게이트가 먼저 실행되므로
+    이 함수가 반환하는 None은 실제로 인증되지 않은 요청에서만 발생한다.
+    """
+    try:
+        return session.get("user_id") or session.get("user_email") or None
+    except Exception:
+        return None
 
 
 def _cs_role_allowed() -> bool:
@@ -4933,8 +4951,7 @@ def personal_tokens():
     """Personal Access Token 관리 페이지 (Phase 135)."""
     if not _check_auth():
         return redirect(url_for("auth.login", next=request.url))
-    from flask import session as _session
-    user_id = _session.get("user_id") or _session.get("user_email")
+    user_id = _current_user_id()
 
     tokens = []
     try:
@@ -4974,8 +4991,7 @@ def personal_tokens_generate():
     """
     if not _check_auth():
         return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
-    from flask import session as _session
-    user_id = _session.get("user_id") or _session.get("user_email")
+    user_id = _current_user_id()
 
     data = request.get_json(force=True, silent=True) or {}
     scopes = data.get("scopes") or ["collect.write"]
@@ -4999,8 +5015,7 @@ def personal_tokens_revoke():
     """
     if not _check_auth():
         return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
-    from flask import session as _session
-    user_id = _session.get("user_id") or _session.get("user_email")
+    user_id = _current_user_id()
 
     data = request.get_json(force=True, silent=True) or {}
     token_hash = (data.get("token_hash") or "").strip()
