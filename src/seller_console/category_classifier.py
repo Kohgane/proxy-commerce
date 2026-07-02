@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List
 
 # 정규화 카테고리: (코드, 한글 라벨, 키워드들)  — 코드는 coupang CATEGORY_MAP과 정렬
@@ -49,6 +50,20 @@ CATEGORY_RULES: List[Dict[str, Any]] = [
 
 DEFAULT = {"code": "GEN", "label": "기타", "confidence": 0.0}
 
+# v41 X-2: 자동 카테고리 오분류 수리.
+# 증상 = "접이식 차량용 책상" → '식품/차'(FOD). 원인 = 단어 부분일치: 한 글자 키워드 "차"(tea)가
+# "차량"(vehicle) 안에 substring으로 잡힘. 한국어는 복합어에 공백이 없어 substring 매칭은 동음이의 함정.
+# 수리: ①한 글자(단일 음절) 키워드는 '독립 토큰'일 때만 매칭(차량→차 오매칭 박멸) ②멀티글자 키워드는
+# 가중치 높게(형태가 뚜렷) ③근거가 약한 한 글자뿐이면 신뢰도 낮춰 추천 비우고 '직접 선택' 정직 표기.
+# 동음이의 상위 함정(차·배·밤·눈 등)은 단독으로 확정 카테고리를 만들지 않는다.
+_HOMONYM_AMBIGUOUS = {"차", "배", "밤", "눈", "말", "김", "옷", "컵", "펜", "립"}
+_MANUAL_THRESHOLD = 0.5   # 이 미만이면 GEN(직접 선택) — 가짜 확정 금지
+_TOKEN_RE = re.compile(r"[가-힣a-z0-9]+")
+
+
+def _tokens(text: str) -> set:
+    return set(_TOKEN_RE.findall(text))
+
 # 화면 드롭다운용 정규화 카테고리 목록
 CATEGORY_OPTIONS: List[Dict[str, str]] = (
     [{"code": r["code"], "label": r["label"]} for r in CATEGORY_RULES]
@@ -64,22 +79,45 @@ def classify(title: str, description: str = "", keywords: str = "") -> Dict[str,
     """
     text = " ".join([title or "", description or "", keywords or ""]).lower()
     if not text.strip():
-        return {**DEFAULT, "matched": []}
+        return {**DEFAULT, "matched": [], "needs_manual": True}
+
+    tokens = _tokens(text)
+
+    def _matches(kw: str) -> bool:
+        kw = kw.lower()
+        # 한 글자(단일 음절) 키워드는 '독립 토큰'일 때만 인정 → 차량→차 같은 substring 오매칭 박멸.
+        if len(kw) == 1:
+            return kw in tokens
+        return kw in text   # 멀티글자는 형태가 뚜렷 → substring 허용
 
     best = None
     best_hits: List[str] = []
+    best_score = 0.0
     for rule in CATEGORY_RULES:
-        hits = [k for k in rule["kw"] if k.lower() in text]
-        if hits and (best is None or len(hits) > len(best_hits)):
-            best = rule
-            best_hits = hits
+        hits = [k for k in rule["kw"] if _matches(k)]
+        # 가중치: 멀티글자=2(뚜렷), 한 글자=1(약함). 동음이의 함정 글자는 0.5(단독 확정 불가).
+        score = sum(0.5 if k in _HOMONYM_AMBIGUOUS else (2.0 if len(k) >= 2 else 1.0) for k in hits)
+        if hits and (best is None or score > best_score):
+            best, best_hits, best_score = rule, hits, score
     if not best:
-        return {**DEFAULT, "matched": [], "suggested_keywords": suggest_keywords("GEN", title)}
+        return {**DEFAULT, "matched": [], "needs_manual": True,
+                "suggested_keywords": suggest_keywords("GEN", title)}
 
-    # confidence: 매칭 키워드 수에 따라 0.5~0.95
-    confidence = min(0.5 + 0.15 * len(best_hits), 0.95)
+    has_strong = any(len(k) >= 2 and k not in _HOMONYM_AMBIGUOUS for k in best_hits)
+    # 신뢰도: 점수 기반. 뚜렷한(멀티글자) 근거가 하나도 없으면 상한을 낮춰 '직접 선택'으로.
+    confidence = min(0.5 + 0.15 * best_score, 0.95)
+    if not has_strong:
+        confidence = min(confidence, 0.4)   # 한 글자/동음이의뿐 → 낮은 신뢰도
+
+    if confidence < _MANUAL_THRESHOLD:
+        # 근거 약함 → 가짜 확정 금지, 사용자에게 직접 선택 요청(정직).
+        return {"code": "GEN", "label": "기타", "confidence": round(confidence, 2),
+                "matched": best_hits[:5], "needs_manual": True,
+                "suggested_keywords": suggest_keywords("GEN", title)}
+
     return {"code": best["code"], "label": best["label"],
             "confidence": round(confidence, 2), "matched": best_hits[:5],
+            "needs_manual": False,
             "suggested_keywords": suggest_keywords(best["code"], title)}
 
 

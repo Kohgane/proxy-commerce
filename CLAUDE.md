@@ -75,8 +75,16 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   **정직**: 서버 영속 저장된 값(count)이 늘 때만 반영(가짜 실시간 아님). **편집 가드**: 드로어(kgp-drawer-open)/모달
   (.modal.show) 열려 있으면 중단 대신 '새로 수집된 N건' 배너 후 편집 종료 시 반영. 가드 test_v41_step1_0b_autorefresh(6).
   전체 10676 passed. before/after: docs/screens/v41/step1-0b-autorefresh-{before,after}.png(빈 목록→수집→탭복귀 poll로 자동 등장).
-- ⏳ 남음(내 몫, Copilot의 STEP 1-1~1-4·STEP 2 회피): X-1 이미지↔상품ID 귀속 / X-2 카테고리 오분류(부분일치 금지) /
-  STEP 4-2·v40-B 확장·북마클릿 아이콘 브릿지 마크. (STEP 3 JSON제거·UX, 4-1 라벨, STEP 5 디자인은 후속.)
+- ✅ **X-2 자동 카테고리 오분류 수리 (#390):** 증상=접이식 차량용 책상 → '식품/차'(FOD). 근본 원인=`category_classifier`
+  가 **단어 부분일치**(substring)라 한 글자 키워드 "차"(tea)가 "차**량**"(vehicle) 안에 매칭. 한국어 복합어는 공백이
+  없어 substring 매칭이 동음이의 함정. 수리: ①한 글자(단일 음절) 키워드는 **독립 토큰**일 때만 매칭(_TOKEN_RE로
+  토큰화 → 차량→차 오매칭 박멸) ②멀티글자=가중치 2/한글자=1/동음이의함정(차·배·밤·눈·옷·컵·펜·립…)=0.5로 점수화
+  ③뚜렷한 멀티글자 근거 없으면 신뢰도 상한 0.4 → `_MANUAL_THRESHOLD` 0.5 미만이면 **GEN + needs_manual**(가짜 확정
+  금지, UI가 '직접 선택해 주세요' 표기). 진짜 차(녹차·홍차·원두 커피)는 멀티글자로 FOD 유지(회귀 0). 옷장→가구(옷
+  substring 오분류 박멸). 가드 test_v41_x2_category_misclassify(7) + 기존 test 갱신(녹차 matched). 전체 10683 passed.
+  before/after: docs/screens/v41/x2-category-{before,after}.png(식품/차 → 홈/가구/주방, 키워드칩도 가구 계열로).
+- ⏳ 남음(내 몫, Copilot의 STEP 1-1~1-4·STEP 2 회피): X-1 이미지↔상품ID 귀속 / STEP 4-2·v40-B 확장·북마클릿 아이콘
+  브릿지 마크. (STEP 3 JSON제거·UX, 4-1 라벨, STEP 5 디자인은 후속.)
 
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)
 - 규칙(불변): 각 항목 **실제 화면 before/after 캡처로만 완료**. 추측 금지·거짓성공/임의환산 금지·회귀 금지(pytest+CI)·토큰 단일소스.

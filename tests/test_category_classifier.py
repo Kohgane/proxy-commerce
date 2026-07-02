@@ -41,7 +41,7 @@ def test_classify_endpoint(client):
     r = client.post("/seller/collect/classify", json={"title": "녹차 티백"})
     d = r.get_json()
     assert d["ok"] is True and d["code"] == "FOD"
-    assert "차" in d["matched"]
+    assert "녹차" in d["matched"]   # v41 X-2: 한 글자 '차'(substring)가 아니라 멀티글자 '녹차'로 매칭
 
 
 def _item(title="포터 백팩"):
