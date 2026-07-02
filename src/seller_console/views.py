@@ -4001,7 +4001,10 @@ def billing_select():
     if plan not in billing_store.PLANS:
         return jsonify({"ok": False, "error": "알 수 없는 플랜입니다."}), 400
     if plan == "free":
-        billing_store.set_plan(_seller_id(), "free")
+        try:
+            billing_store.set_plan(_seller_id(), "free")
+        except billing_store.BillingCommitError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 503
         return jsonify({"ok": True, "plan": "free", "message": "무료 플랜으로 전환했습니다."})
     # 유료: 결제 연동 필요 — 미설정이면 정직 안내(활성 안 함)
     pay_ready = bool(os.getenv("TOSS_CLIENT_KEY")) and bool(os.getenv("TOSS_SECRET_KEY"))
@@ -4066,9 +4069,12 @@ def billing_success():
     if str(result.get("status") or "").upper() != "DONE":
         return redirect(url_for("seller_console.billing_page", error="결제 상태를 완료로 확인하지 못했어요."))
 
-    paid = billing_store.pop_pending_payment(order_id) or pending
-    plan = str(paid.get("plan") or "free")
-    billing_store.set_plan(sid, plan)
+    plan = str(pending.get("plan") or "free")
+    try:
+        billing_store.set_plan(sid, plan)
+    except billing_store.BillingCommitError as exc:
+        return redirect(url_for("seller_console.billing_page", error=str(exc)))
+    billing_store.pop_pending_payment(order_id)
     label = billing_store.PLANS.get(plan, {}).get("label", plan)
     return redirect(url_for("seller_console.billing_page", notice=f"{label} 플랜 결제가 완료되었습니다."))
 
@@ -4998,9 +5004,12 @@ def personal_tokens_generate():
     expires_days = int(data.get("expires_days", 365))
 
     try:
-        from src.auth.personal_tokens import generate_token
-        result = generate_token(user_id=user_id, scopes=scopes, expires_days=expires_days)
+        from src.auth import personal_tokens as _pt
+        result = _pt.generate_token(user_id=user_id, scopes=scopes, expires_days=expires_days)
         return jsonify({"ok": True, **result})
+    except _pt.TokenStoreCommitError as exc:
+        logger.warning("토큰 발급 저장 실패: %s", exc)
+        return jsonify({"ok": False, "error": str(exc)}), 503
     except Exception as exc:
         logger.warning("토큰 발급 실패: %s", exc)
         return jsonify({"ok": False, "error": "토큰 발급 중 오류가 발생했습니다."}), 500

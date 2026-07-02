@@ -28,9 +28,15 @@ _TOKEN_LENGTH = 64  # 총 길이 (prefix 포함)
 _DEFAULT_EXPIRY_DAYS = 365
 _VALID_SCOPES = {"collect.write", "catalog.read", "markets.write"}
 
-# 인메모리 캐시 (Sheets 부하 감소, TTL 5분)
+# 인메모리 캐시 (Sheets 부하 감소, TTL 5분).
+# 주의: revoke는 시트에 즉시 영속 커밋되지만, 다른 워커가 이미 이 캐시를 쥔 경우
+# 최대 5분까지 직전 인증 상태가 잠깐 남아 보일 수 있다.
 _token_cache: dict = {}
 _CACHE_TTL_SEC = 300
+
+
+class TokenStoreCommitError(RuntimeError):
+    """토큰 저장소 커밋 실패."""
 
 
 def _hash_token(raw: str) -> str:
@@ -55,6 +61,34 @@ def _ensure_headers(ws) -> None:
             )
     except Exception:
         pass
+
+
+def _sheet_records(ws=None) -> list[dict]:
+    ws = ws or _get_worksheet()
+    return ws.get_all_records()
+
+
+def _find_token_row(token_hash: str, *, ws=None) -> Optional[dict]:
+    for row in _sheet_records(ws):
+        if row.get("token_hash") == token_hash:
+            return row
+    return None
+
+
+def _token_row_matches_saved(row: Optional[dict], *, token_hash: str, user_id: str, scopes: list, expires_at: str) -> bool:
+    if not row:
+        return False
+    if row.get("token_hash") != token_hash:
+        return False
+    if str(row.get("user_id", "")) != str(user_id):
+        return False
+    if str(row.get("expires_at", "")) != str(expires_at):
+        return False
+    try:
+        saved_scopes = json.loads(row.get("scopes_json", "[]"))
+    except Exception:
+        return False
+    return list(saved_scopes) == list(scopes)
 
 
 def generate_token(user_id: str, scopes: list = None, expires_days: int = _DEFAULT_EXPIRY_DAYS) -> dict:
@@ -93,14 +127,23 @@ def generate_token(user_id: str, scopes: list = None, expires_days: int = _DEFAU
         "false",  # revoked
     ]
 
-    if _SHEET_ID:
-        try:
-            ws = _get_worksheet()
-            _ensure_headers(ws)
-            ws.append_row(row)
-            logger.info("Personal Token 발급: user=%s scopes=%s", user_id, scopes)
-        except Exception as exc:
-            logger.error("토큰 저장 실패: %s", exc)
+    if not _SHEET_ID:
+        raise TokenStoreCommitError("토큰 저장소가 아직 준비되지 않았어요. 잠시 후 다시 시도해 주세요.")
+
+    try:
+        ws = _get_worksheet()
+        _ensure_headers(ws)
+        ws.append_row(row)
+        saved = _find_token_row(token_hash, ws=ws)
+        if not _token_row_matches_saved(saved, token_hash=token_hash, user_id=user_id,
+                                        scopes=scopes, expires_at=expires_at):
+            raise TokenStoreCommitError("토큰을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.")
+        logger.info("Personal Token 발급: user=%s scopes=%s", user_id, scopes)
+    except TokenStoreCommitError:
+        raise
+    except Exception as exc:
+        logger.error("토큰 저장 실패: %s", exc)
+        raise TokenStoreCommitError("토큰을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.") from exc
 
     return {
         "raw_token": raw_token,
@@ -109,6 +152,7 @@ def generate_token(user_id: str, scopes: list = None, expires_days: int = _DEFAU
         "scopes": scopes,
         "created_at": now.isoformat(),
         "expires_at": expires_at,
+        "durable": True,
     }
 
 
@@ -141,7 +185,7 @@ def validate_token(raw_token: str, required_scopes: list = None) -> Optional[dic
 
     try:
         ws = _get_worksheet()
-        records = ws.get_all_records()
+        records = _sheet_records(ws)
         now = datetime.now(timezone.utc)
 
         for row in records:
@@ -225,12 +269,15 @@ def revoke_token(token_hash: str, user_id: str, *, user_ids=None) -> bool:
     id_set = _identity_set(user_id, user_ids)
     try:
         ws = _get_worksheet()
-        records = ws.get_all_records()
+        records = _sheet_records(ws)
         for i, row in enumerate(records):
             if row.get("token_hash") == token_hash and str(row.get("user_id", "")) in id_set:
                 row_idx = i + 2
                 ws.update_cell(row_idx, 7, "true")  # revoked 컬럼
-                # 캐시에서 제거
+                persisted = _find_token_row(token_hash, ws=ws)
+                if str((persisted or {}).get("revoked", "false")).lower() != "true":
+                    logger.error("토큰 회수 검증 실패: hash=%s...", token_hash[:8])
+                    return False
                 _token_cache.pop(token_hash, None)
                 logger.info("토큰 회수: user=%s hash=%s...", user_id, token_hash[:8])
                 return True
@@ -256,7 +303,7 @@ def list_tokens(user_id: str, *, user_ids=None) -> list:
     result = []
     try:
         ws = _get_worksheet()
-        records = ws.get_all_records()
+        records = _sheet_records(ws)
         for row in records:
             if str(row.get("user_id", "")) not in id_set:
                 continue
