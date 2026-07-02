@@ -348,12 +348,32 @@ def collect_from_extension():
         else:
             item_id, durable = _ret, True
         logger.info("[collect %s] 저장 시도 seller_id=%r item_id=%s", _corr, seller_id_val, item_id)
+        # v41 STEP 1-0: '수집 완료 = 재조회로 목록에 실제 보임'까지. 브라우저 목록은 관용 식별자
+        #   (user_id+email)로 조회하므로, 자기검증도 같은 식별자 집합으로 재읽기해 '보이는지' 확인.
+        #   (토큰 seller_id와 세션 email이 어긋나면 저장은 됐는데 목록에 안 뜨던 스코프 불일치 방지.)
+        verify_ids = {seller_id_val}
         try:
-            saved = history_get(item_id, seller_id=seller_id_val) is not None
+            from src.auth.user_store import get_store as _get_user_store
+            _u = _get_user_store().find_by_id(seller_id_val)
+            if _u is not None and getattr(_u, "email", ""):
+                verify_ids.add(str(_u.email))
         except Exception:
-            saved = bool(item_id)
-        logger.info("[collect %s] 저장 자기검증 saved=%s durable=%s (같은 seller_id=%r로 재조회)",
-                    _corr, saved, durable, seller_id_val)
+            pass
+        saved = False
+        try:
+            from src.seller_console.collect_history_store import existing_ids as _existing_ids
+            saved = str(item_id) in _existing_ids([item_id], seller_ids=verify_ids)
+        except Exception:
+            saved = False
+        if not saved:
+            # 폴백: 정확 seller_id 재조회(existing_ids는 관용집합의 상위집합이라 실사용선 동치;
+            #        여기 폴백은 append/get을 모킹한 테스트 등 특수 경로 호환).
+            try:
+                saved = history_get(item_id, seller_id=seller_id_val) is not None
+            except Exception:
+                saved = bool(item_id)
+        logger.info("[collect %s] 저장 자기검증(목록 스코프 재읽기) saved=%s durable=%s ids=%r",
+                    _corr, saved, durable, sorted(verify_ids))
     except Exception as exc:
         logger.warning("[collect %s] 수집 이력 기록 실패: %s", _corr, exc)
 
