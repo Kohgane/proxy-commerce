@@ -221,6 +221,10 @@ _FILLER_DESC_RE = re.compile(
     r"절약을\s*시작|쇼핑하여\s*절약|에서\s*쇼핑하여|최저가로\s*쇼핑|지금\s*쇼핑하세요|"
     r"가장\s*저렴한\s*가격으로|최저가로\s*구매|에서\s*구매하세요|"   # v39-E2 #3: Temu 류 한 줄 템플릿 필러
     r"여기를\s*눌러|링크를\s*확인하세요|"
+    # v42 1-6: Temu류 자동 필러 — "{사이트}에서 이 {상품}을 확인하세요" + "…제품도 좋아할 수 있습니다".
+    r"[A-Za-z가-힣]+에서\s*이\s*.{0,60}?[을를]\s*확인하세요|"
+    r"(제품|상품)도\s*좋아(할|하실)\s*수\s*있(습니다|어요|을)|"
+    r"(당신은|여러분은|귀하는)?\s*.{0,20}?(제품|상품)도\s*좋아하실\s*(수|것)|"
     r"smarter\s+shopping,?\s*better\s+living|"
     r"start\s+saving|save\s+big\b|shop\b.{0,30}\band\s+save\b|"
     r"free\s+shipping\s+on\s+(all\s+)?orders|"

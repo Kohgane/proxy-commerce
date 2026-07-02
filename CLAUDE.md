@@ -165,7 +165,15 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   injectCollectButton 인증게이트 0·SPA훅·지정도메인 포함·**node로 kgpHostAllowed가 temu/amazon/yahoo/yoshida True,
   무관 사이트 False**). 전체 10723 passed. before/after(정직: 상시 표시가 산출물): docs/screens/v42/e2-always-on-button.png
   (Temu·Amazon 진입 → 고가수집기 버튼 상시, 인증 무관). ※미인증 클릭 안내는 E-1 연동.
-- ⏳ PHASE 1 남음(내 몫): E-3 호버수집 / 1-2 이미지·상세 스코프 / 1-6 상세 필러·AI초안.
+- ✅ **1-6 상세설명 가짜 템플릿(필러) 박멸 (#400):** 증거='Temu에서 이 올인홈 …을 확인하세요. 가구 제품도 좋아할
+  수 있습니다.'가 상세로 저장. `_FILLER_DESC_RE`에 마켓 자동 필러 패턴 추가: `{사이트}에서 이 {상품}을 확인하세요`
+  (`[A-Za-z가-힣]+에서\s*이\s*.{0,60}?[을를]\s*확인하세요`) + `제품/상품도 좋아할 수 있습니다` 추천 꼬리. **오탐 0**
+  검증(실제 상세 '이 제품은 원목…'·'조립 방법을 확인하세요'·'사이즈를 확인하세요'는 필러 아님). extension_api가
+  수집 시 필러면 description 비움(번역본도) → 편집 페이지 상세 빈칸 + 기존 'AI 상세 초안 생성'(aiDraftBadge 'AI 초안·
+  검토·편집 후 저장', 자동 확정 금지) 노출. 플레이스홀더 제거는 strip_placeholder_tokens(v39 D) 유지. 가드
+  test_v42_1_6_filler(6: 템플릿 필러 3 + 실상세 오탐 0 + 서버 필러 빈값 E2E + 편집 AI초안 뱃지). 전체 10727 passed.
+  before/after: docs/screens/v42/1-6-filler-before-after.png(상세 'Temu에서 이…' → 빈 상세 + AI 상세 초안 생성).
+- ⏳ PHASE 1 남음(내 몫): E-3 호버수집 / 1-2 이미지·상세 스코프 추가 강화(로고 제외).
 - ⏳ 후속: PHASE 2 속도, STEP 3 JSON제거·UX / 4-1 라벨 '다리 너머, 오늘의 발굴' / STEP 5 디자인.
 
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)
