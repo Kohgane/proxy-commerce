@@ -65,6 +65,15 @@ def _sheet_account(ws, sid: str) -> Optional[dict]:
     return None
 
 
+def _account_matches_saved(saved: Optional[dict], expected: dict) -> bool:
+    if not saved:
+        return False
+    return (
+        str(saved.get("plan", "free")) == str(expected.get("plan", "free"))
+        and int(saved.get("token_balance", 0) or 0) == int(expected.get("token_balance", 0) or 0)
+    )
+
+
 def get_account(seller_id: Optional[str]) -> dict:
     """셀러 결제 상태 {plan, token_balance}."""
     sid = str(seller_id or "")
@@ -120,7 +129,7 @@ def _save(sid: str, acc: dict) -> bool:
                     ws.update_cell(r, col.get("plan", 1) + 1, normalized["plan"])
                     ws.update_cell(r, col.get("token_balance", 2) + 1, str(normalized["token_balance"]))
                     saved = _sheet_account(ws, sid)
-                    if saved != normalized:
+                    if not _account_matches_saved(saved, normalized):
                         raise BillingCommitError("결제 정보를 저장하지 못했어요. 잠시 후 다시 시도해 주세요.")
                     return True
             new_row = [""] * len(header)
@@ -129,7 +138,7 @@ def _save(sid: str, acc: dict) -> bool:
             new_row[col.get("token_balance", 2)] = str(normalized["token_balance"])
             ws.append_row(new_row)
             saved = _sheet_account(ws, sid)
-            if saved != normalized:
+            if not _account_matches_saved(saved, normalized):
                 raise BillingCommitError("결제 정보를 저장하지 못했어요. 잠시 후 다시 시도해 주세요.")
             return True
         except BillingCommitError:

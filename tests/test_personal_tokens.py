@@ -112,9 +112,9 @@ class TestGenerateToken:
         assert "catalog.read" in user_info["scopes"]
 
     def test_generate_append_failure_is_honest(self, token_sheet, monkeypatch):
-        def _boom(row):
+        def _raise_append_error(row):
             raise RuntimeError("append failed")
-        monkeypatch.setattr(token_sheet, "append_row", _boom)
+        monkeypatch.setattr(token_sheet, "append_row", _raise_append_error)
         with pytest.raises(pt.TokenStoreCommitError):
             pt.generate_token("user123")
 

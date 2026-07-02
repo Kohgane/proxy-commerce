@@ -73,6 +73,22 @@ def _find_token_row(token_hash: str, *, ws=None) -> Optional[dict]:
     return None
 
 
+def _token_row_matches_saved(row: Optional[dict], *, token_hash: str, user_id: str, scopes: list, expires_at: str) -> bool:
+    if not row:
+        return False
+    if row.get("token_hash") != token_hash:
+        return False
+    if str(row.get("user_id", "")) != str(user_id):
+        return False
+    if str(row.get("expires_at", "")) != str(expires_at):
+        return False
+    try:
+        saved_scopes = json.loads(row.get("scopes_json", "[]"))
+    except Exception:
+        return False
+    return list(saved_scopes) == list(scopes)
+
+
 def generate_token(user_id: str, scopes: list = None, expires_days: int = _DEFAULT_EXPIRY_DAYS) -> dict:
     """새 Personal Access Token 발급.
 
@@ -117,7 +133,8 @@ def generate_token(user_id: str, scopes: list = None, expires_days: int = _DEFAU
         _ensure_headers(ws)
         ws.append_row(row)
         saved = _find_token_row(token_hash, ws=ws)
-        if not saved or str(saved.get("user_id", "")) != str(user_id):
+        if not _token_row_matches_saved(saved, token_hash=token_hash, user_id=user_id,
+                                        scopes=scopes, expires_at=expires_at):
             raise TokenStoreCommitError("토큰을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.")
         logger.info("Personal Token 발급: user=%s scopes=%s", user_id, scopes)
     except TokenStoreCommitError:

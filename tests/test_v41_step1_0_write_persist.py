@@ -109,7 +109,11 @@ def test_token_append_failure_never_returns_raw_token(monkeypatch):
     ws = _TokenWS()
     monkeypatch.setattr(pt, "_SHEET_ID", "sheet-test", raising=False)
     monkeypatch.setattr(pt, "_get_worksheet", lambda: ws)
-    monkeypatch.setattr(ws, "append_row", lambda row: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    def _raise_append_error(row):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(ws, "append_row", _raise_append_error)
 
     with pytest.raises(pt.TokenStoreCommitError):
         pt.generate_token("user-1")
@@ -153,7 +157,11 @@ def test_billing_commit_failure_is_honest(monkeypatch):
     ws = _BillingWS()
     monkeypatch.setattr(bs, "_SHEET_ID", "sheet-test", raising=False)
     monkeypatch.setattr(bs, "_get_worksheet", lambda: ws)
-    monkeypatch.setattr(ws, "append_row", lambda row: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    def _raise_append_error(row):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(ws, "append_row", _raise_append_error)
 
     with pytest.raises(bs.BillingCommitError):
         bs.set_plan("seller-1", "plus")
