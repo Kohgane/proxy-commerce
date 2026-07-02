@@ -140,7 +140,16 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   manifest 1.5.24→1.5.25. 가드 test_v42_e1_token_persist(7: /me 200·401·CORS + background 무-자동알림·401플래그 + 옵션
   연결배너·리셋없음). 전체 10709 passed. before/after: docs/screens/v42/e1-token-before-after.png(상태표시 없음 →
   '연결됨 ✓ · demo@goga.kr' + 재설정) + e1-token-connected.png.
-- ⏳ PHASE 1 남음(내 몫): E-5 벌크 저장 영속 / E-4 전체선택 정확도 / E-2 상시버튼 / E-3 호버수집 / 1-2 이미지·상세 스코프 / 1-6 상세 필러·AI초안.
+- ✅ **E-5 벌크 수집 정직 요약 + 재시도 + 진행률 (#397):** 점검=벌크는 이미 항목별 `/api/v1/collect/extension`
+  (STEP 1-0 write-then-verify durable) 후 `d.ok`만 카운트 → '수집됨인데 이력 없음'(가짜성공)은 이미 방지됨. 남은
+  결함=요약이 '성공 N/실패 M'으로 뭉뚱그리고 실패 항목 재시도·진행률이 없음. **수리:** background `handleCollectBulk`
+  가 성공/**중복**(d.duplicate)/실패 분리 집계 + `failedItems` 반환 + 1건마다 `bulkProgress`를 탭에 전송(순차 처리).
+  content_script `kgpRunBulk`(전체/선택/재시도 공용) — 정직 요약 '총 N: 완료 X · 중복 Y · 실패 Z' + 실패분만
+  **'실패 N건 재시도'** 버튼(kgpRenderRetry, 조용한 누락 금지) + `bulkProgress` 수신해 '수집 중… (done/total)'.
+  이력 자동반영은 STEP 1-0b 연동(기존). manifest 1.5.25→1.5.26. 가드 test_v42_e5_bulk_persist(4: 소스계약 + node로
+  재시도 버튼 생성 실증). 전체 10713 passed. before/after: docs/screens/v42/e5-bulk-summary-retry.png(성공/실패만 →
+  완료·중복·실패 + 재시도).
+- ⏳ PHASE 1 남음(내 몫): E-4 전체선택 정확도 / E-2 상시버튼 / E-3 호버수집 / 1-2 이미지·상세 스코프 / 1-6 상세 필러·AI초안.
 - ⏳ 후속: PHASE 2 속도, STEP 3 JSON제거·UX / 4-1 라벨 '다리 너머, 오늘의 발굴' / STEP 5 디자인.
 
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)

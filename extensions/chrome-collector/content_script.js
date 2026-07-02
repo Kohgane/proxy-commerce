@@ -189,6 +189,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse(extractProductMeta());
     return true;
   }
+  // v42 E-5: 벌크 수집 진행률 실시간 갱신(background가 1건마다 전송).
+  if (msg.action === "bulkProgress") {
+    kgpSetStatus(`수집 중… (${msg.done}/${msg.total})`);
+    return false;
+  }
   return false;
 });
 
@@ -749,20 +754,50 @@ function kgpUpdateToolbar() {
   }
 }
 
-async function kgpCollect(urls) {
+function kgpCollect(urls) {
   const items = (urls || []).map(u => _kgpCardByUrl[u]).filter(Boolean).map(c => (
     { url: c.url, title: c.title, image: c.image, images: c.images, price: c.price, currency: c.currency }
   ));
   if (!items.length) { kgpSetStatus("선택된 상품이 없어요. 상품의 ‘수집’ 배지를 눌러 선택하세요."); return; }
+  kgpRunBulk(items);
+}
+
+// v42 E-5: 벌크 실행 코어 — 정직 요약(완료/중복/실패) + 실패 항목 재시도. 전체수집·선택수집·재시도가 공용.
+function kgpRunBulk(items) {
+  if (!items || !items.length) return;
   kgpSetStatus(`수집 중… (0/${items.length})`);
   const btns = document.querySelectorAll(".kgp-tb-btn");
   btns.forEach(b => b.disabled = true);
+  const oldRetry = document.getElementById("kgp-tb-retry");
+  if (oldRetry) oldRetry.remove();
   kgpSendMessage({ action: "collectBulk", items }, (resp) => {
     btns.forEach(b => b.disabled = false);
     if (!resp || resp.ok !== true) { kgpSetStatus(((resp && resp.error) || "수집 실패")); return; }
-    if (resp.success > 0) kgpCelebrate(resp.success);   // 실제 성공 건수만 축하
-    kgpSetStatus(`수집 완료 — 성공 ${resp.success} / 실패 ${resp.failed}. 셀러 콘솔 수집 이력에서 확인하세요.`);
+    if (resp.success > 0) kgpCelebrate(resp.success);   // 실제(중복 제외) 성공 건수만 축하
+    const dup = resp.duplicate || 0, fail = resp.failed || 0;
+    let msg = `총 ${resp.total}: 완료 ${resp.success}`;
+    if (dup) msg += ` · 중복 ${dup}`;
+    if (fail) msg += ` · 실패 ${fail}`;
+    msg += fail ? " — 아래 ‘재시도’를 누르세요." : ". 셀러 콘솔 수집 이력에서 확인하세요.";
+    kgpSetStatus(msg);
+    kgpRenderRetry(resp.failedItems || []);   // 실패분만 재시도 버튼
   });
+}
+
+// 실패 항목 재시도 버튼(정직: 조용한 누락 금지 — 실패 N건을 눈에 보이게).
+function kgpRenderRetry(failedItems) {
+  const old = document.getElementById("kgp-tb-retry");
+  if (old) old.remove();
+  if (!failedItems || !failedItems.length) return;
+  const tb = document.getElementById(KGP_TOOLBAR_ID);
+  if (!tb) return;
+  const b = document.createElement("button");
+  b.id = "kgp-tb-retry";
+  b.className = "kgp-tb-btn";
+  b.textContent = `실패 ${failedItems.length}건 재시도`;
+  b.style.cssText = "background:#f5821f;color:#fff;border:0;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer";
+  b.addEventListener("click", () => kgpRunBulk(failedItems));
+  tb.appendChild(b);
 }
 
 function kgpBuildToolbar() {
