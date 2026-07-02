@@ -649,18 +649,24 @@ function _kgpAmazonCards() {
       const asin = (el.getAttribute("data-asin") || "").trim();
       if (!/^[A-Z0-9]{10}$/.test(asin)) return;
       if (_kgpAmazonSponsored(el)) return;                 // 스폰서(광고) 제외
-      const a = el.querySelector('a.a-link-normal[href*="/dp/"], h2 a, a.a-link-normal.s-no-outline');
-      const href = a && a.href ? a.href.split("?")[0].split("#")[0] : "";
-      if (!href || href.indexOf("http") !== 0 || seen[href]) return;
+      // v42 E-4: 유효 ASIN(비스폰서)이면 상품 — 앵커 셀렉터 변형·가격 없는 카드('옵션 보기' 등)도
+      //   누락하지 않는다. href는 앵커 없으면 ASIN으로 구성, 제목/이미지 셀렉터를 넓힌다. 가격은 선택.
+      const a = el.querySelector('a.a-link-normal[href*="/dp/"], h2 a, a.a-link-normal.s-no-outline, a[href*="/dp/"]');
+      let href = a && a.href ? a.href.split("?")[0].split("#")[0] : "";
+      if (!href || href.indexOf("http") !== 0) href = location.origin + "/dp/" + asin;   // ASIN 폴백
+      if (seen[href]) return;
       const img = el.querySelector("img.s-image") || el.querySelector("img");
-      const titleEl = el.querySelector("h2 span") || el.querySelector("h2");
+      const titleEl = el.querySelector("h2 span") || el.querySelector("h2 a span") || el.querySelector("h2")
+        || el.querySelector('[data-cy="title-recipe"] span') || el.querySelector(".a-size-base-plus, .a-size-medium");
+      let title = titleEl ? (titleEl.innerText || titleEl.textContent || "").trim() : "";
+      if (!title && img && img.alt) title = img.alt.trim();
+      if (!title && !img) return;                           // 제목·이미지 둘 다 없으면 상품 아님
       const priceEl = el.querySelector(".a-price .a-offscreen") || el.querySelector(".a-price");
       const pr = _kgpPrice(priceEl ? priceEl.textContent : (el.innerText || ""));
-      if (!img || !titleEl || !pr.price) return;            // 제목+가격+링크+이미지 모두 있어야 상품
       seen[href] = 1;
       const bimg = _kgpBestImg(img);                        // v41 X-1: lazy placeholder 대신 실제 이미지
       cards.push({
-        url: href, title: (titleEl.innerText || titleEl.textContent || "").trim().slice(0, 200),
+        url: href, title: (title || "(제목 없음)").slice(0, 200),
         image: bimg, images: bimg ? [bimg] : [], price: pr.price, currency: pr.currency, el: el,   /* v42 1-1: USD 기본값 금지 */
       });
     } catch (e) { /* noop */ }
@@ -746,9 +752,10 @@ function kgpSetStatus(msg) {
 function kgpUpdateToolbar() {
   const c = document.getElementById("kgp-tb-count");
   if (!c) return;
-  // 광고·미디어를 걸러냈을 때 정직하게 '전체 N개 중 상품 M개'로 표기.
+  // v42 E-4: 정직 표기 — 인식된 상품 수 + 제외(광고 등) 수를 눈에 보이게(조용한 누락 금지).
   if (_kgpScannedCount > _kgpCards.length) {
-    c.textContent = `전체 ${_kgpScannedCount}개 중 상품 ${_kgpCards.length}개 · ${KGP_SELECTED.size}개 선택`;
+    const miss = _kgpScannedCount - _kgpCards.length;
+    c.textContent = `전체 ${_kgpScannedCount}개 중 상품 ${_kgpCards.length}개 · 제외 ${miss}(광고 등) · ${KGP_SELECTED.size}개 선택`;
   } else {
     c.textContent = `${_kgpCards.length}개 발견 · ${KGP_SELECTED.size}개 선택`;
   }
