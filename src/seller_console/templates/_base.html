@@ -94,6 +94,7 @@
 
     <div class="flex-grow-1">
     <!-- 핵심 메뉴(항상 노출) — 비기너 과부하 방지(v5). 나머지는 '고급 기능'으로 접음. -->
+    {% if _user_id or _user_email or not _auth_enabled %}
     <ul class="nav flex-column gap-1">
       <li><a class="console-nav-link {% if _path == '/seller/' or _path.startswith('/seller/dashboard') %}active{% endif %}" href="/seller/dashboard"><i class="bi bi-speedometer2"></i><span>{{ t('nav.home') }}</span></a></li>
       <li><a class="console-nav-link {% if _path == '/seller/sourcing' or _path.startswith('/seller/sourcing/my-sources') or _path.startswith('/seller/sourcing/collect') or _path.startswith('/seller/sourcing/recommend') %}active{% endif %}" href="/seller/sourcing"><i class="bi bi-stars"></i><span>AI 소싱·등록</span></a></li>
@@ -165,6 +166,16 @@
       <li><a class="console-nav-link {% if _path.startswith('/seller/about') %}active{% endif %}" href="/seller/about"><i class="bi bi-info-circle"></i><span>고가브릿지란?(소개)</span></a></li>
     </ul>
     </details>
+    {% else %}
+    {# 비로그인: 공개 진입점만 안내 #}
+    <ul class="nav flex-column gap-1">
+      <li><a class="console-nav-link" href="/seller/about"><i class="bi bi-info-circle"></i><span>고가브릿지란?</span></a></li>
+      <li><a class="console-nav-link" href="/seller/start"><i class="bi bi-play-circle"></i><span>시작하기(For Beginners)</span></a></li>
+      <li><a class="console-nav-link" href="/seller/billing"><i class="bi bi-credit-card"></i><span>요금 안내</span></a></li>
+      <li><a class="console-nav-link" href="/auth/login"><i class="bi bi-box-arrow-in-right"></i><span>로그인</span></a></li>
+      <li><a class="console-nav-link" href="/auth/signup"><i class="bi bi-person-plus"></i><span>무료 시작</span></a></li>
+    </ul>
+    {% endif %}
     </div>
 
     {# v36 PART B: PWA 설치 — 홈 화면에 앱처럼 추가(안드로이드: beforeinstallprompt, iOS: 공유→홈 화면에 추가 안내) #}

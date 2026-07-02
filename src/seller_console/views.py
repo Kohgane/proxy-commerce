@@ -82,6 +82,7 @@ def inject_seller_template_flags():
         "current_lang": _lang,
         "t": (lambda key, lang=_lang: _t(key, lang)),
         "account_plan": _plan,
+        "_auth_enabled": _AUTH_ENABLED,
     }
 
 
@@ -2781,6 +2782,8 @@ def orders_sync():
 
     Response: {"ok": true, "results": {...}}
     """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
     svc = _get_order_sync_service()
     if svc is None:
         _log_order_op("warning", "orders_sync", reason="service_unavailable")
@@ -2797,6 +2800,8 @@ def orders_sync():
 @bp.post("/orders/<marketplace>/<order_id>/status")
 def order_update_status(marketplace: str, order_id: str):
     """주문 상태 전이 처리."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
     svc = _get_order_sync_service()
     if svc is None:
         _log_order_op("warning", "status_update", marketplace=marketplace, order_id=order_id, reason="service_unavailable")
@@ -2852,6 +2857,8 @@ def order_detail(marketplace: str, order_id: str):
 
     Response: {"ok": true, "order": {...}}
     """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
     svc = _get_order_sync_service()
     if svc is None:
         return jsonify({"ok": False, "error": "서비스 준비 중입니다."}), 503
@@ -2877,6 +2884,8 @@ def order_tracking(marketplace: str, order_id: str):
     Request body: {"courier": "CJ대한통운", "tracking_no": "1234567890"}
     Response: {"ok": true}
     """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
     data = request.get_json(force=True, silent=True) or {}
     courier = (data.get("courier") or "").strip()
     tracking_no = (data.get("tracking_no") or "").strip()
@@ -2905,6 +2914,8 @@ def orders_bulk_tracking():
     Request body: {"items": [{"order_id": "...", "marketplace": "...", "courier": "...", "tracking_no": "..."}]}
     Response: {"ok": true, "results": [...]}
     """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
     data = request.get_json(force=True, silent=True) or {}
     items = data.get("items") or []
 
@@ -2956,6 +2967,8 @@ def orders_bulk_tracking():
 @bp.post("/orders/bulk/status")
 def orders_bulk_status():
     """선택 주문 일괄 상태 변경."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
     data = request.get_json(force=True, silent=True) or {}
     items = data.get("items") or []
     next_status = str(data.get("next_status") or "").strip().lower()
@@ -3043,6 +3056,8 @@ def orders_bulk_status():
 @bp.get("/orders/export.csv")
 def orders_export_csv():
     """주문 목록 CSV 내보내기 (Phase 129)."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
     import csv
     import io
     from flask import Response
@@ -3185,6 +3200,8 @@ def notifications_test():
 @bp.get("/me")
 def my_page():
     """셀러 마이페이지 (Phase 133)."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
     from flask import session as _session
     user_id = _session.get("user_id")
     user = None
@@ -4914,8 +4931,10 @@ def _register_api_routes(app):
 @bp.get("/me/tokens")
 def personal_tokens():
     """Personal Access Token 관리 페이지 (Phase 135)."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
     from flask import session as _session
-    user_id = _session.get("user_id", "dev")
+    user_id = _session.get("user_id") or _session.get("user_email")
 
     tokens = []
     try:
@@ -4953,8 +4972,10 @@ def personal_tokens_generate():
     Response: {"ok": true, "raw_token": "tok_...", "expires_at": "..."}
     주의: raw_token은 1회만 반환됨.
     """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
     from flask import session as _session
-    user_id = _session.get("user_id", "dev")
+    user_id = _session.get("user_id") or _session.get("user_email")
 
     data = request.get_json(force=True, silent=True) or {}
     scopes = data.get("scopes") or ["collect.write"]
@@ -4976,8 +4997,10 @@ def personal_tokens_revoke():
     Request body: {"token_hash": "..."}
     Response: {"ok": true}
     """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
     from flask import session as _session
-    user_id = _session.get("user_id", "dev")
+    user_id = _session.get("user_id") or _session.get("user_email")
 
     data = request.get_json(force=True, silent=True) or {}
     token_hash = (data.get("token_hash") or "").strip()
@@ -7886,6 +7909,8 @@ def returns_partial_refund(request_id: str):
 @bp.get("/settlement")
 def settlement_report():
     """월별 정산 리포트 화면 (Phase 146)."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
     from src.settlement.reporter import SettlementReporter
 
     month = (request.args.get("month") or datetime.now(timezone.utc).strftime("%Y-%m")).strip()
@@ -7938,6 +7963,8 @@ def settlement_report():
 @bp.get("/settlement/export.csv")
 def settlement_export_csv():
     """정산 CSV 내보내기."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
     from src.settlement.reporter import SettlementReporter
 
     month = (request.args.get("month") or datetime.now(timezone.utc).strftime("%Y-%m")).strip()
@@ -7952,6 +7979,8 @@ def settlement_export_csv():
 @bp.get("/settlement/export.xlsx")
 def settlement_export_xlsx():
     """정산 Excel 내보내기(XML Spreadsheet)."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
     from src.settlement.reporter import SettlementReporter
 
     month = (request.args.get("month") or datetime.now(timezone.utc).strftime("%Y-%m")).strip()
