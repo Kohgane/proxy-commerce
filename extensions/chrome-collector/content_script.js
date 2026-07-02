@@ -594,6 +594,30 @@ function _kgpInBadRegion(el) {
   return false;
 }
 
+// v41 X-1: 리스팅 카드의 대표 이미지가 lazy-load placeholder(빈/공용 src)라, 스크롤 전엔
+// 여러 상품이 같은 placeholder src를 공유 → '상품 A에 상품 B 이미지'가 붙는 문제.
+// 실제 이미지 소스(currentSrc·data-src·srcset 등)를 우선 선택해 상품별 '자기 이미지'로 귀속.
+function _kgpBestImg(img) {
+  if (!img) return "";
+  const _isPlaceholder = (s) => !s || s.indexOf("data:") === 0 ||
+    /(1x1|blank|spacer|placeholder|loading|transparent\.|pixel|lazy(load)?[-_.]|grey\.gif|gray\.gif|s\.gif)/i.test(s);
+  const cand = [
+    img.currentSrc || "",
+    img.getAttribute("data-src") || "",
+    img.getAttribute("data-original") || "",
+    img.getAttribute("data-lazy") || "",
+    img.getAttribute("data-lazy-src") || "",
+  ];
+  const ss = img.getAttribute("srcset") || img.getAttribute("data-srcset") || "";
+  if (ss) {
+    const parts = ss.split(",");
+    cand.push((parts[parts.length - 1] || "").trim().split(" ")[0]);
+  }
+  cand.push(img.src || "");   // 마지막 폴백(placeholder일 수 있음)
+  for (const c of cand) { if (c && !_isPlaceholder(c)) return c; }
+  return img.currentSrc || img.src || "";   // 전부 placeholder면 그거라도(정직: 서버가 이후 보강/빈값)
+}
+
 // 스폰서(광고) 카드 판별 — 클래스/라벨 기반(보수적, 오탐 최소).
 function _kgpAmazonSponsored(el) {
   try {
@@ -626,9 +650,10 @@ function _kgpAmazonCards() {
       const pr = _kgpPrice(priceEl ? priceEl.textContent : (el.innerText || ""));
       if (!img || !titleEl || !pr.price) return;            // 제목+가격+링크+이미지 모두 있어야 상품
       seen[href] = 1;
+      const bimg = _kgpBestImg(img);                        // v41 X-1: lazy placeholder 대신 실제 이미지
       cards.push({
         url: href, title: (titleEl.innerText || titleEl.textContent || "").trim().slice(0, 200),
-        image: img.src, images: [img.src], price: pr.price, currency: pr.currency || "USD", el: el,
+        image: bimg, images: bimg ? [bimg] : [], price: pr.price, currency: pr.currency || "USD", el: el,
       });
     } catch (e) { /* noop */ }
   });
@@ -658,9 +683,10 @@ function _kgpGenericCards() {
       const title = ((img.alt || "").trim()) || (titleEl ? titleEl.innerText : "") || text;
       if (!title || title.trim().length < 4) continue;     // 제목 필수
       seen[href] = 1;
+      const bimg = _kgpBestImg(img) || img.src;             // v41 X-1: 실제 이미지 우선(placeholder 공유 방지)
       cards.push({
         url: href, title: title.trim().replace(/\s+/g, " ").slice(0, 200),
-        image: img.src, images: [img.src], price: pr.price, currency: pr.currency, el: card,
+        image: bimg, images: bimg ? [bimg] : [], price: pr.price, currency: pr.currency, el: card,
       });
     }
   } catch (e) { /* noop */ }

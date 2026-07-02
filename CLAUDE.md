@@ -91,8 +91,18 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   키스톤 픽셀). 기존 버전핀 4곳(v38/v39) 1.5.21 갱신. 전체 10687 passed. 캡처(정직: before=오너측 캐시 지구본 재현
   불가): docs/screens/v41/4-2-extension-toolbar-bridge.png(16/32/48/128 브릿지 마크 + 툴바 목업). ※오너 액션: 확장을
   1.5.21로 재로딩(chrome://extensions → 새로고침)하면 지구본 사라짐.
-- ⏳ 남음(내 몫, Copilot의 STEP 1-1~1-4·STEP 2 회피): X-1 이미지↔상품ID 귀속(PDP 갤러리 스코프 강화) / v40-B 북마클릿
-  아이콘. (STEP 3 JSON제거·UX, 4-1 라벨 '다리 너머 오늘의 발굴', STEP 5 디자인은 후속.)
+- ✅ **X-1 이미지↔상품 매핑(엉뚱한 이미지) 수리 (#392):** 증상=목록서 상품 A에 상품 B 이미지 / 어떤 상품은 대표
+  이미지 없음. **근본 원인 두 갈래:** (1)확장 리스팅 카드가 raw `img.src`만 써서, lazy-load 페이지에선 스크롤 전 여러
+  상품이 **같은 placeholder src를 공유** → 'A에 B 이미지'. (2)이미지 없을 때 목록이 다른 이미지로 렌더될 여지.
+  **수리:** ①content_script 신규 `_kgpBestImg(img)` — currentSrc·data-src·data-original·srcset(최대해상도) 우선,
+  placeholder(data:·1x1·blank·spacer·lazyload…) 배제 → `_kgpAmazonCards`/`_kgpGenericCards` 두 경로 모두 적용
+  (카드마다 자기 data-src로 귀속, 이미지 없으면 `images:[]` 정직). 서버는 이미 행(상품 ID)에 이미지 귀속(누출 0)
+  — 회귀 가드로 재확인. ②collect_history 목록 빈 이미지 셀에 '이미지 없음' title/aria(엉뚱 이미지 대신 정직 표기).
+  manifest 1.5.21→1.5.22. 가드 test_v41_x1_image_mapping(3: 소스계약 + **node로 두 카드 placeholder 비공유 실증**
+  A≠B + 서버 항목간 이미지 누출 0). 버전핀 5곳 1.5.22 갱신. before/after: docs/screens/v41/x1-image-mapping.png
+  (BEFORE 두 카드 공유 placeholder → AFTER 각자 자기 이미지, 실제 _kgpBestImg 실행 결과).
+  → **Week 1 내 몫 완주**: STEP 1-0·1-0b·X-2·4-2·X-1. (Copilot: STEP 1-1~1-4 죽은버튼·STEP 2 로그인.)
+- ⏳ 후속(내 몫): v40-B 북마클릿 아이콘 / STEP 3 JSON제거·UX / 4-1 라벨 '다리 너머, 오늘의 발굴' / STEP 5 디자인.
 
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)
 - 규칙(불변): 각 항목 **실제 화면 before/after 캡처로만 완료**. 추측 금지·거짓성공/임의환산 금지·회귀 금지(pytest+CI)·토큰 단일소스.
