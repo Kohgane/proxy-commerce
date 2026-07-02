@@ -213,7 +213,9 @@
                        onerror="this.style.display='none'">
                   {% endfor %}
                 {% else %}
+                  {# v41 X-1: 이미지 없으면 다른 상품 이미지 대신 정직한 '이미지 없음' 표기(엉뚱 이미지 0). #}
                   <span class="d-inline-flex align-items-center justify-content-center text-muted"
+                        title="이미지 없음" aria-label="이미지 없음"
                         style="width:52px;height:52px;border-radius:8px;background:#f1f3f5;font-size:18px"><i class="bi bi-image"></i></span>
                 {% endif %}
                 </a>
