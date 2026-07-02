@@ -5406,6 +5406,31 @@ def collect_history_alias():
     return redirect(url_for("seller_console.collect_history"))
 
 
+@bp.get("/collect/history/count")
+def collect_history_count():
+    """수집 이력 총건수(경량 폴링용) — v41 STEP 1-0b.
+
+    수집이력 화면이 열려 있으면 이 값을 폴링/탭포커스로 재조회해, 서버에 실제로
+    영속 저장된 건수가 늘었을 때만 자동 새로고침을 트리거한다(가짜 실시간 금지).
+    정직 데이터: 실제 저장 스코프(user_id+email 관용집합)로 재읽기한 값만 반환.
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "auth"}), 401
+    try:
+        days = int(request.args.get("days", "30"))
+    except (TypeError, ValueError):
+        days = 30
+    total = 0
+    try:
+        from .collect_history_store import summary
+        summ = summary(days=days, seller_ids=_seller_identities())
+        total = int(summ.get("total") or 0)
+    except Exception as exc:
+        logger.warning("[collect-history-count] 조회 실패: %s", exc)
+        return jsonify({"ok": False, "error": "server"}), 200
+    return jsonify({"ok": True, "total": total})
+
+
 @bp.get("/collect/preview/<item_id>")
 def collect_preview_by_id(item_id: str):
     """수집된 상품 미리보기 (Phase 135.2)."""

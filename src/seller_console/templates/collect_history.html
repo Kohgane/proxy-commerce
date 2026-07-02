@@ -553,6 +553,52 @@ window.addEventListener('message', function (e) {
   if (e.data && e.data.kgp === 'drawer-close') closeItemDrawer();   // v39 F: 수집 실패 빈 상태 '수집 이력으로'
 });
 
+// v41 STEP 1-0b: 수집 → 목록 자동 반영.
+// 화면이 열려 있는 동안 서버에 '실제로 영속 저장된' 총건수를 폴링/탭포커스로 재조회해,
+// 늘어난 게 확인되면 새로고침 없이 새 상품이 뜨게 한다(가짜 실시간 아님 — 서버 커밋된 값만).
+(function () {
+  var initialTotal = parseInt('{{ summary.total|int }}', 10) || 0;
+  var days = parseInt('{{ filters.days|int }}', 10) || 30;
+  var pending = false;                 // 새 항목 감지됐으나 편집 중이라 대기
+  var reloading = false;
+  function editing() {                  // 드로어/모달 열려 있으면 편집 중 → 중단하지 않음
+    if (document.body.classList.contains('kgp-drawer-open')) return true;
+    return !!document.querySelector('.modal.show');
+  }
+  function showBanner(n) {
+    if (document.getElementById('kgpNewItemsBanner')) return;
+    var b = document.createElement('div');
+    b.id = 'kgpNewItemsBanner';
+    b.className = 'pc-status pc-status-info small mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2';
+    b.innerHTML = '<span><i class="bi bi-arrow-down-circle"></i> 새로 수집된 상품 ' + n + '건이 있어요.</span>' +
+                  '<button type="button" class="btn btn-sm btn-primary" onclick="window.location.reload()">지금 보기</button>';
+    var host = document.querySelector('.container-fluid.py-4');
+    var anchor = host ? host.querySelector('.d-flex.align-items-center.mb-4') : null;
+    if (host && anchor && anchor.nextSibling) host.insertBefore(b, anchor.nextSibling);
+    else if (host) host.insertBefore(b, host.firstChild);
+  }
+  function apply(total) {
+    if (reloading || total <= initialTotal) return;
+    var n = total - initialTotal;
+    if (editing()) { pending = true; showBanner(n); return; }  // 편집 중이면 배너만, 저장 후 반영
+    reloading = true;
+    window.location.reload();
+  }
+  function poll() {
+    if (document.hidden || reloading) return;
+    fetch('/seller/collect/history/count?days=' + days, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) { if (j && j.ok && typeof j.total === 'number') apply(j.total); })
+      .catch(function () {});   // 네트워크 실패는 조용히 무시(다음 주기 재시도)
+  }
+  setInterval(poll, 8000);                                    // 8초 폴링
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });  // 탭 복귀 시 즉시
+  // 편집 종료(드로어 닫힘) 후 대기 중이던 반영을 처리
+  window.addEventListener('message', function (e) {
+    if (e && e.data && e.data.kgp === 'drawer-close' && pending && !editing()) poll();
+  });
+})();
+
 function selectedItemIds() {
   return Array.from(document.querySelectorAll('.row-chk:checked')).map(c => c.value);
 }
