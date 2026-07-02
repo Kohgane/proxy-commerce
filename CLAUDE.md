@@ -57,6 +57,35 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
 
 > 이 파일은 매 세션 시작 시 로드된다. 오너(Kohgane) 지시·검증된 팩트를 누적 기록한다.
 
+## 🟥 D-30 론칭마스터플랜 / v41 Week 1 (오너 2026-07-02 — 8/1 론칭, "생존 기반")
+- 지휘 문서=launch_masterplan_D30, 세부=addendum_v41. **깃허브 Copilot과 병행 작업 — 중복 회피**(Copilot=STEP
+  1-1~1-4 죽은버튼 `copilot/add-step-1-dead-functionality`, STEP 2 로그인 `copilot/add-login-status-screen-separation`).
+  규칙: 각 항목=별도 PR=before/after 캡처=CLAUDE.md 셀프점검 게이트 통과 후 머지. **1번(영속성) 안 끝나면 2번 이후 금지.**
+- ✅ **STEP 1-0 write 영속성 근본 수리 (#387, #388):** 증상 ①수집기 '수집 완료'→이력에 없음(항목 286e5bd75186)
+  ②삭제→새로고침→부활 ③토큰 저장→인증 반복. **근본 원인=캐시 무효화 누락**: collect_history_store의
+  append/update/delete가 **시트 경로에서만** flask.g 요청범위 캐시(`_kgp_ch_rows`)를 무효화하고 **인메모리 경로에선
+  안 해서** 같은 요청 재읽기가 스테일('부활'). 수리: 인메모리 경로에도 `_invalidate_cache()` + delete 끝에 통합 +
+  신규 `existing_ids()`(무효화 후 `_all_rows()` 재읽기로 실제 잔존 확인) → **write-then-verify**. bulk-delete 라우트가
+  삭제 후 재조회해 안 지워졌으면 정직 실패 200. 확장 수집 자기검증을 **목록 스코프**(user_id+email 관용집합, user_store에서
+  email 해석)로 재읽기 → 스코프 불일치로 '완료인데 안 보임' 박멸, 비영속이면 502. 토큰은 Copilot이 commit-verify 추가.
+  가드 test_v41_step1_0_write_persistence(5)+collect_scope(3). before/after: docs/screens/v41/{write-persist,collect-appears}-*.png.
+- ✅ **STEP 1-0b 수집→목록 자동 반영 (#389):** 수집이력 화면 열려 있으면 **새로고침 없이** 새 상품 자동 등장.
+  신규 `GET /seller/collect/history/count`→{ok,total}(seller 관용 스코프+days 필터, 실패 시 ok:false 정직). 템플릿
+  폴링 스크립트: 8초 간격 + `visibilitychange`(탭 복귀) 재조회, 서버 total이 렌더 시점보다 늘면 auto-reload.
+  **정직**: 서버 영속 저장된 값(count)이 늘 때만 반영(가짜 실시간 아님). **편집 가드**: 드로어(kgp-drawer-open)/모달
+  (.modal.show) 열려 있으면 중단 대신 '새로 수집된 N건' 배너 후 편집 종료 시 반영. 가드 test_v41_step1_0b_autorefresh(6).
+  전체 10676 passed. before/after: docs/screens/v41/step1-0b-autorefresh-{before,after}.png(빈 목록→수집→탭복귀 poll로 자동 등장).
+- ✅ **X-2 자동 카테고리 오분류 수리 (#390):** 증상=접이식 차량용 책상 → '식품/차'(FOD). 근본 원인=`category_classifier`
+  가 **단어 부분일치**(substring)라 한 글자 키워드 "차"(tea)가 "차**량**"(vehicle) 안에 매칭. 한국어 복합어는 공백이
+  없어 substring 매칭이 동음이의 함정. 수리: ①한 글자(단일 음절) 키워드는 **독립 토큰**일 때만 매칭(_TOKEN_RE로
+  토큰화 → 차량→차 오매칭 박멸) ②멀티글자=가중치 2/한글자=1/동음이의함정(차·배·밤·눈·옷·컵·펜·립…)=0.5로 점수화
+  ③뚜렷한 멀티글자 근거 없으면 신뢰도 상한 0.4 → `_MANUAL_THRESHOLD` 0.5 미만이면 **GEN + needs_manual**(가짜 확정
+  금지, UI가 '직접 선택해 주세요' 표기). 진짜 차(녹차·홍차·원두 커피)는 멀티글자로 FOD 유지(회귀 0). 옷장→가구(옷
+  substring 오분류 박멸). 가드 test_v41_x2_category_misclassify(7) + 기존 test 갱신(녹차 matched). 전체 10683 passed.
+  before/after: docs/screens/v41/x2-category-{before,after}.png(식품/차 → 홈/가구/주방, 키워드칩도 가구 계열로).
+- ⏳ 남음(내 몫, Copilot의 STEP 1-1~1-4·STEP 2 회피): X-1 이미지↔상품ID 귀속 / STEP 4-2·v40-B 확장·북마클릿 아이콘
+  브릿지 마크. (STEP 3 JSON제거·UX, 4-1 라벨, STEP 5 디자인은 후속.)
+
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)
 - 규칙(불변): 각 항목 **실제 화면 before/after 캡처로만 완료**. 추측 금지·거짓성공/임의환산 금지·회귀 금지(pytest+CI)·토큰 단일소스.
 - 순서: A 지구본잔존 → B 소형아이콘 → C 인페이지 편집 드로어(핵심) → D 가격/상세/번역 → E 버튼라벨 → F 404박멸 → G 전수.
