@@ -166,6 +166,9 @@ def append(
         # 시트 미설정 = 단일 테넌트/개발 의도(인메모리가 저장소). 영속으로 간주.
         _in_memory.append(row_data)
 
+    # v41 STEP 1-0: 모든 쓰기 경로(시트·인메모리)에서 요청 범위 캐시 무효화 → 같은 요청 재조회 부활 방지.
+    _invalidate_cache()
+
     if return_durable:
         return item_id, durable
     return item_id
@@ -285,8 +288,32 @@ def update(item_id: str, *, seller_id: Optional[str] = None,
             if not _scope_ok(row.get("seller_id", "")):
                 return False
             row.update(updates)
+            _invalidate_cache()   # v41 STEP 1-0: 인메모리 갱신도 캐시 무효화
             return True
     return False
+
+
+def existing_ids(item_ids, *, seller_id: Optional[str] = None, seller_ids: Optional[set] = None) -> set:
+    """v41 STEP 1-0 write-then-verify: 주어진 id 중 아직 저장소에 남아있는 것(본인 스코프)을 재읽기로 반환.
+    삭제 후 이걸로 검증 → 남아있으면 삭제 미영속(부활)로 정직 판정."""
+    ids = {str(i) for i in (item_ids or []) if str(i).strip()}
+    if not ids:
+        return set()
+
+    def _scope_ok(row_sid) -> bool:
+        rsid = str(row_sid or "")
+        if seller_ids is not None:
+            return rsid in seller_ids
+        if seller_id is not None:
+            return rsid == str(seller_id)
+        return True
+
+    present = set()
+    for row in _all_rows():   # _all_rows는 캐시 무효화 이후 신선 재읽기(시트+인메모리 합집합)
+        rid = str(row.get("id"))
+        if rid in ids and _scope_ok(row.get("seller_id", "")):
+            present.add(rid)
+    return present
 
 
 def delete(item_ids, *, seller_id: Optional[str] = None, seller_ids: Optional[set] = None) -> int:
@@ -346,7 +373,9 @@ def delete(item_ids, *, seller_id: Optional[str] = None, seller_ids: Optional[se
                      if not (str(row.get("id")) in ids and _scope_ok(row.get("seller_id", "")))]
     deleted += before - len(_in_memory)
 
+    # v41 STEP 1-0: 삭제가 있었으면 요청 범위 캐시를 반드시 무효화(시트·인메모리 어느 경로든) → 재조회 부활 방지.
     if deleted:
+        _invalidate_cache()
         logger.info("수집 이력 삭제: %d건", deleted)
     return deleted
 
