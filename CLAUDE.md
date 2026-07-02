@@ -102,7 +102,11 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   A≠B + 서버 항목간 이미지 누출 0). 버전핀 5곳 1.5.22 갱신. before/after: docs/screens/v41/x1-image-mapping.png
   (BEFORE 두 카드 공유 placeholder → AFTER 각자 자기 이미지, 실제 _kgpBestImg 실행 결과).
   → **Week 1 내 몫 완주**: STEP 1-0·1-0b·X-2·4-2·X-1. (Copilot: STEP 1-1~1-4 죽은버튼·STEP 2 로그인.)
-- ⏳ 후속(내 몫): v40-B 북마클릿 아이콘 / STEP 3 JSON제거·UX / 4-1 라벨 '다리 너머, 오늘의 발굴' / STEP 5 디자인.
+- ✅ **Week 1 item 5 북마클릿(v40-B) — 점검 결과 이전 세션에서 이미 완료·가드됨:** `/bm/install`(order_webhook,
+  →/seller/bookmarklet 302), 드래그 앵커 텍스트 0(빈 `<a>`+font-size:0, 아이콘=CSS background favicon-48), title은
+  제로폭(URL 폴백 방지), 설치페이지 파비콘 상속(v39-B). 가드 test_v40_a_root_favicon_bm_install·test_v39b_bookmarklet_favicon
+  (bookmarklet/v40 관련 60 passed). → 새 작업 불필요(정직: 이미 되어 있어 재작업 안 함).
+- ⏳ 후속(내 몫, Week 1 이후): STEP 3 JSON제거·UX / 4-1 라벨 '다리 너머, 오늘의 발굴' / STEP 5 디자인.
 
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)
 - 규칙(불변): 각 항목 **실제 화면 before/after 캡처로만 완료**. 추측 금지·거짓성공/임의환산 금지·회귀 금지(pytest+CI)·토큰 단일소스.
