@@ -106,7 +106,21 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   →/seller/bookmarklet 302), 드래그 앵커 텍스트 0(빈 `<a>`+font-size:0, 아이콘=CSS background favicon-48), title은
   제로폭(URL 폴백 방지), 설치페이지 파비콘 상속(v39-B). 가드 test_v40_a_root_favicon_bm_install·test_v39b_bookmarklet_favicon
   (bookmarklet/v40 관련 60 passed). → 새 작업 불필요(정직: 이미 되어 있어 재작업 안 함).
-- ⏳ 후속(내 몫, Week 1 이후): STEP 3 JSON제거·UX / 4-1 라벨 '다리 너머, 오늘의 발굴' / STEP 5 디자인.
+## 🟥 v42 최종 실행 프롬프트 (오너 2026-07-02 — 8/1 론칭, PHASE 1 수집 블로커 최우선)
+- 지휘=v42. PHASE 1(수집이 진짜로 되게) 안 끝나면 3·4 착수 금지. PHASE 2(속도)는 병행 가능. Copilot=1-7 죽은버튼.
+  이미 완료: 1-4 write영속성(=STEP 1-0 #387/#388), 1-5 자동등장(=STEP 1-0b #389), 1-2 일부(=X-1 #392).
+- ✅ **1-1 가격 클릭 시점 DOM 직접 읽기 + 통화 감지 (#394):** 증거=Temu 61,144원 렌더인데 드로어 0.00 USD.
+  **근본 원인 3:** ①`extractProductMeta`가 `og:price:amount` 있으면 `_kgpScopedPrice()`(렌더 DOM 현재가)를 **아예
+  안 읽음**(`if(!getMeta(...))` 게이트) + 반환도 `getMeta(...) || heuristic`로 스테일 메타 우선 ②`_kgpScopedPrice`
+  정규식이 `₩`는 잡지만 **'원' 접미어 미감지**(Temu KR='61,144원') ③통화 미상 시 `|| "USD"` 기본값. **수리:**
+  신규 `_kgpParsePrice`+`_KGP_CODE_MAP`(원→KRW·엔→JPY·위안/元→CNY). 가격 해결 순서=**scoped(렌더 현재가)→og:price
+  →본문**(게이트 제거, scoped 항상 계산). 반환 `price:heuristicPrice, currency:heuristicCurrency`(USD 기본값 제거).
+  서버 extension_api: 통화 미상+가격 있으면 `price_status=needs_check`(USD 임의 확정 금지), 저장 currency 기본값
+  "USD"→""(2곳). manifest 1.5.22→1.5.23. 가드 test_v42_1_1_price_at_click(6: 소스계약 + node로 ₩/원→KRW 실증 +
+  서버 KRW저장·통화미상 needs_check). 전체 10696 passed. before/after: docs/screens/v42/1-1-price-before-after.png
+  (렌더 61,144원 → BEFORE og:price 0.00 USD / AFTER 렌더DOM 61144 KRW) + 1-1-drawer-krw.png(실제 드로어 61,144 KRW).
+- ⏳ PHASE 1 남음(내 몫): 1-2 이미지·상세·리뷰 스코프(로고 제외 강화) / 1-3 중복수집(goods ID 키) / 1-6 상세 필러·AI초안.
+- ⏳ 후속: PHASE 2 속도, STEP 3 JSON제거·UX / 4-1 라벨 '다리 너머, 오늘의 발굴' / STEP 5 디자인.
 
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)
 - 규칙(불변): 각 항목 **실제 화면 before/after 캡처로만 완료**. 추측 금지·거짓성공/임의환산 금지·회귀 금지(pytest+CI)·토큰 단일소스.
