@@ -752,6 +752,67 @@ function kgpSetStatus(msg) {
   if (s) s.textContent = msg || "";
 }
 
+// ── v42 E-3: 목록 카드 호버 즉시 수집 ──
+const KGP_TOUCH = (() => { try { return matchMedia("(pointer: coarse)").matches; } catch (e) { return false; } })();
+let _kgpCollectedUrls = new Set();   // 이미 수집된 상품 URL(호버 버튼 '수집됨 ✓' 선표시)
+const KGP_BRIDGE_MINI = '<svg width="14" height="14" viewBox="0 0 512 512" aria-hidden="true">' +
+  '<circle cx="256" cy="205" r="92" fill="none" stroke="#c9a24b" stroke-width="46"/>' +
+  '<line x1="80" y1="356" x2="432" y2="356" stroke="#119a8e" stroke-width="46" stroke-linecap="round"/>' +
+  '<circle cx="256" cy="108" r="40" fill="#f5821f"/></svg>';
+
+function kgpQuickBtnStyle(collected) {
+  return [
+    "position:absolute", "z-index:2147483639",
+    KGP_TOUCH ? "top:6px" : "top:50%", KGP_TOUCH ? "right:6px" : "left:50%",
+    KGP_TOUCH ? "" : "transform:translate(-50%,-50%)",
+    "display:flex", "align-items:center", "gap:6px", "white-space:nowrap",
+    KGP_TOUCH ? "padding:3px 8px" : "padding:7px 14px", "border-radius:999px", "cursor:pointer",
+    "font:800 " + (KGP_TOUCH ? "10px" : "13px") + "/1 -apple-system,BlinkMacSystemFont,sans-serif",
+    "background:" + (collected ? "#119a8e" : "#1a1714"), "color:#fff",
+    "border:1.5px solid " + (collected ? "#0f8c80" : "#c9a24b"),
+    "box-shadow:0 4px 14px rgba(0,0,0,.4)", "pointer-events:auto",
+    "opacity:" + ((KGP_TOUCH || collected) ? "1" : "0"), "transition:opacity .12s",
+  ].join(";");
+}
+function kgpMarkQuickCollected(btn) {
+  btn.dataset.collected = "1";
+  const lbl = btn.querySelector(".kgp-q-label");
+  if (lbl) lbl.textContent = "수집됨 ✓";
+  btn.style.cssText = kgpQuickBtnStyle(true);
+  btn.style.cursor = "default";
+}
+function kgpQuickCollect(card, btn) {
+  if (btn.dataset.collected === "1" || btn.dataset.busy === "1") return;
+  btn.dataset.busy = "1";
+  const lbl = btn.querySelector(".kgp-q-label");
+  const prev = lbl ? lbl.textContent : "수집";
+  if (lbl) lbl.textContent = "수집 중…";
+  const meta = { url: card.url, title: card.title, image: card.image, images: card.images, price: card.price, currency: card.currency };
+  kgpSendMessage({ action: "collectBulk", items: [meta] }, (resp) => {
+    btn.dataset.busy = "";
+    if (resp && resp.ok === true && ((resp.success || 0) > 0 || (resp.duplicate || 0) > 0)) {
+      _kgpCollectedUrls.add(card.url);
+      kgpMarkQuickCollected(btn);
+      if ((resp.success || 0) > 0) kgpCelebrate(1);   // 실제 새 수집만 축하(중복은 조용)
+    } else {
+      if (lbl) lbl.textContent = prev;
+      kgpToast((resp && resp.error) || "수집 실패", false);
+    }
+  });
+}
+// 스캔한 카드 중 이미 수집된 것을 서버에 물어 '수집됨 ✓'로 선표시(중복 방지 연동).
+function kgpMarkExisting(cards) {
+  const urls = cards.map((c) => c.url).filter((u) => u && !_kgpCollectedUrls.has(u));
+  if (!urls.length) return;
+  kgpSendMessage({ action: "collectExists", urls }, (resp) => {
+    if (!resp || !resp.ok || !Array.isArray(resp.collected)) return;
+    resp.collected.forEach((u) => _kgpCollectedUrls.add(u));
+    document.querySelectorAll(".kgp-card-quick").forEach((q) => {
+      if (_kgpCollectedUrls.has(q.dataset.url) && q.dataset.collected !== "1") kgpMarkQuickCollected(q);
+    });
+  });
+}
+
 function kgpUpdateToolbar() {
   const c = document.getElementById("kgp-tb-count");
   if (!c) return;
@@ -871,7 +932,7 @@ function kgpBuildToolbar() {
       if (next === "0") {
         _kgpClosed = true;
         bar.remove();
-        document.querySelectorAll(".kgp-card-chk").forEach((b) => b.remove());
+        document.querySelectorAll(".kgp-card-chk, .kgp-card-quick").forEach((b) => b.remove());
         kgpShowReopenPill();
       } else {
         kgpSetStatus("이제 목록 페이지에서 자동으로 열려요.");
@@ -881,7 +942,7 @@ function kgpBuildToolbar() {
       // 대신 구석에 작은 '수집 열기' 배지(선택 개수·펄스)를 남긴다(선택은 유지).
       _kgpClosed = true;
       bar.remove();
-      document.querySelectorAll(".kgp-card-chk").forEach((b) => b.remove());
+      document.querySelectorAll(".kgp-card-chk, .kgp-card-quick").forEach((b) => b.remove());
       kgpShowReopenPill();
     }
   });
@@ -941,7 +1002,7 @@ function kgpInjectListing() {
   const cards = kgpFindCards();
   if (cards.length < 3) {                        // 리스팅 아님 → 정리(배지/바/배지펄스 제거)
     const ex = document.getElementById(KGP_TOOLBAR_ID);
-    if (ex) { ex.remove(); document.querySelectorAll(".kgp-card-chk").forEach((b) => b.remove()); }
+    if (ex) { ex.remove(); document.querySelectorAll(".kgp-card-chk, .kgp-card-quick").forEach((b) => b.remove()); }
     const _pill = document.getElementById(KGP_REOPEN_ID);
     if (_pill) _pill.remove();
     return;
@@ -958,7 +1019,7 @@ function kgpInjectListing() {
   cards.forEach((c) => { _kgpCardByUrl[c.url] = c; });
   if (_kgpClosed) {                              // 접힘 → 구석 배지(개수·펄스)만 유지
     const ex = document.getElementById(KGP_TOOLBAR_ID);
-    if (ex) { ex.remove(); document.querySelectorAll(".kgp-card-chk").forEach((b) => b.remove()); }
+    if (ex) { ex.remove(); document.querySelectorAll(".kgp-card-chk, .kgp-card-quick").forEach((b) => b.remove()); }
     kgpShowReopenPill();
     return;
   }
@@ -985,8 +1046,27 @@ function kgpInjectListing() {
         kgpToggleCard(c.url, badge, c.el);
       });
       c.el.appendChild(badge);
+
+      // v42 E-3: 호버 즉시 수집 버튼(썸네일 중앙, 데스크톱=hover 노출/터치=우상단 상시).
+      if (!c.el.querySelector(":scope > .kgp-card-quick")) {
+        const done = _kgpCollectedUrls.has(c.url);
+        const q = document.createElement("div");
+        q.className = "kgp-card-quick";
+        q.dataset.url = c.url;
+        if (done) q.dataset.collected = "1";
+        q.innerHTML = '<span style="display:flex;width:14px;height:14px;flex:none">' + KGP_BRIDGE_MINI +
+          '</span><span class="kgp-q-label">' + (done ? "수집됨 ✓" : "수집") + "</span>";
+        q.style.cssText = kgpQuickBtnStyle(done);
+        q.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); kgpQuickCollect(c, q); });
+        if (!KGP_TOUCH) {
+          c.el.addEventListener("mouseenter", () => { if (q.dataset.collected !== "1") q.style.opacity = "1"; });
+          c.el.addEventListener("mouseleave", () => { if (q.dataset.collected !== "1") q.style.opacity = "0"; });
+        }
+        c.el.appendChild(q);
+      }
     } catch (e) { /* noop */ }
   });
+  kgpMarkExisting(cards);   // v42 E-3: 이미 수집된 카드 '수집됨 ✓' 선표시
   const _pill = document.getElementById(KGP_REOPEN_ID);
   if (_pill) _pill.remove();                     // 펼침 → 구석 배지 제거
   if (!document.getElementById(KGP_TOOLBAR_ID)) { kgpBuildToolbar(); kgpMaybeCoach(); }
@@ -1018,7 +1098,7 @@ function kgpTeardown() {
     const fab = document.getElementById(KGP_BTN_ID); if (fab) fab.remove();
     const bar = document.getElementById(KGP_TOOLBAR_ID); if (bar) bar.remove();
     const pill = document.getElementById(KGP_REOPEN_ID); if (pill) pill.remove();
-    document.querySelectorAll(".kgp-card-chk").forEach((b) => b.remove());
+    document.querySelectorAll(".kgp-card-chk, .kgp-card-quick").forEach((b) => b.remove());
     document.querySelectorAll('[data-kgp-outline="1"]').forEach((e) => { e.style.outline = ""; e.removeAttribute("data-kgp-outline"); });
   } catch (e) { /* noop */ }
 }
@@ -1036,7 +1116,7 @@ function kgpRemoveFab() {
 function kgpRemoveListing() {
   const bar = document.getElementById(KGP_TOOLBAR_ID); if (bar) bar.remove();
   const pill = document.getElementById(KGP_REOPEN_ID); if (pill) pill.remove();
-  document.querySelectorAll(".kgp-card-chk").forEach((b) => b.remove());
+  document.querySelectorAll(".kgp-card-chk, .kgp-card-quick").forEach((b) => b.remove());
   document.querySelectorAll('[data-kgp-outline="1"]').forEach((e) => { e.style.outline = ""; e.removeAttribute("data-kgp-outline"); });
 }
 

@@ -228,6 +228,42 @@ def api_me():
     return jsonify({"ok": True, "email": email, "name": name, "user_id": uid})
 
 
+@extension_bp.post("/exists")
+def api_exists():
+    """v42 E-3: 목록 카드 중 '이미 수집된' 상품 URL을 알려준다(호버 버튼 '수집됨 ✓' 선표시).
+
+    Request: {"urls": ["...", ...]}  Response: {"ok": true, "collected": ["...이미 수집된 url..."]}
+    정규화 키(1-3)로 셀러 스코프에서 판정. 미인증 401.
+    """
+    user = _require_token(scopes=["collect.write"])
+    if not user:
+        return jsonify({"ok": False, "error": "auth"}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    urls = data.get("urls") if isinstance(data.get("urls"), list) else []
+    urls = [str(u) for u in urls if str(u or "").strip()][:200]
+    seller_id_val = str(user.get("user_id") or "")
+    ids = {seller_id_val}
+    try:
+        from src.auth.user_store import get_store as _gs
+        _u = _gs().find_by_id(seller_id_val)
+        if _u is not None and getattr(_u, "email", ""):
+            ids.add(str(_u.email))
+    except Exception:
+        pass
+    collected = []
+    try:
+        from src.seller_console.collect_history_store import find_by_product_key as _find
+        for u in urls:
+            try:
+                if _find(u, seller_ids=ids):
+                    collected.append(u)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return jsonify({"ok": True, "collected": collected})
+
+
 @extension_bp.post("/extension")
 def collect_from_extension():
     """크롬 확장 / 북마클릿에서 상품 메타 수신 + 카탈로그 저장.

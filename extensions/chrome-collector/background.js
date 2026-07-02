@@ -50,7 +50,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     getSettings().then((data) => sendResponse(data));
     return true;
   }
+  if (msg.action === "collectExists") {   // v42 E-3: 이미 수집된 URL 조회(호버 버튼 '수집됨 ✓' 선표시)
+    handleExists(msg.urls, sendResponse);
+    return true;
+  }
 });
+
+async function handleExists(urls, sendResponse) {
+  const settings = await getSettings();
+  if (!settings.token) { if (sendResponse) sendResponse({ ok: false, collected: [] }); return; }
+  try {
+    const r = await fetch(`${settings.serverUrl}/api/v1/collect/exists`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${settings.token}` },
+      body: JSON.stringify({ urls: Array.isArray(urls) ? urls : [] }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (sendResponse) sendResponse({ ok: !!(d && d.ok), collected: (d && d.collected) || [] });
+  } catch (e) {
+    if (sendResponse) sendResponse({ ok: false, collected: [] });
+  }
+}
 
 async function collectFromTab(tab) {
   try {
