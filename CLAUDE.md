@@ -83,8 +83,16 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   금지, UI가 '직접 선택해 주세요' 표기). 진짜 차(녹차·홍차·원두 커피)는 멀티글자로 FOD 유지(회귀 0). 옷장→가구(옷
   substring 오분류 박멸). 가드 test_v41_x2_category_misclassify(7) + 기존 test 갱신(녹차 matched). 전체 10683 passed.
   before/after: docs/screens/v41/x2-category-{before,after}.png(식품/차 → 홈/가구/주방, 키워드칩도 가구 계열로).
-- ⏳ 남음(내 몫, Copilot의 STEP 1-1~1-4·STEP 2 회피): X-1 이미지↔상품ID 귀속 / STEP 4-2·v40-B 확장·북마클릿 아이콘
-  브릿지 마크. (STEP 3 JSON제거·UX, 4-1 라벨, STEP 5 디자인은 후속.)
+- ✅ **STEP 4-2 확장 툴바 아이콘 브릿지 확인 + 재로딩 유도 (#391):** 오너 증상=툴바 아이콘 지구본. **점검 결과
+  현재 확장 아이콘(icons 16/32/48/128 + action.default_icon)은 이미 브릿지 마크**(v39-A2에서 교체·픽셀검증됨), popup
+  헤더/소싱처 관리도 인라인 브릿지 SVG, 확장 전체 globe/🌐 grep=0. → **실제 원인=캐시된 옛 확장**(오너가 언패키지
+  확장 리로드 필요). 조치: manifest 1.5.20→**1.5.21**(재로딩 유도) + 신규 가드 test_v41_4_2_extension_toolbar_icon(4:
+  **action.default_icon 4사이즈 브릿지 PNG 지정 보증**(기존 가드 공백 메움)·버전핀·manifest globe 0·툴바 128/48 금+주황
+  키스톤 픽셀). 기존 버전핀 4곳(v38/v39) 1.5.21 갱신. 전체 10687 passed. 캡처(정직: before=오너측 캐시 지구본 재현
+  불가): docs/screens/v41/4-2-extension-toolbar-bridge.png(16/32/48/128 브릿지 마크 + 툴바 목업). ※오너 액션: 확장을
+  1.5.21로 재로딩(chrome://extensions → 새로고침)하면 지구본 사라짐.
+- ⏳ 남음(내 몫, Copilot의 STEP 1-1~1-4·STEP 2 회피): X-1 이미지↔상품ID 귀속(PDP 갤러리 스코프 강화) / v40-B 북마클릿
+  아이콘. (STEP 3 JSON제거·UX, 4-1 라벨 '다리 너머 오늘의 발굴', STEP 5 디자인은 후속.)
 
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)
 - 규칙(불변): 각 항목 **실제 화면 before/after 캡처로만 완료**. 추측 금지·거짓성공/임의환산 금지·회귀 금지(pytest+CI)·토큰 단일소스.
