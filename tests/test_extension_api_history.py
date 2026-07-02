@@ -30,6 +30,15 @@ def client(app):
 
 
 class TestExtensionApiHistory:
+    @pytest.fixture(autouse=True)
+    def _clean_store(self):
+        # v42 1-3: 중복 수집 방지가 실 _in_memory를 읽으므로, append를 목킹하는 이 클래스 테스트는
+        #   다른 파일이 남긴 같은 URL 행에 dedup되지 않도록 저장소를 비운다(테스트 격리).
+        from src.seller_console import collect_history_store as ch
+        ch._in_memory.clear()
+        yield
+        ch._in_memory.clear()
+
     def test_collect_records_history(self, client):
         """POST /api/v1/collect/extension → collect_history_store.append 호출됨."""
         with patch("src.api.extension_api._require_token") as mock_auth, \

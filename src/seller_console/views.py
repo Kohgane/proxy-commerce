@@ -1334,8 +1334,16 @@ def _quick_collect(url: str, source: str = "bookmarklet") -> dict:
 
     images = draft.get("images") if isinstance(draft.get("images"), list) else []
     title = draft.get("title_ko") or draft.get("title") or draft.get("title_en") or "(제목 없음)"
+    from . import collect_history_store
+    # v42 1-3: 중복 수집 방지 — 같은 상품이 이미 있으면 기존 항목 안내(북마클릿/공유도 동일).
     try:
-        from . import collect_history_store
+        _dup = collect_history_store.find_by_product_key(url, seller_ids=_seller_identities())
+    except Exception:
+        _dup = None
+    if _dup and _dup.get("id"):
+        return {"ok": True, "item_id": _dup.get("id"), "status": 200, "duplicate": True,
+                "message": "이미 수집한 상품입니다. 내 계정의 ‘수집 이력’에서 확인·편집할 수 있습니다."}
+    try:
         item_id = collect_history_store.append(
             source=source, url=url, title=title,
             image=images[0] if images else draft.get("image", ""),

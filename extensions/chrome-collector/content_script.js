@@ -439,6 +439,10 @@ function handleFabClick(btn) {
       kgpToast(((resp && resp.error) || "수집 실패"), false);
       return;
     }
+    if (resp.duplicate === true) {   // v42 1-3: 이미 수집한 상품 — 새 항목 만들지 않고 안내(가짜 축하 0)
+      kgpToast((resp.message || "이미 수집한 상품입니다.") + "\n셀러 콘솔의 수집 이력에서 확인하세요.", true);
+      return;
+    }
     kgpCelebrate(1);          // 실제 성공 시에만 도장+카운트업(따라하기 재미)
     const tk = resp.title_ko && resp.title_ko !== resp.title ? `\n→ ${resp.title_ko}` : "";
     if (tk) kgpToast(`수집 완료${tk}\n셀러 콘솔에서 확인·편집하세요.`, true);

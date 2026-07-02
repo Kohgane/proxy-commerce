@@ -30,4 +30,4 @@ def test_list_vs_detail_still_mutually_exclusive():
 
 
 def test_extension_version_bumped():
-    assert MANIFEST["version"] == "1.5.23"
+    assert MANIFEST["version"] == "1.5.24"

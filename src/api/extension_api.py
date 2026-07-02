@@ -309,6 +309,30 @@ def collect_from_extension():
     # v4 P0: 저장 자기검증 — append 직후 같은 seller_id로 재조회해 실제 저장됐을 때만 성공.
     #        저장 실패면 가짜 성공(낙관적 토스트) 대신 정직한 실패를 반환한다.
     seller_id_val = str(user.get("user_id") or "")
+
+    # v42 1-3: 중복 수집 방지 — 같은 상품(정규화 goods-id/ASIN 키)이 이미 있으면 새로 만들지 않고 안내.
+    _dedup_ids = {seller_id_val}
+    try:
+        from src.auth.user_store import get_store as _get_user_store_d
+        _du = _get_user_store_d().find_by_id(seller_id_val)
+        if _du is not None and getattr(_du, "email", ""):
+            _dedup_ids.add(str(_du.email))
+    except Exception:
+        pass
+    try:
+        from src.seller_console.collect_history_store import find_by_product_key as _find_dup
+        _dup = _find_dup(url, seller_ids=_dedup_ids)
+    except Exception:
+        _dup = None
+    if _dup and _dup.get("id"):
+        _dup_id = _dup.get("id")
+        logger.info("[collect %s] 중복 수집 감지 → 기존 항목 안내: id=%s url=%s", _corr, _dup_id, url[:80])
+        return jsonify({
+            "ok": True, "duplicate": True, "item_id": _dup_id,
+            "preview_url": f"/seller/collect/preview/{_dup_id}",
+            "message": "이미 수집한 상품입니다.",
+        })
+
     item_id = None
     saved = False
     durable = True

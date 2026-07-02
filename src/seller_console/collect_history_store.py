@@ -232,6 +232,36 @@ def get(item_id: str, seller_id: Optional[str] = None, seller_ids: Optional[set]
     return None
 
 
+def find_by_product_key(url: str, *, seller_id: Optional[str] = None,
+                        seller_ids: Optional[set] = None) -> Optional[dict]:
+    """v42 1-3: 같은 상품(정규화 키 일치)이 이미 수집돼 있으면 그 항목을 반환(중복 방지).
+
+    각 행의 url을 그때그때 정규화해 비교 → 예전 행(키 미저장)도 매칭. 셀러 스코프 격리.
+    같은 키가 여러 건이면 가장 최근 것을 반환.
+    """
+    try:
+        from src.collectors.product_key import normalize_product_key
+    except Exception:
+        return None
+    key = normalize_product_key(url)
+    if not key:
+        return None
+    matches = []
+    for row in _all_rows():
+        _rsid = str(row.get("seller_id", "") or "")
+        if seller_ids is not None:
+            if _rsid not in seller_ids:
+                continue
+        elif seller_id is not None and _rsid != str(seller_id):
+            continue
+        if normalize_product_key(row.get("url", "")) == key:
+            matches.append(row)
+    if not matches:
+        return None
+    matches.sort(key=lambda r: r.get("collected_at", ""), reverse=True)
+    return dict(matches[0])
+
+
 def update(item_id: str, *, seller_id: Optional[str] = None,
            seller_ids: Optional[set] = None, **fields) -> bool:
     """수집 이력 단건의 필드를 갱신 (Phase 201 — 중간 편집 저장).
