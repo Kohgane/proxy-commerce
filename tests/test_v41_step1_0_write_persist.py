@@ -15,7 +15,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
-class _TokenWS:
+class _FakeTokenWorksheet:
     header = ["token_hash", "user_id", "scopes_json", "created_at", "last_used_at", "expires_at", "revoked"]
 
     def __init__(self):
@@ -41,7 +41,7 @@ class _TokenWS:
         self.rows[row_idx - 2][col - 1] = val
 
 
-class _BillingWS:
+class _FakeBillingWorksheet:
     header = ["seller_id", "plan", "token_balance"]
 
     def __init__(self):
@@ -70,7 +70,7 @@ class _BillingWS:
         self.rows.append(list(row))
 
 
-class _CollectWS:
+class _FakeCollectWorksheet:
     header = [
         "id", "collected_at", "source", "domain", "url", "title",
         "image_url", "price", "currency", "status", "preview_url", "extra_json", "seller_id",
@@ -106,7 +106,7 @@ def app_client():
 def test_token_append_failure_never_returns_raw_token(monkeypatch):
     import src.auth.personal_tokens as pt
 
-    ws = _TokenWS()
+    ws = _FakeTokenWorksheet()
     monkeypatch.setattr(pt, "_SHEET_ID", "sheet-test", raising=False)
     monkeypatch.setattr(pt, "_get_worksheet", lambda: ws)
 
@@ -122,7 +122,7 @@ def test_token_append_failure_never_returns_raw_token(monkeypatch):
 def test_token_generate_then_validate_round_trip(monkeypatch):
     import src.auth.personal_tokens as pt
 
-    ws = _TokenWS()
+    ws = _FakeTokenWorksheet()
     monkeypatch.setattr(pt, "_SHEET_ID", "sheet-test", raising=False)
     monkeypatch.setattr(pt, "_get_worksheet", lambda: ws)
     pt._token_cache.clear()
@@ -137,7 +137,7 @@ def test_token_generate_then_validate_round_trip(monkeypatch):
 def test_collect_history_delete_requery_no_respawn(monkeypatch):
     import src.seller_console.collect_history_store as ch
 
-    ws = _CollectWS([
+    ws = _FakeCollectWorksheet([
         ["x1", "2026-07-02T00:00:00+00:00", "extension", "taobao.com", "https://taobao.com/x1", "A", "", "", "", "ok", "", "{}", "u1"],
         ["x2", "2026-07-02T00:00:00+00:00", "extension", "taobao.com", "https://taobao.com/x2", "B", "", "", "", "ok", "", "{}", "u2"],
     ])
@@ -154,7 +154,7 @@ def test_collect_history_delete_requery_no_respawn(monkeypatch):
 def test_billing_commit_failure_is_honest(monkeypatch):
     from src.seller_console import billing_store as bs
 
-    ws = _BillingWS()
+    ws = _FakeBillingWorksheet()
     monkeypatch.setattr(bs, "_SHEET_ID", "sheet-test", raising=False)
     monkeypatch.setattr(bs, "_get_worksheet", lambda: ws)
 

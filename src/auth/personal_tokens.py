@@ -28,7 +28,9 @@ _TOKEN_LENGTH = 64  # 총 길이 (prefix 포함)
 _DEFAULT_EXPIRY_DAYS = 365
 _VALID_SCOPES = {"collect.write", "catalog.read", "markets.write"}
 
-# 인메모리 캐시 (Sheets 부하 감소, TTL 5분)
+# 인메모리 캐시 (Sheets 부하 감소, TTL 5분).
+# 주의: revoke는 시트에 즉시 영속 커밋되지만, 다른 워커가 이미 이 캐시를 쥔 경우
+# 최대 5분까지 직전 인증 상태가 잠깐 남아 보일 수 있다.
 _token_cache: dict = {}
 _CACHE_TTL_SEC = 300
 
