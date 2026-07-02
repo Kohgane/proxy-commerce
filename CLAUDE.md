@@ -149,7 +149,15 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   이력 자동반영은 STEP 1-0b 연동(기존). manifest 1.5.25→1.5.26. 가드 test_v42_e5_bulk_persist(4: 소스계약 + node로
   재시도 버튼 생성 실증). 전체 10713 passed. before/after: docs/screens/v42/e5-bulk-summary-retry.png(성공/실패만 →
   완료·중복·실패 + 재시도).
-- ⏳ PHASE 1 남음(내 몫): E-4 전체선택 정확도 / E-2 상시버튼 / E-3 호버수집 / 1-2 이미지·상세 스코프 / 1-6 상세 필러·AI초안.
+- ✅ **E-4 전체선택 누락(24 중 16) 정확도 (#398):** 증상=벌크바 '전체 24 중 상품 16' — 8개(가격 없는 카드·앵커
+  변형) 미인식. 근본=`_kgpAmazonCards`가 `!img||!titleEl||!pr.price`로 **가격 필수** + `/dp/` 앵커만 인정. 유효
+  ASIN(비스폰서)은 이미 강한 상품 신호이므로 **완화:** href는 앵커 없으면 `origin+/dp/+asin` 폴백, 제목 셀렉터 확장
+  (h2 a span·title-recipe·a-size-base-plus/medium·img.alt), **가격 선택**(제목·이미지 둘 다 없을 때만 제외).
+  MutationObserver+4s 재스캔은 기존(지연로딩 커버). 정직: 벌크바에 '제외 N(광고 등)' 명시(조용한 누락 금지).
+  manifest 1.5.26→1.5.27. 가드 test_v42_e4_selectall(5: 소스계약 + **node로 실제 어댑터 실행 — 26개(16유가+8무가+
+  2광고)→상품 24 인식·광고 2 제외·유가 16**). 전체 10718 passed. before/after: docs/screens/v42/e4-selectall-before-after.png
+  (실제 _kgpAmazonCards: 상품 16 → 24 + 제외 2).
+- ⏳ PHASE 1 남음(내 몫): E-2 상시버튼 / E-3 호버수집 / 1-2 이미지·상세 스코프 / 1-6 상세 필러·AI초안.
 - ⏳ 후속: PHASE 2 속도, STEP 3 JSON제거·UX / 4-1 라벨 '다리 너머, 오늘의 발굴' / STEP 5 디자인.
 
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)
