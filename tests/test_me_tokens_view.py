@@ -18,6 +18,8 @@ os.environ.setdefault("GOOGLE_SHEET_ID", "")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from src.auth.personal_tokens import TokenStoreCommitError
+
 
 @pytest.fixture
 def client():
@@ -116,6 +118,21 @@ class TestGenerateTokenView:
         assert resp.status_code == 500
         data = resp.get_json()
         assert data["ok"] is False
+
+    def test_post_generate_storage_failure_returns_503(self, client):
+        with patch(
+            "src.auth.personal_tokens.generate_token",
+            side_effect=TokenStoreCommitError("토큰을 저장하지 못했어요."),
+        ):
+            resp = client.post(
+                "/seller/me/tokens/generate",
+                data=json.dumps({"scopes": ["collect.write"]}),
+                content_type="application/json",
+            )
+        assert resp.status_code == 503
+        data = resp.get_json()
+        assert data["ok"] is False
+        assert "저장" in (data.get("error") or "")
 
 
 class TestRevokeTokenView:

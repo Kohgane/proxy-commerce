@@ -31,6 +31,10 @@ PLANS = {
 }
 
 
+class BillingCommitError(RuntimeError):
+    """결제/플랜 저장 커밋 실패."""
+
+
 def _get_worksheet():
     from src.utils.sheets import open_sheet
     ws = open_sheet(_SHEET_ID, _WS_NAME)
@@ -43,6 +47,24 @@ def _get_worksheet():
     return ws
 
 
+def _normalize_account(plan: str, token_balance) -> dict:
+    plan = str(plan or "free")
+    if plan not in PLANS:
+        plan = "free"
+    try:
+        bal = int(token_balance or 0)
+    except (TypeError, ValueError):
+        bal = 0
+    return {"plan": plan, "token_balance": max(0, bal)}
+
+
+def _sheet_account(ws, sid: str) -> Optional[dict]:
+    for row in ws.get_all_records():
+        if str(row.get("seller_id", "") or "") == sid:
+            return _normalize_account(row.get("plan", "free"), row.get("token_balance", 0))
+    return None
+
+
 def get_account(seller_id: Optional[str]) -> dict:
     """셀러 결제 상태 {plan, token_balance}."""
     sid = str(seller_id or "")
@@ -51,12 +73,7 @@ def get_account(seller_id: Optional[str]) -> dict:
             ws = _get_worksheet()
             for row in ws.get_all_records():
                 if str(row.get("seller_id", "") or "") == sid:
-                    plan = str(row.get("plan", "free") or "free")
-                    try:
-                        bal = int(row.get("token_balance", 0) or 0)
-                    except (TypeError, ValueError):
-                        bal = 0
-                    return {"plan": plan if plan in PLANS else "free", "token_balance": max(0, bal)}
+                    return _normalize_account(row.get("plan", "free"), row.get("token_balance", 0))
             return {"plan": "free", "token_balance": 0}
         except Exception as exc:
             logger.warning("billing 조회 실패(인메모리 폴백): %s", exc)
@@ -76,7 +93,8 @@ def set_plan(seller_id: Optional[str], plan: str) -> dict:
     plan = plan if plan in PLANS else "free"
     cur = get_account(sid)
     cur["plan"] = plan
-    _save(sid, cur)
+    durable = _save(sid, cur)
+    cur["durable"] = durable
     return cur
 
 
@@ -84,11 +102,13 @@ def add_tokens(seller_id: Optional[str], amount: int) -> dict:
     sid = str(seller_id or "")
     cur = get_account(sid)
     cur["token_balance"] = max(0, cur["token_balance"] + int(amount or 0))
-    _save(sid, cur)
+    durable = _save(sid, cur)
+    cur["durable"] = durable
     return cur
 
 
-def _save(sid: str, acc: dict) -> None:
+def _save(sid: str, acc: dict) -> bool:
+    normalized = _normalize_account(acc.get("plan", "free"), acc.get("token_balance", 0))
     if _SHEET_ID:
         try:
             ws = _get_worksheet()
@@ -97,18 +117,28 @@ def _save(sid: str, acc: dict) -> None:
             col = {h: i for i, h in enumerate(header)}
             for r, row in enumerate(values[1:], start=2):
                 if col.get("seller_id", 0) < len(row) and str(row[col["seller_id"]] or "") == sid:
-                    ws.update_cell(r, col.get("plan", 1) + 1, acc["plan"])
-                    ws.update_cell(r, col.get("token_balance", 2) + 1, str(acc["token_balance"]))
-                    return
+                    ws.update_cell(r, col.get("plan", 1) + 1, normalized["plan"])
+                    ws.update_cell(r, col.get("token_balance", 2) + 1, str(normalized["token_balance"]))
+                    saved = _sheet_account(ws, sid)
+                    if saved != normalized:
+                        raise BillingCommitError("결제 정보를 저장하지 못했어요. 잠시 후 다시 시도해 주세요.")
+                    return True
             new_row = [""] * len(header)
             new_row[col.get("seller_id", 0)] = sid
-            new_row[col.get("plan", 1)] = acc["plan"]
-            new_row[col.get("token_balance", 2)] = str(acc["token_balance"])
+            new_row[col.get("plan", 1)] = normalized["plan"]
+            new_row[col.get("token_balance", 2)] = str(normalized["token_balance"])
             ws.append_row(new_row)
-            return
+            saved = _sheet_account(ws, sid)
+            if saved != normalized:
+                raise BillingCommitError("결제 정보를 저장하지 못했어요. 잠시 후 다시 시도해 주세요.")
+            return True
+        except BillingCommitError:
+            raise
         except Exception as exc:
-            logger.warning("billing 저장 실패(인메모리 폴백): %s", exc)
-    _in_memory[sid] = {"plan": acc["plan"], "token_balance": acc["token_balance"]}
+            logger.warning("billing 저장 실패(비영속): %s", exc)
+            raise BillingCommitError("결제 정보를 저장하지 못했어요. 잠시 후 다시 시도해 주세요.") from exc
+    _in_memory[sid] = dict(normalized)
+    return False
 
 
 def create_pending_payment(*, seller_id: Optional[str], plan: str, order_id: str, amount: int) -> dict:

@@ -147,7 +147,7 @@
             </tbody>
           </table>
         </div>
-        <p class="text-muted small mt-2 mb-0">삭제된 토큰은 즉시 무효화되어 더 이상 인증에 쓸 수 없어요. 이력은 보안 확인용으로만 보관됩니다.</p>
+        <p class="text-muted small mt-2 mb-0">삭제된 토큰은 시트에 즉시 폐기 상태로 저장되어 더 이상 인증에 쓸 수 없어요. 다만 이미 다른 창·프로세스가 5분 인증 캐시를 쥔 경우 아주 잠깐 이전 상태가 보일 수 있습니다. 이력은 보안 확인용으로만 보관됩니다.</p>
       </details>
     </div>
   </div>
@@ -209,6 +209,7 @@
             <button class="btn btn-outline-secondary" onclick="copyToken()">복사</button>
           </div>
         </div>
+        <div id="tokenGenerateError" class="alert alert-danger d-none mt-3 mb-0"></div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>
@@ -221,6 +222,19 @@
 <script>
 const _genModalEl = document.getElementById('generateModal');
 const _genBtn = document.getElementById('generateBtn');
+const _genErr = document.getElementById('tokenGenerateError');
+
+function _showGenerateError(msg) {
+  if (!_genErr) return;
+  _genErr.textContent = msg;
+  _genErr.classList.remove('d-none');
+}
+
+function _hideGenerateError() {
+  if (!_genErr) return;
+  _genErr.textContent = '';
+  _genErr.classList.add('d-none');
+}
 
 function _closeGenerateModal() {
   try {
@@ -244,6 +258,7 @@ _genBtn.addEventListener('click', async () => {
   const expiresDays = parseInt(document.getElementById('expiresDays').value);
   _genBtn.disabled = true;
   _genBtn.textContent = '발급 중...';
+  _hideGenerateError();
   try {
     const resp = await fetch('/seller/me/tokens/generate', {
       method: 'POST',
@@ -254,17 +269,18 @@ _genBtn.addEventListener('click', async () => {
     if (data.ok) {
       document.getElementById('rawToken').value = data.raw_token;
       document.getElementById('tokenResult').classList.remove('d-none');
+      _hideGenerateError();
       _genBtn.classList.replace('btn-primary', 'btn-success');
       _genBtn.textContent = '발급 완료 · 닫기';
       _genBtn.dataset.mode = 'done';
       _genBtn.disabled = false;            // 재활성화 — 클릭 시 닫힘(죽은 버튼 0)
     } else {
-      pcToast('토큰 발급 실패: ' + (data.error || '알 수 없는 오류'), 'error');
+      _showGenerateError(data.error || '토큰을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.');
       _genBtn.disabled = false;
       _genBtn.textContent = '발급하기';
     }
   } catch(e) {
-    pcToast('오류: ' + e.message, 'error');
+    _showGenerateError('오류: ' + e.message);
     _genBtn.disabled = false;
     _genBtn.textContent = '발급하기';
   }
@@ -278,6 +294,7 @@ if (_genModalEl) _genModalEl.addEventListener('show.bs.modal', () => {
   _genBtn.textContent = '발급하기';
   _genBtn.dataset.mode = '';
   _genBtn.disabled = false;
+  _hideGenerateError();
 });
 
 async function copyToken() {

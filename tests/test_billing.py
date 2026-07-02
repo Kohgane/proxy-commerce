@@ -10,6 +10,35 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
+class _FakeBillingWS:
+    header = ["seller_id", "plan", "token_balance"]
+
+    def __init__(self):
+        self.rows = []
+
+    def row_values(self, index):
+        if index == 1 and self.rows:
+            return list(self.header)
+        return []
+
+    def insert_row(self, row, index=1):
+        if row and row[0] == "seller_id":
+            return
+        self.rows.insert(max(index - 2, 0), list(row))
+
+    def get_all_records(self):
+        return [dict(zip(self.header, row)) for row in self.rows]
+
+    def get_all_values(self):
+        return [list(self.header)] + [list(row) for row in self.rows]
+
+    def update_cell(self, row_idx, col, val):
+        self.rows[row_idx - 2][col - 1] = val
+
+    def append_row(self, row):
+        self.rows.append(list(row))
+
+
 @pytest.fixture
 def client():
     from src.order_webhook import app
@@ -24,6 +53,15 @@ def _clear():
     bs._in_memory.clear()
     yield
     bs._in_memory.clear()
+
+
+@pytest.fixture
+def billing_sheet(monkeypatch):
+    from src.seller_console import billing_store as bs
+    ws = _FakeBillingWS()
+    monkeypatch.setattr(bs, "_SHEET_ID", "sheet-test", raising=False)
+    monkeypatch.setattr(bs, "_get_worksheet", lambda: ws)
+    return bs, ws
 
 
 def test_billing_page_shows_plans(client):
@@ -111,3 +149,43 @@ def test_select_rejects_unknown_plan(client):
 def test_billing_in_nav(client):
     html = client.get("/seller/dashboard").get_data(as_text=True)
     assert "/seller/billing" in html
+
+
+def test_set_plan_verifies_sheet_commit(billing_sheet):
+    bs, ws = billing_sheet
+    acc = bs.set_plan("seller-1", "plus")
+    assert acc["plan"] == "plus"
+    assert acc["durable"] is True
+    assert ws.rows == [["seller-1", "plus", "0"]]
+
+
+def test_add_tokens_verifies_sheet_commit(billing_sheet):
+    bs, ws = billing_sheet
+    bs.set_plan("seller-1", "free")
+    acc = bs.add_tokens("seller-1", 7)
+    assert acc["token_balance"] == 7
+    assert acc["durable"] is True
+    assert ws.rows == [["seller-1", "free", "7"]]
+
+
+def test_set_plan_honest_failure_when_sheet_write_breaks(billing_sheet, monkeypatch):
+    bs, ws = billing_sheet
+
+    def _boom(row):
+        raise RuntimeError("append failed")
+
+    monkeypatch.setattr(ws, "append_row", _boom)
+    with pytest.raises(bs.BillingCommitError):
+        bs.set_plan("seller-1", "pro")
+
+
+def test_add_tokens_honest_failure_when_recheck_does_not_persist(billing_sheet, monkeypatch):
+    bs, ws = billing_sheet
+    bs.set_plan("seller-1", "free")
+
+    def _no_persist(row_idx, col, val):
+        return None
+
+    monkeypatch.setattr(ws, "update_cell", _no_persist)
+    with pytest.raises(bs.BillingCommitError):
+        bs.add_tokens("seller-1", 3)
