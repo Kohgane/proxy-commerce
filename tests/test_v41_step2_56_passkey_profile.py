@@ -121,22 +121,25 @@ class TestProfileDropdownConsolidation:
         assert '로그아웃' in src
 
     def test_dropdown_link_targets_are_registered_routes(self):
-        """드롭다운 링크 대상(/seller/me, /seller/me/notifications, /seller/me/tokens)이 views.py에 등록된 라우트."""
-        views_src = (_ROOT / "src/seller_console/views.py").read_text(encoding="utf-8")
-        # /seller/me — 내 프로필
-        assert '@bp.get("/me")' in views_src or '@bp.route("/me"' in views_src or 'def me(' in views_src
-        # /seller/me/notifications — 설정
-        assert '"/me/notifications"' in views_src
-        # /seller/me/tokens — 패스키 관리
-        assert '"/me/tokens"' in views_src
+        """드롭다운 링크 대상(/seller/me, /seller/me/notifications, /seller/me/tokens)이 Flask URL 맵에 존재."""
+        import os as _os
+        _os.environ.setdefault("SELLER_CONSOLE_AUTH", "0")
+        from src.order_webhook import app as _app
+        url_map_rules = {str(r) for r in _app.url_map.iter_rules()}
+        assert "/seller/me" in url_map_rules, f"/seller/me not in URL map: {sorted(url_map_rules)[:20]}"
+        assert "/seller/me/notifications" in url_map_rules, "/seller/me/notifications not in URL map"
+        assert "/seller/me/tokens" in url_map_rules, "/seller/me/tokens not in URL map"
 
     def test_unauth_topbar_passkey_gated_by_user_id_block(self):
         """비로그인 topbar에 패스키 관리 링크가 없음 — 드롭다운이 {% if _user_id %} 블록 안에 있어야 함."""
         src = (_ROOT / "src/seller_console/templates/_base.html").read_text(encoding="utf-8")
         # _user_id 체크 블록 전에 패스키/me/tokens 링크가 나오면 안 됨 (미로그인 노출)
-        user_id_block_start = src.index("{% if _user_id %}")
-        passkey_link_pos = src.index('href="/seller/me/tokens"')
-        logout_form_pos = src.index('action="/auth/logout"')
+        user_id_block_start = src.find("{% if _user_id %}")
+        assert user_id_block_start != -1, "_base.html에 {% if _user_id %} 블록이 없습니다"
+        passkey_link_pos = src.find('href="/seller/me/tokens"')
+        assert passkey_link_pos != -1, "_base.html에 패스키 링크(/seller/me/tokens)가 없습니다"
+        logout_form_pos = src.find('action="/auth/logout"')
+        assert logout_form_pos != -1, "_base.html에 로그아웃 폼이 없습니다"
         # 패스키 링크와 로그아웃 폼이 모두 {% if _user_id %} 블록 안에 있음
         assert passkey_link_pos > user_id_block_start, "패스키 링크가 _user_id 블록 밖에 있습니다"
         assert logout_form_pos > user_id_block_start, "로그아웃 폼이 _user_id 블록 밖에 있습니다"
@@ -170,16 +173,19 @@ class TestRegressionGuards:
         '마이페이지'가 남아 있으면 중복 진입점 — 드롭다운이 깔끔히 집약됐는지 확인.
         """
         src = (_ROOT / "src/seller_console/templates/_base.html").read_text(encoding="utf-8")
-        # dropdown-item 으로 '마이페이지' 가 남아 있으면 안 됨
+        # dropdown-item 클래스를 가진 <a> 태그의 텍스트에 '마이페이지'가 없어야 함
         import re
-        assert not re.search(r'class="dropdown-item"[^>]*>.*마이페이지', src), (
-            "_base.html 드롭다운에 '마이페이지' 레거시 항목이 남아 있음 — '내 프로필'로 대체 확인"
-        )
+        # 한 태그 안에 dropdown-item + 마이페이지가 함께 있는 경우만 검출
+        assert not re.search(
+            r'<a\b[^>]*class="[^"]*dropdown-item[^"]*"[^>]*>[^<]*마이페이지',
+            src,
+        ), "_base.html 드롭다운에 '마이페이지' 레거시 항목이 남아 있음 — '내 프로필'로 대체 확인"
 
     def test_topnav_html_no_old_maipage_entry(self):
         """topnav.html 드롭다운에서 '마이페이지' 레거시 항목이 '내 프로필'로 대체됨."""
         src = (_ROOT / "src/seller_console/templates/partials/topnav.html").read_text(encoding="utf-8")
         import re
-        assert not re.search(r'class="dropdown-item"[^>]*>.*마이페이지', src), (
-            "topnav.html 드롭다운에 '마이페이지' 레거시 항목이 남아 있음"
-        )
+        assert not re.search(
+            r'<a\b[^>]*class="[^"]*dropdown-item[^"]*"[^>]*>[^<]*마이페이지',
+            src,
+        ), "topnav.html 드롭다운에 '마이페이지' 레거시 항목이 남아 있음"
