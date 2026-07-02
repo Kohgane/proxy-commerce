@@ -10,6 +10,37 @@ const clearBtn = document.getElementById("clearBtn");
 const toggleToken = document.getElementById("toggleToken");
 const statusMsg = document.getElementById("statusMsg");
 const getTokenLink = document.getElementById("getTokenLink");
+const connStatus = document.getElementById("connStatus");
+
+// v42 E-1: 토큰 연결 상태 확인 — 서버에 /api/v1/collect/me 호출해 '연결됨 ✓ (계정)' 표시.
+//   유효 200 → 연결됨, 401 → 토큰 무효·만료(재설정), 그 외/네트워크 → 확인 불가(정직).
+function _setConn(kind, text) {
+  if (!connStatus) return;
+  connStatus.style.display = "block";
+  const palette = {
+    ok: ["#0f7b6c", "#e6f4f1"], bad: ["#b42318", "#fde8e6"], warn: ["#8a6d1f", "#fdf6e3"],
+  }[kind] || ["#555", "#eee"];
+  connStatus.style.color = palette[0];
+  connStatus.style.background = palette[1];
+  connStatus.textContent = text;
+}
+function checkConnection(server, token) {
+  if (!token) { if (connStatus) connStatus.style.display = "none"; return; }
+  const base = (server || "https://kohganepercentiii.com").replace(/\/+$/, "");
+  _setConn("warn", "연결 확인 중…");
+  fetch(base + "/api/v1/collect/me", { headers: { "Authorization": "Bearer " + token } })
+    .then((r) => r.status === 401 ? { _bad: true } : r.json().catch(() => ({})))
+    .then((d) => {
+      if (d && d._bad) { _setConn("bad", "토큰이 무효하거나 만료됐어요 — 재발급 후 다시 저장하세요."); return; }
+      if (d && d.ok) {
+        const who = d.email || d.name || d.user_id || "";
+        _setConn("ok", "연결됨 ✓" + (who ? "  ·  " + who : ""));
+      } else {
+        _setConn("warn", "연결 상태를 확인하지 못했어요 (네트워크/서버). 토큰은 저장돼 있어요.");
+      }
+    })
+    .catch(() => _setConn("warn", "연결 상태를 확인하지 못했어요 (네트워크). 토큰은 저장돼 있어요."));
+}
 
 // content_script.js의 KGP_DEFAULT_SOURCES와 동일하게 유지(표시용 라벨/호스트).
 const DEFAULT_SOURCES = [
@@ -67,6 +98,7 @@ readSettings((data) => {
   const server = data.serverUrl || "https://kohganepercentiii.com";
   getTokenLink.href = server + "/seller/me/tokens";
   getTokenLink.target = "_blank";
+  checkConnection(server, data.token);   // v42 E-1: 저장된 토큰이면 연결 상태 즉시 표시
 });
 
 toggleToken.addEventListener("click", () => {
@@ -94,6 +126,7 @@ saveBtn.addEventListener("click", () => {
       return;
     }
     showStatus(statusMsg, "success", "설정이 저장되었습니다.");
+    checkConnection(serverUrl, token);   // v42 E-1: 저장 직후 연결 상태 검증해 '연결됨 ✓' 표시
   });
 });
 
@@ -105,7 +138,8 @@ clearBtn.addEventListener("click", () => {
         return;
       }
       serverUrlInput.value = ""; tokenInput.value = "";
-      showStatus(statusMsg, "success", "초기화되었습니다.");
+      if (connStatus) connStatus.style.display = "none";   // v42 E-1
+      showStatus(statusMsg, "success", "재설정되었습니다.");
     });
   }
 });

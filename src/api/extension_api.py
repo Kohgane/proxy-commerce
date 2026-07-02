@@ -205,6 +205,29 @@ def _merge_scraped_into_payload(payload: dict, scraped) -> dict:
     return out
 
 
+@extension_bp.get("/me")
+def api_me():
+    """v42 E-1: 토큰 연결 상태 확인 — 확장 옵션의 '연결됨 ✓ (계정)' 표시용.
+
+    유효 토큰 → 200 {ok:true, email, name}. 무효·만료 → 401(재설정 유도).
+    CORS는 /api/v1/collect/* 에 이미 열려 있어 확장(교차출처)에서 호출 가능.
+    """
+    user = _require_token()
+    if not user:
+        return jsonify({"ok": False, "error": "invalid_or_expired_token"}), 401
+    uid = str(user.get("user_id") or "")
+    email, name = "", ""
+    try:
+        from src.auth.user_store import get_store as _get_user_store
+        u = _get_user_store().find_by_id(uid)
+        if u is not None:
+            email = getattr(u, "email", "") or ""
+            name = getattr(u, "name", "") or getattr(u, "display_name", "") or ""
+    except Exception:
+        pass
+    return jsonify({"ok": True, "email": email, "name": name, "user_id": uid})
+
+
 @extension_bp.post("/extension")
 def collect_from_extension():
     """크롬 확장 / 북마클릿에서 상품 메타 수신 + 카탈로그 저장.
