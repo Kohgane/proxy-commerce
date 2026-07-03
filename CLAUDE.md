@@ -262,6 +262,22 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
 - ⏳ 후속: 1-2 이미지·상세 스코프 추가 강화(판매자 로고 제외) / PHASE 2 속도 / PHASE 3~5.
 - ⏳ 후속: PHASE 2 속도, STEP 3 JSON제거·UX / 4-1 라벨 '다리 너머, 오늘의 발굴' / STEP 5 디자인.
 
+## 🟥 punchlist v45 (오너 2026-07-03 — 미완 전용 펀치리스트, "P1만 실행. 다른 항목 건드리지 마라")
+- 규칙: 신규 기능 금지, 항목당 PR 1개, 판정 캡처 없으면 미완. 순서 P1→P2→P3·4·5→P6→P7→P8→P9→P10.
+  (P7=이미지·상세 추출은 v44 #408/#409로 이미 반영, P10=업로드 표식은 v44-1 #407로 이미 반영 — 참고.)
+- ✅ **P1 벌크 삭제 부분 실패 근본 수리 (★오너 지목):** 증상=20건 전체선택 삭제→"삭제됨"→몇 개 잔존→반복 삭제→
+  페이지 왕복 후 부활. **점검:** delete()는 이미 `sorted(reverse=True)`로 내림차순 삭제(인덱스 밀림 자체는 방지)였으나
+  **진짜 원인=시트에서 행마다 개별 `ws.delete_rows(r)`(N회 API 호출)** → 20건이면 20회 write가 분당 쿼터(429)를 루프
+  중간에 터뜨리면 `except`가 삼키고 일부만 삭제(부분 실패)·나머지 잔존(부활). **수리:** 신규 `delete_ids()` — 삭제 대상
+  행을 모아 인접 구간(`_contiguous_blocks`)으로 묶고 **단일 batchUpdate 1회**(내림차순 deleteDimension → 원자성·쿼터
+  절약)로 전건 삭제, **실제 삭제된 id 목록 반환**. `delete()`는 len() 반환 하위호환 래퍼. 라우트: `delete_ids`+write-then-
+  verify(existing_ids) → 검증 통과분(`verified_gone`)만 `deleted_ids`로 응답(타셀러/미영속 제외). 프론트 runBulkDelete가
+  **그 id 행만 DOM 제거** 후 성공 시 reload(재조회 검증)·부분실패 시 잔존분 유지+정직 안내. 가드 test_v45_p1_bulk_delete(7:
+  batch_update 1회·delete_rows 0회·20건 전건소멸·구간묶음·내림차순·타셀러차단·int 하위호환) + test_v41_step1_0_write_persist
+  FakeWorksheet에 batch_update 추가. 전체 10762 passed. **판정 캡처:** docs/screens/v45/p1-bulk-delete.png(BEFORE 총수집
+  20·선택 20개 → 삭제 1회 응답 ok/deleted=20/deleted_ids=20 → AFTER 총수집 0·빈 상태, count 재조회 3회 total=0 부활 0).
+  적용 스킬: (백엔드 삭제 로직 — UI/CSS 렌더 변경 없음 → gogabridj-design 불요. impeccable/humanizer CLI 미설치.)
+
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)
 - 규칙(불변): 각 항목 **실제 화면 before/after 캡처로만 완료**. 추측 금지·거짓성공/임의환산 금지·회귀 금지(pytest+CI)·토큰 단일소스.
 - 순서: A 지구본잔존 → B 소형아이콘 → C 인페이지 편집 드로어(핵심) → D 가격/상세/번역 → E 버튼라벨 → F 404박멸 → G 전수.

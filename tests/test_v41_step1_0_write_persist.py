@@ -78,6 +78,8 @@ class _FakeCollectWorksheet:
 
     def __init__(self, rows):
         self.rows = [list(r) for r in rows]
+        self.id = 111
+        self.spreadsheet = self
 
     def row_values(self, index):
         if index == 1 and self.rows:
@@ -92,6 +94,16 @@ class _FakeCollectWorksheet:
 
     def delete_rows(self, row_idx):
         del self.rows[row_idx - 2]
+
+    def batch_update(self, body):
+        # v45 P1: 단일 batchUpdate deleteDimension 삭제 시뮬레이트.
+        # 0-based 행 인덱스(헤더=행0) → self.rows 인덱스 = zero-1.
+        drop = set()
+        for req in body.get("requests", []):
+            rng = req["deleteDimension"]["range"]
+            for zero in range(rng["startIndex"], rng["endIndex"]):
+                drop.add(zero - 1)
+        self.rows = [row for i, row in enumerate(self.rows) if i not in drop]
 
 
 @pytest.fixture
