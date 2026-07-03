@@ -39,7 +39,13 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
 - 시그니처(다리/게이트/키스톤)를 반드시 살린다. 크림+세리프 default로 끝내지 말 것 — 다리 라인아트를 히어로·섹션 디바이더에 반복.
 
 ## 스킬 발동 트리거 (작업 유형 → 스킬)
-- UI/CSS 작성·수정 → `gogabridj-design`(우리 전용) + `web-artifacts-builder`(컴포넌트) + `theme-factory`(테마).
+- **★사용 보고 의무(v44 0-2):** 매 세션 첫 응답에 "로드한 스킬·참조 문서 목록"을 명시한다. UI 작업 PR 본문에
+  "적용 스킬: impeccable(어떤 명령), gogabridj-design"을 명시한다. 명시 없으면 스킬 미적용으로 간주.
+- UI/CSS 작성·수정 → **둘 다 적용**: `impeccable`(AI 슬롭 제거·범용 디자인 품질) + `gogabridj-design`(우리 다리·한지
+  정체성 강제). 순서: impeccable로 품질 잡고, gogabridj-design으로 정체성 덮어쓴다. 폰트·색은 우리 토큰이 최종
+  (Noto Serif KR + Pretendard 고정, impeccable이 Inter 밀어도 우리 토큰 유지). 보조: `web-artifacts-builder`·`theme-factory`.
+  - ※CLI 세션에 impeccable/humanizer 미설치면(available-skills에 없음) "켠 척(거짓)" 금지 — 그 의도(슬롭 제거·사람
+    톤)를 수동 적용하고 PR에 '미설치·수동 적용' 정직 표기(v20 선례).
 - 상세설명·마케팅 카피·가이드 글 → `humanizer`(사람처럼).
 - 새 스킬 만들기/다듬기 → `skill-creator`.
 - 마케팅 정적 이미지·OG·아이콘 → `canvas-design`.
@@ -213,7 +219,23 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   페이지'는 이미 target=_blank(새 탭), 드로어 iframe은 우리 preview(same-origin)만 로드(외부 url iframe 시도 0),
   security 미들웨어가 preview 경로에 SAMEORIGIN 부여(연결거부 아님) → 새 탭 요건 이미 충족, 가드로 못박음. 가드
   test_v43_45_buttons(4). 전체 10744 passed. 캡처: docs/screens/v43/4-margin-calculator.png(원가 61144→마진액 21,400원·23.3%).
-- ⏳ v43 남음: 6 드로어 재구성(칩네비·마켓별카테고리·경고어·상품정보고시·옵션표·8섹션) / 7 카테고리 리프 트리.
+- ⏳ v43 6·7(드로어 재구성·카테고리 트리)은 **addendum v44에 흡수**(퍼센티 4탭 상세 명세)로 재편.
+
+## 🟥 addendum v44 (오너 2026-07-03 — 퍼센티 상품편집 모달 완전 해부 → 우리 드로어 4탭 명세)
+- 순서: 0-1(환경변수 진단)→0-2(스킬 보고)→1(액션바+업로드 표식)→2(가격탭)→3(키워드탭)→4(썸네일탭)→5(상세탭)→
+  6(상품명·옵션). 각 탭=PR=퍼센티 캡처와 나란히 대조. 적용 스킬 명시 없으면 미적용 간주.
+- ✅ **0-1 환경변수 진단 (#406):** 증상=Render에 OPENAI/DEEPL 키 있고 재배포했는데 앱은 '미설정'. 점검: 코드는
+  표준명 `OPENAI_API_KEY`/`DEEPL_API_KEY`/`OPENAI_MODEL`을 os.getenv로 읽음(3모듈 일치). 근본 후보=값에 따옴표/공백
+  혼입 or 프로세스에 env 미도달. **수리:** 신규 `src/utils/env.py::env_str`(앞뒤 공백+감싼 따옴표 제거)·`env_present`·
+  `boot_env_report`(값 마스킹). order_webhook 부팅 시 `환경변수 체크: OPENAI_API_KEY=설정됨/없음 …` 1줄 출력(같은
+  헛걸음 방지). seller_console/ai/translator `_select_provider`+키 읽기 3곳을 env_str로 → 따옴표 섞여도 실호출 정상.
+  가드 test_v44_0_1_env_diag(5). 전체 그린. 캡처: docs/screens/v44/0-1-env-diagnosis.png(부팅 체크라인+정제, 값 마스킹).
+  ※오너 액션: 부팅 로그에서 OPENAI_API_KEY=없음이면 Render env 그룹/서비스/철자 확인(코드는 표준명 읽음).
+- ✅ **0-2 스킬 사용 보고 의무 (#406):** CLAUDE.md 스킬 트리거에 '매 세션 첫 응답에 로드 스킬·참조문서 명시 + UI PR에
+  적용스킬 명시, 없으면 미적용 간주' + impeccable+gogabridj-design 둘 다 적용 규칙 추가. CLI 미설치 스킬은 '켠 척' 금지·
+  수동 적용·정직 표기(v20 선례).
+- ⏳ v44 남음: 1 액션바+업로드 성공 표식(마켓별 뱃지·바로가기·목록 등록됨) / 2 가격탭(옵션가표·마켓별 미리보기) /
+  3 키워드탭 / 4 썸네일탭 / 5 상세탭(리치에디터) / 6 상품명·카테고리·옵션.
 - ⏳ 후속: 1-2 이미지·상세 스코프 추가 강화(판매자 로고 제외) / PHASE 2 속도 / PHASE 3~5.
 - ⏳ 후속: PHASE 2 속도, STEP 3 JSON제거·UX / 4-1 라벨 '다리 너머, 오늘의 발굴' / STEP 5 디자인.
 

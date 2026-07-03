@@ -22,6 +22,13 @@ from .utils.branding import get_brand_name, get_brand_name_ko
 
 logger = logging.getLogger(__name__)
 
+# v44 0-1: 부팅 시 환경변수 도달 여부를 1줄로(값 마스킹) — '키 있는데 미설정' 헛걸음 방지.
+try:
+    from src.utils.env import boot_env_report
+    logger.info(boot_env_report())
+except Exception:
+    pass
+
 app = Flask(__name__)
 
 # 프록시(Render/nginx) 뒤에서 X-Forwarded-Proto/Host를 신뢰하여 scheme/host를 올바르게 반영
