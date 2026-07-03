@@ -277,6 +277,17 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   FakeWorksheet에 batch_update 추가. 전체 10762 passed. **판정 캡처:** docs/screens/v45/p1-bulk-delete.png(BEFORE 총수집
   20·선택 20개 → 삭제 1회 응답 ok/deleted=20/deleted_ids=20 → AFTER 총수집 0·빈 상태, count 재조회 3회 total=0 부활 0).
   적용 스킬: (백엔드 삭제 로직 — UI/CSS 렌더 변경 없음 → gogabridj-design 불요. impeccable/humanizer CLI 미설치.)
+- ✅ **P2 수집 성공률 들쭉날쭉 (★쿼터 지목):** 증상=수집이 가끔 실패(성공률 들쭉날쭉). 근본=Sheets 분당 쿼터(429)를
+  삼키고 폴백/성공 처리 → 전송된 수집이 비영속(durable=False)으로 502되며 '가끔 실패'. **수리:** collect_history_store에
+  `_sheets_write(fn)` — 프로세스 내 **write 직렬화 락**(버스트 완화) + **429/5xx 지수 백오프 재시도(최대 3회)**로 감싸고,
+  append(수집)·batch_update(삭제, P1 연동)·update_cell(갱신) 전 시트 write에 적용. 전이적 429는 재시도로 회복(성공률
+  안정), tries 소진 시 예외 전파 → 기존 durable=False 폴백·502 정직 실패 유지(가짜 성공 0). 재시도 불가(403 권한 등)는
+  즉시 실패(낭비 0). `_quota_stats`(count_429/5xx/retries) 누적 + 매 재시도 warning 로그('시트 쓰기 재시도 N/M (HTTP
+  429)')로 429 카운트 로깅. `get_quota_stats()` 진단 노출. 벌크 'N성공/M실패(재시도)' 요약은 E-5 기존. 가드
+  test_v45_p2_quota_retry(5: 429→재시도 성공 durable·영속429 정직실패·403 fast-fail·삭제 batchUpdate 재시도·16건×3회
+  전건 durable). 전체 10767 passed. **판정 캡처:** docs/screens/v45/p2-quota-retry.png(매 append 첫 시도 429 주입 →
+  재시도 회복, 3회×16 각 성공16·실패0, 이력 48건 전건 실존, 관측 429=48). 적용 스킬: (백엔드 write 재시도 — UI/CSS
+  렌더 변경 없음 → gogabridj-design 불요. impeccable/humanizer CLI 미설치.)
 
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)
 - 규칙(불변): 각 항목 **실제 화면 before/after 캡처로만 완료**. 추측 금지·거짓성공/임의환산 금지·회귀 금지(pytest+CI)·토큰 단일소스.

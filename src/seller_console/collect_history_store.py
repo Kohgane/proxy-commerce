@@ -9,6 +9,8 @@ import json
 import logging
 import os
 import secrets
+import threading
+import time
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from urllib.parse import urlparse
@@ -25,6 +27,55 @@ _HEADERS = [
 
 # 인메모리 폴백 저장소 (GOOGLE_SHEET_ID 없을 때)
 _in_memory: list[dict] = []
+
+# ── v45 P2: 시트 쓰기 직렬화 + 429/5xx 지수 백오프 재시도 ──────────────────────
+# 증상: 수집 성공률 들쭉날쭉. 원인: Sheets 분당 쿼터(429)를 삼키고 성공/폴백 처리 →
+# 전송된 수집이 비영속(durable=False)으로 502되며 '가끔 실패'. 수리: write를 프로세스
+# 내에서 직렬화(버스트 완화)하고 429/5xx는 지수 백오프로 최대 3회 재시도. 끝까지 실패하면
+# 예외 전파 → 호출자가 정직 실패(인메모리 폴백·502)로 처리. 429/5xx 발생 카운트는 로깅.
+_write_lock = threading.Lock()
+_quota_stats = {"count_429": 0, "count_5xx": 0, "retries": 0}
+
+
+def get_quota_stats() -> dict:
+    """진단용 — 시트 쓰기 중 관측한 429/5xx·재시도 누적 카운트(부팅 이후)."""
+    return dict(_quota_stats)
+
+
+def _retryable_status(exc) -> Optional[int]:
+    """gspread APIError 등에서 재시도 대상 HTTP 상태코드를 뽑는다(아니면 None)."""
+    code = getattr(getattr(exc, "response", None), "status_code", None)
+    if code in (429, 500, 502, 503, 504):
+        return code
+    return None
+
+
+def _sheets_write(fn, *, tries: int = 3, base_delay: float = 0.5):
+    """시트 쓰기를 **직렬화 락 + 429/5xx 지수 백오프 재시도**로 감싼다 (v45 P2).
+
+    락은 fn() 실행 순간만 잡고 sleep은 락 밖(다른 쓰기를 막지 않음). 재시도 불가 예외
+    (권한·네트워크 등)는 즉시 전파. tries회 소진 시 마지막 예외 전파.
+    """
+    last = None
+    for attempt in range(tries):
+        try:
+            with _write_lock:
+                return fn()
+        except Exception as exc:   # noqa: BLE001 — 상태코드로 재시도 판정 후 재전파
+            code = _retryable_status(exc)
+            if code is None:
+                raise
+            if code == 429:
+                _quota_stats["count_429"] += 1
+            else:
+                _quota_stats["count_5xx"] += 1
+            last = exc
+            if attempt < tries - 1:
+                _quota_stats["retries"] += 1
+                logger.warning("시트 쓰기 재시도 %d/%d (HTTP %s)", attempt + 1, tries - 1, code)
+                time.sleep(base_delay * (2 ** attempt))
+    logger.warning("시트 쓰기 재시도 %d회 소진 — 최종 실패: %s", tries, last)
+    raise last
 
 
 def _get_worksheet():
@@ -155,7 +206,8 @@ def append(
         try:
             ws = _get_worksheet()
             _ensure_headers(ws)
-            ws.append_row([row_data[h] for h in _HEADERS])
+            # v45 P2: 429/5xx 지수 백오프 재시도 → 분당 쿼터로 인한 '가끔 실패' 회복.
+            _sheets_write(lambda: ws.append_row([row_data[h] for h in _HEADERS]))
             _invalidate_cache()
             logger.info("수집 이력 저장: id=%s source=%s domain=%s", item_id, source, domain)
         except Exception as exc:
@@ -306,7 +358,8 @@ def update(item_id: str, *, seller_id: Optional[str] = None,
                     for field, val in updates.items():
                         ci = col_idx.get(field)
                         if ci is not None:
-                            ws.update_cell(r, ci + 1, val)
+                            # v45 P2: 셀 갱신도 429/5xx 재시도.
+                            _sheets_write(lambda c=ci, v=val: ws.update_cell(r, c + 1, v))
                     _invalidate_cache()
                     logger.info("수집 이력 갱신: id=%s fields=%s", item_id, list(updates))
                     return True
@@ -424,7 +477,8 @@ def delete_ids(item_ids, *, seller_id: Optional[str] = None, seller_ids: Optiona
                         }}}
                         for (start, end) in reversed(blocks)
                     ]
-                    ws.spreadsheet.batch_update({"requests": requests})
+                    # v45 P2: 삭제 batchUpdate도 429/5xx 재시도(쿼터로 인한 부분 실패 회복).
+                    _sheets_write(lambda: ws.spreadsheet.batch_update({"requests": requests}))
                     removed.update(matched_ids)
             if removed:
                 _invalidate_cache()
