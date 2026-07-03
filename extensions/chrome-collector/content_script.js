@@ -63,6 +63,51 @@ function _kgpScopedPrice() {
   return { price: "", currency: "" };
 }
 
+// v44: 사이트별 PDP 추출 — 서버 사후 크롤(봇 차단 영구실패) 대신 클릭 시점 렌더 DOM에서 직접 읽기.
+//   아마존: #imgTagWrapperId(고해상)·#altImages 썸네일→원본 · #feature-bullets·#productDescription·#aplus.
+//   Temu: 메인 캐러셀 컨테이너 · 상세 영역. 갤러리/상세 2버킷.
+function _kgpAmazonHiRes(u) {
+  if (!u) return u;
+  // 아마존 이미지 URL의 크기/포맷 수식자(._AC_SX466_ · ._SS40_ 등) 제거 → 원본 고해상.
+  return u.replace(/\._[A-Za-z0-9,_-]+_\.(jpg|jpeg|png|gif|webp)/i, ".$1");
+}
+function _kgpSitePdp() {
+  const host = (location.hostname || "").toLowerCase();
+  const out = { gallery: [], detail: [], description: "" };
+  const _add = (arr, u) => { u = (u || "").trim(); if (u && u.indexOf("data:") !== 0 && arr.indexOf(u) < 0) arr.push(u); };
+  try {
+    if (/(^|\.)amazon\.[a-z.]+$/.test(host)) {
+      const main = document.querySelector("#imgTagWrapperId img, #landingImage, #imgBlkFront, #main-image");
+      if (main) {
+        _add(out.gallery, main.getAttribute("data-old-hires") || "");
+        const dyn = main.getAttribute("data-a-dynamic-image");
+        if (dyn) { try { Object.keys(JSON.parse(dyn)).forEach(u => _add(out.gallery, u)); } catch (e) { /* noop */ } }
+        _add(out.gallery, _kgpAmazonHiRes(main.currentSrc || main.src || ""));
+      }
+      document.querySelectorAll("#altImages img, #imageBlockThumbs img, li.imageThumbnail img").forEach(im => {
+        _add(out.gallery, _kgpAmazonHiRes(im.currentSrc || im.src || ""));
+      });
+      document.querySelectorAll("#aplus img, #aplus_feature_div img, #productDescription img").forEach(im => {
+        _add(out.detail, _kgpAmazonHiRes(im.getAttribute("data-src") || im.currentSrc || im.src || ""));
+      });
+      const bullets = [];
+      document.querySelectorAll("#feature-bullets li span.a-list-item, #feature-bullets li").forEach(li => {
+        const t = (li.innerText || li.textContent || "").trim();
+        if (t && t.length > 2 && bullets.indexOf(t) < 0) bullets.push("· " + t);
+      });
+      const pd = document.querySelector("#productDescription");
+      const pdText = pd ? (pd.innerText || "").trim() : "";
+      out.description = [bullets.join("\n"), pdText].filter(Boolean).join("\n\n").slice(0, 4000);
+    } else if (/(^|\.)temu\.[a-z.]+$/.test(host)) {
+      const gal = document.querySelector('[class*="gallery" i],[class*="Gallery" i],[class*="mainImage" i],[class*="swiper" i]');
+      if (gal) gal.querySelectorAll("img").forEach(im => _add(out.gallery, im.currentSrc || im.src || im.getAttribute("data-src") || ""));
+      const det = document.querySelector('[class*="detail" i],[class*="Description" i],[class*="goods-desc" i]');
+      if (det) det.querySelectorAll("img").forEach(im => _add(out.detail, im.currentSrc || im.src || im.getAttribute("data-src") || ""));
+    }
+  } catch (e) { /* noop */ }
+  return out;
+}
+
 function extractProductMeta() {
   const getMeta = (prop) => {
     const el = document.querySelector(
@@ -123,6 +168,10 @@ function extractProductMeta() {
   const _kgpInside = (im, sel) => { try { return !!(im.closest && im.closest(sel)); } catch (e) { return false; } };
   const gallery = [], detail = [];
   if (ogImage) { _pushImg(ogImage); gallery.push(ogImage); }
+  // v44: 사이트별 PDP 추출을 최우선(아마존 고해상·A+·불릿 / Temu 캐러셀·상세) — 갤러리 대표는 여기서.
+  const _site = _kgpSitePdp();
+  _site.gallery.forEach((u) => { if (_isProductImg(u)) { _pushImg(u); if (gallery.indexOf(u) < 0) gallery.push(u); } });
+  _site.detail.forEach((u) => { if (_isProductImg(u)) { _pushImg(u); if (detail.indexOf(u) < 0) detail.push(u); } });
   try {
     document.querySelectorAll("img").forEach((im) => {
       let src = im.currentSrc || im.src || im.getAttribute("data-src") || im.getAttribute("data-original") || "";
@@ -178,6 +227,10 @@ function extractProductMeta() {
   const _kgpFiller = /(절약을\s*시작|쇼핑하여\s*절약|에서\s*쇼핑하여|최저가로\s*쇼핑|지금\s*쇼핑하세요|여기를\s*눌러|링크를\s*확인하세요|smarter\s+shopping|start\s+saving|save\s+big|free\s+shipping\s+on\s+(all\s+)?orders)/i;
   // 실제 상품 설명 우선: 설명 섹션 요소 텍스트 → 없으면 필러 아닌 og:description.
   function _kgpRealDescription() {
+    // v44: 사이트별 상세(아마존 불릿+상세, Temu 본문)를 최우선 — 필러 아니면 그대로.
+    if (_site && _site.description && _site.description.length >= 20 && !_kgpFiller.test(_site.description)) {
+      return _site.description.slice(0, 4000);
+    }
     const sel = ["#productDescription", "#feature-bullets", "#description",
       ".product-description", "[class*='product-detail']", "[class*='description']",
       "[id*='description']"];
