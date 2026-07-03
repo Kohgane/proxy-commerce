@@ -79,3 +79,28 @@ def test_amazon_pdp_extraction_behavioral():
     assert any("aplus/A1" in u for u in o["detail"])
     # 상세설명: 불릿 + productDescription
     assert "접착" in o["description"] and "·" in o["description"]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치")
+def test_temu_pdp_extracts_text_and_spec():
+    """Temu: 상세 영역 텍스트 + 스펙표(속성) + 본문 이미지 추출."""
+    i = CS.index("function _kgpAmazonHiRes")
+    j = CS.index("function extractProductMeta")
+    block = CS[i:j]
+    harness = block + r"""
+    function el(p){return Object.assign({getAttribute:(k)=>p[k]||null,querySelectorAll:(s)=>p['_all_'+s]||[],currentSrc:p.currentSrc||'',src:p.src||'',innerText:p.innerText||'',textContent:p.innerText||''},p);}
+    const trs=[el({innerText:'소재 폴리에스터'}),el({innerText:'사이즈 200x90cm'})];
+    const dimg=[el({src:'https://temu.com/detail1.jpg'})];
+    const specSel = "table tr, dl > dt, dl > dd, [class*='spec' i] li, [class*='attribute' i] li, [class*='param' i] li";
+    const det=el({innerText:'린넨 3인 소파. 소재 폴리에스터 사이즈 200x90cm', _all_img:dimg}); det['_all_'+specSel]=trs;
+    const gal=el({_all_img:[el({src:'https://temu.com/g1.jpg'})]});
+    global.location={hostname:'www.temu.com'};
+    global.document={querySelector:(s)=> (s.indexOf('gallery')>=0||s.indexOf('mainImage')>=0||s.indexOf('swiper')>=0)?gal:((s.indexOf('detail')>=0||s.indexOf('Description')>=0||s.indexOf('goods-desc')>=0)?det:null), querySelectorAll:()=>[]};
+    const o=_kgpSitePdp();
+    console.log(JSON.stringify({gallery:o.gallery.length, detail:o.detail.length, spec: o.description.includes('소재 폴리에스터') && o.description.includes('사이즈')}));
+    """
+    res = subprocess.run(["node", "-e", harness], capture_output=True, text=True, timeout=20)
+    assert res.returncode == 0, res.stderr
+    o = json.loads(res.stdout.strip())
+    assert o["gallery"] >= 1 and o["detail"] >= 1
+    assert o["spec"] is True   # 상세 텍스트 + 스펙표 포함

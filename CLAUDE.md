@@ -253,6 +253,11 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   (아마존 핫링크 차단 대응). manifest 1.5.31→1.5.32. 가드 test_v44_img_detail_extract(6: 소스계약+hi-res정규식+node로
   mock 아마존 PDP 추출 갤러리 고해상·A+·불릿). 전체 10755 passed. 캡처: docs/screens/v44/img-detail-amazon-ohsnap.png
   (OHSNAP 접착패드: 갤러리 7장 고해상+A+ 2장+불릿 4).
+- ✅ **이미지·상세 추출 Temu 상세 텍스트+스펙표 보강 (#409):** #408이 Temu는 갤러리/상세 '이미지'만 site-branch서
+  추출(텍스트는 generic 폴백)했던 것 → Temu 상세영역 `det.innerText`(본문) + 스펙표(table tr·dl·[class*=spec/attribute/param] li)를
+  out.description에 설정(양 사이트 텍스트+스펙 site-branch 일치). manifest 1.5.32→1.5.33. 가드 test_v44_img_detail_extract에
+  Temu 케이스 추가(node로 갤러리·상세이미지·본문+스펙 실증). 전체 10756 passed. (오너 재요청분=#408로 이미 구현·머지,
+  이 커밋은 Temu 텍스트/스펙 코너 보강.)
 - ⏳ v44 남음: 2 가격탭(옵션가표·마켓별 미리보기) / 3 키워드탭 / 4 썸네일탭 / 5 상세탭(리치에디터) / 6 상품명·카테고리·옵션.
 - ⏳ 후속: 1-2 이미지·상세 스코프 추가 강화(판매자 로고 제외) / PHASE 2 속도 / PHASE 3~5.
 - ⏳ 후속: PHASE 2 속도, STEP 3 JSON제거·UX / 4-1 라벨 '다리 너머, 오늘의 발굴' / STEP 5 디자인.

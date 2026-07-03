@@ -102,7 +102,18 @@ function _kgpSitePdp() {
       const gal = document.querySelector('[class*="gallery" i],[class*="Gallery" i],[class*="mainImage" i],[class*="swiper" i]');
       if (gal) gal.querySelectorAll("img").forEach(im => _add(out.gallery, im.currentSrc || im.src || im.getAttribute("data-src") || ""));
       const det = document.querySelector('[class*="detail" i],[class*="Description" i],[class*="goods-desc" i]');
-      if (det) det.querySelectorAll("img").forEach(im => _add(out.detail, im.currentSrc || im.src || im.getAttribute("data-src") || ""));
+      if (det) {
+        det.querySelectorAll("img").forEach(im => _add(out.detail, im.currentSrc || im.src || im.getAttribute("data-src") || ""));
+        // v44: Temu 상세 영역 텍스트 + 스펙표(속성표) — 본문 innerText가 스펙표 셀도 포함.
+        const specRows = [];
+        det.querySelectorAll("table tr, dl > dt, dl > dd, [class*='spec' i] li, [class*='attribute' i] li, [class*='param' i] li").forEach(el => {
+          const t = (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
+          if (t && t.length >= 2 && specRows.indexOf(t) < 0) specRows.push(t);
+        });
+        const bodyText = (det.innerText || "").trim();
+        out.description = [bodyText, specRows.length ? ("· " + specRows.slice(0, 40).join("\n· ")) : ""]
+          .filter(Boolean).join("\n\n").slice(0, 4000);
+      }
     }
   } catch (e) { /* noop */ }
   return out;
