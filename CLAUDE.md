@@ -198,8 +198,15 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   상품 후보(제목+이미지+링크+영역OK) scanned 카운트 → 벌크바 '제외 K' 정직. node로 27개(16유가+11무가·상세링크)→
   **27 인식**(옛 16), 비상품(카테고리·이벤트 배너 링크)→0 제외 실증. manifest 1.5.29→1.5.30. 가드 test_v43_2_bulk_accuracy(3).
   전체 10738 passed. before/after: docs/screens/v43/2-bulk-16-to-27.png.
-- ⏳ v43 남음: 3 이미지 클릭시점 추출 / 4 마진계산기 버튼 / 5 원본보기 새탭 / 6 드로어 재구성(칩네비·마켓별카테고리·
-  경고어) / 7 카테고리 리프 트리.
+- ✅ **v43-3 이미지 클릭시점 추출 스코프 (판매자 로고 배제 + 2버킷) (#404):** 증상=갤러리에 판매자 로고('ALL IN
+  HOME')가 상품 이미지로 혼입. 근본=extractProductMeta가 페이지 모든 img≥250px를 수집(src 블랙리스트만), 로고 URL이
+  'logo' 미포함이면 통과. 수리: 신규 `_kgpIsSellerLogo(im)` — src뿐 아니라 **alt/class/조상 영역**(seller/merchant/
+  store-info/vendor/brand-header)으로 로고 배제. **갤러리/상세 2버킷**: `_KGP_GALLERY_SEL`(gallery·product-image·
+  main-image·imgTagWrapper 등) / `_KGP_DETAIL_SEL`(#productDescription·feature-bullets·description) 스코프로 분류,
+  반환에 gallery_images/detail_images + 대표=갤러리 첫 장(로고 배제). 상품 ID 귀속은 서버 행 저장으로 이미 보장(회귀
+  확인). manifest 1.5.30→1.5.31. 가드 test_v43_3_image_scope(3) + **devshot으로 실제 extractProductMeta 실행**(mock PDP:
+  갤러리 3 + 로고 + 상세 1 → 갤러리 3·상세 1·로고 0). 전체 10741 passed. before/after: docs/screens/v43/3-image-scope.png.
+- ⏳ v43 남음: 4 마진계산기 버튼 / 5 원본보기 새탭 / 6 드로어 재구성(칩네비·마켓별카테고리·경고어) / 7 카테고리 리프 트리.
 - ⏳ 후속: 1-2 이미지·상세 스코프 추가 강화(판매자 로고 제외) / PHASE 2 속도 / PHASE 3~5.
 - ⏳ 후속: PHASE 2 속도, STEP 3 JSON제거·UX / 4-1 라벨 '다리 너머, 오늘의 발굴' / STEP 5 디자인.
 

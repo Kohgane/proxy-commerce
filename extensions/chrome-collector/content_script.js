@@ -102,7 +102,27 @@ function extractProductMeta() {
     }
     return false;
   };
-  if (ogImage) _pushImg(ogImage);
+  // v43-3: 판매자/브랜드 로고는 상품 이미지 아님 — src뿐 아니라 alt/class/조상영역으로도 배제('ALL IN HOME' 등).
+  const _kgpSellerLogoRe = /(logo|brand|seller|merchant|store[-_ ]?(logo|name)|shop[-_ ]?(logo|name)|mall[-_ ]?name|판매자|브랜드관)/i;
+  const _kgpIsSellerLogo = (im) => {
+    try {
+      const cls = (im.className && im.className.baseVal !== undefined ? im.className.baseVal : (im.className || ""));
+      if (_kgpSellerLogoRe.test((im.getAttribute("alt") || "") + " " + cls + " " + (im.id || ""))) return true;
+      let cur = im.parentElement, depth = 0;
+      while (cur && depth < 5) {   // 판매자 정보 영역 안이면 로고로 간주
+        const tok = (cur.className && cur.className.baseVal !== undefined ? cur.className.baseVal : (cur.className || "")) + " " + (cur.id || "");
+        if (/(seller|merchant|store[-_ ]?info|shop[-_ ]?info|vendor|brand[-_ ]?header)/i.test(tok)) return true;
+        cur = cur.parentElement; depth++;
+      }
+    } catch (e) { /* noop */ }
+    return false;
+  };
+  // v43-3: PDP 갤러리(대표) ↔ 상세 본문 이미지 2버킷 스코프.
+  const _KGP_GALLERY_SEL = '[class*="gallery" i],[class*="product-image" i],[class*="productImage" i],[class*="main-image" i],[class*="mainImage" i],[id*="imgTagWrapper" i],#imageBlock,[data-testid*="gallery" i]';
+  const _KGP_DETAIL_SEL = '#productDescription,#feature-bullets,[class*="product-detail" i],[class*="description" i],[id*="description" i]';
+  const _kgpInside = (im, sel) => { try { return !!(im.closest && im.closest(sel)); } catch (e) { return false; } };
+  const gallery = [], detail = [];
+  if (ogImage) { _pushImg(ogImage); gallery.push(ogImage); }
   try {
     document.querySelectorAll("img").forEach((im) => {
       let src = im.currentSrc || im.src || im.getAttribute("data-src") || im.getAttribute("data-original") || "";
@@ -112,7 +132,11 @@ function extractProductMeta() {
       }
       const w = im.naturalWidth || im.width || 0;
       const h = im.naturalHeight || im.height || 0;
-      if (src && w >= 250 && h >= 250 && !_kgpInNonProductRegion(im)) _pushImg(src);
+      if (!src || w < 250 || h < 250) return;
+      if (_kgpInNonProductRegion(im) || _kgpIsSellerLogo(im) || !_isProductImg(src)) return;  // 추천·판매자로고·무관 제외
+      _pushImg(src);
+      if (_kgpInside(im, _KGP_DETAIL_SEL)) { if (detail.indexOf(src) < 0) detail.push(src); }
+      else if (_kgpInside(im, _KGP_GALLERY_SEL)) { if (gallery.indexOf(src) < 0) gallery.push(src); }
     });
   } catch (e) { /* noop */ }
 
@@ -171,8 +195,10 @@ function extractProductMeta() {
   return {
     url: location.href,
     title: getMeta("og:title") || document.title || "",
-    image: ogImage,
+    image: (gallery[0] || images[0] || ogImage),   // v43-3: 대표=갤러리 첫 장(로고 배제)
     images: images,
+    gallery_images: gallery,               // v43-3: 갤러리(대표) / 상세 2버킷 — 서버가 스코프 반영
+    detail_images: detail,
     price: heuristicPrice,                 // v42 1-1: 렌더 DOM 현재가 우선(위에서 scoped→meta→본문 순 해결)
     currency: heuristicCurrency,           // 기본값 USD 금지 — 못 얻으면 빈 값 → 서버 '가격 확인 필요'
     description: _kgpRealDescription(),
