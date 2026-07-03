@@ -46,7 +46,7 @@
       <div class="row g-4">
         <!-- 대표 이미지 미리보기 -->
         <div class="col-md-4 text-center">
-          <img id="primaryImagePreview" alt="대표 이미지"
+          <img id="primaryImagePreview" alt="대표 이미지" referrerpolicy="no-referrer"
                class="img-fluid rounded border" style="max-height:240px;object-fit:contain;"
                onerror="this.style.visibility='hidden'">
           <div class="text-muted small mt-1">대표 이미지(첫 번째)</div>
@@ -529,7 +529,7 @@ function addImageRow(url) {
   row.className = 'd-flex align-items-center gap-1 img-row';
   row.innerHTML = `
     <button class="btn btn-outline-warning btn-sm btn-make-primary flex-shrink-0" type="button" title="대표 이미지로 지정" aria-label="대표 이미지로 지정"><i class="bi bi-star"></i></button>
-    <img class="img-thumb flex-shrink-0 rounded border" alt="" style="width:46px;height:46px;object-fit:cover;background:#f1f3f5;cursor:zoom-in"
+    <img class="img-thumb flex-shrink-0 rounded border" alt="" referrerpolicy="no-referrer" style="width:46px;height:46px;object-fit:cover;background:#f1f3f5;cursor:zoom-in"
          title="클릭하면 원본 보기" onerror="this.style.visibility='hidden'">
     <input type="url" class="form-control form-control-sm img-url" placeholder="https://..." value="${escapeHtml(url || '')}">
     <button class="btn btn-outline-primary btn-sm btn-clean-img flex-shrink-0" type="button" title="워터마크 제거·정제(CDN 설정 시 재호스팅)"><i class="bi bi-eraser"></i></button>
@@ -613,7 +613,7 @@ function renderGallery() {
     const sz = i === 0 ? 84 : 56;
     a.style.cssText = 'display:inline-block;position:relative;border-radius:8px;overflow:hidden;border:' +
       (i === 0 ? '2px solid #119a8e' : '1px solid #e3dac8') + ';flex-shrink:0';
-    a.innerHTML = '<img src="' + u.replace(/"/g, '&quot;') + '" alt="" loading="lazy" ' +
+    a.innerHTML = '<img src="' + u.replace(/"/g, '&quot;') + '" alt="" loading="lazy" referrerpolicy="no-referrer" ' +
       'style="width:' + sz + 'px;height:' + sz + 'px;object-fit:cover;display:block" ' +
       'onerror="this.parentElement.style.display=\'none\'">' +
       (i === 0 ? '<span style="position:absolute;left:0;bottom:0;background:#119a8e;color:#fff;font-size:9px;padding:1px 5px;border-top-right-radius:6px">대표</span>' : '');
@@ -635,7 +635,7 @@ function renderDetailGallery() {
     const a = document.createElement('a');
     a.href = u; a.target = '_blank'; a.rel = 'noopener'; a.title = '상세설명 이미지';
     a.style.cssText = 'display:inline-block;border-radius:8px;overflow:hidden;border:1px solid #e3dac8;flex-shrink:0';
-    a.innerHTML = '<img src="' + u.replace(/"/g, '&quot;') + '" alt="" loading="lazy" ' +
+    a.innerHTML = '<img src="' + u.replace(/"/g, '&quot;') + '" alt="" loading="lazy" referrerpolicy="no-referrer" ' +
       'style="width:56px;height:56px;object-fit:cover;display:block" onerror="this.parentElement.style.display=\'none\'">';
     g.appendChild(a);
   });

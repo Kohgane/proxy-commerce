@@ -243,6 +243,16 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   쿠팡·스스' 뱃지 영구 표시**. 이모지 금지 준수(체크=bi-check-lg). 가드 test_v44_1_upload_status(3: 성공만 영속·
   실패 미저장·목록 뱃지·템플릿 재시도/item_id). 전체 10752 passed. before/after: docs/screens/v44/1-upload-success-badge.png
   (결과 마켓별 뱃지+재시도 / 목록 등록됨 뱃지). 적용 스킬: gogabridj-design 토큰(색=success/danger var, 하드코딩 0).
+- ✅ **이미지·상세 클릭시점 추출(가격과 동일 방식) (#408):** 오너=서버 사후 크롤 금지(아마존·Temu 봇차단 영구실패)
+  → 확장이 클릭 시점 렌더 DOM에서 직접 읽어 페이로드에 포함. 신규 `_kgpSitePdp()`+`_kgpAmazonHiRes()`(모듈): **아마존**
+  갤러리=`#imgTagWrapperId`(data-old-hires·data-a-dynamic-image)+`#altImages` 썸네일→원본(크기토큰 `._AC_SX466_`·
+  `._SS40_` 제거로 고해상), 상세=`#feature-bullets`(불릿)+`#productDescription`+`#aplus`(A+ 이미지→detail 버킷).
+  **Temu**=메인 캐러셀 컨테이너→갤러리, 상세 영역→detail. extractProductMeta가 _site.gallery/detail을 버킷에 병합
+  (대표=갤러리), `_kgpRealDescription`이 _site.description(불릿+상세) 우선(필러 아니면). URL만 전송·서버가 상품 ID
+  귀속(기존). 표시 실패 대비 **referrerpolicy=no-referrer**를 목록 썸네일·편집 대표/썸네일/갤러리 img 전부에 추가
+  (아마존 핫링크 차단 대응). manifest 1.5.31→1.5.32. 가드 test_v44_img_detail_extract(6: 소스계약+hi-res정규식+node로
+  mock 아마존 PDP 추출 갤러리 고해상·A+·불릿). 전체 10755 passed. 캡처: docs/screens/v44/img-detail-amazon-ohsnap.png
+  (OHSNAP 접착패드: 갤러리 7장 고해상+A+ 2장+불릿 4).
 - ⏳ v44 남음: 2 가격탭(옵션가표·마켓별 미리보기) / 3 키워드탭 / 4 썸네일탭 / 5 상세탭(리치에디터) / 6 상품명·카테고리·옵션.
 - ⏳ 후속: 1-2 이미지·상세 스코프 추가 강화(판매자 로고 제외) / PHASE 2 속도 / PHASE 3~5.
 - ⏳ 후속: PHASE 2 속도, STEP 3 JSON제거·UX / 4-1 라벨 '다리 너머, 오늘의 발굴' / STEP 5 디자인.
