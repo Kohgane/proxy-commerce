@@ -206,7 +206,14 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   반환에 gallery_images/detail_images + 대표=갤러리 첫 장(로고 배제). 상품 ID 귀속은 서버 행 저장으로 이미 보장(회귀
   확인). manifest 1.5.30→1.5.31. 가드 test_v43_3_image_scope(3) + **devshot으로 실제 extractProductMeta 실행**(mock PDP:
   갤러리 3 + 로고 + 상세 1 → 갤러리 3·상세 1·로고 0). 전체 10741 passed. before/after: docs/screens/v43/3-image-scope.png.
-- ⏳ v43 남음: 4 마진계산기 버튼 / 5 원본보기 새탭 / 6 드로어 재구성(칩네비·마켓별카테고리·경고어) / 7 카테고리 리프 트리.
+- ✅ **v43-4·5 마진 계산기 인라인 모달 + 원본 보기 새 탭 (#405):** **4:** '마진 계산기'가 `<a href="/seller/pricing">`
+  라 드로어 iframe 안에서 클릭 시 iframe이 그 페이지로 이동(무반응처럼 보임). 수리: 인라인 모달 `#marginCalcModal`
+  (원가·판매가·수수료%·배송비 → 마진액/마진율, 수식=판매가−원가−판매가×수수료%−배송비). 원가는 수집가 원화환산
+  프리필(통화미상/환율없음=0, 임의환산 금지), 판매가 제안=원가×1.5. **5:** 점검 결과 드로어 '원본 보기'·편집 '원본
+  페이지'는 이미 target=_blank(새 탭), 드로어 iframe은 우리 preview(same-origin)만 로드(외부 url iframe 시도 0),
+  security 미들웨어가 preview 경로에 SAMEORIGIN 부여(연결거부 아님) → 새 탭 요건 이미 충족, 가드로 못박음. 가드
+  test_v43_45_buttons(4). 전체 10744 passed. 캡처: docs/screens/v43/4-margin-calculator.png(원가 61144→마진액 21,400원·23.3%).
+- ⏳ v43 남음: 6 드로어 재구성(칩네비·마켓별카테고리·경고어·상품정보고시·옵션표·8섹션) / 7 카테고리 리프 트리.
 - ⏳ 후속: 1-2 이미지·상세 스코프 추가 강화(판매자 로고 제외) / PHASE 2 속도 / PHASE 3~5.
 - ⏳ 후속: PHASE 2 속도, STEP 3 JSON제거·UX / 4-1 라벨 '다리 너머, 오늘의 발굴' / STEP 5 디자인.
 
