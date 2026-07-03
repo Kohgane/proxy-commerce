@@ -35,10 +35,11 @@ class AITranslator:
         logger.info("AITranslator 초기화: provider=%s", self.provider)
 
     def _select_provider(self) -> str:
-        """사용 가능한 AI 프로바이더 선택."""
-        if os.getenv("OPENAI_API_KEY"):
+        """사용 가능한 AI 프로바이더 선택. v44 0-1: 값의 따옴표/공백을 제거해 읽는다."""
+        from src.utils.env import env_present
+        if env_present("OPENAI_API_KEY"):
             return "openai"
-        if os.getenv("DEEPL_API_KEY"):
+        if env_present("DEEPL_API_KEY"):
             return "deepl"
         return "stub"
 
@@ -136,7 +137,7 @@ class AITranslator:
 
     def _describe_openai(self, title, category, specs, keywords, brand) -> dict:
         import requests as _req
-        api_key = os.getenv("OPENAI_API_KEY", "")
+        api_key = __import__("src.utils.env", fromlist=["env_str"]).env_str("OPENAI_API_KEY")
         model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
         spec_txt = "\n".join(f"- {l}: {v}" for l, v in specs[:20]) or "(스펙 표 없음)"
         kw_txt = ", ".join(keywords[:15]) or "(없음)"
@@ -171,7 +172,7 @@ class AITranslator:
         """OpenAI GPT-4o-mini로 번역 + 카피 생성."""
         try:
             import requests as _req
-            api_key = os.getenv("OPENAI_API_KEY", "")
+            api_key = __import__("src.utils.env", fromlist=["env_str"]).env_str("OPENAI_API_KEY")
             headers = {
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
@@ -216,7 +217,7 @@ class AITranslator:
         """DeepL로 번역 (카피는 template 기반)."""
         try:
             import requests as _req
-            api_key = os.getenv("DEEPL_API_KEY", "")
+            api_key = __import__("src.utils.env", fromlist=["env_str"]).env_str("DEEPL_API_KEY")
             base_url = (
                 "https://api-free.deepl.com/v2/translate"
                 if api_key.endswith(":fx")
@@ -256,7 +257,7 @@ class AITranslator:
         try:
             import requests as _req
             import json
-            api_key = os.getenv("OPENAI_API_KEY", "")
+            api_key = __import__("src.utils.env", fromlist=["env_str"]).env_str("OPENAI_API_KEY")
             prompt = f"상품명: {title}\n마켓: {marketplace}\n조건: {hint}\n광고 카피 1개만 작성."
             payload = {
                 "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
