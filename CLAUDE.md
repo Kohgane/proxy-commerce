@@ -182,6 +182,18 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   /exists 정규화키 매칭·401). 전체 10732 passed. 캡처: docs/screens/v42/e3-hover-collect.png(기본 숨김/호버 '수집'/
   '수집됨 ✓' 3상태, 실제 kgpQuickBtnStyle).
   → **v42-E 확장(E-1~E-5) + PHASE 1 핵심(1-1·1-3·1-6) 완주.** (Copilot=1-7 죽은버튼.)
+## 🟥 addendum v43 (오너 2026-07-03 — 드로어 퍼센티식 재구성 + 남은 버그 일괄)
+- 순서: 0(운영자 키=OPENAI/DEEPL Render 설정, 오너 처리) → 1 삭제영속 → 2 벌크 → 3 이미지 → 4·5 버튼 → 6 드로어
+  재구성(퍼센티 벤치마크·우리 토큰) → 7 카테고리. 각 항목 캡처 게이트.
+- ✅ **v43-1 삭제 부활 × 자동 새로고침 (#402):** 증상=폴링 자동새로고침 시 삭제분 부활. 점검: 서버 삭제는 이미
+  write-then-verify(v42 1-4 #387, existing_ids 재조회 후 잔존 시 정직 실패 200), delete JS도 data.ok/deleted 확인.
+  근본 잔여=**삭제/폴링 경합**(1-0b 8초 폴링이 삭제 진행 중 reload→커밋 전 재조회 부활 위험). **수리:** ①`window._kgpDeleting`
+  플래그 — runBulkDelete 시작 시 set, poll/apply가 보류(reload로 자연 해제, 실패 경로선 해제) ②서버 총건수 하강 시
+  `initialTotal` 하강 동기화(삭제로 준 값 기준으로, 부활 오탐 방지). 가드 test_v43_1_delete_persist(3: 삭제 후 5회
+  폴링 재조회 부활 0·write-then-verify 정직실패·템플릿 경합가드). 전체 10735 passed. before/after:
+  docs/screens/v43/1-delete-no-resurrection.png(총 수집 5 → 2삭제+폴링 5회 → 3 유지, 부활 0).
+- ⏳ v43 남음: 2 벌크(27중16→정확도) / 3 이미지 클릭시점 추출 / 4 마진계산기 버튼 / 5 원본보기 새탭 / 6 드로어
+  재구성(칩네비·마켓별카테고리·경고어) / 7 카테고리 리프 트리.
 - ⏳ 후속: 1-2 이미지·상세 스코프 추가 강화(판매자 로고 제외) / PHASE 2 속도 / PHASE 3~5.
 - ⏳ 후속: PHASE 2 속도, STEP 3 JSON제거·UX / 4-1 라벨 '다리 너머, 오늘의 발굴' / STEP 5 디자인.
 

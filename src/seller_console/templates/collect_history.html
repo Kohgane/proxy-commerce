@@ -580,14 +580,18 @@ window.addEventListener('message', function (e) {
     else if (host) host.insertBefore(b, host.firstChild);
   }
   function apply(total) {
-    if (reloading || total <= initialTotal) return;
+    // v43-1: 삭제 요청 중엔 폴링 반영 보류(삭제/폴링 경합으로 삭제분이 부활하는 것 방지).
+    if (window._kgpDeleting || reloading) return;
+    // 서버 총건수가 줄면(삭제 등) 기준선도 내려 맞춘다 → 부활 유발 오탐 방지.
+    if (total < initialTotal) { initialTotal = total; return; }
+    if (total <= initialTotal) return;
     var n = total - initialTotal;
     if (editing()) { pending = true; showBanner(n); return; }  // 편집 중이면 배너만, 저장 후 반영
     reloading = true;
     window.location.reload();
   }
   function poll() {
-    if (document.hidden || reloading) return;
+    if (document.hidden || reloading || window._kgpDeleting) return;
     fetch('/seller/collect/history/count?days=' + days, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) { if (j && j.ok && typeof j.total === 'number') apply(j.total); })
@@ -908,6 +912,7 @@ async function runBulkDelete() {
   if (!ids.length) return;
   const btn = document.getElementById('bulkDeleteConfirm');
   setButtonLoading(btn, true, '삭제 중…');
+  window._kgpDeleting = true;   // v43-1: 삭제 진행 중 폴링 자동 반영 보류(경합 부활 방지)
   try {
     const resp = await fetch('/seller/collect/bulk-delete', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -915,20 +920,22 @@ async function runBulkDelete() {
     });
     const ctype = resp.headers.get('content-type') || '';
     if (!ctype.includes('application/json')) {
-      pcToast(`삭제 요청 실패 (HTTP ${resp.status}).`, 'error'); return;
+      pcToast(`삭제 요청 실패 (HTTP ${resp.status}).`, 'error'); window._kgpDeleting = false; return;
     }
     const data = await resp.json();
-    if (!data.ok) { pcToast(data.error || '삭제 실패', 'error'); return; }
+    if (!data.ok) { pcToast(data.error || '삭제 실패', 'error'); window._kgpDeleting = false; return; }
     bootstrap.Modal.getInstance(document.getElementById('bulkDeleteModal'))?.hide();
     // v32: 낙관적 제거만 믿지 않는다 — 실제 삭제 0건이면 정직 안내, 1건+이면 서버 재조회로 영속 반영.
     if (!data.deleted) {
       pcToast('삭제된 항목이 없습니다. 새로고침 후 다시 시도해 주세요.', 'warning');
-      return;
+      window._kgpDeleting = false; return;
     }
     pcToast(`${data.deleted}개 항목을 삭제했습니다.`, 'success');
-    setTimeout(() => location.reload(), 600);   // 서버에서 목록 재조회(재진입해도 유지)
+    // 삭제가 서버에 커밋·검증된 뒤에만 재조회(재진입해도 유지). _kgpDeleting은 reload로 자연 해제.
+    setTimeout(() => location.reload(), 600);
   } catch (err) {
     pcToast('삭제 요청 실패: ' + err.message, 'error');
+    window._kgpDeleting = false;
   } finally {
     setButtonLoading(btn, false);
   }
