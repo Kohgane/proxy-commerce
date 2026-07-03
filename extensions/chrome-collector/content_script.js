@@ -677,9 +677,15 @@ function _kgpAmazonCards() {
   return cards;
 }
 
-// 엄격 폴백 휴리스틱 — 제목+가격+제품링크+충분히 큰 이미지를 '모두' 가질 때만 제품.
+// 특정 href가 상품 '상세 페이지' 링크인지(가격 없는 카드의 대체 상품 신호).
+function _kgpIsDetailHref(href) {
+  return /(\/dp\/|\/gp\/product\/|item\.htm|offer\/detail|\/g-?\d|\/goods\/|\/product\/|-i\.\d+\.\d+|\/products?\/)/i.test(href || "");
+}
+
+// 폴백 휴리스틱 — 제목+제품링크+충분히 큰 이미지. v43-2: 가격이 없어도 '상품 상세 링크'면 인식(미렌더 가격 카드 복구).
 function _kgpGenericCards() {
   const cards = [], seen = {};
+  let scanned = 0;
   try {
     const imgs = document.querySelectorAll("img");
     for (let i = 0; i < imgs.length; i++) {
@@ -695,10 +701,12 @@ function _kgpGenericCards() {
       if (_kgpInBadRegion(card)) continue;                 // 추천/푸터/캐러셀 제외
       const text = (card.innerText || "").trim();
       const pr = _kgpPrice(text);
-      if (!pr.price) continue;                             // 가격 필수
       const titleEl = card.querySelector("h1,h2,h3,h4,[class*='title'],[class*='name']");
       const title = ((img.alt || "").trim()) || (titleEl ? titleEl.innerText : "") || text;
-      if (!title || title.trim().length < 4) continue;     // 제목 필수
+      if (!title || title.trim().length < 4) continue;     // 제목 없으면 상품 후보 아님
+      scanned++;                                           // 상품 후보(제목+이미지+링크+영역OK)
+      // v43-2: 가격 또는 상세링크 중 하나면 상품 인식(가격만 필수였던 옛 규칙이 27중16 누락 유발).
+      if (!pr.price && !_kgpIsDetailHref(href)) continue;  // 둘 다 없으면 제외(정직 카운트에 반영)
       seen[href] = 1;
       const bimg = _kgpBestImg(img) || img.src;             // v41 X-1: 실제 이미지 우선(placeholder 공유 방지)
       cards.push({
@@ -707,6 +715,7 @@ function _kgpGenericCards() {
       });
     }
   } catch (e) { /* noop */ }
+  if (scanned > cards.length) _kgpScannedCount = scanned;   // v43-2: 정직 '전체 N 중 상품 M · 제외 K'
   return cards;
 }
 
