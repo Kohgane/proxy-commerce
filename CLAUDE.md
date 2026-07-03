@@ -234,8 +234,16 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
 - ✅ **0-2 스킬 사용 보고 의무 (#406):** CLAUDE.md 스킬 트리거에 '매 세션 첫 응답에 로드 스킬·참조문서 명시 + UI PR에
   적용스킬 명시, 없으면 미적용 간주' + impeccable+gogabridj-design 둘 다 적용 규칙 추가. CLI 미설치 스킬은 '켠 척' 금지·
   수동 적용·정직 표기(v20 선례).
-- ⏳ v44 남음: 1 액션바+업로드 성공 표식(마켓별 뱃지·바로가기·목록 등록됨) / 2 가격탭(옵션가표·마켓별 미리보기) /
-  3 키워드탭 / 4 썸네일탭 / 5 상세탭(리치에디터) / 6 상품명·카테고리·옵션.
+- ✅ **v44-1 업로드 성공 표식 (#407):** 점검=업로드 결과 모달은 이미 마켓별 성공/실패/큐 + external_url(상품링크)·
+  hint·error_code를 리스트로 렌더(서버 확인분, 정직). 갭=①한눈 뱃지 row·재시도 없음 ②목록에 등록됨 영구 표시 없음.
+  **수리:** ①renderUploadResults에 **마켓별 뱃지 row**(쿠팡 등록됨·스스 등록됨·11번가 실패, 성공은 바로가기 아이콘)
+  + **'실패 N개 마켓 재시도'**(retryFailedUpload — 실패분만 재업로드). ②서버 `_persist_upload_status(item_id, result)`:
+  **성공(success=true) 마켓만** extra_json.uploaded에 market/label/url/at 병합 저장(dedup, 실패는 저장 0=가짜 성공 금지).
+  collect_upload 요청에 item_id 추가. ③collect_history 뷰가 extra.uploaded→uploaded_markets 노출, 행에 **'등록됨 ·
+  쿠팡·스스' 뱃지 영구 표시**. 이모지 금지 준수(체크=bi-check-lg). 가드 test_v44_1_upload_status(3: 성공만 영속·
+  실패 미저장·목록 뱃지·템플릿 재시도/item_id). 전체 10752 passed. before/after: docs/screens/v44/1-upload-success-badge.png
+  (결과 마켓별 뱃지+재시도 / 목록 등록됨 뱃지). 적용 스킬: gogabridj-design 토큰(색=success/danger var, 하드코딩 0).
+- ⏳ v44 남음: 2 가격탭(옵션가표·마켓별 미리보기) / 3 키워드탭 / 4 썸네일탭 / 5 상세탭(리치에디터) / 6 상품명·카테고리·옵션.
 - ⏳ 후속: 1-2 이미지·상세 스코프 추가 강화(판매자 로고 제외) / PHASE 2 속도 / PHASE 3~5.
 - ⏳ 후속: PHASE 2 속도, STEP 3 JSON제거·UX / 4-1 라벨 '다리 너머, 오늘의 발굴' / STEP 5 디자인.
 

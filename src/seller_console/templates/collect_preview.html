@@ -1225,6 +1225,7 @@ async function runUpload() {
         product: buildProductData(),
         markets: _validatedMarkets,
         target_margin_pct: targetMarginPct,
+        item_id: _ITEM_ID,                 // v44-1: 성공 마켓을 항목에 영속(목록 '등록됨' 뱃지)
       }),
     });
     const data = await resp.json();
@@ -1237,6 +1238,13 @@ async function runUpload() {
   }
 }
 
+// v44-1: 실패한 마켓만 재시도(성공/큐는 건드리지 않음).
+function retryFailedUpload(markets) {
+  if (!Array.isArray(markets) || !markets.length) return;
+  _validatedMarkets = markets;
+  runUpload();
+}
+
 function renderUploadResults(data) {
   const el = document.getElementById('uploadResults');
   if (!data.ok) {
@@ -1245,7 +1253,26 @@ function renderUploadResults(data) {
   }
   const result = data.result;
   const summary = `전체 ${result.total}개 · 성공 <strong class="text-success">${result.succeeded}</strong> · 실패 ${result.failed} · 큐 ${result.queued}`;
-  let html = `<div class="mb-3 text-muted small">${summary}</div>`;
+  // v44-1: 마켓별 결과 뱃지 row(한눈에) — 성공(체크·바로가기)·실패(엑스).
+  let badges = '<div class="d-flex flex-wrap gap-2 mb-2">';
+  const _failedMarkets = [];
+  (result.results || []).forEach(r => {
+    const label = kgpEscapeForHtml(r.market_label || r.market);
+    if (r.success) {
+      const link = r.external_url ? `<a href="${r.external_url}" target="_blank" rel="noopener noreferrer" class="ms-1" title="상품 페이지"><i class="bi bi-box-arrow-up-right"></i></a>` : '';
+      badges += `<span class="badge" style="background:color-mix(in srgb,var(--success,#2f9e44) 16%,transparent);color:var(--success,#2f9e44)"><i class="bi bi-check-lg"></i> ${label} 등록됨${link}</span>`;
+    } else if (r.queued) {
+      badges += `<span class="badge" style="background:color-mix(in srgb,var(--warn,#e8a13a) 18%,transparent);color:var(--warn,#8a6d1f)">${label} · 큐</span>`;
+    } else {
+      _failedMarkets.push(r.market);
+      badges += `<span class="badge" style="background:color-mix(in srgb,var(--danger,#c0392b) 14%,transparent);color:var(--danger,#c0392b)"><i class="bi bi-x-lg"></i> ${label} 실패</span>`;
+    }
+  });
+  badges += '</div>';
+  const retryBtn = _failedMarkets.length
+    ? `<button type="button" class="btn btn-sm btn-outline-danger mb-2" onclick="retryFailedUpload(${JSON.stringify(_failedMarkets).replace(/"/g, '&quot;')})"><i class="bi bi-arrow-clockwise"></i> 실패 ${_failedMarkets.length}개 마켓 재시도</button>`
+    : '';
+  let html = `<div class="mb-2 text-muted small">${summary}</div>` + badges + retryBtn;
   html += '<div class="list-group mb-2">';
   (result.results || []).forEach(r => {
     if (r.success) {

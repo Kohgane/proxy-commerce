@@ -1638,11 +1638,53 @@ def collect_upload():
 
         with mc.seller_market_env(_seller_id(), markets):
             result = dispatcher.dispatch(product_data, markets)
-        return jsonify({"ok": True, "result": result.to_dict()})
+        rd = result.to_dict()
+        # v44-1: 서버가 성공 확인한 마켓만 항목에 영속 저장 → 목록에 '등록됨' 뱃지 영구 표시(가짜 성공 0).
+        _persist_upload_status(data.get("item_id"), rd)
+        return jsonify({"ok": True, "result": rd})
     except Exception as exc:
         # v11 P0: 가짜 일반 실패 금지 — 실제 사유를 패스스루로 노출.
         logger.warning("업로드 디스패처 오류: %s", exc)
         return jsonify({"ok": False, "error": f"업로드 중 오류: {exc}"}), 500
+
+
+def _persist_upload_status(item_id, result_dict) -> None:
+    """v44-1: 업로드 결과 중 '성공(success=true)' 마켓을 항목 extra_json.uploaded에 병합 저장.
+
+    서버 응답이 확인한 성공만 저장(가짜 성공 금지). market 기준 dedup(재업로드 시 최신 url·시각으로 갱신).
+    """
+    if not item_id:
+        return
+    try:
+        item = _get_owned_item(str(item_id))
+        if not item:
+            return
+        extra = {}
+        try:
+            extra = json.loads(item.get("extra_json") or "{}") or {}
+        except Exception:
+            extra = {}
+        uploaded = extra.get("uploaded") if isinstance(extra.get("uploaded"), list) else []
+        by_market = {u.get("market"): u for u in uploaded if isinstance(u, dict) and u.get("market")}
+        now = datetime.now(timezone.utc).isoformat()
+        changed = False
+        for r in (result_dict.get("results") or []):
+            if r.get("success") and r.get("market"):
+                by_market[r["market"]] = {
+                    "market": r["market"],
+                    "market_label": r.get("market_label") or r["market"],
+                    "external_url": r.get("external_url") or "",
+                    "at": now,
+                }
+                changed = True
+        if not changed:
+            return
+        extra["uploaded"] = list(by_market.values())
+        from .collect_history_store import update as _update
+        _update(str(item_id), seller_ids=_seller_identities(),
+                extra_json=json.dumps(extra, ensure_ascii=False))
+    except Exception as exc:
+        logger.warning("업로드 상태 영속 실패(무시): %s", exc)
 
 
 @bp.post("/collect/prevalidate")
@@ -5370,6 +5412,13 @@ def collect_history():
         except Exception:
             pass
         it["thumbs"] = thumbs[:5]
+        # v44-1: 업로드 성공한 마켓 라벨(등록됨 뱃지용) — extra_json.uploaded(서버 확인분)만.
+        try:
+            up = json.loads(it.get("extra_json") or "{}").get("uploaded")
+            it["uploaded_markets"] = [str(u.get("market_label") or u.get("market"))
+                                      for u in up if isinstance(u, dict) and (u.get("market_label") or u.get("market"))] if isinstance(up, list) else []
+        except Exception:
+            it["uploaded_markets"] = []
 
     from .upload_dispatcher import MARKET_LABELS, SUPPORTED_MARKETS
     upload_markets = [{"code": m, "label": MARKET_LABELS.get(m, m)} for m in SUPPORTED_MARKETS]

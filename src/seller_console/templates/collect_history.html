@@ -226,6 +226,11 @@
                   {{ it.title or "(제목 없음)" }}
                 </a>
                 <span class="text-muted small d-block text-truncate" title="{{ it.url }}">{{ it.domain or it.url }}</span>
+                {# v44-1: 업로드 성공한 마켓 '등록됨' 뱃지(서버 확인분 영구 표시). #}
+                {% if it.uploaded_markets %}
+                <span class="badge mt-1" style="background:color-mix(in srgb,var(--success,#2f9e44) 15%,transparent);color:var(--success,#2f9e44)"
+                      title="{{ it.uploaded_markets|join(', ') }}에 등록됨"><i class="bi bi-check-circle"></i> 등록됨 · {{ it.uploaded_markets|join('·') }}</span>
+                {% endif %}
               </td>
               <td class="small" data-label="가격">
                 {% if it.price %}<span class="fw-semibold">{{ it.price }}</span> <span class="text-muted">{{ it.currency }}</span>{% else %}<span class="text-muted">-</span>{% endif %}
