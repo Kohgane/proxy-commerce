@@ -928,9 +928,18 @@ async function runBulkDelete() {
       pcToast(`삭제 요청 실패 (HTTP ${resp.status}).`, 'error'); window._kgpDeleting = false; return;
     }
     const data = await resp.json();
-    if (!data.ok) { pcToast(data.error || '삭제 실패', 'error'); window._kgpDeleting = false; return; }
     bootstrap.Modal.getInstance(document.getElementById('bulkDeleteModal'))?.hide();
-    // v32: 낙관적 제거만 믿지 않는다 — 실제 삭제 0건이면 정직 안내, 1건+이면 서버 재조회로 영속 반영.
+    // v45 P1: 서버가 검증한 '실제 삭제된 id 목록'만 DOM에서 제거(재조회로 검증). 잔존분은 그대로 둔다.
+    const goneIds = Array.isArray(data.deleted_ids) ? data.deleted_ids.map(String) : [];
+    goneIds.forEach(id => {
+      const chk = document.querySelector(`.row-chk[value="${(window.CSS && CSS.escape) ? CSS.escape(id) : id}"]`);
+      if (chk) { const tr = chk.closest('tr'); if (tr) tr.remove(); }
+    });
+    if (!data.ok) {
+      // 부분 실패: 삭제된 것만 사라지고, 못 지운 건 남아 정직 안내(가짜 성공 0).
+      pcToast(data.error || '일부 항목이 삭제되지 않았습니다.', 'error');
+      window._kgpDeleting = false; return;
+    }
     if (!data.deleted) {
       pcToast('삭제된 항목이 없습니다. 새로고침 후 다시 시도해 주세요.', 'warning');
       window._kgpDeleting = false; return;

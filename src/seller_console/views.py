@@ -1998,18 +1998,22 @@ def collect_bulk_delete():
         from . import collect_history_store
         # v32: 목록과 동일한 관용 스코프로 삭제 → 별칭 불일치로 삭제 0건(재진입 부활) 방지.
         ids_set = _seller_identities()
-        deleted = collect_history_store.delete(item_ids, seller_ids=ids_set)
+        # v45 P1: 단일 batchUpdate 삭제 + 실제 삭제된 id 목록을 응답(프론트가 그 행만 제거).
+        deleted_ids = collect_history_store.delete_ids(item_ids, seller_ids=ids_set)
         # v41 STEP 1-0 write-then-verify: 삭제 후 재읽기로 실제 사라졌는지 검증(부활 0). 남아있으면 정직 실패.
         still = collect_history_store.existing_ids(item_ids, seller_ids=ids_set)
     except Exception as exc:
         logger.warning("일괄 삭제 오류: %s", exc)
         return jsonify({"ok": False, "error": "일괄 삭제 중 오류가 발생했습니다."}), 500
 
+    # 실제 삭제된 id 중 재읽기로도 사라짐이 검증된 것만 프론트에 통보 → 그 행만 DOM에서 제거.
+    # (still = 삭제 시도했으나 여전히 잔존 = 미영속. 검증 통과분만 verified_gone.)
+    verified_gone = [i for i in deleted_ids if i not in still]
     if still:
         logger.warning("일괄 삭제 미영속(재읽기서 %d건 잔존): %s", len(still), list(still)[:5])
-        return jsonify({"ok": False, "deleted": deleted,
+        return jsonify({"ok": False, "deleted": len(verified_gone), "deleted_ids": verified_gone,
                         "error": f"{len(still)}건이 삭제되지 않았어요(서버 저장 실패). 새로고침 후 다시 시도해 주세요."}), 200
-    return jsonify({"ok": True, "deleted": deleted})
+    return jsonify({"ok": True, "deleted": len(verified_gone), "deleted_ids": verified_gone})
 
 
 @bp.post("/collect/bulk-category")
