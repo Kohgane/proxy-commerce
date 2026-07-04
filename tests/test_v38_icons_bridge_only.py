@@ -24,13 +24,13 @@ def test_extension_inpage_has_no_pictographic_emoji():
 
 def test_extension_version_bumped_for_icon_refresh():
     # 캐시된 옛 트레이 아이콘(지구본 오인) 갱신 위해 버전 bump
-    assert MANIFEST["version"] == "1.5.34"
+    assert MANIFEST["version"] == "1.5.35"
     # 아이콘 매핑은 브릿지 PNG(16/32/48/128)
     assert MANIFEST["icons"]["128"] == "icons/128.png"
 
 
 def test_favicon_cache_bumped():
-    assert "v='179'" in BASE                    # 탭 아이콘 캐시 갱신(브릿지)
+    assert "v='180'" in BASE                    # 탭 아이콘 캐시 갱신(브릿지)
     assert "v='176'" not in BASE
     assert "bridge gateway mark" in FAVICON_SVG  # favicon = 브릿지 게이트웨이
     assert "globe" not in FAVICON_SVG.lower()
