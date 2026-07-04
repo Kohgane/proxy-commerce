@@ -76,6 +76,8 @@ def _request_with_retry(method: str, url: str, max_retries: int = 3, **kwargs) -
 
     for attempt in range(max_retries):
         try:
+            from src.market_throttle import pace
+            pace("woocommerce")   # v45: 큐 페이싱(자체 429 재시도는 아래 유지)
             r = requests.request(method, url, params=merged_params, timeout=30, **kwargs)
             if r.status_code == 429:
                 retry_after = float(r.headers.get('Retry-After', 2))

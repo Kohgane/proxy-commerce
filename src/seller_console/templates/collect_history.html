@@ -333,6 +333,15 @@
           <label class="form-label small mb-1">목표 마진율 (%)</label>
           <input type="number" id="bulkMargin" class="form-control form-control-sm" value="22" min="0" max="90" step="1">
         </div>
+        <!-- v45: 벌크 등록 진행률(청크 단위 실제 진행) -->
+        <div id="bulkUploadProgress" class="mt-2 d-none">
+          <div class="d-flex justify-content-between small mb-1">
+            <span>등록 중…</span><span id="bulkProgressText">0 / 0</span>
+          </div>
+          <div class="progress" style="height:8px;">
+            <div id="bulkProgressBar" class="progress-bar" role="progressbar" style="width:0%;background:var(--teal,#119a8e);"></div>
+          </div>
+        </div>
         <div id="bulkUploadResult" class="small mt-2 d-none"></div>
       </div>
       <div class="modal-footer">
@@ -978,24 +987,41 @@ async function runBulkUpload() {
   const btn = document.getElementById('bulkUploadConfirm');
   setButtonLoading(btn, true, '등록 중…');
   const box = document.getElementById('bulkUploadResult');
+  // v45: 청크 단위로 나눠 서버 부하·타임아웃 방지 + 실제 진행률 표시. 각 상품은 서버 스로틀 큐 경유.
+  const CHUNK = 5;
+  const prog = document.getElementById('bulkUploadProgress');
+  const bar = document.getElementById('bulkProgressBar');
+  const ptxt = document.getElementById('bulkProgressText');
+  prog.classList.remove('d-none');
+  box.classList.add('d-none');
+  let done = 0, succeeded = 0;
+  const results = [];
   try {
-    const resp = await fetch('/seller/collect/bulk-upload', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({item_ids: ids, markets: markets, target_margin_pct: margin}),
-    });
-    // 서버가 JSON이 아닌 HTML(오류/타임아웃 페이지)을 줄 수 있으므로 안전하게 처리.
-    const ctype = resp.headers.get('content-type') || '';
-    if (!ctype.includes('application/json')) {
-      const msg = resp.status === 504 || resp.status === 502
-        ? `서버 응답 지연(${resp.status}) — 한 번에 너무 많은 상품일 수 있어요. 상품 수를 줄여 다시 시도하세요.`
-        : `등록 요청 실패 (HTTP ${resp.status}). 잠시 후 다시 시도하세요.`;
-      pcToast(msg, 'error');
-      return;
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const chunk = ids.slice(i, i + CHUNK);
+      let data = null;
+      try {
+        const resp = await fetch('/seller/collect/bulk-upload', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({item_ids: chunk, markets: markets, target_margin_pct: margin}),
+        });
+        const ctype = resp.headers.get('content-type') || '';
+        if (ctype.includes('application/json')) data = await resp.json();
+      } catch (e) { /* 청크 실패는 아래서 실패로 집계(정직) */ }
+      if (data && data.ok && Array.isArray(data.results)) {
+        data.results.forEach(r => { results.push(r); if (r.ok) succeeded++; });
+      } else {
+        // 이 청크 전체 실패로 정직 집계(가짜 성공 0)
+        chunk.forEach(id => results.push({id: id, ok: false, error: (data && data.error) || '등록 실패'}));
+      }
+      done += chunk.length;
+      const pct = Math.round(done / ids.length * 100);
+      bar.style.width = pct + '%';
+      ptxt.textContent = `${done} / ${ids.length}`;
     }
-    const data = await resp.json();
-    if (!data.ok) { pcToast(data.error || '일괄 업로드 실패', 'error'); return; }
-    let html = `<div class="alert alert-info py-2">전체 ${data.total}개 · 성공 <strong>${data.succeeded}</strong> · 실패 ${data.total - data.succeeded}</div><ul class="list-group">`;
-    (data.results || []).forEach(r => {
+    // 최종 요약(성공+실패 합계 = 전체, 정직)
+    let html = `<div class="alert alert-info py-2">전체 ${ids.length}개 · 성공 <strong>${succeeded}</strong> · 실패 ${ids.length - succeeded}</div><ul class="list-group">`;
+    results.forEach(r => {
       const cls = r.ok ? 'list-group-item-success' : 'list-group-item-warning';
       const icon = r.ok ? '<i class="bi bi-check-circle text-success"></i>' : '<i class="bi bi-exclamation-triangle text-warning"></i>';
       html += `<li class="list-group-item ${cls}"><span>${icon} ${(r.title || r.id)}</span></li>`;
@@ -1003,8 +1029,10 @@ async function runBulkUpload() {
     html += '</ul>';
     box.innerHTML = html;
     box.classList.remove('d-none');
-    pcToast(`${data.succeeded}/${data.total}개 마켓 등록 완료`, 'success');
+    prog.classList.add('d-none');
+    pcToast(`${succeeded}/${ids.length}개 마켓 등록 완료`, succeeded === ids.length ? 'success' : 'warning');
   } catch (err) {
+    prog.classList.add('d-none');
     pcToast('일괄 업로드 요청 실패: ' + err.message, 'error');
   } finally {
     setButtonLoading(btn, false);

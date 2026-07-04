@@ -41,9 +41,10 @@ def relay_enabled(market: str = "") -> bool:
 class RelayResponse:
     """requests.Response 호환 최소 shim (status_code/json()/text/raise_for_status)."""
 
-    def __init__(self, status_code: int, text: str = ""):
+    def __init__(self, status_code: int, text: str = "", headers=None):
         self.status_code = int(status_code)
         self.text = text or ""
+        self.headers = headers or {}
 
     def json(self):
         return _json.loads(self.text) if self.text else {}
@@ -53,37 +54,43 @@ class RelayResponse:
             raise requests.exceptions.HTTPError(f"{self.status_code} via relay", response=self)
 
 
-def relay_request(method, url, *, headers=None, json=None, data=None, timeout=30, market=""):
+def relay_request(method, url, *, headers=None, json=None, data=None, timeout=30, market="", key=""):
     """릴레이 설정 시 고정 IP 경유, 아니면 직접 requests 호출(폴백).
+
+    v45: 모든 마켓 호출은 market_throttle을 타 페이싱(마켓별 초당 한도) + 429/5xx 지수
+    백오프 재시도(최대 3회)한다. key=자격 단위(vendorId/앱ID; 없으면 마켓 전역).
 
     Returns: requests.Response 또는 RelayResponse(호환).
     """
-    if not relay_enabled(market):
-        return requests.request(method, url, headers=headers, json=json, data=data, timeout=timeout)
+    from src.market_throttle import throttled_request
 
-    relay_url = os.getenv("MARKET_RELAY_URL", "").rstrip("/")
-    token = os.getenv("MARKET_RELAY_TOKEN", "")
-    body = None
-    if json is not None:
-        body = _json.dumps(json, ensure_ascii=False)
-    elif data is not None:
-        body = data if isinstance(data, str) else _json.dumps(data, ensure_ascii=False)
+    def _send():
+        if not relay_enabled(market):
+            return requests.request(method, url, headers=headers, json=json, data=data, timeout=timeout)
+        relay_url = os.getenv("MARKET_RELAY_URL", "").rstrip("/")
+        token = os.getenv("MARKET_RELAY_TOKEN", "")
+        body = None
+        if json is not None:
+            body = _json.dumps(json, ensure_ascii=False)
+        elif data is not None:
+            body = data if isinstance(data, str) else _json.dumps(data, ensure_ascii=False)
+        spec = {"method": str(method).upper(), "url": url, "headers": dict(headers or {}), "body": body}
+        payload = _json.dumps(spec, ensure_ascii=False)
+        ts = str(int(time.time()))
+        sig = hmac.new(token.encode(), (ts + payload).encode(), hashlib.sha256).hexdigest()
+        r = requests.post(
+            relay_url + "/relay",
+            data=payload.encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "X-Relay-Timestamp": ts,
+                "X-Relay-Signature": sig,
+                "Content-Type": "application/json",
+            },
+            timeout=timeout + 10,
+        )
+        r.raise_for_status()
+        out = r.json()
+        return RelayResponse(int(out.get("status", 502)), out.get("body", ""), headers=out.get("headers"))
 
-    spec = {"method": str(method).upper(), "url": url, "headers": dict(headers or {}), "body": body}
-    payload = _json.dumps(spec, ensure_ascii=False)
-    ts = str(int(time.time()))
-    sig = hmac.new(token.encode(), (ts + payload).encode(), hashlib.sha256).hexdigest()
-    r = requests.post(
-        relay_url + "/relay",
-        data=payload.encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {token}",
-            "X-Relay-Timestamp": ts,
-            "X-Relay-Signature": sig,
-            "Content-Type": "application/json",
-        },
-        timeout=timeout + 10,
-    )
-    r.raise_for_status()
-    out = r.json()
-    return RelayResponse(int(out.get("status", 502)), out.get("body", ""))
+    return throttled_request(_send, market=(market or "").strip().lower() or "generic", key=key or "")

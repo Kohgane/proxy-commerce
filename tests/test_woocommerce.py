@@ -58,7 +58,7 @@ class TestRequestWithRetry:
             with patch('time.sleep') as mock_sleep:
                 r = self.mod._request_with_retry('GET', 'http://example.com')
                 assert r.status_code == 200
-                mock_sleep.assert_called_once_with(0.01)
+                mock_sleep.assert_any_call(0.01)  # v45: 페이싱 sleep과 공존
 
     def test_request_with_retry_500(self):
         """5xx 에러 시 지수 백오프 후 재시도."""
@@ -72,7 +72,7 @@ class TestRequestWithRetry:
             with patch('time.sleep') as mock_sleep:
                 r = self.mod._request_with_retry('GET', 'http://example.com')
                 assert r.status_code == 200
-                mock_sleep.assert_called_once_with(1)  # 2^0 = 1
+                mock_sleep.assert_any_call(1)  # 2^0 = 1 (v45 페이싱 sleep과 공존)
 
     def test_request_with_retry_connection_error(self):
         """연결 에러 시 재시도 후 최종 실패."""

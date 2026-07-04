@@ -202,15 +202,19 @@ class NaverSmartStoreUploader(BaseUploader):
         if not self.client_id or not self.client_secret:
             return ''
         try:
-            resp = requests.post(
-                self._TOKEN_URL,
-                data={
-                    'grant_type': 'client_credentials',
-                    'client_id': self.client_id,
-                    'client_secret': self.client_secret,
-                    'type': 'SELF',
-                },
-                timeout=15,
+            from src.market_throttle import throttled_request
+            resp = throttled_request(
+                lambda: requests.post(
+                    self._TOKEN_URL,
+                    data={
+                        'grant_type': 'client_credentials',
+                        'client_id': self.client_id,
+                        'client_secret': self.client_secret,
+                        'type': 'SELF',
+                    },
+                    timeout=15,
+                ),
+                market="smartstore", key=str(self.client_id or ""),
             )
             resp.raise_for_status()
             data = resp.json()
@@ -238,7 +242,8 @@ class NaverSmartStoreUploader(BaseUploader):
             try:
                 # 고정 IP 릴레이 경유(MARKET_RELAY_URL 설정 시) — 네이버 호출 IP 화이트리스트 대응(v8).
                 from src.market_relay import relay_request
-                resp = relay_request(method, url, json=data, headers=headers, timeout=30, market="smartstore")
+                resp = relay_request(method, url, json=data, headers=headers, timeout=30,
+                                     market="smartstore", key=str(self.client_id or ""))
                 if resp.status_code == 429:
                     logger.warning('Naver rate limit hit, retrying in %ds (attempt %d)', 5, attempt + 1)
                     time.sleep(5 * (attempt + 1))
