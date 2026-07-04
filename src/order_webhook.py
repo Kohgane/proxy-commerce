@@ -23,8 +23,13 @@ from .utils.branding import get_brand_name, get_brand_name_ko
 logger = logging.getLogger(__name__)
 
 # v44 0-1: 부팅 시 환경변수 도달 여부를 1줄로(값 마스킹) — '키 있는데 미설정' 헛걸음 방지.
+# v45 P8: 리포트 전에 키를 in-place 정제 → 이후 모든 모듈(AI 초안 copywriter·번역 translator 등)이
+#   raw os.getenv로 읽어도 따옴표/공백 없는 값을 본다(단일 소스, AI 초안·번역 실동작 보장).
 try:
-    from src.utils.env import boot_env_report
+    from src.utils.env import boot_env_report, sanitize_env_inplace
+    _cleaned = sanitize_env_inplace()
+    if _cleaned:
+        logger.info("환경변수 정제(따옴표/공백 제거): %s", ", ".join(_cleaned))
     logger.info(boot_env_report())
 except Exception:
     pass

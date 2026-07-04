@@ -304,6 +304,21 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   body 통째 교체에도 바 생존). ※라이브 아마존/Temu 최종 확인은 오너가 확장 1.5.34 재로딩 후(캡처는 실제 어댑터 실행분).
   적용 스킬: (확장 오버레이 위치/셀렉터 — 우리 토큰 색 유지·하드코딩 hex는 기존 확장 인라인 스타일 관행. gogabridj-design
   토큰은 앱 CSS 전용, 확장은 인라인. impeccable/humanizer CLI 미설치.)
+- ✅ **P6 호버 수집 버튼 — 점검 결과 E-3(#401)로 이미 완료·가드됨:** content_script `kgpQuickCollect`/
+  `kgpQuickBtnStyle`(호버 시 썸네일 중앙 브릿지+'수집' 알약, 터치=우상단 소형)·'수집됨 ✓' 3상태·`kgpMarkExisting`+
+  `collectExists`→`/api/v1/collect/exists`(정규화키로 이미 수집분 선표시). P3/P4/P5 변경이 회귀 안 시킴(가드
+  test_v42_e3_hover_collect 5 pass). 캡처 docs/screens/v42/e3-hover-collect.png. → 재작업 불필요(정직: 이미 됨).
+- ✅ **P7(이미지·상세 추출)=v44 #408/#409, P10(업로드 표식)=v44-1 #407로 이미 반영·가드됨:** test_v44_img_detail_extract
+  (4)·test_v44_1_upload_status(3) pass. 재작업 불필요.
+- ✅ **P8 OPENAI/DEEPL '미설정'(값·재배포 완료 상태) 근본 수리 (#413):** 증상=Render 키 설정+재배포했는데 AI 초안·
+  번역 '미설정'. 근본=v44 0-1은 seller_console/ai/translator만 env_str 정제 — **copywriter(AI 초안)·translator_quality·
+  ai_listing·cs_bot 등 15+곳이 raw os.getenv**라 값에 따옴표/공백 섞이면 여전히 '키 있는데 안 먹음'. **수리(단일 소스):**
+  `env.py::sanitize_env_inplace(OPENAI/DEEPL/OPENAI_MODEL/ANTHROPIC)` — 부팅 시 os.environ에서 앞뒤 공백·감싼 따옴표
+  제거해 in-place 덮어씀(감쌈만이면 키 제거=미설정 정직). order_webhook 부팅이 boot_env_report 전에 호출 → **이후 어떤
+  모듈이 raw os.getenv로 읽어도 깨끗한 값**. 값 미로깅(변경된 키 이름만). 가드 test_v45_p8_env_sanitize(6). 전체 10780
+  passed. **판정 캡처:** docs/screens/v45/p8-env-sanitize.png(오염 키 → 정제 → os.getenv 클린·env_present True, 값 마스킹).
+  ※실제 AI 초안·번역 동작은 오너가 Render에 유효 키 설정 시(코드는 오염돼도 정제해 인식). 적용 스킬: (백엔드 env 정제 —
+  UI 없음. impeccable/humanizer CLI 미설치.)
 
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)
 - 규칙(불변): 각 항목 **실제 화면 before/after 캡처로만 완료**. 추측 금지·거짓성공/임의환산 금지·회귀 금지(pytest+CI)·토큰 단일소스.
