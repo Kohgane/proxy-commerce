@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -55,6 +56,41 @@ def _pg_tokens():
     except Exception as exc:
         logger.warning("PG 토큰 백엔드 확인 실패 — Sheets 폴백: %s", exc)
     return None
+
+
+def _classify_token_error(exc) -> str:
+    """토큰 저장 실패 원인 1줄 분류(로그·정직 안내용). 시크릿 미포함."""
+    code = getattr(getattr(exc, "response", None), "status_code", None)
+    msg = str(exc).lower()
+    if code == 429 or "429" in msg or "quota" in msg or "rate limit" in msg or "rate_limit" in msg:
+        return "Sheets 분당 쿼터 초과(429)"
+    if code in (401, 403) or "permission" in msg or "denied" in msg or "unauthor" in msg or "forbidden" in msg:
+        return "Sheets 권한/인증 실패"
+    if code in (500, 502, 503, 504) or "timeout" in msg or "timed out" in msg or "temporarily" in msg:
+        return "Sheets 서버 오류/타임아웃"
+    if "lock" in msg or "conflict" in msg:
+        return "Sheets 잠금/충돌"
+    return f"기타 오류({type(exc).__name__})"
+
+
+def _retryable(exc) -> bool:
+    code = getattr(getattr(exc, "response", None), "status_code", None)
+    return code in (429, 500, 502, 503, 504)
+
+
+def _sheet_retry(fn, tries: int = 3):
+    """Sheets 호출을 429/5xx 지수 백오프 재시도로 감싼다(전이적 실패 완화)."""
+    last = None
+    for i in range(tries):
+        try:
+            return fn()
+        except Exception as exc:   # noqa: BLE001
+            if not _retryable(exc):
+                raise
+            last = exc
+            if i < tries - 1:
+                time.sleep(0.4 * (2 ** i))
+    raise last
 
 
 def _get_worksheet():
@@ -158,17 +194,28 @@ def generate_token(user_id: str, scopes: list = None, expires_days: int = _DEFAU
     try:
         ws = _get_worksheet()
         _ensure_headers(ws)
-        ws.append_row(row)
-        saved = _find_token_row(token_hash, ws=ws)
-        if not _token_row_matches_saved(saved, token_hash=token_hash, user_id=user_id,
-                                        scopes=scopes, expires_at=expires_at):
-            raise TokenStoreCommitError("토큰을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.")
-        logger.info("Personal Token 발급: user=%s scopes=%s", user_id, scopes)
+        _sheet_retry(lambda: ws.append_row(row))     # 429/5xx 재시도(전이적 실패 완화)
+        # 자기검증 읽기 — 읽기 자체가 429로 터지면 append는 이미 성공했을 수 있으므로 관대하게
+        # 처리(가짜 실패로 토큰 중복 발급되던 버그 방지). '깨끗이 읽었는데 없음'만 진짜 실패.
+        try:
+            saved = _sheet_retry(lambda: _find_token_row(token_hash, ws=ws))
+            read_ok = True
+        except Exception as rexc:   # noqa: BLE001
+            read_ok = False
+            logger.warning("토큰 발급 자기검증 읽기 실패(원인=%s) — append 성공으로 간주: %s: %s",
+                           _classify_token_error(rexc), type(rexc).__name__, rexc)
+        if read_ok and not _token_row_matches_saved(saved, token_hash=token_hash, user_id=user_id,
+                                                    scopes=scopes, expires_at=expires_at):
+            logger.error("토큰 발급 저장 검증 불일치(원인=쓰기 후 미반영) user=%s", user_id)
+            raise TokenStoreCommitError("토큰을 저장하지 못했어요(쓰기 후 미반영). 잠시 후 다시 시도해 주세요.")
+        logger.info("Personal Token 발급: user=%s scopes=%s verified=%s", user_id, scopes, read_ok)
     except TokenStoreCommitError:
         raise
     except Exception as exc:
-        logger.error("토큰 저장 실패: %s", exc)
-        raise TokenStoreCommitError("토큰을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.") from exc
+        cause = _classify_token_error(exc)
+        # 서버 로그에 실제 예외(타입+메시지) + 원인 1줄. 시크릿 미포함.
+        logger.error("토큰 저장 실패(원인=%s): %s: %s", cause, type(exc).__name__, exc)
+        raise TokenStoreCommitError(f"토큰을 저장하지 못했어요({cause}). 잠시 후 다시 시도해 주세요.") from exc
 
     return {
         "raw_token": raw_token,
