@@ -44,6 +44,19 @@ def _hash_token(raw: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _pg_tokens():
+    """Postgres 이관 백엔드 활성 시 user_tokens_pg 반환(스키마 1회), 아니면 None(Sheets 폴백)."""
+    try:
+        from src.db import pg as _pgmod
+        if _pgmod.pg_enabled():
+            _pgmod.init_schema()
+            from src.db import user_tokens_pg as _tpg
+            return _tpg
+    except Exception as exc:
+        logger.warning("PG 토큰 백엔드 확인 실패 — Sheets 폴백: %s", exc)
+    return None
+
+
 def _get_worksheet():
     """personal_tokens 워크시트 반환."""
     from src.utils.sheets import open_sheet
@@ -115,7 +128,19 @@ def generate_token(user_id: str, scopes: list = None, expires_days: int = _DEFAU
     token_hash = _hash_token(raw_token)
 
     now = datetime.now(timezone.utc)
-    expires_at = (now + timedelta(days=expires_days)).isoformat()
+    expires_dt = now + timedelta(days=expires_days)
+    expires_at = expires_dt.isoformat()
+
+    # 이관: Postgres 백엔드 활성 시 트랜잭션 커밋 후에만 성공(영속).
+    _tp = _pg_tokens()
+    if _tp is not None:
+        if not _tp.insert(user_id, token_hash, scopes, expires_dt):
+            raise TokenStoreCommitError("토큰을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.")
+        logger.info("Personal Token 발급(PG): user=%s scopes=%s", user_id, scopes)
+        return {
+            "raw_token": raw_token, "token_hash": token_hash, "user_id": user_id,
+            "scopes": scopes, "created_at": now.isoformat(), "expires_at": expires_at, "durable": True,
+        }
 
     row = [
         token_hash,
@@ -179,6 +204,14 @@ def validate_token(raw_token: str, required_scopes: list = None) -> Optional[dic
         if (datetime.now(timezone.utc).timestamp() - cached_at) < _CACHE_TTL_SEC:
             if _check_scopes(user_info.get("scopes", []), required_scopes):
                 return user_info
+
+    # 이관: Postgres 백엔드 활성 시 PG에서 검증.
+    _tp = _pg_tokens()
+    if _tp is not None:
+        info = _tp.validate(token_hash, required_scopes)
+        if info:
+            _token_cache[token_hash] = (datetime.now(timezone.utc).timestamp(), info)
+        return info
 
     if not _SHEET_ID:
         return None
@@ -263,10 +296,16 @@ def revoke_token(token_hash: str, user_id: str, *, user_ids=None) -> bool:
     Returns:
         성공 여부(실제 시트 커밋됐을 때만 True — 가짜 성공 0).
     """
+    id_set = _identity_set(user_id, user_ids)
+    _tp = _pg_tokens()
+    if _tp is not None:
+        ok = _tp.revoke(token_hash, id_set)
+        if ok:
+            _token_cache.pop(token_hash, None)
+        return ok
+
     if not _SHEET_ID:
         return False
-
-    id_set = _identity_set(user_id, user_ids)
     try:
         ws = _get_worksheet()
         records = _sheet_records(ws)
@@ -296,10 +335,13 @@ def list_tokens(user_id: str, *, user_ids=None) -> list:
     Returns:
         [{token_hash_prefix, scopes, created_at, last_used_at, expires_at, revoked}]
     """
+    id_set = _identity_set(user_id, user_ids)
+    _tp = _pg_tokens()
+    if _tp is not None:
+        return _tp.list_for(id_set)
+
     if not _SHEET_ID:
         return []
-
-    id_set = _identity_set(user_id, user_ids)
     result = []
     try:
         ws = _get_worksheet()

@@ -365,6 +365,22 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   color-mix 배경·bi-info-circle(이모지0·하드코딩hex0). 가드 test_v45_coupang_wizard_note(3). 캡처 docs/screens/v45/coupang-wizard-note.png.
   적용 스킬: **gogabridj-design**(warn 토큰·이모지0).
 
+## 🟦 DB 이관 (오너 2026-07-04 — Google Sheets → Supabase Postgres, 단계적)
+- 접속정보는 Render 환경변수(SUPABASE_DB_URL/DATABASE_URL)로만, 하드코딩 금지. 미설정이면 기존 Sheets/인메모리
+  폴백(무회귀). 단계: 1(collect_history·user_tokens) → 2(products·market_links 암호화) → 3(주문·정산, Sheets 읽기전용 강등).
+- ✅ **1단계 collect_history + user_tokens PG 이관 (#417):** 버그 최다 2테이블. 신규 `src/db/pg.py`(env 접속·풀·
+  `tx()` 트랜잭션 커밋 후에만 성공·`init_schema()`), `src/db/schema_stage1.sql`(uuid PK·user_id 스코프·**product_key
+  부분 유니크**(활성행만, 중복수집 방지)·deleted_at 소프트삭제·created/updated_at + updated_at 트리거), `src/db/
+  collect_history_pg.py`·`src/db/user_tokens_pg.py`(스토어 API 미러). collect_history_store·personal_tokens가 pg_enabled()
+  면 위임(각 함수 조기 반환), 아니면 Sheets. **원천 소멸:** 삭제=deleted_at 단일 UPDATE(P1 행밀림·부분삭제 소멸),
+  트랜잭션 커밋 후 durable(P2 쿼터429 비영속 소멸), product_key 유니크(재수집 중복 0). 마이그레이션
+  `scripts/migrate_to_supabase.py`(Sheets→PG 멱등 삽입 + 건수 대조, `--count` 드라이런). 가드
+  test_v45_supabase_stage1(6, SUPABASE_DB_URL 설정 시만; 삭제 부활0·토큰 재시작 유지·재수집 중복0·스코프 격리) — 로컬
+  PostgreSQL 16으로 실검증. **검증 캡처:** docs/screens/v45/supabase-stage1.png(20건 삭제→재조회3회 [0,0,0]·토큰
+  validate 재시작 유지·재수집 같은 id). 전체(폴백, PG 미설정) 그린 유지. **P1/P2 우회코드는 Sheets 폴백용으로 보존
+  (PG 경로가 바이패스) — Sheets 읽기전용 강등(3단계) 시 제거.** ※오너 액션: Render에 SUPABASE_DB_URL 설정 후
+  migrate 스크립트 1회 실행. 적용 스킬: (백엔드 DB — UI 없음.)
+
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)
 - 규칙(불변): 각 항목 **실제 화면 before/after 캡처로만 완료**. 추측 금지·거짓성공/임의환산 금지·회귀 금지(pytest+CI)·토큰 단일소스.
 - 순서: A 지구본잔존 → B 소형아이콘 → C 인페이지 편집 드로어(핵심) → D 가격/상세/번역 → E 버튼라벨 → F 404박멸 → G 전수.
