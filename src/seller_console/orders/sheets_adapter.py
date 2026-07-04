@@ -22,6 +22,19 @@ from .models import OrderLineItem, OrderStatus, UnifiedOrder
 
 logger = logging.getLogger(__name__)
 
+
+def _pg_orders():
+    """Postgres 이관 백엔드 활성 시 orders_pg 반환(스키마 1회), 아니면 None(Sheets 폴백)."""
+    try:
+        from src.db import pg as _pgmod
+        if _pgmod.pg_enabled():
+            _pgmod.init_schema()
+            from src.db import orders_pg as _op
+            return _op
+    except Exception as exc:
+        logger.warning("PG 주문 백엔드 확인 실패 — Sheets 폴백: %s", exc)
+    return None
+
 # 워크시트 컬럼 헤더 (순서 고정)
 ORDERS_HEADERS = [
     "order_id",
@@ -87,6 +100,10 @@ class OrderSheetsAdapter:
 
     def bulk_upsert(self, orders: List[UnifiedOrder]) -> int:
         """(order_id, marketplace) 복합 키로 upsert. 처리된 행 수 반환."""
+        _b = _pg_orders()
+        if _b is not None:
+            rows = [dict(zip(ORDERS_HEADERS, self._order_to_row(o))) for o in (orders or [])]
+            return _b.upsert_rows(rows)
         if not self.sheet_id:
             logger.warning("bulk_upsert: GOOGLE_SHEET_ID 미설정 — 건너뜀")
             return 0
@@ -121,19 +138,22 @@ class OrderSheetsAdapter:
 
     def query(self, filters: dict = None, limit: int = 50, offset: int = 0) -> List[UnifiedOrder]:
         """필터/정렬/페이지네이션으로 주문 조회."""
-        if not self.sheet_id:
+        filters = filters or {}
+        _b = _pg_orders()
+        if _b is None and not self.sheet_id:
             logger.warning("query: GOOGLE_SHEET_ID 미설정 — 빈 목록 반환")
             return []
-
-        filters = filters or {}
-        try:
-            from src.utils.sheets import get_all_records_safe, get_or_create_worksheet, open_sheet_object
-            sh = open_sheet_object(self.sheet_id)
-            ws = get_or_create_worksheet(sh, "orders", headers=ORDERS_HEADERS)
-            rows = get_all_records_safe(ws)
-        except Exception as exc:
-            logger.warning("query: Sheets 읽기 실패: %s", exc)
-            return []
+        if _b is not None:
+            rows = _b.all_row_dicts()
+        else:
+            try:
+                from src.utils.sheets import get_all_records_safe, get_or_create_worksheet, open_sheet_object
+                sh = open_sheet_object(self.sheet_id)
+                ws = get_or_create_worksheet(sh, "orders", headers=ORDERS_HEADERS)
+                rows = get_all_records_safe(ws)
+            except Exception as exc:
+                logger.warning("query: Sheets 읽기 실패: %s", exc)
+                return []
 
         orders = [self._row_to_order(r) for r in rows if r.get("order_id")]
 
@@ -169,6 +189,9 @@ class OrderSheetsAdapter:
         tracking_no: str,
     ) -> bool:
         """운송장 번호 갱신. 성공 시 True."""
+        _b = _pg_orders()
+        if _b is not None:
+            return _b.update_tracking(order_id, marketplace, courier, tracking_no, OrderStatus.SHIPPED.value)
         if not self.sheet_id:
             logger.warning("update_tracking: GOOGLE_SHEET_ID 미설정")
             return False
@@ -206,6 +229,10 @@ class OrderSheetsAdapter:
         note: str = "",
     ) -> bool:
         """주문 상태/메모 갱신. 성공 시 True."""
+        _b = _pg_orders()
+        if _b is not None:
+            updated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+            return _b.update_status(order_id, marketplace, status, note, updated_at)
         if not self.sheet_id:
             logger.warning("update_status: GOOGLE_SHEET_ID 미설정")
             return False
@@ -255,18 +282,21 @@ class OrderSheetsAdapter:
             "returned_exchanged": 0,
             "source": "fallback",
         }
-        if not self.sheet_id:
+        _b = _pg_orders()
+        if _b is not None:
+            rows = _b.all_row_dicts()
+        elif not self.sheet_id:
             logger.warning("kpi_summary: GOOGLE_SHEET_ID 미설정 — mock 반환")
             return {**fallback, "source": "mock"}
-
-        try:
-            from src.utils.sheets import get_all_records_safe, get_or_create_worksheet, open_sheet_object
-            sh = open_sheet_object(self.sheet_id)
-            ws = get_or_create_worksheet(sh, "orders", headers=ORDERS_HEADERS)
-            rows = get_all_records_safe(ws)
-        except Exception as exc:
-            logger.warning("kpi_summary: Sheets 읽기 실패: %s", exc)
-            return fallback
+        else:
+            try:
+                from src.utils.sheets import get_all_records_safe, get_or_create_worksheet, open_sheet_object
+                sh = open_sheet_object(self.sheet_id)
+                ws = get_or_create_worksheet(sh, "orders", headers=ORDERS_HEADERS)
+                rows = get_all_records_safe(ws)
+            except Exception as exc:
+                logger.warning("kpi_summary: Sheets 읽기 실패: %s", exc)
+                return fallback
 
         today = date.today().isoformat()
         today_new = 0
