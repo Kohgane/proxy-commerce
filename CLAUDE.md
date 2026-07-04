@@ -349,6 +349,21 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   (favicon.ico 16/32/48 + 브라우저 탭 + 확장 툴바 + 마스터 1024 + 확장 128/48). ※라이브 favicon.ico 최종 확인은 오너가
   배포 후 kohganepercentiii.com/favicon.ico(캐시 강제새로고침). 적용 스킬: **gogabridj-design**(다리/게이트/키스톤
   시그니처·먹/금/청록/주황 토큰·globe 금지). impeccable/humanizer CLI 미설치→의도 수동.
+- ✅ **마켓 API 스로틀 큐 (#416):** 오너 지시=모든 마켓 API 호출 직접 금지→큐 페이싱. 신규 `src/market_throttle.py`:
+  (market,key)별 **토큰버킷 페이싱**(마켓별 초당 안전마진 — 네이버/스스=1.5/s[앱ID당2→1.5], 쿠팡=7/s[vendorId당10→7],
+  env MARKET_RPS_<M> 오버라이드) + **429/5xx 지수 백오프(1→2→4) 재시도 최대 3회**(최종 실패=실패 응답 그대로, 가짜성공0)
+  + **rate-limit-remaining 헤더 로깅**(GNCP-GW-RateLimit-Remaining 등). `throttled_request(do_request,market,key)` / 자체
+  재시도 있는 호출자용 `pace()`. 전 마켓 호출 경유: relay_request(쿠팡 key=vendorId·스스 key=client_id) + naver토큰·
+  elevenst=throttled_request, woo·shopify=pace(자체 429 재시도 유지). woo/shopify 기존 sleep 단언은 assert_any_call로
+  (페이싱 sleep 공존). 가드 test_v45_market_throttle(9: RPS·429재시도성공·영속429정직실패·5xx·예외재시도·헤더로깅·
+  **벌크30 각 첫429→전건성공/429=30**·페이싱 최소간격·relay경유·**청크 진행률**). **진행률:** collect_history 일괄
+  등록을 **청크(5건) 단위**로 나눠 전송 → 청크마다 진행바(done/total) 갱신(서버 부하·504 타임아웃 방지 + 실제 진행률),
+  각 상품은 서버 스로틀 큐 경유, 성공+실패 합계=전체 정직 집계. **판정 캡처:** docs/screens/v45/market-throttle.png
+  (벌크30 ok30/fail0·429=30 전건회복·RPS 7/1.5). ※라이브는 오너 키+릴레이IP 설정 후.
+- ✅ **마켓연동 위저드 쿠팡 정직 안내 (#416):** markets_connect.html 쿠팡 카드에만(`m.market=='coupang'`) 콜아웃:
+  '쿠팡 API 키는 판매자당 1개 — 다른 셀러툴과 동시 연동 불가', '연동정보 수정 주 10회·반영 최대 30분'. warn 토큰 좌보더+
+  color-mix 배경·bi-info-circle(이모지0·하드코딩hex0). 가드 test_v45_coupang_wizard_note(3). 캡처 docs/screens/v45/coupang-wizard-note.png.
+  적용 스킬: **gogabridj-design**(warn 토큰·이모지0).
 
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)
 - 규칙(불변): 각 항목 **실제 화면 before/after 캡처로만 완료**. 추측 금지·거짓성공/임의환산 금지·회귀 금지(pytest+CI)·토큰 단일소스.

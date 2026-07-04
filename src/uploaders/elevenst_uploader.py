@@ -79,11 +79,15 @@ class ElevenStUploader(BaseUploader):
             return {"success": False, "error": "Missing ELEVENST_API_KEY", "sku": product.get("sku", "")}
         try:
             xml_body = self._build_product_xml(product)
-            resp = requests.post(
-                f"{_BASE_URL}/prodservices/product",
-                headers={"openapikey": self.api_key, "Content-Type": "text/xml; charset=utf-8"},
-                data=xml_body.encode("utf-8"),
-                timeout=15,
+            from src.market_throttle import throttled_request
+            resp = throttled_request(
+                lambda: requests.post(
+                    f"{_BASE_URL}/prodservices/product",
+                    headers={"openapikey": self.api_key, "Content-Type": "text/xml; charset=utf-8"},
+                    data=xml_body.encode("utf-8"),
+                    timeout=15,
+                ),
+                market="elevenst",
             )
             if resp.status_code not in (200, 201):
                 return {
@@ -111,11 +115,15 @@ class ElevenStUploader(BaseUploader):
                 "<?xml version='1.0' encoding='UTF-8'?>"
                 f"<PriceRequest><sellprc>{price}</sellprc></PriceRequest>"
             )
-            resp = requests.post(
-                f"{_BASE_URL}/prodservices/product/{product_id}/price",
-                headers={"openapikey": self.api_key, "Content-Type": "text/xml; charset=utf-8"},
-                data=xml_body.encode("utf-8"),
-                timeout=10,
+            from src.market_throttle import throttled_request
+            resp = throttled_request(
+                lambda: requests.post(
+                    f"{_BASE_URL}/prodservices/product/{product_id}/price",
+                    headers={"openapikey": self.api_key, "Content-Type": "text/xml; charset=utf-8"},
+                    data=xml_body.encode("utf-8"),
+                    timeout=10,
+                ),
+                market="elevenst",
             )
             if resp.status_code in (200, 201):
                 return {"success": True}

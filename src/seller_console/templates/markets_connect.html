@@ -115,6 +115,17 @@
             </span>
           </div>
 
+          {% if m.market == 'coupang' %}
+          <!-- v45: 쿠팡 정직 안내(판매자당 키 1개·수정 한도·반영 지연) -->
+          <div class="mc-note-coupang mb-3" style="border-left:3px solid var(--warn,#C9A24B); background:color-mix(in srgb, var(--warn,#C9A24B) 8%, transparent); border-radius:8px; padding:.6rem .8rem;">
+            <div class="small fw-semibold mb-1"><i class="bi bi-info-circle"></i> 쿠팡 연동 전 알아두기</div>
+            <ul class="small mb-0 ps-3" style="line-height:1.6;">
+              <li>쿠팡 API 키는 <strong>판매자당 1개</strong>예요 — 다른 셀러툴과 <strong>동시 연동은 안 돼요</strong>(한 곳에서만 사용).</li>
+              <li>연동 정보 <strong>수정은 주 10회로 제한</strong>되고, 바꾼 값이 <strong>반영되기까지 최대 30분</strong> 걸릴 수 있어요.</li>
+            </ul>
+          </div>
+          {% endif %}
+
           <!-- 마스킹된 연동 정보 요약(민감정보 마스킹) -->
           {% set _shown = [] %}
           <div class="mc-kv mb-3">

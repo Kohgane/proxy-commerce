@@ -57,6 +57,8 @@ def _request_with_retry(method: str, url: str, max_retries: int = 3, **kwargs) -
         # Merge caller-supplied headers (if any) on top of default auth headers
         merged_headers = {**_headers(), **kwargs.pop('headers', {})}
         try:
+            from src.market_throttle import pace
+            pace("shopify")   # v45: 큐 페이싱(자체 429 재시도는 아래 유지)
             r = requests.request(method, url, headers=merged_headers, timeout=30, **kwargs)
             if r.status_code == 429:
                 retry_after = float(r.headers.get('Retry-After', 2))
