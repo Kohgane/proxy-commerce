@@ -108,6 +108,42 @@ def migrate_tokens(cur, dry=False) -> tuple:
     return len(rows), inserted, int(cur.fetchone()[0])
 
 
+def _sheet_order_rows():
+    import os as _os
+    sid = _os.getenv("GOOGLE_SHEET_ID")
+    if not sid:
+        return []
+    from src.utils.sheets import get_all_records_safe, get_or_create_worksheet, open_sheet_object
+    from src.seller_console.orders.sheets_adapter import ORDERS_HEADERS
+    sh = open_sheet_object(sid)
+    ws = get_or_create_worksheet(sh, "orders", headers=ORDERS_HEADERS)
+    return get_all_records_safe(ws)
+
+
+def migrate_orders(cur, dry=False) -> tuple:
+    """Sheets 'orders' 워크시트 → orders 테이블. (order_id, marketplace) upsert."""
+    from src.db.orders_pg import _COLS
+    rows = [r for r in _sheet_order_rows() if r.get("order_id")]
+    inserted = 0
+    set_clause = ", ".join(f"{c}=EXCLUDED.{c}" for c in _COLS if c not in ("order_id", "marketplace"))
+    for r in rows:
+        if dry:
+            continue
+        try:
+            vals = [str(r.get(c, "") if r.get(c) is not None else "") for c in _COLS]
+            cur.execute(
+                f"""INSERT INTO orders ({', '.join(_COLS)})
+                    VALUES ({', '.join(['%s'] * len(_COLS))})
+                    ON CONFLICT (order_id, marketplace) WHERE deleted_at IS NULL
+                    DO UPDATE SET {set_clause}""",
+                vals)
+            inserted += 1
+        except Exception as exc:
+            _log(f"  order 행 이관 실패(건너뜀): {exc}")
+    cur.execute("SELECT count(*) FROM orders WHERE deleted_at IS NULL")
+    return len(rows), inserted, int(cur.fetchone()[0])
+
+
 def migrate_market_links(cur, dry=False) -> tuple:
     """data/market_credentials/<seller>.json(Fernet) → market_links(암호문). 파일에서 직접 로드."""
     import glob
@@ -148,9 +184,11 @@ def main():
             sc, si, sp = migrate_collect(cur, dry=dry)
             tc, ti, tp = migrate_tokens(cur, dry=dry)
             mls, mli, mlp = migrate_market_links(cur, dry=dry)
+            oc, oi, op = migrate_orders(cur, dry=dry)
     _log(f"[collect_history] Sheets 원본 {sc}건 · 삽입 {si}건 · PG 총 {sp}건")
     _log(f"[user_tokens]     Sheets 원본 {tc}건 · 삽입 {ti}건 · PG 총 {tp}건")
     _log(f"[market_links]    파일 셀러 {mls}명 · 삽입 {mli}건 · PG 총 {mlp}건")
+    _log(f"[orders]          Sheets 원본 {oc}건 · 삽입 {oi}건 · PG 총 {op}건")
     # 건수 대조(멱등 재실행 시 삽입 0이어도 PG 총계가 원본 이상이면 OK)
     ok = (sp >= sc) and (tp >= tc)
     _log(f"검증(건수 대조): collect PG≥Sheets={sp>=sc}, tokens PG≥Sheets={tp>=tc} → {'OK' if ok else '불일치'}")

@@ -410,6 +410,19 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   저장→재시작 유지·DB 암호문(평문0)·셀러격리·삭제·병합). **검증 캡처:** docs/screens/v45/supabase-stage2.png(쿠팡 저장→
   재시작 유지·is_encrypted True·평문 노출0·Fernet gAAAA·타셀러 미노출·삭제). ⏳ **products(수집상품 상세·이미지배열·상세설명)**
   는 collect_history.extra_json(jsonb)에 이미 durable — 별도 정규화 테이블은 오너 read-model 확인 후(2b).
+- ✅ **3단계 orders(주문·정산) PG 이관 (#421):** 주문·정산 데이터를 Sheets 'orders' 워크시트 → PG(영속). 신규
+  `src/db/schema_stage3.sql`(orders: uuid PK·user_id·**(order_id,marketplace) 활성 유니크**(중복 주문 0)·ORDERS_HEADERS
+  전 컬럼 text·deleted_at 소프트삭제·timestamps·ix_orders_placed·updated_at 트리거), `src/db/orders_pg.py`
+  (upsert_rows(ON CONFLICT DO UPDATE)/all_row_dicts/update_tracking/update_status — 행 dict는 시트와 동일 ORDERS_HEADERS
+  키라 어댑터의 _row_to_order·필터·KPI 로직 그대로 재사용). **정산 KPI(마진 등)는 이 행에서 파생 — 별도 정산 테이블
+  불필요.** OrderSheetsAdapter가 pg_enabled면 위임(`_pg_orders()`: bulk_upsert→upsert_rows, query/kpi_summary 읽기소스를
+  all_row_dicts로, update_tracking/update_status 위임), 아니면 Sheets 폴백(무회귀). init_schema가 stage3도 적용.
+  migrate_to_supabase에 migrate_orders(Sheets 'orders'→PG upsert) 추가. 가드 test_v45_supabase_stage3(5, DATABASE_URL
+  설정 시만: upsert·중복0·재시작 유지·운송장 영속·상태 갱신·KPI 파생·미존재 False) — 로컬 PG로 실검증(22 PG테스트 그린).
+  **검증 캡처:** docs/screens/v45/supabase-stage3.png(주문 2건 upsert→재upsert 중복0(총2)·coupang 필터1·운송장 999→
+  재시작 유지 status=shipped·KPI pending_ship1/shipped1). 전체(폴백, PG 미설정) 10816 passed / 16 skipped 그린.
+  ※오너 액션: SUPABASE_DB_URL/DATABASE_URL 설정 후 migrate 1회 실행 시 기존 Sheets 주문 이관. **Sheets 읽기전용 백업
+  강등(일 1회 덤프)·P1/P2 우회코드 제거는 PG 안정 확인 후 별도 진행**(현재는 폴백 안전 위해 우회코드 보존). 적용 스킬: (백엔드 DB — UI 없음.)
 
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)
 - 규칙(불변): 각 항목 **실제 화면 before/after 캡처로만 완료**. 추측 금지·거짓성공/임의환산 금지·회귀 금지(pytest+CI)·토큰 단일소스.

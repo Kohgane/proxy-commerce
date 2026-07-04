@@ -186,7 +186,7 @@ def init_schema():
     if _schema_done or not pg_enabled():
         return
     here = Path(__file__).parent
-    for fname in ("schema_stage1.sql", "schema_stage2.sql"):
+    for fname in ("schema_stage1.sql", "schema_stage2.sql", "schema_stage3.sql"):
         f = here / fname
         if f.exists():
             run_ddl(f.read_text(encoding="utf-8"))
