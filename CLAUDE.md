@@ -368,6 +368,10 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
 ## 🟦 DB 이관 (오너 2026-07-04 — Google Sheets → Supabase Postgres, 단계적)
 - 접속정보는 Render 환경변수(SUPABASE_DB_URL/DATABASE_URL)로만, 하드코딩 금지. 미설정이면 기존 Sheets/인메모리
   폴백(무회귀). 단계: 1(collect_history·user_tokens) → 2(products·market_links 암호화) → 3(주문·정산, Sheets 읽기전용 강등).
+- ⚠️ **Supabase 연결 규칙(오너 2026-07-04):** 런타임=트랜잭션 풀러(6543, SUPABASE_DB_URL) — prepared statement 이슈
+  주의(psycopg2는 named prepared 안 씀·pg.get_conn이 반납 전 rollback으로 idle-in-transaction 정리). **DDL·마이그레이션은
+  직접 연결(5432, 별도 env DATABASE_URL_DIRECT)** 로: pg.run_ddl/init_schema·pg.direct_conn()·migrate 스크립트가 직접 연결
+  사용(미설정이면 SUPABASE_DB_URL 폴백). CREATE EXTENSION/FUNCTION/TRIGGER는 풀러서 실패하므로 직접 연결 필수.
 - ✅ **1단계 collect_history + user_tokens PG 이관 (#417):** 버그 최다 2테이블. 신규 `src/db/pg.py`(env 접속·풀·
   `tx()` 트랜잭션 커밋 후에만 성공·`init_schema()`), `src/db/schema_stage1.sql`(uuid PK·user_id 스코프·**product_key
   부분 유니크**(활성행만, 중복수집 방지)·deleted_at 소프트삭제·created/updated_at + updated_at 트리거), `src/db/

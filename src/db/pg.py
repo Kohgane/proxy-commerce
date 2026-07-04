@@ -24,8 +24,18 @@ _available = False
 
 
 def db_url() -> str:
-    """환경변수에서 접속 URL(없으면 '')."""
+    """런타임 접속 URL — Supabase 트랜잭션 풀러(포트 6543) 권장. 없으면 ''."""
     return (os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL") or "").strip()
+
+
+def direct_url() -> str:
+    """DDL·마이그레이션용 **직접 연결**(포트 5432) URL.
+
+    Supabase 트랜잭션 풀러(6543)는 prepared statement/DDL 이슈가 있어, 스키마 생성·마이그레이션은
+    Direct connection(대시보드의 5432 URL)을 별도 env(DATABASE_URL_DIRECT)로 받아 쓴다. 미설정이면
+    풀러 URL로 폴백(로컬/단일 PG는 구분 없음).
+    """
+    return (os.getenv("DATABASE_URL_DIRECT") or "").strip() or db_url()
 
 
 def pg_enabled() -> bool:
@@ -90,12 +100,20 @@ def _get_pool():
 
 @contextlib.contextmanager
 def get_conn():
-    """풀에서 커넥션을 빌려주고 반납."""
+    """풀에서 커넥션을 빌려주고 반납.
+
+    트랜잭션 풀러(6543) 호환: 반납 전 `rollback()`으로 열린 트랜잭션을 반드시 정리한다
+    (idle-in-transaction·prepared statement 잔류 방지). tx()는 이미 commit했으므로 no-op.
+    """
     pool = _get_pool()
     conn = pool.getconn()
     try:
         yield conn
     finally:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         pool.putconn(conn)
 
 
@@ -124,13 +142,36 @@ _SCHEMA_FILE = Path(__file__).with_name("schema_stage1.sql")
 _schema_done = False
 
 
+@contextlib.contextmanager
+def direct_conn():
+    """마이그레이션용 **직접 연결(5432)** 1회용 컨텍스트 — 정상 종료 시 commit, 예외 시 rollback."""
+    conn = _connect(direct_url())
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def run_ddl(ddl: str):
+    """DDL을 **직접 연결(5432)** 로 실행 — 트랜잭션 풀러의 DDL/prepared 이슈 회피."""
+    conn = _connect(direct_url())
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(ddl)
+    finally:
+        conn.close()
+
+
 def init_schema():
-    """1단계 스키마를 idempotent 적용(collect_history, user_tokens)."""
+    """1단계 스키마를 idempotent 적용(collect_history, user_tokens). 직접 연결로 실행."""
     global _schema_done
     if _schema_done or not pg_enabled():
         return
-    ddl = _SCHEMA_FILE.read_text(encoding="utf-8")
-    with tx() as cur:
-        cur.execute(ddl)
+    run_ddl(_SCHEMA_FILE.read_text(encoding="utf-8"))
     _schema_done = True
-    logger.info("Postgres 1단계 스키마 적용 완료")
+    logger.info("Postgres 1단계 스키마 적용 완료(직접 연결)")
