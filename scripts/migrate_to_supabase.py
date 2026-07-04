@@ -108,18 +108,50 @@ def migrate_tokens(cur, dry=False) -> tuple:
     return len(rows), inserted, int(cur.fetchone()[0])
 
 
+def migrate_market_links(cur, dry=False) -> tuple:
+    """data/market_credentials/<seller>.json(Fernet) → market_links(암호문). 파일에서 직접 로드."""
+    import glob
+    import os as _os
+    from src.seller_console import market_credentials as mc
+    from src.db import market_links_pg as ml
+    files = glob.glob(_os.path.join(mc._DATA_DIR, "*.json")) if _os.path.isdir(mc._DATA_DIR) else []
+    sellers = 0
+    inserted = 0
+    for f in files:
+        seller = _os.path.splitext(_os.path.basename(f))[0]
+        creds = mc.load_all_from_file(seller)   # {market: {env:val}} — PG 활성이어도 파일 직접
+        if not creds:
+            continue
+        sellers += 1
+        if dry:
+            continue
+        for market, values in creds.items():
+            enc_blob, is_enc = ml._encode(values)
+            cur.execute(
+                """INSERT INTO market_links (user_id, market, enc_blob, is_encrypted)
+                   VALUES (%s,%s,%s,%s)
+                   ON CONFLICT (user_id, market) WHERE deleted_at IS NULL
+                   DO UPDATE SET enc_blob=EXCLUDED.enc_blob, is_encrypted=EXCLUDED.is_encrypted""",
+                (seller, market, enc_blob, is_enc))
+            inserted += 1
+    cur.execute("SELECT count(*) FROM market_links WHERE deleted_at IS NULL")
+    return sellers, inserted, int(cur.fetchone()[0])
+
+
 def main():
     dry = "--count" in sys.argv
     pg = _pg()
-    _log("=== 이관 1단계: Sheets → Supabase Postgres (직접 연결 5432) ===")
+    _log("=== 이관 1·2단계: Sheets/파일 → Supabase Postgres (직접 연결 5432) ===")
     # 마이그레이션은 직접 연결(5432)로 — 트랜잭션 풀러(6543)의 prepared/DDL 이슈 회피.
     with pg.direct_conn() as conn:
         with conn.cursor() as cur:
             sc, si, sp = migrate_collect(cur, dry=dry)
             tc, ti, tp = migrate_tokens(cur, dry=dry)
+            mls, mli, mlp = migrate_market_links(cur, dry=dry)
     _log(f"[collect_history] Sheets 원본 {sc}건 · 삽입 {si}건 · PG 총 {sp}건")
     _log(f"[user_tokens]     Sheets 원본 {tc}건 · 삽입 {ti}건 · PG 총 {tp}건")
-    # 건수 대조(멱등 재실행 시 삽입 0이어도 PG 총계가 Sheets 이상이면 OK)
+    _log(f"[market_links]    파일 셀러 {mls}명 · 삽입 {mli}건 · PG 총 {mlp}건")
+    # 건수 대조(멱등 재실행 시 삽입 0이어도 PG 총계가 원본 이상이면 OK)
     ok = (sp >= sc) and (tp >= tc)
     _log(f"검증(건수 대조): collect PG≥Sheets={sp>=sc}, tokens PG≥Sheets={tp>=tc} → {'OK' if ok else '불일치'}")
     return 0 if ok else 1

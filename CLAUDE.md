@@ -393,6 +393,23 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   test_v45_token_diag(5: 분류·읽기429관대·append429재시도·권한실패원인안내·라우트원인전달). 전체 그린(폴백). **검증 캡처:**
   docs/screens/v45/bm-token-supabase.png(PG 발급 성공→'북마클릿 준비됐어요'·드래그 앵커·durable 1행, 로컬 PG 실행). ※라이브는
   오너가 Render에 SUPABASE_DB_URL 설정 시 완전 해소(그 전엔 Sheets 재시도+관대검증으로 완화, 실패 시 원인 로깅). 적용 스킬: (백엔드.)
+- ✅ **연결 규칙 확정 + psycopg3/NullPool 전환 (#419 이후 · 오너 2026-07-04):** 오너가 Render 설정 확정 — 런타임=
+  **`DATABASE_URL`**(트랜잭션 풀러 6543, 구 SUPABASE_DB_URL도 허용), DDL/마이그레이션=**`DATABASE_URL_DIRECT`**(직접 5432).
+  드라이버 **psycopg2→psycopg3** 교체(requirements psycopg[binary]), **NullPool**(클라 풀 없음·매 작업 새 연결+close)
+  + **prepare_threshold=None**(prepared statement 미사용) → 풀러 호환. DDL은 psycopg3 확장 프로토콜이 단일 문장만 →
+  `_split_sql`($$ 함수본문 경계 보존)로 문장별 실행(직접 연결·autocommit). **부팅 로그 'DB 연결: Supabase OK' 1줄**
+  (order_webhook 부팅이 pg_enabled()+init_schema 호출, 미설정이면 조용히 폴백). 가드 test_v45_supabase_conn(6: URL
+  precedence·직접연결 DDL·NullPool·prepared 비활성·부팅로그). **라이브 검증 캡처(로컬 PG psycopg3):**
+  docs/screens/v45/supabase-stage1-live.png(북마클릿 토큰 발급→재시작 durable / 수집 20건 삭제→재조회 total 0×3 부활 0).
+- ✅ **2단계 market_links(연동정보·암호화 컬럼) PG 이관 (#420):** market_credentials 저장을 data/<seller>.json(Render
+  ephemeral·재배포 소실) → PG(영속). 신규 `src/db/schema_stage2.sql`(market_links: uuid·user_id·market·**enc_blob**(Fernet
+  암호문)·is_encrypted·deleted_at·timestamps·(user_id,market) 활성 유니크), `src/db/market_links_pg.py`(load_all/get/save/
+  delete — 앱이 Fernet 암호화 후 enc_blob에만 저장, DB엔 암호문). market_credentials가 pg_enabled면 위임(get은 _load_all
+  경유·save/delete/_load_all 위임), 아니면 파일. `load_all_from_file`(이관용 파일 직접 로더). init_schema가 stage2도 적용.
+  migrate_to_supabase에 market_links 이관(파일→PG 암호문) 추가. 가드 test_v45_supabase_stage2(5, DATABASE_URL 설정 시만:
+  저장→재시작 유지·DB 암호문(평문0)·셀러격리·삭제·병합). **검증 캡처:** docs/screens/v45/supabase-stage2.png(쿠팡 저장→
+  재시작 유지·is_encrypted True·평문 노출0·Fernet gAAAA·타셀러 미노출·삭제). ⏳ **products(수집상품 상세·이미지배열·상세설명)**
+  는 collect_history.extra_json(jsonb)에 이미 durable — 별도 정규화 테이블은 오너 read-model 확인 후(2b).
 
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)
 - 규칙(불변): 각 항목 **실제 화면 before/after 캡처로만 완료**. 추측 금지·거짓성공/임의환산 금지·회귀 금지(pytest+CI)·토큰 단일소스.

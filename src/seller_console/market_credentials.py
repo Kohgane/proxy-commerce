@@ -114,11 +114,32 @@ def _fernet():
     return None
 
 
+def _pg_links():
+    """Postgres 이관 백엔드 활성 시 market_links_pg 반환(스키마 1회), 아니면 None(data/ 파일 폴백)."""
+    try:
+        from src.db import pg as _pgmod
+        if _pgmod.pg_enabled():
+            _pgmod.init_schema()
+            from src.db import market_links_pg as _ml
+            return _ml
+    except Exception as exc:
+        logger.warning("PG 연동정보 백엔드 확인 실패 — data/ 폴백: %s", exc)
+    return None
+
+
 def _path(seller_id: str) -> str:
     return os.path.join(_DATA_DIR, f"{_safe_seller_id(seller_id)}.json")
 
 
 def _load_all(seller_id: str) -> Dict[str, Dict[str, str]]:
+    _b = _pg_links()
+    if _b is not None:
+        return _b.load_all(seller_id)
+    return load_all_from_file(seller_id)
+
+
+def load_all_from_file(seller_id: str) -> Dict[str, Dict[str, str]]:
+    """data/<seller>.json에서 직접 로드(복호화) — 이관 스크립트가 PG 활성 시에도 원본을 읽게."""
     path = _path(seller_id)
     if not os.path.exists(path):
         return {}
@@ -186,6 +207,9 @@ def save(seller_id: str, market: str, values: Dict[str, str]) -> Dict[str, str]:
     # 병합: 입력한 필드만 갱신하고 나머지(예: 비워둔 비밀값)는 기존 값 유지.
     existing = data.get(market) if isinstance(data.get(market), dict) else {}
     merged = {**existing, **cleaned}
+    _b = _pg_links()
+    if _b is not None:
+        return _b.save(seller_id, market, merged)     # PG: (user_id,market) upsert(암호문)
     data[market] = merged
     _save_all(seller_id, data)
     return merged
@@ -193,6 +217,9 @@ def save(seller_id: str, market: str, values: Dict[str, str]) -> Dict[str, str]:
 
 def delete(seller_id: str, market: str) -> bool:
     """셀러의 특정 마켓 자격증명을 삭제한다."""
+    _b = _pg_links()
+    if _b is not None:
+        return _b.delete(seller_id, market)
     data = _load_all(seller_id)
     if market in data:
         del data[market]
