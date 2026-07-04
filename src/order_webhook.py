@@ -34,6 +34,15 @@ try:
 except Exception:
     pass
 
+# 이관: 부팅 시 Supabase Postgres 연결·스키마 부트스트랩(성공 시 'DB 연결: Supabase OK' 1줄).
+#   DATABASE_URL 미설정이면 조용히 Sheets 폴백(로그 없음, 무회귀).
+try:
+    from src.db import pg as _pgboot
+    if _pgboot.pg_enabled():          # 성공 시 pg.py가 'DB 연결: Supabase OK' 로깅
+        _pgboot.init_schema()         # 1·2단계 테이블 idempotent 생성(직접 연결)
+except Exception as _pgexc:
+    logger.warning("Supabase 부팅 연결/스키마 실패 — Sheets 폴백: %s", _pgexc)
+
 app = Flask(__name__)
 
 # 프록시(Render/nginx) 뒤에서 X-Forwarded-Proto/Host를 신뢰하여 scheme/host를 올바르게 반영
