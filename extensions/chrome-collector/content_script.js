@@ -476,6 +476,14 @@ if (!window.__kgpViewportBound) {
   window.__kgpViewportBound = true;
 }
 
+// v45 P4·P5: 지속 오버레이(FAB·벌크바·구석 배지)를 <body>가 아니라 **documentElement(<html>) 직속**에
+//   붙인다. 이유: ①SPA가 <body> 전체를 갈아끼워도 오버레이가 살아남음(P5 깜빡임 방지) ②<body>에 걸린
+//   transform/filter가 position:fixed 기준을 바꿔 '좌상단 처박힘'을 유발하는 것을 회피(P4 상단중앙 고정).
+//   (transient 토스트/도장은 짧게 살다 사라져 <body>여도 무방.)
+function _kgpMount(el) {
+  (document.documentElement || document.body).appendChild(el);
+}
+
 // 수집 누적 카운트 + 마일스톤 축하(실제 성공 시에만 호출).
 function kgpBumpCount(n) {
   let c = parseInt(kgpLSget("kgp_collect_count", "0"), 10) || 0;
@@ -569,7 +577,7 @@ function injectCollectButton() {
   // 고가브릿지 토큰: 먹 매트 pill + 금 얇은 링 + 청록 미세 악센트. (네이비+주황 폐기, v4)
   // 위치: 우측 '중앙'(v7) — 콘텐츠 안 가리게. 드래그로 옮기면 위치 기억(kgp_fab_pos).
   btn.style.cssText = [
-    "position:fixed", "right:16px", "top:calc(50% - 24px)", "z-index:2147483646",
+    "position:fixed", "right:16px", "top:calc(50% - 24px)", "z-index:2147483647",
     "display:flex", "align-items:center", "gap:10px", "max-width:min(82vw,300px)", "box-sizing:border-box",
     "padding:9px 16px 9px 10px", "border:1px solid #c9a24b", "border-radius:999px",
     "background:#1a1714", "color:#f5efe3",
@@ -586,7 +594,7 @@ function injectCollectButton() {
     btn.style.boxShadow = "0 6px 20px rgba(0,0,0,.4),0 0 0 4px rgba(17,154,142,.10)";
   });
   btn.addEventListener("click", () => handleFabClick(btn));
-  document.body.appendChild(btn);
+  _kgpMount(btn);                            // v45 P5: <html> 직속(본문 재렌더에도 상시 표시)
   kgpMakeDraggable(btn, "kgp_fab_pos");      // 드래그 이동 + 위치 기억(v7)
 
   // 처음 등장 시 한 번 살짝 강조(인지성↑, 과하지 않게). reduced-motion이면 생략.
@@ -729,11 +737,18 @@ function _kgpAmazonSponsored(el) {
   return false;
 }
 
-// 아마존 검색결과 어댑터 — 실제 '상품' 카드만(유효 ASIN + 가격 + 상품URL). 스폰서/뮤직/앱/미디어 제외.
-// v25 P0: 전체선택 시 광고·미디어 카드까지 잡히던 문제 → data-asin(10자) 필수 + 스폰서 제외.
+// 아마존 검색결과 어댑터 — 실제 '상품' 카드(유효 ASIN + 상품URL). 뮤직/앱/미디어 위젯 제외.
+// v25 P0: data-asin(10자) 필수로 비-상품 위젯 제외.
+// v45 P3: '버튼이 카드마다 있다 없다' 해소 — 셀렉터를 s-search-result만이 아니라 **유효 data-asin을
+//   가진 카드 전부**로 넓히고(레이아웃 변형·스폰서 컨테이너 커버), **스폰서(광고) 상품도 포함**한다
+//   (유효 ASIN=실제 소싱 가능 상품). 비-상품 미디어(ASIN 없음)는 자연 제외 = v25 '광고·미디어 제외' 의도 유지.
 function _kgpAmazonCards() {
   const cards = [], seen = {};
-  const all = document.querySelectorAll('[data-component-type="s-search-result"]');
+  // s-search-result ∪ div[data-asin]:not([data-asin=""]) — 요소 단위 dedupe.
+  const set = new Set();
+  document.querySelectorAll('[data-component-type="s-search-result"], div[data-asin]:not([data-asin=""])')
+    .forEach((e) => set.add(e));
+  const all = Array.from(set);
   _kgpScannedCount = all.length;                          // '전체 N개' (상품/비상품 합)
   all.forEach((el) => {
     try {
@@ -741,9 +756,12 @@ function _kgpAmazonCards() {
       // 유효 ASIN(B0… 등 10자 영숫자)만 = 실제 상품. 뮤직/앱/프로모 위젯은 ASIN이 없거나 비정상.
       const asin = (el.getAttribute("data-asin") || "").trim();
       if (!/^[A-Z0-9]{10}$/.test(asin)) return;
-      if (_kgpAmazonSponsored(el)) return;                 // 스폰서(광고) 제외
-      // v42 E-4: 유효 ASIN(비스폰서)이면 상품 — 앵커 셀렉터 변형·가격 없는 카드('옵션 보기' 등)도
-      //   누락하지 않는다. href는 앵커 없으면 ASIN으로 구성, 제목/이미지 셀렉터를 넓힌다. 가격은 선택.
+      // 중첩(스폰서 컨테이너 안 상품 카드) 시 같은 ASIN을 가진 조상이 있으면 스킵(중복 방지).
+      const parentAsin = el.parentElement && el.parentElement.closest('[data-asin]:not([data-asin=""])');
+      if (parentAsin && parentAsin !== el && (parentAsin.getAttribute("data-asin") || "").trim() === asin) return;
+      const sponsored = _kgpAmazonSponsored(el);           // v45 P3: 제외 아님 — 태깅만(스폰서 상품도 수집).
+      // v42 E-4: 유효 ASIN이면 상품 — 앵커 셀렉터 변형·가격 없는 카드('옵션 보기' 등)도 누락하지 않는다.
+      //   href는 앵커 없으면 ASIN으로 구성, 제목/이미지 셀렉터를 넓힌다. 가격은 선택.
       const a = el.querySelector('a.a-link-normal[href*="/dp/"], h2 a, a.a-link-normal.s-no-outline, a[href*="/dp/"]');
       let href = a && a.href ? a.href.split("?")[0].split("#")[0] : "";
       if (!href || href.indexOf("http") !== 0) href = location.origin + "/dp/" + asin;   // ASIN 폴백
@@ -760,7 +778,8 @@ function _kgpAmazonCards() {
       const bimg = _kgpBestImg(img);                        // v41 X-1: lazy placeholder 대신 실제 이미지
       cards.push({
         url: href, title: (title || "(제목 없음)").slice(0, 200),
-        image: bimg, images: bimg ? [bimg] : [], price: pr.price, currency: pr.currency, el: el,   /* v42 1-1: USD 기본값 금지 */
+        image: bimg, images: bimg ? [bimg] : [], price: pr.price, currency: pr.currency,
+        sponsored: sponsored, el: el,   /* v42 1-1: USD 기본값 금지 · v45 P3: 스폰서 태깅(제외 아님) */
       });
     } catch (e) { /* noop */ }
   });
@@ -975,7 +994,7 @@ function kgpBuildToolbar() {
   bar.id = KGP_TOOLBAR_ID;
   bar.style.cssText = [
     "position:fixed", "top:12px", "left:50%", "transform:translateX(-50%)",
-    "z-index:2147483646", "display:flex", "align-items:center", "gap:10px",
+    "z-index:2147483647", "display:flex", "align-items:center", "gap:10px",
     "padding:8px 14px", "border-radius:999px", "border:1px solid #c9a24b",
     "background:#1a1714", "color:#f5efe3",
     "font:13px/1.2 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
@@ -1045,7 +1064,7 @@ function kgpBuildToolbar() {
       kgpShowReopenPill();
     }
   });
-  document.body.appendChild(bar);
+  _kgpMount(bar);                          // v45 P4: <html> 직속(상단중앙 고정, 좌상단 처박힘 방지)
   // 드래그로 이동 + 위치 기억(grip 영역만 잡기, 버튼 클릭은 드래그 제외).
   kgpMakeDraggable(bar, "kgp_bar_pos", { handle: bar, ignore: "button,[data-act]" });
 }
@@ -1075,7 +1094,7 @@ function kgpShowReopenPill() {
     '<span style="font-weight:700;font-size:12px">수집 열기</span>' +
     '<span class="kgp-pill-count" style="display:' + (sel ? "inline-block" : "none") + ';background:#119a8e;color:#fff;border-radius:999px;padding:1px 7px;font-size:11px;font-weight:800">' + (sel || "") + '</span>';
   pill.style.cssText = [
-    "position:fixed", "top:12px", "left:12px", "z-index:2147483646",
+    "position:fixed", "top:12px", "left:12px", "z-index:2147483647",
     "display:flex", "align-items:center", "gap:6px", "padding:5px 10px 5px 6px",
     "border:1px solid #c9a24b", "border-radius:999px",
     "background:#1a1714", "color:#f5efe3",
@@ -1089,7 +1108,7 @@ function kgpShowReopenPill() {
     _kgpClosed = false;
     kgpInjectListing();               // 바 + 배지 복원(선택 유지)
   });
-  document.body.appendChild(pill);
+  _kgpMount(pill);                         // v45 P5: <html> 직속(본문 재렌더에도 상시 표시)
   kgpMakeDraggable(pill, "kgp_bar_pos", {});
 }
 

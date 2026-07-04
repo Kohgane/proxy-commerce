@@ -288,6 +288,22 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   전건 durable). 전체 10767 passed. **판정 캡처:** docs/screens/v45/p2-quota-retry.png(매 append 첫 시도 429 주입 →
   재시도 회복, 3회×16 각 성공16·실패0, 이력 48건 전건 실존, 관측 429=48). 적용 스킬: (백엔드 write 재시도 — UI/CSS
   렌더 변경 없음 → gogabridj-design 불요. impeccable/humanizer CLI 미설치.)
+- ✅ **P3·P4·P5 확장 오버레이 견고화 (그룹 1 PR):** 확장 content_script.js. **P3(버튼 있다 없다):** 아마존 카드
+  셀렉터가 `[data-component-type="s-search-result"]`만이라 레이아웃 변형 카드를 놓쳐 '카드마다 있다 없다' → 셀렉터를
+  **`s-search-result ∪ div[data-asin]:not([data-asin=""])`**(요소 dedupe)로 넓히고, **스폰서(광고) 상품도 포함**
+  (유효 ASIN=실제 소싱 가능, v45 최신 우선 — v25 '스폰서 제외' 반전; 태깅만 `sponsored:`, 제외 아님). 비-상품 미디어
+  (ASIN 없음)는 여전히 제외(v25 의도 유지). 중첩 data-asin 조상 스킵(중복 0). 정직 '전체 N 중 상품 M · 제외 K'.
+  **P4(벌크바 좌상단 처박힘):** 바는 이미 fixed top:12px left:50% translateX(-50%)였으나 body-append라 body 조상
+  transform이 fixed 기준을 바꿔 처박힘 → **`_kgpMount`로 documentElement(<html>) 직속** + z-index 최상위(2147483647).
+  드래그 저장 위치는 kgpClampFixed로 뷰포트 클램프(기존). **P5(FAB 깜빡임):** FAB/바/구석배지를 documentElement 직속
+  마운트 → SPA가 body 통째 교체해도 생존. MutationObserver 제거 감지 디바운스 재부착은 기존(v38#4). 가드
+  test_v45_p3p4p5_extension(P3 셀렉터·스폰서 태깅·node로 21상품(스폰서2 포함)·미디어 제외 실증 + P4/P5 documentElement
+  마운트·z-index·observer) + test_extension_amazon_products_v25/test_v42_e4_selectall 스폰서 포함으로 갱신.
+  manifest 1.5.33→1.5.34(버전핀 5곳 갱신). 전체 10775 passed. **판정 캡처:** docs/screens/v45/p3p4p5-extension.png
+  (실제 content_script 주입: 상품 12개(일반8+변형2+스폰서2) 전부 '수집' 배지·미디어1 제외·바 상단중앙 parent=HTML +
+  body 통째 교체에도 바 생존). ※라이브 아마존/Temu 최종 확인은 오너가 확장 1.5.34 재로딩 후(캡처는 실제 어댑터 실행분).
+  적용 스킬: (확장 오버레이 위치/셀렉터 — 우리 토큰 색 유지·하드코딩 hex는 기존 확장 인라인 스타일 관행. gogabridj-design
+  토큰은 앱 CSS 전용, 확장은 인라인. impeccable/humanizer CLI 미설치.)
 
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)
 - 규칙(불변): 각 항목 **실제 화면 before/after 캡처로만 완료**. 추측 금지·거짓성공/임의환산 금지·회귀 금지(pytest+CI)·토큰 단일소스.
