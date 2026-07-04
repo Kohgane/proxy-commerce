@@ -85,7 +85,7 @@
                  draggable="true"
                  title="&#8203;"
                  aria-label="고가수집기"
-                 style="flex:none;width:44px;height:44px;display:inline-block;border-radius:12px;background:var(--ink,#1a1714) url('/seller/static/favicon-48.png?v=179') center/26px 26px no-repeat;box-shadow:0 8px 22px rgba(26,23,20,.2);text-decoration:none;font-size:0;line-height:0;cursor:grab;"></a>
+                 style="flex:none;width:44px;height:44px;display:inline-block;border-radius:12px;background:var(--ink,#1a1714) url('/seller/static/favicon-48.png?v=180') center/26px 26px no-repeat;box-shadow:0 8px 22px rgba(26,23,20,.2);text-decoration:none;font-size:0;line-height:0;cursor:grab;"></a>
               <span style="font-size:.95rem;color:var(--ink,#1a1714);font-weight:600;pointer-events:none;">고가수집기 — <span class="text-muted fw-normal">이 페이지에서 북마크바로 끌어다 놓으세요 (누르지 마세요)</span></span>
             </div>
             <div class="steps mt-3 text-start small" style="max-width:420px;margin:0 auto;">
@@ -155,7 +155,7 @@ function buildBookmarkletCode(translate) {
     "html:(document.documentElement?document.documentElement.outerHTML:'').slice(0,800000)," +
     "translate:" + (translate ? "true" : "false") + "};" +
     // 인페이지 소형 토스트(새 창 0) — 고가수집기 위치(우하단)에 살짝. B-1: 토스트에 우리 브릿지 마크 고정(우리가 DOM을 그리므로 100% 우리 아이콘).
-    "function K(m,ok){var t=document.getElementById('kgpbm');if(!t){t=document.createElement('div');t.id='kgpbm';t.style.cssText='position:fixed;right:20px;bottom:84px;z-index:2147483647;display:flex;align-items:center;gap:8px;max-width:300px;padding:10px 14px;border-radius:10px;font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.3)';var ic=document.createElement('img');ic.src=S+'/seller/static/favicon-32.png?v=179';ic.alt='';ic.style.cssText='width:20px;height:20px;border-radius:5px;flex:none;background:#fff';t.appendChild(ic);var tx=document.createElement('span');tx.id='kgpbmx';tx.style.whiteSpace='pre-wrap';t.appendChild(tx);document.body.appendChild(t);}t.style.background=ok?'#16a34a':'#dc2626';var x=document.getElementById('kgpbmx');if(x)x.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0'},4500);}" +
+    "function K(m,ok){var t=document.getElementById('kgpbm');if(!t){t=document.createElement('div');t.id='kgpbm';t.style.cssText='position:fixed;right:20px;bottom:84px;z-index:2147483647;display:flex;align-items:center;gap:8px;max-width:300px;padding:10px 14px;border-radius:10px;font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.3)';var ic=document.createElement('img');ic.src=S+'/seller/static/favicon-32.png?v=180';ic.alt='';ic.style.cssText='width:20px;height:20px;border-radius:5px;flex:none;background:#fff';t.appendChild(ic);var tx=document.createElement('span');tx.id='kgpbmx';tx.style.whiteSpace='pre-wrap';t.appendChild(tx);document.body.appendChild(t);}t.style.background=ok?'#16a34a':'#dc2626';var x=document.getElementById('kgpbmx');if(x)x.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0'},4500);}" +
     "K('수집 중…',true);" +
     "fetch(S+'/api/v1/collect/extension',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+T},body:JSON.stringify(data)})" +
     ".then(function(r){return r.json().catch(function(){return{}})})" +

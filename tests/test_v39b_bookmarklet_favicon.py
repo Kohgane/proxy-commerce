@@ -30,7 +30,7 @@ def test_install_page_favicon_inheritance_links(client):
     html = client.get("/seller/bookmarklet").get_data(as_text=True)
     assert 'sizes="48x48"' in html and "favicon-48.png" in html
     assert 'rel="shortcut icon"' in html and "favicon.ico" in html
-    assert "favicon.svg?v=179" in html
+    assert "favicon.svg?v=180" in html
     assert "globe" not in BASE.lower()
 
 
@@ -42,8 +42,8 @@ def test_drag_anchor_icon_only_zero_width_title():
     assert ">고가수집기</a>" not in TPL
     assert 'id="bookmarkletLink"' in TPL and "></a>" in TPL    # 앵커 내부 비어 있음
     assert 'aria-label="고가수집기"' in TPL                    # a11y 이름은 aria-label로만
-    assert "favicon-48.png?v=179" in TPL          # 앵커 마크(CSS background)
-    assert 'favicon-32.png?v=179' in TPL          # 토스트 마크
+    assert "favicon-48.png?v=180" in TPL          # 앵커 마크(CSS background)
+    assert 'favicon-32.png?v=180' in TPL          # 토스트 마크
     assert ">수집</a>" not in TPL                  # 옛 '수집' 단독 라벨 폐기
 
 
