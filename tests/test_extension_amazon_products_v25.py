@@ -15,14 +15,23 @@ import pytest
 CS = Path("extensions/chrome-collector/content_script.js").read_text(encoding="utf-8")
 
 
-def test_amazon_requires_valid_asin_and_excludes_sponsored():
-    # 유효 ASIN 필수 + 스폰서 제외 함수 + 호출
+def test_amazon_requires_valid_asin():
+    # 유효 ASIN(10자) 필수로 비-상품 위젯(뮤직/앱/프로모) 제외 — v25 핵심.
     assert "function _kgpAmazonSponsored" in CS
     assert "/^[A-Z0-9]{10}$/.test(asin)" in CS
-    assert "_kgpAmazonSponsored(el)" in CS
-    # 스폰서 라벨 셀렉터(클래스/컴포넌트 기반)
+    # v45 P3: 스폰서 라벨 셀렉터는 유지(태깅용) — 스폰서 라벨 판별 자체는 계속 존재.
     assert "s-sponsored-label-text" in CS
     assert "sp-sponsored-result" in CS
+
+
+def test_v45_p3_sponsored_products_included_not_excluded():
+    """v45 P3(최신 우선): 스폰서 상품도 수집 대상(제외 아님) — 유효 ASIN이면 소싱 가능.
+    _kgpAmazonSponsored는 '제외'가 아니라 카드에 sponsored 플래그로 태깅만 한다."""
+    # 셀렉터 확장: data-asin 카드 전부(레이아웃 변형·스폰서 커버)
+    assert 'div[data-asin]:not([data-asin=""])' in CS
+    # 스폰서를 return(제외)하지 않고 태깅 — 'if (_kgpAmazonSponsored(el)) return' 패턴이 없어야 함.
+    assert "if (_kgpAmazonSponsored(el)) return" not in CS
+    assert "sponsored: sponsored" in CS   # 카드 객체에 태깅
 
 
 def test_scanned_vs_product_count_surfaced():

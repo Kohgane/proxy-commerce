@@ -81,5 +81,6 @@ def test_amazon_adapter_recovers_priceless_cards():
     import json
     o = json.loads(res.stdout.strip())
     assert o["scanned"] == 26           # 전체(16+8+2)
-    assert o["products"] == 24          # 스폰서 2 제외, 무가 8 복구 → 24 (옛날엔 16)
-    assert o["priced"] == 16            # 가격 있는 건 16
+    # v45 P3(최신 우선): 스폰서 상품도 포함 → 26. (E-4의 '무가 8 복구'는 유지, 스폰서 제외만 반전.)
+    assert o["products"] == 26          # 유가16 + 무가8 복구 + 스폰서2 포함
+    assert o["priced"] == 18            # 가격 있는 건 유가16 + 스폰서2(가격 있음)

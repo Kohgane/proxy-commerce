@@ -24,7 +24,7 @@ def test_manifest_matches_all_urls():
 def test_fab_injection_has_no_auth_gate():
     """버튼은 인증 상태와 무관하게 표시(토큰 검사는 클릭 때만) — injectCollectButton에 토큰/auth 검사 없음."""
     i = CS.index("function injectCollectButton(")
-    j = CS.index("document.body.appendChild(btn)", i)
+    j = CS.index("_kgpMount(btn)", i)   # v45 P5: body.appendChild → _kgpMount(<html> 직속)
     body = CS[i:j]
     for bad in ("token", "Bearer", "getSettings", "authRequired", "401"):
         assert bad not in body, f"injectCollectButton에 인증 게이트({bad}) 있으면 안 됨"
