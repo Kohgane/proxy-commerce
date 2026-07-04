@@ -1,0 +1,133 @@
+"""scripts/migrate_to_supabase.py — 이관 1단계: Google Sheets → Supabase Postgres.
+
+버그 최다 테이블 2개(collect_history, user_tokens)를 Sheets에서 읽어 PG로 옮기고 건수 대조한다.
+접속정보는 환경변수로만: GOOGLE_SHEET_ID(원본) + SUPABASE_DB_URL/DATABASE_URL(대상). 하드코딩 금지.
+
+사용:
+    GOOGLE_SHEET_ID=... SUPABASE_DB_URL=... python scripts/migrate_to_supabase.py          # 실행
+    ... python scripts/migrate_to_supabase.py --count                                       # 건수만 대조(드라이런)
+
+멱등: 이미 옮긴 행은 product_key 유니크/토큰 해시 유니크로 중복 삽입 0. 재실행 안전.
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+from datetime import datetime, timezone
+
+
+def _log(msg):
+    print(msg, flush=True)
+
+
+def _sheet_collect_rows():
+    """Sheets collect_history 전체 행(dict)."""
+    from src.seller_console import collect_history_store as ch
+    if not ch._SHEET_ID:
+        return []
+    return list(ch._read_sheet_records())
+
+
+def _sheet_token_rows():
+    from src.auth import personal_tokens as pt
+    if not pt._SHEET_ID:
+        return []
+    return list(pt._sheet_records())
+
+
+def _pg():
+    from src.db import pg
+    if not pg.pg_enabled():
+        raise SystemExit("SUPABASE_DB_URL/DATABASE_URL 미설정 또는 연결 실패 — 이관 대상 없음.")
+    pg.init_schema()
+    return pg
+
+
+def migrate_collect(pg, dry=False) -> tuple:
+    rows = _sheet_collect_rows()
+    from src.collectors.product_key import normalize_product_key
+    inserted = 0
+    for r in rows:
+        if dry:
+            continue
+        url = r.get("url", "")
+        pkey = normalize_product_key(url) or None
+        collected_at = r.get("collected_at") or datetime.now(timezone.utc).isoformat()
+        extra = r.get("extra_json") or "{}"
+        try:
+            with pg.tx() as cur:
+                # id 보존(레거시 hex는 uuid가 아니므로 새 uuid 부여, 원본 id는 extra에 보관).
+                extra_obj = json.loads(extra) if isinstance(extra, str) else (extra or {})
+                if r.get("id"):
+                    extra_obj.setdefault("_legacy_id", str(r.get("id")))
+                cur.execute(
+                    """INSERT INTO collect_history
+                       (user_id, product_key, source, domain, url, title, image_url, price, currency, status, preview_url, extra_json, created_at)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s)
+                       ON CONFLICT (user_id, product_key)
+                         WHERE product_key IS NOT NULL AND product_key <> '' AND deleted_at IS NULL
+                       DO NOTHING""",
+                    (r.get("seller_id", ""), pkey, r.get("source", ""), r.get("domain", ""),
+                     url, r.get("title", ""), r.get("image_url", ""), str(r.get("price", "") or ""),
+                     r.get("currency", ""), r.get("status", "ok") or "ok", r.get("preview_url", ""),
+                     json.dumps(extra_obj, ensure_ascii=False), collected_at))
+                inserted += cur.rowcount
+        except Exception as exc:
+            _log(f"  collect 행 이관 실패(건너뜀): {exc}")
+    with pg.query() as cur:
+        cur.execute("SELECT count(*) FROM collect_history WHERE deleted_at IS NULL")
+        pg_count = int(cur.fetchone()[0])
+    return len(rows), inserted, pg_count
+
+
+def migrate_tokens(pg, dry=False) -> tuple:
+    rows = _sheet_token_rows()
+    inserted = 0
+    for r in rows:
+        if dry:
+            continue
+        try:
+            scopes = json.loads(r.get("scopes_json", "[]") or "[]")
+        except Exception:
+            scopes = []
+        revoked = str(r.get("revoked", "false")).lower() == "true"
+        th = r.get("token_hash", "")
+        if not th:
+            continue
+        try:
+            with pg.tx() as cur:
+                cur.execute(
+                    """INSERT INTO user_tokens (user_id, token_hash, token_prefix, scopes, status, last_used_at, expires_at, created_at)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                       ON CONFLICT (token_hash) WHERE deleted_at IS NULL DO NOTHING""",
+                    (r.get("user_id", ""), th, th[:8], json.dumps(scopes),
+                     "revoked" if revoked else "active",
+                     r.get("last_used_at") or None, r.get("expires_at") or None,
+                     r.get("created_at") or datetime.now(timezone.utc).isoformat()))
+                inserted += cur.rowcount
+        except Exception as exc:
+            _log(f"  token 행 이관 실패(건너뜀): {exc}")
+    with pg.query() as cur:
+        cur.execute("SELECT count(*) FROM user_tokens WHERE deleted_at IS NULL")
+        pg_count = int(cur.fetchone()[0])
+    return len(rows), inserted, pg_count
+
+
+def main():
+    dry = "--count" in sys.argv
+    pg = _pg()
+    _log("=== 이관 1단계: Sheets → Supabase Postgres ===")
+    sc, si, sp = migrate_collect(pg, dry=dry)
+    _log(f"[collect_history] Sheets 원본 {sc}건 · 삽입 {si}건 · PG 총 {sp}건")
+    tc, ti, tp = migrate_tokens(pg, dry=dry)
+    _log(f"[user_tokens]     Sheets 원본 {tc}건 · 삽입 {ti}건 · PG 총 {tp}건")
+    # 건수 대조(멱등 재실행 시 삽입 0이어도 PG 총계가 Sheets 이상이면 OK)
+    ok = (sp >= sc) and (tp >= tc)
+    _log(f"검증(건수 대조): collect PG≥Sheets={sp>=sc}, tokens PG≥Sheets={tp>=tc} → {'OK' if ok else '불일치'}")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.path.insert(0, os.getcwd())
+    raise SystemExit(main())

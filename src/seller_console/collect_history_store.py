@@ -114,6 +114,22 @@ def _invalidate_cache():
         pass
 
 
+def _pg_backend():
+    """Postgres 이관 백엔드 활성 시 모듈 반환(스키마 1회 부트스트랩), 아니면 None(Sheets 폴백).
+
+    SUPABASE_DB_URL/DATABASE_URL 설정 + psycopg2 + 연결 성공일 때만. 미설정이면 기존 경로 유지(무회귀).
+    """
+    try:
+        from src.db import pg as _pgmod
+        if _pgmod.pg_enabled():
+            _pgmod.init_schema()
+            from src.db import collect_history_pg as _chpg
+            return _chpg
+    except Exception as exc:
+        logger.warning("PG 백엔드 확인 실패 — Sheets 폴백: %s", exc)
+    return None
+
+
 def _all_rows() -> list[dict]:
     """현재 워커가 볼 수 있는 모든 행 = 시트 + 인메모리 합집합(id 기준 dedup).
 
@@ -182,6 +198,12 @@ def append(
     Returns:
         생성된 item_id (6바이트 hex), 또는 return_durable=True면 (item_id, durable).
     """
+    _b = _pg_backend()
+    if _b:
+        return _b.append(source=source, url=url, title=title, image=image, price=price,
+                         currency=currency, status=status, preview_url=preview_url,
+                         extra=extra, seller_id=seller_id, return_durable=return_durable)
+
     item_id = secrets.token_hex(6)
     domain = urlparse(url).netloc
     now = datetime.now(timezone.utc).isoformat()
@@ -238,6 +260,10 @@ def list_items(
         days: 최근 N일
         seller_id: 셀러 격리 필터. None이면 전체(레거시/단일 테넌트), 값이면 해당 셀러 항목만.
     """
+    _b = _pg_backend()
+    if _b:
+        return _b.list_items(domain=domain, source=source, days=days, seller_id=seller_id, seller_ids=seller_ids)
+
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     rows = _all_rows()
 
@@ -268,6 +294,10 @@ def get(item_id: str, seller_id: Optional[str] = None, seller_ids: Optional[set]
         seller_id: 지정 시 해당 셀러의 항목만 반환(타 셀러 항목 접근 차단). None이면 검사 안 함.
         seller_ids: 사용자의 식별자 집합(user_id+email) — 별칭 불일치 대비 관용 매칭.
     """
+    _b = _pg_backend()
+    if _b:
+        return _b.get(item_id, seller_id=seller_id, seller_ids=seller_ids)
+
     def _match(row: dict) -> bool:
         if row.get("id") != item_id:
             return False
@@ -291,6 +321,9 @@ def find_by_product_key(url: str, *, seller_id: Optional[str] = None,
     각 행의 url을 그때그때 정규화해 비교 → 예전 행(키 미저장)도 매칭. 셀러 스코프 격리.
     같은 키가 여러 건이면 가장 최근 것을 반환.
     """
+    _b = _pg_backend()
+    if _b:
+        return _b.find_by_product_key(url, seller_id=seller_id, seller_ids=seller_ids)
     try:
         from src.collectors.product_key import normalize_product_key
     except Exception:
@@ -325,6 +358,10 @@ def update(item_id: str, *, seller_id: Optional[str] = None,
     Returns:
         갱신 성공 여부.
     """
+    _b = _pg_backend()
+    if _b:
+        return _b.update(item_id, seller_id=seller_id, seller_ids=seller_ids, **fields)
+
     allowed = {"title", "image_url", "price", "currency", "status", "extra_json"}
     updates = {k: ("" if v is None else str(v)) for k, v in fields.items() if k in allowed}
     if not updates:
@@ -379,6 +416,9 @@ def update(item_id: str, *, seller_id: Optional[str] = None,
 def existing_ids(item_ids, *, seller_id: Optional[str] = None, seller_ids: Optional[set] = None) -> set:
     """v41 STEP 1-0 write-then-verify: 주어진 id 중 아직 저장소에 남아있는 것(본인 스코프)을 재읽기로 반환.
     삭제 후 이걸로 검증 → 남아있으면 삭제 미영속(부활)로 정직 판정."""
+    _b = _pg_backend()
+    if _b:
+        return _b.existing_ids(item_ids, seller_id=seller_id, seller_ids=seller_ids)
     ids = {str(i) for i in (item_ids or []) if str(i).strip()}
     if not ids:
         return set()
@@ -430,6 +470,9 @@ def delete_ids(item_ids, *, seller_id: Optional[str] = None, seller_ids: Optiona
     Returns:
         실제 삭제된 id 문자열 리스트.
     """
+    _b = _pg_backend()
+    if _b:
+        return _b.delete_ids(item_ids, seller_id=seller_id, seller_ids=seller_ids)
     ids = {str(i) for i in (item_ids or []) if str(i).strip()}
     if not ids:
         return []
