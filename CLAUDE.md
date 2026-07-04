@@ -319,6 +319,19 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   passed. **판정 캡처:** docs/screens/v45/p8-env-sanitize.png(오염 키 → 정제 → os.getenv 클린·env_present True, 값 마스킹).
   ※실제 AI 초안·번역 동작은 오너가 Render에 유효 키 설정 시(코드는 오염돼도 정제해 인식). 적용 스킬: (백엔드 env 정제 —
   UI 없음. impeccable/humanizer CLI 미설치.)
+- ✅ **P9 편집 드로어 칩 탭 분리 (#414):** collect_preview.html 편집 폼을 단일 세로 스크롤 → **7개 칩 탭**으로 분리
+  (퍼센티 벤치마크): [상품명·카테고리][가격][옵션][키워드][썸네일][상세페이지][업로드]. **저위험 방식**: 필드 DOM·ID·
+  핸들러(editTitle/editPrice/editCategory/optionRows/imageGallery/editDescription 등)는 그대로 두고, 각 섹션을 `.kgp-esec`
+  +`data-etab`로 마킹 → `kgpEtab(name)`가 `.kgp-etab-hide` 클래스만 토글(한 탭씩 표시, 라우트 이동·새 창 0). 이미지+제목+
+  가격이 한 row에 묶여 있던 것만 3개 독립 섹션으로 언네스트(썸네일/상품명/가격 탭 분리). 카테고리(DOM 말미)는 basic 탭에
+  귀속 — CSS로 숨김 섹션이 접혀 제목·카테고리가 인접 표시. 상세이미지 블록의 자체 조건부 display는 안 깨지게 클래스만
+  토글. 칩 디자인=고가브릿지 토큰(활성 먹 배경+금 키스톤 아이콘+청록 악센트, 하드코딩 hex 0, 이모지 0=bi-*). 기본 basic
+  활성+나머지 초기 hide(JS 전에도 한 탭). 푸터 액션(저장·원본·마진·등록)은 전 탭 상시. 업로드 탭=등록 진입 CTA
+  (openUploadModal). 가드 test_v45_p9_drawer_tabs(6: 7탭·kgpEtab 클래스토글·필드ID 보존·섹션 매핑·기본탭·실렌더). 전체
+  10786 passed. 적용 스킬: **gogabridj-design**(칩=먹/금/청록 토큰·다리 키스톤·이모지0·드로어=같은 페이지 오버레이).
+  impeccable/humanizer CLI 미설치→의도 수동. **판정 캡처:** docs/screens/v45/p9-drawer-tabs.png(7탭 각 화면 — 상품명·
+  카테고리/가격(289,000원)/옵션/키워드칩/썸네일(대표+갤러리3+상세1)/상세페이지(설명+AI초안+꾸미기)/업로드).
+  → **punchlist v45 P1~P10 완주**(P1·P2·P3·P4·P5·P8·P9 신규 수리 + P6·P7·P10 기완료 확인).
 
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)
 - 규칙(불변): 각 항목 **실제 화면 before/after 캡처로만 완료**. 추측 금지·거짓성공/임의환산 금지·회귀 금지(pytest+CI)·토큰 단일소스.
