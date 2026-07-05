@@ -551,3 +551,65 @@ body::before {
 .pc-toast-info    { border-left-color: var(--gold); }    .pc-toast-info .pc-toast-ic    { color: var(--gold); }
 @keyframes pcToastIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .pc-toast { animation: none; } }
+
+/* ── 인덱스 패스트 스크롤(폰 앱서랍 방식) — kgp-fastscroll.js 짝. 토큰 단일소스 ── */
+.kgp-fs-on { position: relative; }
+/* 섹션 sticky 헤더(초성/A-Z/#) */
+.kgp-fs-head { background: var(--cream); }
+.kgp-fs-head td,
+.kgp-fs-head:not(:has(td)) {
+  position: sticky; top: 0; z-index: 5;
+  background: var(--cream);
+  font-family: var(--font-display, "Noto Serif KR", serif);
+  font-weight: 700; color: var(--ink);
+  letter-spacing: -.01em;
+  padding: 6px 14px; border-bottom: 1px solid var(--border);
+}
+.kgp-fs-head:not(:has(td)) { display: block; }
+/* content-visibility = 네이티브 가상화(1천+ 항목 성능) */
+.kgp-fs-item { content-visibility: auto; contain-intrinsic-size: 0 52px; }
+
+/* 우측 세로 인덱스 레일 */
+.kgp-fs-rail {
+  position: fixed; right: 2px; top: 50%; transform: translateY(-50%);
+  z-index: 1030; display: flex; flex-direction: column; align-items: center;
+  gap: 0; padding: 6px 2px; max-height: 86vh;
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  border: 1px solid var(--border); border-radius: 999px;
+  box-shadow: var(--shadow); backdrop-filter: blur(6px);
+  user-select: none; touch-action: none;
+}
+.kgp-fs-letter {
+  appearance: none; border: 0; background: transparent; cursor: pointer;
+  color: color-mix(in srgb, var(--ink) 42%, transparent);
+  font-size: 11px; font-weight: 600; line-height: 1;
+  width: 22px; min-height: 15px; padding: 1px 0;
+  display: flex; align-items: center; justify-content: center;
+  transition: transform .12s ease, color .12s ease;
+}
+.kgp-fs-letter:hover { color: var(--teal); transform: scale(1.5); }
+.kgp-fs-letter:focus-visible { outline: 2px solid var(--teal); border-radius: 4px; }
+.kgp-fs-active { color: var(--teal); font-weight: 800; }
+.kgp-fs-dim { color: color-mix(in srgb, var(--ink) 15%, transparent); pointer-events: none; }
+
+/* 스크럽 시 현재 글자 말풍선(먹 배경 + 한지 글자) */
+.kgp-fs-bubble {
+  position: fixed; right: 44px; top: 50%; transform: translateY(-50%) scale(.6);
+  z-index: 1031; pointer-events: none; opacity: 0;
+  min-width: 64px; height: 64px; padding: 0 14px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--ink); color: var(--cream);
+  font-family: var(--font-display, "Noto Serif KR", serif);
+  font-weight: 700; font-size: 30px; border-radius: 18px 18px 6px 18px;
+  box-shadow: var(--shadow); transition: opacity .12s ease, transform .12s ease;
+}
+.kgp-fs-bubble-on { opacity: 1; transform: translateY(-50%) scale(1); }
+
+/* 히트 영역은 넓게(터치 ≥44px), 시각 폭은 좁게 */
+@media (pointer: coarse) {
+  .kgp-fs-rail { padding: 8px 12px; right: 0; }
+  .kgp-fs-letter { width: 28px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kgp-fs-letter, .kgp-fs-bubble { transition: none; }
+}

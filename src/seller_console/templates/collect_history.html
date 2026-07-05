@@ -183,7 +183,8 @@
           <i class="bi bi-trash"></i> 선택 삭제
         </button>
       </div>
-      <div class="table-responsive">
+      {% if fastscroll %}<div class="small text-muted px-3 pb-2">제목순 — 오른쪽 <strong>인덱스</strong>(ㄱ~ㅎ·A~Z)를 누르거나 긁어 빠르게 이동하세요.</div>{% endif %}
+      <div class="table-responsive"{% if fastscroll %} data-fs-root{% endif %}>
         <table class="table table-hover mb-0 table-cards">
           <thead class="table-light">
             <tr>
@@ -197,9 +198,9 @@
               <th>미리보기·등록</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody{% if fastscroll %} data-fs-list{% endif %}>
           {% for it in items %}
-            <tr>
+            <tr{% if fastscroll %} data-fs-key="{{ it.title or '#' }}"{% endif %}>
               <td class="ps-3 cardcell-check"><input type="checkbox" class="row-chk" value="{{ it.id }}" data-title="{{ it.title or '(제목 없음)' }}" aria-label="선택"></td>
               <td class="cardcell-img">
                 {# v39 C: 클릭 = 인페이지 편집 드로어(새 창/원본 이동 0). #}
@@ -270,7 +271,7 @@
           </tbody>
         </table>
       </div>
-      {% if pagination and pagination.total_pages > 1 %}
+      {% if pagination and pagination.total_pages > 1 and not fastscroll %}
       {% set _qs = '&q=' ~ filters.q ~ '&domain=' ~ filters.domain ~ '&source=' ~ filters.source ~ '&status=' ~ filters.status ~ '&group=' ~ filters.group ~ '&sort=' ~ filters.sort ~ '&days=' ~ filters.days ~ '&per_page=' ~ filters.per_page %}
       <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 p-2 border-top">
         <span class="small text-muted">전체 {{ pagination.total }}개 · {{ pagination.page }}/{{ pagination.total_pages }} 페이지</span>
@@ -1039,4 +1040,13 @@ async function runBulkUpload() {
   }
 }
 </script>
+{% if fastscroll %}
+<script src="/seller/static/kgp-fastscroll.js"></script>
+<script>
+  (function () {
+    var root = document.querySelector('[data-fs-root]');
+    if (root && window.KGPFastScroll) window.KGPFastScroll.init(root, { enabled: true });
+  })();
+</script>
+{% endif %}
 {% endblock %}
