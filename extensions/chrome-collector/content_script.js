@@ -539,7 +539,12 @@ function handleFabClick(btn) {
   kgpSendMessage({ action: "collect", meta }, (resp) => {
     setFabState(btn, "idle");
     if (!resp || resp.ok !== true) {
-      kgpToast(((resp && resp.error) || "수집 실패"), false);
+      // 재발급 안내는 401(만료·삭제) 또는 토큰 미설정일 때만 — 그리고 사용자가 버튼을 누른 이 순간에만(매 페이지 토스트 금지).
+      if (resp && resp.authRequired) {
+        kgpToast("확장 옵션에서 토큰을 다시 설정해 주세요.\n(토큰이 만료됐거나 삭제됐어요)", false);
+      } else {
+        kgpToast(((resp && resp.error) || "수집 실패"), false);
+      }
       return;
     }
     if (resp.duplicate === true) {   // v42 1-3: 이미 수집한 상품 — 새 항목 만들지 않고 안내(가짜 축하 0)
