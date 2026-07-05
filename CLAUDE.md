@@ -433,6 +433,25 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   docs/screens/v45/supabase-backup.png(collect 2·market_links 1·orders 1 덤프·평문 노출 False·백업 전후 PG 행수 2=2 불변·
   ok True). 전체(폴백, PG 미설정) 그린. ⏳ **P1/P2 우회코드 제거는 여전히 보류**(제거 시 PG 미설정 환경의 Sheets 폴백이
   깨짐 — Render에 DATABASE_URL 설정 + migrate 실행 검증 후 PG-only 전환 시 별도). 적용 스킬: (백엔드 DB — UI 없음.)
+- ✅ **이관 스크립트 이미지 포함 (#423):** 운영자가 Render Shell서 `python scripts/migrate_to_supabase.py` 시 '파일 없음'.
+  근본=이관 코드는 main에 있으나(#417~#422) **Dockerfile이 scripts/ 중 start_render.sh만 COPY**(Phase 227 extensions/ 누락과
+  동일). 수리: `COPY scripts/migrate_to_supabase.py` 추가(.sql은 src/db/라 COPY src/에 포함, .dockerignore scripts 미배제).
+  COPY 대상 없으면 빌드 실패 → CI Docker Build 그린=이미지 포함 증명. 로컬 PG로 스크립트 실행(테이블4 생성+건수대조+exit0) 검증.
+
+## 🟩 북마클릿 파일 가져오기 최종 해법 (오너 2026-07-05 — 드래그 폐기 → 크롬 ICON 속성)
+- ✅ **북마클릿 크롬 '북마크 가져오기' 파일(ICON 속성) 전환 (#424):** 드래그 방식은 크롬이 **드래그 시점 페이지 파비콘을
+  북마크에 상속**해 지구본/회색 아이콘 위험 → **파일 가져오기**로 봉인. 신규 `POST /seller/bookmarklet/file` — 토큰 발급
+  (Supabase 1단계, `generate_token`) 후 **NETSCAPE-Bookmark-file-1 HTML**(`Content-Disposition: attachment; filename=고가수집기.html`)
+  응답: `<A HREF="javascript:(수집코드+토큰)" ICON="data:image/png;base64,{favicon-48 v8 브릿지}">고가수집기</A>`(html.escape로
+  HREF 큰따옴표 이스케이프 → 가져오기 시 디코드). **토큰 저장 실패면 파일도 안 만듦(정직 503, 가짜 파일 0)**. 서버 헬퍼
+  `_bookmarklet_js`(토스트가 우리 favicon 마크로 그림·새 창 0)·`_bridge_icon_data_uri`(1회 캐시)·`_netscape_bookmark`. 템플릿:
+  드래그 앵커(bmDragZone·draggable·issueAndBuild) 전량 제거 → '내 북마클릿 파일 받기' 버튼(fetch→blob 다운로드) + **3단계
+  그림 안내**(SVG: 파일 받기 → chrome://bookmarks ⋮ 북마크 가져오기 → '가져온 항목'서 북마크바 드래그) + '아이콘이 바로
+  안 보이면 한 번 클릭하면 고정됩니다' + 확장 메인 안내 유지. 가드 test_bm_import_file(6: 파일 다운로드·ICON base64·수집코드·
+  번역반영·**토큰실패 503 파일0**·소스계약) + test_v39b_bookmarklet_favicon 재작성(파일방식·3단계·서버ICON) + test_extension_
+  button_switch 갱신(드래그 잔재 0). **검증 캡처:** docs/screens/v45/bm-import-file.png(실제 Chromium서 '파일 받기' 클릭 →
+  고가수집기.html 다운로드 → NETSCAPE True·수집코드 True·번역 True·ICON=브릿지 마크 디코드·PG durable 토큰 1행). 적용 스킬:
+  **gogabridj-design**(3단계 카드=한지 배경·다리/키스톤 SVG·먹/금/청록/주황 토큰·이모지0·지구본0). impeccable/humanizer CLI 미설치→의도 수동.
 
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)
 - 규칙(불변): 각 항목 **실제 화면 before/after 캡처로만 완료**. 추측 금지·거짓성공/임의환산 금지·회귀 금지(pytest+CI)·토큰 단일소스.

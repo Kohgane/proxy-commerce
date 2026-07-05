@@ -1,8 +1,10 @@
-"""tests/test_v39b_bookmarklet_favicon.py — v39 B: 북마클릿 파비콘/주입 UI 마크 + 정직 폴백.
+"""tests/test_v39b_bookmarklet_favicon.py — 북마클릿 파비콘 + 파일 가져오기(ICON 속성) 방식.
 
-B-1(확실): 북마클릿이 inject하는 토스트 아이콘 = 우리 브릿지 마크(우리가 DOM을 그림 → 100% 우리 마크).
-B-2(최대치+정직): 설치 페이지 파비콘 = 신규 마크(상속 경로), 드래그 텍스트 '고가수집기',
-  회색 아이콘일 수 있다는 정직 안내 + 1차 권장=확장.
+최종 해법(오너): 드래그 방식(크롬이 페이지 파비콘을 상속 → 지구본 위험) 폐기 → **크롬 북마크
+가져오기 파일**의 ICON 속성에 브릿지 마크(base64)를 담아 아이콘을 확정한다.
+- 설치 페이지 파비콘 링크(상속 경로 잔존 무해) 유지.
+- '내 북마클릿 파일 받기' → 서버가 토큰 발급(Supabase) 후 NETSCAPE 북마크 HTML(ICON=data:image/png) 응답.
+- 토스트 마크는 서버 생성 북마클릿 코드(_bookmarklet_js)가 우리 favicon으로 그린다.
 """
 from __future__ import annotations
 
@@ -13,6 +15,7 @@ import pytest
 
 TPL = Path("src/seller_console/templates/bookmarklet.html").read_text(encoding="utf-8")
 BASE = Path("src/seller_console/templates/_base.html").read_text(encoding="utf-8")
+VIEWS = Path("src/seller_console/views.py").read_text(encoding="utf-8")
 
 
 @pytest.fixture
@@ -23,50 +26,49 @@ def client():
         yield c
 
 
-def test_install_page_favicon_inheritance_links(client):
-    # v39-B 핵심: 설치 페이지 파비콘 = 브릿지 마크(48px PNG + shortcut icon) → 크롬 드래그 상속
+def test_install_page_favicon_links(client):
+    # 설치 페이지 파비콘 = 브릿지 마크(48px PNG + shortcut icon + svg) — head 상속(무해)
     with client.session_transaction() as s:
         s["user_id"] = "u1"
     html = client.get("/seller/bookmarklet").get_data(as_text=True)
     assert 'sizes="48x48"' in html and "favicon-48.png" in html
     assert 'rel="shortcut icon"' in html and "favicon.ico" in html
-    assert "favicon.svg?v=180" in html
     assert "globe" not in BASE.lower()
 
 
-def test_drag_anchor_icon_only_zero_width_title():
-    # v40-B: 북마크바엔 '아이콘만' — 앵커 안 텍스트 노드 0(아이콘=CSS background) + title 제로폭(URL 폴백 방지)
-    assert 'title="&#8203;"' in TPL
-    assert "draggable=\"true\"" in TPL
-    # 드래그 앵커는 '고가수집기' 텍스트를 품지 않는다(그게 북마크 title이 되어 글자가 남았던 원인)
-    assert ">고가수집기</a>" not in TPL
-    assert 'id="bookmarkletLink"' in TPL and "></a>" in TPL    # 앵커 내부 비어 있음
-    assert 'aria-label="고가수집기"' in TPL                    # a11y 이름은 aria-label로만
-    assert "favicon-48.png?v=180" in TPL          # 앵커 마크(CSS background)
-    assert 'favicon-32.png?v=180' in TPL          # 토스트 마크
-    assert ">수집</a>" not in TPL                  # 옛 '수집' 단독 라벨 폐기
-
-
-def test_drag_path_enforcement_copy():
-    # '이 페이지에서 끌어야' + '누르지 마세요' 드래그 경로 강제 안내
-    assert "이 페이지에서" in TPL
-    assert "북마크바" in TPL
-    assert "아이콘만" in TPL                        # 글자 없이 아이콘만
-
-
-def test_injected_toast_carries_our_mark():
-    # B-1: 인페이지 토스트가 우리 favicon(브릿지 마크)을 img로 주입
-    assert "kgpbm" in TPL and "favicon-32.png" in TPL
-    # 토스트는 텍스트 노드 분리(아이콘 + 메시지)
-    assert "kgpbmx" in TPL
-
-
-def test_honest_gray_icon_fallback_recommends_extension():
-    assert "회색" in TPL                            # 회색 아이콘 가능성 정직 고지
-    assert "고가수집기 확장" in TPL or "크롬 확장" in TPL
-    assert "/seller/extension" in TPL               # 1차 권장 = 확장
-
-
-def test_no_new_window_still_holds():
-    # 새 창/팝업 0(v38 #5 유지) — window.open 미사용
+def test_file_import_replaces_drag(client):
+    # 드래그 방식(지구본 경로) 봉인 — 파일 받기 CTA + POST 라우트로 전환
+    assert "내 북마클릿 파일 받기" in TPL
+    assert "downloadBookmarkFile" in TPL and "/seller/bookmarklet/file" in TPL
+    # 옛 드래그 앵커 잔재 0
+    assert "draggable" not in TPL and "bmDragZone" not in TPL
+    assert "issueAndBuild" not in TPL and 'id="bookmarkletLink"' not in TPL
     assert "window.open" not in TPL
+
+
+def test_three_step_import_guidance():
+    # 3단계 그림 안내: 파일 받기 → chrome://bookmarks 가져오기 → 가져온 항목에서 드래그
+    assert "chrome://bookmarks" in TPL
+    assert "북마크 가져오기" in TPL
+    assert "가져온 항목" in TPL and "북마크바" in TPL
+    # 아이콘 고정 안내
+    assert "한 번 클릭하면 고정됩니다" in TPL
+    # 그림(SVG) 3개
+    assert TPL.count("<svg") >= 3
+
+
+def test_server_builds_netscape_file_with_icon():
+    # 서버가 ICON 속성(브릿지 base64) 담은 NETSCAPE 북마크 파일 생성 + 토큰 발급(Supabase) 선행
+    assert "NETSCAPE-Bookmark-file-1" in VIEWS
+    assert 'ICON="' in VIEWS or "ICON=\\\"" in VIEWS
+    assert "data:image/png;base64," in VIEWS
+    assert "favicon-48.png" in VIEWS               # ICON = 브릿지 마크(v8)
+    assert "generate_token" in VIEWS               # 토큰 저장(Supabase 1단계) 선행
+    assert 'attachment; filename' in VIEWS         # 다운로드 응답
+    # 토스트 마크(우리 favicon)를 서버 북마클릿 코드가 그린다
+    assert "kgpbm" in VIEWS and "favicon-32.png" in VIEWS
+
+
+def test_honest_extension_main_kept():
+    assert "확장 설치하기(메인)" in TPL
+    assert "/seller/extension" in TPL
