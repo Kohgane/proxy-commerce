@@ -65,6 +65,11 @@ m = re.search(r'ICON="data:image/png;base64,([^"]+)"', body)
 icon_b64 = m.group(1) if m else ""
 has_collect = "/api/v1/collect/extension" in body
 translate_true = "translate:true" in body
+# 앵커 텍스트(북마크바에 뜨는 글자) — 제로폭만 있어야 '아이콘만'
+am = re.search(r'ICON="[^"]+">(.*?)</A>', body)
+anchor_text = am.group(1) if am else "?"
+visible_chars = anchor_text.replace("​", "").strip()   # 제로폭 제거 후 보이는 글자
+icon_only = (visible_chars == "")
 # 아이콘 디코드
 from PIL import Image, ImageDraw
 icon_img = None
@@ -93,7 +98,8 @@ d.text((x, y), "다운로드 파일 검증", fill=teal); y += 22
 d.text((x, y), f"파일명: {saved_file['name']}", fill=ink); y += 18
 d.text((x, y), f"NETSCAPE-Bookmark-file-1: {is_netscape}", fill=ink); y += 18
 d.text((x, y), f"수집 코드 baked: {has_collect}", fill=ink); y += 18
-d.text((x, y), f"번역 ON 반영: {translate_true}", fill=ink); y += 26
+d.text((x, y), f"번역 ON 반영: {translate_true}", fill=ink); y += 18
+d.text((x, y), f"앵커 보이는 글자: {'0(아이콘만)' if icon_only else repr(visible_chars)}", fill=ink); y += 26
 d.text((x, y), "ICON 속성 = 브릿지 마크(base64)", fill=teal); y += 22
 if icon_img:
     big = icon_img.resize((72, 72))
@@ -111,5 +117,5 @@ d.text((x+10, y+26), "발급 실패면 파일도 안 만듦(정직).", fill=mute
 d.text((x+10, y+44), "확장이 메인 안내 유지 · 새 창 0.", fill=muted)
 os.makedirs("docs/screens/v45", exist_ok=True)
 canvas.save("docs/screens/v45/bm-import-file.png")
-print(f"is_netscape={is_netscape} has_collect={has_collect} translate_true={translate_true} icon_bytes={len(icon_b64)} tok={tok} name={saved_file['name']}")
+print(f"is_netscape={is_netscape} has_collect={has_collect} translate_true={translate_true} icon_only={icon_only} anchor_text={anchor_text!r} icon_bytes={len(icon_b64)} tok={tok} name={saved_file['name']}")
 print("saved docs/screens/v45/bm-import-file.png")

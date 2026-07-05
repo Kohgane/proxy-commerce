@@ -5175,10 +5175,12 @@ def _bridge_icon_data_uri() -> str:
     return _BRIDGE_ICON_DATA_URI
 
 
-def _netscape_bookmark(href: str, icon_data_uri: str, label: str = "고가수집기") -> str:
+def _netscape_bookmark(href: str, icon_data_uri: str, label: str = "​") -> str:
     """크롬 '북마크 가져오기'가 읽는 NETSCAPE-Bookmark-file-1 HTML. ICON 속성에 브릿지 마크.
 
     HREF는 html.escape로 이스케이프(크롬 가져오기 시 엔티티 디코드) → 아이콘이 북마크에 고정.
+    앵커 텍스트=제로폭(U+200B) → 북마크바에 **보이는 글자 0(아이콘만)**. (완전 빈 문자열은 크롬이
+    javascript: URL을 이름으로 폴백할 수 있어, 제로폭으로 폴백 방지 — v40-B 선례.)
     """
     import html as _html
     href_esc = _html.escape(href, quote=True)
@@ -5188,7 +5190,7 @@ def _netscape_bookmark(href: str, icon_data_uri: str, label: str = "고가수집
         "<TITLE>Bookmarks</TITLE>\n"
         "<H1>Bookmarks</H1>\n"
         "<DL><p>\n"
-        f"    <DT><A HREF=\"{href_esc}\" ICON=\"{icon_data_uri}\">{_html.escape(label)}</A>\n"
+        f"    <DT><A HREF=\"{href_esc}\" ICON=\"{icon_data_uri}\">{label}</A>\n"
         "</DL><p>\n"
     )
 
