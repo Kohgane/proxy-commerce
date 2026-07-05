@@ -40,7 +40,9 @@ def test_download_netscape_file_with_icon(client, token_ok):
     assert "<!DOCTYPE NETSCAPE-Bookmark-file-1>" in body
     assert 'HREF="javascript:(function' in body            # 수집 코드 baked
     assert 'ICON="data:image/png;base64,' in body          # 브릿지 마크 아이콘 고정
-    assert ">고가수집기</A>" in body                        # 라벨
+    # #425(4): 앵커 텍스트=제로폭 → 북마크바 '아이콘만'(보이는 글자 0). '고가수집기' 글자 제거.
+    assert "​</A>" in body                             # 제로폭 앵커(아이콘만)
+    assert ">고가수집기</A>" not in body                    # 옛 텍스트 라벨 폐기
     assert "translate:true" in body                        # 번역 ON 반영
     assert "&quot;" in body                                 # HREF 내 큰따옴표 이스케이프(가져오기 시 디코드)
     assert "/api/v1/collect/extension" in body             # 서버 수집 엔드포인트
