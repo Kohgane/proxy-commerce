@@ -71,10 +71,17 @@
 
   {% if tokens %}
   <div class="card mb-4">
+    <div class="card-body p-2 border-bottom d-flex align-items-center gap-2">
+      <button id="bulkRevokeBtn" class="btn btn-sm btn-outline-danger" type="button" disabled>
+        <i class="bi bi-trash"></i> 선택 삭제 <span id="bulkRevokeCount">0</span>
+      </button>
+      <span class="text-muted small">체크박스로 여러 토큰을 골라 한 번에 삭제할 수 있어요.</span>
+    </div>
     <div class="card-body p-0">
       <table class="table table-hover mb-0">
         <thead class="table-light">
           <tr>
+            <th style="width:38px"><input class="form-check-input" type="checkbox" id="tokSelectAll" aria-label="전체 선택"></th>
             <th>토큰 <span class="pc-help" data-bs-toggle="tooltip" data-bs-title="보안을 위해 토큰 원문은 발급 때 한 번만 보이고, 여기엔 식별용 앞부분만 표시돼요(해시).">?</span></th>
             <th>권한</th>
             <th>발급일</th>
@@ -87,6 +94,7 @@
         <tbody>
           {% for tok in tokens %}
           <tr>
+            <td>{% if not tok.revoked %}<input class="form-check-input tok-check" type="checkbox" data-hash="{{ tok.token_hash }}" aria-label="토큰 선택">{% endif %}</td>
             <td><code>{{ tok.token_hash_prefix }}</code></td>
             {% set _scope_ko = {'collect.write': '상품 수집', 'catalog.read': '카탈로그 조회', 'markets.write': '마켓 업로드'} %}
             <td>
@@ -335,6 +343,45 @@ document.querySelectorAll('.revoke-btn').forEach(btn => {
     }
   });
 });
+
+// 체크박스 다중선택 삭제
+(function () {
+  const checks = () => Array.from(document.querySelectorAll('.tok-check'));
+  const selected = () => checks().filter(c => c.checked);
+  const bulkBtn = document.getElementById('bulkRevokeBtn');
+  const countEl = document.getElementById('bulkRevokeCount');
+  const selectAll = document.getElementById('tokSelectAll');
+  function sync() {
+    const n = selected().length;
+    if (countEl) countEl.textContent = n ? `(${n})` : '0';
+    if (bulkBtn) bulkBtn.disabled = n === 0;
+    if (selectAll) {
+      const all = checks();
+      selectAll.checked = all.length > 0 && n === all.length;
+      selectAll.indeterminate = n > 0 && n < all.length;
+    }
+  }
+  checks().forEach(c => c.addEventListener('change', sync));
+  if (selectAll) selectAll.addEventListener('change', () => { checks().forEach(c => { c.checked = selectAll.checked; }); sync(); });
+  if (bulkBtn) bulkBtn.addEventListener('click', async () => {
+    const hashes = selected().map(c => c.dataset.hash);
+    if (!hashes.length) return;
+    if (!(await pcConfirm(`선택한 토큰 ${hashes.length}개를 삭제하시겠습니까? 삭제하면 즉시 무효화되며 복구할 수 없습니다.`, {title: '토큰 다중 삭제', confirmLabel: '삭제'}))) return;
+    try {
+      const resp = await fetch('/seller/me/tokens/revoke-bulk', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({token_hashes: hashes})
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        location.reload();   // 서버 재조회(부활 0 검증) — PG durable
+      } else {
+        pcToast('삭제 실패: ' + (data.error || '알 수 없는 오류'), 'error');
+      }
+    } catch (e) { pcToast('오류: ' + e.message, 'error'); }
+  });
+  sync();
+})();
 </script>
 <script src="/seller/static/passkey.js"></script>
 <script>

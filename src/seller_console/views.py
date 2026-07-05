@@ -5104,6 +5104,40 @@ def personal_tokens_revoke():
         return jsonify({"ok": False, "error": "토큰 회수 중 오류가 발생했습니다."}), 500
 
 
+@bp.post("/me/tokens/revoke-bulk")
+def personal_tokens_revoke_bulk():
+    """토큰 다중선택 삭제 — 체크박스로 고른 여러 토큰을 한 번에 폐기.
+
+    Request body: {"token_hashes": ["...", ...]}
+    각 토큰은 revoke_token(PG면 소프트삭제=durable)으로 폐기. 실제 폐기된 것만 revoked에 담아
+    정직 집계(부활 0). 본인 스코프(관용 식별자) 밖 토큰은 무시.
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    user_id = _current_user_id()
+    data = request.get_json(force=True, silent=True) or {}
+    hashes = data.get("token_hashes") or []
+    if not isinstance(hashes, list) or not hashes:
+        return jsonify({"ok": False, "error": "삭제할 토큰을 선택해 주세요."}), 400
+
+    try:
+        from src.auth.personal_tokens import revoke_token
+        ids = _seller_identities()
+        revoked, missed = [], []
+        for th in hashes:
+            th = (th or "").strip()
+            if not th:
+                continue
+            if revoke_token(token_hash=th, user_id=user_id, user_ids=ids):
+                revoked.append(th)
+            else:
+                missed.append(th)   # 이미 삭제됐거나 본인 것 아님(정직)
+        return jsonify({"ok": len(revoked) > 0, "revoked": revoked, "revoked_count": len(revoked), "missed_count": len(missed)})
+    except Exception as exc:
+        logger.warning("토큰 다중 회수 실패: %s", exc)
+        return jsonify({"ok": False, "error": "토큰 삭제 중 오류가 발생했습니다."}), 500
+
+
 # ---------------------------------------------------------------------------
 # Phase 135: 북마클릿
 # ---------------------------------------------------------------------------
