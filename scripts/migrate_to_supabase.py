@@ -44,16 +44,30 @@ def _pg():
     return pg
 
 
-def migrate_collect(cur, dry=False) -> tuple:
-    """cur = 직접 연결(5432) 커서. 트랜잭션 풀러 이슈 회피."""
+def migrate_collect(cur, dry=False) -> dict:
+    """cur = 직접 연결(5432) 커서. 트랜잭션 풀러 이슈 회피.
+
+    스킵된 행의 사유를 증명한다:
+    - product_key 중복(ON CONFLICT DO NOTHING, rowcount 0) → 중복으로 분류·키 목록 로깅.
+    - 예외 발생 → 에러로 분류·해당 행 url + 원인 로깅.
+    검증은 **distinct key 기준**(중복은 정상 dedup): 에러 0 + PG총계 == 기대 distinct면 PASS.
+    """
     rows = _sheet_collect_rows()
     from src.collectors.product_key import normalize_product_key
     inserted = 0
+    dup_keys = []          # 중복(정상 dedup)으로 스킵된 product_key
+    errors = []            # (url, 원인) — 진짜 실패
+    empty_key_rows = 0     # product_key 없는 행(중복 판정 불가 → 전부 삽입)
+    distinct_keys = set()
     for r in rows:
-        if dry:
-            continue
         url = r.get("url", "")
         pkey = normalize_product_key(url) or None
+        if pkey:
+            distinct_keys.add(pkey)
+        else:
+            empty_key_rows += 1
+        if dry:
+            continue
         collected_at = r.get("collected_at") or datetime.now(timezone.utc).isoformat()
         extra = r.get("extra_json") or "{}"
         try:
@@ -71,11 +85,26 @@ def migrate_collect(cur, dry=False) -> tuple:
                  url, r.get("title", ""), r.get("image_url", ""), str(r.get("price", "") or ""),
                  r.get("currency", ""), r.get("status", "ok") or "ok", r.get("preview_url", ""),
                  json.dumps(extra_obj, ensure_ascii=False), collected_at))
-            inserted += cur.rowcount
+            if cur.rowcount == 0:
+                # ON CONFLICT DO NOTHING → 같은 (user_id, product_key) 활성 행 존재 = 중복 스킵
+                dup_keys.append(pkey or url)
+            else:
+                inserted += cur.rowcount
         except Exception as exc:
-            _log(f"  collect 행 이관 실패(건너뜀): {exc}")
+            errors.append((url, str(exc)))
+            _log(f"  collect 에러 스킵: url={url[:80]} 원인={exc}")
     cur.execute("SELECT count(*) FROM collect_history WHERE deleted_at IS NULL")
-    return len(rows), inserted, int(cur.fetchone()[0])
+    pg_total = int(cur.fetchone()[0])
+    distinct_expected = len(distinct_keys) + empty_key_rows   # 기대 건수(중복 제거 후)
+    if dup_keys:
+        _log(f"  중복 스킵 {len(dup_keys)}건(정상 dedup) — product_key 목록: {dup_keys}")
+    if errors:
+        _log(f"  에러 스킵 {len(errors)}건(실패) — 위 상세 로그 참조")
+    return {
+        "sheets_total": len(rows), "inserted": inserted, "pg_total": pg_total,
+        "dup_count": len(dup_keys), "err_count": len(errors),
+        "distinct_expected": distinct_expected, "dup_keys": dup_keys, "errors": errors,
+    }
 
 
 def migrate_tokens(cur, dry=False) -> tuple:
@@ -181,17 +210,26 @@ def main():
     # 마이그레이션은 직접 연결(5432)로 — 트랜잭션 풀러(6543)의 prepared/DDL 이슈 회피.
     with pg.direct_conn() as conn:
         with conn.cursor() as cur:
-            sc, si, sp = migrate_collect(cur, dry=dry)
+            cm = migrate_collect(cur, dry=dry)
             tc, ti, tp = migrate_tokens(cur, dry=dry)
             mls, mli, mlp = migrate_market_links(cur, dry=dry)
             oc, oi, op = migrate_orders(cur, dry=dry)
-    _log(f"[collect_history] Sheets 원본 {sc}건 · 삽입 {si}건 · PG 총 {sp}건")
+    _log(f"[collect_history] Sheets 원본 {cm['sheets_total']}건 · 삽입 {cm['inserted']}건 · "
+         f"중복(정상 dedup) {cm['dup_count']}건 · 에러 {cm['err_count']}건 · "
+         f"PG 총 {cm['pg_total']}건 · 기대 distinct {cm['distinct_expected']}건")
     _log(f"[user_tokens]     Sheets 원본 {tc}건 · 삽입 {ti}건 · PG 총 {tp}건")
     _log(f"[market_links]    파일 셀러 {mls}명 · 삽입 {mli}건 · PG 총 {mlp}건")
     _log(f"[orders]          Sheets 원본 {oc}건 · 삽입 {oi}건 · PG 총 {op}건")
-    # 건수 대조(멱등 재실행 시 삽입 0이어도 PG 총계가 원본 이상이면 OK)
-    ok = (sp >= sc) and (tp >= tc)
-    _log(f"검증(건수 대조): collect PG≥Sheets={sp>=sc}, tokens PG≥Sheets={tp>=tc} → {'OK' if ok else '불일치'}")
+    # 검증(distinct key 기준): 중복은 정상 dedup(스킵 정당) — 에러 0 + PG총계 == 기대 distinct면 PASS.
+    collect_ok = (cm["err_count"] == 0) and (cm["pg_total"] >= cm["distinct_expected"])
+    tokens_ok = (tp >= tc)
+    ok = collect_ok and tokens_ok
+    _log(f"검증(distinct 기준): collect PASS={collect_ok} (PG {cm['pg_total']} == 기대 distinct "
+         f"{cm['distinct_expected']}, 에러 {cm['err_count']}) · tokens PASS={tokens_ok} → {'OK' if ok else '불일치'}")
+    if cm["err_count"]:
+        _log("  ※ 에러 스킵이 있어 불일치 — 위 'collect 에러 스킵' 로그의 행/원인 확인 후 재실행하세요.")
+    elif cm["dup_count"]:
+        _log(f"  ※ 스킵 {cm['dup_count']}건은 전부 product_key 중복(같은 상품 재수집) = 정상 dedup → PASS.")
     return 0 if ok else 1
 
 
