@@ -38,7 +38,8 @@ def test_bookmarklet_page_still_has_bridge_favicon_and_iconly(client):
     with client.session_transaction() as s:
         s["user_id"] = "u1"
     html = client.get("/seller/bookmarklet").get_data(as_text=True)
-    assert "favicon.ico?v=179" in html or "favicon-48.png" in html   # 설치 페이지 파비콘=브릿지(v39-B)
+    assert "favicon.ico?v=180" in html or "favicon-48.png" in html   # 설치 페이지 파비콘=브릿지
     from pathlib import Path
     tpl = Path("src/seller_console/templates/bookmarklet.html").read_text(encoding="utf-8")
-    assert 'title="&#8203;"' in tpl                                   # 글자 없이 아이콘만(제로폭)
+    # #424: 드래그(파비콘 상속) 폐기 → 파일 가져오기(ICON 속성). 아이콘은 파일에 base64로 담김.
+    assert "내 북마클릿 파일 받기" in tpl and "draggable" not in tpl

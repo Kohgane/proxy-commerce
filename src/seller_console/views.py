@@ -5125,6 +5125,109 @@ def bookmarklet():
     )
 
 
+def _bookmarklet_js(server: str, token: str, translate: bool) -> str:
+    """북마클릿 javascript: 코드(내 토큰 baked) — 크롬 북마크 가져오기 파일 HREF에 넣는다.
+
+    상품 1개 상세 페이지에서 메타/이미지/HTML을 읽어 백그라운드 fetch로 서버에 저장하고
+    인페이지 토스트로만 결과 표시(새 창 0). CSP가 막으면 인페이지 안내(확장 권장).
+    """
+    tr = "true" if translate else "false"
+    # 주의: 이 문자열은 그대로 HREF 속성값이 되므로, 호출부(_netscape_bookmark)가 html.escape로
+    # 큰따옴표(&quot;)·앰퍼샌드(&amp;)를 이스케이프한다(크롬 가져오기 시 엔티티 디코드).
+    return (
+        "javascript:(function(){"
+        "var S='" + server + "',T='" + token + "';"
+        "try{var _c=0;document.querySelectorAll('a[href] img').forEach(function(i){if((i.naturalWidth||0)>=120)_c++});"
+        "if(_c>=8){if(!confirm('이 페이지엔 상품이 여러 개 같아요. 북마클릿은 상품 1개 상세용입니다. 여러 상품은 크롬 확장을 쓰세요. 이 페이지를 1개로 수집할까요?'))return;}}catch(e){}"
+        "function M(p){var e=document.querySelector('meta[property=\"'+p+'\"],meta[name=\"'+p+'\"]');return e?(e.content||''):''}"
+        "function G(s){if(!s||s.indexOf('data:')===0)return false;if(/(logo|sprite|icon|avatar|placeholder|loading|blank|pixel|banner|thumb_)/i.test(s))return false;return true;}"
+        "var imgs=[];var og=M('og:image');if(G(og))imgs.push(og);"
+        "try{[].forEach.call(document.images||[],function(im){if(im&&im.src&&G(im.src)&&(im.naturalWidth||0)>=300&&(im.naturalHeight||0)>=300)imgs.push(im.src)})}catch(e){}"
+        "var data={url:location.href,"
+        "title:(M('og:title')||document.title||'').slice(0,300),"
+        "price:M('product:price:amount')||'',"
+        "currency:M('product:price:currency')||'',"
+        "description:M('og:description')||M('description')||'',"
+        "images:imgs.slice(0,30),"
+        "html:(document.documentElement?document.documentElement.outerHTML:'').slice(0,800000),"
+        "translate:" + tr + "};"
+        "function K(m,ok){var t=document.getElementById('kgpbm');if(!t){t=document.createElement('div');t.id='kgpbm';t.style.cssText='position:fixed;right:20px;bottom:84px;z-index:2147483647;display:flex;align-items:center;gap:8px;max-width:300px;padding:10px 14px;border-radius:10px;font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.3)';var ic=document.createElement('img');ic.src=S+'/seller/static/favicon-32.png?v=180';ic.alt='';ic.style.cssText='width:20px;height:20px;border-radius:5px;flex:none;background:#fff';t.appendChild(ic);var tx=document.createElement('span');tx.id='kgpbmx';tx.style.whiteSpace='pre-wrap';t.appendChild(tx);document.body.appendChild(t);}t.style.background=ok?'#16a34a':'#dc2626';var x=document.getElementById('kgpbmx');if(x)x.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0'},4500);}"
+        "K('수집 중…',true);"
+        "fetch(S+'/api/v1/collect/extension',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+T},body:JSON.stringify(data)})"
+        ".then(function(r){return r.json().catch(function(){return{}})})"
+        ".then(function(d){if(d&&d.ok){K('수집 완료 · 셀러 콘솔 ‘수집한 상품’에서 확인',true);}else{K('수집 실패: '+((d&&d.error)||'잠시 후 다시 시도'),false);}})"
+        ".catch(function(){K('이 사이트는 보안정책(CSP)으로 직접 수집이 막혀요.\\n크롬 확장(고가수집기)을 쓰세요.',false);});"
+        "})();"
+    )
+
+
+_BRIDGE_ICON_DATA_URI = None
+
+
+def _bridge_icon_data_uri() -> str:
+    """북마크 ICON 속성용 브릿지 마크(favicon-48 v8) data:image/png;base64 — 1회 캐시."""
+    global _BRIDGE_ICON_DATA_URI
+    if _BRIDGE_ICON_DATA_URI is None:
+        import base64
+        p = os.path.join(os.path.dirname(__file__), "static", "favicon-48.png")
+        with open(p, "rb") as f:
+            _BRIDGE_ICON_DATA_URI = "data:image/png;base64," + base64.b64encode(f.read()).decode("ascii")
+    return _BRIDGE_ICON_DATA_URI
+
+
+def _netscape_bookmark(href: str, icon_data_uri: str, label: str = "고가수집기") -> str:
+    """크롬 '북마크 가져오기'가 읽는 NETSCAPE-Bookmark-file-1 HTML. ICON 속성에 브릿지 마크.
+
+    HREF는 html.escape로 이스케이프(크롬 가져오기 시 엔티티 디코드) → 아이콘이 북마크에 고정.
+    """
+    import html as _html
+    href_esc = _html.escape(href, quote=True)
+    return (
+        "<!DOCTYPE NETSCAPE-Bookmark-file-1>\n"
+        "<META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=UTF-8\">\n"
+        "<TITLE>Bookmarks</TITLE>\n"
+        "<H1>Bookmarks</H1>\n"
+        "<DL><p>\n"
+        f"    <DT><A HREF=\"{href_esc}\" ICON=\"{icon_data_uri}\">{_html.escape(label)}</A>\n"
+        "</DL><p>\n"
+    )
+
+
+@bp.post("/bookmarklet/file")
+def bookmarklet_file():
+    """'내 북마클릿 파일 받기' — 토큰 발급(Supabase) 후 크롬 가져오기용 북마크 HTML을 내려준다.
+
+    토큰 저장(Supabase 1단계)이 선행 — 저장 실패면 파일도 만들지 않고 정직한 실패(JSON).
+    성공 시 Content-Disposition: attachment; filename="고가수집기.html".
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    user_id = _current_user_id()
+    translate = (request.form.get("translate") or request.args.get("translate") or "1") != "0"
+
+    try:
+        from src.auth import personal_tokens as _pt
+        result = _pt.generate_token(user_id=user_id, scopes=["collect.write"], expires_days=365)
+        raw = result.get("raw_token")
+        if not raw:
+            raise RuntimeError("토큰이 비어 있습니다.")
+    except Exception as exc:
+        # 토큰 저장 실패 → 파일 생성 실패(정직). 원인 1줄 로깅.
+        logger.warning("북마클릿 파일 토큰 발급 실패: %s", exc)
+        return jsonify({"ok": False, "error": "토큰을 저장하지 못해 파일을 만들지 못했어요. 잠시 후 다시 시도해 주세요."}), 503
+
+    server = request.host_url.rstrip("/")
+    href = _bookmarklet_js(server, raw, translate)
+    html_body = _netscape_bookmark(href, _bridge_icon_data_uri())
+    resp = Response(html_body, mimetype="text/html; charset=utf-8")
+    fname = quote_plus("고가수집기.html").replace("+", "%20")
+    resp.headers["Content-Disposition"] = (
+        "attachment; filename=gogasujipgi.html; filename*=UTF-8''" + fname
+    )
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 def _chrome_extension_dir() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "extensions", "chrome-collector"))
 

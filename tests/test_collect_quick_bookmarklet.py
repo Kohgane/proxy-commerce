@@ -60,12 +60,11 @@ def test_quick_collect_rejects_bad_url(client):
 
 
 def test_bookmarklet_page_inpage_no_new_window(client):
-    # v38 #5: 새 창 금지 → 내 토큰 백그라운드 fetch + 인페이지 토스트로 전환.
+    # #424: 파일 가져오기 방식 — 새 창 금지 유지. 수집 코드/Bearer는 다운로드 파일(서버 생성)에 있음.
     html = client.get("/seller/bookmarklet").get_data(as_text=True)
-    assert "window.open" not in html            # 새 창/팝업 0
-    assert "/api/v1/collect/extension" in html  # 백그라운드 fetch
-    assert "Bearer" in html                     # 내 토큰 인증
-    assert "고가수집기" in html                  # 라벨
+    assert "window.open" not in html                 # 새 창/팝업 0
+    assert "/seller/bookmarklet/file" in html        # 파일 받기 라우트
+    assert "고가수집기" in html                       # 라벨
 
 
 def test_collect_page_amazon_dropdown_and_favicon(client):
