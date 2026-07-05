@@ -423,6 +423,16 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   재시작 유지 status=shipped·KPI pending_ship1/shipped1). 전체(폴백, PG 미설정) 10816 passed / 16 skipped 그린.
   ※오너 액션: SUPABASE_DB_URL/DATABASE_URL 설정 후 migrate 1회 실행 시 기존 Sheets 주문 이관. **Sheets 읽기전용 백업
   강등(일 1회 덤프)·P1/P2 우회코드 제거는 PG 안정 확인 후 별도 진행**(현재는 폴백 안전 위해 우회코드 보존). 적용 스킬: (백엔드 DB — UI 없음.)
+- ✅ **3단계 마무리 — Sheets 읽기전용 백업(PG→Sheets 일 1회 덤프) (#422):** PG가 1차 저장소가 된 뒤 Sheets를 **읽기전용
+  백업**으로 강등. 신규 `src/db/backup.py::backup_to_sheets()` — 4개 이관 테이블(collect_history·user_tokens·market_links·
+  orders) 전체(소프트삭제 포함)를 `_backup_<table>` 워크시트에 **최신본 스냅샷 덮어쓰기** + `_backup_meta`(시각·건수, 대조용).
+  **읽기 전용**: PG에 쓰지 않음(백업은 Sheets에만). **정직**: pg_enabled 아니면 백업 대상 없음/GOOGLE_SHEET_ID 미설정이면
+  정직 사유(가짜 성공 0), 행수는 PG 실측(집계 날조 0), market_links는 **암호문(enc_blob)만 백업**(평문 노출 0). 신규 라우트
+  `POST /cron/supabase-backup`(X-Cron-Secret, Render Cron 일 1회). 가드 test_v45_supabase_backup(4: PG미설정/시트미설정 정직·
+  소스계약(4테이블·enc_blob·PG write 0·라우트)·**로컬 PG 실덤프**(헤더+행·메타·읽기전용 행수 불변)). **검증 캡처:**
+  docs/screens/v45/supabase-backup.png(collect 2·market_links 1·orders 1 덤프·평문 노출 False·백업 전후 PG 행수 2=2 불변·
+  ok True). 전체(폴백, PG 미설정) 그린. ⏳ **P1/P2 우회코드 제거는 여전히 보류**(제거 시 PG 미설정 환경의 Sheets 폴백이
+  깨짐 — Render에 DATABASE_URL 설정 + migrate 실행 검증 후 PG-only 전환 시 별도). 적용 스킬: (백엔드 DB — UI 없음.)
 
 ## 🟧 v39 브리프 (오너 2026-06-29 — "수집 신뢰성·인페이지 편집 드로어·아이콘 가시성·404 박멸" + v39-M 모바일 PWA)
 - 규칙(불변): 각 항목 **실제 화면 before/after 캡처로만 완료**. 추측 금지·거짓성공/임의환산 금지·회귀 금지(pytest+CI)·토큰 단일소스.

@@ -88,6 +88,26 @@ def sourcing_monitor_cron():
     return jsonify({"ok": True, **summary})
 
 
+@cron_bp.post("/supabase-backup")
+def supabase_backup_cron():
+    """PG(1차 저장소) → Google Sheets **읽기전용 백업** 일 1회 스냅샷 덤프.
+
+    헤더 ``X-Cron-Secret`` 이 ``CRON_SECRET`` 환경변수와 일치해야 실행(미설정 시 허용).
+    PG 미설정/시트 미설정이면 정직 사유 반환(가짜 성공 0).
+    """
+    cron_secret = os.getenv("CRON_SECRET")
+    if cron_secret:
+        if request.headers.get("X-Cron-Secret", "") != cron_secret:
+            return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    try:
+        from src.db.backup import backup_to_sheets
+        summary = backup_to_sheets()
+    except Exception as exc:
+        logger.error("Supabase 백업 오류: %s", exc)
+        return jsonify({"ok": False, "error": "백업 실행 중 오류가 발생했습니다."}), 500
+    return jsonify(summary)
+
+
 def _send_summary_notification(results: dict):
     """재가격 결과 요약을 텔레그램 + 이메일로 발송."""
     evaluated = results.get("evaluated", 0)
