@@ -47,5 +47,8 @@ ENV PORT=10000 \
 
 # Copy startup script
 COPY scripts/start_render.sh ./scripts/start_render.sh
+# DB 이관 스크립트 — 운영자가 Render Shell에서 `python scripts/migrate_to_supabase.py` 실행.
+# (스키마 .sql 은 src/db/ 아래라 COPY src/ 에 이미 포함됨.)
+COPY scripts/migrate_to_supabase.py ./scripts/migrate_to_supabase.py
 
 CMD ["sh", "scripts/start_render.sh"]
