@@ -2598,6 +2598,10 @@ def collect_bulk_duplicate():
     return jsonify({"ok": True, "duplicated": len(new_ids), "new_ids": new_ids})
 
 
+# 이름순 인덱스 패스트 스크롤 시 한 화면에 올리는 최대 항목 수(가상화로 성능, 안전 상한).
+_FASTSCROLL_MAX = 5000
+
+
 @bp.get("/catalog")
 def catalog():
     """상품 카탈로그 페이지 (Phase 128) — Sheets catalog 워크시트 뷰."""
@@ -2655,8 +2659,12 @@ def catalog():
             all_items = sorted(all_items, key=lambda i: i.last_synced_at or datetime.min, reverse=True)
 
         total = len(all_items)
-        start = (page_num - 1) * per_page
-        items = all_items[start:start + per_page]
+        if sort == "title_asc":
+            # 이름순 = 인덱스 패스트 스크롤(초성/A-Z/#) — 전체를 한 번에(가상화로 성능). 안전 상한.
+            items = all_items[:_FASTSCROLL_MAX]
+        else:
+            start = (page_num - 1) * per_page
+            items = all_items[start:start + per_page]
     except Exception as exc:
         logger.warning("카탈로그 데이터 로드 실패: %s", exc)
         error_msg = str(exc)
@@ -2720,6 +2728,7 @@ def catalog():
         },
         marketplace_options=marketplace_options,
         country_options=country_options,
+        fastscroll=(sort == "title_asc"),   # 이름순일 때만 인덱스 레일
     )
 
 
@@ -5529,12 +5538,18 @@ def collect_history():
     else:  # newest (기본)
         items.sort(key=lambda r: r.get("collected_at", ""), reverse=True)
 
-    # 페이지네이션
+    # 페이지네이션 (이름순=인덱스 패스트 스크롤이면 전체 로드, 가상화로 성능)
     total_filtered = len(items)
-    total_pages = max(1, (total_filtered + per_page - 1) // per_page)
-    page = min(page, total_pages)
-    start = (page - 1) * per_page
-    items = items[start:start + per_page]
+    fastscroll = (sort == "title")
+    if fastscroll:
+        total_pages = 1
+        page = 1
+        items = items[:_FASTSCROLL_MAX]
+    else:
+        total_pages = max(1, (total_filtered + per_page - 1) // per_page)
+        page = min(page, total_pages)
+        start = (page - 1) * per_page
+        items = items[start:start + per_page]
 
     # 각 항목에 썸네일 목록(최대 5장) 부착 — 대표이미지 + extra_json의 수집 이미지들.
     # 사람이 이름 옆에서 이미지로 바로 확인할 수 있게(오너 요청).
@@ -5597,6 +5612,7 @@ def collect_history():
         category_options=CATEGORY_OPTIONS,
         translation_free=translation_free,
         groups=groups,
+        fastscroll=fastscroll,
     )
 
 
