@@ -613,6 +613,7 @@ body::before {
 }
 .kgp-fs-scrub-row b { font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kgp-fs-scrub-none { color: var(--muted); font-size: 15px; padding: 12px 0; }
+.kgp-fs-scrub-more { color: var(--muted); font-size: 14px; padding: 6px 0 2px; font-weight: 600; }
 
 /* 목록에 레일 자리 확보(우측 패딩) */
 [data-fs-root] { padding-right: 40px; }

@@ -18,10 +18,12 @@ def client():
 
 
 def test_catalog_table_cards():
+    # table-cards는 본문, data-label/cardcell-*는 행 파셜(단일소스)로 이동.
     assert "table-cards" in CATALOG
+    ROWS = Path("src/seller_console/templates/catalog_rows.html").read_text(encoding="utf-8")
     for lbl in ('data-label="SKU"', 'data-label="가격"', 'data-label="상태"', 'data-label="마지막 동기화"'):
-        assert lbl in CATALOG, f"{lbl} 누락"
-    assert "cardcell-title" in CATALOG and "cardcell-actions" in CATALOG
+        assert lbl in ROWS, f"{lbl} 누락"
+    assert "cardcell-title" in ROWS and "cardcell-actions" in ROWS
 
 
 def test_mobile_action_flow_routes_ok(client):

@@ -41,12 +41,23 @@
     this.opts = opts || {};
     this.enabled = !!this.opts.enabled;
     this.list = root.querySelector("[data-fs-list]");
+    // v3 서버버킷 모드: 5000행을 DOM에 안 그리고, 서버가 준 버킷(count/offset/sample)으로
+    //   레일·스크럽·점프(lazy-fetch). buckets 있으면 서버모드, 없으면 기존 DOM 모드(하위호환).
+    this.buckets = this.opts.buckets || null;
+    this.serverMode = !!(this.buckets && this.enabled);
     this.rail = null; this.scrub = null; this.sbig = null; this.sitems = null;
     this.spans = [];
-    this.headers = {};       // bucket -> header element
+    this.headers = {};       // bucket -> header element (DOM 모드)
     this.present = {};       // bucket -> true
     this.data = {};          // bucket -> [{title, img}]
     this.cur = null;
+    if (this.serverMode) {
+      var self = this;
+      BUCKETS.forEach(function (b) {
+        var e = self.buckets[b];
+        if (e && e.count > 0) { self.present[b] = true; self.data[b] = e.sample || []; }
+      });
+    }
   }
 
   KGPFastScroll.prototype.groupSections = function () {
@@ -176,12 +187,14 @@
       this.cur = bucket;
       this.sbig.textContent = bucket;
       var rows = (this.data[bucket] || []);
+      var extra = 0;
+      if (this.serverMode && this.buckets[bucket]) extra = Math.max(0, this.buckets[bucket].count - rows.length);
       this.sitems.innerHTML = rows.length
         ? rows.slice(0, 40).map(function (it) {
             return '<div class="kgp-fs-scrub-row">' +
               (it.img ? '<img src="' + esc(it.img) + '" alt="" referrerpolicy="no-referrer">' : '<span class="kgp-fs-scrub-ic"></span>') +
               '<b>' + esc(it.title) + '</b></div>';
-          }).join("")
+          }).join("") + (extra ? '<div class="kgp-fs-scrub-more">…외 ' + extra + '개</div>' : "")
         : '<div class="kgp-fs-scrub-none">이 초성엔 아직 없어요</div>';
     }
   };
@@ -191,7 +204,15 @@
     this.scrub.classList.remove("kgp-fs-scrub-on");
     this.rail.classList.remove("kgp-fs-scrubbing");
     this.spans.forEach(function (s) { s.style.transform = ""; s.style.color = ""; });
-    if (bucket && this.headers[bucket]) this.headers[bucket].scrollIntoView({ block: "start" });   // 조용히 착지(토스트 0)
+    if (bucket) {
+      if (this.serverMode) {
+        // 서버모드: 해당 버킷 섹션을 lazy-fetch(offset 창) — 전체 DOM 없이 점프.
+        var e = this.buckets[bucket];
+        if (e && e.count > 0 && typeof this.opts.onJump === "function") this.opts.onJump(e.offset, bucket);
+      } else if (this.headers[bucket]) {
+        this.headers[bucket].scrollIntoView({ block: "start" });   // DOM 모드: 조용히 착지(토스트 0)
+      }
+    }
     this.cur = null;
   };
 
@@ -246,9 +267,10 @@
   };
 
   KGPFastScroll.prototype.init = function () {
-    if (this.enabled && this.list) this.groupSections();
+    // 서버모드는 DOM 섹션 그룹핑을 하지 않는다(5000행 미렌더). DOM 모드만 그룹핑.
+    if (this.enabled && !this.serverMode && this.list) this.groupSections();
     this.buildRail();
-    this._jumpFromHash();
+    if (!this.serverMode) this._jumpFromHash();
     return this;
   };
 

@@ -1351,6 +1351,18 @@ function renderUploadResults(data) {
   el.innerHTML = html;
 }
 
-document.addEventListener('DOMContentLoaded', initEditor);
+// 드로어 백지 방지: 편집기 초기화 실패해도 정적 편집폼은 이미 보이므로,
+// 부모(수집이력)에 'preview-ready' 핸드셰이크를 반드시 보낸다. 초기화 예외는 콘솔에 남기되
+// 렌더는 살아있게(백지 금지). 부모는 이 신호가 워치독 시간 내 안 오면 '불러오기 실패+재시도'를 띄운다.
+function _kgpSignalReady() {
+  try { if (window.parent && window.parent !== window) window.parent.postMessage({ kgp: 'preview-ready' }, '*'); } catch (e) {}
+}
+document.addEventListener('DOMContentLoaded', function () {
+  try { initEditor(); }
+  catch (e) { console.error('[편집기] 초기화 오류(정적 편집폼은 유지):', e); }
+  _kgpSignalReady();
+});
+// load 시점에도 한 번 더(초기화 전 스크립트 예외로 DOMContentLoaded 콜백이 통째로 날아간 경우 대비).
+window.addEventListener('load', _kgpSignalReady);
 </script>
 {% endblock %}

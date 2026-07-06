@@ -198,97 +198,22 @@
               <th>미리보기·등록</th>
             </tr>
           </thead>
-          <tbody{% if fastscroll %} data-fs-list{% endif %}>
-          {% for it in items %}
-            <tr{% if fastscroll %} data-fs-key="{{ it.title_display or it.title or '#' }}"{% endif %}>
-              <td class="ps-3 cardcell-check"><input type="checkbox" class="row-chk" value="{{ it.id }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}" aria-label="선택"></td>
-              <td class="cardcell-img">
-                {# v39 C: 클릭 = 인페이지 편집 드로어(새 창/원본 이동 0). #}
-                <a href="javascript:void(0)" class="kgp-open-drawer d-inline-flex align-items-center gap-1" role="button"
-                   data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}" title="클릭하면 편집 드로어가 열려요">
-                {% if it.thumbs %}
-                  {% for t in it.thumbs %}
-                  <img src="{{ t }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"
-                       width="{{ '52' if loop.first else '34' }}" height="{{ '52' if loop.first else '34' }}"
-                       style="width:{{ '52' if loop.first else '34' }}px;height:{{ '52' if loop.first else '34' }}px;object-fit:cover;border-radius:7px;background:#f1f3f5;border:1px solid #e9ecef"
-                       onerror="this.style.display='none'">
-                  {% endfor %}
-                {% else %}
-                  {# v41 X-1: 이미지 없으면 다른 상품 이미지 대신 정직한 '이미지 없음' 표기(엉뚱 이미지 0). #}
-                  <span class="d-inline-flex align-items-center justify-content-center text-muted"
-                        title="이미지 없음" aria-label="이미지 없음"
-                        style="width:52px;height:52px;border-radius:8px;background:#f1f3f5;font-size:18px"><i class="bi bi-image"></i></span>
-                {% endif %}
-                </a>
-              </td>
-              <td style="max-width:360px" class="cardcell-title">
-                <a href="javascript:void(0)" class="kgp-open-drawer text-decoration-none fw-semibold text-dark d-block text-truncate" role="button"
-                   data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}" title="{{ it.title_display or it.title or '(제목 없음)' }}">
-                  {{ it.title_display or it.title or "(제목 없음)" }}
-                </a>
-                {# v45(6): 요청 언어({{ current_lang }})로 번역 안 됨 → 원문 표시 + '원문' 뱃지(섞기 금지). #}
-                {% if it.title_is_original %}
-                <span class="badge mt-1" style="background:color-mix(in srgb,var(--warn,#f5821f) 14%,transparent);color:var(--warn,#f5821f)" title="{{ '아직 한국어로 번역되지 않았어요' if current_lang != 'en' else 'Original (not translated)' }}"><i class="bi bi-translate"></i> 원문</span>
-                {% endif %}
-                <span class="text-muted small d-block text-truncate" title="{{ it.url }}">{{ it.domain or it.url }}</span>
-                {# v44-1: 업로드 성공한 마켓 '등록됨' 뱃지(서버 확인분 영구 표시). #}
-                {% if it.uploaded_markets %}
-                <span class="badge mt-1" style="background:color-mix(in srgb,var(--success,#2f9e44) 15%,transparent);color:var(--success,#2f9e44)"
-                      title="{{ it.uploaded_markets|join(', ') }}에 등록됨"><i class="bi bi-check-circle"></i> 등록됨 · {{ it.uploaded_markets|join('·') }}</span>
-                {% endif %}
-              </td>
-              <td class="small" data-label="가격">
-                {% if it.price %}<span class="fw-semibold">{{ it.price }}</span> <span class="text-muted">{{ it.currency }}</span>{% else %}<span class="text-muted">-</span>{% endif %}
-              </td>
-              <td data-label="경로">
-                {% if it.source in ("extension", "chrome_extension") %}
-                  <span class="badge bg-primary">확장</span>
-                {% elif it.source == "bookmarklet" %}
-                  <span class="badge bg-secondary">북마클릿</span>
-                {% elif it.source == "quick" %}
-                  <span class="badge bg-secondary">즉시</span>
-                {% elif it.source == "manual" %}
-                  <span class="badge bg-info text-dark">수동</span>
-                {% elif it.source in ("bulk", "bulk_collect") %}
-                  <span class="badge bg-warning text-dark">벌크</span>
-                {% else %}
-                  <span class="badge bg-light text-dark">{{ it.source or "-" }}</span>
-                {% endif %}
-              </td>
-              <td class="text-muted small" data-label="수집 시각">{{ it.collected_at[:16] if it.collected_at else "-" }}</td>
-              <td data-label="상태">
-                {% if it.status == "ok" %}
-                  <span class="badge bg-success"><i class="bi bi-check-lg"></i></span>
-                {% elif it.status == "archived" %}
-                  <span class="badge bg-secondary"><i class="bi bi-archive"></i> 보관</span>
-                {% else %}
-                  <span class="badge bg-danger">{{ it.status }}</span>
-                {% endif %}
-              </td>
-              <td class="text-nowrap cardcell-actions">
-                <button type="button" class="kgp-open-drawer btn btn-success btn-sm py-0"
-                        data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}"
-                        title="확인·수정 후 마켓에 등록"><i class="bi bi-pencil-square"></i> 편집·등록</button>
-              </td>
-            </tr>
-          {% endfor %}
+          {# 속도: 첫 50건만 렌더 + 무한스크롤(fmt=rows). 행은 collect_history_rows.html 단일소스. #}
+          <tbody data-fs-list id="chRows">
+          {% include 'collect_history_rows.html' %}
           </tbody>
         </table>
       </div>
-      {% if pagination and pagination.total_pages > 1 and not fastscroll %}
+      {# 속도: 무한스크롤 — 바닥 근접 시 다음 50건을 이어붙인다(페이지 이동 없음). #}
       {% set _qs = '&q=' ~ filters.q ~ '&domain=' ~ filters.domain ~ '&source=' ~ filters.source ~ '&status=' ~ filters.status ~ '&group=' ~ filters.group ~ '&sort=' ~ filters.sort ~ '&days=' ~ filters.days ~ '&per_page=' ~ filters.per_page %}
-      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 p-2 border-top">
-        <span class="small text-muted">전체 {{ pagination.total }}개 · {{ pagination.page }}/{{ pagination.total_pages }} 페이지</span>
-        <nav><ul class="pagination pagination-sm mb-0">
-          <li class="page-item {% if pagination.page <= 1 %}disabled{% endif %}">
-            <a class="page-link" href="?page={{ pagination.page - 1 }}{{ _qs }}">이전</a>
-          </li>
-          <li class="page-item {% if pagination.page >= pagination.total_pages %}disabled{% endif %}">
-            <a class="page-link" href="?page={{ pagination.page + 1 }}{{ _qs }}">다음</a>
-          </li>
-        </ul></nav>
+      <div id="fsInfiniteScroll"
+           data-loaded="{{ items|length }}"
+           data-total="{{ pagination.total }}"
+           data-has-more="{{ '1' if has_more else '0' }}"
+           class="text-center text-muted small py-3" style="min-height:1px;">
+        <span id="fsLoadingSpin" class="d-none"><span class="spinner-border spinner-border-sm"></span> 더 불러오는 중…</span>
+        <span id="fsAllLoaded" class="d-none">전체 {{ pagination.total }}건 모두 표시했어요</span>
       </div>
-      {% endif %}
     </div>
   </div>
   {% else %}
@@ -508,7 +433,13 @@
   .kgp-drawer-head { display: flex; align-items: center; gap: .75rem; padding: .7rem 1rem;
     border-bottom: 1px solid var(--console-border, #e6e0d3); flex-shrink: 0; }
   .kgp-drawer-title { font-weight: 700; flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kgp-drawer-body { position: relative; flex-grow: 1; display: flex; min-height: 0; }
   .kgp-drawer-iframe { flex-grow: 1; width: 100%; border: 0; }
+  .kgp-drawer-fail { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: var(--surface, #fff); padding: 1.25rem; text-align: center; z-index: 2; }
+  .kgp-drawer-fail[hidden] { display: none; }
+  .kgp-drawer-fail-card { max-width: 320px; }
+  .kgp-drawer-fail-card .bi-exclamation-triangle { font-size: 1.8rem; color: var(--warn, #C98A1E); }
   .kgp-drawer-x { width: 44px; height: 44px; border: 0; background: transparent; font-size: 1.4rem; cursor: pointer; border-radius: 8px; color: var(--text-muted, #777); }
   .kgp-drawer-x:hover { background: var(--console-primary-weak, #eee); }
   .kgp-drawer-grip { display: none; }
@@ -537,26 +468,66 @@
     <a id="kgpDrawerOrigin" href="javascript:void(0)" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary btn-sm"><span class="kgp-drawer-origin-txt">원본 보기 </span><i class="bi bi-box-arrow-up-right"></i></a>
     <button type="button" class="kgp-drawer-x" onclick="closeItemDrawer()" aria-label="닫기"><i class="bi bi-x-lg"></i></button>
   </div>
-  <iframe class="kgp-drawer-iframe" id="kgpDrawerFrame" title="상품 편집" referrerpolicy="no-referrer"></iframe>
+  <div class="kgp-drawer-body">
+    <iframe class="kgp-drawer-iframe" id="kgpDrawerFrame" title="상품 편집" referrerpolicy="no-referrer"></iframe>
+    {# 백지 금지: iframe이 렌더 신호(preview-ready)를 못 보내면 이 오버레이로 '불러오기 실패+재시도' 정직 표기. #}
+    <div class="kgp-drawer-fail" id="kgpDrawerFail" hidden>
+      <div class="kgp-drawer-fail-card">
+        <i class="bi bi-exclamation-triangle"></i>
+        <div class="fw-semibold mt-2">편집 화면을 불러오지 못했어요</div>
+        <div class="text-muted small mt-1">네트워크가 잠시 불안정했을 수 있어요. 다시 시도해 주세요.</div>
+        <div class="d-flex gap-2 justify-content-center mt-3">
+          <button type="button" class="btn btn-primary btn-sm" onclick="retryItemDrawer()"><i class="bi bi-arrow-clockwise"></i> 다시 시도</button>
+          <a id="kgpDrawerFailOpen" href="javascript:void(0)" target="_blank" rel="noopener" class="btn btn-outline-secondary btn-sm"><i class="bi bi-box-arrow-up-right"></i> 새 탭에서 열기</a>
+        </div>
+      </div>
+    </div>
+  </div>
 </aside>
 
 <script>
 // v39 C: 편집 드로어 — 목록 클릭을 라우트 이동/새 창에서 인페이지 오버레이로 교체.
 let _kgpDrawerDirty = false;   // iframe에서 저장 발생 시 닫을 때 목록 새로고침
-function openItemDrawer(id, title, url) {
+let _kgpDrawerId = '';         // 현재 드로어 항목(재시도용)
+let _kgpDrawerReady = false;   // iframe이 preview-ready 신호를 보냈는가
+let _kgpDrawerWatch = null;    // 백지 감시 타이머
+const _KGP_DRAWER_TIMEOUT = 8000;   // 이 시간 내 렌더 신호 없으면 '불러오기 실패'
+
+function _kgpDrawerLoadFrame(id) {
   const fr = document.getElementById('kgpDrawerFrame');
-  fr.src = '/seller/collect/preview/' + encodeURIComponent(id) + '?drawer=1';
+  const fail = document.getElementById('kgpDrawerFail');
+  if (fail) fail.hidden = true;
+  _kgpDrawerReady = false;
+  if (_kgpDrawerWatch) clearTimeout(_kgpDrawerWatch);
+  // 캐시/SW가 stale·오프라인 응답을 주는 경우 대비 캐시버스트.
+  fr.src = '/seller/collect/preview/' + encodeURIComponent(id) + '?drawer=1&t=' + Date.now();
+  const failOpen = document.getElementById('kgpDrawerFailOpen');
+  if (failOpen) failOpen.href = '/seller/collect/preview/' + encodeURIComponent(id);
+  _kgpDrawerWatch = setTimeout(showDrawerFail, _KGP_DRAWER_TIMEOUT);
+}
+function openItemDrawer(id, title, url) {
+  _kgpDrawerId = id;
   document.getElementById('kgpDrawerTitle').textContent = title || '상품 편집';
   const orig = document.getElementById('kgpDrawerOrigin');
   if (url) { orig.href = url; orig.style.display = ''; } else { orig.style.display = 'none'; }
   document.getElementById('kgpDrawer').classList.add('show');
   document.getElementById('kgpDrawerBackdrop').classList.add('show');
   document.body.classList.add('kgp-drawer-open');
+  _kgpDrawerLoadFrame(id);
+}
+function retryItemDrawer() {   // '다시 시도' — 백지/실패 오버레이에서 재로딩
+  if (_kgpDrawerId) _kgpDrawerLoadFrame(_kgpDrawerId);
+}
+function showDrawerFail() {     // 렌더 신호가 제때 안 오면 백지 대신 정직한 실패 표기
+  if (_kgpDrawerReady) return;
+  const fail = document.getElementById('kgpDrawerFail');
+  if (fail) fail.hidden = false;
 }
 function closeItemDrawer() {
   document.getElementById('kgpDrawer').classList.remove('show');
   document.getElementById('kgpDrawerBackdrop').classList.remove('show');
   document.body.classList.remove('kgp-drawer-open');
+  if (_kgpDrawerWatch) { clearTimeout(_kgpDrawerWatch); _kgpDrawerWatch = null; }
   if (_kgpDrawerDirty) { _kgpDrawerDirty = false; window.location.reload(); }   // 저장 반영
   setTimeout(() => { const fr = document.getElementById('kgpDrawerFrame'); if (fr) fr.src = 'about:blank'; }, 300);
 }
@@ -572,6 +543,27 @@ document.addEventListener('keydown', function (e) { if (e.key === 'Escape') clos
 window.addEventListener('message', function (e) {
   if (e.data && e.data.kgp === 'preview-saved') _kgpDrawerDirty = true;
   if (e.data && e.data.kgp === 'drawer-close') closeItemDrawer();   // v39 F: 수집 실패 빈 상태 '수집 이력으로'
+  if (e.data && e.data.kgp === 'preview-ready') {                    // 렌더 성공 신호 → 백지 감시 해제
+    _kgpDrawerReady = true;
+    if (_kgpDrawerWatch) { clearTimeout(_kgpDrawerWatch); _kgpDrawerWatch = null; }
+    const fail = document.getElementById('kgpDrawerFail');
+    if (fail) fail.hidden = true;
+  }
+});
+// iframe onload 폴백: X-Frame-Options 차단 등으로 postMessage가 아예 안 오는 경우,
+// onload 직후 same-origin 본문 접근을 시도해 비었/차단됐으면 즉시 실패 표기(8초 안 기다림).
+document.getElementById('kgpDrawerFrame').addEventListener('load', function () {
+  const fr = this;
+  if (!fr.src || fr.src === 'about:blank' || fr.src.indexOf('about:blank') === 0) return;
+  setTimeout(function () {
+    if (_kgpDrawerReady) return;
+    let ok = false;
+    try {
+      const d = fr.contentDocument;               // 차단 시 null/예외
+      ok = !!(d && d.body && d.body.innerHTML.length > 200);
+    } catch (err) { ok = false; }
+    if (!ok) showDrawerFail();
+  }, 400);
 });
 
 // v41 STEP 1-0b: 수집 → 목록 자동 반영.
@@ -1044,14 +1036,57 @@ async function runBulkUpload() {
   }
 }
 </script>
+{% set _fs_base = '?q=' ~ filters.q ~ '&domain=' ~ filters.domain ~ '&source=' ~ filters.source ~ '&status=' ~ filters.status ~ '&group=' ~ filters.group ~ '&sort=' ~ filters.sort ~ '&days=' ~ filters.days ~ '&per_page=' ~ filters.per_page %}
 {% set _fs_switch = '?q=' ~ filters.q ~ '&domain=' ~ filters.domain ~ '&source=' ~ filters.source ~ '&status=' ~ filters.status ~ '&group=' ~ filters.group ~ '&sort=title&days=' ~ filters.days ~ '&per_page=' ~ filters.per_page %}
 <script src="/seller/static/kgp-fastscroll.js"></script>
 <script>
   (function () {
+    // 속도: 첫 50건 후 무한스크롤/나이아 점프로 fmt=rows 이어붙임(페이지 이동 없음).
+    var BASE = "/seller/collect/history{{ _fs_base }}";
+    var tbody = document.getElementById('chRows');
+    var meta = document.getElementById('fsInfiniteScroll');
+    var total = parseInt(meta && meta.dataset.total || '0', 10) || 0;
+    var loaded = parseInt(meta && meta.dataset.loaded || '0', 10) || 0;
+    var loading = false;
+    var spin = document.getElementById('fsLoadingSpin');
+    var done = document.getElementById('fsAllLoaded');
+    function setDone() { if (spin) spin.classList.add('d-none'); if (done && loaded >= total) done.classList.remove('d-none'); }
+
+    async function fetchRows(offset, replace) {
+      if (loading) return 0;
+      loading = true; if (spin) spin.classList.remove('d-none');
+      try {
+        var r = await fetch(BASE + '&fmt=rows&offset=' + offset, { headers: { 'X-Requested-With': 'fetch' } });
+        var html = await r.text();
+        if (replace) { tbody.innerHTML = html; }
+        else { tbody.insertAdjacentHTML('beforeend', html); }
+        var tmp = document.createElement('tbody'); tmp.innerHTML = html;
+        var n = tmp.querySelectorAll('tr').length;
+        loaded = replace ? (offset + n) : (loaded + n);
+        return n;
+      } catch (e) { return 0; }
+      finally { loading = false; if (spin) spin.classList.add('d-none'); setDone(); }
+    }
+
+    if (meta && 'IntersectionObserver' in window) {
+      var io = new IntersectionObserver(function (ents) {
+        ents.forEach(function (en) { if (en.isIntersecting && loaded < total && !loading) fetchRows(loaded, false); });
+      }, { rootMargin: '600px' });
+      io.observe(meta);
+    }
+    setDone();
+
     var root = document.querySelector('[data-fs-root]');
     if (root && window.KGPFastScroll) window.KGPFastScroll.init(root, {
       enabled: {{ 'true' if fastscroll else 'false' }},
-      switchUrl: "{{ _fs_switch }}"
+      switchUrl: "{{ _fs_switch }}",
+      buckets: {{ fs_buckets|tojson if fs_buckets is defined else '{}' }},
+      onJump: function (offset) {
+        fetchRows(offset, true).then(function () {
+          var card = document.querySelector('[data-fs-root]');
+          if (card) card.scrollIntoView({ block: 'start' });
+        });
+      }
     });
   })();
 </script>

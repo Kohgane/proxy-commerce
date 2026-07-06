@@ -1,0 +1,60 @@
+{# 카탈로그 행 파셜 — 첫 로드·무한스크롤(fmt=rows)·나이아 점프가 공유. 행 마크업 단일 소스. #}
+{% for item in items %}
+<tr data-fs-key="{{ item.title or '#' }}">
+  <td class="cardcell-img">
+    <span class="badge bg-secondary" style="font-size:0.7rem;">
+      {{ item.marketplace_label }}
+    </span>
+    {% if not item.is_ready %}
+    <span class="badge bg-dark ms-1" style="font-size:0.65rem;">준비 중</span>
+    {% endif %}
+    <div class="small text-muted">{{ item.country }}/{{ item.currency }}</div>
+  </td>
+  <td class="fw-semibold cardcell-title">
+    {{ item.title or '(제목 없음)' }}
+    {% if item.is_localization_fallback %}
+    <div class="small text-muted">미현지화(원문 표시)</div>
+    {% endif %}
+  </td>
+  <td data-label="SKU"><code style="font-size:0.75rem;">{{ item.sku or '-' }}</code></td>
+  <td data-label="가격">
+    {{ item.price_display }}
+    {% if item.price_note %}
+    <div class="small text-muted">{{ item.price_note }}</div>
+    {% endif %}
+  </td>
+  <td data-label="상태">
+    {% if item.state == 'active' %}
+      <span class="badge bg-success">활성</span>
+    {% elif item.state == 'out_of_stock' %}
+      <span class="badge bg-warning text-dark">품절</span>
+    {% elif item.state == 'error' %}
+      <span class="badge bg-danger">오류</span>
+    {% elif item.state == 'suspended' %}
+      <span class="badge bg-secondary">정지</span>
+    {% else %}
+      <span class="badge bg-light text-dark">{{ item.state }}</span>
+    {% endif %}
+  </td>
+  <td class="text-muted small" data-label="마지막 동기화">
+    {% if item.last_synced_at %}
+      {{ item.last_synced_at.strftime('%m/%d %H:%M') if item.last_synced_at else '-' }}
+    {% else %}
+      -
+    {% endif %}
+  </td>
+  <td class="cardcell-actions">
+    {% if item.is_ready %}
+    <button class="btn btn-outline-secondary btn-sm py-0"
+            aria-label="상품 동기화"
+            onclick="syncItem(this, '{{ item.product_id }}', '{{ item.marketplace }}')">
+      <i class="bi bi-arrow-clockwise"></i> 동기화
+    </button>
+    {% else %}
+    <button class="btn btn-outline-secondary btn-sm py-0" disabled aria-disabled="true">
+      연동 필요
+    </button>
+    {% endif %}
+  </td>
+</tr>
+{% endfor %}

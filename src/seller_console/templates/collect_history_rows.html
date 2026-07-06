@@ -1,0 +1,74 @@
+{# 수집이력 행 파셜 — 첫 로드·무한스크롤(fmt=rows)·나이아 점프 공유. current_lang은 컨텍스트 전역. #}
+{% for it in items %}
+<tr data-fs-key="{{ it.title_display or it.title or '#' }}">
+  <td class="ps-3 cardcell-check"><input type="checkbox" class="row-chk" value="{{ it.id }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}" aria-label="선택"></td>
+  <td class="cardcell-img">
+    {# v39 C: 클릭 = 인페이지 편집 드로어(새 창/원본 이동 0). #}
+    <a href="javascript:void(0)" class="kgp-open-drawer d-inline-flex align-items-center gap-1" role="button"
+       data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}" title="클릭하면 편집 드로어가 열려요">
+    {% if it.thumbs %}
+      {% for t in it.thumbs %}
+      <img src="{{ t }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"
+           width="{{ '52' if loop.first else '34' }}" height="{{ '52' if loop.first else '34' }}"
+           style="width:{{ '52' if loop.first else '34' }}px;height:{{ '52' if loop.first else '34' }}px;object-fit:cover;border-radius:7px;background:#f1f3f5;border:1px solid #e9ecef"
+           onerror="this.style.display='none'">
+      {% endfor %}
+    {% else %}
+      {# v41 X-1: 이미지 없으면 다른 상품 이미지 대신 정직한 '이미지 없음' 표기(엉뚱 이미지 0). #}
+      <span class="d-inline-flex align-items-center justify-content-center text-muted"
+            title="이미지 없음" aria-label="이미지 없음"
+            style="width:52px;height:52px;border-radius:8px;background:#f1f3f5;font-size:18px"><i class="bi bi-image"></i></span>
+    {% endif %}
+    </a>
+  </td>
+  <td style="max-width:360px" class="cardcell-title">
+    <a href="javascript:void(0)" class="kgp-open-drawer text-decoration-none fw-semibold text-dark d-block text-truncate" role="button"
+       data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}" title="{{ it.title_display or it.title or '(제목 없음)' }}">
+      {{ it.title_display or it.title or "(제목 없음)" }}
+    </a>
+    {# v45(6): 요청 언어({{ current_lang }})로 번역 안 됨 → 원문 표시 + '원문' 뱃지(섞기 금지). #}
+    {% if it.title_is_original %}
+    <span class="badge mt-1" style="background:color-mix(in srgb,var(--warn,#f5821f) 14%,transparent);color:var(--warn,#f5821f)" title="{{ '아직 한국어로 번역되지 않았어요' if current_lang != 'en' else 'Original (not translated)' }}"><i class="bi bi-translate"></i> 원문</span>
+    {% endif %}
+    <span class="text-muted small d-block text-truncate" title="{{ it.url }}">{{ it.domain or it.url }}</span>
+    {# v44-1: 업로드 성공한 마켓 '등록됨' 뱃지(서버 확인분 영구 표시). #}
+    {% if it.uploaded_markets %}
+    <span class="badge mt-1" style="background:color-mix(in srgb,var(--success,#2f9e44) 15%,transparent);color:var(--success,#2f9e44)"
+          title="{{ it.uploaded_markets|join(', ') }}에 등록됨"><i class="bi bi-check-circle"></i> 등록됨 · {{ it.uploaded_markets|join('·') }}</span>
+    {% endif %}
+  </td>
+  <td class="small" data-label="가격">
+    {% if it.price %}<span class="fw-semibold">{{ it.price }}</span> <span class="text-muted">{{ it.currency }}</span>{% else %}<span class="text-muted">-</span>{% endif %}
+  </td>
+  <td data-label="경로">
+    {% if it.source in ("extension", "chrome_extension") %}
+      <span class="badge bg-primary">확장</span>
+    {% elif it.source == "bookmarklet" %}
+      <span class="badge bg-secondary">북마클릿</span>
+    {% elif it.source == "quick" %}
+      <span class="badge bg-secondary">즉시</span>
+    {% elif it.source == "manual" %}
+      <span class="badge bg-info text-dark">수동</span>
+    {% elif it.source in ("bulk", "bulk_collect") %}
+      <span class="badge bg-warning text-dark">벌크</span>
+    {% else %}
+      <span class="badge bg-light text-dark">{{ it.source or "-" }}</span>
+    {% endif %}
+  </td>
+  <td class="text-muted small" data-label="수집 시각">{{ it.collected_at[:16] if it.collected_at else "-" }}</td>
+  <td data-label="상태">
+    {% if it.status == "ok" %}
+      <span class="badge bg-success"><i class="bi bi-check-lg"></i></span>
+    {% elif it.status == "archived" %}
+      <span class="badge bg-secondary"><i class="bi bi-archive"></i> 보관</span>
+    {% else %}
+      <span class="badge bg-danger">{{ it.status }}</span>
+    {% endif %}
+  </td>
+  <td class="text-nowrap cardcell-actions">
+    <button type="button" class="kgp-open-drawer btn btn-success btn-sm py-0"
+            data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}"
+            title="확인·수정 후 마켓에 등록"><i class="bi bi-pencil-square"></i> 편집·등록</button>
+  </td>
+</tr>
+{% endfor %}

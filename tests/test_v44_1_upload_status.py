@@ -83,5 +83,7 @@ def test_templates_have_badges_retry_and_item_id():
     # 결과 모달: 마켓별 뱃지 + 실패 재시도 + item_id 전송.
     assert "등록됨" in PREVIEW and "retryFailedUpload" in PREVIEW
     assert "item_id: _ITEM_ID" in PREVIEW
-    # 목록: 등록됨 뱃지.
-    assert "uploaded_markets" in HISTORY and "등록됨" in HISTORY
+    # 목록: 등록됨 뱃지(행 마크업은 파셜로 이동).
+    from pathlib import Path
+    HISTORY_ROWS = Path("src/seller_console/templates/collect_history_rows.html").read_text(encoding="utf-8")
+    assert "uploaded_markets" in HISTORY_ROWS and "등록됨" in HISTORY_ROWS

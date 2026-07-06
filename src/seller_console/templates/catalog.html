@@ -106,66 +106,10 @@
             <th style="width:120px;">액션</th>
           </tr>
         </thead>
-        <tbody{% if fastscroll %} data-fs-list{% endif %}>
-          {% for item in items %}
-          <tr{% if fastscroll %} data-fs-key="{{ item.title or '#' }}"{% endif %}>
-            <td class="cardcell-img">
-              <span class="badge bg-secondary" style="font-size:0.7rem;">
-                {{ item.marketplace_label }}
-              </span>
-              {% if not item.is_ready %}
-              <span class="badge bg-dark ms-1" style="font-size:0.65rem;">준비 중</span>
-              {% endif %}
-              <div class="small text-muted">{{ item.country }}/{{ item.currency }}</div>
-            </td>
-            <td class="fw-semibold cardcell-title">
-              {{ item.title or '(제목 없음)' }}
-              {% if item.is_localization_fallback %}
-              <div class="small text-muted">미현지화(원문 표시)</div>
-              {% endif %}
-            </td>
-            <td data-label="SKU"><code style="font-size:0.75rem;">{{ item.sku or '-' }}</code></td>
-            <td data-label="가격">
-              {{ item.price_display }}
-              {% if item.price_note %}
-              <div class="small text-muted">{{ item.price_note }}</div>
-              {% endif %}
-            </td>
-            <td data-label="상태">
-              {% if item.state == 'active' %}
-                <span class="badge bg-success">활성</span>
-              {% elif item.state == 'out_of_stock' %}
-                <span class="badge bg-warning text-dark">품절</span>
-              {% elif item.state == 'error' %}
-                <span class="badge bg-danger">오류</span>
-              {% elif item.state == 'suspended' %}
-                <span class="badge bg-secondary">정지</span>
-              {% else %}
-                <span class="badge bg-light text-dark">{{ item.state }}</span>
-              {% endif %}
-            </td>
-            <td class="text-muted small" data-label="마지막 동기화">
-              {% if item.last_synced_at %}
-                {{ item.last_synced_at.strftime('%m/%d %H:%M') if item.last_synced_at else '-' }}
-              {% else %}
-                -
-              {% endif %}
-            </td>
-            <td class="cardcell-actions">
-              {% if item.is_ready %}
-              <button class="btn btn-outline-secondary btn-sm py-0"
-                      aria-label="상품 동기화"
-                      onclick="syncItem(this, '{{ item.product_id }}', '{{ item.marketplace }}')">
-                <i class="bi bi-arrow-clockwise"></i> 동기화
-              </button>
-              {% else %}
-              <button class="btn btn-outline-secondary btn-sm py-0" disabled aria-disabled="true">
-                연동 필요
-              </button>
-              {% endif %}
-            </td>
-          </tr>
-          {% else %}
+        {# 속도: 첫 50건만 렌더 + 무한스크롤(fmt=rows)로 추가. 행은 catalog_rows.html 단일소스. #}
+        <tbody data-fs-list id="catalogRows">
+          {% include 'catalog_rows.html' %}
+          {% if total == 0 %}
           <tr>
             <td colspan="7" class="text-center text-muted py-4">
               <div class="console-empty-state p-2">
@@ -181,35 +125,23 @@
               </div>
             </td>
           </tr>
-          {% endfor %}
+          {% endif %}
         </tbody>
       </table>
     </div>
   </div>
 </div>
 
-<!-- 페이지네이션 (이름순=인덱스 패스트 스크롤이라 전체 로드 → 페이지네이션 숨김) -->
-{% if total_pages > 1 and not fastscroll %}
-<nav class="mt-3">
-  <ul class="pagination pagination-sm justify-content-center">
-    {% if current_page > 1 %}
-    <li class="page-item">
-      <a class="page-link" href="?page={{ current_page - 1 }}&marketplace={{ filters.marketplace }}&country={{ filters.country }}&state={{ filters.state }}&search={{ filters.search }}&sort={{ filters.sort }}&per_page={{ filters.per_page }}">이전</a>
-    </li>
-    {% endif %}
-    {% for p in range(1, total_pages + 1) %}
-    <li class="page-item {% if p == current_page %}active{% endif %}">
-      <a class="page-link" href="?page={{ p }}&marketplace={{ filters.marketplace }}&country={{ filters.country }}&state={{ filters.state }}&search={{ filters.search }}&sort={{ filters.sort }}&per_page={{ filters.per_page }}">{{ p }}</a>
-    </li>
-    {% endfor %}
-    {% if current_page < total_pages %}
-    <li class="page-item">
-      <a class="page-link" href="?page={{ current_page + 1 }}&marketplace={{ filters.marketplace }}&country={{ filters.country }}&state={{ filters.state }}&search={{ filters.search }}&sort={{ filters.sort }}&per_page={{ filters.per_page }}">다음</a>
-    </li>
-    {% endif %}
-  </ul>
-</nav>
-{% endif %}
+<!-- 속도: 무한스크롤 — 스크롤이 바닥에 닿으면 다음 50건을 fmt=rows로 이어붙인다(페이지 이동 없음). -->
+<div id="fsInfiniteScroll"
+     data-loaded="{{ items|length }}"
+     data-total="{{ total }}"
+     data-has-more="{{ '1' if has_more else '0' }}"
+     data-per-page="{{ filters.per_page }}"
+     class="text-center text-muted small py-3" style="min-height:1px;">
+  <span id="fsLoadingSpin" class="d-none"><span class="spinner-border spinner-border-sm"></span> 더 불러오는 중…</span>
+  <span id="fsAllLoaded" class="d-none">{{ total }}건 모두 표시했어요</span>
+</div>
 
 <div class="position-fixed bottom-0 end-0 p-3 pc-toast-stack">
   <div id="catalogToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
@@ -265,14 +197,64 @@ async function syncItem(button, productId, marketplace) {
   }
 }
 </script>
+{% set _fs_base = '?marketplace=' ~ filters.marketplace ~ '&country=' ~ filters.country ~ '&state=' ~ filters.state ~ '&search=' ~ filters.search ~ '&sort=' ~ filters.sort ~ '&per_page=' ~ filters.per_page %}
 {% set _fs_switch = '?marketplace=' ~ filters.marketplace ~ '&country=' ~ filters.country ~ '&state=' ~ filters.state ~ '&search=' ~ filters.search ~ '&sort=title_asc&per_page=' ~ filters.per_page %}
 <script src="/seller/static/kgp-fastscroll.js"></script>
 <script>
   (function () {
+    // 속도: 첫 50건 렌더 후 무한스크롤/나이아 점프로 fmt=rows를 이어붙인다(페이지 이동 없음).
+    var BASE = "/seller/catalog{{ _fs_base }}";
+    var tbody = document.getElementById('catalogRows');
+    var meta = document.getElementById('fsInfiniteScroll');
+    var total = parseInt(meta && meta.dataset.total || '0', 10) || 0;
+    var loaded = parseInt(meta && meta.dataset.loaded || '0', 10) || 0;
+    var perPage = parseInt(meta && meta.dataset.perPage || '50', 10) || 50;
+    var loading = false;
+    var spin = document.getElementById('fsLoadingSpin');
+    var done = document.getElementById('fsAllLoaded');
+
+    function setDone() { if (spin) spin.classList.add('d-none'); if (done && loaded >= total) done.classList.remove('d-none'); }
+
+    async function fetchRows(offset, replace) {
+      if (loading) return 0;
+      loading = true; if (spin) spin.classList.remove('d-none');
+      try {
+        var r = await fetch(BASE + '&fmt=rows&offset=' + offset, { headers: { 'X-Requested-With': 'fetch' } });
+        var html = await r.text();
+        if (replace) { tbody.innerHTML = html; loaded = 0; }
+        else { tbody.insertAdjacentHTML('beforeend', html); }
+        // 새로 추가된 행 개수 = 이 응답의 tr 수
+        var tmp = document.createElement('tbody'); tmp.innerHTML = html;
+        var n = tmp.querySelectorAll('tr').length;
+        loaded = replace ? (offset + n) : (loaded + n);
+        return n;
+      } catch (e) { return 0; }
+      finally { loading = false; if (spin) spin.classList.add('d-none'); setDone(); }
+    }
+
+    // 무한스크롤: 바닥 근접 시 다음 청크.
+    if (meta && 'IntersectionObserver' in window) {
+      var io = new IntersectionObserver(function (ents) {
+        ents.forEach(function (en) {
+          if (en.isIntersecting && loaded < total && !loading) fetchRows(loaded, false);
+        });
+      }, { rootMargin: '600px' });
+      io.observe(meta);
+    }
+    setDone();
+
+    // 나이아 레일: 이름순이면 서버 버킷으로 점프(lazy-fetch), 다른 정렬이면 이름순 전환.
     var root = document.querySelector('[data-fs-root]');
     if (root && window.KGPFastScroll) window.KGPFastScroll.init(root, {
       enabled: {{ 'true' if fastscroll else 'false' }},
-      switchUrl: "{{ _fs_switch }}"
+      switchUrl: "{{ _fs_switch }}",
+      buckets: {{ fs_buckets|tojson if fs_buckets is defined else '{}' }},
+      onJump: function (offset) {
+        fetchRows(offset, true).then(function () {
+          var card = document.querySelector('[data-fs-root]');
+          if (card) card.scrollIntoView({ block: 'start' });
+        });
+      }
     });
   })();
 </script>
