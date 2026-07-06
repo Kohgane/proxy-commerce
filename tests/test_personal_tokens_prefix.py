@@ -44,12 +44,12 @@ class _FakeWS:
 
 @pytest.fixture
 def token_sheet(monkeypatch):
-    ws = _FakeWS()
-    monkeypatch.setattr(pt, "_SHEET_ID", "sheet-test", raising=False)
-    monkeypatch.setattr(pt, "_get_worksheet", lambda: ws)
+    # PG-only 전환 후: 인메모리(개발/테스트) 저장소. Sheets 목킹 제거.
     pt._token_cache.clear()
-    yield ws
+    pt._in_memory[:] = []
+    yield None
     pt._token_cache.clear()
+    pt._in_memory[:] = []
 
 
 class TestTokenPrefixUnification:
