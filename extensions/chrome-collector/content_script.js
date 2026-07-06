@@ -934,16 +934,18 @@ const KGP_BRIDGE_MINI = '<svg width="14" height="14" viewBox="0 0 512 512" aria-
   '<circle cx="256" cy="108" r="40" fill="#f5821f"/></svg>';
 
 function kgpQuickBtnStyle(collected) {
+  // v45 P1: 중앙 수집 버튼 1.5배(아이콘·글자·패딩 비례) + 히트영역 ≥66px.
   return [
     "position:absolute", "z-index:2147483639",
-    KGP_TOUCH ? "top:6px" : "top:50%", KGP_TOUCH ? "right:6px" : "left:50%",
+    KGP_TOUCH ? "top:8px" : "top:50%", KGP_TOUCH ? "right:8px" : "left:50%",
     KGP_TOUCH ? "" : "transform:translate(-50%,-50%)",
-    "display:flex", "align-items:center", "gap:6px", "white-space:nowrap",
-    KGP_TOUCH ? "padding:3px 8px" : "padding:7px 14px", "border-radius:999px", "cursor:pointer",
-    "font:800 " + (KGP_TOUCH ? "10px" : "13px") + "/1 -apple-system,BlinkMacSystemFont,sans-serif",
+    "display:flex", "align-items:center", "justify-content:center", "gap:9px", "white-space:nowrap",
+    KGP_TOUCH ? "padding:8px 14px" : "padding:11px 22px", "border-radius:999px", "cursor:pointer",
+    "min-height:66px",                 // 히트영역 ≥66px
+    "font:800 " + (KGP_TOUCH ? "15px" : "20px") + "/1 -apple-system,BlinkMacSystemFont,sans-serif",
     "background:" + (collected ? "#119a8e" : "#1a1714"), "color:#fff",
-    "border:1.5px solid " + (collected ? "#0f8c80" : "#c9a24b"),
-    "box-shadow:0 4px 14px rgba(0,0,0,.4)", "pointer-events:auto",
+    "border:2px solid " + (collected ? "#0f8c80" : "#c9a24b"),
+    "box-shadow:0 6px 20px rgba(0,0,0,.42)", "pointer-events:auto",
     "opacity:" + ((KGP_TOUCH || collected) ? "1" : "0"), "transition:opacity .12s",
   ].join(";");
 }
@@ -1049,31 +1051,31 @@ function kgpBuildToolbar() {
   bar.id = KGP_TOOLBAR_ID;
   bar.style.cssText = [
     "position:fixed", "top:12px", "left:50%", "transform:translateX(-50%)",
-    "z-index:2147483647", "display:flex", "align-items:center", "gap:10px",
-    "padding:8px 14px", "border-radius:999px", "border:1px solid #c9a24b",
+    "z-index:2147483647", "display:flex", "align-items:center", "gap:12px",
+    "padding:10px 18px", "border-radius:999px", "border:1px solid #c9a24b",   // v45 P1: 벌크바 +25%
     "background:#1a1714", "color:#f5efe3",
-    "font:13px/1.2 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
-    "box-shadow:0 8px 24px rgba(0,0,0,.45)", "max-width:94vw", "flex-wrap:wrap",
+    "font:16px/1.2 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+    "box-shadow:0 8px 24px rgba(0,0,0,.45)", "max-width:96vw", "flex-wrap:wrap",
   ].join(";");
-  // 버튼 위계: 전체 수집=청록 채움(Primary), 선택 수집=금 아웃라인(Secondary), 전체선택/해제=고스트.
-  const btnBase = "padding:5px 11px;border-radius:8px;cursor:pointer;font-weight:700;font-size:12px;";
+  // 버튼 위계: 전체 수집=청록 채움(Primary), 선택 수집=금 아웃라인(Secondary), 전체선택/해제=고스트. (+25% 확대)
+  const btnBase = "padding:7px 14px;border-radius:9px;cursor:pointer;font-weight:700;font-size:15px;min-height:40px;";
   const ghost = btnBase + "background:transparent;color:#e7ddc9;border:1px solid #4a4234;";
   const gold = btnBase + "background:transparent;color:#e8d6a8;border:1.5px solid #c9a24b;";
   const teal = btnBase + "background:#119a8e;color:#fff;border:1px solid #0f8c80;";
   const autoOn = kgpLSget("kgp_bar_auto", "1") !== "0";
   bar.innerHTML =
     '<span id="kgp-tb-grip" style="display:flex;align-items:center;gap:7px">' +
-    '<span style="display:flex;align-items:center;justify-content:center;width:26px;height:26px;background:transparent;border:0">' + KGP_BRIDGE_SVG + '</span>' +
+    '<span style="display:flex;align-items:center;justify-content:center;width:33px;height:33px;background:transparent;border:0">' + KGP_BRIDGE_SVG + '</span>' +
     '<strong style="color:#ecdcb0">고가수집기</strong></span>' +
     '<span id="kgp-tb-count" style="opacity:.85"></span>' +
-    '<span style="width:1px;height:18px;background:#4a4234"></span>' +
+    '<span style="width:1px;height:22px;background:#4a4234"></span>' +
     '<button class="kgp-tb-btn" data-act="all-sel" style="' + ghost + '">전체 선택</button>' +
     '<button class="kgp-tb-btn" data-act="clear" style="' + ghost + '">선택 해제</button>' +
     '<button class="kgp-tb-btn" data-act="collect-sel" style="' + gold + '">선택 수집</button>' +
     '<button class="kgp-tb-btn" data-act="collect-all" style="' + teal + '">전체 수집</button>' +
-    '<span id="kgp-tb-status" style="opacity:.95;font-size:12px;max-width:360px"></span>' +
+    '<span id="kgp-tb-status" style="opacity:.95;font-size:15px;max-width:420px"></span>' +
     '<button class="kgp-tb-btn" data-act="auto" title="새 목록 페이지에서 자동으로 열지 여부" style="' + ghost + '">' + (autoOn ? '자동' : '수동') + '</button>' +
-    '<button data-act="close" title="접기(구석 배지로)" style="' + btnBase + 'background:transparent;color:#c9bda6;border:none;font-size:15px">✕</button>';
+    '<button data-act="close" title="접기(구석 배지로)" style="' + btnBase + 'background:transparent;color:#c9bda6;border:none;font-size:19px">✕</button>';
   bar.addEventListener("click", (e) => {
     const t = e.target.closest("[data-act]");
     if (!t) return;
@@ -1227,7 +1229,7 @@ function kgpInjectListing() {
         q.className = "kgp-card-quick";
         q.dataset.url = c.url;
         if (done) q.dataset.collected = "1";
-        q.innerHTML = '<span style="display:flex;width:14px;height:14px;flex:none">' + KGP_BRIDGE_MINI +
+        q.innerHTML = '<span style="display:flex;width:21px;height:21px;flex:none">' + KGP_BRIDGE_MINI +   // 아이콘 1.5배(14→21)
           '</span><span class="kgp-q-label">' + (done ? "수집됨 ✓" : "수집") + "</span>";
         q.style.cssText = kgpQuickBtnStyle(done);
         q.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); kgpQuickCollect(c, q); });
