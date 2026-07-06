@@ -5473,6 +5473,13 @@ def collect_history():
     if not _check_auth():
         return redirect(url_for("seller_console.index"))
 
+    # v45(6): UI 언어 토글 — 목록 제목을 해당 언어만 표시(원문 폴백 시 '원문' 뱃지).
+    try:
+        from .i18n import normalize_lang as _norm_lang
+        _current_lang = _norm_lang(request.cookies.get("kgp_lang"))
+    except Exception:
+        _current_lang = "ko"
+
     domain = request.args.get("domain", "").strip()
     source = request.args.get("source", "").strip()
     days = int(request.args.get("days", "30"))
@@ -5570,6 +5577,21 @@ def collect_history():
         except Exception:
             pass
         it["thumbs"] = thumbs[:5]
+        # v45(6): 한/영 분리 표시 — UI 언어 토글(current_lang)에 맞는 언어만 보여주고, 그 언어 번역이
+        #   없으면 원문으로 폴백 + '원문' 뱃지(섞어 보여주기 금지·정직).
+        try:
+            _ex = json.loads(it.get("extra_json") or "{}")
+        except Exception:
+            _ex = {}
+        _tko = (str(_ex.get("title_ko") or "").strip()) or (str(it.get("title") or "").strip())
+        _ten = str(_ex.get("title_en") or _ex.get("title") or it.get("title") or "").strip()
+        _translated = bool(_tko) and bool(_ten) and _tko != _ten
+        if _current_lang == "en":
+            it["title_display"] = _ten or _tko or "(제목 없음)"
+            it["title_is_original"] = not bool(_ten)   # en=원문 소스라 보통 뱃지 없음(ko로 폴백 시만)
+        else:  # ko
+            it["title_display"] = (_tko if _translated else (_ten or _tko)) or "(제목 없음)"
+            it["title_is_original"] = not _translated   # 번역 안 됨 → 원문 뱃지
         # v44-1: 업로드 성공한 마켓 라벨(등록됨 뱃지용) — extra_json.uploaded(서버 확인분)만.
         try:
             up = json.loads(it.get("extra_json") or "{}").get("uploaded")
