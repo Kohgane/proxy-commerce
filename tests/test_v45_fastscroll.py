@@ -35,7 +35,7 @@ def test_component_file_exists():
     assert "KGPFastScroll" in src
     assert "bucketOf" in src and "scrollIntoView" in src   # 그룹핑 + 점프
     assert "touchstart" in src and "touchmove" in src      # 엄지 스크럽(터치)
-    assert "kgp-fs-bubble" in src                          # 대형 버블
+    assert "kgp-fs-scrub" in src                           # 스크럽 오버레이
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node 미설치")
@@ -78,21 +78,30 @@ def test_template_wiring_source():
     assert "not fastscroll" in CATALOG and "not fastscroll" in CH
 
 
-def test_component_naia_behaviors():
+def test_component_naia_v2_behaviors():
     src = JS.read_text(encoding="utf-8")
-    assert "switchUrl" in src and "이름순으로 전환됨" in src   # 다른 정렬 → 자동 전환 + 토스트
-    assert "아직 없음" in src                                  # 빈 섹션 1행
-    assert "kgpfs=" in src                                      # 해시 점프
-    assert "elementFromPoint" in src                           # 스크럽(정답지 방식)
+    # v2 정답지: 토스트 폭탄 제거(전환 조용히), 스크럽 오버레이·레일 벤딩·해시 점프
+    assert "이름순으로 전환됨" not in src and "pcToast" not in src   # 토스트 0
+    assert "_showScrub" in src and "kgp-fs-scrub-items" in src        # 스크럽 모드(빈 화면+초성+항목)
+    assert "_bend" in src and "translateX" in src and "scale(" in src  # 레일 벤딩
+    assert "elementFromPoint" in src                                   # 정답지 스크럽 판정
+    assert "switchUrl" in src and "kgpfs=" in src                      # 다른 정렬 조용히 전환 + 해시
+    assert "아직 없어요" in src or "아직 없음" in src                   # 빈 초성/섹션
 
 
 def test_css_uses_tokens_not_hardcoded():
     block = CSS[CSS.index("나이아 인덱스 레일"):]
-    assert ".kgp-fs-rail" in block and ".kgp-fs-bubble" in block
+    assert ".kgp-fs-rail" in block and ".kgp-fs-scrub" in block   # 레일 + 스크럽 오버레이
     assert "var(--ink)" in block and "var(--teal)" in block and "var(--cream)" in block
     import re
-    # 버블 그림자의 rgba(먹) 1건은 토큰 밖 허용(그림자). hex 하드코딩만 검사.
     hexes = re.findall(r"#[0-9A-Fa-f]{3,6}\b", block)
     assert hexes == [], f"하드코딩 hex 발견: {hexes}"
     assert "content-visibility" in block and "prefers-reduced-motion" in block
-    assert "아직 없음" not in block or True   # CSS엔 문자열 없음(무관)
+
+
+def test_catalog_no_mock_sheets_banner():
+    # 항목5: PG-only 후 Mock/Sheets 배너 제거, 실데이터 없을 때만 정직한 빈 상태
+    assert "Mock 데이터" not in CATALOG and "Sheets에 저장" not in CATALOG
+    assert "아직 수집된 상품이 없어요" in CATALOG
+    # 항목4: 필터 접이식('필터 ▾')
+    assert 'id="catalogFilters"' in CATALOG and "collapse" in CATALOG and "kgp-filter-toggle" in CATALOG

@@ -4,11 +4,9 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h4 class="mb-0 fw-bold"><i class="bi bi-box-seam"></i> 상품 카탈로그</h4>
-  <div class="d-flex gap-2">
+  <div class="d-flex gap-2 align-items-center">
     <a href="/seller/collect" class="btn btn-primary btn-sm">+ 새 상품 수집</a>
-    <span class="badge bg-secondary align-self-center">
-      {{ source }} · 총 {{ total }}건
-    </span>
+    {% if total %}<span class="badge bg-secondary align-self-center">총 {{ total }}건</span>{% endif %}
   </div>
 </div>
 
@@ -18,16 +16,24 @@
 </div>
 {% endif %}
 
-{% if source == 'mock' %}
-<div class="alert alert-info mb-4">
-  <strong><i class="bi bi-info-circle"></i> Mock 데이터:</strong> Google Sheets catalog 워크시트가 비어있습니다.
-  <a href="/seller/collect" class="alert-link">수동 수집기</a>에서 상품을 수집하고 "Sheets에 저장" 버튼으로 추가하세요.
+{% if total == 0 and not error_msg %}
+{# PG-only 전환 후: Sheets 언급 제거. 실데이터 없을 때만 정직한 빈 상태. #}
+<div class="console-empty-state text-center py-5 my-3">
+  <div class="console-empty-icon mb-2"><i class="bi bi-box-seam"></i></div>
+  <div class="fw-semibold mb-1">아직 수집된 상품이 없어요</div>
+  <div class="small text-muted mb-3">해외 상품을 수집하면 여기에 카탈로그로 쌓입니다.</div>
+  <a href="/seller/collect" class="btn btn-primary btn-sm">수집 시작</a>
 </div>
 {% endif %}
 
 <div class="card border-0 shadow-sm pc-action-table">
   <div class="card-header bg-white">
-    <form method="get" class="row g-2 align-items-end">
+    {# 항목4: 모바일서 필터가 첫 화면을 다 먹지 않게 접이식. 기본 접힘(collapse), '필터 ▾'로 펼침. #}
+    <button class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1 kgp-filter-toggle" type="button"
+            data-bs-toggle="collapse" data-bs-target="#catalogFilters" aria-expanded="false" aria-controls="catalogFilters">
+      <i class="bi bi-funnel"></i> 필터 <i class="bi bi-chevron-down small"></i>
+    </button>
+    <form method="get" id="catalogFilters" class="row g-2 align-items-end collapse mt-2">
       <div class="col-md-2">
         <label class="form-label small mb-1">마켓</label>
         <select name="marketplace" class="form-select form-select-sm">
