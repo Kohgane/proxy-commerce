@@ -9,8 +9,7 @@ from src.seller_console import collect_history_store as chs
 
 @pytest.fixture
 def in_memory_store(monkeypatch):
-    """Sheets 미사용(인메모리) 모드로 강제 + 저장소 초기화."""
-    monkeypatch.setattr(chs, "_SHEET_ID", None)
+    """인메모리(PG 미설정) 모드 + 저장소 초기화. (PG-only 전환으로 Sheets 경로 제거됨.)"""
     chs._in_memory.clear()
     yield chs
     chs._in_memory.clear()

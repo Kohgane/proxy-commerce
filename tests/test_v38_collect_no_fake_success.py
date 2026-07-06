@@ -38,23 +38,6 @@ def test_single_collect_appears_in_same_user_list(client):
     assert len(items) == 1 and items[0]["title"] == "Temu 테스트 상품"
 
 
-def test_non_durable_save_is_honest_failure_not_fake_success(client, monkeypatch):
-    # 가짜 성공 박멸: 시트 설정됐는데 쓰기 실패 → 인메모리 폴백 → 502 정직 실패(ok:false)
-    _clear_mem()
-    import src.seller_console.collect_history_store as ch
-    monkeypatch.setattr(ch, "_SHEET_ID", "fake-sheet-id")
-
-    def _boom():
-        raise RuntimeError("sheet write down")
-    monkeypatch.setattr(ch, "_get_worksheet", _boom)
-
-    r = client.post("/api/v1/collect/extension",
-                    json={"url": "https://temu.com/p/zzz", "title": "비영속 상품", "price": "1"})
-    body = r.get_json()
-    assert r.status_code == 502, f"비영속 저장인데 성공 처리됨(가짜 성공): {body}"
-    assert body["ok"] is False
-
-
 def test_durable_save_returns_flag():
     from src.seller_console import collect_history_store as ch
     ch._in_memory.clear()

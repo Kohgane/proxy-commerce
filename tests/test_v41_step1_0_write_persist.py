@@ -147,20 +147,19 @@ def test_token_generate_then_validate_round_trip(monkeypatch):
 
 
 def test_collect_history_delete_requery_no_respawn(monkeypatch):
+    # PG-only 전환 후: 인메모리(개발/테스트) 경로 — 삭제 후 재조회 부활 0 + 셀러 스코프 격리.
+    # (PG durable 삭제·부활 0은 test_v45_supabase_stage1에서 로컬 PG로 검증.)
     import src.seller_console.collect_history_store as ch
-
-    ws = _FakeCollectWorksheet([
-        ["x1", "2026-07-02T00:00:00+00:00", "extension", "taobao.com", "https://taobao.com/x1", "A", "", "", "", "ok", "", "{}", "u1"],
-        ["x2", "2026-07-02T00:00:00+00:00", "extension", "taobao.com", "https://taobao.com/x2", "B", "", "", "", "ok", "", "{}", "u2"],
-    ])
-    monkeypatch.setattr(ch, "_SHEET_ID", "sheet-test", raising=False)
-    monkeypatch.setattr(ch, "_get_worksheet", lambda: ws)
     ch._in_memory[:] = []
+    x1 = ch.append(source="extension", url="https://taobao.com/x1", title="A", seller_id="u1")
+    x2 = ch.append(source="extension", url="https://taobao.com/x2", title="B", seller_id="u2")
 
-    deleted = ch.delete(["x1", "x2"], seller_ids={"u1"})
-    assert deleted == 1
+    deleted = ch.delete([x1, x2], seller_ids={"u1"})
+    assert deleted == 1                                    # 타 셀러(u2) 미삭제
     assert [row["id"] for row in ch.list_items(days=30, seller_ids={"u1"})] == []
-    assert [row["id"] for row in ch.list_items(days=30, seller_ids={"u2"})] == ["x2"]
+    assert [row["id"] for row in ch.list_items(days=30, seller_ids={"u2"})] == [x2]
+    assert ch.existing_ids([x1], seller_ids={"u1"}) == set()   # 재조회 부활 0
+    ch._in_memory[:] = []
 
 
 def test_billing_commit_failure_is_honest(monkeypatch):

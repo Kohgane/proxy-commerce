@@ -34,14 +34,26 @@ try:
 except Exception:
     pass
 
-# 이관: 부팅 시 Supabase Postgres 연결·스키마 부트스트랩(성공 시 'DB 연결: Supabase OK' 1줄).
-#   DATABASE_URL 미설정이면 조용히 Sheets 폴백(로그 없음, 무회귀).
+# PG-only 전환: 1차 저장소 = Supabase Postgres. 부팅 시 연결·스키마 부트스트랩(성공 시 'DB 연결: Supabase OK').
+#   프로덕션(APP_ENV=production)에서 DATABASE_URL이 없거나 연결 실패면 **조용한 폴백 대신 부팅 실패**
+#   (명확한 에러) — 셀러 데이터가 비영속 인메모리로 새는 것을 원천 차단. 개발/테스트는 인메모리 허용.
 try:
     from src.db import pg as _pgboot
-    if _pgboot.pg_enabled():          # 성공 시 pg.py가 'DB 연결: Supabase OK' 로깅
-        _pgboot.init_schema()         # 1·2단계 테이블 idempotent 생성(직접 연결)
+    _pg_ok = _pgboot.pg_enabled()     # 성공 시 pg.py가 'DB 연결: Supabase OK' 로깅
+    if _pg_ok:
+        _pgboot.init_schema()         # 이관 테이블 idempotent 생성(직접 연결)
+    elif os.getenv("APP_ENV", "").lower() == "production":
+        raise RuntimeError(
+            "DATABASE_URL(Supabase Postgres)이 설정되지 않았거나 연결에 실패했습니다. "
+            "PG-only 모드에서는 프로덕션 부팅 조건입니다 — Render 환경변수 DATABASE_URL(6543 풀러)와 "
+            "DATABASE_URL_DIRECT(5432)를 설정하세요."
+        )
+except RuntimeError:
+    raise                              # 부팅 실패는 그대로 전파(프로세스 기동 중단)
 except Exception as _pgexc:
-    logger.warning("Supabase 부팅 연결/스키마 실패 — Sheets 폴백: %s", _pgexc)
+    logger.warning("Supabase 부팅 연결/스키마 확인 실패: %s", _pgexc)
+    if os.getenv("APP_ENV", "").lower() == "production":
+        raise
 
 app = Flask(__name__)
 
