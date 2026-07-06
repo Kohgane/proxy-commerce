@@ -437,6 +437,22 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
   근본=이관 코드는 main에 있으나(#417~#422) **Dockerfile이 scripts/ 중 start_render.sh만 COPY**(Phase 227 extensions/ 누락과
   동일). 수리: `COPY scripts/migrate_to_supabase.py` 추가(.sql은 src/db/라 COPY src/에 포함, .dockerignore scripts 미배제).
   COPY 대상 없으면 빌드 실패 → CI Docker Build 그린=이미지 포함 증명. 로컬 PG로 스크립트 실행(테이블4 생성+건수대조+exit0) 검증.
+- ✅ **이관 검증식: 스킵 사유 증명 + distinct 기준 PASS (#425):** 운영자 이관 collect 220→195(25 스킵) '불일치'. 근본=
+  migrate_collect가 ON CONFLICT(product_key) DO NOTHING으로 중복 상품을 스킵하는데 검증식이 'PG≥Sheets'(195≥220=False)로
+  정상 dedup을 오판. 수리: 스킵을 중복(rowcount 0)/에러(예외)로 분류 → 중복이면 'product_key 목록' 로깅, 에러면 행 url+원인.
+  검증을 **distinct key 기준**(에러 0 + PG총계==기대 distinct면 PASS). 가드 test_v45_migrate_reconcile(2, 로컬 PG). 220→195
+  재현(삽입195·중복25·에러0·distinct195·PASS). 캡처 migrate-reconcile.png.
+- ✅ **PG-only 전환 1차 — collect_history_store Sheets 제거 + 프로덕션 부팅 가드 (#429):** 운영자 부팅 검증(DATABASE_URL
+  6543→Supabase OK, tokens 32/collect 196) 후 PG-only 지시. collect_history_store를 **PG 위임 + 인메모리(개발/테스트)만**으로
+  재작성 — Sheets 경로·P1(batchUpdate·_contiguous_blocks 행밀림 우회)·P2(_sheets_write 429 백오프)·요청캐시(_read_sheet_records)
+  전량 제거(_SHEET_ID/get_quota_stats/_get_worksheet/_ensure_headers/_all_rows 삭제). 근거=PG 소프트삭제·트랜잭션 커밋으로
+  행밀림·쿼터 원천 소멸. 부팅 가드(order_webhook): `APP_ENV=production` + DATABASE_URL 없거나 연결 실패 → **조용한 폴백 대신
+  RuntimeError 부팅 실패**(명확 안내), 개발/테스트(APP_ENV 미설정)는 인메모리 부팅 OK(무회귀). migrate 스크립트는 Sheets 리더
+  자립화(스토어 내부 의존 제거). Sheets는 읽기전용 백업(일1회 덤프 #422)으로만. obsolete 테스트 정리(P2 quota·읽기캐시 삭제,
+  P1 벌크삭제·write-persist·no-fake-success는 인메모리로 재작성). 가드 test_v45_pg_only(4: 스토어 심볼 제거·부팅가드 소스·
+  프로덕션 무DB 부팅실패·개발 무DB 부팅OK) + test_v45_p1_bulk_delete 재작성. **폴백(개발/테스트) 10825 passed / 20 skipped 그린**,
+  PG 위임 경로(stage1) 로컬 PG 검증. 캡처 pg-only-collect.png. ⏳ **user_tokens·orders·market_links 스토어 Sheets 제거는 PR-B로**
+  (각 스토어 독립 그린). 적용 스킬: (백엔드 저장 계층 — UI 없음.)
 
 ## 🟩 북마클릿 파일 가져오기 최종 해법 (오너 2026-07-05 — 드래그 폐기 → 크롬 ICON 속성)
 - ✅ **북마클릿 크롬 '북마크 가져오기' 파일(ICON 속성) 전환 (#424):** 드래그 방식은 크롬이 **드래그 시점 페이지 파비콘을

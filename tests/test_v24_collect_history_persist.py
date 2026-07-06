@@ -20,40 +20,20 @@ def store(monkeypatch):
     mod._in_memory[:] = []
 
 
-def test_sheet_write_failure_still_visible_in_history(store, monkeypatch):
-    """시트가 설정됐지만 쓰기가 실패(폴백)해도 이력/카운터에 즉시 보여야 한다(가짜 성공 0)."""
-    # 시트 설정됨으로 가장
-    monkeypatch.setattr(store, "_SHEET_ID", "FAKE_SHEET", raising=False)
-
-    # 시트 쓰기 실패: _get_worksheet().append_row 가 터짐
-    class _WS:
-        def append_row(self, *a, **k):
-            raise RuntimeError("Sheets quota exceeded")
-
-    monkeypatch.setattr(store, "_get_worksheet", lambda: _WS())
-    monkeypatch.setattr(store, "_ensure_headers", lambda ws: None)
-    # 시트 읽기는 비어 있음(쓰기 실패분이 시트에 없음)
-    monkeypatch.setattr(store, "_read_sheet_records", lambda: [])
-
+def test_append_visible_in_history_inmemory(store):
+    """PG-only 전환 후: 인메모리(개발/테스트) 경로에서 append→목록/단건/카운터 즉시 반영.
+    (Sheets 쓰기 실패 폴백 개념은 제거 — PG는 트랜잭션 커밋으로 durable.)"""
     item_id = store.append(
         source="extension", url="https://taobao.com/item/123",
         title="테스트 상품", price="100", currency="CNY", seller_id="u1",
     )
-    assert item_id  # append는 항상 id 반환
-
+    assert item_id
     ids = {"u1", "u1@example.com"}
-    # 핵심: 시트에 없어도(쓰기 실패 폴백) 같은 워커 이력 조회에 보여야 한다
     items = store.list_items(days=30, seller_ids=ids)
-    assert len(items) == 1, "시트 쓰기 실패 폴백 행이 이력에서 사라짐(=가짜 성공 버그)"
-    assert items[0]["id"] == item_id
-
-    # 단건 조회(자기검증 경로)도 같은 결과
+    assert len(items) == 1 and items[0]["id"] == item_id
     assert store.get(item_id, seller_ids=ids) is not None
-
-    # 카운터(summary)도 반영 — 0이면 '오늘/총수집' 0으로 보이던 증상
     summ = store.summary(days=30, seller_ids=ids)
-    assert summ["total"] == 1
-    assert summ["by_source"]["extension"] == 1
+    assert summ["total"] == 1 and summ["by_source"]["extension"] == 1
 
 
 def test_lenient_seller_id_alias_matching(store, monkeypatch):

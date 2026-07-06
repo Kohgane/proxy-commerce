@@ -21,19 +21,28 @@ def _log(msg):
     print(msg, flush=True)
 
 
+def _sheet_records(ws_name: str) -> list:
+    """Sheets 워크시트 전체 records(dict). 이관 원본 읽기 — 스토어 내부(제거됨)에 의존하지 않는다."""
+    import os as _os
+    sid = _os.getenv("GOOGLE_SHEET_ID")
+    if not sid:
+        return []
+    try:
+        from src.utils.sheets import open_sheet, get_all_records_safe
+        ws = open_sheet(sid, ws_name)
+        return list(get_all_records_safe(ws))
+    except Exception as exc:
+        _log(f"  Sheets '{ws_name}' 읽기 실패: {exc}")
+        return []
+
+
 def _sheet_collect_rows():
     """Sheets collect_history 전체 행(dict)."""
-    from src.seller_console import collect_history_store as ch
-    if not ch._SHEET_ID:
-        return []
-    return list(ch._read_sheet_records())
+    return _sheet_records("collect_history")
 
 
 def _sheet_token_rows():
-    from src.auth import personal_tokens as pt
-    if not pt._SHEET_ID:
-        return []
-    return list(pt._sheet_records())
+    return _sheet_records("personal_tokens")
 
 
 def _pg():
