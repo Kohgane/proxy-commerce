@@ -32,4 +32,10 @@
     </div>
   </div>
 </div>
+{% if drawer %}
+<script>
+  // 백지 감시 해제: 이 '수집 실패' 빈 상태도 정상 렌더이므로 부모에 준비 신호를 보낸다.
+  try { if (window.parent && window.parent !== window) window.parent.postMessage({ kgp: 'preview-ready' }, '*'); } catch (e) {}
+</script>
+{% endif %}
 {% endblock %}
