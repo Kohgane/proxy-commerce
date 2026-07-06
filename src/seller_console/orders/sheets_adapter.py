@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def _pg_orders():
-    """Postgres 이관 백엔드 활성 시 orders_pg 반환(스키마 1회), 아니면 None(Sheets 폴백)."""
+    """Postgres 백엔드 활성 시 orders_pg 반환(스키마 1회), 아니면 None(인메모리)."""
     try:
         from src.db import pg as _pgmod
         if _pgmod.pg_enabled():
@@ -32,8 +32,61 @@ def _pg_orders():
             from src.db import orders_pg as _op
             return _op
     except Exception as exc:
-        logger.warning("PG 주문 백엔드 확인 실패 — Sheets 폴백: %s", exc)
+        logger.warning("PG 주문 백엔드 확인 실패 — 인메모리 폴백: %s", exc)
     return None
+
+
+class _InMemoryOrders:
+    """PG 미설정(개발/테스트) 전용 인메모리 주문 저장소 — orders_pg와 동일 행-dict API."""
+
+    def __init__(self):
+        self.rows: list[dict] = []   # ORDERS_HEADERS 키 dict
+
+    def _find(self, order_id, marketplace):
+        for r in self.rows:
+            if str(r.get("order_id", "")) == str(order_id) and str(r.get("marketplace", "")) == str(marketplace):
+                return r
+        return None
+
+    def upsert_rows(self, rows: list) -> int:
+        n = 0
+        for r in rows or []:
+            ex = self._find(r.get("order_id"), r.get("marketplace"))
+            if ex is not None:
+                ex.update(r)
+            else:
+                self.rows.append(dict(r))
+            n += 1
+        return n
+
+    def all_row_dicts(self) -> list:
+        return [dict(r) for r in self.rows]
+
+    def update_tracking(self, order_id, marketplace, courier, tracking_no, shipped_status) -> bool:
+        r = self._find(order_id, marketplace)
+        if r is None:
+            return False
+        r.update({"courier": courier, "tracking_no": tracking_no, "status": shipped_status})
+        return True
+
+    def update_status(self, order_id, marketplace, status, note, last_synced_at) -> bool:
+        r = self._find(order_id, marketplace)
+        if r is None:
+            return False
+        r["status"] = status
+        if note:
+            prev = str(r.get("notes", "") or "")
+            r["notes"] = (f"{prev} | {note}" if prev.strip() else note)[-2000:]
+        r["last_synced_at"] = last_synced_at
+        return True
+
+
+_MEM = _InMemoryOrders()
+
+
+def _order_backend():
+    """PG면 orders_pg, 아니면 인메모리(개발/테스트). Sheets 폴백은 제거됨(PG-only 전환)."""
+    return _pg_orders() or _MEM
 
 # 워크시트 컬럼 헤더 (순서 고정)
 ORDERS_HEADERS = [
@@ -100,61 +153,14 @@ class OrderSheetsAdapter:
 
     def bulk_upsert(self, orders: List[UnifiedOrder]) -> int:
         """(order_id, marketplace) 복합 키로 upsert. 처리된 행 수 반환."""
-        _b = _pg_orders()
-        if _b is not None:
-            rows = [dict(zip(ORDERS_HEADERS, self._order_to_row(o))) for o in (orders or [])]
-            return _b.upsert_rows(rows)
-        if not self.sheet_id:
-            logger.warning("bulk_upsert: GOOGLE_SHEET_ID 미설정 — 건너뜀")
-            return 0
-
-        try:
-            from src.utils.sheets import get_all_records_safe, get_or_create_worksheet, open_sheet_object
-            sh = open_sheet_object(self.sheet_id)
-            ws = get_or_create_worksheet(sh, "orders", headers=ORDERS_HEADERS)
-            all_rows = get_all_records_safe(ws)
-
-            # (order_id, marketplace) → 행 인덱스 매핑 (헤더가 1행이므로 +2)
-            existing: Dict[tuple, int] = {}
-            for idx, row in enumerate(all_rows, start=2):
-                key = (str(row.get("order_id", "")), str(row.get("marketplace", "")))
-                existing[key] = idx
-
-            count = 0
-            for order in orders:
-                row_data = self._order_to_row(order)
-                key = (order.order_id, order.marketplace)
-                if key in existing:
-                    ws.update(f"A{existing[key]}", [row_data])
-                else:
-                    ws.append_row(row_data)
-                    # 다음 행 번호 추정 (동시 삽입 시 충돌 가능성 낮음)
-                    existing[key] = len(all_rows) + 2 + count
-                count += 1
-            return count
-        except Exception as exc:
-            logger.warning("bulk_upsert 실패: %s", exc)
-            return 0
+        _b = _order_backend()
+        rows = [dict(zip(ORDERS_HEADERS, self._order_to_row(o))) for o in (orders or [])]
+        return _b.upsert_rows(rows)
 
     def query(self, filters: dict = None, limit: int = 50, offset: int = 0) -> List[UnifiedOrder]:
         """필터/정렬/페이지네이션으로 주문 조회."""
         filters = filters or {}
-        _b = _pg_orders()
-        if _b is None and not self.sheet_id:
-            logger.warning("query: GOOGLE_SHEET_ID 미설정 — 빈 목록 반환")
-            return []
-        if _b is not None:
-            rows = _b.all_row_dicts()
-        else:
-            try:
-                from src.utils.sheets import get_all_records_safe, get_or_create_worksheet, open_sheet_object
-                sh = open_sheet_object(self.sheet_id)
-                ws = get_or_create_worksheet(sh, "orders", headers=ORDERS_HEADERS)
-                rows = get_all_records_safe(ws)
-            except Exception as exc:
-                logger.warning("query: Sheets 읽기 실패: %s", exc)
-                return []
-
+        rows = _order_backend().all_row_dicts()
         orders = [self._row_to_order(r) for r in rows if r.get("order_id")]
 
         # 필터 적용
@@ -189,37 +195,10 @@ class OrderSheetsAdapter:
         tracking_no: str,
     ) -> bool:
         """운송장 번호 갱신. 성공 시 True."""
-        _b = _pg_orders()
-        if _b is not None:
-            return _b.update_tracking(order_id, marketplace, courier, tracking_no, OrderStatus.SHIPPED.value)
-        if not self.sheet_id:
-            logger.warning("update_tracking: GOOGLE_SHEET_ID 미설정")
-            return False
-
-        try:
-            from src.utils.sheets import get_all_records_safe, get_or_create_worksheet, open_sheet_object
-            sh = open_sheet_object(self.sheet_id)
-            ws = get_or_create_worksheet(sh, "orders", headers=ORDERS_HEADERS)
-            rows = get_all_records_safe(ws)
-
-            courier_col = ORDERS_HEADERS.index("courier") + 1   # 1-based
-            tracking_col = ORDERS_HEADERS.index("tracking_no") + 1
-            status_col = ORDERS_HEADERS.index("status") + 1
-
-            for idx, row in enumerate(rows, start=2):
-                if (
-                    str(row.get("order_id", "")) == order_id
-                    and str(row.get("marketplace", "")) == marketplace
-                ):
-                    ws.update_cell(idx, courier_col, courier)
-                    ws.update_cell(idx, tracking_col, tracking_no)
-                    ws.update_cell(idx, status_col, OrderStatus.SHIPPED.value)
-                    return True
+        ok = _order_backend().update_tracking(order_id, marketplace, courier, tracking_no, OrderStatus.SHIPPED.value)
+        if not ok:
             logger.warning("update_tracking: 주문 찾을 수 없음 (%s, %s)", order_id, marketplace)
-            return False
-        except Exception as exc:
-            logger.warning("update_tracking 실패: %s", exc)
-            return False
+        return ok
 
     def update_status(
         self,
@@ -229,74 +208,18 @@ class OrderSheetsAdapter:
         note: str = "",
     ) -> bool:
         """주문 상태/메모 갱신. 성공 시 True."""
-        _b = _pg_orders()
-        if _b is not None:
-            updated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-            return _b.update_status(order_id, marketplace, status, note, updated_at)
-        if not self.sheet_id:
-            logger.warning("update_status: GOOGLE_SHEET_ID 미설정")
-            return False
-
         status = str(status or "").strip().lower()
         if not status:
             return False
-
-        try:
-            from src.utils.sheets import get_all_records_safe, get_or_create_worksheet, open_sheet_object
-
-            sh = open_sheet_object(self.sheet_id)
-            ws = get_or_create_worksheet(sh, "orders", headers=ORDERS_HEADERS)
-            rows = get_all_records_safe(ws)
-
-            status_col = ORDERS_HEADERS.index("status") + 1
-            notes_col = ORDERS_HEADERS.index("notes") + 1
-            last_synced_col = ORDERS_HEADERS.index("last_synced_at") + 1
-            updated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-
-            for idx, row in enumerate(rows, start=2):
-                if (
-                    str(row.get("order_id", "")) == order_id
-                    and str(row.get("marketplace", "")) == marketplace
-                ):
-                    ws.update_cell(idx, status_col, status)
-                    if note:
-                        prev_note = str(row.get("notes", "") or "").strip()
-                        combined_note = f"{prev_note} | {note}" if prev_note else note
-                        if len(combined_note) > 2000:
-                            combined_note = combined_note[-2000:]
-                        ws.update_cell(idx, notes_col, combined_note)
-                    ws.update_cell(idx, last_synced_col, updated_at)
-                    return True
+        updated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+        ok = _order_backend().update_status(order_id, marketplace, status, note, updated_at)
+        if not ok:
             logger.warning("update_status: 주문 찾을 수 없음 (%s, %s)", order_id, marketplace)
-            return False
-        except Exception as exc:
-            logger.warning("update_status 실패: %s", exc)
-            return False
+        return ok
 
     def kpi_summary(self) -> dict:
         """KPI 요약: today_new, pending_ship, shipped, returned_exchanged."""
-        fallback = {
-            "today_new": 0,
-            "pending_ship": 0,
-            "shipped": 0,
-            "returned_exchanged": 0,
-            "source": "fallback",
-        }
-        _b = _pg_orders()
-        if _b is not None:
-            rows = _b.all_row_dicts()
-        elif not self.sheet_id:
-            logger.warning("kpi_summary: GOOGLE_SHEET_ID 미설정 — mock 반환")
-            return {**fallback, "source": "mock"}
-        else:
-            try:
-                from src.utils.sheets import get_all_records_safe, get_or_create_worksheet, open_sheet_object
-                sh = open_sheet_object(self.sheet_id)
-                ws = get_or_create_worksheet(sh, "orders", headers=ORDERS_HEADERS)
-                rows = get_all_records_safe(ws)
-            except Exception as exc:
-                logger.warning("kpi_summary: Sheets 읽기 실패: %s", exc)
-                return fallback
+        rows = _order_backend().all_row_dicts()
 
         today = date.today().isoformat()
         today_new = 0
@@ -323,7 +246,7 @@ class OrderSheetsAdapter:
             "pending_ship": pending_ship,
             "shipped": shipped,
             "returned_exchanged": returned_exchanged,
-            "source": "sheets",
+            "source": "backend",
         }
 
     # ------------------------------------------------------------------
@@ -420,45 +343,13 @@ class OrderSheetsAdapter:
     # ------------------------------------------------------------------
 
     def get_all_rows(self) -> list:
-        """orders 워크시트의 모든 행을 raw dict 목록으로 반환."""
-        if not self.sheet_id:
-            return []
-        try:
-            from src.utils.sheets import get_all_records_safe, get_or_create_worksheet, open_sheet_object
-            sh = open_sheet_object(self.sheet_id)
-            ws = get_or_create_worksheet(sh, "orders", headers=ORDERS_HEADERS)
-            return get_all_records_safe(ws)
-        except Exception as exc:
-            logger.warning("get_all_rows 실패: %s", exc)
-            return []
+        """orders의 모든 행을 raw dict(ORDERS_HEADERS 키) 목록으로 반환. (PG면 PG, 아니면 인메모리.)"""
+        return _order_backend().all_row_dicts()
 
     def upsert_row(self, row: dict) -> bool:
-        """raw dict로 orders 워크시트 행 upsert (order_id 기준).
+        """raw dict로 orders 행 upsert (order_id 기준). 자체몰 체크아웃 주문 생성/갱신용.
 
-        주문 생성 및 상태 갱신에 사용 (자체몰 체크아웃).
+        (order_id만 주어져도 marketplace 공란으로 upsert — 기존 자체몰 계약 유지.)
         """
-        if not self.sheet_id:
-            logger.warning("upsert_row: GOOGLE_SHEET_ID 미설정")
-            return False
-        try:
-            from src.utils.sheets import get_all_records_safe, get_or_create_worksheet, open_sheet_object
-            sh = open_sheet_object(self.sheet_id)
-            ws = get_or_create_worksheet(sh, "orders", headers=ORDERS_HEADERS)
-            all_rows = get_all_records_safe(ws)
-
-            order_id = str(row.get("order_id", ""))
-            row_idx = None
-            for idx, existing in enumerate(all_rows, start=2):
-                if str(existing.get("order_id", "")) == order_id:
-                    row_idx = idx
-                    break
-
-            row_data = [str(row.get(h, "")) for h in ORDERS_HEADERS]
-            if row_idx:
-                ws.update(f"A{row_idx}", [row_data])
-            else:
-                ws.append_row(row_data)
-            return True
-        except Exception as exc:
-            logger.warning("upsert_row 실패: %s", exc)
-            return False
+        norm = {h: str(row.get(h, "")) for h in ORDERS_HEADERS}
+        return _order_backend().upsert_rows([norm]) > 0
