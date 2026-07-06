@@ -574,47 +574,61 @@ body::before {
 
 /* 우측 가장자리 고정 레일 — 항상 노출(정렬 무관) */
 .kgp-fs-rail {
-  position: fixed; right: 2px; top: 50%; transform: translateY(-50%);
-  z-index: 1030; display: flex; flex-direction: column; align-items: center;
-  gap: 0; padding: 6px 2px; max-height: 92vh;
+  position: fixed; right: 0; top: 50%; transform: translateY(-50%);
+  z-index: 1030; display: flex; flex-direction: column; align-items: flex-end;
+  gap: 0; padding: 6px 6px 6px 18px; max-height: 94vh;
   user-select: none; touch-action: none;
 }
 .kgp-fs-letter {
   appearance: none; border: 0; background: transparent; cursor: pointer;
-  color: var(--muted); font-size: 10.5px; font-weight: 700; line-height: 1.35;
-  width: 26px; text-align: center;
-  display: flex; align-items: center; justify-content: center;
-  transition: transform .12s ease, color .12s ease;
+  color: var(--muted); font-size: 10.5px; font-weight: 700; line-height: 1.32;
+  width: 24px; text-align: center;
+  transition: transform .08s ease, color .08s ease;
 }
 .kgp-fs-letter:hover { color: var(--teal); transform: scale(1.3); }
 .kgp-fs-letter:focus-visible { outline: 2px solid var(--teal); border-radius: 4px; }
-.kgp-fs-on { color: var(--teal); transform: scale(1.25); }
 .kgp-fs-dim { opacity: .28; }
+.kgp-fs-scrubbing .kgp-fs-letter { color: color-mix(in srgb, var(--muted) 70%, var(--paper)); }
 
-/* 스크럽 시 현재 글자 대형 버블(먹 배경 + 한지 글자, 우측에서 44px) */
-.kgp-fs-bubble {
-  position: fixed; right: 44px; top: 50%;
-  z-index: 1031; pointer-events: none; opacity: 0;
-  width: 74px; height: 74px;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--ink); color: var(--cream);
-  font-family: var(--font-display, "Noto Serif KR", serif);
-  font-weight: 900; font-size: 34px; border-radius: 22px 22px 8px 22px;
-  box-shadow: 0 10px 30px rgba(26,23,20,.35);
-  transition: opacity .1s ease;
+/* 스크럽 모드: 화면 비우고 손가락 높이에 현재 초성 + 그 초성 항목들만(실데이터) */
+.kgp-fs-scrub {
+  position: fixed; inset: 0; background: var(--paper);
+  display: none; z-index: 1029;
 }
-.kgp-fs-bubble-on { opacity: 1; }
+.kgp-fs-scrub-on { display: block; }
+.kgp-fs-scrub-big {
+  position: absolute; left: 22px;
+  font-family: var(--font-display, "Noto Serif KR", serif);
+  font-size: 40px; font-weight: 900; color: var(--ink); line-height: 1;
+}
+.kgp-fs-scrub-items { position: absolute; left: 22px; right: 84px; }
+.kgp-fs-scrub-row {
+  display: flex; align-items: center; gap: 12px; padding: 10px 0; min-height: 52px;
+  border-bottom: 1px solid var(--line, var(--border));
+}
+.kgp-fs-scrub-row img, .kgp-fs-scrub-ic {
+  width: 40px; height: 40px; border-radius: 10px; flex: none; object-fit: cover;
+  background: linear-gradient(135deg, var(--cream), var(--surface)); border: 1px solid var(--border);
+}
+.kgp-fs-scrub-row b { font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kgp-fs-scrub-none { color: var(--muted); font-size: 15px; padding: 12px 0; }
 
 /* 목록에 레일 자리 확보(우측 패딩) */
 [data-fs-root] { padding-right: 40px; }
 
+/* 항목4: 카탈로그 필터 접이식 — 데스크탑은 항상 펼침·토글 숨김, 모바일은 접힘+'필터 ▾' */
+@media (min-width: 768px) {
+  #catalogFilters.collapse:not(.show) { display: flex !important; }
+  .kgp-filter-toggle { display: none !important; }
+}
+
 /* 모바일: 오른쪽 엄지 존 — 히트영역 ≥44px, 글자는 작아도 됨. 행 ≥56px. */
 @media (pointer: coarse) {
-  .kgp-fs-rail { padding: 8px 0; right: 0; }
-  .kgp-fs-letter { width: 44px; }         /* 히트 폭 ≥44px */
+  .kgp-fs-rail { padding: 8px 8px 8px 24px; }
+  .kgp-fs-letter { width: 30px; }
   .kgp-fs-item td, .kgp-fs-row { min-height: 56px; }
   [data-fs-root] { padding-right: 46px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .kgp-fs-letter, .kgp-fs-bubble { transition: none; }
+  .kgp-fs-letter { transition: none; }
 }

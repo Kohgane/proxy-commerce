@@ -1,0 +1,72 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>나이아 레일 v2 — 정답지</title>
+<style>
+:root{--ink:#1A1714;--hanji:#F5EFE3;--paper:#FBF8F1;--gold:#C9A24B;--teal:#119A8E;--muted:#8A8275;--line:#E6DECB}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Pretendard,"Apple SD Gothic Neo",system-ui,sans-serif;background:var(--paper);color:var(--ink);overflow-x:hidden}
+header{position:sticky;top:0;background:rgba(251,248,241,.92);backdrop-filter:blur(12px);padding:14px 18px;border-bottom:1px solid var(--line);font-weight:800;z-index:5;display:flex;justify-content:space-between;align-items:center}
+header .filters{font-size:13px;color:var(--teal);font-weight:700}
+.list{padding:0 56px 80px 0}
+.sec{position:sticky;top:49px;background:var(--hanji);color:var(--muted);font-weight:800;font-size:13px;padding:6px 18px;border-bottom:1px solid var(--line);z-index:4}
+.row{display:flex;align-items:center;gap:14px;padding:12px 18px;min-height:56px;border-bottom:1px solid var(--line)}
+.row .ic{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--hanji),#fff);border:1px solid var(--line);flex:none}
+.row b{font-size:16px;font-weight:600}
+/* ── 스크럽 모드: 화면 비우고 현재 초성만 ── */
+#scrub{position:fixed;inset:0;background:var(--paper);display:none;z-index:8}
+#scrub.on{display:block}
+#scrub .big{position:absolute;left:22px;font-size:34px;font-weight:900;color:var(--ink)}
+#scrub .items{position:absolute;left:22px;right:96px}
+#scrub .items .row{border:none;padding:10px 0;min-height:52px}
+/* ── 레일 ── */
+#rail{position:fixed;right:0;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:flex-end;z-index:10;padding:6px 6px 6px 18px;user-select:none;touch-action:none}
+#rail span{font-size:10.5px;line-height:1.32;font-weight:700;color:var(--muted);width:24px;text-align:center;transition:transform .08s,color .08s}
+#rail span.dim{opacity:.28}
+#rail.scrubbing span{color:#B7AE9C}
+</style></head><body>
+<header><span>상품 카탈로그</span><span class="filters">필터 ▾</span></header>
+<div class="list" id="list"></div>
+<div id="scrub"><div class="big" id="sbig"></div><div class="items" id="sitems"></div></div>
+<div id="rail"></div>
+<script>
+const KO="ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ".split(""), EN="ABCDEFGHIJKLMNOPQRSTUVWXYZ".split(""), ALL=[...KO,...EN,"#"];
+const demo={"ㄱ":["가죽 접이식 책상","고가 브릿지 토트"],"ㄴ":["나무 트레이"],"ㄷ":["다다미 소파"],"ㅁ":["멀티탭 3구","무선충전 스탠드"],"ㅂ":["보조배터리 5000"],"ㅅ":["사이드테이블","소파 쿠션","숄더백"],"ㅇ":["올인홈 각도조절 테이블","우드 랜턴"],"ㅈ":["접이식 차량용 책상"],"ㅊ":["차량용 거치대"],"ㅍ":["폴딩 테이블"],"ㅎ":["홈 무드등"],"A":["Aroma Diffuser"],"B":["Bridge Lamp"],"G":["Grat 4 Grip Stand","Grat 5 Grip"],"M":["MagSafe Ring","MOFT Stand"],"O":["OHSNAP Adhesive"],"P":["PopSockets Grip"],"T":["Tango Grip"],"#":["3in1 충전패드"]};
+const list=document.getElementById("list"),rail=document.getElementById("rail"),
+scrub=document.getElementById("scrub"),sbig=document.getElementById("sbig"),sitems=document.getElementById("sitems");
+ALL.forEach(ch=>{
+  const has=demo[ch]&&demo[ch].length;
+  const sec=document.createElement("div");sec.className="sec";sec.id="sec-"+ch;sec.textContent=ch;list.appendChild(sec);
+  (demo[ch]||[]).forEach(n=>{const r=document.createElement("div");r.className="row";r.innerHTML='<span class="ic"></span><b>'+n+"</b>";list.appendChild(r)});
+  const s=document.createElement("span");s.textContent=ch;if(!has)s.classList.add("dim");s.dataset.ch=ch;rail.appendChild(s);
+});
+const spans=[...rail.children];
+function bend(y){ // 손가락 주변 레일 휘어짐(나이아 시그니처)
+  spans.forEach(s=>{const r=s.getBoundingClientRect(),d=Math.abs(r.top+r.height/2-y);
+    const k=Math.max(0,1-d/140);
+    s.style.transform=`translateX(${-34*k}px) scale(${1+0.55*k})`;
+    s.style.color=k>.85?"var(--teal)":"";});
+}
+function showScrub(ch,y){
+  sbig.textContent=ch; sbig.style.top=Math.min(Math.max(y-20,90),innerHeight-220)+"px";
+  sitems.style.top=Math.min(Math.max(y+28,130),innerHeight-180)+"px";
+  sitems.innerHTML=(demo[ch]||[]).map(n=>'<div class="row"><span class="ic"></span><b>'+n+"</b></div>").join("")||'<div class="row" style="opacity:.4"><b style="font-weight:500;font-size:14px;color:var(--muted)">이 초성엔 아직 없음</b></div>';
+}
+let cur=null;
+function pick(e){
+  const y=(e.touches?e.touches[0]:e).clientY;
+  const el=document.elementFromPoint(rail.getBoundingClientRect().right-12,y);
+  bend(y);
+  if(el&&el.dataset&&el.dataset.ch){cur=el.dataset.ch;scrub.classList.add("on");rail.classList.add("scrubbing");showScrub(cur,y);}
+  e.preventDefault();
+}
+function done(){
+  scrub.classList.remove("on");rail.classList.remove("scrubbing");
+  spans.forEach(s=>{s.style.transform="";s.style.color=""});
+  if(cur){const t=document.getElementById("sec-"+cur);if(t)t.scrollIntoView({block:"start"});}
+  cur=null; // 토스트 없음 — 조용히 점프만
+}
+rail.addEventListener("touchstart",pick,{passive:false});
+rail.addEventListener("touchmove",pick,{passive:false});
+rail.addEventListener("touchend",done);
+rail.addEventListener("mousedown",e=>{pick(e);const mv=ev=>pick(ev),up=()=>{done();removeEventListener("mousemove",mv);removeEventListener("mouseup",up)};addEventListener("mousemove",mv);addEventListener("mouseup",up)});
+</script></body></html>
