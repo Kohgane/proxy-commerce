@@ -80,6 +80,7 @@ def test_fallback_contract_source():
     from pathlib import Path
     src = Path("src/seller_console/orders/sheets_adapter.py").read_text(encoding="utf-8")
     assert "def _pg_orders()" in src
-    assert "_b.upsert_rows(rows)" in src and "_b.all_row_dicts()" in src
+    # PG-only 전환: 어댑터가 PG 또는 인메모리 백엔드로 위임(Sheets 제거)
+    assert "_order_backend()" in src and ".upsert_rows(" in src and ".all_row_dicts()" in src
     sch = Path("src/db/schema_stage3.sql").read_text(encoding="utf-8")
     assert "CREATE TABLE IF NOT EXISTS orders" in sch and "uq_orders_key" in sch

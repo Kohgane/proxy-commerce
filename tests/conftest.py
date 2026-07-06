@@ -310,6 +310,31 @@ def reset_order_validator():
         pass
 
 
+@pytest.fixture(autouse=True)
+def _reset_inmemory_stores():
+    """PG-only 전환: PG 미설정(개발/테스트) 인메모리 스토어를 테스트 간 초기화(상태 누수 방지)."""
+    def _clear():
+        try:
+            import src.seller_console.collect_history_store as ch
+            ch._in_memory[:] = []
+        except Exception:
+            pass
+        try:
+            import src.auth.personal_tokens as pt
+            pt._in_memory[:] = []
+            pt._token_cache.clear()
+        except Exception:
+            pass
+        try:
+            import src.seller_console.orders.sheets_adapter as oa
+            oa._MEM.rows[:] = []
+        except Exception:
+            pass
+    _clear()
+    yield
+    _clear()
+
+
 # ──────────────────────────────────────────────────────────
 # Phase 31-35 fixtures
 # ──────────────────────────────────────────────────────────

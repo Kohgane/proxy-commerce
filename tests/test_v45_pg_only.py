@@ -33,6 +33,15 @@ def test_tokens_sheets_removed():
     assert "_pg_tokens" in src and "_in_memory" in src
 
 
+def test_orders_sheets_removed():
+    # orders(sheets_adapter)도 Sheets CRUD 제거 — PG + 인메모리 백엔드
+    src = Path("src/seller_console/orders/sheets_adapter.py").read_text(encoding="utf-8")
+    for sym in ("open_sheet_object", "get_or_create_worksheet", "get_all_records_safe",
+                "append_row", "update_cell"):
+        assert sym not in src, f"orders 어댑터에 Sheets 심볼 잔존: {sym}"
+    assert "_InMemoryOrders" in src and "_order_backend" in src
+
+
 def test_boot_guard_source():
     ow = Path("src/order_webhook.py").read_text(encoding="utf-8")
     assert 'APP_ENV' in ow and "production" in ow
