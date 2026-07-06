@@ -116,34 +116,30 @@ def app_client():
 
 
 def test_token_append_failure_never_returns_raw_token(monkeypatch):
+    # PG-only: 저장소 커밋 실패(PG insert False) → TokenStoreCommitError(raw 토큰 미반환).
     import src.auth.personal_tokens as pt
 
-    ws = _FakeTokenWorksheet()
-    monkeypatch.setattr(pt, "_SHEET_ID", "sheet-test", raising=False)
-    monkeypatch.setattr(pt, "_get_worksheet", lambda: ws)
-
-    def _raise_append_error(row):
-        raise RuntimeError("boom")
-
-    monkeypatch.setattr(ws, "append_row", _raise_append_error)
+    class _FailBackend:
+        def insert(self, *a, **k):
+            return False   # 커밋 실패
+    monkeypatch.setattr(pt, "_pg_tokens", lambda: _FailBackend())
 
     with pytest.raises(pt.TokenStoreCommitError):
         pt.generate_token("user-1")
 
 
 def test_token_generate_then_validate_round_trip(monkeypatch):
+    # PG-only: 인메모리(개발/테스트) 경로 — 발급 후 즉시 검증.
     import src.auth.personal_tokens as pt
-
-    ws = _FakeTokenWorksheet()
-    monkeypatch.setattr(pt, "_SHEET_ID", "sheet-test", raising=False)
-    monkeypatch.setattr(pt, "_get_worksheet", lambda: ws)
     pt._token_cache.clear()
+    pt._in_memory[:] = []
 
     result = pt.generate_token("user-1", scopes=["collect.write"])
     validated = pt.validate_token(result["raw_token"], required_scopes=["collect.write"])
 
     assert validated is not None
     assert validated["user_id"] == "user-1"
+    pt._in_memory[:] = []
 
 
 def test_collect_history_delete_requery_no_respawn(monkeypatch):

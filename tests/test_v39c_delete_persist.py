@@ -31,33 +31,36 @@ class _FakeWS:
 @pytest.fixture
 def pt_sheet(monkeypatch):
     import src.auth.personal_tokens as pt
-    # 토큰은 email로 발급됨(user_id 세션과 별칭)
-    ws = _FakeWS([["h1", "demo@goga.kr", "[]", "2026-06-01", "", "2027-06-01", "false"]])
-    monkeypatch.setattr(pt, "_SHEET_ID", "sheet-x", raising=False)
-    monkeypatch.setattr(pt, "_get_worksheet", lambda: ws)
-    return pt, ws
+    pt._token_cache.clear()
+    pt._in_memory[:] = []
+    # 토큰은 email(demo@goga.kr)로 발급됨(user_id 세션과 별칭) — 인메모리 직접 시드
+    pt._in_memory.append({"token_hash": "h1", "user_id": "demo@goga.kr", "scopes": [],
+                          "created_at": "2026-06-01", "last_used_at": "", "expires_at": "2027-06-01",
+                          "revoked": False})
+    yield pt, None
+    pt._in_memory[:] = []
+    pt._token_cache.clear()
 
 
 def test_token_listed_and_revoked_via_alias(pt_sheet):
-    pt, ws = pt_sheet
+    pt, _ = pt_sheet
     # 세션 식별자 집합엔 user_id(u1)와 email(demo@goga.kr) 둘 다 — 토큰은 email로 발급됨
     ids = {"u1", "demo@goga.kr"}
     # exact user_id(u1)만으론 안 보이지만, 관용 집합으론 보인다(표시 스코프)
     assert pt.list_tokens("u1") == []
     listed = pt.list_tokens("u1", user_ids=ids)
     assert len(listed) == 1 and listed[0]["token_hash"] == "h1"
-    # 삭제도 관용 매칭으로 성공 → 시트 revoked=true 영속 커밋(부활 0)
+    # 삭제도 관용 매칭으로 성공 → revoked=true 영속(부활 0)
     assert pt.revoke_token("h1", "u1", user_ids=ids) is True
-    assert ws.rows[0][6] == "true"
     # 재진입(재조회) 시 활성 아님(이력으로)
     again = pt.list_tokens("u1", user_ids=ids)
     assert again[0]["revoked"] is True
 
 
-def test_revoke_fake_success_zero_when_no_sheet(monkeypatch):
+def test_revoke_fake_success_zero_when_no_store(monkeypatch):
     import src.auth.personal_tokens as pt
-    monkeypatch.setattr(pt, "_SHEET_ID", "", raising=False)
-    # 시트 미설정 = 커밋 불가 → 가짜 성공 0(False)
+    pt._in_memory[:] = []
+    # 저장소에 없는 토큰 회수 = 커밋 불가 → 가짜 성공 0(False)
     assert pt.revoke_token("h1", "u1", user_ids={"u1"}) is False
 
 

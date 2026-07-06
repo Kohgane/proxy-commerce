@@ -24,6 +24,15 @@ def test_sheets_workaround_removed_from_store():
     assert "_pg_backend" in STORE and "_in_memory" in STORE
 
 
+def test_tokens_sheets_removed():
+    # personal_tokens(user_tokens 스토어)도 Sheets 경로/재시도 제거 — PG + 인메모리
+    src = Path("src/auth/personal_tokens.py").read_text(encoding="utf-8")
+    for sym in ("_sheet_retry", "_get_worksheet", "_sheet_records", "_find_token_row",
+                "_classify_token_error", "_ensure_headers", "_SHEET_ID"):
+        assert sym not in src, f"personal_tokens에 Sheets 심볼 잔존: {sym}"
+    assert "_pg_tokens" in src and "_in_memory" in src
+
+
 def test_boot_guard_source():
     ow = Path("src/order_webhook.py").read_text(encoding="utf-8")
     assert 'APP_ENV' in ow and "production" in ow
