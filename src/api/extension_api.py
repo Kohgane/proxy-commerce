@@ -283,9 +283,16 @@ def collect_from_extension():
 
     payload = request.get_json(force=True, silent=True) or {}
     url = (payload.get("url") or "").strip()
-    logger.info("[collect %s] 수신 token_user_id=%r url=%s", _corr, user.get("user_id"), url[:80])
+    # P0 진단: 확장 버전·엔드포인트·수신 필드를 로깅(전면 실패 원인 1줄 규명용).
+    _ext_ver = str(payload.get("ext_version") or "").strip()
+    logger.info("[collect %s] 수신 ext_version=%s token_user_id=%r url=%s fields=%s",
+                _corr, _ext_ver or "(없음/구버전)", user.get("user_id"), url[:80],
+                sorted(k for k in payload.keys() if k != "html"))
     if not url:
-        return jsonify({"ok": False, "error": "url 필드가 필요합니다."}), 400
+        # 구버전 확장이 url 없이 보내면 조용한 실패 대신 업데이트 안내(정직).
+        _hint = " 확장을 최신 버전으로 업데이트해 주세요." if not _ext_ver else ""
+        return jsonify({"ok": False, "error": "url 필드가 필요합니다." + _hint,
+                        "corr": _corr, "update_extension": not bool(_ext_ver)}), 400
 
     # 봇 차단 사이트 대응: 확장이 보낸 페이지 HTML을 서버에서 파싱해 필드 보강 (네트워크 fetch 없음)
     page_html = payload.get("html")
@@ -462,15 +469,17 @@ def collect_from_extension():
         logger.info("[collect %s] 저장 자기검증(목록 스코프 재읽기) saved=%s durable=%s ids=%r",
                     _corr, saved, durable, sorted(verify_ids))
     except Exception as exc:
-        logger.warning("[collect %s] 수집 이력 기록 실패: %s", _corr, exc)
+        # P0 진단: 전체 예외 스택을 남긴다(PG 예외·컬럼 불일치 등 원인 규명). corr-id로 grep.
+        logger.exception("[collect %s] 수집 이력 기록 실패(스택): %s", _corr, exc)
 
     if not item_id or not saved or not durable:
-        # 가짜 성공 금지(v4/v38 P0): 실제 저장 안 됐거나(saved=False) 영속 저장소(시트)에 못 들어가
-        # 인메모리로만 폴백(durable=False)된 경우 — 멀티워커/새로고침엔 안 보임 → 정직한 실패로
-        # 토스트가 사유를 표시하고 재시도하게 한다(가짜 성공 절대 금지).
-        logger.warning("[collect %s] 저장 검증 실패 → 502 정직 실패: url=%s seller_id=%r saved=%s durable=%s",
+        # 가짜 성공 금지(v4/v38 P0): 실제 저장 안 됐거나(saved=False) 영속 저장(PG 커밋)에 못 들어가면
+        # 정직한 실패로 토스트가 사유·corr-id를 표시하고 재시도하게 한다(가짜 성공 절대 금지).
+        logger.warning("[collect %s] 저장 검증 실패 → 502: url=%s seller_id=%r saved=%s durable=%s",
                        _corr, url[:80], seller_id_val, saved, durable)
-        return jsonify({"ok": False, "error": "수집 항목을 저장하지 못했습니다. 잠시 후 다시 시도하세요."}), 502
+        return jsonify({"ok": False,
+                        "error": "수집 항목을 저장하지 못했습니다. 잠시 후 다시 시도하세요.",
+                        "corr": _corr}), 502
 
     preview_url = f"/seller/collect/preview/{item_id}"
 

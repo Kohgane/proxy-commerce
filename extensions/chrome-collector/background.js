@@ -106,45 +106,40 @@ async function handleCollect(meta, sendResponse) {
     return;
   }
 
+  const endpoint = `${serverUrl}/api/v1/collect/extension`;
   try {
-    const response = await fetch(`${serverUrl}/api/v1/collect/extension`, {
+    const response = await fetch(endpoint, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`
-      },
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
       body: JSON.stringify(meta)
     });
-
-    const data = await response.json();
-    // v42 E-1: 재프롬프트는 401(만료·무효)일 때만. 호출부가 '재설정' 안내를 띄운다.
+    // P0 진단: 엔드포인트·HTTP 상태·응답 본문(원문)을 확장 콘솔에 로그 → 원인 1줄(401/404/500/CORS).
+    const raw = await response.text();
+    let data = {};
+    try { data = JSON.parse(raw); } catch (e) { data = {}; }
+    console.log(`[고가수집기] POST ${endpoint} → ${response.status} ${response.statusText}`,
+                "\n응답:", raw.slice(0, 400));
     if (response.status === 401) data.authRequired = true;
+    // 서버가 JSON을 못 준 경우(500 HTML 등)도 조용한 실패 금지 — 상태코드로 정직한 사유.
+    if (!data || (typeof data.ok === "undefined")) {
+      data = { ok: false, error: `서버 오류 (HTTP ${response.status}). 잠시 후 다시 시도하세요.`, httpStatus: response.status };
+    }
+    if (!data.error && !data.ok) data.error = `수집 실패 (HTTP ${response.status})`;
+    if (data.httpStatus === undefined) data.httpStatus = response.status;
 
     if (sendResponse) sendResponse(data);
-
-    if (data.ok) {
-      chrome.notifications.create({
-        type: "basic",
-        iconUrl: "icons/48.png",
-        title: "고가브릿지",
-        message: `수집 완료: ${meta.title || meta.url}`
-      });
-    } else {
-      chrome.notifications.create({
-        type: "basic",
-        iconUrl: "icons/48.png",
-        title: "고가브릿지",
-        message: data.error || "수집 실패"
-      });
-    }
+    chrome.notifications.create({
+      type: "basic", iconUrl: "icons/48.png", title: "고가브릿지",
+      message: data.ok ? `수집 완료: ${meta.title || meta.url}`
+                       : `수집 실패 (${response.status}): ${data.error || ""}`.slice(0, 180)
+    });
   } catch (err) {
-    const result = { ok: false, error: err.message || "서버 연결 실패" };
+    // 네트워크/CORS 실패 등 — 엔드포인트와 함께 로그.
+    console.error(`[고가수집기] 수집 요청 실패 POST ${endpoint}:`, err);
+    const result = { ok: false, error: `네트워크 오류: ${err.message || "서버에 연결하지 못했습니다"}`, networkError: true };
     if (sendResponse) sendResponse(result);
     chrome.notifications.create({
-      type: "basic",
-      iconUrl: "icons/48.png",
-      title: "고가브릿지",
-      message: result.error
+      type: "basic", iconUrl: "icons/48.png", title: "고가브릿지", message: result.error
     });
   }
 }
@@ -172,19 +167,26 @@ async function handleCollectBulk(items, sendResponse, tabId) {
   //   순차 처리(동시 폭주로 인한 유실 방지) + 1건마다 진행률을 탭에 전송(bulkProgress).
   let success = 0, failed = 0, duplicate = 0;
   const failedItems = [];
+  let _extVer = ""; try { _extVer = chrome.runtime.getManifest().version; } catch (e) {}
   for (let i = 0; i < items.length; i++) {
     const meta = items[i];
+    if (meta && !meta.ext_version) meta.ext_version = _extVer;   // P0 하위호환·진단
     try {
       const r = await fetch(`${serverUrl}/api/v1/collect/extension`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify(meta),
       });
-      const d = await r.json().catch(() => ({}));
+      const raw = await r.text();
+      let d = {}; try { d = JSON.parse(raw); } catch (e) { d = {}; }
+      if (!r.ok || typeof d.ok === "undefined") {   // P0 진단: 실패 1건 상태·본문 로그(첫 실패만 상세)
+        if (failed === 0) console.log(`[고가수집기] 벌크 실패 HTTP ${r.status}:`, raw.slice(0, 300));
+      }
       if (d && d.ok && d.duplicate) duplicate++;      // 이미 수집(중복) — '완료'로 부풀리지 않음
       else if (d && d.ok) success++;                  // 서버 커밋 성공(STEP 1-0 write-then-verify)
       else { failed++; failedItems.push(meta); }      // 502 등 정직 실패 → 재시도 대상
     } catch (e) {
+      if (failed === 0) console.error("[고가수집기] 벌크 네트워크 오류:", e);
       failed++; failedItems.push(meta);
     }
     if (tabId != null) {

@@ -316,6 +316,7 @@ function extractProductMeta() {
     brand: getMeta("og:brand") || "",
     jsonld: jsonldScripts,
     html: pageHtml,
+    ext_version: (function () { try { return chrome.runtime.getManifest().version; } catch (e) { return ""; } })(),  // P0 진단·하위호환
     collected_at: new Date().toISOString()
   };
 }
@@ -590,7 +591,9 @@ function handleFabClick(btn) {
       if (resp && resp.authRequired) {
         kgpToast("확장 옵션에서 토큰을 다시 설정해 주세요.\n(토큰이 만료됐거나 삭제됐어요)", false);
       } else {
-        kgpToast(((resp && resp.error) || "수집 실패"), false);
+        // P0 진단: 실패 사유에 HTTP 상태·서버 corr-id를 함께 노출(콘솔+토스트).
+        var _st = resp && resp.httpStatus ? ` (HTTP ${resp.httpStatus})` : "";
+        kgpToast(((resp && resp.error) || "수집 실패") + _st, false);
       }
       return;
     }
