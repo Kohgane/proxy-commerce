@@ -72,10 +72,16 @@ def test_collect_history_rail_always_on(client):
 
 
 def test_template_wiring_source():
+    # 속도: 행은 파셜(단일소스)로 분리 — 목록 컨테이너(data-fs-list)는 본문, data-fs-key는 파셜.
+    CAT_ROWS = Path("src/seller_console/templates/catalog_rows.html").read_text(encoding="utf-8")
+    CH_ROWS = Path("src/seller_console/templates/collect_history_rows.html").read_text(encoding="utf-8")
     for t in (CATALOG, CH):
-        assert "data-fs-list" in t and "data-fs-key" in t
-    # 이름순이면 페이지네이션 숨김(전체 로드)
-    assert "not fastscroll" in CATALOG and "not fastscroll" in CH
+        assert "data-fs-list" in t
+    for t in (CAT_ROWS, CH_ROWS):
+        assert "data-fs-key" in t
+    # 이름순 전체 5000 로드 폐기 → 첫50 + 무한스크롤(fmt=rows) + 나이아 서버버킷 점프(onJump)
+    for t in (CATALOG, CH):
+        assert "fsInfiniteScroll" in t and "onJump" in t and "fmt=rows" in t
 
 
 def test_component_naia_v2_behaviors():

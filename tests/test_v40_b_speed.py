@@ -49,5 +49,6 @@ def test_gzip_still_applied(client):
 
 
 def test_list_thumbnails_lazy_async():
-    tpl = Path("src/seller_console/templates/collect_history.html").read_text(encoding="utf-8")
+    # 행 마크업은 파셜(단일소스)로 이동 — 썸네일 lazy/async는 거기서 검증.
+    tpl = Path("src/seller_console/templates/collect_history_rows.html").read_text(encoding="utf-8")
     assert 'loading="lazy"' in tpl and 'decoding="async"' in tpl

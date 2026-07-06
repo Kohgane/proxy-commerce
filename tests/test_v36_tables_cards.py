@@ -21,11 +21,12 @@ def client():
 
 
 def test_collect_history_table_is_cardable():
-    # 표에 table-cards 클래스 + 셀에 data-label(카드 라벨)
+    # 표에 table-cards 클래스(본문) + 셀에 data-label(카드 라벨)은 행 파셜(단일소스)로 이동.
     assert "table-cards" in HIST
+    ROWS = Path("src/seller_console/templates/collect_history_rows.html").read_text(encoding="utf-8")
     for lbl in ('data-label="가격"', 'data-label="경로"', 'data-label="수집 시각"', 'data-label="상태"'):
-        assert lbl in HIST, f"{lbl} 누락"
-    assert "cardcell-actions" in HIST
+        assert lbl in ROWS, f"{lbl} 누락"
+    assert "cardcell-actions" in ROWS
 
 
 def test_table_cards_mobile_css():

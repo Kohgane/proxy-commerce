@@ -2598,8 +2598,55 @@ def collect_bulk_duplicate():
     return jsonify({"ok": True, "duplicated": len(new_ids), "new_ids": new_ids})
 
 
-# 이름순 인덱스 패스트 스크롤 시 한 화면에 올리는 최대 항목 수(가상화로 성능, 안전 상한).
-_FASTSCROLL_MAX = 5000
+# 속도: 첫 로드는 이 개수만 렌더(첫50) + 무한스크롤로 추가. 이름순도 전체 5000 로드 폐기 —
+# 나이아 점프는 서버 버킷 인덱스(fs_buckets)로 해당 섹션만 lazy-fetch(fmt=rows&offset=…).
+_FASTSCROLL_MAX = 5000   # (하위호환 상수 — 더는 전체 로드에 쓰지 않음)
+_FS_PAGE = 50            # 첫 화면·무한스크롤 청크 크기
+
+# 초성 버킷(JS kgp-fastscroll.js와 동일 규칙) — 서버가 버킷별 count/offset/샘플을 계산해
+# 나이아 레일에 넘기면, 5000행을 DOM에 그리지 않고도 스크럽 오버레이·점프가 실데이터로 동작한다.
+_FS_CHO19 = ["ㄱ", "ㄱ", "ㄴ", "ㄷ", "ㄷ", "ㄹ", "ㅁ", "ㅂ", "ㅂ", "ㅅ", "ㅅ", "ㅇ",
+             "ㅈ", "ㅈ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ"]
+_FS_COMPAT = {
+    "ㄱ": "ㄱ", "ㄲ": "ㄱ", "ㄳ": "ㄱ", "ㄴ": "ㄴ", "ㄵ": "ㄴ", "ㄶ": "ㄴ", "ㄷ": "ㄷ", "ㄸ": "ㄷ",
+    "ㄹ": "ㄹ", "ㄺ": "ㄹ", "ㄻ": "ㄹ", "ㄼ": "ㄹ", "ㄽ": "ㄹ", "ㄾ": "ㄹ", "ㄿ": "ㄹ", "ㅀ": "ㄹ",
+    "ㅁ": "ㅁ", "ㅂ": "ㅂ", "ㅃ": "ㅂ", "ㅄ": "ㅂ", "ㅅ": "ㅅ", "ㅆ": "ㅅ", "ㅇ": "ㅇ",
+    "ㅈ": "ㅈ", "ㅉ": "ㅈ", "ㅊ": "ㅊ", "ㅋ": "ㅋ", "ㅌ": "ㅌ", "ㅍ": "ㅍ", "ㅎ": "ㅎ",
+}
+
+
+def _fs_bucket_of(key: str) -> str:
+    s = (key or "").strip()
+    if not s:
+        return "#"
+    ch = s[0]
+    o = ord(ch)
+    if 0xAC00 <= o <= 0xD7A3:               # 완성형 한글 → 초성
+        return _FS_CHO19[(o - 0xAC00) // 588]
+    if ch in _FS_COMPAT:                     # 호환 자모
+        return _FS_COMPAT[ch]
+    if ("a" <= ch <= "z") or ("A" <= ch <= "Z"):
+        return ch.upper()
+    return "#"
+
+
+def _fs_build_buckets(sorted_pairs):
+    """정렬된 (title, img) 목록 → 버킷별 {count, offset, sample}(초성/A-Z/#).
+
+    offset = 정렬 전체에서 그 버킷 첫 항목의 0-based 인덱스(무한스크롤 점프용).
+    sample = 스크럽 오버레이용 실데이터(제목+이미지) 앞 12개(전체 렌더 없이 실데이터).
+    """
+    out: dict = {}
+    for idx, (title, img) in enumerate(sorted_pairs):
+        b = _fs_bucket_of(title)
+        e = out.get(b)
+        if e is None:
+            out[b] = {"count": 1, "offset": idx, "sample": [{"title": title or "", "img": img or ""}]}
+        else:
+            e["count"] += 1
+            if len(e["sample"]) < 12:
+                e["sample"].append({"title": title or "", "img": img or ""})
+    return out
 
 
 @bp.get("/catalog")
@@ -2617,8 +2664,13 @@ def catalog():
     state_filter = (request.args.get("state") or "").strip()
     search = (request.args.get("search") or "").strip().lower()
     sort = (request.args.get("sort") or "last_synced_desc").strip()
+    # 속도: 무한스크롤·나이아 점프 공통 창(window) — offset부터 per_page개만 렌더.
+    fmt = (request.args.get("fmt") or "").strip()
+    offset = max(0, request.args.get("offset", 0, type=int))
 
-    items = []
+    import time as _time
+    _t0 = _time.monotonic()
+    all_items = []
     total = 0
     source = "mock"
     error_msg = None
@@ -2659,16 +2711,13 @@ def catalog():
             all_items = sorted(all_items, key=lambda i: i.last_synced_at or datetime.min, reverse=True)
 
         total = len(all_items)
-        if sort == "title_asc":
-            # 이름순 = 인덱스 패스트 스크롤(초성/A-Z/#) — 전체를 한 번에(가상화로 성능). 안전 상한.
-            items = all_items[:_FASTSCROLL_MAX]
-        else:
-            start = (page_num - 1) * per_page
-            items = all_items[start:start + per_page]
     except Exception as exc:
         logger.warning("카탈로그 데이터 로드 실패: %s", exc)
         error_msg = str(exc)
 
+    # 첫 화면·무한스크롤·나이아 점프 공통: offset부터 per_page개만(전체 5000 로드 폐기).
+    items = all_items[offset:offset + per_page]
+    has_more = (offset + len(items)) < total
     total_pages = max(1, (total + per_page - 1) // per_page)
     marketplace_options = [
         {"market": m, **_marketplace_meta(m)}
@@ -2709,6 +2758,18 @@ def catalog():
             }
         )
 
+    logger.info("[catalog] sort=%s total=%s offset=%s rendered=%s elapsed_ms=%.1f",
+                sort, total, offset, len(view_items), (_time.monotonic() - _t0) * 1000)
+
+    # 무한스크롤·나이아 점프 요청 → 행 파셜만(경량).
+    if fmt == "rows":
+        return render_template("catalog_rows.html", items=view_items, offset=offset, has_more=has_more)
+
+    # 전체 페이지: 이름순이면 나이아 버킷 인덱스(전체 렌더 없이 실데이터 샘플 + offset)를 넘긴다.
+    fs_buckets = {}
+    if sort == "title_asc":
+        fs_buckets = _fs_build_buckets([((i.title or ""), "") for i in all_items])
+
     return render_template(
         "catalog.html",
         items=view_items,
@@ -2716,6 +2777,8 @@ def catalog():
         current_page=page_num,
         total_pages=total_pages,
         total=total,
+        has_more=has_more,
+        fs_buckets=fs_buckets,
         source=source,
         error_msg=error_msg,
         filters={
@@ -5497,6 +5560,9 @@ def collect_history():
     if per_page not in (20, 50, 100):
         per_page = 50
     page = max(1, request.args.get("page", 1, type=int))
+    # 속도: 무한스크롤·나이아 점프 공통 창.
+    fmt = (request.args.get("fmt") or "").strip()
+    offset = max(0, request.args.get("offset", 0, type=int))
 
     items = []
     summ = {"total": 0, "today": 0, "domains": 0, "by_source": {"extension": 0, "bookmarklet": 0, "manual": 0, "bulk": 0}}
@@ -5551,18 +5617,14 @@ def collect_history():
     else:  # newest (기본)
         items.sort(key=lambda r: r.get("collected_at", ""), reverse=True)
 
-    # 페이지네이션 (이름순=인덱스 패스트 스크롤이면 전체 로드, 가상화로 성능)
+    # 속도: 첫 offset~per_page개만(전체 5000 로드 폐기). 이름순도 동일 — 나이아 점프는 서버 버킷 lazy-fetch.
     total_filtered = len(items)
     fastscroll = (sort == "title")
-    if fastscroll:
-        total_pages = 1
-        page = 1
-        items = items[:_FASTSCROLL_MAX]
-    else:
-        total_pages = max(1, (total_filtered + per_page - 1) // per_page)
-        page = min(page, total_pages)
-        start = (page - 1) * per_page
-        items = items[start:start + per_page]
+    all_rows = items                                  # 정렬된 전체(버킷 인덱스용)
+    items = all_rows[offset:offset + per_page]
+    has_more = (offset + len(items)) < total_filtered
+    total_pages = max(1, (total_filtered + per_page - 1) // per_page)
+    page = 1 if fastscroll else min(page, total_pages)
 
     # 각 항목에 썸네일 목록(최대 5장) 부착 — 대표이미지 + extra_json의 수집 이미지들.
     # 사람이 이름 옆에서 이미지로 바로 확인할 수 있게(오너 요청).
@@ -5620,18 +5682,32 @@ def collect_history():
         }
     except Exception:
         translation_free = {"limit": 20, "used": 0, "remaining": 20}
+    logger.info("[collect-history] sort=%s total=%s offset=%s rendered=%s", sort, total_filtered, offset, len(items))
+
+    # 무한스크롤·나이아 점프 요청 → 행 파셜만(경량).
+    if fmt == "rows":
+        return render_template("collect_history_rows.html", items=items)
+
     # 상품 그룹(v3 P1-5)
     try:
         from . import collect_groups
         groups = collect_groups.list_groups(_seller_id())
     except Exception:
         groups = []
+
+    # 이름순이면 나이아 버킷 인덱스(전체 렌더 없이 실데이터 샘플+offset). 이미지=대표(image_url).
+    fs_buckets = {}
+    if fastscroll:
+        fs_buckets = _fs_build_buckets([((r.get("title") or ""), (r.get("image_url") or "")) for r in all_rows])
+
     return render_template(
         "collect_history.html",
         page="collect_history",
         items=items,
         summary=summ,
         domains=domains,
+        has_more=has_more,
+        fs_buckets=fs_buckets,
         filters={"domain": domain, "source": source, "days": days,
                  "q": q, "status": status_f, "group": group_f, "sort": sort, "per_page": per_page},
         pagination={"page": page, "per_page": per_page, "total": total_filtered,
