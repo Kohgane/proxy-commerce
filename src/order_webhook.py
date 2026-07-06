@@ -1438,15 +1438,43 @@ def bm_install():
     return redirect("/seller/bookmarklet", code=302)
 
 
+def _wants_json_error() -> bool:
+    """API 경로(/api/)·JSON 요청이면 HTML 대신 JSON 에러를 반환해야 한다.
+
+    P0: 확장/북마클릿이 부르는 /api/v1/collect/* 는 절대 HTML(DOCTYPE)을 주면 안 된다
+    (클라이언트 r.json()이 '<!DOCTYPE' 파싱 실패 → 수집 전면 실패). API 경로는 항상 JSON.
+    """
+    try:
+        p = request.path or ""
+        if p.startswith("/api/") or p.startswith("/webhook/") or p.startswith("/cron/"):
+            return True
+        acc = request.headers.get("Accept", "")
+        return "application/json" in acc and "text/html" not in acc
+    except Exception:
+        return False
+
+
 @app.errorhandler(404)
 def not_found(e):
-    """404 — 커스텀 에러 페이지."""
+    """404 — API 경로는 JSON, 그 외 커스텀 HTML 페이지."""
+    if _wants_json_error():
+        return jsonify({"ok": False, "error": "not_found", "path": request.path}), 404
     return render_template('errors/404.html'), 404
+
+
+@app.errorhandler(405)
+def method_not_allowed(e):
+    if _wants_json_error():
+        return jsonify({"ok": False, "error": "method_not_allowed"}), 405
+    return render_template('errors/404.html'), 405
 
 
 @app.errorhandler(500)
 def server_error(e):
-    """500 — 커스텀 에러 페이지."""
+    """500 — API 경로는 JSON(스택은 서버 로그), 그 외 커스텀 HTML 페이지."""
+    logger.exception("서버 500 오류: path=%s", getattr(request, "path", "?"))
+    if _wants_json_error():
+        return jsonify({"ok": False, "error": "서버 오류가 발생했습니다. 잠시 후 다시 시도하세요."}), 500
     return render_template('errors/500.html'), 500
 
 
