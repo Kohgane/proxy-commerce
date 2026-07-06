@@ -552,63 +552,68 @@ body::before {
 @keyframes pcToastIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .pc-toast { animation: none; } }
 
-/* ── 인덱스 패스트 스크롤(폰 앱서랍 방식) — kgp-fastscroll.js 짝. 토큰 단일소스 ── */
-.kgp-fs-on { position: relative; }
-/* 섹션 sticky 헤더(초성/A-Z/#) */
+/* ── 나이아 인덱스 레일 — kgp-fastscroll.js 짝. 정답지 docs/design/naia_rail_demo.html. 토큰 단일소스 ── */
+/* 섹션 sticky 헤더(초성/A-Z/#) — 41섹션 전부 */
 .kgp-fs-head { background: var(--cream); }
 .kgp-fs-head td,
 .kgp-fs-head:not(:has(td)) {
   position: sticky; top: 0; z-index: 5;
   background: var(--cream);
   font-family: var(--font-display, "Noto Serif KR", serif);
-  font-weight: 700; color: var(--ink);
+  font-weight: 800; color: var(--ink);
   letter-spacing: -.01em;
   padding: 6px 14px; border-bottom: 1px solid var(--border);
 }
 .kgp-fs-head:not(:has(td)) { display: block; }
+/* 빈 섹션 '아직 없음' 1행 */
+.kgp-fs-empty td, .kgp-fs-empty { color: var(--muted); opacity: .55; font-size: 13px; padding: 10px 18px; }
 /* content-visibility = 네이티브 가상화(1천+ 항목 성능) */
-.kgp-fs-item { content-visibility: auto; contain-intrinsic-size: 0 52px; }
+.kgp-fs-item { content-visibility: auto; contain-intrinsic-size: 0 56px; }
+/* 항목 행 — 나이아처럼 시원하게(터치 ≥56px), 레일에 안 가리게 우측 여백 */
+.kgp-fs-item td { min-height: 56px; }
 
-/* 우측 세로 인덱스 레일 */
+/* 우측 가장자리 고정 레일 — 항상 노출(정렬 무관) */
 .kgp-fs-rail {
   position: fixed; right: 2px; top: 50%; transform: translateY(-50%);
   z-index: 1030; display: flex; flex-direction: column; align-items: center;
-  gap: 0; padding: 6px 2px; max-height: 86vh;
-  background: color-mix(in srgb, var(--surface) 86%, transparent);
-  border: 1px solid var(--border); border-radius: 999px;
-  box-shadow: var(--shadow); backdrop-filter: blur(6px);
+  gap: 0; padding: 6px 2px; max-height: 92vh;
   user-select: none; touch-action: none;
 }
 .kgp-fs-letter {
   appearance: none; border: 0; background: transparent; cursor: pointer;
-  color: color-mix(in srgb, var(--ink) 42%, transparent);
-  font-size: 11px; font-weight: 600; line-height: 1;
-  width: 22px; min-height: 15px; padding: 1px 0;
+  color: var(--muted); font-size: 10.5px; font-weight: 700; line-height: 1.35;
+  width: 26px; text-align: center;
   display: flex; align-items: center; justify-content: center;
   transition: transform .12s ease, color .12s ease;
 }
-.kgp-fs-letter:hover { color: var(--teal); transform: scale(1.5); }
+.kgp-fs-letter:hover { color: var(--teal); transform: scale(1.3); }
 .kgp-fs-letter:focus-visible { outline: 2px solid var(--teal); border-radius: 4px; }
-.kgp-fs-active { color: var(--teal); font-weight: 800; }
-.kgp-fs-dim { color: color-mix(in srgb, var(--ink) 15%, transparent); pointer-events: none; }
+.kgp-fs-on { color: var(--teal); transform: scale(1.25); }
+.kgp-fs-dim { opacity: .28; }
 
-/* 스크럽 시 현재 글자 말풍선(먹 배경 + 한지 글자) */
+/* 스크럽 시 현재 글자 대형 버블(먹 배경 + 한지 글자, 우측에서 44px) */
 .kgp-fs-bubble {
-  position: fixed; right: 44px; top: 50%; transform: translateY(-50%) scale(.6);
+  position: fixed; right: 44px; top: 50%;
   z-index: 1031; pointer-events: none; opacity: 0;
-  min-width: 64px; height: 64px; padding: 0 14px;
+  width: 74px; height: 74px;
   display: flex; align-items: center; justify-content: center;
   background: var(--ink); color: var(--cream);
   font-family: var(--font-display, "Noto Serif KR", serif);
-  font-weight: 700; font-size: 30px; border-radius: 18px 18px 6px 18px;
-  box-shadow: var(--shadow); transition: opacity .12s ease, transform .12s ease;
+  font-weight: 900; font-size: 34px; border-radius: 22px 22px 8px 22px;
+  box-shadow: 0 10px 30px rgba(26,23,20,.35);
+  transition: opacity .1s ease;
 }
-.kgp-fs-bubble-on { opacity: 1; transform: translateY(-50%) scale(1); }
+.kgp-fs-bubble-on { opacity: 1; }
 
-/* 히트 영역은 넓게(터치 ≥44px), 시각 폭은 좁게 */
+/* 목록에 레일 자리 확보(우측 패딩) */
+[data-fs-root] { padding-right: 40px; }
+
+/* 모바일: 오른쪽 엄지 존 — 히트영역 ≥44px, 글자는 작아도 됨. 행 ≥56px. */
 @media (pointer: coarse) {
-  .kgp-fs-rail { padding: 8px 12px; right: 0; }
-  .kgp-fs-letter { width: 28px; }
+  .kgp-fs-rail { padding: 8px 0; right: 0; }
+  .kgp-fs-letter { width: 44px; }         /* 히트 폭 ≥44px */
+  .kgp-fs-item td, .kgp-fs-row { min-height: 56px; }
+  [data-fs-root] { padding-right: 46px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .kgp-fs-letter, .kgp-fs-bubble { transition: none; }

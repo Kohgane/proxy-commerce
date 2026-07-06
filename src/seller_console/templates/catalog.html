@@ -85,10 +85,8 @@
       </div>
     </form>
   </div>
-  <div class="card-body p-0"{% if fastscroll %} data-fs-root{% endif %}>
-    {% if fastscroll %}
-    <div class="small text-muted px-3 pt-2">이름순 — 오른쪽 <strong>인덱스</strong>(ㄱ~ㅎ·A~Z)를 누르거나 긁어 빠르게 이동하세요.</div>
-    {% endif %}
+  <div class="card-body p-0" data-fs-root>
+    <div class="small text-muted px-3 pt-2">오른쪽 <strong>인덱스 레일</strong>(ㄱ~ㅎ·A~Z·#)을 누르거나 긁어 빠르게 이동하세요.{% if not fastscroll %} (다른 정렬 중엔 눌렀을 때 이름순으로 전환됩니다.){% endif %}</div>
     <div class="table-responsive">
       <table class="table table-hover mb-0 table-cards">
         <thead class="table-light">
@@ -261,13 +259,15 @@ async function syncItem(button, productId, marketplace) {
   }
 }
 </script>
-{% if fastscroll %}
+{% set _fs_switch = '?marketplace=' ~ filters.marketplace ~ '&country=' ~ filters.country ~ '&state=' ~ filters.state ~ '&search=' ~ filters.search ~ '&sort=title_asc&per_page=' ~ filters.per_page %}
 <script src="/seller/static/kgp-fastscroll.js"></script>
 <script>
   (function () {
     var root = document.querySelector('[data-fs-root]');
-    if (root && window.KGPFastScroll) window.KGPFastScroll.init(root, { enabled: true });
+    if (root && window.KGPFastScroll) window.KGPFastScroll.init(root, {
+      enabled: {{ 'true' if fastscroll else 'false' }},
+      switchUrl: "{{ _fs_switch }}"
+    });
   })();
 </script>
-{% endif %}
 {% endblock %}

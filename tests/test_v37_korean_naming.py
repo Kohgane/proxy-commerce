@@ -35,7 +35,8 @@ def test_brand_en_is_gogabridj():
 def test_no_spaced_korean_brand_in_source():
     # 사용자 노출 한글 표기에 '고가 브릿지'(공백) 잔존 0 (소스 전수)
     res = subprocess.run(
-        ["grep", "-rIn", "고가 브릿지", "src/", "extensions/", "docs/"],
+        # design/는 오너 제공 디자인 정답지(참조 아티팩트) — 앱 소스/사용자 노출 아님
+        ["grep", "-rIn", "--exclude-dir=design", "고가 브릿지", "src/", "extensions/", "docs/"],
         capture_output=True, text=True,
     )
     assert res.stdout.strip() == "", f"공백 표기 잔존:\n{res.stdout}"
