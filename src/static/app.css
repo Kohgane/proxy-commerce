@@ -596,12 +596,13 @@ body::before {
   display: none; z-index: 1029;
 }
 .kgp-fs-scrub-on { display: block; }
+/* 위치는 JS가 transform: translateY로만 갱신(리플로우 0·60fps) → top:0 고정 + will-change */
 .kgp-fs-scrub-big {
-  position: absolute; left: 22px;
+  position: absolute; left: 22px; top: 0; will-change: transform;
   font-family: var(--font-display, "Noto Serif KR", serif);
   font-size: 40px; font-weight: 900; color: var(--ink); line-height: 1;
 }
-.kgp-fs-scrub-items { position: absolute; left: 22px; right: 84px; }
+.kgp-fs-scrub-items { position: absolute; left: 22px; right: 84px; top: 0; will-change: transform; }
 .kgp-fs-scrub-row {
   display: flex; align-items: center; gap: 12px; padding: 10px 0; min-height: 52px;
   border-bottom: 1px solid var(--line, var(--border));

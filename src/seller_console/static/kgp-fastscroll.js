@@ -128,40 +128,62 @@
   };
 
   KGPFastScroll.prototype._bend = function (y) {
-    // 손가락 근접 레일 글자 휘어짐(나이아 시그니처): translateX(-34)·scale(1.55) 그라디언트
-    this.spans.forEach(function (s) {
-      var r = s.getBoundingClientRect();
-      var d = Math.abs(r.top + r.height / 2 - y);
+    // 손가락 근접 레일 글자 휘어짐(나이아 시그니처): transform만(컴포지터) — 리플로우 0.
+    //   위치는 초기 1회 캐시한 중심 y(this._cy[i])로 계산 → 매 프레임 getBoundingClientRect(강제 리플로우) 회피.
+    var cy = this._cy;
+    this.spans.forEach(function (s, i) {
+      var d = Math.abs((cy ? cy[i] : (s.getBoundingClientRect().top + 7)) - y);
       var k = Math.max(0, 1 - d / 140);
       s.style.transform = "translateX(" + (-34 * k) + "px) scale(" + (1 + 0.55 * k) + ")";
-      s.style.color = k > 0.85 ? "var(--teal)" : "";
     });
   };
 
+  KGPFastScroll.prototype._cacheGeom = function () {
+    // 스크럽 시작 시 레일 글자 중심 y·경계를 1회 캐시(이후 프레임은 계산만 — 강제 리플로우 회피).
+    var self = this;
+    this._railRect = this.rail.getBoundingClientRect();
+    this._cy = this.spans.map(function (s) { var r = s.getBoundingClientRect(); return r.top + r.height / 2; });
+  };
+
   KGPFastScroll.prototype._bucketAt = function (y) {
-    var rect = this.rail.getBoundingClientRect();
-    var el = document.elementFromPoint(rect.right - 12, y);
-    if (el && el.getAttribute && el.getAttribute("data-fs-bucket")) return el.getAttribute("data-fs-bucket");
-    var n = this.spans.length;
-    var rel = Math.max(0, Math.min(n - 1, Math.floor((y - rect.top) / (rect.height / n))));
-    return this.spans[rel] ? this.spans[rel].getAttribute("data-fs-bucket") : null;
+    var rect = this._railRect || this.rail.getBoundingClientRect();
+    // 여러 x에서 elementFromPoint 시도(벤딩으로 글자가 왼쪽으로 이동해도 히트) → 실패 시 캐시된 중심 y로 최근접.
+    var xs = [rect.right - 8, rect.right - 20, rect.left + 10];
+    for (var j = 0; j < xs.length; j++) {
+      var el = document.elementFromPoint(xs[j], y);
+      if (el && el.getAttribute && el.getAttribute("data-fs-bucket")) return el.getAttribute("data-fs-bucket");
+    }
+    var cy = this._cy, best = 0, bd = 1e9;
+    if (cy) {
+      for (var i = 0; i < cy.length; i++) { var d = Math.abs(cy[i] - y); if (d < bd) { bd = d; best = i; } }
+    } else {
+      var n = this.spans.length;
+      best = Math.max(0, Math.min(n - 1, Math.floor((y - rect.top) / (rect.height / n))));
+    }
+    return this.spans[best] ? this.spans[best].getAttribute("data-fs-bucket") : null;
   };
 
   KGPFastScroll.prototype._showScrub = function (bucket, y) {
-    this.cur = bucket;
     this.scrub.classList.add("kgp-fs-scrub-on");
     this.rail.classList.add("kgp-fs-scrubbing");
-    this.sbig.textContent = bucket;
-    this.sbig.style.top = Math.min(Math.max(y - 20, 90), global.innerHeight - 240) + "px";
-    this.sitems.style.top = Math.min(Math.max(y + 30, 140), global.innerHeight - 200) + "px";
-    var rows = (this.data[bucket] || []);
-    this.sitems.innerHTML = rows.length
-      ? rows.slice(0, 40).map(function (it) {
-          return '<div class="kgp-fs-scrub-row">' +
-            (it.img ? '<img src="' + esc(it.img) + '" alt="" referrerpolicy="no-referrer">' : '<span class="kgp-fs-scrub-ic"></span>') +
-            '<b>' + esc(it.title) + '</b></div>';
-        }).join("")
-      : '<div class="kgp-fs-scrub-none">이 초성엔 아직 없어요</div>';
+    // 위치는 transform(translateY)만 — top 쓰기(리플로우) 금지, 60fps.
+    var bigY = Math.min(Math.max(y - 20, 90), global.innerHeight - 240);
+    var itemsY = Math.min(Math.max(y + 30, 140), global.innerHeight - 200);
+    this.sbig.style.transform = "translateY(" + bigY + "px)";
+    this.sitems.style.transform = "translateY(" + itemsY + "px)";
+    // 항목 목록은 **버킷이 바뀔 때만** 재생성(innerHTML) — 매 move 리플로우 방지.
+    if (bucket !== this.cur) {
+      this.cur = bucket;
+      this.sbig.textContent = bucket;
+      var rows = (this.data[bucket] || []);
+      this.sitems.innerHTML = rows.length
+        ? rows.slice(0, 40).map(function (it) {
+            return '<div class="kgp-fs-scrub-row">' +
+              (it.img ? '<img src="' + esc(it.img) + '" alt="" referrerpolicy="no-referrer">' : '<span class="kgp-fs-scrub-ic"></span>') +
+              '<b>' + esc(it.title) + '</b></div>';
+          }).join("")
+        : '<div class="kgp-fs-scrub-none">이 초성엔 아직 없어요</div>';
+    }
   };
 
   KGPFastScroll.prototype._endScrub = function () {
@@ -182,17 +204,22 @@
   KGPFastScroll.prototype._wire = function () {
     var self = this;
     var pick = function (clientY, ev) {
-      if (ev) ev.preventDefault();
-      var b = self._bucketAt(clientY);
-      self._bend(clientY);
-      if (b) self._showScrub(b, clientY);
+      try {
+        if (ev && ev.cancelable) ev.preventDefault();   // 페이지 스크롤 대신 스크럽(touch-action:none 보강)
+        var b = self._bucketAt(clientY);
+        self._bend(clientY);
+        if (b) self._showScrub(b, clientY);
+      } catch (err) {
+        try { console.error("[고가레일] 스크럽 오류:", err); } catch (e) {}
+      }
     };
     if (this.enabled) {
-      this.rail.addEventListener("touchstart", function (e) { pick(e.touches[0].clientY, e); }, { passive: false });
+      this.rail.addEventListener("touchstart", function (e) { self._cacheGeom(); pick(e.touches[0].clientY, e); }, { passive: false });
       this.rail.addEventListener("touchmove", function (e) { pick(e.touches[0].clientY, e); }, { passive: false });
       this.rail.addEventListener("touchend", function () { self._endScrub(); });
+      this.rail.addEventListener("touchcancel", function () { self._endScrub(); });
       this.rail.addEventListener("mousedown", function (e) {
-        pick(e.clientY, e);
+        self._cacheGeom(); pick(e.clientY, e);
         var mv = function (ev) { pick(ev.clientY, ev); };
         var up = function () { self._endScrub(); document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up); };
         document.addEventListener("mousemove", mv); document.addEventListener("mouseup", up);
