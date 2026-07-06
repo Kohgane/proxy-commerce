@@ -132,11 +132,15 @@ async function handleCollect(meta, sendResponse) {
     if (data.httpStatus === undefined) data.httpStatus = response.status;
 
     if (sendResponse) sendResponse(data);
-    chrome.notifications.create({
-      type: "basic", iconUrl: "icons/48.png", title: "고가브릿지",
-      message: data.ok ? `수집 완료: ${meta.title || meta.url}`
-                       : `수집 실패 (${response.status}): ${data.error || ""}`.slice(0, 180)
-    });
+    // 알럿 중복 방지: content_script가 인페이지 토스트로 결과를 보여주는 경로(sendResponse 있음)에서는
+    //   OS 알림을 만들지 않는다(토스트+OS알림 이중 알럿 제거). 컨텍스트 메뉴 등 토스트 없는 경로만 OS 알림.
+    if (!sendResponse) {
+      chrome.notifications.create({
+        type: "basic", iconUrl: "icons/48.png", title: "고가브릿지",
+        message: data.ok ? `수집 완료: ${meta.title || meta.url}`
+                         : `수집 실패 (${response.status}): ${data.error || ""}`.slice(0, 180)
+      });
+    }
   } catch (err) {
     // 네트워크/CORS 실패 등 — 엔드포인트와 함께 로그.
     console.error(`[고가수집기] 수집 요청 실패 POST ${endpoint}:`, err);
@@ -201,10 +205,13 @@ async function handleCollectBulk(items, sendResponse, tabId) {
   const parts = [`완료 ${success}`];
   if (duplicate) parts.push(`중복 ${duplicate}`);
   if (failed) parts.push(`실패 ${failed}`);
-  chrome.notifications.create({
-    type: "basic", iconUrl: "icons/48.png", title: "고가브릿지",
-    message: `일괄 수집 (총 ${items.length}): ${parts.join(" · ")}`,
-  });
+  // 알럿 중복 방지: content가 인페이지 요약을 보여주는 경로(sendResponse)에선 OS 알림 생략.
+  if (!sendResponse) {
+    chrome.notifications.create({
+      type: "basic", iconUrl: "icons/48.png", title: "고가브릿지",
+      message: `일괄 수집 (총 ${items.length}): ${parts.join(" · ")}`,
+    });
+  }
   if (sendResponse) sendResponse({ ok: true, success, failed, duplicate, total: items.length, failedItems });
 }
 

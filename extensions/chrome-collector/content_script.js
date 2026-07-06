@@ -381,6 +381,22 @@ function looksLikeProductPage() {
   return false;
 }
 
+// 알럿 중복 방지(오너): 수집 요청마다 corr-id를 부여하고, 그 corr-id의 완료 알럿은 '건당 1회'만.
+//   (콜백 이중 발화·경로 중복 등 어떤 원인이든 같은 건은 한 번만 토스트/축하한다.)
+let _kgpCorrSeq = 0;
+const _kgpCorrDone = new Set();
+function kgpNewCorr() { return "c" + Date.now() + "-" + (++_kgpCorrSeq); }
+function kgpAlertOnce(corr, fn) {
+  if (!corr) { fn(); return; }
+  if (_kgpCorrDone.has(corr)) return;   // 같은 요청은 이미 알럿함 → 중복 억제
+  _kgpCorrDone.add(corr);
+  if (_kgpCorrDone.size > 300) {        // 메모리 상한(오래된 corr 정리)
+    const it = _kgpCorrDone.values();
+    for (let i = 0; i < 100; i++) { const v = it.next(); if (v.done) break; _kgpCorrDone.delete(v.value); }
+  }
+  fn();
+}
+
 function kgpToast(message, ok) {
   let t = document.getElementById("kgp-collect-toast");
   if (!t) {
@@ -584,26 +600,32 @@ function handleFabClick(btn) {
   if (btn._kgpDragged || btn.dataset.busy) return;
   setFabState(btn, "loading");
   const meta = extractProductMeta();
+  const corr = kgpNewCorr();
+  meta.corr_id = corr;                    // 서버 로깅·알럿 dedupe 기준
   kgpSendMessage({ action: "collect", meta }, (resp) => {
     setFabState(btn, "idle");
     if (!resp || resp.ok !== true) {
-      // 재발급 안내는 401(만료·삭제) 또는 토큰 미설정일 때만 — 그리고 사용자가 버튼을 누른 이 순간에만(매 페이지 토스트 금지).
-      if (resp && resp.authRequired) {
-        kgpToast("확장 옵션에서 토큰을 다시 설정해 주세요.\n(토큰이 만료됐거나 삭제됐어요)", false);
-      } else {
-        // P0 진단: 실패 사유에 HTTP 상태·서버 corr-id를 함께 노출(콘솔+토스트).
-        var _st = resp && resp.httpStatus ? ` (HTTP ${resp.httpStatus})` : "";
-        kgpToast(((resp && resp.error) || "수집 실패") + _st, false);
-      }
+      kgpAlertOnce(corr, () => {          // 실패 알럿도 건당 1회
+        // 재발급 안내는 401(만료·삭제) 또는 토큰 미설정일 때만 — 그리고 사용자가 버튼을 누른 이 순간에만(매 페이지 토스트 금지).
+        if (resp && resp.authRequired) {
+          kgpToast("확장 옵션에서 토큰을 다시 설정해 주세요.\n(토큰이 만료됐거나 삭제됐어요)", false);
+        } else {
+          // P0 진단: 실패 사유에 HTTP 상태를 함께 노출(콘솔+토스트).
+          var _st = resp && resp.httpStatus ? ` (HTTP ${resp.httpStatus})` : "";
+          kgpToast(((resp && resp.error) || "수집 실패") + _st, false);
+        }
+      });
       return;
     }
     if (resp.duplicate === true) {   // v42 1-3: 이미 수집한 상품 — 새 항목 만들지 않고 안내(가짜 축하 0)
-      kgpToast((resp.message || "이미 수집한 상품입니다.") + "\n셀러 콘솔의 수집 이력에서 확인하세요.", true);
+      kgpAlertOnce(corr, () => kgpToast((resp.message || "이미 수집한 상품입니다.") + "\n셀러 콘솔의 수집 이력에서 확인하세요.", true));
       return;
     }
-    kgpCelebrate(1);          // 실제 성공 시에만 도장+카운트업(따라하기 재미)
-    const tk = resp.title_ko && resp.title_ko !== resp.title ? `\n→ ${resp.title_ko}` : "";
-    if (tk) kgpToast(`수집 완료${tk}\n셀러 콘솔에서 확인·편집하세요.`, true);
+    kgpAlertOnce(corr, () => {        // 성공 알럿(축하+토스트)도 건당 1회
+      kgpCelebrate(1);               // 실제 성공 시에만 도장+카운트업(따라하기 재미)
+      const tk = resp.title_ko && resp.title_ko !== resp.title ? `\n→ ${resp.title_ko}` : "";
+      if (tk) kgpToast(`수집 완료${tk}\n셀러 콘솔에서 확인·편집하세요.`, true);
+    });
   });
 }
 
@@ -962,16 +984,19 @@ function kgpQuickCollect(card, btn) {
   const lbl = btn.querySelector(".kgp-q-label");
   const prev = lbl ? lbl.textContent : "수집";
   if (lbl) lbl.textContent = "수집 중…";
-  const meta = { url: card.url, title: card.title, image: card.image, images: card.images, price: card.price, currency: card.currency };
+  const corr = kgpNewCorr();
+  const meta = { url: card.url, title: card.title, image: card.image, images: card.images, price: card.price, currency: card.currency, corr_id: corr };
   kgpSendMessage({ action: "collectBulk", items: [meta] }, (resp) => {
     btn.dataset.busy = "";
     if (resp && resp.ok === true && ((resp.success || 0) > 0 || (resp.duplicate || 0) > 0)) {
       _kgpCollectedUrls.add(card.url);
       kgpMarkQuickCollected(btn);
-      if ((resp.success || 0) > 0) kgpCelebrate(1);   // 실제 새 수집만 축하(중복은 조용)
+      if ((resp.success || 0) > 0) kgpAlertOnce(corr, () => kgpCelebrate(1));   // 실제 새 수집만 축하(건당 1회·중복은 조용)
     } else {
-      if (lbl) lbl.textContent = prev;
-      kgpToast((resp && resp.error) || "수집 실패", false);
+      kgpAlertOnce(corr, () => {
+        if (lbl) lbl.textContent = prev;
+        kgpToast((resp && resp.error) || "수집 실패", false);
+      });
     }
   });
 }
