@@ -120,9 +120,13 @@ async function handleCollect(meta, sendResponse) {
     console.log(`[고가수집기] POST ${endpoint} → ${response.status} ${response.statusText}`,
                 "\n응답:", raw.slice(0, 400));
     if (response.status === 401) data.authRequired = true;
-    // 서버가 JSON을 못 준 경우(500 HTML 등)도 조용한 실패 금지 — 상태코드로 정직한 사유.
+    // 서버가 JSON을 못 준 경우(로그인 리다이렉트·HTML 오류 페이지 등)도 조용한 실패 금지.
+    const _looksHtml = /^\s*<(!doctype|html)/i.test(raw);
     if (!data || (typeof data.ok === "undefined")) {
-      data = { ok: false, error: `서버 오류 (HTTP ${response.status}). 잠시 후 다시 시도하세요.`, httpStatus: response.status };
+      data = { ok: false,
+               error: _looksHtml ? `서버 응답 오류(로그인 확인이 필요할 수 있어요). HTTP ${response.status}`
+                                 : `서버 오류 (HTTP ${response.status}). 잠시 후 다시 시도하세요.`,
+               httpStatus: response.status };
     }
     if (!data.error && !data.ok) data.error = `수집 실패 (HTTP ${response.status})`;
     if (data.httpStatus === undefined) data.httpStatus = response.status;
