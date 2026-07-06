@@ -50,17 +50,63 @@ function _kgpParsePrice(raw) {
   return { price: num, currency: cur };
 }
 function _kgpScopedPrice() {
+  // v45(5): Temu '9 KRW' 오값 재현 대응 — 첫 가격 노드가 아니라, 취소선(원가)·추천/리뷰 영역을
+  //   제외한 **유효 후보 중 최댓값**을 판매가로 채택(쿠폰·배송비·단위가 같은 소액 오값에 안 밀림).
   let nodes = [];
   try {
     nodes = Array.from(document.querySelectorAll('[class*="price" i],[class*="Price"],[itemprop="price"],[data-price],[class*="amount" i]'));
   } catch (e) { nodes = []; }
+  let best = null, bestVal = -1;
   for (const el of nodes) {
     if (_kgpInNonProd(el) || _kgpPriceIsOriginal(el)) continue;
     const raw = el.getAttribute("content") || el.getAttribute("data-price") || (el.textContent || "").trim();
     const p = _kgpParsePrice(raw);
-    if (p) return p;
+    if (!p) continue;
+    const v = parseFloat(p.price) || 0;
+    if (v > bestVal) { bestVal = v; best = p; }
   }
-  return { price: "", currency: "" };
+  return best || { price: "", currency: "" };
+}
+
+// v45(5): 클릭 시점 옵션(색상/사이즈/수량/변형) 추출 — payload.options로 전송(서버가 편집 프리필).
+//   보수적: <select> + 라벨 붙은 스와치 그룹(값 2개 이상)만. 추천/리뷰 영역·과다 그룹 제외.
+const _KGP_OPT_LABEL = /(색상|색깔|컬러|사이즈|크기|규격|수량|종류|옵션|타입|스타일|모델|용량|color|colour|size|variant|option|type|style|qty|quantity|model|capacity)/i;
+function _kgpOptName(around) {
+  const m = (around || "").match(_KGP_OPT_LABEL);
+  return m ? m[0] : "옵션";
+}
+function _kgpCollectOptions() {
+  const out = [], seen = new Set();
+  try {
+    // 1) <select> 드롭다운
+    document.querySelectorAll("select").forEach((sel) => {
+      if (_kgpInNonProd(sel)) return;
+      const opts = Array.from(sel.options || []).map((o) => (o.textContent || "").trim())
+        .filter((t) => t && !/^(선택|선택하세요|choose|select|please)/i.test(t));
+      const uniq = Array.from(new Set(opts));
+      if (uniq.length >= 2) {
+        const lbl = sel.getAttribute("aria-label") || (sel.labels && sel.labels[0] && sel.labels[0].textContent) || "";
+        out.push({ name: _kgpOptName(lbl), values: uniq.slice(0, 50) });
+      }
+    });
+    // 2) 스와치/변형 그룹
+    document.querySelectorAll('[class*="sku" i],[class*="variant" i],[class*="option" i],[class*="attr" i],[role="radiogroup"],[class*="spec" i]').forEach((grp) => {
+      if (_kgpInNonProd(grp)) return;
+      const vals = [];
+      grp.querySelectorAll('button,[role="radio"],li,span[aria-label],img[alt],[class*="item" i]').forEach((el) => {
+        let t = (el.getAttribute("aria-label") || el.getAttribute("title") || el.getAttribute("alt") || el.textContent || "").replace(/\s+/g, " ").trim();
+        if (t && t.length >= 1 && t.length <= 40 && !_KGP_OPT_LABEL.test(t) && vals.indexOf(t) < 0) vals.push(t);
+      });
+      if (vals.length >= 2 && vals.length <= 60) {
+        const lblEl = grp.querySelector('[class*="label" i],[class*="title" i],dt,legend');
+        const around = ((lblEl && lblEl.textContent) || "") + " " + ((grp.previousElementSibling && grp.previousElementSibling.textContent) || "") + " " + (grp.getAttribute("aria-label") || "");
+        const name = _kgpOptName(around);
+        const key = name + "|" + vals.slice(0, 4).join(",");
+        if (!seen.has(key)) { seen.add(key); out.push({ name: name, values: vals.slice(0, 50) }); }
+      }
+    });
+  } catch (e) { /* noop */ }
+  return out.slice(0, 8);
 }
 
 // v44: 사이트별 PDP 추출 — 서버 사후 크롤(봇 차단 영구실패) 대신 클릭 시점 렌더 DOM에서 직접 읽기.
@@ -263,6 +309,7 @@ function extractProductMeta() {
     images: images,
     gallery_images: gallery,               // v43-3: 갤러리(대표) / 상세 2버킷 — 서버가 스코프 반영
     detail_images: detail,
+    options: _kgpCollectOptions(),         // v45(5): 클릭 시점 옵션(색상/사이즈/수량) — 서버 편집 프리필
     price: heuristicPrice,                 // v42 1-1: 렌더 DOM 현재가 우선(위에서 scoped→meta→본문 순 해결)
     currency: heuristicCurrency,           // 기본값 USD 금지 — 못 얻으면 빈 값 → 서버 '가격 확인 필요'
     description: _kgpRealDescription(),
