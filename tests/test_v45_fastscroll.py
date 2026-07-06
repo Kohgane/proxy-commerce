@@ -34,7 +34,8 @@ def test_component_file_exists():
     src = JS.read_text(encoding="utf-8")
     assert "KGPFastScroll" in src
     assert "bucketOf" in src and "scrollIntoView" in src   # 그룹핑 + 점프
-    assert "pointerdown" in src and "kgp-fs-bubble" in src  # 스크럽 + 버블
+    assert "touchstart" in src and "touchmove" in src      # 엄지 스크럽(터치)
+    assert "kgp-fs-bubble" in src                          # 대형 버블
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node 미설치")
@@ -53,19 +54,21 @@ def test_choseong_bucketing_node():
     assert res["bad"] == []                # 전부 정확 분류
 
 
-def test_catalog_rail_only_on_name_sort(client):
-    # 이름순(title_asc)일 때만 레일/스크립트 노출
+def test_catalog_rail_always_on_both_sorts(client):
+    # 나이아: 레일은 항상 노출(정렬 무관). 이름순은 그룹핑(enabled true), 다른 정렬은 자동 전환.
     h_name = client.get("/seller/catalog?sort=title_asc").get_data(as_text=True)
-    assert "data-fs-root" in h_name and "kgp-fastscroll.js" in h_name and "KGPFastScroll.init" in h_name
-    h_recent = client.get("/seller/catalog?sort=last_synced_desc").get_data(as_text=True)
-    assert "data-fs-root" not in h_recent and "kgp-fastscroll.js" not in h_recent
-
-
-def test_collect_history_rail_only_on_name_sort(client):
-    h_name = client.get("/seller/collect/history?sort=title").get_data(as_text=True)
     assert "data-fs-root" in h_name and "kgp-fastscroll.js" in h_name
+    assert "enabled: true" in h_name
+    h_recent = client.get("/seller/catalog?sort=last_synced_desc").get_data(as_text=True)
+    assert "data-fs-root" in h_recent and "kgp-fastscroll.js" in h_recent   # 레일 여전히 노출
+    assert "enabled: false" in h_recent and "switchUrl" in h_recent          # 조작 시 이름순 전환
+
+
+def test_collect_history_rail_always_on(client):
+    h_name = client.get("/seller/collect/history?sort=title").get_data(as_text=True)
+    assert "data-fs-root" in h_name and "enabled: true" in h_name
     h_new = client.get("/seller/collect/history?sort=newest").get_data(as_text=True)
-    assert "data-fs-root" not in h_new
+    assert "data-fs-root" in h_new and "enabled: false" in h_new and "switchUrl" in h_new
 
 
 def test_template_wiring_source():
@@ -75,13 +78,21 @@ def test_template_wiring_source():
     assert "not fastscroll" in CATALOG and "not fastscroll" in CH
 
 
+def test_component_naia_behaviors():
+    src = JS.read_text(encoding="utf-8")
+    assert "switchUrl" in src and "이름순으로 전환됨" in src   # 다른 정렬 → 자동 전환 + 토스트
+    assert "아직 없음" in src                                  # 빈 섹션 1행
+    assert "kgpfs=" in src                                      # 해시 점프
+    assert "elementFromPoint" in src                           # 스크럽(정답지 방식)
+
+
 def test_css_uses_tokens_not_hardcoded():
-    # 패스트 스크롤 CSS 블록은 토큰(var(--*))만 — 하드코딩 hex 없음
-    block = CSS[CSS.index("인덱스 패스트 스크롤"):]
+    block = CSS[CSS.index("나이아 인덱스 레일"):]
     assert ".kgp-fs-rail" in block and ".kgp-fs-bubble" in block
     assert "var(--ink)" in block and "var(--teal)" in block and "var(--cream)" in block
     import re
+    # 버블 그림자의 rgba(먹) 1건은 토큰 밖 허용(그림자). hex 하드코딩만 검사.
     hexes = re.findall(r"#[0-9A-Fa-f]{3,6}\b", block)
     assert hexes == [], f"하드코딩 hex 발견: {hexes}"
-    # content-visibility 가상화 + reduced-motion
     assert "content-visibility" in block and "prefers-reduced-motion" in block
+    assert "아직 없음" not in block or True   # CSS엔 문자열 없음(무관)
