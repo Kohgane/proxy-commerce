@@ -3,6 +3,24 @@
 <head>
   {% set _brand_name = brand_name|default('gogabridj', true) %}
   <meta charset="utf-8">
+  {# 한/영 단일 소스(오너): 언어는 명시적 토글로만 바뀐다(기본 ko). localStorage 'kgp_lang'을
+     미러로 두고, 쿠키가 사라졌을 때만 1회 복원(무한루프 방지). 브라우저 로케일로 **자동 EN 전환 금지**. #}
+  <script>
+  (function () {
+    try {
+      var server = "{{ current_lang|default('ko', true) }}";
+      var ls = localStorage.getItem('kgp_lang');
+      var hasCookie = document.cookie.indexOf('kgp_lang=') !== -1;
+      if (!hasCookie && (ls === 'ko' || ls === 'en') && ls !== server && !sessionStorage.getItem('_kgpLangRestore')) {
+        sessionStorage.setItem('_kgpLangRestore', '1');   // 1회만(루프 방지)
+        location.replace('/i18n/set?lang=' + ls + '&next=' + encodeURIComponent(location.pathname + location.search));
+        return;
+      }
+      localStorage.setItem('kgp_lang', server);           // 서버 상태를 미러(단일 소스 동기)
+      sessionStorage.removeItem('_kgpLangRestore');
+    } catch (e) {}
+  })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}셀러 콘솔{% endblock %} | {{ _brand_name }}</title>
   <meta property="og:site_name" content="{{ _brand_name }}">
