@@ -124,7 +124,27 @@ class RequestLogger:
         # 응답 헤더에 Request-ID 추가
         response.headers["X-Request-ID"] = request_id
 
+        # 속도 진단: 구간(쿼리/렌더 등) 타이밍을 Server-Timing 헤더(브라우저 네트워크 탭)와 로그에 노출.
+        perf = {}
+        counts = {}
+        try:
+            from src.utils.perf import perf_snapshot, perf_server_timing, perf_counts
+            perf = perf_snapshot()
+            counts = perf_counts()
+            st = perf_server_timing()
+            total = f"total;dur={elapsed_ms}"
+            # db 연결(쿼리) 수도 Server-Timing에 노출 → N+1을 네트워크 탭에서 바로 확인.
+            if counts.get("db_conn"):
+                total = f"dbconn;desc={counts['db_conn']};dur=0, " + total
+            response.headers["Server-Timing"] = (st + ", " + total) if st else total
+        except Exception:
+            pass
+
         log_entry = self._build_log_entry(request, response, request_id, elapsed_ms)
+        if perf:
+            log_entry["perf_ms"] = perf
+        if counts:
+            log_entry["perf_count"] = counts
         self._request_log.log(_LOG_LEVEL, json.dumps(log_entry, ensure_ascii=False))
         return response
 

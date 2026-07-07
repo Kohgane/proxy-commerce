@@ -49,23 +49,58 @@ function _kgpParsePrice(raw) {
                    : (_KGP_SYM_MAP[sym] || "");
   return { price: num, currency: cur };
 }
+// 가격이 아닌 숫자(재고 '9개 남음'·쿠폰·수량·배송·평점·판매수)를 걸러 Temu '9 KRW' 오추출을 막는다.
+const _KGP_NONPRICE_RE = /(재고|남음|남았|개\s*남|수량|qty|quantity|stock|left|in\s*cart|장바구니|쿠폰|coupon|적립|포인트|point|리뷰|review|평점|rating|판매|sold|명이|배송비|shipping\s*fee|무료배송|free\s*shipping|할인율|% ?off|퍼센트)/i;
+function _kgpNonPriceCtx(el) {
+  // 노드 자신·근접 조상(4단계) 텍스트/클래스에 재고·쿠폰·수량 신호가 있으면 가격 후보에서 제외.
+  let cur = el, depth = 0;
+  while (cur && depth < 4) {
+    const tok = ((cur.className && cur.className.baseVal !== undefined ? cur.className.baseVal : (cur.className || "")) + " " + (cur.id || ""));
+    if (tok && _KGP_NONPRICE_RE.test(tok)) return true;
+    cur = cur.parentElement; depth++;
+  }
+  // 노드 자신 텍스트가 '9개 남음'처럼 재고/수량 문구면 제외(가격 숫자와 혼동 방지).
+  const own = (el.textContent || "").slice(0, 40);
+  if (_KGP_NONPRICE_RE.test(own)) return true;
+  return false;
+}
+function _kgpNodePath(el) {
+  var parts = [], cur = el, n = 0;
+  while (cur && n < 4) {
+    var t = (cur.tagName || "").toLowerCase();
+    var c = (cur.className && cur.className.baseVal !== undefined ? cur.className.baseVal : (cur.className || ""));
+    parts.unshift(t + (c ? "." + String(c).trim().split(/\s+/).slice(0, 2).join(".") : ""));
+    cur = cur.parentElement; n++;
+  }
+  return parts.join(" > ");
+}
 function _kgpScopedPrice() {
-  // v45(5): Temu '9 KRW' 오값 재현 대응 — 첫 가격 노드가 아니라, 취소선(원가)·추천/리뷰 영역을
-  //   제외한 **유효 후보 중 최댓값**을 판매가로 채택(쿠폰·배송비·단위가 같은 소액 오값에 안 밀림).
+  // P0(오너): Temu 실가 20,605원인데 9 KRW 저장 = 재고 '9개 남음'/쿠폰 숫자를 가격으로 오인.
+  //   수리: ①재고·쿠폰·수량·평점 문맥 제외 ②원가(취소선)·추천/리뷰 제외 ③**메인 가격은 화면에서
+  //   가장 큰 글씨** → 후보를 폰트 크기로 스코어(동률이면 큰 값). 후보·채택 노드경로를 콘솔 로그.
   let nodes = [];
   try {
-    nodes = Array.from(document.querySelectorAll('[class*="price" i],[class*="Price"],[itemprop="price"],[data-price],[class*="amount" i]'));
+    nodes = Array.from(document.querySelectorAll('[class*="price" i],[class*="Price"],[itemprop="price"],[data-price],[class*="amount" i],[aria-label*="price" i]'));
   } catch (e) { nodes = []; }
-  let best = null, bestVal = -1;
+  const cands = [];
   for (const el of nodes) {
-    if (_kgpInNonProd(el) || _kgpPriceIsOriginal(el)) continue;
+    if (_kgpInNonProd(el) || _kgpPriceIsOriginal(el) || _kgpNonPriceCtx(el)) continue;
     const raw = el.getAttribute("content") || el.getAttribute("data-price") || (el.textContent || "").trim();
     const p = _kgpParsePrice(raw);
     if (!p) continue;
-    const v = parseFloat(p.price) || 0;
-    if (v > bestVal) { bestVal = v; best = p; }
+    let fs = 0;
+    try { fs = parseFloat(getComputedStyle(el).fontSize) || 0; } catch (e) { fs = 0; }
+    cands.push({ price: p.price, currency: p.currency, val: parseFloat(p.price) || 0, fs: fs, path: _kgpNodePath(el) });
   }
-  return best || { price: "", currency: "" };
+  // 메인 가격 = 가장 큰 글씨(시각적 프로미넌스). 폰트 정보 없으면 큰 값으로.
+  cands.sort((a, b) => (b.fs - a.fs) || (b.val - a.val));
+  const best = cands[0] || null;
+  try {
+    console.log("[고가수집기] 가격 후보(" + cands.length + "):",
+      cands.slice(0, 8).map(c => c.price + " " + c.currency + " @" + c.fs + "px [" + c.path + "]"));
+    if (best) console.log("[고가수집기] 채택 가격:", best.price, best.currency, "| node:", best.path);
+  } catch (e) {}
+  return best ? { price: best.price, currency: best.currency } : { price: "", currency: "" };
 }
 
 // v45(5): 클릭 시점 옵션(색상/사이즈/수량/변형) 추출 — payload.options로 전송(서버가 편집 프리필).
@@ -381,6 +416,22 @@ function looksLikeProductPage() {
   return false;
 }
 
+// 알럿 중복 방지(오너): 수집 요청마다 corr-id를 부여하고, 그 corr-id의 완료 알럿은 '건당 1회'만.
+//   (콜백 이중 발화·경로 중복 등 어떤 원인이든 같은 건은 한 번만 토스트/축하한다.)
+let _kgpCorrSeq = 0;
+const _kgpCorrDone = new Set();
+function kgpNewCorr() { return "c" + Date.now() + "-" + (++_kgpCorrSeq); }
+function kgpAlertOnce(corr, fn) {
+  if (!corr) { fn(); return; }
+  if (_kgpCorrDone.has(corr)) return;   // 같은 요청은 이미 알럿함 → 중복 억제
+  _kgpCorrDone.add(corr);
+  if (_kgpCorrDone.size > 300) {        // 메모리 상한(오래된 corr 정리)
+    const it = _kgpCorrDone.values();
+    for (let i = 0; i < 100; i++) { const v = it.next(); if (v.done) break; _kgpCorrDone.delete(v.value); }
+  }
+  fn();
+}
+
 function kgpToast(message, ok) {
   let t = document.getElementById("kgp-collect-toast");
   if (!t) {
@@ -399,6 +450,44 @@ function kgpToast(message, ok) {
   t.style.opacity = "1";
   clearTimeout(t._hideTimer);
   t._hideTimer = setTimeout(() => { t.style.opacity = "0"; }, 4000);
+}
+
+// 결과 토스트(단일 메시지 + 액션 버튼). 신규/중복을 '하나씩' 명확히 — 완료·중복 동시 출력 금지.
+let _kgpServerUrl = "";
+try { kgpSendMessage({ action: "getSettings" }, (s) => { if (s && s.serverUrl) _kgpServerUrl = s.serverUrl; }); } catch (e) {}
+function _kgpEsc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function kgpOpenHistory() {
+  const base = _kgpServerUrl || "https://kohganepercentiii.com";
+  window.open(base + "/seller/collect/history", "_blank", "noopener");
+}
+function kgpResultToast(message, ok, actions) {
+  // actions: [{label, fn}] — 토스트 안 작은 버튼(이력 열기 / 다시 수집)
+  let t = document.getElementById("kgp-collect-toast");
+  if (!t) {
+    t = document.createElement("div");
+    t.id = "kgp-collect-toast";
+    t.style.cssText = [
+      "position:fixed", "right:20px", "bottom:84px", "z-index:2147483647",
+      "max-width:300px", "padding:11px 14px", "border-radius:10px",
+      "font:13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+      "color:#fff", "box-shadow:0 4px 16px rgba(0,0,0,.25)"
+    ].join(";");
+    document.body.appendChild(t);
+  }
+  t.style.background = ok ? "#16a34a" : "#dc2626";
+  t.innerHTML = '<div style="white-space:pre-wrap">' + _kgpEsc(message) + "</div>";
+  (actions || []).forEach((a, i) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = a.label;
+    btn.style.cssText = "margin:8px 6px 0 0;padding:5px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.6);background:rgba(255,255,255,.14);color:#fff;font:600 12px/1 inherit;cursor:pointer";
+    btn.addEventListener("click", (e) => { e.stopPropagation(); try { a.fn(); } catch (err) {} });
+    t.appendChild(btn);
+  });
+  t.style.opacity = "1";
+  clearTimeout(t._hideTimer);
+  // 액션 버튼이 있으면 오래 유지(클릭 기회), 없으면 4초.
+  t._hideTimer = setTimeout(() => { t.style.opacity = "0"; }, (actions && actions.length) ? 9000 : 4000);
 }
 
 function setFabState(btn, state) {
@@ -542,7 +631,8 @@ const KGP_WIT = [
   "오늘도 한 건 +1", "담았습니다. 다음 상품 가시죠", "착! 도장 쾅",
   "수집 완료, 다음 상품으로", "마진은 셀러님 몫",
 ];
-function kgpCelebrate(added) {
+function kgpCelebrate(added, silent) {
+  // silent=true면 축하 애니메이션(스탬프)만 — 토스트는 호출부가 '하나' 띄운다(완료/중복 동시출력 금지).
   added = Math.max(1, added || 1);
   const total = kgpBumpCount(added);
   const prev = total - added;
@@ -550,7 +640,7 @@ function kgpCelebrate(added) {
   let milestone = 0;
   for (const m of milestones) { if (prev < m && total >= m) milestone = m; }
   if (KGP_RM) {
-    kgpToast(`수집 완료 · 누적 ${total}건` + (milestone ? `\n${milestone}건 달성!` : ""), true);
+    if (!silent) kgpToast(`수집 완료 · 누적 ${total}건` + (milestone ? `\n${milestone}건 달성!` : ""), true);
     return total;
   }
   kgpEnsureStyles();
@@ -580,30 +670,46 @@ function kgpCelebrate(added) {
   return total;
 }
 
-function handleFabClick(btn) {
+function handleFabClick(btn, opts) {
+  opts = opts || {};
   if (btn._kgpDragged || btn.dataset.busy) return;
   setFabState(btn, "loading");
   const meta = extractProductMeta();
+  const corr = kgpNewCorr();
+  meta.corr_id = corr;                    // 서버 로깅·알럿 dedupe 기준
+  if (opts.force) meta.force = true;      // 다시 수집(덮어쓰기) — 가격·이미지 갱신
   kgpSendMessage({ action: "collect", meta }, (resp) => {
     setFabState(btn, "idle");
     if (!resp || resp.ok !== true) {
-      // 재발급 안내는 401(만료·삭제) 또는 토큰 미설정일 때만 — 그리고 사용자가 버튼을 누른 이 순간에만(매 페이지 토스트 금지).
-      if (resp && resp.authRequired) {
-        kgpToast("확장 옵션에서 토큰을 다시 설정해 주세요.\n(토큰이 만료됐거나 삭제됐어요)", false);
-      } else {
-        // P0 진단: 실패 사유에 HTTP 상태·서버 corr-id를 함께 노출(콘솔+토스트).
-        var _st = resp && resp.httpStatus ? ` (HTTP ${resp.httpStatus})` : "";
-        kgpToast(((resp && resp.error) || "수집 실패") + _st, false);
-      }
+      kgpAlertOnce(corr, () => {          // 실패 알럿도 건당 1회
+        if (resp && resp.authRequired) {
+          kgpToast("확장 옵션에서 토큰을 다시 설정해 주세요.\n(토큰이 만료됐거나 삭제됐어요)", false);
+        } else {
+          var _st = resp && resp.httpStatus ? ` (HTTP ${resp.httpStatus})` : "";
+          kgpToast(((resp && resp.error) || "수집 실패") + _st, false);
+        }
+      });
       return;
     }
-    if (resp.duplicate === true) {   // v42 1-3: 이미 수집한 상품 — 새 항목 만들지 않고 안내(가짜 축하 0)
-      kgpToast((resp.message || "이미 수집한 상품입니다.") + "\n셀러 콘솔의 수집 이력에서 확인하세요.", true);
+    // 다시 수집(덮어쓰기) 결과 — 가격·이미지 갱신됨(단일 메시지).
+    if (resp.updated === true) {
+      kgpAlertOnce(corr, () => kgpResultToast("다시 수집 완료 — 가격·이미지를 갱신했어요", true,
+        [{ label: "이력 열기", fn: kgpOpenHistory }]));
       return;
     }
-    kgpCelebrate(1);          // 실제 성공 시에만 도장+카운트업(따라하기 재미)
-    const tk = resp.title_ko && resp.title_ko !== resp.title ? `\n→ ${resp.title_ko}` : "";
-    if (tk) kgpToast(`수집 완료${tk}\n셀러 콘솔에서 확인·편집하세요.`, true);
+    // 중복 — '이미 수집한 상품' 하나만(완료 토스트와 동시 출력 금지) + '다시 수집(덮어쓰기)'.
+    if (resp.duplicate === true) {
+      kgpAlertOnce(corr, () => kgpResultToast("이미 수집한 상품 — 이력에서 확인", true, [
+        { label: "이력 열기", fn: kgpOpenHistory },
+        { label: "다시 수집(덮어쓰기)", fn: () => handleFabClick(btn, { force: true }) },
+      ]));
+      return;
+    }
+    // 신규 — '수집 완료' 하나만 + 축하 스탬프(토스트는 하나).
+    kgpAlertOnce(corr, () => {
+      kgpCelebrate(1, true);           // 스탬프만(silent) — 토스트는 아래 하나
+      kgpResultToast("수집 완료 — 이력에서 확인", true, [{ label: "이력 열기", fn: kgpOpenHistory }]);
+    });
   });
 }
 
@@ -962,16 +1068,19 @@ function kgpQuickCollect(card, btn) {
   const lbl = btn.querySelector(".kgp-q-label");
   const prev = lbl ? lbl.textContent : "수집";
   if (lbl) lbl.textContent = "수집 중…";
-  const meta = { url: card.url, title: card.title, image: card.image, images: card.images, price: card.price, currency: card.currency };
+  const corr = kgpNewCorr();
+  const meta = { url: card.url, title: card.title, image: card.image, images: card.images, price: card.price, currency: card.currency, corr_id: corr };
   kgpSendMessage({ action: "collectBulk", items: [meta] }, (resp) => {
     btn.dataset.busy = "";
     if (resp && resp.ok === true && ((resp.success || 0) > 0 || (resp.duplicate || 0) > 0)) {
       _kgpCollectedUrls.add(card.url);
       kgpMarkQuickCollected(btn);
-      if ((resp.success || 0) > 0) kgpCelebrate(1);   // 실제 새 수집만 축하(중복은 조용)
+      if ((resp.success || 0) > 0) kgpAlertOnce(corr, () => kgpCelebrate(1));   // 실제 새 수집만 축하(건당 1회·중복은 조용)
     } else {
-      if (lbl) lbl.textContent = prev;
-      kgpToast((resp && resp.error) || "수집 실패", false);
+      kgpAlertOnce(corr, () => {
+        if (lbl) lbl.textContent = prev;
+        kgpToast((resp && resp.error) || "수집 실패", false);
+      });
     }
   });
 }

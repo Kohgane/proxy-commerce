@@ -97,6 +97,7 @@ def get_conn(*, autocommit: bool = False):
 @contextlib.contextmanager
 def tx():
     """트랜잭션 — 블록 정상 종료 시 commit, 예외 시 rollback. (커밋 후에만 성공 응답)"""
+    _perf_mark("db_write")
     conn = _connect(db_url(), autocommit=False)
     try:
         with conn.cursor() as cur:
@@ -109,9 +110,62 @@ def tx():
         conn.close()
 
 
+def _perf_mark(kind: str, new_conn: bool = True) -> None:
+    try:
+        from src.utils.perf import perf_count
+        perf_count(kind, 1)
+        if new_conn:
+            perf_count("db_conn", 1)
+    except Exception:
+        pass
+
+
+def _request_read_conn():
+    """요청(request) 범위 내 읽기 연결을 1개로 재사용한다 — 페이지당 연결 핸드셰이크를 N→1로.
+
+    속도 핵심(오너): query()가 매번 새 연결을 열어 수집이력 3연결(64ms)·드로어 6연결(386ms)이
+    걸렸다. 요청 동안 autocommit 읽기 연결 하나를 flask.g에 캐시해 재사용하고 teardown에서 닫는다.
+    요청 컨텍스트가 아니면 None(호출부가 1회용 연결 사용).
+    """
+    try:
+        from flask import g, has_request_context
+        if not has_request_context():
+            return None, False
+        c = getattr(g, "_kgp_db_read_conn", None)
+        if c is not None and not getattr(c, "closed", False):
+            return c, False                     # 재사용(새 연결 아님)
+        c = _connect(db_url(), autocommit=True)
+        setattr(g, "_kgp_db_read_conn", c)
+        return c, True                          # 이 요청의 첫 읽기 연결(새로 열림)
+    except Exception:
+        return None, False
+
+
+def close_request_conn(_exc=None):
+    """요청 종료 시 캐시된 읽기 연결을 닫는다(app.teardown_request에 등록)."""
+    try:
+        from flask import g
+        c = getattr(g, "_kgp_db_read_conn", None)
+        if c is not None:
+            try:
+                c.close()
+            except Exception:
+                pass
+            setattr(g, "_kgp_db_read_conn", None)
+    except Exception:
+        pass
+
+
 @contextlib.contextmanager
 def query():
-    """읽기 전용 — autocommit 연결(트랜잭션 안 열어둠). NullPool 1회용."""
+    """읽기 전용 — 요청 범위 내에서는 연결 1개를 재사용(핸드셰이크 절감), 밖에서는 1회용."""
+    conn, is_new = _request_read_conn()
+    if conn is not None:
+        _perf_mark("db_read", new_conn=is_new)
+        with conn.cursor() as cur:
+            yield cur
+        return
+    _perf_mark("db_read", new_conn=True)
     conn = _connect(db_url(), autocommit=True)
     try:
         with conn.cursor() as cur:

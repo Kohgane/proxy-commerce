@@ -257,12 +257,29 @@ def get_auto_purchase_queue() -> Dict[str, Any]:
 # 환율 데이터
 # ---------------------------------------------------------------------------
 
-def get_fx_rates() -> Dict[str, Any]:
-    """환율 데이터 반환.
+_FX_CACHE: Dict[str, Any] = {"data": None, "ts": 0.0}
+_FX_TTL = float(os.getenv("FX_CACHE_TTL_SEC", "600"))   # 기본 10분(환율은 자주 안 바뀜)
 
-    Phase 19 (fx) 모듈 재사용. FX_DISABLE_NETWORK 가드 적용.
-    실시간 환율 사용 가능 시 source='realtime', 아니면 'env' 또는 'default'.
+
+def get_fx_rates() -> Dict[str, Any]:
+    """환율 데이터(프로세스 TTL 캐시) — 페이지마다 외부 환율 API를 다시 부르지 않는다(속도).
+
+    오너: '세션당 반복 호출 캐시(환율)'. 드로어 등에서 매번 frankfurter/외부 호출이 수백 ms를
+    잡아먹던 것을 10분 캐시로 제거. FX_DISABLE_NETWORK/env 폴백은 그대로.
     """
+    import time as _t
+    now = _t.time()
+    c = _FX_CACHE.get("data")
+    if c is not None and (now - _FX_CACHE.get("ts", 0.0)) < _FX_TTL:
+        return c
+    data = _compute_fx_rates()
+    _FX_CACHE["data"] = data
+    _FX_CACHE["ts"] = now
+    return data
+
+
+def _compute_fx_rates() -> Dict[str, Any]:
+    """환율 실계산(캐시 미스 시). Phase 19 (fx) 모듈 재사용. FX_DISABLE_NETWORK 가드."""
     mock_data = {
         "USD": 1370.5,
         "JPY": 9.12,

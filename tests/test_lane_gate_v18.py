@@ -50,17 +50,18 @@ def test_gate_suggests_export_for_foreign(client):
     assert "추천" in html and idx > 0
 
 
-def test_set_lane_switches_lang_and_currency(client):
+def test_set_lane_switches_currency_not_language(client):
+    # 한/영 자동전환 금지(오너): 레인은 통화 맥락만 구성하고 **언어는 바꾸지 않는다.**
+    #   (예전엔 수출형 선택이 kgp_lang=en으로 UI를 제멋대로 EN 전환시켰다.)
     r = client.get("/lane/set?lane=export&next=/seller/", follow_redirects=False)
     assert r.status_code == 302
     cookies = " ".join(r.headers.getlist("Set-Cookie"))
     assert "kgp_lane=export" in cookies
-    assert "kgp_lang=en" in cookies          # 실제 언어 전환(가짜 분기 아님)
-    assert "kgp_currency=USD" in cookies     # 실제 통화 전환
-    # 수입형은 ko/KRW
+    assert "kgp_lang=" not in cookies         # 언어는 건드리지 않음(명시 토글만)
+    assert "kgp_currency=USD" in cookies      # 통화만 레인 맥락으로 구성
     r2 = client.get("/lane/set?lane=import", follow_redirects=False)
     c2 = " ".join(r2.headers.getlist("Set-Cookie"))
-    assert "kgp_lang=ko" in c2 and "kgp_currency=KRW" in c2
+    assert "kgp_lang=" not in c2 and "kgp_currency=KRW" in c2
 
 
 def test_topbar_lane_switcher(client, monkeypatch):

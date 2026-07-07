@@ -1066,6 +1066,16 @@ _GZIP_TYPES = ("text/html", "text/css", "application/javascript",
 _GZIP_MIN_BYTES = int(os.getenv("GZIP_MIN_BYTES", "600"))
 
 
+@app.teardown_request
+def _close_request_db_conn(exc):
+    """속도: 요청 범위에서 재사용한 PG 읽기 연결을 요청 종료 시 닫는다(연결 누수 0)."""
+    try:
+        from src.db.pg import close_request_conn
+        close_request_conn(exc)
+    except Exception:
+        pass
+
+
 @app.after_request
 def _perf_after_request(response):
     try:
@@ -1286,8 +1296,9 @@ def lane_set():
     resp = redirect(nxt, code=302)
     yr = 60 * 60 * 24 * 365
     resp.set_cookie("kgp_lane", lane, max_age=yr, samesite="Lax")
-    # 레인이 언어·통화를 실제로 구성(유저가 이후 개별 전환 가능)
-    resp.set_cookie("kgp_lang", info["lang"], max_age=yr, samesite="Lax")
+    # 한/영 자동전환 금지(오너): 레인(수입/수출) 선택은 **언어를 바꾸지 않는다.**
+    #   예전엔 여기서 kgp_lang을 레인 언어로 덮어써 '수출형' 고르면 UI가 제멋대로 EN이 됐다.
+    #   언어는 오직 명시적 토글(/i18n/set)로만 바뀐다(기본 ko). 통화만 레인 맥락으로 구성.
     resp.set_cookie("kgp_currency", info["currency"], max_age=yr, samesite="Lax")
     resp.set_cookie("kgp_region_dismissed", "1", max_age=yr, samesite="Lax")
     return resp

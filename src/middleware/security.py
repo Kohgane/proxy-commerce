@@ -30,9 +30,11 @@ _HSTS_MAX_AGE = int(os.getenv("SECURITY_HSTS_MAX_AGE", "31536000"))  # 1년
 # HTML 페이지용 CSP — Bootstrap CDN 및 인라인 스타일/스크립트 허용
 _CSP_HTML_PAGES = (
     "default-src 'self'; "
-    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    # 속도 ③: 폰트를 <link>로 병렬 로드하도록 Google Fonts 호스트 허용(기존 @import가 CSP에 막혀
+    #   Noto Serif KR이 아예 안 뜨던 문제도 함께 해소 — 브랜드 세리프 실제 로드).
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
     "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-    "font-src 'self' https://cdn.jsdelivr.net data:; "
+    "font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com data:; "
     "img-src 'self' data: https:; "
     "connect-src 'self'; "
     "object-src 'none'; "

@@ -19,8 +19,11 @@ def test_options_in_payload():
 
 
 def test_price_scoping_max_value_fix():
-    # 9 KRW 오값 방지: 첫 노드가 아니라 유효 후보 '최댓값' 채택
-    assert "bestVal" in CS and "if (v > bestVal)" in CS
+    # 9 KRW 오값 방지(v45 재수리): '최댓값'이 아니라 **메인 가격=가장 큰 글씨**(폰트 프로미넌스)로
+    #   채택하고, 재고 '9개 남음'·쿠폰 문맥은 배제(_kgpNonPriceCtx). 최댓값 방식은 원가/번들에 밀릴 수
+    #   있어 폐기 — 폰트 크기 스코어 + 비가격 문맥 제외로 교체.
+    assert "getComputedStyle(el).fontSize" in CS and "b.fs - a.fs" in CS
+    assert "_kgpNonPriceCtx" in CS
     # 취소선(원가)·추천/리뷰 영역 제외 유지
     assert "_kgpPriceIsOriginal" in CS and "_kgpInNonProd" in CS
 
@@ -43,6 +46,6 @@ def test_price_currency_map_has_won():
 
 def test_manifest_bumped():
     mf = json.loads(Path("extensions/chrome-collector/manifest.json").read_text(encoding="utf-8"))
-    # 5번 반영 버전(≥1.5.40)
+    # 5번 반영 버전(≥1.5.43)
     parts = [int(x) for x in mf["version"].split(".")]
     assert parts >= [1, 5, 37]
