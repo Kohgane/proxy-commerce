@@ -1,6 +1,22 @@
 {% extends "_base.html" %}
 {% block title %}북마클릿 설치{% endblock %}
 {% block content %}
+<style>
+  /* 코드 조각 복사 칩 — 폰트 1.5배 + 클릭 복사(고가브릿지 토큰: 먹 배경·금 테·청록 아이콘). */
+  .kgp-copy-code {
+    display:inline-flex; align-items:center; gap:.1rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 1.35rem;                      /* small(≈0.875rem) 대비 ~1.5배 */
+    font-weight: 700; line-height: 1.2;
+    padding:.4rem .8rem; border-radius: 10px;
+    background: var(--ink,#1A1714); color: var(--paper,#FBF8F1);
+    border:1px solid var(--gold,#C9A24B); cursor:pointer;
+    transition: transform .1s, box-shadow .1s;
+  }
+  .kgp-copy-code:hover { transform: translateY(-1px); box-shadow:0 4px 14px rgba(0,0,0,.18); }
+  .kgp-copy-code .bi { color: var(--teal,#119A8E); font-size: 1rem; }
+  .kgp-copy-code.copied { border-color: var(--teal,#119A8E); }
+</style>
 <div class="container-fluid py-4" style="max-width:1040px">
   <h1 class="h3 mb-1"><i class="bi bi-bookmark-star"></i> 북마클릿 (고급)</h1>
   <p class="text-muted mb-3">쇼핑 페이지에서 클릭 한 번으로 상품을 수집합니다. <strong>새 창 없이 그 자리에서</strong> ‘수집 완료’가 떠요. 아래에서 <strong>내 북마클릿 파일</strong>을 한 번만 받아 크롬에 가져오면 됩니다.</p>
@@ -89,7 +105,8 @@
               <line x1="22" y1="54" x2="90" y2="54" stroke="var(--line,#e6decb)" stroke-width="2"/>
             </svg>
             <div class="fw-semibold mt-2"><span class="badge text-bg-secondary me-1">2</span> 크롬에서 가져오기</div>
-            <div class="small text-muted mt-1">주소창에 <code>chrome://bookmarks</code> → 우측 <strong>⋮</strong> → <strong>북마크 가져오기</strong> → 받은 파일 선택.</div>
+            <div class="small text-muted mt-1">주소창에 아래 주소를 붙여넣고 → 우측 <strong>⋮</strong> → <strong>북마크 가져오기</strong> → 받은 파일 선택.</div>
+            <button type="button" class="kgp-copy-code mt-2" data-copy="chrome://bookmarks" title="클릭하면 복사돼요">chrome://bookmarks<i class="bi bi-clipboard ms-2"></i></button>
           </div>
         </div>
         <div class="col-md-4">
@@ -171,5 +188,36 @@ async function downloadBookmarkFile() {
     btn.disabled = false; btn.innerHTML = orig;
   }
 }
+
+// 코드 조각 클릭 → 클립보드 복사 + '복사됨' 토스트 1회(중복 방지). 모든 .kgp-copy-code[data-copy]에 적용.
+document.addEventListener('click', function (e) {
+  const chip = e.target.closest('.kgp-copy-code');
+  if (!chip) return;
+  const text = chip.getAttribute('data-copy') || chip.textContent.trim();
+  const done = function () {
+    if (chip._kgpCopied) return;                 // 같은 클릭 흐름 중복 토스트 방지
+    chip._kgpCopied = true;
+    setTimeout(function () { chip._kgpCopied = false; }, 1200);
+    chip.classList.add('copied');
+    if (typeof pcToast === 'function') pcToast('복사됐어요: ' + text, 'success');
+  };
+  const fail = function () { if (typeof pcToast === 'function') pcToast('복사에 실패했어요. 길게 눌러 복사해 주세요.', 'error'); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, function () {
+      // 폴백: execCommand
+      try {
+        const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select(); const ok = document.execCommand('copy'); ta.remove();
+        ok ? done() : fail();
+      } catch (err) { fail(); }
+    });
+  } else {
+    try {
+      const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select(); const ok = document.execCommand('copy'); ta.remove();
+      ok ? done() : fail();
+    } catch (err) { fail(); }
+  }
+});
 </script>
 {% endblock %}
