@@ -107,7 +107,7 @@ def append(*, source: str, url: str, title: str, image: str = "", price: str = "
 
 
 def list_items(*, domain: str = "", source: str = "", days: int = 30,
-               seller_id=None, seller_ids=None) -> list:
+               seller_id=None, seller_ids=None, limit=None, offset=0) -> list:
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     sc, params = _scope(seller_id, seller_ids)
     sql = (f"SELECT {_SELECT} FROM collect_history WHERE deleted_at IS NULL "
@@ -118,6 +118,9 @@ def list_items(*, domain: str = "", source: str = "", days: int = 30,
     if source:
         sql += " AND source = %s"; args.append(source)
     sql += " ORDER BY created_at DESC"
+    # 속도: 기본 뷰(최신순·필터없음)는 SQL LIMIT/OFFSET로 그 페이지만 가져온다(전체 스캔 회피).
+    if limit is not None:
+        sql += " LIMIT %s OFFSET %s"; args.append(int(limit)); args.append(int(offset))
     with pg.query() as cur:
         cur.execute(sql, args)
         return [_shape(t) for t in cur.fetchall()]
@@ -190,29 +193,37 @@ def update(item_id: str, *, seller_id=None, seller_ids=None, **fields) -> bool:
 
 
 def summary(days: int = 30, seller_id=None, seller_ids=None) -> dict:
-    items = list_items(days=days, seller_id=seller_id, seller_ids=seller_ids)
-    by_source = {"extension": 0, "bookmarklet": 0, "manual": 0, "bulk": 0}
-    today_prefix = datetime.now(timezone.utc).date().isoformat()
-    today = 0
-    domains = set()
-    for it in items:
-        s = it.get("source", "")
-        if s in ("chrome_extension", "extension"):
-            by_source["extension"] += 1
-        elif s in by_source:
-            by_source[s] += 1
-        elif s in ("bulk", "bulk_collect"):
-            by_source["bulk"] += 1
-        if it.get("collected_at", "").startswith(today_prefix):
-            today += 1
-        if it.get("domain"):
-            domains.add(it["domain"])
-    return {"total": len(items), "today": today, "domains": len(domains), "by_source": by_source}
+    # 속도: 전체 행을 파이썬으로 가져와 세지 않고 SQL 집계(count/FILTER) 1회로 — 스캔 대신 인덱스 count.
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    sc, params = _scope(seller_id, seller_ids)
+    sql = (
+        "SELECT count(*) AS total, "
+        "count(*) FILTER (WHERE created_at >= %s) AS today, "
+        "count(DISTINCT domain) FILTER (WHERE domain <> '') AS domains, "
+        "count(*) FILTER (WHERE source IN ('extension','chrome_extension')) AS ext, "
+        "count(*) FILTER (WHERE source = 'bookmarklet') AS bm, "
+        "count(*) FILTER (WHERE source = 'manual') AS manual, "
+        "count(*) FILTER (WHERE source IN ('bulk','bulk_collect')) AS bulk "
+        f"FROM collect_history WHERE deleted_at IS NULL AND created_at >= %s AND {sc}"
+    )
+    with pg.query() as cur:
+        cur.execute(sql, [today_start, cutoff] + params)
+        r = cur.fetchone() or (0, 0, 0, 0, 0, 0, 0)
+    return {"total": r[0] or 0, "today": r[1] or 0, "domains": r[2] or 0,
+            "by_source": {"extension": r[3] or 0, "bookmarklet": r[4] or 0,
+                          "manual": r[5] or 0, "bulk": r[6] or 0}}
 
 
 def distinct_domains(days: int = 90, seller_id=None, seller_ids=None) -> list:
-    items = list_items(days=days, seller_id=seller_id, seller_ids=seller_ids)
-    return sorted({it.get("domain", "") for it in items if it.get("domain")})
+    # 속도: SQL DISTINCT로 도메인만 — 전체 행 파이썬 로드 제거.
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    sc, params = _scope(seller_id, seller_ids)
+    sql = (f"SELECT DISTINCT domain FROM collect_history WHERE deleted_at IS NULL "
+           f"AND created_at >= %s AND {sc} AND domain <> '' ORDER BY domain")
+    with pg.query() as cur:
+        cur.execute(sql, [cutoff] + params)
+        return [r[0] for r in cur.fetchall()]
 
 
 def count_total(days: int = 3650, seller_id=None, seller_ids=None) -> int:

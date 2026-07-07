@@ -5569,6 +5569,10 @@ def collect_history():
     fmt = (request.args.get("fmt") or "").strip()
     offset = max(0, request.args.get("offset", 0, type=int))
 
+    # 속도: 기본 뷰(최신순·필터 없음)는 목록을 SQL LIMIT/OFFSET로 그 페이지만 가져온다
+    #   (전체 스캔 회피 — 상품 많아도 첫 페이지 비용 고정). 필터/타 정렬은 기존 전체 로드 경로.
+    _sql_page = (sort == "newest" and not q and not status_f and not group_f and not domain and not source)
+
     items = []
     summ = {"total": 0, "today": 0, "domains": 0, "by_source": {"extension": 0, "bookmarklet": 0, "manual": 0, "bulk": 0}}
     domains = []
@@ -5578,60 +5582,73 @@ def collect_history():
         _sid = _seller_id()
         _ids = _seller_identities()
         with perf_block("db"):
-            items = list_items(domain=domain, source=source, days=days, seller_ids=_ids)
-            summ = summary(days=days, seller_ids=_ids)
-            domains = distinct_domains(seller_ids=_ids)
-        # v9 P0 추적: 이력 필터 식별자 + 결과 건수(어느 seller_id로 조회하는지 증거).
-        logger.info("[collect-history] seller_id=%s identities=%s total=%s", _sid, sorted(_ids), summ.get("total"))
+            if _sql_page:
+                items = list_items(days=days, seller_ids=_ids, limit=per_page, offset=offset)
+            else:
+                items = list_items(domain=domain, source=source, days=days, seller_ids=_ids)
+            # 속도: 무한스크롤 조각(fmt=rows)은 행만 렌더 → summary·도메인 스캔 2회 전부 생략(1쿼리).
+            if fmt != "rows":
+                summ = summary(days=days, seller_ids=_ids)
+                domains = distinct_domains(seller_ids=_ids)
+        logger.info("[collect-history] seller_id=%s identities=%s total=%s sql_page=%s fmt=%s", _sid, sorted(_ids), summ.get("total"), _sql_page, fmt or "-")
     except Exception as exc:
         logger.warning("수집 이력 조회 실패: %s", exc)
 
-    # 상태 필터(활성/보관)
-    if status_f in ("ok", "archived"):
-        items = [it for it in items if (it.get("status") or "") == status_f]
+    if _sql_page:
+        # SQL이 이미 최신순·해당 페이지만 반환 — 파이썬 필터/정렬/슬라이스 생략.
+        total_filtered = summ.get("total", len(items))
+        fastscroll = False
+        all_rows = items
+        has_more = (offset + len(items)) < total_filtered
+        total_pages = max(1, (total_filtered + per_page - 1) // per_page)
+        page = min(page, total_pages)
+    else:
+        # 상태 필터(활성/보관)
+        if status_f in ("ok", "archived"):
+            items = [it for it in items if (it.get("status") or "") == status_f]
 
-    # 그룹 필터 (extra_json.group_id)
-    if group_f:
-        def _grp(it):
+        # 그룹 필터 (extra_json.group_id)
+        if group_f:
+            def _grp(it):
+                try:
+                    return (json.loads(it.get("extra_json") or "{}") or {}).get("group_id") or ""
+                except Exception:
+                    return ""
+            items = [it for it in items if _grp(it) == group_f]
+
+        # 검색(제목/도메인/URL 부분일치)
+        if q:
+            ql = q.lower()
+            items = [it for it in items
+                     if ql in (it.get("title") or "").lower()
+                     or ql in (it.get("domain") or "").lower()
+                     or ql in (it.get("url") or "").lower()]
+
+        # 정렬
+        def _price_num(it):
             try:
-                return (json.loads(it.get("extra_json") or "{}") or {}).get("group_id") or ""
-            except Exception:
-                return ""
-        items = [it for it in items if _grp(it) == group_f]
+                return float(str(it.get("price") or "").replace(",", "").strip())
+            except (TypeError, ValueError):
+                return -1.0
+        if sort == "oldest":
+            items.sort(key=lambda r: r.get("collected_at", ""))
+        elif sort == "price_high":
+            items.sort(key=_price_num, reverse=True)
+        elif sort == "price_low":
+            items.sort(key=_price_num)
+        elif sort == "title":
+            items.sort(key=lambda r: (r.get("title") or "").lower())
+        else:  # newest (기본)
+            items.sort(key=lambda r: r.get("collected_at", ""), reverse=True)
 
-    # 검색(제목/도메인/URL 부분일치)
-    if q:
-        ql = q.lower()
-        items = [it for it in items
-                 if ql in (it.get("title") or "").lower()
-                 or ql in (it.get("domain") or "").lower()
-                 or ql in (it.get("url") or "").lower()]
-
-    # 정렬
-    def _price_num(it):
-        try:
-            return float(str(it.get("price") or "").replace(",", "").strip())
-        except (TypeError, ValueError):
-            return -1.0
-    if sort == "oldest":
-        items.sort(key=lambda r: r.get("collected_at", ""))
-    elif sort == "price_high":
-        items.sort(key=_price_num, reverse=True)
-    elif sort == "price_low":
-        items.sort(key=_price_num)
-    elif sort == "title":
-        items.sort(key=lambda r: (r.get("title") or "").lower())
-    else:  # newest (기본)
-        items.sort(key=lambda r: r.get("collected_at", ""), reverse=True)
-
-    # 속도: 첫 offset~per_page개만(전체 5000 로드 폐기). 이름순도 동일 — 나이아 점프는 서버 버킷 lazy-fetch.
-    total_filtered = len(items)
-    fastscroll = (sort == "title")
-    all_rows = items                                  # 정렬된 전체(버킷 인덱스용)
-    items = all_rows[offset:offset + per_page]
-    has_more = (offset + len(items)) < total_filtered
-    total_pages = max(1, (total_filtered + per_page - 1) // per_page)
-    page = 1 if fastscroll else min(page, total_pages)
+        # 첫 offset~per_page개만(전체 로드 후 슬라이스). 이름순은 나이아 점프용 all_rows 필요.
+        total_filtered = len(items)
+        fastscroll = (sort == "title")
+        all_rows = items                                  # 정렬된 전체(버킷 인덱스용)
+        items = all_rows[offset:offset + per_page]
+        has_more = (offset + len(items)) < total_filtered
+        total_pages = max(1, (total_filtered + per_page - 1) // per_page)
+        page = 1 if fastscroll else min(page, total_pages)
 
     # 속도 ② 페이로드 다이어트: extra_json은 항목당 **한 번만** 파싱(기존 3회 → 1회), 목록 썸네일은
     #   **대표 1장만**(목록은 한눈 확인용 — 갤러리 5장은 편집 드로어에서). 무거운 extra_json은 클라로 안 보냄(HTML만).

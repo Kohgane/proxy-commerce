@@ -38,11 +38,15 @@ def test_ddl_runs_via_direct_connection_and_split():
 def test_psycopg3_nullpool_and_no_prepared():
     # psycopg3 사용 + prepared statement 비활성(트랜잭션 풀러 호환)
     assert "import psycopg" in PGSRC and "prepare_threshold=None" in PGSRC
-    # NullPool: 매 작업마다 새 연결 후 close(영속 풀 없음)
+    # NullPool: 영속 풀 없음(psycopg2 풀 API 미사용). 매 작업 새 연결 후 close 원칙 유지.
     assert "ThreadedConnectionPool" not in PGSRC and "getconn" not in PGSRC
-    for fn in ("def tx(", "def query(", "def get_conn("):
+    # tx()·get_conn()은 1회용(즉시 close). query()는 속도 최적화로 요청 범위 내 읽기 연결을 재사용하되
+    #   요청 종료 시 close_request_conn(teardown)로 닫는다(연결 누수 0) + 요청 밖 1회용 경로는 즉시 close.
+    for fn in ("def tx(", "def get_conn("):
         j = PGSRC.index(fn)
         assert "conn.close()" in PGSRC[j:j + 400], fn
+    assert "close_request_conn" in PGSRC          # 요청 범위 재사용 연결의 명시적 종료
+    assert "conn.close()" in PGSRC[PGSRC.index("def query("):]   # query 1회용 경로도 close
 
 
 def test_migration_uses_direct_conn():

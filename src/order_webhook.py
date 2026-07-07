@@ -1066,6 +1066,16 @@ _GZIP_TYPES = ("text/html", "text/css", "application/javascript",
 _GZIP_MIN_BYTES = int(os.getenv("GZIP_MIN_BYTES", "600"))
 
 
+@app.teardown_request
+def _close_request_db_conn(exc):
+    """속도: 요청 범위에서 재사용한 PG 읽기 연결을 요청 종료 시 닫는다(연결 누수 0)."""
+    try:
+        from src.db.pg import close_request_conn
+        close_request_conn(exc)
+    except Exception:
+        pass
+
+
 @app.after_request
 def _perf_after_request(response):
     try:

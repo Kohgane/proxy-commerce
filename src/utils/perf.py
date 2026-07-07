@@ -43,6 +43,31 @@ def perf_block(name: str):
             b[name] = round(b.get(name, 0.0) + dt, 2)
 
 
+_CNT_ATTR = "_kgp_perf_count"
+
+
+def _counter() -> dict:
+    if not has_request_context():
+        return {}
+    d = getattr(g, _CNT_ATTR, None)
+    if d is None:
+        d = {}
+        setattr(g, _CNT_ATTR, d)
+    return d
+
+
+def perf_count(name: str, n: int = 1) -> None:
+    """이벤트 카운트(예: DB 쿼리·연결 수) — N+1 진단용."""
+    c = _counter()
+    if c is not None:
+        c[name] = c.get(name, 0) + n
+
+
+def perf_counts() -> dict:
+    c = _counter()
+    return dict(c) if c else {}
+
+
 def perf_snapshot() -> dict:
     """현재까지 누적된 구간 타이밍(ms) 스냅샷."""
     b = _bucket()

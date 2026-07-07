@@ -93,12 +93,13 @@ def append(
 
 def list_items(
     *, domain: str = "", source: str = "", days: int = 30, seller_id: Optional[str] = None,
-    seller_ids: Optional[set] = None,
+    seller_ids: Optional[set] = None, limit: Optional[int] = None, offset: int = 0,
 ) -> list[dict]:
-    """수집 이력 목록 반환 (최신순)."""
+    """수집 이력 목록 반환 (최신순). limit 지정 시 그 페이지만(속도)."""
     _b = _pg_backend()
     if _b:
-        return _b.list_items(domain=domain, source=source, days=days, seller_id=seller_id, seller_ids=seller_ids)
+        return _b.list_items(domain=domain, source=source, days=days, seller_id=seller_id,
+                             seller_ids=seller_ids, limit=limit, offset=offset)
 
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     result = []
@@ -117,6 +118,8 @@ def list_items(
             continue
         result.append(dict(row))
     result.sort(key=lambda r: r.get("collected_at", ""), reverse=True)
+    if limit is not None:
+        return result[int(offset):int(offset) + int(limit)]
     return result
 
 
