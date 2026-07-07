@@ -107,6 +107,8 @@ async function handleCollect(meta, sendResponse) {
   }
 
   const endpoint = `${serverUrl}/api/v1/collect/extension`;
+  // P0 진단: 요청에 인증 토큰이 실렸는지 콘솔에 노출(값은 마스킹). 미인증(HTML 로그인 응답) 원인 규명용.
+  console.log(`[고가수집기] 인증 토큰 ${token ? "첨부됨(Bearer …" + String(token).slice(-4) + ")" : "없음 — 확장 옵션에서 토큰을 설정하세요"} → POST ${endpoint}`);
   try {
     const response = await fetch(endpoint, {
       method: "POST",
@@ -176,6 +178,8 @@ async function handleCollectBulk(items, sendResponse, tabId) {
   let success = 0, failed = 0, duplicate = 0;
   const failedItems = [];
   let _extVer = ""; try { _extVer = chrome.runtime.getManifest().version; } catch (e) {}
+  // P0 진단: 벌크도 인증 토큰 첨부 여부를 콘솔에 노출(마스킹).
+  console.log(`[고가수집기] 벌크 ${items.length}건 · 인증 토큰 ${token ? "첨부됨(Bearer …" + String(token).slice(-4) + ")" : "없음"}`);
   for (let i = 0; i < items.length; i++) {
     const meta = items[i];
     if (meta && !meta.ext_version) meta.ext_version = _extVer;   // P0 하위호환·진단
