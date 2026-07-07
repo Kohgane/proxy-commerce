@@ -4,7 +4,8 @@
  *   먹(ink) 베이스 · 한지(hanji) 크림 · 금(antique gold) 악센트 · 청록(teal) Primary.
  * 작업 화면(콘솔)은 한지 라이트(가독성), 랜딩/로그인은 먹 다크(입구 럭셔리, 별도 테마).
  * 색·폰트·간격은 이 토큰을 단일 소스로 — 화면에서 하드코딩하지 말 것.
- * 폰트: 디스플레이=Noto Serif KR(명조), 본문/UI=Pretendard.
+ * 폰트: 디스플레이=Noto Serif KR(명조), 본문/UI=Pretendard. 둘 다 display=swap(FOIT 방지).
+ * (속도 ③: Noto Serif는 CSP가 fonts.googleapis.com을 막아 프로덕션에서 안 뜨던 것을 CSP 허용으로 해소.)
  */
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
 @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;600;700&display=swap');

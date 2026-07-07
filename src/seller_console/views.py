@@ -2678,8 +2678,10 @@ def catalog():
     try:
         from .market_status_sheets import MarketStatusSheetsAdapter
         from datetime import datetime
+        from src.utils.perf import perf_block
         adapter = MarketStatusSheetsAdapter()
-        result = adapter.fetch_all()
+        with perf_block("db"):
+            result = adapter.fetch_all()
         all_items = result.items
         source = result.source
         max_price_for_none = 10**15
@@ -2760,17 +2762,20 @@ def catalog():
 
     logger.info("[catalog] sort=%s total=%s offset=%s rendered=%s elapsed_ms=%.1f",
                 sort, total, offset, len(view_items), (_time.monotonic() - _t0) * 1000)
+    from src.utils.perf import perf_block as _pb
 
     # 무한스크롤·나이아 점프 요청 → 행 파셜만(경량).
     if fmt == "rows":
-        return render_template("catalog_rows.html", items=view_items, offset=offset, has_more=has_more)
+        with _pb("render"):
+            return render_template("catalog_rows.html", items=view_items, offset=offset, has_more=has_more)
 
     # 전체 페이지: 이름순이면 나이아 버킷 인덱스(전체 렌더 없이 실데이터 샘플 + offset)를 넘긴다.
     fs_buckets = {}
     if sort == "title_asc":
         fs_buckets = _fs_build_buckets([((i.title or ""), "") for i in all_items])
 
-    return render_template(
+    with _pb("render"):
+      return render_template(
         "catalog.html",
         items=view_items,
         page="catalog",
@@ -5569,11 +5574,13 @@ def collect_history():
     domains = []
     try:
         from .collect_history_store import list_items, summary, distinct_domains
+        from src.utils.perf import perf_block
         _sid = _seller_id()
         _ids = _seller_identities()
-        items = list_items(domain=domain, source=source, days=days, seller_ids=_ids)
-        summ = summary(days=days, seller_ids=_ids)
-        domains = distinct_domains(seller_ids=_ids)
+        with perf_block("db"):
+            items = list_items(domain=domain, source=source, days=days, seller_ids=_ids)
+            summ = summary(days=days, seller_ids=_ids)
+            domains = distinct_domains(seller_ids=_ids)
         # v9 P0 추적: 이력 필터 식별자 + 결과 건수(어느 seller_id로 조회하는지 증거).
         logger.info("[collect-history] seller_id=%s identities=%s total=%s", _sid, sorted(_ids), summ.get("total"))
     except Exception as exc:
@@ -5626,47 +5633,36 @@ def collect_history():
     total_pages = max(1, (total_filtered + per_page - 1) // per_page)
     page = 1 if fastscroll else min(page, total_pages)
 
-    # 각 항목에 썸네일 목록(최대 5장) 부착 — 대표이미지 + extra_json의 수집 이미지들.
-    # 사람이 이름 옆에서 이미지로 바로 확인할 수 있게(오너 요청).
+    # 속도 ② 페이로드 다이어트: extra_json은 항목당 **한 번만** 파싱(기존 3회 → 1회), 목록 썸네일은
+    #   **대표 1장만**(목록은 한눈 확인용 — 갤러리 5장은 편집 드로어에서). 무거운 extra_json은 클라로 안 보냄(HTML만).
     for it in items:
-        thumbs: list[str] = []
-        rep = (it.get("image_url") or "").strip()
-        if rep:
-            thumbs.append(rep)
         try:
             ex = json.loads(it.get("extra_json") or "{}")
+        except Exception:
+            ex = {}
+        rep = (it.get("image_url") or "").strip()
+        if not rep:                                   # 대표 없으면 수집 이미지 첫 장
             imgs = ex.get("images") if isinstance(ex.get("images"), list) else []
             for u in imgs:
                 u = (str(u) or "").strip()
-                if u and u not in thumbs:
-                    thumbs.append(u)
-                if len(thumbs) >= 5:
+                if u:
+                    rep = u
                     break
-        except Exception:
-            pass
-        it["thumbs"] = thumbs[:5]
-        # v45(6): 한/영 분리 표시 — UI 언어 토글(current_lang)에 맞는 언어만 보여주고, 그 언어 번역이
-        #   없으면 원문으로 폴백 + '원문' 뱃지(섞어 보여주기 금지·정직).
-        try:
-            _ex = json.loads(it.get("extra_json") or "{}")
-        except Exception:
-            _ex = {}
-        _tko = (str(_ex.get("title_ko") or "").strip()) or (str(it.get("title") or "").strip())
-        _ten = str(_ex.get("title_en") or _ex.get("title") or it.get("title") or "").strip()
+        it["thumbs"] = [rep] if rep else []           # 목록=대표 1장
+        # v45(6): 한/영 분리 표시 — UI 언어 토글(current_lang)에 맞는 언어만(원문 폴백 시 '원문' 뱃지).
+        _tko = (str(ex.get("title_ko") or "").strip()) or (str(it.get("title") or "").strip())
+        _ten = str(ex.get("title_en") or ex.get("title") or it.get("title") or "").strip()
         _translated = bool(_tko) and bool(_ten) and _tko != _ten
         if _current_lang == "en":
             it["title_display"] = _ten or _tko or "(제목 없음)"
-            it["title_is_original"] = not bool(_ten)   # en=원문 소스라 보통 뱃지 없음(ko로 폴백 시만)
+            it["title_is_original"] = not bool(_ten)
         else:  # ko
             it["title_display"] = (_tko if _translated else (_ten or _tko)) or "(제목 없음)"
-            it["title_is_original"] = not _translated   # 번역 안 됨 → 원문 뱃지
+            it["title_is_original"] = not _translated
         # v44-1: 업로드 성공한 마켓 라벨(등록됨 뱃지용) — extra_json.uploaded(서버 확인분)만.
-        try:
-            up = json.loads(it.get("extra_json") or "{}").get("uploaded")
-            it["uploaded_markets"] = [str(u.get("market_label") or u.get("market"))
-                                      for u in up if isinstance(u, dict) and (u.get("market_label") or u.get("market"))] if isinstance(up, list) else []
-        except Exception:
-            it["uploaded_markets"] = []
+        up = ex.get("uploaded")
+        it["uploaded_markets"] = [str(u.get("market_label") or u.get("market"))
+                                  for u in up if isinstance(u, dict) and (u.get("market_label") or u.get("market"))] if isinstance(up, list) else []
 
     from .upload_dispatcher import MARKET_LABELS, SUPPORTED_MARKETS
     upload_markets = [{"code": m, "label": MARKET_LABELS.get(m, m)} for m in SUPPORTED_MARKETS]
@@ -5683,10 +5679,12 @@ def collect_history():
     except Exception:
         translation_free = {"limit": 20, "used": 0, "remaining": 20}
     logger.info("[collect-history] sort=%s total=%s offset=%s rendered=%s", sort, total_filtered, offset, len(items))
+    from src.utils.perf import perf_block
 
     # 무한스크롤·나이아 점프 요청 → 행 파셜만(경량).
     if fmt == "rows":
-        return render_template("collect_history_rows.html", items=items)
+        with perf_block("render"):
+            return render_template("collect_history_rows.html", items=items)
 
     # 상품 그룹(v3 P1-5)
     try:
@@ -5700,7 +5698,8 @@ def collect_history():
     if fastscroll:
         fs_buckets = _fs_build_buckets([((r.get("title") or ""), (r.get("image_url") or "")) for r in all_rows])
 
-    return render_template(
+    with perf_block("render"):
+      return render_template(
         "collect_history.html",
         page="collect_history",
         items=items,
@@ -5818,7 +5817,9 @@ def collect_preview_by_id(item_id: str):
     if cur_cat:
         cat_suggestion = {**cat_suggestion, "suggested_keywords": _suggest_kw(cur_cat, _title_for_cat)}
 
-    return render_template(
+    from src.utils.perf import perf_block as _pb
+    with _pb("render"):
+      return render_template(
         "collect_preview.html",
         page="collect_history",
         item=item,

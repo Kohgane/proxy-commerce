@@ -309,6 +309,8 @@
 })();
 </script>
 
+<!-- 속도 ③: 스크립트는 body 끝 배치라 초기 렌더를 막지 않음(defer와 동일 효과). 뒤 인라인 스크립트가
+     bootstrap/seller.js에 의존하므로 defer 속성은 실행순서를 깨 미사용(placement로 비차단 달성). -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="{{ url_for('seller_console.static', filename='seller.js') }}"></script>
 <script>

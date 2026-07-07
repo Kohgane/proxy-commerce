@@ -41,6 +41,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_collect_history_user_key
 CREATE INDEX IF NOT EXISTS ix_collect_history_user
   ON collect_history (user_id) WHERE deleted_at IS NULL;
 
+-- 속도 ⑤: 목록 쿼리(WHERE user_id IN(...) AND created_at >= ? ORDER BY created_at DESC)와
+--   count 쿼리를 커버하는 복합 인덱스(user_id + created_at 내림차순, 활성행만).
+CREATE INDEX IF NOT EXISTS ix_collect_history_user_created
+  ON collect_history (user_id, created_at DESC) WHERE deleted_at IS NULL;
+
 DROP TRIGGER IF EXISTS trg_collect_history_updated ON collect_history;
 CREATE TRIGGER trg_collect_history_updated BEFORE UPDATE ON collect_history
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();

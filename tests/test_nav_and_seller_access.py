@@ -90,7 +90,9 @@ def test_collect_history_shows_thumbnails_and_bulk_select_all(client):
         resp = client.get("/seller/collect/history")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
-    assert "https://i/2.jpg" in html and "https://i/3.jpg" in html   # 추가 썸네일
+    # 속도 ② 페이로드 다이어트: 목록은 대표 썸네일 1장만(갤러리 5장은 편집 드로어에서).
+    assert "https://i/rep.jpg" in html                               # 대표 1장
+    assert "https://i/2.jpg" not in html and "https://i/3.jpg" not in html  # 목록엔 추가 썸네일 미노출
     assert "toggleAllBulkMarkets" in html                            # 모달 전체 선택
 
 
