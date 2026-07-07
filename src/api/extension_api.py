@@ -283,6 +283,8 @@ def collect_from_extension():
 
     payload = request.get_json(force=True, silent=True) or {}
     url = (payload.get("url") or "").strip()
+    # 다시 수집(덮어쓰기): 중복이어도 새 항목을 만들지 않고 기존 항목의 가격·이미지를 갱신한다.
+    _force = bool(payload.get("force") or payload.get("overwrite"))
     # P0 진단: 확장 버전·엔드포인트·수신 필드를 로깅(전면 실패 원인 1줄 규명용).
     _ext_ver = str(payload.get("ext_version") or "").strip()
     logger.info("[collect %s] 수신 ext_version=%s token_user_id=%r url=%s fields=%s",
@@ -392,6 +394,47 @@ def collect_from_extension():
         _dup = None
     if _dup and _dup.get("id"):
         _dup_id = _dup.get("id")
+        if _force:
+            # 다시 수집(덮어쓰기): 기존 항목의 가격·이미지·제목을 새 수집값으로 갱신(중복 행 안 만듦).
+            try:
+                import json as _json
+                try:
+                    _merged = _json.loads(_dup.get("extra_json") or "{}")
+                except Exception:
+                    _merged = {}
+                _merged.update({
+                    "title_ko": title_ko, "title_en": title, "title": title,
+                    "price": payload.get("price", ""), "currency": payload.get("currency") or "",
+                    "price_original": payload.get("price", ""),
+                    "price_status": payload.get("price_status", ""),
+                    "images": images,
+                    "gallery_images": _bucket_filter(payload.get("gallery_images"), images),
+                    "detail_images": _bucket_filter(payload.get("detail_images"), []),
+                    "options": payload.get("options", []),
+                    "description": payload.get("description", ""),
+                    "description_ko": tr.get("description_ko", ""),
+                    "recollected": True,
+                })
+                from src.seller_console.collect_history_store import update as _hist_update
+                _ok = _hist_update(
+                    _dup_id, seller_ids=_dedup_ids,
+                    title=title_ko,
+                    image_url=(images[0] if images else payload.get("image", "")),
+                    price=payload.get("price", ""),
+                    currency=payload.get("currency") or "",
+                    extra_json=_json.dumps(_merged, ensure_ascii=False),
+                )
+                logger.info("[collect %s] 다시수집(덮어쓰기) id=%s ok=%s price=%s %s",
+                            _corr, _dup_id, _ok, payload.get("price", ""), payload.get("currency") or "")
+                if _ok:
+                    return jsonify({
+                        "ok": True, "updated": True, "item_id": _dup_id,
+                        "preview_url": f"/seller/collect/preview/{_dup_id}",
+                        "message": "다시 수집해 가격·이미지를 갱신했어요.",
+                    })
+            except Exception as _exc:
+                logger.exception("[collect %s] 다시수집 갱신 실패: %s", _corr, _exc)
+            # 갱신 실패 시 정직: 아래 일반 중복 응답(가짜 성공 금지)
         logger.info("[collect %s] 중복 수집 감지 → 기존 항목 안내: id=%s url=%s", _corr, _dup_id, url[:80])
         return jsonify({
             "ok": True, "duplicate": True, "item_id": _dup_id,
