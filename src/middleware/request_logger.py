@@ -132,8 +132,12 @@ class RequestLogger:
             perf = perf_snapshot()
             counts = perf_counts()
             st = perf_server_timing()
-            total = f"total;dur={elapsed_ms}"
-            # db 연결(쿼리) 수도 Server-Timing에 노출 → N+1을 네트워크 탭에서 바로 확인.
+            # v47 STEP1: app 시간(=total - db - render) 명시 → 오너가 네트워크 탭에서 TTFB의 서버시간
+            #   구성(db/렌더/앱)을 바로 판정(서버시간 비중 ≥50%면 Render Standard 승급 근거).
+            _db = float(perf.get("db", 0) or 0)
+            _render = float(perf.get("render", 0) or 0)
+            _app = round(max(0.0, elapsed_ms - _db - _render), 2)
+            total = f"app;dur={_app}, total;dur={elapsed_ms}"
             if counts.get("db_conn"):
                 total = f"dbconn;desc={counts['db_conn']};dur=0, " + total
             response.headers["Server-Timing"] = (st + ", " + total) if st else total
