@@ -5593,10 +5593,13 @@ def collect_history():
         _sid = _seller_id()
         _ids = _seller_identities()
         with perf_block("db"):
+            # 속도 STEP1: 목록은 lean=True — 대형 컬럼(이미지 40장·상세·리뷰·스펙) 제외 축약 projection.
+            #   단, 그룹 필터는 extra_json.group_id를 파이썬에서 읽으므로 그 경우만 full(lean=False).
+            _use_lean = not group_f
             if _sql_page:
-                items = list_items(days=days, seller_ids=_ids, limit=per_page, offset=offset)
+                items = list_items(days=days, seller_ids=_ids, limit=per_page, offset=offset, lean=True)
             else:
-                items = list_items(domain=domain, source=source, days=days, seller_ids=_ids)
+                items = list_items(domain=domain, source=source, days=days, seller_ids=_ids, lean=_use_lean)
             # 속도: 무한스크롤 조각(fmt=rows)은 행만 렌더 → summary·도메인 스캔 2회 전부 생략(1쿼리).
             if fmt != "rows":
                 summ = summary(days=days, seller_ids=_ids)

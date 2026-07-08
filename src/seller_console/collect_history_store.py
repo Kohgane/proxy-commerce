@@ -93,13 +93,13 @@ def append(
 
 def list_items(
     *, domain: str = "", source: str = "", days: int = 30, seller_id: Optional[str] = None,
-    seller_ids: Optional[set] = None, limit: Optional[int] = None, offset: int = 0,
+    seller_ids: Optional[set] = None, limit: Optional[int] = None, offset: int = 0, lean: bool = False,
 ) -> list[dict]:
-    """수집 이력 목록 반환 (최신순). limit 지정 시 그 페이지만(속도)."""
+    """수집 이력 목록 반환 (최신순). limit 지정 시 그 페이지만. lean=True면 대형 컬럼 제외(속도)."""
     _b = _pg_backend()
     if _b:
         return _b.list_items(domain=domain, source=source, days=days, seller_id=seller_id,
-                             seller_ids=seller_ids, limit=limit, offset=offset)
+                             seller_ids=seller_ids, limit=limit, offset=offset, lean=lean)
 
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     result = []
@@ -119,7 +119,21 @@ def list_items(
         result.append(dict(row))
     result.sort(key=lambda r: r.get("collected_at", ""), reverse=True)
     if limit is not None:
-        return result[int(offset):int(offset) + int(limit)]
+        result = result[int(offset):int(offset) + int(limit)]
+    if lean:
+        # PG lean projection과 동일 모양: 목록 렌더에 필요한 작은 필드만 남긴다(대형 배열 제외).
+        import json as _json
+        for _r in result:
+            try:
+                _ex = _json.loads(_r.get("extra_json") or "{}")
+            except Exception:
+                _ex = {}
+            _imgs = _ex.get("images") if isinstance(_ex.get("images"), list) else []
+            _r["extra_json"] = _json.dumps({
+                "title_ko": _ex.get("title_ko"), "title_en": _ex.get("title_en"), "title": _ex.get("title"),
+                "uploaded": _ex.get("uploaded"), "price_status": _ex.get("price_status"),
+                "warnings": _ex.get("warnings"), "images": _imgs[:1],
+            }, ensure_ascii=False)
     return result
 
 
@@ -269,6 +283,11 @@ def delete(item_ids, *, seller_id: Optional[str] = None, seller_ids: Optional[se
 
 def summary(days: int = 30, seller_id: Optional[str] = None, seller_ids: Optional[set] = None) -> dict:
     """기간별 요약 통계."""
+    # 속도(v46 STEP1): PG면 SQL 집계(count/FILTER)로 위임 — 전체 행(대형 extra_json 포함) 파이썬 스캔 금지.
+    #   기존엔 list_items(전체)로 2000행 detoast(각 400ms) → summary/distinct 합 800ms 병목.
+    _b = _pg_backend()
+    if _b:
+        return _b.summary(days=days, seller_id=seller_id, seller_ids=seller_ids)
     items = list_items(days=days, seller_id=seller_id, seller_ids=seller_ids)
     by_source: dict[str, int] = {"extension": 0, "bookmarklet": 0, "manual": 0, "bulk": 0}
     today_prefix = datetime.now(timezone.utc).date().isoformat()
@@ -294,5 +313,9 @@ def summary(days: int = 30, seller_id: Optional[str] = None, seller_ids: Optiona
 
 def distinct_domains(days: int = 90, seller_id: Optional[str] = None, seller_ids: Optional[set] = None) -> list[str]:
     """최근 N일 내 수집된 도메인 목록 (중복 제거, 알파벳순)."""
+    # 속도(v46 STEP1): PG면 SELECT DISTINCT domain(도메인 컬럼만)로 위임 — 전체 행 detoast 회피.
+    _b = _pg_backend()
+    if _b:
+        return _b.distinct_domains(days=days, seller_id=seller_id, seller_ids=seller_ids)
     items = list_items(days=days, seller_id=seller_id, seller_ids=seller_ids)
     return sorted({item.get("domain", "") for item in items if item.get("domain")})
