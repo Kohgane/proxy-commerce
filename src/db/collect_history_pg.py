@@ -23,6 +23,24 @@ logger = logging.getLogger(__name__)
 _SELECT = ("id, created_at, source, domain, url, title, image_url, price, currency, "
            "status, preview_url, extra_json, user_id")
 
+# 속도(v46 STEP1): 목록 쿼리는 대형 컬럼(extra_json의 이미지 40장·상세설명·리뷰·스펙)을 통째로
+#   끌지 않고, 목록 렌더에 필요한 작은 필드만 SQL에서 축약(jsonb_build_object) → 전송량·직렬화 급감.
+#   대표 썸네일은 image_url 컬럼(이미 존재) + images 폴백은 첫 1장만.
+_LEAN_EXTRA = (
+    "jsonb_build_object("
+    "'title_ko', extra_json->'title_ko',"
+    "'title_en', extra_json->'title_en',"
+    "'title', extra_json->'title',"
+    "'uploaded', extra_json->'uploaded',"
+    "'price_status', extra_json->'price_status',"
+    "'warnings', extra_json->'warnings',"
+    "'images', CASE WHEN jsonb_typeof(extra_json->'images')='array' AND jsonb_array_length(extra_json->'images')>0 "
+    "THEN jsonb_build_array(extra_json->'images'->0) ELSE '[]'::jsonb END"
+    ") AS extra_json"
+)
+_SELECT_LEAN = ("id, created_at, source, domain, url, title, image_url, price, currency, "
+                "status, preview_url, " + _LEAN_EXTRA + ", user_id")
+
 
 def _shape(t) -> dict:
     """DB 행 튜플 → Sheets 스토어와 동일 모양의 dict."""
@@ -107,10 +125,11 @@ def append(*, source: str, url: str, title: str, image: str = "", price: str = "
 
 
 def list_items(*, domain: str = "", source: str = "", days: int = 30,
-               seller_id=None, seller_ids=None, limit=None, offset=0) -> list:
+               seller_id=None, seller_ids=None, limit=None, offset=0, lean=False) -> list:
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     sc, params = _scope(seller_id, seller_ids)
-    sql = (f"SELECT {_SELECT} FROM collect_history WHERE deleted_at IS NULL "
+    _cols = _SELECT_LEAN if lean else _SELECT      # 속도: 목록은 대형 컬럼 제외한 축약 projection
+    sql = (f"SELECT {_cols} FROM collect_history WHERE deleted_at IS NULL "
            f"AND created_at >= %s AND {sc}")
     args = [cutoff] + params
     if domain:
