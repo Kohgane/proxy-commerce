@@ -70,21 +70,75 @@
     } catch (e) {}
     return out;
   }
+  var STATE_KEYS = ["__NEXT_DATA__", "__NUXT__", "__INITIAL_STATE__", "__INIT_DATA__", "__STORE__",
+                    "rawData", "__PRELOADED_STATE__", "__APOLLO_STATE__", "__data", "pageData", "window._d"];
+
+  // 문자열에서 index 위치의 { 또는 [ 부터 문자열-인지 균형 매칭으로 JSON 조각을 잘라낸다.
+  function _sliceBalanced(s, from) {
+    var open = s.charAt(from), close = open === "{" ? "}" : "]";
+    if (open !== "{" && open !== "[") return null;
+    var depth = 0, inStr = false, esc = false, q = "";
+    for (var i = from; i < s.length; i++) {
+      var c = s.charAt(i);
+      if (inStr) {
+        if (esc) esc = false; else if (c === "\\") esc = true; else if (c === q) inStr = false;
+      } else {
+        if (c === '"' || c === "'") { inStr = true; q = c; }
+        else if (c === "{" || c === "[") depth++;
+        else if (c === "}" || c === "]") { depth--; if (depth === 0) return s.slice(from, i + 1); }
+      }
+    }
+    return null;
+  }
+
+  // ★핵심(v46 STEP3): 확장 content script는 **격리 월드**라 페이지의 live window.rawData를 못 읽는다.
+  //   → 인라인 <script> **텍스트**에서 'window.rawData = {...}' 류 초기 상태 할당을 파싱(DOM 텍스트라
+  //   격리월드에서도 접근 가능). 북마클릿(페이지월드)도 동일 코드로 동작.
+  function _scriptStates() {
+    var out = [];
+    try {
+      var ss = document.querySelectorAll("script:not([src])");
+      for (var i = 0; i < ss.length && i < 60; i++) {
+        var t = ss[i].textContent || "";
+        if (t.length < 20 || t.length > 6000000) continue;
+        for (var k = 0; k < STATE_KEYS.length; k++) {
+          var key = STATE_KEYS[k];
+          var pos = 0, guard = 0;
+          while (guard++ < 5) {
+            var idx = t.indexOf(key, pos);
+            if (idx < 0) break;
+            pos = idx + key.length;
+            var eq = t.indexOf("=", idx);
+            if (eq < 0 || eq - idx > key.length + 8) continue;   // '=' 가 키 바로 뒤여야(할당)
+            var seg = t.slice(eq, eq + 300);
+            var mb = /[{\[]/.exec(seg);
+            if (!mb) continue;
+            var raw = _sliceBalanced(t, eq + mb.index);
+            if (raw) { try { var o = JSON.parse(raw); if (o && typeof o === "object") out.push(o); } catch (e) {} }
+          }
+        }
+      }
+    } catch (e) {}
+    return out;
+  }
+
   function _globalStates() {
     // 흔한 초기 상태 전역/스크립트(next/nuxt/redux/사이트 커스텀). 값이 객체면 후보로.
     var cands = [];
-    var keys = ["__NEXT_DATA__", "__NUXT__", "__INITIAL_STATE__", "__INIT_DATA__", "__STORE__",
-                "rawData", "__PRELOADED_STATE__", "__APOLLO_STATE__", "__data", "pageData"];
-    for (var i = 0; i < keys.length; i++) {
-      try { var v = global[keys[i]]; if (v && typeof v === "object") cands.push(v); } catch (e) {}
+    // (1) live 전역 — 북마클릿(페이지월드)에서만 유효. 확장(격리월드)에선 대개 undefined.
+    for (var i = 0; i < STATE_KEYS.length; i++) {
+      try { var v = global[STATE_KEYS[i]]; if (v && typeof v === "object") cands.push(v); } catch (e) {}
     }
-    // <script id=__NEXT_DATA__ type=application/json> 등 인라인 JSON
+    // (2) <script id=__NEXT_DATA__ type=application/json> 등 인라인 JSON(DOM 텍스트).
     try {
       var ss = document.querySelectorAll('script[type="application/json"]');
-      for (var k = 0; k < ss.length && k < 8; k++) {
+      for (var k = 0; k < ss.length && k < 12; k++) {
         try { var o = JSON.parse(ss[k].textContent || ""); if (o && typeof o === "object") cands.push(o); } catch (e) {}
       }
     } catch (e) {}
+    // (3) ★인라인 <script> 텍스트의 상태 할당(window.rawData=... 등) — 격리월드 대응 핵심.
+    var st = _scriptStates();
+    for (var j = 0; j < st.length; j++) cands.push(st[j]);
     return cands;
   }
   function _walk(root, visit, maxNodes) {
@@ -137,47 +191,118 @@
         res.ok = res.ok || !!(res.price || res.images.length);
       }
     }
-    // 전역 상태 딥워크(스키마 무관) — JSON-LD로 못 채운 것 보강
-    var states = _globalStates();
+    // 전역/스크립트 상태 딥워크(스키마 무관·키 이름 휴리스틱) — JSON-LD로 못 채운 것 보강.
+    var IMG_KEY = /(image|img|pic|photo|thumb|gallery|carousel|album)/i;
+    var DET_KEY = /(detail|desc|content)/i;
+    var SKU_KEY = /(sku|variant|goodsspec|specsku|skulist|productlist)/i;
+    var SPEC_KEY = /(spec|attr|prop|option|variation)/i;
+    var PRICE_KEY = /(price|amount|sale|deal|salePrice|normalPrice)/i;
+    var PRICE_BAD = /(count|qty|num|origin|list|regular|market|before|min|max|unit|discount|off|save)/i;
+    var RATE_KEY = /(avgrating|averagerating|ratingvalue|goodsscore|starscore|score|rating)$/i;
+    var CNT_KEY = /(reviewcount|reviewnum|commentcount|reviewtotal|totalreview|ratingcount)/i;
+
+    function pushImgs(arr, dest, seen) {
+      for (var i = 0; i < arr.length && dest.length < 40; i++) {
+        var u = arr[i];
+        if (typeof u === "object" && u) u = u.url || u.src || u.imageUrl || u.thumbUrl || u.image || "";
+        if (typeof u === "string" && /^https?:\/\//.test(u) && isProductImg(u)) uniqPush(dest, seen, hiRes(u));
+      }
+    }
+    // 숫자 가격의 센트/소단위 환산: 통화가 소단위(USD/EUR/GBP…) + 정수 + 큰 값이면 ÷100.
+    function priceFromNum(n, cur) {
+      var v = Number(n);
+      if (!(v > 0)) return "";
+      var CENTS = { USD: 1, EUR: 1, GBP: 1, CNY: 1, AUD: 1, CAD: 1 };  // 소단위 있는 통화
+      if (cur && CENTS[cur] && v === Math.floor(v) && v >= 1000) return String(v / 100);
+      return String(v);
+    }
+    function skuPrice(o) {
+      for (var k in o) {
+        try {
+          if (PRICE_KEY.test(k) && !PRICE_BAD.test(k)) {
+            var pv = o[k];
+            if (typeof pv === "string") { var pp = parsePriceStr(pv); if (pp) return pp; }
+            else if (typeof pv === "number") {
+              var cur = String(o.currency || o.currencyCode || o.priceCurrency || res.currency || "").toUpperCase();
+              var val = priceFromNum(pv, cur); if (val) return { price: val, currency: cur };
+            }
+          }
+        } catch (e) {}
+      }
+      return null;
+    }
+    var _skuPriceSet = false;
+    var states = _globalStates();   // live 전역 + 인라인 <script> 텍스트 상태(격리월드 대응)
     for (var s = 0; s < states.length; s++) {
       _walk(states[s], function (node) {
-        // 이미지: url/이미지 배열
         for (var key in node) {
           try {
             var kv = String(key).toLowerCase(), v = node[key];
-            if (typeof v === "string" && /^https?:\/\//.test(v)) {
-              if (/(image|img|pic|photo|thumb|gallery)/.test(kv) && isProductImg(v)) {
-                if (/(detail|desc|content)/.test(kv)) uniqPush(res.detailImages, detSeen, hiRes(v));
-                else uniqPush(res.images, imgSeen, hiRes(v));
+            // (1) 이미지 배열(배열 키가 이미지류)
+            if (Array.isArray(v) && IMG_KEY.test(kv)) {
+              pushImgs(v, DET_KEY.test(kv) ? res.detailImages : res.images, DET_KEY.test(kv) ? detSeen : imgSeen);
+            }
+            // (2) 단일 이미지 url
+            else if (typeof v === "string" && /^https?:\/\//.test(v) && IMG_KEY.test(kv) && isProductImg(v)) {
+              uniqPush(DET_KEY.test(kv) ? res.detailImages : res.images, DET_KEY.test(kv) ? detSeen : imgSeen, hiRes(v));
+            }
+            // (3) SKU 배열 → 옵션·sku별 가격, 메인 가격(첫 유효 sku)
+            else if (Array.isArray(v) && SKU_KEY.test(kv) && v.length && typeof v[0] === "object") {
+              for (var i = 0; i < v.length && i < 200; i++) {
+                var so = v[i]; if (!so || typeof so !== "object") continue;
+                var sp = skuPrice(so);
+                var specVals = [];
+                for (var sk in so) { if (SPEC_KEY.test(sk)) { var sv = so[sk]; if (Array.isArray(sv)) specVals = specVals.concat(sv.map(String)); else if (typeof sv === "string") specVals.push(sv); } }
+                res.skus.push({ spec: specVals, price: sp ? sp.price : "", currency: sp ? sp.currency : "" });
+                if (sp && !_skuPriceSet) { res.price = sp.price; res.currency = sp.currency; _skuPriceSet = true; }
               }
+            }
+            // (4) 평점·리뷰수
+            else if (RATE_KEY.test(kv) && !res.rating && (typeof v === "string" || typeof v === "number")) {
+              var rn = parseFloat(v); if (rn > 0 && rn <= 5) res.rating = String(v);
+            }
+            else if (CNT_KEY.test(kv) && !res.reviewCount && (typeof v === "string" || typeof v === "number")) {
+              res.reviewCount = String(v);
+            }
+            // (5) 제목·설명
+            else if (!res.title && /(^title$|goodsname|productname|itemname|^name$)/i.test(kv) && typeof v === "string" && v.length > 2) {
+              res.title = v.slice(0, 300);
+            }
+            else if (!res.description && /(description|detailtext|goodsdesc|productdesc)/i.test(kv) && typeof v === "string" && v.length > 20) {
+              res.description = v.slice(0, 4000);
             }
           } catch (e) {}
         }
-        // 가격: 표시 문자열 우선(통화기호 포함). 숫자만 있는 필드는 애매 → 문자열만 채택.
+        // (6) 가격: sku에서 못 얻었으면 표시 문자열(통화기호 포함) 우선.
         if (!res.price) {
           for (var k2 in node) {
             try {
-              var kk = String(k2).toLowerCase();
-              if (/(price|amount|sale|deal)/.test(kk) && !/(count|qty|num|origin|list|regular|market|before)/.test(kk)) {
-                var pv = node[k2];
-                if (typeof pv === "string") { var pp = parsePriceStr(pv); if (pp && pp.currency) { res.price = pp.price; res.currency = pp.currency; break; } }
+              if (PRICE_KEY.test(k2) && !PRICE_BAD.test(k2)) {
+                var pv2 = node[k2];
+                if (typeof pv2 === "string") { var pp2 = parsePriceStr(pv2); if (pp2 && pp2.currency) { res.price = pp2.price; res.currency = pp2.currency; break; } }
               }
             } catch (e) {}
           }
         }
-        // 리뷰 텍스트(초기 JSON에 실린 것만)
+        // (7) 리뷰 텍스트(초기 JSON에 실린 것만) — 길이 완화.
         if (res.reviews.length < REVIEW_MAX) {
           try {
-            var body = node.reviewBody || node.comment || node.content;
+            var body = node.reviewBody || node.comment || node.content || node.text;
             var hasRating = node.rating != null || node.star != null || node.score != null;
-            if (typeof body === "string" && body.length > 4 && (hasRating || node.reviewId || node.commentId)) {
-              res.reviews.push({ author: node.author || node.userName || node.nickname || "",
+            if (typeof body === "string" && body.length >= 2 && (hasRating || node.reviewId || node.commentId || node.reviewer)) {
+              res.reviews.push({ author: node.author || node.userName || node.nickname || node.reviewer || "",
                                  rating: node.rating || node.star || node.score || "",
                                  text: String(body).slice(0, 500) });
             }
           } catch (e) {}
         }
-      }, 20000);
+      }, 30000);
+    }
+    // 옵션: sku 스펙 값을 축 이름 없이 합쳐 후보로(중복 제거). 이름은 알 수 없으면 '옵션'.
+    if (res.skus.length) {
+      var ovals = [], oseen = {};
+      res.skus.forEach(function (sk) { (sk.spec || []).forEach(function (val) { if (val && !oseen[val]) { oseen[val] = 1; ovals.push(val); } }); });
+      if (ovals.length >= 2) res.options.push({ name: "옵션", values: ovals.slice(0, 100) });
     }
     res.ok = !!(res.price || res.images.length || res.title);
     return res;
