@@ -334,11 +334,28 @@ def collect_from_extension():
     def _price_empty(v):
         return v is None or str(v).strip() in ("", "0", "0.0", "0.00")
     _cur = str(payload.get("currency") or "").strip().upper()
+    _warnings = list(payload.get("warnings") or [])
     if _price_empty(payload.get("price")):
         payload["price_status"] = "needs_check"
     elif not _cur:
         # v42 1-1: 가격은 있는데 통화 미상 → USD 임의 확정 금지, '가격 확인 필요' 정직.
         payload["price_status"] = "needs_check"
+        if "통화" not in " ".join(_warnings):
+            _warnings.append("통화를 확인하지 못했어요")
+    else:
+        # 서버 sanity 게이트(방어): 통화별 비상식 하한(재고·리뷰 숫자 오인 저장 거부). 확장/북마클릿
+        #   추출기 게이트를 서버에서도 한 번 더 — 어느 경로로 와도 9 KRW 같은 오값을 '확정 가격'으로 저장 금지.
+        _min = {"KRW": 100, "JPY": 10, "CNY": 1, "USD": 0.5, "EUR": 0.5, "GBP": 0.5}
+        try:
+            _pv = float(str(payload.get("price")).replace(",", "").strip())
+        except (TypeError, ValueError):
+            _pv = -1.0
+        if _cur in _min and 0 < _pv < _min[_cur]:
+            payload["price_status"] = "needs_check"
+            _warnings.append(f"가격이 비상식적으로 낮아요({_cur} {_pv:g}) — 재고/쿠폰 숫자 오인 가능")
+            logger.warning("[collect %s] 가격 sanity 거부: %s %s (하한 %s)", _corr, _pv, _cur, _min[_cur])
+    if _warnings:
+        payload["warnings"] = _warnings
 
     payload.pop("html", None)  # 대용량 HTML은 이력에 저장하지 않음
 
@@ -407,6 +424,7 @@ def collect_from_extension():
                     "price": payload.get("price", ""), "currency": payload.get("currency") or "",
                     "price_original": payload.get("price", ""),
                     "price_status": payload.get("price_status", ""),
+                    "warnings": payload.get("warnings", []),
                     "images": images,
                     "gallery_images": _bucket_filter(payload.get("gallery_images"), images),
                     "detail_images": _bucket_filter(payload.get("detail_images"), []),
@@ -474,6 +492,10 @@ def collect_from_extension():
                 "reviews": payload.get("reviews", []),
                 "detail_specs": payload.get("detail_specs", []),
                 "price_status": payload.get("price_status", ""),
+                "warnings": payload.get("warnings", []),
+                "source": payload.get("source", ""),
+                "rating": payload.get("rating", ""),
+                "review_count": payload.get("review_count", ""),
                 "translation_provider": tr.get("provider", "none"),
             },
             seller_id=seller_id_val,

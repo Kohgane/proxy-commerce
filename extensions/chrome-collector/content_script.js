@@ -201,6 +201,11 @@ function _kgpSitePdp() {
 }
 
 function extractProductMeta() {
+  // 공유 추출기(kgp-extractor.js) 우선 — 확장·북마클릿 동일 코드(JSON우선·DOM폴백·부분수집·가격 sanity).
+  //   manifest가 이 스크립트보다 먼저 로드. 만약 미로드면 아래 레거시 DOM 폴백으로 정직 동작.
+  if (typeof window.kgpExtractProduct === "function") {
+    try { return window.kgpExtractProduct(); } catch (e) { try { console.error("[고가수집기] 공유 추출기 오류, 레거시 폴백:", e); } catch (_) {} }
+  }
   const getMeta = (prop) => {
     const el = document.querySelector(
       `meta[property="${prop}"], meta[name="${prop}"]`
