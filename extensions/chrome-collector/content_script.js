@@ -710,19 +710,26 @@ function handleFabClick(btn, opts) {
       ]));
       return;
     }
-    // STEP2 (a) 추출 실패 지점 정직 표기 — 부분 수집이면 '성공처럼' 금지. 축하 없음.
-    if (meta && meta.partial) {
-      try { console.warn("[고가수집기] 부분 수집(초기 JSON·DOM 모두 핵심정보 미확보):", meta.warnings || []); } catch (e) {}
-      kgpAlertOnce(corr, () => kgpResultToast(
-        "부분 수집 — 페이지에서 정보를 충분히 못 읽었어요.\n드로어에서 가격·이미지를 확인·보완하세요", false,
-        [{ label: "이력 열기", fn: kgpOpenHistory }]));
+    // v47 STEP2: 서버 필드 상태(성공/부분 + 누락 필드명)로 정직 표기 — 무음 실패·가짜 성공 금지.
+    //   서버 field_status가 단일 소스. 없으면(구서버) 클라 meta.partial 폴백.
+    var fs = resp.field_status || null;
+    var isPartial = fs ? (fs.status === "부분") : !!(meta && meta.partial);
+    if (isPartial) {
+      var _ml = fs && ((fs.missing_short && fs.missing_short.length) ? fs.missing_short : fs.missing);
+      var miss = (_ml && _ml.length) ? _ml.join("·") : "";
+      try { console.warn("[고가수집기] 부분 수집 — 누락:", (fs && fs.missing) || (meta && meta.warnings) || []); } catch (e) {}
+      var _msg = miss
+        ? ("부분 수집 — " + miss + " 누락 (" + (fs.filled) + "/" + (fs.total) + " 필드)\n드로어에서 확인·보완하세요")
+        : "부분 수집 — 페이지에서 정보를 충분히 못 읽었어요.\n드로어에서 가격·이미지를 확인·보완하세요";
+      kgpAlertOnce(corr, () => kgpResultToast(_msg, false, [{ label: "이력 열기", fn: kgpOpenHistory }]));
       return;
     }
-    // 신규 — '수집 완료' 하나만 + 축하 스탬프(토스트는 하나). 가격 경고 있으면 함께 안내.
+    // 성공 — '수집 완료(N/7 필드)' 하나만 + 축하 스탬프(토스트는 하나). 가격 경고 있으면 함께 안내.
     kgpAlertOnce(corr, () => {
       var _warn = (meta && Array.isArray(meta.warnings) && meta.warnings.length) ? "\n⚠ " + meta.warnings[0] : "";
+      var _cnt = fs ? (" (" + fs.filled + "/" + fs.total + " 필드)") : "";
       kgpCelebrate(1, true);           // 스탬프만(silent) — 토스트는 아래 하나
-      kgpResultToast("수집 완료 — 이력에서 확인" + _warn, true, [{ label: "이력 열기", fn: kgpOpenHistory }]);
+      kgpResultToast("수집 완료" + _cnt + " — 이력에서 확인" + _warn, true, [{ label: "이력 열기", fn: kgpOpenHistory }]);
     });
   });
 }

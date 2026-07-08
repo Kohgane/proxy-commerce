@@ -514,6 +514,18 @@
         warnings.length ? "| 경고:" + warnings.join(" / ") : "");
     } catch (e) {}
 
+    // v47 STEP2: 필드별 추출 소스(json/dom/none) — 서버가 수집 로그에 '어느 소스가 어느 필드를
+    //   줬는지'(json/dom/없음) 표기. 값 있으면 어디서 왔는지, 없으면 none(가짜 소스 날조 금지).
+    var fieldSources = {
+      title: j.title ? "json" : (title ? "dom" : "none"),
+      price: j.price ? "json" : (price ? "dom" : "none"),
+      images: (j.images && j.images.length) ? "json" : (gallery.length ? "dom" : "none"),
+      options: (j.options && j.options.length) ? "json" : (options.length ? "dom" : "none"),
+      description: j.description ? "json" : (description ? "dom" : "none"),
+      detail_images: (j.detailImages && j.detailImages.length) ? "json" : (detailImages.length ? "dom" : "none"),
+      reviews: ((j.reviews && j.reviews.length) || j.rating || j.reviewCount) ? "json" : "none"
+    };
+
     var out = {
       url: location.href,
       title: String(title || "").slice(0, 300),
@@ -525,6 +537,7 @@
       description: description, detail_specs: specs,
       reviews: reviews, rating: rating, review_count: reviewCount,
       source: source, partial: partial, warnings: warnings,
+      field_sources: fieldSources,
       jsonld: _jsonLd(),
       collected_at: new Date().toISOString()
     };

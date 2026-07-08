@@ -433,6 +433,12 @@ def collect_from_extension():
                     "description_ko": tr.get("description_ko", ""),
                     "recollected": True,
                 })
+                try:
+                    from src.collectors.collect_status import compute_collect_status as _ccs
+                    _fs = payload.get("field_sources") if isinstance(payload.get("field_sources"), dict) else {}
+                    _merged["collect_status"] = _ccs(_merged, title_fallback=title_ko, sources=_fs)
+                except Exception:
+                    pass
                 from src.seller_console.collect_history_store import update as _hist_update
                 _ok = _hist_update(
                     _dup_id, seller_ids=_dedup_ids,
@@ -460,6 +466,42 @@ def collect_from_extension():
             "message": "이미 수집한 상품입니다.",
         })
 
+    # v47 STEP2: 수집 필드 상태(성공/부분)를 단일 판정해 extra에 심는다 — 목록 상태 컬럼·드로어
+    #   수집 로그·토스트가 같은 판정을 쓴다(가짜 성공·무음 실패 금지). field_sources는 확장이 보낸
+    #   필드별 추출소스(json/dom/server)면 로그에 표기, 없으면 있음/없음.
+    _extra = {
+        "jsonld": payload.get("jsonld", []),
+        "title": title,
+        "title_en": title,
+        "title_ko": title_ko,
+        "description": payload.get("description", ""),
+        "description_ko": tr.get("description_ko", ""),
+        "images": images,
+        "gallery_images": _bucket_filter(payload.get("gallery_images"), images),
+        "detail_images": _bucket_filter(payload.get("detail_images"), []),
+        "price": payload.get("price", ""),
+        "price_original": payload.get("price", ""),
+        "currency": payload.get("currency") or "",   # v42 1-1: USD 기본값 금지
+        "brand": payload.get("brand", ""),
+        "options": payload.get("options", []),
+        "reviews": payload.get("reviews", []),
+        "detail_specs": payload.get("detail_specs", []),
+        "price_status": payload.get("price_status", ""),
+        "warnings": payload.get("warnings", []),
+        "source": payload.get("source", ""),
+        "rating": payload.get("rating", ""),
+        "review_count": payload.get("review_count", ""),
+        "translation_provider": tr.get("provider", "none"),
+    }
+    _field_status = {}
+    try:
+        from src.collectors.collect_status import compute_collect_status
+        _fs = payload.get("field_sources") if isinstance(payload.get("field_sources"), dict) else {}
+        _field_status = compute_collect_status(_extra, title_fallback=title_ko, sources=_fs)
+        _extra["collect_status"] = _field_status
+    except Exception as exc:
+        logger.warning("[collect %s] 수집 상태 판정 실패: %s", _corr, exc)
+
     item_id = None
     saved = False
     durable = True
@@ -474,30 +516,7 @@ def collect_from_extension():
             price=payload.get("price", ""),
             currency=payload.get("currency") or "",   # v42 1-1: USD 기본값 금지(통화 미상은 빈 값)
             status="ok",
-            extra={
-                "jsonld": payload.get("jsonld", []),
-                "title": title,
-                "title_en": title,
-                "title_ko": title_ko,
-                "description": payload.get("description", ""),
-                "description_ko": tr.get("description_ko", ""),
-                "images": images,
-                "gallery_images": _bucket_filter(payload.get("gallery_images"), images),
-                "detail_images": _bucket_filter(payload.get("detail_images"), []),
-                "price": payload.get("price", ""),
-                "price_original": payload.get("price", ""),
-                "currency": payload.get("currency") or "",   # v42 1-1: USD 기본값 금지
-                "brand": payload.get("brand", ""),
-                "options": payload.get("options", []),
-                "reviews": payload.get("reviews", []),
-                "detail_specs": payload.get("detail_specs", []),
-                "price_status": payload.get("price_status", ""),
-                "warnings": payload.get("warnings", []),
-                "source": payload.get("source", ""),
-                "rating": payload.get("rating", ""),
-                "review_count": payload.get("review_count", ""),
-                "translation_provider": tr.get("provider", "none"),
-            },
+            extra=_extra,
             seller_id=seller_id_val,
         )
         # return_durable=True면 (item_id, durable) 튜플. 단, 일부 테스트가 append를 단일값으로
@@ -554,8 +573,9 @@ def collect_from_extension():
 
     logger.info("확장 수집 완료: url=%s user=%s id=%s", url[:80], seller_id_val, item_id)
 
-    # v46 STEP4: 부분 수집 판정을 응답에 담는다 — 경량 북마클릿(클라 추출 없음)이 이 값으로 정직 표기.
-    #   가격도 이미지도 못 얻었으면 partial(가짜 성공처럼 안 보이게).
+    # v47 STEP2: 필드 상태(성공/부분 + 누락 필드)를 응답에 담는다 → 토스트가 '수집 완료(N/7)' 또는
+    #   '부분 수집 — 이미지·리뷰 누락'으로 정직 표기(가짜 성공처럼 안 보이게).
+    #   partial은 하위호환(경량 북마클릿용): 핵심(가격·이미지) 둘 다 없을 때만 True(coarse).
     _partial = (not str(payload.get("price") or "").strip()) and not images
     return jsonify({
         "ok": True,
@@ -565,6 +585,7 @@ def collect_from_extension():
         "title": title,
         "title_ko": title_ko,
         "partial": _partial,
+        "field_status": _field_status,   # {status,filled,total,missing,...}
         "translated": tr.get("provider", "none") not in ("none", "stub"),
     })
 

@@ -5681,6 +5681,16 @@ def collect_history():
         up = ex.get("uploaded")
         it["uploaded_markets"] = [str(u.get("market_label") or u.get("market"))
                                   for u in up if isinstance(u, dict) and (u.get("market_label") or u.get("market"))] if isinstance(up, list) else []
+        # v47 STEP2: 수집 필드 상태(성공/부분 + 누락 필드) — 목록 상태 컬럼에 정직 표기.
+        #   저장된 값이 있으면 그대로, 없으면(옛 레코드) 지금 판정(무음 실패·가짜 성공 금지).
+        cs = ex.get("collect_status") if isinstance(ex.get("collect_status"), dict) else None
+        if not cs:
+            try:
+                from src.collectors.collect_status import compute_collect_status as _ccs
+                cs = _ccs(ex, title_fallback=it.get("title") or "")
+            except Exception:
+                cs = None
+        it["collect_status"] = cs
 
     from .upload_dispatcher import MARKET_LABELS, SUPPORTED_MARKETS
     upload_markets = [{"code": m, "label": MARKET_LABELS.get(m, m)} for m in SUPPORTED_MARKETS]
@@ -5835,6 +5845,15 @@ def collect_preview_by_id(item_id: str):
     if cur_cat:
         cat_suggestion = {**cat_suggestion, "suggested_keywords": _suggest_kw(cur_cat, _title_for_cat)}
 
+    # v47 STEP2: 수집 로그(어느 소스가 어느 필드를 줬는지) — 드로어 하단 접이식. 저장값 우선, 없으면 판정.
+    collect_status = extra.get("collect_status") if isinstance(extra.get("collect_status"), dict) else None
+    if not collect_status:
+        try:
+            from src.collectors.collect_status import compute_collect_status as _ccs
+            collect_status = _ccs(extra, title_fallback=item.get("title") or "")
+        except Exception:
+            collect_status = None
+
     from src.utils.perf import perf_block as _pb
     with _pb("render"):
       return render_template(
@@ -5842,6 +5861,7 @@ def collect_preview_by_id(item_id: str):
         page="collect_history",
         item=item,
         extra=extra,
+        collect_status=collect_status,
         fx_rates=fx_rates,
         fx_is_mock=fx_is_mock,
         fx_updated=fx_updated,
