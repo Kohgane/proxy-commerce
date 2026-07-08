@@ -554,6 +554,9 @@ def collect_from_extension():
 
     logger.info("확장 수집 완료: url=%s user=%s id=%s", url[:80], seller_id_val, item_id)
 
+    # v46 STEP4: 부분 수집 판정을 응답에 담는다 — 경량 북마클릿(클라 추출 없음)이 이 값으로 정직 표기.
+    #   가격도 이미지도 못 얻었으면 partial(가짜 성공처럼 안 보이게).
+    _partial = (not str(payload.get("price") or "").strip()) and not images
     return jsonify({
         "ok": True,
         "item_id": item_id,
@@ -561,6 +564,7 @@ def collect_from_extension():
         "preview_url": preview_url,
         "title": title,
         "title_ko": title_ko,
+        "partial": _partial,
         "translated": tr.get("provider", "none") not in ("none", "stub"),
     })
 

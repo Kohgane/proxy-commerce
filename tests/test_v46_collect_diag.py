@@ -26,8 +26,8 @@ def test_a_partial_honest_toast_extension():
 
 
 def test_a_partial_honest_toast_bookmarklet():
-    # 북마클릿도 동일 추출기(data.partial) → 부분 수집 정직 표기
-    assert "data.partial" in VIEWS and "부분 수집" in VIEWS
+    # 북마클릿(v46 STEP4 경량화): partial 판정은 서버 응답(d.partial) → 부분 수집 정직 표기
+    assert "d&&d.ok&&d.partial" in VIEWS and "부분 수집" in VIEWS
 
 
 def test_b_api_transport_logged():

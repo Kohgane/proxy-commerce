@@ -19,6 +19,7 @@ EX = Path("extensions/chrome-collector/kgp-extractor.js").read_text(encoding="ut
 MF = json.loads(Path("extensions/chrome-collector/manifest.json").read_text(encoding="utf-8"))
 CS = Path("extensions/chrome-collector/content_script.js").read_text(encoding="utf-8")
 VIEWS = Path("src/seller_console/views.py").read_text(encoding="utf-8")
+API = Path("src/api/extension_api.py").read_text(encoding="utf-8")
 
 
 def test_extractor_source_priority():
@@ -46,15 +47,17 @@ def test_images_options_reviews_specs():
 
 
 def test_shared_between_extension_and_bookmarklet():
-    # 확장: manifest가 추출기를 content_script보다 먼저 로드
+    # 확장: manifest가 추출기를 content_script보다 먼저 로드 → JS 추출기 실행(격리월드 대응)
     js = MF["content_scripts"][0]["js"]
     assert js == ["kgp-extractor.js", "content_script.js"]
-    # content_script는 공유 추출기에 위임(중복 구현 아님)
     assert "window.kgpExtractProduct === \"function\"" in CS
     assert "return window.kgpExtractProduct();" in CS
-    # 북마클릿: 서버가 같은 추출기 파일을 인라인 + kgpExtractProduct 호출
-    assert "_extractor_js" in VIEWS and "kgp-extractor.js" in VIEWS
-    assert "window.kgpExtractProduct()" in VIEWS
+    # 북마클릿(v46 STEP4): 가져오기 신뢰성 위해 경량화 — 29KB 인라인 폐기, 페이지 HTML을 서버로 보내
+    #   서버가 추출(로직 공유). 여전히 같은 수집 엔드포인트로 전송.
+    assert "html:(document.documentElement" in VIEWS         # 페이지 HTML 전송
+    assert "/api/v1/collect/extension" in VIEWS
+    # 서버가 posted HTML에서 추출(범용 스크래퍼 병합)
+    assert "_merge_scraped_into_payload" in API
 
 
 @pytest.fixture(autouse=True)

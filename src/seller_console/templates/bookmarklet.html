@@ -136,6 +136,16 @@
           결과는 <a href="/seller/collect/history">수집 이력</a>에서 확인·편집하세요.
         </div>
       </div>
+
+      {# v46 STEP4: 실패 유형별 안내 — 가져오기가 안 될 때. #}
+      <details class="mt-3 small">
+        <summary class="fw-semibold" style="cursor:pointer"><i class="bi bi-question-circle"></i> 가져오기가 안 되나요?</summary>
+        <ul class="mt-2 mb-0 text-muted" style="line-height:1.7">
+          <li><strong>가져오기 단계에서 실패</strong>: 받은 파일을 다시 내려받아 시도해 주세요. 브라우저가 이전 파일을 캐시했을 수 있어요.</li>
+          <li><strong>가져왔는데 북마크바에 안 보임</strong>: 크롬 <button type="button" class="kgp-copy-code" data-copy="chrome://bookmarks" title="클릭하면 복사돼요" style="font-size:1rem;padding:.2rem .5rem">chrome://bookmarks<i class="bi bi-clipboard ms-1"></i></button> → ‘가져온 항목’ 폴더에서 북마크바로 끌어다 놓으세요.</li>
+          <li><strong>클릭해도 반응 없음</strong>: 그 사이트가 보안정책(CSP)으로 막는 경우예요. 그럴 땐 <a href="/seller/extension">크롬 확장(고가수집기)</a>을 쓰세요(더 정확합니다).</li>
+        </ul>
+      </details>
     </div>
   </div>
 
