@@ -5345,6 +5345,34 @@ def bookmarklet_file():
     return resp
 
 
+@bp.post("/bookmarklet/code")
+def bookmarklet_code():
+    """v47 STEP3: '북마클릿 코드 복사' — 토큰 발급(Supabase) 후 javascript: 코드를 텍스트로 반환.
+
+    진단: 크롬 '북마크 가져오기'(파일)는 최신 크롬에서 javascript: HREF를 보안상 드롭하거나 '가져온
+    항목' 폴더에 묻히는 등 실기기 실패 사례가 있다. 또 **주소창에 javascript: 를 붙여넣으면 크롬이
+    접두어를 지운다**(anti-XSS). 유일하게 안전한 경로 = **북마크 편집 대화상자의 URL 칸에 붙여넣기**.
+    → 이 라우트가 코드를 주고, 클라가 클립보드에 복사 → 사용자가 '북마크 추가 → 편집 → URL칸 붙여넣기'.
+    토큰 저장 실패면 코드도 안 준다(정직 503, 가짜 성공 0).
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    user_id = _current_user_id()
+    translate = (request.form.get("translate") or request.args.get("translate") or "1") != "0"
+    try:
+        from src.auth import personal_tokens as _pt
+        result = _pt.generate_token(user_id=user_id, scopes=["collect.write"], expires_days=365)
+        raw = result.get("raw_token")
+        if not raw:
+            raise RuntimeError("토큰이 비어 있습니다.")
+    except Exception as exc:
+        logger.warning("북마클릿 코드 토큰 발급 실패: %s", exc)
+        return jsonify({"ok": False, "error": "토큰을 저장하지 못해 코드를 만들지 못했어요. 잠시 후 다시 시도해 주세요."}), 503
+    server = request.host_url.rstrip("/")
+    code = _bookmarklet_js(server, raw, translate)
+    return jsonify({"ok": True, "code": code})
+
+
 def _chrome_extension_dir() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "extensions", "chrome-collector"))
 
