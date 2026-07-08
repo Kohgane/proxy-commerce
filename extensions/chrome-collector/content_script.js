@@ -675,11 +675,64 @@ function kgpCelebrate(added, silent) {
   return total;
 }
 
+// v47 STEP4: MAIN world 추출 결과 병합 — 격리월드(content_script)가 못 읽는 페이지 live 전역
+//   (Temu 등 XHR로 렌더 후 채우는 초기 상태)을 MAIN world(kgp-main.js)에서 읽어 넘긴 meta와 병합.
+//   비어 있는 필드는 채우고, 배열(이미지·옵션·리뷰·상세)은 더 완전한 쪽 채택. 응답 없으면 격리월드만(정직).
+function kgpMergeMeta(base, extra) {
+  if (!extra || typeof extra !== "object") return base;
+  const out = Object.assign({}, base);
+  const empty = (v) => v == null || v === "" || (Array.isArray(v) && v.length === 0);
+  ["title", "price", "currency", "description", "rating", "review_count", "price_status", "source"].forEach((k) => {
+    if (empty(out[k]) && !empty(extra[k])) out[k] = extra[k];
+  });
+  ["images", "gallery_images", "detail_images", "options", "skus", "reviews", "detail_specs"].forEach((k) => {
+    const a = Array.isArray(out[k]) ? out[k] : [], b = Array.isArray(extra[k]) ? extra[k] : [];
+    if (b.length > a.length) out[k] = b;
+  });
+  if (empty(out.image) && out.images && out.images.length) out.image = out.images[0];
+  if (empty(out.thumbnail) && out.images && out.images.length) out.thumbnail = out.images[0];
+  if (!empty(out.price) && Array.isArray(out.images) && out.images.length) out.partial = false;  // 병합으로 핵심 확보
+  // field_sources 병합: MAIN이 json 준 필드는 json 우선(수집 로그가 실제 소스 표기).
+  if (extra.field_sources) {
+    out.field_sources = Object.assign({}, out.field_sources || {});
+    for (const fk in extra.field_sources) {
+      if (extra.field_sources[fk] === "json") out.field_sources[fk] = "json";
+      else if (!out.field_sources[fk] || out.field_sources[fk] === "none") out.field_sources[fk] = extra.field_sources[fk];
+    }
+  }
+  return out;
+}
+function kgpExtractMerged(cb) {
+  let isolated;
+  try { isolated = extractProductMeta(); }
+  catch (e) { isolated = { url: location.href, partial: true, warnings: ["추출 실패"] }; }
+  let done = false;
+  const reqId = "kgpq_" + Date.now() + "_" + Math.floor(Math.random() * 1e6);
+  function onMsg(e) {
+    if (e.source !== window || !e.data || e.data.__kgpRes !== reqId) return;
+    window.removeEventListener("message", onMsg);
+    if (done) return; done = true;
+    const merged = kgpMergeMeta(isolated, e.data.meta);
+    try {
+      console.log("[고가수집기] MAIN world 병합 — 이미지 " + ((isolated.images || []).length) + "→" + ((merged.images || []).length)
+        + ", 가격 " + (isolated.price || "-") + "→" + (merged.price || "-"));
+    } catch (_) {}
+    cb(merged);
+  }
+  window.addEventListener("message", onMsg, false);
+  try { window.postMessage({ __kgpReq: reqId }, "*"); } catch (e) {}
+  setTimeout(() => {
+    if (done) return; done = true;
+    window.removeEventListener("message", onMsg);
+    cb(isolated);   // MAIN world 미응답(비지원 크롬/타임아웃) → 격리월드 추출만(정직 폴백)
+  }, 700);
+}
+
 function handleFabClick(btn, opts) {
   opts = opts || {};
   if (btn._kgpDragged || btn.dataset.busy) return;
   setFabState(btn, "loading");
-  const meta = extractProductMeta();
+  kgpExtractMerged(function (meta) {
   const corr = kgpNewCorr();
   meta.corr_id = corr;                    // 서버 로깅·알럿 dedupe 기준
   if (opts.force) meta.force = true;      // 다시 수집(덮어쓰기) — 가격·이미지 갱신
@@ -732,6 +785,7 @@ function handleFabClick(btn, opts) {
       kgpResultToast("수집 완료" + _cnt + " — 이력에서 확인" + _warn, true, [{ label: "이력 열기", fn: kgpOpenHistory }]);
     });
   });
+  });   // v47 STEP4: kgpExtractMerged 콜백 닫기
 }
 
 function injectCollectButton() {
