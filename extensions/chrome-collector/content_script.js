@@ -710,10 +710,19 @@ function handleFabClick(btn, opts) {
       ]));
       return;
     }
-    // 신규 — '수집 완료' 하나만 + 축하 스탬프(토스트는 하나).
+    // STEP2 (a) 추출 실패 지점 정직 표기 — 부분 수집이면 '성공처럼' 금지. 축하 없음.
+    if (meta && meta.partial) {
+      try { console.warn("[고가수집기] 부분 수집(초기 JSON·DOM 모두 핵심정보 미확보):", meta.warnings || []); } catch (e) {}
+      kgpAlertOnce(corr, () => kgpResultToast(
+        "부분 수집 — 페이지에서 정보를 충분히 못 읽었어요.\n드로어에서 가격·이미지를 확인·보완하세요", false,
+        [{ label: "이력 열기", fn: kgpOpenHistory }]));
+      return;
+    }
+    // 신규 — '수집 완료' 하나만 + 축하 스탬프(토스트는 하나). 가격 경고 있으면 함께 안내.
     kgpAlertOnce(corr, () => {
+      var _warn = (meta && Array.isArray(meta.warnings) && meta.warnings.length) ? "\n⚠ " + meta.warnings[0] : "";
       kgpCelebrate(1, true);           // 스탬프만(silent) — 토스트는 아래 하나
-      kgpResultToast("수집 완료 — 이력에서 확인", true, [{ label: "이력 열기", fn: kgpOpenHistory }]);
+      kgpResultToast("수집 완료 — 이력에서 확인" + _warn, true, [{ label: "이력 열기", fn: kgpOpenHistory }]);
     });
   });
 }
