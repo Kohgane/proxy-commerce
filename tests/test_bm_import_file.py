@@ -43,7 +43,7 @@ def test_download_netscape_file_with_icon(client, token_ok):
     # #425(4): 앵커 텍스트=제로폭 → 북마크바 '아이콘만'(보이는 글자 0). '고가수집기' 글자 제거.
     assert "​</A>" in body                             # 제로폭 앵커(아이콘만)
     assert ">고가수집기</A>" not in body                    # 옛 텍스트 라벨 폐기
-    assert "translate:true" in body                        # 번역 ON 반영
+    assert "data.translate=true" in body                        # 번역 ON 반영
     assert "&quot;" in body                                 # HREF 내 큰따옴표 이스케이프(가져오기 시 디코드)
     assert "/api/v1/collect/extension" in body             # 서버 수집 엔드포인트
 
@@ -51,7 +51,7 @@ def test_download_netscape_file_with_icon(client, token_ok):
 def test_translate_off_reflected(client, token_ok):
     r = client.post("/seller/bookmarklet/file", data={"translate": "0"})
     body = r.get_data(as_text=True)
-    assert "translate:false" in body
+    assert "data.translate=false" in body
 
 
 def test_token_save_failure_no_file(client, monkeypatch):

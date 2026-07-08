@@ -978,7 +978,13 @@ function initEditor() {
     const _pv = parseFloat(_rawPrice || '0');
     if (_EXTRA.price_status === 'needs_check' || !(_pv > 0)) {
       document.getElementById('editPrice').value = '';                         // 빈칸 — 가짜 환산 금지
-      document.getElementById('priceNeedsCheck').classList.remove('d-none');
+      const _pnc = document.getElementById('priceNeedsCheck');
+      _pnc.classList.remove('d-none');
+      // 공유 추출기/서버 sanity 게이트의 구체적 경고(예: 'KRW 9 비상식')를 그대로 노출.
+      const _w = Array.isArray(_EXTRA.warnings) ? _EXTRA.warnings.filter(Boolean) : [];
+      if (_w.length) _pnc.innerHTML = '<i class="bi bi-exclamation-triangle"></i> ' + _w.map(function (m) {
+        return String(m).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
+      }).join(' · ') + ' — 실제 가격을 입력해 주세요.';
     } else {
       document.getElementById('editPrice').value = _rawPrice;
     }
