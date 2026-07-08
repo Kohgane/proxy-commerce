@@ -2016,6 +2016,186 @@ def collect_bulk_delete():
     return jsonify({"ok": True, "deleted": len(verified_gone), "deleted_ids": verified_gone})
 
 
+# ── v47 STEP5: 엑셀 벌크 내보내기 / 가져오기 ─────────────────────────────────
+def _excel_existing_ids() -> set:
+    """내 수집목록의 모든 상품ID(가져오기 갱신 대상 판정용)."""
+    try:
+        from . import collect_history_store as ch
+        rows = ch.list_items(seller_ids=_seller_identities(), days=3650, limit=None, lean=True)
+        return {str(r.get("id")) for r in rows if r.get("id")}
+    except Exception:
+        return set()
+
+
+@bp.post("/collect/export-xlsx")
+def collect_export_xlsx():
+    """선택(item_ids) 또는 전체(필터 무시, 최신 5000) 수집 상품을 xlsx로 내보낸다."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    item_ids = [str(i) for i in (data.get("item_ids") or []) if str(i).strip()]
+    from . import collect_history_store as ch
+    ids_set = _seller_identities()
+    from .collect_excel import MAX_ROWS
+    if item_ids:
+        items = []
+        for iid in item_ids[:MAX_ROWS]:
+            it = ch.get(iid, seller_ids=ids_set)
+            if it:
+                items.append(it)
+    else:
+        items = ch.list_items(seller_ids=ids_set, days=3650, limit=MAX_ROWS)
+    from .collect_excel import build_workbook
+    try:
+        xls = build_workbook(items)
+    except Exception as exc:
+        logger.warning("엑셀 내보내기 실패: %s", exc)
+        return jsonify({"ok": False, "error": "엑셀 생성 중 오류가 발생했어요."}), 500
+    resp = Response(xls, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    fname = quote_plus("고가브릿지_상품.xlsx").replace("+", "%20")
+    resp.headers["Content-Disposition"] = "attachment; filename=goga_products.xlsx; filename*=UTF-8''" + fname
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@bp.get("/collect/export-template")
+def collect_export_template():
+    """빈 템플릿(헤더 + 예시 1행) 다운로드."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
+    from .collect_excel import template_workbook
+    xls = template_workbook()
+    resp = Response(xls, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    fname = quote_plus("고가브릿지_템플릿.xlsx").replace("+", "%20")
+    resp.headers["Content-Disposition"] = "attachment; filename=goga_template.xlsx; filename*=UTF-8''" + fname
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+def _excel_parse_and_validate():
+    """업로드 파일 → (report, http_status). report={ok, new, update, errors, truncated, apply?}."""
+    f = request.files.get("file")
+    if not f:
+        return {"ok": False, "error": "엑셀 파일을 선택하세요."}, 400
+    raw = f.read()
+    if not raw:
+        return {"ok": False, "error": "빈 파일이에요."}, 400
+    if len(raw) > 20 * 1024 * 1024:
+        return {"ok": False, "error": "파일이 너무 커요(20MB 이하)."}, 400
+    from .collect_excel import parse_workbook, validate_rows
+    rows, perr, truncated = parse_workbook(raw)
+    report = validate_rows(rows, _excel_existing_ids())
+    report["errors"] = perr + report["errors"]
+    report["truncated"] = truncated
+    report["ok"] = True
+    return report, 200
+
+
+@bp.post("/collect/import-xlsx")
+def collect_import_xlsx():
+    """가져오기 1단계: 검증만(적용 안 함). 신규/갱신/오류 리포트 반환 → 사용자 확인 후 apply."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    try:
+        report, code = _excel_parse_and_validate()
+    except Exception as exc:
+        logger.warning("엑셀 검증 실패: %s", exc)
+        return jsonify({"ok": False, "error": "엑셀을 읽는 중 오류가 발생했어요. 템플릿 형식인지 확인해 주세요."}), 400
+    if not report.get("ok"):
+        return jsonify(report), code
+    # 미리보기(최대 30행 요약)만 반환 — 적용은 같은 파일 재전송(stateless).
+    preview = [{"row": a["_row"], "mode": a["mode"], "id": a["id"],
+                "title": a["fields"].get("title_ko") or a["fields"].get("title_en"),
+                "price": a["fields"].get("price")} for a in report.get("apply", [])[:30]]
+    return jsonify({"ok": True, "new": report["new"], "update": report["update"],
+                    "errors": report["errors"][:100], "error_count": len(report["errors"]),
+                    "truncated": report["truncated"], "preview": preview,
+                    "apply_count": len(report.get("apply", []))})
+
+
+@bp.post("/collect/import-apply")
+def collect_import_apply():
+    """가져오기 2단계: 같은 파일 재검증 후 실제 적용(신규=추가/갱신=업데이트). 오류는 행별(전체 롤백 아님)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    try:
+        report, code = _excel_parse_and_validate()
+    except Exception as exc:
+        logger.warning("엑셀 적용 파싱 실패: %s", exc)
+        return jsonify({"ok": False, "error": "엑셀을 읽는 중 오류가 발생했어요."}), 400
+    if not report.get("ok"):
+        return jsonify(report), code
+    from . import collect_history_store as ch
+    import json as _json
+    from src.collectors.collect_status import compute_collect_status
+    ids_set = _seller_identities()
+    seller_id_val = _seller_id()
+    created, updated = 0, 0
+    row_errors = list(report["errors"])
+
+    def _extra_from(fields, base=None):
+        ex = dict(base or {})
+        ex.update({
+            "title_ko": fields["title_ko"], "title_en": fields["title_en"],
+            "title": fields["title_ko"] or fields["title_en"],
+            "category_code": fields["category"],
+            "price": fields["price"], "currency": "KRW",
+            "options": fields["options"],
+            "gallery_images": fields["gallery"], "images": fields["gallery"],
+            "detail_images": fields["detail_images"],
+            "keywords": fields["keywords"],
+            "thumbnail": fields["thumbnail"] or (fields["gallery"][0] if fields["gallery"] else ""),
+            "source": "excel_import",
+        })
+        try:
+            ex["collect_status"] = compute_collect_status(ex, title_fallback=ex["title"])
+        except Exception:
+            pass
+        return ex
+
+    for a in report.get("apply", []):
+        rnum, mode, fields = a["_row"], a["mode"], a["fields"]
+        thumb = fields["thumbnail"] or (fields["gallery"][0] if fields["gallery"] else "")
+        try:
+            if mode == "update":
+                base = {}
+                cur = ch.get(a["id"], seller_ids=ids_set)
+                if not cur:
+                    row_errors.append({"row": rnum, "reason": "갱신 대상을 찾지 못했어요(삭제됐을 수 있어요)."})
+                    continue
+                try:
+                    base = _json.loads(cur.get("extra_json") or "{}")
+                except Exception:
+                    base = {}
+                ex = _extra_from(fields, base)
+                ok = ch.update(a["id"], seller_ids=ids_set,
+                               title=ex["title"], image_url=thumb,
+                               price=fields["price"], currency="KRW",
+                               extra_json=_json.dumps(ex, ensure_ascii=False))
+                if ok:
+                    updated += 1
+                else:
+                    row_errors.append({"row": rnum, "reason": "갱신 저장에 실패했어요."})
+            else:
+                ex = _extra_from(fields)
+                ret = ch.append(return_durable=True, source="excel_import",
+                                url=fields["url"], title=ex["title"], image=thumb,
+                                price=fields["price"], currency="KRW", status="ok",
+                                extra=ex, seller_id=seller_id_val)
+                iid, durable = ret if isinstance(ret, tuple) and len(ret) == 2 else (ret, True)
+                if iid and durable:
+                    created += 1
+                else:
+                    row_errors.append({"row": rnum, "reason": "저장 영속화에 실패했어요(재시도 필요)."})
+        except Exception as exc:
+            logger.warning("엑셀 적용 행 오류 row=%s: %s", rnum, exc)
+            row_errors.append({"row": rnum, "reason": f"적용 중 오류: {str(exc)[:80]}"})
+
+    return jsonify({"ok": True, "created": created, "updated": updated,
+                    "errors": row_errors[:200], "error_count": len(row_errors),
+                    "truncated": report["truncated"]})
+
+
 @bp.post("/collect/bulk-category")
 def collect_bulk_category():
     """수집 이력 여러 항목에 카테고리를 일괄 지정 (셀러 격리).
