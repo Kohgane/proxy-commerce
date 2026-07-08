@@ -5236,51 +5236,37 @@ def bookmarklet():
     )
 
 
-_EXTRACTOR_JS = None
-
-
-def _extractor_js() -> str:
-    """공유 추출기(kgp-extractor.js) 원문 — 북마클릿에 인라인해 확장과 **동일 추출기**를 쓴다(1회 캐시)."""
-    global _EXTRACTOR_JS
-    if _EXTRACTOR_JS is None:
-        p = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                         "extensions", "chrome-collector", "kgp-extractor.js")
-        try:
-            with open(p, "r", encoding="utf-8") as f:
-                _EXTRACTOR_JS = f.read()
-        except Exception:
-            _EXTRACTOR_JS = ""   # 없으면 북마클릿은 메타만(정직) — 아래 폴백
-    return _EXTRACTOR_JS
-
-
 def _bookmarklet_js(server: str, token: str, translate: bool) -> str:
     """북마클릿 javascript: 코드(내 토큰 baked) — 크롬 북마크 가져오기 파일 HREF에 넣는다.
 
-    확장과 **동일한 공유 추출기**(kgp-extractor.js)를 인라인해 JSON우선·DOM폴백·부분수집·가격 sanity를
-    그대로 쓴다(경로별 중복 구현 0). 백그라운드 fetch + 인페이지 토스트(새 창 0). CSP 차단 시 확장 안내.
+    v46 STEP4: **가져오기 신뢰성 우선.** 과거엔 공유 추출기(~20KB)를 인라인해 javascript: URL이 29KB가
+    되어 크롬 '북마크 가져오기'가 실패했다 → **경량화**(≈2KB): 클라이언트는 og 메타+대표 이미지+페이지
+    HTML만 담아 보내고, **서버가 posted HTML에서 풍부 추출**(JSON-LD/초기상태/DOM). partial 판정도 서버
+    응답(d.partial). 확장(격리월드 대응 JS 추출기)과 로직은 서버 추출로 공유, 북마클릿 URL은 작게 유지.
+    (HTML 이스케이프는 호출부 html.escape가 처리 — 이번 원인은 이스케이프가 아니라 URL 길이였음.)
     """
     tr = "true" if translate else "false"
-    _ext = _extractor_js()
-    # 주의: 이 문자열은 그대로 HREF 속성값이 되므로, 호출부(_netscape_bookmark)가 html.escape로
-    # 큰따옴표(&quot;)·앰퍼샌드(&amp;)를 이스케이프한다(크롬 가져오기 시 엔티티 디코드).
     return (
         "javascript:(function(){"
         "var S='" + server + "',T='" + token + "';"
         "try{var _c=0;document.querySelectorAll('a[href] img').forEach(function(i){if((i.naturalWidth||0)>=120)_c++});"
         "if(_c>=8){if(!confirm('이 페이지엔 상품이 여러 개 같아요. 북마클릿은 상품 1개 상세용입니다. 여러 상품은 크롬 확장을 쓰세요. 이 페이지를 1개로 수집할까요?'))return;}}catch(e){}"
-        + _ext + ";"    # 공유 추출기 인라인 → window.kgpExtractProduct 설정(확장과 동일 코드)
         "function M(p){var e=document.querySelector('meta[property=\"'+p+'\"],meta[name=\"'+p+'\"]');return e?(e.content||''):''}"
-        "var data;try{data=window.kgpExtractProduct();}catch(e){data={url:location.href,title:(M('og:title')||document.title||'').slice(0,300),images:[],partial:true};}"
-        "data.html=(document.documentElement?document.documentElement.outerHTML:'').slice(0,800000);"
-        "data.ext_version='bookmarklet';"
-        "data.translate=" + tr + ";"
+        "function G(s){if(!s||s.indexOf('data:')===0)return false;if(/(logo|sprite|icon|avatar|placeholder|loading|blank|pixel|banner|thumb_)/i.test(s))return false;return true;}"
+        "var imgs=[];var og=M('og:image');if(G(og))imgs.push(og);"
+        "try{[].forEach.call(document.images||[],function(im){if(im&&im.src&&G(im.src)&&(im.naturalWidth||0)>=300&&(im.naturalHeight||0)>=300)imgs.push(im.src)})}catch(e){}"
+        "var data={url:location.href,title:(M('og:title')||document.title||'').slice(0,300),"
+        "price:M('product:price:amount')||'',currency:M('product:price:currency')||'',"
+        "description:M('og:description')||M('description')||'',images:imgs.slice(0,30),"
+        "html:(document.documentElement?document.documentElement.outerHTML:'').slice(0,900000),"
+        "ext_version:'bookmarklet',translate:" + tr + "};"
         "function K(m,ok){var t=document.getElementById('kgpbm');if(!t){t=document.createElement('div');t.id='kgpbm';t.style.cssText='position:fixed;right:20px;bottom:84px;z-index:2147483647;display:flex;align-items:center;gap:8px;max-width:300px;padding:10px 14px;border-radius:10px;font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.3)';var ic=document.createElement('img');ic.src=S+'/seller/static/favicon-32.png?v=180';ic.alt='';ic.style.cssText='width:20px;height:20px;border-radius:5px;flex:none;background:#fff';t.appendChild(ic);var tx=document.createElement('span');tx.id='kgpbmx';tx.style.whiteSpace='pre-wrap';t.appendChild(tx);document.body.appendChild(t);}t.style.background=ok?'#16a34a':'#dc2626';var x=document.getElementById('kgpbmx');if(x)x.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0'},4500);}"
         "K('수집 중…',true);"
         "var _ST=0,_HTML=false;"
         "fetch(S+'/api/v1/collect/extension',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+T},body:JSON.stringify(data)})"
         ".then(function(r){_ST=r.status;return r.text().then(function(x){_HTML=/^\\s*<(!doctype|html)/i.test(x);try{return JSON.parse(x)}catch(e){return{}}})})"
         ".then(function(d){try{console.log('[고가수집기] /api/v1/collect/extension →',_ST,d)}catch(e){}"
-        "if(d&&d.ok&&data.partial){K('부분 수집 — 페이지 정보를 충분히 못 읽었어요. 셀러 콘솔에서 확인·보완하세요',false);}"
+        "if(d&&d.ok&&d.partial){K('부분 수집 — 페이지 정보를 충분히 못 읽었어요. 셀러 콘솔에서 확인·보완하세요',false);}"
         "else if(d&&d.ok){K('수집 완료 · 셀러 콘솔 ‘수집한 상품’에서 확인',true);}"
         "else if(_HTML){K('서버 응답 오류(로그인 확인이 필요할 수 있어요). HTTP '+_ST,false);}"
         "else{K('수집 실패 (HTTP '+_ST+'): '+((d&&d.error)||'잠시 후 다시 시도'),false);}})"
