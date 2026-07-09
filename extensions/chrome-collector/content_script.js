@@ -736,6 +736,14 @@ function handleFabClick(btn, opts) {
   const corr = kgpNewCorr();
   meta.corr_id = corr;                    // 서버 로깅·알럿 dedupe 기준
   if (opts.force) meta.force = true;      // 다시 수집(덮어쓰기) — 가격·이미지 갱신
+  // v49 STEP4 포렌식: 전송 직전 클라 추출 요약(어느 필드가 비었는지 콘솔에서 즉시 확인).
+  try {
+    console.log("[고가수집기] 전송요약", {
+      price: meta.price, currency: meta.currency, images: (meta.images || []).length,
+      desc: (meta.description || "").length + "자", options: (meta.options || []).length,
+      reviews: (meta.reviews || []).length, rating: meta.rating, source: meta.source, partial: meta.partial,
+    });
+  } catch (e) { /* noop */ }
   kgpSendMessage({ action: "collect", meta }, (resp) => {
     setFabState(btn, "idle");
     if (!resp || resp.ok !== true) {
