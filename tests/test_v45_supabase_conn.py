@@ -38,8 +38,12 @@ def test_ddl_runs_via_direct_connection_and_split():
 def test_psycopg3_nullpool_and_no_prepared():
     # psycopg3 사용 + prepared statement 비활성(트랜잭션 풀러 호환)
     assert "import psycopg" in PGSRC and "prepare_threshold=None" in PGSRC
-    # NullPool: 영속 풀 없음(psycopg2 풀 API 미사용). 매 작업 새 연결 후 close 원칙 유지.
-    assert "ThreadedConnectionPool" not in PGSRC and "getconn" not in PGSRC
+    # psycopg2 풀 API 미사용(psycopg3 전환 유지)
+    assert "ThreadedConnectionPool" not in PGSRC
+    # v49 STEP2: 상시 풀(psycopg_pool getconn/putconn)은 **PG_PERSISTENT_POOL=1일 때만**(기본 OFF).
+    #   기본 경로는 여전히 요청범위 1회용 연결(NullPool). 풀 코드는 게이트 안에만 존재.
+    assert "PG_PERSISTENT_POOL" in PGSRC
+    assert ('getconn' not in PGSRC) or ("_persistent_pool" in PGSRC)  # getconn은 풀 경로에서만
     # tx()·get_conn()은 1회용(즉시 close). query()는 속도 최적화로 요청 범위 내 읽기 연결을 재사용하되
     #   요청 종료 시 close_request_conn(teardown)로 닫는다(연결 누수 0) + 요청 밖 1회용 경로는 즉시 close.
     for fn in ("def tx(", "def get_conn("):

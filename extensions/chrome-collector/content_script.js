@@ -675,14 +675,75 @@ function kgpCelebrate(added, silent) {
   return total;
 }
 
+// v47 STEP4: MAIN world 추출 결과 병합 — 격리월드(content_script)가 못 읽는 페이지 live 전역
+//   (Temu 등 XHR로 렌더 후 채우는 초기 상태)을 MAIN world(kgp-main.js)에서 읽어 넘긴 meta와 병합.
+//   비어 있는 필드는 채우고, 배열(이미지·옵션·리뷰·상세)은 더 완전한 쪽 채택. 응답 없으면 격리월드만(정직).
+function kgpMergeMeta(base, extra) {
+  if (!extra || typeof extra !== "object") return base;
+  const out = Object.assign({}, base);
+  const empty = (v) => v == null || v === "" || (Array.isArray(v) && v.length === 0);
+  ["title", "price", "currency", "description", "rating", "review_count", "price_status", "source"].forEach((k) => {
+    if (empty(out[k]) && !empty(extra[k])) out[k] = extra[k];
+  });
+  ["images", "gallery_images", "detail_images", "options", "skus", "reviews", "detail_specs"].forEach((k) => {
+    const a = Array.isArray(out[k]) ? out[k] : [], b = Array.isArray(extra[k]) ? extra[k] : [];
+    if (b.length > a.length) out[k] = b;
+  });
+  if (empty(out.image) && out.images && out.images.length) out.image = out.images[0];
+  if (empty(out.thumbnail) && out.images && out.images.length) out.thumbnail = out.images[0];
+  if (!empty(out.price) && Array.isArray(out.images) && out.images.length) out.partial = false;  // 병합으로 핵심 확보
+  // field_sources 병합: MAIN이 json 준 필드는 json 우선(수집 로그가 실제 소스 표기).
+  if (extra.field_sources) {
+    out.field_sources = Object.assign({}, out.field_sources || {});
+    for (const fk in extra.field_sources) {
+      if (extra.field_sources[fk] === "json") out.field_sources[fk] = "json";
+      else if (!out.field_sources[fk] || out.field_sources[fk] === "none") out.field_sources[fk] = extra.field_sources[fk];
+    }
+  }
+  return out;
+}
+function kgpExtractMerged(cb) {
+  let isolated;
+  try { isolated = extractProductMeta(); }
+  catch (e) { isolated = { url: location.href, partial: true, warnings: ["추출 실패"] }; }
+  let done = false;
+  const reqId = "kgpq_" + Date.now() + "_" + Math.floor(Math.random() * 1e6);
+  function onMsg(e) {
+    if (e.source !== window || !e.data || e.data.__kgpRes !== reqId) return;
+    window.removeEventListener("message", onMsg);
+    if (done) return; done = true;
+    const merged = kgpMergeMeta(isolated, e.data.meta);
+    try {
+      console.log("[고가수집기] MAIN world 병합 — 이미지 " + ((isolated.images || []).length) + "→" + ((merged.images || []).length)
+        + ", 가격 " + (isolated.price || "-") + "→" + (merged.price || "-"));
+    } catch (_) {}
+    cb(merged);
+  }
+  window.addEventListener("message", onMsg, false);
+  try { window.postMessage({ __kgpReq: reqId }, "*"); } catch (e) {}
+  setTimeout(() => {
+    if (done) return; done = true;
+    window.removeEventListener("message", onMsg);
+    cb(isolated);   // MAIN world 미응답(비지원 크롬/타임아웃) → 격리월드 추출만(정직 폴백)
+  }, 700);
+}
+
 function handleFabClick(btn, opts) {
   opts = opts || {};
   if (btn._kgpDragged || btn.dataset.busy) return;
   setFabState(btn, "loading");
-  const meta = extractProductMeta();
+  kgpExtractMerged(function (meta) {
   const corr = kgpNewCorr();
   meta.corr_id = corr;                    // 서버 로깅·알럿 dedupe 기준
   if (opts.force) meta.force = true;      // 다시 수집(덮어쓰기) — 가격·이미지 갱신
+  // v49 STEP4 포렌식: 전송 직전 클라 추출 요약(어느 필드가 비었는지 콘솔에서 즉시 확인).
+  try {
+    console.log("[고가수집기] 전송요약", {
+      price: meta.price, currency: meta.currency, images: (meta.images || []).length,
+      desc: (meta.description || "").length + "자", options: (meta.options || []).length,
+      reviews: (meta.reviews || []).length, rating: meta.rating, source: meta.source, partial: meta.partial,
+    });
+  } catch (e) { /* noop */ }
   kgpSendMessage({ action: "collect", meta }, (resp) => {
     setFabState(btn, "idle");
     if (!resp || resp.ok !== true) {
@@ -710,21 +771,37 @@ function handleFabClick(btn, opts) {
       ]));
       return;
     }
-    // STEP2 (a) 추출 실패 지점 정직 표기 — 부분 수집이면 '성공처럼' 금지. 축하 없음.
-    if (meta && meta.partial) {
-      try { console.warn("[고가수집기] 부분 수집(초기 JSON·DOM 모두 핵심정보 미확보):", meta.warnings || []); } catch (e) {}
+    // v47/v49 STEP2·5: 서버 필드 상태(성공/부분/실패)로 정직 표기 — 무음 실패·가짜 성공 금지.
+    //   서버 field_status가 단일 소스. 없으면(구서버) 클라 meta.partial 폴백.
+    var fs = resp.field_status || null;
+    // v49 STEP5: 실패(핵심 3 전부 미확보) — 원인 명시, 축하 없음.
+    if (fs && fs.status === "실패") {
+      try { console.warn("[고가수집기] 수집 실패 —", fs.cause || "핵심 정보 미확보"); } catch (e) {}
       kgpAlertOnce(corr, () => kgpResultToast(
-        "부분 수집 — 페이지에서 정보를 충분히 못 읽었어요.\n드로어에서 가격·이미지를 확인·보완하세요", false,
-        [{ label: "이력 열기", fn: kgpOpenHistory }]));
+        "수집 실패 — " + (fs.cause || "핵심 정보(제목·가격·이미지)를 못 읽었어요") + "\n드로어에서 직접 입력하거나 다시 시도하세요",
+        false, [{ label: "이력 열기", fn: kgpOpenHistory }]));
       return;
     }
-    // 신규 — '수집 완료' 하나만 + 축하 스탬프(토스트는 하나). 가격 경고 있으면 함께 안내.
+    var isPartial = fs ? (fs.status === "부분") : !!(meta && meta.partial);
+    if (isPartial) {
+      var _ml = fs && ((fs.missing_short && fs.missing_short.length) ? fs.missing_short : fs.missing);
+      var miss = (_ml && _ml.length) ? _ml.join("·") : "";
+      try { console.warn("[고가수집기] 부분 수집 — 누락:", (fs && fs.missing) || (meta && meta.warnings) || []); } catch (e) {}
+      var _msg = miss
+        ? ("부분 수집 — " + miss + " 누락 (" + (fs.filled) + "/" + (fs.total) + " 필드)\n드로어에서 확인·보완하세요")
+        : "부분 수집 — 페이지에서 정보를 충분히 못 읽었어요.\n드로어에서 가격·이미지를 확인·보완하세요";
+      kgpAlertOnce(corr, () => kgpResultToast(_msg, false, [{ label: "이력 열기", fn: kgpOpenHistory }]));
+      return;
+    }
+    // 성공 — '수집 완료(N/7 필드)' 하나만 + 축하 스탬프(토스트는 하나). 가격 경고 있으면 함께 안내.
     kgpAlertOnce(corr, () => {
       var _warn = (meta && Array.isArray(meta.warnings) && meta.warnings.length) ? "\n⚠ " + meta.warnings[0] : "";
+      var _cnt = fs ? (" (" + fs.filled + "/" + fs.total + " 필드)") : "";
       kgpCelebrate(1, true);           // 스탬프만(silent) — 토스트는 아래 하나
-      kgpResultToast("수집 완료 — 이력에서 확인" + _warn, true, [{ label: "이력 열기", fn: kgpOpenHistory }]);
+      kgpResultToast("수집 완료" + _cnt + " — 이력에서 확인" + _warn, true, [{ label: "이력 열기", fn: kgpOpenHistory }]);
     });
   });
+  });   // v47 STEP4: kgpExtractMerged 콜백 닫기
 }
 
 function injectCollectButton() {

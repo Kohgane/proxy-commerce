@@ -34,6 +34,7 @@ _LEAN_EXTRA = (
     "'uploaded', extra_json->'uploaded',"
     "'price_status', extra_json->'price_status',"
     "'warnings', extra_json->'warnings',"
+    "'collect_status', extra_json->'collect_status',"
     "'images', CASE WHEN jsonb_typeof(extra_json->'images')='array' AND jsonb_array_length(extra_json->'images')>0 "
     "THEN jsonb_build_array(extra_json->'images'->0) ELSE '[]'::jsonb END"
     ") AS extra_json"

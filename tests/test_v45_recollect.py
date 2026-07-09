@@ -65,8 +65,8 @@ def test_extension_single_toasts_and_recollect_button():
     global CS
     from pathlib import Path
     CS = Path("extensions/chrome-collector/content_script.js").read_text(encoding="utf-8")
-    # 신규/중복 단일 메시지
-    assert "수집 완료 — 이력에서 확인" in CS
+    # 신규/중복 단일 메시지 (v47 STEP2: '수집 완료(N/7 필드)' — 필드수 보간)
+    assert "수집 완료" in CS and "이력에서 확인" in CS
     assert "이미 수집한 상품 — 이력에서 확인" in CS
     # 다시 수집(덮어쓰기) 버튼 + force 전송
     assert "다시 수집(덮어쓰기)" in CS

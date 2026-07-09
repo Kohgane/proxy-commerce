@@ -47,14 +47,14 @@ def test_file_import_replaces_drag(client):
 
 
 def test_three_step_import_guidance():
-    # 3단계 그림 안내: 파일 받기 → chrome://bookmarks 가져오기 → 가져온 항목에서 드래그
-    assert "chrome://bookmarks" in TPL
-    assert "북마크 가져오기" in TPL
+    # v47 STEP3: 주 방법=코드 복사 → 북마크 편집창 URL칸 붙여넣기(주소창 javascript: 제거 우회).
+    assert "북마클릿 코드 복사" in TPL
+    assert "URL 칸" in TPL and "주소창" in TPL
+    assert "Ctrl+D" in TPL and "고가수집기" in TPL
+    # 파일 가져오기는 대체 방법으로 보존(가져온 항목/북마크바 드래그 안내 유지)
+    assert "대체 방법" in TPL
+    assert "chrome://bookmarks" in TPL and "북마크 가져오기" in TPL
     assert "가져온 항목" in TPL and "북마크바" in TPL
-    # 아이콘 고정 안내
-    assert "한 번 클릭하면 고정됩니다" in TPL
-    # 그림(SVG) 3개
-    assert TPL.count("<svg") >= 3
 
 
 def test_server_builds_netscape_file_with_icon():

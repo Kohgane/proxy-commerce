@@ -76,12 +76,58 @@ def pg_enabled() -> bool:
         return _available
 
 
+_pool = None
+_pool_checked = False
+
+
+def _persistent_pool():
+    """v49 STEP2: PG_PERSISTENT_POOL=1 이면 상시 커넥션 풀(psycopg_pool)을 1회 생성해 재사용.
+
+    기본 OFF(미설정) → None 반환 → 기존 요청범위 1회용 연결(NullPool) 유지(무변경).
+    ON일 때: 워커당 소형 풀(pool_size=5, pre_ping, recycle) — 요청마다 TCP+TLS 핸드셰이크(대륙 간
+    ~220ms)를 제거. 트랜잭션 풀러(6543) 호환 위해 prepared statement 비활성·autocommit 읽기.
+    풀 라이브러리 미설치/생성 실패 시 None(정직 폴백, 무회귀). 오너가 SG 서비스에서 켜고 계측.
+    """
+    global _pool, _pool_checked
+    if os.getenv("PG_PERSISTENT_POOL", "0") != "1":
+        return None
+    if _pool_checked:
+        return _pool
+    with _lock:
+        if _pool_checked:
+            return _pool
+        _pool_checked = True
+        try:
+            from psycopg_pool import ConnectionPool
+            _pool = ConnectionPool(
+                conninfo=db_url(),
+                min_size=int(os.getenv("PG_POOL_MIN", "1") or 1),
+                max_size=int(os.getenv("PG_POOL_SIZE", "5") or 5),
+                max_idle=float(os.getenv("PG_POOL_RECYCLE", "300") or 300),
+                kwargs={"prepare_threshold": None, "autocommit": True},  # 풀러 호환
+                check=ConnectionPool.check_connection,                   # pre_ping
+                open=True,
+            )
+            logger.info("DB 상시 커넥션 풀 활성(psycopg_pool, size=%s)", os.getenv("PG_POOL_SIZE", "5"))
+        except Exception as exc:
+            logger.warning("상시 풀 생성 실패 — 요청범위 연결 폴백: %s", exc)
+            _pool = None
+        return _pool
+
+
 def reset_state():
-    """테스트용 — 캐시된 가용성 초기화(NullPool이라 닫을 풀 없음)."""
-    global _checked, _available
+    """테스트용 — 캐시된 가용성·풀 초기화."""
+    global _checked, _available, _pool, _pool_checked
     with _lock:
         _checked = False
         _available = False
+        try:
+            if _pool is not None:
+                _pool.close()
+        except Exception:
+            pass
+        _pool = None
+        _pool_checked = False
 
 
 @contextlib.contextmanager
@@ -100,7 +146,7 @@ def tx():
     _perf_mark("db_write")
     conn = _connect(db_url(), autocommit=False)
     try:
-        with conn.cursor() as cur:
+        with conn.cursor() as cur, _timed_db():
             yield cur
         conn.commit()
     except Exception:
@@ -114,10 +160,36 @@ def _perf_mark(kind: str, new_conn: bool = True) -> None:
     try:
         from src.utils.perf import perf_count
         perf_count(kind, 1)
+        perf_count("db_query", 1)          # v49 STEP2: 요청당 총 쿼리 수(N+1 진단)
         if new_conn:
             perf_count("db_conn", 1)
     except Exception:
         pass
+
+
+@contextlib.contextmanager
+def _timed_db():
+    """v49 STEP2: 이 DB 작업(execute+fetch)의 경과 ms를 'db' 버킷 합산 + 개별 ms 리스트에 기록.
+
+    query()/tx() 안에서 cursor yield 구간을 감싸므로 호출부의 실제 쿼리 시간이 측정된다.
+    """
+    import time as _t
+    t0 = _t.perf_counter()
+    try:
+        yield
+    finally:
+        dt = (_t.perf_counter() - t0) * 1000.0
+        try:
+            from src.utils.perf import perf_block as _pb, perf_add_ms
+            # perf_block과 동일 버킷('db')에 합산(뷰 레벨 중복 래핑 제거로 이중계상 없음).
+            b = None
+            from src.utils.perf import _bucket as _get_bucket  # type: ignore
+            b = _get_bucket()
+            if b is not None:
+                b["db"] = round(b.get("db", 0.0) + dt, 2)
+            perf_add_ms("db", dt)
+        except Exception:
+            pass
 
 
 def _request_read_conn():
@@ -134,8 +206,23 @@ def _request_read_conn():
         c = getattr(g, "_kgp_db_read_conn", None)
         if c is not None and not getattr(c, "closed", False):
             return c, False                     # 재사용(새 연결 아님)
+        # v49 STEP2: 상시 풀이 켜져 있으면 풀에서 대여(핸드셰이크 없음) — 없으면 1회용 연결.
+        pool = _persistent_pool()
+        if pool is not None:
+            try:
+                c = pool.getconn()
+                try:
+                    c.autocommit = True
+                except Exception:
+                    pass
+                setattr(g, "_kgp_db_read_conn", c)
+                setattr(g, "_kgp_db_conn_pooled", True)
+                return c, False                 # 풀 대여 = 새 핸드셰이크 아님(연결 수 미계상)
+            except Exception:
+                pass
         c = _connect(db_url(), autocommit=True)
         setattr(g, "_kgp_db_read_conn", c)
+        setattr(g, "_kgp_db_conn_pooled", False)
         return c, True                          # 이 요청의 첫 읽기 연결(새로 열림)
     except Exception:
         return None, False
@@ -147,11 +234,16 @@ def close_request_conn(_exc=None):
         from flask import g
         c = getattr(g, "_kgp_db_read_conn", None)
         if c is not None:
+            pooled = getattr(g, "_kgp_db_conn_pooled", False)
             try:
-                c.close()
+                if pooled and _pool is not None:
+                    _pool.putconn(c)            # v49 STEP2: 풀에 반납(닫지 않음)
+                else:
+                    c.close()
             except Exception:
                 pass
             setattr(g, "_kgp_db_read_conn", None)
+            setattr(g, "_kgp_db_conn_pooled", False)
     except Exception:
         pass
 
@@ -162,13 +254,13 @@ def query():
     conn, is_new = _request_read_conn()
     if conn is not None:
         _perf_mark("db_read", new_conn=is_new)
-        with conn.cursor() as cur:
+        with conn.cursor() as cur, _timed_db():
             yield cur
         return
     _perf_mark("db_read", new_conn=True)
     conn = _connect(db_url(), autocommit=True)
     try:
-        with conn.cursor() as cur:
+        with conn.cursor() as cur, _timed_db():
             yield cur
     finally:
         conn.close()

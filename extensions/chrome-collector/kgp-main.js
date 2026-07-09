@@ -1,0 +1,35 @@
+/* kgp-main.js — MAIN world 브릿지 (v47 STEP4, 근본 수리).
+ *
+ * 문제: 확장 content_script는 **격리 월드(isolated world)**라 페이지의 live 전역
+ *   (window.rawData / __NEXT_DATA__ / __NUXT__ 등)을 못 읽는다. Temu처럼 초기 상태를
+ *   **XHR로 렌더 후에 채우는** 사이트는 인라인 <script> 텍스트에도 안 실려, 격리월드
+ *   추출기가 가격·이미지·상세를 못 얻어 '부분 수집'이 났다(v46 실기기 실패의 근본).
+ *
+ * 해결: 이 스크립트를 manifest "world":"MAIN" 으로 페이지 월드에 주입한다. 여기서는
+ *   live 전역이 그대로 보이므로 kgpExtractProduct()를 실행하면 초기상태 JSON을 읽는다.
+ *   순환참조/대용량 상태를 직접 넘기지 않고 **추출 결과(작은 plain object)만** postMessage로
+ *   격리월드 content_script에 넘긴다(구조화 복제 안전). 추가 네트워크(API) 호출 없음.
+ */
+(function () {
+  "use strict";
+  if (window.__kgpMainBound) return;   // 중복 주입 방지(SPA 재주입 등)
+  window.__kgpMainBound = true;
+
+  function _run() {
+    try {
+      return (typeof window.kgpExtractProduct === "function") ? window.kgpExtractProduct() : null;
+    } catch (e) {
+      try { console.warn("[고가수집기] MAIN world 추출 오류:", e); } catch (_) {}
+      return null;
+    }
+  }
+
+  // 격리월드가 요청(__kgpReq)하면 그 시점의 live DOM/전역에서 추출해 결과(__kgpRes)를 돌려준다.
+  window.addEventListener("message", function (e) {
+    try {
+      if (e.source !== window || !e.data || e.data.__kgpReq == null) return;
+      var meta = _run();
+      window.postMessage({ __kgpRes: e.data.__kgpReq, meta: meta }, "*");
+    } catch (_) {}
+  }, false);
+})();

@@ -182,6 +182,19 @@
         <button type="button" class="btn btn-outline-danger btn-sm" id="bulkDeleteBtn" onclick="openBulkDeleteModal()" disabled>
           <i class="bi bi-trash"></i> 선택 삭제
         </button>
+        {# v47 STEP5: 엑셀 벌크 — 내보내기(선택 없으면 전체) / 업로드(검증→확인→적용). #}
+        <span class="mx-1" style="width:1px;height:20px;background:var(--border,#e9ecef)"></span>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="excelExportBtn" onclick="excelExport()"
+                title="선택한 상품(없으면 전체)을 엑셀로 내보내요">
+          <i class="bi bi-file-earmark-excel"></i> 엑셀 내보내기
+        </button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('excelFile').click()"
+                title="엑셀로 상품을 일괄 등록·수정해요(확인 후 적용)">
+          <i class="bi bi-upload"></i> 엑셀 업로드
+        </button>
+        <input type="file" id="excelFile" accept=".xlsx" style="display:none" onchange="excelValidate(this)">
+        <a class="small text-muted text-decoration-none" href="/seller/collect/export-template"
+           title="빈 템플릿(예시 1행) 받기"><i class="bi bi-download"></i> 템플릿</a>
       </div>
       <div class="small text-muted px-3 pb-2">오른쪽 <strong>인덱스 레일</strong>(ㄱ~ㅎ·A~Z·#)을 누르거나 긁어 빠르게 이동하세요.{% if not fastscroll %} (다른 정렬 중엔 눌렀을 때 제목순으로 전환됩니다.){% endif %}</div>
       <div class="table-responsive" data-fs-root>
@@ -420,6 +433,27 @@
   </div>
 </div>
 
+{# v47 STEP5: 엑셀 업로드 검증 리포트 — 신규/갱신/오류를 보여주고 '확인 후' 적용(즉시 적용 아님). #}
+<div class="modal fade" id="excelReportModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-file-earmark-excel"></i> 엑셀 업로드 — 검증 결과</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+      </div>
+      <div class="modal-body">
+        <div id="excelReportSummary" class="d-flex flex-wrap gap-2 mb-3"></div>
+        <div id="excelReportBody"></div>
+        <p class="small text-muted mb-0 mt-2">‘적용’을 누르기 전에는 아무것도 바뀌지 않아요. 상품ID가 있으면 <strong>갱신</strong>, 없으면 <strong>신규</strong>로 추가됩니다. 오류 행은 건너뛰고 나머지만 적용해요(전체 취소 아님).</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">취소</button>
+        <button type="button" class="btn btn-success" id="excelApplyBtn" onclick="excelApply()"><i class="bi bi-check-lg"></i> 적용</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {# v39 C: 인페이지 편집 드로어 — 클릭 시 우측 슬라이드(같은 페이지 위 오버레이, 새 창/라우트 이동 0).
    기존 편집 페이지(/collect/preview/{id})를 iframe(drawer 모드)로 임베드해 전체 편집 기능 재사용. #}
 <style>
@@ -618,6 +652,94 @@ document.getElementById('kgpDrawerFrame').addEventListener('load', function () {
 
 function selectedItemIds() {
   return Array.from(document.querySelectorAll('.row-chk:checked')).map(c => c.value);
+}
+
+// ── v47 STEP5: 엑셀 내보내기 / 업로드(검증→확인→적용) ──
+async function excelExport() {
+  const ids = selectedItemIds();
+  const btn = document.getElementById('excelExportBtn');
+  const orig = btn.innerHTML; btn.disabled = true; btn.textContent = '내보내는 중…';
+  try {
+    const r = await fetch('/seller/collect/export-xlsx', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item_ids: ids })
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'goga_products.xlsx';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    if (typeof pcToast === 'function') pcToast(ids.length ? `선택 ${ids.length}개를 내보냈어요.` : '전체 상품을 내보냈어요.', 'success');
+  } catch (e) {
+    if (typeof pcToast === 'function') pcToast('내보내기 실패: ' + (e.message || '다시 시도'), 'error');
+  } finally { btn.disabled = false; btn.innerHTML = orig; }
+}
+
+var _excelFile = null;
+async function excelValidate(input) {
+  const f = input.files && input.files[0];
+  input.value = '';                    // 같은 파일 재선택 가능하게 초기화
+  if (!f) return;
+  _excelFile = f;
+  const fd = new FormData(); fd.append('file', f);
+  try {
+    const r = await fetch('/seller/collect/import-xlsx', { method: 'POST', body: fd });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) { if (typeof pcToast === 'function') pcToast((d && d.error) || '엑셀을 읽지 못했어요.', 'error'); return; }
+    excelRenderReport(d);
+    new bootstrap.Modal(document.getElementById('excelReportModal')).show();
+  } catch (e) {
+    if (typeof pcToast === 'function') pcToast('검증 실패: ' + (e.message || '다시 시도'), 'error');
+  }
+}
+
+function _esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+function excelRenderReport(d) {
+  const sum = document.getElementById('excelReportSummary');
+  sum.innerHTML =
+    `<span class="badge bg-success"><i class="bi bi-plus-lg"></i> 신규 ${d.new}</span>` +
+    `<span class="badge bg-primary"><i class="bi bi-arrow-repeat"></i> 갱신 ${d.update}</span>` +
+    `<span class="badge ${d.error_count ? 'bg-danger' : 'bg-secondary'}"><i class="bi bi-exclamation-triangle"></i> 오류 ${d.error_count}</span>`;
+  let html = '';
+  if (d.truncated) html += `<div class="alert alert-warning small py-2">행이 많아 5000개까지만 처리했어요. 나눠서 올려 주세요.</div>`;
+  if (d.errors && d.errors.length) {
+    html += `<div class="mb-2"><strong class="text-danger">오류 행</strong><ul class="small mb-2" style="max-height:160px;overflow:auto">`;
+    d.errors.forEach(function (e) { html += `<li>${e.row}행: ${_esc(e.reason)}</li>`; });
+    html += `</ul></div>`;
+  }
+  if (d.preview && d.preview.length) {
+    html += `<div class="table-responsive"><table class="table table-sm small mb-0"><thead><tr><th>행</th><th>구분</th><th>제목</th><th>가격</th></tr></thead><tbody>`;
+    d.preview.forEach(function (p) {
+      const badge = p.mode === 'update' ? '<span class="badge bg-primary">갱신</span>' : '<span class="badge bg-success">신규</span>';
+      html += `<tr><td>${p.row}</td><td>${badge}</td><td>${_esc(p.title)}</td><td>${_esc(p.price)}</td></tr>`;
+    });
+    html += `</tbody></table></div>`;
+    if (d.apply_count > d.preview.length) html += `<div class="small text-muted mt-1">…외 ${d.apply_count - d.preview.length}건</div>`;
+  }
+  const applyBtn = document.getElementById('excelApplyBtn');
+  applyBtn.disabled = (d.new + d.update) === 0;    // 적용할 게 없으면 비활성
+  document.getElementById('excelReportBody').innerHTML = html || '<p class="text-muted small mb-0">적용할 유효한 행이 없어요.</p>';
+}
+
+async function excelApply() {
+  if (!_excelFile) return;
+  const btn = document.getElementById('excelApplyBtn');
+  const orig = btn.innerHTML; btn.disabled = true; btn.textContent = '적용 중…';
+  const fd = new FormData(); fd.append('file', _excelFile);
+  try {
+    const r = await fetch('/seller/collect/import-apply', { method: 'POST', body: fd });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) throw new Error((d && d.error) || 'HTTP ' + r.status);
+    const msg = `적용 완료 — 신규 ${d.created} · 갱신 ${d.updated}` + (d.error_count ? ` · 오류 ${d.error_count}` : '');
+    if (typeof pcToast === 'function') pcToast(msg, d.error_count ? 'warning' : 'success');
+    try { bootstrap.Modal.getInstance(document.getElementById('excelReportModal')).hide(); } catch (e) {}
+    setTimeout(() => location.reload(), 900);
+  } catch (e) {
+    if (typeof pcToast === 'function') pcToast('적용 실패: ' + (e.message || '다시 시도'), 'error');
+    btn.disabled = false; btn.innerHTML = orig;
+  }
 }
 function refreshSelCount() {
   const n = selectedItemIds().length;

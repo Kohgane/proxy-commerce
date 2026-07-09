@@ -68,6 +68,30 @@ def perf_counts() -> dict:
     return dict(c) if c else {}
 
 
+_MS_ATTR = "_kgp_perf_ms"
+_MS_CAP = 50   # 요청당 기록할 개별 쿼리 ms 최대 개수(폭주 방지)
+
+
+def perf_add_ms(name: str, ms: float) -> None:
+    """개별 이벤트(예: DB 쿼리 1건)의 ms를 리스트로 누적 — 요청당 [개별 ms] 진단용."""
+    if not has_request_context():
+        return
+    d = getattr(g, _MS_ATTR, None)
+    if d is None:
+        d = {}
+        setattr(g, _MS_ATTR, d)
+    lst = d.setdefault(name, [])
+    if len(lst) < _MS_CAP:
+        lst.append(round(float(ms), 2))
+
+
+def perf_ms_list(name: str) -> list:
+    if not has_request_context():
+        return []
+    d = getattr(g, _MS_ATTR, None)
+    return list(d.get(name, [])) if d else []
+
+
 def perf_snapshot() -> dict:
     """현재까지 누적된 구간 타이밍(ms) 스냅샷."""
     b = _bucket()

@@ -2016,6 +2016,186 @@ def collect_bulk_delete():
     return jsonify({"ok": True, "deleted": len(verified_gone), "deleted_ids": verified_gone})
 
 
+# ── v47 STEP5: 엑셀 벌크 내보내기 / 가져오기 ─────────────────────────────────
+def _excel_existing_ids() -> set:
+    """내 수집목록의 모든 상품ID(가져오기 갱신 대상 판정용)."""
+    try:
+        from . import collect_history_store as ch
+        rows = ch.list_items(seller_ids=_seller_identities(), days=3650, limit=None, lean=True)
+        return {str(r.get("id")) for r in rows if r.get("id")}
+    except Exception:
+        return set()
+
+
+@bp.post("/collect/export-xlsx")
+def collect_export_xlsx():
+    """선택(item_ids) 또는 전체(필터 무시, 최신 5000) 수집 상품을 xlsx로 내보낸다."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    item_ids = [str(i) for i in (data.get("item_ids") or []) if str(i).strip()]
+    from . import collect_history_store as ch
+    ids_set = _seller_identities()
+    from .collect_excel import MAX_ROWS
+    if item_ids:
+        items = []
+        for iid in item_ids[:MAX_ROWS]:
+            it = ch.get(iid, seller_ids=ids_set)
+            if it:
+                items.append(it)
+    else:
+        items = ch.list_items(seller_ids=ids_set, days=3650, limit=MAX_ROWS)
+    from .collect_excel import build_workbook
+    try:
+        xls = build_workbook(items)
+    except Exception as exc:
+        logger.warning("엑셀 내보내기 실패: %s", exc)
+        return jsonify({"ok": False, "error": "엑셀 생성 중 오류가 발생했어요."}), 500
+    resp = Response(xls, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    fname = quote_plus("고가브릿지_상품.xlsx").replace("+", "%20")
+    resp.headers["Content-Disposition"] = "attachment; filename=goga_products.xlsx; filename*=UTF-8''" + fname
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@bp.get("/collect/export-template")
+def collect_export_template():
+    """빈 템플릿(헤더 + 예시 1행) 다운로드."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
+    from .collect_excel import template_workbook
+    xls = template_workbook()
+    resp = Response(xls, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    fname = quote_plus("고가브릿지_템플릿.xlsx").replace("+", "%20")
+    resp.headers["Content-Disposition"] = "attachment; filename=goga_template.xlsx; filename*=UTF-8''" + fname
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+def _excel_parse_and_validate():
+    """업로드 파일 → (report, http_status). report={ok, new, update, errors, truncated, apply?}."""
+    f = request.files.get("file")
+    if not f:
+        return {"ok": False, "error": "엑셀 파일을 선택하세요."}, 400
+    raw = f.read()
+    if not raw:
+        return {"ok": False, "error": "빈 파일이에요."}, 400
+    if len(raw) > 20 * 1024 * 1024:
+        return {"ok": False, "error": "파일이 너무 커요(20MB 이하)."}, 400
+    from .collect_excel import parse_workbook, validate_rows
+    rows, perr, truncated = parse_workbook(raw)
+    report = validate_rows(rows, _excel_existing_ids())
+    report["errors"] = perr + report["errors"]
+    report["truncated"] = truncated
+    report["ok"] = True
+    return report, 200
+
+
+@bp.post("/collect/import-xlsx")
+def collect_import_xlsx():
+    """가져오기 1단계: 검증만(적용 안 함). 신규/갱신/오류 리포트 반환 → 사용자 확인 후 apply."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    try:
+        report, code = _excel_parse_and_validate()
+    except Exception as exc:
+        logger.warning("엑셀 검증 실패: %s", exc)
+        return jsonify({"ok": False, "error": "엑셀을 읽는 중 오류가 발생했어요. 템플릿 형식인지 확인해 주세요."}), 400
+    if not report.get("ok"):
+        return jsonify(report), code
+    # 미리보기(최대 30행 요약)만 반환 — 적용은 같은 파일 재전송(stateless).
+    preview = [{"row": a["_row"], "mode": a["mode"], "id": a["id"],
+                "title": a["fields"].get("title_ko") or a["fields"].get("title_en"),
+                "price": a["fields"].get("price")} for a in report.get("apply", [])[:30]]
+    return jsonify({"ok": True, "new": report["new"], "update": report["update"],
+                    "errors": report["errors"][:100], "error_count": len(report["errors"]),
+                    "truncated": report["truncated"], "preview": preview,
+                    "apply_count": len(report.get("apply", []))})
+
+
+@bp.post("/collect/import-apply")
+def collect_import_apply():
+    """가져오기 2단계: 같은 파일 재검증 후 실제 적용(신규=추가/갱신=업데이트). 오류는 행별(전체 롤백 아님)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    try:
+        report, code = _excel_parse_and_validate()
+    except Exception as exc:
+        logger.warning("엑셀 적용 파싱 실패: %s", exc)
+        return jsonify({"ok": False, "error": "엑셀을 읽는 중 오류가 발생했어요."}), 400
+    if not report.get("ok"):
+        return jsonify(report), code
+    from . import collect_history_store as ch
+    import json as _json
+    from src.collectors.collect_status import compute_collect_status
+    ids_set = _seller_identities()
+    seller_id_val = _seller_id()
+    created, updated = 0, 0
+    row_errors = list(report["errors"])
+
+    def _extra_from(fields, base=None):
+        ex = dict(base or {})
+        ex.update({
+            "title_ko": fields["title_ko"], "title_en": fields["title_en"],
+            "title": fields["title_ko"] or fields["title_en"],
+            "category_code": fields["category"],
+            "price": fields["price"], "currency": "KRW",
+            "options": fields["options"],
+            "gallery_images": fields["gallery"], "images": fields["gallery"],
+            "detail_images": fields["detail_images"],
+            "keywords": fields["keywords"],
+            "thumbnail": fields["thumbnail"] or (fields["gallery"][0] if fields["gallery"] else ""),
+            "source": "excel_import",
+        })
+        try:
+            ex["collect_status"] = compute_collect_status(ex, title_fallback=ex["title"])
+        except Exception:
+            pass
+        return ex
+
+    for a in report.get("apply", []):
+        rnum, mode, fields = a["_row"], a["mode"], a["fields"]
+        thumb = fields["thumbnail"] or (fields["gallery"][0] if fields["gallery"] else "")
+        try:
+            if mode == "update":
+                base = {}
+                cur = ch.get(a["id"], seller_ids=ids_set)
+                if not cur:
+                    row_errors.append({"row": rnum, "reason": "갱신 대상을 찾지 못했어요(삭제됐을 수 있어요)."})
+                    continue
+                try:
+                    base = _json.loads(cur.get("extra_json") or "{}")
+                except Exception:
+                    base = {}
+                ex = _extra_from(fields, base)
+                ok = ch.update(a["id"], seller_ids=ids_set,
+                               title=ex["title"], image_url=thumb,
+                               price=fields["price"], currency="KRW",
+                               extra_json=_json.dumps(ex, ensure_ascii=False))
+                if ok:
+                    updated += 1
+                else:
+                    row_errors.append({"row": rnum, "reason": "갱신 저장에 실패했어요."})
+            else:
+                ex = _extra_from(fields)
+                ret = ch.append(return_durable=True, source="excel_import",
+                                url=fields["url"], title=ex["title"], image=thumb,
+                                price=fields["price"], currency="KRW", status="ok",
+                                extra=ex, seller_id=seller_id_val)
+                iid, durable = ret if isinstance(ret, tuple) and len(ret) == 2 else (ret, True)
+                if iid and durable:
+                    created += 1
+                else:
+                    row_errors.append({"row": rnum, "reason": "저장 영속화에 실패했어요(재시도 필요)."})
+        except Exception as exc:
+            logger.warning("엑셀 적용 행 오류 row=%s: %s", rnum, exc)
+            row_errors.append({"row": rnum, "reason": f"적용 중 오류: {str(exc)[:80]}"})
+
+    return jsonify({"ok": True, "created": created, "updated": updated,
+                    "errors": row_errors[:200], "error_count": len(row_errors),
+                    "truncated": report["truncated"]})
+
+
 @bp.post("/collect/bulk-category")
 def collect_bulk_category():
     """수집 이력 여러 항목에 카테고리를 일괄 지정 (셀러 격리).
@@ -5262,6 +5442,7 @@ def _bookmarklet_js(server: str, token: str, translate: bool) -> str:
         "ext_version:'bookmarklet',translate:" + tr + "};"
         "function K(m,ok){var t=document.getElementById('kgpbm');if(!t){t=document.createElement('div');t.id='kgpbm';t.style.cssText='position:fixed;right:20px;bottom:84px;z-index:2147483647;display:flex;align-items:center;gap:8px;max-width:300px;padding:10px 14px;border-radius:10px;font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.3)';var ic=document.createElement('img');ic.src=S+'/seller/static/favicon-32.png?v=180';ic.alt='';ic.style.cssText='width:20px;height:20px;border-radius:5px;flex:none;background:#fff';t.appendChild(ic);var tx=document.createElement('span');tx.id='kgpbmx';tx.style.whiteSpace='pre-wrap';t.appendChild(tx);document.body.appendChild(t);}t.style.background=ok?'#16a34a':'#dc2626';var x=document.getElementById('kgpbmx');if(x)x.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0'},4500);}"
         "K('수집 중…',true);"
+        "try{console.log('[고가수집기] 전송요약',{price:data.price,currency:data.currency,images:(data.images||[]).length,desc:(data.description||'').length+'자',html:(data.html||'').length+'자'})}catch(e){}"
         "var _ST=0,_HTML=false;"
         "fetch(S+'/api/v1/collect/extension',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+T},body:JSON.stringify(data)})"
         ".then(function(r){_ST=r.status;return r.text().then(function(x){_HTML=/^\\s*<(!doctype|html)/i.test(x);try{return JSON.parse(x)}catch(e){return{}}})})"
@@ -5290,15 +5471,17 @@ def _bridge_icon_data_uri() -> str:
     return _BRIDGE_ICON_DATA_URI
 
 
-def _netscape_bookmark(href: str, icon_data_uri: str, label: str = "​") -> str:
+def _netscape_bookmark(href: str, icon_data_uri: str, label: str = "고가수집") -> str:
     """크롬 '북마크 가져오기'가 읽는 NETSCAPE-Bookmark-file-1 HTML. ICON 속성에 브릿지 마크.
 
     HREF는 html.escape로 이스케이프(크롬 가져오기 시 엔티티 디코드) → 아이콘이 북마크에 고정.
-    앵커 텍스트=제로폭(U+200B) → 북마크바에 **보이는 글자 0(아이콘만)**. (완전 빈 문자열은 크롬이
-    javascript: URL을 이름으로 폴백할 수 있어, 제로폭으로 폴백 방지 — v40-B 선례.)
+    v49 STEP3 수리: 앵커 텍스트=**가시 문자열 '고가수집'**. (v40-B가 쓰던 제로폭 U+200B는 가져오기
+    후 북마크 이름이 '투명/빈칸'으로 보여 사용자가 못 찾는 버그의 근원 — 오너 실기기 확정. 이제 이름이
+    '고가수집'으로 또렷이 보인다. 빈 문자열의 javascript: URL 폴백 우려도 해소.)
     """
     import html as _html
     href_esc = _html.escape(href, quote=True)
+    label = _html.escape(label or "고가수집")
     return (
         "<!DOCTYPE NETSCAPE-Bookmark-file-1>\n"
         "<META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=UTF-8\">\n"
@@ -5345,6 +5528,34 @@ def bookmarklet_file():
     return resp
 
 
+@bp.post("/bookmarklet/code")
+def bookmarklet_code():
+    """v47 STEP3: '북마클릿 코드 복사' — 토큰 발급(Supabase) 후 javascript: 코드를 텍스트로 반환.
+
+    진단: 크롬 '북마크 가져오기'(파일)는 최신 크롬에서 javascript: HREF를 보안상 드롭하거나 '가져온
+    항목' 폴더에 묻히는 등 실기기 실패 사례가 있다. 또 **주소창에 javascript: 를 붙여넣으면 크롬이
+    접두어를 지운다**(anti-XSS). 유일하게 안전한 경로 = **북마크 편집 대화상자의 URL 칸에 붙여넣기**.
+    → 이 라우트가 코드를 주고, 클라가 클립보드에 복사 → 사용자가 '북마크 추가 → 편집 → URL칸 붙여넣기'.
+    토큰 저장 실패면 코드도 안 준다(정직 503, 가짜 성공 0).
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    user_id = _current_user_id()
+    translate = (request.form.get("translate") or request.args.get("translate") or "1") != "0"
+    try:
+        from src.auth import personal_tokens as _pt
+        result = _pt.generate_token(user_id=user_id, scopes=["collect.write"], expires_days=365)
+        raw = result.get("raw_token")
+        if not raw:
+            raise RuntimeError("토큰이 비어 있습니다.")
+    except Exception as exc:
+        logger.warning("북마클릿 코드 토큰 발급 실패: %s", exc)
+        return jsonify({"ok": False, "error": "토큰을 저장하지 못해 코드를 만들지 못했어요. 잠시 후 다시 시도해 주세요."}), 503
+    server = request.host_url.rstrip("/")
+    code = _bookmarklet_js(server, raw, translate)
+    return jsonify({"ok": True, "code": code})
+
+
 def _chrome_extension_dir() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "extensions", "chrome-collector"))
 
@@ -5377,7 +5588,7 @@ def extension_download():
     if not os.path.isdir(ext_dir):
         abort(404)
     include = [
-        "manifest.json", "background.js", "kgp-extractor.js", "content_script.js",
+        "manifest.json", "background.js", "kgp-extractor.js", "kgp-main.js", "content_script.js",
         "popup.html", "popup.js", "options.html", "options.js", "README.md",
     ]
     buf = io.BytesIO()
@@ -5579,18 +5790,17 @@ def collect_history():
         from src.utils.perf import perf_block
         _sid = _seller_id()
         _ids = _seller_identities()
-        with perf_block("db"):
-            # 속도 STEP1: 목록은 lean=True — 대형 컬럼(이미지 40장·상세·리뷰·스펙) 제외 축약 projection.
-            #   단, 그룹 필터는 extra_json.group_id를 파이썬에서 읽으므로 그 경우만 full(lean=False).
-            _use_lean = not group_f
-            if _sql_page:
-                items = list_items(days=days, seller_ids=_ids, limit=per_page, offset=offset, lean=True)
-            else:
-                items = list_items(domain=domain, source=source, days=days, seller_ids=_ids, lean=_use_lean)
-            # 속도: 무한스크롤 조각(fmt=rows)은 행만 렌더 → summary·도메인 스캔 2회 전부 생략(1쿼리).
-            if fmt != "rows":
-                summ = summary(days=days, seller_ids=_ids)
-                domains = distinct_domains(seller_ids=_ids)
+        # v49 STEP2: DB 시간은 pg 레이어(query/tx)가 쿼리별로 계측한다(뷰 레벨 perf_block("db") 제거 —
+        #   같은 쿼리를 이중 계상하던 것 해소). 목록은 lean=True(대형 컬럼 제외), 그룹 필터일 때만 full.
+        _use_lean = not group_f
+        if _sql_page:
+            items = list_items(days=days, seller_ids=_ids, limit=per_page, offset=offset, lean=True)
+        else:
+            items = list_items(domain=domain, source=source, days=days, seller_ids=_ids, lean=_use_lean)
+        # 속도: 무한스크롤 조각(fmt=rows)은 행만 렌더 → summary·도메인 스캔 2회 전부 생략(1쿼리).
+        if fmt != "rows":
+            summ = summary(days=days, seller_ids=_ids)
+            domains = distinct_domains(seller_ids=_ids)
         logger.info("[collect-history] seller_id=%s identities=%s total=%s sql_page=%s fmt=%s", _sid, sorted(_ids), summ.get("total"), _sql_page, fmt or "-")
     except Exception as exc:
         logger.warning("수집 이력 조회 실패: %s", exc)
@@ -5681,6 +5891,16 @@ def collect_history():
         up = ex.get("uploaded")
         it["uploaded_markets"] = [str(u.get("market_label") or u.get("market"))
                                   for u in up if isinstance(u, dict) and (u.get("market_label") or u.get("market"))] if isinstance(up, list) else []
+        # v47 STEP2: 수집 필드 상태(성공/부분 + 누락 필드) — 목록 상태 컬럼에 정직 표기.
+        #   저장된 값이 있으면 그대로, 없으면(옛 레코드) 지금 판정(무음 실패·가짜 성공 금지).
+        cs = ex.get("collect_status") if isinstance(ex.get("collect_status"), dict) else None
+        if not cs:
+            try:
+                from src.collectors.collect_status import compute_collect_status as _ccs
+                cs = _ccs(ex, title_fallback=it.get("title") or "")
+            except Exception:
+                cs = None
+        it["collect_status"] = cs
 
     from .upload_dispatcher import MARKET_LABELS, SUPPORTED_MARKETS
     upload_markets = [{"code": m, "label": MARKET_LABELS.get(m, m)} for m in SUPPORTED_MARKETS]
@@ -5835,6 +6055,15 @@ def collect_preview_by_id(item_id: str):
     if cur_cat:
         cat_suggestion = {**cat_suggestion, "suggested_keywords": _suggest_kw(cur_cat, _title_for_cat)}
 
+    # v47 STEP2: 수집 로그(어느 소스가 어느 필드를 줬는지) — 드로어 하단 접이식. 저장값 우선, 없으면 판정.
+    collect_status = extra.get("collect_status") if isinstance(extra.get("collect_status"), dict) else None
+    if not collect_status:
+        try:
+            from src.collectors.collect_status import compute_collect_status as _ccs
+            collect_status = _ccs(extra, title_fallback=item.get("title") or "")
+        except Exception:
+            collect_status = None
+
     from src.utils.perf import perf_block as _pb
     with _pb("render"):
       return render_template(
@@ -5842,6 +6071,7 @@ def collect_preview_by_id(item_id: str):
         page="collect_history",
         item=item,
         extra=extra,
+        collect_status=collect_status,
         fx_rates=fx_rates,
         fx_is_mock=fx_is_mock,
         fx_updated=fx_updated,
