@@ -5787,18 +5787,17 @@ def collect_history():
         from src.utils.perf import perf_block
         _sid = _seller_id()
         _ids = _seller_identities()
-        with perf_block("db"):
-            # 속도 STEP1: 목록은 lean=True — 대형 컬럼(이미지 40장·상세·리뷰·스펙) 제외 축약 projection.
-            #   단, 그룹 필터는 extra_json.group_id를 파이썬에서 읽으므로 그 경우만 full(lean=False).
-            _use_lean = not group_f
-            if _sql_page:
-                items = list_items(days=days, seller_ids=_ids, limit=per_page, offset=offset, lean=True)
-            else:
-                items = list_items(domain=domain, source=source, days=days, seller_ids=_ids, lean=_use_lean)
-            # 속도: 무한스크롤 조각(fmt=rows)은 행만 렌더 → summary·도메인 스캔 2회 전부 생략(1쿼리).
-            if fmt != "rows":
-                summ = summary(days=days, seller_ids=_ids)
-                domains = distinct_domains(seller_ids=_ids)
+        # v49 STEP2: DB 시간은 pg 레이어(query/tx)가 쿼리별로 계측한다(뷰 레벨 perf_block("db") 제거 —
+        #   같은 쿼리를 이중 계상하던 것 해소). 목록은 lean=True(대형 컬럼 제외), 그룹 필터일 때만 full.
+        _use_lean = not group_f
+        if _sql_page:
+            items = list_items(days=days, seller_ids=_ids, limit=per_page, offset=offset, lean=True)
+        else:
+            items = list_items(domain=domain, source=source, days=days, seller_ids=_ids, lean=_use_lean)
+        # 속도: 무한스크롤 조각(fmt=rows)은 행만 렌더 → summary·도메인 스캔 2회 전부 생략(1쿼리).
+        if fmt != "rows":
+            summ = summary(days=days, seller_ids=_ids)
+            domains = distinct_domains(seller_ids=_ids)
         logger.info("[collect-history] seller_id=%s identities=%s total=%s sql_page=%s fmt=%s", _sid, sorted(_ids), summ.get("total"), _sql_page, fmt or "-")
     except Exception as exc:
         logger.warning("수집 이력 조회 실패: %s", exc)

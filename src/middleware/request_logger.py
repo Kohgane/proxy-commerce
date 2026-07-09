@@ -128,7 +128,7 @@ class RequestLogger:
         perf = {}
         counts = {}
         try:
-            from src.utils.perf import perf_snapshot, perf_server_timing, perf_counts
+            from src.utils.perf import perf_snapshot, perf_server_timing, perf_counts, perf_ms_list
             perf = perf_snapshot()
             counts = perf_counts()
             st = perf_server_timing()
@@ -138,9 +138,17 @@ class RequestLogger:
             _render = float(perf.get("render", 0) or 0)
             _app = round(max(0.0, elapsed_ms - _db - _render), 2)
             total = f"app;dur={_app}, total;dur={elapsed_ms}"
+            # v49 STEP2: 요청당 총 쿼리 수를 Server-Timing에 명시(N+1 진단, 목표 페이지당 ≤3).
+            _q = int(counts.get("db_query", 0) or 0)
+            if _q:
+                total = f'dbq;desc="{_q} queries";dur=0, ' + total
             if counts.get("db_conn"):
                 total = f"dbconn;desc={counts['db_conn']};dur=0, " + total
             response.headers["Server-Timing"] = (st + ", " + total) if st else total
+            # v49 STEP2: 개별 쿼리 ms(느린 순 상위 10)를 로그에 — 어떤 쿼리가 왕복을 먹는지 규명.
+            _mslist = perf_ms_list("db")
+            if _mslist:
+                perf["db_ms_each"] = sorted(_mslist, reverse=True)[:10]
         except Exception:
             pass
 
