@@ -46,6 +46,6 @@ def test_price_currency_map_has_won():
 
 def test_manifest_bumped():
     mf = json.loads(Path("extensions/chrome-collector/manifest.json").read_text(encoding="utf-8"))
-    # 5번 반영 버전(≥1.5.50)
+    # 5번 반영 버전(≥1.5.51)
     parts = [int(x) for x in mf["version"].split(".")]
     assert parts >= [1, 5, 37]
