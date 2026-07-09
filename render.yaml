@@ -51,6 +51,118 @@ services:
       - key: SHOPIFY_CLIENT_SECRET
         sync: false
 
+  # ──────────────────────────────────────────────────────────────────
+  # v49 STEP1 — 싱가포르 이관용 신규 서비스 (Render Blueprint)
+  #   목적: Render 리전을 Supabase(싱가포르)와 일치시켜 쿼리 왕복 지연(~220ms/쿼리) 제거.
+  #   플랜: starter(상시 가동, cold start 없음). 리전: singapore.
+  #   생성: Render 대시보드 → New → Blueprint → 이 레포 → proxy-commerce-sg 생성.
+  #   값이 sync:false 인 키는 오너가 Environment 탭에서 직접 입력(현 서비스 값 그대로 복사).
+  #   전체 절차·환경변수 전수 목록: docs/migration_sg_v1.md
+  # ──────────────────────────────────────────────────────────────────
+  - type: web
+    name: proxy-commerce-sg
+    runtime: docker
+    plan: starter
+    region: singapore
+    branch: main
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: PORT
+        value: "10000"
+      - key: FX_DISABLE_NETWORK
+        value: "1"
+      - key: GUNICORN_WORKERS
+        value: "2"
+      - key: GUNICORN_TIMEOUT
+        value: "120"
+      - key: GUNICORN_LOG_LEVEL
+        value: info
+      # ── 필수: DB(Supabase 싱가포르) — 런타임=풀러 6543, DDL=직접 5432 ──
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_URL_DIRECT
+        sync: false
+      # ── 필수: 세션 서명 키(재시작·워커 간 세션 유지) ──
+      - key: SECRET_KEY
+        sync: false
+      # ── AI·번역 ──
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        sync: false
+      - key: DEEPL_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # ── Sheets 백업(읽기전용 덤프) ──
+      - key: GOOGLE_SHEET_ID
+        sync: false
+      - key: GOOGLE_SERVICE_JSON_B64
+        sync: false
+      # ── 마켓 자격증명 암호화 키(복호화 위해 동일 값 필수) ──
+      - key: MARKET_CRED_ENC_KEY
+        sync: false
+      # ── 마켓 연동 ──
+      - key: SHOPIFY_SHOP
+        sync: false
+      - key: SHOPIFY_CLIENT_ID
+        sync: false
+      - key: SHOPIFY_CLIENT_SECRET
+        sync: false
+      - key: SHOPIFY_ACCESS_TOKEN
+        sync: false
+      - key: WOO_BASE_URL
+        sync: false
+      - key: WOO_CK
+        sync: false
+      - key: WOO_CS
+        sync: false
+      - key: WOO_WEBHOOK_SECRET
+        sync: false
+      - key: COUPANG_ACCESS_KEY
+        sync: false
+      - key: COUPANG_SECRET_KEY
+        sync: false
+      - key: COUPANG_VENDOR_ID
+        sync: false
+      - key: NAVER_COMMERCE_CLIENT_ID
+        sync: false
+      - key: NAVER_COMMERCE_CLIENT_SECRET
+        sync: false
+      - key: ELEVENST_API_KEY
+        sync: false
+      # ── 이미지 CDN ──
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      # ── 알림·크론 ──
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+      # ── 소셜 로그인 OAuth ──
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: NAVER_CLIENT_ID
+        sync: false
+      - key: NAVER_CLIENT_SECRET
+        sync: false
+      - key: KAKAO_CLIENT_ID
+        sync: false
+      - key: KAKAO_CLIENT_SECRET
+        sync: false
+      # ※ 그 외 검색·SEO·기타 키는 docs/migration_sg_v1.md 참조(현 서비스 Environment 탭 전수 복사 권장).
+
   - type: web
     name: proxy-commerce-staging
     env: docker
