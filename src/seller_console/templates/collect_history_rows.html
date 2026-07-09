@@ -62,7 +62,9 @@
     {% elif it.status == "ok" %}
       {# v47 STEP2: 수집 필드 상태 — 성공(N/7) 또는 부분(누락 필드명). 가짜 성공·무음 실패 금지. #}
       {% set cs = it.collect_status %}
-      {% if cs and cs.status == "부분" %}
+      {% if cs and cs.status == "실패" %}
+        <span class="badge bg-danger" title="{{ cs.cause }}"><i class="bi bi-x-octagon"></i> 실패 · 추출 실패</span>
+      {% elif cs and cs.status == "부분" %}
         <span class="badge" style="background:color-mix(in srgb,var(--warn,#f5821f) 16%,transparent);color:var(--warn,#f5821f)"
               title="누락: {{ cs.missing|join('·') }} ({{ cs.filled }}/{{ cs.total }} 필드)"><i class="bi bi-exclamation-triangle"></i> 부분 · {{ (cs.missing_short or cs.missing)|join('·') }}</span>
       {% elif cs %}

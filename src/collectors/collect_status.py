@@ -96,11 +96,23 @@ def compute_collect_status(
             missing_labels.append(label)
             if core:
                 core_missing.append(label)
-    status = "성공" if filled == TOTAL else "부분"
+    # v49 STEP5: 3단계 — 성공(전 필드)/부분(일부 누락)/실패(핵심 3 전부 미확보=추출 실패).
+    #   저장은 됐으나 제목·가격·이미지가 모두 없으면 '부분'이 아니라 '실패'로 정직 표기(원인 명시).
+    _core_total = len(_CORE)
+    if filled == TOTAL:
+        status = "성공"
+        cause = ""
+    elif len(core_missing) >= _core_total:
+        status = "실패"
+        cause = "추출 실패 — 핵심 정보(제목·가격·이미지)를 못 읽었어요"
+    else:
+        status = "부분"
+        cause = ""
     # 뱃지·토스트용 간결 누락 목록: 핵심 누락이 있으면 핵심만(가장 급함), 없으면 부가 누락 최대 3개.
     missing_short = core_missing if core_missing else missing_labels[:3]
     return {
         "status": status,
+        "cause": cause,
         "filled": filled,
         "total": TOTAL,
         "present": present_labels,
@@ -112,10 +124,12 @@ def compute_collect_status(
 
 
 def status_summary(st: Dict[str, Any]) -> str:
-    """토스트/뱃지용 한 줄 요약. '수집 완료(7/7)' 또는 '부분 수집 — 이미지·리뷰 누락'."""
+    """토스트/뱃지용 한 줄 요약. 성공(7/7)/부분(누락)/실패(원인)."""
     if not st:
         return ""
     if st.get("status") == "성공":
         return f"수집 완료({st.get('filled')}/{st.get('total')} 필드)"
+    if st.get("status") == "실패":
+        return f"수집 실패 — {st.get('cause') or '핵심 정보 미확보'}"
     miss = "·".join(st.get("missing_short") or st.get("missing") or [])
     return f"부분 수집 — {miss} 누락" if miss else "부분 수집"

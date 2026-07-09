@@ -771,9 +771,17 @@ function handleFabClick(btn, opts) {
       ]));
       return;
     }
-    // v47 STEP2: 서버 필드 상태(성공/부분 + 누락 필드명)로 정직 표기 — 무음 실패·가짜 성공 금지.
+    // v47/v49 STEP2·5: 서버 필드 상태(성공/부분/실패)로 정직 표기 — 무음 실패·가짜 성공 금지.
     //   서버 field_status가 단일 소스. 없으면(구서버) 클라 meta.partial 폴백.
     var fs = resp.field_status || null;
+    // v49 STEP5: 실패(핵심 3 전부 미확보) — 원인 명시, 축하 없음.
+    if (fs && fs.status === "실패") {
+      try { console.warn("[고가수집기] 수집 실패 —", fs.cause || "핵심 정보 미확보"); } catch (e) {}
+      kgpAlertOnce(corr, () => kgpResultToast(
+        "수집 실패 — " + (fs.cause || "핵심 정보(제목·가격·이미지)를 못 읽었어요") + "\n드로어에서 직접 입력하거나 다시 시도하세요",
+        false, [{ label: "이력 열기", fn: kgpOpenHistory }]));
+      return;
+    }
     var isPartial = fs ? (fs.status === "부분") : !!(meta && meta.partial);
     if (isPartial) {
       var _ml = fs && ((fs.missing_short && fs.missing_short.length) ? fs.missing_short : fs.missing);

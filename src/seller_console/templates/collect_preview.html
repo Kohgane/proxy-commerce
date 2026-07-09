@@ -264,7 +264,9 @@
     {% if collect_status %}
     <details class="mx-3 mb-2 small" style="border:1px solid var(--border,#e9ecef);border-radius:8px;padding:.4rem .6rem">
       <summary style="cursor:pointer;font-weight:600">
-        {% if collect_status.status == "부분" %}
+        {% if collect_status.status == "실패" %}
+          <span style="color:var(--danger,#e03131)"><i class="bi bi-x-octagon"></i> 수집 실패 — {{ collect_status.cause }}</span>
+        {% elif collect_status.status == "부분" %}
           <span style="color:var(--warn,#f5821f)"><i class="bi bi-exclamation-triangle"></i> 부분 수집 — {{ collect_status.missing|join('·') }} 누락</span>
         {% else %}
           <span style="color:var(--success,#2f9e44)"><i class="bi bi-check-circle"></i> 수집 완료</span>
