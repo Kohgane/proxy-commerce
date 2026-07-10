@@ -316,8 +316,22 @@ def map_product(states: List[Any]) -> Dict[str, Any]:
     return res
 
 
-def parse_state_from_html(html: str) -> Dict[str, Any]:
-    """수신 HTML → 초기 상태 JSON 파싱 → 상품 필드 매핑. 상태 JSON 없으면 빈 결과(폴백은 호출부)."""
+_TEMU_HOST = re.compile(r"(^|\.)temu\.com$", re.I)
+
+
+def parse_state_from_html(html: str, url: str = "") -> Dict[str, Any]:
+    """수신 HTML → 초기 상태 JSON 파싱 → 상품 필드 매핑. 상태 JSON 없으면 빈 결과(폴백은 호출부).
+
+    v51: **테무는 rawData/초기상태 전역이 구조적으로 없음(오너 확정)** → 테무 URL은 이 파서를 건너뛴다
+    (PRERENDER_CONFIG 등 비-상품 인라인 JSON을 상품으로 오파싱하지 않도록). 테무는 확장 Tier1(API 캡처)로만.
+    """
+    try:
+        from urllib.parse import urlparse
+        host = (urlparse(url).hostname or "") if url else ""
+        if host and _TEMU_HOST.search(host):
+            return {}
+    except Exception:
+        pass
     states = extract_state_json(html)
     if not states:
         return {}

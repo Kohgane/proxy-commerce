@@ -22,8 +22,9 @@ MAIN = Path("extensions/chrome-collector/kgp-main.js").read_text(encoding="utf-8
 def test_manifest_has_main_world_content_script():
     import json
     m = json.loads(MANIFEST)
-    worlds = [cs for cs in m["content_scripts"] if cs.get("world") == "MAIN"]
-    assert worlds, "MAIN world content script 항목이 없음"
+    # v51: MAIN world 항목이 2개(kgp-net document_start + kgp-main document_idle) → 브릿지 항목 특정.
+    worlds = [cs for cs in m["content_scripts"] if cs.get("world") == "MAIN" and "kgp-main.js" in cs.get("js", [])]
+    assert worlds, "MAIN world(kgp-main) content script 항목이 없음"
     js = worlds[0]["js"]
     assert "kgp-extractor.js" in js and "kgp-main.js" in js   # 추출기 + 브릿지 둘 다 MAIN에
 

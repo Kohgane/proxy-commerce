@@ -125,6 +125,13 @@
   function _globalStates() {
     // 흔한 초기 상태 전역/스크립트(next/nuxt/redux/사이트 커스텀). 값이 객체면 후보로.
     var cands = [];
+    // (0) ★Tier 1(v51): kgp-net.js가 캡처한 상품 API 응답 — 테무처럼 초기상태 전역이 없고
+    //     데이터가 API 응답으로만 존재하는 사이트의 핵심. MAIN world에서만 채워짐(페이지가 이미 받은
+    //     응답을 읽을 뿐 — 추가 요청 0). 최신 응답이 더 정확하므로 뒤에서부터(역순) 우선.
+    try {
+      var cap = global.__kgpCaptured;
+      if (cap && cap.length) { for (var c = cap.length - 1; c >= 0; c--) cands.push(cap[c]); }
+    } catch (e) {}
     // (1) live 전역 — 북마클릿(페이지월드)에서만 유효. 확장(격리월드)에선 대개 undefined.
     for (var i = 0; i < STATE_KEYS.length; i++) {
       try { var v = global[STATE_KEYS[i]]; if (v && typeof v === "object") cands.push(v); } catch (e) {}
@@ -376,36 +383,63 @@
     } catch (e) {}
     return cands[0] || null;
   }
+  // v51 Tier2: 갤러리 스코프 전용 제외(추천/연관/함께구매만 — 캐러셀/스와이퍼는 '갤러리 그 자체'라 제외 안 함).
+  function _galleryExcluded(el) {
+    var re = /(recommend|related|similar|also[-_ ]?bought|you[-_ ]?may|sponsored|advert|ranking|cross[-_ ]?sell|up[-_ ]?sell|footer|comment|qna|review[-_ ]?list)/i;
+    var cur = el && el.parentElement, d = 0;
+    while (cur && d < 10) {
+      var tok = (cur.className && cur.className.baseVal !== undefined ? cur.className.baseVal : (cur.className || "")) + " " + (cur.id || "");
+      if (tok && re.test(tok)) return true;
+      cur = cur.parentElement; d++;
+    }
+    return false;
+  }
+  // 이미지 요소의 최고해상도 후보(currentSrc·data-*·srcset 최대). naturalWidth 필터 미사용(URL·컨테이너로 판별).
+  function _bestImgSrc(im) {
+    var src = im.currentSrc || im.getAttribute("data-old-hires") || im.getAttribute("data-src")
+      || im.getAttribute("data-original") || im.getAttribute("data-lazy") || im.getAttribute("data-image") || im.src || "";
+    try {
+      if (im.srcset) {
+        var best = "", bw = -1;
+        im.srcset.split(",").forEach(function (part) {
+          var seg = part.trim().split(/\s+/); var u = seg[0];
+          var w = seg[1] ? parseInt(seg[1], 10) || 0 : 0;
+          if (u && w >= bw) { bw = w; best = u; }
+        });
+        if (best) src = best;
+      }
+    } catch (e) {}
+    return src;
+  }
   function _domImages() {
     var out = [], seen = {}, det = [], detSeen = {};
     var og = _meta("og:image") || _meta("og:image:url"); if (isProductImg(og)) uniqPush(out, seen, hiRes(og));
-    var gSel = '[class*="gallery" i] img,[class*="product-image" i] img,[class*="main-image" i] img,#imgTagWrapperId img,[class*="swiper" i] img,[class*="carousel" i] img';
+    // 상품 갤러리 컨테이너(메인 캐러셀/스와이퍼/프리뷰)로 스코프 한정 — 페이지 전체 document.images 금지.
+    var gSel = '[class*="gallery" i] img,[class*="product-image" i] img,[class*="main-image" i] img,#imgTagWrapperId img,'
+      + '[class*="swiper" i] img,[class*="carousel" i] img,[class*="preview" i] img,[class*="mainImage" i] img,'
+      + '[class*="bigImg" i] img,[class*="thumb" i] img,[data-testid*="gallery" i] img,[aria-roledescription="carousel"] img';
     var dSel = '#productDescription img,#feature-bullets img,[class*="detail" i] img,[class*="description" i] img,#aplus img';
-    function grab(sel, arr, sset, bucket) {
-      try {
-        var els = document.querySelectorAll(sel);
-        for (var i = 0; i < els.length; i++) {
-          var im = els[i];
-          if (_nonProdRegion(im)) continue;
-          var src = im.currentSrc || im.getAttribute("data-old-hires") || im.getAttribute("data-src") || im.getAttribute("data-original") || im.src || "";
-          if (im.srcset) { var last = im.srcset.split(",").pop(); if (last) src = last.trim().split(/\s+/)[0] || src; }
-          if ((im.naturalWidth || 250) < 200 && !bucket) continue;   // 갤러리는 큰 것만
-          if (isProductImg(src)) uniqPush(arr, sset, hiRes(src));
-        }
-      } catch (e) {}
-    }
-    grab(gSel, out, seen, false);
-    grab(dSel, det, detSeen, true);
-    // 갤러리 못 찾으면 페이지의 큰 상품 이미지로 폴백
-    if (out.length <= 1) {
-      try {
-        var all = document.images || [];
-        for (var i = 0; i < all.length; i++) {
-          var im = all[i]; if (_nonProdRegion(im)) continue;
-          if ((im.naturalWidth || 0) >= 300 && (im.naturalHeight || 0) >= 300 && isProductImg(im.currentSrc || im.src)) uniqPush(out, seen, hiRes(im.currentSrc || im.src));
-        }
-      } catch (e) {}
-    }
+    // 갤러리: naturalWidth 필터 없이 — 추천/연관 섹션만 제외(캐러셀은 갤러리라 허용).
+    try {
+      var gels = document.querySelectorAll(gSel);
+      for (var gi = 0; gi < gels.length; gi++) {
+        var im = gels[gi];
+        if (_galleryExcluded(im)) continue;
+        var src = _bestImgSrc(im);
+        if (isProductImg(src)) uniqPush(out, seen, hiRes(src));
+      }
+    } catch (e) {}
+    // 상세 본문 이미지(별도 버킷) — 추천/리뷰/푸터 제외.
+    try {
+      var dels = document.querySelectorAll(dSel);
+      for (var di = 0; di < dels.length; di++) {
+        var dm = dels[di];
+        if (_nonProdRegion(dm) || _galleryExcluded(dm)) continue;
+        var dsrc = _bestImgSrc(dm);
+        if (isProductImg(dsrc)) uniqPush(det, detSeen, hiRes(dsrc));
+      }
+    } catch (e) {}
+    // 브리프(오너): 갤러리 컨테이너 스코프 실패 시 document.images 전체 폴백 금지 → 빈 배열(정직, Tier1이 채우거나 부분수집).
     return { images: out, detailImages: det };
   }
   var OPT_LABEL = /(색상|색깔|컬러|사이즈|크기|규격|수량|종류|옵션|타입|스타일|모델|용량|color|colour|size|variant|option|type|style|qty|quantity|model|capacity)/i;
@@ -474,7 +508,12 @@
     var j = {};
     try { j = _fromJson(); } catch (e) { j = { ok: false, images: [], detailImages: [], options: [], skus: [], specs: [], reviews: [] }; }
 
-    var title = j.title || _meta("og:title") || (document.title || "");
+    // 타이틀: Tier1(JSON/API) → Tier2(h1) → Tier3(og:title) → document.title.
+    var h1t = "";
+    try { var h1el = document.querySelector("h1"); if (h1el) h1t = (h1el.textContent || "").trim().slice(0, 300); } catch (e) {}
+    var ogt = _meta("og:title");
+    var title = j.title || h1t || ogt || (document.title || "");
+    var titleSrc = j.title ? "tier1" : (h1t ? "tier2" : (ogt || document.title ? "tier3" : "none"));
     var price = j.price || "", currency = j.currency || "";
     var images = (j.images || []).slice(), detailImages = (j.detailImages || []).slice();
     var options = (j.options || []).slice(), skus = (j.skus || []).slice(), specs = (j.specs || []).slice();
@@ -514,16 +553,16 @@
         warnings.length ? "| 경고:" + warnings.join(" / ") : "");
     } catch (e) {}
 
-    // v47 STEP2: 필드별 추출 소스(json/dom/none) — 서버가 수집 로그에 '어느 소스가 어느 필드를
-    //   줬는지'(json/dom/없음) 표기. 값 있으면 어디서 왔는지, 없으면 none(가짜 소스 날조 금지).
+    // v51: 필드별 추출 Tier — Tier1(캡처 API/초기상태 JSON)·Tier2(렌더 DOM 갤러리·h1)·Tier3(og/meta)·none.
+    //   서버 수집 로그에 '어느 Tier가 어느 필드를 줬는지' 표기. 값 없으면 none(가짜 소스 날조 금지).
     var fieldSources = {
-      title: j.title ? "json" : (title ? "dom" : "none"),
-      price: j.price ? "json" : (price ? "dom" : "none"),
-      images: (j.images && j.images.length) ? "json" : (gallery.length ? "dom" : "none"),
-      options: (j.options && j.options.length) ? "json" : (options.length ? "dom" : "none"),
-      description: j.description ? "json" : (description ? "dom" : "none"),
-      detail_images: (j.detailImages && j.detailImages.length) ? "json" : (detailImages.length ? "dom" : "none"),
-      reviews: ((j.reviews && j.reviews.length) || j.rating || j.reviewCount) ? "json" : "none"
+      title: titleSrc,
+      price: j.price ? "tier1" : (price ? "tier2" : "none"),
+      images: (j.images && j.images.length) ? "tier1" : (gallery.length ? "tier2" : "none"),
+      options: (j.options && j.options.length) ? "tier1" : (options.length ? "tier2" : "none"),
+      description: j.description ? "tier1" : (description ? "tier2" : "none"),
+      detail_images: (j.detailImages && j.detailImages.length) ? "tier1" : (detailImages.length ? "tier2" : "none"),
+      reviews: ((j.reviews && j.reviews.length) || j.rating || j.reviewCount) ? "tier1" : "none"
     };
 
     var out = {

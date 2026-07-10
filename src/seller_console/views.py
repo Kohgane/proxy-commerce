@@ -5441,6 +5441,7 @@ def _bookmarklet_js(server: str, token: str, translate: bool) -> str:
         "html:(document.documentElement?document.documentElement.outerHTML:'').slice(0,900000),"
         "ext_version:'bookmarklet',translate:" + tr + "};"
         "function K(m,ok){var t=document.getElementById('kgpbm');if(!t){t=document.createElement('div');t.id='kgpbm';t.style.cssText='position:fixed;right:20px;bottom:84px;z-index:2147483647;display:flex;align-items:center;gap:8px;max-width:300px;padding:10px 14px;border-radius:10px;font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.3)';var ic=document.createElement('img');ic.src=S+'/seller/static/favicon-32.png?v=181';ic.alt='';ic.style.cssText='width:20px;height:20px;border-radius:5px;flex:none;background:#fff';t.appendChild(ic);var tx=document.createElement('span');tx.id='kgpbmx';tx.style.whiteSpace='pre-wrap';t.appendChild(tx);document.body.appendChild(t);}t.style.background=ok?'#16a34a':'#dc2626';var x=document.getElementById('kgpbmx');if(x)x.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0'},4500);}"
+        "try{if(/(^|\\.)temu\\.com$/i.test(location.hostname))K('테무는 상품 데이터가 API로만 로드돼 북마클릿은 일부만 수집돼요.\\n정확한 수집은 크롬 확장(고가수집기)을 쓰세요.',false)}catch(e){}"
         "K('수집 중…',true);"
         "try{console.log('[고가수집기] 전송요약',{price:data.price,currency:data.currency,images:(data.images||[]).length,desc:(data.description||'').length+'자',html:(data.html||'').length+'자'})}catch(e){}"
         "var _ST=0,_HTML=false;"
@@ -5588,7 +5589,7 @@ def extension_download():
     if not os.path.isdir(ext_dir):
         abort(404)
     include = [
-        "manifest.json", "background.js", "kgp-extractor.js", "kgp-main.js", "content_script.js",
+        "manifest.json", "background.js", "kgp-net.js", "kgp-extractor.js", "kgp-main.js", "content_script.js",
         "popup.html", "popup.js", "options.html", "options.js", "README.md",
     ]
     buf = io.BytesIO()
