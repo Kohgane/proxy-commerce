@@ -39,8 +39,8 @@ def test_drawer_uses_batched_connected_markets():
 
 def test_instant_skeleton_and_prefetch():
     # 클릭 즉시 skeleton + hover/touch prefetch + 진행바(기존).
-    assert "kgp-nav-skeleton" in BASE and "showSkeleton" in BASE
-    assert "rel = 'prefetch'" in BASE or "l.rel = 'prefetch'" in BASE
+    # v52: 인스턴트 body-swap 엔진이 대체 — 즉시 콘텐츠 교체라 skeleton 불요, 프리패치는 fetch 메모리 캐시.
+    assert "function prefetch(url)" in BASE and "fetchDoc" in BASE
     assert "kgp-progress" in BASE                          # 진행바 유지
     # 내부 링크만·새탭 제외
     assert "location.origin" in BASE

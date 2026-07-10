@@ -8,7 +8,9 @@
  * (속도 ③: Noto Serif는 CSP가 fonts.googleapis.com을 막아 프로덕션에서 안 뜨던 것을 CSP 허용으로 해소.)
  */
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
-@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;600;700&display=swap');
+/* v52 STEP1(전송 최적화): 콘솔 세리프(--font-display)는 실사 결과 weight 600만 사용(h1·pc-display 등
+   전부 --w-semi=600). 미사용 500·700 굵기 제거 → 전송량↓(패밀리·디자인·토큰 불변). display=swap 유지. */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@600&display=swap');
 
 :root {
   /* ========================================================================
