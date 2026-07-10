@@ -21,4 +21,4 @@ def test_fab_still_always_shown_on_sourcing():
 
 
 def test_extension_version_bumped():
-    assert MANIFEST["version"] == "1.5.52"
+    assert MANIFEST["version"] == "1.5.53"

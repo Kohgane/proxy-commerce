@@ -1495,17 +1495,78 @@ function kgpRemoveListing() {
   document.querySelectorAll('[data-kgp-outline="1"]').forEach((e) => { e.style.outline = ""; e.removeAttribute("data-kgp-outline"); });
 }
 
-// SPA 대응 + v11 P0: 페이지 종류에 따라 버튼 자동 전환(목록=중앙 바만, 상세=우측 FAB만 — 동시 노출 0).
+// v53 STEP1: 페이지 타입 점수제 감지기 — 단일 상품 vs 목록.
+//   증상: 단일 상품 페이지에 중앙(벌크) 버튼이 떠 수집·선택 불가(옛 판정=카드 3개+면 무조건 목록).
+//   URL 어댑터 매치 최우선, DOM 휴리스틱 보조. 동점/무신호=불능→우측 단건(안전 기본값).
+const KGP_DETAIL_URL_RE = /(\/dp\/|\/gp\/product\/|\/vp\/products\/|item\.htm|aliexpress\.[^/]+\/item\/|[?&]goods_id=|[/-]g-\d{3,}|\/goods\/\d|\/product\/\d|\/products\/[\w-]+|\/itm\/)/i;
+const KGP_LIST_URL_RE = /(\/s\?|\/s\/|\/search|\/sch\b|[?&](q|keyword|query|search|k)=|\/category|\/categories|\/c\/|\/list\b|\/best\b|\/ranking|\/plp|\/browse|\/deals)/i;
+
+function kgpDetectPageType() {
+  // 수동 오버라이드 최우선(감지 실패 대비 탈출구) — 경로 단위 기억.
+  try {
+    const ov = sessionStorage.getItem("kgp_pt_ov:" + location.pathname);
+    if (ov === "single" || ov === "list") return ov;
+  } catch (e) {}
+  const href = location.href;
+  let single = 0, list = 0;
+  // 1) URL 어댑터 매치 최우선(가중치 3)
+  if (KGP_DETAIL_URL_RE.test(href)) single += 3;
+  if (KGP_LIST_URL_RE.test(href)) list += 3;
+  // 2) DOM 신호(보조)
+  try { const h1 = document.querySelectorAll("h1"); if (h1.length === 1 && (h1[0].textContent || "").trim().length > 6) single += 1; } catch (e) {}
+  try { if (document.querySelector('[class*="gallery" i],[class*="swiper" i],[class*="carousel" i],[aria-roledescription="carousel"]')) single += 1; } catch (e) {}
+  try {
+    document.querySelectorAll('script[type="application/ld+json"]').forEach((s) => {
+      const t = s.textContent || "";
+      if (/"@type"\s*:\s*"Product"/i.test(t)) single += 2;
+      if (/"@type"\s*:\s*"ItemList"/i.test(t)) list += 2;
+    });
+  } catch (e) {}
+  // 3) 반복 상품 카드 그리드(동일 구조 6개+ = 강한 목록 신호, 3~5 = 약한 신호)
+  try { const n = kgpFindCards().length; if (n >= 6) list += 3; else if (n >= 3) list += 1; } catch (e) {}
+
+  if (single === 0 && list === 0) return "unknown";
+  if (list > single) return "list";
+  if (single > list) return "single";
+  return "unknown";                                   // 동점 → 불능(안전 기본값으로)
+}
+
+// 수동 오버라이드: 버튼 롱프레스(≥600ms) → 이 페이지를 단일↔목록 강제 토글(감지 실패 대비).
+function kgpAttachOverride(el) {
+  if (!el || el._kgpOv) return; el._kgpOv = 1;
+  let timer = null;
+  const start = () => { timer = setTimeout(() => {
+    let cur = "";
+    try { cur = sessionStorage.getItem("kgp_pt_ov:" + location.pathname) || kgpDetectPageType(); } catch (e) { cur = "single"; }
+    const next = cur === "list" ? "single" : "list";
+    try { sessionStorage.setItem("kgp_pt_ov:" + location.pathname, next); } catch (e) {}
+    try { kgpToast("이 페이지를 '" + (next === "list" ? "목록(벌크)" : "단일 상품") + "'으로 강제했어요", true); } catch (e) {}
+    kgpRefresh();
+  }, 600); };
+  const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  el.addEventListener("mousedown", start); el.addEventListener("touchstart", start, { passive: true });
+  ["mouseup", "mouseleave", "touchend", "touchcancel"].forEach((ev) => el.addEventListener(ev, cancel));
+  el.addEventListener("contextmenu", (e) => { e.preventDefault(); cancel();
+    let cur = ""; try { cur = sessionStorage.getItem("kgp_pt_ov:" + location.pathname) || kgpDetectPageType(); } catch (x) {}
+    const next = cur === "list" ? "single" : "list";
+    try { sessionStorage.setItem("kgp_pt_ov:" + location.pathname, next); } catch (x) {}
+    try { kgpToast("이 페이지를 '" + (next === "list" ? "목록(벌크)" : "단일 상품") + "'으로 강제했어요", true); } catch (x) {}
+    kgpRefresh();
+  });
+}
+
+// SPA 대응 + v53 STEP1: 페이지 타입 감지로 버튼 자동 전환(목록=중앙 바만, 단일/불능=우측 FAB만 — 동시 노출 0).
 function kgpRefresh() {
   if (!kgpHostAllowed() && !kgpEntrySession()) { kgpTeardown(); return; }   // 지정 소싱처 또는 앱 진입(v10/v17)
-  const cards = kgpFindCards();
-  const isList = cards.length >= 3;                   // 제품 그리드(여러 제품) = 목록
-  if (isList) {
+  const pt = kgpDetectPageType();
+  if (pt === "list") {
     kgpRemoveFab();                                   // 목록: 우측 FAB 숨김
-    kgpInjectListing();                               // 중앙 바만
+    kgpInjectListing();                               // 중앙 바만(1.5배)
+    try { kgpAttachOverride(document.getElementById(KGP_TOOLBAR_ID)); } catch (e) {}
   } else {
-    kgpRemoveListing();                               // 상세: 중앙 바/배지 숨김
-    injectCollectButton();                            // 우측 FAB만(looksLikeProductPage/디테일 URL 가드)
+    kgpRemoveListing();                               // 단일/불능: 중앙 바/배지 숨김
+    injectCollectButton();                            // 우측 단건 FAB만(안전 기본값)
+    try { kgpAttachOverride(document.getElementById(KGP_BTN_ID)); } catch (e) {}
   }
 }
 
@@ -1557,7 +1618,7 @@ setInterval(() => { if (kgpHostAllowed()) kgpRefresh(); }, 4000);
   let _t = null;
   function _scheduleRefresh() {
     if (_t) return;
-    _t = setTimeout(() => { _t = null; try { if (kgpHostAllowed() || kgpEntrySession()) kgpRefresh(); } catch (e) {} }, 400);
+    _t = setTimeout(() => { _t = null; try { if (kgpHostAllowed() || kgpEntrySession()) kgpRefresh(); } catch (e) {} }, 500);   // v53 STEP1: DOM 변이 재판정 디바운스 500ms
   }
   try {
     const obs = new MutationObserver((muts) => {
