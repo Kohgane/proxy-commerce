@@ -90,7 +90,7 @@ def compute_collect_status(
         # v51: Tier 라벨(Tier1=캡처 API/초기상태·Tier2=렌더 DOM·Tier3=og/meta) + 하위호환(json/dom/server).
         src_label = {
             "tier1": "Tier1(API/상태)", "tier2": "Tier2(DOM)", "tier3": "Tier3(og)",
-            "json": "JSON", "dom": "DOM", "server": "서버파싱",
+            "ldjson": "ld+json", "json": "JSON", "dom": "DOM", "server": "서버파싱",
         }.get(src, ("있음" if ok else "없음"))
         fields.append({"key": key, "label": label, "ok": ok, "core": core, "source": src_label})
         if ok:

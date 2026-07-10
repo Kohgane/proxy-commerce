@@ -8,7 +8,9 @@
 <link rel="privacy-policy" href="/privacy">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700;900&display=swap" rel="stylesheet">
+<!-- v52 STEP1(전송 최적화): 랜딩 세리프 실사 = 900(hero h1·KPI·scard·sec-head) + 500(plain .serif 상속).
+     700은 세리프 아님(UI=Pretendard) → 제거. 패밀리·디자인 불변, display=swap 유지. -->
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;900&display=swap" rel="stylesheet">
 <style>
   body.bg-light { background: var(--paper) !important; color: var(--ink); margin: 0; line-height: 1.62; }
   .lp { --maxw: 1180px; }

@@ -316,6 +316,113 @@ def map_product(states: List[Any]) -> Dict[str, Any]:
     return res
 
 
+def _ld_first(v):
+    return v[0] if isinstance(v, list) and v else v
+
+
+def _ld_price(offers) -> Tuple[str, str]:
+    """schema.org offers(dict/list/AggregateOffer)에서 (price, currency) 추출 — 판매가 우선."""
+    for off in (offers if isinstance(offers, list) else [offers]):
+        if not isinstance(off, dict):
+            continue
+        if off.get("offers"):                                  # AggregateOffer.offers 중첩
+            p, c = _ld_price(off["offers"])
+            if p:
+                return p, c
+        spec = off.get("priceSpecification") if isinstance(off.get("priceSpecification"), dict) else {}
+        price = off.get("price") or off.get("lowPrice") or spec.get("price")
+        cur = off.get("priceCurrency") or spec.get("priceCurrency")
+        if price not in (None, ""):
+            return str(price).replace(",", "").strip(), str(cur or "").upper()
+    return "", ""
+
+
+def _ld_images(img) -> List[str]:
+    out = []
+    for it in (img if isinstance(img, list) else [img]):
+        if isinstance(it, str) and re.match(r"^https?://", it):
+            out.append(it)
+        elif isinstance(it, dict):
+            u = it.get("url") or it.get("contentUrl")
+            if isinstance(u, str) and re.match(r"^https?://", u):
+                out.append(u)
+    return out
+
+
+def _iter_ld_products(data):
+    stack = [data]
+    seen = 0
+    while stack and seen < 5000:
+        seen += 1
+        d = stack.pop()
+        if isinstance(d, list):
+            stack.extend(d)
+            continue
+        if not isinstance(d, dict):
+            continue
+        g = d.get("@graph")
+        if g:
+            stack.extend(g if isinstance(g, list) else [g])
+        t = d.get("@type")
+        types = t if isinstance(t, list) else [t]
+        if any(str(x).lower() == "product" for x in types if x):
+            yield d
+
+
+def parse_ldjson(html: str) -> Dict[str, Any]:
+    """<script type="application/ld+json"> 전수 파싱 → schema.org Product 필드 매핑(북마클릿 가격 본체).
+
+    대부분 쇼핑몰이 ld+json Product를 싣는다: offers.price/priceCurrency·image·aggregateRating·description·review.
+    """
+    out: Dict[str, Any] = {}
+    if not html:
+        return out
+    blocks = re.findall(r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', html, re.S | re.I)
+    for raw in blocks:
+        try:
+            data = json.loads(raw.strip())
+        except Exception:
+            continue
+        for p in _iter_ld_products(data):
+            if not out.get("title") and p.get("name"):
+                out["title"] = str(p["name"])[:300]
+            if not out.get("description") and isinstance(p.get("description"), str) and len(p["description"]) > 20:
+                out["description"] = p["description"][:4000]
+            if not out.get("price") and p.get("offers"):
+                pr, cur = _ld_price(p["offers"])
+                if pr:
+                    out["price"] = pr
+                    out["currency"] = cur
+            if not out.get("images") and p.get("image"):
+                imgs = _ld_images(p["image"])
+                if imgs:
+                    out["images"] = imgs
+            agg = p.get("aggregateRating")
+            if isinstance(agg, dict):
+                if not out.get("rating") and agg.get("ratingValue") not in (None, ""):
+                    out["rating"] = str(agg["ratingValue"])
+                if not out.get("review_count") and (agg.get("reviewCount") or agg.get("ratingCount")):
+                    out["review_count"] = str(agg.get("reviewCount") or agg.get("ratingCount"))
+            rv = p.get("review")
+            if rv and not out.get("reviews"):
+                revs = []
+                for one in (rv if isinstance(rv, list) else [rv])[:10]:
+                    if not isinstance(one, dict):
+                        continue
+                    body = one.get("reviewBody") or one.get("description") or ""
+                    if body:
+                        author = one.get("author")
+                        if isinstance(author, dict):
+                            author = author.get("name", "")
+                        rr = one.get("reviewRating")
+                        revs.append({"author": str(author or ""), "rating": str((rr or {}).get("ratingValue", "") if isinstance(rr, dict) else ""), "text": str(body)[:500]})
+                if revs:
+                    out["reviews"] = revs
+        if out.get("price"):
+            break
+    return out
+
+
 _TEMU_HOST = re.compile(r"(^|\.)temu\.com$", re.I)
 
 

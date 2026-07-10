@@ -432,72 +432,106 @@ if ('serviceWorker' in navigator) {
   }
 })();
 
-// v13 속도: 상단 진행바(체감 속도 피드백) + 내부 링크 프리패치(hover/포커스 → 다음 페이지 즉시).
-//   prefers-reduced-motion 존중(진행바 애니메이션 생략). 경량·같은 출처만.
+// v52 STEP1: 인스턴트 내비 엔진(자작 ~2KB, 외부 프레임워크 0). hover-prefetch(메모리 캐시) +
+//   동일 오리진 <a> 클릭 시 <main> 콘텐츠만 스왑 + pushState + 스크롤 복원(CSS/JS 재로드 없음).
+//   핵심 안전: 스왑 중 어떤 오류든 즉시 일반 내비게이션으로 강등(내비가 죽는 일 금지).
+//   reduced-motion 존중. 진행바·skeleton은 스왑 생명주기에 연동.
 (function () {
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var SWAP = 'main.console-content', PAGEJS = '#kgp-page-js';
+  var cache = {}, TTL = 30000, inflight = 0, MAXFLIGHT = 2;
+  var scrollPos = {};
+
+  // 진행바
   var bar = document.createElement('div');
   bar.id = 'kgp-progress';
   bar.style.cssText = 'position:fixed;top:0;left:0;height:3px;width:0;z-index:3000;background:linear-gradient(90deg,#119a8e,#c9a24b);transition:width .2s ease,opacity .3s ease;opacity:0;pointer-events:none';
   var timer;
-  function start() {
-    if (RM || !document.body) return;
-    if (!bar.parentNode) document.body.appendChild(bar);
-    clearInterval(timer);
-    bar.style.opacity = '1'; bar.style.width = '8%';
-    var w = 8;
-    timer = setInterval(function () { w = Math.min(90, w + (90 - w) * 0.12); bar.style.width = w + '%'; }, 200);
-  }
-  function done() {
-    clearInterval(timer);
-    if (!bar.parentNode) return;
-    bar.style.width = '100%';
-    setTimeout(function () { bar.style.opacity = '0'; bar.style.width = '0'; }, 250);
-  }
-  // v51 STEP2: 내비 클릭 즉시 skeleton 오버레이 — 새 페이지 도착 전에도 '반응함'을 0ms에 보여줘 체감 지연↓.
-  //   프리패치로 대상이 워밍돼 있으면 실제 전환도 빠름. 전체 페이지 전환이라 새 페이지 로드 시 자연 소멸.
-  function showSkeleton() {
-    if (RM || !document.body) return;
-    if (document.getElementById('kgp-nav-skeleton')) return;
-    var sk = document.createElement('div');
-    sk.id = 'kgp-nav-skeleton';
-    sk.style.cssText = 'position:fixed;inset:0;z-index:2900;background:rgba(248,250,252,.62);pointer-events:none;opacity:0;transition:opacity .12s ease';
-    var rows = '';
-    for (var i = 0; i < 6; i++) rows += '<div class="skeleton" style="height:20px;margin:14px 0;border-radius:6px;background:#e9ecef"></div>';
-    sk.innerHTML = '<div style="max-width:1100px;margin:88px auto 0;padding:0 22px">' + rows + '</div>';
-    document.body.appendChild(sk);
-    requestAnimationFrame(function () { sk.style.opacity = '1'; });
-    setTimeout(function () { var s = document.getElementById('kgp-nav-skeleton'); if (s) s.remove(); }, 4000);  // 취소 시 안전 제거
-  }
-  function clearSkeleton() { var s = document.getElementById('kgp-nav-skeleton'); if (s) s.remove(); }
-  document.addEventListener('click', function (e) {
-    var a = e.target.closest && e.target.closest('a[href]');
-    if (!a) return;
-    var href = a.getAttribute('href') || '';
-    if (a.target === '_blank' || href.charAt(0) === '#' || href.indexOf('javascript:') === 0 || a.hasAttribute('download')) return;
-    if (a.origin && a.origin !== location.origin) return;
-    start();
-    showSkeleton();
-  }, true);
-  window.addEventListener('pageshow', function () { done(); clearSkeleton(); });   // bfcache 복귀 시 정리
-  window.addEventListener('beforeunload', start);
+  function start() { if (RM || !document.body) return; if (!bar.parentNode) document.body.appendChild(bar); clearInterval(timer); bar.style.opacity = '1'; bar.style.width = '8%'; var w = 8; timer = setInterval(function () { w = Math.min(90, w + (90 - w) * 0.12); bar.style.width = w + '%'; }, 120); }
+  function done() { clearInterval(timer); if (!bar.parentNode) return; bar.style.width = '100%'; setTimeout(function () { bar.style.opacity = '0'; bar.style.width = '0'; }, 200); }
 
-  var prefetched = {};
-  function prefetch(url) {
-    if (!url || prefetched[url] || url.charAt(0) !== '/') return;
-    prefetched[url] = 1;
-    var l = document.createElement('link');
-    l.rel = 'prefetch'; l.href = url;
-    document.head.appendChild(l);
+  function eligible(a) {
+    if (!a) return null;
+    var href = a.getAttribute('href') || '';
+    if (a.target === '_blank' || a.hasAttribute('download') || a.hasAttribute('data-no-swap') || a.hasAttribute('data-method')) return null;
+    if (href === '' || href.charAt(0) === '#' || href.indexOf('javascript:') === 0 || href.indexOf('mailto:') === 0 || href.indexOf('tel:') === 0) return null;
+    if (a.origin && a.origin !== location.origin) return null;
+    if (/\/(logout|sign[-_]?out|auth\/logout)/i.test(a.pathname || href)) return null;   // 로그아웃 제외(부작용)
+    return a.href;
   }
+  function fetchDoc(url) {
+    var c = cache[url]; if (c && (Date.now() - c.t) < TTL) return Promise.resolve(c.html);
+    return fetch(url, { credentials: 'same-origin', headers: { 'X-KGP-Nav': '1' }, redirect: 'follow' })
+      .then(function (r) {
+        if (!r.ok || r.redirected && r.url !== url) throw new Error('redirect-or-error');
+        if (!/text\/html/i.test(r.headers.get('content-type') || '')) throw new Error('non-html');
+        return r.text();
+      }).then(function (html) { cache[url] = { html: html, t: Date.now() }; return html; });
+  }
+  function prefetch(url) { if (!url || cache[url] || inflight >= MAXFLIGHT) return; inflight++; fetchDoc(url).catch(function () {}).then(function () { inflight--; }); }
+  function runScripts(container) {
+    var ss = container.querySelectorAll('script');
+    for (var i = 0; i < ss.length; i++) {
+      var old = ss[i];
+      var src = old.getAttribute('src');
+      if (src && document.querySelector('head script[src="' + src + '"]')) { old.parentNode && old.parentNode.removeChild(old); continue; }  // 이미 로드된 외부 스크립트 재실행 안 함
+      var s = document.createElement('script');
+      for (var k = 0; k < old.attributes.length; k++) s.setAttribute(old.attributes[k].name, old.attributes[k].value);
+      if (!src) s.textContent = old.textContent;
+      old.parentNode.replaceChild(s, old);
+    }
+  }
+  function teardown() {
+    try { (window.__kgpTeardown || []).forEach(function (fn) { try { fn(); } catch (e) {} }); } catch (e) {}
+    window.__kgpTeardown = [];
+  }
+  function swap(url, html, push) {
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    var newMain = doc.querySelector(SWAP), curMain = document.querySelector(SWAP);
+    if (!newMain || !curMain) throw new Error('no-main');            // 구조 다르면 폴백
+    scrollPos[location.href] = window.scrollY;
+    teardown();
+    try { document.dispatchEvent(new CustomEvent('kgp:before-swap')); } catch (e) {}
+    curMain.innerHTML = newMain.innerHTML;
+    var curJs = document.querySelector(PAGEJS), newJs = doc.querySelector(PAGEJS);
+    if (curJs) curJs.innerHTML = newJs ? newJs.innerHTML : '';
+    if (doc.title) document.title = doc.title;
+    runScripts(curMain);
+    if (curJs) runScripts(curJs);
+    if (push) history.pushState({ kgp: 1, url: url }, '', url);
+    window.scrollTo(0, push ? 0 : (scrollPos[url] || 0));
+    try { document.dispatchEvent(new CustomEvent('kgp:navigated', { detail: { url: url } })); } catch (e) {}
+    done();
+  }
+  var busy = false;
+  function go(url, push) {
+    if (busy) { location.assign(url); return; }
+    busy = true; start();
+    fetchDoc(url).then(function (html) {
+      try { swap(url, html, push); busy = false; }
+      catch (e) { busy = false; done(); location.assign(url); }        // 스왑 실패 → 일반 내비
+    }).catch(function () { busy = false; done(); location.assign(url); });  // fetch 실패 → 일반 내비
+  }
+
+  document.addEventListener('click', function (e) {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    var a = e.target.closest && e.target.closest('a[href]');
+    var url = eligible(a);
+    if (!url) return;
+    e.preventDefault();
+    go(url, true);
+  });
+  window.addEventListener('popstate', function () { go(location.href, false); });
   ['mouseover', 'focusin', 'touchstart'].forEach(function (ev) {
     document.addEventListener(ev, function (e) {
-      var a = e.target.closest && e.target.closest('a[href^="/"]');
-      if (a && a.target !== '_blank') prefetch(a.getAttribute('href'));
+      var a = e.target.closest && e.target.closest('a[href]');
+      var url = eligible(a);
+      if (url) prefetch(url);
     }, { passive: true });
   });
 })();
 </script>
-{% block extra_js %}{% endblock %}
+{# v52 STEP1: 페이지별 스크립트를 마킹 래퍼로 감싼다 → 인스턴트 내비 엔진이 스왑 후 재실행(레이아웃 무영향). #}
+<div id="kgp-page-js">{% block extra_js %}{% endblock %}</div>
 </body>
 </html>

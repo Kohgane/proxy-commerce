@@ -13,7 +13,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 def test_base_has_progress_and_prefetch():
     html = Path("src/seller_console/templates/_base.html").read_text(encoding="utf-8")
     assert "kgp-progress" in html               # 상단 진행바
-    assert "rel = 'prefetch'" in html or "rel='prefetch'" in html  # 내부 링크 프리패치
+    # v52: 링크 rel=prefetch → fetch 메모리 캐시 프리패치로 대체(인스턴트 내비 엔진).
+    assert "function prefetch(url)" in html and "fetchDoc" in html  # 내부 링크 프리패치(메모리 캐시)
     assert "prefers-reduced-motion" in html      # reduced-motion 존중(진행바)
 
 

@@ -5433,10 +5433,22 @@ def _bookmarklet_js(server: str, token: str, translate: bool) -> str:
         "if(_c>=8){if(!confirm('이 페이지엔 상품이 여러 개 같아요. 북마클릿은 상품 1개 상세용입니다. 여러 상품은 크롬 확장을 쓰세요. 이 페이지를 1개로 수집할까요?'))return;}}catch(e){}"
         "function M(p){var e=document.querySelector('meta[property=\"'+p+'\"],meta[name=\"'+p+'\"]');return e?(e.content||''):''}"
         "function G(s){if(!s||s.indexOf('data:')===0)return false;if(/(logo|sprite|icon|avatar|placeholder|loading|blank|pixel|banner|thumb_)/i.test(s))return false;return true;}"
-        "var imgs=[];var og=M('og:image');if(G(og))imgs.push(og);"
-        "try{[].forEach.call(document.images||[],function(im){if(im&&im.src&&G(im.src)&&(im.naturalWidth||0)>=300&&(im.naturalHeight||0)>=300)imgs.push(im.src)})}catch(e){}"
-        "var data={url:location.href,title:(M('og:title')||document.title||'').slice(0,300),"
-        "price:M('product:price:amount')||'',currency:M('product:price:currency')||'',"
+        # v52 STEP3 Tier2(클라 추출): 추천/연관 제외(캐러셀=갤러리라 허용 안 함은 여기선 스코프로 대체)
+        "function GX(el){var r=/(recommend|related|similar|also|you-?may|sponsored|ranking|footer|comment|qna|review-?list)/i;var c=el&&el.parentElement,d=0;while(c&&d<10){var t=((c.className&&c.className.baseVal!==undefined?c.className.baseVal:(c.className||''))+' '+(c.id||''));if(t&&r.test(t))return true;c=c.parentElement;d++;}return false;}"
+        # 최고해상도 후보(naturalWidth 필터 금지 — URL·컨테이너로 판별)
+        "function BS(im){var s=im.currentSrc||im.getAttribute('data-src')||im.getAttribute('data-original')||im.getAttribute('data-lazy')||im.src||'';if(im.srcset){var b='',w=-1;im.srcset.split(',').forEach(function(p){var g=p.trim().split(/\\s+/);var ww=g[1]?parseInt(g[1],10)||0:0;if(g[0]&&ww>=w){w=ww;b=g[0];}});if(b)s=b;}return s;}"
+        # 가격 파싱(통화기호+숫자)
+        "function PP(t){var m=String(t).match(/([₩$€£¥]|원|USD|KRW|JPY|CNY)\\s*([\\d,]+(?:\\.\\d+)?)|([\\d,]+(?:\\.\\d+)?)\\s*(원|USD|KRW|JPY|CNY)/i);if(!m)return null;var sym=m[1]||m[4]||'';var num=(m[2]||m[3]||'').replace(/,/g,'');var CM={'₩':'KRW','원':'KRW','$':'USD','¥':'JPY','€':'EUR','£':'GBP'};var cur=CM[sym]||(/^[A-Z]{3}$/i.test(sym)?sym.toUpperCase():'');return num?{price:num,currency:cur}:null;}"
+        # 갤러리 스코프 이미지(메인 캐러셀/스와이퍼/프리뷰) — 추천 제외, naturalWidth 필터 없음
+        "var imgs=[],sn={};var og=M('og:image');if(G(og)){imgs.push(og);sn[og]=1;}"
+        "try{document.querySelectorAll('[class*=gallery i] img,[class*=swiper i] img,[class*=carousel i] img,[class*=preview i] img,[class*=main-image i] img,[class*=mainImage i] img,[class*=bigImg i] img').forEach(function(im){if(GX(im))return;var s=BS(im);if(s&&G(s)&&!sn[s]){sn[s]=1;imgs.push(s);}});}catch(e){}"
+        # 판매가(취소선 정가 제외), 큰 폰트 우선
+        "function PR(){try{var ns=document.querySelectorAll('[class*=price i],[class*=Price],[itemprop=price],[data-price],[class*=amount i]');var best=null,bf=-1;for(var i=0;i<ns.length;i++){var el=ns[i];if(GX(el))continue;var st=false,cu=el,dd=0;while(cu&&dd<4){var tg=(cu.tagName||'').toLowerCase();if(tg==='del'||tg==='s'||tg==='strike'){st=true;break;}var tk=((cu.className&&cu.className.baseVal!==undefined?cu.className.baseVal:(cu.className||''))+'');if(/(original|strike|line-?through|regular|정가|원가|할인전|compare)/i.test(tk)){st=true;break;}cu=cu.parentElement;dd++;}if(st)continue;var pp=PP(el.getAttribute('content')||el.getAttribute('data-price')||el.textContent||'');if(!pp)continue;var fs=0;try{fs=parseFloat(getComputedStyle(el).fontSize)||0;}catch(e){}if(fs>=bf){bf=fs;best=pp;}}return best;}catch(e){return null;}}"
+        "var h1t=((document.querySelector('h1')||{}).textContent||'').trim().slice(0,300);"
+        "var mp=M('product:price:amount'),mc=M('product:price:currency');var dp=mp?{price:mp,currency:mc}:PR();"
+        "var _fs={title:h1t?'tier2':(M('og:title')?'tier3':'tier2'),price:dp?(mp?'tier3':'tier2'):'none',images:imgs.length?(imgs.length===1&&og?'tier3':'tier2'):'none'};"
+        "var data={url:location.href,title:(h1t||M('og:title')||document.title||'').slice(0,300),"
+        "price:dp?dp.price:'',currency:dp?dp.currency:'',field_sources:_fs,"
         "description:M('og:description')||M('description')||'',images:imgs.slice(0,30),"
         "html:(document.documentElement?document.documentElement.outerHTML:'').slice(0,900000),"
         "ext_version:'bookmarklet',translate:" + tr + "};"

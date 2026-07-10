@@ -642,7 +642,9 @@ document.getElementById('kgpDrawerFrame').addEventListener('load', function () {
       .then(function (j) { if (j && j.ok && typeof j.total === 'number') apply(j.total); })
       .catch(function () {});   // 네트워크 실패는 조용히 무시(다음 주기 재시도)
   }
-  setInterval(poll, 8000);                                    // 8초 폴링
+  var _pollTimer = setInterval(poll, 8000);                   // 8초 폴링
+  // v52 STEP1: 인스턴트 내비 스왑으로 이 페이지를 떠날 때 폴링 정리(인터벌 누수/중복 방지).
+  (window.__kgpTeardown = window.__kgpTeardown || []).push(function () { clearInterval(_pollTimer); });
   document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });  // 탭 복귀 시 즉시
   // 편집 종료(드로어 닫힘) 후 대기 중이던 반영을 처리
   window.addEventListener('message', function (e) {
