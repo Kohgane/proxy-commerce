@@ -4,6 +4,7 @@
 <head>
   {% set _brand_name = brand_name|default('gogabridj', true) %}
   <meta charset="utf-8">
+  <meta name="build" content="{{ build_sha|default('unknown', true) }}">{# v53 STEP0: 라이브 배포 커밋 판정 #}
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}gogabridj{% endblock %} | {{ _brand_name }}</title>
   {# v16 P1: 링크 공유 카드 브랜딩 — 이름·소개·이미지가 제대로 뜨도록 OG/트위터 정비 #}

@@ -3,6 +3,7 @@
 <head>
   {% set _brand_name = brand_name|default('gogabridj', true) %}
   <meta charset="utf-8">
+  <meta name="build" content="{{ build_sha|default('unknown', true) }}">{# v53 STEP0: 라이브 배포 커밋 판정(curl 한 줄) #}
   {# 한/영 단일 소스(오너): 언어는 명시적 토글로만 바뀐다(기본 ko). localStorage 'kgp_lang'을
      미러로 두고, 쿠키가 사라졌을 때만 1회 복원(무한루프 방지). 브라우저 로케일로 **자동 EN 전환 금지**. #}
   <script>
