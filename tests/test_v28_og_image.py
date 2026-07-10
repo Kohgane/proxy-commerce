@@ -27,7 +27,7 @@ def test_og_card_asset_is_1200x630():
 
 def test_og_meta_points_to_bridge_card_not_glove(client):
     html = client.get("/").get_data(as_text=True)
-    assert "og-card.png?v=4" in html              # og:image = 신규 브릿지 카드 + 캐시 bump
+    assert "og-card.png?v=5" in html              # v50: og:image = v8 브릿지 카드 재생성 + 캐시 bump(4→5)
     assert 'property="og:image"' in html
     assert 'name="twitter:image"' in html
     # 옛 정사각 아이콘을 og:image로 쓰지 않음

@@ -25,15 +25,15 @@
   <title>{% block title %}셀러 콘솔{% endblock %} | {{ _brand_name }}</title>
   <meta property="og:site_name" content="{{ _brand_name }}">
   <meta property="og:title" content="{{ _brand_name }}">
-  <link rel="icon" type="image/svg+xml" href="{{ url_for('seller_console.static', filename='favicon.svg', v='180') }}">
-  <link rel="icon" type="image/x-icon" href="{{ url_for('seller_console.static', filename='favicon.ico', v='180') }}">
-  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('seller_console.static', filename='favicon-32.png', v='180') }}">
-  <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('seller_console.static', filename='favicon-16.png', v='180') }}">
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('seller_console.static', filename='favicon.svg', v='181') }}">
+  <link rel="icon" type="image/x-icon" href="{{ url_for('seller_console.static', filename='favicon.ico', v='181') }}">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('seller_console.static', filename='favicon-32.png', v='181') }}">
+  <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('seller_console.static', filename='favicon-16.png', v='181') }}">
   {# v39-B: 48px PNG + shortcut icon = 브릿지 마크 — 크롬이 북마클릿 드래그 시 이 페이지 파비콘을 북마크에 상속(핵심). #}
-  <link rel="icon" type="image/png" sizes="48x48" href="{{ url_for('seller_console.static', filename='favicon-48.png', v='180') }}">
-  <link rel="shortcut icon" href="{{ url_for('seller_console.static', filename='favicon.ico', v='180') }}">
-  <link rel="apple-touch-icon" href="{{ url_for('seller_console.static', filename='apple-touch-icon.png', v='180') }}">
-  <link rel="manifest" href="{{ url_for('seller_console.static', filename='manifest.webmanifest', v='180') }}">
+  <link rel="icon" type="image/png" sizes="48x48" href="{{ url_for('seller_console.static', filename='favicon-48.png', v='181') }}">
+  <link rel="shortcut icon" href="{{ url_for('seller_console.static', filename='favicon.ico', v='181') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('seller_console.static', filename='apple-touch-icon.png', v='181') }}">
+  <link rel="manifest" href="{{ url_for('seller_console.static', filename='manifest.webmanifest', v='181') }}">
   <meta name="theme-color" content="#f8fafc">
   {# v39-M M1: iOS 홈 화면 설치형 PWA — standalone 실행 + 상태바 + 앱 타이틀(고가브릿지) #}
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -454,6 +454,22 @@ if ('serviceWorker' in navigator) {
     bar.style.width = '100%';
     setTimeout(function () { bar.style.opacity = '0'; bar.style.width = '0'; }, 250);
   }
+  // v51 STEP2: 내비 클릭 즉시 skeleton 오버레이 — 새 페이지 도착 전에도 '반응함'을 0ms에 보여줘 체감 지연↓.
+  //   프리패치로 대상이 워밍돼 있으면 실제 전환도 빠름. 전체 페이지 전환이라 새 페이지 로드 시 자연 소멸.
+  function showSkeleton() {
+    if (RM || !document.body) return;
+    if (document.getElementById('kgp-nav-skeleton')) return;
+    var sk = document.createElement('div');
+    sk.id = 'kgp-nav-skeleton';
+    sk.style.cssText = 'position:fixed;inset:0;z-index:2900;background:rgba(248,250,252,.62);pointer-events:none;opacity:0;transition:opacity .12s ease';
+    var rows = '';
+    for (var i = 0; i < 6; i++) rows += '<div class="skeleton" style="height:20px;margin:14px 0;border-radius:6px;background:#e9ecef"></div>';
+    sk.innerHTML = '<div style="max-width:1100px;margin:88px auto 0;padding:0 22px">' + rows + '</div>';
+    document.body.appendChild(sk);
+    requestAnimationFrame(function () { sk.style.opacity = '1'; });
+    setTimeout(function () { var s = document.getElementById('kgp-nav-skeleton'); if (s) s.remove(); }, 4000);  // 취소 시 안전 제거
+  }
+  function clearSkeleton() { var s = document.getElementById('kgp-nav-skeleton'); if (s) s.remove(); }
   document.addEventListener('click', function (e) {
     var a = e.target.closest && e.target.closest('a[href]');
     if (!a) return;
@@ -461,8 +477,9 @@ if ('serviceWorker' in navigator) {
     if (a.target === '_blank' || href.charAt(0) === '#' || href.indexOf('javascript:') === 0 || a.hasAttribute('download')) return;
     if (a.origin && a.origin !== location.origin) return;
     start();
+    showSkeleton();
   }, true);
-  window.addEventListener('pageshow', done);
+  window.addEventListener('pageshow', function () { done(); clearSkeleton(); });   // bfcache 복귀 시 정리
   window.addEventListener('beforeunload', start);
 
   var prefetched = {};

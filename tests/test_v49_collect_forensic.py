@@ -76,8 +76,10 @@ def test_html_payload_server_parses_to_db():
          patch("src.api.extension_api._upsert_catalog", return_value="c1"), \
          patch("src.api.extension_api._notify_telegram"):
         with app.test_client() as c:
+            # v51: 서버 초기상태 파서는 **비-테무** 사이트용(테무는 rawData 없음 → 확장 Tier1 전용).
+            #   이 케이스는 rawData를 인라인 임베드하는 일반 사이트 검증(비-temu URL).
             r = c.post("/api/v1/collect/extension",
-                       data=json.dumps({"url": "https://temu.com/g-1", "title": "x", "html": _TEMU_HTML}),
+                       data=json.dumps({"url": "https://shop.example.com/g-1", "title": "x", "html": _TEMU_HTML}),
                        content_type="application/json", headers={"Authorization": "Bearer t"})
             d = r.get_json()
             assert d["ok"] is True

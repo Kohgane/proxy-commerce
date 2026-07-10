@@ -48,8 +48,9 @@ def test_images_options_reviews_specs():
 
 def test_shared_between_extension_and_bookmarklet():
     # 확장: manifest가 추출기를 content_script보다 먼저 로드 → JS 추출기 실행(격리월드 대응)
-    js = MF["content_scripts"][0]["js"]
-    assert js == ["kgp-extractor.js", "content_script.js"]
+    # v51: content_scripts[0]은 kgp-net(document_start) → 격리월드 항목(content_script.js 포함) 특정.
+    iso = [cs for cs in MF["content_scripts"] if "content_script.js" in cs.get("js", [])][0]
+    assert iso["js"] == ["kgp-extractor.js", "content_script.js"]
     assert "window.kgpExtractProduct === \"function\"" in CS
     assert "return window.kgpExtractProduct();" in CS
     # 북마클릿(v46 STEP4): 가져오기 신뢰성 위해 경량화 — 29KB 인라인 폐기, 페이지 HTML을 서버로 보내

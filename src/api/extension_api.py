@@ -352,7 +352,7 @@ def collect_from_extension():
         #   기존 값이 비었을 때만 보강(사용자/클라 값 우선). DOM/OG(UniversalScraper)는 그 다음 폴백.
         try:
             from src.collectors.state_json import parse_state_from_html
-            _sj = parse_state_from_html(page_html)
+            _sj = parse_state_from_html(page_html, url)   # v51: 테무 URL은 파서 건너뜀(초기상태 없음)
             if _sj:
                 _filled = payload = _merge_state_into_payload(payload, _sj)
                 logger.info("[collect %s] 초기상태 JSON 파싱: price=%r images=%d options=%d detail=%d reviews=%d rating=%r",
