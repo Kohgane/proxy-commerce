@@ -6034,12 +6034,12 @@ def collect_preview_by_id(item_id: str):
     except Exception as exc:
         logger.debug("FX 환율 주입 실패: %s", exc)
 
-    # 마켓 연동 상태(셀러별) — 편집 화면에서 어떤 마켓이 연결됐는지 한눈에
+    # 마켓 연동 상태(셀러별) — 편집 화면에서 어떤 마켓이 연결됐는지 한눈에.
+    # v51 STEP2: 마켓마다 is_connected(=_load_all 쿼리)를 5회 부르던 것 → connected_markets로 1회 왕복.
     market_connected: dict = {}
     try:
         from . import market_credentials as mc
-        for m in ("shopify", "coupang", "smartstore", "elevenst", "woocommerce"):
-            market_connected[m] = bool(mc.is_connected(_seller_id(), m))
+        market_connected = mc.connected_markets(_seller_id(), ("shopify", "coupang", "smartstore", "elevenst", "woocommerce"))
     except Exception as exc:
         logger.debug("마켓 연결 상태 조회 실패: %s", exc)
 

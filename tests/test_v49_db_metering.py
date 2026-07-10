@@ -33,18 +33,20 @@ def test_source_contract_metering():
 
 
 def test_source_contract_pool_gated():
-    # 상시 풀은 PG_PERSISTENT_POOL 게이트 안에만(기본 OFF, 무회귀)
+    # 상시 풀 — v51: 기본 ON(PG_PERSISTENT_POOL=0 으로만 끔), DB 미설정·미설치 시 폴백.
     assert "PG_PERSISTENT_POOL" in PG and "_persistent_pool" in PG
     assert "psycopg_pool" in PG and "putconn" in PG
-    # 게이트: 미설정이면 즉시 None 반환(기본 OFF)
-    assert 'os.getenv("PG_PERSISTENT_POOL", "0") != "1":\n        return None' in PG
+    # 게이트: =0 이면 OFF, DB URL 없으면 폴백(None)
+    assert 'os.getenv("PG_PERSISTENT_POOL", "1") != "1"' in PG   # 기본 ON
+    assert "if not db_url():" in PG                               # DB 없으면 폴백
 
 
 @pytest.mark.skipif(not _has_pg, reason="로컬 PostgreSQL(DATABASE_URL) 설정 시만")
 def test_query_count_and_timing_measured():
     # 실 PG로 수집이력 페이지의 쿼리 수·개별 ms·연결 수를 계측(목표 ≤3 쿼리, 1 연결).
+    # v51: 풀 기본 ON → 이 케이스는 요청범위 1회용 연결 경로(dbconn=1)를 보려 PG_PERSISTENT_POOL=0 강제.
     os.environ["SELLER_CONSOLE_AUTH"] = "0"
-    os.environ.pop("PG_PERSISTENT_POOL", None)
+    os.environ["PG_PERSISTENT_POOL"] = "0"
     from src.db import pg
     pg.reset_state(); pg.init_schema()
     from src.seller_console import collect_history_store as ch

@@ -81,15 +81,17 @@ _pool_checked = False
 
 
 def _persistent_pool():
-    """v49 STEP2: PG_PERSISTENT_POOL=1 이면 상시 커넥션 풀(psycopg_pool)을 1회 생성해 재사용.
+    """v51 STEP2: 상시 커넥션 풀(psycopg_pool)을 1회 생성해 재사용 — **기본 ON**(PG_PERSISTENT_POOL=0으로만 끔).
 
-    기본 OFF(미설정) → None 반환 → 기존 요청범위 1회용 연결(NullPool) 유지(무변경).
-    ON일 때: 워커당 소형 풀(pool_size=5, pre_ping, recycle) — 요청마다 TCP+TLS 핸드셰이크(대륙 간
-    ~220ms)를 제거. 트랜잭션 풀러(6543) 호환 위해 prepared statement 비활성·autocommit 읽기.
-    풀 라이브러리 미설치/생성 실패 시 None(정직 폴백, 무회귀). 오너가 SG 서비스에서 켜고 계측.
+    v49에선 opt-in(기본 OFF)이었으나 v51에서 기본 ON 전환(오너 지시). 워커당 소형 풀(pool_size=5,
+    pre_ping, recycle) — 요청마다 TCP+TLS 핸드셰이크를 제거(내비 지연 완화). 트랜잭션 풀러(6543) 호환 위해
+    prepared statement 비활성·autocommit 읽기. **풀 라이브러리 미설치·DB URL 없음·생성 실패 시 None**
+    (정직 폴백 → 기존 요청범위 1회용 연결, 무회귀). PG_PERSISTENT_POOL=0 이면 강제 OFF.
     """
     global _pool, _pool_checked
-    if os.getenv("PG_PERSISTENT_POOL", "0") != "1":
+    if os.getenv("PG_PERSISTENT_POOL", "1") != "1":   # 기본 ON, =0 으로만 끔
+        return None
+    if not db_url():                                   # DB 미설정(개발/테스트 인메모리) → 폴백
         return None
     if _pool_checked:
         return _pool

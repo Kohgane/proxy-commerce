@@ -24,9 +24,10 @@ def _item():
 
 
 def test_edit_page_shows_connection_badges(client):
+    # v51: 드로어가 connected_markets(배치 1회)로 판정 → 그걸 패치.
     with patch("src.seller_console.collect_history_store.get", return_value=_item()), \
-         patch("src.seller_console.market_credentials.is_connected",
-               side_effect=lambda sid, m: m in ("shopify", "coupang")):
+         patch("src.seller_console.market_credentials.connected_markets",
+               side_effect=lambda sid, markets: {m: (m in ("shopify", "coupang")) for m in markets}):
         html = client.get("/seller/collect/preview/x").get_data(as_text=True)
     assert "키 설정됨" in html and "bi-check-circle" in html   # 연결된 마켓(v18 아이콘셋)
     assert "미설정" in html and "bi-x-circle" in html         # 미연결 마켓
@@ -36,7 +37,8 @@ def test_edit_page_shows_connection_badges(client):
 
 def test_edit_page_all_connected_shows_full(client):
     with patch("src.seller_console.collect_history_store.get", return_value=_item()), \
-         patch("src.seller_console.market_credentials.is_connected", return_value=True):
+         patch("src.seller_console.market_credentials.connected_markets",
+               side_effect=lambda sid, markets: {m: True for m in markets}):
         html = client.get("/seller/collect/preview/x").get_data(as_text=True)
     assert "키 설정 5/5" in html
     assert "미설정</a>" not in html  # 미설정 배지 없음

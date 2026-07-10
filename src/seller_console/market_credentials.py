@@ -246,17 +246,32 @@ def all_credential_env(seller_id: str) -> Dict[str, str]:
     return merged
 
 
+def _market_ok(stored: Dict[str, str], market: str) -> bool:
+    fields = MARKET_CRED_FIELDS.get(market)
+    if not fields:
+        return False
+    for field in fields:
+        if not field.get("required"):
+            continue
+        if not ((stored or {}).get(field["env"]) or os.getenv(field["env"])):
+            return False
+    return True
+
+
 def is_connected(seller_id: str, market: str) -> bool:
     """필수 필드가 셀러 저장값 또는 전역 환경변수로 모두 채워졌는지."""
     if market not in MARKET_CRED_FIELDS:
         return False
-    stored = get(seller_id, market)
-    for field in MARKET_CRED_FIELDS[market]:
-        if not field.get("required"):
-            continue
-        if not (stored.get(field["env"]) or os.getenv(field["env"])):
-            return False
-    return True
+    return _market_ok(get(seller_id, market), market)
+
+
+def connected_markets(seller_id: str, markets) -> Dict[str, bool]:
+    """v51 STEP2: 여러 마켓의 연결 여부를 **_load_all 1회**로 판정(드로어의 5회 왕복 → 1회).
+
+    is_connected를 마켓마다 부르면 _load_all(=PG 쿼리)이 N번 → 대륙 간 RTT가 N배. 한 번 읽어 메모리에서 판정.
+    """
+    alld = _load_all(seller_id)
+    return {m: _market_ok(alld.get(m, {}), m) for m in markets}
 
 
 def _mask(value: str) -> str:
