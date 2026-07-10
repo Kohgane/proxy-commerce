@@ -148,6 +148,14 @@ def _translate_payload(payload: dict) -> dict:
 # 라우트
 # ---------------------------------------------------------------------------
 
+def _field_empty(payload: dict, key: str) -> bool:
+    """v52: 필드가 비었는지(스칼라 빈값/0, 배열 무내용)."""
+    v = payload.get(key)
+    if isinstance(v, list):
+        return not any(str(i or "").strip() for i in v)
+    return v is None or str(v).strip() in ("", "0", "0.0", "0.00")
+
+
 def _merge_state_into_payload(payload: dict, sj: dict) -> dict:
     """v49 STEP4: 초기 상태 JSON 파싱 결과(sj)로 payload의 빈 필드를 보강(클라/사용자 값 우선).
 
@@ -346,7 +354,23 @@ def collect_from_extension():
 
     # 봇 차단 사이트 대응: 확장이 보낸 페이지 HTML을 서버에서 파싱해 필드 보강 (네트워크 fetch 없음)
     page_html = payload.get("html")
+    _srv_src: dict = {}   # v52: 서버가 채운 필드의 출처(ldjson/tier1/dom) — 수집 로그용
     if page_html and isinstance(page_html, str):
+        # v52 STEP2: ld+json 1차 — 대부분 쇼핑몰이 schema.org Product(offers.price 등)를 ld+json으로 싣는다.
+        #   북마클릿 가격 미수집의 본체 수리. 우선순위: ld+json → (초기상태 JSON) → og/DOM. 빈 필드만 보강.
+        try:
+            from src.collectors.state_json import parse_ldjson
+            _ld = parse_ldjson(page_html)
+            if _ld:
+                for _k in ("price", "images", "title", "description", "rating", "review_count", "reviews"):
+                    if _ld.get(_k) and _field_empty(payload, _k):
+                        _srv_src[_k if _k not in ("rating", "review_count") else "reviews"] = "ldjson"
+                payload = _merge_state_into_payload(payload, _ld)
+                logger.info("[collect %s] ld+json 파싱: price=%r %s images=%d rating=%r reviews=%d",
+                            _corr, _ld.get("price"), _ld.get("currency"), len(_ld.get("images") or []),
+                            _ld.get("rating"), len(_ld.get("reviews") or []))
+        except Exception as exc:
+            logger.warning("[collect %s] ld+json 파싱 실패: %s", _corr, exc)
         # v49 STEP4(근본): 수신 HTML의 **초기 상태 JSON**(window.rawData 등)을 서버가 직접 파싱 →
         #   sku 가격·갤러리 전체·옵션·상세 이미지·평점·리뷰 매핑(추가 API 호출 없음). 확장·북마클릿 공통.
         #   기존 값이 비었을 때만 보강(사용자/클라 값 우선). DOM/OG(UniversalScraper)는 그 다음 폴백.
@@ -496,8 +520,8 @@ def collect_from_extension():
                 })
                 try:
                     from src.collectors.collect_status import compute_collect_status as _ccs
-                    _fs = payload.get("field_sources") if isinstance(payload.get("field_sources"), dict) else {}
-                    _merged["collect_status"] = _ccs(_merged, title_fallback=title_ko, sources=_fs)
+                    _cfs = payload.get("field_sources") if isinstance(payload.get("field_sources"), dict) else {}
+                    _merged["collect_status"] = _ccs(_merged, title_fallback=title_ko, sources={**_srv_src, **_cfs})
                 except Exception:
                     pass
                 from src.seller_console.collect_history_store import update as _hist_update
@@ -557,7 +581,8 @@ def collect_from_extension():
     _field_status = {}
     try:
         from src.collectors.collect_status import compute_collect_status
-        _fs = payload.get("field_sources") if isinstance(payload.get("field_sources"), dict) else {}
+        _cfs = payload.get("field_sources") if isinstance(payload.get("field_sources"), dict) else {}
+        _fs = {**_srv_src, **_cfs}   # v52: 서버 ld+json 출처 + 클라(확장 tier) 출처(클라 우선)
         _field_status = compute_collect_status(_extra, title_fallback=title_ko, sources=_fs)
         _extra["collect_status"] = _field_status
     except Exception as exc:
