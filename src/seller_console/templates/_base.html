@@ -51,6 +51,11 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
   <link rel="stylesheet" href="{{ url_for('seller_console.static', filename='seller.css') }}">
   <link rel="stylesheet" href="{{ url_for('seller_console.static', filename='console.css') }}">
+  {# v53 STEP3 초가속: Speculation Rules — 동일 오리진 콘솔 링크를 크롬이 미리 prefetch(문서, JS 미실행 →
+     내비 엔진 fetch가 캐시 히트로 즉시). eagerness moderate(hover/pointerdown), 로그아웃·삭제 경로 제외. #}
+  <script type="speculationrules">
+  {"prefetch":[{"where":{"and":[{"href_matches":"/seller/*"},{"not":{"href_matches":"/*logout*"}},{"not":{"href_matches":"/*sign*out*"}},{"not":{"href_matches":"/*/delete*"}},{"not":{"href_matches":"/*bulk-delete*"}}]},"eagerness":"moderate"}]}
+  </script>
 </head>
 <body class="console-body">
 {% set _path = request.path if request is defined else '' %}
@@ -493,12 +498,18 @@ if ('serviceWorker' in navigator) {
     scrollPos[location.href] = window.scrollY;
     teardown();
     try { document.dispatchEvent(new CustomEvent('kgp:before-swap')); } catch (e) {}
-    curMain.innerHTML = newMain.innerHTML;
-    var curJs = document.querySelector(PAGEJS), newJs = doc.querySelector(PAGEJS);
-    if (curJs) curJs.innerHTML = newJs ? newJs.innerHTML : '';
-    if (doc.title) document.title = doc.title;
-    runScripts(curMain);
-    if (curJs) runScripts(curJs);
+    // 실제 DOM 교체(콘텐츠+페이지 스크립트+타이틀).
+    function _apply() {
+      curMain.innerHTML = newMain.innerHTML;
+      var curJs = document.querySelector(PAGEJS), newJs = doc.querySelector(PAGEJS);
+      if (curJs) curJs.innerHTML = newJs ? newJs.innerHTML : '';
+      if (doc.title) document.title = doc.title;
+      runScripts(curMain);
+      if (curJs) runScripts(curJs);
+    }
+    // v53 STEP3: View Transitions — 끊김 없는 전환(체감 반응↑). 미지원/reduced-motion이면 즉시 교체.
+    if (document.startViewTransition && !RM) { try { document.startViewTransition(_apply); } catch (e) { _apply(); } }
+    else { _apply(); }
     if (push) history.pushState({ kgp: 1, url: url }, '', url);
     window.scrollTo(0, push ? 0 : (scrollPos[url] || 0));
     try { document.dispatchEvent(new CustomEvent('kgp:navigated', { detail: { url: url } })); } catch (e) {}

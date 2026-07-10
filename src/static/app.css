@@ -637,3 +637,10 @@ body::before {
 @media (prefers-reduced-motion: reduce) {
   .kgp-fs-letter { transition: none; }
 }
+
+/* v53 STEP3 초가속: View Transitions — 내비 전환 크로스페이드(스왑 엔진 startViewTransition + MPA 폴백).
+   기본 크로스페이드로 충분(커스텀 애니메이션 없음). reduced-motion이면 전환 애니메이션 정지. */
+@view-transition { navigation: auto; }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+}
