@@ -33,8 +33,9 @@ def test_all_core_missing_is_failure_with_cause():
 
 def test_some_core_present_is_partial_not_failure():
     from src.collectors.collect_status import compute_collect_status
-    st = compute_collect_status({"title_ko": "상품", "price": "", "images": []})
-    assert st["status"] == "부분"          # 제목 present → 실패 아님
+    # v54: core={가격,갤러리}. 가격 present + 갤러리 누락 → 핵심 하나만 → 부분(둘 다 누락은 실패).
+    st = compute_collect_status({"title_ko": "상품", "price": "100", "price_status": "", "images": []})
+    assert st["status"] == "부분"
 
 
 def test_all_present_is_success():
@@ -42,7 +43,7 @@ def test_all_present_is_success():
     st = compute_collect_status({"title_ko": "A", "price": "100", "price_status": "", "images": ["a"],
                                  "options": [{"a": 1}], "description": "x" * 40, "detail_images": ["d"],
                                  "reviews": [{"t": 1}]})
-    assert st["status"] == "성공" and st["filled"] == 7
+    assert st["status"] == "성공" and st["filled"] == 5   # v54: 5필드(제목 카운트 제외)
 
 
 def test_failure_rendered_in_list_and_drawer_and_toast():

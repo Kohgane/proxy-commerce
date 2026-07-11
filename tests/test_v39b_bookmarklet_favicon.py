@@ -47,14 +47,14 @@ def test_file_import_replaces_drag(client):
 
 
 def test_three_step_import_guidance():
-    # v47 STEP3: 주 방법=코드 복사 → 북마크 편집창 URL칸 붙여넣기(주소창 javascript: 제거 우회).
-    assert "북마클릿 코드 복사" in TPL
-    assert "URL 칸" in TPL and "주소창" in TPL
-    assert "Ctrl+D" in TPL and "고가수집기" in TPL
-    # 파일 가져오기는 대체 방법으로 보존(가져온 항목/북마크바 드래그 안내 유지)
-    assert "대체 방법" in TPL
+    # v54 STEP1: 주 방법=파일 받기 → 크롬 가져오기(아이콘 포함·북마크바 직행). 복사는 대체(아이콘 없이).
+    assert "파일 받기" in TPL and "아이콘 포함" in TPL
+    assert "북마크바로 직행" in TPL and "고가수집기" in TPL
     assert "chrome://bookmarks" in TPL and "북마크 가져오기" in TPL
-    assert "가져온 항목" in TPL and "북마크바" in TPL
+    # 크롬 버전 변수 정직 안내(가져온 북마크 폴더 폴백)
+    assert "가져온 북마크" in TPL and "북마크바" in TPL
+    # 복사는 대체 방법(아이콘 없이 빠른 설치)
+    assert "대체 방법" in TPL and "북마클릿 코드 복사" in TPL
 
 
 def test_server_builds_netscape_file_with_icon():
@@ -62,7 +62,8 @@ def test_server_builds_netscape_file_with_icon():
     assert "NETSCAPE-Bookmark-file-1" in VIEWS
     assert 'ICON="' in VIEWS or "ICON=\\\"" in VIEWS
     assert "data:image/png;base64," in VIEWS
-    assert "favicon-48.png" in VIEWS               # ICON = 브릿지 마크(v8)
+    assert 'PERSONAL_TOOLBAR_FOLDER="true"' in VIEWS   # v54: 북마크바 직행 폴더
+    assert 'static", "favicon-32.png"' in VIEWS or "favicon-32.png" in VIEWS   # ICON = v181 favicon-32
     assert "generate_token" in VIEWS               # 토큰 저장(Supabase 1단계) 선행
     assert 'attachment; filename' in VIEWS         # 다운로드 응답
     # 토스트 마크(우리 favicon)를 서버 북마클릿 코드가 그린다

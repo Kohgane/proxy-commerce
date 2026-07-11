@@ -1571,11 +1571,21 @@ function kgpRefresh() {
 }
 
 // 설정 로드 후 첫 렌더. 설정 바뀌면(소싱처 추가/삭제·토글·FAB on/off) 즉시 반영.
+// v54 STEP2: 자가진단 모드 — ON이면 MAIN world(kgp-net 채점)에 진단 표를 콘솔 출력하도록 주기 요청.
+let KGP_DIAG = false;
+let _kgpDiagTimer = null;
+function kgpDiagPing() { try { window.postMessage({ __kgpDiagReq: 1 }, "*"); } catch (e) {} }
+function kgpDiagApply() {
+  if (_kgpDiagTimer) { clearInterval(_kgpDiagTimer); _kgpDiagTimer = null; }
+  if (KGP_DIAG) { setTimeout(kgpDiagPing, 1500); _kgpDiagTimer = setInterval(kgpDiagPing, 4000); }   // 응답이 들어오는 대로 표 갱신
+}
 function kgpLoadSourcesThen(cb) {
   try {
-    chrome.storage.local.get(["kgp_sources", "kgp_fab_enabled"], (r) => {
+    chrome.storage.local.get(["kgp_sources", "kgp_fab_enabled", "kgp_diag"], (r) => {
       KGP_SOURCES = (r && r.kgp_sources) || {};
       KGP_FAB_ENABLED = !(r && r.kgp_fab_enabled === false);   // 기본 ON
+      KGP_DIAG = !!(r && r.kgp_diag);                          // 진단 모드 기본 OFF
+      kgpDiagApply();
       cb && cb();
     });
   } catch (e) { KGP_SOURCES = {}; cb && cb(); }
@@ -1589,6 +1599,7 @@ try {
       if (!KGP_FAB_ENABLED) kgpRemoveFab();             // 끄면 즉시 제거
       changed = true;
     }
+    if (changes && changes.kgp_diag) { KGP_DIAG = !!changes.kgp_diag.newValue; kgpDiagApply(); }
     if (changed) kgpRefresh();                          // 런타임 즉시 반영
   });
 } catch (e) { /* noop */ }

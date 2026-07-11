@@ -45,5 +45,5 @@ def test_copy_method_guide_and_address_bar_warning():
     assert "Ctrl+Shift+O" in TPL or "북마크 관리자" in TPL
     assert "새 북마크 추가" in TPL
     assert "주소창" in TPL and "javascript:" in TPL       # 주소창은 접두어 지움 경고
-    # 파일 방식: 가져온 항목 폴더 → 북마크바로 꺼내는 안내 유지
-    assert "가져온 항목" in TPL and "북마크바" in TPL
+    # v54: 파일 방식 폴백 안내 = '가져온 북마크'(Imported) 폴더 → 북마크바
+    assert "가져온 북마크" in TPL and "북마크바" in TPL

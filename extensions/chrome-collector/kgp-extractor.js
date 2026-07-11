@@ -125,12 +125,19 @@
   function _globalStates() {
     // 흔한 초기 상태 전역/스크립트(next/nuxt/redux/사이트 커스텀). 값이 객체면 후보로.
     var cands = [];
-    // (0) ★Tier 1(v51): kgp-net.js가 캡처한 상품 API 응답 — 테무처럼 초기상태 전역이 없고
-    //     데이터가 API 응답으로만 존재하는 사이트의 핵심. MAIN world에서만 채워짐(페이지가 이미 받은
-    //     응답을 읽을 뿐 — 추가 요청 0). 최신 응답이 더 정확하므로 뒤에서부터(역순) 우선.
+    // (0) ★Tier 1(v51/v54): kgp-net.js가 캡처·채점한 상품 API 응답 — 초기상태 전역이 없고 데이터가 API
+    //     응답으로만 존재하는 사이트(테무)의 핵심. v54: 점수순 정렬(최고점=자가발견 채택). 채택 응답 URL을
+    //     __kgpTier1Url 에 기록(sources=tier1:{URL패턴}). MAIN world에서만 채워짐(추가 요청 0).
     try {
       var cap = global.__kgpCaptured;
-      if (cap && cap.length) { for (var c = cap.length - 1; c >= 0; c--) cands.push(cap[c]); }
+      if (cap && cap.length) {
+        for (var c = 0; c < cap.length; c++) {
+          var e = cap[c];
+          var obj = (e && e.obj !== undefined) ? e.obj : e;   // v54 구조({obj,score,url}) / 구버전 호환
+          if (obj && typeof obj === "object") cands.push(obj);
+        }
+        try { global.__kgpTier1Url = (cap[0] && cap[0].url) || ""; global.__kgpTier1Score = (cap[0] && cap[0].score) || 0; } catch (e2) {}
+      }
     } catch (e) {}
     // (1) live 전역 — 북마클릿(페이지월드)에서만 유효. 확장(격리월드)에선 대개 undefined.
     for (var i = 0; i < STATE_KEYS.length; i++) {
@@ -577,6 +584,8 @@
       reviews: reviews, rating: rating, review_count: reviewCount,
       source: source, partial: partial, warnings: warnings,
       field_sources: fieldSources,
+      // v54 STEP2: 자가발견 채택 응답 URL 패턴(sources=tier1:{URL}) — Tier1이 실제 기여했을 때만.
+      tier1_source: (j.ok && fieldSources.price === "tier1") ? (global.__kgpTier1Url || "") : "",
       jsonld: _jsonLd(),
       collected_at: new Date().toISOString()
     };

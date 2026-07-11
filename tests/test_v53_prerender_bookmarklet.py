@@ -55,8 +55,8 @@ def test_drawer_warm_endpoint_ok():
 
 # ── STEP4 ─────────────────────────────────────────────────────
 def test_bookmarklet_icon_notice_and_name():
-    assert "아이콘이 표시되지 않습니다" in BM        # 아이콘 부재 명시
-    assert "파일" in BM and "가져오기" in BM         # 파일 방식 유도
+    assert "아이콘이 안 붙습니다" in BM              # v54: 복사 방식 아이콘 부재 명시
+    assert "파일" in BM and "가져오기" in BM         # 파일 방식 유도(아이콘 포함)
     assert "⚡고가수집" in BM                         # 복사 방식 기본 이름 ⚡ 접두
 
 

@@ -51,9 +51,10 @@ global.XMLHttpRequest = function(){}; global.XMLHttpRequest.prototype = { open:f
 require(P.resolve("extensions/chrome-collector/kgp-net.js"));
 window.fetch({__body: JSON.stringify({goods:{skuList:[{salePrice:20605}],galleryList:["a"]}}), __ct:"application/json"});
 window.fetch({__body: JSON.stringify({PRERENDER_CONFIG:{x:1},InitialI18nStore:{y:2}}), __ct:"application/json"});
-setTimeout(function(){ console.log(JSON.stringify({n: window.__kgpCaptured.length, hasGoods: !!(window.__kgpCaptured[0]&&window.__kgpCaptured[0].goods), bound: !!window.__kgpNetBound})); }, 40);
+setTimeout(function(){ var e=window.__kgpCaptured[0]||{}; console.log(JSON.stringify({n: window.__kgpCaptured.length, hasGoods: !!(e.obj&&e.obj.goods), bound: !!window.__kgpNetBound})); }, 40);
 """)
     d = json.loads(out)
+    # v54: 캡처 엔트리는 {obj,score,url} 구조 → obj.goods 확인.
     assert d["n"] == 1 and d["hasGoods"] is True and d["bound"] is True   # 상품만 캡처, 비상품 배제
 
 

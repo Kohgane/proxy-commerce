@@ -60,7 +60,7 @@
     {% if it.status == "archived" %}
       <span class="badge bg-secondary"><i class="bi bi-archive"></i> 보관</span>
     {% elif it.status == "ok" %}
-      {# v47 STEP2: 수집 필드 상태 — 성공(N/7) 또는 부분(누락 필드명). 가짜 성공·무음 실패 금지. #}
+      {# v47 STEP2: 수집 필드 상태 — 성공(N/5) 또는 부분(누락 필드명). 가짜 성공·무음 실패 금지. #}
       {% set cs = it.collect_status %}
       {% if cs and cs.status == "실패" %}
         <span class="badge bg-danger" title="{{ cs.cause }}"><i class="bi bi-x-octagon"></i> 실패 · 추출 실패</span>

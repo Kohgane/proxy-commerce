@@ -27,7 +27,21 @@
   // 격리월드가 요청(__kgpReq)하면 그 시점의 live DOM/전역에서 추출해 결과(__kgpRes)를 돌려준다.
   window.addEventListener("message", function (e) {
     try {
-      if (e.source !== window || !e.data || e.data.__kgpReq == null) return;
+      if (e.source !== window || !e.data) return;
+      // v54 STEP2: 진단 모드 — 격리월드가 __kgpDiagReq 를 보내면 캡처·채점된 후보를 콘솔 표로 출력.
+      if (e.data.__kgpDiagReq) {
+        try {
+          var rows = (typeof window.__kgpDiagRows === "function") ? window.__kgpDiagRows() : [];
+          if (rows.length && console.table) {
+            console.log("%c[고가수집기] 자가진단 — 가로챈 JSON 응답 채점(최고점=상품 소스 자동 채택)", "font-weight:bold;color:#119a8e");
+            console.table(rows);
+          } else {
+            console.log("[고가수집기] 자가진단: 아직 상품형 JSON 응답 없음(페이지 스크롤·옵션 클릭 후 다시 시도)");
+          }
+        } catch (_) {}
+        return;
+      }
+      if (e.data.__kgpReq == null) return;
       var meta = _run();
       window.postMessage({ __kgpRes: e.data.__kgpReq, meta: meta }, "*");
     } catch (_) {}

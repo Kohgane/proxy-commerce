@@ -5474,11 +5474,14 @@ _BRIDGE_ICON_DATA_URI = None
 
 
 def _bridge_icon_data_uri() -> str:
-    """북마크 ICON 속성용 브릿지 마크(favicon-48 v8) data:image/png;base64 — 1회 캐시."""
+    """북마크 ICON 속성용 브릿지 마크(favicon-32 v181) data:image/png;base64 — 1회 캐시.
+
+    v54 STEP1: 북마크바 아이콘용으로 32px 사용(브리프 지정). v8/v181 마스터에서 파생된 현행 파비콘.
+    """
     global _BRIDGE_ICON_DATA_URI
     if _BRIDGE_ICON_DATA_URI is None:
         import base64
-        p = os.path.join(os.path.dirname(__file__), "static", "favicon-48.png")
+        p = os.path.join(os.path.dirname(__file__), "static", "favicon-32.png")
         with open(p, "rb") as f:
             _BRIDGE_ICON_DATA_URI = "data:image/png;base64," + base64.b64encode(f.read()).decode("ascii")
     return _BRIDGE_ICON_DATA_URI
@@ -5487,10 +5490,12 @@ def _bridge_icon_data_uri() -> str:
 def _netscape_bookmark(href: str, icon_data_uri: str, label: str = "고가수집") -> str:
     """크롬 '북마크 가져오기'가 읽는 NETSCAPE-Bookmark-file-1 HTML. ICON 속성에 브릿지 마크.
 
-    HREF는 html.escape로 이스케이프(크롬 가져오기 시 엔티티 디코드) → 아이콘이 북마크에 고정.
-    v49 STEP3 수리: 앵커 텍스트=**가시 문자열 '고가수집'**. (v40-B가 쓰던 제로폭 U+200B는 가져오기
-    후 북마크 이름이 '투명/빈칸'으로 보여 사용자가 못 찾는 버그의 근원 — 오너 실기기 확정. 이제 이름이
-    '고가수집'으로 또렷이 보인다. 빈 문자열의 javascript: URL 폴백 우려도 해소.)
+    v54 STEP1: 북마클릿을 **PERSONAL_TOOLBAR_FOLDER="true"** 폴더(= 북마크바) 하위에 배치 → 크롬이
+    가져오기 시 이 폴더 내용을 **북마크바로 직행 병합**(별도 '가져온 북마크' 폴더로 빠지지 않게). ICON은
+    브릿지 마크(v181 favicon-32) — javascript: 북마클릿의 파비콘은 가져오기 파일 ICON 속성만이 유일 기록 경로.
+
+    HREF는 html.escape로 이스케이프(크롬 가져오기 시 엔티티 디코드). 앵커 텍스트=가시 문자열 '고가수집'
+    (v49: 제로폭 U+200B 버그 해소).
     """
     import html as _html
     href_esc = _html.escape(href, quote=True)
@@ -5501,7 +5506,10 @@ def _netscape_bookmark(href: str, icon_data_uri: str, label: str = "고가수집
         "<TITLE>Bookmarks</TITLE>\n"
         "<H1>Bookmarks</H1>\n"
         "<DL><p>\n"
-        f"    <DT><A HREF=\"{href_esc}\" ICON=\"{icon_data_uri}\">{label}</A>\n"
+        "    <DT><H3 PERSONAL_TOOLBAR_FOLDER=\"true\">Bookmarks bar</H3>\n"
+        "    <DL><p>\n"
+        f"        <DT><A HREF=\"{href_esc}\" ICON=\"{icon_data_uri}\">{label}</A>\n"
+        "    </DL><p>\n"
         "</DL><p>\n"
     )
 

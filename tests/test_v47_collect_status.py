@@ -34,22 +34,31 @@ def test_all_fields_present_is_success():
             "options": [{"name": "옵션", "values": ["빨", "파"]}], "description": "x" * 40,
             "detail_images": ["d"], "reviews": [{"text": "good"}]}
     st = compute_collect_status(full)
-    assert st["status"] == "성공" and st["filled"] == st["total"] == 7
+    # v54 STEP3: 배지는 드로어 5탭 기준(가격·갤러리·옵션·상세·리뷰), 제목은 카운트 제외.
+    assert st["status"] == "성공" and st["filled"] == st["total"] == 5
     assert st["missing"] == []
 
 
 def test_core_missing_is_partial_and_listed():
     from src.collectors.collect_status import compute_collect_status, status_summary
-    part = {"title": "t", "price": "", "price_status": "needs_check", "images": []}
+    # v54: core={가격,갤러리}. 갤러리 있음 + 가격 누락 → 핵심 하나만 누락 = '부분'(둘 다 누락은 '실패').
+    part = {"title": "t", "price": "", "price_status": "needs_check", "images": ["a"], "reviews": []}
     st = compute_collect_status(part, sources={"title": "dom"})
     assert st["status"] == "부분"
-    assert "가격" in st["core_missing"] and "이미지" in st["core_missing"]
+    assert "가격" in st["core_missing"] and "갤러리" not in st["core_missing"]   # 갤러리는 present
     # 간결 요약은 핵심 누락 우선(노이즈 억제)
     assert st["missing_short"] == st["core_missing"]
     assert "부분 수집" in status_summary(st) and "가격" in status_summary(st)
     # 필드별 소스 표기(있으면 소스, 없으면 없음 — 가짜 소스 금지)
     src = {f["key"]: f["source"] for f in st["fields"]}
     assert src["title"] == "DOM" and src["price"] == "없음"
+
+
+def test_both_core_missing_is_failure():
+    # v54: 가격·갤러리 둘 다 없으면 '실패'(추출 실패) — 정직.
+    from src.collectors.collect_status import compute_collect_status
+    st = compute_collect_status({"title": "t", "price": "", "images": []})
+    assert st["status"] == "실패" and "가격" in st["core_missing"] and "갤러리" in st["core_missing"]
 
 
 def test_needs_check_price_not_counted_present():

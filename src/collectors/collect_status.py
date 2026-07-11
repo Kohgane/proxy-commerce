@@ -13,18 +13,18 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 # 필드 순서 = 표시 순서. (키, 한글 라벨, 핵심 여부)
+# v54 STEP3: 상태 배지를 **드로어 5탭 기준**으로 카운트(가격·갤러리·옵션·상세·리뷰). 제목은 거의 항상
+#   있어 판정에서 제외(소스 로그용으로만 표시) → '7/7' 표기 오류 정리. '상세'=상세설명 또는 상세이미지 present.
 FIELDS = [
-    ("title", "제목", True),
     ("price", "가격", True),
-    ("images", "이미지", True),
+    ("images", "갤러리", True),
     ("options", "옵션", False),
-    ("description", "상세설명", False),
-    ("detail_images", "상세이미지", False),
+    ("detail", "상세", False),
     ("reviews", "리뷰·평점", False),
 ]
-TOTAL = len(FIELDS)
+TOTAL = len(FIELDS)   # 5
 _LABEL = {k: lbl for k, lbl, _ in FIELDS}
-_CORE = {k for k, _, core in FIELDS if core}
+_CORE = {k for k, _, core in FIELDS if core}   # {price, images}
 
 
 def _nonempty(v: Any) -> bool:
@@ -48,9 +48,13 @@ def _field_present(key: str, extra: Dict[str, Any], title_fallback: str = "") ->
         return _nonempty(extra.get("images")) or _nonempty(extra.get("gallery_images"))
     if key == "options":
         return _nonempty(extra.get("options"))
-    if key == "description":
+    if key == "detail":
+        # v54: '상세' = 상세설명(≥20자) 또는 상세이미지 배열(테무 상세 본체) present.
         d = extra.get("description_ko") or extra.get("description") or ""
-        return len(str(d).strip()) >= 20   # 빈약한 한두 글자는 present로 안 침
+        return len(str(d).strip()) >= 20 or _nonempty(extra.get("detail_images"))
+    if key == "description":   # 하위호환(개별 조회용)
+        d = extra.get("description_ko") or extra.get("description") or ""
+        return len(str(d).strip()) >= 20
     if key == "detail_images":
         return _nonempty(extra.get("detail_images"))
     if key == "reviews":
@@ -100,6 +104,14 @@ def compute_collect_status(
             missing_labels.append(label)
             if core:
                 core_missing.append(label)
+    # v54 STEP3: 제목은 카운트 제외(거의 항상 있음) — 소스 로그용으로만 fields 앞에 표시.
+    _t_ok = _field_present("title", extra, title_fallback)
+    _t_src = str(sources.get("title") or "").strip().lower()
+    _t_label = {
+        "tier1": "Tier1(API/상태)", "tier2": "Tier2(DOM)", "tier3": "Tier3(og)",
+        "ldjson": "ld+json", "json": "JSON", "dom": "DOM", "server": "서버파싱",
+    }.get(_t_src, ("있음" if _t_ok else "없음"))
+    fields.insert(0, {"key": "title", "label": "제목", "ok": _t_ok, "core": False, "source": _t_label, "count": False})
     # v49 STEP5: 3단계 — 성공(전 필드)/부분(일부 누락)/실패(핵심 3 전부 미확보=추출 실패).
     #   저장은 됐으나 제목·가격·이미지가 모두 없으면 '부분'이 아니라 '실패'로 정직 표기(원인 명시).
     _core_total = len(_CORE)
@@ -108,7 +120,7 @@ def compute_collect_status(
         cause = ""
     elif len(core_missing) >= _core_total:
         status = "실패"
-        cause = "추출 실패 — 핵심 정보(제목·가격·이미지)를 못 읽었어요"
+        cause = "추출 실패 — 핵심 정보(가격·갤러리)를 못 읽었어요"
     else:
         status = "부분"
         cause = ""

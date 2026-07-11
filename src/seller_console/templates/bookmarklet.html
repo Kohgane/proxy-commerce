@@ -19,7 +19,7 @@
 </style>
 <div class="container-fluid py-4" style="max-width:1040px">
   <h1 class="h3 mb-1"><i class="bi bi-bookmark-star"></i> 북마클릿 (고급)</h1>
-  <p class="text-muted mb-3">쇼핑 페이지에서 클릭 한 번으로 상품을 수집합니다. <strong>새 창 없이 그 자리에서</strong> ‘수집 완료’가 떠요. 아래 <strong>코드 복사</strong>를 눌러 <strong>북마크 편집창 URL 칸에 붙여넣기</strong> 한 번만 하면 됩니다.</p>
+  <p class="text-muted mb-3">쇼핑 페이지에서 클릭 한 번으로 상품을 수집합니다. <strong>새 창 없이 그 자리에서</strong> ‘수집 완료’가 떠요. 아래 <strong>① 파일 받기 → ② 크롬에 가져오기</strong> 두 번이면 <strong>아이콘까지</strong> 북마크바에 설치됩니다.</p>
 
   <div class="alert alert-primary d-flex align-items-center gap-2 mb-4" role="note">
     <span style="font-size:1.3rem"><i class="bi bi-puzzle"></i></span>
@@ -63,31 +63,30 @@
     </div>
   </div>
 
-  <!-- v47 STEP3: 코드 복사 → 북마크 편집창 URL칸 붙여넣기(가장 확실한 방법) -->
-  <div class="card">
-    <div class="card-header"><strong><i class="bi bi-clipboard-check"></i> 북마클릿 설치 (코드 복사 → 붙여넣기 · 가장 확실)</strong></div>
+  <!-- v54 STEP1: 1순위 = 파일 받기 → 가져오기(끝). 아이콘 포함, 북마크바 직행(PERSONAL_TOOLBAR_FOLDER). -->
+  <div class="card border-primary">
+    <div class="card-header"><strong><i class="bi bi-download"></i> 설치 (아이콘 포함) — ① 파일 받기 → ② 크롬에 가져오기 (끝)</strong></div>
     <div class="card-body">
-      <div class="alert alert-warning small d-flex align-items-start gap-2" style="border-left:3px solid var(--orange,#f5821f)">
-        <i class="bi bi-info-circle mt-1" style="color:var(--orange,#f5821f)"></i>
-        <div>주소창에 붙여넣으면 크롬이 <code>javascript:</code>를 지웁니다(보안). 그래서 <strong>‘북마크 편집’ 창의 URL 칸</strong>에 넣어야 해요. 아래 순서대로 하면 됩니다.</div>
+      {# 아이콘 미리보기 — 가져오기 후 북마크바에 이렇게 보여요 #}
+      <div class="d-flex align-items-center gap-2 p-2 mb-3 rounded-3" style="background:color-mix(in srgb, var(--teal) 8%, transparent);border:1px solid var(--hairline-color);width:max-content">
+        <img src="/seller/static/favicon-32.png?v=181" alt="" width="20" height="20" style="border-radius:5px;background:#fff">
+        <span class="fw-semibold" style="font-size:.9rem">고가수집</span>
+        <span class="text-muted small">← 북마크바에 이렇게 (아이콘 + 이름)</span>
       </div>
 
       <div class="text-center py-2">
-        <button id="codeBtn" class="btn btn-cta btn-lg" type="button" onclick="copyBookmarkletCode()">
-          <i class="bi bi-clipboard"></i> ① 북마클릿 코드 복사
+        <button id="fileBtn" class="btn btn-cta btn-lg" type="button" onclick="downloadBookmarkFile()">
+          <i class="bi bi-filetype-html"></i> ① 내 북마클릿 파일 받기
         </button>
-        <div id="codeHint" class="text-muted small mt-2">누르면 내 전용 수집 토큰이 든 코드를 클립보드에 복사해요(1회). 이 코드엔 내 토큰이 들어 있어요 — 남과 공유하지 마세요.</div>
+        <div id="fileHint" class="text-muted small mt-2">내 전용 토큰이 든 <strong>고가수집기.html</strong>을 내려받아요(1회). 남과 공유하지 마세요.</div>
       </div>
 
       <ol class="mt-3 mb-0" style="line-height:1.9">
-        <li><strong>① 코드 복사</strong> 버튼을 누릅니다(위).</li>
-        <li><strong>② 북마크 관리자</strong>를 엽니다 — <button type="button" class="kgp-copy-code" data-copy="Ctrl+Shift+O" title="클릭하면 복사돼요" style="font-size:.95rem;padding:.1rem .4rem">Ctrl+Shift+O<i class="bi bi-clipboard ms-1"></i></button>(맥 <strong>⌘+⌥+B</strong>).</li>
-        <li>빈 곳을 <strong>우클릭 → ‘새 북마크 추가’</strong> → <strong>URL 란에 붙여넣기(Ctrl+V)</strong> → 이름은 <strong>⚡고가수집</strong> → 저장.</li>
-        <li>해외 상품 페이지에서 북마크바의 <strong>⚡고가수집</strong>을 누르면 <strong>새 창 없이 그 자리에서 ‘수집 완료’</strong>가 떠요.</li>
+        <li><strong>① 파일 받기</strong> 버튼을 누릅니다(위).</li>
+        <li><strong>② 북마크 가져오기</strong>: 주소창에 <button type="button" class="kgp-copy-code" data-copy="chrome://bookmarks" title="클릭하면 복사돼요" style="font-size:.95rem;padding:.15rem .45rem">chrome://bookmarks<i class="bi bi-clipboard ms-1"></i></button> 붙여넣기 → 우측 <strong>⋮</strong> → <strong>북마크 가져오기</strong> → 받은 <strong>고가수집기.html</strong> 선택.</li>
+        <li>파일이 <strong>북마크바로 직행</strong>합니다(아이콘 + ‘고가수집’). 해외 상품 페이지에서 누르면 <strong>새 창 없이 그 자리에서 ‘수집 완료’</strong>가 떠요.</li>
       </ol>
-      <p class="small text-muted mt-2 mb-0"><i class="bi bi-lightbulb"></i> Ctrl+D로 북마크를 추가한 뒤 <strong>수정</strong>에서 URL 란에 붙여넣어도 됩니다. 어느 쪽이든 <strong>주소창(맨 위)에는 붙여넣지 마세요</strong> — 크롬이 <code>javascript:</code>를 지웁니다.</p>
-      {# v53 STEP4: 아이콘 부재 안내 + 기본 이름에 ⚡ 접두(아이콘 대신 눈에 띄게). #}
-      <p class="small text-muted mt-2 mb-0"><i class="bi bi-info-circle"></i> <strong>크롬 정책상 직접 추가한(복사·붙여넣기) 북마클릿엔 아이콘이 표시되지 않습니다.</strong> 그래서 이름 앞에 <strong>⚡</strong>를 붙여 눈에 띄게 했어요. <strong>아이콘</strong>을 원하시면 아래 <strong>‘파일로 가져오기’</strong> 방식을 쓰세요(브릿지 아이콘 + 이름).</p>
+      <p class="small text-muted mt-2 mb-0"><i class="bi bi-info-circle"></i> 크롬 버전에 따라 드물게 <strong>‘가져온 북마크’(Imported)</strong> 폴더로 들어갈 수 있어요 — 그러면 그 폴더를 열어 <strong>고가수집</strong>을 북마크바로 끌어다 놓으면 됩니다(아이콘은 그대로 유지).</p>
 
       <div class="alert alert-success small mt-3 mb-0 d-flex align-items-start gap-2">
         <i class="bi bi-check-circle text-success mt-1"></i>
@@ -98,7 +97,7 @@
       <details class="mt-3 small">
         <summary class="fw-semibold" style="cursor:pointer"><i class="bi bi-question-circle"></i> 잘 안 되나요?</summary>
         <ul class="mt-2 mb-0 text-muted" style="line-height:1.7">
-          <li><strong>URL 칸에 붙여넣었는데 저장이 안 됨</strong>: 주소창이 아니라 <strong>북마크 편집 대화상자</strong>의 URL 칸인지 확인하세요(주소창은 <code>javascript:</code>를 지웁니다).</li>
+          <li><strong>가져오기가 막힘</strong>: 크롬 버전에 따라 <code>javascript:</code> 북마크 가져오기가 막히기도 해요. 그럴 땐 아래 <strong>‘아이콘 없이 빠른 설치’</strong>(코드 복사)를 쓰세요.</li>
           <li><strong>클릭해도 반응 없음</strong>: 그 사이트가 보안정책(CSP)으로 막는 경우예요. 그럴 땐 <a href="/seller/extension">크롬 확장(고가수집기)</a>을 쓰세요(더 정확합니다).</li>
           <li><strong>여러 상품이 섞여 수집됨</strong>: 북마클릿은 <strong>상품 1개 상세 페이지</strong>용입니다. 목록/검색에서 여러 개는 <a href="/seller/extension">크롬 확장</a>으로 취사선택 수집하세요.</li>
         </ul>
@@ -106,22 +105,25 @@
     </div>
   </div>
 
-  <!-- 대체: 파일로 가져오기(브릿지 아이콘 자동) -->
+  <!-- 대체: 코드 복사(아이콘 없이 빠른 설치) -->
   <div class="card mt-3">
     <details>
-      <summary class="card-header" style="cursor:pointer"><strong><i class="bi bi-download"></i> 대체 방법 — 파일로 가져오기 (아이콘 자동)</strong></summary>
+      <summary class="card-header" style="cursor:pointer"><strong><i class="bi bi-clipboard-check"></i> 대체 방법 — 아이콘 없이 빠른 설치 (코드 복사 → 붙여넣기)</strong></summary>
       <div class="card-body">
-        <p class="small text-muted">코드 복사가 번거로우면 파일을 받아 크롬에 가져올 수도 있어요(브릿지 아이콘이 자동으로 붙습니다). 다만 크롬 버전에 따라 <code>javascript:</code> 북마크 가져오기가 막히기도 해서, 안 되면 위 <strong>코드 복사</strong> 방법을 쓰세요.</p>
+        <div class="alert alert-warning small d-flex align-items-start gap-2" style="border-left:3px solid var(--orange,#f5821f)">
+          <i class="bi bi-info-circle mt-1" style="color:var(--orange,#f5821f)"></i>
+          <div><strong>크롬 정책상 이 방식(직접 붙여넣기)엔 아이콘이 안 붙습니다.</strong> 그래서 이름 앞에 <strong>⚡</strong>를 붙여 눈에 띄게 했어요. 아이콘을 원하면 위 <strong>‘파일 받기’</strong> 방식을 쓰세요.</div>
+        </div>
         <div class="text-center py-2">
-          <button id="fileBtn" class="btn btn-outline-secondary" type="button" onclick="downloadBookmarkFile()">
-            <i class="bi bi-filetype-html"></i> 내 북마클릿 파일 받기
+          <button id="codeBtn" class="btn btn-outline-secondary" type="button" onclick="copyBookmarkletCode()">
+            <i class="bi bi-clipboard"></i> 북마클릿 코드 복사
           </button>
-          <div id="fileHint" class="text-muted small mt-2">내 전용 토큰이 든 <strong>고가수집기.html</strong>을 내려받아요(1회). 남과 공유하지 마세요.</div>
+          <div id="codeHint" class="text-muted small mt-2">누르면 내 전용 수집 토큰이 든 코드를 클립보드에 복사해요(1회). 남과 공유하지 마세요.</div>
         </div>
         <ol class="small text-muted mt-2 mb-0" style="line-height:1.8">
-          <li>위 버튼으로 파일을 내려받아요.</li>
-          <li>주소창에 <button type="button" class="kgp-copy-code" data-copy="chrome://bookmarks" title="클릭하면 복사돼요" style="font-size:.95rem;padding:.15rem .45rem">chrome://bookmarks<i class="bi bi-clipboard ms-1"></i></button> 붙여넣기 → 우측 <strong>⋮</strong> → <strong>북마크 가져오기</strong> → 받은 파일 선택.</li>
-          <li><strong>‘가져온 항목’</strong> 폴더의 브릿지 아이콘을 북마크바로 끌어다 놓으세요. (아이콘이 바로 안 보이면 한 번 클릭하면 고정)</li>
+          <li><strong>코드 복사</strong> 버튼을 누릅니다(위).</li>
+          <li><strong>북마크 관리자</strong>(Ctrl+Shift+O / 맥 ⌘+⌥+B) → 빈 곳 <strong>우클릭 → ‘새 북마크 추가’</strong> → <strong>URL 란에 붙여넣기</strong> → 이름 <strong>⚡고가수집</strong> → 저장.</li>
+          <li><strong>주소창(맨 위)에는 붙여넣지 마세요</strong> — 크롬이 <code>javascript:</code>를 지웁니다.</li>
         </ol>
       </div>
     </details>
