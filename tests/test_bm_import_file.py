@@ -42,7 +42,7 @@ def test_download_netscape_file_with_icon(client, token_ok):
     assert 'ICON="data:image/png;base64,' in body          # 브릿지 마크 아이콘 고정
     # v49 STEP3: 앵커 텍스트=가시 문자열 '고가수집'(제로폭 U+200B는 가져오기 후 이름이 투명/빈칸으로
     #   보여 못 찾는 버그의 근원 → 오너 실기기 확정. 이제 이름이 또렷이 보인다).
-    assert ">고가수집</A>" in body                          # 가시 앵커 텍스트
+    assert "></A>" in body  # v56: 앵커 텍스트 빈 문자열(오너 요청 — 파비콘만 표시)
     assert "​</A>" not in body                          # 제로폭 폐기(투명 이름 버그 박멸)
     assert "translate:true" in body or "translate:" in body                        # 번역 ON 반영
     assert "&quot;" in body                                 # HREF 내 큰따옴표 이스케이프(가져오기 시 디코드)
@@ -52,7 +52,7 @@ def test_download_netscape_file_with_icon(client, token_ok):
 def test_translate_off_reflected(client, token_ok):
     r = client.post("/seller/bookmarklet/file", data={"translate": "0"})
     body = r.get_data(as_text=True)
-    assert "translate:false" in body
+    assert "TR=false" in body  # v56: 코어가 TR 변수로 번역 반영
 
 
 def test_token_save_failure_no_file(client, monkeypatch):

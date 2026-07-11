@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="build" content="{{ build_sha|default('unknown', true) }}">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>고가수집기 설치 테스트 — 데모 상품</title>
+  <meta property="og:title" content="데모 상품 · 접이식 차량용 책상">
+  <meta property="og:image" content="{{ request.host_url.rstrip('/') }}/seller/static/favicon-512.png">
+  <meta property="product:price:amount" content="18900">
+  <meta property="product:price:currency" content="KRW">
+  {# 자가 테스트 판별용 ld+json Product (실추출 대상) #}
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@type":"Product","name":"데모 상품 · 접이식 차량용 책상",
+   "image":["{{ request.host_url.rstrip('/') }}/seller/static/favicon-512.png","{{ request.host_url.rstrip('/') }}/seller/static/icon-192.png"],
+   "description":"북마클릿 설치 테스트용 데모 상품입니다. 실제 판매 상품이 아닙니다.",
+   "offers":{"@type":"Offer","price":"18900","priceCurrency":"KRW"}}
+  </script>
+  <style>
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;background:#f7f2e8;color:#1a1714}
+    .wrap{max-width:820px;margin:0 auto;padding:28px 20px}
+    .verdict{border-radius:12px;padding:16px 18px;margin-bottom:20px;font-weight:600;line-height:1.5}
+    .verdict.wait{background:#fff8e6;border:1px solid #f0d98c;color:#8a6d22}
+    .verdict.ok{background:#e9f9f1;border:1px solid #7fd0a8;color:#116b47}
+    .card{background:#fff;border:1px solid #e7decc;border-radius:14px;padding:18px;margin-bottom:16px}
+    .gallery{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    .gallery img{width:88px;height:88px;object-fit:cover;border-radius:8px;border:1px solid #e7decc;background:#f1f3f5}
+    h1{font-size:1.4rem;margin:0 0 6px} .price{font-size:1.5rem;font-weight:800;color:#119a8e}
+    ol{line-height:1.9} .muted{color:#7a726a;font-size:.9rem}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div id="verdict" class="verdict wait">
+    <span id="verdictText">아직 북마클릿이 실행되지 않았어요. 아래 안내대로 <b>북마크바의 고가수집</b>을 눌러 보세요.</span>
+  </div>
+
+  <div class="card">
+    <h1>데모 상품 · 접이식 차량용 책상 <span class="muted" style="font-weight:400">(테스트용 · 실판매 아님)</span></h1>
+    <div class="price">18,900원</div>
+    <div class="gallery">
+      <img src="/seller/static/favicon-512.png" alt="" referrerpolicy="no-referrer">
+      <img src="/seller/static/icon-192.png" alt="" referrerpolicy="no-referrer">
+    </div>
+  </div>
+
+  <div class="card">
+    <strong>설치 테스트 방법</strong>
+    <ol>
+      <li>이 페이지가 <b>새 탭</b>으로 열렸습니다(그대로 두세요).</li>
+      <li>북마크바에서 <b>고가수집</b>(브릿지 아이콘) 을 클릭합니다.</li>
+      <li>화면 우하단에 <b>토스트</b>가 뜨고, 위 배너가 <b style="color:#116b47">초록 판정</b>으로 바뀌면 정상입니다.</li>
+    </ol>
+    <p class="muted">배너가 안 바뀌면 북마클릿이 실행되지 않은 것(설치·아이콘 문제) — 셀러 콘솔의 ‘아이콘 없이 빠른 설치’로 다시 시도하세요.</p>
+  </div>
+</div>
+
+<script>
+// v56 STEP1: 북마클릿이 실행되면 토스트(#kgpbm)가 생긴다 → 그걸 감시해 초록 판정(침묵 사망 판별).
+(function () {
+  var shown = false;
+  function markOk(msg) {
+    if (shown) return; shown = true;
+    var v = document.getElementById('verdict'), t = document.getElementById('verdictText');
+    v.className = 'verdict ok'; t.textContent = msg;
+  }
+  function check() {
+    var toast = document.getElementById('kgpbm');
+    if (toast) {
+      var txt = (document.getElementById('kgpbmx') || {}).textContent || '';
+      if (/완료/.test(txt)) markOk('북마클릿 작동 확인 완료 — 수집 성공 토스트를 받았습니다.');
+      else markOk('북마클릿이 실행됐어요 (토스트 표시 확인). 전송 결과: ' + (txt || '진행 중'));
+    }
+  }
+  try {
+    var obs = new MutationObserver(check);
+    obs.observe(document.body, { childList: true, subtree: true });
+  } catch (e) {}
+  setInterval(check, 500);   // 옵저버 미지원 폴백
+})();
+</script>
+</body>
+</html>

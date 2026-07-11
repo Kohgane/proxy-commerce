@@ -21,27 +21,32 @@ def _bm():
     return _bookmarklet_js("https://kohganepercentiii.com", "TOK", True)
 
 
+def _run():
+    # v56 STEP1: Tier2 추출(GX/BS/PP/PR)은 로더가 주입하는 run.js로 이동.
+    from src.seller_console.views import _bookmarklet_run_js
+    return _bookmarklet_run_js()
+
+
 def test_bookmarklet_tier2_source_contract():
-    js = _bm()
+    js = _run()   # v56: 추출 로직은 run.js
     assert "function GX(" in js and "function BS(" in js and "function PP(" in js and "function PR(" in js
     assert "querySelector('h1')" in js                       # h1 타이틀 우선
     assert "gallery i] img" in js and "swiper i] img" in js  # 갤러리 스코프
-    # 이미지 수집 구간(var imgs … var data)에 naturalWidth 필터 없음(추천 오수집 원인 제거).
-    img_region = js.split("var imgs=[]")[1].split("var data=")[0]
-    assert "naturalWidth" not in img_region
-    assert "field_sources:_fs" in js                         # 필드 출처 동봉
-    assert "strike" in js and ("정가" in js or "original" in js)  # 취소선/정가 제외
-    assert "temu" in js and "크롬 확장" in js                # 테무 부분수집 안내(확장 권장)
+    assert "naturalWidth" not in js                          # naturalWidth 필터 없음(추천 오수집 방지)
+    assert "field_sources:_fs" in js or "_fs=" in js         # 필드 출처 동봉
+    assert "strike" in js                                    # 취소선/정가 제외
+    # 코어(bookmarklet)의 CSP 실패 안내는 확장 권장
+    assert "크롬 확장" in _bm()
 
 
 def test_bookmarklet_size_within_limit():
-    assert len(_bm()) < 6000, f"북마클릿 너무 큼: {len(_bm())}"
+    assert len(_bm()) < 6000, f"북마클릿 코어 너무 큼: {len(_bm())}"   # v56 로더 코어 ~3KB
 
 
 def test_price_parse_logic():
-    # 북마클릿의 PP(가격 파싱)를 추출해 node로 실증.
-    js = _bm()[len("javascript:"):]
-    m = re.search(r"function PP\(t\)\{.*?\}(?=function|var )", js, re.S)
+    # run.js의 PP(가격 파싱)를 추출해 node로 실증.
+    js = _run()
+    m = re.search(r"function PP\(t\)\{.*?\}(?=function|window)", js, re.S)
     assert m, "PP 함수를 찾지 못함"
     fn = m.group(0)
     harness = fn + """

@@ -5430,55 +5430,73 @@ def bookmarklet():
 
 
 def _bookmarklet_js(server: str, token: str, translate: bool) -> str:
-    """북마클릿 javascript: 코드(내 토큰 baked) — 크롬 북마크 가져오기 파일 HREF에 넣는다.
+    """북마클릿 javascript: 코드(로더 구조 — v56 STEP1, 침묵 사망 원천 제거).
 
-    v46 STEP4: **가져오기 신뢰성 우선.** 과거엔 공유 추출기(~20KB)를 인라인해 javascript: URL이 29KB가
-    되어 크롬 '북마크 가져오기'가 실패했다 → **경량화**(≈2KB): 클라이언트는 og 메타+대표 이미지+페이지
-    HTML만 담아 보내고, **서버가 posted HTML에서 풍부 추출**(JSON-LD/초기상태/DOM). partial 판정도 서버
-    응답(d.partial). 확장(격리월드 대응 JS 추출기)과 로직은 서버 추출로 공유, 북마클릿 URL은 작게 유지.
-    (HTML 이스케이프는 호출부 html.escape가 처리 — 이번 원인은 이스케이프가 아니라 URL 길이였음.)
+    2계층: **인라인 코어(±1.5KB, 검증된 구버전 로직)** 가 토스트 K()를 최우선 정의하고 즉시 '수집 중…'을
+    띄운 뒤 og메타+기본 이미지+outerHTML을 전송한다(이것만으로 구버전 수준 수집 보장). 그 전에 **로더**가
+    S+'/seller/bookmarklet/run.js?v=…' 를 script로 주입 시도 → 성공하면 확장 추출(window.__kgpRun)이 코어의
+    데이터를 대체하고, 실패(CSP·타임아웃)면 코어가 그대로 진행. **어느 경로든 토스트·수집은 반드시 발생.**
+    토큰(T)은 코어 closure에만 — run.js URL에 노출 안 함(run.js는 추출 로직만, 전송은 코어가 T로 수행).
+    전 구간 try/catch + 최후 보루 alert(토스트 생성조차 실패 시 침묵 금지).
     """
     tr = "true" if translate else "false"
     return (
         "javascript:(function(){"
-        "var S='" + server + "',T='" + token + "';"
-        "try{var _c=0;document.querySelectorAll('a[href] img').forEach(function(i){if((i.naturalWidth||0)>=120)_c++});"
-        "if(_c>=8){if(!confirm('이 페이지엔 상품이 여러 개 같아요. 북마클릿은 상품 1개 상세용입니다. 여러 상품은 크롬 확장을 쓰세요. 이 페이지를 1개로 수집할까요?'))return;}}catch(e){}"
-        "function M(p){var e=document.querySelector('meta[property=\"'+p+'\"],meta[name=\"'+p+'\"]');return e?(e.content||''):''}"
+        "try{"
+        "var S='" + server + "',T='" + token + "',TR=" + tr + ";"
+        # ── 토스트 K() 최우선 정의(생성 실패 시 alert 폴백) ──
+        "function K(m,ok){try{var t=document.getElementById('kgpbm');if(!t){t=document.createElement('div');t.id='kgpbm';t.style.cssText='position:fixed;right:20px;bottom:84px;z-index:2147483647;display:flex;align-items:center;gap:8px;max-width:300px;padding:10px 14px;border-radius:10px;font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.3)';var ic=document.createElement('img');ic.src=S+'/seller/static/favicon-32.png?v=181';ic.alt='';ic.style.cssText='width:20px;height:20px;border-radius:5px;flex:none;background:#fff';t.appendChild(ic);var tx=document.createElement('span');tx.id='kgpbmx';tx.style.whiteSpace='pre-wrap';t.appendChild(tx);document.body.appendChild(t);}t.style.background=ok?'#16a34a':'#dc2626';var x=document.getElementById('kgpbmx');if(x)x.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0'},4500);}catch(e){try{alert('[고가수집기] '+m)}catch(_){}}}"
+        "K('수집 중…',true);"   # ← 즉시 표시(침묵 금지)
+        # ── 코어 추출(검증된 구버전: og메타 + 기본 이미지 + outerHTML) ──
+        "function M(p){try{var e=document.querySelector('meta[property=\"'+p+'\"],meta[name=\"'+p+'\"]');return e?(e.content||''):''}catch(e){return ''}}"
+        "function core(){var imgs=[];var og=M('og:image');if(og)imgs.push(og);"
+        "try{[].forEach.call(document.images||[],function(im){if(im&&im.src&&(im.naturalWidth||0)>=300&&!/(logo|sprite|icon|avatar|placeholder|loading|blank|pixel|banner)/i.test(im.src))imgs.push(im.src)})}catch(e){}"
+        "return{url:location.href,title:(M('og:title')||document.title||'').slice(0,300),price:M('product:price:amount')||'',currency:M('product:price:currency')||'',description:M('og:description')||M('description')||'',images:imgs.slice(0,30),html:(document.documentElement?document.documentElement.outerHTML:'').slice(0,900000),ext_version:'bm-core',translate:TR};}"
+        # ── 전송(토큰 T는 여기서만) ──
+        "function send(data){try{data=data||core();data.translate=TR;}catch(e){data=core();}"
+        "var _S=0,_H=false;"
+        "fetch(S+'/api/v1/collect/extension',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+T},body:JSON.stringify(data)})"
+        ".then(function(r){_S=r.status;return r.text().then(function(x){_H=/^\\s*<(!doctype|html)/i.test(x);try{return JSON.parse(x)}catch(e){return{}}})})"
+        ".then(function(d){if(d&&d.ok&&d.partial)K('부분 수집 — 셀러 콘솔에서 확인·보완하세요',false);"
+        "else if(d&&d.ok)K('수집 완료 · 셀러 콘솔 ‘수집한 상품’에서 확인',true);"
+        "else if(_H)K('로그인 확인이 필요할 수 있어요 (HTTP '+_S+')',false);"
+        "else K('수집 실패 (HTTP '+_S+'): '+((d&&d.error)||'잠시 후 다시'),false);})"
+        ".catch(function(){K('이 사이트는 보안정책(CSP)으로 직접 수집이 막혀요. 크롬 확장을 쓰세요.',false);});}"
+        # ── 로더: run.js 주입 시도(토큰 미포함). 성공=확장추출, 실패/타임아웃=코어 ──
+        "var done=false;function go(data){if(done)return;done=true;send(data);}"
+        "try{var sc=document.createElement('script');sc.src=S+'/seller/bookmarklet/run.js?v='+Date.now();"
+        "sc.onload=function(){try{if(typeof window.__kgpRun==='function'){window.__kgpRun(function(d){go(d);});}else{go(core());}}catch(e){go(core());}};"
+        "sc.onerror=function(){go(core());};"
+        "(document.head||document.documentElement).appendChild(sc);"
+        "setTimeout(function(){go(core());},2500);"   # run.js 미로드(CSP/타임아웃) → 코어 폴백
+        "}catch(e){go(core());}"
+        "}catch(e){try{alert('[고가수집기] 수집기 실행 오류: '+(e&&e.message||e))}catch(_){}}"
+        "})();"
+    )
+
+
+def _bookmarklet_run_js() -> str:
+    """/seller/bookmarklet/run.js — 로더가 주입하는 확장 추출기(토큰 없음). window.__kgpRun(cb) 정의.
+
+    v55 Tier2(갤러리 스코프·srcset 최고해상·판매가 PR·h1 타이틀)를 서버 배포물로 분리 → 추출 개선을 이
+    파일 재배포만으로 반영(북마클릿 재설치 불요). 전송·토큰은 코어가 담당(여기엔 URL·토큰 노출 0).
+    """
+    return (
+        "(function(){"
+        "function M(p){try{var e=document.querySelector('meta[property=\"'+p+'\"],meta[name=\"'+p+'\"]');return e?(e.content||''):''}catch(e){return ''}}"
         "function G(s){if(!s||s.indexOf('data:')===0)return false;if(/(logo|sprite|icon|avatar|placeholder|loading|blank|pixel|banner|thumb_)/i.test(s))return false;return true;}"
-        # v52 STEP3 Tier2(클라 추출): 추천/연관 제외(캐러셀=갤러리라 허용 안 함은 여기선 스코프로 대체)
         "function GX(el){var r=/(recommend|related|similar|also|you-?may|sponsored|ranking|footer|comment|qna|review-?list)/i;var c=el&&el.parentElement,d=0;while(c&&d<10){var t=((c.className&&c.className.baseVal!==undefined?c.className.baseVal:(c.className||''))+' '+(c.id||''));if(t&&r.test(t))return true;c=c.parentElement;d++;}return false;}"
-        # 최고해상도 후보(naturalWidth 필터 금지 — URL·컨테이너로 판별)
         "function BS(im){var s=im.currentSrc||im.getAttribute('data-src')||im.getAttribute('data-original')||im.getAttribute('data-lazy')||im.src||'';if(im.srcset){var b='',w=-1;im.srcset.split(',').forEach(function(p){var g=p.trim().split(/\\s+/);var ww=g[1]?parseInt(g[1],10)||0:0;if(g[0]&&ww>=w){w=ww;b=g[0];}});if(b)s=b;}return s;}"
-        # 가격 파싱(통화기호+숫자)
-        "function PP(t){var m=String(t).match(/([₩$€£¥]|원|USD|KRW|JPY|CNY)\\s*([\\d,]+(?:\\.\\d+)?)|([\\d,]+(?:\\.\\d+)?)\\s*(원|USD|KRW|JPY|CNY)/i);if(!m)return null;var sym=m[1]||m[4]||'';var num=(m[2]||m[3]||'').replace(/,/g,'');var CM={'₩':'KRW','원':'KRW','$':'USD','¥':'JPY','€':'EUR','£':'GBP'};var cur=CM[sym]||(/^[A-Z]{3}$/i.test(sym)?sym.toUpperCase():'');return num?{price:num,currency:cur}:null;}"
-        # 갤러리 스코프 이미지(메인 캐러셀/스와이퍼/프리뷰) — 추천 제외, naturalWidth 필터 없음
+        "function PP(t){var m=String(t).match(/([\\u20a9$\\u20ac\\u00a3\\u00a5]|\\uc6d0|USD|KRW|JPY|CNY)\\s*([\\d,]+(?:\\.\\d+)?)|([\\d,]+(?:\\.\\d+)?)\\s*(\\uc6d0|USD|KRW|JPY|CNY)/i);if(!m)return null;var sym=m[1]||m[4]||'';var num=(m[2]||m[3]||'').replace(/,/g,'');var CM={'\\u20a9':'KRW','\\uc6d0':'KRW','$':'USD','\\u00a5':'JPY','\\u20ac':'EUR','\\u00a3':'GBP'};var cur=CM[sym]||(/^[A-Z]{3}$/i.test(sym)?sym.toUpperCase():'');return num?{price:num,currency:cur}:null;}"
+        "function PR(){try{var ns=document.querySelectorAll('[class*=price i],[class*=Price],[itemprop=price],[data-price],[class*=amount i]');var best=null,bf=-1;for(var i=0;i<ns.length;i++){var el=ns[i];if(GX(el))continue;var st=false,cu=el,dd=0;while(cu&&dd<4){var tg=(cu.tagName||'').toLowerCase();if(tg==='del'||tg==='s'||tg==='strike'){st=true;break;}var tk=((cu.className&&cu.className.baseVal!==undefined?cu.className.baseVal:(cu.className||''))+'');if(/(original|strike|line-?through|regular|\\uc815\\uac00|\\uc6d0\\uac00|compare)/i.test(tk)){st=true;break;}cu=cu.parentElement;dd++;}if(st)continue;var pp=PP(el.getAttribute('content')||el.getAttribute('data-price')||el.textContent||'');if(!pp)continue;var fs=0;try{fs=parseFloat(getComputedStyle(el).fontSize)||0;}catch(e){}if(fs>=bf){bf=fs;best=pp;}}return best;}catch(e){return null;}}"
+        "window.__kgpRun=function(cb){try{"
         "var imgs=[],sn={};var og=M('og:image');if(G(og)){imgs.push(og);sn[og]=1;}"
         "try{document.querySelectorAll('[class*=gallery i] img,[class*=swiper i] img,[class*=carousel i] img,[class*=preview i] img,[class*=main-image i] img,[class*=mainImage i] img,[class*=bigImg i] img').forEach(function(im){if(GX(im))return;var s=BS(im);if(s&&G(s)&&!sn[s]){sn[s]=1;imgs.push(s);}});}catch(e){}"
-        # 판매가(취소선 정가 제외), 큰 폰트 우선
-        "function PR(){try{var ns=document.querySelectorAll('[class*=price i],[class*=Price],[itemprop=price],[data-price],[class*=amount i]');var best=null,bf=-1;for(var i=0;i<ns.length;i++){var el=ns[i];if(GX(el))continue;var st=false,cu=el,dd=0;while(cu&&dd<4){var tg=(cu.tagName||'').toLowerCase();if(tg==='del'||tg==='s'||tg==='strike'){st=true;break;}var tk=((cu.className&&cu.className.baseVal!==undefined?cu.className.baseVal:(cu.className||''))+'');if(/(original|strike|line-?through|regular|정가|원가|할인전|compare)/i.test(tk)){st=true;break;}cu=cu.parentElement;dd++;}if(st)continue;var pp=PP(el.getAttribute('content')||el.getAttribute('data-price')||el.textContent||'');if(!pp)continue;var fs=0;try{fs=parseFloat(getComputedStyle(el).fontSize)||0;}catch(e){}if(fs>=bf){bf=fs;best=pp;}}return best;}catch(e){return null;}}"
         "var h1t=((document.querySelector('h1')||{}).textContent||'').trim().slice(0,300);"
         "var mp=M('product:price:amount'),mc=M('product:price:currency');var dp=mp?{price:mp,currency:mc}:PR();"
         "var _fs={title:h1t?'tier2':(M('og:title')?'tier3':'tier2'),price:dp?(mp?'tier3':'tier2'):'none',images:imgs.length?(imgs.length===1&&og?'tier3':'tier2'):'none'};"
-        "var data={url:location.href,title:(h1t||M('og:title')||document.title||'').slice(0,300),"
-        "price:dp?dp.price:'',currency:dp?dp.currency:'',field_sources:_fs,"
-        "description:M('og:description')||M('description')||'',images:imgs.slice(0,30),"
-        "html:(document.documentElement?document.documentElement.outerHTML:'').slice(0,900000),"
-        "ext_version:'bookmarklet',translate:" + tr + "};"
-        "function K(m,ok){var t=document.getElementById('kgpbm');if(!t){t=document.createElement('div');t.id='kgpbm';t.style.cssText='position:fixed;right:20px;bottom:84px;z-index:2147483647;display:flex;align-items:center;gap:8px;max-width:300px;padding:10px 14px;border-radius:10px;font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.3)';var ic=document.createElement('img');ic.src=S+'/seller/static/favicon-32.png?v=181';ic.alt='';ic.style.cssText='width:20px;height:20px;border-radius:5px;flex:none;background:#fff';t.appendChild(ic);var tx=document.createElement('span');tx.id='kgpbmx';tx.style.whiteSpace='pre-wrap';t.appendChild(tx);document.body.appendChild(t);}t.style.background=ok?'#16a34a':'#dc2626';var x=document.getElementById('kgpbmx');if(x)x.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0'},4500);}"
-        "try{if(/(^|\\.)temu\\.com$/i.test(location.hostname))K('테무는 상품 데이터가 API로만 로드돼 북마클릿은 일부만 수집돼요.\\n정확한 수집은 크롬 확장(고가수집기)을 쓰세요.',false)}catch(e){}"
-        "K('수집 중…',true);"
-        "try{console.log('[고가수집기] 전송요약',{price:data.price,currency:data.currency,images:(data.images||[]).length,desc:(data.description||'').length+'자',html:(data.html||'').length+'자'})}catch(e){}"
-        "var _ST=0,_HTML=false;"
-        "fetch(S+'/api/v1/collect/extension',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+T},body:JSON.stringify(data)})"
-        ".then(function(r){_ST=r.status;return r.text().then(function(x){_HTML=/^\\s*<(!doctype|html)/i.test(x);try{return JSON.parse(x)}catch(e){return{}}})})"
-        ".then(function(d){try{console.log('[고가수집기] /api/v1/collect/extension →',_ST,d)}catch(e){}"
-        "if(d&&d.ok&&d.partial){K('부분 수집 — 페이지 정보를 충분히 못 읽었어요. 셀러 콘솔에서 확인·보완하세요',false);}"
-        "else if(d&&d.ok){K('수집 완료 · 셀러 콘솔 ‘수집한 상품’에서 확인',true);}"
-        "else if(_HTML){K('서버 응답 오류(로그인 확인이 필요할 수 있어요). HTTP '+_ST,false);}"
-        "else{K('수집 실패 (HTTP '+_ST+'): '+((d&&d.error)||'잠시 후 다시 시도'),false);}})"
-        ".catch(function(e){try{console.error('[고가수집기] 수집 요청 실패:',e)}catch(_){}"
-        "K('이 사이트는 보안정책(CSP)으로 직접 수집이 막혀요.\\n크롬 확장(고가수집기)을 쓰세요.',false);});"
+        "cb({url:location.href,title:(h1t||M('og:title')||document.title||'').slice(0,300),price:dp?dp.price:'',currency:dp?dp.currency:'',field_sources:_fs,description:M('og:description')||M('description')||'',images:imgs.slice(0,30),html:(document.documentElement?document.documentElement.outerHTML:'').slice(0,900000),ext_version:'bm-run'});"
+        "}catch(e){try{cb(null)}catch(_){}}};"
         "})();"
     )
 
@@ -5507,12 +5525,11 @@ def _netscape_bookmark(href: str, icon_data_uri: str, label: str = "고가수집
     가져오기 시 이 폴더 내용을 **북마크바로 직행 병합**(별도 '가져온 북마크' 폴더로 빠지지 않게). ICON은
     브릿지 마크(v181 favicon-32) — javascript: 북마클릿의 파비콘은 가져오기 파일 ICON 속성만이 유일 기록 경로.
 
-    HREF는 html.escape로 이스케이프(크롬 가져오기 시 엔티티 디코드). 앵커 텍스트=가시 문자열 '고가수집'
-    (v49: 제로폭 U+200B 버그 해소).
+    v56 STEP1: **앵커 텍스트 빈 문자열**(오너 요청 — 북마크바에 파비콘만 표시). ICON(v181 favicon-32)이
+    아이콘을 담당. 안내 문구에 '아이콘만 보이는 게 정상' 명시. HREF는 html.escape(가져오기 시 디코드).
     """
     import html as _html
     href_esc = _html.escape(href, quote=True)
-    label = _html.escape(label or "고가수집")
     return (
         "<!DOCTYPE NETSCAPE-Bookmark-file-1>\n"
         "<META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=UTF-8\">\n"
@@ -5521,7 +5538,7 @@ def _netscape_bookmark(href: str, icon_data_uri: str, label: str = "고가수집
         "<DL><p>\n"
         "    <DT><H3 PERSONAL_TOOLBAR_FOLDER=\"true\">Bookmarks bar</H3>\n"
         "    <DL><p>\n"
-        f"        <DT><A HREF=\"{href_esc}\" ICON=\"{icon_data_uri}\">{label}</A>\n"
+        f"        <DT><A HREF=\"{href_esc}\" ICON=\"{icon_data_uri}\"></A>\n"
         "    </DL><p>\n"
         "</DL><p>\n"
     )
@@ -5588,6 +5605,27 @@ def bookmarklet_code():
     server = request.host_url.rstrip("/")
     code = _bookmarklet_js(server, raw, translate)
     return jsonify({"ok": True, "code": code})
+
+
+@bp.get("/bookmarklet/run.js")
+def bookmarklet_run_js():
+    """v56 STEP1: 북마클릿 로더가 주입하는 확장 추출기(토큰 없음·인증 불요·CORS 허용).
+
+    window.__kgpRun(cb) 정의. 추출 개선을 이 파일 재배포만으로 반영(재설치 불요). 토큰·전송은 코어가 담당.
+    """
+    resp = Response(_bookmarklet_run_js(), mimetype="application/javascript; charset=utf-8")
+    resp.headers["Access-Control-Allow-Origin"] = "*"        # 임의 쇼핑몰에서 script로 로드
+    resp.headers["Cache-Control"] = "public, max-age=300"    # 5분(개선 배포 빠른 반영)
+    return resp
+
+
+@bp.get("/bookmarklet/testpage")
+def bookmarklet_testpage():
+    """v56 STEP1: 북마클릿 설치 자가 테스트용 데모 상품 페이지(ld+json + 갤러리).
+
+    새 탭으로 열고 여기서 북마클릿을 누르면 → 토스트가 뜨는지 감시해 **초록 판정**을 표시(침묵 사망 판별).
+    """
+    return render_template("bookmarklet_testpage.html")
 
 
 def _chrome_extension_dir() -> str:
