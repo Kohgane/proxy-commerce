@@ -2,7 +2,7 @@
 
 오너가 라이브 파비콘과 v8 마스터 해시 불일치를 확인 → 배포/캐시 문제. 진단 결과 커밋된 static
 파비콘은 이미 build_icons.py 코드 v8과 해시 일치(Docker도 포함)했고, og-card만 pre-v8(구 아이콘)이라
-재생성했다. 캐시버스트 ?v=181(파비콘)·?v=5(og)로 강제 갱신. 확장 1.5.53.
+재생성했다. 캐시버스트 ?v=181(파비콘)·?v=5(og)로 강제 갱신. 확장 1.5.54.
 
 Pillow는 빌드타임 전용(CI collect-only 미설치) → 해시 테스트는 함수 내 지연 import + 미설치 시 skip.
 """
@@ -79,7 +79,7 @@ def test_cache_bust_bumped():
 
 def test_extension_version_bumped():
     import json
-    assert json.loads(MANIFEST)["version"] == "1.5.53"
+    assert json.loads(MANIFEST)["version"] == "1.5.54"
 
 
 def test_no_stale_old_icon_files():

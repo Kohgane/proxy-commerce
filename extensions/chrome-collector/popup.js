@@ -85,6 +85,15 @@ if (fabToggle) {
   });
 }
 
+// v54 STEP2: 자가진단 모드 토글 — ON이면 content_script가 F12 콘솔에 캡처·채점 표를 출력(상품 API 자가발견).
+const diagToggle = document.getElementById("diagToggle");
+if (diagToggle) {
+  chrome.storage.local.get("kgp_diag", (r) => { diagToggle.checked = !!(r && r.kgp_diag); });
+  diagToggle.addEventListener("change", () => {
+    chrome.storage.local.set({ kgp_diag: diagToggle.checked });   // content_script가 onChanged로 즉시 반영
+  });
+}
+
 // 수집 버튼 클릭
 btnCollect.addEventListener("click", async () => {
   btnCollect.disabled = true;
