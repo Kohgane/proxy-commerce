@@ -3074,6 +3074,60 @@ def _log_order_op(level: str, action: str, marketplace: str = "-", order_id: str
     logger.warning(message, action, marketplace, order_id, reason)
 
 
+_SOURCED_MARK = "[소싱완료]"
+
+
+def _order_source_info(order: dict) -> dict:
+    """v56 STEP2: 주문 → 카탈로그(sku) → 수집 원본(src_url) 역참조 + 소싱처 주문서용 복사 텍스트.
+
+    끊긴 경우(수동 등록·sku 미매칭)는 source_url="" (템플릿이 '원본 미연결'+수동 연결 UI 표기).
+    """
+    items = order.get("items") or []
+    source_url, prod_title = "", ""
+    try:
+        from src.orders.catalog_lookup import CatalogLookup
+        cl = CatalogLookup()
+        for it in items:
+            sku = str((it or {}).get("sku") or "").strip()
+            if not sku:
+                continue
+            row = cl.lookup_by_sku(sku)
+            if row and str(row.get("src_url") or "").strip():
+                source_url = str(row["src_url"]).strip()
+                prod_title = str(row.get("title_ko") or row.get("title_en") or "").strip()
+                break
+    except Exception as exc:
+        logger.debug("주문 소싱처 역참조 실패: %s", exc)
+    # 소싱처 주문서에 붙여넣을 정보(옵션·수량·수취인 메모) — 마스킹된 수취인만(개인정보 보호).
+    lines = []
+    for it in items:
+        it = it or {}
+        title = str(it.get("title") or "").strip()
+        qty = it.get("qty") or 1
+        opts = it.get("options") or {}
+        opt_txt = ""
+        if isinstance(opts, dict) and opts:
+            opt_txt = " / ".join(f"{k}:{v}" for k, v in opts.items() if str(v).strip())
+        elif isinstance(opts, str):
+            opt_txt = opts.strip()
+        seg = title or "(상품)"
+        if opt_txt:
+            seg += f" [{opt_txt}]"
+        seg += f" x{qty}"
+        lines.append(seg)
+    recip = str(order.get("buyer_name_masked") or "").strip()
+    copy_text = "\n".join(lines)
+    if recip:
+        copy_text += f"\n수취인: {recip}"
+    return {
+        "source_url": source_url,
+        "product_title": prod_title,
+        "copy_text": copy_text,
+        "linked": bool(source_url),
+        "sourced": _SOURCED_MARK in str(order.get("notes") or ""),
+    }
+
+
 @bp.get("/orders")
 def orders():
     """주문 관리 페이지 (Phase 129 — 실연동)."""
@@ -3112,6 +3166,8 @@ def orders():
 
     from .orders.courier_catalog import get_courier_catalog
     order_dicts = [o.to_dict() for o in order_list]
+    for _od in order_dicts:                       # v56 STEP2: 주문마다 소싱처 링크·복사텍스트·소싱완료 부착
+        _od["source_info"] = _order_source_info(_od)
     return render_template(
         "orders.html",
         page="orders",
@@ -3254,6 +3310,38 @@ def order_tracking(marketplace: str, order_id: str):
     except Exception as exc:
         _log_order_op("error", "tracking_update", marketplace=marketplace, order_id=order_id, reason="internal_error", exc=exc)
         return jsonify({"ok": False, "error": "운송장 등록 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/orders/<marketplace>/<order_id>/sourced")
+def order_toggle_sourced(marketplace: str, order_id: str):
+    """v56 STEP2: '소싱 주문 완료' 토글 — notes에 [소싱완료] 마커를 넣고/빼서 영속(상태값은 불변).
+
+    무엇을 시켰고 뭘 안 시켰는지 추적용(수동). Response: {ok, sourced}.
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    svc = _get_order_sync_service()
+    if svc is None:
+        return jsonify({"ok": False, "error": "서비스 준비 중입니다."}), 503
+    try:
+        order_list = svc.list_orders(filters={"marketplace": marketplace, "search": order_id}, limit=10, offset=0)
+        order = next((o for o in order_list if o.order_id == order_id), None)
+        if not order:
+            return jsonify({"ok": False, "error": "주문을 찾을 수 없습니다."}), 404
+        cur_status = order.status.value if hasattr(order.status, "value") else str(order.status)
+        notes = str(order.notes or "")
+        if _SOURCED_MARK in notes:
+            notes = notes.replace(_SOURCED_MARK, "").strip(); sourced = False
+        else:
+            notes = (_SOURCED_MARK + " " + notes).strip(); sourced = True
+        from .orders.sheets_adapter import _order_backend
+        from datetime import datetime, timezone
+        _order_backend().update_status(order_id, marketplace, cur_status, notes,
+                                       datetime.now(timezone.utc).isoformat())
+        return jsonify({"ok": True, "sourced": sourced})
+    except Exception as exc:
+        _log_order_op("error", "sourced_toggle", marketplace=marketplace, order_id=order_id, reason="internal_error", exc=exc)
+        return jsonify({"ok": False, "error": "소싱 완료 표시 중 오류가 발생했습니다."}), 500
 
 
 @bp.post("/orders/bulk/tracking")

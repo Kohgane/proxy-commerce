@@ -194,6 +194,19 @@
               {% else %}<span class="text-muted small">-</span>{% endif %}
             </td>
             <td class="cardcell-actions">
+              {# v56 STEP2: 주문 → 소싱처 원클릭 + 주문정보 복사 + 소싱완료 토글 (데스크톱·모바일 공용) #}
+              {% set si = o.source_info %}
+              <div class="d-flex gap-1 flex-wrap mb-1">
+                {% if si and si.linked %}
+                <a class="btn btn-sm btn-cta py-0" href="{{ si.source_url }}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i> 소싱처에서 주문</a>
+                {% else %}
+                <span class="badge bg-light text-dark border" title="주문 상품이 수집 원본과 연결되지 않았어요(수동 등록 등)">원본 미연결</span>
+                <a class="btn btn-sm btn-outline-secondary py-0" href="/seller/catalog" title="상품에 원본 URL을 연결하세요">수동 연결</a>
+                {% endif %}
+                <button class="btn btn-sm btn-outline-primary py-0" data-copy-order="{{ (si.copy_text if si else '')|e }}" onclick="kgpCopyOrder(this)"><i class="bi bi-clipboard"></i> 주문 정보 복사</button>
+                <button class="btn btn-sm py-0 {{ 'btn-success' if si and si.sourced else 'btn-outline-success' }}" data-sourced="{{ '1' if si and si.sourced else '0' }}"
+                  onclick="kgpToggleSourced(this, '{{ o.marketplace }}', '{{ o.order_id }}')"><i class="bi bi-check2-circle"></i> <span>{{ '소싱 주문 완료' if si and si.sourced else '소싱 주문 완료로 표시' }}</span></button>
+              </div>
               <div class="d-flex gap-1 flex-wrap">
                 <button class="btn btn-outline-primary btn-sm py-0"
                   onclick="openTrackingModal('{{ o.marketplace }}', '{{ o.order_id }}')">운송장</button>
