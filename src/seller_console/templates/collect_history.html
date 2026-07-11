@@ -566,6 +566,10 @@ function closeItemDrawer() {
   setTimeout(() => { const fr = document.getElementById('kgpDrawerFrame'); if (fr) fr.src = 'about:blank'; }, 300);
 }
 // 위임 클릭: .kgp-open-drawer (썸네일/제목/편집 버튼)
+// v55 STEP4: 인스턴트 내비 스왑마다 재바인딩되어 중복(→클릭 이중발화) 되던 것을 kgpInitOnce로 1회만 바인딩
+//   (document 위임이라 스왑 후에도 현재 DOM에 동작). 이하 document/window 리스너 동일.
+function _chOnce(k) { return !window.kgpInitOnce || window.kgpInitOnce('ch_' + k); }
+if (_chOnce('drawer_click'))
 document.addEventListener('click', function (e) {
   const el = e.target.closest('.kgp-open-drawer');
   if (!el) return;
@@ -575,7 +579,7 @@ document.addEventListener('click', function (e) {
 // v53 STEP3: 드로어 데이터 hover 선행 로드 — 행에 마우스 올리면 해당 상품 상세를 미리 fetch(동시 1건)로
 //   서버 렌더 경로(DB 풀·템플릿)를 워밍 → 클릭 시 iframe 로드 체감 단축. 저장 스테일 방지 위해 iframe의
 //   ?t= 캐시버스트는 유지(이 fetch는 워밍 전용, 응답은 버림).
-(function () {
+if (_chOnce('hover_warm')) (function () {
   var warmed = {}, inflight = false;
   function warm(id) {
     if (!id || warmed[id] || inflight) return;
@@ -592,8 +596,8 @@ document.addEventListener('click', function (e) {
   });
 })();
 // ESC로 닫기 + iframe 저장 알림 수신(저장 시 목록 새로고침 플래그)
-document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeItemDrawer(); });
-window.addEventListener('message', function (e) {
+if (_chOnce('keydown')) document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeItemDrawer(); });
+if (_chOnce('message')) window.addEventListener('message', function (e) {
   if (e.data && e.data.kgp === 'preview-saved') _kgpDrawerDirty = true;
   if (e.data && e.data.kgp === 'drawer-close') closeItemDrawer();   // v39 F: 수집 실패 빈 상태 '수집 이력으로'
   if (e.data && e.data.kgp === 'preview-ready') {                    // 렌더 성공 신호 → 백지 감시 해제
@@ -662,12 +666,16 @@ document.getElementById('kgpDrawerFrame').addEventListener('load', function () {
       .catch(function () {});   // 네트워크 실패는 조용히 무시(다음 주기 재시도)
   }
   var _pollTimer = setInterval(poll, 8000);                   // 8초 폴링
-  // v52 STEP1: 인스턴트 내비 스왑으로 이 페이지를 떠날 때 폴링 정리(인터벌 누수/중복 방지).
-  (window.__kgpTeardown = window.__kgpTeardown || []).push(function () { clearInterval(_pollTimer); });
-  document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });  // 탭 복귀 시 즉시
-  // 편집 종료(드로어 닫힘) 후 대기 중이던 반영을 처리
-  window.addEventListener('message', function (e) {
-    if (e && e.data && e.data.kgp === 'drawer-close' && pending && !editing()) poll();
+  // v55 STEP4: 이 블록은 상태 의존(closure) → 스왑마다 새로 실행되어야 하므로, document/window 리스너를
+  //   teardown에 등록해 스왑-이탈 시 제거(누적 방지). 인터벌도 함께 정리.
+  function _onVis() { if (!document.hidden) poll(); }         // 탭 복귀 시 즉시
+  function _onMsg(e) { if (e && e.data && e.data.kgp === 'drawer-close' && pending && !editing()) poll(); }
+  document.addEventListener('visibilitychange', _onVis);
+  window.addEventListener('message', _onMsg);
+  (window.__kgpTeardown = window.__kgpTeardown || []).push(function () {
+    clearInterval(_pollTimer);
+    document.removeEventListener('visibilitychange', _onVis);
+    window.removeEventListener('message', _onMsg);
   });
 })();
 
@@ -785,14 +793,21 @@ function refreshSelCount() {
   const dup = document.getElementById('bulkDuplicateBtn');
   if (dup) dup.disabled = n === 0;
 }
-document.addEventListener('DOMContentLoaded', function () {
+// v55 STEP4: 인스턴트 내비 스왑-인 시엔 DOMContentLoaded가 이미 지나 안 뜨므로, 준비됐으면 즉시 실행
+//   (스왑 후 '전체선택'·행 체크박스가 죽던 것 수리). 요소 단위 바인딩이라 매 스왑 새 요소에 붙어야 함.
+function _chInitCheckboxes() {
   const all = document.getElementById('chkAll');
-  if (all) all.addEventListener('change', () => {
-    document.querySelectorAll('.row-chk').forEach(c => { c.checked = all.checked; });
-    refreshSelCount();
-  });
-  document.querySelectorAll('.row-chk').forEach(c => c.addEventListener('change', refreshSelCount));
-});
+  if (all && !all._kgpBound) {
+    all._kgpBound = 1;
+    all.addEventListener('change', () => {
+      document.querySelectorAll('.row-chk').forEach(c => { c.checked = all.checked; });
+      refreshSelCount();
+    });
+  }
+  document.querySelectorAll('.row-chk').forEach(c => { if (!c._kgpBound) { c._kgpBound = 1; c.addEventListener('change', refreshSelCount); } });
+}
+if (document.readyState !== 'loading') _chInitCheckboxes();
+else document.addEventListener('DOMContentLoaded', _chInitCheckboxes);
 function openBulkStatusModal() {
   const ids = selectedItemIds();
   if (!ids.length) { pcToast('상품을 먼저 선택하세요.', 'warning'); return; }
