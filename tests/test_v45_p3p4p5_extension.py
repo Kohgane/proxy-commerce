@@ -98,9 +98,9 @@ def test_p5_fab_documentElement_and_observer_reattach():
     # FAB z-index 최상위
     fi = CS.index("btn.id = KGP_BTN_ID")
     assert "z-index:2147483647" in CS[fi:fi + 900]
-    # MutationObserver가 오버레이 사라짐 감지 시 디바운스 재부착
+    # MutationObserver가 오버레이 사라짐 감지 시 디바운스 재부착(v55 STEP5: 재판정 아닌 '재마운트 전용').
     assert "new MutationObserver" in CS
-    assert "fabGone" in CS and "_scheduleRefresh" in CS
+    assert "const gone =" in CS and "_remountIfGone" in CS
 
 
 def test_manifest_version_bumped():

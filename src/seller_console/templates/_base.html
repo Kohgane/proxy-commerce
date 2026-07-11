@@ -465,14 +465,25 @@ if ('serviceWorker' in navigator) {
     if (/\/(logout|sign[-_]?out|auth\/logout)/i.test(a.pathname || href)) return null;   // 로그아웃 제외(부작용)
     return a.href;
   }
+  // v55 STEP4: 멱등 init 가드 — 페이지 스크립트가 document/window 리스너를 스왑마다 중복 바인딩하는 것 방지
+  //   (한 번만 바인딩, 이후 위임으로 동작). 페이지 스크립트에서 if(window.kgpInitOnce('key')){…} 로 사용.
+  window.kgpInitOnce = function (key) {
+    window.__kgpOnce = window.__kgpOnce || {};
+    if (window.__kgpOnce[key]) return false;
+    window.__kgpOnce[key] = 1; return true;
+  };
   function fetchDoc(url) {
     var c = cache[url]; if (c && (Date.now() - c.t) < TTL) return Promise.resolve(c.html);
-    return fetch(url, { credentials: 'same-origin', headers: { 'X-KGP-Nav': '1' }, redirect: 'follow' })
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var to = ctrl ? setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, 2000) : null;   // v55 STEP4: 2초 타임아웃 → 폴백
+    return fetch(url, { credentials: 'same-origin', headers: { 'X-KGP-Nav': '1' }, redirect: 'follow', signal: ctrl ? ctrl.signal : undefined })
       .then(function (r) {
+        if (to) clearTimeout(to);
         if (!r.ok || r.redirected && r.url !== url) throw new Error('redirect-or-error');
         if (!/text\/html/i.test(r.headers.get('content-type') || '')) throw new Error('non-html');
         return r.text();
-      }).then(function (html) { cache[url] = { html: html, t: Date.now() }; return html; });
+      }).then(function (html) { cache[url] = { html: html, t: Date.now() }; return html; })
+      .catch(function (e) { if (to) clearTimeout(to); throw e; });
   }
   function prefetch(url) { if (!url || cache[url] || inflight >= MAXFLIGHT) return; inflight++; fetchDoc(url).catch(function () {}).then(function () { inflight--; }); }
   function runScripts(container) {
@@ -519,15 +530,22 @@ if ('serviceWorker' in navigator) {
   function go(url, push) {
     if (busy) { location.assign(url); return; }
     busy = true; start();
+    // v55 STEP4: 스톨 방지 워치독 — 2.5초 내 스왑 미완료면 강제로 일반 내비 강등(busy 영구 고착 방지).
+    var guard = setTimeout(function () { if (busy) { busy = false; done(); location.assign(url); } }, 2500);
     fetchDoc(url).then(function (html) {
+      clearTimeout(guard);
       try { swap(url, html, push); busy = false; }
       catch (e) { busy = false; done(); location.assign(url); }        // 스왑 실패 → 일반 내비
-    }).catch(function () { busy = false; done(); location.assign(url); });  // fetch 실패 → 일반 내비
+    }).catch(function () { clearTimeout(guard); busy = false; done(); location.assign(url); });  // fetch 실패/타임아웃 → 일반 내비
   }
 
   document.addEventListener('click', function (e) {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     var a = e.target.closest && e.target.closest('a[href]');
+    if (!a) return;
+    // v55 STEP4: 링크 내부의 인터랙티브 컨트롤(버튼·입력·contenteditable·data-no-swap) 클릭이면 스왑 안 함(컨트롤이 처리).
+    var ctl = e.target.closest && e.target.closest('button, input, select, textarea, [contenteditable], [data-no-swap]');
+    if (ctl && a.contains(ctl) && ctl !== a) return;
     var url = eligible(a);
     if (!url) return;
     e.preventDefault();

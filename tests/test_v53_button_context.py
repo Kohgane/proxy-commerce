@@ -23,7 +23,8 @@ def test_source_contract():
     assert "KGP_DETAIL_URL_RE" in CS and "KGP_LIST_URL_RE" in CS
     assert "kgpAttachOverride" in CS and "kgp_pt_ov:" in CS          # 롱프레스/우클릭 오버라이드
     assert "cards.length >= 3" not in CS                             # 옛 카드-3-개 판정 제거
-    assert "}, 500)" in CS                                           # SPA 재판정 디바운스 500ms
+    # v55 STEP5: SPA 재판정을 URL 변경 한정으로, DOM변이 재판정/500ms 디바운스 제거(점멸) → 캐시 판정.
+    assert "function kgpPageType" in CS and "KGP_PT_CACHE" in CS
     # 목록/단일 상호배타(동시 표시 금지): list → RemoveFab+Listing, else RemoveListing+FAB
     assert "kgpRemoveFab();" in CS and "kgpRemoveListing();" in CS
 

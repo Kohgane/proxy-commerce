@@ -1524,11 +1524,14 @@ function kgpDetectPageType() {
     if (ov === "single" || ov === "list") return ov;
   } catch (e) {}
   const href = location.href;
-  let single = 0, list = 0;
-  // 1) URL 어댑터 매치 최우선(가중치 3)
-  if (KGP_DETAIL_URL_RE.test(href)) single += 3;
-  if (KGP_LIST_URL_RE.test(href)) list += 3;
-  // 2) DOM 신호(보조)
+  const isDetail = KGP_DETAIL_URL_RE.test(href);
+  const isList = KGP_LIST_URL_RE.test(href);
+  // v55 STEP5: URL 규칙 하드매치 최우선(결정적) — 테무 -g-{숫자}=단일, /search 등=목록. DOM 휴리스틱은
+  //   URL이 애매할 때만(둘 다/둘 다 아님). 지연로드·DOM변이와 무관하게 판정 즉시 확정(점멸 제거).
+  if (isDetail && !isList) return "single";
+  if (isList && !isDetail) return "list";
+  // URL 애매 → DOM 신호 1회 점수화(이후 kgpPageType 캐시로 세션 내 불변).
+  let single = isDetail ? 3 : 0, list = isList ? 3 : 0;
   try { const h1 = document.querySelectorAll("h1"); if (h1.length === 1 && (h1[0].textContent || "").trim().length > 6) single += 1; } catch (e) {}
   try { if (document.querySelector('[class*="gallery" i],[class*="swiper" i],[class*="carousel" i],[aria-roledescription="carousel"]')) single += 1; } catch (e) {}
   try {
@@ -1538,13 +1541,27 @@ function kgpDetectPageType() {
       if (/"@type"\s*:\s*"ItemList"/i.test(t)) list += 2;
     });
   } catch (e) {}
-  // 3) 반복 상품 카드 그리드(동일 구조 6개+ = 강한 목록 신호, 3~5 = 약한 신호)
   try { const n = kgpFindCards().length; if (n >= 6) list += 3; else if (n >= 3) list += 1; } catch (e) {}
 
   if (single === 0 && list === 0) return "unknown";
   if (list > single) return "list";
   if (single > list) return "single";
   return "unknown";                                   // 동점 → 불능(안전 기본값으로)
+}
+
+// v55 STEP5: URL별 판정 캐시(세션 내 불변 = 히스테리시스) — 같은 URL은 재판정 안 함(왔다갔다 금지).
+//   오버라이드는 캐시 무시(즉시 반영). 'unknown'은 캐시 안 함(DOM 준비 후 재판정 여지).
+const KGP_PT_CACHE = {};
+function kgpPageType() {
+  try {
+    const ov = sessionStorage.getItem("kgp_pt_ov:" + location.pathname);
+    if (ov === "single" || ov === "list") return ov;
+  } catch (e) {}
+  const key = location.pathname + location.search;
+  if (KGP_PT_CACHE[key]) return KGP_PT_CACHE[key];
+  const pt = kgpDetectPageType();
+  if (pt !== "unknown") KGP_PT_CACHE[key] = pt;       // 결정된 판정만 고정(번복 금지)
+  return pt;
 }
 
 // 수동 오버라이드: 버튼 롱프레스(≥600ms) → 이 페이지를 단일↔목록 강제 토글(감지 실패 대비).
@@ -1574,14 +1591,15 @@ function kgpAttachOverride(el) {
 // SPA 대응 + v53 STEP1: 페이지 타입 감지로 버튼 자동 전환(목록=중앙 바만, 단일/불능=우측 FAB만 — 동시 노출 0).
 function kgpRefresh() {
   if (!kgpHostAllowed() && !kgpEntrySession()) { kgpTeardown(); return; }   // 지정 소싱처 또는 앱 진입(v10/v17)
-  const pt = kgpDetectPageType();
+  // v55 STEP5: URL별 캐시 판정 사용(재판정 안 함). inject*/remove*는 멱등(이미 마운트면 no-op) → 점멸 0.
+  const pt = kgpPageType();
   if (pt === "list") {
-    kgpRemoveFab();                                   // 목록: 우측 FAB 숨김
-    kgpInjectListing();                               // 중앙 바만(1.5배)
+    if (document.getElementById(KGP_BTN_ID)) kgpRemoveFab();   // 상호배타(있을 때만 제거)
+    kgpInjectListing();                               // 중앙 바만(1.5배, 멱등)
     try { kgpAttachOverride(document.getElementById(KGP_TOOLBAR_ID)); } catch (e) {}
   } else {
-    kgpRemoveListing();                               // 단일/불능: 중앙 바/배지 숨김
-    injectCollectButton();                            // 우측 단건 FAB만(안전 기본값)
+    if (document.getElementById(KGP_TOOLBAR_ID) || document.getElementById(KGP_REOPEN_ID)) kgpRemoveListing();
+    injectCollectButton();                            // 우측 단건 FAB만(멱등, 안전 기본값)
     try { kgpAttachOverride(document.getElementById(KGP_BTN_ID)); } catch (e) {}
   }
 }
@@ -1635,35 +1653,41 @@ setInterval(() => {
     setTimeout(kgpRefresh, 900);
   }
 }, 1500);
-// 동적 로딩(무한 스크롤)·지연 렌더 대응: 주기적으로 모드 재평가(목록↔상세 자동 전환).
-setInterval(() => { if (kgpHostAllowed()) kgpRefresh(); }, 4000);
+// v55 STEP5: 주기적 always-refresh(4초) 제거 — 점멸의 원인(지속 재판정). 재판정은 URL 변경 시로 한정.
 
-// v38 #4: MutationObserver로 SPA 라우팅/사이트 재렌더에도 버튼을 일관 유지(재주입).
-//   사이트가 본문을 갈아끼우며 우리 FAB/바를 날려도, 또는 늦게 렌더되는 SPA에서도 즉시 복구.
-//   URL 변경(history.pushState) 감지도 겸해 setTimeout 디바운스로 과도호출 방지.
+// v55 STEP5: 재주입 전용 옵저버 — 우리 오버레이가 사이트 재렌더로 사라졌을 때만 **캐시된 판정 그대로** 재마운트.
+//   DOM 변이 기반 '재판정'은 제거(kgpRefresh는 kgpPageType 캐시 사용 → 판정 번복 0). URL 변경은 history 훅으로.
 (function () {
   let _t = null;
-  function _scheduleRefresh() {
+  function _remountIfGone() {
     if (_t) return;
-    _t = setTimeout(() => { _t = null; try { if (kgpHostAllowed() || kgpEntrySession()) kgpRefresh(); } catch (e) {} }, 500);   // v53 STEP1: DOM 변이 재판정 디바운스 500ms
+    _t = setTimeout(() => {
+      _t = null;
+      try {
+        if (!(kgpHostAllowed() || kgpEntrySession())) return;
+        const gone = !document.getElementById(KGP_BTN_ID) && !document.getElementById(KGP_TOOLBAR_ID) && !document.getElementById(KGP_REOPEN_ID);
+        if (gone) kgpRefresh();          // 사라졌을 때만 재마운트(캐시 판정 사용, 재판정 아님)
+      } catch (e) {}
+    }, 400);
+  }
+  function _onUrlChange() {
+    // URL 변경 = 새 페이지 → 판정 재평가(새 URL은 캐시 없음). 상태 초기화는 아래 URL 폴링과 공유.
+    if (_t) { clearTimeout(_t); _t = null; }
+    try { if (kgpHostAllowed() || kgpEntrySession()) setTimeout(kgpRefresh, 300); } catch (e) {}
   }
   try {
-    const obs = new MutationObserver((muts) => {
-      // 우리 오버레이가 사라졌거나(사이트 재렌더) 본문이 크게 바뀌면 재주입.
-      const fabGone = !document.getElementById(KGP_BTN_ID) && !document.getElementById(KGP_TOOLBAR_ID) && !document.getElementById(KGP_REOPEN_ID);
-      if (fabGone || muts.some(m => m.addedNodes && m.addedNodes.length)) _scheduleRefresh();
-    });
+    const obs = new MutationObserver(() => { _remountIfGone(); });   // 오버레이 소실 감지 전용(재판정 아님)
     const _start = () => { if (document.body) obs.observe(document.body, { childList: true, subtree: true }); else setTimeout(_start, 300); };
     _start();
   } catch (e) { /* MutationObserver 미지원 환경 무시 */ }
-  // SPA: history API 후킹(pushState/replaceState/popstate) → 라우팅 즉시 재평가.
+  // SPA: history API 후킹(pushState/replaceState/popstate) → URL 변경 시에만 재판정.
   try {
     ["pushState", "replaceState"].forEach((fn) => {
       const orig = history[fn];
       if (typeof orig === "function") {
-        history[fn] = function () { const r = orig.apply(this, arguments); _scheduleRefresh(); return r; };
+        history[fn] = function () { const r = orig.apply(this, arguments); _onUrlChange(); return r; };
       }
     });
-    window.addEventListener("popstate", _scheduleRefresh, { passive: true });
+    window.addEventListener("popstate", _onUrlChange, { passive: true });
   } catch (e) { /* noop */ }
 })();
