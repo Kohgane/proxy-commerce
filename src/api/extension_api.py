@@ -355,9 +355,14 @@ def collect_from_extension():
     # 봇 차단 사이트 대응: 확장이 보낸 페이지 HTML을 서버에서 파싱해 필드 보강 (네트워크 fetch 없음)
     page_html = payload.get("html")
     _srv_src: dict = {}   # v52: 서버가 채운 필드의 출처(ldjson/tier1/dom) — 수집 로그용
+    # ── v54 STEP3: 필드 병합 우선순위(명문화) = tier1 > ld+json > tier2 DOM > og ─────────────────
+    #   tier1 = 확장이 클릭시점 API 캡처/DOM에서 읽어 **payload에 이미 담아 보낸 값**(자가진단 채택 포함).
+    #   서버 보강(_merge_*)은 **빈 필드만** 채우므로 payload(tier1) 값이 항상 우선. 그 다음 ld+json(서버),
+    #   그 다음 UniversalScraper(DOM=tier2 → og=tier3) 순. 출처 라벨도 이 순서로: compute_collect_status에
+    #   {**_srv_src(ldjson), **client_field_sources(tier1/tier2)} 병합 → 클라(tier1/tier2)가 서버(ldjson)를 덮는다.
     if page_html and isinstance(page_html, str):
-        # v52 STEP2: ld+json 1차 — 대부분 쇼핑몰이 schema.org Product(offers.price 등)를 ld+json으로 싣는다.
-        #   북마클릿 가격 미수집의 본체 수리. 우선순위: ld+json → (초기상태 JSON) → og/DOM. 빈 필드만 보강.
+        # ld+json(서버 1차) — 대부분 쇼핑몰이 schema.org Product(offers.price 등)를 싣는다(북마클릿 가격 본체).
+        #   tier1(payload)이 이미 채운 필드는 건드리지 않음(_field_empty 게이트).
         try:
             from src.collectors.state_json import parse_ldjson
             _ld = parse_ldjson(page_html)
