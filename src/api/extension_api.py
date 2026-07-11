@@ -563,6 +563,8 @@ def collect_from_extension():
         "rating": payload.get("rating", ""),
         "review_count": payload.get("review_count", ""),
         "translation_provider": tr.get("provider", "none"),
+        "tier1_source": payload.get("tier1_source", ""),      # v55: 자가발견 채택 API URL
+        "tier1_diag": payload.get("tier1_diag") or {},        # v56 STEP4: Tier1 최종 판정(used·원인) 저장
     }
     _field_status = {}
     try:

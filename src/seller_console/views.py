@@ -5542,6 +5542,7 @@ def _bookmarklet_js(server: str, token: str, translate: bool) -> str:
         "return{url:location.href,title:(M('og:title')||document.title||'').slice(0,300),price:M('product:price:amount')||'',currency:M('product:price:currency')||'',description:M('og:description')||M('description')||'',images:imgs.slice(0,30),html:(document.documentElement?document.documentElement.outerHTML:'').slice(0,900000),ext_version:'bm-core',translate:TR};}"
         # ── 전송(토큰 T는 여기서만) ──
         "function send(data){try{data=data||core();data.translate=TR;}catch(e){data=core();}"
+        "try{console.log('[고가수집기] 전송요약',{price:data.price,currency:data.currency,images:(data.images||[]).length,src:data.ext_version})}catch(e){}"
         "var _S=0,_H=false;"
         "fetch(S+'/api/v1/collect/extension',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+T},body:JSON.stringify(data)})"
         ".then(function(r){_S=r.status;return r.text().then(function(x){_H=/^\\s*<(!doctype|html)/i.test(x);try{return JSON.parse(x)}catch(e){return{}}})})"

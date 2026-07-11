@@ -79,4 +79,4 @@ def test_e2e_extension_9krw_discarded():
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] >= "1.5.55"
+    assert MANIFEST["version"] >= "1.5.56"

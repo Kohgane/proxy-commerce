@@ -83,6 +83,10 @@ def _structured_draft(title, category, keywords, specs, options, brand) -> str:
         for name, val in rows:
             lines.append(f"· {name}: {val}")
 
+    # 확인된 상세(키워드·옵션·스펙)가 하나도 없으면 창작 대신 입력 요청(정직).
+    if not kws and not rows:
+        lines.append("")
+        lines.append("· 확인된 상세 정보가 부족합니다. 소재·사이즈·용도 등을 직접 입력해 주세요.")
     # 안내 틀(정직 boilerplate — 없는 스펙 창작 아님, 항상 참인 일반 안내)
     lines.append("")
     lines.append("■ 안내")

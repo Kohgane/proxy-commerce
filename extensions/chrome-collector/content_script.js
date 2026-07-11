@@ -716,19 +716,22 @@ function kgpExtractMerged(cb) {
     const merged = kgpMergeMeta(isolated, e.data.meta);
     // v55 STEP1: MAIN meta의 Tier1 채택 URL 전파(sources=tier1:{URL}).
     try { if (e.data.meta && e.data.meta.tier1_source && !merged.tier1_source) merged.tier1_source = e.data.meta.tier1_source; } catch (_) {}
-    // v55 STEP1: Tier1 자동 진단 — 기여했으면 확인, 아니면 원인 1줄(무음 금지).
+    // v55 STEP1 / v56 STEP4: Tier1 자동 진단 — 기여했으면 확인, 아니면 원인 1줄(무음 금지).
+    //   v56: 진단 결과를 payload에 동봉(tier1_diag) → 서버 저장·드로어 표기(콘솔 안 봐도 최종 판정 확인).
     try {
       var diag = e.data.diag || {};
       var usedTier1 = !!(merged.tier1_source) || (merged.field_sources && merged.field_sources.price === "tier1");
+      var cause = "";
       if (usedTier1) {
         console.log("%c[고가수집기] Tier1 동작 ✓ — 채택 " + (merged.tier1_source || "(API 응답)") + " (최고점 " + (diag.topScore || 0) + "/4)", "color:#119a8e;font-weight:bold");
         try { if (diag.topUrl) chrome.storage && chrome.storage.local && chrome.storage.local.set({ ["kgp_api_pat:" + location.hostname]: diag.topUrl }); } catch (_) {}
       } else {
-        var why = !diag.netBound ? "인터셉터 미주입(MAIN world 로드 실패 — 확장 재로딩 필요)"
+        cause = !diag.netBound ? "인터셉터 미주입(MAIN world 로드 실패 — 확장 재로딩 필요)"
           : (diag.captured === 0 ? "매치 0건(상품 API 응답을 아직 못 잡음 — 페이지 새로고침 후 다시 수집)"
           : "시그니처 미달(최고점 " + (diag.topScore || 0) + "/4 — 팝업 '자가진단 모드'로 후보 표 확인)");
-        console.warn("%c[고가수집기] Tier1 무동작 → DOM 폴백 사용. 원인: " + why, "color:#c2503c;font-weight:bold");
+        console.warn("%c[고가수집기] Tier1 무동작 → DOM 폴백 사용. 원인: " + cause, "color:#c2503c;font-weight:bold");
       }
+      merged.tier1_diag = { used: usedTier1, netBound: !!diag.netBound, captured: diag.captured || 0, topScore: diag.topScore || 0, source: merged.tier1_source || "", cause: cause };
       console.log("[고가수집기] MAIN world 병합 — 이미지 " + ((isolated.images || []).length) + "→" + ((merged.images || []).length)
         + ", 가격 " + (isolated.price || "-") + "→" + (merged.price || "-"));
     } catch (_) {}
