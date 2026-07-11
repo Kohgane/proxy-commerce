@@ -6168,6 +6168,7 @@ def collect_ai_description(item_id: str):
         res = AITranslator().generate_description({
             "title": title, "category": category, "keywords": keywords,
             "specs": specs, "brand": extra.get("brand") or "",
+            "options": extra.get("options") or [],   # v56 STEP3: 키없음 구조초안에 옵션표 반영
         })
     except Exception as exc:
         logger.warning("AI 상세 생성 오류: %s", exc)

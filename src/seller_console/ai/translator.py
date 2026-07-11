@@ -27,6 +27,71 @@ def _dry_run() -> bool:
     return os.getenv("ADAPTER_DRY_RUN", "0") == "1"
 
 
+_CAT_LABEL = {
+    "BAG": "가방", "CLO": "의류", "BTY": "뷰티", "FOD": "식품", "ELC": "가전", "DIG": "디지털",
+    "HOM": "홈·리빙", "HLT": "건강", "SPT": "스포츠·레저", "TOY": "완구", "BBY": "유아", "PET": "반려동물",
+    "OFC": "문구·오피스", "GEN": "",
+}
+
+
+def _structured_draft(title, category, keywords, specs, options, brand) -> str:
+    """v56 STEP3: 키 없음 모드 구조 초안 — **확인된 정보만** 실키·실값으로. 빈/플레이스홀더 행은 생략, 창작 0."""
+    def _clean(v):
+        return str(v or "").strip()
+
+    lines = []
+    t = _clean(title)
+    if t:
+        lines.append(t)
+    cat = _clean(category)
+    cat_label = _CAT_LABEL.get(cat, cat)      # 코드면 라벨, 아니면 원문(GEN·미상은 빈값)
+    head_bits = [b for b in (_clean(brand), cat_label) if b]
+    if head_bits:
+        lines.append(" · ".join(head_bits))
+
+    # 특징(키워드 — 실데이터만)
+    kws = []
+    for k in (keywords or []):
+        s = _clean(k)
+        if s and len(s) > 1 and s not in kws:
+            kws.append(s)
+    if kws:
+        lines.append("")
+        lines.append("■ 특징")
+        for k in kws[:8]:
+            lines.append(f"· {k}")
+
+    # 옵션·상세(옵션 + 스펙 — 실키·실값, 'k'/'v' 류 1글자 플레이스홀더 배제)
+    rows = []
+    for opt in (options or []):
+        if isinstance(opt, dict):
+            name = _clean(opt.get("name"))
+            vals = [_clean(v) for v in (opt.get("values") or []) if _clean(v)]
+            if name and vals:
+                rows.append((name, ", ".join(vals[:12])))
+    for sp in (specs or []):
+        try:
+            label, value = _clean(sp[0]), _clean(sp[1])
+        except Exception:
+            continue
+        if not label or not value or len(label) <= 1 or len(value) <= 1:
+            continue      # ★ '- k: v' 플레이스홀더/빈 행 생략
+        rows.append((label, value))
+    if rows:
+        lines.append("")
+        lines.append("■ 옵션·상세")
+        for name, val in rows:
+            lines.append(f"· {name}: {val}")
+
+    # 안내 틀(정직 boilerplate — 없는 스펙 창작 아님, 항상 참인 일반 안내)
+    lines.append("")
+    lines.append("■ 안내")
+    lines.append("· 모니터·조명 환경에 따라 실제 색상과 차이가 있을 수 있습니다.")
+    lines.append("· 정확한 사이즈·소재는 위 옵션·상세 정보를 확인해 주세요.")
+    lines.append("· 배송·교환·반품은 판매 마켓의 정책을 따릅니다.")
+    return "\n".join(lines).strip()
+
+
 class AITranslator:
     """상품 메타데이터 → 한국어 번역 + 마켓별 광고 카피 생성."""
 
@@ -119,21 +184,19 @@ class AITranslator:
         specs = product.get("specs") or []
         brand = (product.get("brand") or "").strip()
 
+        # 옵션(색상/사이즈 등)을 스펙 힌트로 흡수해 두면 키없음 구조초안이 풍부해진다.
+        options = product.get("options") or []
+
         if self.provider == "openai" and not _dry_run():
             try:
                 return self._describe_openai(title, category, specs, keywords, brand)
             except Exception as exc:
                 logger.warning("AI 상세 생성 실패, 정직 구조화로 폴백: %s", exc)
 
-        # 정직 폴백: 확인된 정보(제목/스펙)만 구조화 — 없는 수치 날조 0.
-        lines = []
-        if title:
-            lines.append(title)
-        for label, value in specs[:20]:
-            lines.append(f"- {label}: {value}")
-        if not specs:
-            lines.append("· 확인된 상세 정보가 부족합니다. 소재·사이즈·용도 등을 직접 입력해 주세요.")
-        return {"text": "\n".join(lines).strip(), "provider": "stub", "is_draft": True}
+        # v56 STEP3: 키 없음 모드 = 확인된 정보(제목·카테고리·키워드·옵션·스펙)만으로 **구조 초안**.
+        #   ★ '- k: v' 플레이스홀더 버그 수리: 실키·실값만 렌더, 값 없는 행은 생략, 창작 0.
+        return {"text": _structured_draft(title, category, keywords, specs, options, brand),
+                "provider": "stub", "is_draft": True}
 
     def _describe_openai(self, title, category, specs, keywords, brand) -> dict:
         import requests as _req
