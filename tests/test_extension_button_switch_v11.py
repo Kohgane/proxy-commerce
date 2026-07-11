@@ -22,7 +22,8 @@ def test_detail_url_patterns():
 
 def test_mutual_exclusion_in_refresh():
     # kgpRefresh가 목록이면 FAB 제거, 상세면 리스팅 제거(동시 노출 0).
-    assert "const isList = cards.length >= 3" in CS
+    # v53 STEP1: 판정이 카드 개수 → 점수제 페이지 타입 감지기로 교체.
+    assert "kgpDetectPageType()" in CS and 'pt === "list"' in CS
     assert "kgpRemoveFab();" in CS
     assert "kgpRemoveListing();" in CS
     # v38 #4: FAB는 더 이상 상품 페이지 휴리스틱으로 막지 않음(소싱처면 항상 노출).

@@ -68,7 +68,8 @@ except ImportError:
 
 @app.context_processor
 def inject_brand_name():
-    return {"brand_name": get_brand_name(), "brand_name_ko": get_brand_name_ko()}
+    from src.utils.build_info import get_build_sha
+    return {"brand_name": get_brand_name(), "brand_name_ko": get_brand_name_ko(), "build_sha": get_build_sha()}
 
 _AUTO_BLUEPRINT_CANDIDATE_MODULES = (
     "src.cs.inbox_routes",
@@ -1624,10 +1625,12 @@ def tracking_update():
 @limiter.limit(LIMIT_HEALTH)
 def health():
     """Healthcheck 엔드포인트 — Docker/LB용."""
+    from src.utils.build_info import get_build_sha
     return jsonify({
         "status": "ok",
         "service": "proxy-commerce",
         "version": os.getenv("APP_VERSION", "dev"),
+        "build": get_build_sha(),   # v53 STEP0: 라이브 배포 커밋(7자리) — 배포 누락 판정용
     })
 
 

@@ -572,6 +572,25 @@ document.addEventListener('click', function (e) {
   e.preventDefault();
   openItemDrawer(el.getAttribute('data-id'), el.getAttribute('data-title'), el.getAttribute('data-url'));
 });
+// v53 STEP3: 드로어 데이터 hover 선행 로드 — 행에 마우스 올리면 해당 상품 상세를 미리 fetch(동시 1건)로
+//   서버 렌더 경로(DB 풀·템플릿)를 워밍 → 클릭 시 iframe 로드 체감 단축. 저장 스테일 방지 위해 iframe의
+//   ?t= 캐시버스트는 유지(이 fetch는 워밍 전용, 응답은 버림).
+(function () {
+  var warmed = {}, inflight = false;
+  function warm(id) {
+    if (!id || warmed[id] || inflight) return;
+    inflight = true; warmed[id] = 1;
+    fetch('/seller/collect/preview/' + encodeURIComponent(id) + '?drawer=1&warm=1',
+          { credentials: 'same-origin', headers: { 'X-KGP-Prefetch': '1' } })
+      .catch(function () {}).then(function () { inflight = false; });
+  }
+  ['mouseover', 'touchstart', 'focusin'].forEach(function (ev) {
+    document.addEventListener(ev, function (e) {
+      var el = e.target.closest && e.target.closest('.kgp-open-drawer[data-id]');
+      if (el) warm(el.getAttribute('data-id'));
+    }, { passive: true });
+  });
+})();
 // ESC로 닫기 + iframe 저장 알림 수신(저장 시 목록 새로고침 플래그)
 document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeItemDrawer(); });
 window.addEventListener('message', function (e) {
