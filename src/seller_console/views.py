@@ -1343,11 +1343,24 @@ def _quick_collect(url: str, source: str = "bookmarklet") -> dict:
     if _dup and _dup.get("id"):
         return {"ok": True, "item_id": _dup.get("id"), "status": 200, "duplicate": True,
                 "message": "이미 수집한 상품입니다. 내 계정의 ‘수집 이력’에서 확인·편집할 수 있습니다."}
+    # v55 STEP2: 서버 단일 sanity — 북마클릿/공유 경로도 비상식 가격 폐기(9 저장 금지) + 이미지 필터.
+    try:
+        from src.collectors.collect_sanitize import sanitize_payload
+        _s = {"price": draft.get("price_original") or draft.get("price") or "", "currency": draft.get("currency") or "",
+              "images": images, "image": draft.get("image", "")}
+        sanitize_payload(_s)
+        draft["price"] = _s.get("price", ""); draft["price_original"] = _s.get("price", "")
+        draft["price_status"] = _s.get("price_status", "")
+        draft["images"] = _s.get("images", images); images = draft["images"]
+        if _s.get("warnings"):
+            draft["warnings"] = _s["warnings"]
+    except Exception as exc:
+        logger.debug("빠른 수집 sanity 스킵: %s", exc)
     try:
         item_id = collect_history_store.append(
             source=source, url=url, title=title,
             image=images[0] if images else draft.get("image", ""),
-            price=str(draft.get("price_original") or draft.get("price") or ""),
+            price=str(draft.get("price") or ""),
             currency=draft.get("currency") or "",
             extra=draft, seller_id=_seller_id(),
         )

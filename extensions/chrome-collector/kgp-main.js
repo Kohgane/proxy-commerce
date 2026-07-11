@@ -43,7 +43,15 @@
       }
       if (e.data.__kgpReq == null) return;
       var meta = _run();
-      window.postMessage({ __kgpRes: e.data.__kgpReq, meta: meta }, "*");
+      // v55 STEP1: Tier1 진단 정보 동봉 — 격리월드가 '왜 Tier1이 비었나'를 무음 없이 1줄로 알림.
+      var diag = { netBound: false, captured: 0, topScore: 0, topUrl: "" };
+      try {
+        diag.netBound = !!window.__kgpNetBound;
+        var cap = window.__kgpCaptured || [];
+        diag.captured = cap.length;
+        if (cap.length) { diag.topScore = cap[0].score || 0; diag.topUrl = cap[0].url || ""; }
+      } catch (_) {}
+      window.postMessage({ __kgpRes: e.data.__kgpReq, meta: meta, diag: diag }, "*");
     } catch (_) {}
   }, false);
 })();

@@ -420,32 +420,13 @@ def collect_from_extension():
     except Exception as exc:
         logger.warning("[collect %s] 필러/리뷰 처리 실패: %s", _corr, exc)
 
-    # v16 P0: 가격이 비었거나 0이면 가짜 0원 대신 '확인 필요'로 정직 표기.
-    def _price_empty(v):
-        return v is None or str(v).strip() in ("", "0", "0.0", "0.00")
-    _cur = str(payload.get("currency") or "").strip().upper()
-    _warnings = list(payload.get("warnings") or [])
-    if _price_empty(payload.get("price")):
-        payload["price_status"] = "needs_check"
-    elif not _cur:
-        # v42 1-1: 가격은 있는데 통화 미상 → USD 임의 확정 금지, '가격 확인 필요' 정직.
-        payload["price_status"] = "needs_check"
-        if "통화" not in " ".join(_warnings):
-            _warnings.append("통화를 확인하지 못했어요")
-    else:
-        # 서버 sanity 게이트(방어): 통화별 비상식 하한(재고·리뷰 숫자 오인 저장 거부). 확장/북마클릿
-        #   추출기 게이트를 서버에서도 한 번 더 — 어느 경로로 와도 9 KRW 같은 오값을 '확정 가격'으로 저장 금지.
-        _min = {"KRW": 100, "JPY": 10, "CNY": 1, "USD": 0.5, "EUR": 0.5, "GBP": 0.5}
-        try:
-            _pv = float(str(payload.get("price")).replace(",", "").strip())
-        except (TypeError, ValueError):
-            _pv = -1.0
-        if _cur in _min and 0 < _pv < _min[_cur]:
-            payload["price_status"] = "needs_check"
-            _warnings.append(f"가격이 비상식적으로 낮아요({_cur} {_pv:g}) — 재고/쿠폰 숫자 오인 가능")
-            logger.warning("[collect %s] 가격 sanity 거부: %s %s (하한 %s)", _corr, _pv, _cur, _min[_cur])
-    if _warnings:
-        payload["warnings"] = _warnings
+    # v55 STEP2: 서버 단일 지점 sanity — 비상식/통화미상 가격은 **값 폐기**(9 KRW 저장 금지, needs_check),
+    #   이미지는 도메인·중복·비상품 URL 필터. 모든 경로(확장·북마클릿) 공통 게이트.
+    _price_before = payload.get("price")
+    from src.collectors.collect_sanitize import sanitize_payload
+    sanitize_payload(payload)
+    if _price_before and not payload.get("price"):
+        logger.warning("[collect %s] 가격 sanity 폐기: %r %s → 누락", _corr, _price_before, payload.get("currency"))
 
     payload.pop("html", None)  # 대용량 HTML은 이력에 저장하지 않음
 
