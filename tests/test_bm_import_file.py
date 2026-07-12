@@ -45,7 +45,11 @@ def test_download_netscape_file_with_icon(client, token_ok):
     assert "></A>" in body  # v56: 앵커 텍스트 빈 문자열(오너 요청 — 파비콘만 표시)
     assert "​</A>" not in body                          # 제로폭 폐기(투명 이름 버그 박멸)
     assert "translate:true" in body or "translate:" in body                        # 번역 ON 반영
-    assert "&quot;" in body                                 # HREF 내 큰따옴표 이스케이프(가져오기 시 디코드)
+    # v59 STEP1: HREF는 퍼센트 인코딩 → 엔티티(&quot; 등) 0개, 큰따옴표는 %22로. (엔티티 SyntaxError 근절)
+    import re as _re
+    _href = _re.search(r'<A HREF="([^"]*)"', body).group(1)
+    assert _href.count("&") == 0, "HREF에 & 잔존(엔티티 방식 회귀)"
+    assert "%22" in _href                                   # 큰따옴표 퍼센트 인코딩
     assert "/api/v1/collect/extension" in body             # 서버 수집 엔드포인트
 
 

@@ -1,0 +1,10 @@
+v59 STEP1 — 북마클릿 퍼센트 인코딩 (엔티티 SyntaxError 근절)
+
+BEFORE (구 방식: html.escape → 엔티티):
+  HREF 앞 120자: javascript:(function(){try{var S=&#x27;https://kohganepercentiii.com&#x27;,T=&#x27;tok_DEMO&#x27;,TR=true;function K(m,o
+  '&' 개수: 136  (가져오기 경로에서 미디코드 시 Unexpected token '&')
+
+AFTER (v59: 퍼센트 인코딩):
+  HREF 앞 120자: javascript:(function(){try{var S=%27https://kohganepercentiii.com%27,T=%27tok_DEMO%27,TR=true;function K(m,ok){try{var t
+  '&' 개수: 0  HTML 특수문자: 0
+  디코드 == 원본 JS: True

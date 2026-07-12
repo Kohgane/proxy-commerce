@@ -5612,6 +5612,33 @@ def _bookmarklet_run_js() -> str:
     )
 
 
+def _percent_encode_js(js: str) -> str:
+    """v59 STEP1: javascript: 페이로드를 **퍼센트 인코딩** — HTML 특수문자(%, &, <, >, ", ', +)와
+    모든 비ASCII(한글 토스트 포함)를 %XX(UTF-8)로. 결과 HREF에 HTML 특수문자 0개 → NETSCAPE 파일
+    가져오기의 엔티티 이스케이프·디코드 의존이 소멸(Uncaught SyntaxError: Unexpected token '&' 근절).
+
+    %를 인코딩 대상에 포함(반복문이 문자 단위라 원본 %도 %25로 — 이중 인코딩 아님). 브라우저는 javascript:
+    URL 실행 시 퍼센트 디코드하므로, 디코드하면 원본 JS와 **바이트 동일**(계약 테스트로 고정).
+    """
+    enc = set("%&<>\"'+")
+    out = []
+    for ch in js:
+        if ch in enc or ord(ch) > 127:
+            out.extend("%%%02X" % b for b in ch.encode("utf-8"))
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def _bookmarklet_file_href(server: str, token: str, translate: bool) -> str:
+    """v59 STEP1: NETSCAPE 파일 HREF용 — 동일 페이로드 소스(_bookmarklet_js)에서 javascript: 본문만
+    퍼센트 인코딩. `javascript:` 접두어는 리터럴 유지, 그 뒤 본문은 HTML 특수문자 0개."""
+    js = _bookmarklet_js(server, token, translate)
+    prefix = "javascript:"
+    body = js[len(prefix):] if js.startswith(prefix) else js
+    return prefix + _percent_encode_js(body)
+
+
 _BRIDGE_ICON_DATA_URI = None
 
 
@@ -5637,7 +5664,10 @@ def _netscape_bookmark(href: str, icon_data_uri: str, label: str = "고가수집
     브릿지 마크(v182 favicon-32) — javascript: 북마클릿의 파비콘은 가져오기 파일 ICON 속성만이 유일 기록 경로.
 
     v56 STEP1: **앵커 텍스트 빈 문자열**(오너 요청 — 북마크바에 파비콘만 표시). ICON(v182 favicon-32)이
-    아이콘을 담당. 안내 문구에 '아이콘만 보이는 게 정상' 명시. HREF는 html.escape(가져오기 시 디코드).
+    아이콘을 담당. 안내 문구에 '아이콘만 보이는 게 정상' 명시.
+
+    v59 STEP1: HREF는 이미 퍼센트 인코딩(HTML 특수문자 0개)이라 escape는 실질 no-op이지만, 방어적으로
+    유지(엔티티 잔존 0 — 디코드 의존 소멸). 계약 테스트가 HREF에 '&' 0개를 고정한다.
     """
     import html as _html
     href_esc = _html.escape(href, quote=True)
@@ -5679,7 +5709,8 @@ def bookmarklet_file():
         return jsonify({"ok": False, "error": "토큰을 저장하지 못해 파일을 만들지 못했어요. 잠시 후 다시 시도해 주세요."}), 503
 
     server = request.host_url.rstrip("/")
-    href = _bookmarklet_js(server, raw, translate)
+    # v59 STEP1: 퍼센트 인코딩 HREF(HTML 특수문자 0개) → 가져오기 엔티티 SyntaxError 근절.
+    href = _bookmarklet_file_href(server, raw, translate)
     html_body = _netscape_bookmark(href, _bridge_icon_data_uri())
     resp = Response(html_body, mimetype="text/html; charset=utf-8")
     fname = quote_plus("고가수집기.html").replace("+", "%20")
