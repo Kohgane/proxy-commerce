@@ -176,10 +176,11 @@
       </div>
 
       <!-- [썸네일] v39-E2 #2: 상세설명 이미지(본문) — 갤러리와 분리. 상세페이지 본문용. -->
-      <div class="kgp-esec mb-3 kgp-etab-hide" id="detailImagesBlock" data-etab="thumb" style="display:none">
+      {# v57 STEP3: 상세설명 이미지(테무 상세이미지 전량)는 '상세페이지' 탭에 표시(썸네일 탭 아님). #}
+      <div class="kgp-esec mb-3 kgp-etab-hide" id="detailImagesBlock" data-etab="detail" style="display:none">
         <label class="form-label small fw-semibold mb-2 d-block">상세설명 이미지 <span class="text-muted">(상세페이지 본문용 — 갤러리와 분리)</span></label>
         <div id="detailGallery" class="d-flex flex-wrap gap-2 mb-1"></div>
-        <div class="form-text">상세설명 영역에서 수집된 이미지예요. 갤러리(대표)와 섞이지 않습니다.</div>
+        <div class="form-text">상세설명 영역에서 수집된 이미지예요. 갤러리(대표)와 섞이지 않습니다. <span id="detailFoldNote" class="text-warning" style="display:none"><i class="bi bi-exclamation-triangle"></i> 원본에 ‘더보기’ 접힘이 있어 일부만 수집됐을 수 있어요.</span></div>
       </div>
 
       <!-- [상세페이지] v40-C: 마켓별 상세페이지 꾸미기 (블록 에디터 + 마켓 프리셋 + 미리보기) -->
@@ -825,7 +826,15 @@ function renderDetailGallery() {
   const g = document.getElementById('detailGallery');
   if (!block || !g) return;
   const urls = detailImgs.map(u => (u || '').trim()).filter(Boolean);
-  if (!urls.length) { block.style.display = 'none'; return; }
+  // v57 STEP3: 원본 '더보기' 접힘 잔존(detail_fold) 시 정직 안내 — 비어 있어도 블록 노출해 안내.
+  const foldNote = document.getElementById('detailFoldNote');
+  const folded = !!(_EXTRA && _EXTRA.detail_fold);
+  if (foldNote) foldNote.style.display = folded ? '' : 'none';
+  if (!urls.length) {
+    if (folded) { block.style.display = ''; g.innerHTML = '<span class="text-muted small">상세 이미지를 못 읽었어요 — 원본에서 ‘더보기’를 펼친 뒤 다시 수집해 보세요.</span>'; }
+    else block.style.display = 'none';
+    return;
+  }
   block.style.display = '';
   g.innerHTML = '';
   urls.forEach((u) => {

@@ -207,7 +207,8 @@
     }
     // 전역/스크립트 상태 딥워크(스키마 무관·키 이름 휴리스틱) — JSON-LD로 못 채운 것 보강.
     var IMG_KEY = /(image|img|pic|photo|thumb|gallery|carousel|album)/i;
-    var DET_KEY = /(detail|desc|content)/i;
+    // v57 STEP3: 테무 상세이미지 키 보강(decoration/bottom/richtext/longimage 등 접힘 상세도 detail로 라우팅).
+    var DET_KEY = /(detail|desc|content|decoration|bottomimage|richtext|longimage|goodsdesc)/i;
     var SKU_KEY = /(sku|variant|goodsspec|specsku|skulist|productlist)/i;
     var SPEC_KEY = /(spec|attr|prop|option|variation)/i;
     var PRICE_KEY = /(price|amount|sale|deal|salePrice|normalPrice)/i;
@@ -449,6 +450,24 @@
     // 브리프(오너): 갤러리 컨테이너 스코프 실패 시 document.images 전체 폴백 금지 → 빈 배열(정직, Tier1이 채우거나 부분수집).
     return { images: out, detailImages: det };
   }
+  // v57 STEP3: 상세영역에 '더보기'류 접힘 컨트롤이 있는지(펼치면 상세이미지가 더 나올 수 있음).
+  var FOLD_RE = /(더\s*보기|펼치기|전체\s*보기|자세히\s*보기|see\s*more|view\s*more|read\s*more|show\s*more|expand)/i;
+  function _foldButtons() {
+    var out = [];
+    try {
+      var cands = document.querySelectorAll(
+        '[class*="detail" i] button,[class*="detail" i] a,[class*="detail" i] [role="button"],' +
+        '[class*="description" i] button,[class*="description" i] a,[class*="desc" i] [role="button"],' +
+        'button,a[role="button"],[role="button"]');
+      for (var i = 0; i < cands.length && out.length < 6; i++) {
+        var el = cands[i];
+        var t = (el.innerText || el.textContent || el.getAttribute("aria-label") || "").trim();
+        if (t && t.length <= 20 && FOLD_RE.test(t)) out.push(el);
+      }
+    } catch (e) {}
+    return out;
+  }
+  function _hasDetailFold() { return _foldButtons().length > 0; }
   var OPT_LABEL = /(색상|색깔|컬러|사이즈|크기|규격|수량|종류|옵션|타입|스타일|모델|용량|color|colour|size|variant|option|type|style|qty|quantity|model|capacity)/i;
   function _domOptions() {
     var out = [], seen = {};
@@ -539,6 +558,15 @@
       } catch (e) { warnings.push("DOM 폴백 중 일부 실패"); }
     }
 
+    // v57 STEP3: 상세이미지는 **갤러리와 독립** 수집 — Tier1이 갤러리를 채웠어도 상세(더보기 접힘)는
+    //   비어 있을 수 있다. 숨김 컨테이너(display:none 포함 — querySelectorAll은 포함)의 data-src까지 긁는다.
+    var detailFold = _hasDetailFold();
+    if (detailImages.length === 0) {
+      try { var di2 = _domImages(); if (di2.detailImages && di2.detailImages.length) detailImages = di2.detailImages; } catch (e) {}
+    }
+    // 정직: 더보기 접힘이 남아 있고 상세이미지가 여전히 비었으면 '일부만' 경고(무음 실패 금지).
+    if (detailFold && detailImages.length === 0) warnings.push("상세이미지 일부만(더보기 펼침 필요할 수 있어요)");
+
     // ③ 둘 다 실패 → 부분 수집(가짜 성공 금지)
     var partial = !price && images.length === 0;
     if (partial) { source = "partial"; warnings.push("초기 JSON·DOM 모두에서 핵심 정보를 못 읽어 부분 수집입니다"); }
@@ -578,6 +606,7 @@
       price: price, currency: currency, price_status: price_status,
       image: gallery[0] || "",
       images: gallery, gallery_images: gallery, detail_images: detailImages,
+      detail_fold: detailFold,          // v57 STEP3: 상세 '더보기' 접힘 잔존 여부(정직 표기용)
       thumbnail: gallery[0] || "",
       options: options, skus: skus,
       description: description, detail_specs: specs,
@@ -592,6 +621,37 @@
     return out;
   }
 
+  // v57 STEP3: 상세 '더보기' 접힘을 프로그램적으로 펼친다 — 클릭 → MutationObserver로 새 img 대기(최대 3s).
+  //   상세이미지가 fold 뒤에 lazy-mount되는 테무 대응. 접힘 없으면 즉시 콜백(정상 페이지 지연 0).
+  //   추가 네트워크 요청 없음(페이지 자체 로더가 이미지 채움). cb는 상세이미지 증가 여부와 무관하게 1회 호출.
+  function kgpRevealDetailFolds(cb) {
+    var done = false;
+    function finish() { if (done) return; done = true; try { cb && cb(); } catch (e) {} }
+    var btns;
+    try { btns = _foldButtons(); } catch (e) { btns = []; }
+    if (!btns || !btns.length) { finish(); return; }
+    var scope = null;
+    try { scope = document.querySelector('[class*="detail" i],[class*="description" i],[class*="goods-desc" i]') || document.body; } catch (e) { scope = document.body; }
+    var before = 0;
+    try { before = scope.querySelectorAll("img").length; } catch (e) {}
+    var mo = null, timer = null;
+    function stop() { try { if (mo) mo.disconnect(); } catch (e) {} if (timer) clearTimeout(timer); finish(); }
+    try {
+      mo = new MutationObserver(function () {
+        var now = 0; try { now = scope.querySelectorAll("img").length; } catch (e) {}
+        if (now > before) stop();               // 새 이미지 mount 확인 → 조기 종료
+      });
+      mo.observe(scope, { childList: true, subtree: true, attributes: true, attributeFilter: ["src", "data-src"] });
+    } catch (e) {}
+    // 접힘 버튼 클릭(최대 3개 — 여러 섹션 대응). 스크롤 유발 lazy도 커버.
+    for (var i = 0; i < btns.length && i < 3; i++) {
+      try { btns[i].scrollIntoView({ block: "center" }); } catch (e) {}
+      try { btns[i].click(); } catch (e) {}
+    }
+    timer = setTimeout(stop, 3000);              // 최대 3초 후 강제 종료(무한 대기 금지)
+  }
+
   global.kgpExtractProduct = kgpExtractProduct;
-  if (typeof module !== "undefined" && module.exports) module.exports = { kgpExtractProduct: kgpExtractProduct };
+  global.kgpRevealDetailFolds = kgpRevealDetailFolds;
+  if (typeof module !== "undefined" && module.exports) module.exports = { kgpExtractProduct: kgpExtractProduct, kgpRevealDetailFolds: kgpRevealDetailFolds };
 })(typeof window !== "undefined" ? window : this);

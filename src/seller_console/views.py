@@ -6452,6 +6452,9 @@ def collect_preview_save(item_id: str):
     _di = data.get("detail_images")
     if isinstance(_di, list):
         extra["detail_images"] = [str(u).strip() for u in _di if str(u).strip()]
+    # v57 STEP3: 상세 '더보기' 접힘 잔존 여부(정직 표기 — 드로어 상세페이지 탭 안내).
+    if "detail_fold" in data:
+        extra["detail_fold"] = bool(data.get("detail_fold"))
     # v40-C: 마켓별 상세페이지 블록(공통 + 마켓 오버라이드) 보존.
     _db = data.get("detail_blocks")
     if isinstance(_db, dict):

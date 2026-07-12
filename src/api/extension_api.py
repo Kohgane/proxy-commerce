@@ -550,6 +550,7 @@ def collect_from_extension():
         "images": images,
         "gallery_images": _bucket_filter(payload.get("gallery_images"), images),
         "detail_images": _bucket_filter(payload.get("detail_images"), []),
+        "detail_fold": bool(payload.get("detail_fold")),      # v57 STEP3: 상세 '더보기' 접힘 잔존(정직 표기)
         "price": payload.get("price", ""),
         "price_original": payload.get("price", ""),
         "currency": payload.get("currency") or "",   # v42 1-1: USD 기본값 금지

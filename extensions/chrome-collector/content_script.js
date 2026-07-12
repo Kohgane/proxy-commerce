@@ -691,6 +691,7 @@ function kgpMergeMeta(base, extra) {
   });
   if (empty(out.image) && out.images && out.images.length) out.image = out.images[0];
   if (empty(out.thumbnail) && out.images && out.images.length) out.thumbnail = out.images[0];
+  out.detail_fold = !!(out.detail_fold || extra.detail_fold);   // v57 STEP3: 어느 월드든 접힘 감지 시 표기
   if (!empty(out.price) && Array.isArray(out.images) && out.images.length) out.partial = false;  // 병합으로 핵심 확보
   // field_sources 병합: MAIN이 json 준 필드는 json 우선(수집 로그가 실제 소스 표기).
   if (extra.field_sources) {
@@ -751,6 +752,10 @@ function handleFabClick(btn, opts) {
   opts = opts || {};
   if (btn._kgpDragged || btn.dataset.busy) return;
   setFabState(btn, "loading");
+  // v57 STEP3: 상세 '더보기' 접힘을 먼저 펼친 뒤 추출(테무 상세이미지 전량) — 접힘 없으면 즉시 진행(지연 0).
+  var _reveal = (typeof window.kgpRevealDetailFolds === "function")
+    ? window.kgpRevealDetailFolds : function (cb) { cb && cb(); };
+  _reveal(function () {
   kgpExtractMerged(function (meta) {
   const corr = kgpNewCorr();
   meta.corr_id = corr;                    // 서버 로깅·알럿 dedupe 기준
@@ -821,6 +826,7 @@ function handleFabClick(btn, opts) {
     });
   });
   });   // v47 STEP4: kgpExtractMerged 콜백 닫기
+  });   // v57 STEP3: kgpRevealDetailFolds 콜백 닫기
 }
 
 function injectCollectButton() {
