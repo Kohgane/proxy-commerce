@@ -135,6 +135,9 @@ def test_committed_favicons_match_code():
         _ans = Path("assets/brand-icons/favicon-master-48.png")
         if _ans.exists():
             shutil.copy(_ans, tmp / "assets/brand-icons/favicon-master-48.png")
+        _lm = Path("assets/brand-icons/master-512.png")
+        if _lm.exists():
+            shutil.copy(_lm, tmp / "assets/brand-icons/master-512.png")
         mod.deploy(str(tmp))
 
         def md5(p):

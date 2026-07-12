@@ -178,6 +178,19 @@ def _rs(master, s):
 
 
 FAVICON_MASTER_48 = "assets/brand-icons/favicon-master-48.png"
+LARGE_MASTER_512 = "assets/brand-icons/master-512.png"
+
+
+def _large_master(root="."):
+    """v57 대형 통일(오너): 대형 아이콘(180/192/512/1024·apple-touch·OG·확장128)의 정답지 =
+    `assets/brand-icons/master-512.png`(오너 공식 512, 소형 정답지와 동일 디자인). 있으면 그걸(원본 픽셀 보존)
+    대형 소스로, 없으면 코드 렌더 1024 마스터로 폴백(정직).
+    """
+    from PIL import Image
+    p = os.path.join(root, LARGE_MASTER_512)
+    if os.path.exists(p):
+        return Image.open(p)              # 512 원본(RGBA) — 1024는 업스케일, 그 외는 다운스케일
+    return None
 
 
 def _favicon48_answer(root="."):
@@ -201,7 +214,9 @@ def deploy(root="."):
     import base64
     import io
     from PIL import Image
-    master = build_master(simple=False)     # 대형 전용 1024 마스터(코드 렌더)
+    # v57 대형 통일: 대형 소스 = 오너 공식 512(master-512.png) 우선, 없으면 코드 1024 마스터 폴백.
+    _lm = _large_master(root)
+    master = _lm if _lm is not None else build_master(simple=False)
     fav48 = _favicon48_answer(root)         # 소형 정답지(오너 커밋 48px) 우선
     small48 = fav48 if fav48 is not None else build_master(simple=True)
     static = os.path.join(root, "src/seller_console/static")
@@ -238,8 +253,8 @@ def deploy(root="."):
     )
     with open(f"{static}/favicon.svg", "w", encoding="utf-8") as f:
         f.write(svg)
-    # 마스터 단일 소스 벤더링
-    master.save(f"{assets}/icon-master-1024.png")
+    # 마스터 단일 소스 벤더링(1024로 업스케일 — OG 카드 생성기가 이 파일을 소스로 사용).
+    _rs(master, 1024).save(f"{assets}/icon-master-1024.png")
 
     # 확장 아이콘 — 48 = 정답지 픽셀 그대로, 16/32 = 정답지 다운스케일, 128 = 1024 마스터
     for s in (16, 32, 48):

@@ -33,9 +33,11 @@ def _has(path, rgb, tol=44, size=64):
 
 def test_master_is_white_bg_with_brand_colors():
     from PIL import Image
-    im = Image.open(STATIC / "icon-1024.png").convert("RGB")
-    # 모서리(보더 바깥)는 흰 배경
-    assert _near(im.getpixel((8, 8)), (255, 255, 255), tol=6), "마스터 배경이 흰색 아님"
+    im = Image.open(STATIC / "icon-1024.png").convert("RGBA")
+    # v57 대형 통일(오너 공식 512): 모서리(보더 바깥)는 **투명**(alpha 0) 또는 흰색, 내부는 흰 배경.
+    cr, cg, cb, ca = im.getpixel((8, 8))
+    assert ca == 0 or _near((cr, cg, cb), (255, 255, 255), tol=8), "모서리가 투명/흰색 아님"
+    assert _near(im.convert("RGB").getpixel((512, 512)), (255, 255, 255), tol=8), "내부 배경이 흰색 아님"
     # 브랜드 색 존재: 골드·틸·주황·먹
     for rgb, name in [((201, 162, 75), "gold"), ((17, 154, 142), "teal"),
                       ((245, 130, 31), "orange"), ((26, 23, 20), "ink")]:

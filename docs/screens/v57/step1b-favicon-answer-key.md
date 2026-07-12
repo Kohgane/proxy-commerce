@@ -19,16 +19,16 @@ favicon-48 vs favicon-master-48
 ```
 캡처: `step1b-favicon-answer-key.png`(favicon 16/32/48 native + 확대).
 
-## ⚠️ 대형 마스터 디자인 대조 (오너 요청 기록)
-`icon-bridge-v2-512`(오너 공식 대형) vs 현행 1024 코드 마스터(`icon-512.png`) — **디자인 불일치**:
-| | 512 정답지 | 1024 코드 마스터 |
-|---|---|---|
-| 아치 | 열린 게이트 아치(inverted-U) | 거의 완전한 링(원) |
-| 케이블 | 타워→측면 사이드스팬(깔끔) | 중앙 깊은 해먹 처짐 |
-| 수면 라인 | 없음 | 데크 아래 청록 2줄 |
+## 대형 통일 (오너 확정 — 512 공식 마크로 파생)
+오너 지시 "대형통일" → 대형 아이콘(180/192/512/1024·apple-touch·OG·확장128)을 코드 마스터 대신
+**오너 공식 `master-512.png`**(md5 `70cbdee83a618e676caa82ec632fcd43`, 512×512 RGBA)에서 파생:
+- `_large_master()`: master-512.png 있으면 대형 소스로(1024=업스케일·그 외=다운스케일), 없으면 코드 마스터 폴백.
+- OG 카드(`gen_og_card.py`)가 `icon-master-1024.png`(=오너 512 업스케일)를 소스로 재생성 → OG도 공식 마크.
+- 캐시버스트 og `?v=5 → v=6`(OG 디자인 변경 강제 갱신).
+- 오너 아트 특성: 보더 바깥 **투명**(alpha 0), 내부 흰 배경.
 
-지시대로 대형은 1024 마스터 유지. 캡처: `step1b-large-master-crosscheck.png`.
-→ **권고**: 브랜드 일관성을 위해 대형도 오너 공식 512에서 파생하도록 통일 가능(오너 확인 시 1커밋). 현재는 미적용(지시 준수).
+**결과: favicon(소형)과 앱아이콘·OG(대형)가 동일 디자인으로 통일** — 캡처 `step1b-large-master-crosscheck.png`
+(BEFORE: 코드 링아치 vs 정답지 열린아치 불일치) → 통일 후 favicon-48 ≡ icon-512 동일 마크.
 
 ## 오너 액션
 - 배포 후: `python scripts/compare_favicon.py --live https://kohganepercentiii.com/seller/static/favicon-48.png?v=182` → 라이브 픽셀 동일 확인.
