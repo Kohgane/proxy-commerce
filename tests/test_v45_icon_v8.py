@@ -71,4 +71,4 @@ def test_cache_version_and_manifest_bumped():
     base = (Path("src/seller_console/templates/_base.html")).read_text(encoding="utf-8")
     assert "v='181'" in base and "v='179'" not in base
     mf = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert mf["version"] == "1.5.55"
+    assert mf["version"] == "1.5.56"

@@ -896,3 +896,37 @@ document.getElementById("tm-tracking-no")?.addEventListener("keydown", (event) =
     document.getElementById("trackingSaveButton")?.focus();
   }
 });
+
+// v56 STEP2: 주문 정보 복사(소싱처 주문서 붙여넣기용) — 옵션·수량·수취인 메모.
+function kgpCopyOrder(btn) {
+  var text = btn.getAttribute('data-copy-order') || '';
+  function ok() { try { (window.pcToast || function (m) { alert(m); })('주문 정보를 복사했어요. 소싱처 주문서에 붙여넣으세요.', 'success'); } catch (e) {} }
+  function fail() { try { (window.pcToast || function (m) { alert(m); })('복사 실패 — 길게 눌러 직접 복사하세요.', 'warning'); } catch (e) {} }
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(ok, function () {
+        var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); ok(); } catch (e) { fail(); } ta.remove();
+      });
+    } else {
+      var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); ok(); } catch (e) { fail(); } ta.remove();
+    }
+  } catch (e) { fail(); }
+}
+
+// v56 STEP2: '소싱 주문 완료' 토글 — 서버 notes 마커 영속(무엇을 시켰는지 추적).
+function kgpToggleSourced(btn, marketplace, orderId) {
+  btn.disabled = true;
+  fetch('/seller/orders/' + encodeURIComponent(marketplace) + '/' + encodeURIComponent(orderId) + '/sourced', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: '{}'
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    if (!d.ok) { try { (window.pcToast || function (m) { alert(m); })(d.error || '표시 실패', 'error'); } catch (e) {} return; }
+    var span = btn.querySelector('span');
+    if (d.sourced) { btn.classList.add('btn-success'); btn.classList.remove('btn-outline-success'); if (span) span.textContent = '소싱 주문 완료'; }
+    else { btn.classList.remove('btn-success'); btn.classList.add('btn-outline-success'); if (span) span.textContent = '소싱 주문 완료로 표시'; }
+    btn.setAttribute('data-sourced', d.sourced ? '1' : '0');
+    try { (window.pcToast || function (m) {})(d.sourced ? '소싱 주문 완료로 표시했어요.' : '소싱 완료 표시를 해제했어요.', 'success'); } catch (e) {}
+  }).catch(function () { try { (window.pcToast || function (m) { alert(m); })('네트워크 오류', 'error'); } catch (e) {} })
+    .then(function () { btn.disabled = false; });
+}

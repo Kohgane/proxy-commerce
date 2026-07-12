@@ -21,7 +21,7 @@ def test_netscape_personal_toolbar_folder():
     assert 'PERSONAL_TOOLBAR_FOLDER="true"' in b        # 북마크바 직행
     assert b.count("<DL><p>") == 2                        # 폴더 중첩 구조
     assert 'ICON="data:image/png;base64,' in b           # ICON 속성(유일 파비콘 경로)
-    assert ">고가수집</A>" in b                           # 가시 라벨(제로폭 아님)
+    assert "></A>" in b  # v56: 앵커 텍스트 빈 문자열(파비콘만)
 
 
 def test_icon_is_v181_favicon32_not_stale():

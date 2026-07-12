@@ -287,6 +287,15 @@
         {% endif %}
         <span class="text-muted fw-normal">({{ collect_status.filled }}/{{ collect_status.total }} 필드) · 수집 로그 보기</span>
       </summary>
+      {# v56 STEP4: 테무 Tier1 최종 판정 — 확장 API 인터셉터 동작/원인(콘솔 안 봐도 드로어에서 확인). #}
+      {% set _t1 = extra.get('tier1_diag') if extra else None %}
+      {% if _t1 and (_t1.used or _t1.cause) %}
+      <div class="mt-2 mb-1 small" style="padding:.35rem .5rem;border-radius:6px;background:{{ 'color-mix(in srgb,var(--teal) 10%,transparent)' if _t1.used else 'color-mix(in srgb,var(--danger) 8%,transparent)' }}">
+        {% if _t1.used %}<i class="bi bi-lightning-charge" style="color:var(--teal,#119a8e)"></i> <strong>Tier1 동작</strong>(확장 API 인터셉트) — 채택 <span class="text-muted">{{ (_t1.source or 'API 응답')[:64] }}</span> · 최고점 {{ _t1.topScore }}/4
+        {% else %}<i class="bi bi-info-circle" style="color:var(--danger,#c2503c)"></i> <strong>Tier1 미동작</strong> → DOM 폴백. 원인: {{ _t1.cause }}
+        {% endif %}
+      </div>
+      {% endif %}
       <table class="table table-sm mt-2 mb-0" style="font-size:.82rem">
         <tbody>
           {% for f in collect_status.fields %}

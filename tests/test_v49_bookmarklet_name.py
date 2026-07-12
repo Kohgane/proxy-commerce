@@ -16,28 +16,24 @@ _ZW = "​"
 
 
 def test_generated_anchor_text_is_visible():
+    # v56 STEP1(오너 요청): 앵커 텍스트=빈 문자열(파비콘만 표시). 단 **제로폭 U+200B는 금지**(투명 이름
+    #   폴백/javascript: URL 노출 버그의 근원) — 완전 빈 문자열 "" 이어야 하며, ICON이 아이콘을 담당.
     from src.seller_console.views import _bookmarklet_js, _netscape_bookmark
     href = _bookmarklet_js("https://x.com", "TOK", True)
     nb = _netscape_bookmark(href, "data:image/png;base64,ABCD")
-    # 앵커 텍스트 추출
     m = re.search(r'ICON="[^"]*">(.*?)</A>', nb, re.S)
-    assert m, "앵커 텍스트를 찾지 못함"
+    assert m, "앵커 요소를 찾지 못함"
     label = m.group(1)
-    # 가시 문자열 — 제로폭/공백만 있으면 안 됨
-    assert _ZW not in label, "제로폭 U+200B 잔존(투명 이름 버그)"
-    assert label.strip() != "", "앵커 텍스트가 공백뿐(투명)"
-    assert "고가수집" in label
-    # 빈 문자열 아님 → 크롬이 javascript: URL을 이름으로 폴백하지 않음
-    assert "javascript:" not in label
+    assert label == "", "앵커 텍스트는 빈 문자열이어야(파비콘만)"
+    assert _ZW not in nb, "제로폭 U+200B 금지"
+    assert "ICON=" in nb                                   # 아이콘이 표시를 담당
 
 
-def test_netscape_default_label_visible():
-    # 기본 라벨이 가시 문자열(제로폭 아님)
-    src = VIEWS_SRC
-    i = src.index("def _netscape_bookmark")
-    sig = src[i:i + 120]
-    assert _ZW not in sig, "기본 라벨에 제로폭 U+200B 잔존"
-    assert 'label: str = "고가수집"' in sig
+def test_netscape_empty_anchor_no_zero_width():
+    # v56: 앵커 텍스트 빈 문자열(파비콘만) — 제로폭 U+200B는 여전히 금지(폴백 버그 근원).
+    from src.seller_console.views import _netscape_bookmark
+    nb = _netscape_bookmark("javascript:void(0)", "data:image/png;base64,AB")
+    assert "></A>" in nb and _ZW not in nb
 
 
 def test_copy_method_guide_and_address_bar_warning():

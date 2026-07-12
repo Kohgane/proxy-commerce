@@ -20,11 +20,13 @@ def client():
 
 
 def test_bookmarklet_no_new_window():
-    # 새 창/팝업/리다이렉트 금지 (템플릿·서버 북마클릿 코드 둘 다)
+    # 북마클릿(서버 생성 코드)이 새 창/팝업/리다이렉트를 열지 않는다.
+    from src.seller_console.views import _bookmarklet_js, _bookmarklet_run_js
+    code = _bookmarklet_js("https://x.com", "T", True) + _bookmarklet_run_js()
+    assert "window.open" not in code and "_blank" not in code
+    assert "collect/receiver" not in code   # postMessage 새 탭 경로 제거
+    # 템플릿의 인페이지 수집 안내에도 window.open 없음(v56 설치 테스트 링크 target=_blank는 정상 페이지 이동).
     assert "window.open" not in BM
-    assert "_blank" not in BM
-    assert "collect/receiver" not in BM   # postMessage 새 탭 경로 제거
-    assert "window.open" not in VIEWS.split("_bookmarklet_js")[1][:2500]
 
 
 def test_bookmarklet_background_fetch_with_token():
