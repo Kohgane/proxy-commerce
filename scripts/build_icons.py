@@ -177,41 +177,46 @@ def _rs(master, s):
     return master.resize((s, s), Image.LANCZOS)
 
 
-def _committed_master(root="."):
-    """v57 STEP1: 오너가 커밋한 정답 원본(brand_icons_v2/master-48.png)이 있으면 그걸 유일 정답지로.
-    (첨부 벡터 없음 → 48px 원본을 업스케일·임베드로 사용. 없으면 코드 지오메트리로 두 타워 브릿지 렌더.)"""
+FAVICON_MASTER_48 = "assets/brand-icons/favicon-master-48.png"
+
+
+def _favicon48_answer(root="."):
+    """v57 파비콘 정정(오너): 파비콘 소사이즈의 **정답지**는 `assets/brand-icons/favicon-master-48.png`(48×48).
+    favicon-16/32/48·ico·확장 16/32/48은 1024 마스터가 아니라 **이 파일 기준**으로 생성(16px=이 파일 다운스케일).
+    파일이 있으면 그걸 유일 정답지로, 없으면 None(코드 렌더 two-tower로 폴백 — 정직).
+    """
     from PIL import Image
-    p = os.path.join(root, "brand_icons_v2", "master-48.png")
+    p = os.path.join(root, FAVICON_MASTER_48)
     if os.path.exists(p):
-        return Image.open(p).convert("RGB").resize((SIZE, SIZE), Image.LANCZOS)
+        return Image.open(p).convert("RGBA").convert("RGB")
     return None
 
 
 def deploy(root="."):
-    """레포의 실제 아이콘 위치를 전부 교체(단일 소스 = 커밋된 master-48.png 우선, 없으면 코드 지오메트리)."""
+    """레포의 실제 아이콘 위치를 전부 교체.
+    - 소형 파비콘(16/32/48·ico·확장 16/32/48) = `assets/brand-icons/favicon-master-48.png`(정답지) **다운스케일**.
+      (없으면 코드 렌더 two-tower로 폴백 — 정직.)
+    - 대형(180/192/512/1024·apple-touch·확장 128) = 1024 코드 마스터.
+    """
     import base64
     import io
-    committed = _committed_master(root)
-    if committed is not None:
-        master = committed
-        small = committed                 # 커밋 원본이면 소형도 동일(픽셀 정답)
-    else:
-        master = build_master(simple=False)
-        small = build_master(simple=True) # v57: 소형도 두 타워 현수교(오답 마크 회수)
+    master = build_master(simple=False)     # 대형 전용 1024 마스터(코드 렌더)
+    fav48 = _favicon48_answer(root)         # 소형 정답지(오너 커밋 48px) 우선
+    small48 = fav48 if fav48 is not None else build_master(simple=True)
     static = os.path.join(root, "src/seller_console/static")
     ext = os.path.join(root, "extensions/chrome-collector/icons")
     assets = os.path.join(root, "assets/brand-icons")
     for d in (static, ext, assets):
         os.makedirs(d, exist_ok=True)
 
-    # 앱 static — 소형(16/32/48)은 고대비 변형, 대형은 풀 디테일
-    _rs(small, 16).save(f"{static}/favicon-16.png")
-    _rs(small, 32).save(f"{static}/favicon-32.png")
-    _rs(small, 48).save(f"{static}/favicon-48.png")
+    # 앱 static — 소형(16/32/48)은 **favicon-master-48 다운스케일**(16=48 다운스케일), 대형은 1024 마스터
+    _rs(small48, 16).save(f"{static}/favicon-16.png")
+    _rs(small48, 32).save(f"{static}/favicon-32.png")
+    _rs(small48, 48).save(f"{static}/favicon-48.png")
     for s in (180, 192, 512, 1024):
         _rs(master, s).save(f"{static}/icon-{s}.png")
     _rs(master, 180).save(f"{static}/apple-touch-icon.png")
-    _rs(small, 48).save(f"{static}/favicon.ico", sizes=[(16, 16), (32, 32), (48, 48)])
+    _rs(small48, 48).save(f"{static}/favicon.ico", sizes=[(16, 16), (32, 32), (48, 48)])
     # favicon.svg — 마스터 래스터(512) data-URI 임베드(스케일러블 선언 유지, 경량)
     buf = io.BytesIO()
     _rs(master, 512).save(buf, "PNG")
@@ -227,9 +232,9 @@ def deploy(root="."):
     # 마스터 단일 소스 벤더링
     master.save(f"{assets}/icon-master-1024.png")
 
-    # 확장 아이콘 — 16/32/48 고대비 변형, 128 풀
+    # 확장 아이콘 — 16/32/48 = favicon-master-48(정답지) 다운스케일, 128 = 1024 마스터
     for s in (16, 32, 48):
-        _rs(small, s).save(f"{ext}/{s}.png")
+        _rs(small48, s).save(f"{ext}/{s}.png")
     _rs(master, 128).save(f"{ext}/128.png")
 
     return master

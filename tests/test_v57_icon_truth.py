@@ -56,10 +56,47 @@ def test_build_simple_is_two_tower_not_arch_dot():
     assert "leg(" in seg, "타워(leg) 스트로크가 있어야 두 타워"
 
 
-def test_committed_master_preferred_when_present():
-    # 오너가 정답 원본을 커밋하면(brand_icons_v2/master-48.png) 그걸 유일 정답지로 우선.
-    assert "_committed_master" in BUILD
-    assert "brand_icons_v2" in BUILD and "master-48.png" in BUILD
+def test_favicon48_answer_is_sole_small_source():
+    # v57 오너: 파비콘 소사이즈 정답지=assets/brand-icons/favicon-master-48.png →
+    #   favicon-16/32/48·ico·확장 16/32/48이 1024 마스터가 아니라 이 파일 다운스케일(16=48 다운스케일).
+    assert "assets/brand-icons/favicon-master-48.png" in BUILD
+    assert "def _favicon48_answer" in BUILD
+    # 소형 소스가 small48(정답지 우선), 대형은 1024 master로 분리.
+    assert "small48 = fav48 if fav48 is not None else build_master(simple=True)" in BUILD
+    seg = BUILD.split("def deploy")[1]
+    assert "_rs(small48, 16)" in seg and "_rs(small48, 48)" in seg   # 16/48 = 정답지 다운스케일
+    assert "_rs(master, 512)" in seg or "_rs(master, 1024)" in seg   # 대형은 1024 마스터
+
+
+def test_favicon48_downscale_pipeline_uses_committed_file(tmp_path):
+    # 정답지 파일이 있으면 favicon-16/32/48이 그 파일 다운스케일과 픽셀 동일(파이프라인 계약).
+    if not _pillow_ok():
+        pytest.skip("Pillow 미설치")
+    from PIL import Image
+    import hashlib
+    mod = _load()
+    root = tmp_path
+    (root / "assets/brand-icons").mkdir(parents=True)
+    (root / "src/seller_console/static").mkdir(parents=True)
+    (root / "extensions/chrome-collector/icons").mkdir(parents=True)
+    # 임의 48px 정답지(단색 아님 — 대각선)로 파이프라인 검증
+    ans = Image.new("RGB", (48, 48), (255, 255, 255))
+    for i in range(48):
+        ans.putpixel((i, i), (0x11, 0x9A, 0x8E))
+    ans.save(root / "assets/brand-icons/favicon-master-48.png")
+    mod.deploy(str(root))
+    got48 = Image.open(root / "src/seller_console/static/favicon-48.png").convert("RGB")
+    exp48 = ans.resize((48, 48), Image.LANCZOS).convert("RGB")
+    assert hashlib.md5(got48.tobytes()).hexdigest() == hashlib.md5(exp48.tobytes()).hexdigest()
+    got16 = Image.open(root / "src/seller_console/static/favicon-16.png").convert("RGB")
+    exp16 = ans.resize((16, 16), Image.LANCZOS).convert("RGB")   # 16 = 정답지(48) 다운스케일
+    assert hashlib.md5(got16.tobytes()).hexdigest() == hashlib.md5(exp16.tobytes()).hexdigest()
+
+
+def test_compare_favicon_tool_exists():
+    tool = Path("scripts/compare_favicon.py").read_text(encoding="utf-8")
+    assert "favicon-master-48.png" in tool
+    assert "픽셀 동일" in tool and "--live" in tool
 
 
 @pytest.mark.skipif(not _pillow_ok(), reason="Pillow 미설치(빌드타임 전용)")
