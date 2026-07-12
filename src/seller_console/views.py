@@ -5539,6 +5539,10 @@ def bookmarklet():
     )
 
 
+_BM_CORE_VER = "bm-v58"   # v58 STEP3: 북마클릿 코어 버전(파일 생성 시 토스트에 주입 — 죽은 버전 혼동 차단)
+_BM_RUN_VER = "run-v58"   # run.js 채택 시 (bm-vN+run-vM)
+
+
 def _bookmarklet_js(server: str, token: str, translate: bool) -> str:
     """북마클릿 javascript: 코드(로더 구조 — v56 STEP1, 침묵 사망 원천 제거).
 
@@ -5553,15 +5557,15 @@ def _bookmarklet_js(server: str, token: str, translate: bool) -> str:
     return (
         "javascript:(function(){"
         "try{"
-        "var S='" + server + "',T='" + token + "',TR=" + tr + ";"
+        "var S='" + server + "',T='" + token + "',TR=" + tr + ",BMV='" + _BM_CORE_VER + "';"
         # ── 토스트 K() 최우선 정의(생성 실패 시 alert 폴백) ──
         "function K(m,ok){try{var t=document.getElementById('kgpbm');if(!t){t=document.createElement('div');t.id='kgpbm';t.style.cssText='position:fixed;right:20px;bottom:84px;z-index:2147483647;display:flex;align-items:center;gap:8px;max-width:300px;padding:10px 14px;border-radius:10px;font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.3)';var ic=document.createElement('img');ic.src=S+'/seller/static/favicon-32.png?v=182';ic.alt='';ic.style.cssText='width:20px;height:20px;border-radius:5px;flex:none;background:#fff';t.appendChild(ic);var tx=document.createElement('span');tx.id='kgpbmx';tx.style.whiteSpace='pre-wrap';t.appendChild(tx);document.body.appendChild(t);}t.style.background=ok?'#16a34a':'#dc2626';var x=document.getElementById('kgpbmx');if(x)x.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0'},4500);}catch(e){try{alert('[고가수집기] '+m)}catch(_){}}}"
-        "K('수집 중…',true);"   # ← 즉시 표시(침묵 금지)
+        "K('수집 중… ('+BMV+')',true);"   # ← 즉시 표시 + 버전 스탬프(v58 STEP3, 죽은 버전 혼동 차단)
         # ── 코어 추출(검증된 구버전: og메타 + 기본 이미지 + outerHTML) ──
         "function M(p){try{var e=document.querySelector('meta[property=\"'+p+'\"],meta[name=\"'+p+'\"]');return e?(e.content||''):''}catch(e){return ''}}"
         "function core(){var imgs=[];var og=M('og:image');if(og)imgs.push(og);"
         "try{[].forEach.call(document.images||[],function(im){if(im&&im.src&&(im.naturalWidth||0)>=300&&!/(logo|sprite|icon|avatar|placeholder|loading|blank|pixel|banner)/i.test(im.src))imgs.push(im.src)})}catch(e){}"
-        "return{url:location.href,title:(M('og:title')||document.title||'').slice(0,300),price:M('product:price:amount')||'',currency:M('product:price:currency')||'',description:M('og:description')||M('description')||'',images:imgs.slice(0,30),html:(document.documentElement?document.documentElement.outerHTML:'').slice(0,900000),ext_version:'bm-core',translate:TR};}"
+        "return{url:location.href,title:(M('og:title')||document.title||'').slice(0,300),price:M('product:price:amount')||'',currency:M('product:price:currency')||'',description:M('og:description')||M('description')||'',images:imgs.slice(0,30),html:(document.documentElement?document.documentElement.outerHTML:'').slice(0,900000),ext_version:BMV,translate:TR};}"
         # ── 전송(토큰 T는 여기서만) ──
         "function send(data){try{data=data||core();data.translate=TR;}catch(e){data=core();}"
         "try{console.log('[고가수집기] 전송요약',{price:data.price,currency:data.currency,images:(data.images||[]).length,src:data.ext_version})}catch(e){}"
@@ -5576,7 +5580,8 @@ def _bookmarklet_js(server: str, token: str, translate: bool) -> str:
         # ── 로더: run.js 주입 시도(토큰 미포함). 성공=확장추출, 실패/타임아웃=코어 ──
         "var done=false;function go(data){if(done)return;done=true;send(data);}"
         "try{var sc=document.createElement('script');sc.src=S+'/seller/bookmarklet/run.js?v='+Date.now();"
-        "sc.onload=function(){try{if(typeof window.__kgpRun==='function'){window.__kgpRun(function(d){go(d);});}else{go(core());}}catch(e){go(core());}};"
+        # v58 STEP3: run.js 채택 시 토스트에 (bm-vN+run-vM) 표기 + 서버 로그용 ext_version 결합.
+        "sc.onload=function(){try{if(typeof window.__kgpRun==='function'){window.__kgpRun(function(d){try{if(d){var rv=(d.ext_version||'run');d.ext_version=BMV+'+'+rv;K('수집 중… ('+d.ext_version+')',true);}}catch(e){}go(d);});}else{go(core());}}catch(e){go(core());}};"
         "sc.onerror=function(){go(core());};"
         "(document.head||document.documentElement).appendChild(sc);"
         "setTimeout(function(){go(core());},2500);"   # run.js 미로드(CSP/타임아웃) → 코어 폴백
@@ -5606,7 +5611,7 @@ def _bookmarklet_run_js() -> str:
         "var h1t=((document.querySelector('h1')||{}).textContent||'').trim().slice(0,300);"
         "var mp=M('product:price:amount'),mc=M('product:price:currency');var dp=mp?{price:mp,currency:mc}:PR();"
         "var _fs={title:h1t?'tier2':(M('og:title')?'tier3':'tier2'),price:dp?(mp?'tier3':'tier2'):'none',images:imgs.length?(imgs.length===1&&og?'tier3':'tier2'):'none'};"
-        "cb({url:location.href,title:(h1t||M('og:title')||document.title||'').slice(0,300),price:dp?dp.price:'',currency:dp?dp.currency:'',field_sources:_fs,description:M('og:description')||M('description')||'',images:imgs.slice(0,30),html:(document.documentElement?document.documentElement.outerHTML:'').slice(0,900000),ext_version:'bm-run'});"
+        "cb({url:location.href,title:(h1t||M('og:title')||document.title||'').slice(0,300),price:dp?dp.price:'',currency:dp?dp.currency:'',field_sources:_fs,description:M('og:description')||M('description')||'',images:imgs.slice(0,30),html:(document.documentElement?document.documentElement.outerHTML:'').slice(0,900000),ext_version:'" + _BM_RUN_VER + "'});"
         "}catch(e){try{cb(null)}catch(_){}}};"
         "})();"
     )

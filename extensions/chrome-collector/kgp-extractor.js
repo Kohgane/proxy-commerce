@@ -504,17 +504,50 @@
   var OPT_LABEL = /(색상|색깔|컬러|사이즈|크기|규격|수량|종류|옵션|타입|스타일|모델|용량|color|colour|size|variant|option|type|style|qty|quantity|model|capacity)/i;
   function _domOptions() {
     var out = [], seen = {};
+    function _push(name, vals) {
+      var uniq = [], s2 = {};
+      vals.forEach(function (v) { v = (v || "").replace(/\s+/g, " ").trim(); if (v && v.length <= 40 && !s2[v]) { s2[v] = 1; uniq.push(v); } });
+      if (uniq.length < 2) return;
+      var key = name + "|" + uniq.join(",");
+      if (seen[key]) return; seen[key] = 1;
+      out.push({ name: name, values: uniq.slice(0, 50) });
+    }
     try {
       var sels = document.querySelectorAll("select");
       for (var i = 0; i < sels.length; i++) {
         var sel = sels[i]; if (_nonProdRegion(sel)) continue;
         var vals = Array.prototype.slice.call(sel.options || []).map(function (o) { return (o.textContent || "").trim(); })
           .filter(function (t) { return t && !/^(선택|선택하세요|choose|select|please)/i.test(t); });
-        var uniq = []; var s2 = {}; vals.forEach(function (v) { if (!s2[v]) { s2[v] = 1; uniq.push(v); } });
-        if (uniq.length >= 2) {
-          var lbl = sel.getAttribute("aria-label") || (sel.labels && sel.labels[0] && sel.labels[0].textContent) || "";
-          var m = String(lbl).match(OPT_LABEL); out.push({ name: m ? m[0] : "옵션", values: uniq.slice(0, 50) });
+        var lbl = sel.getAttribute("aria-label") || (sel.labels && sel.labels[0] && sel.labels[0].textContent) || "";
+        var m = String(lbl).match(OPT_LABEL); _push(m ? m[0] : "옵션", vals);
+      }
+    } catch (e) {}
+    // v58 STEP2: 라디오·버튼 그룹(구매박스 인근 색상/사이즈 스와치) — select 없는 SPA(테무 등) 대응.
+    //   role=radiogroup / [class*=sku i] / [class*=option i] / [class*=variant i] / [class*=spec i] 컨테이너에서
+    //   버튼·라디오·라벨의 텍스트를 옵션 값으로. 추천/리뷰 영역 제외. 값 2+일 때만(확신 없으면 미수집=정직).
+    try {
+      var groups = document.querySelectorAll('[role="radiogroup"],[class*="sku" i],[class*="option" i],[class*="variant" i],[class*="spec" i],[class*="swatch" i]');
+      for (var g = 0; g < groups.length; g++) {
+        var grp = groups[g];
+        if (_nonProdRegion(grp) || _galleryExcluded(grp)) continue;
+        if (grp.querySelector("select")) continue;       // select은 위에서 처리(중복 방지)
+        // 그룹 라벨: aria-label / [class*=label] / 첫 텍스트 노드 중 OPT_LABEL 매칭.
+        var glbl = grp.getAttribute("aria-label") || "";
+        if (!glbl) { var le = grp.querySelector('[class*="label" i],[class*="title" i],dt,.name'); if (le) glbl = (le.innerText || le.textContent || ""); }
+        var gm = String(glbl).match(OPT_LABEL);
+        // 값 후보: 버튼·라디오·옵션 라벨·스와치.
+        var cands = grp.querySelectorAll('button,[role="radio"],label,[class*="value" i],[class*="item" i],a[data-value],[data-value]');
+        var vv = [];
+        for (var c = 0; c < cands.length && vv.length < 60; c++) {
+          var el = cands[c];
+          if (el.querySelector && el.querySelector("button,[role=radio],select")) continue;   // 중첩 컨테이너 스킵
+          var t = (el.getAttribute && (el.getAttribute("aria-label") || el.getAttribute("data-value") || el.getAttribute("title"))) || el.innerText || el.textContent || "";
+          t = String(t).replace(/\s+/g, " ").trim();
+          if (t && t.length >= 1 && t.length <= 40 && !/^(선택|choose|select|please|담기|구매|장바구니|add to|buy)/i.test(t)) vv.push(t);
         }
+        // 라벨 텍스트가 값에 섞이면 제외(라벨=그룹명).
+        if (gm) vv = vv.filter(function (v) { return v.replace(/\s/g, "") !== gm[0].replace(/\s/g, ""); });
+        _push(gm ? gm[0] : "옵션", vv);
       }
     } catch (e) {}
     return out;

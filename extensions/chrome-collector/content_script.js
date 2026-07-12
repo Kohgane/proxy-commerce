@@ -821,8 +821,11 @@ function handleFabClick(btn, opts) {
     kgpAlertOnce(corr, () => {
       var _warn = (meta && Array.isArray(meta.warnings) && meta.warnings.length) ? "\n⚠ " + meta.warnings[0] : "";
       var _cnt = fs ? (" (" + fs.filled + "/" + fs.total + " 필드)") : "";
+      // v58 STEP3: 확장 버전 스탬프(죽은 버전 혼동 차단) — 매니페스트 버전 표기.
+      var _ev = "";
+      try { _ev = " · ext v" + (chrome.runtime.getManifest && chrome.runtime.getManifest().version || ""); } catch (e) {}
       kgpCelebrate(1, true);           // 스탬프만(silent) — 토스트는 아래 하나
-      kgpResultToast("수집 완료" + _cnt + " — 이력에서 확인" + _warn, true, [{ label: "이력 열기", fn: kgpOpenHistory }]);
+      kgpResultToast("수집 완료" + _cnt + _ev + " — 이력에서 확인" + _warn, true, [{ label: "이력 열기", fn: kgpOpenHistory }]);
     });
   });
   });   // v47 STEP4: kgpExtractMerged 콜백 닫기

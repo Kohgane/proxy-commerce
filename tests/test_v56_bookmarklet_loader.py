@@ -23,9 +23,10 @@ def _run():
 
 def test_core_toast_first_and_immediate():
     js = _bm()
-    # K() 정의가 fetch/로더보다 앞 + 즉시 '수집 중…' 표시(침묵 금지).
-    assert js.index("function K(") < js.index("K('수집 중…',true)")
-    assert js.index("K('수집 중…',true)") < js.index("__kgpRun")   # 로더보다 먼저 토스트
+    # K() 정의가 fetch/로더보다 앞 + 즉시 '수집 중… (bm-vN)' 표시(침묵 금지 · v58 버전 스탬프).
+    _toast = "K('수집 중… ('+BMV+')',true)"
+    assert js.index("function K(") < js.index(_toast)
+    assert js.index(_toast) < js.index("__kgpRun")   # 로더보다 먼저 토스트
     assert "function core()" in js and "outerHTML" in js and "og:image" in js   # 검증된 구버전 코어
 
 

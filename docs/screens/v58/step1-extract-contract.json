@@ -1,0 +1,26 @@
+{
+  "generic_mall(JSON-LD)": {
+    "title": "프리미엄 무선 이어폰 X100",
+    "price": "39000",
+    "currency": "KRW",
+    "images": 2,
+    "options": 0,
+    "source": "json"
+  },
+  "testpage(og/meta)": {
+    "title": "데모 상품 접이식 차량용 책상",
+    "price": "18900",
+    "currency": "KRW",
+    "images": 1,
+    "options": 0,
+    "source": "dom"
+  },
+  "temu(state-json)": {
+    "title": "미니 가습기 USB",
+    "price": "12900",
+    "currency": "KRW",
+    "images": 3,
+    "options": 0,
+    "source": "json+dom"
+  }
+}

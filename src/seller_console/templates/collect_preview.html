@@ -1166,7 +1166,19 @@ function initEditor() {
 
   _initImages().forEach(addImageRow);
   if (document.querySelectorAll('#imageRows .img-row').length === 0) addImageRow('');
-  _initOptions().forEach(o => addOptionRow(o.name, o.values));
+  var _opts = _initOptions();
+  _opts.forEach(o => addOptionRow(o.name, o.values));
+  // v58 STEP2: 옵션 누락 시 정직 배지(무음 아님 — 직접 추가 유도).
+  (function () {
+    var host = document.getElementById('optionRows');
+    if (host && _opts.length === 0) {
+      var b = document.createElement('div');
+      b.className = 'small text-muted';
+      b.innerHTML = '<span class="badge" style="background:color-mix(in srgb,var(--warn,#f5821f) 14%,transparent);color:var(--warn,#f5821f)">' +
+        '<i class="bi bi-exclamation-triangle"></i> 옵션 미수집</span> 이 상품에서 옵션(색상·사이즈·팩 등)을 찾지 못했어요. 필요하면 <strong>+ 옵션 추가</strong>로 직접 입력하세요.';
+      host.parentNode.appendChild(b);
+    }
+  })();
   refreshPrimaryImage();
   refreshImageBadges();
   renderDetailGallery();   // v39-E2 #2: 상세설명 이미지(본문) 분리 표시
