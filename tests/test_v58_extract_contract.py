@@ -29,9 +29,9 @@ def _playwright_ok() -> bool:
 
 # ── source-contract: 추출 코드 경로 존재(어디서나) ──
 def test_title_has_multi_tier_fallback():
-    # 제목: Tier1(JSON) → h1 → og:title → document.title (클라 title이 비지 않도록 폴백 체인).
-    assert "var title = j.title || h1t || ogt || (document.title" in EX
-    assert 'querySelector("h1")' in EX and '_meta("og:title")' in EX
+    # v60 STEP1: 제목 = 어댑터 셀렉터 → Tier1(JSON) → 본문 h1(UI 제외) → og:title → document.title.
+    assert "var title = at || j.title || h1t || ogt || (document.title" in EX
+    assert "_cleanH1" in EX and '_meta("og:title")' in EX
 
 
 def test_price_has_jsonld_state_dom_paths():
