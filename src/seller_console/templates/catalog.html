@@ -257,5 +257,45 @@ async function syncItem(button, productId, marketplace) {
       }
     });
   })();
+
+  // v57 STEP2: 카탈로그 실시간 갱신 안내(3중화: visibilitychange + 15초 폴링 활성탭만 + 증가 감지).
+  //   카탈로그는 '수집'이 아니라 마켓 동기화 결과 → 오해 없는 정직 배너(새로고침 버튼, 자동 전체리렌더 금지).
+  (function () {
+    var meta = document.getElementById('fsInfiniteScroll');
+    if (!meta) return;
+    var baseline = parseInt(meta.getAttribute('data-total'), 10) || 0;
+    var mk = '{{ filters.marketplace }}';
+    function banner(n) {
+      var b = document.getElementById('kgpCatNewBanner');
+      if (!b) {
+        b = document.createElement('div');
+        b.id = 'kgpCatNewBanner';
+        b.className = 'pc-status pc-status-info small mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2';
+        var host = document.querySelector('.container-fluid') || document.body;
+        host.insertBefore(b, host.firstChild);
+      }
+      b.innerHTML = '<span><i class="bi bi-arrow-repeat"></i> 마켓 동기화로 상품 ' + n +
+                    '건이 갱신됐어요.</span>' +
+                    '<button type="button" class="btn btn-sm btn-primary" onclick="window.location.reload()">새로고침</button>';
+    }
+    function poll() {
+      if (document.hidden) return;                 // 활성 탭만
+      fetch('/seller/catalog/count' + (mk ? ('?marketplace=' + encodeURIComponent(mk)) : ''),
+            { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) {
+          if (!j || !j.ok || typeof j.total !== 'number') return;
+          if (j.total < baseline) { baseline = j.total; return; }   // 줄면 기준선 하강(오탐 방지)
+          if (j.total > baseline) banner(j.total - baseline);
+        })
+        .catch(function () {});
+    }
+    var _t = setInterval(poll, 15000);
+    function _onVis() { if (!document.hidden) poll(); }
+    document.addEventListener('visibilitychange', _onVis);
+    (window.__kgpTeardown = window.__kgpTeardown || []).push(function () {
+      clearInterval(_t); document.removeEventListener('visibilitychange', _onVis);
+    });
+  })();
 </script>
 {% endblock %}

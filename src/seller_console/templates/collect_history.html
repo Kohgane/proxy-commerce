@@ -212,7 +212,8 @@
             </tr>
           </thead>
           {# 속도: 첫 50건만 렌더 + 무한스크롤(fmt=rows). 행은 collect_history_rows.html 단일소스. #}
-          <tbody data-fs-list id="chRows">
+          {# v57 STEP2: 실시간 증분 커서 — 초기 렌더 시점 최신 collected_at(신규 삽입 기준선). #}
+          <tbody data-fs-list id="chRows" data-newest="{{ items[0].collected_at if items else '' }}">
           {% include 'collect_history_rows.html' %}
           </tbody>
         </table>
@@ -457,6 +458,11 @@
 {# v39 C: 인페이지 편집 드로어 — 클릭 시 우측 슬라이드(같은 페이지 위 오버레이, 새 창/라우트 이동 0).
    기존 편집 페이지(/collect/preview/{id})를 iframe(drawer 모드)로 임베드해 전체 편집 기능 재사용. #}
 <style>
+  /* v57 STEP2: 실시간 삽입된 새 행 — 청록 살짝 강조 후 페이드(가짜 아님 · 서버 커밋분). */
+  @keyframes kgpNewRowFade { 0% { background: color-mix(in srgb, var(--teal,#119a8e) 18%, transparent); }
+    100% { background: transparent; } }
+  .kgp-newrow > td { animation: kgpNewRowFade 2.6s ease-out 1; }
+  @media (prefers-reduced-motion: reduce) { .kgp-newrow > td { animation: none; } }
   .kgp-drawer-backdrop { position: fixed; inset: 0; background: rgba(20,18,16,.45); z-index: 1080;
     opacity: 0; pointer-events: none; transition: opacity .2s ease; }
   .kgp-drawer-backdrop.show { opacity: 1; pointer-events: auto; }
@@ -623,55 +629,87 @@ document.getElementById('kgpDrawerFrame').addEventListener('load', function () {
   }, 400);
 });
 
-// v41 STEP 1-0b: 수집 → 목록 자동 반영.
-// 화면이 열려 있는 동안 서버에 '실제로 영속 저장된' 총건수를 폴링/탭포커스로 재조회해,
-// 늘어난 게 확인되면 새로고침 없이 새 상품이 뜨게 한다(가짜 실시간 아님 — 서버 커밋된 값만).
+// v57 STEP2: 수집 → 목록 실시간 반영(전체 리렌더 금지 · 증분 삽입).
+//   3중화: (1)visibilitychange 탭복귀 재조회 (2)15초 폴링(활성 탭만) (3)신규 감지 시
+//   서버 렌더 행을 목록 맨 위에 끼워넣고 '새 상품 N건 수집됨' 토스트만(기존 행 재렌더 0).
+//   커서=collected_at(updated_after). 정직: 서버가 실제 영속 저장·스코프 재읽기한 신규만.
 (function () {
-  var initialTotal = parseInt('{{ summary.total|int }}', 10) || 0;
+  var body = document.getElementById('chRows');
+  if (!body) return;                    // 빈 상태(테이블 없음)면 폴링 불필요
   var days = parseInt('{{ filters.days|int }}', 10) || 30;
-  var pending = false;                 // 새 항목 감지됐으나 편집 중이라 대기
-  var reloading = false;
-  function editing() {                  // 드로어/모달 열려 있으면 편집 중 → 중단하지 않음
+  var cursor = (body.getAttribute('data-newest') || '').trim();   // 초기 렌더 최신 시각
+  var sort = '{{ filters.sort }}' || 'newest';
+  var pendingCount = 0;                  // 편집 중 감지된 신규 누적(저장 후 반영)
+  function editing() {                   // 드로어/모달 열려 있으면 편집 중 → 삽입 보류(배너만)
     if (document.body.classList.contains('kgp-drawer-open')) return true;
     return !!document.querySelector('.modal.show');
   }
   function showBanner(n) {
-    if (document.getElementById('kgpNewItemsBanner')) return;
-    var b = document.createElement('div');
-    b.id = 'kgpNewItemsBanner';
-    b.className = 'pc-status pc-status-info small mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2';
-    b.innerHTML = '<span><i class="bi bi-arrow-down-circle"></i> 새로 수집된 상품 ' + n + '건이 있어요.</span>' +
+    var b = document.getElementById('kgpNewItemsBanner');
+    if (!b) {
+      b = document.createElement('div');
+      b.id = 'kgpNewItemsBanner';
+      b.className = 'pc-status pc-status-info small mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2';
+      var host = document.querySelector('.container-fluid.py-4');
+      var anchor = host ? host.querySelector('.d-flex.align-items-center.mb-4') : null;
+      if (host && anchor && anchor.nextSibling) host.insertBefore(b, anchor.nextSibling);
+      else if (host) host.insertBefore(b, host.firstChild);
+    }
+    b.innerHTML = '<span><i class="bi bi-arrow-down-circle"></i> 편집 중 새로 수집된 상품 ' + n +
+                  '건 대기 중 — 편집을 마치면 표시돼요.</span>' +
                   '<button type="button" class="btn btn-sm btn-primary" onclick="window.location.reload()">지금 보기</button>';
-    var host = document.querySelector('.container-fluid.py-4');
-    var anchor = host ? host.querySelector('.d-flex.align-items-center.mb-4') : null;
-    if (host && anchor && anchor.nextSibling) host.insertBefore(b, anchor.nextSibling);
-    else if (host) host.insertBefore(b, host.firstChild);
   }
-  function apply(total) {
-    // v43-1: 삭제 요청 중엔 폴링 반영 보류(삭제/폴링 경합으로 삭제분이 부활하는 것 방지).
-    if (window._kgpDeleting || reloading) return;
-    // 서버 총건수가 줄면(삭제 등) 기준선도 내려 맞춘다 → 부활 유발 오탐 방지.
-    if (total < initialTotal) { initialTotal = total; return; }
-    if (total <= initialTotal) return;
-    var n = total - initialTotal;
-    if (editing()) { pending = true; showBanner(n); return; }  // 편집 중이면 배너만, 저장 후 반영
-    reloading = true;
-    window.location.reload();
+  function insertRows(html, n) {
+    // 서버가 렌더한 <tr>들을 파싱해 목록 맨 위에 삽입(기존 행 손대지 않음).
+    var tmp = document.createElement('tbody');
+    tmp.innerHTML = html;
+    var rows = Array.prototype.slice.call(tmp.querySelectorAll('tr'));
+    // 이미 있는 id(중복 삽입 방지 — 폴링 경합)면 스킵.
+    rows = rows.filter(function (tr) {
+      var chk = tr.querySelector('.row-chk');
+      var id = chk ? chk.value : '';
+      return !(id && body.querySelector('.row-chk[value="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]'));
+    });
+    if (!rows.length) return 0;
+    // 최신순 목록이면 맨 위, 그 외 정렬은 사용자 정렬 존중 → 상단 삽입 + 안내(재정렬은 새로고침).
+    for (var i = rows.length - 1; i >= 0; i--) {
+      var tr = rows[i];
+      tr.classList.add('kgp-newrow');
+      body.insertBefore(tr, body.firstChild);
+    }
+    if (typeof refreshSelCount === 'function') { try { refreshSelCount(); } catch (e) {} }
+    return rows.length;
+  }
+  function apply(j) {
+    if (window._kgpDeleting) return;     // v43-1: 삭제 경합 시 삽입 보류
+    if (j.server_max && j.server_max > cursor) cursor = j.server_max;   // 커서 전진
+    var n = parseInt(j.count, 10) || 0;
+    if (n <= 0 || !j.html) return;
+    if (editing()) { pendingCount += n; showBanner(pendingCount); return; }
+    var added = insertRows(j.html, n);
+    if (added > 0 && typeof pcToast === 'function') {
+      pcToast('새 상품 ' + added + '건 수집됨', 'success');
+    }
   }
   function poll() {
-    if (document.hidden || reloading || window._kgpDeleting) return;
-    fetch('/seller/collect/history/count?days=' + days, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+    if (document.hidden || window._kgpDeleting) return;   // 활성 탭만
+    fetch('/seller/collect/history/since?days=' + days + '&after=' + encodeURIComponent(cursor),
+          { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (j) { if (j && j.ok && typeof j.total === 'number') apply(j.total); })
-      .catch(function () {});   // 네트워크 실패는 조용히 무시(다음 주기 재시도)
+      .then(function (j) { if (j && j.ok) apply(j); })
+      .catch(function () {});             // 네트워크 실패는 조용히(다음 주기 재시도)
   }
-  var _pollTimer = setInterval(poll, 8000);                   // 8초 폴링
-  // v55 STEP4: 이 블록은 상태 의존(closure) → 스왑마다 새로 실행되어야 하므로, document/window 리스너를
-  //   teardown에 등록해 스왑-이탈 시 제거(누적 방지). 인터벌도 함께 정리.
-  function _onVis() { if (!document.hidden) poll(); }         // 탭 복귀 시 즉시
-  function _onMsg(e) { if (e && e.data && e.data.kgp === 'drawer-close' && pending && !editing()) poll(); }
+  var _pollTimer = setInterval(poll, 15000);              // 15초 폴링(브리프 지정)
+  function _onVis() { if (!document.hidden) poll(); }      // 탭 복귀 시 즉시 재조회
+  function _onMsg(e) {                                     // 드로어 닫힘 → 대기분 반영 시도
+    if (e && e.data && e.data.kgp === 'drawer-close' && pendingCount && !editing()) {
+      var b = document.getElementById('kgpNewItemsBanner'); if (b) b.remove();
+      pendingCount = 0; poll();
+    }
+  }
   document.addEventListener('visibilitychange', _onVis);
   window.addEventListener('message', _onMsg);
+  // v55 STEP4: closure 의존 → 스왑 이탈 시 리스너/인터벌 정리(누적 방지).
   (window.__kgpTeardown = window.__kgpTeardown || []).push(function () {
     clearInterval(_pollTimer);
     document.removeEventListener('visibilitychange', _onVis);

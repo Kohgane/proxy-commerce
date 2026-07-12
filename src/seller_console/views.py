@@ -2993,6 +2993,28 @@ def catalog():
     )
 
 
+@bp.get("/catalog/count")
+def catalog_count():
+    """v57 STEP2: 카탈로그 총건수(경량 폴링용). 마켓 동기화로 상품이 늘면 화면이 열려 있는 동안
+    visibilitychange/15초 폴링으로 이 값을 재조회해, 실제 늘었을 때만 '새로고침' 배너를 띄운다
+    (카탈로그는 수집이 아니라 마켓 동기화 결과 → '수집됨' 토스트 대신 정직한 갱신 안내).
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "auth"}), 401
+    mk = (request.args.get("marketplace") or "").strip()
+    total = 0
+    try:
+        from .market_status_sheets import MarketStatusSheetsAdapter
+        items = MarketStatusSheetsAdapter().fetch_all().items
+        if mk:
+            items = [i for i in items if (i.marketplace or "") == mk]
+        total = len(items)
+    except Exception as exc:
+        logger.warning("[catalog-count] 조회 실패: %s", exc)
+        return jsonify({"ok": False, "error": "server"}), 200
+    return jsonify({"ok": True, "total": total})
+
+
 @bp.post("/catalog/<marketplace>/<product_id>/sync")
 def catalog_sync_item(marketplace: str, product_id: str):
     """카탈로그 단일 상품 동기화(정직 모드 포함)."""
@@ -5533,7 +5555,7 @@ def _bookmarklet_js(server: str, token: str, translate: bool) -> str:
         "try{"
         "var S='" + server + "',T='" + token + "',TR=" + tr + ";"
         # ── 토스트 K() 최우선 정의(생성 실패 시 alert 폴백) ──
-        "function K(m,ok){try{var t=document.getElementById('kgpbm');if(!t){t=document.createElement('div');t.id='kgpbm';t.style.cssText='position:fixed;right:20px;bottom:84px;z-index:2147483647;display:flex;align-items:center;gap:8px;max-width:300px;padding:10px 14px;border-radius:10px;font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.3)';var ic=document.createElement('img');ic.src=S+'/seller/static/favicon-32.png?v=181';ic.alt='';ic.style.cssText='width:20px;height:20px;border-radius:5px;flex:none;background:#fff';t.appendChild(ic);var tx=document.createElement('span');tx.id='kgpbmx';tx.style.whiteSpace='pre-wrap';t.appendChild(tx);document.body.appendChild(t);}t.style.background=ok?'#16a34a':'#dc2626';var x=document.getElementById('kgpbmx');if(x)x.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0'},4500);}catch(e){try{alert('[고가수집기] '+m)}catch(_){}}}"
+        "function K(m,ok){try{var t=document.getElementById('kgpbm');if(!t){t=document.createElement('div');t.id='kgpbm';t.style.cssText='position:fixed;right:20px;bottom:84px;z-index:2147483647;display:flex;align-items:center;gap:8px;max-width:300px;padding:10px 14px;border-radius:10px;font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.3)';var ic=document.createElement('img');ic.src=S+'/seller/static/favicon-32.png?v=182';ic.alt='';ic.style.cssText='width:20px;height:20px;border-radius:5px;flex:none;background:#fff';t.appendChild(ic);var tx=document.createElement('span');tx.id='kgpbmx';tx.style.whiteSpace='pre-wrap';t.appendChild(tx);document.body.appendChild(t);}t.style.background=ok?'#16a34a':'#dc2626';var x=document.getElementById('kgpbmx');if(x)x.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0'},4500);}catch(e){try{alert('[고가수집기] '+m)}catch(_){}}}"
         "K('수집 중…',true);"   # ← 즉시 표시(침묵 금지)
         # ── 코어 추출(검증된 구버전: og메타 + 기본 이미지 + outerHTML) ──
         "function M(p){try{var e=document.querySelector('meta[property=\"'+p+'\"],meta[name=\"'+p+'\"]');return e?(e.content||''):''}catch(e){return ''}}"
@@ -5594,9 +5616,9 @@ _BRIDGE_ICON_DATA_URI = None
 
 
 def _bridge_icon_data_uri() -> str:
-    """북마크 ICON 속성용 브릿지 마크(favicon-32 v181) data:image/png;base64 — 1회 캐시.
+    """북마크 ICON 속성용 브릿지 마크(favicon-32 v182) data:image/png;base64 — 1회 캐시.
 
-    v54 STEP1: 북마크바 아이콘용으로 32px 사용(브리프 지정). v8/v181 마스터에서 파생된 현행 파비콘.
+    v54 STEP1: 북마크바 아이콘용으로 32px 사용(브리프 지정). v8/v182 마스터에서 파생된 현행 파비콘.
     """
     global _BRIDGE_ICON_DATA_URI
     if _BRIDGE_ICON_DATA_URI is None:
@@ -5612,9 +5634,9 @@ def _netscape_bookmark(href: str, icon_data_uri: str, label: str = "고가수집
 
     v54 STEP1: 북마클릿을 **PERSONAL_TOOLBAR_FOLDER="true"** 폴더(= 북마크바) 하위에 배치 → 크롬이
     가져오기 시 이 폴더 내용을 **북마크바로 직행 병합**(별도 '가져온 북마크' 폴더로 빠지지 않게). ICON은
-    브릿지 마크(v181 favicon-32) — javascript: 북마클릿의 파비콘은 가져오기 파일 ICON 속성만이 유일 기록 경로.
+    브릿지 마크(v182 favicon-32) — javascript: 북마클릿의 파비콘은 가져오기 파일 ICON 속성만이 유일 기록 경로.
 
-    v56 STEP1: **앵커 텍스트 빈 문자열**(오너 요청 — 북마크바에 파비콘만 표시). ICON(v181 favicon-32)이
+    v56 STEP1: **앵커 텍스트 빈 문자열**(오너 요청 — 북마크바에 파비콘만 표시). ICON(v182 favicon-32)이
     아이콘을 담당. 안내 문구에 '아이콘만 보이는 게 정상' 명시. HREF는 html.escape(가져오기 시 디코드).
     """
     import html as _html
@@ -5911,6 +5933,47 @@ def discovery_keywords_remove():
 # Phase 135.2: /seller/collect/history + /seller/collect/preview/<id>
 # ---------------------------------------------------------------------------
 
+def _shape_collect_items(items, current_lang):
+    """수집이력 행 파셜(collect_history_rows.html)이 기대하는 필드로 item dict를 in-place 가공.
+    목록 렌더(collect_history)와 실시간 증분(collect_history_since)이 동일 모양을 쓰게 단일소스.
+    """
+    for it in items:
+        try:
+            ex = json.loads(it.get("extra_json") or "{}")
+        except Exception:
+            ex = {}
+        rep = (it.get("image_url") or "").strip()
+        if not rep:                                   # 대표 없으면 수집 이미지 첫 장
+            imgs = ex.get("images") if isinstance(ex.get("images"), list) else []
+            for u in imgs:
+                u = (str(u) or "").strip()
+                if u:
+                    rep = u
+                    break
+        it["thumbs"] = [rep] if rep else []           # 목록=대표 1장
+        _tko = (str(ex.get("title_ko") or "").strip()) or (str(it.get("title") or "").strip())
+        _ten = str(ex.get("title_en") or ex.get("title") or it.get("title") or "").strip()
+        _translated = bool(_tko) and bool(_ten) and _tko != _ten
+        if current_lang == "en":
+            it["title_display"] = _ten or _tko or "(제목 없음)"
+            it["title_is_original"] = not bool(_ten)
+        else:  # ko
+            it["title_display"] = (_tko if _translated else (_ten or _tko)) or "(제목 없음)"
+            it["title_is_original"] = not _translated
+        up = ex.get("uploaded")
+        it["uploaded_markets"] = [str(u.get("market_label") or u.get("market"))
+                                  for u in up if isinstance(u, dict) and (u.get("market_label") or u.get("market"))] if isinstance(up, list) else []
+        cs = ex.get("collect_status") if isinstance(ex.get("collect_status"), dict) else None
+        if not cs:
+            try:
+                from src.collectors.collect_status import compute_collect_status as _ccs
+                cs = _ccs(ex, title_fallback=it.get("title") or "")
+            except Exception:
+                cs = None
+        it["collect_status"] = cs
+    return items
+
+
 @bp.get("/collect/history")
 def collect_history():
     """수집 이력 페이지 (Phase 135.2)."""
@@ -6022,46 +6085,9 @@ def collect_history():
         total_pages = max(1, (total_filtered + per_page - 1) // per_page)
         page = 1 if fastscroll else min(page, total_pages)
 
-    # 속도 ② 페이로드 다이어트: extra_json은 항목당 **한 번만** 파싱(기존 3회 → 1회), 목록 썸네일은
-    #   **대표 1장만**(목록은 한눈 확인용 — 갤러리 5장은 편집 드로어에서). 무거운 extra_json은 클라로 안 보냄(HTML만).
-    for it in items:
-        try:
-            ex = json.loads(it.get("extra_json") or "{}")
-        except Exception:
-            ex = {}
-        rep = (it.get("image_url") or "").strip()
-        if not rep:                                   # 대표 없으면 수집 이미지 첫 장
-            imgs = ex.get("images") if isinstance(ex.get("images"), list) else []
-            for u in imgs:
-                u = (str(u) or "").strip()
-                if u:
-                    rep = u
-                    break
-        it["thumbs"] = [rep] if rep else []           # 목록=대표 1장
-        # v45(6): 한/영 분리 표시 — UI 언어 토글(current_lang)에 맞는 언어만(원문 폴백 시 '원문' 뱃지).
-        _tko = (str(ex.get("title_ko") or "").strip()) or (str(it.get("title") or "").strip())
-        _ten = str(ex.get("title_en") or ex.get("title") or it.get("title") or "").strip()
-        _translated = bool(_tko) and bool(_ten) and _tko != _ten
-        if _current_lang == "en":
-            it["title_display"] = _ten or _tko or "(제목 없음)"
-            it["title_is_original"] = not bool(_ten)
-        else:  # ko
-            it["title_display"] = (_tko if _translated else (_ten or _tko)) or "(제목 없음)"
-            it["title_is_original"] = not _translated
-        # v44-1: 업로드 성공한 마켓 라벨(등록됨 뱃지용) — extra_json.uploaded(서버 확인분)만.
-        up = ex.get("uploaded")
-        it["uploaded_markets"] = [str(u.get("market_label") or u.get("market"))
-                                  for u in up if isinstance(u, dict) and (u.get("market_label") or u.get("market"))] if isinstance(up, list) else []
-        # v47 STEP2: 수집 필드 상태(성공/부분 + 누락 필드) — 목록 상태 컬럼에 정직 표기.
-        #   저장된 값이 있으면 그대로, 없으면(옛 레코드) 지금 판정(무음 실패·가짜 성공 금지).
-        cs = ex.get("collect_status") if isinstance(ex.get("collect_status"), dict) else None
-        if not cs:
-            try:
-                from src.collectors.collect_status import compute_collect_status as _ccs
-                cs = _ccs(ex, title_fallback=it.get("title") or "")
-            except Exception:
-                cs = None
-        it["collect_status"] = cs
+    # 속도 ② 페이로드 다이어트: 행 파셜 필드 가공은 단일소스 헬퍼(_shape_collect_items)로
+    #   (목록·실시간 증분 collect_history_since가 동일 모양 공유). 무거운 extra_json은 클라로 안 보냄(HTML만).
+    _shape_collect_items(items, _current_lang)
 
     from .upload_dispatcher import MARKET_LABELS, SUPPORTED_MARKETS
     upload_markets = [{"code": m, "label": MARKET_LABELS.get(m, m)} for m in SUPPORTED_MARKETS]
@@ -6147,6 +6173,50 @@ def collect_history_count():
         logger.warning("[collect-history-count] 조회 실패: %s", exc)
         return jsonify({"ok": False, "error": "server"}), 200
     return jsonify({"ok": True, "total": total})
+
+
+@bp.get("/collect/history/since")
+def collect_history_since():
+    """v57 STEP2: 수집 → 목록 실시간 증분 반영(전체 리렌더 금지).
+
+    `after` ISO 커서 이후에 **실제 영속 저장된** 새 상품만 서버에서 행 파셜로 렌더해 반환한다.
+    클라이언트(수집이력·카탈로그 화면)는 15초 폴링/탭복귀 시 이 endpoint를 호출해, 새 행을
+    목록 맨 위에 끼워넣고 '새 상품 N건 수집됨' 토스트만 띄운다(기존 행 재렌더 0).
+
+    정직 데이터: 저장 스코프(user_id+email 관용집합) 재읽기 + collected_at > after 필터.
+    가짜 실시간 금지 — 서버 커밋된 값만. server_max(=최신 collected_at)를 다음 커서로 돌려준다.
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "auth"}), 401
+    after = (request.args.get("after") or "").strip()
+    try:
+        days = int(request.args.get("days", "30"))
+    except (TypeError, ValueError):
+        days = 30
+    try:
+        from .i18n import normalize_lang as _norm_lang
+        _current_lang = _norm_lang(request.cookies.get("kgp_lang"))
+    except Exception:
+        _current_lang = "ko"
+    try:
+        from .collect_history_store import list_items
+        # 최신 60건만 훑어 커서 이후 신규 판정(폴링 경량 — 대량 스캔 회피).
+        recent = list_items(days=days, seller_ids=_seller_identities(), limit=60, offset=0)
+    except Exception as exc:
+        logger.warning("[collect-history-since] 조회 실패: %s", exc)
+        return jsonify({"ok": False, "error": "server"}), 200
+    recent.sort(key=lambda r: r.get("collected_at", ""), reverse=True)
+    server_max = recent[0].get("collected_at", "") if recent else ""
+    if not after:
+        # 커서 미지정(첫 호출) — 기준선만 알려주고 신규 0(초기 화면과 중복 삽입 방지).
+        return jsonify({"ok": True, "count": 0, "server_max": server_max, "html": ""})
+    fresh = [r for r in recent if (r.get("collected_at", "") or "") > after]
+    if not fresh:
+        return jsonify({"ok": True, "count": 0, "server_max": server_max, "html": ""})
+    fresh = fresh[:20]                                  # 한 번에 최대 20행 삽입(폭주 방지)
+    _shape_collect_items(fresh, _current_lang)
+    html = render_template("collect_history_rows.html", items=fresh)
+    return jsonify({"ok": True, "count": len(fresh), "server_max": server_max, "html": html})
 
 
 @bp.get("/collect/preview/<item_id>")
@@ -6382,6 +6452,9 @@ def collect_preview_save(item_id: str):
     _di = data.get("detail_images")
     if isinstance(_di, list):
         extra["detail_images"] = [str(u).strip() for u in _di if str(u).strip()]
+    # v57 STEP3: 상세 '더보기' 접힘 잔존 여부(정직 표기 — 드로어 상세페이지 탭 안내).
+    if "detail_fold" in data:
+        extra["detail_fold"] = bool(data.get("detail_fold"))
     # v40-C: 마켓별 상세페이지 블록(공통 + 마켓 오버라이드) 보존.
     _db = data.get("detail_blocks")
     if isinstance(_db, dict):

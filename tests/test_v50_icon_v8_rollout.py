@@ -45,6 +45,13 @@ def test_committed_favicons_match_code_v8_master():
         (tmp / "src/seller_console/static").mkdir(parents=True)
         (tmp / "extensions/chrome-collector/icons").mkdir(parents=True)
         (tmp / "assets/brand-icons").mkdir(parents=True)
+        # v57: 소형 favicon은 정답지(favicon-master-48.png) 기준 → tmp에도 복사(커밋본 일치).
+        _ans = Path("assets/brand-icons/favicon-master-48.png")
+        if _ans.exists():
+            shutil.copy(_ans, tmp / "assets/brand-icons/favicon-master-48.png")
+        _lm = Path("assets/brand-icons/master-512.png")
+        if _lm.exists():
+            shutil.copy(_lm, tmp / "assets/brand-icons/master-512.png")
         mod.deploy(str(tmp))
         for f in ("favicon-16.png", "favicon-32.png", "favicon-48.png", "favicon.ico",
                   "apple-touch-icon.png", "icon-192.png", "icon-512.png", "icon-1024.png"):
@@ -72,14 +79,14 @@ def test_og_card_uses_v8_master():
 
 
 def test_cache_bust_bumped():
-    # 파비콘 ?v=181, og ?v=5 로 캐시버스트(라이브 브라우저 강제 재요청).
-    assert "v='181'" in BASE and "v='180'" not in BASE
-    assert "og-card.png?v=5" in BASE_APP and "og-card.png?v=4" not in BASE_APP
+    # 파비콘 ?v=182(v57 아이콘 정정), og ?v=6(v57 대형 통일 — OG도 오너 공식 마크로) 캐시버스트.
+    assert "v='182'" in BASE and "v='181'" not in BASE
+    assert "og-card.png?v=6" in BASE_APP and "og-card.png?v=5" not in BASE_APP
 
 
 def test_extension_version_bumped():
     import json
-    assert json.loads(MANIFEST)["version"] == "1.5.56"
+    assert json.loads(MANIFEST)["version"] == "1.5.57"
 
 
 def test_no_stale_old_icon_files():

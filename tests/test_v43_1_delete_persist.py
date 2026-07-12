@@ -69,9 +69,8 @@ def test_delete_write_then_verify_honest_failure(client, monkeypatch):
 
 def test_template_poll_holds_during_delete():
     html = Path("src/seller_console/templates/collect_history.html").read_text(encoding="utf-8")
-    # 폴링 apply/poll이 삭제 중(_kgpDeleting) 보류 + 삭제가 플래그 설정.
+    # v57 STEP2: 폴링(since 증분 삽입)이 삭제 중(_kgpDeleting) 보류 + 폴링/삭제 경합 방지.
+    #   (v57에서 전체 reload 폴링 → since 증분 삽입으로 승격 — 삭제 경합 가드는 유지.)
     assert "window._kgpDeleting" in html
-    assert "if (window._kgpDeleting || reloading) return;" in html
-    assert "reloading || window._kgpDeleting) return;" in html
-    # 서버 총건수 하강 시 기준선 하강(부활 오탐 방지).
-    assert "if (total < initialTotal) { initialTotal = total; return; }" in html
+    assert "if (window._kgpDeleting) return;" in html          # apply: 삭제 경합 시 삽입 보류
+    assert "document.hidden || window._kgpDeleting) return;" in html  # poll: 삭제 중/비활성 탭 스킵
