@@ -403,13 +403,19 @@
     return false;
   }
   // 이미지 요소의 최고해상도 후보(currentSrc·data-*·srcset 최대). naturalWidth 필터 미사용(URL·컨테이너로 판별).
+  //   v57 STEP4: 롤오버/줌 data-* 변형(data-zoom-image·data-large·data-image-large·data-hires 등) 우선(고해상).
   function _bestImgSrc(im) {
-    var src = im.currentSrc || im.getAttribute("data-old-hires") || im.getAttribute("data-src")
-      || im.getAttribute("data-original") || im.getAttribute("data-lazy") || im.getAttribute("data-image") || im.src || "";
+    var src = im.getAttribute("data-zoom-image") || im.getAttribute("data-large") || im.getAttribute("data-large-image")
+      || im.getAttribute("data-image-large") || im.getAttribute("data-hires") || im.getAttribute("data-old-hires")
+      || im.getAttribute("data-zoom") || im.currentSrc || im.getAttribute("data-src")
+      || im.getAttribute("data-original") || im.getAttribute("data-lazy") || im.getAttribute("data-image")
+      || im.getAttribute("data-srcset") || im.src || "";
     try {
-      if (im.srcset) {
+      // srcset(또는 data-srcset)에서 최대 해상도 후보 — data-*로 못 얻었을 때만 덮어씀.
+      var ss = im.srcset || im.getAttribute("data-srcset") || "";
+      if (ss && (!src || src === im.src)) {
         var best = "", bw = -1;
-        im.srcset.split(",").forEach(function (part) {
+        ss.split(",").forEach(function (part) {
           var seg = part.trim().split(/\s+/); var u = seg[0];
           var w = seg[1] ? parseInt(seg[1], 10) || 0 : 0;
           if (u && w >= bw) { bw = w; best = u; }
@@ -418,6 +424,15 @@
       }
     } catch (e) {}
     return src;
+  }
+  // v57 STEP4: 인라인 background-image:url(...) 스타일에서 이미지 URL 추출(div/ a 기반 갤러리 대응).
+  function _bgImage(el) {
+    try {
+      var st = (el.getAttribute && el.getAttribute("style")) || "";
+      var m = st.match(/background(?:-image)?\s*:\s*url\((['"]?)([^'")]+)\1\)/i);
+      if (m && m[2]) return m[2].trim();
+    } catch (e) {}
+    return "";
   }
   function _domImages() {
     var out = [], seen = {}, det = [], detSeen = {};
@@ -435,6 +450,24 @@
         if (_galleryExcluded(im)) continue;
         var src = _bestImgSrc(im);
         if (isProductImg(src)) uniqPush(out, seen, hiRes(src));
+      }
+    } catch (e) {}
+    // v57 STEP4: 제네릭 갤러리 보강 — <picture><source srcset> + 인라인 background-image(div/a 갤러리).
+    try {
+      var gScope = '[class*="gallery" i],[class*="product-image" i],[class*="main-image" i],[class*="swiper" i],'
+        + '[class*="carousel" i],[class*="preview" i],[class*="mainImage" i],[data-testid*="gallery" i]';
+      var srcs = document.querySelectorAll(gScope + ' picture source,picture source');
+      for (var si = 0; si < srcs.length; si++) {
+        var so = srcs[si]; if (_galleryExcluded(so)) continue;
+        var ssv = so.getAttribute("srcset") || so.getAttribute("data-srcset") || "";
+        var u0 = ssv ? ssv.split(",")[0].trim().split(/\s+/)[0] : (so.getAttribute("src") || "");
+        if (isProductImg(u0)) uniqPush(out, seen, hiRes(u0));
+      }
+      var bgs = document.querySelectorAll(gScope + ' [style*="background-image" i],[style*="background-image" i]');
+      for (var bi = 0; bi < bgs.length && bi < 200; bi++) {
+        var be = bgs[bi]; if (_galleryExcluded(be)) continue;
+        var bu = _bgImage(be);
+        if (isProductImg(bu)) uniqPush(out, seen, hiRes(bu));
       }
     } catch (e) {}
     // 상세 본문 이미지(별도 버킷) — 추천/리뷰/푸터 제외.

@@ -115,6 +115,44 @@ def _bucket_filter(bucket, fallback) -> list:
     return out if out else list(fallback or [])
 
 
+def _og_images_from_html(html: str) -> list:
+    """v57 STEP4: 수신 HTML에서 og:image(들) 추출 — 제네릭 사이트 이미지 union 보강용.
+    og:image / og:image:url / og:image:secure_url 다중 태그(순서 보존).
+    """
+    if not html or not isinstance(html, str):
+        return []
+    import re
+    out, seen = [], set()
+    for m in re.finditer(
+        r'<meta[^>]+(?:property|name)=["\']og:image(?::(?:url|secure_url))?["\'][^>]*>', html, re.I):
+        cm = re.search(r'content=["\']([^"\']+)["\']', m.group(0), re.I)
+        if cm:
+            u = cm.group(1).strip()
+            if u and u not in seen:
+                seen.add(u)
+                out.append(u)
+    return out
+
+
+def _union_images(*sources) -> list:
+    """v57 STEP4: 여러 이미지 소스(클라 + ld+json + og 등)를 **순서 보존 union + 중복 제거** →
+    무관 이미지 제거. 첫 소스(클라/tier1)가 앞, 그 뒤로 미포함분만 append(제네릭 사이트 누락 0)."""
+    merged, seen = [], set()
+    for src in sources:
+        if not isinstance(src, list):
+            continue
+        for u in src:
+            u = str(u or "").strip()
+            if u and u not in seen:
+                seen.add(u)
+                merged.append(u)
+    try:
+        from src.collectors.universal_scraper import filter_product_images
+        return filter_product_images(merged)
+    except Exception:
+        return merged
+
+
 def _translate_payload(payload: dict) -> dict:
     """수집 페이로드 제목/설명을 한국어로 번역 (Phase 202).
 
@@ -355,6 +393,7 @@ def collect_from_extension():
     # 봇 차단 사이트 대응: 확장이 보낸 페이지 HTML을 서버에서 파싱해 필드 보강 (네트워크 fetch 없음)
     page_html = payload.get("html")
     _srv_src: dict = {}   # v52: 서버가 채운 필드의 출처(ldjson/tier1/dom) — 수집 로그용
+    _ld_images: list = []   # v57 STEP4: ld+json Product.image 배열(union 보강용)
     # ── v54 STEP3: 필드 병합 우선순위(명문화) = tier1 > ld+json > tier2 DOM > og ─────────────────
     #   tier1 = 확장이 클릭시점 API 캡처/DOM에서 읽어 **payload에 이미 담아 보낸 값**(자가진단 채택 포함).
     #   서버 보강(_merge_*)은 **빈 필드만** 채우므로 payload(tier1) 값이 항상 우선. 그 다음 ld+json(서버),
@@ -367,6 +406,8 @@ def collect_from_extension():
             from src.collectors.state_json import parse_ldjson
             _ld = parse_ldjson(page_html)
             if _ld:
+                if isinstance(_ld.get("images"), list):
+                    _ld_images = list(_ld["images"])       # v57 STEP4: union 보강용(빈 필드 게이트와 무관)
                 for _k in ("price", "images", "title", "description", "rating", "review_count", "reviews"):
                     if _ld.get(_k) and _field_empty(payload, _k):
                         _srv_src[_k if _k not in ("rating", "review_count") else "reviews"] = "ldjson"
@@ -406,6 +447,22 @@ def collect_from_extension():
                 payload["detail_specs"] = [list(s) for s in det["specs"]]
         except Exception as exc:
             logger.debug("상세설명 추출 실패: %s", exc)
+
+        # v57 STEP4: 제네릭 이미지 보강 — 클라(tier1/DOM) + ld+json image + og:image를 **순서 보존 union**
+        #   (빈 필드만 채우는 _merge와 달리, 이미 이미지가 있어도 누락분을 뒤에 append). 제네릭 사이트 갤러리 누락 0.
+        try:
+            _og_imgs = _og_images_from_html(page_html)
+            _client_g = payload.get("gallery_images") if isinstance(payload.get("gallery_images"), list) else []
+            _client_i = payload.get("images") if isinstance(payload.get("images"), list) else []
+            _union = _union_images(_client_g, _client_i, _ld_images, _og_imgs)
+            if _union:
+                # 클라 갤러리가 있었으면 그 순서를 앞에 유지(union이 이미 그 순서). images/gallery 동기.
+                payload["images"] = _union
+                payload["gallery_images"] = _union
+                logger.info("[collect %s] 이미지 union: 클라 %d + ld %d + og %d → %d(중복제거)",
+                            _corr, len(_client_g or _client_i), len(_ld_images), len(_og_imgs), len(_union))
+        except Exception as exc:
+            logger.debug("이미지 union 보강 실패: %s", exc)
 
     # v16 P0: 사이트 공통 마케팅 필러는 상품 설명으로 저장하지 않는다(html 없어도 적용).
     # 리뷰(해당 제품)는 best-effort 추출(없으면 빈 리스트 — 가짜 리뷰 금지).

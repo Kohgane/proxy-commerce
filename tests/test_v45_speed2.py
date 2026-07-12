@@ -52,9 +52,13 @@ def test_list_single_thumbnail_and_parse_once(client):
     html = client.get("/seller/collect/history").get_data(as_text=True)
     assert "https://i/rep.jpg" in html                       # 대표 1장
     assert "https://i/2.jpg" not in html                     # 목록엔 추가 썸네일 미노출(다이어트)
-    # extra_json 파싱은 항목당 1회(3회 중복 제거) — 소스에 반복 json.loads 없음
+    # extra_json 파싱은 항목당 1회 — v57 STEP2에서 단일소스 헬퍼(_shape_collect_items)로 추출(목록·증분 공유).
     assert "각 항목에 썸네일 목록(최대 5장)" not in VIEWS      # 옛 5장 로직 제거
-    assert "extra_json은 항목당 **한 번만** 파싱" in VIEWS
+    assert "def _shape_collect_items" in VIEWS
+    assert "_shape_collect_items(items, _current_lang)" in VIEWS
+    # 헬퍼 본문이 item당 json.loads 1회만(반복 파싱 없음) — 헬퍼 함수 스코프로 한정 검사.
+    _seg = VIEWS.split("def _shape_collect_items")[1].split("@bp.get")[0]
+    assert _seg.count('json.loads(it.get("extra_json")') == 1
 
 
 def test_pg_list_index():
