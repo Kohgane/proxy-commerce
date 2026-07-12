@@ -5533,7 +5533,7 @@ def _bookmarklet_js(server: str, token: str, translate: bool) -> str:
         "try{"
         "var S='" + server + "',T='" + token + "',TR=" + tr + ";"
         # ── 토스트 K() 최우선 정의(생성 실패 시 alert 폴백) ──
-        "function K(m,ok){try{var t=document.getElementById('kgpbm');if(!t){t=document.createElement('div');t.id='kgpbm';t.style.cssText='position:fixed;right:20px;bottom:84px;z-index:2147483647;display:flex;align-items:center;gap:8px;max-width:300px;padding:10px 14px;border-radius:10px;font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.3)';var ic=document.createElement('img');ic.src=S+'/seller/static/favicon-32.png?v=181';ic.alt='';ic.style.cssText='width:20px;height:20px;border-radius:5px;flex:none;background:#fff';t.appendChild(ic);var tx=document.createElement('span');tx.id='kgpbmx';tx.style.whiteSpace='pre-wrap';t.appendChild(tx);document.body.appendChild(t);}t.style.background=ok?'#16a34a':'#dc2626';var x=document.getElementById('kgpbmx');if(x)x.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0'},4500);}catch(e){try{alert('[고가수집기] '+m)}catch(_){}}}"
+        "function K(m,ok){try{var t=document.getElementById('kgpbm');if(!t){t=document.createElement('div');t.id='kgpbm';t.style.cssText='position:fixed;right:20px;bottom:84px;z-index:2147483647;display:flex;align-items:center;gap:8px;max-width:300px;padding:10px 14px;border-radius:10px;font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.3)';var ic=document.createElement('img');ic.src=S+'/seller/static/favicon-32.png?v=182';ic.alt='';ic.style.cssText='width:20px;height:20px;border-radius:5px;flex:none;background:#fff';t.appendChild(ic);var tx=document.createElement('span');tx.id='kgpbmx';tx.style.whiteSpace='pre-wrap';t.appendChild(tx);document.body.appendChild(t);}t.style.background=ok?'#16a34a':'#dc2626';var x=document.getElementById('kgpbmx');if(x)x.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0'},4500);}catch(e){try{alert('[고가수집기] '+m)}catch(_){}}}"
         "K('수집 중…',true);"   # ← 즉시 표시(침묵 금지)
         # ── 코어 추출(검증된 구버전: og메타 + 기본 이미지 + outerHTML) ──
         "function M(p){try{var e=document.querySelector('meta[property=\"'+p+'\"],meta[name=\"'+p+'\"]');return e?(e.content||''):''}catch(e){return ''}}"
@@ -5594,9 +5594,9 @@ _BRIDGE_ICON_DATA_URI = None
 
 
 def _bridge_icon_data_uri() -> str:
-    """북마크 ICON 속성용 브릿지 마크(favicon-32 v181) data:image/png;base64 — 1회 캐시.
+    """북마크 ICON 속성용 브릿지 마크(favicon-32 v182) data:image/png;base64 — 1회 캐시.
 
-    v54 STEP1: 북마크바 아이콘용으로 32px 사용(브리프 지정). v8/v181 마스터에서 파생된 현행 파비콘.
+    v54 STEP1: 북마크바 아이콘용으로 32px 사용(브리프 지정). v8/v182 마스터에서 파생된 현행 파비콘.
     """
     global _BRIDGE_ICON_DATA_URI
     if _BRIDGE_ICON_DATA_URI is None:
@@ -5612,9 +5612,9 @@ def _netscape_bookmark(href: str, icon_data_uri: str, label: str = "고가수집
 
     v54 STEP1: 북마클릿을 **PERSONAL_TOOLBAR_FOLDER="true"** 폴더(= 북마크바) 하위에 배치 → 크롬이
     가져오기 시 이 폴더 내용을 **북마크바로 직행 병합**(별도 '가져온 북마크' 폴더로 빠지지 않게). ICON은
-    브릿지 마크(v181 favicon-32) — javascript: 북마클릿의 파비콘은 가져오기 파일 ICON 속성만이 유일 기록 경로.
+    브릿지 마크(v182 favicon-32) — javascript: 북마클릿의 파비콘은 가져오기 파일 ICON 속성만이 유일 기록 경로.
 
-    v56 STEP1: **앵커 텍스트 빈 문자열**(오너 요청 — 북마크바에 파비콘만 표시). ICON(v181 favicon-32)이
+    v56 STEP1: **앵커 텍스트 빈 문자열**(오너 요청 — 북마크바에 파비콘만 표시). ICON(v182 favicon-32)이
     아이콘을 담당. 안내 문구에 '아이콘만 보이는 게 정상' 명시. HREF는 html.escape(가져오기 시 디코드).
     """
     import html as _html

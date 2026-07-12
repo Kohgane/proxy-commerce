@@ -72,14 +72,14 @@ def test_og_card_uses_v8_master():
 
 
 def test_cache_bust_bumped():
-    # 파비콘 ?v=181, og ?v=5 로 캐시버스트(라이브 브라우저 강제 재요청).
-    assert "v='181'" in BASE and "v='180'" not in BASE
+    # 파비콘 ?v=182(v57 STEP1 아이콘 정정), og ?v=5 로 캐시버스트(라이브 브라우저 강제 재요청).
+    assert "v='182'" in BASE and "v='181'" not in BASE
     assert "og-card.png?v=5" in BASE_APP and "og-card.png?v=4" not in BASE_APP
 
 
 def test_extension_version_bumped():
     import json
-    assert json.loads(MANIFEST)["version"] == "1.5.56"
+    assert json.loads(MANIFEST)["version"] == "1.5.57"
 
 
 def test_no_stale_old_icon_files():

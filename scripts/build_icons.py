@@ -46,35 +46,51 @@ def _quad(p0, p1, p2, n=72):
     return pts
 
 
+WATER = (0x5F, 0xB8, 0xAD)   # 수면 라인(밝은 청록)
+
+
 def build_simple():
-    """≤48px 소형 전용 고대비 변형 — 얇은 케이블/타워는 뭉개지므로 생략하고 굵은 게이트
-    아치 + 큰 주황 키스톤 + 굵은 틸 데크만(색상 정체성 유지, 소형 가독). 흰 배경 통일."""
+    """v57 STEP1(오답 마크 회수): ≤48px 소형도 **두 타워 현수교**로 렌더(굵은 스트로크로 소형 가독).
+    오너 정답 설계 = 두 타워 + 현수 케이블 + 중앙 원형 키스톤 + 수면 라인, 흰 배경 + 먹 라운드 보더.
+    (구 build_simple은 타워 없는 단일 아치+점 = 오답이었음.)"""
     from PIL import Image, ImageDraw
     W = SIZE * S
     img = Image.new("RGB", (W, W), WHITE)
     d = ImageDraw.Draw(img)
 
-    def box(x0, y0, x1, y1):
-        return [x0 * S, y0 * S, x1 * S, y1 * S]
-
     def P(pt):
         return (pt[0] * S, pt[1] * S)
+
+    def box(x0, y0, x1, y1):
+        return [x0 * S, y0 * S, x1 * S, y1 * S]
 
     def dot(c, r, color):
         d.ellipse(box(c[0] - r, c[1] - r, c[0] + r, c[1] + r), fill=color)
 
-    d.rounded_rectangle(box(38, 38, 986, 986), radius=int(190 * S), outline=INK, width=int(44 * S))
-    # 굵은 골드 게이트 아치(전체 원 - 상단 틈) + 짧은 다리
-    R, cy = 205, 470
-    gap = math.degrees(0.235)
-    d.arc(box(CX - R, cy - R, CX + R, cy + R), 270 + gap, 270 - gap + 360, fill=GOLD, width=int(76 * S))
-    for lx in (CX - R, CX + R):
-        d.line([P((lx, cy)), P((lx, 760))], fill=GOLD, width=int(76 * S))
-    # 굵은 틸 데크 2줄(소형서 뭉개지지 않게 두껍게 — 16px서도 청록 생존)
-    for dy in (622, 726):
-        d.line([P((140, dy)), P((884, dy))], fill=TEAL, width=int(84 * S))
-    # 큰 주황 키스톤
-    dot((CX, cy - R), 70, ORANGE)
+    def tline(pts, color, w):
+        d.line([P(p) for p in pts], fill=color, width=int(round(w * S)), joint="curve")
+
+    def leg(x, y0, y1, w, color):
+        d.line([P((x, y0)), P((x, y1))], fill=color, width=int(w * S))
+        dot((x, y0), w / 2.0, color); dot((x, y1), w / 2.0, color)
+
+    # 먹 라운드 보더(소형은 얇게 — 내부 디테일 생존 공간 확보)
+    d.rounded_rectangle(box(40, 40, 984, 984), radius=int(190 * S), outline=INK, width=int(34 * S))
+    TX = (300, 724)          # 두 타워 x(소형은 안쪽으로 모아 굵게)
+    TOP, DECK, BASE = 300, 632, 726
+    # 현수 케이블(딥골드, 굵게): 사이드스팬 + 타워탑 사이 처짐
+    tline(_quad((TX[0], TOP), (200, 500), (150, DECK)), DEEPGOLD, 34)
+    tline(_quad((TX[1], TOP), (824, 500), (874, DECK)), DEEPGOLD, 34)
+    tline(_quad((TX[0], TOP), (CX, 606), (TX[1], TOP)), DEEPGOLD, 34)
+    # 두 타워(골드, 굵게) — 데크 관통
+    for tx in TX:
+        leg(tx, TOP - 18, BASE, 58, GOLD)
+    # 틸 데크(아주 굵게 — 16px 축소서도 순수 청록 생존)
+    d.line([P((132, DECK)), P((892, DECK))], fill=TEAL, width=int(104 * S))
+    # 중앙 원형 키스톤(주황, 크게) — 타워탑 사이 케이블 정중앙
+    dot((CX, 578), 84, ORANGE)
+    # 수면 라인(순수 청록 — 소형 축소서 데크 청록과 합쳐져 생존, 밝은 WATER는 마스터 전용)
+    d.line([P((160, 820)), P((864, 820))], fill=TEAL, width=int(30 * S))
     return img.resize((SIZE, SIZE), Image.LANCZOS)
 
 
@@ -136,6 +152,10 @@ def build_master(simple=False):
     # 7) 키스톤(주황) — 최상단 틈 정중앙
     dot((CX, ARCH_CY - ARCH_R), 29, ORANGE)
 
+    # 8) 수면 라인(v57 STEP1) — 데크 아래 밝은 청록 2줄(다리 위 현수교 정체성 보강)
+    d.line([P((DECK_X0, 828)), P((DECK_X1, 828))], fill=WATER, width=int(14 * S))
+    d.line([P((DECK_X0 + 40, 858)), P((DECK_X1 - 40, 858))], fill=WATER, width=int(10 * S))
+
     return img.resize((SIZE, SIZE), Image.LANCZOS)
 
 
@@ -157,12 +177,27 @@ def _rs(master, s):
     return master.resize((s, s), Image.LANCZOS)
 
 
+def _committed_master(root="."):
+    """v57 STEP1: 오너가 커밋한 정답 원본(brand_icons_v2/master-48.png)이 있으면 그걸 유일 정답지로.
+    (첨부 벡터 없음 → 48px 원본을 업스케일·임베드로 사용. 없으면 코드 지오메트리로 두 타워 브릿지 렌더.)"""
+    from PIL import Image
+    p = os.path.join(root, "brand_icons_v2", "master-48.png")
+    if os.path.exists(p):
+        return Image.open(p).convert("RGB").resize((SIZE, SIZE), Image.LANCZOS)
+    return None
+
+
 def deploy(root="."):
-    """레포의 실제 아이콘 위치를 전부 v8로 교체(단일 소스=이 스크립트의 코드 지오메트리)."""
+    """레포의 실제 아이콘 위치를 전부 교체(단일 소스 = 커밋된 master-48.png 우선, 없으면 코드 지오메트리)."""
     import base64
     import io
-    master = build_master(simple=False)
-    small = build_master(simple=True)     # ≤48 고대비 변형(소형 가독)
+    committed = _committed_master(root)
+    if committed is not None:
+        master = committed
+        small = committed                 # 커밋 원본이면 소형도 동일(픽셀 정답)
+    else:
+        master = build_master(simple=False)
+        small = build_master(simple=True) # v57: 소형도 두 타워 현수교(오답 마크 회수)
     static = os.path.join(root, "src/seller_console/static")
     ext = os.path.join(root, "extensions/chrome-collector/icons")
     assets = os.path.join(root, "assets/brand-icons")

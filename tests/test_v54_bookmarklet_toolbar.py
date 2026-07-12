@@ -37,7 +37,7 @@ def test_page_file_first_copy_secondary():
     assert "① 파일 받기" in BM and "아이콘 포함" in BM
     assert "아이콘 없이 빠른 설치" in BM                  # 복사 방식 정직 라벨
     assert "북마크바로 직행" in BM
-    assert "favicon-32.png?v=181" in BM                   # 아이콘 미리보기
+    assert "favicon-32.png?v=182" in BM                   # 아이콘 미리보기
     # 파일 카드가 복사 카드보다 앞(1순위)
     assert BM.index("① 파일 받기") < BM.index("아이콘 없이 빠른 설치")
     # 크롬 버전 변수 정직 안내(추측 금지)

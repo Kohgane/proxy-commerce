@@ -38,4 +38,4 @@ def test_32px_high_contrast():
 
 def test_favicon_cache_bumped_to_178():
     base = Path("src/seller_console/templates/_base.html").read_text(encoding="utf-8")
-    assert "v='181'" in base and "v='178'" not in base
+    assert "v='182'" in base and "v='181'" not in base
