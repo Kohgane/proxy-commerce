@@ -18,6 +18,14 @@
   .kgp-copy-code.copied { border-color: var(--teal,#119A8E); }
 </style>
 <div class="container-fluid py-4" style="max-width:1040px">
+  {# v57 STEP0: 로더 전환(v56) 후 구버전 북마클릿은 무동작 → 최상단 경고로 재설치 유도(구 토큰·구 코드 자연 폐기). #}
+  <div class="alert alert-warning d-flex align-items-start gap-2 mb-3" role="alert" style="border-left:4px solid var(--orange,#f5821f)">
+    <i class="bi bi-exclamation-triangle-fill mt-1" style="color:var(--orange,#f5821f)"></i>
+    <div>
+      <strong>이전에 설치한 북마클릿은 더 이상 작동하지 않습니다 — 아래에서 새로 설치하세요.</strong>
+      <div class="small text-muted mt-1">수집기가 새 구조(로더)로 바뀌었어요. 기존 북마크는 삭제하고 <strong>① 파일 받기 → ② 가져오기</strong>로 다시 설치하면 됩니다. 설치 후 <a href="/seller/bookmarklet/testpage" target="_blank" rel="noopener">설치 테스트</a>로 확인하세요.</div>
+    </div>
+  </div>
   <h1 class="h3 mb-1"><i class="bi bi-bookmark-star"></i> 북마클릿 (고급)</h1>
   <p class="text-muted mb-3">쇼핑 페이지에서 클릭 한 번으로 상품을 수집합니다. <strong>새 창 없이 그 자리에서</strong> ‘수집 완료’가 떠요. 아래 <strong>① 파일 받기 → ② 크롬에 가져오기</strong> 두 번이면 <strong>아이콘까지</strong> 북마크바에 설치됩니다.</p>
 
