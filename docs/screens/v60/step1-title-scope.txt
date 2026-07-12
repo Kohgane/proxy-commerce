@@ -1,0 +1,8 @@
+v60 STEP1 — 제목 추출 오염 차단
+페이지 상태: 'Chat history' 사이드패널(role=complementary) + 우리 확장 FAB(kgp-collect-fab) h1 + 상품 #productTitle
+
+BEFORE(구): document.querySelector('h1') = 첫 h1 = 'Chat history' (또는 '고가수집기') → 오염
+AFTER (v60): title = 'andobil [2026 Ultra-Thin] Magnetic Phone Grip Ring Holder'
+field_sources.title: tier2
+
+→ 삽입 UI(kgp-*·aside·role=complementary·assistant/chat) 제외 + 어댑터 #productTitle 우선 → 상품명 정상

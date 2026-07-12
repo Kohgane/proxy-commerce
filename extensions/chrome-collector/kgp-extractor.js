@@ -579,6 +579,62 @@
     }
     return _meta("og:description") || _meta("description") || "";
   }
+  // v60 STEP1: 우리 확장이 주입한 DOM(kgp-*) 또는 사이드패널/챗/네비 등 페이지 크롬 안에 있는 요소인지.
+  //   → 제목/키워드 추출에서 제외(아마존 'Chat history' 등 삽입 UI h1 오염 차단).
+  function _isInjectedUI(el) {
+    var re = /(^|\s|-)(kgp-|assistant|copilot|rufus|chat[-_ ]?history|chat[-_ ]?panel|side[-_ ]?panel|sidebar|drawer|overlay|extension|widget|toolbar|popover|modal)($|\s|-)/i;
+    var cur = el, d = 0;
+    while (cur && d < 12) {
+      var id = cur.id || "";
+      var cls = (cur.className && cur.className.baseVal !== undefined ? cur.className.baseVal : (cur.className || ""));
+      if (/^kgp-/.test(id) || /(^|\s)kgp-/.test(cls) || (cur.getAttribute && cur.getAttribute("data-kgp-outline"))) return true;
+      var tg = (cur.tagName || "").toLowerCase();
+      if (tg === "nav" || tg === "aside" || tg === "header") return true;
+      var role = cur.getAttribute && (cur.getAttribute("role") || "");
+      if (/(complementary|navigation|dialog|banner)/i.test(role || "")) return true;
+      if (re.test(id + " " + cls)) return true;
+      cur = cur.parentElement; d++;
+    }
+    return false;
+  }
+  // v60 STEP1: 디폴트 소싱처 어댑터별 상품명 셀렉터(하드매핑) — 삽입 UI h1 오염을 원천 우회.
+  function _adapterTitle() {
+    var host = (location.hostname || "").toLowerCase();
+    var MAP = [
+      { re: /(^|\.)amazon\.[a-z.]+$/, sels: ["#productTitle", "#title #productTitle", "h1#title span"] },
+      { re: /(^|\.)temu\.[a-z.]+$/, sels: ['[class*="goods-name" i]', '[class*="productTitle" i]', 'h1[class*="title" i]'] },
+      { re: /(^|\.)(aliexpress|ae01)\.[a-z.]+$/, sels: ['h1[data-pl="product-title"]', '[class*="title--wrap" i] h1', "h1"] },
+      { re: /(^|\.)(taobao|tmall)\.[a-z.]+$/, sels: ['[class*="mainTitle" i]', '[class*="ItemTitle" i]', "h1"] },
+    ];
+    for (var i = 0; i < MAP.length; i++) {
+      if (!MAP[i].re.test(host)) continue;
+      for (var s = 0; s < MAP[i].sels.length; s++) {
+        try {
+          var el = document.querySelector(MAP[i].sels[s]);
+          if (el && !_isInjectedUI(el)) {
+            var t = (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
+            if (t && t.length >= 2) return t.slice(0, 300);
+          }
+        } catch (e) {}
+      }
+      break;
+    }
+    return "";
+  }
+  // v60 STEP1: 본문 최상위 h1 — 우리 UI·삽입 패널 제외, 제일 긴(상품명일 가능성 높은) 것.
+  function _cleanH1() {
+    try {
+      var h1s = document.querySelectorAll("h1");
+      var best = "";
+      for (var i = 0; i < h1s.length; i++) {
+        var el = h1s[i];
+        if (_isInjectedUI(el) || _nonProdRegion(el)) continue;
+        var t = (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
+        if (t && t.length > best.length) best = t;
+      }
+      return best.slice(0, 300);
+    } catch (e) { return ""; }
+  }
 
   // ── 가격 sanity 게이트 ─────────────────────────────────────
   function _priceSanity(price, currency) {
@@ -600,12 +656,13 @@
     var j = {};
     try { j = _fromJson(); } catch (e) { j = { ok: false, images: [], detailImages: [], options: [], skus: [], specs: [], reviews: [] }; }
 
-    // 타이틀: Tier1(JSON/API) → Tier2(h1) → Tier3(og:title) → document.title.
-    var h1t = "";
-    try { var h1el = document.querySelector("h1"); if (h1el) h1t = (h1el.textContent || "").trim().slice(0, 300); } catch (e) {}
+    // v60 STEP1: 타이틀 우선순위 = 어댑터 지정 셀렉터 → ld+json/state name(Tier1) → 본문 h1(우리 UI·패널 제외)
+    //   → og:title → document.title(최후). 삽입 UI h1('Chat history' 등) 오염 차단.
+    var at = _adapterTitle();
+    var h1t = _cleanH1();
     var ogt = _meta("og:title");
-    var title = j.title || h1t || ogt || (document.title || "");
-    var titleSrc = j.title ? "tier1" : (h1t ? "tier2" : (ogt || document.title ? "tier3" : "none"));
+    var title = at || j.title || h1t || ogt || (document.title || "");
+    var titleSrc = at ? "adapter" : (j.title ? "tier1" : (h1t ? "tier2" : (ogt || document.title ? "tier3" : "none")));
     var price = j.price || "", currency = j.currency || "";
     var images = (j.images || []).slice(), detailImages = (j.detailImages || []).slice();
     var options = (j.options || []).slice(), skus = (j.skus || []).slice(), specs = (j.specs || []).slice();
