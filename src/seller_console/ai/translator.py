@@ -11,9 +11,23 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+# v60 STEP4: AI 초안·키워드 오염어 차단(STEP1 스코프 공유) — 확장 UI 텍스트·챗패널·도메인·수집기 문구.
+_CONTAM_RE = re.compile(
+    r"(chat\s*history|채팅\s*기록|고가수집|고가브릿지|gogabridj|kgp[-_ ]|확장\s*프로그램|사이드\s*패널|"
+    r"sidebar|assistant|copilot|rufus|번역까지\s*한\s*번에|수집\s*중|https?://|www\.|\.com\b|\.co\.[a-z]{2}|"
+    r"수집기|브라우저\s*확장)",
+    re.I,
+)
+
+
+def _is_contaminated(s: str) -> bool:
+    """상품 텍스트가 아니라 확장 UI·페이지 크롬 오염어인지(초안·키워드에서 배제)."""
+    return bool(s) and bool(_CONTAM_RE.search(str(s)))
 
 # 마켓별 카피 톤앤매너 프롬프트 힌트
 _MARKET_PROMPTS = {
@@ -41,19 +55,24 @@ def _structured_draft(title, category, keywords, specs, options, brand) -> str:
 
     lines = []
     t = _clean(title)
+    # v60 STEP4: 제목이 오염어(Chat history 등)면 헤더로 쓰지 않음(STEP1이 근원 차단 — 방어적 이중 게이트).
+    if t and _is_contaminated(t):
+        t = ""
     if t:
         lines.append(t)
+        # 후킹 1줄(항상 참인 일반 안내 — 없는 스펙 창작 아님).
+        lines.append("해외 정품 · 국내 배송으로 편하게 만나보세요.")
     cat = _clean(category)
     cat_label = _CAT_LABEL.get(cat, cat)      # 코드면 라벨, 아니면 원문(GEN·미상은 빈값)
     head_bits = [b for b in (_clean(brand), cat_label) if b]
     if head_bits:
         lines.append(" · ".join(head_bits))
 
-    # 특징(키워드 — 실데이터만)
+    # 특징(키워드 — 실데이터만 · v60 STEP4 오염어 배제)
     kws = []
     for k in (keywords or []):
         s = _clean(k)
-        if s and len(s) > 1 and s not in kws:
+        if s and len(s) > 1 and s not in kws and not _is_contaminated(s):
             kws.append(s)
     if kws:
         lines.append("")
@@ -89,10 +108,11 @@ def _structured_draft(title, category, keywords, specs, options, brand) -> str:
         lines.append("· 확인된 상세 정보가 부족합니다. 소재·사이즈·용도 등을 직접 입력해 주세요.")
     # 안내 틀(정직 boilerplate — 없는 스펙 창작 아님, 항상 참인 일반 안내)
     lines.append("")
-    lines.append("■ 안내")
+    lines.append("■ 배송·구매대행 안내")
+    lines.append("· 해외 구매대행 상품으로, 주문 후 현지 배송·통관을 거쳐 발송됩니다.")
     lines.append("· 모니터·조명 환경에 따라 실제 색상과 차이가 있을 수 있습니다.")
     lines.append("· 정확한 사이즈·소재는 위 옵션·상세 정보를 확인해 주세요.")
-    lines.append("· 배송·교환·반품은 판매 마켓의 정책을 따릅니다.")
+    lines.append("· 교환·반품은 판매 마켓과 구매대행 정책을 따릅니다.")
     return "\n".join(lines).strip()
 
 
@@ -244,17 +264,32 @@ class AITranslator:
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             }
+            # v60 STEP3: 이커머스 특화 프롬프트(직역투·음차 박멸). 브랜드/모델/규격 원문 보존, 자연 판매 문체.
+            system = (
+                "당신은 해외 상품을 한국 오픈마켓(쿠팡·스마트스토어)에 등록하는 전문 상품 번역가입니다. "
+                "다음 규칙을 반드시 지키세요.\n"
+                "1) 브랜드명·모델명·규격(치수·용량·재질·호환 기종 예: MagSafe, iPhone 15)은 **원문 그대로 보존**"
+                " — 억지 음차(예: 안도빌)·직역 금지.\n"
+                "2) 마케팅 수식어(ultra-thin, premium 등)는 **자연스러운 한국어 판매 문체**로(예: 초슬림, 프리미엄).\n"
+                "3) 단위 변환 금지(inch·mm·g 원문 단위 유지). 없는 스펙 창작 금지.\n"
+                "4) 상품명은 한국 관례 **브랜드 + 핵심 스펙 + 용도** 순, 자연스러운 명사구(어색한 조사·번역기 말투 금지).\n"
+                "5) 설명은 원문 불릿(·) 구조를 유지하며 한국어로."
+            )
             prompt = (
-                "다음 상품 정보를 한국어로 번역하고, 각 마켓용 광고 카피를 생성하세요.\n"
-                f"제목: {title}\n설명: {description}\n\n"
-                "JSON 형식으로만 답변:\n"
-                '{"title_ko":"...","description_ko":"...","copy_coupang":"...","copy_smartstore":"...","copy_11st":"..."}'
+                "아래 상품을 위 규칙대로 한국어로 번역하고, 마켓용 판매 카피도 만드세요.\n"
+                f"[제목]\n{title}\n\n[설명]\n{description}\n\n"
+                "JSON으로만 답변:\n"
+                '{"title_ko":"브랜드+핵심스펙+용도 자연문","description_ko":"불릿 유지 한국어",'
+                '"copy_coupang":"...","copy_smartstore":"...","copy_11st":"..."}'
             )
             payload = {
                 "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.3,
-                "max_tokens": 800,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.2,
+                "max_tokens": 900,
                 "response_format": {"type": "json_object"},
             }
             resp = _req.post(

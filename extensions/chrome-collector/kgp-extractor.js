@@ -573,9 +573,24 @@
     return specs;
   }
   function _domDescription() {
-    var sel = ['#feature-bullets', '#productDescription', '[class*="description" i]', '[class*="detail" i]'];
+    // v60 STEP2: 아마존 About this item(#feature-bullets) 불릿을 구조화 텍스트로 + productDescription 본문.
+    try {
+      var fb = document.querySelector("#feature-bullets");
+      if (fb && !_nonProdRegion(fb)) {
+        var bl = [];
+        fb.querySelectorAll("li span.a-list-item, li").forEach(function (li) {
+          var t = (li.innerText || li.textContent || "").replace(/\s+/g, " ").trim();
+          if (t && t.length > 2 && !/^about this item$/i.test(t) && bl.indexOf("· " + t) < 0) bl.push("· " + t);
+        });
+        var pd = document.querySelector("#productDescription");
+        var pdt = pd ? (pd.innerText || "").replace(/\n{3,}/g, "\n\n").trim() : "";
+        var out = [bl.join("\n"), pdt].filter(Boolean).join("\n\n").trim();
+        if (out.length > 20) return out.slice(0, 4000);
+      }
+    } catch (e) {}
+    var sel = ['#productDescription', '[class*="description" i]', '[class*="detail" i]'];
     for (var i = 0; i < sel.length; i++) {
-      try { var el = document.querySelector(sel[i]); if (el) { var t = (el.innerText || "").trim(); if (t.length > 20) return t.slice(0, 4000); } } catch (e) {}
+      try { var el = document.querySelector(sel[i]); if (el && !_nonProdRegion(el)) { var t = (el.innerText || "").trim(); if (t.length > 20) return t.slice(0, 4000); } } catch (e) {}
     }
     return _meta("og:description") || _meta("description") || "";
   }
@@ -687,6 +702,11 @@
     if (detailImages.length === 0) {
       try { var di2 = _domImages(); if (di2.detailImages && di2.detailImages.length) detailImages = di2.detailImages; } catch (e) {}
     }
+    // v60 STEP2: 상세설명(desc_text)도 **가격/이미지와 독립** 수집 — Tier1이 가격·이미지를 채워 needDom이
+    //   false여도 상세설명은 비어 있을 수 있다(아마존 About this item 미수집 근원). 있으면 채운다.
+    if (!description) { try { description = _domDescription(); } catch (e) {} }
+    if (!options.length) { try { options = _domOptions(); } catch (e) {} }
+    if (!specs.length) { try { specs = _domSpecs(); } catch (e) {} }
     // 정직: 더보기 접힘이 남아 있고 상세이미지가 여전히 비었으면 '일부만' 경고(무음 실패 금지).
     if (detailFold && detailImages.length === 0) warnings.push("상세이미지 일부만(더보기 펼침 필요할 수 있어요)");
 
@@ -733,6 +753,7 @@
       thumbnail: gallery[0] || "",
       options: options, skus: skus,
       description: description, detail_specs: specs,
+      desc_text: description, desc_images: detailImages,   // v60 STEP2: 상세 텍스트/이미지 명시 분리(브리프 명명)
       reviews: reviews, rating: rating, review_count: reviewCount,
       source: source, partial: partial, warnings: warnings,
       field_sources: fieldSources,
