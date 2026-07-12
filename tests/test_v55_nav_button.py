@@ -55,6 +55,8 @@ def test_pagetype_url_decisive_and_cached_node():
     harness = (
         "const KGP_DETAIL_URL_RE=" + dre + ";const KGP_LIST_URL_RE=" + lre + ";\n"
         "let _cards=0; function kgpFindCards(){return new Array(_cards);}\n"
+        "function kgpIsDefaultSourcing(){return false;}\n"   # v60 STEP5: 점수제/캐시 경로 검증 → 디폴트소싱 우회
+
         "global.location={href:'',pathname:'/',search:''};\n"
         "global.sessionStorage={_d:{},getItem(k){return this._d[k]||null;},setItem(k,v){this._d[k]=v;}};\n"
         "global.document={querySelectorAll(){return [];},querySelector(){return null;}};\n"

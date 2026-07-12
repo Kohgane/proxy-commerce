@@ -1529,6 +1529,12 @@ function kgpRemoveListing() {
 const KGP_DETAIL_URL_RE = /(\/dp\/|\/gp\/product\/|\/vp\/products\/|item\.htm|aliexpress\.[^/]+\/item\/|[?&]goods_id=|[/-]g-\d{3,}|\/goods\/\d|\/product\/\d|\/products\/[\w-]+|\/itm\/)/i;
 const KGP_LIST_URL_RE = /(\/s\?|\/s\/|\/search|\/sch\b|[?&](q|keyword|query|search|k)=|\/category|\/categories|\/c\/|\/list\b|\/best\b|\/ranking|\/plp|\/browse|\/deals)/i;
 
+// v60 STEP5: 디폴트 소싱처(어댑터 등록 사이트) — 여기선 판정불능('unknown') 금지, URL로 결정적 판정.
+const KGP_DEFAULT_SRC_RE = /(^|\.)(amazon\.[a-z.]+|temu\.com|aliexpress\.[a-z.]+|taobao\.com|tmall\.com|1688\.com|(shopping\.)?yahoo\.co\.jp|paypaymall\.yahoo\.co\.jp|mercari\.com|rakuten\.co\.jp)$/i;
+function kgpIsDefaultSourcing() {
+  try { return KGP_DEFAULT_SRC_RE.test((location.hostname || "").toLowerCase()); } catch (e) { return false; }
+}
+
 function kgpDetectPageType() {
   // 수동 오버라이드 최우선(감지 실패 대비 탈출구) — 경로 단위 기억.
   try {
@@ -1538,6 +1544,8 @@ function kgpDetectPageType() {
   const href = location.href;
   const isDetail = KGP_DETAIL_URL_RE.test(href);
   const isList = KGP_LIST_URL_RE.test(href);
+  // v60 STEP5: 디폴트 소싱처는 URL 패턴으로 **결정적** 판정(불능 금지) — 상세패턴=단건, 그 외 도메인 전체=벌크.
+  if (kgpIsDefaultSourcing()) return isDetail ? "single" : "list";
   // v55 STEP5: URL 규칙 하드매치 최우선(결정적) — 테무 -g-{숫자}=단일, /search 등=목록. DOM 휴리스틱은
   //   URL이 애매할 때만(둘 다/둘 다 아님). 지연로드·DOM변이와 무관하게 판정 즉시 확정(점멸 제거).
   if (isDetail && !isList) return "single";
