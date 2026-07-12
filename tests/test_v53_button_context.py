@@ -65,6 +65,8 @@ def test_detector_scoring_node():
     harness = (
         "const KGP_DETAIL_URL_RE=" + detail_re + ";const KGP_LIST_URL_RE=" + list_re + ";\n"
         "let _cardN=0; function kgpFindCards(){return new Array(_cardN);}\n"
+        "function kgpIsDefaultSourcing(){return false;}\n"   # v60 STEP5: 점수제 경로 검증 → 디폴트소싱 우회
+
         "let _lds=[], _h1=0, _gallery=false;\n"
         "global.location={href:'',pathname:'/p'};\n"
         "global.sessionStorage={_d:{},getItem(k){return this._d[k]||null;},setItem(k,v){this._d[k]=v;}};\n"
@@ -96,4 +98,4 @@ def test_detector_scoring_node():
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.60"
+    assert MANIFEST["version"] == "1.5.61"
