@@ -45,6 +45,10 @@ def test_committed_favicons_match_code_v8_master():
         (tmp / "src/seller_console/static").mkdir(parents=True)
         (tmp / "extensions/chrome-collector/icons").mkdir(parents=True)
         (tmp / "assets/brand-icons").mkdir(parents=True)
+        # v57: 소형 favicon은 정답지(favicon-master-48.png) 기준 → tmp에도 복사(커밋본 일치).
+        _ans = Path("assets/brand-icons/favicon-master-48.png")
+        if _ans.exists():
+            shutil.copy(_ans, tmp / "assets/brand-icons/favicon-master-48.png")
         mod.deploy(str(tmp))
         for f in ("favicon-16.png", "favicon-32.png", "favicon-48.png", "favicon.ico",
                   "apple-touch-icon.png", "icon-192.png", "icon-512.png", "icon-1024.png"):

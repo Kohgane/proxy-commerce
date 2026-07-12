@@ -64,7 +64,8 @@ def test_favicon48_answer_is_sole_small_source():
     # 소형 소스가 small48(정답지 우선), 대형은 1024 master로 분리.
     assert "small48 = fav48 if fav48 is not None else build_master(simple=True)" in BUILD
     seg = BUILD.split("def deploy")[1]
-    assert "_rs(small48, 16)" in seg and "_rs(small48, 48)" in seg   # 16/48 = 정답지 다운스케일
+    assert "_small(48)" in seg and "_small(16)" in seg               # 48=정답지 그대로, 16=다운스케일
+    assert "fav48.copy()" in seg                                     # 48은 리샘플 0(픽셀 동일)
     assert "_rs(master, 512)" in seg or "_rs(master, 1024)" in seg   # 대형은 1024 마스터
 
 
@@ -85,11 +86,12 @@ def test_favicon48_downscale_pipeline_uses_committed_file(tmp_path):
         ans.putpixel((i, i), (0x11, 0x9A, 0x8E))
     ans.save(root / "assets/brand-icons/favicon-master-48.png")
     mod.deploy(str(root))
-    got48 = Image.open(root / "src/seller_console/static/favicon-48.png").convert("RGB")
-    exp48 = ans.resize((48, 48), Image.LANCZOS).convert("RGB")
-    assert hashlib.md5(got48.tobytes()).hexdigest() == hashlib.md5(exp48.tobytes()).hexdigest()
-    got16 = Image.open(root / "src/seller_console/static/favicon-16.png").convert("RGB")
-    exp16 = ans.resize((16, 16), Image.LANCZOS).convert("RGB")   # 16 = 정답지(48) 다운스케일
+    # favicon-48 = 정답지 **픽셀 그대로**(리샘플 0 — 픽셀 동일 보장).
+    got48 = Image.open(root / "src/seller_console/static/favicon-48.png").convert("RGBA")
+    assert hashlib.md5(got48.tobytes()).hexdigest() == hashlib.md5(ans.convert("RGBA").tobytes()).hexdigest()
+    # 16 = 정답지(48) 다운스케일.
+    got16 = Image.open(root / "src/seller_console/static/favicon-16.png").convert("RGBA")
+    exp16 = ans.convert("RGBA").resize((16, 16), Image.LANCZOS)
     assert hashlib.md5(got16.tobytes()).hexdigest() == hashlib.md5(exp16.tobytes()).hexdigest()
 
 
@@ -129,6 +131,10 @@ def test_committed_favicons_match_code():
         (tmp / "src/seller_console/static").mkdir(parents=True)
         (tmp / "extensions/chrome-collector/icons").mkdir(parents=True)
         (tmp / "assets/brand-icons").mkdir(parents=True)
+        # v57: 소형 favicon은 정답지(favicon-master-48.png) 기준 → tmp에도 복사해야 커밋본과 일치.
+        _ans = Path("assets/brand-icons/favicon-master-48.png")
+        if _ans.exists():
+            shutil.copy(_ans, tmp / "assets/brand-icons/favicon-master-48.png")
         mod.deploy(str(tmp))
 
         def md5(p):

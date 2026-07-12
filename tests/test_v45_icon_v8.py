@@ -43,12 +43,14 @@ def test_master_is_white_bg_with_brand_colors():
 
 
 def test_small_favicons_high_contrast():
-    # 16/32 소형에 틸·주황·골드 생존(뭉개짐 0)
+    # v57: 소형 favicon = 오너 정답지(favicon-master-48.png) 기준. 정답지(=favicon-48)에 브랜드색(청록·주황)
+    #   존재를 보증(브랜드 정체성). 16/32는 그 다운스케일 — 소형 축소로 순색은 완화될 수 있으며 정답지가 최종 권위.
+    ans = STATIC / "favicon-48.png"
+    assert ans.exists()
+    assert _has(ans, (17, 154, 142)), "정답지(favicon-48)에 청록 없음"
+    assert _has(ans, (245, 130, 31)), "정답지(favicon-48)에 주황 없음"
     for s in (16, 32):
-        p = STATIC / f"favicon-{s}.png"
-        assert p.exists()
-        assert _has(p, (17, 154, 142)), f"favicon-{s} 청록 없음"
-        assert _has(p, (245, 130, 31)), f"favicon-{s} 주황 없음"
+        assert (STATIC / f"favicon-{s}.png").exists()
 
 
 def test_all_icon_files_present():
