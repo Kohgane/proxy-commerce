@@ -13,9 +13,10 @@ def test_loader_routes_present():
 
 
 def test_old_bookmarklet_warning_banner():
-    assert "더 이상 작동하지 않습니다" in TPL and "새로 설치" in TPL
+    # v58 STEP3: '설치 전 기존 고가수집 북마크 전부 삭제' 경고 + 구버전 무동작 명시.
+    assert "전부 삭제" in TPL and "작동하지 않습니다" in TPL
     # 배너가 최상단(첫 카드/헤딩보다 앞)
-    assert TPL.index("더 이상 작동하지 않습니다") < TPL.index("북마클릿 (고급)")
+    assert TPL.index("전부 삭제") < TPL.index("북마클릿 (고급)")
 
 
 def test_run_js_and_testpage_live():
