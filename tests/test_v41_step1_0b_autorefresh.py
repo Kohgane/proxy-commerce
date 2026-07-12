@@ -65,14 +65,15 @@ def test_count_honest_on_error(client):
 
 
 def test_history_page_has_polling_script(client):
-    """수집이력 화면에 자동 반영 폴링 스크립트가 포함(count 폴링 + 탭포커스)."""
+    """수집이력 화면에 실시간 반영 폴링 스크립트가 포함(v57: since 증분 + 탭포커스).
+    (v41 count 폴링 → v57 STEP2 since 커서 증분 삽입으로 승격, 전체 리렌더 제거.)"""
     with patch("src.seller_console.collect_history_store.list_items", return_value=[]), \
          patch("src.seller_console.collect_history_store.summary", return_value=_summary(0)), \
          patch("src.seller_console.collect_history_store.distinct_domains", return_value=[]):
         html = client.get("/seller/collect/history").data.decode("utf-8")
-    assert "/seller/collect/history/count" in html
+    assert "/seller/collect/history/since" in html
     assert "visibilitychange" in html
-    assert "STEP 1-0b" in html
+    assert "STEP2" in html
 
 
 def test_autorefresh_guards_editing(client):
