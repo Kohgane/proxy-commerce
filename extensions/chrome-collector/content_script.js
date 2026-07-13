@@ -964,8 +964,8 @@ let _kgpClosed = false;           // 사용자가 툴바를 닫았으면 자동 
 // v65 STEP2: 제외 사유별 분해 카운트('제외 (광고 등)' 뭉뚱그림 금지). 스캔마다 초기화.
 //   ad=광고(스폰서, 태깅만·전체선택 제외) · region=비상품영역(추천/푸터) · parse=카드 파싱 실패(제목/ASIN 등)
 //   · url=URL 추출 실패(앵커 없음) · dup=중복(같은 상품).
-let _kgpExcl = { ad: 0, region: 0, parse: 0, url: 0, dup: 0 };
-function _kgpExclReset() { _kgpExcl = { ad: 0, region: 0, parse: 0, url: 0, dup: 0 }; }
+let _kgpExcl = { ad: 0, region: 0, parse: 0, url: 0, dup: 0, reco: 0 };
+function _kgpExclReset() { _kgpExcl = { ad: 0, region: 0, parse: 0, url: 0, dup: 0, reco: 0 }; }
 
 // v64 STEP2: 전체선택/전체수집 대상 — 기본은 실상품만(광고 제외). '광고 포함' 토글 시 전부.
 function _kgpInclAds() { return kgpLSget("kgp_incl_ads", "0") === "1"; }
@@ -1114,12 +1114,24 @@ function _kgpAmazonSponsored(el) {
 //   (유효 ASIN=실제 소싱 가능 상품). 비-상품 미디어(ASIN 없음)는 자연 제외 = v25 '광고·미디어 제외' 의도 유지.
 function _kgpAmazonCards() {
   const cards = [], seen = {};
-  // s-search-result ∪ div[data-asin]:not([data-asin=""]) — 요소 단위 dedupe.
+  // v66 STEP1: 감지 분모를 **메인 검색결과 그리드**로 한정(.s-main-slot). 추천 캐러셀·frequently-viewed·
+  //   배너 타일(메인 그리드 밖 유효 ASIN)은 분모에서 빼고 별도 카운트(_kgpExcl.reco) — 분모 뻥튀기 금지.
+  const mainSlot = (document.querySelector && document.querySelector('.s-main-slot, [data-component-type="s-search-results"]')) || null;
+  const scope = mainSlot || document;
   const set = new Set();
-  document.querySelectorAll('[data-component-type="s-search-result"], div[data-asin]:not([data-asin=""])')
+  scope.querySelectorAll('[data-component-type="s-search-result"], div[data-asin]:not([data-asin=""])')
     .forEach((e) => set.add(e));
+  // 메인 그리드 밖 유효 ASIN 카드(추천 영역) → 분모 제외 + 별도 카운트.
+  if (mainSlot) {
+    document.querySelectorAll('div[data-asin]:not([data-asin=""])').forEach((e) => {
+      if (mainSlot.contains(e)) return;
+      const a2 = (e.getAttribute("data-asin") || "").trim();
+      const nested = e.parentElement && e.parentElement.closest('[data-asin]:not([data-asin=""])');
+      if (/^[A-Z0-9]{10}$/.test(a2) && !nested) _kgpExcl.reco++;   // 추천영역 n 제외
+    });
+  }
   const all = Array.from(set);
-  _kgpScannedCount = all.length;                          // '전체 N개' (상품/비상품 합)
+  _kgpScannedCount = all.length;                          // '전체 N개' (메인 그리드 내 상품/비상품 합)
   all.forEach((el) => {
     try {
       if (_kgpInBadRegion(el, { allowAds: true })) { _kgpExcl.region++; return; }   // v64 STEP2: 스폰서=실상품 → 영역 제외 안 함(명시 태깅만)
@@ -1397,11 +1409,12 @@ function kgpUpdateToolbar() {
   // v64 STEP2: 광고(스폰서) 수를 명시(오너가 분류 정합을 눈으로 검증). 제외=구조적 비상품(광고 아님).
   const ads = _kgpAdCount();
   const adTxt = ads ? ` · 광고 ${ads}` : "";
+  const recoTxt = _kgpExcl.reco ? ` · 추천 제외 ${_kgpExcl.reco}` : "";   // v66 STEP1: 추천영역 분모 제외
   if (_kgpScannedCount > _kgpCards.length) {
     const miss = _kgpScannedCount - _kgpCards.length;
-    c.textContent = `전체 ${_kgpScannedCount}개 중 상품 ${_kgpCards.length}개${adTxt} · 제외 ${miss} · ${KGP_SELECTED.size}개 선택`;
+    c.textContent = `메인 ${_kgpScannedCount}개 중 상품 ${_kgpCards.length}개${adTxt} · 제외 ${miss}${recoTxt} · ${KGP_SELECTED.size}개 선택`;
   } else {
-    c.textContent = `상품 ${_kgpCards.length}개${adTxt} · ${KGP_SELECTED.size}개 선택`;
+    c.textContent = `상품 ${_kgpCards.length}개${adTxt}${recoTxt} · ${KGP_SELECTED.size}개 선택`;
   }
 }
 

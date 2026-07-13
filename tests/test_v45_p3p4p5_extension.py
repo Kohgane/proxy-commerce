@@ -105,4 +105,4 @@ def test_p5_fab_documentElement_and_observer_reattach():
 
 
 def test_manifest_version_bumped():
-    assert MANIFEST["version"] == "1.5.71"
+    assert MANIFEST["version"] == "1.5.72"

@@ -37,7 +37,7 @@ def test_v45_p3_sponsored_products_included_not_excluded():
 def test_scanned_vs_product_count_surfaced():
     # 정직한 '전체 N개 중 상품 M개' 표기
     assert "_kgpScannedCount" in CS
-    assert "전체 ${_kgpScannedCount}개 중 상품 ${_kgpCards.length}개" in CS
+    assert "메인 ${_kgpScannedCount}개 중 상품 ${_kgpCards.length}개" in CS
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치")

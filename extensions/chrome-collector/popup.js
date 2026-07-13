@@ -158,11 +158,14 @@ if (hoverAnchor) {
       const ex = r.excl || {};
       const exclLine = "제외: 광고 " + (ex.ad || 0) + " · 파싱실패 " + (ex.parse || 0)
         + " · URL실패 " + (ex.url || 0) + " · 중복 " + (ex.dup || 0) + " · 비상품영역 " + (ex.region || 0);
+      // v66 STEP1: 메인 그리드 n/n + 추천영역 제외 m(분모 뻥튀기 금지).
+      const mainLine = "메인 그리드: 상품 " + r.cards + " / 스캔 " + r.scanned
+        + (ex.reco ? " · 추천영역 제외 " + ex.reco : "");
       body.innerHTML = [
         "호스트: " + esc(r.host) + " · " + supported,
         "판정: " + (PT[r.pageType] || r.pageType) + " · 버튼: " + (BTN[r.button] || r.button),
-        "카드 감지: " + r.cards + "건 (제네릭 " + r.generic + " · 어댑터 " + adap + ")",
-        "스캔 전체: " + r.scanned + "건",
+        mainLine,
+        "제네릭 " + r.generic + " · 어댑터 " + adap,
         exclLine,
       ].map(esc).join("<br>");
     });

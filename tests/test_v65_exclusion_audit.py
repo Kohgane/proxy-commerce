@@ -20,11 +20,11 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.71"
+    assert MANIFEST["version"] == "1.5.72"
 
 
 def test_source_contract():
-    assert "let _kgpExcl = { ad: 0, region: 0, parse: 0, url: 0, dup: 0 }" in CS
+    assert "let _kgpExcl = { ad: 0, region: 0, parse: 0, url: 0, dup: 0, reco: 0 }" in CS
     assert "function _kgpExclReset()" in CS
     assert "_kgpExclReset();" in CS                       # 스캔마다 초기화
     # kgpDetectState가 excl 노출.
