@@ -41,6 +41,38 @@ def _dry_run() -> bool:
     return os.getenv("ADAPTER_DRY_RUN", "0") == "1"
 
 
+def classify_translate_error(exc: Exception) -> str:
+    """v64 STEP6: 번역 실패 원인을 사람이 읽을 한 줄로 분류(무음 금지·오귀인 금지).
+
+    키가 설정돼 있는데 실패한 경우, '키 미설정'으로 오귀인하지 않고 실제 원인을 표기한다.
+    - 인증(401/403) → 키가 잘못됐거나 만료됨
+    - 모델(404/400 model) → 모델명(OPENAI_MODEL)이 잘못됨
+    - 쿼터(429) → 사용량/결제 한도 초과
+    - 타임아웃 → 응답 지연
+    - 네트워크 → 연결 실패
+    """
+    s = str(exc or "").lower()
+    status = None
+    resp = getattr(exc, "response", None)
+    if resp is not None:
+        status = getattr(resp, "status_code", None)
+    if status in (401, 403) or "unauthorized" in s or "invalid_api_key" in s or "authenticationerror" in s:
+        return "API 키가 잘못됐거나 만료됐어요(키 재발급 후 재설정)"
+    if status == 429 or "rate limit" in s or "quota" in s or "insufficient_quota" in s:
+        return "API 사용량·결제 한도를 초과했어요(플랜·결제 확인)"
+    if status in (404, 400) and "model" in s:
+        return "설정한 모델명(OPENAI_MODEL)이 잘못됐어요"
+    if "model" in s and ("does not exist" in s or "not found" in s):
+        return "설정한 모델명(OPENAI_MODEL)이 잘못됐어요"
+    if "timeout" in s or "timed out" in s:
+        return "번역 서버 응답이 지연됐어요(잠시 후 재시도)"
+    if "connection" in s or "network" in s or "resolve" in s or "ssl" in s:
+        return "번역 서버에 연결하지 못했어요(네트워크·프록시 확인)"
+    if status:
+        return f"번역 API 오류(HTTP {status})"
+    return "번역 API 호출에 실패했어요"
+
+
 _CAT_LABEL = {
     "BAG": "가방", "CLO": "의류", "BTY": "뷰티", "FOD": "식품", "ELC": "가전", "DIG": "디지털",
     "HOM": "홈·리빙", "HLT": "건강", "SPT": "스포츠·레저", "TOY": "완구", "BBY": "유아", "PET": "반려동물",
@@ -305,7 +337,8 @@ class AITranslator:
             result["provider"] = "openai"
             return result
         except Exception as exc:
-            logger.warning("OpenAI 번역 실패, stub으로 폴백: %s", exc)
+            reason = classify_translate_error(exc)
+            logger.warning("OpenAI 번역 실패(%s): %s", reason, exc)   # v64 STEP6: 원인 로깅(무음 금지)
             return {
                 "title_ko": title,
                 "description_ko": description,
@@ -313,6 +346,7 @@ class AITranslator:
                 "copy_smartstore": f"[openai-fallback] {title}",
                 "copy_11st": f"[openai-fallback] {title}",
                 "provider": "openai-fallback",
+                "error": reason,
             }
 
     def _translate_deepl(self, title: str, description: str) -> dict:
@@ -344,7 +378,8 @@ class AITranslator:
                 "provider": "deepl",
             }
         except Exception as exc:
-            logger.warning("DeepL 번역 실패, stub으로 폴백: %s", exc)
+            reason = classify_translate_error(exc)
+            logger.warning("DeepL 번역 실패(%s): %s", reason, exc)   # v64 STEP6: 원인 로깅(무음 금지)
             return {
                 "title_ko": title,
                 "description_ko": description,
@@ -352,6 +387,7 @@ class AITranslator:
                 "copy_smartstore": f"[deepl-fallback] {title}",
                 "copy_11st": f"[deepl-fallback] {title}",
                 "provider": "deepl-fallback",
+                "error": reason,
             }
 
     def _copy_openai(self, title: str, marketplace: str, hint: str) -> str:

@@ -2311,6 +2311,7 @@ def collect_bulk_translate():
     updated = 0
     translated = 0
     blocked = 0
+    fail_reason = ""          # v64 STEP6: 키가 있는데 호출 실패한 실제 원인(오귀인 방지)
     results = []
     try:
         for item_id in item_ids:
@@ -2333,8 +2334,13 @@ def collect_bulk_translate():
                     title_ko = (out.get("title_ko") or "").strip() or title
                     desc_ko = (out.get("description_ko") or "").strip() or desc
                     provider = out.get("provider", "stub")
+                    if out.get("error") and not fail_reason:
+                        fail_reason = str(out.get("error"))       # 키 있는데 실패한 원인 포착
                 except Exception as exc:
-                    logger.debug("번역 실패(원문 유지): %s", exc)
+                    from .ai.translator import classify_translate_error
+                    if not fail_reason:
+                        fail_reason = classify_translate_error(exc)
+                    logger.warning("번역 실패(원문 유지): %s", exc)
             real = provider not in ("none", "stub", "")
             # 실 번역기가 있는데 무료 한도로 막힌 경우만 '차단'으로 집계(stub은 차단 아님).
             if (not allow) and translator is not None and (title or desc):
@@ -2366,7 +2372,18 @@ def collect_bulk_translate():
 
     message = None
     if translated == 0 and blocked == 0:
-        message = "번역기(OPENAI_API_KEY 또는 DEEPL_API_KEY)가 설정되지 않아 원문을 유지했습니다."
+        # v64 STEP6: 키가 있는데 실패했으면 '키 미설정'으로 오귀인하지 않고 실제 원인 표기(무음 금지).
+        try:
+            from .ai.translator import AITranslator as _AT
+            _has_key = _AT()._select_provider() != "stub"
+        except Exception:
+            _has_key = False
+        if fail_reason and _has_key:
+            message = f"번역에 실패했어요 — {fail_reason}"
+        elif _has_key:
+            message = "번역 결과가 비어 원문을 유지했어요(잠시 후 재시도)."
+        else:
+            message = "번역기(OPENAI_API_KEY 또는 DEEPL_API_KEY)가 설정되지 않아 원문을 유지했습니다."
     elif blocked > 0:
         message = (f"무료 번역 {_limit}회를 모두 사용했습니다. {blocked}개는 번역하지 못했어요 — "
                    "구독하거나 토큰을 충전하면 계속 번역할 수 있습니다(결제 미설정 시 운영자 문의).")
@@ -2374,6 +2391,7 @@ def collect_bulk_translate():
                     "total": len(item_ids), "blocked": blocked,
                     "free_limit": _limit, "free_used": _used_before + translated,
                     "free_remaining": new_remaining, "unlimited": _unlimited,
+                    "fail_reason": fail_reason,          # v64 STEP6: 실패 원인(무음 금지)
                     "message": message, "results": results})
 
 
