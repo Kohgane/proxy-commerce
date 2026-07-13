@@ -82,7 +82,7 @@ def test_bookmarklet_toast_version_stamp():
     assert "K('수집 중… ('+BMV+')',true)" in js       # 즉시 토스트에 bm-vN
     assert "BMV+'+'+rv" in js                          # 채택 시 (bm-vN+run-vM)
     run = v._bookmarklet_run_js()
-    assert "ext_version:'run-v58'" in run
+    assert "ext_version='run-v62'" in run   # v62: 래퍼가 공유 추출기 결과에 버전 스탬프
 
 
 def test_extension_toast_has_version():

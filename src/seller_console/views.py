@@ -5540,7 +5540,7 @@ def bookmarklet():
 
 
 _BM_CORE_VER = "bm-v58"   # v58 STEP3: 북마클릿 코어 버전(파일 생성 시 토스트에 주입 — 죽은 버전 혼동 차단)
-_BM_RUN_VER = "run-v58"   # run.js 채택 시 (bm-vN+run-vM)
+_BM_RUN_VER = "run-v62"   # run.js 채택 시 (bm-vN+run-vM)
 
 
 def _bookmarklet_js(server: str, token: str, translate: bool) -> str:
@@ -5591,30 +5591,42 @@ def _bookmarklet_js(server: str, token: str, translate: bool) -> str:
     )
 
 
-def _bookmarklet_run_js() -> str:
-    """/seller/bookmarklet/run.js — 로더가 주입하는 확장 추출기(토큰 없음). window.__kgpRun(cb) 정의.
+_BM_EXTRACTOR_CACHE = None
 
-    v55 Tier2(갤러리 스코프·srcset 최고해상·판매가 PR·h1 타이틀)를 서버 배포물로 분리 → 추출 개선을 이
-    파일 재배포만으로 반영(북마클릿 재설치 불요). 전송·토큰은 코어가 담당(여기엔 URL·토큰 노출 0).
+
+def _shared_extractor_js() -> str:
+    """v62 STEP1: 확장·북마클릿 공유 추출기 소스(extensions/chrome-collector/kgp-extractor.js) 1회 로드.
+    경로별 추출기 중복 구현 제거 — 이 단일 파일이 window.kgpExtractProduct를 정의."""
+    global _BM_EXTRACTOR_CACHE
+    if _BM_EXTRACTOR_CACHE is None:
+        p = os.path.join(os.path.dirname(__file__), "..", "..",
+                         "extensions", "chrome-collector", "kgp-extractor.js")
+        try:
+            with open(p, encoding="utf-8") as f:
+                _BM_EXTRACTOR_CACHE = f.read()
+        except Exception as exc:
+            logger.warning("공유 추출기 로드 실패(run.js): %s", exc)
+            _BM_EXTRACTOR_CACHE = ""
+    return _BM_EXTRACTOR_CACHE
+
+
+def _bookmarklet_run_js() -> str:
+    """/seller/bookmarklet/run.js — 로더가 주입하는 추출기. window.__kgpRun(cb) 정의.
+
+    v62 STEP1(추출기 단일화): 확장 콘텐츠 스크립트와 **동일한 kgp-extractor.js**를 번들해
+    window.kgpExtractProduct를 정의하고, 얇은 __kgpRun 래퍼가 그 결과에 html·버전만 얹어 cb에 넘긴다.
+    → 북마클릿·확장 추출 품질 편차 소멸(단일 소스). 전송·토큰은 코어가 담당(여기엔 URL·토큰 노출 0).
     """
-    return (
-        "(function(){"
-        "function M(p){try{var e=document.querySelector('meta[property=\"'+p+'\"],meta[name=\"'+p+'\"]');return e?(e.content||''):''}catch(e){return ''}}"
-        "function G(s){if(!s||s.indexOf('data:')===0)return false;if(/(logo|sprite|icon|avatar|placeholder|loading|blank|pixel|banner|thumb_)/i.test(s))return false;return true;}"
-        "function GX(el){var r=/(recommend|related|similar|also|you-?may|sponsored|ranking|footer|comment|qna|review-?list)/i;var c=el&&el.parentElement,d=0;while(c&&d<10){var t=((c.className&&c.className.baseVal!==undefined?c.className.baseVal:(c.className||''))+' '+(c.id||''));if(t&&r.test(t))return true;c=c.parentElement;d++;}return false;}"
-        "function BS(im){var s=im.currentSrc||im.getAttribute('data-src')||im.getAttribute('data-original')||im.getAttribute('data-lazy')||im.src||'';if(im.srcset){var b='',w=-1;im.srcset.split(',').forEach(function(p){var g=p.trim().split(/\\s+/);var ww=g[1]?parseInt(g[1],10)||0:0;if(g[0]&&ww>=w){w=ww;b=g[0];}});if(b)s=b;}return s;}"
-        "function PP(t){var m=String(t).match(/([\\u20a9$\\u20ac\\u00a3\\u00a5]|\\uc6d0|USD|KRW|JPY|CNY)\\s*([\\d,]+(?:\\.\\d+)?)|([\\d,]+(?:\\.\\d+)?)\\s*(\\uc6d0|USD|KRW|JPY|CNY)/i);if(!m)return null;var sym=m[1]||m[4]||'';var num=(m[2]||m[3]||'').replace(/,/g,'');var CM={'\\u20a9':'KRW','\\uc6d0':'KRW','$':'USD','\\u00a5':'JPY','\\u20ac':'EUR','\\u00a3':'GBP'};var cur=CM[sym]||(/^[A-Z]{3}$/i.test(sym)?sym.toUpperCase():'');return num?{price:num,currency:cur}:null;}"
-        "function PR(){try{var ns=document.querySelectorAll('[class*=price i],[class*=Price],[itemprop=price],[data-price],[class*=amount i]');var best=null,bf=-1;for(var i=0;i<ns.length;i++){var el=ns[i];if(GX(el))continue;var st=false,cu=el,dd=0;while(cu&&dd<4){var tg=(cu.tagName||'').toLowerCase();if(tg==='del'||tg==='s'||tg==='strike'){st=true;break;}var tk=((cu.className&&cu.className.baseVal!==undefined?cu.className.baseVal:(cu.className||''))+'');if(/(original|strike|line-?through|regular|\\uc815\\uac00|\\uc6d0\\uac00|compare)/i.test(tk)){st=true;break;}cu=cu.parentElement;dd++;}if(st)continue;var pp=PP(el.getAttribute('content')||el.getAttribute('data-price')||el.textContent||'');if(!pp)continue;var fs=0;try{fs=parseFloat(getComputedStyle(el).fontSize)||0;}catch(e){}if(fs>=bf){bf=fs;best=pp;}}return best;}catch(e){return null;}}"
-        "window.__kgpRun=function(cb){try{"
-        "var imgs=[],sn={};var og=M('og:image');if(G(og)){imgs.push(og);sn[og]=1;}"
-        "try{document.querySelectorAll('[class*=gallery i] img,[class*=swiper i] img,[class*=carousel i] img,[class*=preview i] img,[class*=main-image i] img,[class*=mainImage i] img,[class*=bigImg i] img').forEach(function(im){if(GX(im))return;var s=BS(im);if(s&&G(s)&&!sn[s]){sn[s]=1;imgs.push(s);}});}catch(e){}"
-        "var h1t=((document.querySelector('h1')||{}).textContent||'').trim().slice(0,300);"
-        "var mp=M('product:price:amount'),mc=M('product:price:currency');var dp=mp?{price:mp,currency:mc}:PR();"
-        "var _fs={title:h1t?'tier2':(M('og:title')?'tier3':'tier2'),price:dp?(mp?'tier3':'tier2'):'none',images:imgs.length?(imgs.length===1&&og?'tier3':'tier2'):'none'};"
-        "cb({url:location.href,title:(h1t||M('og:title')||document.title||'').slice(0,300),price:dp?dp.price:'',currency:dp?dp.currency:'',field_sources:_fs,description:M('og:description')||M('description')||'',images:imgs.slice(0,30),html:(document.documentElement?document.documentElement.outerHTML:'').slice(0,900000),ext_version:'" + _BM_RUN_VER + "'});"
-        "}catch(e){try{cb(null)}catch(_){}}};"
-        "})();"
+    core = _shared_extractor_js()
+    wrapper = (
+        "(function(){window.__kgpRun=function(cb){try{"
+        "var r=(typeof window.kgpExtractProduct==='function')?(window.kgpExtractProduct()||{}):{};"
+        "try{r.html=(document.documentElement?document.documentElement.outerHTML:'').slice(0,900000);}catch(e){}"
+        "r.ext_version='" + _BM_RUN_VER + "';"
+        "cb(r);"
+        "}catch(e){try{cb(null)}catch(_){}}};})();"
     )
+    return core + "\n" + wrapper
 
 
 def _percent_encode_js(js: str) -> str:
