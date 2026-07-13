@@ -132,8 +132,8 @@ async function _kgpEnrichOne(item, settings) {
     KgpEnrich.current = item.url;
     _kgpBroadcastEnrich();
     await _kgpWaitTabComplete(tab.id, 22000);
-    await _kgpSleep(1200);                    // SPA·lazy 이미지 정착 여유
-    const meta = await _kgpSendTab(tab.id, { action: "extractMeta" });
+    // v65 STEP1: 렌더 완료 대기 후 추출(정본 경로) — content_script가 가격+메인이미지 로드 감지(최대 8초).
+    const meta = await _kgpSendTab(tab.id, { action: "extractMetaWait" });
     if (!meta) throw new Error("상세 추출 실패(빈 응답)");
     const body = {
       item_id: item.item_id,

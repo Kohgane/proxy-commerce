@@ -367,6 +367,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse(extractProductMeta());
     return true;
   }
+  // v65 STEP1: 렌더 완료 대기 후 추출(정본 경로) — 보강 큐가 백그라운드 탭에서 사용.
+  //   가격+메인이미지 로드 감지(최대 8초) → 접힘 상세 펼침 → 렌더된 DOM 추출. 부분이면 partial 표기.
+  if (msg.action === "extractMetaWait") {
+    const _wait = (typeof window.kgpWaitRendered === "function") ? window.kgpWaitRendered : (cb) => cb({ partial: false });
+    _wait((res) => {
+      const _finish = () => {
+        let meta = {};
+        try { meta = extractProductMeta() || {}; } catch (e) { meta = {}; }
+        meta.partial = !!(res && res.partial);
+        sendResponse(meta);
+      };
+      // 상세 접힘(더보기) 펼쳐 상세 이미지·불릿까지 렌더 후 추출.
+      try { if (typeof window.kgpRevealDetailFolds === "function") window.kgpRevealDetailFolds(_finish); else _finish(); }
+      catch (e) { _finish(); }
+    }, 8000);
+    return true;   // 비동기 응답
+  }
   // v42 E-5: 벌크 수집 진행률 실시간 갱신(background가 1건마다 전송).
   if (msg.action === "bulkProgress") {
     kgpSetStatus(`수집 중… (${msg.done}/${msg.total})`);

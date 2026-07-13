@@ -29,8 +29,10 @@ def _playwright_ok() -> bool:
 
 # ── source-contract: 추출 코드 경로 존재(어디서나) ──
 def test_title_has_multi_tier_fallback():
-    # v60 STEP1: 제목 = 어댑터 셀렉터 → Tier1(JSON) → 본문 h1(UI 제외) → og:title → document.title.
-    assert "var title = at || j.title || h1t || ogt || (document.title" in EX
+    # v60 STEP1 / v65 STEP1: 제목 = 어댑터 → Tier1(JSON) → 본문 h1(UI 제외) → og → document.title,
+    #   순수 사이트명(_isBareSiteName)은 후보에서 배제하며 첫 유효값 채택.
+    assert 's: "adapter"' in EX and 's: "tier1"' in EX and 's: "tier2"' in EX and 's: "tier3"' in EX
+    assert "_isBareSiteName" in EX
     assert "_cleanH1" in EX and '_meta("og:title")' in EX
 
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import glob
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -32,8 +33,11 @@ def test_injected_ui_exclusion_and_adapter_source():
     # kgp-* 우리 UI + 사이드패널/챗/어시스턴트 제외
     for tok in ("kgp-", "assistant", "chat", "sidebar", "complementary"):
         assert tok in EX
-    # 우선순위: 어댑터 → j.title → cleanH1 → og → document.title
-    assert "var title = at || j.title || h1t || ogt" in EX
+    # 우선순위: 어댑터 → j.title(tier1) → cleanH1(tier2) → og → document.title(tier3).
+    #   v65 STEP1: 순수 사이트명(_isBareSiteName)은 후보에서 배제하며 이 순서로 첫 유효값 채택.
+    assert "function _isBareSiteName" in EX
+    cands = re.search(r"var _cands = \[(.*?)\];", EX, re.S).group(1)
+    assert cands.index('s: "adapter"') < cands.index('s: "tier1"') < cands.index('s: "tier2"') < cands.index('s: "tier3"')
 
 
 # ── behavioral: 삽입 UI 존재 상태에서 제목 오염 차단 ──
