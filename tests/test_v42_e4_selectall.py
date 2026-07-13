@@ -31,7 +31,8 @@ def test_title_selectors_broadened():
 
 
 def test_honest_excluded_count_shown():
-    assert "제외 ${miss}(광고 등)" in CS
+    # v64 STEP2: 광고(스폰서)와 구조적 제외를 분리 표기(제외=광고 아님, 광고는 별도 카운트).
+    assert "제외 ${miss}" in CS and "광고 ${ads}" in CS
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치")
