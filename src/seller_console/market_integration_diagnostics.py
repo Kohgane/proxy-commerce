@@ -97,18 +97,32 @@ def _shopify_read_step() -> dict[str, Any]:
 
     raw = ShopifyAdapter().check_connection()
     if raw.get("ok"):
-        detail = " / ".join(filter(None, [str(raw.get("shop_name") or "").strip(), str(raw.get("shop_domain") or "").strip(), str(raw.get("plan_name") or "").strip()]))
+        detail = " / ".join(filter(None, [
+            str(raw.get("shop_name") or "").strip(),
+            str(raw.get("shop_domain") or "").strip(),
+            str(raw.get("plan_name") or "").strip(),
+            (f"API {raw.get('api_version')}" if raw.get("api_version") else ""),   # v61 STEP2: 버전 표기
+        ]))
         return _step(True, "shopify", "read_connection", hint="GraphQL shop 조회 성공", detail=detail or "Shopify 연결 확인 완료", raw=raw)
 
     http_status = int(raw.get("http_status") or 0)
+    # v61 STEP2: 실패 지점 구분(미설정/401/403). api_error 뭉뚱그림 금지 — 실제 HTTP·본문 요약을 detail에.
     error_code = "api_error"
     if raw.get("status") == "not_configured":
         error_code = "token_missing"
     elif http_status == 401:
         error_code = "token_expired"
-    elif http_status == 403:
+    elif http_status == 403 or raw.get("status") == "scope_insufficient":
         error_code = "scope_insufficient"
-    return _step(False, "shopify", "read_connection", error_code=error_code, hint=str(raw.get("message") or "").strip(), detail=str(raw.get("reason") or raw.get("message") or "").strip(), raw=raw)
+    _missing = raw.get("missing_env") or []
+    _detail_bits = [
+        (f"미설정 env: {', '.join(_missing)}" if _missing else ""),          # 값 미표시 — 이름만
+        (f"HTTP {http_status}" if http_status else ""),
+        str(raw.get("reason") or raw.get("message") or "").strip(),
+    ]
+    return _step(False, "shopify", "read_connection", error_code=error_code,
+                 hint=str(raw.get("message") or "").strip(),
+                 detail=" · ".join([b for b in _detail_bits if b]) or "Shopify 연결 실패", raw=raw)
 
 
 def _adapter_health_step(market: str) -> dict[str, Any]:

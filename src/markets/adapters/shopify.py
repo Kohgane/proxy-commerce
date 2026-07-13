@@ -351,6 +351,7 @@ class ShopifyAdapter(MarketAdapter):
                 "shop_domain": str(shop.get("myshopifyDomain") or self._shop_domain()).strip(),
                 "currency": str(shop.get("currencyCode") or "").strip(),
                 "plan_name": str(plan.get("displayName") or "").strip(),
+                "api_version": self._api_version(),   # v61 STEP2: 사용 중 Admin API 버전 표기
             }
         except requests.RequestException:
             return {
@@ -411,6 +412,12 @@ class ShopifyAdapter(MarketAdapter):
 
     @staticmethod
     def _error_summary(response: requests.Response) -> str:
+        # v61 STEP2: 실제 HTTP·본문 요약(api_error 뭉뚱그림 금지) + 자격증명 마스킹.
+        try:
+            from src.utils.secret_mask import mask_text
+        except Exception:
+            mask_text = lambda s, **k: s   # noqa: E731
+        out = ""
         try:
             body = response.json()
         except Exception:
@@ -418,14 +425,20 @@ class ShopifyAdapter(MarketAdapter):
         if isinstance(body, dict):
             errors = body.get("errors")
             if isinstance(errors, str):
-                return errors
-            if isinstance(errors, dict):
-                parts = []
-                for key, value in errors.items():
-                    parts.append(f"{key}: {value}")
-                if parts:
-                    return "; ".join(parts)
-        return response.reason or "요청이 거절되었습니다."
+                out = errors
+            elif isinstance(errors, dict):
+                out = "; ".join(f"{k}: {v}" for k, v in errors.items())
+            elif isinstance(errors, list) and errors:
+                out = "; ".join(str((e or {}).get("message") or e) for e in errors[:3])
+        if not out:
+            # JSON 오류 구조 없으면 원문 본문 앞부분(실제 HTTP 상태 포함) — 뭉뚱그림 금지.
+            try:
+                raw = (response.text or "")[:300]
+            except Exception:
+                raw = ""
+            out = (f"HTTP {response.status_code} {response.reason or ''} — {raw}".strip()
+                   if raw else (response.reason or f"HTTP {response.status_code}"))
+        return mask_text(out)
 
     def _idempotency_key(self, payload: ListingPayload) -> str:
         options = payload.options if isinstance(payload.options, dict) else {}
