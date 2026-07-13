@@ -94,6 +94,15 @@ if (diagToggle) {
   });
 }
 
+// v64 STEP3: 호버 수집 버튼 위치(이미지 영역 앵커) — 사이트 무관 chrome.storage.local, content_script가 즉시 반영.
+const hoverAnchor = document.getElementById("hoverAnchor");
+if (hoverAnchor) {
+  chrome.storage.local.get("kgp_hover_anchor", (r) => { hoverAnchor.value = (r && r.kgp_hover_anchor) || "center"; });
+  hoverAnchor.addEventListener("change", () => {
+    chrome.storage.local.set({ kgp_hover_anchor: hoverAnchor.value });   // onChanged로 즉시 반영
+  });
+}
+
 // v63 STEP1: 감지 진단 패널 — 현재 탭의 실측(판정·카드수·어댑터 매치·버튼상태)을 표시.
 //   추측 서술이 아니라 content_script가 실제로 계산한 값 → '왜 안 떠?'를 캡처 한 장으로 진단.
 (function () {

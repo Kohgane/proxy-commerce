@@ -1246,21 +1246,37 @@ const KGP_BRIDGE_MINI = '<svg width="14" height="14" viewBox="0 0 512 512" aria-
   '<line x1="80" y1="356" x2="432" y2="356" stroke="#119a8e" stroke-width="46" stroke-linecap="round"/>' +
   '<circle cx="256" cy="108" r="40" fill="#f5821f"/></svg>';
 
+// v64 STEP3: 호버 수집 버튼 스펙 확정 — 이미지 영역 오버레이 앵커(요시다 '수집됨✓' 스타일).
+//   원 과대·글자 과소 → 지름 절반(min-height 66→34)·텍스트 위주 필(아이콘 21→14, 글자 위계 ↑).
+//   앵커: 기본 중앙, 설정(kgp_hover_anchor)에서 좌하 7시(bl)/우하 5시(br) 선택. 터치는 우상단 상시 소형.
+//   토큰: 먹(#1a1714)·금(#c9a24b) 테, 수집됨=청록(#119a8e). 임의 색 금지.
+let KGP_HOVER_ANCHOR = "center";   // v64 STEP3: chrome.storage.local(사이트 무관 공유) — 팝업이 설정.
+function kgpHoverAnchor() {
+  const a = KGP_HOVER_ANCHOR;
+  return (a === "bl" || a === "br" || a === "center") ? a : "center";
+}
+function _kgpAnchorCss() {
+  if (KGP_TOUCH) return ["top:8px", "right:8px"];       // 터치: 우상단 상시
+  const a = kgpHoverAnchor();
+  if (a === "bl") return ["bottom:10px", "left:10px"];   // 7시
+  if (a === "br") return ["bottom:10px", "right:10px"];  // 5시
+  return ["top:50%", "left:50%", "transform:translate(-50%,-50%)"];  // 중앙(기본)
+}
 function kgpQuickBtnStyle(collected) {
-  // v45 P1: 중앙 수집 버튼 1.5배(아이콘·글자·패딩 비례) + 히트영역 ≥66px.
   return [
     "position:absolute", "z-index:2147483639",
-    KGP_TOUCH ? "top:8px" : "top:50%", KGP_TOUCH ? "right:8px" : "left:50%",
-    KGP_TOUCH ? "" : "transform:translate(-50%,-50%)",
-    "display:flex", "align-items:center", "justify-content:center", "gap:9px", "white-space:nowrap",
-    KGP_TOUCH ? "padding:8px 14px" : "padding:11px 22px", "border-radius:999px", "cursor:pointer",
-    "min-height:66px",                 // 히트영역 ≥66px
-    "font:800 " + (KGP_TOUCH ? "15px" : "20px") + "/1 -apple-system,BlinkMacSystemFont,sans-serif",
+  ].concat(_kgpAnchorCss()).concat([
+    "display:flex", "align-items:center", "justify-content:center",
+    "gap:6px", "white-space:nowrap",
+    KGP_TOUCH ? "padding:5px 11px" : "padding:6px 14px", "border-radius:999px", "cursor:pointer",
+    "min-height:34px",                 // v64: 지름 절반(66→34), 텍스트 위주 필
+    "font:800 " + (KGP_TOUCH ? "13px" : "15px") + "/1 -apple-system,BlinkMacSystemFont,sans-serif",
+    "letter-spacing:-.01em",
     "background:" + (collected ? "#119a8e" : "#1a1714"), "color:#fff",
-    "border:2px solid " + (collected ? "#0f8c80" : "#c9a24b"),
-    "box-shadow:0 6px 20px rgba(0,0,0,.42)", "pointer-events:auto",
+    "border:1.5px solid " + (collected ? "#0f8c80" : "#c9a24b"),
+    "box-shadow:0 3px 12px rgba(0,0,0,.34)", "pointer-events:auto",
     "opacity:" + ((KGP_TOUCH || collected) ? "1" : "0"), "transition:opacity .12s",
-  ].join(";");
+  ]).join(";");
 }
 function kgpMarkQuickCollected(btn) {
   btn.dataset.collected = "1";
@@ -1572,7 +1588,7 @@ function kgpInjectListing() {
         q.className = "kgp-card-quick";
         q.dataset.url = c.url;
         if (done) q.dataset.collected = "1";
-        q.innerHTML = '<span style="display:flex;width:21px;height:21px;flex:none">' + KGP_BRIDGE_MINI +   // 아이콘 1.5배(14→21)
+        q.innerHTML = '<span style="display:flex;width:14px;height:14px;flex:none">' + KGP_BRIDGE_MINI +   // v64 STEP3: 아이콘 축소(21→14), 텍스트 위주
           '</span><span class="kgp-q-label">' + (done ? "수집됨 ✓" : "수집") + "</span>";
         q.style.cssText = kgpQuickBtnStyle(done);
         q.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); kgpQuickCollect(c, q); });
@@ -1750,10 +1766,11 @@ function kgpDiagApply() {
 }
 function kgpLoadSourcesThen(cb) {
   try {
-    chrome.storage.local.get(["kgp_sources", "kgp_fab_enabled", "kgp_diag"], (r) => {
+    chrome.storage.local.get(["kgp_sources", "kgp_fab_enabled", "kgp_diag", "kgp_hover_anchor"], (r) => {
       KGP_SOURCES = (r && r.kgp_sources) || {};
       KGP_FAB_ENABLED = !(r && r.kgp_fab_enabled === false);   // 기본 ON
       KGP_DIAG = !!(r && r.kgp_diag);                          // 진단 모드 기본 OFF
+      KGP_HOVER_ANCHOR = (r && r.kgp_hover_anchor) || "center";  // v64 STEP3: 수집 버튼 위치
       kgpDiagApply();
       cb && cb();
     });
@@ -1769,6 +1786,10 @@ try {
       changed = true;
     }
     if (changes && changes.kgp_diag) { KGP_DIAG = !!changes.kgp_diag.newValue; kgpDiagApply(); }
+    if (changes && changes.kgp_hover_anchor) {          // v64 STEP3: 위치 변경 즉시 반영
+      KGP_HOVER_ANCHOR = changes.kgp_hover_anchor.newValue || "center";
+      document.querySelectorAll(".kgp-card-quick").forEach((q) => { q.style.cssText = kgpQuickBtnStyle(q.dataset.collected === "1"); });
+    }
     if (changed) kgpRefresh();                          // 런타임 즉시 반영
   });
 } catch (e) { /* noop */ }
