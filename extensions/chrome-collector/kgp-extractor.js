@@ -382,6 +382,22 @@
     }
     return parts.join(" > ");
   }
+  // v66 STEP2: 컨테이너 합성 텍스트 가격 — 테무 등은 통화·숫자를 여러 span으로 분절(₩|1|,|899)해
+  //   노드 단위 매칭이 실패한다. content·data-price·aria-label 속성 + textContent를 **공백·개행 제거로
+  //   조립**해 통화 패턴 매칭. 취소선 제외(_priceOriginal)는 컨테이너 단위 유지. 통화 미감지 시 빈 통화(추정 금지).
+  function _composedPrice(el) {
+    var cands = [
+      el.getAttribute && el.getAttribute("content"),
+      el.getAttribute && el.getAttribute("data-price"),
+      el.getAttribute && el.getAttribute("aria-label"),
+      (el.textContent || "").replace(/\s+/g, ""),   // span 분절 조립(공백·개행 제거)
+    ];
+    for (var i = 0; i < cands.length; i++) {
+      var p = parsePriceStr(cands[i]);
+      if (p && p.price) return p;
+    }
+    return null;
+  }
   function _domPrice() {
     var nodes = [];
     try {
@@ -391,8 +407,7 @@
     for (var i = 0; i < nodes.length; i++) {
       var el = nodes[i];
       if (_nonProdRegion(el) || _priceOriginal(el) || _nonPriceCtx(el)) continue;
-      var raw = el.getAttribute("content") || el.getAttribute("data-price") || (el.textContent || "").trim();
-      var p = parsePriceStr(raw); if (!p) continue;
+      var p = _composedPrice(el); if (!p) continue;
       var fs = 0; try { fs = parseFloat(getComputedStyle(el).fontSize) || 0; } catch (e) {}
       cands.push({ price: p.price, currency: p.currency, val: parseFloat(p.price) || 0, fs: fs, path: _nodePath(el) });
     }
