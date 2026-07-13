@@ -372,6 +372,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     kgpSetStatus(`수집 중… (${msg.done}/${msg.total})`);
     return false;
   }
+  // v63 STEP1: 감지 디버그 패널 — 팝업이 조회. 지금 이 페이지의 실측 상태를 반환('왜 안 떠?'를 캡처 한 장으로).
+  if (msg.action === "kgpDetectState") {
+    let pt = "unknown", allowed = false, cards = 0, btn = "none";
+    try { allowed = kgpHostAllowed() || kgpEntrySession(); } catch (e) {}
+    try { pt = kgpPageType(); } catch (e) {}
+    try { kgpFindCards(); cards = _kgpLastDetect.merged; } catch (e) {}
+    try {
+      if (document.getElementById(KGP_TOOLBAR_ID)) btn = "bulkbar";
+      else if (document.getElementById(KGP_REOPEN_ID)) btn = "reopen";
+      else if (document.getElementById(KGP_BTN_ID)) btn = "fab";
+    } catch (e) {}
+    sendResponse({
+      ok: true, host: (location.hostname || ""), allowed: allowed, pageType: pt,
+      cards: cards, generic: _kgpLastDetect.generic, adapter: _kgpLastDetect.adapter,
+      adapterMatched: _kgpLastDetect.adapterMatched, scanned: _kgpScannedCount || 0, button: btn,
+    });
+    return true;
+  }
   return false;
 });
 
@@ -1084,11 +1102,22 @@ function _kgpGenericCards() {
       const w = img.naturalWidth || img.width || 0;
       const h = img.naturalHeight || img.height || 0;
       if (w < 140 || h < 140) continue;                    // 작은 썸네일/아이콘 제외
-      const a = img.closest("a[href]");
+      let a = img.closest("a[href]");
+      // v63 STEP1: 테무 등 SPA는 이미지를 <a>로 안 감쌀 수 있음 → 카드 컨테이너의 상세링크 앵커로 폴백.
+      let card = (a && a.closest("li,article,div"))
+        || img.closest("li,article,[class*='card' i],[class*='item' i],[class*='product' i],[class*='goods' i]");
+      if ((!a || !a.href || a.href.indexOf("http") !== 0) && card) {
+        const cand = card.querySelectorAll("a[href]");
+        for (let j = 0; j < cand.length; j++) {
+          const hh = cand[j].href || "";
+          if (hh.indexOf("http") === 0 && _kgpIsDetailHref(hh)) { a = cand[j]; break; }  // 상세링크 우선
+        }
+        if ((!a || (a.href || "").indexOf("http") !== 0) && cand.length && (cand[0].href || "").indexOf("http") === 0) a = cand[0];
+      }
       if (!a || !a.href || a.href.indexOf("http") !== 0) continue;
       const href = a.href.split("#")[0];
       if (seen[href]) continue;
-      const card = a.closest("li,article,div") || a;
+      if (!card) card = a.closest("li,article,div") || a;
       if (_kgpInBadRegion(card)) continue;                 // 추천/푸터/캐러셀 제외
       const text = (card.innerText || "").trim();
       const pr = _kgpPrice(text);
@@ -1110,13 +1139,49 @@ function _kgpGenericCards() {
   return cards;
 }
 
+// v63 STEP1: 상품 고유키 — 어댑터/제네릭이 같은 상품을 다른 URL 형태로 잡아도 하나로 묶는다.
+//   아마존 ASIN(/dp/·/gp/product/), 테무·굿즈(goods_id·-g-<n>·/goods/<n>) 우선, 그 외 쿼리/ref 제거 URL.
+function _kgpCardKey(url) {
+  const u = url || "";
+  let m = u.match(/\/(?:dp|gp\/product|gp\/aw\/d)\/([A-Z0-9]{10})/i);
+  if (m) return "asin:" + m[1].toUpperCase();
+  m = u.match(/[?&]goods_id=(\d+)/i) || u.match(/[/-]g-(\d{4,})/i) || u.match(/\/goods\/(\d+)/i);
+  if (m) return "goods:" + m[1];
+  return u.split("#")[0].split("?")[0].replace(/\/(?:ref|spm|dp)=.*$/i, "").replace(/\/+$/, "").toLowerCase();
+}
+
+// v63 STEP1: 감지 역전 — 제네릭(요시다에서 검증된 건강 경로)을 항상 먼저, 어댑터는 정밀 보강만.
+//   같은 상품키는 어댑터 결과로 덮어써(정밀: 스폰서 태그·정돈된 제목/가격), 제네릭만 잡은 상품은 유지한다.
+//   → 어댑터 셀렉터가 현행 DOM과 불일치(사망)해도 제네릭 커버리지를 절대 막지 않는다(폴백 차단 구조 제거).
+function _kgpMergeCards(generic, adapter) {
+  const byKey = {}, order = [];
+  (generic || []).forEach((c) => {
+    const k = _kgpCardKey(c && c.url); if (!k) return;
+    if (!byKey[k]) order.push(k);
+    byKey[k] = c;
+  });
+  (adapter || []).forEach((c) => {
+    const k = _kgpCardKey(c && c.url); if (!k) return;
+    if (!byKey[k]) order.push(k);
+    byKey[k] = c;                          // 어댑터 우선(정밀 보강) — 없으면 신규 추가
+  });
+  return order.map((k) => byKey[k]);
+}
+
+// v63 STEP1: 마지막 감지 스냅샷(팝업 디버그 패널이 조회) — 추측이 아니라 실측을 보고한다.
+let _kgpLastDetect = { generic: 0, adapter: 0, merged: 0, adapterMatched: false };
 function kgpFindCards() {
   const host = (location.hostname || "").toLowerCase();
-  _kgpScannedCount = 0;            // 매 스캔 초기화(어댑터가 '전체 N개'를 설정)
-  let cards = [];
-  try { if (/(^|\.)amazon\.[a-z.]+$/.test(host)) cards = _kgpAmazonCards(); } catch (e) { cards = []; }
-  if (!cards.length) { try { cards = _kgpGenericCards(); } catch (e) { cards = []; } }
-  return cards;
+  _kgpScannedCount = 0;            // 매 스캔 초기화(어댑터/제네릭이 '전체 N개'를 설정)
+  let generic = [], gScanned = 0;
+  try { generic = _kgpGenericCards(); gScanned = _kgpScannedCount; } catch (e) { generic = []; }
+  let adapter = [];
+  try { if (/(^|\.)amazon\.[a-z.]+$/.test(host)) { _kgpScannedCount = 0; adapter = _kgpAmazonCards(); } } catch (e) { adapter = []; }
+  // 정직 카운트: 어댑터가 스캔한 전체(있으면)와 제네릭 스캔 중 큰 값 유지('전체 N 중 상품 M').
+  _kgpScannedCount = Math.max(_kgpScannedCount || 0, gScanned || 0);
+  const merged = _kgpMergeCards(generic, adapter);
+  _kgpLastDetect = { generic: generic.length, adapter: adapter.length, merged: merged.length, adapterMatched: adapter.length > 0 };
+  return merged;
 }
 
 function kgpCardBadgeStyle(selected) {
