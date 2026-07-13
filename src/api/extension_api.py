@@ -423,12 +423,14 @@ def collect_enrich():
         if len(merged) > len(extra.get("detail_images") or []):
             extra["detail_images"] = merged; changed["detail_images"] = len(merged)
     gi = data.get("gallery") or data.get("gallery_images") or data.get("images")
+    rep = ""
     if isinstance(gi, list) and gi:
-        merged = _union(extra.get("images"), gi)
-        if len(merged) > len(extra.get("images") or []):
-            extra["images"] = merged; changed["images"] = len(merged)
-        if not extra.get("gallery_images"):
-            extra["gallery_images"] = _union(extra.get("gallery_images"), gi)
+        # v66 STEP3: 상세 페이지 고해상 갤러리를 **대표로** — 검색결과 저해상 썸네일을 대표로 쓰지 않는다.
+        #   보강 갤러리(hi-res)를 앞에 두어 union → 대표(images[0])가 고해상이 되게.
+        merged = _union(gi, extra.get("images"))
+        extra["images"] = merged; changed["images"] = len(merged)
+        extra["gallery_images"] = _union(gi, extra.get("gallery_images"))
+        rep = merged[0] if merged else ""
     extra["enriched"] = True
     # 상태 배지 재계산(부분→성공).
     try:
@@ -436,8 +438,13 @@ def collect_enrich():
         extra["collect_status"] = _ccs(extra, title_fallback=item.get("title") or "")
     except Exception:
         pass
-    ok = _update(item_id, seller_ids=ids, extra_json=_json.dumps(extra, ensure_ascii=False))
+    _upd = {"extra_json": _json.dumps(extra, ensure_ascii=False)}
+    if rep:
+        _upd["image_url"] = rep     # 목록 대표 썸네일도 고해상으로 교체
+    ok = _update(item_id, seller_ids=ids, **_upd)
     st = extra.get("collect_status") or {}
+    # v66 STEP3: 보강 판정 회수 — 큐가 돌았는지/필드를 채웠는지 서버 로그로 특정(어느 쪽인지 PR 근거).
+    logger.info("[enrich] item=%s changed=%s status=%s rep=%s", item_id, changed, st.get("status"), bool(rep))
     return jsonify({"ok": bool(ok), "item_id": item_id, "changed": changed,
                     "status": st.get("status"), "filled": st.get("filled"), "total": st.get("total")})
 
