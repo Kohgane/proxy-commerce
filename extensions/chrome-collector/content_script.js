@@ -918,6 +918,19 @@ let _kgpCardByUrl = {};           // url → 카드 데이터(el 포함) — 재
 let _kgpScannedCount = 0;         // 마지막 스캔에서 본 후보 카드 총수(상품 M개 / 전체 N개 표기용)
 let _kgpClosed = false;           // 사용자가 툴바를 닫았으면 자동 재생성 안 함(같은 URL 동안)
 
+// v64 STEP2: 전체선택/전체수집 대상 — 기본은 실상품만(광고 제외). '광고 포함' 토글 시 전부.
+function _kgpInclAds() { return kgpLSget("kgp_incl_ads", "0") === "1"; }
+function _kgpSelectableUrls() {
+  const incl = _kgpInclAds();
+  return Object.keys(_kgpCardByUrl).filter((u) => {
+    const c = _kgpCardByUrl[u];
+    return incl || !(c && c.sponsored);
+  });
+}
+function _kgpAdCount() {
+  return Object.keys(_kgpCardByUrl).filter((u) => _kgpCardByUrl[u] && _kgpCardByUrl[u].sponsored).length;
+}
+
 function _kgpPrice(text) {
   const m = String(text || "").match(/([\d][\d.,]{1,})\s*원|(?:₩|\$|¥|€|£)\s*([\d][\d.,]{1,})/);
   if (!m) return { price: "", currency: "" };
@@ -990,7 +1003,14 @@ function kgpHostAllowed() {
 //   썸네일·추천레일·"본 적 있음"·캐러셀·푸터·광고 제외. "N개 발견" = 실제 수집 가능 수.
 // ---------------------------------------------------------------------------
 // 카드가 추천/푸터/캐러셀/광고 같은 '제품 그리드 아님' 영역에 속하면 제외.
-function _kgpInBadRegion(el) {
+// v64 STEP2: 구조적 비상품 영역(추천/캐러셀/푸터)과 광고 영역을 분리.
+//   opts.allowAds=true면 sponsor/ad/promo/deal 토큰으로 '영역 제외'하지 않는다 — 아마존
+//   스폰서는 실상품이므로 명시 신호(_kgpAmazonSponsored)로 '태깅'만 하고 카드는 살린다
+//   (과잉 휴리스틱 제외 = 66중 48 오제외의 근본 원인 제거). 구조적 비상품은 여전히 제외.
+function _kgpInBadRegion(el, opts) {
+  opts = opts || {};
+  const structRe = /(footer|recommend|related|carousel|slider|viewed|recently|history|also-?viewed|also-?bought|similar|banner|rcmd)/;
+  const adRe = /(sponsor|advert|\bads?\b|promo|deal-?strip)/;
   let n = el;
   for (let i = 0; n && i < 9; i++, n = n.parentElement) {
     let cls = "";
@@ -998,7 +1018,8 @@ function _kgpInBadRegion(el) {
     const tag = (n.tagName || "").toLowerCase();
     const meta = ((n.id || "") + " " + cls + " " + ((n.getAttribute && (n.getAttribute("aria-label") || n.getAttribute("data-component-type"))) || "")).toLowerCase();
     if (tag === "footer" || tag === "header" || tag === "nav") return true;
-    if (/(footer|recommend|related|carousel|slider|sponsor|advert|\bads?\b|viewed|recently|history|also-?viewed|also-?bought|similar|banner|promo|deal-?strip|rcmd)/.test(meta)) return true;
+    if (structRe.test(meta)) return true;
+    if (!opts.allowAds && adRe.test(meta)) return true;   // 광고 영역 제외(아마존은 allowAds로 유지)
   }
   return false;
 }
@@ -1052,7 +1073,7 @@ function _kgpAmazonCards() {
   _kgpScannedCount = all.length;                          // '전체 N개' (상품/비상품 합)
   all.forEach((el) => {
     try {
-      if (_kgpInBadRegion(el)) return;
+      if (_kgpInBadRegion(el, { allowAds: true })) return;   // v64 STEP2: 스폰서=실상품 → 영역 제외 안 함(명시 태깅만)
       // 유효 ASIN(B0… 등 10자 영숫자)만 = 실제 상품. 뮤직/앱/프로모 위젯은 ASIN이 없거나 비정상.
       const asin = (el.getAttribute("data-asin") || "").trim();
       if (!/^[A-Z0-9]{10}$/.test(asin)) return;
@@ -1287,11 +1308,14 @@ function kgpUpdateToolbar() {
   const c = document.getElementById("kgp-tb-count");
   if (!c) return;
   // v42 E-4: 정직 표기 — 인식된 상품 수 + 제외(광고 등) 수를 눈에 보이게(조용한 누락 금지).
+  // v64 STEP2: 광고(스폰서) 수를 명시(오너가 분류 정합을 눈으로 검증). 제외=구조적 비상품(광고 아님).
+  const ads = _kgpAdCount();
+  const adTxt = ads ? ` · 광고 ${ads}` : "";
   if (_kgpScannedCount > _kgpCards.length) {
     const miss = _kgpScannedCount - _kgpCards.length;
-    c.textContent = `전체 ${_kgpScannedCount}개 중 상품 ${_kgpCards.length}개 · 제외 ${miss}(광고 등) · ${KGP_SELECTED.size}개 선택`;
+    c.textContent = `전체 ${_kgpScannedCount}개 중 상품 ${_kgpCards.length}개${adTxt} · 제외 ${miss} · ${KGP_SELECTED.size}개 선택`;
   } else {
-    c.textContent = `${_kgpCards.length}개 발견 · ${KGP_SELECTED.size}개 선택`;
+    c.textContent = `상품 ${_kgpCards.length}개${adTxt} · ${KGP_SELECTED.size}개 선택`;
   }
 }
 
@@ -1368,6 +1392,7 @@ function kgpBuildToolbar() {
     '<button class="kgp-tb-btn" data-act="clear" style="' + ghost + '">선택 해제</button>' +
     '<button class="kgp-tb-btn" data-act="collect-sel" style="' + gold + '">선택 수집</button>' +
     '<button class="kgp-tb-btn" data-act="collect-all" style="' + teal + '">전체 수집</button>' +
+    '<button class="kgp-tb-btn" data-act="incl-ads" title="전체선택·전체수집에 광고(스폰서) 상품을 포함할지" style="' + ghost + '">' + (_kgpInclAds() ? '광고 포함 ✓' : '광고 포함') + '</button>' +
     '<span id="kgp-tb-status" style="opacity:.95;font-size:15px;max-width:420px"></span>' +
     '<button class="kgp-tb-btn" data-act="auto" title="새 목록 페이지에서 자동으로 열지 여부" style="' + ghost + '">' + (autoOn ? '자동' : '수동') + '</button>' +
     '<button data-act="close" title="접기(구석 배지로)" style="' + btnBase + 'background:transparent;color:#c9bda6;border:none;font-size:19px">✕</button>';
@@ -1376,11 +1401,19 @@ function kgpBuildToolbar() {
     if (!t) return;
     const act = t.dataset.act;
     if (act === "all-sel") {
+      // v64 STEP2: 전체선택 = 실상품 전체(광고 제외, '광고 포함' 켜면 전부).
+      const pick = new Set(_kgpSelectableUrls());
       document.querySelectorAll(".kgp-card-chk").forEach((b) => {
         const url = b.dataset.url;
+        if (!pick.has(url)) return;
         const c = _kgpCardByUrl[url];
         kgpSetCardSelected(url, b, c && c.el, true);
       });
+      kgpUpdateToolbar();
+    } else if (act === "incl-ads") {
+      const next = _kgpInclAds() ? "0" : "1";
+      kgpLSset("kgp_incl_ads", next);
+      t.textContent = next === "1" ? "광고 포함 ✓" : "광고 포함";
       kgpUpdateToolbar();
     } else if (act === "clear") {
       document.querySelectorAll(".kgp-card-chk").forEach((b) => {
@@ -1393,7 +1426,7 @@ function kgpBuildToolbar() {
     } else if (act === "collect-sel") {
       kgpCollect([...KGP_SELECTED]);
     } else if (act === "collect-all") {
-      kgpCollect(Object.keys(_kgpCardByUrl));
+      kgpCollect(_kgpSelectableUrls());          // v64 STEP2: 광고 제외(광고 포함 토글로 전부)
     } else if (act === "auto") {
       // 팝업 자동표시 on/off(v7). 끄면 지금 접고, 이후 목록 페이지는 구석 배지로만 시작.
       const next = kgpLSget("kgp_bar_auto", "1") === "0" ? "1" : "0";
@@ -1516,6 +1549,21 @@ function kgpInjectListing() {
         kgpToggleCard(c.url, badge, c.el);
       });
       c.el.appendChild(badge);
+
+      // v64 STEP2: 광고(스폰서) 카드는 우상단 'AD' 미니 배지로 시각화(오너가 분류 오판을 눈으로 검증).
+      //   토큰 준수(먹 배경·금 테). 실상품이므로 카드는 살리되, 전체선택은 기본 제외(광고 포함 토글로 켬).
+      if (c.sponsored && !c.el.querySelector(":scope > .kgp-card-ad")) {
+        const ad = document.createElement("div");
+        ad.className = "kgp-card-ad";
+        ad.textContent = "AD";
+        ad.style.cssText = [
+          "position:absolute", "top:6px", "right:6px", "z-index:2147483640",
+          "padding:2px 7px", "border-radius:6px", "pointer-events:none", "user-select:none",
+          "font:800 10px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+          "letter-spacing:.06em", "background:#1a1714", "color:#e8d6a8", "border:1px solid #c9a24b",
+        ].join(";");
+        c.el.appendChild(ad);
+      }
 
       // v42 E-3: 호버 즉시 수집 버튼(썸네일 중앙, 데스크톱=hover 노출/터치=우상단 상시).
       if (!c.el.querySelector(":scope > .kgp-card-quick")) {
