@@ -6231,6 +6231,32 @@ def collect_history_count():
     return jsonify({"ok": True, "total": total})
 
 
+@bp.get("/collect/field-loss")
+def collect_field_loss():
+    """v63 STEP2: 필드 손실 지도 + 어댑터 품질 게이트(diagnostics).
+
+    수집한 상품의 저장 collect_status를 도메인(테무·아마존·요시다…)별로 집계해
+    [필드×tier×결과] 매트릭스와 충족률을 반환한다. 디폴트 마켓 충족률 90% 미만이면
+    해당 어댑터를 '미완'으로 표기(가짜 '완료' 서술 금지). 본인 스코프만.
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "auth"}), 401
+    try:
+        days = int(request.args.get("days", "90"))
+    except (TypeError, ValueError):
+        days = 90
+    try:
+        from .collect_history_store import list_items
+        from src.collectors.field_loss_matrix import build_field_loss_matrix, adapter_quality_gate
+        items = list_items(days=days, seller_ids=_seller_identities(), limit=None)
+        matrix = build_field_loss_matrix(items)
+        gate = adapter_quality_gate(items)
+    except Exception as exc:
+        logger.warning("[collect-field-loss] 집계 실패: %s", exc)
+        return jsonify({"ok": False, "error": "server"}), 200
+    return jsonify({"ok": True, "matrix": matrix, "adapter_gate": gate})
+
+
 @bp.get("/collect/history/since")
 def collect_history_since():
     """v57 STEP2: 수집 → 목록 실시간 증분 반영(전체 리렌더 금지).
