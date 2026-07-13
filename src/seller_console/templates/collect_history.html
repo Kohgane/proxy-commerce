@@ -204,7 +204,7 @@
               <th class="ps-3"><input type="checkbox" id="chkAll" title="전체 선택" aria-label="전체 선택"></th>
               <th>이미지</th>
               <th>제목</th>
-              <th>가격</th>
+              <th class="text-end">가격</th>
               <th>경로</th>
               <th>수집 시각</th>
               <th>상태</th>
@@ -876,8 +876,8 @@ async function runBulkStatus(status) {
     if (!data.ok) { pcToast(data.error || '상태 변경 실패', 'error'); return; }
     // 상태 배지 갱신
     const badge = status === 'archived'
-      ? '<span class="badge bg-secondary"><i class="bi bi-archive"></i> 보관</span>'
-      : '<span class="badge bg-success"><i class="bi bi-check-lg"></i></span>';
+      ? '<span class="badge" style="background:var(--hanji,#f5efe3);color:var(--muted,#8a8275);border:1px solid var(--line,#e6decb)"><i class="bi bi-archive"></i> 보관</span>'
+      : '<span class="badge" style="background:color-mix(in srgb,var(--teal,#119a8e) 15%,transparent);color:var(--teal,#119a8e)"><i class="bi bi-check-lg"></i></span>';
     ids.forEach(id => {
       const chk = document.querySelector(`.row-chk[value="${id}"]`);
       const tr = chk && chk.closest('tr');
