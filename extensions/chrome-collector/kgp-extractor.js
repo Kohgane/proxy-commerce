@@ -130,13 +130,25 @@
     //     __kgpTier1Url 에 기록(sources=tier1:{URL패턴}). MAIN world에서만 채워짐(추가 요청 0).
     try {
       var cap = global.__kgpCaptured;
-      if (cap && cap.length) {
+      // v62 STEP2: goods_id 페이지(테무 등)면 **내 goods_id 매칭 캡처만** 채택(이전 상품 응답 오채택 금지).
+      var pgid = (typeof global.__kgpPageGoodsId === "function") ? global.__kgpPageGoodsId() : "";
+      if (pgid) {
+        var m = (typeof global.__kgpMatchCapture === "function") ? global.__kgpMatchCapture(pgid) : null;
+        if (m && m.obj) {
+          cands.push(m.obj);
+          try { global.__kgpTier1Url = m.url || ""; global.__kgpTier1Score = m.score || 0; global.__kgpTier1Mismatch = false; } catch (e2) {}
+        } else {
+          // 내 goods_id 응답 미포착 → 다른 상품 캡처 채택 금지. Tier2(DOM) 폴백 신호.
+          try { global.__kgpTier1Mismatch = true; global.__kgpTier1Url = ""; global.__kgpTier1Score = 0; } catch (e2) {}
+        }
+      } else if (cap && cap.length) {
+        // goods_id 없는 사이트(비테무) → 기존 점수순 후보(오채택 위험 낮음).
         for (var c = 0; c < cap.length; c++) {
           var e = cap[c];
           var obj = (e && e.obj !== undefined) ? e.obj : e;   // v54 구조({obj,score,url}) / 구버전 호환
           if (obj && typeof obj === "object") cands.push(obj);
         }
-        try { global.__kgpTier1Url = (cap[0] && cap[0].url) || ""; global.__kgpTier1Score = (cap[0] && cap[0].score) || 0; } catch (e2) {}
+        try { global.__kgpTier1Url = (cap[0] && cap[0].url) || ""; global.__kgpTier1Score = (cap[0] && cap[0].score) || 0; global.__kgpTier1Mismatch = false; } catch (e2) {}
       }
     } catch (e) {}
     // (1) live 전역 — 북마클릿(페이지월드)에서만 유효. 확장(격리월드)에선 대개 undefined.

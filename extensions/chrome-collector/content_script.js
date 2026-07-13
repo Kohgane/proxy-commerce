@@ -728,11 +728,13 @@ function kgpExtractMerged(cb) {
         try { if (diag.topUrl) chrome.storage && chrome.storage.local && chrome.storage.local.set({ ["kgp_api_pat:" + location.hostname]: diag.topUrl }); } catch (_) {}
       } else {
         cause = !diag.netBound ? "인터셉터 미주입(MAIN world 로드 실패 — 확장 재로딩 필요)"
+          // v62 STEP2: 내 goods_id 응답 미포착 — 다른 상품 응답 오채택 방지 위해 Tier2 폴백(정직 안내).
+          : (diag.pageGoodsId && diag.mismatch ? "이 상품의 API 응답 미포착(goods_id " + diag.pageGoodsId + ") — 페이지 새로고침 후 재시도"
           : (diag.captured === 0 ? "매치 0건(상품 API 응답을 아직 못 잡음 — 페이지 새로고침 후 다시 수집)"
-          : "시그니처 미달(최고점 " + (diag.topScore || 0) + "/4 — 팝업 '자가진단 모드'로 후보 표 확인)");
+          : "시그니처 미달(최고점 " + (diag.topScore || 0) + "/4 — 팝업 '자가진단 모드'로 후보 표 확인)"));
         console.warn("%c[고가수집기] Tier1 무동작 → DOM 폴백 사용. 원인: " + cause, "color:#c2503c;font-weight:bold");
       }
-      merged.tier1_diag = { used: usedTier1, netBound: !!diag.netBound, captured: diag.captured || 0, topScore: diag.topScore || 0, source: merged.tier1_source || "", cause: cause };
+      merged.tier1_diag = { used: usedTier1, netBound: !!diag.netBound, captured: diag.captured || 0, topScore: diag.topScore || 0, source: merged.tier1_source || "", cause: cause, page_goods_id: diag.pageGoodsId || "", goods_matched: !!diag.matched };
       console.log("[고가수집기] MAIN world 병합 — 이미지 " + ((isolated.images || []).length) + "→" + ((merged.images || []).length)
         + ", 가격 " + (isolated.price || "-") + "→" + (merged.price || "-"));
     } catch (_) {}
