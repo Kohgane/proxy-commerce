@@ -534,6 +534,33 @@
         var m = String(lbl).match(OPT_LABEL); _push(m ? m[0] : "옵션", vals);
       }
     } catch (e) {}
+    // v62 STEP3: 아마존 트위스터 — 축 이름 정확 매핑(색상/사이즈). 값은 v58 스와치 경로가 이미 잡지만
+    //   이름이 '옵션'으로 뭉개짐 → 행 id(inline-twister-row-color_name) / .a-form-label('Color:')로 축명 복원.
+    try {
+      var _TW_ID = { color: "색상", size: "사이즈", style: "스타일", pattern: "패턴", flavor: "종류", model: "모델", material: "소재", edition: "에디션" };
+      var trows = document.querySelectorAll('[id^="inline-twister-row-"],#twister [class*="twisterTextDiv" i]');
+      for (var t2 = 0; t2 < trows.length; t2++) {
+        var row = trows[t2];
+        if (_nonProdRegion(row)) continue;
+        // 축명: 행 id의 표준 축(color/size…)을 한글로 우선 매핑, 없으면 .a-form-label 텍스트.
+        var rid = (row.id || "").replace("inline-twister-row-", "").split("_")[0].toLowerCase();
+        var nm = _TW_ID[rid] || "";
+        if (!nm) {
+          var flbl = row.querySelector(".a-form-label,label");
+          if (flbl) {
+            var ft = String(flbl.innerText || flbl.textContent || "").replace(/[:：]\s*$/, "").replace(/\s+/g, " ").trim();
+            var fm = ft.match(OPT_LABEL); if (fm) nm = fm[0];
+          }
+        }
+        var tv = [], sw = row.querySelectorAll('.swatches li,[class*="swatch" i] li,ul.a-button-list li,[role="radio"],button[data-asin]');
+        for (var s3 = 0; s3 < sw.length && tv.length < 60; s3++) {
+          var el3 = sw[s3];
+          var st = String((el3.getAttribute && (el3.getAttribute("title") || el3.getAttribute("aria-label"))) || el3.innerText || el3.textContent || "").replace(/\s+/g, " ").trim();
+          if (st && st.length <= 40 && !/^(선택|choose|select|please|담기|구매|장바구니)/i.test(st)) tv.push(st);
+        }
+        _push(nm || "옵션", tv);
+      }
+    } catch (e) {}
     // v58 STEP2: 라디오·버튼 그룹(구매박스 인근 색상/사이즈 스와치) — select 없는 SPA(테무 등) 대응.
     //   role=radiogroup / [class*=sku i] / [class*=option i] / [class*=variant i] / [class*=spec i] 컨테이너에서
     //   버튼·라디오·라벨의 텍스트를 옵션 값으로. 추천/리뷰 영역 제외. 값 2+일 때만(확신 없으면 미수집=정직).
@@ -542,6 +569,7 @@
       for (var g = 0; g < groups.length; g++) {
         var grp = groups[g];
         if (_nonProdRegion(grp) || _galleryExcluded(grp)) continue;
+        if (grp.closest && grp.closest('[id^="inline-twister-row-"]')) continue;   // v62: 트위스터는 위에서 축명 매핑(중복 방지)
         if (grp.querySelector("select")) continue;       // select은 위에서 처리(중복 방지)
         // 그룹 라벨: aria-label / [class*=label] / 첫 텍스트 노드 중 OPT_LABEL 매칭.
         var glbl = grp.getAttribute("aria-label") || "";
