@@ -73,6 +73,7 @@ def test_detection_snapshot_node():
     ])
     harness = (
         "let _kgpScannedCount = 0;\n"
+        "let _kgpExcl={ad:0,region:0,parse:0,url:0,dup:0};function _kgpExclReset(){};\n"
         "let _kgpLastDetect = { generic:0, adapter:0, merged:0, adapterMatched:false };\n"
         "function _kgpAmazonCards(){ return []; }\n"           # temu 호스트라 미호출(안전 스텁)
         "function mk(p){p=p||{};p.getAttribute=p.getAttribute||function(){return null;};"

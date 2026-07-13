@@ -404,6 +404,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       ok: true, host: (location.hostname || ""), allowed: allowed, pageType: pt,
       cards: cards, generic: _kgpLastDetect.generic, adapter: _kgpLastDetect.adapter,
       adapterMatched: _kgpLastDetect.adapterMatched, scanned: _kgpScannedCount || 0, button: btn,
+      excl: _kgpExcl,   // v65 STEP2: 제외 사유 분해(광고/파싱/URL/중복/영역)
     });
     return true;
   }
@@ -960,6 +961,11 @@ let _kgpCards = [];
 let _kgpCardByUrl = {};           // url → 카드 데이터(el 포함) — 재스캔 시 '병합'(절대 비우지 않음)
 let _kgpScannedCount = 0;         // 마지막 스캔에서 본 후보 카드 총수(상품 M개 / 전체 N개 표기용)
 let _kgpClosed = false;           // 사용자가 툴바를 닫았으면 자동 재생성 안 함(같은 URL 동안)
+// v65 STEP2: 제외 사유별 분해 카운트('제외 (광고 등)' 뭉뚱그림 금지). 스캔마다 초기화.
+//   ad=광고(스폰서, 태깅만·전체선택 제외) · region=비상품영역(추천/푸터) · parse=카드 파싱 실패(제목/ASIN 등)
+//   · url=URL 추출 실패(앵커 없음) · dup=중복(같은 상품).
+let _kgpExcl = { ad: 0, region: 0, parse: 0, url: 0, dup: 0 };
+function _kgpExclReset() { _kgpExcl = { ad: 0, region: 0, parse: 0, url: 0, dup: 0 }; }
 
 // v64 STEP2: 전체선택/전체수집 대상 — 기본은 실상품만(광고 제외). '광고 포함' 토글 시 전부.
 function _kgpInclAds() { return kgpLSget("kgp_incl_ads", "0") === "1"; }
@@ -1116,26 +1122,27 @@ function _kgpAmazonCards() {
   _kgpScannedCount = all.length;                          // '전체 N개' (상품/비상품 합)
   all.forEach((el) => {
     try {
-      if (_kgpInBadRegion(el, { allowAds: true })) return;   // v64 STEP2: 스폰서=실상품 → 영역 제외 안 함(명시 태깅만)
+      if (_kgpInBadRegion(el, { allowAds: true })) { _kgpExcl.region++; return; }   // v64 STEP2: 스폰서=실상품 → 영역 제외 안 함(명시 태깅만)
       // 유효 ASIN(B0… 등 10자 영숫자)만 = 실제 상품. 뮤직/앱/프로모 위젯은 ASIN이 없거나 비정상.
       const asin = (el.getAttribute("data-asin") || "").trim();
-      if (!/^[A-Z0-9]{10}$/.test(asin)) return;
+      if (!/^[A-Z0-9]{10}$/.test(asin)) { _kgpExcl.parse++; return; }   // v65 STEP2: 유효 ASIN 없음=파싱 실패
       // 중첩(스폰서 컨테이너 안 상품 카드) 시 같은 ASIN을 가진 조상이 있으면 스킵(중복 방지).
       const parentAsin = el.parentElement && el.parentElement.closest('[data-asin]:not([data-asin=""])');
-      if (parentAsin && parentAsin !== el && (parentAsin.getAttribute("data-asin") || "").trim() === asin) return;
+      if (parentAsin && parentAsin !== el && (parentAsin.getAttribute("data-asin") || "").trim() === asin) { _kgpExcl.dup++; return; }
       const sponsored = _kgpAmazonSponsored(el);           // v45 P3: 제외 아님 — 태깅만(스폰서 상품도 수집).
+      if (sponsored) _kgpExcl.ad++;                         // v65 STEP2: 광고 카운트(제외 아님)
       // v42 E-4: 유효 ASIN이면 상품 — 앵커 셀렉터 변형·가격 없는 카드('옵션 보기' 등)도 누락하지 않는다.
       //   href는 앵커 없으면 ASIN으로 구성, 제목/이미지 셀렉터를 넓힌다. 가격은 선택.
       const a = el.querySelector('a.a-link-normal[href*="/dp/"], h2 a, a.a-link-normal.s-no-outline, a[href*="/dp/"]');
       let href = a && a.href ? a.href.split("?")[0].split("#")[0] : "";
       if (!href || href.indexOf("http") !== 0) href = location.origin + "/dp/" + asin;   // ASIN 폴백
-      if (seen[href]) return;
+      if (seen[href]) { _kgpExcl.dup++; return; }
       const img = el.querySelector("img.s-image") || el.querySelector("img");
       const titleEl = el.querySelector("h2 span") || el.querySelector("h2 a span") || el.querySelector("h2")
         || el.querySelector('[data-cy="title-recipe"] span') || el.querySelector(".a-size-base-plus, .a-size-medium");
       let title = titleEl ? (titleEl.innerText || titleEl.textContent || "").trim() : "";
       if (!title && img && img.alt) title = img.alt.trim();
-      if (!title && !img) return;                           // 제목·이미지 둘 다 없으면 상품 아님
+      if (!title && !img) { _kgpExcl.parse++; return; }     // 제목·이미지 둘 다 없으면 상품 아님
       const priceEl = el.querySelector(".a-price .a-offscreen") || el.querySelector(".a-price");
       const pr = _kgpPrice(priceEl ? priceEl.textContent : (el.innerText || ""));
       seen[href] = 1;
@@ -1178,19 +1185,19 @@ function _kgpGenericCards() {
         }
         if ((!a || (a.href || "").indexOf("http") !== 0) && cand.length && (cand[0].href || "").indexOf("http") === 0) a = cand[0];
       }
-      if (!a || !a.href || a.href.indexOf("http") !== 0) continue;
+      if (!a || !a.href || a.href.indexOf("http") !== 0) { _kgpExcl.url++; continue; }   // v65 STEP2: URL 추출 실패
       const href = a.href.split("#")[0];
-      if (seen[href]) continue;
+      if (seen[href]) { _kgpExcl.dup++; continue; }
       if (!card) card = a.closest("li,article,div") || a;
-      if (_kgpInBadRegion(card)) continue;                 // 추천/푸터/캐러셀 제외
+      if (_kgpInBadRegion(card)) { _kgpExcl.region++; continue; }   // 추천/푸터/캐러셀 제외
       const text = (card.innerText || "").trim();
       const pr = _kgpPrice(text);
       const titleEl = card.querySelector("h1,h2,h3,h4,[class*='title'],[class*='name']");
       const title = ((img.alt || "").trim()) || (titleEl ? titleEl.innerText : "") || text;
-      if (!title || title.trim().length < 4) continue;     // 제목 없으면 상품 후보 아님
+      if (!title || title.trim().length < 4) { _kgpExcl.parse++; continue; }     // 제목 없으면 상품 후보 아님
       scanned++;                                           // 상품 후보(제목+이미지+링크+영역OK)
       // v43-2: 가격 또는 상세링크 중 하나면 상품 인식(가격만 필수였던 옛 규칙이 27중16 누락 유발).
-      if (!pr.price && !_kgpIsDetailHref(href)) continue;  // 둘 다 없으면 제외(정직 카운트에 반영)
+      if (!pr.price && !_kgpIsDetailHref(href)) { _kgpExcl.parse++; continue; }  // 둘 다 없으면 제외(정직 카운트에 반영)
       seen[href] = 1;
       const bimg = _kgpBestImg(img) || img.src;             // v41 X-1: 실제 이미지 우선(placeholder 공유 방지)
       cards.push({
@@ -1237,6 +1244,7 @@ let _kgpLastDetect = { generic: 0, adapter: 0, merged: 0, adapterMatched: false 
 function kgpFindCards() {
   const host = (location.hostname || "").toLowerCase();
   _kgpScannedCount = 0;            // 매 스캔 초기화(어댑터/제네릭이 '전체 N개'를 설정)
+  _kgpExclReset();                 // v65 STEP2: 제외 사유 카운트 초기화
   let generic = [], gScanned = 0;
   try { generic = _kgpGenericCards(); gScanned = _kgpScannedCount; } catch (e) { generic = []; }
   let adapter = [];
