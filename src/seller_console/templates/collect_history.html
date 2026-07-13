@@ -266,10 +266,20 @@
           </div>
           <div class="d-flex flex-wrap gap-2">
             {% for m in upload_markets %}
+            {% if m.pending %}
+            {# v61 STEP3: 스마트스토어 심사중 — 비활성 + 배지(토큰 시도·실패 노출 없음). #}
+            <label class="market-tile border rounded px-3 py-2 d-flex align-items-center gap-2 mb-0 opacity-50" style="cursor:not-allowed"
+                   title="{{ m.pending_note }}">
+              <input class="form-check-input m-0" type="checkbox" disabled>
+              <span class="fw-semibold small">{{ m.label }}</span>
+              <span class="badge" style="background:color-mix(in srgb,var(--warn,#f5821f) 16%,transparent);color:var(--warn,#f5821f)"><i class="bi bi-hourglass-split"></i> {{ m.pending_note }}</span>
+            </label>
+            {% else %}
             <label class="market-tile border rounded px-3 py-2 d-flex align-items-center gap-2 mb-0" for="bm_{{ m.code }}">
               <input class="form-check-input bulk-market-chk m-0" type="checkbox" id="bm_{{ m.code }}" value="{{ m.code }}">
               <span class="fw-semibold small">{{ m.label }}</span>
             </label>
+            {% endif %}
             {% endfor %}
           </div>
         </div>

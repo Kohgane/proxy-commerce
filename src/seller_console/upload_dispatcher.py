@@ -24,6 +24,12 @@ except Exception:  # pragma: no cover - 브리지 모듈 부재 시 안전 폴�
 # 지원 마켓 코드
 SUPPORTED_MARKETS = ["coupang", "smartstore", "elevenst", "woocommerce", "shopify"]
 
+
+def smartstore_approved() -> bool:
+    """v61 STEP3: 스마트스토어(네이버 커머스솔루션) 승인 여부. 승인 전엔 업로드 시도 차단.
+    승인 완료 시 관리자가 SMARTSTORE_APPROVED=1(또는 true/yes) 설정으로 오픈."""
+    return str(os.getenv("SMARTSTORE_APPROVED", "")).strip().lower() in ("1", "true", "yes", "on")
+
 # 마켓 표시명
 MARKET_LABELS = {
     "coupang": "쿠팡",
@@ -160,6 +166,17 @@ class UploadDispatcher:
                 error_code="unsupported_market",
                 message=f"지원하지 않는 마켓: {market}",
                 hint="지원 마켓: " + ", ".join(SUPPORTED_MARKETS),
+            )
+
+        # v61 STEP3: 스마트스토어 약관 준수 게이트 — 커머스솔루션 승인 전에는 업로드 시도 자체 차단
+        #   (토큰 발급·실패 노출 금지). SMARTSTORE_APPROVED=1(env 또는 admin 토글) 시에만 활성.
+        if market == "smartstore" and not smartstore_approved():
+            return PrevalidationResult(
+                market=market,
+                ok=False,
+                error_code="smartstore_pending_review",
+                message="스마트스토어는 심사중입니다 — 커머스솔루션 승인 후 오픈됩니다.",
+                hint="네이버 커머스솔루션 승인 완료 후 관리자가 오픈합니다(현재는 등록 시도가 차단됩니다).",
             )
 
         # 토큰/환경변수 검증

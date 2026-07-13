@@ -50,6 +50,7 @@ class TestPrevalidateEnvAliases:
             monkeypatch.delenv(k, raising=False)
         monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "id")
         monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", "sec")
+        monkeypatch.setenv("SMARTSTORE_APPROVED", "1")   # v61 STEP3: 게이트 통과 후 env-alias 검증
         r = self._prevalidate("smartstore")
         assert r.ok is True
 

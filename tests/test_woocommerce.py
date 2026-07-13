@@ -92,17 +92,20 @@ class TestRequestWithRetry:
                 with pytest.raises(RuntimeError, match="Max retries exceeded"):
                     self.mod._request_with_retry('GET', 'http://example.com', max_retries=2)
 
-    def test_request_merges_auth_params(self):
-        """auth params와 추가 params가 함께 전달된다."""
+    def test_request_uses_basic_auth_header_not_query(self):
+        """v61 STEP1: 자격증명은 쿼리스트링이 아니라 HTTP Basic Auth(auth=)로 전달 + 브라우저 UA + 빈 sku 제거."""
         ok = _ok_response([])
         with patch('requests.request', return_value=ok) as mock_req:
             with patch.object(self.mod, '_woo_ck', return_value='ck_test'):
                 with patch.object(self.mod, '_woo_cs', return_value='cs_test'):
-                    self.mod._request_with_retry('GET', 'http://example.com', params={'sku': 'ABC'})
-                    called_params = mock_req.call_args[1]['params']
-                    assert called_params['consumer_key'] == 'ck_test'
-                    assert called_params['consumer_secret'] == 'cs_test'
-                    assert called_params['sku'] == 'ABC'
+                    self.mod._request_with_retry('GET', 'http://example.com', params={'sku': 'ABC', 'empty': ''})
+                    kw = mock_req.call_args[1]
+                    # 자격증명 = auth 튜플(헤더), 쿼리엔 없음
+                    assert kw.get('auth') == ('ck_test', 'cs_test')
+                    assert 'consumer_key' not in kw['params'] and 'consumer_secret' not in kw['params']
+                    assert kw['params'].get('sku') == 'ABC'
+                    assert 'empty' not in kw['params']                 # 빈 값 파라미터 제거
+                    assert 'Mozilla' in kw['headers']['User-Agent']    # 브라우저형 UA
 
 
 # ──────────────────────────────────────────────────────────

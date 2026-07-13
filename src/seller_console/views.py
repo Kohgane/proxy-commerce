@@ -6126,7 +6126,15 @@ def collect_history():
     _shape_collect_items(items, _current_lang)
 
     from .upload_dispatcher import MARKET_LABELS, SUPPORTED_MARKETS
-    upload_markets = [{"code": m, "label": MARKET_LABELS.get(m, m)} for m in SUPPORTED_MARKETS]
+    # v61 STEP3: 스마트스토어는 커머스솔루션 승인 전 '심사중'(비활성) — 등록 시도 차단(약관 준수).
+    from .upload_dispatcher import smartstore_approved as _ss_ok
+    _ss_pending = (not _ss_ok())
+    upload_markets = [
+        {"code": m, "label": MARKET_LABELS.get(m, m),
+         "pending": (m == "smartstore" and _ss_pending),
+         "pending_note": ("심사중 — 커머스솔루션 승인 후 오픈" if (m == "smartstore" and _ss_pending) else "")}
+        for m in SUPPORTED_MARKETS
+    ]
     from .category_classifier import CATEGORY_OPTIONS
     # 번역 무료 사용량(v3 P1-4) — UI에 '무료 N/한도 남음' 표시
     try:
