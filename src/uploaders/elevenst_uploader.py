@@ -231,7 +231,27 @@ class ElevenStUploader(BaseUploader):
             return ""
 
         code = _find("result_code", "resultCode", "ErrCode")
-        message = _find("result_text", "resultMsg", "ErrMsg") or "등록 실패"
+        raw_msg = _find("result_text", "resultMsg", "ErrMsg")
         product_no = _find("ProductNo", "product_no", "prdNo")
         ok = code in ("100", "200", "0") or bool(product_no)
-        return {"ok": ok, "product_no": product_no, "message": message}
+        # v61 STEP4: '등록 실패: 등록 실패' 동어반복 금지 — 응답 코드·메시지 원문(마스킹)으로 구체화.
+        try:
+            from src.utils.secret_mask import mask_text
+        except Exception:
+            mask_text = lambda s, **k: s   # noqa: E731
+        if raw_msg and code:
+            message = mask_text(f"[{code}] {raw_msg}")
+        elif raw_msg:
+            message = mask_text(raw_msg)
+        elif code:
+            message = f"11번가 응답 코드 {code} (메시지 없음 — 코드로 원인 확인 필요)"
+        else:
+            # 코드·메시지 둘 다 없음 → 원문 앞부분을 마스킹해 진단(뭉뚱그림 금지).
+            _raw = ""
+            try:
+                import xml.etree.ElementTree as _ET
+                _raw = _ET.tostring(root, encoding="unicode")[:300]
+            except Exception:
+                _raw = ""
+            message = ("11번가 응답을 해석하지 못했어요 — 원문: " + mask_text(_raw)) if _raw else "11번가 응답 없음(연결·키 확인 필요)"
+        return {"ok": ok, "code": code, "product_no": product_no, "message": message}

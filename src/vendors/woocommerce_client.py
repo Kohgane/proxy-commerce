@@ -63,22 +63,45 @@ _ORIGIN_MAP = {'JP': '일본', 'FR': '프랑스', 'US': '미국', 'KR': '한국'
 
 
 def _auth_params():
+    # v61: 하위호환용(테스트/구 호출). 실제 요청은 Basic Auth 헤더(_request_with_retry) 경로.
     return {"consumer_key": _woo_ck(), "consumer_secret": _woo_cs()}
 
 
+# v61 STEP1: Bluehost ModSecurity 회피 — 봇 UA 대신 일반 브라우저형 UA + Accept.
+_WOO_UA = os.getenv(
+    "WOO_USER_AGENT",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/125.0.0.0 Safari/537.36",
+)
+_WOO_HEADERS = {"User-Agent": _WOO_UA, "Accept": "application/json"}
+
+
+def _clean_params(extra_params):
+    """v61 STEP1: 빈 값 파라미터(특히 sku=) 제거 — WooCommerce가 빈 sku=로 406/오작동."""
+    return {k: v for k, v in (extra_params or {}).items()
+            if v is not None and str(v).strip() != ""}
+
+
 def _request_with_retry(method: str, url: str, max_retries: int = 3, **kwargs) -> requests.Response:
+    """WooCommerce API 요청 + 지수 백오프 재시도.
+
+    v61 STEP1(406 수리): 자격증명을 쿼리스트링 → **HTTP Basic Auth 헤더**(HTTPS 표준 경로)로,
+    일반 브라우저형 User-Agent(Bluehost ModSecurity 회피), 빈 sku= 파라미터 제거.
+    실패 시 응답 본문 요약을 **마스킹 후** 진단 로그에(자격증명 평문 0).
     """
-    WooCommerce API 요청 + 지수 백오프 재시도.
-    Rate limit 및 서버 에러(5xx) 처리 포함.
-    """
-    extra_params = kwargs.pop('params', {})
-    merged_params = {**_auth_params(), **extra_params}
+    from src.utils.secret_mask import mask_text, mask_url
+    extra_params = _clean_params(kwargs.pop('params', {}))
+    headers = {**_WOO_HEADERS, **(kwargs.pop('headers', {}) or {})}
+    ck, cs = _woo_ck(), _woo_cs()
+    auth = (ck, cs) if (ck and cs) else None
+    _masked_url = mask_url(url)
 
     for attempt in range(max_retries):
         try:
             from src.market_throttle import pace
             pace("woocommerce")   # v45: 큐 페이싱(자체 429 재시도는 아래 유지)
-            r = requests.request(method, url, params=merged_params, timeout=30, **kwargs)
+            r = requests.request(method, url, params=extra_params, headers=headers,
+                                 auth=auth, timeout=30, **kwargs)
             if r.status_code == 429:
                 retry_after = float(r.headers.get('Retry-After', 2))
                 logger.warning("WooCommerce rate limit hit, retrying after %ss", retry_after)
@@ -86,16 +109,25 @@ def _request_with_retry(method: str, url: str, max_retries: int = 3, **kwargs) -
                 continue
             if r.status_code >= 500:
                 wait = 2 ** attempt
-                logger.warning("WooCommerce server error %s, retrying in %ss", r.status_code, wait)
+                logger.warning("WooCommerce server error %s (%s), retrying in %ss",
+                               r.status_code, _masked_url, wait)
                 time.sleep(wait)
                 continue
+            if r.status_code >= 400:
+                # v61 STEP1: 4xx는 원인 진단(마스킹된 본문 요약) — 동어반복·평문 금지.
+                body = ""
+                try:
+                    body = mask_text(r.text[:400], secrets=[ck, cs])
+                except Exception:
+                    pass
+                logger.warning("WooCommerce %s %s → 실패 요약: %s", r.status_code, _masked_url, body)
             r.raise_for_status()
             return r
         except requests.exceptions.ConnectionError as e:
             if attempt == max_retries - 1:
                 raise
             wait = 2 ** attempt
-            logger.warning("Connection error, retrying in %ss: %s", wait, e)
+            logger.warning("Connection error, retrying in %ss: %s", wait, mask_text(str(e), secrets=[ck, cs]))
             time.sleep(wait)
     raise RuntimeError("Max retries exceeded for WooCommerce API")
 
@@ -280,10 +312,13 @@ def get_store_info() -> dict:
 
 
 def _find_by_sku(sku: str):
+    # v61 STEP1: 빈 sku로 조회하면 전체 목록의 첫 상품을 오매칭 → 빈 sku면 조회 안 함(신규 등록).
+    if not (sku or "").strip():
+        return None
     url = _woo_endpoint("products")
     r = _request_with_retry('GET', url, params={'sku': sku})
     lst = r.json()
-    return lst[0] if lst else None
+    return lst[0] if isinstance(lst, list) and lst else None
 
 
 def upsert_product(prod: dict):
