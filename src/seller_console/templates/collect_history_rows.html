@@ -69,6 +69,14 @@
     {% else %}
       <span class="badge" style="background:color-mix(in srgb,var(--danger,#d64545) 15%,transparent);color:var(--danger,#d64545)">{{ it.status }}</span>
     {% endif %}
+    {# v65 STEP4: 보강(2단 수집) 상태 — 대기(스피너)/완료. 단건은 배지 없음(보강 불필요). #}
+    {% if it.enrich_status == "pending" %}
+      <span class="badge d-inline-flex align-items-center gap-1 mt-1" style="background:var(--hanji,#f5efe3);color:var(--muted,#8a8275);border:1px solid var(--line,#e6decb)"
+            title="상세(옵션·상세·리뷰)를 백그라운드에서 보강 중이에요"><span class="spinner-border spinner-border-sm" style="width:.7rem;height:.7rem;border-width:.13em"></span> 보강 중…</span>
+    {% elif it.enrich_status == "done" %}
+      <span class="badge mt-1" style="background:color-mix(in srgb,var(--teal,#119a8e) 15%,transparent);color:var(--teal,#119a8e)"
+            title="상세 보강 완료"><i class="bi bi-stars"></i> 보강 완료</span>
+    {% endif %}
   </td>
   <td class="text-nowrap cardcell-actions">
     <button type="button" class="kgp-open-drawer btn btn-success btn-sm py-0"
