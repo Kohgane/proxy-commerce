@@ -2328,18 +2328,22 @@ def collect_bulk_translate():
             # 무료 한도 도달 시(실 번역기 있음) 이후 항목은 번역 차단 — 원문 유지.
             allow = _unlimited or (translated < _remaining)
             title_ko, desc_ko, provider = title, desc, "none"
+            item_err = ""            # v66 STEP4: 항목별 실패 사유(실패 항목 사유 명시)
             if allow and translator is not None and (title or desc):
                 try:
                     out = translator.translate_product({"title": title, "description": desc})
                     title_ko = (out.get("title_ko") or "").strip() or title
                     desc_ko = (out.get("description_ko") or "").strip() or desc
                     provider = out.get("provider", "stub")
-                    if out.get("error") and not fail_reason:
-                        fail_reason = str(out.get("error"))       # 키 있는데 실패한 원인 포착
+                    if out.get("error"):
+                        item_err = str(out.get("error"))
+                        if not fail_reason:
+                            fail_reason = item_err                # 키 있는데 실패한 원인 포착
                 except Exception as exc:
                     from .ai.translator import classify_translate_error
+                    item_err = classify_translate_error(exc)
                     if not fail_reason:
-                        fail_reason = classify_translate_error(exc)
+                        fail_reason = item_err
                     logger.warning("번역 실패(원문 유지): %s", exc)
             real = provider not in ("none", "stub", "")
             # 실 번역기가 있는데 무료 한도로 막힌 경우만 '차단'으로 집계(stub은 차단 아님).
@@ -2356,7 +2360,10 @@ def collect_bulk_translate():
                 updated += 1
             if real:
                 translated += 1
+            # v66 STEP4: 항목별 실패 사유 명시(진행/실패 표시용) — 실 번역기 있는데 안 된 항목만 사유.
+            _r_err = item_err if (not real and item_err) else ("무료 한도 소진" if (not allow and translator is not None and (title or desc)) else "")
             results.append({"id": item_id, "ok": bool(ok), "translated": real,
+                            "reason": _r_err,
                             "title": fields.get("title", item.get("title"))})
     except Exception as exc:
         logger.warning("일괄 번역 오류: %s", exc)

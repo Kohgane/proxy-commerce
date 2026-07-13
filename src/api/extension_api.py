@@ -170,8 +170,17 @@ def _translate_payload(payload: dict) -> dict:
         out["title_ko"] = (tr.get("title_ko") or "").strip() or title
         out["description_ko"] = (tr.get("description_ko") or "").strip() or description
         out["provider"] = tr.get("provider", "stub")
+        # v66 STEP4: 키가 있는데 호출 실패(fallback)면 실제 원인을 서버 로그에 남긴다(무음 금지·오귀인 금지).
+        if tr.get("error"):
+            out["translate_error"] = str(tr.get("error"))
+            logger.warning("[collect 번역] 키 있음·호출 실패 → 원문 유지: %s", tr.get("error"))
     except Exception as exc:
-        logger.warning("확장 수집 번역 실패, 원문 유지: %s", exc)
+        try:
+            from src.seller_console.ai.translator import classify_translate_error
+            out["translate_error"] = classify_translate_error(exc)
+        except Exception:
+            pass
+        logger.warning("확장 수집 번역 실패(%s), 원문 유지: %s", out.get("translate_error", "원인 미상"), exc)
     # v39 D: 번역본에도 플레이스홀더 토큰이 남지 않도록 정리(가짜값 금지).
     try:
         from src.collectors.universal_scraper import strip_placeholder_tokens as _strip_ph

@@ -1026,12 +1026,18 @@ async function runBulkTranslate() {
       const wrap = document.getElementById('translFree');
       if (wrap) wrap.className = 'small ' + (data.free_remaining > 0 ? 'text-muted' : 'text-danger');
     }
-    if (data.blocked > 0) {
+    // v66 STEP4: 진행/실패 명시 — 실패 항목 사유를 집계해 보여준다(무음 금지).
+    const failed = (data.results || []).filter(r => r.reason);
+    const topReason = failed.length ? (failed[0].reason || '') : (data.fail_reason || '');
+    if (data.translated > 0) {
+      let msg = `${data.translated}/${data.total} 한국어로 번역 (무료 ${data.free_remaining}회 남음)`;
+      if (failed.length) msg += ` · 실패 ${failed.length}${topReason ? ' — ' + topReason : ''}`;
+      pcToast(msg, failed.length ? 'warning' : 'success');
+    } else if (data.blocked > 0) {
       pcToast(data.message || `무료 번역 한도 소진 — ${data.blocked}개 번역 못 함.`, 'warning');
-    } else if (data.translated > 0) {
-      pcToast(`${data.translated}/${data.total}개 한국어로 번역했습니다. (무료 ${data.free_remaining}회 남음)`, 'success');
     } else {
-      pcToast(data.message || '번역기가 설정되지 않아 원문을 유지했습니다.', 'warning');
+      // 전건 실패: 키 있는데 실패면 원인, 아니면 키 미설정 안내(오귀인 금지).
+      pcToast((topReason ? `번역 실패 — ${topReason}` : (data.message || '번역기가 설정되지 않아 원문을 유지했습니다.')), 'warning');
     }
   } catch (err) {
     pcToast('요청 실패: ' + err.message, 'error');
