@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -27,34 +29,52 @@ def _run():
     return _bookmarklet_run_js()
 
 
-def test_bookmarklet_tier2_source_contract():
-    js = _run()   # v56: 추출 로직은 run.js
-    assert "function GX(" in js and "function BS(" in js and "function PP(" in js and "function PR(" in js
-    assert "querySelector('h1')" in js                       # h1 타이틀 우선
-    assert "gallery i] img" in js and "swiper i] img" in js  # 갤러리 스코프
-    assert "naturalWidth" not in js                          # naturalWidth 필터 없음(추천 오수집 방지)
-    assert "field_sources:_fs" in js or "_fs=" in js         # 필드 출처 동봉
-    assert "strike" in js                                    # 취소선/정가 제외
-    # 코어(bookmarklet)의 CSP 실패 안내는 확장 권장
-    assert "크롬 확장" in _bm()
+def test_bookmarklet_uses_shared_extractor():
+    # v62 STEP1: run.js는 확장과 **동일한 kgp-extractor.js**를 번들(경로별 중복 구현 제거).
+    js = _run()
+    assert "kgpExtractProduct" in js and "window.__kgpRun=function(cb)" in js
+    assert "parsePriceStr" in js and "_domImages" in js       # 공유 추출기 내부(단일 소스)
+    assert "gallery" in js.lower()                            # 갤러리 스코프(추출기 내)
+    # 옛 경로 전용 재구현(PP/PR/GX/BS 함수) 제거 — 중복 0.
+    assert "function PP(t)" not in js and "function PR()" not in js
+    assert "크롬 확장" in _bm()                                # 코어 CSP 실패 안내
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치")
+def test_run_js_defines_extractor_api_node():
+    js = _run()
+    shim = ("global.window=global;"
+            "global.document={querySelector:function(){return null;},querySelectorAll:function(){return [];},"
+            "documentElement:{outerHTML:''}};"
+            "global.location={href:'https://x.com/dp/1',hostname:'x.com'};\n")
+    harness = shim + js + "\nconsole.log((typeof window.kgpExtractProduct==='function')&&(typeof window.__kgpRun==='function'));"
+    f = tempfile.NamedTemporaryFile("w", suffix=".js", delete=False)
+    f.write(harness); f.close()
+    try:
+        r = subprocess.run(["node", f.name], capture_output=True, text=True, timeout=15)
+        assert r.returncode == 0, r.stderr
+        assert r.stdout.strip().splitlines()[-1] == "true"    # 공유 추출기 API 정의됨
+    finally:
+        os.unlink(f.name)
 
 
 def test_bookmarklet_size_within_limit():
     assert len(_bm()) < 6000, f"북마클릿 코어 너무 큼: {len(_bm())}"   # v56 로더 코어 ~3KB
 
 
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치")
 def test_price_parse_logic():
-    # run.js의 PP(가격 파싱)를 추출해 node로 실증.
-    js = _run()
-    m = re.search(r"function PP\(t\)\{.*?\}(?=function|window)", js, re.S)
-    assert m, "PP 함수를 찾지 못함"
-    fn = m.group(0)
-    harness = fn + """
-var out = {};
-out.krw = PP('₩89,000');
-out.won = PP('89,000원');
-out.usd = PP('$12.99');
-out.none = PP('재고 5개 남음');
+    # v62 STEP1: 가격 파싱은 공유 추출기(kgp-extractor.js parsePriceStr). run.js 번들에서 추출해 node로 실증.
+    ex = Path("extensions/chrome-collector/kgp-extractor.js").read_text(encoding="utf-8")
+    a = ex.index("function _sym(")
+    b = ex.index("function uniqPush(")
+    block = ex[a:b]   # _sym + CODE + PRICE_RE + parsePriceStr
+    harness = block + """
+var out={};
+out.krw=parsePriceStr('₩89,000');
+out.won=parsePriceStr('89,000원');
+out.usd=parsePriceStr('$12.99');
+out.none=parsePriceStr('재고 5개 남음');
 console.log(JSON.stringify(out));
 """
     f = tempfile.NamedTemporaryFile("w", suffix=".js", delete=False)
