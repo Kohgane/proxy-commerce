@@ -1388,8 +1388,32 @@ function kgpRunBulk(items) {
     msg += fail ? " — 아래 ‘재시도’를 누르세요." : ". 셀러 콘솔 수집 이력에서 확인하세요.";
     kgpSetStatus(msg);
     kgpRenderRetry(resp.failedItems || []);   // 실패분만 재시도 버튼
+    // v64 STEP1: 2단 상세 보강 시작 — 목록 저장분(item_id)을 백그라운드 탭으로 순차 방문해 보강.
+    const targets = resp.enrichTargets || [];
+    if (targets.length) {
+      kgpSendMessage({ action: "enrichStart", targets }, (er) => {
+        if (er && er.ok) kgpSetStatus(msg + ` · 상세 보강 시작(0/${er.total})`);
+      });
+    }
   });
 }
+
+// v64 STEP1: 상세 보강 진행률을 벌크바 상태에 실시간 표시(background가 1건마다 전송).
+try {
+  chrome.runtime.onMessage.addListener((m) => {
+    if (m && m.action === "enrichProgress" && m.state) {
+      const s = m.state;
+      if (s.total > 0 && document.getElementById(KGP_TOOLBAR_ID)) {
+        let t = `상세 보강 ${s.done}/${s.total}`;
+        if (s.failed) t += ` · 보강 실패 ${s.failed}`;
+        if (s.paused) t += " · 일시정지";
+        else if (!s.running && s.done >= s.total) t += " · 완료";
+        kgpSetStatus(t);
+      }
+    }
+    return false;
+  });
+} catch (e) { /* noop */ }
 
 // 실패 항목 재시도 버튼(정직: 조용한 누락 금지 — 실패 N건을 눈에 보이게).
 function kgpRenderRetry(failedItems) {

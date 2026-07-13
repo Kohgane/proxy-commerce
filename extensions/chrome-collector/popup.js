@@ -94,6 +94,38 @@ if (diagToggle) {
   });
 }
 
+// v64 STEP1: 벌크 상세 보강 큐 진행률 패널(n/총 · 일시정지 · 중단).
+(function () {
+  const panel = document.getElementById("enrichPanel");
+  const countEl = document.getElementById("enrichCount");
+  const noteEl = document.getElementById("enrichNote");
+  const pauseBtn = document.getElementById("enrichPause");
+  const stopBtn = document.getElementById("enrichStop");
+  if (!panel) return;
+  function render(s) {
+    if (!s || !s.total) { panel.style.display = "none"; return; }
+    panel.style.display = "block";
+    countEl.textContent = s.done + "/" + s.total;
+    pauseBtn.textContent = s.paused ? "재개" : "일시정지";
+    let note = "";
+    if (s.failed) note = "보강 실패 " + s.failed + "건";
+    if (!s.running && s.done >= s.total) note = (note ? note + " · " : "") + "완료";
+    else if (s.paused) note = (note ? note + " · " : "") + "일시정지됨";
+    noteEl.textContent = note;
+  }
+  try { chrome.runtime.sendMessage({ action: "enrichState" }, (s) => { if (!chrome.runtime.lastError) render(s); }); } catch (e) {}
+  try {
+    chrome.runtime.onMessage.addListener((m) => { if (m && m.action === "enrichProgress") render(m.state); return false; });
+  } catch (e) {}
+  if (pauseBtn) pauseBtn.addEventListener("click", () => {
+    const paused = pauseBtn.textContent !== "재개";   // 현재 '일시정지'면 → 정지 요청
+    chrome.runtime.sendMessage({ action: "enrichPause", paused }, (s) => { if (!chrome.runtime.lastError) render(s); });
+  });
+  if (stopBtn) stopBtn.addEventListener("click", () => {
+    chrome.runtime.sendMessage({ action: "enrichStop" }, (s) => { if (!chrome.runtime.lastError) render(s); });
+  });
+})();
+
 // v64 STEP3: 호버 수집 버튼 위치(이미지 영역 앵커) — 사이트 무관 chrome.storage.local, content_script가 즉시 반영.
 const hoverAnchor = document.getElementById("hoverAnchor");
 if (hoverAnchor) {
