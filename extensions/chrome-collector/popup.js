@@ -94,6 +94,35 @@ if (diagToggle) {
   });
 }
 
+// v63 STEP1: 감지 진단 패널 — 현재 탭의 실측(판정·카드수·어댑터 매치·버튼상태)을 표시.
+//   추측 서술이 아니라 content_script가 실제로 계산한 값 → '왜 안 떠?'를 캡처 한 장으로 진단.
+(function () {
+  const body = document.getElementById("detectBody");
+  if (!body) return;
+  const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  const PT = { single: "단일", list: "목록", unknown: "불능" };
+  const BTN = { fab: "단건 FAB", bulkbar: "중앙 벌크바", reopen: "구석 배지", none: "없음" };
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tab = tabs && tabs[0];
+    if (!tab || !tab.id) { body.textContent = "탭을 찾을 수 없어요"; return; }
+    chrome.tabs.sendMessage(tab.id, { action: "kgpDetectState" }, (r) => {
+      const err = chrome.runtime && chrome.runtime.lastError;
+      if (err || !r || !r.ok) {
+        body.innerHTML = "이 페이지에선 수집기가 실행되지 않았어요<br><span style='color:#b9a08c'>지정 소싱처가 아니거나 새로고침 필요</span>";
+        return;
+      }
+      const adap = r.adapterMatched ? ("매치 " + r.adapter + "건") : "미스(제네릭 폴백)";
+      const supported = r.allowed ? "✓ 소싱처" : "✗ 비지정";
+      body.innerHTML = [
+        "호스트: " + esc(r.host) + " · " + supported,
+        "판정: " + (PT[r.pageType] || r.pageType) + " · 버튼: " + (BTN[r.button] || r.button),
+        "카드 감지: " + r.cards + "건 (제네릭 " + r.generic + " · 어댑터 " + adap + ")",
+        "스캔 전체: " + r.scanned + "건",
+      ].map(esc).join("<br>");
+    });
+  });
+})();
+
 // 수집 버튼 클릭
 btnCollect.addEventListener("click", async () => {
   btnCollect.disabled = true;
