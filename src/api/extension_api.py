@@ -634,6 +634,22 @@ def collect_from_extension():
     except Exception as exc:
         logger.warning("[collect %s] 수집 상태 판정 실패: %s", _corr, exc)
 
+    # v62 STEP4: 키워드는 **서버 생성**(클라 추출 폐지) — 제목·카테고리·옵션·상세 빈출어 + 오염어 필터.
+    try:
+        from src.seller_console.keyword_gen import generate_keywords, refine_keywords
+        _kw = generate_keywords(
+            title=(title_ko or title),
+            category=(_extra.get("category_code") or payload.get("category_code") or ""),
+            options=_extra.get("options") or [],
+            desc_text=_extra.get("description") or "",
+            brand=_extra.get("brand") or "",
+        )
+        _kw = refine_keywords(title_ko or title, _kw)   # OPENAI 가용 시 정제(미가용=그대로)
+        _extra["keywords"] = _kw
+        _extra["tags"] = _kw
+    except Exception as exc:
+        logger.warning("[collect %s] 키워드 서버 생성 실패: %s", _corr, exc)
+
     item_id = None
     saved = False
     durable = True
