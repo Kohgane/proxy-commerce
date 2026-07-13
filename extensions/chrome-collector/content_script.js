@@ -636,6 +636,32 @@ if (!window.__kgpViewportBound) {
   window.__kgpViewportBound = true;
 }
 
+// v64 STEP4: 벌크바 스크롤 추적 sticky 하드닝. 바는 position:fixed(뷰포트 상단 고정)라 원래 스크롤을
+//   따라오지만, 일부 사이트는 <html>/<body> 조상에 transform/filter를 걸어 position:fixed의 기준을
+//   바꿔 바가 콘텐츠와 함께 스크롤돼 버린다(고전적 'fixed inside transform' 버그). 스크롤 시 바의 실제
+//   top이 의도한 값에서 밀렸으면 translateY로 보정해 항상 뷰포트 상단에 고정한다. 사용자가 드래그해
+//   위치를 저장했으면(kgp_bar_pos) 존중(자동 재핀 안 함). z-index는 최상위(2147483647)라 사이트 헤더 위.
+const _KGP_BAR_TOP = 12;
+let _kgpBarPinT = null;
+function _kgpKeepBarPinned() {
+  const bar = document.getElementById(KGP_TOOLBAR_ID);
+  if (!bar || !bar.isConnected) return;
+  if (kgpLSget("kgp_bar_pos", "")) return;          // 사용자가 옮긴 위치는 존중
+  bar.style.transform = "translateX(-50%)";          // 기준 복원 후 실제 top 측정
+  let top;
+  try { top = bar.getBoundingClientRect().top; } catch (e) { return; }
+  const drift = top - _KGP_BAR_TOP;                   // 변형 조상 때문에 밀린 양(정상 사이트=≈0)
+  if (Math.abs(drift) > 1) bar.style.transform = "translateX(-50%) translateY(" + (-drift) + "px)";
+}
+function _kgpBarScroll() {
+  if (_kgpBarPinT) return;                            // 스크롤 스로틀(리플로우 최소화)
+  _kgpBarPinT = setTimeout(() => { _kgpBarPinT = null; _kgpKeepBarPinned(); }, 120);
+}
+if (!window.__kgpBarScrollBound) {
+  window.addEventListener("scroll", _kgpBarScroll, { passive: true });
+  window.__kgpBarScrollBound = true;
+}
+
 // v45 P4·P5: 지속 오버레이(FAB·벌크바·구석 배지)를 <body>가 아니라 **documentElement(<html>) 직속**에
 //   붙인다. 이유: ①SPA가 <body> 전체를 갈아끼워도 오버레이가 살아남음(P5 깜빡임 방지) ②<body>에 걸린
 //   transform/filter가 position:fixed 기준을 바꿔 '좌상단 처박힘'을 유발하는 것을 회피(P4 상단중앙 고정).
@@ -1466,6 +1492,7 @@ function kgpBuildToolbar() {
     }
   });
   _kgpMount(bar);                          // v45 P4: <html> 직속(상단중앙 고정, 좌상단 처박힘 방지)
+  try { _kgpKeepBarPinned(); } catch (e) {}  // v64 STEP4: 마운트 즉시 뷰포트 상단 고정 보정(변형 조상 대응)
   // 드래그로 이동 + 위치 기억(grip 영역만 잡기, 버튼 클릭은 드래그 제외).
   kgpMakeDraggable(bar, "kgp_bar_pos", { handle: bar, ignore: "button,[data-act]" });
 }
