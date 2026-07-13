@@ -28,11 +28,11 @@ def test_scrub_robust_hit_area():
     assert "this._cy" in JS
 
 
-def test_quick_button_1_5x_hit66():
-    # 중앙 수집 버튼 1.5배 + 히트영역 ≥66px
-    assert "min-height:66px" in CS
-    assert 'font:800 " + (KGP_TOUCH ? "15px" : "20px")' in CS   # 글자 1.5배(13→20 / 10→15)
-    assert "width:21px;height:21px" in CS                        # 아이콘 1.5배(14→21)
+def test_quick_button_spec_v64():
+    # v64 STEP3: 원 과대·글자 과소 수리 — 지름 절반(66→34)·아이콘 축소(21→14)·텍스트 위주 필.
+    assert "min-height:34px" in CS
+    assert 'font:800 " + (KGP_TOUCH ? "13px" : "15px")' in CS    # 텍스트 위주(아이콘 축소)
+    assert "width:14px;height:14px" in CS                        # 아이콘 21→14
 
 
 def test_bulk_bar_plus25():
