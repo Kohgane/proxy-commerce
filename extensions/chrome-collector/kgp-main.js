@@ -44,12 +44,18 @@
       if (e.data.__kgpReq == null) return;
       var meta = _run();
       // v55 STEP1: Tier1 진단 정보 동봉 — 격리월드가 '왜 Tier1이 비었나'를 무음 없이 1줄로 알림.
-      var diag = { netBound: false, captured: 0, topScore: 0, topUrl: "" };
+      // v62 STEP2: goods_id 매칭 진단 — 내 goods_id 응답 포착 여부(오채택 방지 근거).
+      var diag = { netBound: false, captured: 0, topScore: 0, topUrl: "", pageGoodsId: "", matched: false, mismatch: false };
       try {
         diag.netBound = !!window.__kgpNetBound;
         var cap = window.__kgpCaptured || [];
         diag.captured = cap.length;
         if (cap.length) { diag.topScore = cap[0].score || 0; diag.topUrl = cap[0].url || ""; }
+        diag.pageGoodsId = (typeof window.__kgpPageGoodsId === "function") ? (window.__kgpPageGoodsId() || "") : "";
+        if (diag.pageGoodsId) {
+          diag.matched = !!(typeof window.__kgpMatchCapture === "function" && window.__kgpMatchCapture(diag.pageGoodsId));
+          diag.mismatch = !diag.matched;
+        }
       } catch (_) {}
       window.postMessage({ __kgpRes: e.data.__kgpReq, meta: meta, diag: diag }, "*");
     } catch (_) {}

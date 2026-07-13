@@ -55,6 +55,48 @@
     return { price: sig.price, images: sig.images, sku: sig.sku, reviews: sig.reviews, score: sig.price + sig.images + sig.sku + sig.reviews };
   }
 
+  // v62 STEP2: 테무 goods_id 추출 — URL(-g-{n}·goods_id=·goodsId=) + 응답 객체 walk(goodsId/goods_id 키).
+  var GID_URL = /(?:[-_/]g-|[?&](?:_x_)?goods_?id=|\/goods\/)(\d{5,})/i;
+  function _goodsIdFromUrl(u) {
+    try { var m = String(u || "").match(GID_URL); return m ? m[1] : ""; } catch (e) { return ""; }
+  }
+  function _goodsIdFromObj(root) {
+    var stack = [root], seen = 0;
+    while (stack.length && seen < 4000) {
+      seen++;
+      var v = stack.pop();
+      if (!v || typeof v !== "object") continue;
+      if (v.length !== undefined && typeof v.length === "number") {
+        for (var i = 0; i < v.length && i < 200; i++) if (v[i] && typeof v[i] === "object") stack.push(v[i]);
+        continue;
+      }
+      for (var k in v) {
+        var kl = ("" + k).toLowerCase();
+        if ((kl === "goodsid" || kl === "goods_id") && (typeof v[k] === "number" || typeof v[k] === "string")) {
+          var g = String(v[k]).replace(/\D/g, ""); if (g.length >= 5) return g;
+        }
+        if (v[k] && typeof v[k] === "object") stack.push(v[k]);
+      }
+    }
+    return "";
+  }
+  // v62 STEP2: goods_id 정확 매칭용 캡처 조회 — 현재 페이지 goods_id와 일치하는 최신 응답(TTL 10분), 없으면 null.
+  //   '이전 상품 응답 오채택' 방지 — 점수 최고가 아니라 **내 goods_id** 우선.
+  window.__kgpPageGoodsId = function () { return _goodsIdFromUrl((window.location && window.location.href) || ""); };
+  window.__kgpMatchCapture = function (goodsId) {
+    goodsId = String(goodsId || "").replace(/\D/g, "");
+    if (!goodsId) return null;
+    var now = Date.now(), best = null;
+    var cap = window.__kgpCaptured || [];
+    for (var i = 0; i < cap.length; i++) {
+      var e = cap[i];
+      if (e.goods_id === goodsId && (now - (e.ts || 0)) <= 600000) {   // TTL 10분
+        if (!best || (e.ts || 0) > (best.ts || 0)) best = e;           // 최신 우선
+      }
+    }
+    return best;
+  };
+
   function stash(text, url) {
     try {
       if (!text || text.length > MAXLEN || !JSONISH.test(text)) return;
@@ -62,8 +104,9 @@
       if (!o || typeof o !== "object") return;
       var s = _kgpScore(o);
       if (s.score <= 0) return;               // 상품 신호 0 → 버림(비상품 응답)
-      window.__kgpCaptured.push({ url: url || "", size: text.length, price: s.price, images: s.images, sku: s.sku, reviews: s.reviews, score: s.score, obj: o });
-      window.__kgpCaptured.sort(function (a, b) { return b.score - a.score; });   // 점수순(최고점 채택)
+      var gid = _goodsIdFromUrl(url) || _goodsIdFromObj(o);   // v62 STEP2: goods_id 키(URL 우선, 없으면 응답)
+      window.__kgpCaptured.push({ url: url || "", size: text.length, price: s.price, images: s.images, sku: s.sku, reviews: s.reviews, score: s.score, goods_id: gid, ts: Date.now(), obj: o });
+      window.__kgpCaptured.sort(function (a, b) { return b.score - a.score; });   // 점수순(폴백용 — 매칭 우선)
       if (window.__kgpCaptured.length > CAP) window.__kgpCaptured.length = CAP;
     } catch (e) { /* JSON 아님 — 무시 */ }
   }
