@@ -691,6 +691,16 @@
     } catch (e) { return ""; }
   }
 
+  // v65 STEP1: 순수 사이트/브랜드명 판별(상품명 아님) — 제목이 'Temu'·'Amazon' 등으로 저장되는 것 차단.
+  //   상품명이면 사이트명 뒤에 상품 정보가 붙거나(예 '무선 이어폰 | Temu') 길이가 길다. 바로 그 사이트명만/짧은 것만 배제.
+  function _isBareSiteName(t) {
+    var s = String(t || "").trim();
+    if (!s) return true;
+    if (s.length <= 2) return true;
+    if (/^(temu|amazon|aliexpress|taobao|tmall|1688|rakuten|mercari|shopee|ebay|yahoo|paypaymall)!?(\.[a-z.]+)?\s*(shopping|쇼핑|ショッピング|재팬|japan)?[\s\-–|:·!]*$/i.test(s)) return true;
+    return false;
+  }
+
   // ── 가격 sanity 게이트 ─────────────────────────────────────
   function _priceSanity(price, currency) {
     var warnings = [], status = "";
@@ -716,8 +726,14 @@
     var at = _adapterTitle();
     var h1t = _cleanH1();
     var ogt = _meta("og:title");
-    var title = at || j.title || h1t || ogt || (document.title || "");
-    var titleSrc = at ? "adapter" : (j.title ? "tier1" : (h1t ? "tier2" : (ogt || document.title ? "tier3" : "none")));
+    // v65 STEP1: 순수 사이트/브랜드명("Temu" 등)은 상품명이 아니다 — 후보에서 배제(제목 'Temu' 재발 금지).
+    var _cands = [{ v: at, s: "adapter" }, { v: j.title, s: "tier1" }, { v: h1t, s: "tier2" },
+      { v: ogt, s: "tier3" }, { v: (document.title || ""), s: "tier3" }];
+    var title = "", titleSrc = "none";
+    for (var _ti = 0; _ti < _cands.length; _ti++) {
+      var _c = String(_cands[_ti].v || "").replace(/\s+/g, " ").trim();
+      if (_c && !_isBareSiteName(_c)) { title = _c; titleSrc = _cands[_ti].s; break; }
+    }
     var price = j.price || "", currency = j.currency || "";
     var images = (j.images || []).slice(), detailImages = (j.detailImages || []).slice();
     var options = (j.options || []).slice(), skus = (j.skus || []).slice(), specs = (j.specs || []).slice();
@@ -835,7 +851,41 @@
     timer = setTimeout(stop, 3000);              // 최대 3초 후 강제 종료(무한 대기 금지)
   }
 
+  // v65 STEP1: 렌더 완료 대기 — 정본 경로(렌더된 DOM 추출)의 게이트. 가격 패턴 텍스트 + 메인 이미지(≥200px)
+  //   로드를 감지하면 준비 완료. 최대 maxMs(기본 8초) 초과 시 '부분'(있는 것만)으로 진행. 셀렉터 의존 최소.
+  function _renderReady() {
+    var priceOk = false, imgOk = false;
+    try { var p = _domPrice(); priceOk = !!(p && p.price); } catch (e) {}
+    try {
+      var imgs = document.querySelectorAll("img");
+      for (var i = 0; i < imgs.length; i++) {
+        var im = imgs[i];
+        if (((im.naturalWidth || im.width || 0) >= 200) && ((im.naturalHeight || im.height || 0) >= 200)) { imgOk = true; break; }
+      }
+    } catch (e) {}
+    return { priceOk: priceOk, imgOk: imgOk, ready: priceOk && imgOk };
+  }
+  // 준비될 때까지 폴링(250ms). ready면 partial=false, maxMs 초과면 partial=true로 cb 호출(무한대기 금지).
+  function kgpWaitRendered(cb, maxMs) {
+    var intervalMs = 250;
+    var maxTicks = Math.max(1, Math.ceil(((typeof maxMs === "number" ? maxMs : 8000)) / intervalMs));
+    var ticks = 0, done = false;
+    function finish(partial) { if (done) return; done = true; try { cb && cb({ partial: !!partial, ready: !partial }); } catch (e) {} }
+    function tick() {
+      if (done) return;
+      var r;
+      try { r = _renderReady(); } catch (e) { r = { ready: false }; }
+      if (r.ready) { finish(false); return; }
+      ticks++;
+      if (ticks >= maxTicks) { finish(true); return; }   // 8초 초과 → 부분 표기
+      setTimeout(tick, intervalMs);
+    }
+    tick();
+  }
+
   global.kgpExtractProduct = kgpExtractProduct;
   global.kgpRevealDetailFolds = kgpRevealDetailFolds;
-  if (typeof module !== "undefined" && module.exports) module.exports = { kgpExtractProduct: kgpExtractProduct, kgpRevealDetailFolds: kgpRevealDetailFolds };
+  global.kgpWaitRendered = kgpWaitRendered;
+  global._kgpRenderReady = _renderReady;   // 테스트/진단용
+  if (typeof module !== "undefined" && module.exports) module.exports = { kgpExtractProduct: kgpExtractProduct, kgpRevealDetailFolds: kgpRevealDetailFolds, kgpWaitRendered: kgpWaitRendered };
 })(typeof window !== "undefined" ? window : this);
