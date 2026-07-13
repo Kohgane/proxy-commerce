@@ -350,6 +350,89 @@ def api_exists():
     return jsonify({"ok": True, "collected": collected})
 
 
+@extension_bp.post("/enrich")
+def collect_enrich():
+    """v64 STEP1: 벌크 2단 수집 — 목록 데이터 저장 후 확장이 각 상품 상세 페이지에서 읽은
+    상세 필드로 기존 항목을 '보강'한다. **fill-only**: 제목·가격은 기존 우선(상세 추출이 비면 유지),
+    옵션·상세설명·상세이미지·리뷰·평점·갤러리는 비어 있을 때 채운다. 상태 배지 재계산(부분→성공).
+
+    Request: {item_id, options?, description?, detail_images?, gallery?/images?, reviews?, rating?, review_count?}
+    Response: {ok, item_id, changed:{field:count}, status, filled, total}
+    서버측 아마존/테무 직접 크롤 없음 — 확장이 브라우저 컨텍스트에서 읽어 보낸 값만 병합(가짜 성공 0).
+    """
+    user = _require_token(scopes=["collect.write"])
+    if not user:
+        return jsonify({"ok": False, "error": "auth"}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    item_id = str(data.get("item_id") or "").strip()
+    if not item_id:
+        return jsonify({"ok": False, "error": "item_id가 필요합니다."}), 400
+    seller_id_val = str(user.get("user_id") or "")
+    ids = {seller_id_val}
+    try:
+        from src.auth.user_store import get_store as _gs
+        _u = _gs().find_by_id(seller_id_val)
+        if _u is not None and getattr(_u, "email", ""):
+            ids.add(str(_u.email))
+    except Exception:
+        pass
+    import json as _json
+    from src.seller_console.collect_history_store import get as _get, update as _update
+    item = _get(item_id, seller_ids=ids)
+    if not item:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    try:
+        extra = _json.loads(item.get("extra_json") or "{}")
+    except Exception:
+        extra = {}
+
+    def _union(a, b):
+        out, seen = [], set()
+        for x in list(a or []) + list(b or []):
+            if isinstance(x, str) and x and x not in seen:
+                seen.add(x); out.append(x)
+        return out
+
+    changed: dict = {}
+    # 옵션·리뷰: 리스트가 오고 기존이 비었으면 채움.
+    for k in ("options", "reviews"):
+        v = data.get(k)
+        if isinstance(v, list) and v and not extra.get(k):
+            extra[k] = v; changed[k] = len(v)
+    # 상세설명: 20자↑ 실텍스트가 오고 기존이 빈약(<20자)하면 채움.
+    _desc = str(data.get("description") or "").strip()
+    if len(_desc) >= 20 and len(str(extra.get("description") or "").strip()) < 20:
+        extra["description"] = _desc; changed["description"] = 1
+    # 평점·리뷰수: 오고 기존 비었으면.
+    for k in ("rating", "review_count"):
+        if data.get(k) and not extra.get(k):
+            extra[k] = data[k]; changed[k] = 1
+    # 상세이미지·갤러리: union(순서보존 dedup) — 늘어날 때만.
+    di = data.get("detail_images")
+    if isinstance(di, list) and di:
+        merged = _union(extra.get("detail_images"), di)
+        if len(merged) > len(extra.get("detail_images") or []):
+            extra["detail_images"] = merged; changed["detail_images"] = len(merged)
+    gi = data.get("gallery") or data.get("gallery_images") or data.get("images")
+    if isinstance(gi, list) and gi:
+        merged = _union(extra.get("images"), gi)
+        if len(merged) > len(extra.get("images") or []):
+            extra["images"] = merged; changed["images"] = len(merged)
+        if not extra.get("gallery_images"):
+            extra["gallery_images"] = _union(extra.get("gallery_images"), gi)
+    extra["enriched"] = True
+    # 상태 배지 재계산(부분→성공).
+    try:
+        from src.collectors.collect_status import compute_collect_status as _ccs
+        extra["collect_status"] = _ccs(extra, title_fallback=item.get("title") or "")
+    except Exception:
+        pass
+    ok = _update(item_id, seller_ids=ids, extra_json=_json.dumps(extra, ensure_ascii=False))
+    st = extra.get("collect_status") or {}
+    return jsonify({"ok": bool(ok), "item_id": item_id, "changed": changed,
+                    "status": st.get("status"), "filled": st.get("filled"), "total": st.get("total")})
+
+
 @extension_bp.post("/extension")
 def collect_from_extension():
     """크롬 확장 / 북마클릿에서 상품 메타 수신 + 카탈로그 저장.

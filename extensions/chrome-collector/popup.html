@@ -70,6 +70,18 @@
       <div id="detectBody" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#e8ded0">불러오는 중…</div>
     </div>
 
+    <!-- v64 STEP1: 벌크 상세 보강 큐 진행률(n/총 · 일시정지 · 중단) -->
+    <div id="enrichPanel" style="display:none;margin-top:8px;padding:9px 12px;background:#f8f6f0;border-radius:8px;font-size:12.5px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <span style="font-weight:700;color:#1a1714">상세 보강 <span id="enrichCount">0/0</span></span>
+        <span>
+          <button id="enrichPause" style="font-size:12px;font-weight:600;padding:3px 9px;border:1px solid #c9a24b;border-radius:6px;background:#fff;color:#1a1714;cursor:pointer">일시정지</button>
+          <button id="enrichStop" style="font-size:12px;font-weight:600;padding:3px 9px;border:1px solid #d8d0c0;border-radius:6px;background:#fff;color:#8a5a2b;cursor:pointer">중단</button>
+        </span>
+      </div>
+      <div id="enrichNote" style="margin-top:3px;color:#7a726a;font-size:11.5px"></div>
+    </div>
+
     <div class="status" id="status"></div>
   </div>
 

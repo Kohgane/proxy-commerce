@@ -54,6 +54,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     handleExists(msg.urls, sendResponse);
     return true;
   }
+  // v64 STEP1: 벌크 상세 보강 큐 제어.
+  if (msg.action === "enrichStart") { handleEnrichStart(msg.targets, sendResponse); return true; }
+  if (msg.action === "enrichState") { sendResponse(_kgpEnrichSnapshot()); return false; }
+  if (msg.action === "enrichPause") { KgpEnrich.paused = !!msg.paused; _kgpBroadcastEnrich(); sendResponse(_kgpEnrichSnapshot()); return false; }
+  if (msg.action === "enrichStop") { KgpEnrich.stopped = true; KgpEnrich.queue = []; _kgpBroadcastEnrich(); sendResponse(_kgpEnrichSnapshot()); return false; }
 });
 
 async function handleExists(urls, sendResponse) {
@@ -70,6 +75,128 @@ async function handleExists(urls, sendResponse) {
   } catch (e) {
     if (sendResponse) sendResponse({ ok: false, collected: [] });
   }
+}
+
+// ── v64 STEP1: 벌크 2단 수집 — 상세 보강 큐 ──────────────────────────────────
+//   1단(목록 데이터)은 이미 저장됨. 2단: 확장이 백그라운드 탭으로 각 상품 상세를 순차 방문해
+//   옵션·상세·리뷰·갤러리를 읽어 서버 /enrich로 기존 항목에 병합(fill-only). 사용자 브라우저
+//   컨텍스트라 차단 리스크 최소. 동시 1탭·항목당 3~6초 랜덤 간격·실패 1회 재시도·일시정지/중단.
+const KgpEnrich = {
+  queue: [], done: 0, total: 0, failed: 0, ok: 0,
+  paused: false, stopped: false, running: false, current: "",
+};
+function _kgpEnrichSnapshot() {
+  return { done: KgpEnrich.done, total: KgpEnrich.total, failed: KgpEnrich.failed,
+    ok: KgpEnrich.ok, paused: KgpEnrich.paused, stopped: KgpEnrich.stopped,
+    running: KgpEnrich.running, current: KgpEnrich.current };
+}
+// 항목당 대기(3~6초 랜덤). rng 주입 가능(테스트).
+function _kgpEnrichDelayMs(rng) {
+  const r = (typeof rng === "function") ? rng() : Math.random();
+  return 3000 + Math.floor(r * 3000);
+}
+function _kgpSleep(ms) { return new Promise((res) => setTimeout(res, ms)); }
+function _kgpWaitTabComplete(tabId, timeoutMs) {
+  return new Promise((resolve) => {
+    let done = false;
+    const to = setTimeout(() => { if (!done) { done = true; try { chrome.tabs.onUpdated.removeListener(li); } catch (e) {} resolve(false); } }, timeoutMs || 20000);
+    function li(id, info) {
+      if (id === tabId && info.status === "complete" && !done) {
+        done = true; clearTimeout(to);
+        try { chrome.tabs.onUpdated.removeListener(li); } catch (e) {}
+        resolve(true);
+      }
+    }
+    chrome.tabs.onUpdated.addListener(li);
+  });
+}
+function _kgpSendTab(tabId, msg) {
+  return new Promise((resolve) => {
+    try {
+      chrome.tabs.sendMessage(tabId, msg, (resp) => {
+        if (chrome.runtime && chrome.runtime.lastError) return resolve(null);
+        resolve(resp || null);
+      });
+    } catch (e) { resolve(null); }
+  });
+}
+function _kgpBroadcastEnrich() {
+  const snap = _kgpEnrichSnapshot();
+  try { chrome.runtime.sendMessage({ action: "enrichProgress", state: snap }); } catch (e) {}
+}
+async function _kgpEnrichOne(item, settings) {
+  // 상세 탭을 열어 확장 content_script의 extractMeta로 상세 필드를 읽는다(서버 크롤 아님).
+  let tab = null;
+  try {
+    tab = await chrome.tabs.create({ url: item.url, active: false });
+    KgpEnrich.current = item.url;
+    _kgpBroadcastEnrich();
+    await _kgpWaitTabComplete(tab.id, 22000);
+    await _kgpSleep(1200);                    // SPA·lazy 이미지 정착 여유
+    const meta = await _kgpSendTab(tab.id, { action: "extractMeta" });
+    if (!meta) throw new Error("상세 추출 실패(빈 응답)");
+    const body = {
+      item_id: item.item_id,
+      options: meta.options || [],
+      description: meta.description || "",
+      detail_images: meta.detail_images || [],
+      gallery: meta.gallery_images || meta.images || [],
+      reviews: meta.reviews || [],
+      rating: meta.rating || "",
+      review_count: meta.review_count || "",
+    };
+    const r = await fetch(`${settings.serverUrl}/api/v1/collect/enrich`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${settings.token}` },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d || !d.ok) throw new Error("서버 보강 실패 HTTP " + r.status);
+    return true;
+  } finally {
+    if (tab && tab.id != null) { try { await chrome.tabs.remove(tab.id); } catch (e) {} }
+  }
+}
+async function _kgpEnrichLoop() {
+  if (KgpEnrich.running) return;
+  KgpEnrich.running = true;
+  const settings = await getSettings();
+  while (KgpEnrich.queue.length && !KgpEnrich.stopped) {
+    if (KgpEnrich.paused) { await _kgpSleep(600); continue; }
+    const item = KgpEnrich.queue.shift();
+    try {
+      await _kgpEnrichOne(item, settings);
+      KgpEnrich.ok++;
+    } catch (e) {
+      if ((item.retries || 0) < 1) {          // 실패 1회 재시도(뒤에 다시 넣음)
+        item.retries = (item.retries || 0) + 1;
+        KgpEnrich.queue.push(item);
+        KgpEnrich.done++; _kgpBroadcastEnrich();
+        if (!KgpEnrich.stopped) await _kgpSleep(_kgpEnrichDelayMs());
+        continue;
+      }
+      KgpEnrich.failed++;                       // 재시도도 실패 → '보강 실패' 정직 집계
+    }
+    KgpEnrich.done++;
+    KgpEnrich.current = "";
+    _kgpBroadcastEnrich();
+    if (KgpEnrich.queue.length && !KgpEnrich.stopped) await _kgpSleep(_kgpEnrichDelayMs());
+  }
+  KgpEnrich.running = false;
+  KgpEnrich.current = "";
+  _kgpBroadcastEnrich();
+}
+function handleEnrichStart(targets, sendResponse) {
+  const items = (Array.isArray(targets) ? targets : [])
+    .filter((t) => t && t.item_id && t.url)
+    .map((t) => ({ item_id: String(t.item_id), url: String(t.url), retries: 0 }));
+  if (!items.length) { if (sendResponse) sendResponse({ ok: false, error: "보강할 항목이 없습니다." }); return; }
+  // 새 배치: 카운터 초기화(진행 중이면 이어붙임).
+  if (!KgpEnrich.running) { KgpEnrich.done = 0; KgpEnrich.failed = 0; KgpEnrich.ok = 0; KgpEnrich.stopped = false; KgpEnrich.paused = false; KgpEnrich.total = 0; }
+  KgpEnrich.queue.push(...items);
+  KgpEnrich.total += items.length;
+  if (sendResponse) sendResponse({ ok: true, total: KgpEnrich.total });
+  _kgpEnrichLoop();
 }
 
 async function collectFromTab(tab) {
@@ -177,6 +304,7 @@ async function handleCollectBulk(items, sendResponse, tabId) {
   //   순차 처리(동시 폭주로 인한 유실 방지) + 1건마다 진행률을 탭에 전송(bulkProgress).
   let success = 0, failed = 0, duplicate = 0;
   const failedItems = [];
+  const enrichTargets = [];   // v64 STEP1: 2단 보강 대상(서버가 회신한 item_id + 상세 URL)
   let _extVer = ""; try { _extVer = chrome.runtime.getManifest().version; } catch (e) {}
   // P0 진단: 벌크도 인증 토큰 첨부 여부를 콘솔에 노출(마스킹).
   console.log(`[고가수집기] 벌크 ${items.length}건 · 인증 토큰 ${token ? "첨부됨(Bearer …" + String(token).slice(-4) + ")" : "없음"}`);
@@ -197,6 +325,8 @@ async function handleCollectBulk(items, sendResponse, tabId) {
       if (d && d.ok && d.duplicate) duplicate++;      // 이미 수집(중복) — '완료'로 부풀리지 않음
       else if (d && d.ok) success++;                  // 서버 커밋 성공(STEP 1-0 write-then-verify)
       else { failed++; failedItems.push(meta); }      // 502 등 정직 실패 → 재시도 대상
+      // v64 STEP1: 성공·중복 항목은 상세 보강 대상(item_id + 상세 URL). 실패는 제외.
+      if (d && d.ok && d.item_id && meta && meta.url) enrichTargets.push({ item_id: d.item_id, url: meta.url });
     } catch (e) {
       if (failed === 0) console.error("[고가수집기] 벌크 네트워크 오류:", e);
       failed++; failedItems.push(meta);
@@ -216,7 +346,7 @@ async function handleCollectBulk(items, sendResponse, tabId) {
       message: `일괄 수집 (총 ${items.length}): ${parts.join(" · ")}`,
     });
   }
-  if (sendResponse) sendResponse({ ok: true, success, failed, duplicate, total: items.length, failedItems });
+  if (sendResponse) sendResponse({ ok: true, success, failed, duplicate, total: items.length, failedItems, enrichTargets });
 }
 
 // content_script에서 호출할 메타 추출 함수 (executeScript용)
