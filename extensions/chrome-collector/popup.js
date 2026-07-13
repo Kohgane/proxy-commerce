@@ -154,11 +154,16 @@ if (hoverAnchor) {
       }
       const adap = r.adapterMatched ? ("매치 " + r.adapter + "건") : "미스(제네릭 폴백)";
       const supported = r.allowed ? "✓ 소싱처" : "✗ 비지정";
+      // v65 STEP2: 제외 사유 분해('제외 (광고 등)' 뭉뚱그림 금지).
+      const ex = r.excl || {};
+      const exclLine = "제외: 광고 " + (ex.ad || 0) + " · 파싱실패 " + (ex.parse || 0)
+        + " · URL실패 " + (ex.url || 0) + " · 중복 " + (ex.dup || 0) + " · 비상품영역 " + (ex.region || 0);
       body.innerHTML = [
         "호스트: " + esc(r.host) + " · " + supported,
         "판정: " + (PT[r.pageType] || r.pageType) + " · 버튼: " + (BTN[r.button] || r.button),
         "카드 감지: " + r.cards + "건 (제네릭 " + r.generic + " · 어댑터 " + adap + ")",
         "스캔 전체: " + r.scanned + "건",
+        exclLine,
       ].map(esc).join("<br>");
     });
   });
