@@ -1298,17 +1298,36 @@ function kgpHoverAnchor() {
   const a = KGP_HOVER_ANCHOR;
   return (a === "bl" || a === "br" || a === "center") ? a : "center";
 }
-function _kgpAnchorCss() {
+function _kgpAnchorCss(mode) {
+  // v65 STEP3: mode='corner'(이미지 못 찾음) → 좌상단 폴백(허공 금지). 그 외 이미지 영역 앵커.
+  if (mode === "corner") return ["top:6px", "left:6px"];
   if (KGP_TOUCH) return ["top:8px", "right:8px"];       // 터치: 우상단 상시
   const a = kgpHoverAnchor();
   if (a === "bl") return ["bottom:10px", "left:10px"];   // 7시
   if (a === "br") return ["bottom:10px", "right:10px"];  // 5시
   return ["top:50%", "left:50%", "transform:translate(-50%,-50%)"];  // 중앙(기본)
 }
-function kgpQuickBtnStyle(collected) {
+// v65 STEP3: 카드에서 대표 이미지 요소 찾기(가장 큰 상품 이미지) — 버튼을 이 이미지 위에 앵커.
+function _kgpCardImage(card) {
+  if (!card || !card.querySelectorAll) return null;
+  let best = null, bestArea = 0;
+  try {
+    const imgs = card.querySelectorAll("img");
+    for (let i = 0; i < imgs.length; i++) {
+      const im = imgs[i];
+      const w = im.naturalWidth || im.width || im.clientWidth || 0;
+      const h = im.naturalHeight || im.height || im.clientHeight || 0;
+      if (w < 60 || h < 60) continue;                    // 아이콘/썸네일 제외
+      const area = w * h;
+      if (area > bestArea) { bestArea = area; best = im; }
+    }
+  } catch (e) {}
+  return best;
+}
+function kgpQuickBtnStyle(collected, mode) {
   return [
     "position:absolute", "z-index:2147483639",
-  ].concat(_kgpAnchorCss()).concat([
+  ].concat(_kgpAnchorCss(mode)).concat([
     "display:flex", "align-items:center", "justify-content:center",
     "gap:6px", "white-space:nowrap",
     KGP_TOUCH ? "padding:5px 11px" : "padding:6px 14px", "border-radius:999px", "cursor:pointer",
@@ -1325,7 +1344,7 @@ function kgpMarkQuickCollected(btn) {
   btn.dataset.collected = "1";
   const lbl = btn.querySelector(".kgp-q-label");
   if (lbl) lbl.textContent = "수집됨 ✓";
-  btn.style.cssText = kgpQuickBtnStyle(true);
+  btn.style.cssText = kgpQuickBtnStyle(true, btn.dataset.anchorMode || "");   // v65 STEP3: 앵커 모드 보존
   btn.style.cursor = "default";
 }
 function kgpQuickCollect(card, btn) {
@@ -1649,22 +1668,28 @@ function kgpInjectListing() {
         c.el.appendChild(ad);
       }
 
-      // v42 E-3: 호버 즉시 수집 버튼(썸네일 중앙, 데스크톱=hover 노출/터치=우상단 상시).
-      if (!c.el.querySelector(":scope > .kgp-card-quick")) {
+      // v42 E-3 / v65 STEP3: 호버 즉시 수집 버튼 — 카드 우측 허공이 아니라 **상품 이미지 요소 위**에 앵커.
+      //   이미지를 못 찾으면 카드 좌상단 폴백(mode=corner, 허공 금지). 데스크톱=hover 노출/터치=우상단 상시.
+      if (!c.el.querySelector(".kgp-card-quick")) {
         const done = _kgpCollectedUrls.has(c.url);
+        const imgEl = _kgpCardImage(c.el);
+        const host = (imgEl && imgEl.parentElement) ? imgEl.parentElement : c.el;
+        const mode = imgEl ? "" : "corner";
         const q = document.createElement("div");
         q.className = "kgp-card-quick";
         q.dataset.url = c.url;
+        q.dataset.anchorMode = mode;
         if (done) q.dataset.collected = "1";
         q.innerHTML = '<span style="display:flex;width:14px;height:14px;flex:none">' + KGP_BRIDGE_MINI +   // v64 STEP3: 아이콘 축소(21→14), 텍스트 위주
           '</span><span class="kgp-q-label">' + (done ? "수집됨 ✓" : "수집") + "</span>";
-        q.style.cssText = kgpQuickBtnStyle(done);
+        q.style.cssText = kgpQuickBtnStyle(done, mode);
         q.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); kgpQuickCollect(c, q); });
         if (!KGP_TOUCH) {
           c.el.addEventListener("mouseenter", () => { if (q.dataset.collected !== "1") q.style.opacity = "1"; });
           c.el.addEventListener("mouseleave", () => { if (q.dataset.collected !== "1") q.style.opacity = "0"; });
         }
-        c.el.appendChild(q);
+        try { if (getComputedStyle(host).position === "static") host.style.position = "relative"; } catch (e) {}
+        host.appendChild(q);
       }
     } catch (e) { /* noop */ }
   });
@@ -1856,7 +1881,7 @@ try {
     if (changes && changes.kgp_diag) { KGP_DIAG = !!changes.kgp_diag.newValue; kgpDiagApply(); }
     if (changes && changes.kgp_hover_anchor) {          // v64 STEP3: 위치 변경 즉시 반영
       KGP_HOVER_ANCHOR = changes.kgp_hover_anchor.newValue || "center";
-      document.querySelectorAll(".kgp-card-quick").forEach((q) => { q.style.cssText = kgpQuickBtnStyle(q.dataset.collected === "1"); });
+      document.querySelectorAll(".kgp-card-quick").forEach((q) => { q.style.cssText = kgpQuickBtnStyle(q.dataset.collected === "1", q.dataset.anchorMode || ""); });
     }
     if (changed) kgpRefresh();                          // 런타임 즉시 반영
   });

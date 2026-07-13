@@ -21,11 +21,11 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.69"
+    assert MANIFEST["version"] == "1.5.70"
 
 
 def test_button_shrunk_and_tokens():
-    style = re.search(r"function kgpQuickBtnStyle\(collected\) \{.*?\n\}", CS, re.S).group(0)
+    style = re.search(r"function kgpQuickBtnStyle\(collected, mode\) \{.*?\n\}", CS, re.S).group(0)
     assert "min-height:34px" in style        # 지름 절반(66→34)
     assert "66px" not in style               # 옛 큰 값 제거
     # gogabridj 토큰만(먹/금/청록) — 임의 색 없음.
@@ -47,7 +47,7 @@ def test_anchor_setting_wired():
 @pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치")
 def test_anchor_css_node():
     # KGP_TOUCH=false(데스크톱)일 때 앵커별 CSS: center=translate, bl=bottom+left, br=bottom+right.
-    fn = re.search(r"function _kgpAnchorCss\(\) \{.*?\n\}", CS, re.S).group(0)
+    fn = re.search(r"function _kgpAnchorCss\(mode\) \{.*?\n\}", CS, re.S).group(0)
     harness = (
         "var KGP_TOUCH=false; var _a='center';\n"
         "function kgpLSget(){return _a;}\n"
