@@ -6037,6 +6037,12 @@ def _shape_collect_items(items, current_lang):
             except Exception:
                 cs = None
         it["collect_status"] = cs
+        # v65 STEP4: 보강(2단 수집) 상태 — 완료(enriched)/대기(벌크로 수집됐으나 아직 상세 미보강).
+        #   단건(상세페이지 클릭)은 이미 풀데이터라 보강 불필요('' → 배지 없음). 정직: 실제 저장값 기준.
+        _enriched = bool(ex.get("enriched"))
+        _src = str(it.get("source") or "")
+        _pending = (not _enriched) and _src in ("bulk", "bulk_collect") and bool(cs) and cs.get("status") != "성공"
+        it["enrich_status"] = "done" if _enriched else ("pending" if _pending else "")
     return items
 
 
