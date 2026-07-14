@@ -420,6 +420,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     });
     return true;
   }
+  // v70 STEP5: 진단 스냅샷 저장 — 현재 렌더된 페이지 DOM(outerHTML)을 반환. 팝업이 파일로 내려받아
+  //   실페이지 하네스 픽스처로 커밋(오너 1회). 서버측 직접 크롤 없이 렌더된 DOM 그대로.
+  if (msg.action === "kgpSnapshot") {
+    let html = "";
+    try { html = "<!doctype html>\n" + document.documentElement.outerHTML; } catch (e) { html = ""; }
+    sendResponse({ ok: !!html, html: html, host: (location.hostname || ""), url: (location.href || ""), title: (document.title || "") });
+    return true;
+  }
   return false;
 });
 

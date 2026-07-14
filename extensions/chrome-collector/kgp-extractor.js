@@ -517,8 +517,10 @@
         if (_galleryExcluded(im)) continue;
         var src = _amazonDynMax(im) || _bestImgSrc(im);   // 고해상 우선
         if (!src) continue;
-        var w = im.naturalWidth || im.width || 0, h = im.naturalHeight || im.height || 0;
-        if ((w && w < 40) || (h && h < 40)) continue;      // 1px·스프라이트 아이콘 배제
+        // 로드된 실측 크기만으로 1px·초소형 아이콘 배제(깨진/미로드 이미지의 layout width=16 오판 방지 —
+        //   미로드는 파일명 기반 NONPROD_IMG(sprite/icon)로 걸러짐).
+        var nw = im.naturalWidth || 0, nh = im.naturalHeight || 0;
+        if ((nw && nw < 40) || (nh && nh < 40)) continue;
         if (isProductImg(src)) uniqPush(out, seen, hiRes(src));
       }
     } catch (e) {}
