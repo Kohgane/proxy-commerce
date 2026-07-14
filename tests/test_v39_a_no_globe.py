@@ -41,4 +41,4 @@ def test_all_extension_js_emoji_free():
 def test_favicon_is_bridge_and_version_bumped():
     fav = Path("src/seller_console/static/favicon.svg").read_text(encoding="utf-8")
     assert "bridge gateway mark" in fav and "globe" not in fav.lower()
-    assert MANIFEST["version"] == "1.5.73"
+    assert MANIFEST["version"] == "1.5.74"

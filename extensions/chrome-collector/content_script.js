@@ -967,17 +967,27 @@ let _kgpClosed = false;           // 사용자가 툴바를 닫았으면 자동 
 let _kgpExcl = { ad: 0, region: 0, parse: 0, url: 0, dup: 0, reco: 0 };
 function _kgpExclReset() { _kgpExcl = { ad: 0, region: 0, parse: 0, url: 0, dup: 0, reco: 0 }; }
 
-// v64 STEP2: 전체선택/전체수집 대상 — 기본은 실상품만(광고 제외). '광고 포함' 토글 시 전부.
+// v64 STEP2 / v67 STEP1: 전체선택/전체수집 대상 — 기본은 **메인 그리드 실상품만**(추천·광고 제외).
+//   '추천 포함'(kgp_incl_reco)·'광고 포함'(kgp_incl_ads) 토글로 확장. 버튼은 전 타일에 부착돼 개별 수집은 항상 가능.
 function _kgpInclAds() { return kgpLSget("kgp_incl_ads", "0") === "1"; }
+function _kgpInclReco() { return kgpLSget("kgp_incl_reco", "0") === "1"; }
 function _kgpSelectableUrls() {
-  const incl = _kgpInclAds();
+  const inclAds = _kgpInclAds(), inclReco = _kgpInclReco();
   return Object.keys(_kgpCardByUrl).filter((u) => {
     const c = _kgpCardByUrl[u];
-    return incl || !(c && c.sponsored);
+    if (c && c.sponsored && !inclAds) return false;
+    if (c && c.region === "reco" && !inclReco) return false;
+    return true;
   });
 }
 function _kgpAdCount() {
   return Object.keys(_kgpCardByUrl).filter((u) => _kgpCardByUrl[u] && _kgpCardByUrl[u].sponsored).length;
+}
+function _kgpRecoCount() {
+  return Object.keys(_kgpCardByUrl).filter((u) => _kgpCardByUrl[u] && _kgpCardByUrl[u].region === "reco").length;
+}
+function _kgpMainCount() {
+  return Object.keys(_kgpCardByUrl).filter((u) => { const c = _kgpCardByUrl[u]; return c && c.region !== "reco" && !c.sponsored; }).length;
 }
 
 function _kgpPrice(text) {
@@ -1067,8 +1077,22 @@ function _kgpInBadRegion(el, opts) {
     const tag = (n.tagName || "").toLowerCase();
     const meta = ((n.id || "") + " " + cls + " " + ((n.getAttribute && (n.getAttribute("aria-label") || n.getAttribute("data-component-type"))) || "")).toLowerCase();
     if (tag === "footer" || tag === "header" || tag === "nav") return true;
-    if (structRe.test(meta)) return true;
+    // v67 STEP1: structuralOnly면 추천/캐러셀은 '제외' 안 함(전 타일 버튼 부착 — region 태깅으로 카운트만 구분).
+    if (!opts.structuralOnly && structRe.test(meta)) return true;
     if (!opts.allowAds && adRe.test(meta)) return true;   // 광고 영역 제외(아마존은 allowAds로 유지)
+  }
+  return false;
+}
+
+// v67 STEP1: 카드가 추천/캐러셀/frequently-viewed 영역인지(제외 아님 — region='reco' 태그용).
+function _kgpIsRecoRegion(el) {
+  const recoRe = /(recommend|related|carousel|slider|viewed|recently|also-?viewed|also-?bought|similar|frequently|rcmd|sponsored-products|p13n|cross-?sell|up-?sell|you-?may)/i;
+  let n = el;
+  for (let i = 0; n && i < 9; i++, n = n.parentElement) {
+    let cls = "";
+    try { cls = (typeof n.className === "string" ? n.className : (n.getAttribute && n.getAttribute("class")) || ""); } catch (e) { cls = ""; }
+    const meta = ((n.id || "") + " " + cls + " " + ((n.getAttribute && (n.getAttribute("aria-label") || n.getAttribute("data-component-type"))) || "")).toLowerCase();
+    if (recoRe.test(meta)) return true;
   }
   return false;
 }
@@ -1114,37 +1138,27 @@ function _kgpAmazonSponsored(el) {
 //   (유효 ASIN=실제 소싱 가능 상품). 비-상품 미디어(ASIN 없음)는 자연 제외 = v25 '광고·미디어 제외' 의도 유지.
 function _kgpAmazonCards() {
   const cards = [], seen = {};
-  // v66 STEP1: 감지 분모를 **메인 검색결과 그리드**로 한정(.s-main-slot). 추천 캐러셀·frequently-viewed·
-  //   배너 타일(메인 그리드 밖 유효 ASIN)은 분모에서 빼고 별도 카운트(_kgpExcl.reco) — 분모 뻥튀기 금지.
+  // v67 STEP1: **전 타일 버튼(대형 셀러툴 패리티)** — 메인 그리드뿐 아니라 추천 캐러셀·frequently-viewed
+  //   배너 타일에도 버튼 부착. 메인/추천 구분은 region 태그로(카운트 표시에만). 구조적 비상품(footer/nav)만 제외.
   const mainSlot = (document.querySelector && document.querySelector('.s-main-slot, [data-component-type="s-search-results"]')) || null;
-  const scope = mainSlot || document;
   const set = new Set();
-  scope.querySelectorAll('[data-component-type="s-search-result"], div[data-asin]:not([data-asin=""])')
+  document.querySelectorAll('[data-component-type="s-search-result"], div[data-asin]:not([data-asin=""])')
     .forEach((e) => set.add(e));
-  // 메인 그리드 밖 유효 ASIN 카드(추천 영역) → 분모 제외 + 별도 카운트.
-  if (mainSlot) {
-    document.querySelectorAll('div[data-asin]:not([data-asin=""])').forEach((e) => {
-      if (mainSlot.contains(e)) return;
-      const a2 = (e.getAttribute("data-asin") || "").trim();
-      const nested = e.parentElement && e.parentElement.closest('[data-asin]:not([data-asin=""])');
-      if (/^[A-Z0-9]{10}$/.test(a2) && !nested) _kgpExcl.reco++;   // 추천영역 n 제외
-    });
-  }
   const all = Array.from(set);
-  _kgpScannedCount = all.length;                          // '전체 N개' (메인 그리드 내 상품/비상품 합)
+  _kgpScannedCount = all.length;                          // '전체 N개'(메인+추천 상품/비상품 합)
   all.forEach((el) => {
     try {
-      if (_kgpInBadRegion(el, { allowAds: true })) { _kgpExcl.region++; return; }   // v64 STEP2: 스폰서=실상품 → 영역 제외 안 함(명시 태깅만)
-      // 유효 ASIN(B0… 등 10자 영숫자)만 = 실제 상품. 뮤직/앱/프로모 위젯은 ASIN이 없거나 비정상.
+      // v67: 구조적 비상품(footer/nav)만 제외 — 추천/캐러셀은 버튼 부착(region='reco' 태깅).
+      if (_kgpInBadRegion(el, { allowAds: true, structuralOnly: true })) { _kgpExcl.region++; return; }
       const asin = (el.getAttribute("data-asin") || "").trim();
       if (!/^[A-Z0-9]{10}$/.test(asin)) { _kgpExcl.parse++; return; }   // v65 STEP2: 유효 ASIN 없음=파싱 실패
-      // 중첩(스폰서 컨테이너 안 상품 카드) 시 같은 ASIN을 가진 조상이 있으면 스킵(중복 방지).
       const parentAsin = el.parentElement && el.parentElement.closest('[data-asin]:not([data-asin=""])');
       if (parentAsin && parentAsin !== el && (parentAsin.getAttribute("data-asin") || "").trim() === asin) { _kgpExcl.dup++; return; }
       const sponsored = _kgpAmazonSponsored(el);           // v45 P3: 제외 아님 — 태깅만(스폰서 상품도 수집).
-      if (sponsored) _kgpExcl.ad++;                         // v65 STEP2: 광고 카운트(제외 아님)
-      // v42 E-4: 유효 ASIN이면 상품 — 앵커 셀렉터 변형·가격 없는 카드('옵션 보기' 등)도 누락하지 않는다.
-      //   href는 앵커 없으면 ASIN으로 구성, 제목/이미지 셀렉터를 넓힌다. 가격은 선택.
+      if (sponsored) _kgpExcl.ad++;                        // v65 STEP2: 광고 카운트(제외 아님)
+      // v67 STEP1: region = 메인 그리드 안이면 main, 밖(추천/캐러셀)이면 reco. 버튼은 둘 다 부착.
+      const region = (mainSlot ? mainSlot.contains(el) : !_kgpIsRecoRegion(el)) ? "main" : "reco";
+      if (region === "reco") _kgpExcl.reco++;
       const a = el.querySelector('a.a-link-normal[href*="/dp/"], h2 a, a.a-link-normal.s-no-outline, a[href*="/dp/"]');
       let href = a && a.href ? a.href.split("?")[0].split("#")[0] : "";
       if (!href || href.indexOf("http") !== 0) href = location.origin + "/dp/" + asin;   // ASIN 폴백
@@ -1162,7 +1176,7 @@ function _kgpAmazonCards() {
       cards.push({
         url: href, title: (title || "(제목 없음)").slice(0, 200),
         image: bimg, images: bimg ? [bimg] : [], price: pr.price, currency: pr.currency,
-        sponsored: sponsored, el: el,   /* v42 1-1: USD 기본값 금지 · v45 P3: 스폰서 태깅(제외 아님) */
+        sponsored: sponsored, region: region, el: el,   /* v67: region 태그(main/reco) */
       });
     } catch (e) { /* noop */ }
   });
@@ -1201,7 +1215,8 @@ function _kgpGenericCards() {
       const href = a.href.split("#")[0];
       if (seen[href]) { _kgpExcl.dup++; continue; }
       if (!card) card = a.closest("li,article,div") || a;
-      if (_kgpInBadRegion(card)) { _kgpExcl.region++; continue; }   // 추천/푸터/캐러셀 제외
+      // v67 STEP1: 구조적 비상품(footer/nav)만 제외 — 추천/캐러셀 상품 타일도 버튼 부착(region='reco').
+      if (_kgpInBadRegion(card, { structuralOnly: true })) { _kgpExcl.region++; continue; }
       const text = (card.innerText || "").trim();
       const pr = _kgpPrice(text);
       const titleEl = card.querySelector("h1,h2,h3,h4,[class*='title'],[class*='name']");
@@ -1211,10 +1226,12 @@ function _kgpGenericCards() {
       // v43-2: 가격 또는 상세링크 중 하나면 상품 인식(가격만 필수였던 옛 규칙이 27중16 누락 유발).
       if (!pr.price && !_kgpIsDetailHref(href)) { _kgpExcl.parse++; continue; }  // 둘 다 없으면 제외(정직 카운트에 반영)
       seen[href] = 1;
+      const region = _kgpIsRecoRegion(card) ? "reco" : "main";   // v67: 추천 영역 태깅(버튼은 부착)
+      if (region === "reco") _kgpExcl.reco++;
       const bimg = _kgpBestImg(img) || img.src;             // v41 X-1: 실제 이미지 우선(placeholder 공유 방지)
       cards.push({
         url: href, title: title.trim().replace(/\s+/g, " ").slice(0, 200),
-        image: bimg, images: bimg ? [bimg] : [], price: pr.price, currency: pr.currency, el: card,
+        image: bimg, images: bimg ? [bimg] : [], price: pr.price, currency: pr.currency, region: region, el: card,
       });
     }
   } catch (e) { /* noop */ }
@@ -1407,15 +1424,11 @@ function kgpUpdateToolbar() {
   if (!c) return;
   // v42 E-4: 정직 표기 — 인식된 상품 수 + 제외(광고 등) 수를 눈에 보이게(조용한 누락 금지).
   // v64 STEP2: 광고(스폰서) 수를 명시(오너가 분류 정합을 눈으로 검증). 제외=구조적 비상품(광고 아님).
-  const ads = _kgpAdCount();
+  // v67 STEP1: 카운트 표기 [메인 n / 추천 m / 광고 k] — 버튼은 전 타일 부착, 카운트만 구분.
+  const ads = _kgpAdCount(), reco = _kgpRecoCount(), main = _kgpMainCount();
+  const recoTxt = reco ? ` · 추천 ${reco}` : "";
   const adTxt = ads ? ` · 광고 ${ads}` : "";
-  const recoTxt = _kgpExcl.reco ? ` · 추천 제외 ${_kgpExcl.reco}` : "";   // v66 STEP1: 추천영역 분모 제외
-  if (_kgpScannedCount > _kgpCards.length) {
-    const miss = _kgpScannedCount - _kgpCards.length;
-    c.textContent = `메인 ${_kgpScannedCount}개 중 상품 ${_kgpCards.length}개${adTxt} · 제외 ${miss}${recoTxt} · ${KGP_SELECTED.size}개 선택`;
-  } else {
-    c.textContent = `상품 ${_kgpCards.length}개${adTxt}${recoTxt} · ${KGP_SELECTED.size}개 선택`;
-  }
+  c.textContent = `메인 ${main}${recoTxt}${adTxt} · ${KGP_SELECTED.size}개 선택`;
 }
 
 function kgpCollect(urls) {
@@ -1515,6 +1528,7 @@ function kgpBuildToolbar() {
     '<button class="kgp-tb-btn" data-act="clear" style="' + ghost + '">선택 해제</button>' +
     '<button class="kgp-tb-btn" data-act="collect-sel" style="' + gold + '">선택 수집</button>' +
     '<button class="kgp-tb-btn" data-act="collect-all" style="' + teal + '">전체 수집</button>' +
+    '<button class="kgp-tb-btn" data-act="incl-reco" title="전체선택·전체수집에 추천/캐러셀 상품을 포함할지" style="' + ghost + '">' + (_kgpInclReco() ? '추천 포함 ✓' : '추천 포함') + '</button>' +
     '<button class="kgp-tb-btn" data-act="incl-ads" title="전체선택·전체수집에 광고(스폰서) 상품을 포함할지" style="' + ghost + '">' + (_kgpInclAds() ? '광고 포함 ✓' : '광고 포함') + '</button>' +
     '<span id="kgp-tb-status" style="opacity:.95;font-size:15px;max-width:420px"></span>' +
     '<button class="kgp-tb-btn" data-act="auto" title="새 목록 페이지에서 자동으로 열지 여부" style="' + ghost + '">' + (autoOn ? '자동' : '수동') + '</button>' +
@@ -1537,6 +1551,11 @@ function kgpBuildToolbar() {
       const next = _kgpInclAds() ? "0" : "1";
       kgpLSset("kgp_incl_ads", next);
       t.textContent = next === "1" ? "광고 포함 ✓" : "광고 포함";
+      kgpUpdateToolbar();
+    } else if (act === "incl-reco") {
+      const next = _kgpInclReco() ? "0" : "1";
+      kgpLSset("kgp_incl_reco", next);
+      t.textContent = next === "1" ? "추천 포함 ✓" : "추천 포함";
       kgpUpdateToolbar();
     } else if (act === "clear") {
       document.querySelectorAll(".kgp-card-chk").forEach((b) => {

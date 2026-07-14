@@ -20,7 +20,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.73"
+    assert MANIFEST["version"] == "1.5.74"
 
 
 def test_source_contract():
@@ -49,8 +49,9 @@ def test_amazon_exclusion_breakdown_node():
            + _extract("_kgpBestImg") + "\n" + _extract("_kgpPrice") + "\n" + _extract("_kgpAmazonCards") + "\n")
     harness = (
         "let _kgpScannedCount=0;\n"
-        "let _kgpExcl={ad:0,region:0,parse:0,url:0,dup:0};\n"
-        "function _kgpExclReset(){_kgpExcl={ad:0,region:0,parse:0,url:0,dup:0};}\n"
+        "let _kgpExcl={ad:0,region:0,parse:0,url:0,dup:0,reco:0};\n"
+        "function _kgpExclReset(){_kgpExcl={ad:0,region:0,parse:0,url:0,dup:0,reco:0};}\n"
+        "function _kgpIsRecoRegion(){return false;}\n"
         "global.location={origin:'https://www.amazon.com'};\n"
         "function mkImg(){return {alt:'상품',src:'https://img/x.jpg',currentSrc:'',getAttribute:function(){return null;}};}\n"
         "function card(asin, opts){opts=opts||{};\n"

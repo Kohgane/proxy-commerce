@@ -36,8 +36,9 @@ def test_p3_amazon_cards_includes_sponsored_excludes_media():
     block = CS[i:j]   # _kgpAmazonSponsored + _kgpAmazonCards
     harness = block + r"""
     let _kgpScannedCount = 0;
-    let _kgpExcl={ad:0,region:0,parse:0,url:0,dup:0};function _kgpExclReset(){};
+    let _kgpExcl={ad:0,region:0,parse:0,url:0,dup:0,reco:0};function _kgpExclReset(){};
     function _kgpInBadRegion(el){ return !!el.__bad; }
+    function _kgpIsRecoRegion(el){ return !!el.__reco; }
     function _kgpPrice(t){ return t && /\d/.test(t) ? {price:'10.00',currency:'USD'} : {price:'',currency:''}; }
     function _kgpBestImg(img){ return img ? img.src : ''; }
     function mkCard(o){
@@ -105,4 +106,4 @@ def test_p5_fab_documentElement_and_observer_reattach():
 
 
 def test_manifest_version_bumped():
-    assert MANIFEST["version"] == "1.5.73"
+    assert MANIFEST["version"] == "1.5.74"
