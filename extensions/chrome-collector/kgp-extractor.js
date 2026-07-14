@@ -563,6 +563,22 @@
   }
   function _hasDetailFold() { return _foldButtons().length > 0; }
   var OPT_LABEL = /(색상|색깔|컬러|사이즈|크기|규격|수량|종류|옵션|타입|스타일|모델|용량|color|colour|size|variant|option|type|style|qty|quantity|model|capacity)/i;
+  // v70 STEP2: 수량 셀렉터는 옵션(변형)이 아님 — 라벨/ID/이름이 수량류면 명시 제외(색상·사이즈 변형만 수집).
+  var QTY_RE = /(수량|개수|갯수|数量|数量|qty|quantity|amount|count)/i;
+  // 값이 순수 1..N 정수열(수량 드롭다운)이면 옵션 아님 — 라벨이 없어도 배제.
+  function _looksLikeQty(vals) {
+    if (!vals || vals.length < 2) return false;
+    var nums = [];
+    for (var i = 0; i < vals.length; i++) {
+      var t = String(vals[i]).replace(/\s+/g, "");
+      if (!/^\d{1,3}$/.test(t)) return false;   // 정수 아니면 수량 아님(색상/사이즈 텍스트)
+      nums.push(parseInt(t, 10));
+    }
+    // 1 또는 0에서 시작하는 오름차순 연속열 → 수량.
+    if (nums[0] > 2) return false;
+    for (var j = 1; j < nums.length; j++) { if (nums[j] !== nums[j - 1] + 1) return false; }
+    return true;
+  }
   function _domOptions() {
     var out = [], seen = {};
     function _push(name, vals) {
@@ -580,6 +596,9 @@
         var vals = Array.prototype.slice.call(sel.options || []).map(function (o) { return (o.textContent || "").trim(); })
           .filter(function (t) { return t && !/^(선택|선택하세요|choose|select|please)/i.test(t); });
         var lbl = sel.getAttribute("aria-label") || (sel.labels && sel.labels[0] && sel.labels[0].textContent) || "";
+        // v70 STEP2: 수량 드롭다운 제외 — 라벨/id/name이 수량류이거나 값이 순수 1..N 정수열이면 옵션 아님.
+        var selId = (sel.id || "") + " " + ((sel.getAttribute && sel.getAttribute("name")) || "");
+        if (QTY_RE.test(lbl) || QTY_RE.test(selId) || _looksLikeQty(vals)) continue;
         var m = String(lbl).match(OPT_LABEL); _push(m ? m[0] : "옵션", vals);
       }
     } catch (e) {}
@@ -587,12 +606,28 @@
     //   이름이 '옵션'으로 뭉개짐 → 행 id(inline-twister-row-color_name) / .a-form-label('Color:')로 축명 복원.
     try {
       var _TW_ID = { color: "색상", size: "사이즈", style: "스타일", pattern: "패턴", flavor: "종류", model: "모델", material: "소재", edition: "에디션" };
-      var trows = document.querySelectorAll('[id^="inline-twister-row-"],#twister [class*="twisterTextDiv" i]');
+      // v70 STEP2: 트위스터 값 정제 — 스와치 라벨은 img[alt]/aria-label 우선, 'Click to select X'류 접두 제거.
+      var _twClean = function (s) {
+        s = String(s || "").replace(/\s+/g, " ").trim();
+        var m = s.match(/^(?:click to select|select|choose|선택[:：]?)\s*(.+)$/i);
+        if (m && m[1]) s = m[1].trim();
+        return s.replace(/\.\s*$/, "").trim();
+      };
+      var _twVal = function (el) {
+        var im = el.querySelector && el.querySelector("img[alt]");
+        var v = (im && im.getAttribute && im.getAttribute("alt")) || "";
+        if (!v) v = (el.getAttribute && el.getAttribute("aria-label")) || "";
+        if (!v) v = (el.getAttribute && el.getAttribute("title")) || "";
+        if (!v) v = el.innerText || el.textContent || "";
+        return _twClean(v);
+      };
+      // v70 STEP2: 신형 인라인 트위스터(inline-twister-row-) + 구형 variation_ 컨테이너 둘 다.
+      var trows = document.querySelectorAll('[id^="inline-twister-row-"],[id^="variation_"],#twister [class*="twisterTextDiv" i]');
       for (var t2 = 0; t2 < trows.length; t2++) {
         var row = trows[t2];
         if (_nonProdRegion(row)) continue;
         // 축명: 행 id의 표준 축(color/size…)을 한글로 우선 매핑, 없으면 .a-form-label 텍스트.
-        var rid = (row.id || "").replace("inline-twister-row-", "").split("_")[0].toLowerCase();
+        var rid = (row.id || "").replace(/^(inline-twister-row-|variation_)/, "").split("_")[0].toLowerCase();
         var nm = _TW_ID[rid] || "";
         if (!nm) {
           var flbl = row.querySelector(".a-form-label,label");
@@ -601,11 +636,11 @@
             var fm = ft.match(OPT_LABEL); if (fm) nm = fm[0];
           }
         }
-        var tv = [], sw = row.querySelectorAll('.swatches li,[class*="swatch" i] li,ul.a-button-list li,[role="radio"],button[data-asin]');
+        // 값: 스와치 li·버튼·라디오(+img[alt]). 신형은 li[id^=color_name_]/구형은 ul li.
+        var tv = [], sw = row.querySelectorAll('li[id],li[data-asin],.swatches li,[class*="swatch" i] li,ul.a-button-list li,ul li,[role="radio"],button[data-asin],.a-button-toggle');
         for (var s3 = 0; s3 < sw.length && tv.length < 60; s3++) {
-          var el3 = sw[s3];
-          var st = String((el3.getAttribute && (el3.getAttribute("title") || el3.getAttribute("aria-label"))) || el3.innerText || el3.textContent || "").replace(/\s+/g, " ").trim();
-          if (st && st.length <= 40 && !/^(선택|choose|select|please|담기|구매|장바구니)/i.test(st)) tv.push(st);
+          var st = _twVal(sw[s3]);
+          if (st && st.length <= 40 && !QTY_RE.test(st) && !/^(선택|choose|select|please|담기|구매|장바구니|add to|buy)/i.test(st)) tv.push(st);
         }
         _push(nm || "옵션", tv);
       }
@@ -618,11 +653,13 @@
       for (var g = 0; g < groups.length; g++) {
         var grp = groups[g];
         if (_nonProdRegion(grp) || _galleryExcluded(grp)) continue;
-        if (grp.closest && grp.closest('[id^="inline-twister-row-"]')) continue;   // v62: 트위스터는 위에서 축명 매핑(중복 방지)
+        if (grp.closest && grp.closest('[id^="inline-twister-row-"],[id^="variation_"]')) continue;   // v62/v70: 트위스터는 위에서 축명 매핑(중복 방지)
         if (grp.querySelector("select")) continue;       // select은 위에서 처리(중복 방지)
         // 그룹 라벨: aria-label / [class*=label] / 첫 텍스트 노드 중 OPT_LABEL 매칭.
         var glbl = grp.getAttribute("aria-label") || "";
         if (!glbl) { var le = grp.querySelector('[class*="label" i],[class*="title" i],dt,.name'); if (le) glbl = (le.innerText || le.textContent || ""); }
+        // v70 STEP2: 수량 그룹 제외.
+        if (QTY_RE.test(glbl) || QTY_RE.test(grp.id || "")) continue;
         var gm = String(glbl).match(OPT_LABEL);
         // 값 후보: 버튼·라디오·옵션 라벨·스와치.
         var cands = grp.querySelectorAll('button,[role="radio"],label,[class*="value" i],[class*="item" i],a[data-value],[data-value]');
@@ -636,6 +673,7 @@
         }
         // 라벨 텍스트가 값에 섞이면 제외(라벨=그룹명).
         if (gm) vv = vv.filter(function (v) { return v.replace(/\s/g, "") !== gm[0].replace(/\s/g, ""); });
+        if (_looksLikeQty(vv)) continue;   // v70 STEP2: 순수 1..N 정수열(수량) 제외
         _push(gm ? gm[0] : "옵션", vv);
       }
     } catch (e) {}

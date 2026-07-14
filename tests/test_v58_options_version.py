@@ -71,7 +71,8 @@ def test_button_group_options_extracted():
     opts = {o["name"]: o["values"] for o in (r.get("options") or [])}
     assert "색상" in opts and set(opts["색상"]) == {"블랙", "화이트"}
     assert "사이즈" in opts and set(opts["사이즈"]) == {"S", "M", "L"}
-    assert "수량" in opts and set(opts["수량"]) == {"1팩", "2팩"}
+    # v70 STEP2: '수량' 라벨 그룹은 옵션(변형) 아님 → 명시 제외(색상·사이즈만 변형).
+    assert "수량" not in opts
 
 
 # ── STEP3 버전 스탬프 ──
