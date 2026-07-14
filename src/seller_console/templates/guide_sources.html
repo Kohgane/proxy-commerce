@@ -1,0 +1,59 @@
+{% extends "_base.html" %}
+{% block title %}기본 지원 소싱처{% endblock %}
+{% block content %}
+<div class="container-fluid py-4" style="max-width: 960px;">
+  <div class="mb-4">
+    <h1 class="h3 mb-1"><i class="bi bi-diagram-3"></i> 기본 지원 소싱처</h1>
+    <p class="text-muted mb-0">아래 사이트에서는 <strong>고가수집기</strong> 확장이 자동으로 켜집니다. 상품 목록에서는 카드마다 <strong>호버 [수집]</strong>과 화면 상단 <strong>벌크 수집 바</strong>, 상품 상세에서는 우측 <strong>단건 수집 버튼</strong>이 항상 나타납니다.</p>
+  </div>
+
+  <!-- 버튼 보장 계약 -->
+  <div class="card mb-4">
+    <div class="card-body">
+      <h5 class="fw-bold mb-2"><i class="bi bi-bridge text-teal"></i> 어디서든 수집 버튼이 뜹니다</h5>
+      <p class="small text-muted mb-2">사이트 구조가 바뀌어 정밀 인식이 빗나가도, <strong>제네릭 타일 감지</strong>가 폴백으로 반드시 작동합니다. 그래서 아래 소싱처에서는 목록·상세 어느 화면이든 버튼이 사라지지 않습니다.</p>
+      <div class="small text-muted">
+        <span class="me-3"><i class="bi bi-grid-3x3-gap"></i> 목록 → 호버 [수집] + 벌크 바</span>
+        <span class="me-3"><i class="bi bi-arrow-right-short"></i></span>
+        <span><i class="bi bi-card-image"></i> 상세 → 단건 수집 버튼</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 레지스트리 표 -->
+  <div class="card mb-4">
+    <div class="table-responsive">
+      <table class="table align-middle mb-0">
+        <thead>
+          <tr class="small text-muted">
+            <th>소싱처</th><th>도메인</th>
+            <th class="text-center">목록 버튼</th>
+            <th class="text-center">호버 수집</th>
+            <th class="text-center">상세 버튼</th>
+            <th>비고</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in sites %}
+          <tr>
+            <td class="fw-bold">{{ s.label }}</td>
+            <td class="small text-muted">{{ s.domains }}</td>
+            <td class="text-center">{% if s.list_btn %}<i class="bi bi-check-lg text-success"></i>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td class="text-center">{% if s.hover %}<i class="bi bi-check-lg text-success"></i>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td class="text-center">{% if s.detail_btn %}<i class="bi bi-check-lg text-success"></i>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td class="small text-muted">
+              {% if s.adapter %}<span class="badge rounded-pill" style="background:color-mix(in srgb,var(--gold,#c9a24b) 18%,transparent);color:var(--ink,#1a1714)"><i class="bi bi-stars"></i> 정밀 어댑터</span> {% endif %}{{ s.note }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 미지원 사이트 정직 안내 -->
+  <div class="alert alert-secondary small mb-0">
+    <i class="bi bi-info-circle"></i> 여기 없는 사이트에서 수집하려면 확장의 <strong>소싱처 관리</strong>에서 도메인을 직접 추가하세요. 추가한 사이트도 제네릭 감지로 목록·상세 버튼이 나타납니다. (도메인을 확인하지 못한 사이트를 기본 목록에 넣지 않는 건 <strong>정직 데이터</strong> 원칙 때문입니다 — 가짜 지원 표기 금지.)
+  </div>
+</div>
+{% endblock %}
