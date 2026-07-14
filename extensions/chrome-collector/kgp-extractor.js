@@ -495,9 +495,53 @@
     } catch (e) {}
     return "";
   }
+  // v70 STEP3: 아마존 갤러리 hi-res 승격 — data-a-dynamic-image(url→[w,h] JSON)에서 최대 해상도 URL.
+  function _amazonDynMax(im) {
+    try {
+      var j = im.getAttribute && im.getAttribute("data-a-dynamic-image");
+      if (!j) return "";
+      var map = JSON.parse(j), best = "", ba = -1;
+      for (var k in map) { if (!map.hasOwnProperty(k)) continue; var d = map[k] || []; var a = (d[0] || 0) * (d[1] || 0); if (a > ba) { ba = a; best = k; } }
+      return best;
+    } catch (e) { return ""; }
+  }
+  // v70 STEP3: 아마존 갤러리 스코프 — #altImages(썸네일 스트립) + #imgTagWrapper(메인)만. 관련상품·스프라이트·1px 배제,
+  //   hiRes/data-old-hires/data-a-dynamic-image 고해상 승격. 브로드 제네릭 갤러리(추천 캐러셀 혼입=58장 근원)는 건너뜀.
+  function _amazonGallery() {
+    var out = [], seen = {};
+    var aSel = "#altImages img, #imgTagWrapperId img, #imgTagWrapper img, #main-image-container img, #imageBlock img, #ivLargeImage img, #landingImage";
+    try {
+      var els = document.querySelectorAll(aSel);
+      for (var i = 0; i < els.length; i++) {
+        var im = els[i];
+        if (_galleryExcluded(im)) continue;
+        var src = _amazonDynMax(im) || _bestImgSrc(im);   // 고해상 우선
+        if (!src) continue;
+        var w = im.naturalWidth || im.width || 0, h = im.naturalHeight || im.height || 0;
+        if ((w && w < 40) || (h && h < 40)) continue;      // 1px·스프라이트 아이콘 배제
+        if (isProductImg(src)) uniqPush(out, seen, hiRes(src));
+      }
+    } catch (e) {}
+    return out;
+  }
   function _domImages() {
     var out = [], seen = {}, det = [], detSeen = {};
     var og = _meta("og:image") || _meta("og:image:url"); if (isProductImg(og)) uniqPush(out, seen, hiRes(og));
+    // v70 STEP3: 아마존은 갤러리 스코프를 #altImages+#imgTagWrapper로 한정(58장 혼입 방지) → 상세만 dSel로 추가.
+    var _host = ""; try { _host = (location.hostname || "").toLowerCase(); } catch (e) {}
+    if (/(^|\.)amazon\.[a-z.]+$/.test(_host)) {
+      var ag = _amazonGallery();
+      for (var ai = 0; ai < ag.length; ai++) uniqPush(out, seen, ag[ai]);
+      try {
+        var adels = document.querySelectorAll('#aplus img,#productDescription img,#feature-bullets img,#aplus_feature_div img');
+        for (var adi = 0; adi < adels.length; adi++) {
+          var adm = adels[adi]; if (_nonProdRegion(adm) || _galleryExcluded(adm)) continue;
+          var adsrc = _amazonDynMax(adm) || _bestImgSrc(adm);
+          if (isProductImg(adsrc)) uniqPush(det, detSeen, hiRes(adsrc));
+        }
+      } catch (e) {}
+      return { images: out, detailImages: det };   // 브로드 제네릭 스코프 건너뜀(자기 상품만)
+    }
     // 상품 갤러리 컨테이너(메인 캐러셀/스와이퍼/프리뷰)로 스코프 한정 — 페이지 전체 document.images 금지.
     var gSel = '[class*="gallery" i] img,[class*="product-image" i] img,[class*="main-image" i] img,#imgTagWrapperId img,'
       + '[class*="swiper" i] img,[class*="carousel" i] img,[class*="preview" i] img,[class*="mainImage" i] img,'
