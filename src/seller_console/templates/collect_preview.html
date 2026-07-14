@@ -1168,14 +1168,24 @@ function initEditor() {
   if (document.querySelectorAll('#imageRows .img-row').length === 0) addImageRow('');
   var _opts = _initOptions();
   _opts.forEach(o => addOptionRow(o.name, o.values));
-  // v58 STEP2: 옵션 누락 시 정직 배지(무음 아님 — 직접 추가 유도).
+  // v58 STEP2 / v67 STEP3: 옵션 없음 배지 — 무옵션(단일 상품)과 추출 실패를 구분(정직).
+  //   핵심 필드(가격·이미지)를 제대로 읽었으면 = 옵션 UI 없는 단일 상품 → 중립('단일 상품').
+  //   핵심도 못 읽었으면 = 추출 실패 → 경고색('옵션 미수집').
   (function () {
     var host = document.getElementById('optionRows');
     if (host && _opts.length === 0) {
+      var _imgOk = Array.isArray(_EXTRA.images) && _EXTRA.images.length > 0;
+      var _priceOk = _EXTRA.price && String(_EXTRA.price).trim() && _EXTRA.price_status !== 'needs_check';
+      var coreOk = _imgOk && _priceOk;   // 상품 정보를 제대로 읽음 → 옵션 없음 = 단일 상품
       var b = document.createElement('div');
-      b.className = 'small text-muted';
-      b.innerHTML = '<span class="badge" style="background:color-mix(in srgb,var(--warn,#f5821f) 14%,transparent);color:var(--warn,#f5821f)">' +
-        '<i class="bi bi-exclamation-triangle"></i> 옵션 미수집</span> 이 상품에서 옵션(색상·사이즈·팩 등)을 찾지 못했어요. 필요하면 <strong>+ 옵션 추가</strong>로 직접 입력하세요.';
+      b.className = 'small';
+      if (coreOk) {
+        b.innerHTML = '<span class="badge" style="background:var(--hanji,#f5efe3);color:var(--muted,#8a8275);border:1px solid var(--line,#e6decb)">' +
+          '<i class="bi bi-box"></i> 단일 상품</span> 옵션(색상·사이즈)이 없는 단일 상품이에요. 필요하면 <strong>+ 옵션 추가</strong>로 직접 입력하세요.';
+      } else {
+        b.innerHTML = '<span class="badge" style="background:color-mix(in srgb,var(--warn,#f5821f) 14%,transparent);color:var(--warn,#f5821f)">' +
+          '<i class="bi bi-exclamation-triangle"></i> 옵션 미수집</span> 상품 정보를 완전히 읽지 못해 옵션을 못 찾았어요. 보강 후 다시 확인하거나 <strong>+ 옵션 추가</strong>로 직접 입력하세요.';
+      }
       host.parentNode.appendChild(b);
     }
   })();
