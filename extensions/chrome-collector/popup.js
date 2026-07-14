@@ -156,11 +156,11 @@ if (hoverAnchor) {
       const supported = r.allowed ? "✓ 소싱처" : "✗ 비지정";
       // v65 STEP2: 제외 사유 분해('제외 (광고 등)' 뭉뚱그림 금지).
       const ex = r.excl || {};
-      const exclLine = "제외: 광고 " + (ex.ad || 0) + " · 파싱실패 " + (ex.parse || 0)
+      // v67 STEP1: 제외 사유(광고·reco는 '제외'가 아니라 태그 — 버튼 부착됨). 진짜 제외만.
+      const exclLine = "제외: 파싱실패 " + (ex.parse || 0)
         + " · URL실패 " + (ex.url || 0) + " · 중복 " + (ex.dup || 0) + " · 비상품영역 " + (ex.region || 0);
-      // v66 STEP1: 메인 그리드 n/n + 추천영역 제외 m(분모 뻥튀기 금지).
-      const mainLine = "메인 그리드: 상품 " + r.cards + " / 스캔 " + r.scanned
-        + (ex.reco ? " · 추천영역 제외 " + ex.reco : "");
+      // v67 STEP1: 감지 = 전 타일 버튼 부착. [메인 / 추천 / 광고] 구분(카운트만).
+      const mainLine = "감지: 상품 " + r.cards + "개 (추천 " + (ex.reco || 0) + " · 광고 " + (ex.ad || 0) + " 포함) / 스캔 " + r.scanned;
       body.innerHTML = [
         "호스트: " + esc(r.host) + " · " + supported,
         "판정: " + (PT[r.pageType] || r.pageType) + " · 버튼: " + (BTN[r.button] || r.button),

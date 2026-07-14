@@ -29,9 +29,9 @@ def test_generic_recovers_priceless_detail_cards():
         return CS[i:j]
     deps = "\n".join([
         "let _kgpScannedCount=0;",
-        "let _kgpExcl={ad:0,region:0,parse:0,url:0,dup:0};function _kgpExclReset(){};",
+        "let _kgpExcl={ad:0,region:0,parse:0,url:0,dup:0,reco:0};function _kgpExclReset(){};",
         "const _KGP_ORIG_PRICE_RE=/x^/;const _KGP_NONPROD_RE=/(recommend|related|footer|review)/i;",
-        fn("_kgpInBadRegion"), fn("_kgpPrice"), fn("_kgpBestImg"),
+        fn("_kgpInBadRegion"), fn("_kgpIsRecoRegion"), fn("_kgpPrice"), fn("_kgpBestImg"),
         fn("_kgpIsDetailHref"), fn("_kgpGenericCards"),
     ])
     harness = deps + r"""
@@ -68,9 +68,9 @@ def test_non_product_links_still_excluded():
         pytest.skip("node 미설치")
     deps = "\n".join([
         "let _kgpScannedCount=0;",
-        "let _kgpExcl={ad:0,region:0,parse:0,url:0,dup:0};function _kgpExclReset(){};",
+        "let _kgpExcl={ad:0,region:0,parse:0,url:0,dup:0,reco:0};function _kgpExclReset(){};",
         "const _KGP_ORIG_PRICE_RE=/x^/;const _KGP_NONPROD_RE=/(recommend|related|footer|review)/i;",
-        fn("_kgpInBadRegion"), fn("_kgpPrice"), fn("_kgpBestImg"),
+        fn("_kgpInBadRegion"), fn("_kgpIsRecoRegion"), fn("_kgpPrice"), fn("_kgpBestImg"),
         fn("_kgpIsDetailHref"), fn("_kgpGenericCards"),
     ])
     harness = deps + r"""

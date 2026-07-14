@@ -20,18 +20,18 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.73"
+    assert MANIFEST["version"] == "1.5.74"
 
 
 def test_source_contract():
-    assert "reco: 0" in CS                                    # 추천영역 카운터
-    assert ".s-main-slot" in CS                               # 메인 그리드 스코프
+    assert "reco: 0" in CS                                    # 추천 카운터
+    assert ".s-main-slot" in CS                               # 메인 그리드 판정
     assert "_kgpExcl.reco++" in CS
-    # 스코프를 메인 슬롯으로 한정(scope.querySelectorAll).
-    assert "scope.querySelectorAll" in CS
-    # 팝업/툴바에 추천 제외 표기.
-    assert "추천영역 제외" in POPUP_JS
-    assert "추천 제외" in CS
+    # v67 정정: 전 타일 감지 + region 태그(추천도 버튼 부착, 구조적만 제외).
+    assert "structuralOnly: true" in CS
+    assert "region: region" in CS
+    # 팝업/툴바에 추천 카운트 표기.
+    assert "추천" in POPUP_JS and "추천" in CS
 
 
 def _extract(fn):
@@ -42,8 +42,9 @@ def _extract(fn):
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치")
 def test_main_slot_scope_excludes_reco_node():
-    """메인 슬롯 안 3 상품 + 밖(추천) 2 유효 ASIN → 감지 3, reco 2(분모 제외)."""
-    fns = (_extract("_kgpInBadRegion") + "\n" + _extract("_kgpAmazonSponsored") + "\n"
+    """v67: 메인 슬롯 안 3 + 밖(추천) 2 → 전부 감지(버튼 부착), 추천 2 태깅(reco)."""
+    fns = (_extract("_kgpInBadRegion") + "\n" + _extract("_kgpIsRecoRegion") + "\n"
+           + _extract("_kgpAmazonSponsored") + "\n"
            + _extract("_kgpBestImg") + "\n" + _extract("_kgpPrice") + "\n" + _extract("_kgpAmazonCards") + "\n")
     harness = (
         "let _kgpScannedCount=0;\n"
@@ -70,7 +71,9 @@ def test_main_slot_scope_excludes_reco_node():
         + fns +
         "_kgpExclReset();\n"
         "var cards=_kgpAmazonCards();\n"
-        "console.log(JSON.stringify({count:cards.length, scanned:_kgpScannedCount, reco:_kgpExcl.reco}));\n"
+        "var regs=cards.map(function(c){return c.region;});\n"
+        "console.log(JSON.stringify({count:cards.length, scanned:_kgpScannedCount, reco:_kgpExcl.reco, "
+        "mainN:regs.filter(function(r){return r==='main';}).length, recoN:regs.filter(function(r){return r==='reco';}).length}));\n"
     )
     f = tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8")
     f.write(harness); f.close()
@@ -80,6 +83,7 @@ def test_main_slot_scope_excludes_reco_node():
         out = json.loads(r.stdout.strip().splitlines()[-1])
     finally:
         Path(f.name).unlink()
-    assert out["count"] == 3, out       # 메인 그리드 3 상품만 감지
-    assert out["scanned"] == 3, out     # 분모 = 메인 3(추천 2 미포함, 뻥튀기 금지)
-    assert out["reco"] == 2, out        # 추천영역 2 별도 카운트
+    assert out["count"] == 5, out       # v67: 전 타일 감지(버튼 부착) — 메인3 + 추천2
+    assert out["scanned"] == 5, out
+    assert out["reco"] == 2, out        # 추천영역 2 태깅
+    assert out["mainN"] == 3 and out["recoN"] == 2, out   # region 태그 정확

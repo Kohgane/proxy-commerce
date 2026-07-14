@@ -20,7 +20,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.73"
+    assert MANIFEST["version"] == "1.5.74"
 
 
 def test_source_contract():
@@ -28,8 +28,8 @@ def test_source_contract():
     assert "function _kgpInBadRegion(el, opts)" in CS
     assert "const structRe" in CS and "const adRe" in CS
     assert "opts.allowAds" in CS
-    # 아마존 어댑터는 allowAds로 호출(스폰서 영역 제외 안 함).
-    assert "_kgpInBadRegion(el, { allowAds: true })" in CS
+    # 아마존 어댑터는 allowAds로 호출(스폰서 영역 제외 안 함). v67: structuralOnly로 추천도 버튼.
+    assert "_kgpInBadRegion(el, { allowAds: true, structuralOnly: true })" in CS
     # AD 미니 배지 + 전체선택 광고 제외 헬퍼 + 광고 포함 토글.
     assert "kgp-card-ad" in CS and 'textContent = "AD"' in CS
     assert "_kgpSelectableUrls" in CS and "_kgpInclAds" in CS

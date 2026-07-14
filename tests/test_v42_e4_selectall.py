@@ -31,8 +31,8 @@ def test_title_selectors_broadened():
 
 
 def test_honest_excluded_count_shown():
-    # v64 STEP2: 광고(스폰서)와 구조적 제외를 분리 표기(제외=광고 아님, 광고는 별도 카운트).
-    assert "제외 ${miss}" in CS and "광고 ${ads}" in CS
+    # v67 STEP1: 카운트 [메인 n / 추천 m / 광고 k] — 버튼은 전 타일 부착, 카운트만 구분.
+    assert "메인 ${main}" in CS and "추천 ${reco}" in CS and "광고 ${ads}" in CS
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치")
@@ -44,9 +44,9 @@ def test_amazon_adapter_recovers_priceless_cards():
         return CS[i:j]
     deps = "\n".join([
         "let _kgpScannedCount = 0;",
-        "let _kgpExcl={ad:0,region:0,parse:0,url:0,dup:0};function _kgpExclReset(){};",
+        "let _kgpExcl={ad:0,region:0,parse:0,url:0,dup:0,reco:0};function _kgpExclReset(){};",
         "const _KGP_ORIG_PRICE_RE=/x^/; const _KGP_NONPROD_RE=/(recommend|related|footer|review)/i;",
-        fn("_kgpInBadRegion"), fn("_kgpAmazonSponsored"), fn("_kgpPrice"),
+        fn("_kgpInBadRegion"), fn("_kgpIsRecoRegion"), fn("_kgpAmazonSponsored"), fn("_kgpPrice"),
         fn("_kgpBestImg"), fn("_kgpAmazonCards"),
     ])
     # 최소 DOM 스텁 — Amazon 검색결과 24개(16 유가 + 8 무가) + 2 스폰서.
