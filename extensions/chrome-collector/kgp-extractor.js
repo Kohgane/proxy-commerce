@@ -341,7 +341,8 @@
     return el ? (el.getAttribute("content") || "") : "";
   }
   function _nonProdRegion(el) {
-    var re = /(recommend|related|similar|also[-_ ]?bought|sponsored|advert|ranking|carousel|cross[-_ ]?sell|up[-_ ]?sell|footer|navbar|breadcrumb|review|comment|qna|feedback|seller|merchant|store[-_ ]?info|vendor|brand[-_ ]?header)/i;
+    // v70 STEP1: 아마존 광고·추천 위젯(정가 32.99 오채택 근원) 패턴 추가 — sims/multi-brand/video/sp_detail.
+    var re = /(recommend|related|similar|also[-_ ]?bought|sponsored|advert|ranking|carousel|cross[-_ ]?sell|up[-_ ]?sell|footer|navbar|breadcrumb|review|comment|qna|feedback|seller|merchant|store[-_ ]?info|vendor|brand[-_ ]?header|sims|multi[-_ ]?brand|video|sp[-_]detail|octopus)/i;
     var cur = el && el.parentElement, d = 0;
     while (cur && d < 8) {
       var tok = (cur.className && cur.className.baseVal !== undefined ? cur.className.baseVal : (cur.className || "")) + " " + (cur.id || "");
@@ -398,7 +399,38 @@
     }
     return null;
   }
+  function _clsId(el) {
+    return ((el.className && el.className.baseVal !== undefined ? el.className.baseVal : (el.className || "")) + " " + (el.id || ""));
+  }
+  // v70 STEP1: 아마존 정가(a-text-price) 배제 — 광고 위젯의 정가 32.99가 실판매가 29.99를 이기던 근원.
+  function _isListPriceNode(el) { return /a-text-price/i.test(_clsId(el)); }
+  // v70 STEP1: 어댑터 buybox 스코프 최우선 — 아마존 현재가 컨테이너(#apex_desktop·corePrice·priceToPay)에서만
+  //   현재가를 읽는다. 스코프 안이라도 정가(a-text-price)·취소선은 배제. 스코프 성공 시 전역 휴리스틱·폰트크기 불요.
+  function _buyboxPrice() {
+    var scopeSel = "#apex_desktop,#corePrice_desktop,#corePriceDisplay_desktop_feature_div,#corePrice_feature_div,#corePriceDisplay_mobile_feature_div,#buybox,#price_inside_buybox,#priceblock_ourprice,#newAccordionRow,#qualifiedBuybox";
+    var priceSel = ".priceToPay,.apexPriceToPay,[data-testid*=\"priceToPay\" i],span[data-a-color=\"price\"] .a-offscreen,.a-price:not(.a-text-price)";
+    var scopes;
+    try { scopes = document.querySelectorAll(scopeSel); } catch (e) { return null; }
+    for (var s = 0; s < scopes.length; s++) {
+      var sc = scopes[s];
+      if (_nonProdRegion(sc)) continue;
+      var pn;
+      try { pn = sc.querySelectorAll(priceSel); } catch (e) { continue; }
+      for (var i = 0; i < pn.length; i++) {
+        var el = pn[i];
+        if (_isListPriceNode(el) || _priceOriginal(el) || _nonPriceCtx(el)) continue;
+        var p = _composedPrice(el); if (!p || !p.price) continue;
+        var path = _nodePath(el);
+        try { console.log("[고가수집기] (buybox)가격 채택: " + p.price + " " + p.currency + " [" + path + "]"); } catch (e) {}
+        return { price: p.price, currency: p.currency, val: parseFloat(p.price) || 0, fs: 0, path: path, scope: true };
+      }
+    }
+    return null;
+  }
   function _domPrice() {
+    // v70 STEP1: buybox 스코프 최우선 → 실패 시에만 전역 휴리스틱(폰트크기는 동률 보조로 강등).
+    var bx = _buyboxPrice();
+    if (bx) return bx;
     var nodes = [];
     try {
       nodes = Array.prototype.slice.call(document.querySelectorAll('[class*="price" i],[class*="Price"],[itemprop="price"],[data-price],[class*="amount" i],[aria-label*="price" i]'));
@@ -407,11 +439,13 @@
     for (var i = 0; i < nodes.length; i++) {
       var el = nodes[i];
       if (_nonProdRegion(el) || _priceOriginal(el) || _nonPriceCtx(el)) continue;
+      if (_isListPriceNode(el)) continue;   // v70: 아마존 정가(a-text-price) 배제
       var p = _composedPrice(el); if (!p) continue;
       var fs = 0; try { fs = parseFloat(getComputedStyle(el).fontSize) || 0; } catch (e) {}
-      cands.push({ price: p.price, currency: p.currency, val: parseFloat(p.price) || 0, fs: fs, path: _nodePath(el) });
+      cands.push({ price: p.price, currency: p.currency, val: parseFloat(p.price) || 0, fs: fs, ord: i, path: _nodePath(el) });
     }
-    cands.sort(function (a, b) { return (b.fs - a.fs) || (b.val - a.val); });
+    // v70 STEP1: 폰트크기 강등 — 문서 순서(현재가는 buybox라 상단) 우선, 폰트는 동률 보조.
+    cands.sort(function (a, b) { return (a.ord - b.ord) || (b.fs - a.fs); });
     try {
       console.log("[고가수집기] (DOM)가격 후보(" + cands.length + "):",
         cands.slice(0, 6).map(function (c) { return c.price + " " + c.currency + " @" + c.fs + "px [" + c.path + "]"; }));
