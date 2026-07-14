@@ -144,8 +144,23 @@ async function _kgpEnrichOne(item, settings) {
   let win = null, tabId = null;
   try {
     if (mode === "window") {
-      win = await chrome.windows.create({ url: item.url, type: "popup", width: 480, height: 640, top: 90, left: 90, focused: false });
-      tabId = win && win.tabs && win.tabs[0] && win.tabs[0].id;
+      // v70 STEP6: 소형 창이 안 뜨는 환경(정책·API 부재) 대비 — 실패 시 조용히 죽지 않고 백그라운드 탭 폴백.
+      try {
+        if (!(chrome.windows && chrome.windows.create)) throw new Error("chrome.windows 미가용");
+        win = await chrome.windows.create({ url: item.url, type: "popup", width: 480, height: 640, top: 90, left: 90, focused: false });
+        tabId = win && win.tabs && win.tabs[0] && win.tabs[0].id;
+        // 창은 떴는데 tabs 미포함(타이밍) → 창의 탭 id 조회(url 불필요, id만 — tabs 권한 불요).
+        if (win && win.id != null && tabId == null) {
+          try { const ts = await chrome.tabs.query({ windowId: win.id }); tabId = ts && ts[0] && ts[0].id; } catch (e) {}
+        }
+        if (tabId == null) throw new Error("소형 창 탭 없음");
+      } catch (e) {
+        try { console.warn("[고가수집기 보강] 소형 창 실패 → 백그라운드 탭 폴백:", e && e.message); } catch (e2) {}
+        if (win && win.id != null) { try { await chrome.windows.remove(win.id); } catch (e3) {} }
+        win = null;
+        const tab = await chrome.tabs.create({ url: item.url, active: false });
+        tabId = tab && tab.id;
+      }
     } else {
       const tab = await chrome.tabs.create({ url: item.url, active: (mode === "tab-activate") });
       tabId = tab && tab.id;
