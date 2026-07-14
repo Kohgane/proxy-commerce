@@ -1,0 +1,13 @@
+{
+  "note": "합성 구조 재현 — 실제 아마존 캡처 아님(정직). v70 STEP1/2/3 추출 검증.",
+  "url": "https://www.amazon.com/dp/BENKSTEST1",
+  "title_contains": "BENKS",
+  "price": "29.99",
+  "currency": "USD",
+  "options": { "색상": ["Black", "Navy", "Red", "Green"] },
+  "no_option_names": ["수량"],
+  "images_min": 5,
+  "images_max": 15,
+  "images_exclude_substr": ["REL", "sprite"],
+  "description_contains": "무선 충전"
+}

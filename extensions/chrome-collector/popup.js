@@ -94,6 +94,38 @@ if (diagToggle) {
   });
 }
 
+// v70 STEP5: 진단 스냅샷 저장 — 현재 탭의 렌더된 DOM을 파일로 내려받아 실페이지 하네스 픽스처로.
+const btnSnapshot = document.getElementById("btnSnapshot");
+const snapshotNote = document.getElementById("snapshotNote");
+if (btnSnapshot) {
+  btnSnapshot.addEventListener("click", () => {
+    if (snapshotNote) snapshotNote.textContent = "페이지 DOM 수집 중…";
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs && tabs[0];
+      if (!tab || !tab.id) { if (snapshotNote) snapshotNote.textContent = "활성 탭을 찾지 못했어요."; return; }
+      chrome.tabs.sendMessage(tab.id, { action: "kgpSnapshot" }, (res) => {
+        if (chrome.runtime.lastError || !res || !res.ok || !res.html) {
+          if (snapshotNote) snapshotNote.textContent = "이 페이지에서는 스냅샷을 못 떴어요(확장 새로고침 후 재시도).";
+          return;
+        }
+        try {
+          const host = (res.host || "page").replace(/[^a-z0-9.-]/gi, "_");
+          const slug = (res.url || "").replace(/^https?:\/\//, "").replace(/[^a-z0-9]+/gi, "-").slice(0, 60) || host;
+          const blob = new Blob([res.html], { type: "text/html" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url; a.download = "kgp-snapshot-" + slug + ".html";
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 2000);
+          if (snapshotNote) snapshotNote.textContent = "저장됨 · fixtures/realpages/ 에 커밋하면 하네스 픽스처가 됩니다.";
+        } catch (e) {
+          if (snapshotNote) snapshotNote.textContent = "저장 실패: " + (e && e.message);
+        }
+      });
+    });
+  });
+}
+
 // v64 STEP1: 벌크 상세 보강 큐 진행률 패널(n/총 · 일시정지 · 중단).
 (function () {
   const panel = document.getElementById("enrichPanel");

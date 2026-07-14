@@ -18,6 +18,7 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
 ## 절대 원칙 (모든 작업)
 - 정직 데이터: 미연결·실패는 빈 상태+안내. **가짜 성공·가짜 수치·Mock·임의 환산 금지.**
 - 회귀 금지: 수정마다 pytest + CI 게이트.
+- **추출 로직(kgp-extractor.js) 변경 시 실페이지 하네스 통과 필수(v70 STEP5):** `tests/test_v70_realpage_harness.py`(Playwright, `fixtures/realpages/*.html` 스냅샷) 그린 없이 추출 변경 금지. 테무·로그인성 사이트 픽스처는 확장 팝업 '진단 스냅샷 저장'으로 오너가 커밋. 로컬 빠른 확인은 `node scripts/extract_harness.js`(jsdom).
 - 디자인은 `app.css` 토큰 단일 소스. 하드코딩 hex/px 금지.
 - 완료 인정 = **실제 화면 before/after 캡처.** "적용함" 보고만으론 미완.
 - 일반 유저에게 개발 표기·메타 JSON·관리자 링크·플레이스홀더(`{REGION_NAME...}`) 노출 금지.
