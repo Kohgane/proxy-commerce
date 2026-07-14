@@ -21,12 +21,12 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 def test_source_contract():
     assert "inline-twister-row-" in EX          # 아마존 트위스터 행 셀렉터
     assert "_TW_ID" in EX and "a-form-label" in EX
-    # 트위스터 행은 제네릭 스와치 경로에서 중복 배제(closest 가드).
-    assert 'grp.closest(\'[id^="inline-twister-row-"]\')' in EX
+    # 트위스터 행은 제네릭 스와치 경로에서 중복 배제(closest 가드) — v70: variation_ 구형도 포함.
+    assert 'grp.closest(\'[id^="inline-twister-row-"],[id^="variation_"]\')' in EX
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.76"
+    assert MANIFEST["version"] == "1.5.77"
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치")
@@ -35,8 +35,11 @@ def test_twister_axis_naming_node():
     m = re.search(r"function _domOptions\(\) \{.*?\n  \}", EX, re.S)
     assert m, "_domOptions 추출 실패"
     opt_label = re.search(r"var OPT_LABEL = (/.*/i);", EX).group(1)
+    qty_re = re.search(r"var QTY_RE = (/.*/i);", EX).group(1)
     harness = (
         "var OPT_LABEL=" + opt_label + ";\n"
+        "var QTY_RE=" + qty_re + ";\n"                       # v70: 트위스터 값 필터가 참조
+        "function _looksLikeQty(){return false;}\n"          # v70: 색상/사이즈는 수량 아님
         "function _nonProdRegion(){return false;}\n"
         "function _galleryExcluded(){return false;}\n"
         # mock DOM: 트위스터 색상행(3값) + 사이즈행(2값) + select 없음.
