@@ -1843,9 +1843,17 @@ const KGP_DETAIL_URL_RE = /(\/dp\/|\/gp\/product\/|\/vp\/products\/|item\.htm|al
 const KGP_LIST_URL_RE = /(\/s\?|\/s\/|\/search|\/sch\b|[?&](q|keyword|query|search|k)=|\/category|\/categories|\/c\/|\/list\b|\/best\b|\/ranking|\/plp|\/browse|\/deals)/i;
 
 // v60 STEP5: 디폴트 소싱처(어댑터 등록 사이트) — 여기선 판정불능('unknown') 금지, URL로 결정적 판정.
-const KGP_DEFAULT_SRC_RE = /(^|\.)(amazon\.[a-z.]+|temu\.com|aliexpress\.[a-z.]+|taobao\.com|tmall\.com|1688\.com|(shopping\.)?yahoo\.co\.jp|paypaymall\.yahoo\.co\.jp|mercari\.com|rakuten\.co\.jp)$/i;
+// v70 STEP4: 정규식 fast-path — 레지스트리(KGP_DEFAULT_SOURCES) 전 도메인 포함(과거 누락분 yoshida·iherb·dhgate·qoo10 보강).
+const KGP_DEFAULT_SRC_RE = /(^|\.)(amazon\.[a-z.]+|temu\.com|aliexpress\.[a-z.]+|taobao\.com|tmall\.com|1688\.com|(shopping\.)?yahoo\.co\.jp|paypaymall\.yahoo\.co\.jp|mercari\.com|rakuten\.(co\.jp|com)|yoshidakaban\.com|iherb\.com|dhgate\.com|qoo10\.[a-z.]+)$/i;
+// v70 STEP4: 디폴트 소싱처 판정 = 레지스트리 단일 소스. 과거 정규식 단독이라 요시다/아이허브/DHgate/큐텐이
+//   결정적 페이지 판정(상세=single·목록=list)에서 누락 → 해당 사이트 수집 버튼 회귀. 레지스트리 순회로 봉인.
 function kgpIsDefaultSourcing() {
-  try { return KGP_DEFAULT_SRC_RE.test((location.hostname || "").toLowerCase()); } catch (e) { return false; }
+  try {
+    const host = (location.hostname || "").toLowerCase();
+    if (KGP_DEFAULT_SRC_RE.test(host)) return true;
+    for (let i = 0; i < KGP_DEFAULT_SOURCES.length; i++) { if (KGP_DEFAULT_SOURCES[i].test(host)) return true; }   // 레지스트리 백스톱(드리프트 0)
+  } catch (e) { return false; }
+  return false;
 }
 
 function kgpDetectPageType() {

@@ -4596,6 +4596,18 @@ def guide_business():
     return render_template("guide_business.html", page="guide_business")
 
 
+@bp.get("/guide/sources")
+def guide_sources():
+    """v70 STEP4: 기본 지원 소싱처 레지스트리 문서 — 확장 KGP_DEFAULT_SOURCES와 일치(가드 강제).
+
+    각 사이트의 목록/호버/상세 버튼 보장 계약을 표로. 미지원 사이트는 확장 소싱처 관리에서 직접 추가(정직).
+    """
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
+    from src.collectors.sourcing_registry import registry_rows
+    return render_template("guide_sources.html", page="guide_sources", sites=registry_rows())
+
+
 @bp.post("/markets/connect/<market>")
 def markets_connect_save(market):
     """셀러 마켓 자격증명 저장 (JSON)."""
