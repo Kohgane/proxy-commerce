@@ -51,4 +51,4 @@ console.log("OK");
 
 
 def test_manifest_bumped():
-    assert '"version": "1.5.77"' in Path("extensions/chrome-collector/manifest.json").read_text(encoding="utf-8")
+    assert '"version": "1.5.78"' in Path("extensions/chrome-collector/manifest.json").read_text(encoding="utf-8")
