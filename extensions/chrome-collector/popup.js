@@ -126,6 +126,13 @@ if (diagToggle) {
   });
 })();
 
+// v67 STEP2: 상세 보강 렌더 모드(소형 창/탭 활성화/백그라운드) — background가 getSettings로 읽음.
+const enrichMode = document.getElementById("enrichMode");
+if (enrichMode) {
+  chrome.storage.local.get("kgp_enrich_mode", (r) => { enrichMode.value = (r && r.kgp_enrich_mode) || "window"; });
+  enrichMode.addEventListener("change", () => { chrome.storage.local.set({ kgp_enrich_mode: enrichMode.value }); });
+}
+
 // v64 STEP3: 호버 수집 버튼 위치(이미지 영역 앵커) — 사이트 무관 chrome.storage.local, content_script가 즉시 반영.
 const hoverAnchor = document.getElementById("hoverAnchor");
 if (hoverAnchor) {

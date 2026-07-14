@@ -370,18 +370,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // v65 STEP1: 렌더 완료 대기 후 추출(정본 경로) — 보강 큐가 백그라운드 탭에서 사용.
   //   가격+메인이미지 로드 감지(최대 8초) → 접힘 상세 펼침 → 렌더된 DOM 추출. 부분이면 partial 표기.
   if (msg.action === "extractMetaWait") {
-    const _wait = (typeof window.kgpWaitRendered === "function") ? window.kgpWaitRendered : (cb) => cb({ partial: false });
-    _wait((res) => {
-      const _finish = () => {
-        let meta = {};
-        try { meta = extractProductMeta() || {}; } catch (e) { meta = {}; }
-        meta.partial = !!(res && res.partial);
-        sendResponse(meta);
-      };
-      // 상세 접힘(더보기) 펼쳐 상세 이미지·불릿까지 렌더 후 추출.
-      try { if (typeof window.kgpRevealDetailFolds === "function") window.kgpRevealDetailFolds(_finish); else _finish(); }
-      catch (e) { _finish(); }
-    }, 8000);
+    // v67 STEP2: 렌더 보장 — 자동 스크롤(상→하 lazy 트리거) → 인터스티셜(앱유도·지역게이트) 닫기 시도 →
+    //   가격+갤러리 셀렉터 충족 대기(최대 12초). 타임아웃 시 어느 조건 미충족인지 로그(가격/이미지).
+    const _extract = () => {
+      const interstitial = (typeof _kgpDismissInterstitial === "function") ? _kgpDismissInterstitial() : false;
+      const _wait = (typeof window.kgpWaitRendered === "function") ? window.kgpWaitRendered : (cb) => cb({ partial: false });
+      _wait((res) => {
+        const _finish = () => {
+          let meta = {};
+          try { meta = extractProductMeta() || {}; } catch (e) { meta = {}; }
+          meta.partial = !!(res && res.partial);
+          meta.interstitial = !!interstitial;
+          if (res && res.partial) {   // 타임아웃 원인 로그(가격 노드 미출현/이미지 0장 + 탭 hidden 여부)
+            try {
+              const rr = (typeof window._kgpRenderReady === "function") ? window._kgpRenderReady() : {};
+              console.log("[고가수집기 보강] 렌더 타임아웃 — priceOk=" + rr.priceOk + " imgOk=" + rr.imgOk + " hidden=" + document.hidden + " interstitial=" + interstitial);
+            } catch (e) {}
+          }
+          sendResponse(meta);
+        };
+        try { if (typeof window.kgpRevealDetailFolds === "function") window.kgpRevealDetailFolds(_finish); else _finish(); }
+        catch (e) { _finish(); }
+      }, 12000);
+    };
+    if (typeof _kgpAutoScroll === "function") _kgpAutoScroll(_extract); else _extract();
     return true;   // 비동기 응답
   }
   // v42 E-5: 벌크 수집 진행률 실시간 갱신(background가 1건마다 전송).
@@ -410,6 +422,43 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   return false;
 });
+
+// v67 STEP2: 자동 스크롤(상→하)로 lazy 이미지·가격 트리거 후 원위치 → cb. 최대 4초.
+function _kgpAutoScroll(cb) {
+  let done = false;
+  const fin = () => { if (done) return; done = true; try { window.scrollTo(0, 0); } catch (e) {} setTimeout(cb, 150); };
+  try {
+    const h = Math.max(document.body ? document.body.scrollHeight : 0, document.documentElement ? document.documentElement.scrollHeight : 0);
+    const step = Math.max(400, Math.floor((window.innerHeight || 600) * 0.85));
+    let y = 0;
+    const iv = setInterval(() => {
+      y += step; try { window.scrollTo(0, y); } catch (e) {}
+      if (y >= h) { clearInterval(iv); fin(); }
+    }, 140);
+    setTimeout(() => { try { clearInterval(iv); } catch (e) {} fin(); }, 4000);
+  } catch (e) { fin(); }
+}
+// v67 STEP2: 인터스티셜(앱 유도·지역 게이트·큰 모달) 감지 → 닫기 시도. 닫아도 남으면 true(보강 불가 신호).
+function _kgpDismissInterstitial() {
+  let blocked = false;
+  try {
+    const vw = (window.innerWidth || 1), vh = (window.innerHeight || 1), area = vw * vh;
+    const ov = document.querySelectorAll('[class*="modal" i],[class*="popup" i],[class*="overlay" i],[class*="interstitial" i],[class*="app-download" i],[class*="app-banner" i],[class*="region" i],[class*="gate" i],[role="dialog"]');
+    for (let i = 0; i < ov.length && i < 40; i++) {
+      const el = ov[i];
+      let cs; try { cs = getComputedStyle(el); } catch (e) { continue; }
+      if (cs.display === "none" || cs.visibility === "hidden") continue;
+      if (cs.position !== "fixed" && cs.position !== "absolute") continue;
+      let r; try { r = el.getBoundingClientRect(); } catch (e) { continue; }
+      if (r.width * r.height < area * 0.4) continue;    // 뷰포트 40%↑ 덮는 것만
+      const close = el.querySelector('[class*="close" i],[aria-label*="close" i],[aria-label*="닫기"],[class*="dismiss" i],button');
+      if (close) { try { close.click(); } catch (e) {} }
+      try { r = el.getBoundingClientRect(); cs = getComputedStyle(el); } catch (e) {}
+      if (cs.display !== "none" && r.width * r.height >= area * 0.4) blocked = true;   // 닫아도 남음
+    }
+  } catch (e) {}
+  return blocked;
+}
 
 // v16 P0: MV3 — 확장이 업데이트/재로딩되면 기존 탭의 content script는 chrome.runtime이 끊겨
 // (extension context invalidated) sendMessage가 "Cannot read properties of undefined (reading 'sendMessage')"
