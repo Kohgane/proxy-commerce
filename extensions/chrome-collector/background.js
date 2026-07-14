@@ -12,11 +12,12 @@ async function getSettings() {
     syncData = await chrome.storage.sync.get(["serverUrl", "token"]);
   } catch (_) {}
   try {
-    localData = await chrome.storage.local.get(["serverUrl", "token"]);
+    localData = await chrome.storage.local.get(["serverUrl", "token", "kgp_enrich_mode"]);
   } catch (_) {}
   return {
     serverUrl: syncData.serverUrl || localData.serverUrl || DEFAULT_SERVER_URL,
     token: syncData.token || localData.token || "",
+    enrichMode: localData.kgp_enrich_mode || "window",   // v67 STEP2: 보강 렌더 모드(window 기본)
   };
 }
 
@@ -124,17 +125,40 @@ function _kgpBroadcastEnrich() {
   const snap = _kgpEnrichSnapshot();
   try { chrome.runtime.sendMessage({ action: "enrichProgress", state: snap }); } catch (e) {}
 }
+// v67 STEP2: 테무 렌더 성공 기준(백그라운드 탭 스로틀로 lazy 미출현 방지) — 가격 실가 + 갤러리 자기 상품 ≥3장.
+function _kgpEnrichVerdict(item, meta) {
+  const gallery = (meta && (meta.gallery_images || meta.images)) || [];
+  const galN = Array.isArray(gallery) ? gallery.length : 0;
+  const priceOk = !!(meta && meta.price && String(meta.price).trim());
+  const isTemu = /(^|\.)temu\.com/i.test(item.url || "");
+  if (meta && meta.interstitial) return { ok: false, reason: "테무 로그인/게이트로 보강 불가(인터스티셜)" };
+  if (isTemu && (!priceOk || galN < 3)) {
+    return { ok: false, reason: "테무 렌더 미완 — " + (!priceOk ? "가격 노드 미출현 " : "") + (galN < 3 ? "갤러리 " + galN + "장(3장 미만)" : "") };
+  }
+  return { ok: true, reason: "" };
+}
 async function _kgpEnrichOne(item, settings) {
-  // 상세 탭을 열어 확장 content_script의 extractMeta로 상세 필드를 읽는다(서버 크롤 아님).
-  let tab = null;
+  // v67 STEP2: 렌더 보장 — 기본은 별도 소형 창(popup 480×640, 탭 활성=렌더 보장, 화면 점유 최소).
+  //   설정으로 탭 활성화 사이클(tab-activate)/기존 백그라운드(background) 선택. 서버 크롤 아님(확장 DOM).
+  const mode = (settings && settings.enrichMode) || "window";
+  let win = null, tabId = null;
   try {
-    tab = await chrome.tabs.create({ url: item.url, active: false });
+    if (mode === "window") {
+      win = await chrome.windows.create({ url: item.url, type: "popup", width: 480, height: 640, top: 90, left: 90, focused: false });
+      tabId = win && win.tabs && win.tabs[0] && win.tabs[0].id;
+    } else {
+      const tab = await chrome.tabs.create({ url: item.url, active: (mode === "tab-activate") });
+      tabId = tab && tab.id;
+    }
     KgpEnrich.current = item.url;
     _kgpBroadcastEnrich();
-    await _kgpWaitTabComplete(tab.id, 22000);
-    // v65 STEP1: 렌더 완료 대기 후 추출(정본 경로) — content_script가 가격+메인이미지 로드 감지(최대 8초).
-    const meta = await _kgpSendTab(tab.id, { action: "extractMetaWait" });
+    if (tabId != null) await _kgpWaitTabComplete(tabId, 22000);
+    // 렌더 완료 대기 후 추출(자동스크롤·인터스티셜·12초 — content_script extractMetaWait).
+    const meta = (tabId != null) ? await _kgpSendTab(tabId, { action: "extractMetaWait" }) : null;
     if (!meta) throw new Error("상세 추출 실패(빈 응답)");
+    // v67 STEP2: 렌더 미보장 상태로 '보강 완료' 금지 — 테무 성공 기준 미달이면 정직 실패(재시도/보강 실패).
+    const verdict = _kgpEnrichVerdict(item, meta);
+    if (!verdict.ok) throw new Error(verdict.reason);
     const body = {
       item_id: item.item_id,
       options: meta.options || [],
@@ -154,7 +178,8 @@ async function _kgpEnrichOne(item, settings) {
     if (!r.ok || !d || !d.ok) throw new Error("서버 보강 실패 HTTP " + r.status);
     return true;
   } finally {
-    if (tab && tab.id != null) { try { await chrome.tabs.remove(tab.id); } catch (e) {} }
+    if (win && win.id != null) { try { await chrome.windows.remove(win.id); } catch (e) {} }
+    else if (tabId != null) { try { await chrome.tabs.remove(tabId); } catch (e) {} }
   }
 }
 async function _kgpEnrichLoop() {
