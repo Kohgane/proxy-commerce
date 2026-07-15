@@ -20,12 +20,13 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.87"
+    assert MANIFEST["version"] == "1.5.88"
 
 
 def test_bar_fixed_top_max_zindex():
     # 바 스타일: position:fixed + top:12px + z-index 최상위(사이트 헤더 위).
-    bar = re.search(r'"position:fixed", "top:12px", "left:50%", "transform:translateX\(-50%\)",\s*"z-index:2147483647"', CS)
+    # v72 STEP4: 격리 위해 position/transform/z-index에 !important 추가(값 불변).
+    bar = re.search(r'"position:fixed !important", "top:12px", "left:50%", "transform:translateX\(-50%\) !important",\s*"z-index:2147483647 !important"', CS)
     assert bar, "벌크바가 fixed top + 최상위 z-index여야 함"
 
 
