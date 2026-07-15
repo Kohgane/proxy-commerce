@@ -4,5 +4,6 @@
   "title_contains": "트렁크 정리함",
   "price": "11235",
   "currency": "KRW",
-  "images_min": 3
+  "images_min": 3,
+  "options": { "색상": ["블랙", "베이지"], "사이즈": ["대형", "소형"] }
 }
