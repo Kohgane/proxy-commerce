@@ -496,6 +496,11 @@ function kgpSendMessage(msg, cb) {
 
 const KGP_BTN_ID = "kgp-collect-fab";
 
+// v72 STEP4: 버튼 스펙 격리 — 사이트 상속 오염(font-size·line-height·letter-spacing 등)이 우리 버튼을
+//   과대하게 만드는 것을 원천 차단. all:initial이 모든 상속/비상속 속성을 초기값으로 리셋(shadow DOM 동급
+//   격리) → 이후 우리 인라인 !important 스펙만 적용. 알리·테무·아마존 픽셀 동일. cssText 최선두에 붙인다.
+const _KGP_RESET = "all:initial !important;box-sizing:border-box !important;";
+
 /** 상품 페이지로 보이는지 휴리스틱 판단. */
 function looksLikeProductPage() {
   const getMeta = (p) =>
@@ -971,18 +976,18 @@ function injectCollectButton() {
     '<span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;' +
     'background:transparent;border:0;flex-shrink:0">' + KGP_BRIDGE_SVG + '</span>' +
     '<span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1.12">' +
-    '<span class="kgp-fab-label" style="font-weight:700;font-size:14px;color:#f5efe3">고가수집기</span>' +
-    '<span style="font-size:10px;color:#c9a24b;font-family:Georgia,\'Times New Roman\',serif">번역까지 한 번에</span>' +
+    '<span class="kgp-fab-label" style="font-weight:700 !important;font-size:14px !important;line-height:1.1 !important;color:#f5efe3">고가수집기</span>' +
+    '<span style="font-size:10px !important;line-height:1.1 !important;color:#c9a24b;font-family:Georgia,\'Times New Roman\',serif">번역까지 한 번에</span>' +
     '</span>';
   btn.title = "고가브릿지로 수집 (한국어 번역 포함)";
   // 고가브릿지 토큰: 먹 매트 pill + 금 얇은 링 + 청록 미세 악센트. (네이비+주황 폐기, v4)
   // 위치: 우측 '중앙'(v7) — 콘텐츠 안 가리게. 드래그로 옮기면 위치 기억(kgp_fab_pos).
-  btn.style.cssText = [
-    "position:fixed", "right:16px", "top:calc(50% - 24px)", "z-index:2147483647",
-    "display:flex", "align-items:center", "gap:10px", "max-width:min(82vw,300px)", "box-sizing:border-box",
-    "padding:9px 16px 9px 10px", "border:1px solid #c9a24b", "border-radius:999px",
-    "background:#1a1714", "color:#f5efe3",
-    "font:14px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+  btn.style.cssText = _KGP_RESET + [   // v72 STEP4: all:initial 격리(사이트 상속 오염 차단)
+    "position:fixed !important", "right:16px", "top:calc(50% - 24px)", "z-index:2147483647 !important",
+    "display:flex !important", "align-items:center", "gap:10px", "max-width:min(82vw,300px)", "box-sizing:border-box",
+    "padding:9px 16px 9px 10px !important", "border:1px solid #c9a24b !important", "border-radius:999px !important",
+    "background:#1a1714 !important", "color:#f5efe3 !important",
+    "font:14px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif !important",
     "cursor:pointer", "box-shadow:0 6px 20px rgba(0,0,0,.4),0 0 0 4px rgba(17,154,142,.10)",
     "transition:transform .12s,opacity .12s,box-shadow .12s"
   ].join(";");
@@ -1343,8 +1348,8 @@ function kgpFindCards() {
 }
 
 function kgpCardBadgeStyle(selected) {
-  // v71 STEP4: 사이트 CSS 간섭 격리 — 크기·형태 결정 속성에 !important(인라인+!important=최고 특이성).
-  return [
+  // v71 STEP4 !important + v72 STEP4 all:initial 격리(사이트 상속 오염 원천 차단).
+  return _KGP_RESET + [
     "position:absolute !important", "top:6px !important", "left:6px !important", "z-index:2147483640 !important",
     "box-sizing:border-box !important", "width:auto !important", "height:auto !important", "min-height:0 !important", "max-width:none !important",
     "padding:3px 8px !important", "margin:0 !important", "border-radius:7px !important", "cursor:pointer", "user-select:none",
@@ -1421,8 +1426,8 @@ function _kgpCardImage(card) {
   return best;
 }
 function kgpQuickBtnStyle(collected, mode) {
-  // v71 STEP4: 사이트 불문 단일 스펙 강제 — 크기·형태 속성에 !important(알리 등 사이트 CSS 간섭 격리).
-  return [
+  // v71 STEP4 !important + v72 STEP4 all:initial 격리(알리 상속 오염 원천 차단).
+  return _KGP_RESET + [
     "position:absolute !important", "z-index:2147483639 !important",
   ].concat(_kgpAnchorCss(mode)).concat([
     "box-sizing:border-box !important", "width:auto !important", "height:auto !important", "max-width:none !important",
@@ -1569,16 +1574,17 @@ function kgpRenderRetry(failedItems) {
 function kgpBuildToolbar() {
   const bar = document.createElement("div");
   bar.id = KGP_TOOLBAR_ID;
-  bar.style.cssText = [
-    "position:fixed", "top:12px", "left:50%", "transform:translateX(-50%)",
-    "z-index:2147483647", "display:flex", "align-items:center", "gap:12px",
-    "padding:10px 18px", "border-radius:999px", "border:1px solid #c9a24b",   // v45 P1: 벌크바 +25%
-    "background:#1a1714", "color:#f5efe3",
-    "font:16px/1.2 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
-    "box-shadow:0 8px 24px rgba(0,0,0,.45)", "max-width:96vw", "flex-wrap:wrap",
+  bar.style.cssText = _KGP_RESET + [   // v72 STEP4: all:initial 격리(사이트 상속 오염 → 벌크바 과대 차단)
+    "position:fixed !important", "top:12px", "left:50%", "transform:translateX(-50%) !important",
+    "z-index:2147483647 !important", "display:flex !important", "align-items:center", "gap:12px",
+    "padding:10px 18px !important", "border-radius:999px !important", "border:1px solid #c9a24b !important",   // v45 P1: 벌크바 +25%
+    "background:#1a1714 !important", "color:#f5efe3 !important",
+    "font:16px/1.2 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif !important",
+    "box-shadow:0 8px 24px rgba(0,0,0,.45)", "max-width:96vw !important", "flex-wrap:wrap",
   ].join(";");
   // 버튼 위계: 전체 수집=청록 채움(Primary), 선택 수집=금 아웃라인(Secondary), 전체선택/해제=고스트. (+25% 확대)
-  const btnBase = "padding:7px 14px;border-radius:9px;cursor:pointer;font-weight:700;font-size:15px;min-height:40px;";
+  // v72 STEP4: 내부 버튼도 all:initial 격리(사이트 button 규칙 상속 차단) + 고정 px !important.
+  const btnBase = _KGP_RESET + "padding:7px 14px !important;border-radius:9px !important;cursor:pointer;font-weight:700 !important;font-size:15px !important;line-height:1 !important;min-height:40px !important;display:inline-flex !important;align-items:center;";
   const ghost = btnBase + "background:transparent;color:#e7ddc9;border:1px solid #4a4234;";
   const gold = btnBase + "background:transparent;color:#e8d6a8;border:1.5px solid #c9a24b;";
   const teal = btnBase + "background:#119a8e;color:#fff;border:1px solid #0f8c80;";

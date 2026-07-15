@@ -38,5 +38,6 @@ def test_quick_button_spec_v64():
 def test_bulk_bar_plus25():
     # 벌크바 글자·버튼 +25%
     assert "font:16px/1.2" in CS                                 # 바 폰트 13→16
-    assert "font-size:15px;min-height:40px" in CS                # 버튼 12→15
+    # v72 STEP4: btnBase에 !important·line-height·all:initial 추가 → 개별 속성으로 확인.
+    assert "font-size:15px !important" in CS and "min-height:40px !important" in CS   # 버튼 12→15
     assert "width:33px;height:33px" in CS                        # 그립 아이콘 26→33

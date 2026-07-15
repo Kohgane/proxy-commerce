@@ -99,11 +99,11 @@ def test_p5_fab_documentElement_and_observer_reattach():
     assert "_kgpMount(btn)" in CS                              # FAB <html> 직속
     # FAB z-index 최상위
     fi = CS.index("btn.id = KGP_BTN_ID")
-    assert "z-index:2147483647" in CS[fi:fi + 900]
+    assert "z-index:2147483647" in CS[fi:fi + 1500]
     # MutationObserver가 오버레이 사라짐 감지 시 디바운스 재부착(v55 STEP5: 재판정 아닌 '재마운트 전용').
     assert "new MutationObserver" in CS
     assert "const gone =" in CS and "_remountIfGone" in CS
 
 
 def test_manifest_version_bumped():
-    assert MANIFEST["version"] == "1.5.87"
+    assert MANIFEST["version"] == "1.5.88"

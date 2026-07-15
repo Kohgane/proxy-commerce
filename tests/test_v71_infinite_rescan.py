@@ -22,7 +22,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.87"
+    assert MANIFEST["version"] == "1.5.88"
 
 
 def test_source_contract():
@@ -46,7 +46,7 @@ def test_button_style_has_important_node():
     import shutil as _sh
     if not _sh.which("node"):
         pytest.skip("node 미설치")
-    harness = m.group(0) + "\nprocess.stdout.write(kgpCardBadgeStyle(false));\n"
+    harness = "var _KGP_RESET=\"all:initial !important;box-sizing:border-box !important;\";\n" + m.group(0) + "\nprocess.stdout.write(kgpCardBadgeStyle(false));\n"
     f = tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8")
     f.write(harness); f.close()
     try:
