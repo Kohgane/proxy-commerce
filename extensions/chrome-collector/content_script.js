@@ -1881,10 +1881,10 @@ function kgpDetectPageType() {
   const href = location.href;
   const isDetail = KGP_DETAIL_URL_RE.test(href);
   const isList = KGP_LIST_URL_RE.test(href);
-  // v60 STEP5: 디폴트 소싱처는 URL 패턴으로 **결정적** 판정(불능 금지) — 상세패턴=단건, 그 외 도메인 전체=벌크.
-  if (kgpIsDefaultSourcing()) return isDetail ? "single" : "list";
-  // v55 STEP5: URL 규칙 하드매치 최우선(결정적) — 테무 -g-{숫자}=단일, /search 등=목록. DOM 휴리스틱은
-  //   URL이 애매할 때만(둘 다/둘 다 아님). 지연로드·DOM변이와 무관하게 판정 즉시 확정(점멸 제거).
+  // v71 STEP5: 디폴트 소싱처도 URL이 명확할 때만 URL로 판정하고, **애매하면 DOM 신호로 낙하**한다.
+  //   (v60의 'isDetail?single:list' 기본값이 라쿠텐·야후재팬 상세 URL(상세 RE 불일치)을 'list'로 오판 →
+  //    상세 버튼 미표시. 상세 상품이면 DOM(단일 h1·갤러리·JSON-LD Product)으로 single 판정 → FAB 노출.)
+  // v55 STEP5: URL 규칙 하드매치 최우선(결정적). DOM 휴리스틱은 URL 애매할 때만(점멸 제거·판정 캐시).
   if (isDetail && !isList) return "single";
   if (isList && !isDetail) return "list";
   // URL 애매 → DOM 신호 1회 점수화(이후 kgpPageType 캐시로 세션 내 불변).
