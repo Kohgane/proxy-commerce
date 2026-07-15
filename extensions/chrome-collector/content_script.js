@@ -1458,6 +1458,10 @@ function kgpQuickCollect(card, btn) {
     if (resp && resp.ok === true && ((resp.success || 0) > 0 || (resp.duplicate || 0) > 0)) {
       _kgpCollectedUrls.add(card.url);
       kgpMarkQuickCollected(btn);
+      // v72 STEP3: 호버 단건도 **보강 큐 자동 등록**(벌크 경로와 동일) — 아마존 목록가 미달('-')·옵션·상세를
+      //   상세 페이지 방문으로 채운다. 목록 카드 가격/제목은 이미 1차로 담겨 저장됨(meta), 보강은 fill-only.
+      const _targets = (resp.enrichTargets || []).filter((t) => t && t.item_id && t.url);
+      if (_targets.length) { try { kgpSendMessage({ action: "enrichStart", targets: _targets }, () => {}); } catch (e) {} }
       if ((resp.success || 0) > 0) kgpAlertOnce(corr, () => kgpCelebrate(1));   // 실제 새 수집만 축하(건당 1회·중복은 조용)
     } else {
       kgpAlertOnce(corr, () => {
