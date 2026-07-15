@@ -1,0 +1,8 @@
+{
+  "note": "합성 구조 재현 — 실제 테무 캡처 아님(정직). v71 STEP1 통화 로케일 추론(가격 11235·통화 빔 → KRW locale).",
+  "url": "https://www.temu.com/kr/goods-11235.html",
+  "title_contains": "트렁크 정리함",
+  "price": "11235",
+  "currency": "KRW",
+  "images_min": 3
+}
