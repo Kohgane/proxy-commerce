@@ -63,6 +63,35 @@ def _require_token(scopes: list = None) -> Optional[dict]:
         return None
 
 
+def _session_user() -> Optional[dict]:
+    """v72 STEP1: Bearer 토큰이 없거나 무효(401)여도 **유효한 콘솔 로그인 세션 쿠키**면 통과(북마클릿 폴백).
+
+    CSRF 방어: 커스텀 헤더 `X-KGP: 1`을 요구한다. 단순 HTML 폼은 커스텀 헤더를 붙일 수 없고, 커스텀 헤더가
+    붙은 크로스사이트 fetch는 CORS preflight를 거쳐야 하므로(우리 CORS는 /api/v1/collect/* 만 자격 허용)
+    임의 사이트의 폼 위조가 세션 인증을 악용하지 못한다.
+    """
+    try:
+        if request.headers.get("X-KGP") != "1":
+            return None
+        from flask import session
+        uid = str(session.get("user_id") or "").strip()
+        email = str(session.get("user_email") or "").strip()
+        if not uid and not email:
+            return None
+        return {"user_id": uid or email, "email": email,
+                "scopes": ["collect.write", "catalog.read"], "auth": "session"}
+    except Exception:
+        return None
+
+
+def _auth_user(scopes: list = None) -> Optional[dict]:
+    """v72 STEP1: 인증 사다리 — Bearer 토큰 우선, 무효면 콘솔 세션 쿠키 폴백(X-KGP 헤더 필요)."""
+    user = _require_token(scopes=scopes)
+    if user:
+        return user
+    return _session_user()
+
+
 # ---------------------------------------------------------------------------
 # 헬퍼
 # ---------------------------------------------------------------------------
@@ -461,10 +490,14 @@ def collect_from_extension():
     """
     # v9 P0 — 수집 1건 끝까지 추적(상관관계 ID). 어느 홉에서 사라지는지 로그로 본다.
     _corr = secrets.token_hex(4)
-    user = _require_token(scopes=["collect.write"])
+    # v72 STEP1: Bearer 우선, 무효(401)면 콘솔 로그인 세션 쿠키 폴백(X-KGP 헤더 필요) — 북마클릿 토큰 사망 대비.
+    user = _auth_user(scopes=["collect.write"])
     if not user:
-        logger.warning("[collect %s] 인증 실패(토큰 없음/무효)", _corr)
-        return jsonify({"ok": False, "error": "인증이 필요합니다. Personal Access Token을 설정해주세요."}), 401
+        logger.warning("[collect %s] 인증 실패(토큰 무효 + 세션 없음)", _corr)
+        return jsonify({"ok": False, "error": "콘솔 로그인 후 다시 눌러 주세요.",
+                        "login_required": True, "login_url": "/seller/dashboard"}), 401
+    if user.get("auth") == "session":
+        logger.info("[collect %s] 세션 폴백 인증(토큰 무효) user_id=%r", _corr, user.get("user_id"))
 
     payload = request.get_json(force=True, silent=True) or {}
     url = (payload.get("url") or "").strip()

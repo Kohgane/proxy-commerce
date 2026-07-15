@@ -43,11 +43,12 @@ def test_b_collect_history_is_user_scoped():
     assert "seller_ids" in store          # list/get/delete가 seller_ids로 격리
 
 
-def test_b_collected_detail_scope_isolation():
+def test_b_collected_detail_scope_isolation(monkeypatch):
     # 타 셀러 항목은 404(누출 0) — 본인 스코프만
     os.environ["SELLER_CONSOLE_AUTH"] = "0"
     import src.api.extension_api as ext
-    ext._require_token = lambda scopes=None: {"user_id": "owner1", "scopes": ["collect.write"]}
+    # monkeypatch로 패치(테스트 종료 시 자동 복원 — 전역 오염 방지, v72에서 세션 폴백 테스트 격리).
+    monkeypatch.setattr(ext, "_require_token", lambda scopes=None: {"user_id": "owner1", "scopes": ["collect.write"]})
     from src.order_webhook import app
     from src.seller_console import collect_history_store as ch
     ch._in_memory.clear()

@@ -1031,6 +1031,12 @@ if not app.secret_key:
 app.config.setdefault("SESSION_COOKIE_SECURE", os.getenv("SESSION_COOKIE_SECURE", "0") == "1")
 app.config.setdefault("SESSION_COOKIE_HTTPONLY", True)
 app.config.setdefault("SESSION_COOKIE_SAMESITE", "Lax")
+# v72 STEP1: 북마클릿 세션 폴백 — 임의 쇼핑몰(크로스사이트)에서 우리 API로 세션 쿠키가 전송되려면
+#   SameSite=None; Secure가 필요하다. 프로덕션(HTTPS)에서만 적용(개발/테스트는 Lax 유지 → HTTP 세션 정상).
+#   Secure라 HTTPS에서만 전송되고, 세션 인증은 커스텀 헤더 X-KGP를 요구해 단순 폼 CSRF는 차단된다.
+if os.getenv("APP_ENV", "").strip().lower() == "production":
+    app.config["SESSION_COOKIE_SAMESITE"] = "None"
+    app.config["SESSION_COOKIE_SECURE"] = True
 # '자동 로그인' 선택 시에만 영구 세션 유지 기간(기본 14일). 미선택 시 브라우저 세션 쿠키
 # (브라우저 종료 시 자동 로그아웃 → 공용 PC/개인정보 보호). establish_session()이 제어.
 try:
@@ -1203,9 +1209,13 @@ CORS(app, resources={
     # Bearer 토큰 인증(쿠키 미사용)이라 origins '*' 안전. 미설정 시 브라우저가
     # preflight를 막아 'Failed to fetch'로 수집이 실패하므로 명시적으로 허용한다.
     r'/api/v1/collect/*': {
+        # v72 STEP1: 북마클릿 세션 폴백 — 자격(쿠키) 동반 크로스오리진. supports_credentials면 flask_cors가
+        #   요청 Origin을 반영(리터럴 '*' 아님)하고 Access-Control-Allow-Credentials: true를 붙인다. 세션 인증은
+        #   커스텀 헤더 X-KGP를 요구(엔드포인트에서 검증)하므로 단순 폼 위조는 통과 못 함(CSRF 방어).
         'origins': '*',
         'methods': ['GET', 'POST', 'OPTIONS'],
-        'allow_headers': ['Content-Type', 'Authorization'],
+        'allow_headers': ['Content-Type', 'Authorization', 'X-KGP'],
+        'supports_credentials': True,
     },
 })
 
