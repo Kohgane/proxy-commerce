@@ -835,6 +835,26 @@
   }
 
   // ── 가격 sanity 게이트 ─────────────────────────────────────
+  // v71 STEP1: 통화 로케일 추론 — tier1·DOM 통화가 비었을 때 어댑터 로케일 기본값으로 채운다(무근거 추정
+  //   금지: 명시 로케일 힌트(html lang·경로 /kr·/jp)와 도메인 TLD만 근거로 인정). 못 정하면 빈 통화 유지.
+  function _localeCurrency() {
+    var host = "", path = "", lang = "";
+    try { host = (location.hostname || "").toLowerCase(); path = (location.pathname || "").toLowerCase(); } catch (e) {}
+    try { lang = ((document.documentElement && document.documentElement.lang) || "").toLowerCase(); } catch (e) {}
+    var hint = lang + " " + path + " " + host;
+    // 명시 로케일 힌트(언어/경로) 최우선.
+    if (/(^|[^a-z])ko(-|[^a-z]|$)|\/kr(\/|$|-)|(^|\.)kr\./.test(hint)) return "KRW";
+    if (/(^|[^a-z])ja(-|[^a-z]|$)|\/jp(\/|$|-)|(^|\.)jp\./.test(hint)) return "JPY";
+    if (/(^|[^a-z])zh(-|[^a-z]|$)|(^|\.)cn\./.test(hint)) return "CNY";
+    // 도메인 TLD/레지스트리 기본값.
+    if (/(^|\.)(taobao|tmall|1688)\.com$/.test(host)) return "CNY";
+    if (/(^|\.)amazon\.co\.jp$/.test(host) || /(^|\.)rakuten\.(co\.jp|com)$/.test(host)
+        || /(^|\.)yoshidakaban\.com$/.test(host) || /yahoo\.co\.jp$/.test(host)) return "JPY";
+    if (/(^|\.)amazon\.co\.uk$/.test(host)) return "GBP";
+    if (/(^|\.)amazon\.(de|fr|it|es|nl)$/.test(host)) return "EUR";
+    if (/(^|\.)amazon\.[a-z.]+$/.test(host)) return "USD";   // amazon.com 등 기본 USD
+    return "";
+  }
   function _priceSanity(price, currency) {
     var warnings = [], status = "";
     var v = parseFloat(String(price || "").replace(/,/g, ""));
@@ -903,6 +923,12 @@
     var partial = !price && images.length === 0;
     if (partial) { source = "partial"; warnings.push("초기 JSON·DOM 모두에서 핵심 정보를 못 읽어 부분 수집입니다"); }
 
+    // v71 STEP1: 가격은 있는데 통화만 비면 로케일 추론(3번째 사다리) — needs_check로 가격 누락되던 근원 수리.
+    var currencyLocale = false;
+    if (price && !currency) {
+      var lc = ""; try { lc = _localeCurrency(); } catch (e) {}
+      if (lc) { currency = lc; currencyLocale = true; }
+    }
     // 가격 sanity
     var sane = _priceSanity(price, currency);
     var price_status = sane.status;
@@ -915,7 +941,7 @@
     images.forEach(function (u) { uniqPush(gallery, seen, u); });
 
     try {
-      console.log("[고가수집기] 추출 소스=" + source, "| 가격=" + price + " " + currency + " (" + (price_status || "ok") + ")",
+      console.log("[고가수집기] 추출 소스=" + source, "| 가격=" + price + " " + currency + (currencyLocale ? "(locale)" : "") + " (" + (price_status || "ok") + ")",
         "| 갤러리=" + gallery.length + " 상세이미지=" + detailImages.length + " 옵션=" + options.length + " 스펙=" + specs.length + " 리뷰=" + reviews.length,
         warnings.length ? "| 경고:" + warnings.join(" / ") : "");
     } catch (e) {}
