@@ -20,4 +20,20 @@
 </script>
 </head><body>
 <h1>접이식 차량용 트렁크 정리함</h1>
+<!-- v71 STEP2: 테무식 전역 상태(sku 스펙 객체) — 옵션 축명·값텍스트·값이미지. Object 문자열화 금지 검증. -->
+<script>
+window.__INITIAL_STATE__ = {
+  store: { goods: {
+    goodsName: "접이식 차량용 트렁크 정리함",
+    skuList: [
+      { skuId: 101, price: 11235, specs: [
+        { specKeyName: "색상", specValueName: "블랙", thumbUrl: "https://img.kwcdn.com/sku-black.jpg" },
+        { specKeyName: "사이즈", specValueName: "대형" } ] },
+      { skuId: 102, price: 12000, specs: [
+        { specKeyName: "색상", specValueName: "베이지", thumbUrl: "https://img.kwcdn.com/sku-beige.jpg" },
+        { specKeyName: "사이즈", specValueName: "소형" } ] }
+    ]
+  } }
+};
+</script>
 </body></html>

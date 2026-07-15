@@ -180,6 +180,57 @@
       }
     }
   }
+  // v71 STEP2: sku 스펙 객체 매퍼 — [옵션명·값 텍스트·값 이미지]를 필드로 추출. Object 통짜 문자열화·URL 값 금지.
+  var _OPT_AXIS_KEY = /(speckeyname|speckey|specname|propertyname|propname|attrname|attributename|optionname|dimensionname|keyname|attrkey|categoryname)/i;
+  var _OPT_VAL_KEY = /(specvaluename|specvalue|valuename|propvalue|attrvalue|optionvalue|valuetext|^value$|^val$)/i;
+  var _OPT_VIMG_KEY = /(image|img|thumb|thumburl|hdthumburl|pic|photo)/i;
+  function _optClean(s) { s = String(s == null ? "" : s).replace(/\s+/g, " ").trim(); return s.length <= 40 ? s : ""; }
+  function _pickStrField(o, re, exclude) {
+    for (var k in o) { if (exclude && k === exclude) continue; try { if (re.test(k) && typeof o[k] === "string" && o[k].trim()) return { k: k, v: o[k] }; } catch (e) {} }
+    return null;
+  }
+  function _pickUrlField(o, re) {
+    for (var k in o) { try { if (re.test(k) && typeof o[k] === "string" && /^https?:\/\//i.test(o[k])) return o[k]; } catch (e) {} }
+    return "";
+  }
+  // sku 객체 → axisMap 갱신(축→값·값이미지) + 이 sku의 값 텍스트 배열 반환(값별 가격 매핑용).
+  function _collectSkuSpecs(so, axisMap, SPEC_KEY) {
+    var out = [];
+    function add(axis, val, img) {
+      axis = _optClean(axis); val = _optClean(val);
+      if (!axis || !val || /^https?:\/\//i.test(val) || val === "[object Object]") return;   // URL·Object 문자열화 금지
+      var a = axisMap[axis] || (axisMap[axis] = { order: [], set: {}, images: {} });
+      if (!a.set[val]) { a.set[val] = 1; a.order.push(val); }
+      if (img && /^https?:\/\//i.test(img) && !a.images[val]) a.images[val] = hiRes(img);
+      out.push(val);
+    }
+    // 평면 sku: 축명·값명 필드가 sku 객체에 직접.
+    var fnm = _pickStrField(so, _OPT_AXIS_KEY, null);
+    var fvl = _pickStrField(so, _OPT_VAL_KEY, fnm ? fnm.k : null);
+    if (fnm && fvl) add(fnm.v, fvl.v, _pickUrlField(so, _OPT_VIMG_KEY));
+    // 중첩 스펙 컨테이너(배열/객체).
+    for (var sk in so) {
+      if (!SPEC_KEY.test(sk)) continue;
+      var sv;
+      try { sv = so[sk]; } catch (e) { continue; }
+      if (Array.isArray(sv)) {
+        for (var i = 0; i < sv.length && i < 60; i++) {
+          var e2 = sv[i];
+          if (e2 && typeof e2 === "object" && !Array.isArray(e2)) {
+            var nm = _pickStrField(e2, _OPT_AXIS_KEY, null);
+            var vl = _pickStrField(e2, _OPT_VAL_KEY, nm ? nm.k : null);
+            if (nm && vl) add(nm.v, vl.v, _pickUrlField(e2, _OPT_VIMG_KEY));
+            else if (vl) add("옵션", vl.v, _pickUrlField(e2, _OPT_VIMG_KEY));
+            // 값 텍스트 필드 못 찾으면 스킵(Object 문자열화 방지 — 정직 미수집).
+          } else if (typeof e2 === "string") add("옵션", e2, "");
+        }
+      } else if (sv && typeof sv === "object") {
+        for (var k2 in sv) { try { if (typeof sv[k2] === "string") add(k2, sv[k2], ""); } catch (e) {} }
+      }
+      // sv가 string이면 무시(평면 축명/값명 오분류 방지 — 위 평면 경로에서 처리).
+    }
+    return out;
+  }
   function _fromJson() {
     var res = { title: "", price: "", currency: "", images: [], detailImages: [], specs: [],
                 options: [], skus: [], reviews: [], rating: "", reviewCount: "", description: "", ok: false };
@@ -259,6 +310,7 @@
       return null;
     }
     var _skuPriceSet = false;
+    var axisMap = {};               // v71 STEP2: sku 스펙 축 → {order,set,images} (Object 문자열화 방지)
     var states = _globalStates();   // live 전역 + 인라인 <script> 텍스트 상태(격리월드 대응)
     for (var s = 0; s < states.length; s++) {
       _walk(states[s], function (node) {
@@ -278,9 +330,9 @@
               for (var i = 0; i < v.length && i < 200; i++) {
                 var so = v[i]; if (!so || typeof so !== "object") continue;
                 var sp = skuPrice(so);
-                var specVals = [];
-                for (var sk in so) { if (SPEC_KEY.test(sk)) { var sv = so[sk]; if (Array.isArray(sv)) specVals = specVals.concat(sv.map(String)); else if (typeof sv === "string") specVals.push(sv); } }
-                res.skus.push({ spec: specVals, price: sp ? sp.price : "", currency: sp ? sp.currency : "" });
+                // v71 STEP2: 스펙 객체 → 축명·값텍스트·값이미지 구조 추출(Object 문자열화·URL 값 금지).
+                var skuVals = _collectSkuSpecs(so, axisMap, SPEC_KEY);
+                res.skus.push({ spec: skuVals, price: sp ? sp.price : "", currency: sp ? sp.currency : "" });
                 if (sp && !_skuPriceSet) { res.price = sp.price; res.currency = sp.currency; _skuPriceSet = true; }
               }
             }
@@ -325,12 +377,15 @@
         }
       }, 30000);
     }
-    // 옵션: sku 스펙 값을 축 이름 없이 합쳐 후보로(중복 제거). 이름은 알 수 없으면 '옵션'.
-    if (res.skus.length) {
-      var ovals = [], oseen = {};
-      res.skus.forEach(function (sk) { (sk.spec || []).forEach(function (val) { if (val && !oseen[val]) { oseen[val] = 1; ovals.push(val); } }); });
-      if (ovals.length >= 2) res.options.push({ name: "옵션", values: ovals.slice(0, 100) });
-    }
+    // v71 STEP2: 옵션 = sku 스펙 축별(색상·사이즈…). 값은 텍스트, 값 이미지는 option_image로 분리(values 오염 0).
+    Object.keys(axisMap).forEach(function (axis) {
+      var a = axisMap[axis];
+      if (a.order.length >= 2) {
+        var opt = { name: axis, values: a.order.slice(0, 100) };
+        if (Object.keys(a.images).length) opt.option_image = a.images;   // 값→이미지(별도 필드)
+        res.options.push(opt);
+      }
+    });
     res.ok = !!(res.price || res.images.length || res.title);
     return res;
   }
