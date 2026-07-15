@@ -603,7 +603,10 @@
     var gSel = '[class*="gallery" i] img,[class*="product-image" i] img,[class*="main-image" i] img,#imgTagWrapperId img,'
       + '[class*="swiper" i] img,[class*="carousel" i] img,[class*="preview" i] img,[class*="mainImage" i] img,'
       + '[class*="bigImg" i] img,[class*="thumb" i] img,[data-testid*="gallery" i] img,[aria-roledescription="carousel"] img';
-    var dSel = '#productDescription img,#feature-bullets img,[class*="detail" i] img,[class*="description" i] img,#aplus img';
+    // v71 STEP3: 테무 상세 컨테이너 보강(goods-desc·decoration·richtext·longimage·productDesc).
+    var dSel = '#productDescription img,#feature-bullets img,[class*="detail" i] img,[class*="description" i] img,#aplus img,'
+      + '[class*="goods-desc" i] img,[class*="goodsDesc" i] img,[class*="decoration" i] img,[class*="richtext" i] img,'
+      + '[class*="rich-text" i] img,[class*="longimage" i] img,[class*="productDesc" i] img,[class*="pdd" i] img';
     // 갤러리: naturalWidth 필터 없이 — 추천/연관 섹션만 제외(캐러셀은 갤러리라 허용).
     try {
       var gels = document.querySelectorAll(gSel);
@@ -646,13 +649,16 @@
     return { images: out, detailImages: det };
   }
   // v57 STEP3: 상세영역에 '더보기'류 접힘 컨트롤이 있는지(펼치면 상세이미지가 더 나올 수 있음).
-  var FOLD_RE = /(더\s*보기|펼치기|전체\s*보기|자세히\s*보기|see\s*more|view\s*more|read\s*more|show\s*more|expand)/i;
+  // v71 STEP3: 테무·CJK 상세 펼침 라벨 보강(상품상세·전체·全部·查看更多·展开·상세정보).
+  var FOLD_RE = /(더\s*보기|펼치기|전체\s*보기|자세히\s*보기|상품\s*상세|상세\s*보기|상세\s*정보|see\s*more|view\s*more|read\s*more|show\s*more|see\s*all|view\s*all|product\s*details|expand|全部|查看更多|展开|もっと見る|続きを読む)/i;
   function _foldButtons() {
     var out = [];
     try {
       var cands = document.querySelectorAll(
         '[class*="detail" i] button,[class*="detail" i] a,[class*="detail" i] [role="button"],' +
         '[class*="description" i] button,[class*="description" i] a,[class*="desc" i] [role="button"],' +
+        // v71 STEP3: 테무식 이미지/div 기반 펼침(button/a 아님) — expand/more/unfold 클래스.
+        '[class*="expand" i],[class*="viewmore" i],[class*="view-more" i],[class*="unfold" i],[class*="showmore" i],[class*="more-btn" i],' +
         'button,a[role="button"],[role="button"]');
       for (var i = 0; i < cands.length && out.length < 6; i++) {
         var el = cands[i];
@@ -1045,7 +1051,7 @@
     try { btns = _foldButtons(); } catch (e) { btns = []; }
     if (!btns || !btns.length) { finish(); return; }
     var scope = null;
-    try { scope = document.querySelector('[class*="detail" i],[class*="description" i],[class*="goods-desc" i]') || document.body; } catch (e) { scope = document.body; }
+    try { scope = document.querySelector('[class*="detail" i],[class*="description" i],[class*="goods-desc" i],[class*="goodsDesc" i],[class*="decoration" i],[class*="richtext" i],[class*="rich-text" i]') || document.body; } catch (e) { scope = document.body; }
     var before = 0;
     try { before = scope.querySelectorAll("img").length; } catch (e) {}
     var mo = null, timer = null;
