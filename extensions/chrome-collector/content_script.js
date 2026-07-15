@@ -1343,12 +1343,14 @@ function kgpFindCards() {
 }
 
 function kgpCardBadgeStyle(selected) {
+  // v71 STEP4: 사이트 CSS 간섭 격리 — 크기·형태 결정 속성에 !important(인라인+!important=최고 특이성).
   return [
-    "position:absolute", "top:6px", "left:6px", "z-index:2147483640",
-    "padding:3px 8px", "border-radius:7px", "cursor:pointer", "user-select:none",
-    "font:700 11px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
-    selected ? "background:#119a8e" : "background:#1a1714", "color:#fff",
-    "border:1.5px solid " + (selected ? "#0f8c80" : "#c9a24b"),
+    "position:absolute !important", "top:6px !important", "left:6px !important", "z-index:2147483640 !important",
+    "box-sizing:border-box !important", "width:auto !important", "height:auto !important", "min-height:0 !important", "max-width:none !important",
+    "padding:3px 8px !important", "margin:0 !important", "border-radius:7px !important", "cursor:pointer", "user-select:none",
+    "font:700 11px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif !important",
+    (selected ? "background:#119a8e" : "background:#1a1714") + " !important", "color:#fff !important",
+    "border:1.5px solid " + (selected ? "#0f8c80" : "#c9a24b") + " !important",
     "box-shadow:0 2px 8px rgba(0,0,0,.35)",
   ].join(";");
 }
@@ -1419,17 +1421,19 @@ function _kgpCardImage(card) {
   return best;
 }
 function kgpQuickBtnStyle(collected, mode) {
+  // v71 STEP4: 사이트 불문 단일 스펙 강제 — 크기·형태 속성에 !important(알리 등 사이트 CSS 간섭 격리).
   return [
-    "position:absolute", "z-index:2147483639",
+    "position:absolute !important", "z-index:2147483639 !important",
   ].concat(_kgpAnchorCss(mode)).concat([
-    "display:flex", "align-items:center", "justify-content:center",
-    "gap:6px", "white-space:nowrap",
-    KGP_TOUCH ? "padding:5px 11px" : "padding:6px 14px", "border-radius:999px", "cursor:pointer",
-    "min-height:34px",                 // v64: 지름 절반(66→34), 텍스트 위주 필
-    "font:800 " + (KGP_TOUCH ? "13px" : "15px") + "/1 -apple-system,BlinkMacSystemFont,sans-serif",
+    "box-sizing:border-box !important", "width:auto !important", "height:auto !important", "max-width:none !important",
+    "display:flex !important", "align-items:center", "justify-content:center",
+    "gap:6px", "white-space:nowrap !important",
+    (KGP_TOUCH ? "padding:5px 11px" : "padding:6px 14px") + " !important", "margin:0 !important", "border-radius:999px !important", "cursor:pointer",
+    "min-height:34px !important", "max-height:44px !important",   // v64 지름 절반(66→34) 필형, 사이트 CSS 무력화
+    "font:800 " + (KGP_TOUCH ? "13px" : "15px") + "/1 -apple-system,BlinkMacSystemFont,sans-serif !important",
     "letter-spacing:-.01em",
-    "background:" + (collected ? "#119a8e" : "#1a1714"), "color:#fff",
-    "border:1.5px solid " + (collected ? "#0f8c80" : "#c9a24b"),
+    ("background:" + (collected ? "#119a8e" : "#1a1714")) + " !important", "color:#fff !important",
+    "border:1.5px solid " + (collected ? "#0f8c80" : "#c9a24b") + " !important",
     "box-shadow:0 3px 12px rgba(0,0,0,.34)", "pointer-events:auto",
     "opacity:" + ((KGP_TOUCH || collected) ? "1" : "0"), "transition:opacity .12s",
   ]).join(";");
@@ -1731,22 +1735,26 @@ function kgpInjectListing() {
       const existing = c.el.querySelector(":scope > .kgp-card-chk");
       const sel = KGP_SELECTED.has(c.url);
       if (existing) {
-        // 이미 배지 있음 — 선택 상태만 동기화(선택을 풀지 않음)
+        // v71 STEP4: 가상화(재사용 노드) 대응 — 이 카드 요소가 스크롤로 다른 상품에 재사용됐으면 배지 url 갱신.
+        existing.dataset.url = c.url;
+        existing._kgpEl = c.el;
         existing.textContent = sel ? "✓ 선택" : "수집";
         existing.style.cssText = kgpCardBadgeStyle(sel);
         if (sel) { c.el.style.outline = "3px solid #119a8e"; c.el.style.outlineOffset = "-3px"; c.el.setAttribute("data-kgp-outline", "1"); }
+        else { c.el.style.outline = ""; c.el.removeAttribute("data-kgp-outline"); }
         return;
       }
       if (getComputedStyle(c.el).position === "static") c.el.style.position = "relative";
       const badge = document.createElement("div");
       badge.className = "kgp-card-chk";
       badge.dataset.url = c.url;
+      badge._kgpEl = c.el;
       badge.textContent = sel ? "✓ 선택" : "수집";
       badge.style.cssText = kgpCardBadgeStyle(sel);
       if (sel) { c.el.style.outline = "3px solid #119a8e"; c.el.style.outlineOffset = "-3px"; c.el.setAttribute("data-kgp-outline", "1"); }
       badge.addEventListener("click", (e) => {
         e.preventDefault(); e.stopPropagation();
-        kgpToggleCard(c.url, badge, c.el);
+        kgpToggleCard(badge.dataset.url, badge, badge._kgpEl || c.el);   // v71 STEP4: dataset.url(가상화 갱신 반영)
       });
       c.el.appendChild(badge);
 
@@ -2044,4 +2052,31 @@ setInterval(() => {
     });
     window.addEventListener("popstate", _onUrlChange, { passive: true });
   } catch (e) { /* noop */ }
+})();
+
+// v71 STEP4: 무한스크롤 신규 타일 배지 부착 — 목록 모드에서 신규 타일 유입(MutationObserver) + 스크롤
+//   (가상화 리스트: childList 무변이로 노드 재사용)에 디바운스 300ms 재부착. kgpInjectListing은 멱등(배지 있는
+//   카드 스킵 + 가상화 재사용 노드 url 갱신). kgpPageType 캐시 사용 = 재판정 아님(v55 점멸 방지 원칙 유지).
+(function () {
+  let _rt = null;
+  function kgpRescanTiles() {
+    if (_rt) return;
+    _rt = setTimeout(() => {
+      _rt = null;
+      try {
+        if (!(kgpHostAllowed() || kgpEntrySession())) return;
+        if (kgpPageType() !== "list") return;          // 목록 모드만(캐시 판정 — 번복 0)
+        if (_kgpClosed) return;                          // 사용자가 바 닫음 → 배지 미부착
+        if (window.top !== window.self) return;
+        kgpInjectListing();                              // 멱등 재부착
+      } catch (e) {}
+    }, 300);
+  }
+  try {
+    const mo = new MutationObserver(kgpRescanTiles);
+    const start = () => { if (document.body) mo.observe(document.body, { childList: true, subtree: true }); else setTimeout(start, 300); };
+    start();
+    window.addEventListener("scroll", kgpRescanTiles, { passive: true });   // 가상화(childList 무변이) 대응
+    window.addEventListener("resize", kgpRescanTiles, { passive: true });
+  } catch (e) { /* IntersectionObserver/MutationObserver 미지원 무시 */ }
 })();
