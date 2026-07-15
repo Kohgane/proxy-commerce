@@ -20,8 +20,11 @@ CS = Path("extensions/chrome-collector/content_script.js").read_text(encoding="u
 def test_default_sourcing_deterministic():
     assert "function kgpIsDefaultSourcing" in CS
     assert "KGP_DEFAULT_SRC_RE" in CS
-    # 디폴트 소싱처는 상세패턴=single, 그 외=list (unknown 금지).
-    assert 'if (kgpIsDefaultSourcing()) return isDetail ? "single" : "list";' in CS
+    # v71 STEP5: 디폴트 소싱처도 URL 명확할 때만 URL 판정(상세=single·목록=list), 애매하면 DOM 신호로 낙하
+    #   (무조건 list 기본값 제거 — 라쿠텐/야후 상세 오판 방지). 결정 라인은 공통 하드매치.
+    assert 'if (isDetail && !isList) return "single";' in CS
+    assert 'if (isList && !isDetail) return "list";' in CS
+    assert "애매하면 DOM 신호로 낙하" in CS
     for dom in ("amazon", "temu", "aliexpress", "yahoo", "taobao", "1688"):
         assert dom in CS
 
@@ -50,15 +53,23 @@ def test_default_sourcing_url_decisions_node():
     # content_script에서 정규식 2개 추출해 결정 로직 실증.
     src_re = re.search(r"const KGP_DEFAULT_SRC_RE = (/.*/i);", CS).group(1)
     det_re = re.search(r"const KGP_DETAIL_URL_RE = (/.*/i);", CS).group(1)
+    list_re = re.search(r"const KGP_LIST_URL_RE = (/.*/i);", CS).group(1)
+    # v71 STEP5: 디폴트 소싱처도 URL 명확할 때만 URL 판정, 애매하면 DOM 낙하('dom').
     harness = f"""
-    const SRC={src_re}; const DET={det_re};
-    function pt(host,href){{ if(SRC.test(host)) return DET.test(href)?'single':'list'; return 'heuristic'; }}
+    const SRC={src_re}; const DET={det_re}; const LIST={list_re};
+    function pt(host,href){{
+      const isD=DET.test(href), isL=LIST.test(href);
+      if(isD && !isL) return 'single';
+      if(isL && !isD) return 'list';
+      return 'dom';   // 애매 → DOM 신호(하네스 밖); 디폴트/비디폴트 동일
+    }}
     const cases=[
       ['www.amazon.com','https://www.amazon.com/dp/B0XXXX','single'],
       ['www.amazon.com','https://www.amazon.com/s?k=phone','list'],
       ['www.temu.com','https://www.temu.com/x-g-601099.html','single'],
-      ['www.temu.com','https://www.temu.com/','list'],
-      ['shop.example.com','https://shop.example.com/x','heuristic'],
+      ['www.temu.com','https://www.temu.com/','dom'],
+      ['item.rakuten.co.jp','https://item.rakuten.co.jp/shop/abc123/','dom'],
+      ['shop.example.com','https://shop.example.com/x','dom'],
     ];
     let ok=true; cases.forEach(c=>{{ if(pt(c[0],c[1])!==c[2]){{ok=false;console.log('FAIL',c,'→',pt(c[0],c[1]));}} }});
     console.log(ok?'ALL_OK':'FAIL');

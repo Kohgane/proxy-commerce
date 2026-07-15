@@ -26,7 +26,7 @@ def test_source_contract():
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.85"
+    assert MANIFEST["version"] == "1.5.86"
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치")
