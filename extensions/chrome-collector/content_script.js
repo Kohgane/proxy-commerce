@@ -1501,17 +1501,19 @@ function kgpUpdateToolbar() {
   c.textContent = `메인 ${main}${recoTxt}${adTxt} · ${KGP_SELECTED.size}개 선택`;
 }
 
-function kgpCollect(urls) {
+function kgpCollect(urls, opts) {
   const items = (urls || []).map(u => _kgpCardByUrl[u]).filter(Boolean).map(c => (
     { url: c.url, title: c.title, image: c.image, images: c.images, price: c.price, currency: c.currency }
   ));
   if (!items.length) { kgpSetStatus("선택된 상품이 없어요. 상품의 ‘수집’ 배지를 눌러 선택하세요."); return; }
-  kgpRunBulk(items);
+  kgpRunBulk(items, opts);
 }
 
 // v42 E-5: 벌크 실행 코어 — 정직 요약(완료/중복/실패) + 실패 항목 재시도. 전체수집·선택수집·재시도가 공용.
-function kgpRunBulk(items) {
+// v72b STEP3: opts.force=true면 각 항목에 force 플래그 → 서버가 기존 레코드를 덮어씀(신규 행 금지, '다시 수집').
+function kgpRunBulk(items, opts) {
   if (!items || !items.length) return;
+  if (opts && opts.force) items.forEach(it => { if (it) it.force = true; });
   kgpSetStatus(`수집 중… (0/${items.length})`);
   const btns = document.querySelectorAll(".kgp-tb-btn");
   btns.forEach(b => b.disabled = true);
@@ -1599,6 +1601,7 @@ function kgpBuildToolbar() {
     '<button class="kgp-tb-btn" data-act="clear" style="' + ghost + '">선택 해제</button>' +
     '<button class="kgp-tb-btn" data-act="collect-sel" style="' + gold + '">선택 수집</button>' +
     '<button class="kgp-tb-btn" data-act="collect-all" style="' + teal + '">전체 수집</button>' +
+    '<button class="kgp-tb-btn" data-act="recollect" title="선택 상품을 최신 추출기로 다시 수집(기존 항목 갱신·신규 생성 안 함) — 가격 ‘-’·구버전 잔재 세탁" style="' + gold + '">다시 수집</button>' +
     '<button class="kgp-tb-btn" data-act="incl-reco" title="전체선택·전체수집에 추천/캐러셀 상품을 포함할지" style="' + ghost + '">' + (_kgpInclReco() ? '추천 포함 ✓' : '추천 포함') + '</button>' +
     '<button class="kgp-tb-btn" data-act="incl-ads" title="전체선택·전체수집에 광고(스폰서) 상품을 포함할지" style="' + ghost + '">' + (_kgpInclAds() ? '광고 포함 ✓' : '광고 포함') + '</button>' +
     '<span id="kgp-tb-status" style="opacity:.95;font-size:15px;max-width:420px"></span>' +
@@ -1640,6 +1643,12 @@ function kgpBuildToolbar() {
       kgpCollect([...KGP_SELECTED]);
     } else if (act === "collect-all") {
       kgpCollect(_kgpSelectableUrls());          // v64 STEP2: 광고 제외(광고 포함 토글로 전부)
+    } else if (act === "recollect") {
+      // v72b STEP3: 선택 상품을 force로 다시 수집 → 서버가 기존 레코드 덮어씀(신규 생성 0).
+      //   구버전 수집분('-' 가격·잔재)을 최신 추출기로 세탁하는 통로. 선택 없으면 안내.
+      const sel = [...KGP_SELECTED];
+      if (!sel.length) { kgpSetStatus("먼저 다시 수집할 상품의 ‘수집’ 배지를 눌러 선택하세요."); return; }
+      kgpCollect(sel, { force: true });
     } else if (act === "auto") {
       // 팝업 자동표시 on/off(v7). 끄면 지금 접고, 이후 목록 페이지는 구석 배지로만 시작.
       const next = kgpLSget("kgp_bar_auto", "1") === "0" ? "1" : "0";
