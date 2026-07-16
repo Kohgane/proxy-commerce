@@ -641,6 +641,10 @@ function kgpEnsureStyles() {
 
 // 드래그로 위치 이동 + 마지막 위치를 localStorage에 기억. opts.handle/opts.ignore 지원.
 // 드래그 직후 click을 억제하도록 el._kgpDragged 플래그를 잠깐 세운다.
+// v73 STEP1: all:initial !important(v72 격리)가 우리 위치 오프셋(top/left/right/transform)을 auto로
+//   !important 덮어써 벌크바·FAB·호버버튼이 정적 흐름(긴 페이지 최하단=화면 밖)으로 떨어지던 회귀 수리.
+//   동적 위치(드래그·클램프)도 반드시 !important로 설정해 격리 리셋을 이긴다. (크기 격리는 유지.)
+function _kgpPos(el, prop, val) { try { el.style.setProperty(prop, val, "important"); } catch (e) { el.style[prop] = val; } }
 function kgpMakeDraggable(el, storeKey, opts) {
   opts = opts || {};
   const saved = kgpLSget(storeKey, "");
@@ -648,9 +652,9 @@ function kgpMakeDraggable(el, storeKey, opts) {
     try {
       const p = JSON.parse(saved);
       if (p && typeof p.left === "number") {
-        el.style.left = Math.max(4, Math.min(window.innerWidth - 40, p.left)) + "px";
-        el.style.top = Math.max(4, Math.min(window.innerHeight - 40, p.top)) + "px";
-        el.style.right = "auto"; el.style.bottom = "auto"; el.style.transform = "none";
+        _kgpPos(el, "left", Math.max(4, Math.min(window.innerWidth - 40, p.left)) + "px");
+        _kgpPos(el, "top", Math.max(4, Math.min(window.innerHeight - 40, p.top)) + "px");
+        _kgpPos(el, "right", "auto"); _kgpPos(el, "bottom", "auto"); _kgpPos(el, "transform", "none");
       }
     } catch (e) { /* noop */ }
   }
@@ -671,8 +675,8 @@ function kgpMakeDraggable(el, storeKey, opts) {
     if (moved) {
       const nl = Math.max(4, Math.min(window.innerWidth - el.offsetWidth - 4, ox + dx));
       const nt = Math.max(4, Math.min(window.innerHeight - el.offsetHeight - 4, oy + dy));
-      el.style.left = nl + "px"; el.style.top = nt + "px";
-      el.style.right = "auto"; el.style.bottom = "auto"; el.style.transform = "none";
+      _kgpPos(el, "left", nl + "px"); _kgpPos(el, "top", nt + "px");
+      _kgpPos(el, "right", "auto"); _kgpPos(el, "bottom", "auto"); _kgpPos(el, "transform", "none");
     }
   });
   window.addEventListener("mouseup", () => {
@@ -697,8 +701,8 @@ function kgpClampFixed(el) {
   if (!el.style.left || el.style.left === "auto") return;
   const w = el.offsetWidth, h = el.offsetHeight;
   const l = parseFloat(el.style.left) || 0, t = parseFloat(el.style.top) || 0;
-  el.style.left = Math.max(4, Math.min(Math.max(4, window.innerWidth - w - 4), l)) + "px";
-  el.style.top = Math.max(4, Math.min(Math.max(4, window.innerHeight - h - 4), t)) + "px";
+  _kgpPos(el, "left", Math.max(4, Math.min(Math.max(4, window.innerWidth - w - 4), l)) + "px");
+  _kgpPos(el, "top", Math.max(4, Math.min(Math.max(4, window.innerHeight - h - 4), t)) + "px");
 }
 let _kgpResizeT = null;
 function kgpOnViewportChange() {
@@ -983,13 +987,15 @@ function injectCollectButton() {
   // 고가브릿지 토큰: 먹 매트 pill + 금 얇은 링 + 청록 미세 악센트. (네이비+주황 폐기, v4)
   // 위치: 우측 '중앙'(v7) — 콘텐츠 안 가리게. 드래그로 옮기면 위치 기억(kgp_fab_pos).
   btn.style.cssText = _KGP_RESET + [   // v72 STEP4: all:initial 격리(사이트 상속 오염 차단)
-    "position:fixed !important", "right:16px", "top:calc(50% - 24px)", "z-index:2147483647 !important",
-    "display:flex !important", "align-items:center", "gap:10px", "max-width:min(82vw,300px)", "box-sizing:border-box",
+    // v73 STEP1: 위치/레이아웃 오프셋 전부 !important — all:initial의 auto가 우리 top/right를 덮어써
+    //   FAB가 화면 밖(정적 흐름)으로 떨어지던 회귀 수리(격리는 유지).
+    "position:fixed !important", "right:16px !important", "top:calc(50% - 24px) !important", "z-index:2147483647 !important",
+    "display:flex !important", "align-items:center !important", "gap:10px !important", "max-width:min(82vw,300px) !important", "box-sizing:border-box !important",
     "padding:9px 16px 9px 10px !important", "border:1px solid #c9a24b !important", "border-radius:999px !important",
     "background:#1a1714 !important", "color:#f5efe3 !important",
     "font:14px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif !important",
-    "cursor:pointer", "box-shadow:0 6px 20px rgba(0,0,0,.4),0 0 0 4px rgba(17,154,142,.10)",
-    "transition:transform .12s,opacity .12s,box-shadow .12s"
+    "cursor:pointer !important", "box-shadow:0 6px 20px rgba(0,0,0,.4),0 0 0 4px rgba(17,154,142,.10) !important",
+    "transition:transform .12s,opacity .12s,box-shadow .12s !important"
   ].join(";");
   btn.addEventListener("mouseenter", () => {
     btn.style.transform = "translateY(-2px)";
@@ -1401,12 +1407,14 @@ function kgpHoverAnchor() {
 }
 function _kgpAnchorCss(mode) {
   // v65 STEP3: mode='corner'(이미지 못 찾음) → 좌상단 폴백(허공 금지). 그 외 이미지 영역 앵커.
-  if (mode === "corner") return ["top:6px", "left:6px"];
-  if (KGP_TOUCH) return ["top:8px", "right:8px"];       // 터치: 우상단 상시
+  // v73 STEP1: 앵커 오프셋 전부 !important — all:initial의 auto가 호버 버튼 위치를 덮어써 '일부만' 보이던
+  //   회귀 수리(카드 배지는 이미 !important라 생존, 호버 버튼만 앵커 오프셋이 비-!important였음).
+  if (mode === "corner") return ["top:6px !important", "left:6px !important"];
+  if (KGP_TOUCH) return ["top:8px !important", "right:8px !important"];       // 터치: 우상단 상시
   const a = kgpHoverAnchor();
-  if (a === "bl") return ["bottom:10px", "left:10px"];   // 7시
-  if (a === "br") return ["bottom:10px", "right:10px"];  // 5시
-  return ["top:50%", "left:50%", "transform:translate(-50%,-50%)"];  // 중앙(기본)
+  if (a === "bl") return ["bottom:10px !important", "left:10px !important"];   // 7시
+  if (a === "br") return ["bottom:10px !important", "right:10px !important"];  // 5시
+  return ["top:50% !important", "left:50% !important", "transform:translate(-50%,-50%) !important"];  // 중앙(기본)
 }
 // v65 STEP3: 카드에서 대표 이미지 요소 찾기(가장 큰 상품 이미지) — 버튼을 이 이미지 위에 앵커.
 function _kgpCardImage(card) {
@@ -1593,12 +1601,14 @@ function kgpBuildToolbar() {
   const bar = document.createElement("div");
   bar.id = KGP_TOOLBAR_ID;
   bar.style.cssText = _KGP_RESET + [   // v72 STEP4: all:initial 격리(사이트 상속 오염 → 벌크바 과대 차단)
-    "position:fixed !important", "top:12px", "left:50%", "transform:translateX(-50%) !important",
-    "z-index:2147483647 !important", "display:flex !important", "align-items:center", "gap:12px",
+    // v73 STEP1: top/left/gap/flex-wrap 등 전부 !important — all:initial의 top:auto/left:auto가 우리
+    //   top:12px/left:50%를 덮어써 벌크바가 정적 흐름(긴 목록 최하단=화면 밖)으로 떨어지던 회귀 수리.
+    "position:fixed !important", "top:12px !important", "left:50% !important", "transform:translateX(-50%) !important",
+    "z-index:2147483647 !important", "display:flex !important", "align-items:center !important", "gap:12px !important",
     "padding:10px 18px !important", "border-radius:999px !important", "border:1px solid #c9a24b !important",   // v45 P1: 벌크바 +25%
     "background:#1a1714 !important", "color:#f5efe3 !important",
     "font:16px/1.2 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif !important",
-    "box-shadow:0 8px 24px rgba(0,0,0,.45)", "max-width:96vw !important", "flex-wrap:wrap",
+    "box-shadow:0 8px 24px rgba(0,0,0,.45) !important", "max-width:96vw !important", "flex-wrap:wrap !important",
   ].join(";");
   // 버튼 위계: 전체 수집=청록 채움(Primary), 선택 수집=금 아웃라인(Secondary), 전체선택/해제=고스트. (+25% 확대)
   // v72 STEP4: 내부 버튼도 all:initial 격리(사이트 button 규칙 상속 차단) + 고정 px !important.
