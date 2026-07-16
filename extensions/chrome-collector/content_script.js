@@ -1925,6 +1925,11 @@ function kgpDetectPageType() {
     const ov = sessionStorage.getItem("kgp_pt_ov:" + location.pathname);
     if (ov === "single" || ov === "list") return ov;
   } catch (e) {}
+  // v73 STEP2: 페이지 타입 판정은 순수 모듈(KGPDetect)에 위임 — 단일 소스(하네스로 계약 검증). 미로드 시 인라인 폴백.
+  if (typeof KGPDetect !== "undefined" && KGPDetect.pageType) {
+    let _n = 0; try { _n = kgpFindCards().length; } catch (e) { _n = 0; }
+    return KGPDetect.pageType(document, location.href, { cardCount: _n });
+  }
   const href = location.href;
   const isDetail = KGP_DETAIL_URL_RE.test(href);
   const isList = KGP_LIST_URL_RE.test(href);

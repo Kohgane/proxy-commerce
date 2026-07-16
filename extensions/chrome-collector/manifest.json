@@ -1,10 +1,18 @@
 {
   "manifest_version": 3,
   "name": "고가수집기",
-  "version": "1.5.91",
+  "version": "1.5.92",
   "description": "지정 소싱처(타오바오·아마존 등)에서 한 클릭에 고가브릿지로 수집 (인페이지 수집 + 리스팅 다중 선택 수집 + 자동 번역)",
-  "permissions": ["activeTab", "storage", "contextMenus", "notifications", "scripting"],
-  "host_permissions": ["<all_urls>"],
+  "permissions": [
+    "activeTab",
+    "storage",
+    "contextMenus",
+    "notifications",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "icons": {
     "16": "icons/16.png",
     "32": "icons/32.png",
@@ -25,19 +33,34 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["kgp-net.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "kgp-net.js"
+      ],
       "run_at": "document_start",
       "world": "MAIN"
     },
     {
-      "matches": ["<all_urls>"],
-      "js": ["kgp-extractor.js", "content_script.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "kgp-extractor.js",
+        "kgp-detect.js",
+        "content_script.js"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["<all_urls>"],
-      "js": ["kgp-extractor.js", "kgp-main.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "kgp-extractor.js",
+        "kgp-main.js"
+      ],
       "run_at": "document_idle",
       "world": "MAIN"
     }

@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 CS = Path("extensions/chrome-collector/content_script.js").read_text(encoding="utf-8")
+DETECT = Path("extensions/chrome-collector/kgp-detect.js").read_text(encoding="utf-8")
 SEARCH_FIXTURE = Path("fixtures/realpages/amazon-search.html").read_text(encoding="utf-8")
 DP_FIXTURE = Path("fixtures/realpages/synthetic-amazon-dp.html").read_text(encoding="utf-8")
 
@@ -32,16 +33,19 @@ def _playwright_ok():
     return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
 
 
-# chrome 스텁을 evaluate 함수 본문에 인라인 정의 → CS eval과 동일 동기 호출(add_init_script 레이스 제거).
-_INJECT = """(cs) => {
+# chrome 스텁을 evaluate 함수 본문에 인라인 정의 → 스크립트 eval과 동일 동기 호출(add_init_script 레이스 제거).
+# 매니페스트 로드 순서대로 kgp-detect.js → content_script.js 를 eval(실 번들 = 감지 모듈 위임 경로 검증).
+_INJECT = """(a) => {
+  const [detect, cs] = a;
   window.chrome = {
     runtime: { id: 'x', onMessage: { addListener(){} }, sendMessage(){}, getURL: u => u, lastError: null,
-               getManifest: () => ({ version: '1.5.91' }) },
+               getManifest: () => ({ version: '1.5.92' }) },
     storage: {
       local: { get: (k, cb) => cb && cb({}), set(){}, onChanged: { addListener(){} } },
       sync:  { get: (k, cb) => cb && cb({}), set(){}, onChanged: { addListener(){} } }
     }
   };
+  (0, eval)(detect);
   (0, eval)(cs);
 }"""
 
@@ -64,7 +68,7 @@ def _run(url, body):
                 route.abort()
         page.route("**/*", handler)
         page.goto(url, wait_until="domcontentloaded")
-        page.evaluate(_INJECT, CS)          # chrome 정의 + CS eval(동기·무레이스)
+        page.evaluate(_INJECT, [DETECT, CS])   # chrome 정의 + kgp-detect + CS eval(동기·무레이스)
         page.wait_for_timeout(1200)
         info = page.evaluate("""() => {
             const bar = document.getElementById('kgp-listing-toolbar');
