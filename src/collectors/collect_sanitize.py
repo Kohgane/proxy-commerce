@@ -85,6 +85,16 @@ def renormalize_price_field(current: Any) -> Tuple[str, bool]:
     return cur, False
 
 
+def canonical_price(*candidates) -> str:
+    """v72b STEP1: 정본 가격 단일 소스 — 여러 후보(price → price_original → item.price) 중 첫 **정규화 성공값**.
+    드로어·마진계산·마켓 등록이 모두 이 함수로 동일 값을 읽는다(이원화 제거). 실패면 '' (0.00 저장 금지)."""
+    for c in candidates:
+        norm, ok = normalize_price(c)
+        if ok:
+            return norm
+    return ""
+
+
 def renormalize_all(items_iter, update_fn) -> Dict[str, int]:
     """v72 STEP2: 기저장 오염 가격 재정규화 배치(주입식 — 스토어 비의존, 테스트 용이).
 

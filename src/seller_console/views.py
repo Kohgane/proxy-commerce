@@ -107,6 +107,13 @@ def _render_seller_page(title: str, body: str, page: str = "dashboard") -> str:
     )
 
 
+def _canon_price(d) -> str:
+    """v72b STEP1: 정본 가격 단일 소스 — price(정본) → price_original(파생) 순 정규화. 이원화 제거."""
+    from src.collectors.collect_sanitize import canonical_price
+    d = d or {}
+    return canonical_price(d.get("price"), d.get("price_original"))
+
+
 def _check_auth() -> bool:
     """인증 확인. SELLER_CONSOLE_AUTH=1 이면 실제 로그인 세션을 요구한다.
 
@@ -1283,7 +1290,7 @@ def collect_preview():
                 url=url,
                 title=title,
                 image=images[0] if images else "",
-                price=str(draft.get("price_original") or draft.get("price") or ""),
+                price=_canon_price(draft),   # v72b STEP1: 정본 단일 소스(정규화·price 우선)
                 currency=draft.get("currency") or "",
                 extra=draft,
                 seller_id=_seller_id(),
@@ -1596,7 +1603,7 @@ def collect_receive():
             url=url,
             title=title,
             image=images[0] if images else "",
-            price=str(draft.get("price_original") or draft.get("price") or ""),
+            price=_canon_price(draft),   # v72b STEP1: 정본 단일 소스(정규화·price 우선)
             currency=draft.get("currency") or "",
             extra=draft,
             seller_id=_seller_id(),
@@ -1630,6 +1637,14 @@ def collect_upload():
 
     if not product_data:
         return jsonify({"ok": False, "error": "상품 데이터가 필요합니다."}), 400
+    # v72b STEP1: 마켓 등록도 정본 가격 단일 소스로 정규화(드로어가 "81800." 등 오염값을 보내도 거부 소멸).
+    try:
+        from src.collectors.collect_sanitize import canonical_price as _cp
+        _cn = _cp(product_data.get("price"), product_data.get("price_original"))
+        if _cn:
+            product_data["price"] = _cn
+    except Exception:
+        pass
 
     if not markets:
         return jsonify({"ok": False, "error": "업로드 대상 마켓을 선택하세요."}), 400
@@ -1906,7 +1921,7 @@ def collect_bulk():
                 url=url,
                 title=title,
                 image=images[0] if images else "",
-                price=str(d.get("price_original") or d.get("price") or ""),
+                price=_canon_price(d),   # v72b STEP1: 정본 단일 소스
                 currency=d.get("currency") or "",
                 extra=d,
                 seller_id=_seller_id(),
