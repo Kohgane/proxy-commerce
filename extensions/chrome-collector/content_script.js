@@ -1425,6 +1425,22 @@ function _kgpCardImage(card) {
   } catch (e) {}
   return best;
 }
+// v72b STEP4: 호버 버튼 자식(아이콘·라벨) 격리 — 자식 span에 all:initial+고정 !important를 인라인으로
+//   박아, 사이트의 직접 `span{font-size/width…!important}` 규칙이 라벨/아이콘을 부풀리는 경로를 봉인.
+//   (버튼 루트만 격리하면 자식은 사이트 규칙에 노출 → auto-width 과대. 인라인 !important=캐스케이드 최상위.)
+function _kgpQuickIconSpan() {
+  return '<span style="' + _KGP_RESET +
+    "display:inline-flex !important;width:14px !important;height:14px !important;" +
+    "min-width:0 !important;max-width:none !important;flex:none !important;align-items:center;justify-content:center" +
+    '">' + KGP_BRIDGE_MINI + "</span>";
+}
+function _kgpQuickLabelSpan(text) {
+  return '<span class="kgp-q-label" style="' + _KGP_RESET +
+    "display:inline !important;width:auto !important;max-width:none !important;" +
+    "font:800 " + (KGP_TOUCH ? "13px" : "15px") + "/1 -apple-system,BlinkMacSystemFont,sans-serif !important;" +
+    "color:#fff !important;letter-spacing:-.01em !important;white-space:nowrap !important" +
+    '">' + text + "</span>";
+}
 function kgpQuickBtnStyle(collected, mode) {
   // v71 STEP4 !important + v72 STEP4 all:initial 격리(알리 상속 오염 원천 차단).
   return _KGP_RESET + [
@@ -1804,8 +1820,10 @@ function kgpInjectListing() {
         q.dataset.url = c.url;
         q.dataset.anchorMode = mode;
         if (done) q.dataset.collected = "1";
-        q.innerHTML = '<span style="display:flex;width:14px;height:14px;flex:none">' + KGP_BRIDGE_MINI +   // v64 STEP3: 아이콘 축소(21→14), 텍스트 위주
-          '</span><span class="kgp-q-label">' + (done ? "수집됨 ✓" : "수집") + "</span>";
+        // v72b STEP4: 자식 요소도 all:initial 격리(알리 등 사이트의 직접 `span{…!important}` 규칙이
+        //   라벨/아이콘을 부풀려 버튼 auto-width가 과대해지던 근본 차단). 인라인 !important는 캐스케이드
+        //   최상위 → 사이트 스타일시트 !important도 못 이김. (버튼 루트는 v72 STEP4서 이미 격리됨.)
+        q.innerHTML = _kgpQuickIconSpan() + _kgpQuickLabelSpan(done ? "수집됨 ✓" : "수집");
         q.style.cssText = kgpQuickBtnStyle(done, mode);
         q.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); kgpQuickCollect(c, q); });
         if (!KGP_TOUCH) {
@@ -2018,6 +2036,15 @@ try {
     if (changed) kgpRefresh();                          // 런타임 즉시 반영
   });
 } catch (e) { /* noop */ }
+
+// v72b STEP4: 설치된 확장 버전을 페이지 DOM(documentElement[data-kgp-ext])에 각인 — 우리 셀러 콘솔이
+//   이 값을 읽어 신선도 배너(최신/구버전 재로딩)를 판정한다. 호스트 게이팅과 무관하게 모든 페이지 무조건.
+(function _kgpStampExtVersion() {
+  try {
+    const v = (chrome.runtime.getManifest && chrome.runtime.getManifest().version) || "";
+    if (v && document.documentElement) document.documentElement.setAttribute("data-kgp-ext", v);
+  } catch (e) { /* noop */ }
+})();
 
 kgpLoadSourcesThen(kgpRefresh);
 let _kgpLastUrl = location.href;

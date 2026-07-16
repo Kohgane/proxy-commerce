@@ -6258,6 +6258,7 @@ def collect_history():
         translation_free=translation_free,
         groups=groups,
         fastscroll=fastscroll,
+        expected_ext_version=_chrome_extension_version(),   # v72b STEP4: 신선도 배너(설치 버전 대조)
     )
 
 

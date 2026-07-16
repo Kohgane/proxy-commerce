@@ -9,6 +9,11 @@
     </div>
   </div>
 
+  <!-- v72b STEP4: 고가수집기 확장 신선도 배너 — content_script가 각인한 설치 버전(data-kgp-ext)을
+       최신 버전과 대조. 구버전이면 재로딩 안내(수집 품질 이슈의 최다 원인). 정직: 감지 실패는 '미감지'로 표기. -->
+  <div id="extFreshBanner" class="pc-status small mb-3 d-none align-items-center gap-2"
+       data-expected="{{ expected_ext_version }}"></div>
+
   {% if summary.total and summary.total > 0 %}
   <!-- 초보 흐름: 다음 할 일 한 줄(happy path) -->
   <div class="pc-status pc-status-info small mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -1300,6 +1305,51 @@ async function runBulkUpload() {
         });
       }
     });
+  })();
+
+  // v72b STEP4: 고가수집기 확장 신선도 배너 — content_script가 documentElement[data-kgp-ext]에 각인한
+  //   설치 버전을 최신(서버 manifest)과 대조. 낮으면 재로딩 안내(수집 품질 이슈 최다 원인). 정직: 미감지는 '미감지'.
+  (function () {
+    var el = document.getElementById('extFreshBanner');
+    if (!el) return;
+    var expected = (el.getAttribute('data-expected') || '').trim();
+    if (!expected) return;                                  // 서버가 버전 못 읽으면 배너 생략(가짜 금지)
+    function cmp(a, b) {                                    // semver-ish 숫자 비교(1.5.9 < 1.5.89)
+      var pa = String(a).split('.'), pb = String(b).split('.');
+      for (var i = 0; i < Math.max(pa.length, pb.length); i++) {
+        var na = parseInt(pa[i] || '0', 10), nb = parseInt(pb[i] || '0', 10);
+        if (isNaN(na)) na = 0; if (isNaN(nb)) nb = 0;
+        if (na !== nb) return na < nb ? -1 : 1;
+      }
+      return 0;
+    }
+    function paint(installed) {
+      el.classList.remove('d-none', 'pc-status-success', 'pc-status-info', 'pc-status-warning');
+      if (!installed) {
+        el.classList.add('pc-status-info');
+        el.innerHTML = '<i class="bi bi-info-circle"></i><span>고가수집기 확장이 감지되지 않았어요 ' +
+          '(최신 v' + expected + '). <a href="/seller/extension">설치·재로딩 방법</a></span>';
+        return;
+      }
+      var c = cmp(installed, expected);
+      if (c < 0) {
+        el.classList.add('pc-status-warning');
+        el.innerHTML = '<i class="bi bi-exclamation-triangle"></i><span>설치된 고가수집기 <strong>v' + installed +
+          '</strong>가 최신 <strong>v' + expected + '</strong>보다 낮아요 — ' +
+          '<code>chrome://extensions</code>에서 새로고침(재로딩)하면 최신 추출기로 갱신됩니다.</span>';
+      } else {
+        el.classList.add('pc-status-success');
+        el.innerHTML = '<i class="bi bi-check-circle"></i><span>고가수집기 최신 버전입니다 (v' + installed + ')</span>';
+      }
+    }
+    // content_script는 document_idle 각인 → 몇 차례 재확인(설치했는데 늦게 각인되는 경우 대비).
+    var tries = 0;
+    (function check() {
+      var installed = (document.documentElement.getAttribute('data-kgp-ext') || '').trim();
+      if (installed) { paint(installed); return; }
+      if (++tries >= 6) { paint(''); return; }              // ~3초 내 미각인 = 미감지(정직)
+      setTimeout(check, 500);
+    })();
   })();
 </script>
 {% endblock %}

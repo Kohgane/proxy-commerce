@@ -21,7 +21,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.89"
+    assert MANIFEST["version"] == "1.5.90"
 
 
 def test_button_shrunk_and_tokens():
@@ -30,8 +30,8 @@ def test_button_shrunk_and_tokens():
     assert "66px" not in style               # 옛 큰 값 제거
     # gogabridj 토큰만(먹/금/청록) — 임의 색 없음.
     assert "#1a1714" in style and "#c9a24b" in style and "#119a8e" in style
-    # 아이콘 축소(21→14).
-    assert 'width:14px;height:14px' in CS
+    # 아이콘 축소(21→14) — v72b: 자식 span 격리로 !important 부착.
+    assert 'width:14px !important;height:14px !important' in CS
 
 
 def test_anchor_setting_wired():
