@@ -5874,7 +5874,7 @@ def extension_download():
     if not os.path.isdir(ext_dir):
         abort(404)
     include = [
-        "manifest.json", "background.js", "kgp-net.js", "kgp-extractor.js", "kgp-main.js", "content_script.js",
+        "manifest.json", "background.js", "kgp-net.js", "kgp-extractor.js", "kgp-detect.js", "kgp-main.js", "content_script.js",
         "popup.html", "popup.js", "options.html", "options.js", "README.md",
     ]
     buf = io.BytesIO()
