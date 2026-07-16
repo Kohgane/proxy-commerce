@@ -40,7 +40,7 @@ def test_bookmarklet_fetch_contract():
     assert "credentials:'include'" in js          # 세션 쿠키 동반
     assert "'X-KGP':'1'" in js                     # CSRF 헤더
     assert "'Bearer '+T" in js                     # 토큰 우선(기존 유지)
-    assert "d.login_required" in js and "[열기]" in js   # 로그인 안내 링크
+    assert "d.login_required" in js and "열기]" in js   # v72b: 로그인/토큰 재발급 링크
 
 
 def test_token_reissue_does_not_revoke():

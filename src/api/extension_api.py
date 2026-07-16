@@ -495,7 +495,8 @@ def collect_from_extension():
     if not user:
         logger.warning("[collect %s] 인증 실패(토큰 무효 + 세션 없음)", _corr)
         return jsonify({"ok": False, "error": "콘솔 로그인 후 다시 눌러 주세요.",
-                        "login_required": True, "login_url": "/seller/dashboard"}), 401
+                        "login_required": True, "login_url": "/seller/dashboard",
+                        "reissue_url": "/seller/bookmarklet"}), 401   # v72b STEP2: 토큰 재발급 페이지
     if user.get("auth") == "session":
         logger.info("[collect %s] 세션 폴백 인증(토큰 무효) user_id=%r", _corr, user.get("user_id"))
 
