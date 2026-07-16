@@ -561,6 +561,19 @@ function _firstNonEmpty(...vals) {
   return '';
 }
 
+// v72b STEP1: 정본 가격 정규화(서버 normalize_price 미러) — 통화기호·문자 머리/꼬리 제거, 천단위 콤마 제거,
+//   소수점 1개만. number 입력이 거부하는 "81800."(꼬리 점)·"1,234"(콤마)를 "81800"·"1234"로. 실패면 ''.
+function _normPriceStr(raw) {
+  const s = String(raw == null ? '' : raw).trim();
+  if (!s) return '';
+  const m = s.match(/\d[\d,]*(?:\.\d+)?/);   // 정수부(+콤마) + 선택 소수부(숫자 필수 → 꼬리 점 배제)
+  if (!m) return '';
+  const t = m[0].replace(/,/g, '');
+  if (!t || t === '.' || (t.split('.').length - 1) > 1) return '';
+  const n = parseFloat(t);
+  return (isFinite(n) && n > 0) ? t : '';
+}
+
 function escapeHtml(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -1135,7 +1148,9 @@ function initEditor() {
   try {
     // 실제 추출 가격만 사용(price/item.price). price_original은 파생값이라 프리필에서 제외
     // — 빈 USD가 KRW로 둔갑하던 원인(v31).
-    const _rawPrice = _firstNonEmpty(_EXTRA.price, _ITEM.price);
+    // v72b STEP1: 정본 가격 단일 소스 — price(정본)→price_original→item.price 순, number 입력이 받도록 정규화
+    //   (꼬리 점·콤마·통화기호 제거). "81800."/"1,234"가 number 입력에서 0.00 되던 근원 제거.
+    const _rawPrice = _normPriceStr(_firstNonEmpty(_EXTRA.price, _EXTRA.price_original, _ITEM.price, _ITEM.price_original));
     const _pv = parseFloat(_rawPrice || '0');
     if (_EXTRA.price_status === 'needs_check' || !(_pv > 0)) {
       document.getElementById('editPrice').value = '';                         // 빈칸 — 가짜 환산 금지

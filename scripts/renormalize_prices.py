@@ -46,7 +46,8 @@ def _iter_and_update(dry: bool):
             print(f"  [dry] {item_id}: → {new_price}")
             return
         try:
-            ch.update(item_id, extra_updates={"price": new_price})
+            # v72b STEP1: 정본 단일 소스 — price·price_original 둘 다 정규화값으로 동기화(이원화 제거).
+            ch.update(item_id, extra_updates={"price": new_price, "price_original": new_price})
         except Exception as e:
             print(f"  [err] {item_id}: {e}")
 
