@@ -19,7 +19,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.90"
+    assert MANIFEST["version"] == "1.5.91"
 
 
 def test_source_contract():
@@ -29,7 +29,7 @@ def test_source_contract():
     assert 'const mode = imgEl ? "" : "corner";' in CS    # 이미지 없으면 corner 폴백
     assert "host.appendChild(q)" in CS
     # corner 앵커 = 좌상단(허공 금지).
-    assert 'if (mode === "corner") return ["top:6px", "left:6px"];' in CS
+    assert 'if (mode === "corner") return ["top:6px !important", "left:6px !important"];' in CS
     # 앵커 모드 보존(재스타일 시).
     assert "q.dataset.anchorMode = mode" in CS
     assert 'kgpQuickBtnStyle(true, btn.dataset.anchorMode' in CS
@@ -82,5 +82,5 @@ def test_anchor_css_corner_node():
         out = json.loads(r.stdout.strip().splitlines()[-1])
     finally:
         Path(f.name).unlink()
-    assert out["corner"] == "top:6px|left:6px"                    # 폴백 좌상단
+    assert out["corner"] == "top:6px !important|left:6px !important"   # 폴백 좌상단(v73: !important)
     assert "translate(-50%,-50%)" in out["center"]               # 이미지 중앙(기본)
