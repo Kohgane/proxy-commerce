@@ -5591,7 +5591,7 @@ def bookmarklet():
     )
 
 
-_BM_CORE_VER = "bm-v72"   # v72 STEP1: 세션 폴백(credentials+X-KGP) — 코어 버전 스탬프 갱신
+_BM_CORE_VER = "bm-v72b"   # v72 STEP1: 세션 폴백(credentials+X-KGP) — 코어 버전 스탬프 갱신
 _BM_RUN_VER = "run-v62"   # run.js 채택 시 (bm-vN+run-vM)
 
 
@@ -5627,8 +5627,8 @@ def _bookmarklet_js(server: str, token: str, translate: bool) -> str:
         ".then(function(r){_S=r.status;return r.text().then(function(x){_H=/^\\s*<(!doctype|html)/i.test(x);try{return JSON.parse(x)}catch(e){return{}}})})"
         ".then(function(d){if(d&&d.ok&&d.partial)K('부분 수집 — 셀러 콘솔에서 확인·보완하세요',false);"
         "else if(d&&d.ok)K('수집 완료 · 셀러 콘솔 ‘수집한 상품’에서 확인',true);"
-        # v72 STEP1: 토큰 무효 + 세션 없음 → 로그인 안내 + [열기] 링크(토스트 내 클릭).
-        "else if(d&&d.login_required){K('콘솔 로그인 후 다시 눌러 주세요',false);try{var lt=document.getElementById('kgpbmx');if(lt){var a=document.createElement('a');a.href=S+(d.login_url||'/seller/dashboard');a.rel='noopener';a.textContent=' [열기]';a.style.cssText='color:#fff;text-decoration:underline;font-weight:700';lt.appendChild(a);}}catch(e){}}"
+        # v72 STEP1/v72b STEP2: 토큰 무효 + 세션 없음 → 로그인/토큰 재발급 안내 + [재발급 열기] 링크(30초 복구).
+        "else if(d&&d.login_required){K('로그인 후 토큰을 재발급해 주세요',false);try{var lt=document.getElementById('kgpbmx');if(lt){var a=document.createElement('a');a.href=S+(d.reissue_url||d.login_url||'/seller/bookmarklet');a.rel='noopener';a.textContent=' [토큰 재발급 열기]';a.style.cssText='color:#fff;text-decoration:underline;font-weight:700';lt.appendChild(a);}}catch(e){}}"
         "else if(_H)K('로그인 확인이 필요할 수 있어요 (HTTP '+_S+')',false);"
         "else K('수집 실패 (HTTP '+_S+'): '+((d&&d.error)||'잠시 후 다시'),false);})"
         ".catch(function(){K('이 사이트는 보안정책(CSP)으로 직접 수집이 막혀요. 크롬 확장을 쓰세요.',false);});}"
