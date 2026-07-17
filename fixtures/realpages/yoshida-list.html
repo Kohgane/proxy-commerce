@@ -1,0 +1,27 @@
+<!doctype html>
+<!-- v74 STEP1 픽스처 — 요시다카반 목록(구조 충실 합성; 오너 실스냅샷 공급 시 교체).
+     계약: 카테고리 내비 줄(gnb·category-tiles) 버튼 0 · 상품 타일 전부 부착.
+     오탐 원인: 카테고리 아이콘(≥140px) + /category·/products/<짧은슬러그>(가격 없음)이 옛 느슨한 규칙 통과. -->
+<html lang="ja"><head><meta charset="utf-8"><title>PORTER | YOSHIDA & CO.,LTD.</title></head>
+<body>
+<!-- ① 카테고리 내비(nav 태그) — 아이콘 큼(180px)이지만 상품 아님 → 버튼 0 -->
+<nav class="gnb category-nav">
+  <a href="/category/bags"><img src="https://www.yoshidakaban.com/img/cat-bags.jpg" width="180" height="180" alt="バッグ"></a>
+  <a href="/category/wallets"><img src="https://www.yoshidakaban.com/img/cat-wallets.jpg" width="180" height="180" alt="財布"></a>
+  <a href="/category/pouches"><img src="https://www.yoshidakaban.com/img/cat-pouch.jpg" width="180" height="180" alt="ポーチ"></a>
+</nav>
+<!-- ② 카테고리 타일(nav 아님, category URL·가격 없음) — URL 필터로 버튼 0 -->
+<div class="category-tiles">
+  <a href="/products/bags"><img src="https://www.yoshidakaban.com/img/tile-bags.jpg" width="200" height="200" alt="バッグ一覧"></a>
+  <a href="/c/luggage"><img src="https://www.yoshidakaban.com/img/tile-lug.jpg" width="200" height="200" alt="ラゲッジ一覧"></a>
+</div>
+<!-- ③ 상품 그리드 — 상품 URL(/products/detail/<id>) + 가격 → 전부 버튼 -->
+<div class="product-list">
+  <div class="product"><a href="/products/detail/000898123"><img src="https://www.yoshidakaban.com/img/000898123.jpg" width="240" height="240" alt="PORTER TANKER ショルダーバッグ"></a><div class="name">PORTER TANKER ショルダーバッグ</div><div class="price">¥19,800</div></div>
+  <div class="product"><a href="/products/detail/000898124"><img src="https://www.yoshidakaban.com/img/000898124.jpg" width="240" height="240" alt="PORTER TANKER ウエストバッグ"></a><div class="name">PORTER TANKER ウエストバッグ</div><div class="price">¥22,000</div></div>
+  <div class="product"><a href="/products/detail/000898125"><img src="https://www.yoshidakaban.com/img/000898125.jpg" width="240" height="240" alt="PORTER CURRENT ウォレット"></a><div class="name">PORTER CURRENT ウォレット</div><div class="price">¥27,500</div></div>
+  <div class="product"><a href="/products/detail/000898126"><img src="https://www.yoshidakaban.com/img/000898126.jpg" width="240" height="240" alt="PORTER FREE STYLE トートバッグ"></a><div class="name">PORTER FREE STYLE トートバッグ</div><div class="price">¥33,000</div></div>
+  <div class="product"><a href="/products/detail/000898127"><img src="https://www.yoshidakaban.com/img/000898127.jpg" width="240" height="240" alt="PORTER HEAT ボディバッグ"></a><div class="name">PORTER HEAT ボディバッグ</div><div class="price">¥24,200</div></div>
+  <div class="product"><a href="/products/detail/000898128"><img src="https://www.yoshidakaban.com/img/000898128.jpg" width="240" height="240" alt="PORTER SMOKY ブリーフケース"></a><div class="name">PORTER SMOKY ブリーフケース</div><div class="price">¥41,800</div></div>
+</div>
+</body></html>

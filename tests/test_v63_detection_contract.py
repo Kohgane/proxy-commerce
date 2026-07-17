@@ -69,6 +69,7 @@ def test_detection_snapshot_node():
     """
     fns = "".join(_extract(f) + "\n" for f in [
         "_kgpCardKey", "_kgpMergeCards", "_kgpIsDetailHref",
+        "_kgpIsCategoryHref", "_kgpIsProductHref", "_kgpInNavRegion",   # v74 STEP1: 엄격 자격 헬퍼
         "_kgpInBadRegion", "_kgpBestImg", "_kgpPrice", "_kgpGenericCards", "kgpFindCards",
     ])
     harness = (
