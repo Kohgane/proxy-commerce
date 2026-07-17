@@ -1,0 +1,16 @@
+{
+  "note": "합성 구조 재현 — 실제 알리 캡처 아님(정직). v74 STEP4 알리 상세 어댑터(runParams·후행점 정규화·sku 옵션).",
+  "url": "https://www.aliexpress.com/item/1005006620123.html",
+  "title_contains": "Blender",
+  "price": "6620",
+  "currency": "KRW",
+  "images_min": 6,
+  "options": {
+    "Color": [
+      "White",
+      "Green",
+      "Pink"
+    ]
+  },
+  "description_contains": ""
+}
