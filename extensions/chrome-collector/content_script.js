@@ -2170,3 +2170,43 @@ setInterval(() => {
     window.addEventListener("resize", kgpRescanTiles, { passive: true });
   } catch (e) { /* IntersectionObserver/MutationObserver 미지원 무시 */ }
 })();
+
+// v74 STEP3: 알리 버튼 생존(대형 셀러툴 패리티) — 호버 오버레이가 카드 서브트리를 교체해 우리 배지/호버 버튼이
+//   '증발'하면 즉시(100ms) 재부착. 신규-타일 재스캔(300ms)과 별개: **우리 오버레이 소실만** 빠르게 감지 → 재주입.
+//   (앵커 안정 조상 방안도 검토했으나, v65 이미지-앵커 위치를 보존하면서 알리 SPA 재렌더까지 커버하려면
+//    소실 즉시 재부착이 가장 견고 — 위치 회귀 0 + 증발 지속시간 최소화.)
+(function () {
+  let _reat = null;
+  function kgpReattachOverlays() {
+    if (_reat) return;
+    _reat = setTimeout(() => {
+      _reat = null;
+      try {
+        if (!(kgpHostAllowed() || kgpEntrySession())) return;
+        if (_kgpClosed || window.top !== window.self) return;
+        if (kgpPageType() !== "list") return;   // 목록 모드만(캐시 판정 — 번복 0)
+        kgpInjectListing();                       // 멱등: 사라진 배지/호버 버튼만 다시 생성
+      } catch (e) {}
+    }, 100);   // 100ms 디바운스(호버 재렌더 폭주 완화 + 즉시성)
+  }
+  function _isOurOverlay(n) {
+    if (!n || n.nodeType !== 1) return false;
+    try {
+      if (n.classList && (n.classList.contains("kgp-card-quick") || n.classList.contains("kgp-card-chk"))) return true;
+      return !!(n.querySelector && n.querySelector(".kgp-card-quick, .kgp-card-chk"));
+    } catch (e) { return false; }
+  }
+  function _onMut(muts) {
+    for (let i = 0; i < muts.length; i++) {
+      const rm = muts[i].removedNodes || [];
+      for (let j = 0; j < rm.length; j++) {
+        if (_isOurOverlay(rm[j])) { kgpReattachOverlays(); return; }   // 우리 오버레이가 제거됨 → 즉시 재부착
+      }
+    }
+  }
+  try {
+    const mo = new MutationObserver(_onMut);
+    const start = () => { if (document.body) mo.observe(document.body, { childList: true, subtree: true }); else setTimeout(start, 300); };
+    start();
+  } catch (e) { /* MutationObserver 미지원 무시 */ }
+})();
