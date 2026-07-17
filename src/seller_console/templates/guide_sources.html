@@ -30,6 +30,7 @@
             <th class="text-center">목록 버튼</th>
             <th class="text-center">호버 수집</th>
             <th class="text-center">상세 버튼</th>
+            <th class="text-center">추출 지원</th>
             <th>비고</th>
           </tr>
         </thead>
@@ -41,15 +42,41 @@
             <td class="text-center">{% if s.list_btn %}<i class="bi bi-check-lg text-success"></i>{% else %}<span class="text-muted">—</span>{% endif %}</td>
             <td class="text-center">{% if s.hover %}<i class="bi bi-check-lg text-success"></i>{% else %}<span class="text-muted">—</span>{% endif %}</td>
             <td class="text-center">{% if s.detail_btn %}<i class="bi bi-check-lg text-success"></i>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td class="text-center">
+              <span class="badge rounded-pill bg-{{ s.coverage.css }}" title="{{ s.coverage.detail }}">{{ s.coverage.label }}</span>
+            </td>
             <td class="small text-muted">
               {% if s.adapter %}<span class="badge rounded-pill" style="background:color-mix(in srgb,var(--gold,#c9a24b) 18%,transparent);color:var(--ink,#1a1714)"><i class="bi bi-stars"></i> 정밀 어댑터</span> {% endif %}{{ s.note }}
+              {% if s.coverage.level != 'unverified' %}<span class="d-block text-muted">{{ s.coverage.detail }}</span>{% endif %}
             </td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
+    <div class="card-body pt-0">
+      <div class="small text-muted">
+        <span class="me-3"><span class="badge rounded-pill bg-success">완전 지원</span> 제목·가격·갤러리·옵션·상세 하네스 검증</span>
+        <span class="me-3"><span class="badge rounded-pill bg-warning">부분 지원</span> 일부 필드만 검증(누락 필드 명시)</span>
+        <span><span class="badge rounded-pill bg-secondary">미검증</span> 실페이지 스냅샷 필요</span>
+      </div>
+    </div>
   </div>
+
+  <!-- v75 STEP1: 오너 스냅샷 요청 목록(미검증 마켓 — 진단 없는 '지원' 표기 금지) -->
+  {% if snapshot_needed %}
+  <div class="card mb-4">
+    <div class="card-body">
+      <h5 class="fw-bold mb-2"><i class="bi bi-camera text-teal"></i> 스냅샷 필요 마켓 <span class="small text-muted">({{ snapshot_needed|length }}개)</span></h5>
+      <p class="small text-muted mb-2">아래 마켓은 아직 <strong>실페이지 하네스 검증 전</strong>입니다. 각 사이트의 <strong>상품 상세 1곳</strong>에서 확장 팝업의 <strong>‘진단 스냅샷 저장’</strong>으로 스냅샷을 보내주시면, 하네스 계약을 추가해 추출을 완전 지원으로 올립니다.</p>
+      <div class="d-flex flex-wrap gap-2">
+        {% for m in snapshot_needed %}
+        <span class="badge rounded-pill bg-light text-dark border" title="{{ m.domains }}">{{ m.label }}</span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
   <!-- 미지원 사이트 정직 안내 -->
   <div class="alert alert-secondary small mb-0">

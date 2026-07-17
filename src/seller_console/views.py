@@ -4619,8 +4619,9 @@ def guide_sources():
     """
     if not _check_auth():
         return redirect(url_for("auth.login", next=request.url))
-    from src.collectors.sourcing_registry import registry_rows
-    return render_template("guide_sources.html", page="guide_sources", sites=registry_rows())
+    from src.collectors.sourcing_registry import registry_rows, snapshot_needed
+    return render_template("guide_sources.html", page="guide_sources",
+                           sites=registry_rows(), snapshot_needed=snapshot_needed())
 
 
 @bp.post("/markets/connect/<market>")
