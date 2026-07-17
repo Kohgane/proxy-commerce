@@ -33,6 +33,13 @@
     var cur = code ? (CODE[code] || CODE[code.toUpperCase()] || code.toUpperCase()) : (_sym(sym) || "");
     return { price: num, currency: cur };
   }
+  // v74 STEP4: 숫자 정규화 공통 유틸(전 어댑터) — 천단위 콤마·공백·통화기호 제거 + **후행 점**('6620.'→6620)
+  //   제거해 항상 \d+(\.\d+)? 형태로. (알리 등 후행 점/천단위 혼입 가격을 마켓이 거부하던 근원 봉인.)
+  function _normNum(s) {
+    var t = String(s == null ? "" : s).replace(/[,\s ]/g, "");   // 콤마·공백·NBSP 제거
+    var m = t.match(/\d+(?:\.\d+)?/);                                 // 후행 점·기호·문자 절삭 → 정수 or 소수
+    return m ? m[0] : "";
+  }
   function uniqPush(arr, seen, v) {
     v = (v == null ? "" : String(v)).trim();
     if (v && !seen[v]) { seen[v] = 1; arr.push(v); }
@@ -71,7 +78,8 @@
     return out;
   }
   var STATE_KEYS = ["__NEXT_DATA__", "__NUXT__", "__INITIAL_STATE__", "__INIT_DATA__", "__STORE__",
-                    "rawData", "__PRELOADED_STATE__", "__APOLLO_STATE__", "__data", "pageData", "window._d"];
+                    "rawData", "__PRELOADED_STATE__", "__APOLLO_STATE__", "__data", "pageData", "window._d",
+                    "runParams"];   // v74 STEP4: 알리익스프레스 상세 초기 상태(window.runParams = {data:{…}})
 
   // 문자열에서 index 위치의 { 또는 [ 부터 문자열-인지 균형 매칭으로 JSON 조각을 잘라낸다.
   function _sliceBalanced(s, from) {
@@ -182,7 +190,8 @@
   }
   // v71 STEP2: sku 스펙 객체 매퍼 — [옵션명·값 텍스트·값 이미지]를 필드로 추출. Object 통짜 문자열화·URL 값 금지.
   var _OPT_AXIS_KEY = /(speckeyname|speckey|specname|propertyname|propname|attrname|attributename|optionname|dimensionname|keyname|attrkey|categoryname)/i;
-  var _OPT_VAL_KEY = /(specvaluename|specvalue|valuename|propvalue|attrvalue|optionvalue|valuetext|^value$|^val$)/i;
+  // v74 STEP4: 알리 sku 값 키(propertyValueDisplayName/valueDisplayName) 추가 — 옵션값 미수집(options=0) 봉인.
+  var _OPT_VAL_KEY = /(specvaluename|specvalue|valuename|propvalue|propertyvalue|valuedisplayname|attrvalue|optionvalue|valuetext|^value$|^val$)/i;
   var _OPT_VIMG_KEY = /(image|img|thumb|thumburl|hdthumburl|pic|photo)/i;
   function _optClean(s) { s = String(s == null ? "" : s).replace(/\s+/g, " ").trim(); return s.length <= 40 ? s : ""; }
   function _pickStrField(o, re, exclude) {
@@ -208,6 +217,9 @@
     var fnm = _pickStrField(so, _OPT_AXIS_KEY, null);
     var fvl = _pickStrField(so, _OPT_VAL_KEY, fnm ? fnm.k : null);
     if (fnm && fvl) add(fnm.v, fvl.v, _pickUrlField(so, _OPT_VIMG_KEY));
+    // v74 STEP4: 알리식 축(부모=skuPropertyName) + 중첩 값(자식=propertyValueDisplayName) — 자식이 축명을
+    //   안 들고 값만 있을 때 **부모 축명**을 물려줘 '옵션' 뭉뚱그림 대신 'Color/Size'로 귀속.
+    var parentAxis = fnm ? fnm.v : "";
     // 중첩 스펙 컨테이너(배열/객체).
     for (var sk in so) {
       if (!SPEC_KEY.test(sk)) continue;
@@ -219,10 +231,10 @@
           if (e2 && typeof e2 === "object" && !Array.isArray(e2)) {
             var nm = _pickStrField(e2, _OPT_AXIS_KEY, null);
             var vl = _pickStrField(e2, _OPT_VAL_KEY, nm ? nm.k : null);
-            if (nm && vl) add(nm.v, vl.v, _pickUrlField(e2, _OPT_VIMG_KEY));
-            else if (vl) add("옵션", vl.v, _pickUrlField(e2, _OPT_VIMG_KEY));
+            var axisName = (nm && nm.v) || parentAxis || "옵션";
+            if (vl) add(axisName, vl.v, _pickUrlField(e2, _OPT_VIMG_KEY));
             // 값 텍스트 필드 못 찾으면 스킵(Object 문자열화 방지 — 정직 미수집).
-          } else if (typeof e2 === "string") add("옵션", e2, "");
+          } else if (typeof e2 === "string") add(parentAxis || "옵션", e2, "");
         }
       } else if (sv && typeof sv === "object") {
         for (var k2 in sv) { try { if (typeof sv[k2] === "string") add(k2, sv[k2], ""); } catch (e) {} }
@@ -990,6 +1002,8 @@
       var lc = ""; try { lc = _localeCurrency(); } catch (e) {}
       if (lc) { currency = lc; currencyLocale = true; }
     }
+    // v74 STEP4: 가격 숫자 정규화(공통) — 후행 점·천단위 제거해 항상 \d+(\.\d+)?. sanity 이전에 봉인.
+    price = _normNum(price);
     // 가격 sanity
     var sane = _priceSanity(price, currency);
     var price_status = sane.status;
