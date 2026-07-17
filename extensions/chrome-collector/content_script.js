@@ -1251,9 +1251,33 @@ function _kgpAmazonCards() {
   return cards;
 }
 
-// 특정 href가 상품 '상세 페이지' 링크인지(가격 없는 카드의 대체 상품 신호).
+// 특정 href가 상품 '상세 페이지' 링크인지(가격 없는 카드의 대체 상품 신호). — 앵커 선택용(느슨).
 function _kgpIsDetailHref(href) {
   return /(\/dp\/|\/gp\/product\/|item\.htm|offer\/detail|\/g-?\d|\/goods\/|\/product\/|-i\.\d+\.\d+|\/products?\/)/i.test(href || "");
+}
+// v74 STEP1: 카테고리 내비 URL 판별(상품 아님) — 카테고리/컬렉션/브랜드/랭킹/리스트 내비.
+function _kgpIsCategoryHref(href) {
+  return /(\/category\/|\/categories\/|\/categorylist|\/c\/[a-z]|\/collection\b|\/collections\/|\/brand\/|\/brands\/|\/department\b|\/ranking\b|\/lineup\b|\/gnb\b|[?&](category|categoryid|cat|dept|genre)=)/i.test(href || "");
+}
+// v74 STEP1: '상품' URL(식별자 있는 상세 링크)만 인정 — 카테고리 URL은 제외(오탐 봉인).
+//   상품 신호=명시 ID(dp/goods_id/g-<n>/item.htm 등) 또는 상세 슬러그(products/detail·digit 포함·8+자 슬러그).
+function _kgpIsProductHref(href) {
+  const h = href || "";
+  if (_kgpIsCategoryHref(h)) return false;
+  return /(\/dp\/[A-Z0-9]{10}|\/gp\/product\/|item\.htm|[?&]goods_id=|[/-]g-\d{3,}|\/goods\/\d|-i\.\d+\.\d+|aliexpress\.[^/]+\/item\/\d+|\/item\/\d+|\/product\/\d|\/products?\/detail|\/products?\/[^/?#]*\d|\/products?\/[^/?#]{8,}|\/itm\/)/i.test(h);
+}
+// v74 STEP1: 내비/메뉴/브레드크럼 영역이면 상품 타일 아님(구조적 오탐 차단, 최대 6단계 조상).
+function _kgpInNavRegion(el) {
+  const navRe = /(^|[\s_-])(nav|navi|navigation|menu|gnb|lnb|breadcrumb|megamenu|category-?nav|tablist)([\s_-]|$)/i;
+  let n = el;
+  for (let i = 0; n && i < 6; i++, n = n.parentElement) {
+    if ((n.tagName || "").toLowerCase() === "nav") return true;
+    const role = (n.getAttribute && n.getAttribute("role")) || "";
+    if (role === "navigation" || role === "menu" || role === "menubar" || role === "tablist") return true;
+    let cls = ""; try { cls = (typeof n.className === "string" ? n.className : (n.getAttribute && n.getAttribute("class")) || ""); } catch (e) { cls = ""; }
+    if (navRe.test(((n.id || "") + " " + cls))) return true;
+  }
+  return false;
 }
 
 // 폴백 휴리스틱 — 제목+제품링크+충분히 큰 이미지. v43-2: 가격이 없어도 '상품 상세 링크'면 인식(미렌더 가격 카드 복구).
@@ -1285,14 +1309,17 @@ function _kgpGenericCards() {
       if (!card) card = a.closest("li,article,div") || a;
       // v67 STEP1: 구조적 비상품(footer/nav)만 제외 — 추천/캐러셀 상품 타일도 버튼 부착(region='reco').
       if (_kgpInBadRegion(card, { structuralOnly: true })) { _kgpExcl.region++; continue; }
+      // v74 STEP1: 내비/메뉴/카테고리 영역 타일은 상품 아님 → 오탐 봉인(요시다 카테고리 아이콘 줄).
+      if (_kgpInNavRegion(card)) { _kgpExcl.region++; continue; }
       const text = (card.innerText || "").trim();
       const pr = _kgpPrice(text);
       const titleEl = card.querySelector("h1,h2,h3,h4,[class*='title'],[class*='name']");
       const title = ((img.alt || "").trim()) || (titleEl ? titleEl.innerText : "") || text;
       if (!title || title.trim().length < 4) { _kgpExcl.parse++; continue; }     // 제목 없으면 상품 후보 아님
       scanned++;                                           // 상품 후보(제목+이미지+링크+영역OK)
-      // v43-2: 가격 또는 상세링크 중 하나면 상품 인식(가격만 필수였던 옛 규칙이 27중16 누락 유발).
-      if (!pr.price && !_kgpIsDetailHref(href)) { _kgpExcl.parse++; continue; }  // 둘 다 없으면 제외(정직 카운트에 반영)
+      // v74 STEP1: 타일 자격 = [상품 URL 패턴 or 가격 텍스트] 중 1 필수 + 이미지(위). 카테고리 URL(가격없음)은 제외.
+      //   (v43-2의 느슨한 _kgpIsDetailHref는 /products/<카테고리>까지 통과시켜 카테고리 줄 오탐 유발 → 엄격판.)
+      if (!pr.price && !_kgpIsProductHref(href)) { _kgpExcl.parse++; continue; }  // 둘 다 없으면 제외(정직 카운트에 반영)
       seen[href] = 1;
       const region = _kgpIsRecoRegion(card) ? "reco" : "main";   // v67: 추천 영역 태깅(버튼은 부착)
       if (region === "reco") _kgpExcl.reco++;
