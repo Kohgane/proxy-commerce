@@ -14,7 +14,12 @@ _WS_NAME = "my_sources"
 _HEADERS = [
     "domain", "label", "note", "created_at", "last_used_at",
     "openness_status", "adapter_name", "last_collect_at", "last_collect_result",
+    "diag_json", "diag_at",   # v75 STEP2: 자가진단(필드별 ○/×) 결과 + 시각
 ]
+
+# v75 STEP2: 자가진단 3핵심(제목·가격·이미지) — 미달 시 '수동 보완 필요'(등록은 허용, 차단 아님).
+_DIAG_CORE3 = ("title", "price", "image")
+_DIAG_FIELDS = ("title", "price", "image", "options", "description")
 _in_memory: dict[str, dict] = {}
 
 # 대형 플랫폼 (전용 배지 표기 — 차단하지 않음)
@@ -440,3 +445,101 @@ class MySourcesStore:
             )
             for r in list_sources()
         ]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# v75 STEP2: My Sources 자가진단 — 등록 사이트의 상품 페이지 1곳에서 테스트 추출 →
+#   [제목·가격·이미지·옵션·상세] 필드별 ○/× 를 등록 카드에 저장·표시. 3핵심(제목·가격·이미지)
+#   미달이면 '수동 보완 필요' 안내(등록/수집은 그대로 허용 — 차단 아님). 정직: 실제 추출 결과만.
+# ─────────────────────────────────────────────────────────────────────────────
+def get_source(value: str) -> "dict | None":
+    """도메인으로 단일 소스 조회(진단 저장/표시용)."""
+    domain = normalize_domain(value)
+    if not domain:
+        return None
+    for r in list_sources():
+        if normalize_domain(r.get("domain", "")) == domain:
+            return dict(r)
+    return None
+
+
+def diag_from_scraped(scraped: dict) -> dict:
+    """추출 결과(dict) → 필드별 ○/× + 3핵심 통과 여부. 순수 함수(테스트 용이)."""
+    scraped = scraped or {}
+    def _has(v):
+        if isinstance(v, (list, tuple)):
+            return len(v) > 0
+        return bool(str(v or "").strip())
+    fields = {
+        "title": _has(scraped.get("title")),
+        "price": _has(scraped.get("price")),
+        "image": _has(scraped.get("images")) or _has(scraped.get("image")),
+        "options": _has(scraped.get("options")),
+        "description": _has(scraped.get("description")) or _has(scraped.get("desc_text")),
+    }
+    missing_core = [f for f in _DIAG_CORE3 if not fields[f]]
+    return {
+        "fields": fields,
+        "core3_ok": not missing_core,
+        "missing_core": missing_core,
+        "supported": [f for f in _DIAG_FIELDS if fields[f]],
+        "unsupported": [f for f in _DIAG_FIELDS if not fields[f]],
+    }
+
+
+def diagnose_source_fields(example_url: str, timeout: float = 6.0) -> dict:
+    """상품 예시 URL을 서버에서 가져와 UniversalScraper로 필드별 진단. 봇차단/실패는 정직 표기
+    (status='blocked'/'error') — 그 경우 확장(브라우저 DOM)으로 진단하도록 안내. 가짜 성공 0."""
+    url = (example_url or "").strip()
+    if not url:
+        return {"status": "error", "detail": "상품 예시 URL이 필요합니다."}
+    if "://" not in url:
+        url = "https://" + url
+    if not _is_safe_probe_url(url):
+        return {"status": "blocked", "detail": "안전하지 않은 URL(내부 IP/비표준 스키마)"}
+    try:
+        from src.collectors.universal_scraper import UniversalScraper
+        sp = UniversalScraper().fetch(url)
+        scraped = sp.to_dict() if hasattr(sp, "to_dict") else dict(sp or {})
+    except Exception as exc:
+        logger.debug("진단 추출 실패(%s): %s", url, exc)
+        return {"status": "blocked",
+                "detail": "서버에서 페이지를 읽지 못했어요(봇 차단 가능) — 확장으로 진단해 주세요."}
+    diag = diag_from_scraped(scraped)
+    diag["status"] = "ok" if diag["core3_ok"] else "partial"   # partial=3핵심 미달(수동 보완 필요)
+    diag["url"] = url
+    return diag
+
+
+def save_diagnosis(value: str, diag: dict) -> bool:
+    """진단 결과를 소스 카드에 저장(diag_json + diag_at). 등록 없이 진단만 한 경우도 자동 등록."""
+    import json as _json
+    domain = normalize_domain(value)
+    if not domain:
+        return False
+    now = _utc_now()
+    payload = _json.dumps(diag or {}, ensure_ascii=False)
+    entry = _in_memory.get(domain)
+    if entry is None:
+        # 진단만 하고 아직 미등록이면 자동 등록(차단 아님).
+        try:
+            entry = add_source(domain, skip_probe=True)
+        except Exception:
+            entry = None
+        entry = _in_memory.get(domain, entry)
+    if entry is not None:
+        entry["diag_json"] = payload
+        entry["diag_at"] = now
+    ws = _sheet()
+    if ws is not None:
+        try:
+            records = ws.get_all_records()
+            for idx, row in enumerate(records, start=2):
+                if normalize_domain(row.get("domain", "")) == domain:
+                    ws.update_cell(idx, 10, payload)   # diag_json
+                    ws.update_cell(idx, 11, now)        # diag_at
+                    return True
+            ws.append_row([(entry or {}).get(h, "") for h in _HEADERS])
+        except Exception as exc:
+            logger.debug("진단 저장 실패(sheet): %s", exc)
+    return domain in _in_memory

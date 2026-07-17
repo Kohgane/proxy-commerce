@@ -7265,6 +7265,14 @@ def sourcing_hub():
     try:
         from src.seller_console.my_sources_store import list_sources
         registry_sources = list_sources()
+        # v75 STEP2: 자가진단 결과(diag_json) 파싱해 카드에 부착(필드별 ○/× 표시용).
+        for _s in registry_sources:
+            _dj = (_s.get("diag_json") or "").strip()
+            if _dj:
+                try:
+                    _s["diag"] = json.loads(_dj)
+                except Exception:
+                    _s["diag"] = None
     except Exception as exc:
         logger.debug("My Sources 조회 스킵: %s", exc)
 
@@ -9655,6 +9663,38 @@ def sourcing_my_sources_add():
     except Exception as exc:
         logger.warning("My Sources 추가 실패: %s", exc)
         return jsonify({"ok": False, "error": "즐겨찾기 추가 중 오류가 발생했습니다."}), 500
+
+
+@bp.post("/sourcing/my-sources/diagnose")
+def sourcing_my_sources_diagnose():
+    """v75 STEP2: 등록 소싱처 자가진단 — 상품 예시 URL 1곳을 서버가 읽어 필드별 ○/× 진단 후 카드에 저장.
+
+    정직: 봇 차단/실패는 status=blocked로 표기(확장 진단 안내). 3핵심(제목·가격·이미지) 미달=partial(수동
+    보완 필요) — 등록/수집은 차단하지 않는다. 확장 자가진단(v54) 결과를 직접 보낼 수도 있다(scraped 전달 시).
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    domain = (data.get("domain") or "").strip()
+    example_url = (data.get("url") or data.get("example_url") or "").strip()
+    try:
+        from src.seller_console.my_sources_store import (
+            diag_from_scraped, diagnose_source_fields, save_diagnosis, normalize_domain,
+        )
+        if isinstance(data.get("scraped"), dict):
+            # 확장(브라우저 DOM) 자가진단 결과 직접 반영 — 봇 차단 사이트도 진단 가능.
+            diag = diag_from_scraped(data["scraped"])
+            diag["status"] = "ok" if diag["core3_ok"] else "partial"
+            diag["url"] = example_url
+        else:
+            diag = diagnose_source_fields(example_url)
+        dom = domain or normalize_domain(example_url)
+        if dom and diag.get("fields"):
+            save_diagnosis(dom, diag)
+        return jsonify({"ok": True, "domain": dom, "diag": diag})
+    except Exception as exc:
+        logger.warning("My Sources 진단 실패: %s", exc)
+        return jsonify({"ok": False, "error": "진단 중 오류가 발생했습니다."}), 500
 
 
 @bp.post("/sourcing/my-sources/remove")

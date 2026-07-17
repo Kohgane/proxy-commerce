@@ -111,6 +111,19 @@
                     {% endif %}
                   </div>
                   <div class="small text-muted text-truncate">{{ source.domain }} · {{ adapter }}</div>
+                  <!-- v75 STEP2: 자가진단 결과(필드별 ○/×) — 3핵심 미달이면 '수동 보완 필요' -->
+                  {% if source.diag and source.diag.fields %}
+                  <div class="small mt-1 registry-diag">
+                    {% for f, label in [('title','제목'),('price','가격'),('image','이미지'),('options','옵션'),('description','상세')] %}
+                    <span class="me-1" title="{{ label }} {{ '수집 가능' if source.diag.fields[f] else '미지원' }}">
+                      {% if source.diag.fields[f] %}<span class="text-success">●</span>{% else %}<span class="text-muted">○</span>{% endif %} {{ label }}
+                    </span>
+                    {% endfor %}
+                    {% if not source.diag.core3_ok %}
+                    <span class="badge text-bg-warning text-dark ms-1" title="제목·가격·이미지 중 일부 미수집 — 편집 화면에서 직접 채우세요(등록·수집은 됩니다)">수동 보완 필요</span>
+                    {% endif %}
+                  </div>
+                  {% endif %}
                   <!-- 상세 정보 (접기/펼치기) -->
                   <div class="registry-detail mt-1 d-none small text-muted">
                     <div>등록일: {{ (source.created_at or '')[:10] or '-' }}</div>
@@ -125,6 +138,7 @@
                 <div class="d-flex gap-1 flex-shrink-0">
                   <button type="button" class="btn btn-sm btn-outline-secondary registry-detail-btn" title="상세 보기" aria-label="상세 보기" style="padding:1px 6px;">…</button>
                   <button type="button" class="btn btn-sm btn-outline-primary registry-recollect-btn" data-domain="{{ source.domain }}" title="재수집" aria-label="재수집" style="padding:1px 6px;">↺</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary registry-diag-btn" data-domain="{{ source.domain }}" title="자가진단 (상품 페이지 URL로 필드별 수집 가능 여부 점검)" aria-label="자가진단" style="padding:1px 6px;"><i class="bi bi-clipboard-check"></i></button>
                   <form method="post" action="/seller/sourcing/my-sources" class="d-inline">
                     <input type="hidden" name="action" value="remove">
                     <input type="hidden" name="keyword" value="{{ keyword }}">
@@ -509,6 +523,36 @@ document.querySelectorAll('.registry-recollect-btn').forEach(btn => {
       btn.textContent = '!';
     } finally {
       setTimeout(() => { btn.disabled = false; btn.textContent = '↺'; }, 2000);
+    }
+  });
+});
+
+// v75 STEP2: 소싱처 자가진단 — 상품 예시 URL로 필드별 수집 가능 여부 점검(3핵심 미달 시 '수동 보완 필요').
+document.querySelectorAll('.registry-diag-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const domain = btn.dataset.domain;
+    const url = window.prompt(`${domain}\n이 사이트의 상품 상세 페이지 주소를 붙여넣으면 [제목·가격·이미지·옵션·상세] 수집 가능 여부를 점검합니다.\n(봇 차단 사이트는 확장 자가진단을 권장합니다.)`, 'https://');
+    if (!url || !/^https?:\/\//i.test(url)) { if (url) pcToast('http(s):// 로 시작하는 상품 주소를 입력하세요.', 'warning'); return; }
+    btn.disabled = true; const prev = btn.innerHTML; btn.textContent = '…';
+    try {
+      const resp = await fetch('/seller/sourcing/my-sources/diagnose', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({domain: domain, url: url}),
+      });
+      const data = await resp.json();
+      if (data.ok && data.diag && data.diag.fields) {
+        const f = data.diag.fields;
+        const ko = {title:'제목', price:'가격', image:'이미지', options:'옵션', description:'상세'};
+        const line = ['title','price','image','options','description'].map(k => (f[k] ? '● ' : '○ ') + ko[k]).join('  ');
+        pcToast((data.diag.core3_ok ? '진단 완료 — 3핵심 수집 가능' : '진단 완료 — 3핵심 일부 미달(수동 보완 필요)') + '\n' + line, data.diag.core3_ok ? 'success' : 'warning');
+        setTimeout(() => location.reload(), 1400);   // 카드에 결과 반영
+      } else {
+        pcToast((data.diag && data.diag.detail) || data.error || '진단하지 못했어요. 확장 자가진단을 이용해 주세요.', 'warning');
+      }
+    } catch(e) {
+      pcToast('진단 중 오류가 발생했어요.', 'danger');
+    } finally {
+      btn.disabled = false; btn.innerHTML = prev;
     }
   });
 });
