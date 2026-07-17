@@ -48,6 +48,7 @@ def test_render_retry_appends_button():
     tid = "kgp-listing-toolbar"
     script = f"""
     const KGP_TOOLBAR_ID = "{tid}";
+    const _KGP_RESET = "all:initial !important;box-sizing:border-box !important;";  // v74 STEP2: 재시도 버튼 격리
     global.document = null;
     // 최소 DOM 스텁
     const btns = [];

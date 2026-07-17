@@ -1619,7 +1619,7 @@ function kgpRenderRetry(failedItems) {
   b.id = "kgp-tb-retry";
   b.className = "kgp-tb-btn";
   b.textContent = `실패 ${failedItems.length}건 재시도`;
-  b.style.cssText = "background:#f5821f;color:#fff;border:0;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer";
+  b.style.cssText = _KGP_RESET + "background:#f5821f !important;color:#fff !important;border:0 !important;border-radius:8px !important;padding:6px 12px !important;font-weight:700 !important;font-size:15px !important;cursor:pointer !important;min-height:40px !important;display:inline-flex !important;align-items:center !important";
   b.addEventListener("click", () => kgpRunBulk(failedItems));
   tb.appendChild(b);
 }
@@ -1639,17 +1639,19 @@ function kgpBuildToolbar() {
   ].join(";");
   // 버튼 위계: 전체 수집=청록 채움(Primary), 선택 수집=금 아웃라인(Secondary), 전체선택/해제=고스트. (+25% 확대)
   // v72 STEP4: 내부 버튼도 all:initial 격리(사이트 button 규칙 상속 차단) + 고정 px !important.
-  const btnBase = _KGP_RESET + "padding:7px 14px !important;border-radius:9px !important;cursor:pointer;font-weight:700 !important;font-size:15px !important;line-height:1 !important;min-height:40px !important;display:inline-flex !important;align-items:center;";
-  const ghost = btnBase + "background:transparent;color:#e7ddc9;border:1px solid #4a4234;";
-  const gold = btnBase + "background:transparent;color:#e8d6a8;border:1.5px solid #c9a24b;";
-  const teal = btnBase + "background:#119a8e;color:#fff;border:1px solid #0f8c80;";
+  const btnBase = _KGP_RESET + "padding:7px 14px !important;border-radius:9px !important;cursor:pointer !important;font-weight:700 !important;font-size:15px !important;line-height:1 !important;min-height:40px !important;display:inline-flex !important;align-items:center !important;";
+  // v74 STEP2: 배경·텍스트·보더 색 전부 !important — all:initial(격리)의 color:initial(검정)이 비-!important
+  //   버튼색을 덮어써 다크 바 위에서 '유령화'되던 저대비 회귀 수리. 사이트 상속·색 규칙도 차단(자립 스타일).
+  const ghost = btnBase + "background:transparent !important;color:#e7ddc9 !important;border:1px solid #4a4234 !important;";
+  const gold = btnBase + "background:transparent !important;color:#e8d6a8 !important;border:1.5px solid #c9a24b !important;";
+  const teal = btnBase + "background:#119a8e !important;color:#fff !important;border:1px solid #0f8c80 !important;";
   const autoOn = kgpLSget("kgp_bar_auto", "1") !== "0";
   bar.innerHTML =
-    '<span id="kgp-tb-grip" style="display:flex;align-items:center;gap:7px">' +
+    '<span id="kgp-tb-grip" style="display:flex !important;align-items:center;gap:7px;color:#f5efe3 !important">' +
     '<span style="display:flex;align-items:center;justify-content:center;width:33px;height:33px;background:transparent;border:0">' + KGP_BRIDGE_SVG + '</span>' +
-    '<strong style="color:#ecdcb0">고가수집기</strong></span>' +
-    '<span id="kgp-tb-count" style="opacity:.85"></span>' +
-    '<span style="width:1px;height:22px;background:#4a4234"></span>' +
+    '<strong style="color:#ecdcb0 !important">고가수집기</strong></span>' +
+    '<span id="kgp-tb-count" style="opacity:.85;color:#f5efe3 !important"></span>' +
+    '<span style="width:1px;height:22px;background:#4a4234 !important"></span>' +
     '<button class="kgp-tb-btn" data-act="all-sel" style="' + ghost + '">전체 선택</button>' +
     '<button class="kgp-tb-btn" data-act="clear" style="' + ghost + '">선택 해제</button>' +
     '<button class="kgp-tb-btn" data-act="collect-sel" style="' + gold + '">선택 수집</button>' +
@@ -1657,9 +1659,9 @@ function kgpBuildToolbar() {
     '<button class="kgp-tb-btn" data-act="recollect" title="선택 상품을 최신 추출기로 다시 수집(기존 항목 갱신·신규 생성 안 함) — 가격 ‘-’·구버전 잔재 세탁" style="' + gold + '">다시 수집</button>' +
     '<button class="kgp-tb-btn" data-act="incl-reco" title="전체선택·전체수집에 추천/캐러셀 상품을 포함할지" style="' + ghost + '">' + (_kgpInclReco() ? '추천 포함 ✓' : '추천 포함') + '</button>' +
     '<button class="kgp-tb-btn" data-act="incl-ads" title="전체선택·전체수집에 광고(스폰서) 상품을 포함할지" style="' + ghost + '">' + (_kgpInclAds() ? '광고 포함 ✓' : '광고 포함') + '</button>' +
-    '<span id="kgp-tb-status" style="opacity:.95;font-size:15px;max-width:420px"></span>' +
+    '<span id="kgp-tb-status" style="opacity:.95;font-size:15px;max-width:420px;color:#f5efe3 !important"></span>' +
     '<button class="kgp-tb-btn" data-act="auto" title="새 목록 페이지에서 자동으로 열지 여부" style="' + ghost + '">' + (autoOn ? '자동' : '수동') + '</button>' +
-    '<button data-act="close" title="접기(구석 배지로)" style="' + btnBase + 'background:transparent;color:#c9bda6;border:none;font-size:19px">✕</button>';
+    '<button data-act="close" title="접기(구석 배지로)" style="' + btnBase + 'background:transparent !important;color:#c9bda6 !important;border:none !important;font-size:19px !important">✕</button>';
   bar.addEventListener("click", (e) => {
     const t = e.target.closest("[data-act]");
     if (!t) return;
