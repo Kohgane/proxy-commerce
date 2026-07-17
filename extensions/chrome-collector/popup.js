@@ -126,6 +126,50 @@ if (btnSnapshot) {
   });
 }
 
+// v75 STEP3: '이 페이지 수집이 이상해요' — 스냅샷 HTML + 추출 결과 + 감지 로그를 하나의 진단 파일로 저장.
+//   파일 하나(HTML=픽스처 + 임베드 JSON=실제 추출 결과)만 전달하면 하네스가 그대로 재현·대조.
+const btnDiagBundle = document.getElementById("btnDiagBundle");
+if (btnDiagBundle) {
+  btnDiagBundle.addEventListener("click", () => {
+    if (snapshotNote) snapshotNote.textContent = "진단 번들 생성 중…";
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs && tabs[0];
+      if (!tab || !tab.id) { if (snapshotNote) snapshotNote.textContent = "활성 탭을 찾지 못했어요."; return; }
+      chrome.tabs.sendMessage(tab.id, { action: "kgpDiagBundle" }, (res) => {
+        if (chrome.runtime.lastError || !res || !res.ok || !res.html) {
+          if (snapshotNote) snapshotNote.textContent = "이 페이지에선 진단을 못 떴어요(확장 새로고침 후 재시도).";
+          return;
+        }
+        try {
+          const host = (res.host || "page").replace(/[^a-z0-9.-]/gi, "_");
+          const slug = (res.url || "").replace(/^https?:\/\//, "").replace(/[^a-z0-9]+/gi, "-").slice(0, 60) || host;
+          // 진단 메타(추출 결과·감지·버전)를 스냅샷 HTML 안에 <script type="application/json"> 로 임베드.
+          //   → 파일 = 실페이지 픽스처 그대로 + 하네스가 읽을 실제 추출 결과. 하나로 재현.
+          const diag = {
+            url: res.url || "", host: res.host || "", title: res.title || "",
+            ext_version: res.ext_version || "", collected_at: res.collected_at || "",
+            extracted: res.extracted || null, detection: res.detection || null,
+          };
+          const embed = '\n<script type="application/json" id="kgp-diagnostic">'
+            + JSON.stringify(diag).replace(/<\/script>/gi, "<\\/script>") + "<\/script>\n";
+          const bundle = res.html + embed;
+          const blob = new Blob([bundle], { type: "text/html" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url; a.download = "kgp-diagnostic-" + slug + ".html";
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 2000);
+          const e = res.extracted || {};
+          const summ = "제목=" + (e.title ? "○" : "×") + " 가격=" + ((e.price ? "○" : "×")) + " 이미지=" + ((e.images && e.images.length) || 0);
+          if (snapshotNote) snapshotNote.textContent = "진단 파일 저장됨 (" + summ + ") · 이 파일 하나만 보내주시면 재현합니다.";
+        } catch (e) {
+          if (snapshotNote) snapshotNote.textContent = "저장 실패: " + (e && e.message);
+        }
+      });
+    });
+  });
+}
+
 // v64 STEP1: 벌크 상세 보강 큐 진행률 패널(n/총 · 일시정지 · 중단).
 (function () {
   const panel = document.getElementById("enrichPanel");
