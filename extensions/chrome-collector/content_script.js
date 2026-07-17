@@ -428,6 +428,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ ok: !!html, html: html, host: (location.hostname || ""), url: (location.href || ""), title: (document.title || "") });
     return true;
   }
+  // v75 STEP3: '이 페이지 수집이 이상해요' — 스냅샷 HTML + 추출 결과 + 감지 로그를 하나로 묶어 반환.
+  //   오너/유저가 파일 하나만 전달하면 하네스가 그대로 재현(HTML=픽스처, extracted=실제 추출 결과 대조).
+  if (msg.action === "kgpDiagBundle") {
+    let html = "", extracted = null, detection = null, extVer = "";
+    try { html = "<!doctype html>\n" + document.documentElement.outerHTML; } catch (e) { html = ""; }
+    try { if (typeof window.kgpExtractProduct === "function") extracted = window.kgpExtractProduct(); } catch (e) { extracted = { __err: String(e) }; }
+    try {
+      kgpFindCards();
+      detection = { pageType: (typeof kgpPageType === "function" ? kgpPageType() : ""),
+        generic: _kgpLastDetect.generic, adapter: _kgpLastDetect.adapter, merged: _kgpLastDetect.merged,
+        adapterMatched: _kgpLastDetect.adapterMatched, scanned: _kgpScannedCount || 0,
+        bar: !!document.getElementById(KGP_TOOLBAR_ID), fab: !!document.getElementById(KGP_BTN_ID),
+        excl: _kgpExcl };
+    } catch (e) { detection = { __err: String(e) }; }
+    try { extVer = chrome.runtime.getManifest().version; } catch (e) {}
+    sendResponse({ ok: !!html, html: html, host: (location.hostname || ""), url: (location.href || ""),
+      title: (document.title || ""), extracted: extracted, detection: detection, ext_version: extVer,
+      collected_at: new Date().toISOString() });
+    return true;
+  }
   return false;
 });
 
