@@ -16,5 +16,6 @@
     "rec-2.jpg",
     "rec-3.jpg"
   ],
-  "description_contains": ""
+  "description_contains": "",
+  "detail_images_min": 2
 }

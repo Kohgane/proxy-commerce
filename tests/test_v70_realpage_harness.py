@@ -118,5 +118,18 @@ def test_realpage_snapshot(expected):
     for sub in (spec.get("images_exclude_substr") or []):
         assert not any(sub in u for u in imgs), (sub, imgs, ctx)
 
+    # v76 STEP5: 상세이미지(A+/설명/장식 영역) — 갤러리와 별도 버킷. 픽스처별 di 기준치.
+    det = r.get("detail_images") or []
+    if "detail_images_min" in spec:
+        assert len(det) >= spec["detail_images_min"], ("상세이미지 부족", len(det), det, ctx)
+    if "detail_images_max" in spec:
+        assert len(det) <= spec["detail_images_max"], ("상세이미지 초과", len(det), det, ctx)
+    for sub in (spec.get("detail_images_exclude_substr") or []):
+        assert not any(sub in u for u in det), ("상세이미지 오염", sub, det, ctx)
+    # 갤러리↔상세 상호배타(같은 URL 양쪽 중복 금지).
+    if spec.get("detail_images_min") or spec.get("images_exclude_substr"):
+        _dupe = set(imgs) & set(det)
+        assert not _dupe, ("갤러리·상세 중복", _dupe, ctx)
+
     if "description_contains" in spec:
         assert spec["description_contains"] in (r.get("description") or ""), ctx

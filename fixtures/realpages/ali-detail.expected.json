@@ -22,5 +22,6 @@
   "title_excludes": [
     "AliExpress",
     "aliexpress"
-  ]
+  ],
+  "detail_images_min": 2
 }
