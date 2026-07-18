@@ -906,6 +906,45 @@
     if (/^(temu|amazon|aliexpress|taobao|tmall|1688|rakuten|mercari|shopee|ebay|yahoo|paypaymall)!?(\.[a-z.]+)?\s*(shopping|쇼핑|ショッピング|재팬|japan)?[\s\-–|:·!]*$/i.test(s)) return true;
     return false;
   }
+  // v76 STEP1: 제목 새니타이저(전 마켓 공통) — 사이트명 접두/접미 제거. 어댑터별 알려진 패턴 + 제네릭(구분자
+  //   |·:·- 뒤 세그먼트가 도메인 브랜드명과 일치하면 제거). 계약: 제목에 사이트명 0. 상품명 본문은 보존.
+  var _SITE_BRAND_RE = /(amazon(\.[a-z.]+)?|aliexpress|rakuten|楽天市場|楽天|temu|qoo10|mercari|メルカリ|메루카리|ヤフーショッピング|yahoo!?\s*(shopping|쇼핑)?|paypaymall|吉田カバン|요시다카반|요시다|yoshida(kaban)?|iherb|dhgate|tmall|taobao|1688|shopee|ebay)/i;
+  function _brandFromHost(url) {
+    try {
+      var h = (new URL(url).hostname || "").replace(/^www\./, "");
+      var parts = h.split(".");
+      // 메인 라벨(SLD) — co.jp/com 등 앞. 4자 이상만(오탐 방지).
+      var sld = parts.length >= 2 ? parts[parts.length - 2] : (parts[0] || "");
+      if (sld && (sld === "co" || sld === "com") && parts.length >= 3) sld = parts[parts.length - 3];
+      return sld.length >= 4 ? sld.toLowerCase() : "";
+    } catch (e) { return ""; }
+  }
+  function _sanitizeTitle(t, url) {
+    var s = String(t == null ? "" : t).replace(/\s+/g, " ").trim();
+    if (!s) return "";
+    // 접두: 【楽天市場】… / 【…市場/store/shop…】
+    s = s.replace(/^【\s*[^】]{0,24}(楽天|市場|store|shop|mall|ストア)[^】]{0,24}】\s*/i, "");
+    // 접두: 사이트명 + 구분자(: | - – ·). 예 "Amazon.com: ", "楽天市場｜"
+    s = s.replace(/^(amazon(\.[a-z.]+)?|楽天市場|rakuten|aliexpress|temu|qoo10)\s*[:：|｜\-–·]\s*/i, "");
+    // 접미: 구분자 + 사이트/브랜드명 (여러 개 연속 제거)
+    for (var i = 0; i < 3; i++) {
+      var before = s;
+      s = s.replace(new RegExp("\\s*[|｜:：\\-–·]\\s*" + _SITE_BRAND_RE.source + "\\s*$", "i"), "");
+      if (s === before) break;
+    }
+    // 제네릭: 구분자 뒤 마지막 세그먼트가 도메인 브랜드명과 (영숫자 기준) 일치하면 제거.
+    var brand = _brandFromHost(url);
+    if (brand) {
+      var segs = s.split(/\s*[|｜·]\s*/);
+      if (segs.length >= 2) {
+        var last = segs[segs.length - 1].replace(/[^a-z0-9]/gi, "").toLowerCase();
+        if (last && (last === brand || last.indexOf(brand) === 0 || brand.indexOf(last) === 0)) {
+          segs.pop(); s = segs.join(" | ");
+        }
+      }
+    }
+    return s.replace(/\s+/g, " ").trim();
+  }
 
   // ── 가격 sanity 게이트 ─────────────────────────────────────
   // v71 STEP1: 통화 로케일 추론 — tier1·DOM 통화가 비었을 때 어댑터 로케일 기본값으로 채운다(무근거 추정
@@ -960,6 +999,7 @@
       var _c = String(_cands[_ti].v || "").replace(/\s+/g, " ").trim();
       if (_c && !_isBareSiteName(_c)) { title = _c; titleSrc = _cands[_ti].s; break; }
     }
+    title = _sanitizeTitle(title, location.href);   // v76 STEP1: 사이트명 접두/접미 제거(전 마켓 공통)
     var price = j.price || "", currency = j.currency || "";
     var images = (j.images || []).slice(), detailImages = (j.detailImages || []).slice();
     var options = (j.options || []).slice(), skus = (j.skus || []).slice(), specs = (j.specs || []).slice();

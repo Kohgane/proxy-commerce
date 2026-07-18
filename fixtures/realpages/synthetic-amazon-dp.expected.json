@@ -4,10 +4,27 @@
   "title_contains": "BENKS",
   "price": "29.99",
   "currency": "USD",
-  "options": { "색상": ["Black", "Navy", "Red", "Green"] },
-  "no_option_names": ["수량"],
+  "options": {
+    "색상": [
+      "Black",
+      "Navy",
+      "Red",
+      "Green"
+    ]
+  },
+  "no_option_names": [
+    "수량"
+  ],
   "images_min": 5,
   "images_max": 15,
-  "images_exclude_substr": ["REL", "sprite"],
-  "description_contains": "무선 충전"
+  "images_exclude_substr": [
+    "REL",
+    "sprite"
+  ],
+  "description_contains": "무선 충전",
+  "title_excludes": [
+    "Amazon.com",
+    "Amazon.co",
+    "amazon.com"
+  ]
 }
