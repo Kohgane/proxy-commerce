@@ -79,7 +79,8 @@
   }
   var STATE_KEYS = ["__NEXT_DATA__", "__NUXT__", "__INITIAL_STATE__", "__INIT_DATA__", "__STORE__",
                     "rawData", "__PRELOADED_STATE__", "__APOLLO_STATE__", "__data", "pageData", "window._d",
-                    "runParams"];   // v74 STEP4: 알리익스프레스 상세 초기 상태(window.runParams = {data:{…}})
+                    "runParams",       // v74 STEP4: 알리익스프레스 상세 초기 상태(window.runParams = {data:{…}})
+                    "_init_data_", "__AER_DATA__", "icRenderData", "_d_c_"];   // v76 STEP2: 알리 SSR 변형 전역(신 레이아웃 imagePathList/skuPropertyList 소재)
 
   // 문자열에서 index 위치의 { 또는 [ 부터 문자열-인지 균형 매칭으로 JSON 조각을 잘라낸다.
   function _sliceBalanced(s, from) {
@@ -193,6 +194,8 @@
   // v74 STEP4: 알리 sku 값 키(propertyValueDisplayName/valueDisplayName) 추가 — 옵션값 미수집(options=0) 봉인.
   var _OPT_VAL_KEY = /(specvaluename|specvalue|valuename|propvalue|propertyvalue|valuedisplayname|attrvalue|optionvalue|valuetext|^value$|^val$)/i;
   var _OPT_VIMG_KEY = /(image|img|thumb|thumburl|hdthumburl|pic|photo)/i;
+  // v76 STEP2: sku/옵션 스와치 썸네일 키 — 갤러리(대표 이미지) 오염 금지. 값→이미지는 option_image로만 귀속.
+  var _OPT_SWATCH_KEY = /(skuproperty.*(image|img|pic)|property.*(image|img|pic)|swatch|coloroption|optionimage|variationimage|variantimage|skuimage)/i;
   function _optClean(s) { s = String(s == null ? "" : s).replace(/\s+/g, " ").trim(); return s.length <= 40 ? s : ""; }
   function _pickStrField(o, re, exclude) {
     for (var k in o) { if (exclude && k === exclude) continue; try { if (re.test(k) && typeof o[k] === "string" && o[k].trim()) return { k: k, v: o[k] }; } catch (e) {} }
@@ -329,12 +332,14 @@
         for (var key in node) {
           try {
             var kv = String(key).toLowerCase(), v = node[key];
+            // v76 STEP2: sku/옵션 스와치 썸네일은 갤러리 라우팅 제외(대표 이미지 오염 방지 — option_image로만).
+            var _swatch = _OPT_SWATCH_KEY.test(kv);
             // (1) 이미지 배열(배열 키가 이미지류)
-            if (Array.isArray(v) && IMG_KEY.test(kv)) {
+            if (Array.isArray(v) && IMG_KEY.test(kv) && !_swatch) {
               pushImgs(v, DET_KEY.test(kv) ? res.detailImages : res.images, DET_KEY.test(kv) ? detSeen : imgSeen);
             }
             // (2) 단일 이미지 url
-            else if (typeof v === "string" && /^https?:\/\//.test(v) && IMG_KEY.test(kv) && isProductImg(v)) {
+            else if (typeof v === "string" && /^https?:\/\//.test(v) && IMG_KEY.test(kv) && isProductImg(v) && !_swatch) {
               uniqPush(DET_KEY.test(kv) ? res.detailImages : res.images, DET_KEY.test(kv) ? detSeen : imgSeen, hiRes(v));
             }
             // (3) SKU 배열 → 옵션·sku별 가격, 메인 가격(첫 유효 sku)

@@ -1,10 +1,16 @@
 {
-  "note": "합성 구조 재현 — 실제 알리 캡처 아님(정직). v74 STEP4 알리 상세 어댑터(runParams·후행점 정규화·sku 옵션).",
+  "note": "합성 구조 재현 — 실제 알리 캡처 아님(정직). v74 STEP4 알리 상세 어댑터(runParams·후행점 정규화·sku 옵션). v76 STEP2: imagePathList 전량(갤러리=7) + sku 스와치 썸네일 갤러리 제외(option_image 전용).",
   "url": "https://www.aliexpress.com/item/1005006620123.html",
   "title_contains": "Blender",
   "price": "6620",
   "currency": "KRW",
   "images_min": 6,
+  "images_max": 7,
+  "images_exclude_substr": [
+    "c-white.jpg",
+    "c-green.jpg",
+    "c-pink.jpg"
+  ],
   "options": {
     "Color": [
       "White",
