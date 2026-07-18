@@ -24,7 +24,7 @@ def test_audit_main_interceptor_present():
     nets = [c for c in MANIFEST["content_scripts"]
             if c.get("world") == "MAIN" and c.get("run_at") == "document_start" and "kgp-net.js" in c.get("js", [])]
     assert nets, "kgp-net.js MAIN document_start 인터셉터 없음"
-    # 숫자 semver 비교(문자열 비교는 1.5.101 < 1.5.56 오판 — 3자리 패치 대응).
+    # 숫자 semver 비교(문자열 비교는 1.5.102 < 1.5.56 오판 — 3자리 패치 대응).
     assert tuple(int(x) for x in MANIFEST["version"].split(".")) >= (1, 5, 56)
     assert Path("extensions/chrome-collector/kgp-net.js").exists()
 

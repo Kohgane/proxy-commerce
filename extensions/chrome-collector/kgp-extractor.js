@@ -893,6 +893,36 @@
     } catch (e) {}
     return specs;
   }
+  // v76 STEP6: DOM 리뷰 폴백 — 초기 JSON에 리뷰가 없어도 **페이지에 이미 렌더된** 리뷰 섹션 상위 텍스트를 읽는다.
+  //   추가 네트워크 요청 0(존재분만). 아마존([data-hook=review]) + 제네릭 리뷰 항목. 리뷰 영역은 정상(제외 안 함).
+  function _domReviews() {
+    var out = [], seenTxt = {};
+    try {
+      var items = document.querySelectorAll('[data-hook="review"],[id^="customer_review"],[class*="review-item" i],'
+        + '[class*="reviewItem" i],[itemprop="review"],[class*="comment-item" i],li[class*="review" i]');
+      for (var i = 0; i < items.length && out.length < REVIEW_MAX; i++) {
+        var it = items[i];
+        var bodyEl = it.querySelector('[data-hook="review-body"],[class*="review-text" i],[class*="reviewText" i],'
+          + '[itemprop="reviewBody"],[class*="review-content" i],[class*="content" i],[class*="comment-text" i],p');
+        var body = bodyEl ? String(bodyEl.innerText || bodyEl.textContent || "") : String(it.innerText || it.textContent || "");
+        body = body.replace(/\s+/g, " ").trim();
+        if (!body || body.length < 3) continue;
+        var kk = body.slice(0, 40);
+        if (seenTxt[kk]) continue; seenTxt[kk] = 1;
+        var rEl = it.querySelector('[data-hook="review-star-rating"] .a-icon-alt,[class*="a-icon-alt" i],'
+          + '[itemprop="ratingValue"],[class*="star" i],[class*="rating" i]');
+        var rating = "";
+        if (rEl) {
+          var rraw = String(rEl.getAttribute && rEl.getAttribute("content") || rEl.innerText || rEl.textContent || "");
+          var rm = rraw.match(/(\d(?:\.\d)?)/); if (rm) { var rv2 = parseFloat(rm[1]); if (rv2 > 0 && rv2 <= 5) rating = rm[1]; }
+        }
+        var aEl = it.querySelector('.a-profile-name,[class*="author" i],[itemprop="author"],[class*="reviewer" i],[class*="user-name" i]');
+        var author = aEl ? String(aEl.innerText || aEl.textContent || "").replace(/\s+/g, " ").trim() : "";
+        out.push({ author: author.slice(0, 60), rating: rating, text: body.slice(0, 500) });
+      }
+    } catch (e) {}
+    return out;
+  }
   function _domDescription() {
     // v60 STEP2: 아마존 About this item(#feature-bullets) 불릿을 구조화 텍스트로 + productDescription 본문.
     try {
@@ -1104,6 +1134,18 @@
     if (!description) { try { description = _domDescription(); } catch (e) {} }
     if (!options.length) { try { options = _domOptions(); } catch (e) {} }
     if (!specs.length) { try { specs = _domSpecs(); } catch (e) {} }
+    // v76 STEP6: 리뷰도 **초기 JSON과 독립** 수집 — 아마존 등 리뷰가 JSON-LD/state에 없고 DOM에만 렌더될 때,
+    //   페이지에 이미 있는 리뷰 섹션 상위 텍스트를 읽는다(추가 요청 0·존재분만). JSON 리뷰가 부족하면 병합·중복제거.
+    if (reviews.length < 3) {
+      try {
+        var _seenR = {}; reviews.forEach(function (r) { if (r && r.text) _seenR[String(r.text).slice(0, 40)] = 1; });
+        var dr = _domReviews();
+        for (var _di = 0; _di < dr.length && reviews.length < REVIEW_MAX; _di++) {
+          var _k = String(dr[_di].text || "").slice(0, 40);
+          if (_k && !_seenR[_k]) { _seenR[_k] = 1; reviews.push(dr[_di]); }
+        }
+      } catch (e) {}
+    }
     // 정직: 더보기 접힘이 남아 있고 상세이미지가 여전히 비었으면 '일부만' 경고(무음 실패 금지).
     if (detailFold && detailImages.length === 0) warnings.push("상세이미지 일부만(더보기 펼침 필요할 수 있어요)");
 
@@ -1156,7 +1198,7 @@
       options: (j.options && j.options.length) ? "tier1" : (options.length ? "tier2" : "none"),
       description: j.description ? "tier1" : (description ? "tier2" : "none"),
       detail_images: (j.detailImages && j.detailImages.length) ? "tier1" : (detailImages.length ? "tier2" : "none"),
-      reviews: ((j.reviews && j.reviews.length) || j.rating || j.reviewCount) ? "tier1" : "none"
+      reviews: ((j.reviews && j.reviews.length) || j.rating || j.reviewCount) ? "tier1" : (reviews.length ? "tier2" : "none")   // v76 STEP6: DOM 리뷰=tier2
     };
 
     var out = {
