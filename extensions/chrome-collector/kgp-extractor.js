@@ -51,7 +51,7 @@
     try {
       // 아마존 크기 토큰(image._AC_SX466_.jpg → image.jpg)은 통째로 제거(더블닷 방지).
       u = u.replace(/\._(AC_)?S[XYLS]\d+_/gi, "").replace(/\._(SX|SY|SS|SL|UX|UY|CR)\d+(,\d+)*_/gi, "");
-      u = u.replace(/(\?|&)(imageView2?|thumb|w|width|h|height|size|quality)=[^&]*/gi, "");
+      u = u.replace(/(\?|&)(imageView2?|thumb|w|width|h|height|size|quality|_ex)=[^&]*/gi, "");   // v76 STEP3: 라쿠텐 _ex=WxH(썸네일) 제거 → 원본
       u = u.replace(/[?&]$/, "").replace(/\.{2,}(jpg|jpeg|png|webp|gif)/i, ".$1");
     } catch (e) {}
     return u;
@@ -598,6 +598,58 @@
     } catch (e) {}
     return out;
   }
+  // v76 STEP3: 라쿠텐(楽天市場) 상세 어댑터 — 갤러리 1→전량. 초기 JSON이 가격+대표1장만 주면 needDom이 false라
+  //   제네릭 DOM 갤러리가 안 돌아 '갤러리1'에 그친다. 호스트별로 독립 수집: 갤러리 컨테이너 + 라쿠텐 CDN(r10s.jp·
+  //   image.rakuten.co.jp) 이미지 전량(추천/리뷰/상세 영역 제외) + 상세 본문(텍스트·이미지) 별도 버킷.
+  var _RAKUTEN_CDN = /(^|\/\/|\.)(r10s\.jp|image\.rakuten\.co\.jp|thumbnail\.image\.rakuten\.co\.jp|r\.r10s\.jp)/i;
+  function _inRakutenDetail(el) {
+    var re = /(item[-_]?detail|item[-_]?desc|itemdesc|sale[-_]?desc|description|spec|レビュー|商品説明)/i;
+    var cur = el, d = 0;
+    while (cur && d < 8) {
+      var tok = (cur.className && cur.className.baseVal !== undefined ? cur.className.baseVal : (cur.className || "")) + " " + (cur.id || "");
+      if (tok && re.test(tok)) return true;
+      cur = cur.parentElement; d++;
+    }
+    return false;
+  }
+  function _rakutenGallery() {
+    var out = [], seen = {}, det = [], detSeen = {};
+    // (a) 상세 본문 이미지 먼저(별도 버킷) — 갤러리 CDN 스윕에서 이 영역을 제외하기 위해 URL 마킹.
+    var dSel = '[class*="item-detail" i] img,[id*="item_desc" i] img,[class*="itemDesc" i] img,'
+      + '[class*="sale_desc" i] img,[class*="description" i] img,[id*="ratRanking" i] img';
+    try {
+      var dels = document.querySelectorAll(dSel);
+      for (var d = 0; d < dels.length; d++) {
+        var dm = dels[d]; if (_nonProdRegion(dm) || _galleryExcluded(dm)) continue;
+        var ds = _bestImgSrc(dm); if (isProductImg(ds)) uniqPush(det, detSeen, hiRes(ds));
+      }
+    } catch (e) {}
+    // (b) 갤러리 컨테이너 스코프(있으면 우선).
+    var gSel = '[class*="image-gallery" i] img,[class*="ImageMain" i] img,[class*="ImageThumb" i] img,'
+      + '[class*="item-image" i] img,[class*="itemImage" i] img,[id*="ImageBody" i] img,'
+      + '[class*="sliderMain" i] img,[class*="thumbnail" i] img';
+    try {
+      var gels = document.querySelectorAll(gSel);
+      for (var i = 0; i < gels.length; i++) {
+        var im = gels[i]; if (_galleryExcluded(im) || _inRakutenDetail(im)) continue;
+        var s = _bestImgSrc(im); if (isProductImg(s)) uniqPush(out, seen, hiRes(s));
+      }
+    } catch (e) {}
+    // (c) 컨테이너로 부족하면 라쿠텐 CDN 이미지 전량(추천/리뷰/상세 영역 제외) → '전량' 보장.
+    if (out.length < 3) {
+      try {
+        var all = document.querySelectorAll("img");
+        for (var k = 0; k < all.length && out.length < 40; k++) {
+          var im2 = all[k]; var s2 = _bestImgSrc(im2);
+          if (!s2 || !_RAKUTEN_CDN.test(s2)) continue;
+          if (_galleryExcluded(im2) || _nonProdRegion(im2) || _inRakutenDetail(im2)) continue;
+          if (detSeen[hiRes(s2)]) continue;   // 상세 버킷에 이미 귀속된 것은 갤러리 제외
+          if (isProductImg(s2)) uniqPush(out, seen, hiRes(s2));
+        }
+      } catch (e) {}
+    }
+    return { images: out, detailImages: det };
+  }
   function _domImages() {
     var out = [], seen = {}, det = [], detSeen = {};
     var og = _meta("og:image") || _meta("og:image:url"); if (isProductImg(og)) uniqPush(out, seen, hiRes(og));
@@ -1055,6 +1107,17 @@
     price = sane.status === "needs_check" && !sane.price ? "" : sane.price;
     currency = sane.currency;
     warnings = warnings.concat(sane.warnings);
+
+    // v76 STEP3: 라쿠텐은 초기 JSON이 가격+대표1장만 줘 needDom=false여도 갤러리가 1장에 그친다 → 호스트가
+    //   라쿠텐이면 DOM 갤러리를 **독립 수집·병합**(갤러리 1→전량) + 상세 본문 이미지 분리. (아마존식 독립 경로.)
+    try {
+      var _rh = ""; try { _rh = (location.hostname || "").toLowerCase(); } catch (e) {}
+      if (/(^|\.)rakuten\.(co\.jp|com)$/.test(_rh)) {
+        var rg = _rakutenGallery();
+        if (rg.images.length) { rg.images.forEach(function (u) { images.push(u); }); source = (source === "json" ? "json+dom" : source); }
+        if (!detailImages.length && rg.detailImages.length) detailImages = rg.detailImages;
+      }
+    } catch (e) {}
 
     // 이미지 원본해상도 + 순서 보존 + 중복 제거(이미 uniqPush로 됨). 1번=썸네일.
     var seen = {}, gallery = [];
