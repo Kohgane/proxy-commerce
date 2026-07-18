@@ -29,7 +29,7 @@ def test_manifest_icons_and_action_all_bridge_png():
 
 def test_version_bumped_for_reload():
     """캐시된 옛 확장(지구본) 재로딩 유도 — 버전 상향."""
-    assert MANIFEST["version"] == "1.5.100"
+    assert MANIFEST["version"] == "1.5.101"
 
 
 def test_manifest_has_no_globe():
