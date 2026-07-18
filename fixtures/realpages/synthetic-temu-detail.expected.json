@@ -19,5 +19,9 @@
   "title_excludes": [
     "Temu",
     "temu.com"
+  ],
+  "detail_images_min": 3,
+  "detail_images_exclude_substr": [
+    "temu-rec1"
   ]
 }
