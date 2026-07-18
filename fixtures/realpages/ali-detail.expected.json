@@ -12,5 +12,9 @@
       "Pink"
     ]
   },
-  "description_contains": ""
+  "description_contains": "",
+  "title_excludes": [
+    "AliExpress",
+    "aliexpress"
+  ]
 }

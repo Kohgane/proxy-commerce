@@ -1,0 +1,13 @@
+{
+  "note": "합성 구조 재현 — 실제 요시다 캡처 아님(정직). v76 STEP1 제목 새니타이저(꼬리 '| 吉田カバン' 제거). 옵션(색상 스와치)은 STEP4에서.",
+  "url": "https://www.yoshidakaban.com/products/detail/000898123",
+  "title_contains": "PORTER TANKER",
+  "title_excludes": [
+    "吉田カバン",
+    "| 吉田",
+    "yoshidakaban"
+  ],
+  "price": "19800",
+  "currency": "JPY",
+  "images_min": 6
+}

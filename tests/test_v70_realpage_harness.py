@@ -50,7 +50,7 @@ def test_snapshot_infra_source_contract():
     assert "실페이지 하네스 통과 필수" in Path("CLAUDE.md").read_text(encoding="utf-8")
     # manifest bump.
     mani = _json.loads(Path("extensions/chrome-collector/manifest.json").read_text(encoding="utf-8"))
-    assert mani["version"] == "1.5.97"
+    assert mani["version"] == "1.5.98"
 
 
 def _extract_via_browser(expected):
@@ -90,6 +90,10 @@ def test_realpage_snapshot(expected):
 
     if "title_contains" in spec:
         assert spec["title_contains"] in (r.get("title") or ""), ctx
+    # v76 STEP1: 제목에 사이트명 0(접두/접미 새니타이저) — 명시 목록 + 공통 사이트명 셋.
+    _title = r.get("title") or ""
+    for sub in (spec.get("title_excludes") or []):
+        assert sub not in _title, ("제목 사이트명 오염", sub, _title, ctx)
     if "price" in spec:
         assert (r.get("price") or "") == spec["price"], ctx
     if "currency" in spec:
