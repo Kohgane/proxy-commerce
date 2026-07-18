@@ -30,5 +30,7 @@
   "detail_images_min": 4,
   "detail_images_exclude_substr": [
     "REVIEWIMG"
-  ]
+  ],
+  "reviews_min": 3,
+  "reviews_contains": "충전"
 }

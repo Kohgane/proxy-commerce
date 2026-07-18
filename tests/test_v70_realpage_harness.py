@@ -50,7 +50,7 @@ def test_snapshot_infra_source_contract():
     assert "실페이지 하네스 통과 필수" in Path("CLAUDE.md").read_text(encoding="utf-8")
     # manifest bump.
     mani = _json.loads(Path("extensions/chrome-collector/manifest.json").read_text(encoding="utf-8"))
-    assert mani["version"] == "1.5.101"
+    assert mani["version"] == "1.5.102"
 
 
 def _extract_via_browser(expected):
@@ -133,3 +133,11 @@ def test_realpage_snapshot(expected):
 
     if "description_contains" in spec:
         assert spec["description_contains"] in (r.get("description") or ""), ctx
+
+    # v76 STEP6: 리뷰(페이지 내 존재분·DOM 폴백) — 개수 기준 + 본문 텍스트 존재(빈 리뷰 금지).
+    revs = r.get("reviews") or []
+    if "reviews_min" in spec:
+        assert len(revs) >= spec["reviews_min"], ("리뷰 부족", len(revs), ctx)
+        assert all((rv.get("text") or "").strip() for rv in revs), ("빈 리뷰", revs, ctx)
+    if "reviews_contains" in spec:
+        assert any(spec["reviews_contains"] in (rv.get("text") or "") for rv in revs), (spec["reviews_contains"], revs, ctx)
