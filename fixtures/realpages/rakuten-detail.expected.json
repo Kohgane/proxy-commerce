@@ -1,0 +1,20 @@
+{
+  "note": "합성 구조 재현 — 실제 라쿠텐 캡처 아님(정직). v76 STEP3 라쿠텐(楽天市場) 상세 어댑터: 갤러리 1→전량(r10s.jp CDN·?_ex 썸네일 정규화) + 상세 본문 이미지 분리(item-detail) + 추천(recommend) 섹션 갤러리 제외.",
+  "url": "https://item.rakuten.co.jp/river-outdoor/chair-001/",
+  "title_contains": "折りたたみ椅子",
+  "title_excludes": [
+    "楽天市場",
+    "楽天",
+    "rakuten"
+  ],
+  "price": "3980",
+  "currency": "JPY",
+  "images_min": 5,
+  "images_max": 6,
+  "images_exclude_substr": [
+    "rec-1.jpg",
+    "rec-2.jpg",
+    "rec-3.jpg"
+  ],
+  "description_contains": ""
+}
