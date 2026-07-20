@@ -21,7 +21,7 @@ def test_href_falls_back_to_asin():
 
 def test_price_is_optional_title_or_image_required():
     # 가격 필수 제거 → 제목·이미지 둘 다 없을 때만 제외(v65 STEP2: 제외 사유 카운트 부착).
-    assert "if (!title && !img) { _kgpExcl.parse++; return; }" in CS
+    assert "if (!title && !img) { _kgpExcl.parse++; _kgpMarkSkip(el, \"parse-fail\"); return; }" in CS
     assert "if (!img || !titleEl || !pr.price) return;" not in CS   # 옛 엄격 조건 제거
 
 
@@ -44,7 +44,7 @@ def test_amazon_adapter_recovers_priceless_cards():
         return CS[i:j]
     deps = "\n".join([
         "let _kgpScannedCount = 0;",
-        "let _kgpExcl={ad:0,region:0,parse:0,url:0,dup:0,reco:0};function _kgpExclReset(){};",
+        "let _kgpExcl={ad:0,region:0,parse:0,url:0,dup:0,reco:0};function _kgpExclReset(){};function _kgpMarkSkip(){};function _kgpClearSkip(){};function _kgpSkipReset(){};var _kgpSkipStats={};",
         "const _KGP_ORIG_PRICE_RE=/x^/; const _KGP_NONPROD_RE=/(recommend|related|footer|review)/i;",
         fn("_kgpInBadRegion"), fn("_kgpIsRecoRegion"), fn("_kgpAmazonSponsored"), fn("_kgpPrice"),
         fn("_kgpBestImg"), fn("_kgpAmazonCards"),
