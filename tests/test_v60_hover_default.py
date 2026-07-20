@@ -41,7 +41,8 @@ def test_hover_collect_uses_extension_queue_not_fetch():
 def test_hover_button_per_card_and_reuse():
     # v65 STEP3: 카드당 1개 — 버튼이 이미지 요소 부모에 앵커되어 카드 직속 자식이 아닐 수 있으므로
     #   중복 방지 셀렉터를 자손(.kgp-card-quick)으로. 스크롤 재사용(재스캔 시 기존 유지).
-    assert 'c.el.querySelector(".kgp-card-quick")' in CS
+    # v77 STEP1: 멱등 — 타일당 .kgp-card-quick 최대 1개(자손 조회로 재사용 갱신·재생성 0).
+    assert 'c.el.querySelectorAll(":scope .kgp-card-quick")' in CS
     assert "kgp-card-quick" in CS
     # 카드 감지: 아마존 어댑터 + 상세링크(/g-{id} 등 테무 그리드) 인식.
     assert "_kgpAmazonCards" in CS and "_kgpIsDetailHref" in CS

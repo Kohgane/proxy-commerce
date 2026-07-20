@@ -39,7 +39,7 @@ _INJECT = """(a) => {
   const [detect, cs] = a;
   window.chrome = {
     runtime: { id: 'x', onMessage: { addListener(){} }, sendMessage(){}, getURL: u => u, lastError: null,
-               getManifest: () => ({ version: '1.5.102' }) },
+               getManifest: () => ({ version: '1.5.103' }) },
     storage: {
       local: { get: (k, cb) => cb && cb({}), set(){}, onChanged: { addListener(){} } },
       sync:  { get: (k, cb) => cb && cb({}), set(){}, onChanged: { addListener(){} } }
@@ -90,6 +90,10 @@ def _run(url, body):
                 fabVisible: fcs ? (fcs.display !== 'none' && fcs.visibility !== 'hidden') : null,
                 badges: document.querySelectorAll('.kgp-card-chk').length,
                 quick: document.querySelectorAll('.kgp-card-quick').length,
+                // v77 STEP1(B): 상시 노출 금지 — 미선택/미수집인데 opacity>0(호버 아닌데 보임) = 정책 위반.
+                persistentBadge: (() => { let n=0; document.querySelectorAll('.kgp-card-chk').forEach((b)=>{ if(!b.textContent.includes('✓') && parseFloat(getComputedStyle(b).opacity||'1')>0) n++; }); return n; })(),
+                persistentQuick: (() => { let n=0; document.querySelectorAll('.kgp-card-quick').forEach((q)=>{ if(q.dataset.collected!=='1' && parseFloat(getComputedStyle(q).opacity||'1')>0) n++; }); return n; })(),
+                maxQuickPerTile: (() => { let mx=0; (typeof _kgpAmazonCards==='function'?_kgpAmazonCards():[]).forEach((c)=>{ const el=c.el||c; const n=el.querySelectorAll?el.querySelectorAll('.kgp-card-quick').length:0; if(n>mx)mx=n; }); return mx; })(),
                 amazonCards: (typeof _kgpAmazonCards === 'function') ? _kgpAmazonCards().length : -1,
                 count: (document.getElementById('kgp-tb-count') || {}).textContent || '',
             };
@@ -110,8 +114,12 @@ def test_amazon_search_renders_bulk_bar_and_all_tile_buttons():
     assert info["bar"] is True, ("중앙 벌크바 소멸 회귀!", info)
     assert info["barVisible"] is True, ("벌크바가 DOM엔 있으나 실렌더 안 됨(소멸 증상)!", info)
     assert info["amazonCards"] == 24, info
-    assert info["badges"] == 24, ("일부 타일 배지 누락 회귀!", info)
-    assert info["quick"] == 24, ("호버 버튼 일부만 회귀!", info)
+    assert info["badges"] == 24, ("선택 토글 일부 타일 누락 회귀!", info)
+    assert info["quick"] == 24, ("호버 [수집] 버튼 일부만 회귀!", info)
+    # v77 STEP1(B): 단일 버튼 시스템 — 타일당 [수집] 1개 · 상시 노출 0(호버 시에만).
+    assert info["maxQuickPerTile"] <= 1, ("타일당 [수집] 2개 이상(이중 버튼) 회귀!", info)
+    assert info["persistentQuick"] == 0, ("상시 [수집] 노출 금지 위반(호버 시에만)!", info)
+    assert info["persistentBadge"] == 0, ("상시 선택 토글 노출 금지 위반(호버 시에만)!", info)
     assert "메인 16 · 광고 8" in info["count"], info
 
 

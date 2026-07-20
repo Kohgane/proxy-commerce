@@ -1410,6 +1410,10 @@ function kgpCardBadgeStyle(selected) {
     (selected ? "background:#119a8e" : "background:#1a1714") + " !important", "color:#fff !important",
     "border:1.5px solid " + (selected ? "#0f8c80" : "#c9a24b") + " !important",
     "box-shadow:0 2px 8px rgba(0,0,0,.35)",
+    // v77 STEP1(B): 선택 토글은 **호버 전용**(미선택·비호버=숨김) — '상시 배지/이중 상시 버튼' 근절. selected는 유지.
+    //   opacity !important + transition !important — all:initial !important 격리가 opacity를 initial(1)로
+    //   덮어써 '호버 없이 상시 노출'되던 근원 봉인(호버 토글도 setProperty important).
+    "opacity:" + ((KGP_TOUCH || selected) ? "1" : "0") + " !important", "transition:opacity .12s !important",
   ].join(";");
 }
 
@@ -1420,7 +1424,7 @@ function kgpSetCardSelected(url, badge, el, selected) {
     if (el) { el.style.outline = "3px solid #119a8e"; el.style.outlineOffset = "-3px"; el.setAttribute("data-kgp-outline", "1"); }
   } else {
     KGP_SELECTED.delete(url);
-    if (badge) { badge.textContent = "수집"; badge.style.cssText = kgpCardBadgeStyle(false); }
+    if (badge) { badge.textContent = "선택"; badge.style.cssText = kgpCardBadgeStyle(false); }   // v77(B): 선택 토글 라벨
     if (el) { el.style.outline = ""; el.removeAttribute("data-kgp-outline"); }
   }
 }
@@ -1511,7 +1515,9 @@ function kgpQuickBtnStyle(collected, mode) {
     ("background:" + (collected ? "#119a8e" : "#1a1714")) + " !important", "color:#fff !important",
     "border:1.5px solid " + (collected ? "#0f8c80" : "#c9a24b") + " !important",
     "box-shadow:0 3px 12px rgba(0,0,0,.34)", "pointer-events:auto",
-    "opacity:" + ((KGP_TOUCH || collected) ? "1" : "0"), "transition:opacity .12s",
+    // v77 STEP1: opacity !important — all:initial !important(격리)가 opacity를 initial(1)로 !important 덮어써
+    //   비-!important opacity:0(호버 숨김)이 무력화 → '호버 없이 상시 버튼' 근원. !important로 봉인.
+    "opacity:" + ((KGP_TOUCH || collected) ? "1" : "0") + " !important", "transition:opacity .12s !important",
   ]).join(";");
 }
 function kgpMarkQuickCollected(btn) {
@@ -1832,7 +1838,7 @@ function kgpInjectListing() {
         // v71 STEP4: 가상화(재사용 노드) 대응 — 이 카드 요소가 스크롤로 다른 상품에 재사용됐으면 배지 url 갱신.
         existing.dataset.url = c.url;
         existing._kgpEl = c.el;
-        existing.textContent = sel ? "✓ 선택" : "수집";
+        existing.textContent = sel ? "✓ 선택" : "선택";   // v77 STEP1(B): 선택 토글(수집 버튼과 구분 — '이중 [수집]' 오인 방지)
         existing.style.cssText = kgpCardBadgeStyle(sel);
         if (sel) { c.el.style.outline = "3px solid #119a8e"; c.el.style.outlineOffset = "-3px"; c.el.setAttribute("data-kgp-outline", "1"); }
         else { c.el.style.outline = ""; c.el.removeAttribute("data-kgp-outline"); }
@@ -1843,7 +1849,7 @@ function kgpInjectListing() {
       badge.className = "kgp-card-chk";
       badge.dataset.url = c.url;
       badge._kgpEl = c.el;
-      badge.textContent = sel ? "✓ 선택" : "수집";
+      badge.textContent = sel ? "✓ 선택" : "선택";   // v77 STEP1(B): 선택 토글(수집 버튼과 구분·호버 전용)
       badge.style.cssText = kgpCardBadgeStyle(sel);
       if (sel) { c.el.style.outline = "3px solid #119a8e"; c.el.style.outlineOffset = "-3px"; c.el.setAttribute("data-kgp-outline", "1"); }
       badge.addEventListener("click", (e) => {
@@ -1869,7 +1875,13 @@ function kgpInjectListing() {
 
       // v42 E-3 / v65 STEP3: 호버 즉시 수집 버튼 — 카드 우측 허공이 아니라 **상품 이미지 요소 위**에 앵커.
       //   이미지를 못 찾으면 카드 좌상단 폴백(mode=corner, 허공 금지). 데스크톱=hover 노출/터치=우상단 상시.
-      if (!c.el.querySelector(".kgp-card-quick")) {
+      // v77 STEP1: 멱등 — 타일당 [수집] 최대 1개. 이중 감지 시 콘솔 경고 후 잉여 제거.
+      const _quicks = c.el.querySelectorAll(":scope .kgp-card-quick");
+      if (_quicks.length > 1) {
+        console.warn("[고가수집기] 타일 중복 수집버튼 감지·정리", _quicks.length, c.url);
+        for (let _i = 1; _i < _quicks.length; _i++) _quicks[_i].remove();
+      }
+      if (!_quicks.length) {
         const done = _kgpCollectedUrls.has(c.url);
         const imgEl = _kgpCardImage(c.el);
         const host = (imgEl && imgEl.parentElement) ? imgEl.parentElement : c.el;
@@ -1879,18 +1891,23 @@ function kgpInjectListing() {
         q.dataset.url = c.url;
         q.dataset.anchorMode = mode;
         if (done) q.dataset.collected = "1";
-        // v72b STEP4: 자식 요소도 all:initial 격리(알리 등 사이트의 직접 `span{…!important}` 규칙이
-        //   라벨/아이콘을 부풀려 버튼 auto-width가 과대해지던 근본 차단). 인라인 !important는 캐스케이드
-        //   최상위 → 사이트 스타일시트 !important도 못 이김. (버튼 루트는 v72 STEP4서 이미 격리됨.)
+        // v72b STEP4: 자식 요소도 all:initial 격리(사이트 span{…!important} 오염 → 버튼 과대 차단).
         q.innerHTML = _kgpQuickIconSpan() + _kgpQuickLabelSpan(done ? "수집됨 ✓" : "수집");
         q.style.cssText = kgpQuickBtnStyle(done, mode);
         q.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); kgpQuickCollect(c, q); });
         if (!KGP_TOUCH) {
-          c.el.addEventListener("mouseenter", () => { if (q.dataset.collected !== "1") q.style.opacity = "1"; });
-          c.el.addEventListener("mouseleave", () => { if (q.dataset.collected !== "1") q.style.opacity = "0"; });
+          // v77 STEP1(B): 호버 시 [수집] + 선택 토글 **동시 노출**(둘 다 호버 전용). setProperty important —
+          //   all:initial 격리를 이겨야 opacity 토글이 먹는다. 선택된 카드의 선택 토글은 유지(숨기지 않음).
+          const _reveal = (on) => {
+            if (q.dataset.collected !== "1") q.style.setProperty("opacity", on ? "1" : "0", "important");
+            if (badge && !KGP_SELECTED.has(badge.dataset.url)) badge.style.setProperty("opacity", on ? "1" : "0", "important");
+          };
+          c.el.addEventListener("mouseenter", () => _reveal(true));
+          c.el.addEventListener("mouseleave", () => _reveal(false));
         }
         try { if (getComputedStyle(host).position === "static") host.style.position = "relative"; } catch (e) {}
         host.appendChild(q);
+        c.el.dataset.kgp = "done";   // v77 STEP1: 멱등 마킹(주입 완료 타일)
       }
     } catch (e) { /* noop */ }
   });
