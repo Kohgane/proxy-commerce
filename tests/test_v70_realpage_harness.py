@@ -50,7 +50,7 @@ def test_snapshot_infra_source_contract():
     assert "실페이지 하네스 통과 필수" in Path("CLAUDE.md").read_text(encoding="utf-8")
     # manifest bump.
     mani = _json.loads(Path("extensions/chrome-collector/manifest.json").read_text(encoding="utf-8"))
-    assert mani["version"] == "1.5.107"
+    assert mani["version"] == "1.5.108"
 
 
 def _extract_via_browser(expected):
@@ -98,6 +98,10 @@ def test_realpage_snapshot(expected):
         assert (r.get("price") or "") == spec["price"], ctx
     if "currency" in spec:
         assert (r.get("currency") or "") == spec["currency"], ctx
+    # v78 STEP4: 가격 출처(어댑터 패리티) — 아마존 buybox 어댑터 매치 시 field_sources.price=buybox(모순 해소).
+    if "price_source" in spec:
+        assert (r.get("field_sources") or {}).get("price") == spec["price_source"], \
+            ("가격 출처 불일치", (r.get("field_sources") or {}).get("price"), spec["price_source"], ctx)
 
     opts = {o["name"]: o["values"] for o in (r.get("options") or [])}
     # v71 STEP2 계약: 옵션 값에 "[object" 또는 "http"(URL) 오염 금지(모든 픽스처 공통).

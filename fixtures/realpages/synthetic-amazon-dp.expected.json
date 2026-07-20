@@ -4,6 +4,7 @@
   "title_contains": "BENKS",
   "price": "29.99",
   "currency": "USD",
+  "price_source": "buybox",
   "options": {
     "색상": [
       "Black",
