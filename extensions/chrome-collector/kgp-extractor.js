@@ -520,7 +520,7 @@
         var p = _composedPrice(el); if (!p || !p.price) continue;
         var path = _nodePath(el);
         try { console.log("[고가수집기] (buybox)가격 채택: " + p.price + " " + p.currency + " [" + path + "]"); } catch (e) {}
-        return { price: p.price, currency: p.currency, val: parseFloat(p.price) || 0, fs: 0, path: path, scope: true };
+        return { price: p.price, currency: p.currency, val: parseFloat(p.price) || 0, fs: 0, path: path, scope: true, src: "buybox" };
       }
     }
     return null;
@@ -540,7 +540,7 @@
       if (_isListPriceNode(el)) continue;   // v70: 아마존 정가(a-text-price) 배제
       var p = _composedPrice(el); if (!p) continue;
       var fs = 0; try { fs = parseFloat(getComputedStyle(el).fontSize) || 0; } catch (e) {}
-      cands.push({ price: p.price, currency: p.currency, val: parseFloat(p.price) || 0, fs: fs, ord: i, path: _nodePath(el) });
+      cands.push({ price: p.price, currency: p.currency, val: parseFloat(p.price) || 0, fs: fs, ord: i, path: _nodePath(el), src: "dom" });
     }
     // v70 STEP1: 폰트크기 강등 — 문서 순서(현재가는 buybox라 상단) 우선, 폰트는 동률 보조.
     cands.sort(function (a, b) { return (a.ord - b.ord) || (b.fs - a.fs); });
@@ -1144,6 +1144,10 @@
     }
     title = _sanitizeTitle(title, location.href);   // v76 STEP1: 사이트명 접두/접미 제거(전 마켓 공통)
     var price = j.price || "", currency = j.currency || "";
+    // v78 STEP4: 가격 출처(어댑터 패리티) — tier1(state JSON)·buybox(어댑터 스코프)·tier2(제네릭 휴리스틱)·none.
+    //   실기기 아마존은 state JSON 미캡처(tier1 빈값)라 buybox 어댑터가 현재가를 읽는데, 예전엔 그 provenance를
+    //   버리고 fieldSources가 무조건 'tier2'로 라벨 → '어댑터 매치인데 tier2' 모순. 여기서 실제 출처를 보존한다.
+    var priceSrc = j.price ? "tier1" : "";
     var images = (j.images || []).slice(), detailImages = (j.detailImages || []).slice();
     var options = (j.options || []).slice(), skus = (j.skus || []).slice(), specs = (j.specs || []).slice();
     var reviews = (j.reviews || []).slice(), rating = j.rating || "", reviewCount = j.reviewCount || "";
@@ -1153,7 +1157,7 @@
     if (needDom) {
       source = j.ok ? "json+dom" : "dom";
       try {
-        if (!price) { var dp = _domPrice(); if (dp) { price = dp.price; currency = dp.currency; } }
+        if (!price) { var dp = _domPrice(); if (dp) { price = dp.price; currency = dp.currency; priceSrc = (dp.scope || dp.src === "buybox") ? "buybox" : "tier2"; } }
         if (images.length === 0) { var di = _domImages(); images = di.images; if (!detailImages.length) detailImages = di.detailImages; }
         if (!options.length) options = _domOptions();
         if (!specs.length) specs = _domSpecs();
@@ -1250,7 +1254,7 @@
     })();
 
     try {
-      console.log("[고가수집기] 추출 소스=" + source, "| 가격=" + price + " " + currency + (currencyLocale ? "(locale)" : "") + " (" + (price_status || "ok") + ")",
+      console.log("[고가수집기] 추출 소스=" + source, "| 가격=" + price + " " + currency + (currencyLocale ? "(locale)" : "") + " [" + (priceSrc || "none") + "] (" + (price_status || "ok") + ")",
         "| 갤러리=" + gallery.length + " 상세이미지=" + detailImages.length + " 옵션=" + options.length + " 스펙=" + specs.length + " 리뷰=" + reviews.length + " 평점=" + (rating || "없음") + " 리뷰수=" + (reviewCount || "없음"),
         warnings.length ? "| 경고:" + warnings.join(" / ") : "");
     } catch (e) {}
@@ -1259,7 +1263,7 @@
     //   서버 수집 로그에 '어느 Tier가 어느 필드를 줬는지' 표기. 값 없으면 none(가짜 소스 날조 금지).
     var fieldSources = {
       title: titleSrc,
-      price: j.price ? "tier1" : (price ? "tier2" : "none"),
+      price: priceSrc ? priceSrc : (price ? "tier2" : "none"),   // v78 STEP4: buybox 어댑터 매치 시 'buybox'(모순 해소)
       images: (j.images && j.images.length) ? "tier1" : (gallery.length ? "tier2" : "none"),
       options: (j.options && j.options.length) ? "tier1" : (options.length ? "tier2" : "none"),
       description: j.description ? "tier1" : (description ? "tier2" : "none"),
