@@ -32,5 +32,12 @@
     "REVIEWIMG"
   ],
   "reviews_min": 3,
-  "reviews_contains": "충전"
+  "reviews_contains": "충전",
+  "desc_text_excludes": [
+    "Buy "
+  ],
+  "desc_text_contains": [
+    "· 15W 고속 무선 충전 지원"
+  ],
+  "desc_source": "adapter"
 }

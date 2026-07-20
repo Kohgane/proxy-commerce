@@ -949,8 +949,10 @@
     } catch (e) {}
     return out;
   }
-  function _domDescription() {
-    // v60 STEP2: 아마존 About this item(#feature-bullets) 불릿을 구조화 텍스트로 + productDescription 본문.
+  // v78 STEP3: 상세설명 소스 사다리 — **어댑터 상세(DOM)** 전용(meta 폴백 분리). 아마존 feature-bullets+A+,
+  //   테무 상세영역, productDescription/detail 컨테이너 본문. meta SEO 문구('Buy …')는 여기서 반환 안 함.
+  function _adapterDetailText() {
+    // 아마존: About this item(#feature-bullets) 불릿 + productDescription + A+(#aplus) 본문.
     try {
       var fb = document.querySelector("#feature-bullets");
       if (fb && !_nonProdRegion(fb)) {
@@ -961,16 +963,26 @@
         });
         var pd = document.querySelector("#productDescription");
         var pdt = pd ? (pd.innerText || "").replace(/\n{3,}/g, "\n\n").trim() : "";
-        var out = [bl.join("\n"), pdt].filter(Boolean).join("\n\n").trim();
+        var apl = document.querySelector("#aplus, #aplus_feature_div, #aplusBrandStory_feature_div");
+        var aplt = (apl && !_nonProdRegion(apl)) ? (apl.innerText || "").replace(/\n{3,}/g, "\n\n").trim() : "";
+        var out = [bl.join("\n"), pdt, aplt].filter(Boolean).join("\n\n").trim();
         if (out.length > 20) return out.slice(0, 4000);
       }
     } catch (e) {}
-    var sel = ['#productDescription', '[class*="description" i]', '[class*="detail" i]'];
+    // 테무·제네릭 상세영역 + productDescription/detail 컨테이너(추천/리뷰 제외).
+    var sel = ['#productDescription', '[class*="goods-desc" i]', '[class*="goodsDesc" i]', '[class*="productDesc" i]',
+      '[class*="detail-desc" i]', '[class*="item-desc" i]', '[class*="description" i]', '[class*="detail" i]'];
     for (var i = 0; i < sel.length; i++) {
-      try { var el = document.querySelector(sel[i]); if (el && !_nonProdRegion(el)) { var t = (el.innerText || "").trim(); if (t.length > 20) return t.slice(0, 4000); } } catch (e) {}
+      try {
+        var el = document.querySelector(sel[i]);
+        if (el && !_nonProdRegion(el) && !_galleryExcluded(el)) { var t = (el.innerText || "").replace(/\n{3,}/g, "\n\n").trim(); if (t.length > 20) return t.slice(0, 4000); }
+      } catch (e) {}
     }
-    return _meta("og:description") || _meta("description") || "";
+    return "";
   }
+  function _metaDescription() { return _meta("og:description") || _meta("description") || ""; }
+  // 하위호환(v60): _domDescription = 어댑터 상세 우선, 없으면 meta 폴백.
+  function _domDescription() { return _adapterDetailText() || _metaDescription(); }
   // v60 STEP1: 우리 확장이 주입한 DOM(kgp-*) 또는 사이드패널/챗/네비 등 페이지 크롬 안에 있는 요소인지.
   //   → 제목/키워드 추출에서 제외(아마존 'Chat history' 등 삽입 UI h1 오염 차단).
   function _isInjectedUI(el) {
@@ -1135,7 +1147,7 @@
     var images = (j.images || []).slice(), detailImages = (j.detailImages || []).slice();
     var options = (j.options || []).slice(), skus = (j.skus || []).slice(), specs = (j.specs || []).slice();
     var reviews = (j.reviews || []).slice(), rating = j.rating || "", reviewCount = j.reviewCount || "";
-    var description = j.description || "";
+    var description = "", descSource = "";   // v78 STEP3: 소스 사다리로 채움(어댑터>ldjson>meta)
 
     var needDom = !price || images.length === 0;
     if (needDom) {
@@ -1145,7 +1157,6 @@
         if (images.length === 0) { var di = _domImages(); images = di.images; if (!detailImages.length) detailImages = di.detailImages; }
         if (!options.length) options = _domOptions();
         if (!specs.length) specs = _domSpecs();
-        if (!description) description = _domDescription();
       } catch (e) { warnings.push("DOM 폴백 중 일부 실패"); }
     }
 
@@ -1155,11 +1166,27 @@
     if (detailImages.length === 0) {
       try { var di2 = _domImages(); if (di2.detailImages && di2.detailImages.length) detailImages = di2.detailImages; } catch (e) {}
     }
-    // v60 STEP2: 상세설명(desc_text)도 **가격/이미지와 독립** 수집 — Tier1이 가격·이미지를 채워 needDom이
-    //   false여도 상세설명은 비어 있을 수 있다(아마존 About this item 미수집 근원). 있으면 채운다.
-    if (!description) { try { description = _domDescription(); } catch (e) {} }
     if (!options.length) { try { options = _domOptions(); } catch (e) {} }
     if (!specs.length) { try { specs = _domSpecs(); } catch (e) {} }
+    // v78 STEP3: 상세설명 소스 사다리(재배선) — ① 어댑터 상세(DOM: feature-bullets+A+·테무 상세영역) →
+    //   ② ld+json/state description(Tier1) → ③ **meta description은 최후 폴백**(SEO 'Buy …') + desc_source=meta
+    //   표기(품질 낮음 신호). '가격/이미지와 독립' 수집(Tier1이 채워도 상세는 빌 수 있음).
+    try {
+      var _ad = _adapterDetailText();
+      if (_ad && _ad.length > 20) { description = _ad; descSource = "adapter"; }
+    } catch (e) {}
+    if (!description && j.description) { description = j.description; descSource = j.ok ? "tier1" : "ldjson"; }
+    if (!description) { try { var _m = _metaDescription(); if (_m) { description = _m; descSource = "meta"; } } catch (e) {} }
+    // v78 STEP3: detail_specs(스펙 표)가 있으면 desc_text에 병합(사용자가 상세에서 스펙까지 한눈에).
+    if (specs.length) {
+      try {
+        var _specTxt = specs.slice(0, 40).map(function (s) { return "· " + s.k + ": " + s.v; }).join("\n");
+        if (_specTxt && (!description || description.indexOf(_specTxt.split("\n")[0]) < 0)) {
+          description = (description ? description + "\n\n" : "") + _specTxt;
+          if (!descSource) descSource = "specs";
+        }
+      } catch (e) {}
+    }
     // v76 STEP6: 리뷰도 **초기 JSON과 독립** 수집 — 아마존 등 리뷰가 JSON-LD/state에 없고 DOM에만 렌더될 때,
     //   페이지에 이미 있는 리뷰 섹션 상위 텍스트를 읽는다(추가 요청 0·존재분만). JSON 리뷰가 부족하면 병합·중복제거.
     if (reviews.length < 3) {
@@ -1251,6 +1278,7 @@
       options: options, skus: skus,
       description: description, detail_specs: specs,
       desc_text: description, desc_images: detailImages,   // v60 STEP2: 상세 텍스트/이미지 명시 분리(브리프 명명)
+      desc_source: descSource,   // v78 STEP3: 상세설명 출처(adapter>tier1/ldjson>meta>specs) — meta면 품질 낮음 신호
       reviews: reviews, rating: rating, review_count: reviewCount,
       source: source, partial: partial, warnings: warnings,
       field_sources: fieldSources,

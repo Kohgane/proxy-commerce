@@ -28,8 +28,9 @@ def _playwright_ok() -> bool:
 
 # ── STEP2 상세설명 독립 수집 ──
 def test_desc_captured_independently_source():
-    assert "상세설명(desc_text)도 **가격/이미지와 독립**" in EX
-    assert "if (!description) { try { description = _domDescription(); } catch" in EX
+    # v78 STEP3: 상세설명 소스 사다리(어댑터>ldjson>meta) — 가격/이미지와 독립 수집(needDom 무관).
+    assert "function _adapterDetailText()" in EX
+    assert 'description = _ad; descSource = "adapter";' in EX      # 어댑터 우선(독립 수집)
     assert "desc_text: description, desc_images: detailImages" in EX
     # About this item 불릿 구조화
     assert "#feature-bullets" in EX and "a-list-item" in EX
