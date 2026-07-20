@@ -197,12 +197,15 @@
   // v76 STEP2: sku/옵션 스와치 썸네일 키 — 갤러리(대표 이미지) 오염 금지. 값→이미지는 option_image로만 귀속.
   var _OPT_SWATCH_KEY = /(skuproperty.*(image|img|pic)|property.*(image|img|pic)|swatch|coloroption|optionimage|variationimage|variantimage|skuimage)/i;
   function _optClean(s) { s = String(s == null ? "" : s).replace(/\s+/g, " ").trim(); return s.length <= 40 ? s : ""; }
+  // v78 STEP1: 키 정규화 — 구분자(_·-·공백) 제거 후 매칭. 실기기 테무 sku가 underscore 키(spec_key·spec_value)를
+  //   쓰면 speckey/specvalue 패턴에 안 걸려 옵션 0이 되던 근원(skus>0·options=0). 정규화로 봉인.
+  function _normKey(k) { return String(k == null ? "" : k).replace(/[_\-\s]/g, ""); }
   function _pickStrField(o, re, exclude) {
-    for (var k in o) { if (exclude && k === exclude) continue; try { if (re.test(k) && typeof o[k] === "string" && o[k].trim()) return { k: k, v: o[k] }; } catch (e) {} }
+    for (var k in o) { if (exclude && k === exclude) continue; try { if (re.test(_normKey(k)) && typeof o[k] === "string" && o[k].trim()) return { k: k, v: o[k] }; } catch (e) {} }
     return null;
   }
   function _pickUrlField(o, re) {
-    for (var k in o) { try { if (re.test(k) && typeof o[k] === "string" && /^https?:\/\//i.test(o[k])) return o[k]; } catch (e) {} }
+    for (var k in o) { try { if (re.test(_normKey(k)) && typeof o[k] === "string" && /^https?:\/\//i.test(o[k])) return o[k]; } catch (e) {} }
     return "";
   }
   // sku 객체 → axisMap 갱신(축→값·값이미지) + 이 sku의 값 텍스트 배열 반환(값별 가격 매핑용).
@@ -394,17 +397,39 @@
         }
       }, 30000);
     }
-    // v71 STEP2: 옵션 = sku 스펙 축별(색상·사이즈…). 값은 텍스트, 값 이미지는 option_image로 분리(values 오염 0).
-    Object.keys(axisMap).forEach(function (axis) {
-      var a = axisMap[axis];
-      if (a.order.length >= 2) {
-        var opt = { name: axis, values: a.order.slice(0, 100) };
-        if (Object.keys(a.images).length) opt.option_image = a.images;   // 값→이미지(별도 필드)
-        res.options.push(opt);
-      }
-    });
+    // v71 STEP2 / v78 STEP1: 옵션 = sku 스펙 축별(색상·사이즈…) — 단일 변환. 값은 텍스트, 값 이미지는 option_image 분리.
+    res.options = _skusToOptions(axisMap, res.skus);
     res.ok = !!(res.price || res.images.length || res.title);
     return res;
+  }
+  // v78 STEP1: sku→옵션 단일 변환 함수(하네스·확장 경로 통일). 계약: skus에 스펙 변형이 있으면 options>0.
+  //   ① axisMap(이름 있는 축, 값 2+) 우선. ② 이름 축이 0인데 skus에 spec 값이 있으면 위치별 전치(fragmented
+  //   축명 대비)로 '옵션'/'옵션2' 축 복원. 스펙 변형이 전혀 없으면 옵션 0(정직 — 날조 금지).
+  function _skusToOptions(axisMap, skus) {
+    var out = [];
+    Object.keys(axisMap || {}).forEach(function (axis) {
+      var a = axisMap[axis];
+      if (a && a.order.length >= 2) {
+        var opt = { name: axis, values: a.order.slice(0, 100) };
+        if (Object.keys(a.images).length) opt.option_image = a.images;
+        out.push(opt);
+      }
+    });
+    if (out.length) return out;
+    // ② 폴백: 이름 축 0 → skus[].spec를 위치별 전치. (예: 각 sku가 [색상값] 또는 [색상값,사이즈값])
+    var maxLen = 0, hasSpec = false;
+    (skus || []).forEach(function (s) { var sp = (s && s.spec) || []; if (sp.length) hasSpec = true; if (sp.length > maxLen) maxLen = sp.length; });
+    if (!hasSpec) return out;   // 스펙 변형 없음 → 옵션 0(정직)
+    for (var p = 0; p < maxLen && p < 4; p++) {
+      var order = [], set = {};
+      (skus || []).forEach(function (s) {
+        var v = s && s.spec && s.spec[p];
+        v = _optClean(v);
+        if (v && !set[v]) { set[v] = 1; order.push(v); }
+      });
+      if (order.length >= 1) out.push({ name: maxLen > 1 ? ("옵션" + (p + 1)) : "옵션", values: order.slice(0, 100) });
+    }
+    return out;
   }
 
   // ── ② DOM 폴백 ────────────────────────────────────────────
