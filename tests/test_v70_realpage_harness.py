@@ -50,7 +50,7 @@ def test_snapshot_infra_source_contract():
     assert "실페이지 하네스 통과 필수" in Path("CLAUDE.md").read_text(encoding="utf-8")
     # manifest bump.
     mani = _json.loads(Path("extensions/chrome-collector/manifest.json").read_text(encoding="utf-8"))
-    assert mani["version"] == "1.5.105"
+    assert mani["version"] == "1.5.106"
 
 
 def _extract_via_browser(expected):
@@ -141,3 +141,14 @@ def test_realpage_snapshot(expected):
         assert all((rv.get("text") or "").strip() for rv in revs), ("빈 리뷰", revs, ctx)
     if "reviews_contains" in spec:
         assert any(spec["reviews_contains"] in (rv.get("text") or "") for rv in revs), (spec["reviews_contains"], revs, ctx)
+
+    # v78 STEP2: 리뷰 메타 정직 — rating은 (1,5] 또는 없음(0·1 더미 금지), review_count는 실 리뷰 수 이상.
+    _rating = (r.get("rating") or "").strip()
+    if spec.get("rating_no_dummy"):
+        assert _rating not in ("0", "1"), ("rating 더미(0·1) 저장!", _rating, ctx)
+        if _rating:
+            assert 1.0 < float(_rating) <= 5.0, ("rating 범위 밖!", _rating, ctx)
+    if spec.get("review_count_gte_reviews"):
+        _rc = (r.get("review_count") or "").strip()
+        if _rc:
+            assert int(_rc) >= len(revs), ("review_count < 실제 리뷰 수(스테일)!", _rc, len(revs), ctx)

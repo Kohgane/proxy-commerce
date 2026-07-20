@@ -358,7 +358,8 @@
             }
             // (4) 평점·리뷰수
             else if (RATE_KEY.test(kv) && !res.rating && (typeof v === "string" || typeof v === "number")) {
-              var rn = parseFloat(v); if (rn > 0 && rn <= 5) res.rating = String(v);
+              // v78 STEP2: 더미 평점(0·1 — score:1 등 오채택) 방어 — (1,5]만 채택(뒤의 실 평점이 이기게).
+              var rn = parseFloat(v); if (rn > 1 && rn <= 5) res.rating = String(v);
             }
             else if (CNT_KEY.test(kv) && !res.reviewCount && (typeof v === "string" || typeof v === "number")) {
               res.reviewCount = String(v);
@@ -1208,9 +1209,22 @@
     var seen = {}, gallery = [];
     images.forEach(function (u) { uniqPush(gallery, seen, u); });
 
+    // v78 STEP2: 리뷰 메타 정직화 — rating은 (1,5]만(0·1 더미 금지), 아니면 '없음'(빈값). review_count는 실제
+    //   추출 리뷰 수 이상(count<reviews면 스테일 '0' 등 → 최소 reviews.length 보정). 가짜 평점/카운트 저장 방지.
+    (function () {
+      var _raw = String(rating == null ? "" : rating).trim();
+      var _rn = parseFloat(_raw);
+      if (!(_rn > 1 && _rn <= 5)) rating = "";     // 0·1·범위밖 → 없음(정직)
+      else rating = _raw;
+      var _cn = parseInt(String(reviewCount == null ? "" : reviewCount).replace(/[^\d]/g, ""), 10);
+      if (!(_cn > 0)) _cn = 0;
+      if (_cn < reviews.length) _cn = reviews.length;   // count ≥ 실제 추출 리뷰 수(불일치 스테일 보정)
+      reviewCount = _cn ? String(_cn) : "";
+    })();
+
     try {
       console.log("[고가수집기] 추출 소스=" + source, "| 가격=" + price + " " + currency + (currencyLocale ? "(locale)" : "") + " (" + (price_status || "ok") + ")",
-        "| 갤러리=" + gallery.length + " 상세이미지=" + detailImages.length + " 옵션=" + options.length + " 스펙=" + specs.length + " 리뷰=" + reviews.length,
+        "| 갤러리=" + gallery.length + " 상세이미지=" + detailImages.length + " 옵션=" + options.length + " 스펙=" + specs.length + " 리뷰=" + reviews.length + " 평점=" + (rating || "없음") + " 리뷰수=" + (reviewCount || "없음"),
         warnings.length ? "| 경고:" + warnings.join(" / ") : "");
     } catch (e) {}
 
