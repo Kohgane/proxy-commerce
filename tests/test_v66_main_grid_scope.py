@@ -20,7 +20,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.103"
+    assert MANIFEST["version"] == "1.5.104"
 
 
 def test_source_contract():
@@ -50,6 +50,7 @@ def test_main_slot_scope_excludes_reco_node():
         "let _kgpScannedCount=0;\n"
         "let _kgpExcl={ad:0,region:0,parse:0,url:0,dup:0,reco:0};\n"
         "function _kgpExclReset(){_kgpExcl={ad:0,region:0,parse:0,url:0,dup:0,reco:0};}\n"
+        "function _kgpMarkSkip(){};function _kgpClearSkip(){};function _kgpSkipReset(){};var _kgpSkipStats={};\n"
         "global.location={origin:'https://www.amazon.com'};\n"
         "function mkImg(){return {alt:'상품',src:'https://img/x.jpg',currentSrc:'',getAttribute:function(){return null;}};}\n"
         "function card(asin){\n"

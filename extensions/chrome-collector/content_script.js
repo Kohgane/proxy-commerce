@@ -416,7 +416,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       ok: true, host: (location.hostname || ""), allowed: allowed, pageType: pt,
       cards: cards, generic: _kgpLastDetect.generic, adapter: _kgpLastDetect.adapter,
       adapterMatched: _kgpLastDetect.adapterMatched, scanned: _kgpScannedCount || 0, button: btn,
-      excl: _kgpExcl,   // v65 STEP2: 제외 사유 분해(광고/파싱/URL/중복/영역)
+      excl: _kgpExcl, skipStats: _kgpSkipStats,   // v65/v77: 제외 사유 분해 + 타일 스킵 사유별 카운트
     });
     return true;
   }
@@ -440,7 +440,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         generic: _kgpLastDetect.generic, adapter: _kgpLastDetect.adapter, merged: _kgpLastDetect.merged,
         adapterMatched: _kgpLastDetect.adapterMatched, scanned: _kgpScannedCount || 0,
         bar: !!document.getElementById(KGP_TOOLBAR_ID), fab: !!document.getElementById(KGP_BTN_ID),
-        excl: _kgpExcl };
+        excl: _kgpExcl, skipStats: _kgpSkipStats };   // v77 STEP2: 미부착 타일 사유별 집계
     } catch (e) { detection = { __err: String(e) }; }
     try { extVer = chrome.runtime.getManifest().version; } catch (e) {}
     sendResponse({ ok: !!html, html: html, host: (location.hostname || ""), url: (location.href || ""),
@@ -1055,6 +1055,20 @@ let _kgpClosed = false;           // 사용자가 툴바를 닫았으면 자동 
 let _kgpExcl = { ad: 0, region: 0, parse: 0, url: 0, dup: 0, reco: 0 };
 function _kgpExclReset() { _kgpExcl = { ad: 0, region: 0, parse: 0, url: 0, dup: 0, reco: 0 }; }
 
+// v77 STEP2: 미부착(자격 탈락) 타일 자가보고 — 타일에 data-kgp-skip="사유" 부여 + 사유별 카운트 집계.
+//   사유: non-product(구조적 비상품)·no-asin/no-url(식별자 없음)·parse-fail(제목·이미지 없음)·dup(중복)·ad-excluded.
+//   "왜 이 타일만 버튼이 없지?"를 속성 하나로 판독 + 디버그 패널(진단 번들 excl/skipStats)에 집계.
+let _kgpSkipStats = {};
+function _kgpSkipReset() { _kgpSkipStats = {}; }
+function _kgpMarkSkip(el, reason) {
+  try {
+    if (!el || !el.setAttribute) return;
+    el.setAttribute("data-kgp-skip", reason);
+    _kgpSkipStats[reason] = (_kgpSkipStats[reason] || 0) + 1;
+  } catch (e) {}
+}
+function _kgpClearSkip(el) { try { if (el && el.removeAttribute) el.removeAttribute("data-kgp-skip"); } catch (e) {} }
+
 // v64 STEP2 / v67 STEP1: 전체선택/전체수집 대상 — 기본은 **메인 그리드 실상품만**(추천·광고 제외).
 //   '추천 포함'(kgp_incl_reco)·'광고 포함'(kgp_incl_ads) 토글로 확장. 버튼은 전 타일에 부착돼 개별 수집은 항상 가능.
 function _kgpInclAds() { return kgpLSget("kgp_incl_ads", "0") === "1"; }
@@ -1236,12 +1250,13 @@ function _kgpAmazonCards() {
   _kgpScannedCount = all.length;                          // '전체 N개'(메인+추천 상품/비상품 합)
   all.forEach((el) => {
     try {
+      // v77 STEP2: 자격 탈락 타일에 data-kgp-skip="사유" 부여 — '왜 이 타일만 버튼이 없지?'를 속성 하나로 판독.
       // v67: 구조적 비상품(footer/nav)만 제외 — 추천/캐러셀은 버튼 부착(region='reco' 태깅).
-      if (_kgpInBadRegion(el, { allowAds: true, structuralOnly: true })) { _kgpExcl.region++; return; }
+      if (_kgpInBadRegion(el, { allowAds: true, structuralOnly: true })) { _kgpExcl.region++; _kgpMarkSkip(el, "non-product"); return; }
       const asin = (el.getAttribute("data-asin") || "").trim();
-      if (!/^[A-Z0-9]{10}$/.test(asin)) { _kgpExcl.parse++; return; }   // v65 STEP2: 유효 ASIN 없음=파싱 실패
+      if (!/^[A-Z0-9]{10}$/.test(asin)) { _kgpExcl.parse++; _kgpMarkSkip(el, "no-asin"); return; }   // v65 STEP2: 유효 ASIN 없음=파싱 실패
       const parentAsin = el.parentElement && el.parentElement.closest('[data-asin]:not([data-asin=""])');
-      if (parentAsin && parentAsin !== el && (parentAsin.getAttribute("data-asin") || "").trim() === asin) { _kgpExcl.dup++; return; }
+      if (parentAsin && parentAsin !== el && (parentAsin.getAttribute("data-asin") || "").trim() === asin) { _kgpExcl.dup++; _kgpMarkSkip(el, "dup"); return; }
       const sponsored = _kgpAmazonSponsored(el);           // v45 P3: 제외 아님 — 태깅만(스폰서 상품도 수집).
       if (sponsored) _kgpExcl.ad++;                        // v65 STEP2: 광고 카운트(제외 아님)
       // v67 STEP1: region = 메인 그리드 안이면 main, 밖(추천/캐러셀)이면 reco. 버튼은 둘 다 부착.
@@ -1250,16 +1265,17 @@ function _kgpAmazonCards() {
       const a = el.querySelector('a.a-link-normal[href*="/dp/"], h2 a, a.a-link-normal.s-no-outline, a[href*="/dp/"]');
       let href = a && a.href ? a.href.split("?")[0].split("#")[0] : "";
       if (!href || href.indexOf("http") !== 0) href = location.origin + "/dp/" + asin;   // ASIN 폴백
-      if (seen[href]) { _kgpExcl.dup++; return; }
+      if (seen[href]) { _kgpExcl.dup++; _kgpMarkSkip(el, "dup"); return; }
       const img = el.querySelector("img.s-image") || el.querySelector("img");
       const titleEl = el.querySelector("h2 span") || el.querySelector("h2 a span") || el.querySelector("h2")
         || el.querySelector('[data-cy="title-recipe"] span') || el.querySelector(".a-size-base-plus, .a-size-medium");
       let title = titleEl ? (titleEl.innerText || titleEl.textContent || "").trim() : "";
       if (!title && img && img.alt) title = img.alt.trim();
-      if (!title && !img) { _kgpExcl.parse++; return; }     // 제목·이미지 둘 다 없으면 상품 아님
+      if (!title && !img) { _kgpExcl.parse++; _kgpMarkSkip(el, "parse-fail"); return; }     // 제목·이미지 둘 다 없으면 상품 아님
       const priceEl = el.querySelector(".a-price .a-offscreen") || el.querySelector(".a-price");
       const pr = _kgpPrice(priceEl ? priceEl.textContent : (el.innerText || ""));
       seen[href] = 1;
+      _kgpClearSkip(el);   // v77 STEP2: 채택된 타일은 스킵 표식 제거(재스캔 정합)
       const bimg = _kgpBestImg(img);                        // v41 X-1: lazy placeholder 대신 실제 이미지
       cards.push({
         url: href, title: (title || "(제목 없음)").slice(0, 200),
@@ -1323,24 +1339,27 @@ function _kgpGenericCards() {
         }
         if ((!a || (a.href || "").indexOf("http") !== 0) && cand.length && (cand[0].href || "").indexOf("http") === 0) a = cand[0];
       }
-      if (!a || !a.href || a.href.indexOf("http") !== 0) { _kgpExcl.url++; continue; }   // v65 STEP2: URL 추출 실패
+      // v77 STEP2: 미부착 타일 자가보고 — 스킵 대상 타일 요소에 data-kgp-skip="사유".
+      const _skipEl = card || (a && a.closest("li,article,div")) || (img.closest && img.closest("li,article,div")) || img.parentElement;
+      if (!a || !a.href || a.href.indexOf("http") !== 0) { _kgpExcl.url++; _kgpMarkSkip(_skipEl, "no-url"); continue; }   // v65 STEP2: URL 추출 실패
       const href = a.href.split("#")[0];
-      if (seen[href]) { _kgpExcl.dup++; continue; }
+      if (seen[href]) { _kgpExcl.dup++; _kgpMarkSkip(_skipEl, "dup"); continue; }
       if (!card) card = a.closest("li,article,div") || a;
       // v67 STEP1: 구조적 비상품(footer/nav)만 제외 — 추천/캐러셀 상품 타일도 버튼 부착(region='reco').
-      if (_kgpInBadRegion(card, { structuralOnly: true })) { _kgpExcl.region++; continue; }
+      if (_kgpInBadRegion(card, { structuralOnly: true })) { _kgpExcl.region++; _kgpMarkSkip(card, "non-product"); continue; }
       // v74 STEP1: 내비/메뉴/카테고리 영역 타일은 상품 아님 → 오탐 봉인(요시다 카테고리 아이콘 줄).
-      if (_kgpInNavRegion(card)) { _kgpExcl.region++; continue; }
+      if (_kgpInNavRegion(card)) { _kgpExcl.region++; _kgpMarkSkip(card, "nav"); continue; }
       const text = (card.innerText || "").trim();
       const pr = _kgpPrice(text);
       const titleEl = card.querySelector("h1,h2,h3,h4,[class*='title'],[class*='name']");
       const title = ((img.alt || "").trim()) || (titleEl ? titleEl.innerText : "") || text;
-      if (!title || title.trim().length < 4) { _kgpExcl.parse++; continue; }     // 제목 없으면 상품 후보 아님
+      if (!title || title.trim().length < 4) { _kgpExcl.parse++; _kgpMarkSkip(card, "parse-fail"); continue; }     // 제목 없으면 상품 후보 아님
       scanned++;                                           // 상품 후보(제목+이미지+링크+영역OK)
       // v74 STEP1: 타일 자격 = [상품 URL 패턴 or 가격 텍스트] 중 1 필수 + 이미지(위). 카테고리 URL(가격없음)은 제외.
       //   (v43-2의 느슨한 _kgpIsDetailHref는 /products/<카테고리>까지 통과시켜 카테고리 줄 오탐 유발 → 엄격판.)
-      if (!pr.price && !_kgpIsProductHref(href)) { _kgpExcl.parse++; continue; }  // 둘 다 없으면 제외(정직 카운트에 반영)
+      if (!pr.price && !_kgpIsProductHref(href)) { _kgpExcl.parse++; _kgpMarkSkip(card, "no-price-no-url"); continue; }  // 둘 다 없으면 제외(정직 카운트에 반영)
       seen[href] = 1;
+      _kgpClearSkip(card);   // v77 STEP2: 채택 타일 스킵 표식 제거
       const region = _kgpIsRecoRegion(card) ? "reco" : "main";   // v67: 추천 영역 태깅(버튼은 부착)
       if (region === "reco") _kgpExcl.reco++;
       const bimg = _kgpBestImg(img) || img.src;             // v41 X-1: 실제 이미지 우선(placeholder 공유 방지)
@@ -1389,6 +1408,7 @@ function kgpFindCards() {
   const host = (location.hostname || "").toLowerCase();
   _kgpScannedCount = 0;            // 매 스캔 초기화(어댑터/제네릭이 '전체 N개'를 설정)
   _kgpExclReset();                 // v65 STEP2: 제외 사유 카운트 초기화
+  _kgpSkipReset();                 // v77 STEP2: 타일 스킵 사유 집계 초기화
   let generic = [], gScanned = 0;
   try { generic = _kgpGenericCards(); gScanned = _kgpScannedCount; } catch (e) { generic = []; }
   let adapter = [];

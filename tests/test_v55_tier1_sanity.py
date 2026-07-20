@@ -79,5 +79,5 @@ def test_e2e_extension_9krw_discarded():
 
 
 def test_manifest_bumped():
-    # 숫자 semver 비교(문자열 비교는 1.5.103 < 1.5.56 오판 — 3자리 패치 대응).
+    # 숫자 semver 비교(문자열 비교는 1.5.104 < 1.5.56 오판 — 3자리 패치 대응).
     assert tuple(int(x) for x in MANIFEST["version"].split(".")) >= (1, 5, 56)

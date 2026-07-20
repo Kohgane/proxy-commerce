@@ -65,7 +65,7 @@ def _detect(url, body):
 
 # ── 매니페스트: kgp-detect.js가 content_script.js 앞에 로드(위임 전제) ──
 def test_manifest_loads_detect_before_content_script():
-    assert MANIFEST["version"] == "1.5.103"
+    assert MANIFEST["version"] == "1.5.104"
     bundles = [c.get("js", []) for c in MANIFEST["content_scripts"]]
     target = next((js for js in bundles if "content_script.js" in js), None)
     assert target is not None
@@ -103,7 +103,9 @@ def test_amazon_search_detection_contract():
     assert d["tileCount"] == 24, d                          # tiles = 24
     assert d["main"] == 16, d                               # 유기(organic) = 16
     assert d["ad"] == 8, d                                  # 광고(sponsored) = 8
-    assert d["asinMissing"] == 0, d                         # asin 결손 = 0
+    # v77 STEP2: 픽스처에 비상품 위젯(ASIN 없음) 1개 추가 — 자가보고(data-kgp-skip="no-asin") 대상.
+    #   상품 타일은 여전히 ASIN 결손 0(24/24), 위젯 1개만 결손(스킵 표식됨).
+    assert d["asinMissing"] == 1, d
     assert len(d["anchors"]) == 24 and all(a == "img.s-image" for a in d["anchors"]), d  # 앵커 24/24
     assert d["countLabel"] == "메인 16 · 광고 8", d          # 벌크 카운트 표기
 
