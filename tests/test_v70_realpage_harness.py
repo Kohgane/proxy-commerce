@@ -50,7 +50,7 @@ def test_snapshot_infra_source_contract():
     assert "실페이지 하네스 통과 필수" in Path("CLAUDE.md").read_text(encoding="utf-8")
     # manifest bump.
     mani = _json.loads(Path("extensions/chrome-collector/manifest.json").read_text(encoding="utf-8"))
-    assert mani["version"] == "1.5.106"
+    assert mani["version"] == "1.5.107"
 
 
 def _extract_via_browser(expected):
@@ -133,6 +133,15 @@ def test_realpage_snapshot(expected):
 
     if "description_contains" in spec:
         assert spec["description_contains"] in (r.get("description") or ""), ctx
+
+    # v78 STEP3: 상세설명 소스 사다리(어댑터>ldjson>meta) — meta SEO 접두 금지 + 어댑터 불릿 포함.
+    _desc = r.get("desc_text") or r.get("description") or ""
+    for sub in (spec.get("desc_text_excludes") or []):
+        assert not _desc.lstrip().startswith(sub) and sub not in _desc[:40], ("상세설명 meta SEO 오염", sub, _desc[:60], ctx)
+    for sub in (spec.get("desc_text_contains") or []):
+        assert sub in _desc, ("상세설명에 어댑터 불릿 없음", sub, _desc[:80], ctx)
+    if "desc_source" in spec:
+        assert (r.get("desc_source") or "") == spec["desc_source"], ("desc_source 불일치", r.get("desc_source"), ctx)
 
     # v76 STEP6: 리뷰(페이지 내 존재분·DOM 폴백) — 개수 기준 + 본문 텍스트 존재(빈 리뷰 금지).
     revs = r.get("reviews") or []
