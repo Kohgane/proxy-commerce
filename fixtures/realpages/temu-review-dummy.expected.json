@@ -1,0 +1,15 @@
+{
+  "note": "합성 구조 재현 — 실기기 테무 리뷰 메타 오매핑(오너 진단 reviews:8·rating:'1'·review_count:'0'). v78 STEP2: 더미 score:1·review_count:0 방어. 계약: rating (1,5] 또는 없음(0·1 금지), review_count>=reviews.",
+  "url": "https://www.temu.com/kr/cat-review-g-1.html",
+  "title_contains": "캣타워 리뷰",
+  "title_excludes": [
+    "temu",
+    "Temu"
+  ],
+  "price": "40603",
+  "currency": "KRW",
+  "reviews_min": 8,
+  "rating_no_dummy": true,
+  "review_count_gte_reviews": true,
+  "description_contains": ""
+}

@@ -1,0 +1,31 @@
+<!doctype html>
+<!-- v78 STEP2 픽스처 — 테무 실기기 리뷰 메타 오매핑 재현(오너 진단: reviews:8·rating:"1"·review_count:"0").
+     상태 JSON에 더미 score:1 + review_count:0 + 실 리뷰 8건(각 rating). 계약: rating (1,5]만(0·1 더미 금지)
+     또는 없음, review_count >= reviews. -->
+<html lang="ko"><head><meta charset="utf-8">
+<meta property="og:title" content="접이식 캣타워 리뷰 상품">
+<title>접이식 캣타워 리뷰 상품</title>
+</head><body>
+<h1>접이식 캣타워 리뷰 상품</h1>
+<div class="price">₩40,603</div>
+<script>
+window.__INITIAL_STATE__ = {
+  store: { goods: {
+    goodsName: "접이식 캣타워 리뷰 상품",
+    price_info: { price: 40603, currency: "KRW" },
+    score: 1,                 /* 더미(관련도 점수 등) — 평점 아님 */
+    review_count: 0,          /* 스테일 0 — 실 리뷰 8건과 불일치 */
+    review_list: [
+      { reviewId: 1, rating: 5, content: "튼튼하고 좋아요" },
+      { reviewId: 2, rating: 4, content: "조립 쉬움" },
+      { reviewId: 3, rating: 5, content: "고양이가 좋아해요" },
+      { reviewId: 4, rating: 5, content: "가성비 굿" },
+      { reviewId: 5, rating: 4, content: "배송 빠름" },
+      { reviewId: 6, rating: 5, content: "색상 예뻐요" },
+      { reviewId: 7, rating: 3, content: "약간 흔들림" },
+      { reviewId: 8, rating: 5, content: "재구매 의사" }
+    ]
+  } }
+};
+</script>
+</body></html>
