@@ -22,7 +22,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.102"
+    assert MANIFEST["version"] == "1.5.103"
 
 
 def test_source_contract():
@@ -46,7 +46,9 @@ def test_button_style_has_important_node():
     import shutil as _sh
     if not _sh.which("node"):
         pytest.skip("node 미설치")
-    harness = "var _KGP_RESET=\"all:initial !important;box-sizing:border-box !important;\";\n" + m.group(0) + "\nprocess.stdout.write(kgpCardBadgeStyle(false));\n"
+    # v77 STEP1(B): kgpCardBadgeStyle이 KGP_TOUCH(호버 전용 opacity) 참조 → 노드 하네스에 스텁.
+    harness = ("var _KGP_RESET=\"all:initial !important;box-sizing:border-box !important;\";var KGP_TOUCH=false;\n"
+               + m.group(0) + "\nprocess.stdout.write(kgpCardBadgeStyle(false));\n")
     f = tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8")
     f.write(harness); f.close()
     try:
