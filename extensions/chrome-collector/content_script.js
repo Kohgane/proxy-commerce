@@ -1918,12 +1918,23 @@ function kgpInjectListing() {
         if (!KGP_TOUCH) {
           // v77 STEP1(B): 호버 시 [수집] + 선택 토글 **동시 노출**(둘 다 호버 전용). setProperty important —
           //   all:initial 격리를 이겨야 opacity 토글이 먹는다. 선택된 카드의 선택 토글은 유지(숨기지 않음).
-          const _reveal = (on) => {
+          // v79 STEP1: hover 소멸 루프 수리 — 버튼이 커서 위치(이미지 중앙)에 나타나 c.el 경계 밖으로
+          //   삐져나오면 mouseleave→숨김→재hover 무한 반복. 수리: hover 판정을 [타일 ∪ 버튼] 공통으로
+          //   (버튼도 hover 유지 대상 → mouseenter/leave를 q에도 바인딩) + 숨김 200ms 유예(재진입 시 취소).
+          let _hoverTimer = null;
+          const _apply = (on) => {
             if (q.dataset.collected !== "1") q.style.setProperty("opacity", on ? "1" : "0", "important");
             if (badge && !KGP_SELECTED.has(badge.dataset.url)) badge.style.setProperty("opacity", on ? "1" : "0", "important");
           };
-          c.el.addEventListener("mouseenter", () => _reveal(true));
-          c.el.addEventListener("mouseleave", () => _reveal(false));
+          const _show = () => { if (_hoverTimer) { clearTimeout(_hoverTimer); _hoverTimer = null; } _apply(true); };
+          const _hide = () => {
+            if (_hoverTimer) clearTimeout(_hoverTimer);
+            _hoverTimer = setTimeout(() => { _apply(false); _hoverTimer = null; }, 200);   // 200ms 유예 → 깜빡임 루프 차단
+          };
+          c.el.addEventListener("mouseenter", _show);
+          c.el.addEventListener("mouseleave", _hide);
+          q.addEventListener("mouseenter", _show);     // 버튼 위로 오면 유지(버튼도 hover 대상)
+          q.addEventListener("mouseleave", _hide);
         }
         try { if (getComputedStyle(host).position === "static") host.style.position = "relative"; } catch (e) {}
         host.appendChild(q);
