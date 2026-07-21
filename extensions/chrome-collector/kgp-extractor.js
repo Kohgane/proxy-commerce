@@ -197,6 +197,18 @@
   // v76 STEP2: sku/옵션 스와치 썸네일 키 — 갤러리(대표 이미지) 오염 금지. 값→이미지는 option_image로만 귀속.
   var _OPT_SWATCH_KEY = /(skuproperty.*(image|img|pic)|property.*(image|img|pic)|swatch|coloroption|optionimage|variationimage|variantimage|skuimage)/i;
   function _optClean(s) { s = String(s == null ? "" : s).replace(/\s+/g, " ").trim(); return s.length <= 40 ? s : ""; }
+  // v79 STEP3: 옵션 값 화이트리스트 — 옵션이 아닌 오염값 배제(전 마켓 공통). 화살표·캐러셀 내비 글리프,
+  //   미디어 탭명(Product Image/Video·이미지·동영상), 순수 품번(5자리+ 숫자, 예 '900037')은 옵션 값이 아니다.
+  //   사이즈(2~4자리 숫자·단위)는 보존(≤4자리·문자 포함). 라쿠텐 스펙 뭉침·아마존 캐러셀 컨트롤 박멸.
+  function _isBadOptValue(v) {
+    v = String(v == null ? "" : v).trim();
+    if (!v) return true;
+    if (/^[<>‹›«»←-⇿◀-◿⟨⟩⬅⬆⬇➡]+$/.test(v)) return true;   // 화살표·내비 글리프
+    if (/^(product\s*)?(image|video|photo|이미지|동영상|사진|썸네일|thumbnail)s?$/i.test(v)) return true;                        // 미디어 탭명
+    if (/roll ?over image|click to (zoom|enlarge|open)|zoom in/i.test(v)) return true;                                          // 미디어 안내 문구
+    if (/^\d{5,}$/.test(v)) return true;                                                                                        // 순수 품번(5자리+)
+    return false;
+  }
   // v78 STEP1: 키 정규화 — 구분자(_·-·공백) 제거 후 매칭. 실기기 테무 sku가 underscore 키(spec_key·spec_value)를
   //   쓰면 speckey/specvalue 패턴에 안 걸려 옵션 0이 되던 근원(skus>0·options=0). 정규화로 봉인.
   function _normKey(k) { return String(k == null ? "" : k).replace(/[_\-\s]/g, ""); }
@@ -214,6 +226,7 @@
     function add(axis, val, img) {
       axis = _optClean(axis); val = _optClean(val);
       if (!axis || !val || /^https?:\/\//i.test(val) || val === "[object Object]") return;   // URL·Object 문자열화 금지
+      if (_isBadOptValue(val)) return;   // v79 STEP3: 화살표·미디어탭·품번 배제(옵션 값 화이트리스트)
       var a = axisMap[axis] || (axisMap[axis] = { order: [], set: {}, images: {} });
       if (!a.set[val]) { a.set[val] = 1; a.order.push(val); }
       if (img && /^https?:\/\//i.test(img) && !a.images[val]) a.images[val] = hiRes(img);
@@ -811,7 +824,9 @@
     var out = [], seen = {};
     function _push(name, vals) {
       var uniq = [], s2 = {};
-      vals.forEach(function (v) { v = (v || "").replace(/\s+/g, " ").trim(); if (v && v.length <= 40 && !s2[v]) { s2[v] = 1; uniq.push(v); } });
+      // v79 STEP3: 알리식 값에 축명 접두 중복('색상: 1pcs') → 접두 제거(축명과 동일 라벨만).
+      var _pre = name ? new RegExp("^" + String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*[:：]\\s*", "i") : null;
+      vals.forEach(function (v) { v = (v || "").replace(/\s+/g, " ").trim(); if (_pre) v = v.replace(_pre, "").trim(); if (v && v.length <= 40 && !_isBadOptValue(v) && !s2[v]) { s2[v] = 1; uniq.push(v); } });   // v79 STEP3: 오염값 배제
       if (uniq.length < 2) return;
       var key = name + "|" + uniq.join(",");
       if (seen[key]) return; seen[key] = 1;
@@ -882,6 +897,10 @@
         var grp = groups[g];
         if (_nonProdRegion(grp) || _galleryExcluded(grp)) continue;
         if (grp.closest && grp.closest('[id^="inline-twister-row-"],[id^="variation_"]')) continue;   // v62/v70: 트위스터는 위에서 축명 매핑(중복 방지)
+        // v79 STEP3: 미디어 캐러셀(#altImages·썸네일)·스펙표(table/dl/spec/attribute)는 옵션 아님 — 제외.
+        //   아마존 '←/1/→·Product Image' 캐러셀 컨트롤, 라쿠텐 스펙표(브랜드·품번·원산지) 뭉침 박멸.
+        //   스펙표는 _domSpecs가 별도 수집(정직). 테무 등 실옵션은 JSON(axisMap) 경로라 무영향.
+        if (grp.closest && grp.closest('#altImages,[class*="thumbnail" i],[class*="imageThumb" i],[class*="a-carousel" i],[aria-roledescription="carousel"],table,dl,[class*="spec" i],[class*="attribute" i],[class*="product-info" i],[class*="itemInfo" i]')) continue;
         if (grp.querySelector("select")) continue;       // select은 위에서 처리(중복 방지)
         // 그룹 라벨: aria-label / [class*=label] / 첫 텍스트 노드 중 OPT_LABEL 매칭.
         var glbl = grp.getAttribute("aria-label") || "";
