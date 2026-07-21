@@ -52,6 +52,8 @@
       // 아마존 크기 토큰(image._AC_SX466_.jpg → image.jpg)은 통째로 제거(더블닷 방지).
       u = u.replace(/\._(AC_)?S[XYLS]\d+_/gi, "").replace(/\._(SX|SY|SS|SL|UX|UY|CR)\d+(,\d+)*_/gi, "");
       u = u.replace(/(\?|&)(imageView2?|thumb|w|width|h|height|size|quality|_ex)=[^&]*/gi, "");   // v76 STEP3: 라쿠텐 _ex=WxH(썸네일) 제거 → 원본
+      // v79 STEP4: 알리 썸네일 변형(.jpg_80x80xz.jpg·.jpg_640x640q90.jpg) → 원본(.jpg)으로 정규화 → 변형 dedupe.
+      u = u.replace(/\.(jpg|jpeg|png|webp|gif)_\d+x\d+[a-z0-9]*\.(jpg|jpeg|png|webp|gif)$/i, ".$1");
       u = u.replace(/[?&]$/, "").replace(/\.{2,}(jpg|jpeg|png|webp|gif)/i, ".$1");
     } catch (e) {}
     return u;
@@ -60,6 +62,28 @@
   // 비-상품 이미지(로고/아이콘/배너/픽셀…) 판정
   var NONPROD_IMG = /(logo|sprite|icon|favicon|avatar|placeholder|loading|blank|pixel|spinner|banner|badge|button|arrow|chevron|caret|rating|star_|flags?|emoji|watermark|qr[-_]?code|coupon|nav_|1x1|transparent\.|spacer)/i;
   function isProductImg(s) { return s && s.indexOf("data:") !== 0 && !NONPROD_IMG.test(s); }
+  // v79 STEP4: 호스트별 갤러리 오염 필터 — 테무 kwcdn 배너·쿠폰(material-put·aimg·upload_aimg) 제외(상품
+  //   /product/ 경로만), 라쿠텐 타상품(현재 shop 슬러그 밖 CDN 이미지) 제외. 비대상 호스트·비-CDN은 무영향.
+  function _galleryScopeHost(list) {
+    var h = ""; try { h = (location.hostname || "").toLowerCase(); } catch (e) {}
+    if (/(^|\.)temu\.com$/.test(h)) {
+      return list.filter(function (u) {
+        if (!/kwcdn\.com/i.test(u)) return true;                                   // 비-kwcdn 유지
+        if (/\/(material-put|marketing|activity|promo)\//i.test(u) || /(^|[\/_])(upload_)?aimg/i.test(u)) return false;   // 배너·쿠폰
+        return /\/product\//i.test(u);                                            // 상품 경로만
+      });
+    }
+    if (/(^|\.)rakuten\.(co\.jp|com)$/.test(h)) {
+      var slug = ""; try { var mm = (location.pathname || "").match(/^\/([^\/]+)\//); slug = mm ? mm[1].toLowerCase() : ""; } catch (e) {}
+      if (!slug) return list;
+      return list.filter(function (u) {
+        var lu = u.toLowerCase();
+        if (/r10s\.jp|image\.rakuten\.co\.jp/i.test(lu) && lu.indexOf("/" + slug + "/") < 0 && lu.indexOf(slug) < 0) return false;   // 타 shop 추천
+        return true;
+      });
+    }
+    return list;
+  }
 
   // 가격이 아닌 숫자(재고·쿠폰·수량·평점·판매수) 문맥 배제
   var NONPRICE = /(재고|남음|남았|개\s*남|수량|qty|quantity|stock|left|in\s*cart|장바구니|쿠폰|coupon|적립|포인트|point|리뷰|review|평점|rating|판매|sold|명이|배송비|shipping\s*fee|무료배송|free\s*shipping|할인율|% ?off|퍼센트)/i;
@@ -1278,6 +1302,7 @@
     // 이미지 원본해상도 + 순서 보존 + 중복 제거(이미 uniqPush로 됨). 1번=썸네일.
     var seen = {}, gallery = [];
     images.forEach(function (u) { uniqPush(gallery, seen, u); });
+    gallery = _galleryScopeHost(gallery);   // v79 STEP4: 호스트별 갤러리 오염 필터(테무 배너·라쿠텐 타상품)
 
     // v78 STEP2: 리뷰 메타 정직화 — rating은 (1,5]만(0·1 더미 금지), 아니면 '없음'(빈값). review_count는 실제
     //   추출 리뷰 수 이상(count<reviews면 스테일 '0' 등 → 최소 reviews.length 보정). 가짜 평점/카운트 저장 방지.
