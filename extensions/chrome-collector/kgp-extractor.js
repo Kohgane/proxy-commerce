@@ -398,6 +398,26 @@
         }
       }, 30000);
     }
+    // v79 STEP2: sku 정제 — 빈 항목(spec 없고 price 없음) 제거 + 동일 spec 중복 dedupe.
+    //   _walk가 같은 sku 배열을 여러 상태에서 재방문해 2~3배 반복(테무·라쿠텐 확정). 동일 spec 서명은
+    //   하나만 남기되, 무가격보다 유가격을 우선(정보 우위). 옵션(axisMap 파생)은 이미 dedup이라 무영향.
+    (function () {
+      var idx = {}, clean = [];
+      for (var _si = 0; _si < res.skus.length; _si++) {
+        var _sk = res.skus[_si] || {};
+        var _spec = _sk.spec || [];
+        var _price = _sk.price || "";
+        if (!_spec.length && !_price) continue;                     // 빈 sku 제거(정직)
+        var _key = _spec.slice().sort().join("");             // spec 값 집합 서명
+        if (Object.prototype.hasOwnProperty.call(idx, _key)) {
+          var _prev = clean[idx[_key]];                             // 동일 spec 재등장 = 중복
+          if (!_prev.price && _price) clean[idx[_key]] = _sk;       // 무가격→유가격 교체
+          continue;
+        }
+        idx[_key] = clean.length; clean.push(_sk);
+      }
+      res.skus = clean;
+    })();
     // v71 STEP2 / v78 STEP1: 옵션 = sku 스펙 축별(색상·사이즈…) — 단일 변환. 값은 텍스트, 값 이미지는 option_image 분리.
     res.options = _skusToOptions(axisMap, res.skus);
     res.ok = !!(res.price || res.images.length || res.title);
