@@ -39,7 +39,7 @@ _INJECT = """(a) => {
   const [detect, cs] = a;
   window.chrome = {
     runtime: { id: 'x', onMessage: { addListener(){} }, sendMessage(){}, getURL: u => u, lastError: null,
-               getManifest: () => ({ version: '1.5.112' }) },
+               getManifest: () => ({ version: '1.5.113' }) },
     storage: {
       local: { get: (k, cb) => cb && cb({}), set(){}, onChanged: { addListener(){} } },
       sync:  { get: (k, cb) => cb && cb({}), set(){}, onChanged: { addListener(){} } }

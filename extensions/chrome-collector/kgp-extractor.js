@@ -986,27 +986,48 @@
   //   추가 네트워크 요청 0(존재분만). 아마존([data-hook=review]) + 제네릭 리뷰 항목. 리뷰 영역은 정상(제외 안 함).
   function _domReviews() {
     var out = [], seenTxt = {};
+    function _clean(el) { return el ? String(el.innerText || el.textContent || "").replace(/\s+/g, " ").trim() : ""; }
+    // v79 STEP5: 본문 셀렉터 = 구체적인 리뷰 본문만(저자 노드 .a-profile-* 배제). 넓은 [class*=content]·p는
+    //   저자 프로필(.a-profile-content)을 먼저 잡아 text=author 복제를 만들었다 → 순차 구체 셀렉터 + 저자 배제.
+    var BODY_SELS = ['[data-hook="review-body"]', '[itemprop="reviewBody"]', '[class*="review-text" i]',
+      '[class*="reviewText" i]', '[class*="review-content" i]', '[class*="comment-text" i]', '[class*="comment-content" i]'];
+    var AUTH_SEL = '.a-profile-name,.a-profile-content,[class*="author" i],[itemprop="author"],[class*="reviewer" i],[class*="user-name" i]';
     try {
       var items = document.querySelectorAll('[data-hook="review"],[id^="customer_review"],[class*="review-item" i],'
         + '[class*="reviewItem" i],[itemprop="review"],[class*="comment-item" i],li[class*="review" i]');
       for (var i = 0; i < items.length && out.length < REVIEW_MAX; i++) {
         var it = items[i];
-        var bodyEl = it.querySelector('[data-hook="review-body"],[class*="review-text" i],[class*="reviewText" i],'
-          + '[itemprop="reviewBody"],[class*="review-content" i],[class*="content" i],[class*="comment-text" i],p');
-        var body = bodyEl ? String(bodyEl.innerText || bodyEl.textContent || "") : String(it.innerText || it.textContent || "");
-        body = body.replace(/\s+/g, " ").trim();
-        if (!body || body.length < 3) continue;
+        // 저자 먼저 확정(본문 후보에서 배제 기준).
+        var aEl = it.querySelector('.a-profile-name,[class*="author" i],[itemprop="author"],[class*="reviewer" i],[class*="user-name" i]');
+        var author = _clean(aEl);
+        // 본문: 구체 셀렉터 순차 → 저자 노드/저자 텍스트가 아닌 첫 후보.
+        var body = "";
+        for (var s = 0; s < BODY_SELS.length; s++) {
+          var be = it.querySelector(BODY_SELS[s]);
+          if (!be) continue;
+          if (be.closest && be.closest(AUTH_SEL)) continue;          // 저자 프로필 하위면 스킵
+          var t = _clean(be);
+          if (t && t.length >= 3 && t !== author) { body = t; break; }   // v79 STEP5: text≠author 봉인
+        }
+        if (!body) continue;                                          // 본문 못 찾으면 저자 복제 저장 금지(스킵)
         var kk = body.slice(0, 40);
         if (seenTxt[kk]) continue; seenTxt[kk] = 1;
-        var rEl = it.querySelector('[data-hook="review-star-rating"] .a-icon-alt,[class*="a-icon-alt" i],'
-          + '[itemprop="ratingValue"],[class*="star" i],[class*="rating" i]');
+        // 평점: 'X out of 5 stars'(a-icon-alt) 우선 → X/5. class a-star-N 폴백. 1.0~5.0만.
         var rating = "";
+        var rEl = it.querySelector('[data-hook="review-star-rating"] .a-icon-alt,[data-hook="cmps-review-star-rating"] .a-icon-alt,'
+          + '[class*="a-icon-alt" i],[itemprop="ratingValue"]');
         if (rEl) {
-          var rraw = String(rEl.getAttribute && rEl.getAttribute("content") || rEl.innerText || rEl.textContent || "");
-          var rm = rraw.match(/(\d(?:\.\d)?)/); if (rm) { var rv2 = parseFloat(rm[1]); if (rv2 > 0 && rv2 <= 5) rating = rm[1]; }
+          var rraw = String((rEl.getAttribute && rEl.getAttribute("content")) || rEl.innerText || rEl.textContent || "");
+          var rm = rraw.match(/(\d(?:\.\d)?)\s*(?:out of|\/)\s*5/i) || rraw.match(/(\d(?:\.\d)?)/);
+          if (rm) { var rv2 = parseFloat(rm[1]); if (rv2 >= 1 && rv2 <= 5) rating = rm[1]; }   // 원본 형식 보존('5.0')
         }
-        var aEl = it.querySelector('.a-profile-name,[class*="author" i],[itemprop="author"],[class*="reviewer" i],[class*="user-name" i]');
-        var author = aEl ? String(aEl.innerText || aEl.textContent || "").replace(/\s+/g, " ").trim() : "";
+        if (!rating) {   // class 기반(a-star-4 / rating-4) 폴백.
+          try {
+            var sc = it.querySelector('[class*="a-star-" i],[class*="star-rating" i]');
+            var cm = sc ? String((sc.className && sc.className.baseVal !== undefined ? sc.className.baseVal : sc.className) || "").match(/(?:a-star-|rating-)(\d(?:[._]\d)?)/i) : null;
+            if (cm) { var rv3 = parseFloat(cm[1].replace("_", ".")); if (rv3 >= 1 && rv3 <= 5) rating = String(rv3); }
+          } catch (e) {}
+        }
         out.push({ author: author.slice(0, 60), rating: rating, text: body.slice(0, 500) });
       }
     } catch (e) {}
