@@ -1065,6 +1065,20 @@
     return "";
   }
   function _metaDescription() { return _meta("og:description") || _meta("description") || ""; }
+  // v79 STEP6: SEO/필러 상세 판정(서버 _FILLER_DESC_RE 미러) — Tier1(state) / meta 후보가 '{사이트}에서 이
+  //   …을 확인하세요'·'Buy … online'·'쇼핑하여 절약을 시작' 등 마켓 자동 필러면 desc_text로 저장 금지(정직 —
+  //   빈 상세 + 편집 AI 초안). 어댑터 상세(실 DOM)는 신뢰(필터 안 함). 계약: desc_text 접두 'Temu에서'/'Buy ' 금지.
+  function _isFillerDesc(s) {
+    s = String(s == null ? "" : s).replace(/\s+/g, " ").trim();
+    if (!s) return true;
+    if (/^Buy\s/i.test(s)) return true;                                                   // 아마존 SEO 'Buy X online…'
+    if (/[A-Za-z가-힣]+에서\s*이\s*.{0,80}?[을를]\s*확인하세요/.test(s)) return true;       // '{사이트}에서 이 …을 확인하세요'
+    if (/(제품|상품)도\s*좋아할\s*수\s*있습니다/.test(s)) return true;                       // 추천 꼬리
+    if (/(쇼핑하여|구매하여)\s*절약을?\s*시작/.test(s)) return true;                          // 테무 '쇼핑하여 절약을 시작'
+    if (/shop\b.{0,40}\band save\b/i.test(s) || /start saving/i.test(s)) return true;      // Shop … and save
+    if (/^Temu\b/i.test(s) || /^Temu에서/.test(s)) return true;                            // 'Temu…' 접두
+    return false;
+  }
   // 하위호환(v60): _domDescription = 어댑터 상세 우선, 없으면 meta 폴백.
   function _domDescription() { return _adapterDetailText() || _metaDescription(); }
   // v60 STEP1: 우리 확장이 주입한 DOM(kgp-*) 또는 사이드패널/챗/네비 등 페이지 크롬 안에 있는 요소인지.
@@ -1263,8 +1277,9 @@
       var _ad = _adapterDetailText();
       if (_ad && _ad.length > 20) { description = _ad; descSource = "adapter"; }
     } catch (e) {}
-    if (!description && j.description) { description = j.description; descSource = j.ok ? "tier1" : "ldjson"; }
-    if (!description) { try { var _m = _metaDescription(); if (_m) { description = _m; descSource = "meta"; } } catch (e) {} }
+    // v79 STEP6: Tier1(state)·meta 후보가 마켓 SEO/필러면 거부(빈 상세 + 편집 AI 초안, 정직). 어댑터는 신뢰.
+    if (!description && j.description && !_isFillerDesc(j.description)) { description = j.description; descSource = j.ok ? "tier1" : "ldjson"; }
+    if (!description) { try { var _m = _metaDescription(); if (_m && !_isFillerDesc(_m)) { description = _m; descSource = "meta"; } } catch (e) {} }
     // v78 STEP3: detail_specs(스펙 표)가 있으면 desc_text에 병합(사용자가 상세에서 스펙까지 한눈에).
     if (specs.length) {
       try {
