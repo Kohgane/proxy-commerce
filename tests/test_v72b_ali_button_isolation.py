@@ -25,7 +25,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.108"
+    assert MANIFEST["version"] == "1.5.109"
 
 
 # ── source-contract: 자식 격리 + 버전 각인 + 배너 ──
@@ -65,7 +65,7 @@ def test_banner_version_compare_node():
     assert m, "cmp 함수 추출 실패"
     harness = (
         m.group(0) + "\n"
-        "var out={a:cmp('1.5.9','1.5.108'), b:cmp('1.5.108','1.5.108'), c:cmp('1.6.0','1.5.108')};\n"
+        "var out={a:cmp('1.5.9','1.5.109'), b:cmp('1.5.109','1.5.109'), c:cmp('1.6.0','1.5.109')};\n"
         "console.log(JSON.stringify(out));\n"
     )
     f = tempfile.NamedTemporaryFile("w", suffix=".js", delete=False)
@@ -76,9 +76,9 @@ def test_banner_version_compare_node():
         out = json.loads(r.stdout.strip().splitlines()[-1])
     finally:
         Path(f.name).unlink()
-    assert out["a"] == -1        # 1.5.9 < 1.5.108(구버전 감지 — 숫자 비교, 문자열 아님)
+    assert out["a"] == -1        # 1.5.9 < 1.5.109(구버전 감지 — 숫자 비교, 문자열 아님)
     assert out["b"] == 0         # 동일 = 최신
-    assert out["c"] == 1         # 1.6.0 > 1.5.108
+    assert out["c"] == 1         # 1.6.0 > 1.5.109
 
 
 # ── Playwright: 적대적 직접 span 규칙 하에서 호버 라벨이 우리 스펙 유지 ──
@@ -93,7 +93,7 @@ def _playwright_ok():
 _CHROME_STUB = """
 window.chrome = {
   runtime: { id: 'x', onMessage: { addListener(){} }, sendMessage(){}, getURL: u => u, lastError: null,
-             getManifest: () => ({ version: '1.5.108' }) },
+             getManifest: () => ({ version: '1.5.109' }) },
   storage: {
     local: { get: (k, cb) => cb && cb({}), set(){}, onChanged: { addListener(){} } },
     sync:  { get: (k, cb) => cb && cb({}), set(){}, onChanged: { addListener(){} } }
