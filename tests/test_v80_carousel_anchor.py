@@ -20,7 +20,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.119"
+    assert MANIFEST["version"] == "1.5.120"
 
 
 # ── source-contract: 캐러셀 안정 앵커 + z-index ──
@@ -46,7 +46,7 @@ def _playwright_ok():
 _CHROME_STUB = """
 window.chrome = {
   runtime: { id: 'x', onMessage: { addListener(){} }, sendMessage(){}, getURL: u => u, lastError: null,
-             getManifest: () => ({ version: '1.5.119' }) },
+             getManifest: () => ({ version: '1.5.120' }) },
   storage: {
     local: { get: (k, cb) => cb && cb({}), set(){}, onChanged: { addListener(){} } },
     sync:  { get: (k, cb) => cb && cb({}), set(){}, onChanged: { addListener(){} } }

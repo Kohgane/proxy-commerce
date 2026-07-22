@@ -17,7 +17,9 @@ CS = Path("extensions/chrome-collector/content_script.js").read_text(encoding="u
 def test_generic_price_optional_with_detail_link():
     assert "function _kgpIsProductHref" in CS
     # v74 STEP1: 자격 = 가격 or 엄격 상품 URL(_kgpIsProductHref) — 카테고리 URL 오탐 봉인(느슨한 _kgpIsDetailHref 폐기).
-    assert "if (!pr.price && !_kgpIsProductHref(href)) { _kgpExcl.parse++; _kgpMarkSkip(card, \"no-price-no-url\"); continue; }" in CS
+    # v81 STEP4 STEP C: keep-gate 동일(둘 다 없을 때만 제외), 사유만 no-item-url/no-price로 분리.
+    assert "if (!pr.price && !_kgpIsProductHref(href)) {" in CS
+    assert '_kgpMarkSkip(card, _kgpIsProductHref(href) ? "no-price" : "no-item-url")' in CS
     assert "if (!pr.price) continue;" not in CS   # 옛 '가격 필수' 제거
 
 
@@ -32,8 +34,9 @@ def test_generic_recovers_priceless_detail_cards():
         "let _kgpScannedCount=0;",
         "let _kgpExcl={ad:0,region:0,parse:0,url:0,dup:0,reco:0};function _kgpExclReset(){};function _kgpMarkSkip(){};function _kgpClearSkip(){};function _kgpSkipReset(){};var _kgpSkipStats={};",
         "const _KGP_ORIG_PRICE_RE=/x^/;const _KGP_NONPROD_RE=/(recommend|related|footer|review)/i;",
+        "const _KGP_RECO_HEADING_RE=/(閲覧した商品からのおすすめ|あなたにおすすめ)/;",
         fn("_kgpInBadRegion"), fn("_kgpIsRecoRegion"), fn("_kgpPrice"), fn("_kgpBestImg"),
-        fn("_kgpIsDetailHref"), fn("_kgpIsCategoryHref"), fn("_kgpIsProductHref"), fn("_kgpInNavRegion"), fn("_kgpGenericCards"),
+        fn("_kgpIsDetailHref"), fn("_kgpIsCategoryHref"), fn("_kgpIsProductHref"), fn("_kgpInNavRegion"), fn("_kgpInRecommendWidget"), fn("_kgpGenericCards"),
     ])
     harness = deps + r"""
     function mkSpec(o){
@@ -71,8 +74,9 @@ def test_non_product_links_still_excluded():
         "let _kgpScannedCount=0;",
         "let _kgpExcl={ad:0,region:0,parse:0,url:0,dup:0,reco:0};function _kgpExclReset(){};function _kgpMarkSkip(){};function _kgpClearSkip(){};function _kgpSkipReset(){};var _kgpSkipStats={};",
         "const _KGP_ORIG_PRICE_RE=/x^/;const _KGP_NONPROD_RE=/(recommend|related|footer|review)/i;",
+        "const _KGP_RECO_HEADING_RE=/(閲覧した商品からのおすすめ|あなたにおすすめ)/;",
         fn("_kgpInBadRegion"), fn("_kgpIsRecoRegion"), fn("_kgpPrice"), fn("_kgpBestImg"),
-        fn("_kgpIsDetailHref"), fn("_kgpIsCategoryHref"), fn("_kgpIsProductHref"), fn("_kgpInNavRegion"), fn("_kgpGenericCards"),
+        fn("_kgpIsDetailHref"), fn("_kgpIsCategoryHref"), fn("_kgpIsProductHref"), fn("_kgpInNavRegion"), fn("_kgpInRecommendWidget"), fn("_kgpGenericCards"),
     ])
     harness = deps + r"""
     function mkSpec(o){

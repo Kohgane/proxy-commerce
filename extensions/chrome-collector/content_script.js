@@ -1324,6 +1324,28 @@ function _kgpInNavRegion(el) {
   return false;
 }
 
+// v81 STEP4: 추천/이력(足あと) 위젯 명시 블록리스트 — 라쿠텐 톱/상품 페이지의 '閲覧した商品からのおすすめ',
+//   'あなたにおすすめ', 足あと(#riAshiato), 추천 탭패널([id^=tabpanel-recommend]) 섹션 전체를 후보에서 제외.
+//   ※ 감지 자체는 죽이지 않는다 — 이 섹션에 속한 타일만 skip="recommend-widget"으로 제외(제네릭 감지 유지).
+const _KGP_RECO_HEADING_RE = /(閲覧した商品からのおすすめ|あなたにおすすめ|おすすめ商品|チェックした商品|履歴から|이 상품을 본 고객|추천 상품|최근 본 상품)/;
+function _kgpInRecommendWidget(el) {
+  let n = el;
+  for (let i = 0; n && i < 10; i++, n = n.parentElement) {
+    const id = (n.id || "");
+    if (id === "riAshiato" || /^tabpanel-recommend/i.test(id)) return true;
+    // 섹션(section/div[role=region]/aside)에 추천/이력 헤딩이 붙어 있으면 그 섹션 전체 제외.
+    const tag = (n.tagName || "").toLowerCase();
+    const role = (n.getAttribute && n.getAttribute("role")) || "";
+    if (tag === "section" || tag === "aside" || role === "region" || role === "tabpanel") {
+      let hd = null;
+      try { hd = n.querySelector("h1,h2,h3,h4,[role='heading'],[class*='title' i],[class*='header' i],[class*='heading' i]"); } catch (e) { hd = null; }
+      const txt = hd ? (hd.textContent || "") : "";
+      if (txt && _KGP_RECO_HEADING_RE.test(txt)) return true;
+    }
+  }
+  return false;
+}
+
 // 폴백 휴리스틱 — 제목+제품링크+충분히 큰 이미지. v43-2: 가격이 없어도 '상품 상세 링크'면 인식(미렌더 가격 카드 복구).
 function _kgpGenericCards() {
   const cards = [], seen = {};
@@ -1357,6 +1379,8 @@ function _kgpGenericCards() {
       if (_kgpInBadRegion(card, { structuralOnly: true })) { _kgpExcl.region++; _kgpMarkSkip(card, "non-product"); continue; }
       // v74 STEP1: 내비/메뉴/카테고리 영역 타일은 상품 아님 → 오탐 봉인(요시다 카테고리 아이콘 줄).
       if (_kgpInNavRegion(card)) { _kgpExcl.region++; _kgpMarkSkip(card, "nav"); continue; }
+      // v81 STEP4: 추천/이력 위젯(足あと·あなたにおすすめ·閲覧した商品) 타일 명시 제외 — 후보 제외만(감지 유지).
+      if (_kgpInRecommendWidget(card)) { _kgpExcl.region++; _kgpMarkSkip(card, "recommend-widget"); continue; }
       const text = (card.innerText || "").trim();
       const pr = _kgpPrice(text);
       const titleEl = card.querySelector("h1,h2,h3,h4,[class*='title'],[class*='name']");
@@ -1365,7 +1389,13 @@ function _kgpGenericCards() {
       scanned++;                                           // 상품 후보(제목+이미지+링크+영역OK)
       // v74 STEP1: 타일 자격 = [상품 URL 패턴 or 가격 텍스트] 중 1 필수 + 이미지(위). 카테고리 URL(가격없음)은 제외.
       //   (v43-2의 느슨한 _kgpIsDetailHref는 /products/<카테고리>까지 통과시켜 카테고리 줄 오탐 유발 → 엄격판.)
-      if (!pr.price && !_kgpIsProductHref(href)) { _kgpExcl.parse++; _kgpMarkSkip(card, "no-price-no-url"); continue; }  // 둘 다 없으면 제외(정직 카운트에 반영)
+      // v81 STEP4 STEP C: 사유 세분화 — 상품 상세 링크 자체가 없으면 no-item-url, 링크는 되나 가격만 없는 케이스는
+      //   no-price. keep-set 불변(가격·상품링크 둘 다 없을 때만 제외 — 회귀 0).
+      if (!pr.price && !_kgpIsProductHref(href)) {
+        _kgpExcl.parse++;
+        _kgpMarkSkip(card, _kgpIsProductHref(href) ? "no-price" : "no-item-url");
+        continue;
+      }
       seen[href] = 1;
       _kgpClearSkip(card);   // v77 STEP2: 채택 타일 스킵 표식 제거
       const region = _kgpIsRecoRegion(card) ? "reco" : "main";   // v67: 추천 영역 태깅(버튼은 부착)

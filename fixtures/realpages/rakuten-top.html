@@ -1,0 +1,50 @@
+<!--
+  fixtures/realpages/rakuten-top.html — v81 STEP4: 라쿠텐 톱페이지(canonical=https://www.rakuten.co.jp/).
+  오너 실기기 재현: 톱에서 per-tile 수집버튼이 붙고 data-kgp-skip 135건 발생 → 톱은 상품/목록 페이지가
+  아니므로 후보 0이어야 한다. 위젯(足あと·あなたにおすすめ·閲覧した商品からのおすすめ) 타일은 명시 제외.
+  ※ 오너 제출 스냅샷의 구조(위젯 셀렉터/헤딩)를 충실히 재현한 합성 픽스처(실 스냅샷은 리포에 미포함).
+-->
+<html lang="ja"><head><meta charset="utf-8">
+<title>楽天市場：オンラインショッピング</title>
+<link rel="canonical" href="https://www.rakuten.co.jp/">
+</head><body>
+
+<header id="shop-header">
+  <a id="shop_header_logo" href="https://www.rakuten.co.jp/?l2-id=shop_header_logo">楽天市場</a>
+</header>
+
+<!-- 카테고리/캠페인 내비(상품 링크 아님·가격 없음) — no-item-url 로 제외 -->
+<nav class="global-navi" aria-label="カテゴリ">
+  <a href="https://www.rakuten.co.jp/category/100227/"><img src="/img/cat1.jpg" width="180" height="180" alt="レディースファッション"></a>
+  <a href="https://event.rakuten.co.jp/campaign/"><img src="/img/camp1.jpg" width="180" height="180" alt="お買い物マラソン"></a>
+</nav>
+
+<!-- 足あと(이력) 위젯 — #riAshiato 섹션 전체 제외 -->
+<section id="riAshiato">
+  <h2 class="widget-title">最近チェックした商品</h2>
+  <ul>
+    <li><a href="https://item.rakuten.co.jp/shopA/hist-001/"><img src="/img/h1.jpg" width="200" height="200" alt="履歴商品1"></a><span class="price">1,980円</span></li>
+    <li><a href="https://item.rakuten.co.jp/shopA/hist-002/"><img src="/img/h2.jpg" width="200" height="200" alt="履歴商品2"></a><span class="price">3,480円</span></li>
+  </ul>
+</section>
+
+<!-- あなたにおすすめ(추천) 탭패널 — [id^=tabpanel-recommend] 섹션 전체 제외 -->
+<div id="tabpanel-recommend-0" role="tabpanel">
+  <h2 class="rec-heading">あなたにおすすめ</h2>
+  <ul>
+    <li><a href="https://item.rakuten.co.jp/shopB/rec-101/"><img src="/img/r1.jpg" width="200" height="200" alt="おすすめ商品1"></a><span class="price">5,980円</span></li>
+    <li><a href="https://item.rakuten.co.jp/shopB/rec-102/"><img src="/img/r2.jpg" width="200" height="200" alt="おすすめ商品2"></a><span class="price">8,800円</span></li>
+  </ul>
+</div>
+
+<!-- 閲覧した商品からのおすすめ — 헤딩 텍스트 매칭으로 섹션 전체 제외 -->
+<section class="rec-section" role="region">
+  <h2>閲覧した商品からのおすすめ</h2>
+  <ul>
+    <li><a href="https://item.rakuten.co.jp/shopC/vr-201/"><img src="/img/v1.jpg" width="200" height="200" alt="関連おすすめ1"></a><span class="price">2,200円</span></li>
+    <li><a href="https://item.rakuten.co.jp/shopC/vr-202/"><img src="/img/v2.jpg" width="200" height="200" alt="関連おすすめ2"></a><span class="price">4,400円</span></li>
+  </ul>
+</section>
+
+<footer><a href="https://www.rakuten.co.jp/info/">会社概要</a></footer>
+</body></html>
