@@ -5592,7 +5592,7 @@ def bookmarklet():
     )
 
 
-_BM_CORE_VER = "bm-v72b"   # v72 STEP1: 세션 폴백(credentials+X-KGP) — 코어 버전 스탬프 갱신
+_BM_CORE_VER = "bm-v81"   # v81 STEP1: 간이 폴백 정직화(6s·캐시·mode=core) — 코어 버전 스탬프 갱신
 _BM_RUN_VER = "run-v62"   # run.js 채택 시 (bm-vN+run-vM)
 
 
@@ -5627,21 +5627,28 @@ def _bookmarklet_js(server: str, token: str, translate: bool) -> str:
         "fetch(S+'/api/v1/collect/extension',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json','X-KGP':'1','Authorization':'Bearer '+T},body:JSON.stringify(data)})"
         ".then(function(r){_S=r.status;return r.text().then(function(x){_H=/^\\s*<(!doctype|html)/i.test(x);try{return JSON.parse(x)}catch(e){return{}}})})"
         ".then(function(d){if(d&&d.ok&&d.partial)K('부분 수집 — 셀러 콘솔에서 확인·보완하세요',false);"
-        "else if(d&&d.ok)K('수집 완료 · 셀러 콘솔 ‘수집한 상품’에서 확인',true);"
+        "else if(d&&d.ok)K((data&&data.mode==='core')?'간이 수집 완료 — 제목·이미지만. 셀러 콘솔에서 [다시 수집] 권장':'수집 완료 · 셀러 콘솔 ‘수집한 상품’에서 확인',true);"
         # v72 STEP1/v72b STEP2: 토큰 무효 + 세션 없음 → 로그인/토큰 재발급 안내 + [재발급 열기] 링크(30초 복구).
         "else if(d&&d.login_required){K('로그인 후 토큰을 재발급해 주세요',false);try{var lt=document.getElementById('kgpbmx');if(lt){var a=document.createElement('a');a.href=S+(d.reissue_url||d.login_url||'/seller/bookmarklet');a.rel='noopener';a.textContent=' [토큰 재발급 열기]';a.style.cssText='color:#fff;text-decoration:underline;font-weight:700';lt.appendChild(a);}}catch(e){}}"
         "else if(_H)K('로그인 확인이 필요할 수 있어요 (HTTP '+_S+')',false);"
         "else K('수집 실패 (HTTP '+_S+'): '+((d&&d.error)||'잠시 후 다시'),false);})"
         ".catch(function(){K('이 사이트는 보안정책(CSP)으로 직접 수집이 막혀요. 크롬 확장을 쓰세요.',false);});}"
-        # ── 로더: run.js 주입 시도(토큰 미포함). 성공=확장추출, 실패/타임아웃=코어 ──
-        "var done=false;function go(data){if(done)return;done=true;send(data);}"
-        "try{var sc=document.createElement('script');sc.src=S+'/seller/bookmarklet/run.js?v='+Date.now();"
-        # v58 STEP3: run.js 채택 시 토스트에 (bm-vN+run-vM) 표기 + 서버 로그용 ext_version 결합.
-        "sc.onload=function(){try{if(typeof window.__kgpRun==='function'){window.__kgpRun(function(d){try{if(d){var rv=(d.ext_version||'run');d.ext_version=BMV+'+'+rv;K('수집 중… ('+d.ext_version+')',true);}}catch(e){}go(d);});}else{go(core());}}catch(e){go(core());}};"
-        "sc.onerror=function(){go(core());};"
+        # ── 로더(v81 STEP1): run.js 캐시 즉시 eval(다음 클릭 즉시) → 없으면 script 주입(6s 여유) → 실패/타임아웃=
+        #   간이(코어) 폴백. 코어 폴백은 침묵 금지(토스트 '간이 수집') + data.mode='core'(서버 '간이' 배지). ──
+        "var done=false;function go(data,isCore){if(done)return;done=true;if(isCore){try{data=data||core()}catch(e){data=core()}try{data.mode='core'}catch(e){}K('간이 수집(제목·이미지만) — 네트워크 지연으로 확장 수집기 미로드',false);}send(data);}"
+        "function useRun(rv){try{window.__kgpRun(function(d){try{if(d){d.ext_version=BMV+'+'+rv+'-'+(d.ext_version||'run');K('수집 중… ('+d.ext_version+')',true);}}catch(e){}go(d);});}catch(e){go(core(),true);}}"
+        # 백그라운드: run.js 텍스트를 localStorage에 캐시(다음 클릭 즉시용) — best-effort(CSP 차단 시 무시).
+        "function cacheRun(){try{fetch(S+'/seller/bookmarklet/run.js?v='+Date.now(),{credentials:'omit'}).then(function(r){return r.text()}).then(function(t){if(t&&t.length>500){try{localStorage.setItem('kgp_runjs',t)}catch(e){}}}).catch(function(){})}catch(e){}}"
+        # 1) 캐시된 run.js 즉시 eval → __kgpRun 정의되면 즉시 사용(네트워크 대기 0) + 백그라운드 갱신.
+        "var fromCache=false;try{var rc=localStorage.getItem('kgp_runjs');if(rc){(0,eval)(rc);if(typeof window.__kgpRun==='function')fromCache=true;}}catch(e){}"
+        "if(fromCache){useRun('cache');cacheRun();}"
+        # 2) 캐시 없음 → script 주입(6s 타임아웃) + 로드 성공 시 캐시. 실패/타임아웃 → 간이 폴백.
+        "else{try{var sc=document.createElement('script');sc.src=S+'/seller/bookmarklet/run.js?v='+Date.now();"
+        "sc.onload=function(){try{if(typeof window.__kgpRun==='function'){cacheRun();useRun('run');}else{go(core(),true);}}catch(e){go(core(),true);}};"
+        "sc.onerror=function(){go(core(),true);};"
         "(document.head||document.documentElement).appendChild(sc);"
-        "setTimeout(function(){go(core());},2500);"   # run.js 미로드(CSP/타임아웃) → 코어 폴백
-        "}catch(e){go(core());}"
+        "setTimeout(function(){go(core(),true);},6000);"   # v81 STEP1: 2.5s→6s (run.js 로드 여유, '되다안되다' 종결)
+        "}catch(e){go(core(),true);}}"
         "}catch(e){try{alert('[고가수집기] 수집기 실행 오류: '+(e&&e.message||e))}catch(_){}}"
         "})();"
     )
@@ -6081,6 +6088,7 @@ def _shape_collect_items(items, current_lang):
         _src = str(it.get("source") or "")
         _pending = (not _enriched) and _src in ("bulk", "bulk_collect") and bool(cs) and cs.get("status") != "성공"
         it["enrich_status"] = "done" if _enriched else ("pending" if _pending else "")
+        it["is_core"] = (str(ex.get("mode") or "").lower() == "core")   # v81 STEP1: 북마클릿 간이(코어) 폴백 수집
     return items
 
 
