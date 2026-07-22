@@ -74,6 +74,13 @@ def inject_seller_template_flags():
             _plan = (billing_store.get_account(_seller_id()) or {}).get("plan", "free")
     except Exception:
         _plan = None
+    # v81 STEP7: 콘솔 상단 '이번 업데이트' 배너 요약(체인지로그 단일 소스). 실패해도 배너만 생략.
+    _cl_banner = None
+    try:
+        from .changelog import banner_summary
+        _cl_banner = banner_summary() or None
+    except Exception:
+        _cl_banner = None
     return {
         "diagnostic_reveal_enabled": os.getenv("DIAGNOSTIC_REVEAL", "0") == "1",
         "sidebar_grouped": os.getenv("SIDEBAR_GROUPED", "1") == "1",
@@ -82,6 +89,7 @@ def inject_seller_template_flags():
         "current_lang": _lang,
         "t": (lambda key, lang=_lang: _t(key, lang)),
         "account_plan": _plan,
+        "changelog_banner": _cl_banner,
         "_auth_enabled": _AUTH_ENABLED,
         # True when the full console sidebar should be rendered:
         # • always when auth is OFF (dev/test mode — matches pre-existing behaviour)
@@ -5172,6 +5180,13 @@ def messaging_log():
     except Exception as exc:
         logger.warning("메시지 로그 조회 오류: %s", exc)
         return jsonify({"ok": False, "error": "로그 조회 중 오류가 발생했습니다."}), 500
+
+
+@bp.get("/changelog")
+def changelog():
+    """v81 STEP7: 변경 이력 — 배치 버전별 3줄 요약(자동 누적, 사용자 언어)."""
+    from .changelog import get_changelog
+    return render_template("changelog.html", page="changelog", entries=get_changelog())
 
 
 @bp.get("/health")
