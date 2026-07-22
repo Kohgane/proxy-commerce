@@ -22,7 +22,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.115"
+    assert MANIFEST["version"] == "1.5.116"
 
 
 # ── source-contract: [타일∪버튼] 공통 hover + 200ms 유예 ──
@@ -50,7 +50,7 @@ _INJECT = """(a) => {
   const [detect, cs] = a;
   window.chrome = {
     runtime: { id: 'x', onMessage: { addListener(){} }, sendMessage(){}, getURL: u => u, lastError: null,
-               getManifest: () => ({ version: '1.5.115' }) },
+               getManifest: () => ({ version: '1.5.116' }) },
     storage: {
       local: { get: (k, cb) => cb && cb({}), set(){}, onChanged: { addListener(){} } },
       sync:  { get: (k, cb) => cb && cb({}), set(){}, onChanged: { addListener(){} } }
