@@ -1553,7 +1553,8 @@ function _kgpQuickLabelSpan(text) {
 function kgpQuickBtnStyle(collected, mode) {
   // v71 STEP4 !important + v72 STEP4 all:initial 격리(알리 상속 오염 원천 차단).
   return _KGP_RESET + [
-    "position:absolute !important", "z-index:2147483639 !important",
+    // v80 STEP2: 알리 호버 오버레이(미리보기 팝업)보다 위로 — 캐러셀 카드에서 버튼이 팝업에 가려 클릭 불가 방지.
+    "position:absolute !important", "z-index:2147483644 !important",
   ].concat(_kgpAnchorCss(mode)).concat([
     "box-sizing:border-box !important", "width:auto !important", "height:auto !important", "max-width:none !important",
     "display:flex !important", "align-items:center", "justify-content:center",
@@ -1936,7 +1937,22 @@ function kgpInjectListing() {
       if (!_quicks.length) {
         const done = _kgpCollectedUrls.has(c.url);
         const imgEl = _kgpCardImage(c.el);
-        const host = (imgEl && imgEl.parentElement) ? imgEl.parentElement : c.el;
+        // v80 STEP2: 알리 등 카드 내 캐러셀(호버 시 이미지 자동 슬라이드)은 img의 부모(슬라이드)가 매 전환마다
+        //   교체됨 → img 부모 앵커는 좌표 재배치·버튼 증발. 이미지가 캐러셀 안이면 **안정 컨테이너**(가장 바깥
+        //   캐러셀 조상 = 슬라이드 상위, 교체 안 됨)에 앵커해 좌표 고정. 아니면 이미지 래퍼(정밀 유지).
+        //   ※ closest는 슬라이드(swiper-slide도 'swiper' 매치)를 잡으므로, c.el까지 올라가며 **최외곽 매치**를 유지.
+        let host = c.el;
+        if (imgEl && imgEl.parentElement) {
+          let carousel = null, cur = imgEl.parentElement, depth = 0;
+          const _carRe = /(carousel|swiper|slider|slick|gallery|magnifier)/i;
+          while (cur && cur !== c.el && depth < 8) {
+            let tok = "";
+            try { tok = ((cur.className && cur.className.baseVal !== undefined ? cur.className.baseVal : (cur.className || "")) + " " + ((cur.getAttribute && cur.getAttribute("aria-roledescription")) || "")); } catch (e) {}
+            if (_carRe.test(tok)) carousel = cur;   // 계속 올라가며 갱신 → 최종=최외곽(안정 컨테이너)
+            cur = cur.parentElement; depth++;
+          }
+          host = carousel || imgEl.parentElement;
+        }
         const mode = imgEl ? "" : "corner";
         const q = document.createElement("div");
         q.className = "kgp-card-quick";

@@ -19,13 +19,13 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.115"
+    assert MANIFEST["version"] == "1.5.116"
 
 
 def test_source_contract():
     assert "function _kgpCardImage(card)" in CS          # 카드 대표 이미지 탐색
-    # 버튼을 이미지 요소의 부모에 앵커(카드 아님).
-    assert "const host = (imgEl && imgEl.parentElement) ? imgEl.parentElement : c.el;" in CS
+    # v80 STEP2: 버튼을 이미지 요소의 부모에 앵커(카드 아님) — 단, 캐러셀 안이면 최외곽 캐러셀 컨테이너(안정).
+    assert "host = carousel || imgEl.parentElement;" in CS
     assert 'const mode = imgEl ? "" : "corner";' in CS    # 이미지 없으면 corner 폴백
     assert "host.appendChild(q)" in CS
     # corner 앵커 = 좌상단(허공 금지).
