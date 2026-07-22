@@ -10,15 +10,8 @@ const optionsLink = document.getElementById("optionsLink");
 const manageLink = document.getElementById("manageLink");
 const srcBadge = document.getElementById("srcBadge");
 
-// 기본 소싱처(content_script.js와 동일하게 유지).
-const DEFAULT_SOURCE_TESTS = [
-  { id: "taobao", label: "타오바오", test: (h) => /(^|\.)taobao\.com$/.test(h) },
-  { id: "tmall", label: "티몰", test: (h) => /(^|\.)tmall\.com$/.test(h) },
-  { id: "1688", label: "1688", test: (h) => /(^|\.)1688\.com$/.test(h) },
-  { id: "temu", label: "테무", test: (h) => /(^|\.)temu\.com$/.test(h) },
-  { id: "amazon", label: "아마존", test: (h) => /(^|\.)amazon\.[a-z.]+$/.test(h) },
-  { id: "aliexpress", label: "알리익스프레스", test: (h) => /(^|\.)aliexpress\.(com|us)$/.test(h) },
-];
+// v81 STEP3: 소싱처 목록/매처는 kgp-sources.js(단일 진실원천)에 위임 — 콘텐츠스크립트와 byte-동일 판정.
+//   과거엔 popup이 6개만 든 자체 목록이라 rakuten 등에서 콘텐츠스크립트와 모순됐다(팝업 미지정/FAB 노출).
 
 function getSettings() {
   return new Promise((resolve) => {
@@ -32,31 +25,39 @@ function getSettings() {
   });
 }
 
-function hostMatch(host, domain) {
-  domain = String(domain || "").toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^www\./, "");
-  return !!domain && (host === domain || host.endsWith("." + domain));
+// URL이 상품/목록 페이지로 보이나? — kgp-detect의 URL 규칙 재사용(팝업은 페이지 DOM이 없어 URL만 판정).
+function _looksCollectable(url) {
+  try {
+    const D = (typeof KGPDetect !== "undefined") ? KGPDetect : null;
+    if (!D) return true;   // 규칙 미로드 시 보수적으로 '수집 가능'(안내만 다름).
+    if (D.DETAIL_URL_RE.test(url) || D.LIST_URL_RE.test(url)) return true;
+    // 톱/홈(경로 없음)만 '아직 아님'으로 안내 — 그 외(상세/목록 애매)는 수집 가능으로 둔다.
+    let path = "/";
+    try { path = new URL(url).pathname || "/"; } catch (e) {}
+    return !(path === "/" || path === "");
+  } catch (e) { return true; }
 }
 
-// 현재 탭이 지정 소싱처인지 표시.
+// 현재 탭이 지정 소싱처인지 표시. v81 STEP3: 세 상태로 분리.
+//   ① 호스트 미등록 → "지정 소싱처가 아니에요"  ② 소싱처+상품/목록 → "수집 버튼이 표시돼요"
+//   ③ 소싱처지만 톱/홈 → "○○입니다. 상품/목록 페이지에서 수집할 수 있어요"(호스트 등록 O·페이지 타입 X).
 function updateSourceBadge(url) {
   let host = "";
   try { host = new URL(url).hostname.toLowerCase(); } catch (e) { host = ""; }
   chrome.storage.local.get("kgp_sources", (r) => {
     const s = (r && r.kgp_sources) || {};
-    const defs = s.defaults || {};
-    let label = "";
-    for (const src of DEFAULT_SOURCE_TESTS) {
-      if (defs[src.id] !== false && src.test(host)) { label = src.label; break; }
-    }
-    if (!label) {
-      for (const c of (s.custom || [])) { if (c && c.on !== false && hostMatch(host, c.host)) { label = c.host; break; } }
-    }
-    if (label) {
-      srcBadge.className = "src-badge on";
-      srcBadge.textContent = `지정 소싱처 (${label}) — 수집 버튼이 표시돼요`;
-    } else {
+    const m = (typeof KGPSources !== "undefined") ? KGPSources.matchHost(host, s) : null;
+    if (!m) {
       srcBadge.className = "src-badge off";
       srcBadge.textContent = "여긴 지정 소싱처가 아니에요. ‘소싱처 관리’에서 추가할 수 있어요.";
+      return;
+    }
+    if (_looksCollectable(url)) {
+      srcBadge.className = "src-badge on";
+      srcBadge.textContent = `지정 소싱처 (${m.label}) — 수집 버튼이 표시돼요`;
+    } else {
+      srcBadge.className = "src-badge on";
+      srcBadge.textContent = `${m.label}입니다 (소싱처 ✓). 상품·목록 페이지에서 수집 버튼이 나와요.`;
     }
   });
 }

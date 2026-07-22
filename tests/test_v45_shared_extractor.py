@@ -51,8 +51,10 @@ def test_shared_between_extension_and_bookmarklet():
     # v51: content_scripts[0]은 kgp-net(document_start) → 격리월드 항목(content_script.js 포함) 특정.
     iso = [cs for cs in MF["content_scripts"] if "content_script.js" in cs.get("js", [])][0]
     # v73 STEP2: 감지 순수 모듈 kgp-detect.js가 content_script 앞에 추가 로드(위임 단일 소스).
-    assert iso["js"] == ["kgp-extractor.js", "kgp-detect.js", "content_script.js"]
+    # v81 STEP3: 소싱처 매처 kgp-sources.js도 content_script 앞에 로드(팝업과 단일 소스).
+    assert iso["js"] == ["kgp-sources.js", "kgp-extractor.js", "kgp-detect.js", "content_script.js"]
     assert iso["js"].index("kgp-extractor.js") < iso["js"].index("content_script.js")
+    assert iso["js"].index("kgp-sources.js") < iso["js"].index("content_script.js")
     assert "window.kgpExtractProduct === \"function\"" in CS
     assert "return window.kgpExtractProduct();" in CS
     # 북마클릿(v46 STEP4): 가져오기 신뢰성 위해 경량화 — 29KB 인라인 폐기, 페이지 HTML을 서버로 보내

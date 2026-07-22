@@ -32,8 +32,9 @@ def test_run_js_bundles_the_shared_extractor():
 
 def test_extension_content_script_loads_same_extractor():
     # 확장 격리월드 항목이 kgp-extractor.js를 content_script.js보다 먼저 로드(동일 소스).
+    # v81 STEP3: kgp-sources.js(소싱처 매처 단일 소스)가 [0]으로 추가됨 — 로드 순서(먼저)로 검증.
     iso = [c for c in MF["content_scripts"] if "content_script.js" in c.get("js", [])][0]
-    assert iso["js"][0] == "kgp-extractor.js"
+    assert iso["js"].index("kgp-extractor.js") < iso["js"].index("content_script.js")
     # content_script는 window.kgpExtractProduct(공유)를 호출.
     cs = Path("extensions/chrome-collector/content_script.js").read_text(encoding="utf-8")
     assert "window.kgpExtractProduct()" in cs
