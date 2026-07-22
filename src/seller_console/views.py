@@ -5765,6 +5765,27 @@ def _netscape_bookmark(href: str, icon_data_uri: str, label: str = "고가수집
     )
 
 
+def _bookmarklet_token(user_id: str) -> str:
+    """v81 STEP2 토큰 위생 — 안정 토큰 재사용. 세션에 캐시된 raw 토큰이 아직 활성이면 **동일 토큰 재임베드**
+    (신규 남발 0, 파일 재다운로드 시 목록 증가 0). 없거나 만료/회수면 새로 1개 발급 + 세션 캐시.
+    세션 raw는 사용자 자기 쿠키(다운로드하는 파일과 동일 신뢰) — 저장소엔 해시만(원문 저장 0 유지)."""
+    from src.auth import personal_tokens as _pt
+    cached = session.get("bm_token_raw")
+    ch = session.get("bm_token_hash")
+    if cached and ch:
+        try:
+            if _pt.token_active(user_id, ch):
+                return cached   # 재사용(신규 발급 안 함)
+        except Exception:
+            pass
+    result = _pt.generate_token(user_id=user_id, scopes=["collect.write"], expires_days=365)
+    raw = result.get("raw_token")
+    if raw:
+        session["bm_token_raw"] = raw
+        session["bm_token_hash"] = result.get("token_hash")
+    return raw
+
+
 @bp.post("/bookmarklet/file")
 def bookmarklet_file():
     """'내 북마클릿 파일 받기' — 토큰 발급(Supabase) 후 크롬 가져오기용 북마크 HTML을 내려준다.
@@ -5778,9 +5799,7 @@ def bookmarklet_file():
     translate = (request.form.get("translate") or request.args.get("translate") or "1") != "0"
 
     try:
-        from src.auth import personal_tokens as _pt
-        result = _pt.generate_token(user_id=user_id, scopes=["collect.write"], expires_days=365)
-        raw = result.get("raw_token")
+        raw = _bookmarklet_token(user_id)   # v81 STEP2: 안정 토큰 재사용(신규 남발 0)
         if not raw:
             raise RuntimeError("토큰이 비어 있습니다.")
     except Exception as exc:
@@ -5816,9 +5835,7 @@ def bookmarklet_code():
     user_id = _current_user_id()
     translate = (request.form.get("translate") or request.args.get("translate") or "1") != "0"
     try:
-        from src.auth import personal_tokens as _pt
-        result = _pt.generate_token(user_id=user_id, scopes=["collect.write"], expires_days=365)
-        raw = result.get("raw_token")
+        raw = _bookmarklet_token(user_id)   # v81 STEP2: 안정 토큰 재사용(신규 남발 0)
         if not raw:
             raise RuntimeError("토큰이 비어 있습니다.")
     except Exception as exc:
