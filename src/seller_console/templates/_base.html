@@ -280,6 +280,29 @@
     </header>
 
     <main class="console-content">
+      {# v81 STEP7: '이번 업데이트' 배너 — 체인지로그 단일 소스. 최신 버전 1회만(localStorage dismiss). 이모지 0. #}
+      {% if changelog_banner and changelog_banner.points %}
+      <div id="kgpUpdateBanner" class="kgp-update-banner" data-ver="{{ changelog_banner.version }}" hidden>
+        <span class="kgp-ub-keystone" aria-hidden="true"></span>
+        <span class="kgp-ub-label">이번 업데이트</span>
+        <span class="kgp-ub-items">{{ changelog_banner.points | join(' · ') }}</span>
+        <a class="kgp-ub-more" href="/seller/changelog">자세히<i class="bi bi-arrow-right-short"></i></a>
+        <button type="button" class="kgp-ub-x" aria-label="닫기" onclick="kgpDismissUpdateBanner()"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <script>
+      (function(){
+        try{
+          var el=document.getElementById('kgpUpdateBanner'); if(!el) return;
+          var ver=el.getAttribute('data-ver')||'';
+          if(localStorage.getItem('kgp_cl_seen')===ver) return;   // 이 버전 이미 봤으면 숨김
+          el.hidden=false;
+        }catch(e){}
+      })();
+      function kgpDismissUpdateBanner(){
+        try{var el=document.getElementById('kgpUpdateBanner');localStorage.setItem('kgp_cl_seen',el.getAttribute('data-ver')||'');el.hidden=true;}catch(e){}
+      }
+      </script>
+      {% endif %}
       {% block content %}{% endblock %}
     </main>
   </div>

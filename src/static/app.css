@@ -644,3 +644,49 @@ body::before {
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
 }
+
+/* v81 STEP7: '이번 업데이트' 콘솔 배너 + 체인지로그 — gogabridj 토큰만(하드코딩 hex 0). 이모지 0. */
+.kgp-update-banner{
+  display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;
+  margin:0 0 1.1rem;padding:.7rem 1rem;
+  background:color-mix(in srgb, var(--teal) 7%, var(--paper));
+  border:1px solid var(--line);border-left:3px solid var(--teal);
+  border-radius:var(--radius);box-shadow:var(--shadow-sm);
+  font-size:.92rem;color:var(--ink);
+}
+.kgp-ub-keystone{width:9px;height:9px;border-radius:50%;background:var(--orange);flex:0 0 auto;
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--orange) 22%, transparent);}
+.kgp-ub-label{font-weight:700;color:var(--gold-ink);letter-spacing:.01em;white-space:nowrap;}
+.kgp-ub-items{color:var(--ink-2);flex:1 1 auto;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.kgp-ub-more{white-space:nowrap;font-weight:600;color:var(--teal);text-decoration:none;display:inline-flex;align-items:center;}
+.kgp-ub-more:hover{color:var(--teal-strong);text-decoration:underline;}
+.kgp-ub-x{border:0;background:transparent;color:var(--text-muted);cursor:pointer;
+  width:32px;height:32px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;}
+.kgp-ub-x:hover{background:color-mix(in srgb, var(--ink) 7%, transparent);color:var(--ink);}
+@media (max-width:600px){ .kgp-ub-items{white-space:normal;} }
+
+/* 체인지로그 페이지 — 배치 카드 + 다리(게이트 아치) 시그니처 */
+.kgp-cl-wrap{max-width:760px;margin:0 auto;}
+.kgp-cl-head{margin:.5rem 0 1.6rem;}
+.kgp-cl-eyebrow{font-size:.8rem;letter-spacing:.14em;text-transform:uppercase;color:var(--gold-ink);font-weight:700;}
+.kgp-cl-title{font-family:var(--font-display);font-weight:700;
+  font-size:clamp(1.7rem,4vw,2.4rem);letter-spacing:-.02em;color:var(--ink);margin:.15rem 0 .3rem;}
+.kgp-cl-sub{color:var(--text-muted);font-size:.96rem;}
+.kgp-cl-entry{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow-sm);padding:1.1rem 1.3rem;margin-bottom:1rem;transition:transform .16s ease, box-shadow .16s ease;}
+.kgp-cl-entry:hover{transform:translateY(-2px);box-shadow:var(--shadow);}
+.kgp-cl-entry.is-latest{border-color:color-mix(in srgb, var(--gold) 55%, var(--line));}
+.kgp-cl-badge{display:inline-flex;align-items:center;gap:.35rem;font-weight:700;font-size:.82rem;
+  color:var(--teal);background:color-mix(in srgb, var(--teal) 10%, transparent);
+  border:1px solid color-mix(in srgb, var(--teal) 30%, transparent);border-radius:999px;padding:.15rem .6rem;}
+.kgp-cl-badge.is-latest{color:var(--orange-strong);background:color-mix(in srgb, var(--orange) 12%, transparent);
+  border-color:color-mix(in srgb, var(--orange) 38%, transparent);}
+.kgp-cl-etitle{font-weight:700;color:var(--ink);margin-left:.5rem;}
+.kgp-cl-date{float:right;color:var(--text-muted);font-size:.82rem;}
+.kgp-cl-lines{list-style:none;margin:.7rem 0 0;padding:0;}
+.kgp-cl-lines li{position:relative;padding:.28rem 0 .28rem 1.4rem;color:var(--ink-2);font-size:.94rem;line-height:1.5;}
+.kgp-cl-lines li::before{content:"";position:absolute;left:.2rem;top:.85rem;width:7px;height:7px;border-radius:50%;background:var(--gold);}
+.kgp-cl-arch{height:26px;margin:.2rem 0 1.4rem;
+  background:radial-gradient(120% 100% at 50% 100%, transparent 61%, color-mix(in srgb, var(--gold) 40%, transparent) 62%, color-mix(in srgb, var(--gold) 40%, transparent) 66%, transparent 67%);}
+@media (prefers-reduced-motion: reduce){ .kgp-cl-entry{transition:none;} }

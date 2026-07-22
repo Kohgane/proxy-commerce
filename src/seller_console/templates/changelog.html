@@ -1,0 +1,27 @@
+{% extends "_base.html" %}
+{% block title %}변경 이력{% endblock %}
+{% block content %}
+<div class="kgp-cl-wrap">
+  <div class="kgp-cl-head">
+    <div class="kgp-cl-eyebrow">CHANGELOG</div>
+    <h1 class="kgp-cl-title">이번엔 이런 걸 손봤어요</h1>
+    <p class="kgp-cl-sub">업데이트마다 무엇이 좋아졌는지 세 줄로 정리했어요. 최신이 위에 있습니다.</p>
+  </div>
+
+  {# 다리 게이트 아치 디바이더(시그니처) #}
+  <div class="kgp-cl-arch" aria-hidden="true"></div>
+
+  {% for e in entries %}
+  <article class="kgp-cl-entry {% if loop.first %}is-latest{% endif %}">
+    <span class="kgp-cl-badge {% if loop.first %}is-latest{% endif %}">
+      {% if loop.first %}<i class="bi bi-stars"></i>{% else %}<i class="bi bi-check-lg"></i>{% endif %}{{ e.version }}
+    </span>
+    <span class="kgp-cl-etitle">{{ e.title }}</span>
+    <span class="kgp-cl-date">{{ e.date }}</span>
+    <ul class="kgp-cl-lines">
+      {% for ln in e.lines %}<li>{{ ln }}</li>{% endfor %}
+    </ul>
+  </article>
+  {% endfor %}
+</div>
+{% endblock %}
