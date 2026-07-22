@@ -26,7 +26,7 @@ def test_source_contract():
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.117"
+    assert MANIFEST["version"] == "1.5.118"
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치")
@@ -37,10 +37,12 @@ def test_twister_axis_naming_node():
     opt_label = re.search(r"var OPT_LABEL = (/.*/i);", EX).group(1)
     qty_re = re.search(r"var QTY_RE = (/.*/i);", EX).group(1)
     bad_opt = re.search(r"function _isBadOptValue\(v\) \{.*?\n  \}", EX, re.S).group(0)  # v79 STEP3: _push가 참조
+    bad_axis = re.search(r"function _isBadOptAxis\(name\) \{.*?\n  \}", EX, re.S).group(0)  # v80 STEP4: _push가 참조
     harness = (
         "var OPT_LABEL=" + opt_label + ";\n"
         "var QTY_RE=" + qty_re + ";\n"                       # v70: 트위스터 값 필터가 참조
         + bad_opt + "\n"                                     # v79 STEP3: 옵션 값 화이트리스트
+        + bad_axis + "\n"                                    # v80 STEP4: 옵션 축 화이트리스트
         "function _looksLikeQty(){return false;}\n"          # v70: 색상/사이즈는 수량 아님
         "function _nonProdRegion(){return false;}\n"
         "function _galleryExcluded(){return false;}\n"

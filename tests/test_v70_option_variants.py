@@ -20,7 +20,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.117"
+    assert MANIFEST["version"] == "1.5.118"
 
 
 def test_source_contract():
@@ -51,6 +51,7 @@ def test_quantity_excluded_color_collected_node():
         "var QTY_RE = " + qty_re + ";",
         _fn("_looksLikeQty"),
         _fn("_isBadOptValue"),
+        _fn("_isBadOptAxis"),
         "function _nonProdRegion(){return false;}",
         "function _galleryExcluded(){return false;}",
         _fn("_domOptions"),
