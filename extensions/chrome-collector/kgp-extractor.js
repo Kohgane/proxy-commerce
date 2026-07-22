@@ -695,6 +695,8 @@
     }
     return false;
   }
+  // v80 STEP3: 라쿠텐 이미지 URL의 디렉토리(파일명 제거) — 현 상품 폴더 스코프 키. 쿼리 제거 후 마지막 / 이후 절삭.
+  function _rakutenFolder(u) { return String(u == null ? "" : u).split("?")[0].split("#")[0].replace(/\/[^\/]*$/, ""); }
   function _rakutenGallery() {
     var out = [], seen = {}, det = [], detSeen = {};
     // (a) 상세 본문 이미지 먼저(별도 버킷) — 갤러리 CDN 스윕에서 이 영역을 제외하기 위해 URL 마킹.
@@ -718,7 +720,14 @@
         var s = _bestImgSrc(im); if (isProductImg(s)) uniqPush(out, seen, hiRes(s));
       }
     } catch (e) {}
-    // (c) 컨테이너로 부족하면 라쿠텐 CDN 이미지 전량(추천/리뷰/상세 영역 제외) → '전량' 보장.
+    // v80 STEP3: 현 상품 폴더 스코프 — 컨테이너(b, 현 상품) 이미지 + og:image(대표)의 **디렉토리**를 유효 폴더셋으로
+    //   삼아, (c) CDN 스윕에서 그 폴더 밖(같은 shop의 타상품 추천 folder)을 제외. di가 상세영역 DOM 스코프로 깨끗한
+    //   것과 동형(폴더 기준). 폴더셋이 비면 스코프 미적용(shop-slug 필터 v79 STEP4가 교차-shop만 커버).
+    var folderSet = {};
+    out.forEach(function (u) { var f = _rakutenFolder(u); if (f) folderSet[f] = 1; });
+    try { var _og = _meta("og:image") || _meta("og:image:url"); if (_og && _RAKUTEN_CDN.test(_og)) { var _of = _rakutenFolder(hiRes(_og)); if (_of) folderSet[_of] = 1; } } catch (e) {}
+    var _hasFolders = false; for (var _fk in folderSet) { _hasFolders = true; break; }
+    // (c) 컨테이너로 부족하면 라쿠텐 CDN 이미지 전량(추천/리뷰/상세 영역 + 타상품 폴더 제외) → '전량' 보장.
     if (out.length < 3) {
       try {
         var all = document.querySelectorAll("img");
@@ -727,6 +736,7 @@
           if (!s2 || !_RAKUTEN_CDN.test(s2)) continue;
           if (_galleryExcluded(im2) || _nonProdRegion(im2) || _inRakutenDetail(im2)) continue;
           if (detSeen[hiRes(s2)]) continue;   // 상세 버킷에 이미 귀속된 것은 갤러리 제외
+          if (_hasFolders && !folderSet[_rakutenFolder(hiRes(s2))]) continue;   // v80 STEP3: 현 상품 폴더 밖(타상품) 제외
           if (isProductImg(s2)) uniqPush(out, seen, hiRes(s2));
         }
       } catch (e) {}
