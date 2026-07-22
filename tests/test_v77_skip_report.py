@@ -20,7 +20,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.114"
+    assert MANIFEST["version"] == "1.5.115"
 
 
 # ── source-contract: 스킵 마킹 + 사유 집계 + 진단 노출 ──
@@ -50,7 +50,7 @@ def _playwright_ok():
 _INJECT = """(a) => {
   const [detect, cs] = a;
   window.chrome = { runtime: { id: 'x', onMessage: { addListener(){} }, sendMessage(){}, getURL: u => u,
-      lastError: null, getManifest: () => ({ version: '1.5.114' }) },
+      lastError: null, getManifest: () => ({ version: '1.5.115' }) },
     storage: { local: { get: (k, cb) => cb && cb({}), set(){}, onChanged: { addListener(){} } },
                sync:  { get: (k, cb) => cb && cb({}), set(){}, onChanged: { addListener(){} } } } };
   (0, eval)(detect); (0, eval)(cs);

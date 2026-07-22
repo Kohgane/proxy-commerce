@@ -65,7 +65,7 @@ def _detect(url, body):
 
 # ── 매니페스트: kgp-detect.js가 content_script.js 앞에 로드(위임 전제) ──
 def test_manifest_loads_detect_before_content_script():
-    assert MANIFEST["version"] == "1.5.114"
+    assert MANIFEST["version"] == "1.5.115"
     bundles = [c.get("js", []) for c in MANIFEST["content_scripts"]]
     target = next((js for js in bundles if "content_script.js" in js), None)
     assert target is not None

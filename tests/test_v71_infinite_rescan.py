@@ -22,7 +22,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.114"
+    assert MANIFEST["version"] == "1.5.115"
 
 
 def test_source_contract():
@@ -36,17 +36,20 @@ def test_source_contract():
     assert "kgpToggleCard(badge.dataset.url, badge, badge._kgpEl || c.el);" in CS
     # 버튼 단일 스펙: !important.
     assert CS.count("!important") >= 20
-    assert "font:700 11px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif !important" in CS
+    # v80 STEP1: 선택 체크박스는 shadow DOM 자체 그림(텍스트 배지 폐기) — 스타일 이중 주입.
+    assert "function _kgpBuildCheckbox(host, selected)" in CS
+    assert "host.attachShadow({ mode: \"open\" })" in CS
+    assert "root.adoptedStyleSheets = [sh]" in CS and 'document.createElement("style")' in CS
 
 
 def test_button_style_has_important_node():
-    # kgpCardBadgeStyle 출력에 크기/형태 !important 포함(사이트 CSS 무력화).
+    # v80 STEP1: kgpCardBadgeStyle = 체크박스 호스트(위치·크기 컨테이너). 크기/위치/커서 !important(사이트 CSS 무력화).
+    #   가시 UI(배경·테·체크)는 shadow DOM CSS로 이동 → 호스트엔 position/width/height/cursor만.
     m = re.search(r"function kgpCardBadgeStyle\(selected\) \{.*?\n\}", CS, re.S)
     assert m
     import shutil as _sh
     if not _sh.which("node"):
         pytest.skip("node 미설치")
-    # v77 STEP1(B): kgpCardBadgeStyle이 KGP_TOUCH(호버 전용 opacity) 참조 → 노드 하네스에 스텁.
     harness = ("var _KGP_RESET=\"all:initial !important;box-sizing:border-box !important;\";var KGP_TOUCH=false;\n"
                + m.group(0) + "\nprocess.stdout.write(kgpCardBadgeStyle(false));\n")
     f = tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8")
@@ -57,7 +60,7 @@ def test_button_style_has_important_node():
         css = r.stdout.strip()
     finally:
         Path(f.name).unlink()
-    for prop in ("padding:", "font:", "border-radius:", "box-sizing:"):
+    for prop in ("position:absolute", "width:22px", "height:22px", "cursor:pointer", "box-sizing:"):
         assert (prop in css), css
     assert css.count("!important") >= 6, css
 

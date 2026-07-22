@@ -39,7 +39,7 @@ _INJECT = """(a) => {
   const [detect, cs] = a;
   window.chrome = {
     runtime: { id: 'x', onMessage: { addListener(){} }, sendMessage(){}, getURL: u => u, lastError: null,
-               getManifest: () => ({ version: '1.5.114' }) },
+               getManifest: () => ({ version: '1.5.115' }) },
     storage: {
       local: { get: (k, cb) => cb && cb({}), set(){}, onChanged: { addListener(){} } },
       sync:  { get: (k, cb) => cb && cb({}), set(){}, onChanged: { addListener(){} } }
@@ -91,7 +91,7 @@ def _run(url, body):
                 badges: document.querySelectorAll('.kgp-card-chk').length,
                 quick: document.querySelectorAll('.kgp-card-quick').length,
                 // v77 STEP1(B): 상시 노출 금지 — 미선택/미수집인데 opacity>0(호버 아닌데 보임) = 정책 위반.
-                persistentBadge: (() => { let n=0; document.querySelectorAll('.kgp-card-chk').forEach((b)=>{ if(!b.textContent.includes('✓') && parseFloat(getComputedStyle(b).opacity||'1')>0) n++; }); return n; })(),
+                persistentBadge: (() => { let n=0; document.querySelectorAll('.kgp-card-chk').forEach((b)=>{ const on=b.shadowRoot && b.shadowRoot.querySelector('.b.on'); if(!on && parseFloat(getComputedStyle(b).opacity||'1')>0) n++; }); return n; })(),
                 persistentQuick: (() => { let n=0; document.querySelectorAll('.kgp-card-quick').forEach((q)=>{ if(q.dataset.collected!=='1' && parseFloat(getComputedStyle(q).opacity||'1')>0) n++; }); return n; })(),
                 maxQuickPerTile: (() => { let mx=0; (typeof _kgpAmazonCards==='function'?_kgpAmazonCards():[]).forEach((c)=>{ const el=c.el||c; const n=el.querySelectorAll?el.querySelectorAll('.kgp-card-quick').length:0; if(n>mx)mx=n; }); return mx; })(),
                 amazonCards: (typeof _kgpAmazonCards === 'function') ? _kgpAmazonCards().length : -1,
