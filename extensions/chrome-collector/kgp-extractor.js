@@ -233,6 +233,14 @@
     if (/^\d{5,}$/.test(v)) return true;                                                                                        // 순수 품번(5자리+)
     return false;
   }
+  // v80 STEP4: 옵션 축(이름) 화이트리스트 — 원산지·브랜드·제조사·품번·모델·JAN 등 **스펙 속성**은 사용자
+  //   선택 옵션이 아니다(공통축). sku diff가 2값 이상이어도(예 原産地: 日本/タイ) 옵션 아님 → 축명으로 봉인.
+  //   색상·사이즈·컬러·color·size 등 진짜 옵션 축은 보존(안전 화이트리스트 밖).
+  function _isBadOptAxis(name) {
+    var n = String(name == null ? "" : name).replace(/\s+/g, "").toLowerCase();
+    if (!n) return false;
+    return /(원산지|원산국|생산지|産地|原産|madein|countryoforigin|^origin$|브랜드|ブランド|^brand$|메이커|メーカー|^maker$|제조사|제조원|제조국|메이드|manufacturer|품번|품목번호|형번|品番|型番|모델명|모델번호|modelnumber|modelname|^jan$|^asin$|^upc$|^ean$|바코드|barcode|보증기간|warranty)/i.test(n);
+  }
   // v78 STEP1: 키 정규화 — 구분자(_·-·공백) 제거 후 매칭. 실기기 테무 sku가 underscore 키(spec_key·spec_value)를
   //   쓰면 speckey/specvalue 패턴에 안 걸려 옵션 0이 되던 근원(skus>0·options=0). 정규화로 봉인.
   function _normKey(k) { return String(k == null ? "" : k).replace(/[_\-\s]/g, ""); }
@@ -250,6 +258,7 @@
     function add(axis, val, img) {
       axis = _optClean(axis); val = _optClean(val);
       if (!axis || !val || /^https?:\/\//i.test(val) || val === "[object Object]") return;   // URL·Object 문자열화 금지
+      if (_isBadOptAxis(axis)) return;   // v80 STEP4: 원산지·브랜드·품번 등 스펙 축 배제(공통축 옵션화 금지)
       if (_isBadOptValue(val)) return;   // v79 STEP3: 화살표·미디어탭·품번 배제(옵션 값 화이트리스트)
       var a = axisMap[axis] || (axisMap[axis] = { order: [], set: {}, images: {} });
       if (!a.set[val]) { a.set[val] = 1; a.order.push(val); }
@@ -857,6 +866,7 @@
   function _domOptions() {
     var out = [], seen = {};
     function _push(name, vals) {
+      if (_isBadOptAxis(name)) return;   // v80 STEP4: 스펙 축(원산지·브랜드·품번…)은 옵션 아님
       var uniq = [], s2 = {};
       // v79 STEP3: 알리식 값에 축명 접두 중복('색상: 1pcs') → 접두 제거(축명과 동일 라벨만).
       var _pre = name ? new RegExp("^" + String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*[:：]\\s*", "i") : null;

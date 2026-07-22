@@ -20,7 +20,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.117"
+    assert MANIFEST["version"] == "1.5.118"
 
 
 def test_source_contract():
@@ -47,6 +47,7 @@ def test_sku_specs_structured_no_object_no_url_node():
         _fn("hiRes"),
         _fn("_optClean"),
         _fn("_isBadOptValue"),
+        _fn("_isBadOptAxis"),
         _fn("_normKey"),        # v79 STEP3: _pickStrField 의존(과거엔 _optClean 과잉캡처로 딸려왔으나 명시화)
         _fn("_pickStrField"),
         _fn("_pickUrlField"),
