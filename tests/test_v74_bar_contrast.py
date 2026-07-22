@@ -21,7 +21,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.114"
+    assert MANIFEST["version"] == "1.5.115"
 
 
 # ── source-contract: 벌크바 색 전부 !important(자립) ──
@@ -46,7 +46,7 @@ _INJECT = """(a) => {
   const [det, cs] = a;
   window.chrome = {
     runtime: { id: 'x', onMessage: { addListener(){} }, sendMessage(){}, getURL: u => u, lastError: null,
-               getManifest: () => ({ version: '1.5.114' }) },
+               getManifest: () => ({ version: '1.5.115' }) },
     storage: { local: { get:(k,cb)=>cb&&cb({}), set(){}, onChanged:{addListener(){}} },
                sync:  { get:(k,cb)=>cb&&cb({}), set(){}, onChanged:{addListener(){}} } }
   };

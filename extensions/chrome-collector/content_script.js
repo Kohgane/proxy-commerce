@@ -1421,30 +1421,60 @@ function kgpFindCards() {
 }
 
 function kgpCardBadgeStyle(selected) {
-  // v71 STEP4 !important + v72 STEP4 all:initial 격리(사이트 상속 오염 원천 차단).
+  // v80 STEP1: 체크박스 호스트 = 위치·크기 컨테이너만(가시 UI는 shadow DOM). 텍스트 배지 폐기 →
+  //   'I빔 커서·무스타일 텍스트'(all:initial이 cursor/box-shadow 등 비-!important 속성 스트립) 근원 제거.
+  //   cursor:pointer도 !important로(과거 비-!important라 all:initial이 I빔으로 덮던 것 봉인).
   return _KGP_RESET + [
-    "position:absolute !important", "top:6px !important", "left:6px !important", "z-index:2147483640 !important",
-    "box-sizing:border-box !important", "width:auto !important", "height:auto !important", "min-height:0 !important", "max-width:none !important",
-    "padding:3px 8px !important", "margin:0 !important", "border-radius:7px !important", "cursor:pointer", "user-select:none",
-    "font:700 11px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif !important",
-    (selected ? "background:#119a8e" : "background:#1a1714") + " !important", "color:#fff !important",
-    "border:1.5px solid " + (selected ? "#0f8c80" : "#c9a24b") + " !important",
-    "box-shadow:0 2px 8px rgba(0,0,0,.35)",
-    // v77 STEP1(B): 선택 토글은 **호버 전용**(미선택·비호버=숨김) — '상시 배지/이중 상시 버튼' 근절. selected는 유지.
-    //   opacity !important + transition !important — all:initial !important 격리가 opacity를 initial(1)로
-    //   덮어써 '호버 없이 상시 노출'되던 근원 봉인(호버 토글도 setProperty important).
+    "position:absolute !important", "top:6px !important", "left:6px !important", "z-index:2147483642 !important",
+    "box-sizing:border-box !important", "display:block !important",
+    "width:22px !important", "height:22px !important", "min-width:22px !important", "min-height:22px !important",
+    "padding:0 !important", "margin:0 !important", "cursor:pointer !important", "user-select:none !important",
+    // v77 STEP1(B): 선택 토글은 호버 전용(미선택·비호버=숨김), selected·터치는 상시.
     "opacity:" + ((KGP_TOUCH || selected) ? "1" : "0") + " !important", "transition:opacity .12s !important",
   ].join(";");
+}
+
+// v80 STEP1: 선택 체크박스를 shadow DOM에 자체 그림(먹 반투명 원+금 체크) — 사이트 CSS·all:initial 취약성에서
+//   완전 격리. 스타일 이중 주입(adoptedStyleSheets + <style> 인라인 폴백, 실패 시 콘솔 경고). 22px·이미지 위
+//   대비 보장(반투명 백킹). 미선택=먹 박스+금 테(빈), 선택=청록 박스+금 체크 — 두 상태 육안 구분.
+function _kgpBuildCheckbox(host, selected) {
+  var root = host._kgpShadow;
+  if (root === undefined) {
+    try { root = host.attachShadow({ mode: "open" }); } catch (e) { root = null; }
+    host._kgpShadow = root;
+    if (root) {
+      var css = ":host{all:initial}"
+        + ".b{box-sizing:border-box;width:22px;height:22px;border-radius:6px;display:flex;align-items:center;"
+        + "justify-content:center;background:rgba(26,23,20,.82);border:1.6px solid #c9a24b;"
+        + "box-shadow:0 2px 8px rgba(0,0,0,.45);cursor:pointer}"
+        + ".b.on{background:#119a8e;border-color:#0f8c80}"
+        + ".c{width:13px;height:13px;display:none}.b.on .c{display:block}svg{display:block;width:13px;height:13px}";
+      var adopted = false;
+      try {
+        if (("adoptedStyleSheets" in root) && typeof CSSStyleSheet === "function") {
+          var sh = new CSSStyleSheet(); sh.replaceSync(css); root.adoptedStyleSheets = [sh]; adopted = true;
+        }
+      } catch (e) { adopted = false; }
+      var st = document.createElement("style"); st.textContent = css; root.appendChild(st);   // 인라인 폴백(항상 주입)
+      if (!adopted) { try { console.warn("[고가수집기] 체크박스 adoptedStyleSheets 미지원 — <style> 인라인 폴백 사용"); } catch (e) {} }
+      var box = document.createElement("div"); box.setAttribute("class", "b");
+      box.innerHTML = '<span class="c"><svg viewBox="0 0 13 13" aria-hidden="true"><path d="M2.5 7 L5.5 10 L10.5 3.5" fill="none" stroke="#f0d68a" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
+      root.appendChild(box);
+      host._kgpBox = box;
+    }
+  }
+  if (host._kgpBox) host._kgpBox.setAttribute("class", "b" + (selected ? " on" : ""));
+  else host.textContent = selected ? "✓" : "○";   // shadow 미지원 구형 폴백(무스타일 텍스트라도 표식)
 }
 
 function kgpSetCardSelected(url, badge, el, selected) {
   if (selected) {
     KGP_SELECTED.add(url);
-    if (badge) { badge.textContent = "✓ 선택"; badge.style.cssText = kgpCardBadgeStyle(true); }
+    if (badge) { badge.style.cssText = kgpCardBadgeStyle(true); _kgpBuildCheckbox(badge, true); badge.setAttribute("aria-checked", "true"); }
     if (el) { el.style.outline = "3px solid #119a8e"; el.style.outlineOffset = "-3px"; el.setAttribute("data-kgp-outline", "1"); }
   } else {
     KGP_SELECTED.delete(url);
-    if (badge) { badge.textContent = "선택"; badge.style.cssText = kgpCardBadgeStyle(false); }   // v77(B): 선택 토글 라벨
+    if (badge) { badge.style.cssText = kgpCardBadgeStyle(false); _kgpBuildCheckbox(badge, false); badge.setAttribute("aria-checked", "false"); }   // v80 STEP1: shadow 체크박스 토글
     if (el) { el.style.outline = ""; el.removeAttribute("data-kgp-outline"); }
   }
 }
@@ -1858,8 +1888,8 @@ function kgpInjectListing() {
         // v71 STEP4: 가상화(재사용 노드) 대응 — 이 카드 요소가 스크롤로 다른 상품에 재사용됐으면 배지 url 갱신.
         existing.dataset.url = c.url;
         existing._kgpEl = c.el;
-        existing.textContent = sel ? "✓ 선택" : "선택";   // v77 STEP1(B): 선택 토글(수집 버튼과 구분 — '이중 [수집]' 오인 방지)
         existing.style.cssText = kgpCardBadgeStyle(sel);
+        _kgpBuildCheckbox(existing, sel);   // v80 STEP1: shadow 체크박스 갱신(텍스트 배지 폐기)
         if (sel) { c.el.style.outline = "3px solid #119a8e"; c.el.style.outlineOffset = "-3px"; c.el.setAttribute("data-kgp-outline", "1"); }
         else { c.el.style.outline = ""; c.el.removeAttribute("data-kgp-outline"); }
         return;
@@ -1869,8 +1899,10 @@ function kgpInjectListing() {
       badge.className = "kgp-card-chk";
       badge.dataset.url = c.url;
       badge._kgpEl = c.el;
-      badge.textContent = sel ? "✓ 선택" : "선택";   // v77 STEP1(B): 선택 토글(수집 버튼과 구분·호버 전용)
+      badge.setAttribute("role", "checkbox");
+      badge.setAttribute("aria-label", "상품 선택");
       badge.style.cssText = kgpCardBadgeStyle(sel);
+      _kgpBuildCheckbox(badge, sel);   // v80 STEP1: shadow 체크박스(먹 원+금 체크)
       if (sel) { c.el.style.outline = "3px solid #119a8e"; c.el.style.outlineOffset = "-3px"; c.el.setAttribute("data-kgp-outline", "1"); }
       badge.addEventListener("click", (e) => {
         e.preventDefault(); e.stopPropagation();
