@@ -141,8 +141,71 @@ def sanitize_images(images: Any, limit: int = 40) -> List[str]:
     return out
 
 
+# ── v81 STEP5: 제목 새니타이저 서버 봉인 ──
+#   클라이언트 _sanitizeTitle(kgp-extractor.js)를 포팅 + 법인 접미(& Co., Inc., Ltd., 株式会社…)까지 제거.
+#   코어 폴백(북마클릿 og-meta)은 클라 새니타이저를 안 타므로, 서버 단일 지점(sanitize_payload)이 봉인한다.
+#   증거: 'PORTER STROLL 2WAY BAG | YOSHIDA & Co.' 접미 재발 0.
+_MARKET_PREFIX_RE = re.compile(r"^【\s*[^】]{0,24}(楽天|市場|store|shop|mall|ストア)[^】]{0,24}】\s*", re.I)
+_SITE_PREFIX_RE = re.compile(r"^(amazon(\.[a-z.]+)?|楽天市場|rakuten|aliexpress|temu|qoo10)\s*[:：|｜\-–·]\s*", re.I)
+# 사이트/브랜드명(클라 _SITE_BRAND_RE와 동일 집합).
+_SITE_BRAND = (
+    r"(amazon(\.[a-z.]+)?|aliexpress|rakuten|楽天市場|楽天|temu|qoo10|mercari|メルカリ|메루카리|"
+    r"ヤフーショッピング|yahoo!?\s*(shopping|쇼핑)?|paypaymall|吉田カバン|요시다카반|요시다|yoshida(kaban)?|"
+    r"iherb|dhgate|tmall|taobao|1688|shopee|ebay)"
+)
+# 법인 지정 접미(브랜드 뒤에 붙어 $ 앵커를 막던 원인 — & Co., Co., Ltd., Inc., 株式会社, 有限会社…).
+_CORP_SUFFIX = r"(?:\s*[&＆]?\s*(?:co\.?(?:,?\s*ltd\.?)?|company|inc\.?|ltd\.?|corp\.?|gmbh|s\.?a\.?|株式会社|有限会社|カバン))*"
+_TITLE_SUFFIX_RE = re.compile(
+    r"\s*[|｜:：\-–·]\s*" + _SITE_BRAND + _CORP_SUFFIX + r"\s*$", re.I,
+)
+
+
+def _brand_from_host(url: str) -> str:
+    try:
+        from urllib.parse import urlparse as _up
+        h = (_up(url).hostname or "").replace("www.", "", 1) if url else ""
+    except Exception:
+        return ""
+    parts = [p for p in h.split(".") if p]
+    if len(parts) < 2:
+        sld = parts[0] if parts else ""
+    else:
+        sld = parts[-2]
+        if sld in ("co", "com") and len(parts) >= 3:
+            sld = parts[-3]
+    return sld.lower() if len(sld) >= 4 else ""
+
+
+def sanitize_title(title: Any, url: Any = "") -> str:
+    """제목에서 마켓/사이트/브랜드(+법인 접미) 접두·접미를 제거. 실패해도 원문 보존(빈 결과 금지)."""
+    s = re.sub(r"\s+", " ", str(title if title is not None else "")).strip()
+    if not s:
+        return ""
+    s = _MARKET_PREFIX_RE.sub("", s)
+    s = _SITE_PREFIX_RE.sub("", s)
+    for _ in range(3):
+        before = s
+        s = _TITLE_SUFFIX_RE.sub("", s).strip()
+        if s == before:
+            break
+    # 제네릭: 구분자 뒤 마지막 세그먼트가 도메인 브랜드명과 (영숫자 기준) 일치하면 제거.
+    brand = _brand_from_host(str(url or ""))
+    if brand:
+        segs = re.split(r"\s*[|｜·]\s*", s)
+        if len(segs) >= 2:
+            last = re.sub(r"[^a-z0-9]", "", segs[-1], flags=re.I).lower()
+            if last and (last == brand or last.startswith(brand) or brand.startswith(last)):
+                segs.pop()
+                s = " | ".join(segs)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s or str(title).strip()   # 전부 지워졌으면(과도 제거) 원문 보존
+
+
 def sanitize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """저장 직전 단일 지점 검증 — 가격 폐기 규칙 + 이미지 필터를 payload에 in-place 적용."""
+    """저장 직전 단일 지점 검증 — 제목 새니타이즈 + 가격 폐기 규칙 + 이미지 필터를 payload에 in-place 적용."""
+    # v81 STEP5: 제목 봉인 — 코어 폴백(북마클릿)도 여기서 브랜드/법인 접미 제거(클라 미경유 경로 커버).
+    if payload.get("title") is not None:
+        payload["title"] = sanitize_title(payload.get("title"), payload.get("url") or payload.get("source_url") or "")
     price, status, warns = sanitize_price(payload.get("price"), payload.get("currency"))
     payload["price"] = price
     payload["price_status"] = status
