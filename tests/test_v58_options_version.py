@@ -79,7 +79,7 @@ def test_button_group_options_extracted():
 def test_bookmarklet_toast_version_stamp():
     v = _views()
     js = v._bookmarklet_js("https://x.com", "T", True)
-    assert "BMV='bm-v72b'" in js
+    assert "BMV='bm-v81'" in js
     assert "K('수집 중… ('+BMV+')',true)" in js       # 즉시 토스트에 bm-vN
     assert "BMV+'+'+rv" in js                          # 채택 시 (bm-vN+run-vM)
     run = v._bookmarklet_run_js()
@@ -94,4 +94,4 @@ def test_extension_toast_has_version():
 def test_bookmarklet_page_delete_all_warning_and_shortcut():
     assert "전부 삭제" in BM
     assert "Ctrl+Shift+O" in BM                        # 북마크 관리자 단축키
-    assert "bm-v72b" in BM                              # 설치 후 확인 토스트 버전 안내
+    assert "bm-v81" in BM                              # 설치 후 확인 토스트 버전 안내

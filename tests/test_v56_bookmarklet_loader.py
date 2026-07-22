@@ -33,7 +33,8 @@ def test_core_toast_first_and_immediate():
 def test_loader_and_fallback():
     js = _bm()
     assert "/seller/bookmarklet/run.js?v=" in js               # run.js 주입 시도
-    assert "sc.onerror" in js and "setTimeout(function(){go(core());},2500)" in js  # 실패/타임아웃 폴백
+    # v81 STEP1: 타임아웃 2.5s→6s + 간이(코어) 폴백은 isCore 인자로 침묵 금지.
+    assert "sc.onerror" in js and "setTimeout(function(){go(core(),true);},6000)" in js
     assert "window.__kgpRun" in js                             # run.js 함수 호출
 
 

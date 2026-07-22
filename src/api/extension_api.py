@@ -756,6 +756,7 @@ def collect_from_extension():
         "translation_provider": tr.get("provider", "none"),
         "tier1_source": payload.get("tier1_source", ""),      # v55: 자가발견 채택 API URL
         "tier1_diag": payload.get("tier1_diag") or {},        # v56 STEP4: Tier1 최종 판정(used·원인) 저장
+        "mode": (str(payload.get("mode") or "").strip().lower() or "full"),  # v81 STEP1: 'core'=북마클릿 간이 폴백(제목·이미지만), 그 외='full'
     }
     _field_status = {}
     try:
