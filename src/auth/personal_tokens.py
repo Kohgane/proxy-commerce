@@ -23,7 +23,29 @@ logger = logging.getLogger(__name__)
 _TOKEN_PREFIX = "kgp_"
 _TOKEN_PREFIX_LEGACY = "tok_"  # Phase 135 이전 발급분 호환
 _DEFAULT_EXPIRY_DAYS = 365
+_IDLE_EXPIRY_DAYS = 90        # v81 STEP2: 90일 미사용 자동 만료(유휴 토큰 위생)
 _VALID_SCOPES = {"collect.write", "catalog.read", "markets.write"}
+
+
+def _parse_dt(s):
+    try:
+        dt = datetime.fromisoformat(str(s or "").replace("Z", "+00:00"))
+    except Exception:
+        return None
+    if dt.tzinfo is None:   # naive 저장분(offset 없는 ISO) → UTC 취급(aware 비교 안전)
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _is_hard_expired(row, now) -> bool:
+    dt = _parse_dt(row.get("expires_at", ""))
+    return bool(dt and now > dt)
+
+
+def _is_idle_expired(row, now) -> bool:
+    """v81 STEP2: 최근 사용(없으면 발급) 시각 + 90일 < 지금이면 유휴 만료."""
+    dt = _parse_dt(row.get("last_used_at") or row.get("created_at") or "")
+    return bool(dt and now > dt + timedelta(days=_IDLE_EXPIRY_DAYS))
 
 # 인증 캐시(TTL 5분) — revoke는 PG에 즉시 커밋되지만, 다른 워커의 캐시는 최대 5분 남을 수 있다.
 _token_cache: dict = {}
@@ -119,6 +141,8 @@ def validate_token(raw_token: str, required_scopes: list = None) -> Optional[dic
                     return None
             except ValueError:
                 pass
+        if _is_idle_expired(row, now):   # v81 STEP2: 90일 미사용 유휴 만료
+            return None
         scopes = list(row.get("scopes", []))
         if not _check_scopes(scopes, required_scopes):
             return None
@@ -165,6 +189,30 @@ def revoke_token(token_hash: str, user_id: str, *, user_ids=None) -> bool:
     return False
 
 
+def token_active(user_id: str, token_hash: str) -> bool:
+    """v81 STEP2: 해시가 활성(비회수·비만료·비유휴)인지 확인 — 북마클릿 토큰 재사용 판정용(신규 남발 방지).
+    PG면 validate로 활성 여부만(부작용=last_used 갱신 허용), 아니면 인메모리 조회."""
+    if not token_hash:
+        return False
+    _tp = _pg_tokens()
+    if _tp is not None:
+        try:
+            return bool(_tp.validate(token_hash, []))
+        except Exception:
+            return False
+    id_set = _identity_set(user_id, None)
+    now = datetime.now(timezone.utc)
+    for row in _in_memory:
+        if row.get("token_hash") != token_hash:
+            continue
+        if str(row.get("user_id", "")) not in id_set:
+            return False
+        if row.get("revoked") or _is_hard_expired(row, now) or _is_idle_expired(row, now):
+            return False
+        return True
+    return False
+
+
 def list_tokens(user_id: str, *, user_ids=None) -> list:
     """사용자 토큰 목록(raw 미포함). PG면 PG, 아니면 인메모리."""
     id_set = _identity_set(user_id, user_ids)
@@ -173,6 +221,7 @@ def list_tokens(user_id: str, *, user_ids=None) -> list:
         return _tp.list_for(id_set)
 
     result = []
+    now = datetime.now(timezone.utc)
     for row in _in_memory:
         if str(row.get("user_id", "")) not in id_set:
             continue
@@ -185,5 +234,6 @@ def list_tokens(user_id: str, *, user_ids=None) -> list:
             "last_used_at": row.get("last_used_at", ""),
             "expires_at": row.get("expires_at", ""),
             "revoked": bool(row.get("revoked")),
+            "idle_expired": _is_idle_expired(row, now),   # v81 STEP2: 90일 미사용 유휴 만료(정직 표기)
         })
     return result

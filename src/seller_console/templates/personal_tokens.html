@@ -108,6 +108,9 @@
             <td>
               {% if tok.revoked %}
               <span class="badge bg-secondary">삭제됨</span>
+              {% elif tok.idle_expired %}
+              {# v81 STEP2: 90일 미사용 유휴 만료(정직 표기) — 재발급 필요. #}
+              <span class="badge" style="background:color-mix(in srgb,var(--warn,#f5821f) 16%,transparent);color:var(--warn,#f5821f)" data-bs-toggle="tooltip" title="90일 이상 사용하지 않아 자동 만료됐어요. 북마클릿 파일을 다시 받으면 새로 발급됩니다."><i class="bi bi-hourglass-bottom"></i> 유휴 만료</span>
               {% else %}
               <span class="badge bg-success">활성</span>
               {% endif %}
