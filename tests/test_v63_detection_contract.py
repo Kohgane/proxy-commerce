@@ -70,10 +70,12 @@ def test_detection_snapshot_node():
     fns = "".join(_extract(f) + "\n" for f in [
         "_kgpCardKey", "_kgpMergeCards", "_kgpIsDetailHref",
         "_kgpIsCategoryHref", "_kgpIsProductHref", "_kgpInNavRegion",   # v74 STEP1: 엄격 자격 헬퍼
+        "_kgpInRecommendWidget",                                        # v81 STEP4: 추천/이력 위젯 블록리스트
         "_kgpInBadRegion", "_kgpBestImg", "_kgpPrice", "_kgpGenericCards", "kgpFindCards",
     ])
     harness = (
         "let _kgpScannedCount = 0;\n"
+        "const _KGP_RECO_HEADING_RE=/(閲覧した商品からのおすすめ|あなたにおすすめ)/;\n"
         "let _kgpExcl={ad:0,region:0,parse:0,url:0,dup:0,reco:0};function _kgpExclReset(){};\n"
         "function _kgpMarkSkip(){};function _kgpClearSkip(){};function _kgpSkipReset(){};var _kgpSkipStats={};\n"
         "function _kgpIsRecoRegion(){return false;}\n"

@@ -21,7 +21,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 def test_manifest_unchanged():
     # STEP5 자체는 추출기 코드 변경 없음(픽스처·하네스 계약만). 이후 STEP(리뷰 등)이 bump하므로 현재 핀 추적.
-    assert MANIFEST["version"] == "1.5.119"
+    assert MANIFEST["version"] == "1.5.120"
 
 
 # ── 하네스가 상세이미지 계약을 지원(회귀 인프라) ──
