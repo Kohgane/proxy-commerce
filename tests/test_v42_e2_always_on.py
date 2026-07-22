@@ -49,7 +49,10 @@ def test_host_allowed_for_named_markets():
     hi = CS.index("function kgpHostAllowed(")
     hj = CS.index("\n}\n", hi) + 2
     fn = CS[hi:hj]
-    script = block + "\nlet KGP_SOURCES=null;\n" + fn + r"""
+    # v81 STEP3: kgpHostAllowed가 KGPSources(단일 소스)에 위임 → kgp-sources.js를 먼저 로드해 실제 경로 검증.
+    from pathlib import Path as _P
+    SRC = _P("extensions/chrome-collector/kgp-sources.js").read_text(encoding="utf-8")
+    script = "global.self=global;\n" + SRC + "\n" + block + "\nlet KGP_SOURCES=null;\n" + fn + r"""
     function chk(host){
       global.location = { hostname: host };
       return kgpHostAllowed();

@@ -1109,23 +1109,27 @@ function _kgpPrice(text) {
 // v10 P0 — 지정 소싱처에서만 노출 (아무 사이트 ✕).
 //   기본셋(ON) + 사용자 지정 도메인(옵션에서 추가/삭제). 비매치 사이트엔 아무것도 안 그림.
 // ---------------------------------------------------------------------------
-const KGP_DEFAULT_SOURCES = [
+// v81 STEP3: 소싱처 레지스트리는 kgp-sources.js(단일 진실원천)에서 파생 — 팝업/콘텐츠스크립트 drift 봉인.
+//   manifest content_scripts가 kgp-sources.js를 content_script.js보다 먼저 로드(KGPSources 전역 보장).
+//   .test(h) 인터페이스 유지(하위 fast-path 호환) — .re 기반 레지스트리를 어댑터로 감싼다.
+const _KGP_LEGACY_SOURCES = [
   { id: "taobao", label: "타오바오", test: (h) => /(^|\.)taobao\.com$/.test(h) },
   { id: "tmall", label: "티몰", test: (h) => /(^|\.)tmall\.com$/.test(h) },
   { id: "1688", label: "1688", test: (h) => /(^|\.)1688\.com$/.test(h) },
   { id: "temu", label: "테무", test: (h) => /(^|\.)temu\.com$/.test(h) },
-  { id: "amazon", label: "아마존", test: (h) => /(^|\.)amazon\.[a-z.]+$/.test(h) },
+  { id: "amazon", label: "아마존", test: (h) => /(^|\.)amazon\.[a-z][a-z.]*$/.test(h) },
   { id: "aliexpress", label: "알리익스프레스", test: (h) => /(^|\.)aliexpress\.(com|us)$/.test(h) },
-  // v15: 대형 크로스보더 마켓 디폴트 확장(도메인 검증된 것만). 니치/브랜드(요시다카반 등)는 유저 추가 전용.
   { id: "iherb", label: "아이허브", test: (h) => /(^|\.)iherb\.com$/.test(h) },
   { id: "dhgate", label: "DHgate", test: (h) => /(^|\.)dhgate\.com$/.test(h) },
   { id: "qoo10", label: "큐텐", test: (h) => /(^|\.)qoo10\.[a-z.]+$/.test(h) },
   { id: "mercari", label: "메루카리", test: (h) => /(^|\.)mercari\.com$/.test(h) },
   { id: "rakuten", label: "라쿠텐(Rakuten Fashion 포함)", test: (h) => /(^|\.)rakuten\.(co\.jp|com)$/.test(h) },
-  // v42 E-2: 오너 지정 어댑터 도메인 상시 노출(야후쇼핑 재팬·요시다카반).
   { id: "yahoo", label: "야후쇼핑(재팬)", test: (h) => /(shopping\.yahoo\.co\.jp|paypaymall\.yahoo\.co\.jp)$/.test(h) },
   { id: "yoshida", label: "요시다카반", test: (h) => /(^|\.)yoshidakaban\.com$/.test(h) },
 ];
+const KGP_DEFAULT_SOURCES = (typeof KGPSources !== "undefined" && KGPSources.SOURCES)
+  ? KGPSources.SOURCES.map((s) => ({ id: s.id, label: s.label, test: (h) => s.re.test(h) }))
+  : _KGP_LEGACY_SOURCES;
 let KGP_SOURCES = null;   // chrome.storage의 사용자 설정 { defaults:{id:bool}, custom:[{host,on}] }
 let KGP_FAB_ENABLED = true;   // v16 P1: 인페이지 수집 버튼(FAB) on/off (popup 토글, 기본 ON)
 
@@ -1144,14 +1148,18 @@ function _kgpHostMatch(host, domain) {
   return host === domain || host.endsWith("." + domain);
 }
 
-// 현재 사이트가 '지정 소싱처'인가? (기본셋 토글 + 커스텀 도메인)
+// 현재 사이트가 '지정 소싱처'인가? — v81 STEP3: kgp-sources.js(단일 소스)에 위임(팝업과 동일 판정).
 function kgpHostAllowed() {
   const host = (location.hostname || "").toLowerCase();
   if (!host) return false;
   const s = KGP_SOURCES || {};
+  if (typeof KGPSources !== "undefined" && KGPSources.allowed) {
+    try { return KGPSources.allowed(host, s); } catch (e) {}
+  }
+  // 폴백(KGPSources 미로드) — 레지스트리 어댑터로 동일 규칙.
   const defs = s.defaults || {};
   for (const src of KGP_DEFAULT_SOURCES) {
-    if (defs[src.id] !== false && src.test(host)) return true;   // 기본 ON(명시적 false만 끔)
+    if (defs[src.id] !== false && src.test(host)) return true;
   }
   for (const c of (s.custom || [])) {
     if (c && c.on !== false && _kgpHostMatch(host, c.host)) return true;

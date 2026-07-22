@@ -15,13 +15,16 @@ from pathlib import Path
 import pytest
 
 CS = Path("extensions/chrome-collector/content_script.js").read_text(encoding="utf-8")
+# v81 STEP3: 소싱처 레지스트리 단일 진실원천은 kgp-sources.js(팝업·콘텐츠스크립트 공유).
+SRC = Path("extensions/chrome-collector/kgp-sources.js").read_text(encoding="utf-8")
 
 
 # ── 레지스트리 파리티(서버 ↔ 확장) ──
 def test_registry_parity_server_matches_extension():
     from src.collectors.sourcing_registry import registry_ids
-    ext_ids = re.findall(r'\{\s*id:\s*"([a-z0-9]+)"', CS.split("const KGP_DEFAULT_SOURCES")[1].split("];")[0])
-    assert ext_ids, "확장 KGP_DEFAULT_SOURCES id 추출 실패"
+    # v81 STEP3: 확장 레지스트리는 kgp-sources.js(SOURCES) 단일 소스에서 추출.
+    ext_ids = re.findall(r'\{\s*id:\s*"([a-z0-9]+)"', SRC.split("var SOURCES")[1].split("];")[0])
+    assert ext_ids, "확장 kgp-sources.js SOURCES id 추출 실패"
     assert registry_ids() == ext_ids, (registry_ids(), ext_ids)   # 순서·집합 일치(드리프트 0)
 
 
@@ -79,11 +82,6 @@ def test_all_registry_sites_allowed_and_deterministic_node():
         assert m, name
         return m.group(1)
 
-    def arr():
-        m = re.search(r"const KGP_DEFAULT_SOURCES = (\[.*?\n\]);", CS, re.S)
-        assert m, "KGP_DEFAULT_SOURCES"
-        return m.group(1)
-
     def fn(name):
         m = re.search(r"function " + name + r"\([^)]*\) \{.*?\n\}", CS, re.S)
         assert m, name
@@ -91,7 +89,10 @@ def test_all_registry_sites_allowed_and_deterministic_node():
 
     hosts_js = ",".join('["%s","%s"]' % (i, h) for i, h in REGISTRY_HOSTS)
     harness = "\n".join([
-        "const KGP_DEFAULT_SOURCES = " + arr() + ";",
+        # v81 STEP3: kgpHostAllowed는 KGPSources(단일 소스)에 위임 → kgp-sources.js를 먼저 로드해 실경로 검증.
+        "global.self = global;",
+        SRC,
+        "const KGP_DEFAULT_SOURCES = KGPSources.SOURCES.map(function(s){return {id:s.id,label:s.label,test:function(h){return s.re.test(h);}};});",
         "const KGP_DEFAULT_SRC_RE = " + const("KGP_DEFAULT_SRC_RE") + ";",
         "const KGP_DETAIL_URL_RE = " + const("KGP_DETAIL_URL_RE") + ";",
         "let KGP_SOURCES = {};",
