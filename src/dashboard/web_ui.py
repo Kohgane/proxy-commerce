@@ -112,6 +112,149 @@ def _render(title: str, body: str, description: str = "고가브릿지 관리 �
     )
 
 
+# v82 STEP5: 주문 관리 화면 전용 스코프 스타일(.kgp-oc). _BASE_HTML(전 화면 공용)은 불변 — D-9 범위통제.
+#   gogabridj 토큰을 스코프 CSS 변수 단일 소스로. 색 파생은 color-mix로(하드코딩 tint hex 금지).
+_ORDERS_STYLE = """
+<style>
+.kgp-oc{--ink:#1A1714;--hanji:#F5EFE3;--paper:#FBF8F1;--gold:#C9A24B;--teal:#119A8E;--orange:#F5821F;
+  --red:#C0392B;--line:#E6DECB;--muted:#8A8275;--ink-soft:#3A352E;--r:16px;
+  --shadow:0 1px 2px rgba(26,23,20,.06),0 8px 30px rgba(26,23,20,.08);
+  --ease-out:cubic-bezier(.23,1,.32,1);--ease-drawer:cubic-bezier(.32,.72,0,1);color:var(--ink)}
+.kgp-oc *{box-sizing:border-box}
+.kgp-oc .oc-h{font-family:"Noto Serif KR",serif;font-weight:700;font-size:1.5rem;letter-spacing:-.02em;margin:4px 0 2px}
+.kgp-oc .oc-subh{color:var(--muted);font-size:.85rem;margin-bottom:18px}
+.kgp-oc .oc-tabs{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:16px}
+.kgp-oc .oc-div{width:1px;height:22px;background:var(--line);margin:0 6px}
+.kgp-oc .oc-tab{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:999px;
+  text-decoration:none;color:var(--ink-soft);font-size:.86rem;font-weight:600;border:1px solid transparent;
+  transition:background .18s var(--ease-out),color .18s var(--ease-out)}
+.kgp-oc .oc-tab:hover{background:var(--hanji)}
+.kgp-oc .oc-tab--active{background:var(--ink);color:var(--hanji)}
+.kgp-oc .oc-tab-count{font-size:.75rem;opacity:.7}
+.kgp-oc .oc-new{background:var(--teal);color:#fff;font-size:.6rem;font-weight:800;letter-spacing:.04em;padding:2px 5px;border-radius:5px}
+.kgp-oc .oc-card{background:var(--paper);border:1px solid var(--line);box-shadow:var(--shadow);border-radius:var(--r);padding:16px 18px;margin-bottom:18px}
+.kgp-oc .oc-filt{display:flex;flex-wrap:wrap;gap:16px;align-items:center}
+.kgp-oc .oc-filt-grp{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.kgp-oc .oc-lbl{font-size:.78rem;color:var(--muted);margin-right:2px}
+.kgp-oc .oc-preset{padding:5px 11px;border-radius:999px;border:1px solid var(--line);background:#fff;
+  color:var(--ink-soft);font-size:.8rem;cursor:pointer;transition:transform .12s var(--ease-out),border-color .18s,color .18s}
+.kgp-oc .oc-preset:active{transform:scale(.97)}
+.kgp-oc .oc-preset--on{border-color:var(--teal);color:var(--teal);background:color-mix(in srgb,var(--teal) 8%,transparent)}
+.kgp-oc .oc-chip{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:999px;border:1px solid var(--line);background:#fff;font-size:.8rem;cursor:pointer}
+.kgp-oc .oc-chip input{accent-color:var(--teal)}
+.kgp-oc .oc-refresh{margin-left:auto;font-size:.76rem;color:var(--muted)}
+.kgp-oc .oc-tablewrap{background:#fff;border:1px solid var(--line);box-shadow:var(--shadow);border-radius:var(--r);overflow-x:auto}
+.kgp-oc table{width:100%;min-width:860px;border-collapse:collapse}
+.kgp-oc thead th{background:var(--hanji);color:var(--ink-soft);font-size:.74rem;font-weight:700;text-align:left;padding:11px 14px;white-space:nowrap}
+.kgp-oc tbody td{padding:12px 14px;border-top:1px solid var(--line);font-size:.86rem;vertical-align:middle}
+.kgp-oc tbody tr{transition:background .15s var(--ease-out)}
+.kgp-oc tbody tr:hover{background:var(--paper)}
+.kgp-oc .oc-sub{color:var(--muted);font-size:.76rem;margin-top:2px}
+.kgp-oc .oc-cust,.kgp-oc .oc-title{font-weight:600}
+.kgp-oc .oc-title{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kgp-oc .oc-price{font-weight:700}
+.kgp-oc .oc-dt{color:var(--ink-soft);white-space:nowrap}
+.kgp-oc .oc-badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:.74rem;font-weight:700;white-space:nowrap}
+.kgp-oc tbody td:first-child{white-space:nowrap}
+.kgp-oc .oc-badge--paid{background:color-mix(in srgb,var(--teal) 14%,transparent);color:var(--teal)}
+.kgp-oc .oc-badge--prep{background:color-mix(in srgb,var(--orange) 16%,transparent);color:color-mix(in srgb,var(--orange),var(--ink) 42%)}
+.kgp-oc .oc-badge--ship{background:color-mix(in srgb,var(--gold) 20%,transparent);color:color-mix(in srgb,var(--gold),var(--ink) 55%)}
+.kgp-oc .oc-badge--done{background:color-mix(in srgb,var(--muted) 16%,transparent);color:var(--ink-soft)}
+.kgp-oc .oc-badge--cancel{background:color-mix(in srgb,var(--red) 12%,transparent);color:var(--red)}
+.kgp-oc .oc-links{white-space:nowrap}
+.kgp-oc .oc-ico{display:inline-flex;width:26px;height:26px;align-items:center;justify-content:center;border-radius:8px;
+  text-decoration:none;color:var(--teal);border:1px solid var(--line);margin-right:4px;transition:transform .12s var(--ease-out),background .15s}
+.kgp-oc .oc-ico:hover{background:var(--hanji)}
+.kgp-oc .oc-ico:active{transform:scale(.94)}
+.kgp-oc .oc-ico--off{color:var(--line);cursor:default}
+.kgp-oc .oc-detail{background:var(--ink);color:var(--hanji);border:0;padding:7px 14px;border-radius:999px;font-size:.8rem;font-weight:600;cursor:pointer;white-space:nowrap;transition:transform .12s var(--ease-out)}
+.kgp-oc td:last-child{white-space:nowrap}
+.kgp-oc .oc-detail:active{transform:scale(.97)}
+.kgp-oc .oc-empty{color:var(--muted);text-align:center;padding:48px 0}
+.kgp-oc-scrim{position:fixed;inset:0;background:rgba(26,23,20,.38);opacity:0;pointer-events:none;transition:opacity .3s var(--ease-out);z-index:9998}
+.kgp-oc-scrim.on{opacity:1;pointer-events:auto}
+.kgp-oc-drawer{position:fixed;top:0;right:0;height:100%;width:min(440px,92vw);background:var(--paper);
+  box-shadow:-12px 0 40px rgba(26,23,20,.22);transform:translateX(100%);transition:transform .42s var(--ease-drawer);
+  z-index:9999;display:flex;flex-direction:column}
+.kgp-oc-drawer.on{transform:translateX(0)}
+.kgp-oc-dhead{padding:18px 20px;border-bottom:1px solid var(--line);position:relative}
+.kgp-oc-dhead .oc-h{font-size:1.2rem}
+.kgp-oc-dbtns{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.kgp-oc-dbtn{display:inline-flex;align-items:center;gap:6px;padding:8px 13px;border-radius:999px;border:1px solid var(--teal);
+  color:var(--teal);background:#fff;text-decoration:none;font-size:.8rem;font-weight:600;transition:transform .12s var(--ease-out),background .15s}
+.kgp-oc-dbtn:hover{background:color-mix(in srgb,var(--teal) 8%,transparent)}
+.kgp-oc-dbtn:active{transform:scale(.97)}
+.kgp-oc-dbtn--off{border-color:var(--line);color:var(--muted);pointer-events:none}
+.kgp-oc-dbody{padding:18px 20px;overflow-y:auto;flex:1}
+.kgp-oc-sec{margin-bottom:20px}
+.kgp-oc-sec h4{font-family:"Noto Serif KR",serif;font-size:.95rem;margin:0 0 8px;color:var(--ink)}
+.kgp-oc-row{display:flex;justify-content:space-between;gap:14px;padding:7px 0;border-bottom:1px dashed var(--line);font-size:.85rem}
+.kgp-oc-row .k{color:var(--muted)}
+.kgp-oc-row .v{color:var(--ink);font-weight:600;text-align:right;word-break:break-all}
+.kgp-oc-x{position:absolute;top:16px;right:16px;background:transparent;border:0;font-size:1.3rem;cursor:pointer;color:var(--ink-soft);line-height:1}
+@media (prefers-reduced-motion:reduce){.kgp-oc-drawer{transition:transform .01ms}.kgp-oc-scrim{transition:opacity .01ms}
+  .kgp-oc *{transition-duration:.01ms!important}}
+@media (max-width:860px){.kgp-oc-drawer{width:100vw}.kgp-oc .oc-title{max-width:150px}}
+</style>
+"""
+
+# 주문 관리 클라이언트 로직(기간/마켓 필터 · 상세 드로어). 라우트·데이터 불변 — 렌더된 행에서만 동작.
+_ORDERS_SCRIPT = """
+<script>
+(function(){
+  var activePreset=null;
+  function esc(s){return String(s).replace(/[&<>\\"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\\"':'&quot;'}[c];});}
+  window.ocFilter=function(){
+    var rows=document.querySelectorAll('.kgp-oc tbody tr[data-order]');
+    var chips=document.querySelectorAll('.kgp-oc .oc-chip input');
+    var on={},any=false;
+    chips.forEach(function(c){ if(c.checked){on[c.value]=1;any=true;} });
+    var now=Date.now();
+    rows.forEach(function(tr){
+      var show=true;
+      if(any){ var m=tr.getAttribute('data-market')||''; if(!on[m]) show=false; }
+      if(show && activePreset){ var d=Date.parse((tr.getAttribute('data-date')||'')+'T00:00:00');
+        if(isNaN(d) || (now-d)>activePreset) show=false; }
+      tr.style.display=show?'':'none';
+    });
+  };
+  window.ocPreset=function(btn,days){
+    var was=btn.classList.contains('oc-preset--on');
+    document.querySelectorAll('.kgp-oc .oc-preset').forEach(function(b){b.classList.remove('oc-preset--on');});
+    if(was){activePreset=null;} else {btn.classList.add('oc-preset--on'); activePreset=days*86400000;}
+    window.ocFilter();
+  };
+  window.ocOpen=function(btn){
+    var tr=btn.closest('tr'); if(!tr) return;
+    var data={}; try{data=JSON.parse(tr.getAttribute('data-order')||'{}');}catch(e){}
+    var body=document.getElementById('ocDbody'), btns=document.getElementById('ocDbtns');
+    var html='';
+    ['주문정보','상품정보','배송정보'].forEach(function(sec){
+      var obj=data[sec]||{}, rowsp='';
+      Object.keys(obj).forEach(function(k){ var v=obj[k]; if(v===''||v==null) return;
+        rowsp+='<div class="kgp-oc-row"><span class="k">'+esc(k)+'</span><span class="v">'+esc(String(v))+'</span></div>'; });
+      if(rowsp) html+='<div class="kgp-oc-sec"><h4>'+esc(sec)+'</h4>'+rowsp+'</div>';
+    });
+    body.innerHTML=html||'<div class="oc-empty">표시할 정보가 없어요.</div>';
+    var L=data.links||{};
+    var defs=[['수집처',L['수집처'],'◈'],['판매마켓',L['판매마켓'],'▤'],['상세페이지',L['상세페이지'],'↗']];
+    btns.innerHTML=defs.map(function(d){
+      if(d[1]) return '<a class="kgp-oc-dbtn" href="'+esc(d[1])+'" target="_blank" rel="noopener">'+d[2]+' '+esc(d[0])+'</a>';
+      return '<span class="kgp-oc-dbtn kgp-oc-dbtn--off">'+d[2]+' '+esc(d[0])+'</span>';
+    }).join('');
+    document.getElementById('ocScrim').classList.add('on');
+    document.getElementById('ocDrawer').classList.add('on');
+  };
+  window.ocClose=function(){
+    document.getElementById('ocDrawer').classList.remove('on');
+    document.getElementById('ocScrim').classList.remove('on');
+  };
+  document.addEventListener('keydown',function(e){ if(e.key==='Escape') window.ocClose(); });
+})();
+</script>
+"""
+
+
 # ---------------------------------------------------------------------------
 # 내부 데이터 로더
 # ---------------------------------------------------------------------------
@@ -423,54 +566,184 @@ def orders():
     if disabled:
         return disabled
 
-    status_filter = request.args.get("status", "").lower()
+    # v82 STEP5: 주문 관리 화면 리모델(표면 계층만 — 라우트·데이터 구조·JSON 응답 불변).
+    #   상태 탭바 + 필터 카드(기간/마켓/갱신시각) + 리모델 테이블(링크 아이콘·상세 버튼) + 상세 드로어.
+    #   gogabridj 토큰(스코프 CSS 변수)·Noto Serif KR 헤드라인·상태뱃지 공통·drawer 우측 슬라이드.
+    import html as _html
+    import json as _json
+    from collections import Counter
+    from markupsafe import Markup
 
+    status_filter = request.args.get("status", "").lower()
     all_orders = _load_orders()
-    if status_filter:
-        all_orders = [o for o in all_orders if str(o.get("status", "")).lower() == status_filter]
+    view_orders = [
+        o for o in all_orders
+        if not status_filter or str(o.get("status", "")).lower() == status_filter
+    ]
 
     if request.args.get("format") == "json" or request.accept_mimetypes.best == "application/json":
-        return jsonify({"count": len(all_orders), "orders": all_orders})
+        return jsonify({"count": len(view_orders), "orders": view_orders})
+
+    counts = Counter(str(o.get("status", "")).lower() for o in all_orders)
+
+    def _fmt_price(v):
+        try:
+            return "₩{:,}".format(int(float(v)))
+        except (TypeError, ValueError):
+            v = "" if v is None else str(v)
+            return _html.escape(v) if v else "—"
+
+    def _fmt_dt(v):
+        s = str(v or "")
+        try:
+            d = datetime.datetime.fromisoformat(s.replace("Z", "+00:00"))
+            return d.strftime("%m-%d %H:%M")
+        except Exception:
+            return (s[:16].replace("T", " ")) or "—"
+
+    _STATUS_KO = {
+        "paid": "결제완료", "pending": "배송준비중", "processing": "배송준비중",
+        "in_progress": "배송준비중", "shipped": "배송중", "completed": "배송완료",
+        "cancelled": "취소", "canceled": "취소", "returned": "반품",
+        "exchanged": "교환", "refunded": "환불",
+    }
+
+    def _status_ko(status):
+        return _STATUS_KO.get(str(status).lower(), str(status) or "—")
+
+    def _order_chip(status):
+        s = str(status).lower()
+        label = _status_ko(status)
+        if s == "paid":
+            tone = "paid"
+        elif s in ("pending", "processing", "in_progress"):
+            tone = "prep"
+        elif s == "shipped":
+            tone = "ship"
+        elif s == "completed":
+            tone = "done"
+        else:
+            tone = "cancel"
+        return '<span class="oc-badge oc-badge--%s">%s</span>' % (tone, _html.escape(str(label)))
+
+    # 상태 탭(진행군 + 취소·반품·교환군 분리). ?status= 기존 라우트 파라미터 재사용.
+    def _tab(val, lbl, is_new=False):
+        active = " oc-tab--active" if (status_filter == val or (not val and not status_filter)) else ""
+        n = counts.get(val, 0)
+        cnt = ' <span class="oc-tab-count">%d</span>' % n if val and n else ""
+        newb = ' <span class="oc-new">NEW</span>' if (is_new and n) else ""
+        href = ("?status=%s" % val) if val else "?"
+        return '<a class="oc-tab%s" href="%s">%s%s%s</a>' % (active, href, _html.escape(lbl), cnt, newb)
+
+    flow = [("", "전체"), ("paid", "결제완료"), ("pending", "배송준비중"),
+            ("shipped", "배송중"), ("completed", "배송완료")]
+    post = [("cancelled", "취소"), ("returned", "반품"), ("exchanged", "교환")]
+    tabs_html = "".join(_tab(v, l, is_new=(v == "paid")) for v, l in flow)
+    post_html = "".join(_tab(v, l) for v, l in post)
+
+    markets = sorted({str(o.get("market") or o.get("marketplace") or "").strip()
+                      for o in all_orders if (o.get("market") or o.get("marketplace"))})
+    chips_html = "".join(
+        '<label class="oc-chip"><input type="checkbox" checked value="%s" onchange="ocFilter()"> %s</label>'
+        % (_html.escape(m), _html.escape(m)) for m in markets)
+
+    def _lnk(url, label, glyph):
+        if not url:
+            return '<span class="oc-ico oc-ico--off" title="%s 없음">%s</span>' % (_html.escape(label), glyph)
+        return ('<a class="oc-ico" href="%s" target="_blank" rel="noopener" title="%s">%s</a>'
+                % (_html.escape(url), _html.escape(label), glyph))
 
     rows = ""
-    for o in all_orders[:200]:
-        oid = o.get("order_id", o.get("order_number", ""))
-        customer = o.get("customer_name", "")
-        sku = o.get("sku", "")
-        price = o.get("sell_price_krw", "")
+    for o in view_orders[:200]:
+        oid = o.get("order_id", o.get("order_number", "")) or ""
+        onum = o.get("order_number", oid) or oid
+        customer = o.get("customer_name", "") or "—"
+        sku = o.get("sku", "") or ""
+        title = o.get("title_ko") or o.get("title_original") or sku or "—"
+        option = o.get("option") or o.get("sku_option") or ""
+        market = str(o.get("market") or o.get("marketplace") or "—")
+        qty = o.get("quantity", o.get("qty", 1)) or 1
         status = o.get("status", "")
-        margin = o.get("margin_pct", "")
-        order_date = str(o.get("order_date", ""))[:10]
+        order_dt = str(o.get("order_date", "")) or ""
+        src_url = o.get("source_url") or o.get("source_link") or ""
+        mkt_url = o.get("market_url") or o.get("listing_url") or ""
+        det_url = o.get("detail_url") or o.get("product_url") or ""
+        drawer = {
+            "주문정보": {
+                "주문번호": str(onum), "주문ID": str(oid), "주문시간": _fmt_dt(order_dt),
+                "상태": _status_ko(status), "마켓": market, "주문자": str(customer),
+                "개인통관고유부호(PCC)": o.get("pcc") or o.get("personal_customs_code") or "",
+            },
+            "상품정보": {
+                "상품명": str(title), "옵션": str(option), "SKU": str(sku), "수량": str(qty),
+                "판매가": _fmt_price(o.get("sell_price_krw", "")),
+                "원가": _fmt_price(o.get("buy_price", o.get("price_original", ""))),
+                "마진": ("%s%%" % o.get("margin_pct")) if o.get("margin_pct") not in (None, "") else "",
+            },
+            "배송정보": {
+                "수취인": str(customer), "국가": o.get("country") or "",
+                "송장번호": o.get("tracking_no") or o.get("tracking") or "",
+                "배송상태": _status_ko(status),
+            },
+            "links": {"수집처": src_url, "판매마켓": mkt_url, "상세페이지": det_url},
+        }
+        dj = _html.escape(_json.dumps(drawer, ensure_ascii=False), quote=True)
+        links_cell = _lnk(src_url, "수집처", "◈") + _lnk(mkt_url, "판매마켓", "▤") + _lnk(det_url, "상세페이지", "↗")
         rows += (
-            f"<tr><td>{oid}</td><td>{customer}</td><td>{sku}</td>"
-            f"<td>₩{price:,}" if isinstance(price, (int, float)) else f"<td>{price}</td>"
+            '<tr data-market="%s" data-date="%s" data-order="%s">' % (
+                _html.escape(market), _html.escape(order_dt[:10]), dj)
+            + '<td>%s</td>' % _order_chip(status)
+            + '<td class="oc-dt">%s</td>' % _html.escape(_fmt_dt(order_dt))
+            + '<td>%s</td>' % _html.escape(market)
+            + '<td><div class="oc-cust">%s</div><div class="oc-sub">%s</div></td>' % (
+                _html.escape(str(customer)), _html.escape(str(onum)))
+            + '<td><div class="oc-title">%s</div><div class="oc-sub">%s</div></td>' % (
+                _html.escape(str(title)), _html.escape(str(option)))
+            + '<td><div>×%s</div><div class="oc-price">%s</div></td>' % (
+                _html.escape(str(qty)), _fmt_price(o.get("sell_price_krw", "")))
+            + '<td class="oc-links">%s</td>' % links_cell
+            + '<td><button type="button" class="oc-detail" onclick="ocOpen(this)">상세</button></td>'
+            + '</tr>'
         )
-        rows += f"<td>{_status_badge(status)}</td><td>{margin}%</td><td>{order_date}</td></tr>"
     if not rows:
-        rows = "<tr><td colspan='7' class='empty'>주문이 없습니다.</td></tr>"
+        rows = '<tr><td colspan="8" class="oc-empty">해당 조건의 주문이 없어요. 필터를 바꿔보세요.</td></tr>'
 
-    body = f"""
-<div class="section-title">주문 현황</div>
-<div class="filter-bar">
-  <span>상태 필터:</span>
-  <select onchange="location.search='?status='+this.value">
-    <option value="">전체</option>
-    <option value="pending" {'selected' if status_filter=='pending' else ''}>대기</option>
-    <option value="paid" {'selected' if status_filter=='paid' else ''}>결제완료</option>
-    <option value="shipped" {'selected' if status_filter=='shipped' else ''}>배송중</option>
-    <option value="completed" {'selected' if status_filter=='completed' else ''}>완료</option>
-    <option value="cancelled" {'selected' if status_filter=='cancelled' else ''}>취소</option>
-  </select>
-  <span style="color:#888;font-size:0.85rem;">총 {len(all_orders)}개</span>
-</div>
-<table>
-  <thead>
-    <tr><th>주문번호</th><th>고객</th><th>SKU</th><th>판매가(KRW)</th><th>상태</th><th>마진</th><th>주문일</th></tr>
-  </thead>
-  <tbody>{rows}</tbody>
-</table>
-"""
-    return _render("주문 관리", body)
+    now_hm = datetime.datetime.now().strftime("%H:%M:%S")
+    body = (
+        _ORDERS_STYLE
+        + '<div class="kgp-oc">'
+        + '<div class="oc-h">주문 관리</div>'
+        + '<div class="oc-subh">결제부터 배송까지, 한 화면에서 봅니다.</div>'
+        + '<div class="oc-tabs">' + tabs_html + '<span class="oc-div"></span>' + post_html + '</div>'
+        + '<div class="oc-card"><div class="oc-filt">'
+        + '<div class="oc-filt-grp"><span class="oc-lbl">기간</span>'
+        + '<button type="button" class="oc-preset" onclick="ocPreset(this,1)">오늘</button>'
+        + '<button type="button" class="oc-preset" onclick="ocPreset(this,3)">3일</button>'
+        + '<button type="button" class="oc-preset" onclick="ocPreset(this,7)">1주</button>'
+        + '<button type="button" class="oc-preset" onclick="ocPreset(this,14)">2주</button>'
+        + '<button type="button" class="oc-preset" onclick="ocPreset(this,30)">1개월</button>'
+        + '</div>'
+        + (('<div class="oc-filt-grp"><span class="oc-lbl">마켓</span>' + chips_html + '</div>') if chips_html else '')
+        + '<span class="oc-refresh">갱신 ' + now_hm + '</span>'
+        + '</div></div>'
+        + '<div class="oc-tablewrap"><table><thead><tr>'
+        + '<th>상태</th><th>주문시간</th><th>마켓</th><th>주문자 / 번호</th>'
+        + '<th>상품명 / 옵션</th><th>수량 / 금액</th><th>링크</th><th></th>'
+        + '</tr></thead><tbody>' + rows + '</tbody></table></div>'
+        + '<div class="oc-subh" style="margin-top:12px">표시 ' + str(len(view_orders[:200]))
+        + '건 · 전체 ' + str(len(all_orders)) + '건</div>'
+        + '</div>'
+        + '<div class="kgp-oc"><div id="ocScrim" class="kgp-oc-scrim" onclick="ocClose()"></div>'
+        + '<aside id="ocDrawer" class="kgp-oc-drawer" role="dialog" aria-modal="true" aria-label="주문 상세">'
+        + '<button class="kgp-oc-x" onclick="ocClose()" aria-label="닫기">×</button>'
+        + '<div class="kgp-oc-dhead"><div class="oc-h">주문 상세</div><div id="ocDbtns" class="kgp-oc-dbtns"></div></div>'
+        + '<div id="ocDbody" class="kgp-oc-dbody"></div>'
+        + '</aside></div>'
+        + _ORDERS_SCRIPT
+    )
+    # v82 STEP5: 동적 값은 전부 _html.escape 완료 → 이 화면 body만 안전 표시(_BASE_HTML의 {{body}} 오토이스케이프
+    #   회피). _render(전 화면 공용)은 불변이라 타 화면 이스케이프 정책·보안 자세는 그대로.
+    return _render("주문 관리", Markup(body))
 
 
 @web_ui_bp.get("/fx")
