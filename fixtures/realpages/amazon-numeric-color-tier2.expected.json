@@ -1,0 +1,25 @@
+{
+  "note": "합성 구조 재현 — 실제 아마존 캡처 아님(정직). v83 STEP3 재현 ①/②(tier2 트위스터 DOM 경로): 색상 스와치 alt가 '1'·'2'(순수 숫자)로 들어오는 상태. 계약: 색상 축에 숫자 단독값 0(축 자체 소멸) · 사이즈 축은 보존 · 갤러리/상세에서 _AC_US100_·__CR..SX200__ 저해상 토큰 부재 · 제목 카테고리 꼬리(' : Home & Kitchen') 절단 · rating 채움.",
+  "url": "https://www.amazon.com/dp/B0CF88RN17",
+  "title_contains": "Foldable Storage Box",
+  "title_excludes": ["Home & Kitchen", "Amazon.com", "amazon.com"],
+  "price": "24.99",
+  "currency": "USD",
+  "currency_source": "domain+symbol",
+  "options": {
+    "사이즈": ["Large", "Medium"]
+  },
+  "no_option_names": ["색상"],
+  "option_values_exclude": ["1", "2"],
+  "images_min": 5,
+  "images_max": 5,
+  "images_exclude_substr": ["_AC_US100_", "_US100_"],
+  "detail_images_min": 3,
+  "detail_images_exclude_substr": ["_CR0,0", "_SX200", "_PT0_"],
+  "desc_text_contains": ["· 접이식 수납상자 2개 세트, 뚜껑 포함"],
+  "desc_source": "adapter",
+  "reviews_min": 3,
+  "rating": "4.4",
+  "rating_no_dummy": true,
+  "review_count_gte_reviews": true
+}

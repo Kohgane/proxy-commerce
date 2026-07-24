@@ -1361,7 +1361,9 @@ def _quick_collect(url: str, source: str = "bookmarklet") -> dict:
     # v55 STEP2: 서버 단일 sanity — 북마클릿/공유 경로도 비상식 가격 폐기(9 저장 금지) + 이미지 필터.
     try:
         from src.collectors.collect_sanitize import sanitize_payload
-        _s = {"price": draft.get("price_original") or draft.get("price") or "", "currency": draft.get("currency") or "",
+        # v83 STEP1: url을 함께 넘겨 **도메인-통화 정합성**까지 이 경로에서 검증한다(코어 폴백이 로케일로
+        #   통화를 오판해도 라쿠텐 상품이 KRW로 저장되지 않게 — 서버 단일 지점).
+        _s = {"url": url, "price": draft.get("price_original") or draft.get("price") or "", "currency": draft.get("currency") or "",
               "images": images, "image": draft.get("image", "")}
         sanitize_payload(_s)
         draft["price"] = _s.get("price", ""); draft["price_original"] = _s.get("price", "")

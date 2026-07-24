@@ -51,6 +51,52 @@ _NON_PRODUCT_IMG = re.compile(
 )
 
 
+# ── v83 STEP1: 도메인-통화 정합성(서버 세이프티) ──
+#   클라이언트 통화 사다리(kgp-extractor._domainCurrency)의 서버 미러. 단일 통화 도메인만 등재(추측 금지).
+#   라쿠텐 상품이 KRW로 들어오면(구글 번역 로케일 오판·구버전 확장) 가격을 **폐기**하고 사유를 남긴다 —
+#   1/10 가격 오등록은 KRW<100 가드로 못 잡는다(7,480은 상식 범위라 통과해 버린다).
+_DOMAIN_CURRENCY = [
+    (re.compile(r"(^|\.)rakuten\.(co\.jp|com)$", re.I), "JPY"),
+    (re.compile(r"(^|\.)yoshidakaban\.com$", re.I), "JPY"),
+    (re.compile(r"yahoo\.co\.jp$", re.I), "JPY"),
+    (re.compile(r"(^|\.)amazon\.co\.jp$", re.I), "JPY"),
+    (re.compile(r"(^|\.)amazon\.co\.uk$", re.I), "GBP"),
+    (re.compile(r"(^|\.)amazon\.(de|fr|it|es|nl|be|se|pl)$", re.I), "EUR"),
+    (re.compile(r"(^|\.)amazon\.com$", re.I), "USD"),
+    (re.compile(r"(^|\.)amazon\.ca$", re.I), "CAD"),
+    (re.compile(r"(^|\.)amazon\.com\.au$", re.I), "AUD"),
+    (re.compile(r"(^|\.)(taobao|tmall|1688)\.com$", re.I), "CNY"),
+]
+
+
+def domain_currency(url: Any) -> str:
+    """URL 도메인이 **단일 통화**로 확정되는 소싱처면 그 통화, 아니면 ''(미확정 — 판정 위임)."""
+    try:
+        p = urlparse(str(url or ""))
+        host = (p.hostname or "").lower()
+        path = (p.path or "").lower()
+    except Exception:
+        return ""
+    if not host:
+        return ""
+    for rx, cur in _DOMAIN_CURRENCY:
+        if rx.search(host):
+            return cur
+    # 테무는 다국가 단일 도메인 — 국가 경로(/kr)가 명시된 경우만 확정.
+    if re.search(r"(^|\.)temu\.com$", host, re.I):
+        return "KRW" if re.match(r"^/kr(/|$)", path) else ""
+    return ""
+
+
+def check_currency_domain(url: Any, currency: Any) -> str:
+    """도메인 기준 통화와 어긋나면 사람이 읽는 사유를, 정합/미확정이면 ''를 반환."""
+    dom = domain_currency(url)
+    cur = str(currency or "").strip().upper()
+    if not dom or not cur or dom == cur:
+        return ""
+    return f"{dom} 표기 사이트인데 {cur}로 들어왔어요 — 통화 불일치로 가격을 보류했어요"
+
+
 def _to_float(v: Any) -> float:
     try:
         return float(str(v).replace(",", "").strip())
@@ -160,6 +206,18 @@ _TITLE_SUFFIX_RE = re.compile(
 )
 
 
+# v83 STEP3: 아마존 카테고리 사전(클라 _AMZ_CAT_TAIL_RE와 동일 집합) — 제목 꼬리 ' : Home & Kitchen' 절단용.
+_AMZ_CATEGORIES = (
+    r"Home\s*&\s*Kitchen|Kitchen\s*&\s*Dining|Electronics|Beauty\s*&\s*Personal\s*Care|"
+    r"Health\s*&\s*Household|Clothing,?\s*Shoes\s*&\s*Jewelry|Sports\s*&\s*Outdoors|Toys\s*&\s*Games|"
+    r"Tools\s*&\s*Home\s*Improvement|Office\s*Products|Pet\s*Supplies|Grocery\s*&\s*Gourmet\s*Food|Baby|"
+    r"Automotive|Industrial\s*&\s*Scientific|Musical\s*Instruments|Video\s*Games|Books|Garden\s*&\s*Outdoor|"
+    r"Patio,?\s*Lawn\s*&\s*Garden|Cell\s*Phones\s*&\s*Accessories|Computers\s*&\s*Accessories|"
+    r"Arts,?\s*Crafts\s*&\s*Sewing|Appliances|Everything\s*Else"
+)
+_AMZ_CATEGORY_TAIL_RE = re.compile(r"\s*[:：]\s*(" + _AMZ_CATEGORIES + r")\s*$", re.I)
+
+
 def _brand_from_host(url: str) -> str:
     try:
         from urllib.parse import urlparse as _up
@@ -177,10 +235,16 @@ def _brand_from_host(url: str) -> str:
 
 
 def sanitize_title(title: Any, url: Any = "") -> str:
-    """제목에서 마켓/사이트/브랜드(+법인 접미) 접두·접미를 제거. 실패해도 원문 보존(빈 결과 금지)."""
+    """제목에서 마켓/사이트/브랜드(+법인 접미)·카테고리 꼬리를 제거. 실패해도 원문 보존(빈 결과 금지)."""
     s = re.sub(r"\s+", " ", str(title if title is not None else "")).strip()
     if not s:
         return ""
+    # v83 STEP3: 아마존 카테고리 꼬리(' : Home & Kitchen') 절단 — 사전에 있는 카테고리명일 때만(임의 ':' 절단 금지).
+    for _ in range(2):
+        before = s
+        s = _AMZ_CATEGORY_TAIL_RE.sub("", s).strip()
+        if s == before:
+            break
     s = _MARKET_PREFIX_RE.sub("", s)
     s = _SITE_PREFIX_RE.sub("", s)
     for _ in range(3):
@@ -207,6 +271,11 @@ def sanitize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if payload.get("title") is not None:
         payload["title"] = sanitize_title(payload.get("title"), payload.get("url") or payload.get("source_url") or "")
     price, status, warns = sanitize_price(payload.get("price"), payload.get("currency"))
+    # v83 STEP1: 도메인-통화 정합성 — 어긋나면 값 폐기 + 사유(정직). KRW<100 가드와 병렬(서로 다른 실패 유형).
+    _cur_reason = check_currency_domain(payload.get("url") or payload.get("source_url") or "", payload.get("currency"))
+    if _cur_reason:
+        price, status = "", "needs_check"
+        warns = list(warns) + [_cur_reason]
     payload["price"] = price
     payload["price_status"] = status
     if warns:

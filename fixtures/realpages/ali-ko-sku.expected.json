@@ -1,0 +1,20 @@
+{
+  "note": "합성 구조 재현 — 실제 알리 캡처 아님(정직). v83 STEP2: ko.aliexpress.com(국가 서브도메인)에서 sku-item DOM 어댑터로 옵션·sku 소생 + desc에서 판매자/스토어 블록 제외. 계약: options>=1(색상)·skus>=1·desc에 'Store' 단독 블록 부재.",
+  "url": "https://ko.aliexpress.com/item/1005006620123.html",
+  "title_contains": "미니 블렌더",
+  "title_excludes": ["AliExpress", "aliexpress"],
+  "price": "9200",
+  "currency": "KRW",
+  "currency_source": "symbol",
+  "options": {
+    "색상": ["화이트", "그린", "핑크", "블랙", "블루", "옐로우", "퍼플", "민트"]
+  },
+  "options_min": 1,
+  "skus_min": 1,
+  "images_min": 4,
+  "images_max": 4,
+  "images_exclude_substr": ["c-white.jpg", "c-green.jpg", "c-pink.jpg"],
+  "description_contains": "방수",
+  "desc_excludes": ["판매자", "Store", "피드백"],
+  "detail_images_min": 2
+}

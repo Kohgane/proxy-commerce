@@ -21,3 +21,8 @@ data/push_subscriptions.jsonl
 data/omni_sync_log.jsonl
 # Phase 149: 런타임 캐시
 data/analytics_cache.jsonl
+
+# 로컬 하네스용 node 의존성(jsdom) — 커밋 대상 아님(CI 게이트는 Playwright).
+node_modules/
+package.json
+package-lock.json

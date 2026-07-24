@@ -22,9 +22,11 @@
     var M = { "$": "USD", "＄": "USD", "€": "EUR", "£": "GBP", "¥": "JPY", "￥": "JPY", "₩": "KRW", "￦": "KRW" };
     return M[s] || "";
   }
+  // v83 STEP1: 통화 표기 사전 — 일본어 円(라쿠텐·요시다 '7,480円')이 빠져 있어 기호 단계가 통화를 못 읽고
+  //   로케일 사다리로 떨어지던 근원(tsumugi 7,480円 → KRW 오판)의 한 갈래. 円/圓/¥ 추가.
   var CODE = { USD: "USD", EUR: "EUR", GBP: "GBP", JPY: "JPY", KRW: "KRW", CNY: "CNY",
-               "원": "KRW", "엔": "JPY", "위안": "CNY", "元": "CNY" };
-  var PRICE_RE = /([\$＄€£¥￥₩￦])\s*([\d,]+(?:\.\d{1,2})?)|([\d,]+(?:\.\d{1,2})?)\s*(USD|EUR|GBP|JPY|KRW|CNY|원|엔|위안|元)/i;
+               "원": "KRW", "엔": "JPY", "위안": "CNY", "元": "CNY", "円": "JPY", "圓": "JPY" };
+  var PRICE_RE = /([\$＄€£¥￥₩￦])\s*([\d,]+(?:\.\d{1,2})?)|([\d,]+(?:\.\d{1,2})?)\s*(USD|EUR|GBP|JPY|KRW|CNY|원|엔|위안|元|円|圓)/i;
   function parsePriceStr(raw) {
     var m = String(raw == null ? "" : raw).match(PRICE_RE);
     if (!m) return null;
@@ -53,12 +55,31 @@
       // v82 STEP2: 토큰 문자군 확장 — S[XYLS]만으론 _AC_US100_·_AC_UL320_·_SR38,50_(갤러리 저해상 근원)이
       //   안 걸려 원본 승격 실패. [SU][XYLSR]+US/UL/SR 추가로 아마존 사이즈/크롭 토큰 전군을 원본화.
       u = u.replace(/\._(AC_)?[SU][XYLSR]\d+_/gi, "").replace(/\._(SX|SY|SS|SL|SR|UX|UY|UL|US|CR)\d+(,\d+)*_/gi, "");
+      // v83 STEP3: 복합 토큰 블록 통째 제거 — A+ 상세 이미지의 `.__CR0,0,200,225_PT0_SX200__.jpg`(200px 저해상)
+      //   처럼 여러 토큰이 이중 언더스코어로 묶인 형태는 위 단일 토큰 치환으로 안 걸린다. 대문자 토큰 블록만
+      //   (Amazon 수식자 문법) 잘라 원본으로 승격. 소문자 파일명은 건드리지 않는다(타 사이트 오작동 방지).
+      u = u.replace(/\.(_{1,2}[A-Z0-9][A-Z0-9,_]*_{1,2})\.(jpg|jpeg|png|gif|webp)(?=$|\?)/g, ".$2");
       u = u.replace(/(\?|&)(imageView2?|thumb|w|width|h|height|size|quality|_ex)=[^&]*/gi, "");   // v76 STEP3: 라쿠텐 _ex=WxH(썸네일) 제거 → 원본
       // v79 STEP4: 알리 썸네일 변형(.jpg_80x80xz.jpg·.jpg_640x640q90.jpg) → 원본(.jpg)으로 정규화 → 변형 dedupe.
       u = u.replace(/\.(jpg|jpeg|png|webp|gif)_\d+x\d+[a-z0-9]*\.(jpg|jpeg|png|webp|gif)$/i, ".$1");
       u = u.replace(/[?&]$/, "").replace(/\.{2,}(jpg|jpeg|png|webp|gif)/i, ".$1");
     } catch (e) {}
     return u;
+  }
+
+  // v83 STEP3: 승격 실패 저해상 판정 — hiRes를 거치고도 크기/크롭 토큰이 남은 URL은 **원본이 아니다**.
+  //   실기기 증거: 갤러리 `_AC_US100_`(100px 썸네일), A+ 상세 `__CR0,0,200,225_PT0_SX200__`(200px). 저해상을
+  //   상품 이미지로 저장하면 마켓 등록 시 화질 반려 → 승격 못 하면 **제외**(정직: 흐린 이미지 대신 없음).
+  // 토큰은 대문자 고정(아마존 수식자 문법) — 소문자 파일명(`.sr7.jpg` 등)을 저해상으로 오판하지 않도록 대소문자 구분.
+  var _LOWRES_TOKEN_RE = /\.(_{0,2}(?:AC_)?(?:S[XYLS]|U[XYLS]|CR|SR|PT)\d)/;
+  function _isLowResImg(u) {
+    var s = String(u == null ? "" : u);
+    if (!s) return true;
+    if (!_LOWRES_TOKEN_RE.test(s)) return false;
+    // 남은 토큰의 픽셀 수치가 충분히 크면(≥300) 원본급으로 인정, 아니면 저해상.
+    var m = s.match(/(?:S[XYLS]|U[XYLS])(\d{2,4})/);
+    if (m && parseInt(m[1], 10) >= 300) return false;
+    return true;
   }
 
   // 비-상품 이미지(로고/아이콘/배너/픽셀…) 판정
@@ -236,6 +257,25 @@
     if (/^\d$/.test(v)) return true;                                                                                             // v82 STEP1: 단독 한 자리 숫자('1' — 아마존 색상옵션 오수집). 사이즈(2자리+·단위)는 보존.
     return false;
   }
+  // v83 STEP3: 색상류 축의 **순수 숫자 값**은 옵션이 아니다(아마존 B0CF88RN17 색상 '1' 재현). v82 STEP1은 한
+  //   자리 숫자만 막아 '01'·'12' 같은 변형이 남았고, tier2(트위터스터·스와치) 경로에도 축 단위 방어가 없었다.
+  //   사이즈·수량 축의 숫자 값(38·XL 등)은 보존 — **색상류 축에서만** 적용한다.
+  var _COLOR_AXIS_RE = /^(색상|색깔|컬러|color|colour|カラー|色|颜色)$/i;
+  function _dropNumericColorValues(options) {
+    var out = [];
+    (options || []).forEach(function (o) {
+      if (!o || !o.values) return;
+      var vals = o.values;
+      if (_COLOR_AXIS_RE.test(String(o.name || "").trim())) {
+        vals = vals.filter(function (v) { return !/^\d{1,4}$/.test(String(v).trim()); });   // 순수 숫자 단독값 제외
+      }
+      if (!vals.length) return;
+      var copy = { name: o.name, values: vals };
+      if (o.option_image) copy.option_image = o.option_image;
+      out.push(copy);
+    });
+    return out;
+  }
   // v82 STEP1: 폴백 전치(_skusToOptions ②, 축명 소실) 경로 전용 값 필터. 정상 경로는 _isBadOptAxis(축명)로
   //   원산지·제조사를 막지만, 라쿠텐 스펙테이블이 축명 없이 sku spec로 전염되면 폴백에서 '옵션' 값으로 부활한다.
   //   원산지 국가명(タイ 등)·법인 접미(コーポレーション·株式会社·Corp/Inc/Ltd — アーガスコーポレーション)는 옵션 값이 아니다.
@@ -309,7 +349,7 @@
     return out;
   }
   function _fromJson() {
-    var res = { title: "", price: "", currency: "", images: [], detailImages: [], specs: [],
+    var res = { title: "", price: "", currency: "", currencySrc: "", images: [], detailImages: [], specs: [],
                 options: [], skus: [], reviews: [], rating: "", reviewCount: "", description: "", ok: false };
     var imgSeen = {}, detSeen = {};
     // JSON-LD Product 우선(표준·신뢰)
@@ -329,6 +369,8 @@
           if (of.price && !res.price) {
             res.price = String(of.price).replace(/,/g, "");
             res.currency = String(of.priceCurrency || "").toUpperCase();
+            // v83 STEP1: priceCurrency는 **명시 통화 필드**(tier1) — 사다리 최상단. 기호 파생과 구분해 표기.
+            if (res.currency) res.currencySrc = "tier1";
           }
         }
         var agg = p.aggregateRating;
@@ -376,10 +418,12 @@
         try {
           if (PRICE_KEY.test(k) && !PRICE_BAD.test(k)) {
             var pv = o[k];
-            if (typeof pv === "string") { var pp = parsePriceStr(pv); if (pp) return pp; }
+            // v83 STEP1: csrc = 통화 근거(symbol=표시 기호 파생 / tier1=명시 통화 필드). 사다리 순위 판정용.
+            if (typeof pv === "string") { var pp = parsePriceStr(pv); if (pp) return { price: pp.price, currency: pp.currency, csrc: pp.currency ? "symbol" : "" }; }
             else if (typeof pv === "number") {
-              var cur = String(o.currency || o.currencyCode || o.priceCurrency || res.currency || "").toUpperCase();
-              var val = priceFromNum(pv, cur); if (val) return { price: val, currency: cur };
+              var _curField = String(o.currency || o.currencyCode || o.priceCurrency || "").toUpperCase();
+              var cur = _curField || String(res.currency || "").toUpperCase();
+              var val = priceFromNum(pv, cur); if (val) return { price: val, currency: cur, csrc: _curField ? "tier1" : (cur ? (res.currencySrc || "") : "") };
             }
           }
         } catch (e) {}
@@ -412,7 +456,7 @@
                 // v71 STEP2: 스펙 객체 → 축명·값텍스트·값이미지 구조 추출(Object 문자열화·URL 값 금지).
                 var skuVals = _collectSkuSpecs(so, axisMap, SPEC_KEY);
                 res.skus.push({ spec: skuVals, price: sp ? sp.price : "", currency: sp ? sp.currency : "" });
-                if (sp && !_skuPriceSet) { res.price = sp.price; res.currency = sp.currency; _skuPriceSet = true; }
+                if (sp && !_skuPriceSet) { res.price = sp.price; res.currency = sp.currency; res.currencySrc = sp.csrc || (sp.currency ? "symbol" : ""); _skuPriceSet = true; }
               }
             }
             // (4) 평점·리뷰수
@@ -438,7 +482,7 @@
             try {
               if (PRICE_KEY.test(k2) && !PRICE_BAD.test(k2)) {
                 var pv2 = node[k2];
-                if (typeof pv2 === "string") { var pp2 = parsePriceStr(pv2); if (pp2 && pp2.currency) { res.price = pp2.price; res.currency = pp2.currency; break; } }
+                if (typeof pv2 === "string") { var pp2 = parsePriceStr(pv2); if (pp2 && pp2.currency) { res.price = pp2.price; res.currency = pp2.currency; res.currencySrc = "symbol"; break; } }
               }
             } catch (e) {}
           }
@@ -787,7 +831,8 @@
     // 상품 갤러리 컨테이너(메인 캐러셀/스와이퍼/프리뷰)로 스코프 한정 — 페이지 전체 document.images 금지.
     var gSel = '[class*="gallery" i] img,[class*="product-image" i] img,[class*="main-image" i] img,#imgTagWrapperId img,'
       + '[class*="swiper" i] img,[class*="carousel" i] img,[class*="preview" i] img,[class*="mainImage" i] img,'
-      + '[class*="bigImg" i] img,[class*="thumb" i] img,[data-testid*="gallery" i] img,[aria-roledescription="carousel"] img';
+      + '[class*="bigImg" i] img,[class*="thumb" i] img,[data-testid*="gallery" i] img,[aria-roledescription="carousel"] img,'
+      + '[class*="image-view" i] img';   // v83 STEP2: 알리 갤러리 컨테이너(image-view--previewWrap)
     // v71 STEP3: 테무 상세 컨테이너 보강(goods-desc·decoration·richtext·longimage·productDesc).
     var dSel = '#productDescription img,#feature-bullets img,[class*="detail" i] img,[class*="description" i] img,#aplus img,'
       + '[class*="goods-desc" i] img,[class*="goodsDesc" i] img,[class*="decoration" i] img,[class*="richtext" i] img,'
@@ -996,6 +1041,35 @@
     } catch (e) {}
     return out;
   }
+  // ── v83 STEP3: 상세 스펙·설명 위생 ────────────────────────────────────
+  //   증거(라쿠텐 tsumugi): detail_specs에 JCB 프로모 배너("…까지! ポイント3倍")·공유링크 UI 텍스트가 흡입되고,
+  //   desc에 raw HTML 주석과 깨진 속성(`</div ="" ="">`)이 남았다. 스펙은 **상품 속성 표**만, 설명은 **본문**만.
+  var _SPEC_BAD_K = /(까지!|까지\s*!|ポイント\d*倍|포인트\s*(증정|적립|\d*배)|캠페인|キャンペーン|エントリー|쿠폰|クーポン|공유\s*링크|공유하기|シェア|share\s*link|sns|트위터|twitter|facebook|line で送る|즐겨찾기|お気に入り|랭킹|ランキング|배너|banner|\d{1,2}\/\d{1,2}\s*\(|\d{4}[年.\-\/]\d{1,2}[月.\-\/]\d{1,2})/i;
+  var _SPEC_BAD_V = /(\{[^}]*(?:font-size|color|margin|padding|background|border|width|display)\s*:[^}]*\}|^\s*[.#][a-z0-9_-]+\s*\{|@media|<\/?[a-z]+[\s>])/i;
+  function _cleanSpecs(specs) {
+    var out = [];
+    (specs || []).forEach(function (s) {
+      if (!s) return;
+      var k = String(s.k == null ? "" : s.k).replace(/\s+/g, " ").trim();
+      var v = String(s.v == null ? "" : s.v).replace(/\s+/g, " ").trim();
+      if (!k || !v) return;
+      if (_SPEC_BAD_K.test(k) || _SPEC_BAD_K.test(v)) return;   // 프로모·날짜·공유 UI 문구는 상품 속성이 아님
+      if (_SPEC_BAD_V.test(v)) return;                          // CSS 조각·마크업 잔재
+      if (k.length > 60 || v.length > 200) { k = k.slice(0, 60); v = v.slice(0, 200); }
+      out.push({ k: k, v: v });
+    });
+    return out;
+  }
+  // 설명 본문에서 raw HTML 주석·깨진 태그 잔재 제거(사용자에게 마크업 노출 금지).
+  function _stripHtmlNoise(s) {
+    var t = String(s == null ? "" : s);
+    t = t.replace(/<!--[\s\S]*?-->/g, " ");            // HTML 주석
+    t = t.replace(/<!--[\s\S]*$/g, " ");               // 닫히지 않은 주석 잔재
+    t = t.replace(/<\/?[a-z][^>]*>/gi, " ");           // 남은 태그(정상·깨진 것 모두)
+    t = t.replace(/<\/?[a-z][^<>]*$/gi, " ");          // `</div ="" ="">` 류 잘린 태그
+    t = t.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n");
+    return t.trim();
+  }
   function _domSpecs() {
     // 속성 표(스펙): table tr / dl / [class*=spec|attribute|param] li
     var specs = [], seen = {};
@@ -1014,7 +1088,84 @@
         }
       }
     } catch (e) {}
-    return specs;
+    return _cleanSpecs(specs);   // v83 STEP3: 프로모 배너·공유 UI·CSS 조각 제거
+  }
+  // ── v83 STEP2: 알리익스프레스 옵션 어댑터(DOM sku-item) ────────────────
+  //   증거: ko.aliexpress.com 상세에 sku-item 16개·"색상:" 라벨이 실존하는데 options/skus 0으로 수집됐다.
+  //   제네릭 그룹 스캐너는 알리의 해시 클래스(sku-item--image--3XxXxXx) 구조에서 축명을 못 잡는다 → 전용 어댑터.
+  //   호스트 게이트(*.aliexpress.*)라 타 사이트 영향 0. 값이 하나도 없으면 빈 배열(가짜 옵션 금지).
+  function _aliHost(h) {
+    try { h = String(h || (location.hostname || "")).toLowerCase(); } catch (e) { h = String(h || "").toLowerCase(); }
+    return /(^|\.)aliexpress\.[a-z]{2,3}(\.[a-z]{2,3})?$/.test(h);
+  }
+  function _aliOptions() {
+    if (!_aliHost()) return [];
+    var out = [], axSeen = {};
+    try {
+      var titles = document.querySelectorAll('[class*="sku-item--title" i],[class*="sku-title" i],[class*="sku-property-name" i]');
+      for (var i = 0; i < titles.length && out.length < 8; i++) {
+        var tEl = titles[i];
+        if (_nonProdRegion(tEl)) continue;
+        // 축명: "색상: White" / "Color:" → 콜론 앞부분. 선택값(selectedText)은 축명이 아니다.
+        var rawT = String(tEl.innerText || tEl.textContent || "").replace(/\s+/g, " ").trim();
+        var sel = tEl.querySelector('[class*="selectedText" i],[class*="sku-item--selected" i]');
+        if (sel) rawT = rawT.replace(String(sel.innerText || sel.textContent || "").trim(), "").trim();
+        var axis = _normAxis(rawT.split(/[:：]/)[0].replace(/\s+/g, " ").trim());
+        if (!axis || axis.length > 20) continue;
+        // 값 컨테이너: 제목의 형제/부모 안 sku 값 노드들.
+        var box = tEl.parentElement || tEl;
+        var nodes = box.querySelectorAll('[class*="sku-item--image" i] img[alt],[class*="sku-item--text" i],[class*="sku-item--box" i],'
+          + '[class*="sku-property-image" i] img[alt],[class*="sku-property-text" i] span,li[title],[data-sku-col]');
+        var vals = [], vSeen = {};
+        for (var n = 0; n < nodes.length && vals.length < 60; n++) {
+          var el = nodes[n];
+          var v = "";
+          if ((el.tagName || "").toLowerCase() === "img") v = el.getAttribute("alt") || "";
+          if (!v && el.getAttribute) v = el.getAttribute("title") || el.getAttribute("data-value") || "";
+          if (!v) { var im = el.querySelector && el.querySelector("img[alt]"); if (im) v = im.getAttribute("alt") || ""; }
+          if (!v) v = String(el.innerText || el.textContent || "");
+          v = String(v).replace(/\s+/g, " ").trim();
+          if (!v || v.length > 40) continue;
+          if (_isBadOptValue(v) || _isBadOptFallbackValue(v)) continue;
+          if (v === axis || v.replace(/[:：]\s*$/, "") === axis) continue;
+          if (vSeen[v]) continue;
+          vSeen[v] = 1; vals.push(v);
+        }
+        if (!vals.length || axSeen[axis]) continue;
+        axSeen[axis] = 1;
+        out.push({ name: axis, values: vals.slice(0, 50) });
+      }
+    } catch (e) {}
+    return out;
+  }
+  // v83 STEP2: 판매자/스토어 블록은 상세설명이 아니다(알리 desc가 '판매자 블록 쪼가리'로 저장되던 근원).
+  var _SELLER_BLOCK_RE = /(판매자|거래\s*업체|스토어|store\b|seller\b|shop\s*now|팔로우|follow|긍정적\s*피드백|positive\s*feedback|매장\s*방문)/i;
+  function _isSellerBlock(el) {
+    try {
+      var meta = String((el.id || "") + " " + ((el.className && el.className.baseVal !== undefined ? el.className.baseVal : el.className) || "")).toLowerCase();
+      if (/(store|seller|shop-?info|vendor|merchant)/.test(meta)) return true;
+      var t = String(el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
+      if (t.length < 300 && _SELLER_BLOCK_RE.test(t)) return true;
+    } catch (e) {}
+    return false;
+  }
+  // v83 STEP4: 평점 DOM 폴백 — 리뷰는 잡혔는데 rating이 공란인 실기기 증상(초기 JSON에 aggregateRating 없음).
+  //   페이지에 이미 렌더된 **집계 평점 표기**만 읽는다(계산·추정 금지: 리뷰 평균을 지어내지 않는다).
+  function _domRating() {
+    var sels = ['[data-hook="rating-out-of-text"]', '#acrPopover', 'span[data-hook="rating-out-of-text"]',
+      '[itemprop="ratingValue"]', '[class*="rating-value" i]', '[class*="ratingValue" i]',
+      '[class*="average-star" i]', '[class*="averageStar" i]', '[class*="review-average" i]', 'i.a-icon-star span.a-icon-alt'];
+    for (var i = 0; i < sels.length; i++) {
+      try {
+        // 평점 표기는 본래 리뷰 영역 안에 있다 → _nonProdRegion(리뷰 제외 규칙)을 적용하지 않는다.
+        var el = document.querySelector(sels[i]);
+        if (!el || _isInjectedUI(el)) continue;
+        var raw = String((el.getAttribute && (el.getAttribute("title") || el.getAttribute("content"))) || el.innerText || el.textContent || "");
+        var m = raw.match(/(\d(?:[.,]\d)?)\s*(?:out of|\/)\s*5/i) || raw.match(/^\s*(\d(?:[.,]\d)?)\s*$/);
+        if (m) { var v = parseFloat(String(m[1]).replace(",", ".")); if (v > 1 && v <= 5) return String(m[1]).replace(",", "."); }
+      } catch (e) {}
+    }
+    return "";
   }
   // v76 STEP6: DOM 리뷰 폴백 — 초기 JSON에 리뷰가 없어도 **페이지에 이미 렌더된** 리뷰 섹션 상위 텍스트를 읽는다.
   //   추가 네트워크 요청 0(존재분만). 아마존([data-hook=review]) + 제네릭 리뷰 항목. 리뷰 영역은 정상(제외 안 함).
@@ -1088,12 +1239,20 @@
       }
     } catch (e) {}
     // 테무·제네릭 상세영역 + productDescription/detail 컨테이너(추천/리뷰 제외).
-    var sel = ['#productDescription', '[class*="goods-desc" i]', '[class*="goodsDesc" i]', '[class*="productDesc" i]',
+    // v83 STEP2: 알리 상세 모듈(detailmodule_·description--wrap)을 사다리 앞에 두고, **판매자/스토어 블록은 제외**
+    //   (desc가 '판매자 …' 쪼가리로 저장되던 근원). 후보를 하나 실패해도 다음 후보로 계속 내려간다.
+    var sel = ['[class*="detailmodule" i]', '[class*="description--wrap" i]', '#product-description',
+      '#productDescription', '[class*="goods-desc" i]', '[class*="goodsDesc" i]', '[class*="productDesc" i]',
       '[class*="detail-desc" i]', '[class*="item-desc" i]', '[class*="description" i]', '[class*="detail" i]'];
     for (var i = 0; i < sel.length; i++) {
       try {
-        var el = document.querySelector(sel[i]);
-        if (el && !_nonProdRegion(el) && !_galleryExcluded(el)) { var t = (el.innerText || "").replace(/\n{3,}/g, "\n\n").trim(); if (t.length > 20) return t.slice(0, 4000); }
+        var els = document.querySelectorAll(sel[i]);
+        for (var e2 = 0; e2 < els.length && e2 < 5; e2++) {
+          var el = els[e2];
+          if (!el || _nonProdRegion(el) || _galleryExcluded(el) || _isSellerBlock(el)) continue;
+          var t = _stripHtmlNoise(String(el.innerText || el.textContent || "").replace(/\n{3,}/g, "\n\n").trim());
+          if (t.length > 20) return t.slice(0, 4000);
+        }
       } catch (e) {}
     }
     return "";
@@ -1194,9 +1353,21 @@
       return sld.length >= 4 ? sld.toLowerCase() : "";
     } catch (e) { return ""; }
   }
+  // v83 STEP3: 아마존 카테고리 꼬리(' : Home & Kitchen') — 상품명이 아니라 브레드크럼 카테고리다. 사전에 있는
+  //   카테고리명일 때만 절단(임의 ':' 뒤 절단 금지 — 상품명에 콜론이 흔하다).
+  var _AMZ_CAT_TAIL_RE = new RegExp("\\s*[:：]\\s*(" + [
+    "Home\\s*&\\s*Kitchen", "Kitchen\\s*&\\s*Dining", "Electronics", "Beauty\\s*&\\s*Personal\\s*Care",
+    "Health\\s*&\\s*Household", "Clothing,?\\s*Shoes\\s*&\\s*Jewelry", "Sports\\s*&\\s*Outdoors",
+    "Toys\\s*&\\s*Games", "Tools\\s*&\\s*Home\\s*Improvement", "Office\\s*Products", "Pet\\s*Supplies",
+    "Grocery\\s*&\\s*Gourmet\\s*Food", "Baby", "Automotive", "Industrial\\s*&\\s*Scientific",
+    "Musical\\s*Instruments", "Video\\s*Games", "Books", "Garden\\s*&\\s*Outdoor",
+    "Patio,?\\s*Lawn\\s*&\\s*Garden", "Cell\\s*Phones\\s*&\\s*Accessories", "Computers\\s*&\\s*Accessories",
+    "Arts,?\\s*Crafts\\s*&\\s*Sewing", "Appliances", "Everything\\s*Else",
+  ].join("|") + ")\\s*$", "i");
   function _sanitizeTitle(t, url) {
     var s = String(t == null ? "" : t).replace(/\s+/g, " ").trim();
     if (!s) return "";
+    for (var _ci = 0; _ci < 2; _ci++) { var _b = s; s = s.replace(_AMZ_CAT_TAIL_RE, "").trim(); if (s === _b) break; }
     // 접두: 【楽天市場】… / 【…市場/store/shop…】
     s = s.replace(/^【\s*[^】]{0,24}(楽天|市場|store|shop|mall|ストア)[^】]{0,24}】\s*/i, "");
     // 접두: 사이트명 + 구분자(: | - – ·). 예 "Amazon.com: ", "楽天市場｜"
@@ -1222,12 +1393,53 @@
   }
 
   // ── 가격 sanity 게이트 ─────────────────────────────────────
-  // v71 STEP1: 통화 로케일 추론 — tier1·DOM 통화가 비었을 때 어댑터 로케일 기본값으로 채운다(무근거 추정
+  // ── v83 STEP1: 통화 판정 재설계(돈 직결) ────────────────────────────────
+  // 사다리: ①tier1 명시 통화 필드 → ②**어댑터 도메인 고정 테이블** → ③표시 기호 → ④html lang 로케일(최후).
+  //   근원: 구글 번역이 <html lang>을 ko로 바꿔(class="translated-ltr") 로케일 사다리가 7,480円 상품을 KRW로
+  //   오판(tsumugi). 도메인은 번역이 못 바꾸는 근거라 로케일보다 위, 다만 tier1 명시 필드보다는 아래.
+  //
+  // 등재 원칙: **단일 통화 도메인만**(추측 금지). 다통화 표시 도메인(알리 ko/es/ru…)은 미등재 → tier1/기호 위임.
+  function _domainCurrency(host, path) {
+    try {
+      host = String(host || (location.hostname || "")).toLowerCase();
+      path = String(path == null ? (location.pathname || "") : path).toLowerCase();
+    } catch (e) { host = String(host || "").toLowerCase(); path = String(path || "").toLowerCase(); }
+    if (!host) return "";
+    if (/(^|\.)rakuten\.(co\.jp|com)$/.test(host)) return "JPY";           // item.rakuten.co.jp·www·books
+    if (/(^|\.)yoshidakaban\.com$/.test(host)) return "JPY";
+    if (/yahoo\.co\.jp$/.test(host)) return "JPY";
+    if (/(^|\.)amazon\.co\.jp$/.test(host)) return "JPY";
+    if (/(^|\.)amazon\.co\.uk$/.test(host)) return "GBP";
+    if (/(^|\.)amazon\.(de|fr|it|es|nl|be|se|pl)$/.test(host)) return "EUR";
+    if (/(^|\.)amazon\.com$/.test(host)) return "USD";
+    if (/(^|\.)amazon\.ca$/.test(host)) return "CAD";
+    if (/(^|\.)amazon\.com\.au$/.test(host)) return "AUD";
+    if (/(^|\.)(taobao|tmall|1688)\.com$/.test(host)) return "CNY";
+    // 테무는 다국가 단일 도메인 — **국가 경로(/kr)** 가 명시된 경우만 확정(그 외는 미확정 → 기호/로케일).
+    if (/(^|\.)temu\.com$/.test(host)) return /^\/kr(\/|$)/.test(path) ? "KRW" : "";
+    return "";
+  }
+  // v83 STEP1: 구글 번역이 DOM을 바꿔치기한 상태인지(html class="translated-ltr|translated-rtl" · 번역 뱃지).
+  //   true면 html lang은 **번역 언어**라 원문 로케일 근거로 못 쓴다 → 로케일 사다리에서 lang 무효화.
+  function _translatedDom() {
+    try {
+      var de = document.documentElement;
+      if (!de) return false;
+      var cls = String((de.className && de.className.baseVal !== undefined ? de.className.baseVal : de.className) || "");
+      if (/(^|\s)translated-(ltr|rtl)(\s|$)/.test(cls)) return true;
+      if (de.classList && (de.classList.contains("translated-ltr") || de.classList.contains("translated-rtl"))) return true;
+      if (document.querySelector && document.querySelector(".goog-te-banner-frame,#goog-gt-tt,html[class*='translated-']")) return true;
+    } catch (e) {}
+    return false;
+  }
+  // v71 STEP1: 통화 로케일 추론 — 위 단계가 모두 비었을 때 로케일 기본값으로 채운다(무근거 추정
   //   금지: 명시 로케일 힌트(html lang·경로 /kr·/jp)와 도메인 TLD만 근거로 인정). 못 정하면 빈 통화 유지.
-  function _localeCurrency() {
+  //   v83 STEP1: opts.ignoreLang=true(번역된 DOM)면 html lang 근거를 **완전 무효화**(경로·TLD만 인정).
+  function _localeCurrency(opts) {
     var host = "", path = "", lang = "";
     try { host = (location.hostname || "").toLowerCase(); path = (location.pathname || "").toLowerCase(); } catch (e) {}
     try { lang = ((document.documentElement && document.documentElement.lang) || "").toLowerCase(); } catch (e) {}
+    if (opts && opts.ignoreLang) lang = "";
     var hint = lang + " " + path + " " + host;
     // 명시 로케일 힌트(언어/경로) 최우선.
     if (/(^|[^a-z])ko(-|[^a-z]|$)|\/kr(\/|$|-)|(^|\.)kr\./.test(hint)) return "KRW";
@@ -1276,20 +1488,34 @@
     }
     title = _sanitizeTitle(title, location.href);   // v76 STEP1: 사이트명 접두/접미 제거(전 마켓 공통)
     var price = j.price || "", currency = j.currency || "";
+    // v83 STEP1: 통화 근거(tier1 명시 필드 / symbol 표시 기호) — 사다리 판정에 쓴다.
+    var currencySrc = currency ? (j.currencySrc || "symbol") : "";
     // v78 STEP4: 가격 출처(어댑터 패리티) — tier1(state JSON)·buybox(어댑터 스코프)·tier2(제네릭 휴리스틱)·none.
     //   실기기 아마존은 state JSON 미캡처(tier1 빈값)라 buybox 어댑터가 현재가를 읽는데, 예전엔 그 provenance를
     //   버리고 fieldSources가 무조건 'tier2'로 라벨 → '어댑터 매치인데 tier2' 모순. 여기서 실제 출처를 보존한다.
     var priceSrc = j.price ? "tier1" : "";
     var images = (j.images || []).slice(), detailImages = (j.detailImages || []).slice();
-    var options = (j.options || []).slice(), skus = (j.skus || []).slice(), specs = (j.specs || []).slice();
+    var options = (j.options || []).slice(), skus = (j.skus || []).slice(), specs = _cleanSpecs(j.specs || []);
     var reviews = (j.reviews || []).slice(), rating = j.rating || "", reviewCount = j.reviewCount || "";
+    // v83 STEP2: 알리 옵션 소생 — tier1(state)이 비면 DOM sku-item 어댑터로. 값이 있으면 그 값 각각을 sku로도
+    //   등록한다(스와치=실제 선택 가능한 변형. 가격은 미상이라 빈값 — 가짜 가격 금지).
+    if (_aliHost() && !options.length) {
+      var _ao = [];
+      try { _ao = _aliOptions(); } catch (e) { _ao = []; }
+      if (_ao.length) {
+        options = _ao;
+        if (!skus.length) {
+          _ao.forEach(function (o) { (o.values || []).forEach(function (v) { skus.push({ spec: [v], price: "", currency: "" }); }); });
+        }
+      }
+    }
     var description = "", descSource = "";   // v78 STEP3: 소스 사다리로 채움(어댑터>ldjson>meta)
 
     var needDom = !price || images.length === 0;
     if (needDom) {
       source = j.ok ? "json+dom" : "dom";
       try {
-        if (!price) { var dp = _domPrice(); if (dp) { price = dp.price; currency = dp.currency; priceSrc = (dp.scope || dp.src === "buybox") ? "buybox" : "tier2"; } }
+        if (!price) { var dp = _domPrice(); if (dp) { price = dp.price; currency = dp.currency; if (currency) currencySrc = "symbol"; priceSrc = (dp.scope || dp.src === "buybox") ? "buybox" : "tier2"; } }
         if (images.length === 0) { var di = _domImages(); images = di.images; if (!detailImages.length) detailImages = di.detailImages; }
         if (!options.length) options = _domOptions();
         if (!specs.length) specs = _domSpecs();
@@ -1303,7 +1529,9 @@
       try { var di2 = _domImages(); if (di2.detailImages && di2.detailImages.length) detailImages = di2.detailImages; } catch (e) {}
     }
     if (!options.length) { try { options = _domOptions(); } catch (e) {} }
+    if (!options.length && _aliHost()) { try { options = _aliOptions(); } catch (e) {} }
     if (!specs.length) { try { specs = _domSpecs(); } catch (e) {} }
+    options = _dropNumericColorValues(options);   // v83 STEP3: 색상 축의 순수 숫자값('1') 제거(tier1·tier2 공통)
     // v78 STEP3: 상세설명 소스 사다리(재배선) — ① 어댑터 상세(DOM: feature-bullets+A+·테무 상세영역) →
     //   ② ld+json/state description(Tier1) → ③ **meta description은 최후 폴백**(SEO 'Buy …') + desc_source=meta
     //   표기(품질 낮음 신호). '가격/이미지와 독립' 수집(Tier1이 채워도 상세는 빌 수 있음).
@@ -1312,8 +1540,8 @@
       if (_ad && _ad.length > 20) { description = _ad; descSource = "adapter"; }
     } catch (e) {}
     // v79 STEP6: Tier1(state)·meta 후보가 마켓 SEO/필러면 거부(빈 상세 + 편집 AI 초안, 정직). 어댑터는 신뢰.
-    if (!description && j.description && !_isFillerDesc(j.description)) { description = j.description; descSource = j.ok ? "tier1" : "ldjson"; }
-    if (!description) { try { var _m = _metaDescription(); if (_m && !_isFillerDesc(_m)) { description = _m; descSource = "meta"; } } catch (e) {} }
+    if (!description && j.description && !_isFillerDesc(j.description)) { description = _stripHtmlNoise(j.description); descSource = j.ok ? "tier1" : "ldjson"; }
+    if (!description) { try { var _m = _metaDescription(); if (_m && !_isFillerDesc(_m)) { description = _stripHtmlNoise(_m); descSource = "meta"; } } catch (e) {} }
     // v78 STEP3: detail_specs(스펙 표)가 있으면 desc_text에 병합(사용자가 상세에서 스펙까지 한눈에).
     if (specs.length) {
       try {
@@ -1343,17 +1571,42 @@
     var partial = !price && images.length === 0;
     if (partial) { source = "partial"; warnings.push("초기 JSON·DOM 모두에서 핵심 정보를 못 읽어 부분 수집입니다"); }
 
-    // v71 STEP1: 가격은 있는데 통화만 비면 로케일 추론(3번째 사다리) — needs_check로 가격 누락되던 근원 수리.
-    var currencyLocale = false;
+    // ── v83 STEP1: 통화 사다리 확정 ──────────────────────────────────────
+    //   ①tier1 명시 통화 필드(그대로 확정) → ②도메인 고정 테이블 → ③표시 기호 → ④로케일(최후).
+    //   기호와 도메인이 **충돌**하면(예: amazon.com에 ₩ 표시) 도메인을 택하되 needs_check로 올려 사람이 확인한다
+    //   (임의 확정 = 10배 오등록 위험. 정직 데이터 원칙).
+    var translatedDom = false;
+    try { translatedDom = _translatedDom(); } catch (e) {}
+    var currencySource = currencySrc === "tier1" ? "tier1" : (currency ? "symbol" : "none");
+    var currencyConflict = false;
+    var domCur = "";
+    try { domCur = _domainCurrency(); } catch (e) {}
+    if (currencySrc !== "tier1" && domCur) {
+      if (!currency) { currency = domCur; currencySource = "domain"; }
+      else if (currency === domCur) { currencySource = "domain+symbol"; }
+      else {
+        var _symCur = currency;
+        currency = domCur; currencySource = "domain";
+        if (translatedDom) {
+          warnings.push("번역된 페이지라 표시 통화(" + _symCur + ") 대신 원문 기준 " + domCur + "으로 저장했어요");
+        } else {
+          currencyConflict = true;
+          warnings.push("표시 통화(" + _symCur + ")와 사이트 기준 통화(" + domCur + ")가 달라요 — 가격을 확인해 주세요");
+        }
+      }
+    }
     if (price && !currency) {
-      var lc = ""; try { lc = _localeCurrency(); } catch (e) {}
-      if (lc) { currency = lc; currencyLocale = true; }
+      var lc = ""; try { lc = _localeCurrency({ ignoreLang: translatedDom }); } catch (e) {}
+      if (lc) { currency = lc; currencySource = "locale"; }
+    }
+    if (translatedDom && currencySource === "locale") {
+      warnings.push("번역된 페이지예요 — 통화를 확인해 주세요");
     }
     // v74 STEP4: 가격 숫자 정규화(공통) — 후행 점·천단위 제거해 항상 \d+(\.\d+)?. sanity 이전에 봉인.
     price = _normNum(price);
     // 가격 sanity
     var sane = _priceSanity(price, currency);
-    var price_status = sane.status;
+    var price_status = sane.status || (currencyConflict ? "needs_check" : "");
     price = sane.status === "needs_check" && !sane.price ? "" : sane.price;
     currency = sane.currency;
     warnings = warnings.concat(sane.warnings);
@@ -1373,9 +1626,19 @@
     var seen = {}, gallery = [];
     images.forEach(function (u) { uniqPush(gallery, seen, u); });
     gallery = _galleryScopeHost(gallery);   // v79 STEP4: 호스트별 갤러리 오염 필터(테무 배너·라쿠텐 타상품)
+    // v83 STEP3: 원본 승격 실패(저해상 토큰 잔존) 이미지는 갤러리·상세 양쪽에서 제외 + 정직 경고.
+    (function () {
+      var _g0 = gallery.length, _d0 = detailImages.length;
+      gallery = gallery.filter(function (u) { return !_isLowResImg(u); });
+      detailImages = detailImages.filter(function (u) { return !_isLowResImg(u); });
+      var _dropped = (_g0 - gallery.length) + (_d0 - detailImages.length);
+      if (_dropped > 0) warnings.push("저해상 이미지 " + _dropped + "장 제외(원본 해상도 승격 실패)");
+    })();
 
     // v78 STEP2: 리뷰 메타 정직화 — rating은 (1,5]만(0·1 더미 금지), 아니면 '없음'(빈값). review_count는 실제
     //   추출 리뷰 수 이상(count<reviews면 스테일 '0' 등 → 최소 reviews.length 보정). 가짜 평점/카운트 저장 방지.
+    // v83 STEP4: rating 공란인데 리뷰가 있으면 DOM 집계 평점으로 보완(없으면 그대로 공란 — 날조 금지).
+    if (!rating && reviews.length) { try { rating = _domRating(); } catch (e) {} }
     (function () {
       var _raw = String(rating == null ? "" : rating).trim();
       var _rn = parseFloat(_raw);
@@ -1388,7 +1651,7 @@
     })();
 
     try {
-      console.log("[고가수집기] 추출 소스=" + source, "| 가격=" + price + " " + currency + (currencyLocale ? "(locale)" : "") + " [" + (priceSrc || "none") + "] (" + (price_status || "ok") + ")",
+      console.log("[고가수집기] 추출 소스=" + source, "| 가격=" + price + " " + currency + "(" + currencySource + ")" + (translatedDom ? "(translated)" : "") + " [" + (priceSrc || "none") + "] (" + (price_status || "ok") + ")",
         "| 갤러리=" + gallery.length + " 상세이미지=" + detailImages.length + " 옵션=" + options.length + " 스펙=" + specs.length + " 리뷰=" + reviews.length + " 평점=" + (rating || "없음") + " 리뷰수=" + (reviewCount || "없음"),
         warnings.length ? "| 경고:" + warnings.join(" / ") : "");
     } catch (e) {}
@@ -1409,6 +1672,8 @@
       url: location.href,
       title: String(title || "").slice(0, 300),
       price: price, currency: currency, price_status: price_status,
+      // v83 STEP1: 통화 근거(tier1|domain|domain+symbol|symbol|locale|none)와 번역 DOM 여부 — 진단·수집 카드 안내용.
+      currency_source: currencySource, translated_dom: translatedDom,
       image: gallery[0] || "",
       images: gallery, gallery_images: gallery, detail_images: detailImages,
       detail_fold: detailFold,          // v57 STEP3: 상세 '더보기' 접힘 잔존 여부(정직 표기용)
@@ -1496,5 +1761,9 @@
   global._kgpRenderReady = _renderReady;   // 테스트/진단용
   if (typeof module !== "undefined" && module.exports) module.exports = { kgpExtractProduct: kgpExtractProduct, kgpRevealDetailFolds: kgpRevealDetailFolds, kgpWaitRendered: kgpWaitRendered,
     // v82: 순수 헬퍼(DOM 무의존) 하네스 노출 — 계약 검증용(브라우저 경로 불변).
-    _test: { hiRes: hiRes, skusToOptions: _skusToOptions, collectSkuSpecs: _collectSkuSpecs, isBadOptValue: _isBadOptValue, isBadOptAxis: _isBadOptAxis, isBadOptFallbackValue: _isBadOptFallbackValue } };
+    _test: { hiRes: hiRes, skusToOptions: _skusToOptions, collectSkuSpecs: _collectSkuSpecs, isBadOptValue: _isBadOptValue, isBadOptAxis: _isBadOptAxis, isBadOptFallbackValue: _isBadOptFallbackValue,
+      // v83: 통화 사다리·이미지 승격·스펙 위생 계약 검증용.
+      domainCurrency: _domainCurrency, translatedDom: _translatedDom, localeCurrency: _localeCurrency, parsePriceStr: parsePriceStr,
+      isLowResImg: _isLowResImg, cleanSpecs: _cleanSpecs, stripHtmlNoise: _stripHtmlNoise, aliOptions: _aliOptions,
+      dropNumericColorValues: _dropNumericColorValues, domRating: _domRating } };
 })(typeof window !== "undefined" ? window : this);

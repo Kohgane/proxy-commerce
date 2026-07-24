@@ -1,0 +1,75 @@
+<!doctype html>
+<!-- 합성 구조 재현(정직) — 실제 알리 캡처 아님. 오너 실기기 진단(ko.aliexpress.com 상세: sku-item 16개·"색상:"
+     실존하나 options/skus 0, desc=판매자 블록 쪼가리, tier1 가격만 정상)의 재현 픽스처.
+     v83 STEP2 계약: *.aliexpress.* 와일드카드 매칭 + DOM sku-item 어댑터로 옵션·sku 소생 + desc에서 판매자 블록 제외. -->
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>휴대용 미니 블렌더 350ml - AliExpress</title>
+  <meta property="og:title" content="휴대용 미니 블렌더 350ml">
+  <meta name="description" content="Buy 휴대용 미니 블렌더 350ml online">
+</head>
+<body>
+  <div class="header--wrap--A1b2C3d"><a href="/">AliExpress</a></div>
+
+  <h1 data-pl="product-title">휴대용 미니 블렌더 350ml USB 충전식</h1>
+
+  <div class="price--wrap--Q1Kk2Lm">
+    <div class="product-price-value">₩ 9,200</div>
+    <div class="product-price-original">₩ 18,400</div>
+  </div>
+
+  <div class="image-view--previewWrap--E5f6G7h">
+    <img src="https://ae01.alicdn.com/kf/S1a2b3c4-main-1.jpg_640x640q90.jpg" width="600" height="600" alt="블렌더 1">
+    <img src="https://ae01.alicdn.com/kf/S1a2b3c4-main-2.jpg_640x640q90.jpg" width="600" height="600" alt="블렌더 2">
+    <img src="https://ae01.alicdn.com/kf/S1a2b3c4-main-3.jpg_640x640q90.jpg" width="600" height="600" alt="블렌더 3">
+    <img src="https://ae01.alicdn.com/kf/S1a2b3c4-main-4.jpg_640x640q90.jpg" width="600" height="600" alt="블렌더 4">
+  </div>
+
+  <div class="sku--wrap--Ct6R4Vv">
+    <div class="sku-item--wrap--t9Jk9Uw">
+      <div class="sku-item--title--Z0HLO87">색상:<span class="sku-item--selectedText--sTvGbcU">화이트</span></div>
+      <div class="sku-item--skus--StEeloe">
+        <div class="sku-item--image--sIkE4C4" data-sku-col="14:350850"><img alt="화이트" src="https://ae01.alicdn.com/kf/S-c-white.jpg_80x80xz.jpg" width="40" height="40"></div>
+        <div class="sku-item--image--sIkE4C4" data-sku-col="14:350851"><img alt="그린" src="https://ae01.alicdn.com/kf/S-c-green.jpg_80x80xz.jpg" width="40" height="40"></div>
+        <div class="sku-item--image--sIkE4C4" data-sku-col="14:350852"><img alt="핑크" src="https://ae01.alicdn.com/kf/S-c-pink.jpg_80x80xz.jpg" width="40" height="40"></div>
+        <div class="sku-item--image--sIkE4C4" data-sku-col="14:350853"><img alt="블랙" src="https://ae01.alicdn.com/kf/S-c-black.jpg_80x80xz.jpg" width="40" height="40"></div>
+        <div class="sku-item--image--sIkE4C4" data-sku-col="14:350854"><img alt="블루" src="https://ae01.alicdn.com/kf/S-c-blue.jpg_80x80xz.jpg" width="40" height="40"></div>
+        <div class="sku-item--image--sIkE4C4" data-sku-col="14:350855"><img alt="옐로우" src="https://ae01.alicdn.com/kf/S-c-yellow.jpg_80x80xz.jpg" width="40" height="40"></div>
+        <div class="sku-item--image--sIkE4C4" data-sku-col="14:350856"><img alt="퍼플" src="https://ae01.alicdn.com/kf/S-c-purple.jpg_80x80xz.jpg" width="40" height="40"></div>
+        <div class="sku-item--image--sIkE4C4" data-sku-col="14:350857"><img alt="민트" src="https://ae01.alicdn.com/kf/S-c-mint.jpg_80x80xz.jpg" width="40" height="40"></div>
+      </div>
+    </div>
+    <div class="sku-item--wrap--t9Jk9Uw">
+      <div class="sku-item--title--Z0HLO87">플러그:<span class="sku-item--selectedText--sTvGbcU">USB</span></div>
+      <div class="sku-item--skus--StEeloe">
+        <div class="sku-item--text--YFwLn3s"><span title="USB">USB</span></div>
+        <div class="sku-item--text--YFwLn3s"><span title="EU">EU</span></div>
+        <div class="sku-item--text--YFwLn3s"><span title="US">US</span></div>
+        <div class="sku-item--text--YFwLn3s"><span title="UK">UK</span></div>
+        <div class="sku-item--text--YFwLn3s"><span title="KR">KR</span></div>
+        <div class="sku-item--text--YFwLn3s"><span title="AU">AU</span></div>
+        <div class="sku-item--text--YFwLn3s"><span title="JP">JP</span></div>
+        <div class="sku-item--text--YFwLn3s"><span title="CN">CN</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 판매자(스토어) 블록 — 상세설명이 아니다. 옛 사다리는 이 쪼가리를 desc로 저장했다. -->
+  <div class="detailmodule_store store-info--wrap--K9l8M7n">
+    <div>판매자: Yiwu Kitchen Store</div>
+    <div>긍정적 피드백 96.4% · 팔로우</div>
+  </div>
+
+  <div id="product-description">
+    <div class="detailmodule_text">
+      <p>350ml 휴대용 블렌더입니다. USB 충전 후 무선으로 사용하며, 6중 스테인리스 칼날로 얼음까지 분쇄합니다.</p>
+      <p>본체 분리 세척이 가능하고 방수 등급 IPX6입니다.</p>
+    </div>
+    <div class="detailmodule_image">
+      <img src="https://ae01.alicdn.com/kf/S1a2b3c4-detail-1.jpg_640x640q90.jpg" width="750" height="900" alt="상세 1">
+      <img src="https://ae01.alicdn.com/kf/S1a2b3c4-detail-2.jpg_640x640q90.jpg" width="750" height="900" alt="상세 2">
+    </div>
+  </div>
+</body>
+</html>

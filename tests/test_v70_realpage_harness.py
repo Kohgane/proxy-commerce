@@ -50,7 +50,7 @@ def test_snapshot_infra_source_contract():
     assert "실페이지 하네스 통과 필수" in Path("CLAUDE.md").read_text(encoding="utf-8")
     # manifest bump.
     mani = _json.loads(Path("extensions/chrome-collector/manifest.json").read_text(encoding="utf-8"))
-    assert mani["version"] == "1.5.120"
+    assert mani["version"] == "1.5.122"
 
 
 def _extract_via_browser(expected):
@@ -98,6 +98,13 @@ def test_realpage_snapshot(expected):
         assert (r.get("price") or "") == spec["price"], ctx
     if "currency" in spec:
         assert (r.get("currency") or "") == spec["currency"], ctx
+    # v83 STEP1: 통화 사다리 근거(tier1|domain|domain+symbol|symbol|locale) + 번역 DOM 플래그.
+    if "currency_source" in spec:
+        assert (r.get("currency_source") or "") == spec["currency_source"], \
+            ("통화 근거 불일치", r.get("currency_source"), spec["currency_source"], ctx)
+    if "translated_dom" in spec:
+        assert bool(r.get("translated_dom")) is bool(spec["translated_dom"]), \
+            ("번역 DOM 판정 불일치", r.get("translated_dom"), ctx)
     # v78 STEP4: 가격 출처(어댑터 패리티) — 아마존 buybox 어댑터 매치 시 field_sources.price=buybox(모순 해소).
     if "price_source" in spec:
         assert (r.get("field_sources") or {}).get("price") == spec["price_source"], \
@@ -113,6 +120,14 @@ def test_realpage_snapshot(expected):
         assert opts[name] == values, (name, opts.get(name), ctx)
     for name in (spec.get("no_option_names") or []):
         assert name not in opts, (name, ctx)
+    # v83 STEP2/3: 옵션·sku 최소 개수(알리 소생) + 어떤 축에도 있으면 안 되는 값(색상 '1').
+    if "options_min" in spec:
+        assert len(r.get("options") or []) >= spec["options_min"], ("옵션 부족", r.get("options"), ctx)
+    if "skus_min" in spec:
+        assert len(r.get("skus") or []) >= spec["skus_min"], ("sku 부족", len(r.get("skus") or []), ctx)
+    for bad in (spec.get("option_values_exclude") or []):
+        for o in (r.get("options") or []):
+            assert bad not in (o.get("values") or []), ("옵션 금지값", o.get("name"), bad, ctx)
 
     imgs = r.get("images") or []
     if "images_min" in spec:
@@ -146,6 +161,13 @@ def test_realpage_snapshot(expected):
         assert sub in _desc, ("상세설명에 어댑터 불릿 없음", sub, _desc[:80], ctx)
     if "desc_source" in spec:
         assert (r.get("desc_source") or "") == spec["desc_source"], ("desc_source 불일치", r.get("desc_source"), ctx)
+    # v83 STEP2/3: 상세설명 오염 금지(판매자 블록·HTML 주석·CSS 조각) + 스펙 표 위생(프로모·공유링크·날짜).
+    for sub in (spec.get("desc_excludes") or []):
+        assert sub not in _desc, ("상세설명 오염", sub, _desc[:120], ctx)
+    for sub in (spec.get("specs_exclude_substr") or []):
+        for sp in (r.get("detail_specs") or []):
+            assert sub not in str(sp.get("k") or "") and sub not in str(sp.get("v") or ""), \
+                ("detail_specs 오염", sub, sp, ctx)
 
     # v76 STEP6: 리뷰(페이지 내 존재분·DOM 폴백) — 개수 기준 + 본문 텍스트 존재(빈 리뷰 금지).
     revs = r.get("reviews") or []
@@ -157,6 +179,9 @@ def test_realpage_snapshot(expected):
 
     # v78 STEP2: 리뷰 메타 정직 — rating은 (1,5] 또는 없음(0·1 더미 금지), review_count는 실 리뷰 수 이상.
     _rating = (r.get("rating") or "").strip()
+    # v83 STEP4: 리뷰가 있는데 rating 공란이던 텔레메트리 결손 — DOM 집계 평점으로 채웠는지 계약.
+    if "rating" in spec:
+        assert _rating == spec["rating"], ("rating 불일치", _rating, spec["rating"], ctx)
     if spec.get("rating_no_dummy"):
         assert _rating not in ("0", "1"), ("rating 더미(0·1) 저장!", _rating, ctx)
         if _rating:

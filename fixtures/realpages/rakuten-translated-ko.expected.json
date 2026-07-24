@@ -1,0 +1,16 @@
+{
+  "note": "합성 구조 재현 — 실제 라쿠텐 캡처 아님(정직). v83 STEP1 통화 판정 재설계: 구글 번역(html lang=ko·class=translated-ltr)이 로케일 사다리를 오염시켜 7,480円 상품이 KRW로 저장되던 근원. 계약: 번역판 그대로 currency==JPY(도메인 고정 테이블) + translated_dom 플래그 + STEP3 스펙/설명 위생(프로모·공유링크·CSS·HTML 주석 부재).",
+  "url": "https://item.rakuten.co.jp/tsumugi/bag-ai-01/",
+  "title_contains": "ハンドバッグ",
+  "title_excludes": ["楽天市場", "楽天", "rakuten"],
+  "price": "7480",
+  "currency": "JPY",
+  "currency_source": "domain",
+  "translated_dom": true,
+  "images_min": 4,
+  "images_max": 4,
+  "images_exclude_substr": ["rec-1.jpg", "_ex="],
+  "specs_exclude_substr": ["포인트 증정", "까지!", "공유링크", "card-promo"],
+  "desc_excludes": ["<!--", "</div", "card-promo", "포인트 증정", "공유링크"],
+  "description_contains": "手織り"
+}

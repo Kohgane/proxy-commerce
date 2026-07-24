@@ -954,9 +954,11 @@ function kgpMergeMeta(base, extra) {
   if (!extra || typeof extra !== "object") return base;
   const out = Object.assign({}, base);
   const empty = (v) => v == null || v === "" || (Array.isArray(v) && v.length === 0);
-  ["title", "price", "currency", "description", "rating", "review_count", "price_status", "source"].forEach((k) => {
+  // v83 STEP1: currency_source(통화 근거)도 빈 쪽을 채운다 — 서버 진단이 어느 사다리로 확정했는지 본다.
+  ["title", "price", "currency", "currency_source", "description", "rating", "review_count", "price_status", "source"].forEach((k) => {
     if (empty(out[k]) && !empty(extra[k])) out[k] = extra[k];
   });
+  out.translated_dom = !!(out.translated_dom || extra.translated_dom);   // v83 STEP1: 어느 월드든 번역 DOM 감지 시 표기
   ["images", "gallery_images", "detail_images", "options", "skus", "reviews", "detail_specs"].forEach((k) => {
     const a = Array.isArray(out[k]) ? out[k] : [], b = Array.isArray(extra[k]) ? extra[k] : [];
     if (b.length > a.length) out[k] = b;
@@ -1101,7 +1103,9 @@ function handleFabClick(btn, opts) {
       kgpCelebrate(1, true);           // 축하 스탬프(상단) + 누적 카운트 — silent(토스트 없음)
       // v82 STEP4: 결과는 우측 상단 1/3 수집 카드로(우하단 토스트 폐기 → 장바구니 버튼 가림 근치).
       //   카드는 등장 시 확장(Pop in) → 3초 후 pill 수렴(토스트·카드 중복 노출 금지).
-      kgpCollectCard("수집 완료" + _cnt + _ev + " — 이력에서 확인" + _warn, true, [{ label: "이력 열기", fn: kgpOpenHistory }]);
+      // v83 STEP1: 구글 번역 상태로 보고 있으면 알린다 — 통화·문구는 **원문 기준**으로 저장했음을 명시(오해 차단).
+      var _tr = (meta && meta.translated_dom) ? "\n번역된 페이지 — 원문 기준으로 저장했어요" : "";
+      kgpCollectCard("수집 완료" + _cnt + _ev + " — 이력에서 확인" + _tr + _warn, true, [{ label: "이력 열기", fn: kgpOpenHistory }]);
     });
   });
   });   // v47 STEP4: kgpExtractMerged 콜백 닫기
@@ -1243,8 +1247,8 @@ const _KGP_LEGACY_SOURCES = [
   { id: "tmall", label: "티몰", test: (h) => /(^|\.)tmall\.com$/.test(h) },
   { id: "1688", label: "1688", test: (h) => /(^|\.)1688\.com$/.test(h) },
   { id: "temu", label: "테무", test: (h) => /(^|\.)temu\.com$/.test(h) },
-  { id: "amazon", label: "아마존", test: (h) => /(^|\.)amazon\.[a-z][a-z.]*$/.test(h) },
-  { id: "aliexpress", label: "알리익스프레스", test: (h) => /(^|\.)aliexpress\.(com|us)$/.test(h) },
+  { id: "amazon", label: "아마존", test: (h) => /(^|\.)amazon\.[a-z]{2,3}(\.[a-z]{2,3})?$/.test(h) },
+  { id: "aliexpress", label: "알리익스프레스", test: (h) => /(^|\.)aliexpress\.[a-z]{2,3}(\.[a-z]{2,3})?$/.test(h) },   // v83 STEP2: 국가 도메인 와일드카드
   { id: "iherb", label: "아이허브", test: (h) => /(^|\.)iherb\.com$/.test(h) },
   { id: "dhgate", label: "DHgate", test: (h) => /(^|\.)dhgate\.com$/.test(h) },
   { id: "qoo10", label: "큐텐", test: (h) => /(^|\.)qoo10\.[a-z.]+$/.test(h) },
@@ -1533,7 +1537,10 @@ function _kgpGenericCards() {
       });
     }
   } catch (e) { /* noop */ }
-  if (scanned > cards.length) _kgpScannedCount = scanned;   // v43-2: 정직 '전체 N 중 상품 M · 제외 K'
+  // v43-2: 정직 '전체 N 중 상품 M · 제외 K'.
+  // v83 STEP4: `scanned > cards.length`일 때만 기록해, **전건 채택(동수)** 이면 카운터가 0에 머물렀다
+  //   (요시다 목록 진단 scanned=0의 근원 — 스캔을 안 한 게 아니라 안 적었다). 항상 실측값으로 기록.
+  _kgpScannedCount = Math.max(_kgpScannedCount || 0, scanned);
   return cards;
 }
 

@@ -1,0 +1,13 @@
+{
+  "note": "합성 구조 재현 — 실제 라쿠텐 캡처 아님(정직). v83 STEP1 회귀 가드: 번역 안 된 일본어 라쿠텐 상세는 그대로 JPY(기호 円 + 도메인 테이블 일치), translated_dom=false.",
+  "url": "https://item.rakuten.co.jp/shinogi/cup-shiro-01/",
+  "title_contains": "湯呑",
+  "title_excludes": ["楽天市場", "rakuten"],
+  "price": "12100",
+  "currency": "JPY",
+  "currency_source": "domain+symbol",
+  "translated_dom": false,
+  "images_min": 3,
+  "images_max": 3,
+  "description_contains": "鎬"
+}
