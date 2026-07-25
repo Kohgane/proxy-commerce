@@ -450,9 +450,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         excl: _kgpExcl, skipStats: _kgpSkipStats };   // v77 STEP2: 미부착 타일 사유별 집계
     } catch (e) { detection = { __err: String(e) }; }
     try { extVer = chrome.runtime.getManifest().version; } catch (e) {}
-    sendResponse({ ok: !!html, html: html, host: (location.hostname || ""), url: (location.href || ""),
-      title: (document.title || ""), extracted: extracted, detection: detection, ext_version: extVer,
-      collected_at: new Date().toISOString() });
+    // v83.1 STEP2: 빌드 각인(커밋 해시) — ext_version과 별개로 **어느 빌드인지** 커밋 단위 즉판용.
+    //   background가 ZIP에 심어진 build-info.json을 읽어 준다. 개발 설치면 commit=""·source="unpacked-dev"(정직).
+    kgpSendMessage({ action: "kgpBuildInfo" }, (bi) => {
+      sendResponse({ ok: !!html, html: html, host: (location.hostname || ""), url: (location.href || ""),
+        title: (document.title || ""), extracted: extracted, detection: detection, ext_version: extVer,
+        build: bi || { commit: "", source: "unknown" },
+        git_commit: (bi && bi.commit) || "",
+        collected_at: new Date().toISOString() });
+    });
     return true;
   }
   return false;
@@ -648,6 +654,11 @@ function kgpEnsureCardStyles() {
     '#kgp-collect-card .kgp-cc-btn{padding:6px 12px;border-radius:999px;border:1px solid var(--kgp-teal);' +
     'background:transparent;color:var(--kgp-teal);font:600 12px/1 inherit;cursor:pointer}' +
     '#kgp-collect-card .kgp-cc-btn:hover{background:rgba(17,154,142,.14)}' +
+    // v83.1 STEP1: 카드 안 한국어 번역 토글(팝업과 같은 설정). 금 헤어라인으로 결과 문구와 구분.
+    '#kgp-collect-card .kgp-cc-opt{display:flex;align-items:center;justify-content:space-between;gap:10px;' +
+    'margin-top:10px;padding-top:10px;border-top:1px solid color-mix(in srgb, var(--kgp-gold) 34%, transparent);cursor:pointer}' +
+    '#kgp-collect-card .kgp-cc-opt span{font-size:12px;color:var(--kgp-hanji)}' +
+    '#kgp-collect-card .kgp-cc-opt input{width:34px;height:19px;cursor:pointer;accent-color:var(--kgp-teal);flex-shrink:0}' +
     '#kgp-collect-card[data-err="1"] .kgp-cc-pill{border-color:var(--kgp-red)}' +
     '#kgp-collect-card[data-err="1"] .kgp-cc-dot{background:var(--kgp-red)}' +
     '@keyframes kgpCardPop{from{opacity:0;transform:scale(.82)}to{opacity:1;transform:scale(1)}}' +
@@ -683,6 +694,17 @@ function _kgpPlaceCard(card) {
     if (top > vh - r.height - 16) { card.style.top = "16px"; break; }   // 바닥 도달 → 최상단 복귀
   }
 }
+// v83.1 STEP1: 수집 카드의 번역 토글 상태·안내 문구 반영. 카드가 없으면 아무 것도 하지 않는다.
+function kgpRenderCardTranslate(card) {
+  const c = card || document.getElementById("kgp-collect-card");
+  if (!c) return;
+  const input = c.querySelector(".kgp-cc-translate");
+  const note = c.querySelector(".kgp-cc-opt-note");
+  if (input) input.checked = !!KGP_TRANSLATE;
+  // 정직: 이 토글은 **다음 수집부터** 적용된다(이미 저장된 항목을 되돌리지 않는다).
+  if (note) note.textContent = KGP_TRANSLATE ? "· 다음 수집부터 적용" : "· 원문 그대로 저장돼요";
+}
+
 // 단일 수집 결과를 카드로. 등장 시 확장(Pop in) → 3초 후 pill로 수렴(토스트·카드 중복 노출 금지).
 function kgpCollectCard(message, ok, actions) {
   kgpEnsureCardStyles();
@@ -698,7 +720,11 @@ function kgpCollectCard(message, ok, actions) {
         '<span class="kgp-cc-title"></span>' +
         '<span class="kgp-cc-caret">▾</span>' +
       '</div>' +
-      '<div class="kgp-cc-body"><div class="kgp-cc-msg"></div><div class="kgp-cc-actions"></div></div>';
+      '<div class="kgp-cc-body"><div class="kgp-cc-msg"></div><div class="kgp-cc-actions"></div>' +
+        // v83.1 STEP1: 다음 수집부터 적용되는 번역 설정(팝업 토글과 같은 값). 이번 결과는 위 문구가 말한다.
+        '<label class="kgp-cc-opt"><span>한국어 번역 <span class="kgp-cc-opt-note"></span></span>' +
+        '<input type="checkbox" class="kgp-cc-translate"></label>' +
+      '</div>';
     (document.body || document.documentElement).appendChild(card);
     const pill = card.querySelector(".kgp-cc-pill");
     const toggle = () => {
@@ -713,7 +739,21 @@ function kgpCollectCard(message, ok, actions) {
     };
     pill.addEventListener("click", toggle);
     pill.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+    // v83.1 STEP1: 카드 안 번역 토글 — 팝업과 같은 storage 키에 쓴다(양방향 동기는 onChanged가 담당).
+    //   카드 클릭이 접힘 토글로 새지 않도록 stopPropagation.
+    const optRow = card.querySelector(".kgp-cc-opt");
+    const optInput = card.querySelector(".kgp-cc-translate");
+    if (optRow) optRow.addEventListener("click", (e) => { e.stopPropagation(); clearTimeout(card._kgpConverge); });
+    if (optInput) {
+      optInput.addEventListener("change", () => {
+        KGP_TRANSLATE = !!optInput.checked;
+        try { chrome.storage.local.set({ kgp_translate: KGP_TRANSLATE }); } catch (e) {}
+        kgpApplyTranslateCopy();
+        kgpRenderCardTranslate();
+      });
+    }
   }
+  kgpRenderCardTranslate(card);
   card.setAttribute("data-err", ok ? "0" : "1");
   const first = String(message || "").split("\n")[0];
   card.querySelector(".kgp-cc-title").textContent = first.length > 22 ? first.slice(0, 21) + "…" : first;
@@ -734,6 +774,16 @@ function kgpCollectCard(message, ok, actions) {
   clearTimeout(card._kgpConverge);
   card._kgpConverge = setTimeout(() => { card.setAttribute("data-collapsed", "1"); }, 3000);
   return card;
+}
+
+// v83.1 STEP1: FAB 부제·title을 번역 토글 상태에 동기화. 버튼이 하는 일을 라벨이 정확히 말하게 한다
+//   ("번역까지 한 번에"인데 실제로는 원문 저장 = 거짓 라벨). 인자 없으면 현재 FAB를 찾아 갱신.
+function kgpApplyTranslateCopy(btn) {
+  const el = btn || document.getElementById(KGP_BTN_ID);
+  if (!el) return;
+  el.title = KGP_TRANSLATE ? "고가브릿지로 수집 (한국어 번역 포함)" : "고가브릿지로 수집 (원문 그대로)";
+  const sub = el.querySelector(".kgp-fab-sub");
+  if (sub) sub.textContent = KGP_TRANSLATE ? "번역까지 한 번에" : "원문 그대로 수집";
 }
 
 function setFabState(btn, state) {
@@ -1105,7 +1155,10 @@ function handleFabClick(btn, opts) {
       //   카드는 등장 시 확장(Pop in) → 3초 후 pill 수렴(토스트·카드 중복 노출 금지).
       // v83 STEP1: 구글 번역 상태로 보고 있으면 알린다 — 통화·문구는 **원문 기준**으로 저장했음을 명시(오해 차단).
       var _tr = (meta && meta.translated_dom) ? "\n번역된 페이지 — 원문 기준으로 저장했어요" : "";
-      kgpCollectCard("수집 완료" + _cnt + _ev + " — 이력에서 확인" + _tr + _warn, true, [{ label: "이력 열기", fn: kgpOpenHistory }]);
+      // v83.1 STEP1: 이번 수집에 **실제로** 번역이 적용됐는지 — 서버가 확인한 값만 쓴다(가짜 '번역됨' 금지).
+      //   서버 resp.translated=true면 번역 성공, 토글 OFF면 원문 저장, 그 외(키 미설정 등)는 언급하지 않는다.
+      var _ko = resp.translated ? "\n한국어 번역 완료" : (KGP_TRANSLATE ? "" : "\n원문 그대로 저장했어요");
+      kgpCollectCard("수집 완료" + _cnt + _ev + " — 이력에서 확인" + _ko + _tr + _warn, true, [{ label: "이력 열기", fn: kgpOpenHistory }]);
     });
   });
   });   // v47 STEP4: kgpExtractMerged 콜백 닫기
@@ -1131,9 +1184,9 @@ function injectCollectButton() {
     'background:transparent;border:0;flex-shrink:0">' + KGP_BRIDGE_SVG + '</span>' +
     '<span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1.12">' +
     '<span class="kgp-fab-label" style="font-weight:700 !important;font-size:14px !important;line-height:1.1 !important;color:#f5efe3">고가수집기</span>' +
-    '<span style="font-size:10px !important;line-height:1.1 !important;color:#c9a24b;font-family:Georgia,\'Times New Roman\',serif">번역까지 한 번에</span>' +
+    '<span class="kgp-fab-sub" style="font-size:10px !important;line-height:1.1 !important;color:#c9a24b;font-family:Georgia,\'Times New Roman\',serif"></span>' +
     '</span>';
-  btn.title = "고가브릿지로 수집 (한국어 번역 포함)";
+  kgpApplyTranslateCopy(btn);   // v83.1 STEP1: 부제·title을 번역 토글 상태에 맞춰 세팅
   // 고가브릿지 토큰: 먹 매트 pill + 금 얇은 링 + 청록 미세 악센트. (네이비+주황 폐기, v4)
   // 위치: 우측 '중앙'(v7) — 콘텐츠 안 가리게. 드래그로 옮기면 위치 기억(kgp_fab_pos).
   btn.style.cssText = _KGP_RESET + [   // v72 STEP4: all:initial 격리(사이트 상속 오염 차단)
@@ -1262,6 +1315,9 @@ const KGP_DEFAULT_SOURCES = (typeof KGPSources !== "undefined" && KGPSources.SOU
   : _KGP_LEGACY_SOURCES;
 let KGP_SOURCES = null;   // chrome.storage의 사용자 설정 { defaults:{id:bool}, custom:[{host,on}] }
 let KGP_FAB_ENABLED = true;   // v16 P1: 인페이지 수집 버튼(FAB) on/off (popup 토글, 기본 ON)
+// v83.1 STEP1: 한국어 번역 on/off (팝업·수집 카드 공용 토글, 기본 ON). 실제 페이로드 주입은 background가
+//   단일 관문에서 하고, 여기서는 **문구 동기화**(FAB 부제·title, 카드 안내)만 담당한다.
+let KGP_TRANSLATE = true;
 
 // v17 P0: 우리 앱에서 띄운 마켓/소싱처 진입이면(URL 마커 kgpsrc=app) 그 탭 세션 동안 수집기를
 // 강제 노출한다(유저가 FAB를 off 했어도 진입 세션엔 보장). 마커는 sessionStorage로 SPA 이동에도 유지.
@@ -2340,9 +2396,10 @@ function kgpDiagApply() {
 }
 function kgpLoadSourcesThen(cb) {
   try {
-    chrome.storage.local.get(["kgp_sources", "kgp_fab_enabled", "kgp_diag", "kgp_hover_anchor"], (r) => {
+    chrome.storage.local.get(["kgp_sources", "kgp_fab_enabled", "kgp_diag", "kgp_hover_anchor", "kgp_translate"], (r) => {
       KGP_SOURCES = (r && r.kgp_sources) || {};
       KGP_FAB_ENABLED = !(r && r.kgp_fab_enabled === false);   // 기본 ON
+      KGP_TRANSLATE = !(r && r.kgp_translate === false);       // v83.1 STEP1: 한국어 번역 기본 ON
       KGP_DIAG = !!(r && r.kgp_diag);                          // 진단 모드 기본 OFF
       KGP_HOVER_ANCHOR = (r && r.kgp_hover_anchor) || "center";  // v64 STEP3: 수집 버튼 위치
       kgpDiagApply();
@@ -2358,6 +2415,11 @@ try {
       KGP_FAB_ENABLED = changes.kgp_fab_enabled.newValue !== false;
       if (!KGP_FAB_ENABLED) kgpRemoveFab();             // 끄면 즉시 제거
       changed = true;
+    }
+    if (changes && changes.kgp_translate) {          // v83.1 STEP1: 팝업↔카드 양방향 즉시 동기(문구 포함)
+      KGP_TRANSLATE = changes.kgp_translate.newValue !== false;
+      kgpApplyTranslateCopy();
+      kgpRenderCardTranslate();
     }
     if (changes && changes.kgp_diag) { KGP_DIAG = !!changes.kgp_diag.newValue; kgpDiagApply(); }
     if (changes && changes.kgp_hover_anchor) {          // v64 STEP3: 위치 변경 즉시 반영

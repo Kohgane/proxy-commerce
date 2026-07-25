@@ -75,6 +75,36 @@ chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
 optionsLink.addEventListener("click", (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); });
 manageLink.addEventListener("click", (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); });
 
+// v83.1 STEP1: 한국어 번역 토글 — 상태 기억(chrome.storage.local.kgp_translate, 기본 ON).
+//   OFF면 background가 수집 페이로드에 translate:false를 실어 서버 번역 파이프라인을 건너뛴다(원문 그대로 저장).
+//   **원문은 토글과 무관하게 항상 보존**된다 — 번역본(title_ko 등)은 파생 필드일 뿐이다.
+//   같은 키를 인페이지 수집 카드도 읽고 쓴다(onChanged로 양방향 즉시 동기).
+const translateToggle = document.getElementById("translateToggle");
+const translateNote = document.getElementById("translateNote");
+function _kgpRenderTranslateNote(on) {
+  if (translateNote) translateNote.textContent = on ? "(원문은 항상 보존돼요)" : "(원문 그대로 저장돼요)";
+}
+if (translateToggle) {
+  chrome.storage.local.get("kgp_translate", (r) => {
+    const on = !(r && r.kgp_translate === false);
+    translateToggle.checked = on;
+    _kgpRenderTranslateNote(on);
+  });
+  translateToggle.addEventListener("change", () => {
+    chrome.storage.local.set({ kgp_translate: translateToggle.checked });
+    _kgpRenderTranslateNote(translateToggle.checked);
+  });
+  // 인페이지 카드에서 껐다 켜면 팝업도 따라 바뀐다(양방향 동기).
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local" || !changes || !changes.kgp_translate) return;
+      const on = changes.kgp_translate.newValue !== false;
+      translateToggle.checked = on;
+      _kgpRenderTranslateNote(on);
+    });
+  } catch (e) { /* noop */ }
+}
+
 // v16 P1: 인페이지 '수집' 버튼(FAB) on/off 토글 — 상태 기억(chrome.storage.local.kgp_fab_enabled, 기본 ON).
 const fabToggle = document.getElementById("fabToggle");
 if (fabToggle) {

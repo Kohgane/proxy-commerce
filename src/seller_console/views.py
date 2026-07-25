@@ -5909,36 +5909,17 @@ def extension_download():
     """크롬 확장(고가네 수집)을 ZIP으로 즉석 패키징해 내려준다 — 설치용."""
     if not _check_auth():
         return redirect(url_for("auth.login", next=request.url))
-    import io
-    import zipfile
-
     ext_dir = _chrome_extension_dir()
     if not os.path.isdir(ext_dir):
         abort(404)
-    include = [
-        "manifest.json", "background.js", "kgp-net.js", "kgp-extractor.js", "kgp-detect.js", "kgp-main.js", "content_script.js",
-        "popup.html", "popup.js", "options.html", "options.js", "README.md",
-    ]
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        # manifest.json이 ZIP '루트'에 오게 한다(하위폴더 X). 그래야 압축 푼 폴더를
-        # 그대로 '압축해제된 확장 로드'로 선택했을 때 크롬이 manifest를 찾는다.
-        for name in include:
-            p = os.path.join(ext_dir, name)
-            if os.path.isfile(p):
-                z.write(p, arcname=name)
-        icons_dir = os.path.join(ext_dir, "icons")
-        if os.path.isdir(icons_dir):
-            for ic in sorted(os.listdir(icons_dir)):
-                fp = os.path.join(icons_dir, ic)
-                if os.path.isfile(fp):
-                    z.write(fp, arcname=f"icons/{ic}")
-    buf.seek(0)
-    version = _chrome_extension_version() or "1"
-    # v15: 일반 유저 친화 파일명 '고가수집기'(gogasujipgi). 받자마자 무엇인지 알게.
-    fname = f"gogasujipgi-v{version}.zip"
+    # v83.1 STEP2: 패키징은 src/build_extension.py 단일 소스 — 파일 목록 drift 봉인 + ZIP에 빌드 각인
+    #   (build-info.json: commit·built_at)을 넣어 진단 파일이 '어느 빌드인지'를 커밋 단위로 말하게 한다.
+    #   파일명은 기존과 동일(gogasujipgi-v{version}.zip).
+    from src.build_extension import build_zip_bytes
+
+    data, fname, _info = build_zip_bytes(repo_root=os.path.dirname(os.path.dirname(ext_dir)))
     return Response(
-        buf.getvalue(),
+        data,
         mimetype="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )

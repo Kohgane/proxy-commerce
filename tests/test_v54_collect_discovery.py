@@ -94,4 +94,4 @@ def test_diag_mode_source_contract():
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.122"
+    assert MANIFEST["version"] == "1.5.123"

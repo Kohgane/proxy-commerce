@@ -12,13 +12,26 @@ async function getSettings() {
     syncData = await chrome.storage.sync.get(["serverUrl", "token"]);
   } catch (_) {}
   try {
-    localData = await chrome.storage.local.get(["serverUrl", "token", "kgp_enrich_mode"]);
+    localData = await chrome.storage.local.get(["serverUrl", "token", "kgp_enrich_mode", "kgp_translate"]);
   } catch (_) {}
   return {
     serverUrl: syncData.serverUrl || localData.serverUrl || DEFAULT_SERVER_URL,
     token: syncData.token || localData.token || "",
     enrichMode: localData.kgp_enrich_mode || "window",   // v67 STEP2: 보강 렌더 모드(window 기본)
+    // v83.1 STEP1: 한국어 번역 토글(기본 ON). 팝업·수집 카드가 같은 키를 읽고 쓴다(단일 소스).
+    translate: !(localData.kgp_translate === false),
   };
+}
+
+// v83.1 STEP1: 번역 플래그를 전송 페이로드에 주입하는 **단일 관문**. FAB·팝업·벌크·호버·컨텍스트메뉴가
+//   전부 handleCollect/handleCollectBulk를 지나므로 여기 한 곳만 지키면 경로 drift가 없다.
+//   OFF일 때만 translate:false를 싣는다(서버 기본값이 true라 ON은 무전송 = 기존 페이로드 그대로).
+//   ※ 원문(title·description)은 어느 쪽이든 그대로 전송된다 — 토글은 **번역 파이프라인 실행 여부**만 제어하고,
+//     번역본(title_ko 등)은 파생 필드다. 구글 번역 DOM 오염(translated_dom) 판정과는 무관(v83 STEP1 유지).
+function _kgpWithTranslateFlag(meta, translate) {
+  if (translate !== false) return meta;
+  if (!meta || typeof meta !== "object") return meta;
+  return Object.assign({}, meta, { translate: false });
 }
 
 // 컨텍스트 메뉴 생성
@@ -47,6 +60,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     handleCollectBulk(msg.items, sendResponse, sender && sender.tab && sender.tab.id);
     return true; // 비동기 응답
   }
+  if (msg.action === "kgpBuildInfo") {   // v83.1 STEP2: 패키징 시 각인된 커밋 해시(진단 파일용)
+    _kgpBuildInfo().then((info) => sendResponse(info));
+    return true;
+  }
   if (msg.action === "getSettings") {
     getSettings().then((data) => sendResponse(data));
     return true;
@@ -61,6 +78,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === "enrichPause") { KgpEnrich.paused = !!msg.paused; _kgpBroadcastEnrich(); sendResponse(_kgpEnrichSnapshot()); return false; }
   if (msg.action === "enrichStop") { KgpEnrich.stopped = true; KgpEnrich.queue = []; _kgpBroadcastEnrich(); sendResponse(_kgpEnrichSnapshot()); return false; }
 });
+
+// v83.1 STEP2: ZIP 패키징 시 심어진 build-info.json(commit·built_at·branch)을 읽는다.
+//   소스 폴더를 그대로 로드한 개발 설치엔 파일이 없다 → {commit:"", source:"unpacked-dev"}로 **정직 표기**
+//   (가짜 해시 금지). 채팅 채점이 "브랜치 빌드인지"를 버전 문자열이 아니라 커밋으로 즉판한다.
+let _kgpBuildInfoCache = null;
+async function _kgpBuildInfo() {
+  if (_kgpBuildInfoCache) return _kgpBuildInfoCache;
+  let version = "";
+  try { version = chrome.runtime.getManifest().version || ""; } catch (e) {}
+  let info = { version: version, commit: "", commit_short: "", branch: "", source: "unpacked-dev", built_at: "" };
+  try {
+    const r = await fetch(chrome.runtime.getURL("build-info.json"));
+    if (r && r.ok) {
+      const d = await r.json();
+      if (d && typeof d === "object") info = Object.assign(info, d);
+    }
+  } catch (e) { /* 파일 없음 = 개발 설치(정직) */ }
+  _kgpBuildInfoCache = info;
+  return info;
+}
 
 async function handleExists(urls, sendResponse) {
   const settings = await getSettings();
@@ -280,7 +317,7 @@ async function handleCollect(meta, sendResponse) {
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-      body: JSON.stringify(meta)
+      body: JSON.stringify(_kgpWithTranslateFlag(meta, settings.translate))   // v83.1 STEP1
     });
     // P0 진단: 엔드포인트·HTTP 상태·응답 본문(원문)을 확장 콘솔에 로그 → 원인 1줄(401/404/500/CORS).
     const raw = await response.text();
@@ -355,7 +392,7 @@ async function handleCollectBulk(items, sendResponse, tabId) {
       const r = await fetch(`${serverUrl}/api/v1/collect/extension`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify(meta),
+        body: JSON.stringify(_kgpWithTranslateFlag(meta, settings.translate)),   // v83.1 STEP1
       });
       const raw = await r.text();
       let d = {}; try { d = JSON.parse(raw); } catch (e) { d = {}; }
