@@ -838,6 +838,20 @@ function kgpEnsureStyles() {
 //   !important 덮어써 벌크바·FAB·호버버튼이 정적 흐름(긴 페이지 최하단=화면 밖)으로 떨어지던 회귀 수리.
 //   동적 위치(드래그·클램프)도 반드시 !important로 설정해 격리 리셋을 이긴다. (크기 격리는 유지.)
 function _kgpPos(el, prop, val) { try { el.style.setProperty(prop, val, "important"); } catch (e) { el.style[prop] = val; } }
+
+// v84 STEP1(P0-A): 위치 재확정 — `all:initial !important` 격리와 **같은 선언 블록**에 위치를 넣으면,
+//   브라우저가 all 숏핸드를 확장하는 방식/순서에 따라 position이 static(=initial)으로 먹히는 사고가 난다
+//   (오너 실기기 증상: FAB computed position=initial → 화면에서 사라짐). cssText 배정 **후** 위치 롱핸드를
+//   setProperty(...,'important')로 다시 박아 넣으면 숏핸드 확장과 무관하게 항상 이긴다(v73 _kgpPos와 동일 수법).
+//   기존 cssText 선언은 그대로 둔다 — 이중 안전장치(하나가 통해도 결과 동일).
+function _kgpPinFixed(el, pos) {
+  if (!el) return;
+  pos = pos || {};
+  _kgpPos(el, "position", "fixed");
+  _kgpPos(el, "z-index", "2147483647");
+  Object.keys(pos).forEach(function (k) { _kgpPos(el, k, pos[k]); });
+}
+
 function kgpMakeDraggable(el, storeKey, opts) {
   opts = opts || {};
   const saved = kgpLSget(storeKey, "");
@@ -1200,6 +1214,7 @@ function injectCollectButton() {
     "cursor:pointer !important", "box-shadow:0 6px 20px rgba(0,0,0,.4),0 0 0 4px rgba(17,154,142,.10) !important",
     "transition:transform .12s,opacity .12s,box-shadow .12s !important"
   ].join(";");
+  _kgpPinFixed(btn, { right: "16px", top: "calc(50% - 24px)" });   // v84 STEP1: all:initial이 위치를 삼켜도 고정
   btn.addEventListener("mouseenter", () => {
     btn.style.transform = "translateY(-2px)";
     btn.style.boxShadow = "0 10px 26px rgba(0,0,0,.5),0 0 0 5px rgba(17,154,142,.18)";
@@ -1941,6 +1956,7 @@ function kgpBuildToolbar() {
     "font:16px/1.2 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif !important",
     "box-shadow:0 8px 24px rgba(0,0,0,.45) !important", "max-width:96vw !important", "flex-wrap:wrap !important",
   ].join(";");
+  _kgpPinFixed(bar, { top: "12px", left: "50%", transform: "translateX(-50%)" });   // v84 STEP1: 위치 재확정
   // 버튼 위계: 전체 수집=청록 채움(Primary), 선택 수집=금 아웃라인(Secondary), 전체선택/해제=고스트. (+25% 확대)
   // v72 STEP4: 내부 버튼도 all:initial 격리(사이트 button 규칙 상속 차단) + 고정 px !important.
   const btnBase = _KGP_RESET + "padding:7px 14px !important;border-radius:9px !important;cursor:pointer !important;font-weight:700 !important;font-size:15px !important;line-height:1 !important;min-height:40px !important;display:inline-flex !important;align-items:center !important;";

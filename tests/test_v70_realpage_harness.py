@@ -19,12 +19,24 @@ FIX_DIR = Path("fixtures/realpages")
 FIXTURES = sorted(glob.glob(str(FIX_DIR / "*.expected.json")))
 
 
+def _pw_executable():
+    """샌드박스 사전설치 크로미움 경로. 없으면 None → Playwright 기본 설치 경로 사용."""
+    hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")
+    return hits[0] if hits else None
+
+
 def _playwright_ok():
+    """v84: 예전엔 /opt/pw-browsers 글롭만 봐서 **GitHub CI에선 항상 skip**이었다(= 이 하네스가 CI 게이트라는
+    CLAUDE.md 기술이 실제로는 거짓). CI는 `playwright install chromium`으로 기본 경로(~/.cache/ms-playwright)에
+    깔리므로 그 경우도 인정한다. 둘 다 없으면 정직하게 skip."""
     try:
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    if _pw_executable():
+        return True
+    cache = Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or (Path.home() / ".cache" / "ms-playwright"))
+    return cache.is_dir() and any(cache.glob("chromium-*"))
 
 
 def test_fixtures_present():
@@ -50,7 +62,7 @@ def test_snapshot_infra_source_contract():
     assert "실페이지 하네스 통과 필수" in Path("CLAUDE.md").read_text(encoding="utf-8")
     # manifest bump.
     mani = _json.loads(Path("extensions/chrome-collector/manifest.json").read_text(encoding="utf-8"))
-    assert mani["version"] == "1.5.123"
+    assert mani["version"] == "1.5.124"
 
 
 def _extract_via_browser(expected):
@@ -60,10 +72,10 @@ def _extract_via_browser(expected):
     spec = json.loads(Path(expected).read_text(encoding="utf-8"))
     html = (FIX_DIR / (name + ".html")).read_text(encoding="utf-8")
     url = spec["url"]
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = _pw_executable()
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
-        opts = {"executable_path": exe}
+        opts = {"executable_path": exe} if exe else {}   # v84: CI 기본 설치 경로면 Playwright가 알아서 찾는다
         if px:
             opts["proxy"] = {"server": px, "bypass": "127.0.0.1,localhost"}
         b = pw.chromium.launch(**opts)
