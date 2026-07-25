@@ -58,7 +58,11 @@ def _run_git(args, cwd: Path) -> str:
 
 
 def resolve_commit(repo_root: Path) -> Tuple[str, str]:
-    """(commit, source) 반환. 못 구하면 ('', 'unknown') — 가짜 해시 금지."""
+    """(commit, source) 반환. 못 구하면 ('', 'unknown') — 가짜 해시 금지.
+
+    ※ PR 워크플로에서는 GITHUB_SHA 기본값이 GitHub이 만든 **머지 커밋**이라 오너가 브랜치에서 보는 해시와
+      다르다 → ci.yml이 head SHA로 덮어쓴다(각인을 눈으로 대조 가능하게).
+    """
     for env_key, src in (("GITHUB_SHA", "ci"), ("RENDER_GIT_COMMIT", "render"), ("KGP_BUILD_COMMIT", "env")):
         v = (os.environ.get(env_key) or "").strip()
         if v:

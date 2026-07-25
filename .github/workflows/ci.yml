@@ -65,6 +65,11 @@ jobs:
           python-version: "3.12"
 
       - name: 확장 ZIP 빌드(커밋 각인)
+        # PR 이벤트의 기본 GITHUB_SHA는 GitHub이 만든 **머지 커밋**이라 오너가 브랜치에서 보는 해시와 다르다
+        #   → 각인이 "내 브랜치 빌드"임을 못 알아보게 된다. 브랜치 head SHA로 덮어써 눈으로 대조 가능하게.
+        env:
+          GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          GITHUB_REF_NAME: ${{ github.head_ref || github.ref_name }}
         run: |
           python scripts/build_extension_zip.py dist/gogasujipgi-branch.zip
           python - <<'PY'
