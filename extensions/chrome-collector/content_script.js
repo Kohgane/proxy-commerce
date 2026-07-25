@@ -1206,7 +1206,7 @@ function injectCollectButton() {
   btn.style.cssText = _KGP_RESET + [   // v72 STEP4: all:initial 격리(사이트 상속 오염 차단)
     // v73 STEP1: 위치/레이아웃 오프셋 전부 !important — all:initial의 auto가 우리 top/right를 덮어써
     //   FAB가 화면 밖(정적 흐름)으로 떨어지던 회귀 수리(격리는 유지).
-    "position:fixed !important", "right:16px !important", "top:calc(50% - 24px) !important", "z-index:2147483647 !important",
+    "right:16px !important", "top:calc(50% - 24px) !important", "z-index:2147483647 !important",
     "display:flex !important", "align-items:center !important", "gap:10px !important", "max-width:min(82vw,300px) !important", "box-sizing:border-box !important",
     "padding:9px 16px 9px 10px !important", "border:1px solid #c9a24b !important", "border-radius:999px !important",
     "background:#1a1714 !important", "color:#f5efe3 !important",
@@ -1214,7 +1214,6 @@ function injectCollectButton() {
     "cursor:pointer !important", "box-shadow:0 6px 20px rgba(0,0,0,.4),0 0 0 4px rgba(17,154,142,.10) !important",
     "transition:transform .12s,opacity .12s,box-shadow .12s !important"
   ].join(";");
-  _kgpPinFixed(btn, { right: "16px", top: "calc(50% - 24px)" });   // v84 STEP1: all:initial이 위치를 삼켜도 고정
   btn.addEventListener("mouseenter", () => {
     btn.style.transform = "translateY(-2px)";
     btn.style.boxShadow = "0 10px 26px rgba(0,0,0,.5),0 0 0 5px rgba(17,154,142,.18)";
