@@ -133,11 +133,28 @@ def test_build_info_honest_when_commit_unknown(monkeypatch, tmp_path):
 
 
 def test_commit_env_precedence(monkeypatch, tmp_path):
+    """명시 오버라이드가 1순위 — PR의 GITHUB_SHA(머지 커밋)보다 브랜치 head SHA가 이겨야 한다."""
+    for k in ("KGP_BUILD_COMMIT", "GITHUB_SHA", "RENDER_GIT_COMMIT", "GITHUB_ACTIONS"):
+        monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("GITHUB_SHA", "a" * 40)
     assert resolve_commit(tmp_path) == ("a" * 40, "ci")
+    monkeypatch.setenv("KGP_BUILD_COMMIT", "c" * 40)   # 머지 커밋(GITHUB_SHA) 위에 head SHA
+    assert resolve_commit(tmp_path) == ("c" * 40, "env")
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")       # CI 안이면 출처 표기는 'ci'
+    assert resolve_commit(tmp_path) == ("c" * 40, "ci")
+    monkeypatch.delenv("KGP_BUILD_COMMIT")
     monkeypatch.delenv("GITHUB_SHA")
     monkeypatch.setenv("RENDER_GIT_COMMIT", "b" * 40)
     assert resolve_commit(tmp_path) == ("b" * 40, "render")
+
+
+def test_ci_stamps_branch_head_not_merge_commit():
+    """GITHUB_* 는 예약 이름이라 워크플로에서 덮어써도 무시된다 → 전용 키로 넘겨야 한다(실패 재발 방지)."""
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "KGP_BUILD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}" in ci
+    assert "KGP_BUILD_BRANCH: ${{ github.head_ref || github.ref_name }}" in ci
+    # 예약 이름 덮어쓰기(무시되는 설정)로 되돌아가지 않게 못박음.
+    assert "GITHUB_SHA:" not in ci and "GITHUB_REF_NAME:" not in ci
 
 
 def test_diag_bundle_reports_commit():
