@@ -806,7 +806,7 @@ function kgpApplyTranslateCopy(btn) {
   const el = btn || document.getElementById(KGP_BTN_ID);
   if (!el) return;
   el.title = KGP_TRANSLATE ? "고가브릿지로 수집 (한국어 번역 포함)" : "고가브릿지로 수집 (원문 그대로)";
-  const sub = el.querySelector(".kgp-fab-sub");
+  const sub = _kgpFabQuery(el, ".kgp-fab-sub");
   if (sub) sub.textContent = KGP_TRANSLATE ? "번역까지 한 번에" : "원문 그대로 수집";
 }
 
@@ -814,11 +814,11 @@ function setFabState(btn, state) {
   if (state === "loading") {
     btn.dataset.busy = "1";
     btn.style.opacity = "0.7";
-    btn.querySelector(".kgp-fab-label").textContent = "수집 중...";
+    { const _l = _kgpFabQuery(btn, ".kgp-fab-label"); if (_l) _l.textContent = "수집 중..."; }
   } else {
     btn.dataset.busy = "";
     btn.style.opacity = "1";
-    btn.querySelector(".kgp-fab-label").textContent = "고가수집기";
+    { const _l = _kgpFabQuery(btn, ".kgp-fab-label"); if (_l) _l.textContent = "고가수집기"; }
   }
 }
 
@@ -875,6 +875,39 @@ function _kgpPinFixed(el, pos) {
   _kgpPos(el, "z-index", "2147483647");
   Object.keys(pos).forEach(function (k) { _kgpPos(el, k, pos[k]); });
 }
+
+// ── v86 STEP1: Shadow DOM 격리(all:initial 폐기) ────────────────────────────
+//   근원: `all:initial !important`를 **인라인**에 걸면 Chrome이 250여 롱핸드로 전개해 배경·크기·색까지 전부
+//   초기화한다. 인라인 !important라 우리 kgp-style 시트로도 복원 불가(우선순위상 원천 봉쇄) → 요소는 fixed로
+//   존재하지만 **투명·0크기로 안 보인다**(오너 실측: width/height/transform initial).
+//   해결: 호스트에는 **위치 계열만** 인라인으로 두고, 실제 모양은 shadowRoot 안에서 그린다.
+//   페이지 CSS 격리는 shadow 경계가 대신한다(v80 체크박스에서 이미 검증된 패턴).
+function _kgpShadowHost(host, css, html) {
+  var root = host._kgpShadow;
+  if (root === undefined) {
+    try { root = host.attachShadow({ mode: "open" }); } catch (e) { root = null; }
+    host._kgpShadow = root;
+  }
+  if (!root) return null;                       // 구형 폴백: 호출측이 라이트 DOM으로 처리
+  var full = ":host{all:initial}" + css;        // :host에만 initial — 내부 요소엔 영향 없음
+  var adopted = false;
+  try {
+    if (("adoptedStyleSheets" in root) && typeof CSSStyleSheet === "function") {
+      var sh = new CSSStyleSheet(); sh.replaceSync(full); root.adoptedStyleSheets = [sh]; adopted = true;
+    }
+  } catch (e) { adopted = false; }
+  var st = document.createElement("style"); st.textContent = full; root.appendChild(st);   // 인라인 폴백 항상
+  if (!adopted) { try { console.warn("[고가수집기] adoptedStyleSheets 미지원 — <style> 폴백"); } catch (e) {} }
+  root.insertAdjacentHTML("beforeend", html);
+  return root;
+}
+// FAB 내부(shadow) 요소 조회 — 라이트 DOM 폴백도 함께 본다.
+function _kgpFabQuery(el, sel) {
+  if (!el) return null;
+  try { if (el._kgpShadow) return el._kgpShadow.querySelector(sel); } catch (e) {}
+  try { return el.querySelector(sel); } catch (e) { return null; }
+}
+
 
 function kgpMakeDraggable(el, storeKey, opts) {
   opts = opts || {};
@@ -1225,37 +1258,42 @@ function injectCollectButton() {
   const btn = document.createElement("button");
   btn.id = KGP_BTN_ID;
   btn.type = "button";
-  btn.innerHTML =
-    '<span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;' +
-    'background:transparent;border:0;flex-shrink:0">' + KGP_BRIDGE_SVG + '</span>' +
-    '<span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1.12">' +
-    '<span class="kgp-fab-label" style="font-weight:700 !important;font-size:14px !important;line-height:1.1 !important;color:#f5efe3">고가수집기</span>' +
-    '<span class="kgp-fab-sub" style="font-size:10px !important;line-height:1.1 !important;color:#c9a24b;font-family:Georgia,\'Times New Roman\',serif"></span>' +
-    '</span>';
+  // v86 STEP1: 모양은 shadowRoot 안에서 그린다(페이지 CSS 격리는 shadow 경계가 담당).
+  const _fabCss =
+    ".w{display:flex;align-items:center;gap:10px;box-sizing:border-box;max-width:min(82vw,300px);" +
+    "padding:9px 16px 9px 10px;border:1px solid #c9a24b;border-radius:999px;background:#1a1714;color:#f5efe3;" +
+    "font:14px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer;" +
+    "box-shadow:0 6px 20px rgba(0,0,0,.4),0 0 0 4px rgba(17,154,142,.10);transition:transform .12s,box-shadow .12s}" +
+    ".w:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(0,0,0,.5),0 0 0 5px rgba(17,154,142,.18)}" +
+    ".g{display:flex;align-items:center;justify-content:center;width:28px;height:28px;flex-shrink:0}" +
+    ".g svg{display:block;width:22px;height:22px}" +
+    ".t{display:flex;flex-direction:column;align-items:flex-start;line-height:1.12}" +
+    ".kgp-fab-label{font-weight:700;font-size:14px;line-height:1.1;color:#f5efe3;white-space:nowrap}" +
+    ".kgp-fab-sub{font-size:10px;line-height:1.1;color:#c9a24b;font-family:Georgia,'Times New Roman',serif;white-space:nowrap}";
+  const _fabHtml =
+    '<div class="w" part="btn"><span class="g">' + KGP_BRIDGE_SVG + '</span>' +
+    '<span class="t"><span class="kgp-fab-label">고가수집기</span><span class="kgp-fab-sub"></span></span></div>';
+  const _fabRoot = _kgpShadowHost(btn, _fabCss, _fabHtml);
+  if (!_fabRoot) {
+    // shadow 미지원(구형) — 라이트 DOM 폴백. all:initial은 쓰지 않는다(가시성 우선).
+    btn.innerHTML = '<span class="g">' + KGP_BRIDGE_SVG + '</span>' +
+      '<span class="t"><span class="kgp-fab-label">고가수집기</span><span class="kgp-fab-sub"></span></span>';
+    btn.style.cssText = "display:flex;align-items:center;gap:10px;padding:9px 16px 9px 10px;" +
+      "border:1px solid #c9a24b;border-radius:999px;background:#1a1714;color:#f5efe3;cursor:pointer;" +
+      "font:14px/1 -apple-system,sans-serif";
+  }
   kgpApplyTranslateCopy(btn);   // v83.1 STEP1: 부제·title을 번역 토글 상태에 맞춰 세팅
-  kgpEnsureStyles();            // v84 STEP1: 주입 시점에 스타일 보장(수집 전에도 #kgp-style 존재)
-  // 고가브릿지 토큰: 먹 매트 pill + 금 얇은 링 + 청록 미세 악센트. (네이비+주황 폐기, v4)
-  // 위치: 우측 '중앙'(v7) — 콘텐츠 안 가리게. 드래그로 옮기면 위치 기억(kgp_fab_pos).
-  btn.style.cssText = _KGP_RESET + [   // v72 STEP4: all:initial 격리(사이트 상속 오염 차단)
-    // v73 STEP1: 위치/레이아웃 오프셋 전부 !important — all:initial의 auto가 우리 top/right를 덮어써
-    //   FAB가 화면 밖(정적 흐름)으로 떨어지던 회귀 수리(격리는 유지).
-    "position:fixed !important", "right:16px !important", "top:calc(50% - 24px) !important", "z-index:2147483647 !important",
-    "display:flex !important", "align-items:center !important", "gap:10px !important", "max-width:min(82vw,300px) !important", "box-sizing:border-box !important",
-    "padding:9px 16px 9px 10px !important", "border:1px solid #c9a24b !important", "border-radius:999px !important",
-    "background:#1a1714 !important", "color:#f5efe3 !important",
-    "font:14px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif !important",
-    "cursor:pointer !important", "box-shadow:0 6px 20px rgba(0,0,0,.4),0 0 0 4px rgba(17,154,142,.10) !important",
-    "transition:transform .12s,opacity .12s,box-shadow .12s !important"
-  ].join(";");
-  _kgpPinFixed(btn, { right: "16px", top: "calc(50% - 24px)" });   // v84 STEP1: all:initial이 위치를 삼켜도 고정
-  btn.addEventListener("mouseenter", () => {
-    btn.style.transform = "translateY(-2px)";
-    btn.style.boxShadow = "0 10px 26px rgba(0,0,0,.5),0 0 0 5px rgba(17,154,142,.18)";
-  });
-  btn.addEventListener("mouseleave", () => {
-    btn.style.transform = "none";
-    btn.style.boxShadow = "0 6px 20px rgba(0,0,0,.4),0 0 0 4px rgba(17,154,142,.10)";
-  });
+  kgpEnsureStyles();            // v84 STEP1: 주입 시점에 스타일 보장
+  // v86 STEP1: 호스트에는 **위치 계열만** — all:initial 인라인 전개 폐기(가시성 원천 복구).
+  btn.style.setProperty("background", "transparent", "important");
+  btn.style.setProperty("border", "0", "important");
+  btn.style.setProperty("padding", "0", "important");
+  btn.style.setProperty("margin", "0", "important");
+  btn.style.setProperty("width", "auto", "important");
+  btn.style.setProperty("height", "auto", "important");
+  btn.style.setProperty("min-width", "0", "important");
+  btn.style.setProperty("line-height", "normal", "important");
+  _kgpPinFixed(btn, { right: "16px", top: "calc(50% - 24px)" });   // position/z-index/오프셋
   btn.addEventListener("click", () => handleFabClick(btn));
   _kgpMount(btn);                            // v45 P5: <html> 직속(본문 재렌더에도 상시 표시)
   kgpMakeDraggable(btn, "kgp_fab_pos");      // 드래그 이동 + 위치 기억(v7)
