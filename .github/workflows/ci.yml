@@ -55,7 +55,7 @@ jobs:
       # v84 STEP1: 주입 사활 계약은 --collect-only로는 못 잡는다(assert가 안 돈다) → 이 두 파일만 실제 실행.
       #   전건 pytest는 여전히 배포 워크플로 몫이지만, "화면에 버튼이 없는" 회귀만큼은 PR에서 막는다.
       - name: 주입 사활 계약 실행(실브라우저 포함)
-        run: python -m pytest tests/test_v84_injection_harness.py tests/test_v70_realpage_harness.py -q
+        run: python -m pytest tests/test_v84_injection_harness.py tests/test_v86_shadow_visibility.py tests/test_v70_realpage_harness.py -q
 
   # v83.1 STEP2: 머지 전 실기기 검증 경로 상설화 — 브랜치 빌드 확장 ZIP을 PR 아티팩트로 뽑는다.
   #   오너가 배포(/seller/extension/download) 없이도 PR에서 바로 받아 재로딩 → 실기기 재진단 가능.

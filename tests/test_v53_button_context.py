@@ -98,4 +98,4 @@ def test_detector_scoring_node():
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.125"
+    assert MANIFEST["version"] == "1.5.126"
