@@ -898,7 +898,10 @@ function _kgpShadowHost(host, css, html) {
   } catch (e) { adopted = false; }
   var st = document.createElement("style"); st.textContent = full; root.appendChild(st);   // 인라인 폴백 항상
   if (!adopted) { try { console.warn("[고가수집기] adoptedStyleSheets 미지원 — <style> 폴백"); } catch (e) {} }
-  root.insertAdjacentHTML("beforeend", html);
+  // ShadowRoot에는 insertAdjacentHTML이 없다(DocumentFragment 계열) → 래퍼 div로 파싱해 옮긴다.
+  var wrap = document.createElement("div");
+  wrap.innerHTML = html;
+  while (wrap.firstChild) root.appendChild(wrap.firstChild);
   return root;
 }
 // FAB 내부(shadow) 요소 조회 — 라이트 DOM 폴백도 함께 본다.
