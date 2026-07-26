@@ -424,6 +424,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       cards: cards, generic: _kgpLastDetect.generic, adapter: _kgpLastDetect.adapter,
       adapterMatched: _kgpLastDetect.adapterMatched, scanned: _kgpScannedCount || 0, button: btn,
       excl: _kgpExcl, skipStats: _kgpSkipStats,   // v65/v77: 제외 사유 분해 + 타일 스킵 사유별 카운트
+      // v84 STEP1: 스타일 주입·FAB 실측 위치(팝업 감지 진단에서 즉시 확인).
+      styleInjected: !!document.getElementById("kgp-style"),
+      fabPosition: (function () { try { var f = document.getElementById(KGP_BTN_ID); return f ? getComputedStyle(f).position : ""; } catch (e) { return ""; } })(),
     });
     return true;
   }
@@ -453,10 +456,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // v83.1 STEP2: 빌드 각인(커밋 해시) — ext_version과 별개로 **어느 빌드인지** 커밋 단위 즉판용.
     //   background가 ZIP에 심어진 build-info.json을 읽어 준다. 개발 설치면 commit=""·source="unpacked-dev"(정직).
     kgpSendMessage({ action: "kgpBuildInfo" }, (bi) => {
+      // v84 STEP1: 채점 즉판 필드 — 스타일 주입 여부 + FAB **computed** 위치 실측 + 번역 DOM 플래그.
+      //   "값은 맞는데 화면엔 없음"을 진단 파일 하나로 판정하기 위한 최소 사실들(추측 제거).
+      var _ui = { style_injected: false, fab_exists: false, fab_position: "", fab_z: "", fab_parent: "",
+                  bar_exists: false, pinned: false };
+      try {
+        _ui.style_injected = !!document.getElementById("kgp-style");
+        var _f = document.getElementById(KGP_BTN_ID);
+        _ui.fab_exists = !!_f;
+        _ui.bar_exists = !!document.getElementById(KGP_TOOLBAR_ID);
+        if (_f) {
+          var _cs = null; try { _cs = getComputedStyle(_f); } catch (e) {}
+          _ui.fab_position = _cs ? _cs.position : "";        // 'static'이면 화면에서 사라진 상태(오너 증상)
+          _ui.fab_z = _cs ? _cs.zIndex : "";
+          _ui.fab_parent = (_f.parentElement && _f.parentElement.tagName) || "";
+          // 인라인에 !important로 박혔는지(= _kgpPinFixed 발현 여부) — 로드된 빌드에 핀이 있는지 즉판.
+          try { _ui.pinned = _f.style.getPropertyPriority("position") === "important"; } catch (e) {}
+        }
+      } catch (e) {}
       sendResponse({ ok: !!html, html: html, host: (location.hostname || ""), url: (location.href || ""),
         title: (document.title || ""), extracted: extracted, detection: detection, ext_version: extVer,
         build: bi || { commit: "", source: "unknown" },
         git_commit: (bi && bi.commit) || "",
+        style_injected: _ui.style_injected,
+        translated_dom: !!(extracted && extracted.translated_dom),
+        ui: _ui,
         collected_at: new Date().toISOString() });
     });
     return true;
@@ -1201,6 +1225,7 @@ function injectCollectButton() {
     '<span class="kgp-fab-sub" style="font-size:10px !important;line-height:1.1 !important;color:#c9a24b;font-family:Georgia,\'Times New Roman\',serif"></span>' +
     '</span>';
   kgpApplyTranslateCopy(btn);   // v83.1 STEP1: 부제·title을 번역 토글 상태에 맞춰 세팅
+  kgpEnsureStyles();            // v84 STEP1: 주입 시점에 스타일 보장(수집 전에도 #kgp-style 존재)
   // 고가브릿지 토큰: 먹 매트 pill + 금 얇은 링 + 청록 미세 악센트. (네이비+주황 폐기, v4)
   // 위치: 우측 '중앙'(v7) — 콘텐츠 안 가리게. 드래그로 옮기면 위치 기억(kgp_fab_pos).
   btn.style.cssText = _KGP_RESET + [   // v72 STEP4: all:initial 격리(사이트 상속 오염 차단)
