@@ -666,15 +666,53 @@
   // ── v84.1 STEP A: 재고(품절) 신호 ────────────────────────────────────
   //   품절이면 가격이 없거나(있어도 무관한 위젯값) 등록해도 파는 물건이 없다 → 수집 차단이 정직하다.
   //   판정은 **명시 신호가 있을 때만**: 문구 매칭 또는 구매 버튼 부재+명시 품절. 애매하면 unknown(차단 안 함).
-  var _OOS_TEXT = /(currently unavailable|out of stock|sold ?out|temporarily out of stock|unavailable|품절|재고\s*없|일시품절|판매\s*중지|在庫[なが]?\s*(なし|ありません|切れ)|売り切れ|入荷[未]?待ち|agotado|no disponible|rupture de stock|ausverkauft|nicht verfügbar)/i;
-  var _IN_STOCK_TEXT = /(in stock|재고\s*있|在庫あり|購入可能|available now)/i;
+  // v85 STEP1: 어휘 재설계 — **구매 유도 문구를 품절로 오판하지 않는다**.
+  //   실기기 반증(테무 LED): 화면에 "재고 8개"인 정상 상품이 "품절임박"(=곧 매진, 사실은 재고 있음)과
+  //   i18n JSON 문자열 때문에 out_of_stock으로 찍혀 가격이 폐기됐다. 재고 있는 상품을 막는 건 최악이다.
+  //   ① 임박 문구는 **재고 있음** 신호. ② 품절 어휘는 임박 문구를 먼저 걷어낸 뒤 검사(부분매치 금지).
+  var _URGENCY_TEXT = /(품절\s*임박|매진\s*임박|곧\s*품절|almost sold ?out|selling fast|残りわずか|まもなく完売|hurry|few left|only \d+ left)/gi;
+  var _OOS_TEXT = /(currently unavailable|out of stock|sold ?out|temporarily out of stock|품절되었|품절입니다|재고\s*없|일시\s*품절|판매\s*중지|在庫\s*(なし|切れ)|在庫がありません|売り切れ|agotado|no disponible|rupture de stock|ausverkauft|nicht verfügbar)/i;
+  //   명시 재고수량("재고 8개", "in stock", "재고 있음") — 가장 강한 재고 근거.
+  var _QTY_TEXT = /(재고\s*\d+\s*개|남은\s*수량\s*\d+|in stock|재고\s*있|在庫あり|購入可能|available now|\d+\s*개\s*남음)/i;
   var _BUY_BTN_SEL = '#add-to-cart-button,#buy-now-button,[name="submit.add-to-cart"],[id*="addToCart" i],'
     + '[class*="add-to-cart" i],[class*="addToCart" i],[class*="add_to_cart" i],[data-testid*="add-to-cart" i],'
     + '[class*="buy-now" i],[class*="purchase" i] button,button[class*="cart" i]';
-  //   품절 문구를 **상품 스코프 안**에서만 읽는다(추천·리뷰의 '품절' 언급 오탐 방지).
-  var _STOCK_SCOPE_SEL = '#centerCol,#dp-container,#desktop_buybox,#buybox,#availability,'
-    + '[class*="product-detail" i],[class*="item-detail" i],[class*="goods-detail" i],[itemtype*="Product" i],main';
+  //   판정 스코프 = **구매 모듈**. 스폰서·추천·캐러셀은 제외(아마존 반증: buybox 밖 'In Stock' 2건 오탐).
+  var _STOCK_SCOPE_SEL = '#availability,#outOfStock,#availability_feature_div,#desktop_buybox,#buybox,'
+    + '#centerCol,[class*="buy-box" i],[class*="buybox" i],[class*="purchase-panel" i],[itemprop="offers"]';
+
+  function _visibleText(root, limit) {
+    limit = limit || 20000;
+    var out = "", n = 0;
+    try {
+      var walker = document.createTreeWalker(root, 4 /* SHOW_TEXT */, null);
+      var node;
+      while ((node = walker.nextNode()) && out.length < limit) {
+        var pt = node.parentElement;
+        if (!pt) continue;
+        var tg = (pt.tagName || "").toLowerCase();
+        if (tg === "script" || tg === "style" || tg === "noscript" || tg === "template") continue;
+        var v = String(node.nodeValue || "").replace(/\s+/g, " ");
+        if (v.trim()) { out += v + " "; n++; }
+      }
+    } catch (e) {}
+    return out;
+  }
+  // 어댑터별 구매 버튼 표 — "구매 버튼이 아예 없다"는 상세페이지에서 강한 품절 신호다.
+  //   (실기기 Craighill: add-to-cart/buy-now/submit.add-to-cart 전부 부재 = 품절 확정.)
+  function _buyButtonPresent() {
+    try { return !!document.querySelector(_BUY_BTN_SEL); } catch (e) { return false; }
+  }
   function _stockStatus() {
+    var host = ""; try { host = (location.hostname || "").toLowerCase(); } catch (e) {}
+    // v85 STEP1: **단일 상품 페이지에서만** 가동. 목록/불명에선 기록 자체를 생략한다
+    //   (실기기 반증: 라쿠텐 검색 목록에 stock_status=out_of_stock이 찍혔다).
+    try {
+      if (global.KGPDetect && typeof global.KGPDetect.pageType === "function") {
+        if (global.KGPDetect.pageType(document, location.href, {}) !== "single") return "";
+      }
+    } catch (e) {}
+
     var scope = null;
     try {
       var sels = _STOCK_SCOPE_SEL.split(",");
@@ -683,21 +721,32 @@
         if (el && !_nonProdRegion(el) && !_inCartScope(el)) scope = el;
       }
     } catch (e) {}
-    var root = scope || document.body;
-    if (!root) return "unknown";
-    var txt = "";
-    try { txt = String(root.innerText || root.textContent || "").slice(0, 6000); } catch (e) {}
-    // 명시 품절 문구가 상품 스코프에 있으면 품절.
-    if (_OOS_TEXT.test(txt)) {
-      // 단, 같은 스코프에 명시 '재고 있음'이 더 앞서 나오면(변형 안내 등) 판정 보류.
-      var mo = txt.search(_OOS_TEXT), mi = txt.search(_IN_STOCK_TEXT);
-      if (!(mi >= 0 && mi < mo)) return "out_of_stock";
-    }
-    if (_IN_STOCK_TEXT.test(txt)) return "in_stock";
-    // 문구가 없으면 구매 버튼 유무로 보조 판정 — 버튼이 있으면 in_stock, 없으면 **unknown**(차단 안 함).
-    try { if (root.querySelector(_BUY_BTN_SEL)) return "in_stock"; } catch (e) {}
-    return "unknown";
+    if (!scope) return "";                       // 구매 모듈을 못 찾으면 판정하지 않는다(정직)
+    // 스코프 안이라도 추천/캐러셀 하위는 텍스트에서 빼기 위해 보이는 텍스트만 수집.
+    var txt = _visibleText(scope);
+    // 구매 유도 문구는 **먼저 제거** — "품절임박"이 "품절"로 부분매치되는 구조 자체를 없앤다.
+    var urgent = _URGENCY_TEXT.test(txt); _URGENCY_TEXT.lastIndex = 0;
+    var clean = txt.replace(_URGENCY_TEXT, " "); _URGENCY_TEXT.lastIndex = 0;
+
+    var hasBuy = false; try { hasBuy = !!document.querySelector(_BUY_BTN_SEL); } catch (e) {}
+    var qty = _QTY_TEXT.test(clean);
+    var oos = _OOS_TEXT.test(clean);
+
+    // ① 명시 재고수량·재고 문구 = 가장 강한 재고 근거(임박 문구도 재고 있음 신호).
+    if (qty || urgent) return oos ? "unknown" : "in_stock";   // 상충하면 차단하지 않는다
+    // ② 명시 품절 문구.
+    if (oos) return "out_of_stock";
+    // ③ 아마존 상세: 구매 버튼 전부 부재 = 품절(실기기 Craighill 근거 — 페이지에 버튼 요소가 아예 없다).
+    try {
+      if (/(^|\.)amazon\.[a-z][a-z.]*$/.test(host) && !hasBuy && document.querySelector("#productTitle")) {
+        return "out_of_stock";
+      }
+    } catch (e) {}
+    if (hasBuy) return "in_stock";
+    return "unknown";                            // 근거 없음 — 차단 안 함
   }
+
+
 
   function _domPrice() {
     // v70 STEP1: buybox 스코프 최우선 → 실패 시에만 전역 휴리스틱(폰트크기는 동률 보조로 강등).
@@ -1735,8 +1784,9 @@
       price: price, currency: currency, price_status: price_status,
       // v83 STEP1: 통화 근거(tier1|domain|domain+symbol|symbol|locale|none)와 번역 DOM 여부 — 진단·수집 카드 안내용.
       currency_source: currencySource, translated_dom: translatedDom,
-      // v84.1 STEP A: 재고 상태(in_stock|out_of_stock|unknown). out_of_stock이면 수집 차단(가격 미저장).
-      stock_status: stockStatus,
+      // v84.1 STEP A / v85 STEP1: 재고 상태(in_stock|out_of_stock|unknown).
+      //   ""(단일 페이지 아님·구매 모듈 없음)면 **필드를 싣지 않는다** — 목록에 기록되던 오작동 근치.
+      stock_status: stockStatus || undefined,
       image: gallery[0] || "",
       images: gallery, gallery_images: gallery, detail_images: detailImages,
       detail_fold: detailFold,          // v57 STEP3: 상세 '더보기' 접힘 잔존 여부(정직 표기용)

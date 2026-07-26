@@ -176,11 +176,11 @@ if (btnDiagBundle) {
           const slug = (res.url || "").replace(/^https?:\/\//, "").replace(/[^a-z0-9]+/gi, "-").slice(0, 60) || host;
           // 진단 메타(추출 결과·감지·버전)를 스냅샷 HTML 안에 <script type="application/json"> 로 임베드.
           //   → 파일 = 실페이지 픽스처 그대로 + 하네스가 읽을 실제 추출 결과. 하나로 재현.
-          const diag = {
-            url: res.url || "", host: res.host || "", title: res.title || "",
-            ext_version: res.ext_version || "", collected_at: res.collected_at || "",
-            extracted: res.extracted || null, detection: res.detection || null,
-          };
+          // v85 STEP2: **화이트리스트 금지** — content_script가 보낸 필드를 전부 싣는다(html만 제외).
+          //   예전엔 키를 손으로 나열해서, content_script에 새 진단 필드(ui·git_commit·style_injected…)를
+          //   추가해도 파일엔 안 찍혔다(오너 지적: "회수 완료 보고와 불일치"). 목록을 없애 drift를 원천 차단.
+          const diag = {};
+          Object.keys(res || {}).forEach((k) => { if (k !== "html" && k !== "ok") diag[k] = res[k]; });
           const embed = '\n<script type="application/json" id="kgp-diagnostic">'
             + JSON.stringify(diag).replace(/<\/script>/gi, "<\\/script>") + "<\/script>\n";
           const bundle = res.html + embed;
