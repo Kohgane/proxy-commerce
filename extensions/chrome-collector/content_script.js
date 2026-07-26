@@ -1255,10 +1255,13 @@ function injectCollectButton() {
   //   기존엔 looksLikeProductPage/디테일 URL 가드 때문에 SPA(Temu)·카테고리·검색·홈에서 버튼이 안 떠
   //   "어떤 창은 안 뜸"이 발생. 이미 host 게이트(위)로 소싱처에 한정되므로 추가 가드는 제거한다.
 
-  const btn = document.createElement("button");
+  // v86 STEP1: **<button>은 shadow 호스트가 될 수 없다**(Chrome은 div/span/section 등 일부 태그만 허용) —
+  //   attachShadow가 던져 라이트 DOM 폴백으로 조용히 새던 것을 CI 가시성 계약이 잡았다. div+role=button으로.
+  const btn = document.createElement("div");
   btn.id = KGP_BTN_ID;
-  btn.type = "button";
-  // v86 STEP1: 모양은 shadowRoot 안에서 그린다(페이지 CSS 격리는 shadow 경계가 담당).
+  btn.setAttribute("role", "button");
+  btn.setAttribute("tabindex", "0");
+  // 모양은 shadowRoot 안에서 그린다(페이지 CSS 격리는 shadow 경계가 담당).
   const _fabCss =
     ".w{display:flex;align-items:center;gap:10px;box-sizing:border-box;max-width:min(82vw,300px);" +
     "padding:9px 16px 9px 10px;border:1px solid #c9a24b;border-radius:999px;background:#1a1714;color:#f5efe3;" +
@@ -1295,6 +1298,7 @@ function injectCollectButton() {
   btn.style.setProperty("line-height", "normal", "important");
   _kgpPinFixed(btn, { right: "16px", top: "calc(50% - 24px)" });   // position/z-index/오프셋
   btn.addEventListener("click", () => handleFabClick(btn));
+  btn.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleFabClick(btn); } });
   _kgpMount(btn);                            // v45 P5: <html> 직속(본문 재렌더에도 상시 표시)
   kgpMakeDraggable(btn, "kgp_fab_pos");      // 드래그 이동 + 위치 기억(v7)
 
