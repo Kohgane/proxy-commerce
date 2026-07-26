@@ -77,6 +77,9 @@ function check(name, spec, r) {
     if ((r.detail_specs || []).some((sp) => String(sp.k || "").indexOf(s) >= 0 || String(sp.v || "").indexOf(s) >= 0)) fails.push("detail_specs 오염 " + s);
   });
   if (spec.rating != null && String(r.rating || "") !== spec.rating) fails.push("rating " + r.rating + " != " + spec.rating);
+  // v84.1 STEP A: 재고 상태 + 가격에 절대 들어오면 안 되는 값(장바구니 합계 오염).
+  if (spec.stock_status != null && String(r.stock_status || "") !== spec.stock_status) fails.push("stock_status " + r.stock_status + " != " + spec.stock_status);
+  (spec.price_excludes || []).forEach((bad) => { if (String(r.price || "").indexOf(bad) >= 0) fails.push("price 오염 " + bad); });
   return fails;
 }
 

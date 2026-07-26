@@ -1162,6 +1162,14 @@ function handleFabClick(btn, opts) {
     // v47/v49 STEP2·5: 서버 필드 상태(성공/부분/실패)로 정직 표기 — 무음 실패·가짜 성공 금지.
     //   서버 field_status가 단일 소스. 없으면(구서버) 클라 meta.partial 폴백.
     var fs = resp.field_status || null;
+    // v84.1 STEP A(P0): 품절 상품은 저장하지 않는다 — 등록해도 팔 물건이 없고, 품절 DP는 가격 오염
+    //   (장바구니 합계 등)이 잦다. unknown은 차단하지 않는다(확신 없는 차단 금지).
+    if (meta && meta.stock_status === "out_of_stock") {
+      kgpAlertOnce(corr, () => kgpCollectCard(
+        "품절 상품이라 수집하지 않았어요\n재입고되면 다시 수집해 주세요", false,
+        [{ label: "이력 열기", fn: kgpOpenHistory }]));
+      return;
+    }
     // v49 STEP5: 실패(핵심 3 전부 미확보) — 원인 명시, 축하 없음.
     if (fs && fs.status === "실패") {
       try { console.warn("[고가수집기] 수집 실패 —", fs.cause || "핵심 정보 미확보"); } catch (e) {}

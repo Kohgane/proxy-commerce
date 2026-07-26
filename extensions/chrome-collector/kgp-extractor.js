@@ -649,6 +649,56 @@
     }
     return null;
   }
+
+  // ── v84.1 STEP A(P0): 장바구니·사이드 위젯 가격 오염 차단 ──────────────
+  //   실기기 증거(Craighill B0BWFF): "Currently unavailable" 품절 DP인데 price=6.42 USD가 저장됐고,
+  //   그 출처는 **사용자 장바구니 위젯**(#ewc-subtotal, 담겨 있던 Diet Coke)이었다. 상품 가격이 아니라
+  //   '내 카트 합계'다. 이런 컨테이너는 상품 스코프 밖이므로 가격 후보에서 원천 배제한다.
+  //   (buybox 스코프가 잡히면 애초에 여기까지 안 오지만, 품절이라 buybox가 없을 때 전역 휴리스틱이 물었다.)
+  var _CART_SCOPE_SEL = '#ewc,#ewc-content,[id^="ewc"],[class*="ewc-" i],#nav-cart,#nav-tools,'
+    + '[id^="sc-item"],[class*="sc-list-item" i],#huc-v2-order-row-confirm-text,[id^="attach-"],'
+    + '[class*="cart" i],[class*="basket" i],[class*="minicart" i],[id*="cart" i],'
+    + '[data-testid*="cart" i],aside,nav,footer,header';
+  function _inCartScope(el) {
+    try { return !!(el && el.closest && el.closest(_CART_SCOPE_SEL)); } catch (e) { return false; }
+  }
+
+  // ── v84.1 STEP A: 재고(품절) 신호 ────────────────────────────────────
+  //   품절이면 가격이 없거나(있어도 무관한 위젯값) 등록해도 파는 물건이 없다 → 수집 차단이 정직하다.
+  //   판정은 **명시 신호가 있을 때만**: 문구 매칭 또는 구매 버튼 부재+명시 품절. 애매하면 unknown(차단 안 함).
+  var _OOS_TEXT = /(currently unavailable|out of stock|sold ?out|temporarily out of stock|unavailable|품절|재고\s*없|일시품절|판매\s*중지|在庫[なが]?\s*(なし|ありません|切れ)|売り切れ|入荷[未]?待ち|agotado|no disponible|rupture de stock|ausverkauft|nicht verfügbar)/i;
+  var _IN_STOCK_TEXT = /(in stock|재고\s*있|在庫あり|購入可能|available now)/i;
+  var _BUY_BTN_SEL = '#add-to-cart-button,#buy-now-button,[name="submit.add-to-cart"],[id*="addToCart" i],'
+    + '[class*="add-to-cart" i],[class*="addToCart" i],[class*="add_to_cart" i],[data-testid*="add-to-cart" i],'
+    + '[class*="buy-now" i],[class*="purchase" i] button,button[class*="cart" i]';
+  //   품절 문구를 **상품 스코프 안**에서만 읽는다(추천·리뷰의 '품절' 언급 오탐 방지).
+  var _STOCK_SCOPE_SEL = '#centerCol,#dp-container,#desktop_buybox,#buybox,#availability,'
+    + '[class*="product-detail" i],[class*="item-detail" i],[class*="goods-detail" i],[itemtype*="Product" i],main';
+  function _stockStatus() {
+    var scope = null;
+    try {
+      var sels = _STOCK_SCOPE_SEL.split(",");
+      for (var i = 0; i < sels.length && !scope; i++) {
+        var el = document.querySelector(sels[i].trim());
+        if (el && !_nonProdRegion(el) && !_inCartScope(el)) scope = el;
+      }
+    } catch (e) {}
+    var root = scope || document.body;
+    if (!root) return "unknown";
+    var txt = "";
+    try { txt = String(root.innerText || root.textContent || "").slice(0, 6000); } catch (e) {}
+    // 명시 품절 문구가 상품 스코프에 있으면 품절.
+    if (_OOS_TEXT.test(txt)) {
+      // 단, 같은 스코프에 명시 '재고 있음'이 더 앞서 나오면(변형 안내 등) 판정 보류.
+      var mo = txt.search(_OOS_TEXT), mi = txt.search(_IN_STOCK_TEXT);
+      if (!(mi >= 0 && mi < mo)) return "out_of_stock";
+    }
+    if (_IN_STOCK_TEXT.test(txt)) return "in_stock";
+    // 문구가 없으면 구매 버튼 유무로 보조 판정 — 버튼이 있으면 in_stock, 없으면 **unknown**(차단 안 함).
+    try { if (root.querySelector(_BUY_BTN_SEL)) return "in_stock"; } catch (e) {}
+    return "unknown";
+  }
+
   function _domPrice() {
     // v70 STEP1: buybox 스코프 최우선 → 실패 시에만 전역 휴리스틱(폰트크기는 동률 보조로 강등).
     var bx = _buyboxPrice();
@@ -661,6 +711,7 @@
     for (var i = 0; i < nodes.length; i++) {
       var el = nodes[i];
       if (_nonProdRegion(el) || _priceOriginal(el) || _nonPriceCtx(el)) continue;
+      if (_inCartScope(el)) continue;   // v84.1 STEP A: 장바구니·사이드 위젯 가격 배제(내 카트 합계 ≠ 상품가)
       if (_isListPriceNode(el)) continue;   // v70: 아마존 정가(a-text-price) 배제
       var p = _composedPrice(el); if (!p) continue;
       var fs = 0; try { fs = parseFloat(getComputedStyle(el).fontSize) || 0; } catch (e) {}
@@ -1602,6 +1653,16 @@
     if (translatedDom && currencySource === "locale") {
       warnings.push("번역된 페이지예요 — 통화를 확인해 주세요");
     }
+    // ── v84.1 STEP A(P0): 품절 게이트 — 가격보다 먼저 판정한다 ──────────────
+    //   품절 상품은 등록해도 팔 물건이 없다. 게다가 품절 DP는 buybox가 없어 전역 휴리스틱이 엉뚱한 값
+    //   (장바구니 합계 등)을 물기 쉽다 → **가격을 폐기**하고 상태를 명시해 수집 자체를 차단하게 한다.
+    //   unknown은 차단하지 않는다(표기만) — 확신 없는 차단은 정상 수집을 막는 더 큰 해악.
+    var stockStatus = "unknown";
+    try { stockStatus = _stockStatus(); } catch (e) { stockStatus = "unknown"; }
+    if (stockStatus === "out_of_stock") {
+      if (price) warnings.push("품절 상품이라 가격을 저장하지 않았어요(표시가가 장바구니 등 다른 값일 수 있어요)");
+      price = ""; priceSrc = "none";
+    }
     // v74 STEP4: 가격 숫자 정규화(공통) — 후행 점·천단위 제거해 항상 \d+(\.\d+)?. sanity 이전에 봉인.
     price = _normNum(price);
     // 가격 sanity
@@ -1674,6 +1735,8 @@
       price: price, currency: currency, price_status: price_status,
       // v83 STEP1: 통화 근거(tier1|domain|domain+symbol|symbol|locale|none)와 번역 DOM 여부 — 진단·수집 카드 안내용.
       currency_source: currencySource, translated_dom: translatedDom,
+      // v84.1 STEP A: 재고 상태(in_stock|out_of_stock|unknown). out_of_stock이면 수집 차단(가격 미저장).
+      stock_status: stockStatus,
       image: gallery[0] || "",
       images: gallery, gallery_images: gallery, detail_images: detailImages,
       detail_fold: detailFold,          // v57 STEP3: 상세 '더보기' 접힘 잔존 여부(정직 표기용)
@@ -1765,5 +1828,6 @@
       // v83: 통화 사다리·이미지 승격·스펙 위생 계약 검증용.
       domainCurrency: _domainCurrency, translatedDom: _translatedDom, localeCurrency: _localeCurrency, parsePriceStr: parsePriceStr,
       isLowResImg: _isLowResImg, cleanSpecs: _cleanSpecs, stripHtmlNoise: _stripHtmlNoise, aliOptions: _aliOptions,
-      dropNumericColorValues: _dropNumericColorValues, domRating: _domRating } };
+      dropNumericColorValues: _dropNumericColorValues, domRating: _domRating,
+      stockStatus: _stockStatus, inCartScope: _inCartScope } };
 })(typeof window !== "undefined" ? window : this);
