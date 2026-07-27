@@ -256,8 +256,44 @@ if (hoverAnchor) {
   });
 })();
 
+// v82 STEP3: 페이지타입 게이트 — 단일 추출은 pageType==='single'에서만. 문구 분기(unknown/list).
+//   KGPDetect(단일 소스)와 동일 규칙을 팝업에 인라인(팝업은 content_script 모듈을 로드하지 않음).
+function kgpSingleGateMessage(pt) {
+  if (pt === "single") return null;
+  if (pt === "list") return "목록 페이지예요. 타일의 [수집] 버튼이나 벌크바를 쓰세요";
+  return "상품 페이지가 아니에요. 상품/목록 페이지에서 수집할 수 있어요";
+}
+// 현재 탭의 pageType을 content_script(kgpDetectState)에서 조회. 미실행/오류면 'unknown'.
+function kgpGetPageType() {
+  return new Promise((resolve) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs && tabs[0];
+      if (!tab || !tab.id) { resolve("unknown"); return; }
+      chrome.tabs.sendMessage(tab.id, { action: "kgpDetectState" }, (r) => {
+        if (chrome.runtime.lastError || !r || !r.ok) { resolve("unknown"); return; }
+        resolve(r.pageType || "unknown");
+      });
+    });
+  });
+}
+// 로드 시 게이트 반영 — single 아니면 버튼 비활성 + 안내.
+(async function kgpApplySingleGate() {
+  const pt = await kgpGetPageType();
+  const msg = kgpSingleGateMessage(pt);
+  if (msg) {
+    btnCollect.disabled = true;
+    btnCollect.title = msg;
+    showStatus("error", msg);
+  }
+})();
+
 // 수집 버튼 클릭
 btnCollect.addEventListener("click", async () => {
+  // v82 STEP3: 클릭 시 재확인 — single이 아니면 추출/저장하지 않고 분기 문구만.
+  const gatePt = await kgpGetPageType();
+  const gateMsg = kgpSingleGateMessage(gatePt);
+  if (gateMsg) { showStatus("error", gateMsg); return; }
+
   btnCollect.disabled = true;
   showStatus("loading", "상품 정보를 수집하는 중...");
 

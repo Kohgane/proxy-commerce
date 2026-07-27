@@ -117,9 +117,20 @@
     };
   }
 
+  // v82 STEP3: 페이지타입 게이트 — 단일 추출·"이 상품 수집하기"는 pageType==='single'에서만 허용.
+  //   지난 팝업 문구 버그(톱/검색에서 단일 추출 가동)의 근치. 단일 소스(팝업·content_script·하네스 공용).
+  function singleExtractAllowed(pt) { return pt === "single"; }
+  // 게이트 차단 시 팝업 문구 분기(single이면 null — 게이트 통과).
+  function singleGateMessage(pt) {
+    if (pt === "single") return null;
+    if (pt === "list") return "목록 페이지예요. 타일의 [수집] 버튼이나 벌크바를 쓰세요";
+    return "상품 페이지가 아니에요. 상품/목록 페이지에서 수집할 수 있어요";
+  }
+
   global.KGPDetect = {
     DETAIL_URL_RE: DETAIL_URL_RE, LIST_URL_RE: LIST_URL_RE,
     SPONSORED_SEL: SPONSORED_SEL, TILE_SEL: TILE_SEL, ASIN_RE: ASIN_RE,
     pageType: pageType, amazonTiles: amazonTiles, detectUI: detectUI,
+    singleExtractAllowed: singleExtractAllowed, singleGateMessage: singleGateMessage,
   };
 })(typeof self !== "undefined" ? self : this);

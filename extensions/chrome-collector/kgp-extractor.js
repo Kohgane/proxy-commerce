@@ -50,7 +50,9 @@
     if (!u) return u;
     try {
       // 아마존 크기 토큰(image._AC_SX466_.jpg → image.jpg)은 통째로 제거(더블닷 방지).
-      u = u.replace(/\._(AC_)?S[XYLS]\d+_/gi, "").replace(/\._(SX|SY|SS|SL|UX|UY|CR)\d+(,\d+)*_/gi, "");
+      // v82 STEP2: 토큰 문자군 확장 — S[XYLS]만으론 _AC_US100_·_AC_UL320_·_SR38,50_(갤러리 저해상 근원)이
+      //   안 걸려 원본 승격 실패. [SU][XYLSR]+US/UL/SR 추가로 아마존 사이즈/크롭 토큰 전군을 원본화.
+      u = u.replace(/\._(AC_)?[SU][XYLSR]\d+_/gi, "").replace(/\._(SX|SY|SS|SL|SR|UX|UY|UL|US|CR)\d+(,\d+)*_/gi, "");
       u = u.replace(/(\?|&)(imageView2?|thumb|w|width|h|height|size|quality|_ex)=[^&]*/gi, "");   // v76 STEP3: 라쿠텐 _ex=WxH(썸네일) 제거 → 원본
       // v79 STEP4: 알리 썸네일 변형(.jpg_80x80xz.jpg·.jpg_640x640q90.jpg) → 원본(.jpg)으로 정규화 → 변형 dedupe.
       u = u.replace(/\.(jpg|jpeg|png|webp|gif)_\d+x\d+[a-z0-9]*\.(jpg|jpeg|png|webp|gif)$/i, ".$1");
@@ -231,6 +233,17 @@
     if (/^(product\s*)?(image|video|photo|이미지|동영상|사진|썸네일|thumbnail)s?$/i.test(v)) return true;                        // 미디어 탭명
     if (/roll ?over image|click to (zoom|enlarge|open)|zoom in/i.test(v)) return true;                                          // 미디어 안내 문구
     if (/^\d{5,}$/.test(v)) return true;                                                                                        // 순수 품번(5자리+)
+    if (/^\d$/.test(v)) return true;                                                                                             // v82 STEP1: 단독 한 자리 숫자('1' — 아마존 색상옵션 오수집). 사이즈(2자리+·단위)는 보존.
+    return false;
+  }
+  // v82 STEP1: 폴백 전치(_skusToOptions ②, 축명 소실) 경로 전용 값 필터. 정상 경로는 _isBadOptAxis(축명)로
+  //   원산지·제조사를 막지만, 라쿠텐 스펙테이블이 축명 없이 sku spec로 전염되면 폴백에서 '옵션' 값으로 부활한다.
+  //   원산지 국가명(タイ 등)·법인 접미(コーポレーション·株式会社·Corp/Inc/Ltd — アーガスコーポレーション)는 옵션 값이 아니다.
+  function _isBadOptFallbackValue(v) {
+    v = String(v == null ? "" : v).trim();
+    if (!v) return true;
+    if (/^(日本|中国|中國|韓国|韓國|台湾|臺灣|タイ|ベトナム|インド|アメリカ|ドイツ|イタリア|フランス|イギリス|スペイン|インドネシア|マレーシア|バングラデシュ|ミャンマー|カンボジア|フィリピン|パキスタン)$/.test(v)) return true;  // 원산지 국가명
+    if (/(コーポレーション|株式会社|有限会社|corporation|co\.,?\s?ltd|,?\s?inc\.?$|,?\s?ltd\.?$|商事|製作所|工業|industries?)/i.test(v)) return true;  // 법인 접미(제조사명)
     return false;
   }
   // v80 STEP4: 옵션 축(이름) 화이트리스트 — 원산지·브랜드·제조사·품번·모델·JAN 등 **스펙 속성**은 사용자
@@ -492,7 +505,8 @@
       (skus || []).forEach(function (s) {
         var v = s && s.spec && s.spec[p];
         v = _optClean(v);
-        if (v && !set[v]) { set[v] = 1; order.push(v); }
+        // v82 STEP1: 폴백은 축명이 없어 _isBadOptAxis 방어를 못 받는다 → 값 단위로 오염(품번·화살표·원산지·제조사) 배제.
+        if (v && !_isBadOptValue(v) && !_isBadOptFallbackValue(v) && !set[v]) { set[v] = 1; order.push(v); }
       });
       if (order.length >= 1) out.push({ name: maxLen > 1 ? ("옵션" + (p + 1)) : "옵션", values: order.slice(0, 100) });
     }
@@ -1480,5 +1494,7 @@
   global.kgpRevealDetailFolds = kgpRevealDetailFolds;
   global.kgpWaitRendered = kgpWaitRendered;
   global._kgpRenderReady = _renderReady;   // 테스트/진단용
-  if (typeof module !== "undefined" && module.exports) module.exports = { kgpExtractProduct: kgpExtractProduct, kgpRevealDetailFolds: kgpRevealDetailFolds, kgpWaitRendered: kgpWaitRendered };
+  if (typeof module !== "undefined" && module.exports) module.exports = { kgpExtractProduct: kgpExtractProduct, kgpRevealDetailFolds: kgpRevealDetailFolds, kgpWaitRendered: kgpWaitRendered,
+    // v82: 순수 헬퍼(DOM 무의존) 하네스 노출 — 계약 검증용(브라우저 경로 불변).
+    _test: { hiRes: hiRes, skusToOptions: _skusToOptions, collectSkuSpecs: _collectSkuSpecs, isBadOptValue: _isBadOptValue, isBadOptAxis: _isBadOptAxis, isBadOptFallbackValue: _isBadOptFallbackValue } };
 })(typeof window !== "undefined" ? window : this);

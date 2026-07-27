@@ -364,6 +364,13 @@ function extractProductMeta() {
 // 백그라운드 서비스 워커 메시지 리스너
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === "extractMeta") {
+    // v82 STEP3: 페이지타입 게이트(방어선) — single이 아니면 단일 추출 결과를 내지 않는다(저장 불가).
+    //   팝업이 선차단하지만, executeScript 우회·미래 호출자 대비 content_script에서도 봉인.
+    let _pt = "unknown";
+    try { _pt = kgpPageType(); } catch (e) {}
+    const _allowed = (typeof KGPDetect !== "undefined" && KGPDetect.singleExtractAllowed)
+      ? KGPDetect.singleExtractAllowed(_pt) : (_pt === "single");
+    if (!_allowed) { sendResponse({ gated: true, pageType: _pt }); return true; }
     sendResponse(extractProductMeta());
     return true;
   }
@@ -561,7 +568,7 @@ function kgpToast(message, ok) {
     t = document.createElement("div");
     t.id = "kgp-collect-toast";
     t.style.cssText = [
-      "position:fixed", "right:20px", "bottom:84px", "z-index:2147483647",
+      "position:fixed", "right:20px", "top:88px", "z-index:2147483647",
       "max-width:280px", "padding:10px 14px", "border-radius:10px",
       "font:13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
       "color:#fff", "box-shadow:0 4px 16px rgba(0,0,0,.25)", "white-space:pre-wrap"
@@ -590,7 +597,7 @@ function kgpResultToast(message, ok, actions) {
     t = document.createElement("div");
     t.id = "kgp-collect-toast";
     t.style.cssText = [
-      "position:fixed", "right:20px", "bottom:84px", "z-index:2147483647",
+      "position:fixed", "right:20px", "top:88px", "z-index:2147483647",
       "max-width:300px", "padding:11px 14px", "border-radius:10px",
       "font:13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
       "color:#fff", "box-shadow:0 4px 16px rgba(0,0,0,.25)"
@@ -611,6 +618,122 @@ function kgpResultToast(message, ok, actions) {
   clearTimeout(t._hideTimer);
   // 액션 버튼이 있으면 오래 유지(클릭 기회), 없으면 4초.
   t._hideTimer = setTimeout(() => { t.style.opacity = "0"; }, (actions && actions.length) ? 9000 : 4000);
+}
+
+// ── v82 STEP4: 수집 카드(부유 미리보기) ────────────────────────────────────────
+//   우하단 고정 폐기(상점 かごに追加/장바구니 버튼 가림 근치) → 우측 상단 1/3 앵커.
+//   접힘 pill 기본(필드 요약만) · 클릭 확장(Pop in 200ms ease-out) · reduced-motion 존중.
+//   사이트 고정요소(fixed/sticky)와 충돌 시 세로 오프셋 회피. gogabridj 토큰은 스코프 CSS 변수 단일 소스.
+function kgpEnsureCardStyles() {
+  if (document.getElementById("kgp-card-style")) return;
+  const st = document.createElement("style");
+  st.id = "kgp-card-style";
+  st.textContent =
+    '#kgp-collect-card{--kgp-ink:#1A1714;--kgp-hanji:#F5EFE3;--kgp-gold:#C9A24B;--kgp-teal:#119A8E;--kgp-red:#DC2626;--kgp-line:#E6DECB;' +
+    'position:fixed;right:16px;z-index:2147483647;max-width:300px;' +
+    'font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Pretendard,sans-serif;color:var(--kgp-hanji)}' +
+    '#kgp-collect-card .kgp-cc-pill{display:flex;align-items:center;gap:8px;cursor:pointer;padding:9px 14px;' +
+    'border-radius:999px;background:var(--kgp-ink);border:1.5px solid var(--kgp-gold);box-shadow:0 8px 24px rgba(26,23,20,.38);user-select:none}' +
+    '#kgp-collect-card .kgp-cc-glyph{display:inline-flex;width:20px;height:20px;flex-shrink:0}' +
+    '#kgp-collect-card .kgp-cc-dot{width:8px;height:8px;border-radius:999px;background:var(--kgp-teal);flex-shrink:0}' +
+    '#kgp-collect-card .kgp-cc-title{font-weight:700;white-space:nowrap}' +
+    '#kgp-collect-card .kgp-cc-caret{margin-left:2px;opacity:.6;font-size:11px;transition:transform .2s ease}' +
+    '#kgp-collect-card[data-collapsed="0"] .kgp-cc-caret{transform:rotate(180deg)}' +
+    '#kgp-collect-card .kgp-cc-body{margin-top:8px;padding:12px 14px;border-radius:14px;background:var(--kgp-ink);' +
+    'border:1px solid var(--kgp-line);box-shadow:0 8px 24px rgba(26,23,20,.38);transform-origin:top right}' +
+    '#kgp-collect-card[data-collapsed="1"] .kgp-cc-body{display:none}' +
+    '#kgp-collect-card .kgp-cc-msg{white-space:pre-wrap}' +
+    '#kgp-collect-card .kgp-cc-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}' +
+    '#kgp-collect-card .kgp-cc-actions:empty{display:none}' +
+    '#kgp-collect-card .kgp-cc-btn{padding:6px 12px;border-radius:999px;border:1px solid var(--kgp-teal);' +
+    'background:transparent;color:var(--kgp-teal);font:600 12px/1 inherit;cursor:pointer}' +
+    '#kgp-collect-card .kgp-cc-btn:hover{background:rgba(17,154,142,.14)}' +
+    '#kgp-collect-card[data-err="1"] .kgp-cc-pill{border-color:var(--kgp-red)}' +
+    '#kgp-collect-card[data-err="1"] .kgp-cc-dot{background:var(--kgp-red)}' +
+    '@keyframes kgpCardPop{from{opacity:0;transform:scale(.82)}to{opacity:1;transform:scale(1)}}' +
+    '#kgp-collect-card .kgp-cc-pop{animation:kgpCardPop .2s ease-out both}' +
+    '@media (prefers-reduced-motion: reduce){#kgp-collect-card .kgp-cc-pop{animation:none}}';
+  (document.head || document.documentElement).appendChild(st);
+}
+// 우측 상단 1/3 배치 + 사이트 고정요소 충돌 회피(세로 오프셋). elementsFromPoint로 fixed/sticky 겹침 탐지.
+function _kgpPlaceCard(card) {
+  const vh = window.innerHeight || 800;
+  let top = Math.round(vh * 0.30);   // 상단 약 1/3
+  card.style.right = "16px";
+  card.style.top = top + "px";
+  for (let i = 0; i < 8; i++) {
+    const r = card.getBoundingClientRect();
+    const probes = [[r.left + 8, r.top + 8], [r.right - 8, r.top + 8], [r.left + 8, r.bottom - 8]];
+    let hit = false;
+    card.style.visibility = "hidden";   // 자기 자신 제외하고 그 자리의 실제 요소 조회
+    try {
+      for (const p of probes) {
+        const els = document.elementsFromPoint(p[0], p[1]) || [];
+        for (const e of els) {
+          if (e === card || card.contains(e)) continue;
+          let pos = ""; try { pos = getComputedStyle(e).position; } catch (x) {}
+          if (pos === "fixed" || pos === "sticky") { hit = true; break; }
+        }
+        if (hit) break;
+      }
+    } catch (e) {}
+    card.style.visibility = "";
+    if (!hit) break;
+    top += 64; card.style.top = top + "px";
+    if (top > vh - r.height - 16) { card.style.top = "16px"; break; }   // 바닥 도달 → 최상단 복귀
+  }
+}
+// 단일 수집 결과를 카드로. 등장 시 확장(Pop in) → 3초 후 pill로 수렴(토스트·카드 중복 노출 금지).
+function kgpCollectCard(message, ok, actions) {
+  kgpEnsureCardStyles();
+  let card = document.getElementById("kgp-collect-card");
+  if (!card) {
+    card = document.createElement("div");
+    card.id = "kgp-collect-card";
+    card.setAttribute("data-collapsed", "1");
+    card.innerHTML =
+      '<div class="kgp-cc-pill" role="button" tabindex="0" aria-label="수집 카드 펼치기/접기">' +
+        '<span class="kgp-cc-glyph">' + KGP_BRIDGE_SVG + '</span>' +
+        '<span class="kgp-cc-dot"></span>' +
+        '<span class="kgp-cc-title"></span>' +
+        '<span class="kgp-cc-caret">▾</span>' +
+      '</div>' +
+      '<div class="kgp-cc-body"><div class="kgp-cc-msg"></div><div class="kgp-cc-actions"></div></div>';
+    (document.body || document.documentElement).appendChild(card);
+    const pill = card.querySelector(".kgp-cc-pill");
+    const toggle = () => {
+      const collapsed = card.getAttribute("data-collapsed") === "1";
+      card.setAttribute("data-collapsed", collapsed ? "0" : "1");
+      clearTimeout(card._kgpConverge);   // 수동 조작하면 자동 수렴 취소
+      if (collapsed) {
+        const b = card.querySelector(".kgp-cc-body");
+        b.classList.remove("kgp-cc-pop"); void b.offsetWidth; b.classList.add("kgp-cc-pop");
+        _kgpPlaceCard(card);
+      }
+    };
+    pill.addEventListener("click", toggle);
+    pill.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+  }
+  card.setAttribute("data-err", ok ? "0" : "1");
+  const first = String(message || "").split("\n")[0];
+  card.querySelector(".kgp-cc-title").textContent = first.length > 22 ? first.slice(0, 21) + "…" : first;
+  card.querySelector(".kgp-cc-msg").textContent = message || "";
+  const act = card.querySelector(".kgp-cc-actions");
+  act.textContent = "";
+  (actions || []).forEach((a) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "kgp-cc-btn"; b.textContent = a.label;
+    b.addEventListener("click", (e) => { e.stopPropagation(); try { a.fn(); } catch (err) {} });
+    act.appendChild(b);
+  });
+  // 등장: 확장 + Pop in → 3초 후 pill 수렴.
+  card.setAttribute("data-collapsed", "0");
+  _kgpPlaceCard(card);
+  const body = card.querySelector(".kgp-cc-body");
+  body.classList.remove("kgp-cc-pop"); void body.offsetWidth; body.classList.add("kgp-cc-pop");
+  clearTimeout(card._kgpConverge);
+  card._kgpConverge = setTimeout(() => { card.setAttribute("data-collapsed", "1"); }, 3000);
+  return card;
 }
 
 function setFabState(btn, state) {
@@ -798,7 +921,8 @@ function kgpCelebrate(added, silent) {
   }
   kgpEnsureStyles();
   const ov = document.createElement("div");
-  ov.style.cssText = "position:fixed;right:24px;bottom:96px;z-index:2147483647;pointer-events:none;display:flex;flex-direction:column;align-items:flex-end;gap:6px";
+  // v82 STEP4: 우하단 → 우상단(장바구니 버튼 가림 근치). 축하 스탬프는 상단, 정보/액션은 수집 카드(우측 1/3)가 담당.
+  ov.style.cssText = "position:fixed;right:24px;top:20px;z-index:2147483647;pointer-events:none;display:flex;flex-direction:column;align-items:flex-end;gap:6px";
   const stamp = document.createElement("div");
   stamp.style.cssText = "display:flex;align-items:center;gap:8px;padding:10px 16px;border-radius:14px;background:#1a1714;border:2px solid #c9a24b;color:#f5efe3;font:700 14px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.45);animation:kgpStampIn .5s ease-out both";
   stamp.innerHTML = '<span style="display:inline-flex;width:22px;height:22px;align-items:center;justify-content:center">' + KGP_BRIDGE_SVG + '</span><span>' + KGP_WIT[Math.floor(Math.random() * KGP_WIT.length)] + "</span>";
@@ -974,8 +1098,10 @@ function handleFabClick(btn, opts) {
       // v58 STEP3: 확장 버전 스탬프(죽은 버전 혼동 차단) — 매니페스트 버전 표기.
       var _ev = "";
       try { _ev = " · ext v" + (chrome.runtime.getManifest && chrome.runtime.getManifest().version || ""); } catch (e) {}
-      kgpCelebrate(1, true);           // 스탬프만(silent) — 토스트는 아래 하나
-      kgpResultToast("수집 완료" + _cnt + _ev + " — 이력에서 확인" + _warn, true, [{ label: "이력 열기", fn: kgpOpenHistory }]);
+      kgpCelebrate(1, true);           // 축하 스탬프(상단) + 누적 카운트 — silent(토스트 없음)
+      // v82 STEP4: 결과는 우측 상단 1/3 수집 카드로(우하단 토스트 폐기 → 장바구니 버튼 가림 근치).
+      //   카드는 등장 시 확장(Pop in) → 3초 후 pill 수렴(토스트·카드 중복 노출 금지).
+      kgpCollectCard("수집 완료" + _cnt + _ev + " — 이력에서 확인" + _warn, true, [{ label: "이력 열기", fn: kgpOpenHistory }]);
     });
   });
   });   // v47 STEP4: kgpExtractMerged 콜백 닫기
