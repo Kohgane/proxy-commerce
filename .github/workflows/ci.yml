@@ -26,6 +26,11 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
+      # v84 STEP1: 실브라우저 하네스가 CI에서 **실제로 돌게** 한다. 예전엔 브라우저가 없어 항상 skip이었고,
+      #   그래서 "값 계약 그린 + 화면엔 버튼 없음" 상태가 통과했다(오너 실기기 사고의 구조적 원인).
+      - name: Chromium 설치(실브라우저 하네스용)
+        run: python -m playwright install --with-deps chromium
+
       - name: 충돌 마커 검출
         run: |
           found=0
@@ -46,3 +51,60 @@ jobs:
 
       - name: pytest collect clean
         run: python -m pytest --collect-only -q
+
+      # v84 STEP1: 주입 사활 계약은 --collect-only로는 못 잡는다(assert가 안 돈다) → 이 두 파일만 실제 실행.
+      #   전건 pytest는 여전히 배포 워크플로 몫이지만, "화면에 버튼이 없는" 회귀만큼은 PR에서 막는다.
+      - name: 주입 사활 계약 실행(실브라우저 포함)
+        run: python -m pytest tests/test_v84_injection_harness.py tests/test_v86_shadow_visibility.py tests/test_v70_realpage_harness.py -q
+
+  # v83.1 STEP2: 머지 전 실기기 검증 경로 상설화 — 브랜치 빌드 확장 ZIP을 PR 아티팩트로 뽑는다.
+  #   오너가 배포(/seller/extension/download) 없이도 PR에서 바로 받아 재로딩 → 실기기 재진단 가능.
+  #   ZIP 안 build-info.json에 커밋 해시가 각인되고, 확장 진단 파일이 그 값을 실어 준다
+  #   → 채팅 채점이 "이게 브랜치 빌드인가"를 버전 문자열이 아니라 커밋으로 즉판한다.
+  extension-zip:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 확장 ZIP 빌드(커밋 각인)
+        # PR 이벤트의 기본 GITHUB_SHA는 GitHub이 만든 **머지 커밋**이라 오너가 브랜치에서 보는 해시와 다르다
+        #   → 각인이 "내 브랜치 빌드"임을 못 알아보게 된다. GITHUB_* 는 예약 이름이라 덮어쓸 수 없으므로
+        #   (설정해도 무시된다) 전용 오버라이드 키로 head SHA·브랜치명을 넘긴다.
+        env:
+          KGP_BUILD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          KGP_BUILD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          python scripts/build_extension_zip.py dist/gogasujipgi-branch.zip
+          python - <<'PY'
+          import json, sys, zipfile
+          z = zipfile.ZipFile("dist/gogasujipgi-branch.zip")
+          names = set(z.namelist())
+          info = json.loads(z.read("build-info.json"))
+          # manifest가 선언한 content_scripts js가 전부 ZIP에 들어갔는지(설치 즉시 깨지는 누락 방지).
+          mani = json.loads(z.read("manifest.json"))
+          need = {j for cs in mani.get("content_scripts", []) for j in cs.get("js", [])}
+          need |= {mani.get("background", {}).get("service_worker", "")} - {""}
+          missing = sorted(n for n in need if n not in names)
+          if missing:
+              print(f"::error::ZIP에 manifest 선언 스크립트 누락: {missing}")
+              sys.exit(1)
+          if not info.get("commit"):
+              print("::error::build-info.json에 커밋 각인 없음")
+              sys.exit(1)
+          print(f"확장 ZIP OK — version={info['version']} commit={info['commit_short']} files={len(names)}")
+          PY
+
+      - name: 아티팩트 업로드
+        uses: actions/upload-artifact@v4
+        with:
+          name: gogasujipgi-extension
+          path: dist/gogasujipgi-branch.zip
+          retention-days: 30

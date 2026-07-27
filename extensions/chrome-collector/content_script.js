@@ -424,6 +424,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       cards: cards, generic: _kgpLastDetect.generic, adapter: _kgpLastDetect.adapter,
       adapterMatched: _kgpLastDetect.adapterMatched, scanned: _kgpScannedCount || 0, button: btn,
       excl: _kgpExcl, skipStats: _kgpSkipStats,   // v65/v77: 제외 사유 분해 + 타일 스킵 사유별 카운트
+      // v84 STEP1: 스타일 주입·FAB 실측 위치(팝업 감지 진단에서 즉시 확인).
+      styleInjected: !!document.getElementById("kgp-style"),
+      fabPosition: (function () { try { var f = document.getElementById(KGP_BTN_ID); return f ? getComputedStyle(f).position : ""; } catch (e) { return ""; } })(),
     });
     return true;
   }
@@ -450,9 +453,36 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         excl: _kgpExcl, skipStats: _kgpSkipStats };   // v77 STEP2: 미부착 타일 사유별 집계
     } catch (e) { detection = { __err: String(e) }; }
     try { extVer = chrome.runtime.getManifest().version; } catch (e) {}
-    sendResponse({ ok: !!html, html: html, host: (location.hostname || ""), url: (location.href || ""),
-      title: (document.title || ""), extracted: extracted, detection: detection, ext_version: extVer,
-      collected_at: new Date().toISOString() });
+    // v83.1 STEP2: 빌드 각인(커밋 해시) — ext_version과 별개로 **어느 빌드인지** 커밋 단위 즉판용.
+    //   background가 ZIP에 심어진 build-info.json을 읽어 준다. 개발 설치면 commit=""·source="unpacked-dev"(정직).
+    kgpSendMessage({ action: "kgpBuildInfo" }, (bi) => {
+      // v84 STEP1: 채점 즉판 필드 — 스타일 주입 여부 + FAB **computed** 위치 실측 + 번역 DOM 플래그.
+      //   "값은 맞는데 화면엔 없음"을 진단 파일 하나로 판정하기 위한 최소 사실들(추측 제거).
+      var _ui = { style_injected: false, fab_exists: false, fab_position: "", fab_z: "", fab_parent: "",
+                  bar_exists: false, pinned: false };
+      try {
+        _ui.style_injected = !!document.getElementById("kgp-style");
+        var _f = document.getElementById(KGP_BTN_ID);
+        _ui.fab_exists = !!_f;
+        _ui.bar_exists = !!document.getElementById(KGP_TOOLBAR_ID);
+        if (_f) {
+          var _cs = null; try { _cs = getComputedStyle(_f); } catch (e) {}
+          _ui.fab_position = _cs ? _cs.position : "";        // 'static'이면 화면에서 사라진 상태(오너 증상)
+          _ui.fab_z = _cs ? _cs.zIndex : "";
+          _ui.fab_parent = (_f.parentElement && _f.parentElement.tagName) || "";
+          // 인라인에 !important로 박혔는지(= _kgpPinFixed 발현 여부) — 로드된 빌드에 핀이 있는지 즉판.
+          try { _ui.pinned = _f.style.getPropertyPriority("position") === "important"; } catch (e) {}
+        }
+      } catch (e) {}
+      sendResponse({ ok: !!html, html: html, host: (location.hostname || ""), url: (location.href || ""),
+        title: (document.title || ""), extracted: extracted, detection: detection, ext_version: extVer,
+        build: bi || { commit: "", source: "unknown" },
+        git_commit: (bi && bi.commit) || "",
+        style_injected: _ui.style_injected,
+        translated_dom: !!(extracted && extracted.translated_dom),
+        ui: _ui,
+        collected_at: new Date().toISOString() });
+    });
     return true;
   }
   return false;
@@ -648,6 +678,11 @@ function kgpEnsureCardStyles() {
     '#kgp-collect-card .kgp-cc-btn{padding:6px 12px;border-radius:999px;border:1px solid var(--kgp-teal);' +
     'background:transparent;color:var(--kgp-teal);font:600 12px/1 inherit;cursor:pointer}' +
     '#kgp-collect-card .kgp-cc-btn:hover{background:rgba(17,154,142,.14)}' +
+    // v83.1 STEP1: 카드 안 한국어 번역 토글(팝업과 같은 설정). 금 헤어라인으로 결과 문구와 구분.
+    '#kgp-collect-card .kgp-cc-opt{display:flex;align-items:center;justify-content:space-between;gap:10px;' +
+    'margin-top:10px;padding-top:10px;border-top:1px solid color-mix(in srgb, var(--kgp-gold) 34%, transparent);cursor:pointer}' +
+    '#kgp-collect-card .kgp-cc-opt span{font-size:12px;color:var(--kgp-hanji)}' +
+    '#kgp-collect-card .kgp-cc-opt input{width:34px;height:19px;cursor:pointer;accent-color:var(--kgp-teal);flex-shrink:0}' +
     '#kgp-collect-card[data-err="1"] .kgp-cc-pill{border-color:var(--kgp-red)}' +
     '#kgp-collect-card[data-err="1"] .kgp-cc-dot{background:var(--kgp-red)}' +
     '@keyframes kgpCardPop{from{opacity:0;transform:scale(.82)}to{opacity:1;transform:scale(1)}}' +
@@ -683,6 +718,17 @@ function _kgpPlaceCard(card) {
     if (top > vh - r.height - 16) { card.style.top = "16px"; break; }   // 바닥 도달 → 최상단 복귀
   }
 }
+// v83.1 STEP1: 수집 카드의 번역 토글 상태·안내 문구 반영. 카드가 없으면 아무 것도 하지 않는다.
+function kgpRenderCardTranslate(card) {
+  const c = card || document.getElementById("kgp-collect-card");
+  if (!c) return;
+  const input = c.querySelector(".kgp-cc-translate");
+  const note = c.querySelector(".kgp-cc-opt-note");
+  if (input) input.checked = !!KGP_TRANSLATE;
+  // 정직: 이 토글은 **다음 수집부터** 적용된다(이미 저장된 항목을 되돌리지 않는다).
+  if (note) note.textContent = KGP_TRANSLATE ? "· 다음 수집부터 적용" : "· 원문 그대로 저장돼요";
+}
+
 // 단일 수집 결과를 카드로. 등장 시 확장(Pop in) → 3초 후 pill로 수렴(토스트·카드 중복 노출 금지).
 function kgpCollectCard(message, ok, actions) {
   kgpEnsureCardStyles();
@@ -698,7 +744,11 @@ function kgpCollectCard(message, ok, actions) {
         '<span class="kgp-cc-title"></span>' +
         '<span class="kgp-cc-caret">▾</span>' +
       '</div>' +
-      '<div class="kgp-cc-body"><div class="kgp-cc-msg"></div><div class="kgp-cc-actions"></div></div>';
+      '<div class="kgp-cc-body"><div class="kgp-cc-msg"></div><div class="kgp-cc-actions"></div>' +
+        // v83.1 STEP1: 다음 수집부터 적용되는 번역 설정(팝업 토글과 같은 값). 이번 결과는 위 문구가 말한다.
+        '<label class="kgp-cc-opt"><span>한국어 번역 <span class="kgp-cc-opt-note"></span></span>' +
+        '<input type="checkbox" class="kgp-cc-translate"></label>' +
+      '</div>';
     (document.body || document.documentElement).appendChild(card);
     const pill = card.querySelector(".kgp-cc-pill");
     const toggle = () => {
@@ -713,7 +763,21 @@ function kgpCollectCard(message, ok, actions) {
     };
     pill.addEventListener("click", toggle);
     pill.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+    // v83.1 STEP1: 카드 안 번역 토글 — 팝업과 같은 storage 키에 쓴다(양방향 동기는 onChanged가 담당).
+    //   카드 클릭이 접힘 토글로 새지 않도록 stopPropagation.
+    const optRow = card.querySelector(".kgp-cc-opt");
+    const optInput = card.querySelector(".kgp-cc-translate");
+    if (optRow) optRow.addEventListener("click", (e) => { e.stopPropagation(); clearTimeout(card._kgpConverge); });
+    if (optInput) {
+      optInput.addEventListener("change", () => {
+        KGP_TRANSLATE = !!optInput.checked;
+        try { chrome.storage.local.set({ kgp_translate: KGP_TRANSLATE }); } catch (e) {}
+        kgpApplyTranslateCopy();
+        kgpRenderCardTranslate();
+      });
+    }
   }
+  kgpRenderCardTranslate(card);
   card.setAttribute("data-err", ok ? "0" : "1");
   const first = String(message || "").split("\n")[0];
   card.querySelector(".kgp-cc-title").textContent = first.length > 22 ? first.slice(0, 21) + "…" : first;
@@ -736,15 +800,25 @@ function kgpCollectCard(message, ok, actions) {
   return card;
 }
 
+// v83.1 STEP1: FAB 부제·title을 번역 토글 상태에 동기화. 버튼이 하는 일을 라벨이 정확히 말하게 한다
+//   ("번역까지 한 번에"인데 실제로는 원문 저장 = 거짓 라벨). 인자 없으면 현재 FAB를 찾아 갱신.
+function kgpApplyTranslateCopy(btn) {
+  const el = btn || document.getElementById(KGP_BTN_ID);
+  if (!el) return;
+  el.title = KGP_TRANSLATE ? "고가브릿지로 수집 (한국어 번역 포함)" : "고가브릿지로 수집 (원문 그대로)";
+  const sub = _kgpFabQuery(el, ".kgp-fab-sub");
+  if (sub) sub.textContent = KGP_TRANSLATE ? "번역까지 한 번에" : "원문 그대로 수집";
+}
+
 function setFabState(btn, state) {
   if (state === "loading") {
     btn.dataset.busy = "1";
     btn.style.opacity = "0.7";
-    btn.querySelector(".kgp-fab-label").textContent = "수집 중...";
+    { const _l = _kgpFabQuery(btn, ".kgp-fab-label"); if (_l) _l.textContent = "수집 중..."; }
   } else {
     btn.dataset.busy = "";
     btn.style.opacity = "1";
-    btn.querySelector(".kgp-fab-label").textContent = "고가수집기";
+    { const _l = _kgpFabQuery(btn, ".kgp-fab-label"); if (_l) _l.textContent = "고가수집기"; }
   }
 }
 
@@ -788,6 +862,56 @@ function kgpEnsureStyles() {
 //   !important 덮어써 벌크바·FAB·호버버튼이 정적 흐름(긴 페이지 최하단=화면 밖)으로 떨어지던 회귀 수리.
 //   동적 위치(드래그·클램프)도 반드시 !important로 설정해 격리 리셋을 이긴다. (크기 격리는 유지.)
 function _kgpPos(el, prop, val) { try { el.style.setProperty(prop, val, "important"); } catch (e) { el.style[prop] = val; } }
+
+// v84 STEP1(P0-A): 위치 재확정 — `all:initial !important` 격리와 **같은 선언 블록**에 위치를 넣으면,
+//   브라우저가 all 숏핸드를 확장하는 방식/순서에 따라 position이 static(=initial)으로 먹히는 사고가 난다
+//   (오너 실기기 증상: FAB computed position=initial → 화면에서 사라짐). cssText 배정 **후** 위치 롱핸드를
+//   setProperty(...,'important')로 다시 박아 넣으면 숏핸드 확장과 무관하게 항상 이긴다(v73 _kgpPos와 동일 수법).
+//   기존 cssText 선언은 그대로 둔다 — 이중 안전장치(하나가 통해도 결과 동일).
+function _kgpPinFixed(el, pos) {
+  if (!el) return;
+  pos = pos || {};
+  _kgpPos(el, "position", "fixed");
+  _kgpPos(el, "z-index", "2147483647");
+  Object.keys(pos).forEach(function (k) { _kgpPos(el, k, pos[k]); });
+}
+
+// ── v86 STEP1: Shadow DOM 격리(all:initial 폐기) ────────────────────────────
+//   근원: `all:initial !important`를 **인라인**에 걸면 Chrome이 250여 롱핸드로 전개해 배경·크기·색까지 전부
+//   초기화한다. 인라인 !important라 우리 kgp-style 시트로도 복원 불가(우선순위상 원천 봉쇄) → 요소는 fixed로
+//   존재하지만 **투명·0크기로 안 보인다**(오너 실측: width/height/transform initial).
+//   해결: 호스트에는 **위치 계열만** 인라인으로 두고, 실제 모양은 shadowRoot 안에서 그린다.
+//   페이지 CSS 격리는 shadow 경계가 대신한다(v80 체크박스에서 이미 검증된 패턴).
+function _kgpShadowHost(host, css, html) {
+  var root = host._kgpShadow;
+  if (root === undefined) {
+    try { root = host.attachShadow({ mode: "open" }); } catch (e) { root = null; }
+    host._kgpShadow = root;
+  }
+  if (!root) return null;                       // 구형 폴백: 호출측이 라이트 DOM으로 처리
+  var full = ":host{all:initial}" + css;        // :host에만 initial — 내부 요소엔 영향 없음
+  var adopted = false;
+  try {
+    if (("adoptedStyleSheets" in root) && typeof CSSStyleSheet === "function") {
+      var sh = new CSSStyleSheet(); sh.replaceSync(full); root.adoptedStyleSheets = [sh]; adopted = true;
+    }
+  } catch (e) { adopted = false; }
+  var st = document.createElement("style"); st.textContent = full; root.appendChild(st);   // 인라인 폴백 항상
+  if (!adopted) { try { console.warn("[고가수집기] adoptedStyleSheets 미지원 — <style> 폴백"); } catch (e) {} }
+  // ShadowRoot에는 insertAdjacentHTML이 없다(DocumentFragment 계열) → 래퍼 div로 파싱해 옮긴다.
+  var wrap = document.createElement("div");
+  wrap.innerHTML = html;
+  while (wrap.firstChild) root.appendChild(wrap.firstChild);
+  return root;
+}
+// FAB 내부(shadow) 요소 조회 — 라이트 DOM 폴백도 함께 본다.
+function _kgpFabQuery(el, sel) {
+  if (!el) return null;
+  try { if (el._kgpShadow) return el._kgpShadow.querySelector(sel); } catch (e) {}
+  try { return el.querySelector(sel); } catch (e) { return null; }
+}
+
+
 function kgpMakeDraggable(el, storeKey, opts) {
   opts = opts || {};
   const saved = kgpLSget(storeKey, "");
@@ -954,9 +1078,11 @@ function kgpMergeMeta(base, extra) {
   if (!extra || typeof extra !== "object") return base;
   const out = Object.assign({}, base);
   const empty = (v) => v == null || v === "" || (Array.isArray(v) && v.length === 0);
-  ["title", "price", "currency", "description", "rating", "review_count", "price_status", "source"].forEach((k) => {
+  // v83 STEP1: currency_source(통화 근거)도 빈 쪽을 채운다 — 서버 진단이 어느 사다리로 확정했는지 본다.
+  ["title", "price", "currency", "currency_source", "description", "rating", "review_count", "price_status", "source"].forEach((k) => {
     if (empty(out[k]) && !empty(extra[k])) out[k] = extra[k];
   });
+  out.translated_dom = !!(out.translated_dom || extra.translated_dom);   // v83 STEP1: 어느 월드든 번역 DOM 감지 시 표기
   ["images", "gallery_images", "detail_images", "options", "skus", "reviews", "detail_specs"].forEach((k) => {
     const a = Array.isArray(out[k]) ? out[k] : [], b = Array.isArray(extra[k]) ? extra[k] : [];
     if (b.length > a.length) out[k] = b;
@@ -1072,6 +1198,14 @@ function handleFabClick(btn, opts) {
     // v47/v49 STEP2·5: 서버 필드 상태(성공/부분/실패)로 정직 표기 — 무음 실패·가짜 성공 금지.
     //   서버 field_status가 단일 소스. 없으면(구서버) 클라 meta.partial 폴백.
     var fs = resp.field_status || null;
+    // v84.1 STEP A(P0): 품절 상품은 저장하지 않는다 — 등록해도 팔 물건이 없고, 품절 DP는 가격 오염
+    //   (장바구니 합계 등)이 잦다. unknown은 차단하지 않는다(확신 없는 차단 금지).
+    if (meta && meta.stock_status === "out_of_stock") {
+      kgpAlertOnce(corr, () => kgpCollectCard(
+        "품절 상품이라 수집하지 않았어요\n재입고되면 다시 수집해 주세요", false,
+        [{ label: "이력 열기", fn: kgpOpenHistory }]));
+      return;
+    }
     // v49 STEP5: 실패(핵심 3 전부 미확보) — 원인 명시, 축하 없음.
     if (fs && fs.status === "실패") {
       try { console.warn("[고가수집기] 수집 실패 —", fs.cause || "핵심 정보 미확보"); } catch (e) {}
@@ -1101,7 +1235,12 @@ function handleFabClick(btn, opts) {
       kgpCelebrate(1, true);           // 축하 스탬프(상단) + 누적 카운트 — silent(토스트 없음)
       // v82 STEP4: 결과는 우측 상단 1/3 수집 카드로(우하단 토스트 폐기 → 장바구니 버튼 가림 근치).
       //   카드는 등장 시 확장(Pop in) → 3초 후 pill 수렴(토스트·카드 중복 노출 금지).
-      kgpCollectCard("수집 완료" + _cnt + _ev + " — 이력에서 확인" + _warn, true, [{ label: "이력 열기", fn: kgpOpenHistory }]);
+      // v83 STEP1: 구글 번역 상태로 보고 있으면 알린다 — 통화·문구는 **원문 기준**으로 저장했음을 명시(오해 차단).
+      var _tr = (meta && meta.translated_dom) ? "\n번역된 페이지 — 원문 기준으로 저장했어요" : "";
+      // v83.1 STEP1: 이번 수집에 **실제로** 번역이 적용됐는지 — 서버가 확인한 값만 쓴다(가짜 '번역됨' 금지).
+      //   서버 resp.translated=true면 번역 성공, 토글 OFF면 원문 저장, 그 외(키 미설정 등)는 언급하지 않는다.
+      var _ko = resp.translated ? "\n한국어 번역 완료" : (KGP_TRANSLATE ? "" : "\n원문 그대로 저장했어요");
+      kgpCollectCard("수집 완료" + _cnt + _ev + " — 이력에서 확인" + _ko + _tr + _warn, true, [{ label: "이력 열기", fn: kgpOpenHistory }]);
     });
   });
   });   // v47 STEP4: kgpExtractMerged 콜백 닫기
@@ -1119,39 +1258,50 @@ function injectCollectButton() {
   //   기존엔 looksLikeProductPage/디테일 URL 가드 때문에 SPA(Temu)·카테고리·검색·홈에서 버튼이 안 떠
   //   "어떤 창은 안 뜸"이 발생. 이미 host 게이트(위)로 소싱처에 한정되므로 추가 가드는 제거한다.
 
-  const btn = document.createElement("button");
+  // v86 STEP1: **<button>은 shadow 호스트가 될 수 없다**(Chrome은 div/span/section 등 일부 태그만 허용) —
+  //   attachShadow가 던져 라이트 DOM 폴백으로 조용히 새던 것을 CI 가시성 계약이 잡았다. div+role=button으로.
+  const btn = document.createElement("div");
   btn.id = KGP_BTN_ID;
-  btn.type = "button";
-  btn.innerHTML =
-    '<span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;' +
-    'background:transparent;border:0;flex-shrink:0">' + KGP_BRIDGE_SVG + '</span>' +
-    '<span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1.12">' +
-    '<span class="kgp-fab-label" style="font-weight:700 !important;font-size:14px !important;line-height:1.1 !important;color:#f5efe3">고가수집기</span>' +
-    '<span style="font-size:10px !important;line-height:1.1 !important;color:#c9a24b;font-family:Georgia,\'Times New Roman\',serif">번역까지 한 번에</span>' +
-    '</span>';
-  btn.title = "고가브릿지로 수집 (한국어 번역 포함)";
-  // 고가브릿지 토큰: 먹 매트 pill + 금 얇은 링 + 청록 미세 악센트. (네이비+주황 폐기, v4)
-  // 위치: 우측 '중앙'(v7) — 콘텐츠 안 가리게. 드래그로 옮기면 위치 기억(kgp_fab_pos).
-  btn.style.cssText = _KGP_RESET + [   // v72 STEP4: all:initial 격리(사이트 상속 오염 차단)
-    // v73 STEP1: 위치/레이아웃 오프셋 전부 !important — all:initial의 auto가 우리 top/right를 덮어써
-    //   FAB가 화면 밖(정적 흐름)으로 떨어지던 회귀 수리(격리는 유지).
-    "position:fixed !important", "right:16px !important", "top:calc(50% - 24px) !important", "z-index:2147483647 !important",
-    "display:flex !important", "align-items:center !important", "gap:10px !important", "max-width:min(82vw,300px) !important", "box-sizing:border-box !important",
-    "padding:9px 16px 9px 10px !important", "border:1px solid #c9a24b !important", "border-radius:999px !important",
-    "background:#1a1714 !important", "color:#f5efe3 !important",
-    "font:14px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif !important",
-    "cursor:pointer !important", "box-shadow:0 6px 20px rgba(0,0,0,.4),0 0 0 4px rgba(17,154,142,.10) !important",
-    "transition:transform .12s,opacity .12s,box-shadow .12s !important"
-  ].join(";");
-  btn.addEventListener("mouseenter", () => {
-    btn.style.transform = "translateY(-2px)";
-    btn.style.boxShadow = "0 10px 26px rgba(0,0,0,.5),0 0 0 5px rgba(17,154,142,.18)";
-  });
-  btn.addEventListener("mouseleave", () => {
-    btn.style.transform = "none";
-    btn.style.boxShadow = "0 6px 20px rgba(0,0,0,.4),0 0 0 4px rgba(17,154,142,.10)";
-  });
+  btn.setAttribute("role", "button");
+  btn.setAttribute("tabindex", "0");
+  // 모양은 shadowRoot 안에서 그린다(페이지 CSS 격리는 shadow 경계가 담당).
+  const _fabCss =
+    ".w{display:flex;align-items:center;gap:10px;box-sizing:border-box;max-width:min(82vw,300px);" +
+    "padding:9px 16px 9px 10px;border:1px solid #c9a24b;border-radius:999px;background:#1a1714;color:#f5efe3;" +
+    "font:14px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer;" +
+    "box-shadow:0 6px 20px rgba(0,0,0,.4),0 0 0 4px rgba(17,154,142,.10);transition:transform .12s,box-shadow .12s}" +
+    ".w:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(0,0,0,.5),0 0 0 5px rgba(17,154,142,.18)}" +
+    ".g{display:flex;align-items:center;justify-content:center;width:28px;height:28px;flex-shrink:0}" +
+    ".g svg{display:block;width:22px;height:22px}" +
+    ".t{display:flex;flex-direction:column;align-items:flex-start;line-height:1.12}" +
+    ".kgp-fab-label{font-weight:700;font-size:14px;line-height:1.1;color:#f5efe3;white-space:nowrap}" +
+    ".kgp-fab-sub{font-size:10px;line-height:1.1;color:#c9a24b;font-family:Georgia,'Times New Roman',serif;white-space:nowrap}";
+  const _fabHtml =
+    '<div class="w" part="btn"><span class="g">' + KGP_BRIDGE_SVG + '</span>' +
+    '<span class="t"><span class="kgp-fab-label">고가수집기</span><span class="kgp-fab-sub"></span></span></div>';
+  const _fabRoot = _kgpShadowHost(btn, _fabCss, _fabHtml);
+  if (!_fabRoot) {
+    // shadow 미지원(구형) — 라이트 DOM 폴백. all:initial은 쓰지 않는다(가시성 우선).
+    btn.innerHTML = '<span class="g">' + KGP_BRIDGE_SVG + '</span>' +
+      '<span class="t"><span class="kgp-fab-label">고가수집기</span><span class="kgp-fab-sub"></span></span>';
+    btn.style.cssText = "display:flex;align-items:center;gap:10px;padding:9px 16px 9px 10px;" +
+      "border:1px solid #c9a24b;border-radius:999px;background:#1a1714;color:#f5efe3;cursor:pointer;" +
+      "font:14px/1 -apple-system,sans-serif";
+  }
+  kgpApplyTranslateCopy(btn);   // v83.1 STEP1: 부제·title을 번역 토글 상태에 맞춰 세팅
+  kgpEnsureStyles();            // v84 STEP1: 주입 시점에 스타일 보장
+  // v86 STEP1: 호스트에는 **위치 계열만** — all:initial 인라인 전개 폐기(가시성 원천 복구).
+  btn.style.setProperty("background", "transparent", "important");
+  btn.style.setProperty("border", "0", "important");
+  btn.style.setProperty("padding", "0", "important");
+  btn.style.setProperty("margin", "0", "important");
+  btn.style.setProperty("width", "auto", "important");
+  btn.style.setProperty("height", "auto", "important");
+  btn.style.setProperty("min-width", "0", "important");
+  btn.style.setProperty("line-height", "normal", "important");
+  _kgpPinFixed(btn, { right: "16px", top: "calc(50% - 24px)" });   // position/z-index/오프셋
   btn.addEventListener("click", () => handleFabClick(btn));
+  btn.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleFabClick(btn); } });
   _kgpMount(btn);                            // v45 P5: <html> 직속(본문 재렌더에도 상시 표시)
   kgpMakeDraggable(btn, "kgp_fab_pos");      // 드래그 이동 + 위치 기억(v7)
 
@@ -1243,8 +1393,8 @@ const _KGP_LEGACY_SOURCES = [
   { id: "tmall", label: "티몰", test: (h) => /(^|\.)tmall\.com$/.test(h) },
   { id: "1688", label: "1688", test: (h) => /(^|\.)1688\.com$/.test(h) },
   { id: "temu", label: "테무", test: (h) => /(^|\.)temu\.com$/.test(h) },
-  { id: "amazon", label: "아마존", test: (h) => /(^|\.)amazon\.[a-z][a-z.]*$/.test(h) },
-  { id: "aliexpress", label: "알리익스프레스", test: (h) => /(^|\.)aliexpress\.(com|us)$/.test(h) },
+  { id: "amazon", label: "아마존", test: (h) => /(^|\.)amazon\.[a-z]{2,3}(\.[a-z]{2,3})?$/.test(h) },
+  { id: "aliexpress", label: "알리익스프레스", test: (h) => /(^|\.)aliexpress\.[a-z]{2,3}(\.[a-z]{2,3})?$/.test(h) },   // v83 STEP2: 국가 도메인 와일드카드
   { id: "iherb", label: "아이허브", test: (h) => /(^|\.)iherb\.com$/.test(h) },
   { id: "dhgate", label: "DHgate", test: (h) => /(^|\.)dhgate\.com$/.test(h) },
   { id: "qoo10", label: "큐텐", test: (h) => /(^|\.)qoo10\.[a-z.]+$/.test(h) },
@@ -1258,6 +1408,9 @@ const KGP_DEFAULT_SOURCES = (typeof KGPSources !== "undefined" && KGPSources.SOU
   : _KGP_LEGACY_SOURCES;
 let KGP_SOURCES = null;   // chrome.storage의 사용자 설정 { defaults:{id:bool}, custom:[{host,on}] }
 let KGP_FAB_ENABLED = true;   // v16 P1: 인페이지 수집 버튼(FAB) on/off (popup 토글, 기본 ON)
+// v83.1 STEP1: 한국어 번역 on/off (팝업·수집 카드 공용 토글, 기본 ON). 실제 페이로드 주입은 background가
+//   단일 관문에서 하고, 여기서는 **문구 동기화**(FAB 부제·title, 카드 안내)만 담당한다.
+let KGP_TRANSLATE = true;
 
 // v17 P0: 우리 앱에서 띄운 마켓/소싱처 진입이면(URL 마커 kgpsrc=app) 그 탭 세션 동안 수집기를
 // 강제 노출한다(유저가 FAB를 off 했어도 진입 세션엔 보장). 마커는 sessionStorage로 SPA 이동에도 유지.
@@ -1533,7 +1686,10 @@ function _kgpGenericCards() {
       });
     }
   } catch (e) { /* noop */ }
-  if (scanned > cards.length) _kgpScannedCount = scanned;   // v43-2: 정직 '전체 N 중 상품 M · 제외 K'
+  // v43-2: 정직 '전체 N 중 상품 M · 제외 K'.
+  // v83 STEP4: `scanned > cards.length`일 때만 기록해, **전건 채택(동수)** 이면 카운터가 0에 머물렀다
+  //   (요시다 목록 진단 scanned=0의 근원 — 스캔을 안 한 게 아니라 안 적었다). 항상 실측값으로 기록.
+  _kgpScannedCount = Math.max(_kgpScannedCount || 0, scanned);
   return cards;
 }
 
@@ -1878,6 +2034,7 @@ function kgpBuildToolbar() {
     "font:16px/1.2 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif !important",
     "box-shadow:0 8px 24px rgba(0,0,0,.45) !important", "max-width:96vw !important", "flex-wrap:wrap !important",
   ].join(";");
+  _kgpPinFixed(bar, { top: "12px", left: "50%", transform: "translateX(-50%)" });   // v84 STEP1: 위치 재확정
   // 버튼 위계: 전체 수집=청록 채움(Primary), 선택 수집=금 아웃라인(Secondary), 전체선택/해제=고스트. (+25% 확대)
   // v72 STEP4: 내부 버튼도 all:initial 격리(사이트 button 규칙 상속 차단) + 고정 px !important.
   const btnBase = _KGP_RESET + "padding:7px 14px !important;border-radius:9px !important;cursor:pointer !important;font-weight:700 !important;font-size:15px !important;line-height:1 !important;min-height:40px !important;display:inline-flex !important;align-items:center !important;";
@@ -2333,9 +2490,10 @@ function kgpDiagApply() {
 }
 function kgpLoadSourcesThen(cb) {
   try {
-    chrome.storage.local.get(["kgp_sources", "kgp_fab_enabled", "kgp_diag", "kgp_hover_anchor"], (r) => {
+    chrome.storage.local.get(["kgp_sources", "kgp_fab_enabled", "kgp_diag", "kgp_hover_anchor", "kgp_translate"], (r) => {
       KGP_SOURCES = (r && r.kgp_sources) || {};
       KGP_FAB_ENABLED = !(r && r.kgp_fab_enabled === false);   // 기본 ON
+      KGP_TRANSLATE = !(r && r.kgp_translate === false);       // v83.1 STEP1: 한국어 번역 기본 ON
       KGP_DIAG = !!(r && r.kgp_diag);                          // 진단 모드 기본 OFF
       KGP_HOVER_ANCHOR = (r && r.kgp_hover_anchor) || "center";  // v64 STEP3: 수집 버튼 위치
       kgpDiagApply();
@@ -2351,6 +2509,11 @@ try {
       KGP_FAB_ENABLED = changes.kgp_fab_enabled.newValue !== false;
       if (!KGP_FAB_ENABLED) kgpRemoveFab();             // 끄면 즉시 제거
       changed = true;
+    }
+    if (changes && changes.kgp_translate) {          // v83.1 STEP1: 팝업↔카드 양방향 즉시 동기(문구 포함)
+      KGP_TRANSLATE = changes.kgp_translate.newValue !== false;
+      kgpApplyTranslateCopy();
+      kgpRenderCardTranslate();
     }
     if (changes && changes.kgp_diag) { KGP_DIAG = !!changes.kgp_diag.newValue; kgpDiagApply(); }
     if (changes && changes.kgp_hover_anchor) {          // v64 STEP3: 위치 변경 즉시 반영

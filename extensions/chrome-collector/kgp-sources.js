@@ -9,7 +9,7 @@
  * 규칙:
  *   - 서브도메인 와일드카드: `(^|\.)rakuten\.(co\.jp|com)$` 하나로 www/item/search/books.rakuten 전부 커버.
  *   - 쿼리스트링·트래킹 파라미터 무시: 매칭은 **호스트명만** 본다(?l2-id=… 등은 hostname 파싱에서 자연 제거).
- *   - 아마존 국가 도메인 흡수: `(^|\.)amazon\.[a-z][a-z.]*$` 가 com/de/co.jp/co.uk/fr/it/es… 전부 매칭.
+ *   - 아마존·알리 국가 도메인 흡수: `(^|\.)amazon\.[a-z]{2,3}(\.[a-z]{2,3})?$` 가 com/de/co.jp/co.uk/fr/it/es…를 매칭.
  *
  * 통화(currency)는 참고용 힌트만 — 실제 가격 통화 추론은 kgp-extractor._localeCurrency(로케일·경로·TLD)가 담당.
  */
@@ -23,8 +23,11 @@
     { id: "1688", label: "1688", re: /(^|\.)1688\.com$/, currency: "CNY" },
     { id: "temu", label: "테무", re: /(^|\.)temu\.com$/, currency: "" },
     // 아마존 국가 도메인 와일드카드 — com/de/co.jp/co.uk/fr/it/es/… 전부 흡수.
-    { id: "amazon", label: "아마존", re: /(^|\.)amazon\.[a-z][a-z.]*$/, currency: "" },
-    { id: "aliexpress", label: "알리익스프레스", re: /(^|\.)aliexpress\.(com|us)$/, currency: "" },
+    // v83 STEP2: TLD 라벨 2개까지로 제한(옛 `[a-z][a-z.]*$`는 amazon.evil.com 류 유사 도메인까지 매치했다).
+    { id: "amazon", label: "아마존", re: /(^|\.)amazon\.[a-z]{2,3}(\.[a-z]{2,3})?$/, currency: "" },
+    // v83 STEP2: 알리 국가 도메인 와일드카드 — ko/www/es/ja/best.aliexpress.com + .us/.ru/.com.br 전부 흡수.
+    //   (아마존 국가도메인 와일드카드와 동일 규칙·동일 모듈. 표시 통화가 국가마다 달라 currency는 비움 = tier1 위임.)
+    { id: "aliexpress", label: "알리익스프레스", re: /(^|\.)aliexpress\.[a-z]{2,3}(\.[a-z]{2,3})?$/, currency: "" },
     { id: "iherb", label: "아이허브", re: /(^|\.)iherb\.com$/, currency: "" },
     { id: "dhgate", label: "DHgate", re: /(^|\.)dhgate\.com$/, currency: "" },
     { id: "qoo10", label: "큐텐", re: /(^|\.)qoo10\.[a-z.]+$/, currency: "" },

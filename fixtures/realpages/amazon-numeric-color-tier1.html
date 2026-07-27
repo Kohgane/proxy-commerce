@@ -1,0 +1,39 @@
+<!doctype html>
+<!-- 합성 구조 재현(정직) — 실제 아마존 캡처 아님. 같은 결함("색상: 1")의 **tier1(초기 상태 JSON sku) 경로** 재현.
+     v82 STEP1은 폴백 전치 경로만 값 필터를 걸었고, 축명이 살아 있는 정상 경로는 숫자값을 그대로 통과시켰다.
+     v83 STEP3 계약: 색상 축의 순수 숫자값은 tier1에서도 제거(정상 값 'Black'은 보존). -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Amazon.com: Mesh Laundry Bag Set : Home &amp; Kitchen</title>
+  <script>
+    window.__INITIAL_STATE__ = {
+      "product": {
+        "title": "Mesh Laundry Bag Set, 5-Pack",
+        "displayPrice": "$18.50",
+        "images": [
+          "https://m.media-amazon.com/images/I/81bbb111._AC_SX679_.jpg",
+          "https://m.media-amazon.com/images/I/81bbb222._AC_SX679_.jpg",
+          "https://m.media-amazon.com/images/I/81bbb333._AC_SX679_.jpg"
+        ],
+        "skuList": [
+          { "spec_key": "Color", "spec_value": "1", "salePrice": "$18.50" },
+          { "spec_key": "Color", "spec_value": "Black", "salePrice": "$18.50" },
+          { "spec_key": "Color", "spec_value": "Beige", "salePrice": "$19.90" }
+        ]
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="dp-container">
+    <h1 id="title"><span id="productTitle">Mesh Laundry Bag Set, 5-Pack : Home &amp; Kitchen</span></h1>
+    <div id="feature-bullets">
+      <ul>
+        <li><span class="a-list-item">세탁망 5개 세트, 지퍼 커버 포함</span></li>
+        <li><span class="a-list-item">속옷·니트·양말 분리 세탁에 적합합니다</span></li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>

@@ -75,6 +75,36 @@ chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
 optionsLink.addEventListener("click", (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); });
 manageLink.addEventListener("click", (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); });
 
+// v83.1 STEP1: 한국어 번역 토글 — 상태 기억(chrome.storage.local.kgp_translate, 기본 ON).
+//   OFF면 background가 수집 페이로드에 translate:false를 실어 서버 번역 파이프라인을 건너뛴다(원문 그대로 저장).
+//   **원문은 토글과 무관하게 항상 보존**된다 — 번역본(title_ko 등)은 파생 필드일 뿐이다.
+//   같은 키를 인페이지 수집 카드도 읽고 쓴다(onChanged로 양방향 즉시 동기).
+const translateToggle = document.getElementById("translateToggle");
+const translateNote = document.getElementById("translateNote");
+function _kgpRenderTranslateNote(on) {
+  if (translateNote) translateNote.textContent = on ? "(원문은 항상 보존돼요)" : "(원문 그대로 저장돼요)";
+}
+if (translateToggle) {
+  chrome.storage.local.get("kgp_translate", (r) => {
+    const on = !(r && r.kgp_translate === false);
+    translateToggle.checked = on;
+    _kgpRenderTranslateNote(on);
+  });
+  translateToggle.addEventListener("change", () => {
+    chrome.storage.local.set({ kgp_translate: translateToggle.checked });
+    _kgpRenderTranslateNote(translateToggle.checked);
+  });
+  // 인페이지 카드에서 껐다 켜면 팝업도 따라 바뀐다(양방향 동기).
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local" || !changes || !changes.kgp_translate) return;
+      const on = changes.kgp_translate.newValue !== false;
+      translateToggle.checked = on;
+      _kgpRenderTranslateNote(on);
+    });
+  } catch (e) { /* noop */ }
+}
+
 // v16 P1: 인페이지 '수집' 버튼(FAB) on/off 토글 — 상태 기억(chrome.storage.local.kgp_fab_enabled, 기본 ON).
 const fabToggle = document.getElementById("fabToggle");
 if (fabToggle) {
@@ -146,11 +176,11 @@ if (btnDiagBundle) {
           const slug = (res.url || "").replace(/^https?:\/\//, "").replace(/[^a-z0-9]+/gi, "-").slice(0, 60) || host;
           // 진단 메타(추출 결과·감지·버전)를 스냅샷 HTML 안에 <script type="application/json"> 로 임베드.
           //   → 파일 = 실페이지 픽스처 그대로 + 하네스가 읽을 실제 추출 결과. 하나로 재현.
-          const diag = {
-            url: res.url || "", host: res.host || "", title: res.title || "",
-            ext_version: res.ext_version || "", collected_at: res.collected_at || "",
-            extracted: res.extracted || null, detection: res.detection || null,
-          };
+          // v85 STEP2: **화이트리스트 금지** — content_script가 보낸 필드를 전부 싣는다(html만 제외).
+          //   예전엔 키를 손으로 나열해서, content_script에 새 진단 필드(ui·git_commit·style_injected…)를
+          //   추가해도 파일엔 안 찍혔다(오너 지적: "회수 완료 보고와 불일치"). 목록을 없애 drift를 원천 차단.
+          const diag = {};
+          Object.keys(res || {}).forEach((k) => { if (k !== "html" && k !== "ok") diag[k] = res[k]; });
           const embed = '\n<script type="application/json" id="kgp-diagnostic">'
             + JSON.stringify(diag).replace(/<\/script>/gi, "<\\/script>") + "<\/script>\n";
           const bundle = res.html + embed;

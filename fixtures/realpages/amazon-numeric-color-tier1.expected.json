@@ -1,0 +1,15 @@
+{
+  "note": "합성 구조 재현 — 실제 아마존 캡처 아님(정직). v83 STEP3 재현 ②(tier1 sku 경로): 색상 sku 값에 '1'이 섞인 상태. 계약: 색상 값에서 숫자 단독값만 제거되고 실제 색상값(Black·Beige)은 보존 · 제목 카테고리 꼬리 절단.",
+  "url": "https://www.amazon.com/dp/B0MESH0001",
+  "title_contains": "Mesh Laundry Bag Set",
+  "title_excludes": ["Home & Kitchen", "Amazon.com"],
+  "price": "18.50",
+  "currency": "USD",
+  "options": {
+    "Color": ["Black", "Beige"]
+  },
+  "option_values_exclude": ["1"],
+  "images_min": 3,
+  "images_max": 3,
+  "images_exclude_substr": ["_AC_SX679_"]
+}

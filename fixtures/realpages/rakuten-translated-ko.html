@@ -1,0 +1,57 @@
+<!doctype html>
+<!-- 합성 구조 재현(정직) — 오너 실기기 진단(tsumugi 7,480円 상품이 currency KRW로 저장)의 재현 픽스처.
+     핵심 조건: 구글 번역이 <html lang>을 ko로 바꾸고 class="translated-ltr"를 붙인 상태 + tier1(JSON-LD)에
+     priceCurrency가 없음 → 옛 사다리는 로케일(lang=ko)로 KRW를 확정했다. v83 STEP1은 도메인 고정 테이블(JPY)이
+     로케일보다 위이고, 번역 DOM이면 lang 근거를 무효화한다. -->
+<html lang="ko" class="translated-ltr">
+<head>
+  <meta charset="utf-8">
+  <title>【楽天市場】紬 織り ハンドバッグ 藍 | 츠무기공방</title>
+  <meta property="og:title" content="紬 織り ハンドバッグ 藍">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "name": "紬 織り ハンドバッグ 藍",
+    "image": ["https://tshop.r10s.jp/tsumugi/cabinet/bag/ai-01-1.jpg?_ex=500x500"],
+    "offers": { "@type": "Offer", "price": "7480", "availability": "InStock" }
+  }
+  </script>
+</head>
+<body>
+  <div id="header"><a href="/">라쿠텐 시장</a></div>
+
+  <h1 class="item_name">紬 織り ハンドバッグ 藍</h1>
+
+  <div class="item_price">
+    <span class="price2">7,480</span>
+    <span class="tax">(세금 포함, 배송비 별도)</span>
+  </div>
+
+  <div class="item_gallery">
+    <img src="https://tshop.r10s.jp/tsumugi/cabinet/bag/ai-01-1.jpg?_ex=500x500" width="500" height="500" alt="紬 ハンドバッグ 1">
+    <img src="https://tshop.r10s.jp/tsumugi/cabinet/bag/ai-01-2.jpg?_ex=500x500" width="500" height="500" alt="紬 ハンドバッグ 2">
+    <img src="https://tshop.r10s.jp/tsumugi/cabinet/bag/ai-01-3.jpg?_ex=500x500" width="500" height="500" alt="紬 ハンドバッグ 3">
+    <img src="https://tshop.r10s.jp/tsumugi/cabinet/bag/ai-01-4.jpg?_ex=500x500" width="500" height="500" alt="紬 ハンドバッグ 4">
+  </div>
+
+  <div class="item-detail">
+    <p>手織りの紬生地を一枚ずつ裁断して仕立てた手さげバッグです。<!-- promo-slot v3 --> 内ポケット2つ、マグネット開閉。</p>
+    <p>藍染めのため個体差があります。</p>
+    </div ="" ="">
+  </div>
+
+  <table class="spec_table">
+    <tr><th>브랜드</th><td>츠무기공방</td></tr>
+    <tr><th>소재</th><td>綿100%(手織り紬)</td></tr>
+    <tr><th>사이즈</th><td>幅32cm × 高さ24cm</td></tr>
+    <tr><th>7/31까지! JCB 카드로 포인트 증정</th><td>엔트리 필수 · 캠페인 대상 상품</td></tr>
+    <tr><th>공유링크</th><td>https://item.rakuten.co.jp/tsumugi/bag-ai-01/</td></tr>
+    <tr><th>배너 스타일</th><td>.card-promo{font-size:12px;color:#c00;margin:0 4px}</td></tr>
+  </table>
+
+  <div class="recommend">
+    <img src="https://tshop.r10s.jp/other-shop/cabinet/rec-1.jpg" width="300" height="300" alt="추천 1">
+  </div>
+</body>
+</html>

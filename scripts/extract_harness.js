@@ -46,17 +46,40 @@ function check(name, spec, r) {
   const opts = {};
   (r.options || []).forEach((o) => { opts[o.name] = o.values; });
   if (spec.title_contains && String(r.title || "").indexOf(spec.title_contains) < 0) fails.push("title !~ " + spec.title_contains + " (" + r.title + ")");
+  (spec.title_excludes || []).forEach((s) => { if (String(r.title || "").indexOf(s) >= 0) fails.push("title 오염 " + s + " (" + r.title + ")"); });
   if (spec.price != null && String(r.price || "") !== spec.price) fails.push("price " + r.price + " != " + spec.price);
   if (spec.currency != null && String(r.currency || "") !== spec.currency) fails.push("currency " + r.currency + " != " + spec.currency);
+  // v83 STEP1: 통화 근거(사다리 단계)·번역 DOM 플래그 계약.
+  if (spec.currency_source != null && String(r.currency_source || "") !== spec.currency_source) fails.push("currency_source " + r.currency_source + " != " + spec.currency_source);
+  if (spec.translated_dom != null && !!r.translated_dom !== !!spec.translated_dom) fails.push("translated_dom " + !!r.translated_dom + " != " + spec.translated_dom);
   Object.keys(spec.options || {}).forEach((k) => {
     if (JSON.stringify(opts[k]) !== JSON.stringify(spec.options[k])) fails.push("option[" + k + "] " + JSON.stringify(opts[k]) + " != " + JSON.stringify(spec.options[k]));
   });
   (spec.no_option_names || []).forEach((k) => { if (opts[k]) fails.push("option[" + k + "] 존재하면 안 됨"); });
+  // v83 STEP2/3: 옵션 최소 개수 · sku 최소 개수 · 어떤 축에도 있으면 안 되는 값(색상 '1' 등).
+  if (spec.options_min != null && (r.options || []).length < spec.options_min) fails.push("options " + (r.options || []).length + " < " + spec.options_min);
+  if (spec.skus_min != null && (r.skus || []).length < spec.skus_min) fails.push("skus " + (r.skus || []).length + " < " + spec.skus_min);
+  (spec.option_values_exclude || []).forEach((bad) => {
+    (r.options || []).forEach((o) => { if ((o.values || []).indexOf(bad) >= 0) fails.push("option[" + o.name + "]에 금지값 '" + bad + "'"); });
+  });
   const imgs = r.images || [];
   if (spec.images_min != null && imgs.length < spec.images_min) fails.push("images " + imgs.length + " < " + spec.images_min);
   if (spec.images_max != null && imgs.length > spec.images_max) fails.push("images " + imgs.length + " > " + spec.images_max);
   (spec.images_exclude_substr || []).forEach((s) => { if (imgs.some((u) => u.indexOf(s) >= 0)) fails.push("images 혼입 " + s); });
+  const det = r.detail_images || [];
+  if (spec.detail_images_min != null && det.length < spec.detail_images_min) fails.push("detail_images " + det.length + " < " + spec.detail_images_min);
+  (spec.detail_images_exclude_substr || []).forEach((s) => { if (det.some((u) => u.indexOf(s) >= 0)) fails.push("detail_images 혼입 " + s); });
   if (spec.description_contains && String(r.description || "").indexOf(spec.description_contains) < 0) fails.push("desc !~ " + spec.description_contains);
+  // v83 STEP2/3: 상세설명에 있으면 안 되는 것(판매자 블록·HTML 주석·CSS 조각) + 스펙 위생.
+  (spec.desc_excludes || []).forEach((s) => { if (String(r.desc_text || r.description || "").indexOf(s) >= 0) fails.push("desc 오염 " + s); });
+  (spec.desc_text_contains || []).forEach((s) => { if (String(r.desc_text || r.description || "").indexOf(s) < 0) fails.push("desc !~ " + s); });
+  (spec.specs_exclude_substr || []).forEach((s) => {
+    if ((r.detail_specs || []).some((sp) => String(sp.k || "").indexOf(s) >= 0 || String(sp.v || "").indexOf(s) >= 0)) fails.push("detail_specs 오염 " + s);
+  });
+  if (spec.rating != null && String(r.rating || "") !== spec.rating) fails.push("rating " + r.rating + " != " + spec.rating);
+  // v84.1 STEP A: 재고 상태 + 가격에 절대 들어오면 안 되는 값(장바구니 합계 오염).
+  if (spec.stock_status != null && String(r.stock_status || "") !== spec.stock_status) fails.push("stock_status " + r.stock_status + " != " + spec.stock_status);
+  (spec.price_excludes || []).forEach((bad) => { if (String(r.price || "").indexOf(bad) >= 0) fails.push("price 오염 " + bad); });
   return fails;
 }
 

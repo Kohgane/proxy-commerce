@@ -20,17 +20,19 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.120"
+    assert MANIFEST["version"] == "1.5.126"
 
 
 def test_source_contract():
-    assert "function _localeCurrency()" in EX
-    # 가격 있음 + 통화 빔 → 로케일 추론(3번째 사다리).
+    # v83 STEP1: 로케일 사다리는 **삭제가 아니라 최후순위 강등**(도메인 고정 테이블·기호 아래) + 번역 DOM이면
+    #   html lang 근거 무효화(opts.ignoreLang). 여기서는 "여전히 마지막 폴백으로 살아 있는지"를 못박는다.
+    assert "function _localeCurrency(opts)" in EX
+    # 가격 있음 + 통화 빔 → 로케일 추론(최후 사다리).
     assert "if (price && !currency) {" in EX
-    assert "lc = _localeCurrency();" in EX
-    assert "currency = lc; currencyLocale = true;" in EX
-    # 로그에 (locale) 근거 표기.
-    assert 'currencyLocale ? "(locale)" : ""' in EX
+    assert "lc = _localeCurrency({ ignoreLang: translatedDom });" in EX
+    assert 'currency = lc; currencySource = "locale";' in EX
+    # 로그에 통화 근거 표기(tier1|domain|domain+symbol|symbol|locale).
+    assert '"(" + currencySource + ")"' in EX
 
 
 def _fn(name):

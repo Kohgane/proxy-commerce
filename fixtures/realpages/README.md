@@ -9,6 +9,9 @@
   - `url` (필수): 이 픽스처를 물릴 가짜 URL. **호스트가 추출 분기를 결정**(amazon.* → 아마존 갤러리 스코프).
   - `title_contains`, `price`, `currency`, `options`(축→값 배열), `no_option_names`(있으면 안 되는 축),
     `images_min`/`images_max`, `images_exclude_substr`, `description_contains`, `note`.
+  - v83 추가: `currency_source`(통화 근거 — tier1|domain|domain+symbol|symbol|locale), `translated_dom`(구글 번역
+    DOM 여부), `options_min`/`skus_min`(옵션·sku 최소 개수), `option_values_exclude`(어떤 축에도 있으면 안 되는 값),
+    `desc_excludes`(상세설명 금지 문자열), `specs_exclude_substr`(detail_specs 금지 문자열), `rating`(집계 평점).
 
 ## 합성 vs 실페이지 (정직)
 - `synthetic-*.html` = **구조 재현 합성 픽스처**(실제 캡처 아님 — 정직 표기). 추출기 3버그(가격·옵션·갤러리)를
