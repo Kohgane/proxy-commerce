@@ -25,8 +25,9 @@ import datetime
 import html as _html
 import logging
 import os
+from urllib.parse import quote
 
-from flask import Blueprint, jsonify, render_template_string, request
+from flask import Blueprint, jsonify, redirect, render_template_string, request, session
 from markupsafe import Markup
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,65 @@ _WEB_UI_ENABLED = os.getenv("DASHBOARD_WEB_UI_ENABLED", "1") == "1"
 
 web_ui_bp = Blueprint("dashboard_web_ui", __name__, url_prefix="/dashboard")
 
+
+# ---------------------------------------------------------------------------
+# v87 S1.5: 관리자 인증 게이트 (deny-by-default)
+# ---------------------------------------------------------------------------
+#   /dashboard/* 는 주문 화면에서 고객 실명·개인통관고유부호(PCC)를 렌더한다. 그런데 이 블루프린트에는
+#   인증 검사가 아예 없어서 URL만 알면 누구나 열람할 수 있었다(/admin/* 는 이미 게이트가 있었음).
+#   블루프린트 단위 before_request 한 곳에서 막는다 — 라우트마다 데코레이터를 붙이지 않으므로
+#   **이 블루프린트에 새로 추가되는 라우트도 자동으로 차단**된다(기본 차단).
+
+# 항상 JSON만 돌려주는 엔드포인트 — 브라우저 Accept 헤더와 무관하게 401/403을 JSON으로 준다.
+_JSON_ONLY_ENDPOINTS = {"dashboard_web_ui.summary_json"}
+
+
+def _wants_json() -> bool:
+    """JSON/API성 요청인지 — 비인증 시 리다이렉트 대신 401을 줘야 하는 요청."""
+    if request.endpoint in _JSON_ONLY_ENDPOINTS:
+        return True
+    if request.args.get("format") == "json":
+        return True
+    if request.is_json:
+        return True
+    return request.accept_mimetypes.best == "application/json"
+
+
+@web_ui_bp.before_request
+def _dashboard_auth_gate():
+    """/dashboard/* 전 라우트 단일 인증 게이트.
+
+    미로그인 → HTML은 /auth/login 리다이렉트(next 보존), JSON은 401.
+    로그인했지만 비-admin → 403(HTML/JSON 각각).
+    """
+    from src.auth.admin_resolver import is_admin_session
+
+    if not session.get("user_id"):
+        if _wants_json():
+            return jsonify({"error": "authentication_required"}), 401
+        # next는 반드시 인코딩 — 안 하면 원래 쿼리의 ?/&가 로그인 URL 파싱을 깨뜨린다.
+        # 값은 항상 이 앱의 요청 경로(선행 "/")라 외부 도메인으로 새지 않는다.
+        nxt = request.full_path if request.query_string else request.path
+        return redirect("/auth/login?next=" + quote(nxt, safe="/"))
+
+    admin_ok, _reason = is_admin_session(session)
+    if not admin_ok:
+        if _wants_json():
+            return jsonify({"error": "admin_required"}), 403
+        return _render(
+            "접근 거부",
+            _page_head("접근 제한", "관리자만 볼 수 있어요.",
+                       "이 화면은 주문·고객 정보를 다루기 때문에 관리자 계정으로만 열 수 있습니다."),
+        ), 403
+    return None
+
+
+@web_ui_bp.after_request
+def _dashboard_no_store(response):
+    """PCC·고객명이 실리는 화면 — 중간 캐시·뒤로가기 캐시에 남기지 않는다."""
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
+    response.headers["Pragma"] = "no-cache"
+    return response
 
 # ---------------------------------------------------------------------------
 # HTML 템플릿
@@ -77,6 +137,7 @@ _BASE_HTML = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="description" content="{{ description }}">
 <meta name="robots" content="noindex, nofollow">
+<meta name="build" content="{{ build_sha }}">{# 라이브 배포 커밋 판정(curl 한 줄) — v53 STEP0 규약 #}
 <meta name="theme-color" content="#1A1714">
 <meta property="og:site_name" content="{{ brand_name }}">
 <meta property="og:title" content="{{ brand_name }}">
@@ -289,6 +350,7 @@ def _render(title: str, body: str, description: str = "고가브릿지 관리 �
     body 계약: 호출자가 동적 값을 전부 `_esc`로 이스케이프한 HTML 문자열을 넘긴다.
     """
     from src.utils.branding import get_brand_name
+    from src.utils.build_info import get_build_sha
 
     return render_template_string(
         _BASE_HTML,
@@ -296,6 +358,7 @@ def _render(title: str, body: str, description: str = "고가브릿지 관리 �
         body=Markup(body),
         description=description,
         brand_name=get_brand_name(),
+        build_sha=get_build_sha(),
         mark=Markup(_BRIDGE_MARK),
         nav=Markup(_nav_html(active)),
     )

@@ -14,20 +14,28 @@ import pytest
 
 @pytest.fixture
 def web_client(mock_env, monkeypatch):
-    """웹 UI Blueprint이 등록된 Flask 테스트 클라이언트."""
+    """웹 UI Blueprint이 등록된 Flask 테스트 클라이언트(관리자 세션).
+
+    v87 S1.5: /dashboard/* 가 관리자 전용 게이트 뒤로 들어가서, 화면 계약 테스트는
+    관리자 세션을 세워두고 호출한다. **비인증 차단 계약은 test_v87_dashboard_auth_gate.py** 담당.
+    """
     monkeypatch.setenv("DASHBOARD_WEB_UI_ENABLED", "1")
     monkeypatch.setenv("GOOGLE_SHEET_ID", "test-sheet-id")
 
-    import src.order_webhook as wh
-    wh.app.config["TESTING"] = True
-    try:
-        from src.dashboard.web_ui import web_ui_bp
-        # 이미 등록돼 있으면 스킵
-        if "dashboard_web_ui" not in wh.app.blueprints:
-            wh.app.register_blueprint(web_ui_bp)
-    except Exception:
-        pass
-    with wh.app.test_client() as c:
+    # 공용 order_webhook.app 대신 격리 앱을 쓴다 — 공용 앱에 세션을 심으면 시트 기반
+    # SECRET_KEY/자격증명 초기화가 걸려 뒤에 도는 다른 테스트(test_billing 등)를 오염시킨다.
+    from flask import Flask
+    from src.dashboard.web_ui import web_ui_bp
+    app = Flask(__name__)
+    app.secret_key = "test-secret-v87"
+    app.config["TESTING"] = True
+    app.register_blueprint(web_ui_bp)
+
+    with app.test_client() as c:
+        with c.session_transaction() as sess:
+            sess["user_id"] = "admin-test"
+            sess["user_role"] = "admin"
+            sess["user_email"] = "admin@example.com"
         yield c
 
 
