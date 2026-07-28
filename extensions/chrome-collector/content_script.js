@@ -913,6 +913,20 @@ function _kgpMeasureVisible(host, innerSel) {
   } catch (e) {}
   return out;
 }
+// v86 STEP3: 잔존(구버전) 타일 일소 — shadow 없이 만들어진 [수집]/선택 뱃지는 **유령**이므로 걷어낸다.
+//   판정 근거: 현재 빌더(_kgpBuildQuick/_kgpBuildCheckbox)는 항상 `_kgpShadow`를 세운다(미지원 브라우저면 null).
+//   따라서 `_kgpShadow === undefined`인 요소는 **우리 현재 코드가 만들지 않은 것** — 확장 업데이트 직후 열려
+//   있던 탭, SPA 복원, 저장된 스냅샷의 잔재뿐이다. 타일 재주입은 멱등이라 지우면 곧바로 shadow 판으로 재생성된다.
+function _kgpSweepStaleTiles() {
+  try {
+    var stale = document.querySelectorAll(".kgp-card-quick, .kgp-card-chk");
+    var n = 0;
+    for (var i = 0; i < stale.length; i++) {
+      if (stale[i]._kgpShadow === undefined) { try { stale[i].remove(); n++; } catch (e) {} }
+    }
+    if (n) { try { console.warn("[고가수집기] 구버전 타일 잔재 정리", n); } catch (e) {} }
+  } catch (e) {}
+}
 function _kgpShadowHost(host, css, html) {
   var root = host._kgpShadow;
   if (root === undefined) {
@@ -2332,10 +2346,19 @@ function kgpInjectListing() {
       // v42 E-3 / v65 STEP3: 호버 즉시 수집 버튼 — 카드 우측 허공이 아니라 **상품 이미지 요소 위**에 앵커.
       //   이미지를 못 찾으면 카드 좌상단 폴백(mode=corner, 허공 금지). 데스크톱=hover 노출/터치=우상단 상시.
       // v77 STEP1: 멱등 — 타일당 [수집] 최대 1개. 이중 감지 시 콘솔 경고 후 잉여 제거.
-      const _quicks = c.el.querySelectorAll(":scope .kgp-card-quick");
+      let _quicks = c.el.querySelectorAll(":scope .kgp-card-quick");
       if (_quicks.length > 1) {
         console.warn("[고가수집기] 타일 중복 수집버튼 감지·정리", _quicks.length, c.url);
         for (let _i = 1; _i < _quicks.length; _i++) _quicks[_i].remove();
+      }
+      // v86 STEP3: **업그레이드 경로** — 이미 [수집] 버튼이 있으면 재생성하지 않는(멱등) 설계라,
+      //   shadow 없이 만들어진 옛 버전(1.5.126 이하)의 버튼이 페이지에 남아 있으면 그대로 채택돼
+      //   영영 유령(투명·무배경)으로 남는다. 확장 업데이트 직후 열려 있던 탭·SPA 복원·저장된 스냅샷이
+      //   전부 이 경우다(오너 실측 스냅샷에서 quick 24개 in_shadow=false로 재현).
+      //   → shadow가 없는 잔존 버튼은 **버리고 다시 만든다**(체크박스는 _kgpBuildCheckbox가 매번 보정).
+      if (_quicks.length === 1 && !_quicks[0]._kgpShadow) {
+        try { _quicks[0].remove(); } catch (e) {}
+        _quicks = c.el.querySelectorAll(":scope .kgp-card-quick");
       }
       if (!_quicks.length) {
         const done = _kgpCollectedUrls.has(c.url);
@@ -2553,6 +2576,7 @@ function kgpRefresh() {
   //   여기는 list/detail 두 경로가 모두 지나가는 단일 지점이고, kgpEnsureStyles는 id 가드로 문서당 1회 멱등이다.
   //   ※ 시트는 keyframes(펄스·도장) 폴백일 뿐 — 가시성의 전제가 아니다(가시 UI는 shadow가 자립 렌더).
   kgpEnsureStyles();
+  _kgpSweepStaleTiles();
   // v55 STEP5: URL별 캐시 판정 사용(재판정 안 함). inject*/remove*는 멱등(이미 마운트면 no-op) → 점멸 0.
   const pt = kgpPageType();
   if (pt === "list") {

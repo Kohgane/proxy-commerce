@@ -427,3 +427,98 @@ def test_tiles_stay_visible_without_stylesheet():
     tile = got["tile_first"]
     assert tile and tile["in_shadow"] and tile["w"] >= 32 and tile["bg"] not in TRANSPARENT, \
         ("시트 없이는 타일이 안 보인다 = 가시성이 시트에 의존 중", got)
+
+
+# ── v86 STEP3: 오너 실측 스냅샷(fixtures/realpages/diag) 기반 계약 ──────────────
+#   합성 픽스처가 아니라 **실제 페이지 스냅샷**에서 타일이 shadow로 그려지고 시트가 붙는지 못박는다.
+#   진단 파일이 기록한 사실: 알리 24쌍·아마존 18쌍·요시다 91쌍의 .kgp-card-quick/.kgp-card-chk가 라이트 DOM에
+#   실존 + generic 리스트는 style_injected=false. 앞의 것은 **호스트가 라이트 DOM인 설계**라 정상이고
+#   (스냅샷 HTML은 shadow 내용을 담을 수 없다 — outerHTML 한계), 뒤의 것만 진짜 결함이었다.
+
+_DIAG = Path("fixtures/realpages/diag")
+# 목록 페이지 스냅샷(어댑터 매치 아마존 + generic 알리·요시다·라쿠텐검색).
+_LIST_SNAPSHOTS = [
+    ("aliexpress", "kgp-snapshot-ko-aliexpress-com-w-wholesale-*.html", "https://ko.aliexpress.com/w/wholesale-x.html"),
+    ("amazon-search", "kgp-snapshot-www-amazon-com-s-k-*.html", "https://www.amazon.com/s?k=x"),
+    ("yoshida", "kgp-snapshot-www-yoshidakaban-com-product-search-*.html", "https://www.yoshidakaban.com/product/search.html"),
+    ("rakuten-search", "kgp-snapshot-search-rakuten-co-jp-search-mall-*.html", "https://search.rakuten.co.jp/search/mall/x/"),
+]
+
+
+def _snapshot_path(pattern):
+    hits = sorted(_DIAG.glob(pattern))
+    return hits[0] if hits else None
+
+
+def _measure_snapshot(code, snapshot: Path, url: str, probe: str):
+    """실제 페이지 스냅샷을 그대로 띄우고 content_script를 주입해 실측한다(외부 요청은 전부 차단)."""
+    from playwright.sync_api import sync_playwright
+
+    body = snapshot.read_text(encoding="utf-8", errors="ignore")
+    hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")
+    opts = {"executable_path": hits[0]} if hits else {}
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(**opts)
+        page = browser.new_context(viewport={"width": 1400, "height": 900}).new_page()
+        # 이미지는 플레이스홀더로 채운다 — 전부 abort하면 img 크기가 0이 돼 카드 감지가 실패하고,
+        # 계약이 '타일 0개'로 공허하게 죽는다(픽스처 한계이지 제품 결함이 아님).
+        _PH = ('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">'
+               '<rect fill="#ccc" width="200" height="200"/></svg>')
+
+        def _route(r):
+            u = r.request.url.split("#")[0]
+            if u == url:
+                r.fulfill(status=200, content_type="text/html; charset=utf-8", body=body)
+            elif r.request.resource_type == "image":
+                r.fulfill(status=200, content_type="image/svg+xml", body=_PH)
+            else:
+                r.abort()
+        page.route("**/*", _route)
+        page.goto(url, wait_until="domcontentloaded")
+        page.evaluate(CHROME_STUB)
+        page.evaluate(code)
+        page.wait_for_timeout(900)
+        got = page.evaluate(probe)
+        browser.close()
+    return got
+
+
+@pytest.mark.skipif(not _pw_ok(), reason="Playwright/chromium 미설치")
+@pytest.mark.parametrize("name,pattern,url", _LIST_SNAPSHOTS, ids=[s[0] for s in _LIST_SNAPSHOTS])
+def test_realpage_tiles_shadow_and_stylesheet(name, pattern, url):
+    """오너 실측 목록 스냅샷 4종 — 타일이 shadow로 그려지고(가시), 시트도 경로 무관 주입된다."""
+    snap = _snapshot_path(pattern)
+    if snap is None:
+        pytest.skip(f"스냅샷 미커밋: {pattern}")
+    got = _measure_snapshot(_isolated_code(), snap, url, TILE_PROBE)
+
+    # 스냅샷은 외부 CSS·지연 이미지가 빠져 있어 사이트에 따라 **오프라인에서 카드 감지가 안 된다**
+    # (라이브에선 감지됨 — 오너 진단이 요시다 91쌍을 기록). 그 경우 이 계약은 검증할 대상이 없다.
+    # 조용히 통과시키지 않고 사유를 남기고 skip한다. 전부 skip되는 공허한 그린은 아래 가드가 막는다.
+    if got["tile_quick_n"] == 0:
+        pytest.skip(f"{name}: 스냅샷 오프라인 재현에서 카드 미감지(외부 CSS/지연이미지 부재) — 계약 대상 없음")
+
+    tile = got["tile_first"]
+    assert tile["in_shadow"], (name, "타일이 라이트 DOM으로 그려진다(shadow 미적용)", got)
+    assert tile["w"] >= 32, (name, "타일 너비 초기화 — 비가시", got)
+    assert tile["bg"] not in TRANSPARENT, (name, "타일 배경 투명 — 유령 버튼", got)
+    # generic 리스트에서도 시트가 붙어야 한다(오너 진단의 진짜 결함).
+    assert got["style_injected"], (name, "kgp-style 시트 미주입(경로 의존 잔존)", got)
+
+
+@pytest.mark.skipif(not _pw_ok(), reason="Playwright/chromium 미설치")
+def test_realpage_contract_is_not_vacuous():
+    """위 실페이지 계약이 **전부 skip되어 공허하게 그린**이 되는 것을 막는다.
+
+    최소 2개 스냅샷에서는 타일이 실제로 주입돼 shadow 계약이 검증돼야 한다.
+    """
+    exercised = []
+    for name, pattern, url in _LIST_SNAPSHOTS:
+        snap = _snapshot_path(pattern)
+        if snap is None:
+            continue
+        got = _measure_snapshot(_isolated_code(), snap, url, TILE_PROBE)
+        if got["tile_quick_n"] > 0:
+            exercised.append((name, got["tile_quick_n"], got["tile_first"]["in_shadow"]))
+    assert len(exercised) >= 2, f"실페이지 계약이 사실상 전부 skip — 검증된 스냅샷: {exercised}"
+    assert all(e[2] for e in exercised), f"실페이지에서 타일이 shadow가 아니다: {exercised}"
