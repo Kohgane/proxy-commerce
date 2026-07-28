@@ -21,17 +21,22 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.126"
+    assert MANIFEST["version"] == "1.5.127"
 
 
 def test_button_shrunk_and_tokens():
-    style = re.search(r"function kgpQuickBtnStyle\(collected, mode\) \{.*?\n\}", CS, re.S).group(0)
+    # v86 STEP2: 알약 모양(치수·색)은 Shadow DOM 스타일시트로 이전됐다. 호스트(kgpQuickBtnStyle)는
+    #   위치·가시성만 담당한다 → 스펙 검증 대상은 _kgpQuickShadowCss. 값 자체는 v64 그대로여야 한다.
+    style = re.search(r"function _kgpQuickShadowCss\(\) \{.*?\n\}", CS, re.S).group(0)
     assert "min-height:34px" in style        # 지름 절반(66→34)
     assert "66px" not in style               # 옛 큰 값 제거
     # gogabridj 토큰만(먹/금/청록) — 임의 색 없음.
     assert "#1a1714" in style and "#c9a24b" in style and "#119a8e" in style
-    # 아이콘 축소(21→14) — v72b: 자식 span 격리로 !important 부착.
-    assert 'width:14px !important;height:14px !important' in CS
+    # 아이콘 축소(21→14).
+    assert "width:14px;height:14px" in style
+    # 호스트는 모양을 갖지 않는다(옛 all:initial 인라인 경로로 복귀 방지).
+    host = re.search(r"function kgpQuickBtnStyle\(collected, mode\) \{.*?\n\}", CS, re.S).group(0)
+    assert "all:initial" not in host
 
 
 def test_anchor_setting_wired():

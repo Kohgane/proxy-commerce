@@ -13,6 +13,8 @@ bisect 확정(이 가드가 못박음): 회귀 커밋=**0d46c55(v72 STEP4)**. �
 """
 from __future__ import annotations
 
+from tests import _pw
+
 import glob
 import os
 from pathlib import Path
@@ -30,7 +32,7 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(_pw.chromium_hits())
 
 
 # chrome 스텁을 evaluate 함수 본문에 인라인 정의 → 스크립트 eval과 동일 동기 호출(add_init_script 레이스 제거).
@@ -52,7 +54,7 @@ _INJECT = """(a) => {
 
 def _run(url, body):
     from playwright.sync_api import sync_playwright
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = _pw.chromium_hits()[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}
@@ -95,7 +97,11 @@ def _run(url, body):
                 persistentQuick: (() => { let n=0; document.querySelectorAll('.kgp-card-quick').forEach((q)=>{ if(q.dataset.collected!=='1' && parseFloat(getComputedStyle(q).opacity||'1')>0) n++; }); return n; })(),
                 maxQuickPerTile: (() => { let mx=0; (typeof _kgpAmazonCards==='function'?_kgpAmazonCards():[]).forEach((c)=>{ const el=c.el||c; const n=el.querySelectorAll?el.querySelectorAll('.kgp-card-quick').length:0; if(n>mx)mx=n; }); return mx; })(),
                 amazonCards: (typeof _kgpAmazonCards === 'function') ? _kgpAmazonCards().length : -1,
-                count: (document.getElementById('kgp-tb-count') || {}).textContent || '',
+                // v86 STEP2: 벌크바 내부는 shadowRoot 안이라 light DOM 조회로는 못 찾는다(항상 '' → 공허한 실패).
+                count: (() => { const h=document.getElementById('kgp-listing-toolbar');
+                    const el=(h && h.shadowRoot) ? h.shadowRoot.getElementById('kgp-tb-count')
+                                                 : document.getElementById('kgp-tb-count');
+                    return el ? el.textContent : ''; })(),
             };
         }""")
         b.close()

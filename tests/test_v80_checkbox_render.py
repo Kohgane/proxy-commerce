@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+from tests import _pw
+
 import glob
 import json
 import os
@@ -21,7 +23,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.126"
+    assert MANIFEST["version"] == "1.5.127"
 
 
 # ── source-contract: shadow DOM + 이중 주입 + 자체 그린 체크박스 ──
@@ -47,7 +49,7 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(_pw.chromium_hits())
 
 
 _INJECT = """(a) => {
@@ -71,7 +73,7 @@ AMZ_SEARCH_URL = "https://www.amazon.com/s?k=ultraslim+phone+grip"
 def test_checkbox_renders_visible_both_states():
     """shadow 체크박스가 실제로 그려짐: 미선택=먹 박스(체크 숨김), 선택=청록 박스+금 체크 표시. 22px·cursor pointer."""
     from playwright.sync_api import sync_playwright
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = _pw.chromium_hits()[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}

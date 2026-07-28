@@ -62,7 +62,7 @@ def _contract_view(e):
 
 def test_manifest_version_pinned():
     # STEP5는 확장 런타임 무변경(하네스·픽스처만) → 버전 유지(1.5.120).
-    assert MANIFEST["version"] == "1.5.126"
+    assert MANIFEST["version"] == "1.5.127"
 
 
 def test_diag_dir_and_readme():

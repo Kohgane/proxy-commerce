@@ -9,6 +9,8 @@ STEP C: no-price-no-url → no-item-url / no-price 분리.
 """
 from __future__ import annotations
 
+from tests import _pw
+
 import glob
 import json
 import os
@@ -46,7 +48,7 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(_pw.chromium_hits())
 
 
 _INJECT = """(a) => {
@@ -66,7 +68,7 @@ RTOP_URL = "https://www.rakuten.co.jp/"
 @pytest.mark.skipif(not _playwright_ok(), reason="Playwright/chromium 미설치")
 def test_rakuten_top_no_candidates_no_buttons_skips_reported():
     from playwright.sync_api import sync_playwright
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = _pw.chromium_hits()[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}

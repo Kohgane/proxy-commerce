@@ -6,6 +6,8 @@
 """
 from __future__ import annotations
 
+from tests import _pw
+
 import glob
 import os
 from pathlib import Path
@@ -20,7 +22,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.126"
+    assert MANIFEST["version"] == "1.5.127"
 
 
 # ── source-contract: 엄격 상품 URL + 카테고리/내비 제외 ──
@@ -38,7 +40,7 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(_pw.chromium_hits())
 
 
 _INJECT = """(a) => {
@@ -58,7 +60,7 @@ YOSHIDA_URL = "https://www.yoshidakaban.com/products/list"
 @pytest.mark.skipif(not _playwright_ok(), reason="Playwright/chromium 미설치")
 def test_category_rows_get_no_buttons_products_all_buttoned():
     from playwright.sync_api import sync_playwright
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = _pw.chromium_hits()[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}
