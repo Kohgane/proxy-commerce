@@ -357,3 +357,73 @@ def test_fab_source_uses_shadow_not_all_initial():
     assert "_KGP_RESET" not in block, "FAB가 all:initial 리셋 경로로 복귀했다"
     # 공용 헬퍼는 :host 에만 initial을 건다(내부 요소까지 초기화하면 같은 사고 재발).
     assert '":host{all:initial}"' in cs
+
+
+# ── v86 STEP3: 타일 계측 + 시트 주입 경로 무관 ────────────────────────────────
+#   오너 진단(1.5.127) 채점에서 "라이트 DOM에 kgp-card-quick/chk가 실존" → "shadow 구현 미실행"으로 읽혔다.
+#   그러나 **호스트는 설계상 라이트 DOM**이고 모양만 shadow 안에서 그린다. 스냅샷 HTML은 shadow 내용을
+#   담을 수 없으므로 그 판정은 스냅샷으로 불가능하다 → `in_shadow`를 실측해 착시를 끝낸다.
+
+TILE_PROBE = """() => {
+    const q = document.querySelectorAll('.kgp-card-quick');
+    const k = document.querySelectorAll('.kgp-card-chk');
+    const m = (host, sel) => {
+      if (!host) return null;
+      const r = host._kgpShadow || host.shadowRoot || null;
+      const el = r ? (r.querySelector(sel) || host) : host;
+      const cs = getComputedStyle(el);
+      return { in_shadow: !!r, w: el.offsetWidth, h: el.offsetHeight,
+               bg: cs.backgroundColor, visibility: cs.visibility };
+    };
+    return {
+      tile_quick_n: q.length, tile_chk_n: k.length,
+      tile_first: m(q[0], '.p'), chk_first: m(k[0], '.b'),
+      toolbar_first: m(document.getElementById('kgp-listing-toolbar'), '.bar'),
+      style_injected: !!document.getElementById('kgp-style'),
+    };
+}"""
+
+
+@pytest.mark.skipif(not _pw_ok(), reason="Playwright/chromium 미설치")
+def test_tiles_are_shadow_backed_and_visible():
+    """목록 타일 2종 — 라이트 DOM 호스트 뒤에 **실제 shadow**가 붙어 있고, 보이는 크기·배경을 가진다."""
+    got = _measure_listing(_isolated_code(), TILE_PROBE)
+    # 수집 자체가 0이면 아래 단언이 공허하게 통과한다 → 선행 단언으로 못박는다.
+    assert got["tile_quick_n"] >= 3, ("타일 [수집] 버튼 미주입 — 계측 대상 없음", got)
+    assert got["tile_chk_n"] >= 3, ("타일 선택 뱃지 미주입 — 계측 대상 없음", got)
+
+    tile = got["tile_first"]
+    assert tile and tile["in_shadow"], ("[수집] 알약이 shadow 뒤에 없다(라이트 DOM 잔존)", got)
+    assert tile["w"] >= 32, ("[수집] 알약 너비 초기화 — 비가시", got)
+    assert tile["bg"] not in TRANSPARENT, ("[수집] 알약 배경 투명 — 유령 버튼", got)
+    assert tile["visibility"] != "hidden", got
+
+    chk = got["chk_first"]
+    assert chk and chk["in_shadow"], ("선택 뱃지가 shadow 뒤에 없다(라이트 DOM 잔존)", got)
+    assert chk["bg"] not in TRANSPARENT, ("선택 뱃지 배경 투명 — 유령", got)
+
+
+@pytest.mark.skipif(not _pw_ok(), reason="Playwright/chromium 미설치")
+def test_style_sheet_injected_on_generic_list_path():
+    """시트 주입이 경로 무관 — generic 목록(어댑터 매치 없음)에서도 문서당 1회 붙는다.
+
+    오너 진단: 어댑터 매치(아마존)·단일페이지는 true인데 generic 리스트(알리·요시다·라쿠텐검색)는 false였다.
+    주입이 FAB 경로에 묶여 있었기 때문 → kgpRefresh(list/detail 공통 지점)로 옮겼다.
+    """
+    got = _measure_listing(_isolated_code(), TILE_PROBE)
+    assert got["style_injected"], ("generic 목록 경로에서 kgp-style 시트가 안 붙었다", got)
+
+
+@pytest.mark.skipif(not _pw_ok(), reason="Playwright/chromium 미설치")
+def test_tiles_stay_visible_without_stylesheet():
+    """시트는 **폴백일 뿐** — 주입을 차단해도 타일 가시성은 유지돼야 한다(시트 의존 0).
+
+    인위회귀의 짝: 시트가 가시성의 전제가 되면 같은 유령이 다른 경로로 재발한다.
+    """
+    broken = _isolated_code().replace('st.id = "kgp-style";', 'st.id = "kgp-style-DISABLED";', 1)
+    assert broken != _isolated_code(), "시트 주입 차단 지점을 찾지 못했다"
+    got = _measure_listing(broken, TILE_PROBE)
+    assert not got["style_injected"], ("시트 차단이 안 먹었다 — 이 회귀 검증이 무의미", got)
+    tile = got["tile_first"]
+    assert tile and tile["in_shadow"] and tile["w"] >= 32 and tile["bg"] not in TRANSPARENT, \
+        ("시트 없이는 타일이 안 보인다 = 가시성이 시트에 의존 중", got)

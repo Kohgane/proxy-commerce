@@ -44,7 +44,7 @@ def test_cache_bust_v182():
 
 def test_extension_version_bumped():
     # 확장 재로딩 유도(툴바 아이콘 오답 회수).
-    assert MANIFEST["version"] == "1.5.127"
+    assert MANIFEST["version"] == "1.5.128"
 
 
 def test_build_simple_is_two_tower_not_arch_dot():

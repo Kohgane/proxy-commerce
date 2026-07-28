@@ -459,7 +459,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // v84 STEP1: 채점 즉판 필드 — 스타일 주입 여부 + FAB **computed** 위치 실측 + 번역 DOM 플래그.
       //   "값은 맞는데 화면엔 없음"을 진단 파일 하나로 판정하기 위한 최소 사실들(추측 제거).
       var _ui = { style_injected: false, fab_exists: false, fab_position: "", fab_z: "", fab_parent: "",
-                  bar_exists: false, pinned: false };
+                  bar_exists: false, pinned: false,
+                  // v86 STEP3: 타일 2종·툴바 실측. 스냅샷 HTML은 shadow 안을 담지 못하므로,
+                  //   '라이트 DOM에 .kgp-card-quick이 보인다'만으로는 shadow 여부를 알 수 없다.
+                  //   in_shadow(=호스트에 shadowRoot가 붙었는지)를 여기서 직접 재서 그 착시를 끝낸다.
+                  tile_quick_n: 0, tile_chk_n: 0, tile_first: null, toolbar_first: null };
       try {
         _ui.style_injected = !!document.getElementById("kgp-style");
         var _f = document.getElementById(KGP_BTN_ID);
@@ -473,6 +477,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // 인라인에 !important로 박혔는지(= _kgpPinFixed 발현 여부) — 로드된 빌드에 핀이 있는지 즉판.
           try { _ui.pinned = _f.style.getPropertyPriority("position") === "important"; } catch (e) {}
         }
+        // 타일 계측: 개수 + 첫 타일의 **보이는 요소**(shadow면 알약 .p, 폴백이면 호스트) 실측.
+        var _qs = document.querySelectorAll(".kgp-card-quick");
+        var _ks = document.querySelectorAll(".kgp-card-chk");
+        _ui.tile_quick_n = _qs.length;
+        _ui.tile_chk_n = _ks.length;
+        if (_qs.length) _ui.tile_first = _kgpMeasureVisible(_qs[0], ".p");
+        var _bar = document.getElementById(KGP_TOOLBAR_ID);
+        if (_bar) _ui.toolbar_first = _kgpMeasureVisible(_bar, ".bar");
       } catch (e) {}
       sendResponse({ ok: !!html, html: html, host: (location.hostname || ""), url: (location.href || ""),
         title: (document.title || ""), extracted: extracted, detection: detection, ext_version: extVer,
@@ -883,6 +895,24 @@ function _kgpPinFixed(el, pos) {
 //   존재하지만 **투명·0크기로 안 보인다**(오너 실측: width/height/transform initial).
 //   해결: 호스트에는 **위치 계열만** 인라인으로 두고, 실제 모양은 shadowRoot 안에서 그린다.
 //   페이지 CSS 격리는 shadow 경계가 대신한다(v80 체크박스에서 이미 검증된 패턴).
+// v86 STEP3: 진단 계측 단일 소스 — 호스트가 shadow를 가졌으면 **shadow 안 가시 요소**를, 아니면 호스트를 잰다.
+//   `in_shadow`가 이 계층의 핵심 사실: 스냅샷 HTML로는 절대 알 수 없다(shadow 내용은 outerHTML에 없다).
+//   계측 없는 컴포넌트 신설 금지 — 새 오버레이를 만들면 여기서 잴 수 있게 host+셀렉터를 넘긴다.
+function _kgpMeasureVisible(host, innerSel) {
+  var out = { in_shadow: false, w: 0, h: 0, bg: "", visibility: "", opacity: "" };
+  try {
+    var root = host._kgpShadow || host.shadowRoot || null;
+    out.in_shadow = !!root;
+    var el = root ? (root.querySelector(innerSel) || host) : host;
+    var cs = null; try { cs = getComputedStyle(el); } catch (e) {}
+    out.w = el.offsetWidth || 0;
+    out.h = el.offsetHeight || 0;
+    out.bg = cs ? cs.backgroundColor : "";
+    out.visibility = cs ? cs.visibility : "";
+    out.opacity = cs ? cs.opacity : "";
+  } catch (e) {}
+  return out;
+}
 function _kgpShadowHost(host, css, html) {
   var root = host._kgpShadow;
   if (root === undefined) {
@@ -2518,6 +2548,11 @@ function kgpAttachOverride(el) {
 // SPA 대응 + v53 STEP1: 페이지 타입 감지로 버튼 자동 전환(목록=중앙 바만, 단일/불능=우측 FAB만 — 동시 노출 0).
 function kgpRefresh() {
   if (!kgpHostAllowed() && !kgpEntrySession()) { kgpTeardown(); return; }   // 지정 소싱처 또는 앱 진입(v10/v17)
+  // v86 STEP3: 시트 주입을 **경로 무관**으로. 종전엔 injectCollectButton(FAB)/kgpCelebrate/재오픈알약에서만 불러서,
+  //   generic 목록(알리·요시다·라쿠텐검색)은 바만 뜨고 시트가 영영 안 붙었다(오너 진단 style_injected=false).
+  //   여기는 list/detail 두 경로가 모두 지나가는 단일 지점이고, kgpEnsureStyles는 id 가드로 문서당 1회 멱등이다.
+  //   ※ 시트는 keyframes(펄스·도장) 폴백일 뿐 — 가시성의 전제가 아니다(가시 UI는 shadow가 자립 렌더).
+  kgpEnsureStyles();
   // v55 STEP5: URL별 캐시 판정 사용(재판정 안 함). inject*/remove*는 멱등(이미 마운트면 no-op) → 점멸 0.
   const pt = kgpPageType();
   if (pt === "list") {
