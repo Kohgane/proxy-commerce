@@ -899,7 +899,10 @@ function _kgpPinFixed(el, pos) {
 //   `in_shadow`가 이 계층의 핵심 사실: 스냅샷 HTML로는 절대 알 수 없다(shadow 내용은 outerHTML에 없다).
 //   계측 없는 컴포넌트 신설 금지 — 새 오버레이를 만들면 여기서 잴 수 있게 host+셀렉터를 넘긴다.
 function _kgpMeasureVisible(host, innerSel) {
-  var out = { in_shadow: false, w: 0, h: 0, bg: "", visibility: "", opacity: "" };
+  var out = { in_shadow: false, w: 0, h: 0, bg: "", visibility: "", opacity: "",
+              // v86 STEP4: **호스트 자체**도 잰다. 종전엔 shadow 안 알약만 재서, 호스트가 opacity:0이어도
+              //   "배경 먹·80×34"로 그린이 나왔다(계측이 유령을 못 봄 = 그린 착시). 그 구멍을 메운다.
+              host_opacity: "", host_important: false, center_hit: false };
   try {
     var root = host._kgpShadow || host.shadowRoot || null;
     out.in_shadow = !!root;
@@ -910,6 +913,21 @@ function _kgpMeasureVisible(host, innerSel) {
     out.bg = cs ? cs.backgroundColor : "";
     out.visibility = cs ? cs.visibility : "";
     out.opacity = cs ? cs.opacity : "";
+    var hcs = null; try { hcs = getComputedStyle(host); } catch (e) {}
+    out.host_opacity = hcs ? hcs.opacity : "";
+    // 호스트 인라인 !important 잔존 감시(신설 원칙 위반 즉시 적발).
+    try {
+      out.host_important = ["opacity", "display", "visibility"].some(function (p) {
+        return host.style.getPropertyPriority(p) === "important";
+      });
+    } catch (e) {}
+    // **최종 판정은 히트테스트로.** computed 값 단독 판정은 이번 착시의 원인 — 실제로 그 좌표를 눌렀을 때
+    // 우리 요소가 잡히는지가 유일하게 믿을 수 있는 '보인다'의 정의다(가림·투명·표류를 한 번에 잡는다).
+    try {
+      var r = host.getBoundingClientRect();
+      var hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      out.center_hit = !!(hit && (hit === host || host.contains(hit) || (hit.getRootNode && hit.getRootNode().host === host)));
+    } catch (e) {}
   } catch (e) {}
   return out;
 }
@@ -1925,6 +1943,41 @@ function _kgpCardImage(card) {
 //   알약(배경·테두리·글자)은 shadowRoot 안에서 그린다. 옛 구현은 버튼과 자식 span 전부에 `all:initial
 //   !important`를 인라인으로 박았는데, 그게 곧 v86이 규명한 '위치는 맞는데 투명·0크기' 유령의 메커니즘이다
 //   (250 롱핸드 전개 + 인라인 !important라 시트 복원 불가). 사이트 CSS 격리는 shadow 경계가 대신한다.
+// v86 STEP4: absolute 앵커의 기준(containing block) 보장 — 공통 유틸.
+//   종전엔 아마존 카드(c.el)에만 `position:relative`를 줬는데, 알리 카드는 인라인 style=""(static)이라
+//   중앙 앵커가 **카드 밖 조상**을 기준으로 잡혀 버튼이 엉뚱한 좌표로 표류했다.
+//   앵커 대상(host)이 static이면 무조건 relative를 준다 — 사이트 무관 단일 규칙.
+function _kgpEnsureContainingBlock(el) {
+  try {
+    if (el && getComputedStyle(el).position === "static") el.style.position = "relative";
+  } catch (e) {}
+}
+
+// v86 STEP4: [수집] 노출을 **JS 단일 소스**로. 시트 :hover에 기대지 않는다(시트 없이도 보여야 한다는
+//   계약과 정합) + 호스트 인라인 !important도 쓰지 않는다(쓰는 순간 복원 불가 유령이 된다 — 두 번 겪었다).
+//   데스크톱: 카드/버튼 hover 공통 판정(버튼이 카드 밖으로 삐져나와도 깜빡임 루프가 안 생기게 200ms 유예).
+//   터치: 호버가 없으므로 **첫 탭이 노출**(그 탭은 수집을 실행하지 않는다) — 두 번째 탭부터 수집.
+function _kgpBindQuickReveal(card, q, badge) {
+  var show = function (on) {
+    if (q.dataset.collected !== "1") q.style.setProperty("opacity", on ? "1" : "0");
+    if (badge && !KGP_SELECTED.has(badge.dataset.url)) badge.style.setProperty("opacity", on ? "1" : "0");
+  };
+  q._kgpReveal = show;                       // 재적용(스타일 리셋) 후에도 현재 상태를 되살릴 수 있게 노출
+  if (KGP_TOUCH) {
+    q.dataset.revealed = "1";                // 터치는 상시 노출(스타일에서 이미 opacity:1)
+    return;
+  }
+  var timer = null;
+  var enter = function () { if (timer) { clearTimeout(timer); timer = null; } show(true); };
+  var leave = function () {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(function () { show(false); timer = null; }, 200);
+  };
+  card.addEventListener("mouseenter", enter);
+  card.addEventListener("mouseleave", leave);
+  q.addEventListener("mouseenter", enter);   // 버튼 위로 올라와도 유지
+  q.addEventListener("mouseleave", leave);
+}
 function kgpQuickBtnStyle(collected, mode) {
   return [
     // v80 STEP2: 알리 호버 오버레이(미리보기 팝업)보다 위로 — 캐러셀 카드에서 버튼이 팝업에 가려 클릭 불가 방지.
@@ -1934,8 +1987,11 @@ function kgpQuickBtnStyle(collected, mode) {
     "display:block !important", "margin:0 !important", "padding:0 !important",
     "background:transparent !important", "border:0 !important", "outline:0 !important", "float:none !important",
     "cursor:pointer", "pointer-events:auto",
-    // v77 STEP1: opacity !important — 사이트 규칙이 호버 숨김(opacity:0)을 덮어쓰지 못하게 봉인.
-    "opacity:" + ((KGP_TOUCH || collected) ? "1" : "0") + " !important", "transition:opacity .12s !important",
+    // ★ v86 STEP4 원칙: **가시 UI 호스트 인라인에 !important 금지.**
+    //   all:initial(§8-1)과 opacity가 두 번 다 같은 법칙으로 유령을 만들었다 — 인라인 !important는
+    //   시트(:hover 포함)로 되돌릴 수 없어, 한 번 숨으면 복원 경로가 원천 봉쇄된다.
+    //   노출은 시트가 아니라 **JS 단일 토글**(_kgpBindQuickReveal)이 책임진다 → "시트 없어도 보임" 계약과 정합.
+    "opacity:" + ((KGP_TOUCH || collected) ? "1" : "0"), "transition:opacity .12s",
   ]).join(";");
 }
 // shadow 안 알약 CSS — 색 토큰: 먹(#1a1714)·금(#c9a24b), 수집됨=청록(#119a8e).
@@ -2312,7 +2368,7 @@ function kgpInjectListing() {
         else { c.el.style.outline = ""; c.el.removeAttribute("data-kgp-outline"); }
         return;
       }
-      if (getComputedStyle(c.el).position === "static") c.el.style.position = "relative";
+      _kgpEnsureContainingBlock(c.el);   // v86 STEP4: 아마존 전용이던 처리를 전 사이트 공통으로
       const badge = document.createElement("div");
       badge.className = "kgp-card-chk";
       badge.dataset.url = c.url;
@@ -2389,28 +2445,8 @@ function kgpInjectListing() {
         q.style.cssText = kgpQuickBtnStyle(done, mode);
         _kgpBuildQuick(q, done, done ? "수집됨 ✓" : "수집");
         q.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); kgpQuickCollect(c, q); });
-        if (!KGP_TOUCH) {
-          // v77 STEP1(B): 호버 시 [수집] + 선택 토글 **동시 노출**(둘 다 호버 전용). setProperty important —
-          //   all:initial 격리를 이겨야 opacity 토글이 먹는다. 선택된 카드의 선택 토글은 유지(숨기지 않음).
-          // v79 STEP1: hover 소멸 루프 수리 — 버튼이 커서 위치(이미지 중앙)에 나타나 c.el 경계 밖으로
-          //   삐져나오면 mouseleave→숨김→재hover 무한 반복. 수리: hover 판정을 [타일 ∪ 버튼] 공통으로
-          //   (버튼도 hover 유지 대상 → mouseenter/leave를 q에도 바인딩) + 숨김 200ms 유예(재진입 시 취소).
-          let _hoverTimer = null;
-          const _apply = (on) => {
-            if (q.dataset.collected !== "1") q.style.setProperty("opacity", on ? "1" : "0", "important");
-            if (badge && !KGP_SELECTED.has(badge.dataset.url)) badge.style.setProperty("opacity", on ? "1" : "0", "important");
-          };
-          const _show = () => { if (_hoverTimer) { clearTimeout(_hoverTimer); _hoverTimer = null; } _apply(true); };
-          const _hide = () => {
-            if (_hoverTimer) clearTimeout(_hoverTimer);
-            _hoverTimer = setTimeout(() => { _apply(false); _hoverTimer = null; }, 200);   // 200ms 유예 → 깜빡임 루프 차단
-          };
-          c.el.addEventListener("mouseenter", _show);
-          c.el.addEventListener("mouseleave", _hide);
-          q.addEventListener("mouseenter", _show);     // 버튼 위로 오면 유지(버튼도 hover 대상)
-          q.addEventListener("mouseleave", _hide);
-        }
-        try { if (getComputedStyle(host).position === "static") host.style.position = "relative"; } catch (e) {}
+        _kgpBindQuickReveal(c.el, q, badge);
+        _kgpEnsureContainingBlock(host);
         host.appendChild(q);
         c.el.dataset.kgp = "done";   // v77 STEP1: 멱등 마킹(주입 완료 타일)
       }
@@ -2629,7 +2665,12 @@ try {
     if (changes && changes.kgp_diag) { KGP_DIAG = !!changes.kgp_diag.newValue; kgpDiagApply(); }
     if (changes && changes.kgp_hover_anchor) {          // v64 STEP3: 위치 변경 즉시 반영
       KGP_HOVER_ANCHOR = changes.kgp_hover_anchor.newValue || "center";
-      document.querySelectorAll(".kgp-card-quick").forEach((q) => { q.style.cssText = kgpQuickBtnStyle(q.dataset.collected === "1", q.dataset.anchorMode || ""); });
+      document.querySelectorAll(".kgp-card-quick").forEach((q) => {
+        // v86 STEP4: cssText 재적용은 opacity를 기본값(0)으로 되돌린다 → 호버 중이면 노출 상태를 즉시 복원.
+        var _wasOn = q.style.opacity === "1";
+        q.style.cssText = kgpQuickBtnStyle(q.dataset.collected === "1", q.dataset.anchorMode || "");
+        if (_wasOn && typeof q._kgpReveal === "function") q._kgpReveal(true);
+      });
     }
     if (changed) kgpRefresh();                          // 런타임 즉시 반영
   });

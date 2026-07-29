@@ -367,13 +367,20 @@ def test_fab_source_uses_shadow_not_all_initial():
 TILE_PROBE = """() => {
     const q = document.querySelectorAll('.kgp-card-quick');
     const k = document.querySelectorAll('.kgp-card-chk');
+    // v86 STEP4: 호스트 opacity·인라인 !important·히트테스트까지 잰다.
+    //   내부 computed만 보면 호스트가 투명해도 '보인다'로 읽힌다(STEP3 그린 착시의 원인).
     const m = (host, sel) => {
       if (!host) return null;
       const r = host._kgpShadow || host.shadowRoot || null;
       const el = r ? (r.querySelector(sel) || host) : host;
-      const cs = getComputedStyle(el);
+      const cs = getComputedStyle(el), hcs = getComputedStyle(host);
+      const rect = host.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
       return { in_shadow: !!r, w: el.offsetWidth, h: el.offsetHeight,
-               bg: cs.backgroundColor, visibility: cs.visibility };
+               bg: cs.backgroundColor, visibility: cs.visibility,
+               host_opacity: hcs.opacity,
+               host_important: ['opacity','display','visibility'].some(p => host.style.getPropertyPriority(p) === 'important'),
+               center_hit: !!(hit && (hit === host || host.contains(hit) || (hit.getRootNode && hit.getRootNode().host === host))) };
     };
     return {
       tile_quick_n: q.length, tile_chk_n: k.length,
@@ -522,3 +529,120 @@ def test_realpage_contract_is_not_vacuous():
             exercised.append((name, got["tile_quick_n"], got["tile_first"]["in_shadow"]))
     assert len(exercised) >= 2, f"실페이지 계약이 사실상 전부 skip — 검증된 스냅샷: {exercised}"
     assert all(e[2] for e in exercised), f"실페이지에서 타일이 shadow가 아니다: {exercised}"
+
+
+# ── v86 STEP4: 호버 노출 + 히트테스트 ────────────────────────────────────────
+# ★ 신설 원칙(명문화): **가시 UI 호스트 인라인에 `!important` 금지.**
+#   두 번의 유령이 같은 법칙이었다 — (1) all:initial !important(§8-1): 250 롱핸드 전개로 배경·크기 소멸,
+#   (2) opacity:0 !important: 시트 :hover로 복원 불가라 호버 노출 설계가 원리상 사망.
+#   인라인 !important는 **되돌릴 경로를 없앤다**. 노출/상태 전환은 JS 단일 토글이 책임진다.
+
+HOVER_SNAP = """() => {
+    const q = document.querySelector('.kgp-card-quick');
+    if (!q) return { exists: false };
+    const r = q.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return {
+      exists: true,
+      opacity: getComputedStyle(q).opacity,
+      // 히트테스트: 그 좌표를 실제로 눌렀을 때 우리 요소가 잡히는가(가림·표류를 한 번에 잡는다).
+      center_hit: !!(hit && (hit === q || q.contains(hit) || (hit.getRootNode && hit.getRootNode().host === q))),
+      // ★원칙 감시: 상태 전환 속성(opacity)에 인라인 !important가 붙으면 JS 토글이 무력화된다.
+      //   display/position 등 **정적 격리** 속성의 !important는 되돌릴 상태가 아니므로 대상이 아니다.
+      opacity_important: q.style.getPropertyPriority('opacity') === 'important',
+    };
+}"""
+
+HOVER_FIRE = """() => {
+    const q = document.querySelector('.kgp-card-quick');
+    const card = q && q.closest('[data-kgp="done"]');
+    if (card) card.dispatchEvent(new MouseEvent('mouseenter'));
+    return !!card;
+}"""
+
+
+def _measure_hover(code, sim=True):
+    """호버 전/후를 각각 **transition(.12s) 완료 후** 실측한다.
+
+    주의: mouseenter 직후에 getComputedStyle을 읽으면 전이 중이라 아직 옛 값(0)이 나온다 —
+    이걸 '노출 실패'로 오독하면 멀쩡한 코드를 뜯게 된다(실제로 한 번 그럴 뻔했다).
+    """
+    from playwright.sync_api import sync_playwright
+    hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")
+    opts = {"executable_path": hits[0]} if hits else {}
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(**opts)
+        page = browser.new_context(viewport={"width": 1280, "height": 800}).new_page()
+        page.route("**/*", lambda r: (
+            r.fulfill(status=200, content_type="text/html; charset=utf-8", body=LISTING_HTML)
+            if r.request.url.startswith("https://item.rakuten.co.jp/") else r.abort()))
+        page.goto("https://item.rakuten.co.jp/list/", wait_until="domcontentloaded")
+        page.evaluate(CHROME_STUB)
+        page.evaluate(code)
+        page.wait_for_timeout(600)
+        before = page.evaluate(HOVER_SNAP)
+        fired = False
+        if sim:
+            fired = page.evaluate(HOVER_FIRE)
+            page.wait_for_timeout(300)          # transition .12s 완료 대기
+        after = page.evaluate(HOVER_SNAP)
+        browser.close()
+    return {"exists": before.get("exists", False), "before": before, "after": after, "fired": fired,
+            "opacity_important": before.get("opacity_important", False)}
+
+
+@pytest.mark.skipif(not _pw_ok(), reason="Playwright/chromium 미설치")
+def test_quick_reveals_on_card_hover():
+    """카드 hover 시 [수집]이 **실제로 눌리는 상태**가 된다 — 판정은 히트테스트(center_hit)로만."""
+    got = _measure_hover(_isolated_code(), sim=True)
+    assert got["exists"], "타일 [수집] 미주입 — 계약 대상 없음"
+    # 기본은 숨김(호버 전용 설계) — 이게 안 지켜지면 아래 노출 단언이 공허해진다.
+    assert got["before"]["opacity"] == "0", ("기본 상태가 숨김이 아니다 — 호버 계약이 무의미", got)
+    assert got["fired"], ("카드에 mouseenter를 못 쏘았다 — 계약이 공허", got)
+    # 호버 후: 불투명 + 그 좌표를 눌렀을 때 실제로 우리 요소가 잡혀야 한다.
+    assert got["after"]["opacity"] == "1", ("카드 hover에도 [수집]이 안 나타난다 — 노출 경로 사망", got)
+    assert got["after"]["center_hit"], ("보이는데 클릭이 안 잡힌다(가림·표류) — 유령", got)
+
+
+@pytest.mark.skipif(not _pw_ok(), reason="Playwright/chromium 미설치")
+def test_visible_host_has_no_inline_important():
+    """★원칙 계약: 가시 UI 호스트 인라인에 !important가 없다(두 번의 유령이 이 법칙이었다)."""
+    got = _measure_hover(_isolated_code(), sim=False)
+    assert got["exists"], "타일 [수집] 미주입"
+    assert not got["opacity_important"], \
+        ("호스트 opacity에 인라인 !important 부활 — 시트 경로 복원이 원천 봉쇄된다", got)
+
+
+@pytest.mark.skipif(not _pw_ok(), reason="Playwright/chromium 미설치")
+def test_stylesheet_cannot_restore_inline_important_opacity():
+    """★원칙의 근거를 실증한다 — 인라인 `!important`는 **시트로 되돌릴 수 없다**.
+
+    정직한 정정: "인라인 !important면 호버 노출이 원리상 사망"은 **JS 경로에는 해당하지 않는다.**
+    `el.style.setProperty('opacity','1')`(priority 생략)은 인라인 선언을 우선순위째 **교체**하므로,
+    인라인에 !important가 있어도 JS 토글은 성공한다. 즉 종전 코드의 호버가 죽어 있던 것은 아니다.
+    (이 사실을 계약으로 박아두지 않으면, 다음 사람이 같은 가설로 멀쩡한 코드를 또 뜯는다.)
+
+    그럼에도 인라인 !important를 금지하는 이유가 이것 — **시트 기반 복원이 봉쇄된다.**
+    노출 로직을 CSS :hover로 옮기는 순간(가장 자연스러운 리팩터링) 즉시 유령이 된다.
+    아래는 그 봉쇄를 실제로 보여준다: 같은 요소에 시트 규칙을 걸어도 인라인 !important를 못 이긴다.
+    """
+    from playwright.sync_api import sync_playwright
+    hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")
+    opts = {"executable_path": hits[0]} if hits else {}
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(**opts)
+        page = browser.new_context().new_page()
+        page.set_content("<div id=t style=\"opacity:0 !important\">x</div>")
+        got = page.evaluate("""() => {
+            const t = document.getElementById('t');
+            const st = document.createElement('style');
+            st.textContent = '#t{opacity:1 !important}';       // 시트로 복원 시도(최대 강도)
+            document.head.appendChild(st);
+            const bySheet = getComputedStyle(t).opacity;        // → 여전히 0 (인라인 !important 승)
+            t.style.setProperty('opacity', '1');                // JS는 인라인 선언을 통째로 교체
+            const byJs = getComputedStyle(t).opacity;
+            return { bySheet, byJs };
+        }""")
+        browser.close()
+    assert got["bySheet"] == "0", ("시트가 인라인 !important를 이겼다 — 원칙의 전제가 틀림", got)
+    assert got["byJs"] == "1", ("JS setProperty가 인라인 !important를 못 이겼다", got)

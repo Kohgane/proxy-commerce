@@ -24,20 +24,26 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.128"
+    assert MANIFEST["version"] == "1.5.129"
 
 
 # ── source-contract: [타일∪버튼] 공통 hover + 200ms 유예 ──
 def test_hover_grace_source():
     # 숨김 200ms 유예(setTimeout).
-    assert '_hoverTimer = setTimeout(() => { _apply(false); _hoverTimer = null; }, 200);' in CS
-    # 재진입 시 취소(_show가 타이머 clear).
-    assert 'const _show = () => { if (_hoverTimer) { clearTimeout(_hoverTimer); _hoverTimer = null; } _apply(true); };' in CS
-    # 타일 + 버튼 둘 다 hover 유지 대상(버튼에도 mouseenter/leave 바인딩).
-    assert 'c.el.addEventListener("mouseenter", _show);' in CS
-    assert 'c.el.addEventListener("mouseleave", _hide);' in CS
-    assert 'q.addEventListener("mouseenter", _show);' in CS
-    assert 'q.addEventListener("mouseleave", _hide);' in CS
+    # v86 STEP4: 유예 로직이 `_kgpBindQuickReveal`로 옮겨졌다(변수명 변경). 계약의 대상은 **동작**이므로
+    #   "숨김을 200ms 지연시킨다"를 그 함수 본문에서 확인한다(옛 변수명 고정핀은 리팩터링에 부서진다).
+    seg = CS.split("function _kgpBindQuickReveal")[1].split("function kgpQuickBtnStyle")[0]
+    assert "setTimeout(" in seg and "}, 200);" in seg
+    assert "show(false)" in seg          # 지연 대상 = 숨김
+    assert "clearTimeout(timer)" in seg  # 재진입 시 취소(깜빡임 루프 차단)
+    # 타일 + 버튼 **둘 다** hover 유지 대상이어야 한다(버튼이 카드 밖으로 삐져나와도 깜빡임 루프가 안 생긴다).
+    #   v86 STEP4: 바인딩이 _kgpBindQuickReveal(card, q, badge)로 모였다 → 그 안에서 4개 바인딩을 확인한다.
+    assert 'card.addEventListener("mouseenter", enter);' in seg
+    assert 'card.addEventListener("mouseleave", leave);' in seg
+    assert 'q.addEventListener("mouseenter", enter);' in seg
+    assert 'q.addEventListener("mouseleave", leave);' in seg
+    # 호출부가 실제로 카드·버튼·뱃지를 넘긴다(바인딩이 죽은 채 통과하는 것 방지).
+    assert "_kgpBindQuickReveal(c.el, q, badge);" in CS
 
 
 def _playwright_ok():

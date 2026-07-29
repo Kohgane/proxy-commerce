@@ -21,7 +21,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.128"
+    assert MANIFEST["version"] == "1.5.129"
 
 
 def test_button_shrunk_and_tokens():
@@ -36,7 +36,10 @@ def test_button_shrunk_and_tokens():
     assert "width:14px;height:14px" in style
     # 호스트는 모양을 갖지 않는다(옛 all:initial 인라인 경로로 복귀 방지).
     host = re.search(r"function kgpQuickBtnStyle\(collected, mode\) \{.*?\n\}", CS, re.S).group(0)
-    assert "all:initial" not in host
+    # v86 STEP4: 이 가드의 대상은 **코드**다 — 주석의 역사 설명(all:initial이 왜 유령이었는지)까지
+    #   금지하면 재발 방지 지식을 코드에서 지우게 된다. 주석을 제거하고 판정한다.
+    host_code = "\n".join(ln.split("//")[0] for ln in host.splitlines())
+    assert "all:initial" not in host_code
 
 
 def test_anchor_setting_wired():
