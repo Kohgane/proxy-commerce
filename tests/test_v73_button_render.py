@@ -122,9 +122,12 @@ def test_amazon_search_renders_bulk_bar_and_all_tile_buttons():
     assert info["amazonCards"] == 24, info
     assert info["badges"] == 24, ("선택 토글 일부 타일 누락 회귀!", info)
     assert info["quick"] == 24, ("호버 [수집] 버튼 일부만 회귀!", info)
-    # v77 STEP1(B): 단일 버튼 시스템 — 타일당 [수집] 1개 · 상시 노출 0(호버 시에만).
+    # v77 STEP1(B): 타일당 [수집] 1개(이중 버튼 금지) — 이 부분은 불변.
     assert info["maxQuickPerTile"] <= 1, ("타일당 [수집] 2개 이상(이중 버튼) 회귀!", info)
-    assert info["persistentQuick"] == 0, ("상시 [수집] 노출 금지 위반(호버 시에만)!", info)
+    # v86 STEP4.1(오너 승인 2026-07-29): **상시 노출로 정책 반전.** 종전 v77은 '호버 시에만'(rest=0)이었으나
+    #   "지금 보이는가"를 매번 의심하게 만들어 폐기했다 → rest 0.85 / hover 1.0.
+    #   따라서 persistentQuick(=rest에서 보이는 버튼 수)은 0이 아니라 **전체 타일 수**여야 한다.
+    assert info["persistentQuick"] == info["quick"], ("상시 노출 위반 — rest에서 안 보이는 [수집]이 있다", info)
     assert info["persistentBadge"] == 0, ("상시 선택 토글 노출 금지 위반(호버 시에만)!", info)
     assert "메인 16 · 광고 8" in info["count"], info
 

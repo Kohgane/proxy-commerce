@@ -28,7 +28,7 @@ MANIFEST = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
 
 def test_manifest_bumped():
     # 오너가 재로딩해야 토글이 보인다 → 버전 bump가 곧 배포 신호.
-    assert MANIFEST["version"] == "1.5.129"
+    assert MANIFEST["version"] == "1.5.130"
 
 
 # ── STEP1: 번역 토글 ─────────────────────────────────────────────────────

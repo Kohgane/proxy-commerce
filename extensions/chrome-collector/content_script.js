@@ -483,6 +483,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         _ui.tile_quick_n = _qs.length;
         _ui.tile_chk_n = _ks.length;
         if (_qs.length) _ui.tile_first = _kgpMeasureVisible(_qs[0], ".p");
+        // v86 STEP4.1: **계측 사각 3호** — "호버하면 켜지는가"를 실기기에서 판정할 방법이 없었다.
+        //   첫 카드에 synthetic mouseenter를 쏘고 전이(.12s) 여유를 둔 뒤 다시 재서 {before, after}로 남긴다.
+        //   리스너가 안 붙었거나 죽었으면 after가 before와 같게 나와 **즉시 드러난다**(추측 불필요).
+        if (_qs.length) _ui.hover_test = _kgpHoverProbe(_qs[0]);
         var _bar = document.getElementById(KGP_TOOLBAR_ID);
         if (_bar) _ui.toolbar_first = _kgpMeasureVisible(_bar, ".bar");
       } catch (e) {}
@@ -1947,6 +1951,66 @@ function _kgpCardImage(card) {
 //   종전엔 아마존 카드(c.el)에만 `position:relative`를 줬는데, 알리 카드는 인라인 style=""(static)이라
 //   중앙 앵커가 **카드 밖 조상**을 기준으로 잡혀 버튼이 엉뚱한 좌표로 표류했다.
 //   앵커 대상(host)이 static이면 무조건 relative를 준다 — 사이트 무관 단일 규칙.
+// v86 STEP4.1: **계측 사각 3호** — 필드(실기기) 진단에 "호버하면 켜지는가"를 판정할 수단이 없었다.
+//   첫 카드에 synthetic mouseenter를 쏘고 전이(.12s)가 끝날 여유를 준 뒤 다시 재서 {before, after}로 남긴다.
+//   리스너가 안 붙었거나 죽었으면 after가 before와 같게 나와 즉시 드러난다(추측 불필요).
+//   ※ 비동기라 진단 응답 전에 끝나야 한다 → 350ms 후 콜백이 아니라, 호출자가 이미 만든 스냅샷에 채워 넣는다.
+function _kgpHoverProbe(q) {
+  var out = { fired: false, before: null, after: null, note: "" };
+  try {
+    var card = q.closest ? q.closest('[data-kgp="done"]') : null;
+    out.before = { host_opacity: getComputedStyle(q).opacity, center_hit: _kgpCenterHit(q) };
+    if (!card) { out.note = "카드 요소를 못 찾음(앵커 구조 변경?)"; return out; }
+    card.dispatchEvent(new MouseEvent("mouseenter"));
+    out.fired = true;
+    // 동기 측정은 전이 중이라 옛 값이 나온다(STEP4 함정) → 인라인 선언값을 함께 남겨 판정 가능하게.
+    out.after = { host_opacity: getComputedStyle(q).opacity, inline_opacity: q.style.opacity || "",
+                  center_hit: _kgpCenterHit(q) };
+    out.note = "after.host_opacity는 전이 중일 수 있음 — inline_opacity가 최종 목표값";
+  } catch (e) { out.note = "probe 예외: " + (e && e.message); }
+  return out;
+}
+function _kgpCenterHit(el) {
+  try {
+    var r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    if (cx < 0 || cy < 0 || cx > innerWidth || cy > innerHeight) return false;   // 뷰포트 밖=판정 불가
+    var hit = document.elementFromPoint(cx, cy);
+    return !!(hit && (hit === el || el.contains(hit) || (hit.getRootNode && hit.getRootNode().host === el)));
+  } catch (e) { return false; }
+}
+// v86 STEP4.1: 요소가 **스태킹 컨텍스트**를 만드는지 판정(대표적 원인만 — 오탐이 나면 앵커만 한 칸 올라가므로 안전).
+//   transform/filter/will-change/perspective/isolation/opacity<1/contain 등이 걸리면 그 안의 z-index는
+//   컨텍스트 **내부 순위**일 뿐이라, 바깥의 z-index:1짜리 오버레이한테도 진다.
+var KGP_QUICK_REST_OPACITY = 0.85;   // v86 STEP4.1: 상시 노출 기본 투명도(호버 시 1.0)
+function _kgpMakesStackingContext(el) {
+  try {
+    var cs = getComputedStyle(el);
+    if (cs.transform && cs.transform !== "none") return true;
+    if (cs.filter && cs.filter !== "none") return true;
+    if (cs.perspective && cs.perspective !== "none") return true;
+    if (cs.isolation === "isolate") return true;
+    if (cs.mixBlendMode && cs.mixBlendMode !== "normal") return true;
+    if (cs.contain && /paint|layout|strict|content/.test(cs.contain)) return true;
+    if (cs.willChange && /transform|opacity|filter/.test(cs.willChange)) return true;
+    if (cs.opacity !== "" && parseFloat(cs.opacity) < 1) return true;
+  } catch (e) {}
+  return false;
+}
+// 앵커(anchor)와 카드(card) 사이(앵커 자신 포함)에 컨텍스트 생성 조상이 있으면 카드로 올린다.
+//   카드 자체가 컨텍스트 안이면 더 올릴 수 없지만, 가림막이 카드 하위인 한 카드 층이면 충분하다.
+function _kgpEscapeStackingContext(anchor, card) {
+  try {
+    if (!anchor || !card || anchor === card) return anchor || card;
+    var cur = anchor, depth = 0;
+    while (cur && cur !== card && depth < 10) {
+      if (_kgpMakesStackingContext(cur)) return card;
+      cur = cur.parentElement; depth++;
+    }
+  } catch (e) {}
+  return anchor;
+}
 function _kgpEnsureContainingBlock(el) {
   try {
     if (el && getComputedStyle(el).position === "static") el.style.position = "relative";
@@ -1959,8 +2023,10 @@ function _kgpEnsureContainingBlock(el) {
 //   터치: 호버가 없으므로 **첫 탭이 노출**(그 탭은 수집을 실행하지 않는다) — 두 번째 탭부터 수집.
 function _kgpBindQuickReveal(card, q, badge) {
   var show = function (on) {
-    if (q.dataset.collected !== "1") q.style.setProperty("opacity", on ? "1" : "0");
-    if (badge && !KGP_SELECTED.has(badge.dataset.url)) badge.style.setProperty("opacity", on ? "1" : "0");
+    // rest는 0이 아니라 KGP_QUICK_REST_OPACITY — 마우스를 떼도 버튼은 계속 보인다(상시 노출).
+    var rest = String(KGP_QUICK_REST_OPACITY);
+    if (q.dataset.collected !== "1") q.style.setProperty("opacity", on ? "1" : rest);
+    if (badge && !KGP_SELECTED.has(badge.dataset.url)) badge.style.setProperty("opacity", on ? "1" : rest);
   };
   q._kgpReveal = show;                       // 재적용(스타일 리셋) 후에도 현재 상태를 되살릴 수 있게 노출
   if (KGP_TOUCH) {
@@ -1991,7 +2057,10 @@ function kgpQuickBtnStyle(collected, mode) {
     //   all:initial(§8-1)과 opacity가 두 번 다 같은 법칙으로 유령을 만들었다 — 인라인 !important는
     //   시트(:hover 포함)로 되돌릴 수 없어, 한 번 숨으면 복원 경로가 원천 봉쇄된다.
     //   노출은 시트가 아니라 **JS 단일 토글**(_kgpBindQuickReveal)이 책임진다 → "시트 없어도 보임" 계약과 정합.
-    "opacity:" + ((KGP_TOUCH || collected) ? "1" : "0"), "transition:opacity .12s",
+    // v86 STEP4.1(오너 승인): **상시 노출**. 종전 rest=0(호버해야 등장)은 "지금 보이는가"를 매번 의심하게 만들었다.
+    //   rest 0.85 · hover 1.0 — 질문 자체를 소멸시키는 게 목적이다. 전환은 여전히 JS 단일 토글(시트 의존 0),
+    //   상태전환 속성에 인라인 !important 금지(STEP4 명문화 원칙) 유지.
+    "opacity:" + ((KGP_TOUCH || collected) ? "1" : String(KGP_QUICK_REST_OPACITY)), "transition:opacity .12s",
   ]).join(";");
 }
 // shadow 안 알약 CSS — 색 토큰: 먹(#1a1714)·금(#c9a24b), 수집됨=청록(#119a8e).
@@ -2435,6 +2504,12 @@ function kgpInjectListing() {
           }
           host = carousel || imgEl.parentElement;
         }
+        // v86 STEP4.1: **스태킹 컨텍스트 탈출.** 알리 실측(스냅샷)에서 버튼은 좌표·크기 모두 정상인데
+        //   center_hit=false였다. 원인은 앵커 표류가 아니라 **가림**이었다 — 앵커 조상(DIV.nh_nj)에 transform이
+        //   걸려 스태킹 컨텍스트가 생기고, 그 안에서는 우리 z-index(2147483644)가 **컨텍스트 내부로 갇힌다**.
+        //   그래서 바깥의 카드 오버레이(z-index:1짜리)가 우리 위에 그려져 클릭을 가로챈다.
+        //   → 앵커와 카드 사이에 컨텍스트 생성 조상이 있으면 **카드 요소로 올려 붙인다**(그 층에서 z가 다시 유효).
+        host = _kgpEscapeStackingContext(host, c.el);
         const mode = imgEl ? "" : "corner";
         const q = document.createElement("div");
         q.className = "kgp-card-quick";
@@ -2667,7 +2742,7 @@ try {
       KGP_HOVER_ANCHOR = changes.kgp_hover_anchor.newValue || "center";
       document.querySelectorAll(".kgp-card-quick").forEach((q) => {
         // v86 STEP4: cssText 재적용은 opacity를 기본값(0)으로 되돌린다 → 호버 중이면 노출 상태를 즉시 복원.
-        var _wasOn = q.style.opacity === "1";
+        var _wasOn = q.style.opacity === "1";   // 호버 중이었는지(=1)만 복원 대상
         q.style.cssText = kgpQuickBtnStyle(q.dataset.collected === "1", q.dataset.anchorMode || "");
         if (_wasOn && typeof q._kgpReveal === "function") q._kgpReveal(true);
       });

@@ -24,7 +24,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.129"
+    assert MANIFEST["version"] == "1.5.130"
 
 
 # ── source-contract: [타일∪버튼] 공통 hover + 200ms 유예 ──
@@ -103,7 +103,7 @@ def test_hovering_button_keeps_it_and_grace_hides():
             const op = () => parseFloat(getComputedStyle(q).opacity || '1');
             const fire = (el, type) => el.dispatchEvent(new MouseEvent(type, { bubbles: false }));
 
-            const before = op();                                 // 기본: 숨김(0)
+            const before = op();                                 // v86 STEP4.1: rest(0.85) — 상시 노출
             fire(card, 'mouseenter'); await sleep(180);          // >transition(.12s)
             const onCardHover = op();                            // 타일 hover → 등장(1)
             // 깜빡임 시뮬: 타일 leave 직후 버튼 enter(커서가 버튼 위로) — 유지돼야(루프 차단).
@@ -113,14 +113,17 @@ def test_hovering_button_keeps_it_and_grace_hides():
             const withinGrace = op();
             // 버튼도 이탈 → 200ms 유예 경과 후 숨김.
             fire(q, 'mouseleave'); await sleep(360);
-            const afterGrace = op();                             // 유예 후 → 숨김(0)
+            const afterGrace = op();                             // 유예 후 → rest(0.85)로 복귀(숨김 아님)
             return { before, onCardHover, onButtonHover, withinGrace, afterGrace };
         }""")
         b.close()
 
     assert "err" not in seq, seq
-    assert seq["before"] < 0.1, ("기본 상시 노출(호버 아닌데 보임)!", seq)
+    # v86 STEP4.1(오너 승인): rest=0.85 상시 노출. 이 테스트의 관심사는 **깜빡임 루프 차단**이지
+    #   '기본 숨김'이 아니다 → rest는 보이되 hover에서 또렷(1.0)해지는 것으로 판정한다.
+    assert 0.5 < seq["before"] < 1.0, ("rest 상시 노출(0.85) 위반", seq)
     assert seq["onCardHover"] > 0.9, ("타일 hover에 버튼 미등장!", seq)
     assert seq["onButtonHover"] > 0.9, ("버튼 위로 옮겼는데 사라짐(깜빡임 루프)!", seq)
     assert seq["withinGrace"] > 0.9, ("mouseleave 즉시 숨김(200ms 유예 없음)!", seq)
-    assert seq["afterGrace"] < 0.1, ("유예 경과 후에도 안 숨음!", seq)
+    # 유예 경과 후엔 '숨김'이 아니라 rest로 되돌아온다(강조 해제).
+    assert 0.5 < seq["afterGrace"] < 1.0, ("유예 경과 후 rest로 복귀하지 않음(강조가 안 풀림)", seq)

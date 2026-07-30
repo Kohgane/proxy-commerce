@@ -371,6 +371,8 @@ TILE_PROBE = """() => {
     //   내부 computed만 보면 호스트가 투명해도 '보인다'로 읽힌다(STEP3 그린 착시의 원인).
     const m = (host, sel) => {
       if (!host) return null;
+      // v86 STEP4.1: 히트테스트는 뷰포트 안에서만 유효하다(밖이면 elementFromPoint=null) → 먼저 스크롤.
+      try { host.scrollIntoView({ block: 'center' }); } catch (e) {}
       const r = host._kgpShadow || host.shadowRoot || null;
       const el = r ? (r.querySelector(sel) || host) : host;
       const cs = getComputedStyle(el), hcs = getComputedStyle(host);
@@ -597,10 +599,13 @@ def test_quick_reveals_on_card_hover():
     got = _measure_hover(_isolated_code(), sim=True)
     assert got["exists"], "타일 [수집] 미주입 — 계약 대상 없음"
     # 기본은 숨김(호버 전용 설계) — 이게 안 지켜지면 아래 노출 단언이 공허해진다.
-    assert got["before"]["opacity"] == "0", ("기본 상태가 숨김이 아니다 — 호버 계약이 무의미", got)
+    # v86 STEP4.1(오너 승인): 기본이 '숨김(0)'에서 **상시 노출(0.85)**로 바뀌었다.
+    #   호버는 이제 '등장'이 아니라 '강조'다 → rest는 보이되, 호버 시 1.0으로 또렷해져야 한다.
+    assert float(got["before"]["opacity"]) >= 0.8, ("rest에서 [수집]이 안 보인다 — 상시 노출 위반", got)
+    assert float(got["before"]["opacity"]) < 1.0, ("rest와 hover가 같으면 강조 계약이 공허", got)
     assert got["fired"], ("카드에 mouseenter를 못 쏘았다 — 계약이 공허", got)
     # 호버 후: 불투명 + 그 좌표를 눌렀을 때 실제로 우리 요소가 잡혀야 한다.
-    assert got["after"]["opacity"] == "1", ("카드 hover에도 [수집]이 안 나타난다 — 노출 경로 사망", got)
+    assert got["after"]["opacity"] == "1", ("카드 hover에도 [수집]이 또렷해지지 않는다 — 강조 경로 사망", got)
     assert got["after"]["center_hit"], ("보이는데 클릭이 안 잡힌다(가림·표류) — 유령", got)
 
 
@@ -646,3 +651,70 @@ def test_stylesheet_cannot_restore_inline_important_opacity():
         browser.close()
     assert got["bySheet"] == "0", ("시트가 인라인 !important를 이겼다 — 원칙의 전제가 틀림", got)
     assert got["byJs"] == "1", ("JS setProperty가 인라인 !important를 못 이겼다", got)
+
+
+# ── v86 STEP4.1: 상시 노출 + 히트테스트 판정 ─────────────────────────────────
+#   오너 승인(2026-07-29): rest 0.85 / hover 1.0. "지금 보이는가"라는 질문 자체를 없애는 게 목적이다.
+#   판정은 **center_hit**(그 좌표를 누르면 우리 요소가 잡히는가)로 한다 — 좌표·가림·투명을 한 번에 본다.
+
+REST_PROBE = """() => {
+    const qs = document.querySelectorAll('.kgp-card-quick');
+    if (!qs.length) return { n: 0 };
+    const q = qs[0];
+    try { q.scrollIntoView({ block: 'center' }); } catch (e) {}
+    const hit = (el) => {
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return false;
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      if (cx < 0 || cy < 0 || cx > innerWidth || cy > innerHeight) return false;
+      const h = document.elementFromPoint(cx, cy);
+      return !!(h && (h === el || el.contains(h) || (h.getRootNode && h.getRootNode().host === el)));
+    };
+    return {
+      n: qs.length,
+      host_opacity: parseFloat(getComputedStyle(q).opacity),
+      center_hit: hit(q),
+      opacity_important: q.style.getPropertyPriority('opacity') === 'important',
+    };
+}"""
+
+
+@pytest.mark.skipif(not _pw_ok(), reason="Playwright/chromium 미설치")
+@pytest.mark.parametrize("name,pattern,url", _LIST_SNAPSHOTS, ids=[s[0] for s in _LIST_SNAPSHOTS])
+def test_realpage_quick_visible_at_rest(name, pattern, url):
+    """실측 스냅샷 — **마우스를 안 올려도** [수집]이 보이고 눌린다(상시 노출)."""
+    snap = _snapshot_path(pattern)
+    if snap is None:
+        pytest.skip(f"스냅샷 미커밋: {pattern}")
+    got = _measure_snapshot(_isolated_code(), snap, url, REST_PROBE)
+    if not got.get("n"):
+        pytest.skip(f"{name}: 스냅샷 오프라인 재현에서 카드 미감지(외부 CSS/지연이미지 부재) — 계약 대상 없음")
+
+    assert got["host_opacity"] >= 0.8, (name, "rest 상태에서 [수집]이 흐리다/숨어 있다", got)
+    # ★핵심: 좌표를 눌렀을 때 우리 요소가 실제로 잡혀야 한다(알리 가림 재발 감지).
+    assert got["center_hit"], (name, "보이는데 클릭이 안 잡힌다 — 가림 또는 앵커 표류", got)
+    assert not got["opacity_important"], (name, "상태전환 속성에 인라인 !important 부활", got)
+
+
+@pytest.mark.skipif(not _pw_ok(), reason="Playwright/chromium 미설치")
+def test_rest_visibility_regresses_when_hidden_again():
+    """인위회귀 — rest를 다시 0으로 되돌리면 상시 노출 계약이 **실패해야** 한다."""
+    code = _isolated_code()
+    anchor = "var KGP_QUICK_REST_OPACITY = 0.85;"
+    assert anchor in code, "회귀 주입 지점(rest 투명도 상수)을 찾지 못했다"
+    broken = code.replace(anchor, "var KGP_QUICK_REST_OPACITY = 0;", 1)
+    got = _measure_listing(broken, REST_PROBE)
+    assert got.get("n"), ("합성 목록에서도 타일이 없다 — 회귀 검증 불가", got)
+    assert got["host_opacity"] < 0.8, ("rest를 0으로 되돌렸는데 계약이 통과한다 = 게이트가 무의미", got)
+
+
+def test_hover_probe_instrumented_in_diagnostic():
+    """필드 진단(ui 블록)에 hover_test가 실린다 — 실기기에서 '호버하면 켜지는가'를 판정 가능하게."""
+    cs = (EXT / "content_script.js").read_text(encoding="utf-8")
+    assert "function _kgpHoverProbe" in cs, "호버 자가시험 함수 미정의"
+    assert "_ui.hover_test = _kgpHoverProbe(" in cs, "진단 ui 블록에 hover_test 미기록"
+    seg = cs.split("function _kgpHoverProbe")[1].split("function _kgpCenterHit")[0]
+    assert "mouseenter" in seg, "호버를 실제로 발화시키지 않는다"
+    assert "before" in seg and "after" in seg, "{before, after} 쌍으로 남기지 않는다"
+    # 계측 사각 방지: 호스트 opacity와 히트테스트를 함께 남겨야 '보인다'를 판정할 수 있다.
+    assert "host_opacity" in seg and "center_hit" in seg
