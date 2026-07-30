@@ -1673,7 +1673,27 @@ function _kgpIsCategoryHref(href) {
 function _kgpIsProductHref(href) {
   const h = href || "";
   if (_kgpIsCategoryHref(h)) return false;
+  // v86 STEP5: **라쿠텐 상품 URL은 경로에 /item/ 이 없다** — 호스트 자체가 item.rakuten.co.jp이고
+  //   경로가 `/{샵ID}/{상품코드}/` 형태다(예: item.rakuten.co.jp/tabemon-dikara/20072/?variantId=20072).
+  //   기존 패턴들(/item/\d+ 등)은 전부 '경로에 /item/'을 전제해서 **라쿠텐 검색 타일 80개가 통째로
+  //   no-item-url로 버려졌다**(오너 진단 skipStats 45 + 스냅샷 실측 80).
+  //   판정: item.rakuten.co.jp + **경로 세그먼트 2개 이상**(샵 최상위 `/{샵ID}/`는 1개라 자연히 제외).
+  if (_kgpIsRakutenItemHref(h)) return true;
   return /(\/dp\/[A-Z0-9]{10}|\/gp\/product\/|item\.htm|[?&]goods_id=|[/-]g-\d{3,}|\/goods\/\d|-i\.\d+\.\d+|aliexpress\.[^/]+\/item\/\d+|\/item\/\d+|\/product\/\d|\/products?\/detail|\/products?\/[^/?#]*\d|\/products?\/[^/?#]{8,}|\/itm\/)/i.test(h);
+}
+// v86 STEP5: 광고/추적 리다이렉트 링크 판정 — 목적지가 토큰 뒤에 숨어 클라이언트에서 해석 불가한 것들.
+//   (라쿠텐 RPP 광고·rd.rakuten 추적). 상품일 수도 있지만 **안정적인 상품 URL을 못 얻으므로** 후보에서 제외한다.
+function _kgpIsAdRedirectHref(href) {
+  return /(\/redirect_rpp\/|(^|\/\/)[a-z0-9.-]*\bias\.rakuten\.co\.jp\/|rd\.rakuten\.co\.jp\/s\/)/i.test(href || "");
+}
+// 라쿠텐 상품 상세 판정 — 호스트+세그먼트 수로만 본다(상품코드 형식은 샵마다 제각각: 숫자·해시·한글 혼재).
+function _kgpIsRakutenItemHref(href) {
+  try {
+    var u = new URL(href, location.href);
+    if (!/(^|\.)item\.rakuten\.co\.jp$/i.test(u.hostname)) return false;
+    var seg = u.pathname.split("/").filter(Boolean);
+    return seg.length >= 2;          // /{shop}/{itemCode}[/...] = 상품 상세
+  } catch (e) { return false; }
 }
 // v74 STEP1: 내비/메뉴/브레드크럼 영역이면 상품 타일 아님(구조적 오탐 차단, 최대 6단계 조상).
 function _kgpInNavRegion(el) {
@@ -1758,7 +1778,14 @@ function _kgpGenericCards() {
       //   no-price. keep-set 불변(가격·상품링크 둘 다 없을 때만 제외 — 회귀 0).
       if (!pr.price && !_kgpIsProductHref(href)) {
         _kgpExcl.parse++;
-        _kgpMarkSkip(card, _kgpIsProductHref(href) ? "no-price" : "no-item-url");
+        // v86 STEP5: 광고 리다이렉트 타일을 'no-item-url'로 뭉뚱그리면 원인을 못 읽는다 → 사유 분리.
+        //   라쿠텐 검색의 광고 타일(grp07.ias…/redirect_rpp)은 **목적지 URL이 어디에도 없다**
+        //   (앵커 1개·불투명 토큰만, 타일/조상에 item 링크·data 속성 0 — 실측 확인).
+        //   채택하면 안 되는 이유가 분명하다: normalize_product_key가 쿼리를 버려 **10개 광고가 전부
+        //   같은 키(grp07.ias.rakuten.co.jp/redirect_rpp)로 붕괴** → 서로 다른 상품이 1건으로 합쳐져 소실된다.
+        //   그래서 제외하되, 'no-item-url'이 아니라 **ad-redirect**로 정직하게 표기한다(집계에서 즉시 구분).
+        _kgpMarkSkip(card, _kgpIsAdRedirectHref(href) ? "ad-redirect"
+                          : (_kgpIsProductHref(href) ? "no-price" : "no-item-url"));
         continue;
       }
       seen[href] = 1;

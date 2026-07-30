@@ -33,7 +33,10 @@ def test_recommend_widget_blocklist_source():
     # 블록리스트는 후보 제외만(감지 유지) — 제네릭 경로에서 skip 사유로만 적용.
     assert 'if (_kgpInRecommendWidget(card)) { _kgpExcl.region++; _kgpMarkSkip(card, "recommend-widget"); continue; }' in CS
     # STEP C: 사유 분리.
-    assert '_kgpMarkSkip(card, _kgpIsProductHref(href) ? "no-price" : "no-item-url")' in CS
+    # 사유 분리 = 동작 계약(옛 고정핀은 v86 STEP5에서 사유가 늘자 부서졌다 — 문장이 아니라 분기를 본다).
+    seg = CS.split("if (!pr.price && !_kgpIsProductHref(href)) {")[1].split("continue;")[0]
+    assert '"no-price"' in seg and '"no-item-url"' in seg
+    assert '_kgpIsProductHref(href) ?' in seg
     assert "no-price-no-url" not in CS   # 옛 뭉뚱그린 사유 제거
 
 

@@ -21,7 +21,7 @@ KGP_TOOLBAR_ID = "kgp-listing-toolbar"
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.130"
+    assert MANIFEST["version"] == "1.5.131"
 
 
 def test_source_contract():

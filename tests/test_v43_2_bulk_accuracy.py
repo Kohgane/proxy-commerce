@@ -19,7 +19,13 @@ def test_generic_price_optional_with_detail_link():
     # v74 STEP1: 자격 = 가격 or 엄격 상품 URL(_kgpIsProductHref) — 카테고리 URL 오탐 봉인(느슨한 _kgpIsDetailHref 폐기).
     # v81 STEP4 STEP C: keep-gate 동일(둘 다 없을 때만 제외), 사유만 no-item-url/no-price로 분리.
     assert "if (!pr.price && !_kgpIsProductHref(href)) {" in CS
-    assert '_kgpMarkSkip(card, _kgpIsProductHref(href) ? "no-price" : "no-item-url")' in CS
+    # 제외 사유는 **분리해서** 남긴다(뭉뚱그리면 원인을 못 읽는다). 옛 고정핀은 정확한 한 줄을 박아
+    #   v86 STEP5에서 사유가 하나 늘자(ad-redirect) 부서졌다 — 대상은 문장이 아니라 **동작**이므로
+    #   "그 분기가 no-price / no-item-url을 구분해 기록한다"로 본다.
+    seg = CS.split("if (!pr.price && !_kgpIsProductHref(href)) {")[1].split("continue;")[0]
+    assert "_kgpMarkSkip(card," in seg
+    assert '"no-price"' in seg and '"no-item-url"' in seg
+    assert '_kgpIsProductHref(href) ?' in seg   # 가격만 없는 건지 링크가 아예 아닌 건지 실제로 판정
     assert "if (!pr.price) continue;" not in CS   # 옛 '가격 필수' 제거
 
 
@@ -36,7 +42,11 @@ def test_generic_recovers_priceless_detail_cards():
         "const _KGP_ORIG_PRICE_RE=/x^/;const _KGP_NONPROD_RE=/(recommend|related|footer|review)/i;",
         "const _KGP_RECO_HEADING_RE=/(閲覧した商品からのおすすめ|あなたにおすすめ)/;",
         fn("_kgpInBadRegion"), fn("_kgpIsRecoRegion"), fn("_kgpPrice"), fn("_kgpBestImg"),
-        fn("_kgpIsDetailHref"), fn("_kgpIsCategoryHref"), fn("_kgpIsProductHref"), fn("_kgpInNavRegion"), fn("_kgpInRecommendWidget"), fn("_kgpGenericCards"),
+        fn("_kgpIsDetailHref"), fn("_kgpIsCategoryHref"),
+        # v86 STEP5 의존: 빼면 무가 카드에서만 ReferenceError → 조용히 27→16으로 떨어진다
+        #   (유가 카드는 `!pr.price &&` 단락평가로 호출 자체를 안 해 안 터진다).
+        fn("_kgpIsRakutenItemHref"), fn("_kgpIsAdRedirectHref"),
+        fn("_kgpIsProductHref"), fn("_kgpInNavRegion"), fn("_kgpInRecommendWidget"), fn("_kgpGenericCards"),
     ])
     harness = deps + r"""
     function mkSpec(o){
@@ -76,7 +86,11 @@ def test_non_product_links_still_excluded():
         "const _KGP_ORIG_PRICE_RE=/x^/;const _KGP_NONPROD_RE=/(recommend|related|footer|review)/i;",
         "const _KGP_RECO_HEADING_RE=/(閲覧した商品からのおすすめ|あなたにおすすめ)/;",
         fn("_kgpInBadRegion"), fn("_kgpIsRecoRegion"), fn("_kgpPrice"), fn("_kgpBestImg"),
-        fn("_kgpIsDetailHref"), fn("_kgpIsCategoryHref"), fn("_kgpIsProductHref"), fn("_kgpInNavRegion"), fn("_kgpInRecommendWidget"), fn("_kgpGenericCards"),
+        fn("_kgpIsDetailHref"), fn("_kgpIsCategoryHref"),
+        # v86 STEP5 의존: 빼면 무가 카드에서만 ReferenceError → 조용히 27→16으로 떨어진다
+        #   (유가 카드는 `!pr.price &&` 단락평가로 호출 자체를 안 해 안 터진다).
+        fn("_kgpIsRakutenItemHref"), fn("_kgpIsAdRedirectHref"),
+        fn("_kgpIsProductHref"), fn("_kgpInNavRegion"), fn("_kgpInRecommendWidget"), fn("_kgpGenericCards"),
     ])
     harness = deps + r"""
     function mkSpec(o){
