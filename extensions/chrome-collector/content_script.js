@@ -2059,7 +2059,10 @@ function _kgpCenterHit(el) {
 // v86 STEP4.1: 요소가 **스태킹 컨텍스트**를 만드는지 판정(대표적 원인만 — 오탐이 나면 앵커만 한 칸 올라가므로 안전).
 //   transform/filter/will-change/perspective/isolation/opacity<1/contain 등이 걸리면 그 안의 z-index는
 //   컨텍스트 **내부 순위**일 뿐이라, 바깥의 z-index:1짜리 오버레이한테도 진다.
-var KGP_QUICK_REST_OPACITY = 0.85;   // v86 STEP4.1: 상시 노출 기본 투명도(호버 시 1.0)
+// v86-C: 오너가 STEP4.1의 '상시 노출'을 **철회**했다 → rest는 다시 0(마우스를 떼면 사라진다).
+//   목록 카드 호버 노출 방식. 값은 여기 한 곳에서만 정하고, 적용은 전부 JS setProperty로 한다
+//   (시트 의존 금지 — STEP4 원칙: 인라인 !important는 시트가 못 되돌린다).
+var KGP_QUICK_REST_OPACITY = 0;
 function _kgpMakesStackingContext(el) {
   try {
     var cs = getComputedStyle(el);
@@ -2099,14 +2102,23 @@ function _kgpEnsureContainingBlock(el) {
 //   터치: 호버가 없으므로 **첫 탭이 노출**(그 탭은 수집을 실행하지 않는다) — 두 번째 탭부터 수집.
 function _kgpBindQuickReveal(card, q, badge) {
   var show = function (on) {
-    // rest는 0이 아니라 KGP_QUICK_REST_OPACITY — 마우스를 떼도 버튼은 계속 보인다(상시 노출).
+    // v86-C: rest=0 — 마우스를 떼면 사라진다(상시 노출 철회). 시트가 아니라 인라인 setProperty로 건다.
     var rest = String(KGP_QUICK_REST_OPACITY);
     if (q.dataset.collected !== "1") q.style.setProperty("opacity", on ? "1" : rest);
     if (badge && !KGP_SELECTED.has(badge.dataset.url)) badge.style.setProperty("opacity", on ? "1" : rest);
   };
   q._kgpReveal = show;                       // 재적용(스타일 리셋) 후에도 현재 상태를 되살릴 수 있게 노출
   if (KGP_TOUCH) {
-    q.dataset.revealed = "1";                // 터치는 상시 노출(스타일에서 이미 opacity:1)
+    // v86-C 터치 폴백: 마우스가 없으니 **첫 탭=노출 · 둘째 탭=실행**. 상시 노출은 화면을 가린다.
+    q.dataset.revealed = "0";
+    show(false);
+    var reveal = function () {
+      if (q.dataset.revealed === "1") return;
+      q.dataset.revealed = "1";
+      show(true);
+    };
+    try { card.addEventListener("touchstart", reveal, { passive: true }); } catch (e) { card.addEventListener("touchstart", reveal); }
+    card.addEventListener("click", reveal);
     return;
   }
   var timer = null;
@@ -2136,7 +2148,8 @@ function kgpQuickBtnStyle(collected, mode) {
     // v86 STEP4.1(오너 승인): **상시 노출**. 종전 rest=0(호버해야 등장)은 "지금 보이는가"를 매번 의심하게 만들었다.
     //   rest 0.85 · hover 1.0 — 질문 자체를 소멸시키는 게 목적이다. 전환은 여전히 JS 단일 토글(시트 의존 0),
     //   상태전환 속성에 인라인 !important 금지(STEP4 명문화 원칙) 유지.
-    "opacity:" + ((KGP_TOUCH || collected) ? "1" : String(KGP_QUICK_REST_OPACITY)), "transition:opacity .12s",
+    // v86-C: 수집된 타일('수집됨 ✓')만 상시 표시. 그 외는 터치·데스크톱 모두 rest=0에서 시작한다.
+    "opacity:" + (collected ? "1" : String(KGP_QUICK_REST_OPACITY)), "transition:opacity .12s",
   ]).join(";");
 }
 // shadow 안 알약 CSS — 색 토큰: 먹(#1a1714)·금(#c9a24b), 수집됨=청록(#119a8e).
@@ -2472,6 +2485,82 @@ function kgpShowReopenPill() {
 
 let _kgpAutoApplied = false;       // 이 페이지에서 '수동(auto off)' 초기 접힘을 한 번만 적용
 
+// v86-C: 타일 호버 수집버튼 주입을 **벌크바 상태에서 분리**한다.
+//   종전엔 바가 닫히면(_kgpClosed) .kgp-card-quick까지 같이 지우고 early return해서, 목록을 열어도
+//   바를 열기 전엔 타일 버튼이 아예 없었다(오너 실측: 라쿠텐 검색 merged 37 · tile_quick_n 0 · bar false).
+//   버튼은 목록이 감지되면 **항상** 붙는다. 벌크바 토글은 체크박스(chk) 표시/숨김만 관장한다.
+//   badge는 바가 닫혀 있으면 null — _kgpBindQuickReveal이 null을 견딘다.
+function _kgpEnsureTileQuick(c, badge) {
+  try {
+    // v42 E-3 / v65 STEP3: 호버 즉시 수집 버튼 — 카드 우측 허공이 아니라 **상품 이미지 요소 위**에 앵커.
+    //   이미지를 못 찾으면 카드 좌상단 폴백(mode=corner, 허공 금지). 데스크톱=hover 노출/터치=우상단 상시.
+    // v77 STEP1: 멱등 — 타일당 [수집] 최대 1개. 이중 감지 시 콘솔 경고 후 잉여 제거.
+    let _quicks = c.el.querySelectorAll(":scope .kgp-card-quick");
+    if (_quicks.length > 1) {
+      console.warn("[고가수집기] 타일 중복 수집버튼 감지·정리", _quicks.length, c.url);
+      for (let _i = 1; _i < _quicks.length; _i++) _quicks[_i].remove();
+    }
+    // v86 STEP3: **업그레이드 경로** — 이미 [수집] 버튼이 있으면 재생성하지 않는(멱등) 설계라,
+    //   shadow 없이 만들어진 옛 버전(1.5.126 이하)의 버튼이 페이지에 남아 있으면 그대로 채택돼
+    //   영영 유령(투명·무배경)으로 남는다. 확장 업데이트 직후 열려 있던 탭·SPA 복원·저장된 스냅샷이
+    //   전부 이 경우다(오너 실측 스냅샷에서 quick 24개 in_shadow=false로 재현).
+    //   → shadow가 없는 잔존 버튼은 **버리고 다시 만든다**(체크박스는 _kgpBuildCheckbox가 매번 보정).
+    if (_quicks.length === 1 && !_quicks[0]._kgpShadow) {
+      try { _quicks[0].remove(); } catch (e) {}
+      _quicks = c.el.querySelectorAll(":scope .kgp-card-quick");
+    }
+    if (!_quicks.length) {
+      const done = _kgpCollectedUrls.has(c.url);
+      const imgEl = _kgpCardImage(c.el);
+      // v80 STEP2: 알리 등 카드 내 캐러셀(호버 시 이미지 자동 슬라이드)은 img의 부모(슬라이드)가 매 전환마다
+      //   교체됨 → img 부모 앵커는 좌표 재배치·버튼 증발. 이미지가 캐러셀 안이면 **안정 컨테이너**(가장 바깥
+      //   캐러셀 조상 = 슬라이드 상위, 교체 안 됨)에 앵커해 좌표 고정. 아니면 이미지 래퍼(정밀 유지).
+      //   ※ closest는 슬라이드(swiper-slide도 'swiper' 매치)를 잡으므로, c.el까지 올라가며 **최외곽 매치**를 유지.
+      let host = c.el;
+      if (imgEl && imgEl.parentElement) {
+        let carousel = null, cur = imgEl.parentElement, depth = 0;
+        const _carRe = /(carousel|swiper|slider|slick|gallery|magnifier)/i;
+        while (cur && cur !== c.el && depth < 8) {
+          let tok = "";
+          try { tok = ((cur.className && cur.className.baseVal !== undefined ? cur.className.baseVal : (cur.className || "")) + " " + ((cur.getAttribute && cur.getAttribute("aria-roledescription")) || "")); } catch (e) {}
+          if (_carRe.test(tok)) carousel = cur;   // 계속 올라가며 갱신 → 최종=최외곽(안정 컨테이너)
+          cur = cur.parentElement; depth++;
+        }
+        host = carousel || imgEl.parentElement;
+      }
+      // v86 STEP4.1: **스태킹 컨텍스트 탈출.** 알리 실측(스냅샷)에서 버튼은 좌표·크기 모두 정상인데
+      //   center_hit=false였다. 원인은 앵커 표류가 아니라 **가림**이었다 — 앵커 조상(DIV.nh_nj)에 transform이
+      //   걸려 스태킹 컨텍스트가 생기고, 그 안에서는 우리 z-index(2147483644)가 **컨텍스트 내부로 갇힌다**.
+      //   그래서 바깥의 카드 오버레이(z-index:1짜리)가 우리 위에 그려져 클릭을 가로챈다.
+      //   → 앵커와 카드 사이에 컨텍스트 생성 조상이 있으면 **카드 요소로 올려 붙인다**(그 층에서 z가 다시 유효).
+      host = _kgpEscapeStackingContext(host, c.el);
+      const mode = imgEl ? "" : "corner";
+      const q = document.createElement("div");
+      q.className = "kgp-card-quick";
+      q.dataset.url = c.url;
+      q.dataset.anchorMode = mode;
+      if (done) q.dataset.collected = "1";
+      // v86 STEP2: 알약은 shadow 안에서 그린다(사이트 span{…!important} 오염은 shadow 경계가 차단).
+      q.style.cssText = kgpQuickBtnStyle(done, mode);
+      _kgpBuildQuick(q, done, done ? "수집됨 ✓" : "수집");
+      q.addEventListener("click", (e) => {
+        e.preventDefault(); e.stopPropagation();
+        // v86-C 터치: 아직 안 보이는 상태의 첫 탭은 **노출만** 한다(보이지 않는 버튼이 수집되면 사고).
+        if (KGP_TOUCH && q.dataset.revealed !== "1") {
+          q.dataset.revealed = "1";
+          if (q._kgpReveal) q._kgpReveal(true);
+          return;
+        }
+        kgpQuickCollect(c, q);
+      });
+      _kgpBindQuickReveal(c.el, q, badge);
+      _kgpEnsureContainingBlock(host);
+      host.appendChild(q);
+      c.el.dataset.kgp = "done";   // v77 STEP1: 멱등 마킹(주입 완료 타일)
+    }
+  } catch (e) { /* noop */ }
+}
+
 function kgpInjectListing() {
   if (window.top !== window.self || !document.body) return;
   if (!kgpHostAllowed() && !kgpEntrySession()) { kgpTeardown(); return; }   // 지정 소싱처 또는 앱 진입(v10/v17)
@@ -2495,7 +2584,11 @@ function kgpInjectListing() {
   cards.forEach((c) => { _kgpCardByUrl[c.url] = c; });
   if (_kgpClosed) {                              // 접힘 → 구석 배지(개수·펄스)만 유지
     const ex = document.getElementById(KGP_TOOLBAR_ID);
-    if (ex) { ex.remove(); document.querySelectorAll(".kgp-card-chk, .kgp-card-quick").forEach((b) => b.remove()); }
+    // v86-C: 닫으면 **체크박스만** 걷는다. 호버 수집버튼은 바와 무관하게 살아 있어야 한다(오너 확정 UX).
+    if (ex) ex.remove();
+    document.querySelectorAll(".kgp-card-chk").forEach((b) => b.remove());
+    cards.forEach((c) => _kgpEnsureTileQuick(c, null));
+    kgpMarkExisting(cards);
     kgpShowReopenPill();
     return;
   }
@@ -2511,6 +2604,7 @@ function kgpInjectListing() {
         _kgpBuildCheckbox(existing, sel);   // v80 STEP1: shadow 체크박스 갱신(텍스트 배지 폐기)
         if (sel) { c.el.style.outline = "3px solid #119a8e"; c.el.style.outlineOffset = "-3px"; c.el.setAttribute("data-kgp-outline", "1"); }
         else { c.el.style.outline = ""; c.el.removeAttribute("data-kgp-outline"); }
+        _kgpEnsureTileQuick(c, existing);   // v86-C: 사이트 재렌더로 버튼만 날아간 타일 복구(멱등)
         return;
       }
       _kgpEnsureContainingBlock(c.el);   // v86 STEP4: 아마존 전용이던 처리를 전 사이트 공통으로
@@ -2544,63 +2638,7 @@ function kgpInjectListing() {
         c.el.appendChild(ad);
       }
 
-      // v42 E-3 / v65 STEP3: 호버 즉시 수집 버튼 — 카드 우측 허공이 아니라 **상품 이미지 요소 위**에 앵커.
-      //   이미지를 못 찾으면 카드 좌상단 폴백(mode=corner, 허공 금지). 데스크톱=hover 노출/터치=우상단 상시.
-      // v77 STEP1: 멱등 — 타일당 [수집] 최대 1개. 이중 감지 시 콘솔 경고 후 잉여 제거.
-      let _quicks = c.el.querySelectorAll(":scope .kgp-card-quick");
-      if (_quicks.length > 1) {
-        console.warn("[고가수집기] 타일 중복 수집버튼 감지·정리", _quicks.length, c.url);
-        for (let _i = 1; _i < _quicks.length; _i++) _quicks[_i].remove();
-      }
-      // v86 STEP3: **업그레이드 경로** — 이미 [수집] 버튼이 있으면 재생성하지 않는(멱등) 설계라,
-      //   shadow 없이 만들어진 옛 버전(1.5.126 이하)의 버튼이 페이지에 남아 있으면 그대로 채택돼
-      //   영영 유령(투명·무배경)으로 남는다. 확장 업데이트 직후 열려 있던 탭·SPA 복원·저장된 스냅샷이
-      //   전부 이 경우다(오너 실측 스냅샷에서 quick 24개 in_shadow=false로 재현).
-      //   → shadow가 없는 잔존 버튼은 **버리고 다시 만든다**(체크박스는 _kgpBuildCheckbox가 매번 보정).
-      if (_quicks.length === 1 && !_quicks[0]._kgpShadow) {
-        try { _quicks[0].remove(); } catch (e) {}
-        _quicks = c.el.querySelectorAll(":scope .kgp-card-quick");
-      }
-      if (!_quicks.length) {
-        const done = _kgpCollectedUrls.has(c.url);
-        const imgEl = _kgpCardImage(c.el);
-        // v80 STEP2: 알리 등 카드 내 캐러셀(호버 시 이미지 자동 슬라이드)은 img의 부모(슬라이드)가 매 전환마다
-        //   교체됨 → img 부모 앵커는 좌표 재배치·버튼 증발. 이미지가 캐러셀 안이면 **안정 컨테이너**(가장 바깥
-        //   캐러셀 조상 = 슬라이드 상위, 교체 안 됨)에 앵커해 좌표 고정. 아니면 이미지 래퍼(정밀 유지).
-        //   ※ closest는 슬라이드(swiper-slide도 'swiper' 매치)를 잡으므로, c.el까지 올라가며 **최외곽 매치**를 유지.
-        let host = c.el;
-        if (imgEl && imgEl.parentElement) {
-          let carousel = null, cur = imgEl.parentElement, depth = 0;
-          const _carRe = /(carousel|swiper|slider|slick|gallery|magnifier)/i;
-          while (cur && cur !== c.el && depth < 8) {
-            let tok = "";
-            try { tok = ((cur.className && cur.className.baseVal !== undefined ? cur.className.baseVal : (cur.className || "")) + " " + ((cur.getAttribute && cur.getAttribute("aria-roledescription")) || "")); } catch (e) {}
-            if (_carRe.test(tok)) carousel = cur;   // 계속 올라가며 갱신 → 최종=최외곽(안정 컨테이너)
-            cur = cur.parentElement; depth++;
-          }
-          host = carousel || imgEl.parentElement;
-        }
-        // v86 STEP4.1: **스태킹 컨텍스트 탈출.** 알리 실측(스냅샷)에서 버튼은 좌표·크기 모두 정상인데
-        //   center_hit=false였다. 원인은 앵커 표류가 아니라 **가림**이었다 — 앵커 조상(DIV.nh_nj)에 transform이
-        //   걸려 스태킹 컨텍스트가 생기고, 그 안에서는 우리 z-index(2147483644)가 **컨텍스트 내부로 갇힌다**.
-        //   그래서 바깥의 카드 오버레이(z-index:1짜리)가 우리 위에 그려져 클릭을 가로챈다.
-        //   → 앵커와 카드 사이에 컨텍스트 생성 조상이 있으면 **카드 요소로 올려 붙인다**(그 층에서 z가 다시 유효).
-        host = _kgpEscapeStackingContext(host, c.el);
-        const mode = imgEl ? "" : "corner";
-        const q = document.createElement("div");
-        q.className = "kgp-card-quick";
-        q.dataset.url = c.url;
-        q.dataset.anchorMode = mode;
-        if (done) q.dataset.collected = "1";
-        // v86 STEP2: 알약은 shadow 안에서 그린다(사이트 span{…!important} 오염은 shadow 경계가 차단).
-        q.style.cssText = kgpQuickBtnStyle(done, mode);
-        _kgpBuildQuick(q, done, done ? "수집됨 ✓" : "수집");
-        q.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); kgpQuickCollect(c, q); });
-        _kgpBindQuickReveal(c.el, q, badge);
-        _kgpEnsureContainingBlock(host);
-        host.appendChild(q);
-        c.el.dataset.kgp = "done";   // v77 STEP1: 멱등 마킹(주입 완료 타일)
-      }
+      _kgpEnsureTileQuick(c, badge);
     } catch (e) { /* noop */ }
   });
   kgpMarkExisting(cards);   // v42 E-3: 이미 수집된 카드 '수집됨 ✓' 선표시
@@ -2902,7 +2940,8 @@ setInterval(() => {
       try {
         if (!(kgpHostAllowed() || kgpEntrySession())) return;
         if (kgpPageType() !== "list") return;          // 목록 모드만(캐시 판정 — 번복 0)
-        if (_kgpClosed) return;                          // 사용자가 바 닫음 → 배지 미부착
+        // v86-C: 바를 닫아도 **호버 수집버튼은 계속 붙어야** 한다 → 바 상태 게이트 제거.
+        //   kgpInjectListing이 닫힘 상태를 알아서 처리한다(chk만 걷고 quick은 주입).
         if (window.top !== window.self) return;
         kgpInjectListing();                              // 멱등 재부착
       } catch (e) {}

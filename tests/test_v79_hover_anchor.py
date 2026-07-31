@@ -24,7 +24,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.133"
+    assert MANIFEST["version"] == "1.5.134"
 
 
 # ── source-contract: [타일∪버튼] 공통 hover + 200ms 유예 ──
@@ -119,11 +119,11 @@ def test_hovering_button_keeps_it_and_grace_hides():
         b.close()
 
     assert "err" not in seq, seq
-    # v86 STEP4.1(오너 승인): rest=0.85 상시 노출. 이 테스트의 관심사는 **깜빡임 루프 차단**이지
-    #   '기본 숨김'이 아니다 → rest는 보이되 hover에서 또렷(1.0)해지는 것으로 판정한다.
-    assert 0.5 < seq["before"] < 1.0, ("rest 상시 노출(0.85) 위반", seq)
+    # v86-C(오너 철회): 상시 노출 승인이 거둬들여져 rest=0으로 회귀. 이 테스트의 관심사는 여전히
+    #   **깜빡임 루프 차단**이다 → rest는 숨김, hover에서 등장, 유예 후 다시 숨김으로 판정한다.
+    assert seq["before"] == 0, ("rest는 숨김이어야 한다(호버 노출)", seq)
     assert seq["onCardHover"] > 0.9, ("타일 hover에 버튼 미등장!", seq)
     assert seq["onButtonHover"] > 0.9, ("버튼 위로 옮겼는데 사라짐(깜빡임 루프)!", seq)
     assert seq["withinGrace"] > 0.9, ("mouseleave 즉시 숨김(200ms 유예 없음)!", seq)
-    # 유예 경과 후엔 '숨김'이 아니라 rest로 되돌아온다(강조 해제).
-    assert 0.5 < seq["afterGrace"] < 1.0, ("유예 경과 후 rest로 복귀하지 않음(강조가 안 풀림)", seq)
+    # 유예 경과 후 rest(=0)로 복귀 — 마우스를 뗐는데 남아 있으면 화면을 가린다.
+    assert seq["afterGrace"] == 0, ("유예 경과 후 숨김으로 복귀하지 않음", seq)
