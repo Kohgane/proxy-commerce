@@ -1611,6 +1611,20 @@ function _kgpAmazonSponsored(el) {
 // v45 P3: '버튼이 카드마다 있다 없다' 해소 — 셀렉터를 s-search-result만이 아니라 **유효 data-asin을
 //   가진 카드 전부**로 넓히고(레이아웃 변형·스폰서 컨테이너 커버), **스폰서(광고) 상품도 포함**한다
 //   (유효 ASIN=실제 소싱 가능 상품). 비-상품 미디어(ASIN 없음)는 자연 제외 = v25 '광고·미디어 제외' 의도 유지.
+// v86-B: 아마존 스폰서(sspa) 링크의 목적지는 **URL 안에 평문으로** 있다 —
+//   /sspa/click?…&url=%2FComfortable-Magnetic…%2Fdp%2FB0FJM1FRNZ%2Fref%3D…
+//   (라쿠텐 redirect_rpp의 불투명 토큰과 다르다 → 리다이렉트 추적·서버 호출 없이 해석 가능.)
+//   기존 코드가 href를 split("?")[0]로 잘라 이 payload를 통째로 버려서 **모든 광고 타일이
+//   https://…/sspa/click 하나로 붕괴** → 첫 건만 채택되고 나머지가 전부 'dup'으로 떨어졌다.
+function _kgpAmazonSspaAsin(rawHref) {
+  try {
+    var u = new URL(rawHref || "", location.href);
+    if (u.pathname.indexOf("/sspa/click") < 0) return "";
+    var t = u.searchParams.get("url") || "";
+    var m = decodeURIComponent(t).match(/\/dp\/([A-Z0-9]{10})/);
+    return m ? m[1] : "";
+  } catch (e) { return ""; }
+}
 function _kgpAmazonCards() {
   const cards = [], seen = {};
   // v67 STEP1: **전 타일 버튼(대형 셀러툴 패리티)** — 메인 그리드뿐 아니라 추천 캐러셀·frequently-viewed
@@ -1626,8 +1640,20 @@ function _kgpAmazonCards() {
       // v77 STEP2: 자격 탈락 타일에 data-kgp-skip="사유" 부여 — '왜 이 타일만 버튼이 없지?'를 속성 하나로 판독.
       // v67: 구조적 비상품(footer/nav)만 제외 — 추천/캐러셀은 버튼 부착(region='reco' 태깅).
       if (_kgpInBadRegion(el, { allowAds: true, structuralOnly: true })) { _kgpExcl.region++; _kgpMarkSkip(el, "non-product"); return; }
-      const asin = (el.getAttribute("data-asin") || "").trim();
-      if (!/^[A-Z0-9]{10}$/.test(asin)) { _kgpExcl.parse++; _kgpMarkSkip(el, "no-asin"); return; }   // v65 STEP2: 유효 ASIN 없음=파싱 실패
+      let asin = (el.getAttribute("data-asin") || "").trim();
+      // v86-B: data-asin이 비면 스폰서 링크 payload에서 목적지 ASIN을 복원한다(광고 타일도 실제 소싱 가능).
+      // 셀렉터가 매치했다고 믿지 않고 **href를 직접 확인**한다(광고가 아닌 타일을 광고로 오인하면
+      //   멀쩡한 ASIN을 날려 타일이 통째로 사라진다).
+      const _adA = el.querySelector('a[href*="/sspa/click"]');
+      const _adHref = _adA ? String((_adA.getAttribute && _adA.getAttribute("href")) || _adA.href || "") : "";
+      const _isSspa = _adHref.indexOf("/sspa/click") >= 0;
+      if (!/^[A-Z0-9]{10}$/.test(asin) && _isSspa) asin = _kgpAmazonSspaAsin(_adHref);
+      if (!/^[A-Z0-9]{10}$/.test(asin)) {
+        _kgpExcl.parse++;
+        // 사유 분리: 광고 타일인데 payload에서도 못 뽑은 건 'no-asin'과 원인이 다르다(구조 변경 신호).
+        _kgpMarkSkip(el, _isSspa ? "ad-sspa-fail" : "no-asin");
+        return;
+      }
       const parentAsin = el.parentElement && el.parentElement.closest('[data-asin]:not([data-asin=""])');
       if (parentAsin && parentAsin !== el && (parentAsin.getAttribute("data-asin") || "").trim() === asin) { _kgpExcl.dup++; _kgpMarkSkip(el, "dup"); return; }
       const sponsored = _kgpAmazonSponsored(el);           // v45 P3: 제외 아님 — 태깅만(스폰서 상품도 수집).
@@ -1637,8 +1663,14 @@ function _kgpAmazonCards() {
       if (region === "reco") _kgpExcl.reco++;
       const a = el.querySelector('a.a-link-normal[href*="/dp/"], h2 a, a.a-link-normal.s-no-outline, a[href*="/dp/"]');
       let href = a && a.href ? a.href.split("?")[0].split("#")[0] : "";
+      // v86-B: sspa 링크는 자르면 전부 '/sspa/click'으로 붕괴한다 → 해석한 ASIN으로 정규 상세 URL을 세운다.
+      const _aHref = a ? String((a.getAttribute && a.getAttribute("href")) || a.href || "") : "";
+      if (_aHref.indexOf("/sspa/click") >= 0) href = "";
       if (!href || href.indexOf("http") !== 0) href = location.origin + "/dp/" + asin;   // ASIN 폴백
-      if (seen[href]) { _kgpExcl.dup++; _kgpMarkSkip(el, "dup"); return; }
+      // v86-B: 같은 상품이 여러 타일로 반복돼도 **인스턴스마다 버튼을 붙인다**(오너: 눈에 보이는 타일엔 다 있어야).
+      //   url이 같으니 product key도 같고 병합은 기존 로직(서버 dedup·수집 시 중복 안내)이 그대로 처리한다.
+      //   집계에서는 구분되게 dup_instance 표식만 남긴다(제외가 아니므로 _kgpExcl.dup는 올리지 않는다).
+      const _dupInstance = !!seen[href];
       const img = el.querySelector("img.s-image") || el.querySelector("img");
       const titleEl = el.querySelector("h2 span") || el.querySelector("h2 a span") || el.querySelector("h2")
         || el.querySelector('[data-cy="title-recipe"] span') || el.querySelector(".a-size-base-plus, .a-size-medium");
@@ -1654,6 +1686,7 @@ function _kgpAmazonCards() {
         url: href, title: (title || "(제목 없음)").slice(0, 200),
         image: bimg, images: bimg ? [bimg] : [], price: pr.price, currency: pr.currency,
         sponsored: sponsored, region: region, el: el,   /* v67: region 태그(main/reco) */
+        dup_instance: _dupInstance,                     /* v86-B: 같은 상품의 반복 타일(버튼은 부착) */
       });
     } catch (e) { /* noop */ }
   });
@@ -1673,7 +1706,27 @@ function _kgpIsCategoryHref(href) {
 function _kgpIsProductHref(href) {
   const h = href || "";
   if (_kgpIsCategoryHref(h)) return false;
+  // v86 STEP5: **라쿠텐 상품 URL은 경로에 /item/ 이 없다** — 호스트 자체가 item.rakuten.co.jp이고
+  //   경로가 `/{샵ID}/{상품코드}/` 형태다(예: item.rakuten.co.jp/tabemon-dikara/20072/?variantId=20072).
+  //   기존 패턴들(/item/\d+ 등)은 전부 '경로에 /item/'을 전제해서 **라쿠텐 검색 타일 80개가 통째로
+  //   no-item-url로 버려졌다**(오너 진단 skipStats 45 + 스냅샷 실측 80).
+  //   판정: item.rakuten.co.jp + **경로 세그먼트 2개 이상**(샵 최상위 `/{샵ID}/`는 1개라 자연히 제외).
+  if (_kgpIsRakutenItemHref(h)) return true;
   return /(\/dp\/[A-Z0-9]{10}|\/gp\/product\/|item\.htm|[?&]goods_id=|[/-]g-\d{3,}|\/goods\/\d|-i\.\d+\.\d+|aliexpress\.[^/]+\/item\/\d+|\/item\/\d+|\/product\/\d|\/products?\/detail|\/products?\/[^/?#]*\d|\/products?\/[^/?#]{8,}|\/itm\/)/i.test(h);
+}
+// v86 STEP5: 광고/추적 리다이렉트 링크 판정 — 목적지가 토큰 뒤에 숨어 클라이언트에서 해석 불가한 것들.
+//   (라쿠텐 RPP 광고·rd.rakuten 추적). 상품일 수도 있지만 **안정적인 상품 URL을 못 얻으므로** 후보에서 제외한다.
+function _kgpIsAdRedirectHref(href) {
+  return /(\/redirect_rpp\/|(^|\/\/)[a-z0-9.-]*\bias\.rakuten\.co\.jp\/|rd\.rakuten\.co\.jp\/s\/)/i.test(href || "");
+}
+// 라쿠텐 상품 상세 판정 — 호스트+세그먼트 수로만 본다(상품코드 형식은 샵마다 제각각: 숫자·해시·한글 혼재).
+function _kgpIsRakutenItemHref(href) {
+  try {
+    var u = new URL(href, location.href);
+    if (!/(^|\.)item\.rakuten\.co\.jp$/i.test(u.hostname)) return false;
+    var seg = u.pathname.split("/").filter(Boolean);
+    return seg.length >= 2;          // /{shop}/{itemCode}[/...] = 상품 상세
+  } catch (e) { return false; }
 }
 // v74 STEP1: 내비/메뉴/브레드크럼 영역이면 상품 타일 아님(구조적 오탐 차단, 최대 6단계 조상).
 function _kgpInNavRegion(el) {
@@ -1758,7 +1811,14 @@ function _kgpGenericCards() {
       //   no-price. keep-set 불변(가격·상품링크 둘 다 없을 때만 제외 — 회귀 0).
       if (!pr.price && !_kgpIsProductHref(href)) {
         _kgpExcl.parse++;
-        _kgpMarkSkip(card, _kgpIsProductHref(href) ? "no-price" : "no-item-url");
+        // v86 STEP5: 광고 리다이렉트 타일을 'no-item-url'로 뭉뚱그리면 원인을 못 읽는다 → 사유 분리.
+        //   라쿠텐 검색의 광고 타일(grp07.ias…/redirect_rpp)은 **목적지 URL이 어디에도 없다**
+        //   (앵커 1개·불투명 토큰만, 타일/조상에 item 링크·data 속성 0 — 실측 확인).
+        //   채택하면 안 되는 이유가 분명하다: normalize_product_key가 쿼리를 버려 **10개 광고가 전부
+        //   같은 키(grp07.ias.rakuten.co.jp/redirect_rpp)로 붕괴** → 서로 다른 상품이 1건으로 합쳐져 소실된다.
+        //   그래서 제외하되, 'no-item-url'이 아니라 **ad-redirect**로 정직하게 표기한다(집계에서 즉시 구분).
+        _kgpMarkSkip(card, _kgpIsAdRedirectHref(href) ? "ad-redirect"
+                          : (_kgpIsProductHref(href) ? "no-price" : "no-item-url"));
         continue;
       }
       seen[href] = 1;
@@ -1805,7 +1865,23 @@ function _kgpMergeCards(generic, adapter) {
     if (!byKey[k]) order.push(k);
     byKey[k] = c;                          // 어댑터 우선(정밀 보강) — 없으면 신규 추가
   });
-  return order.map((k) => byKey[k]);
+  const out = order.map((k) => byKey[k]);
+  // v86-B: 같은 상품이 **여러 타일로 반복**되는 목록(아마존 검색)에서는 상품키로만 합치면 두 번째
+  //   타일이 통째로 사라져 '왜 이 타일만 버튼이 없지'가 된다(실측: 34 실타일 중 10개가 표식도 없이 소멸).
+  //   상품키 병합(어댑터 우선)은 그대로 두고, **키가 같아도 DOM 타일이 다르면** 인스턴스를 하나 더 남긴다.
+  //   url이 같으니 product key도 같고 병합·중복 안내는 서버의 기존 dedup 로직이 그대로 처리한다.
+  const taken = {};
+  out.forEach((c) => { if (c && c.el) { c.el._kgpTaken = 1; taken.x = 1; } });
+  (adapter || []).forEach((c) => {
+    if (!c || !c.el || c.el._kgpTaken) return;
+    c.el._kgpTaken = 1;
+    const inst = {};
+    for (const p in c) inst[p] = c[p];
+    inst.dup_instance = true;
+    out.push(inst);
+  });
+  out.forEach((c) => { if (c && c.el) { try { delete c.el._kgpTaken; } catch (e) { /* noop */ } } });
+  return out;
 }
 
 // v63 STEP1: 마지막 감지 스냅샷(팝업 디버그 패널이 조회) — 추측이 아니라 실측을 보고한다.
