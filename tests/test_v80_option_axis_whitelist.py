@@ -17,12 +17,14 @@ from pathlib import Path
 
 import pytest
 
+from tests import _pw
+
 EX = Path("extensions/chrome-collector/kgp-extractor.js").read_text(encoding="utf-8")
 MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_text(encoding="utf-8"))
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.131"
+    assert MANIFEST["version"] == "1.5.132"
 
 
 # ── source-contract: 축명 화이트리스트 sku/DOM 양경로 ──
@@ -57,7 +59,9 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    # v86 마감: 옛 CI 리눅스 전용 glob은 개발 머신에서 **항상 미탐지**라 이 파일이 통째로 조용히
+    #   스킵됐다(공허한 그린). 탐지는 tests/_pw 단일 소스로.
+    return bool(_pw.chromium_hits())
 
 
 # 라쿠텐식 sku: 原産地(日本/タイ 2값=공통 스펙축) + 색상(ブラス/シルバー 2값=진짜 옵션).
@@ -81,12 +85,8 @@ RAKUTEN_URL = "https://item.rakuten.co.jp/syuro/tray-900037/"
 
 def _extract(url, body):
     from playwright.sync_api import sync_playwright
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    o = _pw.launch_opts()
     with sync_playwright() as pw:
-        px = os.environ.get("HTTPS_PROXY")
-        o = {"executable_path": exe}
-        if px:
-            o["proxy"] = {"server": px, "bypass": "127.0.0.1,localhost"}
         b = pw.chromium.launch(**o)
         page = b.new_context().new_page()
 

@@ -20,7 +20,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.131"
+    assert MANIFEST["version"] == "1.5.132"
 
 
 def test_source_contract():
@@ -29,7 +29,11 @@ def test_source_contract():
     assert 'val === "[object Object]"' in EX
     assert "/^https?:\\/\\//i.test(val)" in EX
     # 값 이미지는 option_image 필드로 분리.
-    assert "opt.option_image = a.images" in EX
+    #   v86 마감: 옛 고정핀은 `opt.option_image = a.images` 한 줄을 박았는데, 무명 축에서 공통 스펙값을
+    #   거르게 되면서 이미지도 **살아남은 값만** 담도록 바뀌어 부서졌다. 대상은 문장이 아니라 동작이므로
+    #   "값 이미지를 option_image 필드에 싣는다"로 본다(갤러리 오염 방지라는 v76 STEP2 의도 그대로).
+    assert "opt.option_image =" in EX
+    assert "a.images" in EX
     # 옛 버그(sv.map(String)) 제거.
     assert "sv.map(String)" not in EX
 

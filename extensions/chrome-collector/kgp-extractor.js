@@ -529,15 +529,41 @@
   // v78 STEP1: sku→옵션 단일 변환 함수(하네스·확장 경로 통일). 계약: skus에 스펙 변형이 있으면 options>0.
   //   ① axisMap(이름 있는 축, 값 2+) 우선. ② 이름 축이 0인데 skus에 spec 값이 있으면 위치별 전치(fragmented
   //   축명 대비)로 '옵션'/'옵션2' 축 복원. 스펙 변형이 전혀 없으면 옵션 0(정직 — 날조 금지).
+  // v86 마감: 무명 축('옵션')은 **축명이 없어 _isBadOptAxis 방어를 못 받는다.** JSON-LD가 축명 없이
+  //   sku별 스펙 문자열만 주면 전부 이 한 바구니에 쌓여 공통 스펙이 옵션값으로 둔갑한다.
+  //   실측(라쿠텐 receno/tsumugi-tama-s): sku 2건의 spec이
+  //     ["TSUMUGI 汁椀","我戸幹男商店","tsumugi-tama","日本","ブラウン"]
+  //     ["TSUMUGI 汁椀","我戸幹男商店","tsumugi-tama","日本","ブラック"]
+  //   — 앞 4자리가 **두 sku에 그대로 반복**되고 색만 갈린다. 옵션 축은 정의상 sku를 **구분**하는 것이므로
+  //   전 sku 공통 값은 변형이 아니다(시리즈명·제조사·품번·원산국). 값 블랙리스트로 쫓는 건 끝이 없어서
+  //   **구분력**이라는 구조적 근거로 거른다.
+  var _ANON_AXIS = "옵션";
+  function _dropCommonSkuValues(values, skus) {
+    var n = (skus || []).length;
+    if (n < 2) return values;   // sku가 1개면 공통/변형을 가를 근거가 없다(추측 금지 — 그대로 둔다)
+    return (values || []).filter(function (v) {
+      var hits = 0;
+      for (var i = 0; i < n; i++) {
+        var sp = (skus[i] && skus[i].spec) || [];
+        if (sp.indexOf(v) >= 0) hits++;
+      }
+      return hits < n;   // 전 sku 공통 = 아무것도 구분 못 함 = 변형 아님
+    });
+  }
   function _skusToOptions(axisMap, skus) {
     var out = [];
     Object.keys(axisMap || {}).forEach(function (axis) {
       var a = axisMap[axis];
-      if (a && a.order.length >= 2) {
-        var opt = { name: axis, values: a.order.slice(0, 100) };
-        if (Object.keys(a.images).length) opt.option_image = a.images;
-        out.push(opt);
+      if (!a || a.order.length < 2) return;
+      var vals = (axis === _ANON_AXIS) ? _dropCommonSkuValues(a.order, skus) : a.order;
+      if (vals.length < 2) return;   // 걸러내니 변형이 안 남음 → 옵션 아님(이름 축의 >=2 게이트와 동일 기준)
+      var opt = { name: axis, values: vals.slice(0, 100) };
+      if (Object.keys(a.images).length) {
+        var imgs = {};
+        vals.forEach(function (v) { if (a.images[v]) imgs[v] = a.images[v]; });
+        if (Object.keys(imgs).length) opt.option_image = imgs;
       }
+      out.push(opt);
     });
     if (out.length) return out;
     // ② 폴백: 이름 축 0 → skus[].spec를 위치별 전치. (예: 각 sku가 [색상값] 또는 [색상값,사이즈값])
