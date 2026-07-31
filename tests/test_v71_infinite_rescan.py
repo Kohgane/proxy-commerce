@@ -6,6 +6,8 @@
 """
 from __future__ import annotations
 
+from tests import _pw
+
 import glob
 import os
 import re
@@ -22,7 +24,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.126"
+    assert MANIFEST["version"] == "1.5.130"
 
 
 def test_source_contract():
@@ -70,7 +72,7 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(_pw.chromium_hits())
 
 
 _CHROME_STUB = """
@@ -103,7 +105,7 @@ def test_new_tiles_get_badges_on_scroll_inject():
 
     url = "https://www.temu.com/search_result.html?q=desk"
     html = _list_html()
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = _pw.chromium_hits()[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}

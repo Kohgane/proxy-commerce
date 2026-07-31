@@ -8,6 +8,8 @@
 """
 from __future__ import annotations
 
+from tests import _pw
+
 import glob
 import json
 import os
@@ -22,20 +24,26 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.126"
+    assert MANIFEST["version"] == "1.5.130"
 
 
 # ── source-contract: [타일∪버튼] 공통 hover + 200ms 유예 ──
 def test_hover_grace_source():
     # 숨김 200ms 유예(setTimeout).
-    assert '_hoverTimer = setTimeout(() => { _apply(false); _hoverTimer = null; }, 200);' in CS
-    # 재진입 시 취소(_show가 타이머 clear).
-    assert 'const _show = () => { if (_hoverTimer) { clearTimeout(_hoverTimer); _hoverTimer = null; } _apply(true); };' in CS
-    # 타일 + 버튼 둘 다 hover 유지 대상(버튼에도 mouseenter/leave 바인딩).
-    assert 'c.el.addEventListener("mouseenter", _show);' in CS
-    assert 'c.el.addEventListener("mouseleave", _hide);' in CS
-    assert 'q.addEventListener("mouseenter", _show);' in CS
-    assert 'q.addEventListener("mouseleave", _hide);' in CS
+    # v86 STEP4: 유예 로직이 `_kgpBindQuickReveal`로 옮겨졌다(변수명 변경). 계약의 대상은 **동작**이므로
+    #   "숨김을 200ms 지연시킨다"를 그 함수 본문에서 확인한다(옛 변수명 고정핀은 리팩터링에 부서진다).
+    seg = CS.split("function _kgpBindQuickReveal")[1].split("function kgpQuickBtnStyle")[0]
+    assert "setTimeout(" in seg and "}, 200);" in seg
+    assert "show(false)" in seg          # 지연 대상 = 숨김
+    assert "clearTimeout(timer)" in seg  # 재진입 시 취소(깜빡임 루프 차단)
+    # 타일 + 버튼 **둘 다** hover 유지 대상이어야 한다(버튼이 카드 밖으로 삐져나와도 깜빡임 루프가 안 생긴다).
+    #   v86 STEP4: 바인딩이 _kgpBindQuickReveal(card, q, badge)로 모였다 → 그 안에서 4개 바인딩을 확인한다.
+    assert 'card.addEventListener("mouseenter", enter);' in seg
+    assert 'card.addEventListener("mouseleave", leave);' in seg
+    assert 'q.addEventListener("mouseenter", enter);' in seg
+    assert 'q.addEventListener("mouseleave", leave);' in seg
+    # 호출부가 실제로 카드·버튼·뱃지를 넘긴다(바인딩이 죽은 채 통과하는 것 방지).
+    assert "_kgpBindQuickReveal(c.el, q, badge);" in CS
 
 
 def _playwright_ok():
@@ -43,7 +51,7 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(_pw.chromium_hits())
 
 
 _INJECT = """(a) => {
@@ -67,7 +75,7 @@ AMZ_SEARCH_URL = "https://www.amazon.com/s?k=ultraslim+phone+grip"
 def test_hovering_button_keeps_it_and_grace_hides():
     """타일 hover→버튼 등장 / 버튼 위로 옮기면 유지(루프 차단) / 버튼 이탈 후 200ms 유예 뒤 숨김."""
     from playwright.sync_api import sync_playwright
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = _pw.chromium_hits()[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}
@@ -95,7 +103,7 @@ def test_hovering_button_keeps_it_and_grace_hides():
             const op = () => parseFloat(getComputedStyle(q).opacity || '1');
             const fire = (el, type) => el.dispatchEvent(new MouseEvent(type, { bubbles: false }));
 
-            const before = op();                                 // 기본: 숨김(0)
+            const before = op();                                 // v86 STEP4.1: rest(0.85) — 상시 노출
             fire(card, 'mouseenter'); await sleep(180);          // >transition(.12s)
             const onCardHover = op();                            // 타일 hover → 등장(1)
             // 깜빡임 시뮬: 타일 leave 직후 버튼 enter(커서가 버튼 위로) — 유지돼야(루프 차단).
@@ -105,14 +113,17 @@ def test_hovering_button_keeps_it_and_grace_hides():
             const withinGrace = op();
             // 버튼도 이탈 → 200ms 유예 경과 후 숨김.
             fire(q, 'mouseleave'); await sleep(360);
-            const afterGrace = op();                             // 유예 후 → 숨김(0)
+            const afterGrace = op();                             // 유예 후 → rest(0.85)로 복귀(숨김 아님)
             return { before, onCardHover, onButtonHover, withinGrace, afterGrace };
         }""")
         b.close()
 
     assert "err" not in seq, seq
-    assert seq["before"] < 0.1, ("기본 상시 노출(호버 아닌데 보임)!", seq)
+    # v86 STEP4.1(오너 승인): rest=0.85 상시 노출. 이 테스트의 관심사는 **깜빡임 루프 차단**이지
+    #   '기본 숨김'이 아니다 → rest는 보이되 hover에서 또렷(1.0)해지는 것으로 판정한다.
+    assert 0.5 < seq["before"] < 1.0, ("rest 상시 노출(0.85) 위반", seq)
     assert seq["onCardHover"] > 0.9, ("타일 hover에 버튼 미등장!", seq)
     assert seq["onButtonHover"] > 0.9, ("버튼 위로 옮겼는데 사라짐(깜빡임 루프)!", seq)
     assert seq["withinGrace"] > 0.9, ("mouseleave 즉시 숨김(200ms 유예 없음)!", seq)
-    assert seq["afterGrace"] < 0.1, ("유예 경과 후에도 안 숨음!", seq)
+    # 유예 경과 후엔 '숨김'이 아니라 rest로 되돌아온다(강조 해제).
+    assert 0.5 < seq["afterGrace"] < 1.0, ("유예 경과 후 rest로 복귀하지 않음(강조가 안 풀림)", seq)

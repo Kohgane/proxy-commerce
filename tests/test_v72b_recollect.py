@@ -21,7 +21,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.126"
+    assert MANIFEST["version"] == "1.5.130"
 
 
 # ── source-contract: 벌크바 [다시 수집] 버튼 + force 배선 ──
@@ -128,6 +128,9 @@ def test_recollect_force_flag_node():
         "var document={querySelectorAll:function(){return {forEach:function(){}};},"
         "getElementById:function(){return null;}};\n"
         "function kgpSetStatus(){}\n"
+        # v86 STEP2: 벌크바가 shadow로 이전되며 내부 조회가 _kgpTbAll/_kgpTbQ 경유가 됐다 → 하네스 스텁.
+        "function _kgpTbAll(){return {forEach:function(){}};}\n"
+        "function _kgpTbQ(){return null;}\n"
         "function kgpRunBulk(items, opts){\n"
         + body +
         "  sent=items;\n"

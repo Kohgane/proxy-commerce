@@ -13,6 +13,8 @@ bisect 확정(이 가드가 못박음): 회귀 커밋=**0d46c55(v72 STEP4)**. �
 """
 from __future__ import annotations
 
+from tests import _pw
+
 import glob
 import os
 from pathlib import Path
@@ -30,7 +32,7 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(_pw.chromium_hits())
 
 
 # chrome 스텁을 evaluate 함수 본문에 인라인 정의 → 스크립트 eval과 동일 동기 호출(add_init_script 레이스 제거).
@@ -52,7 +54,7 @@ _INJECT = """(a) => {
 
 def _run(url, body):
     from playwright.sync_api import sync_playwright
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = _pw.chromium_hits()[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}
@@ -95,7 +97,11 @@ def _run(url, body):
                 persistentQuick: (() => { let n=0; document.querySelectorAll('.kgp-card-quick').forEach((q)=>{ if(q.dataset.collected!=='1' && parseFloat(getComputedStyle(q).opacity||'1')>0) n++; }); return n; })(),
                 maxQuickPerTile: (() => { let mx=0; (typeof _kgpAmazonCards==='function'?_kgpAmazonCards():[]).forEach((c)=>{ const el=c.el||c; const n=el.querySelectorAll?el.querySelectorAll('.kgp-card-quick').length:0; if(n>mx)mx=n; }); return mx; })(),
                 amazonCards: (typeof _kgpAmazonCards === 'function') ? _kgpAmazonCards().length : -1,
-                count: (document.getElementById('kgp-tb-count') || {}).textContent || '',
+                // v86 STEP2: 벌크바 내부는 shadowRoot 안이라 light DOM 조회로는 못 찾는다(항상 '' → 공허한 실패).
+                count: (() => { const h=document.getElementById('kgp-listing-toolbar');
+                    const el=(h && h.shadowRoot) ? h.shadowRoot.getElementById('kgp-tb-count')
+                                                 : document.getElementById('kgp-tb-count');
+                    return el ? el.textContent : ''; })(),
             };
         }""")
         b.close()
@@ -116,9 +122,12 @@ def test_amazon_search_renders_bulk_bar_and_all_tile_buttons():
     assert info["amazonCards"] == 24, info
     assert info["badges"] == 24, ("선택 토글 일부 타일 누락 회귀!", info)
     assert info["quick"] == 24, ("호버 [수집] 버튼 일부만 회귀!", info)
-    # v77 STEP1(B): 단일 버튼 시스템 — 타일당 [수집] 1개 · 상시 노출 0(호버 시에만).
+    # v77 STEP1(B): 타일당 [수집] 1개(이중 버튼 금지) — 이 부분은 불변.
     assert info["maxQuickPerTile"] <= 1, ("타일당 [수집] 2개 이상(이중 버튼) 회귀!", info)
-    assert info["persistentQuick"] == 0, ("상시 [수집] 노출 금지 위반(호버 시에만)!", info)
+    # v86 STEP4.1(오너 승인 2026-07-29): **상시 노출로 정책 반전.** 종전 v77은 '호버 시에만'(rest=0)이었으나
+    #   "지금 보이는가"를 매번 의심하게 만들어 폐기했다 → rest 0.85 / hover 1.0.
+    #   따라서 persistentQuick(=rest에서 보이는 버튼 수)은 0이 아니라 **전체 타일 수**여야 한다.
+    assert info["persistentQuick"] == info["quick"], ("상시 노출 위반 — rest에서 안 보이는 [수집]이 있다", info)
     assert info["persistentBadge"] == 0, ("상시 선택 토글 노출 금지 위반(호버 시에만)!", info)
     assert "메인 16 · 광고 8" in info["count"], info
 

@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+from tests import _pw
+
 import glob
 import os
 from pathlib import Path
@@ -17,17 +19,27 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.126"
+    assert MANIFEST["version"] == "1.5.130"
 
 
-def test_source_contract_reset_applied_all_buttons():
-    assert 'const _KGP_RESET = "all:initial !important;box-sizing:border-box !important;"' in CS
-    # 4곳 전부 _KGP_RESET 적용: 카드배지·호버알약·단건 FAB·벌크바.
-    assert "return _KGP_RESET + [" in CS                    # kgpCardBadgeStyle/kgpQuickBtnStyle
-    assert CS.count("return _KGP_RESET + [") >= 2
-    assert "btn.style.cssText = _KGP_RESET + [" in CS       # 단건 FAB
-    assert "bar.style.cssText = _KGP_RESET + [" in CS       # 벌크바
-    assert "const btnBase = _KGP_RESET +" in CS             # 벌크바 내부 버튼
+def test_source_contract_isolation_via_shadow_not_reset():
+    """격리 계약 — v86 STEP2에서 `_KGP_RESET`(all:initial 인라인) → **Shadow DOM**으로 교체됐다.
+
+    옛 계약은 `_KGP_RESET`이 4곳에 적용됐는지 봤는데, 그 인라인 all:initial이 바로 '위치는 맞는데
+    투명한 유령 버튼'의 원인이었다(Chrome이 250여 롱핸드로 전개해 배경·크기까지 초기화, 인라인
+    !important라 시트로 복원 불가). 그래서 계약을 **격리 수단이 아니라 격리 결과**로 다시 세운다:
+    가시 UI는 shadow 안에서 그리고, all:initial 인라인은 0이어야 한다.
+    """
+    # 옛 인라인 리셋 상수는 부활하면 안 된다(주석의 역사 설명은 제외).
+    code_only = "\n".join(ln.split("//")[0] for ln in CS.splitlines())
+    assert "_KGP_RESET" not in code_only, "all:initial 인라인 리셋 상수가 부활했다"
+    # 가시 UI 4곳이 shadow 경로를 쓴다: 카드 체크박스·호버 알약·단건 FAB·벌크바.
+    assert "_kgpShadowHost(" in CS
+    assert "_kgpBuildCheckbox" in CS                        # 선택 뱃지
+    assert "_kgpShadowHost(host, _kgpQuickShadowCss()" in CS  # 타일 호버 알약
+    assert "_kgpShadowHost(bar, css, html)" in CS           # 벌크바
+    # 허용되는 유일한 initial 형태는 :host 자신만 초기화(내부 요소엔 무영향).
+    assert '":host{all:initial}"' in CS
 
 
 def _playwright_ok():
@@ -35,7 +47,7 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(_pw.chromium_hits())
 
 
 _CHROME_STUB = """
@@ -78,7 +90,7 @@ def test_bulk_bar_font_isolated_from_hostile_css(site, url):
 
     html = ('<!doctype html><html lang="ko"><head><meta charset="utf-8">' + _HOSTILE +
             '</head><body><div class="grid">' + _cards_html() + '</div></body></html>')
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = _pw.chromium_hits()[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}

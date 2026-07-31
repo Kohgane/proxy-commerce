@@ -6,6 +6,8 @@
 """
 from __future__ import annotations
 
+from tests import _pw
+
 import glob
 import os
 from pathlib import Path
@@ -20,7 +22,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.126"
+    assert MANIFEST["version"] == "1.5.130"
 
 
 # ── source-contract: 오버레이 소실 즉시 재부착 관찰자 ──
@@ -36,7 +38,7 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(_pw.chromium_hits())
 
 
 _INJECT = """(a) => {
@@ -57,7 +59,7 @@ CARD1 = '.list-item[data-product-id="1000000001"]'
 @pytest.mark.skipif(not _playwright_ok(), reason="Playwright/chromium 미설치")
 def test_ali_hover_button_survives_subtree_swap():
     from playwright.sync_api import sync_playwright
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = _pw.chromium_hits()[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}

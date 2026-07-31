@@ -46,18 +46,26 @@ def test_render_retry_appends_button():
     j = CS.index("\n}\n", i) + 2
     fn = CS[i:j]
     tid = "kgp-listing-toolbar"
+    # v86 STEP2: 벌크바 내부가 shadowRoot로 들어가면서 kgpRenderRetry가 라이트 DOM 조회 대신
+    #   shadow를 뚫는 `_kgpTbQ`를 쓴다. 스텁에 그 헬퍼가 없으면 ReferenceError로 죽어 계약이
+    #   '깨진 것처럼' 보인다 → 실제 헬퍼(_kgpTbRoot/_kgpTbQ)를 그대로 주입해 진짜 경로를 태운다.
+    hi = CS.index("function _kgpTbRoot")
+    hj = CS.index("function _kgpTbAll")
+    helpers = CS[hi:hj]
     script = f"""
     const KGP_TOOLBAR_ID = "{tid}";
-    const _KGP_RESET = "all:initial !important;box-sizing:border-box !important;";  // v74 STEP2: 재시도 버튼 격리
     global.document = null;
     // 최소 DOM 스텁
     const btns = [];
-    const toolbar = {{ appendChild: (b) => btns.push(b) }};
+    const toolbar = {{ appendChild: (b) => btns.push(b), querySelector: () => null }};
     const removed = [];
     global.document = {{
       getElementById: (id) => id === KGP_TOOLBAR_ID ? toolbar : null,
-      createElement: () => ({{ style: {{}}, addEventListener: () => {{}}, set textContent(v){{this._t=v;}}, get textContent(){{return this._t;}} }}),
+      createElement: () => ({{ style: {{}}, attrs: {{}}, addEventListener: () => {{}},
+        setAttribute(k, v){{ this.attrs[k] = v; }}, getAttribute(k){{ return this.attrs[k]; }},
+        set textContent(v){{this._t=v;}}, get textContent(){{return this._t;}} }}),
     }};
+    {helpers}
     {fn}
     kgpRenderRetry([{{url:'a'}},{{url:'b'}}]);
     console.log(JSON.stringify({{ made: btns.length, label: btns[0] && btns[0].textContent }}));

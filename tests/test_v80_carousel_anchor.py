@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+from tests import _pw
+
 import glob
 import json
 import os
@@ -20,7 +22,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.126"
+    assert MANIFEST["version"] == "1.5.130"
 
 
 # ── source-contract: 캐러셀 안정 앵커 + z-index ──
@@ -40,7 +42,7 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(_pw.chromium_hits())
 
 
 _CHROME_STUB = """
@@ -80,7 +82,7 @@ ALI_URL = "https://www.aliexpress.com/w/wholesale-roller.html?q=roller"
 def test_button_anchors_carousel_and_survives_swap():
     """버튼이 캐러셀 컨테이너(안정)에 앵커 + 슬라이드 img 교체 후에도 생존·클릭 가능·z-index 오버레이 위."""
     from playwright.sync_api import sync_playwright
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = _pw.chromium_hits()[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}

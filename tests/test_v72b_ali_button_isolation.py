@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+from tests import _pw
+
 import glob
 import json
 import os
@@ -25,20 +27,24 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.126"
+    assert MANIFEST["version"] == "1.5.130"
 
 
 # ── source-contract: 자식 격리 + 버전 각인 + 배너 ──
 def test_quick_button_children_isolated_source():
-    # 자식 span 헬퍼가 _KGP_RESET(all:initial) + 고정 !important를 인라인으로.
-    assert "function _kgpQuickIconSpan()" in CS
-    assert "function _kgpQuickLabelSpan(text)" in CS
-    seg = CS.split("function _kgpQuickIconSpan()")[1].split("function kgpQuickBtnStyle")[0]
-    assert "_KGP_RESET +" in seg
-    assert "font:800 " in seg and "!important" in seg
-    assert 'class="kgp-q-label"' in seg
-    # 호버 버튼 innerHTML이 헬퍼 사용(원시 span 미사용).
-    assert "q.innerHTML = _kgpQuickIconSpan() + _kgpQuickLabelSpan(" in CS
+    """v72b의 의도(사이트 `span{…!important}`가 라벨·아이콘을 부풀리지 못함)를 v86 STEP2 구조에서 재확인.
+
+    옛 구현은 자식 span마다 all:initial 인라인을 박아 막았는데, 그 인라인이 곧 v86이 규명한 '유령' 원인이었다.
+    이제 아이콘·라벨은 shadowRoot 안에 있어 사이트 규칙이 애초에 닿지 않는다(더 강한 격리).
+    """
+    assert "_kgpQuickIconSpan" not in CS, "all:initial 인라인 자식 헬퍼가 부활했다"
+    assert "_kgpQuickLabelSpan" not in CS, "all:initial 인라인 자식 헬퍼가 부활했다"
+    seg = CS.split("function _kgpQuickShadowCss()")[1].split("function _kgpBuildQuick")[0]
+    assert "font:800 " in seg                      # 라벨 위계(굵기·크기) 유지
+    assert ".i{" in seg and ".l{" in seg           # 아이콘·라벨을 shadow 안에서 스타일
+    # 호버 버튼이 shadow 빌더를 통해 만들어진다(원시 innerHTML 미사용).
+    assert "_kgpBuildQuick(q, done," in CS
+    assert "_kgpShadowHost(host, _kgpQuickShadowCss()" in CS
 
 
 def test_ext_version_stamped_source():
@@ -87,7 +93,7 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(_pw.chromium_hits())
 
 
 _CHROME_STUB = """
@@ -130,7 +136,7 @@ def test_hover_button_label_isolated_from_direct_span_rule(site, url):
 
     html = ('<!doctype html><html lang="ko"><head><meta charset="utf-8">' + _HOSTILE +
             '</head><body><div class="grid">' + _cards_html() + '</div></body></html>')
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = _pw.chromium_hits()[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}
@@ -152,7 +158,10 @@ def test_hover_button_label_isolated_from_direct_span_rule(site, url):
         info = page.evaluate("""() => {
             const q = document.querySelector('.kgp-card-quick');
             if (!q) return { quick: false };
-            const lbl = q.querySelector('.kgp-q-label');
+            // v86 STEP2: 알약·라벨이 shadowRoot 안으로 들어갔다(라벨 클래스 .kgp-q-label → .l).
+            //   light DOM으로 찾으면 항상 null이라 '격리 증명'이 공허해진다 → shadow 우선, 구버전 폴백.
+            const root = q.shadowRoot || q;
+            const lbl = root.querySelector('.l') || root.querySelector('.kgp-q-label');
             const lcs = lbl ? getComputedStyle(lbl) : null;
             return {
                 quick: true,

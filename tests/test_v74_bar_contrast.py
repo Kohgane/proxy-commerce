@@ -7,6 +7,8 @@ color를 **비-!important**로 줘서, all:initial의 color:initial(검정)이 �
 """
 from __future__ import annotations
 
+from tests import _pw
+
 import glob
 import os
 from pathlib import Path
@@ -21,17 +23,25 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.126"
+    assert MANIFEST["version"] == "1.5.130"
 
 
 # ── source-contract: 벌크바 색 전부 !important(자립) ──
 def test_bar_colors_all_important_source():
-    seg = CS.split("function kgpBuildToolbar()")[1].split("bar.addEventListener")[0]
-    assert 'background:#1a1714 !important' in seg and 'color:#f5efe3 !important' in seg   # 바 먹/웜화이트
-    assert 'color:#e7ddc9 !important' in seg    # ghost 버튼 텍스트
-    assert 'color:#e8d6a8 !important' in seg    # gold 버튼 텍스트
-    assert 'background:#119a8e !important;color:#fff !important' in seg   # teal 채움
-    assert 'color:#ecdcb0 !important' in seg    # 그립 타이틀
+    """v74의 의도(다크 바 위 대비 — 버튼색이 유령화되지 않음)를 v86 STEP2 구조에서 재확인.
+
+    옛 구현은 all:initial 격리 때문에 색마다 !important를 박아야 했다. Shadow DOM 이전 후에는 사이트
+    규칙이 경계를 못 넘으므로 !important 없이 선언한다. **색 값 자체는 불변**이어야 하므로 그대로 검증한다.
+    (실제 대비 유지는 test_v86_shadow_visibility의 실브라우저 계약이 픽셀로 못박는다.)
+    """
+    seg = CS.split("function kgpBuildToolbar()")[1].split("addEventListener")[0]
+    assert "background:#1a1714;" in seg and "color:#f5efe3" in seg   # 바 먹/웜화이트
+    assert "color:#e7ddc9" in seg    # ghost 버튼 텍스트
+    assert "color:#e8d6a8" in seg    # gold 버튼 텍스트
+    assert "background:#119a8e;color:#fff" in seg   # teal 채움
+    assert "color:#ecdcb0" in seg    # 그립 타이틀
+    # 회귀 방지: 색을 shadow 밖(호스트 인라인)으로 되돌리면 사이트 규칙에 다시 노출된다.
+    assert "_kgpShadowHost(bar, css, html)" in CS
 
 
 def _playwright_ok():
@@ -39,7 +49,7 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(_pw.chromium_hits())
 
 
 _INJECT = """(a) => {
@@ -70,7 +80,7 @@ EXPECT = {
 def _run(hostile):
     from playwright.sync_api import sync_playwright
     html = SEARCH.replace("<body>", hostile + "<body>")
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = _pw.chromium_hits()[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}
@@ -92,16 +102,21 @@ def _run(hostile):
         page.goto(AMZ_URL, wait_until="domcontentloaded")
         page.evaluate(_INJECT, [DETECT, CS])
         page.wait_for_timeout(1200)
+        # v86 STEP2: 벌크바 가시 요소(.bar/버튼/그립)는 shadowRoot 안에 있다. 호스트는 위치만 갖는
+        #   투명 컨테이너라 light DOM으로 색을 재면 항상 rgba(0,0,0,0) — 공허한 실패가 된다.
+        #   대비 계약의 대상은 '실제로 보이는 요소'이므로 shadow 안에서 잰다(폴백: 구버전 light DOM).
         r = page.evaluate("""() => {
-            const bar = document.getElementById('kgp-listing-toolbar');
-            const pick = (act) => { const el = document.querySelector('.kgp-tb-btn[data-act="'+act+'"]'); return el ? getComputedStyle(el).color : null; };
+            const host = document.getElementById('kgp-listing-toolbar');
+            const root = (host && host.shadowRoot) ? host.shadowRoot : document;
+            const bar = (host && host.shadowRoot) ? root.querySelector('.bar') : host;
+            const pick = (act) => { const el = root.querySelector('.kgp-tb-btn[data-act="'+act+'"]'); return el ? getComputedStyle(el).color : null; };
             return {
                 barBg: bar ? getComputedStyle(bar).backgroundColor : null,
                 barColor: bar ? getComputedStyle(bar).color : null,
                 ghost: pick('all-sel'),
                 gold: pick('collect-sel'),
                 teal: pick('collect-all'),
-                grip: (function(){ const s = document.querySelector('#kgp-tb-grip strong'); return s ? getComputedStyle(s).color : null; })(),
+                grip: (function(){ const s = root.querySelector('#kgp-tb-grip strong'); return s ? getComputedStyle(s).color : null; })(),
             };
         }""")
         b.close()

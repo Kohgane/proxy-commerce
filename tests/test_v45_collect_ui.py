@@ -30,14 +30,17 @@ def test_scrub_robust_hit_area():
 
 def test_quick_button_spec_v64():
     # v64 STEP3: 원 과대·글자 과소 수리 — 지름 절반(66→34)·아이콘 축소(21→14)·텍스트 위주 필.
+    # v86 STEP2: 알약이 Shadow DOM으로 이전 — 치수 스펙은 shadow 스타일시트에서 확인한다(값은 불변).
     assert "min-height:34px" in CS
-    assert 'font:800 " + (KGP_TOUCH ? "13px" : "15px")' in CS    # 텍스트 위주(아이콘 축소)
-    assert "width:14px !important;height:14px !important" in CS   # 아이콘 21→14 (v72b: 자식 격리 !important)
+    assert 'KGP_TOUCH ? "13px" : "15px"' in CS                   # 텍스트 위주(아이콘 축소)
+    assert "font:800 " in CS
+    assert "width:14px;height:14px" in CS                        # 아이콘 21→14
 
 
 def test_bulk_bar_plus25():
     # 벌크바 글자·버튼 +25%
     assert "font:16px/1.2" in CS                                 # 바 폰트 13→16
-    # v72 STEP4: btnBase에 !important·line-height·all:initial 추가 → 개별 속성으로 확인.
-    assert "font-size:15px !important" in CS and "min-height:40px !important" in CS   # 버튼 12→15
+    # v86 STEP2: 벌크바가 Shadow DOM으로 이전 — 사이트 CSS가 닿지 않으므로 !important 도배가 불필요해졌다.
+    #   크기 스펙(+25%) 자체는 그대로여야 하므로 shadow 스타일시트에서 확인한다.
+    assert "font-size:15px;" in CS and "min-height:40px;" in CS  # 버튼 12→15
     assert "width:33px;height:33px" in CS                        # 그립 아이콘 26→33
