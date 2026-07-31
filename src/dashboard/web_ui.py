@@ -1131,6 +1131,149 @@ def orders():
     return _render("주문 관리", body, active="orders")
 
 
+def _policy_ctx():
+    """현재 셀러의 가격 정책 + 낙관잠금 version + 최근 이력 5건."""
+    from src.db import settings_pg
+    from src.pricing.policy import merge_policy
+
+    uid = str(session.get("user_id") or "")
+    got = settings_pg.get_policy(uid)
+    return {
+        "uid": uid,
+        "policy": merge_policy(got["policy"]),
+        "version": int(got["version"]),
+        "history": settings_pg.list_history(uid, 5),
+    }
+
+
+def _policy_from_form(form) -> dict:
+    """폼 → 정책 dict. 빈 칸은 넣지 않는다(merge_policy가 디폴트를 유지하게)."""
+    def f(name, cast=float):
+        raw = (form.get(name) or "").strip()
+        if raw == "":
+            return None
+        try:
+            return cast(raw)
+        except (TypeError, ValueError):
+            return None
+
+    markets = {}
+    for mk in ("coupang", "smartstore", "11st", "gmarket"):
+        v = f("fee_" + mk)
+        if v is not None:
+            markets[mk] = v
+    ships = {}
+    for cc in ("US", "JP", "CN", "EU"):
+        v = f("ship_" + cc)
+        if v is not None:
+            ships[cc] = v
+
+    out: dict = {"margin": {}, "shipping": {}, "fees": {}, "display": {}, "customs": {}, "fx": {}}
+    for key, name in (("percent_margin", "percent_margin"), ("plus_margin_krw", "plus_margin_krw")):
+        v = f(name)
+        if v is not None:
+            out["margin"][key] = v
+    for key, name in (("return_fee_krw", "return_fee_krw"), ("exchange_fee_krw", "exchange_fee_krw"),
+                      ("initial_ship_fee_krw", "initial_ship_fee_krw")):
+        v = f(name)
+        if v is not None:
+            out["shipping"][key] = v
+    if ships:
+        out["shipping"]["intl_ship_krw"] = ships
+    kind = (form.get("domestic_kind") or "").strip()
+    if kind in ("free", "paid"):
+        out["shipping"]["domestic_kind"] = kind
+    v = f("card_pct")
+    if v is not None:
+        out["fees"]["card_pct"] = v
+    if markets:
+        out["fees"]["market_pct"] = markets
+    v = f("discount_pct")
+    if v is not None:
+        out["display"]["discount_pct"] = v
+    v = f("round_unit", int)
+    if v is not None:
+        out["display"]["round_unit"] = v
+    base = (form.get("rep_price_base") or "").strip()
+    if base:
+        out["display"]["rep_price_base"] = base
+    mode = (form.get("customs_mode") or "").strip()
+    if mode:
+        out["customs"]["mode"] = mode
+    fxm = (form.get("fx_mode") or "").strip()
+    if fxm:
+        out["fx"]["mode"] = fxm
+    return {k: v for k, v in out.items() if v}
+
+
+@web_ui_bp.post("/fx/policy/preview")
+def fx_policy_preview():
+    """정책을 바꾸면 샘플 상품 판매가가 어떻게 변하는지 **즉시** 돌려준다(JSON).
+
+    식은 서버의 compute_sell_price 하나만 쓴다 — 화면에서 다시 구현하면 두 식이 갈라져 거짓말을 한다.
+    """
+    disabled = _check_enabled()
+    if disabled:
+        return disabled
+    from src.pricing.policy import compute_sell_price, merge_policy, validate_policy
+
+    form = request.form if request.form else (request.get_json(silent=True) or {})
+    get = form.get
+    draft = merge_policy(_policy_from_form(form))
+    errs = validate_policy(draft)
+
+    def _num(name, dflt):
+        try:
+            return float(get(name) or dflt)
+        except (TypeError, ValueError):
+            return float(dflt)
+
+    fx = _get_fx_rates()
+    cur = (get("sample_currency") or "USD").strip().upper()
+    rate = _num("sample_rate", fx.get(f"{cur}KRW", fx.get("USDKRW", 1350)))
+    market = (get("sample_market") or "coupang").strip()
+    country = (get("sample_country") or "US").strip().upper()
+    price = _num("sample_price", 25.0)
+
+    saved = merge_policy(_policy_ctx()["policy"])
+    before = compute_sell_price(saved, source_price=price, fx_rate=rate, market=market, country=country)
+    after = compute_sell_price(draft, source_price=price, fx_rate=rate, market=market, country=country)
+    return jsonify({"ok": not errs, "errors": errs, "before": before, "after": after,
+                    "sample": {"price": price, "currency": cur, "rate": rate,
+                               "market": market, "country": country}})
+
+
+@web_ui_bp.post("/fx/policy")
+def fx_policy_save():
+    """정책 저장 — 낙관잠금(base_version). 검증 실패·충돌은 조용히 넘기지 않고 사유를 돌려준다."""
+    disabled = _check_enabled()
+    if disabled:
+        return disabled
+    from src.db import settings_pg
+    from src.pricing.policy import merge_policy, validate_policy
+
+    ctx = _policy_ctx()
+    draft = merge_policy(_policy_from_form(request.form))
+    errs = validate_policy(draft)
+    if errs:
+        return redirect("/dashboard/fx?policy_error=" + quote(" / ".join(errs), safe=""))
+    try:
+        base_version = int(request.form.get("base_version") or 0)
+    except (TypeError, ValueError):
+        base_version = 0
+    summary = settings_pg.diff_summary(ctx["policy"], draft)
+    try:
+        settings_pg.save_policy(ctx["uid"], draft, base_version, summary)
+    except settings_pg.ConflictError as exc:
+        return redirect("/dashboard/fx?policy_error=" + quote(
+            "다른 곳에서 먼저 저장되었습니다(현재 버전 %d). 새로고침 후 다시 저장해 주세요." % exc.current_version,
+            safe=""))
+    except Exception:
+        logger.exception("가격 정책 저장 실패")
+        return redirect("/dashboard/fx?policy_error=" + quote("정책을 저장하지 못했습니다.", safe=""))
+    return redirect("/dashboard/fx?policy_saved=1")
+
+
 @web_ui_bp.get("/fx")
 def fx_view():
     """환율 현황 + 마진 계산기."""
@@ -1211,9 +1354,166 @@ def fx_view():
         + '<div class="kgp-field"><button type="submit" class="kgp-btn kgp-btn--primary">계산</button></div>'
         + '</div></form>'
         + calc_result
+        + _policy_section()
         + '<p class="kgp-meta">업데이트: %s</p>' % _esc(_now_iso())
     )
     return _render("환율·마진 계산기", body, active="fx")
+
+
+def _policy_section() -> str:
+    """가격 정책 서브섹션 — 이 탭 안에 둔다(별도 메뉴 신설 금지 · 화면 수 동결).
+
+    블랙박스 금지: 식을 그대로 적어 두고, 정책을 만지면 샘플 1건의 판매가가 즉시 다시 계산된다.
+    """
+    from src.pricing.policy import FORMULA_TEXT
+
+    ctx = _policy_ctx()
+    p, ver = ctx["policy"], ctx["version"]
+    mg, sh, fe, dp, cs, fxp = (p["margin"], p["shipping"], p["fees"],
+                               p["display"], p["customs"], p["fx"])
+
+    saved = request.args.get("policy_saved")
+    err = request.args.get("policy_error") or ""
+    notice = ""
+    if err:
+        notice = ('<div class="kgp-note" style="border-left-color:var(--red)">%s</div>' % _esc(err))
+    elif saved:
+        notice = ('<div class="kgp-note" style="border-left-color:var(--teal)">'
+                  '정책을 저장했습니다. 다음 등록·마진 계산부터 반영됩니다.</div>')
+
+    def num(name, value, label, step="0.01", hint=""):
+        return ('<label class="kgp-field"><span class="kgp-label">%s</span>'
+                '<input class="kgp-input kgp-pol" type="number" step="%s" name="%s" value="%s">%s</label>'
+                % (_esc(label), _esc(step), _esc(name), _esc(str(value)),
+                   ('<span class="kgp-meta">%s</span>' % _esc(hint)) if hint else ""))
+
+    def sel(name, value, options, label):
+        opts = "".join('<option value="%s"%s>%s</option>'
+                       % (_esc(v), " selected" if str(value) == str(v) else "", _esc(t))
+                       for v, t in options)
+        return ('<label class="kgp-field"><span class="kgp-label">%s</span>'
+                '<select class="kgp-select kgp-pol" name="%s">%s</select></label>'
+                % (_esc(label), _esc(name), opts))
+
+    hist = ctx["history"]
+    if hist:
+        hist_rows = "".join(
+            '<tr><td class="num">v%s</td><td>%s</td><td class="kgp-meta">%s</td></tr>'
+            % (_esc(str(h["version"])), _esc(h["summary"]), _esc(h["at"][:19].replace("T", " ")))
+            for h in hist)
+        hist_block = ('<div class="kgp-tablewrap"><table class="kgp-table"><thead><tr>'
+                      '<th class="num">버전</th><th>바뀐 항목</th><th>시각</th>'
+                      '</tr></thead><tbody>%s</tbody></table></div>' % hist_rows)
+    else:
+        hist_block = ('<div class="kgp-card">%s</div>'
+                      % _empty("아직 변경 이력이 없어요.", "정책을 저장하면 최근 5건이 여기 쌓입니다."))
+
+    ship = sh["intl_ship_krw"]
+    fees = fe["market_pct"]
+    return (
+        '<h2 class="kgp-h2">가격 정책</h2>'
+        + notice
+        + ('<div class="kgp-note">%s</div>' % _esc(FORMULA_TEXT))
+        + '<form method="post" action="/dashboard/fx/policy" id="kgpPolicyForm">'
+        + ('<input type="hidden" name="base_version" value="%s">' % _esc(str(ver)))
+        + '<h3 class="kgp-h3">마진</h3><div class="kgp-filter">'
+        + num("percent_margin", mg["percent_margin"], "퍼센트 마진(%)", "0.1")
+        + num("plus_margin_krw", mg["plus_margin_krw"], "더하기 마진(원)", "10")
+        + '</div>'
+        + '<h3 class="kgp-h3">배송</h3><div class="kgp-filter">'
+        + num("ship_US", ship.get("US", 0), "미국 해외배송비(원)", "100")
+        + num("ship_JP", ship.get("JP", 0), "일본(원)", "100")
+        + num("ship_CN", ship.get("CN", 0), "중국(원)", "100")
+        + num("ship_EU", ship.get("EU", 0), "EU(원)", "100")
+        + sel("domestic_kind", sh["domestic_kind"], (("paid", "유료"), ("free", "무료")), "국내배송 종류")
+        + num("return_fee_krw", sh["return_fee_krw"], "반품비(원)", "100")
+        + num("exchange_fee_krw", sh["exchange_fee_krw"], "교환비(원)", "100")
+        + num("initial_ship_fee_krw", sh["initial_ship_fee_krw"], "초도배송비(원)", "100", "쿠팡")
+        + '</div>'
+        + '<h3 class="kgp-h3">수수료</h3><div class="kgp-filter">'
+        + num("card_pct", fe["card_pct"], "카드 수수료(%)", "0.01")
+        + num("fee_coupang", fees.get("coupang", 0), "쿠팡(%)", "0.01")
+        + num("fee_smartstore", fees.get("smartstore", 0), "스마트스토어(%)", "0.01")
+        + num("fee_11st", fees.get("11st", 0), "11번가(%)", "0.01")
+        + num("fee_gmarket", fees.get("gmarket", 0), "지마켓(%)", "0.01")
+        + '</div>'
+        + '<h3 class="kgp-h3">표기</h3><div class="kgp-filter">'
+        + num("discount_pct", dp["discount_pct"], "마켓 표기 할인율(%)", "0.1")
+        + sel("round_unit", dp["round_unit"], ((100, "100원"), (10, "10원"), (1, "1원")), "단위 올림")
+        + sel("rep_price_base", dp["rep_price_base"],
+              (("representative", "대표"), ("min", "최저"), ("max", "최고")), "옵션 대표가 기준")
+        + '</div>'
+        + '<h3 class="kgp-h3">통관 · 환율</h3><div class="kgp-filter">'
+        + sel("customs_mode", cs["mode"],
+              (("not_applicable", "부과 대상 아님"), ("included", "포함 계산")), "관부가세")
+        + sel("fx_mode", fxp["mode"], (("auto", "실시간 자동"), ("fixed", "고정값")), "환율 기준")
+        + '</div>'
+        + ('<p class="kgp-meta">관부가세는 통관고유부호(PCC) 파이프라인과 이어집니다 — '
+           '이 화면은 모드만 정하고, 실제 부과 판정은 등록 단계에서 이뤄집니다.</p>')
+        + '<h3 class="kgp-h3">등록 미리보기</h3>'
+        + '<div class="kgp-filter">'
+        + num("sample_price", 25, "샘플 매입가", "0.01")
+        + sel("sample_currency", "USD", (("USD", "USD"), ("JPY", "JPY"), ("CNY", "CNY"), ("EUR", "EUR")),
+              "통화")
+        + sel("sample_country", "US", (("US", "미국"), ("JP", "일본"), ("CN", "중국"), ("EU", "EU")), "소싱국")
+        + sel("sample_market", "coupang",
+              (("coupang", "쿠팡"), ("smartstore", "스마트스토어"), ("11st", "11번가"), ("gmarket", "지마켓")),
+              "마켓")
+        + '</div>'
+        + '<div id="kgpPolicyPreview" class="kgp-card" style="margin-top:var(--s3)">'
+          '<div class="kgp-note">정책을 바꾸면 이 자리에서 판매가가 다시 계산됩니다.</div></div>'
+        + '<div class="kgp-field" style="margin-top:var(--s3)">'
+          '<button type="submit" class="kgp-btn kgp-btn--primary">정책 저장</button></div>'
+        + '</form>'
+        + '<h3 class="kgp-h3">변경 이력 (최근 5건)</h3>' + hist_block
+        + _POLICY_PREVIEW_JS
+    )
+
+
+# 미리보기는 **서버의 식 하나**만 호출한다(화면에서 다시 구현하면 두 식이 갈라져 거짓말을 한다).
+_POLICY_PREVIEW_JS = """
+<script>
+(function () {
+  var form = document.getElementById('kgpPolicyForm');
+  var out = document.getElementById('kgpPolicyPreview');
+  if (!form || !out) return;
+  var timer = null;
+  function money(n) { return '\\u20a9' + Number(n || 0).toLocaleString(); }
+  function render(d) {
+    if (!d.ok) {
+      out.innerHTML = '<div class="kgp-note" style="border-left-color:var(--red)">'
+        + (d.errors || []).map(function (e) { return e.replace(/</g, '&lt;'); }).join('<br>') + '</div>';
+      return;
+    }
+    var b = d.before, a = d.after;
+    var diff = (a.sell_price || 0) - (b.sell_price || 0);
+    var steps = (a.steps || []).map(function (s) {
+      return '<tr><td>' + String(s.label).replace(/</g, '&lt;') + '</td><td class="num">'
+        + String(s.value).replace(/</g, '&lt;') + '</td></tr>';
+    }).join('');
+    out.innerHTML =
+      '<div class="kgp-kpi-label">샘플 1건 판매가</div>'
+      + '<div class="kgp-kpi-value">' + money(a.sell_price) + '</div>'
+      + '<div class="kgp-kpi-sub">저장된 정책 ' + money(b.sell_price)
+      + (diff ? ' \\u2192 ' + (diff > 0 ? '+' : '') + money(diff) : ' (변화 없음)') + '</div>'
+      + '<div class="kgp-tablewrap" style="margin-top:12px"><table class="kgp-table"><tbody>'
+      + steps + '</tbody></table></div>';
+  }
+  function refresh() {
+    var fd = new FormData(form);
+    fetch('/dashboard/fx/policy/preview', { method: 'POST', body: fd, credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(render)
+      .catch(function () {
+        out.innerHTML = '<div class="kgp-note">미리보기를 불러오지 못했습니다.</div>';
+      });
+  }
+  form.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(refresh, 250); });
+  form.addEventListener('change', refresh);
+  refresh();
+})();
+</script>
+"""
 
 
 # ---------------------------------------------------------------------------
