@@ -657,6 +657,12 @@ def oauth_start(provider: str):
 
     state = secrets.token_urlsafe(24)
     session[f"oauth_state_{provider}"] = state
+    # v87 계측: state 유실 갈래를 로그 두 줄 대조로 가른다(동작은 건드리지 않는다).
+    #   state 값 자체는 **절대** 남기지 않는다 — 시크릿 평문 금지. 존재 여부·일치 여부만 본다.
+    logger.info(
+        "oauth_start provider=%s session_new=%s request_host=%s",
+        provider, bool(getattr(session, "new", False)), request.host,
+    )
     session[f"oauth_next_{provider}"] = _safe_next_url(
         request.args.get("next", ""),
         default=_oauth_default_next(provider),
@@ -681,7 +687,31 @@ def oauth_callback(provider: str):
     # CSRF 방어: state 파라미터 검증 (GET=query, POST(form_post)=form)
     state_param = request.values.get("state", "")
     state_stored = session.pop(f"oauth_state_{provider}", "")
-    if not state_param or not secrets.compare_digest(state_param, state_stored):
+    state_equal = bool(state_param and state_stored
+                       and secrets.compare_digest(state_param, state_stored))
+    # v87 계측: '보안 오류'가 어느 갈래인지 로그 한 줄로 가른다(동작 불변 — 판정은 아래 기존 분기 그대로).
+    #   cookie_header_present=false          → 쿠키가 아예 안 돌아옴(브라우저·도메인 갈래)
+    #   쿠키 있고 session_has_state=false    → 세션 저장/백엔드 갈래
+    #   둘 다 true인데 state_equal=false     → 이중 시작(탭 중복·재클릭) 갈래
+    #   state 값 자체는 절대 로그하지 않는다(시크릿 평문 금지) — 존재·일치 여부만.
+    try:
+        _ref = request.referrer or ""
+        _ref_host = _ref.split("//", 1)[-1].split("/", 1)[0] if "//" in _ref else ""
+        logger.info(
+            "oauth_callback provider=%s cookie_header_present=%s session_has_state=%s "
+            "received_state_present=%s state_equal=%s request_host=%s referrer_host=%s",
+            provider,
+            bool(request.headers.get("Cookie")),
+            bool(state_stored),
+            bool(state_param),
+            state_equal,
+            request.host,
+            _ref_host,
+        )
+    except Exception:   # 계측이 로그인 흐름을 절대 막지 않는다
+        logger.exception("oauth_callback 계측 로그 실패(무시)")
+
+    if not state_equal:
         flash("보안 오류가 발생했습니다. 다시 시도해주세요.", "auth_oauth")
         return redirect(url_for("auth.login"))
 
