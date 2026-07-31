@@ -46,6 +46,9 @@ def test_amazon_adapter_recovers_priceless_cards():
         "let _kgpScannedCount = 0;",
         "let _kgpExcl={ad:0,region:0,parse:0,url:0,dup:0,reco:0};function _kgpExclReset(){};function _kgpMarkSkip(){};function _kgpClearSkip(){};function _kgpSkipReset(){};var _kgpSkipStats={};",
         "const _KGP_ORIG_PRICE_RE=/x^/; const _KGP_NONPROD_RE=/(recommend|related|footer|review)/i;",
+        # v86-B 의존: _kgpAmazonCards가 스폰서(sspa) 링크에서 목적지 ASIN을 복원한다. 이걸 빼면
+        #   하네스에서 ReferenceError가 나 카드가 통째로 0이 된다(동작 변화로 오독하기 쉬운 함정).
+        fn("_kgpAmazonSspaAsin"),
         fn("_kgpInBadRegion"), fn("_kgpIsRecoRegion"), fn("_kgpAmazonSponsored"), fn("_kgpPrice"),
         fn("_kgpBestImg"), fn("_kgpAmazonCards"),
     ])

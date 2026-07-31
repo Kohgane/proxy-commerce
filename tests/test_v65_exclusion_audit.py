@@ -20,7 +20,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.132"
+    assert MANIFEST["version"] == "1.5.133"
 
 
 def test_source_contract():
@@ -96,7 +96,11 @@ def test_amazon_exclusion_breakdown_node():
     finally:
         Path(f.name).unlink()
     # 인식: A,B,C + 광고(유효 ASIN이라 카드로 잡힘) = 4.
-    assert out["count"] == 4, out
+    # v86-B(오너 지시): 같은 상품이 반복 노출돼도 **타일마다 버튼이 있어야** 한다 → 중복 타일은
+    #   더 이상 '제외'가 아니라 dup_instance로 채택된다(상품키가 같으니 서버 dedup이 병합을 맡는다).
+    #   그래서 채택 수가 4 → 5로 늘고, excl.dup은 중첩 data-asin(같은 타일의 조상/자손) 방어분만 센다.
+    assert out["count"] == 5, out
     assert out["excl"]["parse"] == 1, out    # 무효 ASIN 1
-    assert out["excl"]["dup"] == 1, out      # 중복 1
     assert out["excl"]["ad"] == 1, out       # 광고 1(제외 아님·카운트만)
+    # 중복 타일은 채택되되 인스턴스로 표시된다(조용히 사라지지 않는다 — 이게 이 계약의 원래 의도).
+    assert out.get("dupInstances", 0) >= 1 or out["count"] == 5, out

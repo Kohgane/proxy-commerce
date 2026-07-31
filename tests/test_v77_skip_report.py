@@ -22,7 +22,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.132"
+    assert MANIFEST["version"] == "1.5.133"
 
 
 # ── source-contract: 스킵 마킹 + 사유 집계 + 진단 노출 ──
@@ -32,7 +32,12 @@ def test_skip_report_source():
     assert "function _kgpClearSkip(el)" in CS
     assert "_kgpSkipReset()" in CS                       # 스캔마다 초기화
     # 아마존 어댑터 탈락 지점 사유 부여.
-    assert '_kgpMarkSkip(el, "no-asin")' in CS
+    #   v86-B: 광고(sspa) 타일은 payload에서 ASIN을 복원하고, 그래도 못 뽑으면 'no-asin'과 원인이 다르므로
+    #   'ad-sspa-fail'로 분리한다. 옛 고정핀(`_kgpMarkSkip(el, "no-asin")` 정확 일치)은 사유가 하나 늘자
+    #   부서졌다 — 대상은 문장이 아니라 **동작**이므로 "그 분기가 두 사유를 구분해 남긴다"로 본다.
+    _asin_seg = CS.split("if (!/^[A-Z0-9]{10}$/.test(asin)) {")[1].split("return;")[0]
+    assert "_kgpMarkSkip(el," in _asin_seg
+    assert '"no-asin"' in _asin_seg and '"ad-sspa-fail"' in _asin_seg
     assert '_kgpMarkSkip(el, "non-product")' in CS
     assert '_kgpMarkSkip(el, "parse-fail")' in CS
     # 제네릭 탈락 지점.
