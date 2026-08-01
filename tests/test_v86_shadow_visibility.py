@@ -598,11 +598,9 @@ def test_quick_reveals_on_card_hover():
     """카드 hover 시 [수집]이 **실제로 눌리는 상태**가 된다 — 판정은 히트테스트(center_hit)로만."""
     got = _measure_hover(_isolated_code(), sim=True)
     assert got["exists"], "타일 [수집] 미주입 — 계약 대상 없음"
-    # 기본은 숨김(호버 전용 설계) — 이게 안 지켜지면 아래 노출 단언이 공허해진다.
-    # v86 STEP4.1(오너 승인): 기본이 '숨김(0)'에서 **상시 노출(0.85)**로 바뀌었다.
-    #   호버는 이제 '등장'이 아니라 '강조'다 → rest는 보이되, 호버 시 1.0으로 또렷해져야 한다.
-    assert float(got["before"]["opacity"]) >= 0.8, ("rest에서 [수집]이 안 보인다 — 상시 노출 위반", got)
-    assert float(got["before"]["opacity"]) < 1.0, ("rest와 hover가 같으면 강조 계약이 공허", got)
+    # v86-C(오너 철회): STEP4.1의 '상시 노출(0.85)' 승인이 **철회**됐다 → 다시 호버 전용.
+    #   rest=0(안 보임) → 호버 1.0(등장) → leave 0. 기본이 숨김이어야 아래 노출 단언이 의미를 갖는다.
+    assert float(got["before"]["opacity"]) == 0.0, ("rest에서 [수집]이 보인다 — 호버 노출 위반", got)
     assert got["fired"], ("카드에 mouseenter를 못 쏘았다 — 계약이 공허", got)
     # 호버 후: 불투명 + 그 좌표를 눌렀을 때 실제로 우리 요소가 잡혀야 한다.
     assert got["after"]["opacity"] == "1", ("카드 hover에도 [수집]이 또렷해지지 않는다 — 강조 경로 사망", got)
@@ -653,9 +651,10 @@ def test_stylesheet_cannot_restore_inline_important_opacity():
     assert got["byJs"] == "1", ("JS setProperty가 인라인 !important를 못 이겼다", got)
 
 
-# ── v86 STEP4.1: 상시 노출 + 히트테스트 판정 ─────────────────────────────────
-#   오너 승인(2026-07-29): rest 0.85 / hover 1.0. "지금 보이는가"라는 질문 자체를 없애는 게 목적이다.
-#   판정은 **center_hit**(그 좌표를 누르면 우리 요소가 잡히는가)로 한다 — 좌표·가림·투명을 한 번에 본다.
+# ── v86-C: 호버 노출 + 히트테스트 판정 ───────────────────────────────────────
+#   오너 철회(2026-07-31): STEP4.1의 '상시 노출(rest 0.85)' 승인을 거둬들였다 → rest=0 호버 전용으로 회귀.
+#   다만 **center_hit 판정은 그대로 쓴다** — opacity:0 요소도 히트테스트에는 잡히므로(v86 STEP4에서 확인),
+#   좌표 표류·가림을 여전히 이 한 값으로 본다. 즉 "안 보이지만 그 자리에 정확히 있다"를 계약한다.
 
 REST_PROBE = """() => {
     const qs = document.querySelectorAll('.kgp-card-quick');
@@ -681,8 +680,8 @@ REST_PROBE = """() => {
 
 @pytest.mark.skipif(not _pw_ok(), reason="Playwright/chromium 미설치")
 @pytest.mark.parametrize("name,pattern,url", _LIST_SNAPSHOTS, ids=[s[0] for s in _LIST_SNAPSHOTS])
-def test_realpage_quick_visible_at_rest(name, pattern, url):
-    """실측 스냅샷 — **마우스를 안 올려도** [수집]이 보이고 눌린다(상시 노출)."""
+def test_realpage_quick_anchored_at_rest(name, pattern, url):
+    """실측 스냅샷 — rest에서는 **안 보이되**, 좌표는 정확히 그 자리에 있다(가림·표류 감지 유지)."""
     snap = _snapshot_path(pattern)
     if snap is None:
         pytest.skip(f"스냅샷 미커밋: {pattern}")
@@ -690,22 +689,26 @@ def test_realpage_quick_visible_at_rest(name, pattern, url):
     if not got.get("n"):
         pytest.skip(f"{name}: 스냅샷 오프라인 재현에서 카드 미감지(외부 CSS/지연이미지 부재) — 계약 대상 없음")
 
-    assert got["host_opacity"] >= 0.8, (name, "rest 상태에서 [수집]이 흐리다/숨어 있다", got)
+    assert got["host_opacity"] == 0.0, (name, "rest 상태에서 [수집]이 보인다 — 호버 노출 위반", got)
     # ★핵심: 좌표를 눌렀을 때 우리 요소가 실제로 잡혀야 한다(알리 가림 재발 감지).
+    #   opacity:0이어도 히트테스트에는 잡힌다 — 그래서 이 단언이 rest에서도 유효하다.
     assert got["center_hit"], (name, "보이는데 클릭이 안 잡힌다 — 가림 또는 앵커 표류", got)
     assert not got["opacity_important"], (name, "상태전환 속성에 인라인 !important 부활", got)
 
 
 @pytest.mark.skipif(not _pw_ok(), reason="Playwright/chromium 미설치")
-def test_rest_visibility_regresses_when_hidden_again():
-    """인위회귀 — rest를 다시 0으로 되돌리면 상시 노출 계약이 **실패해야** 한다."""
+def test_rest_hidden_regresses_when_always_shown():
+    """인위회귀 — rest를 다시 상시 노출로 되돌리면 호버 노출 계약이 **실패해야** 한다.
+
+    v86-C에서 계약이 반전됐다: 예전엔 '0이면 red'였고 지금은 '0이 아니면 red'다.
+    """
     code = _isolated_code()
-    anchor = "var KGP_QUICK_REST_OPACITY = 0.85;"
+    anchor = "var KGP_QUICK_REST_OPACITY = 0;"
     assert anchor in code, "회귀 주입 지점(rest 투명도 상수)을 찾지 못했다"
-    broken = code.replace(anchor, "var KGP_QUICK_REST_OPACITY = 0;", 1)
+    broken = code.replace(anchor, "var KGP_QUICK_REST_OPACITY = 0.85;", 1)
     got = _measure_listing(broken, REST_PROBE)
     assert got.get("n"), ("합성 목록에서도 타일이 없다 — 회귀 검증 불가", got)
-    assert got["host_opacity"] < 0.8, ("rest를 0으로 되돌렸는데 계약이 통과한다 = 게이트가 무의미", got)
+    assert got["host_opacity"] > 0.0, ("rest를 0.85로 되돌렸는데 계약이 통과한다 = 게이트가 무의미", got)
 
 
 def test_hover_probe_instrumented_in_diagnostic():
