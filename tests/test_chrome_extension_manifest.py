@@ -32,12 +32,17 @@ class TestManifestScripting:
             assert perm in permissions, f"{perm} 권한이 누락됐습니다."
 
     def test_content_scripts_all_urls(self):
-        """content_scripts가 <all_urls>에 주입됨 (폴백 메시지 패싱 가능)."""
+        """메시지 패싱을 받는 content script가 <all_urls>에 주입됨(폴백 경로 보장).
+
+        v86-E: 종전엔 `cs[0]`을 **위치로** 집었는데 [0]은 테무 전용 Tier1 캡처(kgp-net.js)
+        항목이라 이 계약의 대상이 아니었다. 메시지 패싱은 content_script.js가 받는다 —
+        대상을 내용으로 고른다(위치 핀은 항목이 늘면 조용히 엉뚱한 걸 검사한다).
+        """
         manifest = _load_manifest()
         cs = manifest.get("content_scripts", [])
         assert len(cs) > 0
-        matches = cs[0].get("matches", [])
-        assert "<all_urls>" in matches
+        target = next(c for c in cs if "content_script.js" in c.get("js", []))
+        assert "<all_urls>" in target.get("matches", [])
 
 
 class TestPopupJsScriptingFallback:
