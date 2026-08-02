@@ -486,7 +486,43 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // v86 STEP4.1: **계측 사각 3호** — "호버하면 켜지는가"를 실기기에서 판정할 방법이 없었다.
         //   첫 카드에 synthetic mouseenter를 쏘고 전이(.12s) 여유를 둔 뒤 다시 재서 {before, after}로 남긴다.
         //   리스너가 안 붙었거나 죽었으면 after가 before와 같게 나와 **즉시 드러난다**(추측 불필요).
-        if (_qs.length) _ui.hover_test = _kgpHoverProbe(_qs[0]);
+        // v86-D: 첫 타일만 재면 "첫 타일은 되는데 나머지는?"을 못 본다 → 첫·중간·마지막 3표본.
+        if (_qs.length) {
+          _ui.hover_test = _kgpHoverProbe(_qs[0]);            // 하위호환(기존 판독 스크립트 유지)
+          var _idx = [0, Math.floor(_qs.length / 2), _qs.length - 1];
+          var _seen = {}, _samples = [];
+          for (var _i = 0; _i < _idx.length; _i++) {
+            var _n = _idx[_i];
+            if (_seen[_n]) continue;
+            _seen[_n] = 1;
+            _samples.push({ i: _n, probe: _kgpHoverProbe(_qs[_n]) });
+          }
+          _ui.hover_test_samples = _samples;
+        }
+        // v86-D: **커버리지** — merged 대비 실제 부착률과 미부착 사유별 수.
+        //   종전 계측은 tile_quick_n(절대 수)만 줘서 "68 스캔에 35개면 나머지 33은 왜?"를 못 읽었다.
+        //   부착률과 사유를 같이 남겨야 회귀인지 정상 제외인지 로그 한 줄로 갈린다.
+        try {
+          var _cards = (typeof kgpFindCards === "function") ? kgpFindCards() : [];
+          var _att = 0, _miss = 0, _missBy = {};
+          for (var _c = 0; _c < _cards.length; _c++) {
+            var _el = _cards[_c] && _cards[_c].el;
+            if (_el && _el.querySelector && _el.querySelector(".kgp-card-quick")) { _att++; continue; }
+            _miss++;
+            var _r = (_el && _el.getAttribute && _el.getAttribute("data-kgp-skip")) || "(표식없음)";
+            _missBy[_r] = (_missBy[_r] || 0) + 1;
+          }
+          _ui.tile_coverage = {
+            merged: _cards.length,
+            attached: _att,
+            missing: _miss,
+            rate: _cards.length ? Math.round((_att / _cards.length) * 1000) / 10 : null,   // %
+            missing_by: _missBy,
+            scanned: _kgpScannedCount,
+            sponsored: _cards.filter(function (c) { return c && c.sponsored; }).length,
+            dup_instances: _cards.filter(function (c) { return c && c.dup_instance; }).length,
+          };
+        } catch (e) { _ui.tile_coverage = { error: String((e && e.message) || e) }; }
         var _bar = document.getElementById(KGP_TOOLBAR_ID);
         if (_bar) _ui.toolbar_first = _kgpMeasureVisible(_bar, ".bar");
       } catch (e) {}
@@ -946,7 +982,21 @@ function _kgpSweepStaleTiles() {
     for (var i = 0; i < stale.length; i++) {
       if (stale[i]._kgpShadow === undefined) { try { stale[i].remove(); n++; } catch (e) {} }
     }
-    if (n) { try { console.warn("[고가수집기] 구버전 타일 잔재 정리", n); } catch (e) {} }
+    // v86-D: **툴바·재오픈 배지도 같은 잔재가 된다.** STEP3에서 타일만 쓸고 바를 빼먹었다.
+    //   shadow 내용은 페이지 저장·복원에 직렬화되지 않으므로 남는 건 **빈 껍데기**인데,
+    //   kgpInjectListing은 `if (!getElementById(KGP_TOOLBAR_ID))`로만 만들어 그 껍데기가
+    //   재생성을 영영 막는다 → 벌크바가 DOM엔 있고 내용은 0인 유령(버튼·닫기 전부 없음).
+    //   확장 업데이트/SPA 복원/저장 스냅샷에서 그대로 재현된다(실측: 아마존 스냅샷에 host 1개 잔존).
+    //   판정은 타일과 동일하게 `_kgpShadow === undefined`(현행 빌더는 성공·실패 무관하게 값을 넣는다).
+    var hostIds = [KGP_TOOLBAR_ID, KGP_REOPEN_ID];
+    for (var h = 0; h < hostIds.length; h++) {
+      var el = document.getElementById(hostIds[h]);
+      if (el && el._kgpShadow === undefined) {
+        try { el.remove(); n++; } catch (e) {}
+        try { console.warn("[고가수집기] 구버전 오버레이 잔재 정리", hostIds[h]); } catch (e) {}
+      }
+    }
+    if (n) { try { console.warn("[고가수집기] 구버전 잔재 정리", n); } catch (e) {} }
   } catch (e) {}
 }
 function _kgpShadowHost(host, css, html) {
@@ -2420,17 +2470,23 @@ function kgpBuildToolbar() {
       if (next === "0") {
         _kgpClosed = true;
         bar.remove();
-        document.querySelectorAll(".kgp-card-chk, .kgp-card-quick").forEach((b) => b.remove());
+        // v86-D: 바를 접어도 **호버 수집버튼은 남는다**(오너 확정 UX). chk만 걷는다.
+        //   v86-C가 kgpInjectListing 경로만 고쳐서, 이 핸들러가 그 자리에서 버튼을 지우면
+        //   재스캔이 뜨기 전까지(정적 페이지면 영영) 버튼이 사라진 채 남았다 — 라이브 tile_quick_n 0의 경로.
+        document.querySelectorAll(".kgp-card-chk").forEach((b) => b.remove());
+        _kgpReensureQuick();
         kgpShowReopenPill();
       } else {
         kgpSetStatus("이제 목록 페이지에서 자동으로 열려요.");
       }
     } else if (act === "close") {
       // 접으면 같은 페이지에서 자동으로 다시 뜨지 않게 한다(URL 변경 시 초기화).
-      // 대신 구석에 작은 '수집 열기' 배지(선택 개수·펄스)를 남긴다(선택은 유지).
+      // 대신 구석에 작은 '고가수집기 열기' 배지(선택 개수·펄스)를 남긴다(선택은 유지).
+      // v86-D: 여기서도 chk만 걷는다 — 호버 수집버튼은 바와 무관하게 살아 있어야 한다.
       _kgpClosed = true;
       bar.remove();
-      document.querySelectorAll(".kgp-card-chk, .kgp-card-quick").forEach((b) => b.remove());
+      document.querySelectorAll(".kgp-card-chk").forEach((b) => b.remove());
+      _kgpReensureQuick();
       kgpShowReopenPill();
     }
   });
@@ -2442,7 +2498,7 @@ function kgpBuildToolbar() {
 
 const KGP_REOPEN_ID = "kgp-listing-reopen";
 
-// 접었을 때 구석에 작은 '수집 열기' 배지 → 클릭 시 바를 다시 띄운다.
+// 접었을 때 구석에 작은 '고가수집기 열기' 배지 → 클릭 시 바를 다시 띄운다.
 // 선택 개수 뱃지 + (선택 있으면) 청록 펄스. 드래그로 옮기면 위치 기억(kgp_bar_pos).
 function kgpShowReopenPill() {
   let pill = document.getElementById(KGP_REOPEN_ID);
@@ -2462,7 +2518,9 @@ function kgpShowReopenPill() {
   pill.title = "고가수집기 바 열기";
   pill.innerHTML =
     '<span style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;background:transparent;border:0">' + KGP_BRIDGE_SVG + '</span>' +
-    '<span style="font-weight:700;font-size:12px">수집 열기</span>' +
+        // v86-D: 이 배지가 여는 건 벌크바다. 바 그립 타이틀이 '고가수집기'이므로 명칭을 그쪽에 맞춘다
+    //   ('수집 열기'는 타일 호버 버튼과 혼동됐다 — 오너가 rest 노출 요소로 오인).
+    '<span style="font-weight:700;font-size:12px">고가수집기 열기</span>' +
     '<span class="kgp-pill-count" style="display:' + (sel ? "inline-block" : "none") + ';background:#119a8e;color:#fff;border-radius:999px;padding:1px 7px;font-size:11px;font-weight:800">' + (sel || "") + '</span>';
   pill.style.cssText = [
     "position:fixed", "top:12px", "left:12px", "z-index:2147483647",
@@ -2484,6 +2542,14 @@ function kgpShowReopenPill() {
 }
 
 let _kgpAutoApplied = false;       // 이 페이지에서 '수동(auto off)' 초기 접힘을 한 번만 적용
+
+// v86-D: 바를 접는 순간에도 호버 수집버튼을 즉시 되붙인다(재스캔을 기다리지 않는다).
+//   정적 목록 페이지는 MutationObserver가 안 뜨므로, 기다리면 영영 버튼이 없는 상태가 된다.
+function _kgpReensureQuick() {
+  try {
+    (_kgpCards || []).forEach(function (c) { if (c && c.el) _kgpEnsureTileQuick(c, null); });
+  } catch (e) { /* noop */ }
+}
 
 // v86-C: 타일 호버 수집버튼 주입을 **벌크바 상태에서 분리**한다.
 //   종전엔 바가 닫히면(_kgpClosed) .kgp-card-quick까지 같이 지우고 early return해서, 목록을 열어도

@@ -20,7 +20,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.134"
+    assert MANIFEST["version"] == "1.5.135"
 
 
 def test_bar_fixed_top_max_zindex():
