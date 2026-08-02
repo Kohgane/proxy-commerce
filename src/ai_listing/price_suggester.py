@@ -26,6 +26,25 @@ _DEFAULT_TARGET_MARGIN_PCT = float(os.getenv("TARGET_MARGIN_PCT", "22"))
 _MIN_MARGIN_PCT = float(os.getenv("PRICING_MIN_MARGIN_PCT", "15"))
 
 
+
+def _seller_pricing_policy() -> dict | None:
+    """v87-S3: 등록가 계산이 코드 상수가 아니라 **셀러가 저장한 가격 정책**을 읽게 한다.
+
+    정책을 저장한 적이 없으면 None → calculator가 디폴트 정책(=현행 상수)을 쓴다. 즉 이관 전과 동일.
+    저장소·세션이 없는 경로(배치·테스트)에서도 터지지 않게 실패는 조용히 None으로 떨어뜨린다.
+    """
+    try:
+        from flask import session
+
+        from src.db import settings_pg
+
+        uid = str(session.get("user_id") or "")
+        if not uid:
+            return None
+        return settings_pg.get_policy(uid).get("policy") or None
+    except Exception:
+        return None
+
 def suggest_price(
     analysis: Dict[str, Any],
     market: str,
@@ -104,6 +123,7 @@ def suggest_price(
                     category=str(category),
                     competitor_prices_krw=competitor_prices,
                     actual_market_prices_krw=actual_market_prices,
+                    policy=_seller_pricing_policy(),
                 )
                 return {
                     "market": market,

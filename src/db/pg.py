@@ -334,7 +334,8 @@ def init_schema():
     if _schema_done or not pg_enabled():
         return
     here = Path(__file__).parent
-    for fname in ("schema_stage1.sql", "schema_stage2.sql", "schema_stage3.sql"):
+    # v87-S3: stage4 = settings(가격 정책). 스키마 파일은 순서대로 idempotent 적용된다.
+    for fname in ("schema_stage1.sql", "schema_stage2.sql", "schema_stage3.sql", "schema_stage4.sql"):
         f = here / fname
         if f.exists():
             run_ddl(f.read_text(encoding="utf-8"))

@@ -103,23 +103,28 @@ def calculate_listing_price(
     ad_budget_pct: float | None = None,
     competitor_prices_krw: Iterable[float] | None = None,
     actual_market_prices_krw: Iterable[float] | None = None,
+    policy: dict | None = None,
 ) -> PriceBreakdown:
+    # v87-S3: 마진·수수료·배송 기준은 이제 **셀러 정책**에서 온다(코드 상수 단일화).
+    #   policy.default_policy()가 현행과 **같은 env 조회**로 만들어지므로, 정책을 저장한 적 없는
+    #   셀러(policy=None)의 결과는 이관 전과 완전히 같다 — 그게 이 이관의 계약이다.
+    from src.pricing.policy import market_fee_pct as _policy_market_fee, merge_policy
+
+    pol = merge_policy(policy)
+    _mg, _fe, _sh = pol["margin"], pol["fees"], pol["shipping"]
+
     target_margin_pct = float(
-        target_margin_pct
-        if target_margin_pct is not None
-        else _env_float("PRICING_DEFAULT_TARGET_MARGIN_PCT", 30.0)
+        target_margin_pct if target_margin_pct is not None else _mg["percent_margin"]
     )
     ad_budget_pct = float(
-        ad_budget_pct
-        if ad_budget_pct is not None
-        else _env_float("PRICING_DEFAULT_AD_BUDGET_PCT", 5.0)
+        ad_budget_pct if ad_budget_pct is not None else _mg["ad_budget_pct"]
     )
-    weight_kg = float(weight_kg if weight_kg is not None else _env_float("PRICING_DEFAULT_WEIGHT_KG", 0.5))
-    payment_fee_pct = _env_float("PRICING_PAYMENT_FEE", 0.033)
-    vat_pct = _env_float("PRICING_VAT", 0.10)
-    intl_shipping_per_kg = _env_float("PRICING_INTL_SHIPPING_PER_KG_KRW", 18000.0)
+    weight_kg = float(weight_kg if weight_kg is not None else _sh["default_weight_kg"])
+    payment_fee_pct = float(_fe["card_pct"]) / 100.0
+    vat_pct = float(pol["customs"]["vat_pct"]) / 100.0
+    intl_shipping_per_kg = float(_sh["intl_ship_per_kg_krw"])
     competitor_discount = _env_float("PRICING_COMPETITOR_DISCOUNT", 0.97)
-    min_margin_guard_pct = _env_float("PRICING_MIN_MARGIN_GUARD_PCT", 15.0)
+    min_margin_guard_pct = float(_mg["min_margin_guard_pct"])
     actual_discount = _env_float("PRICING_ACTUAL_DISCOUNT", 0.97)
 
     cost_krw = float(source_price) * _to_krw_rate(source_currency)
@@ -129,7 +134,7 @@ def calculate_listing_price(
     vat_krw = landed_cost * vat_pct
     total_landed = landed_cost + vat_krw
 
-    market_fee_pct = _market_fee(market)
+    market_fee_pct = _policy_market_fee(pol, market) / 100.0
     deduction = market_fee_pct + payment_fee_pct + (ad_budget_pct / 100.0)
     denominator = max(1.0 - deduction, 0.01)
     calculated_price = total_landed * (1.0 + target_margin_pct / 100.0) / denominator
