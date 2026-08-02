@@ -17,7 +17,13 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_matches_all_urls():
-    cs = MANIFEST["content_scripts"][0]
+    """FAB를 그리는 스크립트가 전 URL에 주입된다(소싱처 어디서나 상시 노출).
+
+    v86-E: 종전엔 `content_scripts[0]`을 **위치로** 집었는데, [0]은 처음부터 테무 전용
+    Tier1 캡처(kgp-net.js) 항목이었다 — 의도(FAB 상시 노출)와 대상이 어긋나 있었다.
+    kgp-net.js 스코프를 테무로 좁히자 이 핀이 드러났다. 대상을 **내용으로** 고른다.
+    """
+    cs = next(c for c in MANIFEST["content_scripts"] if "content_script.js" in c["js"])
     assert "<all_urls>" in cs["matches"]
 
 
