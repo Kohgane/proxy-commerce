@@ -24,6 +24,7 @@ from __future__ import annotations
 import datetime
 import html as _html
 import logging
+import json as _json_mod
 import os
 from urllib.parse import quote
 
@@ -577,7 +578,62 @@ def _load_upload_history() -> list:
     return _load_sheet("UPLOAD_WORKSHEET", "upload_history")
 
 
+def _pg_order_rows() -> list:
+    """PG orders(ORDERS_HEADERS) → 이 화면의 행 어휘로 매핑.
+
+    두 어휘가 다르다: PG는 marketplace/placed_at/total_krw/items_json,
+    이 화면은 market/order_date/sell_price_krw + 평면 상품 필드를 읽는다.
+    상품 정보는 items_json 첫 건에서 편다(다건 주문은 첫 상품으로 대표 — 목록 한 줄이 한 주문이므로).
+    """
+    from src.db import orders_pg
+
+    out = []
+    for r in orders_pg.all_row_dicts() or []:
+        items = []
+        raw = r.get("items_json") or ""
+        if raw:
+            try:
+                parsed = _json_mod.loads(raw)
+                items = parsed if isinstance(parsed, list) else [parsed]
+            except Exception:
+                items = []
+        it = (items[0] if items and isinstance(items[0], dict) else {}) or {}
+        opts = it.get("options")
+        if isinstance(opts, dict):
+            opts = " / ".join(f"{k}:{v}" for k, v in opts.items() if str(v).strip())
+        out.append({
+            "order_id": r.get("order_id", ""), "order_number": r.get("order_id", ""),
+            "market": r.get("marketplace", ""), "status": r.get("status", ""),
+            "order_date": r.get("placed_at", ""),
+            "customer_name": r.get("buyer_name_masked", ""),
+            "sell_price_krw": r.get("total_krw", ""),
+            "buy_price": r.get("landed_cost_krw", ""),
+            "margin_pct": r.get("margin_pct", ""),
+            "tracking_no": r.get("tracking_no", ""), "courier": r.get("courier", ""),
+            "notes": r.get("notes", ""),
+            "sku": str(it.get("sku") or ""), "title_ko": str(it.get("title") or ""),
+            "option": str(opts or ""), "quantity": it.get("qty") or 1,
+            # 주문 행에는 원본/마켓 링크가 없다 — 드로어의 [수집처]가 v56 역참조로 채운다(지어내지 않는다).
+            "items": items,
+        })
+    return out
+
+
 def _load_orders() -> list:
+    """주문 소스 = PG 우선.
+
+    v87-S2 후속: 이 화면은 Phase 20부터 Google Sheets `orders` 워크시트만 읽어 왔는데,
+    주문은 #421에서 PG로 이관됐고 #422 백업은 `_backup_orders`에 쓴다 — 즉 `orders` 시트엔
+    **아무도 쓰지 않는다**. 그래서 PG에 주문이 있어도 이 화면만 0건이었다(셀러 콘솔은 PG를 읽어 정상).
+    소스를 PG로 통일한다. PG 미설정(개발/테스트)일 때만 종전 Sheets 폴백.
+    """
+    try:
+        from src.db.pg import pg_enabled
+        if pg_enabled():
+            return _pg_order_rows()
+    except Exception as exc:
+        # 정직: PG를 못 읽으면 조용히 빈 목록으로 위장하지 않고 사유를 남긴 뒤 폴백한다.
+        logger.warning("주문 PG 조회 실패 — Sheets 폴백: %s", exc)
     return _load_sheet("ORDERS_WORKSHEET", "orders")
 
 
@@ -1510,6 +1566,16 @@ _POLICY_PREVIEW_JS = """
   }
   form.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(refresh, 250); });
   form.addEventListener('change', refresh);
+  // 이중 제출 차단 — 저장은 PG 왕복이라 한 박자 늦고, 그 사이 한 번 더 누르면 두 번째 요청이
+  //   낡은 base_version을 들고 가 낙관잠금 배너가 뜬다(오너 실배포에서 관찰된 오탐).
+  form.addEventListener('submit', function () {
+    var b = form.querySelector('button[type=submit]');
+    if (!b) return;
+    if (b.disabled) return;
+    b.disabled = true; b.textContent = '저장 중…';
+    // 저장은 redirect로 끝나지만, 실패로 같은 페이지에 머무는 경우를 대비해 되살린다.
+    setTimeout(function () { b.disabled = false; b.textContent = '정책 저장'; }, 8000);
+  });
   refresh();
 })();
 </script>

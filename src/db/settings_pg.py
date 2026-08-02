@@ -55,6 +55,17 @@ def get_policy(user_id: str) -> dict:
     return {"policy": copy.deepcopy(got["policy"]), "version": int(got["version"])}
 
 
+def _same_policy(a: dict, b: dict) -> bool:
+    """두 정책이 같은 내용인가(키 순서 무관).
+
+    v87-S3 후속: 같은 저장이 두 번 도착하면(더블 클릭·폼 재전송) 두 번째는 base_version이 낡아
+    낙관잠금에 걸린다. 그런데 **저장된 값이 지금 보내는 값과 같다면 덮어쓸 남의 변경이 없다** —
+    이건 충돌이 아니라 중복이다. 충돌 배너는 '남이 바꾼 걸 네가 밀어낼 뻔했다'일 때만 떠야 한다.
+    (오너 실배포 캡처: 첫 저장에서 '현재 버전 1' 배너 + 이력엔 v1 정상 — 두 번째 도착이 만든 오탐.)
+    """
+    return json.dumps(a or {}, sort_keys=True, ensure_ascii=False) ==         json.dumps(b or {}, sort_keys=True, ensure_ascii=False)
+
+
 def save_policy(user_id: str, policy: dict, base_version: int, summary: str = "") -> dict:
     """정책 저장(낙관잠금). 성공 시 새 version 반환, 충돌이면 ConflictError."""
     uid = (user_id or "").strip()
@@ -65,10 +76,15 @@ def save_policy(user_id: str, policy: dict, base_version: int, summary: str = ""
 
     if _enabled():
         with pg.tx() as cur:
-            cur.execute("SELECT version FROM settings WHERE user_id = %s FOR UPDATE", (uid,))
+            cur.execute("SELECT version, policy FROM settings WHERE user_id = %s FOR UPDATE", (uid,))
             row = cur.fetchone()
             cur_ver = int(row[0]) if row else 0
             if cur_ver != base:
+                stored = {}
+                if row:
+                    stored = row[1] if isinstance(row[1], dict) else json.loads(row[1] or "{}")
+                if _same_policy(stored, pol):
+                    return {"ok": True, "version": cur_ver, "duplicate": True}
                 raise ConflictError(cur_ver)
             new_ver = cur_ver + 1
             if row:
@@ -85,6 +101,8 @@ def save_policy(user_id: str, policy: dict, base_version: int, summary: str = ""
     got = _MEM.get(uid)
     cur_ver = int(got["version"]) if got else 0
     if cur_ver != base:
+        if _same_policy((got or {}).get("policy") or {}, pol):
+            return {"ok": True, "version": cur_ver, "duplicate": True}
         raise ConflictError(cur_ver)
     new_ver = cur_ver + 1
     _MEM[uid] = {"policy": pol, "version": new_ver}
