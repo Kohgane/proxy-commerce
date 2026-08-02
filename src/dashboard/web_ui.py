@@ -458,6 +458,12 @@ _ORDERS_STYLE = """
 .kgp-oc-row{display:flex;justify-content:space-between;gap:14px;padding:7px 0;border-bottom:1px dashed var(--line);font-size:.85rem}
 .kgp-oc-row .k{color:var(--muted)}
 .kgp-oc-row .v{color:var(--ink);font-weight:600;text-align:right;word-break:break-all}
+/* v87-S2: 소싱처 주문서 붙여넣기 — 여러 줄이라 행이 아니라 블록. 값은 셀러가 그대로 옮긴다. */
+.kgp-oc-row.oc-copy{flex-direction:column;align-items:stretch;gap:8px}
+.kgp-oc-row.oc-copy .v{text-align:left;font-weight:400;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.kgp-oc .oc-pre{margin:0;padding:10px 12px;background:var(--hanji);border:1px solid var(--line);
+  border-radius:var(--r-sm);font:inherit;font-size:.84rem;line-height:1.55;color:var(--ink);
+  white-space:pre-wrap;word-break:break-word;max-height:180px;overflow:auto;width:100%}
 .kgp-oc-x{position:absolute;top:16px;right:16px;background:transparent;border:0;font-size:1.3rem;cursor:pointer;color:var(--ink-soft);line-height:1}
 @media (prefers-reduced-motion:reduce){.kgp-oc-drawer{transition:transform .01ms}.kgp-oc-scrim{transition:opacity .01ms}
   .kgp-oc *{transition-duration:.01ms!important}}
@@ -496,10 +502,20 @@ _ORDERS_SCRIPT = """
     var data={}; try{data=JSON.parse(tr.getAttribute('data-order')||'{}');}catch(e){}
     var body=document.getElementById('ocDbody'), btns=document.getElementById('ocDbtns');
     var html='';
-    ['주문정보','상품정보','배송정보'].forEach(function(sec){
+    // v87-S2: 출처 축 3섹션. '주문서 붙여넣기'는 값이 여러 줄이라 행이 아니라 복사 블록으로 낸다
+    //   — 셀러가 소싱처 주문서에 그대로 옮기는 게 이 화면의 실제 작업이다.
+    ['수집처','판매마켓','상세'].forEach(function(sec){
       var obj=data[sec]||{}, rowsp='';
-      Object.keys(obj).forEach(function(k){ var v=obj[k]; if(v===''||v==null) return;
-        rowsp+='<div class="kgp-oc-row"><span class="k">'+esc(k)+'</span><span class="v">'+esc(String(v))+'</span></div>'; });
+      Object.keys(obj).forEach(function(k){
+        var v=obj[k]; if(v===''||v==null) return;
+        if(k==='주문서 붙여넣기'){
+          rowsp+='<div class="kgp-oc-row oc-copy"><span class="k">'+esc(k)+'</span>'
+               + '<span class="v"><pre class="oc-pre">'+esc(String(v))+'</pre>'
+               + '<button type="button" class="kgp-oc-dbtn" onclick="ocCopy(this)">복사</button></span></div>';
+          return;
+        }
+        rowsp+='<div class="kgp-oc-row"><span class="k">'+esc(k)+'</span><span class="v">'+esc(String(v))+'</span></div>';
+      });
       if(rowsp) html+='<div class="kgp-oc-sec"><h4>'+esc(sec)+'</h4>'+rowsp+'</div>';
     });
     body.innerHTML=html||'<div class="oc-empty">표시할 정보가 없어요.</div>';
@@ -511,6 +527,22 @@ _ORDERS_SCRIPT = """
     }).join('');
     document.getElementById('ocScrim').classList.add('on');
     document.getElementById('ocDrawer').classList.add('on');
+  };
+  window.ocCopy=function(btn){
+    var pre=btn.parentElement && btn.parentElement.querySelector('.oc-pre');
+    if(!pre) return;
+    var done=function(){ btn.textContent='복사됨'; setTimeout(function(){ btn.textContent='복사'; },1600); };
+    // 실패를 성공으로 위장하지 않는다 — 클립보드가 막히면 직접 고르라고 알린다(정직 원칙).
+    var fail=function(){ btn.textContent='복사 실패'; try{
+      var r=document.createRange(); r.selectNodeContents(pre);
+      var sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    }catch(e){} setTimeout(function(){ btn.textContent='복사'; },2400); };
+    try{
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(pre.textContent).then(done, fail); return;
+      }
+    }catch(e){}
+    fail();
   };
   window.ocClose=function(){
     document.getElementById('ocDrawer').classList.remove('on');
@@ -547,6 +579,43 @@ def _load_upload_history() -> list:
 
 def _load_orders() -> list:
     return _load_sheet("ORDERS_WORKSHEET", "orders")
+
+
+def _order_sourcing(o: dict) -> dict:
+    """v87-S2: 주문 행 → **v56 소싱처 역참조 재사용**(재구현 금지).
+
+    v56 `_order_source_info`는 `items[]` 기반 주문 dict를 받는데 대시보드 행은 평면이라
+    **모양만 맞춰** 넘긴다 — 카탈로그(sku→src_url) 역참조와 소싱처 주문서 복사텍스트 조립은
+    거기 한 곳에만 둔다(두 벌로 갈라지면 한쪽만 고쳐지고 다른 쪽이 조용히 낡는다).
+
+    실패(모듈 부재·카탈로그 미연결·sku 미매칭)는 **가짜로 채우지 않고** linked=False로 정직 반환 →
+    화면이 '원본 미연결'로 표기한다.
+    """
+    fallback = {"source_url": "", "product_title": "", "copy_text": "", "linked": False, "sourced": False}
+    try:
+        from src.seller_console.views import _order_source_info
+    except Exception:
+        return fallback
+    opt = o.get("option") or o.get("sku_option") or ""
+    shaped = {
+        "items": [{
+            "sku": str(o.get("sku") or "").strip(),
+            "title": str(o.get("title_ko") or o.get("title_original") or "").strip(),
+            "qty": o.get("quantity", o.get("qty", 1)) or 1,
+            "options": str(opt),
+        }],
+        "buyer_name_masked": str(o.get("customer_name") or ""),
+        "notes": str(o.get("notes") or ""),
+    }
+    try:
+        got = _order_source_info(shaped) or {}
+    except Exception:
+        return fallback
+    # 행에 직접 실린 원본 URL이 있으면 우선(카탈로그가 끊겨도 링크는 살린다).
+    if not got.get("source_url"):
+        got["source_url"] = o.get("source_url") or o.get("source_link") or ""
+        got["linked"] = bool(got["source_url"])
+    return got
 
 
 def _numeric_fx_pairs(fx: dict) -> list:
@@ -972,22 +1041,35 @@ def orders():
         src_url = o.get("source_url") or o.get("source_link") or ""
         mkt_url = o.get("market_url") or o.get("listing_url") or ""
         det_url = o.get("detail_url") or o.get("product_url") or ""
+        # v87-S2: 드로어를 **출처 축 3섹션**으로 재편([수집처][판매마켓][상세]).
+        #   종전(#549)은 주문정보/상품정보/배송정보 = 정보 유형 축이었다. 구매대행은 "이 주문을 어디서
+        #   사서 어디에 팔았나"가 작업 단위라, 셀러가 실제로 오가는 두 축(수집처↔판매마켓)을 먼저 세운다.
+        src = _order_sourcing(o)
+        if src.get("source_url") and not src_url:
+            src_url = src["source_url"]
         drawer = {
-            "주문정보": {
-                "주문번호": str(onum), "주문ID": str(oid), "주문시간": _fmt_dt(order_dt),
-                "상태": _status_ko(status), "마켓": market, "주문자": str(customer),
-                "개인통관고유부호(PCC)": o.get("pcc") or o.get("personal_customs_code") or "",
+            "수집처": {
+                "원본 상품": src.get("product_title") or str(title),
+                "원본 주소": src.get("source_url") or "",
+                "소싱 상태": "소싱완료" if src.get("sourced") else ("연결됨" if src.get("linked") else "원본 미연결"),
+                # 소싱처 주문서에 그대로 붙여넣는 텍스트(v56 조립본). 없으면 빈 문자열 — 지어내지 않는다.
+                "주문서 붙여넣기": src.get("copy_text") or "",
             },
-            "상품정보": {
-                "상품명": str(title), "옵션": str(option), "SKU": str(sku), "수량": str(qty),
+            "판매마켓": {
+                "마켓": market, "주문번호": str(onum), "주문ID": str(oid),
+                "상태": _status_ko(status), "주문시간": _fmt_dt(order_dt),
                 "판매가": _fmt_price(o.get("sell_price_krw", "")),
+                "마켓 주문 주소": mkt_url or "",
+            },
+            "상세": {
+                "상품명": str(title), "옵션": str(option), "SKU": str(sku), "수량": str(qty),
                 "원가": _fmt_price(o.get("buy_price", o.get("price_original", ""))),
                 "마진": ("%s%%" % o.get("margin_pct")) if o.get("margin_pct") not in (None, "") else "",
-            },
-            "배송정보": {
-                "수취인": str(customer), "국가": o.get("country") or "",
+                "주문자": str(customer),
+                # 통관고유부호 — 개인정보라 /dashboard/* 인증 게이트(S1.5) 뒤에서만 렌더된다.
+                "개인통관고유부호(PCC)": o.get("pcc") or o.get("personal_customs_code") or "",
+                "국가": o.get("country") or "",
                 "송장번호": o.get("tracking_no") or o.get("tracking") or "",
-                "배송상태": _status_ko(status),
             },
             "links": {"수집처": src_url, "판매마켓": mkt_url, "상세페이지": det_url},
         }
