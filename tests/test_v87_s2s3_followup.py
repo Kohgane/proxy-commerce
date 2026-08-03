@@ -59,9 +59,14 @@ def test_orders_read_pg_not_dead_sheet_source():
 
 def test_pg_rows_mapped_to_screen_vocabulary(monkeypatch):
     """PG 어휘(marketplace/placed_at/total_krw/items_json) → 화면 어휘로 옮겨진다."""
+    from src.db import orders_pg
     from src.dashboard import web_ui
-    monkeypatch.setitem(__import__("sys").modules, "src.db.orders_pg",
-                        type("M", (), {"all_row_dicts": staticmethod(lambda: list(_PG_ROWS))}))
+    # `sys.modules`를 갈아끼우던 종전 방식은 **이 테스트가 먼저 돌 때만** 통했다.
+    #   `_pg_order_rows`는 `from src.db import orders_pg`로 패키지 속성을 읽는데, 다른 테스트가
+    #   그 모듈을 한 번이라도 임포트해 두면 속성이 이미 실모듈로 묶여 있어 sys.modules 패치가
+    #   무시되고 실제 psycopg 연결로 새어나간다(실측: PCC 테스트와 같이 돌리면 깨졌다).
+    #   실행 순서에 기대지 않도록 모듈 속성을 직접 패치한다.
+    monkeypatch.setattr(orders_pg, "all_row_dicts", lambda: list(_PG_ROWS))
     rows = web_ui._pg_order_rows()
     assert len(rows) == 2, rows
     a = rows[0]

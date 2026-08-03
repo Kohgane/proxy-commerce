@@ -452,7 +452,13 @@ _ORDERS_STYLE = """
   color:var(--teal);background:var(--surface);text-decoration:none;font-size:.8rem;font-weight:600;transition:transform .12s var(--ease-out),background .15s}
 .kgp-oc-dbtn:hover{background:color-mix(in srgb,var(--teal) 8%,transparent)}
 .kgp-oc-dbtn:active{transform:scale(.97)}
-.kgp-oc-dbtn--off{border-color:var(--line);color:var(--muted);pointer-events:none}
+/* v87-S2 후속 죽은 버튼 계약: 링크가 없는 칩은 **눌리는 것처럼 보이지 않는다**.
+   종전엔 pointer-events:none 이라 커서도 툴팁도 안 뜨고, 사용자는 "왜 아무 일도 안 나지"만 남았다.
+   포인터 이벤트를 살려 두되(그래야 title 툴팁이 뜬다) span이라 애초에 이동할 곳이 없고,
+   not-allowed 커서 + 흐린 톤 + 툴팁으로 '지금은 못 누른다'는 사실을 먼저 알린다. */
+.kgp-oc-dbtn--off{border-color:var(--line);color:var(--muted);background:transparent;cursor:not-allowed}
+.kgp-oc-dbtn--off:hover{background:transparent}
+.kgp-oc-dbtn--off:active{transform:none}
 .kgp-oc-dbody{padding:18px 20px;overflow-y:auto;flex:1}
 .kgp-oc-sec{margin-bottom:20px}
 .kgp-oc-sec h4{font-family:"Noto Serif KR",serif;font-size:.95rem;margin:0 0 8px;color:var(--ink)}
@@ -521,10 +527,15 @@ _ORDERS_SCRIPT = """
     });
     body.innerHTML=html||'<div class="oc-empty">표시할 정보가 없어요.</div>';
     var L=data.links||{};
-    var defs=[['수집처',L['수집처'],'◈'],['판매마켓',L['판매마켓'],'▤'],['상세페이지',L['상세페이지'],'↗']];
+    // 죽은 버튼 계약(오너 지정): 링크가 있으면 실제로 열리고, 없으면 **왜 못 여는지**를 말한다.
+    //   사유 문구를 칩마다 다르게 두는 건 "원본 미연결"을 판매마켓 칩에 붙이면 거짓말이 되기 때문이다.
+    var defs=[['수집처',L['수집처'],'◈','원본 미연결'],
+              ['판매마켓',L['판매마켓'],'▤','마켓 주문 주소 미연결'],
+              ['상세페이지',L['상세페이지'],'↗','상세페이지 미연결']];
     btns.innerHTML=defs.map(function(d){
       if(d[1]) return '<a class="kgp-oc-dbtn" href="'+esc(d[1])+'" target="_blank" rel="noopener">'+d[2]+' '+esc(d[0])+'</a>';
-      return '<span class="kgp-oc-dbtn kgp-oc-dbtn--off">'+d[2]+' '+esc(d[0])+'</span>';
+      return '<span class="kgp-oc-dbtn kgp-oc-dbtn--off" aria-disabled="true" title="'+esc(d[3])+'">'
+           + d[2]+' '+esc(d[0])+'</span>';
     }).join('');
     document.getElementById('ocScrim').classList.add('on');
     document.getElementById('ocDrawer').classList.add('on');
@@ -613,6 +624,9 @@ def _pg_order_rows() -> list:
             "notes": r.get("notes", ""),
             "sku": str(it.get("sku") or ""), "title_ko": str(it.get("title") or ""),
             "option": str(opts or ""), "quantity": it.get("qty") or 1,
+            # 통관 축 — 종전에는 이 두 키를 아예 안 실어서, 드로어가 읽는 pcc/country가
+            # 코드베이스 어디서도 생산되지 않는 **도달 불가능한 죽은 필드**였다(v87-S2 검수 발견).
+            "pcc": r.get("pcc", ""), "country": r.get("country", ""),
             # 주문 행에는 원본/마켓 링크가 없다 — 드로어의 [수집처]가 v56 역참조로 채운다(지어내지 않는다).
             "items": items,
         })
@@ -1040,6 +1054,15 @@ def orders():
     def _status_ko(status):
         return _STATUS_KO.get(str(status).lower(), str(status) or "—")
 
+    # v87-S2 후속: 드로어 JS는 빈 값 행을 렌더하지 않는다. 그래서 **있어야 하는데 아직 안 들어온**
+    #   값(통관 축)이 빈칸이면 화면에서 통째로 사라져 "그런 필드는 원래 없다"처럼 보인다 —
+    #   PCC가 도달 불가능한 죽은 필드였는데도 아무도 못 알아챈 이유가 정확히 이것이다.
+    #   그래서 이 축만 빈 값을 '미수신'으로 못박아 **자리를 남긴다**(없는 값을 지어내지 않으면서,
+    #   비어 있다는 사실 자체는 화면에 남긴다).
+    def _or_missing(v):
+        s = str(v or "").strip()
+        return s if s else "미수신"
+
     def _order_chip(status):
         s = str(status).lower()
         label = _status_ko(status)
@@ -1123,8 +1146,9 @@ def orders():
                 "마진": ("%s%%" % o.get("margin_pct")) if o.get("margin_pct") not in (None, "") else "",
                 "주문자": str(customer),
                 # 통관고유부호 — 개인정보라 /dashboard/* 인증 게이트(S1.5) 뒤에서만 렌더된다.
-                "개인통관고유부호(PCC)": o.get("pcc") or o.get("personal_customs_code") or "",
-                "국가": o.get("country") or "",
+                # 구매대행의 척추라 **빈 값이어도 자리를 비우지 않는다**('미수신' 표기).
+                "개인통관고유부호(PCC)": _or_missing(o.get("pcc") or o.get("personal_customs_code")),
+                "국가": _or_missing(o.get("country")),
                 "송장번호": o.get("tracking_no") or o.get("tracking") or "",
             },
             "links": {"수집처": src_url, "판매마켓": mkt_url, "상세페이지": det_url},

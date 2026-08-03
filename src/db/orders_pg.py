@@ -18,6 +18,9 @@ _COLS = [
     "buyer_name_masked", "buyer_phone_masked", "buyer_address_masked",
     "total_krw", "shipping_fee_krw", "items_json", "courier", "tracking_no",
     "shipped_at", "landed_cost_krw", "margin_krw", "margin_pct", "last_synced_at", "notes",
+    # v87-S2 후속 통관 축. 아직 이 값을 채우는 동기화 배선이 없어 실서비스에선 빈 값이다 —
+    # 그래서 화면이 '미수신'으로 표기한다(빈 값을 숨겨서 필드가 없는 척하지 않는다).
+    "pcc", "country",
 ]
 
 

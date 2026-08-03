@@ -70,8 +70,11 @@ def qa_row() -> dict:
     """실사형 1건 — 마켓·상품·금액·배송 필드를 전부 채운다(빈칸 화면은 검수가 안 된다).
 
     키는 ORDERS_HEADERS(= `orders_pg._COLS`)와 1:1. 스키마에 없는 칸은 **만들지 않는다**
-    (가짜 컬럼 날조 금지). 주문 화면 드로어의 '개인통관고유부호(PCC)'·'국가'는 현재
-    코드베이스 어디에도 값을 넣는 곳이 없어 빈 값으로 남고, 드로어는 빈 값을 렌더하지 않는다.
+    (가짜 컬럼 날조 금지).
+
+    PCC는 v87-S2 후속에서 `orders`에 컬럼이 생겼다. 실서비스 값은 마켓 주문 동기화가
+    채우지만(별도 티켓) 그 배선 전이라, 검수용 시드는 **형식만 유효한 합성값**을 쓴다 —
+    `P000000000001`은 사람이 봐도 실 PCC가 아니고, 실주문과 섞일 여지가 없다.
     """
     now = datetime.now()
     placed = (now - timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
@@ -101,6 +104,8 @@ def qa_row() -> dict:
         "margin_pct": "31",
         "last_synced_at": now.strftime("%Y-%m-%d %H:%M:%S"),
         "notes": "QA 검수용 시드 — scripts/qa_test_order.py delete 로 제거",
+        "pcc": "P000000000001",
+        "country": "KR",
     }
 
 
