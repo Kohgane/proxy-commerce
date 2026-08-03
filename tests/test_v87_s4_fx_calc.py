@@ -109,3 +109,71 @@ def test_missing_rate_is_honest_not_silent():
 def test_failure_is_not_disguised_as_success():
     assert "계산 요청이 실패했어요" in CALC_JS
     assert "a.ok" in CALC_JS, "서버가 ok=false로 준 걸 결과처럼 그리면 안 된다"
+
+
+# ── 실행 증명(소스 계약만으론 '눌러도 무동작'을 못 잡는다) ────────────────────
+
+_HARNESS = r"""
+import fs from 'fs';
+import { JSDOM } from 'jsdom';
+const js = fs.readFileSync(process.argv[2], 'utf8');
+const dom = new JSDOM(`<body>
+<input id="fxBuy"><select id="fxCur"><option value="USD" selected>USD</option></select>
+<input id="fxMargin" value="20"><button id="fxCalcBtn" disabled>x</button>
+<p id="fxCalcHint"></p><div id="fxCalcOut"></div></body>`, {runScripts:'outside-only'});
+const w = dom.window;
+w.fetch = () => Promise.resolve({json: () => Promise.resolve({
+  after: {ok:true, sell_price: 312300, formula:'f',
+    steps:[{label:'A', value:1}, {label:'퍼센트 마진', value:'45.00%'}]}})});
+w.eval(js);
+const btn = w.document.getElementById('fxCalcBtn'), buy = w.document.getElementById('fxBuy');
+const r = {emptyDisabled: btn.disabled, hasReason: !!btn.title};
+buy.value = '100'; buy.dispatchEvent(new w.Event('input'));
+r.enabledAfterInput = !btn.disabled;
+w.document.getElementById('fxMargin').value = '45';
+btn.dispatchEvent(new w.Event('click'));
+setTimeout(() => {
+  const out = w.document.getElementById('fxCalcOut').innerHTML;
+  r.rendered = out.length > 0;
+  r.showsPrice = /312,?300/.test(out);
+  r.showsMargin = out.includes('45.00%');
+  console.log(JSON.stringify(r));
+}, 80);
+"""
+
+
+def _jsdom_ok() -> bool:
+    return Path("node_modules/jsdom/package.json").exists()
+
+
+@pytest.mark.skipif(not _jsdom_ok(), reason="jsdom 미설치(npm i -D jsdom)")
+def test_calculator_actually_renders_a_result_when_clicked(client, tmp_path):
+    """★ 오너 계약 실행 증명 — 매입가 100 USD · 마진 45 → 결과 박스가 실제로 그려진다.
+
+    소스 문자열 검사만으로는 '눌러도 아무 일 없음'을 못 잡는다(그게 이번 결함이었다).
+    렌더된 페이지의 스크립트를 그대로 jsdom에 태워 **클릭까지** 재현한다.
+    """
+    import json
+    import subprocess
+
+    body = client.get("/dashboard/fx").get_data(as_text=True)
+    scripts = re.findall(r"<script>(.*?)</script>", body, re.S)
+    js_file = tmp_path / "fx.js"
+    js_file.write_text("\n;\n".join(scripts), encoding="utf-8")
+    runner = Path("fxrun.v87s4.mjs")            # jsdom 해석을 위해 레포 루트에서 실행
+    runner.write_text(_HARNESS, encoding="utf-8")
+    try:
+        out = subprocess.run(["node", str(runner), str(js_file)],
+                             capture_output=True, timeout=90)
+        # cp949 콘솔 함정 회피 — 바이트를 직접 utf-8로 푼다.
+        stdout = out.stdout.decode("utf-8", "replace").strip()
+        assert out.returncode == 0, out.stderr.decode("utf-8", "replace")
+        r = json.loads(stdout.splitlines()[-1])
+    finally:
+        runner.unlink(missing_ok=True)
+
+    assert r["emptyDisabled"] is True, "빈 매입가인데 버튼이 눌린다"
+    assert r["hasReason"] is True, "왜 못 누르는지 말하지 않는다"
+    assert r["enabledAfterInput"] is True, "매입가를 넣어도 버튼이 안 살아난다"
+    assert r["rendered"] is True, "클릭해도 결과가 그려지지 않는다(= 실기기 무동작 재현)"
+    assert r["showsPrice"] is True and r["showsMargin"] is True
