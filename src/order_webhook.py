@@ -1200,6 +1200,14 @@ try:
 except Exception as _ai_api_bp_exc:
     logger.warning("AI listing API Blueprint 등록 실패: %s", _ai_api_bp_exc)
 
+# 구매대행 통합 API Blueprint (/api/proxy/*) 등록
+try:
+    from .api.proxy_api import proxy_bp as _proxy_bp
+    app.register_blueprint(_proxy_bp)
+    logger.info("구매대행 API Blueprint 등록 완료 (/api/proxy/)")
+except Exception as _proxy_bp_exc:
+    logger.warning("구매대행 API Blueprint 등록 실패: %s", _proxy_bp_exc)
+
 # CORS 설정 — 허용 오리진은 환경변수로 제어
 # 프로덕션에서는 CORS_ORIGINS에 허용할 도메인을 명시적으로 설정할 것
 _cors_origins = os.getenv('CORS_ORIGINS', '*')
