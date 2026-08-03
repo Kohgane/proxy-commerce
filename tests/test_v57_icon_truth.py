@@ -37,9 +37,9 @@ def _load():
 
 
 def test_cache_bust_v182():
-    # 오답 회수를 라이브에 강제 반영 — ?v=182 일괄, 구 v181 잔존 0.
-    assert "v='182'" in BASE and "v='181'" not in BASE
-    assert "favicon.svg?v=182" in BASE_APP and "v=181" not in BASE_APP
+    # 오답 회수를 라이브에 강제 반영 — ?v=183 일괄, 구 v181 잔존 0.
+    assert "v='183'" in BASE and "v='182'" not in BASE
+    assert "favicon.svg?v=183" in BASE_APP and "v=182" not in BASE_APP
 
 
 def test_extension_version_bumped():
@@ -121,8 +121,9 @@ def test_small_icon_renders_two_towers_pixels():
 
 @pytest.mark.skipif(not _pillow_ok(), reason="Pillow 미설치")
 def test_committed_favicons_match_code():
-    # 커밋된 static/확장 파비콘 = deploy() 코드 출력(해시 일치) → 배포 드리프트 0.
-    import hashlib
+    # 커밋된 static/확장 파비콘 = deploy() 코드 출력(**픽셀** 일치) → 배포 드리프트 0.
+    # v87-S4: md5(PNG 바이트) 비교는 같은 그림이라도 Pillow 버전이 다르면 깨진다 —
+    #   아이콘 드리프트가 아니라 인코더 버전을 잡는 단언이었다(로컬 상시 실패의 정체).
     import shutil
     import tempfile
     mod = _load()
@@ -140,15 +141,19 @@ def test_committed_favicons_match_code():
             shutil.copy(_lm, tmp / "assets/brand-icons/master-512.png")
         mod.deploy(str(tmp))
 
-        def md5(p):
-            return hashlib.md5(Path(p).read_bytes()).hexdigest()
+        from PIL import Image, ImageChops
+
+        def same(a, b):
+            with Image.open(a) as ia, Image.open(b) as ib:
+                ia, ib = ia.convert("RGBA"), ib.convert("RGBA")
+                return ia.size == ib.size and ImageChops.difference(ia, ib).getbbox() is None
 
         for f in ("favicon-16.png", "favicon-32.png", "favicon-48.png", "favicon.ico",
                   "apple-touch-icon.png", "icon-192.png", "icon-512.png"):
-            assert md5(f"src/seller_console/static/{f}") == md5(tmp / "src/seller_console/static" / f), \
-                f"{f} 커밋≠코드(재생성 필요)"
+            assert same(f"src/seller_console/static/{f}", tmp / "src/seller_console/static" / f), \
+                f"{f} 커밋≠코드(그림이 다름 — 재생성 필요)"
         for f in ("16.png", "32.png", "48.png", "128.png"):
-            assert md5(f"extensions/chrome-collector/icons/{f}") == md5(tmp / "extensions/chrome-collector/icons" / f), \
+            assert same(f"extensions/chrome-collector/icons/{f}", tmp / "extensions/chrome-collector/icons" / f), \
                 f"확장 {f} 커밋≠코드"
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

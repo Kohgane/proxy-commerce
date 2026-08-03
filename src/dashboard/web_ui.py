@@ -145,6 +145,14 @@ _BASE_HTML = """<!DOCTYPE html>
 <meta property="og:description" content="{{ description }}">
 <meta property="og:type" content="website">
 <title>{{ title }} | {{ brand_name }}</title>
+{# v87-S4: 이 셸엔 파비콘 선언이 **하나도 없었다** — 브라우저가 루트 /favicon.ico로 폴백하느라
+   탭 아이콘이 캐시된 옛 것에 머물러도 캐시버스트할 방법이 없었다(/seller/ 는 ?v= 로 갱신 가능).
+   /seller/ 와 **같은 마스터 파생 파일**을 같은 버전으로 건다 — 두 콘솔의 탭 아이콘이 갈릴 수 없다. #}
+<link rel="icon" type="image/svg+xml" href="/seller/static/favicon.svg?v=183">
+<link rel="icon" type="image/x-icon" href="/seller/static/favicon.ico?v=183">
+<link rel="icon" type="image/png" sizes="32x32" href="/seller/static/favicon-32.png?v=183">
+<link rel="icon" type="image/png" sizes="16x16" href="/seller/static/favicon-16.png?v=183">
+<link rel="apple-touch-icon" href="/seller/static/apple-touch-icon.png?v=183">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@600;700&display=swap">
@@ -528,10 +536,10 @@ _ORDERS_SCRIPT = """
     body.innerHTML=html||'<div class="oc-empty">표시할 정보가 없어요.</div>';
     var L=data.links||{};
     // 죽은 버튼 계약(오너 지정): 링크가 있으면 실제로 열리고, 없으면 **왜 못 여는지**를 말한다.
-    //   사유 문구를 칩마다 다르게 두는 건 "원본 미연결"을 판매마켓 칩에 붙이면 거짓말이 되기 때문이다.
+    //   툴팁 문구는 오너 재확인분 그대로 세 칩 공통 '원본 미연결'을 쓴다(v87-S4).
     var defs=[['수집처',L['수집처'],'◈','원본 미연결'],
-              ['판매마켓',L['판매마켓'],'▤','마켓 주문 주소 미연결'],
-              ['상세페이지',L['상세페이지'],'↗','상세페이지 미연결']];
+              ['판매마켓',L['판매마켓'],'▤','원본 미연결'],
+              ['상세페이지',L['상세페이지'],'↗','원본 미연결']];
     btns.innerHTML=defs.map(function(d){
       if(d[1]) return '<a class="kgp-oc-dbtn" href="'+esc(d[1])+'" target="_blank" rel="noopener">'+d[2]+' '+esc(d[0])+'</a>';
       return '<span class="kgp-oc-dbtn kgp-oc-dbtn--off" aria-disabled="true" title="'+esc(d[3])+'">'
@@ -675,6 +683,11 @@ def _pg_order_rows() -> list:
             # 통관 축 — 종전에는 이 두 키를 아예 안 실어서, 드로어가 읽는 pcc/country가
             # 코드베이스 어디서도 생산되지 않는 **도달 불가능한 죽은 필드**였다(v87-S2 검수 발견).
             "pcc": r.get("pcc", ""), "country": r.get("country", ""),
+            # v87-S4: 드로어 3칩 대상. 종전에는 이 세 키를 아무도 만들지 않아 칩이 **영구 무반응**이었다
+            # (PCC와 같은 죽은 필드 계열 — 실기기에서 3칩 전부 무반응으로 확인됨).
+            "source_url": r.get("source_url", ""),
+            "market_url": r.get("market_url", ""),
+            "detail_url": r.get("detail_url", ""),
             # 주문 행에는 원본/마켓 링크가 없다 — 드로어의 [수집처]가 v56 역참조로 채운다(지어내지 않는다).
             "items": items,
         })
@@ -1438,33 +1451,15 @@ def fx_view():
             "rates": {pair: rate for pair, rate in fx_pairs},
         })
 
-    # 마진 계산기
-    buy_price = request.args.get("buy_price", "")
-    currency = request.args.get("currency", "USD")
-    margin_pct = request.args.get("margin_pct", "20")
-    calc_result = ""
-    if buy_price:
-        try:
-            bp = float(buy_price)
-            mp = float(margin_pct) / 100
-            rate = float(fx.get(f"{currency}KRW", fx.get("USDKRW", 1350)))
-            buy_krw = bp * rate
-            sell_krw = buy_krw / (1 - mp)
-            calc_result = (
-                '<div class="kgp-card kgp-kpi" style="max-width:420px;margin-top:var(--s3)">'
-                '<div class="kgp-kpi-label">계산 결과</div>'
-                '<div class="kgp-kpi-value">%s</div>'
-                '<div class="kgp-kpi-sub">판매가 · 목표 마진 %s%%</div>'
-                '<div class="kgp-note" style="margin-top:var(--s2)">'
-                '매입가 %s &nbsp;·&nbsp; 마진 금액 %s</div></div>'
-                % (_esc("₩{:,.0f}".format(sell_krw)), _esc(margin_pct),
-                   _esc("₩{:,.0f}".format(buy_krw)), _esc("₩{:,.0f}".format(sell_krw - buy_krw)))
-            )
-        except (ValueError, TypeError, ZeroDivisionError):
-            calc_result = ('<div class="kgp-card" style="max-width:420px;margin-top:var(--s3)">'
-                           '<div class="kgp-note" style="border-left-color:var(--red)">'
-                           '입력값을 확인하세요. 매입가와 마진은 숫자로, 마진은 100 미만이어야 합니다.'
-                           '</div></div>')
+    # v87-S4 마진 계산기 — 계산은 **서버의 compute_sell_price 하나**만 쓴다.
+    #   종전엔 이 화면이 `sell = 매입가×환율 ÷ (1−마진)` 이라는 **두 번째 식**을 자체 구현했다.
+    #   가격 정책(S3)의 식과 갈라져 있어 같은 입력에 다른 답이 나오는 구조였고,
+    #   게다가 GET 폼이라 빈 매입가로도 `?buy_price=&…` 왕복만 하고 아무 결과도 안 냈다(무동작).
+    #   → 입력은 그대로 두고, 계산은 S3 미리보기 엔드포인트(/fx/policy/preview)를 호출해 받아
+    #     **분해표**로 렌더한다. 페이지 이동 0.
+    currency = "USD"
+    margin_pct = "20"
+    rates_json = _json_mod.dumps({p: r for p, r in fx_pairs}, ensure_ascii=False)
 
     rate_rows = "".join(
         '<tr><td class="kgp-strong">%s</td><td class="num">%s</td></tr>'
@@ -1489,23 +1484,90 @@ def fx_view():
         _page_head("환율", "환율·마진", "오늘 환율로 판매가를 계산합니다.")
         + '<h2 class="kgp-h2" style="margin-top:0">환율 현황</h2>' + rates_block
         + '<h2 class="kgp-h2">마진 계산기</h2>'
-        + '<form method="get"><div class="kgp-filter">'
+        # form이 아니다 — 제출(페이지 이동)이 없으므로 빈 값이 쿼리로 실려 왕복하는 일이 없다.
+        + '<div class="kgp-filter">'
         + ('<label class="kgp-field"><span class="kgp-label">매입가</span>'
-           '<input class="kgp-input" type="text" name="buy_price" value="%s" placeholder="예: 100.00"></label>'
-           % _esc(buy_price))
+           '<input class="kgp-input" id="fxBuy" type="text" inputmode="decimal" placeholder="예: 100.00"></label>')
         + ('<label class="kgp-field"><span class="kgp-label">통화</span>'
-           '<select class="kgp-select" name="currency">%s</select></label>'
+           '<select class="kgp-select" id="fxCur">%s</select></label>'
            % "".join(_copt(c) for c in ("USD", "JPY", "CNY", "EUR")))
         + ('<label class="kgp-field"><span class="kgp-label">목표 마진(%%)</span>'
-           '<input class="kgp-input" type="text" name="margin_pct" value="%s" placeholder="예: 20"></label>'
+           '<input class="kgp-input" id="fxMargin" type="text" inputmode="decimal" value="%s" placeholder="예: 20"></label>'
            % _esc(margin_pct))
-        + '<div class="kgp-field"><button type="submit" class="kgp-btn kgp-btn--primary">계산</button></div>'
-        + '</div></form>'
-        + calc_result
+        + ('<div class="kgp-field">'
+           '<button type="button" id="fxCalcBtn" class="kgp-btn kgp-btn--primary" disabled '
+           'aria-disabled="true" title="매입가를 입력하세요">계산</button></div>')
+        + '</div>'
+        + '<p class="kgp-note" id="fxCalcHint">매입가를 입력하면 계산할 수 있어요.</p>'
+        + '<div id="fxCalcOut"></div>'
+        + '<noscript><p class="kgp-note" style="border-left-color:var(--red)">'
+        '이 계산기는 브라우저에서 동작합니다. 자바스크립트를 켜 주세요.</p></noscript>'
+        + _fx_calc_script(rates_json)
         + _policy_section()
         + '<p class="kgp-meta">업데이트: %s</p>' % _esc(_now_iso())
     )
     return _render("환율·마진 계산기", body, active="fx")
+
+
+def _fx_calc_script(rates_json: str) -> str:
+    """마진 계산기 스크립트 — 계산은 서버(compute_sell_price)에 맡기고 여기선 그리기만 한다.
+
+    화면에서 식을 다시 구현하지 않는다. 두 벌이 되면 가격 정책(S3)과 갈라져 같은 입력에
+    다른 판매가를 내놓는다 — 종전 이 화면이 정확히 그 상태였다.
+    """
+    return (
+        '<script>(function(){'
+        'var RATES=%s;'
+        'var buy=document.getElementById("fxBuy"),cur=document.getElementById("fxCur"),'
+        'mg=document.getElementById("fxMargin"),btn=document.getElementById("fxCalcBtn"),'
+        'hint=document.getElementById("fxCalcHint"),out=document.getElementById("fxCalcOut");'
+        'if(!buy||!btn)return;'
+        # 통화 → 해외배송비 국가 키(정책의 intl_ship_krw 키와 같은 축).
+        'var C2C={USD:"US",JPY:"JP",CNY:"CN",EUR:"EU"};'
+        'function esc(s){return String(s==null?"":s).replace(/[&<>"\']/g,function(c){'
+        'return {"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;","\'":"&#39;"}[c];});}'
+        'function num(v){var n=parseFloat(String(v||"").replace(/,/g,""));return isFinite(n)?n:null;}'
+        # 빈 매입가면 버튼을 아예 못 누르게 한다(죽은 버튼 금지 — 왜 못 누르는지도 말한다).
+        'function sync(){var ok=num(buy.value)!==null&&num(buy.value)>0;'
+        'btn.disabled=!ok;btn.setAttribute("aria-disabled",ok?"false":"true");'
+        'btn.title=ok?"":"매입가를 입력하세요";'
+        'if(hint)hint.textContent=ok?"":"매입가를 입력하면 계산할 수 있어요.";}'
+        'buy.addEventListener("input",sync);sync();'
+        'function row(k,v){return \'<div class="kgp-oc-row"><span class="k">\'+esc(k)+'
+        '\'</span><span class="v">\'+esc(v)+\'</span></div>\';}'
+        'function won(n){try{return "₩"+Math.round(n).toLocaleString("ko-KR");}catch(e){return "₩"+n;}}'
+        'btn.addEventListener("click",function(){'
+        'var bp=num(buy.value);if(bp===null||bp<=0){sync();return;}'
+        'var c=cur.value||"USD",rate=RATES[c+"KRW"];'
+        'if(!rate){out.innerHTML=\'<div class="kgp-card"><div class="kgp-note" \'+'
+        '\'style="border-left-color:var(--red)">\'+esc(c)+\' 환율이 아직 없어 계산할 수 없어요. \'+'
+        '\'환율 공급자가 연결되면 계산됩니다.</div></div>\';return;}'
+        'btn.disabled=true;out.innerHTML=\'<div class="kgp-card"><div class="kgp-note">계산 중…</div></div>\';'
+        'var fd=new FormData();'
+        'fd.append("sample_price",bp);fd.append("sample_currency",c);fd.append("sample_rate",rate);'
+        'fd.append("sample_market","coupang");fd.append("sample_country",C2C[c]||"US");'
+        'fd.append("percent_margin",num(mg.value)==null?"":num(mg.value));'
+        'fetch("/dashboard/fx/policy/preview",{method:"POST",body:fd,credentials:"same-origin"})'
+        '.then(function(r){return r.json();}).then(function(d){'
+        'btn.disabled=false;'
+        'var a=d&&d.after;'
+        'if(!a||!a.ok){out.innerHTML=\'<div class="kgp-card"><div class="kgp-note" \'+'
+        '\'style="border-left-color:var(--red)">\'+esc((a&&a.reason)||(d&&(d.errors||[]).join(" · "))||'
+        '\'계산하지 못했어요. 입력값을 확인해 주세요.\')+\'</div></div>\';return;}'
+        'var steps=(a.steps||[]).map(function(s){return row(s.label,s.value);}).join("");'
+        'out.innerHTML=\'<div class="kgp-card kgp-kpi" style="max-width:520px;margin-top:var(--s3)">\'+'
+        '\'<div class="kgp-kpi-label">판매가</div><div class="kgp-kpi-value">\'+esc(won(a.sell_price))+\'</div>\'+'
+        '\'<div class="kgp-kpi-sub">매입가 \'+esc(bp)+" "+esc(c)+\' · 환율 \'+esc(rate)+\'</div>\'+'
+        '\'<div style="margin-top:var(--s3)">\'+steps+\'</div>\'+'
+        '\'<p class="kgp-meta" style="margin-top:var(--s2)">\'+esc(a.formula||"")+\'</p></div>\';'
+        '}).catch(function(){btn.disabled=false;'
+        # 실패를 성공으로 위장하지 않는다.
+        'out.innerHTML=\'<div class="kgp-card"><div class="kgp-note" \'+'
+        '\'style="border-left-color:var(--red)">계산 요청이 실패했어요. 새로고침 후 다시 시도해 주세요.\'+'
+        '\'</div></div>\';});'
+        '});'
+        '})();</script>'
+    ) % rates_json
 
 
 def _policy_section() -> str:

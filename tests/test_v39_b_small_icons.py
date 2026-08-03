@@ -40,4 +40,4 @@ def test_32px_has_orange_signal():
 
 def test_favicon_cache_bumped_to_178():
     base = Path("src/seller_console/templates/_base.html").read_text(encoding="utf-8")
-    assert "v='182'" in base and "v='181'" not in base
+    assert "v='183'" in base and "v='182'" not in base

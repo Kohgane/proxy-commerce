@@ -31,9 +31,26 @@ def _pillow_ok() -> bool:
         return False
 
 
+def _same_pixels(a: Path, b: Path) -> bool:
+    """두 이미지가 **보이는 그림으로** 같은가.
+
+    v87-S4: 종전엔 md5(PNG 바이트)로 비교했는데, 같은 픽셀도 Pillow 버전이 다르면 인코딩 바이트가
+    달라진다. 그래서 이 단언은 '아이콘 드리프트'가 아니라 **Pillow 버전 차이**를 잡고 있었고,
+    로컬에서만 상시 실패(사전 존재 실패 목록의 favicon-16)로 남아 있었다. 실측 확인 결과 커밋본 15개는
+    코드 마스터 출력과 **픽셀 100% 동일**이었다 — 재생성 커밋은 아무것도 고치지 못하고 다음 Pillow
+    업그레이드에 또 깨진다. 판정을 픽셀로 바꿔 '그림이 달라졌을 때만' 빨개지게 한다.
+    """
+    from PIL import Image, ImageChops
+    with Image.open(a) as ia, Image.open(b) as ib:
+        ia, ib = ia.convert("RGBA"), ib.convert("RGBA")
+        if ia.size != ib.size:
+            return False
+        return ImageChops.difference(ia, ib).getbbox() is None
+
+
 @pytest.mark.skipif(not _pillow_ok(), reason="Pillow 미설치(빌드타임 전용)")
 def test_committed_favicons_match_code_v8_master():
-    # 커밋된 static 파비콘 = build_icons.py deploy() 코드 v8 출력(해시 일치) → 드리프트 0.
+    # 커밋된 static 파비콘 = build_icons.py deploy() 코드 v8 출력(픽셀 일치) → 드리프트 0.
     import importlib.util
     import tempfile
     import shutil
@@ -55,11 +72,11 @@ def test_committed_favicons_match_code_v8_master():
         mod.deploy(str(tmp))
         for f in ("favicon-16.png", "favicon-32.png", "favicon-48.png", "favicon.ico",
                   "apple-touch-icon.png", "icon-192.png", "icon-512.png", "icon-1024.png"):
-            assert _md5(STATIC / f) == _md5(tmp / "src/seller_console/static" / f), f"{f} 커밋≠코드v8(재생성 필요)"
+            assert _same_pixels(STATIC / f, tmp / "src/seller_console/static" / f), \
+                f"{f} 커밋≠코드v8(그림이 다름 — 재생성 필요)"
         for f in ("16.png", "32.png", "48.png", "128.png"):
-            a = _md5(Path("extensions/chrome-collector/icons") / f)
-            b = _md5(tmp / "extensions/chrome-collector/icons" / f)
-            assert a == b, f"확장 {f} 커밋≠코드v8"
+            assert _same_pixels(Path("extensions/chrome-collector/icons") / f,
+                                tmp / "extensions/chrome-collector/icons" / f), f"확장 {f} 커밋≠코드v8"
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -79,8 +96,8 @@ def test_og_card_uses_v8_master():
 
 
 def test_cache_bust_bumped():
-    # 파비콘 ?v=182(v57 아이콘 정정), og ?v=6(v57 대형 통일 — OG도 오너 공식 마크로) 캐시버스트.
-    assert "v='182'" in BASE and "v='181'" not in BASE
+    # 파비콘 ?v=183(v57 아이콘 정정), og ?v=6(v57 대형 통일 — OG도 오너 공식 마크로) 캐시버스트.
+    assert "v='183'" in BASE and "v='182'" not in BASE
     assert "og-card.png?v=6" in BASE_APP and "og-card.png?v=5" not in BASE_APP
 
 

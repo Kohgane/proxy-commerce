@@ -67,7 +67,14 @@ def normalize_lang(lang: str | None) -> str:
 
 
 def t(key: str, lang: str | None = None) -> str:
-    """키에 해당하는 현지화 문구. 키 미존재 시 키를 그대로 반환(누락이 보이게 — 정직)."""
+    """키에 해당하는 현지화 문구.
+
+    **폴백 규칙(오너 v87-S4 확정): 미번역은 한국어로 떨어진다.** en 문구가 없으면 ko를 쓴다 —
+    화면 절반이 키나 빈칸으로 남는 것보다 한국어가 섞이는 편이 낫다(혼재 화면이 red인 계약).
+
+    키 자체가 없으면 키 문자열이 그대로 나가는데, 그건 사용자에게 개발 표기를 노출하는 것이라
+    **템플릿이 쓰는 키는 전부 STRINGS에 있어야 한다**(test_v87_s4_language가 기계 판정).
+    """
     lng = normalize_lang(lang)
     entry = STRINGS.get(key)
     if not entry:

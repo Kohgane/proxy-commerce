@@ -106,6 +106,12 @@ def qa_row() -> dict:
         "notes": "QA 검수용 시드 — scripts/qa_test_order.py delete 로 제거",
         "pcc": "P000000000001",
         "country": "KR",
+        # v87-S4 드로어 3칩 검수 픽스처. **일부러 2개만 채운다** — 한 화면에서
+        #   '동작하는 칩'과 '비활성 + 원본 미연결 툴팁'을 나란히 확인할 수 있어야
+        #   죽은 버튼 계약이 캡처 한 장으로 판정된다. 판매마켓은 비운다.
+        "source_url": "https://item.rakuten.co.jp/example/qa-test-0001/",
+        "market_url": "",
+        "detail_url": "https://www.coupang.com/vp/products/qa-test-0001",
     }
 
 
