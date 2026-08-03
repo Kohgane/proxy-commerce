@@ -349,19 +349,27 @@ class TestFxPage:
         assert "rates" in data
         assert data["rates"]["USDKRW"] == 1350.0
 
-    def test_fx_margin_calculator(self, web_client):
+    # v87-S4: 마진 계산기가 GET 쿼리 왕복 → 인라인 계산으로 바뀌었다. 종전 두 테스트는
+    #   `?buy_price=…` 왕복을 **계약으로 고정**하고 있었는데, 그 왕복이 바로 오너가 실기기에서
+    #   본 '계산 눌러도 무동작'(빈 매입가가 쿼리로 실려 왕복만 함)의 형태다. 새 계약으로 교체한다.
+    def test_fx_margin_calculator_is_inline_not_a_query_roundtrip(self, web_client):
         with patch("src.dashboard.web_ui._get_fx_rates", return_value={"USDKRW": 1350.0}):
-            resp = web_client.get("/dashboard/fx?buy_price=100&currency=USD&margin_pct=20")
+            resp = web_client.get("/dashboard/fx")
         html = resp.data.decode("utf-8")
-        assert "계산 결과" in html
-        assert "₩" in html
+        assert 'id="fxCalcBtn"' in html and 'id="fxCalcOut"' in html
+        assert 'method="get"' not in html, "폼 제출이 남아 빈 값이 쿼리로 실려 왕복한다"
 
-    def test_fx_invalid_buy_price(self, web_client):
+    def test_fx_calc_uses_the_shared_pricing_function(self, web_client):
+        """계산은 가격 정책과 **같은 함수**로 — 화면이 식을 두 벌 들고 있지 않다."""
         with patch("src.dashboard.web_ui._get_fx_rates", return_value={"USDKRW": 1350.0}):
-            resp = web_client.get("/dashboard/fx?buy_price=abc&currency=USD&margin_pct=20")
-        assert resp.status_code == 200
+            resp = web_client.get("/dashboard/fx")
+        assert "/dashboard/fx/policy/preview" in resp.data.decode("utf-8")
+
+    def test_fx_empty_buy_price_disables_the_button(self, web_client):
+        with patch("src.dashboard.web_ui._get_fx_rates", return_value={"USDKRW": 1350.0}):
+            resp = web_client.get("/dashboard/fx")
         html = resp.data.decode("utf-8")
-        assert "입력값을 확인하세요" in html
+        assert "매입가를 입력" in html, "왜 못 누르는지 말해주지 않으면 죽은 버튼과 같다"
 
     def test_fx_no_rates_returns_200(self, web_client):
         with patch("src.dashboard.web_ui._get_fx_rates", return_value={}):

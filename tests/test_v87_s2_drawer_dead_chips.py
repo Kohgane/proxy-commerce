@@ -57,7 +57,7 @@ def test_unlinked_chip_is_never_rendered_as_an_anchor():
 
 @pytest.mark.parametrize("chip", ["수집처", "판매마켓", "상세페이지"])
 def test_every_chip_declares_its_own_reason(chip):
-    """칩마다 사유가 다르다 — '원본 미연결'을 판매마켓 칩에 붙이면 거짓말이 된다.
+    """칩마다 사유 문구가 붙어 있다(v87-S4: 오너 재확인분 — 세 칩 공통 '원본 미연결').
 
     새 칩을 추가하면서 사유를 빠뜨리면 여기서 걸린다(툴팁이 undefined로 뜨는 회귀 방지).
     """
@@ -85,8 +85,7 @@ def test_disabled_chip_has_no_hover_affordance():
 
 # ── 시드 주문으로 재현되는가 ───────────────────────────────────────────────────
 
-def test_seed_order_reproduces_all_three_disabled_chips(monkeypatch):
-    """검수 시드는 링크가 하나도 없다 → 세 칩 전부 비활성 경로를 탄다."""
+def _seed_links(monkeypatch):
     import importlib.util
     import os
     os.environ["DASHBOARD_UI_ENABLED"] = "1"
@@ -106,6 +105,35 @@ def test_seed_order_reproduces_all_three_disabled_chips(monkeypatch):
     body = c.get("/dashboard/orders").get_data(as_text=True)
     m = re.search(r"data-order='([^']+)'", body) or re.search(r'data-order="([^"]+)"', body)
     assert m, "행에 드로어 페이로드가 없다"
-    links = json.loads(_html.unescape(m.group(1)))["links"]
+    return json.loads(_html.unescape(m.group(1)))["links"]
+
+
+def test_seed_order_shows_both_chip_states_in_one_capture(monkeypatch):
+    """v87-S4: 시드가 링크를 **일부러 2/3만** 채운다.
+
+    전부 채우면 비활성 상태를 못 보고, 전부 비우면 동작을 못 본다. 2/3이어야 캡처 한 장으로
+    '되는 칩'과 '안 되는 칩'을 나란히 판정할 수 있다 — 죽은 버튼 계약의 재현 픽스처.
+    """
+    links = _seed_links(monkeypatch)
     assert set(links) == {"수집처", "판매마켓", "상세페이지"}
-    assert all(v == "" for v in links.values()), f"시드에 없는 링크가 지어내졌다: {links}"
+    assert links["수집처"].startswith("http"), "수집처 칩이 열릴 대상이 없다"
+    assert links["상세페이지"].startswith("http"), "상세페이지 칩이 열릴 대상이 없다"
+    assert links["판매마켓"] == "", "비활성 상태를 보여줄 칩이 남아 있어야 한다"
+
+
+def test_drawer_links_have_a_producer_not_only_a_reader():
+    """★ v87-S4 실기기 결함의 뿌리 — 세 링크는 만드는 곳이 없어 **영구 비활성**이었다(PCC와 동일 계열)."""
+    src = Path("src/dashboard/web_ui.py").read_text(encoding="utf-8")
+    seg = src.split("def _pg_order_rows")[1].split("\ndef ")[0]
+    for key in ("source_url", "market_url", "detail_url"):
+        assert re.search(r'"%s":\s*r\.get\(' % key, seg), f"_pg_order_rows가 {key}를 만들지 않는다"
+
+
+def test_link_columns_are_persisted():
+    from src.db import orders_pg
+    for c in ("source_url", "market_url", "detail_url"):
+        assert c in orders_pg._COLS
+    schema = Path("src/db/schema_stage3.sql").read_text(encoding="utf-8")
+    for c in ("source_url", "market_url", "detail_url"):
+        assert re.search(r"ALTER\s+TABLE\s+orders\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+%s\s" % c,
+                         schema, re.I), f"{c} idempotent ALTER 없음"

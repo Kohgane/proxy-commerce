@@ -101,7 +101,7 @@ def test_step2_reinstall_warning_retained():
 
 
 def test_loader_and_stamp_features_retained():
-    # run.js 로더·ICON v182·PERSONAL_TOOLBAR_FOLDER·빈 앵커 유지(회귀 방지).
+    # run.js 로더·ICON v183·PERSONAL_TOOLBAR_FOLDER·빈 앵커 유지(회귀 방지).
     v = _views()
     js = v._bookmarklet_js("https://x.com", "T", True)
     assert "/seller/bookmarklet/run.js" in js and "__kgpRun" in js   # 로더 유지
@@ -109,4 +109,4 @@ def test_loader_and_stamp_features_retained():
     assert 'PERSONAL_TOOLBAR_FOLDER="true"' in nb                    # 북마크바 직행
     assert "></A>" in nb                                             # 빈 앵커 텍스트
     src = Path("src/seller_console/views.py").read_text(encoding="utf-8")
-    assert "favicon-32.png?v=182" in src                            # ICON v182
+    assert "favicon-32.png?v=183" in src                            # ICON v183
