@@ -452,7 +452,13 @@ _ORDERS_STYLE = """
   color:var(--teal);background:var(--surface);text-decoration:none;font-size:.8rem;font-weight:600;transition:transform .12s var(--ease-out),background .15s}
 .kgp-oc-dbtn:hover{background:color-mix(in srgb,var(--teal) 8%,transparent)}
 .kgp-oc-dbtn:active{transform:scale(.97)}
-.kgp-oc-dbtn--off{border-color:var(--line);color:var(--muted);pointer-events:none}
+/* v87-S2 후속 죽은 버튼 계약: 링크가 없는 칩은 **눌리는 것처럼 보이지 않는다**.
+   종전엔 pointer-events:none 이라 커서도 툴팁도 안 뜨고, 사용자는 "왜 아무 일도 안 나지"만 남았다.
+   포인터 이벤트를 살려 두되(그래야 title 툴팁이 뜬다) span이라 애초에 이동할 곳이 없고,
+   not-allowed 커서 + 흐린 톤 + 툴팁으로 '지금은 못 누른다'는 사실을 먼저 알린다. */
+.kgp-oc-dbtn--off{border-color:var(--line);color:var(--muted);background:transparent;cursor:not-allowed}
+.kgp-oc-dbtn--off:hover{background:transparent}
+.kgp-oc-dbtn--off:active{transform:none}
 .kgp-oc-dbody{padding:18px 20px;overflow-y:auto;flex:1}
 .kgp-oc-sec{margin-bottom:20px}
 .kgp-oc-sec h4{font-family:"Noto Serif KR",serif;font-size:.95rem;margin:0 0 8px;color:var(--ink)}
@@ -521,10 +527,15 @@ _ORDERS_SCRIPT = """
     });
     body.innerHTML=html||'<div class="oc-empty">표시할 정보가 없어요.</div>';
     var L=data.links||{};
-    var defs=[['수집처',L['수집처'],'◈'],['판매마켓',L['판매마켓'],'▤'],['상세페이지',L['상세페이지'],'↗']];
+    // 죽은 버튼 계약(오너 지정): 링크가 있으면 실제로 열리고, 없으면 **왜 못 여는지**를 말한다.
+    //   사유 문구를 칩마다 다르게 두는 건 "원본 미연결"을 판매마켓 칩에 붙이면 거짓말이 되기 때문이다.
+    var defs=[['수집처',L['수집처'],'◈','원본 미연결'],
+              ['판매마켓',L['판매마켓'],'▤','마켓 주문 주소 미연결'],
+              ['상세페이지',L['상세페이지'],'↗','상세페이지 미연결']];
     btns.innerHTML=defs.map(function(d){
       if(d[1]) return '<a class="kgp-oc-dbtn" href="'+esc(d[1])+'" target="_blank" rel="noopener">'+d[2]+' '+esc(d[0])+'</a>';
-      return '<span class="kgp-oc-dbtn kgp-oc-dbtn--off">'+d[2]+' '+esc(d[0])+'</span>';
+      return '<span class="kgp-oc-dbtn kgp-oc-dbtn--off" aria-disabled="true" title="'+esc(d[3])+'">'
+           + d[2]+' '+esc(d[0])+'</span>';
     }).join('');
     document.getElementById('ocScrim').classList.add('on');
     document.getElementById('ocDrawer').classList.add('on');
