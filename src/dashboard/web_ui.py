@@ -613,6 +613,9 @@ def _pg_order_rows() -> list:
             "notes": r.get("notes", ""),
             "sku": str(it.get("sku") or ""), "title_ko": str(it.get("title") or ""),
             "option": str(opts or ""), "quantity": it.get("qty") or 1,
+            # 통관 축 — 종전에는 이 두 키를 아예 안 실어서, 드로어가 읽는 pcc/country가
+            # 코드베이스 어디서도 생산되지 않는 **도달 불가능한 죽은 필드**였다(v87-S2 검수 발견).
+            "pcc": r.get("pcc", ""), "country": r.get("country", ""),
             # 주문 행에는 원본/마켓 링크가 없다 — 드로어의 [수집처]가 v56 역참조로 채운다(지어내지 않는다).
             "items": items,
         })
@@ -1040,6 +1043,15 @@ def orders():
     def _status_ko(status):
         return _STATUS_KO.get(str(status).lower(), str(status) or "—")
 
+    # v87-S2 후속: 드로어 JS는 빈 값 행을 렌더하지 않는다. 그래서 **있어야 하는데 아직 안 들어온**
+    #   값(통관 축)이 빈칸이면 화면에서 통째로 사라져 "그런 필드는 원래 없다"처럼 보인다 —
+    #   PCC가 도달 불가능한 죽은 필드였는데도 아무도 못 알아챈 이유가 정확히 이것이다.
+    #   그래서 이 축만 빈 값을 '미수신'으로 못박아 **자리를 남긴다**(없는 값을 지어내지 않으면서,
+    #   비어 있다는 사실 자체는 화면에 남긴다).
+    def _or_missing(v):
+        s = str(v or "").strip()
+        return s if s else "미수신"
+
     def _order_chip(status):
         s = str(status).lower()
         label = _status_ko(status)
@@ -1123,8 +1135,9 @@ def orders():
                 "마진": ("%s%%" % o.get("margin_pct")) if o.get("margin_pct") not in (None, "") else "",
                 "주문자": str(customer),
                 # 통관고유부호 — 개인정보라 /dashboard/* 인증 게이트(S1.5) 뒤에서만 렌더된다.
-                "개인통관고유부호(PCC)": o.get("pcc") or o.get("personal_customs_code") or "",
-                "국가": o.get("country") or "",
+                # 구매대행의 척추라 **빈 값이어도 자리를 비우지 않는다**('미수신' 표기).
+                "개인통관고유부호(PCC)": _or_missing(o.get("pcc") or o.get("personal_customs_code")),
+                "국가": _or_missing(o.get("country")),
                 "송장번호": o.get("tracking_no") or o.get("tracking") or "",
             },
             "links": {"수집처": src_url, "판매마켓": mkt_url, "상세페이지": det_url},

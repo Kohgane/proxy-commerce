@@ -30,6 +30,14 @@ CREATE TABLE IF NOT EXISTS orders (
   updated_at            timestamptz NOT NULL DEFAULT now()
 );
 
+-- v87-S2 후속: 통관 축(pcc·country). 구매대행은 통관이 척추라 주문 행에 실린다.
+--   기존 배포에도 붙어야 하므로 CREATE TABLE 본문이 아니라 idempotent ALTER로 둔다
+--   (이미 만들어진 orders 테이블은 CREATE TABLE IF NOT EXISTS가 건드리지 않는다).
+--   값을 채우는 건 마켓 주문 동기화 배선(별도 티켓) — 그 전까지는 빈 값이고,
+--   화면은 빈 값을 숨기지 않고 '미수신'으로 표기한다(죽은 필드 은폐 금지).
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pcc     text NOT NULL DEFAULT '';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS country text NOT NULL DEFAULT '';
+
 -- upsert 키: (order_id, marketplace) 활성 행 유니크.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_orders_key
   ON orders (order_id, marketplace) WHERE deleted_at IS NULL;
