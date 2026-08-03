@@ -310,7 +310,8 @@ class TestDashboardAccessControl:
                 json={'source': 'amazon_us', 'keywords': ['Echo Dot']},
                 content_type='application/json',
             )
-        assert resp.status_code in (200, 202, 302, 400, 422, 503)
+        # v87-S3: 501 = 이 라우트가 수집 잡을 만들지 않는다는 정직한 응답(종전 202 '가짜 성공' 대체).
+        assert resp.status_code in (200, 202, 302, 400, 422, 501, 503)
 
     def test_upload_run_post_endpoint(self, dashboard_web_client, monkeypatch):
         """POST /dashboard/upload/run 엔드포인트가 업로드를 실행하는지 검증한다."""

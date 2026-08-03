@@ -41,16 +41,20 @@ def web_client(mock_env, monkeypatch):
 
 @pytest.fixture
 def sample_products():
+    # v87-S3: 실제 소스(PG collect_history) 어휘로 교정. 종전 픽스처는 죽은 Sheets 워크시트 모양
+    #   (sku/marketplace/country)이라 **프로덕션에서 절대 나오지 않는 행**을 검증하고 있었다.
     return [
         {
-            "sku": "AMZ-001", "title_original": "Backpack Pro", "title_ko": "백팩 프로",
-            "marketplace": "amazon", "country": "US", "price_original": 99.99,
-            "price_krw": 132000, "status": "active", "collected_at": "2026-03-01",
+            "title_original": "Backpack Pro", "title_ko": "백팩 프로",
+            "domain": "amazon.com", "source": "extension", "price_original": "99.99",
+            "currency": "USD", "status": "active", "collected_at": "2026-03-01",
+            "url": "https://amazon.com/dp/A",
         },
         {
-            "sku": "TAO-001", "title_original": "夹克外套", "title_ko": "",
-            "marketplace": "taobao", "country": "CN", "price_original": 180.0,
-            "price_krw": 33000, "status": "active", "collected_at": "2026-03-02",
+            "title_original": "夹克外套", "title_ko": "",
+            "domain": "taobao.com", "source": "extension", "price_original": "180.0",
+            "currency": "CNY", "status": "active", "collected_at": "2026-03-02",
+            "url": "https://taobao.com/item/B",
         },
     ]
 
@@ -164,8 +168,9 @@ class TestDashboardSummaryJson:
             resp = web_client.get("/dashboard/summary")
         data = resp.get_json()
         assert data["products"]["total"] == 2
-        assert data["products"]["amazon"] == 1
-        assert data["products"]["taobao"] == 1
+        # v87-S3: 고정 amazon/taobao 키는 존재하지 않는 필드를 세어 항상 0이었다 → 실제 소싱처별 집계.
+        assert data["products"]["by_domain"] == {"amazon.com": 1, "taobao.com": 1}
+        assert data["products"]["translated"] == 1
 
     def test_summary_revenue(self, web_client, sample_orders, sample_products):
         with patch("src.dashboard.web_ui._load_orders", return_value=sample_orders), \
@@ -186,25 +191,26 @@ class TestProductsPage:
             resp = web_client.get("/dashboard/products")
         assert resp.status_code == 200
 
-    def test_products_shows_sku(self, web_client, sample_products):
+    def test_products_shows_title(self, web_client, sample_products):
+        # v87-S3: SKU는 등록 전 수집 상품에 존재하지 않는다 — 상품명으로 판정한다.
         with patch("src.dashboard.web_ui._load_collected_products", return_value=sample_products):
             resp = web_client.get("/dashboard/products")
         html = resp.data.decode("utf-8")
-        assert "AMZ-001" in html
+        assert "백팩 프로" in html
 
-    def test_products_marketplace_filter_amazon(self, web_client, sample_products):
+    def test_products_domain_filter_amazon(self, web_client, sample_products):
         with patch("src.dashboard.web_ui._load_collected_products", return_value=sample_products):
-            resp = web_client.get("/dashboard/products?marketplace=amazon")
+            resp = web_client.get("/dashboard/products?domain=amazon.com")
         html = resp.data.decode("utf-8")
-        assert "AMZ-001" in html
-        assert "TAO-001" not in html
+        assert "백팩 프로" in html
+        assert "夹克外套" not in html
 
-    def test_products_marketplace_filter_taobao(self, web_client, sample_products):
+    def test_products_domain_filter_taobao(self, web_client, sample_products):
         with patch("src.dashboard.web_ui._load_collected_products", return_value=sample_products):
-            resp = web_client.get("/dashboard/products?marketplace=taobao")
+            resp = web_client.get("/dashboard/products?domain=taobao.com")
         html = resp.data.decode("utf-8")
-        assert "TAO-001" in html
-        assert "AMZ-001" not in html
+        assert "夹克外套" in html
+        assert "백팩 프로" not in html
 
     def test_products_json_format(self, web_client, sample_products):
         with patch("src.dashboard.web_ui._load_collected_products", return_value=sample_products):
@@ -218,16 +224,16 @@ class TestProductsPage:
         with patch("src.dashboard.web_ui._load_collected_products", return_value=sample_products):
             resp = web_client.get("/dashboard/products?format=json&translated=yes")
         data = resp.get_json()
-        # AMZ-001 has title_ko, TAO-001 does not
+        # 첫 행만 title_ko가 있다.
         assert data["count"] == 1
-        assert data["products"][0]["sku"] == "AMZ-001"
+        assert data["products"][0]["title_ko"] == "백팩 프로"
 
     def test_products_translation_filter_no(self, web_client, sample_products):
         with patch("src.dashboard.web_ui._load_collected_products", return_value=sample_products):
             resp = web_client.get("/dashboard/products?format=json&translated=no")
         data = resp.get_json()
         assert data["count"] == 1
-        assert data["products"][0]["sku"] == "TAO-001"
+        assert data["products"][0]["domain"] == "taobao.com"
 
     def test_products_empty_returns_200(self, web_client):
         with patch("src.dashboard.web_ui._load_collected_products", return_value=[]):
@@ -368,20 +374,25 @@ class TestFxPage:
 # ---------------------------------------------------------------------------
 
 class TestCollectStart:
-    def test_collect_start_json_returns_202(self, web_client):
+    # v87-S3: 이 라우트는 수집 잡을 만들지 않는다. 종전 테스트는 202 'started'를 못박아
+    #   **가짜 성공을 계약으로 고정**하고 있었다 — 정직한 501로 교정한다.
+    def test_collect_start_json_returns_501(self, web_client):
         resp = web_client.post(
             "/dashboard/collect/start?format=json",
             json={"source": "amazon"},
         )
-        assert resp.status_code == 202
+        assert resp.status_code == 501
 
-    def test_collect_start_json_has_status(self, web_client):
+    def test_collect_start_json_is_honest_about_doing_nothing(self, web_client):
         resp = web_client.post(
             "/dashboard/collect/start?format=json",
             json={"source": "taobao"},
         )
         data = resp.get_json()
-        assert data["status"] == "started"
+        assert data["status"] == "not_implemented"
+        # 안내문이 '시작'이라는 낱말을 쓰는 건 괜찮다 — 금지하는 건 **시작했다고 주장하는 것**이다.
+        assert "시작되었습니다" not in data["message"]
+        assert data["collect_url"] == "/seller/collect"
         assert "source" in data
         assert "timestamp" in data
 

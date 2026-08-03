@@ -581,7 +581,55 @@ def _load_sheet(worksheet_env: str, default: str) -> list:
         return []
 
 
+def _pg_collected_rows() -> list:
+    """PG collect_history → 이 화면의 행 어휘로 매핑.
+
+    수집 상품의 실제 저장소는 #417/#429 이후 **PG collect_history**다. 그런데 이 화면은 여태
+    Sheets `collected_products` 워크시트를 읽었고, 거기에 쓰는 코드는 `src/collectors/cli.py`가
+    부르는 CollectionManager **하나뿐**이라 웹 경로에서는 아무도 쓰지 않는다 — 주문 화면이
+    죽은 Sheets 소스를 읽던 #562와 **같은 결함**이다(그래서 같은 방식으로 고친다).
+
+    번역본은 `extra_json.title_ko`에 있다. 목록 렌더에 큰 컬럼이 필요 없으므로 lean projection을 쓴다.
+    """
+    from src.db import collect_history_pg
+
+    out = []
+    for r in collect_history_pg.list_items(days=3650, limit=500, lean=True):
+        extra = {}
+        raw = r.get("extra_json") or ""
+        if raw:
+            try:
+                parsed = _json_mod.loads(raw)
+                extra = parsed if isinstance(parsed, dict) else {}
+            except Exception:
+                extra = {}
+        out.append({
+            "title_original": r.get("title", ""),
+            "title_ko": str(extra.get("title_ko") or ""),
+            # 소싱처 = 수집해 온 사이트. 이 화면이 종전에 쓰던 'marketplace'(판매 마켓)와는 다른 축인데,
+            # collect_history에는 판매 마켓이라는 게 없다(아직 등록 전 상품이므로). 어휘를 바로잡는다.
+            "domain": r.get("domain", ""),
+            "source": r.get("source", ""),
+            "price_original": r.get("price", ""),
+            "currency": r.get("currency", ""),
+            "status": r.get("status", ""),
+            "collected_at": r.get("collected_at", ""),
+            "url": r.get("url", ""),
+        })
+    return out
+
+
 def _load_collected_products() -> list:
+    """수집 상품 소스 = PG 우선.
+
+    PG 미설정(개발/테스트)일 때만 종전 Sheets 폴백. 실패를 조용히 0건으로 위장하지 않는다.
+    """
+    try:
+        from src.db.pg import pg_enabled
+        if pg_enabled():
+            return _pg_collected_rows()
+    except Exception as exc:
+        logger.warning("수집 상품 PG 조회 실패 — Sheets 폴백: %s", exc)
     return _load_sheet("COLLECTED_WORKSHEET", "collected_products")
 
 
@@ -767,8 +815,11 @@ def index():
         revenue = 0.0
 
     total_products = len(products)
-    amazon_count = sum(1 for p in products if str(p.get("marketplace", "")).lower() == "amazon")
-    taobao_count = sum(1 for p in products if str(p.get("marketplace", "")).lower() == "taobao")
+    # v87-S3: 'Amazon N · Taobao M'은 collect_history에 없는 marketplace 필드를 세어 **항상 0·0**이었다.
+    #   실제로 셀러가 알고 싶은 건 소싱처가 몇 군데인지와 번역이 얼마나 됐는지다.
+    source_count = len({str(p.get("domain", "")).strip()
+                        for p in products if str(p.get("domain", "")).strip()})
+    translated_count = sum(1 for p in products if p.get("title_ko"))
 
     fx_pairs = _numeric_fx_pairs(fx)
     fx_rows = "".join(
@@ -808,8 +859,8 @@ def index():
         + ('<div class="kgp-card kgp-kpi">'
            '<div class="kgp-kpi-label">수집 상품</div>'
            '<div class="kgp-kpi-value">%s</div>'
-           '<div class="kgp-kpi-sub">Amazon %s · Taobao %s</div></div>'
-           % (_esc("{:,}".format(total_products)), _esc(amazon_count), _esc(taobao_count)))
+           '<div class="kgp-kpi-sub">소싱처 %s곳 · 번역 완료 %s</div></div>'
+           % (_esc("{:,}".format(total_products)), _esc(source_count), _esc(translated_count)))
         + '</div>'
         + '<h2 class="kgp-h2">환율 현황</h2>' + fx_block
         + '<h2 class="kgp-h2">바로 가기</h2><div class="kgp-btnrow">' + quick + '</div>'
@@ -852,8 +903,12 @@ def summary_json():
         "revenue_krw": round(revenue, 2),
         "products": {
             "total": len(products),
-            "amazon": sum(1 for p in products if str(p.get("marketplace", "")).lower() == "amazon"),
-            "taobao": sum(1 for p in products if str(p.get("marketplace", "")).lower() == "taobao"),
+            # v87-S3: amazon/taobao 고정 집계는 collect_history에 없는 marketplace 필드를 세어
+            #   **항상 0**이었다. 실제 축인 소싱처별로 낸다(빈 도메인은 세지 않는다).
+            "by_domain": {d: sum(1 for p in products if str(p.get("domain", "")) == d)
+                          for d in sorted({str(p.get("domain", "")).strip()
+                                           for p in products if str(p.get("domain", "")).strip()})},
+            "translated": sum(1 for p in products if p.get("title_ko")),
         },
         "fx": dict(_numeric_fx_pairs(fx)),
     })
@@ -866,16 +921,17 @@ def products():
     if disabled:
         return disabled
 
-    source_filter = request.args.get("source", "").lower()
-    marketplace_filter = request.args.get("marketplace", "").lower()
+    # v87-S3: 필터 축을 실제 데이터에 맞춘다. 종전 `?source=`(country)·`?marketplace=`는
+    #   collect_history에 존재하지 않는 필드를 걸러서 **항상 0건**을 만들었다(하드코딩 Amazon/Taobao
+    #   선택지도 마찬가지). 수집 상품의 실제 축은 소싱처 도메인이다.
+    domain_filter = request.args.get("domain", "").lower()
     translation_filter = request.args.get("translated", "").lower()
 
     all_products = _load_collected_products()
+    _all_for_options = list(all_products)
 
-    if source_filter:
-        all_products = [p for p in all_products if str(p.get("country", "")).lower() == source_filter]
-    if marketplace_filter:
-        all_products = [p for p in all_products if str(p.get("marketplace", "")).lower() == marketplace_filter]
+    if domain_filter:
+        all_products = [p for p in all_products if str(p.get("domain", "")).lower() == domain_filter]
     if translation_filter == "yes":
         all_products = [p for p in all_products if p.get("title_ko")]
     elif translation_filter == "no":
@@ -887,22 +943,27 @@ def products():
 
     rows = ""
     for p in all_products[:200]:
-        sku = p.get("sku", "")
-        title = p.get("title_ko") or p.get("title_original", "")
-        marketplace = p.get("marketplace", "")
+        # v87-S3: 컬럼 어휘를 실제 데이터로 교정. SKU·마켓은 **아직 등록 전 상품에는 존재하지 않아**
+        #   항상 빈칸이었다(있는 척하는 열 = 드로어 PCC와 같은 죽은 필드). 가격은 통화와 함께 낸다 —
+        #   원화 환산은 여기서 하지 않는다(임의 환산 금지).
+        title = p.get("title_ko") or p.get("title_original", "") or "—"
+        domain = p.get("domain", "") or p.get("marketplace", "")
         price = p.get("price_krw") or p.get("price_original", "")
+        cur = str(p.get("currency", "") or "")
+        price_cell = ("%s %s" % (_esc(price), _esc(cur))).strip() if price else "가격 확인 필요"
         translated = ('<span class="kgp-badge kgp-badge--ok">번역 완료</span>' if p.get("title_ko")
                       else '<span class="kgp-badge kgp-badge--neutral">원문</span>')
         rows += (
-            '<tr><td class="kgp-strong">%s</td><td>%s</td><td>%s</td>'
-            '<td class="num">%s</td><td>%s</td><td>%s</td></tr>'
-            % (_esc(sku), _esc(title), _esc(marketplace), _esc(price) or "—",
-               translated, _status_badge(p.get("status", "")))
+            '<tr><td class="kgp-strong">%s</td><td>%s</td>'
+            '<td class="num">%s</td><td>%s</td><td>%s</td><td>%s</td></tr>'
+            % (_esc(title), _esc(domain) or "—", price_cell,
+               translated, _status_badge(p.get("status", "")),
+               _esc(str(p.get("collected_at", ""))[:16].replace("T", " ")) or "—")
         )
     if rows:
         table = ('<div class="kgp-tablewrap"><table class="kgp-table"><thead><tr>'
-                 '<th>SKU</th><th>상품명</th><th>마켓</th><th class="num">가격</th>'
-                 '<th>번역</th><th>상태</th></tr></thead><tbody>%s</tbody></table></div>' % rows)
+                 '<th>상품명</th><th>소싱처</th><th class="num">수집가</th>'
+                 '<th>번역</th><th>상태</th><th>수집시각</th></tr></thead><tbody>%s</tbody></table></div>' % rows)
     else:
         table = ('<div class="kgp-card">%s</div>'
                  % _empty("이 조건에 맞는 상품이 없어요.",
@@ -913,14 +974,20 @@ def products():
         sel = " selected" if current == value else ""
         return '<option value="%s"%s>%s</option>' % (_esc(value), sel, _esc(label))
 
+    # 필터 선택지는 **필터 적용 전 전체**에서 뽑는다(적용 후에서 뽑으면 한 번 고르고 나면
+    # 다른 소싱처로 못 옮긴다 — 자기 발등 찍는 필터).
+    domains = sorted({str(p.get("domain", "")).strip()
+                      for p in _all_for_options if str(p.get("domain", "")).strip()})
+
     body = (
         _page_head("상품", "상품 수집", "수집한 상품을 확인하고 마켓에 올릴 준비를 합니다.")
         + '<div class="kgp-filter">'
-        + ('<label class="kgp-field"><span class="kgp-label">마켓</span>'
-           '<select class="kgp-select" onchange="location.search=\'?marketplace=\'+this.value">'
-           + _opt("", "전체 마켓", marketplace_filter)
-           + _opt("amazon", "Amazon", marketplace_filter)
-           + _opt("taobao", "Taobao", marketplace_filter)
+        # 선택지를 하드코딩(Amazon/Taobao)하지 않는다 — 실제 수집된 소싱처만 고를 수 있어야
+        # 고를 때마다 0건이 나오는 일이 없다.
+        + ('<label class="kgp-field"><span class="kgp-label">소싱처</span>'
+           '<select class="kgp-select" onchange="location.search=\'?domain=\'+this.value">'
+           + _opt("", "전체 소싱처", domain_filter)
+           + "".join(_opt(d, d, domain_filter) for d in domains)
            + '</select></label>')
         + ('<label class="kgp-field"><span class="kgp-label">번역</span>'
            '<select class="kgp-select" onchange="location.search=\'?translated=\'+this.value">'
@@ -928,9 +995,10 @@ def products():
            + _opt("yes", "번역 완료", translation_filter)
            + _opt("no", "번역 미완", translation_filter)
            + '</select></label>')
+        # v87-S3: 종전 '수집 시작' 버튼은 아무 작업도 트리거하지 않으면서 '수집 작업이 시작되었습니다'라고
+        #   답했다(가짜 성공). 실제 수집 진입점은 확장·북마클릿·셀러 콘솔이므로 **그리로 보낸다**.
         + ('<div class="kgp-field"><span class="kgp-label">작업</span>'
-           '<form action="/dashboard/collect/start" method="post">'
-           '<button type="submit" class="kgp-btn kgp-btn--ghost">수집 시작</button></form></div>')
+           '<a class="kgp-btn kgp-btn--ghost" href="/seller/collect">수집하러 가기</a></div>')
         + '<span class="kgp-count">총 %s개</span>' % _esc("{:,}".format(len(all_products)))
         + '</div>'
         + table
@@ -1617,22 +1685,26 @@ def collect_start():
     if disabled:
         return disabled
 
+    # v87-S3 정직화: 이 라우트는 **수집 작업을 만들지 않는다**. 로그를 남기고 202 'started'를
+    #   돌려줬을 뿐, 큐도 잡도 없다 — 전형적인 가짜 성공이었다. 서버측 수집 잡이 실제로 생기기
+    #   전까지는 없는 일을 시작했다고 하지 않고, 진짜 수집 경로를 알려준다.
+    #   (라우트 자체는 남긴다 — 없애면 외부 호출자가 404로 조용히 실패한다.)
     source = request.form.get("source", request.json.get("source", "all") if request.is_json else "all")
-    logger.info("수집 작업 시작 요청: source=%s", source)
+    logger.info("수집 시작 요청 수신(서버측 수집 잡 없음): source=%s", source)
 
     result = {
-        "status": "started",
+        "status": "not_implemented",
         "source": source,
-        "message": f"수집 작업이 시작되었습니다 (source={source}). 결과는 상품 목록에서 확인하세요.",
+        "message": "이 화면에서는 수집을 시작할 수 없습니다. 고가수집기 확장 또는 셀러 콘솔에서 수집해 주세요.",
+        "collect_url": "/seller/collect",
         "timestamp": _now_iso(),
     }
 
     if request.is_json or request.args.get("format") == "json":
-        return jsonify(result), 202
+        return jsonify(result), 501
 
-    # HTML 폼 제출 시 대시보드로 리디렉션
-    from flask import redirect, url_for
-    return redirect(url_for("dashboard_web_ui.products") + "?started=1")
+    from flask import redirect
+    return redirect("/seller/collect")
 
 
 @web_ui_bp.post("/upload/run")
