@@ -108,7 +108,10 @@ def test_missing_rate_is_honest_not_silent():
 
 def test_failure_is_not_disguised_as_success():
     assert "계산 요청이 실패했어요" in CALC_JS
-    assert "a.ok" in CALC_JS, "서버가 ok=false로 준 걸 결과처럼 그리면 안 된다"
+    # v87-S5: ok=false 처리는 공용 분해 컴포넌트로 옮겼다(마크업 단일화). 계산기는 사유를
+    #   컴포넌트에 넘기고, 컴포넌트가 실패를 결과처럼 그리지 않는다.
+    assert "error:" in CALC_JS, "실패 사유를 컴포넌트에 넘기지 않는다"
+    assert "res.ok === false" in SRC, "컴포넌트가 ok=false를 결과처럼 그린다"
 
 
 # ── 실행 증명(소스 계약만으론 '눌러도 무동작'을 못 잡는다) ────────────────────
