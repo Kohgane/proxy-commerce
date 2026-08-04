@@ -338,7 +338,9 @@ a:hover{text-decoration:underline;text-underline-offset:3px}
 </head>
 <body>
 <header class="kgp-top">
-  <a class="kgp-brand" href="/dashboard/">{{ mark }}<span class="kgp-word">고가브릿지</span></a>
+  {# v87-S6: 로고=사이트 정문(랜딩 "/"). 콘솔 홈(/dashboard/)이 아니다 — 로고는 브랜드 진입점이지
+     현재 셸의 홈 버튼이 아니라는 오너 확정. 셀러 셸(_base.html)도 같은 규칙. #}
+  <a class="kgp-brand" href="/">{{ mark }}<span class="kgp-word">고가브릿지</span></a>
   <nav class="kgp-nav">{{ nav }}</nav>
 </header>
 <main class="kgp-main">

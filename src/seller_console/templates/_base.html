@@ -90,7 +90,8 @@
 
 <div class="console-shell" data-testid="seller-console-shell">
   <nav class="sidebar console-sidebar d-flex flex-column p-3" id="sidebarDrawer" data-testid="seller-sidebar">
-    <a href="/seller/" class="console-brand text-decoration-none mb-3">
+    {# v87-S6: 로고=사이트 정문(랜딩 "/") — 콘솔 홈이 아니다(오너 확정). 대시보드 셸과 동일 규칙. #}
+    <a href="/" class="console-brand text-decoration-none mb-3">
       <div class="small text-secondary">{{ brand_name_ko|default('고가브릿지', true) }}</div>
       <strong><i class="bi bi-shop"></i> 셀러 콘솔 · {{ _brand_name }}</strong>
     </a>
@@ -228,7 +229,7 @@
   <div class="console-main">
     <header class="console-topbar">
       <div class="d-flex align-items-center gap-2">
-        <a href="/seller/" class="console-topbar-brand text-decoration-none"><strong>{{ _brand_name }}</strong></a>
+        <a href="/" class="console-topbar-brand text-decoration-none"><strong>{{ _brand_name }}</strong></a>
         {% if _user_role == 'seller' %}<span class="badge text-bg-primary">셀러</span>{% endif %}
       </div>
 
