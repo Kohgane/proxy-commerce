@@ -49,8 +49,12 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
-  <link rel="stylesheet" href="{{ url_for('seller_console.static', filename='seller.css') }}">
-  <link rel="stylesheet" href="{{ url_for('seller_console.static', filename='console.css') }}">
+  {# v87-S5: CSS에 캐시 키가 없어 max-age=604800(1주)로 굳어 있었다. 스타일만 고치면 최대
+     일주일간 브라우저가 옛 파일을 써서, 로고 hover 반응처럼 CSS로만 고치는 건 사용자에게
+     도달하지 못한다. 배포 커밋(build_sha)을 키로 걸면 배포할 때마다 자동 갱신되고,
+     ?v= 가 붙으면 _perf_after_request가 immutable 1년으로 올려 재검증 왕복도 사라진다. #}
+  <link rel="stylesheet" href="{{ url_for('seller_console.static', filename='seller.css') }}?v={{ build_sha }}">
+  <link rel="stylesheet" href="{{ url_for('seller_console.static', filename='console.css') }}?v={{ build_sha }}">
   {# v53 STEP3 초가속: Speculation Rules — 동일 오리진 콘솔 링크를 크롬이 미리 prefetch(문서, JS 미실행 →
      내비 엔진 fetch가 캐시 히트로 즉시). eagerness moderate(hover/pointerdown), 로그아웃·삭제 경로 제외. #}
   <script type="speculationrules">

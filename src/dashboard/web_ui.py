@@ -187,8 +187,13 @@ a:hover{text-decoration:underline;text-underline-offset:3px}
 /* ── 상단바 ── */
 .kgp-top{display:flex;align-items:center;gap:var(--s3);height:60px;padding:0 var(--s3);
   background:var(--ink);color:var(--hanji);position:sticky;top:0;z-index:40}
-.kgp-brand{display:inline-flex;align-items:center;gap:10px;flex-shrink:0;color:var(--hanji)}
-.kgp-brand:hover{text-decoration:none}
+/* v87-S5 로고=홈 링크. anchor 자체는 처음부터 있었는데 hover가 밑줄까지 지워서 **눌리는 것으로
+   안 보였다**(오너: '비링크·클릭 무반응'). 커서와 미세 반응으로 누를 수 있음을 먼저 알린다. */
+.kgp-brand{display:inline-flex;align-items:center;gap:10px;flex-shrink:0;color:var(--hanji);
+  cursor:pointer;border-radius:var(--r-sm);transition:opacity .15s var(--ease-out)}
+.kgp-brand:hover{text-decoration:none;opacity:.82}
+.kgp-brand:active{opacity:.7}
+.kgp-brand:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
 .kgp-mark{width:30px;height:21px;display:block}
 .kgp-word{font-family:var(--font-display);font-weight:700;font-size:1.05rem;letter-spacing:-.02em}
 .kgp-nav{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none}
@@ -1483,6 +1488,8 @@ def fx_view():
     body = (
         _page_head("환율", "환율·마진", "오늘 환율로 판매가를 계산합니다.")
         + '<h2 class="kgp-h2" style="margin-top:0">환율 현황</h2>' + rates_block
+        # 공용 분해 컴포넌트는 이 화면에 **한 번만** 싣는다(계산기·정책 미리보기가 함께 쓴다).
+        + _BREAKDOWN_COMPONENT_JS
         + '<h2 class="kgp-h2">마진 계산기</h2>'
         # form이 아니다 — 제출(페이지 이동)이 없으므로 빈 값이 쿼리로 실려 왕복하는 일이 없다.
         + '<div class="kgp-filter">'
@@ -1509,6 +1516,49 @@ def fx_view():
     return _render("환율·마진 계산기", body, active="fx")
 
 
+#: v87-S5 판매가 분해 컴포넌트 — **단일 소스**.
+#:   마진 계산기와 가격 정책 미리보기는 같은 `compute_sell_price` 결과를 받는데 마크업이 두 벌이라
+#:   한쪽만(계산기) 레이블·값이 붙어 찍혔다("매입가 × 환율86616.6"). 식을 한 벌로 만든 것과 같은
+#:   이유로 **그리는 쪽도 한 벌**로 둔다 — 이 파일에 정의가 하나뿐이어야 한다(계약 테스트가 센다).
+#:   이 프로젝트 대시보드는 Jinja 파셜이 아니라 render_template_string 단일 파일이라,
+#:   '같은 파셜'의 실체는 이 상수 하나를 두 호출자가 함께 쓰는 것이다.
+_BREAKDOWN_COMPONENT_ID = "kgpBreakdown"
+
+_BREAKDOWN_COMPONENT_JS = """<script>
+(function(){
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  window.kgpWon = function(n){
+    var v = Number(n);
+    if(!isFinite(v)) return '—';
+    try{ return '\\u20A9' + Math.round(v).toLocaleString('ko-KR'); }catch(e){ return '\\u20A9' + Math.round(v); }
+  };
+  /* 판매가 + 단계별 분해표. 행은 표(kgp-table)로 그린다 — div 두 개를 나란히 두면
+     좁은 폭에서 레이블과 값이 붙어 찍힌다(오너 캡처에서 확인된 형태). */
+  window.kgpBreakdown = function(el, res, opt){
+    if(!el) return;
+    opt = opt || {};
+    if(!res || res.ok === false){
+      el.innerHTML = '<div class="kgp-note" style="border-left-color:var(--red)">'
+        + esc(opt.error || (res && res.reason) || '계산하지 못했어요. 입력값을 확인해 주세요.')
+        + '</div>';
+      return;
+    }
+    var steps = (res.steps || []).map(function(s){
+      return '<tr><td>' + esc(s.label) + '</td><td class="num">' + esc(s.value) + '</td></tr>';
+    }).join('');
+    el.innerHTML =
+      '<div class="kgp-kpi-label">' + esc(opt.label || '판매가') + '</div>'
+      + '<div class="kgp-kpi-value">' + esc(window.kgpWon(res.sell_price)) + '</div>'
+      + (opt.sub ? '<div class="kgp-kpi-sub">' + esc(opt.sub) + '</div>' : '')
+      + '<div class="kgp-tablewrap" style="margin-top:12px"><table class="kgp-table"><tbody>'
+      + steps + '</tbody></table></div>'
+      + (opt.formula ? '<p class="kgp-meta" style="margin-top:8px">' + esc(opt.formula) + '</p>' : '');
+  };
+})();
+</script>"""
+
+
 def _fx_calc_script(rates_json: str) -> str:
     """마진 계산기 스크립트 — 계산은 서버(compute_sell_price)에 맡기고 여기선 그리기만 한다.
 
@@ -1533,9 +1583,7 @@ def _fx_calc_script(rates_json: str) -> str:
         'btn.title=ok?"":"매입가를 입력하세요";'
         'if(hint)hint.textContent=ok?"":"매입가를 입력하면 계산할 수 있어요.";}'
         'buy.addEventListener("input",sync);sync();'
-        'function row(k,v){return \'<div class="kgp-oc-row"><span class="k">\'+esc(k)+'
-        '\'</span><span class="v">\'+esc(v)+\'</span></div>\';}'
-        'function won(n){try{return "₩"+Math.round(n).toLocaleString("ko-KR");}catch(e){return "₩"+n;}}'
+        # v87-S5: 자체 row()/won() 제거 — 분해표 마크업과 금액 표기는 공용 컴포넌트가 담당한다.
         'btn.addEventListener("click",function(){'
         'var bp=num(buy.value);if(bp===null||bp<=0){sync();return;}'
         'var c=cur.value||"USD",rate=RATES[c+"KRW"];'
@@ -1551,15 +1599,12 @@ def _fx_calc_script(rates_json: str) -> str:
         '.then(function(r){return r.json();}).then(function(d){'
         'btn.disabled=false;'
         'var a=d&&d.after;'
-        'if(!a||!a.ok){out.innerHTML=\'<div class="kgp-card"><div class="kgp-note" \'+'
-        '\'style="border-left-color:var(--red)">\'+esc((a&&a.reason)||(d&&(d.errors||[]).join(" · "))||'
-        '\'계산하지 못했어요. 입력값을 확인해 주세요.\')+\'</div></div>\';return;}'
-        'var steps=(a.steps||[]).map(function(s){return row(s.label,s.value);}).join("");'
-        'out.innerHTML=\'<div class="kgp-card kgp-kpi" style="max-width:520px;margin-top:var(--s3)">\'+'
-        '\'<div class="kgp-kpi-label">판매가</div><div class="kgp-kpi-value">\'+esc(won(a.sell_price))+\'</div>\'+'
-        '\'<div class="kgp-kpi-sub">매입가 \'+esc(bp)+" "+esc(c)+\' · 환율 \'+esc(rate)+\'</div>\'+'
-        '\'<div style="margin-top:var(--s3)">\'+steps+\'</div>\'+'
-        '\'<p class="kgp-meta" style="margin-top:var(--s2)">\'+esc(a.formula||"")+\'</p></div>\';'
+        # 그리기는 공용 컴포넌트 하나로 — 정책 미리보기와 같은 마크업(표 정렬)이 나온다.
+        'out.innerHTML=\'<div class="kgp-card kgp-kpi" id="fxCalcCard" style="max-width:520px;margin-top:var(--s3)"></div>\';'
+        'window.kgpBreakdown(document.getElementById("fxCalcCard"), a, {'
+        'label:"판매가", sub:"매입가 "+bp+" "+c+" · 환율 "+rate,'
+        'formula:(a&&a.formula)||"",'
+        'error:(a&&a.reason)||(d&&(d.errors||[]).join(" · "))||""});'
         '}).catch(function(){btn.disabled=false;'
         # 실패를 성공으로 위장하지 않는다.
         'out.innerHTML=\'<div class="kgp-card"><div class="kgp-note" \'+'
@@ -1688,7 +1733,9 @@ _POLICY_PREVIEW_JS = """
   var out = document.getElementById('kgpPolicyPreview');
   if (!form || !out) return;
   var timer = null;
-  function money(n) { return '\\u20a9' + Number(n || 0).toLocaleString(); }
+  // 금액 표기도 공용(window.kgpWon) — 자체 money()는 로케일이 달라 계산기와 표기가 갈렸다.
+  // v87-S5: 마크업은 공용 컴포넌트(window.kgpBreakdown) 하나로 — 마진 계산기와 같은 표를 그린다.
+  //   두 벌로 두었더니 계산기 쪽만 레이블·값이 붙어 찍혔다(오너 캡처).
   function render(d) {
     if (!d.ok) {
       out.innerHTML = '<div class="kgp-note" style="border-left-color:var(--red)">'
@@ -1697,17 +1744,9 @@ _POLICY_PREVIEW_JS = """
     }
     var b = d.before, a = d.after;
     var diff = (a.sell_price || 0) - (b.sell_price || 0);
-    var steps = (a.steps || []).map(function (s) {
-      return '<tr><td>' + String(s.label).replace(/</g, '&lt;') + '</td><td class="num">'
-        + String(s.value).replace(/</g, '&lt;') + '</td></tr>';
-    }).join('');
-    out.innerHTML =
-      '<div class="kgp-kpi-label">샘플 1건 판매가</div>'
-      + '<div class="kgp-kpi-value">' + money(a.sell_price) + '</div>'
-      + '<div class="kgp-kpi-sub">저장된 정책 ' + money(b.sell_price)
-      + (diff ? ' \\u2192 ' + (diff > 0 ? '+' : '') + money(diff) : ' (변화 없음)') + '</div>'
-      + '<div class="kgp-tablewrap" style="margin-top:12px"><table class="kgp-table"><tbody>'
-      + steps + '</tbody></table></div>';
+    var sub = '저장된 정책 ' + window.kgpWon(b.sell_price)
+      + (diff ? ' \\u2192 ' + (diff > 0 ? '+' : '') + window.kgpWon(diff) : ' (변화 없음)');
+    window.kgpBreakdown(out, a, { label: '샘플 1건 판매가', sub: sub });
   }
   function refresh() {
     var fd = new FormData(form);

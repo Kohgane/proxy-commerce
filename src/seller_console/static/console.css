@@ -27,9 +27,20 @@
   color: var(--console-text);
 }
 
+/* v87-S5: 로고=홈 링크(/seller/). anchor는 있었으나 .text-decoration-none 때문에 hover 반응이
+   전혀 없어 눌리는 것으로 안 보였다 — 대시보드 셸(.kgp-brand)과 같은 규칙으로 맞춘다. */
 .console-brand {
   color: var(--console-text);
+  cursor: pointer;
+  border-radius: var(--pc-radius-sm, 6px);
+  transition: opacity 0.15s ease-out;
 }
+.console-brand:hover { opacity: 0.82; }
+.console-brand:active { opacity: 0.7; }
+.console-brand:focus-visible { outline: 2px solid var(--gold, #c9a24b); outline-offset: 3px; }
+
+.console-topbar-brand { cursor: pointer; transition: opacity 0.15s ease-out; }
+.console-topbar-brand:hover { opacity: 0.82; }
 
 .console-nav-group-title {
   font-size: 0.72rem;
