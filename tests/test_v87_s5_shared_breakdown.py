@@ -135,16 +135,20 @@ def test_both_screens_render_the_identical_structure(client, tmp_path):
 
 # ── 로고 = 홈 링크 ────────────────────────────────────────────────────────────
 
-def test_dashboard_shell_logo_links_home(client):
+def test_dashboard_shell_logo_links_landing(client):
+    """v87-S6: 로고=사이트 정문(랜딩 "/"). 콘솔 홈(/dashboard/)이 아니다(오너 확정)."""
     body = client.get("/dashboard/fx").get_data(as_text=True)
-    assert re.search(r'<a class="kgp-brand" href="/dashboard/"', body), "대시보드 로고가 홈 링크가 아니다"
+    assert re.search(r'<a class="kgp-brand" href="/"', body), "대시보드 로고가 랜딩 링크가 아니다"
+    assert not re.search(r'<a class="kgp-brand" href="/dashboard/"', body), "콘솔 홈으로 되돌아갔다"
 
 
-def test_seller_shell_logo_links_home():
-    assert re.search(r'<a href="/seller/"[^>]*class="[^"]*console-brand', SELLER_BASE), \
-        "셀러 콘솔 사이드바 로고가 홈 링크가 아니다"
-    assert re.search(r'<a href="/seller/"[^>]*class="[^"]*console-topbar-brand', SELLER_BASE), \
-        "셀러 콘솔 탑바 로고가 홈 링크가 아니다"
+def test_seller_shell_logo_links_landing():
+    assert re.search(r'<a href="/"[^>]*class="[^"]*console-brand', SELLER_BASE), \
+        "셀러 콘솔 사이드바 로고가 랜딩 링크가 아니다"
+    assert re.search(r'<a href="/"[^>]*class="[^"]*console-topbar-brand', SELLER_BASE), \
+        "셀러 콘솔 탑바 로고가 랜딩 링크가 아니다"
+    assert not re.search(r'<a href="/seller/"[^>]*class="[^"]*console-(topbar-)?brand', SELLER_BASE), \
+        "셀러 셸 로고가 콘솔 홈으로 되돌아갔다"
 
 
 def test_both_logos_look_clickable():

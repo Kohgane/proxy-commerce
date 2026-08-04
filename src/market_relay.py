@@ -20,9 +20,93 @@ import logging
 import os
 import time
 
+import base64
+from urllib.parse import urlparse
+
 import requests
 
 logger = logging.getLogger(__name__)
+
+# ── v87-S6-2: mkt.php 릴레이(오너가 Bluehost 50.6.34.63에 설치) ──────────────────
+#   프로토콜(오너 확정): POST {url, method, headers, body_b64} + 헤더 X-KGP-Relay-Key
+#                        → {status, content_type, body_b64}
+#   서명은 **호출부에서 원 URL 기준으로 이미 끝난다**(쿠팡 CEA는 path+query로 서명). 릴레이는
+#   헤더·바디를 무가공 전달하므로 서명이 유효하다 — 여기서 URL을 바꾸거나 헤더를 만지면 안 된다.
+_API_RELAY_ALLOWED_HOSTS = {"api-gateway.coupang.com", "api.commerce.naver.com"}
+
+
+class RelayError(requests.exceptions.RequestException):
+    """릴레이 경유 자체의 실패 — 마켓 직결 오류와 **구분해** 표기한다.
+
+    requests 예외를 상속해 기존 호출부의 예외 처리 흐름을 타되, 메시지에 '릴레이 오류'를 달아
+    마켓 카드에서 '쿠팡이 거부함'과 '우리 릴레이가 죽음'을 혼동하지 않게 한다.
+    """
+
+
+def api_relay_url() -> str:
+    return (os.getenv("MARKET_API_RELAY_URL") or "").strip().rstrip("/")
+
+
+def api_relay_enabled() -> bool:
+    """MARKET_API_RELAY_URL이 있으면 전 마켓 요청을 릴레이 경유(없으면 현행 직결)."""
+    return bool(api_relay_url())
+
+
+def _api_relay_key() -> str:
+    return (os.getenv("MARKET_API_RELAY_KEY") or os.getenv("MARKET_RELAY_TOKEN") or "").strip()
+
+
+def assert_host_allowed(url: str) -> str:
+    """허용 외 호스트는 **클라이언트 단에서도** 거부(릴레이 검증에만 기대지 않는다)."""
+    host = (urlparse(url).hostname or "").lower()
+    if host not in _API_RELAY_ALLOWED_HOSTS:
+        raise RelayError(f"릴레이 오류: 허용되지 않은 호스트({host or 'unknown'})")
+    return host
+
+
+def _body_bytes(json_body, data) -> bytes:
+    if json_body is not None:
+        return _json.dumps(json_body, ensure_ascii=False).encode("utf-8")
+    if data is None:
+        return b""
+    return data.encode("utf-8") if isinstance(data, str) else (
+        data if isinstance(data, (bytes, bytearray)) else _json.dumps(data, ensure_ascii=False).encode("utf-8")
+    )
+
+
+def _api_relay_send(method, url, headers, json_body, data, timeout):
+    """mkt.php 경유 1회 전송. 릴레이 계층 실패는 RelayError로 올린다."""
+    payload = {
+        "url": url,                                   # 원 URL 그대로(서명 대상과 동일해야 한다)
+        "method": str(method).upper(),
+        "headers": dict(headers or {}),
+        "body_b64": base64.b64encode(_body_bytes(json_body, data)).decode("ascii"),
+    }
+    try:
+        r = requests.post(
+            api_relay_url(),
+            json=payload,
+            headers={"X-KGP-Relay-Key": _api_relay_key(), "Content-Type": "application/json"},
+            timeout=timeout,
+        )
+    except requests.exceptions.RequestException as exc:
+        raise RelayError(f"릴레이 오류: 릴레이에 닿지 못했습니다 ({exc})") from exc
+    if r.status_code != 200:
+        raise RelayError(f"릴레이 오류: 릴레이가 HTTP {r.status_code}")
+    try:
+        out = r.json()
+    except ValueError as exc:
+        raise RelayError("릴레이 오류: 릴레이 응답이 JSON이 아닙니다") from exc
+    if out.get("error"):
+        raise RelayError(f"릴레이 오류: {out.get('error')}")
+    if "status" not in out:
+        raise RelayError("릴레이 오류: 응답에 status가 없습니다")
+    try:
+        body = base64.b64decode(out.get("body_b64") or "").decode("utf-8", "replace")
+    except Exception as exc:                                   # noqa: BLE001 — 형식 위반은 릴레이 문제
+        raise RelayError("릴레이 오류: body_b64를 해석하지 못했습니다") from exc
+    return RelayResponse(int(out["status"]), body,
+                         headers={"Content-Type": out.get("content_type") or ""})
 
 
 def _relay_markets() -> set:
@@ -64,7 +148,14 @@ def relay_request(method, url, *, headers=None, json=None, data=None, timeout=30
     """
     from src.market_throttle import throttled_request
 
+    # v87-S6-2: 허용 호스트 검증은 **스로틀/재시도 바깥**에서 — 설정 오류를 3회 재시도해봐야 소용없다.
+    if api_relay_enabled():
+        assert_host_allowed(url)
+
     def _send():
+        # mkt.php 릴레이가 설정돼 있으면 전 요청을 경유(구 MARKET_RELAY_URL 경로보다 우선).
+        if api_relay_enabled():
+            return _api_relay_send(method, url, headers, json, data, 35)
         if not relay_enabled(market):
             return requests.request(method, url, headers=headers, json=json, data=data, timeout=timeout)
         relay_url = os.getenv("MARKET_RELAY_URL", "").rstrip("/")

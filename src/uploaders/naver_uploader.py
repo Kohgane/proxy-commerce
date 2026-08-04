@@ -7,6 +7,8 @@ import time
 
 import requests
 
+from src.market_relay import RelayError, relay_request
+
 from .base_uploader import BaseUploader
 
 logger = logging.getLogger(__name__)
@@ -240,8 +242,7 @@ class NaverSmartStoreUploader(BaseUploader):
         }
         for attempt in range(3):
             try:
-                # 고정 IP 릴레이 경유(MARKET_RELAY_URL 설정 시) — 네이버 호출 IP 화이트리스트 대응(v8).
-                from src.market_relay import relay_request
+                # 고정 IP 릴레이 경유 — 네이버 호출 IP 화이트리스트 대응(v8 / v87-S6-2 mkt.php).
                 resp = relay_request(method, url, json=data, headers=headers, timeout=30,
                                      market="smartstore", key=str(self.client_id or ""))
                 if resp.status_code == 429:

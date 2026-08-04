@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 
 import requests
 
+from src.market_relay import RelayError, relay_request
+
 from .base_uploader import BaseUploader
 
 logger = logging.getLogger(__name__)
@@ -372,9 +374,8 @@ class CoupangUploader(BaseUploader):
         }
         for attempt in range(3):
             try:
-                # 고정 IP 릴레이 경유(MARKET_RELAY_URL 설정 시) — 쿠팡 호출 IP 화이트리스트 대응(v8).
+                # 고정 IP 릴레이 경유 — 쿠팡 호출 IP 화이트리스트 대응(v8 / v87-S6-2 mkt.php).
                 # 미설정이면 직접 호출(폴백). 서명은 위에서 이미 끝났고 릴레이는 포워딩만.
-                from src.market_relay import relay_request
                 resp = relay_request(method, url, json=data, headers=headers, timeout=30,
                                      market="coupang", key=str(self.vendor_id or ""))
                 if resp.status_code == 429:
@@ -389,6 +390,11 @@ class CoupangUploader(BaseUploader):
                     return {'error': f'Server error ({resp.status_code})'}
                 resp.raise_for_status()
                 return resp.json()
+            except RelayError as exc:
+                # v87-S6-2: 릴레이 계층 실패는 재시도해도 같다(설정·릴레이 다운) → 즉시 정직 반환.
+                #   '쿠팡이 거부함'과 '우리 릴레이가 죽음'을 마켓 카드에서 구분하기 위함.
+                logger.error('Coupang relay failed: %s', exc)
+                return {'error': str(exc)}
             except requests.exceptions.RequestException as exc:
                 logger.warning('Coupang API request failed (attempt %d): %s', attempt + 1, exc)
                 if attempt < 2:
