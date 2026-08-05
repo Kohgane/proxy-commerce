@@ -99,6 +99,49 @@ def test_relay_used_when_configured(monkeypatch):
     assert resp.json() == {"data": 7}
 
 
+def test_relay_envelope_sends_branded_ua_not_python_requests(monkeypatch):
+    """v87-S8: 릴레이 봉투에 UA·Accept 명시.
+
+    requests 기본 UA(`python-requests/x.y.z`)는 Bluehost Apache mod_security가 406 'Not Acceptable'로
+    끊는다(실측: UA만 바꾸면 406→403으로 스크립트까지 도달). 이 프로젝트의 WooCommerce 406도 같은
+    원인이었으므로 재발 방지로 못박는다.
+    """
+    monkeypatch.setenv("MARKET_API_RELAY_URL", "https://relay.example.com/mkt.php")
+    seen = {}
+
+    def fake_post(url, json=None, headers=None, timeout=None, **kw):
+        seen.update(headers=headers, payload=json)
+        return _Resp(200, {"status": 200, "body_b64": ""})
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    market_relay.relay_request("POST", NAVER_URL, data={"grant_type": "client_credentials"},
+                               market="smartstore")
+
+    h = {k.lower(): v for k, v in seen["headers"].items()}
+    assert "user-agent" in h, "봉투에 UA가 없다 — 기본 python-requests UA로 나가 406에 걸린다"
+    assert "python-requests" not in h["user-agent"].lower(), h["user-agent"]
+    assert "gogabridj" in h["user-agent"].lower(), h["user-agent"]
+    assert h.get("accept") == "application/json", h.get("accept")
+
+
+def test_relay_ua_is_not_injected_into_market_request_headers(monkeypatch):
+    """UA는 **봉투에만**. 마켓 원 요청 헤더에 끼워넣으면 서명 대상 헤더가 오염된다."""
+    monkeypatch.setenv("MARKET_API_RELAY_URL", "https://relay.example.com/mkt.php")
+    seen = {}
+
+    def fake_post(url, json=None, headers=None, timeout=None, **kw):
+        seen.update(payload=json)
+        return _Resp(200, {"status": 200, "body_b64": ""})
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    market_relay.relay_request("POST", NAVER_URL, headers={"Authorization": "Bearer T"},
+                               data={"a": 1}, market="smartstore")
+
+    inner = {k.lower() for k in seen["payload"]["headers"]}
+    assert "user-agent" not in inner, f"마켓 요청 헤더가 오염됐다: {seen['payload']['headers']}"
+    assert seen["payload"]["headers"]["Authorization"] == "Bearer T", "원 헤더가 변형됐다"
+
+
 def test_naver_host_also_relayed(monkeypatch):
     monkeypatch.setenv("MARKET_API_RELAY_URL", "https://relay.example.com/mkt.php")
     monkeypatch.setattr(requests, "post",

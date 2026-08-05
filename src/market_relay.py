@@ -39,6 +39,10 @@ _API_RELAY_ALLOWED_HOSTS = {"api-gateway.coupang.com", "api.commerce.naver.com"}
 #   아니라 **OAuth 토큰 발급이 직결로 나가서** — 토큰을 못 받으니 그 뒤가 전부 막힌 것.
 _IP_GATED_MARKETS = {"coupang", "smartstore", "naver", "naver_commerce"}
 
+# v87-S8: 릴레이 호출용 UA. 기본값 `python-requests/…`는 Bluehost mod_security가 406으로 끊는다.
+#   봇 UA로 위장하지 않고 우리 서비스를 밝히는 문자열을 쓴다(차단 규칙 회피가 아니라 정상 식별).
+_RELAY_USER_AGENT = "gogabridj-relay/1.0 (+https://kohganepercentiii.com)"
+
 
 class RelayError(requests.exceptions.RequestException):
     """릴레이 경유 자체의 실패 — 마켓 직결 오류와 **구분해** 표기한다.
@@ -115,7 +119,17 @@ def _api_relay_send(method, url, headers, json_body, data, timeout):
         r = requests.post(
             api_relay_url(),
             json=payload,
-            headers={"X-KGP-Relay-Key": _api_relay_key(), "Content-Type": "application/json"},
+            # v87-S8: **릴레이 봉투 헤더에만** UA·Accept를 명시한다(마켓 원 요청 헤더는 payload 안에
+            #   무가공 유지 — 서명 불변). requests 기본 UA(`python-requests/x.y.z`)는 Bluehost의
+            #   Apache mod_security가 406 'Not Acceptable'로 끊는다(실측: 같은 요청에 UA만 브라우저로
+            #   바꾸면 406이 사라지고 스크립트까지 도달). 이 프로젝트엔 같은 선례가 있다 —
+            #   WooCommerce 406도 원인이 UA/Accept 누락이었다.
+            headers={
+                "X-KGP-Relay-Key": _api_relay_key(),
+                "Content-Type": "application/json",
+                "User-Agent": _RELAY_USER_AGENT,
+                "Accept": "application/json",
+            },
             timeout=timeout,
         )
     except requests.exceptions.RequestException as exc:
