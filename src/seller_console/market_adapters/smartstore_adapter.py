@@ -87,9 +87,11 @@ def _get_access_token() -> Optional[str]:
         return None
 
     try:
-        import requests
-        resp = requests.post(
-            _NAVER_AUTH_URL,
+        # v87-S7: 토큰 발급도 릴레이 경유(단일 관문). 오너 실측에서 이 경로만 직결로 남아
+        #   커머스API센터에 릴레이 IP를 등록했는데도 GW.IP_NOT_ALLOWED가 났다.
+        from src.market_relay import relay_request
+        resp = relay_request(
+            "POST", _NAVER_AUTH_URL,
             data={
                 "grant_type": "client_credentials",
                 "client_id": client_id,
@@ -98,7 +100,7 @@ def _get_access_token() -> Optional[str]:
                 "type": "SELF",
             },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=10,
+            timeout=10, market="smartstore", key=str(client_id or ""),
         )
         if resp.status_code != 200:
             body = (resp.text or "").strip().replace("\n", " ")[:200]
@@ -161,11 +163,10 @@ class SmartStoreAdapter(MarketAdapter):
 
         try:
             import requests
-            resp = requests.get(
-                f"{_NAVER_BASE_URL}/external/v2/products",
+            resp = relay_request("GET", f"{_NAVER_BASE_URL}/external/v2/products",
                 headers={"Authorization": f"Bearer {token}"},
                 params={"size": 50, "page": 1},
-                timeout=10,
+                timeout=10, market="smartstore",
             )
             resp.raise_for_status()
             data = resp.json()
@@ -198,11 +199,10 @@ class SmartStoreAdapter(MarketAdapter):
 
         try:
             import requests
-            resp = requests.post(
-                f"{_NAVER_BASE_URL}/external/v2/products",
+            resp = relay_request("POST", f"{_NAVER_BASE_URL}/external/v2/products",
                 headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
                 json=product,
-                timeout=10,
+                timeout=10, market="smartstore",
             )
             resp.raise_for_status()
             return {"status": "ok", "data": resp.json()}
@@ -242,11 +242,10 @@ class SmartStoreAdapter(MarketAdapter):
 
         try:
             import requests
-            resp = requests.patch(
-                f"{_NAVER_BASE_URL}/external/v2/products/{origin_no}/sale-price",
+            resp = relay_request("PATCH", f"{_NAVER_BASE_URL}/external/v2/products/{origin_no}/sale-price",
                 headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
                 json={"salePrice": new_price_krw},
-                timeout=10,
+                timeout=10, market="smartstore",
             )
             if resp.status_code in (200, 204):
                 logger.info("스마트스토어 가격 업데이트 성공: %s → %d원", sku, new_price_krw)
@@ -261,11 +260,10 @@ class SmartStoreAdapter(MarketAdapter):
         """SKU로 originProductNo 조회."""
         try:
             import requests
-            resp = requests.get(
-                f"{_NAVER_BASE_URL}/external/v2/products",
+            resp = relay_request("GET", f"{_NAVER_BASE_URL}/external/v2/products",
                 headers={"Authorization": f"Bearer {token}"},
                 params={"sellerCode": sku, "size": 1},
-                timeout=10,
+                timeout=10, market="smartstore",
             )
             if resp.status_code == 200:
                 contents = resp.json().get("contents", [])
@@ -304,11 +302,10 @@ class SmartStoreAdapter(MarketAdapter):
 
         try:
             import requests
-            resp = requests.get(
-                f"{_NAVER_BASE_URL}/external/v1/pay-order/seller/orders",
+            resp = relay_request("GET", f"{_NAVER_BASE_URL}/external/v1/pay-order/seller/orders",
                 headers={"Authorization": f"Bearer {token}"},
                 params={"lastChangedFrom": since_str, "lastChangedType": "PAYED"},
-                timeout=10,
+                timeout=10, market="smartstore",
             )
             resp.raise_for_status()
             raw_orders = resp.json().get("data", {}).get("contents", [])
@@ -386,8 +383,7 @@ class SmartStoreAdapter(MarketAdapter):
 
         try:
             import requests
-            resp = requests.post(
-                f"{_NAVER_BASE_URL}/external/v1/pay-order/seller/product-orders/dispatch",
+            resp = relay_request("POST", f"{_NAVER_BASE_URL}/external/v1/pay-order/seller/product-orders/dispatch",
                 headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
                 json={
                     "dispatchProductOrders": [
@@ -399,7 +395,7 @@ class SmartStoreAdapter(MarketAdapter):
                         }
                     ]
                 },
-                timeout=10,
+                timeout=10, market="smartstore",
             )
             if resp.status_code in (200, 201):
                 return True

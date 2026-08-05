@@ -1,3 +1,5 @@
+# v87-S7: 이 모듈들이 relay_request(단일 관문)를 타면서 직결도 requests.request로 나간다.
+#   그래서 목 대상도 requests.post/get → requests.request 로 옮긴다(동작 동일, 경로만 통일).
 """tests/test_market_adapter_live_fixes.py — 라이브 검증에서 드러난 어댑터 버그 수정 검증.
 
 1) 스마트스토어: 네이버 커머스 OAuth2는 client_secret 평문이 아니라
@@ -52,7 +54,7 @@ class TestSmartstoreNaverSignature:
 
         captured = {}
 
-        def fake_post(url, data=None, headers=None, timeout=None):
+        def fake_post(method, url, data=None, headers=None, timeout=None):
             captured["data"] = data
             resp = MagicMock()
             resp.status_code = 200
@@ -60,7 +62,7 @@ class TestSmartstoreNaverSignature:
             resp.json.return_value = {"access_token": "TOK", "expires_in": 3600}
             return resp
 
-        with patch("requests.post", side_effect=fake_post):
+        with patch("requests.request", side_effect=fake_post):
             token = ss._get_access_token()
 
         assert token == "TOK"
@@ -108,7 +110,7 @@ class TestSmartstoreIpHint:
         resp = MagicMock()
         resp.status_code = 403
         resp.text = '{"code":"GW.IP_NOT_ALLOWED","message":"호출이 허용되지 않은 IP입니다."}'
-        with patch("requests.post", return_value=resp):
+        with patch("requests.request", return_value=resp):
             result = ss.SmartStoreAdapter().health_check()
         assert result["status"] == "fail"
         assert "허용 IP" in result["hint"]
@@ -158,7 +160,7 @@ class TestCoupangIpAllowlistHint:
         resp.status_code = 403
         resp.text = ('{"path":"/api/v1/marketplace/seller-products","error":"FORBIDDEN",'
                      '"message":"Your ip address 74.220.49.7 is not allowed for this request."}')
-        with patch("requests.get", return_value=resp):
+        with patch("requests.request", return_value=resp):
             result = cp.CoupangAdapter().health_check()
         assert result["status"] == "fail"
         assert "74.220.49.7" in result["hint"]

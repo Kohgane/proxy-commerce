@@ -1,3 +1,5 @@
+# v87-S7: 이 모듈들이 relay_request(단일 관문)를 타면서 직결도 requests.request로 나간다.
+#   그래서 목 대상도 requests.post/get → requests.request 로 옮긴다(동작 동일, 경로만 통일).
 from __future__ import annotations
 
 import base64
@@ -33,7 +35,7 @@ def test_get_access_token_uses_cache(monkeypatch):
         calls["count"] += 1
         return FakeResponse()
 
-    monkeypatch.setattr("requests.post", fake_post)
+    monkeypatch.setattr("requests.request", fake_post)
     token1 = mod.get_access_token()
     token2 = mod.get_access_token(now=0)
     assert token1 == "token-1"

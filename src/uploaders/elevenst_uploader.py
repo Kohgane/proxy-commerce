@@ -19,6 +19,8 @@ CoupangUploader / NaverSmartStoreUploader와 동일한 인터페이스
 """
 
 import logging
+
+from src.market_relay import relay_request
 import math
 import os
 import xml.etree.ElementTree as ET
@@ -81,8 +83,7 @@ class ElevenStUploader(BaseUploader):
             xml_body = self._build_product_xml(product)
             from src.market_throttle import throttled_request
             resp = throttled_request(
-                lambda: requests.post(
-                    f"{_BASE_URL}/prodservices/product",
+                lambda: relay_request("POST", f"{_BASE_URL}/prodservices/product",
                     headers={"openapikey": self.api_key, "Content-Type": "text/xml; charset=utf-8"},
                     data=xml_body.encode("utf-8"),
                     timeout=15,
@@ -117,8 +118,7 @@ class ElevenStUploader(BaseUploader):
             )
             from src.market_throttle import throttled_request
             resp = throttled_request(
-                lambda: requests.post(
-                    f"{_BASE_URL}/prodservices/product/{product_id}/price",
+                lambda: relay_request("POST", f"{_BASE_URL}/prodservices/product/{product_id}/price",
                     headers={"openapikey": self.api_key, "Content-Type": "text/xml; charset=utf-8"},
                     data=xml_body.encode("utf-8"),
                     timeout=10,
@@ -137,10 +137,9 @@ class ElevenStUploader(BaseUploader):
         if not self.api_key:
             return False
         try:
-            resp = requests.delete(
-                f"{_BASE_URL}/prodservices/product/{product_id}",
+            resp = relay_request("DELETE", f"{_BASE_URL}/prodservices/product/{product_id}",
                 headers={"openapikey": self.api_key},
-                timeout=10,
+                timeout=10, market="elevenst",
             )
             return resp.status_code in (200, 201, 204)
         except Exception as exc:
