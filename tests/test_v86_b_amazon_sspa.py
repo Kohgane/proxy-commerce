@@ -30,7 +30,7 @@ _URL = "https://www.amazon.com/s?k=ultraslim+phone+grip"
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.136"
+    assert MANIFEST["version"] == "1.5.137"
 
 
 def _pw_ok():

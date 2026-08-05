@@ -38,11 +38,11 @@
     <span class="badge mt-1" style="background:color-mix(in srgb,var(--success,#2f9e44) 15%,transparent);color:var(--success,#2f9e44)"
           title="{{ it.uploaded_markets|join(', ') }}에 등록됨"><i class="bi bi-check-circle"></i> 등록됨 · {{ it.uploaded_markets|join('·') }}</span>
     {% endif %}
-    {# v81 STEP1: 북마클릿 간이(코어) 폴백 수집 — 제목·이미지만. [다시 수집] 권장(warn 토큰). #}
+    {# v81 STEP1 북마클릿 코어 폴백 / v86-F 목록 타일 간이 — 둘 다 제목·이미지만. [다시 수집] 권장(warn 토큰). #}
     {% if it.is_core %}
     <span class="badge mt-1 kgp-open-drawer" role="button" data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}"
           style="cursor:pointer;background:color-mix(in srgb,var(--warn,#f5821f) 14%,transparent);color:var(--warn,#f5821f);border:1px solid color-mix(in srgb,var(--warn,#f5821f) 40%,transparent)"
-          title="확장 수집기 미로드로 간이 수집됨(제목·이미지만). 클릭 → 드로어에서 [다시 수집]으로 상세·가격 보완"><i class="bi bi-lightning-charge"></i> 간이</span>
+          title="{% if it.collect_mode == 'simple' %}목록 타일에서 간이 수집됨(제목·이미지만 — 상세·옵션은 목록에 없음){% else %}확장 수집기 미로드로 간이 수집됨(제목·이미지만){% endif %}. 클릭 → 드로어에서 [다시 수집]으로 상세·가격 보완"><i class="bi bi-lightning-charge"></i> 간이</span>
     {% endif %}
   </td>
   {# v64 STEP7: 가격 우정렬(스캔 편의). 원가·환율 병기는 드로어 가격 탭으로(목록은 수집가만). #}
