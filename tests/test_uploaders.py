@@ -1,3 +1,5 @@
+# v87-S7: 이 모듈들이 relay_request(단일 관문)를 타면서 직결도 requests.request로 나간다.
+#   그래서 목 대상도 requests.post/get → requests.request 로 옮긴다(동작 동일, 경로만 통일).
 """tests/test_uploaders.py — 업로더 테스트 (40+ 테스트)."""
 
 from unittest.mock import MagicMock, patch
@@ -386,7 +388,7 @@ class TestNaverGetAccessToken:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {'access_token': 'tok123', 'expires_in': 3600}
-        with patch('requests.post', return_value=mock_resp):
+        with patch('requests.request', return_value=mock_resp):
             token = naver_uploader._get_access_token()
         assert token == 'tok123'
         assert naver_uploader._access_token == 'tok123'
@@ -394,13 +396,13 @@ class TestNaverGetAccessToken:
     def test_token_cached(self, naver_uploader):
         naver_uploader._access_token = 'cached-token'
         naver_uploader._token_expires = 9999999999.0
-        with patch('requests.post') as mock_post:
+        with patch('requests.request') as mock_post:
             token = naver_uploader._get_access_token()
         mock_post.assert_not_called()
         assert token == 'cached-token'
 
     def test_token_request_failure_returns_empty(self, naver_uploader):
-        with patch('requests.post', side_effect=Exception('network error')):
+        with patch('requests.request', side_effect=Exception('network error')):
             token = naver_uploader._get_access_token()
         assert token == ''
 

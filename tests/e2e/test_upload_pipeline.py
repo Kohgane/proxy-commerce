@@ -1,3 +1,5 @@
+# v87-S7: 이 모듈들이 relay_request(단일 관문)를 타면서 직결도 requests.request로 나간다.
+#   그래서 목 대상도 requests.post/get → requests.request 로 옮긴다(동작 동일, 경로만 통일).
 """tests/e2e/test_upload_pipeline.py — 업로드 파이프라인 E2E 테스트.
 
 쿠팡/네이버 업로더 전체 흐름(인증→상품등록→확인), 배치 업로드,
@@ -205,7 +207,7 @@ class TestNaverUploaderPipeline:
             'expires_in': 3600,
         }
 
-        with patch('requests.post', return_value=resp):
+        with patch('requests.request', return_value=resp):
             from src.uploaders.naver_uploader import NaverSmartStoreUploader
             uploader = NaverSmartStoreUploader()
             token = uploader._get_access_token()

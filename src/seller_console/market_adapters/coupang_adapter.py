@@ -15,6 +15,8 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
+
+from src.market_relay import relay_request
 import os
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -108,11 +110,10 @@ class CoupangAdapter(MarketAdapter):
         try:
             import requests
             headers = _hmac_sign("GET", url_path)
-            resp = requests.get(
-                f"{_BASE_URL}{url_path}",
+            resp = relay_request("GET", f"{_BASE_URL}{url_path}",
                 headers=headers,
                 params={"vendorId": vendor_id, "status": "APPROVED"},
-                timeout=10,
+                timeout=10, market="coupang",
             )
             resp.raise_for_status()
             data = resp.json()
@@ -151,11 +152,10 @@ class CoupangAdapter(MarketAdapter):
             import requests
             import json
             headers = _hmac_sign("POST", url_path)
-            resp = requests.post(
-                f"{_BASE_URL}{url_path}",
+            resp = relay_request("POST", f"{_BASE_URL}{url_path}",
                 headers=headers,
                 json=product,
-                timeout=10,
+                timeout=10, market="coupang",
             )
             resp.raise_for_status()
             return {"status": "ok", "data": resp.json()}
@@ -200,11 +200,10 @@ class CoupangAdapter(MarketAdapter):
         try:
             import requests
             headers = _hmac_sign("PUT", url_path)
-            resp = requests.put(
-                f"{_BASE_URL}{url_path}",
+            resp = relay_request("PUT", f"{_BASE_URL}{url_path}",
                 headers=headers,
                 json={"vendorItemId": vendor_item_id, "originalPrice": new_price_krw, "salePrice": new_price_krw},
-                timeout=10,
+                timeout=10, market="coupang",
             )
             if resp.status_code in (200, 201):
                 logger.info("쿠팡 가격 업데이트 성공: %s → %d원", sku, new_price_krw)
@@ -221,11 +220,10 @@ class CoupangAdapter(MarketAdapter):
         try:
             import requests
             headers = _hmac_sign("GET", url_path)
-            resp = requests.get(
-                f"{_BASE_URL}{url_path}",
+            resp = relay_request("GET", f"{_BASE_URL}{url_path}",
                 headers=headers,
                 params={"vendorId": vendor_id, "sellerProductCode": sku},
-                timeout=10,
+                timeout=10, market="coupang",
             )
             if resp.status_code == 200:
                 for product in resp.json().get("data", []):
@@ -396,11 +394,10 @@ class CoupangAdapter(MarketAdapter):
             import json
             headers = _hmac_sign("PUT", url_path)
             payload = {"courierCode": courier, "invoiceNumber": tracking_no}
-            resp = requests.put(
-                f"{_BASE_URL}{url_path}",
+            resp = relay_request("PUT", f"{_BASE_URL}{url_path}",
                 headers=headers,
                 json=payload,
-                timeout=10,
+                timeout=10, market="coupang",
             )
             if resp.status_code in (200, 201):
                 logger.info("쿠팡 운송장 등록 성공: %s", order_id)
@@ -433,11 +430,10 @@ class CoupangAdapter(MarketAdapter):
             import requests
             params = {"createdAtFrom": created_at_from or "2024-01-01T00:00:00"} if created_at_from else {}
             headers = _hmac_sign("GET", url_path, urlencode(params) if params else "")
-            resp = requests.get(
-                f"{_BASE_URL}{url_path}",
+            resp = relay_request("GET", f"{_BASE_URL}{url_path}",
                 headers=headers,
                 params=params,
-                timeout=10,
+                timeout=10, market="coupang",
             )
             resp.raise_for_status()
             return resp.json().get("data", [])
@@ -464,7 +460,7 @@ class CoupangAdapter(MarketAdapter):
             query = f"vendorId={vendor_id}&maxPerPage=1"
             import requests
             headers = _hmac_sign("GET", url_path, query)
-            resp = requests.get(f"{_BASE_URL}{url_path}?{query}", headers=headers, timeout=5)
+            resp = relay_request("GET", f"{_BASE_URL}{url_path}?{query}", headers=headers, timeout=5, market="coupang")
             if resp.status_code == 200:
                 return {"status": "ok", "detail": "쿠팡 API 연결 성공"}
             body = (resp.text or "").strip().replace("\n", " ")[:300]

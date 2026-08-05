@@ -49,9 +49,11 @@ def get_access_token(force_refresh: bool = False, now: Optional[float] = None) -
         "type": "SELF",
     }
 
-    import requests
+    # v87-S7: 토큰 발급도 릴레이 경유(단일 관문) — 직결이면 네이버 IP 화이트리스트에 막힌다.
+    from src.market_relay import relay_request
 
-    response = requests.post(_token_url(), data=payload, timeout=10)
+    response = relay_request("POST", _token_url(), data=payload, timeout=10,
+                             market="naver_commerce", key=str(client_id or ""))
     response.raise_for_status()
     data = response.json() or {}
     access_token = str(data.get("access_token") or "")

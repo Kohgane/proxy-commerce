@@ -12,6 +12,8 @@ ADAPTER_DRY_RUN=1 시 실 API 호출 없이 dry-run 응답 반환.
 from __future__ import annotations
 
 import logging
+
+from src.market_relay import relay_request
 import os
 from typing import List
 from xml.etree import ElementTree
@@ -98,8 +100,7 @@ class ElevenAdapter(MarketAdapter):
 
         try:
             import requests
-            resp = requests.get(
-                f"{_BASE_URL}/prodservices/product/productlist",
+            resp = relay_request("GET", f"{_BASE_URL}/prodservices/product/productlist",
                 headers=_auth_headers(),
                 params={"sellerPrdCd": "", "prdStatusCd": "01", "pageNum": 1, "pageSize": 50},
                 timeout=10,
@@ -121,8 +122,7 @@ class ElevenAdapter(MarketAdapter):
         try:
             import requests
             import json
-            resp = requests.post(
-                f"{_BASE_URL}/prodservices/product",
+            resp = relay_request("POST", f"{_BASE_URL}/prodservices/product",
                 headers={**_auth_headers(), "Content-Type": "application/json"},
                 json=product,
                 timeout=10,
@@ -162,8 +162,7 @@ class ElevenAdapter(MarketAdapter):
                 f"<sellprc>{new_price_krw}</sellprc>"
                 f"</PriceRequest>"
             )
-            resp = requests.post(
-                f"{_BASE_URL}/prodservices/product/{sku}/price",
+            resp = relay_request("POST", f"{_BASE_URL}/prodservices/product/{sku}/price",
                 headers={**_auth_headers(), "Content-Type": "application/xml; charset=UTF-8"},
                 data=xml_body.encode("utf-8"),
                 timeout=10,
@@ -203,8 +202,7 @@ class ElevenAdapter(MarketAdapter):
 
         try:
             import requests
-            resp = requests.get(
-                f"{_BASE_URL}/orderservices/order/selOrderInfo",
+            resp = relay_request("GET", f"{_BASE_URL}/orderservices/order/selOrderInfo",
                 headers=_auth_headers(),
                 params={
                     "ordDtFrom": since_str,
@@ -312,8 +310,7 @@ class ElevenAdapter(MarketAdapter):
 
         try:
             import requests
-            resp = requests.post(
-                f"{_BASE_URL}/orderservices/invoice/sellerInvoice",
+            resp = relay_request("POST", f"{_BASE_URL}/orderservices/invoice/sellerInvoice",
                 headers={**_auth_headers(), "Content-Type": "application/xml"},
                 data=(
                     f"<InvoiceRequest>"
@@ -346,8 +343,7 @@ class ElevenAdapter(MarketAdapter):
 
         try:
             import requests
-            resp = requests.get(
-                f"{_BASE_URL}/prodservices/product/productlist",
+            resp = relay_request("GET", f"{_BASE_URL}/prodservices/product/productlist",
                 headers=_auth_headers(),
                 params={"pageNum": 1, "pageSize": 1},
                 timeout=5,

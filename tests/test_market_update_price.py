@@ -1,3 +1,5 @@
+# v87-S7: 이 모듈들이 relay_request(단일 관문)를 타면서 직결도 requests.request로 나간다.
+#   그래서 목 대상도 requests.post/get → requests.request 로 옮긴다(동작 동일, 경로만 통일).
 """tests/test_market_update_price.py — 4개 마켓 어댑터 update_price() 테스트 (Phase 136)."""
 from __future__ import annotations
 
@@ -130,7 +132,7 @@ class TestElevenAdapterUpdatePrice:
         monkeypatch.setenv("ELEVENST_API_KEY", "test_key")
         monkeypatch.setenv("ADAPTER_DRY_RUN", "0")
 
-        with patch("requests.post") as mock_post:
+        with patch("requests.request") as mock_post:
             resp = MagicMock()
             resp.status_code = 200
             resp.text = "<Response><code>200</code></Response>"

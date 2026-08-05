@@ -1,3 +1,5 @@
+# v87-S7: 이 모듈들이 relay_request(단일 관문)를 타면서 직결도 requests.request로 나간다.
+#   그래서 목 대상도 requests.post/get → requests.request 로 옮긴다(동작 동일, 경로만 통일).
 """tests/test_elevenst_uploader.py — 11번가 OpenAPI 업로더 단위 검증.
 
 requests를 목 처리하여 prepare_product 매핑, XML 구성, 응답 파싱,
@@ -91,7 +93,7 @@ class TestUploadProduct:
     def test_success(self, uploader):
         resp = MagicMock(status_code=200,
                          text="<ProductResponse><result_code>200</result_code><ProductNo>P9</ProductNo></ProductResponse>")
-        with patch("src.uploaders.elevenst_uploader.requests.post", return_value=resp):
+        with patch("src.uploaders.elevenst_uploader.requests.request", return_value=resp):
             out = uploader.upload_product({"sku": "S1", "title": "T", "price": 1000, "images": []})
         assert out["success"] is True
         assert out["product_id"] == "P9"
@@ -99,7 +101,7 @@ class TestUploadProduct:
 
     def test_http_error(self, uploader):
         resp = MagicMock(status_code=401, text="Unauthorized")
-        with patch("src.uploaders.elevenst_uploader.requests.post", return_value=resp):
+        with patch("src.uploaders.elevenst_uploader.requests.request", return_value=resp):
             out = uploader.upload_product({"sku": "S1", "title": "T", "price": 1000})
         assert out["success"] is False
         assert "401" in out["error"]
@@ -107,7 +109,7 @@ class TestUploadProduct:
     def test_api_logical_failure(self, uploader):
         resp = MagicMock(status_code=200,
                          text="<ProductResponse><result_code>500</result_code><result_text>등록 거부</result_text></ProductResponse>")
-        with patch("src.uploaders.elevenst_uploader.requests.post", return_value=resp):
+        with patch("src.uploaders.elevenst_uploader.requests.request", return_value=resp):
             out = uploader.upload_product({"sku": "S1", "title": "T", "price": 1000})
         assert out["success"] is False
         assert "등록 거부" in out["error"]

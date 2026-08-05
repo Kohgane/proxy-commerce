@@ -204,19 +204,17 @@ class NaverSmartStoreUploader(BaseUploader):
         if not self.client_id or not self.client_secret:
             return ''
         try:
-            from src.market_throttle import throttled_request
-            resp = throttled_request(
-                lambda: requests.post(
-                    self._TOKEN_URL,
-                    data={
-                        'grant_type': 'client_credentials',
-                        'client_id': self.client_id,
-                        'client_secret': self.client_secret,
-                        'type': 'SELF',
-                    },
-                    timeout=15,
-                ),
-                market="smartstore", key=str(self.client_id or ""),
+            # v87-S7: 토큰 발급도 **릴레이 경유**(단일 관문). 직결로 나가면 네이버가 IP로 막아
+            #   토큰을 못 받고, 그 뒤 모든 호출이 연쇄 실패한다(GW.IP_NOT_ALLOWED).
+            resp = relay_request(
+                'POST', self._TOKEN_URL,
+                data={
+                    'grant_type': 'client_credentials',
+                    'client_id': self.client_id,
+                    'client_secret': self.client_secret,
+                    'type': 'SELF',
+                },
+                timeout=15, market="smartstore", key=str(self.client_id or ""),
             )
             resp.raise_for_status()
             data = resp.json()
