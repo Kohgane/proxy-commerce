@@ -20,7 +20,11 @@ def test_source_contract():
     # corr-id 부여 + 건당 1회 헬퍼 + FAB/호버가 사용
     assert "function kgpAlertOnce" in CS and "_kgpCorrDone" in CS
     assert "meta.corr_id = corr" in CS          # FAB
-    assert "corr_id: corr" in CS                # 호버
+    # 호버(타일) 경로 — v86-F에서 페이로드가 `_kgpTileMeta` 단일 헬퍼로 빠지면서 corr_id는
+    #   리터럴 안이 아니라 헬퍼 반환값에 대입된다. 계약이 봐야 하는 건 "타일 수집에도 corr가
+    #   붙는가"이지 대입이 인라인이냐가 아니다 → 그 구간에서 corr 대입 여부로 센다.
+    _hover = CS.split("function kgpQuickCollect", 1)[1].split("\nfunction ", 1)[0]
+    assert "corr" in _hover and ".corr_id" in _hover, "호버 수집에 corr_id 미부여"
     assert "kgpAlertOnce(corr" in CS
     # background: content 경로(sendResponse)에선 OS 알림 생략(이중 알럿 제거)
     assert "if (!sendResponse) {" in BG
@@ -51,4 +55,4 @@ console.log("OK");
 
 
 def test_manifest_bumped():
-    assert '"version": "1.5.136"' in Path("extensions/chrome-collector/manifest.json").read_text(encoding="utf-8")
+    assert '"version": "1.5.137"' in Path("extensions/chrome-collector/manifest.json").read_text(encoding="utf-8")

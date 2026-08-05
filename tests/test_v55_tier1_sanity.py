@@ -30,7 +30,11 @@ def test_manifest_net_main_document_start():
 def test_tier1_diagnostic_source_contract():
     # kgp-main이 diag(netBound·captured·topScore·topUrl) 동봉, content_script가 원인 1줄 로그(무음 금지).
     assert "diag" in MAIN and "netBound" in MAIN and "captured" in MAIN
-    assert "인터셉터 미주입" in CS and "매치 0건" in CS and "시그니처 미달" in CS
+    # v86-G: 캡처 0의 원인이 '매치 0건' 한 문장이던 것을 **관측값 기반 3갈래**로 쪼갰다
+    #   (주입 타이밍 / 응답 형식 / 시그니처 채점). 문구가 아니라 '갈래가 있는가'를 계약한다.
+    assert "인터셉터 미주입" in CS and "시그니처 미달" in CS
+    assert "주입 타이밍" in CS, "캡처 0을 월드/타이밍 갈래로 못 가른다"
+    assert "시그니처 채점 미달" in CS, "캡처 0을 채점 갈래로 못 가른다"
     assert "Tier1 동작" in CS                             # 기여 시 확인 로그
     assert "MAIN world 미응답" in CS                       # 타임아웃 폴백도 원인 로그
     assert "tier1_source" in CS                            # 채택 URL 전파

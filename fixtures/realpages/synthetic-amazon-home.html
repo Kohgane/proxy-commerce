@@ -1,0 +1,56 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Amazon.com: Online Shopping</title>
+<!--
+  v86-G 픽스처 — 아마존 **홈**(검색 결과가 아님) 캐러셀 목록.
+
+  왜 홈이 따로 필요한가: 오너 실기기 실측에서 아마존 홈/검색만 rest host_opacity=1로 나오고
+  알리·라쿠텐은 0이었다. 기존 목록 계약 스냅샷 4종(ali/amazon-search/yoshida/rakuten-search)에는
+  **홈 경로가 없어** 그 불일치를 재현할 픽스처 자체가 없었다.
+
+  홈은 검색 결과와 마크업이 다르다 — `[data-component-type="s-search-result"]`도, `data-asin`도 없고
+  캐러셀 타일에 /dp/ 링크·이미지·제목·가격만 있다(= generic 카드 경로로 잡힌다). 그래서 아마존
+  어댑터가 아니라 generic 경로의 rest 처리를 검증하게 된다.
+-->
+<style>
+  body { font-family: Arial, sans-serif; margin: 0; background: #eaeded; }
+  .a-carousel { display: flex; gap: 12px; padding: 16px; background: #fff; margin: 12px; }
+  .a-carousel-card { width: 220px; }
+  .a-carousel-card img { width: 200px; height: 200px; display: block; }
+  .p13n-sc-price { color: #b12704; font-weight: 700; }
+</style>
+
+<div id="nav-belt">Amazon home</div>
+
+<div class="a-carousel" data-a-carousel-options='{"name":"deals"}'>
+  <div class="a-carousel-card">
+    <a href="/dp/B0HOME0001/ref=sr_1_1"><img src="https://m.media-amazon.com/images/I/71home01._AC_UL320_.jpg" alt="Stainless Steel Insulated Tumbler 30oz"></a>
+    <a href="/dp/B0HOME0001/ref=sr_1_1"><span>Stainless Steel Insulated Tumbler 30oz</span></a>
+    <span class="p13n-sc-price">$24.99</span>
+  </div>
+  <div class="a-carousel-card">
+    <a href="/dp/B0HOME0002/ref=sr_1_2"><img src="https://m.media-amazon.com/images/I/71home02._AC_UL320_.jpg" alt="Foldable Laptop Stand Aluminum"></a>
+    <a href="/dp/B0HOME0002/ref=sr_1_2"><span>Foldable Laptop Stand Aluminum</span></a>
+    <span class="p13n-sc-price">$32.50</span>
+  </div>
+  <div class="a-carousel-card">
+    <a href="/dp/B0HOME0003/ref=sr_1_3"><img src="https://m.media-amazon.com/images/I/71home03._AC_UL320_.jpg" alt="Wireless Charging Pad 15W Fast"></a>
+    <a href="/dp/B0HOME0003/ref=sr_1_3"><span>Wireless Charging Pad 15W Fast</span></a>
+    <span class="p13n-sc-price">$18.99</span>
+  </div>
+  <div class="a-carousel-card">
+    <a href="/dp/B0HOME0004/ref=sr_1_4"><img src="https://m.media-amazon.com/images/I/71home04._AC_UL320_.jpg" alt="Ceramic Non-Stick Frying Pan 10 inch"></a>
+    <a href="/dp/B0HOME0004/ref=sr_1_4"><span>Ceramic Non-Stick Frying Pan 10 inch</span></a>
+    <span class="p13n-sc-price">$41.00</span>
+  </div>
+  <div class="a-carousel-card">
+    <a href="/dp/B0HOME0005/ref=sr_1_5"><img src="https://m.media-amazon.com/images/I/71home05._AC_UL320_.jpg" alt="Bluetooth Sleep Headphones Headband"></a>
+    <a href="/dp/B0HOME0005/ref=sr_1_5"><span>Bluetooth Sleep Headphones Headband</span></a>
+    <span class="p13n-sc-price">$27.90</span>
+  </div>
+  <div class="a-carousel-card">
+    <a href="/dp/B0HOME0006/ref=sr_1_6"><img src="https://m.media-amazon.com/images/I/71home06._AC_UL320_.jpg" alt="Adjustable Dumbbell Set 25 lb"></a>
+    <a href="/dp/B0HOME0006/ref=sr_1_6"><span>Adjustable Dumbbell Set 25 lb</span></a>
+    <span class="p13n-sc-price">$89.99</span>
+  </div>
+</div>

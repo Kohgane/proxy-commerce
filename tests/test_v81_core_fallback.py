@@ -55,10 +55,14 @@ def test_bm_js_valid():
 
 
 def test_server_stores_mode_and_history_badge():
-    # 서버 저장에 mode 필드 + 이력 뷰가 is_core 플래그 + 템플릿 '간이' 배지.
-    ext = Path("src/api/extension_api.py").read_text(encoding="utf-8")
-    assert '"mode": (str(payload.get("mode") or "").strip().lower() or "full")' in ext
+    """서버 저장에 mode 필드 + 이력 뷰가 is_core 플래그 + 템플릿 '간이' 배지.
+
+    v86-F: 판정이 리터럴 비교에서 `SIMPLE_COLLECT_MODES`(core/simple 집합)로 일반화됐다 —
+    소스 문자열 대신 **동작**으로 계약한다(구현을 리터럴로 못박으면 다음 모드 추가 때 또 깨진다).
+    """
+    from src.api.extension_api import _resolve_collect_mode
+    assert _resolve_collect_mode({"mode": "core"}) == "core", "북마클릿 코어 폴백 모드가 보존돼야 한다"
     views = Path("src/seller_console/views.py").read_text(encoding="utf-8")
-    assert 'it["is_core"] = (str(ex.get("mode") or "").lower() == "core")' in views
+    assert 'it["is_core"]' in views and "SIMPLE_COLLECT_MODES" in views
     rows = Path("src/seller_console/templates/collect_history_rows.html").read_text(encoding="utf-8")
     assert "{% if it.is_core %}" in rows and "간이" in rows and "다시 수집" in rows

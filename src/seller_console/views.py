@@ -6103,7 +6103,12 @@ def _shape_collect_items(items, current_lang):
         _src = str(it.get("source") or "")
         _pending = (not _enriched) and _src in ("bulk", "bulk_collect") and bool(cs) and cs.get("status") != "성공"
         it["enrich_status"] = "done" if _enriched else ("pending" if _pending else "")
-        it["is_core"] = (str(ex.get("mode") or "").lower() == "core")   # v81 STEP1: 북마클릿 간이(코어) 폴백 수집
+        # v81 STEP1: 북마클릿 간이(코어) 폴백 / v86-F: 목록 타일 간이('simple') — 둘 다 '간이' 뱃지.
+        #   판정은 extension_api의 SIMPLE_COLLECT_MODES 한 곳에서만 정의한다(뱃지 조건이 두 벌 되면 또 어긋난다).
+        from src.api.extension_api import SIMPLE_COLLECT_MODES
+        _mode = str(ex.get("mode") or "").lower()
+        it["is_core"] = _mode in SIMPLE_COLLECT_MODES
+        it["collect_mode"] = _mode
     return items
 
 

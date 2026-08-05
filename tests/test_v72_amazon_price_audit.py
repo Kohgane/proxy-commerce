@@ -20,7 +20,12 @@ FIX = Path("fixtures/realpages/synthetic-amazon-search.html")
 def test_hover_collect_enqueues_enrich():
     seg = CS.split("function kgpQuickCollect")[1].split("function kgpMarkExisting")[0]
     # 목록 카드 가격/제목 1차 전송(meta).
-    assert "price: card.price, currency: card.currency" in seg
+    #   v86-F: 페이로드가 `_kgpTileMeta` 단일 헬퍼로 빠졌다(단건·벌크 공유). 계약은 "타일 가격이
+    #   실려 나가는가"이므로 헬퍼 정의에서 확인하고, 호출부는 헬퍼 경유만 본다(리터럴 고정 해제).
+    assert "_kgpTileMeta(card)" in seg, "호버 수집이 타일 페이로드 헬퍼를 안 쓴다"
+    _tile = CS.split("function _kgpTileMeta(", 1)[1].split("\n}", 1)[0]
+    assert "price: c.price" in _tile and "currency: c.currency" in _tile, \
+        "타일 페이로드에 목록 가격/통화가 안 실린다"
     # 성공 시 enrichTargets로 보강 큐 자동 등록(enrichStart).
     assert "resp.enrichTargets" in seg
     assert 'action: "enrichStart"' in seg

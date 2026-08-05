@@ -84,6 +84,19 @@ def _pw_ok():
         return False
 
 
+_FIX = Path("fixtures/realpages")
+
+
+def _launch_opts(pw) -> dict:
+    """chromium 실행 옵션 — CI 사전설치 경로가 있으면 그걸, 없으면 playwright 기본(OS 무관)."""
+    hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")
+    opts = {"executable_path": hits[0]} if hits else {}
+    proxy = os.environ.get("HTTPS_PROXY")
+    if proxy:
+        opts["proxy"] = {"server": proxy, "bypass": "127.0.0.1,localhost"}
+    return opts
+
+
 # 게이트를 '스킵으로 통과'시키지 않기 위한 안전장치 — CI/릴리스에서 이 값을 켜면
 # 브라우저 미설치는 스킵이 아니라 **실패**가 된다(공허한 그린 방지).
 _REQUIRE_BROWSER = os.getenv("KGP_REQUIRE_BROWSER", "") == "1"
@@ -709,6 +722,111 @@ def test_rest_hidden_regresses_when_always_shown():
     got = _measure_listing(broken, REST_PROBE)
     assert got.get("n"), ("합성 목록에서도 타일이 없다 — 회귀 검증 불가", got)
     assert got["host_opacity"] > 0.0, ("rest를 0.85로 되돌렸는데 계약이 통과한다 = 게이트가 무의미", got)
+
+
+# ── v86-G: 사이트별 rest 단언(아마존 홈 픽스처) ──────────────────────────────
+#   오너 실측: 아마존 홈 rest host_opacity=1인데 알리·라쿠텐은 0. 기존 계약 스냅샷 4종에 **홈 경로가
+#   없어** 재현 자체가 불가능했다. 홈은 검색결과와 마크업이 달라(캐러셀 /dp/ 타일 = generic 경로)
+#   아마존 어댑터가 아닌 generic 경로의 rest를 검증하게 된다.
+#
+#   ★판독의 핵심: rest 값은 **collected 상태와 짝지어야만** 의미가 있다. '수집됨 ✓' 타일은 v86-C 설계상
+#   rest에서도 상시 노출(opacity 1)이고 호버 토글에서 제외된다. 그래서 "아마존만 1"은 위반일 수도,
+#   그 카드들이 이미 수집된 것일 수도 있다 — 둘을 가르지 못하는 계측이 문제였다. 아래는 타일마다
+#   (collected, opacity)를 함께 재서 그 혼동을 구조적으로 없앤다.
+
+AMAZON_HOME_FIXTURE = _FIX / "synthetic-amazon-home.html"
+
+REST_BY_STATE_PROBE = """() => {
+    const qs = [...document.querySelectorAll('.kgp-card-quick')];
+    return {
+      n: qs.length,
+      tiles: qs.map(q => ({
+        collected: q.dataset.collected === '1',
+        opacity: parseFloat(getComputedStyle(q).opacity),
+      })),
+    };
+}"""
+
+
+def _measure_site(code: str, url: str, html: str, probe: str) -> dict:
+    """임의 사이트 URL + HTML로 목록을 띄우고 content_script를 주입해 실측(외부 요청 전면 차단)."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(**_launch_opts(pw))
+        page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
+        origin = "/".join(url.split("/")[:3]) + "/"
+        page.route(
+            "**/*",
+            lambda route: (
+                route.fulfill(status=200, content_type="text/html; charset=utf-8", body=html)
+                if route.request.url.startswith(origin)
+                else route.abort()
+            ),
+        )
+        page.goto(url, wait_until="domcontentloaded")
+        page.evaluate(CHROME_STUB)
+        page.evaluate(code)
+        page.wait_for_timeout(700)
+        got = page.evaluate(probe)
+        browser.close()
+    return got
+
+
+@pytest.mark.skipif(not _pw_ok(), reason="Playwright/chromium 미설치")
+def test_amazon_home_rest_hidden_like_other_sites():
+    """★사이트별 rest 단언 — 아마존 **홈**에서도 미수집 타일은 rest에서 안 보인다(알리·라쿠텐과 동일)."""
+    assert AMAZON_HOME_FIXTURE.exists(), "아마존 홈 픽스처 미커밋"
+    got = _measure_site(_isolated_code(), "https://www.amazon.com/",
+                        AMAZON_HOME_FIXTURE.read_text(encoding="utf-8"), REST_BY_STATE_PROBE)
+    assert got["n"] >= 3, ("아마존 홈에서 타일 미부착 — 계약 대상 없음(공허한 그린 방지)", got)
+    leaked = [t for t in got["tiles"] if not t["collected"] and t["opacity"] > 0]
+    assert not leaked, ("아마존 홈에서 미수집 타일이 rest에 노출 — 사이트별 rest 불일치", got)
+
+
+@pytest.mark.skipif(not _pw_ok(), reason="Playwright/chromium 미설치")
+def test_collected_tile_is_the_only_rest_visible_state():
+    """'수집됨 ✓'만 rest 노출 — rest=1을 봤을 때 위반인지 수집됨인지 갈리는 근거를 계약으로 박는다.
+
+    이 단언이 없으면 "전 사이트 rest 0 통일"을 하다가 수집됨 표시까지 지워버려도 아무도 못 잡는다.
+    """
+    assert AMAZON_HOME_FIXTURE.exists(), "아마존 홈 픽스처 미커밋"
+    code = _isolated_code() + """
+      ;(function () {
+        var q = document.querySelector('.kgp-card-quick');
+        if (q && typeof kgpMarkQuickCollected === 'function') kgpMarkQuickCollected(q);
+      })();
+    """
+    got = _measure_site(code, "https://www.amazon.com/",
+                        AMAZON_HOME_FIXTURE.read_text(encoding="utf-8"), REST_BY_STATE_PROBE)
+    assert got["n"] >= 3, ("타일 미부착 — 계약 대상 없음", got)
+    coll = [t for t in got["tiles"] if t["collected"]]
+    rest = [t for t in got["tiles"] if not t["collected"]]
+    assert len(coll) == 1, ("수집됨 표식 주입 실패 — 이 계약이 공허하다", got)
+    assert coll[0]["opacity"] == 1.0, ("'수집됨 ✓' 타일이 rest에서 사라졌다 — 수집 표시 소실", got)
+    assert all(t["opacity"] == 0.0 for t in rest), ("미수집 타일이 rest에 노출", got)
+
+
+@pytest.mark.skipif(not _pw_ok(), reason="Playwright/chromium 미설치")
+def test_rest_state_recorded_before_hover_probe_fires():
+    """진단의 rest_state는 **호버 프로브 이전** 값이어야 한다(프로브가 opacity를 1로 올린다).
+
+    순서가 뒤집히면 진단이 자기가 만든 노출을 위반으로 보고한다 — 계측이 스스로를 오염시키는 함정.
+    """
+    cs = (EXT / "content_script.js").read_text(encoding="utf-8")
+    body = cs.split("_ui.tile_quick_n = _qs.length;", 1)[1]
+    i_rest = body.find("_ui.rest_state =")
+    i_hover = body.find("_ui.hover_test =")
+    assert i_rest > 0, "진단에 rest_state 미기록 — 사이트별 rest를 실기기에서 판정할 수단이 없다"
+    assert i_hover > 0, "hover_test 계측이 사라졌다"
+    assert i_rest < i_hover, "rest_state를 호버 프로브 뒤에서 잰다 — 프로브가 올린 opacity를 위반으로 오독한다"
+
+
+def test_hover_probe_records_collected_state():
+    """호버 프로브가 collected를 남긴다 — host_opacity=1의 두 원인(위반/수집됨)을 가르는 유일한 근거."""
+    cs = (EXT / "content_script.js").read_text(encoding="utf-8")
+    seg = cs.split("function _kgpHoverProbe", 1)[1].split("function _kgpCenterHit", 1)[0]
+    assert "collected" in seg, "호버 프로브에 collected 미기록 — rest=1 판독이 여전히 불가능"
 
 
 def test_hover_probe_instrumented_in_diagnostic():

@@ -45,12 +45,17 @@
       var meta = _run();
       // v55 STEP1: Tier1 진단 정보 동봉 — 격리월드가 '왜 Tier1이 비었나'를 무음 없이 1줄로 알림.
       // v62 STEP2: goods_id 매칭 진단 — 내 goods_id 응답 포착 여부(오채택 방지 근거).
-      var diag = { netBound: false, captured: 0, topScore: 0, topUrl: "", pageGoodsId: "", matched: false, mismatch: false };
+      // v86-G: netStats(seen/jsonish/kept/dropped) + top 후보 요약을 함께 넘긴다 —
+      //   `captured:0` 하나로는 '월드/타이밍 실패'와 '채점 실패'를 못 갈랐다(kgp-net.js 주석 참조).
+      var diag = { netBound: false, captured: 0, topScore: 0, topUrl: "", pageGoodsId: "", matched: false, mismatch: false,
+                   netStats: null, top: null };
       try {
         diag.netBound = !!window.__kgpNetBound;
         var cap = window.__kgpCaptured || [];
         diag.captured = cap.length;
         if (cap.length) { diag.topScore = cap[0].score || 0; diag.topUrl = cap[0].url || ""; }
+        diag.netStats = window.__kgpNetStats || null;
+        diag.top = (typeof window.__kgpTopCandidate === "function") ? window.__kgpTopCandidate() : null;
         diag.pageGoodsId = (typeof window.__kgpPageGoodsId === "function") ? (window.__kgpPageGoodsId() || "") : "";
         if (diag.pageGoodsId) {
           diag.matched = !!(typeof window.__kgpMatchCapture === "function" && window.__kgpMatchCapture(diag.pageGoodsId));

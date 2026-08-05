@@ -488,6 +488,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         //   리스너가 안 붙었거나 죽었으면 after가 before와 같게 나와 **즉시 드러난다**(추측 불필요).
         // v86-D: 첫 타일만 재면 "첫 타일은 되는데 나머지는?"을 못 본다 → 첫·중간·마지막 3표본.
         if (_qs.length) {
+          // v86-G: 사이트별 rest 판정을 **전수 집계**로 남긴다. 표본 3개는 어느 게 수집됨 타일인지에 따라
+          //   사이트 전체 결론이 뒤집힌다(아마존 홈에서 첫 타일이 '수집됨 ✓'이면 rest=1이 정상인데 위반처럼 읽힌다).
+          //   rest_violations = 수집 안 된 타일인데 rest에서 보이는 수 → 이 값만 0이면 호버 은닉 계약 충족.
+          //   ★반드시 호버 프로브 **이전에** 잰다 — 프로브가 synthetic mouseenter로 opacity를 1로 올린다.
+          try {
+            var _rv = 0, _rc = 0;
+            for (var _r = 0; _r < _qs.length; _r++) {
+              var _q = _qs[_r];
+              if (_q.dataset && _q.dataset.collected === "1") { _rc++; continue; }
+              if (parseFloat(getComputedStyle(_q).opacity || "0") > 0) _rv++;
+            }
+            _ui.rest_state = { n: _qs.length, collected: _rc, rest_violations: _rv, rest_opacity: KGP_QUICK_REST_OPACITY };
+          } catch (e) {}
           _ui.hover_test = _kgpHoverProbe(_qs[0]);            // 하위호환(기존 판독 스크립트 유지)
           var _idx = [0, Math.floor(_qs.length / 2), _qs.length - 1];
           var _seen = {}, _samples = [];
@@ -1238,6 +1251,44 @@ function kgpMergeMeta(base, extra) {
   }
   return out;
 }
+// v86-G: Tier1 진단 조립 단일 소스. 종전엔 **성공 응답 경로에서만** merged.tier1_diag를 세웠고,
+//   900ms 타임아웃 폴백은 콘솔 경고만 남기고 그냥 cb(isolated)로 빠졌다. 그래서 MAIN world가 응답을
+//   못 하면 payload에 tier1 흔적이 **아예 없고**, 오너 실기기에선 "tier1 흔적 무"로만 보였다
+//   (=미주입인지, 진단 자체가 안 붙은 건지 구분 불가). 이제 두 경로 모두 여기를 통과한다.
+// 필드: tier1_hits(=채점 통과 응답 수) / tier1_seen·dropped(채점 이전 트래픽) / top(최고점 후보 요약).
+function _kgpTier1Diag(diag, tier1Source, usedTier1, cause) {
+  diag = diag || {};
+  var ns = diag.netStats || {};
+  return {
+    used: !!usedTier1,
+    netBound: !!diag.netBound,
+    tier1_source: tier1Source || "",
+    tier1_hits: diag.captured || 0,          // 채점 통과(score>=1) 응답 수 = 실제 후보 수
+    tier1_seen: ns.seen || 0,                // 래퍼가 본 응답 수(채점 전) — 0이면 월드/타이밍 문제
+    tier1_jsonish: ns.jsonish || 0,
+    tier1_dropped: ns.dropped || 0,          // 봤지만 0점 = 시그니처 채점 문제
+    dropped_urls: ns.droppedUrls || [],
+    top: diag.top || null,                   // {url,score,price,images,sku,reviews,size,goods_id}
+    topScore: diag.topScore || 0,
+    cause: cause || "",
+    page_goods_id: diag.pageGoodsId || "",
+    goods_matched: !!diag.matched,
+  };
+}
+// v86-G: 캡처 0의 원인 갈래를 **관측값으로** 가른다(추측 문구 금지).
+function _kgpTier1Cause(diag) {
+  var ns = (diag && diag.netStats) || {};
+  if (!diag || !diag.netBound) return "인터셉터 미주입(MAIN world 로드 실패 — 확장 재로딩 필요)";
+  if (diag.pageGoodsId && diag.mismatch && diag.captured) {
+    return "이 상품의 API 응답 미포착(goods_id " + diag.pageGoodsId + ") — 페이지 새로고침 후 재시도";
+  }
+  if (!diag.captured) {
+    if (!ns.seen) return "래퍼는 붙었는데 응답 0건(주입 타이밍 — 상품 데이터가 document_start 이전/문서 외 경로)";
+    if (!ns.jsonish) return "응답 " + ns.seen + "건 전부 JSON 아님(캡처 대상 밖 — 요청 형식 변경 의심)";
+    return "JSON " + ns.jsonish + "건 포착·전부 0점(시그니처 채점 미달 — 응답 키 구조 변경)";
+  }
+  return "시그니처 미달(최고점 " + (diag.topScore || 0) + "/4 — 팝업 '자가진단 모드'로 후보 표 확인)";
+}
 function kgpExtractMerged(cb) {
   let isolated;
   try { isolated = extractProductMeta(); }
@@ -1261,14 +1312,10 @@ function kgpExtractMerged(cb) {
         console.log("%c[고가수집기] Tier1 동작 ✓ — 채택 " + (merged.tier1_source || "(API 응답)") + " (최고점 " + (diag.topScore || 0) + "/4)", "color:#119a8e;font-weight:bold");
         try { if (diag.topUrl) chrome.storage && chrome.storage.local && chrome.storage.local.set({ ["kgp_api_pat:" + location.hostname]: diag.topUrl }); } catch (_) {}
       } else {
-        cause = !diag.netBound ? "인터셉터 미주입(MAIN world 로드 실패 — 확장 재로딩 필요)"
-          // v62 STEP2: 내 goods_id 응답 미포착 — 다른 상품 응답 오채택 방지 위해 Tier2 폴백(정직 안내).
-          : (diag.pageGoodsId && diag.mismatch ? "이 상품의 API 응답 미포착(goods_id " + diag.pageGoodsId + ") — 페이지 새로고침 후 재시도"
-          : (diag.captured === 0 ? "매치 0건(상품 API 응답을 아직 못 잡음 — 페이지 새로고침 후 다시 수집)"
-          : "시그니처 미달(최고점 " + (diag.topScore || 0) + "/4 — 팝업 '자가진단 모드'로 후보 표 확인)"));
+        cause = _kgpTier1Cause(diag);
         console.warn("%c[고가수집기] Tier1 무동작 → DOM 폴백 사용. 원인: " + cause, "color:#c2503c;font-weight:bold");
       }
-      merged.tier1_diag = { used: usedTier1, netBound: !!diag.netBound, captured: diag.captured || 0, topScore: diag.topScore || 0, source: merged.tier1_source || "", cause: cause, page_goods_id: diag.pageGoodsId || "", goods_matched: !!diag.matched };
+      merged.tier1_diag = _kgpTier1Diag(diag, merged.tier1_source, usedTier1, cause);
       console.log("[고가수집기] MAIN world 병합 — 이미지 " + ((isolated.images || []).length) + "→" + ((merged.images || []).length)
         + ", 가격 " + (isolated.price || "-") + "→" + (merged.price || "-"));
     } catch (_) {}
@@ -1279,7 +1326,11 @@ function kgpExtractMerged(cb) {
   setTimeout(() => {
     if (done) return; done = true;
     window.removeEventListener("message", onMsg);
-    try { console.warn("%c[고가수집기] Tier1 무동작 → DOM 폴백. 원인: MAIN world 미응답(kgp-main 미로드/타임아웃 — 확장 재로딩 권장)", "color:#c2503c;font-weight:bold"); } catch (_) {}
+    var tmCause = "MAIN world 미응답(kgp-main 미로드/타임아웃 — 확장 재로딩 권장)";
+    try { console.warn("%c[고가수집기] Tier1 무동작 → DOM 폴백. 원인: " + tmCause, "color:#c2503c;font-weight:bold"); } catch (_) {}
+    // v86-G: 이 경로도 진단을 **반드시** 실어 보낸다. 종전엔 여기서 tier1_diag가 아예 안 붙어,
+    //   payload에 tier1 흔적이 없는 것이 곧 '미응답'인지 '진단 미부착'인지 판별 불가였다.
+    try { isolated.tier1_diag = _kgpTier1Diag({}, "", false, tmCause); } catch (_) {}
     cb(isolated);   // MAIN world 미응답(비지원 크롬/타임아웃) → 격리월드 추출만(정직 폴백)
   }, 900);
 }
@@ -2082,10 +2133,19 @@ function _kgpCardImage(card) {
 //   리스너가 안 붙었거나 죽었으면 after가 before와 같게 나와 즉시 드러난다(추측 불필요).
 //   ※ 비동기라 진단 응답 전에 끝나야 한다 → 350ms 후 콜백이 아니라, 호출자가 이미 만든 스냅샷에 채워 넣는다.
 function _kgpHoverProbe(q) {
-  var out = { fired: false, before: null, after: null, note: "" };
+  var out = { fired: false, before: null, after: null, note: "", collected: false };
   try {
+    // v86-G: **collected를 같이 남긴다.** '수집됨 ✓' 타일은 v86-C 설계상 rest에서도 opacity 1로
+    //   상시 노출되고 호버 토글에서도 제외된다(kgpQuickHover의 dataset.collected 가드). 이 값이 없으면
+    //   실기기 진단의 `host_opacity=1`이 **호버 은닉 위반인지 수집됨 타일인지 구분되지 않는다** —
+    //   아마존 홈 rest=1 / 알리·라쿠텐 rest=0 불일치 판독을 막고 있던 지점이 정확히 여기다.
+    out.collected = (q.dataset && q.dataset.collected === "1");
     var card = q.closest ? q.closest('[data-kgp="done"]') : null;
     out.before = { host_opacity: getComputedStyle(q).opacity, center_hit: _kgpCenterHit(q) };
+    if (out.collected) {
+      out.note = "수집됨 타일 — rest 상시 노출(설계). 호버 계약 대상 아님";
+      return out;
+    }
     if (!card) { out.note = "카드 요소를 못 찾음(앵커 구조 변경?)"; return out; }
     card.dispatchEvent(new MouseEvent("mouseenter"));
     out.fired = true;
@@ -2244,6 +2304,15 @@ function kgpMarkQuickCollected(btn) {
   btn.style.cssText = kgpQuickBtnStyle(true, btn.dataset.anchorMode || "");   // v65 STEP3: 앵커 모드 보존
   btn.style.cursor = "default";
 }
+// v86-F: 목록 타일 수집 페이로드 단일 소스. 타일에는 **제목·이미지(+목록가)만** 있다 —
+//   상세·옵션·갤러리·스펙은 구조상 담길 수 없다(그건 상세페이지 수집 또는 보강 큐의 몫).
+//   그런데 종전엔 mode를 아예 안 실어 서버가 기본값 'full'로 저장했고, 목록에서 PDP 수집분과
+//   구별이 안 됐다(오너 지적: "간이 수집이 full로 저장"). → 타일 경로는 mode:'simple'을 강제한다.
+//   ※ 서버도 이 값을 그대로 믿지 않고 실체(상세·옵션·갤러리 유무)로 재검증한다(extension_api).
+function _kgpTileMeta(c) {
+  return { url: c.url, title: c.title, image: c.image, images: c.images,
+           price: c.price, currency: c.currency, mode: "simple" };
+}
 function kgpQuickCollect(card, btn) {
   if (btn.dataset.collected === "1" || btn.dataset.busy === "1") return;
   btn.dataset.busy = "1";
@@ -2251,7 +2320,8 @@ function kgpQuickCollect(card, btn) {
   const prev = lbl ? lbl.textContent : "수집";
   if (lbl) lbl.textContent = "수집 중…";
   const corr = kgpNewCorr();
-  const meta = { url: card.url, title: card.title, image: card.image, images: card.images, price: card.price, currency: card.currency, corr_id: corr };
+  const meta = _kgpTileMeta(card);
+  meta.corr_id = corr;
   kgpSendMessage({ action: "collectBulk", items: [meta] }, (resp) => {
     btn.dataset.busy = "";
     if (resp && resp.ok === true && ((resp.success || 0) > 0 || (resp.duplicate || 0) > 0)) {
@@ -2297,7 +2367,7 @@ function kgpUpdateToolbar() {
 
 function kgpCollect(urls, opts) {
   const items = (urls || []).map(u => _kgpCardByUrl[u]).filter(Boolean).map(c => (
-    { url: c.url, title: c.title, image: c.image, images: c.images, price: c.price, currency: c.currency }
+    _kgpTileMeta(c)
   ));
   if (!items.length) { kgpSetStatus("선택된 상품이 없어요. 상품의 ‘수집’ 배지를 눌러 선택하세요."); return; }
   kgpRunBulk(items, opts);

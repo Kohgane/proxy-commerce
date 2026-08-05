@@ -25,6 +25,13 @@
   var MAXLEN = 4000000;        // 4MB 초과 응답은 무시
   window.__kgpCaptured = window.__kgpCaptured || [];
 
+  // v86-G: **계측 사각** — `__kgpCaptured`는 채점 통과분(score>=1)만 담는다. 그래서 종전 진단의
+  //   `captured:0`은 "래퍼가 아무 트래픽도 못 봤다(월드/타이밍 실패)"와 "봤지만 전부 0점이었다
+  //   (시그니처 채점 실패)"를 **구분하지 못했다** — 테무 '흔적 무'의 판독을 막던 지점이 정확히 여기다.
+  //   → stash에 들어온 응답을 단계별로 센다: seen(호출) → jsonish(JSON 파싱 성공) → kept/dropped(채점).
+  //   dropped 표본 URL도 3개까지 남긴다(트래픽은 있었다는 물증 = 채점 갈래 확정).
+  window.__kgpNetStats = window.__kgpNetStats || { seen: 0, jsonish: 0, kept: 0, dropped: 0, droppedUrls: [] };
+
   // 상품형 응답 빠른 판별(파싱 전 텍스트 토큰) — 명백한 비상품 응답 스킵으로 파싱 비용 절감(정확도는 채점이 담당).
   var JSONISH = /^[\s﻿]*[\[{]/;
 
@@ -105,13 +112,24 @@
     return best;
   };
 
+  function _note(bucket, url) {
+    try {
+      var st = window.__kgpNetStats;
+      st[bucket] = (st[bucket] || 0) + 1;
+      if (bucket === "dropped" && st.droppedUrls.length < 3 && url) st.droppedUrls.push(String(url).slice(0, 120));
+    } catch (e) {}
+  }
+
   function stash(text, url) {
+    _note("seen", url);
     try {
       if (!text || text.length > MAXLEN || !JSONISH.test(text)) return;
       var o = JSON.parse(text);
       if (!o || typeof o !== "object") return;
+      _note("jsonish", url);
       var s = _kgpScore(o);
-      if (s.score <= 0) return;               // 상품 신호 0 → 버림(비상품 응답)
+      if (s.score <= 0) { _note("dropped", url); return; }   // 상품 신호 0 → 버림(비상품 응답)
+      _note("kept", url);
       var gid = _goodsIdFromUrl(url) || _goodsIdFromObj(o);   // v62 STEP2: goods_id 키(URL 우선, 없으면 응답)
       window.__kgpCaptured.push({ url: url || "", size: text.length, price: s.price, images: s.images, sku: s.sku, reviews: s.reviews, score: s.score, goods_id: gid, ts: Date.now(), obj: o });
       window.__kgpCaptured.sort(function (a, b) { return b.score - a.score; });   // 점수순(폴백용 — 매칭 우선)
@@ -163,6 +181,17 @@
       return _send.apply(this, arguments);
     };
   } catch (e) {}
+
+  // v86-G: 최고점 후보 1건 요약(obj 제외) — 진단에 실어 서버·드로어에서 "무엇을 잡았나"를 바로 본다.
+  //   점수만으로는 "가격만 잡힌 2점"과 "가격+옵션+갤러리 3점"을 구분 못 해 수리 방향이 안 잡힌다.
+  window.__kgpTopCandidate = function () {
+    var cap = window.__kgpCaptured || [];
+    if (!cap.length) return null;
+    var e = cap[0];
+    return { url: (e.url || "").slice(0, 160), score: e.score || 0, size: e.size || 0,
+             price: !!e.price, images: !!e.images, sku: !!e.sku, reviews: !!e.reviews,
+             goods_id: e.goods_id || "" };
+  };
 
   // ── 진단 표 데이터(메타만, obj 제외) — 격리월드가 postMessage로 요청하면 kgp-main이 console.table ──
   window.__kgpDiagRows = function () {

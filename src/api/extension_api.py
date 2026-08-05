@@ -232,6 +232,34 @@ def _field_empty(payload: dict, key: str) -> bool:
     return v is None or str(v).strip() in ("", "0", "0.0", "0.00")
 
 
+# v86-F: 간이(제목·이미지만) 수집 모드 집합. 'core'=북마클릿 폴백(v81), 'simple'=목록 타일(v86-F).
+#   둘 다 목록에서 '간이' 뱃지로 표시하고 [다시 수집]을 권한다.
+SIMPLE_COLLECT_MODES = frozenset({"core", "simple"})
+
+
+def _resolve_collect_mode(payload: dict) -> str:
+    """수집 모드를 **실체로 재검증**해 결정한다.
+
+    v86-F 오너 지적: 아마존 목록 타일 수집이 `mode:'full'`로 저장돼, 제목·이미지뿐인 항목이
+    상세페이지 수집분과 목록에서 구별되지 않았다(정직 표기 위반 — '간이' 뱃지가 안 뜬다).
+
+    클라가 보낸 mode를 그대로 믿지 않는다. 확장이 낡았거나(구버전) 새 호출부가 mode를 빠뜨리면
+    같은 사고가 조용히 재발하기 때문이다. 상세·옵션·스펙·갤러리가 **전부 비었으면** 간이로 강등한다.
+    (가격은 목록 카드에도 실리므로 '상세를 받았다'의 근거가 못 된다 → 판정에서 제외.)
+    반대로 올리진 않는다 — 클라가 간이라고 했으면 간이다(보수적).
+    """
+    mode = str(payload.get("mode") or "").strip().lower() or "full"
+    if mode in SIMPLE_COLLECT_MODES:
+        return mode
+    substantive = ("description", "options", "detail_specs", "gallery_images", "detail_images", "reviews")
+    if any(not _field_empty(payload, k) for k in substantive):
+        return mode
+    imgs = [i for i in (payload.get("images") or []) if str(i or "").strip()]
+    if len(imgs) > 1:
+        return mode
+    return "simple"
+
+
 def _merge_state_into_payload(payload: dict, sj: dict) -> dict:
     """v49 STEP4: 초기 상태 JSON 파싱 결과(sj)로 payload의 빈 필드를 보강(클라/사용자 값 우선).
 
@@ -461,6 +489,12 @@ def collect_enrich():
         extra["gallery_images"] = _union(gi, extra.get("gallery_images"))
         rep = merged[0] if merged else ""
     extra["enriched"] = True
+    # v86-F: 보강으로 상세가 실제로 채워졌으면 '간이'를 해제한다. 안 그러면 타일 수집분에 뱃지가
+    #   영구히 남아 경고가 소음이 되고, 정작 진짜 간이 항목이 묻힌다. 단 **실제로 채워졌을 때만**
+    #   (changed가 비면 그대로 간이 — 큐만 돌고 못 채운 것을 성공으로 위장하지 않는다).
+    if changed and str(extra.get("mode") or "").lower() in SIMPLE_COLLECT_MODES:
+        extra["mode"] = "full"
+        changed["mode"] = 1
     # 상태 배지 재계산(부분→성공).
     try:
         from src.collectors.collect_status import compute_collect_status as _ccs
@@ -756,7 +790,7 @@ def collect_from_extension():
         "translation_provider": tr.get("provider", "none"),
         "tier1_source": payload.get("tier1_source", ""),      # v55: 자가발견 채택 API URL
         "tier1_diag": payload.get("tier1_diag") or {},        # v56 STEP4: Tier1 최종 판정(used·원인) 저장
-        "mode": (str(payload.get("mode") or "").strip().lower() or "full"),  # v81 STEP1: 'core'=북마클릿 간이 폴백(제목·이미지만), 그 외='full'
+        "mode": _resolve_collect_mode(payload),   # v81 'core'(북마클릿) / v86-F 'simple'(목록 타일) / 'full'
     }
     _field_status = {}
     try:
