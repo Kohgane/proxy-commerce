@@ -35,7 +35,9 @@ def test_hover_collect_uses_extension_queue_not_fetch():
     assert '"collectBulk"' in seg and "kgpSendMessage" in seg
     assert "fetch(" not in seg                                  # 페이지 직접 fetch 금지
     assert "kgpMarkQuickCollected" in seg                       # 수집됨 배지
-    assert "_kgpCollectedUrls.add" in seg
+    # v86-G: 집합 직접 조작(_kgpCollectedUrls.add)은 빈 키 오염 때문에 금지됐고, 가드 헬퍼를 거친다.
+    #   계약의 뜻은 그대로 — "수집 성공 시 그 카드 URL을 수집됨으로 기록한다". 인자까지 못박아 완화 아님.
+    assert "_kgpRememberCollected(card.url)" in seg
 
 
 def test_hover_button_per_card_and_reuse():

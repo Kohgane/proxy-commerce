@@ -66,7 +66,9 @@ def test_goods_id_exact_match_no_wrong_adoption():
 @pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치")
 def test_goods_id_from_various_url_patterns():
     a = NET.index("var GID_URL")
-    b = NET.index("function _goodsIdFromObj")
+    # v86-G: `_goodsIdFromObj`(단일 대표 id) → `_goodsIdsFromObj`(집합)로 바뀌며 그 앞에 _isGidKey가
+    #   생겼다. 이 슬라이스가 노리는 건 **URL 패턴 파서 한 함수**뿐이므로 경계만 옮긴다(검증 범위 동일).
+    b = NET.index("function _isGidKey")
     block = NET[a:b].replace("function _goodsIdFromUrl", "function gid")
     harness = block + (
         "var out={};"

@@ -191,11 +191,17 @@
       if (pgid) {
         var m = (typeof global.__kgpMatchCapture === "function") ? global.__kgpMatchCapture(pgid) : null;
         if (m && m.obj) {
-          cands.push(m.obj);
-          try { global.__kgpTier1Url = m.url || ""; global.__kgpTier1Score = m.score || 0; global.__kgpTier1Mismatch = false; } catch (e2) {}
+          // v86-G(수리): 응답 통짜가 아니라 **내 goods_id 서브트리**로 좁혀 넘긴다. 테무 PDP 응답은 추천
+          //   캐러셀(다른 상품 가격·제목·이미지)을 같이 싣고 오므로, 통짜를 walk하면 추천값을 집을 수 있다.
+          //   축소가 신호를 없애면 kgp-net.js가 통짜로 되돌린다(수집 악화 금지).
+          var _sc = null;
+          try { _sc = (typeof global.__kgpScopeToGoods === "function") ? global.__kgpScopeToGoods(m.obj, pgid) : null; } catch (e3) {}
+          cands.push((_sc && _sc.obj) ? _sc.obj : m.obj);
+          try { global.__kgpTier1Url = m.url || ""; global.__kgpTier1Score = m.score || 0; global.__kgpTier1Mismatch = false;
+                global.__kgpTier1Scope = _sc ? { scoped: !!_sc.scoped, reason: _sc.reason || "" } : null; } catch (e2) {}
         } else {
           // 내 goods_id 응답 미포착 → 다른 상품 캡처 채택 금지. Tier2(DOM) 폴백 신호.
-          try { global.__kgpTier1Mismatch = true; global.__kgpTier1Url = ""; global.__kgpTier1Score = 0; } catch (e2) {}
+          try { global.__kgpTier1Mismatch = true; global.__kgpTier1Url = ""; global.__kgpTier1Score = 0; global.__kgpTier1Scope = null; } catch (e2) {}
         }
       } else if (cap && cap.length) {
         // goods_id 없는 사이트(비테무) → 기존 점수순 후보(오채택 위험 낮음).

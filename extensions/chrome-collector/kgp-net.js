@@ -75,38 +75,159 @@
   function _goodsIdFromUrl(u) {
     try { var m = String(u || "").match(GID_URL); return m ? m[1] : ""; } catch (e) { return ""; }
   }
-  function _goodsIdFromObj(root) {
-    var stack = [root], seen = 0;
-    while (stack.length && seen < 4000) {
+  function _isGidKey(kl) { return kl === "goodsid" || kl === "goods_id"; }
+  function _gidVal(v) {
+    if (typeof v !== "number" && typeof v !== "string") return "";
+    var g = String(v).replace(/\D/g, "");
+    return g.length >= 5 ? g : "";
+  }
+
+  // v86-G(수리): 응답 **전체의** goods_id 집합. 종전 `_goodsIdFromObj`는 DFS 첫 히트 **하나**만 키로 박았다.
+  //   테무 PDP 렌더 응답은 내 상품 블록과 추천 캐러셀(다른 goodsId 다수)이 **한 응답에 같이** 온다. 그래서
+  //   키 선택이 walk 순서에 좌우돼 추천 상품 id가 잡히면 `__kgpMatchCapture`가 불일치로 보고 Tier1 후보를
+  //   **통째로 폐기** → 가격·옵션·갤러리 전부 공백('merged 0', tier1 흔적 무)이 된다. jsdom 재현 확인.
+  //   → 집합으로 바꿔 "내 상품이 이 응답 안에 있는가"를 순서와 무관하게 판정한다.
+  var GID_MAX = 60;
+  function _goodsIdsFromObj(root) {
+    var ids = [], seenIds = {}, stack = [root], seen = 0;
+    while (stack.length && seen < 8000 && ids.length < GID_MAX) {
       seen++;
       var v = stack.pop();
       if (!v || typeof v !== "object") continue;
       if (v.length !== undefined && typeof v.length === "number") {
-        for (var i = 0; i < v.length && i < 200; i++) if (v[i] && typeof v[i] === "object") stack.push(v[i]);
+        for (var i = 0; i < v.length && i < 300; i++) if (v[i] && typeof v[i] === "object") stack.push(v[i]);
         continue;
       }
       for (var k in v) {
         var kl = ("" + k).toLowerCase();
-        if ((kl === "goodsid" || kl === "goods_id") && (typeof v[k] === "number" || typeof v[k] === "string")) {
-          var g = String(v[k]).replace(/\D/g, ""); if (g.length >= 5) return g;
+        if (_isGidKey(kl)) {
+          var g = _gidVal(v[k]);
+          if (g && !seenIds[g]) { seenIds[g] = 1; ids.push(g); }
         }
         if (v[k] && typeof v[k] === "object") stack.push(v[k]);
       }
     }
-    return "";
+    return ids;
   }
-  // v62 STEP2: goods_id 정확 매칭용 캡처 조회 — 현재 페이지 goods_id와 일치하는 최신 응답(TTL 10분), 없으면 null.
+
+  // ── v86-G(수리): 내 goods_id 서브트리로 스코프 축소 ──
+  //   매칭이 붙어도 **응답 통짜**를 후보로 넘기면 추출기가 추천 캐러셀의 가격·제목·이미지를 집을 수 있다
+  //   (walk 순서 의존 = 조용한 오염). 내 goods 노드에서 위로 올라가되 **외래 goods_id가 섞이는 순간 멈춰**
+  //   가장 넓은 '순수' 조상을 고른다(= 내 상품의 sku·price·gallery는 품고, 추천 블록은 배제).
+  //   축소가 신호를 없애면(score 0) 통짜로 되돌린다 — 스코프가 수집을 악화시키지 않는다.
+  function _hasForeignGid(node, gid) {
+    var stack = [node], seen = 0;
+    while (stack.length && seen < 6000) {
+      seen++;
+      var v = stack.pop();
+      if (!v || typeof v !== "object") continue;
+      if (v.length !== undefined && typeof v.length === "number") {
+        for (var i = 0; i < v.length && i < 300; i++) if (v[i] && typeof v[i] === "object") stack.push(v[i]);
+        continue;
+      }
+      for (var k in v) {
+        if (_isGidKey(("" + k).toLowerCase())) {
+          var g = _gidVal(v[k]);
+          if (g && g !== gid) return true;
+        }
+        if (v[k] && typeof v[k] === "object") stack.push(v[k]);
+      }
+    }
+    return false;
+  }
+  // v86-G(수리): **특정** gid 한 개만 찾는 탐색 — `_goodsIdsFromObj`는 수집 상한(60개·8000노드)이 있어
+  //   대형 응답(테무 렌더 응답은 MB급)에서 내 id가 상한 밖으로 밀려날 수 있다. 그러면 매칭이 다시 깨져
+  //   같은 버그로 되돌아간다. 값 하나를 찾는 일은 훨씬 싸므로 예산을 크게 잡고 발견 즉시 끝낸다.
+  function _hasGid(root, gid) {
+    var stack = [root], seen = 0;
+    while (stack.length && seen < 60000) {
+      seen++;
+      var v = stack.pop();
+      if (!v || typeof v !== "object") continue;
+      if (v.length !== undefined && typeof v.length === "number") {
+        for (var i = 0; i < v.length && i < 500; i++) if (v[i] && typeof v[i] === "object") stack.push(v[i]);
+        continue;
+      }
+      for (var k in v) {
+        if (_isGidKey(("" + k).toLowerCase()) && _gidVal(v[k]) === gid) return true;
+        if (v[k] && typeof v[k] === "object") stack.push(v[k]);
+      }
+    }
+    return false;
+  }
+  function _pathsToGoods(root, gid, maxHits) {
+    var out = [], stack = [{ n: root, p: [] }], seen = 0;
+    while (stack.length && seen < 40000 && out.length < (maxHits || 5)) {
+      seen++;
+      var cur = stack.pop(), v = cur.n;
+      if (!v || typeof v !== "object") continue;
+      var path = cur.p.concat([v]);
+      if (v.length !== undefined && typeof v.length === "number") {
+        for (var i = 0; i < v.length && i < 300; i++) if (v[i] && typeof v[i] === "object") stack.push({ n: v[i], p: path });
+        continue;
+      }
+      var isMine = false;
+      for (var k in v) {
+        if (_isGidKey(("" + k).toLowerCase()) && _gidVal(v[k]) === gid) isMine = true;
+        if (v[k] && typeof v[k] === "object") stack.push({ n: v[k], p: path });
+      }
+      if (isMine) out.push(path);
+    }
+    return out;
+  }
+  window.__kgpScopeToGoods = function (root, gid) {
+    gid = String(gid || "").replace(/\D/g, "");
+    var fallback = { obj: root, scoped: false, reason: gid ? "no_gid_node" : "no_page_gid" };
+    if (!gid || !root || typeof root !== "object") return fallback;
+    try {
+      // 빠른 경로: 응답에 외래 goods_id가 아예 없으면(=추천 미동봉) 축소할 이유가 없다. 큰 응답에서
+      //   경로 탐색·조상별 서브트리 검사를 통째로 건너뛴다(추출 900ms 예산 보호).
+      if (!_hasForeignGid(root, gid)) return { obj: root, scoped: false, reason: "already_pure" };
+      var paths = _pathsToGoods(root, gid, 3);
+      if (!paths.length) return fallback;
+      var best = null;
+      for (var p = 0; p < paths.length; p++) {
+        var path = paths[p];
+        var node = path[path.length - 1];              // 내 goods 노드
+        var climbed = 0;
+        for (var i = path.length - 2; i >= 0 && climbed < 12; i--, climbed++) {   // 위로 올라가며 순수 조상 확장
+          if (_hasForeignGid(path[i], gid)) break;
+          node = path[i];
+        }
+        var sc = _kgpScore(node).score;
+        if (!best || sc > best.score) best = { node: node, score: sc, widened: node !== path[path.length - 1] };
+      }
+      if (!best || best.score <= 0) return { obj: root, scoped: false, reason: "scope_lost_signal" };
+      if (best.node === root) return { obj: root, scoped: false, reason: "already_pure" };
+      return { obj: best.node, scoped: true, reason: "narrowed", score: best.score };
+    } catch (e) { return fallback; }
+  };
+
+  // v62 STEP2: goods_id 정확 매칭용 캡처 조회 — 현재 페이지 goods_id와 일치하는 응답(TTL 10분), 없으면 null.
   //   '이전 상품 응답 오채택' 방지 — 점수 최고가 아니라 **내 goods_id** 우선.
+  // v86-G(수리): 판정 기준을 '캡처의 대표 id 1개 == 내 id'에서 **'내 id가 응답 안에 있는가'**로 넓히고,
+  //   여러 후보는 (URL에 내 id 있음 → 시그니처 점수 → 최신) 순으로 고른다. 종전엔 walk 순서 한 번의
+  //   운으로 Tier1 전체가 날아갔다. 넓힘의 대가(추천에 내 id가 스친 응답 채택)는 위 스코프 축소가 막는다.
   window.__kgpPageGoodsId = function () { return _goodsIdFromUrl((window.location && window.location.href) || ""); };
   window.__kgpMatchCapture = function (goodsId) {
     goodsId = String(goodsId || "").replace(/\D/g, "");
     if (!goodsId) return null;
-    var now = Date.now(), best = null;
+    var now = Date.now(), best = null, bestRank = null;
     var cap = window.__kgpCaptured || [];
     for (var i = 0; i < cap.length; i++) {
       var e = cap[i];
-      if (e.goods_id === goodsId && (now - (e.ts || 0)) <= 600000) {   // TTL 10분
-        if (!best || (e.ts || 0) > (best.ts || 0)) best = e;           // 최신 우선
+      if ((now - (e.ts || 0)) > 600000) continue;                       // TTL 10분
+      var urlHit = _goodsIdFromUrl(e.url || "") === goodsId;
+      var inBody = e.goods_id === goodsId ||
+        (e.goods_ids && e.goods_ids.indexOf && e.goods_ids.indexOf(goodsId) >= 0);
+      // 수집 상한(60개)에 밀려 목록에 없을 수 있다 → 응답 본체에서 그 id만 한 번 더 확인(대형 응답 대비).
+      if (!urlHit && !inBody && e.obj) inBody = _hasGid(e.obj, goodsId);
+      if (!urlHit && !inBody) continue;
+      var rank = [urlHit ? 1 : 0, e.score || 0, e.ts || 0];
+      if (!best || rank[0] > bestRank[0] ||
+          (rank[0] === bestRank[0] && rank[1] > bestRank[1]) ||
+          (rank[0] === bestRank[0] && rank[1] === bestRank[1] && rank[2] > bestRank[2])) {
+        best = e; bestRank = rank;
       }
     }
     return best;
@@ -130,8 +251,11 @@
       var s = _kgpScore(o);
       if (s.score <= 0) { _note("dropped", url); return; }   // 상품 신호 0 → 버림(비상품 응답)
       _note("kept", url);
-      var gid = _goodsIdFromUrl(url) || _goodsIdFromObj(o);   // v62 STEP2: goods_id 키(URL 우선, 없으면 응답)
-      window.__kgpCaptured.push({ url: url || "", size: text.length, price: s.price, images: s.images, sku: s.sku, reviews: s.reviews, score: s.score, goods_id: gid, ts: Date.now(), obj: o });
+      // v62 STEP2 → v86-G: 대표 goods_id(URL 우선)에 더해 **응답 안의 전 goods_id 집합**을 함께 보관.
+      //   대표 하나만으론 추천 캐러셀 id가 뽑혀 내 상품 응답이 불일치로 버려졌다(재현 확인).
+      var gids = _goodsIdsFromObj(o);
+      var gid = _goodsIdFromUrl(url) || gids[0] || "";
+      window.__kgpCaptured.push({ url: url || "", size: text.length, price: s.price, images: s.images, sku: s.sku, reviews: s.reviews, score: s.score, goods_id: gid, goods_ids: gids, ts: Date.now(), obj: o });
       window.__kgpCaptured.sort(function (a, b) { return b.score - a.score; });   // 점수순(폴백용 — 매칭 우선)
       if (window.__kgpCaptured.length > CAP) window.__kgpCaptured.length = CAP;
     } catch (e) { /* JSON 아님 — 무시 */ }
@@ -190,7 +314,10 @@
     var e = cap[0];
     return { url: (e.url || "").slice(0, 160), score: e.score || 0, size: e.size || 0,
              price: !!e.price, images: !!e.images, sku: !!e.sku, reviews: !!e.reviews,
-             goods_id: e.goods_id || "" };
+             goods_id: e.goods_id || "",
+             // v86-G(수리): 응답 안 goods_id 개수. 1보다 크면 추천 캐러셀 동봉 응답 —
+             //   대표 id 하나로 매칭하던 종전 방식이 깨지던 조건 그 자체다(실기기 판독용).
+             goods_ids_n: (e.goods_ids && e.goods_ids.length) || 0 };
   };
 
   // ── 진단 표 데이터(메타만, obj 제외) — 격리월드가 postMessage로 요청하면 kgp-main이 console.table ──
