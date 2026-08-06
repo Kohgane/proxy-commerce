@@ -118,7 +118,7 @@ def test_manifest_loads_sources_before_content_script():
     js = cs_entry["js"]
     assert "kgp-sources.js" in js, "manifest content_scripts에 kgp-sources.js 미포함"
     assert js.index("kgp-sources.js") < js.index("content_script.js"), "kgp-sources는 content_script보다 먼저 로드돼야"
-    assert MANIFEST["version"] == "1.5.137"
+    assert MANIFEST["version"] == "1.5.138"
 
 
 def _sources_registry():

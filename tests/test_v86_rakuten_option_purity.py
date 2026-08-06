@@ -39,7 +39,7 @@ CONTAMINANTS = ["TSUMUGI 汁椀", "我戸幹男商店", "tsumugi-tama", "日本"
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.137"
+    assert MANIFEST["version"] == "1.5.138"
 
 
 def _pw_ok():

@@ -1273,6 +1273,11 @@ function _kgpTier1Diag(diag, tier1Source, usedTier1, cause) {
     cause: cause || "",
     page_goods_id: diag.pageGoodsId || "",
     goods_matched: !!diag.matched,
+    // v86-G(수리): 매칭·스코프 판독. `goods_matched:false`의 원인이 "응답 자체가 없음"인지
+    //   "응답은 왔는데 대표 id가 추천 상품이라 버려짐"인지 가르려면 **응답 안 goods_id 개수**가 필요하다.
+    //   scope는 추천 캐러셀 배제 여부(narrowed / already_pure / scope_lost_signal).
+    goods_ids_n: (diag.top && diag.top.goods_ids_n) || 0,
+    tier1_scope: diag.scope || null,
   };
 }
 // v86-G: 캡처 0의 원인 갈래를 **관측값으로** 가른다(추측 문구 금지).
@@ -2078,6 +2083,17 @@ function kgpSetStatus(msg) {
 // ── v42 E-3: 목록 카드 호버 즉시 수집 ──
 const KGP_TOUCH = (() => { try { return matchMedia("(pointer: coarse)").matches; } catch (e) { return false; } })();
 let _kgpCollectedUrls = new Set();   // 이미 수집된 상품 URL(호버 버튼 '수집됨 ✓' 선표시)
+// v86-G: **빈 키 오염 봉인.** rest에서 [수집]이 보이는 유일한 정당 사유는 `dataset.collected==="1"`
+//   ('수집됨 ✓' 상시 노출, v86-C)이고, 그 값은 이 집합 조회로도 켜진다(타일 생성 시 done, 선표시 시 mark).
+//   URL이 안 잡히는 타일(아마존 홈 캐러셀처럼 href 해석이 실패하는 경로)이 섞이면 `""`/`"undefined"`가
+//   집합에 들어갈 수 있고, 그 순간 **같은 처지의 모든 타일이 '수집됨'으로 켜져 rest가 통째로 1**이 된다
+//   — 사이트별 rest 불일치가 만들어지는 구조적 분기. 빈 키는 어떤 경우에도 매칭 근거가 아니다.
+function _kgpUrlKey(u) {
+  u = (u == null ? "" : String(u)).trim();
+  return (!u || u === "undefined" || u === "null") ? "" : u;
+}
+function _kgpRememberCollected(u) { const k = _kgpUrlKey(u); if (k) _kgpCollectedUrls.add(k); }
+function _kgpIsCollectedUrl(u) { const k = _kgpUrlKey(u); return !!k && _kgpCollectedUrls.has(k); }
 const KGP_BRIDGE_MINI = '<svg width="14" height="14" viewBox="0 0 512 512" aria-hidden="true">' +
   '<circle cx="256" cy="205" r="92" fill="none" stroke="#c9a24b" stroke-width="46"/>' +
   '<line x1="80" y1="356" x2="432" y2="356" stroke="#119a8e" stroke-width="46" stroke-linecap="round"/>' +
@@ -2325,7 +2341,7 @@ function kgpQuickCollect(card, btn) {
   kgpSendMessage({ action: "collectBulk", items: [meta] }, (resp) => {
     btn.dataset.busy = "";
     if (resp && resp.ok === true && ((resp.success || 0) > 0 || (resp.duplicate || 0) > 0)) {
-      _kgpCollectedUrls.add(card.url);
+      _kgpRememberCollected(card.url);
       kgpMarkQuickCollected(btn);
       // v72 STEP3: 호버 단건도 **보강 큐 자동 등록**(벌크 경로와 동일) — 아마존 목록가 미달('-')·옵션·상세를
       //   상세 페이지 방문으로 채운다. 목록 카드 가격/제목은 이미 1차로 담겨 저장됨(meta), 보강은 fill-only.
@@ -2342,13 +2358,13 @@ function kgpQuickCollect(card, btn) {
 }
 // 스캔한 카드 중 이미 수집된 것을 서버에 물어 '수집됨 ✓'로 선표시(중복 방지 연동).
 function kgpMarkExisting(cards) {
-  const urls = cards.map((c) => c.url).filter((u) => u && !_kgpCollectedUrls.has(u));
+  const urls = cards.map((c) => _kgpUrlKey(c.url)).filter((u) => u && !_kgpIsCollectedUrl(u));
   if (!urls.length) return;
   kgpSendMessage({ action: "collectExists", urls }, (resp) => {
     if (!resp || !resp.ok || !Array.isArray(resp.collected)) return;
-    resp.collected.forEach((u) => _kgpCollectedUrls.add(u));
+    resp.collected.forEach((u) => _kgpRememberCollected(u));
     document.querySelectorAll(".kgp-card-quick").forEach((q) => {
-      if (_kgpCollectedUrls.has(q.dataset.url) && q.dataset.collected !== "1") kgpMarkQuickCollected(q);
+      if (_kgpIsCollectedUrl(q.dataset.url) && q.dataset.collected !== "1") kgpMarkQuickCollected(q);
     });
   });
 }
@@ -2646,7 +2662,7 @@ function _kgpEnsureTileQuick(c, badge) {
       _quicks = c.el.querySelectorAll(":scope .kgp-card-quick");
     }
     if (!_quicks.length) {
-      const done = _kgpCollectedUrls.has(c.url);
+      const done = _kgpIsCollectedUrl(c.url);
       const imgEl = _kgpCardImage(c.el);
       // v80 STEP2: 알리 등 카드 내 캐러셀(호버 시 이미지 자동 슬라이드)은 img의 부모(슬라이드)가 매 전환마다
       //   교체됨 → img 부모 앵커는 좌표 재배치·버튼 증발. 이미지가 캐러셀 안이면 **안정 컨테이너**(가장 바깥

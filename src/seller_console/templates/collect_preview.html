@@ -292,7 +292,9 @@
       {% set _t1 = extra.get('tier1_diag') if extra else None %}
       {% if _t1 and (_t1.used or _t1.cause) %}
       <div class="mt-2 mb-1 small" style="padding:.35rem .5rem;border-radius:6px;background:{{ 'color-mix(in srgb,var(--teal) 10%,transparent)' if _t1.used else 'color-mix(in srgb,var(--danger) 8%,transparent)' }}">
-        {% if _t1.used %}<i class="bi bi-lightning-charge" style="color:var(--teal,#119a8e)"></i> <strong>Tier1 동작</strong>(확장 API 인터셉트) — 채택 <span class="text-muted">{{ (_t1.source or 'API 응답')[:64] }}</span> · 최고점 {{ _t1.topScore }}/4
+        {# v86-G(수리): 키 이름이 `source` → `tier1_source`로 바뀌었는데 여기가 안 따라와, 채택 URL이
+           **항상** 'API 응답'으로 표시되던 조용한 회귀. 옛 저장분(source)도 함께 읽어 하위호환. #}
+        {% if _t1.used %}<i class="bi bi-lightning-charge" style="color:var(--teal,#119a8e)"></i> <strong>Tier1 동작</strong>(확장 API 인터셉트) — 채택 <span class="text-muted">{{ (_t1.tier1_source or _t1.source or 'API 응답')[:64] }}</span> · 최고점 {{ _t1.topScore }}/4{% if _t1.tier1_scope and _t1.tier1_scope.scoped %} · <span class="text-muted">추천 상품 블록 배제</span>{% endif %}
         {% else %}<i class="bi bi-info-circle" style="color:var(--danger,#c2503c)"></i> <strong>Tier1 미동작</strong> → DOM 폴백. 원인: {{ _t1.cause }}
         {% endif %}
       </div>
