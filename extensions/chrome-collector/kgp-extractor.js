@@ -1606,7 +1606,7 @@
   }
 
   // ── v86-H: 리스트 페이지 오염 차단 ─────────────────────────
-  // 실측(오너 채팅 채점, 1.5.139): pageType=list인데 tier2/3 DOM 폴백이 **페이지 UI를 상품 필드로 오인**했다.
+  // 실측(오너 채팅 채점, 1.5.140): pageType=list인데 tier2/3 DOM 폴백이 **페이지 UI를 상품 필드로 오인**했다.
   //   · 라쿠텐: options에 도도부현 47개+정렬 8종+리뷰필터 / price=5.3 JPY / title="ソーシャルギフト"(네비)
   //   · 아마존: options=정렬 드롭다운 / desc="Automate shopping…"(Rufus 문구) / title=검색어(tier3)
   //   · 알리: images 154장에 48x48 아이콘·배너 혼입
