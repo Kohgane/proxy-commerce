@@ -24,7 +24,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.138"
+    assert MANIFEST["version"] == "1.5.139"
 
 
 # ── source-contract: [타일∪버튼] 공통 hover + 200ms 유예 ──

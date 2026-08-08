@@ -356,7 +356,12 @@
   }
   function _fromJson() {
     var res = { title: "", price: "", currency: "", currencySrc: "", images: [], detailImages: [], specs: [],
-                options: [], skus: [], reviews: [], rating: "", reviewCount: "", description: "", ok: false };
+                options: [], skus: [], reviews: [], rating: "", reviewCount: "", description: "", ok: false,
+                // v86-H: tier1 **출처 구분**. JSON-LD `@type:Product`가 기여했으면 true.
+                //   아래 상태 딥워크는 스키마 무관 키 휴리스틱이라 목록 페이지에서 네비·프로모 값을 상품 값으로
+                //   집는다(라쿠텐 검색: title="ソーシャルギフト" · price=5.3 — 실측). 그래서 "tier1이니까 믿는다"가
+                //   목록에서는 성립하지 않는다. 신뢰 근거는 **Product 타입 선언**뿐이다.
+                ldProduct: false };
     var imgSeen = {}, detSeen = {};
     // JSON-LD Product 우선(표준·신뢰)
     var lds = _jsonLd();
@@ -390,6 +395,7 @@
             text: String(one.reviewBody || one.description || "").slice(0, 500)
           });
         }
+        if (res.title || res.price || res.images.length || res.description) res.ldProduct = true;
         res.ok = res.ok || !!(res.price || res.images.length);
       }
     }
@@ -1599,8 +1605,86 @@
     return { price: String(price), currency: currency || "", status: status, warnings: warnings };
   }
 
+  // ── v86-H: 리스트 페이지 오염 차단 ─────────────────────────
+  // 실측(오너 채팅 채점, 1.5.139): pageType=list인데 tier2/3 DOM 폴백이 **페이지 UI를 상품 필드로 오인**했다.
+  //   · 라쿠텐: options에 도도부현 47개+정렬 8종+리뷰필터 / price=5.3 JPY / title="ソーシャルギフト"(네비)
+  //   · 아마존: options=정렬 드롭다운 / desc="Automate shopping…"(Rufus 문구) / title=검색어(tier3)
+  //   · 알리: images 154장에 48x48 아이콘·배너 혼입
+  // 목록에는 **상품이 하나가 아니다** — 상품 단위 필드를 DOM에서 긁는 행위 자체가 정의상 오답이다.
+  //   그래서 tier1(구조화 데이터)이 진짜 상품 값을 준 경우만 남기고, tier2/3 폴백값은 비운다.
+  //   조용히 비우지 않는다: suppressed:{reason:"list", fields:[...]}로 사유를 남긴다.
+  var _LIST_SUPPRESS_FIELDS = ["title", "price", "options", "skus", "description", "desc_text", "reviews"];
+
+  // pageType은 **호출자가 준 값**을 신뢰한다(content_script의 kgpPageType = 카드수까지 반영한 권위 판정).
+  //   없으면 KGPDetect(격리월드)로 폴백. 둘 다 없으면 ""(=억제 안 함) — 모르면 건드리지 않는다(정직).
+  function _extractPageType(opts) {
+    try { if (opts && opts.pageType) return String(opts.pageType); } catch (e) {}
+    try {
+      if (global.KGPDetect && typeof global.KGPDetect.pageType === "function") {
+        return global.KGPDetect.pageType(document, location.href, {}) || "";
+      }
+    } catch (e) {}
+    return "";
+  }
+
+  // 리스트 전용 이미지 크기 게이트 — 아이콘(48x48)·배너 혼입 차단. **상세 갤러리 경로에는 영향 0**이어야
+  //   하므로 이 함수는 list 분기에서만 호출한다. URL→실측 크기 맵을 document.images 1회 순회로 만든다.
+  //   크기를 못 재면 **버리지 않는다**(측정 불가를 오염으로 단정하지 않음 — 정직).
+  var _LIST_IMG_MIN = 200;      // 양변 모두 이 값 미만이면 아이콘·썸네일로 간주
+  var _LIST_IMG_RATIO = 4;      // 가로:세로(또는 역) 비가 이 이상이면 배너/스트립
+  // CDN URL에 박힌 크기 토큰 — 오프라인 스냅샷·CI에서도 재는 유일한 수단(렌더가 없으면 naturalWidth=0).
+  //   실측(알리 목록): 상품 `..._480x480q75.jpg_.avif` / 아이콘 `.../48x48.png` `/60x60.png` / 배너 `/154x64.png`.
+  //   마지막 토큰을 채택한다(경로 뒤쪽일수록 실제 서빙 크기).
+  var _URL_SIZE_RE = /[_/](\d{2,4})x(\d{2,4})(?:q\d{1,3})?(?=[._/]|$)/gi;
+  function _urlSize(u) {
+    var s = String(u == null ? "" : u), m, last = null;
+    _URL_SIZE_RE.lastIndex = 0;
+    while ((m = _URL_SIZE_RE.exec(s))) last = { w: parseInt(m[1], 10), h: parseInt(m[2], 10) };
+    return (last && last.w > 0 && last.h > 0) ? last : null;
+  }
+  function _tooSmallOrBanner(d) {
+    if (!d || !d.w || !d.h) return false;
+    if (d.w < _LIST_IMG_MIN && d.h < _LIST_IMG_MIN) return true;                 // 아이콘류(48x48·60x60)
+    var mx = Math.max(d.w, d.h), mn = Math.min(d.w, d.h);
+    return mn > 0 && (mx / mn) >= _LIST_IMG_RATIO;                                // 배너/스트립(154x64 등)
+  }
+  function _listImageGate(list) {
+    var dim = {};
+    try {
+      var imgs = document.images || [];
+      for (var i = 0; i < imgs.length && i < 3000; i++) {
+        var im = imgs[i];
+        var w = 0, h = 0;
+        try {
+          w = im.naturalWidth || 0; h = im.naturalHeight || 0;
+          if (!w || !h) { var r = im.getBoundingClientRect(); w = w || Math.round(r.width); h = h || Math.round(r.height); }
+        } catch (e) {}
+        if (!w || !h) continue;
+        var urls = [];
+        try { if (im.currentSrc) urls.push(im.currentSrc); } catch (e) {}
+        try { if (im.src) urls.push(im.src); } catch (e) {}
+        try { if (im.getAttribute) { var ds = im.getAttribute("data-src"); if (ds) urls.push(ds); } } catch (e) {}
+        for (var u = 0; u < urls.length; u++) {
+          var key = String(urls[u]);
+          var prev = dim[key];
+          // 같은 URL이 여러 번 쓰이면 **가장 큰 렌더 크기**를 채택(썸네일 재사용으로 인한 오탈락 방지).
+          if (!prev || (w * h) > (prev.w * prev.h)) dim[key] = { w: w, h: h };
+        }
+      }
+    } catch (e) {}
+    var dropped = 0;
+    var kept = (list || []).filter(function (u) {
+      // ①URL 크기 토큰(오프라인에서도 잼) → ②렌더/자연 크기. 둘 다 없으면 **유지**(측정 불가를 오염으로 단정 금지).
+      var d = _urlSize(u) || dim[String(u)];
+      if (!d) return true;
+      if (_tooSmallOrBanner(d)) { dropped++; return false; }
+      return true;
+    });
+    return { images: kept, dropped: dropped };
+  }
+
   // ── 오케스트레이션 ────────────────────────────────────────
-  function kgpExtractProduct() {
+  function kgpExtractProduct(opts) {
     var warnings = [], source = "json";
     var j = {};
     try { j = _fromJson(); } catch (e) { j = { ok: false, images: [], detailImages: [], options: [], skus: [], specs: [], reviews: [] }; }
@@ -1798,6 +1882,49 @@
         warnings.length ? "| 경고:" + warnings.join(" / ") : "");
     } catch (e) {}
 
+    // ── v86-H: 리스트 갈래 억제 (상세 경로 무영향 — 이 블록은 pageType==='list'에서만 실행) ──
+    //   tier1이 준 값은 남긴다(구조화 데이터는 목록에서도 상품 단위일 수 있다). tier2/3 DOM 폴백만 비운다.
+    var _pageType = _extractPageType(opts);
+    var _suppressed = null;
+    if (_pageType === "list") {
+      // tier1 예외는 **JSON-LD Product가 실제로 기여했을 때만**. 상태 딥워크(스키마 무관 휴리스틱)는
+      //   목록에서 네비·프로모 값을 집으므로 신뢰 근거가 못 된다 — 실측 3소스 모두 Product 선언 0.
+      var _t1 = !!j.ldProduct;
+      var _hit = [];
+      var _drop = function (name, isTier1, clear) {
+        if (isTier1) return;                 // tier1 실값은 예외(브리프: "진짜 상품 값을 주는 경우만 예외")
+        if (clear()) _hit.push(name);        // clear()는 실제로 비운 게 있을 때만 true
+      };
+      _drop("title", _t1 && titleSrc === "tier1", function () {
+        if (!title) return false; title = ""; titleSrc = "none"; return true;
+      });
+      _drop("price", _t1 && priceSrc === "tier1", function () {
+        if (!price) return false; price = ""; priceSrc = "none"; price_status = ""; return true;
+      });
+      _drop("options", _t1 && !!(j.options && j.options.length), function () {
+        if (!options.length) return false; options = []; return true;
+      });
+      _drop("skus", _t1 && !!(j.skus && j.skus.length), function () {
+        if (!skus.length) return false; skus = []; return true;
+      });
+      _drop("description", _t1 && !!j.description, function () {
+        if (!description) return false; description = ""; descSource = ""; return true;
+      });
+      _drop("detail_specs", _t1 && !!(j.specs && j.specs.length), function () {
+        if (!specs.length) return false; specs = []; return true;
+      });
+      _drop("reviews", _t1 && !!((j.reviews && j.reviews.length) || j.rating || j.reviewCount), function () {
+        if (!reviews.length && !rating && !reviewCount) return false;
+        reviews = []; rating = ""; reviewCount = ""; return true;
+      });
+      // 이미지는 비우지 않고 **크기 게이트**만 건다(목록에도 상품 이미지는 실재한다 — 브리프 2항).
+      var _ig = _listImageGate(gallery);
+      if (_ig.dropped) { gallery = _ig.images; warnings.push("목록 페이지: 아이콘·배너 이미지 " + _ig.dropped + "장 제외"); }
+      _suppressed = { reason: "list", fields: _hit, images_dropped: _ig.dropped };
+      if (_hit.length) warnings.push("목록 페이지라 상품 단위 필드(" + _hit.join("·") + ")를 비웠어요 — 상품을 하나로 특정할 수 없어요");
+      try { console.warn("[고가수집기] 목록 페이지 — 상품 단위 필드 억제:", _hit.join(",") || "(없음)", "· 이미지 제외", _ig.dropped); } catch (e) {}
+    }
+
     // v51: 필드별 추출 Tier — Tier1(캡처 API/초기상태 JSON)·Tier2(렌더 DOM 갤러리·h1)·Tier3(og/meta)·none.
     //   서버 수집 로그에 '어느 Tier가 어느 필드를 줬는지' 표기. 값 없으면 none(가짜 소스 날조 금지).
     var fieldSources = {
@@ -1830,6 +1957,10 @@
       reviews: reviews, rating: rating, review_count: reviewCount,
       source: source, partial: partial, warnings: warnings,
       field_sources: fieldSources,
+      // v86-H: 목록 페이지에서 무엇을 왜 비웠는지 — 조용한 오염도, 조용한 공백도 금지.
+      //   {reason:"list", fields:[...], images_dropped:N}. 상세 페이지에선 필드 자체를 싣지 않는다.
+      page_type: _pageType || undefined,
+      suppressed: _suppressed || undefined,
       // v54 STEP2: 자가발견 채택 응답 URL 패턴(sources=tier1:{URL}) — Tier1이 실제 기여했을 때만.
       tier1_source: (j.ok && fieldSources.price === "tier1") ? (global.__kgpTier1Url || "") : "",
       jsonld: _jsonLd(),
@@ -1911,5 +2042,8 @@
       domainCurrency: _domainCurrency, translatedDom: _translatedDom, localeCurrency: _localeCurrency, parsePriceStr: parsePriceStr,
       isLowResImg: _isLowResImg, cleanSpecs: _cleanSpecs, stripHtmlNoise: _stripHtmlNoise, aliOptions: _aliOptions,
       dropNumericColorValues: _dropNumericColorValues, domRating: _domRating,
-      stockStatus: _stockStatus, inCartScope: _inCartScope } };
+      stockStatus: _stockStatus, inCartScope: _inCartScope,
+      // v86-H: 목록 갈래 이미지 게이트(URL 크기 토큰 · 렌더 크기) — 계약 검증용 순수 헬퍼.
+      urlSize: _urlSize, tooSmallOrBanner: _tooSmallOrBanner, listImageGate: _listImageGate,
+      listSuppressFields: _LIST_SUPPRESS_FIELDS } };
 })(typeof window !== "undefined" ? window : this);

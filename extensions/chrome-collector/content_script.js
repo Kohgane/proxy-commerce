@@ -204,7 +204,8 @@ function extractProductMeta() {
   // 공유 추출기(kgp-extractor.js) 우선 — 확장·북마클릿 동일 코드(JSON우선·DOM폴백·부분수집·가격 sanity).
   //   manifest가 이 스크립트보다 먼저 로드. 만약 미로드면 아래 레거시 DOM 폴백으로 정직 동작.
   if (typeof window.kgpExtractProduct === "function") {
-    try { return window.kgpExtractProduct(); } catch (e) { try { console.error("[고가수집기] 공유 추출기 오류, 레거시 폴백:", e); } catch (_) {} }
+    // v86-H: 권위 판정(카드 수까지 반영)을 추출기에 넘겨 목록 갈래 억제를 켠다 — 추출기 자체 판정은 폴백.
+    try { return window.kgpExtractProduct({ pageType: kgpPageType() }); } catch (e) { try { console.error("[고가수집기] 공유 추출기 오류, 레거시 폴백:", e); } catch (_) {} }
   }
   const getMeta = (prop) => {
     const el = document.querySelector(
@@ -443,7 +444,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === "kgpDiagBundle") {
     let html = "", extracted = null, detection = null, extVer = "";
     try { html = "<!doctype html>\n" + document.documentElement.outerHTML; } catch (e) { html = ""; }
-    try { if (typeof window.kgpExtractProduct === "function") extracted = window.kgpExtractProduct(); } catch (e) { extracted = { __err: String(e) }; }
+    try { if (typeof window.kgpExtractProduct === "function") extracted = window.kgpExtractProduct({ pageType: kgpPageType() }); } catch (e) { extracted = { __err: String(e) }; }
     try {
       kgpFindCards();
       detection = { pageType: (typeof kgpPageType === "function" ? kgpPageType() : ""),
@@ -1327,7 +1328,9 @@ function kgpExtractMerged(cb) {
     cb(merged);
   }
   window.addEventListener("message", onMsg, false);
-  try { window.postMessage({ __kgpReq: reqId }, "*"); } catch (e) {}
+  // v86-H: MAIN world는 kgpFindCards가 없어 스스로는 목록 판정을 못 한다 → 격리월드의 권위 판정을 실어 보낸다.
+  var _ptForMain = ""; try { _ptForMain = kgpPageType(); } catch (e) {}
+  try { window.postMessage({ __kgpReq: reqId, pageType: _ptForMain }, "*"); } catch (e) {}
   setTimeout(() => {
     if (done) return; done = true;
     window.removeEventListener("message", onMsg);

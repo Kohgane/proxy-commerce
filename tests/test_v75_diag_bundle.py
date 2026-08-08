@@ -19,13 +19,13 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.138"
+    assert MANIFEST["version"] == "1.5.139"
 
 
 # ── source-contract: 진단 번들 메시지 + 팝업 버튼/다운로드 ──
 def test_diag_bundle_source():
     assert 'msg.action === "kgpDiagBundle"' in CS       # content_script 핸들러
-    assert "window.kgpExtractProduct()" in CS           # 추출 결과 포함
+    assert "window.kgpExtractProduct({" in CS           # 추출 결과 포함(v86-H: pageType 인자 동반)
     assert "detection" in CS and "ext_version" in CS    # 감지 로그·버전 포함
     # 팝업: '이 페이지 수집이 이상해요' 버튼 + 진단 파일 다운로드.
     assert 'id="btnDiagBundle"' in POPUP_HTML
