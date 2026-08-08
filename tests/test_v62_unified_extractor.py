@@ -37,7 +37,8 @@ def test_extension_content_script_loads_same_extractor():
     assert iso["js"].index("kgp-extractor.js") < iso["js"].index("content_script.js")
     # content_script는 window.kgpExtractProduct(공유)를 호출.
     cs = Path("extensions/chrome-collector/content_script.js").read_text(encoding="utf-8")
-    assert "window.kgpExtractProduct()" in cs
+    # v86-H: pageType 인자가 붙었다 — 호출 사실만 보도록 여는 괄호까지로 경계를 옮긴다.
+    assert "window.kgpExtractProduct({" in cs
 
 
 def test_unified_schema_fields_present():

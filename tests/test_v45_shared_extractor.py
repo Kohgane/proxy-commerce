@@ -56,7 +56,9 @@ def test_shared_between_extension_and_bookmarklet():
     assert iso["js"].index("kgp-extractor.js") < iso["js"].index("content_script.js")
     assert iso["js"].index("kgp-sources.js") < iso["js"].index("content_script.js")
     assert "window.kgpExtractProduct === \"function\"" in CS
-    assert "return window.kgpExtractProduct();" in CS
+    # v86-H: 목록 갈래 억제를 켜려 pageType을 넘기게 됐다(인자 없는 호출 리터럴 → 인자 포함으로).
+    #   계약의 뜻은 그대로 — "content_script는 공유 추출기를 호출한다". 인자까지 못박아 완화 아님.
+    assert "return window.kgpExtractProduct({ pageType: kgpPageType() });" in CS
     # 북마클릿(v46 STEP4): 가져오기 신뢰성 위해 경량화 — 29KB 인라인 폐기, 페이지 HTML을 서버로 보내
     #   서버가 추출(로직 공유). 여전히 같은 수집 엔드포인트로 전송.
     assert "html:(document.documentElement" in VIEWS         # 페이지 HTML 전송

@@ -376,5 +376,5 @@ def test_diag_bundle_carries_scope_and_gid_count():
     assert "goods_ids_n" in seg and "tier1_scope" in seg, "진단 조립 단일 소스에 미부착"
     assert "diag.scope" in MAIN, "MAIN world 브릿지가 스코프를 넘기지 않는다"
     # 스코프는 추출기 실행 **뒤에** 서는 값 — 순서가 뒤집히면 항상 null이다.
-    assert MAIN.index("var meta = _run();") < MAIN.index("diag.scope"), \
+    assert MAIN.index("var meta = _run({") < MAIN.index("diag.scope"), \
         "추출 전에 스코프를 읽는다 — 언제나 null이 실린다"

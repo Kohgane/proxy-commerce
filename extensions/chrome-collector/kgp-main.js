@@ -15,9 +15,10 @@
   if (window.__kgpMainBound) return;   // 중복 주입 방지(SPA 재주입 등)
   window.__kgpMainBound = true;
 
-  function _run() {
+  function _run(opts) {
     try {
-      return (typeof window.kgpExtractProduct === "function") ? window.kgpExtractProduct() : null;
+      // v86-H: 격리월드가 넘겨준 pageType을 그대로 전달 — MAIN world는 카드 수를 못 세어 스스로 판정 불가.
+      return (typeof window.kgpExtractProduct === "function") ? window.kgpExtractProduct(opts || {}) : null;
     } catch (e) {
       try { console.warn("[고가수집기] MAIN world 추출 오류:", e); } catch (_) {}
       return null;
@@ -42,7 +43,7 @@
         return;
       }
       if (e.data.__kgpReq == null) return;
-      var meta = _run();
+      var meta = _run({ pageType: (e.data && e.data.pageType) || "" });
       // v55 STEP1: Tier1 진단 정보 동봉 — 격리월드가 '왜 Tier1이 비었나'를 무음 없이 1줄로 알림.
       // v62 STEP2: goods_id 매칭 진단 — 내 goods_id 응답 포착 여부(오채택 방지 근거).
       // v86-G: netStats(seen/jsonish/kept/dropped) + top 후보 요약을 함께 넘긴다 —
