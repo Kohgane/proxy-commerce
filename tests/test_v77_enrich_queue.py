@@ -26,7 +26,7 @@ MANIFEST = json.loads((ROOT / "extensions/chrome-collector/manifest.json").read_
 
 def test_manifest_unchanged():
     # STEP3은 판정 회수(보강 큐 검증 테스트만) — 확장 코드 불변 → 버전 유지(정직).
-    assert MANIFEST["version"] == "1.5.139"
+    assert MANIFEST["version"] == "1.5.140"
 
 
 # ── source-contract: 진행률 표기(0/N → done/total · 완료) + 서버 보강 배선 ──

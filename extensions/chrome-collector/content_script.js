@@ -444,7 +444,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === "kgpDiagBundle") {
     let html = "", extracted = null, detection = null, extVer = "";
     try { html = "<!doctype html>\n" + document.documentElement.outerHTML; } catch (e) { html = ""; }
-    try { if (typeof window.kgpExtractProduct === "function") extracted = window.kgpExtractProduct({ pageType: kgpPageType() }); } catch (e) { extracted = { __err: String(e) }; }
+    // v86-I: 진단 export와 수집 payload는 **같은 권위 스토어**를 읽는다(별도 스냅샷 경로 금지).
+    //   아래 kgpAcquireMeta 콜백에서 extracted가 채워진다 — 여기서 따로 추출하지 않는다.
     try {
       kgpFindCards();
       detection = { pageType: (typeof kgpPageType === "function" ? kgpPageType() : ""),
@@ -456,6 +457,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     try { extVer = chrome.runtime.getManifest().version; } catch (e) {}
     // v83.1 STEP2: 빌드 각인(커밋 해시) — ext_version과 별개로 **어느 빌드인지** 커밋 단위 즉판용.
     //   background가 ZIP에 심어진 build-info.json을 읽어 준다. 개발 설치면 commit=""·source="unpacked-dev"(정직).
+    kgpAcquireMeta(function (_authMeta) {
+      extracted = _authMeta;
+      try {
+        // v86-I 계측 동봉(읽기 전용): tier1 카운터를 진단 본문에서 바로 읽는다.
+        var _t1 = (_authMeta && _authMeta.tier1_diag) || {};
+        if (detection && !detection.__err) detection.tier1 = {
+          seen: _t1.tier1_seen || 0, hits: _t1.tier1_hits || 0,
+          goods_ids_n: _t1.goods_ids_n || 0, pending: !!_authMeta.tier1_pending,
+          reads: (_kgpMetaStore && _kgpMetaStore.tries) || 0 };
+      } catch (e) {}
     kgpSendMessage({ action: "kgpBuildInfo" }, (bi) => {
       // v84 STEP1: 채점 즉판 필드 — 스타일 주입 여부 + FAB **computed** 위치 실측 + 번역 DOM 플래그.
       //   "값은 맞는데 화면엔 없음"을 진단 파일 하나로 판정하기 위한 최소 사실들(추측 제거).
@@ -539,6 +550,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         } catch (e) { _ui.tile_coverage = { error: String((e && e.message) || e) }; }
         var _bar = document.getElementById(KGP_TOOLBAR_ID);
         if (_bar) _ui.toolbar_first = _kgpMeasureVisible(_bar, ".bar");
+        // v86-I 계측 동봉(읽기 전용·로직 변경 0): 벌크바가 **접힘**이라 없는 것인지,
+        //   아예 안 붙은 것인지 스냅샷만으로 가른다. bar_exists=false의 두 원인을 분리하는 유일한 근거.
+        _ui.bar_collapsed = !!_kgpClosed;
+        try { _ui.bar_auto = kgpLSget("kgp_bar_auto", "1") !== "0"; } catch (e) { _ui.bar_auto = null; }
       } catch (e) {}
       sendResponse({ ok: !!html, html: html, host: (location.hostname || ""), url: (location.href || ""),
         title: (document.title || ""), extracted: extracted, detection: detection, ext_version: extVer,
@@ -547,7 +562,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         style_injected: _ui.style_injected,
         translated_dom: !!(extracted && extracted.translated_dom),
         ui: _ui,
+        // v86-I: 마지막 **전송** payload 요약(읽기 전용) — 추출 결과(extracted)와 나란히 놓고
+        //   "추출은 됐는데 전송이 빔" 갈래를 진단 파일 하나로 판독한다.
+        payload_echo: (_kgpMetaStore && _kgpMetaStore.echo) || null,
         collected_at: new Date().toISOString() });
+    });
     });
     return true;
   }
@@ -1343,6 +1362,77 @@ function kgpExtractMerged(cb) {
   }, 900);
 }
 
+// ── v86-I: 추출-저장 단일 권위 스토어 ──────────────────────────────────────
+// 실측(오너 채점): 같은 분 테무 상세에서 **진단은 price/gallery/options/reviews 전부 tier1**인데
+//   **서버 레코드는 title만 생존**(price=0·currency=USD·gallery 0·options 0)이었다. 탈락 집합이 정확히
+//   tier1 비동기 필드였다. 갈래는 A(클릭 시점 tier1 미착지) 또는 B(payload가 진단과 다른 스토어 독출).
+//   두 갈래 모두 **"클릭 시점에 같은 스토어를 다시 읽는다"** 로 덮인다 — 그래서 갈래 판별을 기다리지 않는다.
+//
+// 여기가 그 단일 진입점이다. 수집 payload도, 진단 export도 이 함수만 통과한다(별도 스냅샷·중복 직렬화 금지).
+var KGP_TIER1_WAIT_MS = 700;    // 미착지 시 재독출까지 대기 상한(1회)
+var KGP_TIER1_TRIES = 2;        // 최초 + 재독출 1회 — 무한 대기 금지(사용자를 세워두지 않는다)
+var _kgpMetaStore = { meta: null, at: 0, tries: 0, echo: null };
+
+// tier1 착지 판정 — 구조화 소스(tier1)가 **실제로 어떤 필드를 줬는가**로만 본다.
+//   tier1_diag의 캡처 수로 판정하면 "잡았지만 추출에 안 쓰인" 경우를 착지로 오인한다.
+function _kgpTier1Landed(meta) {
+  var fs = (meta && meta.field_sources) || {};
+  var keys = ["price", "images", "options", "reviews", "description"];
+  for (var i = 0; i < keys.length; i++) if (fs[keys[i]] === "tier1") return true;
+  return false;
+}
+// 통화 무가공 운반 — 빈 통화에 기본값(USD)을 **주입하지 않는다**. 빈 값은 빈 값으로 보내고 서버가 정직 표기.
+//   다만 skus[].currency 공백은 상위 통화로 채운다(같은 상품인데 SKU만 통화 미상인 잔결함, 오너 칩).
+function _kgpCarryCurrency(meta) {
+  try {
+    var top = String((meta && meta.currency) || "").trim();
+    if (!top || !Array.isArray(meta.skus)) return;
+    for (var i = 0; i < meta.skus.length; i++) {
+      var s = meta.skus[i];
+      if (s && typeof s === "object" && !String(s.currency || "").trim()) s.currency = top;
+    }
+  } catch (e) {}
+}
+// 마지막 전송 payload 요약(읽기 전용) — "추출은 됐는데 전송이 빔" 갈래를 진단만으로 가르는 근거.
+function _kgpPayloadEcho(meta) {
+  meta = meta || {};
+  return {
+    at: new Date().toISOString(),
+    has_title: !!meta.title, has_price: !!meta.price,
+    currency: meta.currency || "", currency_source: meta.currency_source || "",
+    images_n: (meta.images || []).length, options_n: (meta.options || []).length,
+    reviews_n: (meta.reviews || []).length, skus_n: (meta.skus || []).length,
+    mode: meta.mode || "", tier1_pending: !!meta.tier1_pending,
+    field_sources: meta.field_sources || null,
+  };
+}
+// 클릭 시점 재독출. tier1이 아직 안 왔으면 **상한 내에서 한 번 더** 읽고, 그래도 없으면
+//   조용히 빈 필드를 보내지 않고 tier1_pending + 간이(simple)로 정직 강등한다(v86-F 계보).
+function kgpAcquireMeta(cb) {
+  var tries = 0;
+  var wait = true;
+  try { wait = kgpPageType() === "single"; } catch (e) {}   // 목록에선 tier1이 원래 안 온다 — 지연 0
+  function done(meta) {
+    meta = meta || {};
+    if (!_kgpTier1Landed(meta)) {
+      meta.tier1_pending = true;
+      meta.mode = "simple";                                  // 정직 강등 — 서버가 '간이'로 표기
+    }
+    _kgpCarryCurrency(meta);
+    _kgpMetaStore = { meta: meta, at: Date.now(), tries: tries, echo: _kgpMetaStore.echo };
+    try { cb(meta); } catch (e) {}
+  }
+  function attempt() {
+    tries++;
+    kgpExtractMerged(function (meta) {
+      if (!wait || _kgpTier1Landed(meta) || tries >= KGP_TIER1_TRIES) { done(meta); return; }
+      try { console.warn("[고가수집기] tier1 미착지 — " + KGP_TIER1_WAIT_MS + "ms 후 재독출(" + tries + "/" + KGP_TIER1_TRIES + ")"); } catch (e) {}
+      setTimeout(attempt, KGP_TIER1_WAIT_MS);
+    });
+  }
+  attempt();
+}
+
 function handleFabClick(btn, opts) {
   opts = opts || {};
   if (btn._kgpDragged || btn.dataset.busy) return;
@@ -1351,7 +1441,8 @@ function handleFabClick(btn, opts) {
   var _reveal = (typeof window.kgpRevealDetailFolds === "function")
     ? window.kgpRevealDetailFolds : function (cb) { cb && cb(); };
   _reveal(function () {
-  kgpExtractMerged(function (meta) {
+  // v86-I: 단일 권위 스토어 경유 — 클릭 시점 재독출 + tier1 미착지 시 상한 대기 후 재독출.
+  kgpAcquireMeta(function (meta) {
   const corr = kgpNewCorr();
   meta.corr_id = corr;                    // 서버 로깅·알럿 dedupe 기준
   if (opts.force) meta.force = true;      // 다시 수집(덮어쓰기) — 가격·이미지 갱신
@@ -1363,6 +1454,8 @@ function handleFabClick(btn, opts) {
       reviews: (meta.reviews || []).length, rating: meta.rating, source: meta.source, partial: meta.partial,
     });
   } catch (e) { /* noop */ }
+  // v86-I: 마지막 전송 payload 요약을 스토어에 남긴다 — 진단이 "무엇을 보냈나"를 그대로 보여준다.
+  try { _kgpMetaStore.echo = _kgpPayloadEcho(meta); } catch (e) {}
   kgpSendMessage({ action: "collect", meta }, (resp) => {
     setFabState(btn, "idle");
     if (!resp || resp.ok !== true) {

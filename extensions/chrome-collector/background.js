@@ -445,7 +445,9 @@ function extractMeta() {
     image: ogImage,
     images: ogImage ? [ogImage] : [],
     price: getMeta("product:price:amount"),
-    currency: getMeta("product:price:currency") || "USD",
+    // v86-I: 빈 통화에 USD 기본값 주입 금지 — 빈 값은 빈 값으로 보내고 서버가 '통화 미수신'으로 정직 표기한다.
+    //   임의 USD는 원화 상품을 달러로 둔갑시켜 가격 검증·마진 계산을 통째로 오염시킨다(v42 1-1 계보).
+    currency: getMeta("product:price:currency") || "",
     description: getMeta("og:description") || getMeta("description"),
     brand: getMeta("og:brand") || "",
     jsonld: jsonldScripts,
