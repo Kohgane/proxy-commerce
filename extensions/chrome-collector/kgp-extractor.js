@@ -471,9 +471,22 @@
                 if (sp && !_skuPriceSet) { res.price = sp.price; res.currency = sp.currency; res.currencySrc = sp.csrc || (sp.currency ? "symbol" : ""); _skuPriceSet = true; }
               }
             }
+            // (3b) 스펙 표(테무 goodsProperty·유사) → specs. [{key, values:[..]}] 형태. 상세설명이 비면
+            //   이 스펙표가 desc 사다리(specs)로 채워진다(오너 테무 실기기: 상세 none·스펙표 미수집 결함).
+            else if (Array.isArray(v) && /(goodsproperty|productproperty|paramproperty|attributelist)$/i.test(kv)
+                     && v.length && typeof v[0] === "object") {
+              for (var _pi = 0; _pi < v.length && res.specs.length < 60; _pi++) {
+                var _po = v[_pi]; if (!_po || typeof _po !== "object") continue;
+                var _pk = _po.key || _po.name || _po.k || _po.propertyName;
+                var _pvraw = _po.values != null ? _po.values : (_po.value != null ? _po.value : _po.vals);
+                var _pv = Array.isArray(_pvraw)
+                  ? _pvraw.filter(function (x) { return typeof x === "string" && x; }).join(", ")
+                  : (typeof _pvraw === "string" ? _pvraw : "");
+                if (typeof _pk === "string" && _pk && _pv) res.specs.push({ k: _pk.slice(0, 60), v: _pv.slice(0, 200) });
+              }
+            }
             // (4) 평점·리뷰수
-            else if (RATE_KEY.test(kv) && !res.rating && (typeof v === "string" || typeof v === "number")) {
-              // v78 STEP2: 더미 평점(0·1 — score:1 등 오채택) 방어 — (1,5]만 채택(뒤의 실 평점이 이기게).
+            else if (RATE_KEY.test(kv) && !res.rating && (typeof v === "string" || typeof v === "number")) {              // v78 STEP2: 더미 평점(0·1 — score:1 등 오채택) 방어 — (1,5]만 채택(뒤의 실 평점이 이기게).
               var rn = parseFloat(v); if (rn > 1 && rn <= 5) res.rating = String(v);
             }
             else if (CNT_KEY.test(kv) && !res.reviewCount && (typeof v === "string" || typeof v === "number")) {
@@ -1185,7 +1198,7 @@
   var _SPEC_BAD_K = /(까지!|까지\s*!|ポイント\d*倍|포인트\s*(증정|적립|\d*배)|캠페인|キャンペーン|エントリー|쿠폰|クーポン|공유\s*링크|공유하기|シェア|share\s*link|sns|트위터|twitter|facebook|line で送る|즐겨찾기|お気に入り|랭킹|ランキング|배너|banner|\d{1,2}\/\d{1,2}\s*\(|\d{4}[年.\-\/]\d{1,2}[月.\-\/]\d{1,2})/i;
   var _SPEC_BAD_V = /(\{[^}]*(?:font-size|color|margin|padding|background|border|width|display)\s*:[^}]*\}|^\s*[.#][a-z0-9_-]+\s*\{|@media|<\/?[a-z]+[\s>])/i;
   function _cleanSpecs(specs) {
-    var out = [];
+    var out = [], seen = {};   // v86-M: 키 기준 중복 제거(goodsProperty가 캡처 JSON·인라인 등 여러 후보 상태에 중복 존재 → 설명 이중 표기 방지, _domSpecs와 동일 규약).
     (specs || []).forEach(function (s) {
       if (!s) return;
       var k = String(s.k == null ? "" : s.k).replace(/\s+/g, " ").trim();
@@ -1194,6 +1207,9 @@
       if (_SPEC_BAD_K.test(k) || _SPEC_BAD_K.test(v)) return;   // 프로모·날짜·공유 UI 문구는 상품 속성이 아님
       if (_SPEC_BAD_V.test(v)) return;                          // CSS 조각·마크업 잔재
       if (k.length > 60 || v.length > 200) { k = k.slice(0, 60); v = v.slice(0, 200); }
+      var dk = k.toLowerCase();
+      if (seen[dk]) return;                                     // 같은 속성 라벨 재등장 → 첫 값만(설명 중복 박멸)
+      seen[dk] = 1;
       out.push({ k: k, v: v });
     });
     return out;
