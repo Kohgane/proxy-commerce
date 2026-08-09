@@ -133,6 +133,8 @@ def test_recollect_force_flag_node():
         # v86 STEP2: 벌크바가 shadow로 이전되며 내부 조회가 _kgpTbAll/_kgpTbQ 경유가 됐다 → 하네스 스텁.
         "function _kgpTbAll(){return {forEach:function(){}};}\n"
         "function _kgpTbQ(){return null;}\n"
+        # v86-L: kgpRunBulk가 전송 직전 echo를 기록(_kgpRecordEcho) → 격리 하네스에 스텁.
+        "function _kgpRecordEcho(){}\n"
         "function kgpRunBulk(items, opts){\n"
         + body +
         "  sent=items;\n"
