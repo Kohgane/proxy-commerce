@@ -25,7 +25,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.141"
+    assert MANIFEST["version"] == "1.5.142"
 
 
 # ── source-contract: priceSrc 보존 + buybox 라벨 ──
