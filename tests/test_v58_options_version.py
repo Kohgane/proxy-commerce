@@ -22,7 +22,7 @@ BM = Path("src/seller_console/templates/bookmarklet.html").read_text(encoding="u
 def _playwright_ok() -> bool:
     try:
         import playwright  # noqa: F401
-        return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+        return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome"))
     except Exception:
         return False
 
@@ -54,7 +54,7 @@ def test_button_group_options_extracted():
 <div class="variant-size"><span class="label">사이즈</span><button>S</button><button>M</button><button>L</button></div>
 <div class="option-pack"><span class="label">수량</span><label><input type="radio">1팩</label><label><input type="radio">2팩</label></div>
 </body></html>"""
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}

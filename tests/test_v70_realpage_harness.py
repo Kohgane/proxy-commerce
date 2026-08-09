@@ -21,7 +21,7 @@ FIXTURES = sorted(glob.glob(str(FIX_DIR / "*.expected.json")))
 
 def _pw_executable():
     """샌드박스 사전설치 크로미움 경로. 없으면 None → Playwright 기본 설치 경로 사용."""
-    hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")
+    hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")
     return hits[0] if hits else None
 
 

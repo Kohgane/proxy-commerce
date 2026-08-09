@@ -21,7 +21,7 @@ os.environ.setdefault("ADAPTER_DRY_RUN", "1")
 def _playwright_ok() -> bool:
     try:
         import playwright  # noqa: F401
-        return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+        return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome"))
     except Exception:
         return False
 
@@ -47,7 +47,7 @@ def test_amazon_about_this_item_captured_when_tier1_full():
 <div id="feature-bullets"><h2>About this item</h2><ul>
 <li><span class="a-list-item">2026 Ultra-Thin magnetic design, only 2.5mm thick</span></li>
 <li><span class="a-list-item">Strong N52 magnets, MagSafe compatible</span></li></ul></div></body></html>"""
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}

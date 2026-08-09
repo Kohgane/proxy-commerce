@@ -56,7 +56,7 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome"))
 
 
 @pytest.mark.skipif(not _playwright_ok(), reason="Playwright/chromium 미설치")
@@ -69,7 +69,7 @@ def test_norm_price_str_number_input_accepts():
     fn = m.group(0)
     html = ('<!doctype html><html><body><input type="number" step="0.01" id="p">'
             '<script>' + fn + '</script></body></html>')
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}

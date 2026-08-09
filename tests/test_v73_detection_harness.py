@@ -29,7 +29,7 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome"))
 
 
 # 순수 모듈 실행(chrome 불필요) — 픽스처 로드 → kgp-detect eval → detectUI(document, href).
@@ -42,7 +42,7 @@ _DETECT_CALL = """(a) => {
 
 def _detect(url, body):
     from playwright.sync_api import sync_playwright
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}

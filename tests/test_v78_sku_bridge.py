@@ -72,7 +72,7 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome"))
 
 
 @pytest.mark.skipif(not _playwright_ok(), reason="Playwright/chromium 미설치")
@@ -80,7 +80,7 @@ def test_temu_underscore_skus_yield_options():
     """실 kgp-extractor: 테무 underscore sku(skus>0) → options>0(색상·사이즈) + 가격 40603 KRW."""
     from playwright.sync_api import sync_playwright
     url = "https://www.temu.com/kr/cat-tower-g-1.html"
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}

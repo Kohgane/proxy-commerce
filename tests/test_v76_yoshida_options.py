@@ -40,7 +40,7 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome"))
 
 
 @pytest.mark.skipif(not _playwright_ok(), reason="Playwright/chromium 미설치")
@@ -48,7 +48,7 @@ def test_yoshida_color_option_and_gallery_scope():
     """실 kgp-extractor: 색상 스와치 옵션 수집(opt>=1) + 갤러리 스코프(연관상품·스와치 썸네일 제외)."""
     from playwright.sync_api import sync_playwright
     url = "https://www.yoshidakaban.com/products/detail/12345"
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}

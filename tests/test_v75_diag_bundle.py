@@ -41,7 +41,7 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome"))
 
 
 EX = Path("extensions/chrome-collector/kgp-extractor.js").read_text(encoding="utf-8")
@@ -54,7 +54,7 @@ def test_diag_bundle_data_is_reproducible():
     임베드 JSON을 다시 파싱해 스냅샷 HTML과 추출 결과가 한 파일에서 복원됨을 실증."""
     from playwright.sync_api import sync_playwright
     url = "https://www.aliexpress.com/item/1005006620123.html"
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}

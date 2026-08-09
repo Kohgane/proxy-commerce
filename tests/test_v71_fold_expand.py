@@ -40,7 +40,7 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome"))
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치")
@@ -79,7 +79,7 @@ def test_fold_reveal_collects_detail_images():
   <button class="view-more" onclick="var c=document.querySelector('.goods-desc');for(var i=1;i&lt;=6;i++){var im=document.createElement('img');im.src='https://img.kwcdn.com/detail-'+i+'.jpg';c.appendChild(im);}this.remove();">상품 상세 더보기</button>
 </div>
 </body></html>"""
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}

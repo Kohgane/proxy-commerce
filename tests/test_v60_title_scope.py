@@ -20,7 +20,7 @@ EX = Path("extensions/chrome-collector/kgp-extractor.js").read_text(encoding="ut
 def _playwright_ok() -> bool:
     try:
         import playwright  # noqa: F401
-        return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+        return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome"))
     except Exception:
         return False
 
@@ -51,7 +51,7 @@ def test_title_ignores_injected_chat_and_our_ui():
 <div id="kgp-collect-fab"><h1>고가수집기</h1></div>
 <div id="dp"><h1 id="title"><span id="productTitle">andobil [2026 Ultra-Thin] Magnetic Phone Grip Ring Holder</span></h1>
 <div class="price">$12.99</div></div></body></html>"""
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}

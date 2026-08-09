@@ -22,7 +22,7 @@ def _playwright_ok() -> bool:
     try:
         import playwright  # noqa: F401
         import glob
-        return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+        return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome"))
     except Exception:
         return False
 

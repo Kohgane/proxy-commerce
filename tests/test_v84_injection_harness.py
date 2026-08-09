@@ -76,7 +76,7 @@ def _pw_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    if glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"):
+    if glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome"):
         return True
     cache = Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or (Path.home() / ".cache" / "ms-playwright"))
     return cache.is_dir() and any(cache.glob("chromium-*"))
@@ -90,7 +90,7 @@ def test_fab_computed_position_is_fixed_in_real_browser():
     """
     from playwright.sync_api import sync_playwright
 
-    hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")
+    hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")
     html = (
         "<!doctype html><html lang='ja'><head><meta charset='utf-8'><title>t</title></head>"
         "<body><h1 class='item_name'>테스트 상품</h1><div class='item_price'>3,980円</div></body></html>"
