@@ -49,7 +49,7 @@
       // v86-G: netStats(seen/jsonish/kept/dropped) + top 후보 요약을 함께 넘긴다 —
       //   `captured:0` 하나로는 '월드/타이밍 실패'와 '채점 실패'를 못 갈랐다(kgp-net.js 주석 참조).
       var diag = { netBound: false, captured: 0, topScore: 0, topUrl: "", pageGoodsId: "", matched: false, mismatch: false,
-                   netStats: null, top: null, scope: null };
+                   netStats: null, top: null, scope: null, adopted: null };
       try {
         diag.netBound = !!window.__kgpNetBound;
         var cap = window.__kgpCaptured || [];
@@ -57,6 +57,8 @@
         if (cap.length) { diag.topScore = cap[0].score || 0; diag.topUrl = cap[0].url || ""; }
         diag.netStats = window.__kgpNetStats || null;
         diag.top = (typeof window.__kgpTopCandidate === "function") ? window.__kgpTopCandidate() : null;
+        // v86-K: 실제 채택 후보(읽기 전용) — top≠adopted면 방어(id 불일치 기각) 작동 증거.
+        diag.adopted = (typeof window.__kgpAdoptedCandidate === "function") ? window.__kgpAdoptedCandidate() : null;
         // v86-G(수리): 추출기가 방금 정한 Tier1 스코프(추천 캐러셀 배제 여부). _run() 뒤라 값이 서 있다.
         diag.scope = window.__kgpTier1Scope || null;
         diag.pageGoodsId = (typeof window.__kgpPageGoodsId === "function") ? (window.__kgpPageGoodsId() || "") : "";

@@ -57,6 +57,114 @@ jobs:
       - name: 주입 사활 계약 실행(실브라우저 포함)
         run: python -m pytest tests/test_v84_injection_harness.py tests/test_v86_shadow_visibility.py tests/test_v70_realpage_harness.py -q
 
+  # v86-K: 전체 스위트 필수 게이트 — collect-only 사각(v86-H2에서 23 레드 은닉)을 봉인한다.
+  #   KGP_REQUIRE_BROWSER=1 → 브라우저/노드/jsdom/Pillow 인프라 부재로 인한 skip은 **실패**로 전환(조용한
+  #   skip 금지). 인메모리 레인(기본): 브라우저/노드/jsdom/Pillow 전부 붙여 실행. PG 계약은 아래 pg-suite에서
+  #   따로 돈다(전역 DATABASE_URL은 앱을 PG 모드로 바꿔 인메모리 가정 다수를 깨므로 레인 분리 필수).
+  full-suite:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      KGP_REQUIRE_BROWSER: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+          pip install "Pillow>=10"            # 아이콘/OG 빌드 계약(스테일 skip 방지)
+          npm install jsdom --no-save         # jsdom 하네스(node -e require('jsdom'))
+
+      - name: Chromium 설치(실브라우저 하네스)
+        run: python -m playwright install --with-deps chromium
+
+      - name: 전체 스위트(인메모리 레인) 실행 — KGP_REQUIRE_BROWSER=1 · 인프라 skip 0
+        run: |
+          set -o pipefail
+          # PG 전용 계약은 pg-suite 잡으로 분리(인메모리 앱에선 skip 대상) → 여기선 ignore.
+          python -m pytest tests/ -q -rs -p no:cacheprovider \
+            --ignore=tests/test_v45_migrate_reconcile.py \
+            --ignore=tests/test_v45_supabase_backup.py \
+            --ignore=tests/test_v45_supabase_stage1.py \
+            --ignore=tests/test_v45_supabase_stage2.py \
+            --ignore=tests/test_v45_supabase_stage3.py \
+            --ignore=tests/test_v45_token_bulk_delete.py \
+            --ignore=tests/test_v49_db_metering.py \
+            2>&1 | tee /tmp/pytest_full.txt
+          echo "----- 요약(pass/fail/skip) -----"; tail -1 /tmp/pytest_full.txt
+          # 인프라 skip 0 강제: KGP_REQUIRE_BROWSER=1이 인프라 skip을 실패로 전환하므로 여기서 SKIPPED로 남는
+          #   건 로직 skip('계약 대상 없음' 류)뿐이어야 한다. 인프라 패턴 SKIPPED가 있으면 게이트 실패(이중 안전).
+          if grep -E "^SKIPPED" /tmp/pytest_full.txt | grep -qiE "Playwright|chromium|node 미설치|jsdom|Pillow|브라우저"; then
+            echo "::error::인프라 skip 잔존 — 브라우저/노드/jsdom/Pillow 설치가 새는 지점 있음"; exit 1
+          fi
+
+  # v86-K: PG 계약 레인 — Postgres 서비스 + DATABASE_URL로 Supabase 이관 계약만 격리 실행(인메모리 레인과
+  #   상호배타). 두 잡의 합집합이 전 계약을 커버 → CI 전체에서 조용한 skip 0.
+  pg-suite:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: goga
+          POSTGRES_PASSWORD: goga
+          POSTGRES_DB: gogadb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 8
+    env:
+      DATABASE_URL: "postgresql://goga:goga@localhost:5432/gogadb"
+      SUPABASE_DB_URL: "postgresql://goga:goga@localhost:5432/gogadb"
+      DATABASE_URL_DIRECT: "postgresql://goga:goga@localhost:5432/gogadb"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: PG 이관 계약 실행(격리 레인)
+        run: |
+          set -o pipefail
+          python -m pytest -q -p no:cacheprovider \
+            tests/test_v45_migrate_reconcile.py \
+            tests/test_v45_supabase_backup.py \
+            tests/test_v45_supabase_stage1.py \
+            tests/test_v45_supabase_stage2.py \
+            tests/test_v45_supabase_stage3.py \
+            tests/test_v45_token_bulk_delete.py \
+            tests/test_v49_db_metering.py \
+            2>&1 | tee /tmp/pytest_pg.txt
+          tail -1 /tmp/pytest_pg.txt
+
   # v83.1 STEP2: 머지 전 실기기 검증 경로 상설화 — 브랜치 빌드 확장 ZIP을 PR 아티팩트로 뽑는다.
   #   오너가 배포(/seller/extension/download) 없이도 PR에서 바로 받아 재로딩 → 실기기 재진단 가능.
   #   ZIP 안 build-info.json에 커밋 해시가 각인되고, 확장 진단 파일이 그 값을 실어 준다

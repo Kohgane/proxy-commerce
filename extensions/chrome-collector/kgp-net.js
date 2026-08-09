@@ -320,6 +320,37 @@
              goods_ids_n: (e.goods_ids && e.goods_ids.length) || 0 };
   };
 
+  // v86-K: **실제 채택된 후보** 요약(읽기 전용 — 선택 로직 무변경). extractor가 세팅한 전역
+  //   (__kgpTier1Url/__kgpTier1Mismatch/__kgpTier1Score)을 **역판독**만 한다(분기 추가 0).
+  //   top(최고점)과 adopted(채택)가 다르면 그 자체가 방어(id 불일치 기각) 작동의 증거다.
+  //   adopt_cause enum: adopted:id_match / adopted:top_score / rejected:id_mismatch /
+  //   rejected:no_capture / rejected:score / rejected:not_injected (빈 문자열 금지).
+  window.__kgpAdoptedCandidate = function () {
+    var url = window.__kgpTier1Url || "";
+    var bound = !!window.__kgpNetBound;
+    var cap = window.__kgpCaptured || [];
+    var pageId = (typeof window.__kgpPageGoodsId === "function") ? (window.__kgpPageGoodsId() || "") : "";
+    var cause;
+    if (!bound) cause = "rejected:not_injected";
+    else if (url) cause = pageId ? "adopted:id_match" : "adopted:top_score";
+    else if (window.__kgpTier1Mismatch) cause = "rejected:id_mismatch";
+    else if (!cap.length) cause = "rejected:no_capture";
+    else cause = "rejected:score";
+    if (!url) {
+      return { adopted: false, url: "", score: window.__kgpTier1Score || 0, goods_id: "",
+               goods_matched: false, price: false, images: false, sku: false, reviews: false, adopt_cause: cause };
+    }
+    var e = null;
+    for (var i = 0; i < cap.length; i++) {
+      if (cap[i].url === url || (cap[i].url || "").slice(0, 160) === url.slice(0, 160)) { e = cap[i]; break; }
+    }
+    e = e || {};
+    return { adopted: true, url: (url || "").slice(0, 160), score: e.score || window.__kgpTier1Score || 0,
+             goods_id: e.goods_id || "",
+             goods_matched: !!(pageId && e.goods_id && String(e.goods_id) === String(pageId)),
+             price: !!e.price, images: !!e.images, sku: !!e.sku, reviews: !!e.reviews, adopt_cause: cause };
+  };
+
   // ── 진단 표 데이터(메타만, obj 제외) — 격리월드가 postMessage로 요청하면 kgp-main이 console.table ──
   window.__kgpDiagRows = function () {
     return (window.__kgpCaptured || []).map(function (e) {

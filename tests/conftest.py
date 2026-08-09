@@ -10,6 +10,7 @@
 """
 
 import os
+import re
 import sys
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
@@ -21,6 +22,47 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 # 셀러 콘솔 인증 강제는 운영 기본 ON(SELLER_CONSOLE_AUTH 미설정 시 "1"). 단 테스트는
 # 세션 없이 페이지를 직접 호출하므로 OFF로 고정한다(모듈 로드 전에 설정해야 반영됨).
 os.environ.setdefault("SELLER_CONSOLE_AUTH", "0")
+
+
+# ──────────────────────────────────────────────────────────
+# v86-K: KGP_REQUIRE_BROWSER — 인프라 부재 시 '조용한 skip' 금지(실패로 전환).
+#
+# 배경(v86-H2 교훈): CI가 collect-only라 실브라우저/노드 하네스가 항상 skip → "값 계약 그린인데
+#   화면엔 버튼 없음" 류의 회귀가 통과했다(오너 실기기 사고의 구조적 원인). 이 플래그가 켜지면
+#   브라우저/노드/jsdom/Pillow/PG 인프라 부재로 인한 skip을 **실패**로 바꿔, 게이트가 실제로 물게 한다.
+#   플래그가 꺼져 있으면(기본) 종전대로 skip — 로컬 개발 편의는 유지.
+#
+# ※ 인프라 skip만 전환한다(정직). 의도적 로직/데이터 skip(주문 품질 등)은 그대로 둔다.
+# ──────────────────────────────────────────────────────────
+_REQUIRE_BROWSER = os.getenv("KGP_REQUIRE_BROWSER") == "1"
+# 인메모리 하네스 인프라(브라우저/노드/jsdom/Pillow)만 전환한다 — 이것들의 조용한 skip이 곧 '값 그린인데
+#   화면엔 버튼 없음' 류 false-green의 원인(v86-H2). PG(DATABASE_URL)는 **별도 인프라 레인**이다: 전역
+#   DATABASE_URL은 앱을 PG 모드로 바꿔 인메모리 가정 테스트 다수를 깨므로, PG 계약은 격리된 pg-suite 잡에서
+#   따로 돈다 → 여기서는 PG skip을 실패로 바꾸지 않는다(그러면 인메모리 레인이 거짓 red가 된다).
+_INFRA_SKIP_RE = re.compile(
+    r"(Playwright|chromium|node\s*미설치|jsdom|Pillow|브라우저)",
+    re.I,
+)
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    rep = outcome.get_result()
+    if not _REQUIRE_BROWSER or not getattr(rep, "skipped", False):
+        return
+    lr = rep.longrepr
+    reason = ""
+    try:
+        reason = str(lr[2]) if isinstance(lr, tuple) and len(lr) >= 3 else str(lr)
+    except Exception:
+        reason = str(lr)
+    if _INFRA_SKIP_RE.search(reason):
+        rep.outcome = "failed"
+        rep.longrepr = (
+            "KGP_REQUIRE_BROWSER=1: 인프라 부재로 조용한 skip 금지 → 실패 처리. "
+            "사유: " + reason + " — CI/로컬에 해당 인프라(브라우저/노드/jsdom/Pillow/PG)를 설치하라."
+        )
 
 
 # ──────────────────────────────────────────────────────────
