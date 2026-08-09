@@ -1,0 +1,12 @@
+{
+  "note": "합성 구조 재현 — 실제 테무 캡처 아님(정직). 오너 실기기 1.5.142 진단: extracted price 12730·images·options·reviews(tier1) 다 있는데 description=none. 근본=goodsProperty(스펙 배열) 미수집. 이 픽스처로 goodsProperty→specs→상세설명 채움을 고정. og:description은 필러('Temu에서 이…확인하세요')라 거부되고, 대신 스펙표가 상세로 들어간다. (오너 실스냅샷에선 스펙 37개 클린 추출 확인.)",
+  "url": "https://www.temu.com/kr/goods-12730.html",
+  "title_contains": "무선 스피커",
+  "title_excludes": ["Temu", "temu.com"],
+  "price": "12730",
+  "currency": "KRW",
+  "currency_source": "domain",
+  "images_min": 3,
+  "description_contains": "전원 모드",
+  "description_excludes": ["확인하세요"]
+}

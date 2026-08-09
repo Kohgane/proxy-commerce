@@ -1,0 +1,33 @@
+<!doctype html>
+<!-- 합성 픽스처(구조 재현) — 실제 테무 캡처 아님. 오너 실기기(1.5.142) 진단 결함 재현:
+     extracted는 price/images/options/reviews(tier1) 다 있는데 description=none·스펙표 미수집.
+     근본 = 테무 goodsProperty(스펙 배열, [{key, values[]}])를 추출기가 안 읽음. 이 픽스처가 그
+     구조를 재현해 goodsProperty→specs→상세설명 사다리가 채워지는지 고정한다. 상태는 실제 테무처럼
+     window.rawData 할당(인용부호 JSON)으로 실어 jsdom(텍스트 파싱)·Playwright(실행) 양쪽에서 잡힌다. -->
+<html lang="ko"><head>
+<meta charset="utf-8">
+<title>큐브 매직큐브 RGB 조명 휴대용 무선 스피커</title>
+<meta property="og:title" content="큐브 매직큐브 RGB 조명 휴대용 무선 스피커">
+<meta property="og:description" content="Temu에서 이 스피커을 확인하세요. 오디오 제품도 좋아할 수 있습니다.">
+</head><body>
+<h1>큐브 매직큐브 RGB 조명 휴대용 무선 스피커</h1>
+<script>
+window.rawData = {"store":{"goods":{
+  "goodsName":"큐브 매직큐브 RGB 조명 휴대용 무선 스피커",
+  "imagePathList":[
+    "https://img.kwcdn.com/product/temu-a1.jpg",
+    "https://img.kwcdn.com/product/temu-a2.jpg",
+    "https://img.kwcdn.com/product/temu-a3.jpg"
+  ],
+  "goodsProperty":[
+    {"key":"전원 모드","values":["USB 충전"],"refPid":1067,"important":1},
+    {"key":"작동 전압","values":["≤36V"],"refPid":1132,"important":1},
+    {"key":"무선 속성","values":["무선"],"refPid":2149,"important":1},
+    {"key":"배터리 속성","values":["충전식 배터리"],"refPid":2153,"important":1}
+  ],
+  "skuList":[
+    {"skuId":601,"price":12730,"specs":[{"specKeyName":"색상","specValueName":"검정"}]}
+  ]
+}}};
+</script>
+</body></html>

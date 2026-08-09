@@ -471,9 +471,22 @@
                 if (sp && !_skuPriceSet) { res.price = sp.price; res.currency = sp.currency; res.currencySrc = sp.csrc || (sp.currency ? "symbol" : ""); _skuPriceSet = true; }
               }
             }
+            // (3b) 스펙 표(테무 goodsProperty·유사) → specs. [{key, values:[..]}] 형태. 상세설명이 비면
+            //   이 스펙표가 desc 사다리(specs)로 채워진다(오너 테무 실기기: 상세 none·스펙표 미수집 결함).
+            else if (Array.isArray(v) && /(goodsproperty|productproperty|paramproperty|attributelist)$/i.test(kv)
+                     && v.length && typeof v[0] === "object") {
+              for (var _pi = 0; _pi < v.length && res.specs.length < 60; _pi++) {
+                var _po = v[_pi]; if (!_po || typeof _po !== "object") continue;
+                var _pk = _po.key || _po.name || _po.k || _po.propertyName;
+                var _pvraw = _po.values != null ? _po.values : (_po.value != null ? _po.value : _po.vals);
+                var _pv = Array.isArray(_pvraw)
+                  ? _pvraw.filter(function (x) { return typeof x === "string" && x; }).join(", ")
+                  : (typeof _pvraw === "string" ? _pvraw : "");
+                if (typeof _pk === "string" && _pk && _pv) res.specs.push({ k: _pk.slice(0, 60), v: _pv.slice(0, 200) });
+              }
+            }
             // (4) 평점·리뷰수
-            else if (RATE_KEY.test(kv) && !res.rating && (typeof v === "string" || typeof v === "number")) {
-              // v78 STEP2: 더미 평점(0·1 — score:1 등 오채택) 방어 — (1,5]만 채택(뒤의 실 평점이 이기게).
+            else if (RATE_KEY.test(kv) && !res.rating && (typeof v === "string" || typeof v === "number")) {              // v78 STEP2: 더미 평점(0·1 — score:1 등 오채택) 방어 — (1,5]만 채택(뒤의 실 평점이 이기게).
               var rn = parseFloat(v); if (rn > 1 && rn <= 5) res.rating = String(v);
             }
             else if (CNT_KEY.test(kv) && !res.reviewCount && (typeof v === "string" || typeof v === "number")) {
