@@ -67,6 +67,10 @@ jobs:
       contents: read
     env:
       KGP_REQUIRE_BROWSER: "1"
+      # ★핵심(v86-K 실측): 실페이지 하네스가 브라우저를 `/opt/pw-browsers/chromium-*/chrome-linux/chrome`
+      #   글롭으로 찾는다(샌드박스 관행). CI 기본 설치 경로(~/.cache)면 글롭 실패 → 종전엔 조용히 skip
+      #   (=CI에서 브라우저 계약이 한 번도 안 돌던 v86-H2 사각의 실체). 설치 경로를 글롭 대상으로 고정.
+      PLAYWRIGHT_BROWSERS_PATH: "/opt/pw-browsers"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -89,14 +93,18 @@ jobs:
           pip install "Pillow>=10"            # 아이콘/OG 빌드 계약(스테일 skip 방지)
           npm install jsdom --no-save         # jsdom 하네스(node -e require('jsdom'))
 
-      - name: Chromium 설치(실브라우저 하네스)
-        run: python -m playwright install --with-deps chromium
+      - name: Chromium 설치(/opt/pw-browsers = 하네스 글롭 대상)
+        run: |
+          sudo mkdir -p /opt/pw-browsers
+          sudo chown -R "$(id -un)" /opt/pw-browsers
+          python -m playwright install --with-deps chromium
+          ls -d /opt/pw-browsers/chromium-*/chrome-linux/chrome   # 글롭 대상 실존 확인(없으면 즉시 실패)
 
       - name: 전체 스위트(인메모리 레인) 실행 — KGP_REQUIRE_BROWSER=1 · 인프라 skip 0
         run: |
           set -o pipefail
           # PG 전용 계약은 pg-suite 잡으로 분리(인메모리 앱에선 skip 대상) → 여기선 ignore.
-          python -m pytest tests/ -q -rs -p no:cacheprovider \
+          python -m pytest tests/ -q -ra -p no:cacheprovider \
             --ignore=tests/test_v45_migrate_reconcile.py \
             --ignore=tests/test_v45_supabase_backup.py \
             --ignore=tests/test_v45_supabase_stage1.py \
