@@ -84,9 +84,11 @@ def test_recollect_updates_existing_no_new_row(flask_client, monkeypatch):
     n_before = len(ids_before)
 
     # 2차 '다시 수집'(force): 같은 URL + 실제 가격 → 기존 항목 덮어씀(신규 행 0).
+    # v83 STEP1: 도메인-통화 정합 게이트가 KRW-on-amazon.com을 폐기하므로(실 US 아마존은 KRW 미반환),
+    #   재수집-가격채움 계약은 도메인에 맞는 통화(USD)로 검증한다(옛 테스트는 불일치 데이터로 게이트에 걸렸음).
     r2 = flask_client.post("/api/v1/collect/extension",
                            json={"url": url, "title": "재추출 대상", "price": "12000",
-                                 "currency": "KRW", "force": True},
+                                 "currency": "USD", "force": True},
                            headers=hdr)
     assert r2.status_code == 200, r2.get_data(as_text=True)
     d2 = r2.get_json()

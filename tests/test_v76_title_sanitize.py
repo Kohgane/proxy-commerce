@@ -38,7 +38,9 @@ def test_sanitize_patterns_node():
         j = EX.index("\n  }\n", i) + 4
         return EX[i:j]
     re_line = re.search(r"var _SITE_BRAND_RE = [^\n]+", EX).group(0)
-    src = re_line + "\n" + grab("_brandFromHost") + "\n" + grab("_sanitizeTitle") + "\n"
+    # v83 STEP3: _sanitizeTitle이 참조하는 아마존 카테고리 꼬리 정규식도 주입(다중 라인 new RegExp 블록).
+    amz_tail = re.search(r"var _AMZ_CAT_TAIL_RE = new RegExp\([\s\S]*?, \"i\"\);", EX).group(0)
+    src = re_line + "\n" + amz_tail + "\n" + grab("_brandFromHost") + "\n" + grab("_sanitizeTitle") + "\n"
     cases = [
         ["Amazon.com: BENKS 3-in-1 Wireless Charger", "https://www.amazon.com/dp/B0", "BENKS 3-in-1 Wireless Charger"],
         ["PORTER TANKER ショルダーバッグ | 吉田カバン", "https://www.yoshidakaban.com/products/1", "PORTER TANKER ショルダーバッグ"],

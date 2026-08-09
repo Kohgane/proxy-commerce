@@ -81,7 +81,7 @@ def test_amazon_country_currency_locale():
         "global.document={documentElement:{lang:''}};"
         "const src=require('fs').readFileSync('extensions/chrome-collector/kgp-extractor.js','utf8');"
         # _localeCurrency 추출·실행(순수 함수 — host만 바꿔 평가)
-        "const m=src.match(/function _localeCurrency\\(\\)[\\s\\S]*?\\n  \\}/);"
+        "const m=src.match(/function _localeCurrency\\([^)]*\\)[\\s\\S]*?\\n  \\}/);"
         "eval(m[0]);"
         "function cur(h){global.location.hostname=h;return _localeCurrency();}"
         "console.log(JSON.stringify({de:cur('www.amazon.de'),jp:cur('www.amazon.co.jp'),"

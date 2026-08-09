@@ -38,6 +38,8 @@ def test_recollect_force_flow_wired():
 def test_amazon_title_sanitizer_strips_prefix_verdict():
     """판별: 'Amazon.com:' 접두를 새니타이저가 제거 → 회귀 아님. 재수집 시 제목 세탁(구수집분 판정)."""
     brand = re.search(r"var _SITE_BRAND_RE = (/.*/i);", EX).group(1)
+    # v83 STEP3: _sanitizeTitle이 참조하는 아마존 카테고리 꼬리 정규식도 주입.
+    amz_tail = re.search(r"var _AMZ_CAT_TAIL_RE = new RegExp\([\s\S]*?, \"i\"\);", EX).group(0)
     bf = re.search(r"function _brandFromHost\(url\) \{.*?\n  \}", EX, re.S).group(0)
     st = re.search(r"function _sanitizeTitle\(t, url\) \{.*?\n  \}", EX, re.S).group(0)
     cases = [
@@ -48,7 +50,7 @@ def test_amazon_title_sanitizer_strips_prefix_verdict():
         ["OHSNAP Steamer - Amazon.com", "https://www.amazon.com/dp/B0X", "OHSNAP Steamer"],
     ]
     harness = (
-        "var _SITE_BRAND_RE=" + brand + ";\n" + bf + "\n" + st + "\n"
+        "var _SITE_BRAND_RE=" + brand + ";\n" + amz_tail + "\n" + bf + "\n" + st + "\n"
         + "var C=" + json.dumps(cases) + ";\n"
         + "process.stdout.write(JSON.stringify(C.map(function(c){return _sanitizeTitle(c[0],c[1]);}))+'\\n');"
     )

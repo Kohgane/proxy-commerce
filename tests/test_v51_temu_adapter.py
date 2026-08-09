@@ -111,7 +111,10 @@ def test_source_labels_and_bookmarklet_toast():
     labels = {f["key"]: f["source"] for f in st["fields"]}
     assert labels["price"] == "Tier1(API/상태)" and labels["images"] == "Tier2(DOM)" and labels["title"] == "Tier3(og)"
     # 북마클릿 테무 안내 토스트 + 다운로드 ZIP kgp-net.js 포함
+    # v53+: ZIP 파일 목록은 src/build_extension.py로 이관됨(views.py는 build_zip_bytes 위임).
     assert "temu" in VIEWS.lower() and "크롬 확장" in VIEWS
-    assert '"kgp-net.js"' in VIEWS
+    from pathlib import Path as _P
+    _BUILD = _P("src/build_extension.py").read_text(encoding="utf-8")
+    assert '"kgp-net.js"' in _BUILD
     # state_json 테무 폐기 주석
     assert "테무" in SJ and "폐기" in SJ or "건너뛴" in SJ

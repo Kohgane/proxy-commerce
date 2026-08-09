@@ -23,7 +23,15 @@ import pytest
 
 EX = Path("extensions/chrome-collector/kgp-extractor.js").read_text(encoding="utf-8")
 DIAG_DIR = Path("fixtures/realpages/diag")
-DIAG_FILES = sorted(glob.glob(str(DIAG_DIR / "*.html")))
+# v86-H: 계약 파일 = 진단 임베드(kgp-diagnostic)가 있는 '진단 파일'만. 팝업 '진단 스냅샷 저장'이 내리는
+#   순수 DOM 스냅샷(kgp-snapshot-*, 임베드 없음)은 계약 baseline이 없으므로 회귀 계약 대상이 아니다
+#   (그 파일들은 realpages 하네스 픽스처용). embed 유무로 필터 → 스냅샷 오글로빙 제외.
+def _has_embed(p):
+    try:
+        return 'id="kgp-diagnostic"' in Path(p).read_text(encoding="utf-8")
+    except Exception:
+        return False
+DIAG_FILES = sorted(f for f in glob.glob(str(DIAG_DIR / "*.html")) if _has_embed(f))
 MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_text(encoding="utf-8"))
 
 # 진단 임베드 블록 파서(팝업과 동일 이스케이프 규칙: </script> → <\/script>).

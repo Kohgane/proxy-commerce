@@ -40,7 +40,10 @@ def test_loader_and_fallback():
 
 def test_token_not_in_run_js():
     # 토큰은 코어 closure에만 — run.js URL/본문에 노출 0.
-    assert "TOK" not in _run() and "Bearer" not in _run()
+    # v82: 정확 센티널 사용 — 'TOK'는 kgp-extractor의 _LOWRES_TOKEN_RE('TOKEN')와 부분일치해 오탐.
+    #   실제 토큰 표식(prefix 'kgp_' / 'Bearer' / Authorization)만으로 누출을 판정한다.
+    rj = _run()
+    assert "kgp_" not in rj and "Bearer" not in rj and "Authorization" not in rj
     assert "window.__kgpRun" in _run() and "cb(" in _run()
 
 
