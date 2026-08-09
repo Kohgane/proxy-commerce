@@ -1198,7 +1198,7 @@
   var _SPEC_BAD_K = /(까지!|까지\s*!|ポイント\d*倍|포인트\s*(증정|적립|\d*배)|캠페인|キャンペーン|エントリー|쿠폰|クーポン|공유\s*링크|공유하기|シェア|share\s*link|sns|트위터|twitter|facebook|line で送る|즐겨찾기|お気に入り|랭킹|ランキング|배너|banner|\d{1,2}\/\d{1,2}\s*\(|\d{4}[年.\-\/]\d{1,2}[月.\-\/]\d{1,2})/i;
   var _SPEC_BAD_V = /(\{[^}]*(?:font-size|color|margin|padding|background|border|width|display)\s*:[^}]*\}|^\s*[.#][a-z0-9_-]+\s*\{|@media|<\/?[a-z]+[\s>])/i;
   function _cleanSpecs(specs) {
-    var out = [];
+    var out = [], seen = {};   // v86-M: 키 기준 중복 제거(goodsProperty가 캡처 JSON·인라인 등 여러 후보 상태에 중복 존재 → 설명 이중 표기 방지, _domSpecs와 동일 규약).
     (specs || []).forEach(function (s) {
       if (!s) return;
       var k = String(s.k == null ? "" : s.k).replace(/\s+/g, " ").trim();
@@ -1207,6 +1207,9 @@
       if (_SPEC_BAD_K.test(k) || _SPEC_BAD_K.test(v)) return;   // 프로모·날짜·공유 UI 문구는 상품 속성이 아님
       if (_SPEC_BAD_V.test(v)) return;                          // CSS 조각·마크업 잔재
       if (k.length > 60 || v.length > 200) { k = k.slice(0, 60); v = v.slice(0, 200); }
+      var dk = k.toLowerCase();
+      if (seen[dk]) return;                                     // 같은 속성 라벨 재등장 → 첫 값만(설명 중복 박멸)
+      seen[dk] = 1;
       out.push({ k: k, v: v });
     });
     return out;

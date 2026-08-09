@@ -35,6 +35,16 @@ def test_goodsproperty_spec_case_in_walker():
     assert (".key" in seg or "propertyName" in seg) and ".values" in seg, "key/values 파싱 누락"
 
 
+def test_cleanspecs_dedupes_by_key():
+    # goodsProperty가 캡처 JSON·인라인 등 여러 후보 상태에 중복 존재 → 스펙 중복 → 상세설명 이중 표기.
+    # _cleanSpecs가 키(소문자) 기준으로 중복을 걷어내야 한다(오너 실스냅샷서 상세 366자 1벌, 이중 아님).
+    m = re.search(r"function _cleanSpecs\(specs\)\s*\{([\s\S]*?)\n  \}", EX)
+    assert m, "_cleanSpecs 정의 없음"
+    body = m.group(1)
+    assert "seen" in body and "toLowerCase()" in body and "if (seen[" in body, \
+        "_cleanSpecs 키 기준 중복 제거 없음(상세 이중 표기 회귀 위험)"
+
+
 def test_realpage_fixture_present_and_asserts_description():
     # behavioral 게이트(실페이지 하네스)가 물릴 테무 스펙 픽스처 + 상세설명 계약.
     html = FIX / "temu-goodsproperty.html"
