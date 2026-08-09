@@ -1409,6 +1409,20 @@ function _kgpPayloadEcho(meta) {
     field_sources: meta.field_sources || null,
   };
 }
+// v86-L: echo 기록 단일 관문. 종전엔 FAB(handleFabClick)만 echo를 남겨, 호버 단건·벌크 경로
+//   (collectBulk)로 수집하면 payload_echo=null이었다(오너 테무 실기기 결함 = 경로 분기 b).
+//   모든 전송 경로가 이 함수를 통과하게 해 **어느 경로로 보냈든** echo가 남고, path enum으로
+//   '어느 버튼이 보냈나'를, echoed_at으로 '언제 보냈나'를 진단 파일 하나로 판독한다.
+//   path: "fab" | "hover" | "bulk" | "bulk-retry"(재시도). extra는 병합(예: {items_n}).
+function _kgpRecordEcho(meta, path, extra) {
+  try {
+    var e = _kgpPayloadEcho(meta);
+    e.path = path || "unknown";
+    e.echoed_at = e.at;          // 명시적 별칭(판독 편의 — at은 유지)
+    if (extra) for (var k in extra) if (Object.prototype.hasOwnProperty.call(extra, k)) e[k] = extra[k];
+    _kgpMetaStore.echo = e;
+  } catch (x) {}
+}
 // 클릭 시점 재독출. tier1이 아직 안 왔으면 **상한 내에서 한 번 더** 읽고, 그래도 없으면
 //   조용히 빈 필드를 보내지 않고 tier1_pending + 간이(simple)로 정직 강등한다(v86-F 계보).
 function kgpAcquireMeta(cb) {
@@ -1457,8 +1471,8 @@ function handleFabClick(btn, opts) {
       reviews: (meta.reviews || []).length, rating: meta.rating, source: meta.source, partial: meta.partial,
     });
   } catch (e) { /* noop */ }
-  // v86-I: 마지막 전송 payload 요약을 스토어에 남긴다 — 진단이 "무엇을 보냈나"를 그대로 보여준다.
-  try { _kgpMetaStore.echo = _kgpPayloadEcho(meta); } catch (e) {}
+  // v86-I/L: 마지막 전송 payload 요약을 스토어에 남긴다(진단이 "무엇을 보냈나"). path="fab".
+  _kgpRecordEcho(meta, "fab");
   kgpSendMessage({ action: "collect", meta }, (resp) => {
     setFabState(btn, "idle");
     if (!resp || resp.ok !== true) {
@@ -2437,6 +2451,8 @@ function kgpQuickCollect(card, btn) {
   const corr = kgpNewCorr();
   const meta = _kgpTileMeta(card);
   meta.corr_id = corr;
+  // v86-L: 호버 단건도 echo 기록(경로 분기 봉인) — 종전엔 FAB만 남겨 payload_echo=null이었다.
+  _kgpRecordEcho(meta, "hover");
   kgpSendMessage({ action: "collectBulk", items: [meta] }, (resp) => {
     btn.dataset.busy = "";
     if (resp && resp.ok === true && ((resp.success || 0) > 0 || (resp.duplicate || 0) > 0)) {
@@ -2498,6 +2514,8 @@ function kgpRunBulk(items, opts) {
   btns.forEach(b => b.disabled = true);
   const oldRetry = _kgpTbQ("#kgp-tb-retry");
   if (oldRetry) oldRetry.remove();
+  // v86-L: 벌크도 echo 기록 — 대표(items[0]) 요약 + items_n. path=재시도면 bulk-retry.
+  _kgpRecordEcho(items[0] || {}, (opts && opts.retry) ? "bulk-retry" : "bulk", { items_n: items.length });
   kgpSendMessage({ action: "collectBulk", items }, (resp) => {
     btns.forEach(b => b.disabled = false);
     if (!resp || resp.ok !== true) { kgpSetStatus(((resp && resp.error) || "수집 실패")); return; }

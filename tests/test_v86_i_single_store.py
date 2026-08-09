@@ -220,7 +220,10 @@ def test_reread_bound_is_explicit():
 def test_diag_carries_payload_echo():
     """진단에 마지막 전송 payload 요약 — '추출은 됐는데 전송이 빔'을 진단만으로 가른다."""
     assert "payload_echo:" in CS, "진단 응답에 payload_echo가 없다"
-    assert "_kgpMetaStore.echo = _kgpPayloadEcho(meta)" in CS, "전송 시점에 echo를 안 남긴다"
+    # v86-L: echo 기록이 FAB 직접대입 → 단일 관문 `_kgpRecordEcho`로 이관(호버·벌크도 남기게).
+    #   전송 시점에 echo를 남기는 계약은 유지 — FAB 경로가 recorder를 호출하는지로 본다.
+    assert '_kgpRecordEcho(meta, "fab")' in CS, "FAB 전송 시점에 echo를 안 남긴다(v86-L 단일 관문)"
+    assert "_kgpMetaStore.echo = e" in CS, "recorder가 스토어에 echo를 안 남긴다"
     seg = CS.split("function _kgpPayloadEcho", 1)[1].split("\n}", 1)[0]
     for k in ("has_title", "has_price", "currency", "images_n", "options_n", "reviews_n", "tier1_pending"):
         assert k in seg, f"echo에 {k} 누락"
