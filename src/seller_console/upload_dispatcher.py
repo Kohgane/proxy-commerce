@@ -7,12 +7,56 @@ Phase 190: prevalidate(), external_product_id/url, error_code/hint 추가.
 """
 from __future__ import annotations
 
+import html as _html
 import logging
 import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def render_detail_blocks_html(detail_blocks: Any, market: str) -> str:
+    """v86-N: 드로어 '상세페이지 꾸미기'(v40-C) 블록 → 마켓 상세설명 HTML.
+
+    detail_blocks = {common:[{type,content}...], <market>:[...]} (마켓 오버라이드는 선택).
+    현재 마켓 오버라이드가 있으면 그것을, 없으면 공통(common)을 렌더한다 — 드로어 미리보기
+    (dpPreview)와 **동일 시맨틱**(text=<p>, highlight=<div>, image=<img>, divider=<hr>)이라
+    '미리보기=실제 등록물'이 성립한다. 내용은 전부 이스케이프(마크업 주입 방지).
+    블록이 없거나 렌더 결과가 비면 '' 반환(호출측이 기존 description 폴백 유지 → 회귀 0).
+    """
+    if not isinstance(detail_blocks, dict):
+        return ""
+    blocks = detail_blocks.get(market)
+    if not isinstance(blocks, list):
+        blocks = detail_blocks.get("common")
+    if not isinstance(blocks, list):
+        return ""
+    parts: List[str] = []
+    for b in blocks:
+        if not isinstance(b, dict):
+            continue
+        btype = b.get("type")
+        content = str(b.get("content") or "")
+        if btype == "text":
+            if content.strip():
+                parts.append(
+                    '<p style="font-size:.95rem;white-space:pre-wrap;margin:0 0 .8rem">'
+                    + _html.escape(content) + "</p>")
+        elif btype == "highlight":
+            if content.strip():
+                parts.append(
+                    '<div style="background:#fff8e6;border:1px solid #f0d68a;border-radius:8px;'
+                    'padding:10px 12px;margin:0 0 .8rem;white-space:pre-wrap">'
+                    + _html.escape(content) + "</div>")
+        elif btype == "image":
+            if content.strip():
+                parts.append(
+                    '<img src="' + _html.escape(content, quote=True)
+                    + '" style="max-width:100%;border-radius:6px;margin:0 0 .8rem" alt="">')
+        elif btype == "divider":
+            parts.append('<hr style="margin:.8rem 0">')
+    return "".join(parts).strip()
 
 # 채널 브리지 예외 (자격증명 미설정 식별용). 브리지 미존재 시 폴백 정의.
 try:
@@ -430,6 +474,14 @@ class UploadDispatcher:
     @staticmethod
     def _payload_for_market(product_data: Dict[str, Any], market: str) -> tuple[Dict[str, Any], bool]:
         payload = dict(product_data or {})
+        # v86-N: 드로어 '상세페이지 꾸미기' 블록(detail_blocks)을 이 마켓의 description_html로 렌더.
+        #   블록이 있으면(셀러의 명시적 상세 구성) 그것을 상세설명 HTML로 채운다 → 채널 브리지
+        #   (description_html or description)가 이를 사용해 실제 등록에 반영(coupang/smartstore/11st).
+        #   블록 없으면 미설정 → 기존 plain description 폴백 유지(회귀 0). AI 경로는 detail_blocks가
+        #   없으므로 무영향(선-설정된 description_html 있으면 그대로 존중).
+        _blocks_html = render_detail_blocks_html(payload.get("detail_blocks"), market)
+        if _blocks_html:
+            payload["description_html"] = _blocks_html
         localized_map = payload.get("localized") if isinstance(payload.get("localized"), dict) else {}
         try:
             from src.markets.adapters.base import get_marketplace_meta
