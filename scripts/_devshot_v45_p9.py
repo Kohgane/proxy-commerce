@@ -47,7 +47,7 @@ TABS = [("basic", "상품명·카테고리"), ("price", "가격"), ("options", "
         ("keywords", "키워드"), ("thumb", "썸네일"), ("detail", "상세페이지"), ("upload", "업로드")]
 
 from playwright.sync_api import sync_playwright
-exe = glob.glob('/opt/pw-browsers/chromium-*/chrome-linux/chrome')[0]
+exe = glob.glob('/opt/pw-browsers/chromium-*/chrome-linux*/chrome')[0]
 shots = []
 with sync_playwright() as pw:
     px = os.environ.get('HTTPS_PROXY')

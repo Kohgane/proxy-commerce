@@ -34,7 +34,7 @@ threading.Thread(target=run, daemon=True).start()
 time.sleep(2)
 
 from playwright.sync_api import sync_playwright
-exe = glob.glob('/opt/pw-browsers/chromium-*/chrome-linux/chrome')[0]
+exe = glob.glob('/opt/pw-browsers/chromium-*/chrome-linux*/chrome')[0]
 out = sys.argv[1] if len(sys.argv)>1 else 'sourcing'
 with sync_playwright() as pw:
     import os as _os

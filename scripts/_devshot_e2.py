@@ -42,7 +42,7 @@ PAGE = f"""<!doctype html><meta charset=utf-8>
 out = "/tmp/shot_e2.html"; Path(out).write_text(PAGE, encoding="utf-8")
 
 from playwright.sync_api import sync_playwright
-exe = glob.glob('/opt/pw-browsers/chromium-*/chrome-linux/chrome')[0]
+exe = glob.glob('/opt/pw-browsers/chromium-*/chrome-linux*/chrome')[0]
 with sync_playwright() as pw:
     _px = os.environ.get('HTTPS_PROXY') or os.environ.get('HTTP_PROXY')
     _opts = {'executable_path': exe}

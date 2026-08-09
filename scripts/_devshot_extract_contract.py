@@ -36,11 +36,13 @@ FIXTURES = {
 
 def run():
     from playwright.sync_api import sync_playwright
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    # 샌드박스(chrome-linux)·CI 최신 Chrome-for-Testing(chrome-linux64) 양쪽 매치. 없으면
+    #   빈 executable_path로 Playwright 기본 해석(PLAYWRIGHT_BROWSERS_PATH)에 위임 → IndexError 없음.
+    _hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")
     out = {}
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
-        o = {"executable_path": exe}
+        o = {"executable_path": _hits[0]} if _hits else {}
         if px:
             o["proxy"] = {"server": px, "bypass": "127.0.0.1,localhost"}
         b = pw.chromium.launch(**o)

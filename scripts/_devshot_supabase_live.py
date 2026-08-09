@@ -35,7 +35,7 @@ _bs = "/tmp/bsdl/node_modules/bootstrap/dist/css/bootstrap.min.css"
 import urllib.request, json as _json
 
 from playwright.sync_api import sync_playwright
-exe = glob.glob('/opt/pw-browsers/chromium-*/chrome-linux/chrome')[0]
+exe = glob.glob('/opt/pw-browsers/chromium-*/chrome-linux*/chrome')[0]
 with sync_playwright() as pw:
     px = os.environ.get('HTTPS_PROXY'); o = {'executable_path': exe}
     if px: o['proxy'] = {'server': px, 'bypass': '127.0.0.1,localhost'}

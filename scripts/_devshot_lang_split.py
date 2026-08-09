@@ -18,7 +18,7 @@ ser = app.session_interface.get_signing_serializer(app)
 cookie = ser.dumps({"user_id": "u1", "user_email": "demo@goga.kr", "user_name": "데모", "user_role": "admin"})
 _bs = "/tmp/bsdl/node_modules/bootstrap/dist/css/bootstrap.min.css"
 from playwright.sync_api import sync_playwright
-exe = glob.glob('/opt/pw-browsers/chromium-*/chrome-linux/chrome')[0]
+exe = glob.glob('/opt/pw-browsers/chromium-*/chrome-linux*/chrome')[0]
 
 def shot(lang, path):
     with sync_playwright() as pw:

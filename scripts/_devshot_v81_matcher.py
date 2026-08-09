@@ -57,7 +57,7 @@ tmp = "/tmp/_v81_matcher.html"
 open(tmp, "w", encoding="utf-8").write(html)
 
 from playwright.sync_api import sync_playwright
-exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")[0]
 with sync_playwright() as pw:
     b = pw.chromium.launch(executable_path=exe)
     p = b.new_context(viewport={"width": 420, "height": 470}).new_page()

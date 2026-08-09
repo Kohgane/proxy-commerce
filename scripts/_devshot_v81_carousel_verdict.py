@@ -21,7 +21,7 @@ ALI = (
    for i in range(1,4))
  + '</div></body></html>')
 U = "https://www.aliexpress.com/w/wholesale-roller.html?q=roller"
-exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")[0]
 with sync_playwright() as pw:
     px = os.environ.get("HTTPS_PROXY"); o = {"executable_path": exe}
     if px: o["proxy"] = {"server": px, "bypass": "127.0.0.1,localhost"}
