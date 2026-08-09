@@ -81,6 +81,6 @@ def test_no_extra_api_calls():
 
 def test_download_zip_includes_main_bridge():
     # 확장 다운로드 ZIP에 kgp-main.js 포함(빠지면 MAIN world 미주입 → 근본 수리 무효).
-    VIEWS = Path("src/seller_console/views.py").read_text(encoding="utf-8")
-    m = re.search(r"include = \[(.*?)\]", VIEWS, re.S)
-    assert m and '"kgp-main.js"' in m.group(1)
+    # v53+: ZIP 파일 목록은 src/build_extension.py(단일 소스)로 이관됨(views.py는 build_zip_bytes 위임).
+    BUILD = Path("src/build_extension.py").read_text(encoding="utf-8")
+    assert '"kgp-main.js"' in BUILD

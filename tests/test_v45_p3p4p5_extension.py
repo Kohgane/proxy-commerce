@@ -97,9 +97,10 @@ def test_p4p5_mount_helper_uses_documentElement():
 # ── P5 ────────────────────────────────────────────────────────────────────────
 def test_p5_fab_documentElement_and_observer_reattach():
     assert "_kgpMount(btn)" in CS                              # FAB <html> 직속
-    # FAB z-index 최상위
-    fi = CS.index("btn.id = KGP_BTN_ID")
-    assert "z-index:2147483647" in CS[fi:fi + 1500]
+    # FAB z-index 최상위 — v84/v86: 위치 고정 핀(_kgpPinFixed)이 mount 시 top z-index를 !important로 박고,
+    #   shadow 호스트 _fabCss에도 z-index:2147483647이 있다(shadow DOM 격리 전환).
+    assert '_kgpPos(el, "z-index", "2147483647")' in CS       # 핀이 최상위 z-index 강제
+    assert "z-index:2147483647" in CS                          # FAB/바 스타일에 최상위 z-index 존재
     # MutationObserver가 오버레이 사라짐 감지 시 디바운스 재부착(v55 STEP5: 재판정 아닌 '재마운트 전용').
     assert "new MutationObserver" in CS
     assert "const gone =" in CS and "_remountIfGone" in CS

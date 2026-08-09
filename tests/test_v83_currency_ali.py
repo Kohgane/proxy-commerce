@@ -54,8 +54,9 @@ def test_step1_currency_ladder_source_contract():
 
 def test_step2_ali_source_contract():
     # 소싱처 매처 단일 모듈에서 국가 도메인 와일드카드(아마존과 동일 규칙).
-    assert r"aliexpress\.[a-z][a-z.]*$" in SOURCES
-    assert r"amazon\.[a-z][a-z.]*$" in SOURCES
+    # v83 STEP2: TLD 라벨 2~3자로 타이트닝(옛 [a-z][a-z.]*는 amazon.evil.com 류까지 매치).
+    assert r"aliexpress\.[a-z]{2,3}(\.[a-z]{2,3})?$" in SOURCES
+    assert r"amazon\.[a-z]{2,3}(\.[a-z]{2,3})?$" in SOURCES
     assert r"aliexpress\.(com|us)$" not in SOURCES        # 옛 고정 TLD 잔존 0
     assert r"aliexpress\.(com|us)$" not in CS
     # DOM sku-item 옵션 어댑터 + 판매자 블록 제외.

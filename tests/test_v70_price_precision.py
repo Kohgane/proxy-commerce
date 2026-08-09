@@ -66,6 +66,7 @@ def test_buybox_wins_over_ad_text_price_node():
         "var NONPRICE = " + re.search(r"var NONPRICE = (/.*/i);", EX).group(1) + ";",
         _fn("_nonPriceCtx"),
         _fn("_nodePath"),
+        _fn("_inCartScope"),      # v84.1 STEP A: 장바구니/사이드 위젯 가격 배제(_domPrice 의존)
         _fn("_composedPrice"),
         _fn("_buyboxPrice"),
         _fn("_domPrice"),

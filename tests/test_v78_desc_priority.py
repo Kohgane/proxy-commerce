@@ -30,7 +30,7 @@ def test_desc_ladder_source():
     # 사다리: 어댑터 → tier1/ldjson → meta(표기).
     assert 'description = _ad; descSource = "adapter";' in EX
     assert 'descSource = j.ok ? "tier1" : "ldjson";' in EX
-    assert 'description = _m; descSource = "meta";' in EX
+    assert 'description = _stripHtmlNoise(_m); descSource = "meta";' in EX
     # detail_specs 병합 + desc_source 출력.
     assert "if (specs.length) {" in EX and '· " + s.k + ": " + s.v' in EX
     assert "desc_source: descSource" in EX
