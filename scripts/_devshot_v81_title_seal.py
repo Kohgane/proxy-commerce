@@ -47,7 +47,7 @@ td{padding:10px 12px;font-size:13px;border-top:1px solid #efe6d5;vertical-align:
 
 tmp = "/tmp/_v81_title.html"
 open(tmp, "w", encoding="utf-8").write(PAGE)
-exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")[0]
 from playwright.sync_api import sync_playwright
 with sync_playwright() as pw:
     b = pw.chromium.launch(executable_path=exe)

@@ -18,7 +18,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.140"
+    assert MANIFEST["version"] == "1.5.141"
 
 
 # ── source-contract: sku 정제 블록 ──
@@ -35,7 +35,7 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome"))
 
 
 # 테무식 상태: 동일 spec 3회 반복 + 빈 sku 1개. dedup 후 2건, 옵션은 색상[2]·사이즈[2].
@@ -63,7 +63,7 @@ _BODY = (
 
 def _extract(url, body):
     from playwright.sync_api import sync_playwright
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}

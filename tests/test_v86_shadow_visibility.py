@@ -75,7 +75,7 @@ def _pw_ok():
         from playwright.sync_api import sync_playwright
     except Exception:
         return False
-    if glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"):
+    if glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome"):
         return True
     try:
         with sync_playwright() as pw:
@@ -89,7 +89,7 @@ _FIX = Path("fixtures/realpages")
 
 def _launch_opts(pw) -> dict:
     """chromium 실행 옵션 — CI 사전설치 경로가 있으면 그걸, 없으면 playwright 기본(OS 무관)."""
-    hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")
+    hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")
     opts = {"executable_path": hits[0]} if hits else {}
     proxy = os.environ.get("HTTPS_PROXY")
     if proxy:
@@ -123,7 +123,7 @@ def _measure(code: str) -> dict:
     """주어진 content_script 코드로 페이지를 띄우고 FAB 가시성 지표를 실측한다."""
     from playwright.sync_api import sync_playwright
 
-    hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")
+    hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")
     opts = {"executable_path": hits[0]} if hits else {}
     proxy = os.environ.get("HTTPS_PROXY")
     if proxy:
@@ -234,7 +234,7 @@ def _measure_listing(code: str, probe: str = TOOLBAR_PROBE) -> dict:
     """카드가 있는 목록 페이지를 띄워 벌크바 지표를 실측한다."""
     from playwright.sync_api import sync_playwright
 
-    hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")
+    hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")
     opts = {"executable_path": hits[0]} if hits else {}
     proxy = os.environ.get("HTTPS_PROXY")
     if proxy:
@@ -477,7 +477,7 @@ def _measure_snapshot(code, snapshot: Path, url: str, probe: str):
     from playwright.sync_api import sync_playwright
 
     body = snapshot.read_text(encoding="utf-8", errors="ignore")
-    hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")
+    hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")
     opts = {"executable_path": hits[0]} if hits else {}
     with sync_playwright() as pw:
         browser = pw.chromium.launch(**opts)
@@ -583,7 +583,7 @@ def _measure_hover(code, sim=True):
     이걸 '노출 실패'로 오독하면 멀쩡한 코드를 뜯게 된다(실제로 한 번 그럴 뻔했다).
     """
     from playwright.sync_api import sync_playwright
-    hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")
+    hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")
     opts = {"executable_path": hits[0]} if hits else {}
     with sync_playwright() as pw:
         browser = pw.chromium.launch(**opts)
@@ -643,7 +643,7 @@ def test_stylesheet_cannot_restore_inline_important_opacity():
     아래는 그 봉쇄를 실제로 보여준다: 같은 요소에 시트 규칙을 걸어도 인라인 !important를 못 이긴다.
     """
     from playwright.sync_api import sync_playwright
-    hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")
+    hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")
     opts = {"executable_path": hits[0]} if hits else {}
     with sync_playwright() as pw:
         browser = pw.chromium.launch(**opts)

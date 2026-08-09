@@ -59,7 +59,7 @@ item_id = resp.get("item_id")
 print("collect:", resp.get("ok"), item_id)
 
 from playwright.sync_api import sync_playwright
-exe = glob.glob('/opt/pw-browsers/chromium-*/chrome-linux/chrome')[0]
+exe = glob.glob('/opt/pw-browsers/chromium-*/chrome-linux*/chrome')[0]
 with sync_playwright() as pw:
     _px = os.environ.get('HTTPS_PROXY') or os.environ.get('HTTP_PROXY')
     _opts = {'executable_path': exe}

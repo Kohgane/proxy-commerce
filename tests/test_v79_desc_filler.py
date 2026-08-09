@@ -22,7 +22,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.140"
+    assert MANIFEST["version"] == "1.5.141"
 
 
 # ── source-contract: 배포 감사(코드가 번들에 실렸는지) + 필러 거부 ──
@@ -66,7 +66,7 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome"))
 
 
 # 테무: state.description=필러 + 스펙표 + 상세 텍스트 없음(이미지형). desc_text는 필러 금지(스펙 병합만).
@@ -97,7 +97,7 @@ _AMZ = (
 
 def _extract(url, body):
     from playwright.sync_api import sync_playwright
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}

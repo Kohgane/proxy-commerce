@@ -8,7 +8,6 @@ Pillow는 빌드타임 전용(CI collect-only 미설치) → 해시 테스트는
 """
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 
 import pytest
@@ -17,10 +16,6 @@ STATIC = Path("src/seller_console/static")
 BASE = Path("src/seller_console/templates/_base.html").read_text(encoding="utf-8")
 BASE_APP = Path("src/templates/_base_app.html").read_text(encoding="utf-8")
 MANIFEST = Path("extensions/chrome-collector/manifest.json").read_text(encoding="utf-8")
-
-
-def _md5(p: Path) -> str:
-    return hashlib.md5(p.read_bytes()).hexdigest()
 
 
 def _pillow_ok() -> bool:
@@ -83,16 +78,38 @@ def test_committed_favicons_match_code_v8_master():
 
 @pytest.mark.skipif(not _pillow_ok(), reason="Pillow 미설치")
 def test_og_card_uses_v8_master():
-    # og-card.png = 현재 v8 마스터(assets/brand-icons/icon-master-1024.png)로 재생성된 최신본.
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("gen_og_card", "scripts/gen_og_card.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    before = _md5(STATIC / "og-card.png")
-    mod.main() if hasattr(mod, "main") else None
-    after = _md5(STATIC / "og-card.png")
-    # 재실행해도 동일(=이미 v8 마스터 기준) — 재생성이 멱등.
-    assert before == after, "og-card가 v8 마스터와 불일치(재생성 필요)"
+    """og-card.png = v8 마스터(흰 배경 브릿지 마크) 기반 최신본 — 구 글러브/다크 카드 아님.
+
+    v86-K: 종전엔 gen_og_card.py로 재생성해 md5(before)==md5(after) 멱등을 봤는데, og-card 텍스트가
+    시스템 폰트(_SERIF_CANDIDATES 폴백)로 렌더되므로 **커밋 환경과 CI의 폰트가 다르면** 재생성 바이트가
+    달라져 상시 red였다(그림 드리프트가 아니라 폰트/Pillow 차이). 계약의 본질은 'og-card가 v8 마스터를
+    쓰는 최신본이냐(구 글러브/다크 카드로 스테일하지 않냐)'이므로, 재생성 대신 **커밋본 내용**으로 판정한다:
+    ①규격 1200×630 ②먹(#1A1714) 배경 ③좌측 마크 영역에 v8 마스터의 흰 배경이 실존(구 다크 글러브 카드면
+    흰 블록이 없다). 폰트 비의존 → 포터블.
+    """
+    from PIL import Image
+
+    with Image.open(STATIC / "og-card.png") as im:
+        im = im.convert("RGBA")
+        assert im.size == (1200, 630), f"og-card 규격 아님: {im.size}"
+        px = im.load()
+        W, H = im.size
+
+        def _near(p, c, tol=12):
+            return all(abs(p[i] - c[i]) <= tol for i in range(3))
+
+        # ② 먹 배경(상단 중앙, 텍스트/보더 밖)
+        assert _near(px[600, 40], (26, 23, 20)), f"og-card 먹 배경 아님: {px[600, 40]}"
+        # ③ 좌측 마크 영역(96..526)에 v8 마스터 흰 배경 실존 — 구 다크 카드면 흰색 없음.
+        top = (H - 430) // 2
+        white = total = 0
+        for y in range(top, top + 430, 8):
+            for x in range(96, 526, 8):
+                total += 1
+                if _near(px[x, y], (255, 255, 255), 12):
+                    white += 1
+        assert white / total > 0.3, \
+            f"og-card 좌측 마크에 v8 마스터 흰 배경 없음(구 글러브/다크 카드 의심): {white}/{total}"
 
 
 def test_cache_bust_bumped():
@@ -103,7 +120,7 @@ def test_cache_bust_bumped():
 
 def test_extension_version_bumped():
     import json
-    assert json.loads(MANIFEST)["version"] == "1.5.140"
+    assert json.loads(MANIFEST)["version"] == "1.5.141"
 
 
 def test_no_stale_old_icon_files():

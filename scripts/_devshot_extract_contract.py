@@ -36,17 +36,24 @@ FIXTURES = {
 
 def run():
     from playwright.sync_api import sync_playwright
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    # 샌드박스(chrome-linux)·CI 최신 Chrome-for-Testing(chrome-linux64) 양쪽 매치. 없으면
+    #   빈 executable_path로 Playwright 기본 해석(PLAYWRIGHT_BROWSERS_PATH)에 위임 → IndexError 없음.
+    _hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")
     out = {}
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
-        o = {"executable_path": exe}
+        o = {"executable_path": _hits[0]} if _hits else {}
         if px:
             o["proxy"] = {"server": px, "bypass": "127.0.0.1,localhost"}
         b = pw.chromium.launch(**o)
         p = b.new_context().new_page()
+        # 픽스처에 외부 <img src="https://…">가 있는데, HTTPS_PROXY가 없는 CI에선
+        #   wait_until="load"가 그 외부 로드를 기다리며 블록(타임아웃/행)한다. 추출은 로드된
+        #   픽셀이 아니라 DOM 속성만 읽으므로 ①모든 요청 abort(외부 네트워크 0) ②domcontentloaded로
+        #   전환해 완전 헤르메틱하게 만든다(로컬·CI 동일 동작).
+        p.route("**/*", lambda route: route.abort())
         for name, html in FIXTURES.items():
-            p.set_content(html, wait_until="load")
+            p.set_content(html, wait_until="domcontentloaded")
             r = p.evaluate(
                 """(a)=>{const[EX,CS]=a;
                 window.chrome={runtime:{id:'x',onMessage:{addListener(){}},sendMessage(){},getURL:(u)=>u},

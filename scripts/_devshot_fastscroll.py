@@ -41,7 +41,7 @@ _bs = "/tmp/bsdl/node_modules/bootstrap/dist/css/bootstrap.min.css"
 _app = "src/static/app.css"
 
 from playwright.sync_api import sync_playwright
-exe = glob.glob('/opt/pw-browsers/chromium-*/chrome-linux/chrome')[0]
+exe = glob.glob('/opt/pw-browsers/chromium-*/chrome-linux*/chrome')[0]
 
 def shot(dev, actions, path, w, h):
     with sync_playwright() as pw:

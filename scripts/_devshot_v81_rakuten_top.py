@@ -11,7 +11,7 @@ DET = Path("extensions/chrome-collector/kgp-detect.js").read_text(encoding="utf-
 RTOP = Path("fixtures/realpages/rakuten-top.html").read_text(encoding="utf-8")
 INJ = """(a)=>{const[det,cs]=a;window.chrome={runtime:{id:'x',onMessage:{addListener(){}},sendMessage(){},getURL:u=>u,lastError:null,getManifest:()=>({version:'1.5.120'})},storage:{local:{get:(k,cb)=>cb&&cb({}),set(){},onChanged:{addListener(){}}},sync:{get:(k,cb)=>cb&&cb({}),set(){},onChanged:{addListener(){}}}}};(0,eval)(det);(0,eval)(cs);}"""
 U = "https://www.rakuten.co.jp/"
-exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")[0]
 with sync_playwright() as pw:
     px = os.environ.get("HTTPS_PROXY"); o = {"executable_path": exe}
     if px: o["proxy"] = {"server": px, "bypass": "127.0.0.1,localhost"}

@@ -35,7 +35,7 @@ with open(HARNESS, "w", encoding="utf-8") as f:
 
 out = sys.argv[1] if len(sys.argv) > 1 else "fab"
 from playwright.sync_api import sync_playwright
-exe = glob.glob('/opt/pw-browsers/chromium-*/chrome-linux/chrome')[0]
+exe = glob.glob('/opt/pw-browsers/chromium-*/chrome-linux*/chrome')[0]
 with sync_playwright() as pw:
     b = pw.chromium.launch(executable_path=exe, args=["--allow-file-access-from-files"])
     p = b.new_context(viewport={'width': 820, 'height': 420}).new_page()

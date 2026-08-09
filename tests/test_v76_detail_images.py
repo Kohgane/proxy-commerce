@@ -21,7 +21,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 def test_manifest_unchanged():
     # STEP5 자체는 추출기 코드 변경 없음(픽스처·하네스 계약만). 이후 STEP(리뷰 등)이 bump하므로 현재 핀 추적.
-    assert MANIFEST["version"] == "1.5.140"
+    assert MANIFEST["version"] == "1.5.141"
 
 
 # ── 하네스가 상세이미지 계약을 지원(회귀 인프라) ──
@@ -51,12 +51,12 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome"))
 
 
 def _extract(url, body):
     from playwright.sync_api import sync_playwright
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}

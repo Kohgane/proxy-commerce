@@ -21,7 +21,7 @@ FIXTURES = sorted(glob.glob(str(FIX_DIR / "*.expected.json")))
 
 def _pw_executable():
     """샌드박스 사전설치 크로미움 경로. 없으면 None → Playwright 기본 설치 경로 사용."""
-    hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")
+    hits = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")
     return hits[0] if hits else None
 
 
@@ -62,7 +62,7 @@ def test_snapshot_infra_source_contract():
     assert "실페이지 하네스 통과 필수" in Path("CLAUDE.md").read_text(encoding="utf-8")
     # manifest bump.
     mani = _json.loads(Path("extensions/chrome-collector/manifest.json").read_text(encoding="utf-8"))
-    assert mani["version"] == "1.5.140"
+    assert mani["version"] == "1.5.141"
 
 
 def _extract_via_browser(expected):

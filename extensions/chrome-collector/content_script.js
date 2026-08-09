@@ -1289,6 +1289,9 @@ function _kgpTier1Diag(diag, tier1Source, usedTier1, cause) {
     tier1_dropped: ns.dropped || 0,          // 봤지만 0점 = 시그니처 채점 문제
     dropped_urls: ns.droppedUrls || [],
     top: diag.top || null,                   // {url,score,price,images,sku,reviews,size,goods_id}
+    // v86-K: 실제 채택 후보(읽기 전용 계측 — 선택 로직 무변경). top과 다르면 방어(id 불일치 기각) 작동 증거.
+    //   {adopted, url, score, goods_id, goods_matched, price/images/sku/reviews 불리언, adopt_cause enum}.
+    adopted: diag.adopted || null,
     topScore: diag.topScore || 0,
     cause: cause || "",
     page_goods_id: diag.pageGoodsId || "",

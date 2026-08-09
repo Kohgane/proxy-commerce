@@ -32,7 +32,7 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome"))
 
 
 _CHROME_STUB = """
@@ -69,7 +69,7 @@ ALI_URL = "https://www.aliexpress.com/w/wholesale-roller.html?q=roller"
 def test_verdict_button_survives_slide_swap():
     """판정 회수 라이브: 슬라이드 교체 후에도 버튼이 캐러셀 컨테이너에 생존(v80 STEP2 계약 유지)."""
     from playwright.sync_api import sync_playwright
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}

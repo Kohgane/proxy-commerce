@@ -20,7 +20,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.140"
+    assert MANIFEST["version"] == "1.5.141"
 
 
 # ── source-contract: 라쿠텐 어댑터 함수 + 병합 배선 + _ex 정규화 ──
@@ -40,7 +40,7 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome"))
 
 
 @pytest.mark.skipif(not _playwright_ok(), reason="Playwright/chromium 미설치")
@@ -48,7 +48,7 @@ def test_rakuten_gallery_full_detail_split():
     """실 kgp-extractor: 갤러리 1→전량(r10s.jp 6장·_ex 제거·대표=상품) + 상세 이미지 분리 + 추천 제외 + 3핵심."""
     from playwright.sync_api import sync_playwright
     url = "https://item.rakuten.co.jp/river-outdoor/chair-001/"
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}

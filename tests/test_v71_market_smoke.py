@@ -21,7 +21,7 @@ KGP_TOOLBAR_ID = "kgp-listing-toolbar"
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.140"
+    assert MANIFEST["version"] == "1.5.141"
 
 
 def test_source_contract():
@@ -35,7 +35,7 @@ def _playwright_ok():
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome"))
 
 
 _CHROME_STUB = """
@@ -86,7 +86,7 @@ def test_default_market_button_attaches(name, url, expect, html):
     """레지스트리 마켓 목록→벌크바 / 상세→FAB 실측(버튼 보장)."""
     from playwright.sync_api import sync_playwright
 
-    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")[0]
+    exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")[0]
     with sync_playwright() as pw:
         px = os.environ.get("HTTPS_PROXY")
         o = {"executable_path": exe}
