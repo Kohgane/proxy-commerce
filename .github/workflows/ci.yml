@@ -93,12 +93,26 @@ jobs:
           pip install "Pillow>=10"            # 아이콘/OG 빌드 계약(스테일 skip 방지)
           npm install jsdom --no-save         # jsdom 하네스(node -e require('jsdom'))
 
-      - name: Chromium 설치(/opt/pw-browsers = 하네스 글롭 대상)
+      - name: Chromium 설치(/opt/pw-browsers = 하네스 탐색 대상)
         run: |
           sudo mkdir -p /opt/pw-browsers
           sudo chown -R "$(id -un)" /opt/pw-browsers
           python -m playwright install --with-deps chromium
-          ls -d /opt/pw-browsers/chromium-*/chrome-linux/chrome   # 글롭 대상 실존 확인(없으면 즉시 실패)
+          # 실존 확인은 **Playwright 자체 해석기**로 한다(권위 소스). 하드코딩 글롭
+          #   (chrome-linux/chrome)은 최신 Playwright의 Chrome-for-Testing 레이아웃
+          #   (chrome-linux64/chrome)에서 빗나가 거짓 실패를 낸다. 하네스도 executable_path로
+          #   폴백하므로 여기서도 같은 기준으로 '설치 실존'만 못박는다(없으면 즉시 실패).
+          python - <<'PY'
+          import sys
+          from pathlib import Path
+          from playwright.sync_api import sync_playwright
+          with sync_playwright() as pw:
+              exe = Path(pw.chromium.executable_path)
+          print("chromium executable_path:", exe)
+          if not exe.exists():
+              print("::error::PLAYWRIGHT_BROWSERS_PATH에 chromium 실행파일 없음 — 설치 누수")
+              sys.exit(1)
+          PY
 
       - name: 전체 스위트(인메모리 레인) 실행 — KGP_REQUIRE_BROWSER=1 · 인프라 skip 0
         run: |
