@@ -678,6 +678,9 @@ class UploadDispatcher:
                 "title_en": collected.get("title_original"),
                 "sku": collected.get("sku"),
                 "category": collected.get("category_code"),
+                # v86-O: 셀러가 꾸민 상세(블록→description_html) → WC 상품 설명 본문에 반영.
+                #   비면 woocommerce_client가 기존 벤더 템플릿(배송·관부가세·교환반품)으로 폴백.
+                "description": collected.get("description_html") or "",
                 "tags": ",".join(str(t) for t in (collected.get("tags") or [])),
                 "images": ",".join(str(i) for i in (collected.get("images") or [])),
                 "brand": collected.get("brand"),
@@ -741,7 +744,9 @@ class UploadDispatcher:
 
             payload = ListingPayload(
                 title=str(product_data.get("title") or product_data.get("title_ko") or "").strip(),
-                description=str(product_data.get("description") or "").strip(),
+                # v86-O: 셀러가 꾸민 상세(블록→description_html, _payload_for_market서 주입)를
+                #   Shopify body_html로 반영. 블록 없으면 기존 plain description 폴백(회귀 0).
+                description=str(product_data.get("description_html") or product_data.get("description") or "").strip(),
                 price=price,
                 currency=str(product_data.get("currency") or "USD").upper(),
                 sku=str(product_data.get("sku") or product_data.get("asin") or "").strip(),
