@@ -186,16 +186,29 @@ def _prepare_stock(stock_value, manage: bool = True) -> dict:
 
 
 def _generate_description(catalog_row: dict) -> str:
-    """벤더별 WooCommerce 상품 설명 HTML 생성."""
+    """벤더별 WooCommerce 상품 설명 HTML 생성.
+
+    v86-O: 셀러가 드로어에서 편집·꾸민 상세(블록→HTML 또는 원문 설명)가 있으면 그것을 본문으로
+    쓰고(실반영), 없을 때만 기존 벤더 템플릿 헤더로 폴백. 배송·관부가세·교환반품 안내(컴플라이언스)는
+    항상 하단에 유지.
+    """
     vendor = catalog_row.get('vendor', '')
     source_country = catalog_row.get('source_country', '')
 
     origin = _ORIGIN_MAP.get(source_country, source_country)
 
+    seller_body = str(catalog_row.get('description') or '').strip()
+    if seller_body:
+        head = seller_body
+    else:
+        head = (
+            f"<h3>{catalog_row.get('title_ko', '')}</h3>\n"
+            f"<p><strong>브랜드:</strong> {catalog_row.get('brand', '')}</p>\n"
+            f"<p><strong>원산지:</strong> {origin}</p>"
+        )
+
     html = f"""<div class="product-detail">
-<h3>{catalog_row.get('title_ko', '')}</h3>
-<p><strong>브랜드:</strong> {catalog_row.get('brand', '')}</p>
-<p><strong>원산지:</strong> {origin}</p>
+{head}
 """
 
     if vendor == 'PORTER':
