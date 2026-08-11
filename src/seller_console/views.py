@@ -3696,7 +3696,7 @@ def notifications_test():
         ok = send_telegram("✅ 고가브릿지 알림 테스트 메시지입니다.", urgency="info")
         if ok:
             return jsonify({"ok": True, "message": "텔레그램 메시지 전송 성공"})
-        return jsonify({"ok": False, "message": "TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID 미설정 — 알림 비활성"}), 200
+        return jsonify({"ok": False, "message": "텔레그램 알림이 아직 연결되지 않았어요."}), 200
     except Exception as exc:
         logger.warning("텔레그램 테스트 오류: %s", exc)
         return jsonify({"ok": False, "error": "메시지 전송 중 오류가 발생했습니다."}), 500
