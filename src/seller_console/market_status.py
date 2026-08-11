@@ -203,7 +203,7 @@ class AllMarketStatus:
     def to_legacy_dict(self) -> dict:
         """기존 data_aggregator.get_market_product_status() 형태와 호환되는 dict 반환.
 
-        widgets.py 및 market_status.html 기존 템플릿과 호환성 유지.
+        widgets.py 기존 위젯과 호환성 유지.
         """
         markets = [s.to_dict() for s in self.summaries]
         return {
