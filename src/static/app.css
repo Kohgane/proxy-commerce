@@ -179,6 +179,7 @@ a:hover {
 .pc-badge-on { color: var(--teal); background: color-mix(in srgb, var(--teal) 13%, transparent); border-color: color-mix(in srgb, var(--teal) 34%, transparent); }
 .pc-badge-off { color: var(--orange); background: color-mix(in srgb, var(--orange) 14%, transparent); border-color: color-mix(in srgb, var(--orange) 36%, transparent); }
 .pc-badge-danger { color: var(--danger, #C0392B); background: color-mix(in srgb, var(--danger, #C0392B) 12%, transparent); border-color: color-mix(in srgb, var(--danger, #C0392B) 32%, transparent); }
+.pc-badge-muted { color: var(--text-muted, #7A726A); background: color-mix(in srgb, var(--text-muted, #7A726A) 12%, transparent); border-color: color-mix(in srgb, var(--text-muted, #7A726A) 30%, transparent); }
 
 .btn {
   border-radius: var(--pc-radius-sm);
