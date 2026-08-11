@@ -253,7 +253,7 @@ function renderResults(results, targetMarginPct) {
   if (first.fx_used) {
     const fxInfo = first.fx_used;
     const src = fxInfo.source || 'default';
-    const srcLabel = src === 'realtime' ? '실시간' : src === 'env' ? '환경변수' : src === 'manual' ? '수동' : '기본값';
+    const srcLabel = src === 'realtime' ? '실시간' : src === 'env' ? '설정값' : src === 'manual' ? '수동' : '기본값';
     const currency = document.getElementById('currency').value;
     const rate = fxInfo[currency] || '';
     const badge = document.getElementById('fxBadgeText');
