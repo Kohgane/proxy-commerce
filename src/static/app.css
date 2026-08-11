@@ -168,6 +168,18 @@ a:hover {
 .pc-status-warning { background: #fffbeb; border-color: #fde68a; }
 .pc-status-danger { background: #fef2f2; border-color: #fecaca; }
 
+/* 상태 뱃지 — 전 화면 공통 컴포넌트(gogabridj 토큰 단일 소스). 부트스트랩 컬러 뱃지 대체.
+   연결/완료=청록, 미설정/대기=주황, 실패=적. color-mix로 은은한 배경(하드코딩 hex 0). */
+.pc-badge {
+  display: inline-flex; align-items: center; gap: 0.28em;
+  font-size: 0.72rem; font-weight: 600; line-height: 1;
+  padding: 0.34em 0.62em; border-radius: 999px;
+  border: 1px solid transparent; white-space: nowrap;
+}
+.pc-badge-on { color: var(--teal); background: color-mix(in srgb, var(--teal) 13%, transparent); border-color: color-mix(in srgb, var(--teal) 34%, transparent); }
+.pc-badge-off { color: var(--orange); background: color-mix(in srgb, var(--orange) 14%, transparent); border-color: color-mix(in srgb, var(--orange) 36%, transparent); }
+.pc-badge-danger { color: var(--danger, #C0392B); background: color-mix(in srgb, var(--danger, #C0392B) 12%, transparent); border-color: color-mix(in srgb, var(--danger, #C0392B) 32%, transparent); }
+
 .btn {
   border-radius: var(--pc-radius-sm);
   transition: transform var(--pc-transition), box-shadow var(--pc-transition), background-color var(--pc-transition);

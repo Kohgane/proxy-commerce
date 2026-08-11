@@ -2,8 +2,16 @@
 {% block title %}알림 설정{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="mb-0 fw-bold"><i class="bi bi-bell"></i> 알림 설정</h4>
+<div class="d-flex justify-content-between align-items-start mb-2">
+  <div>
+    <div class="console-kpi-label mb-1">알림</div>
+    <h4 class="mb-0 fw-bold"><i class="bi bi-bell"></i> 알림 설정</h4>
+  </div>
+</div>
+<hr class="pc-hairline mt-0 mb-4">
+
+<div class="pc-status pc-status-info small mb-4">
+  주문 입고·오류·재고 소진 같은 중요한 순간을 텔레그램이나 이메일로 바로 받아보세요.
 </div>
 
 <!-- 텔레그램 상태 -->
@@ -12,14 +20,13 @@
     <div class="d-flex justify-content-between align-items-center mb-2">
       <h6 class="fw-semibold mb-0"><i class="bi bi-telegram"></i> 텔레그램 알림</h6>
       {% if telegram_active %}
-        <span class="badge bg-success"><i class="bi bi-check-circle"></i> 활성</span>
+        <span class="pc-badge pc-badge-on"><i class="bi bi-check-lg"></i> 연결됨</span>
       {% else %}
-        <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> 미설정</span>
+        <span class="pc-badge pc-badge-off"><i class="bi bi-dash-circle"></i> 미연결</span>
       {% endif %}
     </div>
     <p class="text-muted small mb-3">
-      주문 입고, 오류 발생, 재고 소진 등의 이벤트를 텔레그램으로 수신합니다.
-      <br>환경변수: <code>TELEGRAM_BOT_TOKEN</code>, <code>TELEGRAM_CHAT_ID</code>
+      새 주문, 오류, 재고 소진 등의 알림을 텔레그램 메신저로 즉시 받습니다.
     </p>
     {% if telegram_active %}
     <button class="btn btn-outline-primary btn-sm" id="btnTestTelegram" onclick="testTelegram()">
@@ -27,43 +34,44 @@
     </button>
     <span id="telegramTestResult" class="ms-2 small text-muted"></span>
     {% else %}
-    <a href="https://core.telegram.org/bots#6-botfather" target="_blank" class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-clipboard"></i> BotFather에서 토큰 발급 →
+    <a href="https://core.telegram.org/bots#6-botfather" target="_blank" rel="noopener" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-box-arrow-up-right"></i> 텔레그램 봇 만들기 안내 →
     </a>
+    <div class="form-text mt-1">봇을 만든 뒤 연결 정보를 등록하면 알림이 켜집니다.</div>
     {% endif %}
   </div>
 </div>
 
-<!-- Resend 상태 -->
+<!-- 이메일(Resend) 상태 -->
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body">
     <div class="d-flex justify-content-between align-items-center mb-2">
-      <h6 class="fw-semibold mb-0"><i class="bi bi-envelope"></i> 이메일 알림 (Resend)</h6>
+      <h6 class="fw-semibold mb-0"><i class="bi bi-envelope"></i> 이메일 알림</h6>
       {% if resend_active %}
-        <span class="badge bg-success"><i class="bi bi-check-circle"></i> 활성</span>
+        <span class="pc-badge pc-badge-on"><i class="bi bi-check-lg"></i> 연결됨</span>
       {% else %}
-        <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> 미설정</span>
+        <span class="pc-badge pc-badge-off"><i class="bi bi-dash-circle"></i> 미연결</span>
       {% endif %}
     </div>
     <p class="text-muted small mb-3">
-      주문 확인, 배송 시작 등의 이벤트를 이메일로 발송합니다.
-      <br>환경변수: <code>RESEND_API_KEY</code>, <code>RESEND_FROM_EMAIL</code> (선택)
+      주문 확인, 배송 시작 같은 소식을 이메일로 발송합니다.
     </p>
     {% if not resend_active %}
-    <a href="https://resend.com/api-keys" target="_blank" class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-clipboard"></i> Resend에서 API 키 발급 →
+    <a href="https://resend.com/api-keys" target="_blank" rel="noopener" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-box-arrow-up-right"></i> 이메일 발송 연결 안내 →
     </a>
+    <div class="form-text mt-1">이메일 발송 서비스를 연결하면 알림이 켜집니다.</div>
     {% endif %}
   </div>
 </div>
 
-<div class="mt-3 p-3 bg-light rounded text-muted small">
-  <strong><i class="bi bi-pin-angle"></i> 알림 훅 포인트</strong>
+<div class="mt-3 p-3 rounded text-muted small" style="background:var(--hanji,#F5EFE3)">
+  <strong><i class="bi bi-info-circle"></i> 언제 알림이 오나요?</strong>
   <ul class="mb-0 mt-1">
-    <li>새 주문 sync 시: "신규 주문 N건 (마켓별 집계)"</li>
-    <li><code>/health/deep</code> fail 시: "[실패] [서비스명] 체크 실패"</li>
-    <li>재고 0 도달: "[상품명] — 재고 없음"</li>
-    <li>마진 이상: "[상품명] 마진 손실 예상"</li>
+    <li>새 주문이 들어왔을 때 — 마켓별 집계로 알려드려요</li>
+    <li>서비스 점검에서 문제가 감지됐을 때</li>
+    <li>상품 재고가 소진됐을 때</li>
+    <li>예상 마진이 손실로 바뀔 때</li>
   </ul>
 </div>
 
