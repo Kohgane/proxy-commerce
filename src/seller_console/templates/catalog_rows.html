@@ -2,11 +2,9 @@
 {% for item in items %}
 <tr data-fs-key="{{ item.title or '#' }}">
   <td class="cardcell-img">
-    <span class="badge bg-secondary" style="font-size:0.7rem;">
-      {{ item.marketplace_label }}
-    </span>
+    <span class="pc-badge pc-badge-muted">{{ item.marketplace_label }}</span>
     {% if not item.is_ready %}
-    <span class="badge bg-dark ms-1" style="font-size:0.65rem;">준비 중</span>
+    <span class="pc-badge pc-badge-off ms-1">준비 중</span>
     {% endif %}
     <div class="small text-muted">{{ item.country }}/{{ item.currency }}</div>
   </td>
@@ -25,15 +23,17 @@
   </td>
   <td data-label="상태">
     {% if item.state == 'active' %}
-      <span class="badge bg-success">활성</span>
+      <span class="pc-badge pc-badge-on">활성</span>
     {% elif item.state == 'out_of_stock' %}
-      <span class="badge bg-warning text-dark">품절</span>
+      <span class="pc-badge pc-badge-off">품절</span>
     {% elif item.state == 'error' %}
-      <span class="badge bg-danger">오류</span>
+      <span class="pc-badge pc-badge-danger">오류</span>
+    {% elif item.state == 'price_anomaly' %}
+      <span class="pc-badge pc-badge-off">가격 이상</span>
     {% elif item.state == 'suspended' %}
-      <span class="badge bg-secondary">정지</span>
+      <span class="pc-badge pc-badge-muted">정지</span>
     {% else %}
-      <span class="badge bg-light text-dark">{{ item.state }}</span>
+      <span class="pc-badge pc-badge-muted">{{ item.state }}</span>
     {% endif %}
   </td>
   <td class="text-muted small" data-label="마지막 동기화">
