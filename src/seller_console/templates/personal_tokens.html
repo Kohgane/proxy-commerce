@@ -2,15 +2,17 @@
 {% block title %}Personal Access Token 관리{% endblock %}
 {% block content %}
 <div class="container-fluid py-4">
-  <div class="d-flex justify-content-between align-items-center mb-3">
+  <div class="d-flex justify-content-between align-items-start mb-2">
     <div>
-      <h1 class="h3 mb-0"><i class="bi bi-key"></i> Personal Access Token 관리</h1>
+      <div class="console-kpi-label mb-1">인증 토큰</div>
+      <h1 class="h4 fw-bold mb-0"><i class="bi bi-key"></i> Personal Access Token 관리</h1>
       <small class="text-muted">크롬 확장 / 북마클릿이 “내 계정”으로 수집하도록 인증하는 열쇠입니다.</small>
     </div>
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#generateModal">
       ＋ 새 토큰 발급
     </button>
   </div>
+  <hr class="pc-hairline mt-0 mb-4">
 
   <!-- v40-D: 패스키(WebAuthn) — 이 기기에 지문·Face·PIN 로그인 등록 -->
   <div class="card mb-4" id="passkeyCard">
@@ -99,7 +101,7 @@
             {% set _scope_ko = {'collect.write': '상품 수집', 'catalog.read': '카탈로그 조회', 'markets.write': '마켓 업로드'} %}
             <td>
               {% for scope in tok.scopes %}
-              <span class="badge bg-secondary me-1" data-bs-toggle="tooltip" title="{{ scope }}">{{ _scope_ko.get(scope, scope) }}</span>
+              <span class="pc-badge pc-badge-muted me-1" data-bs-toggle="tooltip" title="{{ scope }}">{{ _scope_ko.get(scope, scope) }}</span>
               {% endfor %}
             </td>
             <td>{{ tok.created_at[:10] if tok.created_at else '-' }}</td>
@@ -107,12 +109,12 @@
             <td>{{ tok.expires_at[:10] if tok.expires_at else '-' }}</td>
             <td>
               {% if tok.revoked %}
-              <span class="badge bg-secondary">삭제됨</span>
+              <span class="pc-badge pc-badge-muted">삭제됨</span>
               {% elif tok.idle_expired %}
               {# v81 STEP2: 90일 미사용 유휴 만료(정직 표기) — 재발급 필요. #}
-              <span class="badge" style="background:color-mix(in srgb,var(--warn,#f5821f) 16%,transparent);color:var(--warn,#f5821f)" data-bs-toggle="tooltip" title="90일 이상 사용하지 않아 자동 만료됐어요. 북마클릿 파일을 다시 받으면 새로 발급됩니다."><i class="bi bi-hourglass-bottom"></i> 유휴 만료</span>
+              <span class="pc-badge pc-badge-off" data-bs-toggle="tooltip" title="90일 이상 사용하지 않아 자동 만료됐어요. 북마클릿 파일을 다시 받으면 새로 발급됩니다."><i class="bi bi-hourglass-bottom"></i> 유휴 만료</span>
               {% else %}
-              <span class="badge bg-success">활성</span>
+              <span class="pc-badge pc-badge-on">활성</span>
               {% endif %}
             </td>
             <td>
@@ -149,10 +151,10 @@
               {% for tok in revoked_tokens %}
               <tr class="text-muted">
                 <td><code>{{ tok.token_hash_prefix }}</code></td>
-                <td>{% for scope in tok.scopes %}<span class="badge bg-light text-dark me-1" title="{{ scope }}">{{ _scope_ko2.get(scope, scope) }}</span>{% endfor %}</td>
+                <td>{% for scope in tok.scopes %}<span class="pc-badge pc-badge-muted me-1" title="{{ scope }}">{{ _scope_ko2.get(scope, scope) }}</span>{% endfor %}</td>
                 <td>{{ tok.created_at[:10] if tok.created_at else '-' }}</td>
                 <td>{{ tok.last_used_at[:10] if tok.last_used_at else '미사용' }}</td>
-                <td><span class="badge bg-secondary">삭제됨</span></td>
+                <td><span class="pc-badge pc-badge-muted">삭제됨</span></td>
               </tr>
               {% endfor %}
             </tbody>
