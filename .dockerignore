@@ -23,3 +23,8 @@ build/
 *.egg
 node_modules/
 .DS_Store
+
+# v87-W1: 운영 스크립트는 scripts/ 통째로 이미지에 넣되(migrate·hygiene_report·qa_test_order 등
+# 누락 재발 봉인), 개발 전용 스크린샷 스크립트(_devshot*.py, playwright 의존·런타임 미사용)만
+# **명시 제외**한다. 암묵 제외 금지 — 여기 이름으로 남긴다. (시크릿 파일은 scripts/에 없음.)
+scripts/_devshot*.py
