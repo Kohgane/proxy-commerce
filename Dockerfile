@@ -45,10 +45,10 @@ ENV PORT=10000 \
     GUNICORN_TIMEOUT=120 \
     APP_ENV=${APP_ENV}
 
-# Copy startup script
-COPY scripts/start_render.sh ./scripts/start_render.sh
-# DB 이관 스크립트 — 운영자가 Render Shell에서 `python scripts/migrate_to_supabase.py` 실행.
-# (스키마 .sql 은 src/db/ 아래라 COPY src/ 에 이미 포함됨.)
-COPY scripts/migrate_to_supabase.py ./scripts/migrate_to_supabase.py
+# 운영 스크립트 전체 포함 — 운영자가 Render Shell에서 실행하는 산출물(start_render.sh·
+# migrate_to_supabase.py·hygiene_report.py 등)이 배포 이미지에 항상 존재하도록 scripts/ 통째 복사.
+# (예전엔 스크립트를 하나씩 COPY해서 신규 산출물이 이미지에서 누락되는 갭이 반복됐다: #423 migrate,
+#  v87-W1 hygiene_report. 통째 복사로 재발 봉인. .py 텍스트라 이미지 크기 영향 미미, 런타임 미임포트.)
+COPY scripts/ ./scripts/
 
 CMD ["sh", "scripts/start_render.sh"]
