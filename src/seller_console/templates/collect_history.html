@@ -147,6 +147,23 @@
     </div>
   </div>
 
+  {# v87-W1: 비상품 정리 후보 진입 + 안내. 삭제가 아니라 보관(복원 가능)이 기본. #}
+  {% if hygiene_mode %}
+  <div class="pc-status pc-status-warning small mb-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <span>
+      <i class="bi bi-funnel"></i> <strong>정리 후보 {{ cleanup_count }}건</strong> — 상품이 아닌 것으로 의심되는 페이지예요(메일·챗·검색·문서 등).
+      <strong>삭제가 아니라 보관(복원 가능)</strong>합니다. 목록을 확인한 뒤 선택해 <strong>보관</strong>하세요. 영구 삭제는 ‘보관’ 목록에서만, 다시 확인 후에 됩니다.
+    </span>
+    <a href="/seller/collect/history" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x-lg"></i> 정리 후보 해제</a>
+  </div>
+  {% else %}
+  <div class="mb-3">
+    <a href="/seller/collect/history?hygiene=cleanup" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-funnel"></i> 정리 후보 보기 <span class="text-muted">— 상품 아닌 페이지 골라 보관</span>
+    </a>
+  </div>
+  {% endif %}
+
   <!-- 목록 -->
   {% if items %}
   <div class="card">
@@ -184,9 +201,16 @@
         <button type="button" class="btn btn-outline-secondary btn-sm" id="bulkDuplicateBtn" onclick="runBulkDuplicate()" disabled>
           <i class="bi bi-files"></i> 복제
         </button>
+        {% if hygiene_mode %}
+        {# v87-W1: 정리 후보의 기본 동작 = 보관(복원 가능). 여기선 영구 삭제 버튼을 숨겨 archive-first를 강제. #}
+        <button type="button" class="btn btn-warning btn-sm" id="bulkArchiveBtn" onclick="runBulkArchiveCandidates()" disabled>
+          <i class="bi bi-archive"></i> 선택 보관 (복원 가능)
+        </button>
+        {% else %}
         <button type="button" class="btn btn-outline-danger btn-sm" id="bulkDeleteBtn" onclick="openBulkDeleteModal()" disabled>
           <i class="bi bi-trash"></i> 선택 삭제
         </button>
+        {% endif %}
         {# v47 STEP5: 엑셀 벌크 — 내보내기(선택 없으면 전체) / 업로드(검증→확인→적용). #}
         <span class="mx-1" style="width:1px;height:20px;background:var(--border,#e9ecef)"></span>
         <button type="button" class="btn btn-outline-secondary btn-sm" id="excelExportBtn" onclick="excelExport()"
@@ -438,12 +462,17 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
       </div>
       <div class="modal-body">
-        <p class="mb-2">선택한 <strong id="delSelCount">0</strong>개 수집 항목을 <strong>삭제</strong>합니다.</p>
-        <p class="small text-muted mb-0">수집 이력에서만 제거되며, 이미 마켓에 등록한 상품은 영향받지 않습니다. 되돌릴 수 없습니다.</p>
+        <p class="mb-2">선택한 <strong id="delSelCount">0</strong>개 수집 항목을 <strong>영구 삭제</strong>합니다.</p>
+        <p class="small text-muted mb-2">수집 이력에서만 제거되며, 이미 마켓에 등록한 상품은 영향받지 않습니다. <strong>되돌릴 수 없습니다.</strong> 정리 목적이라면 삭제 대신 <strong>보관(복원 가능)</strong>을 권장해요.</p>
+        {# v87-W1: 영구 삭제 2단 확인 — 체크해야 삭제 버튼이 열린다(실수 방지). #}
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="bulkDeleteAck" onchange="document.getElementById('bulkDeleteConfirm').disabled=!this.checked">
+          <label class="form-check-label small" for="bulkDeleteAck">영구 삭제를 이해했으며 되돌릴 수 없음에 동의합니다.</label>
+        </div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">취소</button>
-        <button type="button" class="btn btn-danger" id="bulkDeleteConfirm" onclick="runBulkDelete()"><i class="bi bi-trash"></i> 삭제</button>
+        <button type="button" class="btn btn-danger" id="bulkDeleteConfirm" onclick="runBulkDelete()" disabled><i class="bi bi-trash"></i> 영구 삭제</button>
       </div>
     </div>
   </div>
@@ -845,6 +874,33 @@ function refreshSelCount() {
   if (st) st.disabled = n === 0;
   const dup = document.getElementById('bulkDuplicateBtn');
   if (dup) dup.disabled = n === 0;
+  const arch = document.getElementById('bulkArchiveBtn');   // v87-W1: 정리 후보 보관
+  if (arch) arch.disabled = n === 0;
+}
+
+// v87-W1: 정리 후보 일괄 보관(archive) — 삭제 아님(복원 가능). 기존 bulk-status(archived) 재사용.
+async function runBulkArchiveCandidates() {
+  const ids = selectedItemIds();
+  if (!ids.length) { pcToast('보관할 항목을 먼저 선택하세요.', 'warning'); return; }
+  if (!confirm(`선택한 ${ids.length}건을 보관할까요? 삭제가 아니라 보관이며, ‘보관’ 목록에서 언제든 복원할 수 있어요.`)) return;
+  const btn = document.getElementById('bulkArchiveBtn');
+  setButtonLoading(btn, true, '보관 중…');
+  try {
+    const resp = await fetch('/seller/collect/bulk-status', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({item_ids: ids, status: 'archived'}),
+    });
+    const ctype = resp.headers.get('content-type') || '';
+    if (!ctype.includes('application/json')) { pcToast(`요청 실패 (HTTP ${resp.status}).`, 'error'); return; }
+    const data = await resp.json();
+    if (!data.ok) { pcToast(data.error || '보관 실패', 'error'); return; }
+    pcToast(`${data.updated}건을 보관했어요. ‘보관’ 목록에서 복원할 수 있어요.`, 'success');
+    setTimeout(() => location.reload(), 700);   // 보관된 항목은 정리 후보에서 빠지도록 재조회
+  } catch (err) {
+    pcToast('요청 실패: ' + err.message, 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
 }
 // v55 STEP4: 인스턴트 내비 스왑-인 시엔 DOMContentLoaded가 이미 지나 안 뜨므로, 준비됐으면 즉시 실행
 //   (스왑 후 '전체선택'·행 체크박스가 죽던 것 수리). 요소 단위 바인딩이라 매 스왑 새 요소에 붙어야 함.
@@ -1133,6 +1189,11 @@ function openBulkDeleteModal() {
   const ids = selectedItemIds();
   if (!ids.length) { pcToast('삭제할 상품을 먼저 선택하세요.', 'warning'); return; }
   document.getElementById('delSelCount').textContent = ids.length;
+  // v87-W1: 2단 확인 초기화 — 열 때마다 체크 해제 + 삭제 버튼 잠금.
+  const _ack = document.getElementById('bulkDeleteAck');
+  const _conf = document.getElementById('bulkDeleteConfirm');
+  if (_ack) _ack.checked = false;
+  if (_conf) _conf.disabled = true;
   new bootstrap.Modal(document.getElementById('bulkDeleteModal')).show();
 }
 async function runBulkDelete() {

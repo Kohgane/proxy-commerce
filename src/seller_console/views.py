@@ -6109,6 +6109,12 @@ def _shape_collect_items(items, current_lang):
         _mode = str(ex.get("mode") or "").lower()
         it["is_core"] = _mode in SIMPLE_COLLECT_MODES
         it["collect_mode"] = _mode
+        # v87-W1: 비상품 정리 후보 판별(점수+사유) — 표기용. 삭제/거부 아님(후보 제시만).
+        try:
+            from .collect_hygiene import classify_row as _classify_hygiene
+            it["hygiene"] = _classify_hygiene(it)
+        except Exception:
+            it["hygiene"] = {"is_candidate": False, "score": 0, "reasons": []}
     return items
 
 
@@ -6131,6 +6137,7 @@ def collect_history():
     q = request.args.get("q", "").strip()
     status_f = request.args.get("status", "").strip()          # ""=전체 / ok / archived
     group_f = request.args.get("group", "").strip()            # 그룹 id 필터
+    hygiene_f = request.args.get("hygiene", "").strip()        # v87-W1: "cleanup"=비상품 정리 후보만
     sort = (request.args.get("sort") or "newest").strip()
     per_page = request.args.get("per_page", 50, type=int)
     if per_page not in (20, 50, 100):
@@ -6142,7 +6149,7 @@ def collect_history():
 
     # 속도: 기본 뷰(최신순·필터 없음)는 목록을 SQL LIMIT/OFFSET로 그 페이지만 가져온다
     #   (전체 스캔 회피 — 상품 많아도 첫 페이지 비용 고정). 필터/타 정렬은 기존 전체 로드 경로.
-    _sql_page = (sort == "newest" and not q and not status_f and not group_f and not domain and not source)
+    _sql_page = (sort == "newest" and not q and not status_f and not group_f and not domain and not source and not hygiene_f)
 
     items = []
     summ = {"total": 0, "today": 0, "domains": 0, "by_source": {"extension": 0, "bookmarklet": 0, "manual": 0, "bulk": 0}}
@@ -6188,6 +6195,16 @@ def collect_history():
                 except Exception:
                     return ""
             items = [it for it in items if _grp(it) == group_f]
+
+        # v87-W1: 비상품 정리 후보 필터 — 판별기가 후보로 잡은 '활성' 행만. 이미 보관한 건 정리
+        #   완료로 보고 후보에서 제외(보관하면 후보 목록에서 자연히 빠진다). (삭제 아님)
+        if hygiene_f == "cleanup":
+            try:
+                from .collect_hygiene import is_cleanup_candidate as _is_cand
+                items = [it for it in items
+                         if (it.get("status") or "ok") != "archived" and _is_cand(it)]
+            except Exception as _he:
+                logger.warning("정리 후보 판별 실패: %s", _he)
 
         # 검색(제목/도메인/URL 부분일치)
         if q:
@@ -6279,7 +6296,10 @@ def collect_history():
         has_more=has_more,
         fs_buckets=fs_buckets,
         filters={"domain": domain, "source": source, "days": days,
-                 "q": q, "status": status_f, "group": group_f, "sort": sort, "per_page": per_page},
+                 "q": q, "status": status_f, "group": group_f, "sort": sort, "per_page": per_page,
+                 "hygiene": hygiene_f},
+        hygiene_mode=(hygiene_f == "cleanup"),
+        cleanup_count=(total_filtered if hygiene_f == "cleanup" else None),
         pagination={"page": page, "per_page": per_page, "total": total_filtered,
                     "total_pages": total_pages},
         upload_markets=upload_markets,

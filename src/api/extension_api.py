@@ -818,6 +818,21 @@ def collect_from_extension():
     except Exception as exc:
         logger.warning("[collect %s] 키워드 서버 생성 실패: %s", _corr, exc)
 
+    # v87-W1 유입 봉인: 저장 시점에 비상품 판별기를 통과시킨다. 후보면 사유를 extra에 남기고
+    #   응답에 경고를 실어 준다 — 저장 자체는 허용(오탐으로 실상품을 거부하지 않는다).
+    _hygiene = {"is_candidate": False, "score": 0, "reasons": []}
+    try:
+        from src.seller_console.collect_hygiene import classify_row as _classify_hygiene
+        _hygiene = _classify_hygiene({
+            "url": url, "price": payload.get("price", ""),
+            "image_url": images[0] if images else payload.get("image", ""),
+            "extra": _extra,
+        })
+        if _hygiene.get("is_candidate"):
+            _extra["hygiene"] = _hygiene
+    except Exception as _he:
+        logger.warning("[collect %s] 유입 봉인 판별 실패: %s", _corr, _he)
+
     item_id = None
     saved = False
     durable = True
@@ -903,6 +918,8 @@ def collect_from_extension():
         "partial": _partial,
         "field_status": _field_status,   # {status,filled,total,missing,...}
         "translated": tr.get("provider", "none") not in ("none", "stub"),
+        # v87-W1: 비상품 의심 경고(저장은 됨) — 확장/토스트가 '상품이 아닌 페이지 같아요' 안내.
+        "hygiene_warning": (_hygiene if _hygiene.get("is_candidate") else None),
     })
 
 

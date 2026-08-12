@@ -33,6 +33,10 @@
     {# v64 STEP7: 도메인 = 은은한 칩(토큰) — 색 남용 없이 위계만. #}
     <span class="d-inline-block text-truncate mt-1" title="{{ it.url }}"
           style="max-width:220px;font-size:11px;line-height:1.5;padding:1px 8px;border-radius:999px;background:var(--hanji,#f5efe3);color:var(--muted,#8a8275);border:1px solid var(--line,#e6decb)">{{ it.domain or it.url }}</span>
+    {# v87-W1: 비상품 정리 후보 — 상품이 아닌 페이지로 의심(삭제 아님, 정리 후보로만 표기). #}
+    {% if it.hygiene and it.hygiene.is_candidate %}
+    <span class="pc-badge pc-badge-off mt-1" title="{{ it.hygiene.reasons|join(' · ') }} — ‘정리 후보’에서 보관할 수 있어요(삭제 아님)"><i class="bi bi-exclamation-triangle"></i> 비상품 의심</span>
+    {% endif %}
     {# v44-1: 업로드 성공한 마켓 '등록됨' 뱃지(서버 확인분 영구 표시). #}
     {% if it.uploaded_markets %}
     <span class="badge mt-1" style="background:color-mix(in srgb,var(--success,#2f9e44) 15%,transparent);color:var(--success,#2f9e44)"
