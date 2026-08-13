@@ -333,6 +333,42 @@ btnCollect.addEventListener("click", async () => {
       throw new Error("현재 탭을 찾을 수 없습니다.");
     }
 
+    // v86-L2: 0차 — in-page 정본 경로(kgpCollectNow)에 위임한다. content_script가 MAIN tier1을 병합해
+    //   수집·전송하고 echo까지 남긴다(FAB와 동일 코드). 여기서 executeScript(og/jsonld)로 직접 추출하면
+    //   MAIN 캡처(테무 네트워크 상품 JSON)를 못 읽어 title만 전송되고 payload_echo=null이 된다(오너 결함).
+    //   content_script가 없는 페이지(주입 실패)에서만 아래 executeScript/extractMeta 폴백을 탄다.
+    const delegated = await new Promise((resolve) => {
+      try {
+        chrome.tabs.sendMessage(tab.id, { action: "kgpCollectNow" }, (resp) => {
+          if (chrome.runtime.lastError) { resolve(null); return; }   // content_script 부재 → 폴백
+          resolve(resp || null);
+        });
+      } catch (e) { resolve(null); }
+    });
+    if (delegated) {
+      if (delegated.ok) {
+        const label = delegated.collected_title || delegated.collected_url || tab.url || "";
+        showStatus("success", `수집 완료!<br><small>${label}</small>`);
+        if (delegated.preview_url) {
+          const settings = await getSettings();
+          const serverUrl = settings.serverUrl || "https://kohganepercentiii.com";
+          const link = document.createElement("a");
+          link.href = serverUrl + delegated.preview_url;
+          link.target = "_blank";
+          link.className = "preview-link";
+          link.textContent = "→ 미리보기";
+          statusEl.appendChild(link);
+        }
+      } else if (delegated.gated) {
+        showStatus("error", kgpSingleGateMessage(delegated.pageType) || "이 페이지에서는 수집할 수 없어요.");
+      } else if (delegated.authRequired) {
+        showStatus("error", "확장 옵션에서 토큰을 다시 설정해 주세요.");
+      } else {
+        showStatus("error", `${delegated.error || "수집 실패"}`);
+      }
+      return;   // btnCollect는 finally에서 재활성화
+    }
+
     // 1차 시도: scripting.executeScript (권한 있고 허용된 페이지)
     let meta;
     try {

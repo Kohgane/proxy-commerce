@@ -31,7 +31,7 @@ NET = (EXT / "kgp-net.js").read_text(encoding="utf-8")
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.143"
+    assert MANIFEST["version"] == "1.5.144"
 
 
 def _net_entry():
