@@ -42,17 +42,35 @@ try:
     _pg_ok = _pgboot.pg_enabled()     # 성공 시 pg.py가 'DB 연결: Supabase OK' 로깅
     if _pg_ok:
         _pgboot.init_schema()         # 이관 테이블 idempotent 생성(직접 연결)
-    elif os.getenv("APP_ENV", "").lower() == "production":
-        raise RuntimeError(
-            "DATABASE_URL(Supabase Postgres)이 설정되지 않았거나 연결에 실패했습니다. "
-            "PG-only 모드에서는 프로덕션 부팅 조건입니다 — Render 환경변수 DATABASE_URL(6543 풀러)와 "
-            "DATABASE_URL_DIRECT(5432)를 설정하세요."
-        )
+    else:
+        # v87-W3: '조용한 휘발' 봉인. 예전 가드는 APP_ENV==production일 때만 실패해, 그 값을
+        #   안 두면 배포서도 조용히 in-memory로 폴백 → 수집 이력이 배포마다 소실됐다. 이제
+        #   **배포 컨테이너(Render 등)면 PG 없이는 부팅 실패**(데이터가 새는 걸 원천 차단).
+        #   의도적 휘발 운영은 ALLOW_VOLATILE_STORAGE=1로만 허용(명시적 옵트인).
+        _deployed = _pgboot.is_deployed()
+        _allow_volatile = str(os.getenv("ALLOW_VOLATILE_STORAGE", "")).strip().lower() in ("1", "true", "yes", "on")
+        if _deployed and not _allow_volatile:
+            raise RuntimeError(
+                "DATABASE_URL(Supabase Postgres)이 설정되지 않았거나 연결에 실패했습니다. "
+                "배포 컨테이너에서는 수집 이력 등이 컨테이너 로컬(in-memory)로 저장돼 **배포마다 소실**됩니다. "
+                "Render 환경변수 DATABASE_URL(6543 풀러)·DATABASE_URL_DIRECT(5432)를 설정하세요. "
+                "(의도적 휘발 운영이면 ALLOW_VOLATILE_STORAGE=1)"
+            )
+        elif _deployed:
+            logger.error(
+                "⚠️ 저장 휘발 경고: DATABASE_URL 미도달 — 수집 이력이 in-memory로 배포마다 소실됩니다"
+                " (ALLOW_VOLATILE_STORAGE=1로 명시 허용됨). DATABASE_URL 확인 권장."
+            )
 except RuntimeError:
     raise                              # 부팅 실패는 그대로 전파(프로세스 기동 중단)
 except Exception as _pgexc:
     logger.warning("Supabase 부팅 연결/스키마 확인 실패: %s", _pgexc)
-    if os.getenv("APP_ENV", "").lower() == "production":
+    try:
+        from src.db.pg import is_deployed as _is_dep
+        _dep = _is_dep()
+    except Exception:
+        _dep = str(os.getenv("APP_ENV", "")).strip().lower() == "production"
+    if _dep and str(os.getenv("ALLOW_VOLATILE_STORAGE", "")).strip().lower() not in ("1", "true", "yes", "on"):
         raise
 
 app = Flask(__name__)
@@ -1636,11 +1654,19 @@ def tracking_update():
 def health():
     """Healthcheck 엔드포인트 — Docker/LB용."""
     from src.utils.build_info import get_build_sha
+    # v87-W3: 저장 내구성 신호 — 배포마다 수집이력이 소실되는 '조용한 휘발'을 밖에서 볼 수 있게.
+    #   durable=False(volatile_in_production=True)면 DATABASE_URL 미도달로 in-memory 운영 중.
+    try:
+        from src.db.pg import storage_status
+        _storage = storage_status()
+    except Exception:
+        _storage = {"durable": None}
     return jsonify({
         "status": "ok",
         "service": "proxy-commerce",
         "version": os.getenv("APP_VERSION", "dev"),
         "build": get_build_sha(),   # v53 STEP0: 라이브 배포 커밋(7자리) — 배포 누락 판정용
+        "storage": _storage,        # v87-W3: {durable, backend, url_set, deployed, volatile_in_production}
     })
 
 

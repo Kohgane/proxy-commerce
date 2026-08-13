@@ -49,7 +49,7 @@ jobs:
           echo "== /app/scripts contents (배포 이미지 실증) =="
           docker exec pc-ci ls -1 /app/scripts/
           missing=0
-          for f in hygiene_report.py qa_test_order.py migrate_to_supabase.py start_render.sh; do
+          for f in hygiene_report.py qa_test_order.py persistence_check.py migrate_to_supabase.py start_render.sh; do
             if docker exec pc-ci test -f /app/scripts/$f; then
               echo "✓ /app/scripts/$f present"
             else

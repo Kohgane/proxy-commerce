@@ -76,6 +76,43 @@ def pg_enabled() -> bool:
         return _available
 
 
+def is_deployed() -> bool:
+    """배포(운영) 컨테이너 여부 — Render/컨테이너 마커로 판별.
+
+    로컬 개발/CI는 False. Render는 RENDER 계열 env를 주입한다. APP_ENV=production도 배포로 본다.
+    (배포서 휘발 저장을 조용히 돌리는 걸 막기 위한 신호 — v87-W3.) 일반 테스트는 RENDER·production
+    미설정이라 자연히 False라 부팅 가드에 걸리지 않는다(가드를 검증하는 테스트만 명시적으로 켠다).
+    """
+    if str(os.getenv("APP_ENV", "")).strip().lower() in ("ci", "test", "development", "dev", "local"):
+        return False
+    for k in ("RENDER", "RENDER_SERVICE_ID", "RENDER_INSTANCE_ID"):
+        if os.getenv(k):
+            return True
+    return str(os.getenv("APP_ENV", "")).strip().lower() == "production"
+
+
+def storage_status() -> dict:
+    """수집 이력 등 PG 계층 저장소의 내구성 신호 — /health·부팅 가드·진단이 공유하는 단일 소스.
+
+    durable=True면 재배포에도 레코드 생존(Supabase PG). False면 컨테이너 로컬 in-memory로
+    폴백 중 = **배포마다 소실**(v87-W3의 데이터 소실 원인). 삭제/쓰기 없음(순수 조회).
+    """
+    url_set = bool(db_url())
+    try:
+        available = pg_enabled()
+    except Exception:
+        available = False
+    deployed = is_deployed()
+    return {
+        "durable": bool(available),
+        "backend": "postgres" if available else "in-memory",
+        "url_set": url_set,
+        "deployed": deployed,
+        # 배포인데 내구 저장이 아니면 = 조용한 휘발(경고 대상).
+        "volatile_in_production": bool(deployed and not available),
+    }
+
+
 _pool = None
 _pool_checked = False
 

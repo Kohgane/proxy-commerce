@@ -15,7 +15,8 @@ DOCKERIGNORE = Path(".dockerignore").read_text(encoding="utf-8") if Path(".docke
 CI_DOCKER = Path(".github/workflows/render_deploy_check.yml").read_text(encoding="utf-8")
 
 # 배포 이미지에 반드시 있어야 하는 운영 스크립트(오너가 Render Shell에서 실행).
-OPERATIONAL = ["hygiene_report.py", "qa_test_order.py", "migrate_to_supabase.py", "start_render.sh"]
+OPERATIONAL = ["hygiene_report.py", "qa_test_order.py", "persistence_check.py",
+               "migrate_to_supabase.py", "start_render.sh"]
 
 
 def _dockerignore_patterns():
