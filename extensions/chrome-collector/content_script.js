@@ -375,6 +375,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse(extractProductMeta());
     return true;
   }
+  // v86-L2: 팝업 [수집]도 in-page 정본 경로로 강제한다. 종전 팝업(popup.js)은 executeScript(og/jsonld를
+  //   ISOLATED로 읽음) + extractMeta 폴백으로 전송해 **MAIN 월드 tier1(테무 네트워크 캡처)을 아예 안 읽고**,
+  //   echo도 안 남겼다 → 네트워크 전달 테무에서 title만 전송(서버 1/5) + payload_echo=null(오너 실기기 결함).
+  //   이 핸들러가 팝업 전송을 FAB와 **같은 코드**(kgpAcquireMeta=클릭 시점 재독출+tier1 병합/대기, _kgpRecordEcho)
+  //   로 통과시킨다. path="popup". extractMeta 봉인과 동일하게 single 게이트도 방어선으로 둔다(우회 대비).
+  if (msg.action === "kgpCollectNow") {
+    let _pt2 = "unknown";
+    try { _pt2 = kgpPageType(); } catch (e) {}
+    const _ok2 = (typeof KGPDetect !== "undefined" && KGPDetect.singleExtractAllowed)
+      ? KGPDetect.singleExtractAllowed(_pt2) : (_pt2 === "single");
+    if (!_ok2) { sendResponse({ ok: false, gated: true, pageType: _pt2 }); return true; }
+    kgpAcquireMeta(function (meta) {
+      meta = meta || {};
+      meta.corr_id = kgpNewCorr();
+      if (msg.force) meta.force = true;
+      _kgpRecordEcho(meta, "popup");
+      kgpSendMessage({ action: "collect", meta }, function (resp) {
+        resp = resp || { ok: false, error: "no-response" };
+        // 팝업 UI가 성공 문구에 쓸 제목/URL 동봉(팝업은 meta를 직접 안 만든다).
+        try { resp.collected_title = meta.title || ""; resp.collected_url = meta.url || location.href; } catch (e) {}
+        try { sendResponse(resp); } catch (e) {}
+      });
+    });
+    return true;   // 비동기 응답
+  }
   // v65 STEP1: 렌더 완료 대기 후 추출(정본 경로) — 보강 큐가 백그라운드 탭에서 사용.
   //   가격+메인이미지 로드 감지(최대 8초) → 접힘 상세 펼침 → 렌더된 DOM 추출. 부분이면 partial 표기.
   if (msg.action === "extractMetaWait") {
