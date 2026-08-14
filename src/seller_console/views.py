@@ -6097,6 +6097,11 @@ def _shape_collect_items(items, current_lang):
             except Exception:
                 cs = None
         it["collect_status"] = cs
+        # v87-W4: 목록에 리뷰 수·평점 노출(수신·저장 트랙). review_count 우선, 없으면 reviews 길이.
+        _rc_raw = str(ex.get("review_count") or "").strip()
+        _revs_n = len(ex.get("reviews") or []) if isinstance(ex.get("reviews"), list) else 0
+        it["review_count"] = _rc_raw or (str(_revs_n) if _revs_n else "")
+        it["rating"] = str(ex.get("rating") or "").strip()
         # v65 STEP4: 보강(2단 수집) 상태 — 완료(enriched)/대기(벌크로 수집됐으나 아직 상세 미보강).
         #   단건(상세페이지 클릭)은 이미 풀데이터라 보강 불필요('' → 배지 없음). 정직: 실제 저장값 기준.
         _enriched = bool(ex.get("enriched"))

@@ -35,6 +35,10 @@ _LEAN_EXTRA = (
     "'price_status', extra_json->'price_status',"
     "'warnings', extra_json->'warnings',"
     "'collect_status', extra_json->'collect_status',"
+    # v87-W4: 목록에서도 리뷰·평점 표시(작은 스칼라만 — 대형 reviews 배열은 통째로 안 끈다).
+    "'rating', extra_json->'rating',"
+    "'review_count', extra_json->'review_count',"
+    "'recollected_at', extra_json->'recollected_at',"
     "'images', CASE WHEN jsonb_typeof(extra_json->'images')='array' AND jsonb_array_length(extra_json->'images')>0 "
     "THEN jsonb_build_array(extra_json->'images'->0) ELSE '[]'::jsonb END"
     ") AS extra_json"
