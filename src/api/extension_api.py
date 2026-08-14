@@ -260,6 +260,22 @@ def _resolve_collect_mode(payload: dict) -> str:
     return "simple"
 
 
+def _nonempty_w4(v) -> bool:
+    """v87-W4: 재수집 병합에서 '값이 실제로 왔는가' 판정(빈 문자열·빈 리스트·None=없음)."""
+    if v is None:
+        return False
+    if isinstance(v, str):
+        return bool(v.strip())
+    if isinstance(v, (list, tuple, dict)):
+        return len(v) > 0
+    return bool(str(v).strip())
+
+
+def _now_iso_w4() -> str:
+    """v87-W4: 최근 갱신 시각(UTC ISO) — 최초수집(collected_at)과 분리 표시용."""
+    return datetime.now(timezone.utc).isoformat()
+
+
 def _merge_state_into_payload(payload: dict, sj: dict) -> dict:
     """v49 STEP4: 초기 상태 JSON 파싱 결과(sj)로 payload의 빈 필드를 보강(클라/사용자 값 우선).
 
@@ -728,6 +744,18 @@ def collect_from_extension():
                     "description_ko": tr.get("description_ko", ""),
                     "recollected": True,
                 })
+                # v87-W4: 재수집이 리뷰·평점(및 상세 스펙)을 **갱신**한다. 종전 _merged.update는 이 키들을
+                #   빠뜨려, 최초수집(리뷰 없음) 행을 리뷰 담긴 새 수집으로 덮어써도 _merged엔 옛 빈 값이 남고
+                #   그걸로 collect_status를 재계산 → '리뷰·평점 누락(4/5)' 고정이었다(오너 실기기 결함).
+                #   정직 규칙: 새 수집이 값을 주면 그 값으로 갱신, 안 주면(빈값) 기존 값 보존(재수집 누락으로
+                #   기존 리뷰를 지우지 않음 = 비파괴). 최근 갱신 시각도 남긴다(참고 칩: 최초/최근 분리 표시).
+                def _fresh(_key, _new):
+                    return _new if _nonempty_w4(_new) else _merged.get(_key)
+                _merged["reviews"] = _fresh("reviews", payload.get("reviews", []))
+                _merged["rating"] = _fresh("rating", payload.get("rating", ""))
+                _merged["review_count"] = _fresh("review_count", payload.get("review_count", ""))
+                _merged["detail_specs"] = _fresh("detail_specs", payload.get("detail_specs", []))
+                _merged["recollected_at"] = _now_iso_w4()
                 try:
                     from src.collectors.collect_status import compute_collect_status as _ccs
                     _cfs = payload.get("field_sources") if isinstance(payload.get("field_sources"), dict) else {}

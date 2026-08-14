@@ -127,6 +127,24 @@
 
       <!-- [상세페이지] 상세 설명 (전체 폭 · 확대 에디터) -->
       <div class="kgp-esec mt-2 kgp-etab-hide" data-etab="detail">
+        {# v87-W4: 리뷰·평점 수신 표시(조용한 미렌더 금지). 빈 리뷰는 '0건 수신'으로 정직 표기 —
+           재수집이 리뷰를 갱신하는지 여기서 바로 보인다(오너 실기기: 서버 수신·저장·표시 트랙). #}
+        {% set _rc_raw = (extra.get('review_count') if extra else '') or '' %}
+        {% set _revs = (extra.get('reviews') if extra else []) or [] %}
+        {% set _rc = _rc_raw if (_rc_raw|string|trim) else (_revs|length if _revs else 0) %}
+        {% set _rating = (extra.get('rating') if extra else '') or '' %}
+        <div class="mb-2 d-flex align-items-center gap-2 flex-wrap"
+             style="padding:.4rem .6rem;border:1px solid var(--line,#e6decb);border-radius:10px;background:var(--paper,#fbf8f1);font-size:.84rem">
+          <span class="fw-semibold"><i class="bi bi-star-fill" style="color:var(--gold,#c9a24b)"></i> 리뷰·평점</span>
+          {% if (_rc|string|trim and _rc|string != '0') or (_rating|string|trim) %}
+            <span><i class="bi bi-chat-square-text" style="color:var(--teal,#119a8e)"></i> 리뷰 <strong>{{ _rc }}</strong>건</span>
+            {% if _rating|string|trim %}<span class="text-muted">·</span>
+            <span><i class="bi bi-star-half" style="color:var(--teal,#119a8e)"></i> 평점 <strong>{{ _rating }}</strong> / 5</span>{% endif %}
+            {% if extra.get('recollected_at') %}<span class="text-muted" style="font-size:.74rem">· 최근 갱신 {{ extra.get('recollected_at')[:16] }}</span>{% endif %}
+          {% else %}
+            <span class="text-muted"><i class="bi bi-dash-circle"></i> 리뷰 0건 수신 — 이 상품 페이지에서 리뷰·평점을 찾지 못했어요</span>
+          {% endif %}
+        </div>
         <div class="d-flex justify-content-between align-items-center mb-1 flex-wrap gap-1">
           <label class="form-label small fw-semibold mb-0" for="editDescription">상세 설명
             <span id="aiDraftBadge" class="badge" style="display:none;background:color-mix(in srgb,var(--teal,#119a8e) 16%,transparent);color:var(--teal,#119a8e);font-size:.68rem;"><i class="bi bi-stars"></i> AI 초안 · 검토·편집 후 저장</span>

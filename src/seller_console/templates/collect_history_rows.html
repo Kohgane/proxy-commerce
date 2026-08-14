@@ -87,6 +87,13 @@
       <span class="badge mt-1" style="background:color-mix(in srgb,var(--teal,#119a8e) 15%,transparent);color:var(--teal,#119a8e)"
             title="상세 보강 완료"><i class="bi bi-stars"></i> 보강 완료</span>
     {% endif %}
+    {# v87-W4: 리뷰 수·평점 노출(수신·저장 트랙). 값이 있을 때만 표기(목록 컴팩트 — 0건은 드로어에서 정직 표기). #}
+    {% if it.review_count or it.rating %}
+    <span class="d-block text-muted mt-1" style="font-size:11px" title="수집된 리뷰 수·평점">
+      <i class="bi bi-star-fill" style="color:var(--gold,#c9a24b)"></i>
+      {% if it.review_count %}리뷰 {{ it.review_count }}{% endif %}{% if it.rating %} · {{ it.rating }}/5{% endif %}
+    </span>
+    {% endif %}
   </td>
   <td class="text-nowrap cardcell-actions">
     <button type="button" class="kgp-open-drawer btn btn-success btn-sm py-0"
