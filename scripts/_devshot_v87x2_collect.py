@@ -10,7 +10,7 @@ os.environ["SELLER_CONSOLE_AUTH"] = "0"
 
 MC = "src/seller_console/templates/manual_collect.html"
 NEW = open(MC, encoding="utf-8").read()
-OLD = subprocess.check_output(["git", "show", "HEAD:" + MC]).decode("utf-8")
+OLD = subprocess.check_output(["git", "show", "origin/main:" + MC]).decode("utf-8")
 
 from src.order_webhook import app
 app.jinja_env.auto_reload = True
