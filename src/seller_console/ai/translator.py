@@ -167,6 +167,17 @@ def reset_translate_stats() -> None:
         _TR_STATS["by_reason"] = {}
 
 
+# v87-W7 회수: 실패 메시지에 **프로바이더명 명시** — 체인 도입 후 어느 단이 죽었는지 오너가 바로 알아야 한다.
+_PROVIDER_LABEL = {"mymemory": "MyMemory", "papago": "Papago", "deepl": "DeepL",
+                   "azure": "Azure", "openai": "OpenAI"}
+
+
+def provider_label(name: str) -> str:
+    """체인 프로바이더 내부명 → 사람이 읽을 표기(‘-fallback’ 접미 제거)."""
+    base = (name or "").replace("-fallback", "").strip().lower()
+    return _PROVIDER_LABEL.get(base, base or "번역")
+
+
 def classify_translate_error(exc: Exception) -> str:
     """v64 STEP6: 번역 실패 원인을 사람이 읽을 한 줄로 분류(무음 금지·오귀인 금지).
 
@@ -391,7 +402,9 @@ class AITranslator:
 
         # 체인 전부 실패 → 원문 유지(정직 실패). 마지막 프로바이더·사유를 보존(드로어·하위호환 진단).
         _last = attempts[-1]["provider"] if attempts else ""
-        _err = (attempts[-1]["error"] if attempts else "") or "번역 실패"
+        _reason = (attempts[-1]["error"] if attempts else "") or "번역 실패"
+        # v87-W7 회수: 실패 메시지에 프로바이더명 명시("OpenAI: 결제 한도 초과" 식) — 어느 단이 죽었는지 즉시 파악.
+        _err = f"{provider_label(_last)}: {_reason}" if _last else _reason
         return {"title_ko": title, "description_ko": description,
                 "provider": (_last + "-fallback") if _last else "none",
                 "error": _err, "translate_error": _err, "attempts": attempts,

@@ -85,6 +85,31 @@ def test_azure_calls_official_endpoint_with_region(monkeypatch):
     assert seen["headers"]["Ocp-Apim-Subscription-Region"] == "koreacentral"
 
 
+def test_failure_message_names_provider(monkeypatch):
+    # v87-W7 회수: 체인 전부 실패 시 실패 메시지에 **어느 단이 죽었는지** 프로바이더명 명시.
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-x")
+    monkeypatch.setenv("TRANSLATE_PROVIDER_CHAIN", "openai")
+    import requests
+
+    class _R429:
+        status_code = 429
+    def _boom(*a, **k):
+        e = requests.HTTPError("rate limit / insufficient_quota")
+        e.response = _R429()
+        raise e
+    monkeypatch.setattr(requests, "post", _boom)
+    res = AITranslator().translate_product({"title": "x", "description": "y"})
+    assert res["translate_error"].startswith("OpenAI:")            # 프로바이더명 접두
+    assert "한도" in res["translate_error"]                         # 실사유(결제 한도) 병기
+
+
+def test_provider_label_maps():
+    from src.seller_console.ai.translator import provider_label
+    assert provider_label("openai-fallback") == "OpenAI"
+    assert provider_label("papago") == "Papago"
+    assert provider_label("azure-fallback") == "Azure"
+
+
 def test_papago_failure_falls_over_to_azure(monkeypatch):
     monkeypatch.setenv("NCP_PAPAGO_CLIENT_ID", "id")
     monkeypatch.setenv("NCP_PAPAGO_CLIENT_SECRET", "sec")
