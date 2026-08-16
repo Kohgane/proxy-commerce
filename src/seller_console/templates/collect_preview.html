@@ -94,7 +94,10 @@
         {# v87-W6: 번역 상태 정직 표시 — 실패면 사유 + 재시도 유도, 사용자가 끈 경우/미번역은 구분. #}
         {% if extra and extra.get('translate_error') %}
         <div class="small mb-1" style="color:var(--danger,#c2503c)">
+          {# v87-W7 회수: 실패 메시지에 프로바이더명 명시(어느 단이 죽었는지) + 체인 시도 이력 툴팁. #}
           <i class="bi bi-exclamation-triangle"></i> 번역 실패 — {{ extra.get('translate_error') }}.
+          {% set _fatt = extra.get('translation_attempts') or [] %}
+          {% if _fatt|length > 1 %}<span style="color:var(--muted,#8a8275)" title="{% for a in _fatt %}{{ a.provider }}:{{ '성공' if a.ok else '실패' }}{% if a.error %}({{ a.error }}){% endif %}{{ ' · ' if not loop.last }}{% endfor %}">· 체인 {{ _fatt|length }}단 시도</span>{% endif %}
           <button type="button" class="btn btn-link btn-sm p-0 align-baseline" onclick="translateToKo()">다시 번역</button>
         </div>
         {% elif extra and extra.get('translate_requested') is false %}
