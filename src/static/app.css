@@ -30,6 +30,8 @@
   --teal-strong: #0E8A7C; --teal-hover: #12A897;
   --orange-strong: #DA7012; --orange-hover: #F5871F;
   --gold-ink: #8A6D22; --gold-ink-strong: #6F561A;
+  /* 주문 되돌림(반품·교환·환불) 톤 — 금먹↔적 사이 브론즈. danger(적)·gold(금) 둘 다와 구분(색약 대비 아이콘 병행). */
+  --st-return: #9A5A33;
   --on-accent: #FFFFFF;
   /* 다크 'vault'(랜딩/로그인) */
   --vault-bg: #1A1714; --vault-surface: #241F1A; --vault-text: #F5EFE3; --vault-gold: #C9A24B;
@@ -180,6 +182,26 @@ a:hover {
 .pc-badge-off { color: var(--orange); background: color-mix(in srgb, var(--orange) 14%, transparent); border-color: color-mix(in srgb, var(--orange) 36%, transparent); }
 .pc-badge-danger { color: var(--danger, #C0392B); background: color-mix(in srgb, var(--danger, #C0392B) 12%, transparent); border-color: color-mix(in srgb, var(--danger, #C0392B) 32%, transparent); }
 .pc-badge-muted { color: var(--text-muted, #7A726A); background: color-mix(in srgb, var(--text-muted, #7A726A) 12%, transparent); border-color: color-mix(in srgb, var(--text-muted, #7A726A) 30%, transparent); }
+
+/* v87-W2-impl 주문 상태 라이프사이클 뱃지 — 계층색(4) + 비색 단서(단계 도트·아이콘).
+   색이 9상태를 혼자 지지 못한다(색약·인접붙음) → 색은 '거친 계층'만, 정밀 단계는 비-색 단서로.
+   진행(신규→결제→준비→배송)=금 1색 + 채운 도트 수(1~4), 완료=청록+체크, 취소=먹뮤트+슬래시,
+   되돌림(반품·교환·환불)=브론즈(≠오류 적색)+되돌림 아이콘. 그레이스케일에서도 도트수/아이콘으로 구분. */
+.pc-lc {
+  display: inline-flex; align-items: center; gap: 0.36em;
+  font-size: 0.72rem; font-weight: 600; line-height: 1;
+  padding: 0.34em 0.62em; border-radius: 999px;
+  border: 1px solid transparent; white-space: nowrap;
+}
+.pc-lc-progress { color: var(--gold-ink); background: color-mix(in srgb, var(--gold) 14%, transparent); border-color: color-mix(in srgb, var(--gold) 38%, transparent); }
+.pc-lc-done     { color: var(--teal);     background: color-mix(in srgb, var(--teal) 13%, transparent); border-color: color-mix(in srgb, var(--teal) 34%, transparent); }
+.pc-lc-cancel   { color: var(--ink-soft, #3A352E); background: color-mix(in srgb, var(--ink-soft, #3A352E) 9%, transparent); border-color: color-mix(in srgb, var(--ink-soft, #3A352E) 26%, transparent); }
+/* 되돌림 톤 = 금먹↔적 사이 브론즈, danger(적)와도 gold(금)와도 구분 — 색약 대비 되돌림 아이콘이 1차 단서. */
+.pc-lc-return   { color: var(--st-return); background: color-mix(in srgb, var(--st-return) 15%, transparent); border-color: color-mix(in srgb, var(--st-return) 40%, transparent); }
+.pc-lc-dots { display: inline-flex; gap: 2px; }
+.pc-lc-dot  { width: 5px; height: 5px; border-radius: 50%; border: 1px solid currentColor; box-sizing: border-box; }
+.pc-lc-dot--on { background: currentColor; }
+.pc-lc .bi { font-size: 0.9em; }
 
 .btn {
   border-radius: var(--pc-radius-sm);

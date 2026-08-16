@@ -1,4 +1,5 @@
 {% extends "_base.html" %}
+{% from "_status_badge.html" import status_badge %}
 {% block title %}주문 관리{% endblock %}
 
 {% block content %}
@@ -171,23 +172,22 @@
               >
             </td>
             <td class="cardcell-img">
-              {% if o.marketplace == 'coupang' %}<span class="badge bg-warning text-dark">쿠팡</span>
-              {% elif o.marketplace == 'smartstore' %}<span class="badge bg-success">스마트스토어</span>
-              {% elif o.marketplace == '11st' %}<span class="badge bg-danger">11번가</span>
-              {% else %}<span class="badge bg-secondary">{{ o.marketplace }}</span>{% endif %}
+              {# v87-W2-impl: 마켓 색 코딩 제거 → 뮤트 통일(마켓명이 항상 구분자, 색은 중복이었음). #}
+              {% set _mp_label = {"coupang": "쿠팡", "smartstore": "스마트스토어", "11st": "11번가"} %}
+              <span class="pc-badge pc-badge-muted">{{ _mp_label.get(o.marketplace, o.marketplace) }}</span>
             </td>
             <td class="cardcell-title"><small class="font-monospace">{{ o.order_id }}</small></td>
             <td data-label="주문일시"><small>{{ (o.placed_at or '')[:16] }}</small></td>
             <td data-label="상품">
               {% if o["items"] %}
                 <small>{{ o["items"][0]["title"][:20] }}{% if o["items"][0]["title"]|length > 20 %}…{% endif %}</small>
-                {% if o["items"]|length > 1 %}<span class="badge bg-light text-dark">+{{ o["items"]|length - 1 }}</span>{% endif %}
+                {% if o["items"]|length > 1 %}<span class="pc-badge pc-badge-muted">+{{ o["items"]|length - 1 }}</span>{% endif %}
               {% endif %}
             </td>
             <td class="text-end" data-label="금액"><small>{{ "{:,}".format(o.total_krw|int) }}원</small></td>
             <td data-label="상태">
-              {% set status_colors = {"new":"secondary","paid":"primary","preparing":"info","shipped":"warning","delivered":"success","canceled":"dark","returned":"danger","exchanged":"danger","refund_requested":"danger"} %}
-              <span class="badge bg-{{ status_colors.get(o.status, 'secondary') }}">{{ o.status if _en_orders else _status_ko.get(o.status, o.status) }}</span>
+              {# v87-W2-impl: 부트스트랩 무순서 색 → 계층색+비색 단서(단계 도트·아이콘). 그레이스케일·색약 생존. #}
+              {{ status_badge(o.status, o.status if _en_orders else _status_ko.get(o.status, o.status)) }}
             </td>
             <td data-label="운송장">
               {% if o.tracking_no %}<small class="font-monospace">{{ o.courier }} {{ o.tracking_no }}</small>
@@ -200,7 +200,7 @@
                 {% if si and si.linked %}
                 <a class="btn btn-sm btn-cta py-0" href="{{ si.source_url }}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i> 소싱처에서 주문</a>
                 {% else %}
-                <span class="badge bg-light text-dark border" title="주문 상품이 수집 원본과 연결되지 않았어요(수동 등록 등)">원본 미연결</span>
+                <span class="pc-badge pc-badge-muted" title="주문 상품이 수집 원본과 연결되지 않았어요(수동 등록 등)">원본 미연결</span>
                 <a class="btn btn-sm btn-outline-secondary py-0" href="/seller/catalog" title="상품에 원본 URL을 연결하세요">수동 연결</a>
                 {% endif %}
                 <button class="btn btn-sm btn-outline-primary py-0" data-copy-order="{{ (si.copy_text if si else '')|e }}" onclick="kgpCopyOrder(this)"><i class="bi bi-clipboard"></i> 주문 정보 복사</button>
