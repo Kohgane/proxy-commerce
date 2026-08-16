@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import threading
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -93,6 +94,39 @@ _MARKET_PROMPTS = {
 
 def _dry_run() -> bool:
     return os.getenv("ADAPTER_DRY_RUN", "0") == "1"
+
+
+# v87-W6 item 2: 번역 실패 다발 조사 — **계측**(호출 n·성공 n·실패 n·사유별). 번역 무료 쿼터 회계와
+#   완전히 별개인 읽기 전용 관측 카운터(쿼터 무손대). 프로세스 인메모리 누적, get_translate_stats()로 노출.
+_TR_STATS = {"calls": 0, "ok": 0, "fail": 0, "by_reason": {}}
+_TR_STATS_LOCK = threading.Lock()
+
+
+def _record_translate(ok: bool, reason: str = "", provider: str = "") -> None:
+    with _TR_STATS_LOCK:
+        _TR_STATS["calls"] += 1
+        if ok:
+            _TR_STATS["ok"] += 1
+        else:
+            _TR_STATS["fail"] += 1
+            key = (reason or "원인 미상")[:80]
+            _TR_STATS["by_reason"][key] = _TR_STATS["by_reason"].get(key, 0) + 1
+
+
+def get_translate_stats() -> dict:
+    """번역 호출 계측 스냅샷(읽기 전용) — 호출/성공/실패/사유별. 진단·리포트용(쿼터 회계와 무관)."""
+    with _TR_STATS_LOCK:
+        return {"calls": _TR_STATS["calls"], "ok": _TR_STATS["ok"], "fail": _TR_STATS["fail"],
+                "by_reason": dict(_TR_STATS["by_reason"])}
+
+
+def reset_translate_stats() -> None:
+    """계측 리셋(테스트·리포트 구간 측정용)."""
+    with _TR_STATS_LOCK:
+        _TR_STATS["calls"] = 0
+        _TR_STATS["ok"] = 0
+        _TR_STATS["fail"] = 0
+        _TR_STATS["by_reason"] = {}
 
 
 def classify_translate_error(exc: Exception) -> str:
@@ -375,6 +409,12 @@ class AITranslator:
                 '{"title_ko":"브랜드+핵심스펙+용도 자연문","description_ko":"불릿 유지 한국어",'
                 '"copy_coupang":"...","copy_smartstore":"...","copy_11st":"..."}'
             )
+            # v87-W6 item 2 근원: max_tokens=900 고정이 **긴 상세(일본어 721자 등) + 제목 + 마켓 카피 3종**을
+            #   한 JSON으로 뽑을 때 출력이 잘려 json.loads 실패 → openai-fallback(원문 유지)로 '조용한 실패 다발'
+            #   이었다. 입력 길이에 비례해 상한을 잡고(캡 3000 — AI 예산 존중), 타임아웃도 길이 대응해 늘린다.
+            _in_len = len(title) + len(description)
+            _max_tokens = max(900, min(3000, 1000 + _in_len))
+            _timeout = 30 if _in_len > 400 else 15
             payload = {
                 "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
                 "messages": [
@@ -382,23 +422,25 @@ class AITranslator:
                     {"role": "user", "content": prompt},
                 ],
                 "temperature": 0.2,
-                "max_tokens": 900,
+                "max_tokens": _max_tokens,
                 "response_format": {"type": "json_object"},
             }
             resp = _req.post(
                 "https://api.openai.com/v1/chat/completions",
                 headers=headers,
                 json=payload,
-                timeout=15,
+                timeout=_timeout,
             )
             resp.raise_for_status()
             content = resp.json()["choices"][0]["message"]["content"]
             import json
             result = json.loads(content)
             result["provider"] = "openai"
+            _record_translate(True, provider="openai")   # v87-W6 계측
             return result
         except Exception as exc:
             reason = classify_translate_error(exc)
+            _record_translate(False, reason=reason, provider="openai")   # v87-W6 계측(사유별 집계)
             logger.warning("OpenAI 번역 실패(%s): %s", reason, exc)   # v64 STEP6: 원인 로깅(무음 금지)
             return {
                 "title_ko": title,
@@ -430,6 +472,7 @@ class AITranslator:
             translations = resp.json().get("translations", [])
             title_ko = translations[0]["text"] if len(translations) > 0 else title
             description_ko = translations[1]["text"] if len(translations) > 1 else description
+            _record_translate(True, provider="deepl")   # v87-W6 계측
             return {
                 "title_ko": title_ko,
                 "description_ko": description_ko,
@@ -440,6 +483,7 @@ class AITranslator:
             }
         except Exception as exc:
             reason = classify_translate_error(exc)
+            _record_translate(False, reason=reason, provider="deepl")   # v87-W6 계측(사유별 집계)
             logger.warning("DeepL 번역 실패(%s): %s", reason, exc)   # v64 STEP6: 원인 로깅(무음 금지)
             return {
                 "title_ko": title,

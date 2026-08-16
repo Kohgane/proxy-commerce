@@ -756,6 +756,11 @@ def collect_from_extension():
                 _merged["review_count"] = _fresh("review_count", payload.get("review_count", ""))
                 _merged["detail_specs"] = _fresh("detail_specs", payload.get("detail_specs", []))
                 _merged["recollected_at"] = _now_iso_w4()
+                # v87-W6: 재수집=번역 재시도이기도 하다 — 번역 상태(성공/실패 사유)를 갱신(조용한 실패 고착 방지).
+                _merged["translation_provider"] = tr.get("provider", "none")
+                _merged["translated"] = (str(tr.get("provider") or "") in ("openai", "deepl")) and not tr.get("translate_error")
+                _merged["translate_error"] = tr.get("translate_error", "")
+                _merged["translate_requested"] = bool(translate)
                 try:
                     from src.collectors.collect_status import compute_collect_status as _ccs
                     _cfs = payload.get("field_sources") if isinstance(payload.get("field_sources"), dict) else {}
@@ -816,6 +821,12 @@ def collect_from_extension():
         "rating": payload.get("rating", ""),
         "review_count": payload.get("review_count", ""),
         "translation_provider": tr.get("provider", "none"),
+        # v87-W6 item1·2: 레코드 단위 번역 상태 — 사용자 선택(안 함) vs 실패를 구분해 정직 표시.
+        #   translated=실제 번역됨(openai/deepl, 폴백·stub·none 제외). translate_error=실패 사유(있으면 '번역 실패').
+        #   translate_requested=수집 시 토글 값(안 함이면 '원문 유지'는 사용자 선택 — 실패 아님).
+        "translated": (str(tr.get("provider") or "") in ("openai", "deepl")) and not tr.get("translate_error"),
+        "translate_error": tr.get("translate_error", ""),
+        "translate_requested": bool(translate),
         "tier1_source": payload.get("tier1_source", ""),      # v55: 자가발견 채택 API URL
         "tier1_diag": payload.get("tier1_diag") or {},        # v56 STEP4: Tier1 최종 판정(used·원인) 저장
         "mode": _resolve_collect_mode(payload),   # v81 'core'(북마클릿) / v86-F 'simple'(목록 타일) / 'full'
@@ -945,7 +956,10 @@ def collect_from_extension():
         "title_ko": title_ko,
         "partial": _partial,
         "field_status": _field_status,   # {status,filled,total,missing,...}
-        "translated": tr.get("provider", "none") not in ("none", "stub"),
+        # v87-W6: 폴백(openai-fallback/deepl-fallback)은 **실패=번역 안 됨**이다(원문 유지). 종전엔 fallback을
+        #   translated=True로 보고해 '됐다는데 원문'인 체감 불일치를 만들었다 → 실제 번역된 경우만 True.
+        "translated": str(tr.get("provider") or "none") in ("openai", "deepl") and not tr.get("translate_error"),
+        "translate_error": tr.get("translate_error", ""),
         # v87-W1: 비상품 의심 경고(저장은 됨) — 확장/토스트가 '상품이 아닌 페이지 같아요' 안내.
         "hygiene_warning": (_hygiene if _hygiene.get("is_candidate") else None),
     })

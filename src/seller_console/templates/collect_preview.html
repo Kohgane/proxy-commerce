@@ -91,6 +91,15 @@
             <i class="bi bi-translate"></i> 한국어로 번역
           </button>
         </div>
+        {# v87-W6: 번역 상태 정직 표시 — 실패면 사유 + 재시도 유도, 사용자가 끈 경우/미번역은 구분. #}
+        {% if extra and extra.get('translate_error') %}
+        <div class="small mb-1" style="color:var(--danger,#c2503c)">
+          <i class="bi bi-exclamation-triangle"></i> 번역 실패 — {{ extra.get('translate_error') }}.
+          <button type="button" class="btn btn-link btn-sm p-0 align-baseline" onclick="translateToKo()">다시 번역</button>
+        </div>
+        {% elif extra and extra.get('translate_requested') is false %}
+        <div class="small text-muted mb-1"><i class="bi bi-translate"></i> 수집 시 번역 안 함(원문 그대로). 위 버튼으로 지금 번역할 수 있어요.</div>
+        {% endif %}
         <input type="text" class="form-control" id="editTitle" placeholder="상품 제목">
         <div id="origTitleWrap" class="form-text small d-none">원문: <span id="origTitle" class="text-muted"></span>
           <a href="javascript:void(0)" onclick="restoreOrigTitle()" class="ms-1">원문으로 되돌리기</a></div>
