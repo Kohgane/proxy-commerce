@@ -59,8 +59,8 @@
   <div class="card mb-3">
     <div class="card-header d-flex justify-content-between align-items-center">
       <span class="fw-semibold"><i class="bi bi-pencil-square"></i> 수집 상품 편집</span>
-      {% if extra.edited %}<span class="badge bg-info text-dark">수정됨</span>{% endif %}
-      {% if extra.is_mock %}<span class="badge bg-warning text-dark">목업</span>{% endif %}
+      {% if extra.edited %}<span class="pc-badge pc-badge-muted">수정됨</span>{% endif %}
+      {% if extra.is_mock %}<span class="pc-badge pc-badge-off">목업</span>{% endif %}
     </div>
     <div class="card-body">
       <!-- v45 P9: 편집 칩 탭(고가브릿지 토큰) — 필드를 탭별로 분리(한 탭씩 표시). -->
@@ -135,7 +135,7 @@
                   onclick="convertToKrw()" title="환율을 적용해 가격을 원화(KRW)로 바꿉니다">↻ 원화로 환산</button>
         </div>
         <div class="text-muted mb-1" id="fxNote" style="font-size:.74rem;"></div>
-        <div class="alert alert-warning py-1 px-2 mb-3 d-none" id="priceWarn" style="font-size:.8rem;">
+        <div class="pc-status pc-status-warning py-1 px-2 mb-3 d-none" id="priceWarn" style="font-size:.8rem;">
           <i class="bi bi-exclamation-triangle"></i> <strong>판매가(가격)가 0이거나 비어 있습니다.</strong> 이 상태로는 마켓이 등록을 거부합니다
           (“연결됨”이어도 업로드 실패). 위에 가격을 입력하거나 <strong>↻ 원화로 환산</strong>으로 채워주세요.
         </div>
@@ -380,7 +380,7 @@
   {% if extra and session.get('user_role') == 'admin' %}
   <div class="card">
     <div class="card-header d-flex justify-content-between align-items-center">
-      <span class="small fw-semibold"><i class="bi bi-search"></i> 수집된 원본 메타 <span class="badge bg-secondary">관리자</span></span>
+      <span class="small fw-semibold"><i class="bi bi-search"></i> 수집된 원본 메타 <span class="pc-badge pc-badge-muted">관리자</span></span>
       <button class="btn btn-outline-secondary btn-sm py-0"
               onclick="this.closest('.card').querySelector('pre').classList.toggle('d-none')">
         펼치기/접기
@@ -453,7 +453,7 @@
             <input type="range" class="form-range" id="uploadMarginPct" min="5" max="50" value="22"
                    style="max-width:200px;"
                    oninput="document.getElementById('uploadMarginPctDisplay').textContent=this.value">
-            <span class="fw-bold text-primary" id="uploadMarginPctDisplay">22</span><span>%</span>
+            <span class="fw-bold text-teal" id="uploadMarginPctDisplay">22</span><span>%</span>
           </div>
 
           <div class="d-flex gap-2 mt-3">
@@ -478,7 +478,7 @@
 
         <!-- Step 3: 업로드 진행 중 -->
         <div id="stepUploading" class="d-none text-center py-4">
-          <div class="spinner-border text-primary mb-3" role="status"></div>
+          <div class="spinner-border text-teal mb-3" role="status"></div>
           <div class="fw-semibold">업로드 중...</div>
           <div class="text-muted small mt-1">잠시 기다려 주세요. 중복 클릭하지 마세요.</div>
         </div>
@@ -1083,7 +1083,7 @@ function updateKrwPreview() {
   btn.disabled = !(price > 0);
   if (price > 0) {
     prevEl.textContent = `≈ 원화 약 ${_fmtKrw(price * rate)}원`;
-    prevEl.className = 'fw-semibold text-primary';
+    prevEl.className = 'fw-semibold text-teal';
   } else {
     prevEl.textContent = '≈ 원화 —';
     prevEl.className = 'fw-semibold text-muted';
@@ -1488,12 +1488,12 @@ function renderPrevalidateResults(results) {
   const el = document.getElementById('prevalidateResults');
   const targetMarginPct = parseInt(document.getElementById('uploadMarginPct').value) || 22;
 
-  let html = `<div class="mb-2 text-muted small">목표 마진율: <strong class="text-primary">${targetMarginPct}%</strong></div>`;
+  let html = `<div class="mb-2 text-muted small">목표 마진율: <strong class="text-teal">${targetMarginPct}%</strong></div>`;
   html += '<div class="list-group mb-3">';
   results.forEach(r => {
     const badge = r.ok
-      ? '<span class="badge bg-success">통과</span>'
-      : '<span class="badge bg-danger">실패</span>';
+      ? '<span class="pc-badge pc-badge-on">통과</span>'
+      : '<span class="pc-badge pc-badge-danger">실패</span>';
     html += `
       <div class="list-group-item d-flex justify-content-between align-items-start">
         <div>
@@ -1506,11 +1506,11 @@ function renderPrevalidateResults(results) {
   html += '</div>';
 
   if (_validatedMarkets.length === 0) {
-    html += '<div class="alert alert-warning">통과한 마켓이 없습니다. 설정을 확인하세요.</div>';
+    html += '<div class="pc-status pc-status-warning">통과한 마켓이 없습니다. 설정을 확인하세요.</div>';
     document.getElementById('btnConfirmUpload').disabled = true;
   } else {
     document.getElementById('btnConfirmUpload').disabled = false;
-    html += `<div class="alert alert-info">통과 마켓 <strong>${_validatedMarkets.length}개</strong>에 업로드합니다: ${_validatedMarkets.join(', ')}</div>`;
+    html += `<div class="pc-status pc-status-info">통과 마켓 <strong>${_validatedMarkets.length}개</strong>에 업로드합니다: ${_validatedMarkets.join(', ')}</div>`;
   }
   el.innerHTML = html;
 }
@@ -1538,7 +1538,7 @@ async function runUpload() {
     goToStep('stepResult');
   } catch (err) {
     document.getElementById('uploadResults').innerHTML =
-      `<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> ${kgpEscapeForHtml(kgpFriendlyError(err))}</div>`;
+      `<div class="pc-status pc-status-danger"><i class="bi bi-exclamation-triangle"></i> ${kgpEscapeForHtml(kgpFriendlyError(err))}</div>`;
     goToStep('stepResult');
   }
 }
@@ -1553,7 +1553,7 @@ function retryFailedUpload(markets) {
 function renderUploadResults(data) {
   const el = document.getElementById('uploadResults');
   if (!data.ok) {
-    el.innerHTML = `<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> ${kgpEscapeForHtml(kgpFriendlyError(data))}</div>`;
+    el.innerHTML = `<div class="pc-status pc-status-danger"><i class="bi bi-exclamation-triangle"></i> ${kgpEscapeForHtml(kgpFriendlyError(data))}</div>`;
     return;
   }
   const result = data.result;

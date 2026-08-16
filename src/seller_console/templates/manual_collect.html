@@ -2,19 +2,22 @@
 {% block title %}수집기{% endblock %}
 
 {% block content %}
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+{# v87-X2: STEP3 에디토리얼 격상 — 오버라인(금 라벨)+세리프 헤더+금 헤어라인(P~T 계보). 기능 불변. #}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
   <div>
-    <h1 class="h4 mb-1">상품 수집 → 등록</h1>
-    <p class="text-muted mb-0">
-      <strong>상품 수집이란?</strong> 해외 쇼핑몰의 상품 정보(제목·가격·이미지)를 고가브릿지로 가져오는 거예요.
-      가져온 상품은 다듬어서 내 마켓에 올릴 수 있어요.
-      <span class="pc-help" data-bs-toggle="tooltip" data-bs-title="상품 페이지 주소를 붙여넣거나, 크롬 확장으로 버튼 한 번에 가져올 수 있어요. 가져온 상품은 ‘수집한 상품’에서 편집·등록합니다.">?</span>
-    </p>
+    <div class="console-kpi-label mb-1">상품 수집</div>
+    <h4 class="mb-0 fw-bold"><i class="bi bi-download"></i> 해외 상품, 한 번에 담기</h4>
   </div>
   {% if _user_role == 'admin' %}
-  <a href="/seller/api/status" class="btn btn-outline-secondary btn-sm">API 상태</a>
+  <a href="/seller/api/status" class="btn btn-outline-secondary btn-sm align-self-center">API 상태</a>
   {% endif %}
 </div>
+<p class="text-muted small mb-2">
+  <strong>상품 수집이란?</strong> 해외 쇼핑몰의 상품 정보(제목·가격·이미지)를 고가브릿지로 가져오는 거예요.
+  가져온 상품은 다듬어서 내 마켓에 올릴 수 있어요.
+  <span class="pc-help" data-bs-toggle="tooltip" data-bs-title="상품 페이지 주소를 붙여넣거나, 크롬 확장으로 버튼 한 번에 가져올 수 있어요. 가져온 상품은 ‘수집한 상품’에서 편집·등록합니다.">?</span>
+</p>
+<hr class="pc-hairline mt-0 mb-4">
 
 <!-- 초보 흐름: 다음 할 일 한 줄(happy path) -->
 <div class="pc-status pc-status-info small mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -25,7 +28,7 @@
 {% if api_status %}
 {% set active_count = api_status | selectattr('status', 'equalto', 'active') | list | length %}
 {% if active_count == 0 %}
-<div class="alert alert-info" role="status">API 키가 미설정되어 일부 데이터는 비어 있을 수 있습니다.</div>
+<div class="pc-status pc-status-warning small mb-3"><i class="bi bi-info-circle"></i> API 키가 미설정되어 일부 데이터는 비어 있을 수 있어요.</div>
 {% endif %}
 {% endif %}
 
@@ -41,7 +44,7 @@
   <div class="card-body">
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
       <label class="form-label fw-semibold mb-0"><i class="bi bi-cart"></i> 원클릭 수집 지원 마켓</label>
-      <span class="small text-muted">마켓을 열고 상품 페이지에서 <b class="text-primary"><i class="bi bi-cart"></i> 수집</b> 버튼을 누르세요</span>
+      <span class="small text-muted">마켓을 열고 상품 페이지에서 <b class="text-teal"><i class="bi bi-cart"></i> 수집</b> 버튼을 누르세요</span>
     </div>
     {# v17 P0: 앱에서 마켓 진입 시 도착 페이지에 수집기가 무조건 뜨도록 마커(kgpsrc=app) 부여 #}
     {% macro mk(u) %}{{ u }}{{ '&' if '?' in u else '?' }}kgpsrc=app{% endmacro %}
@@ -75,11 +78,11 @@
       {% endfor %}
       <a href="/seller/sourcing#registryDomainInput" class="btn btn-sm btn-ghost oneclick-market" title="소싱처 등록 관리">＋ 소싱처 추가</a>
     </div>
-    <div class="alert alert-light border mt-3 mb-0 small d-flex gap-2 align-items-start" role="note">
+    <div class="border rounded p-3 mt-3 mb-0 small d-flex gap-2 align-items-start bg-white" role="note">
       <img src="{{ url_for('seller_console.static', filename='favicon.svg') }}" alt="고가브릿지"
            style="width:34px;height:34px;border-radius:8px;flex-shrink:0">
       <div>
-        <b class="text-primary">고가수집기 인페이지 수집</b> — 크롬 확장을 설치하면 <b>지정 소싱처</b>(타오바오·아마존 등)에서
+        <b class="text-teal">고가수집기 인페이지 수집</b> — 크롬 확장을 설치하면 <b>지정 소싱처</b>(타오바오·아마존 등)에서
         ①상품 <b>상세 페이지</b>의 <b>“고가수집기”</b> 버튼으로 한 번에, ②<b>검색·목록 페이지</b>에서는 상품마다 뜨는
         <b>‘수집’ 배지</b>와 상단 <b>전체/선택 수집</b> 바로 <b>여러 상품을 한 번에</b> 수집·한국어 번역됩니다.
         <a href="/seller/extension" class="ms-1 fw-semibold text-decoration-none"><i class="bi bi-puzzle"></i> 확장 설치하기 →</a>
@@ -119,11 +122,11 @@
 </div>
 
 <div id="loadingSpinner" class="text-center py-4 d-none" aria-live="polite">
-  <div class="spinner-border text-primary" role="status"></div>
+  <div class="spinner-border text-teal" role="status"></div>
   <div class="mt-2 text-muted">상품 정보를 수집하고 있습니다...</div>
 </div>
 
-<div id="errorAlert" class="alert alert-danger d-none" role="alert"></div>
+<div id="errorAlert" class="pc-status pc-status-danger small d-none" role="alert"></div>
 
 <div id="previewCard" class="d-none">
   <div class="card console-step-card mb-3">
@@ -302,7 +305,7 @@ async function bulkCollect() {
     });
     const data = await resp.json();
     if (!data.ok) { kgpInlineError('bulkResult', data, { retry: () => bulkCollect() }); return; }
-    let html = `<div class="alert alert-info py-2">전체 ${data.total}개 · 성공 <strong>${data.success}</strong> · 실패 ${data.total - data.success}</div>`;
+    let html = `<div class="pc-status pc-status-info small mb-2">전체 ${data.total}개 · 성공 <strong>${data.success}</strong> · 실패 ${data.total - data.success}</div>`;
     html += '<ul class="list-group">';
     (data.results || []).forEach(r => {
       if (r.ok) {
@@ -374,7 +377,7 @@ function renderPreview(draft, source) {
   cardWrap.className = 'border rounded p-2 h-100 d-flex gap-2 align-items-start';
   const img = document.createElement('img');
   img.alt = '상품 이미지';
-  img.style.cssText = 'width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;';
+  img.style.cssText = 'width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--line,#e6decb);';
   img.onerror = function() { this.style.display = 'none'; };
   if (primaryImage) img.setAttribute('src', primaryImage);
   cardWrap.appendChild(img);
@@ -405,7 +408,7 @@ function renderPreview(draft, source) {
     images.slice(1, 5).forEach((src) => {
       const thumb = document.createElement('img');
       thumb.alt = '상품 썸네일';
-      thumb.style.cssText = 'width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;';
+      thumb.style.cssText = 'width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--line,#e6decb);';
       thumb.onerror = function() { this.remove(); };
       thumb.setAttribute('src', src);
       thumbWrap.appendChild(thumb);

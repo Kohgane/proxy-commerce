@@ -2,12 +2,13 @@
 {% block title %}수집 이력{% endblock %}
 {% block content %}
 <div class="container-fluid py-4">
-  <div class="d-flex align-items-center mb-4">
-    <div>
-      <h1 class="h3 mb-0"><i class="bi bi-box-seam"></i> 수집 이력</h1>
-      <small class="text-muted">크롬 확장, 북마클릿, 수동 입력으로 수집된 상품 기록</small>
-    </div>
+  {# v87-X2: STEP3 에디토리얼 격상 — 오버라인(금 라벨)+세리프 헤더+금 헤어라인(P~T 계보). 기능 불변. #}
+  <div class="mb-2">
+    <div class="console-kpi-label mb-1">한눈에 보기</div>
+    <h4 class="mb-0 fw-bold"><i class="bi bi-box-seam"></i> 수집한 상품, 한눈에</h4>
   </div>
+  <p class="text-muted small mb-2">크롬 확장·북마클릿·수동 입력으로 모은 상품을 한자리에서 확인·편집·업로드해요.</p>
+  <hr class="pc-hairline mt-0 mb-4">
 
   <!-- v72b STEP4: 고가수집기 확장 신선도 배너 — content_script가 각인한 설치 버전(data-kgp-ext)을
        최신 버전과 대조. 구버전이면 재로딩 안내(수집 품질 이슈의 최다 원인). 정직: 감지 실패는 '미감지'로 표기. -->
@@ -810,11 +811,11 @@ function _esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function
 function excelRenderReport(d) {
   const sum = document.getElementById('excelReportSummary');
   sum.innerHTML =
-    `<span class="badge bg-success"><i class="bi bi-plus-lg"></i> 신규 ${d.new}</span>` +
-    `<span class="badge bg-primary"><i class="bi bi-arrow-repeat"></i> 갱신 ${d.update}</span>` +
+    `<span class="pc-badge pc-badge-on"><i class="bi bi-plus-lg"></i> 신규 ${d.new}</span>` +
+    `<span class="pc-badge pc-badge-muted"><i class="bi bi-arrow-repeat"></i> 갱신 ${d.update}</span>` +
     `<span class="badge ${d.error_count ? 'bg-danger' : 'bg-secondary'}"><i class="bi bi-exclamation-triangle"></i> 오류 ${d.error_count}</span>`;
   let html = '';
-  if (d.truncated) html += `<div class="alert alert-warning small py-2">행이 많아 5000개까지만 처리했어요. 나눠서 올려 주세요.</div>`;
+  if (d.truncated) html += `<div class="pc-status pc-status-warning small py-2">행이 많아 5000개까지만 처리했어요. 나눠서 올려 주세요.</div>`;
   if (d.errors && d.errors.length) {
     html += `<div class="mb-2"><strong class="text-danger">오류 행</strong><ul class="small mb-2" style="max-height:160px;overflow:auto">`;
     d.errors.forEach(function (e) { html += `<li>${e.row}행: ${_esc(e.reason)}</li>`; });
@@ -823,7 +824,7 @@ function excelRenderReport(d) {
   if (d.preview && d.preview.length) {
     html += `<div class="table-responsive"><table class="table table-sm small mb-0"><thead><tr><th>행</th><th>구분</th><th>제목</th><th>가격</th></tr></thead><tbody>`;
     d.preview.forEach(function (p) {
-      const badge = p.mode === 'update' ? '<span class="badge bg-primary">갱신</span>' : '<span class="badge bg-success">신규</span>';
+      const badge = p.mode === 'update' ? '<span class="pc-badge pc-badge-muted">갱신</span>' : '<span class="pc-badge pc-badge-on">신규</span>';
       html += `<tr><td>${p.row}</td><td>${badge}</td><td>${_esc(p.title)}</td><td>${_esc(p.price)}</td></tr>`;
     });
     html += `</tbody></table></div>`;
@@ -1295,7 +1296,7 @@ async function runBulkUpload() {
       ptxt.textContent = `${done} / ${ids.length}`;
     }
     // 최종 요약(성공+실패 합계 = 전체, 정직)
-    let html = `<div class="alert alert-info py-2">전체 ${ids.length}개 · 성공 <strong>${succeeded}</strong> · 실패 ${ids.length - succeeded}</div><ul class="list-group">`;
+    let html = `<div class="pc-status pc-status-info small py-2">전체 ${ids.length}개 · 성공 <strong>${succeeded}</strong> · 실패 ${ids.length - succeeded}</div><ul class="list-group">`;
     results.forEach(r => {
       const cls = r.ok ? 'list-group-item-success' : 'list-group-item-warning';
       const icon = r.ok ? '<i class="bi bi-check-circle text-success"></i>' : '<i class="bi bi-exclamation-triangle text-warning"></i>';
