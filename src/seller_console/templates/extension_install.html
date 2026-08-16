@@ -7,6 +7,14 @@
     <p class="text-muted mb-0">설치하면 쇼핑몰에서 <b>버튼 한 번</b>으로 상품이 담겨요. 한 단계씩 따라오면 1~2분이면 끝나요.</p>
   </div>
 
+  {# v87-W7 item5: 확장 업데이트 채널 안내 — 최신 버전·수동 다운로드 경로. 웹스토어 게시 전까지 수동 로드. #}
+  <div class="pc-status pc-status-info small mb-3 d-flex flex-wrap align-items-center gap-2">
+    <span><i class="bi bi-arrow-repeat"></i> 최신 확장 버전 <strong>{{ version or '1.5.147' }}</strong></span>
+    <span class="text-muted">·</span>
+    <a href="/seller/extension/download" class="fw-semibold text-decoration-none"><i class="bi bi-download"></i> 최신 확장 내려받기</a>
+    <span class="text-muted">— 받은 뒤 <code>chrome://extensions</code>에서 <b>새로고침(↻)</b>하면 최신으로 갱신돼요.</span>
+  </div>
+
   <!-- v15: 아무것도 모르는 유저를 위한 '왜 설치 / 왜 토큰' 초친절 비유 -->
   <div class="row g-2 mb-3">
     <div class="col-md-6">

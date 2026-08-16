@@ -37,6 +37,7 @@ PG = Path("src/db/collect_history_pg.py").read_text(encoding="utf-8")
 def test_translate_stats_counts_calls_fails_reasons(monkeypatch):
     T.reset_translate_stats()
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("TRANSLATE_PROVIDER_CHAIN", "openai")   # v87-W7: openai만 격리(체인 무료 프로바이더 네트워크 회피)
     monkeypatch.delenv("ADAPTER_DRY_RUN", raising=False)
     import requests
 

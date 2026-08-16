@@ -51,6 +51,7 @@ def test_classify_generic():
 def test_openai_fallback_carries_error(monkeypatch):
     # 키가 있고 호출이 실패하면 translate_product 결과에 error(원인)가 실린다.
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-xxxxx")
+    monkeypatch.setenv("TRANSLATE_PROVIDER_CHAIN", "openai")   # v87-W7: openai만 격리(체인 무료 프로바이더 네트워크 회피)
     monkeypatch.delenv("ADAPTER_DRY_RUN", raising=False)
     import src.seller_console.ai.translator as T
 
