@@ -32,7 +32,7 @@ _ECHO_ENUMS = ("fab", "hover", "bulk", "bulk-retry")
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.145"
+    assert MANIFEST["version"] == "1.5.146"
 
 
 # ── source-contract: echo가 모든 수집 경로에 배선됐는가(FAB-only 회귀 금지) ──

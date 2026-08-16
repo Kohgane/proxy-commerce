@@ -1,7 +1,7 @@
 """tests/test_v86_v_coverage.py — v86-V 커버리지 표 결함 일소.
 
 ## 오너 실기기 확정(재조사 금지)
-1.5.145 상세 3소스 채점: 가격 3소스 DOM 교차검증 그린. 결함:
+1.5.146 상세 3소스 채점: 가격 3소스 DOM 교차검증 그린. 결함:
 - [크리티컬] 라쿠텐 item.rakuten.co.jp/{샵}/{코드}/ 상세를 pageType=list로 오판정(스캔 105·상품 68·
   제네릭 91 — 추천/사이드바 타일). 단품 수집 거부 + v86-H 억제 발동 → 필드 전무.
 - 아마존: DOM 썸네일 16곳·이미지 ID 75종인데 갤러리 수집 1장(대표).
@@ -43,7 +43,7 @@ def _require_browser():
 
 # ── 소스 계약(결정적) ────────────────────────────────────────────────
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.145"
+    assert MANIFEST["version"] == "1.5.146"
 
 
 def test_rakuten_single_rule_in_content_script():

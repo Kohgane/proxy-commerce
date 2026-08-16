@@ -24,7 +24,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 def test_manifest_unchanged():
     # STEP5는 검증(확장 런타임 무변경) → 버전 유지(1.5.120).
-    assert MANIFEST["version"] == "1.5.145"
+    assert MANIFEST["version"] == "1.5.146"
 
 
 def test_recollect_force_flow_wired():

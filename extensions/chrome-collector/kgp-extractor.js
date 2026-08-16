@@ -890,11 +890,17 @@
         if (_galleryExcluded(im)) continue;
         var src = _amazonDynMax(im) || _bestImgSrc(im);   // 고해상 우선
         if (!src) continue;
-        // 로드된 실측 크기만으로 1px·초소형 아이콘 배제(깨진/미로드 이미지의 layout width=16 오판 방지 —
-        //   미로드는 파일명 기반 NONPROD_IMG(sprite/icon)로 걸러짐).
-        var nw = im.naturalWidth || 0, nh = im.naturalHeight || 0;
-        if ((nw && nw < 40) || (nh && nh < 40)) continue;
-        if (isProductImg(src)) uniqPush(out, seen, hiRes(src));
+        var hr = hiRes(src);
+        // v86-V2: 아마존 altImages 썸네일은 **디자인상 소형**(`_AC_US40_` 등 ~40px 렌더)이다. 종전 naturalWidth<40
+        //   가드는 1px·아이콘 배제용인데, 이 **정품 썸네일**까지 통째로 걸러 실기기 갤러리 1장(대표만)이었다
+        //   (오너 dp: altImages 7썸네일 전부 탈락). 크기 토큰이 있는 URL은 hiRes가 대형 원본으로 승격하므로
+        //   (hr!==src) 크기 가드를 **건너뛰고**, 토큰 없는 고정크기 이미지에만 1px/아이콘 가드를 적용한다.
+        //   판별은 썸네일 렌더 크기가 아니라 **승격된 URL(hr)의 상품성**으로 한다(_bestImgSrc 설계와 일치).
+        if (hr === src) {   // 크기 토큰 없음(고정크기) → 1px·초소형 아이콘 가드 적용(미로드는 파일명으로 걸러짐)
+          var nw = im.naturalWidth || 0, nh = im.naturalHeight || 0;
+          if ((nw && nw < 40) || (nh && nh < 40)) continue;
+        }
+        if (isProductImg(hr)) uniqPush(out, seen, hr);
       }
     } catch (e) {}
     return out;
