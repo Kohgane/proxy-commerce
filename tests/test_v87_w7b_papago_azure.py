@@ -94,13 +94,13 @@ def test_failure_message_names_provider(monkeypatch):
     class _R429:
         status_code = 429
     def _boom(*a, **k):
-        e = requests.HTTPError("rate limit / insufficient_quota")
+        e = requests.HTTPError("Rate limit reached for gpt-4o-mini")   # 속도 제한(결제 아님)
         e.response = _R429()
         raise e
     monkeypatch.setattr(requests, "post", _boom)
     res = AITranslator().translate_product({"title": "x", "description": "y"})
-    assert res["translate_error"].startswith("OpenAI:")            # 프로바이더명 접두
-    assert "한도" in res["translate_error"]                         # 실사유(결제 한도) 병기
+    assert res["translate_error"].startswith("OpenAI:")            # 프로바이더명 접두(어느 단이 죽었는지)
+    assert "속도" in res["translate_error"] and "결제 아님" in res["translate_error"]   # v87-W7a: 결제로 오귀인 금지
 
 
 def test_provider_label_maps():

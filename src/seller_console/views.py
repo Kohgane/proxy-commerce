@@ -4762,7 +4762,10 @@ def collect_ai_copy():
         results = writer.generate(req)
         return jsonify({"ok": True, "results": [r.to_dict() for r in results]})
     except BudgetExceededError as exc:
-        return jsonify({"ok": False, "error": "AI 월 예산을 초과했습니다.", "budget": exc.summary}), 402
+        # v87-W7a: '서버' 월 예산임을 명시 — OpenAI 결제와 무관(오너가 지갑 뒤지지 않게).
+        return jsonify({"ok": False,
+                        "error": "서버 월 예산(AI_MONTHLY_BUDGET_USD) 상한에 도달했습니다 — OpenAI 잔액 아님. 상한을 올리거나 내달 초까지 대기하세요.",
+                        "budget": exc.summary}), 402
     except Exception as exc:
         logger.warning("AI 카피 생성 오류: %s", exc)
         return jsonify({"ok": False, "error": "AI 카피 생성 중 오류가 발생했습니다."}), 500

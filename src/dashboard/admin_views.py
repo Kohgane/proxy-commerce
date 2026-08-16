@@ -519,6 +519,9 @@ def _render_diagnostics(issued_magic_link: str | None):
     # 섹션 5: 가격 엔진 상태
     pricing_status = _build_pricing_status()
 
+    # v87-W7a: 서버 AI 예산 가드 현황(읽기 전용)
+    ai_budget = _build_ai_budget_status()
+
     # 섹션 6: 최근 24시간 알림 로그
     message_log = _build_message_log()
     cs_bot_status = _build_cs_bot_status()
@@ -581,6 +584,7 @@ def _render_diagnostics(issued_magic_link: str | None):
         messenger_health=messenger_health,
         market_health=market_health,
         pricing_status=pricing_status,
+        ai_budget=ai_budget,
         message_log=message_log,
         cs_bot_status=cs_bot_status,
         auth_status=auth_status,
@@ -1173,6 +1177,20 @@ def _build_market_health() -> dict:
         return {item["market"]: normalize_market_diagnostic_result(item) for item in run_all_market_diagnostics()}
     except Exception as exc:
         return {"market_diagnostics": {"status": "api_error", "detail": str(exc), "steps": []}}
+
+
+def _build_ai_budget_status() -> dict:
+    """v87-W7a: 서버 내부 AI 예산 가드 현황(읽기 전용) — 이번 달 누계·상한·차단 여부.
+    오너가 OpenAI 지갑을 뒤지기 전에 '서버가 막은 건지'를 여기서 바로 본다. 실패는 정직 표기."""
+    try:
+        from src.ai.budget import BudgetGuard
+        s = BudgetGuard().summary()   # {limit_usd, used_usd, remaining_usd, pct, status}
+        s["available"] = True
+        s["blocked"] = (s.get("status") == "exceeded")
+        return s
+    except Exception as exc:
+        logger.debug("AI 예산 요약 로드 불가: %s", exc)
+        return {"available": False, "error": str(exc)}
 
 
 def _build_pricing_status() -> dict:
@@ -2680,6 +2698,27 @@ _DIAGNOSTICS_TEMPLATE = """
             </div>
           {% endfor %}
         </div>
+      </div>
+    </div>
+
+    <!-- v87-W7a: 서버 AI 예산 가드 (읽기 전용) — '한도 초과'가 OpenAI인지 서버 예산인지 즉시 판별 -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">🧮 서버 AI 예산 가드 (AI_MONTHLY_BUDGET_USD)</div>
+      <div class="card-body">
+        {% if ai_budget.available %}
+        <ul class="mb-1">
+          <li>이번 달 누계: <strong>${{ '%.2f'|format(ai_budget.used_usd) }}</strong> / 상한 ${{ '%.2f'|format(ai_budget.limit_usd) }} ({{ ai_budget.pct }}%)</li>
+          <li>남은 예산: ${{ '%.2f'|format(ai_budget.remaining_usd) }}</li>
+          <li>차단 여부:
+            {% if ai_budget.blocked %}<span class="badge bg-danger">차단됨 — 서버 월 예산 초과(OpenAI 잔액 아님)</span>
+            {% elif ai_budget.status == 'warning' %}<span class="badge bg-warning text-dark">경고(80%+)</span>
+            {% else %}<span class="badge bg-success">여유</span>{% endif %}
+          </li>
+        </ul>
+        <div class="text-muted small">번역·AI 실패가 "서버 월 예산"이면 여기서 차단됨으로 보인다. OpenAI 결제와 무관 — 상한(AI_MONTHLY_BUDGET_USD)을 올리거나 내달까지 대기.</div>
+        {% else %}
+        <div class="text-muted small">AI 예산 요약을 불러오지 못했습니다(ai_spend 시트 미연결 등). 가드 미작동 시 번역 실패는 프로바이더(OpenAI 등) 사유입니다.</div>
+        {% endif %}
       </div>
     </div>
 
