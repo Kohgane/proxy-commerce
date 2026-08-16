@@ -6086,6 +6086,11 @@ def _shape_collect_items(items, current_lang):
         else:  # ko
             it["title_display"] = (_tko if _translated else (_ten or _tko)) or "(제목 없음)"
             it["title_is_original"] = not _translated
+        # v87-W6: 번역 상태(레코드 단위) — 번역함/원문(안 함)/실패 3분. 실패는 사유 + 재시도 유도.
+        it["translated"] = bool(ex.get("translated"))
+        it["translate_error"] = str(ex.get("translate_error") or "").strip()
+        # translate_requested가 명시 저장 안 된 옛 레코드는 True로 간주(기본값이 번역함).
+        it["translate_requested"] = ex.get("translate_requested", True) is not False
         up = ex.get("uploaded")
         it["uploaded_markets"] = [str(u.get("market_label") or u.get("market"))
                                   for u in up if isinstance(u, dict) and (u.get("market_label") or u.get("market"))] if isinstance(up, list) else []

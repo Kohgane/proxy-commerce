@@ -39,6 +39,10 @@ _LEAN_EXTRA = (
     "'rating', extra_json->'rating',"
     "'review_count', extra_json->'review_count',"
     "'recollected_at', extra_json->'recollected_at',"
+    # v87-W6: 목록 번역 상태 3분(번역함/원문/실패) 표시용 스칼라.
+    "'translated', extra_json->'translated',"
+    "'translate_error', extra_json->'translate_error',"
+    "'translate_requested', extra_json->'translate_requested',"
     "'images', CASE WHEN jsonb_typeof(extra_json->'images')='array' AND jsonb_array_length(extra_json->'images')>0 "
     "THEN jsonb_build_array(extra_json->'images'->0) ELSE '[]'::jsonb END"
     ") AS extra_json"
