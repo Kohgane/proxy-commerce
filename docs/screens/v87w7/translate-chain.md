@@ -70,3 +70,19 @@ AI 초안이 **OpenAI 호출 실패 시에도 provider="stub"로 폴백**해 UI(
 ## 금지 구조 준수
 - **번역 무료 쿼터 회계 무손대**(체인·계측은 별개) · **AI 예산 존중**(계약 requests 모킹, 실 API 호출 0) ·
   **유료 가입 임의 진행 0**(후보는 표로 보고만) · **확장 코드 불가침**(item5 서버 템플릿·문서만).
+
+## 3. W7a 재개정 — '한도 초과' 발화 주체 4분 (오너 실증: OpenAI 잔액 $22.37 → 크레딧 고갈 기각)
+현행 "사용량·결제 한도 초과" 한 줄이 **서로 다른 4가지를 뭉쳤다**. `classify_translate_reason(exc)`로 (사유코드, 문구) 4분:
+
+| 코드 | 발화 주체 | 문구(핵심) |
+|---|---|---|
+| `budget` | **서버 내부 예산 가드**(AI_MONTHLY_BUDGET_USD) | "**서버 월 예산** 상한 … (**OpenAI 잔액 아님** · 상향/대기)" |
+| `quota` | 프로바이더 429 `insufficient_quota` | "프로바이더 **크레딧·결제** 소진(플랜·결제 확인)" |
+| `rate_limit` | 프로바이더 429 rate limit | "**요청 속도 제한**(**결제 아님** · 잠시 후 자동 재시도)" |
+| `auth` | 401/403 | "API **키**가 잘못됐거나 만료" |
+
+- **핵심 수리**: 오너가 본 429는 잔액 $22.37이므로 `rate_limit`(속도 제한) — 이제 "결제 아님"으로 명시(OpenAI 지갑 뒤지지 않게). 내부 가드 차단이면 반드시 "서버 월 예산".
+- 각 사유는 별 문구 → `translate_stats`에 사유별 분리 집계(distinct reason).
+- **발화 주체 실측**: 상품 번역 경로(`translate_product`)는 예산 가드 **미경유**(copywriter/AI카피만 `BudgetExceededError` — views.py 402 응답도 "서버 월 예산 … OpenAI 잔액 아님"으로 명시). 즉 번역 실패는 프로바이더 사유(rate_limit/quota/auth), 예산 차단은 AI카피 경로.
+- **읽기전용 노출**: `/admin/diagnostics`에 "🧮 서버 AI 예산 가드" 카드(이번 달 누계·상한·%·차단 여부). 기존 `/seller/ai-budget` JSON도 존재.
+- 계약 `test_v87_w7a_cause_split`(8): 4코드 유일·budget "서버 월 예산"·rate_limit "결제 아님"·quota 결제·auth 키·diagnostics 노출·빌더 읽기전용.

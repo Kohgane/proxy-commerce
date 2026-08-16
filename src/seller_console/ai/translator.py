@@ -178,36 +178,43 @@ def provider_label(name: str) -> str:
     return _PROVIDER_LABEL.get(base, base or "번역")
 
 
-def classify_translate_error(exc: Exception) -> str:
-    """v64 STEP6: 번역 실패 원인을 사람이 읽을 한 줄로 분류(무음 금지·오귀인 금지).
-
-    키가 설정돼 있는데 실패한 경우, '키 미설정'으로 오귀인하지 않고 실제 원인을 표기한다.
-    - 인증(401/403) → 키가 잘못됐거나 만료됨
-    - 모델(404/400 model) → 모델명(OPENAI_MODEL)이 잘못됨
-    - 쿼터(429) → 사용량/결제 한도 초과
-    - 타임아웃 → 응답 지연
-    - 네트워크 → 연결 실패
-    """
+# v87-W7a 재개정: "한도 초과" 발화 주체를 4분한다(오너 실증 — OpenAI 잔액 $22.37, 크레딧 고갈 기각).
+#   ①서버 내부 예산 가드(AI_MONTHLY_BUDGET_USD) 차단 → **"서버 월 예산"** 명시(OpenAI 지갑 아님)
+#   ②프로바이더 429 insufficient_quota(크레딧·결제 소진) ③프로바이더 429 rate_limit(요청 속도 — 재시도)
+#   ④401/403 무효 키. 각각 별 문구 + 짧은 사유코드(translate_stats 집계). 종전엔 ①③를 ②로 뭉갰다.
+def classify_translate_reason(exc: Exception) -> tuple:
+    """(사유코드, 사람 문구) 반환. 코드는 translate_stats 집계용(budget/quota/rate_limit/auth/model/timeout/network/http/unknown)."""
     s = str(exc or "").lower()
     status = None
     resp = getattr(exc, "response", None)
     if resp is not None:
         status = getattr(resp, "status_code", None)
+    # ① 서버 내부 예산 가드(우리 코드가 막은 것) — OpenAI 결제와 무관. 오너가 지갑 뒤지지 않게 명시.
+    if type(exc).__name__ == "BudgetExceededError" or "월 예산" in str(exc or "") or "monthly budget" in s:
+        return ("budget", "서버 월 예산 상한에 도달해 AI 호출을 멈췄어요(OpenAI 잔액 아님 · AI_MONTHLY_BUDGET_USD 상향/대기)")
+    # ④ 인증
     if status in (401, 403) or "unauthorized" in s or "invalid_api_key" in s or "authenticationerror" in s:
-        return "API 키가 잘못됐거나 만료됐어요(키 재발급 후 재설정)"
-    if status == 429 or "rate limit" in s or "quota" in s or "insufficient_quota" in s:
-        return "API 사용량·결제 한도를 초과했어요(플랜·결제 확인)"
-    if status in (404, 400) and "model" in s:
-        return "설정한 모델명(OPENAI_MODEL)이 잘못됐어요"
-    if "model" in s and ("does not exist" in s or "not found" in s):
-        return "설정한 모델명(OPENAI_MODEL)이 잘못됐어요"
+        return ("auth", "API 키가 잘못됐거나 만료됐어요(키 재발급 후 재설정)")
+    # ② 프로바이더 크레딧·결제 소진(429 insufficient_quota) — 진짜 '결제' 문제.
+    if "insufficient_quota" in s or ("quota" in s and "rate" not in s):
+        return ("quota", "프로바이더 크레딧·결제가 소진됐어요(해당 프로바이더 결제·플랜 확인)")
+    # ③ 프로바이더 요청 속도 제한(429 rate limit) — 결제 아님, 잠시 후 재시도.
+    if status == 429 or "rate limit" in s or "rate_limit" in s or "too many requests" in s:
+        return ("rate_limit", "요청 속도 제한에 걸렸어요(결제 아님 · 잠시 후 자동 재시도)")
+    if (status in (404, 400) and "model" in s) or ("model" in s and ("does not exist" in s or "not found" in s)):
+        return ("model", "설정한 모델명(OPENAI_MODEL)이 잘못됐어요")
     if "timeout" in s or "timed out" in s:
-        return "번역 서버 응답이 지연됐어요(잠시 후 재시도)"
+        return ("timeout", "번역 서버 응답이 지연됐어요(잠시 후 재시도)")
     if "connection" in s or "network" in s or "resolve" in s or "ssl" in s:
-        return "번역 서버에 연결하지 못했어요(네트워크·프록시 확인)"
+        return ("network", "번역 서버에 연결하지 못했어요(네트워크·프록시 확인)")
     if status:
-        return f"번역 API 오류(HTTP {status})"
-    return "번역 API 호출에 실패했어요"
+        return ("http", f"번역 API 오류(HTTP {status})")
+    return ("unknown", "번역 API 호출에 실패했어요")
+
+
+def classify_translate_error(exc: Exception) -> str:
+    """사람이 읽을 한 줄(무음 금지·오귀인 금지). 사유코드는 classify_translate_reason 참조."""
+    return classify_translate_reason(exc)[1]
 
 
 _CAT_LABEL = {

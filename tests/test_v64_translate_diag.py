@@ -28,8 +28,12 @@ def test_classify_auth():
 
 
 def test_classify_quota():
-    assert "한도" in classify_translate_error(_exc_with_status(429))
-    assert "한도" in classify_translate_error(Exception("insufficient_quota"))
+    # v87-W7a 재개정: 429를 요청속도(rate_limit) vs 크레딧소진(insufficient_quota)으로 분리.
+    #   순수 429(속도 제한) → 결제 아님(오너가 OpenAI 지갑 뒤지지 않게).
+    rl = classify_translate_error(_exc_with_status(429, "rate limit reached"))
+    assert "속도" in rl and "결제 아님" in rl
+    q = classify_translate_error(Exception("insufficient_quota"))
+    assert "크레딧" in q or "결제" in q
 
 
 def test_classify_model():
