@@ -52,3 +52,19 @@ def test_upload_modal_uses_tokens():
     # 통과=청록·실패=적 토큰 뱃지 + pc-status.
     assert "pc-badge pc-badge-on" in t and "pc-badge pc-badge-danger" in t
     assert "pc-status pc-status-warning" in t and "pc-status pc-status-info" in t
+
+
+# ── 화면 3: 한눈에 보기(수집 이력, collect_history) ──────────────────
+def test_killist_has_editorial_header():
+    t = (TPL / "collect_history.html").read_text(encoding="utf-8")
+    assert "한눈에 보기" in t                      # 오버라인
+    assert "수집한 상품, 한눈에" in t               # 세리프 헤더
+    assert "pc-hairline" in t                       # 금 헤어라인
+
+
+def test_killist_no_bootstrap_color_badges_or_alerts():
+    t = (TPL / "collect_history.html").read_text(encoding="utf-8")
+    # 엑셀 동기화/일괄 결과 JS의 부트스트랩 색 배지·알림 잔재 0 → pc-badge·pc-status.
+    assert "badge bg-success" not in t and "badge bg-primary" not in t
+    assert "alert alert-info" not in t and "alert alert-warning" not in t
+    assert "pc-badge pc-badge-on" in t and "pc-status pc-status-info" in t
