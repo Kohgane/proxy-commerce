@@ -1458,7 +1458,16 @@ function kgpAcquireMeta(cb) {
     meta = meta || {};
     if (!_kgpTier1Landed(meta)) {
       meta.tier1_pending = true;
-      meta.mode = "simple";                                  // 정직 강등 — 서버가 '간이'로 표기
+      // v86-V(3): tier1 미착지 ≠ 간이. 아마존 상세는 상태 JSON(tier1) 미캡처라도 buybox+DOM 어댑터가
+      //   가격·옵션·리뷰를 채운 **tier2 full 추출**이다. 종전엔 tier1 미착지만 보고 mode='simple'로 과잉
+      //   강등해 echo가 'simple인데 options·reviews 동봉'으로 라벨-내용 모순이었고, 서버(_resolve_collect_mode)는
+      //   클라 simple을 그대로 신뢰해 '간이' 뱃지까지 붙었다. → 실제로 필드가 빈약할 때만 simple. 가격 +
+      //   (옵션|리뷰|평점|SKU|상세≥20자)면 full 유지(tier1_pending으로 tier1 상태만 정직 표기). 'core'(북마클릿) 불변.
+      var _rich = !!String(meta.price || "").trim() && (
+          (meta.options || []).length || (meta.reviews || []).length ||
+          String(meta.rating || "").trim() || (meta.skus || []).length ||
+          String(meta.description || "").length >= 20);
+      if (!_rich && String(meta.mode || "").toLowerCase() !== "core") meta.mode = "simple";
     }
     _kgpCarryCurrency(meta);
     _kgpMetaStore = { meta: meta, at: Date.now(), tries: tries, echo: _kgpMetaStore.echo };
@@ -3015,6 +3024,13 @@ function kgpDetectPageType() {
     const ov = sessionStorage.getItem("kgp_pt_ov:" + location.pathname);
     if (ov === "single" || ov === "list") return ov;
   } catch (e) {}
+  // v86-V [크리티컬]: 라쿠텐 상품 상세는 **호스트 게이트가 제네릭 타일 수보다 우선**한다.
+  //   item.rakuten.co.jp/{샵}/{코드}/ 는 상세 전용 서브도메인인데, 상세 페이지에 추천·사이드바 타일이
+  //   수십 개(오너 실기기: 스캔 105·상품 68·제네릭 91) 깔려 KGPDetect가 cardCount로 'list' 오판정 →
+  //   단품 수집 거부 + v86-H 억제(pageType==='list'에서만 발동)로 필드 전무였다. 상세 서브도메인+상품
+  //   경로(_kgpIsRakutenItemHref: 세그먼트 2개↑)면 single로 못박아 (a)FAB/팝업 단품 게이트 활성 (b)v86-H
+  //   억제 미발동. 목록=search.rakuten.co.jp은 이 판정 false라 불영향(벌크 34타일 계약 유지 — 상세 분기만).
+  try { if (typeof _kgpIsRakutenItemHref === "function" && _kgpIsRakutenItemHref(location.href)) return "single"; } catch (e) {}
   // v73 STEP2: 페이지 타입 판정은 순수 모듈(KGPDetect)에 위임 — 단일 소스(하네스로 계약 검증). 미로드 시 인라인 폴백.
   if (typeof KGPDetect !== "undefined" && KGPDetect.pageType) {
     let _n = 0; try { _n = kgpFindCards().length; } catch (e) { _n = 0; }

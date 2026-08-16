@@ -1864,6 +1864,19 @@
       }
     } catch (e) {}
 
+    // v86-V(2): 아마존도 초기 tier1(og:image·JSON-LD)이 **대표 1장만** 주면 needDom=false라 갤러리 DOM
+    //   (_amazonGallery는 images.length===0에서만 도는 _domImages 안)이 안 돌아 1장에 그친다(실기기: 썸네일
+    //   마크업 16곳·이미지 ID 75종인데 수집 1장). 라쿠텐과 **동일 패턴**으로 독립 수집·병합: #altImages 썸네일
+    //   스트립을 _amazonGallery(v70)로 긁고 hiRes/_amazonDynMax(v82) 승격 — 신규 발명 0. (상세 A+=detail_images는
+    //   이번 범위 밖 백로그.) 중복은 아래 uniqPush로 흡수.
+    try {
+      var _ah = ""; try { _ah = (location.hostname || "").toLowerCase(); } catch (e) {}
+      if (/(^|\.)amazon\.[a-z.]+$/.test(_ah) && images.length <= 1) {
+        var ag2 = _amazonGallery();
+        if (ag2.length > images.length) { ag2.forEach(function (u) { images.push(u); }); source = (source === "json" ? "json+dom" : source); }
+      }
+    } catch (e) {}
+
     // 이미지 원본해상도 + 순서 보존 + 중복 제거(이미 uniqPush로 됨). 1번=썸네일.
     var seen = {}, gallery = [];
     images.forEach(function (u) { uniqPush(gallery, seen, u); });
