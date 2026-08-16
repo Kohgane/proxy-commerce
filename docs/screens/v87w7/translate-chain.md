@@ -13,9 +13,16 @@ AI 초안이 **OpenAI 호출 실패 시에도 provider="stub"로 폴백**해 UI(
   `openai_error`(키 있으나 호출 실패 + `draft_error` 사유). 실패는 `translate_stats`에 적재(계측). 엔드포인트·UI가
   3분 문구 표시(키 미설정 / 키 있으나 실패+사유 / 성공). 키 값·마스킹 로그 0.
 
-## 1. 프로바이더 체인 (즉시 구현분)
-`translate_product`를 **체인**으로 재작성. 기본 순서(브리프대로 무료 우선):
-`mymemory`(무키·무가입) → `deepl`(키 있을 때만) → `openai`(키 있을 때만). 첫 성공 반환, 실패 시 다음.
+## 0. W7 회수 갱신 (오너 env 3종 등록·재배포 완료 — 2026-08-16)
+오너가 `DEEPL_API_KEY`(기존재)·`AZURE_TRANSLATOR_KEY`+`AZURE_TRANSLATOR_REGION`·`NCP_PAPAGO_CLIENT_ID/SECRET`·`OPENAI_API_KEY`+`OPENAI_MODEL`(gpt-4o-mini)을 전부 등록. **후보 표 → 실배선 완료.**
+- **확정 체인 순서**: `mymemory`(무료) → `papago`(NCP 공식) → `deepl` → `azure`(공식, 소스 자동감지) → `openai`(최후). 각 프로바이더는 해당 env가 있을 때만 체인 합류(`_provider_chain` 필터).
+- **공식 엔드포인트만**(비공식/ToS 위반 0): Papago=`papago.apigw.ntruss.com/nmt/v1/translation`(헤더 `x-ncp-apigw-api-key-id`/`x-ncp-apigw-api-key`), Azure=`api.cognitive.microsofttranslator.com/translate?api-version=3.0&to=ko`(헤더 `Ocp-Apim-Subscription-Key`/`-Region`).
+- **기존 DEEPL_API_KEY 경로 관계 = 흡수(병행 아님)**: 종전에도 `_translate_deepl`은 있었으나 이제 체인의 2·3순위 한 단계로 들어가 순차 폴백에 포함. 별도 DeepL 분기 없음(단일 체인).
+- 계약 `test_v87_w7b_papago_azure`(5): 체인 순서·Papago 양키 필수·공식 엔드포인트·확정 env명 헤더·papago 실패→azure 폴백.
+
+## 1. 프로바이더 체인
+`translate_product`를 **체인**으로 재작성. 기본 순서(무료 우선 → 저가/키필요 → OpenAI 최후):
+`mymemory` → `papago` → `deepl` → `azure` → `openai`. 첫 성공 반환, 실패 시 다음.
 - **env 오버라이드** `TRANSLATE_PROVIDER_CHAIN`(쉼표): 예 `openai,mymemory`로 품질 우선. `TRANSLATE_DISABLE_MYMEMORY=1`로 무료 끄기.
 - **MyMemory**(https://api.mymemory.translated.net) — 무키·무가입 무료 MT. 스크립트 기반 원문 언어 추정(ja/zh/en→ko).
 - 레코드에 **사용 프로바이더**(`translation_provider`) + **시도 이력**(`translation_attempts:[{provider,ok,error}]`) 기록 → 드로어 표시.

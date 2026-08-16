@@ -1,9 +1,13 @@
 """src/seller_console/ai/translator.py — 상품 번역 + 마켓별 광고 카피 자동 생성 (Phase 130).
 
-우선순위:
-1. OPENAI_API_KEY 활성 → GPT-4o-mini 사용
-2. DEEPL_API_KEY 활성 → DeepL (번역만, 카피는 template 기반)
-3. 둘 다 없음 → 원본 반환 + warning 로그
+번역 프로바이더 **체인**(v87-W7, 순차 폴백 — 하나 실패하면 다음). 기본 순서 = 무료 우선 → 저가/키필요 → OpenAI 최후:
+1. mymemory  — 무키·무가입 무료(TRANSLATE_DISABLE_MYMEMORY=1로 차단)
+2. papago    — NCP Papago NMT (NCP_PAPAGO_CLIENT_ID + NCP_PAPAGO_CLIENT_SECRET). ko·ja·zh 도메인 최적
+3. deepl     — DeepL (DEEPL_API_KEY). 번역만, 카피는 template
+4. azure     — Azure Translator (AZURE_TRANSLATOR_KEY + AZURE_TRANSLATOR_REGION). 소스 자동감지
+5. openai    — GPT (OPENAI_API_KEY + OPENAI_MODEL=gpt-4o-mini). 번역 + 카피, 최후 폴백
+전부 실패/키 전무 → 원본 유지(stub/-fallback, 정직 실패). `TRANSLATE_PROVIDER_CHAIN`(쉼표)로 순서·선택 오버라이드.
+※ 기존 DEEPL_API_KEY 경로는 별도 분기가 아니라 이 체인의 한 단계로 **흡수**됨(2번째 순위, 병행 아님).
 
 ADAPTER_DRY_RUN=1 시 실 API 호출 차단.
 """
@@ -314,17 +318,24 @@ class AITranslator:
     def _provider_chain(self) -> list:
         from src.utils.env import env_present
         override = os.getenv("TRANSLATE_PROVIDER_CHAIN", "").strip()
+        # v87-W7 회수: 무료 우선 → 저가/키필요(papago=ko·ja·zh 도메인 최적 → deepl 고품질 → azure 광역)
+        #   → OpenAI 최후. Papago/Azure는 오너가 등록한 확정 env명으로 배선(공식 엔드포인트만).
         names = ([n.strip().lower() for n in override.split(",") if n.strip()]
-                 if override else ["mymemory", "deepl", "openai"])
+                 if override else ["mymemory", "papago", "deepl", "azure", "openai"])
         chain = []
         for n in names:
             if n == "openai" and not env_present("OPENAI_API_KEY"):
                 continue
             if n == "deepl" and not env_present("DEEPL_API_KEY"):
                 continue
+            # Papago(NCP)는 CLIENT_ID·SECRET 둘 다 있어야 호출 가능.
+            if n == "papago" and not (env_present("NCP_PAPAGO_CLIENT_ID") and env_present("NCP_PAPAGO_CLIENT_SECRET")):
+                continue
+            if n == "azure" and not env_present("AZURE_TRANSLATOR_KEY"):
+                continue
             if n == "mymemory" and os.getenv("TRANSLATE_DISABLE_MYMEMORY") == "1":
                 continue
-            if n in ("mymemory", "deepl", "openai"):
+            if n in ("mymemory", "papago", "deepl", "azure", "openai"):
                 chain.append(n)
         return chain
 
@@ -358,8 +369,12 @@ class AITranslator:
             try:
                 if name == "mymemory":
                     res = self._translate_mymemory(title, description)
+                elif name == "papago":
+                    res = self._translate_papago(title, description)
                 elif name == "deepl":
                     res = self._translate_deepl(title, description)
+                elif name == "azure":
+                    res = self._translate_azure(title, description)
                 elif name == "openai":
                     res = self._translate_openai(title, description)
                 else:
@@ -647,6 +662,85 @@ class AITranslator:
                 "provider": "deepl-fallback",
                 "error": reason,
             }
+
+    def _translate_papago(self, title: str, description: str) -> dict:
+        """v87-W7 회수: 네이버 클라우드(NCP) Papago NMT — 공식 엔드포인트. ko·ja·zh 도메인 최적.
+        env: NCP_PAPAGO_CLIENT_ID / NCP_PAPAGO_CLIENT_SECRET. 실패면 error 담아 체인 폴백."""
+        import requests as _req
+        _env = __import__("src.utils.env", fromlist=["env_str"])
+        cid = _env.env_str("NCP_PAPAGO_CLIENT_ID")
+        secret = _env.env_str("NCP_PAPAGO_CLIENT_SECRET")
+        src = _detect_src_lang((title or "") + " " + (description or ""))
+        if src == "ko":   # 이미 한국어 → 번역 불필요(성공 처리, 원문 유지).
+            _record_translate(True, provider="papago")
+            return {"title_ko": title, "description_ko": description, "provider": "papago",
+                    "copy_coupang": self._copy_template(title, "coupang"),
+                    "copy_smartstore": self._copy_template(title, "smartstore"),
+                    "copy_11st": self._copy_template(title, "11st")}
+        headers = {"x-ncp-apigw-api-key-id": cid, "x-ncp-apigw-api-key": secret}
+
+        def _one(text: str) -> str:
+            text = (text or "").strip()
+            if not text:
+                return text
+            r = _req.post("https://papago.apigw.ntruss.com/nmt/v1/translation",
+                          headers=headers, data={"source": src, "target": "ko", "text": text[:4900]},
+                          timeout=10)
+            r.raise_for_status()
+            out = (((r.json() or {}).get("message") or {}).get("result") or {}).get("translatedText", "")
+            if not out:
+                raise RuntimeError("Papago 빈 응답")
+            return out
+        try:
+            title_ko = _one(title) or title
+            description_ko = _one(description) or description
+            _record_translate(True, provider="papago")
+            return {"title_ko": title_ko, "description_ko": description_ko, "provider": "papago",
+                    "copy_coupang": self._copy_template(title_ko, "coupang"),
+                    "copy_smartstore": self._copy_template(title_ko, "smartstore"),
+                    "copy_11st": self._copy_template(title_ko, "11st")}
+        except Exception as exc:
+            reason = classify_translate_error(exc)
+            _record_translate(False, reason=reason, provider="papago")
+            logger.warning("Papago 번역 실패(%s): %s", reason, exc)
+            return {"title_ko": title, "description_ko": description,
+                    "provider": "papago-fallback", "error": reason}
+
+    def _translate_azure(self, title: str, description: str) -> dict:
+        """v87-W7 회수: Azure Translator(Cognitive Services) — 공식 엔드포인트, 소스 자동 감지.
+        env: AZURE_TRANSLATOR_KEY (+ AZURE_TRANSLATOR_REGION, 지역 리소스면 필수). 실패면 체인 폴백."""
+        import requests as _req
+        _env = __import__("src.utils.env", fromlist=["env_str"])
+        key = _env.env_str("AZURE_TRANSLATOR_KEY")
+        region = _env.env_str("AZURE_TRANSLATOR_REGION")
+        headers = {"Ocp-Apim-Subscription-Key": key, "Content-Type": "application/json"}
+        if region:
+            headers["Ocp-Apim-Subscription-Region"] = region
+        try:
+            r = _req.post("https://api.cognitive.microsofttranslator.com/translate",
+                          params={"api-version": "3.0", "to": "ko"}, headers=headers,
+                          json=[{"Text": title or ""}, {"Text": description or ""}], timeout=10)
+            r.raise_for_status()
+            data = r.json()
+
+            def _pick(i, fallback):
+                try:
+                    return (data[i].get("translations") or [{}])[0].get("text") or fallback
+                except (IndexError, AttributeError, KeyError):
+                    return fallback
+            title_ko = _pick(0, title)
+            description_ko = _pick(1, description)
+            _record_translate(True, provider="azure")
+            return {"title_ko": title_ko, "description_ko": description_ko, "provider": "azure",
+                    "copy_coupang": self._copy_template(title_ko, "coupang"),
+                    "copy_smartstore": self._copy_template(title_ko, "smartstore"),
+                    "copy_11st": self._copy_template(title_ko, "11st")}
+        except Exception as exc:
+            reason = classify_translate_error(exc)
+            _record_translate(False, reason=reason, provider="azure")
+            logger.warning("Azure 번역 실패(%s): %s", reason, exc)
+            return {"title_ko": title, "description_ko": description,
+                    "provider": "azure-fallback", "error": reason}
 
     def _copy_openai(self, title: str, marketplace: str, hint: str) -> str:
         """OpenAI로 마켓별 카피 생성."""
