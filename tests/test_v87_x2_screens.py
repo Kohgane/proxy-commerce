@@ -34,3 +34,21 @@ def test_collect_no_bootstrap_alert_or_primary():
     assert "#e5e7eb" not in t
     # 토큰 대체 확인.
     assert "pc-status" in t and "text-teal" in t
+
+
+# ── 화면 2: 업로드(마켓 등록 모달, collect_preview) ──────────────────
+def test_upload_modal_no_bootstrap_color_badges_or_alerts():
+    t = (TPL / "collect_preview.html").read_text(encoding="utf-8")
+    # 업로드 모달·사전검증·결과 JS의 부트스트랩 색 배지/알림/파랑 강조 잔재 0.
+    assert "badge bg-success" not in t and "badge bg-danger" not in t
+    assert "badge bg-info" not in t and "badge bg-secondary" not in t
+    assert "alert alert-info" not in t and "alert alert-warning" not in t
+    assert "alert alert-danger" not in t
+    assert "text-primary" not in t
+
+
+def test_upload_modal_uses_tokens():
+    t = (TPL / "collect_preview.html").read_text(encoding="utf-8")
+    # 통과=청록·실패=적 토큰 뱃지 + pc-status.
+    assert "pc-badge pc-badge-on" in t and "pc-badge pc-badge-danger" in t
+    assert "pc-status pc-status-warning" in t and "pc-status pc-status-info" in t
