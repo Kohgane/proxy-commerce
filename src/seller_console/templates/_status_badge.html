@@ -1,0 +1,20 @@
+{# v87-W2-impl 주문 상태 라이프사이클 뱃지 — 공통 컴포넌트(orders·CS 재사용).
+   계층색(4) + 비색 단서: 진행=금+채운 도트수(1~4), 완료=청록+체크, 취소=먹뮤트+슬래시,
+   되돌림(반품·교환·환불)=브론즈+되돌림 아이콘(≠오류 적색). 그레이스케일·색약에서도 도트수/아이콘으로 구분.
+   label은 호출측이 i18n 반영해 전달(색만으로 못 하는 정밀 구분은 항상 라벨이 최종 구분자). #}
+{% macro status_badge(status, label) -%}
+{%- set _steps = {"new": 1, "paid": 2, "preparing": 3, "shipped": 4} -%}
+{%- if status in _steps -%}
+  {%- set _n = _steps[status] -%}
+  <span class="pc-lc pc-lc-progress" data-st="{{ status }}" data-step="{{ _n }}" title="진행 {{ _n }}/4단계">
+    <span class="pc-lc-dots" aria-hidden="true">{% for i in range(1, 5) %}<span class="pc-lc-dot{{ ' pc-lc-dot--on' if i <= _n else '' }}"></span>{% endfor %}</span>{{ label }}</span>
+{%- elif status == "delivered" -%}
+  <span class="pc-lc pc-lc-done" data-st="{{ status }}"><i class="bi bi-check-circle" aria-hidden="true"></i>{{ label }}</span>
+{%- elif status == "canceled" -%}
+  <span class="pc-lc pc-lc-cancel" data-st="{{ status }}"><i class="bi bi-slash-circle" aria-hidden="true"></i>{{ label }}</span>
+{%- elif status in ["returned", "exchanged", "refund_requested"] -%}
+  <span class="pc-lc pc-lc-return" data-st="{{ status }}"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>{{ label }}</span>
+{%- else -%}
+  <span class="pc-lc pc-lc-cancel" data-st="{{ status }}">{{ label }}</span>
+{%- endif -%}
+{%- endmacro %}
