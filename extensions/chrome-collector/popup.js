@@ -291,16 +291,24 @@ if (hoverAnchor) {
 function kgpSingleGateMessage(pt) {
   if (pt === "single") return null;
   if (pt === "list") return "목록 페이지예요. 타일의 [수집] 버튼이나 벌크바를 쓰세요";
+  // v87-W6(3): **미실행(콘텐츠 스크립트 부재) ≠ 비상품**. 종전엔 미실행도 'unknown'으로 뭉개져 "상품
+  //   페이지가 아니에요"(판정 결과)를 표시해 오너 오판을 유발했다(SUPERONE 건). 3분: 미실행/비상품/상품.
+  //   미실행·탭없음은 **'새로고침 필요'만** 안내하고, 판정 결과 문구는 판정이 실제로 돈 경우(unknown 등)에만.
+  if (pt === "not-injected" || pt === "no-tab")
+    return "이 페이지에서 수집기가 아직 실행되지 않았어요. 페이지를 새로고침한 뒤 다시 시도해 주세요.";
   return "상품 페이지가 아니에요. 상품/목록 페이지에서 수집할 수 있어요";
 }
-// 현재 탭의 pageType을 content_script(kgpDetectState)에서 조회. 미실행/오류면 'unknown'.
+// 현재 탭의 pageType을 content_script(kgpDetectState)에서 조회.
+//   v87-W6(3): 미실행(lastError=콘텐츠 스크립트 부재)과 '실행됐으나 판정 불가(unknown)'를 구분해 반환한다.
+//   미실행=not-injected / 탭없음=no-tab / 실행+미결=unknown / 실행+판정=single|list.
 function kgpGetPageType() {
   return new Promise((resolve) => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs && tabs[0];
-      if (!tab || !tab.id) { resolve("unknown"); return; }
+      if (!tab || !tab.id) { resolve("no-tab"); return; }
       chrome.tabs.sendMessage(tab.id, { action: "kgpDetectState" }, (r) => {
-        if (chrome.runtime.lastError || !r || !r.ok) { resolve("unknown"); return; }
+        if (chrome.runtime.lastError) { resolve("not-injected"); return; }   // 콘텐츠 스크립트 미실행
+        if (!r || !r.ok) { resolve("unknown"); return; }                     // 실행됐으나 판정 불가
         resolve(r.pageType || "unknown");
       });
     });

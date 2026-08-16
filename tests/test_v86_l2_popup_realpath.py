@@ -83,7 +83,7 @@ def test_popup_delegates_to_authoritative_path_first():
 
 
 def test_manifest_version_bumped():
-    assert MANIFEST["version"] == "1.5.146"
+    assert MANIFEST["version"] == "1.5.147"
 
 
 # ── 실브라우저 계약(하네스 그린 불인정 — playwright + 확장 로드) ────────────
