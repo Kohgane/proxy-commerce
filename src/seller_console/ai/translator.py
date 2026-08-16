@@ -29,6 +29,60 @@ def _is_contaminated(s: str) -> bool:
     """상품 텍스트가 아니라 확장 UI·페이지 크롬 오염어인지(초안·키워드에서 배제)."""
     return bool(s) and bool(_CONTAM_RE.search(str(s)))
 
+
+# v87-W5: 마켓 페이지 UI 쓰레기(상품 정보가 아님) — 라쿠텐 등 상세에서 스펙/키워드에 섞여 들어와
+#   AI 초안을 오염시켰다(오너 TSUMUGI: 不適切な商品を報告·レビュー·お気に入り·送料無料이 초안에 그대로).
+#   상품 속성어(サイズ/素材/원산지/색상/무게 등)는 건드리지 않도록 **UI 액션·배너 문구만** 좁게 매칭한다.
+_MARKET_UI_JUNK_RE = re.compile(
+    r"("
+    r"不適切|商品を報告|この商品を報告|通報|問い合わせ|お問い合わせ|"                       # JP: 신고·문의
+    r"レビュー|口コミ|お気に入り|ブックマーク|カート|買い物かご|購入手続き|レジ|"           # JP: 리뷰·찜·장바구니·결제
+    r"送料無料|あす楽|ポイント\d*\s*倍|楽天ポイント|クーポン|ランキング|売れ筋|再入荷|"     # JP: 배송/포인트/쿠폰/랭킹 배너
+    r"楽天市場|ショップを?見る|この商品について|数量|在庫あり|在庫なし|"                    # JP: 몰/재고/수량
+    r"리뷰|후기|리뷰\s*쓰기|신고|문의하기|장바구니|찜하기|즐겨찾기|쿠폰|무료\s*배송|배송비\s*무료|랭킹|재입고|재고\s*있음|"  # KO
+    r"write\s*a?\s*review|report\s*(this|item)|add\s*to\s*cart|wish\s*list|add\s*to\s*favorites?|free\s*shipping|coupon|in\s*stock|out\s*of\s*stock|ranking"  # EN
+    r")",
+    re.I,
+)
+
+
+def _is_ui_junk(s: str) -> bool:
+    """상품 속성이 아니라 마켓 페이지 UI 액션/배너 문구인지(초안·키워드·스펙에서 배제)."""
+    return bool(s) and bool(_MARKET_UI_JUNK_RE.search(str(s)))
+
+
+def _is_input_junk(s: str) -> bool:
+    """AI 초안 입력에서 버릴 오염(확장 크롬 + 마켓 UI 쓰레기) 통합 판정."""
+    return _is_contaminated(s) or _is_ui_junk(s)
+
+
+def _clean_specs_for_draft(specs) -> list:
+    """스펙 표에서 UI 쓰레기 행 제거(라벨 또는 값이 UI 액션/배너면 상품 스펙 아님) — 초안 오염 차단."""
+    out = []
+    for sp in (specs or []):
+        try:
+            label, value = str(sp[0] or "").strip(), str(sp[1] or "").strip()
+        except Exception:
+            continue
+        if not label or not value:
+            continue
+        if _is_input_junk(label) or _is_input_junk(value):
+            continue
+        out.append([label, value])
+    return out
+
+
+def _clean_keywords_for_draft(keywords) -> list:
+    """키워드에서 UI 쓰레기 제거(리뷰/신고/송료무료 등 상품어 아님)."""
+    if isinstance(keywords, str):
+        keywords = [k.strip() for k in keywords.split(",") if k.strip()]
+    out = []
+    for k in (keywords or []):
+        s = str(k or "").strip()
+        if s and len(s) > 1 and s not in out and not _is_input_junk(s):
+            out.append(s)
+    return out
+
 # 마켓별 카피 톤앤매너 프롬프트 힌트
 _MARKET_PROMPTS = {
     "coupang": "핵심 키워드 6개 + bullet list 형식. 간결하고 직접적.",
@@ -234,11 +288,12 @@ class AITranslator:
         """
         title = (product.get("title") or "").strip()
         category = (product.get("category") or "").strip()
-        keywords = product.get("keywords") or []
-        if isinstance(keywords, str):
-            keywords = [k.strip() for k in keywords.split(",") if k.strip()]
-        specs = product.get("specs") or []
         brand = (product.get("brand") or "").strip()
+
+        # v87-W5: 입력 전처리 — 마켓 UI 쓰레기(레ビュー·신고·송료무료 등)를 스펙/키워드에서 제거한 뒤
+        #   초안에 넣는다. 종전엔 라쿠텐 UI 문구가 스펙/키워드에 섞여 초안이 오염됐다(오너 TSUMUGI).
+        keywords = _clean_keywords_for_draft(product.get("keywords") or [])
+        specs = _clean_specs_for_draft(product.get("specs") or [])
 
         # 옵션(색상/사이즈 등)을 스펙 힌트로 흡수해 두면 키없음 구조초안이 풍부해진다.
         options = product.get("options") or []
@@ -263,6 +318,12 @@ class AITranslator:
         # v39-E2 #3 + CLAUDE.md: humanizer 의도 적용 — 사람이 직접 쓴 것처럼(AI 티·번역체·과장 금지).
         prompt = (
             "다음 상품의 한국어 상세설명 '초안'을 작성하세요. "
+            # v87-W5: 입력(상품명·스펙·키워드)이 외국어(일본어·중국어·영어)일 수 있다. 결과는 처음부터 끝까지
+            #   **자연스러운 한국어 판매 문안**이어야 하며, 원문 언어 조각을 남기거나 스펙 라벨/값을 기계 직역하지 않는다.
+            "입력 정보(상품명·스펙·키워드)가 외국어(일본어 등)일 수 있습니다. **결과물은 처음부터 끝까지 자연스러운 "
+            "한국어 판매 문안**으로 작성하고, 원문 언어(일본어·중국어 등) 조각을 그대로 남기거나 스펙 라벨·값을 기계 "
+            "번역기 말투로 직역하지 마세요. 스펙은 한국어로 자연스럽게 옮겨 정리하고, 소구점은 문장으로 풀어 주세요. "
+            "쇼핑몰 UI 문구(리뷰/후기/신고/장바구니/찜/쿠폰/포인트/배송 배너 등)는 상품 정보가 아니므로 **무시**하세요. "
             "사람이 직접 쓴 것처럼 자연스럽게 — AI 특유의 정형 문장·번역체·진부한 도입(\"여러분~\", \"~를 소개합니다\")·"
             "감탄 남발을 피하고, 짧고 구체적인 문장으로. "
             "톤: 건방지지 않게 공손하되 군더더기 없는 큐레이터 높임말. "
