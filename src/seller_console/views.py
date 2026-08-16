@@ -1659,6 +1659,26 @@ def collect_upload():
     if not markets:
         return jsonify({"ok": False, "error": "업로드 대상 마켓을 선택하세요."}), 400
 
+    # v87-W7 item2: 상세 병기 — 마켓에 보내는 상세는 **한국어 번역 + 구분선 + 원문**(원문 항상 보존).
+    #   저장 필드는 순수 유지, 전송 시점에만 합성. 편집본(product_data.description=번역/편집본)에 저장된
+    #   원문을 재읽어 병기. 둘이 같거나 원문 없으면 중복 없이 하나만(compose_bilingual).
+    try:
+        _iid = data.get("item_id")
+        if _iid:
+            from src.seller_console.ai.translator import compose_bilingual
+            _it = _get_owned_item(_iid)
+            _orig = ""
+            if _it:
+                try:
+                    _orig = (json.loads(_it.get("extra_json") or "{}") or {}).get("description") or ""
+                except Exception:
+                    _orig = ""
+            _bi = compose_bilingual(product_data.get("description") or "", _orig)
+            if _bi:
+                product_data["description"] = _bi
+    except Exception as _bexc:
+        logger.warning("상세 병기 합성 실패(원문 유지): %s", _bexc)
+
     # Phase 190: target_margin_pct를 payload에 반영 (마진율 실반영)
     target_margin_pct = data.get("target_margin_pct")
     if target_margin_pct is not None:
@@ -6569,13 +6589,18 @@ def collect_ai_description(item_id: str):
             "title": title, "category": category, "keywords": keywords,
             "specs": specs, "brand": extra.get("brand") or "",
             "options": extra.get("options") or [],   # v56 STEP3: 키없음 구조초안에 옵션표 반영
+            # v87-W7 item4: 무키 폴백 품질 — 원문 상세 라인을 통째 보존해 '숫자 조각 리스트' 방지.
+            "description": extra.get("description") or extra.get("description_ko") or "",
         })
     except Exception as exc:
         logger.warning("AI 상세 생성 오류: %s", exc)
         return jsonify({"ok": False, "error": "AI 상세 생성 중 오류가 발생했습니다."}), 500
 
+    # v87-W7a: 실패 사유 3분 — draft_status(openai/no_openai_key/openai_error) + draft_error(사유).
+    #   UI가 '키 미설정'과 '키 있으나 호출 실패(401·모델·타임아웃)'를 구분 안내(오귀인 박멸).
     return jsonify({"ok": True, "text": res.get("text", ""),
-                    "provider": res.get("provider", "stub"), "is_draft": True})
+                    "provider": res.get("provider", "stub"), "is_draft": True,
+                    "draft_status": res.get("draft_status", ""), "draft_error": res.get("draft_error", "")})
 
 
 @bp.post("/collect/preview/<item_id>/save")

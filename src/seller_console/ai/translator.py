@@ -96,6 +96,40 @@ def _dry_run() -> bool:
     return os.getenv("ADAPTER_DRY_RUN", "0") == "1"
 
 
+# v87-W7: MyMemory langpair용 원문 언어 추정(스크립트 기반 휴리스틱). 한글=ko / 가나=ja /
+#   가나 없는 한자=zh-CN / 그 외=en. 정밀 감지가 아니라 무료 MT 소스 지정용(틀리면 체인이 다음으로 폴백).
+_BILINGUAL_DIVIDER = "───────── 원문 (Original) ─────────"
+
+
+def compose_bilingual(ko: str, original: str) -> str:
+    """v87-W7 item2: 상세 병기 — 한국어 번역 상단 + 구분선 + 원문 하단. 마켓 등록 시 이 병기본이 나간다.
+    원문은 항상 보존(별도 저장 필드는 순수 유지, 병기는 표시·전송 시점에 합성). 둘이 같거나 한쪽이 비면
+    중복 없이 하나만."""
+    ko = str(ko or "").strip()
+    original = str(original or "").strip()
+    if not original or ko == original:
+        return ko or original
+    if not ko:
+        return original
+    return f"{ko}\n\n{_BILINGUAL_DIVIDER}\n{original}"
+
+
+def _detect_src_lang(text: str) -> str:
+    s = str(text or "")
+    if not s.strip():
+        return "en"
+    has_hangul = any("가" <= c <= "힣" for c in s)
+    if has_hangul:
+        return "ko"
+    has_kana = any(("぀" <= c <= "ゟ") or ("゠" <= c <= "ヿ") for c in s)
+    if has_kana:
+        return "ja"
+    has_han = any("一" <= c <= "鿿" for c in s)
+    if has_han:
+        return "zh-CN"
+    return "en"
+
+
 # v87-W6 item 2: 번역 실패 다발 조사 — **계측**(호출 n·성공 n·실패 n·사유별). 번역 무료 쿼터 회계와
 #   완전히 별개인 읽기 전용 관측 카운터(쿼터 무손대). 프로세스 인메모리 누적, get_translate_stats()로 노출.
 _TR_STATS = {"calls": 0, "ok": 0, "fail": 0, "by_reason": {}}
@@ -168,8 +202,10 @@ _CAT_LABEL = {
 }
 
 
-def _structured_draft(title, category, keywords, specs, options, brand) -> str:
-    """v56 STEP3: 키 없음 모드 구조 초안 — **확인된 정보만** 실키·실값으로. 빈/플레이스홀더 행은 생략, 창작 0."""
+def _structured_draft(title, category, keywords, specs, options, brand, description="") -> str:
+    """v56 STEP3: 키 없음 모드 구조 초안 — **확인된 정보만** 실키·실값으로. 빈/플레이스홀더 행은 생략, 창작 0.
+    v87-W7 item4: description(원문 상세)을 받으면 원문 스펙 라인을 **통째 보존**해 '숫자 조각 리스트' 대신
+    사람이 읽는 원문 라인을 남긴다(무키 폴백 품질). UI 쓰레기 라인은 제외."""
     def _clean(v):
         return str(v or "").strip()
 
@@ -222,8 +258,27 @@ def _structured_draft(title, category, keywords, specs, options, brand) -> str:
         for name, val in rows:
             lines.append(f"· {name}: {val}")
 
-    # 확인된 상세(키워드·옵션·스펙)가 하나도 없으면 창작 대신 입력 요청(정직).
-    if not kws and not rows:
+    # v87-W7 item4: 원문 상세 라인을 통째 보존(숫자 조각 리스트 금지). 스펙 표가 빈약해도 원문 상세가
+    #   있으면 사람이 읽는 라인을 그대로 남긴다(UI 쓰레기·중복 라인·초단문 제외). 창작 0.
+    _desc = _clean(description)
+    if _desc:
+        _seen_rows = {(_clean(a) + ":" + _clean(b)) for a, b in rows}
+        _desc_lines = []
+        for _ln in _desc.replace("\r", "").split("\n"):
+            _s = _clean(_ln)
+            if len(_s) < 2 or _is_input_junk(_s) or _is_contaminated(_s):
+                continue
+            if _s in _desc_lines:
+                continue
+            _desc_lines.append(_s)
+        if _desc_lines:
+            lines.append("")
+            lines.append("■ 원문 상세")
+            for _s in _desc_lines[:40]:
+                lines.append(_s)   # ★ 원문 라인 통째(숫자 조각으로 쪼개지 않음)
+
+    # 확인된 상세(키워드·옵션·스펙·원문상세)가 하나도 없으면 창작 대신 입력 요청(정직).
+    if not kws and not rows and not _clean(description):
         lines.append("")
         lines.append("· 확인된 상세 정보가 부족합니다. 소재·사이즈·용도 등을 직접 입력해 주세요.")
     # 안내 틀(정직 boilerplate — 없는 스펙 창작 아님, 항상 참인 일반 안내)
@@ -252,44 +307,127 @@ class AITranslator:
             return "deepl"
         return "stub"
 
+    # v87-W7 item1: 번역 프로바이더 **체인** — 하나 실패하면 다음 시도. 기본 순서는 브리프대로 **무료 우선**
+    #   (mymemory=무키·무가입) → 저가/키필요(deepl, 키 있을 때만) → OpenAI(키 있을 때만). env
+    #   `TRANSLATE_PROVIDER_CHAIN`(쉼표구분)로 순서·선택 오버라이드(예: "openai,mymemory"로 품질 우선).
+    #   mymemory는 `TRANSLATE_DISABLE_MYMEMORY=1`로 끌 수 있다(사설 프록시 등 외부호출 차단 환경).
+    def _provider_chain(self) -> list:
+        from src.utils.env import env_present
+        override = os.getenv("TRANSLATE_PROVIDER_CHAIN", "").strip()
+        names = ([n.strip().lower() for n in override.split(",") if n.strip()]
+                 if override else ["mymemory", "deepl", "openai"])
+        chain = []
+        for n in names:
+            if n == "openai" and not env_present("OPENAI_API_KEY"):
+                continue
+            if n == "deepl" and not env_present("DEEPL_API_KEY"):
+                continue
+            if n == "mymemory" and os.getenv("TRANSLATE_DISABLE_MYMEMORY") == "1":
+                continue
+            if n in ("mymemory", "deepl", "openai"):
+                chain.append(n)
+        return chain
+
     def translate_product(self, source: dict) -> dict:
-        """상품 메타데이터를 한국어로 번역하고 마켓별 카피 생성.
+        """상품 메타데이터를 한국어로 번역하고 마켓별 카피 생성 — **프로바이더 체인**(순차 폴백).
 
-        Args:
-            source: {"title": str, "description": str, ...}
-
-        Returns:
-            {
-              "title_ko": str,
-              "description_ko": str,
-              "copy_coupang": str,
-              "copy_smartstore": str,
-              "copy_11st": str,
-              "provider": str,
-            }
+        반환: {title_ko, description_ko, copy_*, provider, attempts:[{provider,ok,error}], (translate_error)}
+        - 첫 성공 프로바이더의 결과 반환 + attempts(시도 이력). 전부 실패면 원문 유지 + provider="none" +
+          translate_error(마지막 사유). 키/프로바이더 전무면 stub(원문 유지, 실패 아님).
         """
         title = source.get("title", "")
         description = source.get("description", "")
 
-        if self.provider == "openai" and not _dry_run():
-            return self._translate_openai(title, description)
-        if self.provider == "deepl" and not _dry_run():
-            return self._translate_deepl(title, description)
-
-        # stub / dry-run
         if _dry_run():
             logger.info("ADAPTER_DRY_RUN=1 — AITranslator stub 모드")
-        else:
-            logger.warning("AI 번역 키 미설정 — 원본 반환 (stub 모드)")
+            return {"title_ko": title, "description_ko": description, "provider": "stub",
+                    "copy_coupang": f"[stub] {title}", "copy_smartstore": f"[stub] {title}",
+                    "copy_11st": f"[stub] {title}", "attempts": []}
 
-        return {
-            "title_ko": title,
-            "description_ko": description,
-            "copy_coupang": f"[stub] {title}",
-            "copy_smartstore": f"[stub] {title}",
-            "copy_11st": f"[stub] {title}",
-            "provider": "stub",
-        }
+        chain = self._provider_chain()
+        if not chain:
+            logger.warning("AI 번역 프로바이더 없음(키·무료 모두 불가) — 원본 반환 (stub 모드)")
+            return {"title_ko": title, "description_ko": description, "provider": "stub",
+                    "copy_coupang": f"[stub] {title}", "copy_smartstore": f"[stub] {title}",
+                    "copy_11st": f"[stub] {title}", "attempts": []}
+
+        import time as _time
+        attempts = []
+        for name in chain:
+            _t0 = _time.time()
+            try:
+                if name == "mymemory":
+                    res = self._translate_mymemory(title, description)
+                elif name == "deepl":
+                    res = self._translate_deepl(title, description)
+                elif name == "openai":
+                    res = self._translate_openai(title, description)
+                else:
+                    continue
+            except Exception as exc:
+                res = {"provider": name + "-fallback", "error": classify_translate_error(exc)}
+            ok = str(res.get("provider") or "") == name and not res.get("error")
+            attempts.append({"provider": name, "ok": bool(ok), "error": str(res.get("error") or ""),
+                             "ms": int((_time.time() - _t0) * 1000)})   # v87-W7: 소요 시간 기록
+            if ok:
+                res["attempts"] = attempts
+                return res
+            logger.warning("[번역 체인] %s 실패(%s) → 다음 프로바이더", name, res.get("error") or "원인 미상")
+
+        # 체인 전부 실패 → 원문 유지(정직 실패). 마지막 프로바이더·사유를 보존(드로어·하위호환 진단).
+        _last = attempts[-1]["provider"] if attempts else ""
+        _err = (attempts[-1]["error"] if attempts else "") or "번역 실패"
+        return {"title_ko": title, "description_ko": description,
+                "provider": (_last + "-fallback") if _last else "none",
+                "error": _err, "translate_error": _err, "attempts": attempts,
+                "copy_coupang": f"[fallback] {title}", "copy_smartstore": f"[fallback] {title}",
+                "copy_11st": f"[fallback] {title}"}
+
+    def _translate_mymemory(self, title: str, description: str) -> dict:
+        """v87-W7: MyMemory 무료 번역 API(무키·무가입). 제목·상세 각각 요청, 한국어로.
+        실패(HTTP·쿼터·파싱)면 error를 담아 반환 → 체인이 다음 프로바이더로 폴백."""
+        import requests as _req
+
+        src = _detect_src_lang((title or "") + " " + (description or ""))
+        if src == "ko":   # 이미 한국어면 번역 불필요(원문 유지, 실패 아님이지만 체인상 성공 처리).
+            _record_translate(True, provider="mymemory")
+            return {"title_ko": title, "description_ko": description, "provider": "mymemory",
+                    "copy_coupang": self._copy_template(title, "coupang"),
+                    "copy_smartstore": self._copy_template(title, "smartstore"),
+                    "copy_11st": self._copy_template(title, "11st")}
+
+        def _one(text: str) -> str:
+            text = (text or "").strip()
+            if not text:
+                return text
+            # MyMemory 단일 요청 상한(약 500자) — 초과분은 그대로 두지 않고 문장 경계로 잘라 앞부분만(정직: 부분).
+            snippet = text[:480]
+            r = _req.get("https://api.mymemory.translated.net/get",
+                         params={"q": snippet, "langpair": f"{src}|ko"}, timeout=12)
+            r.raise_for_status()
+            j = r.json()
+            if int(j.get("responseStatus") or 0) != 200:
+                raise RuntimeError(f"MyMemory 응답 상태 {j.get('responseStatus')}")
+            out = ((j.get("responseData") or {}).get("translatedText") or "").strip()
+            if not out:
+                raise RuntimeError("MyMemory 빈 응답")
+            # 원문보다 길어진 미번역 잔여(원문 그대로 반환류)면 원문 유지.
+            return out if out and out.lower() != snippet.lower() else text
+
+        try:
+            title_ko = _one(title) or title
+            description_ko = _one(description) or description
+            _record_translate(True, provider="mymemory")
+            return {"title_ko": title_ko, "description_ko": description_ko, "provider": "mymemory",
+                    "copy_coupang": self._copy_template(title_ko, "coupang"),
+                    "copy_smartstore": self._copy_template(title_ko, "smartstore"),
+                    "copy_11st": self._copy_template(title_ko, "11st")}
+        except Exception as exc:
+            reason = classify_translate_error(exc)
+            _record_translate(False, reason=reason, provider="mymemory")
+            logger.warning("MyMemory 번역 실패(%s): %s", reason, exc)
+            return {"title_ko": title, "description_ko": description,
+                    "provider": "mymemory-fallback", "error": reason}
 
     def generate_marketplace_copy(self, product: dict, marketplace: str) -> str:
         """마켓별 톤앤매너에 맞는 광고 카피 생성.
@@ -331,17 +469,32 @@ class AITranslator:
 
         # 옵션(색상/사이즈 등)을 스펙 힌트로 흡수해 두면 키없음 구조초안이 풍부해진다.
         options = product.get("options") or []
+        description = str(product.get("description") or "").strip()   # v87-W7 item4: 원문 상세 라인 보존용
 
-        if self.provider == "openai" and not _dry_run():
+        # v87-W7a: 키 부재 vs 키 있으나 호출 실패를 **구분**한다. 종전엔 openai 실패도 provider="stub"로
+        #   폴백해 UI가 "AI 키가 설정되지 않아…"로 뭉갰다(키 있는데 미설정 오귀인 = 오너 결함). draft_status로
+        #   3분: openai(성공) / no_openai_key(키 부재) / openai_error(키 있으나 호출 실패+사유). 실패는 계측 적재.
+        from src.utils.env import env_present
+        draft_status = "no_openai_key"
+        draft_error = ""
+        if env_present("OPENAI_API_KEY") and not _dry_run():
             try:
-                return self._describe_openai(title, category, specs, keywords, brand)
+                _res = self._describe_openai(title, category, specs, keywords, brand)
+                _record_translate(True, provider="openai-draft")
+                _res.setdefault("draft_status", "openai")
+                return _res
             except Exception as exc:
-                logger.warning("AI 상세 생성 실패, 정직 구조화로 폴백: %s", exc)
+                draft_error = classify_translate_error(exc)
+                draft_status = "openai_error"
+                _record_translate(False, reason=draft_error, provider="openai-draft")
+                logger.warning("AI 상세 생성 실패(%s) — 구조화 폴백(키 있음, 호출 실패): %s", draft_error, exc)
 
-        # v56 STEP3: 키 없음 모드 = 확인된 정보(제목·카테고리·키워드·옵션·스펙)만으로 **구조 초안**.
+        # v56 STEP3: 키 없음/실패 모드 = 확인된 정보(제목·카테고리·키워드·옵션·스펙)만으로 **구조 초안**.
         #   ★ '- k: v' 플레이스홀더 버그 수리: 실키·실값만 렌더, 값 없는 행은 생략, 창작 0.
-        return {"text": _structured_draft(title, category, keywords, specs, options, brand),
-                "provider": "stub", "is_draft": True}
+        #   v87-W7 item4: 원문 상세를 넘겨 '숫자 조각 리스트' 대신 원문 스펙 라인을 통째 보존.
+        return {"text": _structured_draft(title, category, keywords, specs, options, brand, description),
+                "provider": "stub", "is_draft": True,
+                "draft_status": draft_status, "draft_error": draft_error}
 
     def _describe_openai(self, title, category, specs, keywords, brand) -> dict:
         import requests as _req

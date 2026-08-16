@@ -99,6 +99,13 @@
         </div>
         {% elif extra and extra.get('translate_requested') is false %}
         <div class="small text-muted mb-1"><i class="bi bi-translate"></i> 수집 시 번역 안 함(원문 그대로). 위 버튼으로 지금 번역할 수 있어요.</div>
+        {% elif extra and extra.get('translated') %}
+        {# v87-W7: 사용 프로바이더 + 시도 이력(체인). #}
+        <div class="small text-muted mb-1"><i class="bi bi-translate" style="color:var(--teal,#119a8e)"></i>
+          번역 프로바이더: <strong>{{ extra.get('translation_provider') }}</strong>
+          {% set _att = extra.get('translation_attempts') or [] %}
+          {% if _att|length > 1 %}<span style="color:var(--gold,#c9a24b)" title="{% for a in _att %}{{ a.provider }}:{{ '성공' if a.ok else '실패' }}{% if a.ms %}({{ a.ms }}ms){% endif %}{{ ' · ' if not loop.last }}{% endfor %}">· {{ _att|length }}차 폴백으로 성공</span>{% endif %}
+        </div>
         {% endif %}
         <input type="text" class="form-control" id="editTitle" placeholder="상품 제목">
         <div id="origTitleWrap" class="form-text small d-none">원문: <span id="origTitle" class="text-muted"></span>
@@ -171,6 +178,20 @@
                   placeholder="상품 상세 설명을 입력하세요 (소재·사이즈·사용법 등). 비워두면 저장되지 않아요."
                   oninput="updateDescCount(); hideAiDraftBadge();"></textarea>
         <div id="aiDescHint" class="form-text" style="display:none;"></div>
+        {# v87-W7 item2: 마켓 전송 미리보기(병기) — 한국어 번역 상단 + 구분선 + 원문 하단(원문 항상 보존).
+           읽기 전용. 실제 마켓 등록 시 이 병기본이 나갑니다. 번역/원문이 같으면 하나만. #}
+        {% set _ko = (extra.get('description_ko') if extra else '') or '' %}
+        {% set _orig = (extra.get('description') if extra else '') or '' %}
+        {% if _orig and _ko and _ko|trim != _orig|trim %}
+        <details class="mt-2 small" style="border:1px solid var(--line,#e6decb);border-radius:8px;padding:.4rem .6rem">
+          <summary style="cursor:pointer;font-weight:600"><i class="bi bi-layout-split" style="color:var(--teal,#119a8e)"></i> 마켓 전송 미리보기 — 한국어+원문 병기</summary>
+          <div class="mt-2" style="white-space:pre-wrap;color:var(--ink-soft,#3a352e);font-size:.86rem;line-height:1.55">{{ _ko|trim }}
+
+───────── 원문 (Original) ─────────
+{{ _orig|trim }}</div>
+          <p class="text-muted mb-0 mt-1" style="font-size:.74rem">원문은 항상 보존됩니다. 마켓 등록 시 위 병기본(한국어+원문)이 전송돼요.</p>
+        </details>
+        {% endif %}
       </div>
 
       <!-- [썸네일] 이미지 관리 — v55 STEP3: 갤러리 hover 삭제/대표/드래그 + 이미지 추가 1급 + 라이트박스 -->
@@ -1116,9 +1137,15 @@ async function aiDescribe() {
     if (badge) badge.style.display = '';
     if (hint) {
       hint.style.display = '';
-      hint.textContent = (data.provider === 'openai')
-        ? 'AI가 생성한 초안이에요. 사실과 다른 부분은 직접 고쳐 주세요(자동 확정 안 됨).'
-        : 'AI 키가 설정되지 않아 확인된 정보(제목·옵션)만 구조화했어요. OPENAI_API_KEY 설정 시 자연스러운 초안이 생성됩니다.';
+      // v87-W7a: 실패 사유 3분 — '키 미설정' / '키 있으나 호출 실패(사유)' / OpenAI 초안 성공. 오귀인 박멸.
+      if (data.provider === 'openai') {
+        hint.textContent = 'AI가 생성한 초안이에요. 사실과 다른 부분은 직접 고쳐 주세요(자동 확정 안 됨).';
+      } else if (data.draft_status === 'openai_error') {
+        hint.textContent = 'AI 키는 설정돼 있지만 호출에 실패해 확인된 정보만 구조화했어요 — 사유: '
+          + (data.draft_error || '원인 미상') + '. (모델명·키 유효성 확인 후 다시 시도)';
+      } else {
+        hint.textContent = 'AI 키(OPENAI_API_KEY)가 설정되지 않아 확인된 정보(제목·옵션·원문 상세)만 구조화했어요. 키 설정 시 자연스러운 초안이 생성됩니다.';
+      }
     }
   } catch (e) {
     pcToast('AI 상세 생성 오류: ' + e.message, 'error');

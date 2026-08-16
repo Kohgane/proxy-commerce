@@ -44,6 +44,7 @@ def test_translate_payload_carries_error(monkeypatch):
     # 키 있고 호출 401 → _translate_payload 결과에 translate_error(원인)가 실린다.
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-xxxxx")
     monkeypatch.delenv("ADAPTER_DRY_RUN", raising=False)
+    monkeypatch.setenv("TRANSLATE_PROVIDER_CHAIN", "openai")   # v87-W7: openai만 격리(체인 무료 프로바이더 네트워크 회피)
 
     def _boom(*a, **k):
         e = requests.HTTPError("unauthorized")
