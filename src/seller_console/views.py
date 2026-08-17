@@ -2396,6 +2396,19 @@ def collect_bulk_translate():
                 blocked += 1
             extra["title_ko"] = title_ko
             extra["description_ko"] = desc_ko
+            # v87-W8 item2: 상태 잔존 박멸 — 성공/실패가 화면에 공존하면 결함이다.
+            #   재번역 성공이면 옛 실패 배너·목록 뱃지의 근거(translate_error)를 즉시 소거하고 translated=True.
+            #   실패면 실패 사유를 갱신 저장(성공 뱃지 잔존 방지). 요청 자체가 있었으므로 translate_requested=True.
+            extra["translate_requested"] = True
+            if real:
+                extra["translated"] = True
+                extra["translation_provider"] = provider
+                if out.get("attempts") is not None:
+                    extra["translation_attempts"] = out.get("attempts")
+                extra.pop("translate_error", None)          # 성공 → 실패 근거 소거(잔존 금지)
+            elif item_err:
+                extra["translated"] = False
+                extra["translate_error"] = item_err          # 실패 사유 갱신(옛 성공 상태 잔존 방지)
             fields = {"extra_json": _json.dumps(extra, ensure_ascii=False)}
             # 실제 번역된 경우에만 표시 제목을 한국어로 갱신(가짜 번역으로 덮어쓰지 않음).
             if real and title_ko and title_ko != item.get("title"):
