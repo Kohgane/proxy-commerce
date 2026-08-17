@@ -56,6 +56,33 @@ def _is_ui_junk(s: str) -> bool:
     return bool(s) and bool(_MARKET_UI_JUNK_RE.search(str(s)))
 
 
+# v87-W8 item3: 제목 상용구(라쿠텐 등) — 번역 전 제목에서 제거할 마켓 판촉/배송 상용구.
+#   제목 segment 단위로 검사(공백···| 구분). 상품 속성어는 매칭 안 되게 좁게(선물포장/배송/포인트/쿠폰).
+_MARKET_TITLE_JUNK_RE = re.compile(
+    r"("
+    r"楽ギフ|ギフト対応|のし対応|熨斗|ラッピング(無料)?|包装(無料)?|"           # JP: 선물/포장 상용구
+    r"あす着|あす楽|翌日配送|即日発送|当日発送|送料無料|送料込|代引|"            # JP: 배송 상용구
+    r"ポイント\d*倍|楽天ポイント|買い回り|マラソン|スーパーSALE|"               # JP: 포인트/세일
+    r"クーポン|レビュー特典|ランキング\d*位?|\d+冠|"                             # JP: 쿠폰/후기특전/랭킹
+    r"무료\s*배송|배송비\s*무료|사은품|쿠폰|적립|"                                # KO 상용구
+    r"free\s*shipping|gift\s*wrap(ping)?"                                       # EN 상용구
+    r")",
+    re.I,
+)
+
+
+def strip_market_boilerplate(title: str) -> str:
+    """v87-W8 item3: 제목에서 마켓 판촉/배송 상용구 세그먼트를 제거(상품 속성어는 보존).
+    세그먼트가 통째로 상용구를 포함하면 드롭. 전부 제거되면 원문 유지(빈 제목 금지)."""
+    t = str(title or "").strip()
+    if not t:
+        return t
+    parts = re.split(r"[\s・|/]+", t)
+    kept = [p for p in parts if p and not _MARKET_TITLE_JUNK_RE.search(p)]
+    out = " ".join(kept).strip(" -_·|/")
+    return out or t
+
+
 def _is_input_junk(s: str) -> bool:
     """AI 초안 입력에서 버릴 오염(확장 크롬 + 마켓 UI 쓰레기) 통합 판정."""
     return _is_contaminated(s) or _is_ui_junk(s)
@@ -177,6 +204,36 @@ def raw_error_meta(exc: Exception):
     if not body:
         body = str(exc or "")[:300]
     return status, body
+
+
+def _is_rate_limit_exc(exc: Exception) -> bool:
+    resp = getattr(exc, "response", None)
+    code = getattr(resp, "status_code", None) if resp is not None else None
+    s = str(exc or "").lower()
+    return code == 429 or "rate limit" in s or "rate_limit" in s or "too many requests" in s
+
+
+def _post_with_429_retry(req, url, **kw):
+    """v87-W8 item4: OpenAI 상시 429 대응 — rate_limit이면 **짧은 백오프 1회**만 재시도(과금·지연 최소).
+    재시도도 실패하면 예외 전파 → 체인이 다음(또는 stub) 폴백. env OPENAI_RETRY_BACKOFF_SEC(기본 1.5, 0=끔)."""
+    try:
+        r = req.post(url, **kw)
+        r.raise_for_status()
+        return r
+    except Exception as exc:
+        if not _is_rate_limit_exc(exc):
+            raise
+        try:
+            backoff = float(os.getenv("OPENAI_RETRY_BACKOFF_SEC", "1.5") or 0)
+        except (TypeError, ValueError):
+            backoff = 1.5
+        if backoff > 0:
+            import time as _t
+            _t.sleep(min(backoff, 5))
+        logger.warning("OpenAI 429(rate_limit) — %.1fs 백오프 후 1회 재시도", backoff)
+        r = req.post(url, **kw)      # 1회만 재시도. 또 429면 raise → 폴백.
+        r.raise_for_status()
+        return r
 
 
 def record_translate_failure(exc: Exception, provider: str) -> str:
@@ -372,13 +429,18 @@ class AITranslator:
     #   (mymemory=무키·무가입) → 저가/키필요(deepl, 키 있을 때만) → OpenAI(키 있을 때만). env
     #   `TRANSLATE_PROVIDER_CHAIN`(쉼표구분)로 순서·선택 오버라이드(예: "openai,mymemory"로 품질 우선).
     #   mymemory는 `TRANSLATE_DISABLE_MYMEMORY=1`로 끌 수 있다(사설 프록시 등 외부호출 차단 환경).
-    def _provider_chain(self) -> list:
+    def _provider_chain(self, src_lang: str = None) -> list:
         from src.utils.env import env_present
         override = os.getenv("TRANSLATE_PROVIDER_CHAIN", "").strip()
         # v87-W7 회수: 무료 우선 → 저가/키필요(papago=ko·ja·zh 도메인 최적 → deepl 고품질 → azure 광역)
         #   → OpenAI 최후. Papago/Azure는 오너가 등록한 확정 env명으로 배선(공식 엔드포인트만).
-        names = ([n.strip().lower() for n in override.split(",") if n.strip()]
-                 if override else ["mymemory", "papago", "deepl", "azure", "openai"])
+        if override:
+            names = [n.strip().lower() for n in override.split(",") if n.strip()]
+        elif src_lang == "ja":
+            # v87-W8 item3: ja는 mymemory 저품질(라쿠텐 상용구 오역) → papago/deepl 선행, mymemory 최후순위.
+            names = ["papago", "deepl", "azure", "openai", "mymemory"]
+        else:
+            names = ["mymemory", "papago", "deepl", "azure", "openai"]
         chain = []
         for n in names:
             if n == "openai" and not env_present("OPENAI_API_KEY"):
@@ -403,7 +465,9 @@ class AITranslator:
         - 첫 성공 프로바이더의 결과 반환 + attempts(시도 이력). 전부 실패면 원문 유지 + provider="none" +
           translate_error(마지막 사유). 키/프로바이더 전무면 stub(원문 유지, 실패 아님).
         """
-        title = source.get("title", "")
+        # v87-W8 item3: 라쿠텐 상용구(楽ギフ_包装·あす着·送料無料 등)를 **번역 전** 제목에서 제거
+        #   (상품 속성어 보존). 안 그러면 mymemory가 상용구를 오역해 "Rakugifu_포장 내일 착용 서신"류가 남는다.
+        title = strip_market_boilerplate(source.get("title", ""))
         description = source.get("description", "")
 
         if _dry_run():
@@ -412,7 +476,9 @@ class AITranslator:
                     "copy_coupang": f"[stub] {title}", "copy_smartstore": f"[stub] {title}",
                     "copy_11st": f"[stub] {title}", "attempts": []}
 
-        chain = self._provider_chain()
+        # v87-W8 item3: 소스 언어별 체인 순서 — ja는 papago/deepl 선행, mymemory 후순위(저품질 오역 방지).
+        _src = _detect_src_lang((title or "") + " " + (description or ""))
+        chain = self._provider_chain(src_lang=_src)
         if not chain:
             logger.warning("AI 번역 프로바이더 없음(키·무료 모두 불가) — 원본 반환 (stub 모드)")
             return {"title_ko": title, "description_ko": description, "provider": "stub",
@@ -650,13 +716,10 @@ class AITranslator:
                 "max_tokens": _max_tokens,
                 "response_format": {"type": "json_object"},
             }
-            resp = _req.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=_timeout,
+            resp = _post_with_429_retry(   # v87-W8 item4: 429면 짧은 백오프 1회 재시도
+                _req, "https://api.openai.com/v1/chat/completions",
+                headers=headers, json=payload, timeout=_timeout,
             )
-            resp.raise_for_status()
             content = resp.json()["choices"][0]["message"]["content"]
             import json
             result = json.loads(content)

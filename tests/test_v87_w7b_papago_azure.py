@@ -89,6 +89,7 @@ def test_failure_message_names_provider(monkeypatch):
     # v87-W7 회수: 체인 전부 실패 시 실패 메시지에 **어느 단이 죽었는지** 프로바이더명 명시.
     monkeypatch.setenv("OPENAI_API_KEY", "sk-x")
     monkeypatch.setenv("TRANSLATE_PROVIDER_CHAIN", "openai")
+    monkeypatch.setenv("OPENAI_RETRY_BACKOFF_SEC", "0")   # v87-W8: 429 재시도 백오프 없이(테스트 지연 방지)
     import requests
 
     class _R429:
