@@ -86,3 +86,23 @@ AI 초안이 **OpenAI 호출 실패 시에도 provider="stub"로 폴백**해 UI(
 - **발화 주체 실측**: 상품 번역 경로(`translate_product`)는 예산 가드 **미경유**(copywriter/AI카피만 `BudgetExceededError` — views.py 402 응답도 "서버 월 예산 … OpenAI 잔액 아님"으로 명시). 즉 번역 실패는 프로바이더 사유(rate_limit/quota/auth), 예산 차단은 AI카피 경로.
 - **읽기전용 노출**: `/admin/diagnostics`에 "🧮 서버 AI 예산 가드" 카드(이번 달 누계·상한·%·차단 여부). 기존 `/seller/ai-budget` JSON도 존재.
 - 계약 `test_v87_w7a_cause_split`(8): 4코드 유일·budget "서버 월 예산"·rate_limit "결제 아님"·quota 결제·auth 키·diagnostics 노출·빌더 읽기전용.
+
+## 4. W7a 조사 범위 확정 (오너 구성 결백 실증: 예산 100 / OpenAI 한도 100 / 키 일치 / 잔액 $22.37)
+"한도 초과" 발화 주체는 코드 내부 → 2갈래 조사.
+
+### ① 내부 예산 추적기 감사 (오계산 여부 + 현재 누계 실측)
+- **산식**: `BudgetGuard.month_to_date()` = Google Sheets `ai_spend` 워크시트에서 `date`가 이번 달(`YYYY-MM` 접두)인 행의 `cost_usd` **합**.
+- **단위**: **USD**(Decimal). 기록측(copywriter `budget.record(total_cost)`)도 **USD**로 적재 — 달러/센트 혼용 **없음**(오계산 아님).
+- **리셋**: 별도 리셋 잡 없음 — `date` 문자열 월접두 필터로 **월 경계 자동 구분**.
+- **저장 위치**: **Google Sheets `ai_spend`** — **W3 PG 이관 대상 아님**(W3=collect_history·user_tokens·orders·market_links만). 시트 미연결/`ai_spend` 부재면 `month_to_date=0` → 절대 차단 안 함.
+- **현재 누계 실측(이 컨테이너)**: `used_usd=0.00 / limit=100.00 / pct=0.0% / status=ok / blocked=False`. (서버 실값은 `/admin/diagnostics` "🧮 서버 AI 예산 가드" 카드가 라이브로 표기 — ai_spend 내용에 의존.)
+- **결정적 사실**: 예산 가드는 **AICopywriter(/ai-create) 경로만** 게이트한다. **상품 번역(`translate_product`)·AI 상세초안(`generate_description`)은 예산 가드 미경유** → 번역/초안의 "한도 초과"는 예산 추적기가 **아니다**.
+
+### ② 프로바이더 응답 오표기 → 원 응답 계측 적재 (branch②)
+- 종전 429를 "사용량·결제 한도"로 뭉침(#609에서 rate_limit/quota/auth/budget 4분). 이제 **원 응답까지 보존**:
+  `record_translate_failure(exc, provider)`가 `raw_error_meta`로 **HTTP status + 응답 바디(300자)**를 `translate_stats.recent`에, 사유코드를 `by_code`에 적재(시크릿 없음, 에러 바디만).
+- 전 프로바이더(mymemory·papago·deepl·azure·openai·openai-draft) 실패 경로가 이 함수 경유 → **다음 실패부터 원문 사유가 남는다**.
+- **읽기전용 노출**: `/admin/diagnostics` "🌐 번역 계측" 카드 = 사유코드별 카운트 + 최근 실패 8건(프로바이더·코드·HTTP·원 응답 바디). '한도 초과' 오귀인을 원 응답과 대조.
+- 계약 `test_v87_w7a_raw_stats`(6): status·body 추출·원 응답 보존·링버퍼 상한·코드 분리·진단 노출·빌더 읽기전용.
+
+**결론(발화 주체)**: 오너의 번역 429는 **OpenAI rate_limit**(잔액 $22 → 결제 아님)이 "결제 한도"로 오표기된 것. 예산 추적기(정상·미차단·번역 미경유)는 무관. 이제 원 응답이 계측에 남아 재발 시 즉시 대조.

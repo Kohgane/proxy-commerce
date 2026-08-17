@@ -136,26 +136,63 @@ def _detect_src_lang(text: str) -> str:
 
 # v87-W6 item 2: 번역 실패 다발 조사 — **계측**(호출 n·성공 n·실패 n·사유별). 번역 무료 쿼터 회계와
 #   완전히 별개인 읽기 전용 관측 카운터(쿼터 무손대). 프로세스 인메모리 누적, get_translate_stats()로 노출.
-_TR_STATS = {"calls": 0, "ok": 0, "fail": 0, "by_reason": {}}
+# v87-W7a 재개정(branch②): 실패 시 **원 응답 코드·바디를 계측에 적재** — 다음 실패부터 원문 사유가 남게.
+#   by_code(사유코드별)·recent(최근 실패 원문: provider·status·body 스니펫)를 추가(쿼터 회계 무손대).
+_TR_STATS = {"calls": 0, "ok": 0, "fail": 0, "by_reason": {}, "by_code": {}, "recent": []}
 _TR_STATS_LOCK = threading.Lock()
+_TR_RECENT_MAX = 25
 
 
-def _record_translate(ok: bool, reason: str = "", provider: str = "") -> None:
+def _record_translate(ok: bool, reason: str = "", provider: str = "",
+                      code: str = "", status=None, body: str = "") -> None:
     with _TR_STATS_LOCK:
         _TR_STATS["calls"] += 1
         if ok:
             _TR_STATS["ok"] += 1
         else:
             _TR_STATS["fail"] += 1
-            key = (reason or "원인 미상")[:80]
+            key = (reason or code or "원인 미상")[:80]
             _TR_STATS["by_reason"][key] = _TR_STATS["by_reason"].get(key, 0) + 1
+            if code:
+                _TR_STATS["by_code"][code] = _TR_STATS["by_code"].get(code, 0) + 1
+            # 원 응답(코드·상태·바디 스니펫) 보존 — 오귀인 시 대조용. 시크릿 없음(에러 바디만, 300자).
+            _TR_STATS["recent"].append({
+                "provider": provider or "", "code": code or "", "status": status,
+                "body": (body or "")[:300], "reason": (reason or "")[:120]})
+            if len(_TR_STATS["recent"]) > _TR_RECENT_MAX:
+                _TR_STATS["recent"] = _TR_STATS["recent"][-_TR_RECENT_MAX:]
+
+
+def raw_error_meta(exc: Exception):
+    """예외에서 원 응답 (status_code, body 스니펫) 추출 — 프로바이더 응답 원문 보존용."""
+    status = None
+    body = ""
+    resp = getattr(exc, "response", None)
+    if resp is not None:
+        status = getattr(resp, "status_code", None)
+        try:
+            body = (getattr(resp, "text", "") or "")[:300]
+        except Exception:
+            body = ""
+    if not body:
+        body = str(exc or "")[:300]
+    return status, body
+
+
+def record_translate_failure(exc: Exception, provider: str) -> str:
+    """분류(코드·문구) + 원 응답(status·body)을 계측에 적재하고 사람 문구를 반환(호출측 error 표시용)."""
+    code, reason = classify_translate_reason(exc)
+    status, body = raw_error_meta(exc)
+    _record_translate(False, reason=reason, provider=provider, code=code, status=status, body=body)
+    return reason
 
 
 def get_translate_stats() -> dict:
-    """번역 호출 계측 스냅샷(읽기 전용) — 호출/성공/실패/사유별. 진단·리포트용(쿼터 회계와 무관)."""
+    """번역 호출 계측 스냅샷(읽기 전용) — 호출/성공/실패/사유별·코드별·최근 실패 원문. 쿼터 회계와 무관."""
     with _TR_STATS_LOCK:
         return {"calls": _TR_STATS["calls"], "ok": _TR_STATS["ok"], "fail": _TR_STATS["fail"],
-                "by_reason": dict(_TR_STATS["by_reason"])}
+                "by_reason": dict(_TR_STATS["by_reason"]), "by_code": dict(_TR_STATS["by_code"]),
+                "recent": list(_TR_STATS["recent"])}
 
 
 def reset_translate_stats() -> None:
@@ -165,6 +202,8 @@ def reset_translate_stats() -> None:
         _TR_STATS["ok"] = 0
         _TR_STATS["fail"] = 0
         _TR_STATS["by_reason"] = {}
+        _TR_STATS["by_code"] = {}
+        _TR_STATS["recent"] = []
 
 
 # v87-W7 회수: 실패 메시지에 **프로바이더명 명시** — 체인 도입 후 어느 단이 죽었는지 오너가 바로 알아야 한다.
@@ -458,8 +497,7 @@ class AITranslator:
                     "copy_smartstore": self._copy_template(title_ko, "smartstore"),
                     "copy_11st": self._copy_template(title_ko, "11st")}
         except Exception as exc:
-            reason = classify_translate_error(exc)
-            _record_translate(False, reason=reason, provider="mymemory")
+            reason = record_translate_failure(exc, "mymemory")   # v87-W7a: 원 응답 코드·바디까지 계측 적재
             logger.warning("MyMemory 번역 실패(%s): %s", reason, exc)
             return {"title_ko": title, "description_ko": description,
                     "provider": "mymemory-fallback", "error": reason}
@@ -519,9 +557,8 @@ class AITranslator:
                 _res.setdefault("draft_status", "openai")
                 return _res
             except Exception as exc:
-                draft_error = classify_translate_error(exc)
+                draft_error = record_translate_failure(exc, "openai-draft")   # v87-W7a: 원 응답 코드·바디 적재
                 draft_status = "openai_error"
-                _record_translate(False, reason=draft_error, provider="openai-draft")
                 logger.warning("AI 상세 생성 실패(%s) — 구조화 폴백(키 있음, 호출 실패): %s", draft_error, exc)
 
         # v56 STEP3: 키 없음/실패 모드 = 확인된 정보(제목·카테고리·키워드·옵션·스펙)만으로 **구조 초안**.
@@ -627,8 +664,7 @@ class AITranslator:
             _record_translate(True, provider="openai")   # v87-W6 계측
             return result
         except Exception as exc:
-            reason = classify_translate_error(exc)
-            _record_translate(False, reason=reason, provider="openai")   # v87-W6 계측(사유별 집계)
+            reason = record_translate_failure(exc, "openai")   # v87-W7a: 원 응답 코드·바디까지 계측 적재
             logger.warning("OpenAI 번역 실패(%s): %s", reason, exc)   # v64 STEP6: 원인 로깅(무음 금지)
             return {
                 "title_ko": title,
@@ -670,8 +706,7 @@ class AITranslator:
                 "provider": "deepl",
             }
         except Exception as exc:
-            reason = classify_translate_error(exc)
-            _record_translate(False, reason=reason, provider="deepl")   # v87-W6 계측(사유별 집계)
+            reason = record_translate_failure(exc, "deepl")   # v87-W7a: 원 응답 코드·바디까지 계측 적재
             logger.warning("DeepL 번역 실패(%s): %s", reason, exc)   # v64 STEP6: 원인 로깅(무음 금지)
             return {
                 "title_ko": title,
@@ -720,8 +755,7 @@ class AITranslator:
                     "copy_smartstore": self._copy_template(title_ko, "smartstore"),
                     "copy_11st": self._copy_template(title_ko, "11st")}
         except Exception as exc:
-            reason = classify_translate_error(exc)
-            _record_translate(False, reason=reason, provider="papago")
+            reason = record_translate_failure(exc, "papago")   # v87-W7a: 원 응답 코드·바디까지 계측 적재
             logger.warning("Papago 번역 실패(%s): %s", reason, exc)
             return {"title_ko": title, "description_ko": description,
                     "provider": "papago-fallback", "error": reason}
@@ -756,8 +790,7 @@ class AITranslator:
                     "copy_smartstore": self._copy_template(title_ko, "smartstore"),
                     "copy_11st": self._copy_template(title_ko, "11st")}
         except Exception as exc:
-            reason = classify_translate_error(exc)
-            _record_translate(False, reason=reason, provider="azure")
+            reason = record_translate_failure(exc, "azure")   # v87-W7a: 원 응답 코드·바디까지 계측 적재
             logger.warning("Azure 번역 실패(%s): %s", reason, exc)
             return {"title_ko": title, "description_ko": description,
                     "provider": "azure-fallback", "error": reason}

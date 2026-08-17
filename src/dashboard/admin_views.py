@@ -522,6 +522,9 @@ def _render_diagnostics(issued_magic_link: str | None):
     # v87-W7a: 서버 AI 예산 가드 현황(읽기 전용)
     ai_budget = _build_ai_budget_status()
 
+    # v87-W7a branch②: 번역 계측(사유코드별 + 최근 실패 원 응답) 읽기 전용
+    translate_stats = _build_translate_stats()
+
     # 섹션 6: 최근 24시간 알림 로그
     message_log = _build_message_log()
     cs_bot_status = _build_cs_bot_status()
@@ -585,6 +588,7 @@ def _render_diagnostics(issued_magic_link: str | None):
         market_health=market_health,
         pricing_status=pricing_status,
         ai_budget=ai_budget,
+        translate_stats=translate_stats,
         message_log=message_log,
         cs_bot_status=cs_bot_status,
         auth_status=auth_status,
@@ -1177,6 +1181,19 @@ def _build_market_health() -> dict:
         return {item["market"]: normalize_market_diagnostic_result(item) for item in run_all_market_diagnostics()}
     except Exception as exc:
         return {"market_diagnostics": {"status": "api_error", "detail": str(exc), "steps": []}}
+
+
+def _build_translate_stats() -> dict:
+    """v87-W7a branch②: 번역 계측(읽기 전용) — 사유코드별 + 최근 실패의 원 응답(status·body).
+    '한도 초과' 오귀인 대조용. 프로세스 인메모리(재시작 시 리셋), 쿼터 회계와 무관."""
+    try:
+        from src.seller_console.ai.translator import get_translate_stats
+        s = get_translate_stats()
+        s["available"] = True
+        return s
+    except Exception as exc:
+        logger.debug("번역 계측 로드 불가: %s", exc)
+        return {"available": False, "error": str(exc)}
 
 
 def _build_ai_budget_status() -> dict:
@@ -2719,6 +2736,34 @@ _DIAGNOSTICS_TEMPLATE = """
         {% else %}
         <div class="text-muted small">AI 예산 요약을 불러오지 못했습니다(ai_spend 시트 미연결 등). 가드 미작동 시 번역 실패는 프로바이더(OpenAI 등) 사유입니다.</div>
         {% endif %}
+      </div>
+    </div>
+
+    <!-- v87-W7a branch②: 번역 계측 — 사유코드별 + 최근 실패 원 응답(오귀인 대조) -->
+    <div class="card mb-4">
+      <div class="card-header fw-bold">🌐 번역 계측 (사유코드 · 최근 실패 원 응답)</div>
+      <div class="card-body">
+        {% if translate_stats.available %}
+        <ul class="mb-2">
+          <li>호출 {{ translate_stats.calls }} · 성공 {{ translate_stats.ok }} · 실패 {{ translate_stats.fail }}</li>
+          <li>사유코드별:
+            {% if translate_stats.by_code %}{% for code, n in translate_stats.by_code.items() %}<span class="badge bg-secondary">{{ code }} {{ n }}</span> {% endfor %}
+            {% else %}<span class="text-muted">실패 없음</span>{% endif %}
+          </li>
+        </ul>
+        {% if translate_stats.recent %}
+        <div class="fw-semibold small mb-1">최근 실패 원 응답(원문 사유 보존 — '한도 초과' 오귀인 대조)</div>
+        <div class="table-responsive"><table class="table table-sm small mb-0">
+          <thead><tr><th>프로바이더</th><th>코드</th><th>HTTP</th><th>원 응답(바디)</th></tr></thead>
+          <tbody>
+          {% for r in translate_stats.recent[-8:] | reverse %}
+            <tr><td>{{ r.provider }}</td><td>{{ r.code }}</td><td>{{ r.status if r.status is not none else '-' }}</td>
+                <td class="text-truncate" style="max-width:420px">{{ r.body }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table></div>
+        {% else %}<div class="text-muted small">최근 실패 없음(프로세스 재시작 시 리셋).</div>{% endif %}
+        {% else %}<div class="text-muted small">번역 계측을 불러오지 못했습니다.</div>{% endif %}
       </div>
     </div>
 
