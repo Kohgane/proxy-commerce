@@ -28,13 +28,13 @@
     </a>
     {# v87-W6: 번역 상태 3분 — 실패(사유+재시도 유도)/원문(사용자 선택)/미번역. 성공은 조용(기본 기대). #}
     {% if it.translate_error %}
-    <span class="badge mt-1 kgp-open-drawer" role="button" data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}"
+    <span class="badge mt-1 kgp-tr-badge kgp-open-drawer" role="button" data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}"
           style="background:color-mix(in srgb,var(--danger,#c2503c) 14%,transparent);color:var(--danger,#c2503c);cursor:pointer"
           title="번역 실패: {{ it.translate_error }} — 클릭해 드로어에서 다시 번역"><i class="bi bi-exclamation-triangle"></i> 번역 실패</span>
     {% elif it.translate_requested is false %}
-    <span class="badge mt-1" style="background:var(--hanji,#f5efe3);color:var(--muted,#8a8275);border:1px solid var(--line,#e6decb)" title="수집 시 번역 안 함(원문 그대로 저장)"><i class="bi bi-translate"></i> 원문(번역 안 함)</span>
+    <span class="badge mt-1 kgp-tr-badge" style="background:var(--hanji,#f5efe3);color:var(--muted,#8a8275);border:1px solid var(--line,#e6decb)" title="수집 시 번역 안 함(원문 그대로 저장)"><i class="bi bi-translate"></i> 원문(번역 안 함)</span>
     {% elif it.title_is_original %}
-    <span class="badge mt-1" style="background:color-mix(in srgb,var(--warn,#f5821f) 14%,transparent);color:var(--warn,#f5821f)" title="{{ '아직 한국어로 번역되지 않았어요' if current_lang != 'en' else 'Original (not translated)' }}"><i class="bi bi-translate"></i> 원문</span>
+    <span class="badge mt-1 kgp-tr-badge" style="background:color-mix(in srgb,var(--warn,#f5821f) 14%,transparent);color:var(--warn,#f5821f)" title="{{ '아직 한국어로 번역되지 않았어요' if current_lang != 'en' else 'Original (not translated)' }}"><i class="bi bi-translate"></i> 원문</span>
     {% endif %}
     {# v64 STEP7: 도메인 = 은은한 칩(토큰) — 색 남용 없이 위계만. #}
     <span class="d-inline-block text-truncate mt-1" title="{{ it.url }}"
@@ -50,7 +50,7 @@
     {% endif %}
     {# v81 STEP1 북마클릿 코어 폴백 / v86-F 목록 타일 간이 — 둘 다 제목·이미지만. [다시 수집] 권장(warn 토큰). #}
     {% if it.is_core %}
-    <span class="badge mt-1 kgp-open-drawer" role="button" data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}"
+    <span class="badge mt-1 kgp-tr-badge kgp-open-drawer" role="button" data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}"
           style="cursor:pointer;background:color-mix(in srgb,var(--warn,#f5821f) 14%,transparent);color:var(--warn,#f5821f);border:1px solid color-mix(in srgb,var(--warn,#f5821f) 40%,transparent)"
           title="{% if it.collect_mode == 'simple' %}목록 타일에서 간이 수집됨(제목·이미지만 — 상세·옵션은 목록에 없음){% else %}확장 수집기 미로드로 간이 수집됨(제목·이미지만){% endif %}. 클릭 → 드로어에서 [다시 수집]으로 상세·가격 보완"><i class="bi bi-lightning-charge"></i> 간이</span>
     {% endif %}

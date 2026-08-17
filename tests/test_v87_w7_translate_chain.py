@@ -44,7 +44,9 @@ def test_detect_src_lang():
 def test_chain_falls_over_and_records_attempts(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-x")
     monkeypatch.delenv("DEEPL_API_KEY", raising=False)
-    monkeypatch.delenv("TRANSLATE_PROVIDER_CHAIN", raising=False)
+    # v87-W9 item1: ja 입력은 이제 openai가 mymemory보다 앞선다(ja 라우팅). 이 테스트는 폴오버 기전 검증이므로
+    #   순서를 명시 오버라이드해 mymemory→openai 폴백을 고정한다.
+    monkeypatch.setenv("TRANSLATE_PROVIDER_CHAIN", "mymemory,openai")
     monkeypatch.delenv("ADAPTER_DRY_RUN", raising=False)
     import requests
 

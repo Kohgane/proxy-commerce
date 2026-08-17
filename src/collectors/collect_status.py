@@ -64,6 +64,25 @@ def _field_present(key: str, extra: Dict[str, Any], title_fallback: str = "") ->
     return False
 
 
+def _field_confirmed_none(key: str, extra: Dict[str, Any], core_ok: bool) -> bool:
+    """v87-W9 item6: 필드가 '해당 없음 확인'(N/A)인가 — '수집 실패'와 구분(분모 제외 대상).
+    - options: 핵심(가격·이미지)을 제대로 읽었는데 옵션이 비었으면 = 단일 상품(옵션 없음 확인).
+    - reviews: review_count가 명시적으로 0이면 = 리뷰 없음 확인(수집 실패 아님).
+    보수적: 확인 근거가 없으면 False(수집 실패로 남겨 정직 표기)."""
+    if key == "options":
+        return core_ok and not _nonempty(extra.get("options"))
+    if key == "reviews":
+        rc = extra.get("review_count")
+        try:
+            if rc is not None and int(str(rc).replace(",", "").strip() or "x") == 0:
+                return True
+        except (TypeError, ValueError):
+            pass
+        if extra.get("reviews_none") is True:
+            return True
+    return False
+
+
 def compute_collect_status(
     extra: Optional[Dict[str, Any]],
     title_fallback: str = "",
@@ -87,16 +106,24 @@ def compute_collect_status(
     core_missing: List[str] = []
     fields: List[Dict[str, Any]] = []
     filled = 0
+    effective_total = 0     # v87-W9 item6: '해당 없음 확인' 필드는 분모에서 제외(5/5 아닌 4/4 만점)
+    _core_ok = (_field_present("price", extra, title_fallback)
+                and _field_present("images", extra, title_fallback))
     for key, label, core in FIELDS:
         ok = _field_present(key, extra, title_fallback)
+        # v87-W9 item6: '없음 확인'(N/A) vs '수집 실패' 구분 — 확인된 해당 없음은 분모 제외.
+        na = (not ok) and (not core) and _field_confirmed_none(key, extra, _core_ok)
         src = str(sources.get(key) or "").strip().lower()
         # 소스가 안 넘어오면 present는 '있음', 누락은 '없음'(가짜 소스 날조 금지).
         # v51: Tier 라벨(Tier1=캡처 API/초기상태·Tier2=렌더 DOM·Tier3=og/meta) + 하위호환(json/dom/server).
         src_label = {
             "tier1": "Tier1(API/상태)", "tier2": "Tier2(DOM)", "tier3": "Tier3(og)",
             "ldjson": "ld+json", "json": "JSON", "dom": "DOM", "server": "서버파싱",
-        }.get(src, ("있음" if ok else "없음"))
-        fields.append({"key": key, "label": label, "ok": ok, "core": core, "source": src_label})
+        }.get(src, ("해당 없음" if na else ("있음" if ok else "없음")))
+        fields.append({"key": key, "label": label, "ok": ok, "core": core, "na": na, "source": src_label})
+        if na:
+            continue                      # 분모(effective_total)에서 제외 — 만점 계산에 미포함
+        effective_total += 1
         if ok:
             filled += 1
             present_labels.append(label)
@@ -115,7 +142,7 @@ def compute_collect_status(
     # v49 STEP5: 3단계 — 성공(전 필드)/부분(일부 누락)/실패(핵심 3 전부 미확보=추출 실패).
     #   저장은 됐으나 제목·가격·이미지가 모두 없으면 '부분'이 아니라 '실패'로 정직 표기(원인 명시).
     _core_total = len(_CORE)
-    if filled == TOTAL:
+    if filled == effective_total:          # v87-W9 item6: '없음 확인' 제외한 유효 필드 전부 present → 만점
         status = "성공"
         cause = ""
     elif len(core_missing) >= _core_total:
@@ -130,7 +157,7 @@ def compute_collect_status(
         "status": status,
         "cause": cause,
         "filled": filled,
-        "total": TOTAL,
+        "total": effective_total,      # v87-W9 item6: '없음 확인' 제외한 유효 분모(4/4 만점 가능)
         "present": present_labels,
         "missing": missing_labels,
         "missing_short": missing_short,
