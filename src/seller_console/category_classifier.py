@@ -71,16 +71,11 @@ CATEGORY_OPTIONS: List[Dict[str, str]] = (
 )
 
 
-def classify(title: str, description: str = "", keywords: str = "") -> Dict[str, Any]:
-    """상품명/설명/키워드에서 정규화 카테고리를 추정한다.
-
-    Returns: {"code", "label", "confidence", "matched": [kw...]}
-    키워드 미일치 시 GEN(confidence 0).
-    """
-    text = " ".join([title or "", description or "", keywords or ""]).lower()
+def _score_text(text: str):
+    """한 덩어리 텍스트에서 최고 점수 카테고리 규칙·히트·점수를 반환. (best_rule|None, hits, score)."""
+    text = (text or "").lower()
     if not text.strip():
-        return {**DEFAULT, "matched": [], "needs_manual": True}
-
+        return None, [], 0.0
     tokens = _tokens(text)
 
     def _matches(kw: str) -> bool:
@@ -99,10 +94,10 @@ def classify(title: str, description: str = "", keywords: str = "") -> Dict[str,
         score = sum(0.5 if k in _HOMONYM_AMBIGUOUS else (2.0 if len(k) >= 2 else 1.0) for k in hits)
         if hits and (best is None or score > best_score):
             best, best_hits, best_score = rule, hits, score
-    if not best:
-        return {**DEFAULT, "matched": [], "needs_manual": True,
-                "suggested_keywords": suggest_keywords("GEN", title)}
+    return best, best_hits, best_score
 
+
+def _finalize(best, best_hits, best_score, title: str, basis: str) -> Dict[str, Any]:
     has_strong = any(len(k) >= 2 and k not in _HOMONYM_AMBIGUOUS for k in best_hits)
     # 신뢰도: 점수 기반. 뚜렷한(멀티글자) 근거가 하나도 없으면 상한을 낮춰 '직접 선택'으로.
     confidence = min(0.5 + 0.15 * best_score, 0.95)
@@ -112,13 +107,43 @@ def classify(title: str, description: str = "", keywords: str = "") -> Dict[str,
     if confidence < _MANUAL_THRESHOLD:
         # 근거 약함 → 가짜 확정 금지, 사용자에게 직접 선택 요청(정직).
         return {"code": "GEN", "label": "기타", "confidence": round(confidence, 2),
-                "matched": best_hits[:5], "needs_manual": True,
+                "matched": best_hits[:5], "needs_manual": True, "basis": basis,
                 "suggested_keywords": suggest_keywords("GEN", title)}
 
     return {"code": best["code"], "label": best["label"],
             "confidence": round(confidence, 2), "matched": best_hits[:5],
-            "needs_manual": False,
+            "needs_manual": False, "basis": basis,
             "suggested_keywords": suggest_keywords(best["code"], title)}
+
+
+def classify(title: str, description: str = "", keywords: str = "") -> Dict[str, Any]:
+    """상품명/설명/키워드에서 정규화 카테고리를 추정한다. **제목 우선**(한국어 제목 기준).
+
+    v87-W8 item1: 종전엔 제목·설명·키워드를 한 텍스트로 **동등 가중** substring 매칭 →
+    설명 속 부수 카테고리어(폰그립 설명의 '책상/주방'→홈, 그릇 설명의 '충전/usb'→디지털)가
+    **제목의 실제 상품어를 눌러** 오분류(그릇→디지털·폰그립→홈 역방향, 오너 실증).
+    수리 = **제목만으로 확신 분류되면 그걸 채택**(설명 노이즈 차단), 제목이 약할 때만 설명·키워드 종합.
+    번역 성공 시 호출측이 한국어 제목을 넘기므로 자연히 한국어 제목 기준 재분류가 된다.
+
+    Returns: {"code", "label", "confidence", "matched", "needs_manual", "basis", "suggested_keywords"}
+    """
+    title = title or ""
+    description = description or ""
+    keywords = keywords or ""
+
+    # 1) 제목 우선 — 제목만으로 확신(비-GEN) 분류되면 설명 노이즈를 보지 않는다.
+    b, h, s = _score_text(title)
+    if b is not None:
+        res = _finalize(b, h, s, title, "title")
+        if res["code"] != "GEN":
+            return res
+
+    # 2) 제목이 무매칭/약함(원문만 있거나 애매) → 제목+설명+키워드 종합(best-effort).
+    b2, h2, s2 = _score_text(" ".join([title, description, keywords]))
+    if b2 is None:
+        return {**DEFAULT, "matched": [], "needs_manual": True, "basis": "none",
+                "suggested_keywords": suggest_keywords("GEN", title)}
+    return _finalize(b2, h2, s2, title, "combined")
 
 
 # 카테고리별 추천 키워드(검색 노출용 일반어). 자동분류 시 칩으로 제시 → 셀러가 골라 담는다.
