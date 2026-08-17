@@ -71,15 +71,24 @@ _MARKET_TITLE_JUNK_RE = re.compile(
 )
 
 
+# v87-W9 item2: 상용구 변형 내성 — 구분자(_·전각＿·전각공백·【】··) 무시. 楽ギフ 계열은 뒤따르는
+#   _包装/包装/対応까지 함께 제거(언더스코어 변형 '楽ギフ_包装' 미제거 재발 방지 — 실증 픽스처).
+_GIFT_RUN_RE = re.compile(r"[【\[]?楽ギフ[_＿\s　]*(包装|対応)?[】\]]?", re.I)
+_TITLE_SEP_RE = re.compile(r"[\s・|/／　_＿]+")
+
+
 def strip_market_boilerplate(title: str) -> str:
-    """v87-W8 item3: 제목에서 마켓 판촉/배송 상용구 세그먼트를 제거(상품 속성어는 보존).
-    세그먼트가 통째로 상용구를 포함하면 드롭. 전부 제거되면 원문 유지(빈 제목 금지)."""
+    """v87-W9 item2: 제목에서 마켓 판촉/배송 상용구를 제거(상품 속성어 보존). 구분자 변형에 내성.
+    ① 楽ギフ 런(_包装 등 접미 포함) 직접 제거 ② 구분자 정규화 후 세그먼트 드롭. 전부 제거되면 원문 유지."""
     t = str(title or "").strip()
     if not t:
         return t
-    parts = re.split(r"[\s・|/]+", t)
+    # ① 楽ギフ_包装/楽ギフ包装/【楽ギフ_包装】 등 언더스코어·전각·괄호 변형을 통째로 제거.
+    cleaned = _GIFT_RUN_RE.sub(" ", t)
+    # ② 구분자(공백·_·전각·・|/) 정규화 후 세그먼트 단위로 상용구 드롭.
+    parts = _TITLE_SEP_RE.split(cleaned)
     kept = [p for p in parts if p and not _MARKET_TITLE_JUNK_RE.search(p)]
-    out = " ".join(kept).strip(" -_·|/")
+    out = " ".join(kept).strip(" -_·|/【】[]")
     return out or t
 
 
@@ -158,6 +167,22 @@ def _detect_src_lang(text: str) -> str:
     has_han = any("一" <= c <= "鿿" for c in s)
     if has_han:
         return "zh-CN"
+    return "en"
+
+
+def _route_src_lang(text: str) -> str:
+    """v87-W9 item1: 체인·프로바이더 소스용 언어 감지 — **라틴 비율 무관**, 가나·한자 1자라도 있으면 ja.
+    라쿠텐/아마존JP가 주 소스라 한자 제목(예 '玉渕')도 ja로 라우팅(zh 오판→mymemory 로마자화 방지).
+    한글이 있으면 ko(번역 불필요), CJK 없으면 en."""
+    s = str(text or "")
+    if not s.strip():
+        return "en"
+    if any("가" <= c <= "힣" for c in s):
+        return "ko"
+    has_kana = any(("぀" <= c <= "ゟ") or ("゠" <= c <= "ヿ") for c in s)
+    has_han = any("一" <= c <= "鿿" for c in s)
+    if has_kana or has_han:      # 가나·한자 1자라도 → ja 체인(라틴 비율 무관)
+        return "ja"
     return "en"
 
 
@@ -476,8 +501,9 @@ class AITranslator:
                     "copy_coupang": f"[stub] {title}", "copy_smartstore": f"[stub] {title}",
                     "copy_11st": f"[stub] {title}", "attempts": []}
 
-        # v87-W8 item3: 소스 언어별 체인 순서 — ja는 papago/deepl 선행, mymemory 후순위(저품질 오역 방지).
-        _src = _detect_src_lang((title or "") + " " + (description or ""))
+        # v87-W8 item3 / v87-W9 item1: 소스 언어별 체인 — 가나·한자 1자라도 있으면 ja(라틴 비율 무관).
+        #   ja는 papago/deepl 선행, mymemory 후순위(저품질 로마자화 방지). 감지·체인을 결과에 기록(진단).
+        _src = _route_src_lang((title or "") + " " + (description or ""))
         chain = self._provider_chain(src_lang=_src)
         if not chain:
             logger.warning("AI 번역 프로바이더 없음(키·무료 모두 불가) — 원본 반환 (stub 모드)")
@@ -509,6 +535,8 @@ class AITranslator:
                              "ms": int((_time.time() - _t0) * 1000)})   # v87-W7: 소요 시간 기록
             if ok:
                 res["attempts"] = attempts
+                res["detected_lang"] = _src          # v87-W9 item1: 감지 언어·선택 체인 기록(진단만으로 판독)
+                res["chain"] = list(chain)
                 return res
             logger.warning("[번역 체인] %s 실패(%s) → 다음 프로바이더", name, res.get("error") or "원인 미상")
 
@@ -520,15 +548,68 @@ class AITranslator:
         return {"title_ko": title, "description_ko": description,
                 "provider": (_last + "-fallback") if _last else "none",
                 "error": _err, "translate_error": _err, "attempts": attempts,
+                "detected_lang": _src, "chain": list(chain),
                 "copy_coupang": f"[fallback] {title}", "copy_smartstore": f"[fallback] {title}",
                 "copy_11st": f"[fallback] {title}"}
+
+    def translate_options(self, options: list) -> dict:
+        """v87-W9 item3: 옵션명·값(ブラウン→브라운) 번역 + **원문 보존**. 체인 경유(ja면 papago 선두).
+
+        입력: [{name, values:[...]}]. 반환: {"options":[{name, name_ko, values, values_ko}], "provider", "translated": bool}
+        원문 보존: values/name은 그대로 두고 *_ko를 병기. 실패 시 *_ko=원문(가짜 번역 0).
+        """
+        opts = [o for o in (options or []) if isinstance(o, dict)]
+        if not opts:
+            return {"options": [], "provider": "none", "translated": False}
+        # 고유 용어 수집(옵션명 + 값) → 한 번에 매핑(중복 호출 최소, 최대 40개).
+        terms = []
+        for o in opts:
+            nm = str(o.get("name") or "").strip()
+            if nm:
+                terms.append(nm)
+            for v in (o.get("values") or ([o.get("value")] if o.get("value") is not None else [])):
+                sv = str(v or "").strip()
+                if sv:
+                    terms.append(sv)
+        uniq = []
+        for t in terms:
+            if t not in uniq:
+                uniq.append(t)
+        uniq = uniq[:40]
+        # 이미 한국어면 번역 불필요.
+        src = _route_src_lang(" ".join(uniq))
+        if src == "ko" or not uniq:
+            mapping = {t: t for t in uniq}
+            provider = "none"
+            translated = False
+        else:
+            # 짧은 용어들을 개행으로 이어 1콜(체인)로 번역 → 줄 단위 매핑(수·순서 보존 시).
+            #   제목이 아닌 **설명**으로 전달(제목 경로의 상용구 제거가 개행을 뭉개지 않게).
+            joined = "\n".join(uniq)
+            out = self.translate_product({"title": "", "description": joined})   # 빈 제목(감지 오염 방지)
+            provider = out.get("provider", "none")
+            translated = provider not in ("none", "stub", "") and not str(provider).endswith("-fallback")
+            ko_lines = [l.strip() for l in str(out.get("description_ko") or "").split("\n") if l.strip()]
+            if translated and len(ko_lines) == len(uniq):
+                mapping = {uniq[i]: ko_lines[i] for i in range(len(uniq))}
+            else:
+                mapping = {t: t for t in uniq}      # 매핑 어긋나면 원문 유지(가짜 번역 금지)
+                translated = False
+        out_opts = []
+        for o in opts:
+            nm = str(o.get("name") or "").strip()
+            vals = [str(v or "").strip() for v in (o.get("values") or ([o.get("value")] if o.get("value") is not None else [])) if str(v or "").strip()]
+            out_opts.append({
+                "name": nm, "name_ko": mapping.get(nm, nm),
+                "values": vals, "values_ko": [mapping.get(v, v) for v in vals]})
+        return {"options": out_opts, "provider": provider, "translated": translated}
 
     def _translate_mymemory(self, title: str, description: str) -> dict:
         """v87-W7: MyMemory 무료 번역 API(무키·무가입). 제목·상세 각각 요청, 한국어로.
         실패(HTTP·쿼터·파싱)면 error를 담아 반환 → 체인이 다음 프로바이더로 폴백."""
         import requests as _req
 
-        src = _detect_src_lang((title or "") + " " + (description or ""))
+        src = _route_src_lang((title or "") + " " + (description or ""))
         if src == "ko":   # 이미 한국어면 번역 불필요(원문 유지, 실패 아님이지만 체인상 성공 처리).
             _record_translate(True, provider="mymemory")
             return {"title_ko": title, "description_ko": description, "provider": "mymemory",
@@ -788,7 +869,7 @@ class AITranslator:
         _env = __import__("src.utils.env", fromlist=["env_str"])
         cid = _env.env_str("NCP_PAPAGO_CLIENT_ID")
         secret = _env.env_str("NCP_PAPAGO_CLIENT_SECRET")
-        src = _detect_src_lang((title or "") + " " + (description or ""))
+        src = _route_src_lang((title or "") + " " + (description or ""))
         if src == "ko":   # 이미 한국어 → 번역 불필요(성공 처리, 원문 유지).
             _record_translate(True, provider="papago")
             return {"title_ko": title, "description_ko": description, "provider": "papago",

@@ -2400,12 +2400,27 @@ def collect_bulk_translate():
             #   재번역 성공이면 옛 실패 배너·목록 뱃지의 근거(translate_error)를 즉시 소거하고 translated=True.
             #   실패면 실패 사유를 갱신 저장(성공 뱃지 잔존 방지). 요청 자체가 있었으므로 translate_requested=True.
             extra["translate_requested"] = True
+            # v87-W9 item4·5: 필드별 상태(제목·상세 분리) — '부분 성공'을 전체 실패로 뭉개지 않는다.
+            _title_ok = bool(real and title_ko and title_ko != title)
+            _desc_ok = bool(real and desc_ko and desc_ko != desc and len(str(desc_ko).strip()) >= 1)
             if real:
                 extra["translated"] = True
                 extra["translation_provider"] = provider
+                extra["title_translated"] = _title_ok
+                extra["desc_translated"] = _desc_ok
                 if out.get("attempts") is not None:
                     extra["translation_attempts"] = out.get("attempts")
+                if out.get("detected_lang"):
+                    extra["translation_lang"] = out.get("detected_lang")   # v87-W9 item1: 감지 언어 기록
                 extra.pop("translate_error", None)          # 성공 → 실패 근거 소거(잔존 금지)
+                # v87-W9 item3: 옵션명·값 번역(원문 보존 병기) — 실제 번역 성공 시에만.
+                if translator is not None and isinstance(extra.get("options"), list) and extra["options"]:
+                    try:
+                        _opt = translator.translate_options(extra["options"])
+                        extra["options"] = _opt.get("options") or extra["options"]
+                        extra["options_translated"] = bool(_opt.get("translated"))
+                    except Exception as _oe:
+                        logger.warning("옵션 번역 실패(원문 유지): %s", _oe)
             elif item_err:
                 extra["translated"] = False
                 extra["translate_error"] = item_err          # 실패 사유 갱신(옛 성공 상태 잔존 방지)
@@ -2422,6 +2437,8 @@ def collect_bulk_translate():
             _r_err = item_err if (not real and item_err) else ("무료 한도 소진" if (not allow and translator is not None and (title or desc)) else "")
             results.append({"id": item_id, "ok": bool(ok), "translated": real,
                             "reason": _r_err,
+                            "title_ok": _title_ok if real else False,   # v87-W9 item5: 필드별 상태
+                            "desc_ok": _desc_ok if real else False,
                             "title": fields.get("title", item.get("title"))})
     except Exception as exc:
         logger.warning("일괄 번역 오류: %s", exc)

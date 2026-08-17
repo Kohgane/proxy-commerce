@@ -1072,13 +1072,27 @@ async function runBulkTranslate() {
     if (!ctype.includes('application/json')) { pcToast(`요청 실패 (HTTP ${resp.status}).`, 'error'); return; }
     const data = await resp.json();
     if (!data.ok) { pcToast(data.error || '번역 실패', 'error'); return; }
-    // 번역된 제목으로 행 갱신
+    // 번역된 제목으로 행 갱신 + v87-W9 item5: 성공 시 '번역 실패'/'원문' 뱃지 즉시 소거(잔존 금지, 리로드 불필요).
     (data.results || []).forEach(r => {
-      if (r.translated && r.title) {
+      if (r.translated) {
         const chk = document.querySelector(`.row-chk[value="${r.id}"]`);
         const tr = chk && chk.closest('tr');
-        const a = tr && tr.querySelector('td a.fw-semibold');
-        if (a) { a.textContent = r.title; a.title = r.title; }
+        if (tr) {
+          if (r.title) { const a = tr.querySelector('td a.fw-semibold'); if (a) { a.textContent = r.title; a.title = r.title; } }
+          // 옛 번역실패·원문 뱃지 제거(성공/실패 공존 박멸). 제목만 성공·상세 실패면 '상세 원문' 표기.
+          tr.querySelectorAll('.kgp-tr-badge').forEach(b => b.remove());
+          if (r.desc_ok === false && r.title_ok) {
+            const cell = tr.querySelector('td a.fw-semibold') && tr.querySelector('td a.fw-semibold').parentElement;
+            if (cell) {
+              const s = document.createElement('span');
+              s.className = 'kgp-tr-badge badge mt-1';
+              s.style.cssText = 'background:color-mix(in srgb,var(--warn,#f5821f) 14%,transparent);color:var(--warn,#f5821f)';
+              s.title = '제목은 번역됨 · 상세는 원문';
+              s.innerHTML = '<i class="bi bi-translate"></i> 상세 원문';
+              cell.appendChild(s);
+            }
+          }
+        }
       }
     });
     // 무료 잔여 갱신
