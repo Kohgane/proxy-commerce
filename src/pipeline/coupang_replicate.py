@@ -350,3 +350,103 @@ def run_pilot_ingest(pilot_rows, *, channel, collect_fn, prevalidate_fn=None,
     return {"registered": False,                            # ★ 등록 안 함(오너 클릭 게이트)
             "summary": summ, "rows": rows_out,
             "note": "마켓 등록 직전 정지 — 오너 검수 후 일괄 등록 클릭(비가역 게이트)"}
+
+
+# ── v88-C 파일럿: 모집단(dedupe) · 선정 · 하드 정지 게이트 ────────────────────────
+# 오너 승인 모집단: coupang_sid truthy → sid 그룹핑 → sid당 대표 1건 = distinct 396.
+# 대표 선정은 **결정적**(난수 금지): ① krw+usd 모두 보유 ② sources[] ship_usd 보유 ③ ASIN 사전순.
+
+# ★ 하드 정지 게이트 — 코드 레벨. env로 못 뚫는다. 해제는 오너 검수 후 별도 커밋으로만.
+PILOT_REGISTER_APPROVED = False
+
+
+def pilot_register_guard() -> None:
+    """파일럿 등록 직전 강제 게이트. 상수 False → 항상 차단(env 오버라이드 불가)."""
+    if PILOT_REGISTER_APPROVED is not True:
+        raise RuntimeError("PILOT_REGISTER_APPROVED=False — 파일럿 자동 등록 하드 정지(오너 검수 후 별도 커밋으로만 해제)")
+
+
+def _rep_sort_key(asin: str, entry: dict):
+    """대표 선정 정렬 키(결정적). 오름차순 min이 대표 — 우선순위 높을수록 작은 키."""
+    has_both = 0 if (entry.get("krw") and entry.get("usd")) else 1        # 0 우선
+    has_ship = 0 if any((s or {}).get("ship_usd") is not None
+                        for s in (entry.get("sources") or [])) else 1     # 0 우선
+    return (has_both, has_ship, str(asin))                                # ASIN 사전순 타이브레이커
+
+
+def build_pilot_population(sourcing_map: dict) -> dict:
+    """모집단 산출 — coupang_sid truthy 그룹핑 → sid당 대표 1. 원본 불변(읽기전용).
+
+    반환: {population:[{sid, asin, krw, usd, name_ko, primary_url, source, reason}], count,
+           reduction:{truthy, distinct_sid, dropped_dup}}.
+    """
+    groups = {}
+    truthy = 0
+    for asin, e in (sourcing_map or {}).items():
+        sid = e.get("coupang_sid")
+        if not sid:
+            continue
+        truthy += 1
+        groups.setdefault(sid, []).append(asin)
+    pop = []
+    for sid, asins in groups.items():
+        # 결정적 대표: 정렬 키 min.
+        rep_asin = min(asins, key=lambda a: _rep_sort_key(a, sourcing_map[a]))
+        e = sourcing_map[rep_asin]
+        srcs = sorted(e.get("sources") or [], key=lambda s: s.get("priority", 99))
+        prim = srcs[0] if srcs else {}
+        e_has_both = bool(e.get("krw") and e.get("usd"))
+        e_has_ship = any((s or {}).get("ship_usd") is not None for s in (e.get("sources") or []))
+        reason = ("krw+usd" if e_has_both else "") + ("|ship_usd" if e_has_ship else "") + \
+                 (f"|asin사전순(그룹 {len(asins)})" if len(asins) > 1 else "|단일")
+        pop.append({"sid": sid, "asin": rep_asin, "krw": e.get("krw"), "usd": e.get("usd"),
+                    "name_ko": e.get("name_ko"), "primary_url": prim.get("url"),
+                    "source": classify_source(prim.get("url"), ),
+                    "group_size": len(asins), "reason": reason.lstrip("|")})
+    # 결정적 정렬(sid 오름차순) — 재현 가능.
+    pop.sort(key=lambda r: r["sid"])
+    return {"population": pop, "count": len(pop),
+            "reduction": {"truthy": truthy, "distinct_sid": len(groups),
+                          "dropped_dup": truthy - len(groups)}}
+
+
+def select_pilot(population: list, n: int = 50) -> list:
+    """396 → n건 **결정적** 샘플(sid 오름차순 stride). 난수 금지 — 같은 입력이면 같은 n건."""
+    pop = sorted(population or [], key=lambda r: r["sid"])
+    L = len(pop)
+    if L <= n:
+        return list(pop)
+    stride = L / float(n)
+    return [pop[int(i * stride)] for i in range(n)]
+
+
+def build_review_row(entry: dict, *, channel: str = "woocommerce_multishop",
+                     blacklist=None, translate_fn=None, price_override=None,
+                     margin_rate: float = DEFAULT_MARGIN_RATE) -> dict:
+    """검수표 1행. 번역=원본에서 재처리(표시본 재처리 금지). 가격=현행가 주입(없으면 sourcing krw 기준).
+
+    금지 85 필터 **강제 통과** — 미통과는 excluded=True + reason(조용한 탈락 금지). 등록은 하지 않는다.
+    """
+    title_src = entry.get("name_ko") or ""
+    fb = is_forbidden(title_src, blacklist=blacklist)
+    # 가격: 현행가(price_override, 라이브 조인 시 재조회) 우선, 없으면 sourcing krw(원가).
+    cost = price_override if price_override is not None else entry.get("krw")
+    price = recalc_channel_price(cost, channel, margin_rate=margin_rate) if cost else \
+        {"ok": False, "reason": "원가 미상"}
+    # 번역: 원본에서(주입 translate_fn — 라이브 시 체인, 오프라인 미주입이면 원문 유지).
+    title_ko = title_src
+    if translate_fn:
+        try:
+            out = translate_fn({"title": title_src, "description": ""})
+            title_ko = (out.get("title_ko") or "").strip() or title_src
+        except Exception:
+            title_ko = title_src
+    return {
+        "sid": entry.get("sid"), "asin": entry.get("asin"),
+        "title_ko": title_ko, "cost_krw": cost,
+        "sale_krw": price.get("sale_price_krw") if price.get("ok") else None,
+        "margin_pct": price.get("margin_rate") if price.get("ok") else None,
+        "target_channel": channel, "source": entry.get("source"),
+        "forbidden": fb, "excluded": bool(fb),
+        "dedup_reason": entry.get("reason"), "registered": False,
+    }

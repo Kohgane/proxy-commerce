@@ -67,3 +67,11 @@ fx 미상 시 가짜 환산 0(price ok=False). 반환 summary = {ingested·skipp
 1. 계정별 `fetch_inventory`(externalVendorSku 포함, 읽기 전용) 글루 + `run_inventory_join` 라이브 배선 → **수치표 산출**.
 2. 파일럿 50건: `plan_pilot` → 인입→번역→분류→가격→사전검증 배치, 등록 직전 정지 UI(오너 검수 목록).
 3. 실증: 1항 수치표(판매중 n·매칭 m·미매칭 k·소스분포) + 파일럿 상태 분포(5/5·부분·실패 각 n).
+
+## 파일럿 배선 (v88-C, 오너 모집단 승인 396)
+- **모집단(결정적)**: `build_pilot_population` — coupang_sid truthy **636** → sid 그룹핑 → sid당 대표 1 = **distinct 396**(감쇄 240). 대표 우선순위 ①krw+usd 보유 ②sources ship_usd ③ASIN 사전순. 난수 0(재현성 검증). 산출 `data/pilot_population.json`(396, 선정 사유 필드). 원본 sourcing_map 불변.
+- **50 선정**: `select_pilot` — sid 오름차순 stride(결정적, 난수 0).
+- **검수표**(`build_review_row`): sid·ASIN·번역제목(원본 name_ko)·현행가/원가·마진%·타겟채널·**금지 85 필터 판정(사유)**·중복제거 근거. 금지 미통과=`excluded_table`에 사유와 함께(조용한 탈락 금지). 85 리스트는 오너 자산 → `data/coupang_blacklist85.json` 주입(레포 미보유, 카테고리+금지어는 상시).
+- **admin 트리거**: `POST /admin/coupang-pilot`(오너 세션 인증) → 396→50→검수표. 라이브 조인(쿠팡 현행가·재고·판매상태 재조회, 저장 스테일값 신뢰 금지)은 쿠팡 자격+릴레이(Render)일 때만; 미충족=sourcing krw(원가, 현행가 아님)+access 보고.
+- **하드 정지**: `PILOT_REGISTER_APPROVED=False`(상수, env로 못 뚫음) + `pilot_register_guard()`. 등록은 **오너 검수 후 별도 커밋으로만** 해제. 전 검수 행 `registered=False`.
+계약 `test_v88_c_pilot`(9: 396 결정성·대표우선순위·50 결정성·하드정지·검수표/블랙리스트·admin 게이트).
