@@ -3,6 +3,13 @@ on:
   push:
     tags:
       - 'v*'
+  # v88-A: 태그 push 권한 없는 경로(에이전트/프록시)에서도 릴리즈를 낼 수 있도록 수동 디스패치 지원.
+  #   version 입력으로 태그명을 받아, gh release create --target <sha> 가 그 커밋에 태그+릴리즈를 만든다.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag (예: v1.5.149) — manifest 버전과 일치 권장'
+        required: true
 
 jobs:
   release:
@@ -16,6 +23,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Resolve tag name
+        id: tag
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "name=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
       - name: Generate changelog
         id: changelog
         run: |
@@ -26,12 +41,13 @@ jobs:
       - name: Build extension zip (store submission)
         run: |
           mkdir -p dist
-          python scripts/build_extension_zip.py "dist/gogabridj-collector-${{ github.ref_name }}.zip"
+          python scripts/build_extension_zip.py "dist/gogabridj-collector-${{ steps.tag.outputs.name }}.zip"
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ github.ref_name }}" \
-            --title "Release ${{ github.ref_name }}" \
+          gh release create "${{ steps.tag.outputs.name }}" \
+            --title "Release ${{ steps.tag.outputs.name }}" \
             --notes-file CHANGELOG_RELEASE.md \
-            "dist/gogabridj-collector-${{ github.ref_name }}.zip"
+            --target "${{ github.sha }}" \
+            "dist/gogabridj-collector-${{ steps.tag.outputs.name }}.zip"
