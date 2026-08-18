@@ -1,6 +1,7 @@
 # 백그라운드 번역 — 설계 문서 (v88-B)
 
-> 상태: **설계(승인 게이트용)**. 코드 최소. 승인 후 **구현 트랙 분리**.
+> 상태: **구현 완료**(오너 "전부 가라" 승인). 설계=이 문서, 구현=아래 §8 배선. feature flag `TRANSLATE_BACKGROUND=1` + PG 가동 시 활성, 아니면 기존 동기 경로(무회귀).
+> 구현 파일: `src/db/schema_stage5.sql`(translation_jobs) · `src/db/translation_jobs_pg.py`(enqueue/lease/complete/fail/get_by_ids) · `src/seller_console/translate_worker.py`(drain_once) · 라우트 `/collect/translate/{enqueue,status}` + cron `/cron/translate-drain`. 계약 `test_v88_b_impl_*`(PG 7 + 라우트 8).
 > 오너 결정: "전부 가라" — 설계 트랙 개시. **W10 요청 예산 캡은 유지**(안전망 이중화).
 > 불변 원칙(금지): **번역 체인 로직·요청 예산 캡·무료 쿼터 회계 무손대.** 이 설계는 번역을 *어디서 실행하는지*(요청 경로 → 백그라운드 워커)만 바꾼다.
 

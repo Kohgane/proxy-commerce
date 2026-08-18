@@ -126,6 +126,7 @@ jobs:
             --ignore=tests/test_v45_supabase_stage3.py \
             --ignore=tests/test_v45_token_bulk_delete.py \
             --ignore=tests/test_v49_db_metering.py \
+            --ignore=tests/test_v88_b_impl_translation_jobs.py \
             2>&1 | tee /tmp/pytest_full.txt
           echo "----- 요약(pass/fail/skip) -----"; tail -1 /tmp/pytest_full.txt
           # 인프라 skip 0 강제: KGP_REQUIRE_BROWSER=1이 인프라 skip을 실패로 전환하므로 여기서 SKIPPED로 남는
@@ -184,6 +185,7 @@ jobs:
             tests/test_v45_supabase_stage3.py \
             tests/test_v45_token_bulk_delete.py \
             tests/test_v49_db_metering.py \
+            tests/test_v88_b_impl_translation_jobs.py \
             2>&1 | tee /tmp/pytest_pg.txt
           tail -1 /tmp/pytest_pg.txt
 

@@ -2311,6 +2311,66 @@ def collect_bulk_category():
     return jsonify({"ok": True, "updated": updated, "results": results})
 
 
+def _background_translate_enabled() -> bool:
+    """백그라운드 번역 활성 = feature flag + PG 가동. 둘 중 하나라도 없으면 기존 동기 경로(무회귀)."""
+    if os.getenv("TRANSLATE_BACKGROUND", "0") != "1":
+        return False
+    try:
+        from src.db import translation_jobs_pg as _jobs
+        return _jobs.enabled()
+    except Exception:
+        return False
+
+
+@bp.post("/collect/translate/enqueue")
+def collect_translate_enqueue():
+    """v88-B: 번역을 백그라운드 작업으로 등록(요청 경로 — 체인 미호출, 수십 ms).
+
+    flag off / PG 미가동이면 background=False 반환 → 클라이언트는 기존 동기 /collect/bulk-translate 사용(무회귀).
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    item_ids = data.get("item_ids") if isinstance(data.get("item_ids"), list) else []
+    item_ids = [str(i) for i in item_ids if str(i).strip()][:300]
+    if not item_ids:
+        return jsonify({"ok": False, "error": "상품을 선택하세요."}), 400
+    if not _background_translate_enabled():
+        # 정직: 백그라운드 미가동 → 동기 경로로 폴백하라고 신호(가짜 진행 0).
+        return jsonify({"ok": True, "background": False, "reason": "백그라운드 비활성 — 동기 번역 사용"})
+    from src.db import translation_jobs_pg as jobs
+    sid = _seller_id()
+    single = len(item_ids) == 1
+    out = []
+    for iid in item_ids:
+        try:
+            r = jobs.enqueue(sid, iid, priority=(10 if single else 0))   # 드로어 단건 우선순위↑
+            out.append({"item_id": iid, "job_id": r.get("job_id"), "status": r.get("status")})
+        except Exception as exc:
+            logger.warning("번역 작업 등록 실패(%s): %s", iid, exc)
+            out.append({"item_id": iid, "job_id": None, "status": "error"})
+    return jsonify({"ok": True, "background": True, "jobs": out})
+
+
+@bp.get("/collect/translate/status")
+def collect_translate_status():
+    """v88-B: 번역 작업 폴링 — job_ids(쉼표구분) → 상태·프로바이더·원인·필드상태. 셀러 격리."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    raw = request.args.get("job_ids", "") or ""
+    ids = [s for s in (x.strip() for x in raw.split(",")) if s][:300]
+    if not ids:
+        return jsonify({"ok": True, "jobs": {}})
+    try:
+        from src.db import translation_jobs_pg as jobs
+        if not jobs.enabled():
+            return jsonify({"ok": True, "background": False, "jobs": {}})
+        return jsonify({"ok": True, "background": True, "jobs": jobs.get_by_ids(ids, user_id=_seller_id())})
+    except Exception as exc:
+        logger.warning("번역 상태 조회 실패: %s", exc)
+        return jsonify({"ok": False, "error": "상태 조회 중 오류가 발생했습니다."}), 500
+
+
 @bp.post("/collect/bulk-translate")
 def collect_bulk_translate():
     """수집 이력 여러 항목의 제목/설명을 한국어로 일괄 번역 (셀러 격리).
