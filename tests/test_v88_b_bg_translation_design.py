@@ -41,6 +41,9 @@ def test_invariants_stated_chain_cap_quota_untouched():
     assert "무회귀" in TXT or "폴백" in TXT
 
 
-def test_design_only_no_wired_schema_file():
-    # 설계 단계 — 실제 schema_stage5.sql은 아직 없어야 한다(구현은 승인 후 별 트랙).
-    assert not Path("src/db/schema_stage5.sql").exists(), "설계 트랙인데 구현 스키마가 이미 배선됨"
+def test_implementation_wired():
+    # v88-B 구현 승인("전부 가라") — 설계가 구현으로 배선됨(schema_stage5 + 워커 + 라우트).
+    assert Path("src/db/schema_stage5.sql").exists(), "구현 스키마 미배선"
+    assert Path("src/db/translation_jobs_pg.py").exists()
+    assert Path("src/seller_console/translate_worker.py").exists()
+    assert "구현 완료" in TXT, "설계 문서에 구현 완료 상태 미표기"
