@@ -2356,10 +2356,25 @@ def collect_bulk_translate():
     updated = 0
     translated = 0
     blocked = 0
+    deferred = 0              # v87-W10: 요청 예산 초과로 이번엔 미처리(지연) — 다음 요청에 재시도
     fail_reason = ""          # v64 STEP6: 키가 있는데 호출 실패한 실제 원인(오귀인 방지)
     results = []
+    # v87-W10 item2: **요청 경로 워커 보호** — 벌크가 여러 항목을 순차 번역하면 워커를 오래 점유한다.
+    #   요청 전체 예산(기본 20초, 항목당 8초 캡과 별개)을 두고, 소진되면 남은 항목은 '지연'으로 정직 반환
+    #   (원문 유지, 다음 [다시 번역]에 재시도). 워커를 무한정 잡지 않게 한다.
+    import time as _t_bulk
+    try:
+        _bulk_budget = float(os.getenv("TRANSLATE_BULK_BUDGET_SEC", "20") or "20")
+    except (TypeError, ValueError):
+        _bulk_budget = 20.0
+    _bulk_deadline = _t_bulk.time() + max(4.0, _bulk_budget)
     try:
         for item_id in item_ids:
+            if _t_bulk.time() >= _bulk_deadline:      # 예산 소진 → 남은 항목 지연(미처리) 정직 표기
+                deferred += 1
+                results.append({"id": item_id, "ok": False, "translated": False,
+                                "reason": "서버 혼잡 — 잠시 후 다시(지연)", "deferred": True})
+                continue
             item = collect_history_store.get(item_id, seller_ids=_seller_identities())
             if not item:
                 results.append({"id": item_id, "ok": False, "error": "항목 없음"})
@@ -2469,8 +2484,11 @@ def collect_bulk_translate():
     elif blocked > 0:
         message = (f"무료 번역 {_limit}회를 모두 사용했습니다. {blocked}개는 번역하지 못했어요 — "
                    "구독하거나 토큰을 충전하면 계속 번역할 수 있습니다(결제 미설정 시 운영자 문의).")
+    if deferred > 0 and translated == 0 and blocked == 0:
+        message = f"서버가 잠시 혼잡해 {deferred}개를 처리하지 못했어요 — 잠시 후 다시 눌러 주세요."
     return jsonify({"ok": True, "updated": updated, "translated": translated,
                     "total": len(item_ids), "blocked": blocked,
+                    "deferred": deferred,                # v87-W10: 요청 예산 초과로 지연(미처리)된 항목 수
                     "free_limit": _limit, "free_used": _used_before + translated,
                     "free_remaining": new_remaining, "unlimited": _unlimited,
                     "fail_reason": fail_reason,          # v64 STEP6: 실패 원인(무음 금지)

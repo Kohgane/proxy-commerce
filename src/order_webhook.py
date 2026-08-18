@@ -1488,7 +1488,15 @@ def _wants_json_error() -> bool:
         p = request.path or ""
         if p.startswith("/api/") or p.startswith("/webhook/") or p.startswith("/cron/"):
             return True
-        acc = request.headers.get("Accept", "")
+        # v87-W10 item3: 부분 요청(fetch/XHR·드로어 AJAX)은 오류도 JSON — 전체 페이지 HTML 반환 금지
+        #   (중첩 렌더 결함). 브라우저가 자동으로 붙이는 Sec-Fetch-Dest/X-Requested-With로 내비게이션과 구분.
+        h = request.headers
+        if h.get("X-Requested-With", "").lower() == "xmlhttprequest":
+            return True
+        sec_dest = h.get("Sec-Fetch-Dest", "").lower()
+        if sec_dest in ("empty",):        # fetch()/XHR = empty · 문서 내비게이션 = document(제외)
+            return True
+        acc = h.get("Accept", "")
         return "application/json" in acc and "text/html" not in acc
     except Exception:
         return False
