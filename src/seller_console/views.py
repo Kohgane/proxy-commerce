@@ -2387,7 +2387,10 @@ def collect_bulk_translate():
             #   "Rakugifu 포장…")을 다시 번역하면 strip_market_boilerplate가 romaji엔 무력해 상용구가
             #   잔존했다. 원본에서 시작하면 translate_product 진입 시 상용구 제거가 확실히 걸린다.
             title = (extra.get("title_en") or extra.get("title") or item.get("title") or "").strip()
-            desc = extra.get("description") or extra.get("description_ko") or ""
+            # v87-#617: 상세도 제목(W11 item①)과 동형 — 재번역 소스는 **원본**(description). 표시 번역본
+            #   (description_ko)을 소스로 쓰면 드로어 개별 [한국어로 번역] 재클릭 시 한글→한글 재번역(상용구
+            #   잔존·왜곡)이 된다. 원본이 없으면 빈값(아래서 기존 번역본 보존) — _ko는 소스에서 제외.
+            desc = (extra.get("description") or "").strip()
             # 무료 한도 도달 시(실 번역기 있음) 이후 항목은 번역 차단 — 원문 유지.
             allow = _unlimited or (translated < _remaining)
             title_ko, desc_ko, provider = title, desc, "none"
@@ -2413,7 +2416,10 @@ def collect_bulk_translate():
             if (not allow) and translator is not None and (title or desc):
                 blocked += 1
             extra["title_ko"] = title_ko
-            extra["description_ko"] = desc_ko
+            # v87-#617: 원본 상세가 있을 때만 번역본 갱신 — 원본이 없으면(소스 빈값) 기존 description_ko를
+            #   빈값으로 덮어쓰지 않는다(한글→한글 재번역 소스 배제로 desc가 빈값이 된 케이스 보호).
+            if desc:
+                extra["description_ko"] = desc_ko
             # v87-W8 item2: 상태 잔존 박멸 — 성공/실패가 화면에 공존하면 결함이다.
             #   재번역 성공이면 옛 실패 배너·목록 뱃지의 근거(translate_error)를 즉시 소거하고 translated=True.
             #   실패면 실패 사유를 갱신 저장(성공 뱃지 잔존 방지). 요청 자체가 있었으므로 translate_requested=True.
