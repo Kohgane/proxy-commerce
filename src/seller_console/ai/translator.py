@@ -483,6 +483,17 @@ class AITranslator:
                 chain.append(n)
         return chain
 
+    def _budget_left(self) -> float:
+        """v87-W10: 요청 예산 잔여 초. deadline 미설정(비-translate_product 경로)이면 큰 값."""
+        import time as _t
+        dl = getattr(self, "_deadline", None)
+        return 1e9 if dl is None else (dl - _t.time())
+
+    def _clamp_timeout(self, default: float) -> float:
+        """프로바이더 소켓 timeout을 남은 예산으로 클램프(최소 1초) — 워커 장기 점유 차단."""
+        left = self._budget_left()
+        return max(1.0, min(float(default), left)) if left < 1e8 else float(default)
+
     def translate_product(self, source: dict) -> dict:
         """상품 메타데이터를 한국어로 번역하고 마켓별 카피 생성 — **프로바이더 체인**(순차 폴백).
 
@@ -512,9 +523,22 @@ class AITranslator:
                     "copy_11st": f"[stub] {title}", "attempts": []}
 
         import time as _time
+        # v87-W10 item2: **요청 경로 워커 보호** — 체인 전체 소요에 상한(기본 8초). 체인 순서·프로바이더는
+        #   불변(로직 무손대), 각 프로바이더 timeout을 '남은 예산'으로 클램프하고, 예산 소진이면 다음 시도
+        #   없이 정직 실패 반환. 워커를 오래 점유(최악 125초)해 전면 저속·워커 고갈되던 것을 차단.
+        try:
+            _budget = float(os.getenv("TRANSLATE_REQUEST_BUDGET_SEC", "8") or "8")
+        except (TypeError, ValueError):
+            _budget = 8.0
+        self._deadline = _time.time() + max(1.0, _budget)   # 프로바이더가 _budget_left()로 읽어 timeout 클램프
         attempts = []
         for name in chain:
             _t0 = _time.time()
+            if self._budget_left() < 0.8:      # 남은 예산이 사실상 없으면 다음 프로바이더 시도 중단(정직 실패로)
+                attempts.append({"provider": name, "ok": False, "error": "요청 시간 예산 초과(서버 보호)",
+                                 "ms": 0, "skipped": True})
+                logger.warning("[번역 체인] 예산 초과 — %s 이후 시도 중단(워커 보호)", name)
+                break
             try:
                 if name == "mymemory":
                     res = self._translate_mymemory(title, description)
@@ -624,7 +648,7 @@ class AITranslator:
             # MyMemory 단일 요청 상한(약 500자) — 초과분은 그대로 두지 않고 문장 경계로 잘라 앞부분만(정직: 부분).
             snippet = text[:480]
             r = _req.get("https://api.mymemory.translated.net/get",
-                         params={"q": snippet, "langpair": f"{src}|ko"}, timeout=12)
+                         params={"q": snippet, "langpair": f"{src}|ko"}, timeout=self._clamp_timeout(12))
             r.raise_for_status()
             j = r.json()
             if int(j.get("responseStatus") or 0) != 200:
@@ -717,6 +741,14 @@ class AITranslator:
 
     def _describe_openai(self, title, category, specs, keywords, brand) -> dict:
         import requests as _req
+        import time as _time
+        # v87-W10 item2: AI 초안도 요청 경로 — 워커 보호 예산(기본 8초)로 timeout 클램프.
+        if getattr(self, "_deadline", None) is None:
+            try:
+                _b = float(os.getenv("TRANSLATE_REQUEST_BUDGET_SEC", "8") or "8")
+            except (TypeError, ValueError):
+                _b = 8.0
+            self._deadline = _time.time() + max(1.0, _b)
         api_key = __import__("src.utils.env", fromlist=["env_str"]).env_str("OPENAI_API_KEY")
         model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
         spec_txt = "\n".join(f"- {l}: {v}" for l, v in specs[:20]) or "(스펙 표 없음)"
@@ -744,7 +776,7 @@ class AITranslator:
             "https://api.openai.com/v1/chat/completions",
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json={"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.5},
-            timeout=20,
+            timeout=self._clamp_timeout(20),
         )
         resp.raise_for_status()
         text = resp.json()["choices"][0]["message"]["content"].strip()
@@ -799,7 +831,7 @@ class AITranslator:
             }
             resp = _post_with_429_retry(   # v87-W8 item4: 429면 짧은 백오프 1회 재시도
                 _req, "https://api.openai.com/v1/chat/completions",
-                headers=headers, json=payload, timeout=_timeout,
+                headers=headers, json=payload, timeout=self._clamp_timeout(_timeout),
             )
             content = resp.json()["choices"][0]["message"]["content"]
             import json
@@ -835,7 +867,7 @@ class AITranslator:
                 "text": [title, description],
                 "target_lang": "KO",
             }
-            resp = _req.post(base_url, data=params, timeout=10)
+            resp = _req.post(base_url, data=params, timeout=self._clamp_timeout(10))
             resp.raise_for_status()
             translations = resp.json().get("translations", [])
             title_ko = translations[0]["text"] if len(translations) > 0 else title
@@ -884,7 +916,7 @@ class AITranslator:
                 return text
             r = _req.post("https://papago.apigw.ntruss.com/nmt/v1/translation",
                           headers=headers, data={"source": src, "target": "ko", "text": text[:4900]},
-                          timeout=10)
+                          timeout=self._clamp_timeout(10))
             r.raise_for_status()
             out = (((r.json() or {}).get("message") or {}).get("result") or {}).get("translatedText", "")
             if not out:
@@ -917,7 +949,7 @@ class AITranslator:
         try:
             r = _req.post("https://api.cognitive.microsofttranslator.com/translate",
                           params={"api-version": "3.0", "to": "ko"}, headers=headers,
-                          json=[{"Text": title or ""}, {"Text": description or ""}], timeout=10)
+                          json=[{"Text": title or ""}, {"Text": description or ""}], timeout=self._clamp_timeout(10))
             r.raise_for_status()
             data = r.json()
 
