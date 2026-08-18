@@ -269,6 +269,31 @@ def record_translate_failure(exc: Exception, provider: str) -> str:
     return reason
 
 
+def provider_diagnostics() -> list:
+    """v87-W11 item1: 프로바이더별 **env 검출 여부 + 활성 체인 포함 여부**(키 값 미출력).
+    '상위 4 전멸'이 env 미검출(체인에서 제외됨)인지 호출 실패(체인엔 있으나 실패)인지 즉시 판별.
+    호출 실패 사유는 get_translate_stats()의 by_code/recent(원 응답)로 대조."""
+    from src.utils.env import env_present
+    checks = {
+        "mymemory": lambda: os.getenv("TRANSLATE_DISABLE_MYMEMORY") != "1",
+        "papago": lambda: env_present("NCP_PAPAGO_CLIENT_ID") and env_present("NCP_PAPAGO_CLIENT_SECRET"),
+        "deepl": lambda: env_present("DEEPL_API_KEY"),
+        "azure": lambda: env_present("AZURE_TRANSLATOR_KEY"),
+        "openai": lambda: env_present("OPENAI_API_KEY"),
+    }
+    active = set(AITranslator()._provider_chain())          # 무키(비-ja 기본) 순서 기준
+    active_ja = set(AITranslator()._provider_chain(src_lang="ja"))
+    out = []
+    for name in ["mymemory", "papago", "deepl", "azure", "openai"]:
+        try:
+            present = bool(checks[name]())
+        except Exception:
+            present = False
+        out.append({"provider": name, "env_present": present,
+                    "in_chain": name in (active | active_ja)})
+    return out
+
+
 def get_translate_stats() -> dict:
     """번역 호출 계측 스냅샷(읽기 전용) — 호출/성공/실패/사유별·코드별·최근 실패 원문. 쿼터 회계와 무관."""
     with _TR_STATS_LOCK:

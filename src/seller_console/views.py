@@ -2383,7 +2383,10 @@ def collect_bulk_translate():
                 extra = _json.loads(item.get("extra_json") or "{}")
             except (TypeError, ValueError):
                 extra = {}
-            title = item.get("title") or extra.get("title_ko") or ""
+            # v87-W11 item①: 재번역 소스는 **원본 제목**(title_en/extra.title) — 표시본(이미 번역된
+            #   "Rakugifu 포장…")을 다시 번역하면 strip_market_boilerplate가 romaji엔 무력해 상용구가
+            #   잔존했다. 원본에서 시작하면 translate_product 진입 시 상용구 제거가 확실히 걸린다.
+            title = (extra.get("title_en") or extra.get("title") or item.get("title") or "").strip()
             desc = extra.get("description") or extra.get("description_ko") or ""
             # 무료 한도 도달 시(실 번역기 있음) 이후 항목은 번역 차단 — 원문 유지.
             allow = _unlimited or (translated < _remaining)
@@ -6165,13 +6168,13 @@ def _shape_collect_items(items, current_lang):
         up = ex.get("uploaded")
         it["uploaded_markets"] = [str(u.get("market_label") or u.get("market"))
                                   for u in up if isinstance(u, dict) and (u.get("market_label") or u.get("market"))] if isinstance(up, list) else []
-        cs = ex.get("collect_status") if isinstance(ex.get("collect_status"), dict) else None
-        if not cs:
-            try:
-                from src.collectors.collect_status import compute_collect_status as _ccs
-                cs = _ccs(ex, title_fallback=it.get("title") or "")
-            except Exception:
-                cs = None
+        # v87-W11 item②: 저장된 collect_status를 신뢰하지 말고 **조회 시 항상 재계산** — 판정 로직이
+        #   개선돼도 옛 레코드의 스테일 값(예: 단일 상품 4/5)을 화면이 그대로 믿던 구조를 봉인.
+        try:
+            from src.collectors.collect_status import compute_collect_status as _ccs
+            cs = _ccs(ex, title_fallback=it.get("title") or "")
+        except Exception:
+            cs = ex.get("collect_status") if isinstance(ex.get("collect_status"), dict) else None
         it["collect_status"] = cs
         # v87-W4: 목록에 리뷰 수·평점 노출(수신·저장 트랙). review_count 우선, 없으면 reviews 길이.
         _rc_raw = str(ex.get("review_count") or "").strip()
@@ -6560,14 +6563,12 @@ def collect_preview_by_id(item_id: str):
     if cur_cat:
         cat_suggestion = {**cat_suggestion, "suggested_keywords": _suggest_kw(cur_cat, _title_for_cat)}
 
-    # v47 STEP2: 수집 로그(어느 소스가 어느 필드를 줬는지) — 드로어 하단 접이식. 저장값 우선, 없으면 판정.
-    collect_status = extra.get("collect_status") if isinstance(extra.get("collect_status"), dict) else None
-    if not collect_status:
-        try:
-            from src.collectors.collect_status import compute_collect_status as _ccs
-            collect_status = _ccs(extra, title_fallback=item.get("title") or "")
-        except Exception:
-            collect_status = None
+    # v47 STEP2 / v87-W11 item②: 드로어도 **조회 시 항상 재계산**(저장 스테일 신뢰 봉인).
+    try:
+        from src.collectors.collect_status import compute_collect_status as _ccs
+        collect_status = _ccs(extra, title_fallback=item.get("title") or "")
+    except Exception:
+        collect_status = extra.get("collect_status") if isinstance(extra.get("collect_status"), dict) else None
 
     from src.utils.perf import perf_block as _pb
     with _pb("render"):
