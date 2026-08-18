@@ -22,4 +22,5 @@ v80 STEP3 폴더 스코프의 `_rakutenFolder`가 폴더 키에 **호스트를 �
 
 - 11 = 캐러셀 `0000050172001~010`+`020`(상세 본문 `sale_desc`의 `…2000`·`blog*` 이미지는 갤러리 아님 → 제외, 교차 오염 0).
 - 회귀 0: `_rakutenFolder`·`hiRes` 사용 기존 계약(v80 folder·v79 gallery·v76 rakuten adapter·v82 gate·v76 detail) 33 그린.
-계약 `test_v87_598_rakuten_detail_gallery`(3, Playwright 실브라우저).
+- **오너 진단 번들이 근원 실증**: `kgp-diagnostic-item-rakuten…tsumugi…` 임베드가 캡처 시점 `images:1`(버그)을 기록 — 오너 실기기서 갤러리 1장 확정. 의도된 수리라 진단 회귀 계약(v78) baseline의 `images`만 1→11로 갱신(다른 필드 detail_images 22·skus 2·reviews 0 불변).
+계약 `test_v87_598_rakuten_detail_gallery`(3, Playwright 실브라우저) + `test_v78_diag_contract` baseline 갱신.
