@@ -108,6 +108,30 @@ def supabase_backup_cron():
     return jsonify(summary)
 
 
+@cron_bp.post("/translate-drain")
+def translate_drain_cron():
+    """v88-B: 백그라운드 번역 작업 큐 드레인 (Render Cron / 외부 스케줄러 훅).
+
+    헤더 ``X-Cron-Secret`` 이 ``CRON_SECRET`` 과 일치해야 실행(미설정 시 허용). PG 미가동이면 정직 no-op.
+    Query: limit(기본 10).
+    """
+    cron_secret = os.getenv("CRON_SECRET")
+    if cron_secret:
+        if request.headers.get("X-Cron-Secret", "") != cron_secret:
+            return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    try:
+        limit = int(request.args.get("limit", 10))
+    except (TypeError, ValueError):
+        limit = 10
+    try:
+        from src.seller_console.translate_worker import drain_once
+        summary = drain_once(limit=limit)
+    except Exception as exc:
+        logger.error("번역 드레인 오류: %s", exc)
+        return jsonify({"ok": False, "error": "번역 드레인 중 오류가 발생했습니다."}), 500
+    return jsonify(summary)
+
+
 def _send_summary_notification(results: dict):
     """재가격 결과 요약을 텔레그램 + 이메일로 발송."""
     evaluated = results.get("evaluated", 0)
