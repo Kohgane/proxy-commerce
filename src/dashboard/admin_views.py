@@ -1187,9 +1187,10 @@ def _build_translate_stats() -> dict:
     """v87-W7a branch②: 번역 계측(읽기 전용) — 사유코드별 + 최근 실패의 원 응답(status·body).
     '한도 초과' 오귀인 대조용. 프로세스 인메모리(재시작 시 리셋), 쿼터 회계와 무관."""
     try:
-        from src.seller_console.ai.translator import get_translate_stats
+        from src.seller_console.ai.translator import get_translate_stats, provider_diagnostics
         s = get_translate_stats()
         s["available"] = True
+        s["providers"] = provider_diagnostics()   # v87-W11: env 검출·체인 포함 여부(키 값 없음)
         return s
     except Exception as exc:
         logger.debug("번역 계측 로드 불가: %s", exc)
@@ -2744,6 +2745,16 @@ _DIAGNOSTICS_TEMPLATE = """
       <div class="card-header fw-bold">🌐 번역 계측 (사유코드 · 최근 실패 원 응답)</div>
       <div class="card-body">
         {% if translate_stats.available %}
+        {% if translate_stats.providers %}
+        <div class="fw-semibold small mb-1">프로바이더 상태 (env 검출 · 체인 포함) — '상위 4 전멸'이 env 미검출인지 호출 실패인지 판별</div>
+        <div class="mb-2">
+          {% for p in translate_stats.providers %}
+          <span class="badge {{ 'bg-success' if (p.env_present and p.in_chain) else ('bg-secondary' if p.env_present else 'bg-danger') }}"
+                title="{{ 'env 검출·체인 포함' if (p.env_present and p.in_chain) else ('env 검출' if p.env_present else 'env 미검출 → 체인에서 제외됨(오너 액션: 키 이름/값 확인)') }}">
+            {{ p.provider }}: {{ 'OK' if p.env_present else '미검출' }}{{ '·체인' if p.in_chain else '' }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
         <ul class="mb-2">
           <li>호출 {{ translate_stats.calls }} · 성공 {{ translate_stats.ok }} · 실패 {{ translate_stats.fail }}</li>
           <li>사유코드별:
