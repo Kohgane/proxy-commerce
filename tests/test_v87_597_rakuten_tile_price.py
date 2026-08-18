@@ -23,7 +23,7 @@ _FIX = glob.glob("fixtures/realpages/diag/kgp-snapshot-search-rakuten*.html")
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.148"
+    assert MANIFEST["version"] == "1.5.149"
 
 
 def test_source_contract():
@@ -42,7 +42,7 @@ def _playwright_ok():
     return bool(_pw.chromium_hits())
 
 
-_INJECT = """(a)=>{const[det,cs]=a;window.chrome={runtime:{id:'x',onMessage:{addListener(){}},sendMessage(){},getURL:u=>u,lastError:null,getManifest:()=>({version:'1.5.148'})},storage:{local:{get:(k,cb)=>cb&&cb({}),set(){},onChanged:{addListener(){}}},sync:{get:(k,cb)=>cb&&cb({}),set(){},onChanged:{addListener(){}}}}};(0,eval)(det);(0,eval)(cs);}"""
+_INJECT = """(a)=>{const[det,cs]=a;window.chrome={runtime:{id:'x',onMessage:{addListener(){}},sendMessage(){},getURL:u=>u,lastError:null,getManifest:()=>({version:'1.5.149'})},storage:{local:{get:(k,cb)=>cb&&cb({}),set(){},onChanged:{addListener(){}}},sync:{get:(k,cb)=>cb&&cb({}),set(){},onChanged:{addListener(){}}}}};(0,eval)(det);(0,eval)(cs);}"""
 _SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="200" height="200" fill="#ccc"/></svg>'
 _URL = "https://search.rakuten.co.jp/search/mall/test/"
 

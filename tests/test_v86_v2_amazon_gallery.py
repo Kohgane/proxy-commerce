@@ -51,7 +51,7 @@ def _require_browser():
 
 # ── 소스 계약(결정적) ────────────────────────────────────────────────
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.148"
+    assert MANIFEST["version"] == "1.5.149"
 
 
 def test_amazon_gallery_size_token_bypasses_naturalwidth_guard():
