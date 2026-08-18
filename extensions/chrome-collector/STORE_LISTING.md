@@ -95,7 +95,8 @@ user designates, and send it to the user's own gogabridj seller workspace for tr
 | 1 | 개발자 등록 | chrome.google.com/webstore/devconsole | **1회 $5 등록비**(오너 결제). |
 | 2 | 게시 명의 결정 | 동일 대시보드 | **명의 선택은 오너**: (a) 오너 개인 Google 계정 / (b) alaz 명의 계정. 확장 저작자 표기·문의 이메일이 이 명의로 노출됨. |
 | 3 | 판매자 정보 | 대시보드 > Account | 연락 이메일 확인(현 `shanks8@hanmail.net` 또는 사업자 메일). |
-| 4 | zip 업로드 | 대시보드 > New item | `python scripts/build_extension_zip.py dist/goga.zip`로 만든 zip(또는 CI `extension-zip` 아티팩트 `gogasujipgi-branch.zip`). |
+| 4 | 제출 zip 받기 | GitHub(로그인) | **두 경로 중 택1**: (a) **즉시** — 최신 커밋의 Actions run > `extension-zip` 잡 > Artifacts `gogasujipgi-branch.zip`. (b) **영구** — `v*` 태그 푸시 시 Releases에 `gogabridj-collector-<tag>.zip` 자동 첨부(release.yml). 로컬은 `python scripts/build_extension_zip.py dist/goga.zip`. 현재 main 버전 **1.5.149**(manifest 무손대). |
+| 5' | zip 업로드 | 대시보드 > New item | 위에서 받은 zip 업로드(manifest 루트 인식). |
 | 5 | 등록정보 입력 | Store listing 탭 | 본 문서 §1·§3 복사·붙여넣기. 아이콘 128 자동 인식. |
 | 6 | 권한 정당화 | Privacy practices 탭 | 본 문서 §2 표 항목별 입력 + 개인정보 URL. |
 | 7 | 공개 범위 | Visibility | **Unlisted** 선택(검색 미노출·링크 설치). |

@@ -102,15 +102,54 @@ def test_sourcing_map_absent_is_honest():
     assert sm["available"] is False and sm["count"] == 0 and "lookup" in sm
 
 
-def test_access_status_blocks_live_without_assets(monkeypatch):
+def _clear_coupang(monkeypatch):
     for v in ["COUPANG_VENDOR_ID", "COUPANG_ACCESS_KEY", "COUPANG_SECRET_KEY", "MARKET_RELAY_URL",
-              "SOURCING_MAP_PATH"]:
+              "SOURCING_MAP_PATH", "COUPANG_GOGANE_ACCESS", "COUPANG_GOGANE_SECRET", "COUPANG_GOGANE_VENDOR",
+              "COUPANG_WOOJOO_ACCESS", "COUPANG_WOOJOO_SECRET", "COUPANG_WOOJOO_VENDOR"]:
         monkeypatch.delenv(v, raising=False)
+
+
+def test_access_status_blocks_live_without_assets(monkeypatch):
+    _clear_coupang(monkeypatch)
     st = CR.access_status()
     assert st["ready"] is False
     assert "sourcing_map.json" in st["missing"]
     assert st["coupang_accounts"] == {"고가네": False, "우주대행": False}
+    assert st["base_key"]["present"] is False and st["base_key"]["resolved_account"] is None
     assert st["owner_action"]
+
+
+def test_base_key_resolves_to_single_account_by_vendor_id(monkeypatch):
+    # 무접두 COUPANG_* + VENDOR_ID=A01381223 → 고가네만 ready(우주대행 False, 이중화 금지).
+    _clear_coupang(monkeypatch)
+    monkeypatch.setenv("COUPANG_VENDOR_ID", "A01381223")
+    monkeypatch.setenv("COUPANG_ACCESS_KEY", "x")
+    monkeypatch.setenv("COUPANG_SECRET_KEY", "y")
+    assert CR.resolve_base_account() == "gogane"
+    st = CR.access_status()
+    assert st["coupang_accounts"] == {"고가네": True, "우주대행": False}
+    assert st["base_key"]["resolved_account"] == "고가네"
+
+
+def test_base_key_unknown_vendor_is_honest_no_attribution(monkeypatch):
+    # 무접두 키는 있으나 VENDOR_ID가 두 계정과 불일치 → 어느 계정에도 부여 안 함(정직).
+    _clear_coupang(monkeypatch)
+    monkeypatch.setenv("COUPANG_VENDOR_ID", "A09999999")
+    monkeypatch.setenv("COUPANG_ACCESS_KEY", "x")
+    monkeypatch.setenv("COUPANG_SECRET_KEY", "y")
+    assert CR.resolve_base_account() is None
+    st = CR.access_status()
+    assert st["coupang_accounts"] == {"고가네": False, "우주대행": False}
+    assert st["base_key"]["present"] is True and st["base_key"]["resolved_account"] is None
+    assert "불일치" in (st["base_key"]["note"] or "")
+
+
+def test_prefixed_woojoo_credentials_ready(monkeypatch):
+    _clear_coupang(monkeypatch)
+    for k in ("ACCESS", "SECRET", "VENDOR"):
+        monkeypatch.setenv(f"COUPANG_WOOJOO_{k}", "z")
+    st = CR.access_status()
+    assert st["coupang_accounts"]["우주대행"] is True and st["coupang_accounts"]["고가네"] is False
 
 
 def test_run_inventory_join_not_ready_no_fake_numbers():

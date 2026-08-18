@@ -9,7 +9,7 @@
 | 자산/자격 | 이 서버 | 라이브 조인/파일럿 필요 | 오너 액션(조회 경로) |
 |---|---|---|---|
 | **sourcing_map.json**(ASIN→소싱 URL, 1,046건) | **없음**(find 0) | 필수(조인 키) | LinkLynk/Bluehost 계보 자산 → 서버에 `data/sourcing_map.json` 배치 또는 `SOURCING_MAP_PATH` 설정 |
-| **쿠팡 자격 ×2계정** | 없음(env 미설정) | 필수(판매중 목록 read) | `COUPANG_고가네_{VENDOR_ID,ACCESS_KEY,SECRET_KEY}` · `COUPANG_우주대행_*` (또는 단일 `COUPANG_*`) |
+| **쿠팡 자격 ×2계정** | 없음(env 미설정) | 필수(판매중 목록 read) | `COUPANG_GOGANE_{ACCESS,SECRET,VENDOR}`(고가네 A01381223) · `COUPANG_WOOJOO_*`(우주대행 A01504840). **무접두 `COUPANG_*`(Render 기존 키, 마켓 Health 그린)**는 `VENDOR_ID`로 **한 계정에만 흡수**(`resolve_base_account` — 이중화 금지). VENDOR_ID가 두 계정과 불일치면 미상(오너 확인). |
 | **릴레이 고정 IP** | 없음(`MARKET_RELAY_URL`) | 필수(쿠팡 IP 허용) | Bluehost 릴레이 IP를 두 계정 Wing 허용 IP에 등록 |
 
 → **자산·자격이 없어 라이브 조인 수치표·파일럿 50건은 이 세션에서 산출 불가.** `access_status()`가 게이트로 막고

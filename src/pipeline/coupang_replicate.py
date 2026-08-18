@@ -34,8 +34,33 @@ CHANNEL_FEE_RATES = {                # 채널 판매수수료율(%). 멀티샵�
 }
 # 쿠팡에서 정리한 금지 카테고리(오너 확정 — 계정 간 동일 적용의 채널 확장판).
 FORBIDDEN_CATEGORIES = ["향수", "캔들", "애플", "apple", "casetify"]
-# 두 계정(오너 확정) — 계정별 자격은 env(이 서버엔 없음 → access_status가 정직 보고).
-COUPANG_ACCOUNTS = {"고가네": "A01381223", "우주대행": "A01504840"}
+# 두 계정(오너 확정) — 계정별 자격 env 접두: COUPANG_GOGANE_{ACCESS,SECRET,VENDOR} · COUPANG_WOOJOO_*.
+#   VENDOR_ID로 무접두 COUPANG_*(Render 기존 키, 마켓 Health 그린 실증)를 한 계정에만 흡수(이중화 금지).
+COUPANG_ACCOUNTS = {
+    "gogane": {"vendor_id": "A01381223", "label": "고가네", "prefix": "COUPANG_GOGANE"},
+    "woojoo": {"vendor_id": "A01504840", "label": "우주대행", "prefix": "COUPANG_WOOJOO"},
+}
+
+
+def _prefixed_ready(prefix: str) -> bool:
+    """계정 접두 자격(ACCESS/SECRET/VENDOR) 전부 존재?"""
+    return all(os.getenv(f"{prefix}_{k}") for k in ("ACCESS", "SECRET", "VENDOR"))
+
+
+def resolve_base_account() -> Optional[str]:
+    """무접두 COUPANG_*(ACCESS_KEY/SECRET_KEY/VENDOR_ID)가 있으면 **VENDOR_ID로 어느 계정인지 판별**.
+
+    Render 기존 키를 두 계정 중 VENDOR_ID 일치하는 **하나에만** 귀속(양쪽 동시 ready·중복 이중화 금지).
+    무접두 키 없음 or VENDOR_ID가 두 계정과 불일치 → None(미상 — 어느 계정에도 부여 안 함, 정직).
+    반환: "gogane" | "woojoo" | None.
+    """
+    if not all(os.getenv(f"COUPANG_{k}") for k in ("VENDOR_ID", "ACCESS_KEY", "SECRET_KEY")):
+        return None
+    vid = os.getenv("COUPANG_VENDOR_ID", "").strip()
+    for acct, meta in COUPANG_ACCOUNTS.items():
+        if vid and vid == meta["vendor_id"]:
+            return acct
+    return None
 
 # sourcing_map 후보 경로(LinkLynk/Bluehost 계보 — 이 서버엔 없을 수 있음).
 _SOURCING_MAP_CANDIDATES = [
@@ -217,24 +242,31 @@ def plan_pilot(join_rows: list, n: int = 50, prefer: str = "shopify_d2c",
 def access_status() -> dict:
     """라이브 조인/파일럿에 필요한 자산·자격 존재 여부 — 없으면 가짜 수치 대신 이 보고를 낸다."""
     sm = load_sourcing_map()
-    # 계정별 쿠팡 자격(이 서버엔 없음이 기본). 단일 env는 어느 계정인지 불명 → 계정별 명시 env 권장.
-    def _acct_ready(prefix: str) -> bool:
-        return all(os.getenv(f"{prefix}_{k}") for k in ("VENDOR_ID", "ACCESS_KEY", "SECRET_KEY"))
-    base_ready = all(os.getenv(f"COUPANG_{k}") for k in ("VENDOR_ID", "ACCESS_KEY", "SECRET_KEY"))
-    accounts = {name: (_acct_ready(f"COUPANG_{name.upper()}") or base_ready) for name in ("고가네", "우주대행")}
+    # 무접두 COUPANG_*를 VENDOR_ID로 한 계정에 흡수(이중화 금지). 그 외는 계정 접두 자격.
+    base_acct = resolve_base_account()          # "gogane"|"woojoo"|None
+    accounts = {}
+    for acct, meta in COUPANG_ACCOUNTS.items():
+        accounts[meta["label"]] = _prefixed_ready(meta["prefix"]) or (base_acct == acct)
+    base_label = COUPANG_ACCOUNTS[base_acct]["label"] if base_acct else None
+    base_present = all(os.getenv(f"COUPANG_{k}") for k in ("VENDOR_ID", "ACCESS_KEY", "SECRET_KEY"))
     relay = bool(os.getenv("MARKET_RELAY_URL"))
     ready = sm["available"] and any(accounts.values())
     return {
         "ready": ready,
         "sourcing_map": {"available": sm["available"], "path": sm.get("path"), "count": sm["count"]},
-        "coupang_accounts": accounts,          # 계정별 자격 준비 여부
+        "coupang_accounts": accounts,          # 계정별 자격 준비 여부(라벨→bool)
+        # 무접두 COUPANG_* 판별 결과(정직): 어느 계정인지 or 미상. base_present이나 base_account None이면
+        #   VENDOR_ID가 두 계정과 불일치 → 오너 확인 필요(가짜 귀속 0).
+        "base_key": {"present": base_present, "resolved_account": base_label,
+                     "note": None if not base_present or base_label
+                             else "무접두 COUPANG_VENDOR_ID가 두 계정(A01381223/A01504840)과 불일치 — 오너 확인"},
         "relay": relay,                        # 쿠팡 IP 허용용 릴레이(고정 IP)
         "missing": [m for m, ok in [
             ("sourcing_map.json", sm["available"]),
             ("coupang 자격(2계정 중 1+)", any(accounts.values())),
             ("MARKET_RELAY_URL(쿠팡 IP 허용)", relay),
         ] if not ok],
-        "owner_action": "sourcing_map 배치(SOURCING_MAP_PATH) + 계정별 COUPANG_고가네_*/COUPANG_우주대행_* + 릴레이 IP 등록 후 라이브 조인 실행",
+        "owner_action": "sourcing_map 배치(SOURCING_MAP_PATH) + 계정 접두 COUPANG_GOGANE_*/COUPANG_WOOJOO_*(또는 무접두 COUPANG_* 1계정) + 릴레이 IP 등록 후 라이브 조인 실행",
     }
 
 
