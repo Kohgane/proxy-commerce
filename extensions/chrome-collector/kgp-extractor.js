@@ -62,6 +62,10 @@
       u = u.replace(/(\?|&)(imageView2?|thumb|w|width|h|height|size|quality|_ex)=[^&]*/gi, "");   // v76 STEP3: 라쿠텐 _ex=WxH(썸네일) 제거 → 원본
       // v79 STEP4: 알리 썸네일 변형(.jpg_80x80xz.jpg·.jpg_640x640q90.jpg) → 원본(.jpg)으로 정규화 → 변형 dedupe.
       u = u.replace(/\.(jpg|jpeg|png|webp|gif)_\d+x\d+[a-z0-9]*\.(jpg|jpeg|png|webp|gif)$/i, ".$1");
+      // v87-#598: 라쿠텐 CDN 썸네일은 `?_ex=WxH&s=0&r=1` 쿼리로 요청한다(원본=쿼리 없는 .jpg). 위 `_ex=` 제거가
+      //   ?_ex만 지우면 `&s=0&r=1` 고아가 남아(«.jpg&s=0&r=1») **같은 이미지가 다른 URL로 중복 저장**된다. 라쿠텐/
+      //   r10s 이미지에 한해 확장자 뒤 쿼리를 통째로 제거 → 원본 해상도 + 미러/쿼리 변이 dedupe(타 사이트 무영향).
+      if (/(^|\/\/|\.)(r10s\.jp|rakuten\.co\.jp)/i.test(u)) u = u.replace(/(\.(?:jpg|jpeg|png|gif|webp))(?:[?&][^\/]*)?$/i, "$1");
       u = u.replace(/[?&]$/, "").replace(/\.{2,}(jpg|jpeg|png|webp|gif)/i, ".$1");
     } catch (e) {}
     return u;
@@ -920,7 +924,15 @@
     return false;
   }
   // v80 STEP3: 라쿠텐 이미지 URL의 디렉토리(파일명 제거) — 현 상품 폴더 스코프 키. 쿼리 제거 후 마지막 / 이후 절삭.
-  function _rakutenFolder(u) { return String(u == null ? "" : u).split("?")[0].split("#")[0].replace(/\/[^\/]*$/, ""); }
+  function _rakutenFolder(u) {
+    var s = String(u == null ? "" : u).split("?")[0].split("#")[0].replace(/\/[^\/]*$/, "");
+    // v87-#598: 라쿠텐은 **같은 상품 이미지 경로를 여러 CDN 미러 호스트**(shop.r10s.jp·tshop.r10s.jp·
+    //   image.rakuten.co.jp)로 서빙한다(실측: og=shop, 갤러리=image/tshop, path 동일). 폴더 키에 호스트를
+    //   넣으면 og(한 호스트)와 갤러리(다른 미러)가 다른 폴더로 갈려 폴더셋 스코프가 갤러리를 전량 제외한다
+    //   (1장 근원). **경로(path)만**으로 폴더를 판정해 미러 호스트 변이에 무관하게 동일 상품을 묶는다
+    //   (타상품 경로 `/receno/cabinet/lace/…`는 여전히 상이 → v80 STEP3 교차 오염 0 유지).
+    return s.replace(/^https?:\/\/[^\/]+/i, "");
+  }
   function _rakutenGallery() {
     var out = [], seen = {}, det = [], detSeen = {};
     // (a) 상세 본문 이미지 먼저(별도 버킷) — 갤러리 CDN 스윕에서 이 영역을 제외하기 위해 URL 마킹.

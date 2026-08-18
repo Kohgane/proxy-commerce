@@ -120,7 +120,7 @@ def test_cache_bust_bumped():
 
 def test_extension_version_bumped():
     import json
-    assert json.loads(MANIFEST)["version"] == "1.5.148"
+    assert json.loads(MANIFEST)["version"] == "1.5.149"
 
 
 def test_no_stale_old_icon_files():
