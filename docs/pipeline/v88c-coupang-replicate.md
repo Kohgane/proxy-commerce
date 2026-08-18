@@ -23,9 +23,14 @@
 > ※ 쿠팡 `seller-products` 목록 엔드포인트는 `sellerProductCode`는 주지만 `externalVendorSku`는 상세에 있다 →
 > 라이브 글루가 계정별 `fetch_inventory`를 externalVendorSku 포함으로 확장(구현 트랙, 읽기 전용).
 
-## 2. 서버측 수집 인입
+## 2. 서버측 수집 인입 + 3. 파일럿 오케스트레이션
 매칭 소싱 URL → 기존 수집 경로(`_collect_real_draft`/`/collect/bulk`)로 벌크 인입. **별도 우회 경로 발명 0** —
 수집 5필드 판정·번역 체인·분류·간이/부분 정직 표시 전부 기존 파이프라인 통과.
+
+`run_pilot_ingest(pilot_rows, *, channel, collect_fn, prevalidate_fn, existing_source_keys, blacklist)` —
+파일럿 행을 **취급금지 스킵 → 기존 채널 중복 스킵 → collect(기존 경로) → 이미지 2장 캡 → 원가기준 가격 → 사전검증**까지
+돌리고 **`registered=False` 불변(등록은 절대 안 함)**. collect_fn/prevalidate_fn 주입식(발명 0·오프라인 테스트). 외화 원가는
+fx 미상 시 가짜 환산 0(price ok=False). 반환 summary = {ingested·skipped_forbidden·skipped_duplicate·failed_collect·prevalidate_ok/fail}.
 
 ## 3. 파일럿 50건 (등록 직전 정지)
 `plan_pilot(join_rows, n=50, prefer="shopify_d2c", exclude_sources=("rakuten",))`:

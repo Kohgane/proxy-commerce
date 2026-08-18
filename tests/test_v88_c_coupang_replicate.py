@@ -125,3 +125,54 @@ def test_run_inventory_join_ready_with_injected_fetcher():
     smap = {"B001": "https://brand.myshopify.com/products/a"}
     out = CR.run_inventory_join(fetch_items_fn=lambda: items, sourcing_map=smap)
     assert out["ok"] and out["report"]["매칭"] == 1 and out["report"]["소스분포"] == {"shopify_d2c": 1}
+
+
+# ── 파일럿 인입 오케스트레이션 (등록 직전 정지) ─────────────────────────────────
+def _row(url, title="상품"):
+    return CR.JoinRow("고가네", "1", "B1", title, url, CR.classify_source(url))
+
+
+def test_pilot_ingest_stops_before_register_and_applies_all_gates():
+    from src.collectors.product_key import normalize_product_key as key
+    rows = [
+        _row("https://s.myshopify.com/products/clean", "깨끗한 원목 식탁"),   # 정상
+        _row("https://s.myshopify.com/products/perfume", "샤넬 향수"),        # 취급금지
+        _row("https://s.myshopify.com/products/dup", "중복상품"),            # 기존 채널 존재
+    ]
+    collected = {"https://s.myshopify.com/products/clean":
+                 {"title": "깨끗한 원목 식탁", "price": "10000", "currency": "KRW",
+                  "images": ["a", "b", "c", "d"]}}   # 4장 → 2장 캡 검증
+
+    def collect_fn(url):
+        return collected.get(url)
+
+    out = CR.run_pilot_ingest(
+        rows, channel="woocommerce_multishop", collect_fn=collect_fn,
+        prevalidate_fn=lambda d: {"ok": True},
+        existing_source_keys={key("https://s.myshopify.com/products/dup")},
+    )
+    # ★ 절대 등록 안 함.
+    assert out["registered"] is False and "등록 직전 정지" in out["note"]
+    assert all(r["registered"] is False for r in out["rows"])
+    s = out["summary"]
+    assert s["skipped_forbidden"] == 1 and s["skipped_duplicate"] == 1 and s["ingested"] == 1
+    ing = [r for r in out["rows"] if r["action"] == "ingested-prevalidated"][0]
+    assert ing["images"] == 2                     # 이미지 2장 캡
+    assert ing["price"]["ok"] and ing["price"]["sale_price_krw"] == 14400   # 원가기준 재계산
+    assert ing["prevalidate_ok"] is True
+
+
+def test_pilot_ingest_honest_collect_failure_and_foreign_cost():
+    rows = [_row("https://s.myshopify.com/products/fail", "실패상품"),
+            _row("https://s.myshopify.com/products/usd", "외화상품")]
+
+    def collect_fn(url):
+        if url.endswith("/fail"):
+            return None                            # 수집 실패
+        return {"title": "외화상품", "price": "50", "currency": "USD", "images": ["x"]}
+
+    out = CR.run_pilot_ingest(rows, channel="woocommerce_multishop", collect_fn=collect_fn,
+                              prevalidate_fn=lambda d: {"ok": False})
+    assert out["summary"]["failed_collect"] == 1          # 정직 실패(가짜 성공 0)
+    usd = [r for r in out["rows"] if r["action"] == "ingested-prevalidated"][0]
+    assert usd["price"]["ok"] is False and "원가 미상" in usd["price"]["reason"]   # 외화=fx 미상, 가짜 환산 0

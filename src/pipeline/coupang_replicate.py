@@ -253,3 +253,68 @@ def run_inventory_join(fetch_items_fn=None, sourcing_map: Optional[dict] = None)
     items = fetch_items_fn() or []
     rep = join_inventory(items, sm.get("map") or {})
     return {"ok": True, "report": rep.as_table(), "rows": rep.rows, "access": st}
+
+
+# ── 파일럿 인입 오케스트레이션 (작업 2+3 배선 — 등록 직전 정지) ──────────────────
+IMAGE_CAP = 2                          # 오너: 이미지 상품당 2장(Bluehost 디스크 4중 재발방지).
+
+
+def _cost_krw_of(draft: dict):
+    """수집 draft에서 원가(KRW) 추출. KRW면 그 값, 외화면 None(정직 — fx 미상, 가짜 환산 0)."""
+    price = draft.get("price")
+    cur = (draft.get("currency") or "").upper()
+    try:
+        val = float(str(price).replace(",", "")) if price not in (None, "") else None
+    except (TypeError, ValueError):
+        val = None
+    if val is None or val <= 0:
+        return None
+    return val if cur in ("KRW", "") else None
+
+
+def run_pilot_ingest(pilot_rows, *, channel, collect_fn, prevalidate_fn=None,
+                     existing_source_keys=None, blacklist=None,
+                     margin_rate: float = DEFAULT_MARGIN_RATE, image_cap: int = IMAGE_CAP) -> dict:
+    """파일럿 행을 **기존 수집 경로로 인입 → 가격 → 사전검증**까지, **등록은 하지 않는다**(비가역 게이트).
+
+    의존성 주입(테스트/발명 금지): collect_fn(url)→draft(기존 `_collect_real_draft`), prevalidate_fn(draft)→result.
+    각 행: 취급금지 스킵 → 기존 채널 중복 스킵 → collect → 이미지 2장 캡 → 원가기준 가격 → 사전검증. registered=False 불변.
+    """
+    existing = set(existing_source_keys or [])
+    rows_out, summ = [], {"ingested": 0, "skipped_forbidden": 0, "skipped_duplicate": 0,
+                          "failed_collect": 0, "prevalidate_ok": 0, "prevalidate_fail": 0}
+    for r in (pilot_rows or []):
+        url = getattr(r, "sourcing_url", None) or (r.get("sourcing_url") if isinstance(r, dict) else "")
+        title = getattr(r, "title", None) or (r.get("title") if isinstance(r, dict) else "")
+        fb = is_forbidden(title, blacklist=blacklist)
+        if fb:
+            summ["skipped_forbidden"] += 1
+            rows_out.append({"url": url, "action": "skipped-forbidden", "reason": fb, "registered": False})
+            continue
+        if dedup_decision(url, existing) == "update":      # 이미 채널에 있음(SUPERONE 등) → 스킵
+            summ["skipped_duplicate"] += 1
+            rows_out.append({"url": url, "action": "skipped-duplicate", "registered": False})
+            continue
+        draft = None
+        try:
+            draft = collect_fn(url)
+        except Exception as exc:                           # 수집 실패는 정직 실패(가짜 성공 0)
+            draft = None
+        if not draft:
+            summ["failed_collect"] += 1
+            rows_out.append({"url": url, "action": "failed-collect", "registered": False})
+            continue
+        imgs = list(draft.get("images") or [])[:max(0, int(image_cap))]   # 이미지 2장 캡
+        draft["images"] = imgs
+        cost = _cost_krw_of(draft)
+        price = recalc_channel_price(cost, channel, margin_rate=margin_rate) if cost is not None else \
+            {"ok": False, "reason": "원가 미상(외화/빈값) — fx 확인 필요"}
+        pv = prevalidate_fn(draft) if prevalidate_fn else {"ok": None, "reason": "prevalidate 미주입"}
+        pv_ok = bool(getattr(pv, "ok", None) if not isinstance(pv, dict) else pv.get("ok"))
+        summ["prevalidate_ok" if pv_ok else "prevalidate_fail"] += 1
+        summ["ingested"] += 1
+        rows_out.append({"url": url, "action": "ingested-prevalidated", "images": len(imgs),
+                         "price": price, "prevalidate_ok": pv_ok, "registered": False})
+    return {"registered": False,                            # ★ 등록 안 함(오너 클릭 게이트)
+            "summary": summ, "rows": rows_out,
+            "note": "마켓 등록 직전 정지 — 오너 검수 후 일괄 등록 클릭(비가역 게이트)"}
