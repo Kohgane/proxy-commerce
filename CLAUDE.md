@@ -68,6 +68,37 @@ Claude Code는 지금처럼 브랜치·PR·머지를 자율로 한다. 단 **머
 
 > 이 파일은 매 세션 시작 시 로드된다. 오너(Kohgane) 지시·검증된 팩트를 누적 기록한다.
 
+## 🟪 v86~v87 소급 기록 (오너 2026-08-18 마감 배치 — STEP별 1~3줄·무엇을/왜/계약·PR#/해시)
+> 이번 스레드 트랙 전부. v46~v85(#430~#578)은 이전 세션분이라 여기 미기재(PR 히스토리가 원천). 아래는 v86-G~W10.
+- **v86-G 테무 Tier1 계측·타일 간이수집 정직화 (#574대, a8348cc8/684b9b8d/d9e076a9):** 테무 Tier1 폐기 근원=goods_id 오귀속 + rest 빈 키 오염. 타일 수집을 '간이'로 정직 표기(가짜 완전수집 금지). 왜=오판정·오염 봉인.
+- **v86-H 목록 오염 차단 + 스위트 레드 봉합 (#577 c436f3fe·#579 d9f8d9a5):** 목록 페이지 extracted 오염을 상품 단위 필드 억제 + 이미지 크기 게이트로 차단. CI collect-only 사각으로 누적된 23 실패 수리(왜=그린 착시).
+- **v86-I 단일 권위 스토어 (#578 98b498e1):** 추출-저장을 클릭 시점 재독출로 단일화 + tier1 정직 강등(오귀속 방지).
+- **v86-K CI 실스위트 게이트 (#580 ad48b137):** `KGP_REQUIRE_BROWSER=1` 풀스위트 CI 잡 + tier1_diag adopted 계측. 왜=collect-only 사각 재발 방지.
+- **v86-L payload_echo=null 봉인 (#581 db177c4e):** echo 기록을 **단일 관문**으로(모든 수집 경로) → echo null 조용한 누락 박멸.
+- **v86-L2 팝업 [수집] 실경로 수리 (#594 77059d98):** 4번째 진입점(팝업) 정본 통일 + echo 봉인. 계약 test_v86_l2_popup_realpath.
+- **v86-M 테무 상세설명 수집 (#582 ca9e43ec):** goodsProperty 수집 + 실 진단 계약·스펙 중복 봉인.
+- **v86-N/O 상세페이지 블록 → 마켓 실반영 (#583 25c2dd6d·#584 2dbe8850):** 드로어 '상세페이지 꾸미기' 블록을 description_html로 배선 → **5마켓 전부**(쿠팡·스스·11번가·Shopify·Woo) 실반영.
+- **v86-P/Q 정직 스윕 (#585 1bd72faf·#586 58d468b2):** 알림 설정·셀러 화면의 개발표기(env-var·내부 문서경로) 제거 + 에디토리얼. 왜=일반 유저 개발내용 비노출.
+- **v86-R/S/T 상태뱃지 공통화 + 에디토리얼 (#587 0641afcb·#588 3d198681·#589 1ae78e6c):** 카탈로그·마켓 현황·토큰 화면을 pc-badge 공통화 + 오버라인/세리프/헤어라인. 고아 [Mock] 템플릿 제거.
+- **v86-V 커버리지 표 결함 일소 (#596 f5a546f0):** **라쿠텐 상세 single 오판정(크리티컬)** + 아마존 갤러리 + echo + 알리 일괄. 계약 test_v86_v_coverage.
+- **v86-V2 아마존 갤러리 1장→n장 (#599 46ff1b28):** 실기기 재현·근원 특정·수리. 계약 test_v86_v2_amazon_gallery.
+- **W1 수집 목록 위생 (#590 ab07d195):** 비상품 정리 후보(점수+사유, 오탐0) + 유입 봉인(저장 시점 경고, **자동삭제 금지**).
+- **W1b 배포 아티팩트 봉인 + W2 제안서 (#591 507e786b):** Dockerfile scripts/ 통째 COPY(이미지 실증) + 주문 상태 색 제안서 시작.
+- **W2 제안서 개정 (#592 77a06eb4):** 주문 상태 색 인접판별성·색약(적록)·danger 충돌 증빙 → **계층색+비색 단서 권고**(A안).
+- **W2-impl A안 (#606 90d75666):** 계층색 4(금 진행·청록 완료·먹 취소·브론즈 되돌림) + 단계 도트·아이콘 + 반품 danger 분리 + 마켓색 뮤트. 계약 test_v87_w2_impl_status(그레이스케일 판별 8).
+- **W3 수집 이력 영속성 (#593 48f088ec):** 조용한 휘발 봉인 + 내구성 관측 + 전수 census. (W3=Supabase 영속 SURVIVED 종결.)
+- **W4 리뷰·평점 수신-저장 갭 (#595 8949d6b0):** 재수집 병합 누락 봉인(reviews/rating/review_count force-merge). 계약 test_v87_w4_reviews_ingest.
+- **W5 AI 상세 초안 품질 (#600 18bff205):** 라쿠텐 UI 오염(레ビュー·送料無料 등) 제거 + 한국어 정규화. 계약 test_v87_w5_ai_draft.
+- **W6 번역 토글·정직화·계측 (#601 9671b2eb·#602 f23b12fe):** 수집 번역 토글 표시 + 실패 정직화(원문/실패/미실행 3분) + translate_stats 계측 + 확장 팝업 문구 3분.
+- **W7 번역 다중 프로바이더 체인 (#604 348eedc2·#607 d8a3f91e·#608 a93d8c21):** mymemory→papago→deepl→azure→openai 순차 폴백 + attempts + 병기(원문 보존) + Papago(NCP)/Azure 공식 배선 + 실패 메시지 프로바이더명. 계약 test_v87_w7_translate_chain·w7b_papago_azure.
+- **W7a '한도 초과' 발화 주체 4분 (#609 87f5441f·#610 df158caf):** budget(서버 월 예산)/quota/rate_limit/auth 분리(오너 OpenAI 잔액 $22 → rate_limit) + 원 응답(status·body) 계측 적재 + /admin/diagnostics 노출. 계약 test_v87_w7a_cause_split·w7a_raw_stats.
+- **W8 분류기·상태·ja (#611 5fae5c3e):** 자동분류 제목 우선(설명 노이즈 오분류 박멸) + 재번역 성공 시 실패뱃지 소거 + ja 체인 papago 선행·라쿠텐 상용구 제거 + OpenAI 429 백오프 1회. 계약 test_v87_w8_classifier·w8_ja_state.
+- **W9 번역 전필드 신뢰화 (#612 61d51600):** _route_src_lang(가나·한자 1자라도 ja, 玉渕→ja) + 상용구 변형 내성 + 옵션값 번역(원문 보존) + 필드별 상태·목록 뱃지 소거 + 판정 '없음 확인' 분모 제외(4/4). 계약 test_v87_w9_translate_fields.
+- **W10 긴급 안정성 (#613 b40d12c2):** 동기 번역 체인 최악 125s 워커 점유(2워커×4=8슬롯) → 요청 예산 캡(TRANSLATE_REQUEST_BUDGET_SEC=8, 워커 점유 50s→8s) + 벌크 예산(20s, deferred) + 부분요청 오류 JSON(Sec-Fetch-Dest). 계약 test_v87_w10_stability.
+- **X1 SECRET_KEY (PR 없음):** 3-tier 폴백(SECRET_KEY→GOOGLE_SHEET_ID→컨테이너 파일) 무결 확인 — 이상 없음(계측 존치).
+- **X2 STEP3 화면 순회 (#605 a5166949):** 상품 수집·업로드·한눈에 보기 에디토리얼(오버라인+세리프+헤어라인, alert→pc-status, badge bg-*→pc-badge). 계약 test_v87_x2_screens.
+> **누적 채점 규칙(굳힘):** 스냅샷 채점 금지·실브라우저 증빙 필수 · '없음 확인'≠'수집 실패' · 정직 데이터(가짜 성공·임의 환산 0) · 매 트랙 완료 4항(계약 그린+캡처+회귀0+PR 셀프점검) · 장부 고정 섹션(보고 첫 블록 트랙 표) 강제.
+
 ## 🟥 D-30 론칭마스터플랜 / v41 Week 1 (오너 2026-07-02 — 8/1 론칭, "생존 기반")
 - 지휘 문서=launch_masterplan_D30, 세부=addendum_v41. **깃허브 Copilot과 병행 작업 — 중복 회피**(Copilot=STEP
   1-1~1-4 죽은버튼 `copilot/add-step-1-dead-functionality`, STEP 2 로그인 `copilot/add-login-status-screen-separation`).
