@@ -31,7 +31,7 @@ _URL = "https://search.rakuten.co.jp/search/mall/x/"
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.147"
+    assert MANIFEST["version"] == "1.5.148"
 
 
 def _pw_ok():
@@ -154,13 +154,28 @@ def test_ad_redirect_tiles_excluded_and_labelled():
 
 @pytest.mark.skipif(not _pw_ok(), reason="Playwright/chromium 미설치")
 def test_contract_fails_without_rakuten_pattern():
-    """인위회귀 — 라쿠텐 판정을 빼면 타일이 다시 통째로 사라져야 한다(게이트가 실제로 잡는지)."""
+    """인위회귀 — 라쿠텐/JPY 전용 처리를 전부 빼면 타일이 다시 통째로 사라져야 한다(감지가 실제로 그 처리에 걸렸는지).
+
+    v87-#597 이후 라쿠텐 타일이 감지되는 축은 **셋**이다:
+      ① 상세 URL 판정(`_kgpIsRakutenItemHref`) — 가격 없는 타일의 상품-href 인정.
+      ② `円`(엔 한자) → JPY 가격 인식(`_kgpPrice`) — 이 픽스처 30/35 타일이 카드 텍스트에서 바로 가격을 얻는다.
+      ③ 타일 가격 조상 스코프(#597) — 카드 밖 상위 타일에 있는 가격을 잡는 나머지 5.
+    셋 중 하나만 빼면 나머지 축이 타일을 살려 계약이 공허해진다(실측 확인) → 셋 다 무력화해야 게이트가 유의미.
+    """
     code = _isolated_code()
     anchor = "  if (_kgpIsRakutenItemHref(h)) return true;"
-    assert anchor in code, "회귀 주입 지점을 찾지 못했다"
+    assert anchor in code, "회귀 주입 지점(상세 URL 판정)을 찾지 못했다"
     broken = code.replace(anchor, "  // removed", 1)
+    # ② 円 가격 인식 무력화(일반 통화 기능이지만 JP 시장 타일 가격의 근원).
+    yen_anchor = "(?:원|円)"
+    assert yen_anchor in broken, "회귀 주입 지점(円 가격 인식)을 찾지 못했다"
+    broken = broken.replace(yen_anchor, "(?:원)", 1)
+    # ③ #597 가격 조상 스코프 무력화.
+    price_anchor = 'if (!pr.price && href.indexOf("item.rakuten.co.jp") >= 0) {'
+    assert price_anchor in broken, "회귀 주입 지점(#597 가격 조상 스코프)을 찾지 못했다"
+    broken = broken.replace(price_anchor, "if (false) {", 1)
     got = _run(broken)
-    assert got["cards"] < 5, ("라쿠텐 판정을 제거했는데도 타일이 잡힌다 = 게이트가 무의미", got)
+    assert got["cards"] < 5, ("라쿠텐/JPY 전용 처리를 셋 다 제거했는데도 타일이 잡힌다 = 게이트가 무의미", got)
 
 
 def test_ad_redirect_key_collapse_is_real():

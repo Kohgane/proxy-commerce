@@ -37,9 +37,9 @@ function _kgpInNonProd(el) {
 const _KGP_SYM_MAP = { "$": "USD", "＄": "USD", "€": "EUR", "£": "GBP", "¥": "JPY", "￥": "JPY", "₩": "KRW", "￦": "KRW" };
 const _KGP_CODE_MAP = {
   "USD": "USD", "EUR": "EUR", "GBP": "GBP", "JPY": "JPY", "KRW": "KRW", "CNY": "CNY",
-  "원": "KRW", "엔": "JPY", "위안": "CNY", "元": "CNY",
+  "원": "KRW", "엔": "JPY", "円": "JPY", "위안": "CNY", "元": "CNY",   // v87-#597: 円(엔 한자)→JPY
 };
-const _KGP_PRICE_RE = /([\$＄€£¥￥₩￦])\s*([\d,]+(?:\.\d{1,2})?)|([\d,]+(?:\.\d{1,2})?)\s*(USD|EUR|GBP|JPY|KRW|CNY|원|엔|위안|元)/i;
+const _KGP_PRICE_RE = /([\$＄€£¥￥₩￦])\s*([\d,]+(?:\.\d{1,2})?)|([\d,]+(?:\.\d{1,2})?)\s*(USD|EUR|GBP|JPY|KRW|CNY|원|엔|円|위안|元)/i;
 function _kgpParsePrice(raw) {
   const m = (raw || "").match(_KGP_PRICE_RE);
   if (!m) return null;
@@ -1708,11 +1708,14 @@ function _kgpMainCount() {
 }
 
 function _kgpPrice(text) {
-  const m = String(text || "").match(/([\d][\d.,]{1,})\s*원|(?:₩|\$|¥|€|£)\s*([\d][\d.,]{1,})/);
+  // v87-#597: 라쿠텐 리스트 타일 가격은 '1,706円'(엔 한자 접미) — 종전 정규식이 '원'·'¥'만 잡아 円 누락.
+  //   円 접미(→JPY)를 추가해 타일 가격을 채운다. 감지(keep-set)는 불변 — 가격 필드만 채움. 없으면 빈값(날조 0).
+  const m = String(text || "").match(/([\d][\d.,]{1,})\s*(?:원|円)|(?:₩|\$|¥|€|£)\s*([\d][\d.,]{1,})/);
   if (!m) return { price: "", currency: "" };
   const raw = (m[1] || m[2] || "").replace(/,/g, "");
   let cur = "";
-  if (/원|₩/.test(m[0])) cur = "KRW";
+  if (/円/.test(m[0])) cur = "JPY";
+  else if (/원|₩/.test(m[0])) cur = "KRW";
   else if (/\$/.test(m[0])) cur = "USD";
   else if (/¥/.test(m[0])) cur = "JPY";
   else if (/€/.test(m[0])) cur = "EUR";
@@ -2053,7 +2056,19 @@ function _kgpGenericCards() {
       // v81 STEP4: 추천/이력 위젯(足あと·あなたにおすすめ·閲覧した商品) 타일 명시 제외 — 후보 제외만(감지 유지).
       if (_kgpInRecommendWidget(card)) { _kgpExcl.region++; _kgpMarkSkip(card, "recommend-widget"); continue; }
       const text = (card.innerText || "").trim();
-      const pr = _kgpPrice(text);
+      let pr = _kgpPrice(text);
+      // v87-#597: 라쿠텐 검색 타일은 가격(1,706円)이 **감지 카드 바깥 상위 타일 컨테이너**(.searchresultitem)에
+      //   있어 카드 스코프 텍스트론 못 잡는다(가격만 누락, 감지·keep-set은 불변). 라쿠텐 item 타일에 한해
+      //   상품 링크가 여러 개(다른 타일 혼입)로 늘기 직전까지만 조상을 올라가 가격을 포착 → 교차 오염 0.
+      if (!pr.price && href.indexOf("item.rakuten.co.jp") >= 0) {
+        let anc = card.parentElement, hops = 0;
+        while (anc && hops < 4) {
+          if (anc.querySelectorAll('a[href*="item.rakuten.co.jp"]').length > 2) break;   // 타일 경계 초과 → 중단
+          const p2 = _kgpPrice(anc.innerText || anc.textContent || "");
+          if (p2.price) { pr = p2; break; }
+          anc = anc.parentElement; hops++;
+        }
+      }
       const titleEl = card.querySelector("h1,h2,h3,h4,[class*='title'],[class*='name']");
       const title = ((img.alt || "").trim()) || (titleEl ? titleEl.innerText : "") || text;
       if (!title || title.trim().length < 4) { _kgpExcl.parse++; _kgpMarkSkip(card, "parse-fail"); continue; }     // 제목 없으면 상품 후보 아님

@@ -28,7 +28,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.147"
+    assert MANIFEST["version"] == "1.5.148"
 
 
 def test_getpagetype_distinguishes_not_injected():

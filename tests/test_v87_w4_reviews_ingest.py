@@ -1,7 +1,7 @@
 """tests/test_v87_w4_reviews_ingest.py — v87-W4 리뷰·평점 수신·저장·표시 계약.
 
 ## 오너 실기기 결함(재조사 금지)
-확장(1.5.147)이 payload_echo reviews_n=10·rating 4.7·review_count 22 **송신 확정**. 서버 레코드는
+확장(1.5.148)이 payload_echo reviews_n=10·rating 4.7·review_count 22 **송신 확정**. 서버 레코드는
 '부분 수집 — 리뷰·평점 누락(4/5)'. 확장 무죄 — 서버 수신·저장·표시만 본다.
 
 ## 근원(1줄)
@@ -74,7 +74,7 @@ def test_recollect_merges_reviews_to_full(client):
     r1 = client.post("/api/v1/collect/extension", json=dict(_BASE, reviews=[], rating="", review_count=""))
     ex1 = _extra_of(r1.get_json()["item_id"])
     assert ex1["collect_status"]["filled"] == 4 and "리뷰·평점" in ex1["collect_status"]["missing"]
-    # 재수집(1.5.147 — 리뷰 10·평점 4.7·리뷰수 22) force → 5/5 + 실제 저장
+    # 재수집(1.5.148 — 리뷰 10·평점 4.7·리뷰수 22) force → 5/5 + 실제 저장
     r2 = client.post("/api/v1/collect/extension",
                      json=dict(_BASE, reviews=_REVIEWS, rating="4.7", review_count="22", force=True))
     assert r2.get_json().get("updated") is True
