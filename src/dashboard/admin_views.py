@@ -3569,3 +3569,80 @@ _DIAGNOSTICS_TEMPLATE = """
 </body>
 </html>
 """
+
+
+# ── v88-C 파일럿 admin 트리거 (오너 세션 인증 · 등록 하드 정지 · 라이브 실행은 트리거 시만) ──
+@admin_panel_bp.post("/coupang-pilot")
+def coupang_pilot_trigger():
+    """오너가 배포 앱에서 누르면: 모집단 396 → 파일럿 50 → 검수표 산출. **등록 안 함(하드 정지)**.
+
+    라이브 조인(쿠팡 현행가·재고·판매상태 재조회)은 쿠팡 자격+릴레이(Render)일 때만. 미충족이면 sourcing krw
+    기준(현행가 아님) + access 보고. 금지 85 필터 강제(미통과=제외+사유). 저장 스테일값 신뢰 금지(조회 시 산출).
+    admin_panel_bp.before_request 가 오너 세션 인증 강제.
+    """
+    from flask import jsonify, request
+    import json as _json
+    from pathlib import Path as _P
+    from src.pipeline import coupang_replicate as CR
+
+    # 모집단(결정적) — 파일 있으면 재사용, 없으면 sourcing_map에서 산출.
+    pop_file = _P("data/pilot_population.json")
+    if pop_file.is_file():
+        pop = _json.loads(pop_file.read_text(encoding="utf-8")).get("population", [])
+    else:
+        sm_res = CR.load_sourcing_map()
+        sm_raw = {}
+        try:
+            sm_raw = _json.loads(_P("data/sourcing_map.json").read_text(encoding="utf-8"))
+        except Exception:
+            pass
+        pop = CR.build_pilot_population(sm_raw)["population"] if sm_raw else []
+    if not pop:
+        return jsonify({"ok": False, "error": "pilot_population 없음 — sourcing_map 배포 확인"}), 400
+
+    n = int(request.args.get("n", 50))
+    selected = CR.select_pilot(pop, n=n)
+
+    # 라이브 여부(쿠팡 자격+릴레이). 저장 스테일값 신뢰 금지 → 라이브일 때만 현행가 재조회.
+    access = CR.access_status()
+    live = bool(access.get("ready")) and bool(__import__("os").getenv("MARKET_RELAY_URL"))
+    price_fn = None  # 라이브 현행가 재조회 훅(Render 배선점). 미구현 시 None → sourcing krw 사용.
+    translate_fn = None
+    if live:
+        try:
+            from src.seller_console.ai.translator import AITranslator
+            translate_fn = AITranslator().translate_product
+        except Exception:
+            translate_fn = None
+
+    # 오너 확정 85 블랙리스트(레포 미보유 — 오너 자산). 있으면 파일에서 주입, 없으면 카테고리+금지어만.
+    blacklist = []
+    bl_file = _P("data/coupang_blacklist85.json")
+    if bl_file.is_file():
+        try:
+            blacklist = _json.loads(bl_file.read_text(encoding="utf-8")) or []
+        except Exception:
+            blacklist = []
+
+    review, excluded = [], []
+    for e in selected:
+        row = CR.build_review_row(e, channel="woocommerce_multishop", blacklist=blacklist,
+                                  translate_fn=translate_fn,
+                                  price_override=(price_fn(e["sid"]) if price_fn else None))
+        (excluded if row["excluded"] else review).append(row)
+
+    return jsonify({
+        "ok": True,
+        "register_gate": "PILOT_REGISTER_APPROVED=False (하드 정지 — env로 못 뚫음)",
+        "registered": False,
+        "population_count": len(pop),
+        "selected": len(selected),
+        "review_pass": len(review),
+        "excluded_forbidden": len(excluded),
+        "live": live,
+        "price_basis": "쿠팡 현행가(라이브 재조회)" if (live and price_fn) else "sourcing krw(원가 — 현행가 아님)",
+        "blacklist85_loaded": len(blacklist),
+        "access": {"ready": access.get("ready"), "missing": access.get("missing")},
+        "review_table": review,
+        "excluded_table": excluded,   # 조용한 탈락 금지 — 제외건도 사유와 함께 노출
+    })

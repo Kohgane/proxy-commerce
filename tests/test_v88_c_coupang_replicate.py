@@ -97,9 +97,18 @@ def test_plan_pilot_prefers_shopify_excludes_rakuten_no_sideeffect():
 
 
 # ── 접근성 게이트(정직) ──────────────────────────────────────────────────────────
-def test_sourcing_map_absent_is_honest():
+def test_sourcing_map_absent_is_honest(monkeypatch):
+    # 후보 폴백(data/sourcing_map.json 실재)까지 비워 순수 부재 분기 검증.
+    monkeypatch.setattr(CR, "_SOURCING_MAP_CANDIDATES", [])
     sm = CR.load_sourcing_map("nonexistent-path-xyz.json")
     assert sm["available"] is False and sm["count"] == 0 and "lookup" in sm
+
+
+def test_sourcing_map_real_file_parses_richformat():
+    # 실 파일(키=ASIN, 값에 coupang_sid/krw) 로드 계약 — count>0.
+    if __import__("pathlib").Path("data/sourcing_map.json").is_file():
+        sm = CR.load_sourcing_map("data/sourcing_map.json")
+        assert sm["available"] is True and sm["count"] > 1000
 
 
 def _clear_coupang(monkeypatch):
@@ -111,12 +120,22 @@ def _clear_coupang(monkeypatch):
 
 def test_access_status_blocks_live_without_assets(monkeypatch):
     _clear_coupang(monkeypatch)
+    # sourcing_map은 이제 레포에 실재(main 착지) → 부재 분기를 결정적으로 테스트하려면 후보경로를 비운다.
+    monkeypatch.setattr(CR, "_SOURCING_MAP_CANDIDATES", [])
     st = CR.access_status()
     assert st["ready"] is False
     assert "sourcing_map.json" in st["missing"]
     assert st["coupang_accounts"] == {"고가네": False, "우주대행": False}
     assert st["base_key"]["present"] is False and st["base_key"]["resolved_account"] is None
     assert st["owner_action"]
+
+
+def test_access_status_sourcing_map_present_when_committed():
+    # 실재 파일(main 착지) 계약: 후보경로에 data/sourcing_map.json 있으면 available·count>0.
+    st = CR.access_status()
+    if __import__("pathlib").Path("data/sourcing_map.json").is_file():
+        assert st["sourcing_map"]["available"] is True and st["sourcing_map"]["count"] > 0
+        assert "sourcing_map.json" not in st["missing"]
 
 
 def test_base_key_resolves_to_single_account_by_vendor_id(monkeypatch):
