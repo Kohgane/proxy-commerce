@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional
@@ -116,19 +117,70 @@ def recalc_channel_price(cost_krw: float, channel: str, margin_rate: float = DEF
 
 
 # ── 취급금지 필터 (금지어 term + 금지 카테고리 + 주입 blacklist) ─────────────────
+def _term_hit(term: str, text_lower: str) -> bool:
+    """금지 term이 text에 걸리나. **오탐 방지(오너 승인):**
+    - ASCII 토큰/구(bose·keen·ping·lodge·le creuset…) → **단어경계 매칭**(영숫자 인접 아닐 때만) →
+      'shopping'의 'ping', 'dislodge'의 'lodge' 오탐 소멸.
+    - 한글/CJK(롯지·나이키·몽클레르…) → **부분일치**(연접 대응: '롯지스킬렛'·'몽클레르패딩'도 잡음).
+      등록 직전 정지(오너 검수)라 과탐은 안전, 미탐(롯지)이 위험 — 그래서 CJK는 부분일치 유지.
+    """
+    t = str(term).strip().lower()
+    if not t:
+        return False
+    if t.isascii():
+        return re.search(r"(?<![a-z0-9])" + re.escape(t) + r"(?![a-z0-9])", text_lower) is not None
+    return t in text_lower
+
+
 def is_forbidden(title: str, category: str = "", blacklist: Optional[Iterable[str]] = None) -> Optional[str]:
-    """취급금지면 사유 문자열, 아니면 None. blacklist(쿠팡 85 — 오너 자산)는 주입(하드코딩 금지)."""
+    """취급금지면 사유 문자열, 아니면 None. blacklist(쿠팡 오너 자산)는 주입(하드코딩 금지)."""
     text = f"{title or ''} {category or ''}".lower()
     for kw in FORBIDDEN_CATEGORIES:
-        if kw.lower() in text:
+        if _term_hit(kw, text):
             return f"forbidden-category:{kw}"
     for bad in (blacklist or []):
-        if bad and str(bad).lower() in text:
+        if _term_hit(bad, text):
             return f"blacklist:{bad}"
     matches = check_forbidden_terms(title or "")
     if matches:
         return f"forbidden-term:{matches[0].term}"
     return None
+
+
+# ── 제목 정제 (검수표 title_ko — sanitize_title 재사용 + 파일럿 잡문 제거 + 절단 플래그) ──
+_STAR_RE = re.compile(r"[★☆⭐✩✰]+|\(?\s*(?:평점|별점|리뷰|review|rating)\s*[:：]?\s*\d(?:\.\d)?\s*(?:점|별|/\s*5)?\)?", re.I)
+_PROMO_BRACKET_RE = re.compile(r"【[^】]*】|〔[^〕]*〕|\[[^\]]*(?:정품|공식|무료배송|특가|세일|쿠폰|이벤트|당일|사은품|送料無料|楽天|ポイント)[^\]]*\]", re.I)
+_JP_KANA_RE = re.compile(r"[぀-ヿｦ-ﾟ]+")          # 히라가나·가타카나(반각 포함) — 일문 잔재
+_ELLIPSIS_RE = re.compile(r"(?:\.{3,}|…|…)\s*$")
+_TITLE_MAX = 100                                                     # 쿠팡/마켓 제목 실무 상한(넘으면 절단 의심)
+
+
+def clean_title_ko(title, url: str = "") -> dict:
+    """검수표용 제목 정제. 조용히 자르지 않는다 — 절단 의심은 플래그로 표시.
+
+    반환 {"title": 정제문, "truncated": bool, "changed": bool}. sanitize_title(마켓/브랜드/카테고리 꼬리)
+    재사용 후 별점·프로모괄호·일문 잔재 제거 + 인접 중복어 축약. 전부 지워지면 원문 보존(빈 결과 금지).
+    """
+    raw = str(title if title is not None else "").strip()
+    if not raw:
+        return {"title": "", "truncated": False, "changed": False}
+    try:
+        from src.collectors.collect_sanitize import sanitize_title
+        s = sanitize_title(raw, url)
+    except Exception:
+        s = raw
+    truncated = bool(_ELLIPSIS_RE.search(s)) or len(raw) > _TITLE_MAX
+    s = _ELLIPSIS_RE.sub("", s)
+    s = _PROMO_BRACKET_RE.sub(" ", s)
+    s = _STAR_RE.sub(" ", s)
+    s = _JP_KANA_RE.sub(" ", s)                                     # 일문(가나) 잔재 제거
+    s = re.sub(r"[\[\]【】〔〕]", " ", s)                            # 빈 괄호 잔해
+    # 인접 중복어(브랜드 병기 등: "나이키 나이키", "Nike Nike") 축약
+    s = re.sub(r"\b(\w{2,})(\s+\1\b)+", r"\1", s, flags=re.I)
+    s = re.sub(r"\s+", " ", s).strip(" -–·|,")
+    if not s:
+        s = raw                                                     # 과도 제거 방어
+    return {"title": s, "truncated": truncated, "changed": s != raw}
 
 
 # ── 소싱 소스 분류 (파일럿 우선순위 + 라쿠텐 분리) ──────────────────────────────
@@ -502,9 +554,12 @@ def build_review_row(entry: dict, *, channel: str = "woocommerce_multishop",
             title_ko = (out.get("title_ko") or "").strip() or title_src
         except Exception:
             title_ko = title_src
+    # 제목 정제(별점·프로모괄호·일문·중복어 제거) + 절단 플래그(조용히 자르지 않음).
+    ct = clean_title_ko(title_ko, url=entry.get("url", "") or "")
     return {
         "sid": entry.get("sid"), "asin": entry.get("asin"),
-        "title_ko": title_ko, "cost_krw": cost,
+        "title_ko": ct["title"], "title_truncated": ct["truncated"],
+        "title_cleaned": ct["changed"], "cost_krw": cost,
         "sale_krw": price.get("sale_price_krw") if price.get("ok") else None,
         "margin_pct": price.get("margin_rate") if price.get("ok") else None,
         "target_channel": channel, "source": entry.get("source"),
