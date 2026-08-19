@@ -64,6 +64,20 @@ jobs:
           fi
           exit $missing
 
+      - name: Verify pilot static data in image (v88-C 파일럿 · #423 동류 재발방지)
+        run: |
+          echo "== /app/data contents (배포 이미지 실증) =="
+          docker exec pc-ci ls -1 /app/data/ || true
+          missing=0
+          for f in sourcing_map.json pilot_population.json; do
+            if docker exec pc-ci test -f /app/data/$f; then
+              echo "✓ /app/data/$f present"
+            else
+              echo "✗ /app/data/$f MISSING — /admin/coupang-pilot 400 근원"; missing=1
+            fi
+          done
+          exit $missing
+
       - name: Wait for healthcheck
         run: |
           for i in $(seq 1 15); do
