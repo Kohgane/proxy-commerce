@@ -3601,48 +3601,48 @@ def coupang_pilot_trigger():
         return jsonify({"ok": False, "error": "pilot_population 없음 — sourcing_map 배포 확인"}), 400
 
     n = int(request.args.get("n", 50))
-    selected = CR.select_pilot(pop, n=n)
-
-    # 라이브 여부(쿠팡 자격+릴레이). 저장 스테일값 신뢰 금지 → 라이브일 때만 현행가 재조회.
     access = CR.access_status()
-    live = bool(access.get("ready")) and bool(__import__("os").getenv("MARKET_RELAY_URL"))
-    price_fn = None  # 라이브 현행가 재조회 훅(Render 배선점). 미구현 시 None → sourcing krw 사용.
+    relay = CR.relay_ready()
+
+    # 금지 85 블랙리스트(오너 자산 — env COUPANG_BLACKLIST85 우선, 파일 폴백).
+    bl = CR.load_blacklist85()
+    blacklist = bl["terms"]
+    # 가드(정직 데이터): 0건 로드면 표를 만들지 않고 명시적 오류 — 빈 필터로 "전량 통과" 찍는 조용한 실패 금지.
+    #   의도적 우회는 ?allow_no_blacklist=1 (오너가 명시적으로 켜야 함 — 은닉 아님).
+    allow_no_bl = request.args.get("allow_no_blacklist") in ("1", "true", "yes")
+    if bl["count"] == 0 and not allow_no_bl:
+        return jsonify({
+            "ok": False,
+            "error": "blacklist85 로드 0건 — 검수표 산출 중단(빈 필터 전량 통과 금지)",
+            "blacklist85_loaded": 0,
+            "blacklist_source": bl["source"],
+            "how_to_load": "Render env COUPANG_BLACKLIST85 에 JSON 배열 또는 개행/쉼표 구분 목록 입력"
+                           "(권장 — Docker COPY 지뢰 회피). 또는 data/coupang_blacklist85.json 커밋+Dockerfile COPY.",
+            "override": "의도적 진행은 ?allow_no_blacklist=1 (카테고리+금지어 필터만 적용, 85 미적용)",
+        }), 400
+
+    # 라이브 현행가 재조회 훅: 실 쿠팡 현행가 어댑터는 미배선(우회/발명 금지) → None.
+    #   주입 시(테스트/향후 배선) build_pilot_report가 price_basis="coupang live"로 전환.
+    price_fn = None
     translate_fn = None
-    if live:
+    if bool(access.get("ready")) and bool(relay.get("ready")):
         try:
             from src.seller_console.ai.translator import AITranslator
             translate_fn = AITranslator().translate_product
         except Exception:
             translate_fn = None
 
-    # 오너 확정 85 블랙리스트(레포 미보유 — 오너 자산). 있으면 파일에서 주입, 없으면 카테고리+금지어만.
-    blacklist = []
-    bl_file = _P("data/coupang_blacklist85.json")
-    if bl_file.is_file():
-        try:
-            blacklist = _json.loads(bl_file.read_text(encoding="utf-8")) or []
-        except Exception:
-            blacklist = []
-
-    review, excluded = [], []
-    for e in selected:
-        row = CR.build_review_row(e, channel="woocommerce_multishop", blacklist=blacklist,
-                                  translate_fn=translate_fn,
-                                  price_override=(price_fn(e["sid"]) if price_fn else None))
-        (excluded if row["excluded"] else review).append(row)
-
-    return jsonify({
+    report = CR.build_pilot_report(pop, n=n, channel="woocommerce_multishop",
+                                   blacklist=blacklist, access=access, relay=relay,
+                                   price_fn=price_fn, translate_fn=translate_fn)
+    report.update({
         "ok": True,
         "register_gate": "PILOT_REGISTER_APPROVED=False (하드 정지 — env로 못 뚫음)",
         "registered": False,
-        "population_count": len(pop),
-        "selected": len(selected),
-        "review_pass": len(review),
-        "excluded_forbidden": len(excluded),
-        "live": live,
-        "price_basis": "쿠팡 현행가(라이브 재조회)" if (live and price_fn) else "sourcing krw(원가 — 현행가 아님)",
-        "blacklist85_loaded": len(blacklist),
-        "access": {"ready": access.get("ready"), "missing": access.get("missing")},
-        "review_table": review,
-        "excluded_table": excluded,   # 조용한 탈락 금지 — 제외건도 사유와 함께 노출
+        "blacklist85_loaded": bl["count"],
+        "blacklist_source": bl["source"],
+        "relay_mode": relay.get("mode"),
+        "live_price_hook": "미배선(현행가 재조회 어댑터 필요) — 현재 price_basis=sourcing"
+                           if (report["live"] and not report["live_price_used"]) else None,
     })
+    return jsonify(report)

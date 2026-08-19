@@ -43,8 +43,17 @@ COUPANG_ACCOUNTS = {
 
 
 def _prefixed_ready(prefix: str) -> bool:
-    """계정 접두 자격(ACCESS/SECRET/VENDOR) 전부 존재?"""
-    return all(os.getenv(f"{prefix}_{k}") for k in ("ACCESS", "SECRET", "VENDOR"))
+    """계정 접두 자격(ACCESS/SECRET/VENDOR) 전부 존재?
+
+    v88-C 결함: 오너가 **코드베이스 표준 접미**(`_ACCESS_KEY`/`_SECRET_KEY`/`_VENDOR_ID` — 무접두
+    `COUPANG_ACCESS_KEY` 등과 동일 규약)로 넣었는데, 예전 이 함수는 축약형(`_ACCESS`/`_SECRET`/`_VENDOR`)만
+    봐서 우주대행 자격을 놓쳐 live=false. → **두 규약 모두 허용**(어느 쪽으로 넣어도 감지).
+    """
+    def present(*names) -> bool:
+        return any(os.getenv(f"{prefix}_{n}") for n in names)
+    return (present("ACCESS_KEY", "ACCESS")
+            and present("SECRET_KEY", "SECRET")
+            and present("VENDOR_ID", "VENDOR"))
 
 
 def resolve_base_account() -> Optional[str]:
@@ -238,6 +247,56 @@ def plan_pilot(join_rows: list, n: int = 50, prefer: str = "shopify_d2c",
             "note": "마켓 등록 직전 정지 — 오너 검수 후 일괄 등록 클릭(비가역 게이트)"}
 
 
+# ── 릴레이 감지 (단일 진실원천 = market_relay, 두 규약 모두) ─────────────────────
+def relay_ready() -> dict:
+    """쿠팡 IP 허용 릴레이가 설정됐는가 — market_relay를 단일 진실원천으로 두 규약 모두 감지.
+
+    v88-C 결함: 파일럿 게이트가 구 `MARKET_RELAY_URL`만 봤는데, 오너가 실제 설치한 건 **mkt.php 릴레이**
+    (`MARKET_API_RELAY_URL`)라 미감지 → live=false. → 두 경로 모두 인정.
+      - mkt.php(현행, 오너 50.6.34.63 설치): `MARKET_API_RELAY_URL`(+`MARKET_API_RELAY_KEY`|`MARKET_RELAY_TOKEN`)
+      - 구 /relay: `MARKET_RELAY_URL` + `MARKET_RELAY_TOKEN`
+    """
+    from src import market_relay as MR
+    api = MR.api_relay_enabled()
+    legacy = MR.relay_enabled("coupang")
+    mode = "mkt.php(MARKET_API_RELAY_URL)" if api else ("relay(MARKET_RELAY_URL+TOKEN)" if legacy else None)
+    return {"ready": bool(api or legacy), "mode": mode}
+
+
+# ── 금지 85 블랙리스트 로드 (오너 자산 — env 우선, 파일 폴백; COPY 지뢰 회피) ──────
+def load_blacklist85() -> dict:
+    """금지 85 리스트 로드. 소스 우선순위 = env `COUPANG_BLACKLIST85` → 파일 `data/coupang_blacklist85.json`.
+
+    env(권장 — Docker COPY 지뢰 회피, Render에 바로 넣음): JSON 배열 또는 개행/쉼표 구분 문자열.
+    파일: JSON 배열 또는 `{"terms":[...]}`. 둘 다 없거나 0건이면 count 0(정직) — 라우트가 표 산출 전 가드.
+    반환: {"terms":[...], "source": str, "count": n, "file_present": bool}.
+    """
+    raw = (os.getenv("COUPANG_BLACKLIST85") or "").strip()
+    if raw:
+        terms = None
+        if raw[:1] in "[{":
+            try:
+                parsed = json.loads(raw)
+                terms = parsed.get("terms") if isinstance(parsed, dict) else parsed
+            except (ValueError, TypeError):
+                terms = None
+        if terms is None:                       # JSON 아니면 개행/쉼표 구분
+            terms = [t.strip() for t in raw.replace("\n", ",").split(",")]
+        terms = [str(t).strip() for t in (terms or []) if str(t).strip()]
+        return {"terms": terms, "source": "env:COUPANG_BLACKLIST85", "count": len(terms),
+                "file_present": Path("data/coupang_blacklist85.json").is_file()}
+    path = Path(os.getenv("COUPANG_BLACKLIST85_PATH", "") or "data/coupang_blacklist85.json")
+    if path.is_file():
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8"))
+            terms = parsed.get("terms") if isinstance(parsed, dict) else parsed
+            terms = [str(t).strip() for t in (terms or []) if str(t).strip()]
+            return {"terms": terms, "source": f"file:{path}", "count": len(terms), "file_present": True}
+        except (ValueError, TypeError, OSError):
+            return {"terms": [], "source": f"file:{path}(파싱실패)", "count": 0, "file_present": True}
+    return {"terms": [], "source": "none(미설정)", "count": 0, "file_present": False}
+
+
 # ── 접근성 게이트 (라이브 실행 전 정직 확인) ────────────────────────────────────
 def access_status() -> dict:
     """라이브 조인/파일럿에 필요한 자산·자격 존재 여부 — 없으면 가짜 수치 대신 이 보고를 낸다."""
@@ -249,7 +308,8 @@ def access_status() -> dict:
         accounts[meta["label"]] = _prefixed_ready(meta["prefix"]) or (base_acct == acct)
     base_label = COUPANG_ACCOUNTS[base_acct]["label"] if base_acct else None
     base_present = all(os.getenv(f"COUPANG_{k}") for k in ("VENDOR_ID", "ACCESS_KEY", "SECRET_KEY"))
-    relay = bool(os.getenv("MARKET_RELAY_URL"))
+    rr = relay_ready()
+    relay = rr["ready"]
     ready = sm["available"] and any(accounts.values())
     return {
         "ready": ready,
@@ -261,10 +321,11 @@ def access_status() -> dict:
                      "note": None if not base_present or base_label
                              else "무접두 COUPANG_VENDOR_ID가 두 계정(A01381223/A01504840)과 불일치 — 오너 확인"},
         "relay": relay,                        # 쿠팡 IP 허용용 릴레이(고정 IP)
+        "relay_mode": rr["mode"],              # 감지된 릴레이 규약(mkt.php or 구 /relay or None)
         "missing": [m for m, ok in [
             ("sourcing_map.json", sm["available"]),
             ("coupang 자격(2계정 중 1+)", any(accounts.values())),
-            ("MARKET_RELAY_URL(쿠팡 IP 허용)", relay),
+            ("릴레이(MARKET_API_RELAY_URL 또는 MARKET_RELAY_URL+TOKEN)", relay),
         ] if not ok],
         "owner_action": "sourcing_map 배치(SOURCING_MAP_PATH) + 계정 접두 COUPANG_GOGANE_*/COUPANG_WOOJOO_*(또는 무접두 COUPANG_* 1계정) + 릴레이 IP 등록 후 라이브 조인 실행",
     }
@@ -449,4 +510,44 @@ def build_review_row(entry: dict, *, channel: str = "woocommerce_multishop",
         "target_channel": channel, "source": entry.get("source"),
         "forbidden": fb, "excluded": bool(fb),
         "dedup_reason": entry.get("reason"), "registered": False,
+    }
+
+
+# ── 파일럿 검수표 산출 (라우트/테스트 공용 — price_fn 주입으로 라이브 경로 계약 검증) ──
+def build_pilot_report(population, *, n: int = 50, channel: str = "woocommerce_multishop",
+                       blacklist=None, access: Optional[dict] = None, relay: Optional[dict] = None,
+                       price_fn=None, translate_fn=None,
+                       margin_rate: float = DEFAULT_MARGIN_RATE) -> dict:
+    """파일럿 검수표(등록 없음). `live = access.ready and relay.ready`.
+
+    live + price_fn이면 각 행 **현행가 재조회**(price_fn(sid)) → 마진 재계산 → price_basis="coupang live".
+    아니면 sourcing krw(원가). registered=False 불변. price_fn/translate_fn/access/relay는 주입(테스트·라우트 공용).
+    """
+    access = access if access is not None else access_status()
+    relay = relay if relay is not None else relay_ready()
+    selected = select_pilot(population, n=n)
+    live = bool(access.get("ready")) and bool(relay.get("ready"))
+    use_live_price = bool(live and price_fn)
+    price_basis = "coupang live(현행가 재조회)" if use_live_price else "sourcing krw(원가 — 현행가 아님)"
+    review, excluded = [], []
+    for e in selected:
+        override = None
+        if use_live_price:
+            try:
+                override = price_fn(e.get("sid"))
+            except Exception:
+                override = None
+        row = build_review_row(e, channel=channel, blacklist=blacklist,
+                               translate_fn=translate_fn, price_override=override,
+                               margin_rate=margin_rate)
+        (excluded if row["excluded"] else review).append(row)
+    return {
+        "population_count": len(population), "selected": len(selected),
+        "review_pass": len(review), "excluded_forbidden": len(excluded),
+        "live": live, "price_basis": price_basis,
+        "live_price_used": use_live_price,
+        "review_table": review, "excluded_table": excluded,
+        "access": {"ready": access.get("ready"), "missing": access.get("missing"),
+                   "relay_mode": access.get("relay_mode"),
+                   "coupang_accounts": access.get("coupang_accounts")},
     }
