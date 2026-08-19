@@ -95,7 +95,9 @@ def test_pilot_route_requires_admin(monkeypatch):
 
 def test_pilot_route_returns_population_selection_and_gate(monkeypatch):
     c = _admin_client(monkeypatch)
-    r = c.post("/admin/coupang-pilot?n=50")
+    monkeypatch.delenv("COUPANG_BLACKLIST85", raising=False)
+    # blacklist 미설정 → 가드가 400 → 전체 경로 검증 위해 명시적 우회.
+    r = c.post("/admin/coupang-pilot?n=50&allow_no_blacklist=1")
     assert r.status_code == 200, r.status_code
     d = r.get_json()
     assert d["ok"] is True
@@ -107,3 +109,34 @@ def test_pilot_route_returns_population_selection_and_gate(monkeypatch):
     assert "excluded_table" in d and "review_table" in d
     # 라이브 미충족(샌드박스) → 현행가 아님 표기.
     assert "현행가 아님" in d["price_basis"] or d["live"] is True
+
+
+def test_pilot_route_blacklist_guard_blocks_on_zero(monkeypatch):
+    # 조용한 실패 금지: blacklist 0건이면 표 산출 중단·400(빈 필터 전량 통과 금지).
+    c = _admin_client(monkeypatch)
+    monkeypatch.delenv("COUPANG_BLACKLIST85", raising=False)
+    r = c.post("/admin/coupang-pilot?n=10")   # 우회 없음
+    assert r.status_code == 400, r.status_code
+    d = r.get_json()
+    assert d["ok"] is False and d["blacklist85_loaded"] == 0
+    assert "review_table" not in d           # 표를 만들지 않았다
+    assert "COUPANG_BLACKLIST85" in d["how_to_load"]
+
+
+def test_build_pilot_report_live_price_flips_basis_and_recalcs():
+    # 계약(task 3): relay 주입 + price_fn(현행가) → price_basis="coupang live" + 마진 재계산.
+    pop = [{"sid": 7, "asin": "A7", "name_ko": "원목 선반", "krw": 10000, "source": "amazon"}]
+    access = {"ready": True, "missing": [], "relay_mode": "mkt.php(MARKET_API_RELAY_URL)",
+              "coupang_accounts": {"우주대행": True}}
+    relay = {"ready": True, "mode": "mkt.php(MARKET_API_RELAY_URL)"}
+    # 현행가 재조회 stub: sourcing krw(10000)와 다른 현행가(20000) → 재계산 결과가 달라야 한다.
+    live = CR.build_pilot_report(pop, n=1, access=access, relay=relay,
+                                 price_fn=lambda sid: 20000, blacklist=["__none__"])
+    assert live["live"] is True and live["live_price_used"] is True
+    assert live["price_basis"].startswith("coupang live")
+    sale_live = live["review_table"][0]["sale_krw"]
+    # price_fn 없으면 sourcing krw 기준 → 다른 판매가 + basis 표기 달라짐.
+    off = CR.build_pilot_report(pop, n=1, access=access, relay=relay,
+                                price_fn=None, blacklist=["__none__"])
+    assert off["live_price_used"] is False and "현행가 아님" in off["price_basis"]
+    assert sale_live != off["review_table"][0]["sale_krw"], "현행가 재조회가 마진 재계산에 반영 안 됨"

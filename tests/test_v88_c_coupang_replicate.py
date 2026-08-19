@@ -113,8 +113,12 @@ def test_sourcing_map_real_file_parses_richformat():
 
 def _clear_coupang(monkeypatch):
     for v in ["COUPANG_VENDOR_ID", "COUPANG_ACCESS_KEY", "COUPANG_SECRET_KEY", "MARKET_RELAY_URL",
-              "SOURCING_MAP_PATH", "COUPANG_GOGANE_ACCESS", "COUPANG_GOGANE_SECRET", "COUPANG_GOGANE_VENDOR",
-              "COUPANG_WOOJOO_ACCESS", "COUPANG_WOOJOO_SECRET", "COUPANG_WOOJOO_VENDOR"]:
+              "MARKET_RELAY_TOKEN", "MARKET_API_RELAY_URL", "MARKET_API_RELAY_KEY", "MARKET_RELAY_MARKETS",
+              "SOURCING_MAP_PATH", "COUPANG_BLACKLIST85", "COUPANG_BLACKLIST85_PATH",
+              "COUPANG_GOGANE_ACCESS", "COUPANG_GOGANE_SECRET", "COUPANG_GOGANE_VENDOR",
+              "COUPANG_GOGANE_ACCESS_KEY", "COUPANG_GOGANE_SECRET_KEY", "COUPANG_GOGANE_VENDOR_ID",
+              "COUPANG_WOOJOO_ACCESS", "COUPANG_WOOJOO_SECRET", "COUPANG_WOOJOO_VENDOR",
+              "COUPANG_WOOJOO_ACCESS_KEY", "COUPANG_WOOJOO_SECRET_KEY", "COUPANG_WOOJOO_VENDOR_ID"]:
         monkeypatch.delenv(v, raising=False)
 
 
@@ -169,6 +173,44 @@ def test_prefixed_woojoo_credentials_ready(monkeypatch):
         monkeypatch.setenv(f"COUPANG_WOOJOO_{k}", "z")
     st = CR.access_status()
     assert st["coupang_accounts"]["우주대행"] is True and st["coupang_accounts"]["고가네"] is False
+
+
+def test_prefixed_woojoo_canonical_suffix_ready(monkeypatch):
+    # v88-C 결함 회귀 가드: 오너가 코드베이스 표준 접미(_ACCESS_KEY/_SECRET_KEY/_VENDOR_ID)로 넣어도 감지.
+    _clear_coupang(monkeypatch)
+    for k in ("ACCESS_KEY", "SECRET_KEY", "VENDOR_ID"):
+        monkeypatch.setenv(f"COUPANG_WOOJOO_{k}", "z")
+    st = CR.access_status()
+    assert st["coupang_accounts"]["우주대행"] is True, "표준 접미 자격 미감지 → live=false 재발"
+
+
+def test_relay_ready_detects_both_conventions(monkeypatch):
+    _clear_coupang(monkeypatch)
+    assert CR.relay_ready() == {"ready": False, "mode": None}
+    # mkt.php(현행): MARKET_API_RELAY_URL
+    monkeypatch.setenv("MARKET_API_RELAY_URL", "https://relay.example/mkt.php")
+    rr = CR.relay_ready()
+    assert rr["ready"] is True and "mkt.php" in rr["mode"]
+    # 구 /relay: MARKET_RELAY_URL + TOKEN 동시
+    monkeypatch.delenv("MARKET_API_RELAY_URL", raising=False)
+    monkeypatch.setenv("MARKET_RELAY_URL", "https://relay.example")
+    assert CR.relay_ready()["ready"] is False        # TOKEN 없으면 미완
+    monkeypatch.setenv("MARKET_RELAY_TOKEN", "t")
+    assert CR.relay_ready()["ready"] is True
+
+
+def test_load_blacklist85_env_json_csv_and_empty(monkeypatch):
+    _clear_coupang(monkeypatch)
+    monkeypatch.setattr(CR.Path, "is_file", lambda self: False)   # 파일 폴백 차단(순수 env 검증)
+    # 미설정 → 0건(정직).
+    assert CR.load_blacklist85()["count"] == 0
+    # JSON 배열.
+    monkeypatch.setenv("COUPANG_BLACKLIST85", '["샤넬", "루이비통", "롤렉스"]')
+    r = CR.load_blacklist85()
+    assert r["count"] == 3 and "샤넬" in r["terms"] and r["source"].startswith("env")
+    # 개행/쉼표 구분.
+    monkeypatch.setenv("COUPANG_BLACKLIST85", "샤넬, 루이비통\n롤렉스\n")
+    assert CR.load_blacklist85()["count"] == 3
 
 
 def test_run_inventory_join_not_ready_no_fake_numbers():

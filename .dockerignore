@@ -16,6 +16,9 @@ data/
 # v88-C: 파일럿 배선에 필요한 정적 데이터만 빌드 컨텍스트에 재포함(런타임 생성 data/*는 여전히 제외).
 !data/sourcing_map.json
 !data/pilot_population.json
+# 금지 85 블랙리스트: 기본 소스는 env COUPANG_BLACKLIST85(COPY 지뢰 회피). 파일 커밋 시를 대비해 컨텍스트
+# 재포함만 미리 열어둔다(파일 실재 시 Dockerfile에 COPY 한 줄 추가해야 이미지에 실림).
+!data/coupang_blacklist85.json
 *.md
 *.log
 logs/
