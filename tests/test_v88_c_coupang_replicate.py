@@ -47,9 +47,43 @@ def test_forbidden_category_filter(title, cat, expect):
 
 
 def test_forbidden_blacklist_injected_not_hardcoded():
-    # 쿠팡 85 blacklist는 오너 자산 — 주입식(하드코딩 아님).
+    # 쿠팡 blacklist는 오너 자산 — 주입식(하드코딩 아님).
     assert CR.is_forbidden("어떤상품 특정금지어X", blacklist=["특정금지어X"]) == "blacklist:특정금지어X"
     assert CR.is_forbidden("어떤상품 특정금지어X") is None   # 미주입이면 통과(발명 0)
+
+
+def test_lodge_skillet_excluded_korean_and_english():
+    # 검수 반려 실증(B00063RWUM 롯지 스킬렛 미탐 수리): 한글표기(롯지)·영문(lodge) 둘 다 잡아야.
+    bl = ["롯지", "lodge", "bose", "ping"]
+    assert CR.is_forbidden("롯지 스킬렛 무쇠 팬", blacklist=bl) == "blacklist:롯지"       # 한글 부분일치
+    assert CR.is_forbidden("롯지스킬렛10인치", blacklist=bl) == "blacklist:롯지"          # 연접도 잡음
+    assert CR.is_forbidden("Lodge Cast Iron Skillet", blacklist=bl) == "blacklist:lodge"  # 영문 단어경계
+    row = CR.build_review_row({"sid": 1, "asin": "B00063RWUM", "name_ko": "롯지 스킬렛 무쇠 팬", "krw": 30000},
+                              blacklist=bl)
+    assert row["excluded"] is True and row["forbidden"] == "blacklist:롯지"
+
+
+def test_word_boundary_prevents_short_token_false_positives():
+    # 오탐 방지(오너 승인 단어경계): shopping의 ping, dislodge의 lodge, hose의 ...는 안 걸린다.
+    assert CR.is_forbidden("shopping bag 대용량", blacklist=["ping"]) is None
+    assert CR.is_forbidden("dislodge tool set", blacklist=["lodge"]) is None
+    assert CR.is_forbidden("bathrobe 목욕가운", blacklist=["bose"]) is None
+    # 진짜 단어면 잡는다.
+    assert CR.is_forbidden("Ping G430 드라이버", blacklist=["ping"]) == "blacklist:ping"
+    assert CR.is_forbidden("BOSE 무선 이어폰", blacklist=["bose"]) == "blacklist:bose"
+
+
+def test_clean_title_ko_strips_junk_and_flags_truncation():
+    # 별점·프로모괄호·일문·중복어 제거.
+    r = CR.clean_title_ko("【送料無料】나이키 나이키 운동화 ★★★★☆ (평점 4.5)")
+    assert "★" not in r["title"] and "送料無料" not in r["title"] and "【" not in r["title"]
+    assert r["title"].count("나이키") == 1        # 인접 중복어 축약
+    assert r["changed"] is True
+    # 절단 의심(말줄임표) → 조용히 자르지 않고 플래그.
+    t = CR.clean_title_ko("초경량 캠핑 접이식 의자 대형 사이즈…")
+    assert t["truncated"] is True
+    # 일문 가나 제거.
+    assert "ノ" not in CR.clean_title_ko("원목 선반 ラック 3단")["title"]
 
 
 # ── 소스 분류 + 조인 ─────────────────────────────────────────────────────────────
