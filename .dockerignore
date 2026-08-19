@@ -13,6 +13,9 @@ htmlcov/
 tests/
 docs/
 data/
+# v88-C: 파일럿 배선에 필요한 정적 데이터만 빌드 컨텍스트에 재포함(런타임 생성 data/*는 여전히 제외).
+!data/sourcing_map.json
+!data/pilot_population.json
 *.md
 *.log
 logs/

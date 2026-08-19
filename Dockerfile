@@ -27,6 +27,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ ./src/
 # 크롬 확장 소스 — /seller/extension/download 가 런타임에 ZIP으로 패키징해 내려준다.
 COPY extensions/ ./extensions/
+# v88-C: 파일럿 정적 데이터(sourcing_map·pilot_population) — /admin/coupang-pilot 이 CWD(/app) 기준 data/ 로 읽는다.
+#   Dockerfile이 data/를 통째로 COPY하지 않아 배포본 부재 → 400 'pilot_population 없음' 근원(#423 extensions/·#227 scripts/ 동류).
+COPY data/sourcing_map.json data/pilot_population.json ./data/
 COPY gunicorn.conf.py .
 COPY config.example.yml .
 
