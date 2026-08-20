@@ -32,7 +32,8 @@ def test_no_thick_borders_or_hardcoded_brand_hex_in_kpi():
 
 
 def test_kpi_uses_token_shadow_and_reduced_motion():
-    assert "box-shadow: var(--shadow-lg)" in CSS
+    # 디자인 시스템 v2(v40-2): KPI 호버 그림자가 --shadow-lg → 뉴모피즘 토큰 --nm-up-lg로 승계(단일소스 유지).
+    assert "box-shadow: var(--nm-up-lg)" in CSS or "box-shadow: var(--shadow-lg)" in CSS
     assert "prefers-reduced-motion: reduce" in CSS
 
 

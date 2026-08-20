@@ -168,13 +168,18 @@
   background: #fffbeb;
 }
 
+/* 디자인 시스템 v2 — KPI 카드 뉴모피즘 표면(절제, 단일소스 토큰). 하드 보더 제거 + 이중 그림자. */
 .console-kpi-card {
+  background: var(--surface);
+  border: 0;
+  border-radius: var(--radius-xl);
+  box-shadow: var(--nm-up);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .console-kpi-card:hover {
   transform: translateY(-2px);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--nm-up-lg);
 }
 
 .console-kpi-card:active {
