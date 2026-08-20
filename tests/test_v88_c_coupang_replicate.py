@@ -86,6 +86,38 @@ def test_clean_title_ko_strips_junk_and_flags_truncation():
     assert "ノ" not in CR.clean_title_ko("원목 선반 ラック 3단")["title"]
 
 
+def test_clean_title_ko_english_rating_junk_removed():
+    # #검수1 실데이터: FELCO(B00511984W) 별점 잡문 미제거 → 제거.
+    r = CR.clean_title_ko("FELCO F-2 Classic Manual Hand Pruner 4.8 out of 5 stars, rating details")
+    assert "out of 5 stars" not in r["title"] and "rating details" not in r["title"].lower()
+    assert r["changed"] is True
+
+
+@pytest.mark.parametrize("title", [
+    "Insulated Stai", "PEN CLI", "Wireless Mouse w updat", "Fabric Scisso",
+    "Leather Patente", "Rain Wand – 16 Inch Aluminum W",
+])
+def test_clean_title_ko_mid_truncation_flagged(title):
+    # #검수2 실데이터: 중간 절단이 전량 false negative였다 → truncated 또는 truncated_suspect로 정직 표기.
+    r = CR.clean_title_ko(title)
+    assert r["truncated"] or r["truncated_suspect"], (title, r)
+
+
+def test_clean_title_ko_complete_english_tail_not_falsely_flagged():
+    # 완결 영문 꼬리는 절단으로 오탐하지 않는다(화이트리스트).
+    assert not CR.clean_title_ko("Stainless Steel Kitchen Scissors")["truncated_suspect"]
+    assert not CR.clean_title_ko("접이식 원목 3단 선반")["truncated_suspect"]   # 한글 꼬리 무판정
+
+
+def test_clean_title_ko_place_tail_removed_and_cjk_flagged():
+    # #검수3a 지명 잡문(US 주 코드) 꼬리 제거.
+    r = CR.clean_title_ko("Denver Glass Stained Glass – Denver, CO Map")
+    assert "Denver, CO" not in r["title"] and "Map" not in r["title"].split("–")[-1]
+    # #검수3b CJK 한자는 삭제하지 않고 잔존 플래그만(브랜드/제품 소실 방지 — 번역 소관).
+    r2 = CR.clean_title_ko("세일러 万年筆")
+    assert "万年筆" in r2["title"] and r2["cjk_residual"] is True
+
+
 # ── 소스 분류 + 조인 ─────────────────────────────────────────────────────────────
 def test_classify_source():
     assert CR.classify_source("https://www.amazon.co.jp/dp/B0XXXX") == "amazon"
