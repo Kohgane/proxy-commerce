@@ -148,39 +148,90 @@ def is_forbidden(title: str, category: str = "", blacklist: Optional[Iterable[st
 
 
 # ── 제목 정제 (검수표 title_ko — sanitize_title 재사용 + 파일럿 잡문 제거 + 절단 플래그) ──
-_STAR_RE = re.compile(r"[★☆⭐✩✰]+|\(?\s*(?:평점|별점|리뷰|review|rating)\s*[:：]?\s*\d(?:\.\d)?\s*(?:점|별|/\s*5)?\)?", re.I)
+# 별점/평점 잡문(한글 + 영문). #검수: FELCO "4.8 out of 5 stars, rating details".
+_RATING_RE = re.compile(
+    r"[★☆⭐✩✰]+"
+    r"|\(?\s*\d(?:\.\d)?\s*(?:out\s+of|/)\s*\d(?:\.\d)?\s*stars?\b"     # 4.8 out of 5 stars / 4.8/5 stars
+    r"|,?\s*rating\s*details?\b"                                        # rating details
+    r"|\b\d[\d,]*\s*(?:ratings?|reviews?)\b"                            # 1,234 ratings
+    r"|\(?\s*(?:평점|별점|리뷰|review|rating)\s*[:：]?\s*\d(?:\.\d)?\s*(?:점|별|/\s*5)?\)?",
+    re.I)
 _PROMO_BRACKET_RE = re.compile(r"【[^】]*】|〔[^〕]*〕|\[[^\]]*(?:정품|공식|무료배송|특가|세일|쿠폰|이벤트|당일|사은품|送料無料|楽天|ポイント)[^\]]*\]", re.I)
 _JP_KANA_RE = re.compile(r"[぀-ヿｦ-ﾟ]+")          # 히라가나·가타카나(반각 포함) — 일문 잔재
+_CJK_IDEO_RE = re.compile(r"[㐀-䶿一-鿿]")   # CJK 한자(가나 제외) — 잔존 플래그만(삭제 금지)
 _ELLIPSIS_RE = re.compile(r"(?:\.{3,}|…|…)\s*$")
+_TRAIL_DASH_RE = re.compile(r"[–—-]\s*$")                    # 대시로 끝나면 절단
 _TITLE_MAX = 100                                                     # 쿠팡/마켓 제목 실무 상한(넘으면 절단 의심)
+# 지명 잡문 꼬리 제거(#검수: 덴버글라스 "– Denver, CO Map"). US 주(州) 코드일 때만(오탐 방지).
+_US_STATES = frozenset("AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY DC".split())
+_PLACE_TAIL_RE = re.compile(r"\s*[–—-]\s*[A-Z][A-Za-z.]*(?:\s+[A-Z][A-Za-z.]*)*,\s*(?P<st>[A-Z]{2})\b.*$")
+# 절단 판정용 — 완결로 인정하는 흔한 영문 꼬리어(사전 부재 → 화이트리스트). 미포함·단편이면 suspect(정직).
+_COMPLETE_TAIL = frozenset("""
+set kit bag box case cover stand holder mount clip strap band tool tools knife scissors brush
+board mat tray rack shelf light lamp cable charger bottle mug bowl plate spoon fork wand hose
+nozzle filter pump valve blade handle grip ring hook pad mask glove gloves sock socks hat cap
+belt wallet watch clock mirror frame vase pot planter seed seeds toy game book map sign tag
+label sticker magnet battery adapter plug socket switch sensor remote speaker camera phone
+tablet laptop mouse keyboard monitor screen drive memory card reader steel stainless wood
+wooden bamboo cotton leather metal plastic silicone glass ceramic titanium aluminum brass
+copper merino wool nylon resin marble black white red blue green gray grey pink gold silver
+brown beige navy teal orange yellow purple inch inches pack set pcs piece pieces count pair
+pairs mini small large jumbo pro max plus ultra premium deluxe classic vintage modern portable
+foldable adjustable reusable waterproof insulated wireless rechargeable digital smart compact
+universal with for and the of trimmer blender cleaner printer scanner cutting sleeve roller
+grater whistle cabinet storage massage blanket pillow curtain lantern thermos spatula strainer
+organizer diffuser pruner cutter opener grinder slicer peeler whisk ladle tongs
+""".split())
+
+
+def _suspect_tail(s: str) -> bool:
+    """영문 꼬리 단편이면 True(절단 의심). 사전 부재 → 완결 화이트리스트 대조.
+
+    소싱맵 원본 name은 name_ko 자체가 절단원(더 긴 원본 없음)이라 대조 불가 → 라틴 꼬리 단편 휴리스틱.
+    발명 금지: 확실치 않으면 suspect(정직). 한글 꼬리·완결어·긴 단어(8+)는 미판정(오탐 흡수).
+    """
+    m = re.search(r"([A-Za-z]+)\s*$", (s or "").strip())     # 마지막 라틴 토큰 전체(한글 꼬리는 무판정)
+    if not m:
+        return False
+    tok = m.group(1)
+    if len(tok) == 1:                            # 단일 라틴 문자 꼬리("… Aluminum W") = 절단 의심
+        return True
+    return 2 <= len(tok) <= 7 and tok.lower() not in _COMPLETE_TAIL
 
 
 def clean_title_ko(title, url: str = "") -> dict:
-    """검수표용 제목 정제. 조용히 자르지 않는다 — 절단 의심은 플래그로 표시.
+    """검수표용 제목 정제. **조용히 자르지 않는다** — 절단은 truncated(하드)/truncated_suspect(소프트) 플래그.
 
-    반환 {"title": 정제문, "truncated": bool, "changed": bool}. sanitize_title(마켓/브랜드/카테고리 꼬리)
-    재사용 후 별점·프로모괄호·일문 잔재 제거 + 인접 중복어 축약. 전부 지워지면 원문 보존(빈 결과 금지).
+    반환 {"title","truncated","truncated_suspect","cjk_residual","changed"}. sanitize_title(마켓/브랜드/카테고리 꼬리)
+    재사용 후 별점·평점(한/영)·프로모괄호·지명꼬리·일문 가나 제거 + 인접 중복어 축약. CJK 한자는 **삭제 안 함**(번역 소관·
+    브랜드 소실 위험) — 잔존만 cjk_residual로 표기. 전부 지워지면 원문 보존(빈 결과 금지).
     """
     raw = str(title if title is not None else "").strip()
     if not raw:
-        return {"title": "", "truncated": False, "changed": False}
+        return {"title": "", "truncated": False, "truncated_suspect": False, "cjk_residual": False, "changed": False}
     try:
         from src.collectors.collect_sanitize import sanitize_title
         s = sanitize_title(raw, url)
     except Exception:
         s = raw
-    truncated = bool(_ELLIPSIS_RE.search(s)) or len(raw) > _TITLE_MAX
+    # 하드 절단 신호는 **정제 전**에 포착(말줄임표/대시끝은 정제로 지워지므로).
+    hard_trunc = bool(_ELLIPSIS_RE.search(s) or _TRAIL_DASH_RE.search(s) or len(raw) > _TITLE_MAX)
     s = _ELLIPSIS_RE.sub("", s)
     s = _PROMO_BRACKET_RE.sub(" ", s)
-    s = _STAR_RE.sub(" ", s)
+    s = _RATING_RE.sub(" ", s)
+    m = _PLACE_TAIL_RE.search(s)                                     # 지명 꼬리(US 주 코드일 때만)
+    if m and m.group("st").upper() in _US_STATES:
+        s = s[:m.start()].rstrip()
     s = _JP_KANA_RE.sub(" ", s)                                     # 일문(가나) 잔재 제거
     s = re.sub(r"[\[\]【】〔〕]", " ", s)                            # 빈 괄호 잔해
-    # 인접 중복어(브랜드 병기 등: "나이키 나이키", "Nike Nike") 축약
-    s = re.sub(r"\b(\w{2,})(\s+\1\b)+", r"\1", s, flags=re.I)
+    s = re.sub(r"\b(\w{2,})(\s+\1\b)+", r"\1", s, flags=re.I)       # 인접 중복어 축약
     s = re.sub(r"\s+", " ", s).strip(" -–·|,")
     if not s:
         s = raw                                                     # 과도 제거 방어
-    return {"title": s, "truncated": truncated, "changed": s != raw}
+    truncated = hard_trunc or bool(_TRAIL_DASH_RE.search(s))
+    suspect = (not truncated) and _suspect_tail(s)                  # 하드면 suspect 중복 표기 안 함
+    return {"title": s, "truncated": truncated, "truncated_suspect": suspect,
+            "cjk_residual": bool(_CJK_IDEO_RE.search(s)), "changed": s != raw}
 
 
 # ── 소싱 소스 분류 (파일럿 우선순위 + 라쿠텐 분리) ──────────────────────────────
@@ -559,6 +610,7 @@ def build_review_row(entry: dict, *, channel: str = "woocommerce_multishop",
     return {
         "sid": entry.get("sid"), "asin": entry.get("asin"),
         "title_ko": ct["title"], "title_truncated": ct["truncated"],
+        "title_truncated_suspect": ct["truncated_suspect"], "title_cjk_residual": ct["cjk_residual"],
         "title_cleaned": ct["changed"], "cost_krw": cost,
         "sale_krw": price.get("sale_price_krw") if price.get("ok") else None,
         "margin_pct": price.get("margin_rate") if price.get("ok") else None,

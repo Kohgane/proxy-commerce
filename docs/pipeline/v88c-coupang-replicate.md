@@ -75,3 +75,11 @@ fx 미상 시 가짜 환산 0(price ok=False). 반환 summary = {ingested·skipp
 - **admin 트리거**: `POST /admin/coupang-pilot`(오너 세션 인증) → 396→50→검수표. 라이브 조인(쿠팡 현행가·재고·판매상태 재조회, 저장 스테일값 신뢰 금지)은 쿠팡 자격+릴레이(Render)일 때만; 미충족=sourcing krw(원가, 현행가 아님)+access 보고.
 - **하드 정지**: `PILOT_REGISTER_APPROVED=False`(상수, env로 못 뚫음) + `pilot_register_guard()`. 등록은 **오너 검수 후 별도 커밋으로만** 해제. 전 검수 행 `registered=False`.
 계약 `test_v88_c_pilot`(9: 396 결정성·대표우선순위·50 결정성·하드정지·검수표/블랙리스트·admin 게이트).
+
+## 제목 정제 `clean_title_ko` (검수 반려 수리, 실데이터 계약)
+`build_review_row`가 `title_ko`에 적용 → 행에 `title_truncated`·`title_truncated_suspect`·`title_cjk_residual`·`title_cleaned` 노출. `collect_sanitize.sanitize_title`(마켓/브랜드/카테고리 꼬리) 재사용 + 파일럿 잡문 처리.
+- **별점/평점(한·영):** `_RATING_RE` — `★☆`, `4.8 out of 5 stars`, `4.8/5 stars`, `rating details`, `1,234 ratings/reviews`, 한글 평점. (실데이터: FELCO B00511984W.)
+- **지명 잡문 꼬리:** `_PLACE_TAIL_RE` — `– City, ST …`를 **US 주 코드(_US_STATES)일 때만** 제거(오탐 방지). (실데이터: 덴버글라스 "– Denver, CO Map".)
+- **절단 판정(조용히 자르지 않음):** 하드 `truncated` = 말줄임표/대시끝/100자 초과(정제 전 포착). 소프트 `truncated_suspect` = **영문 마지막 토큰이 완결 화이트리스트(`_COMPLETE_TAIL`) 밖 2~7자 단편 또는 단일 문자**(사전 부재 → 화이트리스트, 8+자·한글 꼬리는 무판정). 소싱맵 name_ko 자체가 절단원(더 긴 원본 없음)이라 길이 대조 불가 → 휴리스틱, **불확실=suspect 정직 표기**(발명 0). (실데이터: "Insulated Stai"·"PEN CLI"·"w updat"·"Scisso"·"Patente"·"…Aluminum W".) 과탐은 등록 직전 검수로 흡수(미탐이 더 위험).
+- **CJK 한자 정책(오너 보고):** 일문 **가나**는 제거(`_JP_KANA_RE`), **한자(漢字)는 삭제하지 않는다**. 근거 = ①번역 소관(万年筆→만년필은 translate_fn이 렌더, 삭제하면 제품명 자체 소실) ②CJK 한자는 ja/zh/ko 공유라 브랜드·제품 정보일 수 있어 삭제=파괴적. 대신 `title_cjk_residual=True`로 **잔존 표기**(번역 미완 신호) — 재번역/검수로 해소. (실데이터: 세일러 "万年筆".)
+계약 `test_v88_c_coupang_replicate`(별점 영문·중간절단 6실데이터·완결 꼬리 오탐0·지명꼬리·CJK 잔존).
