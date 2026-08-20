@@ -265,6 +265,45 @@
   margin-top: 0.75rem;
 }
 
+/* 디자인 시스템 v2 (Stage 3) — Swiss 빈 상태: 타이포 위계(헤딩·서브·정렬 CTA), 기하 장식 없음. */
+.console-empty-state .pc-empty-title {
+  font-family: var(--font-display);
+  font-size: 1.18rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-strong);
+  margin-bottom: 0.35rem;
+}
+.console-empty-state .pc-empty-sub {
+  color: var(--console-muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+  max-width: 46ch;
+  margin: 0 auto;
+}
+
+/* 디자인 시스템 v2 (Stage 3) — Swiss 테이블: 오버라인 헤더 + 헤어라인 행 + 정렬 위계(장식 최소). */
+.pc-swiss-table { --bs-table-bg: transparent; }
+.pc-swiss-table > thead th {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--hairline-color, rgba(201, 162, 75, .28));
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--gold-ink, #8a6d22);
+  padding: 0.55rem 0.75rem;
+  white-space: nowrap;
+}
+.pc-swiss-table > tbody > tr > td {
+  border-top: 1px solid var(--console-border);
+  border-bottom: 0;
+  vertical-align: middle;
+  padding: 0.7rem 0.75rem;
+}
+.pc-swiss-table > tbody > tr:first-child > td { border-top: 0; }
+
 .console-onboarding-card {
   border-color: #d9d6ff;
   background: linear-gradient(180deg, var(--on-accent) 0%, #f7f6ff 100%);

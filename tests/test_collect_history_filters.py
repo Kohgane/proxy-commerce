@@ -69,4 +69,4 @@ def test_no_results_message_when_filtered_empty(client):
     from src.seller_console import collect_history_store as chs
     _seed(chs)
     html = client.get("/seller/collect/history?q=존재하지않는검색어").get_data(as_text=True)
-    assert "조건에 맞는 수집 항목이 없습니다" in html
+    assert "조건에 맞는 수집 항목이 없어요" in html

@@ -80,7 +80,7 @@ class TestCollectHistoryView:
              patch("src.seller_console.collect_history_store.distinct_domains", return_value=[]):
             resp = client.get("/seller/collect/history")
         assert resp.status_code == 200
-        assert "수집 이력이 없습니다" in resp.data.decode("utf-8")
+        assert "아직 수집한 상품이 없어요" in resp.data.decode("utf-8")
 
     def test_history_filter_by_domain(self, client):
         """도메인 필터 적용 시 URL 파라미터 반영."""
