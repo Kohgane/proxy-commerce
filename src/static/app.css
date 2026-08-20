@@ -80,6 +80,17 @@
   --lift: translateY(-2px);               /* 카드 호버 상승 */
 
   /* ========================================================================
+     디자인 시스템 v2 (v40-2) — Swiss × Bauhaus × Neumorphism 융합 ([[디자인 시스템 v2]]).
+     뿌리(한지·금속활자·다리) 유지. Swiss=그리드/타이포 위계 · Bauhaus=기하 액센트(금·청록·주황 3원색)
+     · Neumorphism(절제)=카드/버튼/토글 이중 그림자. **그림자는 텍스트 대비 불변 → WCAG AA 유지.**
+     ======================================================================== */
+  --nm-up: 6px 6px 16px rgba(26, 23, 20, .09), -6px -6px 14px rgba(255, 255, 255, .72);
+  --nm-up-sm: 3px 3px 9px rgba(26, 23, 20, .08), -3px -3px 8px rgba(255, 255, 255, .70);
+  --nm-up-lg: 8px 8px 20px rgba(26, 23, 20, .11), -8px -8px 16px rgba(255, 255, 255, .78);
+  --nm-in: inset 4px 4px 10px rgba(26, 23, 20, .10), inset -4px -4px 9px rgba(255, 255, 255, .70);
+  --geo: 84px;                            /* 바우하우스 기하 기본 크기 */
+
+  /* ========================================================================
      하위호환 별칭: 기존 --pc-* 는 v18 토큰을 가리킨다(단일 소스 유지).
      ※ 신규 코드는 v18 토큰을 직접 쓰고, --pc-* 는 점진적으로 정리.
      ======================================================================== */
@@ -536,6 +547,20 @@ a:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(17, 154, 142, .35); 
 /* 카드 호버 상승 + 얕은 3단 그림자(opt-in) */
 .pc-lift { transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
 .pc-lift:hover { transform: var(--lift); box-shadow: var(--shadow-lg); }
+
+/* ── 디자인 시스템 v2 유틸(opt-in, 단일소스) ─────────────────────────────────── */
+/* Neumorphism 표면(절제): 카드/버튼/토글에만. 텍스트 대비 불변 → AA 유지. */
+.pc-neu { background: var(--surface); border: 0; border-radius: var(--radius-xl); box-shadow: var(--nm-up); }
+.pc-neu-sm { border: 0; box-shadow: var(--nm-up-sm); }
+.pc-neu-in { box-shadow: var(--nm-in); }
+.pc-neu-lift { transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
+.pc-neu-lift:hover { transform: var(--lift); box-shadow: var(--nm-up-lg); }
+@media (prefers-reduced-motion: reduce) { .pc-neu-lift { transition: none; } .pc-neu-lift:hover { transform: none; } }
+/* Bauhaus 기하 액센트(빈 상태·온보딩·히어로): 원=금, 사각=청록, 삼각=주황 키스톤. 원색 남발 금지. */
+.pc-geo-circle { display: inline-block; width: var(--geo); height: var(--geo); border-radius: 50%; border: calc(var(--geo) / 7) solid var(--gold); }
+.pc-geo-square { display: inline-block; width: calc(var(--geo) * .86); height: calc(var(--geo) * .86); background: var(--teal); border-radius: 6px; box-shadow: var(--nm-up); }
+.pc-geo-tri { display: inline-block; width: 0; height: 0; border-left: calc(var(--geo) / 1.55) solid transparent; border-right: calc(var(--geo) / 1.55) solid transparent; border-bottom: var(--geo) solid var(--orange); }
+
 /* 링크 밑줄 슬라이드(opt-in) */
 .pc-link { position: relative; text-decoration: none; color: var(--teal); }
 .pc-link::after {
