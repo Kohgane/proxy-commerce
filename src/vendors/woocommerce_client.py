@@ -296,6 +296,14 @@ def prepare_product_data(catalog_row: dict, sell_price_krw: float) -> dict:
         if tag_ids:
             product['tags'] = tag_ids
 
+    # v88-C 파일럿 카나리: status(draft) + 파일럿 메타(비노출 _-prefix) 지원. 미지정이면 기존 동작(publish) 불변.
+    _status = str(catalog_row.get('status') or '').strip().lower()
+    if _status in ('draft', 'pending', 'private', 'publish'):
+        product['status'] = _status
+    for _m in (catalog_row.get('extra_meta') or []):
+        if isinstance(_m, dict) and _m.get('key'):
+            product['meta_data'].append({'key': str(_m['key']), 'value': str(_m.get('value', ''))})
+
     return product
 
 

@@ -520,12 +520,14 @@ def run_pilot_ingest(pilot_rows, *, channel, collect_fn, prevalidate_fn=None,
 # 오너 승인 모집단: coupang_sid truthy → sid 그룹핑 → sid당 대표 1건 = distinct 396.
 # 대표 선정은 **결정적**(난수 금지): ① krw+usd 모두 보유 ② sources[] ship_usd 보유 ③ ASIN 사전순.
 
-# ★ 하드 정지 게이트 — 코드 레벨. env로 못 뚫는다. 해제는 오너 검수 후 별도 커밋으로만.
-PILOT_REGISTER_APPROVED = False
+# ★ 하드 정지 게이트 — 코드 레벨. env로 못 뚫는다.
+#   오너 최종 승인("전부가라", 2026-08-20) → **해제**. 안전은 카나리 게이트(register_pilot_rows batch_ok)로 이관:
+#   승인돼도 batch_ok 없으면 1건(카나리)만 등록. 47 전량은 오너 육안 확인 후 batch_ok=True로만. draft 등록.
+PILOT_REGISTER_APPROVED = True
 
 
 def pilot_register_guard() -> None:
-    """파일럿 등록 직전 강제 게이트. 상수 False → 항상 차단(env 오버라이드 불가)."""
+    """파일럿 등록 직전 강제 게이트. 승인 안 됐으면 차단(env 오버라이드 불가)."""
     if PILOT_REGISTER_APPROVED is not True:
         raise RuntimeError("PILOT_REGISTER_APPROVED=False — 파일럿 자동 등록 하드 정지(오너 검수 후 별도 커밋으로만 해제)")
 
@@ -617,6 +619,76 @@ def build_review_row(entry: dict, *, channel: str = "woocommerce_multishop",
         "target_channel": channel, "source": entry.get("source"),
         "forbidden": fb, "excluded": bool(fb),
         "dedup_reason": entry.get("reason"), "registered": False,
+    }
+
+
+# ── 파일럿 등록 실행 (카나리 게이트 · draft · 롤백 금지 · 행별 정직 결과) ──────────
+def register_pilot_rows(rows, *, dispatch_fn, n: int = 1, batch_ok: bool = False,
+                        status: str = "draft", enrich_fn=None, sleep_fn=None,
+                        sleep_sec: float = 0.6, markets=("woocommerce",)) -> dict:
+    """검수 통과 행을 마켓에 **실등록**. 오너 승인(PILOT_REGISTER_APPROVED) 필수.
+
+    **카나리 게이트:** `batch_ok=False`면 첫 1행(review_table[0] = Ystudio)만 등록. 47 전량은 오너 육안
+    확인 후 `batch_ok=True`(+n)로만. **롤백 금지**(부분 실패 시 성공분 유지) · **조용한 실패 금지**(행별
+    registered+사유) · draft 등록(되돌림성). suspect/cjk 플래그 행도 등록하되 상품 비노출 메타(`_kgp_*`)에
+    남겨 후속 제목 보정 배치 대상으로. dispatch_fn/enrich_fn 주입(발명 0·오프라인 테스트).
+    """
+    pilot_register_guard()                                   # 승인 안 됐으면 raise
+    import time as _t
+    sleep_fn = sleep_fn or _t.sleep
+    passable = [r for r in (rows or []) if not r.get("excluded")]
+    passable = passable[:1] if not batch_ok else passable[:max(0, int(n))]
+    results = []
+    for i, r in enumerate(passable):
+        if i and sleep_sec:
+            sleep_fn(sleep_sec)                              # 레이트리밋 예의(호출 간격)
+        images, desc, src_url = [], "", r.get("url", "") or ""
+        if enrich_fn:
+            try:
+                e = enrich_fn(r) or {}
+                images = list(e.get("images") or [])
+                desc = e.get("description_html") or ""
+                src_url = e.get("sourcing_url") or src_url
+            except Exception as exc:                          # 수집 실패는 정직 실패(등록 안 함), 다음 행 계속
+                results.append({"sid": r.get("sid"), "asin": r.get("asin"), "title": r.get("title_ko"),
+                                "registered": False, "reason": f"collect 실패: {exc}", "image_count": 0,
+                                "url": None, "status": status})
+                continue
+        meta = [{"key": "_kgp_pilot_sid", "value": str(r.get("sid"))}]
+        if r.get("title_truncated") or r.get("title_truncated_suspect"):
+            meta.append({"key": "_kgp_title_suspect", "value": "1"})
+        if r.get("title_cjk_residual"):
+            meta.append({"key": "_kgp_cjk_residual", "value": "1"})
+        product_data = {
+            "title_ko": r.get("title_ko"), "sell_price_krw": r.get("sale_krw"),
+            "images": images, "description_html": desc, "url": src_url,
+            "status": status, "pilot_meta": meta, "source": r.get("source"),
+        }
+        try:
+            dr = dispatch_fn(product_data, list(markets))
+        except Exception as exc:                              # 롤백 금지 — 실패분만 기록하고 계속
+            results.append({"sid": r.get("sid"), "asin": r.get("asin"), "title": r.get("title_ko"),
+                            "registered": False, "reason": f"dispatch 예외: {exc}", "image_count": len(images),
+                            "url": None, "status": status})
+            continue
+        wr = next((rr for rr in (getattr(dr, "results", None) or []) if getattr(rr, "market", "") == "woocommerce"), None)
+        ok = bool(wr and getattr(wr, "success", False))
+        results.append({
+            "sid": r.get("sid"), "asin": r.get("asin"), "title": r.get("title_ko"),
+            "registered": ok, "status": status, "image_count": len(images), "sale_krw": r.get("sale_krw"),
+            "url": (getattr(wr, "external_url", None) if wr else None),
+            "reason": None if ok else (getattr(wr, "message", None) if wr else "woo 결과 없음"),
+            "title_suspect": bool(r.get("title_truncated") or r.get("title_truncated_suspect")),
+            "cjk_residual": bool(r.get("title_cjk_residual")),
+        })
+    return {
+        "mode": "canary" if not batch_ok else "batch",
+        "target": len(passable), "batch_ok": bool(batch_ok), "status": status,
+        "registered": sum(1 for x in results if x["registered"]),
+        "failed": sum(1 for x in results if not x["registered"]),
+        "results": results,
+        "note": ("카나리(1건 · Ystudio) — 육안 확인 후 batch_ok=1로 46건 속행"
+                 if not batch_ok else f"배치({len(passable)}건, draft)"),
     }
 
 

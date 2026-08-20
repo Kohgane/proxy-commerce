@@ -52,11 +52,69 @@ def test_select_pilot_deterministic_and_count():
     assert len(CR.select_pilot(pop[:30], n=50)) == 30
 
 
-def test_hard_stop_gate_raises_and_env_cannot_override(monkeypatch):
-    assert CR.PILOT_REGISTER_APPROVED is False
-    monkeypatch.setenv("PILOT_REGISTER_APPROVED", "1")   # env로 못 뚫는다
-    with pytest.raises(RuntimeError, match="하드 정지"):
-        CR.pilot_register_guard()
+def test_register_gate_approved_and_guard_passes():
+    # 오너 최종 승인("전부가라") → 해제. 안전은 카나리 게이트(register_pilot_rows batch_ok)로 이관.
+    assert CR.PILOT_REGISTER_APPROVED is True
+    CR.pilot_register_guard()          # 승인됐으므로 raise 안 함
+
+
+class _FakeUploadResult:
+    def __init__(self, ok, url=None, message=None):
+        self.market = "woocommerce"; self.success = ok; self.external_url = url; self.message = message
+
+
+class _FakeDispatch:
+    def __init__(self, ok=True): self.ok = ok; self.calls = []
+    def __call__(self, product_data, markets):
+        self.calls.append(product_data)
+        class _DR:
+            results = [_FakeUploadResult(self.ok, url="https://shop/p/%s" % product_data.get("title_ko"),
+                                         message=None if self.ok else "WC 인증 실패")]
+        return _DR()
+
+
+def _rows(n=3):
+    return [{"sid": 100 + i, "asin": "A%d" % i, "title_ko": "상품%d" % i, "sale_krw": 10000 + i,
+             "excluded": False} for i in range(n)]
+
+
+def test_register_canary_registers_only_first_without_batch_ok():
+    disp = _FakeDispatch(ok=True)
+    out = CR.register_pilot_rows(_rows(3), dispatch_fn=disp, sleep_fn=lambda s: None)
+    assert out["mode"] == "canary" and out["target"] == 1 and out["registered"] == 1
+    assert len(disp.calls) == 1                     # 첫 1건(Ystudio)만 — 46건 금지
+    assert disp.calls[0]["status"] == "draft"       # draft 등록
+    assert out["results"][0]["url"].startswith("https://shop/p/")
+
+
+def test_register_batch_ok_registers_all_and_reports_per_row():
+    disp = _FakeDispatch(ok=True)
+    out = CR.register_pilot_rows(_rows(3), dispatch_fn=disp, n=47, batch_ok=True, sleep_fn=lambda s: None)
+    assert out["mode"] == "batch" and out["target"] == 3 and out["registered"] == 3
+    assert all(r["registered"] and r["status"] == "draft" for r in out["results"])
+
+
+def test_register_partial_failure_no_rollback_and_honest_reason():
+    # 첫 성공·둘째 실패 → 성공분 유지(롤백 금지), 실패분 사유 표기(조용한 실패 금지).
+    class _Mixed(_FakeDispatch):
+        def __call__(self, product_data, markets):
+            ok = product_data["title_ko"] != "상품1"
+            class _DR:
+                results = [_FakeUploadResult(ok, url=("u" if ok else None), message=(None if ok else "가격 0"))]
+            return _DR()
+    out = CR.register_pilot_rows(_rows(3), dispatch_fn=_Mixed(), n=3, batch_ok=True, sleep_fn=lambda s: None)
+    assert out["registered"] == 2 and out["failed"] == 1
+    fail = [r for r in out["results"] if not r["registered"]][0]
+    assert fail["reason"] and fail["url"] is None      # 사유 존재·롤백 안 함(성공 2건 유지)
+
+
+def test_register_flags_suspect_cjk_into_meta():
+    disp = _FakeDispatch(ok=True)
+    row = {"sid": 9, "asin": "Z", "title_ko": "세일러 万年筆", "sale_krw": 5000, "excluded": False,
+           "title_truncated_suspect": True, "title_cjk_residual": True}
+    CR.register_pilot_rows([row], dispatch_fn=disp, sleep_fn=lambda s: None)
+    keys = {m["key"] for m in disp.calls[0]["pilot_meta"]}
+    assert "_kgp_title_suspect" in keys and "_kgp_cjk_residual" in keys and "_kgp_pilot_sid" in keys
 
 
 def test_review_row_blacklist_and_price_and_no_register():
@@ -101,7 +159,7 @@ def test_pilot_route_returns_population_selection_and_gate(monkeypatch):
     assert r.status_code == 200, r.status_code
     d = r.get_json()
     assert d["ok"] is True
-    assert d["registered"] is False and "PILOT_REGISTER_APPROVED=False" in d["register_gate"]
+    assert d["registered"] is False and "PILOT_REGISTER_APPROVED=True" in d["register_gate"]
     # 레포에 data/pilot_population.json(396) 존재 → 그 모집단 사용.
     if Path("data/pilot_population.json").is_file():
         assert d["population_count"] == 396 and d["selected"] == 50

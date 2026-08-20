@@ -3637,7 +3637,8 @@ def coupang_pilot_trigger():
                                    price_fn=price_fn, translate_fn=translate_fn)
     report.update({
         "ok": True,
-        "register_gate": "PILOT_REGISTER_APPROVED=False (하드 정지 — env로 못 뚫음)",
+        "register_gate": ("PILOT_REGISTER_APPROVED=True (오너 승인) · 등록은 POST /admin/coupang-pilot/register "
+                          "— 기본 카나리 1건(Ystudio), 46건은 ?batch_ok=1로만. draft 등록."),
         "registered": False,
         "blacklist85_loaded": bl["count"],
         "blacklist_source": bl["source"],
@@ -3646,3 +3647,78 @@ def coupang_pilot_trigger():
                            if (report["live"] and not report["live_price_used"]) else None,
     })
     return jsonify(report)
+
+
+# ── v88-C 파일럿 등록 실행 (오너 승인 · 카나리 게이트 · draft · 롤백 금지) ──────────
+@admin_panel_bp.post("/coupang-pilot/register")
+def coupang_pilot_register():
+    """검수표 행을 WooCommerce에 **draft 실등록**. 오너 세션 인증(before_request).
+
+    기본 = **카나리 1건**(review_table[0] = Ystudio). 46건 전량은 오너 육안 확인 후 **`?batch_ok=1&n=47`**로만.
+    행별 registered:true/false + 사유(조용한 실패 금지) · 부분 실패 시 성공분 유지(롤백 금지) · draft(되돌림성).
+    자격은 env WC_URL/WC_KEY/WC_SECRET(또는 WOO_*) — 없으면 dispatch가 정직 실패(가짜 성공 0).
+    """
+    from flask import jsonify, request
+    import json as _json
+    from pathlib import Path as _P
+    from src.pipeline import coupang_replicate as CR
+
+    # 모집단 → 검수표(트리거와 동일 로직). 블랙리스트 0건이면 등록 금지(빈 필터 등록 금지).
+    pop_file = _P("data/pilot_population.json")
+    if pop_file.is_file():
+        pop = _json.loads(pop_file.read_text(encoding="utf-8")).get("population", [])
+    else:
+        try:
+            sm_raw = _json.loads(_P("data/sourcing_map.json").read_text(encoding="utf-8"))
+        except Exception:
+            sm_raw = {}
+        pop = CR.build_pilot_population(sm_raw)["population"] if sm_raw else []
+    if not pop:
+        return jsonify({"ok": False, "error": "pilot_population 없음 — sourcing_map 배포 확인"}), 400
+
+    bl = CR.load_blacklist85()
+    if bl["count"] == 0 and request.args.get("allow_no_blacklist") not in ("1", "true", "yes"):
+        return jsonify({"ok": False, "error": "blacklist85 로드 0건 — 등록 중단(빈 필터 등록 금지)",
+                        "how_to_load": "Render env COUPANG_BLACKLIST85 설정"}), 400
+
+    access = CR.access_status()
+    relay = CR.relay_ready()
+    report = CR.build_pilot_report(pop, n=int(request.args.get("select_n", 50)),
+                                   channel="woocommerce_multishop", blacklist=bl["terms"],
+                                   access=access, relay=relay)
+    review = report.get("review_table") or []
+
+    batch_ok = request.args.get("batch_ok") in ("1", "true", "yes")
+    n = int(request.args.get("n", 1))
+
+    # 소싱 URL 수집 → 이미지·상세 보강(enrich). 소싱맵에서 ASIN별 소스 URL 해석 + 기존 수집 경로 재사용(발명 0).
+    sm = CR.load_sourcing_map()
+    smap = sm.get("map") or {}
+
+    def _enrich(row):
+        asin = str(row.get("asin") or "").upper()
+        url = smap.get(asin) if isinstance(smap.get(asin), str) else ""
+        if not url:
+            return {"images": [], "description_html": "", "sourcing_url": ""}
+        try:
+            from src.seller_console.views import _collect_real_draft   # 기존 서버 수집(발명 0)
+            draft = _collect_real_draft(url) or {}
+        except Exception:
+            return {"images": [], "description_html": "", "sourcing_url": url}
+        imgs = (draft.get("images") or [])[:CR.IMAGE_CAP]              # 이미지 2장 캡(오너 금지 준수)
+        return {"images": imgs, "description_html": draft.get("description_html") or draft.get("description") or "",
+                "sourcing_url": url}
+
+    try:
+        from src.seller_console.upload_dispatcher import UploadDispatcher
+        dispatcher = UploadDispatcher()
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"UploadDispatcher 로드 실패: {exc}"}), 500
+
+    result = CR.register_pilot_rows(
+        review, dispatch_fn=dispatcher.dispatch, n=n, batch_ok=batch_ok,
+        status="draft", enrich_fn=_enrich, markets=("woocommerce",))
+    result.update({"ok": True, "review_pass": len(review),
+                   "register_gate": "PILOT_REGISTER_APPROVED=True (오너 승인) · draft",
+                   "next": ("육안 확인 후 ?batch_ok=1&n=47 로 46건 속행" if not batch_ok else "완료")})
+    return jsonify(result)
