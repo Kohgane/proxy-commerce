@@ -73,8 +73,14 @@ fx 미상 시 가짜 환산 0(price ok=False). 반환 summary = {ingested·skipp
 - **50 선정**: `select_pilot` — sid 오름차순 stride(결정적, 난수 0).
 - **검수표**(`build_review_row`): sid·ASIN·번역제목(원본 name_ko)·현행가/원가·마진%·타겟채널·**금지 85 필터 판정(사유)**·중복제거 근거. 금지 미통과=`excluded_table`에 사유와 함께(조용한 탈락 금지). 85 리스트는 오너 자산 → `data/coupang_blacklist85.json` 주입(레포 미보유, 카테고리+금지어는 상시).
 - **admin 트리거**: `POST /admin/coupang-pilot`(오너 세션 인증) → 396→50→검수표. 라이브 조인(쿠팡 현행가·재고·판매상태 재조회, 저장 스테일값 신뢰 금지)은 쿠팡 자격+릴레이(Render)일 때만; 미충족=sourcing krw(원가, 현행가 아님)+access 보고.
-- **하드 정지**: `PILOT_REGISTER_APPROVED=False`(상수, env로 못 뚫음) + `pilot_register_guard()`. 등록은 **오너 검수 후 별도 커밋으로만** 해제. 전 검수 행 `registered=False`.
-계약 `test_v88_c_pilot`(9: 396 결정성·대표우선순위·50 결정성·하드정지·검수표/블랙리스트·admin 게이트).
+- **하드 정지 → 해제(오너 최종 승인 "전부가라", 2026-08-20)**: `PILOT_REGISTER_APPROVED=True`. 안전은 **카나리 게이트**로 이관.
+계약 `test_v88_c_pilot`(396 결정성·대표우선순위·50 결정성·승인/가드·검수표/블랙리스트·admin 게이트·등록 카나리/배치/롤백/메타).
+
+## 파일럿 등록 실행 (카나리 게이트 · draft · 롤백 금지)
+- **자격 경로(실측):** WooCommerce 등록은 **env `WC_URL`/`WC_KEY`/`WC_SECRET`(또는 `WOO_BASE_URL/WOO_CK/WOO_CS`)** — 호출 시점 글로벌 env(`upload_dispatcher`/`woocommerce_client`). 셀러콘솔 "WooCommerce 미연결"은 셀러 저장 자격(`market_credentials`)이라 **env 경로와 무관**. 자격 없으면 dispatch가 정직 실패(가짜 성공 0).
+- **executor** `register_pilot_rows(rows, *, dispatch_fn, n, batch_ok, status="draft", enrich_fn, ...)`: `batch_ok=False`면 **첫 1행(Ystudio)만**(카나리), 47 전량은 오너 육안 확인 후 `batch_ok=True`로만. **행별 registered:true/false+사유**(조용한 실패 금지)·**롤백 금지**(부분 실패 시 성공분 유지)·draft(되돌림성)·레이트리밋 예의(호출 간격). suspect/cjk 플래그 행도 등록하되 비노출 메타(`_kgp_title_suspect`·`_kgp_cjk_residual`·`_kgp_pilot_sid`)에 남겨 후속 제목 보정 대상. enrich_fn = 소싱 URL 수집(기존 `_collect_real_draft` 재사용)→이미지 2장 캡+상세.
+- **admin 등록 라우트** `POST /admin/coupang-pilot/register`(오너 세션): 모집단→검수표→`register_pilot_rows`(dispatch=UploadDispatcher, draft). 기본 카나리 1건, `?batch_ok=1&n=47`로 46건 속행. blacklist 0건이면 등록 중단(빈 필터 등록 금지).
+- **불변:** draft 등록(publish 아님) → 오너 스토어서 육안 검수 후 publish. dispatch/enrich 주입식(오프라인 계약 테스트). 라이브 등록은 **Render 전용**(WC 자격 Render, 샌드박스 호출 불가) — 오너가 배포 앱서 트리거.
 
 ## 제목 정제 `clean_title_ko` (검수 반려 수리, 실데이터 계약)
 `build_review_row`가 `title_ko`에 적용 → 행에 `title_truncated`·`title_truncated_suspect`·`title_cjk_residual`·`title_cleaned` 노출. `collect_sanitize.sanitize_title`(마켓/브랜드/카테고리 꼬리) 재사용 + 파일럿 잡문 처리.
