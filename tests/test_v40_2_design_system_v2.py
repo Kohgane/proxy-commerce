@@ -51,6 +51,18 @@ def test_stage2_console_cards_buttons_toggle_neumorphism():
     assert "var(--nm-up-sm)" in gold and "border: 0" in gold
 
 
+def test_stage3_swiss_table_and_empty_state():
+    # Stage 3: Swiss 테이블(오버라인 헤더·헤어라인 행) + Swiss 빈 상태 타이포 위계(기하 장식 0).
+    assert ".pc-swiss-table > thead th" in CONSOLE
+    thead = CONSOLE.split(".pc-swiss-table > thead th", 1)[1].split("}", 1)[0]
+    assert "text-transform: uppercase" in thead and "var(--gold-ink" in thead
+    assert "var(--hairline-color" in thead                       # 헤어라인 하단선
+    assert ".pc-swiss-table > tbody > tr > td" in CONSOLE
+    assert ".console-empty-state .pc-empty-title" in CONSOLE and "var(--font-display)" in CONSOLE
+    # Bauhaus 기하 장식 없음(회귀 가드).
+    assert ".pc-geo" not in CONSOLE
+
+
 def test_root_palette_unchanged_aa_safe():
     # 뿌리 토큰 불변(강조 3색) — 그림자만 추가, 팔레트 재정의 아님.
     assert "--gold: #C9A24B" in APP and "--teal: #119A8E" in APP and "--orange: #F5821F" in APP
