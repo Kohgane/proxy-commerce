@@ -18,17 +18,14 @@ def test_neumorphism_tokens_single_source():
     assert "rgba(255, 255, 255" in APP and "rgba(26, 23, 20" in APP
 
 
-def test_bauhaus_geo_utilities_use_brand_tokens():
-    for cls in (".pc-geo-circle", ".pc-geo-square", ".pc-geo-tri"):
-        assert cls in APP, f"{cls} Bauhaus 유틸 누락"
-    # 원=금, 사각=청록, 삼각=주황(원색은 기존 3토큰만 — 신 원색 도입 0)
-    assert "solid var(--gold)" in APP
-    assert "background: var(--teal)" in APP
-    assert "solid var(--orange)" in APP
+def test_bauhaus_axis_removed_no_dead_utils():
+    # 오너 결정(2026-08-20): Bauhaus 축 제외 → v2 = Swiss × Neumo 2축. 죽은 유틸/토큰 잔류 0.
+    for gone in (".pc-geo-circle", ".pc-geo-square", ".pc-geo-tri", "--geo:"):
+        assert gone not in APP, f"Bauhaus 잔재 {gone} 제거 안 됨(죽은 코드)"
 
 
 def test_neu_utilities_and_reduced_motion():
-    for cls in (".pc-neu ", ".pc-neu-sm", ".pc-neu-in", ".pc-neu-lift"):
+    for cls in (".pc-neu ", ".pc-neu-sm", ".pc-neu-in", ".pc-neu-lift", ".pc-neu-toggle"):
         assert cls in APP, f"{cls} 뉴모피즘 유틸 누락"
     # 모션 접근성: reduced-motion에서 lift 정지.
     assert "prefers-reduced-motion" in APP
@@ -43,6 +40,15 @@ def test_console_kpi_card_uses_neumorphism_tokens():
     assert "border: 0" in block and "var(--radius-xl)" in block
     hov = CONSOLE.split(".console-kpi-card:hover", 1)[1].split("}", 1)[0]
     assert "var(--nm-up-lg)" in hov          # 호버도 토큰(하드코딩 그림자 0)
+
+
+def test_stage2_console_cards_buttons_toggle_neumorphism():
+    # Stage 2: 콘솔 카드/빈상태/스텝 카드 + 토글 스위치 뉴모피즘, 세컨더리 버튼 종이 표면.
+    card = CONSOLE.split(".console-step-card {", 1)[1].split("}", 1)[0]
+    assert "var(--nm-up" in card and "border: 0" in card
+    assert ".form-switch .form-check-input" in CONSOLE and "var(--nm-in)" in CONSOLE
+    gold = APP.split(".btn-gold {", 1)[1].split("}", 1)[0]
+    assert "var(--nm-up-sm)" in gold and "border: 0" in gold
 
 
 def test_root_palette_unchanged_aa_safe():
