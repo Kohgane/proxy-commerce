@@ -9122,56 +9122,28 @@ def returns_partial_refund(request_id: str):
 
 @bp.get("/settlement")
 def settlement_report():
-    """월별 정산 리포트 화면 (Phase 146)."""
+    """월별 정산 화면 — 주문별 순이익 자동계산(콘솔 벤치마크 Q1 #1).
+
+    판매가·원가·수수료·배송비·환율 반영 실마진. 원가 미연결 주문은 '미입력' 정직(합계 제외).
+    마진 공식은 기존 ÷0.618 엔진(MarginCalculator) 재사용 — 이중 정의 없음.
+    """
     if not _check_auth():
         return redirect(url_for("auth.login", next=request.url))
-    from src.settlement.reporter import SettlementReporter
 
     month = (request.args.get("month") or datetime.now(timezone.utc).strftime("%Y-%m")).strip()
-    reporter = SettlementReporter()
-    report = reporter.monthly_report(month, rows=[])
-    channels = "".join(
-        f"<li>{ch}: {amt:,}원</li>" for ch, amt in report["by_channel"].items()
-    ) or "<li>-</li>"
 
-    # 실 주문 KPI(연동 시 실데이터, 미연동 시 0 — 가짜 값 금지)
-    kpi = {"today_new": 0, "pending_ship": 0, "shipped": 0, "returned_exchanged": 0}
+    # 실 주문 → 순이익 자동계산(미연동/미입력은 정직하게 0·미입력, 가짜 수치 금지).
+    from .net_profit import net_profit_summary
+    orders = []
     try:
         from .orders.sync_service import OrderSyncService
-        k = OrderSyncService().kpi_summary() or {}
-        for key in kpi:
-            kpi[key] = int(k.get(key, 0) or 0)
+        order_list = OrderSyncService().list_orders(limit=200, offset=0) or []
+        orders = [o.to_dict() for o in order_list]
     except Exception as exc:
-        logger.debug("장부 주문 KPI 조회 실패: %s", exc)
+        logger.debug("장부 주문 조회 실패: %s", exc)
+    summary = net_profit_summary(orders)
 
-    body = (
-        "<h4 class='mb-1'>💰 장부 · 정산 (수익 관리)</h4>"
-        "<p class='text-muted small mb-3'>매출·정산 요약과 주문 현황입니다. 숫자는 연동된 마켓/주문 데이터 기준이며, "
-        "미연동 시 0으로 정직하게 표시됩니다.</p>"
-        "<form class='row g-2 mb-3'>"
-        "<div class='col-auto'><input name='month' class='form-control form-control-sm' value='"
-        + month
-        + "'></div>"
-        "<div class='col-auto'><button class='btn btn-primary btn-sm'>조회</button></div>"
-        "</form>"
-        "<div class='row g-2 mb-3'>"
-        f"<div class='col-6 col-md-3'><div class='card text-center p-2'><div class='fs-5 fw-bold'>{kpi['today_new']}</div><small class='text-muted'>오늘 신규주문</small></div></div>"
-        f"<div class='col-6 col-md-3'><div class='card text-center p-2'><div class='fs-5 fw-bold text-warning'>{kpi['pending_ship']}</div><small class='text-muted'>배송 대기</small></div></div>"
-        f"<div class='col-6 col-md-3'><div class='card text-center p-2'><div class='fs-5 fw-bold text-success'>{kpi['shipped']}</div><small class='text-muted'>배송 완료</small></div></div>"
-        f"<div class='col-6 col-md-3'><div class='card text-center p-2'><div class='fs-5 fw-bold text-danger'>{kpi['returned_exchanged']}</div><small class='text-muted'>반품/교환</small></div></div>"
-        "</div>"
-        f"<div class='alert alert-light border'>이번달 매출(예정): <strong>{report['total_sales_krw']:,}원</strong><br>"
-        f"실 입금 예정액: <strong>{report['total_expected_deposit_krw']:,}원</strong><br>"
-        f"다음 정산일: {report['next_settlement_date']}</div>"
-        "<h6>채널별 순이익</h6><ul>" + channels + "</ul>"
-        "<div class='d-flex flex-wrap gap-2'>"
-        f"<a class='btn btn-gold btn-sm' href='/seller/settlement/export.csv?month={month}'>CSV 내보내기</a>"
-        f"<a class='btn btn-gold btn-sm' href='/seller/settlement/export.xlsx?month={month}'>Excel 내보내기</a>"
-        "<a class='btn btn-outline-secondary btn-sm' href='/seller/analytics'>📊 BI 분석</a>"
-        "<a class='btn btn-outline-secondary btn-sm' href='/seller/margin'>🧮 마진 계산기</a>"
-        "</div>"
-    )
-    return _render_seller_page("💰 장부 · 정산", body, page="settlement")
+    return render_template("settlement.html", page="settlement", month=month, summary=summary)
 
 
 @bp.get("/settlement/export.csv")

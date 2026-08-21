@@ -28,13 +28,21 @@ def test_settlement_page_200_and_ledger_framing(client):
     assert "/seller/margin" in html
 
 
-def test_settlement_shows_real_order_kpi(client):
-    fake = {"today_new": 7, "pending_ship": 3, "shipped": 11, "returned_exchanged": 1}
+def test_settlement_net_profit_kpis_and_missing_honesty(client):
+    # Q1 #1: 장부 = 주문별 순이익 자동계산. 원가 미연결 주문은 '미입력' 정직(가짜 수치 0).
+    class _FakeOrder:
+        def to_dict(self):
+            return {"order_id": "O1", "marketplace": "coupang", "total_krw": "50000",
+                    "shipping_fee_krw": "0", "items": [{"sku": "NOLINK", "qty": 1}]}
     with patch("src.seller_console.orders.sync_service.OrderSyncService") as MockSvc:
-        MockSvc.return_value.kpi_summary.return_value = fake
+        MockSvc.return_value.list_orders.return_value = [_FakeOrder()]
         resp = client.get("/seller/settlement")
     html = resp.get_data(as_text=True)
-    assert ">7<" in html and ">11<" in html  # 실 주문 KPI 반영
+    assert resp.status_code == 200
+    # 순이익 KPI 라벨(주문 상태 카운트 아님).
+    assert "실 순이익 합계" in html and "평균 마진율" in html and "원가 미연결" in html
+    # 원가 미연결 주문 → 순이익 '미입력'(가짜 0 금지).
+    assert "미입력" in html
 
 
 def test_settlement_in_nav(client):
