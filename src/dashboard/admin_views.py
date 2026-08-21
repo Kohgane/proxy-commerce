@@ -3784,3 +3784,28 @@ def coupang_pilot_backfill():
     result.update({"ok": True, "review_pass": len(review),
                    "note": "이미지 백필(UPDATE·멱등·2장캡) + 재고 instock/관리off. 매칭=_kgp_pilot_sid."})
     return jsonify(result)
+
+
+@admin_panel_bp.get("/coupang-pilot/status")
+def coupang_pilot_status():
+    """진행 상태 조회 전용(WC 실측). 대기/이미지있음 draft/no_image draft/publish/미매칭 카운트.
+
+    자동 마감 크론(`/cron/pilot-drain`·`/cron/translate-drain` 피기백)이 백필→publish를 청크로 진행 —
+    이 라우트는 **조회만**(상태 변경 0). 오너 개입 없이 done=true(pending 0)까지 자동 수렴.
+    """
+    from flask import jsonify
+    from src.pipeline import coupang_replicate as CR
+
+    rows = CR.default_pilot_rows()
+    if not rows:
+        return jsonify({"ok": False, "error": "검수표 0행 — pilot_population/blacklist 배포 확인"}), 400
+    try:
+        from src.vendors import woocommerce_client as _wc
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"woocommerce_client 로드 실패: {exc}"}), 500
+    try:
+        st = CR.pilot_status(rows, list_products_fn=lambda s="draft": _wc.list_products_by_status(s))
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"상태 조회 실패(자격/네트워크): {exc}"}), 502
+    st.update({"ok": True, "auto_finish": "크론이 백필→publish 자동 진행(오너 개입 0). done=true면 전량 publish/no_image 확정."})
+    return jsonify(st)

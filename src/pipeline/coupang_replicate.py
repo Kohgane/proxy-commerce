@@ -727,6 +727,8 @@ def register_pilot_rows(rows, *, dispatch_fn, n: int = 1, batch_ok: bool = False
             "status": status, "pilot_meta": meta, "source": r.get("source"),
             # 재고: 무재고 구매대행 모델 — 재고관리 off + 항상 구매가능(instock).
             "manage_stock": False, "stock_status": "instock",
+            # 상품 타입: 자사 결제형(simple) — external(외부 링크형) 아님.
+            "product_type": "simple",
         }
         try:
             dr = dispatch_fn(product_data, list(markets))
@@ -822,6 +824,177 @@ def backfill_images(rows, *, enrich_fn, list_products_fn, update_fn,
         "unmatched": sum(1 for x in results if not x.get("matched")),
         "results": results,
     }
+
+
+# ── 자동 마감 (크론 피기백 · 청크 · 멱등 · WC 상태=진행상태 · 오너 개입 0) ──────────
+_NO_IMAGE_META = "_kgp_no_image"          # 이미지 0장 → 재시도 방지 플래그(draft 잔류)
+
+
+def _pilot_sid_of(product) -> Optional[str]:
+    for m in (product.get("meta_data") or []):
+        if (m or {}).get("key") == "_kgp_pilot_sid":
+            return str(m.get("value"))
+    return None
+
+
+def _pilot_has_flag(product, key) -> bool:
+    return any((m or {}).get("key") == key and str(m.get("value")) in ("1", "true")
+               for m in (product.get("meta_data") or []))
+
+
+def _pilot_img_count(p) -> int:
+    try:
+        return int(p.get("images_count") if p.get("images_count") is not None else len(p.get("images") or []))
+    except (TypeError, ValueError):
+        return len(p.get("images") or [])
+
+
+def pilot_finish_tick(rows, *, list_products_fn, update_fn, enrich_fn, chunk: int = 5,
+                      image_cap: int = IMAGE_CAP, stock_patch=None, sleep_fn=None, sleep_sec: float = 0.5) -> dict:
+    """자동 마감 1틱(크론). **draft 이미지 백필(2장캡) → 실패 사유 기록 후 스킵 → 전행 처리 완료 시 자동 publish.**
+
+    - 진행상태 = WC 자신(멱등·재개). `_kgp_pilot_sid` 매칭, 이미지 0장 draft는 no_image 플래그+**draft 잔류**(안 팔릴 상품 공개 방지).
+    - 등록분 `type=simple` 강제(자사 결제형 — external 아님). **조용한 실패 금지**(행별 action+사유: collect_fail/sideload_fail/no_image).
+    - list_products_fn(status)/update_fn(pid,patch)/enrich_fn(row) 주입(발명 0·오프라인 테스트). publish는 전행 처리 완료 시만.
+    """
+    import time as _t
+    sleep_fn = sleep_fn or _t.sleep
+    by_sid = {}
+    for p in (list_products_fn("draft") or []):
+        sid = _pilot_sid_of(p)
+        if sid:
+            by_sid[sid] = p
+    passable = [r for r in (rows or []) if not r.get("excluded")]
+    pending = [r for r in passable
+               if str(r.get("sid")) in by_sid
+               and _pilot_img_count(by_sid[str(r.get("sid"))]) == 0
+               and not _pilot_has_flag(by_sid[str(r.get("sid"))], _NO_IMAGE_META)]
+    processed = []
+    for i, r in enumerate(pending[:chunk]):
+        p = by_sid[str(r.get("sid"))]
+        if i and sleep_sec:
+            sleep_fn(sleep_sec)
+        try:
+            e = enrich_fn(r) or {}
+        except Exception as exc:
+            processed.append({"sid": r.get("sid"), "action": "collect_fail", "reason": f"수집 실패: {exc}"})
+            continue
+        imgs = list(e.get("images") or [])[:image_cap]
+        if imgs:
+            patch = {"images": [{"src": u, "position": j} for j, u in enumerate(imgs)], "type": "simple"}
+            if stock_patch:
+                patch.update(stock_patch)
+            try:
+                ok = bool(update_fn(p.get("id"), patch))
+            except Exception as exc:
+                processed.append({"sid": r.get("sid"), "product_id": p.get("id"),
+                                  "action": "sideload_fail", "reason": f"WC 사이드로드 실패: {exc}"})
+                continue
+            processed.append({"sid": r.get("sid"), "product_id": p.get("id"),
+                              "action": "backfilled" if ok else "sideload_fail",
+                              "image_count": len(imgs), "reason": None if ok else "WC update 실패"})
+        else:
+            try:
+                update_fn(p.get("id"), {"meta_data": [{"key": _NO_IMAGE_META, "value": "1"}], "type": "simple"})
+            except Exception:
+                pass
+            processed.append({"sid": r.get("sid"), "product_id": p.get("id"), "action": "no_image",
+                              "image_count": 0, "reason": "수집 이미지 0장 — draft 잔류(공개 안 함)"})
+    remaining = max(0, len(pending) - chunk)
+    published = []
+    if remaining == 0:                        # 전행 처리 완료 → 이미지 있는 draft만 자동 publish(오너 사전 승인)
+        for p in (list_products_fn("draft") or []):
+            if _pilot_sid_of(p) is None or _pilot_img_count(p) == 0:
+                continue                       # 이미지 0 draft는 publish 안 함(안 팔릴 상품 공개 방지)
+            try:
+                if update_fn(p.get("id"), {"status": "publish"}):
+                    published.append({"sid": _pilot_sid_of(p), "product_id": p.get("id")})
+            except Exception:
+                pass
+    return {
+        "pending_before": len(pending), "processed": len(processed),
+        "backfilled": sum(1 for x in processed if x["action"] == "backfilled"),
+        "no_image": sum(1 for x in processed if x["action"] == "no_image"),
+        "failed": sum(1 for x in processed if x["action"] in ("collect_fail", "sideload_fail")),
+        "remaining_pending": remaining, "published_this_tick": len(published),
+        "done": remaining == 0, "results": processed, "published": published,
+    }
+
+
+def pilot_status(rows, *, list_products_fn) -> dict:
+    """조회 전용 진행 상태 — 대기/이미지있음 draft/no_image draft/publish/미매칭(WC 실측)."""
+    passable = [r for r in (rows or []) if not r.get("excluded")]
+    drafts = {}
+    for p in (list_products_fn("draft") or []):
+        s = _pilot_sid_of(p)
+        if s:
+            drafts[s] = p
+    pubs = set()
+    for p in (list_products_fn("publish") or []):
+        s = _pilot_sid_of(p)
+        if s:
+            pubs.add(s)
+    published = with_images = no_image = pending = unmatched = 0
+    for r in passable:
+        sid = str(r.get("sid"))
+        if sid in pubs:
+            published += 1
+        elif sid in drafts:
+            p = drafts[sid]
+            if _pilot_has_flag(p, _NO_IMAGE_META):
+                no_image += 1                 # 종결(이미지 0 확정 · draft 잔류)
+            elif _pilot_img_count(p) == 0:
+                pending += 1                  # 미처리(다음 틱 백필 대상)
+            else:
+                with_images += 1              # 이미지 있음(다음 완료 틱에 publish)
+        else:
+            unmatched += 1
+    return {"target": len(passable), "published": published, "with_images_draft": with_images,
+            "no_image_draft": no_image, "pending": pending, "unmatched": unmatched,
+            "done": pending == 0}
+
+
+def default_pilot_rows(select_n: int = 50) -> list:
+    """모집단→검수표 review_pass 행(라우트 공용, Flask-free). 블랙리스트 0건이면 [](빈 필터 처리 금지 — 등록 세트 유지)."""
+    pf = Path("data/pilot_population.json")
+    if pf.is_file():
+        try:
+            pop = json.loads(pf.read_text(encoding="utf-8")).get("population", [])
+        except (ValueError, OSError):
+            pop = []
+    else:
+        try:
+            sm = json.loads(Path("data/sourcing_map.json").read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            sm = {}
+        pop = build_pilot_population(sm)["population"] if sm else []
+    if not pop:
+        return []
+    bl = load_blacklist85()
+    if bl["count"] == 0:
+        return []
+    report = build_pilot_report(pop, n=select_n, channel="woocommerce_multishop",
+                                blacklist=bl["terms"], access=access_status(), relay=relay_ready())
+    return report.get("review_table") or []
+
+
+def make_enrich_fn(collect_fn, image_cap: int = IMAGE_CAP):
+    """소싱맵 URL 해석 → collect_fn(url) → {images(캡), description_html, sourcing_url}. collect_fn 주입(발명 0)."""
+    smap = load_sourcing_map().get("map") or {}
+
+    def _enrich(row):
+        asin = str(row.get("asin") or "").upper()
+        url = smap.get(asin) if isinstance(smap.get(asin), str) else ""
+        if not url:
+            return {"images": [], "sourcing_url": ""}
+        try:
+            draft = collect_fn(url) or {}
+        except Exception:
+            return {"images": [], "sourcing_url": url}
+        return {"images": (draft.get("images") or [])[:image_cap],
+                "description_html": draft.get("description_html") or draft.get("description") or "",
+                "sourcing_url": url}
+    return _enrich
 
 
 # ── 파일럿 검수표 산출 (라우트/테스트 공용 — price_fn 주입으로 라이브 경로 계약 검증) ──
