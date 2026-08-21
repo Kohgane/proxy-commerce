@@ -153,10 +153,124 @@ def test_prepare_product_data_stock_and_status_override():
     from src.vendors import woocommerce_client as wc
     prod = wc.prepare_product_data(
         {"title_ko": "테스트", "status": "draft", "manage_stock": False, "stock_status": "instock",
-         "extra_meta": [{"key": "_kgp_pilot_sid", "value": "9"}]}, 10000)
+         "product_type": "simple", "extra_meta": [{"key": "_kgp_pilot_sid", "value": "9"}]}, 10000)
     assert prod["status"] == "draft" and prod["manage_stock"] is False and prod["stock_status"] == "instock"
+    assert prod["type"] == "simple"                         # 자사 결제형(external 아님)
     assert "stock_quantity" not in prod                     # 관리 off면 수량 제거
     assert any(m["key"] == "_kgp_pilot_sid" for m in prod["meta_data"])
+
+
+def test_register_sets_product_type_simple():
+    disp = _FakeDispatch(ok=True)
+    CR.register_pilot_rows(_rows(1), dispatch_fn=disp, sleep_fn=lambda s: None)
+    assert disp.calls[0]["product_type"] == "simple"        # external 아님
+
+
+# ── 자동 마감(크론 피기백) — 백필→publish 청크·멱등·no_image draft 잔류 ───────────
+class _FakeWC:
+    """WC 상태 저장소 대역 — draft/publish 목록 + update_product(patch 병합·상태 전이)."""
+    def __init__(self, products):
+        self.products = {p["id"]: p for p in products}
+        self.updates = []
+
+    def list_products_by_status(self, status="draft"):
+        return [dict(p) for p in self.products.values() if p.get("status", "draft") == status]
+
+    def update_product(self, pid, patch):
+        self.updates.append((pid, patch))
+        p = self.products[pid]
+        if "images" in patch:
+            p["images"] = patch["images"]
+        if "status" in patch:
+            p["status"] = patch["status"]
+        if "type" in patch:
+            p["type"] = patch["type"]
+        for m in (patch.get("meta_data") or []):
+            p.setdefault("meta_data", []).append(m)
+        return True
+
+
+def _pilot_products(sids):
+    return [{"id": 100 + s, "status": "draft", "images": [],
+             "meta_data": [{"key": "_kgp_pilot_sid", "value": str(s)}]} for s in sids]
+
+
+def test_pilot_finish_tick_backfills_chunk_then_publishes_when_done():
+    rows = [{"sid": s, "asin": f"A{s}", "excluded": False} for s in (1, 2)]
+    wc = _FakeWC(_pilot_products([1, 2]))
+    enrich = lambda r: {"images": ["https://i/%s-1.jpg" % r["sid"], "https://i/%s-2.jpg" % r["sid"], "x3"]}
+    # 틱1: chunk=1 → sid1만 백필. 아직 pending 남음 → publish 없음.
+    t1 = CR.pilot_finish_tick(rows, list_products_fn=wc.list_products_by_status,
+                              update_fn=wc.update_product, enrich_fn=enrich, chunk=1,
+                              image_cap=2, sleep_fn=lambda s: None)
+    assert t1["backfilled"] == 1 and t1["remaining_pending"] == 1 and t1["published_this_tick"] == 0
+    assert t1["done"] is False
+    # 백필 시 2장 캡 + type=simple.
+    first = [u for u in wc.updates if "images" in u[1]][0]
+    assert len(first[1]["images"]) == 2 and first[1]["type"] == "simple"
+    # 틱2: chunk=5 → sid2 백필 + remaining 0 → 이미지 있는 draft 전부 publish.
+    t2 = CR.pilot_finish_tick(rows, list_products_fn=wc.list_products_by_status,
+                              update_fn=wc.update_product, enrich_fn=enrich, chunk=5,
+                              image_cap=2, sleep_fn=lambda s: None)
+    assert t2["backfilled"] == 1 and t2["remaining_pending"] == 0 and t2["done"] is True
+    assert t2["published_this_tick"] == 2
+    assert all(p["status"] == "publish" for p in wc.products.values())
+
+
+def test_pilot_finish_tick_no_image_stays_draft_and_flagged():
+    rows = [{"sid": 1, "asin": "A1", "excluded": False}]
+    wc = _FakeWC(_pilot_products([1]))
+    enrich = lambda r: {"images": []}                       # 수집 이미지 0장
+    out = CR.pilot_finish_tick(rows, list_products_fn=wc.list_products_by_status,
+                               update_fn=wc.update_product, enrich_fn=enrich, chunk=5,
+                               image_cap=2, sleep_fn=lambda s: None)
+    assert out["no_image"] == 1 and out["backfilled"] == 0
+    # 이미지 0 → publish 금지(안 팔릴 상품 공개 방지), draft 잔류 + no_image 플래그.
+    assert wc.products[101]["status"] == "draft"
+    assert CR._pilot_has_flag(wc.products[101], CR._NO_IMAGE_META)
+    # 다음 틱: 플래그된 행은 재시도 대상에서 제외(pending 0).
+    out2 = CR.pilot_finish_tick(rows, list_products_fn=wc.list_products_by_status,
+                                update_fn=wc.update_product, enrich_fn=enrich, chunk=5,
+                                sleep_fn=lambda s: None)
+    assert out2["pending_before"] == 0 and out2["published_this_tick"] == 0
+
+
+def test_pilot_finish_tick_collect_failure_is_honest_not_silent():
+    rows = [{"sid": 1, "asin": "A1", "excluded": False}]
+    wc = _FakeWC(_pilot_products([1]))
+    def _boom(r):
+        raise RuntimeError("수집 타임아웃")
+    out = CR.pilot_finish_tick(rows, list_products_fn=wc.list_products_by_status,
+                               update_fn=wc.update_product, enrich_fn=_boom, chunk=5,
+                               sleep_fn=lambda s: None)
+    assert out["failed"] == 1 and out["backfilled"] == 0
+    r = out["results"][0]
+    assert r["action"] == "collect_fail" and "수집 실패" in r["reason"]   # 조용한 실패 금지
+    assert wc.products[101]["status"] == "draft"            # 실패 → 여전히 draft
+
+
+def test_pilot_status_buckets_mutually_exclusive():
+    rows = [{"sid": s, "asin": f"A{s}", "excluded": False} for s in (1, 2, 3, 4)]
+    products = [
+        {"id": 101, "status": "publish", "images": [{"src": "x"}],
+         "meta_data": [{"key": "_kgp_pilot_sid", "value": "1"}]},         # published
+        {"id": 102, "status": "draft", "images": [{"src": "y"}],
+         "meta_data": [{"key": "_kgp_pilot_sid", "value": "2"}]},         # with_images (다음 완료틱 publish)
+        {"id": 103, "status": "draft", "images": [],
+         "meta_data": [{"key": "_kgp_pilot_sid", "value": "3"},
+                       {"key": "_kgp_no_image", "value": "1"}]},          # no_image (종결·draft 잔류)
+        # sid 4 → WC에 없음(unmatched · 아직 미등록)
+    ]
+    wc = _FakeWC(products)
+    st = CR.pilot_status(rows, list_products_fn=wc.list_products_by_status)
+    assert st == {"target": 4, "published": 1, "with_images_draft": 1, "no_image_draft": 1,
+                  "pending": 0, "unmatched": 1, "done": True}
+    # 이미지 0·플래그 없는 draft는 pending(다음 백필 대상) — done False.
+    products.append({"id": 105, "status": "draft", "images": [],
+                     "meta_data": [{"key": "_kgp_pilot_sid", "value": "4"}]})
+    wc2 = _FakeWC(products)
+    st2 = CR.pilot_status(rows, list_products_fn=wc2.list_products_by_status)
+    assert st2["pending"] == 1 and st2["unmatched"] == 0 and st2["done"] is False
 
 
 def test_register_flags_suspect_cjk_into_meta():

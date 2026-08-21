@@ -313,6 +313,11 @@ def prepare_product_data(catalog_row: dict, sell_price_krw: float) -> dict:
     if _ss in ('instock', 'outofstock', 'onbackorder'):
         product['stock_status'] = _ss
 
+    # v88-C: 상품 타입 — 자사 결제형(simple) 강제 가능(external 링크형 아님). 미지정이면 WC 기본(simple).
+    _pt = str(catalog_row.get('product_type') or '').strip().lower()
+    if _pt in ('simple', 'external', 'grouped', 'variable'):
+        product['type'] = _pt
+
     return product
 
 

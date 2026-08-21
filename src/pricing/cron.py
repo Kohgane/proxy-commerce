@@ -129,7 +129,62 @@ def translate_drain_cron():
     except Exception as exc:
         logger.error("번역 드레인 오류: %s", exc)
         return jsonify({"ok": False, "error": "번역 드레인 중 오류가 발생했습니다."}), 500
+    # v88-C 마감 자동화 피기백: 같은 인증 틱에서 파일럿 마감 1청크(백필→publish) best-effort.
+    # 실패해도 번역 드레인 결과는 그대로 반환(파일럿이 번역을 막지 않음). 오너 개입 0.
+    try:
+        summary["pilot_finish"] = _run_pilot_finish_tick(chunk=int(request.args.get("pilot_chunk", 5)))
+    except Exception as exc:                       # noqa: BLE001 — 조용한 실패 금지(사유 기록)
+        logger.warning("파일럿 마감 피기백 스킵: %s", exc)
+        summary["pilot_finish"] = {"skipped": str(exc)}
     return jsonify(summary)
+
+
+def _run_pilot_finish_tick(chunk: int = 5) -> dict:
+    """v88-C 파일럿 자동 마감 1틱 — 검수표 행 + WC 자격으로 백필→publish 청크 처리.
+
+    상태 저장소 = WC 자신(멱등·재개). 자격/네트워크 실패는 예외로 전파(호출부가 사유 기록).
+    """
+    from src.pipeline import coupang_replicate as CR
+    from src.vendors import woocommerce_client as _wc
+
+    rows = CR.default_pilot_rows()
+    if not rows:
+        return {"skipped": "검수표 0행(모집단/블랙리스트 미배포)"}
+    from src.seller_console.views import _collect_real_draft
+    enrich = CR.make_enrich_fn(_collect_real_draft, image_cap=CR.IMAGE_CAP)
+    return CR.pilot_finish_tick(
+        rows,
+        list_products_fn=lambda s="draft": _wc.list_products_by_status(s),
+        update_fn=_wc.update_product,
+        enrich_fn=enrich,
+        chunk=chunk,
+        image_cap=CR.IMAGE_CAP,
+        stock_patch={"manage_stock": False, "stock_status": "instock"},
+    )
+
+
+@cron_bp.post("/pilot-drain")
+def pilot_drain_cron():
+    """v88-C: 파일럿 마감 전용 크론 — 백필→publish 청크(회당 기본 5건). 오너 클릭 0.
+
+    헤더 ``X-Cron-Secret`` 이 ``CRON_SECRET`` 과 일치해야 실행(미설정 시 허용).
+    진행상태 = WC 실측(멱등·재개). 전행 처리 완료(remaining_pending=0) 시 이미지 있는 draft 자동 publish,
+    이미지 0장은 no_image 플래그 + draft 잔류(안 팔릴 상품 공개 방지). Query: chunk(기본 5).
+    """
+    cron_secret = os.getenv("CRON_SECRET")
+    if cron_secret:
+        if request.headers.get("X-Cron-Secret", "") != cron_secret:
+            return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    try:
+        chunk = int(request.args.get("chunk", 5))
+    except (TypeError, ValueError):
+        chunk = 5
+    try:
+        result = _run_pilot_finish_tick(chunk=chunk)
+    except Exception as exc:
+        logger.error("파일럿 마감 드레인 오류: %s", exc)
+        return jsonify({"ok": False, "error": f"파일럿 마감 중 오류(자격/네트워크): {exc}"}), 502
+    return jsonify({"ok": True, **result})
 
 
 def _send_summary_notification(results: dict):

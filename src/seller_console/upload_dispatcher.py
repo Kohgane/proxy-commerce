@@ -698,6 +698,8 @@ class UploadDispatcher:
                 "extra_meta": product_data.get("pilot_meta") or [],
                 "manage_stock": product_data.get("manage_stock"),
                 "stock_status": product_data.get("stock_status") or "",
+                # v88-C: 상품 타입(자사 결제형 simple) — 미지정이면 기존 동작 불변.
+                "product_type": product_data.get("product_type") or "",
             }
 
             prod = woocommerce_client.prepare_product_data(catalog_row, sell_price_krw)
