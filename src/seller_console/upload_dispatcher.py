@@ -693,9 +693,11 @@ class UploadDispatcher:
                 or "",
                 "buy_currency": product_data.get("currency") or "",
                 "vendor": product_data.get("vendor") or "",
-                # v88-C 파일럿 카나리: draft 상태 + 파일럿 메타(비노출) 통과. 수동 업로드는 미지정→기존 동작.
+                # v88-C 파일럿 카나리: draft 상태 + 파일럿 메타(비노출) + 재고(무재고 모델) 통과. 수동 업로드는 미지정→기존 동작.
                 "status": product_data.get("status") or "",
                 "extra_meta": product_data.get("pilot_meta") or [],
+                "manage_stock": product_data.get("manage_stock"),
+                "stock_status": product_data.get("stock_status") or "",
             }
 
             prod = woocommerce_client.prepare_product_data(catalog_row, sell_price_krw)

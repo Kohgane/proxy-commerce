@@ -89,3 +89,10 @@ fx 미상 시 가짜 환산 0(price ok=False). 반환 summary = {ingested·skipp
 - **절단 판정(조용히 자르지 않음):** 하드 `truncated` = 말줄임표/대시끝/100자 초과(정제 전 포착). 소프트 `truncated_suspect` = **영문 마지막 토큰이 완결 화이트리스트(`_COMPLETE_TAIL`) 밖 2~7자 단편 또는 단일 문자**(사전 부재 → 화이트리스트, 8+자·한글 꼬리는 무판정). 소싱맵 name_ko 자체가 절단원(더 긴 원본 없음)이라 길이 대조 불가 → 휴리스틱, **불확실=suspect 정직 표기**(발명 0). (실데이터: "Insulated Stai"·"PEN CLI"·"w updat"·"Scisso"·"Patente"·"…Aluminum W".) 과탐은 등록 직전 검수로 흡수(미탐이 더 위험).
 - **CJK 한자 정책(오너 보고):** 일문 **가나**는 제거(`_JP_KANA_RE`), **한자(漢字)는 삭제하지 않는다**. 근거 = ①번역 소관(万年筆→만년필은 translate_fn이 렌더, 삭제하면 제품명 자체 소실) ②CJK 한자는 ja/zh/ko 공유라 브랜드·제품 정보일 수 있어 삭제=파괴적. 대신 `title_cjk_residual=True`로 **잔존 표기**(번역 미완 신호) — 재번역/검수로 해소. (실데이터: 세일러 "万年筆".)
 계약 `test_v88_c_coupang_replicate`(별점 영문·중간절단 6실데이터·완결 꼬리 오탐0·지명꼬리·CJK 잔존).
+
+## 등록 사후 결함 수리 (이미지 0장 · 재고 · 백필)
+- **이미지 0장 근원(실측):** sourcing_map 엔트리는 `{name_ko, sources:[{url,priority}]}` 형식으로 **top-level `url` 없음**. `load_sourcing_map`이 `v.get("url")`(=None)로 flatten → enrich가 URL 미해석 → **collect 미실행 → 0장**. WC 전송 실패 아님. 수리=`_best_source_url`(sources 우선순위 최상 URL 해석) → 99.98% 해석.
+- **조용한 실패 가드:** `register_pilot_rows` 결과에 등록 성공+이미지 0장이면 `warning:"이미지 0장 — 백필 필요"` + 상단 `no_image` 집계(reason:null 성공으로 안 묻음).
+- **재고(무재고 구매대행):** 등록 시 `manage_stock=False` + `stock_status="instock"`(수량 관리 안 함, 항상 구매가능). `prepare_product_data`가 명시 오버라이드 존중(수동 업로드는 미지정→기존 동작 불변).
+- **이미지 백필 라우트** `POST /admin/coupang-pilot/backfill`: 기존 draft를 **재등록 아닌 WC UPDATE**로 이미지(2장 캡)+재고 백필. `_kgp_pilot_sid` 메타로 매칭, 멱등(이미 이미지 있으면 스킵), 매칭 실패·0장 정직 표기. `woocommerce_client.list_products_by_status`/`update_product` 재사용.
+계약 = `test_v88_c_pilot`(source URL 해석·조용한실패 가드·재고·백필 멱등/매칭·stock override).
