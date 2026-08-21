@@ -63,6 +63,23 @@ def test_lodge_skillet_excluded_korean_and_english():
     assert row["excluded"] is True and row["forbidden"] == "blacklist:롯지"
 
 
+def test_korean_partial_match_allow_exception_bossmeer():
+    # 보스미어 오탐 수리: 보스(bose)가 보스미어(별개 브랜드)를 삼키면 안 됨. 정탐(보스 단독)은 유지.
+    bl = ["보스", "bose", "나이키"]
+    assert CR.is_forbidden("보스미어 워머 디퓨저", blacklist=bl) is None          # 예외 브랜드 → 무시(정탐 보호)
+    assert CR.is_forbidden("보스 블루투스 스피커", blacklist=bl) == "blacklist:보스"  # 보스 단독 → 진짜 히트
+    assert CR.is_forbidden("보스 스피커 보스미어 세트", blacklist=bl) == "blacklist:보스"  # 예외 밖에도 있으면 히트
+    # 연접 정탐은 계속 잡힘(예외 아님).
+    assert CR.is_forbidden("나이키운동화", blacklist=bl) == "blacklist:나이키"
+
+
+def test_felco_size_tail_not_suspect():
+    # FELCO nit: 사이즈 꼬리(S/M/L·XL)는 절단 아님. 진짜 단편(W)은 계속 의심.
+    for ok in ("펠코 전정가위 L", "티셔츠 사이즈 M", "장갑 XL"):
+        assert CR.clean_title_ko(ok)["truncated_suspect"] is False, ok
+    assert CR.clean_title_ko("Rain Wand – 16 Inch Aluminum W")["truncated_suspect"] is True
+
+
 def test_word_boundary_prevents_short_token_false_positives():
     # 오탐 방지(오너 승인 단어경계): shopping의 ping, dislodge의 lodge, hose의 ...는 안 걸린다.
     assert CR.is_forbidden("shopping bag 대용량", blacklist=["ping"]) is None
