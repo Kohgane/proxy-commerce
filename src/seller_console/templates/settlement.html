@@ -1,0 +1,105 @@
+{% extends "_base.html" %}
+{% block title %}장부 · 정산{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+  <div class="console-kpi-label mb-1">SETTLEMENT · 수익</div>
+  <h1 class="h4 mb-1">장부 · 정산</h1>
+  <hr class="pc-hairline mt-0 mb-2">
+  <p class="text-muted small mb-0">주문별 순이익을 판매가·원가·수수료·배송비·환율까지 반영해 자동 계산합니다.
+    원가가 연결되지 않은 주문은 <strong>미입력</strong>으로 정직하게 표시하며, 합계에는 넣지 않습니다.</p>
+</div>
+
+<form class="row g-2 mb-3" method="get">
+  <div class="col-auto">
+    <input name="month" class="form-control form-control-sm" value="{{ month }}" aria-label="정산 월">
+  </div>
+  <div class="col-auto"><button class="btn btn-primary btn-sm">조회</button></div>
+</form>
+
+{# ── 순이익 KPI (세리프 대형 · 토큰 좌악센트) ── #}
+<div class="row g-2 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="console-kpi-card" style="border-left-color: var(--teal);">
+      <div class="console-kpi-label">실 순이익 합계</div>
+      <div class="console-stat-value">{{ "{:,}".format(summary.total_net_krw) }}<span class="fs-6">원</span></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="console-kpi-card" style="border-left-color: var(--gold);">
+      <div class="console-kpi-label">집계 매출</div>
+      <div class="console-stat-value">{{ "{:,}".format(summary.total_sales_krw) }}<span class="fs-6">원</span></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="console-kpi-card" style="border-left-color: var(--success);">
+      <div class="console-kpi-label">평균 마진율</div>
+      <div class="console-stat-value">
+        {% if summary.avg_margin_pct is not none %}{{ summary.avg_margin_pct }}<span class="fs-6">%</span>
+        {% else %}<span class="text-muted fs-5">미입력</span>{% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="console-kpi-card" style="border-left-color: var(--warn);">
+      <div class="console-kpi-label">원가 미연결</div>
+      <div class="console-stat-value">{{ summary.incomplete_count }}<span class="fs-6">건</span></div>
+    </div>
+  </div>
+</div>
+
+{# ── 주문별 실마진 Swiss 테이블 ── #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 pc-swiss-table">
+        <thead>
+          <tr>
+            <th>마켓</th><th>주문번호</th>
+            <th class="text-end">판매가</th><th class="text-end">원가(랜딩)</th>
+            <th class="text-end">수수료</th><th class="text-end">배송비</th>
+            <th class="text-end">순이익</th><th class="text-end">마진율</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set _mp = {"coupang":"쿠팡","smartstore":"스마트스토어","11st":"11번가","kohganemultishop":"코가네멀티샵","shopify":"Shopify"} %}
+          {% for r in summary.rows %}
+          <tr>
+            <td><span class="pc-badge pc-badge-muted">{{ _mp.get(r.marketplace, r.marketplace or '-') }}</span></td>
+            <td><small class="font-monospace">{{ r.order_id }}</small></td>
+            <td class="text-end">{% if r.sale_krw is not none %}{{ "{:,}".format(r.sale_krw) }}{% else %}<span class="pc-badge pc-badge-off">미입력</span>{% endif %}</td>
+            <td class="text-end">{% if r.landed_cost_krw is not none %}{{ "{:,}".format(r.landed_cost_krw) }}{% else %}<span class="pc-badge pc-badge-off">미입력</span>{% endif %}</td>
+            <td class="text-end"><small class="text-muted">{{ r.fee_rate_pct }}%</small></td>
+            <td class="text-end">{{ "{:,}".format(r.shipping_fee_krw) }}</td>
+            <td class="text-end">
+              {% if r.complete %}<strong>{{ "{:,}".format(r.net_krw) }}</strong>
+              {% else %}<span class="pc-badge pc-badge-off" title="{{ r.reason }}">미입력</span>{% endif %}
+            </td>
+            <td class="text-end">
+              {% if r.complete %}<span class="pc-badge {{ 'pc-badge-on' if r.margin_pct >= 0 else 'pc-badge-danger' }}">{{ r.margin_pct }}%</span>
+              {% else %}<span class="text-muted">-</span>{% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8" class="text-center text-muted py-4">이 기간에 집계할 주문이 없어요. 마켓을 연동하면 순이익이 자동으로 계산됩니다.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% if summary.incomplete_count %}
+<div class="pc-status pc-status-warn mb-3">
+  원가가 연결되지 않은 주문 {{ summary.incomplete_count }}건은 순이익에서 빠졌습니다.
+  <a href="/seller/catalog">상품에 원본(매입가)을 연결</a>하면 자동으로 반영됩니다.
+</div>
+{% endif %}
+
+<div class="d-flex flex-wrap gap-2">
+  <a class="btn btn-gold btn-sm" href="/seller/settlement/export.csv?month={{ month }}">CSV 내보내기</a>
+  <a class="btn btn-gold btn-sm" href="/seller/settlement/export.xlsx?month={{ month }}">Excel 내보내기</a>
+  <a class="btn btn-outline-secondary btn-sm" href="/seller/analytics">BI 분석</a>
+  <a class="btn btn-outline-secondary btn-sm" href="/seller/margin">마진 계산기</a>
+</div>
+{% endblock %}
