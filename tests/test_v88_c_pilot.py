@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -258,7 +259,7 @@ def test_pilot_status_buckets_mutually_exclusive():
          "meta_data": [{"key": "_kgp_pilot_sid", "value": "2"}]},         # with_images (다음 완료틱 publish)
         {"id": 103, "status": "draft", "images": [],
          "meta_data": [{"key": "_kgp_pilot_sid", "value": "3"},
-                       {"key": "_kgp_no_image", "value": "1"}]},          # no_image (종결·draft 잔류)
+                       {"key": "_kgp_no_image", "value": "coupang"}]},    # no_image 종결(쿠팡까지 시도)·draft 잔류
         # sid 4 → WC에 없음(unmatched · 아직 미등록)
     ]
     wc = _FakeWC(products)
@@ -271,6 +272,130 @@ def test_pilot_status_buckets_mutually_exclusive():
     wc2 = _FakeWC(products)
     st2 = CR.pilot_status(rows, list_products_fn=wc2.list_products_by_status)
     assert st2["pending"] == 1 and st2["unmatched"] == 0 and st2["done"] is False
+
+
+# ── 이미지 소스 피벗: 쿠팡 seller-products 원본 우선 (v88-C) ───────────────────────
+class _Resp:
+    def __init__(self, status, body=None): self.status_code = status; self._b = body or {}
+    def json(self): return self._b
+
+
+def _cp_body(*urls):
+    return {"data": {"items": [{"images": [{"imageOrder": i, "vendorPath": u} for i, u in enumerate(urls)]}]}}
+
+
+def test_coupang_image_urls_extract_and_cdn_base(monkeypatch):
+    monkeypatch.delenv("COUPANG_IMAGE_CDN_BASE", raising=False)
+    data = {"items": [{"images": [{"cdnPath": "a/b/c.jpg"}, {"vendorPath": "https://x.com/d.png"},
+                                  {"cdnPath": "/e/f.webp"}, {"note": "not-an-image"}]}]}
+    urls = CR._coupang_image_urls(data)
+    assert urls == ["https://image.coupangcdn.com/a/b/c.jpg", "https://x.com/d.png",
+                    "https://image.coupangcdn.com/e/f.webp"]
+
+
+def test_account_creds_prefix_and_base_fallback(monkeypatch):
+    for k in list(os.environ):
+        if k.startswith("COUPANG_"):
+            monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("COUPANG_GOGANE_ACCESS_KEY", "gak")
+    monkeypatch.setenv("COUPANG_GOGANE_SECRET_KEY", "gsk")
+    monkeypatch.setenv("COUPANG_GOGANE_VENDOR_ID", "A01381223")
+    # 우주대행은 무접두 base(COUPANG_*)로 흡수(VENDOR_ID 일치).
+    monkeypatch.setenv("COUPANG_ACCESS_KEY", "bak")
+    monkeypatch.setenv("COUPANG_SECRET_KEY", "bsk")
+    monkeypatch.setenv("COUPANG_VENDOR_ID", "A01504840")
+    assert CR._account_creds("gogane") == ("gak", "gsk", "A01381223")
+    assert CR._account_creds("woojoo") == ("bak", "bsk", "A01504840")   # base 폴백
+    assert set(CR.ready_accounts()) == {"gogane", "woojoo"}
+
+
+def test_fetch_coupang_images_account_routing_hint_and_order(monkeypatch):
+    for k in list(os.environ):
+        if k.startswith("COUPANG_"):
+            monkeypatch.delenv(k, raising=False)
+    for a, vid in (("GOGANE", "A01381223"), ("WOOJOO", "A01504840")):
+        monkeypatch.setenv(f"COUPANG_{a}_ACCESS_KEY", f"{a}ak")
+        monkeypatch.setenv(f"COUPANG_{a}_SECRET_KEY", f"{a}sk")
+        monkeypatch.setenv(f"COUPANG_{a}_VENDOR_ID", vid)
+    calls = []
+    def _req(method, url, *, headers=None, market="", key=""):
+        calls.append({"url": url, "key": key, "auth": headers["Authorization"]})
+        # 고가네(A01381223) 소유 아님(404), 우주대행(A01504840) 소유(200).
+        return _Resp(404) if key == "A01381223" else _Resp(200, _cp_body("https://c/1.jpg", "https://c/2.jpg"))
+    now = __import__("datetime").datetime(2026, 8, 21, 0, 0, 0)
+    # 힌트 없음 → ready 순차(고가네→우주대행), 404면 다음 계정.
+    out = CR.fetch_coupang_images(555, request_fn=_req, now_fn=lambda: now)
+    assert out["ok"] and out["account"] == "woojoo" and len(out["images"]) == 2
+    assert [c["key"] for c in calls] == ["A01381223", "A01504840"]      # 순차·혼동 없음
+    assert "access-key=WOOJOOak" in calls[-1]["auth"]                    # 맞는 키로 서명
+    # 힌트 있으면 그 계정만 호출(재판별 0).
+    calls.clear()
+    out2 = CR.fetch_coupang_images(555, account_hint="woojoo", request_fn=_req, now_fn=lambda: now)
+    assert out2["account"] == "woojoo" and [c["key"] for c in calls] == ["A01504840"]
+
+
+def test_fetch_coupang_images_no_creds_and_zero_honest(monkeypatch):
+    for k in list(os.environ):
+        if k.startswith("COUPANG_"):
+            monkeypatch.delenv(k, raising=False)
+    out = CR.fetch_coupang_images(1, request_fn=lambda *a, **k: _Resp(200), now_fn=lambda: __import__("datetime").datetime(2026, 8, 21))
+    assert out["ok"] is False and out["images"] == [] and "자격 없음" in out["reason"]
+
+
+def test_coupang_first_enrich_prefers_coupang_then_sourcing():
+    # 쿠팡 이미지 있으면 소싱 미호출(source=coupang).
+    def _fetch_ok(sid, *, account_hint=None, request_fn=None):
+        return {"ok": True, "images": ["https://c/a.jpg", "https://c/b.jpg", "https://c/c.jpg"], "account": "gogane"}
+    called = {"n": 0}
+    def _collect(url): called["n"] += 1; return {"images": ["https://s/x.jpg"]}
+    en = CR.make_coupang_first_enrich_fn(_collect, image_cap=2, fetch_images_fn=_fetch_ok)
+    r = en({"sid": 7, "asin": "A"})
+    assert r["source"] == "coupang" and len(r["images"]) == 2 and r["account"] == "gogane"
+    assert called["n"] == 0                              # 쿠팡 성공 → 소싱 폴백 안 함
+    # 쿠팡 0장 → 소싱 폴백.
+    def _fetch_zero(sid, *, account_hint=None, request_fn=None):
+        return {"ok": False, "images": [], "account": None, "reason": "200·이미지 0"}
+    en2 = CR.make_coupang_first_enrich_fn(_collect, image_cap=2, fetch_images_fn=_fetch_zero)
+    # 소싱맵에 asin이 없으면 폴백도 0 → source=none + 사유.
+    r2 = en2({"sid": 7, "asin": "NOPE_NOT_IN_MAP"})
+    assert r2["source"] == "none" and r2["images"] == [] and "쿠팡" in r2["reason"]
+
+
+def test_pilot_finish_tick_retries_old_gen_flag_and_caches_account():
+    # 구세대 no_image 플래그("1")는 쿠팡 소스로 재시도 대상(오너 지시 3). 판별 계정 캐시.
+    rows = [{"sid": 1, "asin": "A1", "excluded": False}]
+    products = [{"id": 101, "status": "draft", "images": [],
+                 "meta_data": [{"key": "_kgp_pilot_sid", "value": "1"},
+                               {"key": "_kgp_no_image", "value": "1"}]}]  # 구세대 플래그
+    wc = _FakeWC(products)
+    def _enrich(row):
+        assert row.get("coupang_account") is None       # 아직 캐시 없음
+        return {"images": ["https://c/1.jpg", "https://c/2.jpg"], "account": "woojoo", "source": "coupang"}
+    out = CR.pilot_finish_tick(rows, list_products_fn=wc.list_products_by_status,
+                               update_fn=wc.update_product, enrich_fn=_enrich, chunk=5,
+                               image_cap=2, sleep_fn=lambda s: None)
+    assert out["backfilled"] == 1 and out["pending_before"] == 1        # "1" 플래그도 재시도됨
+    p = wc.products[101]
+    assert CR._pilot_img_count(p) == 2
+    assert CR._pilot_account_hint(p) == "woojoo"                        # 판별 계정 캐시됨
+
+
+def test_pilot_finish_tick_coupang_gen_flag_is_terminal():
+    # 쿠팡·소싱 둘 다 0 → "coupang" 세대 플래그로 종결(다음 틱 재시도 제외).
+    rows = [{"sid": 1, "asin": "A1", "excluded": False}]
+    wc = _FakeWC(_pilot_products([1]))
+    def _enrich(row):
+        return {"images": [], "account": "gogane", "source": "none", "reason": "쿠팡 200·이미지 0 · 소싱 폴백도 0"}
+    out = CR.pilot_finish_tick(rows, list_products_fn=wc.list_products_by_status,
+                               update_fn=wc.update_product, enrich_fn=_enrich, chunk=5,
+                               sleep_fn=lambda s: None)
+    assert out["no_image"] == 1
+    assert CR._pilot_flag_value(wc.products[101], "_kgp_no_image") == "coupang"   # 현 세대 종결
+    # 다음 틱: "coupang" 플래그는 재시도 제외.
+    out2 = CR.pilot_finish_tick(rows, list_products_fn=wc.list_products_by_status,
+                                update_fn=wc.update_product, enrich_fn=_enrich, chunk=5,
+                                sleep_fn=lambda s: None)
+    assert out2["pending_before"] == 0
 
 
 def test_register_flags_suspect_cjk_into_meta():

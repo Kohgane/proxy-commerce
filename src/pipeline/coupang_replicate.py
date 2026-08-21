@@ -826,8 +826,137 @@ def backfill_images(rows, *, enrich_fn, list_products_fn, update_fn,
     }
 
 
+# ── 쿠팡 원본 이미지 소스 (봇차단 회피 · "쿠팡→멀티채널 복제" 정합) ─────────────────
+#   sid별 소속 계정 판별 → 맞는 키로 GET seller-products/{sid}(릴레이 경유·페이싱) → images[].
+_COUPANG_API_BASE = "https://api-gateway.coupang.com"
+_COUPANG_SP_PATH = "/v2/providers/seller_api/apis/api/v1/marketplace/seller-products/{sid}"
+_COUPANG_ACCOUNT_META = "_kgp_pilot_account"   # 판별된 소속 계정 캐시(재틱 재판별 방지)
+
+
+def _account_creds(account: str):
+    """계정(gogane/woojoo) → (access, secret, vendor_id). 접두(표준/축약 접미) 우선 + 무접두 base 폴백."""
+    meta = COUPANG_ACCOUNTS.get(account) or {}
+    pfx = meta.get("prefix", "")
+
+    def pick(*names):
+        for n in names:
+            v = os.getenv(f"{pfx}_{n}", "").strip()
+            if v:
+                return v
+        return ""
+    access = pick("ACCESS_KEY", "ACCESS")
+    secret = pick("SECRET_KEY", "SECRET")
+    vendor = pick("VENDOR_ID", "VENDOR") or meta.get("vendor_id", "")
+    if (not access or not secret) and resolve_base_account() == account:  # 무접두 COUPANG_* 흡수 계정
+        access = access or os.getenv("COUPANG_ACCESS_KEY", "").strip()
+        secret = secret or os.getenv("COUPANG_SECRET_KEY", "").strip()
+        vendor = vendor or os.getenv("COUPANG_VENDOR_ID", "").strip()
+    return access, secret, vendor
+
+
+def ready_accounts() -> list:
+    """자격(access+secret) 준비된 계정 목록(고가네 우선). 판별 시도 순서."""
+    return [a for a in ("gogane", "woojoo") if all(_account_creds(a)[:2])]
+
+
+def _coupang_sign(secret: str, method: str, path: str, date: str) -> str:
+    import hashlib
+    import hmac
+    msg = date + method + path
+    return hmac.new(secret.encode("utf-8"), msg.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _coupang_image_urls(data) -> list:
+    """seller-products GET 응답에서 이미지 URL 수집. 절대 http(s) 우선, cdnPath는 env base로 절대화.
+
+    쿠팡 응답 스키마 변형 대비 재귀 수집(images[].{vendorPath,cdnPath} 등). 정직: 못 만들면 버림.
+    """
+    base = os.getenv("COUPANG_IMAGE_CDN_BASE", "https://image.coupangcdn.com").rstrip("/")
+    out, seen = [], set()
+
+    def _abs(v: str):
+        v = str(v or "").strip()
+        if not v:
+            return None
+        if v.startswith("http://") or v.startswith("https://"):
+            return v
+        return base + ("" if v.startswith("/") else "/") + v
+
+    def _walk(node):
+        if isinstance(node, dict):
+            for k, val in node.items():
+                if isinstance(val, str) and ("path" in k.lower() or "image" in k.lower() or "url" in k.lower()):
+                    u = _abs(val)
+                    if u and u not in seen and any(u.lower().endswith(e) for e in
+                                                   (".jpg", ".jpeg", ".png", ".webp", ".gif")):
+                        seen.add(u)
+                        out.append(u)
+                else:
+                    _walk(val)
+        elif isinstance(node, list):
+            for it in node:
+                _walk(it)
+
+    _walk(data)
+    return out
+
+
+def fetch_coupang_images(sid, *, accounts=None, account_hint=None, request_fn=None, now_fn=None) -> dict:
+    """쿠팡 GET seller-products/{sid} → 원본 이미지 URL. 계정 라우팅(힌트 우선, 없으면 준비된 계정 순차).
+
+    - 계정 혼동 금지: hint 있으면 그 계정만, 없으면 ready_accounts() 순차 시도(200+이미지면 확정·캐시).
+    - 호출 예의: request_fn=relay_request(페이싱·429 백오프 내장) 기본. now_fn 주입(테스트 결정성).
+    - 정직: 자격/이미지 없으면 images=[] + 사유. 조용한 실패 금지(status·account·reason 반환).
+    """
+    from datetime import datetime, timezone
+    now_fn = now_fn or (lambda: datetime.now(timezone.utc))
+    if request_fn is None:
+        from src.market_relay import relay_request as request_fn  # 페이싱·릴레이·백오프 관문
+    try_accts = [account_hint] if account_hint else (accounts if accounts is not None else ready_accounts())
+    try_accts = [a for a in try_accts if a]
+    if not try_accts:
+        return {"ok": False, "images": [], "account": None, "reason": "쿠팡 자격 없음(계정 미준비)"}
+    path = _COUPANG_SP_PATH.format(sid=sid)
+    last = "미상"
+    for acct in try_accts:
+        access, secret, vendor = _account_creds(acct)
+        if not (access and secret):
+            last = f"{acct} 자격 미비"
+            continue
+        date = now_fn().strftime("%y%m%dT%H%M%SZ")
+        sig = _coupang_sign(secret, "GET", path, date)
+        headers = {"Authorization": f"CEA algorithm=HmacSHA256, access-key={access}, "
+                                    f"signed-date={date}, signature={sig}",
+                   "Content-Type": "application/json;charset=UTF-8"}
+        try:
+            resp = request_fn("GET", _COUPANG_API_BASE + path, headers=headers,
+                              market="coupang", key=str(vendor or ""))
+        except Exception as exc:                       # 릴레이/네트워크 실패 — 다음 계정/정직 반환
+            last = f"{acct} 호출 실패: {exc}"
+            continue
+        status = getattr(resp, "status_code", 0)
+        if status == 404 or status == 403:             # 이 계정 소유 아님 → 다음 계정
+            last = f"{acct} {status}(미소유)"
+            continue
+        if status != 200:
+            last = f"{acct} HTTP {status}"
+            continue
+        try:
+            body = resp.json()
+        except Exception as exc:
+            last = f"{acct} 응답 파싱 실패: {exc}"
+            continue
+        imgs = _coupang_image_urls(body.get("data") if isinstance(body, dict) else body)
+        if imgs:
+            return {"ok": True, "images": imgs, "account": acct, "reason": None}
+        last = f"{acct} 200·이미지 0"
+    return {"ok": False, "images": [], "account": None, "reason": last}
+
+
 # ── 자동 마감 (크론 피기백 · 청크 · 멱등 · WC 상태=진행상태 · 오너 개입 0) ──────────
 _NO_IMAGE_META = "_kgp_no_image"          # 이미지 0장 → 재시도 방지 플래그(draft 잔류)
+_NO_IMAGE_GEN = "coupang"                 # 현 세대 플래그값 — 쿠팡 소스까지 시도한 종결 표식.
+#   구세대 플래그(value="1", 아마존 재수집만 시도)는 재시도 대상(쿠팡 소스 신규 → 멱등 재개).
 
 
 def _pilot_sid_of(product) -> Optional[str]:
@@ -837,9 +966,21 @@ def _pilot_sid_of(product) -> Optional[str]:
     return None
 
 
+def _pilot_flag_value(product, key) -> Optional[str]:
+    for m in (product.get("meta_data") or []):
+        if (m or {}).get("key") == key:
+            return str(m.get("value"))
+    return None
+
+
 def _pilot_has_flag(product, key) -> bool:
-    return any((m or {}).get("key") == key and str(m.get("value")) in ("1", "true")
+    return any((m or {}).get("key") == key and str(m.get("value")) in ("1", "true", _NO_IMAGE_GEN)
                for m in (product.get("meta_data") or []))
+
+
+def _pilot_account_hint(product) -> Optional[str]:
+    v = _pilot_flag_value(product, _COUPANG_ACCOUNT_META)
+    return v if v in ("gogane", "woojoo") else None
 
 
 def _pilot_img_count(p) -> int:
@@ -865,25 +1006,37 @@ def pilot_finish_tick(rows, *, list_products_fn, update_fn, enrich_fn, chunk: in
         if sid:
             by_sid[sid] = p
     passable = [r for r in (rows or []) if not r.get("excluded")]
+    # pending: 이미지 0장 draft 중 **현 세대(_NO_IMAGE_GEN)로 종결 안 된** 것.
+    #   구세대 플래그("1" — 아마존만 시도)·미플래그는 쿠팡 소스로 재시도(멱등 재개, 오너 지시 3).
     pending = [r for r in passable
                if str(r.get("sid")) in by_sid
                and _pilot_img_count(by_sid[str(r.get("sid"))]) == 0
-               and not _pilot_has_flag(by_sid[str(r.get("sid"))], _NO_IMAGE_META)]
+               and _pilot_flag_value(by_sid[str(r.get("sid"))], _NO_IMAGE_META) != _NO_IMAGE_GEN]
     processed = []
     for i, r in enumerate(pending[:chunk]):
         p = by_sid[str(r.get("sid"))]
         if i and sleep_sec:
             sleep_fn(sleep_sec)
+        # 소속 계정 힌트(캐시)를 enrich에 전달 — 계정 혼동·재판별 방지(오너 지시 2).
+        r_aug = dict(r)
+        hint = _pilot_account_hint(p)
+        if hint:
+            r_aug["coupang_account"] = hint
         try:
-            e = enrich_fn(r) or {}
+            e = enrich_fn(r_aug) or {}
         except Exception as exc:
             processed.append({"sid": r.get("sid"), "action": "collect_fail", "reason": f"수집 실패: {exc}"})
             continue
         imgs = list(e.get("images") or [])[:image_cap]
+        acct = e.get("account") or hint          # enrich가 판별한 소속 계정
+        acct_meta = ([{"key": _COUPANG_ACCOUNT_META, "value": acct}]
+                     if acct in ("gogane", "woojoo") and acct != hint else [])
         if imgs:
             patch = {"images": [{"src": u, "position": j} for j, u in enumerate(imgs)], "type": "simple"}
+            if acct_meta:
+                patch["meta_data"] = list(acct_meta)   # 판별 계정 캐시(다음 틱 재판별 0)
             if stock_patch:
-                patch.update(stock_patch)
+                patch.update({k: v for k, v in stock_patch.items() if k != "meta_data"})
             try:
                 ok = bool(update_fn(p.get("id"), patch))
             except Exception as exc:
@@ -892,14 +1045,17 @@ def pilot_finish_tick(rows, *, list_products_fn, update_fn, enrich_fn, chunk: in
                 continue
             processed.append({"sid": r.get("sid"), "product_id": p.get("id"),
                               "action": "backfilled" if ok else "sideload_fail",
-                              "image_count": len(imgs), "reason": None if ok else "WC update 실패"})
+                              "image_count": len(imgs), "source": e.get("source"), "account": acct,
+                              "reason": None if ok else "WC update 실패"})
         else:
+            # 쿠팡·소싱 둘 다 0 → 현 세대로 종결 플래그(다음 틱 재시도 제외, 재개 멱등).
             try:
-                update_fn(p.get("id"), {"meta_data": [{"key": _NO_IMAGE_META, "value": "1"}], "type": "simple"})
+                update_fn(p.get("id"), {"meta_data": [{"key": _NO_IMAGE_META, "value": _NO_IMAGE_GEN}] + acct_meta,
+                                        "type": "simple"})
             except Exception:
                 pass
             processed.append({"sid": r.get("sid"), "product_id": p.get("id"), "action": "no_image",
-                              "image_count": 0, "reason": "수집 이미지 0장 — draft 잔류(공개 안 함)"})
+                              "image_count": 0, "reason": (e.get("reason") or "쿠팡·소싱 이미지 0장 — draft 잔류(공개 안 함)")})
     remaining = max(0, len(pending) - chunk)
     published = []
     if remaining == 0:                        # 전행 처리 완료 → 이미지 있는 draft만 자동 publish(오너 사전 승인)
@@ -941,12 +1097,12 @@ def pilot_status(rows, *, list_products_fn) -> dict:
             published += 1
         elif sid in drafts:
             p = drafts[sid]
-            if _pilot_has_flag(p, _NO_IMAGE_META):
-                no_image += 1                 # 종결(이미지 0 확정 · draft 잔류)
-            elif _pilot_img_count(p) == 0:
-                pending += 1                  # 미처리(다음 틱 백필 대상)
-            else:
+            if _pilot_img_count(p) > 0:
                 with_images += 1              # 이미지 있음(다음 완료 틱에 publish)
+            elif _pilot_flag_value(p, _NO_IMAGE_META) == _NO_IMAGE_GEN:
+                no_image += 1                 # 현 세대(쿠팡까지 시도) 종결 · draft 잔류
+            else:
+                pending += 1                  # 미처리/구세대 플래그 — 쿠팡 소스로 재시도 대상
         else:
             unmatched += 1
     return {"target": len(passable), "published": published, "with_images_draft": with_images,
@@ -986,14 +1142,48 @@ def make_enrich_fn(collect_fn, image_cap: int = IMAGE_CAP):
         asin = str(row.get("asin") or "").upper()
         url = smap.get(asin) if isinstance(smap.get(asin), str) else ""
         if not url:
-            return {"images": [], "sourcing_url": ""}
+            return {"images": [], "sourcing_url": "", "source": "sourcing"}
         try:
             draft = collect_fn(url) or {}
         except Exception:
-            return {"images": [], "sourcing_url": url}
+            return {"images": [], "sourcing_url": url, "source": "sourcing"}
         return {"images": (draft.get("images") or [])[:image_cap],
                 "description_html": draft.get("description_html") or draft.get("description") or "",
-                "sourcing_url": url}
+                "sourcing_url": url, "source": "sourcing"}
+    return _enrich
+
+
+def make_coupang_first_enrich_fn(collect_fn, *, image_cap: int = IMAGE_CAP,
+                                 fetch_images_fn=None, request_fn=None):
+    """이미지 소스 **①쿠팡 sid 원본(봇차단 회피) → ②소싱처 수집(폴백)**. (오너 지시 1·v88-C 피벗)
+
+    - 쿠팡 GET seller-products/{sid} 이미지 우선. 계정 힌트(row['coupang_account']) 있으면 그 계정만.
+    - 쿠팡 0장/실패 시 기존 소싱맵 수집으로 폴백. 반환 account/source로 pilot_finish_tick가 캐시·계측.
+    - fetch_images_fn 주입(오프라인 테스트). 기본=fetch_coupang_images(릴레이·페이싱·계정라우팅).
+    """
+    fetch_images_fn = fetch_images_fn or fetch_coupang_images
+    sourcing = make_enrich_fn(collect_fn, image_cap=image_cap)
+
+    def _enrich(row):
+        sid = row.get("sid")
+        hint = row.get("coupang_account")
+        cp = {}
+        if sid is not None:
+            try:
+                cp = fetch_images_fn(sid, account_hint=hint, request_fn=request_fn) or {}
+            except Exception as exc:
+                cp = {"ok": False, "images": [], "account": None, "reason": f"쿠팡 조회 예외: {exc}"}
+        imgs = list(cp.get("images") or [])[:image_cap]
+        if imgs:
+            return {"images": imgs, "account": cp.get("account") or hint,
+                    "source": "coupang", "reason": None}
+        fb = sourcing(row) or {}                      # 폴백: 기존 소싱처 수집
+        fb_imgs = list(fb.get("images") or [])[:image_cap]
+        return {"images": fb_imgs, "account": cp.get("account") or hint,
+                "description_html": fb.get("description_html") or "",
+                "sourcing_url": fb.get("sourcing_url") or "",
+                "source": "sourcing" if fb_imgs else "none",
+                "reason": None if fb_imgs else (f"쿠팡 {cp.get('reason') or '이미지 0'} · 소싱 폴백도 0")}
     return _enrich
 
 
