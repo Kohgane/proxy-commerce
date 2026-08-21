@@ -3722,3 +3722,65 @@ def coupang_pilot_register():
                    "register_gate": "PILOT_REGISTER_APPROVED=True (오너 승인) · draft",
                    "next": ("육안 확인 후 ?batch_ok=1&n=47 로 46건 속행" if not batch_ok else "완료")})
     return jsonify(result)
+
+
+@admin_panel_bp.post("/coupang-pilot/backfill")
+def coupang_pilot_backfill():
+    """기존 47 draft 상품에 **이미지(+재고) 백필** — 재등록 아님, WC UPDATE. `_kgp_pilot_sid` 메타로 매칭.
+
+    이미지 0장 근원(sourcing_map URL 미해석 → collect 미실행)이 `load_sourcing_map` 수리로 해소됨.
+    멱등(이미 이미지 있으면 스킵) · 상품당 2장 캡 · 재고 instock+관리off 동승. 매칭 실패·0장은 정직 표기.
+    """
+    from flask import jsonify, request
+    import json as _json
+    from pathlib import Path as _P
+    from src.pipeline import coupang_replicate as CR
+
+    pop_file = _P("data/pilot_population.json")
+    if pop_file.is_file():
+        pop = _json.loads(pop_file.read_text(encoding="utf-8")).get("population", [])
+    else:
+        try:
+            sm_raw = _json.loads(_P("data/sourcing_map.json").read_text(encoding="utf-8"))
+        except Exception:
+            sm_raw = {}
+        pop = CR.build_pilot_population(sm_raw)["population"] if sm_raw else []
+    if not pop:
+        return jsonify({"ok": False, "error": "pilot_population 없음"}), 400
+
+    bl = CR.load_blacklist85()
+    if bl["count"] == 0 and request.args.get("allow_no_blacklist") not in ("1", "true", "yes"):
+        return jsonify({"ok": False, "error": "blacklist85 로드 0건 — 중단(등록 세트와 동일 필터 유지)"}), 400
+    report = CR.build_pilot_report(pop, n=int(request.args.get("select_n", 50)),
+                                   channel="woocommerce_multishop", blacklist=bl["terms"],
+                                   access=CR.access_status(), relay=CR.relay_ready())
+    review = report.get("review_table") or []
+
+    sm = CR.load_sourcing_map()
+    smap = sm.get("map") or {}
+
+    def _enrich(row):
+        asin = str(row.get("asin") or "").upper()
+        url = smap.get(asin) if isinstance(smap.get(asin), str) else ""
+        if not url:
+            return {"images": []}
+        try:
+            from src.seller_console.views import _collect_real_draft
+            draft = _collect_real_draft(url) or {}
+        except Exception:
+            return {"images": []}
+        return {"images": (draft.get("images") or [])[:CR.IMAGE_CAP]}
+
+    try:
+        from src.vendors import woocommerce_client as _wc
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"woocommerce_client 로드 실패: {exc}"}), 500
+
+    result = CR.backfill_images(
+        review, enrich_fn=_enrich,
+        list_products_fn=lambda: _wc.list_products_by_status("draft"),
+        update_fn=_wc.update_product, image_cap=CR.IMAGE_CAP,
+        stock_patch={"manage_stock": False, "stock_status": "instock"})
+    result.update({"ok": True, "review_pass": len(review),
+                   "note": "이미지 백필(UPDATE·멱등·2장캡) + 재고 instock/관리off. 매칭=_kgp_pilot_sid."})
+    return jsonify(result)

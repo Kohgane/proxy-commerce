@@ -248,6 +248,30 @@ def classify_source(url: str) -> str:
 
 
 # ── sourcing_map 로드 (없으면 정직 보고) ────────────────────────────────────────
+def _best_source_url(entry) -> str:
+    """sourcing_map 엔트리 → 수집 가능한 소스 URL 1개(우선순위 최상).
+
+    v88-C 등록 사후 결함: 엔트리는 `{name_ko, sources:[{url, priority}...]}` 형식이라 **top-level url 없음**.
+    예전 `v.get("url")`이 None을 반환해 enrich가 URL 미해석 → collect 미실행 → **이미지 0장**. → sources[]에서 해석.
+    """
+    if not isinstance(entry, dict):
+        return str(entry or "")
+    direct = entry.get("url") or entry.get("sourcing_url")
+    if direct:
+        return str(direct)
+    sources = entry.get("sources")
+    if isinstance(sources, list) and sources:
+        def _pri(s):
+            try:
+                return int((s or {}).get("priority", 999))
+            except (TypeError, ValueError):
+                return 999
+        best = min([s for s in sources if isinstance(s, dict) and s.get("url")], key=_pri, default=None)
+        if best:
+            return str(best.get("url"))
+    return ""
+
+
 def load_sourcing_map(path: str = "") -> dict:
     """sourcing_map.json 로드 → {available, path, count, map}. 없으면 available=False(가짜 0)."""
     candidates = [path] + _SOURCING_MAP_CANDIDATES if path else _SOURCING_MAP_CANDIDATES
@@ -257,15 +281,15 @@ def load_sourcing_map(path: str = "") -> dict:
                 data = json.loads(Path(cand).read_text(encoding="utf-8"))
             except (ValueError, OSError):
                 continue
-            # 형식 관용: {asin: url} 또는 [{asin, url}] 또는 {asin: {url:...}}.
+            # 형식 관용: {asin: url} · [{asin, url}] · {asin: {sources:[{url,priority}]}}. 소스 URL은 _best_source_url로.
             m = {}
             if isinstance(data, dict):
                 for k, v in data.items():
-                    m[str(k).upper()] = v.get("url") if isinstance(v, dict) else str(v)
+                    m[str(k).upper()] = _best_source_url(v)
             elif isinstance(data, list):
                 for row in data:
                     if isinstance(row, dict) and row.get("asin"):
-                        m[str(row["asin"]).upper()] = row.get("url") or row.get("sourcing_url") or ""
+                        m[str(row["asin"]).upper()] = _best_source_url(row)
             return {"available": True, "path": cand, "count": len(m), "map": m}
     return {"available": False, "path": None, "count": 0, "map": {},
             "lookup": "LinkLynk/Bluehost 계보 자산 — 오너 액션: 서버에 data/sourcing_map.json 배치 또는 SOURCING_MAP_PATH 설정"}
@@ -663,6 +687,8 @@ def register_pilot_rows(rows, *, dispatch_fn, n: int = 1, batch_ok: bool = False
             "title_ko": r.get("title_ko"), "sell_price_krw": r.get("sale_krw"),
             "images": images, "description_html": desc, "url": src_url,
             "status": status, "pilot_meta": meta, "source": r.get("source"),
+            # 재고: 무재고 구매대행 모델 — 재고관리 off + 항상 구매가능(instock).
+            "manage_stock": False, "stock_status": "instock",
         }
         try:
             dr = dispatch_fn(product_data, list(markets))
@@ -673,11 +699,14 @@ def register_pilot_rows(rows, *, dispatch_fn, n: int = 1, batch_ok: bool = False
             continue
         wr = next((rr for rr in (getattr(dr, "results", None) or []) if getattr(rr, "market", "") == "woocommerce"), None)
         ok = bool(wr and getattr(wr, "success", False))
+        # 조용한 실패 가드: 등록 성공인데 이미지 0장이면 warning으로 표기(백필 대상) — reason:null 성공으로 묻지 않음.
+        img_warn = "이미지 0장 — 백필 필요" if (ok and len(images) == 0) else None
         results.append({
             "sid": r.get("sid"), "asin": r.get("asin"), "title": r.get("title_ko"),
             "registered": ok, "status": status, "image_count": len(images), "sale_krw": r.get("sale_krw"),
             "url": (getattr(wr, "external_url", None) if wr else None),
             "reason": None if ok else (getattr(wr, "message", None) if wr else "woo 결과 없음"),
+            "warning": img_warn,
             "title_suspect": bool(r.get("title_truncated") or r.get("title_truncated_suspect")),
             "cjk_residual": bool(r.get("title_cjk_residual")),
         })
@@ -686,9 +715,74 @@ def register_pilot_rows(rows, *, dispatch_fn, n: int = 1, batch_ok: bool = False
         "target": len(passable), "batch_ok": bool(batch_ok), "status": status,
         "registered": sum(1 for x in results if x["registered"]),
         "failed": sum(1 for x in results if not x["registered"]),
+        "no_image": sum(1 for x in results if x.get("registered") and x.get("image_count") == 0),
         "results": results,
         "note": ("카나리(1건 · Ystudio) — 육안 확인 후 batch_ok=1로 46건 속행"
                  if not batch_ok else f"배치({len(passable)}건, draft)"),
+    }
+
+
+# ── 이미지 백필 (기존 draft 상품 UPDATE — 재등록 아님, _kgp_pilot_sid 매칭, 멱등) ──
+def backfill_images(rows, *, enrich_fn, list_products_fn, update_fn,
+                    image_cap: int = IMAGE_CAP, stock_patch=None, sleep_fn=None, sleep_sec: float = 0.5) -> dict:
+    """기존 draft 상품에 이미지(+재고) 백필. **재등록 아님 — WC UPDATE.** `_kgp_pilot_sid` 메타로 상품 매칭.
+
+    list_products_fn() → draft 상품 목록([{id, meta_data:[{key,value}]}]). update_fn(pid, patch)→ok.
+    이미 이미지 있는 상품은 스킵(멱등). 매칭 실패·수집 0장은 정직 표기(조용한 성공 금지). 상품당 image_cap(2)장.
+    """
+    import time as _t
+    sleep_fn = sleep_fn or _t.sleep
+    by_sid = {}
+    for p in (list_products_fn() or []):
+        for m in (p.get("meta_data") or p.get("meta") or []):
+            if (m or {}).get("key") == "_kgp_pilot_sid":
+                by_sid[str(m.get("value"))] = p
+                break
+    results, passable = [], [r for r in (rows or []) if not r.get("excluded")]
+    for i, r in enumerate(passable):
+        p = by_sid.get(str(r.get("sid")))
+        if not p:
+            results.append({"sid": r.get("sid"), "matched": False, "updated": False,
+                            "reason": "WC draft 매칭 실패(_kgp_pilot_sid)"})
+            continue
+        if int(p.get("images_count") or len(p.get("images") or [])) > 0:
+            results.append({"sid": r.get("sid"), "product_id": p.get("id"), "matched": True,
+                            "updated": False, "skipped": True, "reason": "이미 이미지 있음(멱등 스킵)"})
+            continue
+        try:
+            e = enrich_fn(r) or {}
+        except Exception as exc:
+            results.append({"sid": r.get("sid"), "product_id": p.get("id"), "matched": True,
+                            "updated": False, "reason": f"collect 실패: {exc}"})
+            continue
+        imgs = list(e.get("images") or [])[:image_cap]
+        patch = {}
+        if imgs:
+            patch["images"] = [{"src": u, "position": j} for j, u in enumerate(imgs)]
+        if stock_patch:
+            patch.update(stock_patch)
+        if not patch:
+            results.append({"sid": r.get("sid"), "product_id": p.get("id"), "matched": True,
+                            "updated": False, "image_count": 0, "reason": "수집 이미지 0장(소스 확인 필요)"})
+            continue
+        if i and sleep_sec:
+            sleep_fn(sleep_sec)
+        try:
+            ok = bool(update_fn(p.get("id"), patch))
+        except Exception as exc:
+            results.append({"sid": r.get("sid"), "product_id": p.get("id"), "matched": True,
+                            "updated": False, "image_count": len(imgs), "reason": f"WC update 예외: {exc}"})
+            continue
+        results.append({"sid": r.get("sid"), "product_id": p.get("id"), "matched": True,
+                        "updated": ok, "image_count": len(imgs),
+                        "reason": None if ok else "WC update 실패"})
+    return {
+        "target": len(passable),
+        "updated": sum(1 for x in results if x.get("updated")),
+        "skipped": sum(1 for x in results if x.get("skipped")),
+        "failed": sum(1 for x in results if not x.get("updated") and not x.get("skipped")),
+        "unmatched": sum(1 for x in results if not x.get("matched")),
+        "results": results,
     }
 
 

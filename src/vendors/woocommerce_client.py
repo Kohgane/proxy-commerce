@@ -304,7 +304,39 @@ def prepare_product_data(catalog_row: dict, sell_price_krw: float) -> dict:
         if isinstance(_m, dict) and _m.get('key'):
             product['meta_data'].append({'key': str(_m['key']), 'value': str(_m.get('value', ''))})
 
+    # v88-C: 무재고 구매대행 — manage_stock/stock_status 명시 오버라이드(미지정이면 기존 동작 불변).
+    if catalog_row.get('manage_stock') is not None:
+        product['manage_stock'] = bool(catalog_row.get('manage_stock'))
+        if product['manage_stock'] is False:
+            product.pop('stock_quantity', None)       # 재고관리 off면 수량 불필요
+    _ss = str(catalog_row.get('stock_status') or '').strip().lower()
+    if _ss in ('instock', 'outofstock', 'onbackorder'):
+        product['stock_status'] = _ss
+
     return product
+
+
+def list_products_by_status(status: str = 'draft', per_page: int = 100) -> list:
+    """상태별 상품 목록(백필 매칭용). meta_data 포함. 페이지네이션(넉넉히 5페이지)."""
+    out, url = [], _woo_endpoint("products")
+    for page in range(1, 6):
+        r = _request_with_retry('GET', url, params={'status': status, 'per_page': per_page, 'page': page})
+        rows = r.json()
+        if not isinstance(rows, list) or not rows:
+            break
+        out.extend(rows)
+        if len(rows) < per_page:
+            break
+    return out
+
+
+def update_product(product_id, patch: dict) -> bool:
+    """상품 부분 업데이트(백필 — 재등록 아님). 성공 시 True."""
+    if not product_id or not isinstance(patch, dict) or not patch:
+        return False
+    url = _woo_endpoint(f"products/{product_id}")
+    r = _request_with_retry('PUT', url, json=patch)
+    return bool(isinstance(r.json(), dict) and r.json().get('id'))
 
 
 def verify_woo_webhook(payload: bytes, signature: str) -> bool:

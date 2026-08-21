@@ -108,6 +108,57 @@ def test_register_partial_failure_no_rollback_and_honest_reason():
     assert fail["reason"] and fail["url"] is None      # 사유 존재·롤백 안 함(성공 2건 유지)
 
 
+def test_sourcing_map_resolves_source_url_not_none(tmp_path):
+    # 등록 사후 근원 수리: 엔트리에 top-level url 없고 sources[].url만 있어도 해석(이미지 0장 근원).
+    p = tmp_path / "sm.json"
+    p.write_text(json.dumps({"B0AAA": {"name_ko": "가", "krw": 1000,
+                 "sources": [{"url": "https://amz/dp/B0AAA", "priority": 2},
+                             {"url": "https://amz/dp/BEST", "priority": 1}], "coupang_sid": 7}}), encoding="utf-8")
+    m = CR.load_sourcing_map(str(p))["map"]
+    assert m["B0AAA"] == "https://amz/dp/BEST"       # 우선순위 1 소스
+    assert CR._best_source_url({"sources": []}) == "" and CR._best_source_url({"url": "u"}) == "u"
+
+
+def test_register_silent_failure_guard_and_stock():
+    # 이미지 0장인데 등록 성공 → warning(백필 필요) 표기(조용한 성공 금지) + no_image 집계.
+    disp = _FakeDispatch(ok=True)
+    out = CR.register_pilot_rows(_rows(1), dispatch_fn=disp, sleep_fn=lambda s: None)  # enrich 없음 → 이미지 0
+    assert out["no_image"] == 1
+    assert out["results"][0]["registered"] is True and out["results"][0]["warning"] == "이미지 0장 — 백필 필요"
+    # 재고: 무재고 모델 — manage_stock off + instock.
+    assert disp.calls[0]["manage_stock"] is False and disp.calls[0]["stock_status"] == "instock"
+
+
+def test_backfill_images_matches_by_meta_idempotent_and_honest():
+    rows = [{"sid": 10, "asin": "A", "excluded": False}, {"sid": 11, "asin": "B", "excluded": False},
+            {"sid": 12, "asin": "C", "excluded": False}]
+    products = [
+        {"id": 101, "meta_data": [{"key": "_kgp_pilot_sid", "value": "10"}], "images": []},          # 매칭·백필
+        {"id": 102, "meta_data": [{"key": "_kgp_pilot_sid", "value": "11"}], "images": [{"src": "x"}]},  # 이미 이미지 → 스킵
+        # sid 12 → WC에 없음(unmatched)
+    ]
+    updated = {}
+    def _upd(pid, patch): updated[pid] = patch; return True
+    def _enrich(r):
+        return {"images": ["https://i/1.jpg", "https://i/2.jpg", "https://i/3.jpg"]} if r["sid"] == 10 else {"images": []}
+    out = CR.backfill_images(rows, enrich_fn=_enrich, list_products_fn=lambda: products, update_fn=_upd,
+                             image_cap=2, stock_patch={"manage_stock": False, "stock_status": "instock"},
+                             sleep_fn=lambda s: None)
+    assert out["updated"] == 1 and out["skipped"] == 1 and out["unmatched"] == 1
+    assert len(updated[101]["images"]) == 2                 # 2장 캡
+    assert updated[101]["manage_stock"] is False and updated[101]["stock_status"] == "instock"  # 재고 동승
+
+
+def test_prepare_product_data_stock_and_status_override():
+    from src.vendors import woocommerce_client as wc
+    prod = wc.prepare_product_data(
+        {"title_ko": "테스트", "status": "draft", "manage_stock": False, "stock_status": "instock",
+         "extra_meta": [{"key": "_kgp_pilot_sid", "value": "9"}]}, 10000)
+    assert prod["status"] == "draft" and prod["manage_stock"] is False and prod["stock_status"] == "instock"
+    assert "stock_quantity" not in prod                     # 관리 off면 수량 제거
+    assert any(m["key"] == "_kgp_pilot_sid" for m in prod["meta_data"])
+
+
 def test_register_flags_suspect_cjk_into_meta():
     disp = _FakeDispatch(ok=True)
     row = {"sid": 9, "asin": "Z", "title_ko": "세일러 万年筆", "sale_krw": 5000, "excluded": False,
