@@ -132,6 +132,37 @@ def _term_hit(term: str, text_lower: str) -> bool:
     return t in text_lower
 
 
+# 한글 부분일치 오탐 예외([[한글 부분일치 오탐 지뢰]]) — 짧은 블랙리스트 한글이 삼키는 **별개 브랜드**(정탐 보호).
+#   예: `보스`(bose)가 `보스미어`(Bossmeer)를 삼킴. 예외 브랜드 span 안에서만 매칭되면 무시(밖에 또 있으면 진짜 히트).
+_KO_ALLOW_BRANDS = frozenset({"보스미어"})
+
+
+def _covered_only_by_allow(term_lower: str, text_lower: str) -> bool:
+    """term의 모든 출현이 예외 브랜드 span 안에 갇혀 있으면 True(과탐 → 무시). 밖에도 있으면 False(진짜 히트)."""
+    allow_spans = []
+    for brand in _KO_ALLOW_BRANDS:
+        bl = brand.lower()
+        if term_lower not in bl:            # 예외 브랜드가 이 term을 실제로 포함할 때만 의미
+            continue
+        start = 0
+        while True:
+            i = text_lower.find(bl, start)
+            if i < 0:
+                break
+            allow_spans.append((i, i + len(bl)))
+            start = i + 1
+    if not allow_spans:
+        return False
+    start = 0
+    while True:
+        i = text_lower.find(term_lower, start)
+        if i < 0:
+            return True                     # 모든 term 출현이 예외 span에 갇힘
+        if not any(s <= i and i + len(term_lower) <= e for s, e in allow_spans):
+            return False                    # 예외 밖 출현 → 진짜 히트
+        start = i + 1
+
+
 def is_forbidden(title: str, category: str = "", blacklist: Optional[Iterable[str]] = None) -> Optional[str]:
     """취급금지면 사유 문자열, 아니면 None. blacklist(쿠팡 오너 자산)는 주입(하드코딩 금지)."""
     text = f"{title or ''} {category or ''}".lower()
@@ -140,6 +171,10 @@ def is_forbidden(title: str, category: str = "", blacklist: Optional[Iterable[st
             return f"forbidden-category:{kw}"
     for bad in (blacklist or []):
         if _term_hit(bad, text):
+            t = str(bad).strip().lower()
+            # 한글 term이 예외 브랜드(보스미어 등)의 부분일치일 뿐이면 스킵(정탐 보호). ASCII는 이미 단어경계.
+            if not t.isascii() and _covered_only_by_allow(t, text):
+                continue
             return f"blacklist:{bad}"
     matches = check_forbidden_terms(title or "")
     if matches:
@@ -193,10 +228,13 @@ def _suspect_tail(s: str) -> bool:
     m = re.search(r"([A-Za-z]+)\s*$", (s or "").strip())     # 마지막 라틴 토큰 전체(한글 꼬리는 무판정)
     if not m:
         return False
-    tok = m.group(1)
-    if len(tok) == 1:                            # 단일 라틴 문자 꼬리("… Aluminum W") = 절단 의심
+    tok = m.group(1).lower()
+    # FELCO nit: 단일 문자 사이즈(S·M·L)·사이즈 약어(XS/XL/XXL)는 정상 꼬리 → 절단 아님.
+    if tok in ("s", "m", "l", "xs", "xl", "xxl", "xxxl"):
+        return False
+    if len(tok) == 1:                            # 그 외 단일 라틴 문자 꼬리("… Aluminum W") = 절단 의심
         return True
-    return 2 <= len(tok) <= 7 and tok.lower() not in _COMPLETE_TAIL
+    return 2 <= len(tok) <= 7 and tok not in _COMPLETE_TAIL
 
 
 def clean_title_ko(title, url: str = "") -> dict:
