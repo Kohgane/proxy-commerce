@@ -96,3 +96,13 @@ fx 미상 시 가짜 환산 0(price ok=False). 반환 summary = {ingested·skipp
 - **재고(무재고 구매대행):** 등록 시 `manage_stock=False` + `stock_status="instock"`(수량 관리 안 함, 항상 구매가능). `prepare_product_data`가 명시 오버라이드 존중(수동 업로드는 미지정→기존 동작 불변).
 - **이미지 백필 라우트** `POST /admin/coupang-pilot/backfill`: 기존 draft를 **재등록 아닌 WC UPDATE**로 이미지(2장 캡)+재고 백필. `_kgp_pilot_sid` 메타로 매칭, 멱등(이미 이미지 있으면 스킵), 매칭 실패·0장 정직 표기. `woocommerce_client.list_products_by_status`/`update_product` 재사용.
 계약 = `test_v88_c_pilot`(source URL 해석·조용한실패 가드·재고·백필 멱등/매칭·stock override).
+
+## 이미지 소스 피벗 — 아마존 재수집 → 쿠팡 원본 (오너 지시 2026-08-21)
+아마존 서버측 수집은 봇차단으로 0장이 반복 → **쿠팡 seller-products 원본을 1순위**로. 파일럿 47은 쿠팡 기등록(sid 보유)이라 정합.
+- **소스 우선순위** (`make_coupang_first_enrich_fn`): ① 쿠팡 `GET seller-products/{sid}` 이미지 → ② 기존 소싱처 수집(폴백). 쿠팡 성공 시 소싱 미호출.
+- **계정 라우팅** (`fetch_coupang_images`, `_account_creds`): sid별 소속(고가네 A01381223 / 우주대행 A01504840) 판별 — WC 메타 `_kgp_pilot_account` 힌트 있으면 그 계정만, 없으면 `ready_accounts()` 순차(404/403=미소유→다음 계정, 200+이미지=확정·**캐시**). **계정 혼동 금지**(맞는 키로 CEA 서명).
+- **호출 예의:** `relay_request` 관문(고정 IP 릴레이 + `market_throttle` 페이싱 + 429/5xx 백오프) 경유 — 호출제한 이용정지 전례 대응. `now_fn`/`request_fn` 주입으로 오프라인 계약.
+- **CDN 사이드로드:** 응답 이미지 URL(vendorPath 절대 우선, cdnPath는 `COUPANG_IMAGE_CDN_BASE`로 절대화)을 WC `images[].src`로 직접 사이드로드. **핫링크 차단 여부는 배포 후 실측** — 차단 시 릴레이 경유 다운로드→업로드로 폴백(후속). 실패는 `sideload_fail` 사유로 정직 표기(조용한 실패 0).
+- **no_image 재개(멱등):** `_kgp_no_image` 플래그에 **세대값** — 구세대 `"1"`(아마존만 시도)은 **재시도 대상**, 쿠팡까지 시도해도 0장이면 `"coupang"`으로 종결(다음 틱 제외). 이미 no_image 스킵된 행도 이 피벗으로 1회 재유입.
+- 크론 `_run_pilot_finish_tick`이 `make_coupang_first_enrich_fn` 사용 → 배포 후 자동 재수렴.
+계약 = `test_v88_c_pilot`(이미지 추출·계정 라우팅 힌트/순차/404폴백·쿠팡우선 폴백·구세대 재시도·세대 종결).

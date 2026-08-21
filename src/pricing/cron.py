@@ -151,7 +151,8 @@ def _run_pilot_finish_tick(chunk: int = 5) -> dict:
     if not rows:
         return {"skipped": "검수표 0행(모집단/블랙리스트 미배포)"}
     from src.seller_console.views import _collect_real_draft
-    enrich = CR.make_enrich_fn(_collect_real_draft, image_cap=CR.IMAGE_CAP)
+    # 이미지 소스 피벗: ①쿠팡 sid 원본(봇차단 회피·릴레이·계정라우팅) → ②소싱처 수집 폴백.
+    enrich = CR.make_coupang_first_enrich_fn(_collect_real_draft, image_cap=CR.IMAGE_CAP)
     return CR.pilot_finish_tick(
         rows,
         list_products_fn=lambda s="draft": _wc.list_products_by_status(s),
