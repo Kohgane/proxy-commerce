@@ -63,6 +63,24 @@ def test_stage3_swiss_table_and_empty_state():
     assert ".pc-geo" not in CONSOLE
 
 
+def test_stage4_swiss_table_extended_to_lists():
+    # Stage 4: 주문·마켓·카탈로그 리스트에 Swiss 테이블 확대(수집이력과 동일 위계).
+    TPL = Path("src/seller_console/templates")
+    for name in ("orders.html", "markets.html", "catalog.html"):
+        html = (TPL / name).read_text(encoding="utf-8")
+        assert "pc-swiss-table" in html, f"{name} Swiss 테이블 미적용"
+
+
+def test_stage4_onboarding_swiss_tokenized_no_lavender():
+    # Stage 4: 온보딩 카드 라벤더 default 제거 → 토큰(청록 현재단계/완료·금 헤어라인). 하드코딩 보랏빛 0.
+    for lav in ("#d9d6ff", "#c7bfff", "#bbf7d0", "#f0fdf4", "#f7f6ff", "#3b2bb3", "#5b3df5"):
+        assert lav not in CONSOLE, f"온보딩 라벤더 하드코딩 {lav} 잔존(토큰화 필요)"
+    ob = CONSOLE.split(".console-onboarding-card {", 1)[1].split("}", 1)[0]
+    assert "var(--hairline-color" in ob                      # 금 헤어라인
+    nxt = CONSOLE.split(".onboarding-step-card.onboarding-step-next", 1)[1].split("}", 1)[0]
+    assert "var(--teal)" in nxt and "var(--nm-up-sm)" in nxt  # 현재단계 청록 + 뉴모 토큰 그림자
+
+
 def test_root_palette_unchanged_aa_safe():
     # 뿌리 토큰 불변(강조 3색) — 그림자만 추가, 팔레트 재정의 아님.
     assert "--gold: #C9A24B" in APP and "--teal: #119A8E" in APP and "--orange: #F5821F" in APP

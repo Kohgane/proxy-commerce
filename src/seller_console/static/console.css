@@ -304,9 +304,12 @@
 }
 .pc-swiss-table > tbody > tr:first-child > td { border-top: 0; }
 
+/* 디자인 시스템 v2 (Stage 4) — 온보딩 Swiss: 라벤더 default 제거 → 토큰(금 헤어라인·청록 현재단계·
+   청록 완료). 장식 최소·정렬 위계. 하드코딩 hex 0(color-mix로 은은한 틴트). */
 .console-onboarding-card {
-  border-color: #d9d6ff;
-  background: linear-gradient(180deg, var(--on-accent) 0%, #f7f6ff 100%);
+  border-color: var(--console-border);
+  background: var(--surface-warm, #FBF8F1);
+  border-top: 2px solid var(--hairline-color, rgba(201, 162, 75, .28));
 }
 
 .onboarding-step-card {
@@ -314,13 +317,13 @@
 }
 
 .onboarding-step-card.onboarding-step-done {
-  border-color: #bbf7d0;
-  background: #f0fdf4;
+  border-color: color-mix(in srgb, var(--teal) 34%, transparent);
+  background: color-mix(in srgb, var(--teal) 7%, transparent);
 }
 
 .onboarding-step-card.onboarding-step-next {
-  border-color: #c7bfff;
-  box-shadow: 0 8px 18px rgba(91, 61, 245, 0.12);
+  border-color: color-mix(in srgb, var(--teal) 44%, transparent);
+  box-shadow: var(--nm-up-sm);
 }
 
 .kw-mini-bars {
@@ -350,9 +353,9 @@
 }
 
 .console-step.active {
-  border-color: #c7bfff;
-  background: var(--console-primary-weak);
-  color: #3b2bb3;
+  border-color: color-mix(in srgb, var(--teal) 44%, transparent);
+  background: color-mix(in srgb, var(--teal) 10%, transparent);
+  color: var(--teal);
 }
 
 .console-focus:focus,
@@ -362,7 +365,7 @@ button:focus,
 .form-select:focus,
 .form-check-input:focus {
   outline: none;
-  box-shadow: var(--pc-focus-ring, 0 0 0 .2rem rgba(109, 82, 255, .28));
+  box-shadow: var(--pc-focus-ring, 0 0 0 .2rem color-mix(in srgb, var(--teal) 28%, transparent));
 }
 
 /* 디자인 시스템 v2 (Stage 2) — 토글 스위치 뉴모피즘 트랙(off=inset paper, on=청록). */
