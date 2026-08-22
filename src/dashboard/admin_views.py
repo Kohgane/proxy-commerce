@@ -3809,3 +3809,29 @@ def coupang_pilot_status():
         return jsonify({"ok": False, "error": f"상태 조회 실패(자격/네트워크): {exc}"}), 502
     st.update({"ok": True, "auto_finish": "크론이 백필→publish 자동 진행(오너 개입 0). done=true면 전량 publish/no_image 확정."})
     return jsonify(st)
+
+
+@admin_panel_bp.get("/coupang-pilot/sales-cross")
+def coupang_pilot_sales_cross():
+    """4주 판매 검증 — 멀티샵(WC) vs 쿠팡 동일 sid 판매 교차 대조. **조회 전용·자동 판단 0**(판정은 오너).
+
+    published 파일럿 상품별 주문수(최소)·노출(가능하면)을 나란히. WC는 상품의 total_sales(누적 판매수량,
+    조회분 포함) 사용 → 별도 fetch 0. 쿠팡 판매 소스는 미배선이면 미측정으로 정직 표기(가짜 수치 0).
+    """
+    from flask import jsonify
+    from src.pipeline import coupang_replicate as CR
+
+    rows = CR.default_pilot_rows()
+    if not rows:
+        return jsonify({"ok": False, "error": "검수표 0행 — pilot_population/blacklist 배포 확인"}), 400
+    try:
+        from src.vendors import woocommerce_client as _wc
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"woocommerce_client 로드 실패: {exc}"}), 500
+    try:
+        cross = CR.build_sales_crosscheck(
+            rows, list_products_fn=lambda s="draft": _wc.list_products_by_status(s))
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"판매 대조 조회 실패(자격/네트워크): {exc}"}), 502
+    cross["ok"] = True
+    return jsonify(cross)

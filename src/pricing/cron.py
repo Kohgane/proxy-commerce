@@ -138,8 +138,8 @@ def translate_drain_cron():
         if pf.get("skipped"):
             logger.info("파일럿 마감 틱: 스킵(%s)", pf["skipped"])
         else:
-            logger.info("파일럿 마감 틱: 백필 %s · no_image %s · 실패 %s · 잔여 %s · publish %s%s",
-                        pf.get("backfilled"), pf.get("no_image"), pf.get("failed"),
+            logger.info("파일럿 마감 틱: 부활 %s · 백필 %s · no_image %s · 실패 %s · 잔여 %s · publish %s%s",
+                        pf.get("revived"), pf.get("backfilled"), pf.get("no_image"), pf.get("failed"),
                         pf.get("remaining_pending"), pf.get("published_this_tick"),
                         (" · 멈춘행 " + str([{s['sid']: s['reason']} for s in pf.get("stuck", [])])) if pf.get("stuck") else "")
     except Exception as exc:                       # noqa: BLE001 — 조용한 실패 금지(사유 기록)
@@ -159,6 +159,10 @@ def _run_pilot_finish_tick(chunk: int = 5) -> dict:
     rows = CR.default_pilot_rows()
     if not rows:
         return {"skipped": "검수표 0행(모집단/블랙리스트 미배포)"}
+    _list = lambda s="draft": _wc.list_products_by_status(s)
+    # 미실증 종결 방어: 구경로 실패로 소급 종결된 permanent_fail 행을 1회 부활(신경로 재검증).
+    #   revived 마킹으로 행당 1회 — 부활 후 재실패는 진짜 permanent_fail. 배포 후 첫 틱들에서 자동 소진.
+    revive = CR.pilot_revive_permfail(rows, list_products_fn=_list, update_fn=_wc.update_product)
     from src.seller_console.views import _collect_real_draft
     # 이미지 소스 피벗: ①쿠팡 sid 원본(봇차단 회피·릴레이·계정라우팅) → ②소싱처 수집 폴백.
     enrich = CR.make_coupang_first_enrich_fn(_collect_real_draft, image_cap=CR.IMAGE_CAP)
@@ -167,9 +171,9 @@ def _run_pilot_finish_tick(chunk: int = 5) -> dict:
     def _image_ref(u):
         _ref_idx["n"] += 1
         return _wc.sideload_image_to_media(u, index=_ref_idx["n"])
-    return CR.pilot_finish_tick(
+    out = CR.pilot_finish_tick(
         rows,
-        list_products_fn=lambda s="draft": _wc.list_products_by_status(s),
+        list_products_fn=_list,
         update_fn=_wc.update_product,
         enrich_fn=enrich,
         chunk=chunk,
@@ -177,6 +181,8 @@ def _run_pilot_finish_tick(chunk: int = 5) -> dict:
         stock_patch={"manage_stock": False, "stock_status": "instock"},
         image_ref_fn=_image_ref,
     )
+    out["revived"] = revive.get("revived", 0)
+    return out
 
 
 @cron_bp.post("/pilot-drain")
