@@ -107,3 +107,76 @@ def test_route_post_builds_review_table_no_register(monkeypatch):
     r = c.post("/seller/sourcing/register-pipe", data={"urls": "https://ok/1\nhttps://fail/2"})
     body = r.get_data(as_text=True)
     assert r.status_code == 200 and "검수표" in body and "수집 실패" in body
+
+
+# ── P3: 승인 게이트 + 카나리 쿠팡 실등록 ──────────────────────────────────────────
+def _p3_rows():
+    return [{"url": "https://x/1", "title_ko": "원목 식탁", "sale_krw": 71900, "excluded": False},
+            {"url": "https://x/2", "title_ko": "스텐 텀블러", "sale_krw": 27200, "excluded": False},
+            {"url": "https://x/3", "title_ko": "샤넬 향수", "sale_krw": 300000, "excluded": True}]  # 취급제외
+
+
+def test_p3_canary_registers_only_one():
+    calls = []
+    def disp(pd, acct):
+        calls.append((pd["title_ko"], acct))
+        return {"success": True, "product_id": "CP%d" % len(calls), "url": "https://coupang/CP"}
+    out = RP.register_source_rows(_p3_rows(), dispatch_fn=disp,
+                                  enrich_fn=lambda r: {"images": ["https://i/1.jpg", "https://i/2.jpg"]},
+                                  account="gogane", sleep_fn=lambda s: None)
+    assert out["ok"] and out["mode"] == "canary" and out["target"] == 1 and out["registered"] == 1
+    assert len(calls) == 1 and calls[0][1] == "gogane"          # 첫 통과분 1건만(취급제외 제외)
+    assert out["results"][0]["product_id"] == "CP1"
+
+
+def test_p3_batch_registers_passing_only_and_account_routes():
+    calls = []
+    def disp(pd, acct):
+        calls.append(acct); return {"success": True, "product_id": "X", "url": "u"}
+    out = RP.register_source_rows(_p3_rows(), dispatch_fn=disp,
+                                  enrich_fn=lambda r: {"images": ["u"]},
+                                  account="woojoo", batch_ok=True, n=5, sleep_fn=lambda s: None)
+    assert out["registered"] == 2 and out["target"] == 2         # 통과 2건(샤넬 제외)
+    assert calls == ["woojoo", "woojoo"]                          # 계정 라우팅
+
+
+def test_p3_no_image_not_registered_and_partial_failure_no_rollback():
+    def disp(pd, acct):
+        # 스텐 텀블러만 성공, 원목은 이미지 있으나 dispatch 거부.
+        if "텀블러" in pd["title_ko"]:
+            return {"success": True, "product_id": "OK", "url": "u"}
+        return {"success": False, "error": "쿠팡 등록 거부: 카테고리 사전승인"}
+    def enrich(r):
+        return {"images": []} if "식탁" in r["title_ko"] else {"images": ["u"]}
+    out = RP.register_source_rows(_p3_rows(), dispatch_fn=disp, enrich_fn=enrich,
+                                  account="gogane", batch_ok=True, n=5, sleep_fn=lambda s: None)
+    # 원목=이미지0 보류, 텀블러=성공 → 성공분 유지(롤백 금지), 실패분 사유.
+    assert out["registered"] == 1 and out["failed"] == 1
+    noimg = [x for x in out["results"] if "식탁" in x["title"]][0]
+    assert noimg["registered"] is False and "이미지 0장" in noimg["reason"]
+
+
+def test_p3_gated_when_not_approved():
+    out = RP.register_source_rows(_p3_rows(), dispatch_fn=lambda pd, a: {"success": True},
+                                  enrich_fn=lambda r: {"images": ["u"]}, approved=False)
+    assert out["ok"] is False and out["approved"] is False and "미승인" in out["error"]
+
+
+def test_p3_unknown_account_rejected():
+    out = RP.register_source_rows(_p3_rows(), dispatch_fn=lambda pd, a: {"success": True},
+                                  enrich_fn=lambda r: {"images": ["u"]}, account="foo", approved=True)
+    assert out["ok"] is False and "알 수 없는 계정" in out["error"]
+
+
+def test_p3_route_gated_or_registers(monkeypatch):
+    c = _client(monkeypatch)
+    import src.seller_console.views as V
+    monkeypatch.setattr(V, "_collect_real_draft",
+                        lambda url, translate=True: {"title_ko": "원목 식탁", "currency": "KRW",
+                                                     "price_original": 50000, "images": ["https://i/1.jpg"]})
+    # dispatch를 몽키패치해 라이브 쿠팡 호출 없이 성공 반환.
+    monkeypatch.setattr(V, "_coupang_account_dispatch",
+                        lambda pd, account: {"success": True, "product_id": "CP1", "url": "https://coupang/CP1"})
+    r = c.post("/seller/sourcing/register-pipe/register", data={"urls": "https://ok/1", "account": "gogane"})
+    d = r.get_json()
+    assert d["ok"] and d["mode"] == "canary" and d["registered"] == 1 and d["account"] == "gogane"
