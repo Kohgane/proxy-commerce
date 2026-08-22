@@ -25,6 +25,27 @@ def test_row_forbidden_excluded_with_reason():
     assert inj["excluded"] is True
 
 
+def test_forbidden_detail_shows_matched_token_and_span():
+    # 오탐 판별용: 어느 금지 항목이 제목의 어느 부분에 걸렸는지 명시(토라스 Chanel 패턴명 전례).
+    r = RP.build_source_review_row({"title_ko": "토라스 샤넬패턴 케이스", "currency": "KRW", "price_original": 20000},
+                                   blacklist=["샤넬"])
+    d = r["forbidden_detail"]
+    assert d["kind_ko"] == "금지어 목록" and d["term"] == "샤넬"
+    assert d["matched"] == "샤넬" and "⟦샤넬⟧" in d["snippet"] and "패턴" in d["snippet"]   # 걸린 위치 노출
+    # 금지 카테고리도 동일 형식.
+    cat = RP.build_source_review_row({"title_ko": "디올 향수 100ml", "currency": "KRW", "price_original": 50000})
+    assert cat["forbidden_detail"]["kind_ko"] == "금지 카테고리" and cat["forbidden_detail"]["term"] == "향수"
+    # 통과 행은 detail 없음.
+    ok = RP.build_source_review_row({"title_ko": "원목 식탁", "currency": "KRW", "price_original": 30000})
+    assert ok["forbidden_detail"] is None
+
+
+def test_explain_forbidden_direct():
+    assert RP.explain_forbidden(None, "x") is None
+    e = RP.explain_forbidden("blacklist:bose", "Bose QuietComfort Headphones")
+    assert e["term"] == "bose" and e["matched"] == "Bose" and "⟦Bose⟧" in e["snippet"]   # 원문 대소문자 보존
+
+
 def test_row_foreign_cost_honest_when_no_fx():
     r = RP.build_source_review_row({"title_ko": "USB 허브", "currency": "USD", "price_original": 19.99})
     assert r["cost_krw"] is None and r["sale_krw"] is None        # 가짜 환산 0

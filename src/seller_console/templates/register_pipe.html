@@ -102,7 +102,14 @@
               {% if r.margin_pct is not none %}<small>{{ r.margin_pct }}%</small>{% else %}<span class="text-muted">-</span>{% endif %}
             </td>
             <td data-label="취급 판정">
-              {% if r.excluded %}<span class="pc-badge pc-badge-danger" title="{{ r.forbidden }}">취급 제외</span>
+              {% if r.excluded %}
+                <span class="pc-badge pc-badge-danger">취급 제외</span>
+                {% if r.forbidden_detail %}
+                <div class="small text-muted mt-1">
+                  {{ r.forbidden_detail.kind_ko }} <strong>'{{ r.forbidden_detail.term }}'</strong>
+                  {% if r.forbidden_detail.snippet %}<span class="font-monospace">{{ r.forbidden_detail.snippet }}</span>{% endif %}
+                </div>
+                {% endif %}
               {% else %}<span class="pc-badge pc-badge-on">정상</span>{% endif %}
             </td>
           </tr>
