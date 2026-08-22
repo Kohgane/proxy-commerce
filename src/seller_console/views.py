@@ -7552,6 +7552,67 @@ def sourcing_register_pipe():
     return render_template("register_pipe.html", page="sourcing", review=review, urls_text=urls_text)
 
 
+def _coupang_account_dispatch(product_data, account):
+    """P3 쿠팡 실등록 dispatch — 계정별 자격(`_account_creds`)로 `CoupangUploader` 라우팅. 정직 실패."""
+    from src.pipeline.coupang_replicate import _account_creds
+    from src.uploaders.coupang_uploader import CoupangUploader
+    ak, sk, vid = _account_creds(account)
+    if not (ak and sk):
+        return {"success": False, "error": f"{account} 쿠팡 자격 미설정(env) — 등록 불가"}
+    up = CoupangUploader(access_key=ak, secret_key=sk, vendor_id=vid)
+    cat = str(product_data.get("category_code") or "")
+    product = {
+        "title": product_data.get("title_ko") or "상품",
+        "price": int(product_data.get("sell_price_krw") or 0),
+        "original_price": int(product_data.get("sell_price_krw") or 0),
+        "category_id": up.CATEGORY_MAP.get(cat, "76001") if hasattr(up, "CATEGORY_MAP") else "76001",
+        "sku": (product_data.get("url") or "")[-40:],
+        "description": product_data.get("description_html") or product_data.get("title_ko") or "",
+        "images": product_data.get("images") or [],
+        "stock": 99,
+    }
+    return up.upload_product(product)
+
+
+@bp.post("/sourcing/register-pipe/register")
+def sourcing_register_pipe_register():
+    """등록 파이프 P3: 검수 통과분 → **쿠팡 카나리 실등록**(승인 게이트·계정 라우팅·롤백 금지).
+
+    기본 카나리 1건 — 육안 확인 후 `batch_ok=1&n=N`로 속행. 라이브 등록은 Render 전용(쿠팡 자격·릴레이).
+    자격 미설정/미승인이면 정직 차단(가짜 성공 0). 비가역 방어 = 승인 게이트 + 카나리.
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    from src.pipeline.register_pipe import build_source_review, register_source_rows
+    from src.pipeline.coupang_replicate import load_blacklist85
+
+    urls_text = (request.form.get("urls") or "").strip()
+    raw_urls = [ln.strip() for ln in urls_text.splitlines() if ln.strip()]
+    account = (request.form.get("account") or "gogane").strip().lower()
+    batch_ok = (request.form.get("batch_ok") or "") in ("1", "true", "yes")
+    try:
+        n = int(request.form.get("n", 1))
+    except (TypeError, ValueError):
+        n = 1
+    if not raw_urls:
+        return jsonify({"ok": False, "error": "등록할 소싱 URL이 없습니다."}), 400
+
+    bl = load_blacklist85()
+    review = build_source_review(raw_urls, collect_fn=_collect_real_draft,
+                                 channel="woocommerce_multishop", blacklist=bl.get("terms"), cap=50)
+    passes = review.get("review_pass") or []
+    if not passes:
+        return jsonify({"ok": False, "error": "검수 통과 상품이 없습니다(취급제외/수집실패).",
+                        "excluded": len(review.get("excluded") or []), "failed": len(review.get("failed") or [])}), 400
+
+    result = register_source_rows(
+        passes, dispatch_fn=_coupang_account_dispatch,
+        enrich_fn=lambda r: (_collect_real_draft(r.get("url")) or {}),
+        account=account, n=n, batch_ok=batch_ok)
+    status = 200 if result.get("ok") else 403
+    return jsonify(result), status
+
+
 @bp.post("/sourcing/my-sources")
 def sourcing_my_sources():
     """My Sources 추가/삭제/사용시각 갱신 (Phase 160)."""

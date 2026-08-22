@@ -1,17 +1,18 @@
-"""src/pipeline/register_pipe.py — 등록 파이프 이식 P1: 소싱 URL → 수집·검증 → 검수표 (등록 없음).
+"""src/pipeline/register_pipe.py — 등록 파이프 이식 P1(검수표) + P3(승인 게이트·카나리 쿠팡 실등록).
 
-Bluehost 수동 스크립트 등록을 콘솔 클릭 등록으로 이식하는 첫 단계. **등록은 절대 안 한다**(P3에서
-카나리 게이트로 실등록 — 이 모듈은 검수표까지). 서버 기존 자산 최대 재사용(발명 최소):
+Bluehost 수동 스크립트 등록을 콘솔 클릭 등록으로 이식. 서버 기존 자산 최대 재사용(발명 최소):
   - 수집: `_collect_real_draft`(도메인 dispatcher + 범용 스크래퍼 + 번역) 주입.
   - 정제/판정/가격: `clean_title_ko`·`is_forbidden`(blacklist 151)·`recalc_channel_price`(÷0.618 정합) 재사용.
-파일럿 검수표(`build_review_row`)와 **동형 출력** — 후속 P3가 같은 행으로 등록 실행.
+P1 = 검수표(등록 없음). P3 = 검수 통과분을 **카나리 게이트**로 쿠팡 실등록(파일럿 register_pilot_rows 패턴).
 """
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 from src.pipeline.coupang_replicate import (
     DEFAULT_MARGIN_RATE,
+    IMAGE_CAP,
     clean_title_ko,
     is_forbidden,
     recalc_channel_price,
@@ -133,4 +134,102 @@ def build_source_review(urls, *, collect_fn, channel: str = "woocommerce_multish
         "failed": failed,
         "requested": len(clean_urls),
         "capped": len(clean_urls) > cap,
+    }
+
+
+# ── P3: 승인 게이트 + 카나리 쿠팡 실등록 (파일럿 register_pilot_rows 패턴) ──────────
+_REGISTER_PIPE_APPROVED_DEFAULT = True   # 오너 "allow 승인"(2026-08-22). 안전은 카나리 게이트로 이관.
+
+
+def register_pipe_approved() -> bool:
+    """P3 실등록 승인 여부. env `REGISTER_PIPE_APPROVED` 우선(미설정=오너 승인 기본). 안전=카나리."""
+    v = os.getenv("REGISTER_PIPE_APPROVED", "").strip().lower()
+    if v:
+        return v in ("1", "true", "yes", "on")
+    return _REGISTER_PIPE_APPROVED_DEFAULT
+
+
+def _res_field(res, key, *alts):
+    if isinstance(res, dict):
+        for k in (key,) + alts:
+            if k in res:
+                return res[k]
+        return None
+    for k in (key,) + alts:
+        if hasattr(res, k):
+            return getattr(res, k)
+    return None
+
+
+def register_source_rows(rows, *, dispatch_fn, enrich_fn=None, account: str = "gogane",
+                         n: int = 1, batch_ok: bool = False, approved: Optional[bool] = None,
+                         sleep_fn=None, sleep_sec: float = 0.6) -> dict:
+    """P1 검수 통과분 → **쿠팡 실등록**. 승인 게이트 + **카나리(기본 1건)** + 롤백 금지 + 행별 사유.
+
+    - **비가역 방어:** approved 아니면 등록 0(정직 차단). batch_ok=False면 첫 1건만(카나리), 전량은
+      육안 확인 후 batch_ok=1로만. 부분 실패 시 성공분 유지(롤백 금지)·조용한 실패 금지(행별 registered+사유).
+    - **이미지 0장은 등록 안 함**(안 팔릴 상품 — P1/파일럿 정책 일관).
+    - dispatch_fn(product_data, account)→ 등록 결과({success, product_id, url, error} 또는 동형 객체).
+      enrich_fn(row)→{images, description_html, category_code} 재수집(이미지·상세). 둘 다 주입(발명 0·오프라인).
+    """
+    if approved is None:
+        approved = register_pipe_approved()
+    if not approved:
+        return {"ok": False, "approved": False,
+                "error": "REGISTER_PIPE_APPROVED 미승인 — 실등록 차단(안전 게이트)"}
+    if account not in ("gogane", "woojoo"):
+        return {"ok": False, "error": f"알 수 없는 계정: {account} (gogane/woojoo)"}
+
+    import time as _t
+    sleep_fn = sleep_fn or _t.sleep
+    passable = [r for r in (rows or []) if not r.get("excluded")]
+    passable = passable[:1] if not batch_ok else passable[:max(0, int(n))]
+    results = []
+    for i, r in enumerate(passable):
+        if i and sleep_sec:
+            sleep_fn(sleep_sec)                          # 레이트리밋 예의(호출 간격)
+        images, desc, cat = [], "", r.get("category_code")
+        if enrich_fn:
+            try:
+                e = enrich_fn(r) or {}
+                images = list(e.get("images") or [])[:IMAGE_CAP]
+                desc = e.get("description_html") or ""
+                cat = e.get("category_code") or cat
+            except Exception as exc:                     # 수집 실패 = 정직 실패(등록 안 함), 다음 행 계속
+                results.append({"url": r.get("url"), "title": r.get("title_ko"), "registered": False,
+                                "reason": f"collect 실패: {exc}", "image_count": 0, "product_id": None})
+                continue
+        if not images:                                   # 이미지 0장 → 등록 보류(안 팔릴 상품 공개 방지)
+            results.append({"url": r.get("url"), "title": r.get("title_ko"), "registered": False,
+                            "reason": "이미지 0장 — 등록 보류(수집 실패, 확장 수집 권장)",
+                            "image_count": 0, "product_id": None})
+            continue
+        product_data = {
+            "title_ko": r.get("title_ko"), "sell_price_krw": r.get("sale_krw"),
+            "images": images, "description_html": desc, "category_code": cat,
+            "url": r.get("url"), "source": r.get("source"),
+        }
+        try:
+            res = dispatch_fn(product_data, account)
+        except Exception as exc:                         # 롤백 금지 — 실패분만 기록하고 계속
+            results.append({"url": r.get("url"), "title": r.get("title_ko"), "registered": False,
+                            "reason": f"dispatch 예외: {exc}", "image_count": len(images), "product_id": None})
+            continue
+        ok = bool(_res_field(res, "success"))
+        results.append({
+            "url": r.get("url"), "title": r.get("title_ko"), "account": account,
+            "registered": ok, "image_count": len(images),
+            "product_id": (_res_field(res, "product_id") if ok else None),
+            "market_url": (_res_field(res, "url", "external_url") if ok else None),
+            "reason": None if ok else (_res_field(res, "error", "message") or "쿠팡 등록 실패"),
+        })
+    return {
+        "ok": True, "approved": True, "account": account,
+        "mode": "canary" if not batch_ok else "batch",
+        "target": len(passable), "batch_ok": bool(batch_ok),
+        "registered": sum(1 for x in results if x["registered"]),
+        "failed": sum(1 for x in results if not x["registered"]),
+        "results": results,
+        "note": ("카나리 1건 — 쿠팡 승인심사 대기, 육안 확인 후 batch_ok=1로 속행"
+                 if not batch_ok else f"배치 {len(passable)}건(쿠팡 승인심사 대기)"),
     }

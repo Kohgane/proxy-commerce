@@ -53,11 +53,15 @@ class CoupangUploader(BaseUploader):
         'COUPANG_COMPANY_CONTACT_NUMBER': 'company_contact',  # 반품지연락처
     }
 
-    def __init__(self):
-        """Coupang 업로더 초기화. 환경변수에서 API 키·배송정보를 읽는다."""
-        self.access_key = os.getenv('COUPANG_ACCESS_KEY', '')
-        self.secret_key = os.getenv('COUPANG_SECRET_KEY', '')
-        self.vendor_id = os.getenv('COUPANG_VENDOR_ID', '')
+    def __init__(self, access_key: str = None, secret_key: str = None, vendor_id: str = None):
+        """Coupang 업로더 초기화. 기본은 환경변수, **인자로 계정별 자격 오버라이드 가능**(P3 양계정 라우팅).
+
+        access_key/secret_key/vendor_id를 넘기면 그 계정으로 등록(고가네/우주대행 라우팅). 미지정이면 무접두 env.
+        배송정보(출고지/반품지)는 계정 공용이 아닐 수 있어 여전히 env — P3는 계정별 배송 env가 필요하면 후속.
+        """
+        self.access_key = access_key if access_key is not None else os.getenv('COUPANG_ACCESS_KEY', '')
+        self.secret_key = secret_key if secret_key is not None else os.getenv('COUPANG_SECRET_KEY', '')
+        self.vendor_id = vendor_id if vendor_id is not None else os.getenv('COUPANG_VENDOR_ID', '')
         # 셀러 고유 출고지/반품지/Wing ID (Wing > 업체정보 > 배송정보에서 확인)
         self.vendor_user_id = os.getenv('COUPANG_VENDOR_USER_ID', '')
         self.return_center_code = os.getenv('COUPANG_RETURN_CENTER_CODE', '')
