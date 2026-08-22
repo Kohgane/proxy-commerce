@@ -251,9 +251,9 @@ def test_pilot_finish_tick_collect_failure_is_honest_not_silent():
 
 
 def test_pilot_status_buckets_mutually_exclusive():
-    rows = [{"sid": s, "asin": f"A{s}", "excluded": False} for s in (1, 2, 3, 4)]
+    rows = [{"sid": s, "asin": f"A{s}", "title_ko": f"상품{s}", "excluded": False} for s in (1, 2, 3, 4)]
     products = [
-        {"id": 101, "status": "publish", "images": [{"src": "x"}],
+        {"id": 101, "status": "publish", "images": [{"src": "x"}], "permalink": "https://shop/p/1",
          "meta_data": [{"key": "_kgp_pilot_sid", "value": "1"}]},         # published
         {"id": 102, "status": "draft", "images": [{"src": "y"}],
          "meta_data": [{"key": "_kgp_pilot_sid", "value": "2"}]},         # with_images (다음 완료틱 publish)
@@ -264,8 +264,11 @@ def test_pilot_status_buckets_mutually_exclusive():
     ]
     wc = _FakeWC(products)
     st = CR.pilot_status(rows, list_products_fn=wc.list_products_by_status)
-    assert st == {"target": 4, "published": 1, "with_images_draft": 1, "no_image_draft": 1,
-                  "pending": 0, "unmatched": 1, "done": True}
+    assert (st["target"], st["published"], st["with_images_draft"], st["no_image_draft"],
+            st["pending"], st["unmatched"], st["done"]) == (4, 1, 1, 1, 0, 1, True)
+    # 미매칭 행을 sid·asin·이름으로 식별(추정 금지) + 게시물 URL 샘플.
+    assert st["unmatched_rows"] == [{"sid": "4", "asin": "A4", "name": "상품4"}]
+    assert st["published_samples"] == [{"sid": "1", "url": "https://shop/p/1"}]
     # 이미지 0·플래그 없는 draft는 pending(다음 백필 대상) — done False.
     products.append({"id": 105, "status": "draft", "images": [],
                      "meta_data": [{"key": "_kgp_pilot_sid", "value": "4"}]})
