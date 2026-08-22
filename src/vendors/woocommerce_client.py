@@ -336,12 +336,98 @@ def list_products_by_status(status: str = 'draft', per_page: int = 100) -> list:
 
 
 def update_product(product_id, patch: dict) -> bool:
-    """상품 부분 업데이트(백필 — 재등록 아님). 성공 시 True."""
+    """상품 부분 업데이트(백필 — 재등록 아님). 성공 시 True.
+
+    WC 4xx(특히 이미지 사이드로드 400)는 상태코드만이 아니라 **응답 본문(code/message)**을 예외 메시지에
+    실어 재전파 — 호출부(pilot_finish_tick)가 사유 필드에 담아 원인을 확정할 수 있게(조용한 실패 금지).
+    """
     if not product_id or not isinstance(patch, dict) or not patch:
         return False
     url = _woo_endpoint(f"products/{product_id}")
-    r = _request_with_retry('PUT', url, json=patch)
+    try:
+        r = _request_with_retry('PUT', url, json=patch)
+    except requests.exceptions.HTTPError as exc:
+        body = ""
+        try:
+            from src.utils.secret_mask import mask_text
+            body = mask_text((exc.response.text or "")[:300], secrets=[_woo_ck(), _woo_cs()])
+        except Exception:
+            pass
+        status = getattr(getattr(exc, "response", None), "status_code", "?")
+        raise RuntimeError(f"WC {status}: {body or exc}") from exc
     return bool(isinstance(r.json(), dict) and r.json().get('id'))
+
+
+# ── 이미지 media 업로드 (URL 사이드로드 400 회피 — 다운로드→확장자 부여→media→id) ──
+_IMG_MAGIC = [
+    (b"\xff\xd8\xff", "image/jpeg", ".jpg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png", ".png"),
+    (b"GIF87a", "image/gif", ".gif"),
+    (b"GIF89a", "image/gif", ".gif"),
+]
+_CT_EXT = {"image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png",
+           "image/gif": ".gif", "image/webp": ".webp"}
+
+
+def _sniff_image(data: bytes, header_ct: str = ""):
+    """(content_type, ext) — 매직바이트 우선, 없으면 헤더 CT. 판별 불가면 (None, None)."""
+    for magic, ct, ext in _IMG_MAGIC:
+        if data.startswith(magic):
+            return ct, ext
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp", ".webp"
+    ct = (header_ct or "").split(";")[0].strip().lower()
+    if ct in _CT_EXT:
+        return ct, _CT_EXT[ct]
+    return None, None
+
+
+def sideload_image_to_media(url: str, *, index: int = 0, sku: str = "") -> dict:
+    """쿠팡 CDN 등 확장자·MIME 불명 URL을 **서버가 직접 다운로드→확장자 부여→WP media 업로드**.
+
+    URL 사이드로드(WC가 src를 받아 재다운로드)가 400(MIME 판별 실패)나는 근원 회피.
+    반환: {"ok":True,"id":media_id,"source_url":...} | {"ok":False,"reason":...}. 조용한 실패 금지(사유).
+    """
+    base = _woo_base()
+    if not base:
+        return {"ok": False, "reason": "WC base URL 미설정"}
+    try:
+        resp = requests.get(url, headers=_WOO_HEADERS, timeout=30)
+        resp.raise_for_status()
+        data = resp.content
+    except Exception as exc:
+        return {"ok": False, "reason": f"이미지 다운로드 실패: {exc}"}
+    if not data:
+        return {"ok": False, "reason": "이미지 본문 0바이트"}
+    ct, ext = _sniff_image(data, resp.headers.get("Content-Type", ""))
+    if not ct:
+        return {"ok": False, "reason": "이미지 형식 판별 불가(jpeg/png/gif/webp 아님)"}
+    fname = (f"{sku}-" if sku else "kgp-") + f"{index}{ext}"
+    media_url = f"{base}/wp-json/wp/v2/media"
+    ck, cs = _woo_ck(), _woo_cs()
+    headers = {**_WOO_HEADERS, "Content-Type": ct,
+               "Content-Disposition": f'attachment; filename="{fname}"'}
+    try:
+        from src.market_throttle import pace
+        pace("woocommerce")
+        r = requests.post(media_url, data=data, headers=headers,
+                          auth=((ck, cs) if (ck and cs) else None), timeout=60)
+        if r.status_code >= 400:
+            body = ""
+            try:
+                from src.utils.secret_mask import mask_text
+                body = mask_text((r.text or "")[:300], secrets=[ck, cs])
+            except Exception:
+                pass
+            return {"ok": False, "reason": f"media 업로드 {r.status_code}: {body}"}
+        j = r.json()
+    except Exception as exc:
+        return {"ok": False, "reason": f"media 업로드 예외: {exc}"}
+    mid = j.get("id") if isinstance(j, dict) else None
+    if not mid:
+        return {"ok": False, "reason": "media 응답에 id 없음"}
+    return {"ok": True, "id": int(mid), "source_url": j.get("source_url")}
+
 
 
 def verify_woo_webhook(payload: bytes, signature: str) -> bool:
