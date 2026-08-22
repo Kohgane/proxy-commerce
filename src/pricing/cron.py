@@ -132,7 +132,16 @@ def translate_drain_cron():
     # v88-C 마감 자동화 피기백: 같은 인증 틱에서 파일럿 마감 1청크(백필→publish) best-effort.
     # 실패해도 번역 드레인 결과는 그대로 반환(파일럿이 번역을 막지 않음). 오너 개입 0.
     try:
-        summary["pilot_finish"] = _run_pilot_finish_tick(chunk=int(request.args.get("pilot_chunk", 5)))
+        pf = _run_pilot_finish_tick(chunk=int(request.args.get("pilot_chunk", 5)))
+        summary["pilot_finish"] = pf
+        # 틱 로그에 pilot 처리 흔적 남김(조용한 정지 금지 — 오너가 로그로 진척·정체·사유 확인).
+        if pf.get("skipped"):
+            logger.info("파일럿 마감 틱: 스킵(%s)", pf["skipped"])
+        else:
+            logger.info("파일럿 마감 틱: 백필 %s · no_image %s · 실패 %s · 잔여 %s · publish %s%s",
+                        pf.get("backfilled"), pf.get("no_image"), pf.get("failed"),
+                        pf.get("remaining_pending"), pf.get("published_this_tick"),
+                        (" · 멈춘행 " + str([{s['sid']: s['reason']} for s in pf.get("stuck", [])])) if pf.get("stuck") else "")
     except Exception as exc:                       # noqa: BLE001 — 조용한 실패 금지(사유 기록)
         logger.warning("파일럿 마감 피기백 스킵: %s", exc)
         summary["pilot_finish"] = {"skipped": str(exc)}
