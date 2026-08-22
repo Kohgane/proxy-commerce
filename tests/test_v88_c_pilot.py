@@ -186,8 +186,13 @@ class _FakeWC:
             p["status"] = patch["status"]
         if "type" in patch:
             p["type"] = patch["type"]
-        for m in (patch.get("meta_data") or []):
-            p.setdefault("meta_data", []).append(m)
+        for m in (patch.get("meta_data") or []):        # WC는 key로 dedupe(같은 키면 갱신) — 대역도 동형.
+            md = p.setdefault("meta_data", [])
+            existing = next((x for x in md if x.get("key") == m.get("key")), None)
+            if existing:
+                existing["value"] = m.get("value")
+            else:
+                md.append(dict(m))
         return True
 
 
@@ -282,6 +287,95 @@ def test_pilot_finish_tick_survives_wc_list_failure():
                                list_products_fn=_boom_list, update_fn=lambda *a: True,
                                enrich_fn=lambda r: {"images": []}, sleep_fn=lambda s: None)
     assert out["done"] is False and "draft 목록 조회 실패" in out["error"]
+
+
+def test_pilot_finish_tick_image_ref_fn_uses_media_id():
+    # URL 사이드로드 대신 image_ref_fn(url)→{id} → patch가 media id로 이미지 연결(400 회피).
+    rows = [{"sid": 1, "asin": "A1", "excluded": False}]
+    wc = _FakeWC(_pilot_products([1]))
+    enrich = lambda r: {"images": ["https://c/1", "https://c/2"], "source": "coupang"}
+    ref = lambda u: {"ok": True, "id": 900 + int(u[-1])}     # 다운로드→media 업로드 대역
+    out = CR.pilot_finish_tick(rows, list_products_fn=wc.list_products_by_status,
+                               update_fn=wc.update_product, enrich_fn=enrich, chunk=5,
+                               image_cap=2, sleep_fn=lambda s: None, image_ref_fn=ref)
+    assert out["backfilled"] == 1
+    imgs = [u for u in wc.updates if "images" in u[1]][0][1]["images"]
+    assert imgs == [{"id": 901, "position": 0}, {"id": 902, "position": 1}]   # src 아님(media id)
+
+
+def test_pilot_finish_tick_sideload_retry_cap_permanent_fail():
+    # 이미지 변환(사이드로드) 3회 실패 → permanent_fail 종결(무한 재시도 금지). 큐에서 빠져 잔여 진입 허용.
+    rows = [{"sid": 1, "asin": "A1", "excluded": False}]
+    wc = _FakeWC(_pilot_products([1]))
+    enrich = lambda r: {"images": ["https://c/x"], "source": "coupang"}
+    ref_fail = lambda u: {"ok": False, "reason": "media 업로드 400: rest_upload_unknown_type"}
+    outs = []
+    for _ in range(3):
+        outs.append(CR.pilot_finish_tick(rows, list_products_fn=wc.list_products_by_status,
+                                         update_fn=wc.update_product, enrich_fn=enrich, chunk=5,
+                                         image_cap=2, sleep_fn=lambda s: None, image_ref_fn=ref_fail))
+    # 1·2회는 sideload_fail(재시도), 3회째 permanent_fail(종결).
+    assert outs[0]["results"][0]["action"] == "sideload_fail" and outs[0]["results"][0]["attempts"] == 1
+    assert outs[1]["results"][0]["action"] == "sideload_fail" and outs[1]["results"][0]["attempts"] == 2
+    assert outs[2]["permanent_fail"] == 1 and outs[2]["results"][0]["action"] == "permanent_fail"
+    assert "media 업로드 400" in outs[2]["results"][0]["reason"]        # WC 본문 사유 보존
+    assert CR._pilot_flag_value(wc.products[101], "_kgp_perm_fail") == "1"
+    # 종결 후: 더 이상 pending 대상 아님(공회전 제거).
+    out4 = CR.pilot_finish_tick(rows, list_products_fn=wc.list_products_by_status,
+                                update_fn=wc.update_product, enrich_fn=enrich, chunk=5,
+                                image_cap=2, sleep_fn=lambda s: None, image_ref_fn=ref_fail)
+    assert out4["pending_before"] == 0
+
+
+def test_pilot_status_four_way_with_permanent_fail():
+    # done=true 시 4분류: published / no_image / permanent_fail / held.
+    rows = [{"sid": s, "asin": f"A{s}", "title_ko": f"상품{s}", "excluded": False} for s in (1, 2, 3, 4)]
+    rows.append({"sid": 5, "asin": "B0046A80ZC", "title_ko": "보스미어 Bosmere Tarp", "excluded": False})  # held
+    products = [
+        {"id": 101, "status": "publish", "images": [{"src": "x"}], "permalink": "https://s/p/1",
+         "meta_data": [{"key": "_kgp_pilot_sid", "value": "1"}]},                                   # published
+        {"id": 102, "status": "draft", "images": [{"src": "y"}],
+         "meta_data": [{"key": "_kgp_pilot_sid", "value": "2"}]},                                   # with_images
+        {"id": 103, "status": "draft", "images": [],
+         "meta_data": [{"key": "_kgp_pilot_sid", "value": "3"}, {"key": "_kgp_no_image", "value": "coupang"}]},  # no_image
+        {"id": 104, "status": "draft", "images": [],
+         "meta_data": [{"key": "_kgp_pilot_sid", "value": "4"}, {"key": "_kgp_perm_fail", "value": "1"}]},       # permanent_fail
+    ]
+    wc = _FakeWC(products)
+    st = CR.pilot_status(rows, list_products_fn=wc.list_products_by_status)
+    assert (st["target"], st["published"], st["with_images_draft"], st["no_image_draft"],
+            st["permanent_fail_draft"], st["pending"], st["unmatched"], st["held"]) == (4, 1, 1, 1, 1, 0, 0, 1)
+    assert st["done"] is True
+
+
+def test_sideload_image_to_media_downloads_and_uploads(monkeypatch):
+    from src.vendors import woocommerce_client as wc
+    monkeypatch.setenv("WC_URL", "https://shop.example")
+    monkeypatch.setenv("WC_KEY", "ck"); monkeypatch.setenv("WC_SECRET", "cs")
+    calls = {}
+    class _R:
+        def __init__(self, status=200, content=b"", js=None, headers=None):
+            self.status_code = status; self.content = content; self._js = js or {}
+            self.headers = headers or {}; self.text = ""
+        def raise_for_status(self):
+            if self.status_code >= 400: raise Exception("http")
+        def json(self): return self._js
+    def _get(url, headers=None, timeout=None):
+        return _R(200, b"\xff\xd8\xff\xe0jpegbytes", headers={"Content-Type": "image/jpeg"})
+    def _post(url, data=None, headers=None, auth=None, timeout=None):
+        calls["media_url"] = url; calls["ct"] = headers.get("Content-Type"); calls["cd"] = headers.get("Content-Disposition")
+        return _R(201, js={"id": 777, "source_url": "https://shop.example/x.jpg"})
+    monkeypatch.setattr(wc.requests, "get", _get)
+    monkeypatch.setattr(wc.requests, "post", _post)
+    monkeypatch.setattr("src.market_throttle.pace", lambda *a, **k: None)
+    out = wc.sideload_image_to_media("https://coupangcdn/vendor_inventory/abc?q=1", index=2)
+    assert out == {"ok": True, "id": 777, "source_url": "https://shop.example/x.jpg"}
+    assert calls["media_url"].endswith("/wp-json/wp/v2/media")
+    assert calls["ct"] == "image/jpeg" and 'filename="kgp-2.jpg"' in calls["cd"]   # 확장자 부여
+    # 형식 판별 불가(잘못된 바이트·CT 없음) → 정직 실패(업로드 시도 안 함).
+    monkeypatch.setattr(wc.requests, "get", lambda *a, **k: _R(200, b"zzzz", headers={}))
+    bad = wc.sideload_image_to_media("https://coupangcdn/x")
+    assert bad["ok"] is False and "판별 불가" in bad["reason"]
 
 
 def test_pilot_accounting_excludes_hold_brand_bosmere():

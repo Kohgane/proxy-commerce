@@ -106,3 +106,11 @@ fx 미상 시 가짜 환산 0(price ok=False). 반환 summary = {ingested·skipp
 - **no_image 재개(멱등):** `_kgp_no_image` 플래그에 **세대값** — 구세대 `"1"`(아마존만 시도)은 **재시도 대상**, 쿠팡까지 시도해도 0장이면 `"coupang"`으로 종결(다음 틱 제외). 이미 no_image 스킵된 행도 이 피벗으로 1회 재유입.
 - 크론 `_run_pilot_finish_tick`이 `make_coupang_first_enrich_fn` 사용 → 배포 후 자동 재수렴.
 계약 = `test_v88_c_pilot`(이미지 추출·계정 라우팅 힌트/순차/404폴백·쿠팡우선 폴백·구세대 재시도·세대 종결).
+
+## WC 사이드로드 400 → media 업로드 전환 + 재시도 상한 (오너 지시 2026-08-22)
+URL 사이드로드(WC가 `images[].src`를 받아 재다운로드)가 **쿠팡 CDN URL(확장자·MIME 불명)에서 400**(WP MIME 판별 실패). 근원 확정 + 회피:
+- **400 본문 확보:** `update_product`가 4xx 시 상태코드만이 아니라 **응답 본문(code/message, 마스킹)**을 예외에 실어 재전파 → 틱 사유 필드에 원인.
+- **media 업로드 전환**(`sideload_image_to_media`): 서버가 URL **직접 다운로드 → 매직바이트/CT로 형식 판별 → 파일명+확장자 부여 → `POST /wp-json/wp/v2/media`(Content-Disposition filename) → media id** 반환. 판별 불가(jpeg/png/gif/webp 아님)면 정직 실패(업로드 안 함). `pilot_finish_tick(image_ref_fn=)` 주입 — 미주입=URL 직접(테스트). 크론이 `image_ref_fn`으로 배선 → product `images:[{id}]` 연결(URL 사이드로드 포기).
+- **재시도 상한**(`_MAX_BACKFILL_ATTEMPTS=3`): 동일 행 사이드로드 실패 누적(`_kgp_bf_attempts`) 3회 → `_kgp_perm_fail` 종결(`permanent_fail`), 큐에서 빠져 잔여 진입 허용(1건이 파이프 막는 구조 제거·무한 재시도·조용한 공회전 금지). permanent_fail = no_image와 동일 정책(draft 잔류·보고).
+- **status 4분류:** `pilot_status`가 published / no_image_draft / **permanent_fail_draft** / held(+with_images/pending/unmatched) — done=true 시 4분류 최종 보고.
+계약 = `test_v88_c_pilot`(media id 연결·재시도 상한 permanent_fail·status 4분류·`sideload_image_to_media` 다운로드/업로드/형식판별 실패).

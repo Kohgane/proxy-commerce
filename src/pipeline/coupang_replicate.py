@@ -957,6 +957,9 @@ def fetch_coupang_images(sid, *, accounts=None, account_hint=None, request_fn=No
 _NO_IMAGE_META = "_kgp_no_image"          # 이미지 0장 → 재시도 방지 플래그(draft 잔류)
 _NO_IMAGE_GEN = "coupang"                 # 현 세대 플래그값 — 쿠팡 소스까지 시도한 종결 표식.
 #   구세대 플래그(value="1", 아마존 재수집만 시도)는 재시도 대상(쿠팡 소스 신규 → 멱등 재개).
+_PERM_FAIL_META = "_kgp_perm_fail"        # 사이드로드 3회 실패 → 영구 실패 종결(draft 잔류·보고).
+_ATTEMPTS_META = "_kgp_bf_attempts"       # 사이드로드 실패 누적 횟수(재시도 상한 카운터).
+_MAX_BACKFILL_ATTEMPTS = 3                # 동일 행 3회 실패 시 permanent_fail(무한 재시도·조용한 공회전 금지).
 
 
 def _pilot_sid_of(product) -> Optional[str]:
@@ -967,10 +970,12 @@ def _pilot_sid_of(product) -> Optional[str]:
 
 
 def _pilot_flag_value(product, key) -> Optional[str]:
+    # 마지막 일치값 = 현재값(WC 메타 중복 방어 — 누적 카운터/플래그의 최신값 신뢰).
+    found = None
     for m in (product.get("meta_data") or []):
         if (m or {}).get("key") == key:
-            return str(m.get("value"))
-    return None
+            found = str(m.get("value"))
+    return found
 
 
 def _pilot_has_flag(product, key) -> bool:
@@ -1011,7 +1016,8 @@ def _pilot_passable(rows):
 
 
 def pilot_finish_tick(rows, *, list_products_fn, update_fn, enrich_fn, chunk: int = 5,
-                      image_cap: int = IMAGE_CAP, stock_patch=None, sleep_fn=None, sleep_sec: float = 0.5) -> dict:
+                      image_cap: int = IMAGE_CAP, stock_patch=None, sleep_fn=None, sleep_sec: float = 0.5,
+                      image_ref_fn=None, max_attempts: int = _MAX_BACKFILL_ATTEMPTS) -> dict:
     """자동 마감 1틱(크론). **draft 이미지 백필(2장캡) → 실패 사유 기록 후 스킵 → 전행 처리 완료 시 자동 publish.**
 
     - 진행상태 = WC 자신(멱등·재개). `_kgp_pilot_sid` 매칭, 이미지 0장 draft는 no_image 플래그+**draft 잔류**(안 팔릴 상품 공개 방지).
@@ -1034,11 +1040,38 @@ def pilot_finish_tick(rows, *, list_products_fn, update_fn, enrich_fn, chunk: in
     passable, _held = _pilot_passable(rows)        # 보스미어 등 회계 보류 브랜드는 pending 대상에서도 제외
     # pending: 이미지 0장 draft 중 **현 세대(_NO_IMAGE_GEN)로 종결 안 된** 것.
     #   구세대 플래그("1" — 아마존만 시도)·미플래그는 쿠팡 소스로 재시도(멱등 재개, 오너 지시 3).
+    # pending: 이미지 0장 draft 중 no_image(_NO_IMAGE_GEN)·permanent_fail 종결 안 된 것.
     pending = [r for r in passable
                if str(r.get("sid")) in by_sid
                and _pilot_img_count(by_sid[str(r.get("sid"))]) == 0
-               and _pilot_flag_value(by_sid[str(r.get("sid"))], _NO_IMAGE_META) != _NO_IMAGE_GEN]
+               and _pilot_flag_value(by_sid[str(r.get("sid"))], _NO_IMAGE_META) != _NO_IMAGE_GEN
+               and _pilot_flag_value(by_sid[str(r.get("sid"))], _PERM_FAIL_META) != "1"]
     processed = []
+
+    def _record_sideload_fail(r, p, acct_meta, reason):
+        """사이드로드 실패 → 시도횟수 누적. 상한 도달 시 permanent_fail 종결(무한 재시도·조용한 공회전 금지)."""
+        attempts = 0
+        try:
+            attempts = int(_pilot_flag_value(p, _ATTEMPTS_META) or 0)
+        except (TypeError, ValueError):
+            attempts = 0
+        attempts += 1
+        meta = [{"key": _ATTEMPTS_META, "value": str(attempts)}] + list(acct_meta)
+        perm = attempts >= max_attempts
+        if perm:
+            meta.append({"key": _PERM_FAIL_META, "value": "1"})
+        try:
+            update_fn(p.get("id"), {"meta_data": meta, "type": "simple"})
+            mark_err = None
+        except Exception as exc:
+            mark_err = str(exc)                 # 카운터/플래그 기록마저 실패 — 다음 틱 재시도(정직 노출)
+        processed.append({"sid": r.get("sid"), "product_id": p.get("id"),
+                          "action": "permanent_fail" if (perm and not mark_err) else "sideload_fail",
+                          "attempts": attempts, "image_count": 0,
+                          "reason": (reason + (f" · {attempts}/{max_attempts}회"))
+                                    + (f" · 카운터 기록 실패({mark_err})" if mark_err else
+                                       (" · 영구 실패 종결(draft 잔류)" if perm else ""))})
+
     for i, r in enumerate(pending[:chunk]):
         p = by_sid[str(r.get("sid"))]
         if i and sleep_sec:
@@ -1058,7 +1091,23 @@ def pilot_finish_tick(rows, *, list_products_fn, update_fn, enrich_fn, chunk: in
         acct_meta = ([{"key": _COUPANG_ACCOUNT_META, "value": acct}]
                      if acct in ("gogane", "woojoo") and acct != hint else [])
         if imgs:
-            patch = {"images": [{"src": u, "position": j} for j, u in enumerate(imgs)], "type": "simple"}
+            # URL 사이드로드 400 회피: image_ref_fn(url)→{"id":media_id}(다운로드→media 업로드). 미주입=URL 직접(테스트).
+            refs, ref_fails = [], []
+            for u in imgs:
+                if image_ref_fn is None:
+                    refs.append({"src": u})
+                    continue
+                rf = image_ref_fn(u) or {}
+                if rf.get("id") or rf.get("src"):
+                    refs.append({k: v for k, v in rf.items() if k in ("id", "src")})
+                else:
+                    ref_fails.append(rf.get("reason") or "이미지 media 변환 실패")
+            if not refs:                          # 전부 변환 실패 → 재시도 상한 카운트
+                _record_sideload_fail(r, p, acct_meta, "이미지 사이드로드 실패: " + "; ".join(ref_fails[:2]))
+                continue
+            for j, rf in enumerate(refs):
+                rf["position"] = j
+            patch = {"images": refs, "type": "simple"}
             if acct_meta:
                 patch["meta_data"] = list(acct_meta)   # 판별 계정 캐시(다음 틱 재판별 0)
             if stock_patch:
@@ -1066,13 +1115,13 @@ def pilot_finish_tick(rows, *, list_products_fn, update_fn, enrich_fn, chunk: in
             try:
                 ok = bool(update_fn(p.get("id"), patch))
             except Exception as exc:
-                processed.append({"sid": r.get("sid"), "product_id": p.get("id"),
-                                  "action": "sideload_fail", "reason": f"WC 사이드로드 실패: {exc}"})
+                _record_sideload_fail(r, p, acct_meta, f"WC 사이드로드 실패: {exc}")
                 continue
-            processed.append({"sid": r.get("sid"), "product_id": p.get("id"),
-                              "action": "backfilled" if ok else "sideload_fail",
-                              "image_count": len(imgs), "source": e.get("source"), "account": acct,
-                              "reason": None if ok else "WC update 실패"})
+            if ok:
+                processed.append({"sid": r.get("sid"), "product_id": p.get("id"), "action": "backfilled",
+                                  "image_count": len(refs), "source": e.get("source"), "account": acct, "reason": None})
+            else:
+                _record_sideload_fail(r, p, acct_meta, "WC update 반영 안 됨(falsy)")
         else:
             # 쿠팡·소싱 둘 다 0 → 현 세대로 종결 플래그(다음 틱 재시도 제외, 재개 멱등).
             #   ★ 플래그 쓰기 실패(예외 or falsy 반환)를 삼키면 종결이 안 돼 다음 틱에 다시 pending →
@@ -1115,10 +1164,13 @@ def pilot_finish_tick(rows, *, list_products_fn, update_fn, enrich_fn, chunk: in
         "pending_before": len(pending), "processed": len(processed),
         "backfilled": sum(1 for x in processed if x["action"] == "backfilled"),
         "no_image": sum(1 for x in processed if x["action"] == "no_image"),
+        "permanent_fail": sum(1 for x in processed if x["action"] == "permanent_fail"),
         "failed": sum(1 for x in processed if x["action"] in
-                      ("collect_fail", "sideload_fail", "flag_fail", "publish_fail", "publish_list_fail")),
+                      ("collect_fail", "sideload_fail", "flag_fail", "permanent_fail",
+                       "publish_fail", "publish_list_fail")),
         # 멈춘 행을 사유와 함께 노출(조용한 정지 금지) — 행별 격리라 1건 실패가 틱 전체를 죽이지 않음.
-        "stuck": [x for x in processed if x["action"] in ("collect_fail", "sideload_fail", "flag_fail")],
+        "stuck": [x for x in processed if x["action"] in
+                  ("collect_fail", "sideload_fail", "flag_fail", "permanent_fail")],
         "remaining_pending": remaining, "published_this_tick": len(published),
         "done": remaining == 0, "results": processed, "published": published,
     }
@@ -1154,7 +1206,7 @@ def pilot_status(rows, *, list_products_fn) -> dict:
         s = _pilot_sid_of(p)
         if s:
             pubs[s] = p
-    published = with_images = no_image = pending = unmatched = 0
+    published = with_images = no_image = permanent_fail = pending = unmatched = 0
     unmatched_rows, published_samples = [], []
     for r in passable:
         sid = str(r.get("sid"))
@@ -1168,6 +1220,8 @@ def pilot_status(rows, *, list_products_fn) -> dict:
             p = drafts[sid]
             if _pilot_img_count(p) > 0:
                 with_images += 1              # 이미지 있음(다음 완료 틱에 publish)
+            elif _pilot_flag_value(p, _PERM_FAIL_META) == "1":
+                permanent_fail += 1           # 사이드로드 3회 실패 종결 · draft 잔류(no_image와 동일 정책)
             elif _pilot_flag_value(p, _NO_IMAGE_META) == _NO_IMAGE_GEN:
                 no_image += 1                 # 현 세대(쿠팡까지 시도) 종결 · draft 잔류
             else:
@@ -1177,7 +1231,8 @@ def pilot_status(rows, *, list_products_fn) -> dict:
             unmatched_rows.append({"sid": sid, "asin": r.get("asin"),
                                    "name": r.get("title_ko") or r.get("name_ko")})
     return {"target": len(passable), "published": published, "with_images_draft": with_images,
-            "no_image_draft": no_image, "pending": pending, "unmatched": unmatched,
+            "no_image_draft": no_image, "permanent_fail_draft": permanent_fail,
+            "pending": pending, "unmatched": unmatched,
             "unmatched_rows": unmatched_rows, "published_samples": published_samples,
             "held": len(held),
             "held_rows": [{"sid": r.get("sid"), "asin": r.get("asin"),

@@ -162,6 +162,11 @@ def _run_pilot_finish_tick(chunk: int = 5) -> dict:
     from src.seller_console.views import _collect_real_draft
     # 이미지 소스 피벗: ①쿠팡 sid 원본(봇차단 회피·릴레이·계정라우팅) → ②소싱처 수집 폴백.
     enrich = CR.make_coupang_first_enrich_fn(_collect_real_draft, image_cap=CR.IMAGE_CAP)
+    # URL 사이드로드 400(쿠팡 CDN 확장자·MIME 불명) 회피: 서버가 다운로드→media 업로드→media id 연결.
+    _ref_idx = {"n": 0}
+    def _image_ref(u):
+        _ref_idx["n"] += 1
+        return _wc.sideload_image_to_media(u, index=_ref_idx["n"])
     return CR.pilot_finish_tick(
         rows,
         list_products_fn=lambda s="draft": _wc.list_products_by_status(s),
@@ -170,6 +175,7 @@ def _run_pilot_finish_tick(chunk: int = 5) -> dict:
         chunk=chunk,
         image_cap=CR.IMAGE_CAP,
         stock_patch={"manage_stock": False, "stock_status": "instock"},
+        image_ref_fn=_image_ref,
     )
 
 
