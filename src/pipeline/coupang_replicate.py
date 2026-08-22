@@ -1077,24 +1077,45 @@ def pilot_finish_tick(rows, *, list_products_fn, update_fn, enrich_fn, chunk: in
     }
 
 
+def _pilot_product_url(p) -> str:
+    """WC 상품 공개 URL(permalink) — 없으면 link/guid 폴백, 그것도 없으면 빈 문자열."""
+    for k in ("permalink", "link"):
+        v = p.get(k)
+        if isinstance(v, str) and v.startswith("http"):
+            return v
+    g = p.get("guid")
+    if isinstance(g, dict) and str(g.get("rendered", "")).startswith("http"):
+        return g["rendered"]
+    return ""
+
+
 def pilot_status(rows, *, list_products_fn) -> dict:
-    """조회 전용 진행 상태 — 대기/이미지있음 draft/no_image draft/publish/미매칭(WC 실측)."""
+    """조회 전용 진행 상태 — 대기/이미지있음 draft/no_image draft/publish/미매칭(WC 실측).
+
+    unmatched_rows(sid·asin·이름)로 미매칭 행을 **식별**하고(추정 금지), published_samples(sid·url) 3개로
+    실 게시물 URL을 함께 반환한다 — 오너가 status 1회 호출로 완료 수치+미매칭 정체+URL 샘플을 다 확인.
+    """
     passable = [r for r in (rows or []) if not r.get("excluded")]
     drafts = {}
     for p in (list_products_fn("draft") or []):
         s = _pilot_sid_of(p)
         if s:
             drafts[s] = p
-    pubs = set()
+    pubs = {}
     for p in (list_products_fn("publish") or []):
         s = _pilot_sid_of(p)
         if s:
-            pubs.add(s)
+            pubs[s] = p
     published = with_images = no_image = pending = unmatched = 0
+    unmatched_rows, published_samples = [], []
     for r in passable:
         sid = str(r.get("sid"))
         if sid in pubs:
             published += 1
+            if len(published_samples) < 3:
+                url = _pilot_product_url(pubs[sid])
+                if url:
+                    published_samples.append({"sid": sid, "url": url})
         elif sid in drafts:
             p = drafts[sid]
             if _pilot_img_count(p) > 0:
@@ -1105,8 +1126,11 @@ def pilot_status(rows, *, list_products_fn) -> dict:
                 pending += 1                  # 미처리/구세대 플래그 — 쿠팡 소스로 재시도 대상
         else:
             unmatched += 1
+            unmatched_rows.append({"sid": sid, "asin": r.get("asin"),
+                                   "name": r.get("title_ko") or r.get("name_ko")})
     return {"target": len(passable), "published": published, "with_images_draft": with_images,
             "no_image_draft": no_image, "pending": pending, "unmatched": unmatched,
+            "unmatched_rows": unmatched_rows, "published_samples": published_samples,
             "done": pending == 0}
 
 
