@@ -1,0 +1,129 @@
+{% extends "_base.html" %}
+{% block title %}등록 파이프 · 소싱 검수{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-2">
+  <div>
+    <div class="console-kpi-label mb-1">등록 파이프 · P1</div>
+    <h4 class="mb-0 fw-bold"><i class="bi bi-clipboard-check"></i> 소싱 URL 검수</h4>
+  </div>
+</div>
+<hr class="pc-hairline mt-0 mb-4">
+
+<div class="pc-status pc-status-info small mb-3">
+  소싱 URL을 넣으면 <strong>수집 · 번역 · 취급판정 · 판매가 산출</strong>까지 자동으로 돌려 검수표를 만들어요.
+  이 화면은 <strong>검수까지</strong>입니다 — 실제 마켓 등록은 다음 단계(승인 게이트)에서 진행합니다.
+</div>
+
+<!-- 입력 -->
+<form method="post" action="/seller/sourcing/register-pipe" class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <label class="form-label small mb-1" for="urls">소싱 URL (한 줄에 하나, 최대 50개)</label>
+    <textarea class="form-control" id="urls" name="urls" rows="5"
+      placeholder="https://www.amazon.com/dp/...&#10;https://item.rakuten.co.jp/...&#10;https://www.ystudiostyle.com/products/..."
+      >{{ urls_text }}</textarea>
+    <div class="d-flex justify-content-between align-items-center mt-2 flex-wrap gap-2">
+      <span class="text-muted small">수집이 막히면(봇 차단 등) 그 줄은 실패로 정직하게 표시돼요 — 확장 수집을 권장합니다.</span>
+      <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-clipboard-check"></i> 검수표 만들기</button>
+    </div>
+  </div>
+</form>
+
+{% if review is not none %}
+  <!-- 요약 -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="card console-card console-kpi-card console-kpi-primary h-100"><div class="card-body">
+        <div class="console-kpi-label mb-1">검수 통과</div>
+        <div class="console-stat-value">{{ review.review_pass|length }}</div>
+      </div></div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card console-card console-kpi-card console-kpi-warning h-100"><div class="card-body">
+        <div class="console-kpi-label mb-1">취급 제외</div>
+        <div class="console-stat-value">{{ review.excluded|length }}</div>
+      </div></div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card console-card console-kpi-card console-kpi-danger h-100"><div class="card-body">
+        <div class="console-kpi-label mb-1">수집 실패</div>
+        <div class="console-stat-value">{{ review.failed|length }}</div>
+      </div></div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card console-card console-kpi-card console-kpi-success h-100"><div class="card-body">
+        <div class="console-kpi-label mb-1">요청 URL</div>
+        <div class="console-stat-value">{{ review.requested }}</div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="pc-status pc-status-info small mb-3">
+    취급판정 기준: 금지어·금지 카테고리 <strong>{{ review.blacklist_count }}건</strong>.
+    {% if review.fx_usd_krw %}환율(USD→KRW) {{ '{:,.0f}'.format(review.fx_usd_krw) }}원 적용.
+    {% else %}환율 미상 — 외화 원가는 <strong>환산 불가(미입력)</strong>로 정직 표기합니다.{% endif %}
+    {% if review.capped %}<strong>50개 상한 초과분은 잘렸습니다.</strong>{% endif %}
+  </div>
+
+  <!-- 검수표 -->
+  {% if review.review_pass or review.excluded %}
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white"><span class="fw-semibold">검수표</span>
+      <span class="text-muted small ms-2">등록 없음 · 검토 후 다음 단계에서 등록</span></div>
+    <div class="card-body p-0"><div class="table-responsive">
+      <table class="table table-hover mb-0 table-cards pc-swiss-table">
+        <thead class="table-light"><tr>
+          <th style="width:56px;">이미지</th><th>제목(번역)</th><th class="text-end">소싱가</th>
+          <th class="text-end">판매가</th><th class="text-end">마진</th><th>취급 판정</th>
+        </tr></thead>
+        <tbody>
+          {% for r in review.review_pass + review.excluded %}
+          <tr>
+            <td class="cardcell-img">
+              {% if r.thumbnail %}<img src="{{ r.thumbnail }}" referrerpolicy="no-referrer" alt=""
+                   style="width:46px;height:46px;object-fit:cover;border-radius:8px;">
+              {% else %}<span class="text-muted small" title="이미지 없음"><i class="bi bi-image"></i></span>{% endif %}
+            </td>
+            <td class="cardcell-title">
+              <div class="fw-semibold small">{{ r.title_ko[:48] }}{% if r.title_ko|length > 48 %}…{% endif %}</div>
+              <div class="text-muted small text-truncate" style="max-width:280px;">{{ r.url }}</div>
+              {% if r.title_truncated or r.title_truncated_suspect %}<span class="pc-badge pc-badge-off">제목 절단 의심</span>{% endif %}
+              {% if r.title_cjk_residual %}<span class="pc-badge pc-badge-muted">번역 잔여(한자)</span>{% endif %}
+            </td>
+            <td class="text-end" data-label="소싱가">
+              {% if r.cost_krw %}<small>{{ '{:,}'.format(r.cost_krw) }}원</small>
+              {% else %}<span class="pc-badge pc-badge-muted" title="{{ r.cost_basis }}">미입력</span>{% endif %}
+            </td>
+            <td class="text-end" data-label="판매가">
+              {% if r.sale_krw %}<small class="fw-semibold">{{ '{:,}'.format(r.sale_krw) }}원</small>
+              {% else %}<span class="pc-badge pc-badge-muted" title="{{ r.price_reason }}">미입력</span>{% endif %}
+            </td>
+            <td class="text-end" data-label="마진">
+              {% if r.margin_pct is not none %}<small>{{ r.margin_pct }}%</small>{% else %}<span class="text-muted">-</span>{% endif %}
+            </td>
+            <td data-label="취급 판정">
+              {% if r.excluded %}<span class="pc-badge pc-badge-danger" title="{{ r.forbidden }}">취급 제외</span>
+              {% else %}<span class="pc-badge pc-badge-on">정상</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div></div>
+  </div>
+  {% endif %}
+
+  <!-- 수집 실패(정직) -->
+  {% if review.failed %}
+  <div class="card border-0 shadow-sm">
+    <div class="card-header bg-white"><span class="fw-semibold">수집 실패 <span class="text-muted small">({{ review.failed|length }})</span></span></div>
+    <ul class="list-group list-group-flush">
+      {% for f in review.failed %}
+      <li class="list-group-item"><div class="small text-truncate">{{ f.url }}</div>
+        <div class="text-muted small">{{ f.reason }}</div></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+{% endif %}
+{% endblock %}

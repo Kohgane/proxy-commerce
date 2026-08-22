@@ -7514,6 +7514,44 @@ def sourcing_hub():
     )
 
 
+@bp.route("/sourcing/register-pipe", methods=["GET", "POST"])
+def sourcing_register_pipe():
+    """등록 파이프 P1: 소싱 URL 투입 → 수집·검증 → 검수표(등록 없음).
+
+    서버 기존 자산 재사용 — 수집(`_collect_real_draft`)·번역(수집 내장)·blacklist 151·가격(÷0.618)·
+    제목 정제. 파일럿 검수표와 동형. **등록은 이 화면에서 하지 않는다**(P3 카나리 게이트 예정).
+    """
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+
+    from src.pipeline.register_pipe import build_source_review
+    from src.pipeline.coupang_replicate import load_blacklist85
+
+    review = None
+    urls_text = ""
+    if request.method == "POST":
+        urls_text = (request.form.get("urls") or "").strip()
+        raw_urls = [ln.strip() for ln in urls_text.splitlines() if ln.strip()]
+        # 환율(원가 KRW 환산) — 없으면 외화 원가는 '환산 불가' 정직 표기(가짜 환산 0).
+        fx_usd_krw = None
+        try:
+            from .data_aggregator import get_fx_rates
+            fxd = get_fx_rates() or {}
+            fx_usd_krw = (fxd.get("USD") or {}).get("krw") if isinstance(fxd.get("USD"), dict) else fxd.get("USD")
+            fx_usd_krw = float(fx_usd_krw) if fx_usd_krw else None
+        except Exception as exc:
+            logger.debug("register-pipe fx 조회 스킵: %s", exc)
+        bl = load_blacklist85()
+        review = build_source_review(
+            raw_urls, collect_fn=_collect_real_draft,
+            channel="woocommerce_multishop", blacklist=bl.get("terms"),
+            fx_rate=fx_usd_krw, cap=50)
+        review["fx_usd_krw"] = fx_usd_krw
+        review["blacklist_count"] = bl.get("count", 0)
+
+    return render_template("register_pipe.html", page="sourcing", review=review, urls_text=urls_text)
+
+
 @bp.post("/sourcing/my-sources")
 def sourcing_my_sources():
     """My Sources 추가/삭제/사용시각 갱신 (Phase 160)."""
