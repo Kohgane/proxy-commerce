@@ -327,6 +327,60 @@ def test_pilot_finish_tick_sideload_retry_cap_permanent_fail():
     assert out4["pending_before"] == 0
 
 
+def test_pilot_revive_permfail_once_then_terminal():
+    # 미실증 종결 방어: 구경로 실패로 소급 종결된 permanent_fail을 1회 부활(신경로 재검증) → 재부활 금지.
+    rows = [{"sid": 1, "asin": "A1", "excluded": False}]
+    products = [{"id": 101, "status": "draft", "images": [],
+                 "meta_data": [{"key": "_kgp_pilot_sid", "value": "1"},
+                               {"key": "_kgp_perm_fail", "value": "1"},
+                               {"key": "_kgp_bf_attempts", "value": "3"}]}]
+    wc = _FakeWC(products)
+    rev = CR.pilot_revive_permfail(rows, list_products_fn=wc.list_products_by_status, update_fn=wc.update_product)
+    assert rev["revived"] == 1
+    p = wc.products[101]
+    assert CR._pilot_flag_value(p, "_kgp_perm_fail") == "0"      # 종결 해제 → pending 재진입
+    assert CR._pilot_flag_value(p, "_kgp_bf_attempts") == "0"    # 카운터 리셋(신경로 3회 새로)
+    assert CR._pilot_flag_value(p, "_kgp_revived") == "1"        # 부활 1회 마킹
+    # 재부활 금지(revived 마킹). 부활 후 다시 perm_fail 되면 진짜 종결.
+    p["meta_data"].append({"key": "_kgp_perm_fail", "value": "1"})   # 신경로도 3회 실패했다 가정
+    for m in p["meta_data"]:
+        if m["key"] == "_kgp_perm_fail":
+            m["value"] = "1"
+    rev2 = CR.pilot_revive_permfail(rows, list_products_fn=wc.list_products_by_status, update_fn=wc.update_product)
+    assert rev2["revived"] == 0                                  # 이미 부활함 → 재부활 0(진짜 permanent_fail)
+    # pending 재진입 검증: 부활 후(perm_fail=0) tick이 그 행을 백필 대상으로 잡음.
+    wc3 = _FakeWC([{"id": 101, "status": "draft", "images": [],
+                    "meta_data": [{"key": "_kgp_pilot_sid", "value": "1"},
+                                  {"key": "_kgp_perm_fail", "value": "0"}]}])
+    out = CR.pilot_finish_tick(rows, list_products_fn=wc3.list_products_by_status,
+                               update_fn=wc3.update_product, enrich_fn=lambda r: {"images": ["u"]},
+                               chunk=5, image_cap=2, sleep_fn=lambda s: None)
+    assert out["backfilled"] == 1                                # 부활 행이 신경로로 백필됨
+
+
+def test_build_sales_crosscheck_wc_total_sales_and_coupang_unmeasured():
+    # 4주 검증 read-model: published분만, WC는 total_sales(조회분 포함), 쿠팡 미배선=미측정. 자동 판단 0.
+    rows = [{"sid": 1, "asin": "A1", "title_ko": "상품1", "excluded": False},
+            {"sid": 2, "asin": "A2", "title_ko": "상품2", "excluded": False}]
+    products = [
+        {"id": 101, "status": "publish", "total_sales": 5, "permalink": "https://s/p/1",
+         "meta_data": [{"key": "_kgp_pilot_sid", "value": "1"}]},                      # published
+        {"id": 102, "status": "draft", "images": [],
+         "meta_data": [{"key": "_kgp_pilot_sid", "value": "2"}]},                      # draft → 대상 아님
+    ]
+    wc = _FakeWC(products)
+    x = CR.build_sales_crosscheck(rows, list_products_fn=wc.list_products_by_status)
+    assert x["count"] == 1                                       # published분만
+    row = x["rows"][0]
+    assert row["wc"]["orders"] == 5 and row["wc"]["measured"] is True      # 실측(total_sales)
+    assert row["coupang"]["measured"] is False and "미배선" in row["coupang"]["reason"]  # 미측정 정직
+    assert "판정은 오너" in x["note"]                            # 자동 판단 0
+    # 쿠팡 소스 주입 시 측정.
+    x2 = CR.build_sales_crosscheck(rows, list_products_fn=wc.list_products_by_status,
+                                   coupang_sales_fn=lambda sid, acct: {"orders": 12, "views": 340})
+    assert x2["rows"][0]["coupang"]["orders"] == 12 and x2["rows"][0]["coupang"]["views"] == 340
+
+
 def test_pilot_status_four_way_with_permanent_fail():
     # done=true 시 4분류: published / no_image / permanent_fail / held.
     rows = [{"sid": s, "asin": f"A{s}", "title_ko": f"상품{s}", "excluded": False} for s in (1, 2, 3, 4)]

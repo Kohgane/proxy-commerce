@@ -960,6 +960,35 @@ _NO_IMAGE_GEN = "coupang"                 # 현 세대 플래그값 — 쿠팡 �
 _PERM_FAIL_META = "_kgp_perm_fail"        # 사이드로드 3회 실패 → 영구 실패 종결(draft 잔류·보고).
 _ATTEMPTS_META = "_kgp_bf_attempts"       # 사이드로드 실패 누적 횟수(재시도 상한 카운터).
 _MAX_BACKFILL_ATTEMPTS = 3                # 동일 행 3회 실패 시 permanent_fail(무한 재시도·조용한 공회전 금지).
+_REVIVED_META = "_kgp_revived"            # 부활 1회 마킹 — 구경로 실패로 소급 종결된 행을 신경로로 재검증.
+
+
+def pilot_revive_permfail(rows, *, list_products_fn, update_fn) -> dict:
+    """**미실증 종결 방어(오너 지시):** permanent_fail 중 **아직 부활 안 한 행**을 1회 부활.
+
+    구경로(URL 사이드로드) 실패 카운트만으로 상한 도달해 종결됐을 수 있어(신경로 media 업로드 미시도),
+    perm_fail 해제 + attempts 리셋 + `_kgp_revived=1` 마킹 → pending 재진입 → 신경로로 재시도.
+    **부활은 행당 1회**(revived 마킹으로 재부활 차단) → 부활 후 재실패는 **진짜 permanent_fail**(WC 400 본문 사유).
+    """
+    passable, _held = _pilot_passable(rows)
+    sids = {str(r.get("sid")) for r in passable}
+    revived = []
+    for p in (list_products_fn("draft") or []):
+        sid = _pilot_sid_of(p)
+        if sid not in sids:
+            continue
+        if _pilot_flag_value(p, _PERM_FAIL_META) == "1" and _pilot_flag_value(p, _REVIVED_META) != "1":
+            try:
+                update_fn(p.get("id"), {"meta_data": [
+                    {"key": _PERM_FAIL_META, "value": "0"},   # 종결 해제 → pending 재진입
+                    {"key": _ATTEMPTS_META, "value": "0"},    # 카운터 리셋(신경로 3회 새로)
+                    {"key": _REVIVED_META, "value": "1"},     # 부활 1회 마킹(재부활 금지)
+                ], "type": "simple"})
+                revived.append({"sid": sid, "product_id": p.get("id")})
+            except Exception as exc:
+                revived.append({"sid": sid, "product_id": p.get("id"), "error": str(exc)})
+    return {"revived": sum(1 for x in revived if not x.get("error")),
+            "failed": sum(1 for x in revived if x.get("error")), "rows": revived}
 
 
 def _pilot_sid_of(product) -> Optional[str]:
@@ -1238,6 +1267,55 @@ def pilot_status(rows, *, list_products_fn) -> dict:
             "held_rows": [{"sid": r.get("sid"), "asin": r.get("asin"),
                            "name": r.get("title_ko") or r.get("name_ko")} for r in held],
             "done": pending == 0}
+
+
+def build_sales_crosscheck(rows, *, list_products_fn, wc_sales_fn=None, coupang_sales_fn=None) -> dict:
+    """4주 판매 검증 read-model — 멀티샵(WC) vs 쿠팡 **동일 sid** 판매 교차 대조. **조회 전용·자동 판단 0**.
+
+    published 파일럿 상품만 대상. 지표 = 주문수(최소) + 노출(가능하면). 미측정은 None + 사유(가짜 수치 0).
+    wc_sales_fn(product_id)→{orders,revenue_krw,views} · coupang_sales_fn(sid,account)→{orders,views}. 주입(오프라인).
+    **판정은 오너** — 이 함수는 숫자만 나란히 놓는다(승자 판별·자동 결론 없음).
+    """
+    passable, _held = _pilot_passable(rows)
+    pub = {}
+    for p in (list_products_fn("publish") or []):
+        s = _pilot_sid_of(p)
+        if s:
+            pub[s] = p
+
+    def _measure(fn, *args):
+        if not fn:
+            return {"orders": None, "views": None, "measured": False, "reason": "판매 소스 미배선"}
+        try:
+            d = fn(*args) or {}
+        except Exception as exc:
+            return {"orders": None, "views": None, "measured": False, "reason": f"조회 실패: {exc}"}
+        return {"orders": d.get("orders"), "views": d.get("views"),
+                "revenue_krw": d.get("revenue_krw"), "measured": True, "reason": None}
+
+    def _wc_from_product(p):
+        # WC 상품 객체의 total_sales(누적 판매수량)는 이미 조회분에 포함 — 별도 fetch 0. 없으면 미측정.
+        ts = p.get("total_sales")
+        try:
+            return {"orders": int(ts), "views": None, "revenue_krw": None, "measured": True, "reason": None}
+        except (TypeError, ValueError):
+            return {"orders": None, "views": None, "measured": False, "reason": "WC total_sales 없음"}
+
+    out = []
+    for r in passable:
+        sid = str(r.get("sid"))
+        if sid not in pub:
+            continue                      # published분만 검증 대상
+        p = pub[sid]
+        acct = _pilot_account_hint(p)
+        out.append({
+            "sid": sid, "name": r.get("title_ko") or r.get("name_ko"), "account": acct,
+            "url": _pilot_product_url(p),
+            "wc": _measure(wc_sales_fn, p.get("id")) if wc_sales_fn else _wc_from_product(p),
+            "coupang": _measure(coupang_sales_fn, sid, acct),
+        })
+    return {"count": len(out), "rows": out,
+            "note": "조회 전용 — 판정은 오너(자동 승자 판별·결론 없음). 미측정은 판매 소스 배선 후 채워짐."}
 
 
 def default_pilot_rows(select_n: int = 50) -> list:

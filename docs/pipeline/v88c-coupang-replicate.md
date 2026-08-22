@@ -114,3 +114,8 @@ URL 사이드로드(WC가 `images[].src`를 받아 재다운로드)가 **쿠팡 
 - **재시도 상한**(`_MAX_BACKFILL_ATTEMPTS=3`): 동일 행 사이드로드 실패 누적(`_kgp_bf_attempts`) 3회 → `_kgp_perm_fail` 종결(`permanent_fail`), 큐에서 빠져 잔여 진입 허용(1건이 파이프 막는 구조 제거·무한 재시도·조용한 공회전 금지). permanent_fail = no_image와 동일 정책(draft 잔류·보고).
 - **status 4분류:** `pilot_status`가 published / no_image_draft / **permanent_fail_draft** / held(+with_images/pending/unmatched) — done=true 시 4분류 최종 보고.
 계약 = `test_v88_c_pilot`(media id 연결·재시도 상한 permanent_fail·status 4분류·`sideload_image_to_media` 다운로드/업로드/형식판별 실패).
+
+## permanent_fail 부활 1회 + 4주 판매 검증 (오너 지시 2026-08-22)
+- **미실증 종결 방어(`pilot_revive_permfail`):** permanent_fail이 **구경로(URL 사이드로드) 실패 카운트만으로 상한 도달**해 소급 종결됐을 수 있음(신경로 media 업로드 미시도). → perm_fail 중 **아직 부활 안 한 행(`_kgp_revived`≠1)**을 1회 부활: `_kgp_perm_fail=0`(pending 재진입)·`_kgp_bf_attempts=0`(카운터 리셋)·`_kgp_revived=1`(재부활 차단). **부활은 행당 1회** → 부활 후 신경로 3회 재실패는 **진짜 permanent_fail**(WC 400 본문 사유). 크론 `_run_pilot_finish_tick`이 틱 전 자동 실행(revived 마킹으로 배포 후 첫 틱들에서 자동 소진, 오너 개입 0). 로그 `파일럿 마감 틱: 부활 N …`.
+- **4주 판매 검증 read-model(`build_sales_crosscheck`):** published 파일럿 상품별 **멀티샵(WC) vs 쿠팡 동일 sid** 판매 나란히. **조회 전용·자동 판단 0**(판정은 오너 — 승자 판별·결론 없음). WC 주문수 = 상품 객체의 `total_sales`(누적 판매수량, 조회분 포함 → 별도 fetch 0). 쿠팡 판매 소스 미배선이면 **미측정 정직**(가짜 수치 0). 라우트 `GET /admin/coupang-pilot/sales-cross`. 지표 = 주문수(최소)·노출(소스 배선 시). 9/15 상품명 가설 판정과 동주기.
+계약 = `test_v88_c_pilot`(부활 1회·재부활 금지·부활 후 pending 재진입·crosscheck total_sales/미측정/쿠팡 주입).
