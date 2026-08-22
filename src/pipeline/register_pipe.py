@@ -19,6 +19,35 @@ from src.pipeline.coupang_replicate import (
 
 _KRW_CURRENCIES = frozenset({"KRW", "원", ""})
 
+_FORBIDDEN_KIND_KO = {
+    "blacklist": "금지어 목록",
+    "forbidden-category": "금지 카테고리",
+    "forbidden-term": "금지어 사전",
+}
+
+
+def explain_forbidden(reason: Optional[str], title: str) -> Optional[dict]:
+    """취급금지 사유(is_forbidden 반환)를 **매칭 토큰 원문 + 제목의 걸린 위치**로 풀어낸다.
+
+    오너가 표에서 오탐(예: 토라스 'Chanel' 패턴명, '샤넬패턴'처럼 브랜드 아닌 부분일치)을 즉석 판별하도록.
+    반환 {kind, kind_ko, term, matched(제목 내 실제 걸린 부분문자열), snippet(맥락⟦걸린곳⟧)}.
+    """
+    if not reason:
+        return None
+    kind, _, term = str(reason).partition(":")
+    term = term.strip()
+    matched, snippet = "", ""
+    if term and title:
+        idx = title.lower().find(term.lower())
+        if idx >= 0:
+            end = idx + len(term)
+            matched = title[idx:end]
+            s, e = max(0, idx - 8), min(len(title), end + 8)
+            snippet = (("…" if s > 0 else "") + title[s:idx] + "⟦" + matched + "⟧"
+                       + title[end:e] + ("…" if e < len(title) else ""))
+    return {"kind": kind, "kind_ko": _FORBIDDEN_KIND_KO.get(kind, kind),
+            "term": term, "matched": matched, "snippet": snippet}
+
 
 def build_source_review_row(draft: dict, *, url: str = "", channel: str = "woocommerce_multishop",
                             blacklist=None, margin_rate: float = DEFAULT_MARGIN_RATE,
@@ -67,7 +96,8 @@ def build_source_review_row(draft: dict, *, url: str = "", channel: str = "wooco
         "target_channel": channel,
         "image_count": len(images), "thumbnail": (images[0] if images else ""),
         "source": draft.get("source") or draft.get("adapter_used"),
-        "forbidden": fb, "excluded": bool(fb), "registered": False,
+        "forbidden": fb, "forbidden_detail": explain_forbidden(fb, title),
+        "excluded": bool(fb), "registered": False,
     }
 
 
