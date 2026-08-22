@@ -990,6 +990,26 @@ def _pilot_img_count(p) -> int:
         return len(p.get("images") or [])
 
 
+# 파일럿 회계 보류 브랜드 — 오탐(한글 토큰경계, 예: 보스⊂보스미어) 재검 대기.
+#   회계(target/pending/unmatched)에서 제외하되 모집단엔 보존(토큰경계 수리 후 다음 배치 후보).
+_PILOT_HOLD_BRANDS = frozenset({"보스미어"})
+
+
+def _pilot_hold(r) -> bool:
+    name = str(r.get("title_ko") or r.get("name_ko") or "")
+    return any(b and b in name for b in _PILOT_HOLD_BRANDS)
+
+
+def _pilot_passable(rows):
+    """(passable, held) — excluded(금지 카테고리) 제외 + 회계 보류 브랜드(보스미어) 분리."""
+    passable, held = [], []
+    for r in (rows or []):
+        if r.get("excluded"):
+            continue
+        (held if _pilot_hold(r) else passable).append(r)
+    return passable, held
+
+
 def pilot_finish_tick(rows, *, list_products_fn, update_fn, enrich_fn, chunk: int = 5,
                       image_cap: int = IMAGE_CAP, stock_patch=None, sleep_fn=None, sleep_sec: float = 0.5) -> dict:
     """자동 마감 1틱(크론). **draft 이미지 백필(2장캡) → 실패 사유 기록 후 스킵 → 전행 처리 완료 시 자동 publish.**
@@ -1000,12 +1020,18 @@ def pilot_finish_tick(rows, *, list_products_fn, update_fn, enrich_fn, chunk: in
     """
     import time as _t
     sleep_fn = sleep_fn or _t.sleep
+    try:
+        draft_products = list(list_products_fn("draft") or [])
+    except Exception as exc:                       # WC 목록 조회 실패 = 틱 전체 무효 → 정직 반환(조용한 정지 금지)
+        return {"pending_before": 0, "processed": 0, "backfilled": 0, "no_image": 0, "failed": 0,
+                "remaining_pending": None, "published_this_tick": 0, "done": False,
+                "error": f"draft 목록 조회 실패(자격/네트워크): {exc}", "results": [], "published": []}
     by_sid = {}
-    for p in (list_products_fn("draft") or []):
+    for p in draft_products:
         sid = _pilot_sid_of(p)
         if sid:
             by_sid[sid] = p
-    passable = [r for r in (rows or []) if not r.get("excluded")]
+    passable, _held = _pilot_passable(rows)        # 보스미어 등 회계 보류 브랜드는 pending 대상에서도 제외
     # pending: 이미지 0장 draft 중 **현 세대(_NO_IMAGE_GEN)로 종결 안 된** 것.
     #   구세대 플래그("1" — 아마존만 시도)·미플래그는 쿠팡 소스로 재시도(멱등 재개, 오너 지시 3).
     pending = [r for r in passable
@@ -1049,29 +1075,50 @@ def pilot_finish_tick(rows, *, list_products_fn, update_fn, enrich_fn, chunk: in
                               "reason": None if ok else "WC update 실패"})
         else:
             # 쿠팡·소싱 둘 다 0 → 현 세대로 종결 플래그(다음 틱 재시도 제외, 재개 멱등).
+            #   ★ 플래그 쓰기 실패(예외 or falsy 반환)를 삼키면 종결이 안 돼 다음 틱에 다시 pending →
+            #     '조용한 정지'로 영원히 멈춤. 성공 확인해 종결/미종결을 사유와 함께 정직 구분.
+            flag_patch = {"meta_data": [{"key": _NO_IMAGE_META, "value": _NO_IMAGE_GEN}] + acct_meta, "type": "simple"}
             try:
-                update_fn(p.get("id"), {"meta_data": [{"key": _NO_IMAGE_META, "value": _NO_IMAGE_GEN}] + acct_meta,
-                                        "type": "simple"})
-            except Exception:
-                pass
-            processed.append({"sid": r.get("sid"), "product_id": p.get("id"), "action": "no_image",
-                              "image_count": 0, "reason": (e.get("reason") or "쿠팡·소싱 이미지 0장 — draft 잔류(공개 안 함)")})
+                flag_ok = bool(update_fn(p.get("id"), flag_patch))
+                flag_err = None
+            except Exception as exc:
+                flag_ok, flag_err = False, str(exc)
+            if flag_ok:
+                processed.append({"sid": r.get("sid"), "product_id": p.get("id"), "action": "no_image",
+                                  "image_count": 0,
+                                  "reason": (e.get("reason") or "쿠팡·소싱 이미지 0장 — draft 잔류(공개 안 함)")})
+            else:                              # 종결 플래그 미기록 → 다음 틱 재시도(무한 정체 아님, 사유 노출)
+                processed.append({"sid": r.get("sid"), "product_id": p.get("id"), "action": "flag_fail",
+                                  "image_count": 0,
+                                  "reason": f"no_image 종결 플래그 쓰기 실패({flag_err or 'WC 반영 안 됨'}) — 다음 틱 재시도"})
     remaining = max(0, len(pending) - chunk)
     published = []
     if remaining == 0:                        # 전행 처리 완료 → 이미지 있는 draft만 자동 publish(오너 사전 승인)
-        for p in (list_products_fn("draft") or []):
+        try:
+            fresh_drafts = list(list_products_fn("draft") or [])
+        except Exception as exc:
+            fresh_drafts = []
+            processed.append({"sid": None, "action": "publish_list_fail", "reason": f"publish 전 draft 조회 실패: {exc}"})
+        for p in fresh_drafts:
             if _pilot_sid_of(p) is None or _pilot_img_count(p) == 0:
                 continue                       # 이미지 0 draft는 publish 안 함(안 팔릴 상품 공개 방지)
             try:
                 if update_fn(p.get("id"), {"status": "publish"}):
                     published.append({"sid": _pilot_sid_of(p), "product_id": p.get("id")})
-            except Exception:
-                pass
+                else:
+                    processed.append({"sid": _pilot_sid_of(p), "product_id": p.get("id"),
+                                      "action": "publish_fail", "reason": "WC publish 반영 안 됨(falsy)"})
+            except Exception as exc:
+                processed.append({"sid": _pilot_sid_of(p), "product_id": p.get("id"),
+                                  "action": "publish_fail", "reason": f"publish 실패: {exc}"})
     return {
         "pending_before": len(pending), "processed": len(processed),
         "backfilled": sum(1 for x in processed if x["action"] == "backfilled"),
         "no_image": sum(1 for x in processed if x["action"] == "no_image"),
-        "failed": sum(1 for x in processed if x["action"] in ("collect_fail", "sideload_fail")),
+        "failed": sum(1 for x in processed if x["action"] in
+                      ("collect_fail", "sideload_fail", "flag_fail", "publish_fail", "publish_list_fail")),
+        # 멈춘 행을 사유와 함께 노출(조용한 정지 금지) — 행별 격리라 1건 실패가 틱 전체를 죽이지 않음.
+        "stuck": [x for x in processed if x["action"] in ("collect_fail", "sideload_fail", "flag_fail")],
         "remaining_pending": remaining, "published_this_tick": len(published),
         "done": remaining == 0, "results": processed, "published": published,
     }
@@ -1094,8 +1141,9 @@ def pilot_status(rows, *, list_products_fn) -> dict:
 
     unmatched_rows(sid·asin·이름)로 미매칭 행을 **식별**하고(추정 금지), published_samples(sid·url) 3개로
     실 게시물 URL을 함께 반환한다 — 오너가 status 1회 호출로 완료 수치+미매칭 정체+URL 샘플을 다 확인.
+    회계 보류 브랜드(보스미어)는 target에서 제외하고 held로 별도 보고(unmatched 오염 방지·다음 배치 후보).
     """
-    passable = [r for r in (rows or []) if not r.get("excluded")]
+    passable, held = _pilot_passable(rows)
     drafts = {}
     for p in (list_products_fn("draft") or []):
         s = _pilot_sid_of(p)
@@ -1131,6 +1179,9 @@ def pilot_status(rows, *, list_products_fn) -> dict:
     return {"target": len(passable), "published": published, "with_images_draft": with_images,
             "no_image_draft": no_image, "pending": pending, "unmatched": unmatched,
             "unmatched_rows": unmatched_rows, "published_samples": published_samples,
+            "held": len(held),
+            "held_rows": [{"sid": r.get("sid"), "asin": r.get("asin"),
+                           "name": r.get("title_ko") or r.get("name_ko")} for r in held],
             "done": pending == 0}
 
 

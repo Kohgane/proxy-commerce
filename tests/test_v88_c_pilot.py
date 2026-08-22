@@ -248,6 +248,61 @@ def test_pilot_finish_tick_collect_failure_is_honest_not_silent():
     r = out["results"][0]
     assert r["action"] == "collect_fail" and "수집 실패" in r["reason"]   # 조용한 실패 금지
     assert wc.products[101]["status"] == "draft"            # 실패 → 여전히 draft
+    assert out["stuck"] and out["stuck"][0]["sid"] == 1     # 멈춘 행이 사유와 함께 노출
+
+
+def test_pilot_finish_tick_flag_write_failure_not_silent_stall():
+    # 0장 종결 플래그 쓰기가 실패(falsy 반환)하면 조용히 no_image로 묻지 않고 flag_fail 사유 노출 +
+    # 플래그 미기록이라 다음 틱에도 pending(무한 정체 아님, 정직).  ← pending 32 정체 근원 수리.
+    rows = [{"sid": 1, "asin": "A1", "excluded": False}]
+    class _FlagFailWC(_FakeWC):
+        def update_product(self, pid, patch):
+            if any(m.get("key") == "_kgp_no_image" for m in (patch.get("meta_data") or [])):
+                return False                        # WC가 플래그 PUT을 반영 안 함(falsy)
+            return super().update_product(pid, patch)
+    wc = _FlagFailWC(_pilot_products([1]))
+    enrich = lambda r: {"images": [], "account": "gogane", "source": "none", "reason": "쿠팡 404·소싱 0"}
+    out = CR.pilot_finish_tick(rows, list_products_fn=wc.list_products_by_status,
+                               update_fn=wc.update_product, enrich_fn=enrich, chunk=5, sleep_fn=lambda s: None)
+    assert out["no_image"] == 0 and out["failed"] == 1
+    r = out["results"][0]
+    assert r["action"] == "flag_fail" and "플래그 쓰기 실패" in r["reason"]
+    assert not CR._pilot_has_flag(wc.products[101], CR._NO_IMAGE_META)   # 종결 안 됨
+    # 다음 틱: 여전히 pending(정체가 드러남 — 조용히 사라지지 않음).
+    out2 = CR.pilot_finish_tick(rows, list_products_fn=wc.list_products_by_status,
+                                update_fn=wc.update_product, enrich_fn=enrich, chunk=5, sleep_fn=lambda s: None)
+    assert out2["pending_before"] == 1
+
+
+def test_pilot_finish_tick_survives_wc_list_failure():
+    # WC 목록 조회 실패 시 틱 전체가 조용히 죽지 않고 error 사유 반환.
+    def _boom_list(status="draft"):
+        raise RuntimeError("WC 502")
+    out = CR.pilot_finish_tick([{"sid": 1, "asin": "A", "excluded": False}],
+                               list_products_fn=_boom_list, update_fn=lambda *a: True,
+                               enrich_fn=lambda r: {"images": []}, sleep_fn=lambda s: None)
+    assert out["done"] is False and "draft 목록 조회 실패" in out["error"]
+
+
+def test_pilot_accounting_excludes_hold_brand_bosmere():
+    # 회계 정정: 보스미어(오탐·미등록)는 target/pending/unmatched에서 제외 + held로 별도 보고.
+    rows = [
+        {"sid": 1, "asin": "A1", "title_ko": "원목 식탁", "excluded": False},          # 정상
+        {"sid": 2, "asin": "B0046A80ZC", "title_ko": "보스미어 Bosmere Yard Waste Tarp", "excluded": False},  # 보류
+    ]
+    products = [{"id": 101, "status": "publish", "images": [{"src": "x"}], "permalink": "https://s/p/1",
+                 "meta_data": [{"key": "_kgp_pilot_sid", "value": "1"}]}]
+    wc = _FakeWC(products)
+    st = CR.pilot_status(rows, list_products_fn=wc.list_products_by_status)
+    assert st["target"] == 1 and st["published"] == 1 and st["unmatched"] == 0   # 보스미어 회계 제외
+    assert st["held"] == 1 and st["held_rows"][0]["asin"] == "B0046A80ZC"
+    assert st["done"] is True
+    # finish_tick도 보스미어를 pending으로 잡지 않음.
+    wc2 = _FakeWC(_pilot_products([2]))
+    out = CR.pilot_finish_tick(rows, list_products_fn=wc2.list_products_by_status,
+                               update_fn=wc2.update_product, enrich_fn=lambda r: {"images": ["u"]},
+                               chunk=5, sleep_fn=lambda s: None)
+    assert out["pending_before"] == 0            # 보스미어는 pending 대상 아님
 
 
 def test_pilot_status_buckets_mutually_exclusive():
