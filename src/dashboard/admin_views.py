@@ -3835,3 +3835,86 @@ def coupang_pilot_sales_cross():
         return jsonify({"ok": False, "error": f"판매 대조 조회 실패(자격/네트워크): {exc}"}), 502
     cross["ok"] = True
     return jsonify(cross)
+
+
+def _reject_watch_uploader(account: str):
+    """계정별 CoupangUploader(반려감시용). 자격 미설정이면 None + 사유."""
+    from src.pipeline.coupang_replicate import _account_creds
+    from src.uploaders.coupang_uploader import CoupangUploader
+    ak, sk, vid = _account_creds(account)
+    if not (ak and sk):
+        return None, f"{account} 쿠팡 자격 미설정(env) — 조회 불가"
+    return CoupangUploader(access_key=ak, secret_key=sk, vendor_id=vid, account=account), None
+
+
+@admin_panel_bp.route("/reject-watch/scan", methods=["GET", "POST"])
+def reject_watch_scan():
+    """P4 반려감시 — **조회·분류·알림까지**(실행 없음). sids 반려상품의 `/histories` comment로 3유형 자동 분류.
+
+    body/query: account(gogane/woojoo), sids(쉼표 or JSON 배열). 라이브 조회는 Render 전용(쿠팡 자격).
+    admin_panel_bp.before_request가 오너 세션 인증 강제. **자동 재등록/삭제 안 함**(apply 라우트·오너 게이트).
+    """
+    from flask import jsonify, request
+    from src.pipeline import reject_watch as RW
+
+    account = (request.values.get("account") or "gogane").strip().lower()
+    raw = request.values.get("sids") or ""
+    if request.is_json:
+        j = request.get_json(silent=True) or {}
+        account = (j.get("account") or account).strip().lower()
+        sids = j.get("sids") or ([s.strip() for s in str(raw).replace(",", "\n").split() if s.strip()])
+    else:
+        sids = [s.strip() for s in str(raw).replace(",", "\n").split() if s.strip()]
+    if account not in ("gogane", "woojoo"):
+        return jsonify({"ok": False, "error": f"알 수 없는 계정: {account}"}), 400
+    if not sids:
+        return jsonify({"ok": False, "error": "조회할 상품 sid가 없습니다(반려 상품 sid 목록)."}), 400
+
+    up, err = _reject_watch_uploader(account)
+    if err:
+        return jsonify({"ok": False, "error": err, "account": account}), 200
+    items = [{"sid": s, "title": "", "account": account} for s in sids]
+    out = RW.scan_rejections(items, history_fn=lambda sid, acct: up.get_status_histories(sid))
+    return jsonify({"ok": True, "account": account, "registered": False, **out})
+
+
+@admin_panel_bp.post("/reject-watch/apply")
+def reject_watch_apply():
+    """P4 처방 실행 — **오너 승인 게이트 뒤**(비가역). `REJECT_WATCH_APPROVED=1` 아니면 실행 0(정직 보류).
+
+    body: account, rows(scan 결과 rows 또는 [{sid,kind,apple_target}]), approved(선택 override). 재승인/삭제/재등록.
+    """
+    from flask import jsonify, request
+    import os as _os
+    from src.pipeline import reject_watch as RW
+
+    j = request.get_json(silent=True) or {}
+    account = (j.get("account") or "gogane").strip().lower()
+    rows = j.get("rows") or []
+    approved = j.get("approved")
+    if approved is None:
+        approved = str(_os.getenv("REJECT_WATCH_APPROVED", "0")).lower() in ("1", "true", "yes")
+    if account not in ("gogane", "woojoo"):
+        return jsonify({"ok": False, "error": f"알 수 없는 계정: {account}"}), 400
+    if not rows:
+        return jsonify({"ok": False, "error": "처방할 행이 없습니다."}), 400
+    if not approved:
+        # 비가역 방어 — 실행 0, 무엇을 할지만 미리보기(보류 사유 포함).
+        preview = [RW.apply_prescription(r, approved=False) for r in rows]
+        return jsonify({"ok": True, "approved": False, "applied": 0,
+                        "note": "REJECT_WATCH_APPROVED 미승인 — 실행 보류(비가역). 처방 미리보기만.",
+                        "results": preview})
+
+    up, err = _reject_watch_uploader(account)
+    if err:
+        return jsonify({"ok": False, "error": err, "account": account}), 200
+    results = [RW.apply_prescription(
+        r, approved=True,
+        delete_fn=lambda sid: up.delete_product(sid),
+        reissue_fn=lambda sid: up.request_approval(sid),
+        reupload_fn=lambda sid, row: up.request_approval(sid),   # 재승인 요청(수정 후 승인 재요청)
+    ) for r in rows]
+    return jsonify({"ok": True, "approved": True, "account": account,
+                    "applied": sum(1 for x in results if x.get("applied")),
+                    "held": sum(1 for x in results if not x.get("applied")),
+                    "results": results})

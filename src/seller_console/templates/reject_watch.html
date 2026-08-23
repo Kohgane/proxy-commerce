@@ -1,0 +1,127 @@
+{% extends "_base.html" %}
+{% block title %}등록 파이프 · 반려감시{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-2">
+  <div>
+    <div class="console-kpi-label mb-1">등록 파이프 · P4</div>
+    <h4 class="mb-0 fw-bold"><i class="bi bi-clipboard-x"></i> 반려 감시</h4>
+  </div>
+</div>
+<hr class="pc-hairline mt-0 mb-4">
+
+<div class="pc-status pc-status-info small mb-3">
+  반려된 쿠팡 상품의 <strong>실제 사유(이력 comment)</strong>를 조회해 <strong>이미지 규격 · 상표권 · 옵션값</strong>
+  세 유형으로 자동 분류하고 처방을 붙입니다. 알림 요약까지가 이 화면의 몫이에요 —
+  <strong>재등록·삭제 실행은 오너 승인 뒤</strong>에만 진행합니다(되돌릴 수 없는 작업).
+</div>
+
+<!-- 입력 -->
+<form method="post" action="/seller/sourcing/reject-watch" class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <div class="row g-2 align-items-end">
+      <div class="col-auto">
+        <label class="form-label small mb-1" for="account">계정</label>
+        <select id="account" name="account" class="form-select form-select-sm">
+          <option value="gogane" {% if account=='gogane' %}selected{% endif %}>고가네 (A01381223)</option>
+          <option value="woojoo" {% if account=='woojoo' %}selected{% endif %}>우주대행 (A01504840)</option>
+        </select>
+      </div>
+      <div class="col">
+        <label class="form-label small mb-1" for="sids">반려 상품 번호(sellerProductId, 한 줄에 하나)</label>
+        <textarea class="form-control" id="sids" name="sids" rows="4"
+          placeholder="123456789&#10;123456790">{{ sids_text }}</textarea>
+      </div>
+    </div>
+    <div class="d-flex justify-content-between align-items-center mt-2 flex-wrap gap-2">
+      <span class="text-muted small">사유는 상태 문구가 아니라 <strong>이력 comment</strong>로 판정합니다(오판 방지).</span>
+      <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search"></i> 반려 사유 조회·분류</button>
+    </div>
+  </div>
+</form>
+
+{% if scan is not none %}
+  {% if scan.error %}
+    <div class="pc-status pc-status-warning small mb-4">{{ scan.error }}</div>
+  {% else %}
+  <!-- 알림 요약 -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="card console-card console-kpi-card console-kpi-primary h-100"><div class="card-body">
+        <div class="console-kpi-label mb-1">반려 조회</div>
+        <div class="console-stat-value">{{ scan.scanned }}</div>
+      </div></div>
+    </div>
+    {% for k, meta in kinds.items() %}{% if k != 'unknown' and scan.by_kind.get(k) %}
+    <div class="col-6 col-md-3">
+      <div class="card console-card console-kpi-card h-100"><div class="card-body">
+        <div class="console-kpi-label mb-1">{{ meta.ko }}</div>
+        <div class="console-stat-value">{{ scan.by_kind.get(k) }}</div>
+        <div class="text-muted small">→ {{ meta.rx_ko }}</div>
+      </div></div>
+    </div>
+    {% endif %}{% endfor %}
+    {% if scan.needs_manual %}
+    <div class="col-6 col-md-3">
+      <div class="card console-card console-kpi-card console-kpi-warning h-100"><div class="card-body">
+        <div class="console-kpi-label mb-1">미분류(오너 확인)</div>
+        <div class="console-stat-value">{{ scan.needs_manual }}</div>
+      </div></div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="pc-status {% if approved %}pc-status-warning{% else %}pc-status-info{% endif %} small mb-3">
+    {% if approved %}<i class="bi bi-unlock"></i> 처방 실행 <strong>승인됨</strong>(REJECT_WATCH_APPROVED) — 재등록·삭제가 실제로 실행됩니다.
+    {% else %}<i class="bi bi-lock"></i> 처방 실행 <strong>보류</strong> — 재등록·삭제는 오너 승인(REJECT_WATCH_APPROVED) 뒤에만. 지금은 분류·알림만.{% endif %}
+  </div>
+
+  <!-- 분류표 -->
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white"><span class="fw-semibold">반려 분류표</span>
+      <span class="text-muted small ms-2">사유(comment) 기준 · 실행 없음</span></div>
+    <div class="card-body p-0"><div class="table-responsive">
+      <table class="table table-hover mb-0 table-cards pc-swiss-table">
+        <thead class="table-light"><tr>
+          <th>상품번호</th><th>반려 사유(comment)</th><th>분류</th><th>처방</th>
+        </tr></thead>
+        <tbody>
+          {% for r in scan.rows %}
+          <tr>
+            <td data-label="상품번호"><span class="font-monospace small">{{ r.sid }}</span>
+              {% if r.title %}<div class="text-muted small text-truncate" style="max-width:200px;">{{ r.title }}</div>{% endif %}</td>
+            <td data-label="반려 사유">
+              {% if r.error %}<span class="pc-badge pc-badge-danger">조회 실패</span>
+                <div class="text-muted small">{{ r.error }}</div>
+              {% elif r.comment %}<small>{{ r.comment[:80] }}</small>
+                {% if r.comment_is_status_only %}<div><span class="pc-badge pc-badge-muted">상태 문구만(사유 미상)</span></div>{% endif %}
+              {% else %}<span class="pc-badge pc-badge-muted">사유 없음</span>{% endif %}
+            </td>
+            <td data-label="분류">
+              {% if r.kind == 'unknown' %}<span class="pc-badge pc-badge-off">미분류</span>
+              {% elif r.kind == 'trademark' %}<span class="pc-badge pc-badge-danger">{{ r.kind_ko }}</span>
+              {% else %}<span class="pc-badge pc-badge-on">{{ r.kind_ko }}</span>{% endif %}
+              {% if r.kind == 'apple_category' %}
+                <div class="small text-muted mt-1">대상:
+                  {% if r.apple_target == 'android' %}<strong>삼성/픽셀 — 유효</strong>
+                  {% elif r.apple_target == 'apple' %}<strong>iPhone — 표기 보류</strong>
+                  {% else %}미상{% endif %}</div>
+              {% endif %}
+            </td>
+            <td data-label="처방">
+              {% if r.kind == 'unknown' %}<span class="text-muted small">오너 확인 필요</span>
+              {% else %}<span class="fw-semibold small">{{ r.prescription_ko }}</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div></div>
+  </div>
+
+  <div class="pc-status pc-status-info small">
+    {{ scan.alert }} — 처방 실행(재등록/삭제/재승인)은 오너 승인 게이트(<span class="font-monospace">POST /admin/reject-watch/apply</span>) 뒤에서만.
+  </div>
+  {% endif %}
+{% endif %}
+{% endblock %}
