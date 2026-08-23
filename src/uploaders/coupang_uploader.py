@@ -53,32 +53,43 @@ class CoupangUploader(BaseUploader):
         'COUPANG_COMPANY_CONTACT_NUMBER': 'company_contact',  # 반품지연락처
     }
 
-    def __init__(self, access_key: str = None, secret_key: str = None, vendor_id: str = None):
+    # 계정별 배송 env 접두 — `_account_creds`(coupang_replicate)와 동일 규약(COUPANG_GOGANE_*/COUPANG_WOOJOO_*).
+    ACCOUNT_PREFIXES = {'gogane': 'COUPANG_GOGANE', 'woojoo': 'COUPANG_WOOJOO'}
+
+    def __init__(self, access_key: str = None, secret_key: str = None, vendor_id: str = None,
+                 account: str = None, overseas_purchased: bool = None):
         """Coupang 업로더 초기화. 기본은 환경변수, **인자로 계정별 자격 오버라이드 가능**(P3 양계정 라우팅).
 
         access_key/secret_key/vendor_id를 넘기면 그 계정으로 등록(고가네/우주대행 라우팅). 미지정이면 무접두 env.
-        배송정보(출고지/반품지)는 계정 공용이 아닐 수 있어 여전히 env — P3는 계정별 배송 env가 필요하면 후속.
+        **P2 계정별 배송 env(출고지/반품지):** account="gogane"|"woojoo"면 접두 `COUPANG_GOGANE_*`/
+        `COUPANG_WOOJOO_*`를 우선 읽고, 없으면 무접두 `COUPANG_*`로 폴백(단, 폴백은 무접두 키가 이 계정
+        소유일 때만 — `resolve_base_account` 일치 or account 미지정. 계정 간 배송정보 혼입 방지·정직).
+        overseas_purchased=True면 해외구매대행 표기(pccNeeded·고시정보) — 등록 파이프(구매대행)가 명시 전달.
         """
+        self.account = (account or '').strip().lower() or None
         self.access_key = access_key if access_key is not None else os.getenv('COUPANG_ACCESS_KEY', '')
         self.secret_key = secret_key if secret_key is not None else os.getenv('COUPANG_SECRET_KEY', '')
         self.vendor_id = vendor_id if vendor_id is not None else os.getenv('COUPANG_VENDOR_ID', '')
-        # 셀러 고유 출고지/반품지/Wing ID (Wing > 업체정보 > 배송정보에서 확인)
-        self.vendor_user_id = os.getenv('COUPANG_VENDOR_USER_ID', '')
-        self.return_center_code = os.getenv('COUPANG_RETURN_CENTER_CODE', '')
-        self.outbound_place_code = os.getenv('COUPANG_OUTBOUND_SHIPPING_PLACE_CODE', '')
-        self.return_zip = os.getenv('COUPANG_RETURN_ZIP_CODE', '')
-        self.return_addr = os.getenv('COUPANG_RETURN_ADDRESS', '')
-        self.return_addr_detail = os.getenv('COUPANG_RETURN_ADDRESS_DETAIL', '')
-        self.return_charge_name = os.getenv('COUPANG_RETURN_CHARGE_NAME', '')
-        self.company_contact = os.getenv('COUPANG_COMPANY_CONTACT_NUMBER', '')
+        # 셀러 고유 출고지/반품지/Wing ID (Wing > 업체정보 > 배송정보에서 확인) — 계정별 접두 우선.
+        self.vendor_user_id = self._ship_env('COUPANG_VENDOR_USER_ID')
+        self.return_center_code = self._ship_env('COUPANG_RETURN_CENTER_CODE')
+        self.outbound_place_code = self._ship_env('COUPANG_OUTBOUND_SHIPPING_PLACE_CODE')
+        self.return_zip = self._ship_env('COUPANG_RETURN_ZIP_CODE')
+        self.return_addr = self._ship_env('COUPANG_RETURN_ADDRESS')
+        self.return_addr_detail = self._ship_env('COUPANG_RETURN_ADDRESS_DETAIL')
+        self.return_charge_name = self._ship_env('COUPANG_RETURN_CHARGE_NAME')
+        self.company_contact = self._ship_env('COUPANG_COMPANY_CONTACT_NUMBER')
         try:
-            self.return_charge = int(os.getenv('COUPANG_RETURN_CHARGE', '5000') or 5000)
+            self.return_charge = int(self._ship_env('COUPANG_RETURN_CHARGE', '5000') or 5000)
         except (TypeError, ValueError):
             self.return_charge = 5000
-        # 해외구매대행 여부(기본: 일반 — 추가 인증요건 회피). 1/true 시 구매대행 표기.
-        self.overseas_purchased = str(
-            os.getenv('COUPANG_OVERSEAS_PURCHASED', '0')
-        ).lower() in ('1', 'true', 'yes')
+        # 해외구매대행 여부(기본: env). 인자로 명시하면 우선(등록 파이프=구매대행이라 True 전달).
+        if overseas_purchased is not None:
+            self.overseas_purchased = bool(overseas_purchased)
+        else:
+            self.overseas_purchased = str(
+                os.getenv('COUPANG_OVERSEAS_PURCHASED', '0')
+            ).lower() in ('1', 'true', 'yes')
         if not self.access_key:
             logger.warning('COUPANG_ACCESS_KEY is not set')
         if not self.secret_key:
@@ -86,12 +97,45 @@ class CoupangUploader(BaseUploader):
         if not self.vendor_id:
             logger.warning('COUPANG_VENDOR_ID is not set')
 
+    def _ship_env(self, base_env: str, default: str = '') -> str:
+        """배송 env를 계정 접두 우선으로 읽는다.
+
+        base_env='COUPANG_RETURN_CENTER_CODE' → 계정 gogane이면 'COUPANG_GOGANE_RETURN_CENTER_CODE' 우선,
+        없으면 무접두 'COUPANG_RETURN_CENTER_CODE'로 폴백(무접두가 이 계정 소유일 때만 — 혼입 방지).
+        """
+        prefix = self.ACCOUNT_PREFIXES.get(self.account or '')
+        if prefix:
+            suffix = base_env[len('COUPANG_'):]
+            val = os.getenv(f'{prefix}_{suffix}', '').strip()
+            if val:
+                return val
+            # 무접두 폴백은 무접두 자격이 이 계정 소유일 때만(다른 계정 배송정보 도용 금지).
+            if not self._unprefixed_owned_by_account():
+                return default
+        return os.getenv(base_env, default)
+
+    def _unprefixed_owned_by_account(self) -> bool:
+        """무접두 COUPANG_* 배송/자격이 self.account 소유인가(resolve_base_account 일치)? account 미지정=허용."""
+        if not self.account:
+            return True
+        try:
+            from src.pipeline.coupang_replicate import resolve_base_account
+            return resolve_base_account() == self.account
+        except Exception:
+            return True   # 판별 불가 시 기존 동작(폴백 허용) 유지 — 무회귀
+
     def _missing_shipping_config(self) -> list:
-        """쿠팡 등록 필수 출고지/반품지 설정 중 누락된 환경변수명 목록."""
-        return [
-            env for env, attr in self.SHIPPING_ENV_FIELDS.items()
-            if not str(getattr(self, attr, '') or '').strip()
-        ]
+        """쿠팡 등록 필수 출고지/반품지 설정 중 누락된 환경변수명 목록.
+
+        계정(gogane/woojoo) 지정 시 **계정 접두 키명**을 돌려준다(오너가 어느 계정 키를 넣어야 하는지 정직).
+        """
+        prefix = self.ACCOUNT_PREFIXES.get(self.account or '')
+        missing = []
+        for env, attr in self.SHIPPING_ENV_FIELDS.items():
+            if str(getattr(self, attr, '') or '').strip():
+                continue
+            missing.append(f'{prefix}_{env[len("COUPANG_"):]}' if prefix else env)
+        return missing
 
     # ------------------------------------------------------------------
     # Public API
@@ -223,11 +267,25 @@ class CoupangUploader(BaseUploader):
     ]
 
     def _build_notices(self, product: dict) -> list:
-        """옵션 상품고시정보(notices). 비우면 쿠팡이 거부 → 표준 항목을 채운다."""
+        """옵션 상품고시정보(notices). 비우면 쿠팡이 거부 → 표준 항목을 채운다.
+
+        **해외구매대행(overseas_purchased)이면 통관 고시**를 정직 반영: 원산지='해외', 수입자='구매대행'
+        표기 + PCCC(개인통관고유부호) 필요 안내. 구매대행 상품은 pccNeeded=True(페이로드)와 짝을 이룬다.
+        """
         phone = self.company_contact or '상세페이지 참조'
+        origin = str(product.get('origin') or product.get('brand_country') or '').strip()
+        overseas = bool(self.overseas_purchased)
         notices = []
         for detail in self._NOTICE_DETAILS:
-            content = phone if '전화번호' in detail else '상품 상세페이지 참조'
+            if '전화번호' in detail:
+                content = phone
+            elif '제조국' in detail or '원산지' in detail:
+                content = origin or ('해외(구매대행)' if overseas else '상품 상세페이지 참조')
+            elif '제조자' in detail or '수입자' in detail:
+                content = ('해외구매대행(통관 시 개인통관고유부호 필요)' if overseas
+                           else '상품 상세페이지 참조')
+            else:
+                content = '상품 상세페이지 참조'
             notices.append({
                 'noticeCategoryName': self._NOTICE_CATEGORY,
                 'noticeCategoryDetailName': detail,

@@ -64,6 +64,12 @@
     {% else %}환율 미상 — 외화 원가는 <strong>환산 불가(미입력)</strong>로 정직 표기합니다.{% endif %}
     {% if review.capped %}<strong>50개 상한 초과분은 잘렸습니다.</strong>{% endif %}
   </div>
+  <div class="pc-status pc-status-info small mb-3">
+    <strong>실마진</strong>은 채널 수수료·배송비를 반영한 실제 마진이에요(목표 마진율과 별도, 같은 공식 단일 소스).
+    배송비를 아직 못 구한 상품은 <strong>마진 미반영</strong>으로 정직 표기합니다.
+    <strong>배송(한국)</strong>은 소스가 한국으로 실제 배송되는지 판정이며(ALPAKA·ULANZI 등 전례는 배송불가),
+    실측 전이면 <strong>미검증</strong>으로 둡니다 — <strong>등록을 막지는 않고 표시만</strong> 합니다.
+  </div>
 
   <!-- 검수표 -->
   {% if review.review_pass or review.excluded %}
@@ -74,7 +80,7 @@
       <table class="table table-hover mb-0 table-cards pc-swiss-table">
         <thead class="table-light"><tr>
           <th style="width:56px;">이미지</th><th>제목(번역)</th><th class="text-end">소싱가</th>
-          <th class="text-end">판매가</th><th class="text-end">마진</th><th>취급 판정</th>
+          <th class="text-end">판매가</th><th class="text-end">실마진</th><th>배송(한국)</th><th>취급 판정</th>
         </tr></thead>
         <tbody>
           {% for r in review.review_pass + review.excluded %}
@@ -98,8 +104,18 @@
               {% if r.sale_krw %}<small class="fw-semibold">{{ '{:,}'.format(r.sale_krw) }}원</small>
               {% else %}<span class="pc-badge pc-badge-muted" title="{{ r.price_reason }}">미입력</span>{% endif %}
             </td>
-            <td class="text-end" data-label="마진">
-              {% if r.margin_pct is not none %}<small>{{ r.margin_pct }}%</small>{% else %}<span class="text-muted">-</span>{% endif %}
+            <td class="text-end" data-label="실마진">
+              {% if r.margin_pct is not none %}
+                <small class="fw-semibold">{{ r.margin_pct }}%</small>
+                {% if r.net_krw is not none %}<div class="text-muted" style="font-size:.72rem;">순 {{ '{:,}'.format(r.net_krw) }}원</div>{% endif %}
+                <div class="text-muted" style="font-size:.68rem;" title="목표 마진(÷0.618)">목표 {{ r.target_margin_pct }}%</div>
+                {% if r.ship_over_35pct %}<span class="pc-badge pc-badge-off" title="소싱 6조건 §6">배송비 &gt; 원가 35%</span>{% endif %}
+              {% else %}<span class="text-muted">-</span>{% endif %}
+            </td>
+            <td data-label="배송(한국)">
+              {% if r.ship_status == '배송가능' %}<span class="pc-badge pc-badge-on" title="{{ r.ship_reason }}">배송가능</span>
+              {% elif r.ship_status == '배송불가' %}<span class="pc-badge pc-badge-off" title="{{ r.ship_reason }}">배송불가</span>
+              {% else %}<span class="pc-badge pc-badge-muted" title="{{ r.ship_reason }}">미검증</span>{% endif %}
             </td>
             <td data-label="취급 판정">
               {% if r.excluded %}

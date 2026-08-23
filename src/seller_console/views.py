@@ -7559,7 +7559,9 @@ def _coupang_account_dispatch(product_data, account):
     ak, sk, vid = _account_creds(account)
     if not (ak and sk):
         return {"success": False, "error": f"{account} 쿠팡 자격 미설정(env) — 등록 불가"}
-    up = CoupangUploader(access_key=ak, secret_key=sk, vendor_id=vid)
+    # P2: 계정별 출고지/반품지 env(COUPANG_GOGANE_*/COUPANG_WOOJOO_*) 라우팅 + 구매대행 통관(pccNeeded·고시).
+    up = CoupangUploader(access_key=ak, secret_key=sk, vendor_id=vid,
+                         account=account, overseas_purchased=True)
     cat = str(product_data.get("category_code") or "")
     product = {
         "title": product_data.get("title_ko") or "상품",
