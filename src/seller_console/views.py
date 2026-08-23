@@ -7615,6 +7615,44 @@ def sourcing_register_pipe_register():
     return jsonify(result), status
 
 
+@bp.route("/sourcing/reject-watch", methods=["GET", "POST"])
+def sourcing_reject_watch():
+    """등록 파이프 P4: 반려감시 — 반려 상품 sid의 `/histories` comment로 3유형 자동 분류·처방·알림.
+
+    **조회·분류·알림까지**(실행 없음). 처방 실행은 오너 승인 게이트(admin `/reject-watch/apply`) 뒤·비가역.
+    반려 사유는 comment(상태 문구 아님 — 오독 지뢰). 라이브 조회는 Render 전용(쿠팡 자격). 자격 미설정=정직 안내.
+    """
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+
+    import os as _os
+    from src.pipeline import reject_watch as RW
+    from src.pipeline.coupang_replicate import _account_creds
+    from src.uploaders.coupang_uploader import CoupangUploader
+
+    scan = None
+    account = (request.values.get("account") or "gogane").strip().lower()
+    sids_text = ""
+    approved = str(_os.getenv("REJECT_WATCH_APPROVED", "0")).lower() in ("1", "true", "yes")
+    if request.method == "POST":
+        sids_text = (request.form.get("sids") or "").strip()
+        sids = [s.strip() for s in sids_text.replace(",", "\n").split() if s.strip()]
+        if account not in ("gogane", "woojoo"):
+            account = "gogane"
+        ak, sk, vid = _account_creds(account)
+        if not sids:
+            scan = {"error": "반려 상품 sid를 입력해 주세요(한 줄에 하나)."}
+        elif not (ak and sk):
+            scan = {"error": f"{account} 쿠팡 자격 미설정 — 라이브 조회 불가(Render 전용). 자격 설정 후 조회하세요."}
+        else:
+            up = CoupangUploader(access_key=ak, secret_key=sk, vendor_id=vid, account=account)
+            items = [{"sid": s, "title": "", "account": account} for s in sids]
+            scan = RW.scan_rejections(items, history_fn=lambda sid, acct: up.get_status_histories(sid))
+
+    return render_template("reject_watch.html", page="sourcing", scan=scan, account=account,
+                           sids_text=sids_text, approved=approved, kinds=RW.REJECTION_KINDS)
+
+
 @bp.post("/sourcing/my-sources")
 def sourcing_my_sources():
     """My Sources 추가/삭제/사용시각 갱신 (Phase 160)."""

@@ -253,6 +253,39 @@ class CoupangUploader(BaseUploader):
         }
 
     # ------------------------------------------------------------------
+    # 반려감시 (P4) — 상태이력 조회 · 재승인 요청
+    # ------------------------------------------------------------------
+
+    def get_status_histories(self, seller_product_id: str) -> dict:
+        """상품 상태변경 이력 조회 — 반려 사유(comment)는 여기에만 있다([[반려 사유 요약 오독 지뢰]]).
+
+        반환: 쿠팡 응답 dict(그대로) 또는 {'error': ...}. reject_watch.latest_rejection_comment가 파싱.
+        """
+        try:
+            path = (f'/v2/providers/seller_api/apis/api/v1/marketplace/'
+                    f'seller-products/{seller_product_id}/histories')
+            return self._api_request('GET', path)
+        except Exception as exc:
+            logger.error('get_status_histories failed for sid=%s: %s', seller_product_id, exc)
+            return {'error': str(exc)}
+
+    def request_approval(self, seller_product_id: str) -> dict:
+        """SAVED(반려/임시저장) 상품 재승인 요청 — `PUT .../seller-products/{sid}/approvals` 한 방.
+
+        오너 승인 게이트 뒤에서만 호출(비가역). 성공/실패 정직 반환(가짜 성공 0).
+        """
+        try:
+            path = (f'/v2/providers/seller_api/apis/api/v1/marketplace/'
+                    f'seller-products/{seller_product_id}/approvals')
+            result = self._api_request('PUT', path)
+            if 'error' in result:
+                return {'success': False, 'error': result['error'], 'sku': seller_product_id}
+            return {'success': True, 'product_id': seller_product_id}
+        except Exception as exc:
+            logger.error('request_approval failed for sid=%s: %s', seller_product_id, exc)
+            return {'success': False, 'error': str(exc), 'sku': seller_product_id}
+
+    # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
 
