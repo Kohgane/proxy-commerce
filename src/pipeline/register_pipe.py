@@ -26,6 +26,68 @@ _FORBIDDEN_KIND_KO = {
     "forbidden-term": "금지어 사전",
 }
 
+# ── ship_real 서버화 (소싱 6조건 §"등록 전 필수 — 한국 실배송 확인") ─────────────────
+# 오너 수동 검증 전례: 소스 홈 HTML의 국가셀렉터에 value="KR"이 있어야 진짜 배송된다.
+#   정책 페이지 "korea/worldwide" 문구만 믿으면 안 됨(myair0 = 정책상 국제배송인데 KR 없음 → 32건 등록 후 전량 중지).
+#   이 검증으로 ALPAKA 130·ULANZI 84·HydraPak 36 = 250건을 등록 전에 걸렀다.
+_KR_SHIP_BLOCKED_BRANDS = frozenset({"alpaka", "ulanzi", "hydrapak"})
+_KR_MARKER = 'value="KR"'   # Shopify 홈 국가셀렉터 마커(실측)
+
+
+def _brand_of(draft: dict, title: str) -> str:
+    """초안에서 브랜드 추정(brand 필드 → 제목 첫 토큰). 배송불가 브랜드 매칭용."""
+    b = str((draft or {}).get("brand") or "").strip()
+    if b:
+        return b
+    return (title or "").strip().split(" ")[0] if title else ""
+
+
+def kr_ship_viability(brand: str, title: str = "", url: str = "", *, check_fn=None) -> dict:
+    """한국 실배송 가능 판정. **등록 차단 안 함 — 플래그만**(오너 지시).
+
+    판정 순서:
+      1) 배송불가 전례 브랜드(ALPAKA·ULANZI·HydraPak) → viable=False("배송불가").
+      2) check_fn 주입 시(url) 홈 HTML value="KR" 실측 — True/False. check_fn=(status, body) 튜플 반환
+         가능(ship_real get 튜플 지뢰) → 안전 언패킹. 예외/조회불가 → 미검증.
+      3) 그 외 → viable=None("미검증", 실측 불가·정직).
+    반환 {viable(bool|None), status, reason}.
+    """
+    text = f"{brand} {title}".lower()
+    for bad in _KR_SHIP_BLOCKED_BRANDS:
+        if bad in text:
+            return {"viable": False, "status": "배송불가",
+                    "reason": f"{bad.upper()} 전례 — 한국 미배송(등록 전 차단 권고)"}
+    if check_fn and url:
+        try:
+            res = check_fn(url)
+            body = res
+            if isinstance(res, (tuple, list)) and len(res) >= 2:   # (status, body) 언패킹
+                body = res[1]
+            body = "" if body is None else str(body)
+            if _KR_MARKER in body:
+                return {"viable": True, "status": "배송가능", "reason": "홈 국가셀렉터 KR 확인(실측)"}
+            if body:
+                return {"viable": False, "status": "배송불가",
+                        "reason": "홈 국가셀렉터에 KR 없음(정책 문구만으론 미신뢰)"}
+        except Exception as exc:
+            return {"viable": None, "status": "미검증", "reason": f"실배송 조회 실패: {exc}"}
+    return {"viable": None, "status": "미검증", "reason": "실배송 미조회(라이브 확인 필요)"}
+
+
+def _real_margin(sale_krw, cost_krw, fee_rate, ship_cost_krw):
+    """실마진(순이익 KRW, 마진율%) — **단일 소스 MarginCalculator._calc_margin 재사용**(새 공식 0).
+
+    랜딩코스트 = 원가 + 국내배송(있으면). 채널 수수료율 반영. 판매가 미상/원가 미상이면 (None, None).
+    """
+    if not sale_krw or cost_krw is None or fee_rate is None:
+        return None, None
+    from decimal import Decimal
+    from src.seller_console.margin_calculator import MarginCalculator
+    landed = Decimal(str(cost_krw)) + Decimal(str(ship_cost_krw or 0))
+    fee_frac = Decimal(str(fee_rate)) / Decimal("100")
+    net_krw, margin_pct = MarginCalculator._calc_margin(Decimal(str(sale_krw)), landed, fee_frac)
+    return int(net_krw), float(round(margin_pct, 1))
+
 
 def explain_forbidden(reason: Optional[str], title: str) -> Optional[dict]:
     """취급금지 사유(is_forbidden 반환)를 **매칭 토큰 원문 + 제목의 걸린 위치**로 풀어낸다.
@@ -52,12 +114,15 @@ def explain_forbidden(reason: Optional[str], title: str) -> Optional[dict]:
 
 def build_source_review_row(draft: dict, *, url: str = "", channel: str = "woocommerce_multishop",
                             blacklist=None, margin_rate: float = DEFAULT_MARGIN_RATE,
-                            fx_rate: Optional[float] = None) -> dict:
+                            fx_rate: Optional[float] = None, ship_check_fn=None, ship_cost_fn=None) -> dict:
     """수집 초안(draft) → 검수표 1행(파일럿 동형). **등록 안 함**(registered=False 불변).
 
     - 제목: 번역 초안(title_ko) 재정제(clean_title_ko) + 절단/CJK 플래그(조용히 자르지 않음).
     - 취급판정: is_forbidden(blacklist 151 + 금지 카테고리) — 미통과=excluded+사유(조용한 탈락 금지).
     - 가격: 원가 KRW 확보 시 recalc_channel_price(÷0.618 정합). 외화+환율 미상=가짜 환산 0(미입력 정직).
+    - **P2 배송(ship_real):** 한국 실배송 판정(플래그만 — 등록 차단 안 함). 배송불가 전례 브랜드/실측/미검증.
+    - **P2 마진 정밀화:** margin_pct = 채널 수수료·배송비 반영 **실마진**(MarginCalculator 단일 소스, 27.4% 근사 아님).
+      배송비 > 원가 35%면 ship_over_35pct(소싱 6조건 §6 위반). target_margin_pct = 목표 마진(27.4).
     """
     title = (draft.get("title_ko") or draft.get("title_en") or draft.get("title") or "").strip()
     fb = is_forbidden(title, blacklist=blacklist)
@@ -84,6 +149,26 @@ def build_source_review_row(draft: dict, *, url: str = "", channel: str = "wooco
         else {"ok": False, "reason": cost_basis}
     ct = clean_title_ko(title, url=url)
     images = [i for i in (draft.get("images") or []) if i]
+
+    # ── 배송(ship_real) — 플래그만(등록 차단 안 함) ──────────────────────────────
+    brand = _brand_of(draft, title)
+    ship = kr_ship_viability(brand, title, url, check_fn=ship_check_fn)
+
+    # ── 배송비(국내) — 주입 hook. 미상이면 미반영(마진에 0)·정직 표기 ────────────────
+    ship_cost_krw = None
+    if ship_cost_fn and cost_krw:
+        try:
+            v = ship_cost_fn(cost_krw=cost_krw, brand=brand, title=title, url=url)
+            ship_cost_krw = round(float(v)) if v is not None else None
+        except Exception:
+            ship_cost_krw = None
+    ship_over_35pct = bool(ship_cost_krw and cost_krw and ship_cost_krw > 0.35 * cost_krw)
+
+    # ── 실마진 — 단일 소스(MarginCalculator). 27.4% 근사 교체 ─────────────────────
+    sale_krw = price.get("sale_price_krw") if price.get("ok") else None
+    fee_rate = price.get("fee_rate") if price.get("ok") else None
+    net_krw, real_margin_pct = _real_margin(sale_krw, cost_krw, fee_rate, ship_cost_krw)
+
     return {
         "url": url,
         "title_ko": ct["title"], "title_original": draft.get("title_en") or draft.get("title") or "",
@@ -91,8 +176,14 @@ def build_source_review_row(draft: dict, *, url: str = "", channel: str = "wooco
         "title_cjk_residual": ct["cjk_residual"], "title_cleaned": ct["changed"],
         "price_original": price_original, "currency": currency,
         "cost_krw": cost_krw, "cost_basis": cost_basis,
-        "sale_krw": price.get("sale_price_krw") if price.get("ok") else None,
-        "margin_pct": price.get("margin_rate") if price.get("ok") else None,
+        "sale_krw": sale_krw,
+        "margin_pct": real_margin_pct,                 # 실마진(채널 수수료·배송비 반영, 단일 소스)
+        "target_margin_pct": price.get("margin_rate") if price.get("ok") else None,  # 목표(27.4)
+        "fee_rate": fee_rate, "net_krw": net_krw,
+        "ship_cost_krw": ship_cost_krw,
+        "ship_cost_basis": ("국내배송 반영" if ship_cost_krw else "배송비 미상(마진 미반영)"),
+        "ship_over_35pct": ship_over_35pct,            # 소싱 6조건 §6 위반(배송비>원가 35%)
+        "ship_viable": ship["viable"], "ship_status": ship["status"], "ship_reason": ship["reason"],
         "price_reason": None if price.get("ok") else price.get("reason"),
         "target_channel": channel,
         "image_count": len(images), "thumbnail": (images[0] if images else ""),
@@ -104,7 +195,8 @@ def build_source_review_row(draft: dict, *, url: str = "", channel: str = "wooco
 
 def build_source_review(urls, *, collect_fn, channel: str = "woocommerce_multishop",
                         blacklist=None, margin_rate: float = DEFAULT_MARGIN_RATE,
-                        fx_rate: Optional[float] = None, cap: int = 50) -> dict:
+                        fx_rate: Optional[float] = None, cap: int = 50,
+                        ship_check_fn=None, ship_cost_fn=None) -> dict:
     """소싱 URL 목록 → 검수표. collect_fn(url)=서버 수집(주입). **등록 없음.**
 
     수집 실패/취급금지는 조용히 버리지 않고 failed/excluded로 사유와 함께 분리.
@@ -126,7 +218,8 @@ def build_source_review(urls, *, collect_fn, channel: str = "woocommerce_multish
             failed.append({"url": u, "reason": "수집 실패(실데이터 못 얻음) — 확장 수집/직접 입력 권장"})
             continue
         review.append(build_source_review_row(draft, url=u, channel=channel, blacklist=blacklist,
-                                               margin_rate=margin_rate, fx_rate=fx_rate))
+                                               margin_rate=margin_rate, fx_rate=fx_rate,
+                                               ship_check_fn=ship_check_fn, ship_cost_fn=ship_cost_fn))
     return {
         "count": len(review),
         "review_pass": [r for r in review if not r["excluded"]],
