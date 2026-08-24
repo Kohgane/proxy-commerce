@@ -278,6 +278,120 @@ def translate_drain_cron():
                     "budget_sec": tick_budget, "limit": limit, "pilot_chunk": pilot_chunk}), 202
 
 
+_reject_lock = _threading.Lock()   # 반려감시 중복 진입 가드(쿠팡 API 왕복 중복 금지)
+_last_reject_watch: dict = {}      # 최근 감시 결과(진단·로그)
+
+
+def _run_reject_watch(app, account: str, limit: int, budget: float) -> dict:
+    """반려감시 실작업(백그라운드) — 등록 대장 → `/histories` 조회·분류·기록·알림. **실행 0**(처방은 승인 게이트 뒤)."""
+    import time as _t
+    t0 = _t.monotonic()
+    out: dict = {"account": account}
+    try:
+        with app.app_context():
+            from src.db import market_registrations_pg as REG
+            from src.pipeline import reject_watch as RW
+            from src.pipeline.coupang_replicate import _account_creds
+            from src.uploaders.coupang_uploader import CoupangUploader
+            ak, sk, vid = _account_creds(account)
+            if not (ak and sk):
+                out = {"ok": False, "error": f"{account} 쿠팡 자격 미설정 — 감시 불가(가짜 결과 0)"}
+            else:
+                up = CoupangUploader(access_key=ak, secret_key=sk, vendor_id=vid, account=account)
+                out = RW.watch_registered(
+                    queue_fn=lambda n: REG.watch_queue(account=account, limit=n),
+                    history_fn=lambda sid, acct: up.get_status_histories(sid),
+                    record_fn=lambda sid, **kw: REG.mark_checked(sid, **kw),
+                    notify_fn=_reject_notify_fn(account),
+                    limit=limit, time_budget_sec=budget)
+            total = _t.monotonic() - t0
+            out["total_sec"] = round(total, 1)
+            if not out.get("ok"):
+                logger.warning("반려감시 실패(%s): %s", account, out.get("error"))
+            elif out.get("scanned"):
+                logger.info("반려감시 완료(%s): %s · 기록 %s · 알림 %s · %.1fs%s",
+                            account, out.get("alert"), out.get("recorded"), out.get("notified"),
+                            total, "  ⚠️예산소진" if out.get("budget_exhausted") else "")
+            else:
+                logger.info("반려감시(%s): 감시 대상 없음(정상 종료) · %.1fs", account, total)
+    except Exception as exc:                       # noqa: BLE001 — 조용한 정지 금지
+        logger.error("반려감시 오류(백그라운드): %s", exc)
+        out = {"ok": False, "error": str(exc)}
+    finally:
+        _last_reject_watch.clear()
+        _last_reject_watch.update(out)
+        try:
+            _reject_lock.release()
+        except RuntimeError:
+            pass
+    return out
+
+
+def _reject_notify_fn(account: str):
+    """반려 알림 발송기 — 기존 자산 `send_telegram` 재사용(발명 0).
+
+    **가짜 발송 0:** 채널 미설정/dry-run이면 send_telegram이 False를 준다 → 그대로 실패로 올려
+    `notified=False` + 사유가 남는다(보냈다고 주장하지 않는다). 내용은 로그에도 남겨 누락 0.
+    """
+    def _notify(alert: str, rows):
+        kinds = " · ".join(f"{r.get('kind_ko')}({r.get('sid')})"
+                           for r in rows[:5] if r.get("comment"))
+        body = f"[고가브릿지] 쿠팡 반려 감지 · {account}\n{alert}" + (f"\n{kinds}" if kinds else "")
+        from src.notifications.telegram import send_telegram
+        logger.info("반려 알림: %s", body.replace("\n", " | "))
+        if not send_telegram(body, urgency="warning"):
+            raise RuntimeError("알림 채널 미설정 또는 발송 실패(TELEGRAM_BOT_TOKEN/CHAT_ID)")
+    return _notify
+
+
+@cron_bp.post("/reject-watch")
+def reject_watch_cron():
+    """등록 파이프 P4 반려감시 — **즉시 202 + 백그라운드**(Bluehost rej_watch 2h 크론 이식).
+
+    등록 대장(market_registrations)의 미확정 건을 쿠팡 `/histories`로 조회해 **3유형 분류·처방·기록·알림**까지.
+    **처방 실행은 여기서 안 한다**(비가역 — 오너 승인 게이트 `/admin/reject-watch/apply` 뒤).
+    [[동기 대량 라우트 타임아웃 지뢰]] 회피: 즉답 202, 실작업은 벽시계 예산 안에서 백그라운드.
+    권장 주기 = 2시간(원본 크론과 동일). Query: account(gogane|woojoo)·limit.
+    """
+    from flask import current_app
+    cron_secret = os.getenv("CRON_SECRET")
+    if cron_secret and request.headers.get("X-Cron-Secret", "") != cron_secret:
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    account = (request.args.get("account") or "gogane").strip().lower()
+    if account not in ("gogane", "woojoo"):
+        return jsonify({"ok": False, "error": f"알 수 없는 계정: {account}"}), 400
+    try:
+        limit = int(request.args.get("limit", 30))
+    except (TypeError, ValueError):
+        limit = 30
+    if not _reject_lock.acquire(blocking=False):
+        return jsonify({"ok": True, "status": "already_running", "skipped": True,
+                        "message": "이전 감시가 진행 중 — 이번 호출은 스킵합니다.",
+                        "last": {k: _last_reject_watch.get(k) for k in ("scanned", "alert", "total_sec")}}), 202
+    app = current_app._get_current_object()
+    budget = _tick_budget_sec()
+    try:
+        _spawn_reject_watch(app, account, limit, budget)
+    except Exception as exc:
+        try:
+            _reject_lock.release()
+        except RuntimeError:
+            pass
+        logger.error("반려감시 스레드 시작 실패: %s", exc)
+        return jsonify({"ok": False, "error": "감시 시작 실패"}), 500
+    return jsonify({"ok": True, "status": "accepted", "account": account, "limit": limit,
+                    "budget_sec": budget,
+                    "message": "반려감시를 백그라운드에서 시작했습니다(결과는 Render 로그·감시 화면)."}), 202
+
+
+def _spawn_reject_watch(app, account: str, limit: int, budget: float):
+    """감시 스레드 시작(daemon). 테스트는 이 함수를 몽키패치해 동기 실행으로 대체."""
+    th = _threading.Thread(target=_run_reject_watch, args=(app, account, limit, budget),
+                           name="reject-watch-tick", daemon=True)
+    th.start()
+    return th
+
+
 # 파일럿 완료 캐시(프로세스) — 수렴 후 매 틱 무거운 WC 전체 조회 고정비를 없앤다(오너 지시).
 #   done=True면 즉시 skip(0.1s·로그 1줄). 워커 재시작 시 리셋 → 1틱 재검증 후 재설정.
 _pilot_done = {"done": False}

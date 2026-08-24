@@ -151,6 +151,69 @@ def scan_rejections(items, *, history_fn, classify_fn=None) -> dict:
             "alert": alert, "needs_manual": len(needs_manual), "scanned": len(rows)}
 
 
+def watch_registered(*, queue_fn, history_fn, classify_fn=None, record_fn=None,
+                     notify_fn=None, limit: int = 50, time_budget_sec: float = 0,
+                     monotonic_fn=None) -> dict:
+    """**자동 감시 1회전** — 등록 대장에서 감시 대상을 꺼내 조회·분류하고 결과를 되쓴다.
+
+    등록 파이프 관통 후의 P4 몫: 오너가 sid를 손으로 넣지 않아도 서버가 **무엇을 등록했는지 알고**
+    스스로 감시한다. 여기서도 **실행은 0**(조회·분류·기록·알림까지) — 처방 실행은 승인 게이트 뒤.
+
+    - queue_fn(limit)→[{sid,title,account}] (등록 대장) · history_fn(sid, account)→`/histories`
+    - record_fn(sid, **fields) → 결과 되쓰기(상태·분류·처방·조회시각). 없으면 기록 생략.
+    - notify_fn(alert:str, rows:list) → 알림 1건(반려가 **있을 때만**). 실패해도 감시는 성공(정직 표기).
+    - time_budget_sec > 0이면 항목마다 경과를 확인해 초과 시 중단([[동기 대량 라우트 타임아웃 지뢰]]).
+    반환 = scan 결과 + {recorded, notified, budget_exhausted, remaining_hint}.
+    """
+    import time as _t
+    clock = monotonic_fn or _t.monotonic
+    start = clock()
+    try:
+        items = list(queue_fn(limit) or [])
+    except Exception as exc:                               # 큐 조회 실패 = '대상 없음'과 구분(정직)
+        return {"ok": False, "error": f"감시 큐 조회 실패: {exc}", "scanned": 0,
+                "rows": [], "by_kind": {}, "by_prescription": {}, "recorded": 0, "notified": False}
+    if not items:
+        # '없음 확인' ≠ '조회 실패' — 정상 종료를 그렇게 표기한다.
+        return {"ok": True, "scanned": 0, "rows": [], "by_kind": {}, "by_prescription": {},
+                "alert": "감시 대상 없음(등록 대장에 미확정 건 없음)", "needs_manual": 0,
+                "recorded": 0, "notified": False, "budget_exhausted": False}
+
+    budget_exhausted, done = False, []
+    for it in items:
+        if time_budget_sec and (clock() - start) >= float(time_budget_sec):
+            budget_exhausted = True
+            break
+        done.append(it)
+    scan = scan_rejections(done, history_fn=history_fn, classify_fn=classify_fn)
+
+    recorded = 0
+    if record_fn:
+        for r in scan["rows"]:
+            # 조회 실패 행은 상태를 바꾸지 않는다(미상 유지) — 확인 실패를 '확인함'으로 만들지 않는다.
+            status = "" if r.get("error") else ("rejected" if r.get("comment") else "unknown")
+            try:
+                if record_fn(r["sid"], status=status, reject_kind=r.get("kind", ""),
+                             reject_comment=r.get("comment", ""),
+                             prescription=r.get("prescription", "")):
+                    recorded += 1
+            except Exception:
+                pass                                       # 기록 실패는 감시 자체를 죽이지 않음(집계에 미포함)
+
+    notified, notify_error = False, ""
+    has_rejection = any(r.get("comment") and not r.get("error") for r in scan["rows"])
+    if notify_fn and has_rejection:                        # 반려가 있을 때만 알린다(잡음 0)
+        try:
+            notify_fn(scan["alert"], scan["rows"])
+            notified = True
+        except Exception as exc:
+            notify_error = f"알림 발송 실패: {exc}"        # 감시는 성공, 알림만 실패(정직 분리)
+    return {**scan, "ok": True, "recorded": recorded, "notified": notified,
+            "notify_error": notify_error, "budget_exhausted": budget_exhausted,
+            "remaining_hint": max(0, len(items) - len(done)),
+            "elapsed_sec": round(clock() - start, 2)}
+
+
 def apply_prescription(row, *, reupload_fn=None, delete_fn=None, reissue_fn=None,
                        approved: bool = False) -> dict:
     """처방 실행 — **배선하되 오너 승인 게이트 뒤**(비가역). approved=False면 실행 0(보류 사유).
