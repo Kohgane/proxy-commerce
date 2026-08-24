@@ -117,6 +117,54 @@ def test_predict_category_used_for_display_code(monkeypatch):
     assert sent["payload"]["items"][0]["notices"][0]["noticeCategoryName"] == "휴대폰/스마트기기 액세서리"
 
 
+# ── 원산지 소스 우선순위(오너 지시·발명 금지·실측 우선) ────────────────────────────
+def test_resolve_origin_priority():
+    # ① 수집 명시.
+    assert RP.resolve_origin({"origin": "중국"}) == ("중국", "collected")
+    # ① 아마존 상세 Country of Origin — specs.
+    assert RP.resolve_origin({"specs": [("Country of Origin", "Vietnam")]}) == ("Vietnam", "amazon_field")
+    # ① 본문 정규식.
+    assert RP.resolve_origin({"description": "Brand X. Country of Origin: China. Warranty 1yr"}) \
+        == ("China", "amazon_field")
+    assert RP.resolve_origin({"description": "Designed in US, Made in Vietnam"})[0] == "Vietnam"
+    # ② 브랜드 본사국 추정(라벨).
+    bc = lambda b: "중국" if b.lower() == "torras" else None
+    o, src = RP.resolve_origin({"brand": "TORRAS", "title": "TORRAS 케이스"}, brand_country_fn=bc)
+    assert o == "중국" and src == "brand_inferred"
+    # ③ 아무 소스 없음 → 보류.
+    assert RP.resolve_origin({"brand": "무명", "title": "무명 케이스"}, brand_country_fn=lambda b: None) \
+        == ("", "none")
+
+
+def test_load_brand_country_map(tmp_path):
+    import json as _j
+    p = tmp_path / "brand_costs.json"
+    p.write_text(_j.dumps({"TORRAS": {"country": "중국", "usd": 10},
+                           "Ystudio": {"hq_country": "대만"}}), encoding="utf-8")
+    m = RP.load_brand_country_map(str(p))
+    assert m["torras"] == "중국" and m["ystudio"] == "대만"
+    # 리스트 스키마 + 국가 필드 없는 브랜드는 제외.
+    p2 = tmp_path / "b2.json"
+    p2.write_text(_j.dumps([{"brand": "A", "origin": "베트남"}, {"brand": "B"}]), encoding="utf-8")
+    m2 = RP.load_brand_country_map(str(p2))
+    assert m2 == {"a": "베트남"}
+    assert RP.load_brand_country_map("/nonexistent.json") == {}   # 없으면 빈 맵(② 비활성)
+
+
+def test_review_row_origin_source_inferred_not_held():
+    # brand_inferred는 값 채우되 보류 안 함(라벨링) — 오너가 검수표에서 판단.
+    bc = lambda b: "중국" if b.lower() == "torras" else None
+    r = RP.build_source_review_row({"title_ko": "TORRAS 케이스", "brand": "TORRAS",
+                                    "currency": "KRW", "price_original": 30000}, brand_country_fn=bc)
+    assert r["origin"] == "중국" and r["origin_source"] == "brand_inferred"
+    assert r["notice_hold"] is False and r["notice_preview"]["origin_inferred"] is True
+    assert "추정" in r["notice_preview"]["origin_source_ko"]
+    # 아마존 실측은 실측 라벨.
+    r2 = RP.build_source_review_row({"title_ko": "USB 허브", "specs": [("Country of Origin", "China")],
+                                     "currency": "KRW", "price_original": 20000})
+    assert r2["origin_source"] == "amazon_field" and r2["notice_preview"]["origin_inferred"] is False
+
+
 # ── 검수표 고시정보 미리보기(등록 전 오너 확인) ──────────────────────────────────
 def test_review_row_notice_preview():
     r = RP.build_source_review_row({"title_ko": "TORRAS 케이스", "brand": "TORRAS",

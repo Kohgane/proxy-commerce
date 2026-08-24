@@ -7,7 +7,9 @@ P1 = 검수표(등록 없음). P3 = 검수 통과분을 **카나리 게이트**�
 """
 from __future__ import annotations
 
+import json
 import os
+import re
 from typing import Optional
 
 from src.pipeline.coupang_replicate import (
@@ -40,6 +42,101 @@ def _brand_of(draft: dict, title: str) -> str:
     if b:
         return b
     return (title or "").strip().split(" ")[0] if title else ""
+
+
+# ── 원산지 소스 우선순위(오너 지시·발명 금지·실측 우선) ────────────────────────────
+#   ① 아마존 상세 Country of Origin 필드(스펙/본문 실측) · ② 브랜드 본사 국가(추정·라벨링) · ③ 없으면 보류.
+_ORIGIN_LABEL_RE = re.compile(r"(country\s*of\s*origin|원산지|제조국)", re.I)
+_ORIGIN_VALUE_RE = re.compile(
+    r"(?:country\s*of\s*origin|원산지|제조국)\s*[:：]\s*([A-Za-z가-힣][A-Za-z가-힣 ]{0,20})", re.I)
+_MADE_IN_RE = re.compile(r"made\s*in\s+([A-Za-z][A-Za-z ]{0,20})", re.I)
+
+
+def _origin_from_detail(draft: dict) -> str:
+    """수집 상세에서 'Country of Origin' 실측값 추출(아마존 상세 필드). specs 우선 → 본문 정규식."""
+    for pair in (draft.get("specs") or []):
+        try:
+            label, value = pair[0], pair[1]
+        except (TypeError, IndexError, KeyError):
+            label, value = (pair.get("label"), pair.get("value")) if isinstance(pair, dict) else ("", "")
+        if _ORIGIN_LABEL_RE.search(str(label or "")):
+            v = str(value or "").strip()
+            if v:
+                return v
+    text = " ".join(str(draft.get(k) or "") for k in
+                    ("description", "description_en", "description_original", "detail_text", "text"))
+    m = _ORIGIN_VALUE_RE.search(text)
+    if m:
+        return m.group(1).strip()
+    m2 = _MADE_IN_RE.search(text)
+    if m2:
+        return m2.group(1).strip()
+    return ""
+
+
+_BRAND_COUNTRY_CACHE = {"loaded": False, "map": {}}
+
+
+def load_brand_country_map(path: str = "data/brand_costs.json") -> dict:
+    """브랜드→본사국가 맵(오너 자산 `brand_costs.json` 있으면). 스키마 유연(country/origin/hq_country 탐색).
+
+    파일 없거나 국가 필드 없으면 {}(→ ② 경로 비활성, ③ 보류). 발명 금지 — 파일에 있는 값만.
+    """
+    out = {}
+    try:
+        if not os.path.isfile(path):
+            return out
+        data = json.load(open(path, encoding="utf-8"))
+    except Exception:
+        return out
+    items = data.items() if isinstance(data, dict) else \
+        [((x or {}).get("brand"), x) for x in (data or []) if isinstance(x, dict)]
+    for b, v in items:
+        if not b or not isinstance(v, dict):
+            continue
+        c = v.get("country") or v.get("origin") or v.get("hq_country") or v.get("brand_country")
+        if c:
+            out[str(b).strip().lower()] = str(c).strip()
+    return out
+
+
+def _default_brand_country_fn(brand: str):
+    """기본 브랜드→국가(캐시). brand_costs.json 로드 1회. 없으면 None(② 비활성)."""
+    if not _BRAND_COUNTRY_CACHE["loaded"]:
+        _BRAND_COUNTRY_CACHE["map"] = load_brand_country_map()
+        _BRAND_COUNTRY_CACHE["loaded"] = True
+    return _BRAND_COUNTRY_CACHE["map"].get(str(brand or "").strip().lower())
+
+
+_ORIGIN_SOURCE_KO = {
+    "collected": "실측(수집)", "amazon_field": "실측(아마존 상세)",
+    "brand_inferred": "추정(브랜드 본사국)", "none": "미확인",
+}
+
+
+def resolve_origin(draft: dict, *, brand_country_fn=None) -> tuple:
+    """원산지 우선순위 해석. 반환: (origin:str, origin_source:str).
+
+    ① 수집 명시(origin/brand_country) → collected · ① 아마존 상세 Country of Origin → amazon_field ·
+    ② 브랜드 본사국(brand_country_fn/brand_costs.json) → brand_inferred(추정·라벨) · ③ 없음 → none(보류).
+    brand_inferred는 값을 채우되 **추정 라벨**을 남긴다(오너가 검수표에서 승인/보류 판단).
+    """
+    explicit = str((draft or {}).get("origin") or (draft or {}).get("brand_country") or "").strip()
+    if explicit:
+        return explicit, "collected"
+    amz = _origin_from_detail(draft or {})
+    if amz:
+        return amz, "amazon_field"
+    fn = brand_country_fn or _default_brand_country_fn
+    brand = _brand_of(draft or {}, ((draft or {}).get("title_ko") or (draft or {}).get("title") or ""))
+    if brand:
+        try:
+            bc = fn(brand)
+        except Exception:
+            bc = None
+        if bc:
+            return str(bc).strip(), "brand_inferred"
+    return "", "none"
 
 
 def kr_ship_viability(brand: str, title: str = "", url: str = "", *, check_fn=None) -> dict:
@@ -114,7 +211,8 @@ def explain_forbidden(reason: Optional[str], title: str) -> Optional[dict]:
 
 def build_source_review_row(draft: dict, *, url: str = "", channel: str = "woocommerce_multishop",
                             blacklist=None, margin_rate: float = DEFAULT_MARGIN_RATE,
-                            fx_rate: Optional[float] = None, ship_check_fn=None, ship_cost_fn=None) -> dict:
+                            fx_rate: Optional[float] = None, ship_check_fn=None, ship_cost_fn=None,
+                            brand_country_fn=None) -> dict:
     """수집 초안(draft) → 검수표 1행(파일럿 동형). **등록 안 함**(registered=False 불변).
 
     - 제목: 번역 초안(title_ko) 재정제(clean_title_ko) + 절단/CJK 플래그(조용히 자르지 않음).
@@ -155,16 +253,20 @@ def build_source_review_row(draft: dict, *, url: str = "", channel: str = "wooco
     ship = kr_ship_viability(brand, title, url, check_fn=ship_check_fn)
 
     # ── 고시정보 미리보기(P3 카나리 반려 대응) — 등록 전 오너가 실값을 본다. 발명 금지·사실만. ──
-    origin = str(draft.get("origin") or draft.get("brand_country") or "").strip()
+    #   원산지 소스 우선순위(오너): ①아마존 상세 실측 → ②브랜드 본사국 추정(라벨) → ③없으면 보류.
+    origin, origin_source = resolve_origin(draft, brand_country_fn=brand_country_fn)
     notice_preview = {
         "제조자": brand or "미확인",
         "수입자": "고가네",                                   # 기본 계정 상호(우주대행 등록 시 교체)
         "원산지": origin or "미확인 — 등록 보류(추정 금지)",
         "origin_verified": bool(origin),
+        "origin_source": origin_source,                       # collected/amazon_field/brand_inferred/none
+        "origin_source_ko": _ORIGIN_SOURCE_KO.get(origin_source, origin_source),
+        "origin_inferred": origin_source == "brand_inferred", # 추정 → 오너 검수표에서 승인/보류 판단
         "AS연락처": "판매자 연락처(설정값)",
         "인증": "인증 대상 아님(실측 확인 필요)",
     }
-    notice_hold = not bool(origin)                            # 원산지 미확인 → 등록 시 보류(사유 표기)
+    notice_hold = (origin_source == "none")                   # 소스 전무 시만 보류(추정은 채우되 라벨)
 
     # ── 배송비(국내) — 주입 hook. 미상이면 미반영(마진에 0)·정직 표기 ────────────────
     ship_cost_krw = None
@@ -200,7 +302,7 @@ def build_source_review_row(draft: dict, *, url: str = "", channel: str = "wooco
         "target_channel": channel,
         "image_count": len(images), "thumbnail": (images[0] if images else ""),
         "source": draft.get("source") or draft.get("adapter_used"),
-        "brand": brand, "origin": origin,              # 고시정보 실값 배선(등록 시 uploader가 사용)
+        "brand": brand, "origin": origin, "origin_source": origin_source,   # 고시정보 실값(등록 시 uploader가 사용)
         "notice_preview": notice_preview, "notice_hold": notice_hold,   # 고시정보 미리보기 + 원산지 보류
         "forbidden": fb, "forbidden_detail": explain_forbidden(fb, title),
         "excluded": bool(fb), "registered": False,
@@ -210,7 +312,7 @@ def build_source_review_row(draft: dict, *, url: str = "", channel: str = "wooco
 def build_source_review(urls, *, collect_fn, channel: str = "woocommerce_multishop",
                         blacklist=None, margin_rate: float = DEFAULT_MARGIN_RATE,
                         fx_rate: Optional[float] = None, cap: int = 50,
-                        ship_check_fn=None, ship_cost_fn=None) -> dict:
+                        ship_check_fn=None, ship_cost_fn=None, brand_country_fn=None) -> dict:
     """소싱 URL 목록 → 검수표. collect_fn(url)=서버 수집(주입). **등록 없음.**
 
     수집 실패/취급금지는 조용히 버리지 않고 failed/excluded로 사유와 함께 분리.
@@ -233,7 +335,8 @@ def build_source_review(urls, *, collect_fn, channel: str = "woocommerce_multish
             continue
         review.append(build_source_review_row(draft, url=u, channel=channel, blacklist=blacklist,
                                                margin_rate=margin_rate, fx_rate=fx_rate,
-                                               ship_check_fn=ship_check_fn, ship_cost_fn=ship_cost_fn))
+                                               ship_check_fn=ship_check_fn, ship_cost_fn=ship_cost_fn,
+                                               brand_country_fn=brand_country_fn))
     return {
         "count": len(review),
         "review_pass": [r for r in review if not r["excluded"]],

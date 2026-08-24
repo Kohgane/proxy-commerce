@@ -124,7 +124,12 @@
                 <div>수입자 {{ r.notice_preview['수입자'] }}</div>
                 <div>원산지
                   {% if r.notice_preview['origin_verified'] %}<strong>{{ r.notice_preview['원산지'] }}</strong>
-                  {% else %}<span class="pc-badge pc-badge-off" title="추정 금지 — 원산지 수집값 없으면 등록 보류">미확인·보류</span>{% endif %}
+                    {% if r.notice_preview['origin_inferred'] %}
+                    <span class="pc-badge pc-badge-off" title="브랜드 본사국 추정 — 오너 승인/보류 판단">추정(브랜드)</span>
+                    {% else %}
+                    <span class="pc-badge pc-badge-on" title="{{ r.notice_preview['origin_source_ko'] }}">실측</span>
+                    {% endif %}
+                  {% else %}<span class="pc-badge pc-badge-off" title="추정 금지 — 원산지 소스 없으면 등록 보류">미확인·보류</span>{% endif %}
                 </div>
               </div>
               {% else %}<span class="text-muted">-</span>{% endif %}
