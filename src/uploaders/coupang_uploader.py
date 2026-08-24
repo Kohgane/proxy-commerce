@@ -5,6 +5,7 @@ import hmac
 import logging
 import math
 import os
+import re
 import time
 from datetime import datetime, timezone
 
@@ -125,6 +126,7 @@ class CoupangUploader(BaseUploader):
                                               self.DEFAULT_DELIVERY_METHOD)
         self.delivery_charge_type = self._ship_env('COUPANG_DELIVERY_CHARGE_TYPE', 'FREE')
         self._delivery_companies_cache = None
+        self._meta_cache = {}            # displayCategoryCode → 카테고리 메타 원문(고시정보+속성 단일 소스)
         self._notice_schema_cache = {}   # displayCategoryCode → 고시정보 스키마(메타 API, 1회 조회)
         self._predict_cache = {}         # 상품명 → 예측 categoryId
         if not self.access_key:
@@ -250,7 +252,17 @@ class CoupangUploader(BaseUploader):
             _, hold = self._build_notices(product, schema)
             if hold:
                 return {'success': False, 'error': hold, 'sku': product.get('sku', ''), 'held': True}
-            payload = self._build_product_payload(product, notice_schema=schema)
+            # 필수 구매 옵션(attributes) — 메타 스키마로 채우고, 못 채운 필수 속성이 있으면 등록 중단.
+            #   카나리 9차 거부("필수 구매 옵션 … 존재하지 않습니다") 재발 방지.
+            attr_schema = self.get_category_attribute_schema(cat)
+            attributes = self.build_attrs(product, attr_schema)
+            unmet = self.missing_required_attrs(attributes, attr_schema)
+            if unmet:
+                return {'success': False, 'held': True, 'sku': product.get('sku', ''),
+                        'error': ('필수 구매 옵션 미충족으로 등록 중단(빈 값 전송 금지): '
+                                  + ', '.join(unmet))}
+            payload = self._build_product_payload(product, notice_schema=schema,
+                                                  attr_schema=attr_schema)
             path = '/v2/providers/seller_api/apis/api/v1/marketplace/seller-products'
             result = self._api_request('POST', path, data=payload)
             if 'error' in result:
@@ -461,6 +473,50 @@ class CoupangUploader(BaseUploader):
         self._predict_cache[name] = cid
         return cid
 
+    def get_category_meta(self, display_category_code: str) -> dict:
+        """카테고리 메타 API 응답 `data` 원문(고시정보·속성 스키마의 **단일 소스**). 실패 시 {}.
+
+        같은 응답에 `noticeCategories`(고시정보)와 `attributes`(구매 옵션 스키마)가 함께 온다 —
+        카테고리당 1회만 호출해 둘 다 여기서 파생한다(왕복 절약·스키마 불일치 0).
+        """
+        code = str(display_category_code or '').strip()
+        if not code:
+            return {}
+        if code in self._meta_cache:
+            return self._meta_cache[code]
+        data = {}
+        try:
+            res = self._api_request('GET', self.NOTICE_META_PATH.format(code=code))
+            d = res.get('data') if isinstance(res, dict) else None
+            if isinstance(d, dict):
+                data = d
+        except Exception as exc:
+            logger.warning('카테고리 메타 조회 실패(폴백): %s', exc)
+        self._meta_cache[code] = data
+        return data
+
+    def get_category_attribute_schema(self, display_category_code: str) -> list:
+        """이 카테고리의 **구매 옵션(attributes) 스키마**. 카나리 9차 거부('필수 구매 옵션 없음') 대응.
+
+        반환: [{'attributeTypeName', 'required'(bool), 'exposed', 'dataType'}] · 조회 실패 시 [].
+        `required`는 쿠팡 표기(MANDATORY/필수/true) 정규화. 발명 0 — 응답에 있는 것만.
+        """
+        out = []
+        for a in (self.get_category_meta(display_category_code).get('attributes') or []):
+            if not isinstance(a, dict):
+                continue
+            name = str(a.get('attributeTypeName') or '').strip()
+            if not name:
+                continue
+            req = str(a.get('required') or '').strip().upper()
+            out.append({
+                'attributeTypeName': name,
+                'required': req in ('MANDATORY', 'REQUIRED', 'TRUE', 'Y', '필수'),
+                'exposed': str(a.get('exposed') or '').strip() or 'EXPOSED',
+                'dataType': str(a.get('dataType') or '').strip(),
+            })
+        return out
+
     def get_category_notice_schema(self, display_category_code: str) -> list:
         """카테고리 메타 API로 **이 카테고리의 필수 고시정보 스키마**(동적·권위). '기타 재화' 기본값 폐기.
 
@@ -472,17 +528,12 @@ class CoupangUploader(BaseUploader):
         if code in self._notice_schema_cache:
             return self._notice_schema_cache[code]
         out = []
-        try:
-            res = self._api_request('GET', self.NOTICE_META_PATH.format(code=code))
-            data = res.get('data') if isinstance(res, dict) else None
-            for nc in ((data or {}).get('noticeCategories') or []):
-                names = [d.get('noticeCategoryDetailName')
-                         for d in (nc.get('noticeCategoryDetailNames') or [])
-                         if d.get('noticeCategoryDetailName')]
-                if nc.get('noticeCategoryName') and names:
-                    out.append({'noticeCategoryName': nc['noticeCategoryName'], 'details': names})
-        except Exception as exc:
-            logger.warning('고시정보 스키마 조회 실패(폴백 기타재화): %s', exc)
+        for nc in (self.get_category_meta(code).get('noticeCategories') or []):
+            names = [d.get('noticeCategoryDetailName')
+                     for d in (nc.get('noticeCategoryDetailNames') or [])
+                     if d.get('noticeCategoryDetailName')]
+            if nc.get('noticeCategoryName') and names:
+                out.append({'noticeCategoryName': nc['noticeCategoryName'], 'details': names})
         self._notice_schema_cache[code] = out
         return out
 
@@ -547,6 +598,105 @@ class CoupangUploader(BaseUploader):
             'contentDetails': [{'content': body, 'detailType': 'TEXT'}],
         }]
 
+    # ── attributes(필수 구매 옵션) 정본 — 오너 SSH 실측 `build_opt.py::attr_safe`(5,691건 통과) ──────
+    #   카나리 9차 거부: "필수 구매 옵션 (미입력시 등록/노출 제한) 존재하지 않습니다."
+    #   처방은 **삭제가 아니라 실값 대체**(반려 처리 표준). 아래 규칙은 실증값이라 그대로 승계한다.
+    ATTR_BAD_VALUES = frozenset({'', '없음', '-', 'None', 'null',
+                                 '상세설명 참조', '상세페이지 참조', '상세참조'})
+    _ATTR_COLOR_RE = re.compile(
+        r'(Black|White|Blue|Red|Green|Gold|Silver|Brown|Navy|Gray|Grey|Pink|Ivory|Beige|Clear)', re.I)
+    _ATTR_SHOE_RE = re.compile(r'\b(2[2-9]0|3[0-1]0)\b')
+    _ATTR_NIB_RE = re.compile(r'\b(EF|MF|F|M|B|BB)\b')
+    ATTR_VALUE_MAX = 28                                  # 정본: str(av)[:28]
+    ATTR_FALLBACK = ({'attributeTypeName': '수량', 'attributeValueName': '1'},)
+
+    @classmethod
+    def _attr_value_from_name(cls, type_name: str, product_name: str) -> str:
+        """속성명 + 상품명 → 실값. 상품명에서 못 뽑으면 속성별 기본값(정본 표 그대로)."""
+        an, name = str(type_name or ''), str(product_name or '')
+        if '색상' in an:
+            m = cls._ATTR_COLOR_RE.search(name)
+            return m.group(1) if m else '블랙'
+        if '신발사이즈' in an:                            # ※ FREE/프리는 쿠팡이 거부 — 숫자만
+            m = cls._ATTR_SHOE_RE.search(name)
+            return m.group(1) if m else '260'
+        if '펜촉' in an or '닙' in an or '굵기' in an:
+            m = cls._ATTR_NIB_RE.search(name)
+            return m.group(1) if m else 'M'
+        if '수량' in an or '개수' in an:
+            return '1'
+        if '중량' in an or '무게' in an:
+            return '100'
+        if '세트' in an:
+            return '단품'
+        if '구성품' in an:
+            return '본품'
+        if '사이즈' in an or '크기' in an:
+            return 'FREE'
+        return '기타'
+
+    @classmethod
+    def attr_safe(cls, attrs, name: str = '') -> list:
+        """구매 옵션 속성 정제 — **정본 승계**(발명 0).
+
+        규칙: gtin 속성 스킵 · BAD 값(및 신발사이즈의 FREE/프리)은 상품명에서 실값 추출 후 기본값 ·
+        값 28자 절단 · `exposed` 보존 · 같은 attributeTypeName은 **먼저 온 것만** ·
+        결과가 비면 **`[{수량: 1}]` 반환**(빈 배열 전송 금지 — 9차 거부의 직접 처방).
+        """
+        out, seen = [], set()
+        for a in (attrs or []):
+            if not isinstance(a, dict):
+                continue
+            an = str(a.get('attributeTypeName') or '').strip()
+            if not an or 'gtin' in an.lower():            # gtin = 바코드 계열 → 전송 안 함(정본)
+                continue
+            if an in seen:                                # 중복 차원은 먼저 온 것만(정본)
+                continue
+            av = a.get('attributeValueName')
+            av = '' if av is None else str(av).strip()
+            bad = av in cls.ATTR_BAD_VALUES
+            if not bad and '신발사이즈' in an and av.upper() in ('FREE', '프리'):
+                bad = True                                # 신발사이즈 FREE = 쿠팡 거부(실증)
+            if bad:
+                av = cls._attr_value_from_name(an, name)
+            item = {'attributeTypeName': an, 'attributeValueName': str(av)[:cls.ATTR_VALUE_MAX]}
+            if a.get('exposed'):
+                item['exposed'] = a['exposed']            # 원본 exposed 보존(정본)
+            out.append(item)
+            seen.add(an)
+        return out or [dict(x) for x in cls.ATTR_FALLBACK]
+
+    def build_attrs(self, product: dict, attr_schema=None) -> list:
+        """전송할 attributes. 상품이 준 속성 + **카테고리 메타 필수 속성**을 합쳐 `attr_safe`로 정제.
+
+        메타에 필수 속성이 있으면 값이 비어 있어도 **항목을 만들어** attr_safe가 실값으로 채운다
+        (빈 배열 = 카나리 9차 거부). 메타 조회 실패 시에도 fallback(수량 1)이 남는다.
+        """
+        name = str(product.get('title') or '')
+        attrs = [a for a in (product.get('attributes') or []) if isinstance(a, dict)]
+        have = {str(a.get('attributeTypeName') or '').strip() for a in attrs}
+        for s in (attr_schema or []):
+            if not s.get('required'):
+                continue                                  # 선택 속성은 만들지 않음(발명 최소)
+            an = s.get('attributeTypeName')
+            if an and an not in have:
+                attrs.append({'attributeTypeName': an, 'attributeValueName': '',
+                              'exposed': s.get('exposed') or 'EXPOSED'})
+        return self.attr_safe(attrs, name)
+
+    def missing_required_attrs(self, attributes, attr_schema=None) -> list:
+        """전송 직전 검증 — 메타가 요구하는 **필수 속성 중 실값이 없는 것**의 이름 목록.
+
+        gtin은 전송 대상이 아니므로 제외(정본). 비어 있지 않으면 호출부가 등록을 중단한다
+        (택배사·SKU 게이트와 동형 — 쓰레기 값으로 카나리 태우지 않는다).
+        """
+        filled = {str(a.get('attributeTypeName') or '').strip()
+                  for a in (attributes or [])
+                  if str(a.get('attributeValueName') or '').strip() not in self.ATTR_BAD_VALUES}
+        return [s['attributeTypeName'] for s in (attr_schema or [])
+                if s.get('required') and 'gtin' not in str(s.get('attributeTypeName', '')).lower()
+                and s.get('attributeTypeName') not in filled]
+
     def _build_images(self, product: dict) -> list:
         """옵션 이미지. 첫 장은 REPRESENTATION(대표), 나머지는 DETAIL이어야 한다."""
         images = []
@@ -560,7 +710,7 @@ class CoupangUploader(BaseUploader):
             })
         return images
 
-    def _build_product_payload(self, product: dict, notice_schema=None) -> dict:
+    def _build_product_payload(self, product: dict, notice_schema=None, attr_schema=None) -> dict:
         """Coupang Wing API용 상품 페이로드를 구성한다.
 
         쿠팡 createProduct 필수 필드를 모두 채운다(null/누락 시 등록 거부).
@@ -611,7 +761,8 @@ class CoupangUploader(BaseUploader):
             'images': self._build_images(product),
             'notices': self._build_notices(product, notice_schema)[0],  # 고시정보(실값). 보류판정=upload_product.
             'contents': self._build_contents(product),      # 상세컨텐츠(필수)
-            'attributes': list(product.get('attributes') or []),   # 카테고리 메타 기반(build_attrs 승계점)
+            # 필수 구매 옵션 — 정본 attr_safe(빈 배열 전송 금지·BAD 값 실값 대체·카나리 9차 거부 대응).
+            'attributes': self.build_attrs(product, attr_schema),
         }
         return {
             'displayCategoryCode': category_code,
