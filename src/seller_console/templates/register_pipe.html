@@ -144,6 +144,9 @@
                 </div>
                 {% endif %}
               {% else %}<span class="pc-badge pc-badge-on">정상</span>{% endif %}
+              {% for w in (r.warnings or []) %}
+              <div class="mt-1"><span class="pc-badge pc-badge-off" title="{{ w.reason }}"><i class="bi bi-exclamation-triangle"></i> {{ w.label }}</span></div>
+              {% endfor %}
             </td>
           </tr>
           {% endfor %}
