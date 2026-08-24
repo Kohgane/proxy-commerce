@@ -7568,7 +7568,9 @@ def _coupang_account_dispatch(product_data, account):
         "title": product_data.get("title_ko") or "상품",
         "price": int(product_data.get("sell_price_krw") or 0),
         "original_price": int(product_data.get("sell_price_krw") or 0),
-        "category_id": up.CATEGORY_MAP.get(cat, "76001") if hasattr(up, "CATEGORY_MAP") else "76001",
+        # 정본: 카테고리는 쿠팡 예측이 1차. 매핑은 예측 실패 시 폴백일 뿐, 임의 기본값(76001)은 주지 않는다
+        #   — 예측·매핑 둘 다 없으면 업로더가 등록을 중단한다(추측 전송 금지).
+        "category_id": (up.CATEGORY_MAP.get(cat, "") if cat else ""),
         "sku": (product_data.get("url") or "")[-40:],
         "description": product_data.get("description_html") or product_data.get("title_ko") or "",
         "images": product_data.get("images") or [],

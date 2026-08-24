@@ -67,9 +67,10 @@ def test_overseas_purchased_sets_pcc_and_notices(monkeypatch):
     assert maker and "Craftly" in maker[0] and "고가네" in maker[0]   # 제조자=브랜드 · 수입자=계정 상호
 
 
-def test_non_overseas_default_no_pcc(monkeypatch):
-    # 명시 안 하면 env 기본(0) → 일반 상품(pccNeeded False) 무회귀.
+def test_overseas_purchase_is_canonical_constant(monkeypatch):
+    # ★ 정본(5,691건 검증): 이 파이프는 **구매대행 전용**이라 overseasPurchased/pccNeeded를 상수로 보낸다.
+    #   env 스위치로 일반상품 표기하던 옛 동작은 폐기(오너 실측 승계).
     monkeypatch.delenv("COUPANG_OVERSEAS_PURCHASED", raising=False)
     u = CoupangUploader(access_key="a", secret_key="b", vendor_id="v")
-    payload = u._build_product_payload({"title": "국내 상품", "price": 10000, "images": ["u"]})
-    assert payload["items"][0]["pccNeeded"] is False
+    item = u._build_product_payload({"title": "국내 상품", "price": 10000, "images": ["u"]})["items"][0]
+    assert item["overseasPurchased"] == "OVERSEAS_PURCHASED" and item["pccNeeded"] is True
