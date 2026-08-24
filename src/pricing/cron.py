@@ -222,6 +222,31 @@ def translate_drain_cron():
     except (TypeError, ValueError):
         pilot_chunk = 3
 
+    # 동기 검증 모드(?sync=1) — 수동 확인 전용(cron-job.org 아님). 번역 드레인을 **인라인 실행**해
+    #   processed·remaining·budget_exhausted를 응답으로 반환(3회 연속 호출로 remaining 감소 수렴 확인).
+    #   ※ 30s를 넘을 수 있으니 cron-job.org엔 쓰지 말 것(그쪽은 sync 없이 202 async 유지).
+    if str(request.args.get("sync", "")).lower() in ("1", "true", "yes"):
+        import time as _t
+        if not _tick_lock.acquire(blocking=False):
+            return jsonify({"ok": True, "status": "already_running", "skipped": True,
+                            "message": "백그라운드 틱 진행 중 — sync 스킵",
+                            "last_tick": {k: _last_tick.get(k) for k in ("total_sec", "drain_sec", "pilot_sec")}}), 200
+        try:
+            t0 = _t.monotonic()
+            from src.seller_console.translate_worker import drain_once
+            d = drain_once(limit=limit, time_budget_sec=_tick_budget_sec())
+        except Exception as exc:
+            logger.error("sync 번역 드레인 오류: %s", exc)
+            return jsonify({"ok": False, "error": "번역 드레인 중 오류가 발생했습니다."}), 500
+        finally:
+            try:
+                _tick_lock.release()
+            except RuntimeError:
+                pass
+        d["mode"] = "sync"
+        d["route_elapsed_sec"] = round(_t.monotonic() - t0, 2)
+        return jsonify(d), 200
+
     # 중복 틱 진입 가드 — 이전 작업 미완이면 새 스레드 안 띄우고 스킵(202).
     if not _tick_lock.acquire(blocking=False):
         return jsonify({"ok": True, "status": "already_running", "skipped": True,
