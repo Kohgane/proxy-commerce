@@ -141,6 +141,30 @@ def test_route_concurrency_guard_skips_when_running(monkeypatch):
         CRON._tick_lock.release()
 
 
+def test_sync_mode_returns_fields_and_remaining_converges(monkeypatch):
+    # ?sync=1 검증 모드: 인라인 드레인 → processed·remaining·budget_exhausted 반환. 3회 호출 remaining 수렴.
+    monkeypatch.delenv("CRON_SECRET", raising=False)
+    import src.pricing.cron as CRON
+    TW, clk, state = _wire(monkeypatch, total_jobs=12, item_secs=0.0)
+    if CRON._tick_lock.locked():
+        try: CRON._tick_lock.release()
+        except RuntimeError: pass
+    from src.order_webhook import app
+    c = app.test_client()
+    seen = []
+    for _ in range(3):
+        r = c.post("/cron/translate-drain?sync=1&limit=3")     # limit=3 → 회당 3건(결정적)
+        assert r.status_code == 200
+        d = r.get_json()
+        assert d["mode"] == "sync" and "route_elapsed_sec" in d
+        seen.append((d["processed"], d["remaining"], d["budget_exhausted"]))
+        assert not CRON._tick_lock.locked()                    # sync도 락 해제
+    # remaining 감소 수렴: 9 → 6 → 3 (12건을 회당 3건씩).
+    assert [s[0] for s in seen] == [3, 3, 3]                    # 회당 처리 3
+    assert [s[1] for s in seen] == [9, 6, 3]                    # remaining 단조 감소
+    assert all(s[1] < 12 for s in seen) and seen[0][1] > seen[1][1] > seen[2][1]
+
+
 def test_run_full_tick_budget_split_and_releases_lock(monkeypatch):
     # 백그라운드 실작업: 번역 몫 = min(drain_share 20, tick 45 - pilot_min 5)=20, 파일럿엔 나머지. 락 해제 보장.
     for v in ("CRON_TICK_BUDGET_SEC", "TRANSLATE_DRAIN_BUDGET_SEC"):
