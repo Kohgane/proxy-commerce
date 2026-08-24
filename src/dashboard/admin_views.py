@@ -3877,6 +3877,34 @@ def _reject_watch_uploader(account: str):
     return CoupangUploader(access_key=ak, secret_key=sk, vendor_id=vid, account=account), None
 
 
+@admin_panel_bp.get("/coupang-delivery-companies")
+def coupang_delivery_companies_route():
+    """쿠팡 **택배사 코드 정본 목록** 조회(카나리 6차 거부 대응). 조회 전용 — 등록 안 함.
+
+    Query: account(gogane/woojoo). 자격 미설정이면 정직 안내(가짜 목록 0). 라이브는 Render 전용.
+    오너가 이 목록에서 고른 코드를 COUPANG_[계정_]DELIVERY_COMPANY_CODE 로 설정한다.
+    """
+    from flask import jsonify, request
+    account = (request.args.get("account") or "gogane").strip().lower()
+    if account not in ("gogane", "woojoo"):
+        return jsonify({"ok": False, "error": f"알 수 없는 계정: {account}"}), 400
+    up, err = _reject_watch_uploader(account)
+    if err:
+        return jsonify({"ok": False, "error": err, "account": account}), 200
+    rows = up.get_delivery_companies()
+    current = up.resolve_delivery_company_code()
+    return jsonify({
+        "ok": True, "account": account, "count": len(rows), "companies": rows,
+        "current_code": current or None,
+        "current_source": ("env 코드" if up.delivery_company_code and not up.delivery_company_name
+                           else ("이름 힌트 매칭" if current else "미설정")),
+        "name_hint": up.delivery_company_name or None,
+        "note": ("이 목록에서 고른 code를 COUPANG_{}_DELIVERY_COMPANY_CODE 로 설정하세요. "
+                 "또는 COUPANG_{}_DELIVERY_COMPANY_NAME(예: 우체국)만 설정하면 여기서 자동 매칭합니다."
+                 ).format(account.upper(), account.upper()),
+    })
+
+
 @admin_panel_bp.route("/reject-watch/scan", methods=["GET", "POST"])
 def reject_watch_scan():
     """P4 반려감시 — **조회·분류·알림까지**(실행 없음). sids 반려상품의 `/histories` comment로 3유형 자동 분류.

@@ -62,6 +62,9 @@ class CoupangUploader(BaseUploader):
     CATEGORY_PREDICT_PATH = '/v2/providers/openapi/apis/api/v1/categorization/predict'
     NOTICE_META_PATH = ('/v2/providers/seller_api/apis/api/v1/marketplace/'
                         'meta/category-related-metas/display-category-codes/{code}')
+    # 택배사 코드 정본 — 쿠팡 메타 API가 유효 코드 목록을 준다(**새 값 발명 금지**·카나리 6차 거부 대응).
+    DELIVERY_COMPANIES_PATH = ('/v2/providers/openapi/apis/api/v1/marketplace/'
+                               'meta/coupang-delivery-companies')
 
     def __init__(self, access_key: str = None, secret_key: str = None, vendor_id: str = None,
                  account: str = None, overseas_purchased: bool = None):
@@ -105,6 +108,14 @@ class CoupangUploader(BaseUploader):
         #   쿠팡이 어느 문구를 받는지는 카나리 응답이 실측 — 거부되면 응답 원문 허용 문구로 env 교체.
         _fb = os.getenv('COUPANG_ORIGIN_FALLBACK')
         self.origin_fallback = ('해외' if _fb is None else _fb.strip())
+        # 택배사·배송 방식(카나리 6차 거부: "유효하지 않은 택배사 코드(DIRECT_DELIVERY)").
+        #   **하드코딩 금지·발명 금지** — 계정별 env(접두 우선). 코드를 모르면 NAME 힌트로 쿠팡 메타 API에서
+        #   정확한 코드를 조회해 쓴다(정본=쿠팡). 둘 다 없으면 등록 전 정직 실패(가짜 코드 전송 0).
+        self.delivery_company_code = self._ship_env('COUPANG_DELIVERY_COMPANY_CODE')
+        self.delivery_company_name = self._ship_env('COUPANG_DELIVERY_COMPANY_NAME')   # 예: 우체국
+        self.delivery_method = self._ship_env('COUPANG_DELIVERY_METHOD', 'SEQUENCIAL')
+        self.delivery_charge_type = self._ship_env('COUPANG_DELIVERY_CHARGE_TYPE', 'FREE')
+        self._delivery_companies_cache = None
         self._notice_schema_cache = {}   # displayCategoryCode → 고시정보 스키마(메타 API, 1회 조회)
         self._predict_cache = {}         # 상품명 → 예측 categoryId
         if not self.access_key:
@@ -177,6 +188,17 @@ class CoupangUploader(BaseUploader):
                         + ', '.join(missing)
                     ),
                     'sku': product.get('sku', ''),
+                }
+            # 택배사 코드 미확정 → 등록 전 정직 실패(카나리 6차 거부 재발 방지). 유효 코드는 쿠팡 목록이 정본.
+            if not self.resolve_delivery_company_code():
+                pfx = self.ACCOUNT_PREFIXES.get(self.account or '') or 'COUPANG'
+                return {
+                    'success': False, 'held': True, 'sku': product.get('sku', ''),
+                    'error': (
+                        '쿠팡 택배사 코드 미설정으로 등록 불가(유효하지 않은 코드 전송 금지). '
+                        f'{pfx}_DELIVERY_COMPANY_CODE 를 설정하거나 {pfx}_DELIVERY_COMPANY_NAME(예: 우체국)을 '
+                        '설정하세요. 유효 코드 목록은 GET /admin/coupang-delivery-companies 로 확인.'
+                    ),
                 }
             # 카테고리 예측(실 리프 ID) → 그 코드로 고시정보 스키마 조회(동적·권위). 네트워크는 이 경로에만.
             cat = self.predict_category(product.get('title', '')) or product.get('category_id', '76001')
@@ -324,6 +346,48 @@ class CoupangUploader(BaseUploader):
         '제조자/수입자',
         'A/S 책임자와 전화번호 또는 소비자상담 관련 전화번호',
     ]
+
+    def get_delivery_companies(self) -> list:
+        """쿠팡 택배사 코드 **정본 목록** 조회(메타 API). 실패/미지원 시 [](폴백 신호).
+
+        반환: [{"code","name"}]. 카나리 6차 거부("유효하지 않은 택배사 코드") 대응 — 코드를 지어내지 않고
+        쿠팡이 주는 목록에서 고른다. `/admin/coupang-delivery-companies`로 오너가 직접 조회 가능.
+        """
+        if self._delivery_companies_cache is not None:
+            return self._delivery_companies_cache
+        out = []
+        try:
+            res = self._api_request('GET', self.DELIVERY_COMPANIES_PATH)
+            data = res.get('data') if isinstance(res, dict) else None
+            rows = data if isinstance(data, list) else ((data or {}).get('deliveryCompanies') or [])
+            for r in rows:
+                if not isinstance(r, dict):
+                    continue
+                code = str(r.get('deliveryCompanyCode') or r.get('code') or '').strip()
+                name = str(r.get('deliveryCompanyName') or r.get('name') or '').strip()
+                if code:
+                    out.append({'code': code, 'name': name})
+        except Exception as exc:
+            logger.warning('택배사 코드 목록 조회 실패: %s', exc)
+        self._delivery_companies_cache = out
+        return out
+
+    def resolve_delivery_company_code(self) -> str:
+        """전송할 택배사 코드 확정. ① env 코드(정본 승계) → ② env 이름 힌트로 쿠팡 목록에서 매칭 → ③ ''.
+
+        ③(빈 값)이면 호출부가 **등록 전 정직 실패**시킨다 — 유효하지 않은 코드를 보내 카나리를 또 태우지 않는다.
+        """
+        if self.delivery_company_code:
+            return self.delivery_company_code
+        hint = (self.delivery_company_name or '').strip()
+        if not hint:
+            return ''
+        for row in self.get_delivery_companies():          # 정본=쿠팡 목록(발명 0)
+            name = row.get('name') or ''
+            if hint == name or (hint and hint in name):
+                self.delivery_company_code = row['code']    # 1회 확정 후 캐시
+                return row['code']
+        return ''
 
     def predict_category(self, product_name: str) -> str:
         """쿠팡 카테고리 예측 API로 상품명 → **실 카테고리ID**(리프). 실패/미지원 시 '' (폴백 CATEGORY_MAP)."""
@@ -500,9 +564,9 @@ class CoupangUploader(BaseUploader):
             'productGroup': '',
             'description': product.get('description_html', ''),
             # 배송
-            'deliveryMethod': 'SEQUENCIAL',
-            'deliveryCompanyCode': 'DIRECT_DELIVERY',
-            'deliveryChargeType': 'FREE',
+            'deliveryMethod': self.delivery_method,          # env COUPANG_[계정_]DELIVERY_METHOD
+            'deliveryCompanyCode': self.resolve_delivery_company_code(),   # env 코드 → 쿠팡 목록 매칭(발명 0)
+            'deliveryChargeType': self.delivery_charge_type,  # env COUPANG_[계정_]DELIVERY_CHARGE_TYPE
             'deliveryCharge': 0,
             'freeShipOverAmount': 0,
             'deliveryChargeOnReturn': self.return_charge,

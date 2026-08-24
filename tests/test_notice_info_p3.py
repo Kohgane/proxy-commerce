@@ -88,6 +88,7 @@ def test_upload_product_registers_with_fallback_origin(monkeypatch):
     for s in ("VENDOR_USER_ID", "RETURN_CENTER_CODE", "OUTBOUND_SHIPPING_PLACE_CODE",
               "RETURN_ZIP_CODE", "RETURN_ADDRESS", "RETURN_CHARGE_NAME", "COMPANY_CONTACT_NUMBER"):
         monkeypatch.setenv(f"COUPANG_{s}", "x")
+    monkeypatch.setenv("COUPANG_DELIVERY_COMPANY_CODE", "EPOST")   # 택배사 코드(필수·카나리 6차)
     u = CoupangUploader(access_key="a", secret_key="b", vendor_id="v")
     called = {"post": False}
     def _api(m, p, data=None):
@@ -116,6 +117,7 @@ def test_predict_category_used_for_display_code(monkeypatch):
     for s in ("VENDOR_USER_ID", "RETURN_CENTER_CODE", "OUTBOUND_SHIPPING_PLACE_CODE",
               "RETURN_ZIP_CODE", "RETURN_ADDRESS", "RETURN_CHARGE_NAME", "COMPANY_CONTACT_NUMBER"):
         monkeypatch.setenv(f"COUPANG_{s}", "x")
+    monkeypatch.setenv("COUPANG_DELIVERY_COMPANY_CODE", "EPOST")   # 택배사 코드(필수·카나리 6차)
     u = CoupangUploader(access_key="a", secret_key="b", vendor_id="v")
     sent = {}
     def _api(m, p, data=None):
