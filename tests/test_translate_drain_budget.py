@@ -96,9 +96,53 @@ def test_noop_without_pg_has_budget_fields(monkeypatch):
     assert out["processed"] == 0 and out["budget_exhausted"] is False and out["remaining"] == 0
 
 
-def test_route_returns_200_with_budget_fields(monkeypatch):
-    # 라우트는 예산 소진 부분결과도 HTTP 200으로 반환(cron-job.org 초록 계약).
+def test_route_returns_202_immediately_and_spawns_tick(monkeypatch):
+    # cron-job.org 30s 하드 상한 → 라우트는 즉시 202(작업 시작됨)만 반환, 실작업은 백그라운드.
     monkeypatch.delenv("CRON_SECRET", raising=False)
+    import src.pricing.cron as CRON
+    spawned = {}
+    monkeypatch.setattr(CRON, "_spawn_background_tick",
+                        lambda app, limit, pilot_chunk, tick_budget: spawned.update(
+                            {"limit": limit, "pilot_chunk": pilot_chunk, "budget": tick_budget}))
+    # 락이 자유 상태여야(다른 테스트 잔류 방지) — 강제 초기화.
+    if CRON._tick_lock.locked():
+        try: CRON._tick_lock.release()
+        except RuntimeError: pass
+    from src.order_webhook import app
+    c = app.test_client()
+    r = c.post("/cron/translate-drain?limit=7&pilot_chunk=2")
+    assert r.status_code == 202                                   # 즉답 202 = cron 성공 판정
+    d = r.get_json()
+    assert d["status"] == "accepted" and d["limit"] == 7 and d["pilot_chunk"] == 2
+    assert spawned == {"limit": 7, "pilot_chunk": 2, "budget": CRON._tick_budget_sec()}
+    # 스폰(몽키패치)이 락을 안 풀었으므로 라우트가 잡은 락은 여전히 held → 정리.
+    assert CRON._tick_lock.locked()
+    CRON._tick_lock.release()
+
+
+def test_route_concurrency_guard_skips_when_running(monkeypatch):
+    # 이전 틱 미완(락 held)이면 새 스레드 안 띄우고 202 skip(중복 스레드 금지).
+    monkeypatch.delenv("CRON_SECRET", raising=False)
+    import src.pricing.cron as CRON
+    called = {"spawn": False}
+    monkeypatch.setattr(CRON, "_spawn_background_tick",
+                        lambda *a, **k: called.__setitem__("spawn", True))
+    CRON._last_tick.clear(); CRON._last_tick.update({"total_sec": 12.3, "drain_sec": 4.0, "pilot_sec": 8.3})
+    assert CRON._tick_lock.acquire(blocking=False)               # 이전 틱 진행 중 시뮬레이션
+    try:
+        from src.order_webhook import app
+        r = app.test_client().post("/cron/translate-drain")
+        assert r.status_code == 202
+        d = r.get_json()
+        assert d["skipped"] is True and d["status"] == "already_running"
+        assert d["last_tick"]["total_sec"] == 12.3               # 최근 틱 소요 노출
+        assert called["spawn"] is False                          # 중복 스레드 안 띄움
+    finally:
+        CRON._tick_lock.release()
+
+
+def test_run_full_tick_budget_split_and_releases_lock(monkeypatch):
+    # 백그라운드 실작업: 번역 몫 = min(drain_share 20, tick 45 - pilot_min 5)=20, 파일럿엔 나머지. 락 해제 보장.
     for v in ("CRON_TICK_BUDGET_SEC", "TRANSLATE_DRAIN_BUDGET_SEC"):
         monkeypatch.delenv(v, raising=False)
     import src.seller_console.translate_worker as TW
@@ -106,40 +150,17 @@ def test_route_returns_200_with_budget_fields(monkeypatch):
     seen = {}
     def _fake_drain(limit=10, time_budget_sec=None):
         seen["drain_budget"] = time_budget_sec
-        return {"ok": True, "processed": 3, "success": 3, "failed": 0, "retried": 0,
-                "skipped": 0, "remaining": 97, "budget_exhausted": True, "elapsed_sec": time_budget_sec}
+        return {"ok": True, "processed": 3, "remaining": 97, "budget_exhausted": True}
     def _fake_pilot(chunk=3, time_budget_sec=None):
         seen["pilot_budget"] = time_budget_sec
         return {"revived": 1, "backfilled": 2, "remaining_pending": 5, "budget_exhausted": False}
     monkeypatch.setattr(TW, "drain_once", _fake_drain)
     monkeypatch.setattr(CRON, "_run_pilot_finish_tick", _fake_pilot)
     from src.order_webhook import app
-    c = app.test_client()
-    r = c.post("/cron/translate-drain")
-    assert r.status_code == 200                                   # 30초 계약 — 항상 200
-    d = r.get_json()
-    assert d["budget_exhausted"] is True and d["remaining"] == 97 and d["processed"] == 3
-    assert d["pilot_finish"]["revived"] == 1                      # 피기백 결과 포함
-    assert "tick_elapsed_sec" in d
-    # 예산 분배: 번역 몫 = min(drain_share 10, tick 22 - pilot_min 5) = 10, 파일럿엔 나머지 예약.
-    assert seen["drain_budget"] == 10.0 and seen["pilot_budget"] > 5.0
-
-
-def test_route_skips_pilot_when_tick_budget_tiny(monkeypatch):
-    # 틱 예산이 아주 작으면 번역 후 남는 예산 < 파일럿 최소 → 파일럿 스킵(스택 타임아웃 방지).
-    monkeypatch.delenv("CRON_SECRET", raising=False)
-    monkeypatch.setenv("CRON_TICK_BUDGET_SEC", "0.01")
-    import src.seller_console.translate_worker as TW
-    import src.pricing.cron as CRON
-    called = {"pilot": False}
-    monkeypatch.setattr(TW, "drain_once",
-                        lambda limit=10, time_budget_sec=None: {"ok": True, "processed": 0, "remaining": 0,
-                                                                "budget_exhausted": False})
-    monkeypatch.setattr(CRON, "_run_pilot_finish_tick",
-                        lambda chunk=3, time_budget_sec=None: called.__setitem__("pilot", True) or {})
-    from src.order_webhook import app
-    c = app.test_client()
-    r = c.post("/cron/translate-drain")
-    d = r.get_json()
-    assert r.status_code == 200 and called["pilot"] is False      # 파일럿 스킵
-    assert "다음 틱" in d["pilot_finish"]["skipped"]
+    CRON._tick_lock.acquire(blocking=False)                     # 라우트가 잡은 상태 시뮬레이션
+    out = CRON._run_full_tick(app, limit=10, pilot_chunk=3, tick_budget=45.0)
+    assert seen["drain_budget"] == 20.0 and seen["pilot_budget"] > 5.0
+    assert out["drain"]["processed"] == 3 and out["pilot"]["revived"] == 1
+    assert "total_sec" in out and "drain_sec" in out
+    assert not CRON._tick_lock.locked()                         # finally에서 락 해제(무한 점유 방지)
+    assert CRON._last_tick.get("total_sec") is not None         # 최근 틱 기록(로그/진단)

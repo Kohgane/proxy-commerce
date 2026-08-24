@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading as _threading
 
 from flask import Blueprint, jsonify, request
 
@@ -112,9 +113,16 @@ def supabase_backup_cron():
 # 타임아웃 시키지 않도록 한 요청 전체를 벽시계로 캡([[동기 대량 라우트 타임아웃 지뢰]] 재발 대응).
 #   ※ 항목당 최악 지연(번역 W10 8s · 파일럿 수집+사이드로드 수초)이 있어, 예산 도달 후 진행중 1건이 초과할 수
 #     있다. cron이 여전히 빨강이면 CRON_TICK_BUDGET_SEC를 낮춘다(30s 계약 우선). 남은 건은 다음 틱 재개.
-_CRON_TICK_BUDGET_DEFAULT = 22.0
-_DRAIN_SHARE_DEFAULT = 10.0        # 번역 드레인 몫(상한). 파일럿 부활/마감이 굶지 않게 나머지 예약.
+# cron-job.org의 30초 타임아웃은 **플랫폼 하드 상한**(못 늘림). 틱은 즉시 202 반환 + 실작업(번역 드레인 +
+# 파일럿 부활/마감)은 **백그라운드 스레드**로 — 30초 내 응답 보장이 유일한 계약([[동기 대량 라우트 타임아웃 지뢰]]).
+#   진입 가드: 이전 틱 미완이면 스킵(중복 스레드 금지). 스레드는 벽시계 예산으로 자기종료(락 무한 점유 방지).
+#   ★ 다중 워커 안전의 근본은 멱등성(번역 SKIP LOCKED 리스 · 파일럿 WC 상태) — 락은 워커 내 중복 방지용.
+_CRON_TICK_BUDGET_DEFAULT = 45.0   # 스레드 자기종료 상한(응답 아님). 크론 간격(60s)·워커 타임아웃(120s) 아래.
+_DRAIN_SHARE_DEFAULT = 20.0        # 번역 드레인 몫(상한). 파일럿 부활/마감이 굶지 않게 나머지 예약.
 _PILOT_MIN_SEC = 5.0              # 파일럿에 예약하는 최소 예산(부활 패스가 매 틱 돌게).
+
+_tick_lock = _threading.Lock()     # 워커 내 중복 틱 진입 가드
+_last_tick: dict = {}              # 최근 틱 소요/결과(로그·진단) — 어느 작업이 오래 걸렸는지 실측
 
 
 def _tick_budget_sec() -> float:
@@ -133,17 +141,74 @@ def _drain_share_sec() -> float:
         return _DRAIN_SHARE_DEFAULT
 
 
-@cron_bp.post("/translate-drain")
-def translate_drain_cron():
-    """v88-B: 백그라운드 번역 큐 드레인 + v88-C 파일럿 마감 피기백 (Render Cron / 외부 스케줄러 훅).
+def _run_full_tick(app, limit: int, pilot_chunk: int, tick_budget: float) -> dict:
+    """실작업(번역 드레인 + 파일럿 부활·마감)을 벽시계 예산 안에서 수행. **락은 호출부가 잡고, 여기서 반드시 해제.**
 
-    **시간예산 스택 방지**([[동기 대량 라우트 타임아웃 지뢰]]): 한 요청에 번역 드레인 + 파일럿 마감(부활·백필)
-    두 무거운 외부 I/O가 스택돼 cron-job.org 30s를 넘겼다. → **공유 벽시계 예산**(CRON_TICK_BUDGET_SEC,
-    기본 22s)으로 캡: 번역에 상한(_DRAIN_SHARE, 기본 10s), **파일럿에 최소 예산 예약**(부활 굶김 방지), 남은
-    예산 안에서만 파일럿 청크. 항상 30s 안에 응답, 남은 건은 다음 틱 재개(무상태·멱등).
-    헤더 ``X-Cron-Secret`` 이 ``CRON_SECRET`` 과 일치해야 실행(미설정 시 허용). Query: limit·pilot_chunk.
+    per-작업 소요시간을 로그로 남긴다(어느 작업이 30s를 넘겼는지 실측). 예외는 삼키되 사유 기록(조용한 정지 금지).
     """
     import time as _t
+    t0 = _t.monotonic()
+    result: dict = {"limit": limit}
+    try:
+        with app.app_context():
+            drain_budget = max(4.0, min(_drain_share_sec(), tick_budget - _PILOT_MIN_SEC))
+            try:
+                from src.seller_console.translate_worker import drain_once
+                d = drain_once(limit=limit, time_budget_sec=drain_budget)
+            except Exception as exc:               # noqa: BLE001 — 조용한 실패 금지
+                logger.error("번역 드레인 오류(백그라운드): %s", exc)
+                d = {"ok": False, "error": str(exc), "processed": 0}
+            drain_sec = _t.monotonic() - t0
+            pilot_budget = tick_budget - (_t.monotonic() - t0)
+            if pilot_budget >= _PILOT_MIN_SEC:
+                try:
+                    pf = _run_pilot_finish_tick(chunk=pilot_chunk, time_budget_sec=pilot_budget)
+                except Exception as exc:           # noqa: BLE001
+                    logger.warning("파일럿 마감 피기백 스킵(백그라운드): %s", exc)
+                    pf = {"skipped": str(exc)}
+            else:
+                pf = {"skipped": f"번역이 예산 사용({drain_sec:.1f}s) — 다음 틱에서 파일럿"}
+            total = _t.monotonic() - t0
+            pilot_sec = total - drain_sec
+            # 실측 로깅 — 어느 작업이 오래 걸렸는지(30s 초과 표시). cron 판정은 즉답이라, 실작업 결과는 여기로.
+            logger.info(
+                "틱 완료: 번역 %.1fs(처리 %s·잔여 %s) · 파일럿 %.1fs(부활 %s·백필 %s·잔여 %s·예산소진 %s) · 총 %.1fs%s",
+                drain_sec, d.get("processed"), d.get("remaining"),
+                pilot_sec, pf.get("revived"), pf.get("backfilled"), pf.get("remaining_pending"),
+                pf.get("budget_exhausted"), total, "  ⚠️30s초과" if total > 30 else "")
+            result.update({"drain": d, "pilot": pf, "drain_sec": round(drain_sec, 1),
+                           "pilot_sec": round(pilot_sec, 1), "total_sec": round(total, 1)})
+    except Exception as exc:                       # noqa: BLE001 — 최상위 방어(락 해제 보장)
+        logger.error("틱 실행 오류(백그라운드): %s", exc)
+        result["error"] = str(exc)
+    finally:
+        _last_tick.clear()
+        _last_tick.update(result)
+        try:
+            _tick_lock.release()
+        except RuntimeError:                       # 이미 해제됨(방어)
+            pass
+    return result
+
+
+def _spawn_background_tick(app, limit: int, pilot_chunk: int, tick_budget: float):
+    """실작업 스레드 시작(daemon). 테스트는 이 함수를 몽키패치해 동기/기록으로 대체."""
+    th = _threading.Thread(target=_run_full_tick, args=(app, limit, pilot_chunk, tick_budget),
+                           name="translate-pilot-tick", daemon=True)
+    th.start()
+    return th
+
+
+@cron_bp.post("/translate-drain")
+def translate_drain_cron():
+    """v88-B 번역 드레인 + v88-C 파일럿 마감 — **즉시 202 + 백그라운드 스레드**(cron-job.org 30s 하드 상한).
+
+    [[동기 대량 라우트 타임아웃 지뢰]]: 번역 드레인 + 파일럿 부활/마감 두 무거운 외부 I/O를 한 요청에 스택하면
+    30s를 넘긴다. cron-job.org 30s는 플랫폼 상한(못 늘림) → **틱은 즉시 202(작업 시작됨)만 반환**하고 실작업은
+    백그라운드 스레드에서 벽시계 예산 안에 수행. cron 판정 = **202 즉답 = 성공**, 실작업 결과는 Render 로그.
+    **중복 진입 가드**: 이전 틱 미완이면 스킵(중복 스레드 금지). 헤더 ``X-Cron-Secret`` 검증. Query: limit·pilot_chunk.
+    """
+    from flask import current_app
     cron_secret = os.getenv("CRON_SECRET")
     if cron_secret:
         if request.headers.get("X-Cron-Secret", "") != cron_secret:
@@ -152,39 +217,31 @@ def translate_drain_cron():
         limit = int(request.args.get("limit", 10))
     except (TypeError, ValueError):
         limit = 10
-
-    start = _t.monotonic()
-    tick_budget = _tick_budget_sec()
-    # 번역 몫은 파일럿 최소 예산을 뺀 나머지로 상한(번역이 전체를 먹어 파일럿을 굶기지 않게).
-    drain_budget = max(4.0, min(_drain_share_sec(), tick_budget - _PILOT_MIN_SEC))
     try:
-        from src.seller_console.translate_worker import drain_once
-        summary = drain_once(limit=limit, time_budget_sec=drain_budget)
-    except Exception as exc:
-        logger.error("번역 드레인 오류: %s", exc)
-        return jsonify({"ok": False, "error": "번역 드레인 중 오류가 발생했습니다."}), 500
+        pilot_chunk = int(request.args.get("pilot_chunk", 3))
+    except (TypeError, ValueError):
+        pilot_chunk = 3
 
-    # 파일럿 마감 피기백 — **남은 예산 안에서만**(스택 타임아웃·부활 굶김 방지). best-effort.
-    pilot_budget = tick_budget - (_t.monotonic() - start)
-    if pilot_budget >= _PILOT_MIN_SEC:
+    # 중복 틱 진입 가드 — 이전 작업 미완이면 새 스레드 안 띄우고 스킵(202).
+    if not _tick_lock.acquire(blocking=False):
+        return jsonify({"ok": True, "status": "already_running", "skipped": True,
+                        "message": "이전 틱이 아직 진행 중 — 이번 호출은 스킵합니다.",
+                        "last_tick": {k: _last_tick.get(k) for k in ("total_sec", "drain_sec", "pilot_sec")}}), 202
+
+    app = current_app._get_current_object()
+    tick_budget = _tick_budget_sec()
+    try:
+        _spawn_background_tick(app, limit, pilot_chunk, tick_budget)
+    except Exception as exc:                       # 스레드 시작 실패 → 락 해제 후 정직 실패
         try:
-            pf = _run_pilot_finish_tick(chunk=int(request.args.get("pilot_chunk", 3)),
-                                        time_budget_sec=pilot_budget)
-            summary["pilot_finish"] = pf
-            if pf.get("skipped"):
-                logger.info("파일럿 마감 틱: 스킵(%s)", pf["skipped"])
-            else:
-                logger.info("파일럿 마감 틱: 부활 %s · 백필 %s · no_image %s · 실패 %s · 잔여 %s · publish %s · 예산소진 %s%s",
-                            pf.get("revived"), pf.get("backfilled"), pf.get("no_image"), pf.get("failed"),
-                            pf.get("remaining_pending"), pf.get("published_this_tick"), pf.get("budget_exhausted"),
-                            (" · 멈춘행 " + str([{s['sid']: s['reason']} for s in pf.get("stuck", [])])) if pf.get("stuck") else "")
-        except Exception as exc:                   # noqa: BLE001 — 조용한 실패 금지(사유 기록)
-            logger.warning("파일럿 마감 피기백 스킵: %s", exc)
-            summary["pilot_finish"] = {"skipped": str(exc)}
-    else:
-        summary["pilot_finish"] = {"skipped": f"틱 예산 소진(번역 {(_t.monotonic() - start):.1f}s) — 다음 틱에서 파일럿"}
-    summary["tick_elapsed_sec"] = round(_t.monotonic() - start, 2)
-    return jsonify(summary)
+            _tick_lock.release()
+        except RuntimeError:
+            pass
+        logger.error("틱 스레드 시작 실패: %s", exc)
+        return jsonify({"ok": False, "error": "틱 시작 실패"}), 500
+    return jsonify({"ok": True, "status": "accepted",
+                    "message": "틱을 백그라운드에서 시작했습니다(작업 결과는 Render 로그에서 확인).",
+                    "budget_sec": tick_budget, "limit": limit, "pilot_chunk": pilot_chunk}), 202
 
 
 def _run_pilot_finish_tick(chunk: int = 5, *, time_budget_sec: float = None) -> dict:
