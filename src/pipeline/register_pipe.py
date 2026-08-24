@@ -154,6 +154,18 @@ def build_source_review_row(draft: dict, *, url: str = "", channel: str = "wooco
     brand = _brand_of(draft, title)
     ship = kr_ship_viability(brand, title, url, check_fn=ship_check_fn)
 
+    # ── 고시정보 미리보기(P3 카나리 반려 대응) — 등록 전 오너가 실값을 본다. 발명 금지·사실만. ──
+    origin = str(draft.get("origin") or draft.get("brand_country") or "").strip()
+    notice_preview = {
+        "제조자": brand or "미확인",
+        "수입자": "고가네",                                   # 기본 계정 상호(우주대행 등록 시 교체)
+        "원산지": origin or "미확인 — 등록 보류(추정 금지)",
+        "origin_verified": bool(origin),
+        "AS연락처": "판매자 연락처(설정값)",
+        "인증": "인증 대상 아님(실측 확인 필요)",
+    }
+    notice_hold = not bool(origin)                            # 원산지 미확인 → 등록 시 보류(사유 표기)
+
     # ── 배송비(국내) — 주입 hook. 미상이면 미반영(마진에 0)·정직 표기 ────────────────
     ship_cost_krw = None
     if ship_cost_fn and cost_krw:
@@ -188,6 +200,8 @@ def build_source_review_row(draft: dict, *, url: str = "", channel: str = "wooco
         "target_channel": channel,
         "image_count": len(images), "thumbnail": (images[0] if images else ""),
         "source": draft.get("source") or draft.get("adapter_used"),
+        "brand": brand, "origin": origin,              # 고시정보 실값 배선(등록 시 uploader가 사용)
+        "notice_preview": notice_preview, "notice_hold": notice_hold,   # 고시정보 미리보기 + 원산지 보류
         "forbidden": fb, "forbidden_detail": explain_forbidden(fb, title),
         "excluded": bool(fb), "registered": False,
     }
@@ -301,6 +315,7 @@ def register_source_rows(rows, *, dispatch_fn, enrich_fn=None, account: str = "g
             "title_ko": r.get("title_ko"), "sell_price_krw": r.get("sale_krw"),
             "images": images, "description_html": desc, "category_code": cat,
             "url": r.get("url"), "source": r.get("source"),
+            "brand": r.get("brand"), "origin": r.get("origin"),   # 고시정보 실값(제조자/원산지)
         }
         try:
             res = dispatch_fn(product_data, account)

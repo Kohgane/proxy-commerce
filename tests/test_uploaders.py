@@ -25,6 +25,7 @@ SAMPLE_COLLECTED = {
     'category': '数码',
     'category_code': 'DIG',
     'brand': 'SomeBrand',
+    'origin': '중국',                # 제조국(고시정보 실값) — 미확인 시 등록 보류(P3)
     'weight_kg': 0.15,
     'options': {'color': '블랙'},
     'tags': ['数码', '耳机'],

@@ -80,7 +80,7 @@
       <table class="table table-hover mb-0 table-cards pc-swiss-table">
         <thead class="table-light"><tr>
           <th style="width:56px;">이미지</th><th>제목(번역)</th><th class="text-end">소싱가</th>
-          <th class="text-end">판매가</th><th class="text-end">실마진</th><th>배송(한국)</th><th>취급 판정</th>
+          <th class="text-end">판매가</th><th class="text-end">실마진</th><th>배송(한국)</th><th>고시정보</th><th>취급 판정</th>
         </tr></thead>
         <tbody>
           {% for r in review.review_pass + review.excluded %}
@@ -116,6 +116,18 @@
               {% if r.ship_status == '배송가능' %}<span class="pc-badge pc-badge-on" title="{{ r.ship_reason }}">배송가능</span>
               {% elif r.ship_status == '배송불가' %}<span class="pc-badge pc-badge-off" title="{{ r.ship_reason }}">배송불가</span>
               {% else %}<span class="pc-badge pc-badge-muted" title="{{ r.ship_reason }}">미검증</span>{% endif %}
+            </td>
+            <td data-label="고시정보">
+              {% if r.notice_preview %}
+              <div class="small" style="font-size:.72rem; line-height:1.35;">
+                <div>제조자 <strong>{{ r.notice_preview['제조자'] }}</strong></div>
+                <div>수입자 {{ r.notice_preview['수입자'] }}</div>
+                <div>원산지
+                  {% if r.notice_preview['origin_verified'] %}<strong>{{ r.notice_preview['원산지'] }}</strong>
+                  {% else %}<span class="pc-badge pc-badge-off" title="추정 금지 — 원산지 수집값 없으면 등록 보류">미확인·보류</span>{% endif %}
+                </div>
+              </div>
+              {% else %}<span class="text-muted">-</span>{% endif %}
             </td>
             <td data-label="취급 판정">
               {% if r.excluded %}

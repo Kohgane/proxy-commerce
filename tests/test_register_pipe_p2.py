@@ -51,17 +51,20 @@ def test_no_account_reads_unprefixed_backward_compat(monkeypatch):
 
 
 def test_overseas_purchased_sets_pcc_and_notices(monkeypatch):
-    # 구매대행 → overseasPurchased + pccNeeded + 통관 고시정보(원산지 해외·수입자 구매대행).
-    u = CoupangUploader(access_key="a", secret_key="b", vendor_id="v", overseas_purchased=True)
+    # 구매대행 → overseasPurchased + pccNeeded(페이로드 플래그) + 고시정보 실값(제조자=브랜드·수입자=상호·원산지=수집값).
+    u = CoupangUploader(access_key="a", secret_key="b", vendor_id="v", account="gogane", overseas_purchased=True)
     assert u.overseas_purchased is True
-    payload = u._build_product_payload({"title": "니치 백팩", "price": 50000, "images": ["u"]})
+    u.company_contact = "02-1234-5678"
+    # 스키마 미주입(폴백 기타재화) — 실값 규칙은 동일. 브랜드·원산지 있으면 보류 안 함.
+    payload = u._build_product_payload({"title": "니치 백팩", "price": 50000, "images": ["u"],
+                                        "brand": "Craftly", "origin": "베트남"})
     item = payload["items"][0]
-    assert item["overseasPurchased"] == "OVERSEAS_PURCHASED" and item["pccNeeded"] is True
+    assert item["overseasPurchased"] == "OVERSEAS_PURCHASED" and item["pccNeeded"] is True   # 통관 플래그
     notices = {n["noticeCategoryDetailName"]: n["content"] for n in item["notices"]}
     origin = [v for k, v in notices.items() if "제조국" in k or "원산지" in k]
-    assert origin and "해외" in origin[0]                    # 원산지 해외(구매대행) 정직 표기
-    importer = [v for k, v in notices.items() if "제조자" in k or "수입자" in k]
-    assert importer and "개인통관고유부호" in importer[0]      # PCCC 통관 안내
+    assert origin and origin[0] == "베트남"                  # 원산지 = 수집값(추정 금지)
+    maker = [v for k, v in notices.items() if "제조자" in k or "수입자" in k]
+    assert maker and "Craftly" in maker[0] and "고가네" in maker[0]   # 제조자=브랜드 · 수입자=계정 상호
 
 
 def test_non_overseas_default_no_pcc(monkeypatch):
