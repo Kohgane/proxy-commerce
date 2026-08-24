@@ -78,13 +78,23 @@ def test_background_flag_requires_pg(monkeypatch):
 
 
 def test_cron_translate_drain_route(monkeypatch):
+    # 라우트는 즉시 202(작업 시작됨)만 반환 — 실작업은 백그라운드(cron-job.org 30s 하드 상한).
     monkeypatch.delenv("CRON_SECRET", raising=False)
     for v in ("DATABASE_URL", "SUPABASE_DB_URL"):
         monkeypatch.delenv(v, raising=False)
     from src.db import pg
     pg.reset_state()
+    import src.pricing.cron as CRON
+    # 백그라운드 스레드를 동기 실행으로 대체(결정적 검증).
+    monkeypatch.setattr(CRON, "_spawn_background_tick",
+                        lambda app, limit, pilot_chunk, tick_budget: CRON._run_full_tick(app, limit, pilot_chunk, tick_budget))
+    if CRON._tick_lock.locked():
+        try: CRON._tick_lock.release()
+        except RuntimeError: pass
     from src.order_webhook import app
     r = app.test_client().post("/cron/translate-drain")
-    assert r.status_code == 200
-    d = r.get_json()
-    assert d.get("ok") is False and "pg" in (d.get("reason", "").lower())   # 정직 no-op
+    assert r.status_code == 202                                 # 즉답 202 = cron 성공 판정
+    assert r.get_json().get("status") == "accepted"
+    # 실작업(동기 실행분): pg 미가동이면 번역 드레인은 정직 no-op(백그라운드에서).
+    assert CRON._last_tick.get("drain", {}).get("ok") is False
+    assert not CRON._tick_lock.locked()                         # 락 해제 확인(무한 점유 방지)

@@ -1046,15 +1046,20 @@ def _pilot_passable(rows):
 
 def pilot_finish_tick(rows, *, list_products_fn, update_fn, enrich_fn, chunk: int = 5,
                       image_cap: int = IMAGE_CAP, stock_patch=None, sleep_fn=None, sleep_sec: float = 0.5,
-                      image_ref_fn=None, max_attempts: int = _MAX_BACKFILL_ATTEMPTS) -> dict:
+                      image_ref_fn=None, max_attempts: int = _MAX_BACKFILL_ATTEMPTS,
+                      time_budget_sec: float = None, monotonic_fn=None) -> dict:
     """자동 마감 1틱(크론). **draft 이미지 백필(2장캡) → 실패 사유 기록 후 스킵 → 전행 처리 완료 시 자동 publish.**
 
     - 진행상태 = WC 자신(멱등·재개). `_kgp_pilot_sid` 매칭, 이미지 0장 draft는 no_image 플래그+**draft 잔류**(안 팔릴 상품 공개 방지).
     - 등록분 `type=simple` 강제(자사 결제형 — external 아님). **조용한 실패 금지**(행별 action+사유: collect_fail/sideload_fail/no_image).
     - list_products_fn(status)/update_fn(pid,patch)/enrich_fn(row) 주입(발명 0·오프라인 테스트). publish는 전행 처리 완료 시만.
+    - **time_budget_sec**([[동기 대량 라우트 타임아웃 지뢰]]): 청크 항목마다 착수 전 경과 확인 → 예산 도달 시 즉시 중단
+      (budget_exhausted). 각 항목이 수집+사이드로드로 수초라 크론(30s) 스택 초과 방지. 남은 건은 다음 틱 재개(멱등).
     """
     import time as _t
     sleep_fn = sleep_fn or _t.sleep
+    _clock = monotonic_fn or _t.monotonic
+    _start = _clock()
     try:
         draft_products = list(list_products_fn("draft") or [])
     except Exception as exc:                       # WC 목록 조회 실패 = 틱 전체 무효 → 정직 반환(조용한 정지 금지)
@@ -1101,7 +1106,14 @@ def pilot_finish_tick(rows, *, list_products_fn, update_fn, enrich_fn, chunk: in
                                     + (f" · 카운터 기록 실패({mark_err})" if mark_err else
                                        (" · 영구 실패 종결(draft 잔류)" if perm else ""))})
 
+    attempted = 0
+    budget_exhausted = False
     for i, r in enumerate(pending[:chunk]):
+        # 시간예산: 항목 착수 전 경과 확인 — 도달 시 즉시 중단(스택 타임아웃 방지, 남은 건 다음 틱).
+        if time_budget_sec is not None and _clock() - _start >= float(time_budget_sec):
+            budget_exhausted = True
+            break
+        attempted += 1
         p = by_sid[str(r.get("sid"))]
         if i and sleep_sec:
             sleep_fn(sleep_sec)
@@ -1169,9 +1181,9 @@ def pilot_finish_tick(rows, *, list_products_fn, update_fn, enrich_fn, chunk: in
                 processed.append({"sid": r.get("sid"), "product_id": p.get("id"), "action": "flag_fail",
                                   "image_count": 0,
                                   "reason": f"no_image 종결 플래그 쓰기 실패({flag_err or 'WC 반영 안 됨'}) — 다음 틱 재시도"})
-    remaining = max(0, len(pending) - chunk)
+    remaining = max(0, len(pending) - attempted)   # 실제 처리분 기준(예산 중단 시 남은 건 정직 반영)
     published = []
-    if remaining == 0:                        # 전행 처리 완료 → 이미지 있는 draft만 자동 publish(오너 사전 승인)
+    if remaining == 0 and not budget_exhausted:   # 전행 처리 완료 → 이미지 있는 draft만 자동 publish(오너 사전 승인)
         try:
             fresh_drafts = list(list_products_fn("draft") or [])
         except Exception as exc:
@@ -1201,7 +1213,8 @@ def pilot_finish_tick(rows, *, list_products_fn, update_fn, enrich_fn, chunk: in
         "stuck": [x for x in processed if x["action"] in
                   ("collect_fail", "sideload_fail", "flag_fail", "permanent_fail")],
         "remaining_pending": remaining, "published_this_tick": len(published),
-        "done": remaining == 0, "results": processed, "published": published,
+        "done": remaining == 0, "budget_exhausted": budget_exhausted,
+        "results": processed, "published": published,
     }
 
 

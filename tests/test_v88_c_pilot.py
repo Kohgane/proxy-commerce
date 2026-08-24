@@ -303,6 +303,36 @@ def test_pilot_finish_tick_image_ref_fn_uses_media_id():
     assert imgs == [{"id": 901, "position": 0}, {"id": 902, "position": 1}]   # src 아님(media id)
 
 
+def test_pilot_finish_tick_time_budget_stops_and_no_premature_publish():
+    # [[동기 대량 라우트 타임아웃 지뢰]]: 항목당 10초 시뮬레이션 + 예산 25초 → 3건 처리 후 중단.
+    #   중단 시 남은 pending 정직 반영 + budget_exhausted → 전행 완료 아님이라 publish 안 함.
+    rows = [{"sid": s, "asin": f"A{s}", "excluded": False} for s in (1, 2, 3, 4, 5)]
+    wc = _FakeWC(_pilot_products([1, 2, 3, 4, 5]))
+    clock = {"t": 0.0}
+    def enrich(r):
+        clock["t"] += 10.0                                   # 수집+사이드로드 10초 시뮬레이션
+        return {"images": [f"https://i/{r['sid']}-1.jpg", f"https://i/{r['sid']}-2.jpg"]}
+    out = CR.pilot_finish_tick(rows, list_products_fn=wc.list_products_by_status,
+                               update_fn=wc.update_product, enrich_fn=enrich, chunk=5,
+                               image_cap=2, sleep_fn=lambda s: None,
+                               time_budget_sec=25.0, monotonic_fn=lambda: clock["t"])
+    assert out["backfilled"] == 3 and out["budget_exhausted"] is True       # 0·10·20 통과, 30에서 중단
+    assert out["remaining_pending"] == 2 and out["published_this_tick"] == 0  # 미완 → publish 보류
+    assert out["done"] is False
+    # 예산 넉넉하면 전건 처리·publish(무회귀).
+    wc2 = _FakeWC(_pilot_products([1, 2]))
+    clock2 = {"t": 0.0}
+    def enrich2(r):
+        clock2["t"] += 1.0
+        return {"images": [f"https://i/{r['sid']}-1.jpg", f"https://i/{r['sid']}-2.jpg"]}
+    out2 = CR.pilot_finish_tick([{"sid": s, "asin": f"A{s}", "excluded": False} for s in (1, 2)],
+                                list_products_fn=wc2.list_products_by_status,
+                                update_fn=wc2.update_product, enrich_fn=enrich2, chunk=5,
+                                image_cap=2, sleep_fn=lambda s: None,
+                                time_budget_sec=25.0, monotonic_fn=lambda: clock2["t"])
+    assert out2["budget_exhausted"] is False and out2["remaining_pending"] == 0 and out2["published_this_tick"] == 2
+
+
 def test_pilot_finish_tick_sideload_retry_cap_permanent_fail():
     # 이미지 변환(사이드로드) 3회 실패 → permanent_fail 종결(무한 재시도 금지). 큐에서 빠져 잔여 진입 허용.
     rows = [{"sid": 1, "asin": "A1", "excluded": False}]
