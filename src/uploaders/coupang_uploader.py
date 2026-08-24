@@ -151,6 +151,14 @@ class CoupangUploader(BaseUploader):
                 return default
         return os.getenv(base_env, default)
 
+    @staticmethod
+    def _as_int(v):
+        """정본 규약상 int로 보내야 하는 값(출고지코드 등). 숫자가 아니면 원본 유지(정직)."""
+        try:
+            return int(str(v).strip())
+        except (TypeError, ValueError):
+            return v
+
     def _raw_env_present(self, base_env: str) -> bool:
         """해당 배송 env가 (접두/무접두 중 하나라도) **정의되어 있는가**. 빈 문자열도 '정의됨'으로 본다."""
         prefix = self.ACCOUNT_PREFIXES.get(self.account or '')
@@ -217,7 +225,11 @@ class CoupangUploader(BaseUploader):
                     ),
                 }
             # 카테고리 예측(실 리프 ID) → 그 코드로 고시정보 스키마 조회(동적·권위). 네트워크는 이 경로에만.
-            cat = self.predict_category(product.get('title', '')) or product.get('category_id', '76001')
+            #   **정본: 예측 실패 시 등록 중단**(임의 카테고리로 보내면 거부/오분류 — 추측 전송 금지).
+            cat = self.predict_category(product.get('title', '')) or str(product.get('category_id', '') or '')
+            if not cat:
+                return {'success': False, 'held': True, 'sku': product.get('sku', ''),
+                        'error': '쿠팡 카테고리 예측 실패 — 등록 중단(임의 카테고리 전송 금지). 상품명 확인 필요.'}
             product = {**product, 'category_id': cat}
             schema = self.get_category_notice_schema(cat) or None
             # 고시정보 실값 미확인(원산지 등) → 등록 보류(추정 금지·가짜 성공 0).
@@ -242,8 +254,18 @@ class CoupangUploader(BaseUploader):
                 # data null + 비성공 코드 = 등록 거부 → 가짜 성공 금지(정직)
                 msg = result.get('message') or f'코드 {code}'
                 return {'success': False, 'error': f'쿠팡 등록 거부: {msg}', 'sku': product.get('sku', '')}
+            # ★ 정본 2단계: 등록(POST) 성공 후 **승인요청(PUT approvals)** 별도 호출.
+            #   누락하면 상품이 SAVED로 방치된다(심사 진입 안 함). 호출 간 0.4s(레이트리밋).
+            approval = None
+            if product_id:
+                time.sleep(0.4)
+                approval = self.request_approval(product_id)
+                if not approval.get('success'):
+                    logger.warning('승인요청 실패(등록은 됨) sid=%s: %s', product_id, approval.get('error'))
             url = f'https://www.coupang.com/vp/products/{product_id}' if product_id else ''
-            return {'success': True, 'product_id': product_id, 'url': url, 'sku': product.get('sku', '')}
+            return {'success': True, 'product_id': product_id, 'url': url, 'sku': product.get('sku', ''),
+                    'approval_requested': bool(approval and approval.get('success')),
+                    'approval_error': (None if (approval or {}).get('success') else (approval or {}).get('error'))}
         except Exception as exc:
             logger.error('upload_product failed for sku=%s: %s', product.get('sku', ''), exc)
             return {'success': False, 'error': str(exc), 'sku': product.get('sku', '')}
@@ -505,13 +527,10 @@ class CoupangUploader(BaseUploader):
         body = (product.get('description_html') or '').strip()
         if not body:
             body = product.get('title', '') or '상품 상세페이지를 참조해 주세요.'
-        is_html = '<' in body and '>' in body
+        # 정본: contentsType/detailType 모두 TEXT 고정(5,691건 검증 형태).
         return [{
-            'contentsType': 'HTML' if is_html else 'TEXT',
-            'contentDetails': [{
-                'content': body,
-                'detailType': 'HTML' if is_html else 'TEXT',
-            }],
+            'contentsType': 'TEXT',
+            'contentDetails': [{'content': body, 'detailType': 'TEXT'}],
         }]
 
     def _build_images(self, product: dict) -> list:
@@ -523,7 +542,7 @@ class CoupangUploader(BaseUploader):
             images.append({
                 'imageOrder': i,
                 'imageType': 'REPRESENTATION' if i == 0 else 'DETAIL',
-                'vendorPath': url,
+                'vendorPath': str(url).split('?')[0],       # 정본: 쿼리스트링 제거(쿠팡이 거부)
             })
         return images
 
@@ -534,52 +553,66 @@ class CoupangUploader(BaseUploader):
         - 옵션(items[])별: 과세/성인/단위수량/최대구매수량기간/해외구매대행/이미지/고시정보/컨텐츠
         - 상품(root): 묶음배송/도서산간/반품지(주소·우편번호·담당자·연락처·배송비)/출고지/vendorUserId
         """
-        title = product.get('title', '') or '상품'
-        category_code = product.get('category_id', '76001')   # 예측은 upload_product에서 이미 해결(네트워크 격리)
+        title = (product.get('title', '') or '상품')[:100]     # 정본: name[:100]
+        category_code = product.get('category_id', '')        # 예측은 upload_product에서 해결(없으면 FAIL)
         try:
-            stock = int(product.get('stock', 99) or 99)
+            category_code = int(str(category_code).strip())    # 정본: displayCategoryCode = int
         except (TypeError, ValueError):
-            stock = 99
+            pass
+        sku = str(product.get('sku', '') or '').strip() or title
+        try:
+            price = int(product.get('price', 0) or 0)
+        except (TypeError, ValueError):
+            price = 0
+        # 정본: 정가 = 판매가 15% 상향 후 100원 반올림(할인 표기용).
+        original_price = int(round(price * 1.15 / 100) * 100) if price else 0
+        brand = str(product.get('brand', '') or '').strip()
+        # 정본: searchTags = [브랜드 정규화[:20] or "수입", "해외직구"] + 키워드, 최대 10.
         tags = product.get('tags') or []
-        search_tags = [str(t) for t in tags][:20] if isinstance(tags, list) else []
+        kw = [str(t).strip() for t in tags if str(t).strip()] if isinstance(tags, list) else []
+        search_tags = ([(brand[:20] or '수입'), '해외직구'] + kw)[:10]
 
+        # ★ items[] — 5,691건 검증 정본(오너 SSH 실측 coupang_upload.py:122~145). 카나리 7차 거부
+        #   "옵션(...): 10원 이상의 판매가를 입력해주세요"의 정답지. 필드명·값 전부 정본 그대로.
         item = {
-            'itemName': title,
-            'originalPrice': product.get('original_price', product.get('price', 0)),
-            'salePrice': product.get('price', 0),
-            'maximumBuyCount': stock,                       # 판매가능재고
-            'maximumBuyForPersonPeriod': 1,                 # 최대구매수량 기간(일)
-            'maximumBuyForPerson': 0,                       # 인당 최대구매수량(0=제한없음)
-            'outboundShippingTimeDay': 2,                   # 출고소요일
-            'unitCount': 1,                                 # 단위수량
-            'adultOnly': 'EVERYONE',                        # 성인여부
-            'taxType': 'TAX',                               # 과세여부
-            'parallelImported': 'NOT_PARALLEL_IMPORTED',    # 병행수입 아님
-            'overseasPurchased': (
-                'OVERSEAS_PURCHASED' if self.overseas_purchased
-                else 'NOT_OVERSEAS_PURCHASED'
-            ),                                              # 해외구매대행 여부
-            'pccNeeded': bool(self.overseas_purchased),     # 개인통관고유부호 필요여부
-            'externalVendorSku': product.get('sku', ''),
-            'emptyBarcodeYn': 'Y',                          # 바코드 없음
-            'emptyBarcodeReason': '해외 상품으로 바코드 미보유',
+            'itemName': sku,                                # 정본: itemName = sku(제목 아님)
+            'originalPrice': original_price,                 # 정본: price*1.15 100원 반올림
+            'salePrice': price,                              # 정본: 옵션 판매가(누락 시 7차 거부)
+            'maximumBuyCount': 3,                            # 정본
+            'maximumBuyForPerson': 0,
+            'maximumBuyForPersonPeriod': 1,
+            'outboundShippingTimeDay': 7,                    # 정본(구매대행 출고 7일)
+            'unitCount': 1,
+            'adultOnly': 'EVERYONE',
+            'taxType': 'TAX',
+            'parallelImported': 'NOT_PARALLEL_IMPORTED',
+            'overseasPurchased': 'OVERSEAS_PURCHASED',       # 정본(구매대행 고정)
+            'pccNeeded': True,                               # 정본(개인통관고유부호 필요)
+            'externalVendorSku': sku,
+            'emptyBarcode': True,                            # 정본(구 emptyBarcodeYn:'Y' 폐기)
+            'emptyBarcodeReason': '구매대행상품 바코드없음',
+            # 정본: 인증 실측 정답 — 추정 문구(env) 대신 NOT_REQUIRED 구조를 보낸다.
+            'certifications': [{'certificationType': 'NOT_REQUIRED', 'certificationCode': ''}],
             'searchTags': search_tags,
             'images': self._build_images(product),
-            'notices': self._build_notices(product, notice_schema)[0],  # 상품고시정보(실값). 보류판정=upload_product.
+            'notices': self._build_notices(product, notice_schema)[0],  # 고시정보(실값). 보류판정=upload_product.
             'contents': self._build_contents(product),      # 상세컨텐츠(필수)
-            'attributes': [],
+            'attributes': list(product.get('attributes') or []),   # 카테고리 메타 기반(build_attrs 승계점)
         }
         return {
             'displayCategoryCode': category_code,
             'sellerProductName': title,
             'vendorId': self.vendor_id,
-            'saleStartedAt': '2021-01-01T00:00:00',
-            'saleEndedAt': '2099-12-31T00:00:00',
+            # 정본: 판매 시작 = 오늘 00:00:00, 종료 = 2099-01-01T23:59:59.
+            'saleStartedAt': datetime.now().strftime('%Y-%m-%dT00:00:00'),
+            'saleEndedAt': '2099-01-01T23:59:59',
             'displayProductName': title,
             'generalProductName': title,
-            'brand': product.get('brand', ''),
-            'manufacture': product.get('brand', '') or '상세페이지 참조',
-            'productGroup': '',
+            # ★ 정본: brand는 **빈 문자열**, 브랜드는 productGroup에 넣는다.
+            #   (브랜드 오인 IPR 회피 설계로 추정 — 5,691건이 이 형태로 통과했으므로 그대로 승계.)
+            'brand': '',
+            'manufacture': brand or '상세페이지 참조',
+            'productGroup': brand,
             'description': product.get('description_html', ''),
             # 배송
             'deliveryMethod': self.delivery_method,          # env COUPANG_[계정_]DELIVERY_METHOD
@@ -593,7 +626,7 @@ class CoupangUploader(BaseUploader):
             'remoteAreaDeliveryCharge': 0,
             'underPriceGuarantee': False,
             # 출고지/반품지 (셀러 Wing 배송정보)
-            'outboundShippingPlaceCode': self.outbound_place_code,
+            'outboundShippingPlaceCode': self._as_int(self.outbound_place_code),   # 정본: int
             'returnCenterCode': self.return_center_code,
             'returnChargeName': self.return_charge_name,    # 반품지담당자명
             'companyContactNumber': self.company_contact,   # 반품지연락처

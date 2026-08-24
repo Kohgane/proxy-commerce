@@ -131,7 +131,7 @@ def test_predict_category_used_for_display_code(monkeypatch):
         return {}
     monkeypatch.setattr(u, "_api_request", _api)
     u.upload_product({"title": "케이스", "brand": "B", "origin": "베트남", "sku": "s", "images": ["u"]})
-    assert sent["payload"]["displayCategoryCode"] == "556677"           # 예측 코드 사용
+    assert sent["payload"]["displayCategoryCode"] == 556677             # 예측 코드 사용(정본: int)
     assert sent["payload"]["items"][0]["notices"][0]["noticeCategoryName"] == "휴대폰/스마트기기 액세서리"
 
 
