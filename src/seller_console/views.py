@@ -7572,6 +7572,9 @@ def _coupang_account_dispatch(product_data, account):
         "description": product_data.get("description_html") or product_data.get("title_ko") or "",
         "images": product_data.get("images") or [],
         "stock": 99,
+        # 고시정보 실값(P3 카나리 반려 대응) — 제조자=브랜드 · 원산지=수집값(없으면 uploader가 등록 보류).
+        "brand": product_data.get("brand") or "",
+        "origin": product_data.get("origin") or "",
     }
     return up.upload_product(product)
 

@@ -56,6 +56,13 @@ class CoupangUploader(BaseUploader):
     # 계정별 배송 env 접두 — `_account_creds`(coupang_replicate)와 동일 규약(COUPANG_GOGANE_*/COUPANG_WOOJOO_*).
     ACCOUNT_PREFIXES = {'gogane': 'COUPANG_GOGANE', 'woojoo': 'COUPANG_WOOJOO'}
 
+    # 고시정보 실값 배선(P3 카나리 반려 대응) — 수입자 = 계정별 상호(발명 금지·사실).
+    _IMPORTER_NAMES = {'gogane': '고가네', 'woojoo': '우주대행'}
+    # 카테고리 예측 + 카테고리별 고시정보 스키마 조회(동적·권위) — '기타 재화' 기본값 폐기.
+    CATEGORY_PREDICT_PATH = '/v2/providers/openapi/apis/api/v1/categorization/predict'
+    NOTICE_META_PATH = ('/v2/providers/seller_api/apis/api/v1/marketplace/'
+                        'meta/category-related-metas/display-category-codes/{code}')
+
     def __init__(self, access_key: str = None, secret_key: str = None, vendor_id: str = None,
                  account: str = None, overseas_purchased: bool = None):
         """Coupang 업로더 초기화. 기본은 환경변수, **인자로 계정별 자격 오버라이드 가능**(P3 양계정 라우팅).
@@ -90,6 +97,12 @@ class CoupangUploader(BaseUploader):
             self.overseas_purchased = str(
                 os.getenv('COUPANG_OVERSEAS_PURCHASED', '0')
             ).lower() in ('1', 'true', 'yes')
+        # 고시정보 실값(발명 금지) — 수입자=계정별 상호, 인증=KC 비대상 표준 문구(오너 실측 확인 후 env 조정).
+        self.importer_name = (os.getenv('COUPANG_IMPORTER_NAME', '').strip()
+                              or self._IMPORTER_NAMES.get(self.account, '고가네'))
+        self.cert_none_text = os.getenv('COUPANG_CERT_NONE_TEXT', '').strip() or '인증 대상 아님'
+        self._notice_schema_cache = {}   # displayCategoryCode → 고시정보 스키마(메타 API, 1회 조회)
+        self._predict_cache = {}         # 상품명 → 예측 categoryId
         if not self.access_key:
             logger.warning('COUPANG_ACCESS_KEY is not set')
         if not self.secret_key:
@@ -161,7 +174,15 @@ class CoupangUploader(BaseUploader):
                     ),
                     'sku': product.get('sku', ''),
                 }
-            payload = self._build_product_payload(product)
+            # 카테고리 예측(실 리프 ID) → 그 코드로 고시정보 스키마 조회(동적·권위). 네트워크는 이 경로에만.
+            cat = self.predict_category(product.get('title', '')) or product.get('category_id', '76001')
+            product = {**product, 'category_id': cat}
+            schema = self.get_category_notice_schema(cat) or None
+            # 고시정보 실값 미확인(원산지 등) → 등록 보류(추정 금지·가짜 성공 0).
+            _, hold = self._build_notices(product, schema)
+            if hold:
+                return {'success': False, 'error': hold, 'sku': product.get('sku', ''), 'held': True}
+            payload = self._build_product_payload(product, notice_schema=schema)
             path = '/v2/providers/seller_api/apis/api/v1/marketplace/seller-products'
             result = self._api_request('POST', path, data=payload)
             if 'error' in result:
@@ -243,6 +264,7 @@ class CoupangUploader(BaseUploader):
             'images': images,
             'category_id': category_id,
             'brand': collected.get('brand', ''),
+            'origin': collected.get('origin') or collected.get('brand_country', ''),   # 제조국(고시정보 실값)
             'weight_kg': collected.get('weight_kg'),
             'stock': 999,
             'options': collected.get('options', {}),
@@ -289,7 +311,7 @@ class CoupangUploader(BaseUploader):
     # Private helpers
     # ------------------------------------------------------------------
 
-    # 쿠팡 '기타 재화' 상품고시정보 표준 항목(필수). 값은 상세페이지 참조로 채운다.
+    # 쿠팡 '기타 재화' 상품고시정보 표준 항목 — **최후 폴백**(메타 API 조회 실패 시). 기본값 아님.
     _NOTICE_CATEGORY = '기타 재화'
     _NOTICE_DETAILS = [
         '품명 및 모델명',
@@ -299,32 +321,96 @@ class CoupangUploader(BaseUploader):
         'A/S 책임자와 전화번호 또는 소비자상담 관련 전화번호',
     ]
 
-    def _build_notices(self, product: dict) -> list:
-        """옵션 상품고시정보(notices). 비우면 쿠팡이 거부 → 표준 항목을 채운다.
+    def predict_category(self, product_name: str) -> str:
+        """쿠팡 카테고리 예측 API로 상품명 → **실 카테고리ID**(리프). 실패/미지원 시 '' (폴백 CATEGORY_MAP)."""
+        name = str(product_name or '').strip()
+        if not name:
+            return ''
+        if name in self._predict_cache:
+            return self._predict_cache[name]
+        cid = ''
+        try:
+            res = self._api_request('POST', self.CATEGORY_PREDICT_PATH, data={'productName': name})
+            data = res.get('data') if isinstance(res, dict) else None
+            if isinstance(data, dict):
+                cid = str(data.get('predictedCategoryId') or data.get('categoryId') or '')
+        except Exception as exc:
+            logger.warning('카테고리 예측 실패(폴백 사용): %s', exc)
+        self._predict_cache[name] = cid
+        return cid
 
-        **해외구매대행(overseas_purchased)이면 통관 고시**를 정직 반영: 원산지='해외', 수입자='구매대행'
-        표기 + PCCC(개인통관고유부호) 필요 안내. 구매대행 상품은 pccNeeded=True(페이로드)와 짝을 이룬다.
+    def get_category_notice_schema(self, display_category_code: str) -> list:
+        """카테고리 메타 API로 **이 카테고리의 필수 고시정보 스키마**(동적·권위). '기타 재화' 기본값 폐기.
+
+        반환: [{'noticeCategoryName', 'details':[detailName,...]}] · 조회 실패/미지원 시 [](폴백 신호).
         """
-        phone = self.company_contact or '상세페이지 참조'
+        code = str(display_category_code or '').strip()
+        if not code:
+            return []
+        if code in self._notice_schema_cache:
+            return self._notice_schema_cache[code]
+        out = []
+        try:
+            res = self._api_request('GET', self.NOTICE_META_PATH.format(code=code))
+            data = res.get('data') if isinstance(res, dict) else None
+            for nc in ((data or {}).get('noticeCategories') or []):
+                names = [d.get('noticeCategoryDetailName')
+                         for d in (nc.get('noticeCategoryDetailNames') or [])
+                         if d.get('noticeCategoryDetailName')]
+                if nc.get('noticeCategoryName') and names:
+                    out.append({'noticeCategoryName': nc['noticeCategoryName'], 'details': names})
+        except Exception as exc:
+            logger.warning('고시정보 스키마 조회 실패(폴백 기타재화): %s', exc)
+        self._notice_schema_cache[code] = out
+        return out
+
+    def _notice_value_for(self, detail: str, product: dict):
+        """고시정보 상세명 → **실값**(발명 금지·사실만). 원산지 미확인이면 None(등록 보류 신호).
+
+        제조자=수집 브랜드 · 수입자=계정 상호 · 원산지=수집값(없으면 None·추정 금지) ·
+        A/S·전화=COMPANY_CONTACT_NUMBER env · 인증=KC 비대상 표준 문구 · 품명=상품명.
+        """
+        d = str(detail or '')
+        brand = str(product.get('brand') or '').strip()
         origin = str(product.get('origin') or product.get('brand_country') or '').strip()
-        overseas = bool(self.overseas_purchased)
-        notices = []
-        for detail in self._NOTICE_DETAILS:
-            if '전화번호' in detail:
-                content = phone
-            elif '제조국' in detail or '원산지' in detail:
-                content = origin or ('해외(구매대행)' if overseas else '상품 상세페이지 참조')
-            elif '제조자' in detail or '수입자' in detail:
-                content = ('해외구매대행(통관 시 개인통관고유부호 필요)' if overseas
-                           else '상품 상세페이지 참조')
-            else:
-                content = '상품 상세페이지 참조'
-            notices.append({
-                'noticeCategoryName': self._NOTICE_CATEGORY,
-                'noticeCategoryDetailName': detail,
-                'content': content,
-            })
-        return notices
+        phone = str(self.company_contact or '').strip()
+        if '품명' in d or '모델' in d:
+            return product.get('title') or '상세페이지 참조'
+        if '인증' in d or '허가' in d:
+            return self.cert_none_text                       # KC 비대상 표준 문구(오너 실측 확인)
+        if '원산지' in d or '제조국' in d:
+            return origin or None                            # 미확인 → 보류(중국 등 추정 금지)
+        if '수입자' in d and ('제조자' in d or '제조사' in d):
+            return f'{brand or "상세페이지 참조"} / {self.importer_name}'   # 결합 필드
+        if '수입자' in d:
+            return self.importer_name
+        if '제조자' in d or '제조사' in d:
+            return brand or '상세페이지 참조'
+        if 'A/S' in d or 'AS' in d.upper() or '전화' in d or '상담' in d or '연락' in d:
+            return phone or '상세페이지 참조'
+        return '상세페이지 참조'
+
+    def _build_notices(self, product: dict, schema=None):
+        """옵션 상품고시정보(notices) + **등록 보류 사유**. 반환: (notices:list, hold_reason:str|None).
+
+        P3 카나리 반려 수리: '기타 재화' 기본값 폐기 → **메타 API 고시정보 스키마**로 유형 동적 결정(발명 금지).
+        상세명마다 실값(제조자/수입자/원산지/AS/인증). **원산지 미확인이면 등록 보류**(추정 금지).
+        schema는 `upload_product`가 메타 API로 조회해 주입(네트워크는 그 경로에만). 미주입 시 '기타 재화' 폴백.
+        """
+        if not schema:                                       # 폴백: 기타 재화 표준(스키마 미주입/메타 미가용)
+            schema = [{'noticeCategoryName': self._NOTICE_CATEGORY, 'details': list(self._NOTICE_DETAILS)}]
+        nc = schema[0]                                       # 첫 필수 고시 카테고리
+        notices, missing = [], []
+        for detail in nc['details']:
+            val = self._notice_value_for(detail, product)
+            if val is None:                                  # 원산지 등 미확인 필수값 → 보류
+                missing.append(detail)
+                val = ''                                     # 전송 안 됨(보류로 차단)
+            notices.append({'noticeCategoryName': nc['noticeCategoryName'],
+                            'noticeCategoryDetailName': detail, 'content': val})
+        hold = (f'고시정보 실값 미확인({", ".join(missing)}) — 등록 보류(추정 금지, 원산지 등 확인 필요)'
+                if missing else None)
+        return notices, hold
 
     def _build_contents(self, product: dict) -> list:
         """옵션 상세컨텐츠(contents). 비우면 쿠팡이 거부 → 상세설명 HTML/텍스트로 채운다."""
@@ -353,7 +439,7 @@ class CoupangUploader(BaseUploader):
             })
         return images
 
-    def _build_product_payload(self, product: dict) -> dict:
+    def _build_product_payload(self, product: dict, notice_schema=None) -> dict:
         """Coupang Wing API용 상품 페이로드를 구성한다.
 
         쿠팡 createProduct 필수 필드를 모두 채운다(null/누락 시 등록 거부).
@@ -361,7 +447,7 @@ class CoupangUploader(BaseUploader):
         - 상품(root): 묶음배송/도서산간/반품지(주소·우편번호·담당자·연락처·배송비)/출고지/vendorUserId
         """
         title = product.get('title', '') or '상품'
-        category_code = product.get('category_id', '76001')
+        category_code = product.get('category_id', '76001')   # 예측은 upload_product에서 이미 해결(네트워크 격리)
         try:
             stock = int(product.get('stock', 99) or 99)
         except (TypeError, ValueError):
@@ -391,7 +477,7 @@ class CoupangUploader(BaseUploader):
             'emptyBarcodeReason': '해외 상품으로 바코드 미보유',
             'searchTags': search_tags,
             'images': self._build_images(product),
-            'notices': self._build_notices(product),        # 상품고시정보(필수)
+            'notices': self._build_notices(product, notice_schema)[0],  # 상품고시정보(실값). 보류판정=upload_product.
             'contents': self._build_contents(product),      # 상세컨텐츠(필수)
             'attributes': [],
         }
