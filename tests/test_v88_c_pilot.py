@@ -357,6 +357,37 @@ def test_pilot_finish_tick_sideload_retry_cap_permanent_fail():
     assert out4["pending_before"] == 0
 
 
+def test_pilot_revive_status_no_targets_vs_list_failed():
+    # 크론 고정비 제거: '부활 0'을 대상 없음(정상) vs 조회 실패(이상)로 구분(오너 지시).
+    rows = [{"sid": 1, "asin": "A1", "excluded": False}]
+    drafts = [{"id": 101, "status": "draft", "images": [],
+               "meta_data": [{"key": "_kgp_pilot_sid", "value": "1"}]}]   # permfail 아님
+    wc = _FakeWC(drafts)
+    rev = CR.pilot_revive_permfail(rows, draft_products=drafts, update_fn=wc.update_product)
+    assert rev["revived"] == 0 and rev["candidates"] == 0 and rev["status"] == "no_targets"   # 정상
+    def _boom(s="draft"):
+        raise RuntimeError("WC 502")
+    rev2 = CR.pilot_revive_permfail(rows, list_products_fn=_boom, update_fn=wc.update_product)
+    assert rev2["status"] == "list_failed" and "502" in rev2["reason"]    # 이상('없음 확인'≠'수집 실패')
+
+
+def test_pilot_finish_tick_shared_draft_list_skips_top_query():
+    # WC draft 목록 주입 → 상단 조회 생략(고정비 제거). remaining==0 시 publish 재조회만.
+    rows = [{"sid": 1, "asin": "A1", "excluded": False}]
+    drafts = [{"id": 101, "status": "draft", "images": [],
+               "meta_data": [{"key": "_kgp_pilot_sid", "value": "1"}]}]
+    calls = {"n": 0}
+    wc = _FakeWC(drafts)
+    def _list(s="draft"):
+        calls["n"] += 1
+        return wc.list_products_by_status(s)
+    out = CR.pilot_finish_tick(rows, list_products_fn=_list, update_fn=wc.update_product,
+                               enrich_fn=lambda r: {"images": ["u"]}, chunk=5, image_cap=2,
+                               sleep_fn=lambda s: None, draft_products=drafts)
+    assert out["backfilled"] == 1
+    assert calls["n"] == 1              # 상단 조회 생략(주입) — publish 전 재조회 1회만(무주입=2회)
+
+
 def test_pilot_revive_permfail_once_then_terminal():
     # 미실증 종결 방어: 구경로 실패로 소급 종결된 permanent_fail을 1회 부활(신경로 재검증) → 재부활 금지.
     rows = [{"sid": 1, "asin": "A1", "excluded": False}]

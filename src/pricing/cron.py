@@ -171,11 +171,20 @@ def _run_full_tick(app, limit: int, pilot_chunk: int, tick_budget: float) -> dic
             total = _t.monotonic() - t0
             pilot_sec = total - drain_sec
             # 실측 로깅 — 어느 작업이 오래 걸렸는지(30s 초과 표시). cron 판정은 즉답이라, 실작업 결과는 여기로.
-            logger.info(
-                "틱 완료: 번역 %.1fs(처리 %s·잔여 %s) · 파일럿 %.1fs(부활 %s·백필 %s·잔여 %s·예산소진 %s) · 총 %.1fs%s",
-                drain_sec, d.get("processed"), d.get("remaining"),
-                pilot_sec, pf.get("revived"), pf.get("backfilled"), pf.get("remaining_pending"),
-                pf.get("budget_exhausted"), total, "  ⚠️30s초과" if total > 30 else "")
+            #   파일럿: 게이트 skip(완료 캐시) vs 부활상태(no_targets 정상 / list_failed 이상) 구분 로그.
+            if pf.get("gated"):
+                logger.info("틱 완료: 번역 %.1fs(처리 %s·잔여 %s) · 파일럿 skip(완료 캐시·WC 조회 0) · 총 %.1fs",
+                            drain_sec, d.get("processed"), d.get("remaining"), total)
+            elif pf.get("list_failed"):
+                logger.warning("틱 완료: 번역 %.1fs · 파일럿 WC 조회 실패(이상, 부활 판정 불가) · 총 %.1fs",
+                               drain_sec, total)
+            else:
+                logger.info(
+                    "틱 완료: 번역 %.1fs(처리 %s·잔여 %s) · 파일럿 %.1fs(부활 %s[%s]·백필 %s·잔여 %s·예산소진 %s) · 총 %.1fs%s",
+                    drain_sec, d.get("processed"), d.get("remaining"),
+                    pilot_sec, pf.get("revived"), pf.get("revive_status"), pf.get("backfilled"),
+                    pf.get("remaining_pending"), pf.get("budget_exhausted"), total,
+                    "  ⚠️30s초과" if total > 30 else "")
             result.update({"drain": d, "pilot": pf, "drain_sec": round(drain_sec, 1),
                            "pilot_sec": round(pilot_sec, 1), "total_sec": round(total, 1)})
     except Exception as exc:                       # noqa: BLE001 — 최상위 방어(락 해제 보장)
@@ -269,29 +278,49 @@ def translate_drain_cron():
                     "budget_sec": tick_budget, "limit": limit, "pilot_chunk": pilot_chunk}), 202
 
 
+# 파일럿 완료 캐시(프로세스) — 수렴 후 매 틱 무거운 WC 전체 조회 고정비를 없앤다(오너 지시).
+#   done=True면 즉시 skip(0.1s·로그 1줄). 워커 재시작 시 리셋 → 1틱 재검증 후 재설정.
+_pilot_done = {"done": False}
+
+
+def reset_pilot_done_cache():
+    """완료 캐시 리셋 — 새 작업 유입/강제 재실행 시. /pilot-drain?force=1 로 호출."""
+    _pilot_done["done"] = False
+
+
 def _run_pilot_finish_tick(chunk: int = 5, *, time_budget_sec: float = None) -> dict:
     """v88-C 파일럿 자동 마감 1틱 — 검수표 행 + WC 자격으로 백필→publish 청크 처리.
 
-    상태 저장소 = WC 자신(멱등·재개). 자격/네트워크 실패는 예외로 전파(호출부가 사유 기록).
+    **고정비 제거(오너 지시):** ①완료 캐시면 즉시 skip(WC 조회 0). ②WC draft 목록을 틱당 **1회만** 조회해
+    부활·백필이 공유(예전 2회 → 1회). 부활이 실제로 갱신했을 때만 백필이 신선 재조회. ③'부활 0'을
+    **대상 없음(정상) vs 조회 실패(이상)** 로 구분. 상태 저장소 = WC 자신(멱등·재개).
     """
     from src.pipeline import coupang_replicate as CR
     from src.vendors import woocommerce_client as _wc
+
+    # ① 저비용 게이트 — 완료 상태면 WC 조회 없이 즉시 skip.
+    if _pilot_done["done"]:
+        return {"skipped": "파일럿 완료(캐시) — WC 조회 생략", "done": True, "gated": True}
 
     rows = CR.default_pilot_rows()
     if not rows:
         return {"skipped": "검수표 0행(모집단/블랙리스트 미배포)"}
     _list = lambda s="draft": _wc.list_products_by_status(s)
-    # 미실증 종결 방어: 구경로 실패로 소급 종결된 permanent_fail 행을 1회 부활(신경로 재검증).
-    #   revived 마킹으로 행당 1회 — 부활 후 재실패는 진짜 permanent_fail. 배포 후 첫 틱들에서 자동 소진.
-    revive = CR.pilot_revive_permfail(rows, list_products_fn=_list, update_fn=_wc.update_product)
+    # ② WC draft 목록 1회 조회(고정비 제거). 조회 실패 = 이상('없음 확인'≠'수집 실패') → 정직 skip.
+    try:
+        drafts = list(_wc.list_products_by_status("draft") or [])
+    except Exception as exc:
+        return {"skipped": f"WC draft 조회 실패(이상): {exc}", "list_failed": True}
+    # 미실증 종결 방어: permanent_fail 1회 부활(공유 목록 사용).
+    revive = CR.pilot_revive_permfail(rows, draft_products=drafts, update_fn=_wc.update_product)
     from src.seller_console.views import _collect_real_draft
-    # 이미지 소스 피벗: ①쿠팡 sid 원본(봇차단 회피·릴레이·계정라우팅) → ②소싱처 수집 폴백.
     enrich = CR.make_coupang_first_enrich_fn(_collect_real_draft, image_cap=CR.IMAGE_CAP)
-    # URL 사이드로드 400(쿠팡 CDN 확장자·MIME 불명) 회피: 서버가 다운로드→media 업로드→media id 연결.
     _ref_idx = {"n": 0}
     def _image_ref(u):
         _ref_idx["n"] += 1
         return _wc.sideload_image_to_media(u, index=_ref_idx["n"])
+    # 부활이 WC를 갱신했으면 백필은 신선 재조회(스테일 방지). 아니면 공유 목록 재사용(조회 0).
+    shared = None if revive.get("revived", 0) > 0 else drafts
     out = CR.pilot_finish_tick(
         rows,
         list_products_fn=_list,
@@ -302,8 +331,14 @@ def _run_pilot_finish_tick(chunk: int = 5, *, time_budget_sec: float = None) -> 
         stock_patch={"manage_stock": False, "stock_status": "instock"},
         image_ref_fn=_image_ref,
         time_budget_sec=time_budget_sec,       # 청크 항목마다 예산 확인(스택 타임아웃 방지)
+        draft_products=shared,
     )
     out["revived"] = revive.get("revived", 0)
+    out["revive_status"] = revive.get("status")   # no_targets(정상) / revived / revive_failed
+    # ③ 수렴 판정 → 완료 캐시(다음 틱부터 즉시 skip). 부활 대상 없음 + 전행 완료 + 예산 미소진.
+    if (out.get("done") and not out.get("budget_exhausted")
+            and revive.get("status") == "no_targets" and out.get("remaining_pending") == 0):
+        _pilot_done["done"] = True
     return out
 
 
@@ -323,6 +358,9 @@ def pilot_drain_cron():
         chunk = int(request.args.get("chunk", 5))
     except (TypeError, ValueError):
         chunk = 5
+    # ?force=1 → 완료 캐시 리셋(새 작업 유입/강제 재실행). 그 외엔 캐시가 고정비를 없앤다.
+    if str(request.args.get("force", "")).lower() in ("1", "true", "yes"):
+        reset_pilot_done_cache()
     try:
         # 전용 크론도 벽시계 예산 캡(cron-job.org 30s 계약) — 남은 건은 다음 틱 재개.
         result = _run_pilot_finish_tick(chunk=chunk, time_budget_sec=_tick_budget_sec())

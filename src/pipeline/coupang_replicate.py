@@ -963,21 +963,32 @@ _MAX_BACKFILL_ATTEMPTS = 3                # 동일 행 3회 실패 시 permanent
 _REVIVED_META = "_kgp_revived"            # 부활 1회 마킹 — 구경로 실패로 소급 종결된 행을 신경로로 재검증.
 
 
-def pilot_revive_permfail(rows, *, list_products_fn, update_fn) -> dict:
+def pilot_revive_permfail(rows, *, list_products_fn=None, update_fn, draft_products=None) -> dict:
     """**미실증 종결 방어(오너 지시):** permanent_fail 중 **아직 부활 안 한 행**을 1회 부활.
 
     구경로(URL 사이드로드) 실패 카운트만으로 상한 도달해 종결됐을 수 있어(신경로 media 업로드 미시도),
     perm_fail 해제 + attempts 리셋 + `_kgp_revived=1` 마킹 → pending 재진입 → 신경로로 재시도.
     **부활은 행당 1회**(revived 마킹으로 재부활 차단) → 부활 후 재실패는 **진짜 permanent_fail**(WC 400 본문 사유).
+
+    draft_products가 주어지면 그걸 쓴다(WC 조회 공유 — 고정비 제거). 없으면 list_products_fn로 조회.
+    **status 분리(오너 지시):** no_targets(부활 대상 없음·정상) / revived / revive_failed / list_failed(조회 실패·이상).
     """
     passable, _held = _pilot_passable(rows)
     sids = {str(r.get("sid")) for r in passable}
+    if draft_products is None:
+        try:
+            draft_products = list((list_products_fn("draft") if list_products_fn else []) or [])
+        except Exception as exc:                       # 조회 실패 = 이상('없음 확인'≠'수집 실패')
+            return {"revived": 0, "failed": 0, "candidates": 0, "status": "list_failed",
+                    "reason": str(exc), "rows": []}
     revived = []
-    for p in (list_products_fn("draft") or []):
+    candidates = 0
+    for p in (draft_products or []):
         sid = _pilot_sid_of(p)
         if sid not in sids:
             continue
         if _pilot_flag_value(p, _PERM_FAIL_META) == "1" and _pilot_flag_value(p, _REVIVED_META) != "1":
+            candidates += 1
             try:
                 update_fn(p.get("id"), {"meta_data": [
                     {"key": _PERM_FAIL_META, "value": "0"},   # 종결 해제 → pending 재진입
@@ -987,8 +998,10 @@ def pilot_revive_permfail(rows, *, list_products_fn, update_fn) -> dict:
                 revived.append({"sid": sid, "product_id": p.get("id")})
             except Exception as exc:
                 revived.append({"sid": sid, "product_id": p.get("id"), "error": str(exc)})
-    return {"revived": sum(1 for x in revived if not x.get("error")),
-            "failed": sum(1 for x in revived if x.get("error")), "rows": revived}
+    n_ok = sum(1 for x in revived if not x.get("error"))
+    status = "revived" if n_ok else ("no_targets" if candidates == 0 else "revive_failed")
+    return {"revived": n_ok, "failed": sum(1 for x in revived if x.get("error")),
+            "candidates": candidates, "status": status, "rows": revived}
 
 
 def _pilot_sid_of(product) -> Optional[str]:
@@ -1047,7 +1060,7 @@ def _pilot_passable(rows):
 def pilot_finish_tick(rows, *, list_products_fn, update_fn, enrich_fn, chunk: int = 5,
                       image_cap: int = IMAGE_CAP, stock_patch=None, sleep_fn=None, sleep_sec: float = 0.5,
                       image_ref_fn=None, max_attempts: int = _MAX_BACKFILL_ATTEMPTS,
-                      time_budget_sec: float = None, monotonic_fn=None) -> dict:
+                      time_budget_sec: float = None, monotonic_fn=None, draft_products=None) -> dict:
     """자동 마감 1틱(크론). **draft 이미지 백필(2장캡) → 실패 사유 기록 후 스킵 → 전행 처리 완료 시 자동 publish.**
 
     - 진행상태 = WC 자신(멱등·재개). `_kgp_pilot_sid` 매칭, 이미지 0장 draft는 no_image 플래그+**draft 잔류**(안 팔릴 상품 공개 방지).
@@ -1060,12 +1073,13 @@ def pilot_finish_tick(rows, *, list_products_fn, update_fn, enrich_fn, chunk: in
     sleep_fn = sleep_fn or _t.sleep
     _clock = monotonic_fn or _t.monotonic
     _start = _clock()
-    try:
-        draft_products = list(list_products_fn("draft") or [])
-    except Exception as exc:                       # WC 목록 조회 실패 = 틱 전체 무효 → 정직 반환(조용한 정지 금지)
-        return {"pending_before": 0, "processed": 0, "backfilled": 0, "no_image": 0, "failed": 0,
-                "remaining_pending": None, "published_this_tick": 0, "done": False,
-                "error": f"draft 목록 조회 실패(자격/네트워크): {exc}", "results": [], "published": []}
+    if draft_products is None:                     # 미주입 시 조회(주입 시 WC 조회 공유 — 고정비 제거)
+        try:
+            draft_products = list(list_products_fn("draft") or [])
+        except Exception as exc:                   # WC 목록 조회 실패 = 틱 전체 무효 → 정직 반환(조용한 정지 금지)
+            return {"pending_before": 0, "processed": 0, "backfilled": 0, "no_image": 0, "failed": 0,
+                    "remaining_pending": None, "published_this_tick": 0, "done": False,
+                    "error": f"draft 목록 조회 실패(자격/네트워크): {exc}", "results": [], "published": []}
     by_sid = {}
     for p in draft_products:
         sid = _pilot_sid_of(p)
