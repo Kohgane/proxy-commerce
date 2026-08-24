@@ -9,11 +9,35 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 
 logger = logging.getLogger(__name__)
 
 # 원인 4분(W7a) → 재시도 여부. auth/quota=재시도 무의미(터미널). rate_limit/budget/transient=재시도.
 _TERMINAL_CAUSES = {"auth", "quota"}
+
+# 시간예산 드레인 — 외부 크론(cron-job.org 30s 타임아웃) 안에 반드시 응답한다([[동기 대량 라우트 타임아웃 지뢰]]).
+# 25초 도달 시 즉시 중단·부분 결과 반환(HTTP 200), 남은 건은 다음 크론 호출이 이어서 처리. env로 조정.
+#   ※ 항목당 최악 지연은 W10 요청예산 캡(TRANSLATE_REQUEST_BUDGET_SEC, 기본 8s). 25s + 진행중 1건(≤8s) ≈ 33s
+#     여유가 빠듯하면 TRANSLATE_DRAIN_BUDGET_SEC를 20 안팎으로 낮춘다(30s 계약 우선).
+_DRAIN_BUDGET_DEFAULT_SEC = 25.0
+
+
+def _drain_budget_sec() -> float:
+    try:
+        v = float(os.getenv("TRANSLATE_DRAIN_BUDGET_SEC", "") or _DRAIN_BUDGET_DEFAULT_SEC)
+        return v if v > 0 else _DRAIN_BUDGET_DEFAULT_SEC
+    except (TypeError, ValueError):
+        return _DRAIN_BUDGET_DEFAULT_SEC
+
+
+def _pending_remaining() -> int:
+    """남은 대기(pending) 작업 수 — 조용한 누락 방지·진행상태 노출. 조회 실패 시 -1(미상 정직)."""
+    try:
+        from src.db import translation_jobs_pg as jobs
+        return int(jobs.counts().get("pending", 0))
+    except Exception:
+        return -1
 
 
 def _retryable(cause: str) -> bool:
@@ -24,11 +48,20 @@ def _worker_id() -> str:
     return f"w-{os.getpid()}"
 
 
-def drain_once(limit: int = 10, *, worker_id: str = "") -> dict:
-    """대기 작업을 최대 limit건 처리(SKIP LOCKED). PG 미가동이면 정직 no-op."""
+def drain_once(limit: int = 10, *, worker_id: str = "", time_budget_sec: float = None,
+               monotonic_fn=None) -> dict:
+    """대기 작업을 **시간예산 안에서** 처리(SKIP LOCKED). PG 미가동이면 정직 no-op.
+
+    시간예산 드레인([[동기 대량 라우트 타임아웃 지뢰]] 재발 방지): 핸들러 시작 시각을 기록하고 **항목 하나
+    처리할 때마다 경과를 확인** — time_budget_sec(기본 25s) 도달 시 **즉시 중단**하고 부분 결과를 반환한다.
+    항상 외부 크론 타임아웃(30s) 안에 응답하는 것이 계약. 남은 건은 **다음 크론 호출이 이어서 처리**(무상태 재개).
+    한 항목씩 lease(1) → 처리 → 커밋이라 중단 시 미처리 리스가 남지 않는다(스트랜딩 0).
+    반환에 ``remaining``·``budget_exhausted``·``elapsed_sec`` 포함(진행상태 정직 노출).
+    """
     from src.db import translation_jobs_pg as jobs
     if not jobs.enabled():
-        return {"ok": False, "reason": "pg 미가동 — 백그라운드 번역 비활성(동기 경로 사용)", "processed": 0}
+        return {"ok": False, "reason": "pg 미가동 — 백그라운드 번역 비활성(동기 경로 사용)", "processed": 0,
+                "remaining": 0, "budget_exhausted": False}
 
     from . import collect_history_store, translation_usage
     try:
@@ -36,14 +69,27 @@ def drain_once(limit: int = 10, *, worker_id: str = "") -> dict:
         translator = AITranslator()
     except Exception as exc:            # 번역기 로드 실패 → 처리 안 함(작업은 pending 유지)
         logger.warning("번역기 로드 실패(워커): %s", exc)
-        return {"ok": False, "reason": "translator 로드 실패", "processed": 0}
+        return {"ok": False, "reason": "translator 로드 실패", "processed": 0,
+                "remaining": _pending_remaining(), "budget_exhausted": False}
 
-    leased = jobs.lease(int(limit), worker_id=worker_id or _worker_id())
+    budget = float(time_budget_sec) if time_budget_sec is not None else _drain_budget_sec()
+    clock = monotonic_fn or time.monotonic
+    start = clock()
+    wid = worker_id or _worker_id()
     summ = {"ok": True, "processed": 0, "success": 0, "failed": 0, "retried": 0, "skipped": 0}
     _unlimited_env = os.getenv("TRANSLATION_UNLIMITED", "0") == "1"
     _limit = translation_usage.free_limit()
 
-    for job in leased:
+    budget_exhausted = False
+    while summ["processed"] < int(limit):
+        # 항목 착수 전 예산 확인 — 25초 도달이면 즉시 중단(진행중 항목 스트랜딩 0: 아직 lease 안 함).
+        if clock() - start >= budget:
+            budget_exhausted = True
+            break
+        leased = jobs.lease(1, worker_id=wid)
+        if not leased:                  # 큐 소진 — 정상 종료.
+            break
+        job = leased[0]
         summ["processed"] += 1
         jid, uid, item_id = job["job_id"], job["user_id"], job["item_id"]
         item = collect_history_store.get(item_id, seller_ids={uid} if uid else None)
@@ -121,4 +167,8 @@ def drain_once(limit: int = 10, *, worker_id: str = "") -> dict:
             "title_ok": title_ok, "desc_ok": desc_ok, "provider": provider,
             "attempts": out.get("attempts"), "detected_lang": out.get("detected_lang")})
         summ["success"] += 1
+
+    summ["budget_exhausted"] = budget_exhausted
+    summ["remaining"] = _pending_remaining()
+    summ["elapsed_sec"] = round(clock() - start, 2)
     return summ
