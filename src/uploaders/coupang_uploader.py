@@ -224,6 +224,20 @@ class CoupangUploader(BaseUploader):
                         '설정하세요. 유효 코드 목록은 GET /admin/coupang-delivery-companies 로 확인.'
                     ),
                 }
+            # SKU 유효성(카나리 8차 근원) — itemName/externalVendorSku로 그대로 나가는 값이다.
+            #   URL 파편('…&ref_=pd_hp_…')이 들어오면 쿠팡이 옵션명으로 거부한다. 쓰레기 값 전송 금지.
+            from src.collectors.product_key import is_valid_vendor_sku
+            sku = str(product.get('sku', '') or '').strip()
+            if not is_valid_vendor_sku(sku):
+                return {'success': False, 'held': True, 'sku': sku,
+                        'error': ('SKU 추출 실패 — 등록 중단(쓰레기 SKU 전송 금지). '
+                                  f'상품 URL에서 식별자(아마존 ASIN 등)를 뽑지 못했습니다: {sku!r}')}
+            # 판매가 하한(쿠팡: 옵션 10원 이상) — POST 전 차단으로 왕복 절약(카나리 7차 거부 재발 방지).
+            price = self._as_int(product.get('price', 0)) or 0
+            if price < 10:
+                return {'success': False, 'held': True, 'sku': sku,
+                        'error': (f'판매가 미확정({price}원) — 등록 중단. 쿠팡은 옵션 판매가 10원 이상을 '
+                                  '요구합니다. 검수표 판매가가 페이로드까지 전달됐는지 확인하세요.')}
             # 카테고리 예측(실 리프 ID) → 그 코드로 고시정보 스키마 조회(동적·권위). 네트워크는 이 경로에만.
             #   **정본: 예측 실패 시 등록 중단**(임의 카테고리로 보내면 거부/오분류 — 추측 전송 금지).
             cat = self.predict_category(product.get('title', '')) or str(product.get('category_id', '') or '')

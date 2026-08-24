@@ -12,6 +12,7 @@ import os
 import re
 from typing import Optional
 
+from src.collectors.product_key import vendor_sku
 from src.pipeline.coupang_replicate import (
     DEFAULT_MARGIN_RATE,
     IMAGE_CAP,
@@ -338,7 +339,8 @@ def explain_forbidden(reason: Optional[str], title: str) -> Optional[dict]:
 
 def build_source_review_row(draft: dict, *, url: str = "", channel: str = "woocommerce_multishop",
                             blacklist=None, margin_rate: float = DEFAULT_MARGIN_RATE,
-                            fx_rate: Optional[float] = None, ship_check_fn=None, ship_cost_fn=None,
+                            fx_rate: Optional[float] = None, fx_rates: Optional[dict] = None,
+                            ship_check_fn=None, ship_cost_fn=None,
                             brand_country_fn=None, watch_brands=None) -> dict:
     """수집 초안(draft) → 검수표 1행(파일럿 동형). **등록 안 함**(registered=False 불변).
 
@@ -357,13 +359,22 @@ def build_source_review_row(draft: dict, *, url: str = "", channel: str = "wooco
     except (TypeError, ValueError):
         price_original = None
 
+    # 환율은 **그 통화의 환율**만 쓴다(EUR 상품에 USD 환율 = 임의 환산 → 금지). 없으면 미입력 정직.
+    if isinstance(fx_rates, dict):
+        try:
+            rate = float(fx_rates.get(currency) or 0) or None    # 통화 미수록 = 환산 불가(정직)
+        except (TypeError, ValueError):
+            rate = None
+    else:
+        rate = fx_rate                                            # 단일 환율(구 호출부 호환)
+
     cost_krw = None
     if price_original:
         if currency in _KRW_CURRENCIES:
             cost_krw = round(price_original)
             cost_basis = "원화 원가"
-        elif fx_rate:
-            cost_krw = round(price_original * fx_rate)
+        elif rate:
+            cost_krw = round(price_original * rate)
             cost_basis = f"{currency}×환율 환산"
         else:
             cost_basis = f"{currency} 원가 — 환율 미상(환산 불가·미입력)"
@@ -441,7 +452,8 @@ def build_source_review_row(draft: dict, *, url: str = "", channel: str = "wooco
 
 def build_source_review(urls, *, collect_fn, channel: str = "woocommerce_multishop",
                         blacklist=None, margin_rate: float = DEFAULT_MARGIN_RATE,
-                        fx_rate: Optional[float] = None, cap: int = 50,
+                        fx_rate: Optional[float] = None, fx_rates: Optional[dict] = None,
+                        cap: int = 50,
                         ship_check_fn=None, ship_cost_fn=None, brand_country_fn=None,
                         watch_brands=None) -> dict:
     """소싱 URL 목록 → 검수표. collect_fn(url)=서버 수집(주입). **등록 없음.**
@@ -466,6 +478,7 @@ def build_source_review(urls, *, collect_fn, channel: str = "woocommerce_multish
             continue
         review.append(build_source_review_row(draft, url=u, channel=channel, blacklist=blacklist,
                                                margin_rate=margin_rate, fx_rate=fx_rate,
+                                               fx_rates=fx_rates,
                                                ship_check_fn=ship_check_fn, ship_cost_fn=ship_cost_fn,
                                                brand_country_fn=brand_country_fn, watch_brands=watch_brands))
     return {
@@ -545,8 +558,26 @@ def register_source_rows(rows, *, dispatch_fn, enrich_fn=None, account: str = "g
                             "reason": "이미지 0장 — 등록 보류(수집 실패, 확장 수집 권장)",
                             "image_count": 0, "product_id": None})
             continue
+        # 판매가 미확정(환율 미상 등) → 등록 안 함. 0원 전송은 마켓이 반드시 거부한다(왕복 절약·정직 사유).
+        try:
+            _sale = int(r.get("sale_krw") or 0)
+        except (TypeError, ValueError):
+            _sale = 0
+        if _sale < 10:
+            results.append({"url": r.get("url"), "title": r.get("title_ko"), "registered": False,
+                            "reason": (f"판매가 미확정({r.get('sale_krw')!r}) — 등록 보류. "
+                                       + (r.get("price_reason") or "검수표 판매가를 확인하세요.")),
+                            "image_count": len(images), "product_id": None})
+            continue
+        # 판매자 SKU(마켓 옵션명·externalVendorSku) — URL 파편 전송 금지. 못 뽑으면 등록 중단.
+        sku = vendor_sku(r.get("url") or "")
+        if not sku:
+            results.append({"url": r.get("url"), "title": r.get("title_ko"), "registered": False,
+                            "reason": "SKU 추출 실패 — 등록 보류(상품 URL에서 식별자를 뽑지 못했습니다).",
+                            "image_count": len(images), "product_id": None})
+            continue
         product_data = {
-            "title_ko": r.get("title_ko"), "sell_price_krw": r.get("sale_krw"),
+            "title_ko": r.get("title_ko"), "sell_price_krw": r.get("sale_krw"), "sku": sku,
             "images": images, "description_html": desc, "category_code": cat,
             "url": r.get("url"), "source": r.get("source"),
             "brand": r.get("brand"), "origin": r.get("origin"),   # 고시정보 실값(제조자/원산지)
