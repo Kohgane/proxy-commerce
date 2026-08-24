@@ -65,6 +65,10 @@ class CoupangUploader(BaseUploader):
     # 택배사 코드 정본 — 쿠팡 메타 API가 유효 코드 목록을 준다(**새 값 발명 금지**·카나리 6차 거부 대응).
     DELIVERY_COMPANIES_PATH = ('/v2/providers/openapi/apis/api/v1/marketplace/'
                                'meta/coupang-delivery-companies')
+    # ★ 배송 페이로드 **정본**(오너 SSH grep 실측 — coupang_upload.py:125, 5,691건 등록 검증값).
+    #   구매대행이므로 AGENT_BUY. SEQUENCIAL(구 기본값)은 구매대행에 부적합해 폐기(오너 지시).
+    DEFAULT_DELIVERY_METHOD = 'AGENT_BUY'
+    DEFAULT_DELIVERY_COMPANY_CODE = 'CJGLS'
 
     def __init__(self, access_key: str = None, secret_key: str = None, vendor_id: str = None,
                  account: str = None, overseas_purchased: bool = None):
@@ -108,12 +112,17 @@ class CoupangUploader(BaseUploader):
         #   쿠팡이 어느 문구를 받는지는 카나리 응답이 실측 — 거부되면 응답 원문 허용 문구로 env 교체.
         _fb = os.getenv('COUPANG_ORIGIN_FALLBACK')
         self.origin_fallback = ('해외' if _fb is None else _fb.strip())
-        # 택배사·배송 방식(카나리 6차 거부: "유효하지 않은 택배사 코드(DIRECT_DELIVERY)").
-        #   **하드코딩 금지·발명 금지** — 계정별 env(접두 우선). 코드를 모르면 NAME 힌트로 쿠팡 메타 API에서
-        #   정확한 코드를 조회해 쓴다(정본=쿠팡). 둘 다 없으면 등록 전 정직 실패(가짜 코드 전송 0).
+        # 택배사·배송 방식 — **정본 = 오너 SSH grep 실측**(coupang_upload.py:125, 5,691건 등록에 쓰인 값).
+        #   deliveryMethod=AGENT_BUY(구매대행) · deliveryCompanyCode=CJGLS. 기본값이 곧 검증값이라
+        #   env 미설정이어도 정본으로 등록된다. 계정별로 다르면 접두 env로 덮어쓴다(하드코딩 아님·오버라이드 가능).
+        #   ※ SEQUENCIAL(예전 기본값)은 **구매대행에 부적합** — 오너 지시로 폐기.
         self.delivery_company_code = self._ship_env('COUPANG_DELIVERY_COMPANY_CODE')
+        # 명시적으로 빈 값을 준 경우 = 폴백 끔(정본 기본값도 안 씀 → 등록 전 정직 보류).
+        self._delivery_code_disabled = (
+            self._raw_env_present('COUPANG_DELIVERY_COMPANY_CODE') and not self.delivery_company_code)
         self.delivery_company_name = self._ship_env('COUPANG_DELIVERY_COMPANY_NAME')   # 예: 우체국
-        self.delivery_method = self._ship_env('COUPANG_DELIVERY_METHOD', 'SEQUENCIAL')
+        self.delivery_method = self._ship_env('COUPANG_DELIVERY_METHOD',
+                                              self.DEFAULT_DELIVERY_METHOD)
         self.delivery_charge_type = self._ship_env('COUPANG_DELIVERY_CHARGE_TYPE', 'FREE')
         self._delivery_companies_cache = None
         self._notice_schema_cache = {}   # displayCategoryCode → 고시정보 스키마(메타 API, 1회 조회)
@@ -141,6 +150,13 @@ class CoupangUploader(BaseUploader):
             if not self._unprefixed_owned_by_account():
                 return default
         return os.getenv(base_env, default)
+
+    def _raw_env_present(self, base_env: str) -> bool:
+        """해당 배송 env가 (접두/무접두 중 하나라도) **정의되어 있는가**. 빈 문자열도 '정의됨'으로 본다."""
+        prefix = self.ACCOUNT_PREFIXES.get(self.account or '')
+        if prefix and (f'{prefix}_' + base_env[len('COUPANG_'):]) in os.environ:
+            return True
+        return base_env in os.environ
 
     def _unprefixed_owned_by_account(self) -> bool:
         """무접두 COUPANG_* 배송/자격이 self.account 소유인가(resolve_base_account 일치)? account 미지정=허용."""
@@ -373,21 +389,23 @@ class CoupangUploader(BaseUploader):
         return out
 
     def resolve_delivery_company_code(self) -> str:
-        """전송할 택배사 코드 확정. ① env 코드(정본 승계) → ② env 이름 힌트로 쿠팡 목록에서 매칭 → ③ ''.
+        """전송할 택배사 코드 확정. ① 명시 env 코드 → ② env 이름 힌트로 쿠팡 목록 매칭 → ③ **정본 기본값**.
 
-        ③(빈 값)이면 호출부가 **등록 전 정직 실패**시킨다 — 유효하지 않은 코드를 보내 카나리를 또 태우지 않는다.
+        ③ = DEFAULT_DELIVERY_COMPANY_CODE(오너 SSH grep 실측 CJGLS·5,691건 등록 검증값).
+        env를 **명시적으로 빈 값**으로 두면 ''를 돌려주고 호출부가 등록 전 정직 보류시킨다.
         """
-        if self.delivery_company_code:
+        if self.delivery_company_code:                     # ① 명시 env 코드(최우선)
             return self.delivery_company_code
         hint = (self.delivery_company_name or '').strip()
-        if not hint:
+        if hint:                                           # ② 이름 힌트 → 쿠팡 목록 매칭(발명 0)
+            for row in self.get_delivery_companies():
+                name = row.get('name') or ''
+                if hint == name or hint in name:
+                    self.delivery_company_code = row['code']    # 1회 확정 후 캐시
+                    return row['code']
+        if self._delivery_code_disabled:                   # 명시적으로 비움 → 보류(정직)
             return ''
-        for row in self.get_delivery_companies():          # 정본=쿠팡 목록(발명 0)
-            name = row.get('name') or ''
-            if hint == name or (hint and hint in name):
-                self.delivery_company_code = row['code']    # 1회 확정 후 캐시
-                return row['code']
-        return ''
+        return self.DEFAULT_DELIVERY_COMPANY_CODE          # ③ 정본 기본값(오너 SSH 실측·5,691건 검증)
 
     def predict_category(self, product_name: str) -> str:
         """쿠팡 카테고리 예측 API로 상품명 → **실 카테고리ID**(리프). 실패/미지원 시 '' (폴백 CATEGORY_MAP)."""
