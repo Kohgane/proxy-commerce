@@ -63,15 +63,37 @@ def test_name_hint_resolves_from_coupang_list(monkeypatch):
     assert sent["payload"]["deliveryCompanyCode"] == "EPOST"      # 목록의 '우체국택배' 코드
 
 
-def test_unset_holds_before_send(monkeypatch):
-    # ③ 코드·이름 모두 없음 → 등록 전 정직 실패(유효하지 않은 코드 전송 0 = 카나리 재소모 방지).
+def test_unset_uses_verified_default(monkeypatch):
+    # env 미설정 → **정본 기본값**(오너 SSH 실측 CJGLS)으로 등록. 카나리 왕복 0.
     up = _up(monkeypatch, account="woojoo")
+    sent = {}
+    _wire(monkeypatch, up, sent)
+    r = up.upload_product({"title": "케이스", "brand": "B", "origin": "중국", "sku": "s", "images": ["u"]})
+    assert r["success"] is True
+    assert sent["payload"]["deliveryCompanyCode"] == "CJGLS"
+    assert sent["payload"]["deliveryMethod"] == "AGENT_BUY"        # 구매대행(SEQUENCIAL 폐기)
+
+
+def test_explicitly_cleared_holds_before_send(monkeypatch):
+    # 명시적으로 비우면(""): 등록 전 정직 실패 — 유효하지 않은 코드 전송 0.
+    up = _up(monkeypatch, account="woojoo", COUPANG_WOOJOO_DELIVERY_COMPANY_CODE="")
+    up.delivery_company_code = ""
+    up.delivery_company_name = ""
     sent = {}
     _wire(monkeypatch, up, sent)
     r = up.upload_product({"title": "케이스", "brand": "B", "origin": "중국", "sku": "s", "images": ["u"]})
     assert r["success"] is False and r.get("held") is True
     assert "COUPANG_WOOJOO_DELIVERY_COMPANY_CODE" in r["error"]   # 계정 접두 키명 안내
-    assert "sent" not in sent and not sent                        # POST 호출 0
+    assert not sent                                               # POST 호출 0
+
+
+def test_verified_defaults_are_owner_measured():
+    # 정본 = 오너 SSH grep 실측(coupang_upload.py:125 · 5,691건 등록 검증값). 발명 0.
+    from src.uploaders.coupang_uploader import CoupangUploader as CU
+    assert CU.DEFAULT_DELIVERY_METHOD == "AGENT_BUY"      # 구매대행
+    assert CU.DEFAULT_DELIVERY_COMPANY_CODE == "CJGLS"
+    src = open("src/uploaders/coupang_uploader.py", encoding="utf-8").read()
+    assert "'SEQUENCIAL'" not in src                       # 구매대행 부적합 기본값 폐기
 
 
 def test_account_specific_codes(monkeypatch):
@@ -87,7 +109,7 @@ def test_account_specific_codes(monkeypatch):
 def test_delivery_method_and_charge_type_env(monkeypatch):
     # 배송 방식·배송비 유형도 env화(같은 스크립트 승계용) — 기본값은 기존 동작 유지(무회귀).
     up = _up(monkeypatch, account="gogane", COUPANG_GOGANE_DELIVERY_COMPANY_CODE="EPOST")
-    assert up.delivery_method == "SEQUENCIAL" and up.delivery_charge_type == "FREE"
+    assert up.delivery_method == "AGENT_BUY" and up.delivery_charge_type == "FREE"
     up2 = _up(monkeypatch, account="gogane", COUPANG_GOGANE_DELIVERY_COMPANY_CODE="EPOST",
               COUPANG_GOGANE_DELIVERY_METHOD="AGENT_BUY", COUPANG_GOGANE_DELIVERY_CHARGE_TYPE="NOT_FREE")
     sent = {}
