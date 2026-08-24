@@ -168,9 +168,13 @@ def test_route_post_builds_review_table_no_register(monkeypatch):
 
 # ── P3: 승인 게이트 + 카나리 쿠팡 실등록 ──────────────────────────────────────────
 def _p3_rows():
-    return [{"url": "https://x/1", "title_ko": "원목 식탁", "sale_krw": 71900, "excluded": False},
-            {"url": "https://x/2", "title_ko": "스텐 텀블러", "sale_krw": 27200, "excluded": False},
-            {"url": "https://x/3", "title_ko": "샤넬 향수", "sale_krw": 300000, "excluded": True}]  # 취급제외
+    # URL은 **식별자(ASIN)가 뽑히는 실형태** — SKU 게이트(카나리 8차)가 파편 URL을 막는다.
+    return [{"url": "https://www.amazon.com/dp/B0AAAAAAA1", "title_ko": "원목 식탁",
+             "sale_krw": 71900, "excluded": False},
+            {"url": "https://www.amazon.de/-/en/dp/B0BBBBBBB2?ref_=x", "title_ko": "스텐 텀블러",
+             "sale_krw": 27200, "excluded": False},
+            {"url": "https://www.amazon.com/dp/B0CCCCCCC3", "title_ko": "샤넬 향수",
+             "sale_krw": 300000, "excluded": True}]  # 취급제외
 
 
 def test_p3_canary_registers_only_one():
@@ -234,6 +238,7 @@ def test_p3_route_gated_or_registers(monkeypatch):
     # dispatch를 몽키패치해 라이브 쿠팡 호출 없이 성공 반환.
     monkeypatch.setattr(V, "_coupang_account_dispatch",
                         lambda pd, account: {"success": True, "product_id": "CP1", "url": "https://coupang/CP1"})
-    r = c.post("/seller/sourcing/register-pipe/register", data={"urls": "https://ok/1", "account": "gogane"})
+    r = c.post("/seller/sourcing/register-pipe/register",
+               data={"urls": "https://www.amazon.com/dp/B0AAAAAAA1", "account": "gogane"})
     d = r.get_json()
     assert d["ok"] and d["mode"] == "canary" and d["registered"] == 1 and d["account"] == "gogane"

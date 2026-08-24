@@ -7515,6 +7515,32 @@ def sourcing_hub():
     )
 
 
+def _register_pipe_fx_map() -> dict:
+    """통화→원화 환율 맵. 검수표와 **실등록이 같은 환율**을 쓰게 하는 단일 소스.
+
+    카나리 8차 근원: 등록 라우트가 환율을 안 넘겨 원가 환산이 통째로 실패 → 판매가 0으로 전송됐다.
+    통화별 실환율만 쓴다(EUR 상품에 USD 환율 = 임의 환산 → 금지). 조회 실패 시 빈 맵(환산 불가 정직).
+    """
+    try:
+        from .data_aggregator import get_fx_rates
+        fxd = get_fx_rates() or {}
+    except Exception as exc:
+        logger.debug("register-pipe fx 조회 스킵: %s", exc)
+        return {}
+    out = {}
+    for cur, v in fxd.items():
+        if not isinstance(cur, str) or not cur.isalpha():
+            continue                                   # updated_at/is_mock/source 등 메타 제외
+        raw = v.get("krw") if isinstance(v, dict) else v
+        try:
+            rate = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if rate > 0:
+            out[cur.upper()] = rate
+    return out
+
+
 @bp.route("/sourcing/register-pipe", methods=["GET", "POST"])
 def sourcing_register_pipe():
     """등록 파이프 P1: 소싱 URL 투입 → 수집·검증 → 검수표(등록 없음).
@@ -7533,21 +7559,15 @@ def sourcing_register_pipe():
     if request.method == "POST":
         urls_text = (request.form.get("urls") or "").strip()
         raw_urls = [ln.strip() for ln in urls_text.splitlines() if ln.strip()]
-        # 환율(원가 KRW 환산) — 없으면 외화 원가는 '환산 불가' 정직 표기(가짜 환산 0).
-        fx_usd_krw = None
-        try:
-            from .data_aggregator import get_fx_rates
-            fxd = get_fx_rates() or {}
-            fx_usd_krw = (fxd.get("USD") or {}).get("krw") if isinstance(fxd.get("USD"), dict) else fxd.get("USD")
-            fx_usd_krw = float(fx_usd_krw) if fx_usd_krw else None
-        except Exception as exc:
-            logger.debug("register-pipe fx 조회 스킵: %s", exc)
+        # 환율(원가 KRW 환산) — 통화별 실환율. 없으면 외화 원가는 '환산 불가' 정직 표기(가짜 환산 0).
+        fx_map = _register_pipe_fx_map()
         bl = load_blacklist85()
         review = build_source_review(
             raw_urls, collect_fn=_collect_real_draft,
             channel="woocommerce_multishop", blacklist=bl.get("terms"),
-            fx_rate=fx_usd_krw, cap=50)
-        review["fx_usd_krw"] = fx_usd_krw
+            fx_rates=fx_map, cap=50)
+        review["fx_usd_krw"] = fx_map.get("USD")
+        review["fx_rates"] = fx_map
         review["blacklist_count"] = bl.get("count", 0)
 
     return render_template("register_pipe.html", page="sourcing", review=review, urls_text=urls_text)
@@ -7557,6 +7577,7 @@ def _coupang_account_dispatch(product_data, account):
     """P3 쿠팡 실등록 dispatch — 계정별 자격(`_account_creds`)로 `CoupangUploader` 라우팅. 정직 실패."""
     from src.pipeline.coupang_replicate import _account_creds
     from src.uploaders.coupang_uploader import CoupangUploader
+    from src.collectors.product_key import vendor_sku
     ak, sk, vid = _account_creds(account)
     if not (ak and sk):
         return {"success": False, "error": f"{account} 쿠팡 자격 미설정(env) — 등록 불가"}
@@ -7571,8 +7592,11 @@ def _coupang_account_dispatch(product_data, account):
         # 정본: 카테고리는 쿠팡 예측이 1차. 매핑은 예측 실패 시 폴백일 뿐, 임의 기본값(76001)은 주지 않는다
         #   — 예측·매핑 둘 다 없으면 업로더가 등록을 중단한다(추측 전송 금지).
         "category_id": (up.CATEGORY_MAP.get(cat, "") if cat else ""),
-        "sku": (product_data.get("url") or "")[-40:],
-        "description": product_data.get("description_html") or product_data.get("title_ko") or "",
+        # 카나리 8차: URL 꼬리 40자(쿼리 파편) → **상품 식별자**(아마존 ASIN 등). 못 뽑으면 빈값 →
+        #   업로더가 'SKU 추출 실패'로 등록 중단(쓰레기 값으로 카나리 태우지 않는다).
+        "sku": (product_data.get("sku") or vendor_sku(product_data.get("url") or "")),
+        # 키 정정: 페이로드 contents는 `description_html`을 읽는다(구 `description`은 무시돼 상세 소실).
+        "description_html": product_data.get("description_html") or product_data.get("title_ko") or "",
         "images": product_data.get("images") or [],
         "stock": 99,
         # 고시정보 실값(P3 카나리 반려 대응) — 제조자=브랜드 · 원산지=수집값(없으면 uploader가 등록 보류).
@@ -7606,8 +7630,10 @@ def sourcing_register_pipe_register():
         return jsonify({"ok": False, "error": "등록할 소싱 URL이 없습니다."}), 400
 
     bl = load_blacklist85()
+    # 환율은 검수표와 **같은 소스**로(미주입 시 원가 환산 실패 → 판매가 0 전송 = 카나리 8차 근원).
     review = build_source_review(raw_urls, collect_fn=_collect_real_draft,
-                                 channel="woocommerce_multishop", blacklist=bl.get("terms"), cap=50)
+                                 channel="woocommerce_multishop", blacklist=bl.get("terms"),
+                                 fx_rates=_register_pipe_fx_map(), cap=50)
     passes = review.get("review_pass") or []
     if not passes:
         return jsonify({"ok": False, "error": "검수 통과 상품이 없습니다(취급제외/수집실패).",

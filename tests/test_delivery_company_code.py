@@ -48,7 +48,7 @@ def test_env_code_is_used_verbatim(monkeypatch):
     up = _up(monkeypatch, account="gogane", COUPANG_GOGANE_DELIVERY_COMPANY_CODE="EPOST")
     sent = {}
     _wire(monkeypatch, up, sent)
-    r = up.upload_product({"title": "케이스", "brand": "B", "origin": "중국", "sku": "s", "images": ["u"]})
+    r = up.upload_product({"title": "케이스", "brand": "B", "origin": "중국", "sku": "B0GS4698H2", "price": 48500, "images": ["u"]})
     assert r["success"] is True
     assert sent["payload"]["deliveryCompanyCode"] == "EPOST"
 
@@ -58,7 +58,7 @@ def test_name_hint_resolves_from_coupang_list(monkeypatch):
     up = _up(monkeypatch, account="gogane", COUPANG_GOGANE_DELIVERY_COMPANY_NAME="우체국")
     sent = {}
     _wire(monkeypatch, up, sent)
-    r = up.upload_product({"title": "케이스", "brand": "B", "origin": "중국", "sku": "s", "images": ["u"]})
+    r = up.upload_product({"title": "케이스", "brand": "B", "origin": "중국", "sku": "B0GS4698H2", "price": 48500, "images": ["u"]})
     assert r["success"] is True
     assert sent["payload"]["deliveryCompanyCode"] == "EPOST"      # 목록의 '우체국택배' 코드
 
@@ -68,7 +68,7 @@ def test_unset_uses_verified_default(monkeypatch):
     up = _up(monkeypatch, account="woojoo")
     sent = {}
     _wire(monkeypatch, up, sent)
-    r = up.upload_product({"title": "케이스", "brand": "B", "origin": "중국", "sku": "s", "images": ["u"]})
+    r = up.upload_product({"title": "케이스", "brand": "B", "origin": "중국", "sku": "B0GS4698H2", "price": 48500, "images": ["u"]})
     assert r["success"] is True
     assert sent["payload"]["deliveryCompanyCode"] == "CJGLS"
     assert sent["payload"]["deliveryMethod"] == "AGENT_BUY"        # 구매대행(SEQUENCIAL 폐기)
@@ -81,7 +81,7 @@ def test_explicitly_cleared_holds_before_send(monkeypatch):
     up.delivery_company_name = ""
     sent = {}
     _wire(monkeypatch, up, sent)
-    r = up.upload_product({"title": "케이스", "brand": "B", "origin": "중국", "sku": "s", "images": ["u"]})
+    r = up.upload_product({"title": "케이스", "brand": "B", "origin": "중국", "sku": "B0GS4698H2", "price": 48500, "images": ["u"]})
     assert r["success"] is False and r.get("held") is True
     assert "COUPANG_WOOJOO_DELIVERY_COMPANY_CODE" in r["error"]   # 계정 접두 키명 안내
     assert not sent                                               # POST 호출 0
@@ -114,7 +114,7 @@ def test_delivery_method_and_charge_type_env(monkeypatch):
               COUPANG_GOGANE_DELIVERY_METHOD="AGENT_BUY", COUPANG_GOGANE_DELIVERY_CHARGE_TYPE="NOT_FREE")
     sent = {}
     _wire(monkeypatch, up2, sent)
-    up2.upload_product({"title": "x", "brand": "B", "origin": "중국", "sku": "s", "images": ["u"]})
+    up2.upload_product({"title": "x", "brand": "B", "origin": "중국", "sku": "B0GS4698H2", "price": 48500, "images": ["u"]})
     assert sent["payload"]["deliveryMethod"] == "AGENT_BUY"
     assert sent["payload"]["deliveryChargeType"] == "NOT_FREE"
 

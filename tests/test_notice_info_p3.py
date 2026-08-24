@@ -103,12 +103,12 @@ def test_upload_product_registers_with_fallback_origin(monkeypatch):
     monkeypatch.setattr(u, "_api_request", _api)
     monkeypatch.delenv("COUPANG_ORIGIN_FALLBACK", raising=False)
     u.origin_fallback = "해외"
-    res = u.upload_product({"title": "케이스", "brand": "TORRAS", "origin": "", "sku": "s", "images": ["u"]})
+    res = u.upload_product({"title": "케이스", "brand": "TORRAS", "origin": "", "sku": "B0GS4698H2", "price": 48500, "images": ["u"]})
     assert res["success"] is True and called["post"] is True           # 폴백으로 등록 진행
     # 폴백 끄면 보류(등록 시도 0).
     called["post"] = False
     u.origin_fallback = ""
-    held = u.upload_product({"title": "케이스", "brand": "TORRAS", "origin": "", "sku": "s", "images": ["u"]})
+    held = u.upload_product({"title": "케이스", "brand": "TORRAS", "origin": "", "sku": "B0GS4698H2", "price": 48500, "images": ["u"]})
     assert held["success"] is False and held.get("held") is True and called["post"] is False
 
 
@@ -130,7 +130,7 @@ def test_predict_category_used_for_display_code(monkeypatch):
             return {"data": 1, "code": "SUCCESS"}
         return {}
     monkeypatch.setattr(u, "_api_request", _api)
-    u.upload_product({"title": "케이스", "brand": "B", "origin": "베트남", "sku": "s", "images": ["u"]})
+    u.upload_product({"title": "케이스", "brand": "B", "origin": "베트남", "sku": "B0GS4698H2", "price": 48500, "images": ["u"]})
     assert sent["payload"]["displayCategoryCode"] == 556677             # 예측 코드 사용(정본: int)
     assert sent["payload"]["items"][0]["notices"][0]["noticeCategoryName"] == "휴대폰/스마트기기 액세서리"
 
