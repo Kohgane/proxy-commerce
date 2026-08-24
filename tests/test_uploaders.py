@@ -45,6 +45,8 @@ def coupang_uploader(monkeypatch):
     monkeypatch.setenv('COUPANG_RETURN_ADDRESS', '서울시 강남구 테헤란로 1')
     monkeypatch.setenv('COUPANG_RETURN_CHARGE_NAME', '반품담당')
     monkeypatch.setenv('COUPANG_COMPANY_CONTACT_NUMBER', '02-1234-5678')
+    # 택배사 코드(카나리 6차 거부 대응) — 이제 필수 설정. 유효 코드는 쿠팡 목록이 정본.
+    monkeypatch.setenv('COUPANG_DELIVERY_COMPANY_CODE', 'EPOST')
     from src.uploaders.coupang_uploader import CoupangUploader
     return CoupangUploader()
 
