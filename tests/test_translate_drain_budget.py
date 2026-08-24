@@ -188,3 +188,37 @@ def test_run_full_tick_budget_split_and_releases_lock(monkeypatch):
     assert "total_sec" in out and "drain_sec" in out
     assert not CRON._tick_lock.locked()                         # finally에서 락 해제(무한 점유 방지)
     assert CRON._last_tick.get("total_sec") is not None         # 최근 틱 기록(로그/진단)
+
+
+# ── 파일럿 크론 고정비 제거(오너 지시): 완료 게이트 + 단일 WC 조회 + 부활상태 구분 ──────
+def test_pilot_done_gate_skips_without_wc_query(monkeypatch):
+    # 완료 캐시면 WC 조회 0으로 즉시 skip(매 틱 고정비 제거).
+    import src.pricing.cron as CRON
+    from src.pipeline import coupang_replicate as CR
+    from src.vendors import woocommerce_client as WC
+    calls = {"list": 0}
+    monkeypatch.setattr(CR, "default_pilot_rows", lambda: [{"sid": 1, "excluded": False}])
+    monkeypatch.setattr(WC, "list_products_by_status",
+                        lambda s="draft": calls.__setitem__("list", calls["list"] + 1) or [])
+    CRON._pilot_done["done"] = True
+    try:
+        out = CRON._run_pilot_finish_tick(chunk=5)
+        assert out.get("gated") is True and out.get("done") is True
+        assert calls["list"] == 0                    # WC 조회 0 — 고정비 없음
+    finally:
+        CRON.reset_pilot_done_cache()
+    assert CRON._pilot_done["done"] is False          # force 리셋
+
+
+def test_pilot_tick_list_failed_is_honest_skip(monkeypatch):
+    # WC 조회 실패 = 이상(부활 판정 불가) → 정직 skip('없음 확인'≠'조회 실패').
+    import src.pricing.cron as CRON
+    from src.pipeline import coupang_replicate as CR
+    from src.vendors import woocommerce_client as WC
+    CRON.reset_pilot_done_cache()
+    monkeypatch.setattr(CR, "default_pilot_rows", lambda: [{"sid": 1, "excluded": False}])
+    def _boom(s="draft"):
+        raise RuntimeError("WC 502")
+    monkeypatch.setattr(WC, "list_products_by_status", _boom)
+    out = CRON._run_pilot_finish_tick(chunk=5)
+    assert out.get("list_failed") is True and "이상" in out["skipped"]
