@@ -139,6 +139,56 @@ def resolve_origin(draft: dict, *, brand_country_fn=None) -> tuple:
     return "", "none"
 
 
+# ── IPR 리스크 경고 계층(오너 지시) — blacklist(등록 차단)와 **다른 층위**. 차단 아님·표기만, 판단은 오너. ──
+#   근거: 볼트 [[취급 금지 카테고리]] 애플 사전승인 반려 전례 · TORRAS 소명 이력.
+_APPLE_COMPAT_RE = re.compile(
+    r"아이폰|iphone|맥세이프|magsafe|에어팟|airpod|아이패드|ipad|애플\s*워치|apple\s*watch|"
+    r"라이트닝|lightning|맥북|macbook|\bapple\b|애플", re.I)
+
+
+def load_ipr_watch_brands() -> set:
+    """소명 진행 중 브랜드 목록 — **env `IPR_WATCH_BRANDS`(쉼표/파이프) + `data/ipr_watch_brands.json`**.
+
+    하드코딩 금지(오너 지시) — 오너가 볼트에서 관리해 env/파일로 배포. 미설정이면 빈 셋(경고 0).
+    """
+    brands = set()
+    for b in re.split(r"[,|]", os.getenv("IPR_WATCH_BRANDS", "") or ""):
+        b = b.strip().lower()
+        if b:
+            brands.add(b)
+    try:
+        if os.path.isfile("data/ipr_watch_brands.json"):
+            data = json.load(open("data/ipr_watch_brands.json", encoding="utf-8"))
+            seq = data if isinstance(data, list) else (data.get("brands") or [])
+            for b in seq:
+                b = str(b or "").strip().lower()
+                if b:
+                    brands.add(b)
+    except Exception:
+        pass
+    return brands
+
+
+def assess_warnings(title: str, brand: str = "", *, watch_brands=None) -> list:
+    """IPR 리스크 경고(차단 아님·표기). 반환: [{kind, label, reason}].
+
+    ① 애플 호환 표기(iPhone/MagSafe/AirPods 등) → 애플 사전승인 반려 전례 경고. **삼성/픽셀 전용은 무경고**
+       (애플 토큰 없으면 매칭 안 됨). ② 소명 진행 브랜드(env/파일) → 경고.
+    """
+    text = f"{brand or ''} {title or ''}"
+    warnings = []
+    if _APPLE_COMPAT_RE.search(text):
+        warnings.append({"kind": "apple_compat", "label": "애플 호환",
+                         "reason": "애플 카테고리 사전승인 반려 전례 — 등록 전 확인(iPhone 대상 보류·삼성/픽셀용 유효)"})
+    wb = watch_brands if watch_brands is not None else load_ipr_watch_brands()
+    tl = text.lower()
+    matched = next((w for w in wb if w and w in tl), None)
+    if matched:
+        warnings.append({"kind": "ipr_watch", "label": "소명 진행 브랜드",
+                         "reason": f"IPR 소명 진행 중({matched}) — 등록 전 확인"})
+    return warnings
+
+
 def kr_ship_viability(brand: str, title: str = "", url: str = "", *, check_fn=None) -> dict:
     """한국 실배송 가능 판정. **등록 차단 안 함 — 플래그만**(오너 지시).
 
@@ -212,7 +262,7 @@ def explain_forbidden(reason: Optional[str], title: str) -> Optional[dict]:
 def build_source_review_row(draft: dict, *, url: str = "", channel: str = "woocommerce_multishop",
                             blacklist=None, margin_rate: float = DEFAULT_MARGIN_RATE,
                             fx_rate: Optional[float] = None, ship_check_fn=None, ship_cost_fn=None,
-                            brand_country_fn=None) -> dict:
+                            brand_country_fn=None, watch_brands=None) -> dict:
     """수집 초안(draft) → 검수표 1행(파일럿 동형). **등록 안 함**(registered=False 불변).
 
     - 제목: 번역 초안(title_ko) 재정제(clean_title_ko) + 절단/CJK 플래그(조용히 자르지 않음).
@@ -304,6 +354,7 @@ def build_source_review_row(draft: dict, *, url: str = "", channel: str = "wooco
         "source": draft.get("source") or draft.get("adapter_used"),
         "brand": brand, "origin": origin, "origin_source": origin_source,   # 고시정보 실값(등록 시 uploader가 사용)
         "notice_preview": notice_preview, "notice_hold": notice_hold,   # 고시정보 미리보기 + 원산지 보류
+        "warnings": assess_warnings(title, brand, watch_brands=watch_brands),   # IPR 경고(차단 아님·표기)
         "forbidden": fb, "forbidden_detail": explain_forbidden(fb, title),
         "excluded": bool(fb), "registered": False,
     }
@@ -312,7 +363,8 @@ def build_source_review_row(draft: dict, *, url: str = "", channel: str = "wooco
 def build_source_review(urls, *, collect_fn, channel: str = "woocommerce_multishop",
                         blacklist=None, margin_rate: float = DEFAULT_MARGIN_RATE,
                         fx_rate: Optional[float] = None, cap: int = 50,
-                        ship_check_fn=None, ship_cost_fn=None, brand_country_fn=None) -> dict:
+                        ship_check_fn=None, ship_cost_fn=None, brand_country_fn=None,
+                        watch_brands=None) -> dict:
     """소싱 URL 목록 → 검수표. collect_fn(url)=서버 수집(주입). **등록 없음.**
 
     수집 실패/취급금지는 조용히 버리지 않고 failed/excluded로 사유와 함께 분리.
@@ -336,7 +388,7 @@ def build_source_review(urls, *, collect_fn, channel: str = "woocommerce_multish
         review.append(build_source_review_row(draft, url=u, channel=channel, blacklist=blacklist,
                                                margin_rate=margin_rate, fx_rate=fx_rate,
                                                ship_check_fn=ship_check_fn, ship_cost_fn=ship_cost_fn,
-                                               brand_country_fn=brand_country_fn))
+                                               brand_country_fn=brand_country_fn, watch_brands=watch_brands))
     return {
         "count": len(review),
         "review_pass": [r for r in review if not r["excluded"]],
