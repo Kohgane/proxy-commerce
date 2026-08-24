@@ -99,15 +99,47 @@ def test_noop_without_pg_has_budget_fields(monkeypatch):
 def test_route_returns_200_with_budget_fields(monkeypatch):
     # 라우트는 예산 소진 부분결과도 HTTP 200으로 반환(cron-job.org 초록 계약).
     monkeypatch.delenv("CRON_SECRET", raising=False)
-    import src.pricing.cron as CRON
+    for v in ("CRON_TICK_BUDGET_SEC", "TRANSLATE_DRAIN_BUDGET_SEC"):
+        monkeypatch.delenv(v, raising=False)
     import src.seller_console.translate_worker as TW
-    monkeypatch.setattr(TW, "drain_once",
-                        lambda limit=10: {"ok": True, "processed": 3, "success": 3, "failed": 0,
-                                          "retried": 0, "skipped": 0, "remaining": 97,
-                                          "budget_exhausted": True, "elapsed_sec": 25.1})
+    import src.pricing.cron as CRON
+    seen = {}
+    def _fake_drain(limit=10, time_budget_sec=None):
+        seen["drain_budget"] = time_budget_sec
+        return {"ok": True, "processed": 3, "success": 3, "failed": 0, "retried": 0,
+                "skipped": 0, "remaining": 97, "budget_exhausted": True, "elapsed_sec": time_budget_sec}
+    def _fake_pilot(chunk=3, time_budget_sec=None):
+        seen["pilot_budget"] = time_budget_sec
+        return {"revived": 1, "backfilled": 2, "remaining_pending": 5, "budget_exhausted": False}
+    monkeypatch.setattr(TW, "drain_once", _fake_drain)
+    monkeypatch.setattr(CRON, "_run_pilot_finish_tick", _fake_pilot)
     from src.order_webhook import app
     c = app.test_client()
     r = c.post("/cron/translate-drain")
     assert r.status_code == 200                                   # 30초 계약 — 항상 200
     d = r.get_json()
     assert d["budget_exhausted"] is True and d["remaining"] == 97 and d["processed"] == 3
+    assert d["pilot_finish"]["revived"] == 1                      # 피기백 결과 포함
+    assert "tick_elapsed_sec" in d
+    # 예산 분배: 번역 몫 = min(drain_share 10, tick 22 - pilot_min 5) = 10, 파일럿엔 나머지 예약.
+    assert seen["drain_budget"] == 10.0 and seen["pilot_budget"] > 5.0
+
+
+def test_route_skips_pilot_when_tick_budget_tiny(monkeypatch):
+    # 틱 예산이 아주 작으면 번역 후 남는 예산 < 파일럿 최소 → 파일럿 스킵(스택 타임아웃 방지).
+    monkeypatch.delenv("CRON_SECRET", raising=False)
+    monkeypatch.setenv("CRON_TICK_BUDGET_SEC", "0.01")
+    import src.seller_console.translate_worker as TW
+    import src.pricing.cron as CRON
+    called = {"pilot": False}
+    monkeypatch.setattr(TW, "drain_once",
+                        lambda limit=10, time_budget_sec=None: {"ok": True, "processed": 0, "remaining": 0,
+                                                                "budget_exhausted": False})
+    monkeypatch.setattr(CRON, "_run_pilot_finish_tick",
+                        lambda chunk=3, time_budget_sec=None: called.__setitem__("pilot", True) or {})
+    from src.order_webhook import app
+    c = app.test_client()
+    r = c.post("/cron/translate-drain")
+    d = r.get_json()
+    assert r.status_code == 200 and called["pilot"] is False      # 파일럿 스킵
+    assert "다음 틱" in d["pilot_finish"]["skipped"]

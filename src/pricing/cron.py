@@ -108,13 +108,42 @@ def supabase_backup_cron():
     return jsonify(summary)
 
 
+# 크론 틱 공유 벽시계 예산 — 외부 크론(cron-job.org 30s)이 두 작업(번역 드레인 + 파일럿 마감) 스택을
+# 타임아웃 시키지 않도록 한 요청 전체를 벽시계로 캡([[동기 대량 라우트 타임아웃 지뢰]] 재발 대응).
+#   ※ 항목당 최악 지연(번역 W10 8s · 파일럿 수집+사이드로드 수초)이 있어, 예산 도달 후 진행중 1건이 초과할 수
+#     있다. cron이 여전히 빨강이면 CRON_TICK_BUDGET_SEC를 낮춘다(30s 계약 우선). 남은 건은 다음 틱 재개.
+_CRON_TICK_BUDGET_DEFAULT = 22.0
+_DRAIN_SHARE_DEFAULT = 10.0        # 번역 드레인 몫(상한). 파일럿 부활/마감이 굶지 않게 나머지 예약.
+_PILOT_MIN_SEC = 5.0              # 파일럿에 예약하는 최소 예산(부활 패스가 매 틱 돌게).
+
+
+def _tick_budget_sec() -> float:
+    try:
+        v = float(os.getenv("CRON_TICK_BUDGET_SEC", "") or _CRON_TICK_BUDGET_DEFAULT)
+        return v if v > 0 else _CRON_TICK_BUDGET_DEFAULT
+    except (TypeError, ValueError):
+        return _CRON_TICK_BUDGET_DEFAULT
+
+
+def _drain_share_sec() -> float:
+    try:
+        v = float(os.getenv("TRANSLATE_DRAIN_BUDGET_SEC", "") or _DRAIN_SHARE_DEFAULT)
+        return v if v > 0 else _DRAIN_SHARE_DEFAULT
+    except (TypeError, ValueError):
+        return _DRAIN_SHARE_DEFAULT
+
+
 @cron_bp.post("/translate-drain")
 def translate_drain_cron():
-    """v88-B: 백그라운드 번역 작업 큐 드레인 (Render Cron / 외부 스케줄러 훅).
+    """v88-B: 백그라운드 번역 큐 드레인 + v88-C 파일럿 마감 피기백 (Render Cron / 외부 스케줄러 훅).
 
-    헤더 ``X-Cron-Secret`` 이 ``CRON_SECRET`` 과 일치해야 실행(미설정 시 허용). PG 미가동이면 정직 no-op.
-    Query: limit(기본 10).
+    **시간예산 스택 방지**([[동기 대량 라우트 타임아웃 지뢰]]): 한 요청에 번역 드레인 + 파일럿 마감(부활·백필)
+    두 무거운 외부 I/O가 스택돼 cron-job.org 30s를 넘겼다. → **공유 벽시계 예산**(CRON_TICK_BUDGET_SEC,
+    기본 22s)으로 캡: 번역에 상한(_DRAIN_SHARE, 기본 10s), **파일럿에 최소 예산 예약**(부활 굶김 방지), 남은
+    예산 안에서만 파일럿 청크. 항상 30s 안에 응답, 남은 건은 다음 틱 재개(무상태·멱등).
+    헤더 ``X-Cron-Secret`` 이 ``CRON_SECRET`` 과 일치해야 실행(미설정 시 허용). Query: limit·pilot_chunk.
     """
+    import time as _t
     cron_secret = os.getenv("CRON_SECRET")
     if cron_secret:
         if request.headers.get("X-Cron-Secret", "") != cron_secret:
@@ -123,32 +152,42 @@ def translate_drain_cron():
         limit = int(request.args.get("limit", 10))
     except (TypeError, ValueError):
         limit = 10
+
+    start = _t.monotonic()
+    tick_budget = _tick_budget_sec()
+    # 번역 몫은 파일럿 최소 예산을 뺀 나머지로 상한(번역이 전체를 먹어 파일럿을 굶기지 않게).
+    drain_budget = max(4.0, min(_drain_share_sec(), tick_budget - _PILOT_MIN_SEC))
     try:
         from src.seller_console.translate_worker import drain_once
-        summary = drain_once(limit=limit)
+        summary = drain_once(limit=limit, time_budget_sec=drain_budget)
     except Exception as exc:
         logger.error("번역 드레인 오류: %s", exc)
         return jsonify({"ok": False, "error": "번역 드레인 중 오류가 발생했습니다."}), 500
-    # v88-C 마감 자동화 피기백: 같은 인증 틱에서 파일럿 마감 1청크(백필→publish) best-effort.
-    # 실패해도 번역 드레인 결과는 그대로 반환(파일럿이 번역을 막지 않음). 오너 개입 0.
-    try:
-        pf = _run_pilot_finish_tick(chunk=int(request.args.get("pilot_chunk", 5)))
-        summary["pilot_finish"] = pf
-        # 틱 로그에 pilot 처리 흔적 남김(조용한 정지 금지 — 오너가 로그로 진척·정체·사유 확인).
-        if pf.get("skipped"):
-            logger.info("파일럿 마감 틱: 스킵(%s)", pf["skipped"])
-        else:
-            logger.info("파일럿 마감 틱: 부활 %s · 백필 %s · no_image %s · 실패 %s · 잔여 %s · publish %s%s",
-                        pf.get("revived"), pf.get("backfilled"), pf.get("no_image"), pf.get("failed"),
-                        pf.get("remaining_pending"), pf.get("published_this_tick"),
-                        (" · 멈춘행 " + str([{s['sid']: s['reason']} for s in pf.get("stuck", [])])) if pf.get("stuck") else "")
-    except Exception as exc:                       # noqa: BLE001 — 조용한 실패 금지(사유 기록)
-        logger.warning("파일럿 마감 피기백 스킵: %s", exc)
-        summary["pilot_finish"] = {"skipped": str(exc)}
+
+    # 파일럿 마감 피기백 — **남은 예산 안에서만**(스택 타임아웃·부활 굶김 방지). best-effort.
+    pilot_budget = tick_budget - (_t.monotonic() - start)
+    if pilot_budget >= _PILOT_MIN_SEC:
+        try:
+            pf = _run_pilot_finish_tick(chunk=int(request.args.get("pilot_chunk", 3)),
+                                        time_budget_sec=pilot_budget)
+            summary["pilot_finish"] = pf
+            if pf.get("skipped"):
+                logger.info("파일럿 마감 틱: 스킵(%s)", pf["skipped"])
+            else:
+                logger.info("파일럿 마감 틱: 부활 %s · 백필 %s · no_image %s · 실패 %s · 잔여 %s · publish %s · 예산소진 %s%s",
+                            pf.get("revived"), pf.get("backfilled"), pf.get("no_image"), pf.get("failed"),
+                            pf.get("remaining_pending"), pf.get("published_this_tick"), pf.get("budget_exhausted"),
+                            (" · 멈춘행 " + str([{s['sid']: s['reason']} for s in pf.get("stuck", [])])) if pf.get("stuck") else "")
+        except Exception as exc:                   # noqa: BLE001 — 조용한 실패 금지(사유 기록)
+            logger.warning("파일럿 마감 피기백 스킵: %s", exc)
+            summary["pilot_finish"] = {"skipped": str(exc)}
+    else:
+        summary["pilot_finish"] = {"skipped": f"틱 예산 소진(번역 {(_t.monotonic() - start):.1f}s) — 다음 틱에서 파일럿"}
+    summary["tick_elapsed_sec"] = round(_t.monotonic() - start, 2)
     return jsonify(summary)
 
 
-def _run_pilot_finish_tick(chunk: int = 5) -> dict:
+def _run_pilot_finish_tick(chunk: int = 5, *, time_budget_sec: float = None) -> dict:
     """v88-C 파일럿 자동 마감 1틱 — 검수표 행 + WC 자격으로 백필→publish 청크 처리.
 
     상태 저장소 = WC 자신(멱등·재개). 자격/네트워크 실패는 예외로 전파(호출부가 사유 기록).
@@ -180,6 +219,7 @@ def _run_pilot_finish_tick(chunk: int = 5) -> dict:
         image_cap=CR.IMAGE_CAP,
         stock_patch={"manage_stock": False, "stock_status": "instock"},
         image_ref_fn=_image_ref,
+        time_budget_sec=time_budget_sec,       # 청크 항목마다 예산 확인(스택 타임아웃 방지)
     )
     out["revived"] = revive.get("revived", 0)
     return out
@@ -202,7 +242,8 @@ def pilot_drain_cron():
     except (TypeError, ValueError):
         chunk = 5
     try:
-        result = _run_pilot_finish_tick(chunk=chunk)
+        # 전용 크론도 벽시계 예산 캡(cron-job.org 30s 계약) — 남은 건은 다음 틱 재개.
+        result = _run_pilot_finish_tick(chunk=chunk, time_budget_sec=_tick_budget_sec())
     except Exception as exc:
         logger.error("파일럿 마감 드레인 오류: %s", exc)
         return jsonify({"ok": False, "error": f"파일럿 마감 중 오류(자격/네트워크): {exc}"}), 502
