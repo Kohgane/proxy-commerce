@@ -1,7 +1,7 @@
 """tests/test_notice_info_p3.py — P3 카나리 반려: 고시정보 실값 배선.
 
 쿠팡 거부 원문: '기타 재화' 불가 + 카테고리상세명 실값 요구. 카테고리 메타 API로 고시정보 유형 동적 결정,
-실값 채움(제조자/수입자/원산지/AS/인증), 원산지 미확인 등록 보류, 검수표 미리보기. 오프라인(_api_request 주입).
+실값 채움(제조자/수입자/원산지/AS/인증), 원산지 3층위(실측>추정>폴백·보류 폐기), 검수표 미리보기. 오프라인(_api_request 주입).
 """
 from __future__ import annotations
 
@@ -49,14 +49,28 @@ def test_build_notices_real_values(monkeypatch):
     assert by["품명 및 모델명"] == "TORRAS 갤럭시 케이스"
 
 
-def test_origin_unverified_holds():
+def test_origin_unverified_uses_fallback_not_hold(monkeypatch):
+    # 오너 지시: 원산지 미확인 = 등록 보류 **폐기** → 폴백 문구로 등록 시도.
+    monkeypatch.delenv("COUPANG_ORIGIN_FALLBACK", raising=False)
     u = _up()
     sch = [{"noticeCategoryName": "X", "details": ["제조국", "제조자(수입자)"]}]
     notices, hold = u._build_notices({"title": "케이스", "brand": "TORRAS", "origin": ""}, sch)
-    assert hold and "원산지" in hold                                    # 미확인 → 보류(추정 금지)
-    # 원산지 있으면 통과.
-    _, hold2 = u._build_notices({"title": "케이스", "brand": "TORRAS", "origin": "중국"}, sch)
+    assert hold is None                                                # 보류 안 함
+    by = {n["noticeCategoryDetailName"]: n["content"] for n in notices}
+    assert by["제조국"] == "해외"                                       # 폴백 문구로 채움
+    # 실측 원산지는 폴백보다 우선(층위 유지).
+    notices2, hold2 = u._build_notices({"title": "케이스", "brand": "TORRAS", "origin": "중국"}, sch)
     assert hold2 is None
+    assert {n["noticeCategoryDetailName"]: n["content"] for n in notices2}["제조국"] == "중국"
+
+
+def test_origin_hold_only_when_fallback_disabled(monkeypatch):
+    # 폴백을 빈 문자열로 끄면 보류 복귀(특정 국가 추정은 여전히 금지).
+    monkeypatch.setenv("COUPANG_ORIGIN_FALLBACK", "")
+    u = _up()
+    sch = [{"noticeCategoryName": "X", "details": ["제조국"]}]
+    _, hold = u._build_notices({"title": "케이스", "brand": "T", "origin": ""}, sch)
+    assert hold and "원산지" in hold
 
 
 def test_importer_name_by_account():
@@ -69,8 +83,8 @@ def test_fallback_to_etc_when_schema_absent():
     assert notices and notices[0]["noticeCategoryName"] == "기타 재화"   # 폴백(네트워크 0)
 
 
-def test_upload_product_holds_when_origin_missing(monkeypatch):
-    # 배송 env 충족 + 메타 스키마 + 원산지 없음 → 등록 보류(쿠팡 POST 호출 0). account 미지정=무접두 배송 env.
+def test_upload_product_registers_with_fallback_origin(monkeypatch):
+    # 오너 지시(보류 폐기): 원산지 없어도 폴백 문구로 **등록 진행**. 폴백을 끄면 보류.
     for s in ("VENDOR_USER_ID", "RETURN_CENTER_CODE", "OUTBOUND_SHIPPING_PLACE_CODE",
               "RETURN_ZIP_CODE", "RETURN_ADDRESS", "RETURN_CHARGE_NAME", "COMPANY_CONTACT_NUMBER"):
         monkeypatch.setenv(f"COUPANG_{s}", "x")
@@ -86,13 +100,15 @@ def test_upload_product_holds_when_origin_missing(monkeypatch):
             return {"data": 1, "code": "SUCCESS"}
         return {}
     monkeypatch.setattr(u, "_api_request", _api)
+    monkeypatch.delenv("COUPANG_ORIGIN_FALLBACK", raising=False)
+    u.origin_fallback = "해외"
     res = u.upload_product({"title": "케이스", "brand": "TORRAS", "origin": "", "sku": "s", "images": ["u"]})
-    assert res["success"] is False and res.get("held") is True and called["post"] is False   # 등록 시도 0
-    assert "원산지" in res["error"] or "미확인" in res["error"]
-    # 원산지 있으면 등록 진행(POST 호출).
+    assert res["success"] is True and called["post"] is True           # 폴백으로 등록 진행
+    # 폴백 끄면 보류(등록 시도 0).
     called["post"] = False
-    res2 = u.upload_product({"title": "케이스", "brand": "TORRAS", "origin": "베트남", "sku": "s", "images": ["u"]})
-    assert res2["success"] is True and called["post"] is True
+    u.origin_fallback = ""
+    held = u.upload_product({"title": "케이스", "brand": "TORRAS", "origin": "", "sku": "s", "images": ["u"]})
+    assert held["success"] is False and held.get("held") is True and called["post"] is False
 
 
 def test_predict_category_used_for_display_code(monkeypatch):
@@ -131,9 +147,14 @@ def test_resolve_origin_priority():
     bc = lambda b: "중국" if b.lower() == "torras" else None
     o, src = RP.resolve_origin({"brand": "TORRAS", "title": "TORRAS 케이스"}, brand_country_fn=bc)
     assert o == "중국" and src == "brand_inferred"
-    # ③ 아무 소스 없음 → 보류.
-    assert RP.resolve_origin({"brand": "무명", "title": "무명 케이스"}, brand_country_fn=lambda b: None) \
-        == ("", "none")
+    # ③ 실측·추정 없음 → **폴백 층위**(보류 폐기, 오너 지시). 층위 라벨은 fallback으로 구분.
+    assert RP.resolve_origin({"brand": "무명", "title": "무명 케이스"},
+                             brand_country_fn=lambda b: None) == ("해외", "fallback")
+    # 폴백 문구는 env로 교체(카나리 응답이 허용 문구 실측 → 1분 교체).
+    assert RP.resolve_origin({}, brand_country_fn=lambda b: None,
+                             fallback="수입산") == ("수입산", "fallback")
+    # 폴백을 명시적으로 끄면 none(=보류 복귀).
+    assert RP.resolve_origin({}, brand_country_fn=lambda b: None, fallback="") == ("", "none")
 
 
 def test_load_brand_country_map(tmp_path):
@@ -172,7 +193,10 @@ def test_review_row_notice_preview():
     np = r["notice_preview"]
     assert np["제조자"] == "TORRAS" and np["수입자"] == "고가네" and np["origin_verified"] is True
     assert r["notice_hold"] is False and r["brand"] == "TORRAS" and r["origin"] == "베트남"
-    # 원산지 미확인 → 보류 표기.
-    r2 = RP.build_source_review_row({"title_ko": "케이스", "currency": "KRW", "price_original": 30000})
-    assert r2["notice_hold"] is True and r2["notice_preview"]["origin_verified"] is False
-    assert "보류" in r2["notice_preview"]["원산지"]
+    # 원산지 미확인 → **폴백 층위**로 채우고 보류 안 함(오너가 표에서 '임시(폴백)' 식별).
+    r2 = RP.build_source_review_row({"title_ko": "케이스", "currency": "KRW", "price_original": 30000},
+                                    brand_country_fn=lambda b: None)
+    assert r2["notice_hold"] is False and r2["origin_source"] == "fallback"
+    assert r2["notice_preview"]["origin_fallback"] is True
+    assert r2["notice_preview"]["origin_verified"] is False      # 실측 아님(층위 섞지 않음)
+    assert r2["origin"] == "해외"

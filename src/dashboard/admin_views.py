@@ -3837,6 +3837,36 @@ def coupang_pilot_sales_cross():
     return jsonify(cross)
 
 
+@admin_panel_bp.get("/origin-coverage")
+def origin_coverage_route():
+    """원산지 층위 **커버리지 실측**(오너 검수표) — ②brand_inferred / ③fallback / 미확인 건수.
+
+    소싱맵(data/sourcing_map.json) 제목 전수로 사이징. 조회 전용·판단 0(오너가 표만 검수).
+    """
+    from flask import jsonify, request
+    import json as _json
+    from pathlib import Path as _P
+    from src.pipeline import register_pipe as RP
+
+    titles = []
+    try:
+        raw = _json.loads(_P("data/sourcing_map.json").read_text(encoding="utf-8"))
+        titles = [(v or {}).get("name_ko") or "" for v in (raw or {}).values() if isinstance(v, dict)]
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"sourcing_map 로드 실패: {exc}"}), 500
+    try:
+        limit = int(request.args.get("limit", 0))
+    except (TypeError, ValueError):
+        limit = 0
+    if limit > 0:
+        titles = titles[:limit]
+    out = RP.origin_coverage(titles)
+    out["ok"] = True
+    out["note"] = ("②는 brand_origin.json 매칭분, ③은 폴백 문구로 등록되는 분. "
+                   "실측(수집·아마존 상세)은 수집 시점에만 확정되므로 이 표엔 포함되지 않음.")
+    return jsonify(out)
+
+
 def _reject_watch_uploader(account: str):
     """계정별 CoupangUploader(반려감시용). 자격 미설정이면 None + 사유."""
     from src.pipeline.coupang_replicate import _account_creds

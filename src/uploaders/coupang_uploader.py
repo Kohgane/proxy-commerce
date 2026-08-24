@@ -101,6 +101,10 @@ class CoupangUploader(BaseUploader):
         self.importer_name = (os.getenv('COUPANG_IMPORTER_NAME', '').strip()
                               or self._IMPORTER_NAMES.get(self.account, '고가네'))
         self.cert_none_text = os.getenv('COUPANG_CERT_NONE_TEXT', '').strip() or '인증 대상 아님'
+        # 원산지 폴백(오너 지시: 미확인 = 등록 보류 폐기). 빈 문자열로 명시하면 폴백 끔(=보류 복귀).
+        #   쿠팡이 어느 문구를 받는지는 카나리 응답이 실측 — 거부되면 응답 원문 허용 문구로 env 교체.
+        _fb = os.getenv('COUPANG_ORIGIN_FALLBACK')
+        self.origin_fallback = ('해외' if _fb is None else _fb.strip())
         self._notice_schema_cache = {}   # displayCategoryCode → 고시정보 스키마(메타 API, 1회 조회)
         self._predict_cache = {}         # 상품명 → 예측 categoryId
         if not self.access_key:
@@ -379,7 +383,9 @@ class CoupangUploader(BaseUploader):
         if '인증' in d or '허가' in d:
             return self.cert_none_text                       # KC 비대상 표준 문구(오너 실측 확인)
         if '원산지' in d or '제조국' in d:
-            return origin or None                            # 미확인 → 보류(중국 등 추정 금지)
+            # 실측 원산지 우선. 미확인이면 **폴백 문구로 등록 시도**(오너 지시: 보류 폐기).
+            #   폴백을 빈 문자열로 껐을 때만 None(=보류) — 특정 국가 추정은 여전히 금지.
+            return origin or self.origin_fallback or None
         if '수입자' in d and ('제조자' in d or '제조사' in d):
             return f'{brand or "상세페이지 참조"} / {self.importer_name}'   # 결합 필드
         if '수입자' in d:

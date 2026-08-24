@@ -72,6 +72,7 @@ class ScrapedProduct:
     sku: Optional[str] = None
     in_stock: Optional[bool] = None
     options: list = field(default_factory=list)   # [{name, values}]
+    specs: list = field(default_factory=list)     # [(label, value)] — 상세 스펙표(원산지 등 실측 소스)
     raw_meta: dict = field(default_factory=dict)
     extraction_method: str = ""   # "json-ld" / "og" / "heuristic"
     confidence: float = 0.0       # 0.0~1.0
@@ -87,6 +88,7 @@ class ScrapedProduct:
             "price": str(self.price) if self.price is not None else None,
             "currency": self.currency,
             "brand": self.brand,
+            "specs": self.specs,
             "sku": self.sku,
             "in_stock": self.in_stock,
             "options": self.options,
@@ -244,6 +246,80 @@ def is_filler_description(text: str, url: str = "") -> bool:
 
 
 # v39-E2 #3: PDP 상세 영역에서 본문 텍스트 + 스펙/속성 표를 추출(광고/리뷰/네비 제외).
+def extract_amazon_pdp(html: Optional[str], url: str = "") -> dict:
+    """아마존 PDP **실측 추출** — 제목·브랜드·스펙표. 마크업 없으면 빈값(가짜 생성 0).
+
+    범용 detail-scope 셀렉터가 아마존 마크업을 하나도 못 잡아(root None → specs 0) 제목이 'Subtotal'로
+    오추출되고 브랜드가 None이던 근원 수리. 실 스냅샷(2.4MB)에서 확인된 마크업만 타깃:
+      - 제목 `#productTitle` · 브랜드 `tr.po-brand` 값 셀 → 폴백 `#bylineInfo`("Visit the X Store")
+      - 스펙 `tr[class*=po-]`(제품 개요 표) · `#productDetails_techSpec_section_1 tr` · `#detailBullets_feature_div li`
+    반환 {"title","brand","specs":[(label,value)]}. 원산지(Country of Origin)는 이 스펙표에 있으면 잡힌다.
+    """
+    out = {"title": "", "brand": "", "specs": []}
+    if not html:
+        return out
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+    except Exception:
+        return out
+
+    def _txt(el):
+        return re.sub(r"\s+", " ", el.get_text(" ", strip=True)) if el is not None else ""
+
+    try:
+        out["title"] = _txt(soup.select_one("#productTitle"))
+    except Exception:
+        pass
+    # 브랜드: 제품 개요 표의 Brand 행이 가장 깨끗(값만) → 없으면 byline 문구 정제.
+    try:
+        for tr in soup.select('tr[class*="po-brand"]'):
+            tds = tr.find_all("td")
+            if len(tds) >= 2:
+                out["brand"] = _txt(tds[1])
+                break
+        if not out["brand"]:
+            t = _txt(soup.select_one("#bylineInfo"))
+            m = (re.search(r"Visit the (.+?) Store", t, re.I)
+                 or re.search(r"Brand\s*[:：]\s*(.+)", t, re.I))
+            if m:
+                out["brand"] = m.group(1).strip()
+    except Exception:
+        pass
+
+    specs, seen = [], set()
+
+    def _add(label, value):
+        # 아마존 detailBullets는 양방향 마크(‏ ‎)와 콜론이 섞인다 — 정리 후 저장.
+        label = re.sub(r"[‎‏]", "", str(label or "")).strip(" :：·- ")
+        value = re.sub(r"[‎‏]", "", str(value or "")).strip(" :： ")
+        label, value = re.sub(r"\s+", " ", label), re.sub(r"\s+", " ", value)
+        if not label or not value or len(label) > 60 or len(value) > 200:
+            return
+        k = label.lower()
+        if k in seen:
+            return
+        seen.add(k)
+        specs.append((label, value))
+
+    try:
+        for sel in ('tr[class*="po-"]', "#productDetails_techSpec_section_1 tr",
+                    "#productDetails_detailBullets_sections1 tr", "#prodDetails tr"):
+            for tr in soup.select(sel):
+                cells = tr.find_all(["th", "td"])
+                if len(cells) >= 2:
+                    _add(_txt(cells[0]), _txt(cells[1]))
+        for li in soup.select("#detailBullets_feature_div li, #detailBulletsWrapper_feature_div li"):
+            t = _txt(li)
+            if ":" in t or "：" in t:
+                lbl, _, val = t.replace("：", ":").partition(":")
+                _add(lbl, val)
+    except Exception:
+        pass
+    out["specs"] = specs[:40]
+    return out
+
+
 def extract_detail_description(html: Optional[str], url: str = "") -> dict:
     """상세설명 영역의 ① 본문 텍스트 ② 스펙/속성 표를 추출.
 
@@ -270,6 +346,10 @@ def extract_detail_description(html: Optional[str], url: str = "") -> dict:
             root = el
             break
     if root is None:
+        # 범용 스코프 미매칭(아마존 등) → 사이트 실측 추출로 폴백(specs 0 → 실값).
+        amz = extract_amazon_pdp(html, url)
+        if amz.get("specs"):
+            out["specs"] = amz["specs"]
         return out
 
     # ① 스펙/속성 표: <table> th/td, <dl> dt/dd, '라벨: 값' li
@@ -885,6 +965,19 @@ class UniversalScraper:
             try:
                 if getattr(result, "images", None):
                     result.images = filter_product_images(result.images)
+            except Exception:
+                pass
+            # 아마존 PDP 실측 보강: 범용 셀렉터가 아마존 마크업을 못 잡아 제목이 'Subtotal'로 오추출되고
+            #   브랜드 None, 스펙 0이던 근원 수리. **실측값이 있을 때만** 덮어씀(다른 사이트 영향 0).
+            try:
+                if "productTitle" in html or "po-brand" in html or "bylineInfo" in html:
+                    amz = extract_amazon_pdp(html, url)
+                    if amz.get("title"):
+                        result.title = amz["title"]
+                    if amz.get("brand") and not getattr(result, "brand", None):
+                        result.brand = amz["brand"]
+                    if amz.get("specs") and not getattr(result, "specs", None):
+                        result.specs = amz["specs"]
             except Exception:
                 pass
             # v39-E2 #2: 갤러리(대표) vs 상세(본문) 이미지 버킷 분리 → raw_meta에 저장(호출부가 분리 표시).

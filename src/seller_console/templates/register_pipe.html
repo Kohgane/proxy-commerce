@@ -123,13 +123,17 @@
                 <div>제조자 <strong>{{ r.notice_preview['제조자'] }}</strong></div>
                 <div>수입자 {{ r.notice_preview['수입자'] }}</div>
                 <div>원산지
-                  {% if r.notice_preview['origin_verified'] %}<strong>{{ r.notice_preview['원산지'] }}</strong>
-                    {% if r.notice_preview['origin_inferred'] %}
-                    <span class="pc-badge pc-badge-off" title="브랜드 본사국 추정 — 오너 승인/보류 판단">추정(브랜드)</span>
-                    {% else %}
+                  {% if r.notice_preview['origin_source'] == 'none' %}
+                    <span class="pc-badge pc-badge-off" title="폴백까지 비활성 — 등록 보류">미확인·보류</span>
+                  {% else %}<strong>{{ r.notice_preview['원산지'] }}</strong>
+                    {% if r.notice_preview['origin_verified'] %}
                     <span class="pc-badge pc-badge-on" title="{{ r.notice_preview['origin_source_ko'] }}">실측</span>
+                    {% elif r.notice_preview['origin_inferred'] %}
+                    <span class="pc-badge pc-badge-off" title="브랜드 본사국 — 실측 아님">추정(브랜드)</span>
+                    {% else %}
+                    <span class="pc-badge pc-badge-muted" title="실측·추정 소스 없음 — 폴백 문구로 등록(오너 확인)">임시(폴백)</span>
                     {% endif %}
-                  {% else %}<span class="pc-badge pc-badge-off" title="추정 금지 — 원산지 소스 없으면 등록 보류">미확인·보류</span>{% endif %}
+                  {% endif %}
                 </div>
               </div>
               {% else %}<span class="text-muted">-</span>{% endif %}

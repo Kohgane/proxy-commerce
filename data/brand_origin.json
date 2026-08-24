@@ -1,0 +1,29 @@
+{
+  "_README": {
+    "목적": "브랜드 → 본사 국가. 원산지 층위 ②(brand_inferred)의 소스. 실측(수집·아마존 상세)이 없을 때만 사용되고, 검수표에 '추정(브랜드)' 뱃지로 표기된다.",
+    "매칭": "제목 부분일치(소문자). sourcing_map에 brand 필드가 없고 아마존 brand 추출도 불안정해 blacklist와 같은 제목 매칭 방식을 쓴다.",
+    "규칙": "확실한 것만 country에 기입. 불확실하면 country를 비우고(\"\") note에 사유 — 비운 항목은 로드되지 않아 폴백(③)으로 내려간다.",
+    "검증 한계": "샌드박스 프록시가 외부 웹을 차단해 공홈/위키를 fetch로 대조하지 못했다. source는 근거 유형만 표기하고 verified=false로 둔다. 오너가 표에서 검수 후 verified 승격 가능.",
+    "후보 선정": "sourcing_map.json 4,438건의 상위 빈도 영문 토큰에서 추출. 'stacked·Custom·Nano·Japanese·WDT·BookArc' 등 브랜드가 아닌 토큰은 제외."
+  },
+  "brands": {
+    "torras": {"country": "중국", "source": "브랜드 본사 소재(선전) — 공개 사실", "verified": false, "note": "카나리 대상 브랜드"},
+    "rovyvon": {"country": "중국", "source": "브랜드 본사 소재(선전) — 공개 사실", "verified": false, "note": "소싱맵 최다 빈도(100건)"},
+    "hoto": {"country": "중국", "source": "브랜드 본사 소재 — 공개 사실(샤오미 생태계 공구 브랜드)", "verified": false, "note": "소싱맵 58건(hoto+HOTO)"},
+    "sharge": {"country": "중국", "source": "브랜드 본사 소재 — 공개 사실(충전기 브랜드)", "verified": false, "note": "소싱맵 24건"},
+    "outin": {"country": "중국", "source": "브랜드 본사 소재 — 공개 사실(휴대용 에스프레소)", "verified": false, "note": "소싱맵 15건"},
+    "mhw-3bomber": {"country": "중국", "source": "브랜드 본사 소재 — 공개 사실(커피 기물)", "verified": false, "note": "소싱맵 9건"},
+    "colmi": {"country": "중국", "source": "브랜드 본사 소재 — 공개 사실(스마트워치)", "verified": false, "note": "소싱맵 8건"},
+    "benks": {"country": "중국", "source": "브랜드 본사 소재 — 공개 사실(폰 액세서리)", "verified": false, "note": "픽스처 샘플 브랜드"},
+    "sonicware": {"country": "일본", "source": "브랜드 본사 소재 — 공개 사실(신시사이저 제조)", "verified": false, "note": "소싱맵 9건"},
+    "fjallraven": {"country": "스웨덴", "source": "브랜드 본사 소재 — 공개 사실(아웃도어)", "verified": false, "note": "소싱맵 7건. 표기 변형 fjällräven 주의"},
+    "craighill": {"country": "미국", "source": "브랜드 본사 소재(뉴욕) — 공개 사실(디자인 스튜디오)", "verified": false, "note": "실 스냅샷 픽스처 브랜드"},
+    "popsockets": {"country": "미국", "source": "브랜드 본사 소재(콜로라도) — 공개 사실", "verified": false, "note": "카나리 대상 브랜드"},
+    "ystudio": {"country": "대만", "source": "브랜드 본사 소재 — 공개 사실(문구)", "verified": false, "note": "파일럿 언매치 전례 브랜드"},
+
+    "polar": {"country": "", "source": "", "verified": false, "note": "불확실 — 'Polar'는 핀란드 Polar Electro 외 동명 브랜드·일반명사와 충돌. 제목 부분일치 시 오탐 위험 커서 비움"},
+    "bosca": {"country": "", "source": "", "verified": false, "note": "불확실 — 미국 법인/이탈리아 가죽 표기가 섞여 본사국 확정 불가"},
+    "ars": {"country": "", "source": "", "verified": false, "note": "불확실 — 3글자 토큰이라 제목 부분일치 오탐 위험(일본 ARS Corporation 추정되나 미확정)"},
+    "seeker": {"country": "", "source": "", "verified": false, "note": "불확실 — 일반 영단어와 충돌, 브랜드 특정 불가"}
+  }
+}
