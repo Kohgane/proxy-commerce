@@ -77,35 +77,57 @@ def _origin_from_detail(draft: dict) -> str:
 _BRAND_COUNTRY_CACHE = {"loaded": False, "map": {}}
 
 
-def load_brand_country_map(path: str = "data/brand_costs.json") -> dict:
-    """브랜드→본사국가 맵(오너 자산 `brand_costs.json` 있으면). 스키마 유연(country/origin/hq_country 탐색).
+_BRAND_ORIGIN_PATHS = ("data/brand_origin.json", "data/brand_costs.json")
 
-    파일 없거나 국가 필드 없으면 {}(→ ② 경로 비활성, ③ 보류). 발명 금지 — 파일에 있는 값만.
+
+def load_brand_country_map(path: str = "") -> dict:
+    """브랜드→본사국가 맵. `data/brand_origin.json`(전용 자산) → `brand_costs.json`(원가 자산) 순.
+
+    스키마 유연: {"brands":{k:{country,...}}} · {k:{country|origin|hq_country}} · [{brand,country}].
+    **country가 빈 값이면 로드 안 함**(불확실 → ② 비활성 → 폴백으로 내려감). 발명 금지 — 파일 값만.
     """
+    paths = [path] if path else list(_BRAND_ORIGIN_PATHS)
     out = {}
-    try:
-        if not os.path.isfile(path):
-            return out
-        data = json.load(open(path, encoding="utf-8"))
-    except Exception:
-        return out
-    items = data.items() if isinstance(data, dict) else \
-        [((x or {}).get("brand"), x) for x in (data or []) if isinstance(x, dict)]
-    for b, v in items:
-        if not b or not isinstance(v, dict):
+    for p in paths:
+        try:
+            if not os.path.isfile(p):
+                continue
+            data = json.load(open(p, encoding="utf-8"))
+        except Exception:
             continue
-        c = v.get("country") or v.get("origin") or v.get("hq_country") or v.get("brand_country")
-        if c:
-            out[str(b).strip().lower()] = str(c).strip()
+        if isinstance(data, dict) and isinstance(data.get("brands"), dict):
+            data = data["brands"]
+        items = data.items() if isinstance(data, dict) else \
+            [((x or {}).get("brand"), x) for x in (data or []) if isinstance(x, dict)]
+        for b, v in items:
+            if not b or str(b).startswith("_") or not isinstance(v, dict):
+                continue
+            c = v.get("country") or v.get("origin") or v.get("hq_country") or v.get("brand_country")
+            c = str(c or "").strip()
+            if c:                                  # 빈 값(불확실)은 건너뜀 — 폴백으로
+                out.setdefault(str(b).strip().lower(), c)
+        if out:
+            break                                  # 앞 파일에서 얻었으면 뒤 파일은 폴백으로만
     return out
 
 
 def _default_brand_country_fn(brand: str):
-    """기본 브랜드→국가(캐시). brand_costs.json 로드 1회. 없으면 None(② 비활성)."""
+    """기본 브랜드→국가(캐시). brand_origin.json 로드 1회. 없으면 None(② 비활성 → 폴백)."""
     if not _BRAND_COUNTRY_CACHE["loaded"]:
         _BRAND_COUNTRY_CACHE["map"] = load_brand_country_map()
         _BRAND_COUNTRY_CACHE["loaded"] = True
-    return _BRAND_COUNTRY_CACHE["map"].get(str(brand or "").strip().lower())
+    m = _BRAND_COUNTRY_CACHE["map"]
+    b = str(brand or "").strip().lower()
+    if not b:
+        return None
+    if b in m:
+        return m[b]
+    # 제목 부분일치(오너 승인) — sourcing_map에 brand 필드가 없고 아마존 brand 추출도 불안정하므로
+    #   blacklist와 같은 방식으로 제목/브랜드 문자열 안에서 브랜드 키를 찾는다. 긴 키 우선(오탐 최소).
+    for key in sorted(m, key=len, reverse=True):
+        if len(key) >= 4 and key in b:
+            return m[key]
+    return None
 
 
 _ORIGIN_SOURCE_KO = {
@@ -142,10 +164,13 @@ def resolve_origin(draft: dict, *, brand_country_fn=None, fallback=None) -> tupl
     if amz:
         return amz, "amazon_field"
     fn = brand_country_fn or _default_brand_country_fn
-    brand = _brand_of(draft or {}, ((draft or {}).get("title_ko") or (draft or {}).get("title") or ""))
-    if brand:
+    title_s = (draft or {}).get("title_ko") or (draft or {}).get("title") or ""
+    # 브랜드 필드 우선 → **제목 부분일치**(오너 승인: sourcing_map에 brand 필드 부재·아마존 brand 추출 불안정).
+    for probe in (_brand_of(draft or {}, title_s), title_s):
+        if not probe:
+            continue
         try:
-            bc = fn(brand)
+            bc = fn(probe)
         except Exception:
             bc = None
         if bc:
@@ -205,6 +230,40 @@ def assess_warnings(title: str, brand: str = "", *, watch_brands=None) -> list:
         warnings.append({"kind": "ipr_watch", "label": "소명 진행 브랜드",
                          "reason": f"IPR 소명 진행 중({matched}) — 등록 전 확인"})
     return warnings
+
+
+def origin_coverage(titles, *, brand_country_fn=None, fallback=None) -> dict:
+    """원산지 층위 **커버리지 실측** — 제목 목록에 대해 각 층위로 몇 건이 채워지는지.
+
+    오너 검수용 표: ②(brand_inferred)로 채워진 건수 / ③(fallback)으로 간 건수 / 미확인.
+    실측(collected/amazon_field)은 제목만으론 알 수 없어 여기선 ②③만 센다(수집 draft 없이 사이징).
+    """
+    counts = {"brand_inferred": 0, "fallback": 0, "none": 0}
+    by_brand, samples = {}, {"brand_inferred": [], "fallback": []}
+    total = 0
+    for t in (titles or []):
+        t = str(t or "").strip()
+        if not t:
+            continue
+        total += 1
+        origin, src = resolve_origin({"title": t}, brand_country_fn=brand_country_fn, fallback=fallback)
+        counts[src] = counts.get(src, 0) + 1
+        if src == "brand_inferred":
+            by_brand[origin] = by_brand.get(origin, 0) + 1
+        if len(samples.get(src, [])) < 5:
+            samples.setdefault(src, []).append({"title": t[:60], "origin": origin})
+    pct = (lambda n: round(100.0 * n / total, 1) if total else 0.0)
+    return {
+        "total": total,
+        "brand_inferred": counts.get("brand_inferred", 0),
+        "brand_inferred_pct": pct(counts.get("brand_inferred", 0)),
+        "fallback": counts.get("fallback", 0),
+        "fallback_pct": pct(counts.get("fallback", 0)),
+        "none": counts.get("none", 0),
+        "by_country": dict(sorted(by_brand.items(), key=lambda x: -x[1])),
+        "brand_map_size": len(load_brand_country_map()),
+        "samples": samples,
+    }
 
 
 def kr_ship_viability(brand: str, title: str = "", url: str = "", *, check_fn=None) -> dict:

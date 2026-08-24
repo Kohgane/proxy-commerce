@@ -255,6 +255,7 @@ def _scraped_to_draft(scraped) -> dict:
         "price_original": float(scraped.price) if scraped.price is not None else 0.0,
         "currency": scraped.currency or "USD",
         "brand": scraped.brand or "",
+        "specs": list(getattr(scraped, "specs", None) or []),   # 원산지 등 실측 소스(③ 배선)
         "sku": scraped.sku or "",
         "category": "",
         "options": options,
