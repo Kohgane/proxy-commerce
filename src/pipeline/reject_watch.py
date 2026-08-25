@@ -14,7 +14,10 @@ from typing import Optional
 
 # ── 반려 유형 · 처방 (기존 표준 — 새 체계 발명 금지) ──────────────────────────────
 REJECTION_KINDS = {
-    "image_spec":     {"ko": "이미지 규격",            "rx": "reupload",       "rx_ko": "재등록"},
+    # ① 반려 1호 실데이터(2026-08-25 Fellow Stagg): "대표이미지는 최대 10M, 최소 500*500, 최대 5000*5000".
+    #    처방 = 대형본 치환(_SS1600_) + 실치수 심사 후 **이미지 교체 재제출**(PUT 수정 → PUT approvals).
+    "image_spec":     {"ko": "이미지 규격",            "rx": "reupload",
+                       "rx_ko": "이미지 재수집·교체 후 재제출"},
     "trademark":      {"ko": "상표권(담당자 검토)",     "rx": "delete",         "rx_ko": "삭제 권고"},
     "option_value":   {"ko": "옵션값",                "rx": "replace_option", "rx_ko": "값 대체"},
     "apple_category": {"ko": "애플 카테고리 사전승인 반려", "rx": "hold_or_reissue",
@@ -42,7 +45,8 @@ WING_STATES = {
 _APPLE_RE = re.compile(r"애플|apple|아이폰|iphone|아이패드|ipad|맥북|macbook|에어팟|airpod|casetify|mfi|사전\s*승인", re.I)
 _TRADEMARK_RE = re.compile(r"상표|브랜드\s*권|권리\s*침해|지식\s*재산|정품|위조|라이선스|licen[sc]e|가품|병행\s*수입\s*불가", re.I)
 _OPTION_RE = re.compile(r"옵션\s*값|구매\s*옵션|옵션\s*정보|옵션\s*누락|사이즈\s*표기|색상\s*표기|단위\s*수량", re.I)
-_IMAGE_RE = re.compile(r"이미지|사진|대표\s*이미지|화질|해상도|규격|누끼|워터마크|배경\s*처리|픽셀", re.I)
+_IMAGE_RE = re.compile(r"이미지|사진|대표\s*이미지|화질|해상도|규격|누끼|워터마크|배경\s*처리|픽셀|"
+                       r"\d{3,4}\s*\*\s*\d{3,4}|DETAIL", re.I)   # 실데이터: "최소 500*500 … 기타이미지(DETAIL)"
 
 # 애플 세부 — 대상 기기로 처방 분기(오너 지시). **기기 모델 토큰만**(바 '애플/apple' 카테고리어는 제외 —
 #   comment의 '애플 카테고리'가 대상 기기로 오분류되지 않게). 대상 판정은 title+comment의 기기 토큰으로.

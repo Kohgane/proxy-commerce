@@ -125,6 +125,10 @@ class CoupangUploader(BaseUploader):
         self.delivery_method = self._ship_env('COUPANG_DELIVERY_METHOD',
                                               self.DEFAULT_DELIVERY_METHOD)
         self.delivery_charge_type = self._ship_env('COUPANG_DELIVERY_CHARGE_TYPE', 'FREE')
+        # 이미지 규격 실측 게이트(반려 1호). 등록당 이미지 수만큼 HTTP 헤더 조회가 붙으므로
+        #   env로 끌 수 있게 둔다(기본 ON — 규격 미달 전송이 더 비싸다).
+        self.image_screen_enabled = os.getenv('COUPANG_IMAGE_SCREEN', '1').strip().lower() not in (
+            '0', 'false', 'no', 'off')
         self._delivery_companies_cache = None
         self._meta_cache = {}            # displayCategoryCode → 카테고리 메타 원문(고시정보+속성 단일 소스)
         self._notice_schema_cache = {}   # displayCategoryCode → 고시정보 스키마(메타 API, 1회 조회)
@@ -234,6 +238,20 @@ class CoupangUploader(BaseUploader):
                 return {'success': False, 'held': True, 'sku': sku,
                         'error': ('SKU 추출 실패 — 등록 중단(쓰레기 SKU 전송 금지). '
                                   f'상품 URL에서 식별자(아마존 ASIN 등)를 뽑지 못했습니다: {sku!r}')}
+            # 이미지 규격 게이트(반려 1호) — 대형본 치환 후 **실치수** 심사. 미달 이미지는 제외하고,
+            #   대표이미지가 전멸하면 등록 중단(규격 미달 이미지로 카나리 태우지 않는다·동형 게이트 3번째).
+            #   측정 불가는 제외하지 않는다 — '확인 실패'를 '미달'로 단정하지 않는다(정직).
+            if self.image_screen_enabled:
+                from src.collectors.image_norm import screen_images
+                shot = screen_images(product.get('images') or [])
+                if not shot['ok']:
+                    return {'success': False, 'held': True, 'sku': product.get('sku', ''),
+                            'error': f"이미지 규격 미달 — 등록 중단: {shot['reason']}",
+                            'images_dropped': shot['dropped']}
+                if shot['dropped']:
+                    logger.info('이미지 규격 미달 %d장 제외(sku=%s): %s', len(shot['dropped']),
+                                product.get('sku', ''), shot['dropped'][:3])
+                product = {**product, 'images': shot['images']}
             # 판매가 하한(쿠팡: 옵션 10원 이상) — POST 전 차단으로 왕복 절약(카나리 7차 거부 재발 방지).
             price = self._as_int(product.get('price', 0)) or 0
             if price < 10:
@@ -396,6 +414,20 @@ class CoupangUploader(BaseUploader):
         except Exception as exc:
             logger.error('request_approval failed for sid=%s: %s', seller_product_id, exc)
             return {'success': False, 'error': str(exc), 'sku': seller_product_id}
+
+    def rebuild_images_for_resubmit(self, images) -> dict:
+        """반려분 **이미지 교체 페이로드**. 대형본 치환 + 실치수 심사 후 items[].images 형태로.
+
+        반환 {ok, images(전송용), dropped, unknown, reason}. ok=False면 교체할 이미지가 없다는 뜻이라
+        호출부가 재제출을 중단해야 한다(미달 이미지로 재반려되는 왕복 금지).
+        """
+        from src.collectors.image_norm import screen_images
+        shot = screen_images(images or [])
+        if not shot['ok']:
+            return {'ok': False, 'images': [], 'dropped': shot['dropped'],
+                    'unknown': shot['unknown'], 'reason': shot['reason']}
+        return {'ok': True, 'images': self._build_images({'images': shot['images']}),
+                'dropped': shot['dropped'], 'unknown': shot['unknown'], 'reason': ''}
 
     def resubmit_product(self, seller_product_id: str, updates: dict = None) -> dict:
         """반려분 **재승인 제출** — 수정이 필요하면 PUT 수정 후, 아니면 승인요청만.
@@ -723,7 +755,12 @@ class CoupangUploader(BaseUploader):
                 and s.get('attributeTypeName') not in filled]
 
     def _build_images(self, product: dict) -> list:
-        """옵션 이미지. 첫 장은 REPRESENTATION(대표), 나머지는 DETAIL이어야 한다."""
+        """옵션 이미지. 첫 장은 REPRESENTATION(대표), 나머지는 DETAIL이어야 한다.
+
+        반려 1호 수리: 아마존 사이즈 토큰을 **대형본(_SS1600_)으로 치환**한다(규격 미달 URL 전송 금지).
+        쿼리스트링 제거도 정규화 함수가 담당(정본 동일).
+        """
+        from src.collectors.image_norm import normalize_image_url
         images = []
         for i, url in enumerate(product.get('images', [])):
             if not url:
@@ -731,7 +768,7 @@ class CoupangUploader(BaseUploader):
             images.append({
                 'imageOrder': i,
                 'imageType': 'REPRESENTATION' if i == 0 else 'DETAIL',
-                'vendorPath': str(url).split('?')[0],       # 정본: 쿼리스트링 제거(쿠팡이 거부)
+                'vendorPath': normalize_image_url(url),
             })
         return images
 
