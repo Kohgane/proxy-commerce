@@ -373,7 +373,8 @@ def init_schema():
     here = Path(__file__).parent
     # v87-S3: stage4 = settings(가격 정책). 스키마 파일은 순서대로 idempotent 적용된다.
     for fname in ("schema_stage1.sql", "schema_stage2.sql", "schema_stage3.sql", "schema_stage4.sql",
-                  "schema_stage5.sql"):   # v88-B: translation_jobs(백그라운드 번역 큐)
+                  "schema_stage5.sql",   # v88-B: translation_jobs(백그라운드 번역 큐)
+                  "schema_stage6.sql"):  # P4: market_registrations(마켓 등록 대장·반려감시 소스)
         f = here / fname
         if f.exists():
             run_ddl(f.read_text(encoding="utf-8"))

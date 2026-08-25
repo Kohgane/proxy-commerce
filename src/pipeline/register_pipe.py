@@ -517,7 +517,7 @@ def _res_field(res, key, *alts):
 
 def register_source_rows(rows, *, dispatch_fn, enrich_fn=None, account: str = "gogane",
                          n: int = 1, batch_ok: bool = False, approved: Optional[bool] = None,
-                         sleep_fn=None, sleep_sec: float = 0.6) -> dict:
+                         sleep_fn=None, sleep_sec: float = 0.6, record_fn=None) -> dict:
     """P1 검수 통과분 → **쿠팡 실등록**. 승인 게이트 + **카나리(기본 1건)** + 롤백 금지 + 행별 사유.
 
     - **비가역 방어:** approved 아니면 등록 0(정직 차단). batch_ok=False면 첫 1건만(카나리), 전량은
@@ -525,6 +525,8 @@ def register_source_rows(rows, *, dispatch_fn, enrich_fn=None, account: str = "g
     - **이미지 0장은 등록 안 함**(안 팔릴 상품 — P1/파일럿 정책 일관).
     - dispatch_fn(product_data, account)→ 등록 결과({success, product_id, url, error} 또는 동형 객체).
       enrich_fn(row)→{images, description_html, category_code} 재수집(이미지·상세). 둘 다 주입(발명 0·오프라인).
+    - **record_fn(dict)**: 등록 성공분을 **등록 대장**에 적재(P4 반려감시가 감시 대상을 스스로 알게).
+      주입식이라 파이프라인은 저장소를 모른다(오프라인 계약 검증 가능). 적재 실패는 행에 사유 표기.
     """
     if approved is None:
         approved = register_pipe_approved()
@@ -589,10 +591,24 @@ def register_source_rows(rows, *, dispatch_fn, enrich_fn=None, account: str = "g
                             "reason": f"dispatch 예외: {exc}", "image_count": len(images), "product_id": None})
             continue
         ok = bool(_res_field(res, "success"))
+        pid = (_res_field(res, "product_id") if ok else None)
+        if ok and pid and record_fn:
+            # 등록 대장 적재(P4 반려감시 소스) — 실패해도 등록 결과는 유지(롤백 금지·조용한 실패 금지).
+            try:
+                record_fn({"product_id": str(pid), "account": account, "vendor_sku": sku,
+                           "title": r.get("title_ko") or "", "source_url": r.get("url") or "",
+                           "market_url": _res_field(res, "url", "external_url") or ""})
+            except Exception as exc:
+                results.append({"url": r.get("url"), "title": r.get("title_ko"), "account": account,
+                                "registered": True, "image_count": len(images), "product_id": str(pid),
+                                "market_url": _res_field(res, "url", "external_url"),
+                                "reason": None,
+                                "registry_error": f"등록 대장 적재 실패(반려감시 누락 가능): {exc}"})
+                continue
         results.append({
             "url": r.get("url"), "title": r.get("title_ko"), "account": account,
             "registered": ok, "image_count": len(images),
-            "product_id": (_res_field(res, "product_id") if ok else None),
+            "product_id": (str(pid) if ok and pid else None),
             "market_url": (_res_field(res, "url", "external_url") if ok else None),
             "reason": None if ok else (_res_field(res, "error", "message") or "쿠팡 등록 실패"),
         })

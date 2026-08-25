@@ -7515,6 +7515,15 @@ def sourcing_hub():
     )
 
 
+def _record_registration(entry: dict):
+    """등록 성공분 → 마켓 등록 대장(P4 반려감시 소스). PG 미가동이면 인메모리 폴백(정직 표기)."""
+    from src.db import market_registrations_pg as REG
+    return REG.record(entry.get("product_id"), marketplace="coupang",
+                      account=entry.get("account") or "", vendor_sku=entry.get("vendor_sku") or "",
+                      title=entry.get("title") or "", source_url=entry.get("source_url") or "",
+                      market_url=entry.get("market_url") or "")
+
+
 def _register_pipe_fx_map() -> dict:
     """통화→원화 환율 맵. 검수표와 **실등록이 같은 환율**을 쓰게 하는 단일 소스.
 
@@ -7642,7 +7651,8 @@ def sourcing_register_pipe_register():
     result = register_source_rows(
         passes, dispatch_fn=_coupang_account_dispatch,
         enrich_fn=lambda r: (_collect_real_draft(r.get("url")) or {}),
-        account=account, n=n, batch_ok=batch_ok)
+        account=account, n=n, batch_ok=batch_ok,
+        record_fn=_record_registration)          # P4: 등록 대장 적재(반려감시가 감시 대상을 스스로 앎)
     status = 200 if result.get("ok") else 403
     return jsonify(result), status
 
@@ -7672,13 +7682,25 @@ def sourcing_reject_watch():
         if account not in ("gogane", "woojoo"):
             account = "gogane"
         ak, sk, vid = _account_creds(account)
+        titles = {}
         if not sids:
-            scan = {"error": "반려 상품 sid를 입력해 주세요(한 줄에 하나)."}
+            # 입력이 없으면 **등록 대장**에서 감시 대상을 채운다(등록 파이프 관통 후 수동 입력 불필요).
+            from src.db import market_registrations_pg as REG
+            try:
+                queued = REG.watch_queue(account=account, limit=50)
+            except Exception as exc:
+                queued = []
+                logger.warning("등록 대장 조회 실패: %s", exc)
+            sids = [q["sid"] for q in queued]
+            titles = {q["sid"]: q.get("title") or "" for q in queued}
+        if not sids:
+            scan = {"error": ("감시 대상이 없습니다 — 등록 대장에 미확정 건이 없습니다. "
+                              "특정 상품을 보려면 sid를 직접 입력하세요(한 줄에 하나).")}
         elif not (ak and sk):
             scan = {"error": f"{account} 쿠팡 자격 미설정 — 라이브 조회 불가(Render 전용). 자격 설정 후 조회하세요."}
         else:
             up = CoupangUploader(access_key=ak, secret_key=sk, vendor_id=vid, account=account)
-            items = [{"sid": s, "title": "", "account": account} for s in sids]
+            items = [{"sid": s, "title": titles.get(s, ""), "account": account} for s in sids]
             scan = RW.scan_rejections(items, history_fn=lambda sid, acct: up.get_status_histories(sid))
 
     return render_template("reject_watch.html", page="sourcing", scan=scan, account=account,
