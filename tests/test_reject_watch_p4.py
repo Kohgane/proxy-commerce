@@ -11,7 +11,9 @@ from src.pipeline import reject_watch as RW
 # ── 분류: comment(사유)로만 판정 ──────────────────────────────────────────────────
 def test_classify_three_standard_kinds():
     assert RW.classify_rejection("대표 이미지 규격이 맞지 않습니다(해상도 부족)")["kind"] == "image_spec"
-    assert RW.classify_rejection("대표 이미지 규격")["prescription_ko"] == "재등록"
+    # 처방 코드는 불변(reupload). 사람용 문구만 반려 1호 실데이터로 구체화됨(이미지 재수집·교체 후 재제출).
+    _img = RW.classify_rejection("대표 이미지 규격")
+    assert _img["prescription"] == "reupload" and "재제출" in _img["prescription_ko"]
     tm = RW.classify_rejection("상표권 침해 소지 — 브랜드 권리 확인 필요")
     assert tm["kind"] == "trademark" and tm["prescription_ko"] == "삭제 권고"
     ov = RW.classify_rejection("옵션값 정보가 누락되었습니다")
