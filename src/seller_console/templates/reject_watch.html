@@ -71,6 +71,23 @@
     {% endif %}
   </div>
 
+  {% if scan.by_state %}
+  <!-- Wing 상태 분포 — 계기판과 같은 축(반려·임시저장·브랜드수정·증빙). 조치 가능/불가를 나눠 표기. -->
+  <div class="card border-0 shadow-sm mb-4"><div class="card-body">
+    <div class="pc-overline mb-2">상태 분포</div>
+    <div class="d-flex flex-wrap gap-2 mb-2">
+      {% for st, n in scan.by_state.items() %}
+      <span class="pc-badge {% if st == 'rejected' %}pc-badge-danger{% elif st == 'saved' %}pc-badge-warning{% elif st == 'approved' %}pc-badge-success{% else %}pc-badge-muted{% endif %}">
+        {{ scan.labels.get(st, st) }} {{ n }}</span>
+      {% endfor %}
+    </div>
+    <div class="text-muted small">
+      조치 대상 {{ scan.actionable }}건 · 분류·집계만 {{ scan.info_only }}건
+      <span class="text-muted">(브랜드 수정요청·증빙 필요는 자동 조치하지 않습니다)</span>
+    </div>
+  </div></div>
+  {% endif %}
+
   <div class="pc-status {% if approved %}pc-status-warning{% else %}pc-status-info{% endif %} small mb-3">
     {% if approved %}<i class="bi bi-unlock"></i> 처방 실행 <strong>승인됨</strong>(REJECT_WATCH_APPROVED) — 재등록·삭제가 실제로 실행됩니다.
     {% else %}<i class="bi bi-lock"></i> 처방 실행 <strong>보류</strong> — 재등록·삭제는 오너 승인(REJECT_WATCH_APPROVED) 뒤에만. 지금은 분류·알림만.{% endif %}

@@ -3970,7 +3970,9 @@ def reject_watch_apply():
         r, approved=True,
         delete_fn=lambda sid: up.delete_product(sid),
         reissue_fn=lambda sid: up.request_approval(sid),
-        reupload_fn=lambda sid, row: up.request_approval(sid),   # 재승인 요청(수정 후 승인 재요청)
+        # 재승인 정본 경로: 수정할 값이 있으면 **PUT 수정 → PUT approvals** 2단계, 없으면 승인요청만.
+        resubmit_fn=lambda sid, updates: up.resubmit_product(sid, updates),
+        reupload_fn=lambda sid, row: up.request_approval(sid),   # 폴백(구 경로 호환)
     ) for r in rows]
     return jsonify({"ok": True, "approved": True, "account": account,
                     "applied": sum(1 for x in results if x.get("applied")),

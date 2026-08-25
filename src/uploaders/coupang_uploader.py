@@ -397,6 +397,31 @@ class CoupangUploader(BaseUploader):
             logger.error('request_approval failed for sid=%s: %s', seller_product_id, exc)
             return {'success': False, 'error': str(exc), 'sku': seller_product_id}
 
+    def resubmit_product(self, seller_product_id: str, updates: dict = None) -> dict:
+        """반려분 **재승인 제출** — 수정이 필요하면 PUT 수정 후, 아니면 승인요청만.
+
+        쿠팡 반려 상품은 SAVED로 내려온다. 사유가 값 문제면 **수정(PUT seller-products) → 승인요청
+        (PUT approvals)** 2단계, 사유 없이 재심사만 필요하면 승인요청 1단계.
+        비가역이므로 **오너 승인 게이트 뒤에서만** 호출한다. 어느 단계에서 멈췄는지까지 정직 표기.
+        """
+        sid = str(seller_product_id or '').strip()
+        if not sid:
+            return {'success': False, 'error': '상품 id 없음'}
+        updated = False
+        if updates:
+            up = self.update_product(sid, updates)
+            if not up.get('success'):
+                # 수정 실패 상태로 승인요청하면 같은 사유로 또 반려된다 → 여기서 멈춘다.
+                return {'success': False, 'product_id': sid, 'stage': 'update',
+                        'error': f"상품 수정 실패 — 승인요청 안 함: {up.get('error')}"}
+            updated = True
+            time.sleep(0.4)                       # 레이트리밋(정본 승계 — 등록 2단계와 동일)
+        appr = self.request_approval(sid)
+        if not appr.get('success'):
+            return {'success': False, 'product_id': sid, 'stage': 'approval',
+                    'updated': updated, 'error': appr.get('error')}
+        return {'success': True, 'product_id': sid, 'stage': 'approval', 'updated': updated}
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
