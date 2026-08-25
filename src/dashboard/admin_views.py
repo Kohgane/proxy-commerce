@@ -3936,6 +3936,24 @@ def reject_watch_scan():
     return jsonify({"ok": True, "account": account, "registered": False, **out})
 
 
+def _reject_watch_resubmit(up, sid, updates):
+    """반려분 재제출 — 이미지 교체가 필요하면 **대형본 치환 + 실치수 심사** 후 페이로드를 만든다.
+
+    updates에 `images`(원본 URL 목록)가 있으면 그것으로 items[].images를 새로 만들어 교체한다.
+    규격 통과 이미지가 0장이면 **재제출하지 않는다**(미달 이미지로 재반려되는 왕복 금지 — 정직 사유 반환).
+    """
+    upd = dict(updates or {})
+    raw_images = upd.pop("images", None)
+    if raw_images:
+        built = up.rebuild_images_for_resubmit(raw_images)
+        if not built["ok"]:
+            return {"success": False, "product_id": sid, "stage": "images",
+                    "error": f"이미지 규격 미달 — 재제출 중단: {built['reason']}",
+                    "images_dropped": built["dropped"]}
+        upd["items"] = [{"images": built["images"]}]
+    return up.resubmit_product(sid, upd or None)
+
+
 @admin_panel_bp.post("/reject-watch/apply")
 def reject_watch_apply():
     """P4 처방 실행 — **오너 승인 게이트 뒤**(비가역). `REJECT_WATCH_APPROVED=1` 아니면 실행 0(정직 보류).
@@ -3971,7 +3989,8 @@ def reject_watch_apply():
         delete_fn=lambda sid: up.delete_product(sid),
         reissue_fn=lambda sid: up.request_approval(sid),
         # 재승인 정본 경로: 수정할 값이 있으면 **PUT 수정 → PUT approvals** 2단계, 없으면 승인요청만.
-        resubmit_fn=lambda sid, updates: up.resubmit_product(sid, updates),
+        #   반려 1호(이미지 규격): row.images를 주면 대형본 치환 + 실치수 심사 후 교체 페이로드를 만든다.
+        resubmit_fn=lambda sid, updates: _reject_watch_resubmit(up, sid, updates),
         reupload_fn=lambda sid, row: up.request_approval(sid),   # 폴백(구 경로 호환)
     ) for r in rows]
     return jsonify({"ok": True, "approved": True, "account": account,
