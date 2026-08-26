@@ -7524,6 +7524,12 @@ def _record_registration(entry: dict):
                       market_url=entry.get("market_url") or "")
 
 
+def _lookup_registration(sku: str, account: str):
+    """이미 등록된 건 조회(중복 등록 방지). 반려건이면 재제출 경로로 안내된다."""
+    from src.db import market_registrations_pg as REG
+    return REG.find_by_vendor_sku(sku, marketplace="coupang", account=account)
+
+
 def _register_pipe_fx_map() -> dict:
     """통화→원화 환율 맵. 검수표와 **실등록이 같은 환율**을 쓰게 하는 단일 소스.
 
@@ -7652,7 +7658,8 @@ def sourcing_register_pipe_register():
         passes, dispatch_fn=_coupang_account_dispatch,
         enrich_fn=lambda r: (_collect_real_draft(r.get("url")) or {}),
         account=account, n=n, batch_ok=batch_ok,
-        record_fn=_record_registration)          # P4: 등록 대장 적재(반려감시가 감시 대상을 스스로 앎)
+        record_fn=_record_registration,          # P4: 등록 대장 적재(반려감시가 감시 대상을 스스로 앎)
+        lookup_fn=_lookup_registration)          # 중복 등록 방지(반려 수리는 재제출이 정석)
     status = 200 if result.get("ok") else 403
     return jsonify(result), status
 
