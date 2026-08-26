@@ -413,14 +413,32 @@ class TestNaverGetAccessToken:
 class TestNaverUploadProduct:
     def test_upload_product_success(self, naver_uploader):
         prepared = naver_uploader.prepare_product(SAMPLE_COLLECTED)
-        with patch.object(naver_uploader, '_api_request', return_value={'originProductNo': '55555'}):
+        # 이미지는 **네이버 CDN 업로드**를 거친다(P5 정본) — 이 테스트는 등록 페이로드 관심사라 목킹.
+        with patch.object(naver_uploader, 'upload_images',
+                          return_value={'ok': True, 'urls': ['https://shop-phinf.naver.net/a.jpg'],
+                                        'skipped': [], 'reason': ''}), \
+             patch.object(naver_uploader, '_api_request', return_value={'originProductNo': '55555'}):
             result = naver_uploader.upload_product(prepared)
         assert result['success'] is True
         assert result['product_id'] == '55555'
 
+    def test_upload_product_blocked_when_images_fail(self, naver_uploader):
+        """이미지 업로드 0장이면 등록 차단(P5 정본 게이트) — 등록 호출조차 안 한다."""
+        prepared = naver_uploader.prepare_product(SAMPLE_COLLECTED)
+        with patch.object(naver_uploader, 'upload_images',
+                          return_value={'ok': False, 'urls': [], 'skipped': [],
+                                        'reason': '전부 실패'}), \
+             patch.object(naver_uploader, '_api_request') as api:
+            result = naver_uploader.upload_product(prepared)
+        assert result['success'] is False and result['held'] is True
+        api.assert_not_called()
+
     def test_upload_product_error(self, naver_uploader):
         prepared = naver_uploader.prepare_product(SAMPLE_COLLECTED)
-        with patch.object(naver_uploader, '_api_request', return_value={'error': 'bad request'}):
+        with patch.object(naver_uploader, 'upload_images',
+                          return_value={'ok': True, 'urls': ['https://shop-phinf.naver.net/a.jpg'],
+                                        'skipped': [], 'reason': ''}), \
+             patch.object(naver_uploader, '_api_request', return_value={'error': 'bad request'}):
             result = naver_uploader.upload_product(prepared)
         assert result['success'] is False
 

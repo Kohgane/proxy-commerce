@@ -101,6 +101,45 @@ def probe_image_size(url: str, *, fetch_fn=None, timeout: float = 6.0):
         return None                                # 부분 데이터로 못 읽음 = 미상
 
 
+_FETCH_UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+             '(KHTML, like Gecko) Chrome/124.0 Safari/537.36')
+_EXT_BY_CT = {'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png',
+              'image/webp': 'webp', 'image/gif': 'gif'}
+FETCH_MIN_BYTES = 1024          # 정본(naver_img): 1KB 미만은 썸네일 쓰레기 → 스킵
+
+
+def fetch_image_bytes(url: str, *, min_bytes: int = FETCH_MIN_BYTES, timeout: float = 20.0):
+    """외부 이미지 URL → (bytes, filename). 실패/규격미달이면 None.
+
+    **소스 CDN에서 받는 다운로드**라 마켓 아웃바운드가 아니다 — 릴레이를 타지 않는다
+    (아마존은 우리 IP를 막지 않고, 릴레이 허용 호스트도 아니다). 마켓 API 호출은 반드시
+    `market_relay`를 타야 하므로(v87-S7), 이 함수를 업로더 모듈 밖에 둬서 그 관문 규율을 지킨다.
+
+    UA 헤더 필수(아마존 CDN이 기본 UA를 막는다·정본). 확장자는 Content-Type으로 판별.
+    SSL 검증은 정상 유지(정본의 CERT_NONE은 구환경 땜빵이라 승계하지 않는다).
+    """
+    u = normalize_image_url(url)
+    if not u:
+        return None
+    try:
+        import requests
+        resp = requests.get(u, timeout=timeout, headers={"User-Agent": _FETCH_UA})
+        resp.raise_for_status()
+    except Exception as exc:
+        logger.warning("이미지 다운로드 실패 %s: %s", u, exc)
+        return None
+    body = resp.content or b""
+    if len(body) < int(min_bytes):
+        logger.info("이미지 %d바이트 — 규격 미달로 스킵: %s", len(body), u)
+        return None
+    ct = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+    ext = _EXT_BY_CT.get(ct)
+    if not ext:
+        logger.warning("이미지 Content-Type 미지원(%s) — 스킵: %s", ct or "미상", u)
+        return None
+    return body, f"img.{ext}"
+
+
 def screen_images(urls, *, probe_fn=None, min_px: int = MIN_PX, max_px: int = MAX_PX) -> dict:
     """등록 전 이미지 규격 심사. 반환 {ok, images, dropped[], unknown[], reason}.
 

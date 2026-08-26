@@ -3,6 +3,7 @@
 import logging
 import math
 import os
+import re
 import time
 
 import requests
@@ -47,6 +48,22 @@ class NaverSmartStoreUploader(BaseUploader):
         'gocosmos': {'ship': '107987297', 'return': '107987296'},
     }
     DEFAULT_LEAF_CATEGORY = '50004132'      # 정본 기본 리프 카테고리
+    # ★ 카테고리 정본(오너 grep `ss_upload.py` CAT) — **순서 유지·첫 매칭 우선**.
+    #   쿠팡의 predict_category(API 예측)와 **별개 축**이다: 스마트스토어는 사전 매칭이 정본.
+    #   순서를 바꾸면 판정이 바뀐다(예: '주얼리'는 키링 줄 다음에 와야 원래 결과가 나온다). 재정렬 금지.
+    CATEGORY_PATTERNS = (
+        (r"피젯|EDC|스피너|슬라이더|엔진|오브제|퍼즐|모형|분재", '50004132'),
+        (r"슬링백|백팩|가방|패킹큐브|파우치|토트", '50000646'),
+        (r"키링|카라비너|스트랩", '50000570'),
+        (r"목걸이|팔찌|체인|주얼리", '50000570'),
+        (r"멀티툴|나이프|공구|드라이버|드릴|스크러버|에어펌프|레이저|인두", '50003413'),
+        (r"가위|원예|전정", '50000406'),
+        (r"잔|글라스|텀블러|머그|드리퍼|티|주전자|도마|주방", '50004737'),
+        (r"만년필|노트|문구|북마크|데스크", '50002335'),
+        (r"신디사이저|이어팁|카드리더|허브|오디오|스피커|헤드폰", '50000205'),
+        (r"재킷|티셔츠|샌들|의류", '50000167'),
+        (r"향|캔들|디퓨저", '50001854'),
+    )
     # 구매대행 통관 · 반품/교환비 · 판매상태 — 전부 정본 승계.
     CUSTOMS_TAX_TYPE = 'PURCHASE_AGENT'
     RETURN_FEE = 25000
@@ -79,6 +96,10 @@ class NaverSmartStoreUploader(BaseUploader):
             logger.warning('NAVER_CLIENT_ID is not set')
         if not self.client_secret:
             logger.warning('NAVER_CLIENT_SECRET is not set')
+        # 이미지 업로드 게이트(정본) — 등록당 N장 다운로드+업로드가 붙으므로 env로 끌 수 있게.
+        #   기본 ON: 외부 CDN URL을 그대로 넣으면 네이버가 거부하거나 이미지가 깨진다.
+        self.image_upload_enabled = os.getenv('NAVER_IMAGE_UPLOAD', '1').strip().lower() not in (
+            '0', 'false', 'no', 'off')
         self._access_token = None
         self._token_expires = 0
 
@@ -108,6 +129,17 @@ class NaverSmartStoreUploader(BaseUploader):
             실패: {'success': False, 'error': '...'}
         """
         try:
+            # 이미지 정본: 외부 URL을 **네이버 CDN으로 업로드**한 뒤 그 URL로 등록한다.
+            #   0장이면 등록 차단(정본의 raise와 같은 철학 — 이미지 없는 상품 공개 금지).
+            if self.image_upload_enabled and product.get('images'):
+                shot = self.upload_images(product.get('images'))
+                if not shot['ok']:
+                    return {'success': False, 'held': True, 'sku': product.get('sku', ''),
+                            'error': f"이미지 업로드 실패 — 등록 중단: {shot['reason']}"}
+                if shot['skipped']:
+                    logger.info('이미지 %d장 스킵(규격/다운로드) sku=%s',
+                                len(shot['skipped']), product.get('sku', ''))
+                product = {**product, 'images': shot['urls']}
             payload = self._build_product_payload(product)
             path = '/v2/products'
             result = self._api_request('POST', path, data=payload)
@@ -207,7 +239,9 @@ class NaverSmartStoreUploader(BaseUploader):
             'originProduct': {
                 'statusType': self.STATUS_TYPE,
                 'saleType': 'NEW',
-                'leafCategoryId': str(product.get('category_id') or self.DEFAULT_LEAF_CATEGORY),
+                # 명시 카테고리 없으면 **정본 사전 매칭**(상품명 기준·순서 우선), 그래도 없으면 기본 리프.
+                'leafCategoryId': (str(product.get('category_id') or '').strip()
+                                   or self.resolve_category(product.get('title'))),
                 'name': (product.get('title') or '')[:100],
                 'detailContent': product.get('description_html', ''),
                 'images': {'representativeImage': {'url': rep}, 'optionalImages': optional},
@@ -254,6 +288,107 @@ class NaverSmartStoreUploader(BaseUploader):
                 'naverShoppingRegistration': self.NAVER_SHOPPING_REGISTRATION,
             },
         }
+
+    # ── 이미지 업로드 정본(오너 SSH `naver_img.py`) ──────────────────────────────
+    IMAGE_MIN_BYTES = 1024          # 정본: 1KB 미만은 썸네일 쓰레기 → 스킵
+    IMAGE_MAX_COUNT = 10            # 정본: 한 번에 최대 10장
+    IMAGE_RETRY = 3                 # 정본: 429·예외 모두 최대 3회
+
+    @classmethod
+    def normalize_source_url(cls, url: str) -> str:
+        """외부 이미지 URL 정규화(정본): 쿼리스트링 제거 · `//` 시작이면 https: 부착."""
+        u = str(url or '').strip()
+        if not u:
+            return ''
+        if u.startswith('//'):
+            u = 'https:' + u
+        return u.split('?')[0]
+
+    def _fetch_image(self, url: str):
+        """외부 URL → (bytes, filename). 실패/규격미달이면 None.
+
+        **다운로드는 `collectors.image_norm.fetch_image_bytes`에 위임**한다 — 소스 CDN 다운로드는
+        마켓 아웃바운드가 아니지만, 이 모듈은 마켓 호출 전용 관문(v87-S7: 직결 requests 금지)이라
+        외부 fetch를 밖으로 뺀다. UA·1KB·확장자 판별 규칙은 그쪽이 정본으로 보유.
+        """
+        from src.collectors.image_norm import fetch_image_bytes
+        return fetch_image_bytes(url, min_bytes=self.IMAGE_MIN_BYTES)
+
+    def upload_images(self, urls) -> dict:
+        """외부 이미지 URL 목록 → **네이버 CDN URL** 목록. 정본 `naver_img.upload` 승계.
+
+        흐름: 정규화 → 서버가 다운로드 → `multipart/form-data`(필드명 `imageFiles` 반복) 업로드 →
+        응답 `images[].url`. **릴레이 경유**(IP 게이트 — 직결 시 GW.IP_NOT_ALLOWED).
+        반환 {ok, urls, skipped, reason}. 조용한 실패 금지 — 오류 본문 200자까지 사유에 담는다.
+        """
+        cleaned, skipped = [], []
+        for u in (urls or [])[:self.IMAGE_MAX_COUNT]:
+            n = self.normalize_source_url(u)
+            if not n:
+                continue
+            got = self._fetch_image(n)
+            if got is None:
+                skipped.append(n)
+                continue
+            cleaned.append(got)
+        if not cleaned:
+            return {'ok': False, 'urls': [], 'skipped': skipped,
+                    'reason': f'업로드할 이미지 0장(내려받기 실패·규격 미달 {len(skipped)}장)'}
+
+        token = self._get_access_token()
+        if not token:
+            return {'ok': False, 'urls': [], 'skipped': skipped,
+                    'reason': '네이버 액세스 토큰 발급 실패 — 이미지 업로드 불가'}
+        # multipart 본문을 미리 조립해 **바이트로** 넘긴다 — 릴레이(mkt.php)가 body를 base64로
+        #   그대로 전달하므로, 이렇게 하면 직결·릴레이 어느 경로든 같은 요청이 나간다.
+        files = [('imageFiles', (name, body)) for body, name in cleaned]
+        prepped = requests.Request('POST', self.API_BASE + self.IMAGE_UPLOAD_PATH,
+                                   files=files).prepare()
+        headers = {'Authorization': f'Bearer {token}',
+                   'Content-Type': prepped.headers['Content-Type']}
+        last = ''
+        for att in range(self.IMAGE_RETRY):
+            try:
+                resp = relay_request('POST', self.API_BASE + self.IMAGE_UPLOAD_PATH,
+                                     headers=headers, data=prepped.body, timeout=60,
+                                     market='smartstore', key=str(self.client_id or ''))
+                if getattr(resp, 'status_code', 0) == 429:
+                    last = '429 요청 한도'
+                    time.sleep(3 * (att + 1))          # 정본 백오프
+                    continue
+                resp.raise_for_status()
+                data = resp.json()
+                out = [i.get('url') for i in (data.get('images') or []) if i.get('url')]
+                if not out:
+                    return {'ok': False, 'urls': [], 'skipped': skipped,
+                            'reason': f'네이버 응답에 이미지 URL 없음: {str(data)[:200]}'}
+                return {'ok': True, 'urls': out, 'skipped': skipped, 'reason': ''}
+            except requests.exceptions.HTTPError as exc:
+                body = ''
+                try:
+                    body = (exc.response.text or '')[:200]     # 정본: 본문 200자 노출
+                except Exception:
+                    pass
+                last = f'HTTP {getattr(exc.response, "status_code", "?")}: {body}'
+                time.sleep(3 * (att + 1))
+            except Exception as exc:
+                last = str(exc)[:200]
+                time.sleep(3 * (att + 1))
+        return {'ok': False, 'urls': [], 'skipped': skipped,
+                'reason': f'이미지 업로드 실패({self.IMAGE_RETRY}회 시도): {last}'}
+
+    @classmethod
+    def resolve_category(cls, title: str) -> str:
+        """상품명 → 리프 카테고리 ID. **정본 사전 매칭**(순서 유지·첫 매칭 우선), 미매칭이면 기본 리프.
+
+        쿠팡은 예측 API가 정본이고 실패 시 등록을 중단하지만, 스마트스토어는 **사전 매칭이 정본**이라
+        미매칭도 기본 리프로 등록한다(정본 스크립트 동작 그대로 — 규칙을 바꾸지 않는다).
+        """
+        name = str(title or '')
+        for pattern, leaf in cls.CATEGORY_PATTERNS:
+            if re.search(pattern, name, re.I):
+                return leaf
+        return cls.DEFAULT_LEAF_CATEGORY
 
     @staticmethod
     def _as_int(v):

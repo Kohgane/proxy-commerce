@@ -37,8 +37,8 @@ def test_smartstore_canon_supplied_gate_opened():
     assert st["ready"] is True and st["gaps"] == []
     for p in RA.CANON_POINTS:
         assert st["points"][p]["ok"] is True and st["points"][p]["source"]
-    # 승계받지 못한 조각은 숨기지 않고 partial로 남긴다(정직).
-    assert st["partial"]["category"]
+    # 카테고리 11패턴까지 승계 완료 → 남은 partial 없음(#672).
+    assert st["partial"] == {}
 
 
 def test_canon_gate_still_blocks_an_unready_adapter():
