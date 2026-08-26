@@ -388,6 +388,9 @@ class TestNaverPrepareProduct:
 
 class TestNaverGetAccessToken:
     def test_token_request_success(self, naver_uploader):
+        # 네이버 시크릿은 **bcrypt salt**($2a$…) — 평문이면 서명이 안 돼 토큰 요청 자체가 안 나간다.
+        import bcrypt
+        naver_uploader.client_secret = bcrypt.gensalt(rounds=4).decode()
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {'access_token': 'tok123', 'expires_in': 3600}

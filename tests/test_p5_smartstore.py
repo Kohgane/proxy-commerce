@@ -384,3 +384,99 @@ def test_image_upload_can_be_disabled_by_env(monkeypatch):
     monkeypatch.setattr(up, "upload_images", lambda urls: pytest.fail("게이트 껐는데 업로드됨"))
     monkeypatch.setattr(up, "_api_request", lambda *a, **k: {"originProductNo": "1"})
     assert up.upload_product(dict(_PRODUCT))["success"] is True
+
+
+# ── 7. 토큰 발급 정본(bcrypt 서명) + 조용한 실패 수리 ───────────────────────────
+def _valid_salt():
+    """네이버가 발급하는 시크릿은 **bcrypt salt**($2a$…) 형식이다 — 실제 salt로 테스트."""
+    import bcrypt
+    return bcrypt.gensalt(rounds=4).decode()
+def test_token_uses_bcrypt_signature_not_plain_secret(monkeypatch):
+    """★ 카나리 1차 근원: 평문 client_secret을 보냈다. 정본은 **bcrypt client_secret_sign**."""
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "cid")
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", _valid_salt())
+    up = SS(account="chezgoga")
+    sent = {}
+
+    class _R:
+        status_code = 200
+        text = ""
+        def json(self): return {"access_token": "tok", "expires_in": 3600}
+
+    monkeypatch.setattr("src.uploaders.naver_uploader.relay_request",
+                        lambda m, u, **kw: sent.update(kw) or _R())
+    assert up._get_access_token() == "tok"
+    body = sent["data"]
+    assert "client_secret_sign" in body and body["client_secret_sign"]
+    assert "client_secret" not in body                  # 평문 시크릿은 보내지 않는다
+    assert body["timestamp"] and body["type"] == "SELF"
+    assert sent["market"] == "smartstore"               # 릴레이 경유(IP 게이트)
+
+
+def test_signature_is_single_source():
+    """서명 규칙은 smartstore_adapter가 단일 소스 — 이 파일이 따로 구현하면 두 경로가 갈린다."""
+    src = Path("src/uploaders/naver_uploader.py").read_text(encoding="utf-8")
+    assert "_naver_signature" in src
+    assert "import bcrypt" not in src                   # 서명 재구현 금지
+
+
+def test_token_failure_surfaces_response_body(monkeypatch):
+    """조용한 실패 수리 — 네이버 응답 본문 200자를 사유로 올린다(원문이 범인을 지목)."""
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "cid")
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", _valid_salt())
+    up = SS(account="chezgoga")
+
+    class _R:
+        status_code = 401
+        text = '{"code":"invalid_client","message":"Client authentication failed"}'
+
+    monkeypatch.setattr("src.uploaders.naver_uploader.relay_request", lambda *a, **k: _R())
+    assert up._get_access_token() == ""
+    assert "401" in up.token_error and "invalid_client" in up.token_error
+
+
+def test_ip_gate_error_is_visible(monkeypatch):
+    """GW.IP_NOT_ALLOWED도 그대로 보인다 — 릴레이 IP 미등록을 즉시 판별."""
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "cid")
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", _valid_salt())
+    up = SS(account="chezgoga")
+
+    class _R:
+        status_code = 403
+        text = '{"code":"GW.IP_NOT_ALLOWED"}'
+
+    monkeypatch.setattr("src.uploaders.naver_uploader.relay_request", lambda *a, **k: _R())
+    up._get_access_token()
+    assert "GW.IP_NOT_ALLOWED" in up.token_error
+
+
+def test_bad_secret_format_reports_actionable_reason(monkeypatch):
+    """평문 시크릿(bcrypt salt 아님)이면 무엇을 고쳐야 하는지 말한다."""
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "cid")
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", "plaintext-secret")
+    up = SS(account="chezgoga")
+    monkeypatch.setattr("src.uploaders.naver_uploader.relay_request",
+                        lambda *a, **k: pytest.fail("서명 실패인데 토큰 요청됨"))
+    assert up._get_access_token() == ""
+    assert "$2a$" in up.token_error and "전자서명" in up.token_error
+
+
+def test_missing_credentials_names_account_env(monkeypatch):
+    """계정별 env 이름을 안내한다(스토어별 앱 구조)."""
+    for k in ("NAVER_CLIENT_ID", "NAVER_COMMERCE_CLIENT_ID", "NAVER_CHEZGOGA_CLIENT_ID",
+              "NAVER_CLIENT_SECRET", "NAVER_COMMERCE_CLIENT_SECRET", "NAVER_CHEZGOGA_CLIENT_SECRET"):
+        monkeypatch.delenv(k, raising=False)
+    up = SS(account="chezgoga")
+    up._get_access_token()
+    assert "NAVER_CHEZGOGA_CLIENT_ID" in up.token_error
+
+
+def test_image_upload_reports_token_reason(monkeypatch):
+    """이미지 업로드 사유에 토큰 실패 **원문**이 실린다('발급 실패'만 아님)."""
+    up = SS(account="chezgoga")
+    monkeypatch.setattr("src.collectors.image_norm.fetch_image_bytes",
+                        lambda u, **k: (b"x" * 2000, "img.jpg"))
+    monkeypatch.setattr(up, "_get_access_token", lambda: "")
+    up.token_error = "HTTP 403: {\"code\":\"GW.IP_NOT_ALLOWED\"}"
+    out = up.upload_images(["https://x/a.jpg"])
+    assert out["ok"] is False and "GW.IP_NOT_ALLOWED" in out["reason"]
