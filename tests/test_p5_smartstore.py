@@ -220,3 +220,167 @@ def test_naver_calls_go_through_relay():
     relay = Path("src/market_relay.py").read_text(encoding="utf-8")
     assert "api.commerce.naver.com" in relay
     assert '"smartstore"' in relay
+
+
+# ── 6. 이미지 업로드 정본(오너 SSH `naver_img.py`) ──────────────────────────────
+def test_image_upload_canon_constants():
+    assert SS.IMAGE_UPLOAD_PATH == "/v1/product-images/upload"
+    assert SS.IMAGE_MIN_BYTES == 1024 and SS.IMAGE_MAX_COUNT == 10 and SS.IMAGE_RETRY == 3
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("https://m.media-amazon.com/i/a.jpg?v=2", "https://m.media-amazon.com/i/a.jpg"),
+    ("//m.media-amazon.com/i/a.jpg", "https://m.media-amazon.com/i/a.jpg"),   # 정본: https: 부착
+    ("//cdn.x/a.png?q=1", "https://cdn.x/a.png"),
+    ("", ""),
+])
+def test_source_url_normalization(raw, expected):
+    assert SS.normalize_source_url(raw) == expected
+
+
+def _fake_resp(content=b"", ct="image/jpeg", status=200):
+    class _R:
+        status_code = status
+        headers = {"Content-Type": ct}
+    r = _R()
+    r.content = content
+    r.raise_for_status = lambda: None
+    return r
+
+
+def test_fetch_uses_browser_ua(monkeypatch):
+    """UA 헤더 필수 — 아마존 CDN이 기본 UA를 막는다(정본)."""
+    seen = {}
+    monkeypatch.setattr("requests.get",
+                        lambda u, **k: seen.update(k) or _fake_resp(b"x" * 2000))
+    got = SS(account="chezgoga")._fetch_image("https://m.media-amazon.com/i/a.jpg")
+    assert got is not None and got[1] == "img.jpg"
+    assert "Mozilla" in seen["headers"]["User-Agent"]
+
+
+def test_fetch_skips_tiny_files(monkeypatch):
+    """1KB 미만 = 썸네일 쓰레기 → 스킵(정본)."""
+    monkeypatch.setattr("requests.get", lambda u, **k: _fake_resp(b"x" * 500))
+    assert SS(account="chezgoga")._fetch_image("https://x/a.jpg") is None
+
+
+@pytest.mark.parametrize("ct,ext", [("image/jpeg", "jpg"), ("image/png", "png"),
+                                    ("image/webp", "webp"), ("image/gif", "gif")])
+def test_fetch_extension_from_content_type(monkeypatch, ct, ext):
+    monkeypatch.setattr("requests.get", lambda u, **k: _fake_resp(b"x" * 2000, ct=ct))
+    assert SS(account="chezgoga")._fetch_image("https://x/a")[1] == f"img.{ext}"
+
+
+def test_fetch_rejects_unsupported_content_type(monkeypatch):
+    monkeypatch.setattr("requests.get", lambda u, **k: _fake_resp(b"x" * 2000, ct="text/html"))
+    assert SS(account="chezgoga")._fetch_image("https://x/a") is None
+
+
+def test_ssl_verification_not_disabled():
+    """정본의 CERT_NONE은 Bluehost 구환경 땜빵 — **승계하지 않는다**(오너 지시)."""
+    # 독스트링에 '승계하지 않는다'는 설명이 있으므로 **실행되는 호출 형태**만 본다.
+    src = Path("src/uploaders/naver_uploader.py").read_text(encoding="utf-8")
+    assert "verify=False" not in src
+    assert "ssl._create_unverified_context" not in src
+    assert "CERT_NONE" not in src.replace("정본의 CERT_NONE은", "")   # 설명 1곳만 예외
+
+
+def test_upload_images_goes_through_relay(monkeypatch):
+    """multipart도 릴레이 경유 — IP 게이트(직결 시 GW.IP_NOT_ALLOWED)."""
+    up = SS(account="chezgoga")
+    monkeypatch.setattr(up, "_get_access_token", lambda: "tok")
+    monkeypatch.setattr("requests.get", lambda u, **k: _fake_resp(b"x" * 2000))
+    seen = {}
+
+    class _Resp:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return {"images": [{"url": "https://shop-phinf.naver.net/a.jpg"}]}
+
+    def _relay(method, url, **kw):
+        seen.update({"method": method, "url": url, **kw})
+        return _Resp()
+
+    monkeypatch.setattr("src.uploaders.naver_uploader.relay_request", _relay)
+    out = up.upload_images(["https://m.media-amazon.com/i/a.jpg"])
+    assert out["ok"] is True and out["urls"] == ["https://shop-phinf.naver.net/a.jpg"]
+    assert seen["market"] == "smartstore"                      # 릴레이 마켓 지정
+    assert seen["url"].endswith("/v1/product-images/upload")
+    assert seen["headers"]["Authorization"] == "Bearer tok"
+    # multipart 본문이 바이트로 조립돼 나간다(릴레이가 body를 그대로 전달).
+    assert "multipart/form-data; boundary=" in seen["headers"]["Content-Type"]
+    assert b'name="imageFiles"' in seen["data"]
+
+
+def test_upload_images_retries_on_429(monkeypatch):
+    up = SS(account="chezgoga")
+    monkeypatch.setattr(up, "_get_access_token", lambda: "tok")
+    monkeypatch.setattr("requests.get", lambda u, **k: _fake_resp(b"x" * 2000))
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    calls = []
+
+    class _R429:
+        status_code = 429
+        def raise_for_status(self): pass
+
+    monkeypatch.setattr("src.uploaders.naver_uploader.relay_request",
+                        lambda *a, **k: calls.append(1) or _R429())
+    out = up.upload_images(["https://x/a.jpg"])
+    assert out["ok"] is False and len(calls) == SS.IMAGE_RETRY      # 정본: 최대 3회
+    assert "429" in out["reason"]
+
+
+def test_upload_images_surfaces_http_error_body(monkeypatch):
+    """조용한 실패 금지 — 오류 본문 200자까지 사유에 담는다(정본)."""
+    import requests as _rq
+    up = SS(account="chezgoga")
+    monkeypatch.setattr(up, "_get_access_token", lambda: "tok")
+    monkeypatch.setattr("requests.get", lambda u, **k: _fake_resp(b"x" * 2000))
+    monkeypatch.setattr("time.sleep", lambda s: None)
+
+    class _Err:
+        status_code = 400
+        text = "INVALID_IMAGE: 규격 오류입니다"
+        def raise_for_status(self):
+            raise _rq.exceptions.HTTPError(response=self)
+
+    monkeypatch.setattr("src.uploaders.naver_uploader.relay_request", lambda *a, **k: _Err())
+    out = up.upload_images(["https://x/a.jpg"])
+    assert out["ok"] is False and "INVALID_IMAGE" in out["reason"] and "400" in out["reason"]
+
+
+def test_upload_images_zero_blocks_registration(monkeypatch):
+    """업로드 0장이면 등록 차단(정본의 raise와 같은 철학)."""
+    up = SS(account="chezgoga")
+    monkeypatch.setattr(up, "upload_images",
+                        lambda urls: {"ok": False, "urls": [], "skipped": [], "reason": "전부 실패"})
+    monkeypatch.setattr(up, "_api_request",
+                        lambda *a, **k: pytest.fail("이미지 0장인데 등록 호출됨"))
+    res = up.upload_product(dict(_PRODUCT))
+    assert res["success"] is False and res["held"] is True
+    assert "이미지 업로드 실패" in res["error"]
+
+
+def test_uploaded_cdn_urls_are_used_in_payload(monkeypatch):
+    """등록 페이로드에는 **네이버 CDN URL**이 실린다(외부 URL 아님)."""
+    up = SS(account="chezgoga")
+    cdn = ["https://shop-phinf.naver.net/a.jpg", "https://shop-phinf.naver.net/b.jpg"]
+    monkeypatch.setattr(up, "upload_images",
+                        lambda urls: {"ok": True, "urls": cdn, "skipped": [], "reason": ""})
+    sent = {}
+    monkeypatch.setattr(up, "_api_request",
+                        lambda m, p, data=None: sent.update({"d": data}) or {"originProductNo": "1"})
+    res = up.upload_product(dict(_PRODUCT))
+    assert res["success"] is True
+    imgs = sent["d"]["originProduct"]["images"]
+    assert imgs["representativeImage"]["url"] == cdn[0]
+    assert [i["url"] for i in imgs["optionalImages"]] == cdn[1:]
+
+
+def test_image_upload_can_be_disabled_by_env(monkeypatch):
+    monkeypatch.setenv("NAVER_IMAGE_UPLOAD", "0")
+    up = SS(account="chezgoga")
+    assert up.image_upload_enabled is False
+    monkeypatch.setattr(up, "upload_images", lambda urls: pytest.fail("게이트 껐는데 업로드됨"))
+    monkeypatch.setattr(up, "_api_request", lambda *a, **k: {"originProductNo": "1"})
+    assert up.upload_product(dict(_PRODUCT))["success"] is True

@@ -96,6 +96,10 @@ class NaverSmartStoreUploader(BaseUploader):
             logger.warning('NAVER_CLIENT_ID is not set')
         if not self.client_secret:
             logger.warning('NAVER_CLIENT_SECRET is not set')
+        # 이미지 업로드 게이트(정본) — 등록당 N장 다운로드+업로드가 붙으므로 env로 끌 수 있게.
+        #   기본 ON: 외부 CDN URL을 그대로 넣으면 네이버가 거부하거나 이미지가 깨진다.
+        self.image_upload_enabled = os.getenv('NAVER_IMAGE_UPLOAD', '1').strip().lower() not in (
+            '0', 'false', 'no', 'off')
         self._access_token = None
         self._token_expires = 0
 
@@ -125,6 +129,17 @@ class NaverSmartStoreUploader(BaseUploader):
             실패: {'success': False, 'error': '...'}
         """
         try:
+            # 이미지 정본: 외부 URL을 **네이버 CDN으로 업로드**한 뒤 그 URL로 등록한다.
+            #   0장이면 등록 차단(정본의 raise와 같은 철학 — 이미지 없는 상품 공개 금지).
+            if self.image_upload_enabled and product.get('images'):
+                shot = self.upload_images(product.get('images'))
+                if not shot['ok']:
+                    return {'success': False, 'held': True, 'sku': product.get('sku', ''),
+                            'error': f"이미지 업로드 실패 — 등록 중단: {shot['reason']}"}
+                if shot['skipped']:
+                    logger.info('이미지 %d장 스킵(규격/다운로드) sku=%s',
+                                len(shot['skipped']), product.get('sku', ''))
+                product = {**product, 'images': shot['urls']}
             payload = self._build_product_payload(product)
             path = '/v2/products'
             result = self._api_request('POST', path, data=payload)
@@ -273,6 +288,111 @@ class NaverSmartStoreUploader(BaseUploader):
                 'naverShoppingRegistration': self.NAVER_SHOPPING_REGISTRATION,
             },
         }
+
+    # ── 이미지 업로드 정본(오너 SSH `naver_img.py`) ──────────────────────────────
+    _IMG_UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+               '(KHTML, like Gecko) Chrome/124.0 Safari/537.36')
+    _IMG_EXT_BY_CT = {'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png',
+                      'image/webp': 'webp', 'image/gif': 'gif'}
+    IMAGE_MIN_BYTES = 1024          # 정본: 1KB 미만은 썸네일 쓰레기 → 스킵
+    IMAGE_MAX_COUNT = 10            # 정본: 한 번에 최대 10장
+    IMAGE_RETRY = 3                 # 정본: 429·예외 모두 최대 3회
+
+    @classmethod
+    def normalize_source_url(cls, url: str) -> str:
+        """외부 이미지 URL 정규화(정본): 쿼리스트링 제거 · `//` 시작이면 https: 부착."""
+        u = str(url or '').strip()
+        if not u:
+            return ''
+        if u.startswith('//'):
+            u = 'https:' + u
+        return u.split('?')[0]
+
+    def _fetch_image(self, url: str):
+        """외부 URL → (bytes, filename). 실패/규격미달이면 None.
+
+        UA 헤더 필수(아마존 CDN이 기본 UA를 막는다·정본). 확장자는 Content-Type으로 판별.
+        **SSL 검증은 정상 유지** — 정본의 CERT_NONE은 Bluehost 구환경 땜빵이라 승계하지 않는다(오너 지시).
+        """
+        try:
+            resp = requests.get(url, timeout=20, headers={'User-Agent': self._IMG_UA})
+            resp.raise_for_status()
+        except Exception as exc:
+            logger.warning('이미지 다운로드 실패 %s: %s', url, exc)
+            return None
+        body = resp.content or b''
+        if len(body) < self.IMAGE_MIN_BYTES:
+            logger.info('이미지 %d바이트 — 규격 미달로 스킵: %s', len(body), url)
+            return None
+        ct = (resp.headers.get('Content-Type') or '').split(';')[0].strip().lower()
+        ext = self._IMG_EXT_BY_CT.get(ct)
+        if not ext:
+            logger.warning('이미지 Content-Type 미지원(%s) — 스킵: %s', ct or '미상', url)
+            return None
+        return body, f'img.{ext}'
+
+    def upload_images(self, urls) -> dict:
+        """외부 이미지 URL 목록 → **네이버 CDN URL** 목록. 정본 `naver_img.upload` 승계.
+
+        흐름: 정규화 → 서버가 다운로드 → `multipart/form-data`(필드명 `imageFiles` 반복) 업로드 →
+        응답 `images[].url`. **릴레이 경유**(IP 게이트 — 직결 시 GW.IP_NOT_ALLOWED).
+        반환 {ok, urls, skipped, reason}. 조용한 실패 금지 — 오류 본문 200자까지 사유에 담는다.
+        """
+        cleaned, skipped = [], []
+        for u in (urls or [])[:self.IMAGE_MAX_COUNT]:
+            n = self.normalize_source_url(u)
+            if not n:
+                continue
+            got = self._fetch_image(n)
+            if got is None:
+                skipped.append(n)
+                continue
+            cleaned.append(got)
+        if not cleaned:
+            return {'ok': False, 'urls': [], 'skipped': skipped,
+                    'reason': f'업로드할 이미지 0장(내려받기 실패·규격 미달 {len(skipped)}장)'}
+
+        token = self._get_access_token()
+        if not token:
+            return {'ok': False, 'urls': [], 'skipped': skipped,
+                    'reason': '네이버 액세스 토큰 발급 실패 — 이미지 업로드 불가'}
+        # multipart 본문을 미리 조립해 **바이트로** 넘긴다 — 릴레이(mkt.php)가 body를 base64로
+        #   그대로 전달하므로, 이렇게 하면 직결·릴레이 어느 경로든 같은 요청이 나간다.
+        files = [('imageFiles', (name, body)) for body, name in cleaned]
+        prepped = requests.Request('POST', self.API_BASE + self.IMAGE_UPLOAD_PATH,
+                                   files=files).prepare()
+        headers = {'Authorization': f'Bearer {token}',
+                   'Content-Type': prepped.headers['Content-Type']}
+        last = ''
+        for att in range(self.IMAGE_RETRY):
+            try:
+                resp = relay_request('POST', self.API_BASE + self.IMAGE_UPLOAD_PATH,
+                                     headers=headers, data=prepped.body, timeout=60,
+                                     market='smartstore', key=str(self.client_id or ''))
+                if getattr(resp, 'status_code', 0) == 429:
+                    last = '429 요청 한도'
+                    time.sleep(3 * (att + 1))          # 정본 백오프
+                    continue
+                resp.raise_for_status()
+                data = resp.json()
+                out = [i.get('url') for i in (data.get('images') or []) if i.get('url')]
+                if not out:
+                    return {'ok': False, 'urls': [], 'skipped': skipped,
+                            'reason': f'네이버 응답에 이미지 URL 없음: {str(data)[:200]}'}
+                return {'ok': True, 'urls': out, 'skipped': skipped, 'reason': ''}
+            except requests.exceptions.HTTPError as exc:
+                body = ''
+                try:
+                    body = (exc.response.text or '')[:200]     # 정본: 본문 200자 노출
+                except Exception:
+                    pass
+                last = f'HTTP {getattr(exc.response, "status_code", "?")}: {body}'
+                time.sleep(3 * (att + 1))
+            except Exception as exc:
+                last = str(exc)[:200]
+                time.sleep(3 * (att + 1))
+        return {'ok': False, 'urls': [], 'skipped': skipped,
+                'reason': f'이미지 업로드 실패({self.IMAGE_RETRY}회 시도): {last}'}
 
     @classmethod
     def resolve_category(cls, title: str) -> str:
