@@ -224,9 +224,19 @@ def test_p3_gated_when_not_approved():
 
 
 def test_p3_unknown_account_rejected():
-    out = RP.register_source_rows(_p3_rows(), dispatch_fn=lambda pd, a: {"success": True},
-                                  enrich_fn=lambda r: {"images": ["u"]}, account="foo", approved=True)
-    assert out["ok"] is False and "알 수 없는 계정" in out["error"]
+    """계정 축 검증은 **어댑터** 책임으로 이관됐다(P5 — 마켓마다 축이 다르다).
+
+    파이프라인은 빈 계정만 막고, 잘못된 계정명은 어댑터가 정직 차단한다(보호는 그대로).
+    """
+    from src.pipeline.register_adapters import get_adapter
+    # ① 파이프라인: 빈 계정 차단(조용한 무계정 등록 방지).
+    empty = RP.register_source_rows(_p3_rows(), dispatch_fn=lambda pd, a: {"success": True},
+                                    enrich_fn=lambda r: {"images": ["u"]}, account="", approved=True)
+    assert empty["ok"] is False and "계정이 지정되지" in empty["error"]
+    # ② 어댑터: 축이 다른 계정명 차단(쿠팡 계정으로 스마트스토어 등록 불가).
+    res = get_adapter("smartstore").register({"title_ko": "x"}, "foo")
+    assert res["success"] is False and res["held"] is True
+    assert "스마트스토어 계정이 아닙니다" in res["error"]
 
 
 def test_p3_route_gated_or_registers(monkeypatch):
