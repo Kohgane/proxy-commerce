@@ -37,21 +37,64 @@ class NaverSmartStoreUploader(BaseUploader):
     API_BASE = 'https://api.commerce.naver.com/external'
     _TOKEN_URL = 'https://api.commerce.naver.com/external/v1/oauth2/token'
 
-    def __init__(self):
+    # ── P5 정본 승계(오너 SSH 실측 `ss_upload.py`) — 추측 금지, 실증값만 ────────────
+    #   쿠팡과 **다른 축**이다: 계정 = chezgoga / gocosmos (쿠팡 고가네/우주대행과 별개).
+    ACCOUNT_PREFIXES = {'chezgoga': 'NAVER_CHEZGOGA', 'gocosmos': 'NAVER_GOCOSMOS'}
+    # 출고지/반품지 주소 ID — 정본 스크립트는 하드코딩이었으나 **env화**(하드코딩 금지·오너 지시).
+    #   기본값이 곧 실증값이라 env 미설정이어도 정본으로 등록된다(계정별 오버라이드 가능).
+    DEFAULT_ADDRESS_IDS = {
+        'chezgoga': {'ship': '107519271', 'return': '107519270'},
+        'gocosmos': {'ship': '107987297', 'return': '107987296'},
+    }
+    DEFAULT_LEAF_CATEGORY = '50004132'      # 정본 기본 리프 카테고리
+    # 구매대행 통관 · 반품/교환비 · 판매상태 — 전부 정본 승계.
+    CUSTOMS_TAX_TYPE = 'PURCHASE_AGENT'
+    RETURN_FEE = 25000
+    EXCHANGE_FEE = 50000
+    STATUS_TYPE = 'SALE'
+    STOCK_QUANTITY = 999
+    NAVER_SHOPPING_REGISTRATION = True
+    # 원산지 — **스마트스토어 정본**(쿠팡과 다른 허용 문구·실증됨). 어댑터별 원산지 정책 분기.
+    ORIGIN_AREA_CODE = '03'
+    ORIGIN_AREA_CONTENT = '상세설명에 표시'
+    # 이미지 업로드(정본 `naver_img.upload` 상당) — 실패 시 등록 차단(정본과 동일).
+    IMAGE_UPLOAD_PATH = '/v1/product-images/upload'
+
+    def __init__(self, account: str = None):
         """Naver SmartStore 업로더 초기화. 환경변수에서 API 키를 읽는다.
 
         네이버 커머스 자격증명은 코드 경로에 따라 두 이름이 혼용되어 왔다.
         업로드/읽기 진단이 같은 값을 쓰도록 NAVER_COMMERCE_* 를 폴백으로 허용한다.
         """
-        self.client_id = os.getenv('NAVER_CLIENT_ID') or os.getenv('NAVER_COMMERCE_CLIENT_ID', '')
-        self.client_secret = os.getenv('NAVER_CLIENT_SECRET') or os.getenv('NAVER_COMMERCE_CLIENT_SECRET', '')
-        self.channel_id = os.getenv('NAVER_CHANNEL_ID', '')
+        self.account = (account or '').strip().lower() or None
+        self.client_id = self._acct_env('NAVER_CLIENT_ID') or os.getenv('NAVER_COMMERCE_CLIENT_ID', '')
+        self.client_secret = (self._acct_env('NAVER_CLIENT_SECRET')
+                              or os.getenv('NAVER_COMMERCE_CLIENT_SECRET', ''))
+        self.channel_id = self._acct_env('NAVER_CHANNEL_ID')
+        # 출고지/반품지 주소 ID — env 우선, 미설정이면 정본 실증값(계정별).
+        _addr = self.DEFAULT_ADDRESS_IDS.get(self.account or '', {})
+        self.ship_address_id = self._acct_env('NAVER_SHIP_ADDRESS_ID', _addr.get('ship', ''))
+        self.return_address_id = self._acct_env('NAVER_RETURN_ADDRESS_ID', _addr.get('return', ''))
         if not self.client_id:
             logger.warning('NAVER_CLIENT_ID is not set')
         if not self.client_secret:
             logger.warning('NAVER_CLIENT_SECRET is not set')
         self._access_token = None
         self._token_expires = 0
+
+    def _acct_env(self, base_env: str, default: str = '') -> str:
+        """계정 접두 우선 env 읽기 — 쿠팡 `_ship_env`와 동형 규약(계정 간 혼입 방지).
+
+        base_env='NAVER_SHIP_ADDRESS_ID' → account='chezgoga'면 `NAVER_CHEZGOGA_SHIP_ADDRESS_ID` 우선,
+        없으면 무접두 `NAVER_SHIP_ADDRESS_ID`, 그래도 없으면 default(정본 실증값).
+        """
+        prefix = self.ACCOUNT_PREFIXES.get(self.account or '')
+        if prefix:
+            suffix = base_env[len('NAVER_'):]
+            val = os.getenv(f'{prefix}_{suffix}', '').strip()
+            if val:
+                return val
+        return os.getenv(base_env, '').strip() or default
 
     # ------------------------------------------------------------------
     # Public API
@@ -147,25 +190,40 @@ class NaverSmartStoreUploader(BaseUploader):
     # ------------------------------------------------------------------
 
     def _build_product_payload(self, product: dict) -> dict:
-        """Naver Commerce API용 상품 페이로드를 구성한다."""
-        images = [{'url': url, 'representativeImage': (i == 0)}
-                  for i, url in enumerate(product.get('images', []))]
+        """Naver Commerce API 상품 페이로드 — **정본 승계**(오너 SSH 실측 ss_upload.py).
+
+        쿠팡과 **다른 값**을 쓰는 지점(어댑터 4지점 중 원산지·배송·카테고리):
+          · 원산지 = `originAreaCode "03"` + `"상세설명에 표시"` (스마트스토어 허용 문구·실증)
+          · 통관 = `customsTaxType PURCHASE_AGENT`(구매대행)
+          · 반품 25,000 / 교환 50,000 · statusType SALE · 재고 999 · 네이버쇼핑 등록 True
+          · 출고지/반품지 = 주소 ID(env, 기본값=정본 실증값)
+        추측 금지 — 여기 값은 전부 통과 이력이 있는 스크립트에서 온 것이다.
+        """
+        images = [u for u in (product.get('images') or []) if u]
+        rep = images[0] if images else ''
+        optional = [{'url': u} for u in images[1:]]
+        price = int(product.get('price', 0) or 0)
         return {
             'originProduct': {
-                'statusType': 'SALE',
+                'statusType': self.STATUS_TYPE,
                 'saleType': 'NEW',
-                'leafCategoryId': product.get('category_id', '50000000'),
-                'name': product.get('title', ''),
+                'leafCategoryId': str(product.get('category_id') or self.DEFAULT_LEAF_CATEGORY),
+                'name': (product.get('title') or '')[:100],
                 'detailContent': product.get('description_html', ''),
-                'images': {'representativeImage': {'url': images[0]['url'] if images else ''},
-                           'optionalImages': images[1:] if len(images) > 1 else []},
-                'salePrice': product.get('price', 0),
-                'stockQuantity': product.get('stock', 999),
+                'images': {'representativeImage': {'url': rep}, 'optionalImages': optional},
+                'salePrice': price,
+                'stockQuantity': self.STOCK_QUANTITY,
                 'deliveryInfo': {
-                    'deliveryType': 'DIRECT_DELIVERY',
+                    'deliveryType': 'DELIVERY',
                     'deliveryAttributeType': 'NORMAL',
-                    'deliveryFee': {
-                        'deliveryFeeType': 'FREE',
+                    'deliveryCompany': self._acct_env('NAVER_DELIVERY_COMPANY', 'CJGLS'),
+                    'deliveryFee': {'deliveryFeeType': 'FREE'},
+                    'claimDeliveryInfo': {
+                        # 정본: 반품 25,000 / 교환 50,000 (해외 구매대행 실비).
+                        'returnDeliveryFee': self.RETURN_FEE,
+                        'exchangeDeliveryFee': self.EXCHANGE_FEE,
+                        'shippingAddressId': self._as_int(self.ship_address_id),
+                        'returnAddressId': self._as_int(self.return_address_id),
                     },
                 },
                 'detailAttribute': {
@@ -174,24 +232,36 @@ class NaverSmartStoreUploader(BaseUploader):
                         'brandName': product.get('brand', ''),
                     },
                     'afterServiceInfo': {
-                        'afterServiceTelephoneNumber': '',
-                        'afterServiceGuideContent': product.get('return_info', ''),
+                        'afterServiceTelephoneNumber': self._acct_env('NAVER_AS_PHONE'),
+                        'afterServiceGuideContent': product.get('return_info', '')
+                                                    or '해외 구매대행 상품입니다.',
                     },
                     'purchaseQuantityInfo': {
-                        'minPurchaseQuantity': 1,
-                        'maxPurchaseQuantityPer1Time': 99,
+                        'minPurchaseQuantity': 1, 'maxPurchaseQuantityPer1Time': 99,
                     },
+                    # ★ 원산지 정본 — 쿠팡과 다른 축(마켓별 원산지 정책 분기).
                     'originAreaInfo': {
-                        'originAreaCode': '0200037',  # 해외
-                        'importer': '해외직구',
+                        'originAreaCode': self.ORIGIN_AREA_CODE,
+                        'content': self.ORIGIN_AREA_CONTENT,
                     },
                     'sellerCodeInfo': {'sellerManagementCode': product.get('sku', '')},
+                    # 구매대행 통관(정본).
+                    'customsTaxType': self.CUSTOMS_TAX_TYPE,
                 },
             },
             'smartstoreChannelProduct': {
                 'channelProductDisplayStatusType': 'ON',
+                'naverShoppingRegistration': self.NAVER_SHOPPING_REGISTRATION,
             },
         }
+
+    @staticmethod
+    def _as_int(v):
+        """주소 ID 등 정본상 int로 보내야 하는 값. 숫자가 아니면 원본 유지(정직)."""
+        try:
+            return int(str(v).strip())
+        except (TypeError, ValueError):
+            return v
 
     def _get_access_token(self) -> str:
         """OAuth2 client_credentials 방식으로 액세스 토큰을 취득한다.
