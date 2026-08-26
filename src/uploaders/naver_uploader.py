@@ -102,6 +102,13 @@ class NaverSmartStoreUploader(BaseUploader):
             '0', 'false', 'no', 'off')
         self._access_token = None
         self._token_expires = 0
+        self.token_error = ''          # 발급 실패 원문(조용한 실패 금지 — 호출부가 그대로 노출)
+        # 스마트스토어는 보통 **스토어별 앱**이다. 계정 접두 키가 없어 공용 키로 떨어지면
+        #   두 스토어가 같은 자격을 쓰게 되므로 경고를 남긴다(조용한 혼입 방지).
+        if self.account and self.client_id and not os.getenv(
+                f"{self.ACCOUNT_PREFIXES.get(self.account, 'NAVER')}_CLIENT_ID", '').strip():
+            logger.warning('%s 전용 자격(%s_CLIENT_ID) 미설정 — 공용 키로 발급합니다(스토어 혼입 주의).',
+                           self.account, self.ACCOUNT_PREFIXES.get(self.account, 'NAVER'))
 
     def _acct_env(self, base_env: str, default: str = '') -> str:
         """계정 접두 우선 env 읽기 — 쿠팡 `_ship_env`와 동형 규약(계정 간 혼입 방지).
@@ -337,8 +344,9 @@ class NaverSmartStoreUploader(BaseUploader):
 
         token = self._get_access_token()
         if not token:
+            # 원문이 범인을 지목한다(invalid_client·GW.IP_NOT_ALLOWED·서명 오류 등) — 그대로 올린다.
             return {'ok': False, 'urls': [], 'skipped': skipped,
-                    'reason': '네이버 액세스 토큰 발급 실패 — 이미지 업로드 불가'}
+                    'reason': f'네이버 토큰 발급 실패 — {self.token_error or "사유 미상"}'}
         # multipart 본문을 미리 조립해 **바이트로** 넘긴다 — 릴레이(mkt.php)가 body를 base64로
         #   그대로 전달하므로, 이렇게 하면 직결·릴레이 어느 경로든 같은 요청이 나간다.
         files = [('imageFiles', (name, body)) for body, name in cleaned]
@@ -399,45 +407,80 @@ class NaverSmartStoreUploader(BaseUploader):
             return v
 
     def _get_access_token(self) -> str:
-        """OAuth2 client_credentials 방식으로 액세스 토큰을 취득한다.
+        """OAuth2 client_credentials 토큰 발급. 실패 사유는 `self.token_error`에 **원문 200자**로 남긴다.
 
-        토큰이 유효하면 캐시된 값을 반환하고, 만료 시 재발급한다.
+        **정본 서명 = bcrypt `client_secret_sign`**(평문 client_secret 아님).
+        서명 규칙은 `market_adapters.smartstore_adapter._naver_signature`가 단일 소스 —
+        이 파일이 따로 구현하면 두 경로가 갈린다(카나리 1차 실패의 근원이 정확히 그것이었다).
+
+        v87-S7: 발급도 **릴레이 경유**(직결이면 네이버가 IP로 막아 토큰부터 실패 → 연쇄 실패).
         """
         now = time.time()
         if self._access_token and now < self._token_expires - 60:
             return self._access_token
+        self.token_error = ''
         if not self.client_id or not self.client_secret:
+            self.token_error = ('네이버 커머스 자격 미설정 — '
+                                f'{self._cred_env_hint()} 를 설정하세요.')
+            return ''
+        from src.seller_console.market_adapters.smartstore_adapter import _naver_signature
+        timestamp = str(int(now * 1000))
+        sign = _naver_signature(self.client_id, self.client_secret, timestamp)
+        if not sign:
+            self.token_error = ("전자서명 생성 실패 — Client Secret이 '$2a$…' 형식(bcrypt salt)인지 "
+                                "확인하세요. 평문 시크릿은 네이버가 받지 않습니다.")
+            logger.warning('네이버 토큰 발급 실패(서명): %s', self.token_error)
             return ''
         try:
-            # v87-S7: 토큰 발급도 **릴레이 경유**(단일 관문). 직결로 나가면 네이버가 IP로 막아
-            #   토큰을 못 받고, 그 뒤 모든 호출이 연쇄 실패한다(GW.IP_NOT_ALLOWED).
             resp = relay_request(
                 'POST', self._TOKEN_URL,
                 data={
                     'grant_type': 'client_credentials',
                     'client_id': self.client_id,
-                    'client_secret': self.client_secret,
+                    'timestamp': timestamp,
+                    'client_secret_sign': sign,      # ★ 정본: bcrypt 서명(평문 secret 아님)
                     'type': 'SELF',
                 },
+                headers={'Content-Type': 'application/x-www-form-urlencoded'},
                 timeout=15, market="smartstore", key=str(self.client_id or ""),
             )
-            resp.raise_for_status()
-            data = resp.json()
-            self._access_token = data.get('access_token', '')
-            expires_in = int(data.get('expires_in', 3600))
-            self._token_expires = now + expires_in
-            return self._access_token
         except Exception as exc:
-            logger.error('_get_access_token failed: %s', exc)
+            self.token_error = f'토큰 요청 실패: {str(exc)[:200]}'
+            logger.error('네이버 토큰 발급 실패(요청): %s', self.token_error)
             return ''
+        status = getattr(resp, 'status_code', 0)
+        if status != 200:
+            # ★ 원문이 범인을 지목한다(invalid_client·GW.IP_NOT_ALLOWED·서명 오류 등) — 조용한 실패 금지.
+            body = (getattr(resp, 'text', '') or '').strip().replace('\n', ' ')[:200]
+            self.token_error = f'HTTP {status}: {body}'
+            logger.warning('네이버 토큰 발급 실패 HTTP %s: %s', status, body)
+            return ''
+        try:
+            data = resp.json()
+        except Exception as exc:
+            self.token_error = f'토큰 응답 파싱 실패: {str(exc)[:200]}'
+            return ''
+        self._access_token = data.get('access_token', '')
+        if not self._access_token:
+            self.token_error = f'응답에 access_token 없음: {str(data)[:200]}'
+            return ''
+        self._token_expires = now + int(data.get('expires_in', 3600))
+        return self._access_token
+
+    def _cred_env_hint(self) -> str:
+        """이 계정이 읽는 자격 env 이름(설정 안내용). 계정 접두가 있으면 그것을 먼저 안내한다."""
+        prefix = self.ACCOUNT_PREFIXES.get(self.account or '')
+        if prefix:
+            return f'{prefix}_CLIENT_ID/{prefix}_CLIENT_SECRET (또는 공용 NAVER_COMMERCE_CLIENT_ID/SECRET)'
+        return 'NAVER_COMMERCE_CLIENT_ID / NAVER_COMMERCE_CLIENT_SECRET'
 
     def _api_request(self, method: str, path: str, data: dict = None) -> dict:
         """Naver Commerce API에 요청을 전송한다."""
         if not self.client_id or not self.client_secret:
-            return {'error': 'Missing Naver API credentials'}
+            return {'error': f'네이버 커머스 자격 미설정 — {self._cred_env_hint()}'}
         token = self._get_access_token()
         if not token:
-            return {'error': 'Failed to obtain access token'}
+            return {'error': f'네이버 토큰 발급 실패 — {self.token_error or "사유 미상"}'}
         url = self.API_BASE + path
         headers = {
             'Authorization': f'Bearer {token}',
