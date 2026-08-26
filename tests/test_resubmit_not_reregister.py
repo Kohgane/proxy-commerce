@@ -156,5 +156,6 @@ def test_find_by_vendor_sku():
 def test_route_wires_lookup_fn():
     from pathlib import Path
     src = Path("src/seller_console/views.py").read_text(encoding="utf-8")
-    assert "lookup_fn=_lookup_registration" in src
+    # P5에서 마켓별 판정으로 바뀌었다(같은 상품을 쿠팡·스스에 각각 등록하는 건 중복이 아님).
+    assert "lookup_fn=lambda sku, acct: _lookup_registration(sku, acct, marketplace=market)" in src
     assert "find_by_vendor_sku" in src

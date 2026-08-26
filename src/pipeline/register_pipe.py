@@ -536,8 +536,11 @@ def register_source_rows(rows, *, dispatch_fn, enrich_fn=None, account: str = "g
     if not approved:
         return {"ok": False, "approved": False,
                 "error": "REGISTER_PIPE_APPROVED 미승인 — 실등록 차단(안전 게이트)"}
-    if account not in ("gogane", "woojoo"):
-        return {"ok": False, "error": f"알 수 없는 계정: {account} (gogane/woojoo)"}
+    # 계정 축은 **마켓마다 다르다**(쿠팡=고가네/우주대행 · 스마트스토어=chezgoga/gocosmos).
+    #   파이프라인은 축을 모른다 — 축 검증은 어댑터가 한다(register()에서 정직 차단).
+    #   여기서는 비어 있는지만 본다(조용한 무계정 등록 방지).
+    if not str(account or "").strip():
+        return {"ok": False, "error": "계정이 지정되지 않았습니다."}
 
     import time as _t
     sleep_fn = sleep_fn or _t.sleep

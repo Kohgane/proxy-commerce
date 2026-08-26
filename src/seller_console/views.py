@@ -7515,19 +7515,54 @@ def sourcing_hub():
     )
 
 
-def _record_registration(entry: dict):
+def _smartstore_account_dispatch(product_data, account):
+    """P5 스마트스토어 실등록 — 계정(chezgoga/gocosmos)별 라우팅. 정직 실패.
+
+    쿠팡 dispatch와 **같은 형태**(어댑터 4지점만 다르다). 이미지는 정규화 후 전달하고,
+    SKU는 URL 식별자(#663)를 그대로 쓴다 — 마켓이 달라도 상품 식별은 같은 축이다.
+    """
+    from src.collectors.image_norm import normalize_image_urls
+    from src.collectors.product_key import vendor_sku
+    from src.uploaders.naver_uploader import NaverSmartStoreUploader
+
+    up = NaverSmartStoreUploader(account=account)
+    if not (up.client_id and up.client_secret):
+        return {"success": False,
+                "error": "네이버 커머스 자격 미설정(NAVER_COMMERCE_CLIENT_ID/SECRET) — 등록 불가"}
+    if not (up.ship_address_id and up.return_address_id):
+        return {"success": False, "held": True,
+                "error": (f"{account} 출고지/반품지 주소 ID 미설정 — 등록 중단. "
+                          f"NAVER_{account.upper()}_SHIP_ADDRESS_ID / _RETURN_ADDRESS_ID 를 설정하세요.")}
+    product = {
+        "title": product_data.get("title_ko") or "상품",
+        "price": int(product_data.get("sell_price_krw") or 0),
+        "category_id": product_data.get("category_code") or "",   # 미상이면 업로더가 정본 기본 리프
+        "sku": (product_data.get("sku")
+                or vendor_sku(product_data.get("url") or "")),
+        "description_html": (product_data.get("description_html")
+                             or product_data.get("title_ko") or ""),
+        "images": normalize_image_urls(product_data.get("images") or []),
+        "brand": product_data.get("brand") or "",
+    }
+    return up.upload_product(product)
+
+
+def _record_registration(entry: dict, marketplace: str = "coupang"):
     """등록 성공분 → 마켓 등록 대장(P4 반려감시 소스). PG 미가동이면 인메모리 폴백(정직 표기)."""
     from src.db import market_registrations_pg as REG
-    return REG.record(entry.get("product_id"), marketplace="coupang",
+    return REG.record(entry.get("product_id"), marketplace=marketplace,
                       account=entry.get("account") or "", vendor_sku=entry.get("vendor_sku") or "",
                       title=entry.get("title") or "", source_url=entry.get("source_url") or "",
                       market_url=entry.get("market_url") or "")
 
 
-def _lookup_registration(sku: str, account: str):
-    """이미 등록된 건 조회(중복 등록 방지). 반려건이면 재제출 경로로 안내된다."""
+def _lookup_registration(sku: str, account: str, marketplace: str = "coupang"):
+    """이미 등록된 건 조회(중복 등록 방지). 반려건이면 재제출 경로로 안내된다.
+
+    **마켓별로 본다** — 같은 상품을 쿠팡과 스마트스토어에 각각 등록하는 것은 중복이 아니다.
+    """
     from src.db import market_registrations_pg as REG
-    return REG.find_by_vendor_sku(sku, marketplace="coupang", account=account)
+    return REG.find_by_vendor_sku(sku, marketplace=marketplace, account=account)
 
 
 def _register_pipe_fx_map() -> dict:
@@ -7633,9 +7668,17 @@ def sourcing_register_pipe_register():
     from src.pipeline.register_pipe import build_source_review, register_source_rows
     from src.pipeline.coupang_replicate import load_blacklist85
 
+    from src.pipeline.register_adapters import get_adapter
+
     urls_text = (request.form.get("urls") or "").strip()
     raw_urls = [ln.strip() for ln in urls_text.splitlines() if ln.strip()]
-    account = (request.form.get("account") or "gogane").strip().lower()
+    # P5: 마켓 선택(어댑터 인터페이스 첫 실증). 미지정이면 쿠팡(기존 동작 — 무회귀).
+    market = (request.form.get("market") or "coupang").strip().lower()
+    adapter = get_adapter(market)
+    if adapter is None:
+        return jsonify({"ok": False, "error": f"지원하지 않는 마켓입니다: {market}"}), 400
+    _default_acct = "chezgoga" if market == "smartstore" else "gogane"
+    account = (request.form.get("account") or _default_acct).strip().lower()
     batch_ok = (request.form.get("batch_ok") or "") in ("1", "true", "yes")
     try:
         n = int(request.form.get("n", 1))
@@ -7655,11 +7698,14 @@ def sourcing_register_pipe_register():
                         "excluded": len(review.get("excluded") or []), "failed": len(review.get("failed") or [])}), 400
 
     result = register_source_rows(
-        passes, dispatch_fn=_coupang_account_dispatch,
+        passes, dispatch_fn=lambda pd, acct: adapter.register(pd, acct),
         enrich_fn=lambda r: (_collect_real_draft(r.get("url")) or {}),
         account=account, n=n, batch_ok=batch_ok,
-        record_fn=_record_registration,          # P4: 등록 대장 적재(반려감시가 감시 대상을 스스로 앎)
-        lookup_fn=_lookup_registration)          # 중복 등록 방지(반려 수리는 재제출이 정석)
+        # 대장·중복 방지는 **마켓별로** 판정한다(같은 상품을 쿠팡·스스에 각각 등록하는 건 정상).
+        record_fn=lambda e: _record_registration(e, marketplace=market),
+        lookup_fn=lambda sku, acct: _lookup_registration(sku, acct, marketplace=market))
+    result["market"] = market
+    result["market_ko"] = adapter.market_ko
     status = 200 if result.get("ok") else 403
     return jsonify(result), status
 

@@ -103,37 +103,48 @@ class WooCommerceAdapter(MarketAdapter):
 
 
 class SmartStoreAdapter(MarketAdapter):
-    """스마트스토어(네이버) — **정본 미확보. 등록 차단 상태.**
+    """스마트스토어(네이버) — **정본 승계 완료**(오너 SSH 실측 `ss_upload.py`).
 
-    기존 `naver_uploader._build_product_payload`가 존재하지만 **통과 이력이 확인되지 않은 값**이 4지점
-    전부에 들어 있다(아래 gap 사유). 쿠팡이 6차 왕복을 태운 것과 **같은 모양**이라, 정본을 승계하기
-    전까지 전송을 막는다. 정본 확보 = 오너 SSH의 naver_* 통과 스크립트 승계 또는 네이버 메타 API 확정.
+    쿠팡과 **다른 축**: 계정 = chezgoga / gocosmos. 원산지·통관·반품비가 쿠팡과 다른 값을 쓴다
+    (마켓별 정책 분기 — 섞으면 안 된다). 인증·호출은 기존 자산 재사용:
+    `NAVER_COMMERCE_CLIENT_ID/SECRET` + **릴레이 경유**(v87-S7 — 직결 시 `GW.IP_NOT_ALLOWED`).
     """
 
     market = "smartstore"
     market_ko = "스마트스토어"
+    ACCOUNTS = ("chezgoga", "gocosmos")
 
-    # 미확보 사유 — 실측(기존 페이로드 코드에서 확인한 값). 추측이 아니라 '검증 안 됨'의 근거다.
-    GAP_REASONS = {
-        "notice": "originAreaCode='0200037'·importer='해외직구' 하드코딩 · A/S 전화번호 빈 문자열 "
-                  "— 통과 이력 미확인(쿠팡 5차 고시정보 거부와 동형 위험)",
-        "delivery": "deliveryType='DIRECT_DELIVERY' 고정 — 구매대행에 맞는 값인지 미검증 "
-                    "(쿠팡 6차에서 같은 이름의 값이 거부된 전례)",
-        "options": "필수 구매 옵션(optionInfo) 배선 자체가 없음 — 쿠팡 9차 거부와 동형",
-        "category": "leafCategoryId 기본값 '50000000' 임의 지정 — 예측/검증 경로 없음",
+    # ⚠️ 미확보분(정직 표기) — 승계받지 못한 조각. 기본값으로 **동작은 하되** 정밀도가 낮다.
+    PARTIAL = {
+        "category": ("정규식→리프ID 11패턴 미확보 — 기본 리프 50004132로만 등록됩니다"
+                     "(정본 패턴 승계 시 정밀도 상승)."),
     }
 
     def canon_status(self) -> dict:
-        return {"ready": False, "gaps": list(CANON_POINTS),
-                "points": {p: {"ok": False, "gap": self.GAP_REASONS[p]} for p in CANON_POINTS},
-                "note": ("오너 SSH의 naver_* 통과 스크립트를 승계하면 해제됩니다. "
-                         "승계 전 등록은 차단됩니다(추측 전송 금지).")}
+        return {"ready": True, "gaps": [], "partial": dict(self.PARTIAL), "points": {
+            "notice": {"ok": True,
+                       "source": "ss_upload.py 정본 — originAreaCode '03' + '상세설명에 표시'"
+                                 "(스마트스토어 허용 문구·쿠팡과 다름)"},
+            "delivery": {"ok": True,
+                         "source": "ss_upload.py 정본 — 반품 25,000 / 교환 50,000 · 출고지·반품지 주소 ID(env)"},
+            "options": {"ok": True,
+                        "source": "ss_upload.py 정본 — 단일 옵션(재고 999·SALE). 다중 옵션은 쿠팡과 동일하게 후속"},
+            "category": {"ok": True, "source": "ss_upload.py 정본 기본 리프 50004132",
+                         "partial": self.PARTIAL["category"]},
+        }, "note": "인증·호출은 릴레이 경유(네이버 IP 게이트). 계정 축 = chezgoga/gocosmos."}
 
     def register(self, product_data: dict, account: str) -> dict:
         gate = self._canon_gate()
         if gate:
             return gate
-        raise NotImplementedError("정본 승계 후 배선")   # 게이트 해제 시점에 구현
+        acct = str(account or "").strip().lower()
+        if acct not in self.ACCOUNTS:
+            # 쿠팡 계정명(고가네/우주대행)이 잘못 들어오는 사고 방지 — 축이 다르다.
+            return {"success": False, "held": True,
+                    "error": (f"스마트스토어 계정이 아닙니다: {account!r} — "
+                              f"{'/'.join(self.ACCOUNTS)} 중에서 선택하세요(쿠팡 계정 축과 별개).")}
+        from src.seller_console.views import _smartstore_account_dispatch
+        return _smartstore_account_dispatch(product_data, acct)
 
 
 _ADAPTERS = {a.market: a for a in (CoupangAdapter(), WooCommerceAdapter(), SmartStoreAdapter())}

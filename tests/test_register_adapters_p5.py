@@ -31,37 +31,35 @@ def test_coupang_canon_ready_with_sources():
         assert st["points"][p]["source"], p
 
 
-def test_smartstore_blocked_until_canon_supplied():
-    ad = RA.get_adapter("smartstore")
-    st = ad.canon_status()
-    assert st["ready"] is False
-    assert set(st["gaps"]) == set(RA.CANON_POINTS)          # 4지점 전부 미확보
+def test_smartstore_canon_supplied_gate_opened():
+    """정본(ss_upload.py)이 도착해 게이트가 열렸다 — 차단 상태는 해소됨(#671)."""
+    st = RA.get_adapter("smartstore").canon_status()
+    assert st["ready"] is True and st["gaps"] == []
     for p in RA.CANON_POINTS:
-        assert st["points"][p]["ok"] is False
-        assert st["points"][p]["gap"], p                     # 미확보 '사유'가 있어야 한다
+        assert st["points"][p]["ok"] is True and st["points"][p]["source"]
+    # 승계받지 못한 조각은 숨기지 않고 partial로 남긴다(정직).
+    assert st["partial"]["category"]
 
 
-def test_smartstore_register_blocks_without_calling_api(monkeypatch):
-    """차단은 전송 전에 — 네이버 API를 부르지 않는다(카나리 낭비 0)."""
-    import src.uploaders.naver_uploader as NU
-    monkeypatch.setattr(NU.NaverSmartStoreUploader, "upload_product",
-                        lambda self, p: pytest.fail("정본 미확보인데 마켓 API 호출됨"))
-    res = RA.get_adapter("smartstore").register({"title_ko": "x", "sell_price_krw": 10000}, "gogane")
+def test_canon_gate_still_blocks_an_unready_adapter():
+    """게이트 **메커니즘**은 살아 있다 — 미확보 어댑터는 전송 전에 차단된다."""
+    class _Unready(RA.MarketAdapter):
+        market, market_ko = "testmarket", "테스트마켓"
+
+        def canon_status(self):
+            return {"ready": False, "gaps": ["delivery", "category"],
+                    "points": {}, "note": "미승계"}
+
+        def register(self, product_data, account):
+            gate = self._canon_gate()
+            if gate:
+                return gate
+            pytest.fail("미확보인데 전송 경로로 진입함")
+
+    res = _Unready().register({"title_ko": "x"}, "acct")
     assert res["success"] is False and res["held"] is True
-    assert "정본 미확보" in res["error"]
-    assert set(res["canon_gaps"]) == set(RA.CANON_POINTS)
-
-
-def test_smartstore_gap_reasons_cite_real_code_values():
-    """미확보 사유는 **실제 코드에 있는 값**을 지목한다(막연한 '검증 필요' 금지)."""
-    from pathlib import Path
-    src = Path("src/uploaders/naver_uploader.py").read_text(encoding="utf-8")
-    reasons = RA.SmartStoreAdapter.GAP_REASONS
-    assert "0200037" in reasons["notice"] and "0200037" in src
-    assert "DIRECT_DELIVERY" in reasons["delivery"] and "DIRECT_DELIVERY" in src
-    assert "50000000" in reasons["category"] and "50000000" in src
-    # 옵션: 필수 구매 옵션 배선이 실제로 없다(쿠팡 9차와 동형).
-    assert "optionInfo" not in src
+    assert "정본 미확보" in res["error"] and "배송" in res["error"] and "카테고리 매핑" in res["error"]
+    assert res["canon_gaps"] == ["delivery", "category"]
 
 
 def test_woocommerce_is_enrollment_only():
@@ -86,7 +84,7 @@ def test_canon_report_lists_every_market():
     rep = RA.canon_report()
     assert set(rep) == {"coupang", "woocommerce", "smartstore"}
     assert rep["coupang"]["ready"] is True
-    assert rep["smartstore"]["ready"] is False and rep["smartstore"]["note"]
+    assert rep["smartstore"]["ready"] is True and rep["smartstore"]["note"]
 
 
 def test_unknown_market_returns_none():

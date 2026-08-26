@@ -164,18 +164,22 @@
   <div class="card border-0 shadow-sm mb-4" id="p3RegisterCard">
     <div class="card-body">
       <div class="console-kpi-label mb-1">등록 파이프 · P3</div>
-      <div class="fw-bold mb-1"><i class="bi bi-upload"></i> 쿠팡 등록 (카나리)</div>
+      <div class="fw-bold mb-1"><i class="bi bi-upload"></i> 마켓 등록 (카나리)</div>
       <div class="pc-status pc-status-warning small mb-3">
         <strong>비가역 작업</strong>이에요 — 먼저 <strong>카나리 1건</strong>만 등록해 육안 확인 후 나머지를 진행합니다.
-        쿠팡은 등록 후 <strong>승인 심사</strong>를 거칩니다. 자격·릴레이 미설정 시 정직하게 실패로 표시돼요.
+        두 마켓 모두 등록 후 <strong>승인 심사</strong>를 거칩니다. 자격·릴레이 미설정 시 정직하게 실패로 표시돼요.
       </div>
       <div class="row g-2 align-items-end">
         <div class="col-auto">
-          <label class="form-label small mb-1" for="p3Account">등록 계정</label>
-          <select id="p3Account" class="form-select form-select-sm">
-            <option value="gogane">고가네 (A01381223)</option>
-            <option value="woojoo">우주대행 (A01504840)</option>
+          <label class="form-label small mb-1" for="p3Market">마켓</label>
+          <select id="p3Market" class="form-select form-select-sm" onchange="p3SyncAccounts()">
+            <option value="coupang">쿠팡</option>
+            <option value="smartstore">스마트스토어</option>
           </select>
+        </div>
+        <div class="col-auto">
+          <label class="form-label small mb-1" for="p3Account">등록 계정</label>
+          <select id="p3Account" class="form-select form-select-sm"></select>
         </div>
         <div class="col-auto">
           <button type="button" class="btn btn-primary btn-sm" onclick="p3Register(false)">
@@ -191,12 +195,28 @@
     </div>
   </div>
   <script>
+  // 계정 축은 마켓마다 다르다 — 쿠팡(고가네/우주대행)과 스마트스토어(chezgoga/gocosmos)는 별개다.
+  var P3_ACCOUNTS = {
+    coupang: [['gogane', '고가네 (A01381223)'], ['woojoo', '우주대행 (A01504840)']],
+    smartstore: [['chezgoga', 'chezgoga'], ['gocosmos', 'gocosmos']]
+  };
+  function p3SyncAccounts() {
+    var market = document.getElementById('p3Market').value;
+    var sel = document.getElementById('p3Account');
+    sel.innerHTML = (P3_ACCOUNTS[market] || []).map(function (a) {
+      return '<option value="' + a[0] + '">' + a[1] + '</option>';
+    }).join('');
+  }
+  p3SyncAccounts();
+
   async function p3Register(batch) {
     var urls = (document.getElementById('urls') || {}).value || '';
+    var market = document.getElementById('p3Market').value;
     var account = document.getElementById('p3Account').value;
     var box = document.getElementById('p3Result');
-    box.innerHTML = '<span class="text-muted small">등록 중… (쿠팡 승인 심사 대기)</span>';
-    var body = new URLSearchParams({urls: urls, account: account});
+    var marketKo = market === 'smartstore' ? '스마트스토어' : '쿠팡';
+    box.innerHTML = '<span class="text-muted small">등록 중… (' + marketKo + ' 승인 심사 대기)</span>';
+    var body = new URLSearchParams({urls: urls, market: market, account: account});
     if (batch) { body.set('batch_ok', '1'); body.set('n', '{{ review.review_pass|length }}'); }
     try {
       var r = await fetch('/seller/sourcing/register-pipe/register', {method: 'POST', body: body});
@@ -209,8 +229,10 @@
         return '<li class="list-group-item small">' + badge + ' ' + (x.title || x.url || '') + link
              + (x.reason ? '<div class="text-muted">' + x.reason + '</div>' : '') + '</li>';
       }).join('');
-      box.innerHTML = '<div class="pc-status pc-status-success small mb-2">' + d.mode + ' · ' + d.account
-        + ' · 등록 ' + d.registered + ' / 실패 ' + d.failed + ' — ' + (d.note || '') + '</div>'
+      var dup = d.duplicates ? ' / 중복 ' + d.duplicates : '';
+      box.innerHTML = '<div class="pc-status pc-status-success small mb-2">'
+        + (d.market_ko || marketKo) + ' · ' + d.mode + ' · ' + d.account
+        + ' · 등록 ' + d.registered + ' / 실패 ' + d.failed + dup + ' — ' + (d.note || '') + '</div>'
         + '<ul class="list-group list-group-flush">' + rows + '</ul>';
     } catch (e) {
       box.innerHTML = '<div class="pc-status pc-status-danger small">등록 요청 실패: ' + e + '</div>';
