@@ -170,8 +170,10 @@ class TestNaverUploaderPipeline:
 
     def test_naver_upload_product_success(self, monkeypatch):
         """네이버 스마트스토어 상품 업로드 성공 흐름을 검증한다."""
+        import bcrypt
         monkeypatch.setenv('NAVER_CLIENT_ID', 'test-client-id')
-        monkeypatch.setenv('NAVER_CLIENT_SECRET', 'test-client-secret')
+        # 네이버 시크릿은 bcrypt salt($2a$…) — 평문이면 전자서명 생성이 실패한다(정본).
+        monkeypatch.setenv('NAVER_CLIENT_SECRET', bcrypt.gensalt(rounds=4).decode())
         monkeypatch.setenv('NAVER_CHANNEL_ID', 'ch-001')
 
         upload_result = {
@@ -196,8 +198,10 @@ class TestNaverUploaderPipeline:
 
     def test_naver_token_refresh(self, monkeypatch):
         """네이버 액세스 토큰 갱신 흐름을 검증한다."""
+        import bcrypt
         monkeypatch.setenv('NAVER_CLIENT_ID', 'test-client-id')
-        monkeypatch.setenv('NAVER_CLIENT_SECRET', 'test-client-secret')
+        # 네이버 시크릿은 bcrypt salt($2a$…) — 평문이면 전자서명 생성이 실패한다(정본).
+        monkeypatch.setenv('NAVER_CLIENT_SECRET', bcrypt.gensalt(rounds=4).decode())
 
         resp = MagicMock()
         resp.status_code = 200
@@ -216,8 +220,10 @@ class TestNaverUploaderPipeline:
 
     def test_naver_batch_upload(self, monkeypatch):
         """네이버 배치 업로드 전체 흐름을 검증한다."""
+        import bcrypt
         monkeypatch.setenv('NAVER_CLIENT_ID', 'test-client-id')
-        monkeypatch.setenv('NAVER_CLIENT_SECRET', 'test-client-secret')
+        # 네이버 시크릿은 bcrypt salt($2a$…) — 평문이면 전자서명 생성이 실패한다(정본).
+        monkeypatch.setenv('NAVER_CLIENT_SECRET', bcrypt.gensalt(rounds=4).decode())
         monkeypatch.setenv('NAVER_CHANNEL_ID', 'ch-001')
 
         batch_result = {

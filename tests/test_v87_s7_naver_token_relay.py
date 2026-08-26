@@ -26,6 +26,12 @@ import requests
 
 from src import market_relay
 
+def _bcrypt_salt():
+    """네이버 시크릿은 **bcrypt salt**($2a$…) — 평문으론 서명이 안 되고 토큰도 못 받는다."""
+    import bcrypt
+    return bcrypt.gensalt(rounds=4).decode()
+
+
 RELAY = "https://relay.example.com/mkt.php"
 
 
@@ -73,7 +79,7 @@ def test_naver_uploader_token_goes_through_relay(monkeypatch):
     from src.uploaders.naver_uploader import NaverSmartStoreUploader
 
     up = NaverSmartStoreUploader()
-    up.client_id, up.client_secret = "CID", "CSEC"
+    up.client_id, up.client_secret = "CID", _bcrypt_salt()
     up._access_token, up._token_expires = "", 0
     assert up._get_access_token() == "TK"
 
@@ -119,7 +125,7 @@ def test_token_body_is_form_encoded_not_json(monkeypatch):
     from src.uploaders.naver_uploader import NaverSmartStoreUploader
 
     up = NaverSmartStoreUploader()
-    up.client_id, up.client_secret = "CID", "CSEC"
+    up.client_id, up.client_secret = "CID", _bcrypt_salt()
     up._access_token, up._token_expires = "", 0
     up._get_access_token()
 
