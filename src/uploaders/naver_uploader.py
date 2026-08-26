@@ -290,10 +290,6 @@ class NaverSmartStoreUploader(BaseUploader):
         }
 
     # ── 이미지 업로드 정본(오너 SSH `naver_img.py`) ──────────────────────────────
-    _IMG_UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-               '(KHTML, like Gecko) Chrome/124.0 Safari/537.36')
-    _IMG_EXT_BY_CT = {'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png',
-                      'image/webp': 'webp', 'image/gif': 'gif'}
     IMAGE_MIN_BYTES = 1024          # 정본: 1KB 미만은 썸네일 쓰레기 → 스킵
     IMAGE_MAX_COUNT = 10            # 정본: 한 번에 최대 10장
     IMAGE_RETRY = 3                 # 정본: 429·예외 모두 최대 3회
@@ -311,25 +307,12 @@ class NaverSmartStoreUploader(BaseUploader):
     def _fetch_image(self, url: str):
         """외부 URL → (bytes, filename). 실패/규격미달이면 None.
 
-        UA 헤더 필수(아마존 CDN이 기본 UA를 막는다·정본). 확장자는 Content-Type으로 판별.
-        **SSL 검증은 정상 유지** — 정본의 CERT_NONE은 Bluehost 구환경 땜빵이라 승계하지 않는다(오너 지시).
+        **다운로드는 `collectors.image_norm.fetch_image_bytes`에 위임**한다 — 소스 CDN 다운로드는
+        마켓 아웃바운드가 아니지만, 이 모듈은 마켓 호출 전용 관문(v87-S7: 직결 requests 금지)이라
+        외부 fetch를 밖으로 뺀다. UA·1KB·확장자 판별 규칙은 그쪽이 정본으로 보유.
         """
-        try:
-            resp = requests.get(url, timeout=20, headers={'User-Agent': self._IMG_UA})
-            resp.raise_for_status()
-        except Exception as exc:
-            logger.warning('이미지 다운로드 실패 %s: %s', url, exc)
-            return None
-        body = resp.content or b''
-        if len(body) < self.IMAGE_MIN_BYTES:
-            logger.info('이미지 %d바이트 — 규격 미달로 스킵: %s', len(body), url)
-            return None
-        ct = (resp.headers.get('Content-Type') or '').split(';')[0].strip().lower()
-        ext = self._IMG_EXT_BY_CT.get(ct)
-        if not ext:
-            logger.warning('이미지 Content-Type 미지원(%s) — 스킵: %s', ct or '미상', url)
-            return None
-        return body, f'img.{ext}'
+        from src.collectors.image_norm import fetch_image_bytes
+        return fetch_image_bytes(url, min_bytes=self.IMAGE_MIN_BYTES)
 
     def upload_images(self, urls) -> dict:
         """외부 이미지 URL 목록 → **네이버 CDN URL** 목록. 정본 `naver_img.upload` 승계.
