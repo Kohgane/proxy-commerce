@@ -517,7 +517,8 @@ def _res_field(res, key, *alts):
 
 def register_source_rows(rows, *, dispatch_fn, enrich_fn=None, account: str = "gogane",
                          n: int = 1, batch_ok: bool = False, approved: Optional[bool] = None,
-                         sleep_fn=None, sleep_sec: float = 0.6, record_fn=None) -> dict:
+                         sleep_fn=None, sleep_sec: float = 0.6, record_fn=None,
+                         lookup_fn=None) -> dict:
     """P1 검수 통과분 → **쿠팡 실등록**. 승인 게이트 + **카나리(기본 1건)** + 롤백 금지 + 행별 사유.
 
     - **비가역 방어:** approved 아니면 등록 0(정직 차단). batch_ok=False면 첫 1건만(카나리), 전량은
@@ -527,6 +528,8 @@ def register_source_rows(rows, *, dispatch_fn, enrich_fn=None, account: str = "g
       enrich_fn(row)→{images, description_html, category_code} 재수집(이미지·상세). 둘 다 주입(발명 0·오프라인).
     - **record_fn(dict)**: 등록 성공분을 **등록 대장**에 적재(P4 반려감시가 감시 대상을 스스로 알게).
       주입식이라 파이프라인은 저장소를 모른다(오프라인 계약 검증 가능). 적재 실패는 행에 사유 표기.
+    - **lookup_fn(sku, account)**: 이미 등록된 건 조회 → 있으면 **신규 등록 안 함**(중복 방지).
+      반려 수리는 신규 POST가 아니라 **기존 sid 재제출**이 정석이라, 여기서 막고 경로를 안내한다.
     """
     if approved is None:
         approved = register_pipe_approved()
@@ -578,6 +581,24 @@ def register_source_rows(rows, *, dispatch_fn, enrich_fn=None, account: str = "g
                             "reason": "SKU 추출 실패 — 등록 보류(상품 URL에서 식별자를 뽑지 못했습니다).",
                             "image_count": len(images), "product_id": None})
             continue
+        # **중복 등록 방지(오너 지시):** 이미 등록된 상품이면 신규 POST를 하지 않는다.
+        #   반려 수리는 신규 등록이 아니라 **기존 sid PUT 수정 + PUT approvals**가 정석이다.
+        #   여기서 막고 재제출 경로를 사유로 안내한다(같은 상품 두 건이 마켓에 뜨는 것을 방지).
+        if lookup_fn:
+            try:
+                known = lookup_fn(sku, account)
+            except Exception:
+                known = None                        # 조회 실패는 등록을 막지 않는다(가용성 우선·정직)
+            if known and known.get("product_id"):
+                st = str(known.get("status") or "")
+                how = ("반려건입니다 — 재제출(기존 상품 수정 + 승인요청)로 처리하세요."
+                       if st == "rejected" else "이미 등록된 상품입니다.")
+                results.append({"url": r.get("url"), "title": r.get("title_ko"), "account": account,
+                                "registered": False, "duplicate": True,
+                                "product_id": known["product_id"], "existing_status": st,
+                                "reason": f"{how} (상품번호 {known['product_id']}) — 신규 등록 안 함",
+                                "image_count": len(images)})
+                continue
         product_data = {
             "title_ko": r.get("title_ko"), "sell_price_krw": r.get("sale_krw"), "sku": sku,
             "images": images, "description_html": desc, "category_code": cat,
@@ -617,7 +638,8 @@ def register_source_rows(rows, *, dispatch_fn, enrich_fn=None, account: str = "g
         "mode": "canary" if not batch_ok else "batch",
         "target": len(passable), "batch_ok": bool(batch_ok),
         "registered": sum(1 for x in results if x["registered"]),
-        "failed": sum(1 for x in results if not x["registered"]),
+        "failed": sum(1 for x in results if not x["registered"] and not x.get("duplicate")),
+        "duplicates": sum(1 for x in results if x.get("duplicate")),
         "results": results,
         "note": ("카나리 1건 — 쿠팡 승인심사 대기, 육안 확인 후 batch_ok=1로 속행"
                  if not batch_ok else f"배치 {len(passable)}건(쿠팡 승인심사 대기)"),

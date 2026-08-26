@@ -122,6 +122,40 @@ def mark_checked(product_id: str, *, marketplace: str = "coupang", status: str =
         return cur.rowcount > 0
 
 
+def find_by_vendor_sku(vendor_sku: str, *, marketplace: str = "coupang",
+                       account: str = "") -> Optional[dict]:
+    """판매자 SKU(아마존 ASIN 등)로 **이미 등록된 건**을 찾는다. 없으면 None.
+
+    등록 파이프의 중복 방지용 — 반려 수리는 **신규 등록이 아니라 기존 sid 재제출**이 정석이라,
+    같은 상품을 또 POST하지 않게 여기서 먼저 확인한다.
+    """
+    sku = str(vendor_sku or "").strip()
+    if not sku:
+        return None
+    if not enabled():
+        for r in _MEM.values():
+            if (r["marketplace"] == marketplace and r.get("vendor_sku") == sku
+                    and (not account or r["account"] == account)):
+                return dict(r)
+        return None
+    sql = ["""SELECT product_id, account, title, status, reject_kind, prescription
+              FROM market_registrations
+              WHERE deleted_at IS NULL AND marketplace=%s AND vendor_sku=%s"""]
+    args = [marketplace, sku]
+    if account:
+        sql.append("AND account=%s")
+        args.append(account)
+    sql.append("ORDER BY created_at DESC LIMIT 1")
+    with pg.query() as cur:
+        cur.execute(" ".join(sql), tuple(args))
+        rows = cur.fetchall()
+    if not rows:
+        return None
+    r = rows[0]
+    return {"product_id": r[0], "account": r[1], "title": r[2], "status": r[3],
+            "reject_kind": r[4], "prescription": r[5], "vendor_sku": sku}
+
+
 def get(product_id: str, *, marketplace: str = "coupang") -> Optional[dict]:
     pid = str(product_id or "").strip()
     if not enabled():
