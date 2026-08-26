@@ -3936,14 +3936,62 @@ def reject_watch_scan():
     return jsonify({"ok": True, "account": account, "registered": False, **out})
 
 
+@admin_panel_bp.get("/registrations")
+def registrations_report():
+    """등록 대장 조회 — **우리가 만든 마켓 상품**의 상태별 집계 + 최근 목록.
+
+    "쿠팡 임시저장이 갑자기 늘었는데 우리 소행인가?" 같은 질문에 **코드 읽기가 아니라 데이터로**
+    답하기 위한 라우트. 대장에 없는 건 우리가 만든 게 아니다(대장 적재는 등록 성공 시 자동).
+    PG 미가동이면 인메모리 폴백이라 재시작에 휘발 — `durable`로 정직 표기.
+    """
+    from flask import jsonify, request
+    from src.db import market_registrations_pg as REG
+
+    marketplace = (request.args.get("marketplace") or "coupang").strip().lower()
+    account = (request.args.get("account") or "").strip().lower()
+    try:
+        limit = int(request.args.get("limit", 50))
+    except (TypeError, ValueError):
+        limit = 50
+    try:
+        counts = REG.counts(marketplace=marketplace)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"대장 조회 실패: {exc}"}), 200
+    try:
+        watching = REG.watch_queue(marketplace=marketplace, account=account, limit=limit)
+    except Exception as exc:
+        watching = []
+        counts["_watch_query_error"] = str(exc)
+    return jsonify({
+        "ok": True, "marketplace": marketplace, "account": account or "(전체)",
+        "durable": REG.enabled(),
+        "durable_note": ("Supabase 영속" if REG.enabled()
+                         else "PG 미가동 — 인메모리 폴백(재시작 시 휘발). 수치는 이 프로세스 기준."),
+        "total": sum(v for k, v in counts.items() if isinstance(v, int)),
+        "by_status": counts,
+        "watching": watching,
+        "note": ("여기 없는 상품은 이 서버가 만든 게 아닙니다. "
+                 "등록 성공 시 자동 적재되며, 실패분은 적재하지 않습니다."),
+    })
+
+
 def _reject_watch_resubmit(up, sid, updates):
     """반려분 재제출 — 이미지 교체가 필요하면 **대형본 치환 + 실치수 심사** 후 페이로드를 만든다.
 
-    updates에 `images`(원본 URL 목록)가 있으면 그것으로 items[].images를 새로 만들어 교체한다.
-    규격 통과 이미지가 0장이면 **재제출하지 않는다**(미달 이미지로 재반려되는 왕복 금지 — 정직 사유 반환).
+    **반려 2호 교훈:** 이미지 규격 반려인데 `updates.images` 없이 승인요청만 하면 **같은 이미지로 재심사**돼
+    같은 사유로 또 반려된다. 그래서 image_spec 반려는 이미지 교체를 **필수**로 요구한다(왕복 절약).
+    어느 단계를 탔는지·무엇이 실렸는지 로그와 응답에 남긴다(수리 미반영을 로그로 판별 가능하게).
     """
     upd = dict(updates or {})
     raw_images = upd.pop("images", None)
+    kind = str((upd.pop("_kind", "") or "")).strip()      # 호출부가 넘기는 분류(로그·게이트용)
+    if kind == "image_spec" and not raw_images:
+        return {"success": False, "product_id": sid, "stage": "images",
+                "error": ("이미지 규격 반려인데 교체할 이미지가 없습니다 — 재제출 중단. "
+                          "같은 이미지로 승인요청하면 같은 사유로 다시 반려됩니다. "
+                          "updates.images에 원본 이미지 URL을 넣어 주세요.")}
+    replaced = 0
+    first_path = ""
     if raw_images:
         built = up.rebuild_images_for_resubmit(raw_images)
         if not built["ok"]:
@@ -3951,7 +3999,16 @@ def _reject_watch_resubmit(up, sid, updates):
                     "error": f"이미지 규격 미달 — 재제출 중단: {built['reason']}",
                     "images_dropped": built["dropped"]}
         upd["items"] = [{"images": built["images"]}]
-    return up.resubmit_product(sid, upd or None)
+        replaced = len(built["images"])
+        first_path = (built["images"][0] or {}).get("vendorPath", "")
+        logger.info("재제출 이미지 교체 sid=%s: %d장(첫 장 %s) · 제외 %d · 미상 %d",
+                    sid, replaced, first_path, len(built["dropped"]), len(built["unknown"]))
+    out = up.resubmit_product(sid, upd or None)
+    # 계측: 어느 단계까지 갔는지 + 이미지가 실제로 실렸는지(수리 미반영 판별용).
+    out = {**out, "images_replaced": replaced, "first_vendor_path": first_path}
+    logger.info("재제출 결과 sid=%s: success=%s stage=%s updated=%s 이미지=%d장",
+                sid, out.get("success"), out.get("stage"), out.get("updated"), replaced)
+    return out
 
 
 @admin_panel_bp.post("/reject-watch/apply")

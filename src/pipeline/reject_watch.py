@@ -330,7 +330,10 @@ def apply_prescription(row, *, reupload_fn=None, delete_fn=None, reissue_fn=None
         #   수정할 값이 없으면(row.updates 없음) 승인요청만 — 쿠팡 반려분은 SAVED로 내려오므로 재심사 진입이 필요.
         if resubmit_fn:
             try:
-                res = resubmit_fn(sid, (row or {}).get("updates"))
+                # 분류를 함께 넘긴다 — 이미지 규격 반려는 **이미지 교체 없이 재제출 금지**(반려 2호 교훈).
+                _upd = dict((row or {}).get("updates") or {})
+                _upd["_kind"] = kind
+                res = resubmit_fn(sid, _upd)
                 ok = bool((res or {}).get("success")) if isinstance(res, dict) else bool(res)
                 return {**base, "applied": ok, "action": "resubmit", "result": res,
                         **({} if ok else {"reason": (res or {}).get("error", "재승인 실패")})}

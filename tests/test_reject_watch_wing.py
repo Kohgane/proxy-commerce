@@ -119,7 +119,9 @@ def test_resubmit_receives_updates_from_row():
         {"sid": "S1", "kind": "option_value", "wing_state": "rejected",
          "updates": {"items": [{"salePrice": 10000}]}},
         approved=True, resubmit_fn=lambda sid, u: seen.update({"sid": sid, "u": u}) or {"success": True})
-    assert seen["sid"] == "S1" and seen["u"] == {"items": [{"salePrice": 10000}]}
+    # 분류(_kind)가 함께 실린다 — 이미지 규격 반려의 '이미지 교체 필수' 게이트가 유형을 알아야 한다.
+    assert seen["sid"] == "S1"
+    assert seen["u"]["items"] == [{"salePrice": 10000}] and seen["u"]["_kind"] == "option_value"
 
 
 # ── 4. 업로더 재승인 정본 경로 ──────────────────────────────────────────────────
