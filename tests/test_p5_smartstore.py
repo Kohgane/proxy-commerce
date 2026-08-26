@@ -43,7 +43,8 @@ def test_payload_carries_canon(monkeypatch):
     p = up._build_product_payload(_PRODUCT)
     op = p["originProduct"]
     assert op["statusType"] == "SALE" and op["stockQuantity"] == 999
-    assert op["leafCategoryId"] == "50004132"                     # category_id 미상 → 정본 기본 리프
+    # category_id 미상 → 상품명으로 정본 매칭('주전자' = 7행 주방).
+    assert op["leafCategoryId"] == "50004737"
     assert op["salePrice"] == 894000
     da = op["detailAttribute"]
     assert da["customsTaxType"] == "PURCHASE_AGENT"
@@ -56,6 +57,50 @@ def test_payload_carries_canon(monkeypatch):
     # 대표/추가 이미지 분리.
     assert op["images"]["representativeImage"]["url"].endswith("71a._SS1600_.jpg")
     assert len(op["images"]["optionalImages"]) == 1
+
+
+# ── 카테고리 정본 11패턴(순서 유지·첫 매칭 우선) ────────────────────────────────
+@pytest.mark.parametrize("title,leaf", [
+    ("EDC 피젯 스피너", "50004132"),
+    ("분재 오브제 퍼즐", "50004132"),
+    ("슬링백 파우치", "50000646"),
+    ("백팩 패킹큐브", "50000646"),
+    ("키링 카라비너", "50000570"),
+    ("목걸이 주얼리", "50000570"),
+    ("멀티툴 나이프", "50003413"),
+    ("에어펌프 드라이버", "50003413"),
+    ("원예 전정가위", "50000406"),
+    ("스텐 텀블러", "50004737"),
+    ("만년필 북마크", "50002335"),
+    ("블루투스 스피커", "50000205"),
+    ("이어팁 카드리더", "50000205"),
+    ("여름 샌들", "50000167"),
+    ("캔들 디퓨저", "50001854"),
+    ("정체불명 상품", "50004132"),          # 미매칭 → 기본 리프(정본 동작 그대로)
+])
+def test_category_canon_patterns(title, leaf):
+    assert SS.resolve_category(title) == leaf
+
+
+def test_category_order_is_canon_and_must_not_be_resorted():
+    """**첫 매칭 우선** — 순서를 바꾸면 판정이 바뀐다. 정본 순서를 그대로 고정한다.
+
+    실제 사례: '티셔츠'는 10행(재킷|티셔츠)이 아니라 **7행의 '티'**에 먼저 걸려 주방(50004737)이 된다.
+    정본 스크립트와 동일한 결과이므로 재정렬하지 않는다(발명 금지). 바꾸려면 오너가 정본을 고쳐야 한다.
+    """
+    assert SS.resolve_category("티셔츠") == "50004737"      # 7행 '티' 선매칭(정본 동작)
+    assert SS.resolve_category("재킷") == "50000167"        # '티' 없는 의류는 10행으로
+    # 패턴 순서 자체를 고정 — 재정렬 시 이 테스트가 깨진다.
+    assert [leaf for _, leaf in SS.CATEGORY_PATTERNS] == [
+        "50004132", "50000646", "50000570", "50000570", "50003413",
+        "50000406", "50004737", "50002335", "50000205", "50000167", "50001854"]
+    assert len(SS.CATEGORY_PATTERNS) == 11
+
+
+def test_payload_uses_canon_category_when_unspecified():
+    """명시 카테고리가 없으면 상품명으로 정본 매칭(기본 리프 고정이 아니다)."""
+    p = SS(account="chezgoga")._build_product_payload({**_PRODUCT, "title": "멀티툴 나이프"})
+    assert p["originProduct"]["leafCategoryId"] == "50003413"
 
 
 def test_explicit_category_overrides_default():
@@ -98,8 +143,9 @@ def test_no_hardcoded_address_outside_canon_table():
 def test_smartstore_adapter_is_canon_ready():
     st = RA.get_adapter("smartstore").canon_status()
     assert st["ready"] is True and st["gaps"] == []
-    # 미확보분은 숨기지 않고 partial로 표기(정직).
-    assert "category" in st["partial"] and "11패턴" in st["partial"]["category"]
+    # 카테고리 11패턴 승계 완료 → partial 없음(#672).
+    assert st["partial"] == {}
+    assert "11패턴" in st["points"]["category"]["source"]
 
 
 def test_coupang_account_rejected_on_smartstore():

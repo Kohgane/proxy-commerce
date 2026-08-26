@@ -3,6 +3,7 @@
 import logging
 import math
 import os
+import re
 import time
 
 import requests
@@ -47,6 +48,22 @@ class NaverSmartStoreUploader(BaseUploader):
         'gocosmos': {'ship': '107987297', 'return': '107987296'},
     }
     DEFAULT_LEAF_CATEGORY = '50004132'      # 정본 기본 리프 카테고리
+    # ★ 카테고리 정본(오너 grep `ss_upload.py` CAT) — **순서 유지·첫 매칭 우선**.
+    #   쿠팡의 predict_category(API 예측)와 **별개 축**이다: 스마트스토어는 사전 매칭이 정본.
+    #   순서를 바꾸면 판정이 바뀐다(예: '주얼리'는 키링 줄 다음에 와야 원래 결과가 나온다). 재정렬 금지.
+    CATEGORY_PATTERNS = (
+        (r"피젯|EDC|스피너|슬라이더|엔진|오브제|퍼즐|모형|분재", '50004132'),
+        (r"슬링백|백팩|가방|패킹큐브|파우치|토트", '50000646'),
+        (r"키링|카라비너|스트랩", '50000570'),
+        (r"목걸이|팔찌|체인|주얼리", '50000570'),
+        (r"멀티툴|나이프|공구|드라이버|드릴|스크러버|에어펌프|레이저|인두", '50003413'),
+        (r"가위|원예|전정", '50000406'),
+        (r"잔|글라스|텀블러|머그|드리퍼|티|주전자|도마|주방", '50004737'),
+        (r"만년필|노트|문구|북마크|데스크", '50002335'),
+        (r"신디사이저|이어팁|카드리더|허브|오디오|스피커|헤드폰", '50000205'),
+        (r"재킷|티셔츠|샌들|의류", '50000167'),
+        (r"향|캔들|디퓨저", '50001854'),
+    )
     # 구매대행 통관 · 반품/교환비 · 판매상태 — 전부 정본 승계.
     CUSTOMS_TAX_TYPE = 'PURCHASE_AGENT'
     RETURN_FEE = 25000
@@ -207,7 +224,9 @@ class NaverSmartStoreUploader(BaseUploader):
             'originProduct': {
                 'statusType': self.STATUS_TYPE,
                 'saleType': 'NEW',
-                'leafCategoryId': str(product.get('category_id') or self.DEFAULT_LEAF_CATEGORY),
+                # 명시 카테고리 없으면 **정본 사전 매칭**(상품명 기준·순서 우선), 그래도 없으면 기본 리프.
+                'leafCategoryId': (str(product.get('category_id') or '').strip()
+                                   or self.resolve_category(product.get('title'))),
                 'name': (product.get('title') or '')[:100],
                 'detailContent': product.get('description_html', ''),
                 'images': {'representativeImage': {'url': rep}, 'optionalImages': optional},
@@ -254,6 +273,19 @@ class NaverSmartStoreUploader(BaseUploader):
                 'naverShoppingRegistration': self.NAVER_SHOPPING_REGISTRATION,
             },
         }
+
+    @classmethod
+    def resolve_category(cls, title: str) -> str:
+        """상품명 → 리프 카테고리 ID. **정본 사전 매칭**(순서 유지·첫 매칭 우선), 미매칭이면 기본 리프.
+
+        쿠팡은 예측 API가 정본이고 실패 시 등록을 중단하지만, 스마트스토어는 **사전 매칭이 정본**이라
+        미매칭도 기본 리프로 등록한다(정본 스크립트 동작 그대로 — 규칙을 바꾸지 않는다).
+        """
+        name = str(title or '')
+        for pattern, leaf in cls.CATEGORY_PATTERNS:
+            if re.search(pattern, name, re.I):
+                return leaf
+        return cls.DEFAULT_LEAF_CATEGORY
 
     @staticmethod
     def _as_int(v):

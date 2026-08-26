@@ -114,11 +114,7 @@ class SmartStoreAdapter(MarketAdapter):
     market_ko = "스마트스토어"
     ACCOUNTS = ("chezgoga", "gocosmos")
 
-    # ⚠️ 미확보분(정직 표기) — 승계받지 못한 조각. 기본값으로 **동작은 하되** 정밀도가 낮다.
-    PARTIAL = {
-        "category": ("정규식→리프ID 11패턴 미확보 — 기본 리프 50004132로만 등록됩니다"
-                     "(정본 패턴 승계 시 정밀도 상승)."),
-    }
+    PARTIAL: dict = {}          # 승계 완료 — 미확보 조각 없음(카테고리 11패턴 도착·#672)
 
     def canon_status(self) -> dict:
         return {"ready": True, "gaps": [], "partial": dict(self.PARTIAL), "points": {
@@ -129,8 +125,8 @@ class SmartStoreAdapter(MarketAdapter):
                          "source": "ss_upload.py 정본 — 반품 25,000 / 교환 50,000 · 출고지·반품지 주소 ID(env)"},
             "options": {"ok": True,
                         "source": "ss_upload.py 정본 — 단일 옵션(재고 999·SALE). 다중 옵션은 쿠팡과 동일하게 후속"},
-            "category": {"ok": True, "source": "ss_upload.py 정본 기본 리프 50004132",
-                         "partial": self.PARTIAL["category"]},
+            "category": {"ok": True,
+                         "source": "ss_upload.py 정본 CAT 11패턴(순서 유지·첫 매칭 우선) + 기본 리프 50004132"},
         }, "note": "인증·호출은 릴레이 경유(네이버 IP 게이트). 계정 축 = chezgoga/gocosmos."}
 
     def register(self, product_data: dict, account: str) -> dict:
