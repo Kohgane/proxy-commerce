@@ -205,8 +205,19 @@ def convert_image_bytes(body: bytes, *, target: str = CONVERT_TARGET_EXT):
         return None
 
 
+def _skip(on_skip, url: str, reason: str):
+    """스킵 사유를 호출부에 넘긴다(조용한 스킵 금지). 항상 None을 반환 — `return _skip(...)` 용."""
+    logger.info("이미지 스킵 [%s]: %s", reason, url)
+    if on_skip:
+        try:
+            on_skip(url, reason)
+        except Exception:                       # 사유 수집이 본 흐름을 깨뜨리지 않는다
+            logger.debug("on_skip 콜백 실패", exc_info=True)
+    return None
+
+
 def fetch_image_bytes(url: str, *, min_bytes: int = FETCH_MIN_BYTES, timeout: float = 20.0,
-                      allowed_formats=None):
+                      allowed_formats=None, on_skip=None):
     """외부 이미지 URL → `FetchedImage`(bytes·content_type·ext). 실패/규격미달이면 None.
 
     **소스 CDN에서 받는 다운로드**라 마켓 아웃바운드가 아니다 — 릴레이를 타지 않는다
@@ -219,26 +230,26 @@ def fetch_image_bytes(url: str, *, min_bytes: int = FETCH_MIN_BYTES, timeout: fl
     `allowed_formats`: 마켓이 받는 형식 집합(예: 네이버 `{"jpg","png","gif","bmp"}`). 지정하면
     그 밖의 형식(amazon.de WebP 등)을 **JPEG로 실변환**해서 돌려준다. **기본값 None = 무변환**
     — 쿠팡·WooCommerce는 webp가 무해하므로 전역 강제하지 않는다(마켓별 어댑터 이미지 축).
+
+    `on_skip(url, reason)`: **스킵 사유 콜백**(조용한 스킵 금지 — 카나리 6차 지시 3항).
+    빠진 이미지가 1KB 미만인지·다운로드 실패인지·변환 실패인지 호출부가 그대로 표기한다.
     """
     u = normalize_image_url(url)
     if not u:
-        return None
+        return _skip(on_skip, str(url or ''), 'URL 없음')
     try:
         import requests
         resp = requests.get(u, timeout=timeout, headers={"User-Agent": _FETCH_UA})
         resp.raise_for_status()
     except Exception as exc:
-        logger.warning("이미지 다운로드 실패 %s: %s", u, exc)
-        return None
+        return _skip(on_skip, u, f'다운로드 실패({type(exc).__name__}): {str(exc)[:120]}')
     body = resp.content or b""
     if len(body) < int(min_bytes):
-        logger.info("이미지 %d바이트 — 규격 미달로 스킵: %s", len(body), u)
-        return None
+        return _skip(on_skip, u, f'{len(body)}바이트 — {int(min_bytes)}바이트 미만')
     ct = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
     ext = detect_image_format(body) or _EXT_BY_CT.get(ct) or ""
     if not ext:
-        logger.warning("이미지 형식 미상(Content-Type %s) — 스킵: %s", ct or "미상", u)
-        return None
+        return _skip(on_skip, u, f'형식 미상(Content-Type {ct or "없음"})')
     if allowed_formats:
         allow = {str(a).lower().lstrip(".") for a in allowed_formats}
         if "jpg" in allow:
@@ -246,16 +257,18 @@ def fetch_image_bytes(url: str, *, min_bytes: int = FETCH_MIN_BYTES, timeout: fl
         if ext not in allow:
             converted = convert_image_bytes(body, target=CONVERT_TARGET_EXT)
             if converted is None:
-                logger.warning("미허용 형식(%s) 변환 실패 — 스킵: %s", ext, u)
-                return None
+                return _skip(on_skip, u, f'미허용 형식 {ext} → {CONVERT_TARGET_EXT} 변환 실패')
             # 변환 결과로 **메타를 다시 만든다** — 바이트만 바꾸고 원본 메타를 쓰면 어긋난다(카나리 5차 근원).
             part = _make_part(converted, CONVERT_TARGET_EXT)
             if part is None:
-                return None
+                return _skip(on_skip, u, f'변환 결과 메타 불일치({CONVERT_TARGET_EXT})')
             logger.info("이미지 형식 변환 %s → %s (%s, %dB): %s",
                         ext, part.ext, part.content_type, len(part.data), u)
             return part
-    return _make_part(body, ext)
+    part = _make_part(body, ext)
+    if part is None:
+        return _skip(on_skip, u, f'메타 생성 실패(선언 {ext} vs 실제 {detect_image_format(body) or "미상"})')
+    return part
 
 
 def screen_images(urls, *, probe_fn=None, min_px: int = MIN_PX, max_px: int = MAX_PX) -> dict:

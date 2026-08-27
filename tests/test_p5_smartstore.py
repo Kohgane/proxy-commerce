@@ -696,3 +696,176 @@ def test_upload_logs_part_metadata(monkeypatch, caplog):
         up.upload_images(["https://x/a.jpg"])
     joined = " ".join(r.getMessage() for r in caplog.records)
     assert "img.jpg" in joined and "image/jpeg" in joined
+
+
+# ── 카나리 6차: 실패 원문 노출(단계 태그) + 스킵 사유 ────────────────────────────
+# 오너 회수 로그가 확정한 것: parts 라인까지 도달 = 토큰·변환·조립 통과.
+# **측정 정정**: generic "API request failed after retries"는 `_api_request`에만 있고
+# `upload_images`는 그 함수를 쓰지 않는다 → 이미지 업로드는 성공, 실패는 상품 등록 POST였다.
+
+def test_generic_failure_message_is_gone():
+    """generic 문구 금지 — 사유는 단계·시도·유형·상태·본문으로만 말한다(로그 고고학 종료).
+
+    주석에는 옛 문구가 근거로 남아 있어도 되므로 **실행되는 줄**만 본다.
+    """
+    lines = [l for l in Path("src/uploaders/naver_uploader.py").read_text(encoding="utf-8").splitlines()
+             if not l.lstrip().startswith("#")]
+    code = "\n".join(lines)
+    for gone in ("API request failed after retries", "Authentication failed (401)", "Server error ("):
+        assert gone not in code, gone
+
+
+def test_product_register_4xx_surfaces_naver_body(monkeypatch):
+    """★ 카나리 6차 근원: 상품 등록 4xx가 **원문째** 올라온다(3회 삼키기 금지)."""
+    up = SS(account="chezgoga")
+    up.client_id, up.client_secret = "cid", "sec"
+    monkeypatch.setattr(up, "_get_access_token", lambda: "tok")
+    calls = []
+
+    class _R:
+        status_code = 400
+        text = '{"invalidInputs":[{"name":"leafCategoryId","message":"카테고리 오류"}]}'
+        content = text.encode()
+        def raise_for_status(self):
+            raise AssertionError("4xx는 raise_for_status 전에 반환돼야 한다")
+
+    monkeypatch.setattr("src.uploaders.naver_uploader.relay_request",
+                        lambda *a, **k: calls.append(1) or _R())
+    out = up._api_request("POST", "/v2/products", data={})
+    assert len(calls) == 1                                   # 4xx는 재시도 낭비 0
+    err = out["error"]
+    for token in ("stage=POST /v2/products", "attempt=1", "http_status=400",
+                  "leafCategoryId", "카테고리 오류"):
+        assert token in err, (token, err)
+
+
+def test_product_register_relay_error_is_distinguishable(monkeypatch):
+    """릴레이가 죽은 것 vs 네이버가 거부한 것 — `error_type`으로 갈린다.
+
+    `RelayError`는 `requests.RequestException` 상속이라 같은 except로 잡힌다(실측).
+    유형을 안 찍으면 둘이 구분 불가 — 오너 지시 4항의 '릴레이 지목' 판정 근거.
+    """
+    from src.market_relay import RelayError
+    up = SS(account="chezgoga")
+    up.client_id, up.client_secret = "cid", "sec"
+    monkeypatch.setattr(up, "_get_access_token", lambda: "tok")
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    monkeypatch.setattr("src.uploaders.naver_uploader.relay_request",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            RelayError("릴레이 오류: 릴레이가 HTTP 504")))
+    err = up._api_request("POST", "/v2/products", data={})["error"]
+    assert "error_type=RelayError" in err and "504" in err
+    assert "최대 3회" in err          # 네트워크 계열은 3회 소진 후 사유
+
+
+def test_product_register_timeout_says_so(monkeypatch):
+    """타임아웃이면 타임아웃이라고 말한다(generic 금지)."""
+    import requests as _rq
+    up = SS(account="chezgoga")
+    up.client_id, up.client_secret = "cid", "sec"
+    monkeypatch.setattr(up, "_get_access_token", lambda: "tok")
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    monkeypatch.setattr("src.uploaders.naver_uploader.relay_request",
+                        lambda *a, **k: (_ for _ in ()).throw(_rq.exceptions.ReadTimeout("timed out")))
+    err = up._api_request("POST", "/v2/products", data={})["error"]
+    assert "error_type=ReadTimeout" in err
+
+
+def test_each_retry_logged_once(monkeypatch, caplog):
+    """재시도 3회가 **각각** 1줄 — 같은 오류 3연속인지 다른 오류인지 구분(오너 지시 2항)."""
+    import requests as _rq
+    up = SS(account="chezgoga")
+    up.client_id, up.client_secret = "cid", "sec"
+    monkeypatch.setattr(up, "_get_access_token", lambda: "tok")
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    monkeypatch.setattr("src.uploaders.naver_uploader.relay_request",
+                        lambda *a, **k: (_ for _ in ()).throw(_rq.exceptions.ConnectionError("boom")))
+    with caplog.at_level("WARNING"):
+        up._api_request("POST", "/v2/products", data={})
+    lines = [r.getMessage() for r in caplog.records if "stage=POST /v2/products" in r.getMessage()]
+    assert len(lines) == 3
+    assert [f"attempt={i}" in lines[i - 1] for i in (1, 2, 3)] == [True, True, True]
+
+
+def test_image_upload_failure_also_tagged(monkeypatch):
+    """두 재시도 루프가 **같은 사유 조립기**를 쓴다 — 한쪽만 고쳐지는 패턴 차단."""
+    import requests as _rq
+    up = SS(account="chezgoga")
+    monkeypatch.setattr(up, "_get_access_token", lambda: "tok")
+    monkeypatch.setattr("src.collectors.image_norm.fetch_image_bytes",
+                        lambda u, **k: IN.FetchedImage(b"\xff\xd8\xff" + b"x" * 2000,
+                                                       "image/jpeg", "jpg"))
+    monkeypatch.setattr("time.sleep", lambda s: None)
+
+    class _Err:
+        status_code = 400
+        text = "PhotoInfraUpload.extension"
+        def raise_for_status(self):
+            raise _rq.exceptions.HTTPError(response=self)
+
+    monkeypatch.setattr("src.uploaders.naver_uploader.relay_request", lambda *a, **k: _Err())
+    out = up.upload_images(["https://x/a.jpg"])
+    assert out["ok"] is False
+    for token in ("stage=image_upload", "http_status=400", "PhotoInfraUpload.extension"):
+        assert token in out["reason"], (token, out["reason"])
+    assert "전송" in out["reason"]        # 릴레이 지목 대비 — 페이로드 크기 동봉
+
+
+@pytest.mark.parametrize("payload,ct,expect", [
+    (b"x" * 300, "image/jpeg", "바이트"),                 # 1KB 미만
+    (b"x" * 2000, "text/html", "형식 미상"),              # Content-Type 미지원
+])
+def test_skip_reason_is_reported(monkeypatch, payload, ct, expect):
+    """조용한 스킵 금지 — 왜 빠졌는지 사유가 `skipped`에 실린다(오너 지시 3항)."""
+    monkeypatch.setattr("requests.get", lambda u, **k: _fake_resp(payload, ct=ct))
+    monkeypatch.setattr(SS, "_get_access_token", lambda self: "tok")
+    out = SS(account="chezgoga").upload_images(["https://x/a.jpg"])
+    assert out["ok"] is False
+    assert len(out["skipped"]) == 1
+    assert expect in out["skipped"][0]["reason"], out["skipped"]
+    assert expect in out["reason"]                  # 0장 사유에도 그대로
+
+
+def test_conversion_failure_skip_reason(monkeypatch):
+    """변환 실패도 사유로 — '왜 3장 중 1장이 빠졌나'가 화면에서 읽힌다."""
+    bad_webp = b"RIFF" + b"\x00" * 4 + b"WEBP" + b"z" * 2000
+    monkeypatch.setattr("requests.get", lambda u, **k: _fake_resp(bad_webp, ct="image/webp"))
+    monkeypatch.setattr(SS, "_get_access_token", lambda self: "tok")
+    out = SS(account="chezgoga").upload_images(["https://x/a.webp"])
+    assert "변환 실패" in out["skipped"][0]["reason"]
+
+
+def test_partial_skip_still_uploads_the_rest(monkeypatch):
+    """일부 스킵돼도 남은 장수로 진행 — 스킵 사유는 표기하되 등록을 막지 않는다(3장 중 2장 사례)."""
+    good = _mk_image("JPEG")
+    seq = [good, b"x" * 100, good]                    # 가운데 1장만 1KB 미만
+    monkeypatch.setattr("requests.get",
+                        lambda u, **k: _fake_resp(seq.pop(0), ct="image/jpeg"))
+    up = SS(account="chezgoga")
+    monkeypatch.setattr(up, "_get_access_token", lambda: "tok")
+
+    class _OK:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return {"images": [{"url": "https://n/1.jpg"}, {"url": "https://n/2.jpg"}]}
+
+    monkeypatch.setattr("src.uploaders.naver_uploader.relay_request", lambda *a, **k: _OK())
+    out = up.upload_images(["https://x/a.jpg", "https://x/b.jpg", "https://x/c.jpg"])
+    assert out["ok"] is True and len(out["urls"]) == 2
+    assert len(out["skipped"]) == 1 and "바이트" in out["skipped"][0]["reason"]
+
+
+def test_naver_image_endpoint_is_ip_gated_same_as_product(monkeypatch):
+    """오너 지시 4항 조사 — 이미지 엔드포인트도 **같은 호스트·같은 IP 게이트**다.
+
+    `api.commerce.naver.com`이 릴레이 허용 호스트이고 smartstore가 IP 게이트 대상이므로,
+    '이미지 업로드만 직결'은 게이트를 우회하는 셈이 된다 → **구조적 해법 아님**.
+    (게다가 6차 로그상 이미지 업로드는 성공했다 — 재배선 근거 자체가 없다. 추측 배선 금지.)
+    """
+    from urllib.parse import urlparse
+    from src import market_relay as MR
+    host = urlparse(SS.API_BASE + SS.IMAGE_UPLOAD_PATH).hostname
+    assert host == "api.commerce.naver.com"
+    assert host in MR._API_RELAY_ALLOWED_HOSTS
+    assert "smartstore" in MR._IP_GATED_MARKETS
+    assert issubclass(MR.RelayError, __import__("requests").exceptions.RequestException)
