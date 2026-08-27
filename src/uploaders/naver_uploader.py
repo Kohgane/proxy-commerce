@@ -300,6 +300,9 @@ class NaverSmartStoreUploader(BaseUploader):
     IMAGE_MIN_BYTES = 1024          # 정본: 1KB 미만은 썸네일 쓰레기 → 스킵
     IMAGE_MAX_COUNT = 10            # 정본: 한 번에 최대 10장
     IMAGE_RETRY = 3                 # 정본: 429·예외 모두 최대 3회
+    # 카나리 3차 반려 원문: "PhotoInfraUpload.extension — JPEG/JPG/GIF/PNG/BMP만 허용".
+    # 소스가 amazon.de WebP였다. **이 집합은 네이버 전용** — 쿠팡/WC는 webp 무해하므로 강제 안 함.
+    IMAGE_ALLOWED_FORMATS = ('jpg', 'jpeg', 'png', 'gif', 'bmp')
 
     @classmethod
     def normalize_source_url(cls, url: str) -> str:
@@ -317,9 +320,13 @@ class NaverSmartStoreUploader(BaseUploader):
         **다운로드는 `collectors.image_norm.fetch_image_bytes`에 위임**한다 — 소스 CDN 다운로드는
         마켓 아웃바운드가 아니지만, 이 모듈은 마켓 호출 전용 관문(v87-S7: 직결 requests 금지)이라
         외부 fetch를 밖으로 뺀다. UA·1KB·확장자 판별 규칙은 그쪽이 정본으로 보유.
+
+        `allowed_formats`를 여기서만 넘긴다 — 네이버가 거부하는 WebP를 **JPEG로 실변환**(파일명
+        위장 아님)해서 받는다. 변환 실패는 None → 그 이미지 스킵, 0장이면 기존 게이트가 등록 차단.
         """
         from src.collectors.image_norm import fetch_image_bytes
-        return fetch_image_bytes(url, min_bytes=self.IMAGE_MIN_BYTES)
+        return fetch_image_bytes(url, min_bytes=self.IMAGE_MIN_BYTES,
+                                 allowed_formats=self.IMAGE_ALLOWED_FORMATS)
 
     def upload_images(self, urls) -> dict:
         """외부 이미지 URL 목록 → **네이버 CDN URL** 목록. 정본 `naver_img.upload` 승계.
