@@ -144,8 +144,9 @@ class NaverSmartStoreUploader(BaseUploader):
                     return {'success': False, 'held': True, 'sku': product.get('sku', ''),
                             'error': f"이미지 업로드 실패 — 등록 중단: {shot['reason']}"}
                 if shot['skipped']:
-                    logger.info('이미지 %d장 스킵(규격/다운로드) sku=%s',
-                                len(shot['skipped']), product.get('sku', ''))
+                    logger.info('이미지 %d장 스킵 sku=%s — %s', len(shot['skipped']),
+                                product.get('sku', ''),
+                                '; '.join(s['reason'] for s in shot['skipped']))
                 product = {**product, 'images': shot['urls']}
             payload = self._build_product_payload(product)
             path = '/v2/products'
@@ -314,7 +315,7 @@ class NaverSmartStoreUploader(BaseUploader):
             u = 'https:' + u
         return u.split('?')[0]
 
-    def _fetch_image(self, url: str):
+    def _fetch_image(self, url: str, on_skip=None):
         """외부 URL → `FetchedImage`(bytes·content_type·ext). 실패/규격미달이면 None.
 
         **다운로드는 `collectors.image_norm.fetch_image_bytes`에 위임**한다 — 소스 CDN 다운로드는
@@ -323,10 +324,14 @@ class NaverSmartStoreUploader(BaseUploader):
 
         `allowed_formats`를 여기서만 넘긴다 — 네이버가 거부하는 WebP를 **JPEG로 실변환**(파일명
         위장 아님)해서 받는다. 변환 실패는 None → 그 이미지 스킵, 0장이면 기존 게이트가 등록 차단.
+
+        `on_skip(url, reason)`은 **스킵 사유**를 받아 온다(조용한 스킵 금지 — 1KB 미만인지·
+        다운로드 실패인지·변환 실패인지 호출부가 그대로 표기한다).
         """
         from src.collectors.image_norm import fetch_image_bytes
         return fetch_image_bytes(url, min_bytes=self.IMAGE_MIN_BYTES,
-                                 allowed_formats=self.IMAGE_ALLOWED_FORMATS)
+                                 allowed_formats=self.IMAGE_ALLOWED_FORMATS,
+                                 on_skip=on_skip)
 
     def upload_images(self, urls) -> dict:
         """외부 이미지 URL 목록 → **네이버 CDN URL** 목록. 정본 `naver_img.upload` 승계.
@@ -339,15 +344,22 @@ class NaverSmartStoreUploader(BaseUploader):
         for u in (urls or [])[:self.IMAGE_MAX_COUNT]:
             n = self.normalize_source_url(u)
             if not n:
+                skipped.append({'url': str(u or ''), 'reason': 'URL 정규화 실패'})
                 continue
-            got = self._fetch_image(n)
+            got = self._fetch_image(
+                n, on_skip=lambda su, sr: skipped.append({'url': su, 'reason': sr}))
             if got is None:
-                skipped.append(n)
+                if not any(s['url'] == n for s in skipped):     # 사유 없이 빠지는 일 없게(보루)
+                    skipped.append({'url': n, 'reason': '사유 미상'})
                 continue
             cleaned.append(got)
+        if skipped:
+            logger.info('이미지 %d장 스킵 — %s', len(skipped),
+                        '; '.join(f"{s['reason']}({s['url'][-48:]})" for s in skipped))
         if not cleaned:
             return {'ok': False, 'urls': [], 'skipped': skipped,
-                    'reason': f'업로드할 이미지 0장(내려받기 실패·규격 미달 {len(skipped)}장)'}
+                    'reason': ('업로드할 이미지 0장 — '
+                               + '; '.join(s['reason'] for s in skipped[:3]))}
 
         token = self._get_access_token()
         if not token:
@@ -367,6 +379,7 @@ class NaverSmartStoreUploader(BaseUploader):
                     ', '.join(f'{p.filename}({p.content_type},{len(p.data)}B)' for p in cleaned))
         headers = {'Authorization': f'Bearer {token}',
                    'Content-Type': prepped.headers['Content-Type']}
+        payload_bytes = len(prepped.body or b'')
         last = ''
         for att in range(self.IMAGE_RETRY):
             try:
@@ -374,7 +387,9 @@ class NaverSmartStoreUploader(BaseUploader):
                                      headers=headers, data=prepped.body, timeout=60,
                                      market='smartstore', key=str(self.client_id or ''))
                 if getattr(resp, 'status_code', 0) == 429:
-                    last = '429 요청 한도'
+                    last = self._fail_detail('image_upload', att + 1, status=429,
+                                             body=self._resp_body(resp))
+                    logger.warning('이미지 업로드 재시도 — %s', last)
                     time.sleep(3 * (att + 1))          # 정본 백오프
                     continue
                 resp.raise_for_status()
@@ -383,20 +398,52 @@ class NaverSmartStoreUploader(BaseUploader):
                 if not out:
                     return {'ok': False, 'urls': [], 'skipped': skipped,
                             'reason': f'네이버 응답에 이미지 URL 없음: {str(data)[:200]}'}
+                logger.info('네이버 이미지 업로드 성공 %d장(%dB 전송)', len(out), payload_bytes)
                 return {'ok': True, 'urls': out, 'skipped': skipped, 'reason': ''}
             except requests.exceptions.HTTPError as exc:
-                body = ''
-                try:
-                    body = (exc.response.text or '')[:200]     # 정본: 본문 200자 노출
-                except Exception:
-                    pass
-                last = f'HTTP {getattr(exc.response, "status_code", "?")}: {body}'
+                status = getattr(exc.response, 'status_code', None)
+                last = self._fail_detail('image_upload', att + 1, exc=exc, status=status,
+                                         body=self._resp_body(exc.response))
+                logger.warning('이미지 업로드 실패 — %s', last)
+                # 4xx는 같은 요청을 되풀이해도 같은 답이다 — 즉시 사유를 올린다(재시도 낭비 0).
+                if status is not None and 400 <= int(status) < 500 and int(status) != 429:
+                    break
                 time.sleep(3 * (att + 1))
             except Exception as exc:
-                last = str(exc)[:200]
+                last = self._fail_detail('image_upload', att + 1, exc=exc)
+                logger.warning('이미지 업로드 실패 — %s', last)
                 time.sleep(3 * (att + 1))
         return {'ok': False, 'urls': [], 'skipped': skipped,
-                'reason': f'이미지 업로드 실패({self.IMAGE_RETRY}회 시도): {last}'}
+                'reason': f'이미지 업로드 실패(최대 {self.IMAGE_RETRY}회, 전송 {payload_bytes}B): {last}'}
+
+    # ── 실패 원문 노출(카나리 6차) ────────────────────────────────────────────────
+    #   generic "API request failed after retries"는 로그 고고학을 강제한다. 재시도 루프가
+    #   **둘**(이미지 업로드·상품 등록)이므로 사유 조립을 **한 함수로** 둔다 — 한쪽만 고쳐지는
+    #   패턴(#673 서명·#675 part MIME)을 또 만들지 않기 위해.
+    @staticmethod
+    def _resp_body(resp, limit: int = 200) -> str:
+        """응답 본문 앞 limit자. 못 읽으면 빈 문자열(사유 조립이 예외로 죽지 않게)."""
+        try:
+            return (getattr(resp, 'text', '') or '')[:limit]
+        except Exception:
+            return ''
+
+    @staticmethod
+    def _fail_detail(stage: str, attempt: int, *, exc=None, status=None, body: str = '') -> str:
+        """{stage, attempt, error_type, http_status, body[:200]} 한 줄.
+
+        `RelayError`는 `requests.RequestException`을 상속하므로 **릴레이가 죽은 것**과
+        **마켓이 거부한 것**이 같은 except로 잡힌다 — error_type을 찍어 둘을 가른다.
+        """
+        parts = [f'stage={stage}', f'attempt={attempt}']
+        if exc is not None:
+            parts.append(f'error_type={type(exc).__name__}')
+            parts.append(f'error={str(exc)[:200]}')
+        if status is not None:
+            parts.append(f'http_status={status}')
+        if body:
+            parts.append(f'body={body}')
+        return ' '.join(parts)
 
     @classmethod
     def resolve_category(cls, title: str) -> str:
@@ -499,33 +546,54 @@ class NaverSmartStoreUploader(BaseUploader):
             'Authorization': f'Bearer {token}',
             'Content-Type': 'application/json;charset=UTF-8',
         }
+        stage = f'{method.upper()} {path}'
+        last = ''
         for attempt in range(3):
             try:
                 # 고정 IP 릴레이 경유 — 네이버 호출 IP 화이트리스트 대응(v8 / v87-S6-2 mkt.php).
                 resp = relay_request(method, url, json=data, headers=headers, timeout=30,
                                      market="smartstore", key=str(self.client_id or ""))
                 if resp.status_code == 429:
-                    logger.warning('Naver rate limit hit, retrying in %ds (attempt %d)', 5, attempt + 1)
+                    last = self._fail_detail(stage, attempt + 1, status=429,
+                                             body=self._resp_body(resp))
+                    logger.warning('네이버 재시도 — %s', last)
                     time.sleep(5 * (attempt + 1))
                     continue
                 if resp.status_code == 401:
                     # 토큰 무효화 후 재시도
+                    last = self._fail_detail(stage, attempt + 1, status=401,
+                                             body=self._resp_body(resp))
                     self._access_token = None
                     self._token_expires = 0
                     if attempt < 2:
                         token = self._get_access_token()
                         headers['Authorization'] = f'Bearer {token}'
                         continue
-                    return {'error': 'Authentication failed (401)'}
+                    return {'error': f'네이버 인증 실패 — {last}'}
                 if resp.status_code >= 500:
-                    logger.warning('Naver server error %d', resp.status_code)
-                    return {'error': f'Server error ({resp.status_code})'}
+                    last = self._fail_detail(stage, attempt + 1, status=resp.status_code,
+                                             body=self._resp_body(resp))
+                    logger.warning('네이버 서버 오류 — %s', last)
+                    return {'error': f'네이버 서버 오류 — {last}'}
+                # ★ 카나리 6차 근원: 여기서 `raise_for_status()`가 4xx를 HTTPError로 던지면
+                #   아래 except가 **원문을 버리고** 3회 재시도 후 generic 문구만 남겼다.
+                #   4xx는 되풀이해도 같은 답이므로 **본문을 그대로 실어 즉시 반환**한다.
+                if resp.status_code >= 400:
+                    last = self._fail_detail(stage, attempt + 1, status=resp.status_code,
+                                             body=self._resp_body(resp))
+                    logger.warning('네이버 거부 — %s', last)
+                    return {'error': f'네이버 거부 — {last}'}
                 resp.raise_for_status()
                 if resp.content:
                     return resp.json()
                 return {}
             except requests.exceptions.RequestException as exc:
-                logger.warning('Naver API request failed (attempt %d): %s', attempt + 1, exc)
+                # RelayError도 여기로 온다(RequestException 상속) — error_type이 둘을 가른다.
+                last = self._fail_detail(stage, attempt + 1, exc=exc,
+                                         status=getattr(getattr(exc, 'response', None),
+                                                        'status_code', None),
+                                         body=self._resp_body(getattr(exc, 'response', None)))
+                logger.warning('네이버 요청 실패 — %s', last)
                 if attempt < 2:
                     time.sleep(3)
-        return {'error': 'API request failed after retries'}
+        return {'error': f'네이버 요청 실패(최대 3회) — {last or "사유 미상"}'}
