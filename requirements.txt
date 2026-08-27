@@ -22,3 +22,4 @@ cryptography>=42.0,<49
 webauthn>=2.0,<3  # v40-D 패스키 — cryptography<49 호환(2.x 라인)
 psycopg[binary,pool]>=3.1,<4  # v49 STEP2 pool = 상시 커넥션 풀(PG_PERSISTENT_POOL=1일 때만)
 openpyxl>=3.1,<4  # v47 STEP5 엑셀 벌크 내보내기/업로드
+Pillow>=10.0,<14  # 카나리 3차: 네이버 미허용 WebP → JPEG 실변환(image_norm) + 이미지 파이프라인. 이전엔 requirements 미기재라 프로덕션 이미지에 없었다(조용한 무력화).

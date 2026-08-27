@@ -104,19 +104,82 @@ def probe_image_size(url: str, *, fetch_fn=None, timeout: float = 6.0):
 _FETCH_UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
              '(KHTML, like Gecko) Chrome/124.0 Safari/537.36')
 _EXT_BY_CT = {'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png',
-              'image/webp': 'webp', 'image/gif': 'gif'}
+              'image/webp': 'webp', 'image/gif': 'gif', 'image/bmp': 'bmp',
+              'image/x-ms-bmp': 'bmp'}
 FETCH_MIN_BYTES = 1024          # 정본(naver_img): 1KB 미만은 썸네일 쓰레기 → 스킵
 
+# 형식 판별은 **매직 바이트 우선**(Content-Type은 CDN이 틀리게 줄 수 있다), 못 읽으면 CT 폴백.
+_MAGIC = (
+    (b"\xff\xd8\xff", "jpg"),
+    (b"\x89PNG\r\n\x1a\n", "png"),
+    (b"GIF87a", "gif"),
+    (b"GIF89a", "gif"),
+    (b"BM", "bmp"),
+)
+CONVERT_TARGET_EXT = "jpg"       # 미허용 형식의 변환 목적지(네이버 허용 집합의 공통분모)
+_JPEG_QUALITY = 92
 
-def fetch_image_bytes(url: str, *, min_bytes: int = FETCH_MIN_BYTES, timeout: float = 20.0):
+
+def detect_image_format(body: bytes) -> str:
+    """이미지 바이트 → 확장자(jpg/png/gif/bmp/webp). 못 알아보면 빈 문자열."""
+    b = bytes(body or b"")
+    if len(b) >= 12 and b[:4] == b"RIFF" and b[8:12] == b"WEBP":
+        return "webp"
+    for sig, ext in _MAGIC:
+        if b.startswith(sig):
+            return ext
+    return ""
+
+
+def convert_image_bytes(body: bytes, *, target: str = CONVERT_TARGET_EXT):
+    """이미지 바이트 → 목적 형식으로 **실제 바이트 변환**. 실패하면 None.
+
+    파일명만 바꾸는 위장이 아니다 — Pillow로 디코드해 다시 인코딩한다. 알파 채널(webp/png)은
+    JPEG가 못 담으므로 **흰 배경에 플래튼**한다(오너 지시). Pillow 미설치·디코드 실패는 None(정직).
+    """
+    try:
+        from io import BytesIO
+        from PIL import Image                      # 지연 import(CI collect-only 안전 — v39 A 선례)
+    except Exception as exc:
+        logger.warning("Pillow 미가용 — 이미지 변환 불가: %s", exc)
+        return None
+    tgt = (target or CONVERT_TARGET_EXT).lower()
+    fmt = {"jpg": "JPEG", "jpeg": "JPEG", "png": "PNG"}.get(tgt)
+    if not fmt:
+        return None
+    try:
+        with Image.open(BytesIO(bytes(body or b""))) as im:
+            im.load()
+            if fmt == "JPEG":
+                if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
+                    rgba = im.convert("RGBA")
+                    flat = Image.new("RGB", rgba.size, (255, 255, 255))
+                    flat.paste(rgba, mask=rgba.split()[-1])      # 알파 → 흰 배경 플래튼
+                    im = flat
+                elif im.mode != "RGB":
+                    im = im.convert("RGB")
+            out = BytesIO()
+            im.save(out, format=fmt, quality=_JPEG_QUALITY)
+            return out.getvalue()
+    except Exception as exc:
+        logger.warning("이미지 변환 실패(%s): %s", tgt, exc)
+        return None
+
+
+def fetch_image_bytes(url: str, *, min_bytes: int = FETCH_MIN_BYTES, timeout: float = 20.0,
+                      allowed_formats=None):
     """외부 이미지 URL → (bytes, filename). 실패/규격미달이면 None.
 
     **소스 CDN에서 받는 다운로드**라 마켓 아웃바운드가 아니다 — 릴레이를 타지 않는다
     (아마존은 우리 IP를 막지 않고, 릴레이 허용 호스트도 아니다). 마켓 API 호출은 반드시
     `market_relay`를 타야 하므로(v87-S7), 이 함수를 업로더 모듈 밖에 둬서 그 관문 규율을 지킨다.
 
-    UA 헤더 필수(아마존 CDN이 기본 UA를 막는다·정본). 확장자는 Content-Type으로 판별.
+    UA 헤더 필수(아마존 CDN이 기본 UA를 막는다·정본). 확장자는 매직 바이트 우선·Content-Type 폴백.
     SSL 검증은 정상 유지(정본의 CERT_NONE은 구환경 땜빵이라 승계하지 않는다).
+
+    `allowed_formats`: 마켓이 받는 형식 집합(예: 네이버 `{"jpg","png","gif","bmp"}`). 지정하면
+    그 밖의 형식(amazon.de WebP 등)을 **JPEG로 실변환**해서 돌려준다. **기본값 None = 무변환**
+    — 쿠팡·WooCommerce는 webp가 무해하므로 전역 강제하지 않는다(마켓별 어댑터 이미지 축).
     """
     u = normalize_image_url(url)
     if not u:
@@ -133,10 +196,21 @@ def fetch_image_bytes(url: str, *, min_bytes: int = FETCH_MIN_BYTES, timeout: fl
         logger.info("이미지 %d바이트 — 규격 미달로 스킵: %s", len(body), u)
         return None
     ct = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
-    ext = _EXT_BY_CT.get(ct)
+    ext = detect_image_format(body) or _EXT_BY_CT.get(ct) or ""
     if not ext:
-        logger.warning("이미지 Content-Type 미지원(%s) — 스킵: %s", ct or "미상", u)
+        logger.warning("이미지 형식 미상(Content-Type %s) — 스킵: %s", ct or "미상", u)
         return None
+    if allowed_formats:
+        allow = {str(a).lower().lstrip(".") for a in allowed_formats}
+        if "jpg" in allow:
+            allow.add("jpeg")
+        if ext not in allow:
+            converted = convert_image_bytes(body, target=CONVERT_TARGET_EXT)
+            if converted is None:
+                logger.warning("미허용 형식(%s) 변환 실패 — 스킵: %s", ext, u)
+                return None
+            logger.info("이미지 형식 변환 %s → %s: %s", ext, CONVERT_TARGET_EXT, u)
+            return converted, f"img.{CONVERT_TARGET_EXT}"
     return body, f"img.{ext}"
 
 

@@ -14,10 +14,12 @@
 """
 from __future__ import annotations
 
+import random
 from pathlib import Path
 
 import pytest
 
+from src.collectors import image_norm as IN
 from src.pipeline import register_adapters as RA
 from src.uploaders.naver_uploader import NaverSmartStoreUploader as SS
 
@@ -265,8 +267,9 @@ def test_fetch_skips_tiny_files(monkeypatch):
 
 
 @pytest.mark.parametrize("ct,ext", [("image/jpeg", "jpg"), ("image/png", "png"),
-                                    ("image/webp", "webp"), ("image/gif", "gif")])
+                                    ("image/gif", "gif"), ("image/bmp", "bmp")])
 def test_fetch_extension_from_content_type(monkeypatch, ct, ext):
+    """매직 바이트를 못 읽으면 Content-Type 폴백. (webp는 네이버 미허용 → 변환 계약에서 별도로 본다.)"""
     monkeypatch.setattr("requests.get", lambda u, **k: _fake_resp(b"x" * 2000, ct=ct))
     assert SS(account="chezgoga")._fetch_image("https://x/a")[1] == f"img.{ext}"
 
@@ -480,3 +483,130 @@ def test_image_upload_reports_token_reason(monkeypatch):
     up.token_error = "HTTP 403: {\"code\":\"GW.IP_NOT_ALLOWED\"}"
     out = up.upload_images(["https://x/a.jpg"])
     assert out["ok"] is False and "GW.IP_NOT_ALLOWED" in out["reason"]
+
+
+# ── 카나리 3차: WebP 거부 → JPEG 실변환 (네이버 경로 전용) ────────────────────────
+# 네이버 400 원문: "PhotoInfraUpload.extension — JPEG/JPG/GIF/PNG/BMP만 허용".
+# 소스가 amazon.de WebP였다. **파일명 위장이 아니라 실제 바이트 변환**이어야 한다.
+
+def _mk_image(fmt: str, *, alpha: bool = False, size=(600, 600)) -> bytes:
+    """계약 검증용 **실제 이미지 바이트** 생성(Pillow)."""
+    from io import BytesIO
+    from PIL import Image
+    mode = "RGBA" if alpha else "RGB"
+    bg = (255, 0, 0, 0) if alpha else (255, 0, 0)
+    im = Image.new(mode, size, bg)
+    im.paste(Image.new(mode, (200, 200), (0, 0, 255, 255) if alpha else (0, 0, 255)), (0, 0))
+    # 1KB 게이트를 넘도록 압축되지 않는 잡음을 섞는다(단색은 webp가 1KB 미만으로 줄어든다).
+    rnd = random.Random(7)
+    px = im.load()
+    for y in range(0, size[1] // 2, 3):        # 아래 절반은 깨끗이 둔다(플래튼 검증용)
+        for x in range(0, size[0], 3):
+            px[x, y] = (rnd.randrange(256), rnd.randrange(256), rnd.randrange(256),
+                        255) if alpha else (rnd.randrange(256), rnd.randrange(256),
+                                            rnd.randrange(256))
+    if fmt.upper() in ("JPEG", "BMP") and alpha:
+        im = im.convert("RGB")
+    buf = BytesIO()
+    im.save(buf, format=fmt.upper())
+    return buf.getvalue()
+
+
+def test_pillow_available_for_conversion():
+    """변환은 Pillow에 의존한다 — 서버 가용성부터 못박는다(파일럿 이미지 처리에서 이미 사용)."""
+    from PIL import Image                                    # noqa: F401
+    assert IN.convert_image_bytes(_mk_image("PNG")) is not None
+
+
+@pytest.mark.parametrize("fmt,ext", [("JPEG", "jpg"), ("PNG", "png"),
+                                     ("GIF", "gif"), ("BMP", "bmp"), ("WEBP", "webp")])
+def test_magic_bytes_detect_format(fmt, ext):
+    """형식 판별은 **매직 바이트 우선**(CDN이 Content-Type을 틀리게 줄 수 있다)."""
+    assert IN.detect_image_format(_mk_image(fmt)) == ext
+
+
+def test_webp_converted_to_real_jpeg_bytes(monkeypatch):
+    """webp 바이트 → **jpeg 실변환**. 매직바이트(\\xff\\xd8\\xff)로 검증 — 확장자만 바꾼 위장이면 실패."""
+    webp = _mk_image("WEBP")
+    assert IN.detect_image_format(webp) == "webp"
+    monkeypatch.setattr("requests.get", lambda u, **k: _fake_resp(webp, ct="image/webp"))
+    got = SS(account="chezgoga")._fetch_image("https://m.media-amazon.com/i/a.jpg")
+    assert got is not None
+    body, name = got
+    assert name == "img.jpg"
+    assert body[:3] == b"\xff\xd8\xff"                        # 진짜 JPEG
+    assert IN.detect_image_format(body) == "jpg"
+    assert body != webp                                       # 원본 바이트가 아니다
+
+
+def test_webp_alpha_flattened_on_white():
+    """webp 알파 채널은 JPEG가 못 담는다 → **흰 배경 플래튼**(검게 뭉치지 않는다)."""
+    from io import BytesIO
+    from PIL import Image
+    conv = IN.convert_image_bytes(_mk_image("WEBP", alpha=True))
+    assert conv is not None
+    with Image.open(BytesIO(conv)) as im:
+        assert im.mode == "RGB"
+        assert im.getpixel((im.width - 5, im.height - 5)) == (255, 255, 255)   # 투명 → 흰색
+
+
+@pytest.mark.parametrize("fmt,ext", [("JPEG", "jpg"), ("PNG", "png"),
+                                     ("GIF", "gif"), ("BMP", "bmp")])
+def test_allowed_formats_pass_through_unconverted(monkeypatch, fmt, ext):
+    """허용 형식(jpeg/png/gif/bmp)은 **무변환 통과** — 불필요한 재인코딩 금지."""
+    raw = _mk_image(fmt)
+    monkeypatch.setattr("requests.get", lambda u, **k: _fake_resp(raw, ct=f"image/{ext}"))
+    body, name = SS(account="chezgoga")._fetch_image("https://x/a")
+    assert name == f"img.{ext}"
+    assert body == raw                                        # 바이트 동일 = 무변환
+
+
+def test_conversion_failure_skips_image_with_reason(monkeypatch, caplog):
+    """변환 실패 시 그 이미지는 **스킵 + 사유 로그**(가짜 성공 0)."""
+    monkeypatch.setattr("requests.get",
+                        lambda u, **k: _fake_resp(b"RIFF" + b"\x00" * 4 + b"WEBP" + b"z" * 2000,
+                                                  ct="image/webp"))
+    with caplog.at_level("WARNING"):
+        assert SS(account="chezgoga")._fetch_image("https://x/a.webp") is None
+    assert any("변환" in r.message or "변환" in r.getMessage() for r in caplog.records)
+
+
+def test_conversion_failure_zero_images_blocks_registration(monkeypatch):
+    """변환 전멸 → 0장 → **기존 게이트가 등록 차단**(카나리를 이미지 없이 태우지 않는다)."""
+    monkeypatch.setattr("src.collectors.image_norm.fetch_image_bytes", lambda u, **k: None)
+    out = SS(account="chezgoga").upload_images(["https://x/a.webp", "https://x/b.webp"])
+    assert out["ok"] is False and "0장" in out["reason"] and len(out["skipped"]) == 2
+
+
+def test_conversion_is_naver_only_not_global(monkeypatch):
+    """**쿠팡/WC 전역 강제 금지**(오너 지시) — allowed_formats 미지정이면 webp 원본 그대로."""
+    webp = _mk_image("WEBP")
+    monkeypatch.setattr("requests.get", lambda u, **k: _fake_resp(webp, ct="image/webp"))
+    body, name = IN.fetch_image_bytes("https://x/a.jpg")       # 기본 호출 = 쿠팡·WC 경로
+    assert name == "img.webp" and body == webp
+
+
+def test_naver_declares_allowed_formats_and_passes_them():
+    """허용 형식 집합은 **네이버 업로더가 보유**하고 fetch에 넘긴다(전역 상수 아님)."""
+    assert set(SS.IMAGE_ALLOWED_FORMATS) >= {"jpg", "png", "gif", "bmp"}
+    assert "webp" not in {f.lower() for f in SS.IMAGE_ALLOWED_FORMATS}
+    src = Path("src/uploaders/naver_uploader.py").read_text(encoding="utf-8")
+    assert "allowed_formats=self.IMAGE_ALLOWED_FORMATS" in src
+
+
+def test_coupang_uploader_does_not_force_conversion():
+    """쿠팡 업로더는 allowed_formats를 넘기지 않는다(webp 무해 — 마켓별 이미지 축)."""
+    src = Path("src/uploaders/coupang_uploader.py").read_text(encoding="utf-8")
+    assert "allowed_formats" not in src
+
+
+def test_pillow_pinned_in_requirements():
+    """**프로덕션 이미지에 Pillow가 실제로 들어가야** 변환이 산다.
+
+    실측 근원(카나리 3차 부수 발견): Pillow가 requirements.txt에 없었고 `pip show` Required-by도
+    비어 있어(전이 의존 0), Dockerfile이 requirements만 설치하는 프로덕션에는 **Pillow가 없었다**.
+    지연 import라 예외 없이 조용히 무력화된다 — 변환 전멸 → 이미지 0장 → 등록 차단.
+    """
+    req = Path("requirements.txt").read_text(encoding="utf-8")
+    assert any(l.strip().lower().startswith("pillow") for l in req.splitlines()), \
+        "Pillow가 requirements.txt에 없다 — 프로덕션에서 이미지 변환이 조용히 죽는다"
