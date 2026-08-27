@@ -256,7 +256,7 @@ def test_fetch_uses_browser_ua(monkeypatch):
     monkeypatch.setattr("requests.get",
                         lambda u, **k: seen.update(k) or _fake_resp(b"x" * 2000))
     got = SS(account="chezgoga")._fetch_image("https://m.media-amazon.com/i/a.jpg")
-    assert got is not None and got[1] == "img.jpg"
+    assert got is not None and got.filename == "img.jpg"
     assert "Mozilla" in seen["headers"]["User-Agent"]
 
 
@@ -271,7 +271,7 @@ def test_fetch_skips_tiny_files(monkeypatch):
 def test_fetch_extension_from_content_type(monkeypatch, ct, ext):
     """매직 바이트를 못 읽으면 Content-Type 폴백. (webp는 네이버 미허용 → 변환 계약에서 별도로 본다.)"""
     monkeypatch.setattr("requests.get", lambda u, **k: _fake_resp(b"x" * 2000, ct=ct))
-    assert SS(account="chezgoga")._fetch_image("https://x/a")[1] == f"img.{ext}"
+    assert SS(account="chezgoga")._fetch_image("https://x/a").filename == f"img.{ext}"
 
 
 def test_fetch_rejects_unsupported_content_type(monkeypatch):
@@ -478,7 +478,7 @@ def test_image_upload_reports_token_reason(monkeypatch):
     """이미지 업로드 사유에 토큰 실패 **원문**이 실린다('발급 실패'만 아님)."""
     up = SS(account="chezgoga")
     monkeypatch.setattr("src.collectors.image_norm.fetch_image_bytes",
-                        lambda u, **k: (b"x" * 2000, "img.jpg"))
+                        lambda u, **k: IN.FetchedImage(b"x" * 2000, "image/jpeg", "jpg"))
     monkeypatch.setattr(up, "_get_access_token", lambda: "")
     up.token_error = "HTTP 403: {\"code\":\"GW.IP_NOT_ALLOWED\"}"
     out = up.upload_images(["https://x/a.jpg"])
@@ -532,7 +532,7 @@ def test_webp_converted_to_real_jpeg_bytes(monkeypatch):
     monkeypatch.setattr("requests.get", lambda u, **k: _fake_resp(webp, ct="image/webp"))
     got = SS(account="chezgoga")._fetch_image("https://m.media-amazon.com/i/a.jpg")
     assert got is not None
-    body, name = got
+    body, name = got.data, got.filename
     assert name == "img.jpg"
     assert body[:3] == b"\xff\xd8\xff"                        # 진짜 JPEG
     assert IN.detect_image_format(body) == "jpg"
@@ -556,7 +556,8 @@ def test_allowed_formats_pass_through_unconverted(monkeypatch, fmt, ext):
     """허용 형식(jpeg/png/gif/bmp)은 **무변환 통과** — 불필요한 재인코딩 금지."""
     raw = _mk_image(fmt)
     monkeypatch.setattr("requests.get", lambda u, **k: _fake_resp(raw, ct=f"image/{ext}"))
-    body, name = SS(account="chezgoga")._fetch_image("https://x/a")
+    got = SS(account="chezgoga")._fetch_image("https://x/a")
+    body, name = got.data, got.filename
     assert name == f"img.{ext}"
     assert body == raw                                        # 바이트 동일 = 무변환
 
@@ -582,8 +583,9 @@ def test_conversion_is_naver_only_not_global(monkeypatch):
     """**쿠팡/WC 전역 강제 금지**(오너 지시) — allowed_formats 미지정이면 webp 원본 그대로."""
     webp = _mk_image("WEBP")
     monkeypatch.setattr("requests.get", lambda u, **k: _fake_resp(webp, ct="image/webp"))
-    body, name = IN.fetch_image_bytes("https://x/a.jpg")       # 기본 호출 = 쿠팡·WC 경로
-    assert name == "img.webp" and body == webp
+    got = IN.fetch_image_bytes("https://x/a.jpg")              # 기본 호출 = 쿠팡·WC 경로
+    assert got.filename == "img.webp" and got.data == webp
+    assert got.content_type == "image/webp"
 
 
 def test_naver_declares_allowed_formats_and_passes_them():
@@ -610,3 +612,87 @@ def test_pillow_pinned_in_requirements():
     req = Path("requirements.txt").read_text(encoding="utf-8")
     assert any(l.strip().lower().startswith("pillow") for l in req.splitlines()), \
         "Pillow가 requirements.txt에 없다 — 프로덕션에서 이미지 변환이 조용히 죽는다"
+
+
+# ── 카나리 5차: 멀티파트 part 메타 (filename · Content-Type · 바이트 3종 동시) ──────
+# 네이버 400: invalidInputs name=imageFiles[0], type=PhotoInfraUpload.extension.
+# 실측 근원: `files=[(name,(filename, body))]` **2-튜플**을 주면 requests가 part Content-Type을
+# 아예 붙이지 않는다. filename은 이미 .jpg였다 — 빠진 건 part MIME이었다.
+
+def _multipart_parts(fetched):
+    """업로더와 **동일한 방식**으로 조립한 멀티파트에서 part 헤더+본문 시작을 뽑는다."""
+    import requests as _rq
+    files = [('imageFiles', (p.filename, p.data, p.content_type)) for p in fetched]
+    prepped = _rq.Request('POST', SS.API_BASE + SS.IMAGE_UPLOAD_PATH, files=files).prepare()
+    return prepped.body, prepped.headers['Content-Type']
+
+
+def test_webp_part_carries_filename_contenttype_and_jpeg_bytes(monkeypatch):
+    """webp 입력 → part의 **filename=.jpg · Content-Type=image/jpeg · 바이트 JPEG 매직** 3종 동시."""
+    webp = _mk_image("WEBP")
+    monkeypatch.setattr("requests.get", lambda u, **k: _fake_resp(webp, ct="image/webp"))
+    p = SS(account="chezgoga")._fetch_image("https://m.media-amazon.com/i/a.jpg")
+    assert p is not None
+    # ① 3종 세트 자체
+    assert (p.filename, p.content_type, p.ext) == ("img.jpg", "image/jpeg", "jpg")
+    assert p.data[:3] == b"\xff\xd8\xff"
+    # ② 실제 조립된 멀티파트에 셋이 전부 실렸는지
+    body, ctype = _multipart_parts([p])
+    assert ctype.startswith("multipart/form-data; boundary=")
+    head = body[:400].decode("latin-1")
+    assert 'name="imageFiles"; filename="img.jpg"' in head
+    assert "Content-Type: image/jpeg" in head          # ← 카나리 5차에 빠져 있던 줄
+    assert b"\r\n\r\n\xff\xd8\xff" in body[:600]        # 헤더 끝 직후가 JPEG 매직
+
+
+def test_multipart_never_omits_part_content_type():
+    """**2-튜플 조립 금지** — 업로더가 3-튜플로 넘기지 않으면 part MIME이 사라진다(회귀 봉인)."""
+    src = Path("src/uploaders/naver_uploader.py").read_text(encoding="utf-8")
+    assert "(p.filename, p.data, p.content_type)" in src
+    # 실증: 2-튜플이면 정말 Content-Type이 없다(우리 주장의 근거를 테스트가 직접 보여준다).
+    import requests as _rq
+    two = _rq.Request('POST', SS.API_BASE, files=[('imageFiles', ("img.jpg", b"x" * 32))]).prepare()
+    assert "Content-Type: image/jpeg" not in two.body[:300].decode("latin-1")
+
+
+@pytest.mark.parametrize("fmt,ext,ct", [("JPEG", "jpg", "image/jpeg"), ("PNG", "png", "image/png"),
+                                        ("GIF", "gif", "image/gif"), ("BMP", "bmp", "image/bmp")])
+def test_allowed_formats_keep_their_own_mime(monkeypatch, fmt, ext, ct):
+    """무변환 통과 형식도 **자기 MIME**을 단다 — 전부 image/jpeg로 뭉개지 않는다."""
+    raw = _mk_image(fmt)
+    monkeypatch.setattr("requests.get", lambda u, **k: _fake_resp(raw, ct=ct))
+    p = SS(account="chezgoga")._fetch_image("https://x/a")
+    assert (p.filename, p.content_type, p.ext) == (f"img.{ext}", ct, ext)
+    assert p.data == raw
+    assert f"Content-Type: {ct}" in _multipart_parts([p])[0][:400].decode("latin-1")
+
+
+def test_meta_cannot_diverge_from_bytes():
+    """**이중화 구조적 차단** — 메타는 바이트를 되읽어 검증한 뒤에만 만들어진다."""
+    jpeg = _mk_image("JPEG")
+    assert IN._make_part(jpeg, "jpg") is not None
+    assert IN._make_part(jpeg, "png") is None          # 확장자만 갈아끼운 위장은 통과 못 한다
+    assert IN._make_part(_mk_image("WEBP"), "jpg") is None
+    assert IN._make_part(jpeg, "tiff") is None         # MIME 미상 형식
+
+
+def test_ext_and_mime_tables_do_not_diverge():
+    """수신(CT→ext)과 발신(ext→MIME) 표가 **같은 ext 집합**을 덮는다(한쪽만 늘리면 red)."""
+    assert set(IN._EXT_BY_CT.values()) <= set(IN._CT_BY_EXT)
+    for ext, ct in IN._CT_BY_EXT.items():
+        assert IN._EXT_BY_CT.get(ct) == ext, (ext, ct)   # 정규 MIME은 왕복이 일치
+
+
+def test_upload_logs_part_metadata(monkeypatch, caplog):
+    """다음 반려 때 **추측 대신 증거**로 판정하도록 실제 part 메타를 로그로 남긴다."""
+    up = SS(account="chezgoga")
+    monkeypatch.setattr("src.collectors.image_norm.fetch_image_bytes",
+                        lambda u, **k: IN.FetchedImage(b"\xff\xd8\xff" + b"x" * 2000,
+                                                       "image/jpeg", "jpg"))
+    monkeypatch.setattr(up, "_get_access_token", lambda: "tok")
+    monkeypatch.setattr("src.uploaders.naver_uploader.relay_request",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("stop")))
+    with caplog.at_level("INFO"):
+        up.upload_images(["https://x/a.jpg"])
+    joined = " ".join(r.getMessage() for r in caplog.records)
+    assert "img.jpg" in joined and "image/jpeg" in joined

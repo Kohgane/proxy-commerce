@@ -315,7 +315,7 @@ class NaverSmartStoreUploader(BaseUploader):
         return u.split('?')[0]
 
     def _fetch_image(self, url: str):
-        """외부 URL → (bytes, filename). 실패/규격미달이면 None.
+        """외부 URL → `FetchedImage`(bytes·content_type·ext). 실패/규격미달이면 None.
 
         **다운로드는 `collectors.image_norm.fetch_image_bytes`에 위임**한다 — 소스 CDN 다운로드는
         마켓 아웃바운드가 아니지만, 이 모듈은 마켓 호출 전용 관문(v87-S7: 직결 requests 금지)이라
@@ -356,9 +356,15 @@ class NaverSmartStoreUploader(BaseUploader):
                     'reason': f'네이버 토큰 발급 실패 — {self.token_error or "사유 미상"}'}
         # multipart 본문을 미리 조립해 **바이트로** 넘긴다 — 릴레이(mkt.php)가 body를 base64로
         #   그대로 전달하므로, 이렇게 하면 직결·릴레이 어느 경로든 같은 요청이 나간다.
-        files = [('imageFiles', (name, body)) for body, name in cleaned]
+        # ★ 카나리 5차 근원: 2-튜플 `(filename, body)`을 주면 requests가 **part Content-Type을 아예
+        #   안 붙인다**(실측). 네이버 PhotoInfra가 part MIME으로 확장자를 판정하면 빈 값 → `.extension`
+        #   거부. 3-튜플로 **filename·바이트·MIME을 한 세트**로 넘긴다 — 셋 다 `FetchedImage` 출처.
+        files = [('imageFiles', (p.filename, p.data, p.content_type)) for p in cleaned]
         prepped = requests.Request('POST', self.API_BASE + self.IMAGE_UPLOAD_PATH,
                                    files=files).prepare()
+        # 카나리 진단: 실제로 나가는 part 메타를 남긴다(다음 반려 때 추측 대신 증거로 판정).
+        logger.info('네이버 이미지 업로드 %d장 — parts=%s', len(cleaned),
+                    ', '.join(f'{p.filename}({p.content_type},{len(p.data)}B)' for p in cleaned))
         headers = {'Authorization': f'Bearer {token}',
                    'Content-Type': prepped.headers['Content-Type']}
         last = ''

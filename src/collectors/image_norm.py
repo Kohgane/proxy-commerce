@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import NamedTuple
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +120,44 @@ _MAGIC = (
 CONVERT_TARGET_EXT = "jpg"       # 미허용 형식의 변환 목적지(네이버 허용 집합의 공통분모)
 _JPEG_QUALITY = 92
 
+# ext → part MIME. `_EXT_BY_CT`의 역방향이며 **정규 MIME 1개**만 둔다(image/jpg 같은 별칭은 수신용).
+_CT_BY_EXT = {'jpg': 'image/jpeg', 'png': 'image/png', 'gif': 'image/gif',
+              'bmp': 'image/bmp', 'webp': 'image/webp'}
+
+
+class FetchedImage(NamedTuple):
+    """이미지 1장의 **3종 세트** — bytes · content_type · ext.
+
+    카나리 5차 근원: 바이트만 변환하고 **멀티파트 메타(filename·part Content-Type)는 따로**
+    계산하면 둘이 어긋난다(이중화). 이 세 값은 `_make_part`에서 **한 번에** 만들어지고,
+    `filename`도 여기서 파생된다 — 조립부가 확장자를 다시 추론할 여지를 없앤다.
+    """
+    data: bytes
+    content_type: str
+    ext: str
+
+    @property
+    def filename(self) -> str:
+        return f"img.{self.ext}"
+
+
+def _make_part(data: bytes, ext: str):
+    """(bytes, ext) → `FetchedImage`. **바이트와 메타가 어긋나면 None**(정직).
+
+    메타를 만들기 전에 매직 바이트로 되읽어 `ext`와 대조한다 — 확장자만 갈아끼운 위장이
+    이 함수를 통과할 수 없다. 미등록 ext(= MIME 미상)도 None.
+    """
+    ext = str(ext or "").lower().lstrip(".")
+    ct = _CT_BY_EXT.get(ext)
+    if not ct:
+        logger.warning("이미지 확장자 %s의 MIME 미상 — 스킵", ext or "미상")
+        return None
+    actual = detect_image_format(data)
+    if actual and actual != ext:
+        logger.warning("이미지 메타 불일치(선언 %s vs 실제 %s) — 스킵", ext, actual)
+        return None
+    return FetchedImage(bytes(data), ct, ext)
+
 
 def detect_image_format(body: bytes) -> str:
     """이미지 바이트 → 확장자(jpg/png/gif/bmp/webp). 못 알아보면 빈 문자열."""
@@ -168,7 +207,7 @@ def convert_image_bytes(body: bytes, *, target: str = CONVERT_TARGET_EXT):
 
 def fetch_image_bytes(url: str, *, min_bytes: int = FETCH_MIN_BYTES, timeout: float = 20.0,
                       allowed_formats=None):
-    """외부 이미지 URL → (bytes, filename). 실패/규격미달이면 None.
+    """외부 이미지 URL → `FetchedImage`(bytes·content_type·ext). 실패/규격미달이면 None.
 
     **소스 CDN에서 받는 다운로드**라 마켓 아웃바운드가 아니다 — 릴레이를 타지 않는다
     (아마존은 우리 IP를 막지 않고, 릴레이 허용 호스트도 아니다). 마켓 API 호출은 반드시
@@ -209,9 +248,14 @@ def fetch_image_bytes(url: str, *, min_bytes: int = FETCH_MIN_BYTES, timeout: fl
             if converted is None:
                 logger.warning("미허용 형식(%s) 변환 실패 — 스킵: %s", ext, u)
                 return None
-            logger.info("이미지 형식 변환 %s → %s: %s", ext, CONVERT_TARGET_EXT, u)
-            return converted, f"img.{CONVERT_TARGET_EXT}"
-    return body, f"img.{ext}"
+            # 변환 결과로 **메타를 다시 만든다** — 바이트만 바꾸고 원본 메타를 쓰면 어긋난다(카나리 5차 근원).
+            part = _make_part(converted, CONVERT_TARGET_EXT)
+            if part is None:
+                return None
+            logger.info("이미지 형식 변환 %s → %s (%s, %dB): %s",
+                        ext, part.ext, part.content_type, len(part.data), u)
+            return part
+    return _make_part(body, ext)
 
 
 def screen_images(urls, *, probe_fn=None, min_px: int = MIN_PX, max_px: int = MAX_PX) -> dict:
