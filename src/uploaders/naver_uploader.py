@@ -1,10 +1,13 @@
 """Naver SmartStore 상품 업로더."""
 
+import copy
+import json
 import logging
 import math
 import os
 import re
 import time
+from pathlib import Path
 
 import requests
 
@@ -76,6 +79,58 @@ class NaverSmartStoreUploader(BaseUploader):
     ORIGIN_AREA_CONTENT = '상세설명에 표시'
     # 이미지 업로드(정본 `naver_img.upload` 상당) — 실패 시 등록 차단(정본과 동일).
     IMAGE_UPLOAD_PATH = '/v1/product-images/upload'
+
+    # ── 정본 페이로드 템플릿(오너 SSH `ss_template.json`) — 카나리 7차 근원 ──────────
+    #   네이버 400: `originProduct.detailAttribute.minorPurchasable NotNull`.
+    #   정본 `ss_upload.py`는 **템플릿의 originProduct 기본값 위에 페이로드를 얹는** 구조인데
+    #   그 템플릿이 미승계라 기본 필드가 비었다. 필드를 **하나씩 때우지 않는다** — 템플릿에 다른
+    #   필수 기본값이 더 있을 개연이 높아 통째 승계가 왕복 최소(택배사 교훈·오너 지시 2항).
+    TEMPLATE_PATH = Path(__file__).with_name('ss_template.json')
+    _template_cache = None
+    _template_warned = False
+
+    @classmethod
+    def payload_template(cls) -> dict:
+        """정본 템플릿(캐시). 파일이 없거나 비었으면 **빈 dict** — 현재 동작 불변(정직).
+
+        `_` 접두 키는 메모용이라 전송 페이로드에서 제외한다(네이버 필드에 `_` 접두는 없다).
+        """
+        if cls._template_cache is None:
+            try:
+                raw = json.loads(cls.TEMPLATE_PATH.read_text(encoding='utf-8'))
+            except FileNotFoundError:
+                raw = {}
+            except Exception as exc:                       # 형식 오류를 조용히 넘기지 않는다
+                logger.error('정본 템플릿(%s) 파싱 실패 — 빈 템플릿으로 진행: %s',
+                             cls.TEMPLATE_PATH.name, exc)
+                raw = {}
+            cls._template_cache = {k: v for k, v in (raw or {}).items()
+                                   if not str(k).startswith('_')}
+        return cls._template_cache
+
+    @classmethod
+    def template_status(cls) -> dict:
+        """템플릿 승계 상태(진단용). 미승계면 `ready=False` — '됐다'고 말하지 않는다."""
+        tpl = cls.payload_template()
+        return {'ready': bool(tpl), 'path': str(cls.TEMPLATE_PATH),
+                'top_keys': sorted(tpl.keys()),
+                'origin_product_keys': sorted((tpl.get('originProduct') or {}).keys())}
+
+    @staticmethod
+    def _deep_merge(base: dict, over: dict) -> dict:
+        """`base`(템플릿 기본값) 위에 `over`(우리 페이로드)를 **깊게** 덮어쓴다.
+
+        얕은 `update`면 우리 페이로드가 `detailAttribute`를 통째로 대입하는 순간 템플릿의
+        형제 기본값(`minorPurchasable` 등)이 **지워진다** — 템플릿을 승계하는 의미가 사라진다.
+        그래서 dict끼리만 재귀하고, 스칼라·리스트는 페이로드가 이긴다(정본: deepcopy 후 덮어쓰기).
+        """
+        for key, val in (over or {}).items():
+            cur = base.get(key)
+            if isinstance(cur, dict) and isinstance(val, dict):
+                NaverSmartStoreUploader._deep_merge(cur, val)
+            else:
+                base[key] = val
+        return base
 
     def __init__(self, account: str = None):
         """Naver SmartStore 업로더 초기화. 환경변수에서 API 키를 읽는다.
@@ -238,7 +293,21 @@ class NaverSmartStoreUploader(BaseUploader):
           · 반품 25,000 / 교환 50,000 · statusType SALE · 재고 999 · 네이버쇼핑 등록 True
           · 출고지/반품지 = 주소 ID(env, 기본값=정본 실증값)
         추측 금지 — 여기 값은 전부 통과 이력이 있는 스크립트에서 온 것이다.
+
+        **조립 순서(정본과 동일)**: `deepcopy(템플릿)` → 그 위에 아래 페이로드를 **깊게** 덮어쓴다.
+        템플릿이 비어 있으면 결과는 페이로드 그대로(현재 동작 불변).
         """
+        payload = self._compose_payload(product)
+        tpl = self.payload_template()
+        if not tpl and not type(self)._template_warned:
+            type(self)._template_warned = True
+            logger.warning('정본 템플릿(%s) 미승계 — originProduct 필수 기본값이 빠질 수 있습니다'
+                           ' (카나리 7차: detailAttribute.minorPurchasable NotNull).',
+                           self.TEMPLATE_PATH.name)
+        return self._deep_merge(copy.deepcopy(tpl), payload)
+
+    def _compose_payload(self, product: dict) -> dict:
+        """우리가 채우는 값만 담은 페이로드(템플릿 오버레이 대상). 기본값은 템플릿이 맡는다."""
         images = [u for u in (product.get('images') or []) if u]
         rep = images[0] if images else ''
         optional = [{'url': u} for u in images[1:]]

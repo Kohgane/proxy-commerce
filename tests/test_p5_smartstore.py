@@ -869,3 +869,91 @@ def test_naver_image_endpoint_is_ip_gated_same_as_product(monkeypatch):
     assert host in MR._API_RELAY_ALLOWED_HOSTS
     assert "smartstore" in MR._IP_GATED_MARKETS
     assert issubclass(MR.RelayError, __import__("requests").exceptions.RequestException)
+
+
+# ── 카나리 7차: 정본 템플릿 기본값 + 페이로드 오버레이 (오너 지시 3항) ──────────────
+# 네이버 400: originProduct.detailAttribute.minorPurchasable NotNull.
+# 근원: 정본 ss_upload.py는 ss_template.json의 originProduct 기본값 **위에** 페이로드를 얹는다.
+# 필드를 하나씩 때우지 않는다(오너 지시 2항) — 템플릿 도착 시 통째 승계.
+
+def test_merge_order_is_template_then_payload(monkeypatch):
+    """조립 순서 = **deepcopy(템플릿) → 페이로드 덮어쓰기**(정본과 동일)."""
+    tpl = {"originProduct": {"detailAttribute": {"minorPurchasable": True},
+                             "statusType": "WAIT", "customField": "정본기본값"}}
+    monkeypatch.setattr(SS, "_template_cache", tpl, raising=False)
+    p = SS(account="chezgoga")._build_product_payload(_PRODUCT)
+    op = p["originProduct"]
+    # ① 템플릿에만 있는 기본값은 **살아남는다**(이번 반려의 그 필드).
+    assert op["detailAttribute"]["minorPurchasable"] is True
+    assert op["customField"] == "정본기본값"
+    # ② 우리가 채우는 값은 템플릿을 **덮는다**(페이로드 우선).
+    assert op["statusType"] == "SALE"
+    assert op["salePrice"] == 894000
+
+
+def test_merge_is_deep_not_shallow(monkeypatch):
+    """얕은 update면 `detailAttribute` 통째 대입이 템플릿 형제 기본값을 **지운다** — 그게 근원이다."""
+    tpl = {"originProduct": {"detailAttribute": {"minorPurchasable": True,
+                                                 "productInfoProvidedNotice": {"a": 1}}}}
+    monkeypatch.setattr(SS, "_template_cache", tpl, raising=False)
+    da = SS(account="chezgoga")._build_product_payload(_PRODUCT)["originProduct"]["detailAttribute"]
+    assert da["minorPurchasable"] is True                 # 형제 기본값 생존
+    assert da["productInfoProvidedNotice"] == {"a": 1}
+    assert da["customsTaxType"] == "PURCHASE_AGENT"       # 우리 값도 함께
+    assert da["originAreaInfo"]["originAreaCode"] == "03"
+
+
+def test_template_is_not_mutated_between_calls(monkeypatch):
+    """deepcopy — 한 번 등록한 값이 캐시된 템플릿을 오염시키면 다음 상품에 샌다."""
+    tpl = {"originProduct": {"detailAttribute": {"minorPurchasable": True}}}
+    monkeypatch.setattr(SS, "_template_cache", tpl, raising=False)
+    up = SS(account="chezgoga")
+    up._build_product_payload({**_PRODUCT, "title": "첫 상품", "sku": "AAA"})
+    second = up._build_product_payload({**_PRODUCT, "title": "둘째 상품", "sku": "BBB"})
+    assert tpl["originProduct"]["detailAttribute"] == {"minorPurchasable": True}   # 원본 불변
+    assert second["originProduct"]["detailAttribute"]["sellerCodeInfo"][
+        "sellerManagementCode"] == "BBB"                  # 이전 상품 값이 새지 않는다
+
+
+def test_empty_template_keeps_current_behaviour(monkeypatch):
+    """템플릿 미도착 = **현재 동작 불변**(가짜 기본값 발명 0)."""
+    monkeypatch.setattr(SS, "_template_cache", {}, raising=False)
+    p = SS(account="chezgoga")._build_product_payload(_PRODUCT)
+    assert p["originProduct"]["statusType"] == "SALE"
+    assert "minorPurchasable" not in p["originProduct"]["detailAttribute"]
+
+
+def test_no_stopgap_field_patch_in_source():
+    """오너 지시 2항 — **임시 배선 금지**. minorPurchasable을 코드에 박지 않는다(템플릿이 준다)."""
+    src = Path("src/uploaders/naver_uploader.py").read_text(encoding="utf-8")
+    code = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
+    assert "'minorPurchasable'" not in code and '"minorPurchasable"' not in code
+
+
+def test_template_status_is_honest():
+    """미승계를 '됐다'고 말하지 않는다 — 진단이 ready=False로 사실을 말한다."""
+    SS._template_cache = None                      # 실제 파일을 읽는다
+    st = SS.template_status()
+    assert st["path"].endswith("ss_template.json")
+    assert isinstance(st["ready"], bool)
+    assert st["ready"] is bool(SS.payload_template())
+
+
+def test_template_note_keys_are_not_sent():
+    """`_` 접두 메모 키는 전송 페이로드에 실리지 않는다."""
+    SS._template_cache = None
+    assert not any(k.startswith("_") for k in SS.payload_template())
+
+
+def test_template_file_is_valid_json():
+    """템플릿 파일은 항상 파싱 가능해야 한다(도착 시 붙여넣기 실수 조기 검출)."""
+    import json as _json
+    raw = _json.loads(Path("src/uploaders/ss_template.json").read_text(encoding="utf-8"))
+    assert isinstance(raw, dict)
+
+
+def test_template_ships_in_docker_image():
+    """`COPY src/`에 포함되는 위치여야 한다 — scripts/ 누락 선례(#423) 재발 방지."""
+    assert Path("src/uploaders/ss_template.json").exists()
+    df = Path("Dockerfile").read_text(encoding="utf-8")
+    assert "COPY src/" in df
