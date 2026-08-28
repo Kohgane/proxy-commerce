@@ -1079,3 +1079,63 @@ def test_structural_defaults_are_inherited(_tpl):
     assert op["detailAttribute"]["minorPurchasable"] is True             # 7차 반려 필드
     assert op["detailAttribute"]["productInfoProvidedNotice"][
         "productInfoProvidedNoticeType"] == "ETC"                        # 타입도 승계
+
+
+# ── 카나리 8차: productInfoProvidedNoticeType NotValidEnum ──────────────────────
+# 실측 근원: #679가 `etc{}` 블록을 만들면서 **타입을 안 넣었다**. 정본 조합은 "ETC" + etc{}.
+
+def test_notice_type_is_canon_etc_when_template_silent(monkeypatch):
+    """빈 템플릿에서도 타입이 **정본 `ETC`**로 나간다 — NotValidEnum 근원 봉인."""
+    monkeypatch.setattr(SS, "_template_cache", {}, raising=False)
+    n = SS(account="chezgoga")._build_product_payload(_PRODUCT)["originProduct"][
+        "detailAttribute"]["productInfoProvidedNotice"]
+    assert n["productInfoProvidedNoticeType"] == "ETC"      # 대문자 정본 그대로
+    assert SS.CANON_NOTICE_TYPE == "ETC"
+    assert "etc" in n                                        # "ETC" + etc{} 조합
+
+
+def test_notice_type_is_not_in_override(monkeypatch):
+    """② 타입은 **오버라이드 대상이 아니다** — 우리 페이로드가 타입을 들고 있으면 정본을 덮어버린다."""
+    monkeypatch.setattr(SS, "_template_cache", {}, raising=False)
+    composed = SS(account="chezgoga")._compose_payload(_PRODUCT)
+    notice = composed["originProduct"]["detailAttribute"]["productInfoProvidedNotice"]
+    assert "productInfoProvidedNoticeType" not in notice, "오버라이드가 타입을 들고 있다"
+    assert set(notice["etc"]) == {"itemName", "modelName", "manufacturer", "afterServiceDirector"}
+
+
+def test_template_notice_type_wins_over_fallback(monkeypatch):
+    """폴백은 **비었을 때만** — 템플릿이 타입을 주면 그쪽이 이긴다(다른 카테고리는 다른 타입)."""
+    monkeypatch.setattr(SS, "_template_cache", {"originProduct": {"detailAttribute": {
+        "productInfoProvidedNotice": {"productInfoProvidedNoticeType": "WEAR",
+                                      "wear": {"material": "면"}}}}}, raising=False)
+    n = SS(account="chezgoga")._build_product_payload(_PRODUCT)["originProduct"][
+        "detailAttribute"]["productInfoProvidedNotice"]
+    assert n["productInfoProvidedNoticeType"] == "WEAR"      # 우리가 안 덮는다
+    assert n["wear"] == {"material": "면"}
+
+
+def test_notice_common_clauses_inherited_untouched(monkeypatch):
+    """③ 상품 무관 공통 문구는 **템플릿 값 그대로 승계** — 오버라이드 불필요."""
+    common = {"returnCostReason": "단순변심 반품비 부담",
+              "noRefundReason": "사용 흔적 시 불가",
+              "qualityAssuranceStandard": "관련법 및 소비자분쟁해결기준에 따름",
+              "compensationProcedure": "소비자분쟁해결기준에 따름",
+              "troubleShootingContents": "고객센터 문의"}
+    monkeypatch.setattr(SS, "_template_cache", {"originProduct": {"detailAttribute": {
+        "productInfoProvidedNotice": {"productInfoProvidedNoticeType": "ETC",
+                                      "etc": {**common, "itemName": "HARVEST LABEL 토트백",
+                                              "modelName": "hgl-0187",
+                                              "manufacturer": "HARVEST LABEL"}}}}}, raising=False)
+    p = SS(account="chezgoga")._build_product_payload(_PRODUCT)
+    etc = p["originProduct"]["detailAttribute"]["productInfoProvidedNotice"]["etc"]
+    for k, v in common.items():
+        assert etc[k] == v, k                                # 공통 문구 5종 생존
+    assert etc["itemName"] == "Fellow Stagg 주전자"           # 상품별 값은 우리 것
+    assert SS.find_template_leaks(p) == []                   # 예시값 잔존 0
+
+
+def test_notice_type_survives_full_payload(monkeypatch):
+    """전송 페이로드 전체에서 타입이 살아 있는지(중간 병합이 지우지 않는지) 최종 확인."""
+    monkeypatch.setattr(SS, "_template_cache", {}, raising=False)
+    blob = json.dumps(SS(account="chezgoga")._build_product_payload(_PRODUCT), ensure_ascii=False)
+    assert '"productInfoProvidedNoticeType": "ETC"' in blob
