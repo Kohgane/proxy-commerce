@@ -1,6 +1,20 @@
 # CLAUDE.md — 고가브릿지(gogabridj) 프로젝트 지침
 > 이 파일은 Claude Code가 **매 세션 항상 로드**한다. 디자인·스킬·커넥터 사용 규칙을 여기서 강제한다.
 
+## ⭐ 세션 시작 1단계 = 레포 동기 확인 (오너 2026-08-28 — 컨테이너 역행 3회 재발)
+- **어떤 작업이든 착수 전에 `git fetch origin main` → `HEAD == origin/main` 확인.** 불일치면 **재동기화 후 착수.**
+  ```
+  git fetch origin main && git rev-parse HEAD && git rev-parse origin/main   # 같은가?
+  git fetch origin main && git reset --hard origin/main && git checkout -B <작업브랜치> origin/main
+  ```
+- **증상:** 원격 컨테이너가 리포를 옛 커밋으로 되돌려 놓는다(실측: `d45e9008`로 48커밋 역행 — #663~#676 소실).
+  모르고 작업하면 **이미 머지된 수리 위에 옛 코드를 얹고**, 전체 스위트 숫자도 무효가 된다.
+- **역행 감지법(사람 눈):** *최근 머지한 파일·심볼이 없다* — 있어야 할 import 누락, 테스트 수 급감,
+  방금 만든 함수가 사라짐. 이런 게 보이면 **즉시 `git log --oneline -1`**.
+- 자동화: `.claude/hooks/session_start_repo_sync.sh`(SessionStart 훅)가 매 세션 첫 줄에 일치 여부를 보고한다.
+  **훅은 감지·보고만 한다 — 자동 reset 금지**(미커밋 작업 소실 방지). 앞선 커밋/미커밋 변경이 있으면 무엇을 살릴지 먼저 판단.
+- 상세·재발 이력 = 볼트 `지뢰/컨테이너 레포 역행`.
+
 ## ⭐ 세션 시작 = 볼트 pull 먼저 (단일 진실원천)
 - 지식·규율·결정·인프라의 **정본 = 옵시디언 볼트 `Kohgane/kohgane-vault`(private)**. 관제탑 `00_HOME.md` → 프로젝트/지뢰/결정/인프라/런북.
 - **세션 시작 시 볼트를 먼저 clone/pull**해 `프로젝트/고가브릿지`·연결 지뢰(`공허한 그린 부검`·`표시본 재처리 지뢰`·`장부·draft 규율`)·`고가브릿지 번역체인`·`고가브릿지 대기함`을 읽는다.
