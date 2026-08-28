@@ -14,6 +14,7 @@
 """
 from __future__ import annotations
 
+import json
 import random
 from pathlib import Path
 
@@ -893,12 +894,13 @@ def test_merge_order_is_template_then_payload(monkeypatch):
 
 def test_merge_is_deep_not_shallow(monkeypatch):
     """얕은 update면 `detailAttribute` 통째 대입이 템플릿 형제 기본값을 **지운다** — 그게 근원이다."""
+    # 형제 기본값은 **우리가 건드리지 않는** 서브트리로 잡는다(고시정보는 이제 우리가 덮는다).
     tpl = {"originProduct": {"detailAttribute": {"minorPurchasable": True,
-                                                 "productInfoProvidedNotice": {"a": 1}}}}
+                                                 "seoInfo": {"sellerTags": [{"text": "정본"}]}}}}
     monkeypatch.setattr(SS, "_template_cache", tpl, raising=False)
     da = SS(account="chezgoga")._build_product_payload(_PRODUCT)["originProduct"]["detailAttribute"]
     assert da["minorPurchasable"] is True                 # 형제 기본값 생존
-    assert da["productInfoProvidedNotice"] == {"a": 1}
+    assert da["seoInfo"] == {"sellerTags": [{"text": "정본"}]}
     assert da["customsTaxType"] == "PURCHASE_AGENT"       # 우리 값도 함께
     assert da["originAreaInfo"]["originAreaCode"] == "03"
 
@@ -957,3 +959,123 @@ def test_template_ships_in_docker_image():
     assert Path("src/uploaders/ss_template.json").exists()
     df = Path("Dockerfile").read_text(encoding="utf-8")
     assert "COPY src/" in df
+
+
+# ── 카나리 8차 준비: 정본 템플릿의 **상품별 예시값 오염 차단** (오너 지시 4항) ──────
+# 오너 실측: 템플릿에 하베스트라벨 상품의 예시값이 남아 있다(itemName·modelName·manufacturer).
+# 이게 살아 나가면 **남의 상품 정보로 등록**하는 것 — 정직 데이터 위반이자 마켓 제재 사유.
+
+_TPL_FIXTURE = {                       # 오너가 지목한 실제 값들로 재현(파일 미도착 → 값만 인용)
+    "originProduct": {
+        "saleType": "NEW",
+        "detailAttribute": {
+            "minorPurchasable": True,
+            "customsTaxType": "NOT_APPLICABLE",
+            "sellerCodeInfo": {"sellerManagementCode": "hgl-0187"},
+            "productInfoProvidedNotice": {
+                "productInfoProvidedNoticeType": "ETC",
+                "etc": {"itemName": "HARVEST LABEL 하베스트라벨 토트백",
+                        "modelName": "hgl-0187",
+                        "manufacturer": "HARVEST LABEL",
+                        "afterServiceDirector": "070-0000-0000"}},
+        },
+        "deliveryInfo": {"businessCustomsClearanceSaleYn": True, "deliveryCompany": "CJGLS",
+                         "claimDeliveryInfo": {"shippingAddressId": 107519663}},
+    }
+}
+
+
+@pytest.fixture
+def _tpl(monkeypatch):
+    import copy as _copy
+    monkeypatch.setattr(SS, "_template_cache", _copy.deepcopy(_TPL_FIXTURE), raising=False)
+    return SS(account="chezgoga")
+
+
+def test_notice_etc_is_overridden_with_our_product(_tpl):
+    """① 고시정보 etc = **우리 상품 값**(쿠팡 고시와 같은 소스: 상품명·SKU·수집 브랜드·env 연락처)."""
+    etc = _tpl._build_product_payload(_PRODUCT)["originProduct"]["detailAttribute"][
+        "productInfoProvidedNotice"]["etc"]
+    assert etc["itemName"] == "Fellow Stagg 주전자"
+    assert etc["modelName"] == "B0GS4698H2"
+    assert etc["manufacturer"] == "Fellow"
+    assert "HARVEST" not in json.dumps(etc, ensure_ascii=False)
+
+
+def test_notice_as_director_from_env(monkeypatch):
+    """afterServiceDirector = env 연락처. 미설정이면 **빈 값**(예시 연락처를 물려받지 않는다)."""
+    import copy as _copy
+    monkeypatch.setattr(SS, "_template_cache", _copy.deepcopy(_TPL_FIXTURE), raising=False)
+    monkeypatch.setenv("NAVER_CHEZGOGA_AS_PHONE", "02-1234-5678")
+    etc = SS(account="chezgoga")._build_product_payload(_PRODUCT)["originProduct"][
+        "detailAttribute"]["productInfoProvidedNotice"]["etc"]
+    assert etc["afterServiceDirector"] == "02-1234-5678"
+    monkeypatch.delenv("NAVER_CHEZGOGA_AS_PHONE")
+    etc2 = SS(account="chezgoga")._build_product_payload(_PRODUCT)["originProduct"][
+        "detailAttribute"]["productInfoProvidedNotice"]["etc"]
+    assert etc2["afterServiceDirector"] == ""          # 예시값 070-0000-0000 이 아니다
+
+
+def test_no_example_values_survive_in_payload(_tpl):
+    """① 계약 본체 — 전송 페이로드에 `HARVEST LABEL`·`hgl-0187` **잔존 0**."""
+    blob = json.dumps(_tpl._build_product_payload(_PRODUCT), ensure_ascii=False)
+    assert "HARVEST LABEL" not in blob
+    assert "hgl-0187" not in blob
+    assert _tpl.find_template_leaks(_tpl._build_product_payload(_PRODUCT)) == []
+
+
+def test_leak_scanner_catches_field_we_do_not_override():
+    """필드를 **빠뜨리면 조용히 샌다** — 값 기준 전수 스캔이 그걸 잡는다(필드 열거 방식의 한계 보완)."""
+    leaked = {"originProduct": {"detailAttribute": {"productInfoProvidedNotice": {
+        "etc": {"certificateDetails": "HARVEST LABEL 인증"}}}}}
+    found = SS.find_template_leaks(leaked)
+    assert len(found) == 1
+    assert found[0]["path"].endswith("etc.certificateDetails")
+    assert found[0]["token"] == "HARVEST LABEL"
+
+
+def test_leak_blocks_registration(monkeypatch):
+    """유출이 남으면 **등록 중단**(held) — 남의 상품 정보로 등록하느니 멈춘다(택배사 게이트 동형)."""
+    up = SS(account="chezgoga")
+    monkeypatch.setattr(up, "_build_product_payload",
+                        lambda p: {"originProduct": {"name": "HARVEST LABEL 토트백"}})
+    monkeypatch.setattr(up, "_api_request",
+                        lambda *a, **k: pytest.fail("유출 상태로 네이버에 보내면 안 된다"))
+    out = up.upload_product({"sku": "X1", "images": []})
+    assert out["success"] is False and out["held"] is True
+    assert "템플릿 예시값" in out["error"] and "HARVEST LABEL" in out["error"]
+
+
+def test_extra_leak_tokens_from_env(monkeypatch):
+    """예시값이 더 발견되면 배포 없이 env로 막는다(`NAVER_TEMPLATE_EXAMPLE_TOKENS`)."""
+    monkeypatch.setenv("NAVER_TEMPLATE_EXAMPLE_TOKENS", "샘플상호, 000-0000")
+    found = SS.find_template_leaks({"a": {"b": "샘플상호 주식회사"}})
+    assert found and found[0]["token"] == "샘플상호"
+
+
+def test_env_address_beats_template(_tpl, monkeypatch):
+    """② 주소 ID 우선순위 = **env > 템플릿**. 템플릿 107519663 이 아니라 정본 107519271 이 나간다."""
+    cdi = _tpl._build_product_payload(_PRODUCT)["originProduct"]["deliveryInfo"]["claimDeliveryInfo"]
+    assert cdi["shippingAddressId"] == 107519271
+    assert SS.DEFAULT_ADDRESS_IDS["chezgoga"]["ship"] == "107519271"     # 정본 스크립트 값
+    monkeypatch.setenv("NAVER_CHEZGOGA_SHIP_ADDRESS_ID", "999111")       # env가 최우선
+    assert SS(account="chezgoga")._build_product_payload(
+        _PRODUCT)["originProduct"]["deliveryInfo"]["claimDeliveryInfo"]["shippingAddressId"] == 999111
+
+
+def test_customs_and_seller_code_override_template(_tpl):
+    """③ 구매대행 통관·판매자코드는 **우리 값이 이긴다**(정본 ss_upload의 da 덮어쓰기 순서)."""
+    da = _tpl._build_product_payload(_PRODUCT)["originProduct"]["detailAttribute"]
+    assert da["customsTaxType"] == "PURCHASE_AGENT"          # 템플릿 NOT_APPLICABLE 아님
+    assert da["sellerCodeInfo"]["sellerManagementCode"] == "B0GS4698H2"   # hgl-0187 아님
+
+
+def test_structural_defaults_are_inherited(_tpl):
+    """④ 구조 기본값은 **그대로 승계** — 우리가 안 채우는 필드는 템플릿이 맡는다."""
+    p = _tpl._build_product_payload(_PRODUCT)
+    op, di = p["originProduct"], p["originProduct"]["deliveryInfo"]
+    assert di["businessCustomsClearanceSaleYn"] is True
+    assert di["deliveryCompany"] == "CJGLS"
+    assert op["detailAttribute"]["minorPurchasable"] is True             # 7차 반려 필드
+    assert op["detailAttribute"]["productInfoProvidedNotice"][
+        "productInfoProvidedNoticeType"] == "ETC"                        # 타입도 승계
