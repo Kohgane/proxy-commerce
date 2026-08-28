@@ -88,6 +88,11 @@ class NaverSmartStoreUploader(BaseUploader):
     TEMPLATE_PATH = Path(__file__).with_name('ss_template.json')
     _template_cache = None
     _template_warned = False
+    # 템플릿에 남아 있는 **상품별 예시값**(오너 실측: 하베스트라벨 건). 이게 페이로드에 살아 나가면
+    #   남의 상품 정보를 우리 상품에 붙여 등록하는 것 — 정직 데이터 위반이자 마켓 제재 사유다.
+    #   우리가 덮어야 할 필드를 하나라도 빠뜨리면 조용히 새므로 **전송 직전 게이트**로 막는다.
+    #   env `NAVER_TEMPLATE_EXAMPLE_TOKENS`(쉼표 구분)로 추가 가능.
+    TEMPLATE_EXAMPLE_TOKENS = ('HARVEST LABEL', 'hgl-0187')
 
     @classmethod
     def payload_template(cls) -> dict:
@@ -115,6 +120,36 @@ class NaverSmartStoreUploader(BaseUploader):
         return {'ready': bool(tpl), 'path': str(cls.TEMPLATE_PATH),
                 'top_keys': sorted(tpl.keys()),
                 'origin_product_keys': sorted((tpl.get('originProduct') or {}).keys())}
+
+    @classmethod
+    def _example_tokens(cls) -> tuple:
+        extra = [t.strip() for t in os.getenv('NAVER_TEMPLATE_EXAMPLE_TOKENS', '').split(',')
+                 if t.strip()]
+        return tuple(cls.TEMPLATE_EXAMPLE_TOKENS) + tuple(extra)
+
+    @classmethod
+    def find_template_leaks(cls, payload) -> list:
+        """전송 페이로드에 **템플릿 예시값이 남았는지** 전수 스캔. 반환 [{'path','token','value'}].
+
+        우리가 덮을 필드를 하나 빠뜨리면 남의 상품명·SKU가 그대로 나간다(하베스트라벨 건).
+        필드명을 열거해 막으면 또 빠뜨리므로 **값 기준으로 전수 검사**한다.
+        """
+        tokens = cls._example_tokens()
+        found = []
+
+        def _walk(node, path):
+            if isinstance(node, dict):
+                for k, v in node.items():
+                    _walk(v, f'{path}.{k}' if path else str(k))
+            elif isinstance(node, (list, tuple)):
+                for i, v in enumerate(node):
+                    _walk(v, f'{path}[{i}]')
+            elif isinstance(node, str):
+                for t in tokens:
+                    if t and t.lower() in node.lower():
+                        found.append({'path': path, 'token': t, 'value': node[:80]})
+        _walk(payload, '')
+        return found
 
     @staticmethod
     def _deep_merge(base: dict, over: dict) -> dict:
@@ -204,6 +239,14 @@ class NaverSmartStoreUploader(BaseUploader):
                                 '; '.join(s['reason'] for s in shot['skipped']))
                 product = {**product, 'images': shot['urls']}
             payload = self._build_product_payload(product)
+            # 템플릿 예시값 유출 게이트 — 남의 상품 정보로 등록하느니 **중단**한다(택배사 게이트 동형).
+            leaks = self.find_template_leaks(payload)
+            if leaks:
+                detail = '; '.join(f"{l['path']}={l['value']}" for l in leaks[:3])
+                logger.error('템플릿 예시값 유출 %d건 — 등록 중단 sku=%s: %s',
+                             len(leaks), product.get('sku', ''), detail)
+                return {'success': False, 'held': True, 'sku': product.get('sku', ''),
+                        'error': f'템플릿 예시값이 페이로드에 남아 등록 중단({len(leaks)}건): {detail}'}
             path = '/v2/products'
             result = self._api_request('POST', path, data=payload)
             if 'error' in result:
@@ -356,7 +399,19 @@ class NaverSmartStoreUploader(BaseUploader):
                         'content': self.ORIGIN_AREA_CONTENT,
                     },
                     'sellerCodeInfo': {'sellerManagementCode': product.get('sku', '')},
-                    # 구매대행 통관(정본).
+                    # ★ 상품고시정보 — 템플릿 예시값(하베스트라벨) 위에 **우리 상품 값을 반드시 덮는다**.
+                    #   출처는 쿠팡 고시정보와 **같은 소스**: 상품명·SKU·수집 브랜드·AS 연락처(env).
+                    #   비어 있으면 빈 값으로 덮는다 — 남의 브랜드를 붙여 등록하느니 네이버가
+                    #   '필수값 없음'으로 거부하는 편이 정직하다(가짜 정보 0).
+                    'productInfoProvidedNotice': {
+                        'etc': {
+                            'itemName': (product.get('title') or '')[:100],
+                            'modelName': product.get('sku', ''),
+                            'manufacturer': product.get('brand', ''),
+                            'afterServiceDirector': self._acct_env('NAVER_AS_PHONE'),
+                        },
+                    },
+                    # 구매대행 통관(정본) — 템플릿의 NOT_APPLICABLE을 덮는다(우리가 구매대행이다).
                     'customsTaxType': self.CUSTOMS_TAX_TYPE,
                 },
             },
