@@ -93,6 +93,10 @@ class NaverSmartStoreUploader(BaseUploader):
     #   우리가 덮어야 할 필드를 하나라도 빠뜨리면 조용히 새므로 **전송 직전 게이트**로 막는다.
     #   env `NAVER_TEMPLATE_EXAMPLE_TOKENS`(쉼표 구분)로 추가 가능.
     TEMPLATE_EXAMPLE_TOKENS = ('HARVEST LABEL', 'hgl-0187')
+    # 상품고시정보 타입 — **정본 값 그대로**(오너 실측: 통과 이력 조합 = "ETC"(대문자) + `etc{}` 블록).
+    #   카나리 8차 근원: 우리가 `etc{}`만 넣고 **타입을 안 넣어** 네이버가 NotValidEnum.
+    #   이 값은 **오버라이드가 아니라 폴백**이다 — 템플릿이 타입을 주면 그쪽이 이긴다(정본 우선).
+    CANON_NOTICE_TYPE = 'ETC'
 
     @classmethod
     def payload_template(cls) -> dict:
@@ -347,7 +351,23 @@ class NaverSmartStoreUploader(BaseUploader):
             logger.warning('정본 템플릿(%s) 미승계 — originProduct 필수 기본값이 빠질 수 있습니다'
                            ' (카나리 7차: detailAttribute.minorPurchasable NotNull).',
                            self.TEMPLATE_PATH.name)
-        return self._deep_merge(copy.deepcopy(tpl), payload)
+        merged = self._deep_merge(copy.deepcopy(tpl), payload)
+        self._ensure_notice_type(merged)
+        return merged
+
+    @classmethod
+    def _ensure_notice_type(cls, payload: dict) -> dict:
+        """상품고시정보 타입 보정 — **없을 때만** 정본 `ETC`를 채운다(오버라이드 아님).
+
+        카나리 8차: `etc{}` 블록만 있고 타입이 없어 `productInfoProvidedNoticeType NotValidEnum`.
+        정본 조합은 `"ETC"` + `etc{}`이므로 타입이 비면 그 값을 채우고, 템플릿이 이미 타입을
+        주고 있으면 **손대지 않는다**(정본이 우선 — 다른 카테고리는 다른 타입을 쓸 수 있다).
+        """
+        notice = (((payload or {}).get('originProduct') or {})
+                  .get('detailAttribute') or {}).get('productInfoProvidedNotice')
+        if isinstance(notice, dict) and not str(notice.get('productInfoProvidedNoticeType') or '').strip():
+            notice['productInfoProvidedNoticeType'] = cls.CANON_NOTICE_TYPE
+        return payload
 
     def _compose_payload(self, product: dict) -> dict:
         """우리가 채우는 값만 담은 페이로드(템플릿 오버레이 대상). 기본값은 템플릿이 맡는다."""
