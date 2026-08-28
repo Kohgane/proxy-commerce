@@ -1,3 +1,78 @@
 {
-  "_note": "정본 ss_template.json 미도착 — 오너 회수 대기(카나리 7차). 빈 템플릿이면 현재 동작 불변. 도착하면 originProduct 기본값 전체를 여기에 통째로 넣는다(필드 하나씩 때우기 금지). `_` 접두 키는 전송 페이로드에서 제외된다."
+ "originProduct": {
+  "statusType": "SALE",
+  "saleType": "NEW",
+  "leafCategoryId": "50000646",
+  "name": "하베스트라벨 ReLoad 숄더백 HGL-0187",
+  "detailContent": "<div style=\"max-width:780px;margin:0 auto\"><img src=\"https://shop-phinf.pstatic.net/20260709_200/1783525778947S3ERU_JPEG/6602723003814788_1003757273.jpg\" style=\"max-width:100%\" /><br /><h3>하베스트라벨 ReLoad 숄더백 HGL-0187</h3><p>일본 장인이 만든 하베스트라벨(HARVEST LABEL)의 헤리티지 가방. 밀리터리&middot;항공 헤리티지에서 온 견고한 캔버스와 가죽, 세월이 지날수록 깊어지는 물건. Made in Japan.</p><img src=\"https://shop-phinf.pstatic.net/20260709_50/1783525781939RRDI8_JPEG/15497403613265028_1550498517.jpg\" style=\"max-width:100%\" /><br /><img src=\"https://shop-phinf.pstatic.net/20260709_281/17835257851570cep6_JPEG/3615600977476925_1850986368.jpg\" style=\"max-width:100%\" /><br /><div style=\"margin-top:20px;padding:16px;background:#f6f4ef;font-size:12px;color:#666\">일본 구매대행 상품입니다. 관&middot;부가세 포함가이며 배송 7~14일 소요될 수 있습니다. 큐레이션 &middot; KOHGANE</div></div>",
+  "images": {
+   "representativeImage": {"url": "https://shop-phinf.pstatic.net/20260709_200/1783525778947S3ERU_JPEG/6602723003814788_1003757273.jpg"},
+   "optionalImages": [
+    {"url": "https://shop-phinf.pstatic.net/20260709_50/1783525781939RRDI8_JPEG/15497403613265028_1550498517.jpg"},
+    {"url": "https://shop-phinf.pstatic.net/20260709_281/17835257851570cep6_JPEG/3615600977476925_1850986368.jpg"}
+   ]
+  },
+  "salePrice": 199900,
+  "stockQuantity": 999,
+  "deliveryInfo": {
+   "deliveryType": "DELIVERY",
+   "deliveryAttributeType": "NORMAL",
+   "deliveryCompany": "CJGLS",
+   "deliveryBundleGroupUsable": false,
+   "deliveryFee": {"deliveryFeeType": "FREE", "baseFee": 0},
+   "claimDeliveryInfo": {
+    "returnDeliveryCompanyPriorityType": "PRIMARY",
+    "returnDeliveryFee": 5000,
+    "exchangeDeliveryFee": 10000,
+    "shippingAddressId": 107519663,
+    "returnAddressId": 107519270,
+    "freeReturnInsuranceYn": false
+   },
+   "installationFee": false,
+   "businessCustomsClearanceSaleYn": true
+  },
+  "detailAttribute": {
+   "afterServiceInfo": {
+    "afterServiceTelephoneNumber": "010-4526-8127",
+    "afterServiceGuideContent": "판매자 고객센터"
+   },
+   "originAreaInfo": {"originAreaCode": "03", "content": "상세설명에 표시", "plural": false},
+   "sellerCodeInfo": {"sellerManagementCode": "hgl-0187"},
+   "optionInfo": {
+    "simpleOptionSortType": "CREATE",
+    "optionSimple": [], "optionCustom": [],
+    "optionCombinationSortType": "CREATE",
+    "standardOptionGroups": [], "optionStandards": [],
+    "useStockManagement": true, "optionDeliveryAttributes": []
+   },
+   "purchaseReviewInfo": {"purchaseReviewExposure": true},
+   "taxType": "TAX",
+   "customsTaxType": "NOT_APPLICABLE",
+   "certificationTargetExcludeContent": {},
+   "sellerCommentUsable": false,
+   "minorPurchasable": true,
+   "productInfoProvidedNotice": {
+    "productInfoProvidedNoticeType": "ETC",
+    "etc": {
+     "returnCostReason": "단순변심 왕복배송비",
+     "noRefundReason": "개봉후 단순변심 반품불가",
+     "qualityAssuranceStandard": "소비자분쟁해결기준",
+     "compensationProcedure": "고객센터 협의",
+     "troubleShootingContents": "고객센터 협의",
+     "itemName": "하베스트라벨 ReLoad 숄더백 HGL-0187",
+     "modelName": "hgl-0187",
+     "manufacturer": "HARVEST LABEL",
+     "afterServiceDirector": "010-4526-8127"
+    }
+   },
+   "itselfProductionProductYn": false
+  },
+  "customerBenefit": {}
+ },
+ "smartstoreChannelProduct": {
+  "channelProductName": "하베스트라벨 ReLoad 숄더백 HGL-0187",
+  "storeKeepExclusiveProduct": false,
+  "naverShoppingRegistration": true,
+  "channelProductDisplayStatusType": "ON"
+ }
 }

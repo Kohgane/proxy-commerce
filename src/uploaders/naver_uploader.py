@@ -125,11 +125,45 @@ class NaverSmartStoreUploader(BaseUploader):
                 'top_keys': sorted(tpl.keys()),
                 'origin_product_keys': sorted((tpl.get('originProduct') or {}).keys())}
 
+    # 템플릿에서 **상품별 값**이 들어 있는 경로(구조 기본값과 구분). 여기 값들은 전부 우리가 덮어야 한다.
+    TEMPLATE_PRODUCT_PATHS = (
+        ('originProduct', 'name'),
+        ('originProduct', 'detailContent'),
+        ('originProduct', 'images', 'representativeImage', 'url'),
+        ('originProduct', 'detailAttribute', 'sellerCodeInfo', 'sellerManagementCode'),
+        ('originProduct', 'detailAttribute', 'productInfoProvidedNotice', 'etc', 'itemName'),
+        ('originProduct', 'detailAttribute', 'productInfoProvidedNotice', 'etc', 'modelName'),
+        ('originProduct', 'detailAttribute', 'productInfoProvidedNotice', 'etc', 'manufacturer'),
+        ('smartstoreChannelProduct', 'channelProductName'),
+    )
+
+    @classmethod
+    def template_product_values(cls) -> tuple:
+        """템플릿에 박힌 **상품별 값**들. 토큰을 손으로 나열하지 않아도 템플릿이 바뀌면 따라온다.
+
+        `optionalImages`는 리스트라 별도로 훑는다. 구조 기본값(CJGLS·ETC 등)은 여기 안 들어온다 —
+        경로를 명시했기 때문(값 전체를 긁으면 정상 값까지 유출로 오판한다).
+        """
+        tpl = cls.payload_template()
+        out = []
+        for path in cls.TEMPLATE_PRODUCT_PATHS:
+            node = tpl
+            for key in path:
+                node = (node or {}).get(key) if isinstance(node, dict) else None
+            if isinstance(node, str) and node.strip():
+                out.append(node.strip())
+        for img in (((tpl.get('originProduct') or {}).get('images') or {})
+                    .get('optionalImages') or []):
+            url = (img or {}).get('url') if isinstance(img, dict) else None
+            if isinstance(url, str) and url.strip():
+                out.append(url.strip())
+        return tuple(out)
+
     @classmethod
     def _example_tokens(cls) -> tuple:
         extra = [t.strip() for t in os.getenv('NAVER_TEMPLATE_EXAMPLE_TOKENS', '').split(',')
                  if t.strip()]
-        return tuple(cls.TEMPLATE_EXAMPLE_TOKENS) + tuple(extra)
+        return tuple(cls.TEMPLATE_EXAMPLE_TOKENS) + cls.template_product_values() + tuple(extra)
 
     @classmethod
     def find_template_leaks(cls, payload) -> list:
@@ -150,8 +184,10 @@ class NaverSmartStoreUploader(BaseUploader):
                     _walk(v, f'{path}[{i}]')
             elif isinstance(node, str):
                 for t in tokens:
+                    # 같은 경로가 여러 토큰(하드코딩·템플릿 파생)에 걸려도 **1건**으로 보고한다.
                     if t and t.lower() in node.lower():
                         found.append({'path': path, 'token': t, 'value': node[:80]})
+                        break
         _walk(payload, '')
         return found
 
@@ -436,6 +472,9 @@ class NaverSmartStoreUploader(BaseUploader):
                 },
             },
             'smartstoreChannelProduct': {
+                # ★ 실측 유출 지점(카나리 9차 준비): 템플릿의 channelProductName이 남의 상품명이었다.
+                #   `originProduct.name`과 **같은 소스**로 덮는다 — 스토어 노출명이 상품명과 어긋나면 안 된다.
+                'channelProductName': (product.get('title') or '')[:100],
                 'channelProductDisplayStatusType': 'ON',
                 'naverShoppingRegistration': self.NAVER_SHOPPING_REGISTRATION,
             },

@@ -51,8 +51,10 @@ def test_payload_carries_canon(monkeypatch):
     assert op["salePrice"] == 894000
     da = op["detailAttribute"]
     assert da["customsTaxType"] == "PURCHASE_AGENT"
-    # ★ 원산지는 쿠팡과 다른 축 — 스마트스토어 허용 문구.
-    assert da["originAreaInfo"] == {"originAreaCode": "03", "content": "상세설명에 표시"}
+    # ★ 원산지는 쿠팡과 다른 축 — 스마트스토어 허용 문구. 우리 2필드 + 템플릿 `plural` 승계.
+    assert da["originAreaInfo"]["originAreaCode"] == "03"
+    assert da["originAreaInfo"]["content"] == "상세설명에 표시"
+    assert da["originAreaInfo"]["plural"] is False          # 정본 템플릿 기본값 생존
     assert da["sellerCodeInfo"]["sellerManagementCode"] == "B0GS4698H2"
     cdi = op["deliveryInfo"]["claimDeliveryInfo"]
     assert cdi["returnDeliveryFee"] == 25000 and cdi["exchangeDeliveryFee"] == 50000
@@ -1139,3 +1141,124 @@ def test_notice_type_survives_full_payload(monkeypatch):
     monkeypatch.setattr(SS, "_template_cache", {}, raising=False)
     blob = json.dumps(SS(account="chezgoga")._build_product_payload(_PRODUCT), ensure_ascii=False)
     assert '"productInfoProvidedNoticeType": "ETC"' in blob
+
+
+# ── 정본 템플릿 승계 실측 (오너 전문 전달, 2026-08-28) ─────────────────────────────
+# 판정 규율: **오류 문구 소멸로 판정 금지** — 병합 후 페이로드를 직접 본다(8차 교훈).
+
+@pytest.fixture
+def _real_tpl(monkeypatch):
+    """실제 `ss_template.json`(정본)으로 조립. 캐시를 비워 파일에서 다시 읽는다."""
+    monkeypatch.setattr(SS, "_template_cache", None, raising=False)
+    up = SS(account="chezgoga")
+    return up, up._build_product_payload(_PRODUCT)
+
+
+def test_real_template_is_loaded():
+    """template_status() ready=True + originProduct 키 실존."""
+    SS._template_cache = None
+    st = SS.template_status()
+    assert st["ready"] is True
+    assert set(st["top_keys"]) == {"originProduct", "smartstoreChannelProduct"}
+    for key in ("name", "detailContent", "images", "deliveryInfo", "detailAttribute",
+                "leafCategoryId", "salePrice", "stockQuantity", "saleType", "statusType"):
+        assert key in st["origin_product_keys"], key
+
+
+def test_minor_purchasable_present_in_payload(_real_tpl):
+    """7차 반려 필드가 **페이로드에 실존**(문구 소멸이 아니라 값으로 확인)."""
+    _, p = _real_tpl
+    assert p["originProduct"]["detailAttribute"]["minorPurchasable"] is True
+
+
+def test_notice_type_kept_from_template(_real_tpl):
+    """8차 반려 필드 — 템플릿의 `ETC`가 그대로 유지된다."""
+    _, p = _real_tpl
+    assert p["originProduct"]["detailAttribute"][
+        "productInfoProvidedNotice"]["productInfoProvidedNoticeType"] == "ETC"
+
+
+def test_no_template_example_survives_anywhere(_real_tpl):
+    """예시값 잔존 0 — 상품명·SKU·브랜드·상세HTML·pstatic 이미지 URL 전부."""
+    up, p = _real_tpl
+    blob = json.dumps(p, ensure_ascii=False)
+    for token in ("HARVEST LABEL", "hgl-0187", "HGL-0187", "하베스트라벨",
+                  "shop-phinf.pstatic.net", "ReLoad 숄더백"):
+        assert token not in blob, token
+    assert up.find_template_leaks(p) == []
+
+
+def test_channel_product_name_is_ours(_real_tpl):
+    """실측으로 잡힌 유출 지점 — 스토어 노출명도 우리 상품명."""
+    _, p = _real_tpl
+    assert p["smartstoreChannelProduct"]["channelProductName"] == "Fellow Stagg 주전자"
+    assert p["originProduct"]["name"] == "Fellow Stagg 주전자"      # 같은 소스
+
+
+def test_template_derived_tokens_track_the_file():
+    """토큰을 손으로 나열하지 않는다 — 템플릿이 바뀌면 검사 대상도 따라온다."""
+    SS._template_cache = None
+    vals = SS.template_product_values()
+    assert "하베스트라벨 ReLoad 숄더백 HGL-0187" in vals
+    assert any(v.startswith("https://shop-phinf.pstatic.net/") for v in vals)
+    assert any(v.startswith("<div style=") for v in vals)            # detailContent
+    # 구조 기본값은 토큰이 아니다(정상 값을 유출로 오판하면 등록이 통째로 막힌다).
+    assert "CJGLS" not in vals and "ETC" not in vals and "SALE" not in vals
+
+
+def test_customs_override_beats_template(_real_tpl):
+    """구매대행 통관이 템플릿 `NOT_APPLICABLE`을 이긴다."""
+    _, p = _real_tpl
+    assert p["originProduct"]["detailAttribute"]["customsTaxType"] == "PURCHASE_AGENT"
+
+
+def test_env_address_beats_template_real(_real_tpl):
+    """주소 env(107519271) > 템플릿(107519663). 반품지는 양쪽 동일(107519270)."""
+    _, p = _real_tpl
+    cdi = p["originProduct"]["deliveryInfo"]["claimDeliveryInfo"]
+    assert cdi["shippingAddressId"] == 107519271
+    assert cdi["returnAddressId"] == 107519270
+
+
+def test_our_values_beat_template_product_fields(_real_tpl):
+    """상품별 값은 전부 우리 것 — 가격·재고·카테고리·상세·이미지·SKU."""
+    _, p = _real_tpl
+    op = p["originProduct"]
+    assert op["salePrice"] == 894000                     # 템플릿 199900 아님
+    assert op["stockQuantity"] == SS.STOCK_QUANTITY
+    assert op["leafCategoryId"] == "50004737"            # 정본 매칭('주전자'), 템플릿 50000646 아님
+    assert op["detailContent"] == "<p>상세</p>"
+    assert op["images"]["representativeImage"]["url"].endswith("71a._SS1600_.jpg")
+    assert len(op["images"]["optionalImages"]) == 1      # 템플릿 2장이 남지 않는다
+    assert op["detailAttribute"]["sellerCodeInfo"]["sellerManagementCode"] == "B0GS4698H2"
+
+
+def test_structural_defaults_inherited_from_real_template(_real_tpl):
+    """구조 기본값은 승계 — 통관판매·택배사·옵션·과세·리뷰노출 등."""
+    _, p = _real_tpl
+    op, di = p["originProduct"], p["originProduct"]["deliveryInfo"]
+    da = op["detailAttribute"]
+    assert di["businessCustomsClearanceSaleYn"] is True
+    assert di["deliveryCompany"] == "CJGLS"
+    assert di["claimDeliveryInfo"]["returnDeliveryCompanyPriorityType"] == "PRIMARY"
+    assert da["taxType"] == "TAX"
+    assert da["optionInfo"]["useStockManagement"] is True
+    assert da["purchaseReviewInfo"]["purchaseReviewExposure"] is True
+    assert da["itselfProductionProductYn"] is False
+    # 반품/교환비는 우리 정본값이 이긴다(구매대행 실비).
+    assert di["claimDeliveryInfo"]["returnDeliveryFee"] == SS.RETURN_FEE == 25000
+    assert di["claimDeliveryInfo"]["exchangeDeliveryFee"] == SS.EXCHANGE_FEE == 50000
+
+
+def test_notice_common_clauses_from_real_template(_real_tpl):
+    """공통 문구 5종은 템플릿 그대로, 상품별 4종은 우리 값."""
+    _, p = _real_tpl
+    etc = p["originProduct"]["detailAttribute"]["productInfoProvidedNotice"]["etc"]
+    assert etc["returnCostReason"] == "단순변심 왕복배송비"
+    assert etc["noRefundReason"] == "개봉후 단순변심 반품불가"
+    assert etc["qualityAssuranceStandard"] == "소비자분쟁해결기준"
+    assert etc["compensationProcedure"] == "고객센터 협의"
+    assert etc["troubleShootingContents"] == "고객센터 협의"
+    assert etc["itemName"] == "Fellow Stagg 주전자"
+    assert etc["modelName"] == "B0GS4698H2"
+    assert etc["manufacturer"] == "Fellow"
