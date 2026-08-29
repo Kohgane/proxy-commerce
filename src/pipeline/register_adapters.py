@@ -95,11 +95,20 @@ class WooCommerceAdapter(MarketAdapter):
             "category": {"ok": True, "source": "자유 카테고리(리프 ID 강제 없음)"},
         }}
 
+    ACCOUNTS = ("multishop",)          # 자사몰 단일 스토어 — 쿠팡·스스처럼 계정 축이 갈리지 않는다.
+
     def register(self, product_data: dict, account: str) -> dict:
-        # 파일럿이 쓰는 기존 WC 경로가 정본 — 등록 파이프에서의 호출은 오너 승인 후 배선한다.
-        return {"success": False, "held": True,
-                "error": ("멀티샵은 파일럿 경로(v88-C)가 정본입니다 — 등록 파이프에서의 직접 등록은 "
-                          "아직 배선하지 않았습니다(신규 구현 0 방침).")}
+        gate = self._canon_gate()
+        if gate:
+            return gate
+        acct = str(account or "").strip().lower()
+        if acct not in self.ACCOUNTS:
+            # 쿠팡(고가네/우주대행)·스스(chezgoga/gocosmos) 계정명이 잘못 들어오는 사고 방지.
+            return {"success": False, "held": True,
+                    "error": (f"멀티샵 계정이 아닙니다: {account!r} — "
+                              f"{'/'.join(self.ACCOUNTS)} 를 쓰세요(쿠팡·스마트스토어 축과 별개).")}
+        from src.seller_console.views import _woocommerce_dispatch
+        return _woocommerce_dispatch(product_data, acct)
 
 
 class SmartStoreAdapter(MarketAdapter):

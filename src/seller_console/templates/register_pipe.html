@@ -167,7 +167,7 @@
       <div class="fw-bold mb-1"><i class="bi bi-upload"></i> 마켓 등록 (카나리)</div>
       <div class="pc-status pc-status-warning small mb-3">
         <strong>비가역 작업</strong>이에요 — 먼저 <strong>카나리 1건</strong>만 등록해 육안 확인 후 나머지를 진행합니다.
-        두 마켓 모두 등록 후 <strong>승인 심사</strong>를 거칩니다. 자격·릴레이 미설정 시 정직하게 실패로 표시돼요.
+        마켓별 절차는 아래 안내를 보세요. 자격·릴레이 미설정 시 정직하게 실패로 표시돼요.
       </div>
       <div class="row g-2 align-items-end">
         <div class="col-auto">
@@ -175,6 +175,7 @@
           <select id="p3Market" class="form-select form-select-sm" onchange="p3SyncAccounts()">
             <option value="coupang">쿠팡</option>
             <option value="smartstore">스마트스토어</option>
+            <option value="woocommerce">멀티샵(자사몰)</option>
           </select>
         </div>
         <div class="col-auto">
@@ -191,6 +192,7 @@
             title="카나리 확인 후에만 사용하세요">전체 {{ review.review_pass|length }}건 등록</button>
         </div>
       </div>
+      <p id="p3MarketNote" class="text-muted small mb-0 mt-2"></p>
       <div id="p3Result" class="mt-3"></div>
     </div>
   </div>
@@ -198,7 +200,16 @@
   // 계정 축은 마켓마다 다르다 — 쿠팡(고가네/우주대행)과 스마트스토어(chezgoga/gocosmos)는 별개다.
   var P3_ACCOUNTS = {
     coupang: [['gogane', '고가네 (A01381223)'], ['woojoo', '우주대행 (A01504840)']],
-    smartstore: [['chezgoga', 'chezgoga'], ['gocosmos', 'gocosmos']]
+    smartstore: [['chezgoga', 'chezgoga'], ['gocosmos', 'gocosmos']],
+    // 자사몰은 단일 스토어라 계정 축이 없다.
+    woocommerce: [['multishop', '코가네멀티샵']]
+  };
+  // 마켓별 안내 — 자사몰은 심사가 없고 draft로 올라간다(파일럿과 같은 안전판).
+  var P3_MARKET_KO = {coupang: '쿠팡', smartstore: '스마트스토어', woocommerce: '멀티샵'};
+  var P3_MARKET_NOTE = {
+    coupang: '등록 후 승인 심사를 거칩니다.',
+    smartstore: '등록 후 승인 심사를 거칩니다.',
+    woocommerce: '자사몰이라 심사가 없습니다. 임시저장(draft)으로 올라가니 확인 후 공개하세요.'
   };
   function p3SyncAccounts() {
     var market = document.getElementById('p3Market').value;
@@ -206,6 +217,8 @@
     sel.innerHTML = (P3_ACCOUNTS[market] || []).map(function (a) {
       return '<option value="' + a[0] + '">' + a[1] + '</option>';
     }).join('');
+    var note = document.getElementById('p3MarketNote');
+    if (note) { note.textContent = P3_MARKET_NOTE[market] || ''; }
   }
   p3SyncAccounts();
 
@@ -214,8 +227,9 @@
     var market = document.getElementById('p3Market').value;
     var account = document.getElementById('p3Account').value;
     var box = document.getElementById('p3Result');
-    var marketKo = market === 'smartstore' ? '스마트스토어' : '쿠팡';
-    box.innerHTML = '<span class="text-muted small">등록 중… (' + marketKo + ' 승인 심사 대기)</span>';
+    var marketKo = P3_MARKET_KO[market] || market;
+    var waiting = market === 'woocommerce' ? '임시저장으로 등록' : '승인 심사 대기';
+    box.innerHTML = '<span class="text-muted small">등록 중… (' + marketKo + ' ' + waiting + ')</span>';
     var body = new URLSearchParams({urls: urls, market: market, account: account});
     if (batch) { body.set('batch_ok', '1'); body.set('n', '{{ review.review_pass|length }}'); }
     try {
