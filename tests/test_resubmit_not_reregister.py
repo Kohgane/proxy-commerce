@@ -157,5 +157,7 @@ def test_route_wires_lookup_fn():
     from pathlib import Path
     src = Path("src/seller_console/views.py").read_text(encoding="utf-8")
     # P5에서 마켓별 판정으로 바뀌었다(같은 상품을 쿠팡·스스에 각각 등록하는 건 중복이 아님).
-    assert "lookup_fn=lambda sku, acct: _lookup_registration(sku, acct, marketplace=market)" in src
+    #   멀티샵 편입 후에는 **대장 + WC 실조회** 2단이라 분기가 들어갔다 — 양쪽 다 확인한다.
+    assert "_lookup_registration(sku, acct, marketplace=market)" in src      # 쿠팡·스스: 대장 판정
+    assert '_woocommerce_lookup if market == "woocommerce"' in src           # 멀티샵: 대장→WC 실조회
     assert "find_by_vendor_sku" in src

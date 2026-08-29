@@ -7656,6 +7656,82 @@ def _coupang_account_dispatch(product_data, account):
     return up.upload_product(product)
 
 
+# 멀티샵 등록 상태 — **draft**(파일럿과 동일 안전판·되돌림성). 오너가 env로 publish 전환.
+WC_REGISTER_STATUS = (os.getenv("WC_REGISTER_STATUS", "draft").strip().lower()
+                      if os.getenv("WC_REGISTER_STATUS", "").strip().lower()
+                         in ("draft", "pending", "private", "publish") else "draft")
+
+
+def _woocommerce_dispatch(product_data, account):
+    """P5 멀티샵(WooCommerce) 실등록 dispatch — **기존 `UploadDispatcher` 재사용**(신규 구현 0).
+
+    페이로드 모양은 v88-C 파일럿 `register_pilot_rows`와 **동일**하게 맞춘다(무재고 구매대행 모델:
+    manage_stock=False · instock · simple). 등록 상태는 **draft**(파일럿과 같은 안전판 — 되돌림성).
+    파일럿과 다른 점 하나: **sku를 실어 보낸다** — WC `upsert_product`가 SKU로 기존 상품을 찾아
+    중복 POST 대신 갱신하고, 다음 실행의 중복 판정 근거가 된다(파일럿은 sku가 비어 그게 안 됐다).
+    """
+    dispatcher = _get_upload_dispatcher()
+    if dispatcher is None:
+        return {"success": False, "error": "업로드 디스패처 로드 실패 — 등록 불가"}
+    sku = str(product_data.get("sku") or "").strip()
+    pd = {
+        "title_ko": product_data.get("title_ko"),
+        "sell_price_krw": int(product_data.get("sell_price_krw") or 0),
+        "images": product_data.get("images") or [],
+        "description_html": product_data.get("description_html") or "",
+        "url": product_data.get("url") or "",
+        "sku": sku,
+        "brand": product_data.get("brand") or "",
+        "category_code": product_data.get("category_code") or "",
+        # 파일럿과 동형 안전판: draft 등록(공개 아님) · 무재고 구매대행.
+        "status": WC_REGISTER_STATUS,
+        "manage_stock": False,
+        "stock_status": "instock",
+        "product_type": "simple",
+        # 비노출 메타 — 다음 실행·백필이 출처를 알 수 있게(파일럿 `_kgp_pilot_sid`와 같은 계열).
+        "pilot_meta": [{"key": "_kgp_source_sku", "value": sku},
+                       {"key": "_kgp_source_url", "value": product_data.get("url") or ""}],
+    }
+    try:
+        dr = dispatcher.dispatch(pd, ["woocommerce"])
+    except Exception as exc:
+        return {"success": False, "error": f"멀티샵 등록 실패: {exc}"}
+    wr = next((r for r in (getattr(dr, "results", None) or [])
+               if getattr(r, "market", "") == "woocommerce"), None)
+    if wr is None:
+        return {"success": False, "error": "멀티샵 결과 없음(디스패처가 결과를 반환하지 않았습니다)"}
+    if not getattr(wr, "success", False):
+        return {"success": False, "error": (getattr(wr, "message", "") or "멀티샵 등록 실패"),
+                "hint": getattr(wr, "hint", "") or ""}
+    return {"success": True, "product_id": str(getattr(wr, "external_id", "") or sku),
+            "url": getattr(wr, "external_url", "") or "", "sku": sku,
+            "status": WC_REGISTER_STATUS}
+
+
+def _woocommerce_lookup(sku, account):
+    """멀티샵 중복 판정 — **대장 우선, 없으면 WC 실조회**(SKU).
+
+    파일럿(v88-C) 47건은 **SKU 없이** 등록돼(실측: `to_collected` sku='') SKU 조회로는 안 잡힌다.
+    그쪽 식별자는 `_kgp_pilot_sid`(쿠팡 sid)뿐이라 ASIN과 이어지지 않는다 — 백필 전까지 감지 불가.
+    거짓 매칭(제목 유사도 등)으로 정상 등록을 막느니 **못 잡는다고 말한다**(정직).
+    """
+    known = _lookup_registration(sku, account, marketplace="woocommerce")
+    if known and known.get("product_id"):
+        return known
+    if not str(sku or "").strip():
+        return None
+    try:
+        from src.vendors import woocommerce_client as WC
+        found = WC._find_by_sku(sku)
+    except Exception as exc:                       # 조회 실패는 등록을 막지 않는다(가용성 우선·정직)
+        logger.info("멀티샵 중복 조회 실패(등록은 계속): %s", exc)
+        return None
+    if not found:
+        return None
+    return {"product_id": str(found.get("id") or ""), "status": str(found.get("status") or ""),
+            "source": "woocommerce", "sku": sku}
+
+
 @bp.post("/sourcing/register-pipe/register")
 def sourcing_register_pipe_register():
     """등록 파이프 P3: 검수 통과분 → **쿠팡 카나리 실등록**(승인 게이트·계정 라우팅·롤백 금지).
@@ -7677,7 +7753,8 @@ def sourcing_register_pipe_register():
     adapter = get_adapter(market)
     if adapter is None:
         return jsonify({"ok": False, "error": f"지원하지 않는 마켓입니다: {market}"}), 400
-    _default_acct = "chezgoga" if market == "smartstore" else "gogane"
+    _DEFAULT_ACCT = {"smartstore": "chezgoga", "woocommerce": "multishop"}
+    _default_acct = _DEFAULT_ACCT.get(market, "gogane")
     account = (request.form.get("account") or _default_acct).strip().lower()
     batch_ok = (request.form.get("batch_ok") or "") in ("1", "true", "yes")
     try:
@@ -7703,7 +7780,9 @@ def sourcing_register_pipe_register():
         account=account, n=n, batch_ok=batch_ok,
         # 대장·중복 방지는 **마켓별로** 판정한다(같은 상품을 쿠팡·스스에 각각 등록하는 건 정상).
         record_fn=lambda e: _record_registration(e, marketplace=market),
-        lookup_fn=lambda sku, acct: _lookup_registration(sku, acct, marketplace=market))
+        # 멀티샵은 대장에 더해 **WC 실조회**까지(파일럿·수동 등록분 감지). 그 외는 대장 판정.
+        lookup_fn=(_woocommerce_lookup if market == "woocommerce"
+                   else (lambda sku, acct: _lookup_registration(sku, acct, marketplace=market))))
     result["market"] = market
     result["market_ko"] = adapter.market_ko
     status = 200 if result.get("ok") else 403

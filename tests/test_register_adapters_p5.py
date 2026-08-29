@@ -63,11 +63,24 @@ def test_canon_gate_still_blocks_an_unready_adapter():
 
 
 def test_woocommerce_is_enrollment_only():
+    """자사몰 — 심사 규격 없음. **편입(오너 승인 2026-08-28) 후에도 '신규 구현 0'은 유지**.
+
+    이전 계약은 "등록 파이프 배선 없음"을 못박았으나 오너 지시로 배선됐다. 유지되는 규율은
+    **기존 `UploadDispatcher` 재사용**(새 HTTP 클라이언트 0)과 **계정 축 혼입 차단**이다.
+    상세 계약은 `tests/test_p5_woocommerce.py`.
+    """
+    from pathlib import Path
     ad = RA.get_adapter("woocommerce")
     assert ad.canon_status()["ready"] is True                # 자사몰 — 마켓 심사 규격 자체가 없음
-    res = ad.register({}, "gogane")
-    assert res["success"] is False and res["held"] is True   # 신규 구현 0 — 파일럿 경로가 정본
-    assert "파일럿" in res["error"]
+    res = ad.register({}, "gogane")                          # 쿠팡 계정명 → 축 혼입 차단
+    assert res["success"] is False and res["held"] is True
+    assert "멀티샵 계정이 아닙니다" in res["error"]
+    # 신규 구현 0: 어댑터는 기존 디스패처 위임만 한다(자체 HTTP 호출 없음).
+    src = Path("src/pipeline/register_adapters.py").read_text(encoding="utf-8")
+    body = src.split("class WooCommerceAdapter")[1].split("class SmartStoreAdapter")[0]
+    assert "_woocommerce_dispatch" in body
+    for forbidden in ("requests.", "http", "woocommerce_client"):
+        assert forbidden not in body, forbidden
 
 
 def test_coupang_adapter_delegates_to_verified_uploader(monkeypatch):
