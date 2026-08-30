@@ -600,34 +600,8 @@ class NaverSmartStoreUploader(BaseUploader):
                 'reason': f'이미지 업로드 실패(최대 {self.IMAGE_RETRY}회, 전송 {payload_bytes}B): {last}'}
 
     # ── 실패 원문 노출(카나리 6차) ────────────────────────────────────────────────
-    #   generic "API request failed after retries"는 로그 고고학을 강제한다. 재시도 루프가
-    #   **둘**(이미지 업로드·상품 등록)이므로 사유 조립을 **한 함수로** 둔다 — 한쪽만 고쳐지는
-    #   패턴(#673 서명·#675 part MIME)을 또 만들지 않기 위해.
-    @staticmethod
-    def _resp_body(resp, limit: int = 200) -> str:
-        """응답 본문 앞 limit자. 못 읽으면 빈 문자열(사유 조립이 예외로 죽지 않게)."""
-        try:
-            return (getattr(resp, 'text', '') or '')[:limit]
-        except Exception:
-            return ''
-
-    @staticmethod
-    def _fail_detail(stage: str, attempt: int, *, exc=None, status=None, body: str = '') -> str:
-        """{stage, attempt, error_type, http_status, body[:200]} 한 줄.
-
-        `RelayError`는 `requests.RequestException`을 상속하므로 **릴레이가 죽은 것**과
-        **마켓이 거부한 것**이 같은 except로 잡힌다 — error_type을 찍어 둘을 가른다.
-        """
-        parts = [f'stage={stage}', f'attempt={attempt}']
-        if exc is not None:
-            parts.append(f'error_type={type(exc).__name__}')
-            parts.append(f'error={str(exc)[:200]}')
-        if status is not None:
-            parts.append(f'http_status={status}')
-        if body:
-            parts.append(f'body={body}')
-        return ' '.join(parts)
-
+    #   `_resp_body`/`_fail_detail`은 **`BaseUploader`가 단일 소스**(쿠팡과 공유).
+    #   여기서 재구현하지 않는다 — 같은 규칙을 두 곳에 두면 한쪽만 고쳐진다(이 세션 4례).
     @classmethod
     def resolve_category(cls, title: str) -> str:
         """상품명 → 리프 카테고리 ID. **정본 사전 매칭**(순서 유지·첫 매칭 우선), 미매칭이면 기본 리프.

@@ -30,6 +30,38 @@ class BaseUploader(ABC):
         'return_info',
     ]
 
+    # ── 실패 계측 — **마켓 공통 단일 소스** ────────────────────────────────────
+    #   스마트스토어(#676)에서 만든 규약을 쿠팡이 재구현하지 않도록 여기로 올린다.
+    #   이번 세션 최다 반복이 "이중 구현, 한쪽만 수리"(4례)였다 — 같은 규칙은 한 곳에만 둔다.
+    #   generic 문구 금지: 무엇이(stage) · 몇 번째(attempt) · 어떤 유형(error_type) ·
+    #   HTTP 몇(status) · 마켓이 뭐라 했나(body 원문)를 한 줄에 담는다.
+    FAIL_BODY_LIMIT = 300
+
+    @classmethod
+    def _resp_body(cls, resp, limit: int = None) -> str:
+        """응답 본문 앞부분. 못 읽으면 빈 문자열(사유 조립이 예외로 죽지 않게)."""
+        try:
+            return (getattr(resp, 'text', '') or '')[:int(limit or cls.FAIL_BODY_LIMIT)]
+        except Exception:
+            return ''
+
+    @staticmethod
+    def _fail_detail(stage: str, attempt: int, *, exc=None, status=None, body: str = '') -> str:
+        """{stage, attempt, error_type, http_status, body} 한 줄.
+
+        `RelayError`는 `requests.RequestException`을 상속하므로 **릴레이가 죽은 것**과
+        **마켓이 거부한 것**이 같은 except로 잡힌다 — error_type을 찍어 둘을 가른다.
+        """
+        parts = [f'stage={stage}', f'attempt={attempt}']
+        if exc is not None:
+            parts.append(f'error_type={type(exc).__name__}')
+            parts.append(f'error={str(exc)[:200]}')
+        if status is not None:
+            parts.append(f'http_status={status}')
+        if body:
+            parts.append(f'body={body}')
+        return ' '.join(parts)
+
     @abstractmethod
     def upload_product(self, product: dict) -> dict:
         """단일 상품을 업로드한다.
