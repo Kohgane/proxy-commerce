@@ -751,3 +751,141 @@ body::before {
 .kgp-cl-arch{height:26px;margin:.2rem 0 1.4rem;
   background:radial-gradient(120% 100% at 50% 100%, transparent 61%, color-mix(in srgb, var(--gold) 40%, transparent) 62%, color-mix(in srgb, var(--gold) 40%, transparent) 66%, transparent 67%);}
 @media (prefers-reduced-motion: reduce){ .kgp-cl-entry{transition:none;} }
+
+/* ── 디자인 v2 Stage 5 — 등록 파이프(register-pipe) 전면 재설계 ─────────────────
+   Swiss(뼈대: 그리드·여백·타이포 위계) × Neumorphism(표면: 절제된 이중 그림자).
+   Bauhaus 축 제외. 색은 기존 토큰만(새 원색 0) · 하드코딩 hex/px 0 · 텍스트 대비 불변(AA).
+   숫자=세리프(금속활자) / 본문=산세리프 — **페어링이 화면에서 보이게** 크기 차를 크게 준다. */
+
+/* 단계 히어로 — "지금 무엇을 하는 단계인가"를 화면이 먼저 말한다. */
+.rp-step { margin-bottom: var(--space-7); }
+.rp-step-eyebrow {
+  font-family: var(--font-ui); font-size: .72rem; font-weight: 700;
+  letter-spacing: .16em; text-transform: uppercase; color: var(--gold-ink);
+  display: flex; align-items: center; gap: var(--space-2);
+}
+.rp-step-eyebrow::after {                       /* 금 헤어라인이 라벨에서 뻗어 나간다(Swiss 정렬) */
+  content: ""; flex: 1; height: 1px; background: var(--hairline-color);
+}
+.rp-step-title {
+  font-family: var(--font-display); font-weight: var(--w-semi);
+  font-size: clamp(1.65rem, 3.2vw, 2.4rem); line-height: 1.18; letter-spacing: -.025em;
+  color: var(--text-strong); margin: var(--space-3) 0 var(--space-2);
+}
+.rp-step-lead { color: var(--text-muted); font-size: .95rem; line-height: 1.7; max-width: 62ch; }
+
+/* 입력 존 — 떠오른 카드 + 눌린 입력(뉴모피즘 대비로 '여기에 넣는다'를 만든다). */
+.rp-hero {
+  background: var(--surface); border: 0; border-radius: var(--radius-xl);
+  box-shadow: var(--nm-up-lg); padding: var(--space-7);
+}
+.rp-input {
+  background: var(--surface-warm); border: 0; border-radius: var(--radius-lg);
+  box-shadow: var(--nm-in); padding: var(--space-5);
+  font-family: var(--font-ui); font-size: .95rem; line-height: 1.9; color: var(--text);
+  width: 100%; resize: vertical; min-height: calc(var(--space-9) + var(--space-6));
+}
+.rp-input:focus { outline: 2px solid var(--teal); outline-offset: 2px; box-shadow: var(--nm-in); }
+.rp-input::placeholder { color: var(--text-muted); opacity: .75; }
+.rp-hero-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--space-4); flex-wrap: wrap; margin-top: var(--space-5);
+}
+.rp-hint { color: var(--text-muted); font-size: .82rem; line-height: 1.6; max-width: 54ch; }
+
+/* KPI 밴드 — 숫자가 주인공. 라벨은 작게, 숫자는 세리프 대형. */
+.rp-kpis {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-5); margin-bottom: var(--space-7);
+}
+.rp-kpi {
+  background: var(--surface); border: 0; border-radius: var(--radius-xl);
+  box-shadow: var(--nm-up); padding: var(--space-6) var(--space-6) var(--space-5);
+  position: relative; overflow: hidden;
+}
+.rp-kpi::before {                               /* 상단 악센트 — **헤어라인**(두꺼운 보더 금지) */
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 1px; background: var(--border);
+}
+.rp-kpi-pass::before { background: var(--teal); }
+.rp-kpi-warn::before { background: var(--gold); }
+.rp-kpi-fail::before { background: var(--danger); }
+.rp-kpi-label {
+  font-size: .7rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--text-muted);
+}
+.rp-kpi-value {
+  font-family: var(--font-display); font-weight: var(--w-semi);
+  font-size: clamp(2.4rem, 4.4vw, 3.2rem); line-height: 1; letter-spacing: -.03em;
+  color: var(--text-strong); margin-top: var(--space-3);
+  font-variant-numeric: tabular-nums;
+}
+.rp-kpi-unit { font-family: var(--font-ui); font-size: .82rem; color: var(--text-muted); margin-left: var(--space-2); }
+
+/* 판정 기준 스트립 — 문단 벽을 칩으로. 긴 설명은 접어 둔다(밀도 회복). */
+.rp-meta { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; margin-bottom: var(--space-6); }
+.rp-chip {
+  display: inline-flex; align-items: baseline; gap: var(--space-2);
+  background: var(--surface); border-radius: var(--radius-pill); box-shadow: var(--nm-up-sm);
+  padding: var(--space-2) var(--space-4); font-size: .8rem; color: var(--text-muted);
+}
+.rp-chip b { font-family: var(--font-display); font-weight: var(--w-semi); color: var(--text-strong); font-size: .95rem; }
+.rp-note { margin-bottom: var(--space-7); }
+.rp-note > summary {
+  cursor: pointer; list-style: none; color: var(--teal); font-size: .84rem; font-weight: 600;
+  padding: var(--space-2) 0;
+}
+.rp-note > summary::-webkit-details-marker { display: none; }
+.rp-note > summary::before { content: "＋ "; }
+.rp-note[open] > summary::before { content: "－ "; }
+.rp-note-body { color: var(--text-muted); font-size: .86rem; line-height: 1.85; max-width: 76ch; padding-top: var(--space-2); }
+
+/* 검수표 — Swiss 조판. 행간 넉넉·헤어라인·숫자 세리프 우정렬. */
+.rp-table-card { background: var(--surface); border-radius: var(--radius-xl); box-shadow: var(--nm-up); overflow: hidden; }
+.rp-table { width: 100%; border-collapse: collapse; }
+.rp-table thead th {
+  font-size: .68rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--gold-ink); background: transparent; text-align: left;
+  padding: var(--space-5) var(--space-4); border-bottom: 1px solid var(--hairline-color); white-space: nowrap;
+}
+.rp-table tbody td {
+  padding: var(--space-5) var(--space-4); border-bottom: 1px solid var(--border);
+  vertical-align: top; font-size: .88rem; color: var(--text);
+}
+.rp-table tbody tr:last-child td { border-bottom: 0; }
+.rp-table .rp-r { text-align: right; white-space: nowrap; }
+.rp-num {
+  font-family: var(--font-display); font-weight: var(--w-semi); font-size: 1.05rem;
+  letter-spacing: -.01em; color: var(--text-strong); font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.rp-num-lead { font-size: 1.18rem; }
+.rp-unit { font-family: var(--font-ui); font-size: .74rem; font-weight: 400; color: var(--text-muted); margin-left: 2px; }
+.rp-sub { font-size: .74rem; color: var(--text-muted); line-height: 1.6; margin-top: var(--space-1); }
+.rp-title { font-weight: 600; color: var(--text-strong); line-height: 1.5; }
+.rp-url { font-size: .74rem; color: var(--text-muted); word-break: break-all; margin-top: var(--space-1); }
+.rp-thumb { width: 52px; height: 52px; object-fit: cover; border-radius: var(--radius); box-shadow: var(--nm-up-sm); }
+.rp-thumb-empty {
+  width: 52px; height: 52px; border-radius: var(--radius); box-shadow: var(--nm-in);
+  display: grid; place-items: center; color: var(--text-muted);
+}
+.rp-row-out td { background: color-mix(in srgb, var(--danger) 4%, transparent); }
+
+/* 카나리 결과 — 상태별 카드(성공=청록 필, 실패=사유 카드). */
+.rp-result { display: grid; gap: var(--space-4); margin-top: var(--space-5); }
+.rp-res {
+  border-radius: var(--radius-lg); box-shadow: var(--nm-up-sm); padding: var(--space-5);
+  background: var(--surface); border-left: 3px solid var(--border);
+}
+.rp-res-ok { border-left-color: var(--teal); background: color-mix(in srgb, var(--teal) 6%, var(--surface)); }
+.rp-res-dup { border-left-color: var(--gold); }
+.rp-res-fail { border-left-color: var(--danger); }
+.rp-res-title { font-weight: 600; color: var(--text-strong); }
+.rp-res-reason { font-size: .84rem; color: var(--text-muted); line-height: 1.7; margin-top: var(--space-2); }
+
+@media (max-width: 767.98px) {
+  .rp-hero { padding: var(--space-5); }
+  .rp-table thead { display: none; }
+  .rp-table tbody td { display: block; border-bottom: 0; padding: var(--space-2) var(--space-5); }
+  .rp-table tbody tr { display: block; border-bottom: 1px solid var(--border); padding: var(--space-4) 0; }
+  .rp-table .rp-r { text-align: left; }
+}
