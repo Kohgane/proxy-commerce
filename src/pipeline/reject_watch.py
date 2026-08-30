@@ -174,6 +174,53 @@ def wing_state(history) -> str:
     return states[-1]                        # 그 외에는 최신 상태
 
 
+# 판매 상태 문구 — '판매중/승인'이 반려보다 **앞선 이력**에 있으면 사후 재심사로 내려온 건이다.
+# ⚠ **넓게 잡으면 안 된다**: 바 '승인'은 `승인요청`(제출)에도 걸려 신규 반려가 전부 '판매중→반려'로
+#   둔갑한다(실측으로 잡음). 판매/승인 **완료**를 뜻하는 문구만 인정한다.
+_SELLING_RE = re.compile(r"판매\s*중|판매\s*재개|승인\s*완료|PARTIAL_APPROVED|\bAPPROVED\b|ON_?SALE", re.I)
+_REJECT_ROW_RE = re.compile(r"반려|REJECT", re.I)
+
+
+def _history_rows(history) -> list:
+    """`/histories` 응답(튜플·딕트·리스트) → 행 리스트. 세 형태 모두 안전([[ship_real get 튜플 반환]])."""
+    body = history
+    if isinstance(history, (tuple, list)) and len(history) == 2 and not isinstance(history[0], dict):
+        body = history[1]
+    if isinstance(body, dict):
+        rows = body.get("data") or body.get("histories") or body.get("content") or []
+    elif isinstance(body, (list, tuple)):
+        rows = list(body)
+    else:
+        rows = []
+    return [r for r in rows if isinstance(r, dict)]
+
+
+def was_selling(history) -> bool:
+    """**판매중이던 상품이 반려로 내려왔는가**(사후 재심사). 판정 불가면 False(가짜 확정 0).
+
+    미분류 1호(16359486080)가 이 계열이다 — 신규 등록 반려와 성질이 다르다:
+    이미 노출·판매되던 상품이 내려간 것이라 **매출이 즉시 멈춘다**. 우선순위가 높다.
+
+    판정: 최신 반려 행보다 **앞선** 행에 판매중/승인 문구가 있으면 True.
+    이력은 시간 오름차순 가정(쿠팡 `/histories` 관례) — 반려가 없으면 전환도 아니다.
+    """
+    rows = _history_rows(history)
+    last_reject = -1
+    for i, r in enumerate(rows):
+        st = str(r.get("statusName") or r.get("status") or r.get("changeStatus") or "")
+        if _REJECT_ROW_RE.search(st):
+            last_reject = i
+    if last_reject <= 0:
+        return False                                  # 반려 없음, 또는 첫 행부터 반려(=신규 반려)
+    for r in rows[:last_reject]:
+        st = str(r.get("statusName") or r.get("status") or r.get("changeStatus") or "")
+        if _REJECT_ROW_RE.search(st):
+            continue                                  # 반려 행은 판매 상태가 아니다
+        if _SELLING_RE.search(st):
+            return True
+    return False
+
+
 def state_summary(rows) -> dict:
     """상태 유형별 집계 — Wing 계기판과 같은 축으로 본다. 조치 가능/불가를 나눠 표기(정직)."""
     by_state, actionable, info_only = {}, 0, 0
@@ -207,6 +254,7 @@ def scan_rejections(items, *, history_fn, classify_fn=None) -> dict:
             hist = history_fn(sid, account)
             comment = latest_rejection_comment(hist)
             state = wing_state(hist)
+            selling_before = was_selling(hist)
         except Exception as exc:                           # 조회 실패 = 정직(미분류·사유에 기록), 다음 계속
             cl = classify_rejection("", title=title)
             rows.append({"sid": sid, "title": title, "account": account, "comment": "",
@@ -217,18 +265,24 @@ def scan_rejections(items, *, history_fn, classify_fn=None) -> dict:
         cl = classify_fn(comment, title=title)
         row = {"sid": sid, "title": title, "account": account, "comment": comment,
                "wing_state": state, "wing_state_ko": WING_STATES.get(state, {}).get("ko", state),
-               "actionable": bool(WING_STATES.get(state, {}).get("actionable")), **cl}
+               "actionable": bool(WING_STATES.get(state, {}).get("actionable")),
+               # 사후 재심사 — 팔리던 상품이 내려간 건(매출 즉시 중단). 신규 반려와 구분해 표기한다.
+               "was_selling": selling_before, "priority": "high" if selling_before else "normal", **cl}
         rows.append(row)
         by_kind[cl["kind"]] = by_kind.get(cl["kind"], 0) + 1
         by_rx[cl["prescription"]] = by_rx.get(cl["prescription"], 0) + 1
     needs_manual = [r for r in rows if r["kind"] == "unknown"]
+    resale = [r for r in rows if r.get("was_selling")]
     parts = [f"{REJECTION_KINDS[k]['ko']} {n}" for k, n in sorted(by_kind.items(), key=lambda x: -x[1])]
     alert = f"반려 {len(rows)}건 — " + (" · ".join(parts) if parts else "없음")
+    if resale:
+        # 팔리던 상품이 내려간 건은 **맨 앞에** 세운다(매출이 즉시 멈추므로 우선순위가 높다).
+        alert = f"⚠ 판매중→반려 {len(resale)}건(우선) · " + alert
     if needs_manual:
         alert += f" · 미분류 {len(needs_manual)}건(오너 확인)"
     return {"rows": rows, "by_kind": by_kind, "by_prescription": by_rx,
             "alert": alert, "needs_manual": len(needs_manual), "scanned": len(rows),
-            **state_summary(rows)}
+            "resale_rejections": len(resale), **state_summary(rows)}
 
 
 def watch_registered(*, queue_fn, history_fn, classify_fn=None, record_fn=None,
