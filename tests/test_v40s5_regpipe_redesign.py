@@ -98,9 +98,9 @@ def test_zone_hierarchy_present():
     assert html.count("rp-zone-alt") == 2                # 교차 밴드 2개(결과·등록)
     assert html.count("rp-zone-head") == 5
     assert "rp-kpis" in html and html.count("rp-kpi-value") == 4
-    # 밴드는 배경 톤으로 갈린다(보더 아님) + 섹션 여백 64px 이상 토큰.
+    # 밴드는 배경 톤으로 갈린다(보더 아님) + 섹션 여백은 토큰(5-c: 64 → 48px, 오너 A1 지시).
     assert "color-mix" in _block(css, ".rp-zone-alt")
-    assert "--space-8" in _block(css, ".rp-zone")
+    assert "--space-7" in _block(css, ".rp-zone")
 
 
 def test_soft_neumorphism_tokens():
@@ -146,3 +146,26 @@ def test_reduced_motion_and_mobile():
     s5 = _s5_css()
     assert "@media (max-width: 767.98px)" in s5
     assert "display: none" in s5.split("@media (max-width: 767.98px)")[1]   # 모바일 thead 숨김
+
+
+# ── Stage 5-c: 오너 판정 후 마이크로패치(존 48px · 디스플레이 타이포 1단 축소) ─────────
+def test_stage5c_zone_padding_and_display_scale():
+    """A1 존 여백 48px · A2 **디스플레이 타이포만** 1단 축소. 본문·숫자는 불변(과잉 수정 금지)."""
+    css = _s5_css()
+    assert "var(--space-7) 0" in _block(css, ".rp-zone")            # 64 → 48px
+    title = _block(css, ".rp-step-title")
+    assert "clamp(1.4rem, 2.7vw, 2rem)" in title                    # 38.4 → 32.0px(1280px 기준)
+    # 본문·KPI 숫자는 **건드리지 않았다** — 축소가 전역으로 번지지 않았음을 못박는다.
+    assert "clamp(2.4rem, 4.4vw, 3.2rem)" in _block(css, ".rp-kpi-value")
+    assert ".95rem" in _block(css, ".rp-step-lead")
+    assert "1.05rem" in _block(css, ".rp-num")
+
+
+def test_stage5c_style_source_is_single():
+    """A4: 이 화면 스타일 소스는 **단일**(app.css) — 페이지별 CSS·인라인 색 지정 0."""
+    import subprocess
+    css_files = subprocess.run(["grep", "-rl", "--include=*.css", ".rp-zone", "src/"],
+                               capture_output=True, text=True).stdout.split()
+    assert css_files == ["src/static/app.css"], css_files
+    html = _tpl()
+    assert "color:" not in html and "background:" not in html and "<style" not in html

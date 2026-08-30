@@ -770,7 +770,7 @@ body::before {
    숫자=세리프(금속활자) / 본문=산세리프 — **페어링이 화면에서 보이게** 크기 차를 크게 준다. */
 
 /* 단계 히어로 — "지금 무엇을 하는 단계인가"를 화면이 먼저 말한다. */
-.rp-step { margin-bottom: var(--space-7); }
+.rp-step { margin-bottom: var(--space-5); }
 .rp-step-eyebrow {
   font-family: var(--font-ui); font-size: .72rem; font-weight: 700;
   letter-spacing: .16em; text-transform: uppercase; color: var(--gold-ink);
@@ -781,21 +781,23 @@ body::before {
 }
 .rp-step-title {
   font-family: var(--font-display); font-weight: var(--w-semi);
-  font-size: clamp(1.65rem, 3.2vw, 2.4rem); line-height: 1.18; letter-spacing: -.025em;
+  /* A2(오너 지시): **디스플레이 타이포만** 1단 축소. 본문·KPI 숫자는 불변(과잉 수정 금지).
+     1280px 뷰포트 기준 렌더 38.4px → 32.0px(비율 1.2 = 타이포 1스텝). */
+  font-size: clamp(1.4rem, 2.7vw, 2rem); line-height: 1.22; letter-spacing: -.025em;
   color: var(--text-strong); margin: var(--space-3) 0 var(--space-2);
 }
-.rp-step-lead { color: var(--text-muted); font-size: .95rem; line-height: 1.7; max-width: 62ch; }
+.rp-step-lead { color: var(--text-muted); font-size: .95rem; line-height: 1.7; max-width: 62ch; margin-bottom: var(--space-2); }
 
 /* 입력 존 — 떠오른 카드 + 눌린 입력(뉴모피즘 대비로 '여기에 넣는다'를 만든다). */
 .rp-hero {
   background: var(--surface); border: 0; border-radius: var(--radius-2xl);
-  box-shadow: var(--nm-soft-lg); padding: var(--space-8);
+  box-shadow: var(--nm-soft-lg); padding: var(--space-7);
 }
 .rp-input {
   background: var(--surface-warm); border: 0; border-radius: var(--radius-xl);
   box-shadow: var(--nm-soft-in); padding: var(--space-5);
-  font-family: var(--font-ui); font-size: .95rem; line-height: 1.9; color: var(--text);
-  width: 100%; resize: vertical; min-height: calc(var(--space-9) + var(--space-6));
+  font-family: var(--font-ui); font-size: .95rem; line-height: 1.75; color: var(--text);
+  width: 100%; resize: vertical; min-height: var(--space-9);
 }
 .rp-input:focus { outline: 2px solid var(--teal); outline-offset: 2px; box-shadow: var(--nm-soft-in); }
 .rp-input::placeholder { color: var(--text-muted); opacity: .75; }
@@ -812,7 +814,7 @@ body::before {
 }
 .rp-kpi {
   background: var(--surface); border: 0; border-radius: var(--radius-2xl);
-  box-shadow: var(--nm-soft); padding: var(--space-7) var(--space-6) var(--space-6);
+  box-shadow: var(--nm-soft); padding: var(--space-6) var(--space-6) var(--space-4);
   position: relative; overflow: hidden;
 }
 .rp-kpi::before {                               /* 상단 악센트 — **헤어라인**(두꺼운 보더 금지).
@@ -907,11 +909,12 @@ body::before {
    ①URL 입력 ②KPI ③검수표 ④등록(카나리) — 배경 톤 교차 + 넉넉한 섹션 여백으로
    스크롤하면 "단계가 넘어간다"가 느껴지게. 풀블리드는 콘텐츠 컨테이너 폭까지만 확장. */
 .rp-zone {
-  padding: var(--space-8) 0;
+  /* A1(오너 지시): 존 여백 64 → 48px — 5-b 트레이드오프(페이지 높이 6,724px) 회수. */
+  padding: var(--space-7) 0;
   margin-inline: calc(-1 * var(--space-6));
   padding-inline: var(--space-6);
 }
-.rp-zone + .rp-zone { padding-top: var(--space-8); }
+.rp-zone + .rp-zone { padding-top: var(--space-6); }
 /* 교차 밴드 — `--hanji`는 페이지 배경 `--bg`와 명도차가 거의 없어 **구획이 안 읽힌다**(실측).
    먹을 아주 얕게 섞어 한 단계 깊은 한지 톤을 만든다(새 원색 0 — 토큰 파생). */
 .rp-zone-alt { background: color-mix(in srgb, var(--ink) 4%, var(--bg)); }
@@ -921,5 +924,5 @@ body::before {
   font-size: .82rem; color: var(--gold-ink); margin-right: var(--space-2);
 }
 @media (max-width: 767.98px) {
-  .rp-zone { margin-inline: calc(-1 * var(--space-4)); padding-inline: var(--space-4); padding-block: var(--space-7); }
+  .rp-zone { margin-inline: calc(-1 * var(--space-4)); padding-inline: var(--space-4); padding-block: var(--space-6); }
 }
