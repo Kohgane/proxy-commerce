@@ -38,7 +38,7 @@ MEASURE = """() => {
             padT: cs.paddingTop, padB: cs.paddingBottom, mT: cs.marginTop, mB: cs.marginBottom,
             fs: cs.fontSize};
   };
-  const kpis = document.querySelectorAll('.rp-kpi');
+  const kpis = document.querySelectorAll('.rp-stat, .rp-kpi');
   const last = kpis[kpis.length - 1];
   const zones = [...document.querySelectorAll('.rp-zone')].map(z => {
     const cs = getComputedStyle(z);
@@ -55,7 +55,12 @@ MEASURE = """() => {
     heroFoot: box('.rp-hero-foot'),
     title: box('.rp-step-title'),
     form: box('#urls'),
-    kpisBox: box('.rp-kpis'),
+    kpisBox: box('.rp-strip') || box('.rp-kpis'),
+    bodyScroll: document.documentElement.scrollHeight > window.innerHeight + 1,
+    scrollers: [...document.querySelectorAll('.rp-shell *')].filter(e => {
+      const cs = getComputedStyle(e);
+      return /auto|scroll/.test(cs.overflowY) && e.scrollHeight > e.clientHeight + 1;
+    }).map(e => (e.className || '').toString().split(/\s+/)[0]),
     zones,
   };
 }"""
@@ -98,8 +103,9 @@ def _report(tag, m):
           f"부제 {m['lead']['fs'] if m['lead'] else '-'} · "
           f"KPI 하단 {m['kpiBottom']}px / 뷰포트 {m['viewport']}px → {fits}"
           + (f" (모자람 {short}px)" if short > 0 else f" (여유 {-short}px)"))
-    for i, z in enumerate(m["zones"], 1):
-        print(f"      존{i:02d} h={z['h']}px pad={z['padT']}/{z['padB']}")
+    print(f"      body 스크롤: {'있음 ✗' if m.get('bodyScroll') else '없음 ✓'} "
+          f"(scrollHeight {m['pageHeight']} / {m['viewport']})")
+    print(f"      내부 스크롤 영역: {m.get('scrollers')}")
     for k in ("step", "eyebrow", "title", "lead", "hero", "form", "heroFoot", "kpisBox"):
         b = m.get(k)
         if b:

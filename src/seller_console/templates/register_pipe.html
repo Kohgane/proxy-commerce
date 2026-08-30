@@ -1,276 +1,278 @@
 {% extends "_base.html" %}
 {% block title %}등록 파이프 · 소싱 검수{% endblock %}
 
+{#  Stage 5-e — 뷰포트 고정 2단 셸(오너 E1·E2).
+    5-b~5-d의 세로 5존은 스크롤이 전제였다. E1이 그 전제를 뒤집는다: body 스크롤바 0,
+    내부 스크롤은 03 표 1곳만. 그래서 존 마크업을 전량 걷고 좌/우 2단으로 재구성한다.
+      좌 = 01 입력  ·  우 = 02 스트립 → 03 표(유일한 스크롤) → 04 등록바(하단 고정)
+    옛 05존(수집 실패)은 **02 스트립의 카운트 + 03 스크롤 안 접힘**으로 나눠 보냈다. #}
 {% block content %}
-<section class="rp-zone">
-<div class="rp-step rp-zone-head">
-  <div class="rp-step-eyebrow"><span class="rp-zone-num">01</span>소싱 검수</div>
-  <h1 class="rp-step-title">소싱 URL을 넣으면<br>검수표가 나옵니다</h1>
-  <p class="rp-step-lead">
-    수집 · 번역 · 취급판정 · 판매가 산출까지 자동으로 돌립니다.
-    여기는 <strong>검수까지</strong>예요 — 실제 마켓 등록은 아래 2단계에서 따로 진행합니다.
-  </p>
-</div>
+<div class="rp-shell{% if review is none %} rp-shell-solo{% endif %}">
 
-<form method="post" action="/seller/sourcing/register-pipe" class="rp-hero">
-  <label class="rp-kpi-label d-block mb-3" for="urls">소싱 URL · 한 줄에 하나 · 최대 50개</label>
-  <textarea class="rp-input" id="urls" name="urls" rows="5"
-    placeholder="https://www.amazon.com/dp/...&#10;https://item.rakuten.co.jp/...&#10;https://www.ystudiostyle.com/products/..."
-    >{{ urls_text }}</textarea>
-  <div class="rp-hero-foot">
-    <span class="rp-hint">수집이 막히면(봇 차단 등) 그 줄은 실패로 정직하게 표시돼요 — 확장 수집을 권합니다.</span>
-    <button type="submit" class="btn btn-cta">검수표 만들기</button>
-  </div>
-</form>
-</section>
+  <!-- 01 · 소싱 검수 입력 -->
+  <section class="rp-pane rp-pane-in">
+    <div>
+      <div class="rp-step-eyebrow"><span class="rp-step-num">01</span>소싱 검수</div>
+      <h1 class="rp-step-title">소싱 URL을 넣으면<br>검수표가 나옵니다</h1>
+      <p class="rp-step-lead">
+        수집 · 번역 · 취급판정 · 판매가 산출까지 자동으로 돌립니다.
+        여기는 <strong>검수까지</strong>예요 — 실제 마켓 등록은 오른쪽 04에서 따로 진행합니다.
+      </p>
+    </div>
 
-{% if review is not none %}
-  <section class="rp-zone rp-zone-alt">
-  <div class="rp-step rp-zone-head">
-    <div class="rp-step-eyebrow"><span class="rp-zone-num">02</span>검수 결과</div>
-  </div>
-  <div class="rp-kpis">
-    <div class="rp-kpi rp-kpi-pass">
-      <div class="rp-kpi-label">검수 통과</div>
-      <div class="rp-kpi-value">{{ review.review_pass|length }}<span class="rp-kpi-unit">건</span></div>
-    </div>
-    <div class="rp-kpi rp-kpi-warn">
-      <div class="rp-kpi-label">취급 제외</div>
-      <div class="rp-kpi-value">{{ review.excluded|length }}<span class="rp-kpi-unit">건</span></div>
-    </div>
-    <div class="rp-kpi rp-kpi-fail">
-      <div class="rp-kpi-label">수집 실패</div>
-      <div class="rp-kpi-value">{{ review.failed|length }}<span class="rp-kpi-unit">건</span></div>
-    </div>
-    <div class="rp-kpi">
-      <div class="rp-kpi-label">요청 URL</div>
-      <div class="rp-kpi-value">{{ review.requested }}<span class="rp-kpi-unit">건</span></div>
-    </div>
-  </div>
-
-  <div class="rp-meta">
-    <span class="rp-chip">금지어·금지 카테고리 <b>{{ '{:,}'.format(review.blacklist_count) }}</b>건</span>
-    {% if review.fx_usd_krw %}
-    <span class="rp-chip">환율 USD→KRW <b>{{ '{:,.0f}'.format(review.fx_usd_krw) }}</b>원</span>
-    {% else %}
-    <span class="rp-chip">환율 미상 — 외화 원가 <b>환산 불가</b></span>
-    {% endif %}
-    {% if review.capped %}<span class="rp-chip">50개 상한 <b>초과분 잘림</b></span>{% endif %}
-  </div>
-
-  <details class="rp-note">
-    <summary>실마진 · 배송(한국) 판정 기준</summary>
-    <div class="rp-note-body">
-      <strong>실마진</strong>은 채널 수수료·배송비를 반영한 실제 마진이에요(목표 마진율과 별도, 같은 공식 단일 소스).
-      배송비를 아직 못 구한 상품은 <strong>마진 미반영</strong>으로 정직 표기합니다.<br>
-      <strong>배송(한국)</strong>은 소스가 한국으로 실제 배송되는지 판정이며(ALPAKA·ULANZI 등 전례는 배송불가),
-      실측 전이면 <strong>미검증</strong>으로 둡니다 — <strong>등록을 막지는 않고 표시만</strong> 합니다.
-    </div>
-  </details>
+    <form method="post" action="/seller/sourcing/register-pipe" class="rp-hero">
+      <label class="rp-label d-block mb-3" for="urls">소싱 URL · 한 줄에 하나 · 최대 50개</label>
+      <textarea class="rp-input" id="urls" name="urls" rows="5"
+        placeholder="https://www.amazon.com/dp/...&#10;https://item.rakuten.co.jp/...&#10;https://www.ystudiostyle.com/products/..."
+        >{{ urls_text }}</textarea>
+      <div class="rp-hero-foot">
+        <span class="rp-hint">수집이 막히면(봇 차단 등) 그 줄은 실패로 정직하게 표시돼요 — 확장 수집을 권합니다.</span>
+        <button type="submit" class="btn btn-cta">검수표 만들기</button>
+      </div>
+    </form>
   </section>
 
-  <!-- 검수표 -->
-  {% if review.review_pass or review.excluded %}
-  <section class="rp-zone">
-  <div class="rp-step rp-zone-head">
-    <div class="rp-step-eyebrow"><span class="rp-zone-num">03</span>검수표 · 등록 없음</div>
-  </div>
-  <div class="rp-table-card">
-    <table class="rp-table">
-      <thead><tr>
-        <th style="width:76px;">상품</th><th>제목 · 소싱 URL</th>
-        <th class="rp-r">소싱가</th><th class="rp-r">판매가</th><th class="rp-r">실마진</th>
-        <th>배송(한국)</th><th>고시정보</th><th>취급 판정</th>
-      </tr></thead>
-      <tbody>
-        {% for r in review.review_pass + review.excluded %}
-        <tr class="{% if r.excluded %}rp-row-out{% endif %}">
-          <td>
-            {% if r.thumbnail %}<img class="rp-thumb" src="{{ r.thumbnail }}" referrerpolicy="no-referrer" alt="">
-            {% else %}<span class="rp-thumb-empty" title="이미지 없음"><i class="bi bi-image"></i></span>{% endif %}
-          </td>
-          <td data-label="제목">
-            <div class="rp-title">{{ r.title_ko[:52] }}{% if r.title_ko|length > 52 %}…{% endif %}</div>
-            <div class="rp-url">{{ r.url }}</div>
-            {% if r.title_truncated or r.title_truncated_suspect %}<span class="pc-badge pc-badge-off">제목 절단 의심</span>{% endif %}
-            {% if r.title_cjk_residual %}<span class="pc-badge pc-badge-muted">번역 잔여(한자)</span>{% endif %}
-          </td>
-          <td class="rp-r" data-label="소싱가">
-            {% if r.cost_krw %}<span class="rp-num">{{ '{:,}'.format(r.cost_krw) }}<span class="rp-unit">원</span></span>
-            {% else %}<span class="pc-badge pc-badge-muted" title="{{ r.cost_basis }}">미입력</span>{% endif %}
-          </td>
-          <td class="rp-r" data-label="판매가">
-            {% if r.sale_krw %}<span class="rp-num rp-num-lead">{{ '{:,}'.format(r.sale_krw) }}<span class="rp-unit">원</span></span>
-            {% else %}<span class="pc-badge pc-badge-muted" title="{{ r.price_reason }}">미입력</span>{% endif %}
-          </td>
-          <td class="rp-r" data-label="실마진">
-            {% if r.margin_pct is not none %}
-              <span class="rp-num">{{ r.margin_pct }}<span class="rp-unit">%</span></span>
-              {% if r.net_krw is not none %}<div class="rp-sub">순 {{ '{:,}'.format(r.net_krw) }}원</div>{% endif %}
-              <div class="rp-sub" title="목표 마진(÷0.618)">목표 {{ r.target_margin_pct }}%</div>
-              {% if r.ship_over_35pct %}<span class="pc-badge pc-badge-off" title="소싱 6조건 §6">배송비 &gt; 원가 35%</span>{% endif %}
-            {% else %}<span class="rp-sub">마진 미반영</span>{% endif %}
-          </td>
-          <td data-label="배송(한국)">
-            {% if r.ship_status == '배송가능' %}<span class="pc-badge pc-badge-on" title="{{ r.ship_reason }}">배송가능</span>
-            {% elif r.ship_status == '배송불가' %}<span class="pc-badge pc-badge-off" title="{{ r.ship_reason }}">배송불가</span>
-            {% else %}<span class="pc-badge pc-badge-muted" title="{{ r.ship_reason }}">미검증</span>{% endif %}
-          </td>
-          <td data-label="고시정보">
-            {% if r.notice_preview %}
-            <div class="rp-sub">제조자 <strong>{{ r.notice_preview['제조자'] }}</strong></div>
-            <div class="rp-sub">수입자 {{ r.notice_preview['수입자'] }}</div>
-            <div class="rp-sub">원산지
-              {% if r.notice_preview['origin_source'] == 'none' %}
-                <span class="pc-badge pc-badge-off" title="폴백까지 비활성 — 등록 보류">미확인·보류</span>
-              {% else %}<strong>{{ r.notice_preview['원산지'] }}</strong>
-                {% if r.notice_preview['origin_verified'] %}
-                <span class="pc-badge pc-badge-on" title="{{ r.notice_preview['origin_source_ko'] }}">실측</span>
-                {% elif r.notice_preview['origin_inferred'] %}
-                <span class="pc-badge pc-badge-off" title="브랜드 본사국 — 실측 아님">추정(브랜드)</span>
-                {% else %}
-                <span class="pc-badge pc-badge-muted" title="실측·추정 소스 없음 — 폴백 문구로 등록(오너 확인)">임시(폴백)</span>
-                {% endif %}
-              {% endif %}
-            </div>
-            {% else %}<span class="rp-sub">-</span>{% endif %}
-          </td>
-          <td data-label="취급 판정">
-            {% if r.excluded %}
-              <span class="pc-badge pc-badge-danger">취급 제외</span>
-              {% if r.forbidden_detail %}
-              <div class="rp-sub">{{ r.forbidden_detail.kind_ko }} <strong>'{{ r.forbidden_detail.term }}'</strong>
-                {% if r.forbidden_detail.snippet %}<span class="font-monospace">{{ r.forbidden_detail.snippet }}</span>{% endif %}
-              </div>
-              {% endif %}
-            {% else %}<span class="pc-badge pc-badge-on">정상</span>{% endif %}
-            {% for w in (r.warnings or []) %}
-            <div class="mt-1"><span class="pc-badge pc-badge-off" title="{{ w.reason }}">{{ w.label }}</span></div>
+  {% if review is not none %}
+  <!-- 02~04 · 작업면 -->
+  <section class="rp-pane rp-pane-work">
+
+    <!-- 02 · 검수 결과 스트립(카드 크롬 제거 · 숫자 위계 유지) -->
+    <div class="rp-strip">
+      <div class="rp-step-eyebrow flex-grow-0"><span class="rp-step-num">02</span>검수 결과</div>
+      <div class="rp-stat rp-stat-pass">
+        <span class="rp-stat-v">{{ review.review_pass|length }}</span>
+        <span class="rp-stat-unit">건</span><span class="rp-stat-l">검수 통과</span>
+      </div>
+      <div class="rp-stat rp-stat-warn">
+        <span class="rp-stat-v">{{ review.excluded|length }}</span>
+        <span class="rp-stat-unit">건</span><span class="rp-stat-l">취급 제외</span>
+      </div>
+      <div class="rp-stat rp-stat-fail">
+        <span class="rp-stat-v">{{ review.failed|length }}</span>
+        <span class="rp-stat-unit">건</span><span class="rp-stat-l">수집 실패</span>
+      </div>
+      <div class="rp-stat">
+        <span class="rp-stat-v">{{ review.requested }}</span>
+        <span class="rp-stat-unit">건</span><span class="rp-stat-l">요청 URL</span>
+      </div>
+      <div class="rp-meta ms-auto">
+        <span class="rp-chip">금지어·금지 카테고리 <b>{{ '{:,}'.format(review.blacklist_count) }}</b>건</span>
+        {% if review.fx_usd_krw %}
+        <span class="rp-chip">환율 USD→KRW <b>{{ '{:,.0f}'.format(review.fx_usd_krw) }}</b>원</span>
+        {% else %}
+        <span class="rp-chip">환율 미상 — 외화 원가 <b>환산 불가</b></span>
+        {% endif %}
+        {% if review.capped %}<span class="rp-chip">50개 상한 <b>초과분 잘림</b></span>{% endif %}
+      </div>
+    </div>
+
+    <!-- 03 · 검수표 — 이 화면의 **유일한 내부 스크롤** -->
+    {# 단계 라벨은 스크롤 **밖**에 둔다 — 표를 굴려도 "여기가 03"이 안 사라지게. #}
+    <div class="rp-step-eyebrow"><span class="rp-step-num">03</span>검수표 · 등록 없음</div>
+    <div class="rp-scroll">
+      <div id="p3Result" class="rp-result"></div>
+
+      <details class="rp-note">
+        <summary>실마진 · 배송(한국) 판정 기준</summary>
+        <div class="rp-note-body">
+          <strong>실마진</strong>은 채널 수수료·배송비를 반영한 실제 마진이에요(목표 마진율과 별도, 같은 공식 단일 소스).
+          배송비를 아직 못 구한 상품은 <strong>마진 미반영</strong>으로 정직 표기합니다.<br>
+          <strong>배송(한국)</strong>은 소스가 한국으로 실제 배송되는지 판정이며(ALPAKA·ULANZI 등 전례는 배송불가),
+          실측 전이면 <strong>미검증</strong>으로 둡니다 — <strong>등록을 막지는 않고 표시만</strong> 합니다.
+        </div>
+      </details>
+
+      {% if review.failed %}
+      {# 옛 05존 — 카운트는 02 스트립에, 사유 목록은 여기 접힘으로(별도 존 없이). #}
+      <details class="rp-note">
+        <summary>수집 실패 {{ review.failed|length }}건 · 사유 보기</summary>
+        <div class="rp-result mt-3">
+          {% for f in review.failed %}
+          <div class="rp-res rp-res-fail">
+            <div class="rp-res-title">{{ f.url }}</div>
+            <div class="rp-res-reason">{{ f.reason }}</div>
+          </div>
+          {% endfor %}
+        </div>
+      </details>
+      {% endif %}
+
+      {% if review.review_pass or review.excluded %}
+      <div class="rp-table-card">
+        <table class="rp-table">
+          <thead><tr>
+            <th style="width:76px;">상품</th><th>제목 · 소싱 URL</th>
+            <th class="rp-r">소싱가</th><th class="rp-r">판매가</th><th class="rp-r">실마진</th>
+            <th>배송(한국)</th><th>고시정보</th><th>취급 판정</th>
+          </tr></thead>
+          <tbody>
+            {% for r in review.review_pass + review.excluded %}
+            <tr class="{% if r.excluded %}rp-row-out{% endif %}">
+              <td>
+                {% if r.thumbnail %}<img class="rp-thumb" src="{{ r.thumbnail }}" referrerpolicy="no-referrer" alt="">
+                {% else %}<span class="rp-thumb-empty" title="이미지 없음"><i class="bi bi-image"></i></span>{% endif %}
+              </td>
+              <td data-label="제목">
+                <div class="rp-title">{{ r.title_ko[:52] }}{% if r.title_ko|length > 52 %}…{% endif %}</div>
+                <div class="rp-url">{{ r.url }}</div>
+                {% if r.title_truncated or r.title_truncated_suspect %}<span class="pc-badge pc-badge-off">제목 절단 의심</span>{% endif %}
+                {% if r.title_cjk_residual %}<span class="pc-badge pc-badge-muted">번역 잔여(한자)</span>{% endif %}
+              </td>
+              <td class="rp-r" data-label="소싱가">
+                {% if r.cost_krw %}<span class="rp-num">{{ '{:,}'.format(r.cost_krw) }}<span class="rp-unit">원</span></span>
+                {% else %}<span class="pc-badge pc-badge-muted" title="{{ r.cost_basis }}">미입력</span>{% endif %}
+              </td>
+              <td class="rp-r" data-label="판매가">
+                {% if r.sale_krw %}<span class="rp-num rp-num-lead">{{ '{:,}'.format(r.sale_krw) }}<span class="rp-unit">원</span></span>
+                {% else %}<span class="pc-badge pc-badge-muted" title="{{ r.price_reason }}">미입력</span>{% endif %}
+              </td>
+              <td class="rp-r" data-label="실마진">
+                {% if r.margin_pct is not none %}
+                  <span class="rp-num">{{ r.margin_pct }}<span class="rp-unit">%</span></span>
+                  {% if r.net_krw is not none %}<div class="rp-sub">순 {{ '{:,}'.format(r.net_krw) }}원</div>{% endif %}
+                  <div class="rp-sub" title="목표 마진(÷0.618)">목표 {{ r.target_margin_pct }}%</div>
+                  {% if r.ship_over_35pct %}<span class="pc-badge pc-badge-off" title="소싱 6조건 §6">배송비 &gt; 원가 35%</span>{% endif %}
+                {% else %}<span class="rp-sub">마진 미반영</span>{% endif %}
+              </td>
+              <td data-label="배송(한국)">
+                {% if r.ship_status == '배송가능' %}<span class="pc-badge pc-badge-on" title="{{ r.ship_reason }}">배송가능</span>
+                {% elif r.ship_status == '배송불가' %}<span class="pc-badge pc-badge-off" title="{{ r.ship_reason }}">배송불가</span>
+                {% else %}<span class="pc-badge pc-badge-muted" title="{{ r.ship_reason }}">미검증</span>{% endif %}
+              </td>
+              <td data-label="고시정보">
+                {% if r.notice_preview %}
+                <div class="rp-sub">제조자 <strong>{{ r.notice_preview['제조자'] }}</strong></div>
+                <div class="rp-sub">수입자 {{ r.notice_preview['수입자'] }}</div>
+                <div class="rp-sub">원산지
+                  {% if r.notice_preview['origin_source'] == 'none' %}
+                    <span class="pc-badge pc-badge-off" title="폴백까지 비활성 — 등록 보류">미확인·보류</span>
+                  {% else %}<strong>{{ r.notice_preview['원산지'] }}</strong>
+                    {% if r.notice_preview['origin_verified'] %}
+                    <span class="pc-badge pc-badge-on" title="{{ r.notice_preview['origin_source_ko'] }}">실측</span>
+                    {% elif r.notice_preview['origin_inferred'] %}
+                    <span class="pc-badge pc-badge-off" title="브랜드 본사국 — 실측 아님">추정(브랜드)</span>
+                    {% else %}
+                    <span class="pc-badge pc-badge-muted" title="실측·추정 소스 없음 — 폴백 문구로 등록(오너 확인)">임시(폴백)</span>
+                    {% endif %}
+                  {% endif %}
+                </div>
+                {% else %}<span class="rp-sub">-</span>{% endif %}
+              </td>
+              <td data-label="취급 판정">
+                {% if r.excluded %}
+                  <span class="pc-badge pc-badge-danger">취급 제외</span>
+                  {% if r.forbidden_detail %}
+                  <div class="rp-sub">{{ r.forbidden_detail.kind_ko }} <strong>'{{ r.forbidden_detail.term }}'</strong>
+                    {% if r.forbidden_detail.snippet %}<span class="font-monospace">{{ r.forbidden_detail.snippet }}</span>{% endif %}
+                  </div>
+                  {% endif %}
+                {% else %}<span class="pc-badge pc-badge-on">정상</span>{% endif %}
+                {% for w in (r.warnings or []) %}
+                <div class="mt-1"><span class="pc-badge pc-badge-off" title="{{ w.reason }}">{{ w.label }}</span></div>
+                {% endfor %}
+              </td>
+            </tr>
             {% endfor %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  </section>
-  {% endif %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    </div>
 
-  <!-- STEP 2: 마켓 등록 (비가역 — 승인 게이트 + 카나리 1건 먼저) -->
-  {% if review.review_pass %}
-  <section class="rp-zone rp-zone-alt">
-  <div class="rp-step rp-zone-head">
-    <div class="rp-step-eyebrow"><span class="rp-zone-num">04</span>마켓 등록</div>
-    <h2 class="rp-step-title">검수 통과분을 마켓에 올립니다</h2>
-    <p class="rp-step-lead">
-      <strong>비가역 작업</strong>이에요 — 먼저 <strong>카나리 1건</strong>만 올려 눈으로 확인한 뒤 나머지를 진행합니다.
-      자격·릴레이가 없으면 정직하게 실패로 표시돼요.
-    </p>
-  </div>
-
-  <div class="rp-hero" id="p3RegisterCard">
-    <div class="row g-4 align-items-end">
-      <div class="col-12 col-sm-auto">
-        <label class="rp-kpi-label d-block mb-2" for="p3Market">마켓</label>
+    <!-- 04 · 마켓 등록 (비가역 — 승인 게이트 + 카나리 1건 먼저). 작업면 바닥에 고정. -->
+    {% if review.review_pass %}
+    <div class="rp-bar" id="p3RegisterCard">
+      <div class="rp-bar-field">
+        <span class="rp-step-eyebrow"><span class="rp-step-num">04</span>마켓 등록</span>
+      </div>
+      <div class="rp-bar-field">
+        <label class="rp-label" for="p3Market">마켓</label>
         <select id="p3Market" class="form-select" onchange="p3SyncAccounts()">
           <option value="coupang">쿠팡</option>
           <option value="smartstore">스마트스토어</option>
           <option value="woocommerce">멀티샵(자사몰)</option>
         </select>
       </div>
-      <div class="col-12 col-sm-auto">
-        <label class="rp-kpi-label d-block mb-2" for="p3Account">등록 계정</label>
+      <div class="rp-bar-field">
+        <label class="rp-label" for="p3Account">등록 계정</label>
         <select id="p3Account" class="form-select"></select>
       </div>
-      <div class="col-12 col-sm-auto ms-sm-auto d-flex gap-2 flex-wrap">
+      <div class="rp-bar-actions">
         <button type="button" class="btn btn-cta" onclick="p3Register(false)">카나리 1건 등록</button>
         <button type="button" class="btn btn-gold" onclick="p3Register(true)"
           title="카나리 확인 후에만 사용하세요">전체 {{ review.review_pass|length }}건</button>
       </div>
+      <p id="p3MarketNote" class="rp-hint rp-bar-note"></p>
     </div>
-    <p id="p3MarketNote" class="rp-hint mt-4 mb-0"></p>
-    <div id="p3Result" class="rp-result"></div>
-  </div>
 
-  <script>
-  // 계정 축은 마켓마다 다르다 — 쿠팡(고가네/우주대행)과 스마트스토어(chezgoga/gocosmos)는 별개다.
-  var P3_ACCOUNTS = {
-    coupang: [['gogane', '고가네 (A01381223)'], ['woojoo', '우주대행 (A01504840)']],
-    smartstore: [['chezgoga', 'chezgoga'], ['gocosmos', 'gocosmos']],
-    // 자사몰은 단일 스토어라 계정 축이 없다.
-    woocommerce: [['multishop', '코가네멀티샵']]
-  };
-  // 마켓별 안내 — 자사몰은 심사가 없고 draft로 올라간다(파일럿과 같은 안전판).
-  var P3_MARKET_KO = {coupang: '쿠팡', smartstore: '스마트스토어', woocommerce: '멀티샵'};
-  var P3_MARKET_NOTE = {
-    coupang: '등록 후 승인 심사를 거칩니다.',
-    smartstore: '등록 후 승인 심사를 거칩니다.',
-    woocommerce: '자사몰이라 심사가 없습니다. 임시저장(draft)으로 올라가니 확인 후 공개하세요.'
-  };
-  function p3SyncAccounts() {
-    var market = document.getElementById('p3Market').value;
-    var sel = document.getElementById('p3Account');
-    sel.innerHTML = (P3_ACCOUNTS[market] || []).map(function (a) {
-      return '<option value="' + a[0] + '">' + a[1] + '</option>';
-    }).join('');
-    var note = document.getElementById('p3MarketNote');
-    if (note) { note.textContent = P3_MARKET_NOTE[market] || ''; }
-  }
-  p3SyncAccounts();
-
-  async function p3Register(batch) {
-    var urls = (document.getElementById('urls') || {}).value || '';
-    var market = document.getElementById('p3Market').value;
-    var account = document.getElementById('p3Account').value;
-    var box = document.getElementById('p3Result');
-    var marketKo = P3_MARKET_KO[market] || market;
-    var waiting = market === 'woocommerce' ? '임시저장으로 등록' : '승인 심사 대기';
-    box.innerHTML = '<div class="rp-res"><div class="rp-res-reason">등록 중… (' + marketKo + ' ' + waiting + ')</div></div>';
-    var body = new URLSearchParams({urls: urls, market: market, account: account});
-    if (batch) { body.set('batch_ok', '1'); body.set('n', '{{ review.review_pass|length }}'); }
-    try {
-      var r = await fetch('/seller/sourcing/register-pipe/register', {method: 'POST', body: body});
-      var d = await r.json();
-      if (!d.ok) { box.innerHTML = '<div class="rp-res rp-res-fail"><div class="rp-res-reason">' + (d.error || '등록 실패') + '</div></div>'; return; }
-      // 상태별 카드 — 성공은 청록 필, 중복은 금, 실패는 사유 카드(무엇이 왜 안 됐는지).
-      var rows = (d.results || []).map(function(x) {
-        var cls = x.registered ? 'rp-res-ok' : (x.duplicate ? 'rp-res-dup' : 'rp-res-fail');
-        var badge = x.registered ? '<span class="pc-badge pc-badge-on">등록됨</span>'
-                  : (x.duplicate ? '<span class="pc-badge pc-badge-off">이미 등록됨</span>'
-                                 : '<span class="pc-badge pc-badge-danger">실패</span>');
-        var link = x.market_url ? ' <a href="' + x.market_url + '" target="_blank" rel="noopener">상품 보기</a>' : '';
-        return '<div class="rp-res ' + cls + '"><div class="rp-res-title">' + badge + ' '
-             + (x.title || x.url || '') + link + '</div>'
-             + (x.reason ? '<div class="rp-res-reason">' + x.reason + '</div>' : '') + '</div>';
+    <script>
+    // 계정 축은 마켓마다 다르다 — 쿠팡(고가네/우주대행)과 스마트스토어(chezgoga/gocosmos)는 별개다.
+    var P3_ACCOUNTS = {
+      coupang: [['gogane', '고가네 (A01381223)'], ['woojoo', '우주대행 (A01504840)']],
+      smartstore: [['chezgoga', 'chezgoga'], ['gocosmos', 'gocosmos']],
+      // 자사몰은 단일 스토어라 계정 축이 없다.
+      woocommerce: [['multishop', '코가네멀티샵']]
+    };
+    // 마켓별 안내 — 자사몰은 심사가 없고 draft로 올라간다(파일럿과 같은 안전판).
+    var P3_MARKET_KO = {coupang: '쿠팡', smartstore: '스마트스토어', woocommerce: '멀티샵'};
+    var P3_MARKET_NOTE = {
+      coupang: '등록 후 승인 심사를 거칩니다.',
+      smartstore: '등록 후 승인 심사를 거칩니다.',
+      woocommerce: '자사몰이라 심사가 없습니다. 임시저장(draft)으로 올라가니 확인 후 공개하세요.'
+    };
+    function p3SyncAccounts() {
+      var market = document.getElementById('p3Market').value;
+      var sel = document.getElementById('p3Account');
+      sel.innerHTML = (P3_ACCOUNTS[market] || []).map(function (a) {
+        return '<option value="' + a[0] + '">' + a[1] + '</option>';
       }).join('');
-      var dup = d.duplicates ? ' · 중복 ' + d.duplicates : '';
-      box.innerHTML = '<div class="rp-res"><div class="rp-res-title">'
-        + (d.market_ko || marketKo) + ' · ' + d.account + ' · 등록 ' + d.registered
-        + ' / 실패 ' + d.failed + dup + '</div>'
-        + (d.note ? '<div class="rp-res-reason">' + d.note + '</div>' : '') + '</div>' + rows;
-    } catch (e) {
-      box.innerHTML = '<div class="rp-res rp-res-fail"><div class="rp-res-reason">등록 요청 실패: ' + e + '</div></div>';
+      var note = document.getElementById('p3MarketNote');
+      if (note) { note.textContent = P3_MARKET_NOTE[market] || ''; }
     }
-  }
-  </script>
-  </section>
-  {% endif %}
+    p3SyncAccounts();
 
-  <!-- 수집 실패(정직) -->
-  {% if review.failed %}
-  <section class="rp-zone">
-  <div class="rp-step rp-zone-head">
-    <div class="rp-step-eyebrow"><span class="rp-zone-num">05</span>수집 실패 · {{ review.failed|length }}건</div>
-  </div>
-  <div class="rp-result">
-    {% for f in review.failed %}
-    <div class="rp-res rp-res-fail">
-      <div class="rp-res-title">{{ f.url }}</div>
-      <div class="rp-res-reason">{{ f.reason }}</div>
+    async function p3Register(batch) {
+      var urls = (document.getElementById('urls') || {}).value || '';
+      var market = document.getElementById('p3Market').value;
+      var account = document.getElementById('p3Account').value;
+      // 결과는 **03 스크롤 영역 안**에 쌓는다 — 내부 스크롤을 한 곳으로 유지하기 위함(E1).
+      var box = document.getElementById('p3Result');
+      var marketKo = P3_MARKET_KO[market] || market;
+      var waiting = market === 'woocommerce' ? '임시저장으로 등록' : '승인 심사 대기';
+      box.innerHTML = '<div class="rp-res"><div class="rp-res-reason">등록 중… (' + marketKo + ' ' + waiting + ')</div></div>';
+      var body = new URLSearchParams({urls: urls, market: market, account: account});
+      if (batch) { body.set('batch_ok', '1'); body.set('n', '{{ review.review_pass|length }}'); }
+      try {
+        var r = await fetch('/seller/sourcing/register-pipe/register', {method: 'POST', body: body});
+        var d = await r.json();
+        if (!d.ok) { box.innerHTML = '<div class="rp-res rp-res-fail"><div class="rp-res-reason">' + (d.error || '등록 실패') + '</div></div>'; return; }
+        // 상태별 카드 — 성공은 청록 필, 중복은 금, 실패는 사유 카드(무엇이 왜 안 됐는지).
+        var rows = (d.results || []).map(function(x) {
+          var cls = x.registered ? 'rp-res-ok' : (x.duplicate ? 'rp-res-dup' : 'rp-res-fail');
+          var badge = x.registered ? '<span class="pc-badge pc-badge-on">등록됨</span>'
+                    : (x.duplicate ? '<span class="pc-badge pc-badge-off">이미 등록됨</span>'
+                                   : '<span class="pc-badge pc-badge-danger">실패</span>');
+          var link = x.market_url ? ' <a href="' + x.market_url + '" target="_blank" rel="noopener">상품 보기</a>' : '';
+          return '<div class="rp-res ' + cls + '"><div class="rp-res-title">' + badge + ' '
+               + (x.title || x.url || '') + link + '</div>'
+               + (x.reason ? '<div class="rp-res-reason">' + x.reason + '</div>' : '') + '</div>';
+        }).join('');
+        var dup = d.duplicates ? ' · 중복 ' + d.duplicates : '';
+        box.innerHTML = '<div class="rp-res"><div class="rp-res-title">'
+          + (d.market_ko || marketKo) + ' · ' + d.account + ' · 등록 ' + d.registered
+          + ' / 실패 ' + d.failed + dup + '</div>'
+          + (d.note ? '<div class="rp-res-reason">' + d.note + '</div>' : '') + '</div>' + rows;
+      } catch (e) {
+        box.innerHTML = '<div class="rp-res rp-res-fail"><div class="rp-res-reason">등록 요청 실패: ' + e + '</div></div>';
+      }
+    }
+    </script>
+    {% else %}
+    <div class="rp-bar">
+      <p class="rp-hint mb-0">검수 통과 상품이 없어 등록 단계는 열리지 않습니다 — 취급 제외·수집 실패 사유를 먼저 확인하세요.</p>
     </div>
-    {% endfor %}
-  </div>
+    {% endif %}
   </section>
   {% endif %}
-{% endif %}
+</div>
 {% endblock %}
