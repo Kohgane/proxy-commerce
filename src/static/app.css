@@ -47,6 +47,10 @@
   /* 간격 — 8px 그리드(모든 패딩/마진/갭은 이 배수만) */
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px;
   --space-6: 32px; --space-7: 48px; --space-8: 64px; --space-9: 96px;
+  /* 5-e 뷰포트 고정 — 콘솔 크롬(스티키 탑바 + main 상하 패딩) 실측 높이.
+     100dvh에서 이만큼 빼야 body 스크롤바가 안 생긴다(레이아웃 토큰 — --sidebar-w 선례). */
+  --topbar-h: 69px;
+  --rp-fit-offset: calc(var(--topbar-h) + var(--space-6));
 
   /* 라운드 / 그림자 — 두꺼운 보더 대신 여백 + 얕은 그림자 + 1px 가는 구분선 */
   --radius-sm: 8px; --radius: 12px; --radius-lg: 16px; --radius-pill: 999px;
@@ -807,44 +811,45 @@ body::before {
 }
 .rp-hint { color: var(--text-muted); font-size: .82rem; line-height: 1.6; max-width: 54ch; }
 
-/* KPI 밴드 — 숫자가 주인공. 라벨은 작게, 숫자는 세리프 대형. */
-.rp-kpis {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--space-5); margin-bottom: var(--space-7);
+/* 02 KPI 스트립 — 5-e: 카드 4장 크롬(대형 패딩·개별 박스)을 걷고 **한 줄**로.
+   숫자 위계는 그대로 세리프 대형, 라벨은 작게. 구획은 세로 헤어라인이 대신한다(E3). */
+.rp-strip {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: var(--space-5); padding: var(--space-4) var(--space-5);
+  background: var(--surface); border-radius: var(--radius-2xl); box-shadow: var(--nm-soft-sm);
 }
-.rp-kpi {
-  background: var(--surface); border: 0; border-radius: var(--radius-2xl);
-  box-shadow: var(--nm-soft); padding: var(--space-5) var(--space-6) var(--space-4);   /* D3 */
-  position: relative; overflow: hidden;
+.rp-stat { display: flex; align-items: baseline; gap: var(--space-2); position: relative; }
+.rp-stat + .rp-stat { padding-left: var(--space-5); }
+.rp-stat + .rp-stat::before {                   /* 구획 = 세로 헤어라인(개별 박스 금지) */
+  content: ""; position: absolute; left: 0; top: 50%; translate: 0 -50%;
+  width: 1px; height: 1.5em; background: var(--border);
 }
-.rp-kpi::before {                               /* 상단 악센트 — **헤어라인**(두꺼운 보더 금지).
-   라운드가 커져 모서리를 감싸면 '캡'처럼 보인다 → 좌우를 들여 **규칙선**으로 읽히게. */
-  content: ""; position: absolute; inset: 0 var(--space-6) auto; height: 1px; background: var(--border);
+.rp-stat-v {
+  font-family: var(--font-display); font-weight: var(--w-semi);
+  font-size: 1.9rem; line-height: 1; letter-spacing: -.02em; color: var(--text-strong);
 }
-.rp-kpi-pass::before { background: var(--teal); }
-.rp-kpi-warn::before { background: var(--gold); }
-.rp-kpi-fail::before { background: var(--danger); }
-.rp-kpi-label {
+.rp-stat-pass .rp-stat-v { color: var(--teal); }
+.rp-stat-warn .rp-stat-v { color: var(--gold-ink); }
+.rp-stat-fail .rp-stat-v { color: var(--danger); }
+.rp-stat-l {
   font-size: .7rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
   color: var(--text-muted);
 }
-.rp-kpi-value {
-  font-family: var(--font-display); font-weight: var(--w-semi);
-  font-size: clamp(2.4rem, 4.4vw, 3.2rem); line-height: 1; letter-spacing: -.03em;
-  color: var(--text-strong); margin-top: var(--space-3);
-  font-variant-numeric: tabular-nums;
+.rp-stat-unit { font-family: var(--font-ui); font-size: .78rem; color: var(--text-muted); }
+.rp-label {                                      /* 폼 라벨(옛 .rp-kpi-label 역할) */
+  font-size: .7rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--text-muted);
 }
-.rp-kpi-unit { font-family: var(--font-ui); font-size: .82rem; color: var(--text-muted); margin-left: var(--space-2); }
 
 /* 판정 기준 스트립 — 문단 벽을 칩으로. 긴 설명은 접어 둔다(밀도 회복). */
-.rp-meta { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; margin-bottom: var(--space-6); }
+.rp-meta { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
 .rp-chip {
   display: inline-flex; align-items: baseline; gap: var(--space-2);
   background: var(--surface); border-radius: var(--radius-pill); box-shadow: var(--nm-soft-sm);
   padding: var(--space-2) var(--space-4); font-size: .8rem; color: var(--text-muted);
 }
 .rp-chip b { font-family: var(--font-display); font-weight: var(--w-semi); color: var(--text-strong); font-size: .95rem; }
-.rp-note { margin-bottom: var(--space-7); }
+.rp-note { margin: 0; }
 .rp-note > summary {
   cursor: pointer; list-style: none; color: var(--teal); font-size: .84rem; font-weight: 600;
   padding: var(--space-2) 0;
@@ -905,25 +910,63 @@ body::before {
   .rp-table .rp-r { text-align: left; }
 }
 
-/* ── Stage 5-b: 4존 구획 (오너 피드백 "레이아웃 좀 더 확실하게 드러나게") ──────────
-   ①URL 입력 ②KPI ③검수표 ④등록(카나리) — 배경 톤 교차 + 넉넉한 섹션 여백으로
-   스크롤하면 "단계가 넘어간다"가 느껴지게. 풀블리드는 콘텐츠 컨테이너 폭까지만 확장. */
-.rp-zone {
-  /* A1 48px(5-c) → **D3 32px**(5-d): D2 타이포만으론 D1 좌표계(1920×940)에 못 닿아
-     잔여 px를 여백에서만 회수한다. 교차 밴드·풀블리드 구획은 그대로. */
-  padding: var(--space-6) 0;
-  margin-inline: calc(-1 * var(--space-6));
-  padding-inline: var(--space-6);
+/* ── Stage 5-e: 뷰포트 고정 2단 셸 (오너 E1·E2) ──────────────────────────────
+   5-b~5-d는 세로 5존이라 스크롤이 전제였다. E1이 그 전제를 뒤집는다 —
+   **body 스크롤바 0**, 내부 스크롤은 03 표 1곳만. 그래서 존을 걷고 좌/우 2단으로 재구성한다.
+   좌 = 01 입력(고정) · 우 = 02 스트립 → 03 표(유일한 스크롤) → 04 등록바(하단 고정). */
+.rp-shell {
+  display: grid; grid-template-columns: minmax(340px, 24rem) minmax(0, 1fr);
+  gap: var(--space-6); align-items: stretch;
+  height: calc(100dvh - var(--rp-fit-offset));
 }
-.rp-zone + .rp-zone { padding-top: var(--space-5); }   /* D3 */
-/* 교차 밴드 — `--hanji`는 페이지 배경 `--bg`와 명도차가 거의 없어 **구획이 안 읽힌다**(실측).
-   먹을 아주 얕게 섞어 한 단계 깊은 한지 톤을 만든다(새 원색 0 — 토큰 파생). */
-.rp-zone-alt { background: color-mix(in srgb, var(--ink) 4%, var(--bg)); }
-.rp-zone-head { margin-bottom: var(--space-5); }   /* D3 */
-.rp-zone-num {                                     /* 존 번호 — 다리를 건너는 순서(장식 아님) */
+/* 위에 **조건부 요소**(업데이트 배너 등)가 끼면 고정 calc은 그만큼 넘친다(실측 72px 초과).
+   그래서 콘텐츠 칸을 이 화면에서만 flex로 만들고 셸이 **남는 높이**를 먹게 한다.
+   `:has()`로 범위를 이 페이지에 묶어 다른 화면엔 손대지 않는다(전역 회귀 0).
+   `:has()` 미지원 브라우저는 위 calc이 그대로 폴백. */
+main:has(> .rp-shell) {
+  display: flex; flex-direction: column;
+  height: calc(100dvh - var(--topbar-h)); overflow: hidden;
+}
+main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0; }
+.rp-shell-solo { grid-template-columns: minmax(0, 1fr); }   /* 검수 전 — 입력만 */
+.rp-pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; gap: var(--space-4); }
+.rp-pane-in { overflow: hidden; }
+.rp-shell-solo .rp-pane-in { max-width: 46rem; }
+.rp-step-num {                                     /* 단계 번호 — 다리를 건너는 순서(장식 아님) */
   font-family: var(--font-display); font-weight: var(--w-semi);
   font-size: .82rem; color: var(--gold-ink); margin-right: var(--space-2);
 }
+/* 03 — **유일한 내부 스크롤**. 남는 높이를 전부 먹고 그 안에서만 스크롤한다. */
+.rp-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+.rp-scroll > * + * { margin-top: var(--space-4); }
+/* 04 — 하단 고정(작업면 바닥). sticky가 아니라 **레이아웃상 마지막 칸**이라 항상 보인다. */
+.rp-bar {
+  flex: 0 0 auto; background: var(--surface); border-radius: var(--radius-2xl);
+  box-shadow: var(--nm-soft); padding: var(--space-4) var(--space-5);
+  display: flex; align-items: flex-end; flex-wrap: wrap; gap: var(--space-4);
+}
+.rp-bar-field { display: flex; flex-direction: column; gap: var(--space-2); }
+.rp-bar-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-left: auto; }
+.rp-bar-note { flex: 1 1 100%; margin: 0; }
+.rp-empty {
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  text-align: center; gap: var(--space-3); height: 100%;
+  color: var(--text-muted); font-size: .88rem;
+}
+
+/* E5 — 2단이 1열로 풀린다. 뷰포트 고정도 여기서 해제(모바일은 스크롤이 자연스럽다). */
+@media (max-width: 1199.98px) {
+  .rp-shell { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .rp-scroll { overflow: visible; }
+  .rp-bar-actions { margin-left: 0; width: 100%; }
+  .rp-bar-actions .btn { flex: 1 1 auto; }
+}
+/* M0-c 실측 3종 수리 — 터치 타깃 · 헤드라인 위계 · (존 2px 삐짐은 존 제거로 소멸).
+   타깃 44px는 **전 폭 공통**으로 둔다 — 데스크톱 실측에서도 select 38px·summary 36px로 미달이었다. */
+.rp-shell select.form-select, .rp-shell .btn { min-height: 44px; }
+.rp-note > summary { min-height: 44px; display: flex; align-items: center; }
 @media (max-width: 767.98px) {
-  .rp-zone { margin-inline: calc(-1 * var(--space-4)); padding-inline: var(--space-4); padding-block: var(--space-6); }
+  .rp-step-title { font-size: clamp(1.55rem, 6vw, 1.7rem); }   /* 22.4 → 24.8px(본문과 위계 확보) */
+  .rp-strip { gap: var(--space-4); }
+  .rp-stat + .rp-stat { padding-left: var(--space-4); }
 }
