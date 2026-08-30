@@ -98,9 +98,9 @@ def test_zone_hierarchy_present():
     assert html.count("rp-zone-alt") == 2                # 교차 밴드 2개(결과·등록)
     assert html.count("rp-zone-head") == 5
     assert "rp-kpis" in html and html.count("rp-kpi-value") == 4
-    # 밴드는 배경 톤으로 갈린다(보더 아님) + 섹션 여백은 토큰(5-c: 64 → 48px, 오너 A1 지시).
+    # 밴드는 배경 톤으로 갈린다(보더 아님) + 섹션 여백은 토큰(5-d: 48 → 32px, 오너 D3 지시).
     assert "color-mix" in _block(css, ".rp-zone-alt")
-    assert "--space-7" in _block(css, ".rp-zone")
+    assert "--space-6" in _block(css, ".rp-zone")
 
 
 def test_soft_neumorphism_tokens():
@@ -149,16 +149,30 @@ def test_reduced_motion_and_mobile():
 
 
 # ── Stage 5-c: 오너 판정 후 마이크로패치(존 48px · 디스플레이 타이포 1단 축소) ─────────
-def test_stage5c_zone_padding_and_display_scale():
-    """A1 존 여백 48px · A2 **디스플레이 타이포만** 1단 축소. 본문·숫자는 불변(과잉 수정 금지)."""
+#    → **5-d가 승계**(오너 D2·D3): 최신 지시가 이긴다. 5-c 수치는 아래 주석에 근거로만 남긴다.
+def test_stage5d_one_screen_ingredients():
+    """★ D1 좌표계 = **1920×940**(1080 모니터 − 브라우저 크롬). 섹션 01+02가 한 화면.
+
+    실측(scripts/_devshot_v40s5d.py, 헤드리스 크로뮴):
+      5-c: KPI 하단 1,075px / 940px → **135px 초과**
+      5-d: KPI 하단   927px / 940px → **한 화면 O(여유 13px)**
+    CSS는 그 결과를 만든 재료만 못박는다 — 픽셀 판정은 devshot이 한다(캡처가 산출물).
+    """
     css = _s5_css()
-    assert "var(--space-7) 0" in _block(css, ".rp-zone")            # 64 → 48px
-    title = _block(css, ".rp-step-title")
-    assert "clamp(1.4rem, 2.7vw, 2rem)" in title                    # 38.4 → 32.0px(1280px 기준)
-    # 본문·KPI 숫자는 **건드리지 않았다** — 축소가 전역으로 번지지 않았음을 못박는다.
+    # D2 — 디스플레이 타이포 추가 1단(32.0 → 27.2px). 부제도 이번엔 1단 허용.
+    assert "clamp(1.4rem, 2.7vw, 1.7rem)" in _block(css, ".rp-step-title")
+    assert ".88rem" in _block(css, ".rp-step-lead")
+    # KPI 숫자는 **계속 불변** — 주인공은 숫자다(축소가 전역으로 번지지 않았음을 못박는다).
     assert "clamp(2.4rem, 4.4vw, 3.2rem)" in _block(css, ".rp-kpi-value")
-    assert ".95rem" in _block(css, ".rp-step-lead")
     assert "1.05rem" in _block(css, ".rp-num")
+    # D3 — 잔여 px는 **여백에서만**. 존·카드 안쪽 여백 1스텝.
+    assert "var(--space-6) 0" in _block(css, ".rp-zone")
+    assert "padding: var(--space-6)" in _block(css, ".rp-hero")
+
+
+def test_stage5d_textarea_rows_preserved():
+    """D3 계약: 입력 줄 수(rows=5)는 **기능 보존** — 여백을 깎아도 여기는 건드리지 않는다."""
+    assert 'rows="5"' in _tpl()
 
 
 def test_stage5c_style_source_is_single():
