@@ -17,8 +17,10 @@ def _tpl() -> str:
 
 
 def _s5_css() -> str:
+    """Stage 5 CSS **선언부만**. 주석은 근거로 값을 인용할 수 있으므로 제외한다(하드코딩과 구분)."""
     css = CSS.read_text(encoding="utf-8")
-    return css.split("디자인 v2 Stage 5")[1]
+    block = css.split("v2 Stage 5-b")[1]
+    return re.sub(r"/\*.*?\*/", "", block, flags=re.S)
 
 
 def _block(css: str, selector: str) -> str:
@@ -40,7 +42,8 @@ def test_stage5_css_uses_tokens_only():
     """Stage 5 CSS는 **토큰만** 쓴다 — 새 원색·하드코딩 hex 0."""
     css = _s5_css()
     assert not re.search(r"#[0-9a-fA-F]{3,8}\b", css), "Stage 5 CSS에 하드코딩 hex"
-    for token in ("--font-display", "--nm-up", "--nm-in", "--space-", "--radius",
+    # 5-b에서 표면은 **soft 계열**로 이관됐다(부드럽게 — 오너 피드백).
+    for token in ("--font-display", "--nm-soft", "--nm-soft-in", "--space-", "--radius",
                   "--teal", "--gold", "--danger", "--hairline-color"):
         assert token in css, token
 
@@ -84,12 +87,33 @@ def test_structure_and_handlers_survive():
         assert m in html, m
 
 
-def test_step_hierarchy_present():
-    """Swiss 위계 — 단계(Step 1/2)가 화면에서 먼저 읽힌다."""
-    html = _tpl()
-    assert "Step 1" in html and "Step 2" in html
-    assert html.count("rp-step-eyebrow") >= 3            # 입력·등록·실패 섹션
+def test_zone_hierarchy_present():
+    """레이아웃 구획 — **번호 붙은 4존**(입력·결과·검수표·등록)이 배경 톤 교차로 갈린다.
+
+    오너 1차 피드백("레이아웃 좀 더 확실하게 드러나게") 반영: Step 1/2 문구 → 존 번호 01~05.
+    """
+    html, css = _tpl(), _s5_css()
+    for num in ("01", "02", "03", "04", "05"):
+        assert f'rp-zone-num">{num}<' in html, num
+    assert html.count("rp-zone-alt") == 2                # 교차 밴드 2개(결과·등록)
+    assert html.count("rp-zone-head") == 5
     assert "rp-kpis" in html and html.count("rp-kpi-value") == 4
+    # 밴드는 배경 톤으로 갈린다(보더 아님) + 섹션 여백 64px 이상 토큰.
+    assert "color-mix" in _block(css, ".rp-zone-alt")
+    assert "--space-8" in _block(css, ".rp-zone")
+
+
+def test_soft_neumorphism_tokens():
+    """오너 1차 피드백("좀 더 부드럽게") — 넓은 블러·낮은 알파·큰 라운드."""
+    css = CSS.read_text(encoding="utf-8")
+    root = css.split("--nm-soft:")[1].split(";")[0]
+    assert "24px" in root                                  # 블러 반경 ↑(기존 16px)
+    assert ".055" in root or ".05" in root                 # 알파 ↓(기존 .09)
+    s5 = _s5_css()
+    for surface in (".rp-hero", ".rp-kpi", ".rp-table-card"):
+        assert "--nm-soft" in _block(s5, surface), surface
+        assert "--radius-2xl" in _block(s5, surface), surface
+    assert "--radius-2xl: 22px" in css                     # 18 → 22
 
 
 def test_density_wall_of_text_removed():
