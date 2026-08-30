@@ -250,3 +250,92 @@ def test_schema_stage6_wired():
     sql = Path("src/db/schema_stage6.sql").read_text(encoding="utf-8")
     assert "CREATE TABLE IF NOT EXISTS market_registrations" in sql
     assert "uq_mktreg_active" in sql and "set_updated_at" in sql
+
+
+# ── 미분류 1호(16359486080) 계열: 판매중→반려 전환 감지 + 알림 원문 동봉 ─────────
+# 팔리던 상품이 내려간 건은 **매출이 즉시 멈춘다** — 신규 반려와 성질이 다르므로 구분해 표기한다.
+
+def _h(*statuses, comment="담당자 검토 결과 반려되었습니다."):
+    rows = [{"statusName": s, "comment": ""} for s in statuses]
+    for r in rows:
+        if "반려" in r["statusName"] or "DENIED" in r["statusName"]:
+            r["comment"] = comment
+    return {"data": rows}
+
+
+@pytest.mark.parametrize("statuses,expected,label", [
+    (("승인완료", "판매중", "승인반려"), True, "사후 재심사"),
+    (("APPROVED", "DENIED 반려"), True, "영문 상태"),
+    (("승인요청", "승인반려"), False, "신규 반려 — 승인'요청'은 판매중이 아니다"),
+    (("승인반려",), False, "첫 행부터 반려"),
+    (("승인반려", "승인요청", "승인반려"), False, "재반려(수정 후 다시 반려)"),
+    (("승인완료", "판매중"), False, "반려 없음"),
+])
+def test_was_selling_detection(statuses, expected, label):
+    """**과탐 금지**: 바 '승인'으로 잡으면 `승인요청`에 걸려 신규 반려가 전부 우선순위로 둔갑한다."""
+    assert RW.was_selling(_h(*statuses)) is expected, label
+
+
+def test_scan_marks_resale_rejection_and_leads_alert():
+    """전환 건은 행에 표기되고 알림 **맨 앞**에 선다(우선순위)."""
+    hists = {"16359486080": _h("승인완료", "판매중", "승인반려"),
+             "999": _h("승인요청", "승인반려", comment="대표이미지는 최소 500*500")}
+    scan = RW.scan_rejections(
+        [{"sid": "16359486080", "title": "사후 재심사건", "account": "gogane"},
+         {"sid": "999", "title": "신규 반려건", "account": "gogane"}],
+        history_fn=lambda sid, acct: hists[sid])
+    by_sid = {r["sid"]: r for r in scan["rows"]}
+    assert by_sid["16359486080"]["was_selling"] is True
+    assert by_sid["16359486080"]["priority"] == "high"
+    assert by_sid["999"]["was_selling"] is False and by_sid["999"]["priority"] == "normal"
+    assert scan["resale_rejections"] == 1
+    assert scan["alert"].startswith("⚠ 판매중→반려 1건(우선)")
+
+
+def test_no_resale_keeps_alert_clean():
+    """전환이 없으면 알림에 그 문구가 붙지 않는다(잡음 0)."""
+    scan = RW.scan_rejections([{"sid": "999", "title": "t", "account": "gogane"}],
+                              history_fn=lambda sid, acct: _h("승인요청", "승인반려"))
+    assert scan["resale_rejections"] == 0
+    assert "판매중→반려" not in scan["alert"]
+
+
+def test_history_shape_safety():
+    """(status, body) 튜플·리스트·쓰레기 입력 모두 안전([[ship_real get 튜플 반환]])."""
+    rows = [{"statusName": "판매중"}, {"statusName": "승인반려"}]
+    assert RW.was_selling((200, {"data": rows})) is True
+    assert RW.was_selling(rows) is True
+    for junk in (None, "", 0, {"data": "not-a-list"}, [None, 1]):
+        assert RW.was_selling(junk) is False
+
+
+def test_notify_includes_unknown_comment_head(monkeypatch):
+    """③ 미분류 사유 **원문 앞 80자**를 알림에 동봉 — Wing 안 열고 1차 판단."""
+    from src.pricing import cron as CRON
+    sent = {}
+    monkeypatch.setattr("src.notifications.telegram.send_telegram",
+                        lambda body, urgency=None: sent.update(body=body) or True)
+    long_reason = "판매중 상품 사후 재심사 결과 " + "가" * 200
+    rows = [{"sid": "16359486080", "kind": "unknown", "kind_ko": "미분류",
+             "comment": long_reason, "was_selling": True},
+            {"sid": "999", "kind": "image_spec", "kind_ko": "이미지 규격",
+             "comment": "최소 500*500", "was_selling": False}]
+    CRON._reject_notify_fn("gogane")("반려 2건", rows)
+    body = sent["body"]
+    assert "미분류 사유 원문:" in body
+    assert "16359486080: 판매중 상품 사후 재심사 결과" in body
+    head = [ln for ln in body.splitlines() if ln.startswith("· 16359486080")][0]
+    assert len(head.split(": ", 1)[1]) <= 80          # 80자 상한
+    assert "⚠판매중→반려 미분류(16359486080)" in body   # 전환 건 태그
+    assert "이미지 규격(999)" in body                   # 신규 반려는 태그 없음
+
+
+def test_notify_omits_section_when_all_classified(monkeypatch):
+    """분류가 다 됐으면 원문 섹션을 붙이지 않는다(알림 비대화 방지)."""
+    from src.pricing import cron as CRON
+    sent = {}
+    monkeypatch.setattr("src.notifications.telegram.send_telegram",
+                        lambda body, urgency=None: sent.update(body=body) or True)
+    CRON._reject_notify_fn("gogane")("반려 1건", [
+        {"sid": "1", "kind": "image_spec", "kind_ko": "이미지 규격", "comment": "규격"}])
+    assert "미분류 사유 원문" not in sent["body"]

@@ -334,9 +334,22 @@ def _reject_notify_fn(account: str):
     `notified=False` + 사유가 남는다(보냈다고 주장하지 않는다). 내용은 로그에도 남겨 누락 0.
     """
     def _notify(alert: str, rows):
-        kinds = " · ".join(f"{r.get('kind_ko')}({r.get('sid')})"
+        def _tag(r):
+            # 팔리던 상품이 내려간 건은 한눈에 보이게(신규 반려와 구분 — 매출이 즉시 멈춘다).
+            return "⚠판매중→반려 " if r.get("was_selling") else ""
+        kinds = " · ".join(f"{_tag(r)}{r.get('kind_ko')}({r.get('sid')})"
                            for r in rows[:5] if r.get("comment"))
+        # **미분류는 사유 원문 앞 80자를 동봉** — 오너가 Wing을 안 열고도 1차 판단할 수 있게.
+        unknown_lines = []
+        for r in rows:
+            if r.get("kind") == "unknown" and r.get("comment"):
+                head = " ".join(str(r["comment"]).split())[:80]
+                unknown_lines.append(f"· {r.get('sid')}: {head}")
+            if len(unknown_lines) >= 3:                    # 알림이 길어지지 않게 상위 3건만
+                break
         body = f"[고가브릿지] 쿠팡 반려 감지 · {account}\n{alert}" + (f"\n{kinds}" if kinds else "")
+        if unknown_lines:
+            body += "\n미분류 사유 원문:\n" + "\n".join(unknown_lines)
         from src.notifications.telegram import send_telegram
         logger.info("반려 알림: %s", body.replace("\n", " | "))
         if not send_telegram(body, urgency="warning"):
