@@ -2,6 +2,7 @@
 
 import hashlib
 import hmac
+import json
 import logging
 import math
 import os
@@ -199,6 +200,30 @@ class CoupangUploader(BaseUploader):
     # Public API
     # ------------------------------------------------------------------
 
+    # 전송 블록 계측 — 저장처는 **기존 로그 관례**(logger). 등록 대장(market_registrations)
+    #   스키마는 건드리지 않는다(오너 지시 C2 — 스키마는 별도 결정 사안).
+    ATTR_LOG_LIMIT = 1200
+
+    @classmethod
+    def _log_attr_block(cls, sku: str, payload: dict, *, outcome: str, detail: str = '') -> str:
+        """전송한 attributes·옵션(items) 블록 원문을 로그에 남기고 그 줄을 반환한다.
+
+        카나리 실패 부검이 막힌 근원: **보낸 페이로드가 어디에도 남지 않았다**(대장에 payload 컬럼
+        없음·성공 시에만 record). 실패는 물론 성공도 남겨야 "통과한 모양"과 대조가 된다.
+        비밀은 담기지 않는다 — attributes/옵션은 상품 값이고 인증 헤더는 여기 없다.
+        """
+        try:
+            items = payload.get('items') or []
+            block = [{'itemName': (it or {}).get('itemName', ''),
+                      'attributes': (it or {}).get('attributes') or []} for it in items]
+            body = json.dumps(block, ensure_ascii=False)[:cls.ATTR_LOG_LIMIT]
+        except Exception as exc:                       # 계측이 등록을 죽이지 않게
+            body = f'<직렬화 실패: {type(exc).__name__}>'
+        line = (f'쿠팡 전송블록 outcome={outcome} sku={sku or "-"} items={len(payload.get("items") or [])} '
+                f'attributes={body}' + (f' detail={detail}' if detail else ''))
+        (logger.warning if outcome == 'fail' else logger.info)('%s', line)
+        return line
+
     def upload_product(self, product: dict) -> dict:
         """Coupang에 상품을 업로드한다.
 
@@ -284,6 +309,9 @@ class CoupangUploader(BaseUploader):
             path = '/v2/providers/seller_api/apis/api/v1/marketplace/seller-products'
             result = self._api_request('POST', path, data=payload)
             if 'error' in result:
+                # 실패 = 무조건 전송 블록 원문을 남긴다(다음 세션이 로그 고고학을 반복하지 않게).
+                self._log_attr_block(product.get('sku', ''), payload,
+                                     outcome='fail', detail=str(result['error']))
                 return {'success': False, 'error': result['error'], 'sku': product.get('sku', '')}
             # 쿠팡 응답의 data는 sellerProductId(숫자) 또는 {"sellerProductId": ...} 또는 null일 수 있다.
             data = result.get('data')
@@ -297,7 +325,12 @@ class CoupangUploader(BaseUploader):
             if not product_id and code and code not in ('SUCCESS', '200', 'OK'):
                 # data null + 비성공 코드 = 등록 거부 → 가짜 성공 금지(정직)
                 msg = result.get('message') or f'코드 {code}'
+                self._log_attr_block(product.get('sku', ''), payload, outcome='fail',
+                                     detail=f'code={code} message={msg}')
                 return {'success': False, 'error': f'쿠팡 등록 거부: {msg}', 'sku': product.get('sku', '')}
+            # 성공분도 남긴다 — 다음 실패의 **대조 정본**(통과한 attributes가 어떤 모양이었나).
+            self._log_attr_block(product.get('sku', ''), payload, outcome='ok',
+                                 detail=f'sellerProductId={product_id}')
             # ★ 정본 2단계: 등록(POST) 성공 후 **승인요청(PUT approvals)** 별도 호출.
             #   누락하면 상품이 SAVED로 방치된다(심사 진입 안 함). 호출 간 0.4s(레이트리밋).
             approval = None
@@ -884,9 +917,11 @@ class CoupangUploader(BaseUploader):
         """Coupang Wing API에 요청을 전송한다.
 
         Authorization: CEA algorithm=HmacSHA256, access-key={key}, signed-date={date}, signature={sig}
-        429: rate limit → 재시도
-        401: 인증 오류 → 즉시 반환
-        500: 서버 오류 → 반환
+
+        **계측(스마트스토어 #676과 동형):** 실패 사유는 generic 문구가 아니라
+        `stage / attempt / error_type / http_status / body 원문`으로만 말한다.
+        429=재시도 · 4xx=즉시 반환(되풀이해도 같은 답 — 원문 버리고 3회 삼키던 것이 로그 고고학의 근원)
+        · 5xx=원문 실어 반환. 조립 헬퍼는 `BaseUploader` 단일 소스(재구현 금지).
         """
         if not self.access_key or not self.secret_key:
             return {'error': 'Missing Coupang API credentials'}
@@ -901,6 +936,8 @@ class CoupangUploader(BaseUploader):
             'Authorization': auth_header,
             'Content-Type': 'application/json;charset=UTF-8',
         }
+        stage = f'{method.upper()} {path}'
+        last = ''
         for attempt in range(3):
             try:
                 # 고정 IP 릴레이 경유 — 쿠팡 호출 IP 화이트리스트 대응(v8 / v87-S6-2 mkt.php).
@@ -908,24 +945,41 @@ class CoupangUploader(BaseUploader):
                 resp = relay_request(method, url, json=data, headers=headers, timeout=30,
                                      market="coupang", key=str(self.vendor_id or ""))
                 if resp.status_code == 429:
-                    logger.warning('Coupang rate limit hit, retrying in %ds (attempt %d)', 5, attempt + 1)
+                    last = self._fail_detail(stage, attempt + 1, status=429,
+                                             body=self._resp_body(resp))
+                    logger.warning('쿠팡 재시도 — %s', last)
                     time.sleep(5 * (attempt + 1))
                     continue
                 if resp.status_code == 401:
-                    logger.error('Coupang API auth error 401')
-                    return {'error': 'Authentication failed (401)'}
+                    last = self._fail_detail(stage, attempt + 1, status=401,
+                                             body=self._resp_body(resp))
+                    logger.error('쿠팡 인증 실패 — %s', last)
+                    return {'error': f'쿠팡 인증 실패 — {last}'}
                 if resp.status_code >= 500:
-                    logger.warning('Coupang server error %d', resp.status_code)
-                    return {'error': f'Server error ({resp.status_code})'}
+                    last = self._fail_detail(stage, attempt + 1, status=resp.status_code,
+                                             body=self._resp_body(resp))
+                    logger.warning('쿠팡 서버 오류 — %s', last)
+                    return {'error': f'쿠팡 서버 오류 — {last}'}
+                if resp.status_code >= 400:
+                    # 4xx는 되풀이해도 같은 답 → 본문을 그대로 실어 즉시 반환(3회 삼키기 금지).
+                    last = self._fail_detail(stage, attempt + 1, status=resp.status_code,
+                                             body=self._resp_body(resp))
+                    logger.warning('쿠팡 거부 — %s', last)
+                    return {'error': f'쿠팡 거부 — {last}'}
                 resp.raise_for_status()
                 return resp.json()
             except RelayError as exc:
                 # v87-S6-2: 릴레이 계층 실패는 재시도해도 같다(설정·릴레이 다운) → 즉시 정직 반환.
-                #   '쿠팡이 거부함'과 '우리 릴레이가 죽음'을 마켓 카드에서 구분하기 위함.
-                logger.error('Coupang relay failed: %s', exc)
-                return {'error': str(exc)}
+                #   '쿠팡이 거부함'과 '우리 릴레이가 죽음'을 마켓 카드에서 구분하기 위함(error_type).
+                last = self._fail_detail(stage, attempt + 1, exc=exc)
+                logger.error('쿠팡 릴레이 실패 — %s', last)
+                return {'error': f'쿠팡 릴레이 실패 — {last}'}
             except requests.exceptions.RequestException as exc:
-                logger.warning('Coupang API request failed (attempt %d): %s', attempt + 1, exc)
+                last = self._fail_detail(stage, attempt + 1, exc=exc,
+                                         status=getattr(getattr(exc, 'response', None),
+                                                        'status_code', None),
+                                         body=self._resp_body(getattr(exc, 'response', None)))
+                logger.warning('쿠팡 요청 실패 — %s', last)
                 if attempt < 2:
                     time.sleep(3)
-        return {'error': 'API request failed after retries'}
+        return {'error': f'쿠팡 요청 실패(최대 3회) — {last or "사유 미상"}'}
