@@ -2,14 +2,15 @@
 {% block title %}등록 파이프 · 소싱 검수{% endblock %}
 
 {% block content %}
-<section class="rp-step">
-  <div class="rp-step-eyebrow">Step 1 · 소싱 검수</div>
+<section class="rp-zone">
+<div class="rp-step rp-zone-head">
+  <div class="rp-step-eyebrow"><span class="rp-zone-num">01</span>소싱 검수</div>
   <h1 class="rp-step-title">소싱 URL을 넣으면<br>검수표가 나옵니다</h1>
   <p class="rp-step-lead">
     수집 · 번역 · 취급판정 · 판매가 산출까지 자동으로 돌립니다.
     여기는 <strong>검수까지</strong>예요 — 실제 마켓 등록은 아래 2단계에서 따로 진행합니다.
   </p>
-</section>
+</div>
 
 <form method="post" action="/seller/sourcing/register-pipe" class="rp-hero mb-5">
   <label class="rp-kpi-label d-block mb-3" for="urls">소싱 URL · 한 줄에 하나 · 최대 50개</label>
@@ -21,9 +22,14 @@
     <button type="submit" class="btn btn-cta">검수표 만들기</button>
   </div>
 </form>
+</section>
 
 {% if review is not none %}
-  <section class="rp-kpis">
+  <section class="rp-zone rp-zone-alt">
+  <div class="rp-step rp-zone-head">
+    <div class="rp-step-eyebrow"><span class="rp-zone-num">02</span>검수 결과</div>
+  </div>
+  <div class="rp-kpis">
     <div class="rp-kpi rp-kpi-pass">
       <div class="rp-kpi-label">검수 통과</div>
       <div class="rp-kpi-value">{{ review.review_pass|length }}<span class="rp-kpi-unit">건</span></div>
@@ -40,7 +46,7 @@
       <div class="rp-kpi-label">요청 URL</div>
       <div class="rp-kpi-value">{{ review.requested }}<span class="rp-kpi-unit">건</span></div>
     </div>
-  </section>
+  </div>
 
   <div class="rp-meta">
     <span class="rp-chip">금지어·금지 카테고리 <b>{{ '{:,}'.format(review.blacklist_count) }}</b>건</span>
@@ -61,13 +67,15 @@
       실측 전이면 <strong>미검증</strong>으로 둡니다 — <strong>등록을 막지는 않고 표시만</strong> 합니다.
     </div>
   </details>
+  </section>
 
   <!-- 검수표 -->
   {% if review.review_pass or review.excluded %}
-  <section class="rp-step">
-    <div class="rp-step-eyebrow">검수표 · 등록 없음</div>
-  </section>
-  <div class="rp-table-card mb-5">
+  <section class="rp-zone">
+  <div class="rp-step rp-zone-head">
+    <div class="rp-step-eyebrow"><span class="rp-zone-num">03</span>검수표 · 등록 없음</div>
+  </div>
+  <div class="rp-table-card">
     <table class="rp-table">
       <thead><tr>
         <th style="width:76px;">상품</th><th>제목 · 소싱 URL</th>
@@ -145,18 +153,20 @@
       </tbody>
     </table>
   </div>
+  </section>
   {% endif %}
 
   <!-- STEP 2: 마켓 등록 (비가역 — 승인 게이트 + 카나리 1건 먼저) -->
   {% if review.review_pass %}
-  <section class="rp-step">
-    <div class="rp-step-eyebrow">Step 2 · 마켓 등록</div>
+  <section class="rp-zone rp-zone-alt">
+  <div class="rp-step rp-zone-head">
+    <div class="rp-step-eyebrow"><span class="rp-zone-num">04</span>마켓 등록</div>
     <h2 class="rp-step-title">검수 통과분을 마켓에 올립니다</h2>
     <p class="rp-step-lead">
       <strong>비가역 작업</strong>이에요 — 먼저 <strong>카나리 1건</strong>만 올려 눈으로 확인한 뒤 나머지를 진행합니다.
       자격·릴레이가 없으면 정직하게 실패로 표시돼요.
     </p>
-  </section>
+  </div>
 
   <div class="rp-hero" id="p3RegisterCard">
     <div class="row g-4 align-items-end">
@@ -243,13 +253,15 @@
     }
   }
   </script>
+  </section>
   {% endif %}
 
   <!-- 수집 실패(정직) -->
   {% if review.failed %}
-  <section class="rp-step mt-5">
-    <div class="rp-step-eyebrow">수집 실패 · {{ review.failed|length }}건</div>
-  </section>
+  <section class="rp-zone">
+  <div class="rp-step rp-zone-head">
+    <div class="rp-step-eyebrow"><span class="rp-zone-num">05</span>수집 실패 · {{ review.failed|length }}건</div>
+  </div>
   <div class="rp-result">
     {% for f in review.failed %}
     <div class="rp-res rp-res-fail">
@@ -258,6 +270,7 @@
     </div>
     {% endfor %}
   </div>
+  </section>
   {% endif %}
 {% endif %}
 {% endblock %}
