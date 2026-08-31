@@ -19,7 +19,12 @@ REJECTION_KINDS = {
     "image_spec":     {"ko": "이미지 규격",            "rx": "reupload",
                        "rx_ko": "이미지 재수집·교체 후 재제출"},
     "trademark":      {"ko": "상표권(담당자 검토)",     "rx": "delete",         "rx_ko": "삭제 권고"},
-    "option_value":   {"ko": "옵션값",                "rx": "replace_option", "rx_ko": "값 대체"},
+    # P5 — '값 대체'는 뭉뚱그린 처방이었다. 실제 거부는 **단위**와 **허용값**이 갈린다:
+    #   "유효하지 않은 구매 옵션 값 혹은 단위" — 쿠팡 문구 자체가 둘을 한 줄에 담는다.
+    #   단위 계열은 메타 basicUnit 결합(#690 P2), 값 계열은 허용 목록 게이트(#690 P3)로 처방이 다르다.
+    "option_unit":    {"ko": "옵션 단위",              "rx": "attach_unit",
+                       "rx_ko": "메타 basicUnit 결합 후 재전송"},
+    "option_value":   {"ko": "옵션값",                "rx": "replace_option", "rx_ko": "허용값으로 대체"},
     "apple_category": {"ko": "애플 카테고리 사전승인 반려", "rx": "hold_or_reissue",
                        "rx_ko": "iPhone 표기 보류 · 삼성/픽셀용 유효"},
     "unknown":        {"ko": "미분류",                "rx": "manual",         "rx_ko": "오너 확인 필요"},
@@ -45,6 +50,9 @@ WING_STATES = {
 _APPLE_RE = re.compile(r"애플|apple|아이폰|iphone|아이패드|ipad|맥북|macbook|에어팟|airpod|casetify|mfi|사전\s*승인", re.I)
 _TRADEMARK_RE = re.compile(r"상표|브랜드\s*권|권리\s*침해|지식\s*재산|정품|위조|라이선스|licen[sc]e|가품|병행\s*수입\s*불가", re.I)
 _OPTION_RE = re.compile(r"옵션\s*값|구매\s*옵션|옵션\s*정보|옵션\s*누락|사이즈\s*표기|색상\s*표기|단위\s*수량", re.I)
+# P5 — 옵션 계열 안에서 **단위**를 따로 집는다. 처방이 다르기 때문이다(단위 결합 vs 허용값 대체).
+#   쿠팡 실문구 "유효하지 않은 구매 옵션 값 **혹은 단위** 입니다."가 이 분기의 근거다.
+_OPTION_UNIT_RE = re.compile(r"단위", re.I)
 _IMAGE_RE = re.compile(r"이미지|사진|대표\s*이미지|화질|해상도|규격|누끼|워터마크|배경\s*처리|픽셀|"
                        r"\d{3,4}\s*\*\s*\d{3,4}|DETAIL", re.I)   # 실데이터: "최소 500*500 … 기타이미지(DETAIL)"
 
@@ -93,6 +101,10 @@ def classify_rejection(comment: str, *, title: str = "") -> dict:
         return _mk("trademark", matched=m.group(0))
     m = _OPTION_RE.search(text)
     if m:
+        # 사유에 '단위'가 있으면 단위 처방 — 없으면 값 처방(둘 다면 단위가 먼저·결합이 선행 조치).
+        mu = _OPTION_UNIT_RE.search(text)
+        if mu:
+            return _mk("option_unit", matched=mu.group(0))
         return _mk("option_value", matched=m.group(0))
     m = _IMAGE_RE.search(text)
     if m:

@@ -17,7 +17,8 @@ def test_classify_three_standard_kinds():
     tm = RW.classify_rejection("상표권 침해 소지 — 브랜드 권리 확인 필요")
     assert tm["kind"] == "trademark" and tm["prescription_ko"] == "삭제 권고"
     ov = RW.classify_rejection("옵션값 정보가 누락되었습니다")
-    assert ov["kind"] == "option_value" and ov["prescription_ko"] == "값 대체"
+    # #690 P5: 처방 문구가 '값 대체' → '허용값으로 대체'로 구체화됐다(단위 계열은 별도 유형).
+    assert ov["kind"] == "option_value" and ov["prescription_ko"] == "허용값으로 대체"
 
 
 def test_classify_status_phrase_is_not_reason():

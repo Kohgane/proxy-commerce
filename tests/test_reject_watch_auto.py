@@ -339,3 +339,25 @@ def test_notify_omits_section_when_all_classified(monkeypatch):
     CRON._reject_notify_fn("gogane")("반려 1건", [
         {"sid": "1", "kind": "image_spec", "kind_ko": "이미지 규격", "comment": "규격"}])
     assert "미분류 사유 원문" not in sent["body"]
+
+
+# ── P5 — option 처방 분기(단위 vs 허용값) ─────────────────────────────────────
+def test_option_rejection_splits_unit_from_value():
+    """★ 이번 카나리 원문. '값 대체' 한 덩어리로는 처방이 안 나온다 — 단위/값이 갈린다.
+
+    쿠팡 문구가 "구매 옵션 값 **혹은 단위**"라 둘을 한 줄에 담는다. 처방은 다르다:
+    단위 = 메타 basicUnit 결합(#690 P2) · 값 = 허용 목록 게이트(#690 P3).
+    """
+    from src.pipeline.reject_watch import classify_rejection
+
+    r = classify_rejection('유효하지 않은 구매 옵션 값 혹은 단위 입니다.', title='PopSockets 그립톡')
+    assert r['kind'] == 'option_unit'
+    assert 'basicUnit' in r['prescription_ko']
+
+    # '단위'가 없으면 값 처방(회귀 0).
+    r = classify_rejection('구매 옵션 값이 올바르지 않습니다', title='x')
+    assert r['kind'] == 'option_value' and r['prescription'] == 'replace_option'
+
+    # 옵션과 무관한 사유는 건드리지 않는다.
+    r = classify_rejection('대표 이미지 해상도가 최소 500*500 미만입니다', title='x')
+    assert r['kind'] == 'image_spec'
