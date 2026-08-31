@@ -1073,6 +1073,10 @@ def _render_dashboard_home():
     dismissed = request.cookies.get(_ONBOARDING_DISMISS_COOKIE) == "1"
     context = _build_dashboard_home_context(widgets, dismissed=dismissed)
     context["onboarding"]["dismiss_href"] = url_for("seller_console.dismiss_onboarding", next=request.path)
+    # Stage 6-a — 운영 스냅샷. 새 집계를 만들지 않고 기존 산출(계정 자격·등록 대장·수집 요약)만 모은다.
+    #   블록별로 독립 실패하고, 실패는 화면에서 '미연결'로 정직 표기된다(0을 찍지 않는다).
+    from src.pipeline import ops_snapshot
+    context["ops"] = ops_snapshot.build(_seller_identities())
     return render_template("dashboard.html", widgets=widgets, page="dashboard", **context)
 
 
