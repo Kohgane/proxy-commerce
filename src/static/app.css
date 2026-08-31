@@ -882,7 +882,13 @@ body::before {
 .rp-unit { font-family: var(--font-ui); font-size: .74rem; font-weight: 400; color: var(--text-muted); margin-left: 2px; }
 .rp-sub { font-size: .74rem; color: var(--text-muted); line-height: 1.6; margin-top: var(--space-1); }
 .rp-title { font-weight: 600; color: var(--text-strong); line-height: 1.5; }
-.rp-url { font-size: .74rem; color: var(--text-muted); word-break: break-all; margin-top: var(--space-1); }
+.rp-url {
+  font-size: .74rem; color: var(--text-muted); margin-top: var(--space-1);
+  /* F4 — 1줄 말줄임. 전체 URL은 title 호버로 본다(쿼리스트링은 서버가 잘라 보낸다).
+     옛 `word-break: break-all`은 URL을 2~3줄로 접어 표 높이를 키웠다. */
+  display: block; max-width: 42ch;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .rp-thumb { width: 52px; height: 52px; object-fit: cover; border-radius: var(--radius-lg); box-shadow: var(--nm-soft-sm); }
 .rp-thumb-empty {
   width: 52px; height: 52px; border-radius: var(--radius-lg); box-shadow: var(--nm-soft-in);
@@ -913,9 +919,13 @@ body::before {
 /* ── Stage 5-e: 뷰포트 고정 2단 셸 (오너 E1·E2) ──────────────────────────────
    5-b~5-d는 세로 5존이라 스크롤이 전제였다. E1이 그 전제를 뒤집는다 —
    **body 스크롤바 0**, 내부 스크롤은 03 표 1곳만. 그래서 존을 걷고 좌/우 2단으로 재구성한다.
-   좌 = 01 입력(고정) · 우 = 02 스트립 → 03 표(유일한 스크롤) → 04 등록바(하단 고정). */
+   좌 = 01 입력(고정) · 우 = 02 스트립 → 03 표(유일한 스크롤) → 04 등록바(하단 고정).
+
+   **5-f(오너 F1~F5) — 공동 제거.** 5-e는 `minmax(340px,24rem)`이라 1920에서 좌 384px(20%),
+   우 1212px(63%)였고 나머지는 **빈 공동**이었다. 비율을 32/68로 못박고 카드가 여유 높이를
+   끝까지 쓰게 한다(좌 textarea·우 리스트가 flex로 늘어난다 → 카드 밖 여백 0). */
 .rp-shell {
-  display: grid; grid-template-columns: minmax(340px, 24rem) minmax(0, 1fr);
+  display: grid; grid-template-columns: 32fr 68fr;   /* F1 — 좌 32% / 우 68% */
   gap: var(--space-6); align-items: stretch;
   height: calc(100dvh - var(--rp-fit-offset));
 }
@@ -929,6 +939,45 @@ main:has(> .rp-shell) {
 }
 main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0; }
 .rp-shell-solo { grid-template-columns: minmax(0, 1fr); }   /* 검수 전 — 입력만 */
+/* F2 — 좌 입력 카드가 열 높이를 끝까지 쓰고, textarea가 **카드 잔여 높이를 전부** 먹는다.
+   rows 고정은 폐기(속성은 폴백으로 남긴다 — JS·CSS 없이도 최소 높이 확보).
+   한 화면에 URL 20~30줄이 스크롤 없이 보이는 게 이 카드의 목적이다. */
+.rp-pane-in .rp-hero { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+.rp-pane-in .rp-input {
+  flex: 1 1 auto; min-height: 0; resize: none;
+  /* URL 목록은 산문이 아니라 **데이터 필드**다 — 촘촘한 행간이 맞고, 그래야 F2의
+     "한 화면에 20~30줄"이 실제로 들어온다(느슨한 행간으론 14줄에서 막힌다·실측). */
+  font-size: .8rem; line-height: 1.4;
+}
+.rp-pane-in .rp-hero-foot { flex: 0 0 auto; }        /* 검수표 버튼 = 카드 바닥 고정 */
+
+/* F3 — 우측은 **카드 1장**. 헤더(02 스트립)·바디(03 리스트)·푸터(04 등록바)가 한 표면에 붙는다.
+   5-e는 셋이 각자 카드라 사이사이가 배경으로 뚫려 보였다(공동). */
+.rp-card {
+  flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
+  background: var(--surface); border-radius: var(--radius-2xl); box-shadow: var(--nm-soft);
+  overflow: hidden;
+}
+.rp-card > .rp-strip { border-radius: 0; box-shadow: none; flex: 0 0 auto;
+  border-bottom: 1px solid var(--border); }
+.rp-card > .rp-bar { border-radius: 0; box-shadow: none;
+  border-top: 1px solid var(--border); }
+/* 바디 — 비어 있어도 "경계 있는 목록"으로 읽히게 은은한 행 가이드라인을 깐다(질감).
+   빈 화면이 배경과 같은 톤이면 카드가 뚫린 것처럼 보인다(5-e 공동의 정체). */
+.rp-card > .rp-scroll {
+  background: color-mix(in srgb, var(--ink) 2%, var(--surface));
+  background-image: repeating-linear-gradient(
+    to bottom, transparent 0, transparent calc(var(--space-8) - 1px),
+    var(--border) calc(var(--space-8) - 1px), var(--border) var(--space-8));
+  padding: var(--space-4);
+}
+.rp-card > .rp-scroll > .rp-table-card { box-shadow: var(--nm-soft-sm); }
+/* F5 — 빈 상태: 바디 중앙 1줄 안내(공동이 아니라 '아직 비어 있음'으로 읽히게). */
+.rp-listempty {
+  display: flex; align-items: center; justify-content: center; height: 100%;
+  color: var(--text-muted); font-size: .88rem; text-align: center;
+}
+
 .rp-pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; gap: var(--space-4); }
 .rp-pane-in { overflow: hidden; }
 .rp-shell-solo .rp-pane-in { max-width: 46rem; }
@@ -958,6 +1007,11 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 @media (max-width: 1199.98px) {
   .rp-shell { grid-template-columns: minmax(0, 1fr); height: auto; }
   .rp-scroll { overflow: visible; }
+  /* 1열로 쌓이면 열 높이가 사라져 `flex:1`이 textarea를 1줄로 짜부한다(실측 48px).
+     모바일에선 최소 높이로 되돌린다 — 데스크톱의 '남는 높이 먹기'는 여기선 의미가 없다. */
+  .rp-pane-in .rp-hero { flex: 0 0 auto; }
+  .rp-pane-in .rp-input { flex: 0 0 auto; min-height: 11rem; }
+  .rp-card { flex: 0 0 auto; }
   .rp-bar-actions { margin-left: 0; width: 100%; }
   .rp-bar-actions .btn { flex: 1 1 auto; }
 }

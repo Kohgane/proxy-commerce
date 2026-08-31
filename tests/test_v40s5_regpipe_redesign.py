@@ -25,7 +25,9 @@ def _s5_css() -> str:
 
 def _block(css: str, selector: str) -> str:
     """정확한 선택자의 선언 블록. `.rp-kpi`가 `.rp-kpis`에 먼저 걸리지 않게 경계를 본다."""
-    m = re.search(re.escape(selector) + r"\s*(?:,[^{]*)?\{([^}]*)\}", css)
+    # 선택자 **시작 경계**를 본다 — `.rp-scroll` 검색이 `.rp-card > .rp-scroll`에 걸리면
+    # 엉뚱한 블록을 검사하게 된다(5-f에서 실제로 그랬다).
+    m = re.search(r"(?:^|\n)\s*" + re.escape(selector) + r"\s*(?:,[^{]*)?\{([^}]*)\}", css)
     assert m, f"선택자 없음: {selector}"
     return m.group(1)
 
@@ -234,3 +236,71 @@ def test_stage5e_failed_zone_absorbed_not_dropped():
     assert "수집 실패" in html and "사유 보기" in html
     assert 'class="rp-stat rp-stat-fail"' in html            # 02 스트립의 실패 카운트
     assert html.count("rp-res-fail") >= 1                    # 사유 카드 보존
+
+
+# ── Stage 5-f: 공동 제거·비율 교정 (오너 F1~F5) ───────────────────────────────
+def test_stage5f_column_ratio_and_fill():
+    """★ F1 — 좌 32 / 우 68. 5-e는 `minmax(340px,24rem)`이라 1920에서 24/76이었고 나머지가 공동.
+
+    실측(scripts/_devshot_v40s5f.py): 5-e 공동 좌 167px·우 924px → 5-f **좌 0 / 우 0**(0·1·30행 전부).
+    """
+    css = _s5_css()
+    shell = _block(css, ".rp-shell")
+    assert "32fr 68fr" in shell
+    # 카드가 열 높이를 끝까지 쓴다 → 카드 밖 공동이 생기지 않는다.
+    assert "flex: 1 1 auto" in _block(css, ".rp-pane-in .rp-hero")
+    assert "flex: 1 1 auto" in _block(css, ".rp-card")
+
+
+def test_stage5f_textarea_takes_remaining_height():
+    """F2 — rows 고정 폐기, textarea가 카드 잔여 높이를 먹는다(실측 378px ≈ 21줄).
+
+    rows 속성 자체는 CSS 없이도 최소 높이를 주는 폴백이라 남긴다.
+    """
+    css = _s5_css()
+    ta = _block(css, ".rp-pane-in .rp-input")
+    assert "flex: 1 1 auto" in ta and "min-height: 0" in ta
+    assert 'rows="5"' in _tpl()                       # 폴백 보존
+    assert "flex: 0 0 auto" in _block(css, ".rp-pane-in .rp-hero-foot")   # 버튼 = 카드 바닥
+
+
+def test_stage5f_right_is_one_card():
+    """F3 — 헤더(02)·바디(03)·푸터(04)가 **한 카드**에 붙는다(사이가 배경으로 뚫리지 않게)."""
+    html, css = _tpl(), _s5_css()
+    assert 'class="rp-card"' in html
+    card = _block(css, ".rp-card")
+    assert "overflow: hidden" in card and "--nm-soft" in card
+    # 안쪽 조각은 자기 그림자·라운드를 버리고 카드 표면에 붙는다.
+    for inner in (".rp-card > .rp-strip", ".rp-card > .rp-bar"):
+        assert "box-shadow: none" in _block(css, inner), inner
+    # 바디는 비어 있어도 '경계 있는 목록'으로 읽히게 질감을 깐다.
+    body = _block(css, ".rp-card > .rp-scroll")
+    assert "repeating-linear-gradient" in body and "color-mix" in body
+
+
+def test_stage5f_empty_state():
+    """F5 — 0행이면 바디 중앙 1줄 안내 + 등록 버튼 disabled(공동이 아니라 '아직 비어 있음')."""
+    html = _tpl()
+    assert "rp-listempty" in html and "검수표를 만들면 여기에 쌓입니다" in html
+    assert "{% if not review.review_pass %}disabled{% endif %}" in html
+
+
+def test_stage5f_url_is_single_line_without_query():
+    """F4 — URL 1줄 말줄임 + 전체는 title 호버. 쿼리스트링은 **서버가 잘라** 보낸다."""
+    from src.pipeline.register_pipe import _short_url
+    html, css = _tpl(), _s5_css()
+    assert 'title="{{ r.url }}"' in html and "r.url_short" in html
+    u = _block(css, ".rp-url")
+    assert "text-overflow: ellipsis" in u and "white-space: nowrap" in u
+    got = _short_url("https://www.amazon.com/dp/B0ABC?ref=sr_1_3&keywords=grip")
+    assert got == "www.amazon.com/dp/B0ABC"           # 쿼리 제거·프로토콜 제거
+    assert len(_short_url("https://x.com/" + "a" * 200)) <= 60
+    # 원본 url은 그대로 남는다(수집·중복키·등록은 전부 원본을 쓴다).
+    assert '"url": url' in Path("src/pipeline/register_pipe.py").read_text(encoding="utf-8")
+
+
+def test_stage5f_mobile_does_not_collapse_textarea():
+    """1열로 쌓이면 열 높이가 사라져 `flex:1`이 textarea를 1줄로 짜부한다(실측 48px) — 최소 높이로 되돌린다."""
+    css = _s5_css()
+    mob = css.split("@media (max-width: 1199.98px)")[1]
+    assert "min-height: 11rem" in mob and "flex: 0 0 auto" in mob

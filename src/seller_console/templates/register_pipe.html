@@ -35,6 +35,9 @@
   {% if review is not none %}
   <!-- 02~04 · 작업면 -->
   <section class="rp-pane rp-pane-work">
+    {# F3 — 헤더(02)·바디(03)·푸터(04)를 **한 카드**에 담는다. 5-e는 셋이 각자 카드라
+       사이사이가 배경으로 뚫려 공동이 됐다. #}
+    <div class="rp-card">
 
     <!-- 02 · 검수 결과 스트립(카드 크롬 제거 · 숫자 위계 유지) -->
     <div class="rp-strip">
@@ -55,6 +58,7 @@
         <span class="rp-stat-v">{{ review.requested }}</span>
         <span class="rp-stat-unit">건</span><span class="rp-stat-l">요청 URL</span>
       </div>
+      <div class="rp-step-eyebrow"><span class="rp-step-num">03</span>검수표 · 등록 없음</div>
       <div class="rp-meta ms-auto">
         <span class="rp-chip">금지어·금지 카테고리 <b>{{ '{:,}'.format(review.blacklist_count) }}</b>건</span>
         {% if review.fx_usd_krw %}
@@ -67,8 +71,6 @@
     </div>
 
     <!-- 03 · 검수표 — 이 화면의 **유일한 내부 스크롤** -->
-    {# 단계 라벨은 스크롤 **밖**에 둔다 — 표를 굴려도 "여기가 03"이 안 사라지게. #}
-    <div class="rp-step-eyebrow"><span class="rp-step-num">03</span>검수표 · 등록 없음</div>
     <div class="rp-scroll">
       <div id="p3Result" class="rp-result"></div>
 
@@ -114,7 +116,7 @@
               </td>
               <td data-label="제목">
                 <div class="rp-title">{{ r.title_ko[:52] }}{% if r.title_ko|length > 52 %}…{% endif %}</div>
-                <div class="rp-url">{{ r.url }}</div>
+                <div class="rp-url" title="{{ r.url }}">{{ r.url_short or r.url }}</div>
                 {% if r.title_truncated or r.title_truncated_suspect %}<span class="pc-badge pc-badge-off">제목 절단 의심</span>{% endif %}
                 {% if r.title_cjk_residual %}<span class="pc-badge pc-badge-muted">번역 잔여(한자)</span>{% endif %}
               </td>
@@ -176,6 +178,9 @@
           </tbody>
         </table>
       </div>
+      {% else %}
+      {# F5 — 0행. 공동이 아니라 "아직 비어 있음"으로 읽히게 바디 중앙에 한 줄. #}
+      <div class="rp-listempty">검수표를 만들면 여기에 쌓입니다.</div>
       {% endif %}
     </div>
 
@@ -198,7 +203,8 @@
         <select id="p3Account" class="form-select"></select>
       </div>
       <div class="rp-bar-actions">
-        <button type="button" class="btn btn-cta" onclick="p3Register(false)">카나리 1건 등록</button>
+        <button type="button" class="btn btn-cta" onclick="p3Register(false)"
+          {% if not review.review_pass %}disabled{% endif %}>카나리 1건 등록</button>
         <button type="button" class="btn btn-gold" onclick="p3Register(true)"
           title="카나리 확인 후에만 사용하세요">전체 {{ review.review_pass|length }}건</button>
       </div>
@@ -272,6 +278,7 @@
       <p class="rp-hint mb-0">검수 통과 상품이 없어 등록 단계는 열리지 않습니다 — 취급 제외·수집 실패 사유를 먼저 확인하세요.</p>
     </div>
     {% endif %}
+    </div>
   </section>
   {% endif %}
 </div>
