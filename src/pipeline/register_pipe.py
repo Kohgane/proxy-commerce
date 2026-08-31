@@ -299,6 +299,23 @@ def kr_ship_viability(brand: str, title: str = "", url: str = "", *, check_fn=No
     return {"viable": None, "status": "미검증", "reason": "실배송 미조회(라이브 확인 필요)"}
 
 
+URL_SHORT_MAX = 60
+
+
+def _short_url(url: str, limit: int = URL_SHORT_MAX) -> str:
+    """검수표 표시용 1줄 URL — **쿼리스트링 제거** 후 도메인+경로를 limit자로 자른다(오너 F4).
+
+    표시용일 뿐이고 원본 `url`은 그대로 남는다(수집·중복키·등록은 전부 원본을 쓴다).
+    쿼리는 트래킹 파라미터가 대부분이라 표에서 폭만 먹고 판단에 기여하지 않는다.
+    """
+    u = str(url or "").strip()
+    if not u:
+        return ""
+    u = u.split("?", 1)[0].split("#", 1)[0]
+    u = re.sub(r"^https?://", "", u).rstrip("/")
+    return u if len(u) <= limit else u[: limit - 1] + "…"
+
+
 def _real_margin(sale_krw, cost_krw, fee_rate, ship_cost_krw):
     """실마진(순이익 KRW, 마진율%) — **단일 소스 MarginCalculator._calc_margin 재사용**(새 공식 0).
 
@@ -424,7 +441,7 @@ def build_source_review_row(draft: dict, *, url: str = "", channel: str = "wooco
     net_krw, real_margin_pct = _real_margin(sale_krw, cost_krw, fee_rate, ship_cost_krw)
 
     return {
-        "url": url,
+        "url": url, "url_short": _short_url(url),
         "title_ko": ct["title"], "title_original": draft.get("title_en") or draft.get("title") or "",
         "title_truncated": ct["truncated"], "title_truncated_suspect": ct["truncated_suspect"],
         "title_cjk_residual": ct["cjk_residual"], "title_cleaned": ct["changed"],

@@ -9,6 +9,7 @@
 """
 import json
 import logging
+import re
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,13 @@ from src.uploaders.coupang_uploader import CoupangUploader
 from src.uploaders.naver_uploader import NaverSmartStoreUploader
 
 POST_PATH = '/v2/providers/seller_api/apis/api/v1/marketplace/seller-products'
+
+
+def _code_only(path: str) -> str:
+    """주석·독스트링을 뺀 **실행되는 줄**만. 근거를 문서에 인용했다고 계약이 깨지면 안 된다."""
+    src = Path(path).read_text(encoding='utf-8')
+    src = re.sub(r'""".*?"""', '', src, flags=re.S)
+    return '\n'.join(l for l in src.splitlines() if not l.lstrip().startswith('#'))
 
 
 def _uploader():
@@ -138,9 +146,7 @@ def test_attr_block_logging_never_kills_upload():
 
 def test_registry_schema_untouched():
     """대장(market_registrations) 스키마는 건드리지 않는다 — 저장처는 로그(오너 지시 C2)."""
-    lines = [l for l in Path('src/uploaders/coupang_uploader.py').read_text(encoding='utf-8').splitlines()
-             if not l.lstrip().startswith('#')]
-    assert 'market_registrations' not in '\n'.join(lines)
+    assert 'market_registrations' not in _code_only('src/uploaders/coupang_uploader.py')
 
 
 # ── ③ 이중 구현 금지 — 실패 계측 조립은 BaseUploader 단일 소스 ─────────────────
@@ -160,3 +166,131 @@ def test_fail_detail_is_single_source():
 def test_fail_detail_shape():
     got = BaseUploader._fail_detail('POST /x', 2, status=400, body='본문')
     assert got == 'stage=POST /x attempt=2 http_status=400 body=본문'
+
+
+# ── 처방 A+B — 단위 결합 · 허용값 게이트 (오너 P1~P5) ─────────────────────────
+# 부검 결론: 스키마 파서가 `basicUnit`/`usableUnits`를 **버려서** 단위가 붙을 경로 자체가 없었다.
+# 쿠팡 거부 문구 "유효하지 않은 구매 옵션 값 **혹은 단위**"의 '단위' 쪽이 여기서 닫힌다.
+
+META_ATTRS = [
+    {'attributeTypeName': '수량', 'required': 'MANDATORY', 'dataType': 'NUMBER',
+     'inputType': 'INPUT', 'basicUnit': '개', 'usableUnits': ['개']},
+    {'attributeTypeName': '색상', 'required': 'MANDATORY', 'dataType': 'STRING',
+     'inputType': 'SELECT', 'basicUnit': '', 'usableUnits': []},
+    {'attributeTypeName': '중량', 'required': '', 'dataType': 'NUMBER',
+     'inputType': 'INPUT', 'basicUnit': 'g', 'usableUnits': ['g', 'kg']},
+]
+
+
+def _schema(monkeypatch, up):
+    monkeypatch.setattr(up, 'get_category_meta', lambda code: {'attributes': META_ATTRS})
+    return up.get_category_attribute_schema('63955')
+
+
+def test_p1_meta_keeps_unit_fields(monkeypatch):
+    """P1 — `basicUnit`/`usableUnits`/`inputType`을 **보존**한다(여태 버리던 3필드)."""
+    sch = _schema(monkeypatch, _uploader())
+    qty = next(e for e in sch if e['attributeTypeName'] == '수량')
+    assert qty['basicUnit'] == '개' and qty['usableUnits'] == ['개'] and qty['inputType'] == 'INPUT'
+
+
+def test_p1_meta_attributes_are_logged(monkeypatch, caplog):
+    """P1 — 메타 attributes[] **원문**이 로그에 남는다(다음 카나리에서 메타 확보)."""
+    up = _uploader()
+    with caplog.at_level(logging.INFO):
+        _schema(monkeypatch, up)
+    line = next(r.getMessage() for r in caplog.records if '카테고리 메타' in r.getMessage())
+    assert 'usableUnits' in line and 'basicUnit' in line and 'code=63955' in line
+
+
+def test_p2_unit_is_attached_from_meta_only(monkeypatch):
+    """★ P2 — `수량=1` → `1개`. 단위는 **메타 유래**이고 하드코딩이 아니다."""
+    sch = _schema(monkeypatch, _uploader())
+    out = CoupangUploader.attr_safe([{'attributeTypeName': '수량', 'attributeValueName': '1'}],
+                                    'PopSockets 그립톡', sch)
+    assert out[0]['attributeValueName'] == '1개'
+    # 메타에 단위가 없으면 결합하지 않는다(발명 0).
+    out = CoupangUploader.attr_safe([{'attributeTypeName': '색상', 'attributeValueName': '블랙'}],
+                                    'x', sch)
+    assert out[0]['attributeValueName'] == '블랙'
+    # 이미 단위가 붙어 있으면 이중 결합하지 않는다.
+    out = CoupangUploader.attr_safe([{'attributeTypeName': '수량', 'attributeValueName': '2개'}],
+                                    'x', sch)
+    assert out[0]['attributeValueName'] == '2개'
+
+
+def test_p2_no_hardcoded_unit_strings():
+    """단위 문자열이 코드에 박히지 않았다 — 전부 메타에서 온다."""
+    body = _code_only('src/uploaders/coupang_uploader.py')
+    assert 'basicUnit' in body
+    for banned in ("'개'", '"개"', "'kg'", "'ml'"):
+        assert banned not in body, banned
+
+
+def test_p3_value_outside_allowed_units_is_blocked(monkeypatch, caplog):
+    """P3 — 메타 허용 목록 밖 단위는 **전송 전 차단** + 사유. 목록이 없으면 통과."""
+    sch = _schema(monkeypatch, _uploader())
+    with caplog.at_level(logging.INFO):
+        out = CoupangUploader.attr_safe(
+            [{'attributeTypeName': '수량', 'attributeValueName': '1'},
+             {'attributeTypeName': '중량', 'attributeValueName': '45ml'}], 'x', sch)
+    names = [a['attributeTypeName'] for a in out]
+    assert '수량' in names and '중량' not in names          # 허용 밖 → 빠진다
+    line = next(r.getMessage() for r in caplog.records if '옵션 차단' in r.getMessage())
+    assert '45ml' in line and 'g/kg' in line                # 조용한 누락 금지
+    # 스키마를 안 주면(=허용 목록 없음) 그대로 통과 — 회귀 0.
+    assert CoupangUploader.attr_safe(
+        [{'attributeTypeName': '중량', 'attributeValueName': '45ml'}], 'x')[0][
+        'attributeValueName'] == '45ml'
+
+
+def test_p4_failed_registration_is_logged_every_time(monkeypatch, caplog):
+    """★ P4 — 대장은 성공만 적는다. 그래서 실패는 **호출마다 1줄씩** 누적한다(3회면 3줄).
+
+    같은 상품을 3회 클릭했을 때 "실패 3회가 어디에도 없다"가 이번 부검을 막았다.
+    등록 대장 스키마는 건드리지 않는다 — payload 컬럼 결정은 계속 보류.
+    """
+    up = _uploader()
+    _open_gates(up, monkeypatch)
+    monkeypatch.setattr('src.uploaders.coupang_uploader.relay_request',
+                        lambda *a, **k: _Resp(400, '{"message":"유효하지 않은 구매 옵션 값 혹은 단위 입니다."}'))
+    with caplog.at_level(logging.INFO):
+        for _ in range(3):
+            up.upload_product(dict(PRODUCT))
+    lines = [r.getMessage() for r in caplog.records if '등록실패대장' in r.getMessage()]
+    assert len(lines) == 3, lines                          # 3회가 1로 뭉개지지 않는다
+    assert 'sku=CANARY-C3' in lines[0] and 'at=' in lines[0] and 'kind=rejected' in lines[0]
+
+
+def test_p4_held_gate_also_reaches_the_ledger(monkeypatch, caplog):
+    """전송 전 보류(held)도 '등록 안 됨'이다 — 대장 누적에서 빠지지 않는다."""
+    up = _uploader()
+    _open_gates(up, monkeypatch)
+    monkeypatch.setattr(up, '_missing_shipping_config', lambda: ['COUPANG_RETURN_ZIP_CODE'])
+    with caplog.at_level(logging.INFO):
+        up.upload_product(dict(PRODUCT))
+    line = next(r.getMessage() for r in caplog.records if '등록실패대장' in r.getMessage())
+    assert 'kind=held' in line
+
+
+def test_p4_ledger_is_a_single_gate():
+    """실패 return이 10곳이라 각 자리에 흩뿌리면 한 곳을 빠뜨린다 — 관문 하나로 묶었다."""
+    src = Path('src/uploaders/coupang_uploader.py').read_text(encoding='utf-8')
+    assert src.count('self._ledger_fail(') == 1
+    assert 'def _upload_product_inner' in src
+
+
+def test_p2_gate_and_payload_use_the_same_block(monkeypatch, caplog):
+    """게이트가 본 attributes와 **보낸** attributes가 같다(두 번 만들면 갈릴 수 있다)."""
+    up = _uploader()
+    _open_gates(up, monkeypatch)
+    monkeypatch.setattr(up, 'get_category_meta', lambda code: {'attributes': META_ATTRS})
+    monkeypatch.setattr(up, 'get_category_attribute_schema',
+                        lambda code: CoupangUploader.get_category_attribute_schema(up, code))
+    monkeypatch.setattr('src.uploaders.coupang_uploader.relay_request',
+                        lambda *a, **k: _Resp(400, '{"message":"거부"}'))
+    with caplog.at_level(logging.INFO):
+        up.upload_product({**PRODUCT,
+                           'attributes': [{'attributeTypeName': '수량', 'attributeValueName': '1'}]})
+    line = next(r.getMessage() for r in caplog.records if '전송블록' in r.getMessage())
+    assert '"attributeValueName": "1개"' in line       # 결합된 값 그대로 전송

@@ -224,7 +224,33 @@ class CoupangUploader(BaseUploader):
         (logger.warning if outcome == 'fail' else logger.info)('%s', line)
         return line
 
+    @classmethod
+    def _ledger_fail(cls, sku: str, reason: str, *, held: bool = False) -> str:
+        """P4 — **실패 건 누적 대장**(기존 로그 관례. 대장 스키마는 건드리지 않는다).
+
+        `market_registrations`는 성공만 적는다 — 그 구조가 "같은 상품 3회 클릭, 실패 3회가
+        어디에도 없다"를 만들었다. 성공 대장은 그대로 두고, 실패는 여기서 **1줄씩 누적**한다:
+        클릭 3회면 줄 3개(집계가 1로 뭉개지지 않는다). payload 컬럼 결정은 계속 보류.
+        """
+        at = datetime.now(timezone.utc).isoformat(timespec='seconds')
+        line = (f'쿠팡 등록실패대장 at={at} sku={sku or "-"} '
+                f'kind={"held" if held else "rejected"} reason={str(reason or "")[:300]}')
+        logger.warning('%s', line)
+        return line
+
     def upload_product(self, product: dict) -> dict:
+        """Coupang 등록 — **단일 관문**. 실패는 어느 경로로 나가든 여기서 대장에 누적된다.
+
+        반환 계약은 그대로다(`_upload_product_inner`가 실제 로직). 실패 return이 10곳이라
+        각 자리에 로그를 흩뿌리면 한 곳을 빠뜨린다 — 관문 하나로 묶는다(v86-L echo 봉인과 동형).
+        """
+        out = self._upload_product_inner(product)
+        if isinstance(out, dict) and not out.get('success'):
+            self._ledger_fail(out.get('sku') or product.get('sku', ''),
+                              out.get('error', ''), held=bool(out.get('held')))
+        return out
+
+    def _upload_product_inner(self, product: dict) -> dict:
         """Coupang에 상품을 업로드한다.
 
         Returns:
@@ -237,6 +263,9 @@ class CoupangUploader(BaseUploader):
                 # 출고지/반품지 미설정 → 쿠팡이 반드시 거부. 가짜 성공 금지(정직).
                 return {
                     'success': False,
+                    # 전송 전 차단이므로 **보류**다 — 다른 사전 게이트(고시정보·옵션·카테고리)는 전부
+                    #   held를 달고 나가는데 여기만 빠져 있었다(대장 누적에서 rejected로 오분류).
+                    'held': True,
                     'error': (
                         '쿠팡 출고지/반품지 정보 미설정으로 등록 불가. '
                         '다음 환경변수를 Wing 배송정보 값으로 설정하세요: '
@@ -305,7 +334,7 @@ class CoupangUploader(BaseUploader):
                         'error': ('필수 구매 옵션 미충족으로 등록 중단(빈 값 전송 금지): '
                                   + ', '.join(unmet))}
             payload = self._build_product_payload(product, notice_schema=schema,
-                                                  attr_schema=attr_schema)
+                                                  attr_schema=attr_schema, attributes=attributes)
             path = '/v2/providers/seller_api/apis/api/v1/marketplace/seller-products'
             result = self._api_request('POST', path, data=payload)
             if 'error' in result:
@@ -591,8 +620,12 @@ class CoupangUploader(BaseUploader):
         반환: [{'attributeTypeName', 'required'(bool), 'exposed', 'dataType'}] · 조회 실패 시 [].
         `required`는 쿠팡 표기(MANDATORY/필수/true) 정규화. 발명 0 — 응답에 있는 것만.
         """
+        raw = self.get_category_meta(display_category_code).get('attributes') or []
+        # P1 — 메타 attributes[] **원문**을 남긴다(전송블록 계측과 동형).
+        #   여태 이 응답은 코드 안에서만 소비되고 흔적이 0이었다 → 다음 카나리에서 메타를 확보한다.
+        self._log_meta_attributes(display_category_code, raw)
         out = []
-        for a in (self.get_category_meta(display_category_code).get('attributes') or []):
+        for a in raw:
             if not isinstance(a, dict):
                 continue
             name = str(a.get('attributeTypeName') or '').strip()
@@ -604,8 +637,27 @@ class CoupangUploader(BaseUploader):
                 'required': req in ('MANDATORY', 'REQUIRED', 'TRUE', 'Y', '필수'),
                 'exposed': str(a.get('exposed') or '').strip() or 'EXPOSED',
                 'dataType': str(a.get('dataType') or '').strip(),
+                # ★ P1 — 여태 **버리던** 세 필드. 단위·허용값 판정의 유일한 근거다.
+                #   (이걸 버려서 "단위가 붙을 경로 자체가 없다"가 됐다 — 카나리 실패 부검 결론.)
+                'basicUnit': str(a.get('basicUnit') or '').strip(),
+                'inputType': str(a.get('inputType') or '').strip(),
+                'usableUnits': [str(u).strip() for u in (a.get('usableUnits') or [])
+                                if str(u or '').strip()],
             })
         return out
+
+    META_LOG_LIMIT = 2000
+
+    @classmethod
+    def _log_meta_attributes(cls, code: str, raw) -> str:
+        """카테고리 메타 attributes[] 원문 1줄. 비밀 없음(카테고리 규격 = 공개 스키마)."""
+        try:
+            body = json.dumps(raw, ensure_ascii=False)[:cls.META_LOG_LIMIT]
+        except Exception as exc:
+            body = f'<직렬화 실패: {type(exc).__name__}>'
+        line = f'쿠팡 카테고리 메타 code={code or "-"} attributes={body}'
+        logger.info('%s', line)
+        return line
 
     def get_category_notice_schema(self, display_category_code: str) -> list:
         """카테고리 메타 API로 **이 카테고리의 필수 고시정보 스키마**(동적·권위). '기타 재화' 기본값 폐기.
@@ -725,15 +777,66 @@ class CoupangUploader(BaseUploader):
             return 'FREE'
         return '기타'
 
+    # 수치형 판정 — 값이 **순수 숫자**면 수치로 본다(쿠팡 메타의 타입 표기가 카테고리마다 달라
+    #   선언 타입만 믿지 않는다). 결합 여부의 최종 근거는 메타의 basicUnit 존재다.
+    _PURE_NUMBER_RE = re.compile(r'^\d+(?:\.\d+)?$')
+    _NUM_UNIT_RE = re.compile(r'^\d+(?:\.\d+)?\s*(.*)$')
+
     @classmethod
-    def attr_safe(cls, attrs, name: str = '') -> list:
+    def _schema_index(cls, attr_schema) -> dict:
+        """attributeTypeName 기준 스키마 색인 — 단위·허용값 판정의 단일 소스."""
+        out = {}
+        for e in (attr_schema or []):
+            if isinstance(e, dict):
+                an = str(e.get('attributeTypeName') or '').strip()
+                if an:
+                    out[an] = e
+        return out
+
+    @classmethod
+    def _combine_unit(cls, value: str, entry: dict) -> str:
+        """P2 — 수치형 값에 **메타의 basicUnit**을 결합한다('1' -> '1개').
+
+        단위 문자열은 **전부 메타 유래**(하드코딩 0). 메타에 단위가 없으면 결합하지 않는다(발명 0).
+        이미 단위가 붙어 있으면(순수 숫자가 아니면) 손대지 않는다 — 이중 결합 방지.
+        """
+        v = str(value or '').strip()
+        unit = str((entry or {}).get('basicUnit') or '').strip()
+        if not v or not unit or not cls._PURE_NUMBER_RE.match(v):
+            return v
+        return f'{v}{unit}'
+
+    @classmethod
+    def _unit_allowed(cls, value: str, entry: dict):
+        """P3 — 메타가 **허용 단위 목록**(usableUnits)을 주면 그 밖의 값은 차단한다.
+
+        반환 (ok, reason). 목록을 안 주면 통과 — 우리가 목록을 만들지 않는다(발명 0).
+        값에서 숫자를 떼어낸 뒤쪽을 단위로 본다: '1개' -> '개', '45' -> ''(단위 없음).
+        ※ 값 자체의 enum(색상 등)이 메타 응답에 **어떤 키로 오는지 아직 미확인**이라 판정하지 않는다.
+          P1이 남기는 메타 원문 로그에서 그 키가 확인되면 여기에 같은 방식으로 추가한다(추측 금지).
+        """
+        units = [u for u in ((entry or {}).get('usableUnits') or []) if u]
+        if not units:
+            return True, ''
+        v = str(value or '').strip()
+        m = cls._NUM_UNIT_RE.match(v)
+        tail = (m.group(1).strip() if m else v)
+        if not tail:
+            return False, '단위 없음(허용 ' + '/'.join(units) + ')'
+        if tail in units:
+            return True, ''
+        return False, f'허용 밖 단위 {tail!r}(허용 ' + '/'.join(units) + ')'
+
+    @classmethod
+    def attr_safe(cls, attrs, name: str = '', attr_schema=None) -> list:
         """구매 옵션 속성 정제 — **정본 승계**(발명 0).
 
         규칙: gtin 속성 스킵 · BAD 값(및 신발사이즈의 FREE/프리)은 상품명에서 실값 추출 후 기본값 ·
         값 28자 절단 · `exposed` 보존 · 같은 attributeTypeName은 **먼저 온 것만** ·
         결과가 비면 **`[{수량: 1}]` 반환**(빈 배열 전송 금지 — 9차 거부의 직접 처방).
         """
-        out, seen = [], set()
+        out, seen, blocked = [], set(), []
+        idx = cls._schema_index(attr_schema)
         for a in (attrs or []):
             if not isinstance(a, dict):
                 continue
@@ -749,11 +852,21 @@ class CoupangUploader(BaseUploader):
                 bad = True                                # 신발사이즈 FREE = 쿠팡 거부(실증)
             if bad:
                 av = cls._attr_value_from_name(an, name)
+            entry = idx.get(an) or {}
+            av = cls._combine_unit(av, entry)             # P2 — 메타 basicUnit 결합
+            ok, why = cls._unit_allowed(av, entry)        # P3 — 메타 허용 단위 밖이면 차단
+            if not ok:
+                # 조용히 버리지 않는다 — 무엇을 왜 뺐는지 남긴다(다음 거부의 대조 근거).
+                logger.debug('쿠팡 옵션 차단 attr=%s value=%r 사유=%s', an, av, why)
+                blocked.append(f'{an}={av}({why})')
+                continue
             item = {'attributeTypeName': an, 'attributeValueName': str(av)[:cls.ATTR_VALUE_MAX]}
             if a.get('exposed'):
                 item['exposed'] = a['exposed']            # 원본 exposed 보존(정본)
             out.append(item)
             seen.add(an)
+        if blocked:
+            logger.warning('쿠팡 옵션 차단 요약 %d건: %s', len(blocked), ' · '.join(blocked))
         return out or [dict(x) for x in cls.ATTR_FALLBACK]
 
     def build_attrs(self, product: dict, attr_schema=None) -> list:
@@ -772,7 +885,7 @@ class CoupangUploader(BaseUploader):
             if an and an not in have:
                 attrs.append({'attributeTypeName': an, 'attributeValueName': '',
                               'exposed': s.get('exposed') or 'EXPOSED'})
-        return self.attr_safe(attrs, name)
+        return self.attr_safe(attrs, name, attr_schema)
 
     def missing_required_attrs(self, attributes, attr_schema=None) -> list:
         """전송 직전 검증 — 메타가 요구하는 **필수 속성 중 실값이 없는 것**의 이름 목록.
@@ -805,7 +918,8 @@ class CoupangUploader(BaseUploader):
             })
         return images
 
-    def _build_product_payload(self, product: dict, notice_schema=None, attr_schema=None) -> dict:
+    def _build_product_payload(self, product: dict, notice_schema=None, attr_schema=None,
+                               attributes=None) -> dict:
         """Coupang Wing API용 상품 페이로드를 구성한다.
 
         쿠팡 createProduct 필수 필드를 모두 채운다(null/누락 시 등록 거부).
@@ -857,7 +971,10 @@ class CoupangUploader(BaseUploader):
             'notices': self._build_notices(product, notice_schema)[0],  # 고시정보(실값). 보류판정=upload_product.
             'contents': self._build_contents(product),      # 상세컨텐츠(필수)
             # 필수 구매 옵션 — 정본 attr_safe(빈 배열 전송 금지·BAD 값 실값 대체·카나리 9차 거부 대응).
-            'attributes': self.build_attrs(product, attr_schema),
+            # 게이트(upload_product)가 이미 만든 블록을 그대로 쓴다 — 두 번 만들면
+            #   '게이트가 본 값'과 '보낸 값'이 갈릴 수 있다(이중 구현 금지).
+            'attributes': (attributes if attributes is not None
+                           else self.build_attrs(product, attr_schema)),
         }
         return {
             'displayCategoryCode': category_code,
