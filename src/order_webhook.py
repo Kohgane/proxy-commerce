@@ -977,6 +977,14 @@ try:
 except Exception as _cs_tg_bp_exc:
     logger.warning("CS Telegram inbound Blueprint 등록 실패: %s", _cs_tg_bp_exc)
 
+try:
+    # M1-3: 오너가 봇에 던진 상품 URL 수집. CS 웹훅과 **별도 경로**(대상도 쓰기 권한도 다르다).
+    from .api.telegram_collect import bp as telegram_collect_bp
+    app.register_blueprint(telegram_collect_bp)
+    logger.info("텔레그램 수집 Blueprint 등록 완료 (/webhooks/telegram/collect)")
+except Exception as _tg_collect_bp_exc:
+    logger.warning("텔레그램 수집 Blueprint 등록 실패: %s", _tg_collect_bp_exc)
+
 # Phase 133: 인증 시스템 Blueprint 등록 (카카오/구글/네이버 로그인)
 # SECRET_KEY 설정 — 인증 세션 필수
 if not app.secret_key:
