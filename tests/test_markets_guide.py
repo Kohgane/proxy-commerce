@@ -29,13 +29,17 @@ def test_guide_includes_global_expansion_markets():
     keys = {g["key"] for g in get_guide()}
     assert {"amazon", "ebay", "shopee"}.issubset(keys)
     planned = {g["key"] for g in get_guide() if g.get("status") == "planned"}
-    assert planned == {"amazon", "ebay", "shopee"}
+    # K2에서 톡스토어(연동대행사)가 planned로 합류 — 대행사 승인 전이라 등록이 안 열린다.
+    assert planned == {"amazon", "ebay", "shopee", "talkstore"}
 
 
 def test_guide_entries_have_required_shape():
     from src.seller_console.market_guide import get_guide
     for g in get_guide():
-        assert g["official_url"].startswith("http")
+        # `official_url`은 **있으면** http여야 한다. 없을 수도 있다 — 발급 경로가 아직
+        # 공개 확인되지 않은 마켓(톡스토어)에 **없는 링크를 지어 넣지 않기** 위함이다.
+        if g.get("official_url"):
+            assert g["official_url"].startswith("http"), g["key"]
         assert g["flow"] and g["steps"] and g["fields"]
         for fld in g["fields"]:
             assert fld["env"] and fld["label"]

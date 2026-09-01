@@ -95,7 +95,9 @@ def test_coupang_adapter_delegates_to_verified_uploader(monkeypatch):
 
 def test_canon_report_lists_every_market():
     rep = RA.canon_report()
-    assert set(rep) == {"coupang", "woocommerce", "smartstore"}
+    # K2에서 톡스토어(연동대행사) 슬롯이 들어왔다 — ready=False로 **정직 신고**하며 목록에 있다.
+    assert set(rep) == {"coupang", "woocommerce", "smartstore", "talkstore"}
+    assert rep["talkstore"]["ready"] is False and rep["talkstore"]["gaps"]
     assert rep["coupang"]["ready"] is True
     assert rep["smartstore"]["ready"] is True and rep["smartstore"]["note"]
 

@@ -152,7 +152,37 @@ class SmartStoreAdapter(MarketAdapter):
         return _smartstore_account_dispatch(product_data, acct)
 
 
-_ADAPTERS = {a.market: a for a in (CoupangAdapter(), WooCommerceAdapter(), SmartStoreAdapter())}
+class TalkStoreAdapter(MarketAdapter):
+    """톡스토어(카카오) — **연동대행사 모델**. 정본 미확보로 `ready=False`.
+
+    다른 마켓과 축이 하나 더 있다: 대행사 앱 Admin키(서버 비밀 1개) × 판매자별 API 인증키.
+    그래서 판매자가 앱을 직접 만들지 않고 **우리 앱에 자기 스토어를 매핑**한다.
+
+    **지금 여기서 아무것도 보내지 않는다.** 통과 이력 스크립트도, 문서 실측도 없다
+    (컨테이너에서 카카오 문서 도메인이 차단돼 K0 실측을 못 했다 — HTTP 000).
+    쿠팡이 6차 왕복을 태운 이유가 정확히 이것이라, 키가 들어와도 문서 확정이 먼저다.
+    """
+
+    market = "talkstore"
+    market_ko = "톡스토어"
+
+    def canon_status(self) -> dict:
+        gap = "공개 문서 미실측(컨테이너 도메인 차단) + 대행사 등록 심사 전 — 통과 이력 정본 없음"
+        return {"ready": False, "gaps": list(CANON_POINTS), "points": {
+            p: {"ok": False, "gap": gap} for p in CANON_POINTS
+        }, "note": ("연동대행사 모델 — 대행사 앱 Admin키(서버) + 판매자 API 인증키(판매자). "
+                    "심사 통과·문서 실측 전까지 등록 비활성.")}
+
+    def register(self, product_data: dict, account: str) -> dict:
+        # `_canon_gate`가 ready=False를 보고 **전송 없이** 정직 차단한다(추측 페이로드 금지).
+        return self._canon_gate() or {
+            "success": False, "held": True,
+            "error": "톡스토어 등록 경로가 아직 열리지 않았습니다.",
+        }
+
+
+_ADAPTERS = {a.market: a for a in (CoupangAdapter(), WooCommerceAdapter(), SmartStoreAdapter(),
+                             TalkStoreAdapter())}
 
 
 def get_adapter(market: str) -> Optional[MarketAdapter]:
