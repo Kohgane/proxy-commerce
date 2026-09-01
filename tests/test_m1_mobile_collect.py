@@ -137,3 +137,81 @@ def test_durable_gate_survived(client, monkeypatch):
                         lambda **kw: ("id-1", False))      # 비영속
     r = client.post("/api/v1/collect/one", json={"url": "https://x.com/dp/9"})
     assert r.status_code == 502 and "영속" in r.get_json()["error"]
+
+
+# ── M1-2: 파이프 연결 — 수집이 수집 이력에서 끝나지 않는다 ────────────────────
+# 폰에서 소싱할 때 필요한 건 '수집됨'이 아니라 **취급 가능한가 · 얼마에 팔리나**다.
+# 판정은 콘솔 화면과 같은 배선(`build_review_for_urls`)을 그대로 탄다.
+
+def test_m1_2_review_is_opt_in(client, monkeypatch):
+    """기본은 수집만 — `review=1`을 줘야 판정이 붙는다(느린 판정을 강요하지 않는다)."""
+    _auth(monkeypatch)
+    monkeypatch.setattr(api, "_dispatcher_collect", lambda: (lambda u: _Draft()))
+    d = client.post("/api/v1/collect/one", json={"url": "https://x.com/dp/10"}).get_json()
+    assert d["ok"] is True and "review" not in d
+
+
+@pytest.mark.parametrize("send", ["json", "query"])
+def test_m1_2_review_verdict_rides_the_pipe(client, monkeypatch, send):
+    """★ 수집한 URL이 **등록 파이프 검수표를 그대로 통과**해 판정이 돌아온다."""
+    _auth(monkeypatch)
+    monkeypatch.setattr(api, "_dispatcher_collect", lambda: (lambda u: _Draft()))
+    monkeypatch.setattr("src.seller_console.views.build_review_for_urls",
+                        lambda urls, cap=50: {
+                            "review_pass": [{"title_ko": "그립톡", "excluded": False,
+                                             "cost_krw": 9000, "sale_krw": 19900,
+                                             "margin_pct": 27.4, "net_krw": 5400,
+                                             "ship_status": "배송가능", "ship_reason": "실측",
+                                             "warnings": []}],
+                            "excluded": [], "failed": []})
+    url = "https://x.com/dp/11"
+    if send == "json":
+        r = client.post("/api/v1/collect/one", json={"url": url, "review": 1})
+    else:
+        r = client.post(f"/api/v1/collect/one?url={url}&review=1")
+    rv = r.get_json()["review"]
+    assert rv["ok"] is True and rv["verdict"] == "검수 통과"
+    assert rv["sale_krw"] == 19900 and rv["margin_pct"] == 27.4
+    assert rv["ship_status"] == "배송가능"
+
+
+def test_m1_2_excluded_carries_reason(client, monkeypatch):
+    """취급 제외도 **사유와 함께** 올라온다 — 조용한 탈락 금지."""
+    _auth(monkeypatch)
+    monkeypatch.setattr(api, "_dispatcher_collect", lambda: (lambda u: _Draft()))
+    monkeypatch.setattr("src.seller_console.views.build_review_for_urls",
+                        lambda urls, cap=50: {
+                            "review_pass": [],
+                            "excluded": [{"title_ko": "가품 의심", "excluded": True,
+                                          "forbidden_detail": {"kind_ko": "금지어",
+                                                               "term": "레플리카"},
+                                          "warnings": []}],
+                            "failed": []})
+    rv = client.post("/api/v1/collect/one",
+                     json={"url": "https://x.com/dp/12", "review": 1}).get_json()["review"]
+    assert rv["verdict"] == "취급 제외" and "레플리카" in rv["reason"]
+
+
+def test_m1_2_review_failure_does_not_break_collect(client, monkeypatch):
+    """판정이 터져도 **수집 성공은 성공이다** — 판정 실패만 정직하게 알린다."""
+    _auth(monkeypatch)
+    monkeypatch.setattr(api, "_dispatcher_collect", lambda: (lambda u: _Draft()))
+    monkeypatch.setattr("src.seller_console.views.build_review_for_urls",
+                        lambda urls, cap=50: (_ for _ in ()).throw(RuntimeError("환율 조회 불가")))
+    d = client.post("/api/v1/collect/one",
+                    json={"url": "https://x.com/dp/13", "review": 1}).get_json()
+    assert d["ok"] is True and d["item_id"]              # 수집은 살아 있다
+    assert d["review"]["ok"] is False and "환율" in d["review"]["error"]
+
+
+def test_m1_2_review_wiring_is_single_source():
+    """★ 이중 구현 금지 — 콘솔 화면과 모바일 API가 **같은 조립**을 부른다.
+
+    환율·금지어·채널을 붙이는 배선이 두 벌이면 한쪽만 갱신된다.
+    """
+    views = Path("src/seller_console/views.py").read_text(encoding="utf-8")
+    assert views.count("def build_review_for_urls") == 1
+    assert views.count("build_source_review(") == 1      # 조립은 헬퍼 안에서만
+    assert "review = build_review_for_urls(raw_urls)" in views    # 콘솔 라우트가 위임
+    api_src = Path("src/api/extension_api.py").read_text(encoding="utf-8")
+    assert "build_review_for_urls" in api_src and "build_source_review" not in api_src

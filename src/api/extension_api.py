@@ -1072,9 +1072,55 @@ def collect_one():
         return jsonify({"ok": False, "duplicate": False, "url": url,
                         "error": res.get("error") or "수집 실패",
                         "message": "수집하지 못했습니다. 봇 차단 사이트는 PC 확장을 권합니다."}), 502
-    return jsonify({"ok": True, "duplicate": False, "item_id": res.get("item_id"),
-                    "title": res.get("title", ""), "url": url,
-                    "message": "수집됐습니다."})
+    out = {"ok": True, "duplicate": False, "item_id": res.get("item_id"),
+           "title": res.get("title", ""), "url": url, "message": "수집됐습니다."}
+    if _wants_review():
+        out["review"] = _review_verdict(url)
+    return jsonify(out)
+
+
+def _wants_review() -> bool:
+    """`review=1`(body·form·쿼리) — 수집만 할지, 검수 판정까지 받을지."""
+    body = request.get_json(force=True, silent=True) or {}
+    raw = (body.get("review") if isinstance(body, dict) else None)
+    if raw is None:
+        raw = request.form.get("review") or request.args.get("review")
+    return str(raw).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _review_verdict(url: str) -> dict:
+    """★ M1-2 — 수집한 URL을 **등록 파이프 검수표에 그대로 통과**시켜 판정만 뽑아 온다.
+
+    폰에서 소싱할 때 필요한 건 '수집됨'이 아니라 **취급 가능한가 · 얼마에 팔리나**다.
+    판정 로직은 콘솔 화면과 **같은 배선**(`build_review_for_urls`) — 여기서 새로 만들지 않는다.
+    실패·취급제외도 사유와 함께 그대로 올린다(조용한 탈락 금지).
+    """
+    try:
+        from src.seller_console.views import build_review_for_urls
+        rv = build_review_for_urls([url], cap=1)
+    except Exception as exc:
+        logger.warning("모바일 검수 판정 실패(%s): %s", url[:60], exc)
+        return {"ok": False, "error": f"검수 판정 실패: {str(exc)[:120]}"}
+
+    if rv.get("failed"):
+        return {"ok": False, "verdict": "수집 실패", "reason": rv["failed"][0].get("reason", "")}
+    rows = (rv.get("review_pass") or []) + (rv.get("excluded") or [])
+    if not rows:
+        return {"ok": False, "error": "검수 행이 만들어지지 않았습니다."}
+    r = rows[0]
+    fd = r.get("forbidden_detail") or {}
+    return {
+        "ok": True,
+        "verdict": "취급 제외" if r.get("excluded") else "검수 통과",
+        "excluded": bool(r.get("excluded")),
+        "reason": (f"{fd.get('kind_ko', '')} '{fd.get('term', '')}'".strip()
+                   if r.get("excluded") else ""),
+        "title_ko": r.get("title_ko", ""),
+        "cost_krw": r.get("cost_krw"), "sale_krw": r.get("sale_krw"),
+        "margin_pct": r.get("margin_pct"), "net_krw": r.get("net_krw"),
+        "ship_status": r.get("ship_status", ""), "ship_reason": r.get("ship_reason", ""),
+        "warnings": [w.get("label", "") for w in (r.get("warnings") or [])],
+    }
 
 
 @extension_bp.get("/bulk/<job_id>")
