@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 import secrets
 import threading
 import time
@@ -1023,6 +1024,59 @@ def collect_bulk():
     })
 
 
+@extension_bp.post("/one")
+def collect_one():
+    """★ M1-1 — **모바일 단건 수집 엔드포인트**(iOS 단축어 · 텔레그램용).
+
+    기존 진입점이 못 채우던 자리를 메운다(실측):
+      · `/seller/collect/quick`·`/collect/share` = **로그인 세션** 필요 → 단축어·봇은 세션이 없다
+      · `/api/v1/collect/bulk` = 토큰은 되지만 **비동기**(job_id 폴링) → 단축어는 한 번의 답을 원한다
+      · `/api/v1/collect/extension` = 확장이 만든 페이로드(제목·이미지·HTML) 전제
+    그래서 여기는 **토큰 + 동기 + 단건**이다. 수집 자체는 벌크와 **같은 코어**(`collect_one_url`).
+
+    입력: `url`(JSON body · form · 쿼리 어느 쪽이든 — 단축어가 만들기 쉬운 형태를 다 받는다)
+    인증: `Authorization: Bearer <token>` (scope `collect.write`)
+    """
+    user = _require_token(scopes=["collect.write"])
+    if not user:
+        return jsonify({"ok": False, "error": "인증이 필요합니다. 토큰을 확인하세요."}), 401
+
+    body = request.get_json(force=True, silent=True) or {}
+    url = (body.get("url") or request.form.get("url")
+           or request.args.get("url") or request.args.get("u") or "").strip()
+    if not url:
+        # 공유 시트가 제목·본문만 주는 경우가 있다 — 거기서 URL을 건져 낸다(기존 share와 동형).
+        shared = (body.get("text") or body.get("title")
+                  or request.form.get("text") or request.args.get("text") or "")
+        m = re.search(r"https?://[^\s]+", str(shared))
+        if m:
+            url = m.group(0).strip()
+    if not url.startswith(("http://", "https://")):
+        return jsonify({"ok": False, "error": "상품 URL이 필요합니다(http/https)."}), 400
+
+    seller_id = str(user.get("user_id") or "")
+    # 중복 수집 방지 — 기존 정규화 키(v42 1-3)를 그대로 쓴다(새 규칙 만들지 않는다).
+    try:
+        from src.seller_console.collect_history_store import find_by_product_key
+        dup = find_by_product_key(url, seller_ids={seller_id} if seller_id else None)
+        if dup:
+            return jsonify({"ok": True, "duplicate": True, "item_id": dup.get("id"),
+                            "title": dup.get("title", ""),
+                            "message": "이미 수집한 상품입니다."})
+    except Exception as exc:                       # 중복 조회 실패가 수집을 막지 않게
+        logger.warning("단건 수집 중복 조회 실패: %s", exc)
+
+    res = collect_one_url(url, seller_id=seller_id, source="mobile")
+    if not res.get("ok"):
+        # 정직 실패 — 무엇이 왜 안 됐는지 그대로 올린다(가짜 성공 0).
+        return jsonify({"ok": False, "duplicate": False, "url": url,
+                        "error": res.get("error") or "수집 실패",
+                        "message": "수집하지 못했습니다. 봇 차단 사이트는 PC 확장을 권합니다."}), 502
+    return jsonify({"ok": True, "duplicate": False, "item_id": res.get("item_id"),
+                    "title": res.get("title", ""), "url": url,
+                    "message": "수집됐습니다."})
+
+
 @extension_bp.get("/bulk/<job_id>")
 def get_bulk_status(job_id: str):
     """벌크 수집 진행률 폴링.
@@ -1045,51 +1099,62 @@ def get_bulk_status(job_id: str):
     })
 
 
+def _dispatcher_collect():
+    """URL → 수집 결과. 디스패처 우선, 없으면 범용 스크래퍼(기존 폴백 그대로)."""
+    try:
+        from src.collectors.dispatcher import collect as fn
+        return fn
+    except ImportError:
+        from src.collectors.universal_scraper import UniversalScraper
+        return UniversalScraper().fetch
+
+
+def collect_one_url(url: str, *, seller_id: str = "", source: str = "bulk") -> dict:
+    """URL 1건 수집 → 이력 저장. **벌크와 단건(M1-1)이 공유하는 단일 코어**.
+
+    반환 {url, ok, item_id?, title?, error?}. 영속 저장(durable)이 확인될 때만 ok=True —
+    가짜 성공 금지(v38 P0). 이 함수를 두 번 만들지 않는다: 벌크 안에 갇혀 있던 내부 함수를
+    끌어올린 것이고, 모바일 단건 엔드포인트가 같은 것을 부른다(이중 구현 금지).
+    """
+    try:
+        result = _dispatcher_collect()(url)
+        title = getattr(result, "title", "") or ""
+        images = list(getattr(result, "images", []) or [])
+        price = str(getattr(result, "price", "") or "")
+        currency = getattr(result, "currency", "USD")
+        _upsert_catalog(
+            {"url": url, "title": title, "price": price, "currency": currency,
+             "image": images[0] if images else ""},
+            source=f"{source}_collect",
+        )
+        # v38 P0: 이력에 실제 저장(이전엔 catalog만 써서 수집품목에 안 보였음).
+        from src.seller_console.collect_history_store import append as history_append
+        _ret = history_append(
+            return_durable=True, source=source, url=url, title=title,
+            image=images[0] if images else "", price=price, currency=currency,
+            status="ok", seller_id=str(seller_id or ""),
+            extra={"title": title, "title_ko": title, "images": images,
+                   "price": price, "currency": currency},
+        )
+        item_id, durable = _ret if (isinstance(_ret, tuple) and len(_ret) == 2) else (_ret, True)
+        if not item_id or not durable:
+            return {"url": url, "ok": False, "error": "저장 영속화 실패(재시도 필요)"}
+        return {"url": url, "ok": True, "item_id": item_id, "title": title}
+    except Exception as exc:
+        logger.warning("URL 수집 실패(%s): %s — %s", source, url[:60], exc)
+        return {"url": url, "ok": False, "error": str(exc)[:100]}
+
+
 def _run_bulk_job(job_id: str, urls: list) -> None:
     """벌크 수집 백그라운드 실행 (스레드 풀)."""
     job = _bulk_jobs.get(job_id)
     if not job:
         return
 
-    try:
-        from src.collectors.dispatcher import collect as dispatcher_collect
-    except ImportError:
-        # 폴백: 범용 수집기
-        from src.collectors.universal_scraper import UniversalScraper
-        scraper = UniversalScraper()
-        dispatcher_collect = scraper.fetch
-
     seller_id_val = str(job.get("user_id") or "")
 
     def process_url(url: str) -> dict:
-        try:
-            result = dispatcher_collect(url)
-            title = getattr(result, "title", "") or ""
-            images = list(getattr(result, "images", []) or [])
-            price = str(getattr(result, "price", "") or "")
-            currency = getattr(result, "currency", "USD")
-            _upsert_catalog(
-                {"url": url, "title": title, "price": price, "currency": currency,
-                 "image": images[0] if images else ""},
-                source="bulk_collect",
-            )
-            # v38 P0: 벌크도 '수집 이력'에 실제 저장(이전엔 catalog만 써서 수집품목에 안 보였음).
-            #         영속 저장(durable) 확인된 경우에만 성공 처리(가짜 성공 금지).
-            from src.seller_console.collect_history_store import append as history_append
-            _ret = history_append(
-                return_durable=True, source="bulk", url=url, title=title,
-                image=images[0] if images else "", price=price, currency=currency,
-                status="ok", seller_id=seller_id_val,
-                extra={"title": title, "title_ko": title, "images": images,
-                       "price": price, "currency": currency},
-            )
-            item_id, durable = _ret if (isinstance(_ret, tuple) and len(_ret) == 2) else (_ret, True)
-            if not item_id or not durable:
-                return {"url": url, "ok": False, "error": "저장 영속화 실패(재시도 필요)"}
-            return {"url": url, "ok": True, "item_id": item_id}
-        except Exception as exc:
-            logger.warning("벌크 URL 처리 실패: %s — %s", url[:60], exc)
-            return {"url": url, "ok": False, "error": str(exc)[:100]}
+        return collect_one_url(url, seller_id=seller_id_val, source="bulk")
 
     with ThreadPoolExecutor(max_workers=_BULK_MAX_WORKERS) as executor:
         futures = {executor.submit(process_url, url): url for url in urls}
