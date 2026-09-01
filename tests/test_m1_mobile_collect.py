@@ -215,3 +215,36 @@ def test_m1_2_review_wiring_is_single_source():
     assert "review = build_review_for_urls(raw_urls)" in views    # 콘솔 라우트가 위임
     api_src = Path("src/api/extension_api.py").read_text(encoding="utf-8")
     assert "build_review_for_urls" in api_src and "build_source_review" not in api_src
+
+
+# ── M1-4: 단축어 가이드 — 셀러가 실제로 따라 할 수 있는가 ─────────────────────
+
+def test_m1_4_shortcut_guide_is_in_app_and_actionable(monkeypatch):
+    """가이드는 **화면 안**에 있고, 그대로 따라 하면 되는 값만 담는다."""
+    import os
+    os.environ.setdefault("SELLER_CONSOLE_AUTH", "0")
+    from src.order_webhook import app
+    html = app.test_client().get("/seller/extension").get_data(as_text=True)
+    assert "단축어" in html
+    for needed in ("/api/v1/collect/one", "POST", "Authorization", "Bearer",
+                   "/seller/me/tokens", "review"):
+        assert needed in html, needed
+
+
+def test_m1_4_guide_hides_developer_surface():
+    """★ 일반 유저 화면에 개발 표기 금지 — 환경변수·문서 경로·내부 모듈명 0."""
+    tpl = Path("src/seller_console/templates/extension_install.html").read_text(encoding="utf-8")
+    for leaked in ("TELEGRAM_COLLECT", "SELLER_ID", "docs/", "src/", "collect_one_url"):
+        assert leaked not in tpl, leaked
+
+
+def test_m1_4_doc_covers_failure_paths():
+    """문서(운영자용)는 **실패 경로**까지 적는다 — 가짜 성공을 기대하게 두지 않는다."""
+    doc = Path("docs/MOBILE_COLLECT_GUIDE.md").read_text(encoding="utf-8")
+    for topic in ("401", "400", "502", "봇 차단", "duplicate", "review"):
+        assert topic in doc, topic
+    # 텔레그램 잠금 3종이 문서에 다 있어야 오너가 설정할 수 있다.
+    for env in ("TELEGRAM_COLLECT_WEBHOOK_SECRET", "TELEGRAM_COLLECT_CHAT_IDS",
+                "TELEGRAM_COLLECT_SELLER_ID"):
+        assert env in doc, env
+    assert "토큰은 비밀번호와 같습니다" in doc      # 유출 주의 안내
