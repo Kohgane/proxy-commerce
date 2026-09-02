@@ -11,8 +11,8 @@ from pathlib import Path
 import pytest
 
 CONTENT = Path("docs/apply/intro_content.json")
-PDF = Path("docs/apply/gogabridj_intro_kakao_v1.pdf")
-PPTX = Path("docs/apply/gogabridj_intro_kakao_v1.pptx")
+PDF = Path("docs/apply/gogabridj_intro_kakao_v2.pdf")
+PPTX = Path("docs/apply/gogabridj_intro_kakao_v2.pptx")
 
 
 @pytest.fixture(scope="module")
@@ -55,10 +55,41 @@ def test_single_content_source(content, deck_text):
     assert content["cover"]["tagline"] in deck_text
 
 
-def test_owner_fill_markers_present_not_invented(content, deck_text):
-    """★ 모르는 값은 **[오너 기입]** — 지어내지 않는다."""
-    assert deck_text.count("[오너 기입") == 5
-    assert len(content["meta"]["owner_fill"]) == 5
+def _print_source() -> str:
+    """PDF의 **인쇄 원본 HTML**. 이걸 검사하는 이유:
+
+    Chromium이 만든 PDF는 서브셋 폰트 + 커스텀 인코딩이라 스트림에서 텍스트를 되뽑으면
+    글자가 깨진다(실측 — 한글이 전부 깨져 나온다). 깨진 문자열에 `in` 검사를 걸면
+    **무엇도 확인하지 못하면서 통과**한다. 그래서 PDF 바이트 대신, 그 PDF를 만든
+    바로 그 HTML을 같은 생성기로 만들어 검사한다 — 실제로 지키는 계약이 된다.
+    """
+    import importlib.util
+    import json as _json
+    spec = importlib.util.spec_from_file_location("bid", "scripts/build_intro_deck.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.build_html(_json.loads(CONTENT.read_text(encoding="utf-8")))
+
+
+def test_no_owner_fill_placeholders_remain(content, deck_text):
+    """★ v2 = 기입 확정본. **[오너 기입] 잔존 0** — 콘텐츠·pptx·PDF 인쇄원본 전부."""
+    import json as _json
+    assert content["meta"]["owner_fill"] == []
+    assert "[오너 기입" not in _json.dumps(content, ensure_ascii=False)
+    assert "[오너 기입" not in deck_text                      # pptx
+    assert "오너 기입" not in _print_source()                 # PDF 인쇄 원본
+
+
+def test_contact_values_land_in_both_outputs(content, deck_text):
+    """확정 연락처가 pptx와 PDF **양쪽에** — 한쪽만 갱신되는 사고 방지."""
+    import json as _json
+    email, phone = "cigua7134@gmail.com", "010-4526-8127"
+    src = _print_source()
+    for value in (email, phone):
+        assert value in _json.dumps(content, ensure_ascii=False), value
+        assert value in deck_text, f"pptx: {value}"
+        assert value in src, f"pdf: {value}"
+    assert "계약 후 4주" in deck_text and "12개월 내 50명" in deck_text
 
 
 def test_facts_only_no_invented_numbers(deck_text):

@@ -20,7 +20,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONTENT = os.path.join(ROOT, "docs/apply/intro_content.json")
-OUT_PDF = os.path.join(ROOT, "docs/apply/gogabridj_intro_kakao_v1.pdf")
+OUT_PDF = os.path.join(ROOT, "docs/apply/gogabridj_intro_kakao_v2.pdf")
 CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 
 # 디자인 v3 토큰(app.css :root) 승계 — 값을 여기서 새로 만들지 않는다.

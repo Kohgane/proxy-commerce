@@ -310,5 +310,5 @@ function stepDot(s, x, y, n, color) {
   });
 }
 
-p.writeFile({ fileName: "docs/apply/gogabridj_intro_kakao_v1.pptx" })
+p.writeFile({ fileName: "docs/apply/gogabridj_intro_kakao_v2.pptx" })
   .then((f) => console.log("saved", f));
