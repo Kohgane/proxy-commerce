@@ -54,8 +54,35 @@
     <div class="small text-muted mt-2">
       버튼이 안 보이면: ① 확장이 <b>켜져 있는지</b> ② 확장 관리 화면에서 <b>새로고침(↻)</b>
       ③ 지정 소싱처의 상품/목록 페이지인지 ④ 확장 <b>옵션</b>에 토큰이 들어갔는지 확인하세요.
-      모바일은 크롬 확장을 지원하지 않아요 — 상품 주소를 복사해 <a href="/seller/collect">수집기</a>에 붙여넣거나,
-      앱을 홈 화면에 추가한 뒤 쇼핑 앱에서 <b>공유 → 고가브릿지</b>로 보내면 됩니다.
+      모바일은 크롬 확장을 지원하지 않아요 — 아래 <b>폰에서 수집하기</b>를 보세요.
+    </div>
+  </details>
+
+  {# M1-4 — 폰에서 수집. 개발 표기(환경변수·문서 경로) 없이 셀러가 따라 할 수 있는 만큼만. #}
+  <details class="mt-2">
+    <summary class="text-muted small" style="cursor:pointer">폰에서 수집하기 (아이폰 · 안드로이드)</summary>
+    <div class="small text-muted mt-2">
+      <p class="mb-2"><b>안드로이드</b> — 앱을 홈 화면에 추가한 뒤 쇼핑 앱에서
+        <b>공유 → 고가브릿지</b>로 보내면 바로 수집돼요.</p>
+      <p class="mb-2"><b>아이폰(단축어)</b> — 공유 시트에서 한 번에 수집합니다. 5분이면 끝나요.</p>
+      <ol class="mb-2">
+        <li><a href="/seller/me/tokens">내 토큰</a>에서 <b>상품 수집</b> 권한으로 토큰을 발급하세요
+          (발급 값은 그때 한 번만 보입니다).</li>
+        <li>단축어 앱 → 새 단축어 → <b>공유 시트에서 받기</b>를 켭니다(입력: URL).</li>
+        <li><b>URL 콘텐츠 가져오기</b>를 추가하고 이렇게 채웁니다.
+          <div class="mt-1 p-2 rounded" style="background: var(--hanji)">
+            <div>주소 <code>{{ request.host_url.rstrip('/') }}/api/v1/collect/one</code></div>
+            <div>방법 <code>POST</code> · 본문 <code>JSON</code></div>
+            <div>헤더 <code>Authorization</code> = <code>Bearer (발급받은 토큰)</code></div>
+            <div>JSON <code>url</code> = 단축어 입력(공유된 주소)</div>
+          </div>
+        </li>
+        <li>판매가·마진까지 보고 싶으면 JSON에 <code>review</code> = <code>1</code>을 더하세요
+          (몇 초 더 걸립니다).</li>
+        <li>마지막에 결과의 <code>message</code>를 알림으로 보여주면 끝입니다.</li>
+      </ol>
+      <p class="mb-0">수집이 막히는 사이트(봇 차단)는 실패 사유를 그대로 알려드려요 —
+        그때는 PC에서 확장으로 수집하시면 됩니다.</p>
     </div>
   </details>
 </div>

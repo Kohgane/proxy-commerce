@@ -7601,26 +7601,36 @@ def sourcing_register_pipe():
     if not _check_auth():
         return redirect(url_for("seller_console.index"))
 
-    from src.pipeline.register_pipe import build_source_review
-    from src.pipeline.coupang_replicate import load_blacklist85
-
     review = None
     urls_text = ""
     if request.method == "POST":
         urls_text = (request.form.get("urls") or "").strip()
         raw_urls = [ln.strip() for ln in urls_text.splitlines() if ln.strip()]
-        # 환율(원가 KRW 환산) — 통화별 실환율. 없으면 외화 원가는 '환산 불가' 정직 표기(가짜 환산 0).
-        fx_map = _register_pipe_fx_map()
-        bl = load_blacklist85()
-        review = build_source_review(
-            raw_urls, collect_fn=_collect_real_draft,
-            channel="woocommerce_multishop", blacklist=bl.get("terms"),
-            fx_rates=fx_map, cap=50)
-        review["fx_usd_krw"] = fx_map.get("USD")
-        review["fx_rates"] = fx_map
-        review["blacklist_count"] = bl.get("count", 0)
+        review = build_review_for_urls(raw_urls)
 
     return render_template("register_pipe.html", page="sourcing", review=review, urls_text=urls_text)
+
+
+def build_review_for_urls(urls, *, cap: int = 50) -> dict:
+    """소싱 URL 목록 → 검수표. **콘솔 화면과 모바일 API(M1-2)의 단일 배선**.
+
+    환율·금지어·채널을 붙이는 이 조립을 두 곳에 쓰면 한쪽만 갱신된다 — 그래서 여기 한 곳뿐이다.
+    수집은 기존 `_collect_real_draft`, 판정은 기존 `build_source_review`(둘 다 재구현 0).
+    """
+    from src.pipeline.coupang_replicate import load_blacklist85
+    from src.pipeline.register_pipe import build_source_review
+
+    # 환율(원가 KRW 환산) — 통화별 실환율. 없으면 외화 원가는 '환산 불가' 정직 표기(가짜 환산 0).
+    fx_map = _register_pipe_fx_map()
+    bl = load_blacklist85()
+    review = build_source_review(
+        urls, collect_fn=_collect_real_draft,
+        channel="woocommerce_multishop", blacklist=bl.get("terms"),
+        fx_rates=fx_map, cap=cap)
+    review["fx_usd_krw"] = fx_map.get("USD")
+    review["fx_rates"] = fx_map
+    review["blacklist_count"] = bl.get("count", 0)
+    return review
 
 
 def _coupang_account_dispatch(product_data, account):
@@ -7741,8 +7751,7 @@ def sourcing_register_pipe_register():
     """
     if not _check_auth():
         return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
-    from src.pipeline.register_pipe import build_source_review, register_source_rows
-    from src.pipeline.coupang_replicate import load_blacklist85
+    from src.pipeline.register_pipe import register_source_rows
 
     from src.pipeline.register_adapters import get_adapter
 
@@ -7764,11 +7773,9 @@ def sourcing_register_pipe_register():
     if not raw_urls:
         return jsonify({"ok": False, "error": "등록할 소싱 URL이 없습니다."}), 400
 
-    bl = load_blacklist85()
-    # 환율은 검수표와 **같은 소스**로(미주입 시 원가 환산 실패 → 판매가 0 전송 = 카나리 8차 근원).
-    review = build_source_review(raw_urls, collect_fn=_collect_real_draft,
-                                 channel="woocommerce_multishop", blacklist=bl.get("terms"),
-                                 fx_rates=_register_pipe_fx_map(), cap=50)
+    # 검수표와 **같은 조립**을 쓴다 — 환율이 한쪽에만 붙으면 원가 환산이 실패해 판매가 0이
+    #   전송된다(카나리 8차 근원). 그래서 배선을 두 벌 두지 않고 헬퍼 하나로 모았다.
+    review = build_review_for_urls(raw_urls)
     passes = review.get("review_pass") or []
     if not passes:
         return jsonify({"ok": False, "error": "검수 통과 상품이 없습니다(취급제외/수집실패).",
