@@ -27,7 +27,9 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-# ── v87-S6-2: mkt.php 릴레이(오너가 Bluehost 50.6.34.63에 설치) ──────────────────
+# ── v87-S6-2: mkt.php 릴레이(오너가 Bluehost에 설치) ────────────────────────────
+#   ※ 고정 IP는 여기 적지 않는다 — `relay_outbound_ip()`가 설정에서 파생한다(볼트 지뢰
+#     「Render 공유 대역 IP 안내 금지」). 주석에 박아둔 값이 실제와 어긋난 전례가 있다.
 #   프로토콜(오너 확정): POST {url, method, headers, body_b64} + 헤더 X-KGP-Relay-Key
 #                        → {status, content_type, body_b64}
 #   서명은 **호출부에서 원 URL 기준으로 이미 끝난다**(쿠팡 CEA는 path+query로 서명). 릴레이는

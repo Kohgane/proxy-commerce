@@ -97,7 +97,7 @@
     </div>
     <div class="small text-muted">
       <strong>11번가</strong>는 중계를 거치지 않고 서버에서 바로 나가요.
-      {% if direct.ips %}허용 목록에는 <span>{% for ip in direct.ips %}<code class="me-1">{{ ip }}</code>{% endfor %}</span>를
+      {% if direct.ips %}허용 목록에는 <span>{% for ip in direct.ips %}<code>{{ ip }}</code>{{ " · " if not loop.last }}{% endfor %}</span>를
       <strong>전부</strong> 등록해야 합니다{% if not direct.complete %} — 위 주소는 지금 나간 것 하나뿐일 수 있어요{% endif %}.
       {% else %}허용 목록에 등록할 주소를 아직 확인하지 못했어요.{% endif %}
       다만 11번가는 <strong>IP보다 OpenAPI 이용 승인이 먼저</strong>입니다 — 승인 전이면 키가 있어도 연결되지 않아요.
