@@ -135,3 +135,37 @@ def test_other_markets_untouched():
         assert m in mc.SUPPORTED_MARKETS
     for m, ready in (("coupang", True), ("smartstore", True), ("woocommerce", True)):
         assert get_adapter(m).canon_status()["ready"] is ready
+
+
+# ── K3 준비 태세 — 막힌 이유를 3항으로 정규화 ────────────────────────────────
+
+def test_blocker_kinds_are_normalized():
+    """★ '왜 못 여나'를 **세 갈래**로 못박는다 — 해소 주체가 각각 다르다.
+
+    키 미발급 = 오너·마켓(심사) · 정본 없음 = 스크립트/메타 API · 스키마 미확보 = 공개 문서.
+    뒤 둘을 뭉치면 **문서만 읽으면 되는데 카나리를 태우게 된다**(쿠팡 6차 왕복의 구조).
+    """
+    from src.pipeline.register_adapters import BLOCKER_KINDS, BLOCKER_KO
+    assert BLOCKER_KINDS == ("key_pending", "canon_missing", "schema_missing")
+    assert [BLOCKER_KO[k] for k in BLOCKER_KINDS] == ["키 미발급", "정본 없음", "스키마 미확보"]
+
+
+def test_talkstore_reports_all_three_blockers():
+    """톡스토어는 지금 셋 다 막혀 있다 — 하나씩 해소되면 지운다."""
+    st = get_adapter("talkstore").canon_status()
+    from src.pipeline.register_adapters import BLOCKER_KINDS
+    assert set(st["blockers"]) == set(BLOCKER_KINDS)
+    assert st["blockers_ko"] == ["키 미발급", "정본 없음", "스키마 미확보"]
+    # 각 사유가 **무엇을 해야 풀리는지**까지 말한다(막연한 '준비 중' 금지).
+    assert "Admin키" in st["blockers"]["key_pending"]
+    assert "정본" in st["blockers"]["canon_missing"]
+    assert "문서" in st["blockers"]["schema_missing"]
+
+
+def test_open_markets_have_no_blockers():
+    """열린 마켓엔 막힌 이유가 없다 — 빈 값이어야 화면이 '준비 중'을 잘못 띄우지 않는다."""
+    from src.pipeline.register_adapters import canon_report
+    rep = canon_report()
+    for m in ("coupang", "smartstore", "woocommerce"):
+        assert rep[m]["ready"] is True and not rep[m]["blockers"], m
+    assert rep["talkstore"]["blockers"]
