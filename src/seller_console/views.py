@@ -1076,7 +1076,7 @@ def _render_dashboard_home():
     # Stage 6-a — 운영 스냅샷. 새 집계를 만들지 않고 기존 산출(계정 자격·등록 대장·수집 요약)만 모은다.
     #   블록별로 독립 실패하고, 실패는 화면에서 '미연결'로 정직 표기된다(0을 찍지 않는다).
     from src.pipeline import ops_snapshot
-    context["ops"] = ops_snapshot.build(_seller_identities())
+    context["ops"] = ops_snapshot.build(_seller_identities(), seller_id=_seller_id())
     return render_template("dashboard.html", widgets=widgets, page="dashboard", **context)
 
 

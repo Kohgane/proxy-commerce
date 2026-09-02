@@ -37,7 +37,9 @@
       <span class="op-tile-sub ms-auto">쿠팡 · 스마트스토어 4계정</span>
     </div>
     <div class="op-card-body">
-      <div class="op-tiles">
+      {# 4계정이 한 줄에 다 보여야 한다 — 카드 머리말이 "4계정"이라고 말하는데
+         두 개만 보이고 둘은 카드 스크롤 아래에 있으면 화면이 스스로를 반박한다. #}
+      <div class="op-tiles op-tiles-4">
         {% for a in ops.accounts %}
         <div class="op-tile {% if a.connected %}op-tile-on{% endif %}">
           <div>
@@ -54,7 +56,20 @@
     </div>
     <div class="op-card-foot">
       <a class="btn btn-ghost btn-sm" href="/seller/markets/connect">마켓 연동</a>
-      <span class="op-tile-sub ms-auto">자격은 서버 환경변수에서 읽습니다</span>
+      {# S3 연동 마켓 요약 신호줄 — 위 4계정 축은 쿠팡·스마트스토어뿐이라 11번가 같은 축 밖
+         마켓의 오류가 첫 화면에 안 뜬다. 점 하나씩으로 요약해 붙인다.
+         여기 찍히는 초기값은 **자격 설정 여부까지**이고, 실제 응답은 화면이 그린 뒤
+         비동기로 얹는다(3초 안에 못 받으면 '진단 실패'라고 말한다 — 낙관 표기 금지). #}
+      <div class="op-sig ms-auto" id="opMarketSignal"
+           data-diag-url="{{ url_for('seller_console.markets_integration_diagnostics') }}">
+        {% for m in ops.markets.rows %}
+        <span class="op-sig-item{% if not m.configured %} is-off{% endif %}" data-market="{{ m.market }}"
+              title="{{ m.label }} · {% if m.configured %}자격 설정됨{% if m.source %}({{ m.source }}){% endif %}{% else %}미설정{% endif %}">
+          <span class="op-sig-dot"></span>{{ m.label }}
+        </span>
+        {% endfor %}
+        {% if not ops.markets.rows %}<span class="op-tile-sub">{{ ops.markets.note or '연동 마켓 없음' }}</span>{% endif %}
+      </div>
     </div>
   </section>
 
@@ -142,4 +157,55 @@
     </div>
   </section>
 </div>
+
+{# S3 — 진단은 **비차단**이다. 화면은 자격 상태로 먼저 뜨고, 실제 마켓 응답이 오면 점만 갱신한다.
+   3초 안에 못 받으면 '진단 실패'라고 말한다 — 느려진 대시보드로 오너를 기다리게 하지 않는다.
+   엔드포인트는 마켓 연동 화면이 쓰는 그것을 그대로 부른다(진단 로직 재구현 0). #}
+<script>
+(function () {
+  var box = document.getElementById('opMarketSignal');
+  if (!box || !box.dataset.diagUrl) return;
+  var ctl = ('AbortController' in window) ? new AbortController() : null;
+  function mark(el, cls, title) {
+    el.classList.remove('is-ok', 'is-err', 'is-unknown');
+    el.classList.add(cls);
+    if (title) el.title = title;
+  }
+  function giveUp() {
+    // 실패를 성공처럼 두지 않는다. '모른다'를 그대로 말한다.
+    Array.prototype.forEach.call(box.querySelectorAll('.op-sig-item'), function (el) {
+      mark(el, 'is-unknown', (el.textContent || '').trim() + ' · 진단 실패(응답 없음)');
+    });
+    // 점 모양만으로는 '미설정'과 구분이 안 된다 — 한 번은 글자로 말한다.
+    if (!box.querySelector('.op-sig-note')) {
+      var note = document.createElement('span');
+      note.className = 'op-sig-note';
+      note.textContent = '진단 실패 — 응답 없음';
+      box.appendChild(note);
+    }
+  }
+  // 타임아웃은 **스스로 표기를 바꾼다.** abort→catch에만 기대면, 취소를 무시하는 요청에서
+  // 화면이 진단 전 낙관 표기로 굳는다(실측으로 확인). 늦게 온 응답은 그 위를 덮어쓴다.
+  var timer = setTimeout(function () { if (ctl) ctl.abort(); giveUp(); }, 3000);
+  fetch(box.dataset.diagUrl, {
+    credentials: 'same-origin',
+    headers: { 'Accept': 'application/json' },
+    signal: ctl ? ctl.signal : undefined
+  }).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
+    clearTimeout(timer);
+    if (!data || !data.ok || !data.results) throw new Error('no-result');
+    data.results.forEach(function (res) {
+      var el = box.querySelector('[data-market="' + (res.market || '') + '"]');
+      if (!el) return;
+      var label = (el.textContent || '').trim();
+      if (res.status === 'connected' || res.ok === true) {
+        mark(el, 'is-ok', label + ' · 연동 확인됨');
+      } else {
+        var act = res.action || (res.ui && res.ui.action) || res.error_code || '';
+        mark(el, 'is-err', label + ' · 연동 실패' + (act ? ' — ' + act : ''));
+      }
+    });
+  }).catch(function () { clearTimeout(timer); giveUp(); });
+})();
+</script>
 {% endblock %}

@@ -5,7 +5,6 @@
 
 0데이터 = 전 블록 미연결(정직 표기가 실제로 나오는지). 실데이터 = 계정·대장·큐가 찬 상태.
 """
-import io
 import os
 import subprocess
 import sys
@@ -50,6 +49,8 @@ AUDIT = """() => {
     scrollers, smallTargets: small,
     offline: document.querySelectorAll('.op-off').length,
     tiles: document.querySelectorAll('.op-tile').length,
+    signal: [...document.querySelectorAll('.op-sig-item')].map(e =>
+      (e.dataset.market || '') + ':' + (e.className.match(/is-\w+/) || ['자격설정됨'])[0]),
   };
 }"""
 
@@ -62,6 +63,10 @@ EMPTY = {
     "registrations": {"connected": False, "note": "등록 대장 미연결(DATABASE_URL 미설정)", "counts": {}},
     "rejections": {"connected": False, "note": "등록 대장 미연결", "rows": []},
     "sourcing": {"connected": False, "note": "수집 이력 조회 실패", "today": 0, "total": 0},
+    "markets": {"connected": True, "note": "", "rows": [
+        {"market": m, "label": ko, "configured": False, "source": ""}
+        for m, ko in (("coupang", "쿠팡"), ("smartstore", "스마트스토어"), ("elevenst", "11번가"),
+                      ("woocommerce", "우커머스"), ("shopify", "쇼피파이"))]},
 }
 
 LIVE = {
@@ -85,6 +90,13 @@ LIVE = {
         {"product_id": "16359486084", "title": "하베스트라벨 캔버스 토트", "account": "woojoo"},
     ]},
     "sourcing": {"connected": True, "note": "", "today": 12, "total": 396},
+    "markets": {"connected": True, "note": "", "rows": [
+        {"market": "coupang", "label": "쿠팡", "configured": True, "source": "server"},
+        {"market": "smartstore", "label": "스마트스토어", "configured": True, "source": "server"},
+        {"market": "elevenst", "label": "11번가", "configured": True, "source": "seller"},
+        {"market": "woocommerce", "label": "우커머스", "configured": True, "source": "seller"},
+        {"market": "shopify", "label": "쇼피파이", "configured": False, "source": ""},
+    ]},
 }
 
 
@@ -105,12 +117,28 @@ def _render(html_path, app_css, ops):
     open(html_path, "w", encoding="utf-8").write(html.replace("</head>", inline + "</head>", 1))
 
 
-def _shoot(br, tag, css, size, ops):
+# S3 — 진단 응답 스텁. file:// 렌더라 실제 fetch가 안 나가므로, **화면이 응답을 받았을 때**와
+#   **못 받았을 때**를 각각 실제 코드 경로로 재현한다(그림 합성 0).
+DIAG_OK = """() => {
+  window.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, results: [
+    { market: 'coupang', status: 'connected' },
+    { market: 'smartstore', status: 'connected' },
+    { market: 'elevenst', status: 'api_error', error_code: 'openapi_not_registered',
+      action: '11번가 셀러오피스에서 OpenAPI 이용 신청/키 발급 상태를 먼저 확인하세요' },
+    { market: 'woocommerce', status: 'connected' },
+  ]})});
+}"""
+DIAG_HANG = """() => { window.fetch = () => new Promise(() => {}); }"""   # 응답 없음 → 3초 타임아웃
+
+
+def _shoot(br, tag, css, size, ops, stub=None):
     out_html = f"/tmp/_s6a_{tag}.html"
     _render(out_html, css, ops)
     pg = br.new_page(viewport={"width": size[0], "height": size[1]})
+    if stub:
+        pg.add_init_script("(" + stub + ")()")
     pg.goto(f"file://{out_html}")
-    pg.wait_for_timeout(700)
+    pg.wait_for_timeout(3600 if stub is DIAG_HANG else 900)
     a = pg.evaluate(AUDIT)
     shot = pg.screenshot()
     pg.close()
@@ -127,7 +155,6 @@ def _report(tag, a):
 
 
 def main():
-    from PIL import Image, ImageDraw
     from playwright.sync_api import sync_playwright
 
     files = (TPL, CSS, VIEWS, SNAP)
@@ -136,36 +163,23 @@ def main():
         r = subprocess.run(["git", "show", f"origin/main:{f}"], capture_output=True, text=True)
         base[f] = r.stdout if r.returncode == 0 else None      # 신규 파일은 BEFORE에 없다
     cur = {f: open(f, encoding="utf-8").read() for f in files}
-    variants = [("0데이터", EMPTY, DESKTOP), ("실데이터", LIVE, DESKTOP), ("390", LIVE, MOBILE)]
+    variants = [("0데이터", EMPTY, DESKTOP, None), ("실데이터", LIVE, DESKTOP, DIAG_OK),
+                ("진단실패", LIVE, DESKTOP, DIAG_HANG), ("390", LIVE, MOBILE, DIAG_OK)]
     shots, audits = {}, {}
     with sync_playwright() as pw:
         br = pw.chromium.launch(executable_path=CHROME)
-        for label, ops, size in variants:
-            audits[label], shots[label] = _shoot(br, label, cur[CSS], size, ops)
+        for label, ops, size, stub in variants:
+            audits[label], shots[label] = _shoot(br, label, cur[CSS], size, ops, stub)
         br.close()
 
     print("=== Stage 6-a 실측 ===")
-    for label, _, _ in variants:
+    for label, _, _, _ in variants:
         _report(label, audits[label])
+        print(f"      신호줄: {' '.join(audits[label]['signal'])}")
 
     os.makedirs(OUT_DIR, exist_ok=True)
     for label, png in shots.items():
         open(f"{OUT_DIR}/dashboard-{label}.png", "wb").write(png)
-    # 데스크톱 2벌은 나란히, 모바일은 단독.
-    ims = {l: Image.open(io.BytesIO(shots[l])) for l in ("0데이터", "실데이터")}
-    ims = {l: i.resize((i.width // 2, i.height // 2)) for l, i in ims.items()}
-    pad = 30
-    cv = Image.new("RGB", (sum(i.width for i in ims.values()) + pad * 3,
-                           max(i.height for i in ims.values()) + pad + 8), (238, 232, 220))
-    d = ImageDraw.Draw(cv)
-    x = pad
-    for label in ("0데이터", "실데이터"):
-        a = audits[label]
-        d.text((x, 8), f"{label}  {a['vw']}x{a['vh']}  scrollHeight={a['pageHeight']}  "
-                       f"hollow={a['hollow']}  cards={a['cards']}", fill=(26, 23, 20))
-        cv.paste(ims[label], (x, pad))
-        x += ims[label].width + pad
-    cv.save(f"{OUT_DIR}/dashboard-6a-desktop.png")
     print("saved", OUT_DIR)
 
 

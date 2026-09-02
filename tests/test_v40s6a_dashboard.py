@@ -153,3 +153,50 @@ def test_no_dead_links_on_dashboard():
     rules = {str(r) for r in app.url_map.iter_rules()}
     for href in re.findall(r'href="(/seller/[^"{]+)"', _tpl()):
         assert href in rules, href
+
+
+# ── S3: 연동 마켓 요약 신호줄 (비차단 진단) ──────────────────────────────────────
+
+def test_s3_signal_row_covers_markets_outside_the_four_account_axis():
+    """★ 축(4계정)은 쿠팡·스마트스토어뿐이다 — 11번가 오류가 첫 화면에 안 뜨던 구멍.
+
+    축은 그대로 두고 지원 마켓 전부를 점 하나씩으로 요약하는 줄을 붙인다.
+    """
+    from src.pipeline import ops_snapshot as ops
+    axis = {m for m, _ko, _accts in ops.ACCOUNT_AXES}
+    assert axis == {"coupang", "smartstore"}                  # 축은 4계정 유지
+    rows = ops.linked_markets("s3")["rows"]
+    markets = {r["market"] for r in rows}
+    assert "elevenst" in markets and not markets <= axis       # 축 밖 마켓이 실제로 들어온다
+    for r in rows:
+        assert set(r) >= {"market", "label", "configured", "source"}
+    html = _tpl()
+    assert "opMarketSignal" in html and "op-sig-item" in html
+
+
+def test_s3_signal_row_uses_the_single_connection_judge():
+    """판정은 `market_credentials`가 정본 — 대시보드가 자기 판정기를 새로 만들지 않는다."""
+    src = SNAP.read_text(encoding="utf-8")
+    assert "market_credentials" in src and "credential_source" in src
+    # 자격 env를 직접 읽어 "연결됐다"를 스스로 판정하면 화면마다 답이 갈린다(S1에서 잡은 유형).
+    for reinvented in ("ELEVENST_API_KEY", "WC_KEY", "SHOPIFY_CLIENT_ID", "os.environ"):
+        assert reinvented not in src, f"판정 재구현: {reinvented}"
+
+
+def test_s3_diagnostics_are_non_blocking_and_reuse_the_endpoint():
+    """★ 진단은 렌더를 막지 않는다 — 3초 타임아웃 + 엔드포인트 재사용(재구현 0)."""
+    html = _tpl()
+    assert "markets_integration_diagnostics" in html           # 기존 진단 라우트를 그대로 부른다
+    assert "AbortController" in html and "3000" in html        # 3초 상한
+    # 서버 렌더 경로에는 진단 호출이 없다(있으면 대시보드가 마켓 응답만큼 느려진다).
+    assert "run_market_diagnostic" not in SNAP.read_text(encoding="utf-8")
+
+
+def test_s3_diagnostic_failure_says_it_failed_not_ok():
+    """실패를 성공처럼 두지 않는다 — 못 받으면 '진단 실패'라고 말한다."""
+    html = _tpl()
+    assert "진단 실패" in html
+    css = _s6_css()
+    assert "--danger" in _block(css, ".op-sig-item.is-err .op-sig-dot")
+    assert "dashed" in _block(css, ".op-sig-item.is-unknown .op-sig-dot")
+    assert css.count("--orange") == 1                          # 원색은 여전히 신호 1점만

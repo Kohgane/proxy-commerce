@@ -796,6 +796,15 @@ main:has(> .op-shell) > .op-shell { flex: 1 1 auto; height: auto; min-height: 0;
   display: flex; align-items: baseline; gap: var(--space-3);
 }
 .op-card-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: var(--space-5); }
+/* 스크롤로 잘린 줄이 '깨진 화면'으로 읽히지 않게, 본문 아래쪽에 카드 배경으로 스미는 페이드.
+   넘칠 게 없으면 여백 위에 겹쳐 보이지 않는다(조건 분기 없이 안전). */
+.op-card { position: relative; }
+.op-card-body::after {
+  content: ""; position: sticky; display: block; bottom: calc(var(--space-5) * -1);
+  margin: 0 calc(var(--space-5) * -1) calc(var(--space-5) * -1);
+  height: var(--space-5); pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--surface));
+}
 .op-card-foot {
   flex: 0 0 auto; padding: var(--space-3) var(--space-5);
   border-top: 1px solid var(--border);
@@ -809,6 +818,7 @@ main:has(> .op-shell) > .op-shell { flex: 1 1 auto; height: auto; min-height: 0;
 
 /* Bauhaus — 계정 타일을 **기하 모듈**로. 정사각(1:1) 그리드, 원색은 신호 1점만. */
 .op-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.op-tiles-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }  /* 4계정 한 줄 */
 .op-tile {
   aspect-ratio: 1 / 1;                              /* 정사각 모듈(Bauhaus) */
   display: flex; flex-direction: column; justify-content: space-between;
@@ -855,9 +865,33 @@ main:has(> .op-shell) > .op-shell { flex: 1 1 auto; height: auto; min-height: 0;
   box-shadow: var(--nm-soft-sm); min-height: 44px;
 }
 
+/* S3 — 연동 마켓 요약 신호줄. 축(4계정) 밖 마켓의 오류도 첫 화면에 점 하나로는 뜬다.
+   기하 타일이 아니라 텍스트 신호라 Neumo 깊이를 쓰지 않는다(G2 겹침 금지). */
+.op-sig { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.op-sig-item {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  font-size: .7rem; letter-spacing: .04em; color: var(--text-muted);
+}
+.op-sig-dot {
+  width: .5rem; height: .5rem; border-radius: 50%;
+  background: var(--teal); /* 자격 설정됨 — 진단 전 기본값 */
+}
+.op-sig-item.is-off .op-sig-dot { background: var(--border); }        /* 미설정 */
+.op-sig-item.is-ok .op-sig-dot { background: var(--success); }        /* 연동 확인됨 */
+.op-sig-item.is-err .op-sig-dot { background: var(--danger); }        /* 마켓이 거부 */
+.op-sig-item.is-err { color: var(--danger); font-weight: var(--w-semi); }
+.op-sig-item.is-unknown .op-sig-dot {                                  /* 진단 실패 — 모른다 */
+  background: transparent; border: 1px dashed var(--text-muted);
+}
+.op-sig-note {                    /* 점 모양만으론 미설정과 구분이 안 된다 — 글자로도 말한다 */
+  font-size: .7rem; letter-spacing: .04em; color: var(--text-muted);
+  border-left: 1px solid var(--border); padding-left: var(--space-3);
+}
+
 /* G1 — 390px 1열 폴백(뷰포트 고정 해제 · 스크롤이 자연스럽다). */
 @media (max-width: 1199.98px) {
   .op-shell { grid-template-columns: minmax(0, 1fr); height: auto; grid-auto-rows: auto; }
+  .op-tiles-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }   /* 390px는 2×2 */
   .op-shell > * { grid-column: 1 / -1; }
   .op-card { flex: 0 0 auto; }
   .op-card-body { overflow: visible; }
