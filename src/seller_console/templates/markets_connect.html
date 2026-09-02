@@ -77,26 +77,33 @@
     </div>
   </div>
 
-  {% if server_ip %}
-  <div class="alert alert-warning d-flex flex-wrap gap-2 align-items-center mb-3" role="note">
-    <i class="bi bi-hdd-network"></i>
-    <span class="small mb-0">쿠팡 · 네이버 · 11번가는 <strong>서버 IP를 허용 목록에 등록</strong>해야 연결돼요:</span>
-    <code id="serverIp" class="ms-1">{{ server_ip }}</code>
-    <button type="button" class="btn btn-gold btn-sm py-0" onclick="copyServerIp(this)">복사</button>
-    <span class="pc-help" data-bs-toggle="tooltip" data-bs-title="마켓의 'API 호출 허용 IP'(쿠팡 Wing)/'호출 IP 등록'(네이버, 최대 3개)/'허용 IP'(11번가 셀러오피스)에 이 IP를 추가하세요.">?</span>
-    {# S2 — Render 아웃바운드 IP는 리전당 여러 개다. 하나만 등록하면 다른 IP로 나가는 순간 막힌다. #}
-    {% if server_ips and server_ips|length > 1 %}
-    <div class="small text-muted w-100 mt-2">등록해야 할 IP 전체:
-      {% for ip in server_ips %}<code class="me-2">{{ ip }}</code>{% endfor %}
+  {# S2-b: 허용 목록에 등록할 IP는 마켓마다 다르다 — 발신 경로가 다르기 때문이다.
+       쿠팡·스마트스토어는 릴레이 고정 IP 하나로 나가고, 11번가는 우리 서버에서 직접 나간다.
+       여기에 공유 대역 IP를 뭉뚱그려 적는 게 지뢰였다(등록해도 며칠 뒤 다시 막힘). #}
+  {% set gated = allowlist_ips.get('coupang', {}) %}
+  {% set direct = allowlist_ips.get('elevenst', {}) %}
+  <div class="alert alert-warning d-flex flex-column gap-2 mb-3" role="note">
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+      <i class="bi bi-hdd-network"></i>
+      <span class="small mb-0"><strong>쿠팡 · 스마트스토어</strong>는 아래 <strong>고정 IP 하나</strong>만 허용 목록에 등록하세요:</span>
+      {% if gated.ips %}
+      <code id="serverIp" class="ms-1">{{ gated.ips[0] }}</code>
+      <button type="button" class="btn btn-gold btn-sm py-0" onclick="copyServerIp(this)">복사</button>
+      {% else %}
+      <span class="small text-muted">고정 IP를 아직 확인하지 못했어요 — 등록 전 관리자에게 확인해 주세요.</span>
+      {% endif %}
+      <span class="pc-help" data-bs-toggle="tooltip"
+            data-bs-title="쿠팡 Wing 'API 호출 허용 IP' / 네이버 커머스 '호출 IP 등록'(최대 3개)에 이 주소를 추가하세요. 이 두 마켓은 고정 IP 중계를 거쳐 나가므로 주소가 바뀌지 않습니다.">?</span>
     </div>
-    {% elif not server_ips_complete %}
-    <div class="small text-muted w-100 mt-2">
-      위 주소는 <strong>지금 이 순간 나간 IP 하나</strong>예요. 서버 아웃바운드 IP는 여러 개일 수 있어서,
-      호스팅 대시보드의 <strong>Outbound IP 목록을 전부</strong> 등록해 두는 편이 안전합니다.
+    <div class="small text-muted">
+      <strong>11번가</strong>는 중계를 거치지 않고 서버에서 바로 나가요.
+      {% if direct.ips %}허용 목록에는 <span>{% for ip in direct.ips %}<code class="me-1">{{ ip }}</code>{% endfor %}</span>를
+      <strong>전부</strong> 등록해야 합니다{% if not direct.complete %} — 위 주소는 지금 나간 것 하나뿐일 수 있어요{% endif %}.
+      {% else %}허용 목록에 등록할 주소를 아직 확인하지 못했어요.{% endif %}
+      다만 11번가는 <strong>IP보다 OpenAPI 이용 승인이 먼저</strong>입니다 — 승인 전이면 키가 있어도 연결되지 않아요.
     </div>
-    {% endif %}
   </div>
-  {% endif %}
+  {# server_ip / server_ips는 다른 화면·테스트가 참조하는 값이라 뷰에서 계속 넘긴다(여기선 미표시). #}
 
   <!-- 2단: 좌 마켓 리스트 + 우 상세 -->
   <div class="mc-wrap">

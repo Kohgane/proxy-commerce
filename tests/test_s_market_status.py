@@ -90,25 +90,66 @@ def test_s2_other_codes_unchanged():
     assert _parse_error_code("무슨 일인지 모를 오류") == "api_error"
 
 
-def test_s2_action_text_tells_what_to_do():
-    """조치 문구가 **셀러가 할 일**을 말한다. 모르는 코드는 지어내지 않는다."""
+def test_s2_action_text_puts_approval_before_ip():
+    """★ 처방 순서가 곧 내용이다 — **키 승인이 주범, IP는 부차**.
+
+    승인 전이면 키가 있어도 -997이 온다. IP부터 뒤지게 만드는 문구는 며칠을 버리게 한다.
+    """
     from src.seller_console.market_integration_diagnostics import error_action
     act = error_action("openapi_not_registered")
-    assert "셀러오피스" in act and "OpenAPI" in act and "IP" in act
+    assert "셀러오피스" in act and "승인 전" in act
+    assert act.index("승인") < act.index("IP")                    # 승인이 IP보다 먼저
     assert error_action("api_error") == "" and error_action("") == ""
 
 
-def test_s2_ip_list_not_single_hardcoded(monkeypatch):
-    """★ Render 아웃바운드 IP는 복수 — 하나만 등록하면 다른 IP로 나갈 때 다시 막힌다."""
+def test_s2_gated_market_ip_is_relay_not_shared_range(monkeypatch):
+    """★ 지뢰(오너 2026-09-02): 게이트 마켓 안내에 **Render 공유 대역 IP를 적으면 안 된다.**
+
+    Render 아웃바운드는 공유 대역이라 값이 바뀐다 — 오너가 그 IP를 마켓 허용 목록에 등록하고
+    며칠 뒤 다시 막히는 재발 경로다. 쿠팡·스마트스토어의 실제 발신자는 릴레이 하나뿐이다.
+    """
+    monkeypatch.setenv("SELLER_CONSOLE_AUTH", "0")
+    monkeypatch.setenv("SERVER_OUTBOUND_IP", "74.220.49.7, 74.220.52.223")
+    monkeypatch.setenv("MARKET_RELAY_IP", "203.0.113.9")
+    from src.seller_console import views
+    table = views._allowlist_ips()
+    assert table["coupang"] == {"ips": ["203.0.113.9"], "source": "relay", "complete": True}
+    assert table["smartstore"]["source"] == "relay"
+    assert "74.220.52.223" not in table["coupang"]["ips"]          # 공유 대역 유입 금지
+    # 게이트가 아닌 마켓은 실제로 서버에서 직발하므로 그쪽이 맞다.
+    assert table["elevenst"]["ips"] == ["74.220.49.7", "74.220.52.223"]
+    assert table["elevenst"]["source"] == "render"
+
+
+def test_s2_relay_ip_is_derived_not_hardcoded(monkeypatch):
+    """표시값은 **릴레이 설정에서 파생**한다. 소스에 IP 리터럴을 박아두지 않는다."""
+    import importlib
+    import src.market_relay as R
+    monkeypatch.delenv("MARKET_RELAY_IP", raising=False)
+    monkeypatch.setenv("MARKET_API_RELAY_URL", "https://198.51.100.7/mkt.php")
+    R._RELAY_IP_CACHE["ip"] = None
+    assert R.relay_outbound_ip() == "198.51.100.7"
+    R._RELAY_IP_CACHE["ip"] = None
+    monkeypatch.delenv("MARKET_API_RELAY_URL", raising=False)
+    monkeypatch.delenv("MARKET_RELAY_URL", raising=False)
+    assert R.relay_outbound_ip() == ""                            # 모르면 빈값 — 추측 금지
+    R._RELAY_IP_CACHE["ip"] = None
+    src = Path("src/seller_console/views.py").read_text(encoding="utf-8")
+    tpl = Path("src/seller_console/templates/markets_connect.html").read_text(encoding="utf-8")
+    for literal in ("50.6.34.133", "74.220.52.223", "74.220.49.7"):
+        assert literal not in src and literal not in tpl
+    importlib.reload(R)
+
+
+def test_s2_ip_list_not_single(monkeypatch):
+    """직발 마켓의 아웃바운드 IP는 복수 — 하나만 등록하면 다른 IP로 나갈 때 다시 막힌다."""
     monkeypatch.setenv("SELLER_CONSOLE_AUTH", "0")
     from src.seller_console import views
     monkeypatch.setenv("SERVER_OUTBOUND_IP", "74.220.49.7, 74.220.52.223")
     assert views._server_outbound_ips() == ["74.220.49.7", "74.220.52.223"]
     assert views._server_outbound_ip() == "74.220.49.7"           # 단일 표시는 첫 값
-    # 템플릿이 목록과 '전부가 아닐 수 있다'는 안내를 갖고 있다.
     tpl = Path("src/seller_console/templates/markets_connect.html").read_text(encoding="utf-8")
-    assert "server_ips" in tpl and "Outbound IP 목록을 전부" in tpl
-    assert "11번가" in tpl                                         # 11번가도 IP 등록 대상
+    assert "allowlist_ips" in tpl and "11번가" in tpl
 
 
 def test_s2_eleven_st_is_direct_not_relayed():

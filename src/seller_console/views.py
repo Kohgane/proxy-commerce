@@ -4486,11 +4486,48 @@ def markets_connect():
     return render_template(
         "markets_connect.html", page="markets",
         market_statuses=statuses, market_chips=chips, single_market=None, guide_entry=None,
-        guide_map=guide_map(), server_ip=_server_outbound_ip(),
-        # S2 — Render 아웃바운드 IP는 복수. 하나만 등록하면 다른 IP로 나갈 때 다시 막힌다.
-        server_ips=_server_outbound_ips(),
-        server_ips_complete=bool((os.getenv("SERVER_OUTBOUND_IP") or "").strip()),
+        guide_map=guide_map(), **_connect_ip_ctx(),
     )
+
+
+def _connect_ip_ctx() -> dict:
+    """markets_connect.html이 IP 안내에 쓰는 컨텍스트 — **한 군데서만 만든다.**
+
+    전체 화면과 단일 마켓 화면이 같은 템플릿을 렌더한다. 여기서 각자 채우면 한쪽만 고쳐져
+    화면마다 다른 IP를 안내하게 된다(S1에서 잡은 것과 같은 결함 유형).
+    """
+    return {
+        "server_ip": _server_outbound_ip(),
+        # S2 — Render 아웃바운드 IP는 복수. 하나만 등록하면 다른 IP로 나갈 때 다시 막힌다.
+        "server_ips": _server_outbound_ips(),
+        "server_ips_complete": bool((os.getenv("SERVER_OUTBOUND_IP") or "").strip()),
+        "allowlist_ips": _allowlist_ips(),
+    }
+
+
+def _allowlist_ips() -> dict:
+    """마켓별 **허용 목록에 등록할 IP** — 발신 경로에서 파생한다(하드코딩 0).
+
+    ★ S2-b 확정(오너 2026-09-02): 게이트 마켓(쿠팡·스마트스토어)은 릴레이 고정 IP **하나**만
+      등록해야 한다. 여기에 Render 아웃바운드를 적는 게 재발 지뢰였다 — 공유 대역이라 값이 바뀐다.
+      게이트가 아닌 마켓(11번가·우커머스·쇼피파이)은 실제로 Render에서 직발하므로 그쪽이 맞다.
+    """
+    from src import market_relay as mr
+
+    relay_ip = mr.relay_outbound_ip()
+    render_ips = _server_outbound_ips()
+    render_complete = bool((os.getenv("SERVER_OUTBOUND_IP") or "").strip())
+    out = {}
+    for market in ("coupang", "smartstore", "elevenst", "woocommerce", "shopify"):
+        if mr.ip_gated(market):
+            out[market] = {
+                "ips": [relay_ip] if relay_ip else [],
+                "source": "relay",
+                "complete": bool(relay_ip),
+            }
+        else:
+            out[market] = {"ips": render_ips, "source": "render", "complete": render_complete}
+    return out
 
 
 # 서버 아웃바운드 IP 캐시(쿠팡/네이버 허용 IP 등록용 — 화면에 복사 제공)
@@ -4559,7 +4596,7 @@ def markets_connect_one(market):
         "markets_connect.html", page="markets",
         market_statuses=[mc.status(seller, market)], market_chips=chips,
         single_market=market, guide_entry=guide_entry,
-        guide_map=guide_map(), server_ip=_server_outbound_ip(),
+        guide_map=guide_map(), **_connect_ip_ctx(),
     )
 
 
