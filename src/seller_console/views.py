@@ -4487,6 +4487,9 @@ def markets_connect():
         "markets_connect.html", page="markets",
         market_statuses=statuses, market_chips=chips, single_market=None, guide_entry=None,
         guide_map=guide_map(), server_ip=_server_outbound_ip(),
+        # S2 — Render 아웃바운드 IP는 복수. 하나만 등록하면 다른 IP로 나갈 때 다시 막힌다.
+        server_ips=_server_outbound_ips(),
+        server_ips_complete=bool((os.getenv("SERVER_OUTBOUND_IP") or "").strip()),
     )
 
 
@@ -4494,11 +4497,26 @@ def markets_connect():
 _SERVER_IP_CACHE = {"ip": None, "tried": False}
 
 
+def _server_outbound_ips() -> list:
+    """서버 아웃바운드 IP **목록**(S2).
+
+    Render는 리전당 아웃바운드 IP가 **여러 개**다. 실행 중 조회로 얻는 건 그중 **지금 나간 하나**뿐이라,
+    그것만 등록하면 다른 IP로 나가는 순간 다시 막힌다(11번가 -997·쿠팡 IP 거부의 재발 경로).
+    그래서 `SERVER_OUTBOUND_IP`에 쉼표로 여러 개를 넣을 수 있게 하고, 화면은 **전부** 보여준다.
+    env가 비면 실행 중 조회 1개로 폴백하되, 그게 전부가 아닐 수 있다고 화면이 말한다.
+    """
+    raw = (os.getenv("SERVER_OUTBOUND_IP") or "").strip()
+    if raw:
+        return [ip for ip in (x.strip() for x in raw.replace(";", ",").split(",")) if ip]
+    probed = _server_outbound_ip()
+    return [probed] if probed else []
+
+
 def _server_outbound_ip() -> str:
-    """서버 아웃바운드 IP. env SERVER_OUTBOUND_IP 우선, 없으면 1회 조회·캐시(실패 시 '')."""
+    """서버 아웃바운드 IP 1개(실행 중 조회). 목록은 `_server_outbound_ips()`를 쓴다."""
     env_ip = (os.getenv("SERVER_OUTBOUND_IP") or "").strip()
     if env_ip:
-        return env_ip
+        return env_ip.replace(";", ",").split(",")[0].strip()
     if _SERVER_IP_CACHE["ip"] is not None:
         return _SERVER_IP_CACHE["ip"]
     if _SERVER_IP_CACHE["tried"]:
@@ -5407,31 +5425,15 @@ def _marketplace_meta(marketplace: str) -> dict:
 
 
 def _market_configured_for_seller(marketplace: str) -> bool:
-    """전역 환경변수 + 셀러 인앱 저장 자격증명을 함께 고려한 연결 설정 여부."""
+    """연결 여부 — **판정은 `mc.is_connected` 하나만 한다**(S1).
+
+    예전엔 여기서 `_market_is_configured`(마켓별 하드코딩 if)로 따로 판정했다. 그래서
+    `/seller/markets`와 `/markets/connect`가 **같은 마켓을 다르게 판정**했다(실측: 11번가 키가
+    있어도 코드가 `11st`냐 `elevenst`냐에 따라 True/False가 갈렸다). 판정기를 하나로 모은다.
+    `mc.canonical_market`이 별칭(11st→elevenst)을 흡수하므로 호출부는 어느 코드로 불러도 된다.
+    """
     from . import market_credentials as mc
-    with mc.temp_env(mc.all_credential_env(_seller_id())):
-        return _market_is_configured(marketplace)
-
-
-def _market_is_configured(marketplace: str) -> bool:
-    market = (marketplace or "").strip().lower()
-    if market == "shopify":
-        return bool((os.getenv("SHOPIFY_SHOP") or "").strip()) and bool(
-            (os.getenv("SHOPIFY_AUTO_TOKEN") or os.getenv("SHOPIFY_ACCESS_TOKEN") or os.getenv("SHOPIFY_ADMIN_TOKEN") or "").strip()
-        )
-    if market == "coupang":
-        return all(
-            bool((os.getenv(k) or "").strip())
-            for k in ["COUPANG_VENDOR_ID", "COUPANG_ACCESS_KEY", "COUPANG_SECRET_KEY"]
-        )
-    if market == "smartstore":
-        return all(
-            bool((os.getenv(k) or "").strip())
-            for k in ["NAVER_COMMERCE_CLIENT_ID", "NAVER_COMMERCE_CLIENT_SECRET"]
-        )
-    if market == "11st":
-        return bool((os.getenv("ELEVENST_API_KEY") or "").strip())
-    return False
+    return mc.is_connected(_seller_id(), marketplace)
 
 
 def _market_required_env_hint(marketplace: str) -> str:

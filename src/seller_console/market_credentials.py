@@ -87,6 +87,40 @@ MARKET_LABELS = {
 
 SUPPORTED_MARKETS = list(MARKET_CRED_FIELDS.keys())
 
+# S1 — 화면마다 다른 마켓 코드를 쓰던 것을 여기서 흡수한다.
+#   실측: `/seller/markets`는 `11st`, `/markets/connect`는 `elevenst`를 썼고, 같은 마켓인데
+#   판정이 갈렸다(11번가 키가 있어도 한쪽은 False). 표준은 **elevenst**, 나머지는 별칭.
+MARKET_ALIASES = {"11st": "elevenst", "eleven": "elevenst", "naver": "smartstore",
+                  "naver_commerce": "smartstore", "woo": "woocommerce", "wc": "woocommerce"}
+
+
+def canonical_market(market: str) -> str:
+    """마켓 코드 표준형. 모르는 코드는 그대로 돌려준다(조용히 바꾸지 않는다)."""
+    m = str(market or "").strip().lower()
+    return MARKET_ALIASES.get(m, m)
+
+
+def credential_source(seller_id: str, market: str) -> str:
+    """자격이 **어디서** 왔나 — "seller"(내 키) / "server"(서버 설정) / ""(없음).
+
+    화면이 '연결됨'만 보여주면 셀러는 자기가 넣은 건지 서버가 갖고 있는 건지 모른다.
+    판정(연결 여부)과 출처는 **다른 질문**이라 따로 답한다.
+    """
+    market = canonical_market(market)
+    fields = MARKET_CRED_FIELDS.get(market) or []
+    if not fields:
+        return ""
+    stored = _load_all(seller_id).get(market) or {}
+    required = [f["env"] for f in fields if f.get("required")] or [f["env"] for f in fields]
+    if any(str(stored.get(env, "") or "").strip() for env in required):
+        return "seller"
+    if any(str(os.getenv(env, "") or "").strip() for env in required):
+        return "server"
+    return ""
+
+
+SOURCE_LABEL = {"seller": "내 키", "server": "서버 설정", "": "미설정"}
+
 
 def _safe_seller_id(seller_id: str) -> str:
     sid = re.sub(r"[^A-Za-z0-9_.@-]", "_", str(seller_id or "default")).strip("_") or "default"
@@ -259,7 +293,12 @@ def _market_ok(stored: Dict[str, str], market: str) -> bool:
 
 
 def is_connected(seller_id: str, market: str) -> bool:
-    """필수 필드가 셀러 저장값 또는 전역 환경변수로 모두 채워졌는지."""
+    """필수 필드가 셀러 저장값 또는 전역 환경변수로 모두 채워졌는지.
+
+    ★ S1 — **연결 판정의 단일 소스**. 다른 화면이 자기 판정을 따로 만들지 않는다
+    (계약 `test_s1_single_connection_judge`가 판정기 2개 존재를 금지한다).
+    """
+    market = canonical_market(market)
     if market not in MARKET_CRED_FIELDS:
         return False
     return _market_ok(get(seller_id, market), market)

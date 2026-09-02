@@ -80,10 +80,21 @@
   {% if server_ip %}
   <div class="alert alert-warning d-flex flex-wrap gap-2 align-items-center mb-3" role="note">
     <i class="bi bi-hdd-network"></i>
-    <span class="small mb-0">쿠팡·네이버는 <strong>서버 IP를 허용 목록에 등록</strong>해야 연결돼요:</span>
+    <span class="small mb-0">쿠팡 · 네이버 · 11번가는 <strong>서버 IP를 허용 목록에 등록</strong>해야 연결돼요:</span>
     <code id="serverIp" class="ms-1">{{ server_ip }}</code>
     <button type="button" class="btn btn-gold btn-sm py-0" onclick="copyServerIp(this)">복사</button>
-    <span class="pc-help" data-bs-toggle="tooltip" data-bs-title="마켓의 'API 호출 허용 IP'(쿠팡 Wing)/'호출 IP 등록'(네이버, 최대 3개)에 이 IP를 추가하세요.">?</span>
+    <span class="pc-help" data-bs-toggle="tooltip" data-bs-title="마켓의 'API 호출 허용 IP'(쿠팡 Wing)/'호출 IP 등록'(네이버, 최대 3개)/'허용 IP'(11번가 셀러오피스)에 이 IP를 추가하세요.">?</span>
+    {# S2 — Render 아웃바운드 IP는 리전당 여러 개다. 하나만 등록하면 다른 IP로 나가는 순간 막힌다. #}
+    {% if server_ips and server_ips|length > 1 %}
+    <div class="small text-muted w-100 mt-2">등록해야 할 IP 전체:
+      {% for ip in server_ips %}<code class="me-2">{{ ip }}</code>{% endfor %}
+    </div>
+    {% elif not server_ips_complete %}
+    <div class="small text-muted w-100 mt-2">
+      위 주소는 <strong>지금 이 순간 나간 IP 하나</strong>예요. 서버 아웃바운드 IP는 여러 개일 수 있어서,
+      호스팅 대시보드의 <strong>Outbound IP 목록을 전부</strong> 등록해 두는 편이 안전합니다.
+    </div>
+    {% endif %}
   </div>
   {% endif %}
 

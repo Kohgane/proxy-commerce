@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import os
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -83,8 +85,18 @@ def _step(ok: bool, market: str, step: str, *, error_code: str = "", hint: str =
     }
 
 
+# S2 — 11번가 `-997` = "등록된 API 정보 없음". 키 형식이 맞아도 **셀러오피스에서 OpenAPI
+#   서비스를 신청·발급하지 않았거나 호출 IP가 허용 목록에 없으면** 이 코드가 온다.
+#   여태 `api_error`로 뭉개져 화면엔 "API 연결 실패"만 떴다 — 무엇을 해야 하는지가 없었다.
+#   ※ `\b-997\b`는 못 쓴다 — `\b`가 `-` 앞에 오면 **직전이 단어문자여야** 성립해서
+#     "응답 코드 -997"(공백 뒤)은 안 잡힌다. 숫자 경계로 직접 막는다.
+_ELEVENST_NOT_REGISTERED_RE = re.compile(r"resultCode[^0-9\-]{0,12}-?997|(?<![\d.])-997(?![\d.])")
+
+
 def _parse_error_code(detail: str, *, fallback: str = "api_error") -> str:
     normalized = (detail or "").lower()
+    if _ELEVENST_NOT_REGISTERED_RE.search(detail or ""):
+        return "openapi_not_registered"
     if "http 401" in normalized or "token" in normalized or "인증" in normalized:
         return "token_expired"
     if "http 403" in normalized or "scope" in normalized or "권한" in normalized:
@@ -199,6 +211,22 @@ def _write_dry_run_step(market: str) -> dict[str, Any]:
     if status == "stub":
         return _step(False, market, "write_dry_run", error_code="token_missing", hint="연동 정보가 없어 safe write 검증을 진행하지 못했습니다.", detail=detail or "자격증명 미설정", raw=raw)
     return _step(False, market, "write_dry_run", error_code=_parse_error_code(detail), hint=detail or "safe write 검증 실패", detail=detail or status or "write 검증 실패", raw=raw)
+
+
+# 오류 코드 → **셀러가 실제로 할 일**. 상태만 빨갛게 칠하면 무엇을 해야 하는지 모른다.
+ERROR_ACTIONS: dict[str, str] = {
+    "openapi_not_registered": (
+        "11번가 셀러오피스에서 OpenAPI 서비스를 신청해 인증키를 발급받고, "
+        "호출 IP를 허용 목록에 등록한 뒤 다시 시도하세요."),
+    "token_expired": "인증키가 만료됐거나 잘못됐습니다. 마켓에서 재발급해 다시 입력하세요.",
+    "scope_insufficient": "발급된 키에 필요한 권한(스코프)이 없습니다. 마켓에서 권한을 추가하세요.",
+    "token_missing": "연동 정보가 아직 없습니다. 이 화면에서 키를 입력해 주세요.",
+}
+
+
+def error_action(error_code: str) -> str:
+    """조치 문구. 모르는 코드는 빈 문자열 — **지어내지 않는다**(가짜 안내 금지)."""
+    return ERROR_ACTIONS.get(str(error_code or "").strip(), "")
 
 
 def market_status_badge(status: str) -> dict[str, str]:
