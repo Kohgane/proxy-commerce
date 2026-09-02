@@ -418,7 +418,7 @@ def relay_ready() -> dict:
 
     v88-C 결함: 파일럿 게이트가 구 `MARKET_RELAY_URL`만 봤는데, 오너가 실제 설치한 건 **mkt.php 릴레이**
     (`MARKET_API_RELAY_URL`)라 미감지 → live=false. → 두 경로 모두 인정.
-      - mkt.php(현행, 오너 50.6.34.63 설치): `MARKET_API_RELAY_URL`(+`MARKET_API_RELAY_KEY`|`MARKET_RELAY_TOKEN`)
+      - mkt.php(현행, 오너 Bluehost 설치): `MARKET_API_RELAY_URL`(+`MARKET_API_RELAY_KEY`|`MARKET_RELAY_TOKEN`)
       - 구 /relay: `MARKET_RELAY_URL` + `MARKET_RELAY_TOKEN`
     """
     from src import market_relay as MR

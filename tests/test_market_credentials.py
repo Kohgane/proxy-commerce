@@ -190,10 +190,10 @@ class TestSellerCredsReflectedInMarketsPage:
             "COUPANG_ACCESS_KEY": "ak", "COUPANG_SECRET_KEY": "sk", "COUPANG_VENDOR_ID": "A1"})
 
         from src.seller_console import views
-        # 전역 env 기준으로는 미설정
-        assert views._market_is_configured("coupang") is False
-        # 셀러 인앱 저장 기준으로는 설정됨
+        # S1: 판정기가 하나로 합쳐지면서 옛 `_market_is_configured`(마켓별 하드코딩 if)는 제거됐다.
+        #   같은 구분을 **출처**로 표현한다 — env엔 없고 셀러 저장값으로 연결된 상태.
         assert views._market_configured_for_seller("coupang") is True
+        assert module.credential_source("default", "coupang") == "seller"   # 저장한 그 셀러로
 
 
 class TestConnectRoutes:

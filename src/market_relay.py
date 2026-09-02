@@ -27,7 +27,9 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-# ── v87-S6-2: mkt.php 릴레이(오너가 Bluehost 50.6.34.63에 설치) ──────────────────
+# ── v87-S6-2: mkt.php 릴레이(오너가 Bluehost에 설치) ────────────────────────────
+#   ※ 고정 IP는 여기 적지 않는다 — `relay_outbound_ip()`가 설정에서 파생한다(볼트 지뢰
+#     「Render 공유 대역 IP 안내 금지」). 주석에 박아둔 값이 실제와 어긋난 전례가 있다.
 #   프로토콜(오너 확정): POST {url, method, headers, body_b64} + 헤더 X-KGP-Relay-Key
 #                        → {status, content_type, body_b64}
 #   서명은 **호출부에서 원 URL 기준으로 이미 끝난다**(쿠팡 CEA는 path+query로 서명). 릴레이는
@@ -63,6 +65,55 @@ def api_relay_enabled() -> bool:
 
 def _api_relay_key() -> str:
     return (os.getenv("MARKET_API_RELAY_KEY") or os.getenv("MARKET_RELAY_TOKEN") or "").strip()
+
+
+def ip_gated(market: str) -> bool:
+    """이 마켓이 **IP 화이트리스트 게이트**라 릴레이를 타야 하는가.
+
+    화면(마켓 연동)이 "허용 목록에 등록할 IP"를 안내할 때 이 판정으로 갈린다. 게이트 마켓이면
+    릴레이 고정 IP, 아니면 우리 서버 아웃바운드 IP다 — **판정을 화면에서 다시 쓰면 갈라진다.**
+    """
+    return (market or "").strip().lower() in _IP_GATED_MARKETS
+
+
+_RELAY_IP_CACHE = {"ip": None}
+
+
+def relay_outbound_ip() -> str:
+    """릴레이가 마켓에 대고 나가는 **고정 IP**. 하드코딩하지 않고 릴레이 설정에서 파생한다.
+
+    ★ 지뢰(오너 2026-09-02): 게이트 마켓 안내에 **Render 아웃바운드 IP를 적으면 안 된다.**
+      Render는 공유 대역이고 값이 바뀐다 — 오너가 그 IP를 마켓 허용 목록에 등록하고 며칠 뒤
+      다시 막히는 재발 경로다. 게이트 마켓의 실제 발신자는 릴레이 서버 하나뿐이다.
+
+    파생 순서: `MARKET_RELAY_IP`(명시) → 릴레이 URL 호스트가 IP 리터럴이면 그 값 → DNS 해석.
+    셋 다 안 되면 **빈 문자열**을 돌려주고 화면이 "릴레이 IP 미확인"이라고 말한다(추측 금지).
+    """
+    explicit = (os.getenv("MARKET_RELAY_IP") or "").strip()
+    if explicit:
+        return explicit
+    if _RELAY_IP_CACHE["ip"] is not None:
+        return _RELAY_IP_CACHE["ip"]
+    host = ""
+    for u in (api_relay_url(), (os.getenv("MARKET_RELAY_URL") or "").strip()):
+        if u:
+            host = (urlparse(u).hostname or "").strip()
+            if host:
+                break
+    ip = ""
+    if host:
+        try:
+            import ipaddress
+            ipaddress.ip_address(host)
+            ip = host                                  # 이미 IP 리터럴
+        except ValueError:
+            try:
+                import socket
+                ip = socket.gethostbyname(host)
+            except Exception:
+                ip = ""
+    _RELAY_IP_CACHE["ip"] = ip
+    return ip
 
 
 def assert_host_allowed(url: str) -> str:

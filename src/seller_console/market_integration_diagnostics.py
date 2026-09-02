@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import os
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -83,8 +85,18 @@ def _step(ok: bool, market: str, step: str, *, error_code: str = "", hint: str =
     }
 
 
+# S2 — 11번가 `-997` = "등록된 API 정보 없음". 키 형식이 맞아도 **셀러오피스에서 OpenAPI
+#   서비스를 신청·발급하지 않았거나 호출 IP가 허용 목록에 없으면** 이 코드가 온다.
+#   여태 `api_error`로 뭉개져 화면엔 "API 연결 실패"만 떴다 — 무엇을 해야 하는지가 없었다.
+#   ※ `\b-997\b`는 못 쓴다 — `\b`가 `-` 앞에 오면 **직전이 단어문자여야** 성립해서
+#     "응답 코드 -997"(공백 뒤)은 안 잡힌다. 숫자 경계로 직접 막는다.
+_ELEVENST_NOT_REGISTERED_RE = re.compile(r"resultCode[^0-9\-]{0,12}-?997|(?<![\d.])-997(?![\d.])")
+
+
 def _parse_error_code(detail: str, *, fallback: str = "api_error") -> str:
     normalized = (detail or "").lower()
+    if _ELEVENST_NOT_REGISTERED_RE.search(detail or ""):
+        return "openapi_not_registered"
     if "http 401" in normalized or "token" in normalized or "인증" in normalized:
         return "token_expired"
     if "http 403" in normalized or "scope" in normalized or "권한" in normalized:
@@ -199,6 +211,38 @@ def _write_dry_run_step(market: str) -> dict[str, Any]:
     if status == "stub":
         return _step(False, market, "write_dry_run", error_code="token_missing", hint="연동 정보가 없어 safe write 검증을 진행하지 못했습니다.", detail=detail or "자격증명 미설정", raw=raw)
     return _step(False, market, "write_dry_run", error_code=_parse_error_code(detail), hint=detail or "safe write 검증 실패", detail=detail or status or "write 검증 실패", raw=raw)
+
+
+# 오류 코드 → **셀러가 실제로 할 일**. 상태만 빨갛게 칠하면 무엇을 해야 하는지 모른다.
+ERROR_ACTIONS: dict[str, str] = {
+    # ★ 순서가 곧 처방이다(오너 2026-09-02): **키 승인이 주범, IP는 부차.**
+    #   승인 전이면 키가 있어도 -997이 온다 — IP부터 뒤지면 며칠을 버린다.
+    "openapi_not_registered": (
+        "11번가 셀러오피스에서 OpenAPI 이용 신청/키 발급 상태를 먼저 확인하세요 "
+        "— 승인 전이면 키가 있어도 이 오류가 납니다. 승인 후에도 실패하면 허용 IP를 등록하세요."),
+    "token_expired": "인증키가 만료됐거나 잘못됐습니다. 마켓에서 재발급해 다시 입력하세요.",
+    "scope_insufficient": "발급된 키에 필요한 권한(스코프)이 없습니다. 마켓에서 권한을 추가하세요.",
+    "token_missing": "연동 정보가 아직 없습니다. 이 화면에서 키를 입력해 주세요.",
+}
+
+
+def error_action(error_code: str, *, market: str = "") -> str:
+    """조치 문구. 모르는 코드는 빈 문자열 — **지어내지 않는다**(가짜 안내 금지).
+
+    IP를 안내해야 하는 문구는 **발신 경로에서 IP를 파생**해 덧붙인다(하드코딩 금지). 게이트
+    마켓이면 릴레이 고정 IP, 아니면 서버 아웃바운드다 — 이 판정을 화면마다 다시 쓰면 갈라진다.
+    """
+    base = ERROR_ACTIONS.get(str(error_code or "").strip(), "")
+    if not base or error_code != "openapi_not_registered":
+        return base
+    try:
+        from src import market_relay as mr
+        if mr.ip_gated(market or "elevenst"):
+            ip = mr.relay_outbound_ip()
+            return f"{base} 등록할 주소는 고정 중계 IP {ip}입니다." if ip else base
+        return f"{base} 11번가는 중계를 거치지 않고 서버에서 바로 나가므로, 호스팅의 아웃바운드 IP를 전부 등록해야 합니다."
+    except Exception:
+        return base
 
 
 def market_status_badge(status: str) -> dict[str, str]:

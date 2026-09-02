@@ -4486,19 +4486,74 @@ def markets_connect():
     return render_template(
         "markets_connect.html", page="markets",
         market_statuses=statuses, market_chips=chips, single_market=None, guide_entry=None,
-        guide_map=guide_map(), server_ip=_server_outbound_ip(),
+        guide_map=guide_map(), **_connect_ip_ctx(),
     )
+
+
+def _connect_ip_ctx() -> dict:
+    """markets_connect.html이 IP 안내에 쓰는 컨텍스트 — **한 군데서만 만든다.**
+
+    전체 화면과 단일 마켓 화면이 같은 템플릿을 렌더한다. 여기서 각자 채우면 한쪽만 고쳐져
+    화면마다 다른 IP를 안내하게 된다(S1에서 잡은 것과 같은 결함 유형).
+    """
+    return {
+        "server_ip": _server_outbound_ip(),
+        # S2 — Render 아웃바운드 IP는 복수. 하나만 등록하면 다른 IP로 나갈 때 다시 막힌다.
+        "server_ips": _server_outbound_ips(),
+        "server_ips_complete": bool((os.getenv("SERVER_OUTBOUND_IP") or "").strip()),
+        "allowlist_ips": _allowlist_ips(),
+    }
+
+
+def _allowlist_ips() -> dict:
+    """마켓별 **허용 목록에 등록할 IP** — 발신 경로에서 파생한다(하드코딩 0).
+
+    ★ S2-b 확정(오너 2026-09-02): 게이트 마켓(쿠팡·스마트스토어)은 릴레이 고정 IP **하나**만
+      등록해야 한다. 여기에 Render 아웃바운드를 적는 게 재발 지뢰였다 — 공유 대역이라 값이 바뀐다.
+      게이트가 아닌 마켓(11번가·우커머스·쇼피파이)은 실제로 Render에서 직발하므로 그쪽이 맞다.
+    """
+    from src import market_relay as mr
+
+    relay_ip = mr.relay_outbound_ip()
+    render_ips = _server_outbound_ips()
+    render_complete = bool((os.getenv("SERVER_OUTBOUND_IP") or "").strip())
+    out = {}
+    for market in ("coupang", "smartstore", "elevenst", "woocommerce", "shopify"):
+        if mr.ip_gated(market):
+            out[market] = {
+                "ips": [relay_ip] if relay_ip else [],
+                "source": "relay",
+                "complete": bool(relay_ip),
+            }
+        else:
+            out[market] = {"ips": render_ips, "source": "render", "complete": render_complete}
+    return out
 
 
 # 서버 아웃바운드 IP 캐시(쿠팡/네이버 허용 IP 등록용 — 화면에 복사 제공)
 _SERVER_IP_CACHE = {"ip": None, "tried": False}
 
 
+def _server_outbound_ips() -> list:
+    """서버 아웃바운드 IP **목록**(S2).
+
+    Render는 리전당 아웃바운드 IP가 **여러 개**다. 실행 중 조회로 얻는 건 그중 **지금 나간 하나**뿐이라,
+    그것만 등록하면 다른 IP로 나가는 순간 다시 막힌다(11번가 -997·쿠팡 IP 거부의 재발 경로).
+    그래서 `SERVER_OUTBOUND_IP`에 쉼표로 여러 개를 넣을 수 있게 하고, 화면은 **전부** 보여준다.
+    env가 비면 실행 중 조회 1개로 폴백하되, 그게 전부가 아닐 수 있다고 화면이 말한다.
+    """
+    raw = (os.getenv("SERVER_OUTBOUND_IP") or "").strip()
+    if raw:
+        return [ip for ip in (x.strip() for x in raw.replace(";", ",").split(",")) if ip]
+    probed = _server_outbound_ip()
+    return [probed] if probed else []
+
+
 def _server_outbound_ip() -> str:
-    """서버 아웃바운드 IP. env SERVER_OUTBOUND_IP 우선, 없으면 1회 조회·캐시(실패 시 '')."""
+    """서버 아웃바운드 IP 1개(실행 중 조회). 목록은 `_server_outbound_ips()`를 쓴다."""
     env_ip = (os.getenv("SERVER_OUTBOUND_IP") or "").strip()
     if env_ip:
-        return env_ip
+        return env_ip.replace(";", ",").split(",")[0].strip()
     if _SERVER_IP_CACHE["ip"] is not None:
         return _SERVER_IP_CACHE["ip"]
     if _SERVER_IP_CACHE["tried"]:
@@ -4541,7 +4596,7 @@ def markets_connect_one(market):
         "markets_connect.html", page="markets",
         market_statuses=[mc.status(seller, market)], market_chips=chips,
         single_market=market, guide_entry=guide_entry,
-        guide_map=guide_map(), server_ip=_server_outbound_ip(),
+        guide_map=guide_map(), **_connect_ip_ctx(),
     )
 
 
@@ -5407,31 +5462,15 @@ def _marketplace_meta(marketplace: str) -> dict:
 
 
 def _market_configured_for_seller(marketplace: str) -> bool:
-    """전역 환경변수 + 셀러 인앱 저장 자격증명을 함께 고려한 연결 설정 여부."""
+    """연결 여부 — **판정은 `mc.is_connected` 하나만 한다**(S1).
+
+    예전엔 여기서 `_market_is_configured`(마켓별 하드코딩 if)로 따로 판정했다. 그래서
+    `/seller/markets`와 `/markets/connect`가 **같은 마켓을 다르게 판정**했다(실측: 11번가 키가
+    있어도 코드가 `11st`냐 `elevenst`냐에 따라 True/False가 갈렸다). 판정기를 하나로 모은다.
+    `mc.canonical_market`이 별칭(11st→elevenst)을 흡수하므로 호출부는 어느 코드로 불러도 된다.
+    """
     from . import market_credentials as mc
-    with mc.temp_env(mc.all_credential_env(_seller_id())):
-        return _market_is_configured(marketplace)
-
-
-def _market_is_configured(marketplace: str) -> bool:
-    market = (marketplace or "").strip().lower()
-    if market == "shopify":
-        return bool((os.getenv("SHOPIFY_SHOP") or "").strip()) and bool(
-            (os.getenv("SHOPIFY_AUTO_TOKEN") or os.getenv("SHOPIFY_ACCESS_TOKEN") or os.getenv("SHOPIFY_ADMIN_TOKEN") or "").strip()
-        )
-    if market == "coupang":
-        return all(
-            bool((os.getenv(k) or "").strip())
-            for k in ["COUPANG_VENDOR_ID", "COUPANG_ACCESS_KEY", "COUPANG_SECRET_KEY"]
-        )
-    if market == "smartstore":
-        return all(
-            bool((os.getenv(k) or "").strip())
-            for k in ["NAVER_COMMERCE_CLIENT_ID", "NAVER_COMMERCE_CLIENT_SECRET"]
-        )
-    if market == "11st":
-        return bool((os.getenv("ELEVENST_API_KEY") or "").strip())
-    return False
+    return mc.is_connected(_seller_id(), marketplace)
 
 
 def _market_required_env_hint(marketplace: str) -> str:
