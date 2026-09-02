@@ -19,6 +19,19 @@ from typing import Optional
 # 마켓별로 갈리는 4지점 — 인터페이스의 전부(이 밖은 공통 파이프라인이 처리).
 CANON_POINTS = ("notice", "delivery", "options", "category")
 
+# 아직 못 여는 마켓이 **무엇 때문에** 막혔는지 — 세 갈래로 정규화한다(K3).
+#   4지점(무엇이 없나)과 축이 다르다: 이건 **왜 못 채우나**다. 셋이 각각 해소 주체가 다르다.
+#     키 미발급   = 오너·마켓(심사·발급)      → 코드가 할 수 있는 게 없다
+#     정본 없음   = 통과 이력 스크립트/메타 API → 승계하거나 조회하면 풀린다
+#     스키마 미확보 = 공개 문서                 → 문서를 읽으면 풀린다
+#   "정본 없음"과 "스키마 미확보"를 뭉치면 문서만 읽으면 되는데 카나리를 태우게 된다.
+BLOCKER_KINDS = ("key_pending", "canon_missing", "schema_missing")
+BLOCKER_KO = {
+    "key_pending": "키 미발급",
+    "canon_missing": "정본 없음",
+    "schema_missing": "스키마 미확보",
+}
+
 _POINT_KO = {"notice": "고시정보", "delivery": "배송", "options": "옵션 필수값",
              "category": "카테고리 매핑"}
 
@@ -152,7 +165,47 @@ class SmartStoreAdapter(MarketAdapter):
         return _smartstore_account_dispatch(product_data, acct)
 
 
-_ADAPTERS = {a.market: a for a in (CoupangAdapter(), WooCommerceAdapter(), SmartStoreAdapter())}
+class TalkStoreAdapter(MarketAdapter):
+    """톡스토어(카카오) — **연동대행사 모델**. 정본 미확보로 `ready=False`.
+
+    다른 마켓과 축이 하나 더 있다: 대행사 앱 Admin키(서버 비밀 1개) × 판매자별 API 인증키.
+    그래서 판매자가 앱을 직접 만들지 않고 **우리 앱에 자기 스토어를 매핑**한다.
+
+    **지금 여기서 아무것도 보내지 않는다.** 통과 이력 스크립트도, 문서 실측도 없다
+    (컨테이너에서 카카오 문서 도메인이 차단돼 K0 실측을 못 했다 — HTTP 000).
+    쿠팡이 6차 왕복을 태운 이유가 정확히 이것이라, 키가 들어와도 문서 확정이 먼저다.
+    """
+
+    market = "talkstore"
+    market_ko = "톡스토어"
+
+    # 무엇 때문에 막혔나 — 세 갈래 전부(K3 정규화). 해소되는 대로 하나씩 지운다.
+    BLOCKERS = {
+        "key_pending": "대행사 등록 심사 전 — 앱 Admin키 미발급(오너·카카오)",
+        "canon_missing": "통과 이력 스크립트 없음 — 승계할 정본이 없다",
+        "schema_missing": "공개 문서 미실측 — 컨테이너에서 카카오 도메인 차단(HTTP 000)",
+    }
+
+    def canon_status(self) -> dict:
+        gap = " / ".join(f"{BLOCKER_KO[k]}: {v}" for k, v in self.BLOCKERS.items())
+        return {"ready": False, "gaps": list(CANON_POINTS),
+                # ★ 4지점이 왜 비었는지 — 셋으로 갈라 둔다. 해소 주체가 각각 다르다.
+                "blockers": dict(self.BLOCKERS),
+                "blockers_ko": [BLOCKER_KO[k] for k in self.BLOCKERS],
+                "points": {p: {"ok": False, "gap": gap} for p in CANON_POINTS},
+                "note": ("연동대행사 모델 — 대행사 앱 Admin키(서버) + 판매자 API 인증키(판매자). "
+                         "심사 통과·문서 실측 전까지 등록 비활성.")}
+
+    def register(self, product_data: dict, account: str) -> dict:
+        # `_canon_gate`가 ready=False를 보고 **전송 없이** 정직 차단한다(추측 페이로드 금지).
+        return self._canon_gate() or {
+            "success": False, "held": True,
+            "error": "톡스토어 등록 경로가 아직 열리지 않았습니다.",
+        }
+
+
+_ADAPTERS = {a.market: a for a in (CoupangAdapter(), WooCommerceAdapter(), SmartStoreAdapter(),
+                             TalkStoreAdapter())}
 
 
 def get_adapter(market: str) -> Optional[MarketAdapter]:
@@ -170,5 +223,8 @@ def canon_report() -> dict:
         st = ad.canon_status()
         out[name] = {"market_ko": ad.market_ko, "ready": bool(st.get("ready")),
                      "gaps": st.get("gaps") or [], "points": st.get("points") or {},
+                     # 왜 못 여는가(키/정본/스키마) — 없으면 빈 값(열린 마켓엔 막힌 이유가 없다).
+                     "blockers": st.get("blockers") or {},
+                     "blockers_ko": st.get("blockers_ko") or [],
                      "note": st.get("note", "")}
     return out

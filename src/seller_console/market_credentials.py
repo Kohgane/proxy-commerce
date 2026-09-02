@@ -74,6 +74,18 @@ MARKET_CRED_FIELDS: Dict[str, List[Dict[str, Any]]] = {
         {"env": "WC_KEY", "label": "Consumer Key", "secret": True, "required": True},
         {"env": "WC_SECRET", "label": "Consumer Secret", "secret": True, "required": True},
     ],
+    # K2 — **연동대행사 모델**(톡스토어). 다른 마켓과 축이 다르다:
+    #   대행사 앱 Admin키는 **서버 비밀 1개**(env — 이 표에 없다), 판매자는 **자기 인증키만** 넣는다.
+    #   그래서 필드가 둘뿐이고 Admin키는 이 화면에 절대 나오지 않는다(계약이 검사).
+    "talkstore": [
+        {"env": "TALKSTORE_SELLER_API_KEY", "label": "판매자 API 인증키", "secret": True,
+         "required": True,
+         "section": "🔗 연동대행사 방식 — 고가브릿지가 대행사로 등록돼 있어야 동작합니다",
+         "help": "톡스토어 판매자센터에서 발급한 본인 API 인증키. 대행사 앱 키는 저희 서버가 "
+                 "갖고 있어 따로 넣지 않으셔도 됩니다."},
+        {"env": "TALKSTORE_STORE_ID", "label": "스토어 ID", "secret": False, "required": False,
+         "help": "매핑 대상 스토어를 구분할 때 씁니다(있으면 입력)."},
+    ],
 }
 
 # 마켓 표시명
@@ -83,6 +95,7 @@ MARKET_LABELS = {
     "elevenst": "11번가",
     "shopify": "Shopify",
     "woocommerce": "WooCommerce",
+    "talkstore": "톡스토어",
 }
 
 SUPPORTED_MARKETS = list(MARKET_CRED_FIELDS.keys())

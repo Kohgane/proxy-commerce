@@ -196,6 +196,9 @@
           <option value="coupang">쿠팡</option>
           <option value="smartstore">스마트스토어</option>
           <option value="woocommerce">멀티샵(자사몰)</option>
+          {# K2 — 노출하되 비활성. 없는 것처럼 감추면 "왜 없냐"가 되고,
+             고를 수 있게 두면 추측 전송이 된다. 있고 아직 못 쓴다고 말한다. #}
+          <option value="talkstore" disabled>톡스토어 (연동 준비 중)</option>
         </select>
       </div>
       <div class="rp-bar-field">
@@ -217,14 +220,17 @@
       coupang: [['gogane', '고가네 (A01381223)'], ['woojoo', '우주대행 (A01504840)']],
       smartstore: [['chezgoga', 'chezgoga'], ['gocosmos', 'gocosmos']],
       // 자사몰은 단일 스토어라 계정 축이 없다.
-      woocommerce: [['multishop', '코가네멀티샵']]
+      woocommerce: [['multishop', '코가네멀티샵']],
+      talkstore: []
     };
     // 마켓별 안내 — 자사몰은 심사가 없고 draft로 올라간다(파일럿과 같은 안전판).
-    var P3_MARKET_KO = {coupang: '쿠팡', smartstore: '스마트스토어', woocommerce: '멀티샵'};
+    var P3_MARKET_KO = {coupang: '쿠팡', smartstore: '스마트스토어', woocommerce: '멀티샵',
+                        talkstore: '톡스토어'};
     var P3_MARKET_NOTE = {
       coupang: '등록 후 승인 심사를 거칩니다.',
       smartstore: '등록 후 승인 심사를 거칩니다.',
-      woocommerce: '자사몰이라 심사가 없습니다. 임시저장(draft)으로 올라가니 확인 후 공개하세요.'
+      woocommerce: '자사몰이라 심사가 없습니다. 임시저장(draft)으로 올라가니 확인 후 공개하세요.',
+      talkstore: '연동대행사 등록 심사와 규격 확인이 끝나면 열립니다.'
     };
     function p3SyncAccounts() {
       var market = document.getElementById('p3Market').value;
