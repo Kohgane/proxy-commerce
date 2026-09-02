@@ -22,7 +22,9 @@
 
     <form method="post" action="/seller/sourcing/register-pipe" class="rp-hero">
       <label class="rp-label d-block mb-3" for="urls">소싱 URL · 한 줄에 하나 · 최대 50개</label>
-      <textarea class="rp-input" id="urls" name="urls" rows="5"
+      {# H6 — 줄 수만큼 자란다. 최소 6줄은 `rows`가, 최대(카드 잔여 높이)는 CSS가 잡는다.
+         높이 계산은 여기 한 곳뿐이다 — CSS는 한계만 준다(이중 구현 금지). #}
+      <textarea class="rp-input" id="urls" name="urls" rows="6" oninput="kgpAutoGrow(this)"
         placeholder="https://www.amazon.com/dp/...&#10;https://item.rakuten.co.jp/...&#10;https://www.ystudiostyle.com/products/..."
         >{{ urls_text }}</textarea>
       <div class="rp-hero-foot">
@@ -30,6 +32,15 @@
         <button type="submit" class="btn btn-cta">검수표 만들기</button>
       </div>
     </form>
+    <script>
+    // 내용 줄 수에 맞춰 높이를 재계산한다. CSS의 min/max가 6줄~카드 잔여 높이로 가둔다.
+    function kgpAutoGrow(el) {
+      if (!el) return;
+      el.style.height = 'auto';
+      el.style.height = el.scrollHeight + 'px';
+    }
+    kgpAutoGrow(document.getElementById('urls'));   // 서버가 값을 넣어 렌더한 경우도 맞춘다
+    </script>
   </section>
 
   {% if review is not none %}

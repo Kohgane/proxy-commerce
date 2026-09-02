@@ -173,8 +173,11 @@ def test_stage5d_one_screen_ingredients():
 
 
 def test_stage5d_textarea_rows_preserved():
-    """D3 계약: 입력 줄 수(rows=5)는 **기능 보존** — 여백을 깎아도 여기는 건드리지 않는다."""
-    assert 'rows="5"' in _tpl()
+    """입력 줄 수는 **기능 보존** — 여백을 깎아도 여기는 건드리지 않는다.
+
+    5-d는 rows=5였고 **5-g가 6으로 올렸다**(H6: 최소 6줄). JS가 자라게 하기 전의 바닥값이다.
+    """
+    assert 'rows="6"' in _tpl()
 
 
 def test_stage5c_style_source_is_single():
@@ -208,10 +211,16 @@ def test_stage5e_viewport_fit_ingredients():
 
 
 def test_stage5e_single_scroller_by_construction():
-    """내부 스크롤 선언은 `.rp-scroll` **하나뿐**이어야 한다(E1 — 스크롤 2곳 금지)."""
+    """내부 스크롤 **레이아웃 영역**은 `.rp-scroll` 하나뿐이다(E1 — 스크롤 2곳 금지).
+
+    **5-g 승계(H6):** textarea는 예외다. 50개를 넣으면 그 안에서 스크롤하라는 게 지시이고,
+    폼 컨트롤의 자체 스크롤은 레이아웃 영역이 아니다 — 화면이 두 군데로 갈리지 않는다.
+    """
     css = _s5_css()
     decls = re.findall(r"\.rp-[a-z-]+[^{]*\{[^}]*overflow-y:\s*(?:auto|scroll)", css)
-    assert len(decls) == 1, decls
+    layout = [d for d in decls if ".rp-input" not in d]
+    assert len(layout) == 1, layout
+    assert any(".rp-input" in d for d in decls), "textarea 내부 스크롤이 사라졌다"
 
 
 def test_stage5e_touch_targets_and_mobile_breakpoint():
@@ -252,16 +261,33 @@ def test_stage5f_column_ratio_and_fill():
     assert "flex: 1 1 auto" in _block(css, ".rp-card")
 
 
-def test_stage5f_textarea_takes_remaining_height():
-    """F2 — rows 고정 폐기, textarea가 카드 잔여 높이를 먹는다(실측 378px ≈ 21줄).
+def test_stage5g_textarea_grows_with_content():
+    """★ **5-g 승계(H6)** — F2의 "잔여 높이 전부 / 21줄" 계약은 폐기됐다.
 
-    rows 속성 자체는 CSS 없이도 최소 높이를 주는 폴백이라 남긴다.
+    빈 입력칸이 카드를 세로로 다 채우면 **쓰지도 않은 공간이 입력칸 행세**를 한다.
+    대신 줄 수만큼 자란다: 최소 6줄 · 최대 카드 잔여 높이(넘치면 그 안에서 스크롤).
+    """
+    css, html = _s5_css(), _tpl()
+    ta = _block(css, ".rp-pane-in .rp-input")
+    assert "flex: 0 1 auto" in ta                     # 더는 남는 높이를 다 먹지 않는다
+    assert "max-height: 100%" in ta and "overflow-y: auto" in ta
+    assert "min-height: calc(6 *" in ta               # 최소 6줄(선언한 행간에서 파생)
+    assert 'rows="6"' in html                         # JS 전에도 6줄
+    # 높이 계산은 **한 곳**뿐이다 — CSS는 한계만 준다(이중 구현 금지).
+    assert html.count("function kgpAutoGrow") == 1 and 'oninput="kgpAutoGrow(this)"' in html
+    assert "field-sizing" not in css, "높이 계산이 CSS·JS 두 곳에 생겼다"
+
+
+def test_stage5g_content_stacks_from_top():
+    """H7 — 카드 껍데기는 격자를 채우고(stretch), 내용은 위에서 쌓이고, 나머지는 면이다.
+
+    안내문·[검수표 만들기]는 textarea **바로 아래**에 붙는다(카드 바닥 고정 해제).
     """
     css = _s5_css()
-    ta = _block(css, ".rp-pane-in .rp-input")
-    assert "flex: 1 1 auto" in ta and "min-height: 0" in ta
-    assert 'rows="5"' in _tpl()                       # 폴백 보존
-    assert "flex: 0 0 auto" in _block(css, ".rp-pane-in .rp-hero-foot")   # 버튼 = 카드 바닥
+    hero = _block(css, ".rp-pane-in .rp-hero")
+    assert "flex: 1 1 auto" in hero                   # 껍데기는 열 높이를 채운다
+    assert "justify-content: flex-start" in hero      # 내용은 위에서 쌓인다
+    assert "align-items: stretch" in _block(css, ".rp-shell")   # 좌우 카드 높이 동일
 
 
 def test_stage5f_right_is_one_card():
@@ -273,9 +299,12 @@ def test_stage5f_right_is_one_card():
     # 안쪽 조각은 자기 그림자·라운드를 버리고 카드 표면에 붙는다.
     for inner in (".rp-card > .rp-strip", ".rp-card > .rp-bar"):
         assert "box-shadow: none" in _block(css, inner), inner
-    # 바디는 비어 있어도 '경계 있는 목록'으로 읽히게 질감을 깐다.
+    # **5-g 승계(오너 H1):** 5-f는 빈 영역에 행 가이드라인을 깔았는데, 마지막 행 아래까지
+    #   줄이 이어져 **없는 행이 있는 것처럼** 보였다. 빈 영역은 카드 표면 톤 그대로 —
+    #   무늬·선·점 0. 경계는 카드 테두리가 이미 준다.
     body = _block(css, ".rp-card > .rp-scroll")
-    assert "repeating-linear-gradient" in body and "color-mix" in body
+    for gone in ("repeating-linear-gradient", "color-mix", "background-image"):
+        assert gone not in body, gone
 
 
 def test_stage5f_empty_state():

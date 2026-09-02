@@ -939,17 +939,25 @@ main:has(> .rp-shell) {
 }
 main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0; }
 .rp-shell-solo { grid-template-columns: minmax(0, 1fr); }   /* 검수 전 — 입력만 */
-/* F2 — 좌 입력 카드가 열 높이를 끝까지 쓰고, textarea가 **카드 잔여 높이를 전부** 먹는다.
-   rows 고정은 폐기(속성은 폴백으로 남긴다 — JS·CSS 없이도 최소 높이 확보).
-   한 화면에 URL 20~30줄이 스크롤 없이 보이는 게 이 카드의 목적이다. */
-.rp-pane-in .rp-hero { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
-.rp-pane-in .rp-input {
-  flex: 1 1 auto; min-height: 0; resize: none;
-  /* URL 목록은 산문이 아니라 **데이터 필드**다 — 촘촘한 행간이 맞고, 그래야 F2의
-     "한 화면에 20~30줄"이 실제로 들어온다(느슨한 행간으론 14줄에서 막힌다·실측). */
-  font-size: .8rem; line-height: 1.4;
+/* **5-g(오너 H6·H7)** — F2의 "잔여 높이 전부 / 21줄"은 폐기한다.
+   빈 입력칸이 카드를 세로로 다 채우면 **쓰지도 않은 공간이 입력칸 행세**를 했다.
+   대신: 카드 껍데기는 격자를 채우고(H7 stretch), **내용은 위에서 쌓이고 나머지는 면**이다.
+   textarea는 줄 수만큼 자란다 — 최소 6줄, 최대는 카드 잔여 높이(넘치면 그 안에서 스크롤).
+   높이 계산은 JS 한 곳(`kgpAutoGrow`)에서만 하고 CSS는 **한계만** 준다(이중 구현 금지). */
+.rp-pane-in .rp-hero {
+  flex: 1 1 auto; display: flex; flex-direction: column;
+  justify-content: flex-start; min-height: 0;        /* 내용은 위에서 쌓인다 */
 }
-.rp-pane-in .rp-hero-foot { flex: 0 0 auto; }        /* 검수표 버튼 = 카드 바닥 고정 */
+.rp-pane-in .rp-input {
+  flex: 0 1 auto; resize: none; overflow-y: auto;
+  /* URL 목록은 산문이 아니라 **데이터 필드**다 — 촘촘한 행간이 맞다. */
+  font-size: .8rem; line-height: 1.4;
+  /* 최소 6줄(H6) — 선언한 행간·글자크기에서 파생시킨다(수치를 따로 외우지 않게). */
+  min-height: calc(6 * 1.4 * .8rem + 2 * var(--space-4));
+  max-height: 100%;                                   /* 최대 = 카드 잔여 높이 */
+}
+/* 안내문·[검수표 만들기]는 **textarea 바로 아래**에 붙는다(카드 바닥 고정 해제 — H6). */
+.rp-pane-in .rp-hero-foot { flex: 0 0 auto; }
 
 /* F3 — 우측은 **카드 1장**. 헤더(02 스트립)·바디(03 리스트)·푸터(04 등록바)가 한 표면에 붙는다.
    5-e는 셋이 각자 카드라 사이사이가 배경으로 뚫려 보였다(공동). */
@@ -962,15 +970,10 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
   border-bottom: 1px solid var(--border); }
 .rp-card > .rp-bar { border-radius: 0; box-shadow: none;
   border-top: 1px solid var(--border); }
-/* 바디 — 비어 있어도 "경계 있는 목록"으로 읽히게 은은한 행 가이드라인을 깐다(질감).
-   빈 화면이 배경과 같은 톤이면 카드가 뚫린 것처럼 보인다(5-e 공동의 정체). */
-.rp-card > .rp-scroll {
-  background: color-mix(in srgb, var(--ink) 2%, var(--surface));
-  background-image: repeating-linear-gradient(
-    to bottom, transparent 0, transparent calc(var(--space-8) - 1px),
-    var(--border) calc(var(--space-8) - 1px), var(--border) var(--space-8));
-  padding: var(--space-4);
-}
+/* 바디 — **빈 영역은 카드 표면 톤 그대로**(오너 H1). 5-f는 행 가이드라인을 깔아 '경계 있는
+   목록'을 만들려 했지만, 마지막 행 아래까지 줄이 이어져 **없는 행이 있는 것처럼** 보였다.
+   경계는 카드 테두리가 이미 준다 — 무늬·선·점 0. 행은 위에서부터 쌓이고 그 아래는 그냥 면이다. */
+.rp-card > .rp-scroll { padding: var(--space-4); }
 .rp-card > .rp-scroll > .rp-table-card { box-shadow: var(--nm-soft-sm); }
 /* F5 — 빈 상태: 바디 중앙 1줄 안내(공동이 아니라 '아직 비어 있음'으로 읽히게). */
 .rp-listempty {
