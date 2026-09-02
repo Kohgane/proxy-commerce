@@ -22,12 +22,19 @@ def content():
 
 @pytest.fixture(scope="module")
 def deck_text():
-    from pptx import Presentation
+    """pptx 텍스트 — **표준 라이브러리로만** 읽는다.
+
+    `python-pptx`는 이 프로젝트 런타임 의존성이 아니다(소개서 생성은 개발 도구다).
+    계약이 CI에서 조용히 스킵되면 지키는 게 없으므로, zip+정규식으로 직접 읽는다.
+    """
+    import re as _re
+    import zipfile
     out = []
-    for s in Presentation(str(PPTX)).slides:
-        for sh in s.shapes:
-            if sh.has_text_frame:
-                out.append(sh.text_frame.text)
+    with zipfile.ZipFile(PPTX) as z:
+        for name in sorted(n for n in z.namelist()
+                           if n.startswith("ppt/slides/slide") and n.endswith(".xml")):
+            xml = z.read(name).decode("utf-8", "ignore")
+            out.extend(_re.findall(r"<a:t>(.*?)</a:t>", xml, _re.S))
     return " | ".join(out)
 
 
