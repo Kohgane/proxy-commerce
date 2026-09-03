@@ -756,6 +756,151 @@ body::before {
   background:radial-gradient(120% 100% at 50% 100%, transparent 61%, color-mix(in srgb, var(--gold) 40%, transparent) 62%, color-mix(in srgb, var(--gold) 40%, transparent) 66%, transparent 67%);}
 @media (prefers-reduced-motion: reduce){ .kgp-cl-entry{transition:none;} }
 
+/* ── Stage 6-a: 운영 대시보드 (오너 G1~G3) ────────────────────────────────────
+   **4믹스 배분(v3 확정) — 넷이 한 요소에 겹치지 않는다.**
+     Swiss   = 그리드·타이포 위계(단계 번호 01~ 유지)
+     Bauhaus = 기하 블록 — KPI 타일을 정사각/2:1 모듈로. **원색은 1점만**(반려·실패 신호색)
+     Neumo   = 조작 요소(버튼·셀렉트)에만 깊이
+     Glass   = 오버레이·드로어에만
+   ※ v2의 "기하 금지"와 만나면 **v3 우선**(오너 G2). 그래서 여기서만 기하 모듈이 허용된다.
+   5-f 문법 승계: 카드 안에 비움 · 카드 밖 공동 0 · 액션은 카드 푸터. */
+.op-shell {
+  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: var(--space-5); align-items: stretch;
+  height: calc(100dvh - var(--rp-fit-offset));
+}
+main:has(> .op-shell) {
+  display: flex; flex-direction: column;
+  height: calc(100dvh - var(--topbar-h)); overflow: hidden;
+}
+main:has(> .op-shell) > .op-shell { flex: 1 1 auto; height: auto; min-height: 0; }
+
+/* 온보딩 스트립 — 셸 위 한 줄(조건부). 있으면 셸이 그만큼 줄어든다(flex가 흡수). */
+.op-strip {
+  flex: 0 0 auto; display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
+  padding: var(--space-3) var(--space-5); margin-bottom: var(--space-4);
+  background: var(--surface); border-radius: var(--radius-2xl); box-shadow: var(--nm-soft-sm);
+  font-size: .86rem; color: var(--text-muted);
+}
+.op-strip .btn { min-height: 44px; }
+
+/* 카드 — 5-f와 같은 표면 문법(헤더/바디/푸터가 한 표면에 붙는다). */
+.op-card {
+  display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden;
+  background: var(--surface); border-radius: var(--radius-2xl); box-shadow: var(--nm-soft);
+}
+.op-card-head {
+  flex: 0 0 auto; padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: baseline; gap: var(--space-3);
+}
+.op-card-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: var(--space-5); }
+/* 스크롤로 잘린 줄이 '깨진 화면'으로 읽히지 않게, 본문 아래쪽에 카드 배경으로 스미는 페이드.
+   넘칠 게 없으면 여백 위에 겹쳐 보이지 않는다(조건 분기 없이 안전). */
+.op-card { position: relative; }
+.op-card-body::after {
+  content: ""; position: sticky; display: block; bottom: calc(var(--space-5) * -1);
+  margin: 0 calc(var(--space-5) * -1) calc(var(--space-5) * -1);
+  height: var(--space-5); pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--surface));
+}
+.op-card-foot {
+  flex: 0 0 auto; padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
+}
+.op-span-4 { grid-column: span 4; }
+.op-span-5 { grid-column: span 5; }
+.op-span-7 { grid-column: span 7; }
+.op-span-8 { grid-column: span 8; }
+.op-span-12 { grid-column: span 12; }
+
+/* Bauhaus — 계정 타일을 **기하 모듈**로. 정사각(1:1) 그리드, 원색은 신호 1점만. */
+.op-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.op-tiles-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }  /* 4계정 한 줄 */
+.op-tile {
+  aspect-ratio: 1 / 1;                              /* 정사각 모듈(Bauhaus) */
+  display: flex; flex-direction: column; justify-content: space-between;
+  padding: var(--space-4); border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--ink) 3%, var(--surface));
+  position: relative; overflow: hidden;
+}
+.op-tile-wide { aspect-ratio: 2 / 1; }              /* 2:1 모듈 */
+/* 신호 = 기하 1점. 연결됨은 청록 사각, 미연결은 회색, **실패/반려만 원색**(주황). */
+.op-tile::after {
+  content: ""; position: absolute; top: var(--space-4); right: var(--space-4);
+  width: 12px; height: 12px; background: var(--muted);
+}
+.op-tile-on::after { background: var(--teal); }
+.op-tile-alert::after { background: var(--orange); }
+.op-tile-k {
+  font-size: .7rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--text-muted);
+}
+.op-tile-v {
+  font-family: var(--font-display); font-weight: var(--w-semi);
+  font-size: 1.5rem; line-height: 1.1; color: var(--text-strong);
+}
+.op-tile-sub { font-size: .74rem; color: var(--text-muted); line-height: 1.5; }
+
+/* 목록 — 비어도 '경계 있는 목록'으로 읽히게(5-f 질감 승계). */
+.op-list { display: flex; flex-direction: column; }
+.op-row {
+  display: flex; align-items: baseline; gap: var(--space-3);
+  padding: var(--space-3) 0; border-bottom: 1px solid var(--border);
+}
+.op-row:last-child { border-bottom: 0; }
+.op-row-title { flex: 1 1 auto; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.op-empty {
+  display: flex; align-items: center; justify-content: center; height: 100%;
+  color: var(--text-muted); font-size: .86rem; text-align: center;
+}
+/* 미연결 = 숫자를 만들지 않는다(0과 구분). 정직 표기 전용 조판. */
+.op-off { color: var(--text-muted); font-size: .84rem; line-height: 1.6; }
+
+/* Neumo는 **조작 요소에만** — 카드 표면과 겹치지 않게 버튼/셀렉트에 한정. */
+.op-card-foot .btn, .op-card-foot select.form-select {
+  box-shadow: var(--nm-soft-sm); min-height: 44px;
+}
+
+/* S3 — 연동 마켓 요약 신호줄. 축(4계정) 밖 마켓의 오류도 첫 화면에 점 하나로는 뜬다.
+   기하 타일이 아니라 텍스트 신호라 Neumo 깊이를 쓰지 않는다(G2 겹침 금지). */
+.op-sig { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.op-sig-item {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  font-size: .7rem; letter-spacing: .04em; color: var(--text-muted);
+}
+.op-sig-dot {
+  width: .5rem; height: .5rem; border-radius: 50%;
+  background: var(--teal); /* 자격 설정됨 — 진단 전 기본값 */
+}
+.op-sig-item.is-off .op-sig-dot { background: var(--border); }        /* 미설정 */
+.op-sig-item.is-ok .op-sig-dot { background: var(--success); }        /* 연동 확인됨 */
+.op-sig-item.is-err .op-sig-dot { background: var(--danger); }        /* 마켓이 거부 */
+.op-sig-item.is-err { color: var(--danger); font-weight: var(--w-semi); }
+.op-sig-item.is-unknown .op-sig-dot {                                  /* 진단 실패 — 모른다 */
+  background: transparent; border: 1px dashed var(--text-muted);
+}
+.op-sig-note {                    /* 점 모양만으론 미설정과 구분이 안 된다 — 글자로도 말한다 */
+  font-size: .7rem; letter-spacing: .04em; color: var(--text-muted);
+  border-left: 1px solid var(--border); padding-left: var(--space-3);
+}
+
+/* G1 — 390px 1열 폴백(뷰포트 고정 해제 · 스크롤이 자연스럽다). */
+@media (max-width: 1199.98px) {
+  .op-shell { grid-template-columns: minmax(0, 1fr); height: auto; grid-auto-rows: auto; }
+  .op-tiles-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }   /* 390px는 2×2 */
+  .op-shell > * { grid-column: 1 / -1; }
+  .op-card { flex: 0 0 auto; }
+  .op-card-body { overflow: visible; }
+}
+@media (max-width: 575.98px) {
+  .op-tiles { grid-template-columns: minmax(0, 1fr); }
+  .op-tile { aspect-ratio: 2 / 1; }                 /* 좁은 폭에선 정사각이 과하게 높다 */
+}
+
 /* ── v2 Stage 5-b: **부드러운** 뉴모피즘 토큰 (오너 1차 피드백 "좀 더 부드럽게") ──────
    기존 --nm-up 계열은 블러가 짧고 알파가 높아 '눌린 도장'처럼 딱딱하다.
    레퍼런스 Neumo 질감 = **넓은 블러 · 낮은 알파 · 보더 없음 · 큰 라운드**.

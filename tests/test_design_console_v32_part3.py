@@ -18,7 +18,9 @@ def test_overline_kpi_label_defined_and_used():
     lbl = CSS[CSS.index(".console-kpi-label"):CSS.index(".console-kpi-label") + 220]
     assert "uppercase" in lbl and "letter-spacing" in lbl
     assert "var(--gold-ink)" in lbl
-    assert "console-kpi-label" in DASH              # 템플릿에서 실제 사용
+    # v3 Stage 6-a 승계: 대시보드 오버라인은 `op-tile-k`(같은 역할·같은 토큰 규약).
+    #   `.console-kpi-label` 정의 자체는 다른 화면이 계속 쓰므로 위 CSS 단언은 유지.
+    assert "op-tile-k" in DASH                     # 템플릿에서 실제 사용
 
 
 def test_no_thick_borders_or_hardcoded_brand_hex_in_kpi():
@@ -38,4 +40,5 @@ def test_kpi_uses_token_shadow_and_reduced_motion():
 
 
 def test_dashboard_has_gold_hairline_divider():
-    assert "pc-hairline" in DASH                    # 금 헤어라인 구분선
+    # v3 Stage 6-a 승계: 구획은 카드 헤더의 헤어라인 보더가 맡는다(별도 유틸 불요).
+    assert "op-card-head" in DASH                   # 헤어라인 구분선

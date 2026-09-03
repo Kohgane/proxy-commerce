@@ -20,7 +20,7 @@ SELLER_MENU_LINKS = [
     "/seller/api/tokens",
     "/seller/bookmarklet",
     "/seller/discovery",
-    "/seller/collect-history",
+    "/seller/collect/history",
     "/seller/pricing/rules",
     "/seller/pricing/competitors",
     "/seller/pricing/fx-impact",

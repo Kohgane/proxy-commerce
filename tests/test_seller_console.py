@@ -61,13 +61,20 @@ class TestSellerConsoleViews:
         assert resp.status_code == 200
 
     def test_dashboard_home_renders_phase_159_sections(self, client):
-        """대시보드 홈에 신규 리파인 섹션이 표시되어야 한다."""
+        """대시보드 홈 골격 — **v3 Stage 6-a로 교체**(오너 G1~G3).
+
+        옛 위젯 섹션(마켓 연동 상태·마켓별 동기화 현황·실시간 환율·최근 활동·최근 상품)은
+        1920×940 뷰포트 고정 안에 4카드와 함께 들어가지 않는다. 브리프가 지정한 4블록
+        (등록 계정·반려 감시·등록 대장·소싱 대기)이 대시보드가 되고, 옛 섹션은 각자
+        전용 화면(/seller/markets · /seller/pricing · /seller/notifications)이 맡는다.
+        ※ 정보가 사라진 게 아니라 **자리를 옮겼다** — 카드 푸터에 그 화면으로 가는 링크가 있다.
+        """
         resp = client.get("/seller/dashboard")
         assert resp.status_code == 200
         html = resp.get_data(as_text=True)
-        assert "마켓 연동 상태" in html
-        assert "마켓별 등록/동기화 현황" in html
-        assert "실시간 환율" in html
+        for block in ("등록 계정", "반려 감시", "등록 대장", "소싱 대기"):
+            assert block in html, block
+        assert "/seller/markets" in html            # 옛 마켓 현황으로 가는 길은 살아 있다
         assert "gogabridj" in html
 
     def test_dashboard_home_renders_onboarding_guide(self, client):
@@ -506,10 +513,9 @@ class TestDashboardResilience:
             resp = client.get("/seller/dashboard")
         assert resp.status_code == 200
         html = resp.get_data(as_text=True)
-        # 위젯이 없어도 핵심 섹션 골격은 유지된다(빈 상태 degrade)
-        assert "마켓 연동 상태" in html
-        assert "마켓별 등록/동기화 현황" in html
-        assert "실시간 환율" in html
+        # 위젯 빌더가 죽어도 **골격은 유지**된다(빈 상태 degrade). Stage 6-a의 4블록 기준.
+        for block in ("등록 계정", "반려 감시", "등록 대장", "소싱 대기"):
+            assert block in html, block
 
     def test_dashboard_renders_empty_states_with_no_widgets(self, client):
         """위젯이 비어도 최근 활동/최근 상품 영역의 빈 상태가 정직하게 표시된다."""
@@ -517,8 +523,9 @@ class TestDashboardResilience:
             resp = client.get("/seller/dashboard")
         assert resp.status_code == 200
         html = resp.get_data(as_text=True)
-        assert "최근 활동이 없습니다." in html
-        assert "표시할 최근 상품이 없습니다." in html
+        # Stage 6-a 빈 상태 — 미연결과 0건을 **구분**해서 말한다(0을 찍으면 둘이 섞인다).
+        assert "미연결" in html or "감시 중인 반려 건이 없습니다." in html
+        assert "소싱 대기" in html
 
 
 # ---------------------------------------------------------------------------
