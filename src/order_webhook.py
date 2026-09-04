@@ -1109,6 +1109,14 @@ def _close_request_db_conn(exc):
         pass
 
 
+# 화면 방문 카운터(오너 부수 승인) — 로그 기반·PII 0·화면 없음. 확산 순서를 사실로 정하기 위한 씨앗.
+try:
+    from src.observability.route_hits import install as _install_route_hits
+    _install_route_hits(app)
+except Exception as _exc:                                  # 계측이 부팅을 막지 않는다
+    logger.warning('화면 방문 카운터 비활성: %s', _exc)
+
+
 @app.after_request
 def _perf_after_request(response):
     try:
