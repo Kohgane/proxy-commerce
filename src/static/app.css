@@ -1189,6 +1189,15 @@ body.kgp-editor.console-body { background: var(--surface) !important; }
 .ch-progress-thin { height: 8px; }
 .ch-errlist { max-height: 160px; overflow: auto; }
 
+/* T1 — 처방 실행 결과. **마켓 원문 그대로** 싣는다(요약하면 다음 부검에서 원문을 다시 찾는다). */
+.rw-result {
+  white-space: pre-wrap; word-break: break-all; font-size: .74rem; line-height: 1.5;
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  border-radius: var(--radius); padding: var(--space-3);
+  max-height: 220px; overflow: auto;
+}
+.rw-result-row[hidden] { display: none; }
+
 /* 상세 블록 미리보기 — 강조 블록(하이라이트). 옛 `#fff8e6/#f0d68a`를 금 토큰으로. */
 .kgp-block-highlight {
   background: color-mix(in srgb, var(--gold) 12%, var(--surface));

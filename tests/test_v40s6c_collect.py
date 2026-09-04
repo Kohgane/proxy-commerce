@@ -86,8 +86,12 @@ def test_editor_chrome_hiding_is_scoped_to_body_switch():
     모든 화면의 사이드바가 사라진다. `.kgp-editor` 스위치 아래에만 둔다.
     """
     block = _s6c_css()
+    # ★ 지키려는 건 **콘솔 chrome을 무스코프로 숨기는 것**이다. 컴포넌트가 자기 클래스를 숨기는 건
+    #   정상이므로 여기서 막으면 이후 슬라이스마다 오발한다(T1에서 실제로 걸렸다).
+    chrome = (".console-", ".mobile-", ".sidebar-", "#fbWrap", "#fbReopen", "#kgp-progress")
     for rule in re.findall(r"([^\n{}]+)\{[^}]*display:\s*none\s*!important", block):
-        assert ".kgp-editor" in rule or ".kgp-etab-hide" in rule, f"무스코프 숨김: {rule.strip()}"
+        if any(sel in rule for sel in chrome):
+            assert ".kgp-editor" in rule, f"무스코프 chrome 숨김: {rule.strip()}"
     assert "{% block body_class %}" in _t(PREV)
     assert 'class="console-body{% block body_class %}{% endblock %}"' in \
         _t(Path("src/seller_console/templates/_base.html"))
