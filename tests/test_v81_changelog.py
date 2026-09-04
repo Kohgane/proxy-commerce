@@ -80,6 +80,9 @@ def test_banner_and_page_use_tokens_no_emoji():
     # CSS는 토큰(var(--…))만 — 새 블록에 브랜드 hex 하드코딩 0(가드 test_design_tokens_v18와 이중).
     block = APP_CSS.split("v81 STEP7:")[1] if "v81 STEP7:" in APP_CSS else ""
     assert block, "STEP7 CSS 블록 없음"
+    # ★ 6-c(2026-09-03): 이 핀은 **선언부**의 하드코딩을 막는 것이다. 주석은 "옛 값 #xxx를 토큰으로
+    #   바꿨다"처럼 근거로 값을 인용할 수 있고, 그건 문서지 선언이 아니다(6-a 헬퍼와 같은 처리).
+    block = re.sub(r"/\*.*?\*/", "", block, flags=re.S)
     assert "var(--teal)" in block and "var(--gold)" in block and "var(--orange)" in block
     assert not re.search(r"#[0-9A-Fa-f]{6}\b", block), "STEP7 CSS에 하드코딩 hex 잔존"
     # 키스톤(주황 점) 시그니처 present.

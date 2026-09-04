@@ -8,22 +8,27 @@ from __future__ import annotations
 from pathlib import Path
 
 PREVIEW = Path("src/seller_console/templates/collect_preview.html").read_text(encoding="utf-8")
+# ★ Stage 6-c(2026-09-03): 이 화면들의 색·치수가 인라인 → **app.css로 이관**됐다.
+#   핀이 보는 건 "그 규칙이 살아 있나"이지 "어느 파일에 있나"가 아니다 — 소스만 갈아끼운다.
+CSS_S6C = Path("src/static/app.css").read_text(encoding="utf-8")
+
 
 
 def test_option_badge_distinguishes_single_vs_fail():
     # 핵심 필드 판독 여부(coreOk)로 무옵션 vs 추출 실패 구분.
-    assert "var coreOk = _imgOk && _priceOk" in PREVIEW
+    assert "var coreOk = _imgOk && _priceOk" in PREVIEW + CSS_S6C
     # 무옵션 = 중립('단일 상품', 한지/muted 토큰 — 경고색 아님).
-    assert "단일 상품" in PREVIEW
-    assert "background:var(--hanji,#f5efe3);color:var(--muted,#8a8275)" in PREVIEW
+    assert "단일 상품" in PREVIEW + CSS_S6C
+    assert "kgp-badge-quiet" in PREVIEW                 # 6-c: 인라인 → 클래스
+    assert "var(--hanji)" in CSS_S6C.split(".kgp-badge-quiet")[1][:160]
     # 추출 실패 = 경고색(주황 warn).
-    assert "옵션 미수집" in PREVIEW
-    assert "background:color-mix(in srgb,var(--warn,#f5821f) 14%,transparent);color:var(--warn,#f5821f)" in PREVIEW
+    assert "옵션 미수집" in PREVIEW + CSS_S6C
+    assert "color-mix(in srgb,var(--warn) 14%,transparent)" in PREVIEW
 
 
 def test_price_status_gate():
     # needs_check 가격은 '핵심 판독'으로 안 침(정직 — 가짜 성공 방지).
-    assert "_EXTRA.price_status !== 'needs_check'" in PREVIEW
+    assert "_EXTRA.price_status !== 'needs_check'" in PREVIEW + CSS_S6C
 
 
 def test_both_paths_offer_manual_add():

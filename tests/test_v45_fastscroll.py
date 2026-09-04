@@ -98,6 +98,10 @@ def test_component_naia_v2_behaviors():
 def test_css_uses_tokens_not_hardcoded():
     block = CSS[CSS.index("나이아 인덱스 레일"):]
     assert ".kgp-fs-rail" in block and ".kgp-fs-scrub" in block   # 레일 + 스크럽 오버레이
+    # ★ 6-c(2026-09-03): 이 핀은 **선언부**의 하드코딩을 막는 것이다. 주석은 "옛 값 #xxx를
+    #   토큰으로 바꿨다"처럼 근거로 값을 인용할 수 있고, 그건 문서지 선언이 아니다.
+    import re as _re
+    block = _re.sub(r"/\*.*?\*/", "", block, flags=_re.S)
     assert "var(--ink)" in block and "var(--teal)" in block and "var(--cream)" in block
     import re
     hexes = re.findall(r"#[0-9A-Fa-f]{3,6}\b", block)

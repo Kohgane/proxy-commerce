@@ -39,8 +39,12 @@ def test_collect_history_summary_editorial(client):
         with client.session_transaction() as s:
             s["user_id"] = "u1"
         html = client.get("/seller/collect/history").get_data(as_text=True)
-        assert "console-stat-value" in html      # 세리프 대형 KPI
-        assert "console-kpi-label" in html        # 오버라인 라벨
+        # ★ Stage 6-c(2026-09-03): 요약 4장이 **카드 1장 + 기하 타일 4**로 바뀌었다(6-a 문법 승계).
+        #   핀의 뜻("세리프 대형 KPI + 오버라인 라벨")은 그대로다 — 클래스만 op-* 세대로 옮긴다.
+        #   `op-tile-v`가 `var(--font-display)`를 쓰는 건 app.css 6-a 슬라이스가 보증한다.
+        assert "op-tile-v" in html                # 세리프 대형 KPI
+        assert "op-tile-k" in html                # 오버라인 라벨
+        assert "console-kpi-label" in html        # 헤더 오버라인은 유지
         assert "fs-4 fw-bold" not in html         # 옛 마크업 제거
     finally:
         store._in_memory[:] = []

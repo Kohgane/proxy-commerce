@@ -12,6 +12,10 @@ POPUP_JS = Path("extensions/chrome-collector/popup.js").read_text(encoding="utf-
 POPUP_HTML = Path("extensions/chrome-collector/popup.html").read_text(encoding="utf-8")
 BG = Path("extensions/chrome-collector/background.js").read_text(encoding="utf-8")
 ROWS = Path("src/seller_console/templates/collect_history_rows.html").read_text(encoding="utf-8")
+# ★ Stage 6-c(2026-09-03): 이 화면들의 색·치수가 인라인 → **app.css로 이관**됐다.
+#   핀이 보는 건 "그 규칙이 살아 있나"이지 "어느 파일에 있나"가 아니다 — 소스만 갈아끼운다.
+CSS_S6C = Path("src/static/app.css").read_text(encoding="utf-8")
+
 VIEWS = Path("src/seller_console/views.py").read_text(encoding="utf-8")
 
 
@@ -33,11 +37,12 @@ def test_row_enrich_status_derivation():
 
 def test_row_enrich_badges():
     # 행 템플릿: 대기=스피너 '보강 중…', 완료='보강 완료'(토큰), 단건은 배지 없음.
-    assert 'it.enrich_status == "pending"' in ROWS
-    assert "보강 중…" in ROWS and "spinner-border" in ROWS
-    assert 'it.enrich_status == "done"' in ROWS and "보강 완료" in ROWS
+    assert 'it.enrich_status == "pending"' in ROWS + CSS_S6C
+    assert "보강 중…" in ROWS + CSS_S6C and "spinner-border" in ROWS + CSS_S6C
+    assert 'it.enrich_status == "done"' in ROWS + CSS_S6C and "보강 완료" in ROWS + CSS_S6C
     # 토큰 색(청록/한지) — 부트스트랩 색 남용 아님.
-    assert "var(--teal,#119a8e)" in ROWS and "var(--hanji,#f5efe3)" in ROWS
+    assert "var(--teal)" in ROWS and "kgp-badge-quiet" in ROWS   # 6-c: 한지 칩 → 클래스
+    assert "var(--hanji)" in CSS_S6C.split(".kgp-badge-quiet")[1][:160]
 
 
 def test_enrich_status_values():

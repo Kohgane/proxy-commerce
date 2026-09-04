@@ -44,9 +44,11 @@ def test_a_placeholder_tokens_killed():
 
 # (b) 좁은칸 라벨 세로 쪼개짐 — 마켓 선택은 균등 그리드 + nowrap, break-all은 마켓명에 미사용
 def test_b_no_vertical_label_split():
+    # ★ 6-c(2026-09-03): 마켓 타일 CSS가 템플릿 <style> → app.css로 이관됐다(소스만 교체).
+    _css = Path("src/static/app.css").read_text(encoding="utf-8")
     assert "market-grid" in PREVIEW and "col-6 col-md-4" not in PREVIEW
     # 마켓명 라벨에 break-all(글자 단위 줄바꿈) 미사용 — break-all은 긴 URL/에러에만 허용
-    name_block = PREVIEW.split(".market-tile .market-name")[1][:200]
+    name_block = _css.split(".market-tile .market-name")[1][:280]
     assert "white-space: nowrap" in name_block
     assert "break-all" not in name_block
 
@@ -76,8 +78,10 @@ def test_e_pwa_install_share(fn):
 
 # (f) 모바일 드로어 — 바텀시트(아래→위) + 44px 터치 + sticky 액션바
 def test_f_mobile_bottom_sheet():
-    assert "translateY(100%)" in HIST and "border-radius: 16px 16px 0 0" in HIST
-    assert "kgp-action-bar" in PREVIEW and "min-height: 44px" in PREVIEW
+    _css = Path("src/static/app.css").read_text(encoding="utf-8")
+    assert "translateY(100%)" in _css                      # 아래에서 올라오는 바텀시트
+    assert "border-radius: var(--radius-2xl) var(--radius-2xl) 0 0" in _css   # 6-c: 토큰화
+    assert "kgp-action-bar" in PREVIEW and "min-height: 44px" in _css
 
 
 # (g) 수집 상세 404 박멸 — 미존재도 200 '수집 실패'

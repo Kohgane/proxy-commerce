@@ -1,53 +1,11 @@
 {% extends "_base.html" %}
 {% block title %}상품 편집 — {{ item.title or item.id }}{% endblock %}
+{% block body_class %}{% if request.args.get('drawer') %} kgp-editor{% endif %}{% endblock %}
 {% block content %}
-{# v39 C: 편집 드로어(iframe) 임베드 모드 — ?drawer=1이면 콘솔 chrome 숨겨 깔끔히 표시(같은 페이지 위 오버레이). #}
-{% if request.args.get('drawer') %}
-<style>
-  .console-sidebar, .mobile-topbar, .mobile-search, .console-topbar, .sidebar-overlay,
-  #fbWrap, #fbReopen, #kgp-progress { display: none !important; }
-  .console-shell { display: block !important; }
-  .console-main { margin: 0 !important; }
-  .console-content { padding: .75rem !important; overflow-x: hidden; }
-  body.console-body { background: var(--surface, #fff) !important; }
-  .drawer-hide { display: none !important; }   /* 드로어 헤더가 대신 제공 */
-  /* v39-M M3: 모바일 드로어 — 가로 스크롤 0 + 하단 고정 액션바(엄지존, 저장/등록 ≥44px). */
-  .container-fluid { max-width: 100% !important; }
-  img, table, pre { max-width: 100%; }
-  @media (max-width: 767.98px) {
-    .kgp-action-bar {
-      position: sticky; bottom: 0; z-index: 6;
-      background: var(--surface, #fff);
-      border-top: 1px solid var(--console-border, #e6e0d3);
-      box-shadow: 0 -4px 14px rgba(0,0,0,.08);
-      padding: .6rem .7rem;
-    }
-    .kgp-action-bar .btn { min-height: 44px; display: inline-flex; align-items: center; }
-    #btnSaveEdits, #btnOpenUploadModal { flex: 1 1 auto; justify-content: center; }
-  }
-</style>
-{% endif %}
-{# v45 P9: 편집 드로어 칩 탭 — 고가브릿지 토큰(먹 활성·금 키스톤·청록 악센트). 드로어/비드로어 공통. #}
-<style>
-  .kgp-etabs { display:flex; flex-wrap:wrap; gap:.4rem; margin-bottom:1rem; padding-bottom:.15rem; }
-  .kgp-etab-chip {
-    display:inline-flex; align-items:center; gap:.35rem;
-    padding:.42rem .82rem; border-radius:999px;
-    border:1px solid var(--line,#E6DECB); background:#fff;
-    color:var(--ink-soft,#3A352E); font-size:.85rem; font-weight:600;
-    cursor:pointer; white-space:nowrap;
-    transition:transform .12s, background .12s, color .12s, border-color .12s;
-  }
-  .kgp-etab-chip:hover { transform:translateY(-1px); border-color:var(--teal,#119A8E); }
-  .kgp-etab-chip .bi { color:var(--teal,#119A8E); font-size:.9rem; }
-  .kgp-etab-chip.active { background:var(--ink,#1A1714); color:var(--paper,#FBF8F1); border-color:var(--ink,#1A1714); }
-  .kgp-etab-chip.active .bi { color:var(--gold,#C9A24B); }   /* 키스톤(금) 시선 고정점 */
-  .kgp-etab-hide { display:none !important; }
-  .kgp-esec { animation:kgpEtabIn .18s ease-out; }
-  @keyframes kgpEtabIn { from{opacity:0; transform:translateY(4px)} to{opacity:1; transform:none} }
-  @media (prefers-reduced-motion: reduce) { .kgp-esec{animation:none} .kgp-etab-chip{transition:none} }
-</style>
-<div class="container-fluid py-4" style="max-width:880px;">
+{# v39 C: 편집 드로어(iframe) 임베드 모드 — ?drawer=1이면 콘솔 chrome을 감춘다.
+   6-c: 그 CSS는 app.css `.kgp-editor` 슬라이스로 옮겼다. 여기선 body에 스위치만 건다
+   (전역 CSS에 무스코프로 두면 모든 화면의 사이드바가 사라진다). #}
+<div class="container-fluid py-4 kgp-editor-page">
   <div class="mb-3 d-flex justify-content-between align-items-center {% if request.args.get('drawer') %}drawer-hide{% endif %}">
     <a href="/seller/collect/history" class="text-decoration-none text-muted small">← 수집 이력으로 돌아가기</a>
     <span class="text-muted small">
@@ -56,13 +14,15 @@
     </span>
   </div>
 
-  <div class="card mb-3">
-    <div class="card-header d-flex justify-content-between align-items-center">
-      <span class="fw-semibold"><i class="bi bi-pencil-square"></i> 수집 상품 편집</span>
-      {% if extra.edited %}<span class="pc-badge pc-badge-muted">수정됨</span>{% endif %}
-      {% if extra.is_mock %}<span class="pc-badge pc-badge-off">목업</span>{% endif %}
+  <section class="op-card mb-3">
+    <div class="op-card-head">
+      <span class="rp-step-eyebrow"><span class="rp-step-num">01</span>수집 상품 편집</span>
+      <span class="ms-auto d-flex gap-2">
+        {% if extra.edited %}<span class="pc-badge pc-badge-muted">수정됨</span>{% endif %}
+        {% if extra.is_mock %}<span class="pc-badge pc-badge-off">목업</span>{% endif %}
+      </span>
     </div>
-    <div class="card-body">
+    <div class="op-card-body">
       <!-- v45 P9: 편집 칩 탭(고가브릿지 토큰) — 필드를 탭별로 분리(한 탭씩 표시). -->
       <div class="kgp-etabs" role="tablist" aria-label="상품 편집 탭">
         <button type="button" class="kgp-etab-chip active" data-etab="basic" onclick="kgpEtab('basic')"><i class="bi bi-tag"></i> 상품명·카테고리</button>
@@ -77,7 +37,7 @@
       <!-- [썸네일] 대표 이미지 미리보기 -->
       <div class="kgp-esec text-center mb-3 kgp-etab-hide" data-etab="thumb">
         <img id="primaryImagePreview" alt="대표 이미지" referrerpolicy="no-referrer"
-             class="img-fluid rounded border" style="max-height:240px;object-fit:contain;"
+             class="img-fluid rounded border kgp-hero-img"
              onerror="this.style.visibility='hidden'">
         <div class="text-muted small mt-1">대표 이미지(첫 번째)</div>
       </div>
@@ -93,21 +53,21 @@
         </div>
         {# v87-W6: 번역 상태 정직 표시 — 실패면 사유 + 재시도 유도, 사용자가 끈 경우/미번역은 구분. #}
         {% if extra and extra.get('translate_error') %}
-        <div class="small mb-1" style="color:var(--danger,#c2503c)">
+        <div class="small mb-1" style="color:var(--danger)">
           {# v87-W7 회수: 실패 메시지에 프로바이더명 명시(어느 단이 죽었는지) + 체인 시도 이력 툴팁. #}
           <i class="bi bi-exclamation-triangle"></i> 번역 실패 — {{ extra.get('translate_error') }}.
           {% set _fatt = extra.get('translation_attempts') or [] %}
-          {% if _fatt|length > 1 %}<span style="color:var(--muted,#8a8275)" title="{% for a in _fatt %}{{ a.provider }}:{{ '성공' if a.ok else '실패' }}{% if a.error %}({{ a.error }}){% endif %}{{ ' · ' if not loop.last }}{% endfor %}">· 체인 {{ _fatt|length }}단 시도</span>{% endif %}
+          {% if _fatt|length > 1 %}<span style="color:var(--muted)" title="{% for a in _fatt %}{{ a.provider }}:{{ '성공' if a.ok else '실패' }}{% if a.error %}({{ a.error }}){% endif %}{{ ' · ' if not loop.last }}{% endfor %}">· 체인 {{ _fatt|length }}단 시도</span>{% endif %}
           <button type="button" class="btn btn-link btn-sm p-0 align-baseline" onclick="translateToKo()">다시 번역</button>
         </div>
         {% elif extra and extra.get('translate_requested') is false %}
         <div class="small text-muted mb-1"><i class="bi bi-translate"></i> 수집 시 번역 안 함(원문 그대로). 위 버튼으로 지금 번역할 수 있어요.</div>
         {% elif extra and extra.get('translated') %}
         {# v87-W7: 사용 프로바이더 + 시도 이력(체인). #}
-        <div class="small text-muted mb-1"><i class="bi bi-translate" style="color:var(--teal,#119a8e)"></i>
+        <div class="small text-muted mb-1"><i class="bi bi-translate" style="color:var(--teal)"></i>
           번역 프로바이더: <strong>{{ extra.get('translation_provider') }}</strong>
           {% set _att = extra.get('translation_attempts') or [] %}
-          {% if _att|length > 1 %}<span style="color:var(--gold,#c9a24b)" title="{% for a in _att %}{{ a.provider }}:{{ '성공' if a.ok else '실패' }}{% if a.ms %}({{ a.ms }}ms){% endif %}{{ ' · ' if not loop.last }}{% endfor %}">· {{ _att|length }}차 폴백으로 성공</span>{% endif %}
+          {% if _att|length > 1 %}<span style="color:var(--gold)" title="{% for a in _att %}{{ a.provider }}:{{ '성공' if a.ok else '실패' }}{% if a.ms %}({{ a.ms }}ms){% endif %}{{ ' · ' if not loop.last }}{% endfor %}">· {{ _att|length }}차 폴백으로 성공</span>{% endif %}
         </div>
         {% endif %}
         <input type="text" class="form-control" id="editTitle" placeholder="상품 제목">
@@ -152,13 +112,13 @@
         {% set _revs = (extra.get('reviews') if extra else []) or [] %}
         {% set _rc = _rc_raw if (_rc_raw|string|trim) else (_revs|length if _revs else 0) %}
         {% set _rating = (extra.get('rating') if extra else '') or '' %}
-        <div class="mb-2 d-flex align-items-center gap-2 flex-wrap"
-             style="padding:.4rem .6rem;border:1px solid var(--line,#e6decb);border-radius:10px;background:var(--paper,#fbf8f1);font-size:.84rem">
-          <span class="fw-semibold"><i class="bi bi-star-fill" style="color:var(--gold,#c9a24b)"></i> 리뷰·평점</span>
+        <div class="mb-2 d-flex align-items-center gap-2 flex-wrap kgp-inset kgp-inset-paper"
+             >
+          <span class="fw-semibold"><i class="bi bi-star-fill" style="color:var(--gold)"></i> 리뷰·평점</span>
           {% if (_rc|string|trim and _rc|string != '0') or (_rating|string|trim) %}
-            <span><i class="bi bi-chat-square-text" style="color:var(--teal,#119a8e)"></i> 리뷰 <strong>{{ _rc }}</strong>건</span>
+            <span><i class="bi bi-chat-square-text" style="color:var(--teal)"></i> 리뷰 <strong>{{ _rc }}</strong>건</span>
             {% if _rating|string|trim %}<span class="text-muted">·</span>
-            <span><i class="bi bi-star-half" style="color:var(--teal,#119a8e)"></i> 평점 <strong>{{ _rating }}</strong> / 5</span>{% endif %}
+            <span><i class="bi bi-star-half" style="color:var(--teal)"></i> 평점 <strong>{{ _rating }}</strong> / 5</span>{% endif %}
             {% if extra.get('recollected_at') %}<span class="text-muted" style="font-size:.74rem">· 최근 갱신 {{ extra.get('recollected_at')[:16] }}</span>{% endif %}
           {% else %}
             <span class="text-muted"><i class="bi bi-dash-circle"></i> 리뷰 0건 수신 — 이 상품 페이지에서 리뷰·평점을 찾지 못했어요</span>
@@ -166,7 +126,7 @@
         </div>
         <div class="d-flex justify-content-between align-items-center mb-1 flex-wrap gap-1">
           <label class="form-label small fw-semibold mb-0" for="editDescription">상세 설명
-            <span id="aiDraftBadge" class="badge" style="display:none;background:color-mix(in srgb,var(--teal,#119a8e) 16%,transparent);color:var(--teal,#119a8e);font-size:.68rem;"><i class="bi bi-stars"></i> AI 초안 · 검토·편집 후 저장</span>
+            <span id="aiDraftBadge" class="badge" style="display:none;background:color-mix(in srgb,var(--teal) 16%,transparent);color:var(--teal);font-size:.68rem;"><i class="bi bi-stars"></i> AI 초안 · 검토·편집 후 저장</span>
           </label>
           <div class="d-flex align-items-center gap-2">
             <!-- v39-E2 #3: 상세 없거나 빈약하면 AI 초안 생성(자동 확정 금지 — 편집/승인). 키 없으면 정직 구조화. -->
@@ -176,8 +136,8 @@
             <span class="text-muted" style="font-size:.75rem;"><span id="descCharCount">0</span>자</span>
           </div>
         </div>
-        <textarea class="form-control" id="editDescription" rows="14"
-                  style="min-height:300px;font-size:.95rem;line-height:1.6;"
+        <textarea class="form-control kgp-desc-input" id="editDescription" rows="14"
+                  
                   placeholder="상품 상세 설명을 입력하세요 (소재·사이즈·사용법 등). 비워두면 저장되지 않아요."
                   oninput="updateDescCount(); hideAiDraftBadge();"></textarea>
         <div id="aiDescHint" class="form-text" style="display:none;"></div>
@@ -186,9 +146,9 @@
         {% set _ko = (extra.get('description_ko') if extra else '') or '' %}
         {% set _orig = (extra.get('description') if extra else '') or '' %}
         {% if _orig and _ko and _ko|trim != _orig|trim %}
-        <details class="mt-2 small" style="border:1px solid var(--line,#e6decb);border-radius:8px;padding:.4rem .6rem">
-          <summary style="cursor:pointer;font-weight:600"><i class="bi bi-layout-split" style="color:var(--teal,#119a8e)"></i> 마켓 전송 미리보기 — 한국어+원문 병기</summary>
-          <div class="mt-2" style="white-space:pre-wrap;color:var(--ink-soft,#3a352e);font-size:.86rem;line-height:1.55">{{ _ko|trim }}
+        <details class="mt-2 small kgp-inset">
+          <summary style="cursor:pointer;font-weight:600"><i class="bi bi-layout-split" style="color:var(--teal)"></i> 마켓 전송 미리보기 — 한국어+원문 병기</summary>
+          <div class="mt-2" style="white-space:pre-wrap;color:var(--ink-soft);font-size:.86rem;line-height:1.55">{{ _ko|trim }}
 
 ───────── 원문 (Original) ─────────
 {{ _orig|trim }}</div>
@@ -202,9 +162,9 @@
         <label class="form-label small fw-semibold mb-2 d-block">상품 이미지 <span class="text-muted">(맨 앞이 대표 · 마우스 올리면 삭제·대표지정 · 드래그로 순서변경 · 클릭하면 크게)</span></label>
         <div id="imageGallery" class="d-flex flex-wrap gap-2 mb-2"></div>
         <!-- v55 STEP3: '이미지 추가' 1급(URL 입력 + 미리보기 검증 후 추가) -->
-        <div class="d-flex align-items-center gap-2 mb-2" style="max-width:560px">
+        <div class="d-flex align-items-center gap-2 mb-2 kgp-w-md">
           <input type="url" id="addImgUrl" class="form-control form-control-sm" placeholder="이미지 URL 붙여넣기 (https://…)" onkeydown="if(event.key==='Enter'){event.preventDefault();kgpAddImageFromInput();}">
-          <img id="addImgPreview" alt="" referrerpolicy="no-referrer" style="width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid #e3dac8;display:none">
+          <img id="addImgPreview" alt="" referrerpolicy="no-referrer" class="kgp-thumb-sm" style="display:none">
           <button type="button" class="btn btn-primary btn-sm flex-shrink-0" onclick="kgpAddImageFromInput()"><i class="bi bi-plus-lg"></i> 이미지 추가</button>
         </div>
         <details class="small">
@@ -215,14 +175,14 @@
       </div>
 
       <!-- v55 STEP3: 라이트박스 모달 — 이미지 클릭 시 새 창 금지, 인페이지 원비율(ESC·배경클릭·←→) -->
-      <div id="kgpLightbox" style="display:none;position:fixed;inset:0;z-index:20000;background:rgba(0,0,0,.82);align-items:center;justify-content:center" role="dialog" aria-modal="true" aria-label="이미지 크게 보기">
-        <button type="button" id="kgpLbClose" aria-label="닫기" style="position:absolute;top:14px;right:18px;background:none;border:none;color:#fff;font-size:30px;cursor:pointer;line-height:1">&times;</button>
-        <button type="button" id="kgpLbPrev" aria-label="이전" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.14);border:none;color:#fff;font-size:26px;width:44px;height:44px;border-radius:50%;cursor:pointer">&#8249;</button>
-        <img id="kgpLbImg" alt="" referrerpolicy="no-referrer" style="max-width:80vw;max-height:80vh;object-fit:contain;border-radius:8px;background:#111">
-        <button type="button" id="kgpLbNext" aria-label="다음" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.14);border:none;color:#fff;font-size:26px;width:44px;height:44px;border-radius:50%;cursor:pointer">&#8250;</button>
-        <div style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);text-align:center">
-          <span id="kgpLbCount" style="color:#fff;font-size:13px;display:block;margin-bottom:4px"></span>
-          <a id="kgpLbOrig" href="#" target="_blank" rel="noopener" style="color:#c9a24b;font-size:12px">원본 새 탭에서 열기 ↗</a>
+      <div id="kgpLightbox" class="kgp-lightbox" role="dialog" aria-modal="true" aria-label="이미지 크게 보기">
+        <button type="button" id="kgpLbClose" aria-label="닫기" class="kgp-lb-btn kgp-lb-close">&times;</button>
+        <button type="button" id="kgpLbPrev" aria-label="이전" class="kgp-lb-btn kgp-lb-nav kgp-lb-prev">&#8249;</button>
+        <img id="kgpLbImg" alt="" referrerpolicy="no-referrer" class="kgp-lb-img">
+        <button type="button" id="kgpLbNext" aria-label="다음" class="kgp-lb-btn kgp-lb-nav kgp-lb-next">&#8250;</button>
+        <div class="kgp-lb-foot">
+          <span id="kgpLbCount" class="kgp-lb-count"></span>
+          <a id="kgpLbOrig" href="#" target="_blank" rel="noopener" class="kgp-lb-orig">원본 새 탭에서 열기 ↗</a>
         </div>
       </div>
 
@@ -267,7 +227,7 @@
             <!-- 미리보기 -->
             <div class="col-12 col-md-6">
               <div class="small text-muted mb-1">미리보기 <span id="dpPreviewMarket"></span></div>
-              <div id="dpPreview" class="border rounded p-2 bg-white" style="min-height:120px;max-height:340px;overflow:auto;"></div>
+              <div id="dpPreview" class="border rounded p-2 kgp-dp-preview"></div>
             </div>
           </div>
           <div class="form-text mt-1">기본(공통)으로 만들고, 마켓을 골라 일부만 덮어쓸 수 있어요. 마켓 규칙 위반(금지어·과대광고)은 저장·등록 전 경고합니다.</div>
@@ -328,25 +288,25 @@
 
     {# v47 STEP2: 수집 로그 — 어느 소스(JSON/DOM/없음)가 어느 필드를 줬는지 정직 표기. 전 탭 하단 접이식. #}
     {% if collect_status %}
-    <details class="mx-3 mb-2 small" style="border:1px solid var(--border,#e9ecef);border-radius:8px;padding:.4rem .6rem">
+    <details class="mx-3 mb-2 small kgp-inset">
       <summary style="cursor:pointer;font-weight:600">
         {% if collect_status.status == "실패" %}
-          <span style="color:var(--danger,#e03131)"><i class="bi bi-x-octagon"></i> 수집 실패 — {{ collect_status.cause }}</span>
+          <span style="color:var(--danger)"><i class="bi bi-x-octagon"></i> 수집 실패 — {{ collect_status.cause }}</span>
         {% elif collect_status.status == "부분" %}
-          <span style="color:var(--warn,#f5821f)"><i class="bi bi-exclamation-triangle"></i> 부분 수집 — {{ collect_status.missing|join('·') }} 누락</span>
+          <span style="color:var(--warn)"><i class="bi bi-exclamation-triangle"></i> 부분 수집 — {{ collect_status.missing|join('·') }} 누락</span>
         {% else %}
-          <span style="color:var(--success,#2f9e44)"><i class="bi bi-check-circle"></i> 수집 완료</span>
+          <span style="color:var(--success)"><i class="bi bi-check-circle"></i> 수집 완료</span>
         {% endif %}
         <span class="text-muted fw-normal">({{ collect_status.filled }}/{{ collect_status.total }} 필드) · 수집 로그 보기</span>
       </summary>
       {# v56 STEP4: 테무 Tier1 최종 판정 — 확장 API 인터셉터 동작/원인(콘솔 안 봐도 드로어에서 확인). #}
       {% set _t1 = extra.get('tier1_diag') if extra else None %}
       {% if _t1 and (_t1.used or _t1.cause) %}
-      <div class="mt-2 mb-1 small" style="padding:.35rem .5rem;border-radius:6px;background:{{ 'color-mix(in srgb,var(--teal) 10%,transparent)' if _t1.used else 'color-mix(in srgb,var(--danger) 8%,transparent)' }}">
+      <div class="mt-2 mb-1 small kgp-usage-pill {{ 'is-used' if _t1.used else 'is-idle' }}">
         {# v86-G(수리): 키 이름이 `source` → `tier1_source`로 바뀌었는데 여기가 안 따라와, 채택 URL이
            **항상** 'API 응답'으로 표시되던 조용한 회귀. 옛 저장분(source)도 함께 읽어 하위호환. #}
-        {% if _t1.used %}<i class="bi bi-lightning-charge" style="color:var(--teal,#119a8e)"></i> <strong>Tier1 동작</strong>(확장 API 인터셉트) — 채택 <span class="text-muted">{{ (_t1.tier1_source or _t1.source or 'API 응답')[:64] }}</span> · 최고점 {{ _t1.topScore }}/4{% if _t1.tier1_scope and _t1.tier1_scope.scoped %} · <span class="text-muted">추천 상품 블록 배제</span>{% endif %}
-        {% else %}<i class="bi bi-info-circle" style="color:var(--danger,#c2503c)"></i> <strong>Tier1 미동작</strong> → DOM 폴백. 원인: {{ _t1.cause }}
+        {% if _t1.used %}<i class="bi bi-lightning-charge" style="color:var(--teal)"></i> <strong>Tier1 동작</strong>(확장 API 인터셉트) — 채택 <span class="text-muted">{{ (_t1.tier1_source or _t1.source or 'API 응답')[:64] }}</span> · 최고점 {{ _t1.topScore }}/4{% if _t1.tier1_scope and _t1.tier1_scope.scoped %} · <span class="text-muted">추천 상품 블록 배제</span>{% endif %}
+        {% else %}<i class="bi bi-info-circle" style="color:var(--danger)"></i> <strong>Tier1 미동작</strong> → DOM 폴백. 원인: {{ _t1.cause }}
         {% endif %}
       </div>
       {% endif %}
@@ -354,10 +314,10 @@
         <tbody>
           {% for f in collect_status.fields %}
           <tr>
-            <td class="text-muted" style="width:96px">{{ f.label }}{% if f.core %} <span title="핵심 필드">*</span>{% endif %}</td>
+            <td class="text-muted kgp-label-col">{{ f.label }}{% if f.core %} <span title="핵심 필드">*</span>{% endif %}</td>
             <td>
-              {% if f.ok %}<i class="bi bi-check-lg" style="color:var(--success,#2f9e44)"></i> 수집됨
-              {% else %}<i class="bi bi-dash" style="color:var(--warn,#f5821f)"></i> 없음{% endif %}
+              {% if f.ok %}<i class="bi bi-check-lg" style="color:var(--success)"></i> 수집됨
+              {% else %}<i class="bi bi-dash" style="color:var(--warn)"></i> 없음{% endif %}
             </td>
             <td class="text-muted text-end">{{ f.source }}</td>
           </tr>
@@ -368,7 +328,7 @@
     </details>
     {% endif %}
 
-    <div class="card-footer d-flex gap-2 flex-wrap kgp-action-bar">
+    <div class="op-card-foot kgp-action-bar">
       <button class="btn btn-primary btn-sm" id="btnSaveEdits" onclick="saveEdits()"><i class="bi bi-save"></i> 변경사항 저장</button>
       <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer"
          class="btn btn-outline-secondary btn-sm"><i class="bi bi-link-45deg"></i> 원본 페이지</a>
@@ -377,34 +337,28 @@
         <i class="bi bi-box-arrow-up-right"></i> 마켓에 등록
       </button>
     </div>
-  </div>
+  </section>
 
   <!-- RAW 메타 JSON — v31: 개발용 원본 메타는 관리자 전용(일반 유저 비노출) -->
   {% if extra and session.get('user_role') == 'admin' %}
-  <div class="card">
-    <div class="card-header d-flex justify-content-between align-items-center">
-      <span class="small fw-semibold"><i class="bi bi-search"></i> 수집된 원본 메타 <span class="pc-badge pc-badge-muted">관리자</span></span>
-      <button class="btn btn-outline-secondary btn-sm py-0"
-              onclick="this.closest('.card').querySelector('pre').classList.toggle('d-none')">
+  <section class="op-card">
+    <div class="op-card-head">
+      <span class="rp-step-eyebrow">수집된 원본 메타</span>
+      <span class="pc-badge pc-badge-muted">관리자</span>
+      <button class="btn btn-ghost btn-sm py-0 ms-auto"
+              onclick="this.closest('.op-card').querySelector('pre').classList.toggle('d-none')">
         펼치기/접기
       </button>
     </div>
-    <div class="card-body p-0">
-      <pre class="p-3 mb-0 small d-none" style="max-height:300px;overflow:auto;">{{ extra | tojson(indent=2) }}</pre>
+    <div class="op-card-body p-0">
+      <pre class="p-3 mb-0 small d-none kgp-raw-meta">{{ extra | tojson(indent=2) }}</pre>
     </div>
-  </div>
+  </section>
   {% endif %}
 </div>
 
 <!-- ── 마켓 등록 모달 (Phase 190) ───────────────────────────────── -->
 <div class="modal fade" id="uploadModal" tabindex="-1" aria-labelledby="uploadModalLabel" aria-hidden="true">
-  <style>
-    /* 긴 오류 URL/메시지가 창 밖으로 튀어나오지 않도록 박스 안에서 줄바꿈 */
-    #uploadResults .list-group-item { overflow:hidden; }
-    #uploadResults .umsg, #uploadResults .list-group-item .small, #uploadResults .list-group-item div {
-      word-break:break-all; overflow-wrap:anywhere; white-space:normal;
-    }
-  </style>
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
@@ -453,8 +407,8 @@
           <h6 class="fw-semibold mb-2">2. 목표 마진율 설정</h6>
           <div class="d-flex align-items-center gap-3 mb-3">
             <label class="text-muted" for="uploadMarginPct">목표 마진율</label>
-            <input type="range" class="form-range" id="uploadMarginPct" min="5" max="50" value="22"
-                   style="max-width:200px;"
+            <input type="range" class="form-range kgp-w-sm" id="uploadMarginPct" min="5" max="50" value="22"
+                   
                    oninput="document.getElementById('uploadMarginPctDisplay').textContent=this.value">
             <span class="fw-bold text-teal" id="uploadMarginPctDisplay">22</span><span>%</span>
           </div>
@@ -501,58 +455,6 @@
   </div>
 </div>
 
-<style>
-  /* v39 G: 마켓 선택 카드 — 균등 폭 그리드(좁은 드로어서도 라벨 세로 한 글자씩 쪼개짐 0).
-     토큰 단일소스(하드코딩 보라 hex 제거 → var(--teal)). */
-  .market-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-    gap: var(--space-2, .5rem);
-  }
-  .market-tile {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;            /* 배지가 안 들어가면 줄바꿈(글자 단위 세로 쪼개짐 금지) */
-    gap: var(--space-2, .5rem);
-    width: 100%;
-    margin: 0;
-    padding: var(--space-2, .5rem);
-    border: 1px solid var(--border, #e5e0d8);
-    border-radius: var(--radius, 10px);
-    cursor: pointer;
-    transition: background-color .12s, border-color .12s, box-shadow .12s;
-  }
-  .market-tile.is-on  { border-color: var(--success, #2f9e44); }
-  .market-tile.is-off { border-color: var(--warn, #e8a13a); opacity: .8; }
-  .market-tile:hover  { border-color: var(--teal, #119a8e); background-color: color-mix(in srgb, var(--teal, #119a8e) 6%, transparent); }
-  .market-tile.selected {
-    border-color: var(--teal, #119a8e) !important;
-    background-color: color-mix(in srgb, var(--teal, #119a8e) 12%, transparent);
-    box-shadow: 0 0 0 1px var(--teal, #119a8e) inset;
-  }
-  .market-tile .market-upload-check { pointer-events: none; flex: 0 0 auto; }
-  /* 마켓명: 가로 한 줄 고정(세로 쪼개짐 0), 넘치면 … 처리 */
-  .market-tile .market-name {
-    flex: 1 1 auto;
-    min-width: 0;
-    font-weight: 600;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .market-tile .market-badge {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    white-space: nowrap;
-    font-size: .72rem;
-    padding: 2px 8px;
-    border-radius: 999px;
-  }
-  .market-tile .market-badge.on  { background: var(--success, #2f9e44); color: #fff; }
-  .market-tile .market-badge.off { background: var(--surface-2, #efeae1); color: var(--text-2, #6b6258); }
-</style>
 
 <!-- v43-4: 마진 계산기 (인라인 모달) — 원가·판매가·수수료·배송비 → 마진액/마진율 -->
 <div class="modal fade" id="marginCalcModal" tabindex="-1" aria-hidden="true">
@@ -574,7 +476,7 @@
           <div class="col-6"><label class="form-label small">배송비 (원)</label>
             <input type="number" id="mcShip" class="form-control form-control-sm" min="0" step="1" value="0" oninput="calcMargin()"></div>
         </div>
-        <div class="mt-3 p-3 rounded" style="background:var(--surface-2,#f5efe3)">
+        <div class="mt-3 p-3 rounded" style="background:var(--surface-2)">
           <div class="d-flex justify-content-between"><span>마진액</span><strong id="mcProfit">–</strong></div>
           <div class="d-flex justify-content-between mt-1"><span>마진율</span><strong id="mcRate">–</strong></div>
           <div class="small text-muted mt-2" id="mcNote"></div>
@@ -666,7 +568,7 @@ function calcMargin() {
   if (rEl) rEl.textContent = sell > 0 ? (rate.toFixed(1) + '%') : '–';
   if (nEl) {
     if (sell <= 0) { nEl.textContent = '판매가를 입력하세요.'; nEl.style.color = ''; }
-    else if (profit < 0) { nEl.textContent = '마진이 마이너스예요 — 판매가↑ 또는 원가·수수료↓.'; nEl.style.color = 'var(--danger,#c0392b)'; }
+    else if (profit < 0) { nEl.textContent = '마진이 마이너스예요 — 판매가↑ 또는 원가·수수료↓.'; nEl.style.color = 'var(--danger)'; }
     else { nEl.textContent = '수식: 판매가 − 원가 − (판매가×수수료%) − 배송비'; nEl.style.color = ''; }
   }
 }
@@ -695,7 +597,7 @@ function addImageRow(url) {
   row.className = 'd-flex align-items-center gap-1 img-row';
   row.innerHTML = `
     <button class="btn btn-outline-warning btn-sm btn-make-primary flex-shrink-0" type="button" title="대표 이미지로 지정" aria-label="대표 이미지로 지정"><i class="bi bi-star"></i></button>
-    <img class="img-thumb flex-shrink-0 rounded border" alt="" referrerpolicy="no-referrer" style="width:46px;height:46px;object-fit:cover;background:#f1f3f5;cursor:zoom-in"
+    <img class="img-thumb flex-shrink-0 rounded border kgp-thumb-md" alt="" referrerpolicy="no-referrer" 
          title="클릭하면 원본 보기" onerror="this.style.visibility='hidden'">
     <input type="url" class="form-control form-control-sm img-url" placeholder="https://..." value="${escapeHtml(url || '')}">
     <button class="btn btn-outline-primary btn-sm btn-clean-img flex-shrink-0" type="button" title="워터마크 제거·정제(CDN 설정 시 재호스팅)"><i class="bi bi-eraser"></i></button>
@@ -804,16 +706,15 @@ function renderGallery() {
     const sz = i === 0 ? 84 : 56;
     const card = document.createElement('div');
     card.className = 'kgp-gimg'; card.draggable = true; card.dataset.i = i;
-    card.style.cssText = 'position:relative;border-radius:8px;overflow:hidden;flex-shrink:0;border:' +
-      (i === 0 ? '2px solid #119a8e' : '1px solid #e3dac8') + ';cursor:zoom-in';
+    card.className = 'kgp-gimg' + (i === 0 ? ' is-main' : '');
     card.innerHTML =
       '<img src="' + u.replace(/"/g, '&quot;') + '" alt="" loading="lazy" referrerpolicy="no-referrer" ' +
-      'style="width:' + sz + 'px;height:' + sz + 'px;object-fit:cover;display:block" ' +
+      'style="width:' + sz + 'px;height:' + sz + 'px" ' +
       'onerror="this.parentElement.style.display=\'none\'">' +
-      (i === 0 ? '<span style="position:absolute;left:0;bottom:0;background:#119a8e;color:#fff;font-size:9px;padding:1px 5px;border-top-right-radius:6px">대표</span>' : '') +
-      '<span class="kgp-gimg-act" style="position:absolute;top:0;right:0;display:none;gap:2px;padding:2px">' +
-        (i === 0 ? '' : '<button type="button" class="kgp-gimg-star" title="대표 이미지로 지정" aria-label="대표로 지정" style="border:none;background:rgba(0,0,0,.6);color:#f5c451;border-radius:5px;width:20px;height:20px;font-size:11px;cursor:pointer"><i class="bi bi-star-fill"></i></button>') +
-        '<button type="button" class="kgp-gimg-del" title="삭제" aria-label="이미지 삭제" style="border:none;background:rgba(194,80,60,.9);color:#fff;border-radius:5px;width:20px;height:20px;font-size:11px;cursor:pointer">×</button>' +
+      (i === 0 ? '<span class="kgp-gimg-main-tag">대표</span>' : '') +
+      '<span class="kgp-gimg-act">' +
+        (i === 0 ? '' : '<button type="button" class="kgp-gimg-star" title="대표 이미지로 지정" aria-label="대표로 지정"><i class="bi bi-star-fill"></i></button>') +
+        '<button type="button" class="kgp-gimg-del" title="삭제" aria-label="이미지 삭제">×</button>' +
       '</span>';
     const act = card.querySelector('.kgp-gimg-act');
     card.addEventListener('mouseenter', () => { act.style.display = 'flex'; });
@@ -906,9 +807,9 @@ function renderDetailGallery() {
   urls.forEach((u) => {
     const a = document.createElement('a');
     a.href = u; a.target = '_blank'; a.rel = 'noopener'; a.title = '상세설명 이미지';
-    a.style.cssText = 'display:inline-block;border-radius:8px;overflow:hidden;border:1px solid #e3dac8;flex-shrink:0';
+    a.className = 'kgp-strip-item';
     a.innerHTML = '<img src="' + u.replace(/"/g, '&quot;') + '" alt="" loading="lazy" referrerpolicy="no-referrer" ' +
-      'style="width:56px;height:56px;object-fit:cover;display:block" onerror="this.parentElement.style.display=\'none\'">';
+      'class="kgp-strip-img" onerror="this.parentElement.style.display=\'none\'">';
     g.appendChild(a);
   });
 }
@@ -1002,8 +903,8 @@ function dpPreview() {
   let html = '';
   blocks.forEach(b => {
     if (b.type === 'text') html += '<p style="font-size:.9rem;white-space:pre-wrap;margin:0 0 .6rem">' + escapeHtml(b.content) + '</p>';
-    else if (b.type === 'highlight') html += '<div style="background:#fff8e6;border:1px solid #f0d68a;border-radius:8px;padding:8px 10px;font-size:.88rem;margin:0 0 .6rem;white-space:pre-wrap">' + escapeHtml(b.content) + '</div>';
-    else if (b.type === 'image' && b.content) html += '<img src="' + escapeHtml(b.content) + '" style="max-width:100%;border-radius:6px;margin:0 0 .6rem" onerror="this.style.display=\'none\'">';
+    else if (b.type === 'highlight') html += '<div class="kgp-block-highlight">' + escapeHtml(b.content) + '</div>';
+    else if (b.type === 'image' && b.content) html += '<img src="' + escapeHtml(b.content) + '" class="kgp-block-img" onerror="this.style.display=\'none\'">';
     else if (b.type === 'divider') html += '<hr style="margin:.6rem 0">';
   });
   pv.innerHTML = html || '<span class="text-muted small">미리보기가 여기 표시됩니다.</span>';
@@ -1033,7 +934,7 @@ function addOptionRow(name, values) {
   const row = document.createElement('div');
   row.className = 'input-group input-group-sm opt-row';
   row.innerHTML = `
-    <input type="text" class="form-control opt-name" style="max-width:160px;" placeholder="옵션명(예: 색상)" value="${escapeHtml(name || '')}">
+    <input type="text" class="form-control opt-name kgp-w-xs" placeholder="옵션명(예: 색상)" value="${escapeHtml(name || '')}">
     <input type="text" class="form-control opt-values" placeholder="값들(쉼표 구분: Black, White)" value="${escapeHtml(values || '')}">
     <button class="btn btn-outline-danger" type="button" title="삭제"><i class="bi bi-x-lg"></i></button>`;
   row.querySelector('button').addEventListener('click', () => row.remove());
@@ -1254,10 +1155,10 @@ function initEditor() {
       var b = document.createElement('div');
       b.className = 'small';
       if (coreOk) {
-        b.innerHTML = '<span class="badge" style="background:var(--hanji,#f5efe3);color:var(--muted,#8a8275);border:1px solid var(--line,#e6decb)">' +
+        b.innerHTML = '<span class="badge kgp-badge-quiet">' +
           '<i class="bi bi-box"></i> 단일 상품</span> 옵션(색상·사이즈)이 없는 단일 상품이에요. 필요하면 <strong>+ 옵션 추가</strong>로 직접 입력하세요.';
       } else {
-        b.innerHTML = '<span class="badge" style="background:color-mix(in srgb,var(--warn,#f5821f) 14%,transparent);color:var(--warn,#f5821f)">' +
+        b.innerHTML = '<span class="badge" style="background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)">' +
           '<i class="bi bi-exclamation-triangle"></i> 옵션 미수집</span> 상품 정보를 완전히 읽지 못해 옵션을 못 찾았어요. 보강 후 다시 확인하거나 <strong>+ 옵션 추가</strong>로 직접 입력하세요.';
       }
       host.parentNode.appendChild(b);
@@ -1568,12 +1469,12 @@ function renderUploadResults(data) {
     const label = kgpEscapeForHtml(r.market_label || r.market);
     if (r.success) {
       const link = r.external_url ? `<a href="${r.external_url}" target="_blank" rel="noopener noreferrer" class="ms-1" title="상품 페이지"><i class="bi bi-box-arrow-up-right"></i></a>` : '';
-      badges += `<span class="badge" style="background:color-mix(in srgb,var(--success,#2f9e44) 16%,transparent);color:var(--success,#2f9e44)"><i class="bi bi-check-lg"></i> ${label} 등록됨${link}</span>`;
+      badges += `<span class="badge" style="background:color-mix(in srgb,var(--success) 16%,transparent);color:var(--success)"><i class="bi bi-check-lg"></i> ${label} 등록됨${link}</span>`;
     } else if (r.queued) {
-      badges += `<span class="badge" style="background:color-mix(in srgb,var(--warn,#e8a13a) 18%,transparent);color:var(--warn,#8a6d1f)">${label} · 큐</span>`;
+      badges += `<span class="badge" style="background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)">${label} · 큐</span>`;
     } else {
       _failedMarkets.push(r.market);
-      badges += `<span class="badge" style="background:color-mix(in srgb,var(--danger,#c0392b) 14%,transparent);color:var(--danger,#c0392b)"><i class="bi bi-x-lg"></i> ${label} 실패</span>`;
+      badges += `<span class="badge" style="background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger)"><i class="bi bi-x-lg"></i> ${label} 실패</span>`;
     }
   });
   badges += '</div>';
