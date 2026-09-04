@@ -1053,14 +1053,23 @@ class CoupangUploader(BaseUploader):
             'Authorization': auth_header,
             'Content-Type': 'application/json;charset=UTF-8',
         }
+        body = data
+        if data is None and method.upper() in ('PUT', 'POST', 'PATCH'):
+            # F' 411 수리: 바디 없는 PUT(승인요청 `/approvals`)은 requests가 **Content-Length를
+            #   아예 안 붙인다** → 쿠팡 게이트웨이가 `411 Length Required`로 끊는다.
+            #   페이로드를 발명하지 않고 **빈 바디 + 길이 0**을 명시한다(HMAC은 path+date만
+            #   서명하므로 바디를 바꿔도 서명은 불변 — `_generate_hmac_signature` 참조).
+            body = b''
+            headers['Content-Length'] = '0'
         stage = f'{method.upper()} {path}'
         last = ''
         for attempt in range(3):
             try:
                 # 고정 IP 릴레이 경유 — 쿠팡 호출 IP 화이트리스트 대응(v8 / v87-S6-2 mkt.php).
                 # 미설정이면 직접 호출(폴백). 서명은 위에서 이미 끝났고 릴레이는 포워딩만.
-                resp = relay_request(method, url, json=data, headers=headers, timeout=30,
-                                     market="coupang", key=str(self.vendor_id or ""))
+                _kw = ({'data': body} if isinstance(body, (bytes, bytearray)) else {'json': body})
+                resp = relay_request(method, url, headers=headers, timeout=30,
+                                     market="coupang", key=str(self.vendor_id or ""), **_kw)
                 if resp.status_code == 429:
                     last = self._fail_detail(stage, attempt + 1, status=429,
                                              body=self._resp_body(resp))

@@ -305,10 +305,26 @@ def build_market_ui_state(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def resolve_market_key(market: str) -> str:
+    """진단 레지스트리 키로 정규화. **별칭을 여기 하나에서 흡수한다.**
+
+    ★ 6-b 부검(2026-09-04): 레지스트리는 `11st`로 키를 잡는데 자격증명·화면은 `elevenst`를 쓴다.
+      그래서 대시보드 신호줄이 11번가만 **영구 404 → '진단 실패'**였다 — S1에서 잡은 것과 같은
+      '코드가 두 벌' 결함이다. 판정 함수는 `market_credentials.canonical_market` 하나만 쓴다.
+    """
+    key = (market or "").strip().lower()
+    if key in MARKET_GUIDES:
+        return key
+    from .market_credentials import canonical_market
+    canon = canonical_market(key)
+    for k in MARKET_GUIDES:
+        if canonical_market(k) == canon:
+            return k
+    raise KeyError(key)
+
+
 def run_market_diagnostic(market: str) -> dict[str, Any]:
-    market_key = (market or "").strip().lower()
-    if market_key not in MARKET_GUIDES:
-        raise KeyError(market_key)
+    market_key = resolve_market_key(market)
 
     meta = MARKET_GUIDES[market_key]
     read_step = _shopify_read_step() if market_key == "shopify" else _adapter_health_step(market_key)

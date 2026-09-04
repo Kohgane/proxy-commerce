@@ -77,7 +77,9 @@
   <section class="op-card op-span-7">
     <div class="op-card-head">
       <span class="rp-step-eyebrow"><span class="rp-step-num">02</span>반려 감시</span>
-      <span class="op-tile-sub ms-auto">2시간마다 자동 점검 · 처방 실행은 승인 뒤</span>
+      <span class="op-tile-sub ms-auto">
+        {% if ops.rejections.connected %}반려 {{ ops.rejections.rejected }} · 감시 대기 {{ ops.rejections.watching }} · {% endif %}처방 실행은 승인 뒤
+      </span>
     </div>
     <div class="op-card-body">
       {% if not ops.rejections.connected %}
@@ -87,13 +89,17 @@
       <div class="op-list">
         {% for r in ops.rejections.rows %}
         <div class="op-row">
-          <span class="op-row-title" title="{{ r.title }}">{{ r.title or r.product_id }}</span>
-          <span class="op-tile-sub">{{ r.account }}</span>
+          {# 반려 확정과 감시 대기는 **다른 상태**다 — 라벨로 갈라 놓지 않으면 같은 줄로 읽힌다. #}
+          <span class="op-sig-item{% if r.phase == 'rejected' %} is-err{% endif %}">
+            <span class="op-sig-dot"></span>{{ '반려' if r.phase == 'rejected' else '감시' }}
+          </span>
+          <span class="op-row-title" title="{{ r.reject_comment or r.title }}">{{ r.title or r.sid or r.product_id }}</span>
+          <span class="op-tile-sub">{{ r.reject_kind or r.account }}</span>
         </div>
         {% endfor %}
       </div>
       {% else %}
-      <div class="op-empty">감시 중인 반려 건이 없습니다.</div>
+      <div class="op-empty">반려도 감시 대기도 없습니다.</div>
       {% endif %}
     </div>
     <div class="op-card-foot">
@@ -158,54 +164,80 @@
   </section>
 </div>
 
-{# S3 — 진단은 **비차단**이다. 화면은 자격 상태로 먼저 뜨고, 실제 마켓 응답이 오면 점만 갱신한다.
-   3초 안에 못 받으면 '진단 실패'라고 말한다 — 느려진 대시보드로 오너를 기다리게 하지 않는다.
-   엔드포인트는 마켓 연동 화면이 쓰는 그것을 그대로 부른다(진단 로직 재구현 0). #}
+{# S3 — 진단은 **비차단**이다. 화면은 자격 상태로 먼저 뜨고, 마켓 응답이 오면 점만 갱신한다.
+
+   6-b 부검(2026-09-04): 신호줄이 라이브에서 **상시 '진단 실패'**였다. 원인은 타임아웃이 짧아서가
+     아니라 **호출 단위가 틀려서**다 — 전체 진단(GET)은 마켓 5개를 **순차로** 실 API 호출한다.
+     쿠팡은 릴레이(mkt.php) 경유라 요청 하나에 최대 35초, 스마트스토어는 OAuth 토큰 발급이 먼저다.
+     한 요청에 5마켓을 묶으면 3초는 **구조적으로** 못 맞춘다.
+   처방 = 타임아웃 상향이 아니라 **마켓별 개별 호출·개별 표기**. 마켓 하나가 느려도 나머지는 제때
+     뜨고, 못 받은 마켓만 '진단 실패'로 남는다(전부를 실패로 물들이지 않는다).
+   엔드포인트는 마켓 연동 화면이 쓰는 단건 진단(POST)을 그대로 부른다(진단 로직 재구현 0). #}
 <script>
 (function () {
   var box = document.getElementById('opMarketSignal');
   if (!box || !box.dataset.diagUrl) return;
-  var ctl = ('AbortController' in window) ? new AbortController() : null;
+  var items = Array.prototype.slice.call(box.querySelectorAll('.op-sig-item'));
+  if (!items.length) return;
+  var PER_MARKET_MS = 12000;   // 마켓 1개 기준. 릴레이 왕복(최대 35s)보다 짧게 끊어 화면을 붙잡지 않는다.
+
   function mark(el, cls, title) {
     el.classList.remove('is-ok', 'is-err', 'is-unknown');
     el.classList.add(cls);
     if (title) el.title = title;
   }
-  function giveUp() {
-    // 실패를 성공처럼 두지 않는다. '모른다'를 그대로 말한다.
-    Array.prototype.forEach.call(box.querySelectorAll('.op-sig-item'), function (el) {
-      mark(el, 'is-unknown', (el.textContent || '').trim() + ' · 진단 실패(응답 없음)');
-    });
-    // 점 모양만으로는 '미설정'과 구분이 안 된다 — 한 번은 글자로 말한다.
-    if (!box.querySelector('.op-sig-note')) {
-      var note = document.createElement('span');
-      note.className = 'op-sig-note';
-      note.textContent = '진단 실패 — 응답 없음';
-      box.appendChild(note);
-    }
+  function note() {
+    // 점 모양만으로는 '미설정'과 구분이 안 된다 — 못 받은 마켓이 있으면 한 번은 글자로 말한다.
+    var failed = box.querySelectorAll('.op-sig-item.is-unknown').length;
+    var el = box.querySelector('.op-sig-note');
+    if (!failed) { if (el) el.remove(); return; }
+    if (!el) { el = document.createElement('span'); el.className = 'op-sig-note'; box.appendChild(el); }
+    el.textContent = failed + '개 마켓 진단 실패 — 응답 없음';
   }
-  // 타임아웃은 **스스로 표기를 바꾼다.** abort→catch에만 기대면, 취소를 무시하는 요청에서
-  // 화면이 진단 전 낙관 표기로 굳는다(실측으로 확인). 늦게 온 응답은 그 위를 덮어쓴다.
-  var timer = setTimeout(function () { if (ctl) ctl.abort(); giveUp(); }, 3000);
-  fetch(box.dataset.diagUrl, {
-    credentials: 'same-origin',
-    headers: { 'Accept': 'application/json' },
-    signal: ctl ? ctl.signal : undefined
-  }).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
-    clearTimeout(timer);
-    if (!data || !data.ok || !data.results) throw new Error('no-result');
-    data.results.forEach(function (res) {
-      var el = box.querySelector('[data-market="' + (res.market || '') + '"]');
-      if (!el) return;
-      var label = (el.textContent || '').trim();
+  function csrf() {
+    var m = document.querySelector('meta[name="csrf-token"]');
+    return m ? m.getAttribute('content') : '';
+  }
+
+  items.forEach(function (el) {
+    var market = el.dataset.market || '';
+    var label = (el.textContent || '').trim();
+    if (!market) return;
+    var ctl = ('AbortController' in window) ? new AbortController() : null;
+    var done = false;
+    var timer = setTimeout(function () {
+      if (done) return;
+      if (ctl) ctl.abort();
+      // 타임아웃은 **스스로 표기를 바꾼다.** abort→catch에만 기대면, 취소를 무시하는 요청에서
+      // 화면이 진단 전 낙관 표기로 굳는다(실측으로 확인). 늦게 온 응답은 그 위를 덮어쓴다.
+      mark(el, 'is-unknown', label + ' · 진단 실패(응답 없음)');
+      note();
+    }, PER_MARKET_MS);
+
+    fetch(box.dataset.diagUrl, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json',
+                 'X-CSRFToken': csrf() },
+      body: JSON.stringify({ market: market }),
+      signal: ctl ? ctl.signal : undefined
+    }).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
+      done = true; clearTimeout(timer);
+      var res = data && data.ok && data.result;
+      if (!res) throw new Error('no-result');
       if (res.status === 'connected' || res.ok === true) {
         mark(el, 'is-ok', label + ' · 연동 확인됨');
       } else {
         var act = res.action || (res.ui && res.ui.action) || res.error_code || '';
         mark(el, 'is-err', label + ' · 연동 실패' + (act ? ' — ' + act : ''));
       }
+      note();
+    }).catch(function () {
+      done = true; clearTimeout(timer);
+      mark(el, 'is-unknown', label + ' · 진단 실패(응답 없음)');
+      note();
     });
-  }).catch(function () { clearTimeout(timer); giveUp(); });
+  });
 })();
 </script>
 {% endblock %}

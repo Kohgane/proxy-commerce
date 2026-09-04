@@ -27,6 +27,11 @@ REJECTION_KINDS = {
     "option_value":   {"ko": "옵션값",                "rx": "replace_option", "rx_ko": "허용값으로 대체"},
     "apple_category": {"ko": "애플 카테고리 사전승인 반려", "rx": "hold_or_reissue",
                        "rx_ko": "iPhone 표기 보류 · 삼성/픽셀용 유효"},
+    # F' — 임시저장인데 **승인요청이 안 걸린** 건. 여태 사유 텍스트가 없어 '미분류'에 섞였고,
+    #   그러면 처방이 "오너 확인 필요"가 돼 방치된다. 실제로 필요한 건 재등록이 **아니라**
+    #   승인요청 PUT 한 방이다 — 재등록하면 같은 상품이 두 건 뜬다([[동일상품 다중등록 정리]]).
+    "saved_pending":  {"ko": "임시저장(승인요청 누락)", "rx": "request_approval",
+                       "rx_ko": "승인 재요청(PUT approvals) — 재등록 아님"},
     "unknown":        {"ko": "미분류",                "rx": "manual",         "rx_ko": "오너 확인 필요"},
 }
 
@@ -53,6 +58,8 @@ _OPTION_RE = re.compile(r"옵션\s*값|구매\s*옵션|옵션\s*정보|옵션\s*
 # P5 — 옵션 계열 안에서 **단위**를 따로 집는다. 처방이 다르기 때문이다(단위 결합 vs 허용값 대체).
 #   쿠팡 실문구 "유효하지 않은 구매 옵션 값 **혹은 단위** 입니다."가 이 분기의 근거다.
 _OPTION_UNIT_RE = re.compile(r"단위", re.I)
+# F' — 임시저장. 사유 텍스트가 아니라 **상태**지만, 이 상태 자체가 처방을 정한다(승인요청 누락).
+_SAVED_RE = re.compile(r"임시\s*저장|\bSAVED\b", re.I)
 _IMAGE_RE = re.compile(r"이미지|사진|대표\s*이미지|화질|해상도|규격|누끼|워터마크|배경\s*처리|픽셀|"
                        r"\d{3,4}\s*\*\s*\d{3,4}|DETAIL", re.I)   # 실데이터: "최소 500*500 … 기타이미지(DETAIL)"
 
@@ -82,6 +89,11 @@ def classify_rejection(comment: str, *, title: str = "") -> dict:
                 "comment_is_status_only": status_only, **extra}
 
     if not c or status_only:
+        # F' — 사유가 없어도 상태가 **임시저장**이면 처방이 정해진다: 승인요청이 안 걸린 것이다.
+        #   (재등록이 아니라 승인요청 PUT — 재등록은 동일상품 다중등록을 낳는다.)
+        ms = _SAVED_RE.search(f"{c} {title}")
+        if ms:
+            return _mk("saved_pending", matched=ms.group(0))
         # 사유 없음 / 상태 문구만 → 자동 판정 금지(오너 확인). [[반려 사유 요약 오독 지뢰]]
         return _mk("unknown", matched="")
     m = _APPLE_RE.search(text)
@@ -109,6 +121,10 @@ def classify_rejection(comment: str, *, title: str = "") -> dict:
     m = _IMAGE_RE.search(text)
     if m:
         return _mk("image_spec", matched=m.group(0))
+    ms = _SAVED_RE.search(text)
+    if ms:
+        # 구체 사유가 하나도 없고 상태만 임시저장 — 승인요청 누락(위 분기와 같은 처방).
+        return _mk("saved_pending", matched=ms.group(0))
     return _mk("unknown", matched="")
 
 
@@ -361,10 +377,12 @@ def watch_registered(*, queue_fn, history_fn, classify_fn=None, record_fn=None,
 
 
 def apply_prescription(row, *, reupload_fn=None, delete_fn=None, reissue_fn=None,
-                       resubmit_fn=None, approved: bool = False) -> dict:
+                       resubmit_fn=None, approve_fn=None, approved: bool = False) -> dict:
     """처방 실행 — **배선하되 오너 승인 게이트 뒤**(비가역). approved=False면 실행 0(보류 사유).
 
     - image_spec→reupload_fn(sid) · trademark→delete_fn(sid) · option_value→reupload_fn(sid,대체값)
+    - saved_pending→approve_fn(sid): **승인요청 PUT 한 방**. 재등록이 아니다 — 상품을 다시 만들면
+      같은 상품이 두 건 뜬다([[동일상품 다중등록 정리]]). 수정할 값이 없으니 PUT approvals만 건다.
     - apple_category: apple_target=android면 reissue_fn(재등록 가능), apple/unknown이면 **보류**(실행 안 함).
     - unknown→항상 보류(오너 확인). 실행 결과는 정직 반환(가짜 성공 0).
     """
@@ -412,6 +430,17 @@ def apply_prescription(row, *, reupload_fn=None, delete_fn=None, reissue_fn=None
             return {**base, "applied": True, "action": "reupload", "result": res}
         except Exception as exc:
             return {**base, "applied": False, "reason": f"재등록 실패: {exc}"}
+    if kind == "saved_pending":
+        # F' — 승인요청만 다시 건다. 상품 수정도 재생성도 하지 않는다(비가역 최소 표면).
+        if not approve_fn:
+            return {**base, "applied": False, "reason": "승인요청 핸들러 미주입"}
+        try:
+            res = approve_fn(sid)
+            ok = bool((res or {}).get("success")) if isinstance(res, dict) else bool(res)
+            return {**base, "applied": ok, "action": "request_approval", "result": res,
+                    **({} if ok else {"reason": (res or {}).get("error", "승인요청 실패")})}
+        except Exception as exc:
+            return {**base, "applied": False, "reason": f"승인요청 실패: {exc}"}
     if kind == "trademark":
         if not delete_fn:
             return {**base, "applied": False, "reason": "삭제 핸들러 미주입"}

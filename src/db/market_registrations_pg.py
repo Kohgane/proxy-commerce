@@ -174,6 +174,37 @@ def get(product_id: str, *, marketplace: str = "coupang") -> Optional[dict]:
             "reject_kind": r[4], "reject_comment": r[5], "prescription": r[6]}
 
 
+def recent_rejected(*, marketplace: str = "coupang", account: str = "", limit: int = 5) -> list:
+    """반려 **확정** 건 최근 N개. `watch_queue`가 구조적으로 제외하는 상태다.
+
+    F5(2026-09-04): 대시보드 02 카드가 `watch_queue`만 읽어서, 제목이 '반려 감시'인데
+    정작 `rejected`는 한 건도 안 보였다(`_WATCH_STATUSES`에 없으니까). 감시 대기와
+    반려 확정은 다른 상태라 큐를 넓히지 않고 **읽는 함수를 따로** 둔다.
+    """
+    if not enabled():
+        rows = [r for r in _MEM.values()
+                if r["marketplace"] == marketplace and r["status"] == "rejected"
+                and (not account or r["account"] == account)]
+        return [{"sid": r["product_id"], "title": r["title"], "account": r["account"],
+                 "market_url": r["market_url"], "reject_kind": r.get("reject_kind", ""),
+                 "reject_comment": r.get("reject_comment", "")}
+                for r in rows[:max(0, int(limit))]]
+    sql = ["""SELECT product_id, title, account, market_url, reject_kind, reject_comment
+              FROM market_registrations
+              WHERE deleted_at IS NULL AND marketplace=%s AND status='rejected'"""]
+    args = [marketplace]
+    if account:
+        sql.append("AND account=%s")
+        args.append(account)
+    sql.append("ORDER BY checked_at DESC NULLS LAST, created_at DESC LIMIT %s")
+    args.append(max(0, int(limit)))
+    with pg.query() as cur:
+        cur.execute(" ".join(sql), tuple(args))
+        rows = cur.fetchall()
+    return [{"sid": r[0], "title": r[1], "account": r[2], "market_url": r[3],
+             "reject_kind": r[4] or "", "reject_comment": r[5] or ""} for r in rows]
+
+
 def counts(*, marketplace: str = "coupang") -> dict:
     """상태별 건수(대시보드·정직 표기용). 조회 실패는 예외로 올린다(가짜 0 금지)."""
     if not enabled():
