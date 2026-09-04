@@ -1,6 +1,8 @@
 """tests/test_collect_history_thumbnails.py — 수집 이력에 썸네일/편집 버튼(퍼센티식 한눈에)."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import os
 import sys
 from unittest.mock import patch
@@ -31,6 +33,9 @@ def test_history_shows_thumbnails_and_edit(client):
          patch("src.seller_console.collect_history_store.distinct_domains", return_value=["temu.com"]):
         html = client.get("/seller/collect/history").get_data(as_text=True)
     assert "https://img/x.jpg" in html        # 썸네일 이미지
-    assert "object-fit:cover" in html          # 썸네일 스타일
+    # ★ 6-c(2026-09-03): 썸네일 치수·크롭이 인라인 → `.ch-thumb`(app.css)로 이관됐다.
+    #   핀의 뜻("썸네일이 잘려서라도 정사각으로 뜬다")은 그대로 — 소스만 옮긴다.
+    assert "ch-thumb" in html                  # 썸네일 스타일(클래스)
+    assert "object-fit: cover" in Path("src/static/app.css").read_text(encoding="utf-8")
     assert "편집·등록" in html                  # 편집·등록 버튼
     assert "리클라이너 소파" in html

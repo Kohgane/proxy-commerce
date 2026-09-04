@@ -61,7 +61,7 @@
   {"prefetch":[{"where":{"and":[{"href_matches":"/seller/*"},{"not":{"href_matches":"/*logout*"}},{"not":{"href_matches":"/*sign*out*"}},{"not":{"href_matches":"/*/delete*"}},{"not":{"href_matches":"/*bulk-delete*"}}]},"eagerness":"moderate"}]}
   </script>
 </head>
-<body class="console-body">
+<body class="console-body{% block body_class %}{% endblock %}">
 {% set _path = request.path if request is defined else '' %}
 {% set _user_id = session.get('user_id') if session is defined else None %}
 {% set _user_email = session.get('user_email') if session is defined else None %}

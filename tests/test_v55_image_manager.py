@@ -11,6 +11,10 @@ from unittest.mock import patch
 
 os.environ.setdefault("SELLER_CONSOLE_AUTH", "0")
 TPL = Path("src/seller_console/templates/collect_preview.html").read_text(encoding="utf-8")
+CSS_S6C = Path("src/static/app.css").read_text(encoding="utf-8")
+# ★ Stage 6-c(2026-09-03): 이 화면들의 CSS가 템플릿 `<style>`/인라인 → **app.css로 이관**됐다.
+#   핀이 보는 건 "그 규칙이 살아 있나"이지 "어느 파일에 있나"가 아니다 — 소스만 갈아끼운다.
+
 
 
 def test_gallery_hover_actions_and_drag():
@@ -28,7 +32,7 @@ def test_add_image_first_class_with_preview():
 
 def test_lightbox_no_new_window():
     assert 'id="kgpLightbox"' in TPL and "kgpOpenLightbox" in TPL
-    assert "max-width:80vw" in TPL and "max-height:80vh" in TPL          # 원비율 80vw/80vh
+    assert "max-width: 80vw" in CSS_S6C and "max-height: 80vh" in CSS_S6C   # 원비율 80vw/80vh
     assert "kgpLbStep" in TPL and "ArrowLeft" in TPL and "ArrowRight" in TPL   # ←→
     assert "Escape" in TPL                                                # ESC 닫기
     assert "kgpLbClose" in TPL and "e.target === lb" in TPL              # 배경 클릭 닫기

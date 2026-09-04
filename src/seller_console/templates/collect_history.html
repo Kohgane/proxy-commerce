@@ -1,14 +1,14 @@
 {% extends "_base.html" %}
 {% block title %}수집 이력{% endblock %}
 {% block content %}
-<div class="container-fluid py-4">
+<div class="container-fluid py-4 ch-page">
   {# v87-X2: STEP3 에디토리얼 격상 — 오버라인(금 라벨)+세리프 헤더+금 헤어라인(P~T 계보). 기능 불변. #}
-  <div class="mb-2">
+  <header class="ch-head">
     <div class="console-kpi-label mb-1">한눈에 보기</div>
     <h4 class="mb-0 fw-bold"><i class="bi bi-box-seam"></i> 수집한 상품, 한눈에</h4>
-  </div>
-  <p class="text-muted small mb-2">크롬 확장·북마클릿·수동 입력으로 모은 상품을 한자리에서 확인·편집·업로드해요.</p>
-  <hr class="pc-hairline mt-0 mb-4">
+    <p class="text-muted small mb-2">크롬 확장·북마클릿·수동 입력으로 모은 상품을 한자리에서 확인·편집·업로드해요.</p>
+    <hr class="pc-hairline mt-0 mb-0">
+  </header>
 
   <!-- v72b STEP4: 고가수집기 확장 신선도 배너 — content_script가 각인한 설치 버전(data-kgp-ext)을
        최신 버전과 대조. 구버전이면 재로딩 안내(수집 품질 이슈의 최다 원인). 정직: 감지 실패는 '미감지'로 표기. -->
@@ -17,59 +17,47 @@
 
   {% if summary.total and summary.total > 0 %}
   <!-- 초보 흐름: 다음 할 일 한 줄(happy path) -->
-  <div class="pc-status pc-status-info small mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
-    <span><i class="bi bi-signpost-2"></i> <strong>다음 할 일:</strong> 상품을 눌러 확인·편집한 뒤, 마켓에 업로드하세요.</span>
-    <a href="/seller/markets/connect" class="btn btn-primary btn-sm"><i class="bi bi-shop"></i> 마켓 연동하기</a>
+  <div class="op-strip">
+    <i class="bi bi-signpost-2"></i>
+    <span><strong>다음 할 일:</strong> 상품을 눌러 확인·편집한 뒤, 마켓에 업로드하세요.</span>
+    <a href="/seller/markets/connect" class="btn btn-primary btn-sm ms-auto"><i class="bi bi-shop"></i> 마켓 연동하기</a>
   </div>
   {% endif %}
 
-  <!-- 요약 카드 -->
-  <div class="row g-3 mb-4">
-    <div class="col-6 col-md-3">
-      <div class="card console-card console-kpi-card console-kpi-primary h-100">
-        <div class="card-body">
-          <div class="console-kpi-label mb-1">총 수집</div>
-          <div class="console-stat-value">{{ summary.total }}</div>
-        </div>
-      </div>
+  <!-- 01 요약 — 카드 1장 안에 기하 타일 4(조각마다 카드 금지 · 5-f 문법) -->
+  <section class="op-card">
+    <div class="op-card-head">
+      <span class="rp-step-eyebrow"><span class="rp-step-num">01</span>요약 · 필터</span>
+      <span class="op-tile-sub ms-auto">최근 {{ filters.days }}일 기준</span>
     </div>
-    <div class="col-6 col-md-3">
-      <div class="card console-card console-kpi-card console-kpi-success h-100">
-        <div class="card-body">
-          <div class="console-kpi-label mb-1">오늘</div>
-          <div class="console-stat-value">{{ summary.today }}</div>
+    <div class="op-card-body">
+      <div class="ch-stats">
+        <div class="ch-stat {% if summary.total %}is-on{% endif %}">
+          <div class="op-tile-k">총 수집</div>
+          <div class="op-tile-v">{{ summary.total }}<span class="op-tile-sub"> 건</span></div>
         </div>
-      </div>
-    </div>
-    <div class="col-6 col-md-3">
-      <div class="card console-card console-kpi-card console-kpi-warning h-100">
-        <div class="card-body">
-          <div class="console-kpi-label mb-1">도메인</div>
-          <div class="console-stat-value">{{ summary.domains }}</div>
+        <div class="ch-stat {% if summary.today %}is-on{% endif %}">
+          <div class="op-tile-k">오늘</div>
+          <div class="op-tile-v">{{ summary.today }}<span class="op-tile-sub"> 건</span></div>
         </div>
-      </div>
-    </div>
-    <div class="col-6 col-md-3">
-      <div class="card console-card h-100">
-        <div class="card-body">
-          <div class="console-kpi-label mb-2">수집 경로</div>
-          <div class="small">
-            확장 <strong>{{ summary.by_source.extension }}</strong> /
-            북마클릿 <strong>{{ summary.by_source.bookmarklet }}</strong>
-          </div>
-          <div class="small text-muted">
-            수동 <strong>{{ summary.by_source.manual }}</strong> /
+        <div class="ch-stat">
+          <div class="op-tile-k">도메인</div>
+          <div class="op-tile-v">{{ summary.domains }}<span class="op-tile-sub"> 곳</span></div>
+        </div>
+        <div class="ch-stat">
+          <div class="op-tile-k">수집 경로</div>
+          <div class="op-tile-sub">
+            확장 <strong>{{ summary.by_source.extension }}</strong> ·
+            북마클릿 <strong>{{ summary.by_source.bookmarklet }}</strong> ·
+            수동 <strong>{{ summary.by_source.manual }}</strong> ·
             벌크 <strong>{{ summary.by_source.bulk }}</strong>
           </div>
         </div>
       </div>
-    </div>
-  </div>
+      <hr class="ch-divider">
 
-  <!-- 필터 -->
-  <div class="card mb-4">
-    <div class="card-body">
-      <form method="get" class="row g-2 align-items-end">
+      <form method="get" id="chFilterForm">
+        <div class="row g-2 align-items-end">
         <div class="col-12 col-md">
           <label class="form-label small text-muted mb-1">검색</label>
           <input type="search" name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="제목·도메인·URL">
@@ -138,38 +126,78 @@
             {% endfor %}
           </select>
         </div>
-        <div class="col-6 col-md-auto">
-          <button type="submit" class="btn btn-primary btn-sm w-100">적용</button>
-        </div>
-        <div class="col-6 col-md-auto">
-          <a href="/seller/collect/history" class="btn btn-outline-secondary btn-sm w-100">초기화</a>
+          <div class="col-6 col-md-auto">
+            <button type="submit" class="btn btn-primary btn-sm w-100">적용</button>
+          </div>
+          <div class="col-6 col-md-auto">
+            <a href="/seller/collect/history" class="btn btn-ghost btn-sm w-100">초기화</a>
+          </div>
         </div>
       </form>
     </div>
-  </div>
+  </section>
 
   {# v87-W1: 비상품 정리 후보 진입 + 안내. 삭제가 아니라 보관(복원 가능)이 기본. #}
   {% if hygiene_mode %}
-  <div class="pc-status pc-status-warning small mb-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+  <div class="op-strip op-strip-warn">
     <span>
       <i class="bi bi-funnel"></i> <strong>정리 후보 {{ cleanup_count }}건</strong> — 상품이 아닌 것으로 의심되는 페이지예요(메일·챗·검색·문서 등).
       <strong>삭제가 아니라 보관(복원 가능)</strong>합니다. 목록을 확인한 뒤 선택해 <strong>보관</strong>하세요. 영구 삭제는 ‘보관’ 목록에서만, 다시 확인 후에 됩니다.
     </span>
-    <a href="/seller/collect/history" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x-lg"></i> 정리 후보 해제</a>
+    <a href="/seller/collect/history" class="btn btn-ghost btn-sm ms-auto"><i class="bi bi-x-lg"></i> 정리 후보 해제</a>
   </div>
   {% else %}
-  <div class="mb-3">
-    <a href="/seller/collect/history?hygiene=cleanup" class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-funnel"></i> 정리 후보 보기 <span class="text-muted">— 상품 아닌 페이지 골라 보관</span>
-    </a>
-  </div>
+
   {% endif %}
 
   <!-- 목록 -->
   {% if items %}
-  <div class="card">
-    <div class="card-body p-0">
-      <div class="pc-bulk-toolbar d-flex flex-wrap align-items-center gap-2 p-2 border-bottom">
+  <section class="op-card ch-card-table">
+    <div class="op-card-head">
+      <span class="rp-step-eyebrow"><span class="rp-step-num">02</span>수집 목록</span>
+      <span class="op-tile-sub ms-auto">총 {{ pagination.total }}건</span>
+      {% if not hygiene_mode %}
+      <a href="/seller/collect/history?hygiene=cleanup" class="btn btn-ghost btn-sm"
+         title="상품이 아닌 페이지(메일·챗·검색·문서)를 골라 보관해요 — 삭제 아님">
+        <i class="bi bi-funnel"></i> 정리 후보
+      </a>
+      {% endif %}
+    </div>
+    <div class="op-card-body">
+      <div class="small text-muted px-3 pb-2">오른쪽 <strong>인덱스 레일</strong>(ㄱ~ㅎ·A~Z·#)을 누르거나 긁어 빠르게 이동하세요.{% if not fastscroll %} (다른 정렬 중엔 눌렀을 때 제목순으로 전환됩니다.){% endif %}</div>
+      <div class="table-responsive" data-fs-root>
+        <table class="table table-hover mb-0 table-cards pc-swiss-table">
+          <thead>
+            <tr>
+              <th class="ps-3"><input type="checkbox" id="chkAll" title="전체 선택" aria-label="전체 선택"></th>
+              <th>이미지</th>
+              <th>제목</th>
+              <th class="text-end">가격</th>
+              <th>경로</th>
+              <th>수집 시각</th>
+              <th>상태</th>
+              <th>미리보기·등록</th>
+            </tr>
+          </thead>
+          {# 속도: 첫 50건만 렌더 + 무한스크롤(fmt=rows). 행은 collect_history_rows.html 단일소스. #}
+          {# v57 STEP2: 실시간 증분 커서 — 초기 렌더 시점 최신 collected_at(신규 삽입 기준선). #}
+          <tbody data-fs-list id="chRows" data-newest="{{ items[0].collected_at if items else '' }}">
+          {% include 'collect_history_rows.html' %}
+          </tbody>
+        </table>
+      </div>
+      {# 속도: 무한스크롤 — 바닥 근접 시 다음 50건을 이어붙인다(페이지 이동 없음). #}
+      {% set _qs = '&q=' ~ filters.q ~ '&domain=' ~ filters.domain ~ '&source=' ~ filters.source ~ '&status=' ~ filters.status ~ '&group=' ~ filters.group ~ '&sort=' ~ filters.sort ~ '&days=' ~ filters.days ~ '&per_page=' ~ filters.per_page %}
+      <div id="fsInfiniteScroll"
+           data-loaded="{{ items|length }}"
+           data-total="{{ pagination.total }}"
+           data-has-more="{{ '1' if has_more else '0' }}"
+           class="text-center text-muted small py-3 ch-sentinel">
+        <span id="fsLoadingSpin" class="d-none"><span class="spinner-border spinner-border-sm"></span> 더 불러오는 중…</span>
+        <span id="fsAllLoaded" class="d-none">전체 {{ pagination.total }}건 모두 표시했어요</span>
+      </div>
+      </div>
+      <div class="op-card-foot pc-bulk-toolbar ch-toolbar">
         <span class="small text-muted">선택 <strong id="selCount">0</strong>개</span>
         <button type="button" class="btn btn-success btn-sm" id="bulkUploadBtn" onclick="openBulkUploadModal()" disabled>
           <i class="bi bi-box-arrow-up-right"></i> 선택 상품 일괄 마켓 등록
@@ -213,7 +241,7 @@
         </button>
         {% endif %}
         {# v47 STEP5: 엑셀 벌크 — 내보내기(선택 없으면 전체) / 업로드(검증→확인→적용). #}
-        <span class="mx-1" style="width:1px;height:20px;background:var(--border,#e9ecef)"></span>
+        <span class="mx-1 ch-vsep"></span>
         <button type="button" class="btn btn-outline-secondary btn-sm" id="excelExportBtn" onclick="excelExport()"
                 title="선택한 상품(없으면 전체)을 엑셀로 내보내요">
           <i class="bi bi-file-earmark-excel"></i> 엑셀 내보내기
@@ -226,42 +254,14 @@
         <a class="small text-muted text-decoration-none" href="/seller/collect/export-template"
            title="빈 템플릿(예시 1행) 받기"><i class="bi bi-download"></i> 템플릿</a>
       </div>
-      <div class="small text-muted px-3 pb-2">오른쪽 <strong>인덱스 레일</strong>(ㄱ~ㅎ·A~Z·#)을 누르거나 긁어 빠르게 이동하세요.{% if not fastscroll %} (다른 정렬 중엔 눌렀을 때 제목순으로 전환됩니다.){% endif %}</div>
-      <div class="table-responsive" data-fs-root>
-        <table class="table table-hover mb-0 table-cards pc-swiss-table">
-          <thead>
-            <tr>
-              <th class="ps-3"><input type="checkbox" id="chkAll" title="전체 선택" aria-label="전체 선택"></th>
-              <th>이미지</th>
-              <th>제목</th>
-              <th class="text-end">가격</th>
-              <th>경로</th>
-              <th>수집 시각</th>
-              <th>상태</th>
-              <th>미리보기·등록</th>
-            </tr>
-          </thead>
-          {# 속도: 첫 50건만 렌더 + 무한스크롤(fmt=rows). 행은 collect_history_rows.html 단일소스. #}
-          {# v57 STEP2: 실시간 증분 커서 — 초기 렌더 시점 최신 collected_at(신규 삽입 기준선). #}
-          <tbody data-fs-list id="chRows" data-newest="{{ items[0].collected_at if items else '' }}">
-          {% include 'collect_history_rows.html' %}
-          </tbody>
-        </table>
-      </div>
-      {# 속도: 무한스크롤 — 바닥 근접 시 다음 50건을 이어붙인다(페이지 이동 없음). #}
-      {% set _qs = '&q=' ~ filters.q ~ '&domain=' ~ filters.domain ~ '&source=' ~ filters.source ~ '&status=' ~ filters.status ~ '&group=' ~ filters.group ~ '&sort=' ~ filters.sort ~ '&days=' ~ filters.days ~ '&per_page=' ~ filters.per_page %}
-      <div id="fsInfiniteScroll"
-           data-loaded="{{ items|length }}"
-           data-total="{{ pagination.total }}"
-           data-has-more="{{ '1' if has_more else '0' }}"
-           class="text-center text-muted small py-3" style="min-height:1px;">
-        <span id="fsLoadingSpin" class="d-none"><span class="spinner-border spinner-border-sm"></span> 더 불러오는 중…</span>
-        <span id="fsAllLoaded" class="d-none">전체 {{ pagination.total }}건 모두 표시했어요</span>
-      </div>
-    </div>
-  </div>
+    </section>
   {% else %}
-  <div class="console-empty-state py-5">
+  <section class="op-card">
+    <div class="op-card-head">
+      <span class="rp-step-eyebrow"><span class="rp-step-num">02</span>수집 목록</span>
+      <span class="op-tile-sub ms-auto">0건</span>
+    </div>
+    <div class="op-card-body console-empty-state py-5">
     {% if filters.q or filters.domain or filters.source or filters.status or filters.group %}
     <div class="pc-empty-title">조건에 맞는 수집 항목이 없어요</div>
     <p class="pc-empty-sub">필터를 바꾸거나 초기화하면 전체 수집 이력을 다시 볼 수 있어요.</p>
@@ -276,7 +276,8 @@
       <a href="/seller/collect" class="btn btn-gold btn-sm"><i class="bi bi-search"></i> 수동 수집기</a>
     </div>
     {% endif %}
-  </div>
+    </div>
+  </section>
   {% endif %}
 </div>
 
@@ -304,7 +305,7 @@
                    title="{{ m.pending_note }}">
               <input class="form-check-input m-0" type="checkbox" disabled>
               <span class="fw-semibold small">{{ m.label }}</span>
-              <span class="badge" style="background:color-mix(in srgb,var(--warn,#f5821f) 16%,transparent);color:var(--warn,#f5821f)"><i class="bi bi-hourglass-split"></i> {{ m.pending_note }}</span>
+              <span class="badge" style="background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)"><i class="bi bi-hourglass-split"></i> {{ m.pending_note }}</span>
             </label>
             {% else %}
             <label class="market-tile border rounded px-3 py-2 d-flex align-items-center gap-2 mb-0" for="bm_{{ m.code }}">
@@ -324,8 +325,8 @@
           <div class="d-flex justify-content-between small mb-1">
             <span>등록 중…</span><span id="bulkProgressText">0 / 0</span>
           </div>
-          <div class="progress" style="height:8px;">
-            <div id="bulkProgressBar" class="progress-bar" role="progressbar" style="width:0%;background:var(--teal,#119a8e);"></div>
+          <div class="progress ch-progress-thin">
+            <div id="bulkProgressBar" class="progress-bar" role="progressbar" style="width:0%;background:var(--teal);"></div>
           </div>
         </div>
         <div id="bulkUploadResult" class="small mt-2 d-none"></div>
@@ -503,50 +504,8 @@
 </div>
 
 {# v39 C: 인페이지 편집 드로어 — 클릭 시 우측 슬라이드(같은 페이지 위 오버레이, 새 창/라우트 이동 0).
-   기존 편집 페이지(/collect/preview/{id})를 iframe(drawer 모드)로 임베드해 전체 편집 기능 재사용. #}
-<style>
-  /* v57 STEP2: 실시간 삽입된 새 행 — 청록 살짝 강조 후 페이드(가짜 아님 · 서버 커밋분). */
-  @keyframes kgpNewRowFade { 0% { background: color-mix(in srgb, var(--teal,#119a8e) 18%, transparent); }
-    100% { background: transparent; } }
-  .kgp-newrow > td { animation: kgpNewRowFade 2.6s ease-out 1; }
-  @media (prefers-reduced-motion: reduce) { .kgp-newrow > td { animation: none; } }
-  .kgp-drawer-backdrop { position: fixed; inset: 0; background: rgba(20,18,16,.45); z-index: 1080;
-    opacity: 0; pointer-events: none; transition: opacity .2s ease; }
-  .kgp-drawer-backdrop.show { opacity: 1; pointer-events: auto; }
-  .kgp-drawer { position: fixed; top: 0; right: 0; height: 100vh; width: min(960px, 96vw);
-    background: var(--surface, #fff); z-index: 1081; box-shadow: -8px 0 30px rgba(0,0,0,.25);
-    transform: translateX(100%); transition: transform .26s cubic-bezier(.4,0,.2,1); display: flex; flex-direction: column; }
-  .kgp-drawer.show { transform: translateX(0); }
-  .kgp-drawer-head { display: flex; align-items: center; gap: .75rem; padding: .7rem 1rem;
-    border-bottom: 1px solid var(--console-border, #e6e0d3); flex-shrink: 0; }
-  .kgp-drawer-title { font-weight: 700; flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .kgp-drawer-body { position: relative; flex-grow: 1; display: flex; min-height: 0; }
-  .kgp-drawer-iframe { flex-grow: 1; width: 100%; border: 0; }
-  .kgp-drawer-fail { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-    background: var(--surface, #fff); padding: 1.25rem; text-align: center; z-index: 2; }
-  .kgp-drawer-fail[hidden] { display: none; }
-  .kgp-drawer-fail-card { max-width: 320px; }
-  .kgp-drawer-fail-card .bi-exclamation-triangle { font-size: 1.8rem; color: var(--warn, #C98A1E); }
-  .kgp-drawer-x { width: 44px; height: 44px; border: 0; background: transparent; font-size: 1.4rem; cursor: pointer; border-radius: 8px; color: var(--text-muted, #777); }
-  .kgp-drawer-x:hover { background: var(--console-primary-weak, #eee); }
-  .kgp-drawer-grip { display: none; }
-  /* v39-M M3: 모바일은 아래에서 올라오는 풀스크린 바텀시트(한 손 조작). */
-  @media (max-width: 767.98px) {
-    .kgp-drawer {
-      width: 100vw; left: 0; right: 0; top: auto; bottom: 0;
-      height: 92dvh; height: 92vh;        /* 동적 뷰포트 우선, 폴백 vh */
-      border-radius: 16px 16px 0 0;
-      transform: translateY(100%);
-      box-shadow: 0 -8px 30px rgba(0,0,0,.28);
-    }
-    .kgp-drawer.show { transform: translateY(0); }
-    .kgp-drawer-head { padding: .85rem 1rem; }
-    .kgp-drawer-grip { display: block; width: 40px; height: 4px; border-radius: 999px;
-      background: var(--console-border, #d9d2c4); margin: 8px auto 2px; flex-shrink: 0; }
-    .kgp-drawer-origin-txt { display: none; }   /* 좁은 폭: '원본 보기' 라벨 숨기고 아이콘만 */
-  }
-  body.kgp-drawer-open { overflow: hidden; }
-</style>
+   기존 편집 페이지(/collect/preview/{id})를 iframe(drawer 모드)로 임베드해 전체 편집 기능 재사용.
+   6-c: 드로어 CSS는 app.css로 이관(템플릿 <style> 철거). 여기엔 마크업만 남는다. #}
 <div class="kgp-drawer-backdrop" id="kgpDrawerBackdrop" onclick="closeItemDrawer()"></div>
 <aside class="kgp-drawer" id="kgpDrawer" role="dialog" aria-modal="true" aria-label="상품 편집">
   <div class="kgp-drawer-grip" aria-hidden="true"></div>
@@ -819,7 +778,7 @@ function excelRenderReport(d) {
   let html = '';
   if (d.truncated) html += `<div class="pc-status pc-status-warning small py-2">행이 많아 5000개까지만 처리했어요. 나눠서 올려 주세요.</div>`;
   if (d.errors && d.errors.length) {
-    html += `<div class="mb-2"><strong class="text-danger">오류 행</strong><ul class="small mb-2" style="max-height:160px;overflow:auto">`;
+    html += `<div class="mb-2"><strong class="text-danger">오류 행</strong><ul class="small mb-2 ch-errlist">`;
     d.errors.forEach(function (e) { html += `<li>${e.row}행: ${_esc(e.reason)}</li>`; });
     html += `</ul></div>`;
   }
@@ -940,8 +899,8 @@ async function runBulkStatus(status) {
     if (!data.ok) { pcToast(data.error || '상태 변경 실패', 'error'); return; }
     // 상태 배지 갱신
     const badge = status === 'archived'
-      ? '<span class="badge" style="background:var(--hanji,#f5efe3);color:var(--muted,#8a8275);border:1px solid var(--line,#e6decb)"><i class="bi bi-archive"></i> 보관</span>'
-      : '<span class="badge" style="background:color-mix(in srgb,var(--teal,#119a8e) 15%,transparent);color:var(--teal,#119a8e)"><i class="bi bi-check-lg"></i></span>';
+      ? '<span class="badge kgp-badge-quiet"><i class="bi bi-archive"></i> 보관</span>'
+      : '<span class="badge" style="background:color-mix(in srgb,var(--teal) 15%,transparent);color:var(--teal)"><i class="bi bi-check-lg"></i></span>';
     ids.forEach(id => {
       const chk = document.querySelector(`.row-chk[value="${id}"]`);
       const tr = chk && chk.closest('tr');
@@ -1088,7 +1047,7 @@ async function runBulkTranslate() {
             if (cell) {
               const s = document.createElement('span');
               s.className = 'kgp-tr-badge badge mt-1';
-              s.style.cssText = 'background:color-mix(in srgb,var(--warn,#f5821f) 14%,transparent);color:var(--warn,#f5821f)';
+              s.style.cssText = 'background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)';
               s.title = '제목은 번역됨 · 상세는 원문';
               s.innerHTML = '<i class="bi bi-translate"></i> 상세 원문';
               cell.appendChild(s);

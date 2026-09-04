@@ -10,18 +10,18 @@
       {% for t in it.thumbs %}
       <img src="{{ t }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"
            width="{{ '52' if loop.first else '34' }}" height="{{ '52' if loop.first else '34' }}"
-           style="width:{{ '52' if loop.first else '34' }}px;height:{{ '52' if loop.first else '34' }}px;object-fit:cover;border-radius:7px;background:#f1f3f5;border:1px solid #e9ecef"
+           class="ch-thumb {{ 'ch-thumb-lg' if loop.first else 'ch-thumb-sm' }}"
            onerror="this.style.display='none'">
       {% endfor %}
     {% else %}
       {# v41 X-1: 이미지 없으면 다른 상품 이미지 대신 정직한 '이미지 없음' 표기(엉뚱 이미지 0). #}
-      <span class="d-inline-flex align-items-center justify-content-center text-muted"
+      <span class="d-inline-flex align-items-center justify-content-center text-muted ch-thumb-none"
             title="이미지 없음" aria-label="이미지 없음"
-            style="width:52px;height:52px;border-radius:8px;background:#f1f3f5;font-size:18px"><i class="bi bi-image"></i></span>
+            ><i class="bi bi-image"></i></span>
     {% endif %}
     </a>
   </td>
-  <td style="max-width:360px" class="cardcell-title">
+  <td class="cardcell-title ch-cell-title">
     <a href="javascript:void(0)" class="kgp-open-drawer text-decoration-none fw-semibold text-dark d-block text-truncate" role="button"
        data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}" title="{{ it.title_display or it.title or '(제목 없음)' }}">
       {{ it.title_display or it.title or "(제목 없음)" }}
@@ -29,29 +29,29 @@
     {# v87-W6: 번역 상태 3분 — 실패(사유+재시도 유도)/원문(사용자 선택)/미번역. 성공은 조용(기본 기대). #}
     {% if it.translate_error %}
     <span class="badge mt-1 kgp-tr-badge kgp-open-drawer" role="button" data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}"
-          style="background:color-mix(in srgb,var(--danger,#c2503c) 14%,transparent);color:var(--danger,#c2503c);cursor:pointer"
+          style="background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger);cursor:pointer"
           title="번역 실패: {{ it.translate_error }} — 클릭해 드로어에서 다시 번역"><i class="bi bi-exclamation-triangle"></i> 번역 실패</span>
     {% elif it.translate_requested is false %}
-    <span class="badge mt-1 kgp-tr-badge" style="background:var(--hanji,#f5efe3);color:var(--muted,#8a8275);border:1px solid var(--line,#e6decb)" title="수집 시 번역 안 함(원문 그대로 저장)"><i class="bi bi-translate"></i> 원문(번역 안 함)</span>
+    <span class="badge mt-1 kgp-tr-badge kgp-badge-quiet"  title="수집 시 번역 안 함(원문 그대로 저장)"><i class="bi bi-translate"></i> 원문(번역 안 함)</span>
     {% elif it.title_is_original %}
-    <span class="badge mt-1 kgp-tr-badge" style="background:color-mix(in srgb,var(--warn,#f5821f) 14%,transparent);color:var(--warn,#f5821f)" title="{{ '아직 한국어로 번역되지 않았어요' if current_lang != 'en' else 'Original (not translated)' }}"><i class="bi bi-translate"></i> 원문</span>
+    <span class="badge mt-1 kgp-tr-badge" style="background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)" title="{{ '아직 한국어로 번역되지 않았어요' if current_lang != 'en' else 'Original (not translated)' }}"><i class="bi bi-translate"></i> 원문</span>
     {% endif %}
     {# v64 STEP7: 도메인 = 은은한 칩(토큰) — 색 남용 없이 위계만. #}
-    <span class="d-inline-block text-truncate mt-1" title="{{ it.url }}"
-          style="max-width:220px;font-size:11px;line-height:1.5;padding:1px 8px;border-radius:999px;background:var(--hanji,#f5efe3);color:var(--muted,#8a8275);border:1px solid var(--line,#e6decb)">{{ it.domain or it.url }}</span>
+    <span class="d-inline-block text-truncate mt-1 ch-url-pill" title="{{ it.url }}"
+          >{{ it.domain or it.url }}</span>
     {# v87-W1: 비상품 정리 후보 — 상품이 아닌 페이지로 의심(삭제 아님, 정리 후보로만 표기). #}
     {% if it.hygiene and it.hygiene.is_candidate %}
     <span class="pc-badge pc-badge-off mt-1" title="{{ it.hygiene.reasons|join(' · ') }} — ‘정리 후보’에서 보관할 수 있어요(삭제 아님)"><i class="bi bi-exclamation-triangle"></i> 비상품 의심</span>
     {% endif %}
     {# v44-1: 업로드 성공한 마켓 '등록됨' 뱃지(서버 확인분 영구 표시). #}
     {% if it.uploaded_markets %}
-    <span class="badge mt-1" style="background:color-mix(in srgb,var(--success,#2f9e44) 15%,transparent);color:var(--success,#2f9e44)"
+    <span class="badge mt-1" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"
           title="{{ it.uploaded_markets|join(', ') }}에 등록됨"><i class="bi bi-check-circle"></i> 등록됨 · {{ it.uploaded_markets|join('·') }}</span>
     {% endif %}
     {# v81 STEP1 북마클릿 코어 폴백 / v86-F 목록 타일 간이 — 둘 다 제목·이미지만. [다시 수집] 권장(warn 토큰). #}
     {% if it.is_core %}
-    <span class="badge mt-1 kgp-tr-badge kgp-open-drawer" role="button" data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}"
-          style="cursor:pointer;background:color-mix(in srgb,var(--warn,#f5821f) 14%,transparent);color:var(--warn,#f5821f);border:1px solid color-mix(in srgb,var(--warn,#f5821f) 40%,transparent)"
+    <span class="badge mt-1 kgp-tr-badge kgp-open-drawer ch-badge-warn" role="button" data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}"
+          
           title="{% if it.collect_mode == 'simple' %}목록 타일에서 간이 수집됨(제목·이미지만 — 상세·옵션은 목록에 없음){% else %}확장 수집기 미로드로 간이 수집됨(제목·이미지만){% endif %}. 클릭 → 드로어에서 [다시 수집]으로 상세·가격 보완"><i class="bi bi-lightning-charge"></i> 간이</span>
     {% endif %}
   </td>
@@ -62,41 +62,41 @@
   {# v64 STEP7: 경로 = 단일 중립 칩(토큰) — 부트스트랩 색 남용(파랑/노랑/청록) 제거, 위계만. #}
   <td data-label="경로">
     {% set _src = {'extension':'확장','chrome_extension':'확장','bookmarklet':'북마클릿','quick':'즉시','manual':'수동','bulk':'벌크','bulk_collect':'벌크'} %}
-    <span class="badge" style="font-weight:600;background:var(--hanji,#f5efe3);color:var(--ink-soft,#3a352e);border:1px solid var(--line,#e6decb)">{{ _src.get(it.source, it.source or '-') }}</span>
+    <span class="badge ch-badge-src">{{ _src.get(it.source, it.source or '-') }}</span>
   </td>
   <td class="text-muted small" data-label="수집 시각">{{ it.collected_at[:16] if it.collected_at else "-" }}</td>
   {# v64 STEP7: 상태 = 행당 배지 1개, 의미 토큰만(성공=청록·부분=주황·실패=적·보관=먹muted). 부트스트랩 색 남용 제거. #}
   <td data-label="상태">
     {% if it.status == "archived" %}
-      <span class="badge" style="background:var(--hanji,#f5efe3);color:var(--muted,#8a8275);border:1px solid var(--line,#e6decb)"><i class="bi bi-archive"></i> 보관</span>
+      <span class="badge kgp-badge-quiet" ><i class="bi bi-archive"></i> 보관</span>
     {% elif it.status == "ok" %}
       {# v47 STEP2: 수집 필드 상태 — 성공(N/5) 또는 부분(누락 필드명). 가짜 성공·무음 실패 금지. #}
       {% set cs = it.collect_status %}
       {% if cs and cs.status == "실패" %}
-        <span class="badge" style="background:color-mix(in srgb,var(--danger,#d64545) 15%,transparent);color:var(--danger,#d64545)" title="{{ cs.cause }}"><i class="bi bi-x-octagon"></i> 실패 · 추출 실패</span>
+        <span class="badge" style="background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger)" title="{{ cs.cause }}"><i class="bi bi-x-octagon"></i> 실패 · 추출 실패</span>
       {% elif cs and cs.status == "부분" %}
-        <span class="badge" style="background:color-mix(in srgb,var(--warn,#f5821f) 16%,transparent);color:var(--warn,#f5821f)"
+        <span class="badge" style="background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)"
               title="누락: {{ cs.missing|join('·') }} ({{ cs.filled }}/{{ cs.total }} 필드)"><i class="bi bi-exclamation-triangle"></i> 부분 · {{ (cs.missing_short or cs.missing)|join('·') }}</span>
       {% elif cs %}
-        <span class="badge" style="background:color-mix(in srgb,var(--teal,#119a8e) 15%,transparent);color:var(--teal,#119a8e)" title="모든 필드 수집({{ cs.filled }}/{{ cs.total }})"><i class="bi bi-check-lg"></i> 성공 {{ cs.filled }}/{{ cs.total }}</span>
+        <span class="badge" style="background:color-mix(in srgb,var(--teal) 15%,transparent);color:var(--teal)" title="모든 필드 수집({{ cs.filled }}/{{ cs.total }})"><i class="bi bi-check-lg"></i> 성공 {{ cs.filled }}/{{ cs.total }}</span>
       {% else %}
-        <span class="badge" style="background:color-mix(in srgb,var(--teal,#119a8e) 15%,transparent);color:var(--teal,#119a8e)"><i class="bi bi-check-lg"></i></span>
+        <span class="badge" style="background:color-mix(in srgb,var(--teal) 15%,transparent);color:var(--teal)"><i class="bi bi-check-lg"></i></span>
       {% endif %}
     {% else %}
-      <span class="badge" style="background:color-mix(in srgb,var(--danger,#d64545) 15%,transparent);color:var(--danger,#d64545)">{{ it.status }}</span>
+      <span class="badge" style="background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger)">{{ it.status }}</span>
     {% endif %}
     {# v65 STEP4: 보강(2단 수집) 상태 — 대기(스피너)/완료. 단건은 배지 없음(보강 불필요). #}
     {% if it.enrich_status == "pending" %}
-      <span class="badge d-inline-flex align-items-center gap-1 mt-1" style="background:var(--hanji,#f5efe3);color:var(--muted,#8a8275);border:1px solid var(--line,#e6decb)"
+      <span class="badge d-inline-flex align-items-center gap-1 mt-1 kgp-badge-quiet" 
             title="상세(옵션·상세·리뷰)를 백그라운드에서 보강 중이에요"><span class="spinner-border spinner-border-sm" style="width:.7rem;height:.7rem;border-width:.13em"></span> 보강 중…</span>
     {% elif it.enrich_status == "done" %}
-      <span class="badge mt-1" style="background:color-mix(in srgb,var(--teal,#119a8e) 15%,transparent);color:var(--teal,#119a8e)"
+      <span class="badge mt-1" style="background:color-mix(in srgb,var(--teal) 15%,transparent);color:var(--teal)"
             title="상세 보강 완료"><i class="bi bi-stars"></i> 보강 완료</span>
     {% endif %}
     {# v87-W4: 리뷰 수·평점 노출(수신·저장 트랙). 값이 있을 때만 표기(목록 컴팩트 — 0건은 드로어에서 정직 표기). #}
     {% if it.review_count or it.rating %}
-    <span class="d-block text-muted mt-1" style="font-size:11px" title="수집된 리뷰 수·평점">
-      <i class="bi bi-star-fill" style="color:var(--gold,#c9a24b)"></i>
+    <span class="d-block text-muted mt-1 ch-note-sm"  title="수집된 리뷰 수·평점">
+      <i class="bi bi-star-fill" style="color:var(--gold)"></i>
       {% if it.review_count %}리뷰 {{ it.review_count }}{% endif %}{% if it.rating %} · {{ it.rating }}/5{% endif %}
     </span>
     {% endif %}

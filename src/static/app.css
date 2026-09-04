@@ -901,6 +901,302 @@ main:has(> .op-shell) > .op-shell { flex: 1 1 auto; height: auto; min-height: 0;
   .op-tile { aspect-ratio: 2 / 1; }                 /* 좁은 폭에선 정사각이 과하게 높다 */
 }
 
+/* ── Stage 6-c: 수집한 상품 + 편집 드로어 (오너 확산 브리프) ──────────────────
+   6-a 문법을 승계한다 — 카드 1장에 헤더/바디/푸터, 액션은 푸터, 미연결은 0을 안 찍는다.
+   **다른 점 하나:** 이 화면은 목록이라 뷰포트 고정이 아니다. 6-a `.op-shell`은
+   `100dvh`를 먹는데, 페이지네이션되는 목록에 그걸 씌우면 표가 카드 안에서 두 번 스크롤된다.
+   → 같은 12열 격자를 쓰되 높이는 내용이 정한다(`.ch-page`).
+
+   ★ 이 슬라이스는 템플릿에 흩어져 있던 `<style>` 5장(수집 이력 1 · 편집 4)을 옮겨 온 것이다.
+     클래스 이름은 그대로 둔다 — JS가 잡는 훅이라 개명은 로직 변경이다(브리프: 로직 0). */
+.ch-page {
+  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--space-5); align-items: start;
+}
+.ch-page > * { grid-column: 1 / -1; }               /* 기본 전폭, 필요한 것만 op-span-*로 좁힌다 */
+.ch-head { margin-bottom: calc(var(--space-5) * -1 + var(--space-4)); }
+/* 요약 수치 — 기하 모듈이되 **정사각이 아니다.**
+   실측: 12열 폭에서 `op-tile-wide`(2:1)는 한 칸이 190px 높이가 돼, 숫자 넷을 보여주려고
+   260px를 쓰고 목록이 첫 화면 밖으로 밀렸다. 대시보드(5열 카드)와 폭이 달라서 생긴 일이다.
+   → 여기선 높이를 내용이 정한다(비율 고정 금지). */
+.ch-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-4); }
+.ch-stat {
+  position: relative; padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--ink) 3%, var(--surface));
+}
+.ch-stat.is-on::after {
+  content: ""; position: absolute; top: var(--space-3); right: var(--space-3);
+  width: 10px; height: 10px; background: var(--teal);
+}
+.ch-divider { border: 0; border-top: 1px solid var(--border); margin: var(--space-4) 0; }
+/* 경고 성격의 스트립 — 좌측 주황 악센트 1점(원색은 신호로만). */
+.op-strip-warn { border-left: 3px solid var(--warn); }
+/* 카드 위 ghost 버튼은 테두리가 없으면 **버튼으로 안 읽힌다**(실측: '초기화'가 글자처럼 보였다). */
+.op-card .btn-ghost, .op-strip .btn-ghost { border-color: var(--border); }
+/* 필터 컨트롤도 터치 타깃 44px(6-a가 전 폭에 건 규율). */
+.ch-page .form-select, .ch-page .form-control, .ch-page .op-card-body .btn { min-height: 44px; }
+@media (max-width: 1199.98px) { .ch-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 575.98px) { .ch-stats { grid-template-columns: minmax(0, 1fr); } }
+.ch-toolbar { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.ch-toolbar .btn, .ch-toolbar .form-select, .ch-toolbar .form-control { min-height: 44px; }
+/* 표 — 카드가 표면이므로 표 자체는 테두리를 갖지 않는다(조각마다 카드 금지). */
+.ch-card-table .op-card-body { padding: 0; }
+.ch-card-table table { margin-bottom: 0; }
+.ch-card-table thead th {
+  position: sticky; top: 0; z-index: 1; background: var(--surface);
+  font-size: .7rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--text-muted); border-bottom: 1px solid var(--border);
+}
+.ch-card-table tbody td { border-color: var(--border); vertical-align: middle; }
+
+/* v57 STEP2: 실시간 삽입된 새 행 — 청록 살짝 강조 후 페이드(가짜 아님 · 서버 커밋분). */
+@keyframes kgpNewRowFade {
+  0% { background: color-mix(in srgb, var(--teal) 18%, transparent); }
+  100% { background: transparent; }
+}
+.kgp-newrow > td { animation: kgpNewRowFade 2.6s ease-out 1; }
+@media (prefers-reduced-motion: reduce) { .kgp-newrow > td { animation: none; } }
+
+/* 편집 드로어 — v3 배분에서 **Glass가 맡는 자리**(오버레이). 한지 톤 위 반투명 백색. */
+.kgp-drawer-backdrop {
+  position: fixed; inset: 0; z-index: 1080;
+  background: color-mix(in srgb, var(--ink) 45%, transparent);
+  backdrop-filter: blur(2px);
+  opacity: 0; pointer-events: none; transition: opacity .2s ease;
+}
+.kgp-drawer-backdrop.show { opacity: 1; pointer-events: auto; }
+.kgp-drawer {
+  position: fixed; top: 0; right: 0; height: 100vh; width: min(960px, 96vw);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(18px) saturate(1.1);
+  z-index: 1081; box-shadow: var(--nm-soft-lg);
+  transform: translateX(100%); transition: transform .26s cubic-bezier(.4, 0, .2, 1);
+  display: flex; flex-direction: column;
+}
+.kgp-drawer.show { transform: translateX(0); }
+.kgp-drawer-head {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.kgp-drawer-title {
+  font-family: var(--font-display); font-weight: var(--w-semi);
+  flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.kgp-drawer-body { position: relative; flex-grow: 1; display: flex; min-height: 0; }
+.kgp-drawer-iframe { flex-grow: 1; width: 100%; border: 0; }
+.kgp-drawer-fail {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: var(--surface); padding: var(--space-5); text-align: center; z-index: 2;
+}
+.kgp-drawer-fail[hidden] { display: none; }
+.kgp-drawer-fail-card { max-width: 320px; }
+.kgp-drawer-fail-card .bi-exclamation-triangle { font-size: 1.8rem; color: var(--warn); }
+.kgp-drawer-x {
+  width: 44px; height: 44px; border: 0; background: transparent; font-size: 1.4rem;
+  cursor: pointer; border-radius: var(--radius); color: var(--text-muted);
+}
+.kgp-drawer-x:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.kgp-drawer-grip { display: none; }
+/* v39-M M3: 모바일은 아래에서 올라오는 풀스크린 바텀시트(한 손 조작). */
+@media (max-width: 767.98px) {
+  .kgp-drawer {
+    width: 100vw; left: 0; right: 0; top: auto; bottom: 0;
+    height: 92dvh; height: 92vh;                    /* 동적 뷰포트 우선, 폴백 vh */
+    border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
+    transform: translateY(100%);
+  }
+  .kgp-drawer.show { transform: translateY(0); }
+  .kgp-drawer-head { padding: var(--space-4); }
+  .kgp-drawer-grip {
+    display: block; width: 40px; height: 4px; border-radius: 999px;
+    background: var(--border); margin: 0 auto var(--space-2);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kgp-drawer, .kgp-drawer-backdrop { transition: none; }
+}
+
+/* 편집 화면(드로어 안) — 콘솔 chrome을 감추고 편집기만 남긴다. */
+.kgp-editor .console-sidebar, .kgp-editor .mobile-topbar, .kgp-editor .mobile-search,
+.kgp-editor .console-topbar, .kgp-editor .sidebar-overlay,
+.kgp-editor #fbWrap, .kgp-editor #fbReopen, .kgp-editor #kgp-progress { display: none !important; }
+.kgp-editor .console-shell { display: block !important; }
+.kgp-editor .console-main { margin: 0 !important; }
+.kgp-editor .console-content { padding: var(--space-3) !important; overflow-x: hidden; }
+body.kgp-editor.console-body { background: var(--surface) !important; }
+.kgp-editor .drawer-hide { display: none !important; }   /* 드로어 헤더가 대신 제공 */
+.kgp-editor .container-fluid { max-width: 100% !important; }
+.kgp-editor img, .kgp-editor table, .kgp-editor pre { max-width: 100%; }
+@media (max-width: 767.98px) {
+  /* 하단 고정 액션바(엄지존, 저장/등록 ≥44px). */
+  .kgp-action-bar {
+    position: sticky; bottom: 0; z-index: 6;
+    background: var(--surface); border-top: 1px solid var(--border);
+    box-shadow: var(--nm-soft-sm); padding: var(--space-3);
+  }
+  .kgp-action-bar .btn { min-height: 44px; display: inline-flex; align-items: center; }
+  #btnSaveEdits, #btnOpenUploadModal { flex: 1 1 auto; justify-content: center; }
+}
+
+/* 편집 칩 탭(v45 P9) — 활성 = 먹 배경 + 금 키스톤 아이콘. */
+.kgp-etabs {
+  display: flex; flex-wrap: wrap; gap: var(--space-2);
+  margin-bottom: var(--space-4); padding-bottom: 2px;
+}
+.kgp-etab-chip {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  min-height: 44px; padding: var(--space-2) var(--space-4); border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--ink-soft); font-size: .85rem; font-weight: var(--w-semi);
+  cursor: pointer; white-space: nowrap;
+  transition: transform .12s, background .12s, color .12s, border-color .12s;
+}
+.kgp-etab-chip:hover { transform: translateY(-1px); border-color: var(--teal); }
+.kgp-etab-chip .bi { color: var(--teal); font-size: .9rem; }
+.kgp-etab-chip.active { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.kgp-etab-chip.active .bi { color: var(--gold); }   /* 키스톤(금) 시선 고정점 */
+.kgp-etab-hide { display: none !important; }
+.kgp-esec { animation: kgpEtabIn .18s ease-out; }
+@keyframes kgpEtabIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .kgp-esec { animation: none; }
+  .kgp-etab-chip { transition: none; }
+}
+
+/* 업로드 결과 — 긴 오류 URL이 창 밖으로 튀어나오지 않게 박스 안에서 줄바꿈. */
+#uploadResults .list-group-item { overflow: hidden; }
+#uploadResults .umsg, #uploadResults .list-group-item .small,
+#uploadResults .list-group-item div { word-break: break-all; overflow-wrap: anywhere; white-space: normal; }
+
+/* v39 G: 마켓 선택 타일 — 균등 폭 격자(좁은 드로어서도 라벨 세로 쪼개짐 0). */
+.market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: var(--space-2); }
+.market-tile {
+  display: flex; align-items: center; flex-wrap: wrap;  /* 배지가 안 들어가면 줄바꿈 */
+  gap: var(--space-2); width: 100%; margin: 0;
+  min-height: 44px; padding: var(--space-2);
+  border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer;
+  transition: background-color .12s, border-color .12s, box-shadow .12s;
+}
+.market-tile.is-on { border-color: var(--success); }
+.market-tile.is-off { border-color: var(--warn); opacity: .8; }
+.market-tile:hover { border-color: var(--teal); background-color: color-mix(in srgb, var(--teal) 6%, transparent); }
+.market-tile.selected {
+  border-color: var(--teal) !important;
+  background-color: color-mix(in srgb, var(--teal) 12%, transparent);
+  box-shadow: 0 0 0 1px var(--teal) inset;
+}
+.market-tile .market-upload-check { pointer-events: none; flex: 0 0 auto; }
+.market-tile .market-name {           /* 가로 한 줄 고정(세로 쪼개짐 0), 넘치면 … */
+  flex: 1 1 auto; min-width: 0; font-weight: var(--w-semi);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.market-tile .market-badge {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
+  white-space: nowrap; font-size: .72rem; padding: 2px 8px; border-radius: 999px;
+}
+.market-tile .market-badge.on { background: var(--success); color: var(--paper); }
+.market-tile .market-badge.off { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--text-muted); }
+
+/* 이미지 라이트박스 — 인라인 hex/rgba로 흩어져 있던 것을 토큰으로 모았다.
+   여기만 어두운 면이다(사진을 보는 자리). 배경은 순흑이 아니라 **먹**이다. */
+.kgp-lightbox {              /* 여닫기는 JS가 인라인 display로 한다 — 그 동작은 6-c에서 안 건드린다 */
+  display: none; position: fixed; inset: 0; z-index: 20000;
+  background: color-mix(in srgb, var(--ink) 88%, transparent);
+  align-items: center; justify-content: center;
+}
+.kgp-lb-img {
+  max-width: 80vw; max-height: 80vh; object-fit: contain;
+  border-radius: var(--radius); background: var(--ink);
+}
+.kgp-lb-btn {
+  position: absolute; background: none; border: 0; color: var(--paper);
+  cursor: pointer; line-height: 1;
+}
+.kgp-lb-close { top: var(--space-4); right: var(--space-4); font-size: 30px; width: 44px; height: 44px; }
+.kgp-lb-nav {
+  top: 50%; transform: translateY(-50%); font-size: 26px;
+  width: 44px; height: 44px; border-radius: 50%;
+  background: color-mix(in srgb, var(--paper) 14%, transparent);
+}
+.kgp-lb-prev { left: var(--space-4); }
+.kgp-lb-next { right: var(--space-4); }
+.kgp-lb-foot { position: absolute; bottom: var(--space-4); left: 50%; transform: translateX(-50%); text-align: center; }
+.kgp-lb-count { color: var(--paper); font-size: .8rem; display: block; margin-bottom: var(--space-1); }
+.kgp-lb-orig { color: var(--gold); font-size: .75rem; }
+
+/* 갤러리 썸네일 — 대표 1장은 청록 테두리 + '대표' 리본, 나머지는 hover 시 조작 버튼. */
+.kgp-gimg { position: relative; border-radius: var(--radius); overflow: hidden; flex-shrink: 0; cursor: zoom-in; border: 1px solid var(--border); }
+.kgp-gimg.is-main { border: 2px solid var(--teal); }
+.kgp-gimg img { object-fit: cover; display: block; }
+.kgp-gimg-main-tag {
+  position: absolute; left: 0; bottom: 0; background: var(--teal); color: var(--paper);
+  font-size: .58rem; padding: 1px 5px; border-top-right-radius: var(--radius-sm, 6px);
+}
+.kgp-gimg-act { position: absolute; top: 0; right: 0; display: none; gap: 2px; padding: 2px; }
+.kgp-gimg-act button {
+  border: 0; border-radius: var(--radius-sm, 5px); width: 20px; height: 20px;
+  font-size: .7rem; cursor: pointer;
+}
+.kgp-gimg-star { background: color-mix(in srgb, var(--ink) 60%, transparent); color: var(--gold); }
+.kgp-gimg-del { background: color-mix(in srgb, var(--danger) 90%, transparent); color: var(--paper); }
+.kgp-thumb-sm { width: 36px; height: 36px; object-fit: cover; border-radius: var(--radius-sm, 6px); border: 1px solid var(--border); }
+.kgp-thumb-md { width: 46px; height: 46px; object-fit: cover; background: color-mix(in srgb, var(--ink) 4%, transparent); cursor: zoom-in; }
+.kgp-strip-item { display: inline-block; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); flex-shrink: 0; }
+
+.kgp-raw-meta { max-height: 300px; overflow: auto; }
+/* 편집 화면 치수 — 인라인 px로 흩어져 있던 것을 여기 모았다(토큰 단일 소스). */
+.kgp-editor-page { max-width: 880px; }
+.kgp-hero-img { max-height: 240px; object-fit: contain; }
+.kgp-inset {                       /* 접힘·보조 정보 박스 */
+  border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-2) var(--space-3);
+}
+.kgp-inset-paper { background: var(--paper); font-size: .84rem; }
+.kgp-desc-input { min-height: 300px; font-size: .95rem; line-height: 1.6; }
+.kgp-dp-preview { min-height: 120px; max-height: 340px; overflow: auto; }
+.kgp-w-md { max-width: 560px; }
+.kgp-w-sm { max-width: 200px; }
+.kgp-w-xs { max-width: 160px; }
+.kgp-label-col { width: 96px; }
+.kgp-strip-img { width: 56px; height: 56px; object-fit: cover; display: block; }
+.kgp-block-img { max-width: 100%; border-radius: var(--radius-sm, 6px); margin: 0 0 var(--space-3); }
+.kgp-usage-pill { padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm, 6px); }
+.kgp-usage-pill.is-used { background: color-mix(in srgb, var(--teal) 10%, transparent); }
+.kgp-usage-pill.is-idle { background: color-mix(in srgb, var(--danger) 8%, transparent); }
+.kgp-badge-quiet { background: var(--hanji); color: var(--text-muted); border: 1px solid var(--border); }
+/* 목록 행(부분 템플릿) — 인라인으로 흩어져 있던 치수·색을 여기 모았다. */
+.ch-thumb { object-fit: cover; border-radius: var(--radius-sm, 7px); background: color-mix(in srgb, var(--ink) 4%, transparent); border: 1px solid var(--border); }
+.ch-thumb-lg { width: 52px; height: 52px; }
+.ch-thumb-sm { width: 34px; height: 34px; }
+.ch-thumb-none {
+  width: 52px; height: 52px; border-radius: var(--radius); font-size: 1.1rem;
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+.ch-cell-title { max-width: 360px; }
+.ch-url-pill {
+  max-width: 220px; font-size: .7rem; line-height: 1.5; padding: 1px 8px; border-radius: 999px;
+  background: var(--hanji); color: var(--text-muted); border: 1px solid var(--border);
+}
+.ch-badge-src { font-weight: var(--w-semi); background: var(--hanji); color: var(--ink-soft); border: 1px solid var(--border); }
+.ch-badge-warn {
+  cursor: pointer; background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+}
+.ch-note-sm { font-size: .7rem; }
+.ch-sentinel { min-height: 1px; }
+.ch-vsep { width: 1px; height: 20px; background: var(--border); }
+.ch-progress-thin { height: 8px; }
+.ch-errlist { max-height: 160px; overflow: auto; }
+
+/* 상세 블록 미리보기 — 강조 블록(하이라이트). 옛 `#fff8e6/#f0d68a`를 금 토큰으로. */
+.kgp-block-highlight {
+  background: color-mix(in srgb, var(--gold) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
+  border-radius: var(--radius); padding: var(--space-3) var(--space-4);
+  font-size: .88rem; margin: 0 0 var(--space-3); white-space: pre-wrap;
+}
+
 /* ── v2 Stage 5-b: **부드러운** 뉴모피즘 토큰 (오너 1차 피드백 "좀 더 부드럽게") ──────
    기존 --nm-up 계열은 블러가 짧고 알파가 높아 '눌린 도장'처럼 딱딱하다.
    레퍼런스 Neumo 질감 = **넓은 블러 · 낮은 알파 · 보더 없음 · 큰 라운드**.
