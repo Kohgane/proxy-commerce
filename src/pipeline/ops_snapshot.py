@@ -82,13 +82,27 @@ def registration_counts(marketplace: str = "coupang") -> dict:
 
 
 def recent_rejections(limit: int = 5, marketplace: str = "coupang") -> dict:
-    """P4 반려 감시 큐 최근 N건. 감시 크론이 쓰는 `watch_queue`가 그대로 소스다."""
+    """02 카드 — **감시 대기 + 반려 확정**을 함께 보여준다.
+
+    F5 부검(2026-09-04): 카드 제목은 '반려 감시'인데 소스가 `watch_queue`뿐이었다.
+      `watch_queue`는 `_WATCH_STATUSES=('submitted','unknown')`만 고르므로 **rejected를 구조적으로
+      제외한다** — 03 카드에 REJECTED 2건이 떠 있는데 02는 "반려 건이 없습니다"라고 말했다.
+      화면이 자기 제목을 반박한 것이다. 감시 대기(아직 판정 전)와 반려 확정(판정 끝)은
+      **다른 상태**이므로 지우지 않고 **둘 다** 싣고 라벨로 구분한다.
+    새 집계를 만들지 않는다 — 기존 `watch_queue`·`recent_rejected` 두 산출을 합칠 뿐이다.
+    """
     try:
         from src.db import market_registrations_pg as ledger
         if not ledger.enabled():
             return {"connected": False, "note": "등록 대장 미연결", "rows": []}
-        rows = ledger.watch_queue(marketplace=marketplace, limit=int(limit or 5)) or []
-        return {"connected": True, "note": "", "rows": rows[:int(limit or 5)]}
+        cap = int(limit or 5)
+        watching = [dict(r, phase="watching") for r in
+                    (ledger.watch_queue(marketplace=marketplace, limit=cap) or [])]
+        rejected = [dict(r, phase="rejected") for r in
+                    (ledger.recent_rejected(marketplace=marketplace, limit=cap) or [])]
+        # 반려 확정이 먼저다 — 조치가 필요한 쪽이 위로 온다.
+        return {"connected": True, "note": "", "rows": (rejected + watching)[:cap],
+                "watching": len(watching), "rejected": len(rejected)}
     except Exception as exc:
         logger.warning('반려 큐 조회 실패: %s', exc)
         return {"connected": False, "note": "큐 조회 실패", "rows": []}

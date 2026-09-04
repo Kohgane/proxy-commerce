@@ -184,10 +184,15 @@ def test_s3_signal_row_uses_the_single_connection_judge():
 
 
 def test_s3_diagnostics_are_non_blocking_and_reuse_the_endpoint():
-    """★ 진단은 렌더를 막지 않는다 — 3초 타임아웃 + 엔드포인트 재사용(재구현 0)."""
+    """★ 진단은 렌더를 막지 않는다 — 상한 있는 비동기 + 엔드포인트 재사용(재구현 0).
+
+    ★ 6-b(2026-09-04): 상한이 **전체 3초**에서 **마켓별 상한**으로 바뀌었다. 5마켓 순차
+      실API를 한 요청에 묶으면 3초는 구조적으로 못 맞춘다(라이브에서 상시 '진단 실패').
+      비차단이라는 뜻은 그대로 — 상한의 단위만 옮긴다.
+    """
     html = _tpl()
     assert "markets_integration_diagnostics" in html           # 기존 진단 라우트를 그대로 부른다
-    assert "AbortController" in html and "3000" in html        # 3초 상한
+    assert "AbortController" in html and "PER_MARKET_MS" in html
     # 서버 렌더 경로에는 진단 호출이 없다(있으면 대시보드가 마켓 응답만큼 느려진다).
     assert "run_market_diagnostic" not in SNAP.read_text(encoding="utf-8")
 

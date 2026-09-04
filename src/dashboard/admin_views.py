@@ -4049,6 +4049,8 @@ def reject_watch_apply():
         #   반려 1호(이미지 규격): row.images를 주면 대형본 치환 + 실치수 심사 후 교체 페이로드를 만든다.
         resubmit_fn=lambda sid, updates: _reject_watch_resubmit(up, sid, updates),
         reupload_fn=lambda sid, row: up.request_approval(sid),   # 폴백(구 경로 호환)
+        # F' — 임시저장(승인요청 누락): **승인요청 PUT 한 방**만. 수정도 재생성도 하지 않는다.
+        approve_fn=lambda sid: up.request_approval(sid),
     ) for r in rows]
     return jsonify({"ok": True, "approved": True, "account": account,
                     "applied": sum(1 for x in results if x.get("applied")),

@@ -119,16 +119,23 @@ def _render(html_path, app_css, ops):
 
 # S3 — 진단 응답 스텁. file:// 렌더라 실제 fetch가 안 나가므로, **화면이 응답을 받았을 때**와
 #   **못 받았을 때**를 각각 실제 코드 경로로 재현한다(그림 합성 0).
+# 6-b: 화면이 **마켓별 단건 POST**를 부른다 — 스텁도 그 모양이어야 한다.
 DIAG_OK = """() => {
-  window.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, results: [
-    { market: 'coupang', status: 'connected' },
-    { market: 'smartstore', status: 'connected' },
-    { market: 'elevenst', status: 'api_error', error_code: 'openapi_not_registered',
+  const byMarket = {
+    coupang: { status: 'connected' },
+    smartstore: { status: 'connected' },
+    elevenst: { status: 'api_error', error_code: 'openapi_not_registered',
       action: '11번가 셀러오피스에서 OpenAPI 이용 신청/키 발급 상태를 먼저 확인하세요' },
-    { market: 'woocommerce', status: 'connected' },
-  ]})});
+    woocommerce: { status: 'connected' },
+  };
+  window.fetch = (url, opt) => {
+    const m = JSON.parse((opt && opt.body) || '{}').market;
+    const r = byMarket[m];
+    if (!r) return new Promise(() => {});          // 모르는 마켓은 응답 없음 = 그 점만 '진단 실패'
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, result: { market: m, ...r } }) });
+  };
 }"""
-DIAG_HANG = """() => { window.fetch = () => new Promise(() => {}); }"""   # 응답 없음 → 3초 타임아웃
+DIAG_HANG = """() => { window.fetch = () => new Promise(() => {}); }"""   # 전 마켓 응답 없음
 
 
 def _shoot(br, tag, css, size, ops, stub=None):
@@ -138,7 +145,7 @@ def _shoot(br, tag, css, size, ops, stub=None):
     if stub:
         pg.add_init_script("(" + stub + ")()")
     pg.goto(f"file://{out_html}")
-    pg.wait_for_timeout(3600 if stub is DIAG_HANG else 900)
+    pg.wait_for_timeout(13000 if stub is DIAG_HANG else 900)   # 마켓별 12초 상한 통과 대기
     a = pg.evaluate(AUDIT)
     shot = pg.screenshot()
     pg.close()
