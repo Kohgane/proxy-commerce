@@ -7839,6 +7839,24 @@ def sourcing_register_pipe_register():
     return jsonify(result), status
 
 
+def _reject_watch_queue(account: str, limit: int = 50) -> dict:
+    """P4 크론이 **지금 물고 있는** 감시 대상(등록 대장 status=submitted/unknown). 읽기 전용.
+
+    ★ 왜 화면에 필요한가: 여태 이 목록은 **POST로 빈 폼을 제출해야만** 읽혔고, 그것도 쿠팡
+      자격이 있어야 라이브 조회의 입력으로만 쓰였다. 자격이 없으면 오류 문구만 떠서
+      **크론이 뭘 감시 중인지 볼 방법이 아예 없었다** — 감시가 블랙박스였다.
+      대장을 읽는 건 쿠팡 API를 안 부른다(자격 무관·비용 0).
+    """
+    try:
+        from src.db import market_registrations_pg as REG
+        rows = REG.watch_queue(account=account, limit=int(limit)) or []
+        return {"connected": True, "note": "", "rows": rows}
+    except Exception as exc:
+        logger.warning("등록 대장 조회 실패: %s", exc)
+        # 0건과 '못 읽음'을 구분한다 — 빈 목록을 찍으면 "감시 대상 없음"으로 오독된다.
+        return {"connected": False, "note": "등록 대장을 읽지 못했습니다", "rows": []}
+
+
 @bp.route("/sourcing/reject-watch", methods=["GET", "POST"])
 def sourcing_reject_watch():
     """등록 파이프 P4: 반려감시 — 반려 상품 sid의 `/histories` comment로 3유형 자동 분류·처방·알림.
@@ -7856,25 +7874,20 @@ def sourcing_reject_watch():
 
     scan = None
     account = (request.values.get("account") or "gogane").strip().lower()
+    if account not in ("gogane", "woojoo"):
+        account = "gogane"
     sids_text = ""
+    watch = _reject_watch_queue(account)      # GET에서도 보인다 — 감시가 블랙박스가 되지 않게
     approved = str(_os.getenv("REJECT_WATCH_APPROVED", "0")).lower() in ("1", "true", "yes")
     if request.method == "POST":
         sids_text = (request.form.get("sids") or "").strip()
         sids = [s.strip() for s in sids_text.replace(",", "\n").split() if s.strip()]
-        if account not in ("gogane", "woojoo"):
-            account = "gogane"
         ak, sk, vid = _account_creds(account)
         titles = {}
         if not sids:
-            # 입력이 없으면 **등록 대장**에서 감시 대상을 채운다(등록 파이프 관통 후 수동 입력 불필요).
-            from src.db import market_registrations_pg as REG
-            try:
-                queued = REG.watch_queue(account=account, limit=50)
-            except Exception as exc:
-                queued = []
-                logger.warning("등록 대장 조회 실패: %s", exc)
-            sids = [q["sid"] for q in queued]
-            titles = {q["sid"]: q.get("title") or "" for q in queued}
+            # 입력이 없으면 **등록 대장**에서 감시 대상을 채운다(위 화면에 뜬 그 목록과 같은 소스).
+            sids = [q["sid"] for q in watch["rows"]]
+            titles = {q["sid"]: q.get("title") or "" for q in watch["rows"]}
         if not sids:
             scan = {"error": ("감시 대상이 없습니다 — 등록 대장에 미확정 건이 없습니다. "
                               "특정 상품을 보려면 sid를 직접 입력하세요(한 줄에 하나).")}
@@ -7886,7 +7899,8 @@ def sourcing_reject_watch():
             scan = RW.scan_rejections(items, history_fn=lambda sid, acct: up.get_status_histories(sid))
 
     return render_template("reject_watch.html", page="sourcing", scan=scan, account=account,
-                           sids_text=sids_text, approved=approved, kinds=RW.REJECTION_KINDS)
+                           sids_text=sids_text, approved=approved, kinds=RW.REJECTION_KINDS,
+                           watch=watch)
 
 
 @bp.post("/sourcing/my-sources")

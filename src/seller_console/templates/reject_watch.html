@@ -16,10 +16,52 @@
   <strong>재등록·삭제 실행은 오너 승인 뒤</strong>에만 진행합니다(되돌릴 수 없는 작업).
 </div>
 
+{# 감시 대상 — 크론이 **지금 물고 있는** 대장 건(읽기 전용). 여기가 비어 있으면 크론도 할 일이 없다.
+   대장 조회는 쿠팡 API를 부르지 않는다(자격 무관) — 자격이 없어도 이 표는 뜬다. #}
+<section class="op-card mb-4">
+  <div class="op-card-head">
+    <span class="rp-step-eyebrow">감시 대상</span>
+    <span class="op-tile-sub ms-auto">
+      {% if watch.connected %}{{ watch.rows|length }}건 · 등록 대장 미확정({{ account }})
+      {% else %}상태 확인 불가{% endif %}
+    </span>
+  </div>
+  <div class="op-card-body p-0">
+    {% if not watch.connected %}
+    <div class="op-off p-4">미연결 — {{ watch.note }}<br>
+      <span class="op-tile-sub">0건과 구분하기 위해 숫자를 찍지 않습니다.</span></div>
+    {% elif watch.rows %}
+    <table class="table table-hover mb-0 ch-card-table">
+      <thead>
+        <tr><th class="ps-3">상품 번호</th><th>제목</th><th>계정</th><th class="text-end pe-3">마켓</th></tr>
+      </thead>
+      <tbody>
+        {% for w in watch.rows %}
+        <tr>
+          <td class="ps-3"><code>{{ w.sid }}</code></td>
+          <td class="ch-cell-title">{{ w.title or '(제목 없음)' }}</td>
+          <td><span class="badge ch-badge-src">{{ w.account or account }}</span></td>
+          <td class="text-end pe-3">
+            {% if w.market_url %}<a href="{{ w.market_url }}" target="_blank" rel="noopener noreferrer"
+               class="btn btn-ghost btn-sm">쿠팡에서 보기 <i class="bi bi-box-arrow-up-right"></i></a>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="op-empty p-4">감시 대상이 없어요 — 등록 대장에 미확정 건이 없습니다.</div>
+    {% endif %}
+  </div>
+  <div class="op-card-foot">
+    <span class="op-tile-sub">2시간마다 자동 점검합니다. 아래 조회는 <strong>쿠팡에 실제 사유를 물어보는</strong> 단계예요.</span>
+  </div>
+</section>
+
 <!-- 입력 -->
-<form method="post" action="/seller/sourcing/reject-watch" class="card border-0 shadow-sm mb-4">
-  <div class="card-body">
-    <div class="row g-2 align-items-end">
+<form method="post" action="/seller/sourcing/reject-watch" class="op-card mb-4">
+  <div class="op-card-body">
+    <div class="row g-2 align-items-start">
       <div class="col-auto">
         <label class="form-label small mb-1" for="account">계정</label>
         <select id="account" name="account" class="form-select form-select-sm">
@@ -31,6 +73,7 @@
         <label class="form-label small mb-1" for="sids">반려 상품 번호(sellerProductId, 한 줄에 하나)</label>
         <textarea class="form-control" id="sids" name="sids" rows="4"
           placeholder="123456789&#10;123456790">{{ sids_text }}</textarea>
+        <div class="form-text">비워 두면 <strong>위 감시 대상 전부</strong>를 조회합니다.</div>
       </div>
     </div>
     <div class="d-flex justify-content-between align-items-center mt-2 flex-wrap gap-2">
