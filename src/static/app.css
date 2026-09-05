@@ -1664,3 +1664,60 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .gi-arrow { stroke: var(--gold); }
 .gi-arrow-h { fill: var(--gold); }
 .gi-accent { fill: var(--gold); }
+
+/* ── Stage 6-e: 주문 관리 (오너 확산 브리프) ─────────────────────────────────
+   6-a/6-c/6-d 문법 승계 — 카드 1장에 헤더/바디/푸터, 일괄 액션은 푸터, 높이는 내용이 정한다.
+   이 화면은 표가 본론이라 카드가 셋이다: 요약 · 필터 · 목록.
+
+   ※ 승계 부채 하나를 남기고 간다(숨기지 않는다): 숫자 타일 컴포넌트가 이제 셋이다 —
+     `.ch-stat`(6-c) · `.mk-count`(6-d) · `.od-stat`(여기). 셋이 하는 일이 같다.
+     지금 합치려면 이미 채점 끝난 두 화면의 선언을 건드려야 해서 **6-j에서 한 번에** 합친다.
+     (그 전까지 넷째를 만들지 않는다 — 이 주석이 그 브레이크다.) */
+.od-page {
+  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--space-5); align-items: start;
+}
+.od-page > * { grid-column: 1 / -1; }
+.od-page .form-select, .od-page .form-control, .od-page .op-card-foot .btn { min-height: 44px; }
+/* 표 안 행 액션까지 44px를 강제하면 행이 두 배로 높아진다 — 목록은 밀도가 기능이다.
+   그래서 44px는 **카드 밖 조작 요소**에만 건다(6-d가 전 폭에 건 것과 다른 판단, 근거는 밀도). */
+.od-page .op-card-head .btn { min-height: 44px; }
+
+/* 요약 수치 — 비율 고정 없음(6-c 실측 교훈). 원색은 신호 하나(반품/교환)에만. */
+.od-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-4); }
+.od-stat {
+  position: relative; padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--ink) 3%, var(--surface));
+}
+.od-stat-k { font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
+.od-stat-v {
+  font-family: var(--font-display); font-weight: var(--w-semi);
+  font-size: 1.9rem; line-height: 1.1; color: var(--text-strong);
+}
+/* 기하 1점 — '지금 손봐야 하는 것'만 표시한다. 신규는 청록(정상 유입), 반품은 주황(조치). */
+.od-stat.is-on::after, .od-stat.is-alert::after {
+  content: ""; position: absolute; top: var(--space-3); right: var(--space-3);
+  width: 10px; height: 10px; background: var(--teal);
+}
+.od-stat.is-alert::after { background: var(--orange); }
+/* 0이면 신호를 켜지 않는다 — 없는 일을 붉게 칠하지 않는다. */
+.od-stat.is-zero::after { display: none; }
+
+/* 필터 — 한 줄에 눕히고 넘치면 접힌다(칸마다 col-md-* 쪼개기 대신). */
+.od-filter { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: flex-end; }
+.od-filter > label { flex: 0 0 auto; }
+.od-filter .od-f { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.od-filter .od-f-wide { flex: 1 1 14rem; }
+.od-filter .form-select, .od-filter .form-control { min-width: 8rem; }
+.od-checks { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+
+@media (max-width: 1199.98px) { .od-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 575.98px) { .od-stats { grid-template-columns: minmax(0, 1fr); } }
+.od-check-col { width: 44px; }
+/* 택배사 자동완성 — 모달 위에 떠야 한다(모달 z-index보다 크게). */
+.od-courier-list { z-index: 1060; max-height: 15rem; overflow-y: auto; }
+/* 표 행 액션 — 위계를 낮춘다. 행이 반복되는 자리에 채운 버튼을 두면 **강조가 곧 배경**이 된다
+   (실측: 주황 CTA가 14행에 반복돼 화면 전체가 깜빡였다). 완료 상태만 청록 글자로 표시한다. */
+.od-page .cardcell-actions .btn { border-color: var(--border); }
+.od-page .cardcell-actions .btn.is-done { color: var(--teal); border-color: var(--teal); }
