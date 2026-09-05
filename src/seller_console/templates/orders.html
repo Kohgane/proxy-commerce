@@ -3,148 +3,113 @@
 {% block title %}주문 관리{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-start mb-2">
-  <div>
-    <div class="console-kpi-label mb-1">주문</div>
-    <h4 class="mb-0 fw-bold"><i class="bi bi-bag"></i> 주문 관리</h4>
-  </div>
-  <button id="ordersSyncButton" class="btn btn-primary btn-sm" onclick="syncNow()" aria-label="주문 즉시 동기화">
-    <span id="sync-spinner" class="spinner-border spinner-border-sm d-none" role="status"></span>
-    <i class="bi bi-arrow-clockwise"></i> 지금 동기화
-  </button>
-</div>
-<hr class="pc-hairline mt-0 mb-4">
+{# 디자인 v3 Stage 6-e — 6-a/6-c/6-d 문법 승계: 카드 1장에 헤더/바디/푸터, 액션은 푸터.
+   로직 변경 0: id·onclick 핸들러·data-* 훅 이름은 그대로 둔다(JS가 잡는 자리다). #}
+<div class="od-page">
 
-<div class="pc-status pc-status-info small mb-3">
-  주문·배송 관리 화면이에요. 선택·확인·피드백 흐름을 먼저 점검한 뒤 실행하세요.
-</div>
-<div class="pc-status {% if ops_health.service_available %}pc-status-success{% else %}pc-status-warning{% endif %} small mb-3">
-  <div class="fw-semibold mb-1">주문 운영 라우트 진단</div>
-  {% if ops_health.service_available %}
-  <div>주문/배송 핵심 라우트 상태: 정상. 운영 액션을 바로 진행할 수 있습니다.</div>
-  {% else %}
-  <div>주문 서비스가 일시적으로 준비되지 않았습니다(503). 잠시 후 다시 시도하거나 <a href="/admin/diagnostics">/admin/diagnostics</a>에서 점검하세요.</div>
+  <div class="ch-head">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+      <div>
+        <div class="console-kpi-label mb-1">주문</div>
+        <h4 class="mb-0 fw-bold">주문 관리</h4>
+      </div>
+      <button id="ordersSyncButton" class="btn btn-primary btn-sm" onclick="syncNow()" aria-label="주문 즉시 동기화">
+        <span id="sync-spinner" class="spinner-border spinner-border-sm d-none" role="status"></span>
+        <i class="bi bi-arrow-clockwise"></i> 지금 동기화
+      </button>
+    </div>
+    <hr class="pc-hairline mt-0 mb-0">
+  </div>
+
+  {# 라우트 진단은 **문제일 때만** 띄운다. 정상일 때 '정상입니다' 줄이 상시로 있으면
+     화면이 그 줄에 익숙해져 진짜 503일 때도 안 읽힌다(경보 피로). #}
+  {% if not ops_health.service_available %}
+  <section class="pc-status pc-status-warning small">
+    <div class="fw-semibold mb-1">주문 운영 라우트 진단</div>
+    <div>주문 서비스가 일시적으로 준비되지 않았습니다(503). 잠시 후 다시 시도하거나 <a href="/admin/diagnostics">/admin/diagnostics</a>에서 점검하세요.</div>
+  </section>
   {% endif %}
-</div>
 
-<!-- KPI 카드 (v32 PART3: 대시보드와 동일한 에디토리얼 — 세리프 대형·오버라인·토큰 악센트) -->
-<div class="row g-3 mb-4">
-  <div class="col-6 col-md-3">
-    <div class="card console-card console-kpi-card console-kpi-primary h-100">
-      <div class="card-body">
-        <div class="console-kpi-label mb-1">신규(오늘)</div>
-        <div class="console-stat-value">{{ kpi.today_new }}</div>
-      </div>
+  <!-- 요약 · 필터 한 카드 -->
+  <section class="op-card">
+    <div class="op-card-head">
+      <strong>주문 현황 · 찾기</strong>
+      <span class="od-stat-k">주문·배송 관리 화면이에요. 선택 수 표시 · 실행 전 확인 · 행 단위 결과 피드백.</span>
     </div>
-  </div>
-  <div class="col-6 col-md-3">
-    <div class="card console-card console-kpi-card console-kpi-warning h-100">
-      <div class="card-body">
-        <div class="console-kpi-label mb-1">발송대기</div>
-        <div class="console-stat-value">{{ kpi.pending_ship }}</div>
-      </div>
-    </div>
-  </div>
-  <div class="col-6 col-md-3">
-    <div class="card console-card console-kpi-card console-kpi-success h-100">
-      <div class="card-body">
-        <div class="console-kpi-label mb-1">발송중</div>
-        <div class="console-stat-value">{{ kpi.shipped }}</div>
-      </div>
-    </div>
-  </div>
-  <div class="col-6 col-md-3">
-    <div class="card console-card console-kpi-card console-kpi-danger h-100">
-      <div class="card-body">
-        <div class="console-kpi-label mb-1">반품/교환</div>
-        <div class="console-stat-value">{{ kpi.returned_exchanged }}</div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- 필터 바 -->
-<form method="get" action="/seller/orders" class="card border-0 shadow-sm mb-4">
-  <div class="card-body">
-    <div class="row g-2 align-items-end">
-      <div class="col-md-3">
-        <label class="form-label small mb-1">{{ t('orders.market') }}</label>
-        <div class="d-flex gap-2 flex-wrap">
-          {% for mp in ["coupang", "smartstore", "11st", "kohganemultishop"] %}
-          <div class="form-check form-check-inline">
-            <input class="form-check-input" type="checkbox" name="marketplace" value="{{ mp }}" id="mp-{{ mp }}"
-              {% if mp in (filters.get('marketplace') or []) %}checked{% endif %}>
-            <label class="form-check-label small" for="mp-{{ mp }}">{{ mp }}</label>
-          </div>
-          {% endfor %}
+    <div class="op-card-body">
+      <div class="od-stats">
+        <div class="od-stat {{ 'is-on' if kpi.today_new else 'is-on is-zero' }}">
+          <div class="od-stat-k">신규(오늘)</div><div class="od-stat-v">{{ kpi.today_new }}</div>
+        </div>
+        <div class="od-stat">
+          <div class="od-stat-k">발송대기</div><div class="od-stat-v">{{ kpi.pending_ship }}</div>
+        </div>
+        <div class="od-stat">
+          <div class="od-stat-k">발송중</div><div class="od-stat-v">{{ kpi.shipped }}</div>
+        </div>
+        <div class="od-stat {{ 'is-alert' if kpi.returned_exchanged else 'is-alert is-zero' }}">
+          <div class="od-stat-k">반품/교환</div><div class="od-stat-v">{{ kpi.returned_exchanged }}</div>
         </div>
       </div>
-      <div class="col-md-2">
-        <label class="form-label small mb-1">{{ t('orders.status') }}</label>
-        {# v33 3-5: 주문 상태값 한글화(EN 화면은 영문 유지) #}
-        {% set _status_ko = {"new":"신규접수","paid":"결제완료","preparing":"상품준비중","shipped":"배송중","delivered":"배송완료","canceled":"취소","returned":"반품","exchanged":"교환","refund_requested":"환불요청"} %}
-        {% set _en_orders = (current_lang == 'en') %}
-        <select name="status" class="form-select form-select-sm">
-          <option value="">전체</option>
-          {% for s in ["new","paid","preparing","shipped","delivered","canceled","returned","exchanged","refund_requested"] %}
-          <option value="{{ s }}" {% if filters.get('status') == s %}selected{% endif %}>{{ s if _en_orders else _status_ko.get(s, s) }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-2">
-        <label class="form-label small mb-1">{{ t('orders.start_date') }}</label>
-        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ filters.get('date_from', '') }}">
-      </div>
-      <div class="col-md-2">
-        <label class="form-label small mb-1">{{ t('orders.end_date') }}</label>
-        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ filters.get('date_to', '') }}">
-      </div>
-      <div class="col-md-2">
-        <label class="form-label small mb-1">{{ t('orders.search') }}</label>
-        <input type="text" name="search" class="form-control form-control-sm" placeholder="주문번호/구매자" value="{{ filters.get('search', '') }}">
-      </div>
-      <div class="col-md-1">
-        <button type="submit" class="btn btn-outline-secondary btn-sm w-100">{{ t('orders.search') }}</button>
-      </div>
+      <hr class="ch-divider">
+      <form method="get" action="/seller/orders" class="od-filter">
+        <div class="od-f od-f-wide">
+          <label class="form-label small mb-0">{{ t('orders.market') }}</label>
+          <div class="od-checks">
+            {% for mp in ["coupang", "smartstore", "11st", "kohganemultishop"] %}
+            <div class="form-check form-check-inline m-0">
+              <input class="form-check-input" type="checkbox" name="marketplace" value="{{ mp }}" id="mp-{{ mp }}"
+                {% if mp in (filters.get('marketplace') or []) %}checked{% endif %}>
+              <label class="form-check-label small" for="mp-{{ mp }}">{{ mp }}</label>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="od-f">
+          <label class="form-label small mb-0" for="ordersStatus">{{ t('orders.status') }}</label>
+          {# v33 3-5: 주문 상태값 한글화(EN 화면은 영문 유지) #}
+          {% set _status_ko = {"new":"신규접수","paid":"결제완료","preparing":"상품준비중","shipped":"배송중","delivered":"배송완료","canceled":"취소","returned":"반품","exchanged":"교환","refund_requested":"환불요청"} %}
+          {% set _en_orders = (current_lang == 'en') %}
+          <select name="status" id="ordersStatus" class="form-select form-select-sm">
+            <option value="">전체</option>
+            {% for s in ["new","paid","preparing","shipped","delivered","canceled","returned","exchanged","refund_requested"] %}
+            <option value="{{ s }}" {% if filters.get('status') == s %}selected{% endif %}>{{ s if _en_orders else _status_ko.get(s, s) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="od-f">
+          <label class="form-label small mb-0" for="ordersFrom">{{ t('orders.start_date') }}</label>
+          <input type="date" id="ordersFrom" name="date_from" class="form-control form-control-sm" value="{{ filters.get('date_from', '') }}">
+        </div>
+        <div class="od-f">
+          <label class="form-label small mb-0" for="ordersTo">{{ t('orders.end_date') }}</label>
+          <input type="date" id="ordersTo" name="date_to" class="form-control form-control-sm" value="{{ filters.get('date_to', '') }}">
+        </div>
+        <div class="od-f od-f-wide">
+          <label class="form-label small mb-0" for="ordersSearch">{{ t('orders.search') }}</label>
+          <input type="text" id="ordersSearch" name="search" class="form-control form-control-sm" placeholder="주문번호/구매자" value="{{ filters.get('search', '') }}">
+        </div>
+        <button type="submit" class="btn btn-ghost btn-sm">{{ t('orders.search') }}</button>
+      </form>
     </div>
-  </div>
-</form>
+  </section>
 
-<!-- 주문 테이블 -->
-<div class="card border-0 shadow-sm pc-action-table">
-  <div class="card-header bg-white">
-    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 pc-bulk-toolbar px-1 py-1 rounded-3">
-      <div>
-        <span class="fw-semibold">주문 목록</span>
-        {% if orders %}
-        <div class="small text-muted">선택 수 표시 · 실행 전 확인 · 행 단위 결과 피드백</div>
-        {% endif %}
-      </div>
-      <div class="d-flex align-items-center gap-2 flex-wrap">
-        {% if orders %}
-        <span id="bulkSelectionCount" class="badge text-bg-light">0건 선택</span>
-        <button id="bulkTrackingButton" type="button" class="btn btn-outline-primary btn-sm" onclick="openBulkTrackingModal()" disabled title="주문을 선택하면 사용할 수 있습니다.">{{ t('orders.bulk_tracking') }}</button>
-        <button id="bulkShipButton" type="button" class="btn btn-primary btn-sm" onclick="bulkUpdateSelectedStatus('shipped')" disabled title="배송중으로 변경 가능한 주문을 선택하면 사용할 수 있습니다.">{{ t('orders.bulk_ship') }}</button>
-        <button id="bulkStatusButton" type="button" class="btn btn-outline-secondary btn-sm" onclick="openBulkStatusModal()" disabled title="공통 상태 흐름이 있는 주문을 선택하면 사용할 수 있습니다.">{{ t('orders.bulk_status') }}</button>
-        {% endif %}
-        {% if ops_health.service_available %}
-        <a href="/seller/orders/export.csv" class="btn btn-outline-secondary btn-sm">{{ t('orders.export_csv') }}</a>
-        {% else %}
-        <button type="button" class="btn btn-outline-secondary btn-sm" disabled title="주문 서비스가 준비되면 CSV 내보내기를 다시 사용할 수 있습니다.">CSV 내보내기 (서비스 준비 중)</button>
-        {% endif %}
-      </div>
+<!-- 주문 목록 — 일괄 액션은 카드 푸터(6-c 문법) -->
+  <section class="op-card pc-action-table">
+    <div class="op-card-head">
+      <strong>주문 목록</strong>
+      {% if orders %}
+      <span id="bulkSelectionCount" class="pc-badge pc-badge-muted">0건 선택</span>
+      <span id="bulkActionHint" class="od-stat-k ms-auto">선택한 주문이 없어 일괄 액션을 사용할 수 없습니다.</span>
+      {% endif %}
     </div>
-    {% if orders %}
-    <div id="bulkActionHint" class="small text-muted mt-2">선택한 주문이 없어 일괄 액션을 사용할 수 없습니다.</div>
-    {% endif %}
-  </div>
-  <div class="card-body p-0">
+    <div class="op-card-body p-0">
     {% if orders %}
     <div class="table-responsive">
       <table class="table table-hover table-sm mb-0 table-cards pc-swiss-table">
         <thead class="table-light">
           <tr>
-            <th class="text-center" style="width: 44px;">
+            <th class="text-center od-check-col">
               <input type="checkbox" id="ordersSelectAll" title="전체 선택" aria-label="주문 전체 선택">
             </th>
             <th>마켓</th>
@@ -198,19 +163,19 @@
               {% set si = o.source_info %}
               <div class="d-flex gap-1 flex-wrap mb-1">
                 {% if si and si.linked %}
-                <a class="btn btn-sm btn-cta py-0" href="{{ si.source_url }}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i> 소싱처에서 주문</a>
+                <a class="btn btn-sm btn-ghost py-0" href="{{ si.source_url }}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i> 소싱처에서 주문</a>
                 {% else %}
                 <span class="pc-badge pc-badge-muted" title="주문 상품이 수집 원본과 연결되지 않았어요(수동 등록 등)">원본 미연결</span>
-                <a class="btn btn-sm btn-outline-secondary py-0" href="/seller/catalog" title="상품에 원본 URL을 연결하세요">수동 연결</a>
+                <a class="btn btn-sm btn-ghost py-0" href="/seller/catalog" title="상품에 원본 URL을 연결하세요">수동 연결</a>
                 {% endif %}
-                <button class="btn btn-sm btn-outline-primary py-0" data-copy-order="{{ (si.copy_text if si else '')|e }}" onclick="kgpCopyOrder(this)"><i class="bi bi-clipboard"></i> 주문 정보 복사</button>
-                <button class="btn btn-sm py-0 {{ 'btn-success' if si and si.sourced else 'btn-outline-success' }}" data-sourced="{{ '1' if si and si.sourced else '0' }}"
+                <button class="btn btn-sm btn-ghost py-0" data-copy-order="{{ (si.copy_text if si else '')|e }}" onclick="kgpCopyOrder(this)"><i class="bi bi-clipboard"></i> 주문 정보 복사</button>
+                <button class="btn btn-sm btn-ghost py-0{{ ' is-done' if si and si.sourced else '' }}" data-sourced="{{ '1' if si and si.sourced else '0' }}"
                   onclick="kgpToggleSourced(this, '{{ o.marketplace }}', '{{ o.order_id }}')"><i class="bi bi-check2-circle"></i> <span>{{ '소싱 주문 완료' if si and si.sourced else '소싱 주문 완료로 표시' }}</span></button>
               </div>
               <div class="d-flex gap-1 flex-wrap">
-                <button class="btn btn-outline-primary btn-sm py-0"
+                <button class="btn btn-ghost btn-sm py-0"
                   onclick="openTrackingModal('{{ o.marketplace }}', '{{ o.order_id }}')">운송장</button>
-                <button class="btn btn-outline-secondary btn-sm py-0"
+                <button class="btn btn-ghost btn-sm py-0"
                   onclick="openStatusPrompt('{{ o.marketplace }}', '{{ o.order_id }}', '{{ o.status }}')">상태</button>
               </div>
               <div class="pc-inline-feedback d-none" data-order-feedback="{{ o.marketplace }}::{{ o.order_id }}" role="status" aria-live="polite"></div>
@@ -233,7 +198,20 @@
       </div>
     </div>
     {% endif %}
-  </div>
+    </div>
+    <div class="op-card-foot">
+      {% if orders %}
+      <button id="bulkTrackingButton" type="button" class="btn btn-ghost btn-sm" onclick="openBulkTrackingModal()" disabled title="주문을 선택하면 사용할 수 있습니다.">{{ t('orders.bulk_tracking') }}</button>
+      <button id="bulkShipButton" type="button" class="btn btn-primary btn-sm" onclick="bulkUpdateSelectedStatus('shipped')" disabled title="배송중으로 변경 가능한 주문을 선택하면 사용할 수 있습니다.">{{ t('orders.bulk_ship') }}</button>
+      <button id="bulkStatusButton" type="button" class="btn btn-ghost btn-sm" onclick="openBulkStatusModal()" disabled title="공통 상태 흐름이 있는 주문을 선택하면 사용할 수 있습니다.">{{ t('orders.bulk_status') }}</button>
+      {% endif %}
+      {% if ops_health.service_available %}
+      <a href="/seller/orders/export.csv" class="btn btn-ghost btn-sm ms-auto">{{ t('orders.export_csv') }}</a>
+      {% else %}
+      <button type="button" class="btn btn-ghost btn-sm ms-auto" disabled title="주문 서비스가 준비되면 CSV 내보내기를 다시 사용할 수 있습니다.">CSV 내보내기 (서비스 준비 중)</button>
+      {% endif %}
+    </div>
+  </section>
 </div>
 
 <!-- 운송장 입력 모달 -->
@@ -263,10 +241,9 @@
             >
             <div
               id="tm-courier-listbox"
-              class="list-group position-absolute w-100 shadow-sm d-none"
+              class="list-group position-absolute w-100 shadow-sm d-none od-courier-list"
               role="listbox"
               aria-label="택배사 자동완성"
-              style="z-index: 1060; max-height: 240px; overflow-y: auto;"
             ></div>
           </div>
           <div class="form-text">택배사를 선택하거나 직접 입력하면 운송장 번호 입력으로 바로 이어집니다.</div>

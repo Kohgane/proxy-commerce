@@ -16,10 +16,12 @@ def client():
 
 def test_orders_kpi_editorial_upgrade(client):
     html = client.get("/seller/orders").get_data(as_text=True)
-    # 대시보드와 동일 패턴: 세리프 대형 KPI + 오버라인 라벨 + 토큰 악센트 카드 + 금 헤어라인
-    assert "console-stat-value" in html
-    assert "console-kpi-label" in html
-    assert "console-kpi-card" in html
+    # 대시보드와 동일 패턴: 세리프 대형 KPI + 오버라인 라벨 + 토큰 악센트 카드 + 금 헤어라인.
+    # 6-e에서 컴포넌트가 console-kpi-* → od-stat-*로 옮겼다 — **뜻은 그대로, 이름만 재조준.**
+    assert "od-stat-v" in html                      # 세리프 대형 숫자
+    assert "od-stat-k" in html                      # 오버라인 라벨
+    assert "console-kpi-label" in html              # 페이지 오버라인은 공통 컴포넌트 유지
+    assert "od-stat" in html                        # 토큰 악센트 타일
     assert "pc-hairline" in html
     # 옛 마크업/글리프 잔재 0
     assert "fs-2 fw-bold text-primary" not in html
