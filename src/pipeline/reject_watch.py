@@ -313,9 +313,26 @@ def scan_rejections(items, *, history_fn, classify_fn=None) -> dict:
             "resale_rejections": len(resale), **state_summary(rows)}
 
 
+# W5 — 폴링 큐 졸업 대상. **대장 행은 유지하고 재조회만 중단**한다(기록 삭제 아님).
+#   `unknown`도 actionable=False지만 여기 없다 — '미상'은 아직 아무것도 확정 안 된 상태라
+#   큐에 남아야 한다. 졸업은 "확정됐다"는 뜻이지 "조치 안 한다"는 뜻이 아니다.
+GRADUATING_STATES = ("approved", "brand_fix", "doc_required")
+
+
+def _next_status(row) -> str:
+    """감시 결과 → 대장에 쓸 상태. **dry-run과 실행이 같은 함수를 쓴다** —
+    세는 쪽과 쓰는 쪽이 갈리면 미리 본 숫자가 거짓이 된다."""
+    state = str((row or {}).get("wing_state") or "")
+    if (row or {}).get("error"):
+        return ""            # 조회 실패는 상태를 안 바꾼다 — 확인 실패를 '확인함'으로 만들지 않는다
+    if state in GRADUATING_STATES:
+        return state
+    return "rejected" if (row or {}).get("comment") else "unknown"
+
+
 def watch_registered(*, queue_fn, history_fn, classify_fn=None, record_fn=None,
                      notify_fn=None, limit: int = 50, time_budget_sec: float = 0,
-                     monotonic_fn=None) -> dict:
+                     monotonic_fn=None, dry_run: bool = False) -> dict:
     """**자동 감시 1회전** — 등록 대장에서 감시 대상을 꺼내 조회·분류하고 결과를 되쓴다.
 
     등록 파이프 관통 후의 P4 몫: 오너가 sid를 손으로 넣지 않아도 서버가 **무엇을 등록했는지 알고**
@@ -349,23 +366,24 @@ def watch_registered(*, queue_fn, history_fn, classify_fn=None, record_fn=None,
         done.append(it)
     scan = scan_rejections(done, history_fn=history_fn, classify_fn=classify_fn)
 
+    # W5 dry-run — 무엇이 얼마나 바뀌는지 **쓰기 전에** 센다(2천 건 일괄 변경 앞이라 필수).
+    would = {}
+    for r in scan["rows"]:
+        st = _next_status(r)
+        if st:
+            would[st] = would.get(st, 0) + 1
+    scan["would_change"] = would
+    scan["would_graduate"] = sum(n for s, n in would.items() if s in GRADUATING_STATES)
+    if dry_run:
+        return {**scan, "ok": True, "dry_run": True, "recorded": 0, "notified": False,
+                "budget_exhausted": budget_exhausted,
+                "remaining_hint": max(0, len(items) - len(done)),
+                "elapsed_sec": round(clock() - start, 2)}
+
     recorded = 0
     if record_fn:
         for r in scan["rows"]:
-            state = str(r.get("wing_state") or "")
-            if r.get("error"):
-                # 조회 실패 행은 상태를 바꾸지 않는다(미상 유지) — 확인 실패를 '확인함'으로 만들지 않는다.
-                status = ""
-            elif state == "approved":
-                # T2 승인 졸업 — 여태 이 분기가 없어서 **`approved`를 아무도 안 썼다.**
-                #   심사를 통과한 상품이 `unknown`에 머물러 `_WATCH_STATUSES`에 계속 걸리고,
-                #   2시간마다 영원히 재조회됐다(큐가 줄지 않으니 진짜 감시 대상이 묻힌다).
-                #   Wing이 '승인'이라고 답한 건 확정이다 — 큐에서 내보낸다.
-                status = "approved"
-            elif r.get("comment"):
-                status = "rejected"
-            else:
-                status = "unknown"
+            status = _next_status(r)          # dry-run이 센 것과 **같은 판정**(둘이 갈리면 예고가 거짓)
             try:
                 if record_fn(r["sid"], status=status, reject_kind=r.get("kind", ""),
                              reject_comment=r.get("comment", ""),

@@ -83,3 +83,75 @@ def test_approved_is_a_known_wing_state():
     """`approved`는 발명한 값이 아니다 — 이미 스키마에 있던 걸 비로소 쓰는 것이다."""
     assert RW.WING_STATES["approved"]["actionable"] is False
     assert "approved" not in REG._WATCH_STATUSES          # 큐가 그걸 빼도록 이미 돼 있었다
+
+
+# ── W5: 폴링 큐 졸업 확대 + dry-run ─────────────────────────────────────────────
+
+_W5_HIST = {
+    "A": [{"statusName": "승인완료"}],
+    "B": [{"statusName": "반려", "comment": "대표이미지 최소 500*500"}],
+    "C": [{"statusName": "임시저장중"}],
+    "D": [{"statusName": "브랜드 수정 요청"}],
+    "E": [{"statusName": "증빙 서류 첨부 요청"}],
+}
+
+
+def _w5_run(**kw):
+    q = [{"sid": k, "title": f"상품 {k}", "account": "gogane"} for k in _W5_HIST]
+    return RW.watch_registered(queue_fn=lambda n: q,
+                               history_fn=lambda s, a: _W5_HIST[s], limit=10, **kw)
+
+
+def test_dry_run_writes_nothing_but_counts():
+    """★ 2천 건 일괄 변경 앞이라 **쓰기 전에 세는** 길이 있어야 한다."""
+    def boom(*a, **k):
+        raise AssertionError("dry-run이 기록했다")
+
+    out = _w5_run(record_fn=boom, dry_run=True)
+    assert out["dry_run"] is True and out["recorded"] == 0
+    assert out["would_change"] == {"approved": 1, "rejected": 1, "unknown": 1,
+                                   "brand_fix": 1, "doc_required": 1}
+    assert out["would_graduate"] == 3          # approved + brand_fix + doc_required
+
+
+def test_dry_run_does_not_notify():
+    """세어 보는 것만으로 사람을 깨우지 않는다."""
+    def ring(*a, **k):
+        raise AssertionError("dry-run이 알림을 보냈다")
+
+    _w5_run(record_fn=lambda *a, **k: True, notify_fn=ring, dry_run=True)
+
+
+def test_dry_run_and_write_use_the_same_judge():
+    """★ 세는 쪽과 쓰는 쪽이 갈리면 **미리 본 숫자가 거짓**이 된다 — 판정 함수는 하나다."""
+    REG._MEM.clear()
+    for sid in _W5_HIST:
+        REG.record(sid, account="gogane", title=f"상품 {sid}")
+    preview = _w5_run(record_fn=lambda *a, **k: True, dry_run=True)["would_change"]
+    _w5_run(record_fn=lambda sid, **kw: REG.mark_checked(sid, **kw))
+    actual = {}
+    for sid in _W5_HIST:
+        st = REG.get(sid)["status"]
+        actual[st] = actual.get(st, 0) + 1
+    assert preview == actual
+
+
+def test_non_actionable_classifications_leave_the_polling_queue():
+    """브랜드 수정요청·증빙 필요는 분류가 확정된 건 — 폴링만 멈춘다(대장 행은 남는다)."""
+    REG._MEM.clear()
+    for sid in _W5_HIST:
+        REG.record(sid, account="gogane", title=f"상품 {sid}")
+    _w5_run(record_fn=lambda sid, **kw: REG.mark_checked(sid, **kw))
+    assert [r["sid"] for r in REG.watch_queue(account="gogane")] == ["C"]   # 임시저장만 남는다
+    for sid in ("A", "D", "E"):
+        assert REG.get(sid) is not None, "졸업이 대장 행을 지웠다"          # 기록은 유지
+
+
+def test_unknown_never_graduates():
+    """★ `unknown`도 actionable=False지만 졸업 대상이 아니다.
+
+    '미상'은 아직 아무것도 확정 안 된 상태다 — 졸업은 "확정됐다"는 뜻이지
+    "조치 안 한다"는 뜻이 아니다.
+    """
+    assert "unknown" not in RW.GRADUATING_STATES
+    assert RW.WING_STATES["unknown"]["actionable"] is False       # 그런데도 남는다
