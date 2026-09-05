@@ -22,7 +22,7 @@ MARKET_GUIDE: List[Dict[str, Any]] = [
             {"t": "오른쪽 위 ‘업체정보’ → ‘추가판매정보’ → ‘오픈API 키 발급/관리’ 이동", "d": "메뉴 이름은 계정에 따라 약간 다를 수 있어요. ‘오픈API’ 단어를 찾으세요."},
             {"t": "‘발급’ 버튼을 눌러 Access Key / Secret Key 생성", "d": "Secret Key는 발급 시 한 번만 보입니다. 꼭 복사해 두세요."},
             {"t": "업체코드(Vendor ID) 확인", "d": "‘A’로 시작하는 숫자 코드입니다(예: A00012345). 업체정보 화면에 있습니다."},
-            {"t": "복사한 3개 값을 아래 입력칸에 붙여넣고 저장", "d": "[연결 테스트] → ✅ 연결됨 이면 완료."},
+            {"t": "복사한 3개 값을 아래 입력칸에 붙여넣고 저장", "d": "[연결 테스트]에서 ‘연결됨’이 뜨면 완료."},
         ],
         "fields": [
             {"env": "COUPANG_ACCESS_KEY", "label": "Access Key", "where": "오픈API 발급 화면의 ACCESS KEY"},
@@ -39,7 +39,7 @@ MARKET_GUIDE: List[Dict[str, Any]] = [
         ],
         # 📦 상품 등록 필수 — 키 3개와 별개로 출고지/반품지 정보가 반드시 필요.
         "shipping": {
-            "title": "📦 출고지·반품지 정보 — 상품 등록에 꼭 필요해요",
+            "title": "출고지·반품지 정보 — 상품 등록에 꼭 필요해요",
             "why": "쿠팡은 상품을 올릴 때 ‘어디서 보내고(출고지) · 반품을 어디서 받는지(반품지)’를 "
                    "반드시 요구합니다. 이게 없으면 키가 정상이어도 ‘반품지센터코드를 입력하세요’ 같은 "
                    "오류로 등록이 거부돼요. 한 번만 입력하면 이후 모든 상품 등록에 자동으로 쓰입니다.",
@@ -87,7 +87,7 @@ MARKET_GUIDE: List[Dict[str, Any]] = [
             {"t": "‘애플리케이션 관리’ → ‘애플리케이션 등록’", "d": "판매자용 애플리케이션을 새로 만듭니다."},
             {"t": "애플리케이션 ID(Client ID)와 시크릿(Client Secret) 확인", "d": "Client Secret은 ‘$2a$…’로 시작하는 긴 문자열입니다(전자서명용)."},
             {"t": "필요한 권한(상품 등록/수정, 주문 조회 등) 체크", "d": "권한이 부족하면 등록은 되지만 일부 기능이 막힙니다."},
-            {"t": "ID/Secret을 아래 입력칸에 붙여넣고 저장", "d": "[연결 테스트] → ✅ 연결됨 이면 완료."},
+            {"t": "ID/Secret을 아래 입력칸에 붙여넣고 저장", "d": "[연결 테스트]에서 ‘연결됨’이 뜨면 완료."},
         ],
         "fields": [
             {"env": "NAVER_CLIENT_ID", "label": "Client ID", "where": "애플리케이션 정보의 클라이언트 ID"},
@@ -111,7 +111,7 @@ MARKET_GUIDE: List[Dict[str, Any]] = [
             {"t": "11번가 셀러오피스(soffice.11st.co.kr) 로그인", "d": "판매자 계정으로 로그인합니다."},
             {"t": "‘오픈API’ 메뉴에서 사용 신청", "d": "11번가는 OpenAPI 사용 신청/승인이 필요합니다(미승인 시 500 오류)."},
             {"t": "승인 후 API Key 발급/확인", "d": "발급된 키 한 개를 복사합니다."},
-            {"t": "API Key를 아래 입력칸에 붙여넣고 저장", "d": "[연결 테스트] → ✅ 연결됨 이면 완료."},
+            {"t": "API Key를 아래 입력칸에 붙여넣고 저장", "d": "[연결 테스트]에서 ‘연결됨’이 뜨면 완료."},
         ],
         "fields": [
             {"env": "ELEVENST_API_KEY", "label": "API Key", "where": "오픈API 발급 화면의 키"},
@@ -133,7 +133,7 @@ MARKET_GUIDE: List[Dict[str, Any]] = [
             {"t": "Shopify Admin → ‘Settings’ → ‘Apps and sales channels’ → ‘Develop apps’", "d": "커스텀 앱 개발 화면으로 들어갑니다."},
             {"t": "‘Create an app’으로 앱 생성", "d": "이름은 자유(예: ProxyCommerce)."},
             {"t": "‘Configuration’에서 Admin API 권한 부여", "d": "read/write products·inventory·orders 체크."},
-            {"t": "토큰 발급/복사", "d": "개발자 대시보드 앱이면 ‘앱 자동화 토큰(atkn_…)’, Admin 커스텀앱이면 ‘Admin API access token(shpat_…)’. 둘 다 동작합니다. ⚠️ ‘Client secret(shpss_…)’이나 ‘API key’가 아닙니다."},
+            {"t": "토큰 발급/복사", "d": "개발자 대시보드 앱이면 ‘앱 자동화 토큰(atkn_…)’, Admin 커스텀앱이면 ‘Admin API access token(shpat_…)’. 둘 다 동작합니다. 주의: ‘Client secret(shpss_…)’이나 ‘API key’가 아닙니다."},
             {"t": "토큰을 발급한 앱이 ‘판매할 상점’에 설치되어 있는지 확인", "d": "토큰은 그 앱이 설치된 상점에서만 동작합니다. 다른 상점 도메인을 넣으면 401."},
             {"t": "상점 도메인 + 토큰을 아래 입력칸에 붙여넣고 저장", "d": "상점 도메인은 ‘내상점.myshopify.com’ 형태."},
         ],
@@ -160,7 +160,7 @@ MARKET_GUIDE: List[Dict[str, Any]] = [
             {"t": "WordPress 관리자(wp-admin) 로그인", "d": "사이트 관리자 계정으로 로그인합니다."},
             {"t": "‘WooCommerce → 설정 → 고급 → REST API’ 이동", "d": "REST API 키 관리 화면입니다."},
             {"t": "‘키 추가(Add key)’ → 권한을 ‘읽기/쓰기(Read/Write)’로 생성", "d": "Consumer key/secret가 생성됩니다."},
-            {"t": "사이트 URL + key/secret을 아래 입력칸에 붙여넣고 저장", "d": "[연결 테스트] → ✅ 연결됨 이면 완료."},
+            {"t": "사이트 URL + key/secret을 아래 입력칸에 붙여넣고 저장", "d": "[연결 테스트]에서 ‘연결됨’이 뜨면 완료."},
         ],
         "fields": [
             {"env": "WC_URL", "label": "사이트 URL", "where": "https://내사이트주소"},

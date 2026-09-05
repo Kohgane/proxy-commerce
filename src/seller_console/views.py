@@ -4611,7 +4611,10 @@ def markets_guide():
         return redirect(url_for("auth.login", next=request.url))
     from .market_guide import get_guide
 
-    return render_template("markets_guide.html", page="markets", guide=get_guide())
+    # 허용 IP 안내는 연결 화면과 **같은 소스**로만 만든다(_connect_ip_ctx).
+    # 여기서 따로 만들면 화면마다 다른 IP를 안내하게 된다 — S2-b가 잡은 결함 유형 그대로다.
+    return render_template("markets_guide.html", page="markets", guide=get_guide(),
+                           **_connect_ip_ctx())
 
 
 @bp.get("/m")

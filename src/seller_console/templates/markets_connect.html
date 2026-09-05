@@ -4,71 +4,31 @@
 {% block content %}
 {# v40-C: 2단(좌 마켓 리스트 + 우 상세) + 원클릭 설정 드로어. gogabridj-design 토큰(먹/한지/금/청록).
    정직: 연동 상태는 실제 자격증명 유무로만, 자격증명 마스킹·서버 저장. 가짜 '연동완료' 0. 새 창 0(발급 링크만 새 탭). #}
-<style>
-  .mc-wrap { display: grid; grid-template-columns: 260px 1fr; gap: var(--space-4, 16px); align-items: start; }
-  .mc-nav { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
-  .mc-nav .mc-nav-head { padding: 12px 14px; border-bottom: 1px solid var(--border); font-weight: 700; font-size: .9rem; }
-  .mc-nav-item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 0; background: transparent;
-    padding: 12px 14px; font-size: .92rem; color: var(--text); cursor: pointer; border-bottom: 1px solid var(--border); }
-  .mc-nav-item:last-child { border-bottom: 0; }
-  .mc-nav-item:hover { background: var(--surface-warm); }
-  .mc-nav-item.active { background: var(--ink); color: var(--cream-on-dark, #efe7d6); }
-  .mc-nav-item.active .mc-dot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 30%, transparent); }
-  .mc-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
-  .mc-dot.on { background: var(--teal); } .mc-dot.off { background: var(--muted, #8a8275); } .mc-dot.err { background: var(--orange); }
-  .mc-nav-item .mc-nm { flex: 1; }
-  .mc-panel { display: none; }
-  .mc-panel.active { display: block; }
-  .mc-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
-  /* 상태 뱃지 공통 컴포넌트(수집 화면과 동일 규칙): 청록=연동완료, 회색=미연동, 주황=주의 */
-  .mc-badge { display: inline-flex; align-items: center; gap: 6px; font-size: .78rem; font-weight: 700; padding: 5px 11px; border-radius: 999px; }
-  .mc-badge.on { background: color-mix(in srgb, var(--teal) 14%, transparent); color: var(--teal); }
-  .mc-badge.off { background: color-mix(in srgb, var(--muted, #8a8275) 16%, transparent); color: var(--text-muted); }
-  .mc-kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
-  .mc-kv .kv { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: var(--surface-warm); }
-  .mc-kv .kv .k { font-size: .72rem; color: var(--text-muted); font-weight: 600; }
-  .mc-kv .kv .v { font-size: .9rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
-  /* 원클릭 설정 드로어(우측 슬라이드 오버레이 — 새 창·라우트 이동 0) */
-  .mc-drawer-overlay { position: fixed; inset: 0; background: rgba(26,23,20,.4); z-index: 1050; display: none; }
-  .mc-drawer-overlay.open { display: block; }
-  .mc-drawer { position: fixed; top: 0; right: 0; height: 100vh; width: min(480px, 94vw); background: var(--surface);
-    box-shadow: -12px 0 40px rgba(26,23,20,.2); z-index: 1060; transform: translateX(100%); transition: transform .24s var(--ease, ease); display: flex; flex-direction: column; }
-  .mc-drawer.open { transform: none; }
-  .mc-drawer .dh { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--border); }
-  .mc-drawer .db { padding: 18px; overflow: auto; flex: 1; }
-  @media (max-width: 860px) {
-    .mc-wrap { grid-template-columns: 1fr; }
-    .mc-nav { display: flex; overflow-x: auto; } .mc-nav .mc-nav-head { display: none; }
-    .mc-nav-item { border-bottom: 0; border-right: 1px solid var(--border); white-space: nowrap; }
-    .mc-drawer { width: 100vw; }
-  }
-  @media (prefers-reduced-motion: reduce) { .mc-drawer { transition: none; } }
-</style>
 <section class="mb-4">
   <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
     <div>
-      <div class="overline" style="font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--gold-ink);font-weight:700;">마켓 연동</div>
+      <div class="console-kpi-label">마켓 연동</div>
       {% if single_market and market_statuses %}
       <h1 class="h4 mb-1 mt-1">{{ market_statuses[0].label }} 연결</h1>
       <p class="text-muted mb-0"><strong>{{ market_statuses[0].label }}</strong> API 키를 입력하고 ‘인증하기’로 확인하세요. <em>모두 이 화면에서 진행돼요.</em></p>
       {% else %}
       <h1 class="h4 mb-1 mt-1">마켓 연결</h1>
-      <p class="text-muted mb-0">왼쪽에서 마켓을 고르고 <strong>‘계정 설정’</strong>을 누르면, 이 화면 위에서 바로 연동해요. <em>모두 이 화면에서 진행돼요.</em></p>
+      <p class="text-muted mb-0">마켓을 고르고 <strong>‘계정 설정’</strong>을 누르면, 이 화면 위에서 바로 연동해요. <em>모두 이 화면에서 진행돼요.</em></p>
       {% endif %}
     </div>
     <div class="d-flex gap-2 flex-wrap">
-      <button type="button" class="btn btn-cta btn-sm" id="mcNewMarket"><i class="bi bi-plus-lg"></i> 신규 마켓 연동</button>
-      <a href="/seller/markets/guide" class="btn btn-outline-primary btn-sm"><i class="bi bi-book"></i> 연동 가이드</a>
-      <a href="/seller/markets" class="btn btn-outline-secondary btn-sm">← 마켓 현황</a>
+      <button type="button" class="btn btn-ghost btn-sm" id="mcNewMarket"><i class="bi bi-plus-lg"></i> 신규 마켓 연동</button>
+      <a href="/seller/markets/guide" class="btn btn-ghost btn-sm"><i class="bi bi-book"></i> 연동 가이드</a>
+      <a href="/seller/markets" class="btn btn-ghost btn-sm">← 마켓 현황</a>
     </div>
   </div>
 
   {% if single_market %}
-  <a href="/seller/markets/connect" class="btn btn-outline-secondary btn-sm mb-3">← 전체 마켓 보기</a>
+  <a href="/seller/markets/connect" class="btn btn-ghost btn-sm mb-3">← 전체 마켓 보기</a>
   {% endif %}
 
-  <div class="alert alert-light border small d-flex gap-2 align-items-start mb-3" role="note">
-    <span style="font-size:1.05rem"><i class="bi bi-key"></i></span>
+  <div class="pc-status pc-status-info small d-flex gap-2 align-items-start mb-3" role="note">
+    <i class="bi bi-key"></i>
     <div>여기에 넣는 건 <strong>‘내 마켓 키’</strong>(쿠팡·네이버 등에서 발급받은 본인 API 키)예요.
       서버 환경변수와는 다릅니다 — <strong>그건 운영자가 관리하고 여기엔 입력하지 않아도 됩니다.</strong>
       입력한 키는 <strong>안전하게 암호화</strong>되어 보관돼요.
@@ -82,7 +42,7 @@
        여기에 공유 대역 IP를 뭉뚱그려 적는 게 지뢰였다(등록해도 며칠 뒤 다시 막힘). #}
   {% set gated = allowlist_ips.get('coupang', {}) %}
   {% set direct = allowlist_ips.get('elevenst', {}) %}
-  <div class="alert alert-warning d-flex flex-column gap-2 mb-3" role="note">
+  <div class="pc-status pc-status-warning d-flex flex-column gap-2 mb-3" role="note">
     <div class="d-flex flex-wrap gap-2 align-items-center">
       <i class="bi bi-hdd-network"></i>
       <span class="small mb-0"><strong>쿠팡 · 스마트스토어</strong>는 아래 <strong>고정 IP 하나</strong>만 허용 목록에 등록하세요:</span>
@@ -115,7 +75,7 @@
               data-market="{{ m.market }}" data-label="{{ m.label }}" data-connected="{{ '1' if m.connected else '0' }}">
         <span class="mc-dot {{ 'on' if m.connected else 'off' }}"></span>
         <span class="mc-nm">{{ m.label }}</span>
-        <span class="small" style="opacity:.7">{{ '연동완료' if m.connected else '미연동' }}</span>
+        <span class="mc-st">{{ '연동완료' if m.connected else '미연동' }}</span>
       </button>
       {% endfor %}
     </div>
@@ -125,7 +85,7 @@
       {% for m in market_statuses %}
       {% set _g = (guide_map or {}).get(m.market) %}
       <div class="mc-panel mc-market-col" data-market="{{ m.market }}" data-label="{{ m.label }}" data-connected="{{ '1' if m.connected else '0' }}">
-        <div class="mc-card p-3 p-md-4">
+        <div class="op-card p-3 p-md-4">
           <div class="d-flex align-items-center justify-content-between gap-2 mb-2 flex-wrap">
             <h2 class="h5 mb-0">{{ m.label }}</h2>
             <span class="mc-badge {{ 'on' if m.connected else 'off' }}" data-role="status-badge">
@@ -135,9 +95,9 @@
 
           {% if m.market == 'coupang' %}
           <!-- v45: 쿠팡 정직 안내(판매자당 키 1개·수정 한도·반영 지연) -->
-          <div class="mc-note-coupang mb-3" style="border-left:3px solid var(--warn,#C9A24B); background:color-mix(in srgb, var(--warn,#C9A24B) 8%, transparent); border-radius:8px; padding:.6rem .8rem;">
+          <div class="mc-note mc-note-coupang mb-3">
             <div class="small fw-semibold mb-1"><i class="bi bi-info-circle"></i> 쿠팡 연동 전 알아두기</div>
-            <ul class="small mb-0 ps-3" style="line-height:1.6;">
+            <ul class="small mb-0 ps-3">
               <li>쿠팡 API 키는 <strong>판매자당 1개</strong>예요 — 다른 셀러툴과 <strong>동시 연동은 안 돼요</strong>(한 곳에서만 사용).</li>
               <li>연동 정보 <strong>수정은 주 10회로 제한</strong>되고, 바꾼 값이 <strong>반영되기까지 최대 30분</strong> 걸릴 수 있어요.</li>
             </ul>
@@ -163,7 +123,7 @@
               <i class="bi bi-gear"></i> {{ '연동 정보 변경' if m.connected else '계정 설정' }}
             </button>
             {% if _g and _g.official_url %}
-            <a href="{{ _g.official_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-cta btn-sm">
+            <a href="{{ _g.official_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm">
               <i class="bi bi-box-arrow-up-right"></i> {{ _g.official_label or '키 발급 페이지' }}
             </a>
             {% endif %}
@@ -194,7 +154,7 @@
 <div class="mc-drawer-overlay" id="mcDrawerOverlay" onclick="mcCloseDrawer()"></div>
 <aside class="mc-drawer" id="mcDrawer" aria-hidden="true" aria-label="마켓 계정 설정">
   <div class="dh">
-    <div><div class="overline" style="font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;color:var(--gold-ink);font-weight:700;">계정 설정</div>
+    <div><div class="console-kpi-label">계정 설정</div>
       <div class="fw-bold" id="mcDrawerTitle">마켓 연동</div></div>
     <button type="button" class="btn btn-ghost btn-sm" onclick="mcCloseDrawer()" aria-label="닫기"><i class="bi bi-x-lg"></i></button>
   </div>
@@ -204,19 +164,19 @@
     <form class="market-connect-form mc-drawer-form" data-market="{{ m.market }}" autocomplete="off" style="display:none;">
       <div class="small text-muted mb-2">① 키 발급받기 · ② 아래에 붙여넣기 · ③ 인증하기. <em>모두 이 화면에서 진행돼요.</em></div>
       {% if _g and _g.official_url %}
-      <a href="{{ _g.official_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-cta btn-sm w-100 mb-3">
+      <a href="{{ _g.official_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm w-100 mb-3">
         <i class="bi bi-box-arrow-up-right"></i> {{ _g.official_label or '발급 페이지 열기' }}</a>
       {% endif %}
       {% for f in m.fields %}
       {% if f.section %}
       <div class="mt-3 mb-2 pt-2 border-top">
-        <div class="fw-semibold small text-primary">{{ f.section }}</div>
+        <div class="console-kpi-label">{{ f.section }}</div>
         <div class="small text-muted">이 항목은 <strong>{{ m.label }}</strong>에만 필요해요. (다른 마켓엔 없어요.)</div>
       </div>
       {% endif %}
       <div class="mb-2">
         <label class="form-label small mb-1">{{ f.label }}{% if f.required %} <span class="text-danger">*</span>{% endif %}
-          {% if f.from_global %}<span class="badge text-bg-light ms-1">서버 환경변수 사용 중</span>{% endif %}</label>
+          {% if f.from_global %}<span class="pc-badge pc-badge-muted ms-1">서버 환경변수 사용 중</span>{% endif %}</label>
         <input type="{{ 'password' if f.secret else 'text' }}" class="form-control form-control-sm" name="{{ f.env }}"
                data-secret="{{ '1' if f.secret else '0' }}"
                placeholder="{{ '저장됨 (' ~ f.display ~ ')' if (f.has_value and f.secret) else (f.display or f.env) }}"
@@ -225,10 +185,10 @@
       </div>
       {% endfor %}
       <div class="d-flex flex-wrap gap-2 mt-3">
-        <button type="button" class="btn btn-outline-primary btn-sm" data-action="test"><i class="bi bi-plug"></i> 인증하기</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-action="test"><i class="bi bi-plug"></i> 인증하기</button>
         <button type="submit" class="btn btn-primary btn-sm" data-action="save"><i class="bi bi-save"></i> 저장</button>
         {% if m.has_seller_credentials %}
-        <button type="button" class="btn btn-outline-danger btn-sm ms-auto" data-action="disconnect">연결 해제</button>
+        <button type="button" class="btn btn-ghost btn-sm ms-auto" data-action="disconnect">연결 해제</button>
         {% endif %}
       </div>
       <div class="small mt-2 d-none" data-role="test-result"></div>

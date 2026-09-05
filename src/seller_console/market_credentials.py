@@ -35,7 +35,7 @@ MARKET_CRED_FIELDS: Dict[str, List[Dict[str, Any]]] = {
         {"env": "COUPANG_VENDOR_ID", "label": "Vendor ID", "secret": False, "required": True},
         # 📦 출고지·반품지 — 상품 등록 시 쿠팡이 필수로 요구(없으면 등록 거부). 한 번만 입력하면 됨.
         {"env": "COUPANG_VENDOR_USER_ID", "label": "Wing 로그인 ID", "secret": False, "required": False,
-         "section": "📦 출고지·반품지 정보 — 상품 등록에 필수 (한 번만 입력하면 모든 등록에 자동 사용)",
+         "section": "출고지·반품지 정보 — 상품 등록에 필수 (한 번만 입력하면 모든 등록에 자동 사용)",
          "help": "쿠팡 윙에 로그인할 때 쓰는 아이디(이메일/ID). Vendor ID(A+숫자)와 다릅니다."},
         {"env": "COUPANG_OUTBOUND_SHIPPING_PLACE_CODE", "label": "출고지 코드", "secret": False, "required": False,
          "help": "쿠팡 윙 → 판매자정보 → 배송정보(출고지/반품지) → ‘출고지’의 코드(숫자). 예: 7437895"},
