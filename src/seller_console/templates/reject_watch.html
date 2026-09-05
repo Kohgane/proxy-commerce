@@ -83,6 +83,26 @@
   </div>
 </form>
 
+<!-- 소급 재무장 — 이미 큐를 떠난 건을 다시 감시 대상으로 -->
+<section class="op-card mb-4">
+  <div class="op-card-head">
+    <strong>감시 재무장</strong>
+    <span class="op-tile-sub">이미 확정 상태로 앉아 큐에서 빠진 건을 다시 감시 대상으로 올려요.</span>
+  </div>
+  <div class="op-card-body">
+    <label class="form-label small mb-1" for="rearmSids">상품 번호(한 줄에 하나)</label>
+    <textarea class="form-control" id="rearmSids" rows="2" placeholder="16369251981"></textarea>
+    <div class="form-text">
+      마켓에 아무것도 보내지 않아요 — 대장 상태만 <strong>‘심사 중’</strong>으로 되돌립니다.
+      다음 자동 점검이 쿠팡의 실제 상태로 다시 덮어써요. 분류·사유 기록은 그대로 남습니다.
+    </div>
+    <pre class="rw-result mt-2" id="rearmResult" hidden></pre>
+  </div>
+  <div class="op-card-foot">
+    <button type="button" class="btn btn-ghost btn-sm" id="rearmBtn"><i class="bi bi-arrow-repeat"></i> 재무장</button>
+  </div>
+</section>
+
 {% if scan is not none %}
   {% if scan.error %}
     <div class="pc-status pc-status-warning small mb-4">{{ scan.error }}</div>
@@ -244,6 +264,38 @@
           show(sid, '전송 실패', String(err));
         }).then(function () { btn.disabled = false; });
       });
+    });
+  });
+})();
+
+// 소급 재무장 — 처방 실행과 **다른 라우트·다른 성격**이라 로직을 섞지 않는다(마켓 호출 0).
+(function () {
+  var btn = document.getElementById('rearmBtn');
+  var box = document.getElementById('rearmSids');
+  var out = document.getElementById('rearmResult');
+  if (!btn || !box || !out) return;
+  btn.addEventListener('click', function () {
+    var sids = box.value.split('\n').map(function (x) { return x.trim(); })
+                        .filter(function (x) { return x; });
+    if (!sids.length) { pcToast('상품 번호를 입력하세요.', 'error'); return; }
+    var msg = sids.length + '건을 다시 감시 대상으로 올립니다.\n'
+            + '마켓에는 아무것도 보내지 않아요 — 대장 상태만 ‘심사 중’으로 되돌립니다.';
+    pcConfirm(msg, { confirmLabel: '재무장', title: '감시 재무장' }).then(function (ok) {
+      if (!ok) return;
+      btn.disabled = true;
+      fetch('/admin/reject-watch/rearm', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ sids: sids })
+      }).then(function (r) {
+        return r.text().then(function (body) {
+          out.hidden = false;                       // 응답 원문 그대로 — 요약하면 부검이 안 된다
+          out.textContent = 'HTTP ' + r.status + '\n' + body;
+        });
+      }).catch(function (err) {
+        out.hidden = false;
+        out.textContent = '전송 실패\n' + String(err);
+      }).then(function () { btn.disabled = false; });
     });
   });
 })();

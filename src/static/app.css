@@ -24,6 +24,11 @@
   --teal: #119A8E;       /* 브랜드/보조 액션/링크/현재위치 */
   --orange: #F5821F;     /* 주요 행동 CTA 전용 */
   --text-strong: #1A1714; --text: #3A352F; --text-muted: #7A726A;
+  /* ★ 6-d에서 발견: `--muted`를 8곳이 쓰는데 **선언이 없었다.**
+     정의 없는 var()는 오류가 아니라 **그 선언 하나가 조용히 무효**가 된다 —
+     6-a 마켓 타일의 '미연결 회색 점'이 그래서 아예 안 그려지고 있었다(빈 자리로 보였다).
+     스킬 토큰표에 있는 이름이라 호출부를 고치지 않고 **선언을 채운다**(단일 소스 유지). */
+  --muted: #8A8275;
   --bg: #F7F2E8; --surface: #FFFFFF; --surface-warm: #FBF8F1; --border: #E7DECC;
   --success: #2E7D5B; --warn: #C9821F; --danger: #C2503C;
   /* 브랜드 음영(hover/텍스트) 단일소스 — 컴포넌트에서 하드코딩 금지 */
@@ -1477,3 +1482,185 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
   .rp-strip { gap: var(--space-4); }
   .rp-stat + .rp-stat { padding-left: var(--space-4); }
 }
+
+/* ── Stage 6-d: 마켓 3종 — 현황 · 연결 · 발급 가이드 (오너 확산 브리프) ────────
+   6-a/6-c 문법 승계: 카드 1장에 헤더/바디/푸터 · 액션은 푸터 · 미연결은 0을 안 찍는다.
+   4믹스 배분은 6-a와 같다 — Swiss(격자·위계) / Bauhaus(신호 1점) / Neumo(조작 요소) /
+   Glass(오버레이=연결 드로어). **넷이 한 요소에 겹치지 않는다.**
+
+   ★ 이 슬라이스는 템플릿 `<style>` 2장(연결 1 · 가이드 1)을 옮겨 온 것이다.
+     클래스 이름(mc-*, guide-*)은 **그대로 둔다** — JS가 잡는 훅이라 개명이 곧 로직 변경이다.
+
+   높이는 내용이 정한다(6-c 실측 교훈): 마켓 카드는 안에 담기는 줄 수가 마켓마다 다르다.
+   비율을 고정하면 진단 문구가 길어질 때 잘리거나 여백만 남는다. */
+.mk-page {
+  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--space-5); align-items: start;
+}
+.mk-page > * { grid-column: 1 / -1; }
+
+/* 마켓 타일 — Bauhaus 기하 모듈이되 비율 고정 없음. 신호는 우상단 사각 1점. */
+.mk-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-4); }
+.mk-tile {
+  position: relative; display: flex; flex-direction: column; gap: var(--space-2);
+  padding: var(--space-4); padding-right: calc(var(--space-4) + var(--space-4));
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--ink) 3%, var(--surface));
+}
+.mk-tile::after {                       /* 상태 = 기하 1점(원색은 실패에만) */
+  content: ""; position: absolute; top: var(--space-4); right: var(--space-4);
+  width: 12px; height: 12px; background: var(--muted);
+}
+.mk-tile[data-market-state="connected"]::after { background: var(--teal); }
+.mk-tile[data-market-state="scope_error"]::after,
+.mk-tile[data-market-state="auth_error"]::after,
+.mk-tile[data-market-state="api_error"]::after { background: var(--orange); }
+.mk-tile-nm { font-weight: var(--w-semi); font-size: .96rem; color: var(--text-strong); }
+.mk-tile-sub { font-size: .74rem; color: var(--text-muted); line-height: 1.55; }
+.mk-tile-sum { font-size: .8rem; font-weight: var(--w-semi); color: var(--text-strong); }
+.mk-tile-acts { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: auto; }
+.mk-tile-acts .btn { min-height: 44px; }
+.mk-tile-steps { margin: 0; padding-left: 1.1em; font-size: .74rem; color: var(--text-muted); }
+/* 참고값(권한·env·확인 위치)은 접어 둔다 — 평소엔 신호를 가리고, 필요할 때만 편다. */
+.mk-ref { font-size: .72rem; color: var(--text-muted); }
+.mk-ref > summary { cursor: pointer; letter-spacing: .04em; }
+.mk-ref > div { margin-top: var(--space-2); line-height: 1.7; }
+
+/* 마켓별 등록 수치 — 숫자 넷을 한 줄로. 0과 '미연동'을 조판으로 구분한다. */
+.mk-counts { display: flex; gap: var(--space-4); }
+.mk-count { flex: 1 1 0; min-width: 0; text-align: center; }
+.mk-count-v {
+  font-family: var(--font-display); font-weight: var(--w-semi);
+  font-size: 1.35rem; line-height: 1.1; color: var(--text-strong);
+}
+.mk-count-v.is-alert { color: var(--danger); }      /* 오류만 원색 — 신호 1점 */
+.mk-count-k { font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
+
+/* 44px 규율 — 6-a가 전 폭에 건 것. **카드 푸터만 걸면 안 된다**: 실측에서 헤더의 ghost
+   버튼(지금 동기화·실연동 재진단)과 가이드 바로가기 칩이 36px로 남아 17개가 미달이었다. */
+.mk-page .form-select, .mk-page .form-control, .mk-page .btn { min-height: 44px; }
+.mk-page .btn { display: inline-flex; align-items: center; gap: .35em; }
+/* 6-c 교훈 승계: 테두리 없는 ghost는 **버튼으로 안 읽힌다**(글자처럼 보인다).
+   6-c는 `.op-card` 안에만 걸어서 이 화면 헤더의 ghost 두 개가 다시 맨텍스트로 남았다. */
+.mk-page .btn-ghost { border-color: var(--border); }
+/* 타일이 세로 flex라 자식이 **가로로 늘어난다** — 뱃지가 폭 전체를 먹어 알약이 막대가 됐다.
+   (실측: '검사 중' 뱃지가 카드 폭 100%) 뱃지·details는 내용 폭으로 붙인다. */
+.mk-tile > span, .mk-tile > .mk-ref { align-self: flex-start; }
+.mk-filter { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
+.mk-filter .form-select, .mk-filter .form-control { width: auto; min-width: 9rem; }
+.mk-filter-count { margin-left: auto; font-size: .78rem; color: var(--text-muted); }
+
+@media (max-width: 1199.98px) { .mk-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 575.98px) {
+  .mk-grid { grid-template-columns: minmax(0, 1fr); }
+  .mk-counts { flex-wrap: wrap; }
+  .mk-count { flex: 1 1 40%; }
+}
+
+/* ── 마켓 연결(markets_connect) — 좌 목록 + 우 상세 + 설정 드로어 ─────────────
+   드로어가 이 화면의 **Glass 표면**이다(오버레이에만 유리). 목록·카드는 Neumo/Swiss. */
+.mc-wrap { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: var(--space-4); align-items: start; }
+.mc-nav { background: var(--surface); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--nm-soft-sm); }
+.mc-nav .mc-nav-head {
+  padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border);
+  font-size: .7rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted);
+}
+.mc-nav-item {
+  display: flex; align-items: center; gap: var(--space-3); width: 100%; text-align: left;
+  border: 0; border-bottom: 1px solid var(--border); background: transparent;
+  padding: var(--space-3) var(--space-4); font-size: .92rem; color: var(--text-strong);
+  cursor: pointer; min-height: 44px;
+}
+.mc-nav-item:last-child { border-bottom: 0; }
+.mc-nav-item:hover { background: var(--surface-warm); }
+.mc-nav-item.active { background: var(--ink); color: var(--cream); }
+.mc-nav-item.active .mc-dot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 30%, transparent); }
+.mc-nav-item .mc-nm { flex: 1 1 auto; min-width: 0; }
+.mc-nav-item .mc-st { font-size: .74rem; opacity: .72; }
+/* 상태 마커 — **사각이다.** 원래 원형이었는데 템플릿 <style> 안에 있어 아무 규칙도 안 걸렸다.
+   단일 소스로 옮기니 v2 '원형·기하 액센트 0'과 6-a 사각 신호 어휘에 둘 다 어긋난다는 게 드러났다.
+   이관은 이럴 때 값을 맞추는 자리다 — 옮기면서 그대로 두면 위반을 정본으로 승격시키는 꼴이다. */
+.mc-dot { width: 9px; height: 9px; flex: none; background: var(--muted); }
+.mc-dot.on { background: var(--teal); }
+.mc-dot.err { background: var(--orange); }
+.mc-panel { display: none; }
+.mc-panel.active { display: block; }
+.mc-badge {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  font-size: .78rem; font-weight: 700; padding: .34em .74em; border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 14%, transparent); color: var(--text-muted);
+}
+.mc-badge.on { background: color-mix(in srgb, var(--teal) 14%, transparent); color: var(--teal); }
+/* 마스킹된 연동 값 — 키/값 한 줄(세로 쪼개짐 0). */
+.mc-kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--space-3); }
+.mc-kv .kv { border-radius: var(--radius); padding: var(--space-3); background: var(--surface-warm); }
+.mc-kv .kv .k { font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
+.mc-kv .kv .v {
+  font-size: .9rem; font-weight: var(--w-semi); margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* 쿠팡 사전 고지 — 좌측 악센트 1점(6-c `.op-strip-warn`과 같은 문법). */
+.mc-note { border-left: 3px solid var(--warn); border-radius: var(--radius); padding: var(--space-3) var(--space-4);
+  background: color-mix(in srgb, var(--warn) 8%, transparent); }
+/* 드로어 = Glass. 새 창·라우트 이동 0(오버레이). */
+.mc-drawer-overlay {
+  position: fixed; inset: 0; z-index: 1050; display: none;
+  background: color-mix(in srgb, var(--ink) 40%, transparent);
+}
+.mc-drawer-overlay.open { display: block; }
+.mc-drawer {
+  position: fixed; top: 0; right: 0; height: 100vh; width: min(480px, 94vw); z-index: 1060;
+  display: flex; flex-direction: column;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(14px) saturate(130%);
+  box-shadow: var(--nm-up-lg);
+  transform: translateX(100%); transition: transform var(--dur) var(--ease);
+}
+.mc-drawer.open { transform: none; }
+.mc-drawer .dh {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--space-4); border-bottom: 1px solid var(--border);
+}
+.mc-drawer .db { padding: var(--space-4); overflow: auto; flex: 1 1 auto; }
+.mc-drawer .db .btn, .mc-drawer .db .form-control { min-height: 44px; }
+@media (max-width: 860px) {
+  .mc-wrap { grid-template-columns: minmax(0, 1fr); }
+  .mc-nav { display: flex; overflow-x: auto; }
+  .mc-nav .mc-nav-head { display: none; }
+  .mc-nav-item { border-bottom: 0; border-right: 1px solid var(--border); white-space: nowrap; }
+  .mc-drawer { width: 100vw; }
+}
+@media (prefers-reduced-motion: reduce) { .mc-drawer { transition: none; } }
+
+/* ── 발급 가이드(markets_guide) ───────────────────────────────────────────────
+   스텝퍼 번호는 **부트스트랩 파랑(#0d6efd)** 이었다 — 우리 팔레트에 없는 색이라
+   이 화면만 남의 제품처럼 보였다. 먹 원판 + 금 화살표로 되돌린다. */
+.guide-stepper { display: flex; flex-wrap: wrap; align-items: stretch; gap: 0; }
+.guide-step { flex: 1 1 0; min-width: 150px; text-align: center; position: relative; padding: 0 var(--space-2); }
+.guide-step .num {
+  width: 34px; height: 34px; border-radius: var(--radius-sm);   /* 원판 → 각진 모듈(v2 원형 0) */
+  background: var(--ink); color: var(--cream);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-weight: 700; margin: 0 auto var(--space-2);
+}
+.guide-step .lbl { font-size: .85rem; color: var(--text-muted); }
+.guide-step:not(:last-child)::after {
+  content: "→"; position: absolute; right: calc(var(--space-2) * -1); top: 6px;
+  color: var(--gold); font-weight: 700;
+}
+.guide-fieldmap td { vertical-align: middle; }
+.guide-jump a { text-decoration: none; }
+.guide-illu { max-width: 560px; }
+/* 개념 일러스트 — 색은 전부 여기서 준다(템플릿 hex 0).
+   `fill`을 프레젠테이션 속성으로 두면 var()가 안 먹으므로 **CSS로만** 칠한다. */
+.gi-frame { fill: var(--surface-warm); stroke: var(--border); }
+.gi-bar { fill: color-mix(in srgb, var(--ink) 8%, var(--surface-warm)); }
+.gi-slot { fill: var(--surface); stroke: var(--border); }
+.gi-cta { fill: var(--ink); }
+.gi-ok { fill: var(--teal); }
+.gi-on { fill: var(--cream); }                 /* 어두운 판 위 글자 */
+.gi-t { fill: var(--text-strong); }
+.gi-tm { fill: var(--text-muted); }
+.gi-arrow { stroke: var(--gold); }
+.gi-arrow-h { fill: var(--gold); }
+.gi-accent { fill: var(--gold); }

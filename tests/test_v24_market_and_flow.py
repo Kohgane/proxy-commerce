@@ -28,7 +28,7 @@ def test_markets_no_mock_jargon_for_users(client):
 def test_markets_keeps_connection_controls(client):
     """상단 연동 상태/컨트롤(실데이터)은 유지."""
     html = client.get("/seller/markets").get_data(as_text=True)
-    assert "마켓 연동 컨트롤 센터" in html
+    assert "마켓 연동 상태" in html   # 6-d에서 카피 정리
     assert "/seller/markets/connect" in html
 
 

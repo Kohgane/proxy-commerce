@@ -2,272 +2,245 @@
 {% block title %}마켓 현황{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-start mb-2">
-  <div>
-    <div class="console-kpi-label mb-1">마켓</div>
-    <h4 class="fw-bold mb-0"><i class="bi bi-shop"></i> {{ t('markets.title') }}</h4>
-  </div>
-  <div class="d-flex gap-2 align-items-center">
-    {% if not market_data.is_mock %}
-    <span class="pc-badge pc-badge-on">실 데이터 ({{ market_data.source }})</span>
-    {% endif %}
-    {% if market_data.fetched_at %}
-    <span class="text-muted small" id="syncTime" data-fetched="{{ market_data.fetched_at }}">
-      마지막 동기화: <span id="syncAgo">방금 전</span>
-    </span>
-    {% endif %}
-    <button class="btn btn-outline-primary btn-sm" id="syncAllBtn" onclick="syncAllMarkets()">
-      <i class="bi bi-arrow-clockwise"></i> 지금 동기화
-    </button>
-    <button class="btn btn-outline-success btn-sm" id="marketDiagnosticsBtn" onclick="refreshAllMarketDiagnostics()">
-      <i class="bi bi-plug"></i> 실연동 재진단
-    </button>
-    <button class="btn btn-outline-secondary btn-sm" onclick="location.reload()">{{ t('markets.refresh') }}</button>
-  </div>
-</div>
-<hr class="pc-hairline mt-0 mb-4">
+{# 디자인 v3 Stage 6-d — 6-a/6-c 문법 승계: 카드 1장에 헤더/바디/푸터, 액션은 푸터.
+   로직 변경 0: data-market-* 훅·id·onclick 핸들러 이름은 그대로 둔다(JS가 잡는 자리다). #}
+<div class="mk-page">
 
-<div class="pc-status pc-status-info small mb-3">
-  마켓 연동 상태 화면이에요. 상태 카드의 원인·조치 가이드를 먼저 확인한 뒤 연결 확인·권한 확인·재시도를 실행하세요.
-</div>
-
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-body py-3">
-    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div class="ch-head">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
       <div>
-        <div class="fw-semibold">마켓 연동 컨트롤 센터</div>
-        <div class="small text-muted">실제 검증된 연동 상태와 운영자 조치 힌트를 함께 확인하세요.</div>
+        <div class="console-kpi-label mb-1">마켓</div>
+        <h4 class="fw-bold mb-0">{{ t('markets.title') }}</h4>
       </div>
-      <div class="d-flex align-items-center gap-2">
-        <a href="/seller/markets/guide" class="btn btn-outline-primary btn-sm"><i class="bi bi-book"></i> {{ t('markets.guide') }}</a>
-        <a href="/seller/markets/connect" class="btn btn-primary btn-sm"><i class="bi bi-plug"></i> {{ t('markets.connect') }}</a>
-        <span class="badge text-bg-light" id="marketDiagnosticsSummary">실연동 진단 대기</span>
+      <div class="d-flex gap-2 align-items-center flex-wrap">
+        {% if not market_data.is_mock %}
+        <span class="pc-badge pc-badge-on">실 데이터 ({{ market_data.source }})</span>
+        {% endif %}
+        {% if market_data.fetched_at %}
+        <span class="mk-tile-sub" id="syncTime" data-fetched="{{ market_data.fetched_at }}">
+          마지막 동기화: <span id="syncAgo">방금 전</span>
+        </span>
+        {% endif %}
+        <button class="btn btn-ghost btn-sm" id="syncAllBtn" onclick="syncAllMarkets()">
+          <i class="bi bi-arrow-clockwise"></i> 지금 동기화
+        </button>
+        <button class="btn btn-ghost btn-sm" id="marketDiagnosticsBtn" onclick="refreshAllMarketDiagnostics()">
+          <i class="bi bi-plug"></i> 실연동 재진단
+        </button>
+        <button class="btn btn-ghost btn-sm" onclick="location.reload()">{{ t('markets.refresh') }}</button>
       </div>
     </div>
-    <div class="row g-2 mt-2">
-      {% for hub in market_hub_cards %}
-      <div class="col-md-3">
-        <div class="rounded-3 p-2 h-100 pc-market-card" data-market-card="{{ hub.marketplace }}" data-market-state="pending">
-          <div class="d-flex justify-content-between align-items-center mb-1">
-            <strong>{{ hub.label }}</strong>
-            {% if hub.integration_supported %}
-            <span class="pc-market-badge pc-market-badge-pending" data-market-badge="{{ hub.marketplace }}">⏳ 검사 중</span>
-            {% else %}
-            <span class="badge bg-{{ hub.status_style }}">{{ hub.status_label }}</span>
-            {% endif %}
-          </div>
-          <div class="small text-muted">{{ hub.country }}/{{ hub.currency }}{% if not market_data.is_mock %} · 활성 {{ hub.active }} / 전체 {{ hub.total }}{% endif %}</div>
-          {% if hub.note %}
-          <div class="small mt-1">{{ hub.note }}</div>
-          {% endif %}
-          <div class="small text-muted mt-1">마지막 동기화: {{ hub.last_synced_at or '—' }}</div>
+    <hr class="pc-hairline mt-0 mb-0">
+  </div>
+
+  <!-- 연동 상태 — 이 화면의 본론. 마켓마다 타일 하나, 신호는 우상단 점 하나. -->
+  <section class="op-card">
+    <div class="op-card-head">
+      <strong>마켓 연동 상태</strong>
+      <span class="mk-tile-sub">원인·조치를 먼저 읽고 연결 확인·권한 확인·재시도를 실행하세요.</span>
+      <span class="pc-badge pc-badge-muted ms-auto" id="marketDiagnosticsSummary">실연동 진단 대기</span>
+    </div>
+    <div class="op-card-body">
+      <div class="mk-grid">
+        {% for hub in market_hub_cards %}
+        <div class="mk-tile pc-market-card" data-market-card="{{ hub.marketplace }}" data-market-state="pending">
+          <div class="mk-tile-nm">{{ hub.label }}</div>
           {% if hub.integration_supported %}
-          <div class="small mt-2 fw-semibold" data-market-summary="{{ hub.marketplace }}">실연동 검사를 불러오는 중…</div>
-          <div class="small text-muted mt-1 pc-market-guide" data-market-hint="{{ hub.marketplace }}">원인: 초기 실연동 진단을 실행 중입니다. · 조치: 완료 후 가이드 문구를 확인하세요.</div>
-          <div class="small text-muted mt-1" data-market-disabled-reason="{{ hub.marketplace }}">다음 액션: 초기 실연동 진단 실행 중…</div>
-          <div class="small text-muted mt-1" data-market-checked-at="{{ hub.marketplace }}">마지막 점검: 대기 중</div>
-          <div class="d-flex flex-wrap gap-1 mt-2">
-            <button class="btn btn-outline-primary btn-sm" type="button" data-market-action="connection" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'connection')">{{ t('markets.check_connection') }}</button>
-            <button class="btn btn-outline-secondary btn-sm" type="button" data-market-action="scope" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'scope')">권한 확인</button>
-            <button class="btn btn-outline-warning btn-sm" type="button" data-market-action="retry" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'retry')">재시도</button>
-            <a class="btn btn-outline-primary btn-sm" href="/seller/markets/connect/{{ hub.marketplace }}"><i class="bi bi-key"></i> 키 입력</a>
-          </div>
-          <div class="small text-muted mt-2">필수 권한: {{ hub.required_scopes|join(', ') }}</div>
-          <div class="small text-muted mt-1">필수 env: {{ hub.required_env|join(', ') }}</div>
-          <div class="small text-muted mt-1">확인 위치: {{ hub.check_locations|join(' · ') }}</div>
-          <div class="small text-muted mt-1">가이드: <code>{{ hub.docs_path }}</code></div>
-          <ul class="small mt-2 mb-0 ps-3" data-market-steps="{{ hub.marketplace }}"></ul>
-          {% endif %}
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-    <div id="marketDiagnosticsDetail" class="small mt-2 text-muted"></div>
-  </div>
-</div>
-
-<!-- 마켓별 상품 등록·동기화 현황 -->
-<h5 class="fw-bold mb-1 mt-2"><i class="bi bi-bar-chart"></i> 마켓별 상품 등록·동기화 현황</h5>
-<div class="small text-muted mb-2">어떤 마켓에 내 상품이 몇 개 올라가 있고 상태가 어떤지 보여줘요.</div>
-{% if market_data.is_mock %}
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-body text-center text-muted py-5">
-    <i class="bi bi-inbox fs-3 d-block mb-2"></i>
-    <div class="fw-semibold">아직 등록된 상품이 없어요</div>
-    <div class="small mt-1">상품을 마켓에 업로드하면 여기에 마켓별 등록·동기화 현황이 표시돼요.</div>
-    <a href="/seller/collect/history" class="btn btn-primary btn-sm mt-3"><i class="bi bi-box-arrow-up"></i> 수집한 상품에서 업로드하기</a>
-  </div>
-</div>
-{% else %}
-<div class="row g-3 mb-4">
-  {% for m in market_data.markets %}
-  <div class="col-md-3">
-    <div class="card border-0 shadow-sm h-100">
-      <div class="card-body">
-        <h6 class="fw-semibold mb-2">{{ m.label }}</h6>
-        <div class="small text-muted mb-2">{{ m.country }}/{{ m.currency }} · {{ m.region }}</div>
-        {% if not m.is_ready %}
-        <span class="badge bg-dark mb-2">준비 중/미연동</span>
-        {% endif %}
-        <div class="d-flex justify-content-between text-center">
-          <div>
-            <div class="text-success fw-bold fs-4">{{ m.active }}</div>
-            <div class="text-muted small">활성</div>
-          </div>
-          <div>
-            <div class="text-warning fw-bold fs-4">{{ m.out_of_stock }}</div>
-            <div class="text-muted small">품절</div>
-          </div>
-          <div>
-            <div class="text-danger fw-bold fs-4">{{ m.error }}</div>
-            <div class="text-muted small">오류</div>
-          </div>
-          <div>
-            <div class="fw-bold fs-4">{{ m.total }}</div>
-            <div class="text-muted small">합계</div>
-          </div>
-        </div>
-        {% if m.source != "mock" %}
-        <div class="mt-2">
-          <button class="btn btn-outline-secondary btn-sm w-100"
-                  onclick="syncMarket('{{ m.marketplace }}')">
-            <i class="bi bi-arrow-clockwise"></i> 동기화
-          </button>
-        </div>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-  {% endfor %}
-</div>
-{% endif %}
-
-<!-- 필터 바 -->
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-body py-2">
-    <div class="d-flex gap-2 align-items-center flex-wrap">
-      <label class="form-label mb-0 small fw-semibold">필터:</label>
-      <select class="form-select form-select-sm" id="filterMarket" style="width:auto;" onchange="filterTable()">
-        <option value="">전체 마켓</option>
-        {% for market in marketplace_filters %}
-        <option value="{{ market.marketplace }}">{{ market.label }}{% if not market.is_ready %} (준비 중){% endif %}</option>
-        {% endfor %}
-      </select>
-      <select class="form-select form-select-sm" id="filterCountry" style="width:auto;" onchange="filterTable()">
-        <option value="">전체 국가</option>
-        {% for country in country_filters %}
-        <option value="{{ country }}">{{ country }}</option>
-        {% endfor %}
-      </select>
-      <select class="form-select form-select-sm" id="filterStatus" style="width:auto;" onchange="filterTable()">
-        <option value="">전체 상태</option>
-        <option value="active">활성</option>
-        <option value="out_of_stock">품절</option>
-        <option value="error">오류</option>
-        <option value="price_anomaly">가격 이상</option>
-        <option value="suspended">정지</option>
-      </select>
-      <input type="text" class="form-control form-control-sm" id="filterSearch"
-             placeholder="상품명/SKU 검색..." style="width:200px;" oninput="filterTable()">
-      <span class="text-muted small ms-auto" id="rowCount"></span>
-    </div>
-  </div>
-</div>
-
-<!-- 상품 테이블 -->
-<div class="card border-0 shadow-sm">
-  <div class="card-body p-0">
-    <div class="table-responsive">
-      <table class="table table-hover mb-0 table-cards pc-swiss-table" id="productTable">
-        <thead class="table-light">
-          <tr>
-            <th>마켓</th>
-            <th>상품 ID</th>
-            <th>상품명</th>
-            <th>SKU</th>
-            <th class="text-center">상태</th>
-            <th class="text-end">가격</th>
-            <th>국가/통화</th>
-            <th>마지막 동기화</th>
-          </tr>
-        </thead>
-        <tbody id="productTableBody">
-          {% if items and not market_data.is_mock %}
-            {% for item in items %}
-            <tr data-market="{{ item.marketplace }}" data-status="{{ item.state }}" data-country="{{ item.country }}">
-              <td class="cardcell-img">
-                <span class="pc-badge pc-badge-muted">{{ item.marketplace_label }}</span>
-                {% if not item.is_ready %}
-                <span class="pc-badge pc-badge-off ms-1">준비 중</span>
-                {% endif %}
-              </td>
-              <td data-label="상품 ID"><code class="small">{{ item.product_id }}</code></td>
-              <td class="cardcell-title">{{ item.title or '—' }}</td>
-              <td data-label="SKU"><code class="small">{{ item.sku or '—' }}</code></td>
-              <td class="text-center" data-label="상태">
-                {% if item.state == "active" %}
-                <span class="pc-badge pc-badge-on"><i class="bi bi-check-circle"></i> 활성</span>
-                {% elif item.state == "out_of_stock" %}
-                <span class="pc-badge pc-badge-off"><i class="bi bi-exclamation-triangle"></i> 품절</span>
-                {% elif item.state == "error" %}
-                <span class="pc-badge pc-badge-danger" title="{{ item.error_message }}"><i class="bi bi-x-circle"></i> 오류</span>
-                {% elif item.state == "price_anomaly" %}
-                <span class="pc-badge pc-badge-off"><i class="bi bi-cash-coin"></i> 가격 이상</span>
-                {% elif item.state == "suspended" %}
-                <span class="pc-badge pc-badge-muted"><i class="bi bi-slash-circle"></i> 정지</span>
-                {% else %}
-                <span class="pc-badge pc-badge-muted">{{ item.state }}</span>
-                {% endif %}
-              </td>
-              <td class="text-end" data-label="가격">
-                {{ item.price_display }}
-                {% if item.price_note %}
-                <div class="small text-muted">{{ item.price_note }}</div>
-                {% endif %}
-              </td>
-              <td class="small text-muted" data-label="국가/통화">{{ item.country }}/{{ item.currency }} · {{ item.region }}</td>
-              <td class="small text-muted" data-label="마지막 동기화">{{ item.last_synced_at or '—' }}</td>
-            </tr>
-            {% endfor %}
+          <span class="pc-market-badge pc-market-badge-pending" data-market-badge="{{ hub.marketplace }}">검사 중</span>
           {% else %}
-            <!-- 빈 상태: 일반 유저에게 Mock·개발 표기 비노출(친절 안내만) -->
-            <tr>
-              <td colspan="8" class="text-center text-muted py-4">
-                <div><i class="bi bi-inbox"></i> 아직 등록된 상품이 없어요 — 상품을 업로드하면 여기 현황이 표시돼요.</div>
-                <a href="/seller/collect/history" class="btn btn-outline-primary btn-sm mt-2"><i class="bi bi-box-arrow-up-right"></i> 수집한 상품 보기</a>
-                {% if session.get('user_role') == 'admin' %}
-                <div class="small mt-2 text-muted">관리자: <code>catalog</code> 시트 컬럼 — product_id / sku / title / marketplace / state / price / currency / price_krw / last_synced_at / error_message</div>
-                {% endif %}
-              </td>
-            </tr>
+          <span class="pc-badge pc-badge-muted">{{ hub.status_label }}</span>
           {% endif %}
-        </tbody>
-      </table>
+          <div class="mk-tile-sub">{{ hub.country }}/{{ hub.currency }}{% if not market_data.is_mock %} · 활성 {{ hub.active }} / 전체 {{ hub.total }}{% endif %}</div>
+          {% if hub.note %}
+          <div class="mk-tile-sub">{{ hub.note }}</div>
+          {% endif %}
+          <div class="mk-tile-sub">마지막 동기화: {{ hub.last_synced_at or '—' }}</div>
+          {% if hub.integration_supported %}
+          <div class="mk-tile-sum" data-market-summary="{{ hub.marketplace }}">실연동 검사를 불러오는 중…</div>
+          <div class="mk-tile-sub pc-market-guide" data-market-hint="{{ hub.marketplace }}">원인: 초기 실연동 진단을 실행 중입니다. · 조치: 완료 후 가이드 문구를 확인하세요.</div>
+          <div class="mk-tile-sub" data-market-disabled-reason="{{ hub.marketplace }}">다음 액션: 초기 실연동 진단 실행 중…</div>
+          <div class="mk-tile-sub" data-market-checked-at="{{ hub.marketplace }}">마지막 점검: 대기 중</div>
+          <ul class="mk-tile-steps" data-market-steps="{{ hub.marketplace }}"></ul>
+          {# 참고값은 접는다 — 평소엔 상태 신호를 가리고, 막혔을 때만 편다. #}
+          <details class="mk-ref">
+            <summary>연동 참고값</summary>
+            <div>
+              필수 권한: {{ hub.required_scopes|join(', ') }}<br>
+              필수 env: {{ hub.required_env|join(', ') }}<br>
+              확인 위치: {{ hub.check_locations|join(' · ') }}<br>
+              가이드: <code>{{ hub.docs_path }}</code>
+            </div>
+          </details>
+          <div class="mk-tile-acts">
+            <button class="btn btn-ghost btn-sm" type="button" data-market-action="connection" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'connection')">{{ t('markets.check_connection') }}</button>
+            <button class="btn btn-ghost btn-sm" type="button" data-market-action="scope" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'scope')">권한 확인</button>
+            <button class="btn btn-ghost btn-sm" type="button" data-market-action="retry" data-market="{{ hub.marketplace }}" onclick="runMarketDiagnostic('{{ hub.marketplace }}', 'retry')">재시도</button>
+            <a class="btn btn-ghost btn-sm" href="/seller/markets/connect/{{ hub.marketplace }}"><i class="bi bi-key"></i> 키 입력</a>
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <div id="marketDiagnosticsDetail" class="mk-tile-sub mt-3"></div>
     </div>
-  </div>
-</div>
+    <div class="op-card-foot">
+      <a href="/seller/markets/guide" class="btn btn-ghost btn-sm"><i class="bi bi-book"></i> {{ t('markets.guide') }}</a>
+      <a href="/seller/markets/connect" class="btn btn-primary btn-sm"><i class="bi bi-plug"></i> {{ t('markets.connect') }}</a>
+    </div>
+  </section>
 
-<!-- 페이지네이션 -->
-{% if items and items|length > 50 %}
-<div class="d-flex justify-content-center mt-3">
-  <nav>
+  <!-- 마켓별 상품 등록·동기화 현황 -->
+  <section class="op-card">
+    <div class="op-card-head">
+      <strong>마켓별 상품 등록·동기화 현황</strong>
+      <span class="mk-tile-sub">어떤 마켓에 내 상품이 몇 개 올라가 있고 상태가 어떤지 보여줘요.</span>
+    </div>
+    <div class="op-card-body">
+      {% if market_data.is_mock %}
+      {# 미연동은 0을 찍지 않는다 — 0건과 '아직 없음'은 다른 사실이다(6-a 규율). #}
+      <div class="op-off">
+        아직 등록된 상품이 없어요.<br>상품을 마켓에 업로드하면 여기에 마켓별 등록·동기화 현황이 표시돼요.
+      </div>
+      {% else %}
+      <div class="mk-grid">
+        {% for m in market_data.markets %}
+        <div class="mk-tile" data-market-state="{{ 'connected' if m.is_ready else 'pending' }}">
+          <div class="mk-tile-nm">{{ m.label }}</div>
+          <div class="mk-tile-sub">{{ m.country }}/{{ m.currency }} · {{ m.region }}</div>
+          {% if not m.is_ready %}
+          <span class="pc-badge pc-badge-muted">준비 중/미연동</span>
+          {% endif %}
+          <div class="mk-counts">
+            <div class="mk-count"><div class="mk-count-v">{{ m.active }}</div><div class="mk-count-k">활성</div></div>
+            <div class="mk-count"><div class="mk-count-v">{{ m.out_of_stock }}</div><div class="mk-count-k">품절</div></div>
+            <div class="mk-count"><div class="mk-count-v{{ ' is-alert' if m.error else '' }}">{{ m.error }}</div><div class="mk-count-k">오류</div></div>
+            <div class="mk-count"><div class="mk-count-v">{{ m.total }}</div><div class="mk-count-k">합계</div></div>
+          </div>
+          {% if m.source != "mock" %}
+          <div class="mk-tile-acts">
+            <button class="btn btn-ghost btn-sm w-100" onclick="syncMarket('{{ m.marketplace }}')">
+              <i class="bi bi-arrow-clockwise"></i> 동기화
+            </button>
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <!-- 등록 상품 목록(필터는 카드 헤더, 표는 바디) -->
+  <section class="op-card">
+    <div class="op-card-head">
+      <div class="mk-filter w-100">
+        <span class="console-kpi-label">필터</span>
+        <select class="form-select form-select-sm" id="filterMarket" onchange="filterTable()">
+          <option value="">전체 마켓</option>
+          {% for market in marketplace_filters %}
+          <option value="{{ market.marketplace }}">{{ market.label }}{% if not market.is_ready %} (준비 중){% endif %}</option>
+          {% endfor %}
+        </select>
+        <select class="form-select form-select-sm" id="filterCountry" onchange="filterTable()">
+          <option value="">전체 국가</option>
+          {% for country in country_filters %}
+          <option value="{{ country }}">{{ country }}</option>
+          {% endfor %}
+        </select>
+        <select class="form-select form-select-sm" id="filterStatus" onchange="filterTable()">
+          <option value="">전체 상태</option>
+          <option value="active">활성</option>
+          <option value="out_of_stock">품절</option>
+          <option value="error">오류</option>
+          <option value="price_anomaly">가격 이상</option>
+          <option value="suspended">정지</option>
+        </select>
+        <input type="text" class="form-control form-control-sm" id="filterSearch"
+               placeholder="상품명/SKU 검색..." oninput="filterTable()">
+        <span class="mk-filter-count" id="rowCount"></span>
+      </div>
+    </div>
+    <div class="op-card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 table-cards pc-swiss-table" id="productTable">
+          <thead>
+            <tr>
+              <th>마켓</th>
+              <th>상품 ID</th>
+              <th>상품명</th>
+              <th>SKU</th>
+              <th class="text-center">상태</th>
+              <th class="text-end">가격</th>
+              <th>국가/통화</th>
+              <th>마지막 동기화</th>
+            </tr>
+          </thead>
+          <tbody id="productTableBody">
+            {% if items and not market_data.is_mock %}
+              {% for item in items %}
+              <tr data-market="{{ item.marketplace }}" data-status="{{ item.state }}" data-country="{{ item.country }}">
+                <td class="cardcell-img">
+                  <span class="pc-badge pc-badge-muted">{{ item.marketplace_label }}</span>
+                  {% if not item.is_ready %}
+                  <span class="pc-badge pc-badge-off ms-1">준비 중</span>
+                  {% endif %}
+                </td>
+                <td data-label="상품 ID"><code class="small">{{ item.product_id }}</code></td>
+                <td class="cardcell-title">{{ item.title or '—' }}</td>
+                <td data-label="SKU"><code class="small">{{ item.sku or '—' }}</code></td>
+                <td class="text-center" data-label="상태">
+                  {% if item.state == "active" %}
+                  <span class="pc-badge pc-badge-on"><i class="bi bi-check-circle"></i> 활성</span>
+                  {% elif item.state == "out_of_stock" %}
+                  <span class="pc-badge pc-badge-off"><i class="bi bi-exclamation-triangle"></i> 품절</span>
+                  {% elif item.state == "error" %}
+                  <span class="pc-badge pc-badge-danger" title="{{ item.error_message }}"><i class="bi bi-x-circle"></i> 오류</span>
+                  {% elif item.state == "price_anomaly" %}
+                  <span class="pc-badge pc-badge-off"><i class="bi bi-cash-coin"></i> 가격 이상</span>
+                  {% elif item.state == "suspended" %}
+                  <span class="pc-badge pc-badge-muted"><i class="bi bi-slash-circle"></i> 정지</span>
+                  {% else %}
+                  <span class="pc-badge pc-badge-muted">{{ item.state }}</span>
+                  {% endif %}
+                </td>
+                <td class="text-end" data-label="가격">
+                  {{ item.price_display }}
+                  {% if item.price_note %}
+                  <div class="mk-tile-sub">{{ item.price_note }}</div>
+                  {% endif %}
+                </td>
+                <td class="mk-tile-sub" data-label="국가/통화">{{ item.country }}/{{ item.currency }} · {{ item.region }}</td>
+                <td class="mk-tile-sub" data-label="마지막 동기화">{{ item.last_synced_at or '—' }}</td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <!-- 빈 상태: 일반 유저에게 Mock·개발 표기 비노출(친절 안내만) -->
+              <tr>
+                <td colspan="8">
+                  <div class="op-empty py-4">
+                    아직 등록된 상품이 없어요 — 상품을 업로드하면 여기 현황이 표시돼요.
+                    {% if session.get('user_role') == 'admin' %}
+                    <br>관리자: <code>catalog</code> 시트 컬럼 — product_id / sku / title / marketplace / state / price / currency / price_krw / last_synced_at / error_message
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="op-card-foot">
+      <span class="mk-tile-sub">연동 상태는 검증된 결과만 표시합니다. ‘연결됨’이 아니면 원인·조치 가이드를 먼저 확인하세요.</span>
+      <a href="/seller/collect/history" class="btn btn-ghost btn-sm ms-auto"><i class="bi bi-box-arrow-up"></i> 수집한 상품에서 업로드</a>
+    </div>
+  </section>
+
+  {% if items and items|length > 50 %}
+  <nav class="d-flex justify-content-center">
     <ul class="pagination pagination-sm" id="pagination"></ul>
   </nav>
-</div>
-{% endif %}
-
-<div class="text-muted small mt-2">
-  연동 상태는 검증된 결과만 표시합니다. ‘연결됨’이 아니면 원인·조치 가이드를 먼저 확인하세요.
-</div>
-
-<!-- 토스트 알림 -->
-<div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999">
-  <div id="syncToast" class="toast align-items-center text-bg-success border-0" role="alert">
-    <div class="d-flex">
-      <div class="toast-body" id="syncToastBody">동기화 완료</div>
-      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-    </div>
-  </div>
+  {% endif %}
 </div>
 {% endblock %}
 
@@ -277,7 +250,7 @@
 function syncMarket(marketplace) {
   const btn = document.getElementById('syncAllBtn');
   btn.disabled = true;
-  btn.textContent = '⏳ 동기화 중...';
+  btn.textContent = '동기화 중...';
 
   fetch('/seller/markets/sync', {
     method: 'POST',
@@ -287,7 +260,7 @@ function syncMarket(marketplace) {
   .then(r => r.json())
   .then(data => {
     if (!data.ok) {
-      showToast(data.error || '동기화 실패', 'danger');
+      showToast(data.error || '동기화 실패', 'error');
       return;
     }
     const results = data.results || {};
@@ -295,7 +268,7 @@ function syncMarket(marketplace) {
     showToast(`동기화 완료: ${total}개 항목 갱신`);
     setTimeout(() => location.reload(), 1500);
   })
-  .catch(err => showToast('동기화 실패: ' + err.message, 'danger'))
+  .catch(err => showToast('동기화 실패: ' + err.message, 'error'))
   .finally(() => {
     btn.disabled = false;
     btn.textContent = '지금 동기화';
@@ -324,22 +297,12 @@ function formatMarketSupportMessage(cause, action) {
   return parts.join(' · ');
 }
 
+// 권장 액션 1개만 채운 버튼으로 — 나머지는 ghost. 화면당 강조 1개(v3 규율).
 function setRecommendedMarketAction(market, action) {
   document.querySelectorAll(`[data-market="${market}"][data-market-action]`).forEach((btn) => {
     const isRecommended = btn.dataset.marketAction === action;
     btn.classList.toggle('btn-primary', isRecommended);
-    btn.classList.toggle('btn-outline-primary', btn.dataset.marketAction === 'connection' && !isRecommended);
-    btn.classList.toggle('btn-outline-secondary', btn.dataset.marketAction === 'scope' && !isRecommended);
-    btn.classList.toggle('btn-outline-warning', btn.dataset.marketAction === 'retry' && !isRecommended);
-    if (btn.dataset.marketAction === 'retry' && isRecommended) {
-      btn.classList.add('btn-warning');
-      btn.classList.remove('btn-outline-warning');
-    } else if (btn.dataset.marketAction === 'retry') {
-      btn.classList.remove('btn-warning');
-    }
-    if (btn.dataset.marketAction === 'scope' && isRecommended) {
-      btn.classList.remove('btn-outline-secondary');
-    }
+    btn.classList.toggle('btn-ghost', !isRecommended);
   });
 }
 
@@ -405,7 +368,7 @@ function updateMarketDiagnosticsSummary(results) {
   if (!summary) return;
   const connected = results.filter(result => result.status === 'connected').length;
   const degraded = results.length - connected;
-  summary.className = `badge ${degraded ? 'bg-warning text-dark' : 'bg-success'}`;
+  summary.className = `pc-badge ${degraded ? 'pc-badge-off' : 'pc-badge-on'}`;
   summary.textContent = `정상 연결 ${connected} / 조치 필요 ${degraded}`;
 }
 
@@ -414,7 +377,7 @@ function refreshAllMarketDiagnostics() {
   const detail = document.getElementById('marketDiagnosticsDetail');
   if (btn) {
     btn.disabled = true;
-    btn.textContent = '⏳ 진단 중...';
+    btn.textContent = '진단 중...';
   }
   if (detail) {
     detail.textContent = '마켓 실연동 smoke 검사를 실행 중입니다.';
@@ -424,7 +387,7 @@ function refreshAllMarketDiagnostics() {
     .then(r => r.json())
     .then(data => {
       if (!data.ok) {
-        showToast(formatMarketSupportMessage(data.error || '마켓 연동 진단에 실패했습니다.', '재시도 버튼으로 다시 실행하세요.'), 'danger');
+        showToast(formatMarketSupportMessage(data.error || '마켓 연동 진단에 실패했습니다.', '재시도 버튼으로 다시 실행하세요.'), 'error');
         return;
       }
       (data.results || []).forEach(result => renderMarketDiagnostic(result));
@@ -434,7 +397,7 @@ function refreshAllMarketDiagnostics() {
     .catch(err => {
       const message = formatMarketSupportMessage(err.message, '네트워크 상태를 확인한 뒤 재시도 버튼으로 다시 실행하세요.');
       if (detail) detail.textContent = message;
-      showToast(message, 'danger');
+      showToast(message, 'error');
     })
     .finally(() => {
       if (btn) {
@@ -467,23 +430,19 @@ function runMarketDiagnostic(market, requestedAction) {
       } else {
         const causeText = (data.result.ui && data.result.ui.cause_text) || data.result.summary;
         const actionText = (data.result.ui && data.result.ui.action_text) || data.result.hint;
-        showToast(formatMarketSupportMessage(causeText, actionText), 'danger');
+        showToast(formatMarketSupportMessage(causeText, actionText), 'error');
       }
     })
     .catch(err => {
       setMarketButtonsDisabled(market, false, `재시도 가능: ${err.message}`);
-      showToast(formatMarketSupportMessage(err.message, '재시도 버튼으로 다시 실행하세요.'), 'danger');
+      showToast(formatMarketSupportMessage(err.message, '재시도 버튼으로 다시 실행하세요.'), 'error');
     });
 }
 
-// 토스트 표시
+// 토스트 — 부트스트랩 컬러 토스트 대신 공통 컴포넌트(pcToast, 토큰 단일 소스)로.
 function showToast(message, type='success') {
-  const toast = document.getElementById('syncToast');
-  const body = document.getElementById('syncToastBody');
-  body.textContent = message;
-  toast.className = `toast align-items-center text-bg-${type} border-0`;
-  const bsToast = new bootstrap.Toast(toast, {delay: 3000});
-  bsToast.show();
+  if (typeof pcToast === 'function') { pcToast(message, type); return; }
+  console.log(message);   // pcToast 미로드 시에도 조용히 삼키지 않는다
 }
 
 // 테이블 필터링

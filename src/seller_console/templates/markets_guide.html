@@ -2,92 +2,94 @@
 {% block title %}API 키 발급 가이드{% endblock %}
 
 {% block content %}
-<style>
-  .guide-stepper { display:flex; flex-wrap:wrap; align-items:stretch; gap:0; }
-  .guide-step { flex:1 1 0; min-width:150px; text-align:center; position:relative; padding:0 8px; }
-  .guide-step .num { width:34px; height:34px; border-radius:50%; background:#0d6efd; color:#fff;
-     display:flex; align-items:center; justify-content:center; font-weight:700; margin:0 auto 6px; }
-  .guide-step .lbl { font-size:.85rem; color:#334; }
-  .guide-step:not(:last-child)::after { content:"→"; position:absolute; right:-8px; top:6px; color:#9aa; font-weight:700; }
-  .guide-fieldmap td { vertical-align:middle; }
-  .guide-jump a { text-decoration:none; }
-  .guide-illu { max-width:560px; }
-</style>
+{# 디자인 v3 Stage 6-d — 템플릿 스타일 블록 철거(app.css 6-d 슬라이스로 이관).
+   일러스트 색은 **CSS 클래스로만** 준다: `fill="#..."`는 프레젠테이션 속성이라 var()가 안 먹어서
+   여기 hex를 두면 토큰 단일 소스가 깨진다(이 화면만 부트스트랩 파랑/초록이었다).
+   아이콘도 이모지에서 라인 아이콘으로 — 사용자 화면 이모지 0(절대원칙). #}
+<div class="mk-page">
 
-<section class="mb-4">
-  <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
-    <div>
-      <h1 class="h4 mb-1"><i class="bi bi-book"></i> 마켓 API 키 발급 가이드</h1>
-      <p class="text-muted mb-0">각 마켓에서 키를 받아 → 우리 사이트에 붙여넣기만 하면 연결됩니다.</p>
+  <div class="ch-head">
+    <div class="d-flex flex-wrap align-items-start justify-content-between gap-3">
+      <div>
+        <div class="console-kpi-label mb-1">마켓 연동</div>
+        <h4 class="fw-bold mb-0">마켓 API 키 발급 가이드</h4>
+        <p class="mk-tile-sub mb-0 mt-1">각 마켓에서 키를 받아 → 우리 사이트에 붙여넣기만 하면 연결됩니다.</p>
+      </div>
+      <a href="/seller/markets/connect" class="btn btn-ghost btn-sm"><i class="bi bi-plug"></i> 키 입력 화면으로</a>
     </div>
-    <a href="/seller/markets/connect" class="btn btn-primary btn-sm"><i class="bi bi-plug"></i> 키 입력 화면으로</a>
+    <hr class="pc-hairline mt-0 mb-0">
   </div>
 
-  <!-- 개념 일러스트 (이미지) -->
-  <div class="card console-card mb-4">
-    <div class="card-body text-center">
+  <!-- 개념 일러스트 -->
+  <section class="op-card">
+    <div class="op-card-body text-center">
       <svg class="guide-illu w-100" viewBox="0 0 560 150" role="img" aria-label="마켓에서 키를 받아 우리 사이트에 입력하는 흐름">
-        <rect x="8" y="20" width="180" height="110" rx="10" fill="#eef3ff" stroke="#b9c8ff"/>
-        <rect x="8" y="20" width="180" height="24" rx="10" fill="#dbe5ff"/>
-        <circle cx="22" cy="32" r="4" fill="#ff6b6b"/><circle cx="36" cy="32" r="4" fill="#ffd43b"/><circle cx="50" cy="32" r="4" fill="#51cf66"/>
-        <text x="98" y="70" text-anchor="middle" font-size="13" fill="#334">마켓 판매자센터</text>
-        <rect x="58" y="86" width="80" height="22" rx="6" fill="#0d6efd"/>
-        <text x="98" y="101" text-anchor="middle" font-size="11" fill="#fff">API 키 발급</text>
-        <text x="232" y="66" text-anchor="middle" font-size="14">KEY</text>
-        <path d="M196 75 H268" stroke="#9aa" stroke-width="2" marker-end="url(#arrow)"/>
-        <path d="M300 75 H372" stroke="#9aa" stroke-width="2" marker-end="url(#arrow)"/>
         <defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-          <path d="M0,0 L6,3 L0,6 Z" fill="#9aa"/></marker></defs>
-        <rect x="378" y="20" width="174" height="110" rx="10" fill="#f6f9f6" stroke="#bfe3c6"/>
-        <rect x="378" y="20" width="174" height="24" rx="10" fill="#e3f5e8"/>
-        <text x="465" y="37" text-anchor="middle" font-size="12" fill="#2b6a3a">gogabridj</text>
-        <rect x="394" y="60" width="142" height="20" rx="5" fill="#fff" stroke="#cfe6d4"/>
-        <text x="465" y="74" text-anchor="middle" font-size="10" fill="#789">여기에 붙여넣기</text>
-        <rect x="394" y="92" width="142" height="22" rx="6" fill="#198754"/>
-        <text x="465" y="107" text-anchor="middle" font-size="11" fill="#fff">연결 테스트 OK</text>
+          <path class="gi-arrow-h" d="M0,0 L6,3 L0,6 Z"/></marker></defs>
+        <rect class="gi-frame" x="8" y="20" width="180" height="110" rx="10"/>
+        <rect class="gi-bar" x="8" y="20" width="180" height="24" rx="10"/>
+        <text class="gi-t" x="98" y="70" text-anchor="middle" font-size="13">마켓 판매자센터</text>
+        <rect class="gi-cta" x="58" y="86" width="80" height="22" rx="6"/>
+        <text class="gi-on" x="98" y="101" text-anchor="middle" font-size="11">API 키 발급</text>
+        <text class="gi-accent" x="232" y="66" text-anchor="middle" font-size="14">KEY</text>
+        <path class="gi-arrow" d="M196 75 H268" stroke-width="2" marker-end="url(#arrow)"/>
+        <path class="gi-arrow" d="M300 75 H372" stroke-width="2" marker-end="url(#arrow)"/>
+        <rect class="gi-frame" x="378" y="20" width="174" height="110" rx="10"/>
+        <rect class="gi-bar" x="378" y="20" width="174" height="24" rx="10"/>
+        <text class="gi-t" x="465" y="37" text-anchor="middle" font-size="12">gogabridj</text>
+        <rect class="gi-slot" x="394" y="60" width="142" height="20" rx="5"/>
+        <text class="gi-tm" x="465" y="74" text-anchor="middle" font-size="10">여기에 붙여넣기</text>
+        <rect class="gi-ok" x="394" y="92" width="142" height="22" rx="6"/>
+        <text class="gi-on" x="465" y="107" text-anchor="middle" font-size="11">연결 테스트 OK</text>
       </svg>
-      <div class="small text-muted mt-2">핵심: <strong>마켓에서 키 받기 → 우리 사이트 입력칸에 붙여넣기 → [연결 테스트]</strong> 3단계면 끝.</div>
+      <div class="mk-tile-sub mt-2">핵심: <strong>마켓에서 키 받기 → 우리 사이트 입력칸에 붙여넣기 → [연결 테스트]</strong> 3단계면 끝.</div>
     </div>
-  </div>
+  </section>
 
-  <!-- IP 허용목록 안내 (한국 마켓 공통 관문) -->
-  <div class="alert alert-warning d-flex gap-2 align-items-start mb-4">
-    <i class="bi bi-shield-exclamation"></i>
-    <div class="small mb-0">
-      <strong><i class="bi bi-cone-striped"></i> 한국 마켓(쿠팡·네이버·11번가)은 ‘API 호출 허용 IP’ 등록이 필요할 수 있어요.</strong>
-      키가 정확해도 <code>your ip ... is not allowed(403)</code> / <code>GW.IP_NOT_ALLOWED</code> 가 뜨면
-      <strong>이 서버의 아웃바운드 IP</strong>를 각 마켓 판매자센터의 허용 IP에 등록하세요.
-      <ul class="mb-0 mt-1">
-        <li>서버 IP 확인: <strong>Render → 서비스 → Settings → “Outbound IP Addresses”</strong> (보통 3개 — <u>전부</u> 등록)</li>
-        <li>쿠팡: 여러 IP를 쉼표로 등록 가능 · 네이버: 최대 3개(슬롯 교체 필요)</li>
-      </ul>
+  {# S2-b 승계: 등록할 IP는 마켓마다 다르다. 여기에 'Render 아웃바운드 3개 전부'라고
+     적어 둔 게 재발 지뢰였다 — 공유 대역이라 값이 바뀌고, 게이트 마켓은 릴레이로 나간다.
+     연결 화면과 **같은 단일 소스**(allowlist_ips)를 쓴다. 화면마다 다른 IP를 말하지 않게. #}
+  {% set gated = allowlist_ips.get('coupang', {}) %}
+  {% set direct = allowlist_ips.get('elevenst', {}) %}
+  <section class="pc-status pc-status-warning small">
+    <div class="fw-semibold mb-1"><i class="bi bi-shield-exclamation"></i> 한국 마켓은 ‘API 호출 허용 IP’ 등록이 필요할 수 있어요</div>
+    <div>
+      키가 정확해도 <code>your ip ... is not allowed(403)</code> / <code>GW.IP_NOT_ALLOWED</code> 가 뜨면 허용 IP를 등록하세요.
     </div>
-  </div>
+    <ul class="mb-0 mt-2">
+      <li><strong>쿠팡 · 스마트스토어</strong>는 고정 IP 중계를 거칩니다 —
+        {% if gated.ips %}<code>{{ gated.ips[0] }}</code> <strong>하나만</strong> 등록하면 되고, 주소가 바뀌지 않아요.
+        {% else %}고정 IP를 아직 확인하지 못했어요 — 등록 전 관리자에게 확인해 주세요.{% endif %}</li>
+      <li><strong>11번가</strong>는 중계 없이 서버에서 바로 나갑니다 —
+        {% if direct.ips %}{% for ip in direct.ips %}<code>{{ ip }}</code>{{ " · " if not loop.last }}{% endfor %}를
+        <strong>전부</strong> 등록해야 해요{% if not direct.complete %}(지금 나간 주소 하나만 보일 수 있어요){% endif %}.
+        {% else %}등록할 주소를 아직 확인하지 못했어요.{% endif %}
+        다만 <strong>OpenAPI 이용 승인이 먼저</strong>입니다 — 승인 전이면 키가 있어도 연결되지 않아요.</li>
+    </ul>
+  </section>
 
   <!-- 마켓 바로가기 -->
-  <div class="guide-jump d-flex flex-wrap gap-2 mb-4">
+  <nav class="guide-jump d-flex flex-wrap gap-2">
     {% for g in guide %}
-    <a href="#guide-{{ g.key }}" class="btn btn-outline-secondary btn-sm">{{ g.icon }} {{ g.label }}</a>
+    <a href="#guide-{{ g.key }}" class="btn btn-ghost btn-sm">{{ g.label }}</a>
     {% endfor %}
-  </div>
+  </nav>
 
   {% for g in guide %}
-  <div class="card console-card mb-4" id="guide-{{ g.key }}">
-    <div class="card-body">
-      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-        <h2 class="h5 mb-0">
-          {{ g.icon }} {{ g.label }}
-          {% if g.status == 'planned' %}
-          <span class="badge text-bg-warning ms-2 align-middle">연동 준비 중</span>
-          {% endif %}
-        </h2>
-        <a href="{{ g.official_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-primary btn-sm">
-          <i class="bi bi-box-arrow-up-right"></i> {{ g.official_label }}
-        </a>
-      </div>
+  <section class="op-card" id="guide-{{ g.key }}">
+    <div class="op-card-head">
+      <strong>{{ g.label }}</strong>
       {% if g.status == 'planned' %}
-      <div class="alert alert-warning small py-2">
-        <i class="bi bi-translate"></i> 글로벌 확장 마켓입니다. 키 발급 방법을 미리 안내하며, 어댑터 실연동은 순차 적용 예정입니다.
+      <span class="pc-badge pc-badge-off">연동 준비 중</span>
+      {% endif %}
+      <a href="{{ g.official_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm ms-auto">
+        <i class="bi bi-box-arrow-up-right"></i> {{ g.official_label }}
+      </a>
+    </div>
+    <div class="op-card-body">
+      {% if g.status == 'planned' %}
+      <div class="pc-status pc-status-warning small mb-3">
+        글로벌 확장 마켓입니다. 키 발급 방법을 미리 안내하며, 어댑터 실연동은 순차 적용 예정입니다.
         지금 키를 준비해두면 연동 시 바로 사용할 수 있어요.
       </div>
       {% endif %}
@@ -107,7 +109,7 @@
         {% for s in g.steps %}
         <li class="mb-2">
           <span class="fw-semibold">{{ s.t }}</span>
-          <div class="small text-muted">{{ s.d }}</div>
+          <div class="mk-tile-sub">{{ s.d }}</div>
         </li>
         {% endfor %}
       </ol>
@@ -120,7 +122,7 @@
             {% for fld in g.fields %}
             <tr>
               <td class="fw-semibold">{{ fld.label }}</td>
-              <td class="small text-muted">{{ fld.where }}</td>
+              <td class="mk-tile-sub">{{ fld.where }}</td>
               <td><code>{{ fld.env }}</code></td>
             </tr>
             {% endfor %}
@@ -129,88 +131,86 @@
       </div>
 
       {% if g.tips %}
-      <div class="alert alert-light border small mb-3">
+      <div class="pc-status pc-status-info small mb-3">
         {% for tip in g.tips %}<div><i class="bi bi-lightbulb"></i> {{ tip }}</div>{% endfor %}
       </div>
       {% endif %}
 
       {% if g.shipping %}
       <!-- 출고지·반품지 (쿠팡 상품 등록 필수) — 그림 + 단계 + 예시 -->
-      <div class="card border-warning mb-3">
-        <div class="card-body">
-          <h3 class="h6 text-warning-emphasis mb-2">{{ g.shipping.title }}</h3>
-          <p class="small text-muted mb-3">{{ g.shipping.why }}</p>
+      <div class="mc-note mb-3">
+        <div class="fw-semibold mb-1">{{ g.shipping.title }}</div>
+        <p class="mk-tile-sub mb-3">{{ g.shipping.why }}</p>
 
-          <!-- 시각 흐름: Wing 배송정보 화면 → 코드 복사 → 입력칸 -->
-          <div class="text-center mb-3">
-            <svg class="w-100" style="max-width:560px" viewBox="0 0 560 160" role="img"
-                 aria-label="쿠팡 윙 배송정보에서 출고지·반품지 코드를 복사해 입력하는 흐름">
-              <rect x="8" y="18" width="210" height="124" rx="10" fill="#fff7e6" stroke="#ffd591"/>
-              <rect x="8" y="18" width="210" height="22" rx="10" fill="#ffe7ba"/>
-              <text x="113" y="34" text-anchor="middle" font-size="11" fill="#8a5a00">쿠팡 윙 · 배송정보 관리</text>
-              <rect x="22" y="52" width="182" height="20" rx="4" fill="#fff" stroke="#ffe0a3"/>
-              <text x="30" y="66" font-size="9" fill="#7a6033">출고지  코드 7437895</text>
-              <rect x="22" y="78" width="182" height="20" rx="4" fill="#fff" stroke="#ffe0a3"/>
-              <text x="30" y="92" font-size="9" fill="#7a6033">반품지  센터코드 1000274592</text>
-              <rect x="22" y="104" width="182" height="20" rx="4" fill="#fff" stroke="#ffe0a3"/>
-              <text x="30" y="118" font-size="9" fill="#7a6033">반품지 주소·우편번호·연락처</text>
-              <text x="250" y="86" text-anchor="middle" font-size="12">FORM</text>
-              <text x="250" y="104" text-anchor="middle" font-size="8" fill="#789">복사</text>
-              <path d="M224 80 H300" stroke="#9aa" stroke-width="2" marker-end="url(#arrow)"/>
-              <path d="M300 80 H372" stroke="#9aa" stroke-width="2" marker-end="url(#arrow)"/>
-              <rect x="378" y="18" width="174" height="124" rx="10" fill="#f6f9f6" stroke="#bfe3c6"/>
-              <rect x="378" y="18" width="174" height="22" rx="10" fill="#e3f5e8"/>
-              <text x="465" y="34" text-anchor="middle" font-size="11" fill="#2b6a3a">마켓 연결 입력칸</text>
-              <rect x="394" y="52" width="142" height="18" rx="4" fill="#fff" stroke="#cfe6d4"/>
-              <text x="402" y="65" font-size="8" fill="#789">출고지 코드 ▢</text>
-              <rect x="394" y="76" width="142" height="18" rx="4" fill="#fff" stroke="#cfe6d4"/>
-              <text x="402" y="89" font-size="8" fill="#789">반품지센터코드 ▢</text>
-              <rect x="394" y="104" width="142" height="20" rx="6" fill="#198754"/>
-              <text x="465" y="118" text-anchor="middle" font-size="10" fill="#fff">저장 OK</text>
-            </svg>
-          </div>
-
-          <div class="fw-semibold small mb-1">어디서 찾나요?</div>
-          <ol class="small mb-3">
-            {% for s in g.shipping.where_steps %}<li class="mb-1">{{ s }}</li>{% endfor %}
-          </ol>
-
-          <div class="table-responsive">
-            <table class="table table-sm guide-fieldmap mb-2">
-              <thead><tr><th>입력칸</th><th>어디 값?</th><th>예시</th><th>입력칸 이름(env)</th></tr></thead>
-              <tbody>
-                {% for fld in g.shipping.fields %}
-                <tr>
-                  <td class="fw-semibold">{{ fld.label }}</td>
-                  <td class="small text-muted">{{ fld.where }}</td>
-                  <td class="small"><code>{{ fld.ex }}</code></td>
-                  <td><code>{{ fld.env }}</code></td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-          {% if g.shipping.optional_note %}
-          <div class="small text-muted mb-2"><i class="bi bi-info-circle"></i> {{ g.shipping.optional_note }}</div>
-          {% endif %}
-          {% if g.shipping.tips %}
-          <div class="alert alert-light border small mb-0">
-            {% for tip in g.shipping.tips %}<div><i class="bi bi-lightbulb"></i> {{ tip }}</div>{% endfor %}
-          </div>
-          {% endif %}
+        <!-- 시각 흐름: Wing 배송정보 화면 → 코드 복사 → 입력칸 -->
+        <div class="text-center mb-3">
+          <svg class="guide-illu w-100" viewBox="0 0 560 160" role="img"
+               aria-label="쿠팡 윙 배송정보에서 출고지·반품지 코드를 복사해 입력하는 흐름">
+            <rect class="gi-frame" x="8" y="18" width="210" height="124" rx="10"/>
+            <rect class="gi-bar" x="8" y="18" width="210" height="22" rx="10"/>
+            <text class="gi-t" x="113" y="34" text-anchor="middle" font-size="11">쿠팡 윙 · 배송정보 관리</text>
+            <rect class="gi-slot" x="22" y="52" width="182" height="20" rx="4"/>
+            <text class="gi-tm" x="30" y="66" font-size="9">출고지  코드 7437895</text>
+            <rect class="gi-slot" x="22" y="78" width="182" height="20" rx="4"/>
+            <text class="gi-tm" x="30" y="92" font-size="9">반품지  센터코드 1000274592</text>
+            <rect class="gi-slot" x="22" y="104" width="182" height="20" rx="4"/>
+            <text class="gi-tm" x="30" y="118" font-size="9">반품지 주소·우편번호·연락처</text>
+            <text class="gi-accent" x="250" y="86" text-anchor="middle" font-size="12">복사</text>
+            <path class="gi-arrow" d="M224 80 H300" stroke-width="2" marker-end="url(#arrow)"/>
+            <path class="gi-arrow" d="M300 80 H372" stroke-width="2" marker-end="url(#arrow)"/>
+            <rect class="gi-frame" x="378" y="18" width="174" height="124" rx="10"/>
+            <rect class="gi-bar" x="378" y="18" width="174" height="22" rx="10"/>
+            <text class="gi-t" x="465" y="34" text-anchor="middle" font-size="11">마켓 연결 입력칸</text>
+            <rect class="gi-slot" x="394" y="52" width="142" height="18" rx="4"/>
+            <text class="gi-tm" x="402" y="65" font-size="8">출고지 코드</text>
+            <rect class="gi-slot" x="394" y="76" width="142" height="18" rx="4"/>
+            <text class="gi-tm" x="402" y="89" font-size="8">반품지 센터코드</text>
+            <rect class="gi-ok" x="394" y="104" width="142" height="20" rx="6"/>
+            <text class="gi-on" x="465" y="118" text-anchor="middle" font-size="10">저장 OK</text>
+          </svg>
         </div>
+
+        <div class="fw-semibold small mb-1">어디서 찾나요?</div>
+        <ol class="small mb-3">
+          {% for s in g.shipping.where_steps %}<li class="mb-1">{{ s }}</li>{% endfor %}
+        </ol>
+
+        <div class="table-responsive">
+          <table class="table table-sm guide-fieldmap mb-2">
+            <thead><tr><th>입력칸</th><th>어디 값?</th><th>예시</th><th>입력칸 이름(env)</th></tr></thead>
+            <tbody>
+              {% for fld in g.shipping.fields %}
+              <tr>
+                <td class="fw-semibold">{{ fld.label }}</td>
+                <td class="mk-tile-sub">{{ fld.where }}</td>
+                <td class="small"><code>{{ fld.ex }}</code></td>
+                <td><code>{{ fld.env }}</code></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if g.shipping.optional_note %}
+        <div class="mk-tile-sub mb-2"><i class="bi bi-info-circle"></i> {{ g.shipping.optional_note }}</div>
+        {% endif %}
+        {% if g.shipping.tips %}
+        <div class="pc-status pc-status-info small mb-0">
+          {% for tip in g.shipping.tips %}<div><i class="bi bi-lightbulb"></i> {{ tip }}</div>{% endfor %}
+        </div>
+        {% endif %}
       </div>
       {% endif %}
-
+    </div>
+    <div class="op-card-foot">
       {% if g.status == 'planned' %}
-      <span class="text-muted small"><i class="bi bi-wrench"></i> 어댑터 연동 적용 후 입력칸이 열립니다.</span>
+      <span class="mk-tile-sub"><i class="bi bi-wrench"></i> 어댑터 연동 적용 후 입력칸이 열립니다.</span>
       {% else %}
-      <a href="/seller/markets/connect/{{ g.key }}" class="btn btn-success btn-sm"><i class="bi bi-check-circle"></i> {{ g.label }} 키 입력하러 가기</a>
+      <a href="/seller/markets/connect/{{ g.key }}" class="btn btn-primary btn-sm"><i class="bi bi-check-circle"></i> {{ g.label }} 키 입력하러 가기</a>
       {% endif %}
     </div>
-  </div>
+  </section>
   {% endfor %}
 
-  <p class="text-muted small">막히는 부분이 있으면 각 마켓 판매자센터의 도움말을 함께 확인하거나 문의해 주세요.</p>
-</section>
+  <p class="mk-tile-sub">막히는 부분이 있으면 각 마켓 판매자센터의 도움말을 함께 확인하거나 문의해 주세요.</p>
+</div>
 {% endblock %}

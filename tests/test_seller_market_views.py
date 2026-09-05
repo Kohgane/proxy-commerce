@@ -85,7 +85,7 @@ class TestMarketsOverview:
         resp = client.get("/seller/markets")
         assert resp.status_code == 200
         html = resp.get_data(as_text=True)
-        assert "마켓 연동 상태 화면" in html          # v13: 개발 표식(Phase NNN) 제거, 사용자 카피
+        assert "마켓 연동 상태" in html          # v13: 개발 표식(Phase NNN) 제거, 사용자 카피
         assert "연결 확인" in html
         assert "권한 확인" in html
         assert "재시도" in html

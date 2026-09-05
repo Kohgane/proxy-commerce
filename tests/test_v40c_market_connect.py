@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+CSS = Path("src/static/app.css").read_text(encoding="utf-8")
 HTML = Path("src/seller_console/templates/markets_connect.html").read_text(encoding="utf-8")
 
 
@@ -22,7 +23,9 @@ def client():
 
 
 def test_two_column_layout():
-    assert ".mc-wrap { display: grid" in HTML and "grid-template-columns: 260px 1fr" in HTML
+    # 6-d에서 스타일이 템플릿 <style>에서 app.css 단일 소스로 이관됐다 — 검사 자리만 옮긴다.
+    assert ".mc-wrap { display: grid" in CSS
+    assert "grid-template-columns: 260px minmax(0, 1fr)" in CSS   # 우측이 안 넘치게 minmax 보강
     assert "mc-nav" in HTML and "mc-detail" in HTML
     assert "mc-market-nav" in HTML                    # 좌 마켓 리스트
     assert "mc-panel" in HTML                         # 우 상세 패널
@@ -30,7 +33,8 @@ def test_two_column_layout():
 
 def test_status_badge_component():
     # 연동완료=청록 / 미연동=회색 뱃지(공통 컴포넌트)
-    assert ".mc-badge.on" in HTML and ".mc-badge.off" in HTML
+    # 6-d: `.off`는 별도 클래스가 아니라 **기본값**이 됐다(회색). 붙이는 클래스가 하나면 실수도 하나 준다.
+    assert ".mc-badge.on" in CSS and ".mc-badge {" in CSS
     assert "연동완료" in HTML and "미연동" in HTML
     assert "data-role=\"status-badge\"" in HTML
 
@@ -48,14 +52,14 @@ def test_one_click_drawer_no_page_nav():
 def test_shipping_profile_cards_no_vertical_split():
     # 배송 프로필 = 키-값 카드(라벨 nowrap, 세로 쪼개짐 0 — v39-H 규칙)
     assert "배송 프로필" in HTML
-    assert ".mc-kv .kv .v" in HTML and "white-space: nowrap" in HTML
+    assert ".mc-kv .kv .v" in CSS and "white-space: nowrap" in CSS
     assert "이 항목은" in HTML and "에만 필요해요" in HTML   # 마켓 스코프 명시
 
 
 def test_top_actions_and_tokens():
     assert "신규 마켓 연동" in HTML and "연동 가이드" in HTML
     # gogabridj-design 토큰(하드코딩 브랜드 hex 최소 — 스타일은 var/color-mix)
-    style = HTML.split("<style>", 1)[1].split("</style>", 1)[0]
+    style = CSS.split("마켓 연결(markets_connect)", 1)[1].split("── 발급 가이드", 1)[0]
     for hexv in ("#1A1714", "#F5EFE3", "#C9A24B", "#119A8E", "#F5821F"):
         assert hexv not in style
     assert "var(--ink" in style and "var(--teal" in style
