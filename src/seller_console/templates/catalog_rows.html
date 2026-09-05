@@ -15,7 +15,7 @@
     {% endif %}
   </td>
   <td data-label="SKU"><code style="font-size:0.75rem;">{{ item.sku or '-' }}</code></td>
-  <td data-label="가격">
+  <td class="text-end" data-label="가격">
     {{ item.price_display }}
     {% if item.price_note %}
     <div class="small text-muted">{{ item.price_note }}</div>

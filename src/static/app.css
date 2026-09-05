@@ -1721,3 +1721,65 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
    (실측: 주황 CTA가 14행에 반복돼 화면 전체가 깜빡였다). 완료 상태만 청록 글자로 표시한다. */
 .od-page .cardcell-actions .btn { border-color: var(--border); }
 .od-page .cardcell-actions .btn.is-done { color: var(--teal); border-color: var(--teal); }
+
+/* ── 표 정렬 문법 (오너 계약 6-e-2) ──────────────────────────────────────────
+   **표 정렬은 화면이 아니라 문법이다.** 화면마다 고치면 화면마다 다시 어긋난다.
+   `.pc-swiss-table`은 6개 표(orders·collect_history·markets·catalog·settlement·
+   reject_watch)가 공유하는 단일 소스다 — 규칙은 여기 한 곳에만 둔다.
+
+   실측(1920×940)이 잡은 것 — **그리고 내 첫 진단이 틀렸던 것:**
+     · 진범은 **orders 액션 열 하나**다. 버튼 5개가 두 줄로 접혀 셀 76px → **행 99px**.
+       한 줄짜리 텍스트 셀(13~21px)이 그 안에 떠 있고, 첫 버튼 라벨 길이가 행마다
+       달라 **뒤 버튼이 통째로 82px 밀렸다.** 열은 섰는데 열 **안**이 안 섰다.
+       셀에 `text-align:right`를 줘도 **아무 일도 안 난다** — 자식이 `d-flex`라
+       flex 컨테이너가 text-align을 무시하기 때문이다. 배치는 `justify-content`가 정한다.
+     · 헤더/셀 정렬 불일치 0 · vertical-align 전부 middle · 행 높이 종류 1개.
+       **오너 용의자 ①②는 무죄**였다.
+     · 금액 열 시작 x가 8~10px 갈리는 건 **결함이 아니라 자릿수 차이의 정상 결과**다
+       (우정렬이니 끝이 맞고 시작이 다른 게 맞다). 처음에 이걸 원인으로 셌던 건 오독이다.
+       `tabular-nums`는 그래서 **원인 수리가 아니라 보험**으로 남긴다 —
+       비례 숫자 폰트에서 숫자 열을 세로로 훑을 때 자릿수가 어긋나는 걸 막는다.
+     · 전 표 `table-layout: auto` — 지금 데이터에선 우연히 안정일 뿐 보장이 없다.
+
+   원칙: 숫자·금액·날짜 = 우정렬 + 자릿수 맞춤 / 텍스트 = 좌정렬 + 1줄 말줄임 /
+        수직 정렬 통일 / 헤더 정렬 = 셀 정렬 / **데이터가 레이아웃을 흔들지 못하게.** */
+
+/* 자릿수 맞춤 — 표 전체에 건다. 숫자가 아닌 글자는 영향을 안 받는다. */
+.pc-swiss-table { font-variant-numeric: tabular-nums; }
+.pc-swiss-table > thead th,
+.pc-swiss-table > tbody > tr > td { font-variant-numeric: tabular-nums; }
+
+/* 헤더 정렬 = 셀 정렬. 부트스트랩 유틸(.text-end/.text-center)을 헤더·셀 양쪽에 같이
+   붙이는 게 규약이고, 그게 지켜졌는지는 계약이 검사한다(여기선 기본값만 맞춘다). */
+.pc-swiss-table > thead th { vertical-align: bottom; }
+
+/* 텍스트 열은 **1줄 말줄임**. 긴 값이 줄을 늘려 행 높이를 흔들지 못하게.
+   `data-label`이 붙은 셀 = 모바일 카드 전환 대상 = 본문 텍스트 셀이라는 뜻이다. */
+.pc-swiss-table > tbody > tr > td.cardcell-title,
+.pc-swiss-table > tbody > tr > td[data-label] {
+  max-width: 22rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* 다만 **셀 안에 블록이 있으면**(뱃지 줄·부가 설명) 말줄임이 그걸 잘라먹는다 —
+   그런 셀은 규칙에서 뺀다. 잘림보다 어긋남이 낫다는 뜻이 아니라, 잘라선 안 되는 값이다. */
+.pc-swiss-table > tbody > tr > td[data-label]:has(> div),
+.pc-swiss-table > tbody > tr > td[data-label]:has(> ul) { white-space: normal; }
+
+/* 액션 열 — 열 안에서도 세로선이 서게. **버튼 뭉치를 오른쪽 기준으로 모은다.**
+   셀에 `text-align`을 주는 걸로는 안 된다: 자식이 `d-flex`라 flex 컨테이너가
+   text-align을 무시한다(계산값엔 반영되는데 렌더는 그대로였다 — 실측으로 확인).
+   배치를 정하는 건 `justify-content`다. 래퍼가 flex든 아니든 둘 다 걸어 둔다. */
+.pc-swiss-table > tbody > tr > td.cardcell-actions { white-space: normal; text-align: right; }
+.pc-swiss-table > tbody > tr > td.cardcell-actions > .d-flex { justify-content: flex-end; }
+.pc-swiss-table > tbody > tr > td.cardcell-actions > * { vertical-align: middle; }
+
+/* 모바일 카드 전환(.table-cards)에서는 위 말줄임·우정렬이 오히려 방해다 —
+   카드에선 값이 제 줄을 갖는다. 열 규칙은 표일 때만 산다. */
+@media (max-width: 767.98px) {
+  .table-cards.pc-swiss-table > tbody > tr > td.cardcell-title,
+  .table-cards.pc-swiss-table > tbody > tr > td[data-label] {
+    max-width: none; white-space: normal; overflow: visible;
+  }
+  .table-cards.pc-swiss-table > tbody > tr > td.cardcell-actions { text-align: left; }
+  .table-cards.pc-swiss-table > tbody > tr > td.cardcell-actions > .d-flex { justify-content: flex-start; }
+}
