@@ -352,8 +352,20 @@ def watch_registered(*, queue_fn, history_fn, classify_fn=None, record_fn=None,
     recorded = 0
     if record_fn:
         for r in scan["rows"]:
-            # 조회 실패 행은 상태를 바꾸지 않는다(미상 유지) — 확인 실패를 '확인함'으로 만들지 않는다.
-            status = "" if r.get("error") else ("rejected" if r.get("comment") else "unknown")
+            state = str(r.get("wing_state") or "")
+            if r.get("error"):
+                # 조회 실패 행은 상태를 바꾸지 않는다(미상 유지) — 확인 실패를 '확인함'으로 만들지 않는다.
+                status = ""
+            elif state == "approved":
+                # T2 승인 졸업 — 여태 이 분기가 없어서 **`approved`를 아무도 안 썼다.**
+                #   심사를 통과한 상품이 `unknown`에 머물러 `_WATCH_STATUSES`에 계속 걸리고,
+                #   2시간마다 영원히 재조회됐다(큐가 줄지 않으니 진짜 감시 대상이 묻힌다).
+                #   Wing이 '승인'이라고 답한 건 확정이다 — 큐에서 내보낸다.
+                status = "approved"
+            elif r.get("comment"):
+                status = "rejected"
+            else:
+                status = "unknown"
             try:
                 if record_fn(r["sid"], status=status, reject_kind=r.get("kind", ""),
                              reject_comment=r.get("comment", ""),
