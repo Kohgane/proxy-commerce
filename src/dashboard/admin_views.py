@@ -4011,6 +4011,49 @@ def _reject_watch_resubmit(up, sid, updates):
     return out
 
 
+def _reject_watch_rearm(sid: str) -> bool:
+    """대장 status를 `submitted`로 되돌린다 — **재무장 단일 소스**(실행 경로·소급 라우트 공용).
+
+    `mark_checked`는 빈 값 컬럼을 건너뛰므로 분류·사유·처방 기록은 **보존**되고
+    status와 checked_at만 갱신된다. 마켓 호출 0.
+    """
+    from src.db import market_registrations_pg as REG
+    return bool(REG.mark_checked(str(sid or "").strip(), status="submitted"))
+
+
+@admin_panel_bp.post("/reject-watch/rearm")
+def reject_watch_rearm():
+    """소급 재무장 — 이미 큐를 떠난 건을 **다시 감시 대상으로** 올린다(오너 게이트).
+
+    쓸 자리: 처방을 손으로 걸었거나, 옛 크론이 상태를 확정해 버려 큐에서 빠진 건.
+    (실측 사례: 9/03 크론이 임시저장 건을 `rejected`로 앉혀 그날 큐에서 이탈 — 16369251981.)
+
+    **비가역이 아니다**(마켓 호출 0, 다음 스캔이 Wing 실제 상태로 다시 덮는다).
+    그래서 REJECT_WATCH_APPROVED 게이트는 걸지 않는다 — 그 게이트는 마켓을 건드리는 실행용이다.
+    """
+    from flask import jsonify, request
+
+    j = request.get_json(silent=True) or {}
+    sids = [str(x).strip() for x in (j.get("sids") or []) if str(x).strip()]
+    if not sids:
+        return jsonify({"ok": False, "error": "재무장할 상품번호가 없습니다."}), 400
+    if len(sids) > 50:
+        return jsonify({"ok": False, "error": "한 번에 50건까지만 재무장합니다."}), 400
+    results = []
+    for sid in sids:
+        try:
+            ok = _reject_watch_rearm(sid)
+        except Exception as exc:                       # 조용한 성공 금지 — 사유를 그대로 올린다
+            results.append({"sid": sid, "rearmed": False, "error": str(exc)})
+            continue
+        # 대장에 없는 번호를 '재무장됨'이라 말하지 않는다(가짜 성공 0).
+        results.append({"sid": sid, "rearmed": ok,
+                        **({} if ok else {"error": "등록 대장에 없는 상품번호입니다."})})
+    return jsonify({"ok": True, "rearmed": sum(1 for r in results if r["rearmed"]),
+                    "failed": sum(1 for r in results if not r["rearmed"]),
+                    "results": results})
+
+
 @admin_panel_bp.post("/reject-watch/apply")
 def reject_watch_apply():
     """P4 처방 실행 — **오너 승인 게이트 뒤**(비가역). `REJECT_WATCH_APPROVED=1` 아니면 실행 0(정직 보류).
@@ -4051,6 +4094,9 @@ def reject_watch_apply():
         reupload_fn=lambda sid, row: up.request_approval(sid),   # 폴백(구 경로 호환)
         # F' — 임시저장(승인요청 누락): **승인요청 PUT 한 방**만. 수정도 재생성도 하지 않는다.
         approve_fn=lambda sid: up.request_approval(sid),
+        # R2 — 재무장. **다시 요청했으면 결과는 다시 미확정이다.**
+        #   이게 없으면 처방을 걸어 놓고도 대장은 옛 상태 그대로라 아무도 결과를 안 본다.
+        rearm_fn=lambda sid: _reject_watch_rearm(sid),
     ) for r in rows]
     return jsonify({"ok": True, "approved": True, "account": account,
                     "applied": sum(1 for x in results if x.get("applied")),

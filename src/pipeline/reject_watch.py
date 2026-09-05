@@ -406,8 +406,30 @@ def watch_registered(*, queue_fn, history_fn, classify_fn=None, record_fn=None,
             "elapsed_sec": round(clock() - start, 2)}
 
 
+def _rearm(sid, rearm_fn, out: dict) -> dict:
+    """재무장 — **다시 요청했으면 결과는 다시 미확정이다.**
+
+    ★ R2 부검(2026-09-05): 처방을 실행해도 대장 status가 그대로라 감시 사슬이 끊겼다.
+      승인요청은 `{success:true}`만 돌려주고 대장을 안 건드린다. 그래서 이미 큐를 떠난 행
+      (예: `rejected`)에 처방을 걸면 **다시 요청해 놓고도 아무도 결과를 안 본다** —
+      실행할수록 블랙박스가 되는 구조였다.
+
+    성공했을 때만 `submitted`로 되돌린다. 실패는 상태를 건드리지 않는다
+    (실패를 '다시 심사 중'으로 만들면 그거야말로 가짜 수치다).
+    """
+    if not rearm_fn:
+        return out
+    try:
+        out["rearmed"] = bool(rearm_fn(sid))
+    except Exception as exc:                          # 재무장 실패가 처방 성공을 덮지 않는다
+        out["rearmed"] = False
+        out["rearm_error"] = str(exc)
+    return out
+
+
 def apply_prescription(row, *, reupload_fn=None, delete_fn=None, reissue_fn=None,
-                       resubmit_fn=None, approve_fn=None, approved: bool = False) -> dict:
+                       resubmit_fn=None, approve_fn=None, rearm_fn=None,
+                       approved: bool = False) -> dict:
     """처방 실행 — **배선하되 오너 승인 게이트 뒤**(비가역). approved=False면 실행 0(보류 사유).
 
     - image_spec→reupload_fn(sid) · trademark→delete_fn(sid) · option_value→reupload_fn(sid,대체값)
@@ -436,7 +458,7 @@ def apply_prescription(row, *, reupload_fn=None, delete_fn=None, reissue_fn=None
             return {**base, "applied": False, "reason": "재등록 핸들러 미주입"}
         try:
             res = reissue_fn(sid)
-            return {**base, "applied": True, "action": "reissue", "result": res}
+            return _rearm(sid, rearm_fn, {**base, "applied": True, "action": "reissue", "result": res})
         except Exception as exc:
             return {**base, "applied": False, "reason": f"재등록 실패: {exc}"}
     if kind == "image_spec" or kind == "option_value":
@@ -449,15 +471,16 @@ def apply_prescription(row, *, reupload_fn=None, delete_fn=None, reissue_fn=None
                 _upd["_kind"] = kind
                 res = resubmit_fn(sid, _upd)
                 ok = bool((res or {}).get("success")) if isinstance(res, dict) else bool(res)
-                return {**base, "applied": ok, "action": "resubmit", "result": res,
-                        **({} if ok else {"reason": (res or {}).get("error", "재승인 실패")})}
+                out = {**base, "applied": ok, "action": "resubmit", "result": res,
+                       **({} if ok else {"reason": (res or {}).get("error", "재승인 실패")})}
+                return _rearm(sid, rearm_fn, out) if ok else out
             except Exception as exc:
                 return {**base, "applied": False, "reason": f"재승인 실패: {exc}"}
         if not reupload_fn:
             return {**base, "applied": False, "reason": "재등록/재승인 핸들러 미주입"}
         try:
             res = reupload_fn(sid, row)
-            return {**base, "applied": True, "action": "reupload", "result": res}
+            return _rearm(sid, rearm_fn, {**base, "applied": True, "action": "reupload", "result": res})
         except Exception as exc:
             return {**base, "applied": False, "reason": f"재등록 실패: {exc}"}
     if kind == "saved_pending":
@@ -467,8 +490,9 @@ def apply_prescription(row, *, reupload_fn=None, delete_fn=None, reissue_fn=None
         try:
             res = approve_fn(sid)
             ok = bool((res or {}).get("success")) if isinstance(res, dict) else bool(res)
-            return {**base, "applied": ok, "action": "request_approval", "result": res,
-                    **({} if ok else {"reason": (res or {}).get("error", "승인요청 실패")})}
+            out = {**base, "applied": ok, "action": "request_approval", "result": res,
+                   **({} if ok else {"reason": (res or {}).get("error", "승인요청 실패")})}
+            return _rearm(sid, rearm_fn, out) if ok else out
         except Exception as exc:
             return {**base, "applied": False, "reason": f"승인요청 실패: {exc}"}
     if kind == "trademark":
