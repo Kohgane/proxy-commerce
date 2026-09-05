@@ -110,3 +110,45 @@ def test_relay_php_is_not_an_open_relay():
     assert "hash_equals" in php and "릴레이 키 미설정" in php
     for host in R._API_RELAY_ALLOWED_HOSTS:
         assert f"'{host}'" in php, f"허용 호스트 불일치: {host}"
+
+
+# ── F': 비밀 로딩 (대체본이 발명한 자리) ────────────────────────────────
+
+def test_relay_php_reads_the_secret_file_first():
+    """★ 부검(2026-09-05): 대체본이 키를 `getenv()`로만 읽게 **발명**해서 릴레이가 죽었다.
+
+    원본은 docroot 상위의 비밀 파일에서 읽고 있었다. **공유 호스팅 PHP는 셸 export를
+    보지 못한다** — SSH에서 넣은 환경변수는 웹 요청 프로세스에 없다.
+    """
+    from pathlib import Path
+    php = Path("relay/mkt.php").read_text(encoding="utf-8")
+    assert "kgp_relay_secret" in php
+    body = php.split("function kgp_relay_key()")[1].split("}\n\n$RELAY_KEY")[0]
+    # 파일이 **먼저**, env는 폴백 — 순서가 뒤집히면 같은 사고가 난다.
+    assert body.index("file_get_contents") < body.index("getenv")
+    assert "trim(" in body                       # 끝 개행이 섞이면 키가 통째로 어긋난다
+
+
+def test_secret_path_is_relative_not_hardcoded():
+    """경로 하드코딩 0 — 유저명이 레포에 남지 않는다(공개 저장소 위생)."""
+    import re
+    from pathlib import Path
+    php = Path("relay/mkt.php").read_text(encoding="utf-8")
+    assert "dirname(__DIR__)" in php
+    assert not re.search(r"/home\d*/\w+", php), "홈 경로(유저명)가 박혔다"
+
+
+def test_missing_key_names_both_places():
+    """'미설정'만 뜨면 다음 사람이 또 env부터 뒤진다 — 어디를 봤는지 말한다."""
+    from pathlib import Path
+    php = Path("relay/mkt.php").read_text(encoding="utf-8")
+    msg = [ln for ln in php.split("\n") if "릴레이 키 미설정" in ln][0]
+    assert "kgp_relay_secret" in msg and "KGP_RELAY_KEY" in msg
+
+
+def test_content_length_fix_survives():
+    """★ F''(길이 명시)는 그대로다 — 키 수리가 앞 수리를 지우지 않았다."""
+    from pathlib import Path
+    php = Path("relay/mkt.php").read_text(encoding="utf-8")
+    assert "CURLOPT_POSTFIELDS     => $body," in php
+    assert "'Content-Length: ' . strlen($body)" in php
