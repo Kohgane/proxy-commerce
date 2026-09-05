@@ -19,8 +19,29 @@
 declare(strict_types=1);
 
 // ── 설정 ────────────────────────────────────────────────────────────────────
-// 키는 파일에 박지 말고 환경/별도 include로. 없으면 거부한다(열린 릴레이 금지).
-$RELAY_KEY = getenv('KGP_RELAY_KEY') ?: '';
+/**
+ * 키 로딩 — **파일이 먼저, env는 폴백.**
+ *
+ * ★ F''' 부검(2026-09-05): 대체본이 키를 `getenv()`로만 읽게 **발명**해서 릴레이가 죽었다.
+ *   원본은 docroot 상위의 비밀 파일에서 읽고 있었다(8/6 구축분). **공유 호스팅 PHP는
+ *   셸 `export`를 보지 못한다** — SSH에서 넣은 환경변수는 웹 요청 프로세스에 없다.
+ *   프로토콜 계약만 지키고 **비밀 로딩은 계약 밖**이라 사각이 됐다.
+ *
+ * 경로는 하드코딩하지 않는다: `dirname(__DIR__)` = docroot 상위(홈).
+ * 유저명이 레포에 남지 않고, 계정이 바뀌어도 따라간다.
+ */
+function kgp_relay_key(): string {
+    $file = dirname(__DIR__) . '/kgp_relay_secret';
+    if (is_readable($file)) {
+        $v = trim((string) file_get_contents($file));   // 끝 개행이 섞이면 키가 통째로 어긋난다
+        if ($v !== '') {
+            return $v;
+        }
+    }
+    return trim((string) (getenv('KGP_RELAY_KEY') ?: ''));   // 폴백(env를 보는 환경용)
+}
+
+$RELAY_KEY = kgp_relay_key();
 
 // 허용 호스트 — 우리 코드(_API_RELAY_ALLOWED_HOSTS)와 같은 집합이어야 한다.
 $ALLOWED_HOSTS = [
@@ -41,7 +62,8 @@ function fail(string $msg, int $code = 200): void {
 
 // ── 인증 ────────────────────────────────────────────────────────────────────
 if ($RELAY_KEY === '') {
-    fail('릴레이 키 미설정 — 서버 환경변수 KGP_RELAY_KEY를 설정하세요.');
+    // 어디를 봤는지 말한다 — '미설정'만 뜨면 다음 사람이 또 env부터 뒤진다.
+    fail('릴레이 키 미설정 — docroot 상위 kgp_relay_secret 파일 또는 KGP_RELAY_KEY 환경변수를 확인하세요.');
 }
 $given = $_SERVER['HTTP_X_KGP_RELAY_KEY'] ?? '';
 if (!hash_equals($RELAY_KEY, (string) $given)) {
