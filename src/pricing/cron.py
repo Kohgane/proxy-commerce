@@ -282,7 +282,7 @@ _reject_lock = _threading.Lock()   # 반려감시 중복 진입 가드(쿠팡 AP
 _last_reject_watch: dict = {}      # 최근 감시 결과(진단·로그)
 
 
-def _run_reject_watch(app, account: str, limit: int, budget: float) -> dict:
+def _run_reject_watch(app, account: str, limit: int, budget: float, dry_run: bool = False) -> dict:
     """반려감시 실작업(백그라운드) — 등록 대장 → `/histories` 조회·분류·기록·알림. **실행 0**(처방은 승인 게이트 뒤)."""
     import time as _t
     t0 = _t.monotonic()
@@ -302,8 +302,9 @@ def _run_reject_watch(app, account: str, limit: int, budget: float) -> dict:
                     queue_fn=lambda n: REG.watch_queue(account=account, limit=n),
                     history_fn=lambda sid, acct: up.get_status_histories(sid),
                     record_fn=lambda sid, **kw: REG.mark_checked(sid, **kw),
-                    notify_fn=_reject_notify_fn(account),
-                    limit=limit, time_budget_sec=budget)
+                    # dry-run은 알림도 보내지 않는다 — 세어 보는 것만으로 사람을 깨우지 않는다.
+                    notify_fn=(None if dry_run else _reject_notify_fn(account)),
+                    limit=limit, time_budget_sec=budget, dry_run=dry_run)
             total = _t.monotonic() - t0
             out["total_sec"] = round(total, 1)
             if not out.get("ok"):
@@ -318,12 +319,13 @@ def _run_reject_watch(app, account: str, limit: int, budget: float) -> dict:
         logger.error("반려감시 오류(백그라운드): %s", exc)
         out = {"ok": False, "error": str(exc)}
     finally:
-        _last_reject_watch.clear()
-        _last_reject_watch.update(out)
-        try:
-            _reject_lock.release()
-        except RuntimeError:
-            pass
+        if not dry_run:                        # dry-run은 락을 안 잡았다(마지막 결과도 안 덮는다)
+            _last_reject_watch.clear()
+            _last_reject_watch.update(out)
+            try:
+                _reject_lock.release()
+            except RuntimeError:
+                pass
     return out
 
 
@@ -377,6 +379,11 @@ def reject_watch_cron():
         limit = int(request.args.get("limit", 30))
     except (TypeError, ValueError):
         limit = 30
+    # W5 — dry-run: **아무것도 쓰지 않고** 무엇이 얼마나 바뀔지만 세어 **응답으로** 돌려준다.
+    #   2천 건 일괄 상태 변경 앞이라 오너가 숫자를 보고 판단해야 한다(로그로만 흘리면 못 본다).
+    if str(request.args.get("dry_run", "")).lower() in ("1", "true", "yes"):
+        return jsonify(_run_reject_watch(current_app._get_current_object(), account, limit,
+                                         _tick_budget_sec(), dry_run=True)), 200
     if not _reject_lock.acquire(blocking=False):
         return jsonify({"ok": True, "status": "already_running", "skipped": True,
                         "message": "이전 감시가 진행 중 — 이번 호출은 스킵합니다.",
