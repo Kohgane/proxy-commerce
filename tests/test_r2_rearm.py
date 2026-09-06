@@ -153,7 +153,10 @@ def test_rearm_route_is_honest_about_missing_rows():
 def test_rearm_button_confirms_and_posts():
     """버튼은 확인 다이얼로그를 거치고, 응답 원문을 그대로 화면에 남긴다."""
     t = TPL.read_text(encoding="utf-8")
-    assert 'id="rearmBtn"' in t and 'id="rearmSids"' in t and 'id="rearmResult"' in t
+    # 6-h: 입력칸은 조회와 **공유**한다(오너 H2) — 같은 번호를 두 번 치게 하지 않으려고 합쳤다.
+    #   지키는 건 '이 버튼이 이 결과칸에 자기 라우트로 쓴다'이지 입력칸이 따로 있다는 게 아니다.
+    assert 'id="rearmBtn"' in t and 'id="rearmResult"' in t
+    assert 'id="sids"' in t and 'id="rearmSids"' not in t
     js = t.split("소급 재무장")[-1]
     assert "pcConfirm(" in js and "/admin/reject-watch/rearm" in js
     # 6-f-3: 원문 직출력은 은퇴했다. **원문은 접힘 안에 남고**, 기본 화면은 사람 말이다.

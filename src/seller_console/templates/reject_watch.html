@@ -2,231 +2,224 @@
 {% block title %}등록 파이프 · 반려감시{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-start mb-2">
-  <div>
-    <div class="console-kpi-label mb-1">등록 파이프 · P4</div>
-    <h4 class="mb-0 fw-bold"><i class="bi bi-clipboard-x"></i> 반려 감시</h4>
-  </div>
-</div>
-<hr class="pc-hairline mt-0 mb-4">
+{# 디자인 v3 Stage 6-h — 뷰포트 고정 재구성(오너 H1~H5).
+   합격 기준이 '한 화면에 들어간다'라서, 카드 문법 승계보다 **무엇을 세로로 쌓지 않을 것인가**가 본론이다.
+   좌 = 수단(계정·번호·버튼), 우 = 상태(요약 스트립 → 감시 대상 → 분류표). 세로 스크롤은 카드 **안**에서만.
+   로직 변경 0: id·라우트·data-* 훅은 그대로 둔다(JS가 잡는 자리다). #}
+<div class="rw-page">
 
-<div class="pc-status pc-status-info small mb-3">
-  반려된 쿠팡 상품의 <strong>실제 사유(이력 comment)</strong>를 조회해 <strong>이미지 규격 · 상표권 · 옵션값</strong>
-  세 유형으로 자동 분류하고 처방을 붙입니다. 알림 요약까지가 이 화면의 몫이에요 —
-  <strong>재등록·삭제 실행은 오너 승인 뒤</strong>에만 진행합니다(되돌릴 수 없는 작업).
-</div>
+  <div class="ch-head">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+      <div>
+        <div class="console-kpi-label mb-1">등록 파이프 · P4</div>
+        <h4 class="mb-0 fw-bold">반려 감시</h4>
+      </div>
+    </div>
+    <hr class="pc-hairline mt-0 mb-0">
+  </div>
 
-{# 감시 대상 — 크론이 **지금 물고 있는** 대장 건(읽기 전용). 여기가 비어 있으면 크론도 할 일이 없다.
-   대장 조회는 쿠팡 API를 부르지 않는다(자격 무관) — 자격이 없어도 이 표는 뜬다. #}
-<section class="op-card mb-4">
-  <div class="op-card-head">
-    <span class="rp-step-eyebrow">감시 대상</span>
-    <span class="op-tile-sub ms-auto">
-      {% if watch.connected %}{{ watch.rows|length }}건 · 등록 대장 미확정({{ account }})
-      {% else %}상태 확인 불가{% endif %}
-    </span>
-  </div>
-  <div class="op-card-body p-0">
-    {% if not watch.connected %}
-    <div class="op-off p-4">미연결 — {{ watch.note }}<br>
-      <span class="op-tile-sub">0건과 구분하기 위해 숫자를 찍지 않습니다.</span></div>
-    {% elif watch.rows %}
-    <table class="table table-hover mb-0 ch-card-table">
-      <thead>
-        <tr><th class="ps-3">상품 번호</th><th>제목</th><th>계정</th><th class="text-end pe-3">마켓</th></tr>
-      </thead>
-      <tbody>
-        {% for w in watch.rows %}
-        <tr>
-          <td class="ps-3"><code>{{ w.sid }}</code></td>
-          <td class="ch-cell-title">{{ w.title or '(제목 없음)' }}</td>
-          <td><span class="badge ch-badge-src">{{ w.account or account }}</span></td>
-          <td class="text-end pe-3">
-            {% if w.market_url %}<a href="{{ w.market_url }}" target="_blank" rel="noopener noreferrer"
-               class="btn btn-ghost btn-sm">쿠팡에서 보기 <i class="bi bi-box-arrow-up-right"></i></a>{% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <div class="op-empty p-4">감시 대상이 없어요 — 등록 대장에 미확정 건이 없습니다.</div>
-    {% endif %}
-  </div>
-  <div class="op-card-foot">
-    <span class="op-tile-sub">2시간마다 자동 점검합니다. 아래 조회는 <strong>쿠팡에 실제 사유를 물어보는</strong> 단계예요.</span>
-  </div>
-</section>
-
-<!-- 입력 -->
-<form method="post" action="/seller/sourcing/reject-watch" class="op-card mb-4">
-  <div class="op-card-body">
-    <div class="row g-2 align-items-start">
-      <div class="col-auto">
+  <!-- 좌: 수단 — 계정·번호·실행 -->
+  <div class="rw-col">
+    {# 입력칸이 둘이었다(조회용·다시지켜보기용). 같은 번호를 두 번 치게 만드는 구조라 **하나로 합쳤다.**
+       의미가 갈리는 지점은 '비웠을 때'다: 조회는 비우면 감시 대상 전부, 다시 지켜보기는 전부에 걸지
+       않는다(상태를 되돌리는 조작이라 대상이 명시돼야 한다). 그 분기는 버튼이 지고, 입력은 하나다. #}
+    <form method="post" action="/seller/sourcing/reject-watch" class="op-card">
+      <div class="op-card-head">
+        <strong>조회 · 조치</strong>
+        <span class="op-tile-sub ms-auto">사유는 상태 문구가 아니라 <strong>이력 comment</strong>로 판정합니다.</span>
+      </div>
+      <div class="op-card-body">
         <label class="form-label small mb-1" for="account">계정</label>
-        <select id="account" name="account" class="form-select form-select-sm">
+        <select id="account" name="account" class="form-select form-select-sm mb-3">
           <option value="gogane" {% if account=='gogane' %}selected{% endif %}>고가네 (A01381223)</option>
           <option value="woojoo" {% if account=='woojoo' %}selected{% endif %}>우주대행 (A01504840)</option>
         </select>
-      </div>
-      <div class="col">
-        <label class="form-label small mb-1" for="sids">반려 상품 번호(sellerProductId, 한 줄에 하나)</label>
-        <textarea class="form-control" id="sids" name="sids" rows="4"
+
+        <label class="form-label small mb-1" for="sids">상품 번호(sellerProductId, 한 줄에 하나)</label>
+        <textarea class="form-control" id="sids" name="sids" rows="5"
           placeholder="123456789&#10;123456790">{{ sids_text }}</textarea>
-        <div class="form-text">비워 두면 <strong>위 감시 대상 전부</strong>를 조회합니다.</div>
+        <div class="form-text">
+          비워 두면 <strong>감시 대상 전부</strong>를 조회합니다.
+          <strong>다시 지켜보기</strong>는 번호를 적었을 때만 실행돼요.
+        </div>
+        <pre class="rw-result mt-2" id="rearmResult" hidden></pre>
       </div>
-    </div>
-    <div class="d-flex justify-content-between align-items-center mt-2 flex-wrap gap-2">
-      <span class="text-muted small">사유는 상태 문구가 아니라 <strong>이력 comment</strong>로 판정합니다(오판 방지).</span>
-      <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search"></i> 반려 사유 조회·분류</button>
-    </div>
-  </div>
-</form>
+      <div class="op-card-foot">
+        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search"></i> 반려 사유 조회·분류</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="rearmBtn"><i class="bi bi-arrow-repeat"></i> 다시 지켜보기</button>
+      </div>
+    </form>
 
-<!-- 다시 지켜보기(내부: rearm) — 이미 자동 점검에서 빠진 건을 목록에 되돌린다 -->
-<section class="op-card mb-4">
-  <div class="op-card-head">
-    <strong>다시 지켜보기</strong>
-    <span class="op-tile-sub">심사 결과를 다시 확인하고 싶은 상품을 자동 점검 목록에 다시 올려요.</span>
+    {# H3①: 상단 파랑 설명 배너 → 1줄 + 접힘. 진입할 때 한 번 읽으면 되는 교육 문구가
+       화면 맨 위를 상시로 차지하고 있었다. 문장은 하나도 안 버렸다 — 자리만 옮겼다. #}
+    <details class="rw-note">
+      <summary>반려 사유를 조회해 유형별로 분류하고 처방을 붙이는 화면이에요. <span class="rw-note-more">자세히</span></summary>
+      <div class="rw-note-body">
+        반려된 쿠팡 상품의 <strong>실제 사유(이력 comment)</strong>를 조회해 <strong>이미지 규격 · 상표권 · 옵션값</strong>
+        세 유형으로 자동 분류하고 처방을 붙입니다. 알림 요약까지가 이 화면의 몫이에요 —
+        <strong>재등록·삭제 실행은 오너 승인 뒤</strong>에만 진행합니다(되돌릴 수 없는 작업).
+        <div class="mt-2">
+          <strong>다시 지켜보기</strong>는 <strong>마켓에는 아무것도 보내지 않아요.</strong> 다음 자동 점검(최대 2시간 내)부터
+          심사 결과를 다시 확인하고 싶은 상품을 자동 점검 목록에 다시 올려요.
+          지금까지의 분류·사유 기록은 그대로 남습니다.
+        </div>
+        <div class="mt-2">
+          감시 대상은 <strong>2시간마다 자동 점검</strong>합니다. 왼쪽 조회는 <strong>쿠팡에 실제 사유를 물어보는</strong> 단계예요.
+          처방 실행(재등록/삭제/재승인)은 오너 승인 게이트(<span class="font-monospace">POST /admin/reject-watch/apply</span>)
+          뒤에서만 돕니다 — <strong>브랜드 수정요청·증빙 필요는 자동 조치하지 않습니다.</strong>
+        </div>
+      </div>
+    </details>
   </div>
-  <div class="op-card-body">
-    <label class="form-label small mb-1" for="rearmSids">상품 번호(한 줄에 하나)</label>
-    <textarea class="form-control" id="rearmSids" rows="2" placeholder="16369251981"></textarea>
-    <div class="form-text">
-      <strong>마켓에는 아무것도 보내지 않아요.</strong> 다음 자동 점검(최대 2시간 내)부터
-      이 상품의 심사 결과를 다시 확인해요. 지금까지의 분류·사유 기록은 그대로 남습니다.
-    </div>
-    <pre class="rw-result mt-2" id="rearmResult" hidden></pre>
-  </div>
-  <div class="op-card-foot">
-    <button type="button" class="btn btn-ghost btn-sm" id="rearmBtn"><i class="bi bi-arrow-repeat"></i> 다시 지켜보기</button>
-  </div>
-</section>
 
-{% if scan is not none %}
-  {% if scan.error %}
-    <div class="pc-status pc-status-warning small mb-4">{{ scan.error }}</div>
-  {% else %}
-  <!-- 알림 요약 -->
-  <div class="row g-3 mb-4">
-    <div class="col-6 col-md-3">
-      <div class="card console-card console-kpi-card console-kpi-primary h-100"><div class="card-body">
-        <div class="console-kpi-label mb-1">반려 조회</div>
-        <div class="console-stat-value">{{ scan.scanned }}</div>
-      </div></div>
+  <!-- 우: 상태 — 요약 → 감시 대상 → 분류표 -->
+  <div class="rw-col">
+    {% if scan is not none and not scan.error %}
+    {# H3②+KPI: 카드 2장(반려 조회·유형별)을 **한 줄 스트립**으로. 게이트 노랑 배너도 여기 자물쇠 뱃지 하나로 —
+       상태는 한 눈에 보이면 되고, 왜 잠겼는지는 뱃지가 물고 있는다(title + 좌측 접힘 설명). #}
+    <div class="op-strip rw-strip">
+      <span class="rw-kpi"><span class="rw-kpi-k">반려 조회</span><span class="rw-kpi-v">{{ scan.scanned }}</span></span>
+      {% for k, meta in kinds.items() %}{% if k != 'unknown' and scan.by_kind.get(k) %}
+      <span class="rw-kpi"><span class="rw-kpi-k">{{ meta.ko }}</span><span class="rw-kpi-v">{{ scan.by_kind.get(k) }}</span></span>
+      {% endif %}{% endfor %}
+      {% if scan.needs_manual %}
+      <span class="rw-kpi is-warn"><span class="rw-kpi-k">미분류(오너 확인)</span><span class="rw-kpi-v">{{ scan.needs_manual }}</span></span>
+      {% endif %}
+      {% if scan.by_state %}
+      <span class="rw-states">
+        {% for st, n in scan.by_state.items() %}
+        <span class="pc-badge {% if st == 'rejected' %}pc-badge-danger{% elif st == 'saved' %}pc-badge-warning{% elif st == 'approved' %}pc-badge-success{% else %}pc-badge-muted{% endif %}">
+          {{ scan.labels.get(st, st) }} {{ n }}</span>
+        {% endfor %}
+      </span>
+      {% endif %}
+      <span class="pc-badge {% if approved %}pc-badge-warning{% else %}pc-badge-muted{% endif %} ms-auto"
+            title="{% if approved %}처방 실행 승인됨(REJECT_WATCH_APPROVED) — 재등록·삭제가 실제로 실행됩니다.{% else %}처방 실행 보류 — 재등록·삭제는 오너 승인(REJECT_WATCH_APPROVED) 뒤에만. 지금은 분류·알림만.{% endif %}">
+        <i class="bi bi-{% if approved %}unlock{% else %}lock{% endif %}"></i>
+        {% if approved %}실행 승인됨{% else %}실행 보류{% endif %}
+      </span>
     </div>
-    {% for k, meta in kinds.items() %}{% if k != 'unknown' and scan.by_kind.get(k) %}
-    <div class="col-6 col-md-3">
-      <div class="card console-card console-kpi-card h-100"><div class="card-body">
-        <div class="console-kpi-label mb-1">{{ meta.ko }}</div>
-        <div class="console-stat-value">{{ scan.by_kind.get(k) }}</div>
-        <div class="text-muted small">→ {{ meta.rx_ko }}</div>
-      </div></div>
-    </div>
-    {% endif %}{% endfor %}
-    {% if scan.needs_manual %}
-    <div class="col-6 col-md-3">
-      <div class="card console-card console-kpi-card console-kpi-warning h-100"><div class="card-body">
-        <div class="console-kpi-label mb-1">미분류(오너 확인)</div>
-        <div class="console-stat-value">{{ scan.needs_manual }}</div>
-      </div></div>
-    </div>
+    {% elif scan is not none and scan.error %}
+    <div class="pc-status pc-status-warning small">{{ scan.error }}</div>
+    {% endif %}
+
+    {# 감시 대상 — 크론이 **지금 물고 있는** 대장 건(읽기 전용). 여기가 비어 있으면 크론도 할 일이 없다.
+       대장 조회는 쿠팡 API를 부르지 않는다(자격 무관) — 자격이 없어도 이 표는 뜬다. #}
+    <section class="op-card rw-card-watch">
+      <div class="op-card-head">
+        <span class="rp-step-eyebrow">감시 대상</span>
+        <span class="op-tile-sub ms-auto">
+          {% if watch.connected %}{{ watch.rows|length }}건 · 등록 대장 미확정({{ account }}) · 2시간마다 자동 점검
+          {% else %}상태 확인 불가{% endif %}
+        </span>
+      </div>
+      <div class="op-card-body p-0">
+        {% if not watch.connected %}
+        <div class="op-off p-4">미연결 — {{ watch.note }}<br>
+          <span class="op-tile-sub">0건과 구분하기 위해 숫자를 찍지 않습니다.</span></div>
+        {% elif watch.rows %}
+        <table class="table table-hover mb-0 ch-card-table">
+          <thead>
+            <tr><th class="ps-3">상품 번호</th><th>제목</th><th>계정</th><th class="text-end pe-3">마켓</th></tr>
+          </thead>
+          <tbody>
+            {% for w in watch.rows %}
+            <tr>
+              <td class="ps-3"><code>{{ w.sid }}</code></td>
+              <td class="ch-cell-title">{{ w.title or '(제목 없음)' }}</td>
+              <td><span class="badge ch-badge-src">{{ w.account or account }}</span></td>
+              <td class="text-end pe-3">
+                {% if w.market_url %}<a href="{{ w.market_url }}" target="_blank" rel="noopener noreferrer"
+                   class="btn btn-ghost btn-sm">쿠팡에서 보기 <i class="bi bi-box-arrow-up-right"></i></a>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="op-empty p-4">감시 대상이 없어요 — 등록 대장에 미확정 건이 없습니다.</div>
+        {% endif %}
+      </div>
+    </section>
+
+    {% if scan is not none and not scan.error %}
+    <!-- 분류표 -->
+    <section class="op-card rw-card-table">
+      <div class="op-card-head">
+        <strong>반려 분류표</strong>
+        <span class="op-tile-sub">사유(comment) 기준 · 실행 없음</span>
+      </div>
+      <div class="op-card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0 table-cards pc-swiss-table">
+            <thead><tr>
+              <th>상품번호</th><th>반려 사유(comment)</th><th>분류</th><th>처방</th><th class="text-end pe-3">실행</th>
+            </tr></thead>
+            <tbody>
+              {% for r in scan.rows %}
+              <tr>
+                <td data-label="상품번호"><span class="font-monospace small">{{ r.sid }}</span>
+                  {% if r.title %}<div class="text-muted small text-truncate rw-title">{{ r.title }}</div>{% endif %}</td>
+                <td data-label="반려 사유">
+                  {% if r.error %}<span class="pc-badge pc-badge-danger">조회 실패</span>
+                    <div class="text-muted small">{{ r.error }}</div>
+                  {% elif r.comment %}<small>{{ r.comment[:80] }}</small>
+                    {% if r.comment_is_status_only %}<div><span class="pc-badge pc-badge-muted">상태 문구만(사유 미상)</span></div>{% endif %}
+                  {% else %}<span class="pc-badge pc-badge-muted">사유 없음</span>{% endif %}
+                </td>
+                <td data-label="분류">
+                  {% if r.kind == 'unknown' %}<span class="pc-badge pc-badge-off">미분류</span>
+                  {% elif r.kind == 'trademark' %}<span class="pc-badge pc-badge-danger">{{ r.kind_ko }}</span>
+                  {% else %}<span class="pc-badge pc-badge-on">{{ r.kind_ko }}</span>{% endif %}
+                  {% if r.kind == 'apple_category' %}
+                    <div class="small text-muted mt-1">대상:
+                      {% if r.apple_target == 'android' %}<strong>삼성/픽셀 — 유효</strong>
+                      {% elif r.apple_target == 'apple' %}<strong>iPhone — 표기 보류</strong>
+                      {% else %}미상{% endif %}</div>
+                  {% endif %}
+                </td>
+                <td data-label="처방">
+                  {% if r.kind == 'unknown' %}<span class="text-muted small">오너 확인 필요</span>
+                  {% else %}<span class="fw-semibold small">{{ r.prescription_ko }}</span>{% endif %}
+                </td>
+                {# T1 — 처방 실행. **신규 실행 로직 0**: 이미 배선된 `/admin/reject-watch/apply`를 부른다.
+                   한 건씩만(카나리 원칙 — 전체 일괄 없음). 게이트가 잠겨 있으면 비활성 + 사유 표기. #}
+                <td data-label="실행" class="text-end pe-3">
+                  {% if r.kind == 'unknown' %}
+                    <span class="text-muted small">—</span>
+                  {% elif not approved %}
+                    <button type="button" class="btn btn-ghost btn-sm" disabled
+                            title="REJECT_WATCH_APPROVED가 꺼져 있어 실행할 수 없습니다(비가역 방어)">
+                      <i class="bi bi-lock"></i> 게이트 잠김
+                    </button>
+                  {% else %}
+                    <button type="button" class="btn btn-primary btn-sm rw-apply"
+                            data-sid="{{ r.sid }}" data-kind="{{ r.kind }}"
+                            data-kind-ko="{{ r.kind_ko }}" data-rx-ko="{{ r.prescription_ko }}"
+                            data-apple-target="{{ r.apple_target or '' }}"
+                            data-wing-state="{{ r.wing_state or '' }}">
+                      <i class="bi bi-play-fill"></i> 처방 실행
+                    </button>
+                  {% endif %}
+                </td>
+              </tr>
+              <tr class="rw-result-row" id="rwResult-{{ r.sid }}" hidden>
+                <td colspan="5" class="rw-result"></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {# H3③: 하단 파랑 요약 배너 → 이 푸터 한 줄로 흡수. 요약과 표 사이에 카드 경계가 하나 줄었다. #}
+      <div class="op-card-foot">
+        <span class="op-tile-sub">{{ scan.alert }} · 조치 대상 {{ scan.actionable }}건 · 분류·집계만 {{ scan.info_only }}건 — 처방 실행은 오너 승인 뒤에만.</span>
+      </div>
+    </section>
     {% endif %}
   </div>
 
-  {% if scan.by_state %}
-  <!-- Wing 상태 분포 — 계기판과 같은 축(반려·임시저장·브랜드수정·증빙). 조치 가능/불가를 나눠 표기. -->
-  <div class="card border-0 shadow-sm mb-4"><div class="card-body">
-    <div class="pc-overline mb-2">상태 분포</div>
-    <div class="d-flex flex-wrap gap-2 mb-2">
-      {% for st, n in scan.by_state.items() %}
-      <span class="pc-badge {% if st == 'rejected' %}pc-badge-danger{% elif st == 'saved' %}pc-badge-warning{% elif st == 'approved' %}pc-badge-success{% else %}pc-badge-muted{% endif %}">
-        {{ scan.labels.get(st, st) }} {{ n }}</span>
-      {% endfor %}
-    </div>
-    <div class="text-muted small">
-      조치 대상 {{ scan.actionable }}건 · 분류·집계만 {{ scan.info_only }}건
-      <span class="text-muted">(브랜드 수정요청·증빙 필요는 자동 조치하지 않습니다)</span>
-    </div>
-  </div></div>
-  {% endif %}
-
-  <div class="pc-status {% if approved %}pc-status-warning{% else %}pc-status-info{% endif %} small mb-3">
-    {% if approved %}<i class="bi bi-unlock"></i> 처방 실행 <strong>승인됨</strong>(REJECT_WATCH_APPROVED) — 재등록·삭제가 실제로 실행됩니다.
-    {% else %}<i class="bi bi-lock"></i> 처방 실행 <strong>보류</strong> — 재등록·삭제는 오너 승인(REJECT_WATCH_APPROVED) 뒤에만. 지금은 분류·알림만.{% endif %}
-  </div>
-
-  <!-- 분류표 -->
-  <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header bg-white"><span class="fw-semibold">반려 분류표</span>
-      <span class="text-muted small ms-2">사유(comment) 기준 · 실행 없음</span></div>
-    <div class="card-body p-0"><div class="table-responsive">
-      <table class="table table-hover mb-0 table-cards pc-swiss-table">
-        <thead class="table-light"><tr>
-          <th>상품번호</th><th>반려 사유(comment)</th><th>분류</th><th>처방</th><th class="text-end pe-3">실행</th>
-        </tr></thead>
-        <tbody>
-          {% for r in scan.rows %}
-          <tr>
-            <td data-label="상품번호"><span class="font-monospace small">{{ r.sid }}</span>
-              {% if r.title %}<div class="text-muted small text-truncate" style="max-width:200px;">{{ r.title }}</div>{% endif %}</td>
-            <td data-label="반려 사유">
-              {% if r.error %}<span class="pc-badge pc-badge-danger">조회 실패</span>
-                <div class="text-muted small">{{ r.error }}</div>
-              {% elif r.comment %}<small>{{ r.comment[:80] }}</small>
-                {% if r.comment_is_status_only %}<div><span class="pc-badge pc-badge-muted">상태 문구만(사유 미상)</span></div>{% endif %}
-              {% else %}<span class="pc-badge pc-badge-muted">사유 없음</span>{% endif %}
-            </td>
-            <td data-label="분류">
-              {% if r.kind == 'unknown' %}<span class="pc-badge pc-badge-off">미분류</span>
-              {% elif r.kind == 'trademark' %}<span class="pc-badge pc-badge-danger">{{ r.kind_ko }}</span>
-              {% else %}<span class="pc-badge pc-badge-on">{{ r.kind_ko }}</span>{% endif %}
-              {% if r.kind == 'apple_category' %}
-                <div class="small text-muted mt-1">대상:
-                  {% if r.apple_target == 'android' %}<strong>삼성/픽셀 — 유효</strong>
-                  {% elif r.apple_target == 'apple' %}<strong>iPhone — 표기 보류</strong>
-                  {% else %}미상{% endif %}</div>
-              {% endif %}
-            </td>
-            <td data-label="처방">
-              {% if r.kind == 'unknown' %}<span class="text-muted small">오너 확인 필요</span>
-              {% else %}<span class="fw-semibold small">{{ r.prescription_ko }}</span>{% endif %}
-            </td>
-            {# T1 — 처방 실행. **신규 실행 로직 0**: 이미 배선된 `/admin/reject-watch/apply`를 부른다.
-               한 건씩만(카나리 원칙 — 전체 일괄 없음). 게이트가 잠겨 있으면 비활성 + 사유 표기. #}
-            <td data-label="실행" class="text-end pe-3">
-              {% if r.kind == 'unknown' %}
-                <span class="text-muted small">—</span>
-              {% elif not approved %}
-                <button type="button" class="btn btn-ghost btn-sm" disabled
-                        title="REJECT_WATCH_APPROVED가 꺼져 있어 실행할 수 없습니다(비가역 방어)">
-                  <i class="bi bi-lock"></i> 게이트 잠김
-                </button>
-              {% else %}
-                <button type="button" class="btn btn-primary btn-sm rw-apply"
-                        data-sid="{{ r.sid }}" data-kind="{{ r.kind }}"
-                        data-kind-ko="{{ r.kind_ko }}" data-rx-ko="{{ r.prescription_ko }}"
-                        data-apple-target="{{ r.apple_target or '' }}"
-                        data-wing-state="{{ r.wing_state or '' }}">
-                  <i class="bi bi-play-fill"></i> 처방 실행
-                </button>
-              {% endif %}
-            </td>
-          </tr>
-          <tr class="rw-result-row" id="rwResult-{{ r.sid }}" hidden>
-            <td colspan="5" class="rw-result"></td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div></div>
-  </div>
-
-  <div class="pc-status pc-status-info small">
-    {{ scan.alert }} — 처방 실행(재등록/삭제/재승인)은 오너 승인 게이트(<span class="font-monospace">POST /admin/reject-watch/apply</span>) 뒤에서만.
-  </div>
-  {% endif %}
-{% endif %}
+</div>
 
 <script>
 // ── 결과 표시 — **화면은 사람의 것, 원문은 로그의 것** ────────────────────
@@ -314,15 +307,21 @@ var RW_ACTION_KO = {
 })();
 
 // 다시 지켜보기(내부: rearm) — 처방 실행과 **다른 라우트·다른 성격**이라 로직을 섞지 않는다(마켓 호출 0).
+//   6-h: 입력칸을 조회와 **공유**한다(같은 번호를 두 번 치지 않게). 갈리는 건 '비었을 때'뿐이다 —
+//   조회는 비우면 전부, 이건 전부에 걸지 않는다(상태를 되돌리는 조작이라 대상이 명시돼야 한다).
 (function () {
   var btn = document.getElementById('rearmBtn');
-  var box = document.getElementById('rearmSids');
+  var box = document.getElementById('sids');
   var out = document.getElementById('rearmResult');
   if (!btn || !box || !out) return;
   btn.addEventListener('click', function () {
     var sids = box.value.split('\n').map(function (x) { return x.trim(); })
                         .filter(function (x) { return x; });
-    if (!sids.length) { pcToast('상품 번호를 입력하세요.', 'error'); return; }
+    if (!sids.length) {
+      pcToast('상품 번호를 입력하세요 — 다시 지켜보기는 전부에 대해 실행하지 않아요.', 'error');
+      box.focus();
+      return;
+    }
     var msg = sids.length + '건을 다시 지켜봅니다.\n'
             + '마켓에는 아무것도 보내지 않아요 — 자동 점검 목록에만 다시 올립니다.';
     pcConfirm(msg, { confirmLabel: '다시 지켜보기', title: '다시 지켜보기' }).then(function (ok) {
