@@ -44,10 +44,15 @@ def test_approved_graduates_out_of_the_queue():
 
 
 def test_rejected_and_saved_keep_their_meaning():
-    """반려는 나가고(처방 대상), 임시저장은 남는다(아직 조치가 필요하다)."""
+    """반려는 나가고(확정), 임시저장은 남는다(아직 조치가 필요하다).
+
+    ★ 폴백 수리(2026-09-05)로 임시저장이 **제 이름을 갖게 됐다.** 전에는 `unknown`에
+      뭉뚱그렸는데, 그러면 '미상'(아무것도 확인 못 함)과 '임시저장'(승인요청이 필요함)이
+      대장에서 구분되지 않는다. 이 계약의 뜻이 바로 그 구분이라 판정만 정밀해졌다.
+    """
     _run(["APPROVED", "REJECTED", "SAVED"])
     assert REG.get("REJECTED")["status"] == "rejected"
-    assert REG.get("SAVED")["status"] == "unknown"
+    assert REG.get("SAVED")["status"] == "saved"
     # 큐에 남는 건 임시저장 하나 — 승인·반려는 확정이라 빠진다.
     assert [r["sid"] for r in REG.watch_queue(account="gogane")] == ["SAVED"]
 
@@ -109,7 +114,8 @@ def test_dry_run_writes_nothing_but_counts():
 
     out = _w5_run(record_fn=boom, dry_run=True)
     assert out["dry_run"] is True and out["recorded"] == 0
-    assert out["would_change"] == {"approved": 1, "rejected": 1, "unknown": 1,
+    # `saved`는 폴백 수리 후 제 이름을 갖는다(전에는 `unknown`에 섞였다).
+    assert out["would_change"] == {"approved": 1, "rejected": 1, "saved": 1,
                                    "brand_fix": 1, "doc_required": 1}
     assert out["would_graduate"] == 3          # approved + brand_fix + doc_required
 

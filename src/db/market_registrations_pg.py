@@ -14,7 +14,11 @@ from . import pg
 # PG 미가동 시 폴백(개발/테스트 전용 — 재시작에 휘발. durable=False로 정직 표기).
 _MEM: dict = {}
 
-_WATCH_STATUSES = ("submitted", "unknown")
+# 감시 큐에 남는 상태 = **아직 확정 안 된 것들**.
+#   `saved`(임시저장)는 조치 대상이지 확정이 아니다 — 승인요청을 다시 걸면 결과가 또 나온다.
+#   ★ 이게 없으면 `_next_status`가 `saved`를 써도 행이 그대로 큐를 떠난다(반쪽 수리).
+#     판정 쪽만 고치고 저장 쪽을 빼먹는 게 이 프로젝트의 단골 결함이라 둘을 같이 본다.
+_WATCH_STATUSES = ("submitted", "unknown", "saved")
 
 
 def enabled() -> bool:

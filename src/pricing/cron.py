@@ -310,9 +310,16 @@ def _run_reject_watch(app, account: str, limit: int, budget: float, dry_run: boo
             if not out.get("ok"):
                 logger.warning("반려감시 실패(%s): %s", account, out.get("error"))
             elif out.get("scanned"):
+                # 상태 분포를 로그에 남긴다 — **큐에 남았나 떠났나**가 이 트랙의 실전 검증이다.
+                #   `wrote`는 실제로 대장에 쓴 상태고, 남음/졸업은 감시 큐 기준 분류다.
+                _w = out.get("wrote") or {}
+                _dist = " · ".join(f"{k} {v}" for k, v in sorted(_w.items(), key=lambda x: -x[1]))
                 logger.info("반려감시 완료(%s): %s · 기록 %s · 알림 %s · %.1fs%s",
                             account, out.get("alert"), out.get("recorded"), out.get("notified"),
                             total, "  ⚠️예산소진" if out.get("budget_exhausted") else "")
+                logger.info("반려감시 상태(%s): 큐 잔류 %s · 졸업 %s%s",
+                            account, out.get("stayed"), out.get("graduated"),
+                            f" · 내역 {_dist}" if _dist else "")
             else:
                 logger.info("반려감시(%s): 감시 대상 없음(정상 종료) · %.1fs", account, total)
     except Exception as exc:                       # noqa: BLE001 — 조용한 정지 금지
