@@ -1783,3 +1783,67 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
   .table-cards.pc-swiss-table > tbody > tr > td.cardcell-actions { text-align: left; }
   .table-cards.pc-swiss-table > tbody > tr > td.cardcell-actions > .d-flex { justify-content: flex-start; }
 }
+
+/* ── Stage 6-f: 상품 수집 (오너 확산 브리프) ─────────────────────────────────
+   6-a/6-c/6-d/6-e 문법 승계: 카드 1장에 헤더/바디/푸터, 액션은 푸터.
+
+   앞선 슬라이스와 결이 다르다 — **이 화면엔 템플릿 스타일 블록이 없었다.**
+   철거할 게 아니라 v2 카드 5장을 op-card로 옮기고, 흩어진 부트스트랩 색 유틸
+   17개(btn-outline-* 8 · bg-* 7 · text-* 2)를 정리하는 게 본론이다.
+
+   실측이 잡은 것: `btn-outline-primary`가 소싱처 칩·현지화·확장 안내에 8개 흩어져
+   **어느 것이 다음 행동인지 안 읽혔다.** 이 화면은 단계가 넷(URL→미리보기→마켓→업로드)이라
+   **단계마다 채운 버튼 1개**가 규율이다 — 칩은 이동 수단이지 행동이 아니다. */
+.mc-page {
+  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--space-5); align-items: start;
+}
+.mc-page > * { grid-column: 1 / -1; }
+.mc-page .form-control, .mc-page .form-select,
+.mc-page .op-card-foot .btn, .mc-page .op-card-head .btn { min-height: 44px; }
+
+/* 소싱처 칩 — **이동 수단**이다. 채운 버튼으로 두면 단계 CTA와 경쟁한다. */
+.mc-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.mc-chip {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3); min-height: 44px;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); color: var(--text-strong);
+  font-size: .84rem; text-decoration: none; white-space: nowrap;
+}
+.mc-chip:hover { background: var(--surface-warm); color: var(--text-strong); }
+.mc-chip-fav { width: 18px; height: 18px; border-radius: var(--radius-sm); flex: none; }
+.mc-chip-add { border-style: dashed; color: var(--text-muted); }
+
+/* 확장 안내 — 이 화면의 조언 블록. 좌측 악센트 1점(6-c `.op-strip-warn` 문법). */
+.mc-note {
+  display: flex; gap: var(--space-3); align-items: flex-start;
+  padding: var(--space-4); border-radius: var(--radius);
+  border-left: 3px solid var(--teal);
+  background: color-mix(in srgb, var(--teal) 6%, var(--surface));
+  font-size: .86rem; line-height: 1.65;
+}
+.mc-note-mark { width: 34px; height: 34px; border-radius: var(--radius); flex: none; }
+
+/* 마켓 선택 타일 — 체크박스가 라벨 전체를 먹는다(터치 타깃 44px 이상). */
+.mc-markets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
+.mc-market {
+  display: flex; flex-direction: column; gap: var(--space-1);
+  padding: var(--space-3); min-height: 44px; cursor: pointer;
+  border-radius: var(--radius); background: color-mix(in srgb, var(--ink) 3%, var(--surface));
+}
+.mc-market:has(input:checked) { background: color-mix(in srgb, var(--teal) 10%, var(--surface)); }
+/* 미연동은 눌러도 안 되는 자리다 — 흐리게 두고 커서로도 말한다(죽은 버튼 0). */
+.mc-market:has(input:disabled) { cursor: not-allowed; opacity: .62; }
+.mc-market-nm { font-weight: var(--w-semi); font-size: .9rem; }
+.mc-market-sub { font-size: .74rem; color: var(--text-muted); }
+
+/* 미리보기 결과·현지화 미리보기 — 카드 안의 얕은 면(카드를 겹치지 않는다). */
+.mc-inset {
+  padding: var(--space-3); border-radius: var(--radius);
+  background: color-mix(in srgb, var(--ink) 3%, var(--surface));
+}
+.mc-hint { font-size: .78rem; color: var(--text-muted); }
+
+@media (max-width: 1199.98px) { .mc-markets { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 575.98px) { .mc-markets { grid-template-columns: minmax(0, 1fr); } }
