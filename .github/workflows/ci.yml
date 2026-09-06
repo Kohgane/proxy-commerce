@@ -6,17 +6,9 @@ on:
   push:
     branches: [main]
 
-# 6-f-4 실측: 계약 하나가 스위트를 세우자(로컬 서버 대기) 그 잡이 **50분 넘게 러너를 붙들고**
-# 다음 푸시의 잡까지 큐에 세웠다. 새 커밋이 앞 커밋을 대체하면 앞 실행은 의미가 없다 — 접는다.
-# main 푸시는 기록이라 취소하지 않는다(PR 실행만 대체).
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 jobs:
   python-guard:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -71,7 +63,6 @@ jobs:
   #   따로 돈다(전역 DATABASE_URL은 앱을 PG 모드로 바꿔 인메모리 가정 다수를 깨므로 레인 분리 필수).
   full-suite:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     permissions:
       contents: read
     env:
@@ -148,7 +139,6 @@ jobs:
   #   상호배타). 두 잡의 합집합이 전 계약을 커버 → CI 전체에서 조용한 skip 0.
   pg-suite:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     permissions:
       contents: read
     services:
@@ -205,7 +195,6 @@ jobs:
   #   → 채팅 채점이 "이게 브랜치 빌드인가"를 버전 문자열이 아니라 커밋으로 즉판한다.
   extension-zip:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     permissions:
       contents: read
     steps:

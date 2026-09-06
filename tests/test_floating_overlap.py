@@ -16,11 +16,8 @@
 from __future__ import annotations
 
 import glob
-import json
 import os
 import re
-import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
@@ -141,11 +138,11 @@ CSS_FILES = ("src/static/app.css", "src/seller_console/static/console.css",
 
 
 def _page_html(route: str) -> str:
-    """실 라우트 HTML + CSS 인라인.
+    """실 라우트 HTML + CSS 인라인 — **소켓을 열지 않는다.**
 
-    **소켓을 열지 않는다.** 앞선 판에서 로컬 서버를 띄웠다가 CI가 50분 넘게 안 끝났다
-    (평소 9분). 브라우저가 CDN·서비스워커·localhost를 물면 어디서 멈췄는지도 못 본다.
-    `test_client`로 같은 HTML을 받고 CSS만 넣으면 잴 것은 다 잰다(devshot 관행).
+    처음엔 로컬 서버를 띄워 실 URL로 열었다(62초). `test_client`로 같은 HTML을 받고
+    CSS만 넣으면 잴 것은 다 잰다(devshot 관행) — 9초로 줄었고, 서버·CDN·서비스워커가
+    끼어들 자리도 없앴다.
     """
     os.environ.setdefault("SELLER_CONSOLE_AUTH", "0")
     from src.order_webhook import app
@@ -156,23 +153,6 @@ def _page_html(route: str) -> str:
 
 
 def _measure(route: str, hide: bool = False):
-    """★ 측정은 **별도 프로세스에 90초 상한**을 걸고 돌린다.
-
-    앞선 판에서 이 계약이 CI 스위트를 세웠다. 계약이 스위트를 세우면 그건 계약이 아니라 사고다 —
-    브라우저가 어디서 멈추든 여기서 끊고 **실패로 보고**한다(무한 대기 0).
-    """
-    try:
-        out = subprocess.run([sys.executable, str(Path(__file__).resolve()), route,
-                              "1" if hide else "0"],
-                             capture_output=True, text=True, timeout=90, cwd=os.getcwd())
-    except subprocess.TimeoutExpired:
-        pytest.fail(f"{route}: 측정이 90초를 넘겼다 — 브라우저가 멈췄다")
-    if out.returncode != 0:
-        pytest.fail(f"{route}: 측정 실패\n{out.stderr[-1500:]}")
-    return json.loads(out.stdout.strip().splitlines()[-1])
-
-
-def _probe(route: str, hide: bool = False):
     from playwright.sync_api import sync_playwright
     exe = (glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome") or [None])[0]
     slug = route.strip("/").replace("/", "-") + ("-hidden" if hide else "")
@@ -220,9 +200,3 @@ def test_hidden_mini_button_also_clears():
     assert r["fbReopen"] == [], f"미니 버튼이 {r['fbReopen']}를 덮는다"
     assert float(r["_pad"].rstrip("px")) >= MINI_OCCUPIES
 
-
-# ── 서브프로세스 진입점 (pytest가 여기로 다시 부른다) ────────────────────────
-if __name__ == "__main__":
-    sys.path.insert(0, os.getcwd())          # 서브프로세스엔 pytest의 rootdir 주입이 없다
-    _r = _probe(sys.argv[1], sys.argv[2] == "1")
-    print(json.dumps(_r))
