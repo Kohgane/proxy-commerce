@@ -341,7 +341,8 @@ a:hover {
   background: var(--pc-color-surface-muted);
 }
 .pc-action-table .table tbody tr:hover {
-  background: #f8f8ff;
+  /* 6-g: 하드코딩 hex 제거(토큰 단일소스). 값은 눈에 띄게 다르지 않다 — 파랑기만 걷혔다. */
+  background: color-mix(in srgb, var(--ink) 3%, var(--surface));
 }
 
 .pc-bulk-toolbar {
@@ -1705,11 +1706,12 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .od-stat.is-zero::after { display: none; }
 
 /* 필터 — 한 줄에 눕히고 넘치면 접힌다(칸마다 col-md-* 쪼개기 대신). */
-.od-filter { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: flex-end; }
-.od-filter > label { flex: 0 0 auto; }
-.od-filter .od-f { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
-.od-filter .od-f-wide { flex: 1 1 14rem; }
-.od-filter .form-select, .od-filter .form-control { min-width: 8rem; }
+.od-filter, .op-filter { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: flex-end; }
+.od-filter > label, .op-filter > label { flex: 0 0 auto; }
+.od-filter .od-f, .op-filter .op-f { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.od-filter .od-f-wide, .op-filter .op-f-wide { flex: 1 1 14rem; }
+.od-filter .form-select, .od-filter .form-control,
+.op-filter .form-select, .op-filter .form-control { min-width: 8rem; }
 .od-checks { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
 
 @media (max-width: 1199.98px) { .od-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -1719,7 +1721,8 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .od-courier-list { z-index: 1060; max-height: 15rem; overflow-y: auto; }
 /* 표 행 액션 — 위계를 낮춘다. 행이 반복되는 자리에 채운 버튼을 두면 **강조가 곧 배경**이 된다
    (실측: 주황 CTA가 14행에 반복돼 화면 전체가 깜빡였다). 완료 상태만 청록 글자로 표시한다. */
-.od-page .cardcell-actions .btn { border-color: var(--border); }
+.od-page .cardcell-actions .btn,
+.ct-page .cardcell-actions .btn { border-color: var(--border); }
 .od-page .cardcell-actions .btn.is-done { color: var(--teal); border-color: var(--teal); }
 
 /* ── 표 정렬 문법 (오너 계약 6-e-2) ──────────────────────────────────────────
@@ -1870,3 +1873,39 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
   border-radius: var(--radius-sm); background: color-mix(in srgb, var(--ink) 4%, var(--surface));
   white-space: pre-wrap; word-break: break-all; max-height: 16rem; overflow: auto;
 }
+
+/* ── Stage 6-g: 내 상품(카탈로그) ────────────────────────────────────────────
+   오너 확산 순서에서 **건너뛰고 지나간 화면**이다("대시보드 → 수집한 상품 →
+   내 상품(카탈로그) → 주문 관리 → …"에서 3번). 6-e·6-f를 먼저 하며 지나쳤으니 여기서 닫는다.
+
+   이 화면의 본론은 카드 문법 승계보다 **중복 정리**다:
+     · 같은 조건(total==0)에 빈 상태가 **두 개** 렌더됐다(카드 위 하나, 표 안 하나).
+     · 부트스트랩 토스트(`text-bg-*`)가 남아 있었다 — 6-f에서 은퇴시킨 그 패턴.
+     · v2 래퍼 `.pc-action-table`(하드코딩 #f8f8ff 호버)을 달고 있었다.
+
+   ※ 넷째를 만들지 않는다(6-e 주석의 브레이크). 필터 줄·행 액션 위계는 이미 6-e가
+     같은 선언으로 갖고 있어서 **이름만 공용으로 승격**하고 선언은 건드리지 않았다
+     — `.od-filter` → `.od-filter, .op-filter`. 완전한 개명은 6-j 몫. */
+.ct-page {
+  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--space-5); align-items: start;
+}
+.ct-page > * { grid-column: 1 / -1; }
+/* 44px은 **카드 밖·헤더 조작 요소**에만. 표 행까지 키우면 목록 밀도가 죽는다(6-e 판단 승계). */
+.ct-page .op-card-head .btn,
+.ct-page .op-card-body > .op-filter .btn { min-height: 44px; }
+
+/* 화면 제목 줄의 주 행동 버튼이 36px였다 — 손가락으로 누르는 자리다. `.ch-head`는 6-c·6-e·6-g가
+   같이 쓰는 헤더라 **모바일에서만** 키운다: 데스크톱 채점이 끝난 두 화면의 렌더는 그대로 두고,
+   터치에서만 규칙(≥44px)을 지킨다. */
+@media (max-width: 767.98px) { .ch-head .btn { min-height: 44px; } }
+
+/* 표 열 폭·SKU 글자 크기 — 인라인 style로 박혀 있던 것을 토큰 자리로 옮긴다. */
+.ct-col-mk { width: 4.5rem; }
+.ct-col-act { width: 7.5rem; }
+/* SKU — `<code>` 기본색이 부트스트랩 분홍(#d63384)이다. 우리 팔레트 밖 색이라
+   화면당 강조 1색 원칙을 조용히 깬다(실측: 표 전체에서 SKU만 튀었다). */
+.ct-sku { font-size: .75rem; color: var(--text-muted); }
+
+/* 인덱스 레일 안내 — 표 위 한 줄. 설명이지 경보가 아니다(배경·테두리 없음). */
+.ct-railnote { font-size: .78rem; color: var(--text-muted); padding: 0 var(--space-4) var(--space-2); }

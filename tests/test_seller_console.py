@@ -109,8 +109,11 @@ class TestSellerConsoleViews:
             resp = client.get("/seller/catalog")
         assert resp.status_code == 200
         html = resp.get_data(as_text=True)
-        assert "아직 등록된 상품이 없습니다." in html
-        assert "AI 상품등록" in html
+        # 6-g: 빈 상태를 **하나로 합쳤다**(예전엔 같은 조건에 카드 위/표 안 두 개가 떴다).
+        #   지키는 건 문장이 아니라 **다음 행동이 있다는 것** — 그래서 링크를 박는다.
+        assert "아직 등록된 상품이 없어요" in html
+        assert "AI 상품등록" in html and "/seller/listing/ai-create" in html
+        assert "수집기 열기" in html and html.count("아직 등록된 상품이 없어요") == 1
 
     def test_catalog_renders_country_filter(self, client):
         resp = client.get("/seller/catalog")

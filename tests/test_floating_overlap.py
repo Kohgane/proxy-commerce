@@ -134,9 +134,11 @@ PROBE = """(ids) => {
 }"""
 
 
-CSS_FILES = ("src/static/app.css", "src/seller_console/static/console.css",
-             "src/seller_console/static/seller.css",
-             "/tmp/bsdl/node_modules/bootstrap/dist/css/bootstrap.min.css")
+# 순서는 **프로덕션과 같아야 한다**(_base.html: bootstrap → app → seller → console).
+# 순서가 다르면 `!important`끼리 붙었을 때 승자가 바뀌어, 캡처가 라이브와 다른 화면이 된다.
+CSS_FILES = ("/tmp/bsdl/node_modules/bootstrap/dist/css/bootstrap.min.css",
+             "src/static/app.css", "src/seller_console/static/seller.css",
+             "src/seller_console/static/console.css")
 
 
 def _page_html(route: str) -> str:

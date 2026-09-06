@@ -453,9 +453,12 @@ button:focus,
     border: none !important; padding: .2rem 0; min-height: 0;
     display: flex; align-items: center; gap: .5rem; font-size: .95rem;
   }
+  /* 6-g 실측: 라벨 폭을 60px로 **고정**해 놔서 '마지막 동기화'가 "마지막 동 / 기화"로 쪼개졌다.
+     한 단어를 두 줄로 자르는 건 이 프로젝트가 금지한 세로쪼개짐이다(카탈로그·주문·수집이력
+     모두 같은 규칙을 쓰니 한 곳만 고치면 셋 다 낫는다). 최소 폭은 남기고 **줄바꿈만 막는다.** */
   table.table-cards > tbody > tr > td[data-label]::before {
     content: attr(data-label); font-weight: 600; color: var(--text-muted);
-    font-size: .78rem; min-width: 60px; flex: 0 0 60px;
+    font-size: .78rem; min-width: 60px; flex: 0 0 auto; white-space: nowrap;
   }
   /* 상단 한 줄: 체크박스 + 썸네일 + 제목 */
   table.table-cards td.cardcell-check { flex: 0 0 auto; }
