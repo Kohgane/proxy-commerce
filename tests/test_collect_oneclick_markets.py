@@ -31,7 +31,10 @@ def test_collect_page_renders_oneclick_markets(client):
     assert "1688.com" in html
     # 퍼센티식 인페이지 수집(크롬확장) 안내
     assert "인페이지 수집" in html
-    assert 'class="btn btn-outline-primary btn-sm oneclick-market"' in html
+    # 6-f: 소싱처 링크는 **이동 수단**이라 채운/외곽선 버튼에서 알약 칩으로 바뀌었다.
+    #   이 핀이 지키는 건 스타일이 아니라 `oneclick-market` 훅의 생존이다.
+    assert 'class="mc-chip oneclick-market"' in html
+    assert "btn-outline-primary" not in html, "단계 CTA와 경쟁하는 외곽선 버튼이 되살아났다"
 
 
 def test_collect_page_mentions_listing_multi_collect(client):

@@ -65,8 +65,8 @@ AUDIT = """() => {
     .filter(b => (b.textContent || '').includes('게이트 잠김'));
   return {
     applyButtons: btns.length,
-    rearmCard: !!document.getElementById('rearmBtn'),
-    rearmSaysNoMarketCall: (document.body.textContent || '').includes('마켓에 아무것도 보내지 않아요'),
+    rearmCard: !!document.getElementById('rearmBtn'),   // 내부 id는 불변(문구만 바뀐다)
+    rearmSaysNoMarketCall: (document.body.textContent || '').includes('마켓에는 아무것도 보내지 않아요'),
     lockedButtons: locked.length,
     disabledApply: btns.filter(b => b.disabled).length,
     resultRows: document.querySelectorAll('.rw-result-row').length,
@@ -125,6 +125,20 @@ def main():
         pg3.eval_on_selector("#rearmBtn", "el => el.scrollIntoView({block:'center'})")
         pg3.wait_for_timeout(300)
         pg3.screenshot(path=f"{OUT_DIR}/rw-rearm-카드.png")
+        # 결과 문구도 찍는다 — 사람 말 한 줄 + [자세히] 접힘(6-f-3).
+        pg3.evaluate("""() => {
+          const out = document.getElementById('rearmResult');
+          out.hidden = false;
+          rwRender(out, '✔ 1건을 다시 지켜봅니다 — 다음 자동 점검(최대 2시간 내)부터 반영돼요.',
+                   'ok', '{"ok": true, "rearmed": 1, "failed": 0, "results": [{"sid": "16369251981", "rearmed": true}]}');
+          const row = document.querySelector('.rw-result-row');
+          if (row) { row.hidden = false;
+            rwRender(row.querySelector('.rw-result'),
+                     '✔ 승인 요청을 보냈어요 — 쿠팡 심사가 시작됩니다.', 'ok',
+                     '{"ok": true, "applied": 1, "results": [{"sid": "16369251981", "action": "request_approval", "applied": true, "rearmed": true}]}'); }
+        }""")
+        pg3.wait_for_timeout(400)
+        pg3.screenshot(path=f"{OUT_DIR}/rw-결과문구.png")
         pg3.click("#rearmBtn")
         pg3.wait_for_timeout(900)
         d = pg3.evaluate(

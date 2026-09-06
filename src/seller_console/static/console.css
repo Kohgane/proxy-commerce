@@ -106,6 +106,19 @@
   padding: 1rem;
 }
 
+/* 6-f-4: 플로팅 안내 버블("처음이신가요?") 자리를 **본문이 미리 비운다.**
+   겹침은 z-order 문제가 아니다 — 버블은 항상 위에 뜨는 게 맞고, 문제는 그 밑에 아무 자리도
+   예약돼 있지 않다는 것이다. 그래서 마지막 카드의 액션 버튼이 영구히 깔린다
+   (실측: orders `CSV 내보내기` 1872px², reject-watch `처방 실행` 619px²).
+   모바일은 v36에서 이미 84px를 비워 뒀다(아래 ≤767.98 블록) — **데스크톱만 빠져 있었다.**
+   기본값이 '버블 있음'이라 JS가 죽어도 자리는 비어 있다. 숨겼을 때만 줄인다. */
+@media (min-width: 768px) {
+  .console-content { padding-bottom: 132px; }                   /* 버블 95 + 하단 18 + 여유 */
+  body.pc-fb-hidden .console-content { padding-bottom: 80px; }  /* 미니 44 + 하단 18 + 여유 */
+}
+/* 편집 드로어는 버블 자체를 숨긴다(app.css `.kgp-editor`) → 빈 자리를 남길 이유도 없다. */
+body.kgp-editor .console-content { padding-bottom: 1rem; }
+
 /* 디자인 시스템 v2 (Stage 2) — 콘솔 카드/빈상태/스텝 카드 뉴모피즘 표면(하드 보더 제거 + 이중 그림자). */
 .console-card,
 .console-empty-state,

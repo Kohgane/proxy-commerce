@@ -83,23 +83,23 @@
   </div>
 </form>
 
-<!-- 소급 재무장 — 이미 큐를 떠난 건을 다시 감시 대상으로 -->
+<!-- 다시 지켜보기(내부: rearm) — 이미 자동 점검에서 빠진 건을 목록에 되돌린다 -->
 <section class="op-card mb-4">
   <div class="op-card-head">
-    <strong>감시 재무장</strong>
-    <span class="op-tile-sub">이미 확정 상태로 앉아 큐에서 빠진 건을 다시 감시 대상으로 올려요.</span>
+    <strong>다시 지켜보기</strong>
+    <span class="op-tile-sub">심사 결과를 다시 확인하고 싶은 상품을 자동 점검 목록에 다시 올려요.</span>
   </div>
   <div class="op-card-body">
     <label class="form-label small mb-1" for="rearmSids">상품 번호(한 줄에 하나)</label>
     <textarea class="form-control" id="rearmSids" rows="2" placeholder="16369251981"></textarea>
     <div class="form-text">
-      마켓에 아무것도 보내지 않아요 — 대장 상태만 <strong>‘심사 중’</strong>으로 되돌립니다.
-      다음 자동 점검이 쿠팡의 실제 상태로 다시 덮어써요. 분류·사유 기록은 그대로 남습니다.
+      <strong>마켓에는 아무것도 보내지 않아요.</strong> 다음 자동 점검(최대 2시간 내)부터
+      이 상품의 심사 결과를 다시 확인해요. 지금까지의 분류·사유 기록은 그대로 남습니다.
     </div>
     <pre class="rw-result mt-2" id="rearmResult" hidden></pre>
   </div>
   <div class="op-card-foot">
-    <button type="button" class="btn btn-ghost btn-sm" id="rearmBtn"><i class="bi bi-arrow-repeat"></i> 재무장</button>
+    <button type="button" class="btn btn-ghost btn-sm" id="rearmBtn"><i class="bi bi-arrow-repeat"></i> 다시 지켜보기</button>
   </div>
 </section>
 
@@ -229,17 +229,52 @@
 {% endif %}
 
 <script>
+// ── 결과 표시 — **화면은 사람의 것, 원문은 로그의 것** ────────────────────
+//   부검용 원문 직출력은 부검 단계의 스펙이었다. 단계가 끝나면 스펙도 은퇴한다.
+//   원문을 지우지는 않는다 — [자세히] 접힘 안에 두고, 전문은 서버 로그가 갖는다.
+var RW_TONE_ICON = { ok: 'bi-check-lg', warn: 'bi-exclamation-triangle', bad: 'bi-x-lg' };
+
+function rwRender(el, human, tone, raw) {
+  el.textContent = '';
+  var line = document.createElement('div');
+  line.className = 'rw-line rw-' + (tone || 'ok');
+  // 아이콘은 tone이 정한다 — 호출부가 문자를 붙이면 이모지가 화면에 새어 나간다(v33 스윕).
+  var ic = document.createElement('i');
+  ic.className = 'bi ' + (RW_TONE_ICON[tone] || RW_TONE_ICON.ok) + ' rw-line-ic';
+  ic.setAttribute('aria-hidden', 'true');
+  line.appendChild(ic);
+  line.appendChild(document.createTextNode(human));
+  el.appendChild(line);
+  if (raw) {
+    var d = document.createElement('details');
+    d.className = 'rw-raw';
+    var sm = document.createElement('summary');
+    sm.textContent = '자세히';
+    var pre = document.createElement('pre');
+    pre.textContent = raw;                    // textContent — 원문을 그대로, 실행은 안 되게
+    d.appendChild(sm); d.appendChild(pre); el.appendChild(d);
+  }
+}
+
+// 실행한 조치를 **사람 말로**. 무엇을 했는지 말해야지 성공했다고만 하면 안 된다.
+var RW_ACTION_KO = {
+  request_approval: '승인 요청을 보냈어요 — 쿠팡 심사가 시작됩니다.',
+  resubmit: '수정해서 다시 제출했어요 — 쿠팡 심사가 시작됩니다.',
+  reissue: '다시 등록했어요 — 쿠팡 심사가 시작됩니다.',
+  reupload: '다시 등록했어요 — 쿠팡 심사가 시작됩니다.',
+  delete: '상품을 삭제했어요.'
+};
+
 (function () {
   var buttons = document.querySelectorAll('.rw-apply');
   if (!buttons.length) return;
   var account = {{ account | tojson }};
 
-  function show(sid, status, body) {
+  function show(sid, human, tone, raw) {
     var row = document.getElementById('rwResult-' + sid);
     if (!row) return;
     row.hidden = false;
-    // 마켓 원문을 **가공하지 않고** 그대로 싣는다 — 요약하면 다음 부검에서 원문을 다시 찾아야 한다.
-    row.querySelector('.rw-result').textContent = 'HTTP ' + status + '\n' + body;
+    rwRender(row.querySelector('.rw-result'), human, tone, raw);
   }
 
   buttons.forEach(function (btn) {
@@ -258,17 +293,27 @@
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
           body: JSON.stringify({ account: account, approved: true, rows: [row] })
         }).then(function (r) {
-          return r.text().then(function (body) { show(sid, r.status, body); });
+          return r.text().then(function (body) {
+            var d = null; try { d = JSON.parse(body); } catch (e) {}
+            var res = d && d.results && d.results[0];
+            if (r.ok && res && res.applied) {
+              show(sid, RW_ACTION_KO[res.action] || '처방을 실행했어요.', 'ok', body);
+            } else {
+              // 실패도 사람 말 한 줄로 — 다만 원문은 접힘 안에 남긴다(부검 가치 보존).
+              var why = (res && res.reason) || (d && d.error) || '처방을 실행하지 못했어요.';
+              show(sid, '실행하지 못했어요 — ' + why, 'bad', body);
+            }
+          });
         }).catch(function (err) {
           // 실패를 성공처럼 두지 않는다 — 못 보낸 것도 화면에 남긴다.
-          show(sid, '전송 실패', String(err));
+          show(sid, '요청을 보내지 못했어요 — 잠시 후 다시 시도해 주세요.', 'bad', String(err));
         }).then(function () { btn.disabled = false; });
       });
     });
   });
 })();
 
-// 소급 재무장 — 처방 실행과 **다른 라우트·다른 성격**이라 로직을 섞지 않는다(마켓 호출 0).
+// 다시 지켜보기(내부: rearm) — 처방 실행과 **다른 라우트·다른 성격**이라 로직을 섞지 않는다(마켓 호출 0).
 (function () {
   var btn = document.getElementById('rearmBtn');
   var box = document.getElementById('rearmSids');
@@ -278,9 +323,9 @@
     var sids = box.value.split('\n').map(function (x) { return x.trim(); })
                         .filter(function (x) { return x; });
     if (!sids.length) { pcToast('상품 번호를 입력하세요.', 'error'); return; }
-    var msg = sids.length + '건을 다시 감시 대상으로 올립니다.\n'
-            + '마켓에는 아무것도 보내지 않아요 — 대장 상태만 ‘심사 중’으로 되돌립니다.';
-    pcConfirm(msg, { confirmLabel: '재무장', title: '감시 재무장' }).then(function (ok) {
+    var msg = sids.length + '건을 다시 지켜봅니다.\n'
+            + '마켓에는 아무것도 보내지 않아요 — 자동 점검 목록에만 다시 올립니다.';
+    pcConfirm(msg, { confirmLabel: '다시 지켜보기', title: '다시 지켜보기' }).then(function (ok) {
       if (!ok) return;
       btn.disabled = true;
       fetch('/admin/reject-watch/rearm', {
@@ -289,12 +334,23 @@
         body: JSON.stringify({ sids: sids })
       }).then(function (r) {
         return r.text().then(function (body) {
-          out.hidden = false;                       // 응답 원문 그대로 — 요약하면 부검이 안 된다
-          out.textContent = 'HTTP ' + r.status + '\n' + body;
+          out.hidden = false;
+          var d = null; try { d = JSON.parse(body); } catch (e) {}
+          var n = d && typeof d.rearmed === 'number' ? d.rearmed : 0;
+          var failed = d && typeof d.failed === 'number' ? d.failed : 0;
+          if (r.ok && n) {
+            var human = n + '건을 다시 지켜봅니다 — 다음 자동 점검(최대 2시간 내)부터 반영돼요.';
+            // 일부만 된 경우를 성공으로 뭉뚱그리지 않는다(가짜 성공 0).
+            if (failed) human += ' 나머지 ' + failed + '건은 목록에 없는 번호예요.';
+            rwRender(out, human, failed ? 'warn' : 'ok', body);
+          } else {
+            var why = (d && d.error) || '입력한 번호를 자동 점검 목록에서 찾지 못했어요.';
+            rwRender(out, '다시 지켜보지 못했어요 — ' + why, 'bad', body);
+          }
         });
       }).catch(function (err) {
         out.hidden = false;
-        out.textContent = '전송 실패\n' + String(err);
+        rwRender(out, '요청을 보내지 못했어요 — 잠시 후 다시 시도해 주세요.', 'bad', String(err));
       }).then(function () { btn.disabled = false; });
     });
   });

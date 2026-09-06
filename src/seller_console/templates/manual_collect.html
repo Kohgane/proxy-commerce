@@ -2,14 +2,18 @@
 {% block title %}수집기{% endblock %}
 
 {% block content %}
-{# v87-X2: STEP3 에디토리얼 격상 — 오버라인(금 라벨)+세리프 헤더+금 헤어라인(P~T 계보). 기능 불변. #}
+{# 디자인 v3 Stage 6-f — 6-a~6-e 문법 승계: 카드 1장에 헤더/바디/푸터, 액션은 푸터.
+   로직 변경 0: id·onclick 핸들러·market-checkbox 등 JS 훅 25개는 이름 그대로 둔다. #}
+<div class="mc-page">
+
+<div class="ch-head">
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
   <div>
     <div class="console-kpi-label mb-1">상품 수집</div>
     <h4 class="mb-0 fw-bold"><i class="bi bi-download"></i> 해외 상품, 한 번에 담기</h4>
   </div>
   {% if _user_role == 'admin' %}
-  <a href="/seller/api/status" class="btn btn-outline-secondary btn-sm align-self-center">API 상태</a>
+  <a href="/seller/api/status" class="btn btn-ghost btn-sm align-self-center">API 상태</a>
   {% endif %}
 </div>
 <p class="text-muted small mb-2">
@@ -17,12 +21,13 @@
   가져온 상품은 다듬어서 내 마켓에 올릴 수 있어요.
   <span class="pc-help" data-bs-toggle="tooltip" data-bs-title="상품 페이지 주소를 붙여넣거나, 크롬 확장으로 버튼 한 번에 가져올 수 있어요. 가져온 상품은 ‘수집한 상품’에서 편집·등록합니다.">?</span>
 </p>
-<hr class="pc-hairline mt-0 mb-4">
+<hr class="pc-hairline mt-0 mb-0">
+</div>
 
 <!-- 초보 흐름: 다음 할 일 한 줄(happy path) -->
 <div class="pc-status pc-status-info small mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
   <span><i class="bi bi-signpost-2"></i> <strong>다음 할 일:</strong> 수집하면 ‘수집한 상품’에서 확인·편집한 뒤 마켓에 업로드해요.</span>
-  <a href="/seller/collect/history" class="btn btn-outline-primary btn-sm"><i class="bi bi-box-seam"></i> 수집한 상품 보기</a>
+  <a href="/seller/collect/history" class="btn btn-ghost btn-sm"><i class="bi bi-box-seam"></i> 수집한 상품 보기</a>
 </div>
 
 {% if api_status %}
@@ -40,20 +45,20 @@
 </div>
 
 <!-- 원클릭 수집 지원 마켓 -->
-<div class="card console-card mb-3" id="oneclickCard">
-  <div class="card-body">
-    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-      <label class="form-label fw-semibold mb-0"><i class="bi bi-cart"></i> 원클릭 수집 지원 마켓</label>
-      <span class="small text-muted">마켓을 열고 상품 페이지에서 <b class="text-teal"><i class="bi bi-cart"></i> 수집</b> 버튼을 누르세요</span>
-    </div>
+<section class="op-card" id="oneclickCard">
+  <div class="op-card-head">
+    <strong>원클릭 수집 지원 마켓</strong>
+    <span class="mc-hint">마켓을 열고 상품 페이지에서 <b class="text-teal">수집</b> 버튼을 누르세요</span>
+  </div>
+  <div class="op-card-body">
     {# v17 P0: 앱에서 마켓 진입 시 도착 페이지에 수집기가 무조건 뜨도록 마커(kgpsrc=app) 부여 #}
     {% macro mk(u) %}{{ u }}{{ '&' if '?' in u else '?' }}kgpsrc=app{% endmacro %}
-    {% macro favicon(dom) %}{% if dom %}<img src="https://www.google.com/s2/favicons?domain={{ dom }}&sz=32" alt="" width="18" height="18" style="border-radius:3px;vertical-align:-3px" loading="lazy" onerror="this.style.display='none'"> {% endif %}{% endmacro %}
-    <div class="d-flex flex-wrap gap-2" id="oneclickMarkets">
+    {% macro favicon(dom) %}{% if dom %}<img class="mc-chip-fav" src="https://www.google.com/s2/favicons?domain={{ dom }}&sz=32" alt="" width="18" height="18" loading="lazy" onerror="this.style.display='none'"> {% endif %}{% endmacro %}
+    <div class="mc-chips" id="oneclickMarkets">
       {% for m in oneclick_markets %}
       {% if m.countries %}
       <div class="dropdown oneclick-market" data-amazon-dropdown>
-        <button class="btn btn-outline-primary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="{{ m.name }}" data-amazon-btn data-default-label="{{ m.name }}">
+        <button class="mc-chip dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="{{ m.name }}" data-amazon-btn data-default-label="{{ m.name }}">
           {{ favicon(m.domain) }}<span data-amazon-label>{{ m.name }}</span>
         </button>
         <ul class="dropdown-menu">
@@ -68,19 +73,28 @@
       </div>
       {% else %}
       <a href="{{ mk(m.url) }}" target="_blank" rel="noopener noreferrer" title="{{ m.name }}"
-         class="btn btn-outline-primary btn-sm oneclick-market">{{ favicon(m.domain) }}{{ m.name }}</a>
+         class="mc-chip oneclick-market">{{ favicon(m.domain) }}{{ m.name }}</a>
       {% endif %}
       {% endfor %}
       {# v17 P1: 유저가 등록한 소싱처(My Sources) 칩 — 파비콘 + 표시 이름, 클릭 시 진입 보장 #}
       {% for s in (my_sources or []) %}
       <a href="{{ mk(s.url) }}" target="_blank" rel="noopener noreferrer" title="{{ s.name }} (내 소싱처)"
-         class="btn btn-outline-secondary btn-sm oneclick-market my-source-chip">{{ favicon(s.domain) }}{{ s.name }}</a>
+         class="mc-chip oneclick-market my-source-chip">{{ favicon(s.domain) }}{{ s.name }}</a>
       {% endfor %}
-      <a href="/seller/sourcing#registryDomainInput" class="btn btn-sm btn-ghost oneclick-market" title="소싱처 등록 관리">＋ 소싱처 추가</a>
+      <a href="/seller/sourcing#registryDomainInput" class="mc-chip mc-chip-add oneclick-market" title="소싱처 등록 관리">＋ 소싱처 추가</a>
     </div>
-    <div class="border rounded p-3 mt-3 mb-0 small d-flex gap-2 align-items-start bg-white" role="note">
-      <img src="{{ url_for('seller_console.static', filename='favicon.svg') }}" alt="고가브릿지"
-           style="width:34px;height:34px;border-radius:8px;flex-shrink:0">
+    <div class="mc-note mt-3" role="note">
+      {# 다리 시그니처 — 게이트 아치 + 데크 2줄 + 키스톤. 정본 지오메트리는 확장 팝업과 같다.
+         **인라인이라 404도 CSP도 배포 누락도 못 깬다** — 아이콘 하나에 그 리스크를 지불하지 않는다. #}
+      <svg class="mc-note-mark" viewBox="0 0 512 512" role="img" aria-label="고가브릿지">
+        <circle class="bm-arch" cx="256" cy="205" r="92" stroke-width="40"/>
+        <line class="bm-deck" x1="80" y1="338" x2="432" y2="338" stroke-width="36" stroke-linecap="round"/>
+        <line class="bm-deck" x1="80" y1="378" x2="432" y2="378" stroke-width="36" stroke-linecap="round"/>
+        <line class="bm-tie" x1="150" y1="338" x2="150" y2="378" stroke-width="14"/>
+        <line class="bm-tie" x1="256" y1="338" x2="256" y2="378" stroke-width="14"/>
+        <line class="bm-tie" x1="362" y1="338" x2="362" y2="378" stroke-width="14"/>
+        <circle class="bm-key" cx="256" cy="113" r="40"/>
+      </svg>
       <div>
         <b class="text-teal">고가수집기 인페이지 수집</b> — 크롬 확장을 설치하면 <b>지정 소싱처</b>(타오바오·아마존 등)에서
         ①상품 <b>상세 페이지</b>의 <b>“고가수집기”</b> 버튼으로 한 번에, ②<b>검색·목록 페이지</b>에서는 상품마다 뜨는
@@ -90,36 +104,40 @@
       </div>
     </div>
   </div>
-</div>
+</section>
 
-<div class="card console-step-card mb-3">
-  <div class="card-body">
+<section class="op-card">
+  <div class="op-card-head">
+    <strong>URL로 수집</strong>
+    <span class="mc-hint">타오바오·아마존·1688 등 상품 페이지 주소를 붙여넣으면 제목·가격·이미지를 자동으로 가져와요.</span>
+  </div>
+  <div class="op-card-body">
     <label for="productUrl" class="form-label fw-semibold">상품 URL</label>
-    <div class="input-group">
-      <input type="url" id="productUrl" class="form-control console-focus" placeholder="https://..." autocomplete="off" required>
-      <button class="btn btn-primary" id="extractBtn" onclick="extractProduct()">미리보기</button>
-    </div>
-    <div class="form-text">타오바오·아마존·1688 등 상품 페이지 주소를 붙여넣으면 제목·가격·이미지를 자동으로 가져와요.</div>
+    <input type="url" id="productUrl" class="form-control console-focus" placeholder="https://..." autocomplete="off" required>
     <div id="urlError" class="text-danger small mt-2 d-none" role="alert"></div>
   </div>
-</div>
+  <div class="op-card-foot">
+    <button class="btn btn-primary" id="extractBtn" onclick="extractProduct()">미리보기</button>
+  </div>
+</section>
 
 <!-- 여러 URL 일괄 수집 -->
-<div class="card console-card mb-3">
-  <div class="card-body">
-    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-      <label for="bulkUrls" class="form-label fw-semibold mb-0"><i class="bi bi-download"></i> 여러 URL 한 번에 수집</label>
-      <span class="small text-muted">한 줄에 하나씩 · 최대 1000개</span>
-    </div>
+<section class="op-card">
+  <div class="op-card-head">
+    <strong>여러 URL 한 번에 수집</strong>
+    <span class="mc-hint">한 줄에 하나씩 · 최대 1000개</span>
+  </div>
+  <div class="op-card-body">
+    <label for="bulkUrls" class="form-label fw-semibold">URL 목록</label>
     <textarea id="bulkUrls" class="form-control" rows="4"
       placeholder="https://www.amazon.com/dp/...&#10;https://item.taobao.com/...&#10;https://detail.1688.com/..."></textarea>
-    <div class="d-flex gap-2 mt-2">
-      <button class="btn btn-primary" id="bulkCollectBtn" onclick="bulkCollect()">일괄 수집 → 이력 저장</button>
-      <a href="/seller/collect/history" class="btn btn-outline-secondary">수집 이력 보기</a>
-    </div>
     <div id="bulkResult" class="small mt-3 d-none"></div>
   </div>
-</div>
+  <div class="op-card-foot">
+    <button class="btn btn-primary" id="bulkCollectBtn" onclick="bulkCollect()">일괄 수집 → 이력 저장</button>
+    <a href="/seller/collect/history" class="btn btn-ghost">수집 이력 보기</a>
+  </div>
+</section>
 
 <div id="loadingSpinner" class="text-center py-4 d-none" aria-live="polite">
   <div class="spinner-border text-teal" role="status"></div>
@@ -129,13 +147,12 @@
 <div id="errorAlert" class="pc-status pc-status-danger small d-none" role="alert"></div>
 
 <div id="previewCard" class="d-none">
-  <div class="card console-step-card mb-3">
-    <div class="card-body">
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <h2 class="h6 mb-0">추출된 상품</h2>
-        <span id="sourceBadge" class="badge text-bg-secondary"></span>
-      </div>
-
+  <section class="op-card">
+    <div class="op-card-head">
+      <strong>추출된 상품</strong>
+      <span id="sourceBadge" class="pc-badge pc-badge-muted"></span>
+    </div>
+    <div class="op-card-body">
       <div id="extractedCards" class="row g-2 mb-3"></div>
 
       <div class="row g-2">
@@ -152,23 +169,26 @@
         </div>
       </div>
     </div>
-  </div>
+  </section>
 
-  <div class="card console-step-card mb-3">
-    <div class="card-body">
-      <h2 class="h6 mb-3">등록할 마켓 선택</h2>
-      <div class="row g-2 mb-3">
+  <section class="op-card">
+    <div class="op-card-head">
+      <strong>등록할 마켓 선택</strong>
+      <span class="mc-hint">연동된 마켓만 고를 수 있어요.</span>
+    </div>
+    <div class="op-card-body">
+      <div class="mc-markets mb-3">
         {% for market in marketplace_cards %}
-        <div class="col-6 col-md-3">
-          <label class="form-check border rounded p-2 w-100" for="chk_{{ market.code }}">
+        <label class="mc-market" for="chk_{{ market.code }}">
+          <span class="mc-market-nm">
             <input class="form-check-input me-1 market-checkbox" type="checkbox" id="chk_{{ market.code }}" value="{{ market.code }}" {% if not market.is_ready %}disabled{% endif %}>
             {{ market.label }}
-            <div class="small text-muted">{{ market.country }}/{{ market.currency }}</div>
-            {% if not market.is_ready %}
-            <div><span class="badge bg-dark">준비 중/미연동</span></div>
-            {% endif %}
-          </label>
-        </div>
+          </span>
+          <span class="mc-market-sub">{{ market.country }}/{{ market.currency }}</span>
+          {% if not market.is_ready %}
+          <span class="pc-badge pc-badge-muted">준비 중/미연동</span>
+          {% endif %}
+        </label>
         {% endfor %}
       </div>
 
@@ -184,7 +204,7 @@
         </div>
         <div class="col-md-4">
           <button
-            class="btn btn-outline-primary w-100"
+            class="btn btn-ghost w-100"
             id="localizeBtn"
             onclick="localizeProduct()"
             {% if not localization_configured %}disabled{% endif %}
@@ -192,31 +212,23 @@
             <i class="bi bi-translate"></i> 현지화 실행
           </button>
           {% if not localization_configured %}
-          <div class="small text-muted mt-2">번역 API 미설정: /admin/diagnostics에서 설정하세요.</div>
+          {# 일반 유저에게 관리자 경로를 보여주지 않는다(개발 표기 비노출). #}
+          <div class="mc-hint mt-2">번역이 아직 준비되지 않았어요 — 원문 그대로 등록됩니다.</div>
           {% else %}
-          <div class="small text-muted mt-2">기계번역 결과는 사람 검수 후 저장하세요.</div>
+          <div class="mc-hint mt-2">기계번역 결과는 사람 검수 후 저장하세요.</div>
           {% endif %}
         </div>
       </div>
 
-      <div id="localizedPreview" class="border rounded p-2 d-none"></div>
-
-      <div class="d-flex flex-wrap gap-2">
-        <button class="btn btn-outline-secondary" id="saveBtn" onclick="saveToSheets()">카탈로그 저장</button>
-        <button class="btn btn-primary" id="uploadBtn" onclick="uploadProduct()">선택 마켓 업로드</button>
-      </div>
+      <div id="localizedPreview" class="mc-inset d-none"></div>
     </div>
-  </div>
+    <div class="op-card-foot">
+      <button class="btn btn-primary" id="uploadBtn" onclick="uploadProduct()">선택 마켓 업로드</button>
+      <button class="btn btn-ghost" id="saveBtn" onclick="saveToSheets()">카탈로그 저장</button>
+    </div>
+  </section>
 </div>
 
-<div class="toast-container position-fixed bottom-0 end-0 p-3">
-  <div id="uploadToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
-    <div class="toast-header">
-      <strong class="me-auto" id="toastTitle">안내</strong>
-      <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
-    </div>
-    <div class="toast-body" id="toastBody"></div>
-  </div>
 </div>
 {% endblock %}
 
@@ -261,13 +273,18 @@ function setStep(step) {
   });
 }
 
+// 6-f: 부트스트랩 컬러 토스트 → 공통 컴포넌트(pcToast, 토큰 단일 소스).
+//   호출부 16곳의 시그니처는 그대로 둔다 — 여기만 갈면 되고, 훅을 건드리면 로직 변경이다.
+//   pcToast는 textContent로 그리므로(XSS 0) `<br>` 같은 마크업은 줄바꿈으로 바꿔 넘긴다.
 function showToast(title, message, type='success') {
-  const toastEl = document.getElementById('uploadToast');
-  document.getElementById('toastTitle').textContent = title;
-  document.getElementById('toastBody').innerHTML = message;
-  toastEl.classList.remove('text-bg-danger', 'text-bg-success');
-  if (type === 'danger') toastEl.classList.add('text-bg-danger');
-  if (window.bootstrap) new bootstrap.Toast(toastEl, {delay: 3500}).show();
+  const body = String(message == null ? '' : message)
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '');
+  // '안내'·'오류'는 색과 아이콘이 이미 말한다 — 제목이 정보를 더할 때만 붙인다.
+  const generic = ['안내', '오류'];
+  const text = (title && !generic.includes(title)) ? `${title} — ${body}` : body;
+  if (typeof pcToast === 'function') { pcToast(text, type === 'danger' ? 'error' : type); return; }
+  console.log(text);                       // pcToast 미로드 시에도 조용히 삼키지 않는다
 }
 
 function validateUrlInput(url) {
@@ -466,7 +483,7 @@ function renderLocalizedPreview() {
   box.classList.remove('d-none');
   box.innerHTML = entries.map(([locale, row]) => `
     <div class="mb-2 pb-2 border-bottom">
-      <div class="fw-semibold">${escapeHtml(locale)} <span class="badge bg-secondary">${escapeHtml(row.status || 'translated')}</span></div>
+      <div class="fw-semibold">${escapeHtml(locale)} <span class="pc-badge pc-badge-muted">${escapeHtml(row.status || 'translated')}</span></div>
       <input class="form-control form-control-sm mt-1 localized-title" data-locale="${escapeHtml(locale)}" value="${escapeHtml(row.title || '')}">
       <textarea class="form-control form-control-sm mt-1 localized-description" data-locale="${escapeHtml(locale)}" rows="2">${escapeHtml(row.description || '')}</textarea>
     </div>
