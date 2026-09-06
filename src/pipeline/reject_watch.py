@@ -319,15 +319,37 @@ def scan_rejections(items, *, history_fn, classify_fn=None) -> dict:
 GRADUATING_STATES = ("approved", "brand_fix", "doc_required")
 
 
+# 감시 큐에 **남아야 하는** Wing 상태 — 아직 확정이 아닌 것들.
+#   `saved`(임시저장)는 조치 대상이지 확정이 아니다: 승인요청을 다시 걸면 결과가 또 나온다.
+#   `unknown`(미상)은 아무것도 확인 못 한 상태다.
+#   둘 다 큐에 남아야 다음 회전이 결과를 본다.
+UNSETTLED_STATES = ("saved", "unknown")
+
+
 def _next_status(row) -> str:
     """감시 결과 → 대장에 쓸 상태. **dry-run과 실행이 같은 함수를 쓴다** —
-    세는 쪽과 쓰는 쪽이 갈리면 미리 본 숫자가 거짓이 된다."""
+    세는 쪽과 쓰는 쪽이 갈리면 미리 본 숫자가 거짓이 된다.
+
+    ★ 폴백 수리(2026-09-05): 전에는 `comment` 유무만 보고 `rejected`를 앉혔다.
+      `latest_rejection_comment`에는 '조용한 누락 방지' 폴백이 있어 **반려 표기가 없어도
+      마지막 메모를 돌려준다.** 그래서 심사중 메모 한 줄이 상품을 `rejected`로 만들고
+      감시 큐 밖으로 밀어냈다([[임시저장 comment가 반려로 앉는다]]).
+
+      **`wing_state`가 확정값이면 그걸 믿는다.** comment는 *무엇이 문제인가*(kind)를
+      정하는 재료지 *확정인가*(status)를 정하는 근거가 아니다 —
+      '사유가 있다'와 '반려다'는 다른 명제다.
+    """
     state = str((row or {}).get("wing_state") or "")
     if (row or {}).get("error"):
         return ""            # 조회 실패는 상태를 안 바꾼다 — 확인 실패를 '확인함'으로 만들지 않는다
     if state in GRADUATING_STATES:
-        return state
-    return "rejected" if (row or {}).get("comment") else "unknown"
+        return state         # approved·brand_fix·doc_required — 확정이라 큐를 떠난다
+    if state == "rejected":
+        return "rejected"    # Wing이 반려라고 말했을 때만 반려다
+    if state in UNSETTLED_STATES:
+        return state if state == "unknown" else "saved"   # 미확정 — 큐에 남는다
+    # 여기 오는 건 WING_STATES에 없는 새 상태. 확정으로 단정하지 않는다(가짜 확정 0).
+    return "unknown"
 
 
 def watch_registered(*, queue_fn, history_fn, classify_fn=None, record_fn=None,
@@ -381,9 +403,12 @@ def watch_registered(*, queue_fn, history_fn, classify_fn=None, record_fn=None,
                 "elapsed_sec": round(clock() - start, 2)}
 
     recorded = 0
+    wrote: dict = {}                          # 실제로 쓴 상태 분포 — 로그가 졸업/잔류를 말하게
     if record_fn:
         for r in scan["rows"]:
             status = _next_status(r)          # dry-run이 센 것과 **같은 판정**(둘이 갈리면 예고가 거짓)
+            if status:
+                wrote[status] = wrote.get(status, 0) + 1
             try:
                 if record_fn(r["sid"], status=status, reject_kind=r.get("kind", ""),
                              reject_comment=r.get("comment", ""),
@@ -400,7 +425,11 @@ def watch_registered(*, queue_fn, history_fn, classify_fn=None, record_fn=None,
             notified = True
         except Exception as exc:
             notify_error = f"알림 발송 실패: {exc}"        # 감시는 성공, 알림만 실패(정직 분리)
+    from src.db.market_registrations_pg import _WATCH_STATUSES as _WS
     return {**scan, "ok": True, "recorded": recorded, "notified": notified,
+            "wrote": wrote,
+            "stayed": sum(n for st, n in wrote.items() if st in _WS),
+            "graduated": sum(n for st, n in wrote.items() if st not in _WS),
             "notify_error": notify_error, "budget_exhausted": budget_exhausted,
             "remaining_hint": max(0, len(items) - len(done)),
             "elapsed_sec": round(clock() - start, 2)}

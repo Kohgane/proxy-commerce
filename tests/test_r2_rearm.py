@@ -175,15 +175,22 @@ def test_screen_renders():
 
 
 # ── R1 회귀: 큐 이탈을 만든 그 판정 ──────────────────────────────────────────
-def test_comment_present_still_leaves_the_queue():
-    """★ R1 재구성 고정: comment가 있으면 `rejected`가 되고, `rejected`는 감시 큐 밖이다.
+def test_r1_history_is_recorded_and_the_hole_is_closed():
+    """★ R1 재구성 — **역사는 역사로, 현행은 현행으로.**
 
-    9/03 크론이 임시저장 건을 이 경로로 앉혔고 그날 큐에서 빠졌다(오늘 scanned 0의 원인).
-    이 동작 자체는 옳다 — **재무장이 없던 것**이 결함이었다.
+    9/03 크론은 `comment` 유무만 보고 `rejected`를 앉혔다. 임시저장 건이 그 경로로
+    큐에서 빠졌고(그날 scanned 0의 원인), 그때 나는 "이 동작 자체는 옳다"고 적었다.
+    **그것도 틀렸다** — comment 폴백이 반려 아닌 메모까지 반려로 만들고 있었다.
+    지금은 `wing_state`가 상태를 정한다(tests/test_wing_state_priority.py A~E).
+
+    이 계약이 지키는 건 두 가지다: `rejected`는 여전히 큐 밖이라는 것(그건 확정이니까),
+    그리고 **임시저장이 이제 큐에 남는다**는 것 — 9/03의 구멍이 닫혔다는 증거다.
     """
     from src.db.market_registrations_pg import _WATCH_STATUSES
-    assert RW._next_status({"comment": "임시저장"}) == "rejected"
-    assert "rejected" not in _WATCH_STATUSES
+    assert "rejected" not in _WATCH_STATUSES          # 반려는 확정 — 큐를 떠나는 게 맞다
+    # 9/03에 큐를 떠나게 만든 그 입력이, 이제는 남는다.
+    assert RW._next_status({"wing_state": "saved", "comment": "임시저장"}) == "saved"
+    assert "saved" in _WATCH_STATUSES
     assert RW._next_status({"comment": ""}) == "unknown"
     assert "unknown" in _WATCH_STATUSES               # 사유 없음은 큐에 남는다
 
