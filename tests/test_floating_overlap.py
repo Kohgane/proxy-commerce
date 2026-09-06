@@ -158,9 +158,11 @@ PROBE = """(ids) => {
 
 # 순서는 **프로덕션과 같아야 한다**(_base.html: bootstrap → app → seller → console).
 # 순서가 다르면 `!important`끼리 붙었을 때 승자가 바뀌어, 캡처가 라이브와 다른 화면이 된다.
-CSS_FILES = ("/tmp/bsdl/node_modules/bootstrap/dist/css/bootstrap.min.css",
-             "src/static/app.css", "src/seller_console/static/seller.css",
-             "src/seller_console/static/console.css")
+_BS_CANDIDATES = ("node_modules/bootstrap/dist/css/bootstrap.min.css",
+                  "/tmp/bsdl/node_modules/bootstrap/dist/css/bootstrap.min.css")
+CSS_FILES = tuple([p for p in _BS_CANDIDATES if Path(p).exists()][:1]
+                  + ["src/static/app.css", "src/seller_console/static/seller.css",
+                     "src/seller_console/static/console.css"])
 
 
 def _page_html(route: str) -> str:

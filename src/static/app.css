@@ -1927,9 +1927,10 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 /* 내부 스크롤은 **이 둘만**(오너 H1). `.op-card-body`가 이미 `overflow-y:auto`라
    카드에 상한만 주면 스크롤이 카드 안으로 들어온다. */
 /* 실측으로 정한 값이다(어림이 아니라): 상한을 이보다 키우면 940을 넘는다.
-   1760 → 945 → 여기서 두 카드 24px을 깎아 **929**. 남는 11px은 폰트·반올림 여유다. */
-.rw-card-watch { max-height: 11.5rem; }
-.rw-card-table { max-height: 20.5rem; }
+   1760 → 945 → 두 카드를 깎아 940. **여기서 32px을 더 깎아 ~908로 둔다** —
+   CI에는 우리 웹폰트가 없어 글자 높이가 미세하게 다르다(로컬 940 정확은 그래서 위험하다). */
+.rw-card-watch { max-height: 11rem; }
+.rw-card-table { max-height: 19rem; }
 
 /* 요약 스트립 — 카드 2장을 한 줄로. 수치는 세리프, 라벨은 오버라인(6-a 문법). */
 .rw-strip { margin-bottom: 0; padding: var(--space-2) var(--space-4); }

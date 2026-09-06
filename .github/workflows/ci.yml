@@ -92,6 +92,9 @@ jobs:
           pip install -r requirements-dev.txt
           pip install "Pillow>=10"            # 아이콘/OG 빌드 계약(스테일 skip 방지)
           npm install jsdom --no-save         # jsdom 하네스(node -e require('jsdom'))
+          # 6-h 실측: 캡처 계약이 **부트스트랩 없이** 렌더돼 라이브와 다른 화면을 재고 있었다
+          #   (뷰포트 예산 940 대 CI 1161). 앱은 이 CSS를 CDN으로 싣는다 — 계약도 같은 걸 봐야 한다.
+          npm install bootstrap@5.3.0 --no-save   # 뷰포트/겹침 계약이 재는 실제 스타일시트
 
       - name: Chromium 설치(/opt/pw-browsers = 하네스 탐색 대상)
         run: |

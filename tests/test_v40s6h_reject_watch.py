@@ -74,9 +74,15 @@ def _pw_ok():
     return cache.is_dir() and any(cache.glob("chromium-*"))
 
 
-CSS_FILES = ("/tmp/bsdl/node_modules/bootstrap/dist/css/bootstrap.min.css",
-             "src/static/app.css", "src/seller_console/static/seller.css",
-             "src/seller_console/static/console.css")
+# 부트스트랩은 앱이 CDN으로 싣는 **실제 스타일시트**다. 없이 재면 다른 화면을 재는 것이고,
+# 그 숫자로 "한 화면에 들어간다"를 말할 수 없다(CI 실측: 없으면 940 대신 1161).
+# 그래서 **조용히 넘어가지 않고** 못 찾으면 그 사실이 실패로 드러나게 한다.
+_BS_CANDIDATES = ("node_modules/bootstrap/dist/css/bootstrap.min.css",
+                  "/tmp/bsdl/node_modules/bootstrap/dist/css/bootstrap.min.css")
+BOOTSTRAP = next((p for p in _BS_CANDIDATES if Path(p).exists()), None)
+CSS_FILES = tuple(x for x in (BOOTSTRAP, "src/static/app.css",
+                              "src/seller_console/static/seller.css",
+                              "src/seller_console/static/console.css") if x)
 
 PROBE = """() => {
   const scrollers = [];
@@ -84,8 +90,12 @@ PROBE = """() => {
     const s = getComputedStyle(e);
     if (/(auto|scroll)/.test(s.overflowY) && e.scrollHeight > e.clientHeight + 4) scrollers.push(1);
   });
+  // scrollHeight는 뷰포트보다 작아지지 않는다(clamp) — 그래서 '넘쳤나'만 알려주고 **여유는 못 보여준다.**
+  //   여유를 재려면 콘텐츠의 실제 바닥을 봐야 한다. CI엔 우리 웹폰트가 없어 글자 높이가 미세하게
+  //   다르니, 로컬에서 딱 맞춘 값은 CI에서 넘칠 수 있다(6-h에서 실제로 그렇게 깨졌다).
+  const main = document.querySelector('main').getBoundingClientRect();
   return {total: document.documentElement.scrollHeight, vh: window.innerHeight,
-          scrollers: scrollers.length,
+          contentBottom: Math.round(main.bottom), scrollers: scrollers.length,
           cols: document.querySelectorAll('.rw-page > .rw-col').length};
 }"""
 
@@ -160,9 +170,14 @@ def test_fits_one_viewport(n_scan, n_watch, label):
     행이 늘 때 페이지가 자라면 상한이 무는 게 아니라 '지금 데이터에서만 맞는' 레이아웃이다.
     그래서 18행짜리도 같이 잰다 — 상한이 실제로 무는지가 이 계약의 값어치다.
     """
+    assert BOOTSTRAP, ("부트스트랩 CSS를 못 찾았다 — 라이브와 **다른 화면**을 재게 된다. "
+                       f"찾은 자리: {_BS_CANDIDATES}")
     r = _measure(n_scan, n_watch)
     assert r["cols"] == 2, "2단이 아니다"
     assert r["total"] <= r["vh"], f"{label}: scrollHeight {r['total']} > 뷰포트 {r['vh']}"
+    # 여유도 함께 못 박는다 — 0px로 맞추면 폰트가 다른 환경에서 바로 넘친다(그게 CI를 깨뜨렸다).
+    assert r["contentBottom"] <= r["vh"] - 20, \
+        f"{label}: 콘텐츠 바닥 {r['contentBottom']} — 여유 20px 미만이면 다른 환경에서 넘친다"
 
 
 @pytest.mark.skipif(not _pw_ok(), reason="크로미움 없음 — 정직하게 skip")
