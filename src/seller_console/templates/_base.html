@@ -357,6 +357,9 @@
     var hidden = get('kgp_fb_hidden') === '1';
     wrap.style.display = hidden ? 'none' : 'flex';
     reopen.style.display = hidden ? 'flex' : 'none';
+    // 6-f-4: 예약 공간도 같이 줄인다(console.css `.pc-fb-hidden`). 숨겼는데 큰 자리가
+    // 남아 있으면 그건 그것대로 빈 여백이다.
+    document.body.classList.toggle('pc-fb-hidden', hidden);
   }
   hide.addEventListener('click', function(){ set('kgp_fb_hidden','1'); apply(); });
   reopen.addEventListener('click', function(){ set('kgp_fb_hidden','0'); apply(); });
