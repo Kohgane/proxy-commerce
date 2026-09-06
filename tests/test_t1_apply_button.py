@@ -93,18 +93,24 @@ def test_confirm_names_sid_and_prescription_and_irreversibility():
     assert "되돌릴 수 없습니다" in html
 
 
-def test_result_shows_raw_market_response():
-    """★ 결과는 **원문 그대로** — HTTP status + body. 요약하면 다음 부검에서 원문을 다시 찾는다."""
+def test_result_keeps_the_raw_response_but_folds_it():
+    """★ 원문은 **잃지 않는다** — 다만 6-f-3부터 [자세히] 접힘 안에 둔다.
+
+    부검용 직출력은 부검 단계의 스펙이었다. 단계가 끝나면 스펙도 은퇴한다 —
+    지우는 게 아니라 **접는다**. 부검 가치는 그대로, 기본 화면은 사람 말 한 줄.
+    """
     html = _render(approved=True)
-    assert "'HTTP ' + status" in html
     assert "r.text()" in html                            # json 파싱으로 원문을 버리지 않는다
-    assert ".rw-result" in CSS and "white-space: pre-wrap" in CSS.split(".rw-result")[1][:200]
+    assert "'자세히'" in html and "pre.textContent = raw" in html
+    assert ".rw-raw pre" in CSS and "white-space: pre-wrap" in CSS.split(".rw-raw pre")[1][:200]
 
 
 def test_transport_failure_is_shown_not_swallowed():
-    """못 보낸 것도 화면에 남긴다(조용한 실패 금지)."""
+    """못 보낸 것도 화면에 남긴다(조용한 실패 금지) — 이제 사람 말 + 접힘 안 원문."""
     html = _render(approved=True)
-    assert "'전송 실패'" in html and ".catch(" in html
+    assert ".catch(" in html
+    assert "요청을 보내지 못했어요" in html
+    assert "'bad', String(err)" in html                   # 사유 원문도 접힘 안에 남는다
 
 
 @pytest.mark.parametrize("approved", [True, False])

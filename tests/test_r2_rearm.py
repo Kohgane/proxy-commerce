@@ -156,15 +156,17 @@ def test_rearm_button_confirms_and_posts():
     assert 'id="rearmBtn"' in t and 'id="rearmSids"' in t and 'id="rearmResult"' in t
     js = t.split("소급 재무장")[-1]
     assert "pcConfirm(" in js and "/admin/reject-watch/rearm" in js
-    assert "'HTTP ' + r.status" in js                 # 요약 금지 — 원문 그대로
-    assert "전송 실패" in js                           # 실패도 화면에 남긴다
+    # 6-f-3: 원문 직출력은 은퇴했다. **원문은 접힘 안에 남고**, 기본 화면은 사람 말이다.
+    assert "rwRender(" in js and "'자세히'" in js
+    assert "요청을 보내지 못했어요" in js              # 실패도 화면에 남긴다(조용한 실패 0)
 
 
 def test_page_states_no_market_call():
     """화면이 '마켓에 아무것도 안 보낸다'를 사용자 말로 밝힌다(정직 표기)."""
     t = TPL.read_text(encoding="utf-8")
-    assert "마켓에 아무것도 보내지 않아요" in t
-    assert "심사 중" in t
+    # 6-f-3에서 문구가 셀러 말로 바뀌었다 — 지키는 뜻은 그대로다(마켓 호출 0을 밝힌다).
+    assert "마켓에는 아무것도 보내지 않아요" in t
+    assert "자동 점검 목록" in t
 
 
 def test_screen_renders():

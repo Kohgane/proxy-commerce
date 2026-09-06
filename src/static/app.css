@@ -1854,3 +1854,19 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 
 @media (max-width: 1199.98px) { .mc-markets { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 575.98px) { .mc-markets { grid-template-columns: minmax(0, 1fr); } }
+
+/* ── 6-f-3: 결과 표시 — 화면은 사람의 것, 원문은 로그의 것 ───────────────────
+   부검용 원문 직출력은 **부검 단계의 스펙**이었다. 단계가 끝나면 스펙도 은퇴시킨다.
+   지우지는 않는다 — 접힘 안에 두고 전문은 서버 로그가 갖는다(역할 분리). */
+.rw-line { font-size: .88rem; line-height: 1.6; }
+.rw-line-ic { margin-right: .35em; }
+.rw-ok   { color: var(--success); font-weight: var(--w-semi); }
+.rw-warn { color: var(--warn); font-weight: var(--w-semi); }
+.rw-bad  { color: var(--danger); font-weight: var(--w-semi); }
+.rw-raw { margin-top: var(--space-2); font-size: .76rem; color: var(--text-muted); }
+.rw-raw > summary { cursor: pointer; letter-spacing: .04em; }
+.rw-raw pre {
+  margin: var(--space-2) 0 0; padding: var(--space-3);
+  border-radius: var(--radius-sm); background: color-mix(in srgb, var(--ink) 4%, var(--surface));
+  white-space: pre-wrap; word-break: break-all; max-height: 16rem; overflow: auto;
+}
