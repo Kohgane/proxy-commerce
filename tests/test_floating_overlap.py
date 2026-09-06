@@ -16,8 +16,12 @@
 from __future__ import annotations
 
 import glob
+import json
 import os
 import re
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -152,19 +156,37 @@ def _page_html(route: str) -> str:
 
 
 def _measure(route: str, hide: bool = False):
+    """★ 측정은 **별도 프로세스에 90초 상한**을 걸고 돌린다.
+
+    앞선 판에서 이 계약이 CI 스위트를 세웠다. 계약이 스위트를 세우면 그건 계약이 아니라 사고다 —
+    브라우저가 어디서 멈추든 여기서 끊고 **실패로 보고**한다(무한 대기 0).
+    """
+    try:
+        out = subprocess.run([sys.executable, str(Path(__file__).resolve()), route,
+                              "1" if hide else "0"],
+                             capture_output=True, text=True, timeout=90, cwd=os.getcwd())
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"{route}: 측정이 90초를 넘겼다 — 브라우저가 멈췄다")
+    if out.returncode != 0:
+        pytest.fail(f"{route}: 측정 실패\n{out.stderr[-1500:]}")
+    return json.loads(out.stdout.strip().splitlines()[-1])
+
+
+def _probe(route: str, hide: bool = False):
     from playwright.sync_api import sync_playwright
     exe = (glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome") or [None])[0]
-    html = _page_html(route)
+    slug = route.strip("/").replace("/", "-") + ("-hidden" if hide else "")
+    tmp = Path(tempfile.gettempdir()) / f"kgp_overlap_{slug}.html"
+    tmp.write_text(_page_html(route), encoding="utf-8")
     with sync_playwright() as pw:
         br = pw.chromium.launch(**({"executable_path": exe} if exe else {}))
         pg = br.new_page(viewport={"width": 1920, "height": 940})
         pg.set_default_timeout(15000)
-        # 문서만 우리가 채우고 **나머지 요청은 전부 끊는다**(네트워크 0). `set_content`가 아니라
-        # 가짜 URL로 여는 이유: about: 출처에선 localStorage가 던져서 숨김 토글이 동작을 안 한다.
-        url = "http://gogabridj.test/page"
-        pg.route("**/*", lambda r: (r.fulfill(status=200, content_type="text/html; charset=utf-8",
-                                              body=html) if r.request.url == url else r.abort()))
-        pg.goto(url, wait_until="domcontentloaded")
+        # `file://`로 연다: 이름을 풀 것도, 붙을 곳도 없다(DNS 0 · 소켓 0). 그러면서도 출처가
+        # 있어서 localStorage가 살아 있다 — `about:`나 `set_content`면 던져서 숨김 토글이 안 돈다.
+        pg.route("**/*", lambda r: (r.continue_() if r.request.url.startswith("file://")
+                                    else r.abort()))     # 외부는 전부 끊는다
+        pg.goto(tmp.as_uri(), wait_until="domcontentloaded")
         pg.wait_for_timeout(300)
         if hide:
             pg.evaluate("() => document.getElementById('fbHide').click()")
@@ -197,3 +219,10 @@ def test_hidden_mini_button_also_clears():
     assert r["fbWrap"] is None, "숨겼는데 버블이 남아 있다"
     assert r["fbReopen"] == [], f"미니 버튼이 {r['fbReopen']}를 덮는다"
     assert float(r["_pad"].rstrip("px")) >= MINI_OCCUPIES
+
+
+# ── 서브프로세스 진입점 (pytest가 여기로 다시 부른다) ────────────────────────
+if __name__ == "__main__":
+    sys.path.insert(0, os.getcwd())          # 서브프로세스엔 pytest의 rootdir 주입이 없다
+    _r = _probe(sys.argv[1], sys.argv[2] == "1")
+    print(json.dumps(_r))
