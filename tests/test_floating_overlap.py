@@ -18,8 +18,6 @@ from __future__ import annotations
 import glob
 import os
 import re
-import threading
-import time
 from pathlib import Path
 
 import pytest
@@ -133,70 +131,69 @@ PROBE = """(ids) => {
 }"""
 
 
-@pytest.fixture(scope="module")
-def live_server():
-    os.environ.setdefault("SELLER_CONSOLE_AUTH", "0")
-    import urllib.request
+CSS_FILES = ("src/static/app.css", "src/seller_console/static/console.css",
+             "src/seller_console/static/seller.css",
+             "/tmp/bsdl/node_modules/bootstrap/dist/css/bootstrap.min.css")
 
+
+def _page_html(route: str) -> str:
+    """실 라우트 HTML + CSS 인라인.
+
+    **소켓을 열지 않는다.** 앞선 판에서 로컬 서버를 띄웠다가 CI가 50분 넘게 안 끝났다
+    (평소 9분). 브라우저가 CDN·서비스워커·localhost를 물면 어디서 멈췄는지도 못 본다.
+    `test_client`로 같은 HTML을 받고 CSS만 넣으면 잴 것은 다 잰다(devshot 관행).
+    """
+    os.environ.setdefault("SELLER_CONSOLE_AUTH", "0")
     from src.order_webhook import app
-    port = 8911
-    threading.Thread(target=lambda: app.run(port=port, threaded=True, use_reloader=False),
-                     daemon=True).start()
-    for _ in range(80):
-        try:
-            urllib.request.urlopen(f"http://127.0.0.1:{port}/seller/dashboard", timeout=1)
-            return f"http://127.0.0.1:{port}"
-        except Exception:                                        # noqa: BLE001
-            time.sleep(0.25)
-    pytest.skip("로컬 서버가 안 떴다")
+    html = app.test_client().get(route).get_data(as_text=True)
+    style = "".join(f"<style>{Path(p).read_text(encoding='utf-8')}</style>"
+                    for p in CSS_FILES if Path(p).exists())
+    return html.replace("</head>", style + "</head>", 1)
+
+
+def _measure(route: str, hide: bool = False):
+    from playwright.sync_api import sync_playwright
+    exe = (glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome") or [None])[0]
+    html = _page_html(route)
+    with sync_playwright() as pw:
+        br = pw.chromium.launch(**({"executable_path": exe} if exe else {}))
+        pg = br.new_page(viewport={"width": 1920, "height": 940})
+        pg.set_default_timeout(15000)
+        # 문서만 우리가 채우고 **나머지 요청은 전부 끊는다**(네트워크 0). `set_content`가 아니라
+        # 가짜 URL로 여는 이유: about: 출처에선 localStorage가 던져서 숨김 토글이 동작을 안 한다.
+        url = "http://gogabridj.test/page"
+        pg.route("**/*", lambda r: (r.fulfill(status=200, content_type="text/html; charset=utf-8",
+                                              body=html) if r.request.url == url else r.abort()))
+        pg.goto(url, wait_until="domcontentloaded")
+        pg.wait_for_timeout(300)
+        if hide:
+            pg.evaluate("() => document.getElementById('fbHide').click()")
+            pg.wait_for_timeout(200)
+        for _ in range(3):                        # 지연 렌더로 높이가 자라면 한 번 더 내린다
+            pg.evaluate("() => window.scrollTo(0, document.documentElement.scrollHeight)")
+            pg.wait_for_timeout(200)
+        r = pg.evaluate(PROBE, ["fbWrap", "fbReopen"])
+        br.close()
+    return r
 
 
 @pytest.mark.skipif(not _pw_ok(), reason="크로미움 없음 — 정직하게 skip")
 @pytest.mark.parametrize("route", ["/seller/sourcing/reject-watch", "/seller/dashboard", "/seller/orders"])
-def test_nothing_interactive_sits_under_the_bubble(live_server, route):
+def test_nothing_interactive_sits_under_the_bubble(route):
     """★ 최하단까지 내렸을 때 **버블 밑에 눌러야 할 것이 하나도 없다.**
 
     최하단으로 재는 이유: 페이지 중간이라면 더 스크롤해서 버튼을 꺼낼 수 있다.
     끝이면 못 꺼낸다 — 그게 이 결함의 본체다.
     """
-    from playwright.sync_api import sync_playwright
-    exe = (glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome") or [None])[0]
-    bs = "/tmp/bsdl/node_modules/bootstrap/dist/css/bootstrap.min.css"
-    with sync_playwright() as pw:
-        br = pw.chromium.launch(**({"executable_path": exe} if exe else {}))
-        pg = br.new_page(viewport={"width": 1920, "height": 940})
-        pg.goto(live_server + route, wait_until="load")
-        if os.path.exists(bs):                    # CDN은 샌드박스 프록시가 막는다 — 로컬 주입
-            pg.add_style_tag(path=bs)
-        pg.wait_for_timeout(400)
-        for _ in range(3):                        # 지연 렌더로 높이가 자라면 한 번 더 내린다
-            pg.evaluate("() => window.scrollTo(0, document.documentElement.scrollHeight)")
-            pg.wait_for_timeout(250)
-        r = pg.evaluate(PROBE, ["fbWrap", "fbReopen"])
-        br.close()
+    r = _measure(route)
     assert r["fbWrap"] == [], f"{route}: 버블이 {r['fbWrap']}를 덮는다"
     assert float(r["_pad"].rstrip("px")) >= BUBBLE_OCCUPIES, f"{route}: 예약 {r['_pad']}"
 
 
 @pytest.mark.skipif(not _pw_ok(), reason="크로미움 없음 — 정직하게 skip")
-def test_hidden_mini_button_also_clears(live_server):
+def test_hidden_mini_button_also_clears():
     """숨김 상태(미니 버튼)도 같은 잣대 — 자리를 줄였으니 그만큼은 여전히 비어 있어야 한다."""
-    from playwright.sync_api import sync_playwright
-    exe = (glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome") or [None])[0]
-    bs = "/tmp/bsdl/node_modules/bootstrap/dist/css/bootstrap.min.css"
-    with sync_playwright() as pw:
-        br = pw.chromium.launch(**({"executable_path": exe} if exe else {}))
-        pg = br.new_page(viewport={"width": 1920, "height": 940})
-        pg.goto(live_server + "/seller/orders", wait_until="load")
-        if os.path.exists(bs):
-            pg.add_style_tag(path=bs)
-        pg.wait_for_timeout(400)
-        pg.evaluate("() => document.getElementById('fbHide').click()")
-        for _ in range(3):
-            pg.evaluate("() => window.scrollTo(0, document.documentElement.scrollHeight)")
-            pg.wait_for_timeout(250)
-        r = pg.evaluate(PROBE, ["fbWrap", "fbReopen"])
-        br.close()
+    r = _measure("/seller/orders", hide=True)
     assert r["fbWrap"] is None, "숨겼는데 버블이 남아 있다"
     assert r["fbReopen"] == [], f"미니 버튼이 {r['fbReopen']}를 덮는다"
     assert float(r["_pad"].rstrip("px")) >= MINI_OCCUPIES
