@@ -1823,7 +1823,14 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
   background: color-mix(in srgb, var(--teal) 6%, var(--surface));
   font-size: .86rem; line-height: 1.65;
 }
-.mc-note-mark { width: 34px; height: 34px; border-radius: var(--radius); flex: none; }
+.mc-note-mark { width: 34px; height: 34px; flex: none; }
+/* ★ 6-f-2: 이 마크는 **인라인 SVG**다 — 외부 파일이 아니다.
+   아이콘 하나에 404·CSP·배포 아티팩트 리스크를 지불할 이유가 없다(오너 판단).
+   색은 클래스로 준다: SVG 프레젠테이션 속성은 `var()`를 못 받는다(6-d 가이드 일러스트 전례). */
+.mc-note-mark .bm-arch { fill: none; stroke: var(--gold); }
+.mc-note-mark .bm-deck { stroke: var(--teal); }
+.mc-note-mark .bm-tie  { stroke: var(--gold); }
+.mc-note-mark .bm-key  { fill: var(--orange); }
 
 /* 마켓 선택 타일 — 체크박스가 라벨 전체를 먹는다(터치 타깃 44px 이상). */
 .mc-markets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }

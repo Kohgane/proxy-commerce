@@ -84,7 +84,17 @@
       <a href="/seller/sourcing#registryDomainInput" class="mc-chip mc-chip-add oneclick-market" title="소싱처 등록 관리">＋ 소싱처 추가</a>
     </div>
     <div class="mc-note mt-3" role="note">
-      <img class="mc-note-mark" src="{{ url_for('seller_console.static', filename='favicon.svg') }}" alt="고가브릿지">
+      {# 다리 시그니처 — 게이트 아치 + 데크 2줄 + 키스톤. 정본 지오메트리는 확장 팝업과 같다.
+         **인라인이라 404도 CSP도 배포 누락도 못 깬다** — 아이콘 하나에 그 리스크를 지불하지 않는다. #}
+      <svg class="mc-note-mark" viewBox="0 0 512 512" role="img" aria-label="고가브릿지">
+        <circle class="bm-arch" cx="256" cy="205" r="92" stroke-width="40"/>
+        <line class="bm-deck" x1="80" y1="338" x2="432" y2="338" stroke-width="36" stroke-linecap="round"/>
+        <line class="bm-deck" x1="80" y1="378" x2="432" y2="378" stroke-width="36" stroke-linecap="round"/>
+        <line class="bm-tie" x1="150" y1="338" x2="150" y2="378" stroke-width="14"/>
+        <line class="bm-tie" x1="256" y1="338" x2="256" y2="378" stroke-width="14"/>
+        <line class="bm-tie" x1="362" y1="338" x2="362" y2="378" stroke-width="14"/>
+        <circle class="bm-key" cx="256" cy="113" r="40"/>
+      </svg>
       <div>
         <b class="text-teal">고가수집기 인페이지 수집</b> — 크롬 확장을 설치하면 <b>지정 소싱처</b>(타오바오·아마존 등)에서
         ①상품 <b>상세 페이지</b>의 <b>“고가수집기”</b> 버튼으로 한 번에, ②<b>검색·목록 페이지</b>에서는 상품마다 뜨는
