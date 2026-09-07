@@ -94,8 +94,14 @@ PROBE = """() => {
   //   여유를 재려면 콘텐츠의 실제 바닥을 봐야 한다. CI엔 우리 웹폰트가 없어 글자 높이가 미세하게
   //   다르니, 로컬에서 딱 맞춘 값은 CI에서 넘칠 수 있다(6-h에서 실제로 그렇게 깨졌다).
   const main = document.querySelector('main').getBoundingClientRect();
+  // 6-h-2: '보이나'가 아니라 **스크롤이 필요한가**를 잰다 — 넘침이 0이면 스크롤바는 그려지지 않는다.
+  //   (헤드리스는 오버레이 스크롤바라 거터 폭으로는 판별이 안 된다. 넘침이 정직한 신호다.)
+  const need = [];
+  document.querySelectorAll('.rw-page .op-card-body, .rw-page .table-responsive').forEach(function (e) {
+    need.push({y: e.scrollHeight - e.clientHeight, x: e.scrollWidth - e.clientWidth});
+  });
   return {total: document.documentElement.scrollHeight, vh: window.innerHeight,
-          contentBottom: Math.round(main.bottom), scrollers: scrollers.length,
+          contentBottom: Math.round(main.bottom), scrollers: scrollers.length, need: need,
           cols: document.querySelectorAll('.rw-page > .rw-col').length};
 }"""
 
@@ -278,3 +284,52 @@ def test_screen_renders():
     os.environ.setdefault("SELLER_CONSOLE_AUTH", "0")
     from src.order_webhook import app
     assert app.test_client().get("/seller/sourcing/reject-watch").status_code == 200
+
+
+# ── 6-h-2: 스크롤바 다이어트 ─────────────────────────────────────────────────
+@pytest.mark.skipif(not _pw_ok(), reason="크로미움 없음 — 정직하게 skip")
+def test_no_scrollbar_when_nothing_overflows():
+    """★ 행 1개면 내부 스크롤바가 **하나도 안 그려진다**(오너 6-h-2).
+
+    수리 전엔 행이 하나여도 세로·가로 스크롤바가 같이 떴다. 원인은 데이터가 아니라
+    `.op-card-body::after`(스크롤 페이드) 한 줄이었다 —
+      · 오른쪽 음수 마진 24px이 그대로 `scrollWidth`에 얹혀 **가로** 스크롤바를 만들고,
+      · 자기 높이 24px이 `scrollHeight`에 얹혀 **세로** 스크롤바를 만들었다.
+    같은 규칙을 쓰는 네 화면(orders·catalog·markets·reject-watch)이 전부 24px로 같았다 —
+    화면 문제가 아니라 **규칙 문제**라는 증거였다.
+    """
+    r = _measure(1, 1)
+    over = [n for n in r["need"] if n["y"] > 0 or n["x"] > 0]
+    assert not over, f"넘칠 게 없는데 스크롤이 생겼다: {over}"
+
+
+@pytest.mark.skipif(not _pw_ok(), reason="크로미움 없음 — 정직하게 skip")
+def test_horizontal_scroll_never_comes_back():
+    """★ 가로 스크롤은 **어떤 행 수에서도** 0이다 — 세로는 넘치라고 만든 자리지만 가로는 아니다."""
+    for n_scan, n_watch in ((1, 1), (3, 3), (18, 6)):
+        r = _measure(n_scan, n_watch)
+        assert all(n["x"] == 0 for n in r["need"]), f"{n_scan}행에서 가로 스크롤 부활: {r['need']}"
+
+
+def test_fade_does_not_pay_for_itself_in_scroll_size():
+    """페이드는 장식이다 — 장식이 스크롤 크기를 늘리면 그건 장식이 아니라 결함이다."""
+    css = CSS.read_text(encoding="utf-8")
+    rule = css.split(".op-card-body::after {")[1].split("}")[0]
+    assert "margin-top: calc(var(--space-5) * -1)" in rule, "자기 높이를 상쇄하지 않는다"
+    assert "bottom: 0" in rule
+    # 가로 음수 마진이 돌아오면 그 자리에서 가로 스크롤바가 다시 태어난다.
+    assert "margin: 0 calc" not in rule and "margin-inline" not in rule
+
+
+def test_scrollbar_is_slim_tokenized_and_arrowless():
+    """★ 스크롤바도 우리 것 — 얇게, 토큰색으로, 화살표 없이(오너 6-h-2)."""
+    css = CSS.read_text(encoding="utf-8")
+    assert "scrollbar-width: thin" in css
+    assert "scrollbar-color: color-mix(in srgb, var(--ink)" in css
+    thumb = css.split("::-webkit-scrollbar-thumb,")[-1].split("}")[0]
+    assert "color-mix(in srgb, var(--ink)" in thumb and "#" not in thumb, "하드코딩 색"
+    btn = css.split("::-webkit-scrollbar-button,")[-1].split("}")[0]
+    assert "display: none" in btn, "스크롤 화살표가 남았다"
+    # 트랙은 투명 — 안 쓰는 홈이 회색 띠로 남으면 없던 선이 하나 생긴 것처럼 읽힌다.
+    track = css.split("::-webkit-scrollbar-track,")[-1].split("}")[0]
+    assert "transparent" in track

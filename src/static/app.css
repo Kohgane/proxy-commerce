@@ -805,12 +805,44 @@ main:has(> .op-shell) > .op-shell { flex: 1 1 auto; height: auto; min-height: 0;
 /* 스크롤로 잘린 줄이 '깨진 화면'으로 읽히지 않게, 본문 아래쪽에 카드 배경으로 스미는 페이드.
    넘칠 게 없으면 여백 위에 겹쳐 보이지 않는다(조건 분기 없이 안전). */
 .op-card { position: relative; }
+/* 6-h-2 실측 — **이 한 줄이 스크롤바 두 개를 만들고 있었다.**
+   음수 마진으로 카드 좌우 패딩까지 덮으려 했는데, 오른쪽 음수 마진 24px이 그대로
+   `scrollWidth`에 얹혀 **행이 하나여도 가로 스크롤바**가 떴다(orders·catalog·markets·
+   reject-watch 네 화면 전부 24px 동일 — 화면 문제가 아니라 이 규칙 문제였다).
+   자기 높이(24px)도 `scrollHeight`에 얹혀 **넘칠 게 없는데 세로 스크롤바**까지 만들었다.
+   → 가로 음수 마진을 걷고, 자기 높이는 `margin-top` 음수로 상쇄한다(스크롤 크기 기여 0).
+     `bottom: 0`이라 스크롤 뷰포트 바닥에 붙는 건 그대로다. */
 .op-card-body::after {
-  content: ""; position: sticky; display: block; bottom: calc(var(--space-5) * -1);
-  margin: 0 calc(var(--space-5) * -1) calc(var(--space-5) * -1);
-  height: var(--space-5); pointer-events: none;
+  content: ""; position: sticky; display: block; bottom: 0;
+  height: var(--space-5); margin-top: calc(var(--space-5) * -1);
+  pointer-events: none;
   background: linear-gradient(to bottom, transparent, var(--surface));
 }
+/* 6-h-2: 스크롤바도 우리 것 — 얇게, 토큰색으로, **화살표 없이.**
+   `overflow: auto`라 넘칠 때만 그려진다(넘칠 게 없으면 거터도 0 — 위 `::after` 수리가 그 전제다).
+   트랙은 투명 — 안 쓰는 홈이 회색 띠로 남으면 카드에 없던 선이 하나 생긴 것처럼 읽힌다. */
+.op-card-body, .op-card-body .table-responsive {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ink) 22%, transparent) transparent;
+}
+.op-card-body::-webkit-scrollbar,
+.op-card-body .table-responsive::-webkit-scrollbar { width: 8px; height: 8px; }
+.op-card-body::-webkit-scrollbar-track,
+.op-card-body .table-responsive::-webkit-scrollbar-track,
+.op-card-body::-webkit-scrollbar-corner,
+.op-card-body .table-responsive::-webkit-scrollbar-corner { background: transparent; }
+.op-card-body::-webkit-scrollbar-thumb,
+.op-card-body .table-responsive::-webkit-scrollbar-thumb {
+  border-radius: 999px; background: color-mix(in srgb, var(--ink) 18%, transparent);
+}
+.op-card-body:hover::-webkit-scrollbar-thumb,
+.op-card-body .table-responsive:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ink) 30%, transparent);
+}
+/* 화살표(스텝 버튼) 0 — 8px 폭에 버튼이 붙으면 잡을 것도 없는 자리가 두 칸 생긴다. */
+.op-card-body::-webkit-scrollbar-button,
+.op-card-body .table-responsive::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+
 .op-card-foot {
   flex: 0 0 auto; padding: var(--space-3) var(--space-5);
   border-top: 1px solid var(--border);
