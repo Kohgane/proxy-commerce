@@ -802,21 +802,24 @@ main:has(> .op-shell) > .op-shell { flex: 1 1 auto; height: auto; min-height: 0;
   display: flex; align-items: baseline; gap: var(--space-3);
 }
 .op-card-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: var(--space-5); }
-/* 스크롤로 잘린 줄이 '깨진 화면'으로 읽히지 않게, 본문 아래쪽에 카드 배경으로 스미는 페이드.
-   넘칠 게 없으면 여백 위에 겹쳐 보이지 않는다(조건 분기 없이 안전). */
+/* 스크롤 페이드는 **뺐다**(2026-09-07 재부검). 6-h-2에서 "넘칠 게 없으면 여백 위에 겹쳐
+   보이지 않는다(조건 분기 없이 안전)"고 적었는데, 그 주석이 그대로 계약이 돼 버렸다 —
+   그리고 **틀렸다.**
+
+   실측(픽셀 비교, 페이드 켬/끔 두 렌더의 같은 좌표):
+     · `::after`는 `content:""`로 **넘침과 무관하게 상시 render**된다 — 크기 기여 0 ≠ 표시 0.
+     · `margin-top: -24px`가 페이드를 마지막 자식 **박스 안으로** 끌어들이고, sticky는 부모
+       content box를 못 벗어나 패딩으로 내려가지 못한다 → 마지막 줄과 **14px 교차**.
+     · 결과: 마지막 줄 글자 픽셀이 **9%만 남는다**(91% 지워짐). reject-watch·소싱 허브 동일.
+
+   대안 실측: `animation-timeline: scroll(self block)`은 이 크로미움이 지원한다고 답하지만
+   (`CSS.supports` true), **의사요소에선 구동되지 않았다** — 넘치는 카드에서도 opacity 0.
+   그래서 오너가 지정한 차선을 쓴다: **장식을 없애고 신호는 스크롤바가 진다.**
+   아래 슬림 스크롤바가 같은 슬라이스(6-h-2)에서 이미 그 몫을 하고 있다 — 넘칠 때만 그려지고,
+   그건 페이드와 달리 **거짓 신호가 없다.** 장식 하나를 덜어내는 쪽이 옳다.
+   → 지뢰: [[장식이 글자를 지운다]] */
 .op-card { position: relative; }
-/* 6-h-2 실측 — **이 한 줄이 스크롤바 두 개를 만들고 있었다.**
-   음수 마진으로 카드 좌우 패딩까지 덮으려 했는데, 오른쪽 음수 마진 24px이 그대로
-   `scrollWidth`에 얹혀 **행이 하나여도 가로 스크롤바**가 떴다(orders·catalog·markets·
-   reject-watch 네 화면 전부 24px 동일 — 화면 문제가 아니라 이 규칙 문제였다).
-   자기 높이(24px)도 `scrollHeight`에 얹혀 **넘칠 게 없는데 세로 스크롤바**까지 만들었다.
-   → 페이드는 살리고 **스크롤 크기 기여만 0**으로: 좌우 음수 마진을 버리고 세로만 상쇄한다. */
-.op-card-body::after {
-  content: ""; position: sticky; display: block; bottom: 0;
-  height: var(--space-5); margin-top: calc(var(--space-5) * -1);
-  pointer-events: none;
-  background: linear-gradient(to bottom, transparent, var(--surface));
-}
+
 /* 6-h-2: 스크롤바도 우리 것 — 얇게, 토큰색으로, **화살표 없이.**
    `overflow: auto`라 넘칠 때만 그려진다(넘칠 게 없으면 거터도 0 — 위 `::after` 수리가 그 전제다).
    트랙은 투명 — 안 쓰는 홈이 회색 띠로 남으면 카드에 없던 선이 하나 생긴 것처럼 읽힌다. */
