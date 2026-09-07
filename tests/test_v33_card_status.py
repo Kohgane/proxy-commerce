@@ -19,11 +19,15 @@ def client():
 
 def test_sourcing_card_enlarged_and_no_emoji():
     # v35: CSS Grid 다열 복원 + 이미지 원본비율(contain) + 글자/버튼 확대 + 아마존 국가 드롭다운
-    assert "object-fit:contain" in SOURCING                                  # 잘림 없이
-    assert "repeat(auto-fill,minmax(280px,1fr))" in SOURCING                 # 다열 그리드(세로 일렬 방지)
-    assert "font-size:1.12rem" in SOURCING                                    # 제목 ≥17px
-    assert "font-size:1.32rem" in SOURCING                                    # 가격 강조
-    assert "min-height:44px" in SOURCING                                      # 버튼 ≥40px
+    # 6-i: 인라인 → `.si-thumb > img`. 잘림 없이 담는다는 의도는 그대로다.
+    assert "object-fit: contain" in Path("src/static/app.css").read_text(encoding="utf-8")
+    # 6-i: 치수는 그대로, 자리만 인라인 → 토큰 CSS(하드코딩 금지 규율). 값이 줄면 여전히 실패한다 —
+    #   실제로 6-i에서 좁은 열에 맞추려 줄였다가 이 계약이 잡아 되돌렸다.
+    css = Path("src/static/app.css").read_text(encoding="utf-8")
+    assert "repeat(auto-fill, minmax(280px, 1fr))" in css                     # 다열 그리드(세로 일렬 방지)
+    assert "font-size: 1.12rem" in css                                        # 제목 ≥17px
+    assert "font-size: 1.32rem" in css                                        # 가격 강조
+    assert "min-height: 44px" in css                                          # 버튼 ≥40px
     assert "아마존에서 검색 (국가)" in SOURCING                                # 아마존 국가 드롭다운
     assert "{{ s.emoji }}" not in SOURCING                                    # 이모지 제거
 
