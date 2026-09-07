@@ -311,14 +311,26 @@ def test_horizontal_scroll_never_comes_back():
         assert all(n["x"] == 0 for n in r["need"]), f"{n_scan}행에서 가로 스크롤 부활: {r['need']}"
 
 
-def test_fade_does_not_pay_for_itself_in_scroll_size():
-    """페이드는 장식이다 — 장식이 스크롤 크기를 늘리면 그건 장식이 아니라 결함이다."""
-    css = CSS.read_text(encoding="utf-8")
-    rule = css.split(".op-card-body::after {")[1].split("}")[0]
-    assert "margin-top: calc(var(--space-5) * -1)" in rule, "자기 높이를 상쇄하지 않는다"
-    assert "bottom: 0" in rule
-    # 가로 음수 마진이 돌아오면 그 자리에서 가로 스크롤바가 다시 태어난다.
-    assert "margin: 0 calc" not in rule and "margin-inline" not in rule
+def test_fade_is_gone_because_it_was_erasing_text():
+    """★ 이 계약은 **뒤집혔다.** 예전엔 페이드가 *어떻게 있어야 하나*를 못 박았다:
+
+        "페이드는 장식이다 — 장식이 스크롤 크기를 늘리면 그건 장식이 아니라 결함이다."
+        (음수 마진으로 자기 높이를 상쇄하는지 검사)
+
+    크기 기여는 그렇게 0이 됐다. 그런데 6-h-2 주석에 같이 적은 "넘칠 게 없으면 여백 위에 겹쳐
+    보이지 않는다"는 **틀렸고**, 그 문장이 그대로 계약이 돼 두 슬라이스를 지나갔다.
+
+    2026-09-07 재부검 실측(픽셀 비교): `content:""`로 상시 render되고, 음수 마진이 페이드를
+    마지막 자식 박스 안으로 끌어들여 마지막 줄과 14px 겹쳐 — **글자 픽셀의 91%를 지웠다.**
+    이 화면(반려 감시)에서도 보존율 9%였다. 그래서 장식을 뺐다.
+
+    상세와 대안 실측(scroll-driven은 의사요소에서 구동 안 됨)은
+    `tests/test_op_card_fade_autopsy.py`. 여기선 **이 화면이 그 수리를 되돌리지 않는지**만 지킨다.
+    """
+    css = re.sub(r"/\*.*?\*/", "", CSS.read_text(encoding="utf-8"), flags=re.S)
+    assert ".op-card-body::after" not in css, "글자를 지우던 페이드가 되살아났다"
+    # 크기 기여 0이라는 옛 계약의 **의도**는 남는다 — 이제는 '스크롤바가 넘칠 때만 그려진다'로 지킨다.
+    assert "scrollbar-width: thin" in css
 
 
 def test_scrollbar_is_slim_tokenized_and_arrowless():
