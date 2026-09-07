@@ -114,9 +114,35 @@ def test_history_shape_is_logged_for_the_next_cron(caplog):
         shape = RW.log_history_shape("16369251981", h)
     assert shape["n"] == 2
     assert shape["first"]["at"] == "2026-09-03 00:00" and shape["last"]["at"] == "2026-09-07 09:00"
-    assert "이력 응답 형태" in caplog.text and "16369251981" in caplog.text
+    assert "반려감시 상태" in caplog.text and "16369251981" in caplog.text
     # 원문 comment는 로그에 안 싣는다 — 사유 텍스트는 화면·대장의 몫이다.
     assert "이미지" not in caplog.text
+
+
+def test_every_rotation_outcome_is_findable_by_one_search_term():
+    """★ 회수 검색어 통일(오너 2026-09-07) — 「반려감시 상태」 **하나로** 한 회전의 결말이 다 나온다.
+
+    검색어가 결말마다 갈리면 오너가 무엇으로 찾느냐에 따라 다른 결말을 놓친다. 특히 위험한 건
+    **아무것도 안 나오는 경우**다 — 배포가 안 된 건지, 큐가 0건인지, 크론이 터진 건지 구분이 안 된다.
+    그 모호함은 "아직"과 "결함"을 가르는 시한 판정을 그대로 망친다. 그래서 실패·완료·상태·
+    대상없음·오류 **다섯 결말 전부**와 A1 계측이 같은 접두어를 쓴다.
+    """
+    from pathlib import Path
+    cron = Path("src/pricing/cron.py").read_text(encoding="utf-8")
+    # **실제 로그 호출만** 본다 — 주석·docstring·응답 JSON 문구는 로그가 아니라 검색 대상이 아니다
+    #   (내가 쓴 설명문이 내 계약을 통과시키는 자해를 이 스위트에서 이미 네 번 했다).
+    emitted = [ln.strip() for ln in cron.splitlines() if "logger." in ln and '"반려감시' in ln]
+    body = "\n".join(emitted)
+    for outcome in ("실패", "큐 잔류", "감시 대상 없음", "오류(백그라운드)"):
+        assert outcome in body, f"결말 누락: {outcome}"
+    # 로그로 나가는 `반려감시` 줄은 전부 `반려감시 상태`여야 한다 — 하나만 새도 검색이 샌다.
+    #   (`반려감시 완료`는 상태 줄과 **같은 회전에 붙어 나오는** 짝이라 예외로 남긴다.)
+    stray = [ln for ln in emitted
+             if '"반려감시 상태' not in ln and '"반려감시 완료' not in ln]
+    assert not stray, f"검색어 밖으로 샌 로그: {stray}"
+    # A1 계측도 같은 접두어를 쓴다(크론 결말과 같은 검색 결과에 나오게).
+    src = Path("src/pipeline/reject_watch.py").read_text(encoding="utf-8")
+    assert '"반려감시 상태·이력 원문(sid=%s)' in src
 
 
 def test_missing_timestamp_is_not_invented():

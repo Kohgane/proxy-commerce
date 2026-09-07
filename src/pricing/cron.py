@@ -307,8 +307,11 @@ def _run_reject_watch(app, account: str, limit: int, budget: float, dry_run: boo
                     limit=limit, time_budget_sec=budget, dry_run=dry_run)
             total = _t.monotonic() - t0
             out["total_sec"] = round(total, 1)
+            # ★ 회수용 검색어 통일(오너 2026-09-07): 한 회전의 **모든 결말**을 「반려감시 상태」로 시작한다.
+            #   섞여 있으면 오너가 무엇으로 검색하느냐에 따라 다른 결말을 놓치고, 특히 '아무것도 안 나옴'이
+            #   배포 실패인지 큐 0건인지 구분이 안 된다 — 그 모호함이 시한 판정을 망친다.
             if not out.get("ok"):
-                logger.warning("반려감시 실패(%s): %s", account, out.get("error"))
+                logger.warning("반려감시 상태(%s): 실패 — %s", account, out.get("error"))
             elif out.get("scanned"):
                 # 상태 분포를 로그에 남긴다 — **큐에 남았나 떠났나**가 이 트랙의 실전 검증이다.
                 #   `wrote`는 실제로 대장에 쓴 상태고, 남음/졸업은 감시 큐 기준 분류다.
@@ -321,9 +324,9 @@ def _run_reject_watch(app, account: str, limit: int, budget: float, dry_run: boo
                             account, out.get("stayed"), out.get("graduated"),
                             f" · 내역 {_dist}" if _dist else "")
             else:
-                logger.info("반려감시(%s): 감시 대상 없음(정상 종료) · %.1fs", account, total)
+                logger.info("반려감시 상태(%s): 감시 대상 없음 — 큐 0건(정상 종료) · %.1fs", account, total)
     except Exception as exc:                       # noqa: BLE001 — 조용한 정지 금지
-        logger.error("반려감시 오류(백그라운드): %s", exc)
+        logger.error("반려감시 상태: 오류(백그라운드) — %s", exc)
         out = {"ok": False, "error": str(exc)}
     finally:
         if not dry_run:                        # dry-run은 락을 안 잡았다(마지막 결과도 안 덮는다)
@@ -404,7 +407,7 @@ def reject_watch_cron():
             _reject_lock.release()
         except RuntimeError:
             pass
-        logger.error("반려감시 스레드 시작 실패: %s", exc)
+        logger.error("반려감시 상태: 스레드 시작 실패 — %s", exc)
         return jsonify({"ok": False, "error": "감시 시작 실패"}), 500
     return jsonify({"ok": True, "status": "accepted", "account": account, "limit": limit,
                     "budget_sec": budget,

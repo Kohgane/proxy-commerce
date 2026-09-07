@@ -246,7 +246,9 @@ def log_history_shape(sid, history, *, logger_=None) -> dict:
                 "keys": sorted(r.keys())[:8]}
     shape = {"sid": sid, "n": len(rows),
              "first": _brief(rows[0]) if rows else {}, "last": _brief(rows[-1]) if rows else {}}
-    (logger_ or logger).info("이력 응답 형태(sid=%s): 행 %s · 첫 %s · 끝 %s",
+    # 접두어를 크론 결말 줄과 **같은 말**로 맞춘다 — 오너가 「반려감시 상태」 하나로 검색하면
+    #   그 회전의 결말과 이 원문이 **같은 검색 결과에** 나온다(회수 검색어 통일, 오너 2026-09-07).
+    (logger_ or logger).info("반려감시 상태·이력 원문(sid=%s): 행 %s · 첫 %s · 끝 %s",
                              shape["sid"], shape["n"], shape["first"], shape["last"])
     return shape
 
