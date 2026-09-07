@@ -2,174 +2,178 @@
 {% block title %}상품 카탈로그{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-start mb-2">
-  <div>
-    <div class="console-kpi-label mb-1">내 상품</div>
-    <h4 class="mb-0 fw-bold"><i class="bi bi-box-seam"></i> 상품 카탈로그</h4>
-  </div>
-  <div class="d-flex gap-2 align-items-center">
-    {% if total %}<span class="pc-badge pc-badge-muted align-self-center">총 {{ total }}건</span>{% endif %}
-    <a href="/seller/collect" class="btn btn-primary btn-sm">+ 새 상품 수집</a>
-  </div>
-</div>
-<hr class="pc-hairline mt-0 mb-4">
+{# 디자인 v3 Stage 6-g — 6-a/6-c/6-d/6-e 문법 승계: 카드 1장에 헤더/바디/푸터.
+   로직 변경 0: id·onclick·data-* 훅 이름은 그대로 둔다(JS·무한스크롤·나이아 레일이 잡는 자리다). #}
+<div class="ct-page">
 
-{# 상태 코드 → 사용자 한글 라벨(원시 코드 노출 금지). #}
-{% set _state_labels = {'active': '활성', 'out_of_stock': '품절', 'error': '오류', 'price_anomaly': '가격 이상', 'suspended': '정지'} %}
-
-{% if error_msg %}
-<div class="alert alert-warning mb-4">
-  <strong><i class="bi bi-exclamation-triangle"></i> 로드 오류:</strong> {{ error_msg }}
-</div>
-{% endif %}
-
-{% if total == 0 and not error_msg %}
-{# PG-only 전환 후: Sheets 언급 제거. 실데이터 없을 때만 정직한 빈 상태. #}
-<div class="console-empty-state text-center py-5 my-3">
-  <div class="console-empty-icon mb-2"><i class="bi bi-box-seam"></i></div>
-  <div class="fw-semibold mb-1">아직 수집된 상품이 없어요</div>
-  <div class="small text-muted mb-3">해외 상품을 수집하면 여기에 카탈로그로 쌓입니다.</div>
-  <a href="/seller/collect" class="btn btn-primary btn-sm">수집 시작</a>
-</div>
-{% endif %}
-
-<div class="card border-0 shadow-sm pc-action-table">
-  <div class="card-header bg-white">
-    {# 항목4: 모바일서 필터가 첫 화면을 다 먹지 않게 접이식. 기본 접힘(collapse), '필터 ▾'로 펼침. #}
-    <button class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1 kgp-filter-toggle" type="button"
-            data-bs-toggle="collapse" data-bs-target="#catalogFilters" aria-expanded="false" aria-controls="catalogFilters">
-      <i class="bi bi-funnel"></i> 필터 <i class="bi bi-chevron-down small"></i>
-    </button>
-    <form method="get" id="catalogFilters" class="row g-2 align-items-end collapse mt-2">
-      <div class="col-md-2">
-        <label class="form-label small mb-1">마켓</label>
-        <select name="marketplace" class="form-select form-select-sm">
-          <option value="">전체</option>
-          {% for mp in marketplace_options %}
-          <option value="{{ mp.market }}" {% if filters.marketplace == mp.market %}selected{% endif %}>
-            {{ mp.label }}{% if not mp.is_ready %} (준비 중){% endif %}
-          </option>
-          {% endfor %}
-        </select>
+  <div class="ch-head">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+      <div>
+        <div class="console-kpi-label mb-1">내 상품</div>
+        <h4 class="mb-0 fw-bold">상품 카탈로그</h4>
       </div>
-      <div class="col-md-1">
-        <label class="form-label small mb-1">국가</label>
-        <select name="country" class="form-select form-select-sm">
-          <option value="">전체</option>
-          {% for country in country_options %}
-          <option value="{{ country }}" {% if filters.country == country %}selected{% endif %}>{{ country }}</option>
-          {% endfor %}
-        </select>
+      {# 비어 있을 때는 헤더 CTA를 내린다 — 빈 상태 안 '수집기 열기'와 **같은 곳으로 가는**
+         채운 버튼이 둘이 되기 때문이다(강조가 둘이면 강조가 없다). #}
+      {% if total %}
+      <div class="d-flex gap-2 align-items-center">
+        <span class="pc-badge pc-badge-muted align-self-center">총 {{ total }}건</span>
+        <a href="/seller/collect" class="btn btn-primary btn-sm">새 상품 수집</a>
       </div>
-      <div class="col-md-2">
-        <label class="form-label small mb-1">상태</label>
-        <select name="state" class="form-select form-select-sm">
-          <option value="">전체</option>
-          {% for st in ['active', 'out_of_stock', 'error', 'price_anomaly', 'suspended'] %}
-          <option value="{{ st }}" {% if filters.state == st %}selected{% endif %}>{{ _state_labels.get(st, st) }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-3">
-        <label class="form-label small mb-1">검색</label>
-        <input type="text" name="search" class="form-control form-control-sm" value="{{ filters.search }}" placeholder="상품명/SKU/상품ID">
-      </div>
-      <div class="col-md-2">
-        <label class="form-label small mb-1">정렬</label>
-        <select name="sort" class="form-select form-select-sm">
-          <option value="last_synced_desc" {% if filters.sort == 'last_synced_desc' %}selected{% endif %}>최근 동기화순</option>
-          <option value="last_synced_asc" {% if filters.sort == 'last_synced_asc' %}selected{% endif %}>오래된 동기화순</option>
-          <option value="price_desc" {% if filters.sort == 'price_desc' %}selected{% endif %}>가격 높은순</option>
-          <option value="price_asc" {% if filters.sort == 'price_asc' %}selected{% endif %}>가격 낮은순</option>
-          <option value="title_asc" {% if filters.sort == 'title_asc' %}selected{% endif %}>상품명순</option>
-        </select>
-      </div>
-      <div class="col-md-1">
-        <label class="form-label small mb-1">표시</label>
-        <select name="per_page" class="form-select form-select-sm">
-          {% for n in [20, 50, 100] %}
-          <option value="{{ n }}" {% if filters.per_page == n %}selected{% endif %}>{{ n }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-2 d-flex gap-2">
-        <button type="submit" class="btn btn-outline-secondary btn-sm w-100">검색</button>
-        <a href="/seller/catalog" class="btn btn-light btn-sm w-100">초기화</a>
-      </div>
-    </form>
-  </div>
-  <div class="card-body p-0" data-fs-root>
-    <div class="small text-muted px-3 pt-2">오른쪽 <strong>인덱스 레일</strong>(ㄱ~ㅎ·A~Z·#)을 누르거나 긁어 빠르게 이동하세요.{% if not fastscroll %} (다른 정렬 중엔 눌렀을 때 이름순으로 전환됩니다.){% endif %}</div>
-    <div class="table-responsive">
-      <table class="table table-hover mb-0 table-cards pc-swiss-table">
-        <thead class="table-light">
-          <tr>
-            <th style="width:60px;">마켓</th>
-            <th>상품명</th>
-            <th>SKU</th>
-            <th class="text-end">가격</th>
-            <th>상태</th>
-            <th>마지막 동기화</th>
-            <th style="width:120px;">액션</th>
-          </tr>
-        </thead>
-        {# 속도: 첫 50건만 렌더 + 무한스크롤(fmt=rows)로 추가. 행은 catalog_rows.html 단일소스. #}
-        <tbody data-fs-list id="catalogRows">
-          {% include 'catalog_rows.html' %}
-          {% if total == 0 %}
-          <tr>
-            <td colspan="7" class="text-center text-muted py-4">
-              <div class="console-empty-state p-2">
-                <div class="console-empty-icon"><i class="bi bi-box-seam"></i></div>
-                <div class="fw-semibold mb-1">아직 등록된 상품이 없습니다.</div>
-                <div class="small mb-1"><strong>무엇을:</strong> 첫 상품 1개를 등록해 카탈로그를 시작하세요.</div>
-                <div class="small mb-1"><strong>왜:</strong> 상품이 있어야 주문/매출/동기화 데이터가 쌓입니다.</div>
-                <div class="small"><strong>어떻게:</strong> 수집기 또는 AI 상품등록으로 바로 생성할 수 있어요.</div>
-                <div class="console-empty-state-actions">
-                  <a href="/seller/collect" class="btn btn-sm btn-outline-primary">수집기 열기</a>
-                  <a href="/seller/listing/ai-create" class="btn btn-sm btn-primary">AI 상품등록</a>
-                </div>
-              </div>
-            </td>
-          </tr>
-          {% endif %}
-        </tbody>
-      </table>
+      {% endif %}
     </div>
+    <hr class="pc-hairline mt-0 mb-0">
   </div>
-</div>
 
-<!-- 속도: 무한스크롤 — 스크롤이 바닥에 닿으면 다음 50건을 fmt=rows로 이어붙인다(페이지 이동 없음). -->
-<div id="fsInfiniteScroll"
-     data-loaded="{{ items|length }}"
-     data-total="{{ total }}"
-     data-has-more="{{ '1' if has_more else '0' }}"
-     data-per-page="{{ filters.per_page }}"
-     class="text-center text-muted small py-3" style="min-height:1px;">
-  <span id="fsLoadingSpin" class="d-none"><span class="spinner-border spinner-border-sm"></span> 더 불러오는 중…</span>
-  <span id="fsAllLoaded" class="d-none">{{ total }}건 모두 표시했어요</span>
-</div>
+  {# 상태 코드 → 사용자 한글 라벨(원시 코드 노출 금지). #}
+  {% set _state_labels = {'active': '활성', 'out_of_stock': '품절', 'error': '오류', 'price_anomaly': '가격 이상', 'suspended': '정지'} %}
 
-<div class="position-fixed bottom-0 end-0 p-3 pc-toast-stack">
-  <div id="catalogToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
-    <div class="toast-header">
-      <strong class="me-auto">카탈로그</strong>
-      <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+  {% if error_msg %}
+  <section class="pc-status pc-status-warning small">
+    <div class="fw-semibold mb-1">카탈로그를 불러오지 못했어요</div>
+    <div>{{ error_msg }}</div>
+  </section>
+  {% endif %}
+
+  <section class="op-card">
+    <div class="op-card-head">
+      <strong>상품 목록 · 찾기</strong>
+      {# 항목4: 모바일서 필터가 첫 화면을 다 먹지 않게 접이식. 기본 접힘(collapse), '필터'로 펼침. #}
+      <button class="btn btn-ghost btn-sm d-flex align-items-center gap-1 kgp-filter-toggle ms-auto" type="button"
+              data-bs-toggle="collapse" data-bs-target="#catalogFilters" aria-expanded="false" aria-controls="catalogFilters">
+        <i class="bi bi-funnel"></i> 필터 <i class="bi bi-chevron-down small"></i>
+      </button>
     </div>
-    <div class="toast-body" id="catalogToastBody"></div>
-  </div>
+    <div class="op-card-body">
+      <form method="get" id="catalogFilters" class="op-filter collapse">
+        <div class="op-f">
+          <label class="form-label small mb-1" for="ctMarket">마켓</label>
+          <select name="marketplace" id="ctMarket" class="form-select form-select-sm">
+            <option value="">전체</option>
+            {% for mp in marketplace_options %}
+            <option value="{{ mp.market }}" {% if filters.marketplace == mp.market %}selected{% endif %}>
+              {{ mp.label }}{% if not mp.is_ready %} (준비 중){% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="op-f">
+          <label class="form-label small mb-1" for="ctCountry">국가</label>
+          <select name="country" id="ctCountry" class="form-select form-select-sm">
+            <option value="">전체</option>
+            {% for country in country_options %}
+            <option value="{{ country }}" {% if filters.country == country %}selected{% endif %}>{{ country }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="op-f">
+          <label class="form-label small mb-1" for="ctState">상태</label>
+          <select name="state" id="ctState" class="form-select form-select-sm">
+            <option value="">전체</option>
+            {% for st in ['active', 'out_of_stock', 'error', 'price_anomaly', 'suspended'] %}
+            <option value="{{ st }}" {% if filters.state == st %}selected{% endif %}>{{ _state_labels.get(st, st) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="op-f op-f-wide">
+          <label class="form-label small mb-1" for="ctSearch">검색</label>
+          <input type="text" name="search" id="ctSearch" class="form-control form-control-sm"
+                 value="{{ filters.search }}" placeholder="상품명/SKU/상품ID">
+        </div>
+        <div class="op-f">
+          <label class="form-label small mb-1" for="ctSort">정렬</label>
+          <select name="sort" id="ctSort" class="form-select form-select-sm">
+            <option value="last_synced_desc" {% if filters.sort == 'last_synced_desc' %}selected{% endif %}>최근 동기화순</option>
+            <option value="last_synced_asc" {% if filters.sort == 'last_synced_asc' %}selected{% endif %}>오래된 동기화순</option>
+            <option value="price_desc" {% if filters.sort == 'price_desc' %}selected{% endif %}>가격 높은순</option>
+            <option value="price_asc" {% if filters.sort == 'price_asc' %}selected{% endif %}>가격 낮은순</option>
+            <option value="title_asc" {% if filters.sort == 'title_asc' %}selected{% endif %}>상품명순</option>
+          </select>
+        </div>
+        <div class="op-f">
+          <label class="form-label small mb-1" for="ctPer">표시</label>
+          <select name="per_page" id="ctPer" class="form-select form-select-sm">
+            {% for n in [20, 50, 100] %}
+            <option value="{{ n }}" {% if filters.per_page == n %}selected{% endif %}>{{ n }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {# 필터 제출은 **고스트**다(6-e 판단 승계). 화면의 주 행동은 '새 상품 수집' 하나 —
+           필터까지 채우면 강조가 둘이 되어 어느 쪽이 주인지 안 읽힌다.
+           ※ 6-c(수집한 상품)는 아직 채운 버튼을 쓴다 — 두 화면이 갈린다(6-j 부채). #}
+        <div class="op-f d-flex flex-row gap-2">
+          <button type="submit" class="btn btn-ghost btn-sm">검색</button>
+          <a href="/seller/catalog" class="btn btn-ghost btn-sm">초기화</a>
+        </div>
+      </form>
+    </div>
+    <div class="op-card-body p-0" data-fs-root>
+      {# 이동할 게 없으면 이동 안내도 없다 — 0건 화면에서 레일 설명은 소음이다. #}
+      {% if total %}
+      <div class="ct-railnote">오른쪽 <strong>인덱스 레일</strong>(ㄱ~ㅎ·A~Z·#)을 누르거나 긁어 빠르게 이동하세요.{% if not fastscroll %} (다른 정렬 중엔 눌렀을 때 이름순으로 전환됩니다.){% endif %}</div>
+      {% endif %}
+      {# 0건이면 표를 감춘다 — 값이 없는 열 제목만 남기는 건 정보가 아니라 자리 낭비다.
+         지우지 않고 감추는 이유: 무한스크롤·나이아 레일이 `#catalogRows`를 잡는다(훅 보존). #}
+      <div class="table-responsive{% if total == 0 and not error_msg %} d-none{% endif %}">
+        <table class="table table-hover mb-0 table-cards pc-swiss-table">
+          <thead>
+            <tr>
+              <th class="ct-col-mk">마켓</th>
+              <th>상품명</th>
+              <th>SKU</th>
+              <th class="text-end">가격</th>
+              <th>상태</th>
+              <th>마지막 동기화</th>
+              <th class="ct-col-act text-end">액션</th>
+            </tr>
+          </thead>
+          {# 속도: 첫 50건만 렌더 + 무한스크롤(fmt=rows)로 추가. 행은 catalog_rows.html 단일소스. #}
+          <tbody data-fs-list id="catalogRows">
+            {% include 'catalog_rows.html' %}
+          </tbody>
+        </table>
+      </div>
+      {# 빈 상태는 **하나**다. 예전엔 같은 조건(total == 0)에 카드 위/표 안 두 개가 떴다 —
+         같은 말을 두 번 하면 둘 다 안 읽힌다. 무엇을·왜·어떻게가 있는 쪽만 남긴다.
+         블록 자체는 6-e(orders)와 같은 컴포넌트다 — 화면마다 새로 그리지 않는다. #}
+      {% if total == 0 and not error_msg %}
+      <div class="console-empty-state">
+        <div class="console-empty-icon"><i class="bi bi-box-seam"></i></div>
+        <div class="fw-semibold mb-1">아직 등록된 상품이 없어요</div>
+        <div class="small mb-1"><strong>무엇을:</strong> 첫 상품 1개를 등록해 카탈로그를 시작하세요.</div>
+        <div class="small mb-1"><strong>왜:</strong> 상품이 있어야 주문·매출·동기화 데이터가 쌓입니다.</div>
+        <div class="small"><strong>어떻게:</strong> 수집기 또는 AI 상품등록으로 바로 만들 수 있어요.</div>
+        <div class="console-empty-state-actions">
+          <a href="/seller/collect" class="btn btn-primary btn-sm">수집기 열기</a>
+          <a href="/seller/listing/ai-create" class="btn btn-ghost btn-sm">AI 상품등록</a>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    <!-- 속도: 무한스크롤 — 스크롤이 바닥에 닿으면 다음 50건을 fmt=rows로 이어붙인다(페이지 이동 없음). -->
+    <div class="op-card-foot justify-content-center">
+      <div id="fsInfiniteScroll"
+           data-loaded="{{ items|length }}"
+           data-total="{{ total }}"
+           data-has-more="{{ '1' if has_more else '0' }}"
+           data-per-page="{{ filters.per_page }}"
+           class="text-muted small" style="min-height:1px;">
+        <span id="fsLoadingSpin" class="d-none"><span class="spinner-border spinner-border-sm"></span> 더 불러오는 중…</span>
+        <span id="fsAllLoaded" class="d-none">{{ total }}건 모두 표시했어요</span>
+      </div>
+    </div>
+  </section>
+
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+// 6-g: 부트스트랩 컬러 토스트(`text-bg-*` + #catalogToast)를 걷어내고 공통 pcToast로.
+//   **호출부 시그니처는 그대로** 둔다 — 훅을 건드리면 로직 변경이다.
+//   pcToast가 없으면 조용히 삼키지 않고 콘솔에 남긴다(6-f와 같은 규율).
 function showCatalogToast(message, type) {
-  const toastEl = document.getElementById('catalogToast');
-  const bodyEl = document.getElementById('catalogToastBody');
-  if (!toastEl || !bodyEl) return;
-  bodyEl.textContent = message;
-  toastEl.className = `toast text-bg-${type || 'secondary'} border-0`;
-  new bootstrap.Toast(toastEl, { delay: 2500 }).show();
+  if (window.pcToast) { window.pcToast(message, type || 'info'); return; }
+  console.log('[catalog]', type || 'info', message);
 }
 
 async function syncItem(button, productId, marketplace) {
@@ -183,14 +187,7 @@ async function syncItem(button, productId, marketplace) {
     });
     const data = await res.json();
     if (data.ok) {
-      if (window.showGlobalToast) {
-        window.showGlobalToast(`동기화 완료: ${marketplace}/${productId}`, 'success', {
-          toastId: 'catalogToast',
-          bodyId: 'catalogToastBody',
-        });
-      } else {
-        showCatalogToast(`동기화 완료: ${marketplace}/${productId}`, 'success');
-      }
+      showCatalogToast(`동기화 완료: ${marketplace}/${productId}`, 'success');
       setTimeout(() => window.location.reload(), 800);
       return;
     }
@@ -278,7 +275,7 @@ async function syncItem(button, productId, marketplace) {
         b = document.createElement('div');
         b.id = 'kgpCatNewBanner';
         b.className = 'pc-status pc-status-info small mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2';
-        var host = document.querySelector('.container-fluid') || document.body;
+        var host = document.querySelector('.ct-page') || document.querySelector('.container-fluid') || document.body;
         host.insertBefore(b, host.firstChild);
       }
       b.innerHTML = '<span><i class="bi bi-arrow-repeat"></i> 마켓 동기화로 상품 ' + n +

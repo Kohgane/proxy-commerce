@@ -112,6 +112,9 @@ def test_css_uses_tokens_not_hardcoded():
 def test_catalog_no_mock_sheets_banner():
     # 항목5: PG-only 후 Mock/Sheets 배너 제거, 실데이터 없을 때만 정직한 빈 상태
     assert "Mock 데이터" not in CATALOG and "Sheets에 저장" not in CATALOG
-    assert "아직 수집된 상품이 없어요" in CATALOG
+    # 6-g에서 빈 상태 둘을 하나로 합쳤다 — 지키는 뜻(실데이터 없을 때만 정직한 빈 상태)은 그대로,
+    #   검사 자리만 살아남은 쪽으로 옮긴다. 문장이 아니라 조건을 박는다.
+    assert "아직 등록된 상품이 없어요" in CATALOG
+    assert "{% if total == 0 and not error_msg %}" in CATALOG
     # 항목4: 필터 접이식('필터 ▾')
     assert 'id="catalogFilters"' in CATALOG and "collapse" in CATALOG and "kgp-filter-toggle" in CATALOG
