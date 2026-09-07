@@ -19,9 +19,16 @@ from src.pipeline import reject_watch as RW
 
 # ── 1·2. Wing 상태 유형 ─────────────────────────────────────────────────────────
 def test_wing_states_match_dashboard_axes():
-    """계기판 축: 반려·임시저장·브랜드수정·증빙 (+승인·미상)."""
-    assert set(RW.WING_STATES) == {"rejected", "saved", "brand_fix", "doc_required",
-                                   "approved", "unknown"}
+    """계기판 축: 반려·임시저장·브랜드수정·증빙 (+승인·미상).
+
+    A1(2026-09-07)에서 **판매중·심사중** 두 칸이 늘었다. 축이 바뀐 게 아니라, 축에 없던 상태를
+    이력에서 만났을 때 매칭 0으로 **그냥 건너뛰던** 구멍을 메운 것이다(오너 WING 실측: 판매중).
+    그래서 계기판 축은 여전히 전부 있어야 하고, 늘어난 칸은 그 둘로 못 박는다.
+    """
+    assert {"rejected", "saved", "brand_fix", "doc_required",
+            "approved", "unknown"} <= set(RW.WING_STATES)
+    assert set(RW.WING_STATES) - {"rejected", "saved", "brand_fix", "doc_required",
+                                  "approved", "unknown"} == {"selling", "pending"}
     # 조치 가능 유형은 반려·임시저장뿐 — 브랜드수정 2,061건은 분류·집계만(오너 지시).
     actionable = {k for k, v in RW.WING_STATES.items() if v["actionable"]}
     assert actionable == {"rejected", "saved"}

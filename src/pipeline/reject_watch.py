@@ -9,8 +9,11 @@ Bluehost `rej_watch.py`(2h 크론) → 콘솔/크론 조회·분류·알림. **�
 """
 from __future__ import annotations
 
+import logging
 import re
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 # ── 반려 유형 · 처방 (기존 표준 — 새 체계 발명 금지) ──────────────────────────────
 REJECTION_KINDS = {
@@ -48,6 +51,14 @@ WING_STATES = {
     "doc_required": {"ko": "증빙 필요", "actionable": False,
                      "desc": "서류 증빙 요구 — 오너 제출 필요(자동 조치 불가)"},
     "approved":    {"ko": "승인", "actionable": False, "desc": "심사 통과"},
+    # A1(오너 WING 실측 2026-09-07 '판매중'): 사전에 없어 **최신 상태를 읽을 눈이 없었다.**
+    #   selling → approved 경로: 노출·판매 중이면 심사는 끝난 것이다(계기판에서 '판매중'이 종착).
+    #   pending  → 미확정 경로: **제출은 결과가 아니다.** 승인요청/심사중은 아직 답이 안 온 상태라
+    #     큐에 남아야 하고, 여기서 approved로 세면 [[등록 파이프 이식]]의 그 과탐이 재현된다
+    #     ('승인'을 넓게 잡아 승인요청이 승인으로 둔갑 → 우선순위 신호가 통째로 죽었던 건).
+    "selling":     {"ko": "판매중", "actionable": False, "desc": "노출·판매 중 — 심사 종료(승인 경로)"},
+    "pending":     {"ko": "심사중", "actionable": False,
+                    "desc": "승인요청 접수/심사중 — 아직 확정 아님(큐에 남는다)"},
     "unknown":     {"ko": "미상", "actionable": False, "desc": "상태 조회 실패/미확인"},
 }
 
@@ -162,13 +173,84 @@ def latest_rejection_comment(history) -> str:
     return ""
 
 
+# ★ 순서가 규칙이다: 위에서부터 먼저 맞는 것이 이긴다.
+#   `pending`이 `approved`보다 **위**에 있어야 '승인요청'이 '승인'으로 둔갑하지 않는다
+#   ([[등록 파이프 이식]] 과탐 함정: 넓게 잡은 승인 신호 하나가 분류를 통째로 무너뜨렸다).
 _WING_STATE_RE = (
     ("rejected", re.compile(r"반려|REJECT", re.I)),
     ("brand_fix", re.compile(r"브랜드.*(수정|변경|요청)|brand.*(fix|modif)", re.I)),
     ("doc_required", re.compile(r"증빙|서류|첨부.*요청|documents?\s*requir", re.I)),
+    ("pending", re.compile(r"승인\s*요청|심사\s*중|검수\s*중|승인\s*대기|"
+                           r"REQUEST(ED)?_?APPROV|IN_?REVIEW|PENDING", re.I)),
+    ("selling", re.compile(r"판매\s*중|판매\s*재개|ON_?SALE|SELLING", re.I)),
     ("approved", re.compile(r"승인(완료)?$|APPROV", re.I)),
     ("saved", re.compile(r"임시\s*저장|SAVED", re.I)),
 )
+
+# 확정 상태 = 그 이상 안 바뀌는 결론. 미확정(pending/saved/unknown)은 큐에 남는다.
+_SETTLED_STATES = ("rejected", "brand_fix", "doc_required", "selling", "approved")
+
+# 시각 키 후보 — Wing 응답 키 이름이 실측으로 확정되지 않았다. **있는 것만 쓰고 없으면 안 쓴다**(발명 0).
+_AT_KEYS = ("createdAt", "created_at", "changeDate", "changedAt", "regDate", "registeredAt",
+            "updatedAt", "date", "createdDate", "statusDate")
+
+
+def _row_at(row) -> str:
+    """이력 행의 시각 문자열. **없으면 빈 문자열**(발명 0) — 키 이름이 실측 확정 전이라 후보를 훑는다."""
+    for k in _AT_KEYS:
+        v = (row or {}).get(k)
+        if v:
+            return str(v)
+    return ""
+
+
+def timeline(history, *, limit: int = 12) -> list:
+    """이력 응답 → **사람이 읽는 줄글 재료** `[{at, status, comment}]`(6-h-3 N1).
+
+    화면 접힘에 JSON 원문을 그대로 붓던 자리를 대체한다 — 셀러가 알고 싶은 건 응답 스키마가 아니라
+    **쿠팡이 뭐라고 했는지**다. 그래서 이력에 **실제로 있는 것만** 옮긴다:
+    시각·상태 문구·comment 원문. 없는 값은 빈 문자열이고, 지어내지 않는다.
+
+    정렬은 `wing_state`와 같은 규칙 — 시각이 있으면 시각순, 없으면 응답 순서(가정 노출 0).
+    """
+    rows = _history_rows(history)
+    out = []
+    for i, r in enumerate(rows):
+        if not isinstance(r, dict):
+            continue
+        st = str(r.get("statusName") or r.get("status") or r.get("changeStatus") or "").strip()
+        cm = str(r.get("comment") or r.get("reason") or r.get("memo") or "").strip()
+        if not st and not cm:
+            continue                                   # 아무 말도 없는 행은 줄글에 쓸 게 없다
+        out.append({"at": _row_at(r), "status": st, "comment": cm, "_i": i})
+    if any(e["at"] for e in out):
+        out.sort(key=lambda e: (e["at"] or "", e["_i"]))
+    for e in out:
+        e.pop("_i", None)
+    return out[-max(1, int(limit)):] if out else []
+
+
+def log_history_shape(sid, history, *, logger_=None) -> dict:
+    """★ A1 계측 — 이력 응답의 **첫 행·끝 행 원문**(시각 포함)을 INFO로 한 줄 남긴다.
+
+    정렬 방향(최신이 앞이냐 뒤냐)이 아직 실측된 적이 없다. 다음 크론 로그로 확정한 뒤
+    그 근거를 계약에 명기한다 — 그때까지 판정은 시각 정렬로 가정을 피해 간다.
+    개인정보·자격은 안 싣는다(상태 문구·시각·행 수만).
+    """
+    rows = _history_rows(history)
+    def _brief(r):
+        if not isinstance(r, dict):
+            return {}
+        return {"at": _row_at(r),
+                "status": str(r.get("statusName") or r.get("status") or r.get("changeStatus") or "")[:40],
+                "keys": sorted(r.keys())[:8]}
+    shape = {"sid": sid, "n": len(rows),
+             "first": _brief(rows[0]) if rows else {}, "last": _brief(rows[-1]) if rows else {}}
+    # 접두어를 크론 결말 줄과 **같은 말**로 맞춘다 — 오너가 「반려감시 상태」 하나로 검색하면
+    #   그 회전의 결말과 이 원문이 **같은 검색 결과에** 나온다(회수 검색어 통일, 오너 2026-09-07).
+    (logger_ or logger).info("반려감시 상태·이력 원문(sid=%s): 행 %s · 첫 %s · 끝 %s",
+                             shape["sid"], shape["n"], shape["first"], shape["last"])
+    return shape
 
 
 def wing_state(history) -> str:
@@ -186,20 +268,33 @@ def wing_state(history) -> str:
         rows = list(body)
     else:
         rows = []
-    states = []
-    for r in rows:
+    picked = []                              # [(정렬키, 원래 index, 상태)]
+    for i, r in enumerate(rows):
         if not isinstance(r, dict):
             continue
         st = str(r.get("statusName") or r.get("status") or r.get("changeStatus") or "")
         for key, rx in _WING_STATE_RE:
             if rx.search(st):
-                states.append(key)
+                picked.append((_row_at(r), i, key))
                 break
-    if not states:
+    if not picked:
         return "unknown"
-    if "rejected" in states:
-        return "rejected"                    # 조치 대상 우선(다른 상태에 묻히지 않게)
-    return states[-1]                        # 그 외에는 최신 상태
+    # ★ A1: **정렬 가정을 없앤다.** 예전엔 `states[-1]`로 "마지막 = 최신"을 가정했는데
+    #   응답이 최신 우선이면 그건 가장 오래된 행이다(가정은 실측된 적이 없었다).
+    #   시각이 있으면 **시각으로 정렬**하고, 시각이 하나도 없을 때만 순서를 쓴다(그 사실도 로그가 남긴다).
+    if any(at for at, _i, _k in picked):
+        picked.sort(key=lambda t: (t[0] or "", t[1]))
+    latest = picked[-1][2]
+    # ★ A1: `rejected` 절대우선 폐지. 과거 반려 한 줄이 **최신 확정 상태를 영원히 덮고 있었다**
+    #   (재제출로 판매중이 돼도 우리 눈엔 계속 반려 — 오너 WING 실측 2026-09-07이 그걸 잡았다).
+    #   최신이 확정이면 최신을 믿는다. 최신이 미확정(pending/saved)이면, 그 앞의 **확정**을 본다 —
+    #   심사중이라고 해서 직전 반려 사실이 사라지는 건 아니기 때문이다.
+    if latest in _SETTLED_STATES:
+        return latest
+    for _at, _i, key in reversed(picked):
+        if key in _SETTLED_STATES:
+            return key
+    return latest
 
 
 # 판매 상태 문구 — '판매중/승인'이 반려보다 **앞선 이력**에 있으면 사후 재심사로 내려온 건이다.
@@ -280,6 +375,11 @@ def scan_rejections(items, *, history_fn, classify_fn=None) -> dict:
         comment = ""
         try:
             hist = history_fn(sid, account)
+            if not rows:                       # A1 계측 — 회전당 **한 줄만**(50건이면 50줄이 된다)
+                try:
+                    log_history_shape(sid, hist)
+                except Exception:              # 계측이 감시를 죽이지 않는다
+                    pass
             comment = latest_rejection_comment(hist)
             state = wing_state(hist)
             selling_before = was_selling(hist)
@@ -292,6 +392,8 @@ def scan_rejections(items, *, history_fn, classify_fn=None) -> dict:
             continue
         cl = classify_fn(comment, title=title)
         row = {"sid": sid, "title": title, "account": account, "comment": comment,
+               # N1: 접힘에 넣을 **쿠팡이 한 말**(시각·상태·원문). JSON 원문 대체 재료다.
+               "timeline": timeline(hist),
                "wing_state": state, "wing_state_ko": WING_STATES.get(state, {}).get("ko", state),
                "actionable": bool(WING_STATES.get(state, {}).get("actionable")),
                # 사후 재심사 — 팔리던 상품이 내려간 건(매출 즉시 중단). 신규 반려와 구분해 표기한다.
@@ -316,7 +418,9 @@ def scan_rejections(items, *, history_fn, classify_fn=None) -> dict:
 # W5 — 폴링 큐 졸업 대상. **대장 행은 유지하고 재조회만 중단**한다(기록 삭제 아님).
 #   `unknown`도 actionable=False지만 여기 없다 — '미상'은 아직 아무것도 확정 안 된 상태라
 #   큐에 남아야 한다. 졸업은 "확정됐다"는 뜻이지 "조치 안 한다"는 뜻이 아니다.
-GRADUATING_STATES = ("approved", "brand_fix", "doc_required")
+# A1: `selling`(판매중) 추가 — 노출·판매 중이면 심사는 끝났다. 확정인데 큐에 남겨 두면
+#   2시간마다 영원히 다시 물어보게 된다(그게 이 트랙이 없애려던 낭비다).
+GRADUATING_STATES = ("approved", "selling", "brand_fix", "doc_required")
 
 
 # 감시 큐에 **남아야 하는** Wing 상태 — 아직 확정이 아닌 것들.
@@ -418,10 +522,30 @@ def watch_registered(*, queue_fn, history_fn, classify_fn=None, record_fn=None,
                 pass                                       # 기록 실패는 감시 자체를 죽이지 않음(집계에 미포함)
 
     notified, notify_error = False, ""
-    has_rejection = any(r.get("comment") and not r.get("error") for r in scan["rows"])
-    if notify_fn and has_rejection:                        # 반려가 있을 때만 알린다(잡음 0)
+    # 졸업하는 건의 옛 comment는 **지금 문제가 아니다** — 판매중이 된 건을 두고
+    #   "반려 1건"을 덧붙이면 해결된 일을 미해결로 읽히게 만든다(가짜 경보 0).
+    has_rejection = any(r.get("comment") and not r.get("error")
+                       and r.get("wing_state") not in ("selling", "approved")
+                       for r in scan["rows"])
+    # A1: **승인 방향 전환도 알린다.** 지금까지는 반려가 있을 때만 알려서, 문제가 풀린 소식은
+    #   영영 오지 않았다(감시의 절반만 쓰고 있었다). 졸업하는 건이라 **한 번만** 뜬다 —
+    #   다음 회전엔 큐에 없어서 다시 알릴 수도 없다(잡음 0은 그대로).
+    became = [r for r in scan["rows"] if r.get("wing_state") in ("selling", "approved")]
+    alert = scan["alert"]
+    if became:
+        _ko = WING_STATES.get(became[0].get("wing_state"), {}).get("ko", "승인")
+        # 남은 반려 수는 **졸업분을 빼고** 센다. `scan["alert"]`를 그대로 이어 붙이면
+        #   방금 판매중이 된 건까지 '반려 N건'에 포함돼 숫자가 거짓이 된다(가짜 수치 0).
+        _left = [r for r in scan["rows"]
+                 if r.get("comment") and not r.get("error")
+                 and r.get("wing_state") not in ("selling", "approved")]
+        alert = (f"✅ {_ko} 전환 {len(became)}건 — "
+                 + " · ".join(str(r.get("sid")) for r in became[:5])
+                 + (f" 외 {len(became) - 5}건" if len(became) > 5 else "")
+                 + (f" · 남은 반려 {len(_left)}건" if _left else ""))
+    if notify_fn and (has_rejection or became):
         try:
-            notify_fn(scan["alert"], scan["rows"])
+            notify_fn(alert, scan["rows"])
             notified = True
         except Exception as exc:
             notify_error = f"알림 발송 실패: {exc}"        # 감시는 성공, 알림만 실패(정직 분리)
