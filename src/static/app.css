@@ -1781,8 +1781,11 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 
 /* 자릿수 맞춤 — 표 전체에 건다. 숫자가 아닌 글자는 영향을 안 받는다. */
 .pc-swiss-table { font-variant-numeric: tabular-nums; }
+/* 표가 아니어도 **숫자를 세로로 쌓는 자리**면 같은 문제다(6-h-3 이력 타임라인의 시각 열).
+   규칙을 그 화면에 복사하지 않고 여기 선택자만 늘린다 — 선언 자리는 계속 한 곳이다. */
 .pc-swiss-table > thead th,
-.pc-swiss-table > tbody > tr > td { font-variant-numeric: tabular-nums; }
+.pc-swiss-table > tbody > tr > td,
+.rw-tl-at { font-variant-numeric: tabular-nums; }
 
 /* 헤더 정렬 = 셀 정렬. 부트스트랩 유틸(.text-end/.text-center)을 헤더·셀 양쪽에 같이
    붙이는 게 규약이고, 그게 지켜졌는지는 계약이 검사한다(여기선 기본값만 맞춘다). */
@@ -1900,6 +1903,13 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .rw-bad  { color: var(--danger); font-weight: var(--w-semi); }
 .rw-raw { margin-top: var(--space-2); font-size: .76rem; color: var(--text-muted); }
 .rw-raw > summary { cursor: pointer; letter-spacing: .04em; }
+/* N1: 접힘 안은 **쿠팡이 한 말**이다 — 시각 + 상태 + 문구를 시간순 줄글로.
+   개발용 원문은 그 안에 한 겹 더(`.rw-raw-inner`) — 부검 가치는 남기고 기본 화면에선 안 보인다. */
+.rw-tl { margin-top: var(--space-2); display: flex; flex-direction: column; gap: 2px; }
+.rw-tl-line { font-size: .8rem; line-height: 1.6; color: var(--text-strong); }
+.rw-tl-at { color: var(--text-muted); }  /* 자릿수 맞춤은 표 정렬 문법(6-e-2)에서 한 번만 선언한다 */
+.rw-raw-inner { margin-top: var(--space-2); }
+.rw-raw-inner > summary { cursor: pointer; font-size: .74rem; color: var(--text-muted); }
 .rw-raw pre {
   margin: var(--space-2) 0 0; padding: var(--space-3);
   border-radius: var(--radius-sm); background: color-mix(in srgb, var(--ink) 4%, var(--surface));
@@ -1989,6 +1999,31 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 /* 감시 대상 목록의 `<code>` 상품번호가 분홍이었다 — 6-g에서 SKU 하나만 잡고 지나간 그 유형이다.
    화면마다 클래스를 붙이면 다음 화면에서 또 나온다. 부트스트랩 변수를 **우리 토큰으로 덮어** 끝낸다. */
 :root { --bs-code-color: var(--text-muted); }
+
+/* N2: 카드 세로 리사이즈 — 상한은 우리가 정하되 **더 보고 싶으면 유저가 늘린다.**
+   `resize: vertical`만(가로 금지 — 2단 그리드가 무너진다). `max-height`를 풀어 줘야 늘어난다.
+   늘려서 페이지가 940을 넘는 건 **유저 선택**이라 허용한다(초기 렌더 계약은 그대로).
+   그립이 안 보이면 있는 줄도 모른다 → 우하단에 시각 힌트 하나(브라우저 기본 그립 위에 겹친다). */
+.rw-resizable { resize: vertical; overflow: auto; max-height: none; }
+.rw-card-watch.rw-resizable { height: 11rem; min-height: 7rem; }
+.rw-card-table.rw-resizable { height: 19rem; min-height: 9rem; }
+.rw-resizable::before {
+  content: ""; position: absolute; right: 3px; bottom: 3px; width: 10px; height: 10px;
+  pointer-events: none; z-index: 2;
+  background:
+    linear-gradient(135deg, transparent 45%, var(--border) 45%, var(--border) 60%, transparent 60%),
+    linear-gradient(135deg, transparent 70%, var(--border) 70%, var(--border) 85%, transparent 85%);
+}
+/* 모바일에선 리사이즈를 끈다 — 손가락으로 3px 그립을 잡는 건 조작이 아니라 사고다. */
+@media (max-width: 991.98px) {
+  /* 선택자를 **같은 무게로** 맞춘다 — `.rw-card-watch.rw-resizable`(0,2,0)가 위에 있어서
+     `.rw-resizable`(0,1,0)로는 높이를 못 되돌린다(실측: 390에서 카드가 11rem에 갇혀
+     내부 스크롤 2곳이 되살아났다). 모바일은 페이지가 스크롤하는 게 정상이다. */
+  .rw-card-watch.rw-resizable, .rw-card-table.rw-resizable {
+    resize: none; height: auto; overflow: visible;
+  }
+  .rw-resizable::before { display: none; }
+}
 
 /* 모바일은 1열 폴백 — 세로로 쌓고 상한을 푼다(작은 화면에선 페이지 스크롤이 정상이다). */
 @media (max-width: 991.98px) {

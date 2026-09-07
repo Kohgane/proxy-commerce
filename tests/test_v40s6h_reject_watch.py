@@ -333,3 +333,82 @@ def test_scrollbar_is_slim_tokenized_and_arrowless():
     # 트랙은 투명 — 안 쓰는 홈이 회색 띠로 남으면 없던 선이 하나 생긴 것처럼 읽힌다.
     track = css.split("::-webkit-scrollbar-track,")[-1].split("}")[0]
     assert "transparent" in track
+
+
+# ── 6-h-3: 쿠팡이 한 말 · 세로 리사이즈 · WING 링크 ──────────────────────────
+def test_fold_shows_coupang_words_not_json():
+    """★ N1 — [자세히] 안은 **쿠팡이 한 말**이다(시각 + 상태 + 문구), JSON 전문이 아니다.
+
+    셀러가 알고 싶은 건 응답 스키마가 아니라 무슨 일이 있었는지다. 재료는 이미 있었다 —
+    이력의 `comment` 원문·`statusName`·시각. 없는 값은 **지어내지 않고** 그 자리를 비운다.
+    """
+    js = _js(TPL)
+    assert "rw-tl-line" in js and "'(쿠팡: '" in js.replace('" (쿠팡: "', "'(쿠팡: '") or "쿠팡: " in js
+    # 상태만 있고 문구가 없으면 문구를 만들어 붙이지 않는다.
+    assert "t.comment ? ' (쿠팡: ' + t.comment + ')' : ''" in js
+    # 시각을 못 읽으면 원문 그대로 — 형식을 지어내지 않는다.
+    assert "return String(at) + ' — ';" in js
+    # 서버가 재료를 싣는다(발명 0: 이력에 있는 것만).
+    from src.pipeline import reject_watch as RW
+    tl = RW.timeline({"data": [{"statusName": "반려", "comment": "이미지", "createdAt": "2026-09-04 10:12"},
+                               {"statusName": "판매중", "createdAt": "2026-09-07 09:00"}]})
+    assert [e["status"] for e in tl] == ["반려", "판매중"]
+    assert tl[1]["comment"] == "" and tl[1]["at"] == "2026-09-07 09:00"
+
+
+def test_raw_survives_one_layer_deeper():
+    """★ 원문을 **지운 게 아니라 한 겹 더 넣었다** — 부검 가치는 그대로(6-f-3 규율 승계)."""
+    js = _js(TPL)
+    assert "rw-raw-inner" in js and "'원문 보기'" in js
+    assert "pre.textContent = raw" in js, "원문을 innerHTML로 넣으면 실행 위험"
+    css = CSS.read_text(encoding="utf-8")
+    assert ".rw-raw-inner" in css
+
+
+def test_json_never_reaches_the_screen():
+    """★ JSON 키·중괄호·영문 필드명이 **화면 글자로** 나가지 않는다(6-f-3 셀러 언어 연장).
+
+    타임라인은 `data-timeline` 속성으로 나른다 — 속성값은 렌더되는 글자가 아니다.
+    """
+    b = _body(TPL)
+    assert "data-timeline=" in b                      # 나르는 건 속성
+    # 화면 텍스트 자리에 JSON 표기가 없다(속성·주석 제외하고 본다).
+    visible = re.sub(r'\s(data-timeline|title)="[^"]*"', " ", b)
+    for token in ('{"', '"}', "statusName", "createdAt"):
+        assert token not in visible, f"화면에 JSON 흔적: {token}"
+
+
+def test_cards_resize_vertically_only():
+    """★ N2 — 유저가 카드를 세로로 늘린다. 가로는 금지(2단 그리드가 무너진다)."""
+    b, css = _body(TPL), CSS.read_text(encoding="utf-8")
+    assert b.count("rw-resizable") == 2, "리사이즈 대상은 감시 대상·분류표 둘"
+    rule = css.split(".rw-resizable {")[1].split("}")[0]
+    assert "resize: vertical" in rule and "max-height: none" in rule
+    assert "resize: both" not in css and "resize: horizontal" not in css
+    # 그립이 보여야 있는 줄 안다 + 모바일에선 끈다(3px 그립은 손가락으로 못 잡는다).
+    assert ".rw-resizable::before" in css
+    mobile = css.split("@media (max-width: 991.98px)")[1].split("\n}")[0]
+    assert "resize: none" in mobile
+
+
+def test_wing_link_for_pre_approval_rows():
+    """★ N3 — 심사 전 상품은 구매자 URL에 아무것도 없다. WING 상품조회로 보낸다.
+
+    URL 형식은 **오너 스크린샷 실측**을 그대로 승계했다(`vendor-inventory/list?searchKeywords=`).
+    발명 0: 이 세션에선 wing.coupang.com에 접근할 수 없어 딥링크를 스스로 확인할 방법이 없었다.
+    """
+    b = _body(TPL)
+    assert "wing.coupang.com/vendor-inventory/list?searchKeywords={{ w.sid }}" in b
+    assert "WING에서 찾기" in b and "WING 상품조회에서 이 번호로 찾습니다" in b
+    # 구매자 URL은 **승인/판매중일 때만**.
+    assert "{% if w.status in ('approved', 'selling') and w.market_url %}" in b
+    # 상태가 화면까지 와야 가를 수 있다 — 큐가 status를 싣는다.
+    reg = Path("src/db/market_registrations_pg.py").read_text(encoding="utf-8")
+    assert '"status": r["status"]' in reg and "market_url, status FROM market_registrations" in reg
+
+
+@pytest.mark.skipif(not _pw_ok(), reason="크로미움 없음 — 정직하게 skip")
+def test_resize_does_not_break_the_initial_viewport_contract():
+    """★ 늘리는 건 유저 선택이지만 **초기 렌더**는 여전히 한 화면이다(H1 유지)."""
+    r = _measure(18, 6)
+    assert r["total"] <= r["vh"] and r["contentBottom"] <= r["vh"] - 20

@@ -71,8 +71,11 @@ def watch_queue(*, marketplace: str = "coupang", account: str = "", limit: int =
                 if r["marketplace"] == marketplace and r["status"] in _WATCH_STATUSES
                 and (not account or r["account"] == account)]
         return [{"sid": r["product_id"], "title": r["title"], "account": r["account"],
-                 "market_url": r["market_url"]} for r in rows[:max(0, int(limit))]]
-    sql = ["""SELECT product_id, title, account, market_url FROM market_registrations
+                 "market_url": r["market_url"], "status": r["status"]}
+                for r in rows[:max(0, int(limit))]]
+    # `status`도 같이 준다(6-h-3 N3): 화면이 **상태별로 링크를 갈라야** 하는데,
+    #   상태가 안 오면 갈 수가 없어 승인 전 건에도 구매자 URL을 걸게 된다(그게 그 결함이었다).
+    sql = ["""SELECT product_id, title, account, market_url, status FROM market_registrations
               WHERE deleted_at IS NULL AND marketplace=%s AND status = ANY(%s)"""]
     args = [marketplace, list(_WATCH_STATUSES)]
     if account:
@@ -83,7 +86,8 @@ def watch_queue(*, marketplace: str = "coupang", account: str = "", limit: int =
     with pg.query() as cur:
         cur.execute(" ".join(sql), tuple(args))
         rows = cur.fetchall()
-    return [{"sid": r[0], "title": r[1], "account": r[2], "market_url": r[3]} for r in rows]
+    return [{"sid": r[0], "title": r[1], "account": r[2], "market_url": r[3], "status": r[4]}
+            for r in rows]
 
 
 def mark_checked(product_id: str, *, marketplace: str = "coupang", status: str = "",

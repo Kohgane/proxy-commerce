@@ -105,7 +105,7 @@
 
     {# 감시 대상 — 크론이 **지금 물고 있는** 대장 건(읽기 전용). 여기가 비어 있으면 크론도 할 일이 없다.
        대장 조회는 쿠팡 API를 부르지 않는다(자격 무관) — 자격이 없어도 이 표는 뜬다. #}
-    <section class="op-card rw-card-watch">
+    <section class="op-card rw-card-watch rw-resizable">
       <div class="op-card-head">
         <span class="rp-step-eyebrow">감시 대상</span>
         <span class="op-tile-sub ms-auto">
@@ -128,9 +128,21 @@
               <td class="ps-3"><code>{{ w.sid }}</code></td>
               <td class="ch-cell-title">{{ w.title or '(제목 없음)' }}</td>
               <td><span class="badge ch-badge-src">{{ w.account or account }}</span></td>
+              {# N3: 승인 **전** 상품은 구매자 URL(vp/products)에 아무것도 없다 — 심사 전이라 노출이 없다.
+                 그때는 WING 상품조회로 보낸다. URL 형식은 발명하지 않고 **오너 스크린샷 실측**을 그대로 승계:
+                 `vendor-inventory/list?searchKeywords={sid}`.
+                 오늘 이 표에 승인분은 안 들어온다(승인은 졸업해서 큐를 떠난다) — 그래도 상태로 가르는 이유는,
+                 큐 구성이 바뀌어도 링크가 틀리지 않게 하기 위해서다. #}
               <td class="text-end pe-3">
-                {% if w.market_url %}<a href="{{ w.market_url }}" target="_blank" rel="noopener noreferrer"
-                   class="btn btn-ghost btn-sm">쿠팡에서 보기 <i class="bi bi-box-arrow-up-right"></i></a>{% endif %}
+                {% if w.status in ('approved', 'selling') and w.market_url %}
+                <a href="{{ w.market_url }}" target="_blank" rel="noopener noreferrer"
+                   class="btn btn-ghost btn-sm">쿠팡에서 보기 <i class="bi bi-box-arrow-up-right"></i></a>
+                {% else %}
+                <a href="https://wing.coupang.com/vendor-inventory/list?searchKeywords={{ w.sid }}"
+                   target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm"
+                   title="심사 전이라 구매자 화면에는 아직 없어요. WING 상품조회에서 이 번호로 찾습니다.">
+                  WING에서 찾기 <i class="bi bi-box-arrow-up-right"></i></a>
+                {% endif %}
               </td>
             </tr>
             {% endfor %}
@@ -144,7 +156,7 @@
 
     {% if scan is not none and not scan.error %}
     <!-- 분류표 -->
-    <section class="op-card rw-card-table">
+    <section class="op-card rw-card-table rw-resizable">
       <div class="op-card-head">
         <strong>반려 분류표</strong>
         <span class="op-tile-sub">사유(comment) 기준 · 실행 없음</span>
@@ -203,7 +215,10 @@
                   {% endif %}
                 </td>
               </tr>
-              <tr class="rw-result-row" id="rwResult-{{ r.sid }}" hidden>
+              {# N1: 접힘에 넣을 **쿠팡이 한 말**을 행에 실어 둔다. data-*라 화면에 글자로 뜨지 않는다
+                 — 화면에 나가는 건 아래 JS가 만드는 "시각 — 상태 (쿠팡: 문구)" 줄글이다. #}
+              <tr class="rw-result-row" id="rwResult-{{ r.sid }}" hidden
+                  data-timeline='{{ (r.timeline or [])|tojson }}'>
                 <td colspan="5" class="rw-result"></td>
               </tr>
               {% endfor %}
@@ -238,15 +253,55 @@ function rwRender(el, human, tone, raw) {
   line.appendChild(ic);
   line.appendChild(document.createTextNode(human));
   el.appendChild(line);
+  // ── N1: [자세히] 안은 **쿠팡이 한 말**이다 ──────────────────────────────
+  //   예전엔 응답 JSON 전문을 부었다. 셀러가 알고 싶은 건 응답 스키마가 아니라 무슨 일이 있었는지다.
+  //   시각 + 상태 + 쿠팡 문구를 시간순 줄글로 쓴다. 쿠팡 문구가 없는 행은 **지어내지 않고**
+  //   상태만 적는다. 개발용 원문은 그 안에 한 겹 더 [원문 보기]로 남긴다(부검 가치 보존).
+  var d = document.createElement('details');
+  d.className = 'rw-raw';
+  var sm = document.createElement('summary');
+  sm.textContent = '자세히';
+  d.appendChild(sm);
+
+  var tl = [];
+  try { tl = JSON.parse((el.closest('[data-timeline]') || {dataset: {}}).dataset.timeline || '[]'); }
+  catch (e) { tl = []; }
+  if (tl.length) {
+    var ul = document.createElement('div');
+    ul.className = 'rw-tl';
+    tl.forEach(function (t) {
+      var line = document.createElement('div');
+      line.className = 'rw-tl-line';
+      var when = document.createElement('span');
+      when.className = 'rw-tl-at';
+      when.textContent = rwWhen(t.at);        // 시각이 없으면 빈 칸 — 없는 시각은 안 만든다
+      var what = document.createElement('span');
+      what.textContent = (t.status || '상태 미상') + (t.comment ? ' (쿠팡: ' + t.comment + ')' : '');
+      line.appendChild(when); line.appendChild(what);
+      ul.appendChild(line);
+    });
+    d.appendChild(ul);
+  }
   if (raw) {
-    var d = document.createElement('details');
-    d.className = 'rw-raw';
-    var sm = document.createElement('summary');
-    sm.textContent = '자세히';
+    var inner = document.createElement('details');
+    inner.className = 'rw-raw-inner';
+    var innerSm = document.createElement('summary');
+    innerSm.textContent = '원문 보기';        // 개발용 — 한 겹 더 안쪽
     var pre = document.createElement('pre');
     pre.textContent = raw;                    // textContent — 원문을 그대로, 실행은 안 되게
-    d.appendChild(sm); d.appendChild(pre); el.appendChild(d);
+    inner.appendChild(innerSm); inner.appendChild(pre); d.appendChild(inner);
   }
+  if (tl.length || raw) el.appendChild(d);
+}
+
+// 시각 표기 — "9/5 21:04". 못 읽는 형식이면 **원문 그대로** 둔다(형식을 지어내지 않는다).
+function rwWhen(at) {
+  if (!at) return '';
+  var m = String(at).match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})[T ]?(\d{1,2})?:?(\d{2})?/);
+  if (!m) return String(at) + ' — ';
+  var s = Number(m[2]) + '/' + Number(m[3]);
+  if (m[4] && m[5]) s += ' ' + m[4].padStart(2, '0') + ':' + m[5];
+  return s + ' — ';
 }
 
 // 실행한 조치를 **사람 말로**. 무엇을 했는지 말해야지 성공했다고만 하면 안 된다.
@@ -268,6 +323,8 @@ var RW_ACTION_KO = {
     if (!row) return;
     row.hidden = false;
     rwRender(row.querySelector('.rw-result'), human, tone, raw);
+    // 카드 높이가 고정이라 결과가 스크롤 밖에 나타날 수 있다 — 방금 만든 답을 찾아다니게 하지 않는다.
+    if (row.scrollIntoView) row.scrollIntoView({block: 'nearest'});
   }
 
   buttons.forEach(function (btn) {
