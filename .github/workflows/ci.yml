@@ -91,7 +91,12 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
           pip install "Pillow>=10"            # 아이콘/OG 빌드 계약(스테일 skip 방지)
-          npm install jsdom --no-save         # jsdom 하네스(node -e require('jsdom'))
+          # ★ 한 줄에 **같이** 깐다. `--no-save`를 두 번 부르면(package.json이 없는 레포다)
+          #   두 번째 install이 트리를 그 패키지 기준으로 다시 맞추면서 **앞서 깐 jsdom을 지운다**
+          #   — 실측: 6-h 복원 CI에서 jsdom 계약 19건이 "jsdom이 없다"로 무더기 실패했다.
+          #   jsdom = 목록 오염 하네스 · bootstrap = 뷰포트/겹침 계약이 재는 실제 스타일시트
+          #   (앱이 CDN으로 싣는 그 CSS. 없이 렌더하면 라이브와 다른 화면을 잰다 — 940 대 1161).
+          npm install jsdom bootstrap@5.3.0 --no-save
 
       - name: Chromium 설치(/opt/pw-browsers = 하네스 탐색 대상)
         run: |

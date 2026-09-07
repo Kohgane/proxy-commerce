@@ -44,7 +44,8 @@ def test_operator_jargon_is_gone_from_the_screen():
 def test_internal_identifiers_are_untouched():
     """★ 코드 내부 식별자(rearm)는 **불변** — 개명은 로직 변경이다(오너 지시)."""
     s = RW.read_text(encoding="utf-8")
-    for hook in ('id="rearmBtn"', 'id="rearmSids"', 'id="rearmResult"',
+    # 6-h에서 입력칸만 조회와 합쳤다(오너 H2). 개명은 여전히 0 — 버튼·결과·라우트·함수 이름 불변.
+    for hook in ('id="rearmBtn"', 'id="rearmResult"',
                  "/admin/reject-watch/rearm"):
         assert hook in s, f"내부 식별자가 바뀌었다: {hook}"
     admin = Path("src/dashboard/admin_views.py").read_text(encoding="utf-8")

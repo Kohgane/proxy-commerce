@@ -1909,3 +1909,60 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 
 /* 인덱스 레일 안내 — 표 위 한 줄. 설명이지 경보가 아니다(배경·테두리 없음). */
 .ct-railnote { font-size: .78rem; color: var(--text-muted); padding: 0 var(--space-4) var(--space-2); }
+
+/* ── Stage 6-h: 반려 감시 — 뷰포트 고정 (오너 H1~H5) ────────────────────────
+   합격 기준이 "1920×940에 들어간다"라서, 문법 승계보다 **무엇을 세로로 쌓지 않을 것인가**가 본론이다.
+   수리 전 실측: scrollHeight 1760 — 뷰포트를 820px 넘겼다. 카드 5장 + 배너 3장이 전부 세로였다.
+
+   높이를 뷰포트에 **고정하지 않고** 잰다: `100dvh - 크롬`으로 잠그면 상단 업데이트 배너가 있고
+   없고에 따라 어긋난다(그 배너는 공통 chrome이라 이 화면이 못 정한다). 대신 **스크롤 두 곳에만
+   상한**을 주고 나머지는 자연 높이로 둔다 — 남으면 여백이지 깨짐이 아니다. */
+.rw-page {
+  display: grid; grid-template-columns: minmax(21rem, 4fr) 8fr;
+  gap: var(--space-5); align-items: start;
+}
+.rw-page > .ch-head { grid-column: 1 / -1; }
+.rw-col { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+
+/* 내부 스크롤은 **이 둘만**(오너 H1). `.op-card-body`가 이미 `overflow-y:auto`라
+   카드에 상한만 주면 스크롤이 카드 안으로 들어온다. */
+/* 실측으로 정한 값이다(어림이 아니라): 상한을 이보다 키우면 940을 넘는다.
+   1760 → 945 → 두 카드를 깎아 940. **여기서 32px을 더 깎아 ~908로 둔다** —
+   CI에는 우리 웹폰트가 없어 글자 높이가 미세하게 다르다(로컬 940 정확은 그래서 위험하다). */
+.rw-card-watch { max-height: 11rem; }
+.rw-card-table { max-height: 19rem; }
+
+/* 요약 스트립 — 카드 2장을 한 줄로. 수치는 세리프, 라벨은 오버라인(6-a 문법). */
+.rw-strip { margin-bottom: 0; padding: var(--space-2) var(--space-4); }
+.rw-kpi { display: inline-flex; align-items: baseline; gap: var(--space-2); }
+.rw-kpi-k { font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
+.rw-kpi-v { font-family: var(--font-display); font-weight: var(--w-semi); font-size: 1.35rem; line-height: 1; }
+.rw-kpi.is-warn .rw-kpi-v { color: var(--warn); }
+.rw-states { display: inline-flex; flex-wrap: wrap; gap: var(--space-2);
+  padding-left: var(--space-3); border-left: 1px solid var(--border); }
+
+/* 설명 접힘 — 배너였을 때 47px을 상시로 먹었다. 접으면 한 줄, 펴면 원문 그대로. */
+.rw-note {
+  font-size: .78rem; color: var(--text-muted); line-height: 1.6;
+  padding: var(--space-3) var(--space-4);
+  background: color-mix(in srgb, var(--ink) 3%, var(--surface));
+  border-radius: var(--radius-lg);
+}
+.rw-note > summary { cursor: pointer; list-style: none; }
+.rw-note > summary::-webkit-details-marker { display: none; }
+.rw-note-more { color: var(--teal); font-weight: var(--w-semi); }
+.rw-note-body { margin-top: var(--space-3); color: var(--text-muted); }
+.rw-title { max-width: 200px; }
+
+/* 감시 대상 목록의 `<code>` 상품번호가 분홍이었다 — 6-g에서 SKU 하나만 잡고 지나간 그 유형이다.
+   화면마다 클래스를 붙이면 다음 화면에서 또 나온다. 부트스트랩 변수를 **우리 토큰으로 덮어** 끝낸다. */
+:root { --bs-code-color: var(--text-muted); }
+
+/* 모바일은 1열 폴백 — 세로로 쌓고 상한을 푼다(작은 화면에선 페이지 스크롤이 정상이다). */
+@media (max-width: 991.98px) {
+  .rw-page { grid-template-columns: minmax(0, 1fr); }
+  .rw-card-watch, .rw-card-table { max-height: none; }
+  /* 좁은 폭에선 제목과 부제가 한 줄에 못 들어간다 — 제목이 쪼개지느니 부제가 내려가는 게 낫다. */
+  .rw-page .op-card-head { flex-wrap: wrap; }
+  .rw-page .op-card-head .ms-auto { margin-left: 0 !important; }
+}

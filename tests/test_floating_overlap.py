@@ -106,7 +106,29 @@ def _pw_ok():
     return cache.is_dir() and any(cache.glob("chromium-*"))
 
 
+# 6-h 보강: **좌표만 보면 안 보이는 것까지 덮였다고 센다.**
+#   내부 스크롤 카드가 생기자(6-h 반려 감시) `getBoundingClientRect()`가 스크롤 밖으로 잘린 행의
+#   좌표를 그대로 돌려줬다 — 화면엔 없는 버튼이 '버블에 가려졌다'고 잡혔다(면적 2840px²).
+#   잘려서 안 보이는 것은 가려질 수도 없다. 조상들의 클립 박스로 **보이는 사각형**을 먼저 구한다.
+#   계약을 무르게 하는 게 아니다 — 없는 겹침을 지우고 진짜만 남긴다.
 PROBE = """(ids) => {
+  function visibleRect(e) {                    // 조상 클립을 모두 통과한 뒤 남는 사각형
+    let r = e.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
+    let p = e.parentElement;
+    while (p && p !== document.documentElement) {
+      const cs = getComputedStyle(p);
+      if (/(auto|scroll|hidden)/.test(cs.overflowY + ' ' + cs.overflowX)) {
+        const q = p.getBoundingClientRect();
+        const n = {left: Math.max(r.left, q.left), top: Math.max(r.top, q.top),
+                   right: Math.min(r.right, q.right), bottom: Math.min(r.bottom, q.bottom)};
+        if (n.right <= n.left || n.bottom <= n.top) return null;   // 완전히 잘렸다 = 안 보인다
+        r = n;
+      }
+      p = p.parentElement;
+    }
+    return r;
+  }
   const out = {};
   for (const id of ids) {
     const el = document.getElementById(id);
@@ -119,8 +141,8 @@ PROBE = """(ids) => {
         if (e.closest('#fbWrap, #fbReopen, .sidebar, .console-sidebar')) return;
         const cs = getComputedStyle(e);
         if (cs.display === 'none' || cs.visibility === 'hidden') return;
-        const r = e.getBoundingClientRect();
-        if (!r.width || !r.height) return;
+        const r = visibleRect(e);
+        if (!r) return;
         const ov = Math.max(0, Math.min(b.right, r.right) - Math.max(b.left, r.left))
                  * Math.max(0, Math.min(b.bottom, r.bottom) - Math.max(b.top, r.top));
         if (ov > 0) hits.push({t: (e.textContent || e.value || e.tagName).replace(/\\s+/g, ' ').trim().slice(0, 30),
@@ -136,9 +158,11 @@ PROBE = """(ids) => {
 
 # 순서는 **프로덕션과 같아야 한다**(_base.html: bootstrap → app → seller → console).
 # 순서가 다르면 `!important`끼리 붙었을 때 승자가 바뀌어, 캡처가 라이브와 다른 화면이 된다.
-CSS_FILES = ("/tmp/bsdl/node_modules/bootstrap/dist/css/bootstrap.min.css",
-             "src/static/app.css", "src/seller_console/static/seller.css",
-             "src/seller_console/static/console.css")
+_BS_CANDIDATES = ("node_modules/bootstrap/dist/css/bootstrap.min.css",
+                  "/tmp/bsdl/node_modules/bootstrap/dist/css/bootstrap.min.css")
+CSS_FILES = tuple([p for p in _BS_CANDIDATES if Path(p).exists()][:1]
+                  + ["src/static/app.css", "src/seller_console/static/seller.css",
+                     "src/seller_console/static/console.css"])
 
 
 def _page_html(route: str) -> str:
@@ -184,7 +208,9 @@ def _measure(route: str, hide: bool = False):
 
 
 @pytest.mark.skipif(not _pw_ok(), reason="크로미움 없음 — 정직하게 skip")
-@pytest.mark.parametrize("route", ["/seller/sourcing/reject-watch", "/seller/dashboard", "/seller/orders"])
+# 반려 감시는 6-h에서 내부 스크롤이 생긴 **첫 화면**이다 — 레이아웃이 바뀌면 겹침은 재발 후보다.
+@pytest.mark.parametrize("route", ["/seller/sourcing/reject-watch", "/seller/dashboard",
+                                  "/seller/orders", "/seller/catalog"])
 def test_nothing_interactive_sits_under_the_bubble(route):
     """★ 최하단까지 내렸을 때 **버블 밑에 눌러야 할 것이 하나도 없다.**
 
