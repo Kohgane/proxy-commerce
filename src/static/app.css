@@ -2033,3 +2033,111 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
   .rw-page .op-card-head { flex-wrap: wrap; }
   .rw-page .op-card-head .ms-auto { margin-left: 0 !important; }
 }
+
+/* ── Stage 6-i: AI 소싱 허브 ────────────────────────────────────────────────
+   수리 전 실측: 1368px(1920×940에서 428 초과) · v2 `.card` 6 / `op-card` 0 · 잔재 99.
+
+   본론은 높이가 아니라 **순서**였다. 부제가 "키워드 → 국내에서 뭐가 팔리나 → 소싱처 →
+   수집·등록"이라고 선언해 놓고, 화면은 마지막 단계(수집 경로 3장)를 맨 위에 쌓고 첫 단계
+   (키워드)를 네 번째 카드에 뒀다. 세로로만 쌓으면 순서가 뒤집혀도 안 보인다.
+   좌 = 수단 / 우 = 결과로 가르면 순서가 눈에 남는다(5-f·6-h 문법 승계). */
+.si-page {
+  display: grid; grid-template-columns: minmax(22rem, 5fr) 7fr;
+  gap: var(--space-5); align-items: start;
+}
+.si-page > .ch-head, .si-page > .si-notice { grid-column: 1 / -1; }
+/* 머리 = 제목 + 검색 한 줄. 세로로 쌓으면 그것만으로 81px이 더 든다(실측). */
+.si-head { display: grid; grid-template-columns: minmax(19rem, auto) minmax(24rem, 1fr);
+  gap: var(--space-3) var(--space-5); align-items: end; }
+.si-head > hr { grid-column: 1 / -1; margin-top: var(--space-3); }
+.si-col { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.si-min0 { min-width: 0; }
+
+/* 내부 스크롤은 **열마다 하나씩, 둘**(6-h가 세운 규율 승계).
+   우열은 카드마다 상한을 주면 스크롤이 셋이 되고 카드마다 제 내용을 못 보여 준다 —
+   **열 통째로** 스크롤하면 각 카드는 자연 높이로 살고 스크롤은 하나다.
+   상한은 실측값이다: 이보다 키우면 940을 넘는다. CI엔 우리 웹폰트가 없어 글자 높이가
+   미세하게 달라, 940 정확이 아니라 여유를 두고 깎는다(6-h에서 배운 것). */
+/* 상한을 **열**에 건다. 카드 몸통에 걸었더니 등록 입력창 한가운데가 잘렸고(캡처 실측),
+   목록에만 걸었더니 카드가 통째로 길어져 940을 넘었다. 열이 스크롤하면 카드는 자연 높이로 살고
+   스크롤은 열마다 하나 — 좌 1 + 우 1 = 둘(6-h가 세운 규율 그대로).
+   ※ 소싱처 목록을 다른 화면으로 옮기는 선택지는 없다: `/sourcing/my-sources`는 이 화면으로
+     되돌리는 리다이렉트라, 여기가 그 목록의 **유일한 집**이다(실측). 그래서 줄이지 않고 담는다. */
+.si-col { max-height: 28rem; overflow-y: auto; padding-right: var(--space-2); }
+.si-col > * { flex: 0 0 auto; }
+/* 열이 스크롤하면 안의 카드는 **줄어들면 안 된다** — flex 자식은 기본이 축소라, 그대로 두면
+   카드마다 제 몸을 줄이고 `.op-card-body`가 각자 스크롤을 만든다(실측: 스크롤 3곳). */
+
+/* 검색은 화면의 첫 단계라 전폭이다 — 좌열 카드 한 장을 걷어낸 자리를 폭으로 돌려줬다. */
+.si-hero { display: grid; grid-template-columns: 1fr auto; gap: var(--space-3) var(--space-4);
+  align-items: center; }
+.si-hero .si-ask { grid-column: 1 / -1; margin-bottom: 0; }
+.si-periods { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.si-ask { display: block; font-weight: var(--w-semi); font-size: 1.02rem;
+  line-height: 1.4; margin-bottom: var(--space-2); }
+.si-search .input-group-text { background: var(--surface); border-right: 0; color: var(--text-muted); }
+.si-search .form-control { border-left: 0; padding-left: var(--space-2); }
+.si-search .form-control, .si-search .btn, .si-search .input-group-text { min-height: 46px; }
+.si-search .btn { white-space: nowrap; }
+.si-sep { margin: var(--space-3) 0; border-color: var(--border); opacity: 1; }
+.si-adv { text-decoration: none; }
+.si-adv:hover { text-decoration: underline; }
+.si-on { color: var(--teal); }
+.si-notice { font-size: .82rem; color: var(--text-muted); padding: var(--space-2) var(--space-4);
+  background: color-mix(in srgb, var(--teal) 6%, var(--surface));
+  border-left: 3px solid var(--teal); border-radius: var(--radius-sm); }
+
+/* 등록소 행의 아이콘 버튼 — 인라인 `style="padding:1px 6px"`이 네 군데 붙어 있었다. */
+.si-rowbtns .btn { padding: 2px var(--space-2); line-height: 1.2; }
+.si-del:hover { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+
+/* 국내 상품 타일 — 뷰포트 무관 다열(v35 P0에서 col → grid로 바꾼 판단은 그대로 승계). */
+.si-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: var(--space-3); }
+.si-tile { overflow: hidden; display: flex; flex-direction: column; }
+.si-thumb { height: 9rem; background: var(--surface-warm); position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: center; }
+.si-thumb > i { position: absolute; color: var(--text-muted); font-size: 2rem; opacity: .35; }
+.si-thumb > img { position: relative; max-height: 100%; max-width: 100%; object-fit: contain; }
+.si-tile-body { padding: var(--space-3); display: flex; flex-direction: column; flex: 1 1 auto; }
+.si-tile-title { font-weight: var(--w-semi); font-size: .92rem; line-height: 1.4; min-height: 2.8em;
+  color: var(--text-strong); text-decoration: none;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.si-tile-title:hover { color: var(--teal); }
+.si-price { font-family: var(--font-display); font-weight: var(--w-semi); font-size: 1.1rem; }
+.si-find, .si-find-link { min-height: 40px; display: flex; align-items: center; justify-content: center;
+  font-size: .86rem; }
+.si-find { list-style: none; }
+.si-find::-webkit-details-marker { display: none; }
+
+/* 분석 6칸이 카드 6장으로 세로로 쌓여 있었다 → 한 줄 스트립(6-h 승계). */
+.si-strip { margin-bottom: 0; padding: var(--space-2) var(--space-4); flex-wrap: wrap; gap: var(--space-4); }
+.si-strip-k { padding-right: var(--space-3); border-right: 1px solid var(--border); }
+.si-kpi { display: inline-flex; align-items: baseline; gap: var(--space-2); }
+.si-kpi-k { font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
+.si-kpi-v { font-family: var(--font-display); font-weight: var(--w-semi); font-size: 1.2rem; line-height: 1; }
+.si-kpi-none { font-size: .76rem; color: var(--text-muted); }
+
+.si-rec { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3); }
+.si-kwsnap { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.si-kw { display: inline-flex; align-items: baseline; gap: var(--space-2); font-size: .8rem;
+  padding: 2px var(--space-3); border: 1px solid var(--border); border-radius: 999px; }
+.si-kw-v { color: var(--text-muted); }
+
+/* 설명 접힘 — 6-h `.rw-note`와 같은 규칙이라 **선언을 복사하지 않고** 선택자만 얹는다
+   (자릿수 맞춤을 복사했다가 단일 소스 계약을 깬 6-h-3의 교훈). */
+.si-note { font-size: .78rem; color: var(--text-muted); line-height: 1.6;
+  padding: var(--space-3) var(--space-4);
+  background: color-mix(in srgb, var(--ink) 3%, var(--surface)); border-radius: var(--radius-lg); }
+.si-note > summary { cursor: pointer; list-style: none; }
+.si-note > summary::-webkit-details-marker { display: none; }
+.si-note-more { color: var(--teal); font-weight: var(--w-semi); }
+.si-note-body { margin-top: var(--space-3); color: var(--text-muted); }
+
+@media (max-width: 1199.98px) {
+  /* 좁아지면 2단이 서로를 짓누른다 — 한 줄로 풀고 카드 상한도 푼다(페이지가 스크롤하는 게 정상). */
+  .si-page, .si-head { grid-template-columns: 1fr; }
+  /* 모바일에선 열 스크롤을 푼다 — 페이지가 스크롤하는 게 정상이고, 열 안에 갇히면 더 못 본다. */
+  .si-col { max-height: none; overflow: visible; padding-right: 0; }
+  .si-page .op-card-head { flex-wrap: wrap; }
+  .si-page .op-card-head .ms-auto { margin-left: 0 !important; }
+}
