@@ -190,3 +190,71 @@ def test_rejection_only_alert_is_unchanged():
     H = {"B": _h(_row("반려", "2026-09-05 00:00", "상표권 침해"))}
     _out, sent = _watch(H, ["B"])
     assert sent[0].startswith("반려 1건")
+
+
+# ── 화면: 확정 상태가 낡은 사유에 가려지지 않는다 ────────────────────────────
+def test_settled_state_is_shown_before_the_comment_based_kind():
+    """★ 오너 실측(2026-09-07): status=승인인데 분류 뱃지가 「임시저장(승인요청 누락)」이었다.
+
+    `kind`는 **comment 전용**이고(#705), comment는 *과거에 한 말*이다. 그 뒤 상태가 바뀌면
+    뱃지가 상태와 어긋난다 — 그리고 A1 이후 이 표엔 승인·판매중 행도 들어온다(수동 조회는
+    큐를 안 거치므로 `_WATCH_STATUSES` 밖 상태도 조회된다). 표의 전제가 바뀐 것이다.
+
+    #705 원칙은 **그대로 둔다**: kind는 여전히 comment로만 정한다.
+    바꾼 건 **표시 순서**뿐 — 확정 상태를 먼저 놓고, 사유 유형은 '지난 사유'로 아래에.
+    """
+    from pathlib import Path
+    tpl = Path("src/seller_console/templates/reject_watch.html").read_text(encoding="utf-8")
+    cell = tpl.split('<td data-label="분류">')[1].split("</td>")[0]
+    # 상태 분기가 kind 뱃지보다 **앞**에 있어야 순서가 성립한다.
+    assert cell.index("r.wing_state in ('approved', 'selling')") < cell.index("r.kind == 'unknown'")
+    assert "{{ r.wing_state_ko }}" in cell, "상태 라벨이 화면에 없다"
+    assert "지난 사유" in cell, "승인 건의 옛 유형을 현재 유형처럼 보이게 두면 안 된다"
+    # 확정이지만 조치가 필요한 상태(브랜드수정·증빙)도 상태를 먼저 보여 준다.
+    assert "r.wing_state in ('brand_fix', 'doc_required')" in cell
+    # 애플 카테고리 보조 표기는 **승인된 건엔 안 뜬다**(끝난 일의 처방을 계속 말하지 않는다).
+    assert "r.kind == 'apple_category' and r.wing_state not in ('approved', 'selling')" in tpl
+
+
+def test_kind_is_still_comment_only():
+    """★ #705는 안 건드렸다 — 상태를 kind 판정에 섞으면 그게 그 원칙을 깨는 것이다."""
+    import inspect
+    src = inspect.getsource(RW.classify_rejection)
+    assert "wing_state" not in src, "분류가 상태를 보기 시작했다(#705 위반)"
+    # 승인된 이력이어도 comment가 이미지 규격이면 kind는 그대로 이미지 규격이다.
+    cl = RW.classify_rejection("대표이미지는 최대 10M, 최소 500*500")
+    assert cl["kind"] == "image_spec"
+
+
+def test_settled_rows_carry_no_prescription_and_no_execute_button():
+    """★ 판매중 행에 「처방 실행」이 살아 있었다 — 누르면 **살아 있는 상품에 승인요청을 보낸다.**
+
+    처방도 comment 기준이라 상태와 어긋난 것(뱃지와 같은 뿌리). 끝난 일에는 처방이 없다.
+    문구만 바꾸고 버튼을 남기면 고친 게 아니라 가린 것이라, **버튼도 같은 조건으로 막는다.**
+    """
+    from pathlib import Path
+    tpl = Path("src/seller_console/templates/reject_watch.html").read_text(encoding="utf-8")
+    rx = tpl.split('<td data-label="처방">')[1].split("</td>")[0]
+    assert rx.index("r.wing_state in ('approved', 'selling')") < rx.index("r.kind == 'unknown'")
+    assert "조치 없음" in rx
+    run = tpl.split('<td data-label="실행"')[1].split("</td>")[0]
+    assert run.index("r.wing_state in ('approved', 'selling')") < run.index("r.kind == 'unknown'")
+
+
+def test_summary_counts_do_not_call_a_selling_row_a_rejection():
+    """★ 같은 유형 — 집계도 kind 기준이라 판매중이 "반려 3건 … 임시저장 1"에 섞였다(오너 실측).
+
+    숫자가 거짓이면 화면 전체가 거짓이 된다. 끝난 건은 반려 수에서 빼고 **따로 센다**(숨기지 않는다).
+    상태가 이미 분류인 건(브랜드수정·증빙)은 '미분류'로도 안 센다 — 같은 행을 두 번 다르게 부르게 된다.
+    """
+    H = {"A": _h(_row("임시저장중", "2026-09-03 00:00", "임시저장"), _row("판매중", "2026-09-07 09:00")),
+         "B": _h(_row("반려", "2026-09-05 09:30", "대표이미지 최소 500*500 미달")),
+         "C": _h(_row("브랜드 수정요청", "2026-09-06 14:20", "브랜드 등록 필요"))}
+    sc = RW.scan_rejections([{"sid": s, "title": "t", "account": "gogane"} for s in H],
+                            history_fn=lambda sid, acc: H[sid])
+    assert sc["alert"].startswith("판매중 1건 · 반려 2건"), sc["alert"]
+    assert "임시저장" not in sc["alert"], "판매중 건의 옛 유형이 아직 집계에 있다"
+    assert "브랜드 수정요청 1" in sc["alert"] and "미분류" not in sc["alert"]
+    assert sc["needs_manual"] == 0, "상태가 분류인 건을 '오너 확인 필요'로 세면 안 된다"
+    # scanned는 **조회한 전건**이다(숨기지 않는다 — 줄인 건 '반려' 수뿐이다).
+    assert sc["scanned"] == 3

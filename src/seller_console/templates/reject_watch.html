@@ -159,7 +159,7 @@
     <section class="op-card rw-card-table rw-resizable">
       <div class="op-card-head">
         <strong>반려 분류표</strong>
-        <span class="op-tile-sub">사유(comment) 기준 · 실행 없음</span>
+        <span class="op-tile-sub">상태 확정 시 상태 우선 · 유형은 사유(comment) 기준 · 실행 없음</span>
       </div>
       <div class="op-card-body p-0">
         <div class="table-responsive">
@@ -180,10 +180,28 @@
                   {% else %}<span class="pc-badge pc-badge-muted">사유 없음</span>{% endif %}
                 </td>
                 <td data-label="분류">
-                  {% if r.kind == 'unknown' %}<span class="pc-badge pc-badge-off">미분류</span>
+                  {# 오너 실측(2026-09-07): status=승인인데 분류 뱃지가 「임시저장(승인요청 누락)」이었다.
+                     kind는 **comment 전용**(#705 원칙)이고 comment는 *과거에 한 말*이라, 그 뒤 상태가
+                     바뀌면 뱃지가 상태와 어긋난다. A1 이후 이 표엔 승인·판매중 행도 들어온다
+                     (수동 조회가 큐를 안 거친다) — 표의 전제가 바뀐 것이다.
+                     그래서 **상태가 확정이면 상태를 먼저** 놓고, 사유 유형은 그 아래 보조로 둔다.
+                     #705는 그대로다: kind는 여전히 comment로만 정한다. 바꾼 건 **표시 순서**뿐이다. #}
+                  {% if r.wing_state in ('approved', 'selling') %}
+                  <span class="pc-badge pc-badge-on">{{ r.wing_state_ko }}</span>
+                  {% if r.kind != 'unknown' %}
+                  <div class="small text-muted mt-1">지난 사유: {{ r.kind_ko }}</div>{% endif %}
+                  {% else %}
+                  {% set has_state = r.wing_state in ('brand_fix', 'doc_required') %}
+                  {% if has_state %}
+                  <span class="pc-badge pc-badge-off">{{ r.wing_state_ko }}</span>
+                  {% endif %}
+                  {# 상태 뱃지가 이미 섰으면 「미분류」는 덧붙이지 않는다 — 상태가 곧 분류라
+                     "브랜드 수정요청 미분류"처럼 스스로 모순돼 보인다(실측). #}
+                  {% if r.kind == 'unknown' %}{% if not has_state %}<span class="pc-badge pc-badge-off">미분류</span>{% endif %}
                   {% elif r.kind == 'trademark' %}<span class="pc-badge pc-badge-danger">{{ r.kind_ko }}</span>
                   {% else %}<span class="pc-badge pc-badge-on">{{ r.kind_ko }}</span>{% endif %}
-                  {% if r.kind == 'apple_category' %}
+                  {% endif %}
+                  {% if r.kind == 'apple_category' and r.wing_state not in ('approved', 'selling') %}
                     <div class="small text-muted mt-1">대상:
                       {% if r.apple_target == 'android' %}<strong>삼성/픽셀 — 유효</strong>
                       {% elif r.apple_target == 'apple' %}<strong>iPhone — 표기 보류</strong>
@@ -191,13 +209,20 @@
                   {% endif %}
                 </td>
                 <td data-label="처방">
-                  {% if r.kind == 'unknown' %}<span class="text-muted small">오너 확인 필요</span>
+                  {# 같은 유형(오너 지목 확장): 처방도 comment 기준이라 상태와 어긋난다.
+                     판매중인 상품에 "승인 재요청"을 권하고 있었다 — 실행하면 **살아 있는 상품에
+                     승인요청을 보낸다.** 끝난 일에는 처방이 없다. #}
+                  {% if r.wing_state in ('approved', 'selling') %}
+                  <span class="text-muted small">조치 없음 — 심사가 끝났어요</span>
+                  {% elif r.kind == 'unknown' %}<span class="text-muted small">오너 확인 필요</span>
                   {% else %}<span class="fw-semibold small">{{ r.prescription_ko }}</span>{% endif %}
                 </td>
                 {# T1 — 처방 실행. **신규 실행 로직 0**: 이미 배선된 `/admin/reject-watch/apply`를 부른다.
                    한 건씩만(카나리 원칙 — 전체 일괄 없음). 게이트가 잠겨 있으면 비활성 + 사유 표기. #}
                 <td data-label="실행" class="text-end pe-3">
-                  {% if r.kind == 'unknown' %}
+                  {% if r.wing_state in ('approved', 'selling') %}
+                    <span class="text-muted small">—</span>
+                  {% elif r.kind == 'unknown' %}
                     <span class="text-muted small">—</span>
                   {% elif not approved %}
                     <button type="button" class="btn btn-ghost btn-sm" disabled

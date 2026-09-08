@@ -401,10 +401,28 @@ def scan_rejections(items, *, history_fn, classify_fn=None) -> dict:
         rows.append(row)
         by_kind[cl["kind"]] = by_kind.get(cl["kind"], 0) + 1
         by_rx[cl["prescription"]] = by_rx.get(cl["prescription"], 0) + 1
-    needs_manual = [r for r in rows if r["kind"] == "unknown"]
-    resale = [r for r in rows if r.get("was_selling")]
-    parts = [f"{REJECTION_KINDS[k]['ko']} {n}" for k, n in sorted(by_kind.items(), key=lambda x: -x[1])]
-    alert = f"반려 {len(rows)}건 — " + (" · ".join(parts) if parts else "없음")
+    # 같은 유형(오너 지목 확장): 집계도 kind(comment) 기준이라 **확정 상태를 안 봤다.**
+    #   그래서 판매중이 된 건이 "반려 3건 … 임시저장 1"에 섞여 들어갔다(오너 실측 캡처).
+    #   심사가 끝난 건은 반려 수에서 빼고 따로 센다 — 숫자가 거짓이면 화면 전체가 거짓이 된다.
+    settled_ok = [r for r in rows if r.get("wing_state") in ("approved", "selling")]
+    open_rows = [r for r in rows if r.get("wing_state") not in ("approved", "selling")]
+    # 상태가 이미 분류인 건(브랜드수정·증빙)은 **'미분류'가 아니다.** 화면 뱃지와 같은 규칙을 요약에도
+    #   건다 — 안 그러면 "미분류 1 · 미분류 1건(오너 확인)"처럼 같은 행을 두 번 다르게 부른다(실측).
+    _state_named = ("brand_fix", "doc_required")
+    needs_manual = [r for r in open_rows
+                    if r["kind"] == "unknown" and r.get("wing_state") not in _state_named]
+    resale = [r for r in open_rows if r.get("was_selling")]
+    open_kinds = {}
+    for r in open_rows:
+        st = r.get("wing_state")
+        label = WING_STATES[st]["ko"] if st in _state_named else REJECTION_KINDS[r["kind"]]["ko"]
+        open_kinds[label] = open_kinds.get(label, 0) + 1
+    parts = [f"{k} {n}" for k, n in sorted(open_kinds.items(), key=lambda x: -x[1])]
+    alert = f"반려 {len(open_rows)}건 — " + (" · ".join(parts) if parts else "없음")
+    if settled_ok:
+        # 끝난 건은 **좋은 소식**이라 앞에 세운다(숨기면 "왜 안 보이지"가 된다).
+        _ko = WING_STATES.get(settled_ok[0].get("wing_state"), {}).get("ko", "승인")
+        alert = f"{_ko} {len(settled_ok)}건 · " + alert
     if resale:
         # 팔리던 상품이 내려간 건은 **맨 앞에** 세운다(매출이 즉시 멈추므로 우선순위가 높다).
         alert = f"⚠ 판매중→반려 {len(resale)}건(우선) · " + alert
