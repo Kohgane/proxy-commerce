@@ -98,9 +98,28 @@ def test_time_sorting_beats_row_order():
     assert RW.wing_state(oldest_first) == "selling"
 
 
-def test_without_timestamps_it_falls_back_to_row_order():
-    """시각이 없으면 순서를 쓸 수밖에 없다 — 그 사실을 숨기지 않는다(계측이 방향을 확정할 때까지)."""
+def test_measured_direction_is_recorded_but_not_extrapolated():
+    """★★ **방향 실측 확정(2026-09-09, 크론 로그 원문): Wing 이력은 최신 우선.**
+
+    옛 `states[-1]` 가정은 틀린 정도가 아니라 **정확히 거꾸로**였다 — 마지막 행은 최신이 아니라
+    가장 오래된 행이었다. 그 사실을 여기 근거로 박는다(가정 폐기 기록).
+
+    다만 **시각 없는 입력까지 뒤집지는 않는다.** 잰 것은 *실제 응답*(시각을 달고 오는)의 방향이지,
+    시각 없는 응답의 순서는 잰 적이 없다 — 거기까지 가면 실측이 아니라 외삽이고,
+    읽는 순서로 쓰인 기존 픽스처의 의미를 **조용히 뒤집게** 된다. 실제 경로는 시각이 있어
+    이 폴백을 타지 않는다. (실측을 넓게 적용하고 싶으면 그 케이스를 먼저 재야 한다.)
+    """
+    # 시각이 있으면 순서와 무관하게 시각이 이긴다 — 실측이 필요 없는 자리.
+    assert RW.wing_state(_h(_row("판매중", "2026-09-07 09:00"),
+                            _row("반려", "2026-09-03 00:00"))) == "selling"
+    assert RW.wing_state(_h(_row("반려", "2026-09-03 00:00"),
+                            _row("판매중", "2026-09-07 09:00"))) == "selling"
+    # 시각이 없으면 응답 순서를 **그대로** 쓴다(외삽 0).
     assert RW.wing_state(_h(_row("반려"), _row("판매중"))) == "selling"
+    # 순서 규칙은 한 곳에만 산다 — 네 함수가 각자 들고 있다가 동시에 거꾸로였던 자리다.
+    assert RW._ordered_rows({"data": []}) == []
+    src = __import__("pathlib").Path("src/pipeline/reject_watch.py").read_text(encoding="utf-8")
+    assert src.count("_ordered_rows(history)") >= 4, "순서 규칙을 다시 각자 들고 있다"
 
 
 # ── 계측: 방향을 실측으로 확정하기 위한 로그 ─────────────────────────────────
@@ -136,7 +155,10 @@ def test_every_rotation_outcome_is_findable_by_one_search_term():
     for outcome in ("실패", "큐 잔류", "감시 대상 없음", "오류(백그라운드)"):
         assert outcome in body, f"결말 누락: {outcome}"
     # 로그로 나가는 `반려감시` 줄은 전부 `반려감시 상태`여야 한다 — 하나만 새도 검색이 샌다.
-    #   (`반려감시 완료`는 상태 줄과 **같은 회전에 붙어 나오는** 짝이라 예외로 남긴다.)
+    #   (`반려감시 완료`는 상태 줄과 **같은 회전에 붙어 나오는** 짝이라 예외로 남긴다.
+    #    ※ 2026-09-09 부검: 이 예외가 **알림 판정을 가리고 있었다**(`알림 True/False`가 완료 줄에만
+    #      있었다). 판정·실패사유를 상태 줄로 옮겨 예외가 이제 무해해졌다 — 예외를 두려면
+    #      그 줄에 **판정이 없어야** 한다.)
     stray = [ln for ln in emitted
              if '"반려감시 상태' not in ln and '"반려감시 완료' not in ln]
     assert not stray, f"검색어 밖으로 샌 로그: {stray}"
@@ -258,3 +280,45 @@ def test_summary_counts_do_not_call_a_selling_row_a_rejection():
     assert sc["needs_manual"] == 0, "상태가 분류인 건을 '오너 확인 필요'로 세면 안 된다"
     # scanned는 **조회한 전건**이다(숨기지 않는다 — 줄인 건 '반려' 수뿐이다).
     assert sc["scanned"] == 3
+
+
+# ── 알림 부검(2026-09-09): 졸업 2회인데 「판매중 전환」 보고 0 ────────────────
+def test_graduation_alert_header_says_graduation_not_rejection():
+    """★ 부검 결론 — **헤더가 상태를 배신하고 있었다.**
+
+    A1이 승인 방향 알림을 만들었는데 제목은 `쿠팡 반려 감지`로 고정이었다. 그래서 졸업 소식이
+    **반려 알림 제목으로** 나갔다 — 받아도 '판매중 전환 알림'으로 안 읽힌다.
+    오너가 상정한 두 갈래(발송 안 됨 / 발송됐는데 미보고) 어디에도 없던 **세 번째**다:
+    발송은 되는 구조인데 **다른 소식으로 도착한다.**
+
+    문자열(alert 문구)이 아니라 **행 데이터**(wing_state)로 가른다 — 문구가 바뀌어도 안 깨지게.
+    """
+    from pathlib import Path
+    cron = Path("src/pricing/cron.py").read_text(encoding="utf-8")
+    body = cron.split("def _reject_notify_fn")[1].split("\ndef ")[0]
+    assert '"판매중 전환" if graduated else "반려 감지"' in body, "헤더가 아직 고정 문구다"
+    assert 'f"[고가브릿지] 쿠팡 {head_ko}' in body
+    # 졸업 건의 **옛 사유**를 현재 문제처럼 붙이지 않는다(같은 뿌리 — 과거의 말을 현재로 읽기).
+    assert "open_rows = [r for r in rows if r.get(\"wing_state\") not in _GRADUATED]" in body
+    assert "for r in open_rows[:5]" in body and "for r in open_rows:" in body
+
+
+def test_send_attempt_and_verdict_are_findable_by_the_one_search_term():
+    """★ 두 번째 부검 소득 — **판정 필드가 오너 검색어 밖에 있었다.**
+
+    `알림 True/False`는 `반려감시 완료` 줄에만 있었는데, 그 줄은 「반려감시 상태」 검색에 안 걸린다.
+    검색어를 통일했다고 보고해 놓고 정작 **판정을 못 보게 해 뒀다**(내 보고의 구멍).
+    그리고 `notify_error`는 **어디에도 로그되지 않아** '안 보냄'과 '보내려다 실패'가 구분되지 않았다.
+
+    이제 한 검색으로 셋이 다 나온다: 발송 **시도**(직전 줄) · 발송 **판정** · 실패 **사유**.
+    """
+    from pathlib import Path
+    cron = Path("src/pricing/cron.py").read_text(encoding="utf-8")
+    emitted = [ln.strip() for ln in cron.splitlines() if "logger." in ln and "반려감시" in ln]
+    body = "\n".join(emitted)
+    # 발송 시도 — send_telegram **직전**에 찍히는 줄. 있으면 호출됨, 없으면 notify_fn 미호출.
+    assert '"반려감시 상태·알림 발송: %s"' in body, "발송 시도 줄이 검색어 밖이다"
+    # 판정 + 실패 사유 — 상태 줄에서 같이 읽힌다.
+    state_line = next(ln for ln in emitted if "큐 잔류" in ln)
+    assert "알림 %s" in state_line, "판정이 상태 줄에 없다"
+    assert "notify_error" in cron and "알림실패" in cron, "실패 사유가 로그되지 않는다"
