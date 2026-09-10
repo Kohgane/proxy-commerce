@@ -154,11 +154,15 @@ def test_no_fourth_duplicate_component():
     똑같은 부채가 하나 더 생긴다(그 주석이 브레이크다).
     """
     css = CSS.read_text(encoding="utf-8")
-    assert ".od-filter, .op-filter {" in css, "선택자 승격이 사라졌다"
+    # 6-j: 승격을 **개명으로 완결**했다. 6-g에선 `.od-filter, .op-filter`로 이름 둘을 남겼는데,
+    #   이름이 둘이면 다음 화면이 어느 쪽을 쓸지 고르게 되고 그게 세 번째 이름의 시작이다.
+    #   이 계약의 의도("넷째를 만들지 않는다")는 그대로 — 검사 대상만 최종형으로 옮긴다.
+    assert ".od-filter" not in css, "옛 이름이 남았다(개명 미완)"
+    assert ".op-filter {" in css, "공용 필터 선언이 사라졌다"
     assert ".ct-filter" not in css, "같은 일을 하는 넷째 컴포넌트를 만들었다"
     assert 'class="op-filter' in _body(TPL)
-    # 선언은 6-e 것 그대로 — 승격은 이름만이다.
-    block = css.split(".od-filter, .op-filter {")[1].split("}")[0]
+    # 선언은 6-e 것 그대로 — 승격·개명은 이름만이다.
+    block = css.split(".op-filter {")[1].split("}")[0]
     assert "display: flex" in block and "flex-wrap: wrap" in block
 
 

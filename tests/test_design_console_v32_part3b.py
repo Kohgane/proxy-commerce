@@ -55,7 +55,8 @@ def test_collect_history_summary_editorial(client):
 def test_sourcing_hub_editorial(client):
     html = client.get("/seller/sourcing?keyword=에코백").get_data(as_text=True)
     assert "console-kpi-label" in html       # 헤더/분석 오버라인
-    # 6-i: 인라인 → `.si-kpi-v`. 분석 수치가 세리프라는 의도는 그대로고, 자리만 토큰 CSS로 옮겼다.
+    # 6-i: 인라인 → 토큰 CSS. 6-j: 슬라이스별 복사본(`.si-kpi`/`.rw-kpi`)을 **공용 `.op-kpi`**로 합쳤다.
+    #   분석 수치가 세리프라는 의도는 내내 그대로다 — 검사 대상만 최종 이름으로 따라간다.
     from pathlib import Path as _P
-    assert ".si-kpi-v { font-family: var(--font-display)" in _P("src/static/app.css").read_text(encoding="utf-8")
+    assert ".op-kpi-v { font-family: var(--font-display)" in _P("src/static/app.css").read_text(encoding="utf-8")
     assert "AI 소싱·등록" in html              # 기존 식별 문구 보존(무회귀)

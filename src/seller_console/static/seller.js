@@ -141,6 +141,9 @@ function kgpFriendlyError(raw) {
   else if (raw.error) msg = String(raw.error);
   else if (raw.message) msg = String(raw.message);
   else { try { msg = String(raw); } catch (e) { msg = ''; } }
+  // 6-j: 알아볼 수 없는 객체는 `String()`이 **`[object Object]`**를 준다 — 그게 그대로
+  //   사용자 화면에 나갔다(개발 메시지 가리기의 구멍). 원문이 아니라 일반 안내로 떨어뜨린다.
+  if (/^\[object \w+\]$/.test(msg)) msg = '';
   msg = (msg || '').trim();
   // 코드/패턴 → 쉬운 문장(무엇+왜+다음 행동). 서버가 env/HTTP를 줘도 친절 문장으로 가린다.
   const rules = [

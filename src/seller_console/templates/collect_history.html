@@ -127,7 +127,7 @@
           </select>
         </div>
           <div class="col-6 col-md-auto">
-            <button type="submit" class="btn btn-primary btn-sm w-100">적용</button>
+            <button type="submit" class="btn btn-ghost btn-sm w-100">적용</button>
           </div>
           <div class="col-6 col-md-auto">
             <a href="/seller/collect/history" class="btn btn-ghost btn-sm w-100">초기화</a>
@@ -853,13 +853,13 @@ async function runBulkArchiveCandidates() {
       body: JSON.stringify({item_ids: ids, status: 'archived'}),
     });
     const ctype = resp.headers.get('content-type') || '';
-    if (!ctype.includes('application/json')) { pcToast(`요청 실패 (HTTP ${resp.status}).`, 'error'); return; }
+    if (!ctype.includes('application/json')) { pcToast(kgpFriendlyError('HTTP ' + resp.status), 'error'); return; }
     const data = await resp.json();
     if (!data.ok) { pcToast(data.error || '보관 실패', 'error'); return; }
     pcToast(`${data.updated}건을 보관했어요. ‘보관’ 목록에서 복원할 수 있어요.`, 'success');
     setTimeout(() => location.reload(), 700);   // 보관된 항목은 정리 후보에서 빠지도록 재조회
   } catch (err) {
-    pcToast('요청 실패: ' + err.message, 'error');
+    pcToast(kgpFriendlyError(err), 'error');
   } finally {
     setButtonLoading(btn, false);
   }
@@ -894,7 +894,7 @@ async function runBulkStatus(status) {
       body: JSON.stringify({item_ids: ids, status: status}),
     });
     const ctype = resp.headers.get('content-type') || '';
-    if (!ctype.includes('application/json')) { pcToast(`요청 실패 (HTTP ${resp.status}).`, 'error'); return; }
+    if (!ctype.includes('application/json')) { pcToast(kgpFriendlyError('HTTP ' + resp.status), 'error'); return; }
     const data = await resp.json();
     if (!data.ok) { pcToast(data.error || '상태 변경 실패', 'error'); return; }
     // 상태 배지 갱신
@@ -910,7 +910,7 @@ async function runBulkStatus(status) {
     bootstrap.Modal.getInstance(document.getElementById('bulkStatusModal'))?.hide();
     pcToast(`${data.updated}개 상품 상태를 변경했습니다.`, 'success');
   } catch (err) {
-    pcToast('요청 실패: ' + err.message, 'error');
+    pcToast(kgpFriendlyError(err), 'error');
   }
 }
 async function runBulkDuplicate() {
@@ -925,13 +925,13 @@ async function runBulkDuplicate() {
       body: JSON.stringify({item_ids: ids}),
     });
     const ctype = resp.headers.get('content-type') || '';
-    if (!ctype.includes('application/json')) { pcToast(`요청 실패 (HTTP ${resp.status}).`, 'error'); return; }
+    if (!ctype.includes('application/json')) { pcToast(kgpFriendlyError('HTTP ' + resp.status), 'error'); return; }
     const data = await resp.json();
     if (!data.ok) { pcToast(data.error || '복제 실패', 'error'); return; }
     pcToast(`${data.duplicated}개 복제했습니다. 목록을 새로고침합니다.`, 'success');
     setTimeout(() => location.reload(), 800);
   } catch (err) {
-    pcToast('요청 실패: ' + err.message, 'error');
+    pcToast(kgpFriendlyError(err), 'error');
   } finally {
     setButtonLoading(btn, false);
   }
@@ -961,7 +961,7 @@ async function runBulkPrice() {
       method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
     });
     const ctype = resp.headers.get('content-type') || '';
-    if (!ctype.includes('application/json')) { pcToast(`요청 실패 (HTTP ${resp.status}).`, 'error'); return; }
+    if (!ctype.includes('application/json')) { pcToast(kgpFriendlyError('HTTP ' + resp.status), 'error'); return; }
     const data = await resp.json();
     if (!data.ok) { pcToast(data.error || '적용 실패', 'error'); return; }
     // 변경된 가격을 행에 반영
@@ -976,7 +976,7 @@ async function runBulkPrice() {
     bootstrap.Modal.getInstance(document.getElementById('bulkPriceModal'))?.hide();
     pcToast(`${data.updated}개 상품에 적용했습니다.`, 'success');
   } catch (err) {
-    pcToast('요청 실패: ' + err.message, 'error');
+    pcToast(kgpFriendlyError(err), 'error');
   } finally {
     setButtonLoading(btn, false);
   }
@@ -993,7 +993,7 @@ async function runBulkClean() {
       body: JSON.stringify({item_ids: ids}),
     });
     const ctype = resp.headers.get('content-type') || '';
-    if (!ctype.includes('application/json')) { pcToast(`요청 실패 (HTTP ${resp.status}).`, 'error'); return; }
+    if (!ctype.includes('application/json')) { pcToast(kgpFriendlyError('HTTP ' + resp.status), 'error'); return; }
     const data = await resp.json();
     if (!data.ok) {
       if (data.no_rules) {
@@ -1013,7 +1013,7 @@ async function runBulkClean() {
     });
     pcToast(`${data.updated}개 상품명을 정제했습니다.`, 'success');
   } catch (err) {
-    pcToast('요청 실패: ' + err.message, 'error');
+    pcToast(kgpFriendlyError(err), 'error');
   } finally {
     setButtonLoading(btn, false);
   }
@@ -1030,7 +1030,7 @@ async function runBulkTranslate() {
       body: JSON.stringify({item_ids: ids}),
     });
     const ctype = resp.headers.get('content-type') || '';
-    if (!ctype.includes('application/json')) { pcToast(`요청 실패 (HTTP ${resp.status}).`, 'error'); return; }
+    if (!ctype.includes('application/json')) { pcToast(kgpFriendlyError('HTTP ' + resp.status), 'error'); return; }
     const data = await resp.json();
     if (!data.ok) { pcToast(data.error || '번역 실패', 'error'); return; }
     // 번역된 제목으로 행 갱신 + v87-W9 item5: 성공 시 '번역 실패'/'원문' 뱃지 즉시 소거(잔존 금지, 리로드 불필요).
@@ -1077,7 +1077,7 @@ async function runBulkTranslate() {
       pcToast((topReason ? `번역 실패 — ${topReason}` : (data.message || '번역기가 설정되지 않아 원문을 유지했습니다.')), 'warning');
     }
   } catch (err) {
-    pcToast('요청 실패: ' + err.message, 'error');
+    pcToast(kgpFriendlyError(err), 'error');
   } finally {
     setButtonLoading(btn, false);
   }
@@ -1102,14 +1102,14 @@ async function runBulkGroup() {
       body: JSON.stringify({item_ids: ids, group_id: groupName ? '' : groupId, group_name: groupName}),
     });
     const ctype = resp.headers.get('content-type') || '';
-    if (!ctype.includes('application/json')) { pcToast(`요청 실패 (HTTP ${resp.status}).`, 'error'); return; }
+    if (!ctype.includes('application/json')) { pcToast(kgpFriendlyError('HTTP ' + resp.status), 'error'); return; }
     const data = await resp.json();
     if (!data.ok) { pcToast(data.error || '그룹 지정 실패', 'error'); return; }
     bootstrap.Modal.getInstance(document.getElementById('bulkGroupModal'))?.hide();
     pcToast(`${data.updated}개 상품을 그룹에 배정했습니다.`, 'success');
     if (groupName) setTimeout(() => location.reload(), 700);  // 새 그룹이 필터에 보이도록
   } catch (err) {
-    pcToast('요청 실패: ' + err.message, 'error');
+    pcToast(kgpFriendlyError(err), 'error');
   } finally {
     setButtonLoading(btn, false);
   }
@@ -1126,7 +1126,7 @@ async function deleteGroup(gid, el) {
     const li = el.closest('li'); if (li) li.remove();
     pcToast('그룹을 삭제했습니다.', 'success');
   } catch (err) {
-    pcToast('요청 실패: ' + err.message, 'error');
+    pcToast(kgpFriendlyError(err), 'error');
   }
 }
 
@@ -1149,13 +1149,13 @@ async function runBulkCategory() {
       body: JSON.stringify({item_ids: ids, category_code: auto ? '' : code, auto: auto}),
     });
     const ctype = resp.headers.get('content-type') || '';
-    if (!ctype.includes('application/json')) { pcToast(`요청 실패 (HTTP ${resp.status}).`, 'error'); return; }
+    if (!ctype.includes('application/json')) { pcToast(kgpFriendlyError('HTTP ' + resp.status), 'error'); return; }
     const data = await resp.json();
     if (!data.ok) { pcToast(data.error || '카테고리 지정 실패', 'error'); return; }
     bootstrap.Modal.getInstance(document.getElementById('bulkCategoryModal'))?.hide();
     pcToast(`${data.updated}개 상품에 카테고리를 지정했습니다.`, 'success');
   } catch (err) {
-    pcToast('요청 실패: ' + err.message, 'error');
+    pcToast(kgpFriendlyError(err), 'error');
   } finally {
     setButtonLoading(btn, false);
   }
@@ -1185,7 +1185,7 @@ async function runBulkDelete() {
     });
     const ctype = resp.headers.get('content-type') || '';
     if (!ctype.includes('application/json')) {
-      pcToast(`삭제 요청 실패 (HTTP ${resp.status}).`, 'error'); window._kgpDeleting = false; return;
+      pcToast(kgpFriendlyError('HTTP ' + resp.status), 'error'); window._kgpDeleting = false; return;
     }
     const data = await resp.json();
     bootstrap.Modal.getInstance(document.getElementById('bulkDeleteModal'))?.hide();
@@ -1208,7 +1208,7 @@ async function runBulkDelete() {
     // 삭제가 서버에 커밋·검증된 뒤에만 재조회(재진입해도 유지). _kgpDeleting은 reload로 자연 해제.
     setTimeout(() => location.reload(), 600);
   } catch (err) {
-    pcToast('삭제 요청 실패: ' + err.message, 'error');
+    pcToast(kgpFriendlyError(err), 'error');
     window._kgpDeleting = false;
   } finally {
     setButtonLoading(btn, false);
@@ -1284,7 +1284,7 @@ async function runBulkUpload() {
     pcToast(`${succeeded}/${ids.length}개 마켓 등록 완료`, succeeded === ids.length ? 'success' : 'warning');
   } catch (err) {
     prog.classList.add('d-none');
-    pcToast('일괄 업로드 요청 실패: ' + err.message, 'error');
+    pcToast(kgpFriendlyError(err), 'error');
   } finally {
     setButtonLoading(btn, false);
   }
