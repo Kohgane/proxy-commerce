@@ -78,12 +78,12 @@
     {# H3②+KPI: 카드 2장(반려 조회·유형별)을 **한 줄 스트립**으로. 게이트 노랑 배너도 여기 자물쇠 뱃지 하나로 —
        상태는 한 눈에 보이면 되고, 왜 잠겼는지는 뱃지가 물고 있는다(title + 좌측 접힘 설명). #}
     <div class="op-strip rw-strip">
-      <span class="rw-kpi"><span class="rw-kpi-k">반려 조회</span><span class="rw-kpi-v">{{ scan.scanned }}</span></span>
+      <span class="op-kpi"><span class="op-kpi-k">반려 조회</span><span class="op-kpi-v">{{ scan.scanned }}</span></span>
       {% for k, meta in kinds.items() %}{% if k != 'unknown' and scan.by_kind.get(k) %}
-      <span class="rw-kpi"><span class="rw-kpi-k">{{ meta.ko }}</span><span class="rw-kpi-v">{{ scan.by_kind.get(k) }}</span></span>
+      <span class="op-kpi"><span class="op-kpi-k">{{ meta.ko }}</span><span class="op-kpi-v">{{ scan.by_kind.get(k) }}</span></span>
       {% endif %}{% endfor %}
       {% if scan.needs_manual %}
-      <span class="rw-kpi is-warn"><span class="rw-kpi-k">미분류(오너 확인)</span><span class="rw-kpi-v">{{ scan.needs_manual }}</span></span>
+      <span class="op-kpi is-warn"><span class="op-kpi-k">미분류(오너 확인)</span><span class="op-kpi-v">{{ scan.needs_manual }}</span></span>
       {% endif %}
       {% if scan.by_state %}
       <span class="rw-states">

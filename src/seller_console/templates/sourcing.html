@@ -275,10 +275,10 @@
     <div class="op-strip si-strip">
       <span class="op-tile-sub si-strip-k">소싱 분석 · 국내 시장</span>
       {% for m in analysis.metrics %}
-      <span class="si-kpi" title="{{ m.note }}">
-        <span class="si-kpi-k">{{ m.label }}</span>
-        {% if m.value is not none %}<span class="si-kpi-v">{{ m.value }}</span>
-        {% else %}<span class="si-kpi-none">데이터 없음</span>{% endif %}
+      <span class="op-kpi" title="{{ m.note }}">
+        <span class="op-kpi-k">{{ m.label }}</span>
+        {% if m.value is not none %}<span class="op-kpi-v">{{ m.value }}</span>
+        {% else %}<span class="op-kpi-none">데이터 없음</span>{% endif %}
       </span>
       {% endfor %}
     </div>

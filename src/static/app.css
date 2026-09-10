@@ -884,6 +884,15 @@ main:has(> .op-shell) > .op-shell { flex: 1 1 auto; height: auto; min-height: 0;
 }
 .op-tile-sub { font-size: .74rem; color: var(--text-muted); line-height: 1.5; }
 
+/* ── 6-j: 숫자 KPI 공용 문법 (`.op-tile`과 역할이 다르다 — 타일은 칸, KPI는 **한 줄 스트립**) ──
+   6-h(`.rw-kpi`)와 6-i(`.si-kpi`)가 같은 선언을 각자 복사해 갖고 있었다.
+   규칙을 복사하면 다음 화면에서 또 복사된다 — 선언은 여기 하나, 화면은 **치수만** 덮는다. */
+.op-kpi { display: inline-flex; align-items: baseline; gap: var(--space-2); }
+.op-kpi-k { font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
+.op-kpi-v { font-family: var(--font-display); font-weight: var(--w-semi); font-size: 1.35rem; line-height: 1; }
+.op-kpi-none { font-size: .76rem; color: var(--text-muted); }
+.op-kpi.is-warn .op-kpi-v { color: var(--warn); }
+
 /* 목록 — 비어도 '경계 있는 목록'으로 읽히게(5-f 질감 승계). */
 .op-list { display: flex; flex-direction: column; }
 .op-row {
@@ -949,9 +958,14 @@ main:has(> .op-shell) > .op-shell { flex: 1 1 auto; height: auto; min-height: 0;
 
    ★ 이 슬라이스는 템플릿에 흩어져 있던 `<style>` 5장(수집 이력 1 · 편집 4)을 옮겨 온 것이다.
      클래스 이름은 그대로 둔다 — JS가 잡는 훅이라 개명은 로직 변경이다(브리프: 로직 0). */
-.ch-page {
-  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: var(--space-5); align-items: start;
+/* 6-j: 다섯 화면(6-c·6-d·6-e·6-f·6-g)의 페이지 그리드 선언이 **글자 하나까지 같았다**.
+   이름만 다른 같은 규칙이라 선택자 목록으로 접는다. 2단 화면(`.rw-page`·`.si-page`)은
+   진짜로 다른 규칙이라 그대로 둔다 — 같아 보인다고 묶으면 그게 다음 결함이다. */
+.ch-page, .mk-page, .od-page, .mc-page, .ct-page {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--space-5);
+  align-items: start;
 }
 .ch-page > * { grid-column: 1 / -1; }               /* 기본 전폭, 필요한 것만 op-span-*로 좁힌다 */
 .ch-head { margin-bottom: calc(var(--space-5) * -1 + var(--space-4)); }
@@ -1528,10 +1542,6 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 
    높이는 내용이 정한다(6-c 실측 교훈): 마켓 카드는 안에 담기는 줄 수가 마켓마다 다르다.
    비율을 고정하면 진단 문구가 길어질 때 잘리거나 여백만 남는다. */
-.mk-page {
-  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: var(--space-5); align-items: start;
-}
 .mk-page > * { grid-column: 1 / -1; }
 
 /* 마켓 타일 — Bauhaus 기하 모듈이되 비율 고정 없음. 신호는 우상단 사각 1점. */
@@ -1708,10 +1718,6 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
      `.ch-stat`(6-c) · `.mk-count`(6-d) · `.od-stat`(여기). 셋이 하는 일이 같다.
      지금 합치려면 이미 채점 끝난 두 화면의 선언을 건드려야 해서 **6-j에서 한 번에** 합친다.
      (그 전까지 넷째를 만들지 않는다 — 이 주석이 그 브레이크다.) */
-.od-page {
-  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: var(--space-5); align-items: start;
-}
 .od-page > * { grid-column: 1 / -1; }
 .od-page .form-select, .od-page .form-control, .od-page .op-card-foot .btn { min-height: 44px; }
 /* 표 안 행 액션까지 44px를 강제하면 행이 두 배로 높아진다 — 목록은 밀도가 기능이다.
@@ -1740,11 +1746,11 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .od-stat.is-zero::after { display: none; }
 
 /* 필터 — 한 줄에 눕히고 넘치면 접힌다(칸마다 col-md-* 쪼개기 대신). */
-.od-filter, .op-filter { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: flex-end; }
-.od-filter > label, .op-filter > label { flex: 0 0 auto; }
-.od-filter .od-f, .op-filter .op-f { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
-.od-filter .od-f-wide, .op-filter .op-f-wide { flex: 1 1 14rem; }
-.od-filter .form-select, .od-filter .form-control,
+.op-filter { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: flex-end; }
+.op-filter > label, .op-filter > label { flex: 0 0 auto; }
+.op-filter .od-f, .op-filter .op-f { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.op-filter .od-f-wide, .op-filter .op-f-wide { flex: 1 1 14rem; }
+.op-filter .form-select, .op-filter .form-control,
 .op-filter .form-select, .op-filter .form-control { min-width: 8rem; }
 .od-checks { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
 
@@ -1834,10 +1840,6 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
    실측이 잡은 것: `btn-outline-primary`가 소싱처 칩·현지화·확장 안내에 8개 흩어져
    **어느 것이 다음 행동인지 안 읽혔다.** 이 화면은 단계가 넷(URL→미리보기→마켓→업로드)이라
    **단계마다 채운 버튼 1개**가 규율이다 — 칩은 이동 수단이지 행동이 아니다. */
-.mc-page {
-  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: var(--space-5); align-items: start;
-}
 .mc-page > * { grid-column: 1 / -1; }
 .mc-page .form-control, .mc-page .form-select,
 .mc-page .op-card-foot .btn, .mc-page .op-card-head .btn { min-height: 44px; }
@@ -1929,11 +1931,7 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 
    ※ 넷째를 만들지 않는다(6-e 주석의 브레이크). 필터 줄·행 액션 위계는 이미 6-e가
      같은 선언으로 갖고 있어서 **이름만 공용으로 승격**하고 선언은 건드리지 않았다
-     — `.od-filter` → `.od-filter, .op-filter`. 완전한 개명은 6-j 몫. */
-.ct-page {
-  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: var(--space-5); align-items: start;
-}
+     — `.op-filter` → `.op-filter`. 완전한 개명은 6-j 몫. */
 .ct-page > * { grid-column: 1 / -1; }
 /* 44px은 **카드 밖·헤더 조작 요소**에만. 표 행까지 키우면 목록 밀도가 죽는다(6-e 판단 승계). */
 .ct-page .op-card-head .btn,
@@ -1977,11 +1975,9 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .rw-card-table { max-height: 19rem; }
 
 /* 요약 스트립 — 카드 2장을 한 줄로. 수치는 세리프, 라벨은 오버라인(6-a 문법). */
+/* 6-j: 숫자 KPI 문법은 **공용 `.op-kpi`**(위 op-* 절)다. 여기선 이 화면의 치수만 덮는다 —
+   6-h·6-i가 같은 선언을 각자 복사해 갖고 있었고, 그게 '타일 3중복' 부채의 실체였다. */
 .rw-strip { margin-bottom: 0; padding: var(--space-2) var(--space-4); }
-.rw-kpi { display: inline-flex; align-items: baseline; gap: var(--space-2); }
-.rw-kpi-k { font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
-.rw-kpi-v { font-family: var(--font-display); font-weight: var(--w-semi); font-size: 1.35rem; line-height: 1; }
-.rw-kpi.is-warn .rw-kpi-v { color: var(--warn); }
 .rw-states { display: inline-flex; flex-wrap: wrap; gap: var(--space-2);
   padding-left: var(--space-3); border-left: 1px solid var(--border); }
 
@@ -2120,10 +2116,7 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 /* 분석 6칸이 카드 6장으로 세로로 쌓여 있었다 → 한 줄 스트립(6-h 승계). */
 .si-strip { margin-bottom: 0; padding: var(--space-2) var(--space-4); flex-wrap: wrap; gap: var(--space-4); }
 .si-strip-k { padding-right: var(--space-3); border-right: 1px solid var(--border); }
-.si-kpi { display: inline-flex; align-items: baseline; gap: var(--space-2); }
-.si-kpi-k { font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
-.si-kpi-v { font-family: var(--font-display); font-weight: var(--w-semi); font-size: 1.2rem; line-height: 1; }
-.si-kpi-none { font-size: .76rem; color: var(--text-muted); }
+.si-strip .op-kpi-v { font-size: 1.2rem; }   /* 6-j: 문법은 공용, 치수만 이 화면 몫 */
 
 .si-rec { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3); }
 .si-kwsnap { display: flex; flex-wrap: wrap; gap: var(--space-2); }
