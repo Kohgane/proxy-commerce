@@ -320,8 +320,16 @@ def _run_reject_watch(app, account: str, limit: int, budget: float, dry_run: boo
                 logger.info("반려감시 완료(%s): %s · 기록 %s · 알림 %s · %.1fs%s",
                             account, out.get("alert"), out.get("recorded"), out.get("notified"),
                             total, "  ⚠️예산소진" if out.get("budget_exhausted") else "")
-                logger.info("반려감시 상태(%s): 큐 잔류 %s · 졸업 %s%s",
+                # ★ 부검(2026-09-09): **알림 판정이 오너 검색어 밖에 있었다.** `알림 True/False`는
+                #   `반려감시 완료` 줄에만 있었는데 그 줄은 「반려감시 상태」 검색에 안 걸린다
+                #   — 통일했다고 보고해 놓고 정작 판정 필드를 못 보게 해 뒀다. 상태 줄로 옮긴다.
+                #   `notify_error`는 **어디에도 로그되지 않았다** — 정직 분리한다고 만든 필드가
+                #   관측되지 않으면 정직하지 않다. 실패 사유를 여기서 말하게 한다.
+                _nerr = out.get("notify_error") or ""
+                logger.info("반려감시 상태(%s): 큐 잔류 %s · 졸업 %s · 알림 %s%s%s",
                             account, out.get("stayed"), out.get("graduated"),
+                            out.get("notified"),
+                            f" · 알림실패 {_nerr}" if _nerr else "",
                             f" · 내역 {_dist}" if _dist else "")
             else:
                 logger.info("반려감시 상태(%s): 감시 대상 없음 — 큐 0건(정상 종료) · %.1fs", account, total)
@@ -345,25 +353,37 @@ def _reject_notify_fn(account: str):
     **가짜 발송 0:** 채널 미설정/dry-run이면 send_telegram이 False를 준다 → 그대로 실패로 올려
     `notified=False` + 사유가 남는다(보냈다고 주장하지 않는다). 내용은 로그에도 남겨 누락 0.
     """
+    _GRADUATED = ("selling", "approved")
+
     def _notify(alert: str, rows):
         def _tag(r):
             # 팔리던 상품이 내려간 건은 한눈에 보이게(신규 반려와 구분 — 매출이 즉시 멈춘다).
             return "⚠판매중→반려 " if r.get("was_selling") else ""
+        # ★ 부검(2026-09-09): 헤더가 **상태를 배신하고 있었다.** 승인 방향 전환(A1)이 생긴 뒤에도
+        #   제목이 `쿠팡 반려 감지`로 고정이라, 졸업 소식이 반려 알림으로 나갔다 — 받아도
+        #   '판매중 전환 알림'으로 안 읽힌다(오너 미보고의 구조적 원인 후보).
+        #   문자열을 훑지 않고 **행 데이터**로 가른다(alert 문구가 바뀌어도 안 깨지게).
+        graduated = [r for r in rows if r.get("wing_state") in _GRADUATED]
+        open_rows = [r for r in rows if r.get("wing_state") not in _GRADUATED]
+        head_ko = "판매중 전환" if graduated else "반려 감지"
+        # 유형·미분류 원문은 **아직 열린 건**만 — 졸업한 건의 옛 사유를 현재 문제처럼 붙이지 않는다.
         kinds = " · ".join(f"{_tag(r)}{r.get('kind_ko')}({r.get('sid')})"
-                           for r in rows[:5] if r.get("comment"))
+                           for r in open_rows[:5] if r.get("comment"))
         # **미분류는 사유 원문 앞 80자를 동봉** — 오너가 Wing을 안 열고도 1차 판단할 수 있게.
         unknown_lines = []
-        for r in rows:
+        for r in open_rows:
             if r.get("kind") == "unknown" and r.get("comment"):
                 head = " ".join(str(r["comment"]).split())[:80]
                 unknown_lines.append(f"· {r.get('sid')}: {head}")
             if len(unknown_lines) >= 3:                    # 알림이 길어지지 않게 상위 3건만
                 break
-        body = f"[고가브릿지] 쿠팡 반려 감지 · {account}\n{alert}" + (f"\n{kinds}" if kinds else "")
+        body = f"[고가브릿지] 쿠팡 {head_ko} · {account}\n{alert}" + (f"\n{kinds}" if kinds else "")
         if unknown_lines:
             body += "\n미분류 사유 원문:\n" + "\n".join(unknown_lines)
         from src.notifications.telegram import send_telegram
-        logger.info("반려 알림: %s", body.replace("\n", " | "))
+        # 이 줄은 send_telegram **직전**에 찍힌다 — 있으면 발송을 시도한 것이고,
+        #   없으면 notify_fn이 아예 안 불린 것이다. 그래서 회수 검색어에 포함시킨다.
+        logger.info("반려감시 상태·알림 발송: %s", body.replace("\n", " | "))
         if not send_telegram(body, urgency="warning"):
             raise RuntimeError("알림 채널 미설정 또는 발송 실패(TELEGRAM_BOT_TOKEN/CHAT_ID)")
     return _notify

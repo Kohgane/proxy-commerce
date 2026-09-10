@@ -98,9 +98,28 @@ def test_time_sorting_beats_row_order():
     assert RW.wing_state(oldest_first) == "selling"
 
 
-def test_without_timestamps_it_falls_back_to_row_order():
-    """시각이 없으면 순서를 쓸 수밖에 없다 — 그 사실을 숨기지 않는다(계측이 방향을 확정할 때까지)."""
+def test_measured_direction_is_recorded_but_not_extrapolated():
+    """★★ **방향 실측 확정(2026-09-09, 크론 로그 원문): Wing 이력은 최신 우선.**
+
+    옛 `states[-1]` 가정은 틀린 정도가 아니라 **정확히 거꾸로**였다 — 마지막 행은 최신이 아니라
+    가장 오래된 행이었다. 그 사실을 여기 근거로 박는다(가정 폐기 기록).
+
+    다만 **시각 없는 입력까지 뒤집지는 않는다.** 잰 것은 *실제 응답*(시각을 달고 오는)의 방향이지,
+    시각 없는 응답의 순서는 잰 적이 없다 — 거기까지 가면 실측이 아니라 외삽이고,
+    읽는 순서로 쓰인 기존 픽스처의 의미를 **조용히 뒤집게** 된다. 실제 경로는 시각이 있어
+    이 폴백을 타지 않는다. (실측을 넓게 적용하고 싶으면 그 케이스를 먼저 재야 한다.)
+    """
+    # 시각이 있으면 순서와 무관하게 시각이 이긴다 — 실측이 필요 없는 자리.
+    assert RW.wing_state(_h(_row("판매중", "2026-09-07 09:00"),
+                            _row("반려", "2026-09-03 00:00"))) == "selling"
+    assert RW.wing_state(_h(_row("반려", "2026-09-03 00:00"),
+                            _row("판매중", "2026-09-07 09:00"))) == "selling"
+    # 시각이 없으면 응답 순서를 **그대로** 쓴다(외삽 0).
     assert RW.wing_state(_h(_row("반려"), _row("판매중"))) == "selling"
+    # 순서 규칙은 한 곳에만 산다 — 네 함수가 각자 들고 있다가 동시에 거꾸로였던 자리다.
+    assert RW._ordered_rows({"data": []}) == []
+    src = __import__("pathlib").Path("src/pipeline/reject_watch.py").read_text(encoding="utf-8")
+    assert src.count("_ordered_rows(history)") >= 4, "순서 규칙을 다시 각자 들고 있다"
 
 
 # ── 계측: 방향을 실측으로 확정하기 위한 로그 ─────────────────────────────────
@@ -136,7 +155,10 @@ def test_every_rotation_outcome_is_findable_by_one_search_term():
     for outcome in ("실패", "큐 잔류", "감시 대상 없음", "오류(백그라운드)"):
         assert outcome in body, f"결말 누락: {outcome}"
     # 로그로 나가는 `반려감시` 줄은 전부 `반려감시 상태`여야 한다 — 하나만 새도 검색이 샌다.
-    #   (`반려감시 완료`는 상태 줄과 **같은 회전에 붙어 나오는** 짝이라 예외로 남긴다.)
+    #   (`반려감시 완료`는 상태 줄과 **같은 회전에 붙어 나오는** 짝이라 예외로 남긴다.
+    #    ※ 2026-09-09 부검: 이 예외가 **알림 판정을 가리고 있었다**(`알림 True/False`가 완료 줄에만
+    #      있었다). 판정·실패사유를 상태 줄로 옮겨 예외가 이제 무해해졌다 — 예외를 두려면
+    #      그 줄에 **판정이 없어야** 한다.)
     stray = [ln for ln in emitted
              if '"반려감시 상태' not in ln and '"반려감시 완료' not in ln]
     assert not stray, f"검색어 밖으로 샌 로그: {stray}"
@@ -190,3 +212,113 @@ def test_rejection_only_alert_is_unchanged():
     H = {"B": _h(_row("반려", "2026-09-05 00:00", "상표권 침해"))}
     _out, sent = _watch(H, ["B"])
     assert sent[0].startswith("반려 1건")
+
+
+# ── 화면: 확정 상태가 낡은 사유에 가려지지 않는다 ────────────────────────────
+def test_settled_state_is_shown_before_the_comment_based_kind():
+    """★ 오너 실측(2026-09-07): status=승인인데 분류 뱃지가 「임시저장(승인요청 누락)」이었다.
+
+    `kind`는 **comment 전용**이고(#705), comment는 *과거에 한 말*이다. 그 뒤 상태가 바뀌면
+    뱃지가 상태와 어긋난다 — 그리고 A1 이후 이 표엔 승인·판매중 행도 들어온다(수동 조회는
+    큐를 안 거치므로 `_WATCH_STATUSES` 밖 상태도 조회된다). 표의 전제가 바뀐 것이다.
+
+    #705 원칙은 **그대로 둔다**: kind는 여전히 comment로만 정한다.
+    바꾼 건 **표시 순서**뿐 — 확정 상태를 먼저 놓고, 사유 유형은 '지난 사유'로 아래에.
+    """
+    from pathlib import Path
+    tpl = Path("src/seller_console/templates/reject_watch.html").read_text(encoding="utf-8")
+    cell = tpl.split('<td data-label="분류">')[1].split("</td>")[0]
+    # 상태 분기가 kind 뱃지보다 **앞**에 있어야 순서가 성립한다.
+    assert cell.index("r.wing_state in ('approved', 'selling')") < cell.index("r.kind == 'unknown'")
+    assert "{{ r.wing_state_ko }}" in cell, "상태 라벨이 화면에 없다"
+    assert "지난 사유" in cell, "승인 건의 옛 유형을 현재 유형처럼 보이게 두면 안 된다"
+    # 확정이지만 조치가 필요한 상태(브랜드수정·증빙)도 상태를 먼저 보여 준다.
+    assert "r.wing_state in ('brand_fix', 'doc_required')" in cell
+    # 애플 카테고리 보조 표기는 **승인된 건엔 안 뜬다**(끝난 일의 처방을 계속 말하지 않는다).
+    assert "r.kind == 'apple_category' and r.wing_state not in ('approved', 'selling')" in tpl
+
+
+def test_kind_is_still_comment_only():
+    """★ #705는 안 건드렸다 — 상태를 kind 판정에 섞으면 그게 그 원칙을 깨는 것이다."""
+    import inspect
+    src = inspect.getsource(RW.classify_rejection)
+    assert "wing_state" not in src, "분류가 상태를 보기 시작했다(#705 위반)"
+    # 승인된 이력이어도 comment가 이미지 규격이면 kind는 그대로 이미지 규격이다.
+    cl = RW.classify_rejection("대표이미지는 최대 10M, 최소 500*500")
+    assert cl["kind"] == "image_spec"
+
+
+def test_settled_rows_carry_no_prescription_and_no_execute_button():
+    """★ 판매중 행에 「처방 실행」이 살아 있었다 — 누르면 **살아 있는 상품에 승인요청을 보낸다.**
+
+    처방도 comment 기준이라 상태와 어긋난 것(뱃지와 같은 뿌리). 끝난 일에는 처방이 없다.
+    문구만 바꾸고 버튼을 남기면 고친 게 아니라 가린 것이라, **버튼도 같은 조건으로 막는다.**
+    """
+    from pathlib import Path
+    tpl = Path("src/seller_console/templates/reject_watch.html").read_text(encoding="utf-8")
+    rx = tpl.split('<td data-label="처방">')[1].split("</td>")[0]
+    assert rx.index("r.wing_state in ('approved', 'selling')") < rx.index("r.kind == 'unknown'")
+    assert "조치 없음" in rx
+    run = tpl.split('<td data-label="실행"')[1].split("</td>")[0]
+    assert run.index("r.wing_state in ('approved', 'selling')") < run.index("r.kind == 'unknown'")
+
+
+def test_summary_counts_do_not_call_a_selling_row_a_rejection():
+    """★ 같은 유형 — 집계도 kind 기준이라 판매중이 "반려 3건 … 임시저장 1"에 섞였다(오너 실측).
+
+    숫자가 거짓이면 화면 전체가 거짓이 된다. 끝난 건은 반려 수에서 빼고 **따로 센다**(숨기지 않는다).
+    상태가 이미 분류인 건(브랜드수정·증빙)은 '미분류'로도 안 센다 — 같은 행을 두 번 다르게 부르게 된다.
+    """
+    H = {"A": _h(_row("임시저장중", "2026-09-03 00:00", "임시저장"), _row("판매중", "2026-09-07 09:00")),
+         "B": _h(_row("반려", "2026-09-05 09:30", "대표이미지 최소 500*500 미달")),
+         "C": _h(_row("브랜드 수정요청", "2026-09-06 14:20", "브랜드 등록 필요"))}
+    sc = RW.scan_rejections([{"sid": s, "title": "t", "account": "gogane"} for s in H],
+                            history_fn=lambda sid, acc: H[sid])
+    assert sc["alert"].startswith("판매중 1건 · 반려 2건"), sc["alert"]
+    assert "임시저장" not in sc["alert"], "판매중 건의 옛 유형이 아직 집계에 있다"
+    assert "브랜드 수정요청 1" in sc["alert"] and "미분류" not in sc["alert"]
+    assert sc["needs_manual"] == 0, "상태가 분류인 건을 '오너 확인 필요'로 세면 안 된다"
+    # scanned는 **조회한 전건**이다(숨기지 않는다 — 줄인 건 '반려' 수뿐이다).
+    assert sc["scanned"] == 3
+
+
+# ── 알림 부검(2026-09-09): 졸업 2회인데 「판매중 전환」 보고 0 ────────────────
+def test_graduation_alert_header_says_graduation_not_rejection():
+    """★ 부검 결론 — **헤더가 상태를 배신하고 있었다.**
+
+    A1이 승인 방향 알림을 만들었는데 제목은 `쿠팡 반려 감지`로 고정이었다. 그래서 졸업 소식이
+    **반려 알림 제목으로** 나갔다 — 받아도 '판매중 전환 알림'으로 안 읽힌다.
+    오너가 상정한 두 갈래(발송 안 됨 / 발송됐는데 미보고) 어디에도 없던 **세 번째**다:
+    발송은 되는 구조인데 **다른 소식으로 도착한다.**
+
+    문자열(alert 문구)이 아니라 **행 데이터**(wing_state)로 가른다 — 문구가 바뀌어도 안 깨지게.
+    """
+    from pathlib import Path
+    cron = Path("src/pricing/cron.py").read_text(encoding="utf-8")
+    body = cron.split("def _reject_notify_fn")[1].split("\ndef ")[0]
+    assert '"판매중 전환" if graduated else "반려 감지"' in body, "헤더가 아직 고정 문구다"
+    assert 'f"[고가브릿지] 쿠팡 {head_ko}' in body
+    # 졸업 건의 **옛 사유**를 현재 문제처럼 붙이지 않는다(같은 뿌리 — 과거의 말을 현재로 읽기).
+    assert "open_rows = [r for r in rows if r.get(\"wing_state\") not in _GRADUATED]" in body
+    assert "for r in open_rows[:5]" in body and "for r in open_rows:" in body
+
+
+def test_send_attempt_and_verdict_are_findable_by_the_one_search_term():
+    """★ 두 번째 부검 소득 — **판정 필드가 오너 검색어 밖에 있었다.**
+
+    `알림 True/False`는 `반려감시 완료` 줄에만 있었는데, 그 줄은 「반려감시 상태」 검색에 안 걸린다.
+    검색어를 통일했다고 보고해 놓고 정작 **판정을 못 보게 해 뒀다**(내 보고의 구멍).
+    그리고 `notify_error`는 **어디에도 로그되지 않아** '안 보냄'과 '보내려다 실패'가 구분되지 않았다.
+
+    이제 한 검색으로 셋이 다 나온다: 발송 **시도**(직전 줄) · 발송 **판정** · 실패 **사유**.
+    """
+    from pathlib import Path
+    cron = Path("src/pricing/cron.py").read_text(encoding="utf-8")
+    emitted = [ln.strip() for ln in cron.splitlines() if "logger." in ln and "반려감시" in ln]
+    body = "\n".join(emitted)
+    # 발송 시도 — send_telegram **직전**에 찍히는 줄. 있으면 호출됨, 없으면 notify_fn 미호출.
+    assert '"반려감시 상태·알림 발송: %s"' in body, "발송 시도 줄이 검색어 밖이다"
+    # 판정 + 실패 사유 — 상태 줄에서 같이 읽힌다.
+    state_line = next(ln for ln in emitted if "큐 잔류" in ln)
+    assert "알림 %s" in state_line, "판정이 상태 줄에 없다"
+    assert "notify_error" in cron and "알림실패" in cron, "실패 사유가 로그되지 않는다"

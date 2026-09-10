@@ -142,7 +142,11 @@ class TestSellerConsoleViews:
         assert resp.status_code == 200
         html = resp.get_data(as_text=True)
         assert "등록된 소싱처가 없습니다." in html
-        assert "소싱처 등록 시작" in html
+        # 무엇을·왜·어떻게 3단 안내는 그대로다(v24 P1). 6-i에서 한 줄로 줄였다가 이 계약이 잡아 되돌렸다.
+        assert "무엇을:" in html and "왜:" in html and "어떻게:" in html
+        # 다만 '소싱처 등록 시작' CTA는 **뺐다**: 바로 위 등록 버튼과 같은 곳으로 가서,
+        #   0건 화면에 강조가 둘이 됐다(6-g에서 잡은 그 유형 — 강조가 둘이면 강조가 없다).
+        assert "소싱처 등록 시작" not in html
 
     def test_keywords_page_renders_period_toggle(self, client):
         resp = client.get("/seller/keywords?period=year&q=%EB%82%98%EC%9D%B4%ED%82%A4")
@@ -168,8 +172,12 @@ class TestSellerConsoleViews:
         resp = client.get("/seller/sourcing")
         assert resp.status_code == 200
         html = resp.get_data(as_text=True)
-        assert "원클릭 범용 수집" in html
-        assert "My Sources" in html
+        # 6-i: 라벨을 우리말로 바꿨다("원클릭 범용 수집" 오버라인 → 카드 머리 "수집 경로 · 내 소싱처").
+        #   그래서 문구가 아니라 **기능이 있는지**를 본다 — URL 입력 + 즉시 수집 버튼 + 소싱처 등록 폼.
+        #   "어떤 쇼핑몰이든"이라는 범용성 뉘앙스는 머리 접힘 설명에 살아 있다.
+        assert 'id="quickCollectUrl"' in html and "즉시 수집" in html
+        assert "어떤 쇼핑몰이든" in html
+        assert 'id="registryDomainInput"' in html and "내 소싱처" in html
 
     def test_collect_returns_200(self, client):
         """GET /seller/collect → 200."""

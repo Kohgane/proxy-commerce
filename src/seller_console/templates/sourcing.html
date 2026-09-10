@@ -1,226 +1,240 @@
 {% extends "_base.html" %}
 {% block title %}AI 소싱 허브{% endblock %}
 {% block content %}
-<div class="container-fluid py-3">
-  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
-    <div>
+{# 디자인 v3 Stage 6-i — AI 소싱 허브. 확산 계약(1920×940) 그대로.
+   수리 전 실측: 1368px(428 초과) · v2 `.card` 6 / `op-card` 0 · 잔재 99.
+
+   그런데 본론은 높이가 아니었다. **화면이 자기 순서를 거꾸로 놓고 있었다** —
+   부제가 "키워드 → 국내에서 뭐가 팔리나 → 소싱처 찾기 → 수집·등록"이라고 선언해 놓고,
+   정작 맨 위 세 장이 전부 **마지막 단계(수집 경로)**였고 첫 단계(키워드)는 네 번째 카드,
+   스크롤 아래에 있었다. 세로로 쌓으니 순서가 뒤집힌 게 안 보였을 뿐이다.
+
+   좌 = 수단(무엇으로 찾고 무엇으로 담나), 우 = 결과(무엇이 팔리나). 5-f·6-h 문법 승계.
+   로직 변경 0 — id·라우트·form action·JS 훅(registry-*, quickCollect*)은 그대로다. #}
+<div class="si-page">
+
+  {# 제목과 검색을 **한 줄**에 둔다. 따로 쌓으면 그것만으로 81px을 더 먹는데,
+     이 화면에서 제목 다음에 할 일은 늘 검색이라 나란히 두는 게 읽는 순서와도 맞다. #}
+  <div class="ch-head si-head">
+    <div class="si-head-l">
       <div class="console-kpi-label mb-1">AI 소싱·등록</div>
-      <h1 class="h4 mb-1">무엇을 팔지, 데이터로</h1>
-      <p class="text-muted mb-0">키워드 → 국내에서 뭐가 팔리나 → 비슷한 소싱처 상품 찾기 → 바로 수집·등록.</p>
-    </div>
-    <div class="d-flex gap-2">
-      <a href="/seller/sourcing/monitor" class="btn btn-outline-success btn-sm"><i class="bi bi-broadcast"></i> 소싱처 변동 알림</a>
-    </div>
-  </div>
-  <!-- 두 가지 AI 모드: 발굴(이 화면) / 등록 -->
-  <ul class="nav nav-pills gap-2 mb-3">
-    <li class="nav-item"><span class="nav-link active"><i class="bi bi-stars"></i> AI 소싱(상품 발굴)</span></li>
-    <li class="nav-item"><a class="nav-link" href="/seller/listing/ai-create"><i class="bi bi-robot"></i> AI 상품등록(자동 생성)</a></li>
-  </ul>
-
-  {% if notice %}
-  <div class="alert alert-info py-2">{{ notice }}</div>
-  {% endif %}
-
-  <div class="card console-card mb-3">
-    <div class="card-body">
-      <div class="console-section-eyebrow mb-1">원클릭 범용 수집</div>
-      <label class="form-label fw-semibold" for="quickCollectUrl">URL 붙여넣기 → 즉시 수집</label>
-      <div class="input-group input-group-lg">
-        <input id="quickCollectUrl" class="form-control" type="url" placeholder="https://원하는-브랜드몰.com/product/..." value="{{ collect_url }}">
-        <button class="btn btn-primary" type="button" id="quickCollectBtn">즉시 수집</button>
-      </div>
-      <div class="form-text">
-        상품 페이지 주소를 붙여넣고 <strong>즉시 수집</strong>을 누르면 제목·가격·이미지를 자동 추출해
-        <strong>수집 이력</strong>에 저장합니다. 대형 플랫폼이 아니어도, 일반 쇼핑몰 상품 페이지면 자동으로 정보를 읽어옵니다.
-        수집 후 결과 카드의 링크로 <strong>편집·등록</strong>으로 바로 이동할 수 있어요.
-      </div>
-      <div id="quickCollectResult" class="mt-3 d-none"></div>
-    </div>
-  </div>
-
-  <div class="row g-3 mb-3">
-    <div class="col-12 col-lg-5">
-      <div class="card console-card h-100">
-        <div class="card-body">
-          <h2 class="h6 mb-2">크롬 확장으로 수집</h2>
-          <p class="small text-muted mb-2">
-            <strong>지정 소싱처</strong>(타오바오·아마존 등)에서 <strong>클릭 한 번</strong>으로 수집·번역됩니다.
-            크롬 확장을 설치하면 끝 — 코드나 설정은 필요 없어요.
-          </p>
-          <div class="d-flex flex-wrap gap-2">
-            <a href="/seller/extension" class="btn btn-sm btn-primary" title="크롬 확장 설치">
-              <i class="bi bi-puzzle"></i> 확장 설치하기
-            </a>
-            <a href="/seller/bookmarklet" class="btn btn-sm btn-link text-muted small" title="확장을 못 쓸 때(고급)">
-              고급: 북마클릿
-            </a>
+      <h4 class="mb-1 fw-bold">무엇을 팔지, 데이터로</h4>
+      {# 부제 한 줄이 이미 있던 자리다 — 그 줄을 접힘의 summary로 쓴다. 설명은 하나도 안 버렸고
+         화면은 한 줄도 더 안 쓴다(6-h H3와 같은 수). #}
+      <details class="si-note mb-2">
+        <summary>키워드 → 국내에서 뭐가 팔리나 → 비슷한 소싱처 상품 찾기 → 바로 수집·등록.
+          <span class="si-note-more">자세히</span></summary>
+        <div class="si-note-body">
+          왼쪽에서 키워드를 넣으면 오른쪽에 <strong>국내에서 실제 팔리는 상품</strong>(네이버 쇼핑 실데이터)이 뜹니다.
+          마음에 드는 게 있으면 <strong>소싱처에서 비슷한 상품을 찾아</strong> 그 자리에서 수집하세요.
+          <div class="mt-2">
+            수집은 세 갈래예요 — <strong>URL 붙여넣기</strong>(어떤 쇼핑몰이든) ·
+            <strong>크롬 확장</strong>(지정 소싱처에서 클릭 한 번) · <strong>북마클릿</strong>(확장을 못 쓸 때).
+            자주 쓰는 몰은 <strong>소싱처 등록소</strong>에 넣어 두면 재수집·추천이 빨라집니다.
           </div>
         </div>
+      </details>
+      <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-ghost btn-sm" href="/seller/listing/ai-create"><i class="bi bi-robot"></i> AI 상품등록(자동 생성)</a>
+        <a class="btn btn-ghost btn-sm" href="/seller/sourcing/monitor"><i class="bi bi-broadcast"></i> 소싱처 변동 알림</a>
       </div>
     </div>
-    <div class="col-12 col-lg-7">
-      <!-- 소싱처 등록소 (Source Registry) — Phase 162 -->
-      <div class="card console-card h-100">
-        <div class="card-body">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <h2 class="h6 mb-0">소싱처 등록소 (My Sources)</h2>
-            <span class="badge text-bg-secondary">{{ registry_sources|length }}개</span>
-          </div>
-          <p class="small text-muted mb-2">자사몰·소규모 브랜드몰 등 원하는 몰을 직접 등록하세요. 개방성이 자동으로 판정됩니다.</p>
 
-          <!-- 등록 폼 -->
-          <form class="row g-2 mb-3" method="post" action="/seller/sourcing/my-sources">
-            <input type="hidden" name="action" value="add">
-            <input type="hidden" name="keyword" value="{{ keyword }}">
-            <div class="col-12 col-md-5">
-              <input class="form-control form-control-sm" name="domain" id="registryDomainInput" placeholder="example.com 또는 URL" required autocomplete="off">
-            </div>
-            <div class="col-12 col-md-4">
-              <input class="form-control form-control-sm" name="label" id="registryLabelInput" placeholder="표시 이름(선택)">
-            </div>
-            <div class="col-12 col-md-3 d-grid">
-              <button class="btn btn-sm btn-primary" type="submit" id="registrySubmitBtn">등록</button>
-            </div>
-          </form>
-
-          {% if registry_sources %}
-          <!-- 검색/필터 -->
-          <div class="mb-2">
-            <input class="form-control form-control-sm" id="registrySearchInput" type="search" placeholder="이름·도메인 검색…" autocomplete="off">
-          </div>
-          <ul class="list-group list-group-flush" id="registryList" style="max-height:340px;overflow-y:auto;">
-            {% for source in registry_sources %}
-            {% set openness = source.openness_status or 'partial' %}
-            {% set adapter = source.adapter_name or 'generic_og' %}
-            {% set is_large = adapter == 'large_platform' %}
-            <li class="list-group-item px-0 registry-item" data-name="{{ (source.label or source.domain)|lower }}" data-domain="{{ source.domain|lower }}">
-              <div class="d-flex flex-wrap justify-content-between align-items-start gap-1">
-                <div class="flex-grow-1" style="min-width:0;">
-                  <div class="d-flex flex-wrap align-items-center gap-1 mb-0">
-                    <span class="fw-semibold text-truncate">{{ source.label or source.domain }}</span>
-                    {% if openness == 'open' %}
-                    <span class="badge text-bg-success" title="OG/JSON-LD 확인 — 수집 가능">open</span>
-                    {% elif openness == 'restricted' %}
-                    <span class="badge text-bg-danger" title="접근 차단/폐쇄형 — 수집 어려움">restricted <i class="bi bi-exclamation-triangle"></i></span>
-                    {% else %}
-                    <span class="badge text-bg-warning text-dark" title="부분 수집 가능 — OG 미확인">partial</span>
-                    {% endif %}
-                    {% if is_large %}
-                    <span class="badge text-bg-info" title="전용 어댑터 보유 대형몰">대형몰</span>
-                    {% endif %}
-                  </div>
-                  <div class="small text-muted text-truncate">{{ source.domain }} · {{ adapter }}</div>
-                  <!-- v75 STEP2: 자가진단 결과(필드별 ○/×) — 3핵심 미달이면 '수동 보완 필요' -->
-                  {% if source.diag and source.diag.fields %}
-                  <div class="small mt-1 registry-diag">
-                    {% for f, label in [('title','제목'),('price','가격'),('image','이미지'),('options','옵션'),('description','상세')] %}
-                    <span class="me-1" title="{{ label }} {{ '수집 가능' if source.diag.fields[f] else '미지원' }}">
-                      {% if source.diag.fields[f] %}<span class="text-success">●</span>{% else %}<span class="text-muted">○</span>{% endif %} {{ label }}
-                    </span>
-                    {% endfor %}
-                    {% if not source.diag.core3_ok %}
-                    <span class="badge text-bg-warning text-dark ms-1" title="제목·가격·이미지 중 일부 미수집 — 편집 화면에서 직접 채우세요(등록·수집은 됩니다)">수동 보완 필요</span>
-                    {% endif %}
-                  </div>
-                  {% endif %}
-                  <!-- 상세 정보 (접기/펼치기) -->
-                  <div class="registry-detail mt-1 d-none small text-muted">
-                    <div>등록일: {{ (source.created_at or '')[:10] or '-' }}</div>
-                    {% if source.last_collect_at %}
-                    <div>마지막 수집: {{ source.last_collect_at[:19] }} — {{ source.last_collect_result or '-' }}</div>
-                    {% endif %}
-                    {% if source.note %}
-                    <div>메모: {{ source.note }}</div>
-                    {% endif %}
-                  </div>
-                </div>
-                <div class="d-flex gap-1 flex-shrink-0">
-                  <button type="button" class="btn btn-sm btn-outline-secondary registry-detail-btn" title="상세 보기" aria-label="상세 보기" style="padding:1px 6px;">…</button>
-                  <button type="button" class="btn btn-sm btn-outline-primary registry-recollect-btn" data-domain="{{ source.domain }}" title="재수집" aria-label="재수집" style="padding:1px 6px;">↺</button>
-                  <button type="button" class="btn btn-sm btn-outline-secondary registry-diag-btn" data-domain="{{ source.domain }}" title="자가진단 (상품 페이지 URL로 필드별 수집 가능 여부 점검)" aria-label="자가진단" style="padding:1px 6px;"><i class="bi bi-clipboard-check"></i></button>
-                  <form method="post" action="/seller/sourcing/my-sources" class="d-inline">
-                    <input type="hidden" name="action" value="remove">
-                    <input type="hidden" name="keyword" value="{{ keyword }}">
-                    <input type="hidden" name="domain" value="{{ source.domain }}">
-                    <button class="btn btn-sm btn-outline-danger" type="submit" title="삭제" aria-label="삭제" style="padding:1px 6px;"><i class="bi bi-x-lg"></i></button>
-                  </form>
-                </div>
-              </div>
-            </li>
-            {% endfor %}
-          </ul>
-          {% else %}
-          <div class="console-empty-state p-3">
-            <div class="console-empty-icon"><i class="bi bi-diagram-3"></i></div>
-            <div class="fw-semibold mb-1">등록된 소싱처가 없습니다.</div>
-            <div class="small mb-1"><strong>무엇을:</strong> 자주 소싱할 브랜드몰/자사몰 1곳을 먼저 등록하세요.</div>
-            <div class="small mb-1"><strong>왜:</strong> 등록소가 채워지면 재수집·추천 정확도가 더 빨라집니다.</div>
-            <div class="small"><strong>어떻게:</strong> 위 입력창에 URL 또는 도메인을 넣고 등록 버튼을 누르면 끝입니다.</div>
-            <div class="console-empty-state-actions">
-              <a href="#registryDomainInput" class="btn btn-sm btn-primary">소싱처 등록 시작</a>
-            </div>
-          </div>
-          {% endif %}
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- 메인 CTA: 키워드 → AI 상품 추천 (v35 P1: 검색창 크게·넓게·돋보기·또렷한 플레이스홀더) -->
-  <form class="card console-card mb-3" method="get" action="/seller/sourcing" style="border:1px solid var(--border);">
-    <div class="card-body">
-      <div class="console-kpi-label mb-1">상품 발굴</div>
-      <label for="keywordInput" class="d-block fw-semibold mb-2" style="font-size:1.12rem;line-height:1.4;">무슨 상품을 팔까요? 키워드로 시작하세요</label>
-      <div class="input-group input-group-lg mb-2 src-search">
-        <span class="input-group-text" style="background:var(--surface);border-right:0;color:var(--text-muted);"><i class="bi bi-search"></i></span>
+    {# 이 화면의 **첫 단계**다. 좌열 네 번째 카드에 있던 것을 머리로 올렸다 —
+       부제가 선언한 순서(키워드가 먼저)와 화면이 어긋나 있었고, 검색은 폭이 넓을수록 낫다. #}
+    <form class="si-hero" method="get" action="/seller/sourcing">
+      <label for="keywordInput" class="si-ask si-ask-lg">무슨 상품을 팔까요? 키워드로 시작하세요</label>
+      <div class="input-group si-search">
+        <span class="input-group-text"><i class="bi bi-search"></i></span>
         <input id="keywordInput" class="form-control" name="keyword" value="{{ keyword }}"
-               placeholder="예: 요가 레깅스, 보틀, 강아지 장난감"
-               style="min-height:54px;font-size:1.08rem;border-left:0;padding-left:.4rem;" autocomplete="off">
+               placeholder="예: 요가 레깅스, 보틀, 강아지 장난감" autocomplete="off">
         <input type="hidden" name="period" value="{{ period }}">
-        <button class="btn btn-cta px-4" type="submit" style="min-height:54px;font-size:1.05rem;white-space:nowrap;">AI 상품 추천받기</button>
+        <button class="btn btn-cta" type="submit">AI 상품 추천받기</button>
       </div>
-      <div class="d-flex flex-wrap gap-2">
+      <div class="si-periods">
         {% for key, label in period_options.items() %}
-        <a class="btn btn-sm {{ 'btn-primary' if key == period else 'btn-outline-secondary' }}" href="/seller/sourcing?period={{ key }}{% if keyword %}&keyword={{ keyword|urlencode }}{% endif %}">{{ label }}</a>
+        <a class="btn btn-sm {{ 'btn-primary' if key == period else 'btn-ghost' }}"
+           href="/seller/sourcing?period={{ key }}{% if keyword %}&keyword={{ keyword|urlencode }}{% endif %}">{{ label }}</a>
         {% endfor %}
       </div>
-    </div>
-  </form>
+    </form>
+    <hr class="pc-hairline mt-0 mb-0">
+  </div>
 
-  {% if keyword %}
-  <!-- 국내에서 실제 팔리는 상품(네이버 쇼핑 실데이터) -->
-  <div class="card console-card mb-3">
-    <div class="card-body">
-      <h2 class="h6 mb-1">국내에서 팔리는 상품 <span class="text-muted fw-normal">· “{{ keyword }}”</span></h2>
-      {% if domestic_products %}
-      <p class="text-muted small mb-3">아래는 네이버 쇼핑 기준 실제 판매 중인 상품이에요. 마음에 들면 <strong>소싱처에서 비슷한 상품을 찾아</strong> 바로 수집하세요.</p>
-      {# v35 P0: Bootstrap col → CSS Grid(auto-fill)로 다열 복원(세로 일렬 방지, 뷰포트 무관).
-         이미지: 네이버 쇼핑 핫링크 차단 우회(referrerpolicy=no-referrer) + 실패 시 박스 유지·아이콘 플레이스홀더(빈 색 박스 금지). #}
-      <div class="src-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem;">
-        {% for p in domestic_products %}
-        <div class="card console-card h-100 pc-lift" style="overflow:hidden;">
-            <div style="height:210px;background:var(--surface-warm);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;">
-              <i class="bi bi-image" style="position:absolute;color:var(--text-muted);font-size:2.2rem;opacity:.35;" aria-hidden="true"></i>
+  {% if notice %}
+  <div class="si-notice"><i class="bi bi-info-circle"></i> {{ notice }}</div>
+  {% endif %}
+
+  <!-- ── 좌: 수단 — 무엇으로 찾고, 무엇으로 담나 ───────────────────────────── -->
+  <div class="si-col">
+
+    {# ② 수집 경로 3종이 **카드 세 장**으로 흩어져 있었다(URL 카드 + 확장 카드 + 등록소 헤더).
+       셋 다 "어떻게 담나"라 한 장 안에서 갈라 준다 — 정보는 하나도 안 버렸고 자리만 합쳤다. #}
+    <section class="op-card">
+      <div class="op-card-head">
+        <strong>수집 경로 · 내 소싱처</strong>
+        <span class="op-tile-sub ms-auto">마음에 드는 상품을 담는 법</span>
+      </div>
+      <div class="op-card-body">
+        <label class="form-label small mb-1" for="quickCollectUrl">URL 붙여넣기 → 즉시 수집</label>
+        <div class="input-group">
+          <input id="quickCollectUrl" class="form-control" type="url"
+                 placeholder="https://원하는-브랜드몰.com/product/..." value="{{ collect_url }}">
+          <button class="btn btn-primary" type="button" id="quickCollectBtn">즉시 수집</button>
+        </div>
+        <div class="form-text">제목·가격·이미지를 자동 추출해 <strong>수집 이력</strong>에 저장합니다.</div>
+        <div id="quickCollectResult" class="mt-3 d-none"></div>
+
+        <div class="d-flex flex-wrap gap-2 align-items-center mt-3">
+          <span class="op-tile-sub me-1"><strong>지정 소싱처</strong>에서는 클릭 한 번으로</span>
+          <a href="/seller/extension" class="btn btn-sm btn-ghost" title="크롬 확장 설치">
+            <i class="bi bi-puzzle"></i> 확장 설치하기
+          </a>
+          <a href="/seller/bookmarklet" class="op-tile-sub si-adv" title="확장을 못 쓸 때(고급)">고급: 북마클릿</a>
+        </div>
+
+        <hr class="si-sep">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <strong class="si-sub">내 소싱처</strong>
+          <span class="pc-badge">{{ registry_sources|length }}개</span>
+          <span class="op-tile-sub ms-auto">자주 담는 몰을 등록해 두면 재수집·추천이 빨라져요</span>
+        </div>
+        {# 0건일 때 "등록" 버튼과 "소싱처 등록 시작" CTA가 **같은 곳으로** 갔다(6-g에서 잡은 그 유형).
+           강조가 둘이면 강조가 없다 → 0건이면 폼 하나만 두고, 빈 상태는 무엇을·왜만 말한다. #}
+        <form class="row g-2" method="post" action="/seller/sourcing/my-sources">
+          <input type="hidden" name="action" value="add">
+          <input type="hidden" name="keyword" value="{{ keyword }}">
+          <div class="col-12 col-xl-5">
+            <input class="form-control form-control-sm" name="domain" id="registryDomainInput"
+                   placeholder="example.com 또는 URL" required autocomplete="off">
+          </div>
+          <div class="col-7 col-xl-4">
+            <input class="form-control form-control-sm" name="label" id="registryLabelInput" placeholder="표시 이름(선택)">
+          </div>
+          <div class="col-5 col-xl-3 d-grid">
+            <button class="btn btn-sm btn-primary" type="submit" id="registrySubmitBtn">등록</button>
+          </div>
+        </form>
+
+        {% if registry_sources %}
+        <div class="mt-3 mb-2">
+          <input class="form-control form-control-sm" id="registrySearchInput" type="search"
+                 placeholder="이름·도메인 검색…" autocomplete="off">
+        </div>
+        <ul class="list-group list-group-flush si-registry-list" id="registryList">
+          {% for source in registry_sources %}
+          {% set openness = source.openness_status or 'partial' %}
+          {% set adapter = source.adapter_name or 'generic_og' %}
+          {% set is_large = adapter == 'large_platform' %}
+          <li class="list-group-item px-0 registry-item" data-name="{{ (source.label or source.domain)|lower }}" data-domain="{{ source.domain|lower }}">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-1">
+              <div class="flex-grow-1 si-min0">
+                <div class="d-flex flex-wrap align-items-center gap-1 mb-0">
+                  <span class="fw-semibold text-truncate">{{ source.label or source.domain }}</span>
+                  {% if openness == 'open' %}
+                  <span class="pc-badge pc-badge-on" title="OG/JSON-LD 확인 — 수집 가능">수집 가능</span>
+                  {% elif openness == 'restricted' %}
+                  <span class="pc-badge pc-badge-danger" title="접근 차단/폐쇄형 — 수집 어려움">수집 어려움</span>
+                  {% else %}
+                  <span class="pc-badge pc-badge-off" title="부분 수집 가능 — OG 미확인">부분 수집</span>
+                  {% endif %}
+                  {% if is_large %}
+                  <span class="pc-badge pc-badge-muted" title="전용 어댑터 보유 대형몰">대형몰</span>
+                  {% endif %}
+                </div>
+                <div class="small text-muted text-truncate">{{ source.domain }} · {{ adapter }}</div>
+                <!-- v75 STEP2: 자가진단 결과(필드별 ○/×) — 3핵심 미달이면 '수동 보완 필요' -->
+                {% if source.diag and source.diag.fields %}
+                <div class="small mt-1 registry-diag">
+                  {% for f, label in [('title','제목'),('price','가격'),('image','이미지'),('options','옵션'),('description','상세')] %}
+                  <span class="me-1" title="{{ label }} {{ '수집 가능' if source.diag.fields[f] else '미지원' }}">
+                    {% if source.diag.fields[f] %}<span class="si-on">●</span>{% else %}<span class="text-muted">○</span>{% endif %} {{ label }}
+                  </span>
+                  {% endfor %}
+                  {% if not source.diag.core3_ok %}
+                  <span class="pc-badge pc-badge-off ms-1" title="제목·가격·이미지 중 일부 미수집 — 편집 화면에서 직접 채우세요(등록·수집은 됩니다)">수동 보완 필요</span>
+                  {% endif %}
+                </div>
+                {% endif %}
+                <!-- 상세 정보 (접기/펼치기) -->
+                <div class="registry-detail mt-1 d-none small text-muted">
+                  <div>등록일: {{ (source.created_at or '')[:10] or '-' }}</div>
+                  {% if source.last_collect_at %}
+                  <div>마지막 수집: {{ source.last_collect_at[:19] }} — {{ source.last_collect_result or '-' }}</div>
+                  {% endif %}
+                  {% if source.note %}
+                  <div>메모: {{ source.note }}</div>
+                  {% endif %}
+                </div>
+              </div>
+              <div class="d-flex gap-1 flex-shrink-0 si-rowbtns">
+                <button type="button" class="btn btn-sm btn-ghost registry-detail-btn" title="상세 보기" aria-label="상세 보기">…</button>
+                <button type="button" class="btn btn-sm btn-ghost registry-recollect-btn" data-domain="{{ source.domain }}" title="재수집" aria-label="재수집">↺</button>
+                <button type="button" class="btn btn-sm btn-ghost registry-diag-btn" data-domain="{{ source.domain }}" title="자가진단 (상품 페이지 URL로 필드별 수집 가능 여부 점검)" aria-label="자가진단"><i class="bi bi-clipboard-check"></i></button>
+                <form method="post" action="/seller/sourcing/my-sources" class="d-inline">
+                  <input type="hidden" name="action" value="remove">
+                  <input type="hidden" name="keyword" value="{{ keyword }}">
+                  <input type="hidden" name="domain" value="{{ source.domain }}">
+                  <button class="btn btn-sm btn-ghost si-del" type="submit" title="삭제" aria-label="삭제"><i class="bi bi-x-lg"></i></button>
+                </form>
+              </div>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="op-empty mt-3">
+          <div class="fw-semibold mb-1">등록된 소싱처가 없습니다.</div>
+          <div class="small"><strong>무엇을:</strong> 자주 소싱할 브랜드몰·자사몰 1곳을 먼저 등록하세요.</div>
+          <div class="small"><strong>왜:</strong> 등록소가 채워지면 재수집·추천 정확도가 더 빨라집니다.</div>
+          <div class="small"><strong>어떻게:</strong> 위 입력창에 URL 또는 도메인을 넣고 등록 버튼을 누르면 끝입니다.</div>
+        </div>
+        {% endif %}
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ── 우: 결과 — 무엇이 팔리나 ──────────────────────────────────────────── -->
+  <div class="si-col si-results">
+    {% if keyword %}
+    <!-- 국내에서 실제 팔리는 상품(네이버 쇼핑 실데이터) -->
+    <section class="op-card si-card-market">
+      <div class="op-card-head">
+        <strong>국내에서 팔리는 상품</strong>
+        <span class="op-tile-sub">“{{ keyword }}”</span>
+      </div>
+      <div class="op-card-body">
+        {% if domestic_products %}
+        <p class="op-tile-sub mb-3">네이버 쇼핑 기준 <strong>실제 판매 중</strong>인 상품이에요.
+          마음에 들면 <strong>소싱처에서 비슷한 상품을 찾아</strong> 바로 수집하세요.</p>
+        {# v35 P0: Bootstrap col → CSS Grid(auto-fill)로 다열 복원(세로 일렬 방지, 뷰포트 무관).
+           이미지: 네이버 쇼핑 핫링크 차단 우회(referrerpolicy=no-referrer) + 실패 시 박스 유지·아이콘 플레이스홀더. #}
+        <div class="si-grid">
+          {% for p in domestic_products %}
+          <article class="op-card si-tile">
+            <div class="si-thumb">
+              <i class="bi bi-image" aria-hidden="true"></i>
               {% if p.image %}
               <img src="{{ p.image }}" alt="" loading="lazy" referrerpolicy="no-referrer"
-                   style="position:relative;max-height:100%;max-width:100%;object-fit:contain;"
                    onerror="this.style.display='none'">
               {% endif %}
             </div>
-            <div class="card-body p-3 d-flex flex-column">
-              <a href="{{ p.link }}" target="_blank" rel="noopener" class="fw-semibold text-decoration-none text-truncate-2"
-                 style="font-size:1.12rem;line-height:1.4;min-height:3.1em;" title="{{ p.title }}">{{ p.title }}</a>
-              <div class="mt-2 mb-1">{% if p.price %}<span class="fw-bold text-primary" style="font-size:1.32rem;">₩{{ "{:,}".format(p.price) }}</span>{% else %}<span class="text-muted">가격 정보 없음</span>{% endif %}
-                {% if p.mall %}<span class="text-muted d-block" style="font-size:.95rem;">{{ p.mall }}</span>{% endif %}</div>
+            <div class="si-tile-body">
+              <a href="{{ p.link }}" target="_blank" rel="noopener" class="si-tile-title" title="{{ p.title }}">{{ p.title }}</a>
+              <div class="mt-2 mb-1">
+                {% if p.price %}<span class="si-price">₩{{ "{:,}".format(p.price) }}</span>
+                {% else %}<span class="text-muted">가격 정보 없음</span>{% endif %}
+                {% if p.mall %}<span class="op-tile-sub d-block">{{ p.mall }}</span>{% endif %}
+              </div>
               <details class="mt-auto pt-2">
-                <summary class="btn btn-cta w-100" style="list-style:none;min-height:44px;display:flex;align-items:center;justify-content:center;font-size:1rem;">소싱처에서 비슷한 상품 찾기</summary>
+                <summary class="btn btn-primary w-100 si-find">소싱처에서 비슷한 상품 찾기</summary>
                 <div class="d-grid gap-2 mt-2">
                   {% for s in sourcing_search_links %}
-                  <a class="btn btn-outline-secondary" style="min-height:44px;display:flex;align-items:center;justify-content:center;font-size:.98rem;" href="{{ s.url.split('=')[0] }}={{ p.title|urlencode }}" target="_blank" rel="noopener">{{ s.name }}에서 검색</a>
+                  <a class="btn btn-ghost si-find-link" href="{{ s.url.split('=')[0] }}={{ p.title|urlencode }}" target="_blank" rel="noopener">{{ s.name }}에서 검색</a>
                   {% endfor %}
                   <div class="dropdown">
-                    <button class="btn btn-outline-secondary dropdown-toggle w-100" style="min-height:44px;font-size:.98rem;" type="button" data-bs-toggle="dropdown" aria-expanded="false">아마존에서 검색 (국가)</button>
+                    <button class="btn btn-ghost dropdown-toggle w-100 si-find-link" type="button" data-bs-toggle="dropdown" aria-expanded="false">아마존에서 검색 (국가)</button>
                     <ul class="dropdown-menu w-100">
                       {% for ac in amazon_search_countries %}
                       <li><a class="dropdown-item d-flex justify-content-between" href="https://www.amazon.{{ ac.tld }}/s?k={{ p.title|urlencode }}" target="_blank" rel="noopener"><span>{{ ac.name }}</span><span class="text-muted small">{{ ac.currency }}</span></a></li>
@@ -230,108 +244,95 @@
                 </div>
               </details>
             </div>
+          </article>
+          {% endfor %}
         </div>
-        {% endfor %}
-      </div>
-      {% elif not domestic_enabled %}
-      <div class="alert alert-light border small mb-0">
-        <strong>국내 베스트셀러 데이터가 아직 연결되지 않았어요.</strong> (네이버 쇼핑 검색이 아직 연결되지 않았어요)
-        키가 연결되면 여기에 실제 판매 상품이 표시됩니다. <span class="text-muted">— 가짜 수치는 표시하지 않습니다.</span>
-      </div>
-      {% else %}
-      <div class="alert alert-light border small mb-0">이 키워드로 국내 판매 상품을 찾지 못했어요. 다른 키워드를 시도해보세요.</div>
-      {% endif %}
-
-      <!-- 키워드로 소싱처 바로 검색(딥링크) -->
-      {% if sourcing_search_links %}
-      <hr>
-      <div class="small fw-semibold mb-2">소싱처에서 “{{ keyword }}” 바로 검색</div>
-      <div class="d-flex flex-wrap gap-2">
-        {% for s in sourcing_search_links %}
-        <a class="btn btn-sm btn-outline-primary" href="{{ s.url }}" target="_blank" rel="noopener">{{ s.name }}</a>
-        {% endfor %}
-      </div>
-      <div class="form-text">소싱처가 열리면 <strong>고가수집기 크롬 확장</strong>으로 마음에 드는 상품을 바로 수집하세요.</div>
-      {% endif %}
-    </div>
-  </div>
-
-  <!-- 분석 패널 — 계산 가능한 것만 실데이터, 없으면 '데이터 없음' -->
-  <div class="card console-card mb-3">
-    <div class="card-body">
-      <div class="console-kpi-label mb-1">소싱 분석</div>
-      <h2 class="h6 mb-3">국내 시장 한눈에</h2>
-      <div class="row g-2">
-        {% for m in analysis.metrics %}
-        <div class="col-6 col-md-4">
-          <div class="rounded p-3 h-100" style="border:1px solid var(--border);">
-            <div class="console-kpi-label mb-1">{{ m.label }}</div>
-            {% if m.value is not none %}
-            <div style="font-family:var(--font-display);font-size:1.45rem;font-weight:700;letter-spacing:-.01em;line-height:1.1;">{{ m.value }}</div>
-            {% else %}
-            <div class="text-muted">데이터 없음</div>
-            {% endif %}
-            <div class="text-muted mt-1" style="font-size:.7rem">{{ m.note }}</div>
-          </div>
+        {% elif not domestic_enabled %}
+        <div class="op-off">
+          <strong>국내 베스트셀러 데이터가 아직 연결되지 않았어요.</strong>
+          키가 연결되면 여기에 실제 판매 상품이 표시됩니다. 가짜 수치는 표시하지 않습니다.
         </div>
-        {% endfor %}
-      </div>
-    </div>
-  </div>
-  {% endif %}
+        {% else %}
+        <div class="op-empty">이 키워드로 국내 판매 상품을 찾지 못했어요. 다른 키워드를 시도해 보세요.</div>
+        {% endif %}
 
-  <div class="row g-3">
-    <div class="col-12 col-lg-8">
-      <div class="card console-card">
-        <div class="card-body">
-          <h2 class="h6 mb-3">추천 후보</h2>
-          {% if recommendations %}
-          <div class="d-flex flex-column gap-2">
-            {% for rec in recommendations %}
-            <article class="border rounded-3 p-3">
-              <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
-                <div>
-                  <div class="fw-semibold">{{ rec.title }}</div>
-                  <div class="small text-muted">{{ rec.source }} · {{ rec.reason }}</div>
-                  <div class="small mt-1">{{ rec.margin_hint }}</div>
-                </div>
-                <div class="d-flex gap-2">
-                  <a href="{{ rec.cta_href }}" class="btn btn-sm btn-primary">{{ rec.cta_label }}</a>
-                  <a href="{{ rec.secondary_href }}" class="btn btn-sm btn-outline-secondary">{{ rec.secondary_label }}</a>
-                </div>
+        <!-- 키워드로 소싱처 바로 검색(딥링크) -->
+        {% if sourcing_search_links %}
+        <hr class="si-sep">
+        <div class="op-tile-sub mb-2">소싱처에서 “{{ keyword }}” 바로 검색</div>
+        <div class="d-flex flex-wrap gap-2">
+          {% for s in sourcing_search_links %}
+          <a class="btn btn-sm btn-ghost" href="{{ s.url }}" target="_blank" rel="noopener">{{ s.name }}</a>
+          {% endfor %}
+        </div>
+        <div class="form-text">소싱처가 열리면 <strong>고가수집기 크롬 확장</strong>으로 마음에 드는 상품을 바로 수집하세요.</div>
+        {% endif %}
+      </div>
+    </section>
+
+    {# 분석 패널 — 계산 가능한 것만 실데이터, 없으면 '데이터 없음'.
+       카드 6장을 세로로 쌓던 것을 **한 줄 스트립**으로(6-h 승계). 수치는 세리프, 라벨은 오버라인. #}
+    <div class="op-strip si-strip">
+      <span class="op-tile-sub si-strip-k">소싱 분석 · 국내 시장</span>
+      {% for m in analysis.metrics %}
+      <span class="si-kpi" title="{{ m.note }}">
+        <span class="si-kpi-k">{{ m.label }}</span>
+        {% if m.value is not none %}<span class="si-kpi-v">{{ m.value }}</span>
+        {% else %}<span class="si-kpi-none">데이터 없음</span>{% endif %}
+      </span>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <section class="op-card si-card-rec">
+      <div class="op-card-head">
+        <strong>추천 후보</strong>
+        {% if keyword_context.rows %}
+        <a class="op-tile-sub ms-auto si-adv"
+           href="/seller/keywords?period={{ period }}{% if keyword_context.query_text %}&q={{ keyword_context.query_text|urlencode }}{% endif %}">키워드 상세 분석</a>
+        {% endif %}
+      </div>
+      <div class="op-card-body">
+        {% if recommendations %}
+        <div class="d-flex flex-column gap-2">
+          {% for rec in recommendations %}
+          <article class="si-rec">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+              <div class="si-min0">
+                <div class="fw-semibold">{{ rec.title }}</div>
+                <div class="small text-muted">{{ rec.source }} · {{ rec.reason }}</div>
+                <div class="small mt-1">{{ rec.margin_hint }}</div>
               </div>
-            </article>
-            {% endfor %}
-          </div>
-          {% else %}
-          <div class="console-empty-state">
-            <div class="fw-semibold mb-1">표시할 추천이 없습니다.</div>
-            <div class="small">키워드를 입력하면 트렌드/Discovery/후보 큐 기반 추천을 생성합니다.</div>
-          </div>
-          {% endif %}
+              <div class="d-flex gap-2 flex-shrink-0">
+                <a href="{{ rec.cta_href }}" class="btn btn-sm btn-primary">{{ rec.cta_label }}</a>
+                <a href="{{ rec.secondary_href }}" class="btn btn-sm btn-ghost">{{ rec.secondary_label }}</a>
+              </div>
+            </div>
+          </article>
+          {% endfor %}
         </div>
-      </div>
-    </div>
-    <div class="col-12 col-lg-4">
-      <div class="card console-card h-100">
-        <div class="card-body">
-          <h2 class="h6 mb-3">키워드 스냅샷</h2>
-          {% if keyword_context.rows %}
-          <ul class="list-group list-group-flush">
-            {% for row in keyword_context.rows[:5] %}
-            <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
-              <span>{{ row.keyword }}</span>
-              <span class="badge text-bg-light">{{ "{:,}".format(row.search_volume) }}</span>
-            </li>
-            {% endfor %}
-          </ul>
-          <a class="btn btn-sm btn-outline-secondary mt-3" href="/seller/keywords?period={{ period }}{% if keyword_context.query_text %}&q={{ keyword_context.query_text|urlencode }}{% endif %}">상세 분석</a>
-          {% else %}
-          <div class="console-empty-state">키워드 데이터를 불러올 수 없습니다.</div>
-          {% endif %}
+        {% else %}
+        <div class="op-empty">
+          <div class="fw-semibold mb-1">아직 보여 드릴 추천이 없어요.</div>
+          <div class="small">왼쪽에 키워드를 넣으면 트렌드·Discovery·후보 큐를 근거로 추천을 만듭니다.</div>
         </div>
+        {% endif %}
+
+        {# 키워드 스냅샷은 **카드 한 장을 통째로** 쓰고 있었다(우측 4칸). 다섯 줄짜리 목록이라
+           추천 카드 안의 각주로 내린다 — 줄 하나 안 버렸고, 카드 한 장이 사라졌다. #}
+        {% if keyword_context.rows %}
+        <hr class="si-sep">
+        <div class="op-tile-sub mb-2">키워드 스냅샷</div>
+        <div class="si-kwsnap">
+          {% for row in keyword_context.rows[:5] %}
+          <span class="si-kw"><span class="si-kw-t">{{ row.keyword }}</span>
+            <span class="si-kw-v">{{ "{:,}".format(row.search_volume) }}</span></span>
+          {% endfor %}
+        </div>
+        {% endif %}
       </div>
-    </div>
+    </section>
+
   </div>
 </div>
 {% endblock %}

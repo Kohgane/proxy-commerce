@@ -154,22 +154,23 @@ def latest_rejection_comment(history) -> str:
         rows = list(body)
     else:
         rows = []
+    # ★ 방향 실측(2026-09-09) 후속: 이 함수는 이름이 '**가장 최근** 반려'인데 `rej[-1]`이
+    #   응답 순서의 마지막 = **가장 오래된** 반려를 집고 있었다(Wing은 최신 우선).
+    #   순서 규칙은 `_ordered_rows`가 단일 소스로 정한다 — 여기선 끝이 최신이다.
+    rows = _ordered_rows(history)
     rej = []
     for r in rows:
-        if not isinstance(r, dict):
-            continue
         st = str(r.get("statusName") or r.get("status") or r.get("changeStatus") or "")
         cm = str(r.get("comment") or r.get("reason") or r.get("memo") or "").strip()
         if ("반려" in st or "REJECT" in st.upper()) and cm:
             rej.append(cm)
     if rej:
         return rej[-1]
-    # 폴백: 마지막 comment(반려 표기 없어도) — 조용한 누락 방지.
+    # 폴백: 가장 최신 comment(반려 표기 없어도) — 조용한 누락 방지.
     for r in reversed(rows):
-        if isinstance(r, dict):
-            cm = str(r.get("comment") or r.get("reason") or "").strip()
-            if cm:
-                return cm
+        cm = str(r.get("comment") or r.get("reason") or "").strip()
+        if cm:
+            return cm
     return ""
 
 
@@ -204,6 +205,29 @@ def _row_at(row) -> str:
     return ""
 
 
+
+def _ordered_rows(history) -> list:
+    """이력 행을 **오래된 것 → 최신** 순으로 정규화한다. 순서 규칙의 **단일 소스**.
+
+    ★ 방향 실측 확정(2026-09-09, 크론 로그 원문): **Wing 이력은 최신 우선**으로 온다.
+      그래서 시각이 있으면 시각으로 세운다 — 응답 방향이 바뀌어도 판정이 안 흔들린다.
+
+    ※ **시각이 하나도 없는 입력은 순서를 그대로 둔다.** 실측한 건 *실제 응답*(시각을 달고 오는)의
+      방향이지, 시각 없는 응답이 어떤 순서인지는 잰 적이 없다 — 거기까지 뒤집는 건 실측이 아니라
+      **외삽**이고, 그러면 기존 계약 4건의 의미를 조용히 뒤집게 된다(픽스처는 읽는 순서로 쓰여 있다).
+      실제 경로는 시각이 있어 이 폴백을 타지 않는다.
+
+    이 함수를 만든 이유: 같은 순서 가정이 `wing_state`·`latest_rejection_comment`·`was_selling`·
+    `timeline` 네 곳에 흩어져 있었고, 방향이 확정되자 **네 곳이 동시에 거꾸로**였다.
+    규칙을 각자 들고 있으면 다음에 또 따로 틀린다.
+    """
+    rows = [r for r in _history_rows(history) if isinstance(r, dict)]
+    if not rows:
+        return []
+    if any(_row_at(r) for r in rows):
+        return sorted(rows, key=lambda r: (_row_at(r) or "",))
+    return list(rows)                      # 시각 없음 = 방향 미실측 → 손대지 않는다
+
 def timeline(history, *, limit: int = 12) -> list:
     """이력 응답 → **사람이 읽는 줄글 재료** `[{at, status, comment}]`(6-h-3 N1).
 
@@ -213,11 +237,9 @@ def timeline(history, *, limit: int = 12) -> list:
 
     정렬은 `wing_state`와 같은 규칙 — 시각이 있으면 시각순, 없으면 응답 순서(가정 노출 0).
     """
-    rows = _history_rows(history)
+    rows = _ordered_rows(history)          # 순서 단일 소스 — 시각 없으면 최신 우선 응답을 뒤집는다
     out = []
     for i, r in enumerate(rows):
-        if not isinstance(r, dict):
-            continue
         st = str(r.get("statusName") or r.get("status") or r.get("changeStatus") or "").strip()
         cm = str(r.get("comment") or r.get("reason") or r.get("memo") or "").strip()
         if not st and not cm:
@@ -268,10 +290,9 @@ def wing_state(history) -> str:
         rows = list(body)
     else:
         rows = []
-    picked = []                              # [(정렬키, 원래 index, 상태)]
-    for i, r in enumerate(rows):
-        if not isinstance(r, dict):
-            continue
+    # 순서는 `_ordered_rows`가 정한다(단일 소스) — 여기 오면 이미 **끝이 최신**이다.
+    picked = []                              # [(정렬키, index, 상태)] — index는 동시각 타이브레이크용
+    for i, r in enumerate(_ordered_rows(history)):
         st = str(r.get("statusName") or r.get("status") or r.get("changeStatus") or "")
         for key, rx in _WING_STATE_RE:
             if rx.search(st):
@@ -279,11 +300,14 @@ def wing_state(history) -> str:
                 break
     if not picked:
         return "unknown"
-    # ★ A1: **정렬 가정을 없앤다.** 예전엔 `states[-1]`로 "마지막 = 최신"을 가정했는데
-    #   응답이 최신 우선이면 그건 가장 오래된 행이다(가정은 실측된 적이 없었다).
-    #   시각이 있으면 **시각으로 정렬**하고, 시각이 하나도 없을 때만 순서를 쓴다(그 사실도 로그가 남긴다).
-    if any(at for at, _i, _k in picked):
-        picked.sort(key=lambda t: (t[0] or "", t[1]))
+    # ★ A1: **정렬 가정을 없앤다.** 예전엔 `states[-1]`로 "마지막 = 최신"을 가정했다.
+    #   시각이 있으면 **시각으로 정렬**한다 — 응답이 어느 방향으로 오든 판정이 같다.
+    #
+    #   ★★ 방향 실측 확정(2026-09-09, 크론 로그 원문): **Wing 이력은 최신 우선**이다.
+    #      즉 옛 `states[-1]`은 "최신"이 아니라 **가장 오래된 행**을 집고 있었다 —
+    #      가정이 틀렸던 게 아니라 **정확히 거꾸로**였다. 그래서 시각이 하나도 없을 때의
+    #      폴백도 마지막 행이 아니라 **첫 행**을 최신으로 본다(실측을 따르지 않는 폴백은
+    #      계약이 적어 둔 사실과 코드가 어긋나는 자리가 된다).
     latest = picked[-1][2]
     # ★ A1: `rejected` 절대우선 폐지. 과거 반려 한 줄이 **최신 확정 상태를 영원히 덮고 있었다**
     #   (재제출로 판매중이 돼도 우리 눈엔 계속 반려 — 오너 WING 실측 2026-09-07이 그걸 잡았다).
@@ -327,7 +351,10 @@ def was_selling(history) -> bool:
     판정: 최신 반려 행보다 **앞선** 행에 판매중/승인 문구가 있으면 True.
     이력은 시간 오름차순 가정(쿠팡 `/histories` 관례) — 반려가 없으면 전환도 아니다.
     """
-    rows = _history_rows(history)
+    # ★ 방향 실측(2026-09-09) 후속: `rows[:last_reject]`를 '반려 **이전**'으로 봤는데,
+    #   Wing이 최신 우선이면 그건 반려보다 **나중**(더 최신)이다 — 판정이 정확히 거꾸로였다.
+    #   `_ordered_rows`로 오래된→최신으로 세우면 `rows[:i]`가 진짜 '이전'이 된다.
+    rows = _ordered_rows(history)
     last_reject = -1
     for i, r in enumerate(rows):
         st = str(r.get("statusName") or r.get("status") or r.get("changeStatus") or "")
@@ -401,10 +428,28 @@ def scan_rejections(items, *, history_fn, classify_fn=None) -> dict:
         rows.append(row)
         by_kind[cl["kind"]] = by_kind.get(cl["kind"], 0) + 1
         by_rx[cl["prescription"]] = by_rx.get(cl["prescription"], 0) + 1
-    needs_manual = [r for r in rows if r["kind"] == "unknown"]
-    resale = [r for r in rows if r.get("was_selling")]
-    parts = [f"{REJECTION_KINDS[k]['ko']} {n}" for k, n in sorted(by_kind.items(), key=lambda x: -x[1])]
-    alert = f"반려 {len(rows)}건 — " + (" · ".join(parts) if parts else "없음")
+    # 같은 유형(오너 지목 확장): 집계도 kind(comment) 기준이라 **확정 상태를 안 봤다.**
+    #   그래서 판매중이 된 건이 "반려 3건 … 임시저장 1"에 섞여 들어갔다(오너 실측 캡처).
+    #   심사가 끝난 건은 반려 수에서 빼고 따로 센다 — 숫자가 거짓이면 화면 전체가 거짓이 된다.
+    settled_ok = [r for r in rows if r.get("wing_state") in ("approved", "selling")]
+    open_rows = [r for r in rows if r.get("wing_state") not in ("approved", "selling")]
+    # 상태가 이미 분류인 건(브랜드수정·증빙)은 **'미분류'가 아니다.** 화면 뱃지와 같은 규칙을 요약에도
+    #   건다 — 안 그러면 "미분류 1 · 미분류 1건(오너 확인)"처럼 같은 행을 두 번 다르게 부른다(실측).
+    _state_named = ("brand_fix", "doc_required")
+    needs_manual = [r for r in open_rows
+                    if r["kind"] == "unknown" and r.get("wing_state") not in _state_named]
+    resale = [r for r in open_rows if r.get("was_selling")]
+    open_kinds = {}
+    for r in open_rows:
+        st = r.get("wing_state")
+        label = WING_STATES[st]["ko"] if st in _state_named else REJECTION_KINDS[r["kind"]]["ko"]
+        open_kinds[label] = open_kinds.get(label, 0) + 1
+    parts = [f"{k} {n}" for k, n in sorted(open_kinds.items(), key=lambda x: -x[1])]
+    alert = f"반려 {len(open_rows)}건 — " + (" · ".join(parts) if parts else "없음")
+    if settled_ok:
+        # 끝난 건은 **좋은 소식**이라 앞에 세운다(숨기면 "왜 안 보이지"가 된다).
+        _ko = WING_STATES.get(settled_ok[0].get("wing_state"), {}).get("ko", "승인")
+        alert = f"{_ko} {len(settled_ok)}건 · " + alert
     if resale:
         # 팔리던 상품이 내려간 건은 **맨 앞에** 세운다(매출이 즉시 멈추므로 우선순위가 높다).
         alert = f"⚠ 판매중→반려 {len(resale)}건(우선) · " + alert

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 SOURCING = Path("src/seller_console/templates/sourcing.html").read_text(encoding="utf-8")
+CSS = Path("src/static/app.css")
 
 
 @pytest.fixture
@@ -19,7 +20,10 @@ def client():
 
 def test_grid_restored_multicolumn():
     # 세로 일렬 금지 → CSS Grid auto-fill 다열(뷰포트 무관). 부트스트랩 col 의존 제거.
-    assert "repeat(auto-fill,minmax(280px,1fr))" in SOURCING
+    # 6-i: 인라인 → `.si-grid`. 값은 그대로 280px다 — 좁은 열에 맞추려 15rem으로 줄였다가
+    #   이 계약이 잡아 되돌렸다(오너가 v35에서 정한 치수가 뷰포트 예산보다 위다).
+    css = CSS.read_text(encoding="utf-8")
+    assert "repeat(auto-fill, minmax(280px, 1fr))" in css
     assert "col-12 col-sm-6 col-lg-4" not in SOURCING
 
 
@@ -33,7 +37,8 @@ def test_image_hotlink_and_placeholder():
 
 def test_card_overflow_guard():
     # 버튼/콘텐츠가 카드 폭을 넘지 않도록 카드 overflow 처리
-    assert "overflow:hidden;" in SOURCING
+    css = CSS.read_text(encoding="utf-8")
+    assert ".si-tile { overflow: hidden;" in css          # 6-i: 인라인 → 타일 클래스
 
 
 def test_sourcing_page_renders(client):
