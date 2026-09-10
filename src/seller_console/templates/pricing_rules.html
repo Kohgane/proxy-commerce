@@ -259,7 +259,7 @@ async function toggleRule(ruleId, btn) {
   const d = await r.json();
   if (d.ok) {
     btn.textContent = d.enabled ? '활성' : '비활성';
-    btn.className = `btn btn-sm ${d.enabled ? 'btn-success' : 'btn-outline-secondary'}`;
+    btn.className = `btn btn-sm ${d.enabled ? 'btn-success' : 'btn-ghost'}`;
     btn.closest('.rule-card').classList.toggle('opacity-50', !d.enabled);
   }
 }

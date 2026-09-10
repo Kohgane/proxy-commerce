@@ -596,12 +596,12 @@ function addImageRow(url) {
   const row = document.createElement('div');
   row.className = 'd-flex align-items-center gap-1 img-row';
   row.innerHTML = `
-    <button class="btn btn-outline-warning btn-sm btn-make-primary flex-shrink-0" type="button" title="대표 이미지로 지정" aria-label="대표 이미지로 지정"><i class="bi bi-star"></i></button>
+    <button class="btn btn-ghost btn-sm btn-make-primary flex-shrink-0" type="button" title="대표 이미지로 지정" aria-label="대표 이미지로 지정"><i class="bi bi-star"></i></button>
     <img class="img-thumb flex-shrink-0 rounded border kgp-thumb-md" alt="" referrerpolicy="no-referrer" 
          title="클릭하면 원본 보기" onerror="this.style.visibility='hidden'">
     <input type="url" class="form-control form-control-sm img-url" placeholder="https://..." value="${escapeHtml(url || '')}">
-    <button class="btn btn-outline-primary btn-sm btn-clean-img flex-shrink-0" type="button" title="워터마크 제거·정제(CDN 설정 시 재호스팅)"><i class="bi bi-eraser"></i></button>
-    <button class="btn btn-outline-danger btn-sm btn-del flex-shrink-0" type="button" title="삭제"><i class="bi bi-x-lg"></i></button>`;
+    <button class="btn btn-ghost btn-sm btn-clean-img flex-shrink-0" type="button" title="워터마크 제거·정제(CDN 설정 시 재호스팅)"><i class="bi bi-eraser"></i></button>
+    <button class="btn btn-ghost btn-sm btn-del flex-shrink-0" type="button" title="삭제"><i class="bi bi-x-lg"></i></button>`;
   const input = row.querySelector('.img-url');
   const thumb = row.querySelector('.img-thumb');
   function syncThumb() {
@@ -655,10 +655,10 @@ function refreshImageBadges() {
     const btn = row.querySelector('.btn-make-primary');
     if (!btn) return;
     if (i === 0) {
-      btn.classList.add('btn-warning'); btn.classList.remove('btn-outline-warning');
+      btn.classList.add('btn-warning'); btn.classList.remove('btn-ghost');
       btn.textContent = '대표'; btn.disabled = true; btn.title = '현재 대표/썸네일';
     } else {
-      btn.classList.add('btn-outline-warning'); btn.classList.remove('btn-warning');
+      btn.classList.add('btn-ghost'); btn.classList.remove('btn-warning');
       btn.textContent = '지정'; btn.disabled = false; btn.title = '대표 이미지로 지정';
     }
   });
@@ -874,11 +874,11 @@ function dpRender() {
     const row = document.createElement('div');
     row.className = 'border rounded p-2';
     let inner = '<div class="d-flex justify-content-between align-items-center mb-1">' +
-      '<span class="badge text-bg-light">' + ({text:'텍스트',image:'이미지',highlight:'강조박스',divider:'구분선'}[b.type] || b.type) + '</span>' +
+      '<span class="pc-badge pc-badge-muted">' + ({text:'텍스트',image:'이미지',highlight:'강조박스',divider:'구분선'}[b.type] || b.type) + '</span>' +
       '<span class="btn-group btn-group-sm">' +
-      '<button type="button" class="btn btn-outline-secondary py-0" data-act="up">↑</button>' +
-      '<button type="button" class="btn btn-outline-secondary py-0" data-act="down">↓</button>' +
-      '<button type="button" class="btn btn-outline-danger py-0" data-act="del">삭제</button></span></div>';
+      '<button type="button" class="btn btn-ghost py-0" data-act="up">↑</button>' +
+      '<button type="button" class="btn btn-ghost py-0" data-act="down">↓</button>' +
+      '<button type="button" class="btn btn-ghost py-0" data-act="del">삭제</button></span></div>';
     if (b.type === 'text' || b.type === 'highlight') {
       inner += '<textarea class="form-control form-control-sm dp-content" rows="2" placeholder="내용을 입력하세요">' + escapeHtml(b.content) + '</textarea>';
     } else if (b.type === 'image') {
@@ -936,7 +936,7 @@ function addOptionRow(name, values) {
   row.innerHTML = `
     <input type="text" class="form-control opt-name kgp-w-xs" placeholder="옵션명(예: 색상)" value="${escapeHtml(name || '')}">
     <input type="text" class="form-control opt-values" placeholder="값들(쉼표 구분: Black, White)" value="${escapeHtml(values || '')}">
-    <button class="btn btn-outline-danger" type="button" title="삭제"><i class="bi bi-x-lg"></i></button>`;
+    <button class="btn btn-ghost" type="button" title="삭제"><i class="bi bi-x-lg"></i></button>`;
   row.querySelector('button').addEventListener('click', () => row.remove());
   wrap.appendChild(row);
 }
@@ -1269,7 +1269,7 @@ function renderKeywordChips(list) {
   _kwSuggestions.forEach(kw => {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'btn btn-outline-primary btn-sm py-0 px-2 kw-chip';
+    b.className = 'btn btn-ghost btn-sm py-0 px-2 kw-chip';
     b.dataset.kw = kw;
     b.textContent = '＋ ' + kw;
     if (cur.includes(kw)) { b.classList.add('active'); b.style.opacity = '.45'; }
@@ -1479,7 +1479,7 @@ function renderUploadResults(data) {
   });
   badges += '</div>';
   const retryBtn = _failedMarkets.length
-    ? `<button type="button" class="btn btn-sm btn-outline-danger mb-2" onclick="retryFailedUpload(${JSON.stringify(_failedMarkets).replace(/"/g, '&quot;')})"><i class="bi bi-arrow-clockwise"></i> 실패 ${_failedMarkets.length}개 마켓 재시도</button>`
+    ? `<button type="button" class="btn btn-sm btn-ghost mb-2" onclick="retryFailedUpload(${JSON.stringify(_failedMarkets).replace(/"/g, '&quot;')})"><i class="bi bi-arrow-clockwise"></i> 실패 ${_failedMarkets.length}개 마켓 재시도</button>`
     : '';
   let html = `<div class="mb-2 text-muted small">${summary}</div>` + badges + retryBtn;
   html += '<div class="list-group mb-2">';

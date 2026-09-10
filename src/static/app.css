@@ -2142,3 +2142,20 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
   .si-page .op-card-head { flex-wrap: wrap; }
   .si-page .op-card-head .ms-auto { margin-left: 0 !important; }
 }
+
+/* ── Stage 6-j-2: JS가 그리는 마크업의 자리 ──────────────────────────────────
+   JS 렌더 문자열에만 있던 하드코딩·v2 잔재를 받을 클래스들. 서버 렌더와 **같은 문법**을
+   쓰게 하려는 것이지 새 문법을 만드는 게 아니다(그래서 전부 기존 토큰만 참조한다). */
+.pc-narrow { max-width: 20rem; margin-inline: auto; }   /* 인라인 max-width 300/320px 통합 */
+.pc-code-chip {                                          /* 복사용 코드 조각 — 한지 배경 */
+  padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm);
+  background: var(--hanji); font-family: var(--font-mono, monospace);
+}
+/* 수집 결과 박스 — 성공/주의/실패를 배경이 아니라 **좌측 악센트**로 말한다(강조 1색 규율). */
+.si-result-box {
+  padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--ink) 3%, var(--surface));
+}
+.si-result-box.is-warn { border-left: 3px solid var(--warn); }
+.si-result-box.is-bad  { border-left: 3px solid var(--danger); }
+.si-result-thumb { width: 4rem; height: 4rem; object-fit: cover; border-radius: var(--radius-sm); flex-shrink: 0; }

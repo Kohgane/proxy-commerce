@@ -27,8 +27,12 @@ VIEWPORT = (1920, 940)
 
 
 def _body(p: Path = TPL) -> str:
+    """주석만 지운다. **`<script>`는 안 지운다** — 지웠더니 계약이 그린인데 화면은 v2를 그렸다.
+
+    지울 것과 안 지울 것의 기준은 '노이즈인가'가 아니라 **'사용자가 보게 되는가'**다.
+    주석은 화면에 안 나오지만 JS 문자열은 **화면이 된다**([[계약이 script를 지우고 검사한다]]).
+    """
     s = p.read_text(encoding="utf-8")
-    s = re.sub(r"<script.*?</script>", "", s, flags=re.S)
     return re.sub(r"\{#.*?#\}|<!--.*?-->", "", s, flags=re.S)
 
 

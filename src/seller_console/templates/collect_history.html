@@ -774,7 +774,7 @@ function excelRenderReport(d) {
   sum.innerHTML =
     `<span class="pc-badge pc-badge-on"><i class="bi bi-plus-lg"></i> 신규 ${d.new}</span>` +
     `<span class="pc-badge pc-badge-muted"><i class="bi bi-arrow-repeat"></i> 갱신 ${d.update}</span>` +
-    `<span class="badge ${d.error_count ? 'bg-danger' : 'bg-secondary'}"><i class="bi bi-exclamation-triangle"></i> 오류 ${d.error_count}</span>`;
+    `<span class="pc-badge ${d.error_count ? 'pc-badge-danger' : 'pc-badge-muted'}"><i class="bi bi-exclamation-triangle"></i> 오류 ${d.error_count}</span>`;
   let html = '';
   if (d.truncated) html += `<div class="pc-status pc-status-warning small py-2">행이 많아 5000개까지만 처리했어요. 나눠서 올려 주세요.</div>`;
   if (d.errors && d.errors.length) {

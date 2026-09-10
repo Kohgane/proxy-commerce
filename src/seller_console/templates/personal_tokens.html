@@ -436,7 +436,7 @@ async function kgpLoadPasskeys() {
       li.innerHTML = '<span><i class="bi bi-fingerprint"></i> ' + (p.label || '패스키') +
         ' <span class="text-muted">· ' + when + '</span></span>';
       var del = document.createElement('button');
-      del.className = 'btn btn-sm btn-outline-danger py-0'; del.textContent = '삭제';
+      del.className = 'btn btn-sm btn-ghost py-0'; del.textContent = '삭제';
       del.onclick = function () { kgpDeletePasskey(p.credential_id); };
       li.appendChild(del); ul.appendChild(li);
     });

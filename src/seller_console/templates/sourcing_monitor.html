@@ -92,11 +92,11 @@
 function renderChange(td, mon) {
   const ch = mon.change;
   const s = mon.summary || '확인 불가';
-  let cls = 'text-bg-secondary', txt = s;
-  if (ch === 'out_of_stock') cls = 'text-bg-danger';
-  else if (ch === 'price') cls = 'text-bg-warning text-dark';
-  else if (ch === 'options' || ch === 'changed') cls = 'text-bg-info';
-  else if (ch === 'none') { cls = 'text-bg-success'; txt = '변화 없음'; }
+  let cls = 'pc-badge-muted', txt = s;
+  if (ch === 'out_of_stock') cls = 'pc-badge-danger';
+  else if (ch === 'price') cls = 'pc-badge-off text-dark';
+  else if (ch === 'options' || ch === 'changed') cls = 'pc-badge-muted';
+  else if (ch === 'none') { cls = 'pc-badge-on'; txt = '변화 없음'; }
   td.innerHTML = `<span class="badge ${cls}">${txt}</span>`;
 }
 
@@ -115,7 +115,7 @@ async function checkItem(id, row) {
     renderChange(changeTd, mon);
     if (checkedTd && mon.checked_at) checkedTd.textContent = mon.checked_at.slice(0,16).replace('T',' ');
   } catch (e) {
-    changeTd.innerHTML = `<span class="badge text-bg-secondary">확인 실패</span>`;
+    changeTd.innerHTML = `<span class="pc-badge pc-badge-muted">확인 실패</span>`;
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '변화 확인'; }
   }

@@ -113,7 +113,7 @@
               {% for row in log|reverse %}
               <tr>
                 <td class="ps-3 text-muted" style="white-space:nowrap;">{{ row.sent_at[:16] if row.sent_at else '-' }}</td>
-                <td><span class="badge bg-light text-dark border">{{ row.channel }}</span></td>
+                <td><span class="pc-badge pc-badge-muted">{{ row.channel }}</span></td>
                 <td>{{ row.event }}</td>
                 <td>{{ row.locale }}</td>
                 <td>
@@ -185,7 +185,7 @@ async function refreshLog() {
         const statusIcon = row.status === 'ok' ? '<i class="bi bi-check-circle text-success"></i>' : `<span class="text-danger" title="${row.error||''}"><i class="bi bi-x-circle"></i></span>`;
         html += `<tr>
           <td class="ps-3 text-muted" style="white-space:nowrap;">${sentAt||'-'}</td>
-          <td><span class="badge bg-light text-dark border">${row.channel}</span></td>
+          <td><span class="pc-badge pc-badge-muted">${row.channel}</span></td>
           <td>${row.event}</td><td>${row.locale}</td>
           <td>${statusIcon}</td></tr>`;
       }
