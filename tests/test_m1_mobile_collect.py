@@ -79,9 +79,18 @@ def test_extracts_url_from_shared_text(client, monkeypatch):
 
 
 def test_rejects_non_url_honestly(client, monkeypatch):
+    """링크가 없으면 **정직하게 거절하고 무엇을 하면 되는지 말한다.**
+
+    C-트랙에서 문구가 「URL」 → 「링크나 공유 텍스트」로 바뀌었다(셀러 언어 · 오너 지시).
+    계약은 **낱말이 아니라 그 자리가 하는 일**을 잰다 — 거절 + 다음 행동 안내.
+    낱말에 못을 박으면 카피를 고칠 때마다 계약이 깨지고, 정작 안내가 사라져도 안 잡힌다.
+    """
     _auth(monkeypatch)
     r = client.post("/api/v1/collect/one", json={"url": "그냥 텍스트"})
-    assert r.status_code == 400 and "URL" in r.get_json()["error"]
+    assert r.status_code == 400
+    err = r.get_json()["error"]
+    assert "링크" in err or "URL" in err, "무엇이 없는지 말해야 한다"
+    assert "붙여넣" in err, "다음에 무엇을 하면 되는지 말해야 한다"
 
 
 def test_failure_is_honest_not_fake_success(client, monkeypatch):

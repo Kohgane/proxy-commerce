@@ -99,7 +99,8 @@ def telegram_collect():
     from src.collectors.share_text import parse_share_text
     share = parse_share_text(text)
     if not share.get("url"):
-        _reply(chat_id, "상품 링크를 찾지 못했어요. 링크나 앱 공유 텍스트를 그대로 보내주세요.")
+        _reply(chat_id, "상품 링크를 찾지 못했어요. 링크나 앱 공유 텍스트를 그대로 보내주세요. "
+                        "'검수'를 같이 쓰면 판매가·마진까지 알려드려요.")
         return jsonify({"ok": True, "skipped": "no_url"})
 
     url = share["url"]

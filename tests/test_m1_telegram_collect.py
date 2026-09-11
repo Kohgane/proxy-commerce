@@ -93,7 +93,9 @@ def test_no_url_gets_guidance_not_silence(client, _quiet):
     """URL이 없으면 조용히 삼키지 않고 **무엇을 보내야 하는지** 알려준다."""
     r = _post(client, "안녕")
     assert r.get_json()["skipped"] == "no_url"
-    assert "URL" in _quiet[0] and "검수" in _quiet[0]
+    # 낱말이 아니라 **안내가 있는가**를 본다(문구는 셀러 언어로 바뀔 수 있다).
+    assert ("링크" in _quiet[0] or "URL" in _quiet[0]), "무엇이 없는지 말해야 한다"
+    assert "검수" in _quiet[0], "검수 힌트가 사라지면 그 기능을 아무도 모른다"
 
 
 def test_missing_seller_scope_refuses_to_guess(client, monkeypatch, _quiet):
