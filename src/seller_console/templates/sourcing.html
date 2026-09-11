@@ -366,10 +366,10 @@ function renderQuickResult(data, url) {
          <span>수집은 됐지만 이력 저장은 확인되지 않았습니다.</span></div>`;
   quickResult.classList.remove('d-none');
   quickResult.innerHTML = `
-    <div class="border rounded-3 p-3 bg-light">
+    <div class="si-result-box">
       ${savedBanner}
       <div class="d-flex gap-3">
-        ${img ? `<img src="${img}" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex-shrink:0;" onerror="this.style.display='none'">` : ''}
+        ${img ? `<img src="${img}" alt="" class="si-result-thumb" onerror="this.style.display='none'">` : ''}
         <div style="min-width:0;">
           <div class="fw-semibold text-truncate">${title}</div>
           <div class="small text-muted">${priceTxt} · collector: ${source}</div>
@@ -377,8 +377,8 @@ function renderQuickResult(data, url) {
       </div>
       <div class="d-flex flex-wrap gap-2 mt-3">
         <a class="btn btn-sm btn-primary" href="${editHref}"><i class="bi bi-pencil-square"></i> 확인·수정·등록</a>
-        <a class="btn btn-sm btn-outline-secondary" href="/seller/collect/history"><i class="bi bi-clock-history"></i> 수집 이력에서 보기</a>
-        <button type="button" class="btn btn-sm btn-outline-success" id="saveToRegistryBtn" data-domain="${escapeHtml(domain)}" data-url="${escapeHtml(url)}">+ 소싱처로 저장</button>
+        <a class="btn btn-sm btn-ghost" href="/seller/collect/history"><i class="bi bi-clock-history"></i> 수집 이력에서 보기</a>
+        <button type="button" class="btn btn-sm btn-ghost" id="saveToRegistryBtn" data-domain="${escapeHtml(domain)}" data-url="${escapeHtml(url)}">+ 소싱처로 저장</button>
         <button type="button" class="btn btn-sm btn-link text-muted" onclick="quickResult.classList.add('d-none')">닫기</button>
       </div>
       <div id="saveToRegistryResult" class="mt-2 d-none"></div>
@@ -393,7 +393,7 @@ function renderQuickFailure(data, url) {
   const msg = escapeHtml((data && data.error) || '요청 실패');
   quickResult.classList.remove('d-none');
   quickResult.innerHTML = `
-    <div class="border rounded-3 p-3 ${manual ? 'border-warning bg-warning-subtle' : 'border-danger bg-danger-subtle'}">
+    <div class="si-result-box ${manual ? 'is-warn' : 'is-bad'}">
       <div class="fw-semibold mb-1">${manual ? '<i class="bi bi-exclamation-triangle"></i> 자동 수집이 어려운 페이지예요' : '<i class="bi bi-x-circle"></i> 수집 실패'}</div>
       <div class="small mb-2">${msg}</div>
       <div class="small text-muted mb-2">
@@ -405,8 +405,8 @@ function renderQuickFailure(data, url) {
         </ul>
       </div>
       <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-sm btn-outline-primary" href="/seller/extension"><i class="bi bi-puzzle"></i> 크롬 확장 설치</a>
-        <a class="btn btn-sm btn-outline-secondary" href="/seller/collect?url=${encodeURIComponent(url)}"><i class="bi bi-pencil"></i> 직접 입력으로 등록</a>
+        <a class="btn btn-sm btn-ghost" href="/seller/extension"><i class="bi bi-puzzle"></i> 크롬 확장 설치</a>
+        <a class="btn btn-sm btn-ghost" href="/seller/collect?url=${encodeURIComponent(url)}"><i class="bi bi-pencil"></i> 직접 입력으로 등록</a>
         <button type="button" class="btn btn-sm btn-link text-muted" onclick="quickResult.classList.add('d-none')">닫기</button>
       </div>
     </div>
@@ -428,7 +428,7 @@ async function saveToRegistry(e) {
     });
     const data = await resp.json();
     if (data.ok) {
-      const badges = {'open':'<span class="badge text-bg-success">open</span>','partial':'<span class="badge text-bg-warning text-dark">partial</span>','restricted':'<span class="badge text-bg-danger">restricted <i class="bi bi-exclamation-triangle"></i></span>'};
+      const badges = {'open':'<span class="pc-badge pc-badge-on">open</span>','partial':'<span class="pc-badge pc-badge-off text-dark">partial</span>','restricted':'<span class="pc-badge pc-badge-danger">restricted <i class="bi bi-exclamation-triangle"></i></span>'};
       const badge = badges[data.openness_status] || '';
       resultEl.classList.remove('d-none');
       resultEl.innerHTML = `<div class="text-success small">소싱처로 저장됨: <strong>${data.domain}</strong> ${badge} — <a href="/seller/sourcing">목록 보기</a></div>`;

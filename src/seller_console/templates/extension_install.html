@@ -131,9 +131,9 @@ function render() {
   let html = `<div style="font-size:3rem"><i class="bi ${s.icon}"></i></div><h2 class="h5 mt-2">${s.title}</h2>` +
              `<p class="text-muted mt-2 mb-3">${s.body}</p>`;
   if (s.code) {
-    html += `<div class="d-flex justify-content-center mb-3"><span class="px-3 py-2 rounded" style="background:#f5f1e6;font-family:monospace">${s.code}</span></div>`;
+    html += `<div class="d-flex justify-content-center mb-3"><span class="pc-code-chip">${s.code}</span></div>`;
   }
-  html += `<div class="d-grid gap-2 mx-auto" style="max-width:300px"><button type="button" class="btn btn-cta" id="extPrimary">${s.btn.label}</button></div>`;
+  html += `<div class="d-grid gap-2 pc-narrow"><button type="button" class="btn btn-cta" id="extPrimary">${s.btn.label}</button></div>`;
   document.getElementById("extPanel").innerHTML = html;
   document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => { try { new bootstrap.Tooltip(el); } catch (e) {} });
   document.getElementById("extPrimary").addEventListener("click", () => handle(s.btn));

@@ -88,12 +88,12 @@
       {% if scan.by_state %}
       <span class="rw-states">
         {% for st, n in scan.by_state.items() %}
-        <span class="pc-badge {% if st == 'rejected' %}pc-badge-danger{% elif st == 'saved' %}pc-badge-warning{% elif st == 'approved' %}pc-badge-success{% else %}pc-badge-muted{% endif %}">
+        <span class="pc-badge {% if st == 'rejected' %}pc-badge-danger{% elif st == 'saved' %}pc-badge-off{% elif st == 'approved' %}pc-badge-on{% else %}pc-badge-muted{% endif %}">
           {{ scan.labels.get(st, st) }} {{ n }}</span>
         {% endfor %}
       </span>
       {% endif %}
-      <span class="pc-badge {% if approved %}pc-badge-warning{% else %}pc-badge-muted{% endif %} ms-auto"
+      <span class="pc-badge {% if approved %}pc-badge-off{% else %}pc-badge-muted{% endif %} ms-auto"
             title="{% if approved %}처방 실행 승인됨(REJECT_WATCH_APPROVED) — 재등록·삭제가 실제로 실행됩니다.{% else %}처방 실행 보류 — 재등록·삭제는 오너 승인(REJECT_WATCH_APPROVED) 뒤에만. 지금은 분류·알림만.{% endif %}">
         <i class="bi bi-{% if approved %}unlock{% else %}lock{% endif %}"></i>
         {% if approved %}실행 승인됨{% else %}실행 보류{% endif %}

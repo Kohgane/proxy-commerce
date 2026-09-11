@@ -114,7 +114,7 @@ const SOCIAL = [
   { href: '/auth/apple/start?next=/seller/start',  label: 'Apple로 시작', style: 'background:#000;color:#fff;border:none;' },
 ];
 function socialHtml() {
-  return '<div class="d-grid gap-2 mx-auto" style="max-width:320px">' +
+  return '<div class="d-grid gap-2 pc-narrow">' +
     SOCIAL.map(s => `<a class="btn" style="${s.style}" href="${s.href}">${s.label}</a>`).join('') +
     '</div>';
 }
