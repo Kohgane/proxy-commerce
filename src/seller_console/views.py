@@ -1318,20 +1318,28 @@ def collect_preview():
     return jsonify(response)
 
 
-def _quick_collect(url: str, source: str = "bookmarklet") -> dict:
+def _quick_collect(url: str, source: str = "bookmarklet", share_raw: str = "") -> dict:
     """공통 수집 코어 — 로그인 세션으로 URL 수집해 이력에 저장.
 
     Returns: {ok, item_id, message, status} (status=HTTP 코드). 북마클릿/공유(Share Target) 공용.
+
+    `share_raw`(C-T3): 앱 공유 텍스트 원문. 페이지를 못 읽었을 때 **제목만이라도 살리는** 근거다 —
+    공유 글엔 제목이 들어 있으니, 빈손으로 돌려보내는 대신 '간이' 초안을 세운다.
     """
     if not url.startswith(("http://", "https://")):
         return {"ok": False, "item_id": None, "status": 400,
                 "message": "올바른 상품 URL이 아닙니다. 상품 상세 페이지에서 다시 시도해주세요."}
 
     draft = None
-    try:
-        draft = _collect_real_draft(url, translate=True)
-    except Exception as exc:
-        logger.warning("빠른 수집 파이프라인 오류(%s): %s", url[:80], exc)
+    # C-T4''(최종): 타오바오 계열은 **서버 수집을 건너뛴다** — 실측상 반드시 실패한다
+    #   (단축 링크=해외 IP 연결 거부, 상세=IP 무관 로그인 벽). 실패 로그는 소음일 뿐이다.
+    from src.collectors.share_text import is_taobao_family as _is_tb
+    _skip_server = bool(share_raw) and _is_tb(url)
+    if not _skip_server:
+        try:
+            draft = _collect_real_draft(url, translate=True)
+        except Exception as exc:
+            logger.warning("빠른 수집 파이프라인 오류(%s): %s", url[:80], exc)
 
     if not draft:
         t = (request.args.get("t") or "").strip()
@@ -1348,6 +1356,35 @@ def _quick_collect(url: str, source: str = "bookmarklet") -> dict:
             }
 
     if not draft:
+        # C-T3: 페이지는 못 읽었지만 **공유 텍스트에 제목이 있으면** 그것만으로 초안을 세운다.
+        #   가격·이미지·옵션은 '미수집'으로 남는다 — 0으로 채우지 않는다.
+        # **제목이 있을 때만** 폴백한다. 이 경로의 근거가 "공유 글엔 제목이 있으니까"이기 때문이다.
+        #   실측(이 슬라이스에서 계약이 잡음): 맨 URL을 그대로 넣었더니 제목도 가격도 이미지도 없는
+        #   **빈 항목**이 '수집됨'으로 앉고 편집 화면으로 넘어갔다 — 그게 바로 가짜 성공이다.
+        _share_title = ""
+        if share_raw:
+            try:
+                from src.collectors.share_text import parse_share_text as _pst
+                _share_title = _pst(share_raw).get("title", "")
+            except Exception:
+                _share_title = ""
+        if _share_title:
+            try:
+                from src.collectors.share_collect import collect_from_share_text
+                _fin = (request.args.get("final_url") or request.args.get("expanded_url") or "")
+                r = collect_from_share_text(share_raw, seller_id=_seller_id(), source=source,
+                                            final_url=_fin)
+                if r.get("ok"):
+                    _msg = ("제목·상품번호·가격까지 담았어요(공유 시점 가격). 이미지·옵션은 PC에서 "
+                            "고가수집기로 보강해 주세요."
+                            if r.get("price") else
+                            "제목과 링크만 담았어요. VPN을 끄고 다시 공유하면 가격·상품번호까지 담깁니다.")
+                    if r.get("resolve_reason"):
+                        _msg += f" · 링크 펴기 실패: {r['resolve_reason']}"
+                    return {"ok": True, "item_id": r.get("item_id"), "status": 200,
+                            "partial": True, "message": _msg}
+            except Exception as exc:
+                logger.warning("공유 텍스트 폴백 실패: %s", exc)
         return {"ok": False, "item_id": None, "status": 200,
                 "message": ("이 페이지에서 상품 정보를 읽지 못했습니다. 상품 상세 페이지인지 확인하거나, "
                             "봇 차단 사이트(Temu·Amazon 등)는 PC 크롬 확장(고가수집기)에서 더 정확합니다.")}
@@ -1408,14 +1445,13 @@ def collect_quick():
     if not _check_auth():
         return redirect(url_for("auth.login", next=request.full_path))
 
-    url = (request.args.get("u") or request.args.get("url") or "").strip()
-    if not url.startswith(("http://", "https://")):
-        shared = request.args.get("text") or request.args.get("title") or ""
-        m = re.search(r"https?://[^\s]+", shared)
-        if m:
-            url = m.group(0).strip()
+    # C-T1: 공유 텍스트 통째를 받는다 — URL 추출은 `share_text` 한 곳(입력구별 정규식 금지).
+    from src.collectors.share_text import parse_share_text
+    _raw = (request.args.get("u") or request.args.get("url")
+            or request.args.get("text") or request.args.get("title") or "")
+    url = parse_share_text(_raw).get("url", "")
 
-    res = _quick_collect(url, source="bookmarklet")
+    res = _quick_collect(url, source="bookmarklet", share_raw=_raw)
     # 북마클릿은 편집 페이지로 바로 안 보내고 '수집됨'만 표시(오너 결정, Phase 219).
     return render_template(
         "collect_quick_result.html", ok=res["ok"], message=res["message"],
@@ -1434,14 +1470,13 @@ def collect_share():
     if not _check_auth():
         return redirect(url_for("auth.login", next=request.full_path))
 
-    url = (request.args.get("url") or request.args.get("u") or "").strip()
-    if not url.startswith(("http://", "https://")):
-        shared = request.args.get("text") or request.args.get("title") or ""
-        m = re.search(r"https?://[^\s]+", shared)
-        if m:
-            url = m.group(0).strip()
+    # C-T1: 공유 시트가 title·text만 주는 경우가 흔하다 — 셋 다 같은 파서에 넣는다.
+    from src.collectors.share_text import parse_share_text
+    _raw = (request.args.get("url") or request.args.get("u")
+            or request.args.get("text") or request.args.get("title") or "")
+    url = parse_share_text(_raw).get("url", "")
 
-    res = _quick_collect(url, source="share")
+    res = _quick_collect(url, source="share", share_raw=_raw)
     if res["ok"] and res.get("item_id"):
         # 성공 → 편집 화면(모바일 풀스크린 드로어 모드)으로 바로 진입
         return redirect(url_for("seller_console.collect_preview_by_id",
@@ -1663,6 +1698,27 @@ def collect_upload():
 
     if not markets:
         return jsonify({"ok": False, "error": "업로드 대상 마켓을 선택하세요."}), 400
+
+    # C-T3: **보강 전 등록 차단.** 공유 텍스트 초안은 가격이 없다 — 마진을 낼 수 없고,
+    #   0으로 채우면 그건 계산이 아니라 날조다. 버튼을 숨기는 것으로는 부족하다(직접 호출이 남는다).
+    #   게이트는 **서버**에 둔다.
+    try:
+        _gid = data.get("item_id")
+        if _gid:
+            _git = _get_owned_item(_gid)
+            if _git:
+                _gex = json.loads(_git.get("extra_json") or "{}") or {}
+                if str(_gex.get("enrich_state") or "") == "pending":
+                    return jsonify({
+                        "ok": False, "enrich_required": True,
+                        "error": "아직 보강되지 않은 상품이에요. 가격·이미지가 없어 마켓에 등록할 수 없습니다.",
+                        "message": "PC에서 상품 페이지를 열고 고가수집기로 보강한 뒤 등록해 주세요.",
+                    }), 409
+    except Exception as _gexc:
+        # 게이트 판정 자체가 깨졌을 때(extra_json 파손 등) 전 상품 등록을 멈추진 않는다 —
+        #   **뒤에 가격 게이트가 한 겹 더 있기 때문**이다(upload_dispatcher: `price is None or price <= 0` 거부).
+        #   즉 여기서 새어 나가도 가격 없는 초안은 거기서 막힌다. 그 사실이 없었다면 닫는 쪽이 맞다.
+        logger.warning("보강 게이트 확인 실패(가격 게이트로 넘김): %s", _gexc)
 
     # v87-W7 item2: 상세 병기 — 마켓에 보내는 상세는 **한국어 번역 + 구분선 + 원문**(원문 항상 보존).
     #   저장 필드는 순수 유지, 전송 시점에만 합성. 편집본(product_data.description=번역/편집본)에 저장된
@@ -1940,9 +1996,14 @@ def collect_bulk():
     results = []
     success = 0
     for url in urls:
-        if not (url.startswith("http://") or url.startswith("https://")):
-            results.append({"url": url, "ok": False, "error": "http/https URL이 아닙니다."})
+        # C-T1: 한 줄이 공유 텍스트일 수 있다(앱에서 복사하면 그 덩어리가 온다).
+        from src.collectors.share_text import parse_share_text
+        _parsed = parse_share_text(url).get("url", "")
+        if not _parsed:
+            results.append({"url": url, "ok": False,
+                            "error": "상품 링크를 찾지 못했습니다(링크나 공유 텍스트를 붙여넣어 주세요)."})
             continue
+        url = _parsed
         try:
             # Phase 203: 목업 제거 — /collect/preview와 동일한 실 수집 파이프라인 사용
             d = _collect_real_draft(url, translate=True)

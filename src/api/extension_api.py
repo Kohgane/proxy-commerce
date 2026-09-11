@@ -233,9 +233,10 @@ def _field_empty(payload: dict, key: str) -> bool:
     return v is None or str(v).strip() in ("", "0", "0.0", "0.00")
 
 
-# v86-F: 간이(제목·이미지만) 수집 모드 집합. 'core'=북마클릿 폴백(v81), 'simple'=목록 타일(v86-F).
-#   둘 다 목록에서 '간이' 뱃지로 표시하고 [다시 수집]을 권한다.
-SIMPLE_COLLECT_MODES = frozenset({"core", "simple"})
+# v86-F: 간이(제목·이미지만) 수집 모드 집합. 'core'=북마클릿 폴백(v81), 'simple'=목록 타일(v86-F),
+#   C-T3 'share'=앱 공유 텍스트(제목·링크만 — 이미지도 없다).
+#   셋 다 목록에서 '간이' 뱃지 + [다시 수집] 권유. **뱃지 조건은 여기 한 곳에서만 정의한다.**
+SIMPLE_COLLECT_MODES = frozenset({"core", "simple", "share"})
 
 
 def _resolve_collect_mode(payload: dict) -> str:
@@ -433,6 +434,57 @@ def api_exists():
     return jsonify({"ok": True, "collected": collected})
 
 
+@extension_bp.get("/enrich/pending")
+def collect_enrich_pending():
+    """C-T4': **보강 대기 목록** — 확장이 "무엇을 열어야 하는지" 묻는 곳.
+
+    공유 텍스트로 담은 초안은 제목·링크뿐이고, 그 링크는 **로그인된 브라우저에서만** 열린다
+    (실측 2026-09-11: 서버는 중국 IP도 해외 IP도 막힌다). 그래서 보강 주체가 확장이다 —
+    퍼센티가 같은 구조인 이유다. 유저 체감은 "폰에서 담고 PC에서 마무리"다.
+
+    응답 `{ok, items: [{item_id, url, title, uncollected}], total}`.
+    비면 빈 배열이다 — 없는 일감을 만들지 않는다.
+    """
+    user = _require_token(scopes=["collect.write"])
+    if not user:
+        return jsonify({"ok": False, "error": "인증이 필요합니다. 토큰을 확인하세요."}), 401
+    seller_id_val = str(user.get("user_id") or "")
+    ids = {seller_id_val} if seller_id_val else set()
+    try:
+        from src.auth.user_store import get_store as _gs
+        _u = _gs().find_by_id(seller_id_val)
+        if _u is not None and getattr(_u, "email", ""):
+            ids.add(str(_u.email))
+    except Exception:
+        pass
+
+    import json as _json
+    from src.seller_console.collect_history_store import list_items as _list
+    try:
+        limit = max(1, min(int(request.args.get("limit") or 50), 200))
+    except Exception:
+        limit = 50
+
+    out = []
+    for row in _list(seller_ids=ids or None, days=90, limit=500):
+        try:
+            ex = _json.loads(row.get("extra_json") or "{}") or {}
+        except Exception:
+            continue
+        if str(ex.get("enrich_state") or "") != "pending":
+            continue
+        out.append({
+            "item_id": row.get("id"),
+            "url": row.get("url") or "",
+            "title": row.get("title") or ex.get("title") or "",
+            "uncollected": ex.get("uncollected") or [],
+        })
+        if len(out) >= limit:
+            break
+    logger.info("[enrich-pending] seller=%s 대기 %s건", seller_id_val or "?", len(out))
+    return jsonify({"ok": True, "items": out, "total": len(out)})
+
+
 @extension_bp.post("/enrich")
 def collect_enrich():
     """v64 STEP1: 벌크 2단 수집 — 목록 데이터 저장 후 확장이 각 상품 상세 페이지에서 읽은
@@ -490,6 +542,16 @@ def collect_enrich():
     for k in ("rating", "review_count"):
         if data.get(k) and not extra.get(k):
             extra[k] = data[k]; changed[k] = 1
+    # C-T4': 가격·통화 — **기존이 비었을 때만** 채운다(fill-only 그대로).
+    #   원래 가격은 보강 대상이 아니었다: 벌크 목록 수집엔 카드 가격이 이미 실려 있었으니까.
+    #   공유 텍스트 초안은 **가격이 아예 없다** — 그래서 여기서 채우지 않으면 등록 게이트가 영영 안 열린다.
+    #   기존 값이 있으면 손대지 않으므로 옛 경로의 '기존 우선' 규칙은 그대로다.
+    _pin = str(data.get("price") or "").strip()
+    if _pin and not str(extra.get("price") or "").strip():
+        extra["price"] = _pin; changed["price"] = 1
+        _cin = str(data.get("currency") or "").strip()
+        if _cin and not str(extra.get("currency") or "").strip():
+            extra["currency"] = _cin; changed["currency"] = 1
     # 상세이미지·갤러리: union(순서보존 dedup) — 늘어날 때만.
     di = data.get("detail_images")
     if isinstance(di, list) and di:
@@ -512,6 +574,16 @@ def collect_enrich():
     if changed and str(extra.get("mode") or "").lower() in SIMPLE_COLLECT_MODES:
         extra["mode"] = "full"
         changed["mode"] = 1
+    # C-T3/T4': 등록 게이트 해제 — **가격이 실제로 들어왔을 때만**.
+    #   상세·이미지만 채워지고 가격이 여전히 비면 마진을 못 낸다(그 상태로 열면 0 발명으로 돌아간다).
+    if str(extra.get("enrich_state") or "") == "pending":
+        _price_now = str(extra.get("price") or "").strip()
+        if _price_now and _price_now not in ("0", "0.0", "0.00"):
+            extra["enrich_state"] = "done"
+            extra["uncollected"] = [f for f in (extra.get("uncollected") or []) if f != "price"]
+            changed["enrich_state"] = 1
+        else:
+            logger.info("[enrich] item=%s 가격 미보강 — 등록 게이트 유지", item_id)
     # 상태 배지 재계산(부분→성공).
     try:
         from src.collectors.collect_status import compute_collect_status as _ccs
@@ -521,6 +593,14 @@ def collect_enrich():
     _upd = {"extra_json": _json.dumps(extra, ensure_ascii=False)}
     if rep:
         _upd["image_url"] = rep     # 목록 대표 썸네일도 고해상으로 교체
+    # C-T4': 가격을 채웠으면 **행 컬럼도** 갱신한다 — 목록·검수표는 extra가 아니라 행을 읽는다.
+    #   여기 빠뜨리면 드로어엔 가격이 보이는데 목록은 '-'로 남아, 보강이 안 된 것처럼 보인다.
+    if changed.get("price"):
+        _upd["price"] = str(extra.get("price") or "")
+        if extra.get("currency"):
+            _upd["currency"] = str(extra.get("currency"))
+        _upd["status"] = "ok"       # '보강 대기' 해제
+
     ok = _update(item_id, seller_ids=ids, **_upd)
     st = extra.get("collect_status") or {}
     # v66 STEP3: 보강 판정 회수 — 큐가 돌았는지/필드를 채웠는지 서버 로그로 특정(어느 쪽인지 PR 근거).
@@ -1042,17 +1122,23 @@ def collect_one():
         return jsonify({"ok": False, "error": "인증이 필요합니다. 토큰을 확인하세요."}), 401
 
     body = request.get_json(force=True, silent=True) or {}
-    url = (body.get("url") or request.form.get("url")
+    raw = (body.get("url") or request.form.get("url")
            or request.args.get("url") or request.args.get("u") or "").strip()
-    if not url:
-        # 공유 시트가 제목·본문만 주는 경우가 있다 — 거기서 URL을 건져 낸다(기존 share와 동형).
-        shared = (body.get("text") or body.get("title")
+    if not raw:
+        raw = str(body.get("text") or body.get("title")
                   or request.form.get("text") or request.args.get("text") or "")
-        m = re.search(r"https?://[^\s]+", str(shared))
-        if m:
-            url = m.group(0).strip()
-    if not url.startswith(("http://", "https://")):
-        return jsonify({"ok": False, "error": "상품 URL이 필요합니다(http/https)."}), 400
+    # C-T1: `url` 칸에 **공유 텍스트 통째**가 오는 게 정상이다(타오바오 앱 공유 시트가 그 형태로만 준다).
+    #   입력구마다 제 정규식을 두지 않는다 — 파서는 `share_text` 한 곳이다.
+    # C-T2'': 폰 단축어가 「URL 확장」으로 이미 편 최종 URL을 함께 보낼 수 있다(중국망일 때만 성공).
+    #   오면 id·가격까지 건지고, 안 오면 단축 링크와 제목만으로 간다 — 두 갈래 다 정직 표기.
+    final_url = str(body.get("final_url") or body.get("expanded_url")
+                    or request.form.get("final_url") or request.args.get("final_url") or "").strip()
+    from src.collectors.share_text import parse_share_text
+    share = parse_share_text(raw, final_url=final_url)
+    url = share.get("url", "")
+    if not url:
+        return jsonify({"ok": False,
+                        "error": "상품 링크를 찾지 못했습니다. 링크나 공유 텍스트를 그대로 붙여넣어 주세요."}), 400
 
     seller_id = str(user.get("user_id") or "")
     # 중복 수집 방지 — 기존 정규화 키(v42 1-3)를 그대로 쓴다(새 규칙 만들지 않는다).
@@ -1066,8 +1152,41 @@ def collect_one():
     except Exception as exc:                       # 중복 조회 실패가 수집을 막지 않게
         logger.warning("단건 수집 중복 조회 실패: %s", exc)
 
-    res = collect_one_url(url, seller_id=seller_id, source="mobile")
+    # C-T4''(최종): 타오바오 계열은 **서버 수집을 아예 시도하지 않는다.**
+    #   실측 2026-09-11 — 단축 링크는 해외 IP에서 연결 거부, 상세는 IP 무관 로그인 벽.
+    #   먼저 `collect_one_url`을 태우면 **반드시 실패할 요청**을 한 번 날리고 폴백한다.
+    #   그 실패 로그는 진단이 아니라 소음이다. 그래서 갈래를 앞에서 가른다.
+    from src.collectors.share_text import is_taobao_family
+    if is_taobao_family(url) and share.get("title"):
+        res = {"ok": False, "error": "taobao_share_path"}
+    else:
+        res = collect_one_url(url, seller_id=seller_id, source="mobile")
     if not res.get("ok"):
+        # C-T3: 페이지를 못 읽어도 **공유 텍스트에 제목이 있으면** 그것만으로 초안을 세운다.
+        #   가격·이미지·옵션은 '미수집'으로 남는다(0으로 채우지 않는다).
+        if share.get("title"):
+            try:
+                from src.collectors.share_collect import collect_from_share_text
+                sr = collect_from_share_text(raw, seller_id=seller_id, source="mobile_share",
+                                             final_url=final_url)
+                if sr.get("ok"):
+                    _has_price = bool(sr.get("price"))
+                    return jsonify({
+                        "ok": True, "duplicate": False, "partial": True,
+                        "item_id": sr.get("item_id"), "url": sr.get("url"),
+                        "title": sr.get("title_ko") or sr.get("title") or "",
+                        "price": sr.get("price", ""), "currency": sr.get("currency", ""),
+                        "item_id_taobao": sr.get("item_id_taobao", ""),
+                        "uncollected": sr.get("uncollected", []),
+                        "enrich_state": sr.get("enrich_state", ""),
+                        "resolve_reason": sr.get("resolve_reason", ""),
+                        "message": ("제목·상품번호·가격까지 담았어요(공유 시점 가격). "
+                                    "이미지·옵션은 PC에서 고가수집기로 보강해 주세요."
+                                    if _has_price else
+                                    "제목과 링크만 담았어요. VPN을 끄고 다시 공유하면 가격·상품번호까지 담깁니다."),
+                    })
+            except Exception as exc:
+                logger.warning("단건 수집 공유 폴백 실패: %s", exc)
         # 정직 실패 — 무엇이 왜 안 됐는지 그대로 올린다(가짜 성공 0).
         return jsonify({"ok": False, "duplicate": False, "url": url,
                         "error": res.get("error") or "수집 실패",

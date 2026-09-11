@@ -24,7 +24,8 @@ logger = logging.getLogger(__name__)
 
 bp = Blueprint("telegram_collect", __name__)
 
-_URL_RE = re.compile(r"https?://[^\s]+")
+# C-T1: URL 추출은 `share_text` 한 곳이다 — 여기 제 정규식을 두면 "텔레그램만 되는" 갈래가 생긴다.
+#   (타오바오 공유 텍스트는 【淘宝】…「제목」… 덩어리라 맨 정규식이 꼬리 문장부호까지 문다.)
 # 메시지에 이 말이 섞여 있으면 검수 판정까지(없으면 수집만 — 판정은 느리다).
 _REVIEW_WORDS = ("검수", "판정", "review")
 
@@ -95,12 +96,13 @@ def telegram_collect():
         logger.warning("텔레그램 수집: 허용되지 않은 chat_id=%s", chat_id or "?")
         return jsonify({"ok": False, "error": "not_allowed"}), 403
 
-    m = _URL_RE.search(text)
-    if not m:
-        _reply(chat_id, "상품 URL을 보내주세요. '검수'를 같이 쓰면 판매가·마진까지 알려드려요.")
+    from src.collectors.share_text import parse_share_text
+    share = parse_share_text(text)
+    if not share.get("url"):
+        _reply(chat_id, "상품 링크를 찾지 못했어요. 링크나 앱 공유 텍스트를 그대로 보내주세요.")
         return jsonify({"ok": True, "skipped": "no_url"})
 
-    url = m.group(0).strip()
+    url = share["url"]
     seller_id = _seller_id_for(chat_id)
     if not seller_id:
         _reply(chat_id, "수집 대상 계정이 설정돼 있지 않아 저장하지 않았습니다"
@@ -120,6 +122,19 @@ def telegram_collect():
     from src.api.extension_api import collect_one_url
     res = collect_one_url(url, seller_id=seller_id, source="telegram")
     if not res.get("ok"):
+        # C-T3: 페이지를 못 읽어도 **공유 글에 제목이 있으면** 그것만으로 초안을 세운다.
+        #   (타오바오가 그렇다 — 링크는 로그인 벽 뒤고, 제목은 공유 글에 있다.)
+        if share.get("title"):
+            try:
+                from src.collectors.share_collect import collect_from_share_text
+                sr = collect_from_share_text(text, seller_id=seller_id, source="telegram_share")
+                if sr.get("ok"):
+                    _reply(chat_id,
+                           f"담았어요 — {sr.get('title_ko') or sr.get('title')}\n"
+                           f"제목·링크만 있어요(가격·이미지 미수집). PC에서 고가수집기로 보강해 주세요.")
+                    return jsonify({"ok": True, "partial": True, "item_id": sr.get("item_id")})
+            except Exception as exc:
+                logger.warning("텔레그램 공유 폴백 실패: %s", exc)
         # 정직 실패 — 사유를 그대로 전하고 다음 행동을 알려준다.
         _reply(chat_id, f"수집 실패 — {res.get('error') or '사유 미상'}\n"
                         f"봇 차단 사이트는 PC 확장 수집을 권합니다.")

@@ -52,7 +52,7 @@
     {% if it.is_core %}
     <span class="badge mt-1 kgp-tr-badge kgp-open-drawer ch-badge-warn" role="button" data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}"
           
-          title="{% if it.collect_mode == 'simple' %}목록 타일에서 간이 수집됨(제목·이미지만 — 상세·옵션은 목록에 없음){% else %}확장 수집기 미로드로 간이 수집됨(제목·이미지만){% endif %}. 클릭 → 드로어에서 [다시 수집]으로 상세·가격 보완"><i class="bi bi-lightning-charge"></i> 간이</span>
+          title="{% if it.collect_mode == 'simple' %}목록 타일에서 간이 수집됨(제목·이미지만 — 상세·옵션은 목록에 없음){% elif it.collect_mode == 'share' %}앱 공유 텍스트로 수집됨 — 공유 글에는 제목과 링크만 들어 있어요(가격·이미지·옵션 미수집){% else %}확장 수집기 미로드로 간이 수집됨(제목·이미지만){% endif %}. 클릭 → 드로어에서 [다시 수집]으로 상세·가격 보완"><i class="bi bi-lightning-charge"></i> 간이</span>
     {% endif %}
   </td>
   {# v64 STEP7: 가격 우정렬(스캔 편의). 원가·환율 병기는 드로어 가격 탭으로(목록은 수집가만). #}
