@@ -94,10 +94,10 @@ function renderChange(td, mon) {
   const s = mon.summary || '확인 불가';
   let cls = 'pc-badge-muted', txt = s;
   if (ch === 'out_of_stock') cls = 'pc-badge-danger';
-  else if (ch === 'price') cls = 'pc-badge-off text-dark';
+  else if (ch === 'price') cls = 'pc-badge-off';
   else if (ch === 'options' || ch === 'changed') cls = 'pc-badge-muted';
   else if (ch === 'none') { cls = 'pc-badge-on'; txt = '변화 없음'; }
-  td.innerHTML = `<span class="badge ${cls}">${txt}</span>`;
+  td.innerHTML = `<span class="pc-badge ${cls}">${txt}</span>`;
 }
 
 async function checkItem(id, row) {

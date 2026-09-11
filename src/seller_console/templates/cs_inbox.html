@@ -15,7 +15,7 @@
   <div class="op-card-body">
     <div class="row g-3">
       <div class="col-md-3"><div class="text-muted small">24h 신규</div><div class="fs-5 fw-bold">{{ stats.new_24h }}</div></div>
-      <div class="col-md-3"><div class="text-muted small">미응답</div><div class="fs-5 fw-bold">{{ stats.unanswered }} <span class="pc-pc-badge-danger">긴급 {{ stats.urgent_unanswered }}</span></div></div>
+      <div class="col-md-3"><div class="text-muted small">미응답</div><div class="fs-5 fw-bold">{{ stats.unanswered }} <span class="pc-badge pc-badge-danger">긴급 {{ stats.urgent_unanswered }}</span></div></div>
       <div class="col-md-3"><div class="text-muted small">평균 응답</div><div class="fs-5 fw-bold">{{ stats.avg_response_minutes }}분</div></div>
       <div class="col-md-3"><div class="text-muted small">응답률</div><div class="fs-5 fw-bold">{{ stats.response_rate }}%</div></div>
     </div>
@@ -55,7 +55,7 @@
          href="/seller/cs/inbox?msg={{ msg.message_id }}&status={{ filters.status }}&channel={{ filters.channel }}&q={{ filters.q }}">
         <div class="d-flex justify-content-between">
           <small>{{ msg.customer_name }}</small>
-          <span class="badge {% if msg.priority >= 2 %}pc-badge-danger{% elif msg.priority == 1 %}pc-badge-off text-dark{% else %}pc-badge-muted{% endif %}">P{{ msg.priority }}</span>
+          <span class="pc-badge {% if msg.priority >= 2 %}pc-badge-danger{% elif msg.priority == 1 %}pc-badge-off{% else %}pc-badge-muted{% endif %}">P{{ msg.priority }}</span>
         </div>
         <div class="small">{{ msg.body[:70] }}</div>
         <div class="small text-muted">{{ msg.channel }} · {{ msg.status }}</div>
@@ -73,13 +73,13 @@
         <div class="d-flex justify-content-between mb-2">
           <h5 class="mb-0">{{ selected.customer_name }}</h5>
           <div class="d-flex gap-1">
-            <span class="pc-pc-badge-muted text-dark">{{ selected.channel }}</span>
-            <span class="pc-pc-badge-muted text-dark">{{ selected.language }}</span>
-            <span class="pc-pc-badge-muted text-dark">{{ selected.category or "general" }}</span>
+            <span class="pc-badge pc-badge-muted">{{ selected.channel }}</span>
+            <span class="pc-badge pc-badge-muted">{{ selected.language }}</span>
+            <span class="pc-badge pc-badge-muted">{{ selected.category or "general" }}</span>
           </div>
         </div>
 
-        <div class="mb-3 p-2 border rounded pc-badge-muted">
+        <div class="mb-3 pc-inset">
           <div class="small text-muted mb-1">원문</div>
           <div>{{ selected.body }}</div>
         </div>
@@ -100,7 +100,7 @@
             <button class="btn btn-primary btn-sm" name="action" value="send">발송</button>
             <details class="ms-1">
               <summary class="btn btn-ghost btn-sm d-inline-block">여러 채널로 발송</summary>
-              <div class="mt-2 p-2 border rounded pc-badge-muted small">
+              <div class="mt-2 pc-inset small">
                 <label class="d-block"><input type="checkbox" name="channels" value="telegram"> 텔레그램</label>
                 <label class="d-block"><input type="checkbox" name="channels" value="email"> 이메일</label>
                 <label class="d-block"><input type="checkbox" name="channels" value="kakao"> 카카오</label>

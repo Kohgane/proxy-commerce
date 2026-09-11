@@ -1,0 +1,120 @@
+"""tests/test_v40s6l_class_home.py — 우리가 쓴 클래스에 집이 있는가.
+
+**잔재 계약은 "있으면 안 되는 것"만 본다.** v2 클래스가 사라졌는지는 세어도,
+그 자리에 들어간 새 이름이 **실제로 어딘가에 닿는지는 아무도 안 봤다.**
+그 차집합에서 6-l이 이렇게 무너졌다(실측 2026-09-11):
+
+* `pc-badge-muted`를 `pc-pc-badge-muted`로 적었다 — **13곳.** 정의가 없으니 아무 규칙도 안 걸리고,
+  DRY_RUN 뱃지가 **알약이 아니라 맨 텍스트**로 떴다. 잔재 계약은 초록이었다(v2 클래스는 실제로 없으니까).
+* `bg-light`(배경 유틸)를 `pc-badge-muted`(뱃지 변형)로 치환했다 — 표 셀·인용 블록·토스트가
+  **뱃지 옷을 입었다.** 특히 토스트는 `btn-close-white`가 밝은 배경에 얹혀 **닫기 버튼이 사라졌다.**
+* `pc-status-warn`(정본은 `-warning`) 1곳 — 경고 상자가 조용히 기본색으로 떴다.
+* 규칙 없는 이름 8개가 sourcing.html에 살아 있었다 — **내가 6-i에서 쓴 것들이다.**
+  6-k가 `.console-account`에서 잡은 것과 같은 유형: 이름이 있는데 집이 없으면,
+  다음 사람은 그 이름을 믿고 쓰다가 아무 일도 안 일어나는 걸 본다.
+
+두 가지를 본다.
+
+**① 우리 네임스페이스 클래스는 CSS 규칙이 있거나 JS 훅이어야 한다.**
+   둘 다 아니면 그 이름은 화면에 아무 일도 안 한다 — 오타이거나 유령이다.
+
+**② 변형은 기본형과 함께 온다.** `pc-badge-on`은 `pc-badge` 없이는 색만 있고 알약이 아니고,
+   `pc-status-info`는 `pc-status` 없이는 상자가 아니다. 그리고 **뱃지 변형은 뱃지에만** 붙는다.
+"""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+TPL = Path("src/seller_console/templates")
+CSS_FILES = (Path("src/static/app.css"),
+             Path("src/seller_console/static/console.css"),
+             Path("src/seller_console/static/seller.css"))
+JS_FILES = (Path("src/seller_console/static/seller.js"),)
+
+# 우리가 소유한 접두어만 본다 — 부트스트랩 유틸은 이 계약의 일이 아니다.
+OURS = ("pc-", "op-", "ch-", "mk-", "od-", "mc-", "ct-", "rw-", "si-", "kgp-", "fb-", "console-")
+
+
+def _decl(p: Path) -> str:
+    return re.sub(r"/\*.*?\*/", "", p.read_text(encoding="utf-8"), flags=re.S)
+
+
+def _defined() -> set[str]:
+    css = "".join(_decl(p) for p in CSS_FILES)
+    return set(re.findall(r"\.([a-zA-Z][\w-]*)", css))
+
+
+def _hooks() -> str:
+    """규칙이 없어도 **제 일을 하는** 이름들.
+
+    ① JS가 선택자·className 문자열로 잡는 것.
+    ② **계약이 짚는 표식** — `tests/`가 `index("mc-note-coupang")`처럼 위치를 잡는 데 쓰는 이름.
+       이걸 빼먹고 "죽은 이름"이라며 지웠다가 남의 계약을 빨갛게 만들었다(실측 2026-09-11).
+       화면에 색을 안 입혀도, 누군가 그 이름으로 자리를 찾고 있으면 그건 살아 있는 이름이다.
+    """
+    blob = "".join(p.read_text(encoding="utf-8") for p in JS_FILES)
+    for p in sorted(TPL.glob("*.html")):
+        blob += "\n".join(re.findall(r"<script[^>]*>(.*?)</script>",
+                                     p.read_text(encoding="utf-8"), re.S))
+    for p in sorted(Path("tests").glob("*.py")):
+        blob += p.read_text(encoding="utf-8", errors="ignore")
+    return blob
+
+
+def _classes(html: str):
+    """`class="..."` 안의 토큰.
+
+    Jinja 표현식 조각(`{%`·`{{`)은 이름이 아니라 제어문이라 뺀다. 다만 **표현식 안의 이름은 뺄 수 없다** —
+    `{{ ' pc-lc-dot--on' if on }}`처럼 조건부로 붙는 클래스도 화면에 나오니까(6-j-2가 배운 것:
+    계약이 안 보는 만큼 그린은 거짓이다). 대신 그 이름을 감싼 **따옴표는 이름의 일부가 아니다** —
+    안 벗기면 `pc-lc-dot--on'`이 미정의로 잡혀 거짓 경보가 난다(실제로 그랬다).
+    """
+    for m in re.finditer(r'class="([^"]*)"', html):
+        for tok in re.split(r"[\s]+", m.group(1)):
+            tok = tok.strip("'\"")
+            if tok and "{" not in tok and "}" not in tok and "%" not in tok:
+                yield m.group(1), tok
+
+
+def test_every_class_we_write_has_a_home():
+    """★ 이름을 적었는데 규칙도 훅도 없으면, 그 이름은 **화면에서 아무 일도 안 한다.**"""
+    defined, hooks = _defined(), _hooks()
+    orphans = []
+    for p in sorted(TPL.glob("*.html")):
+        html = re.sub(r"\{#.*?#\}|<!--.*?-->", "", p.read_text(encoding="utf-8"), flags=re.S)
+        for _, tok in _classes(html):
+            if tok.startswith(OURS) and tok not in defined and f"{tok}" not in hooks:
+                orphans.append(f"{p.name}:{tok}")
+    assert not orphans, f"규칙도 JS 훅도 없는 이름(화면에 아무 일도 안 한다): {sorted(set(orphans))}"
+
+
+def test_variants_come_with_their_base():
+    """★ 변형만 붙이면 색은 와도 **형태가 안 온다** — 알약이 알약이 아니게 된다."""
+    bad = []
+    for p in sorted(TPL.glob("*.html")):
+        html = re.sub(r"\{#.*?#\}|<!--.*?-->", "", p.read_text(encoding="utf-8"), flags=re.S)
+        for attr, tok in _classes(html):
+            for base in ("pc-badge", "pc-status"):
+                if tok.startswith(base + "-") and base not in re.split(r"[\s{}%]+", attr):
+                    bad.append(f"{p.name}:{tok}")
+    assert not bad, f"기본형 없이 변형만 붙었다: {sorted(set(bad))}"
+
+
+def test_badge_variants_are_only_on_badges():
+    """★ 배경이 필요하다고 뱃지 변형을 블록에 붙이지 않는다.
+
+    실측: 표 셀·인용 블록·토스트가 `pc-badge-muted`를 입고 **알약이 블록을 삼켰다.**
+    조용한 블록의 정본은 `.pc-inset`이다.
+    """
+    bad = []
+    for p in sorted(TPL.glob("*.html")):
+        html = re.sub(r"\{#.*?#\}|<!--.*?-->", "", p.read_text(encoding="utf-8"), flags=re.S)
+        for attr, tok in _classes(html):
+            if not tok.startswith("pc-badge-"):
+                continue
+            toks = set(re.split(r"[\s{}%]+", attr))
+            # 블록 조판 유틸과 한 자리에 있으면 그건 알약이 아니다
+            if toks & {"p-2", "p-3", "rounded", "border", "toast", "op-card-head", "col-12"}:
+                bad.append(f"{p.name}:{attr.strip()[:60]}")
+    assert not bad, f"뱃지가 아닌 것에 뱃지 변형이 붙었다(`pc-inset`이 그 자리다): {bad}"

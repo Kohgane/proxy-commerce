@@ -16,7 +16,7 @@
   {# 제목과 검색을 **한 줄**에 둔다. 따로 쌓으면 그것만으로 81px을 더 먹는데,
      이 화면에서 제목 다음에 할 일은 늘 검색이라 나란히 두는 게 읽는 순서와도 맞다. #}
   <div class="ch-head si-head">
-    <div class="si-head-l">
+    <div>
       <div class="console-kpi-label mb-1">AI 소싱·등록</div>
       <h4 class="mb-1 fw-bold">무엇을 팔지, 데이터로</h4>
       {# 부제 한 줄이 이미 있던 자리다 — 그 줄을 접힘의 summary로 쓴다. 설명은 하나도 안 버렸고
@@ -43,7 +43,7 @@
     {# 이 화면의 **첫 단계**다. 좌열 네 번째 카드에 있던 것을 머리로 올렸다 —
        부제가 선언한 순서(키워드가 먼저)와 화면이 어긋나 있었고, 검색은 폭이 넓을수록 낫다. #}
     <form class="si-hero" method="get" action="/seller/sourcing">
-      <label for="keywordInput" class="si-ask si-ask-lg">무슨 상품을 팔까요? 키워드로 시작하세요</label>
+      <label for="keywordInput" class="si-ask">무슨 상품을 팔까요? 키워드로 시작하세요</label>
       <div class="input-group si-search">
         <span class="input-group-text"><i class="bi bi-search"></i></span>
         <input id="keywordInput" class="form-control" name="keyword" value="{{ keyword }}"
@@ -95,7 +95,7 @@
 
         <hr class="si-sep">
         <div class="d-flex align-items-center gap-2 mb-2">
-          <strong class="si-sub">내 소싱처</strong>
+          <strong>내 소싱처</strong>
           <span class="pc-badge">{{ registry_sources|length }}개</span>
           <span class="op-tile-sub ms-auto">자주 담는 몰을 등록해 두면 재수집·추천이 빨라져요</span>
         </div>
@@ -121,7 +121,7 @@
           <input class="form-control form-control-sm" id="registrySearchInput" type="search"
                  placeholder="이름·도메인 검색…" autocomplete="off">
         </div>
-        <ul class="list-group list-group-flush si-registry-list" id="registryList">
+        <ul class="list-group list-group-flush" id="registryList">
           {% for source in registry_sources %}
           {% set openness = source.openness_status or 'partial' %}
           {% set adapter = source.adapter_name or 'generic_og' %}
@@ -196,10 +196,10 @@
   </div>
 
   <!-- ── 우: 결과 — 무엇이 팔리나 ──────────────────────────────────────────── -->
-  <div class="si-col si-results">
+  <div class="si-col">
     {% if keyword %}
     <!-- 국내에서 실제 팔리는 상품(네이버 쇼핑 실데이터) -->
-    <section class="op-card si-card-market">
+    <section class="op-card">
       <div class="op-card-head">
         <strong>국내에서 팔리는 상품</strong>
         <span class="op-tile-sub">“{{ keyword }}”</span>
@@ -284,7 +284,7 @@
     </div>
     {% endif %}
 
-    <section class="op-card si-card-rec">
+    <section class="op-card">
       <div class="op-card-head">
         <strong>추천 후보</strong>
         {% if keyword_context.rows %}
@@ -325,7 +325,7 @@
         <div class="op-tile-sub mb-2">키워드 스냅샷</div>
         <div class="si-kwsnap">
           {% for row in keyword_context.rows[:5] %}
-          <span class="si-kw"><span class="si-kw-t">{{ row.keyword }}</span>
+          <span class="si-kw"><span>{{ row.keyword }}</span>
             <span class="si-kw-v">{{ "{:,}".format(row.search_volume) }}</span></span>
           {% endfor %}
         </div>

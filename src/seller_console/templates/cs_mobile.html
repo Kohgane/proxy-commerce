@@ -56,9 +56,9 @@
       <div class="d-flex justify-content-between align-items-start mb-1">
         <div>
           <span class="fw-semibold">{{ msg.customer_name }}</span>
-          <span class="pc-pc-badge-muted ms-1 priority-badge">{{ msg.channel }}</span>
+          <span class="pc-badge pc-badge-muted ms-1 priority-badge">{{ msg.channel }}</span>
           {% if msg.priority >= 2 %}
-            <span class="pc-pc-badge-danger ms-1 priority-badge">긴급</span>
+            <span class="pc-badge pc-badge-danger ms-1 priority-badge">긴급</span>
           {% endif %}
         </div>
         <small class="text-muted">{{ msg.received_at[:16] if msg.received_at else '' }}</small>
@@ -81,9 +81,9 @@
                   placeholder="답변 입력 (비워두면 AI 제안 사용)"></textarea>
         <div class="d-flex gap-2 action-btns">
           <button type="submit" name="action" value="send"
-                  class="btn btn-success flex-fill"><i class="bi bi-send"></i> 발송</button>
+                  class="btn btn-primary flex-fill"><i class="bi bi-send"></i> 발송</button>
           <button type="submit" name="action" value="hold"
-                  class="btn btn-ghost flex-fill">⏸ 보류</button>
+                  class="btn btn-ghost flex-fill"><i class="bi bi-pause"></i> 보류</button>
           <button type="submit" name="action" value="resolve"
                   class="btn btn-ghost flex-fill"><i class="bi bi-check-lg"></i> 해결</button>
         </div>
