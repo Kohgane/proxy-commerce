@@ -24,6 +24,22 @@ from pathlib import Path
 import pytest
 
 # 오너가 실제로 받은 공유 텍스트 — 한 글자도 고치지 않는다.
+# 폰(사파리 주소창)이 펴 준 **최종 URL 원문** — 오너 실측 2026-09-11 상하이, VPN 오프.
+# 한 글자도 고치지 않는다. 18개 파라미터 중 열쇠는 넷(id·price·tk·short_name)뿐이고
+# 나머지(suid·un·wxsign·ut_sk…)는 세션성·개인식별 가능 값이라 **저장하지 않는다.**
+FINAL_URL_FIXTURE = (
+    "https://m.intl.taobao.com/detail/detail.html"
+    "?ut_sk=1.aDvDH5soLl4DAC50nJmz%2BzOW_21380790_1789103987893.Copy.1"
+    "&id=993154784090&sourceType=item&price=199"
+    "&suid=407B2EFE-24D1-4A3B-A45A-30025F1DF433&shareUniqueId=37255072833"
+    "&un=4510f0ec3e1477f4a105b3dacc8633bb&share_crt_v=1&un_site=0"
+    "&spm=a2159r.13376460.0.0"
+    "&wxsign=tbw3x8Tobj17BFg4OZykA3ilp4i568utWm3_9ob6Sbe46ZAyZTdTgzHtob05qZRJWnOr3wc6D"
+    "ktBr0z9EoA23DpC3bsKDuDpMtRxy0MKFvoh78oM-t7xK1gwIyGJ2TGoPHYNgfpLKet3wMnHtnR9Dq-Gw"
+    "&tbSocialPopKey=shareItem&sp_tk=bnlYcFQ3VkE3bHQ%3D&cpp=1&shareurl=true"
+    "&short_name=h.8IcTrtZuTU19ieN&tk=nyXpT7VA7lt&app=macos_safari"
+)
+
 SHARE_FIXTURE = (
     "【淘宝】https://e.tb.cn/h.8IcTrtZuTU19ieN?tk=nyXpT7VA7lt CZ356\n"
     "「新中式双人书桌靠墙长条桌简约现代学生写字学习桌实木办公电脑桌」\n"
@@ -339,3 +355,65 @@ def test_taobao_share_never_triggers_a_server_fetch(monkeypatch):
     assert r.status_code == 200, r.get_data(as_text=True)[:200]
     assert r.get_json().get("ok") is True
     assert calls == [], f"타오바오에 서버 수집을 시도했다: {calls}"
+
+
+# ── ⑥ 최종 URL 원문 (오너 실측 픽스처) ──────────────────────────────────────
+def test_owner_final_url_yields_the_four_keys():
+    """★ 실측 원문 그대로에서 열쇠 넷이 나온다. 호스트·경로도 이제 실측이다."""
+    from urllib.parse import urlparse
+
+    from src.collectors.share_text import parse_final_url
+    u = urlparse(FINAL_URL_FIXTURE)
+    assert u.hostname == "m.intl.taobao.com" and u.path == "/detail/detail.html"
+    f = parse_final_url(FINAL_URL_FIXTURE)
+    assert f["item_id"] == "993154784090"
+    assert f["price"] == "199" and f["currency"] == "CNY"
+    assert f["tk"] == "nyXpT7VA7lt"
+    assert f["short_name"] == "h.8IcTrtZuTU19ieN"
+
+
+def test_sp_tk_and_tk_recover_each_other():
+    """★ `sp_tk = base64(tk)` — **검증 가능한 파생 관계**(실측: bnlYcFQ3VkE3bHQ= → nyXpT7VA7lt).
+
+    둘 중 하나만 있어도 열쇠가 복원돼야 한다 — 타오바오가 어느 쪽을 주든 우리는 같은 상품을 가리킨다.
+    """
+    import base64
+
+    from src.collectors.share_text import parse_final_url
+    assert base64.b64decode("bnlYcFQ3VkE3bHQ=").decode() == "nyXpT7VA7lt"
+    only_sp = "https://m.intl.taobao.com/detail/detail.html?id=1&sp_tk=bnlYcFQ3VkE3bHQ%3D"
+    assert parse_final_url(only_sp)["tk"] == "nyXpT7VA7lt"
+
+
+def test_session_values_are_never_stored(monkeypatch):
+    """★ **세션성·개인식별 값을 우리 이력에 쌓지 않는다.**
+
+    실측 원문엔 `suid`(기기 UUID) · `un`(사용자 해시) · `wxsign` · `ut_sk`가 실려 온다.
+    열쇠가 아니고, 남기면 남의 기기·계정 식별자를 우리가 보관하는 셈이다.
+
+    허용목록으로 짠다 — 차단목록이면 타오바오가 새 파라미터를 붙이는 날 그게 그대로 들어온다.
+    """
+    import src.collectors.share_collect as sc
+    saved = {}
+    monkeypatch.setattr("src.seller_console.collect_history_store.append",
+                        lambda **kw: saved.update(kw) or ("i", True))
+    sc.collect_from_share_text(SHARE_FIXTURE, seller_id="u1", translate=False,
+                               final_url=FINAL_URL_FIXTURE)
+    blob = repr(saved)
+    for leak in ("suid", "407B2EFE", "4510f0ec", "wxsign", "ut_sk", "tbSocialPopKey", "spm="):
+        assert leak not in blob, f"세션성 값이 저장됐다: {leak}"
+    assert "993154784090" in blob and "nyXpT7VA7lt" in blob, "열쇠는 남아야 한다"
+
+
+def test_pasted_final_url_behaves_like_shortcut_input():
+    """★ 같은 값을 **입력 모양과 무관하게** 같게 읽는다.
+
+    유저는 사파리 주소창을 복사해 붙여넣기도 하고, 단축어가 `final_url`로 보내기도 한다.
+    둘이 다르게 동작하면 그게 "웹은 되는데 단축어는 안 되는" 갈래의 시작이다(이 트랙의 원 결함).
+    """
+    from src.collectors.share_text import parse_share_text
+    a = parse_share_text("「책상」 " + FINAL_URL_FIXTURE)
+    b = parse_share_text("「책상」", final_url=FINAL_URL_FIXTURE)
+    for k in ("item_id", "price", "currency", "tk", "short_name"):
+        assert a[k] == b[k], f"입력 모양에 따라 {k}가 다르다: {a[k]!r} vs {b[k]!r}"
+    assert "suid" not in a["url"] and "suid" not in b["url"]

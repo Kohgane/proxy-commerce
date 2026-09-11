@@ -24,9 +24,10 @@
 """
 from __future__ import annotations
 
+import base64
 import re
 from typing import Optional
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlencode, urlparse, urlunparse
 
 # URL 뒤에 붙어 오는 중국어 문장부호·괄호 — URL의 일부가 아니다.
 #   실측: 「…」 앞뒤, 【淘宝】 뒤, 문장 끝 。， 등이 그대로 물려 들어왔다.
@@ -93,6 +94,32 @@ def extract_item_id(url: str) -> str:
     return m.group(1) if m else ""
 
 
+# 최종 URL에서 **남겨도 되는** 파라미터. 허용목록이다 — 차단목록이 아니다.
+#   실측 원문(오너 2026-09-11)엔 18개가 실려 왔고 그중 넷만 열쇠다.
+#   나머지는 `suid`(기기 UUID)·`un`(사용자 해시)·`wxsign`·`ut_sk`처럼 **세션성·개인식별 가능** 값이다.
+#   차단목록으로 짜면 타오바오가 새 파라미터를 붙이는 날 그게 그대로 저장된다 — 그래서 허용목록이다.
+_KEEP_PARAMS = ("id", "price", "tk", "short_name", "sourceType")
+
+
+def sanitize_final_url(url: str) -> str:
+    """최종 URL에서 **열쇠만 남기고** 세션성 값을 떼어낸다. 저장·표시는 이것만 쓴다.
+
+    실측 원문에 들어 있던 것 중 버리는 것: `ut_sk` · `suid` · `un` · `wxsign` · `spm` ·
+    `shareUniqueId` · `tbSocialPopKey` 등. 열쇠가 아니고, 남기면 **개인식별 가능한 값을
+    우리 이력에 쌓는 셈**이 된다.
+    """
+    if not url:
+        return ""
+    try:
+        u = urlparse(url)
+        q = parse_qs(u.query)
+    except Exception:
+        return url
+    kept = [(k, v[0]) for k in _KEEP_PARAMS for v in [q.get(k) or []] if v]
+    query = urlencode(kept)
+    return urlunparse((u.scheme, u.netloc, u.path, "", query, ""))
+
+
 def parse_final_url(url: str) -> dict:
     """리다이렉트가 끝난 **최종 URL**에서 건질 것 — `{item_id, price, currency, tk, short_name}`.
 
@@ -120,7 +147,18 @@ def parse_final_url(url: str) -> dict:
         return ""
 
     out["item_id"] = extract_item_id(url)
+    # `tk`와 `sp_tk`는 **검증 가능한 파생 관계**다 — `sp_tk = base64(tk)`
+    #   (실측 원문: `bnlYcFQ3VkE3bHQ=` → `nyXpT7VA7lt`). 둘 중 하나만 있어도 열쇠를 복원한다.
     out["tk"] = _one("tk")
+    if not out["tk"]:
+        raw_sp = _one("sp_tk")
+        if raw_sp:
+            try:
+                cand = base64.b64decode(unquote(raw_sp) + "==", validate=False).decode("utf-8")
+                if re.fullmatch(r"[A-Za-z0-9_-]{4,64}", cand):
+                    out["tk"] = cand
+            except Exception:
+                pass
     out["short_name"] = _one("short_name", "shortName")
     price = _one("price")
     # 숫자만 인정한다 — "199", "199.00"은 값이고 "면의"는 값이 아니다.
@@ -145,6 +183,10 @@ def parse_share_text(raw: str, final_url: str = "") -> dict:
     urls = [u for u in urls if u.startswith(("http://", "https://"))]
     urls.sort(key=_host_rank)                       # 상품 도메인 > 단축 > 그 외
     url = urls[0] if urls else ""
+    # 유저가 **최종 URL을 통째로 붙여넣는** 경우도 있다(사파리 주소창 복사). 그때도 세션성 값을 떼어낸다 —
+    #   `final_url` 인자로 올 때만 정제하면 이 경로로 `suid`·`un`·`wxsign`이 그대로 저장된다.
+    if url and is_taobao_family(url):
+        url = sanitize_final_url(url)
 
     title = ""
     m = _TITLE_RE.search(text)
@@ -180,10 +222,15 @@ def parse_share_text(raw: str, final_url: str = "") -> dict:
     }
 
     # 폰이 펴 준 최종 URL이 함께 왔으면 거기서 id·가격을 건진다(우리가 편 게 아니다 — 폰이 편 것이다).
+    #   인자로 안 오고 **본문에 통째로 붙여넣어졌을 수도** 있다(사파리 주소창 복사). 같은 값을 같게 읽는다 —
+    #   입력 모양이 달라 결과가 달라지면 그게 "웹은 되는데 단축어는 안 되는" 갈래의 시작이다.
     fin = (final_url or "").strip()
+    if not fin.startswith(("http://", "https://")) and url and is_taobao_family(url):
+        if parse_final_url(url).get("item_id"):
+            fin = url
     if fin.startswith(("http://", "https://")):
         f = parse_final_url(fin)
-        out["final_url"] = fin
+        out["final_url"] = sanitize_final_url(fin)
         out["item_id"] = f["item_id"] or out["item_id"]
         out["price"] = f["price"]
         out["currency"] = f["currency"]
