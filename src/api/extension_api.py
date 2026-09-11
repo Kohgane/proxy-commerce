@@ -37,6 +37,35 @@ _BULK_MAX_WORKERS = int(os.getenv("BULK_MAX_WORKERS", "5"))
 # Personal Access Token 인증
 # ---------------------------------------------------------------------------
 
+def auth_failure_reason() -> str:
+    """인증이 왜 실패했는지 **한 문장으로**. 토큰 값은 절대 싣지 않는다(마스킹도 안 한다).
+
+    C-F6 실측(오너 단축어 v1): 응답이 「인증이 필요합니다. 토큰을 확인하세요.」 하나뿐이라
+    **헤더 이름이 틀린 건지 토큰이 틀린 건지 알 수 없었다.** 오너 캡처의 헤더는
+    `X-Intake-T…`였는데 서버가 읽는 건 `Authorization`이다 — 응답이 그걸 말해 줬어야 했다.
+
+    값을 앞 4자라도 비추지 않는다: 로그·스크린샷·채팅으로 새는 경로가 그만큼 늘어난다.
+    형식이 틀렸다는 것과 값이 틀렸다는 것만 말하면 유저는 고칠 수 있다.
+    """
+    raw = request.headers.get("Authorization")
+    if raw is None:
+        # 우리가 안 읽는 헤더로 보냈을 때가 여기다 — 그래서 **이름을 콕 집어** 말한다.
+        return ("인증 헤더가 없습니다. 헤더 이름을 정확히 `Authorization`으로 넣어 주세요"
+                "(다른 이름은 서버가 읽지 않습니다).")
+    if not raw.strip():
+        return "인증 헤더가 비어 있습니다. `Bearer ` 뒤에 토큰을 넣어 주세요."
+    if not raw.startswith("Bearer "):
+        return ("인증 헤더 값은 `Bearer ` 로 시작해야 합니다 — `Bearer`, 공백 한 칸, 그다음 토큰 순서입니다.")
+    token = raw[7:]
+    if not token.strip():
+        return "`Bearer ` 뒤에 토큰이 없습니다."
+    if token != token.strip() or any(c in token for c in "\r\n\t "):
+        return ("토큰에 공백이나 줄바꿈이 섞여 있습니다 — 복사할 때 앞뒤가 딸려 온 경우입니다. "
+                "토큰만 남기고 다시 넣어 주세요.")
+    return ("토큰이 확인되지 않았습니다(만료·폐기·오타). "
+            "셀러 콘솔 → 내 토큰에서 새로 발급해 단축어 헤더를 교체해 주세요.")
+
+
 def _require_token(scopes: list = None) -> Optional[dict]:
     """Authorization: Bearer 토큰 검증.
 
@@ -447,7 +476,7 @@ def collect_enrich_pending():
     """
     user = _require_token(scopes=["collect.write"])
     if not user:
-        return jsonify({"ok": False, "error": "인증이 필요합니다. 토큰을 확인하세요."}), 401
+        return jsonify({"ok": False, "error": auth_failure_reason()}), 401
     seller_id_val = str(user.get("user_id") or "")
     ids = {seller_id_val} if seller_id_val else set()
     try:
@@ -1119,7 +1148,7 @@ def collect_one():
     """
     user = _require_token(scopes=["collect.write"])
     if not user:
-        return jsonify({"ok": False, "error": "인증이 필요합니다. 토큰을 확인하세요."}), 401
+        return jsonify({"ok": False, "error": auth_failure_reason()}), 401
 
     body = request.get_json(force=True, silent=True) or {}
     # C-F4: 단축어 가이드가 쓰라고 한 필드 이름을 **서버가 실제로 읽어야** 한다.

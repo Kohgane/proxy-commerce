@@ -584,3 +584,57 @@ def test_share_text_field_actually_works(monkeypatch):
     assert r.status_code == 200 and d.get("ok") is True
     assert d.get("price") == "199", "가이드대로 보냈는데 가격이 안 담겼다"
     assert d.get("item_id_taobao") == "993154784090"
+
+
+# ── ⑧ C-F6: 인증 실패가 무엇 때문인지 말한다 ────────────────────────────────
+def test_auth_failures_are_distinguishable():
+    """★ 「인증이 필요합니다」 하나로는 **헤더 이름이 틀린 건지 토큰이 틀린 건지 알 수 없다.**
+
+    실측(오너 단축어 v1): 헤더를 `X-Intake-T…`로 보냈는데 응답은 「토큰을 확인하세요」였다.
+    토큰은 멀쩡했다 — 서버가 안 읽는 이름으로 보낸 것뿐이다. 그 한 문장 때문에
+    오너는 토큰을 의심하며 시간을 썼다. **응답이 원인을 말해야 고칠 수 있다.**
+    """
+    from src.order_webhook import app
+    with app.test_client() as c:
+        no_header = c.post("/api/v1/collect/one", json={"share_text": SHARE_FIXTURE})
+        no_bearer = c.post("/api/v1/collect/one", json={"share_text": SHARE_FIXTURE},
+                           headers={"Authorization": "kgp_abc"})
+        bad_token = c.post("/api/v1/collect/one", json={"share_text": SHARE_FIXTURE},
+                           headers={"Authorization": "Bearer kgp_notreal"})
+    msgs = [r.get_json()["error"] for r in (no_header, no_bearer, bad_token)]
+    assert all(r.status_code == 401 for r in (no_header, no_bearer, bad_token))
+    assert len(set(msgs)) == 3, f"세 실패가 같은 문장을 낸다: {msgs}"
+    assert "Authorization" in msgs[0], "헤더 이름을 콕 집어 말해야 한다(오너가 막힌 자리)"
+    assert "Bearer" in msgs[1]
+    assert "발급" in msgs[2]
+
+
+def test_auth_errors_never_echo_the_token():
+    """★ 토큰 값을 응답에 싣지 않는다 — **앞 4자 마스킹도 안 한다.**
+
+    마스킹이라도 로그·스크린샷·채팅으로 새는 경로가 그만큼 늘어난다.
+    형식이 틀렸다는 것과 값이 틀렸다는 것만 말하면 유저는 고칠 수 있다.
+    """
+    from src.order_webhook import app
+    secret = "kgp_SUPERSECRETVALUE12345"
+    with app.test_client() as c:
+        r = c.post("/api/v1/collect/one", json={"share_text": SHARE_FIXTURE},
+                   headers={"Authorization": f"Bearer {secret}"})
+    body = r.get_data(as_text=True)
+    assert secret not in body
+    for n in (4, 6, 8):
+        assert secret[:n] not in body, f"토큰 앞 {n}자가 응답에 있다(마스킹도 금지)"
+    assert "SUPERSECRET" not in body
+
+
+def test_guide_header_name_matches_what_server_reads():
+    """★ `share_text`와 같은 장치 — **가이드가 쓰라는 헤더를 서버가 읽어야** 한다.
+
+    이번엔 가이드가 맞았고(`Authorization`) 단축어에 다른 이름이 들어갔다.
+    그래도 계약을 건다: 다음에 **가이드 쪽이** 어긋나면 그때는 아무도 못 잡는다.
+    """
+    guide = Path("docs/MOBILE_COLLECT_GUIDE.md").read_text(encoding="utf-8")
+    api = Path("src/api/extension_api.py").read_text(encoding="utf-8")
+    assert 'request.headers.get("Authorization"' in api, "서버가 읽는 헤더 이름이 바뀌었다"
+    assert "`Authorization`" in guide, "가이드가 헤더 이름을 명시하지 않는다"
+    assert "Bearer" in guide, "가이드가 Bearer 접두를 명시하지 않는다"
