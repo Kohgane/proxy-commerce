@@ -5,27 +5,27 @@
   <h1 class="h3 mb-1"><i class="bi bi-slash-circle"></i> 금지어 · 단어 치환 규칙</h1>
   <p class="text-muted mb-4">상품명에서 빼야 할 <strong>금지어</strong>와, 바꿔 쓸 <strong>치환 규칙</strong>을 설정하세요. 수집 이력에서 <strong>‘ 상품명 정제’</strong>로 선택 상품에 일괄 적용됩니다.</p>
 
-  <div class="op-card mb-3">
-    <div class="op-card-head"><strong><i class="bi bi-slash-circle"></i> 금지어</strong> <span class="text-muted small">— 제목에 있으면 제거됩니다</span></div>
-    <div class="op-card-body">
+  <div class="card mb-3">
+    <div class="card-header"><strong><i class="bi bi-slash-circle"></i> 금지어</strong> <span class="text-muted small">— 제목에 있으면 제거됩니다</span></div>
+    <div class="card-body">
       <textarea id="bannedInput" class="form-control" rows="5"
                 placeholder="한 줄에 하나씩 또는 쉼표로 구분&#10;예) 정품&#10;최저가&#10;특가">{{ rules.banned | join('\n') }}</textarea>
     </div>
   </div>
 
-  <div class="op-card mb-3">
-    <div class="op-card-head d-flex justify-content-between align-items-center">
+  <div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
       <span><strong><i class="bi bi-arrow-repeat"></i> 치환 규칙</strong> <span class="text-muted small">— A를 B로 바꿉니다</span></span>
       <button type="button" class="btn btn-ghost btn-sm" onclick="addSubRow()">＋ 행 추가</button>
     </div>
-    <div class="op-card-body">
+    <div class="card-body">
       <div id="subRows"></div>
       <div class="text-muted small mt-1">예) <code>정품</code> → <code>(공백)</code>, <code>나이키</code> → <code>NIKE</code></div>
     </div>
   </div>
 
   <button type="button" class="btn btn-primary" id="saveBtn" onclick="saveRules()"> 규칙 저장</button>
-  <a href="/seller/collect/history" class="btn btn-ghost">수집 이력으로</a>
+  <a href="/seller/collect/history" class="btn btn-outline-secondary">수집 이력으로</a>
 </div>
 
 <script>
