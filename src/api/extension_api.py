@@ -1183,7 +1183,7 @@ def collect_one():
                         "message": ("제목·상품번호·가격까지 담았어요(공유 시점 가격). "
                                     "이미지·옵션은 PC에서 고가수집기로 보강해 주세요."
                                     if _has_price else
-                                    "제목과 링크만 담았어요. VPN을 끄고 다시 공유하면 가격·상품번호까지 담깁니다."),
+                                    "제목과 링크만 담았어요. VPN이 전체(Global) 모드면 링크 해석이 막혀요 — 규칙/Smart 모드로 바꾸고 다시 공유하시면 가격·상품번호까지 담깁니다."),
                     })
             except Exception as exc:
                 logger.warning("단건 수집 공유 폴백 실패: %s", exc)

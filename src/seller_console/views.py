@@ -1378,7 +1378,7 @@ def _quick_collect(url: str, source: str = "bookmarklet", share_raw: str = "") -
                     _msg = ("제목·상품번호·가격까지 담았어요(공유 시점 가격). 이미지·옵션은 PC에서 "
                             "고가수집기로 보강해 주세요."
                             if r.get("price") else
-                            "제목과 링크만 담았어요. VPN을 끄고 다시 공유하면 가격·상품번호까지 담깁니다.")
+                            "제목과 링크만 담았어요. VPN이 전체(Global) 모드면 링크 해석이 막혀요 — 규칙/Smart 모드로 바꾸고 다시 공유하시면 가격·상품번호까지 담깁니다.")
                     if r.get("resolve_reason"):
                         _msg += f" · 링크 펴기 실패: {r['resolve_reason']}"
                     return {"ok": True, "item_id": r.get("item_id"), "status": 200,

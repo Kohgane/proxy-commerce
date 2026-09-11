@@ -2,7 +2,7 @@
 
 **캡처 계약(오너):** 폰 390 3벌 — ①공유 텍스트 붙여넣기 ②초안 ③검수표 '보강 대기' 뱃지.
 
-두 갈래를 **둘 다** 찍는다(폰이 편 갈래 / 못 편 갈래) — 화면이 실제로 다르게 말하는지가
+두 갈래를 **둘 다** 찍는다(폰이 편 갈래 / 전체(Global) 모드라 못 편 갈래) — 화면이 실제로 다르게 말하는지가
 이 트랙의 핵심이라, 한쪽만 찍으면 그 핵심이 캡처에 안 남는다.
 """
 import json
@@ -60,7 +60,9 @@ def main():
 
     # 두 갈래 초안을 실제로 만든다(목업 아님 — 실제 저장 경로를 태운다).
     made = {}
-    for tag, fin in (("폰이-폄", FINAL_URL), ("VPN-켜짐", "")):
+    # 갈래 이름은 **원인**으로 적는다 — "VPN 켜짐"이 아니라 "전체 모드"다.
+    #   규칙/Smart 모드면 VPN이 켜져 있어도 폰이 링크를 편다(오너 확정 2026-09-11).
+    for tag, fin in (("폰이-폄", FINAL_URL), ("전체모드", "")):
         r = collect_from_share_text(SHARE_TEXT, seller_id=SELLER, translate=False, final_url=fin)
         made[tag] = r
         print(f"  초안[{tag}] ok={r['ok']} item={r.get('item_id')} "

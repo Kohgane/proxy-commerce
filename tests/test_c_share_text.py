@@ -417,3 +417,27 @@ def test_pasted_final_url_behaves_like_shortcut_input():
     for k in ("item_id", "price", "currency", "tk", "short_name"):
         assert a[k] == b[k], f"입력 모양에 따라 {k}가 다르다: {a[k]!r} vs {b[k]!r}"
     assert "suid" not in a["url"] and "suid" not in b["url"]
+
+
+def test_vpn_guidance_names_the_mode_not_the_switch():
+    """★ 「VPN을 끄세요」는 **틀린 처방**이다 — 오너 확정 2026-09-11.
+
+    가르는 건 VPN이 켜졌느냐가 아니라 **중국 사이트를 터널로 보내느냐**다.
+    규칙(规则)/Smart 모드는 중국 사이트를 우회시키므로 VPN이 켜져 있어도 그대로 작동한다
+    (아스트릴 Smart Mode · Shadowrocket·Clash류 기본 규칙 모드).
+
+    "끄세요"라고 하면 유저는 **필요 없는 불편을 겪고**, 껐는데도 안 되면(다른 이유면)
+    우리 안내가 틀렸다는 것만 배운다. 원인을 이름으로 불러야 고칠 수 있다.
+    """
+    targets = ("src/seller_console/views.py", "src/api/extension_api.py",
+               "docs/MOBILE_COLLECT_GUIDE.md", "docs/C_TAOBAO_FIELD_TEST.md")
+    for path in targets:
+        s = Path(path).read_text(encoding="utf-8")
+        assert "VPN을 끄" not in s, f"{path}에 틀린 처방('VPN을 끄')이 돌아왔다"
+    # 유저가 실제로 읽는 두 곳은 **모드 이름**을 대야 한다.
+    for path in ("src/seller_console/views.py", "src/api/extension_api.py"):
+        s = Path(path).read_text(encoding="utf-8")
+        assert "Global" in s or "전체" in s, f"{path}가 어떤 모드가 문제인지 안 말한다"
+    guide = Path("docs/MOBILE_COLLECT_GUIDE.md").read_text(encoding="utf-8")
+    for term in ("Smart", "Global", "규칙"):
+        assert term in guide, f"가이드에 {term} 안내가 없다"
