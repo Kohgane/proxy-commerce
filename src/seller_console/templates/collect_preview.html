@@ -42,6 +42,25 @@
         <div class="text-muted small mt-1">대표 이미지(첫 번째)</div>
       </div>
 
+      {# C-T3: 공유 텍스트 수집분 — **무엇이 아직 없는지**를 먼저 말한다.
+         공유 글엔 제목·링크만 들어 있어 가격·이미지·옵션은 비어 있다. 그 빈칸이 "0원"이나
+         "이미지 없음"으로 조용히 앉으면 셀러가 수집된 줄 안다 — 그래서 맨 위에서 밝힌다. #}
+      {% set _unc = (extra.get('uncollected') if extra else []) or [] %}
+      {% if _unc %}
+      {% set _unc_ko = {'price': '가격', 'images': '이미지', 'options': '옵션', 'description': '상세설명'} %}
+      <div class="kgp-esec mb-3" data-etab="basic">
+        <div class="pc-status pc-status-warning">
+          <i class="bi bi-exclamation-triangle"></i>
+          <span>
+            <strong>보강 필요</strong> — 앱 공유 글에는 제목과 링크만 들어 있어,
+            <strong>{% for f in _unc %}{{ _unc_ko.get(f, f) }}{% if not loop.last %}·{% endif %}{% endfor %}</strong>은 아직 수집되지 않았습니다.
+            {% if extra.get('resolve_reason') %}<br><span class="small">링크 펴기 실패: {{ extra.get('resolve_reason') }}</span>{% endif %}
+            <br><span class="small">상품 페이지에서 <strong>고가수집기</strong>로 다시 수집하면 채워집니다.</span>
+          </span>
+        </div>
+      </div>
+      {% endif %}
+
       <!-- [상품명·카테고리] 제목 -->
       <div class="kgp-esec mb-3" data-etab="basic">
         <div class="d-flex justify-content-between align-items-center">

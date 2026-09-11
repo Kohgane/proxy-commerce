@@ -15,8 +15,8 @@
   <hr class="pc-hairline mt-0 mb-4">
 
   <!-- v40-D: 패스키(WebAuthn) — 이 기기에 지문·Face·PIN 로그인 등록 -->
-  <div class="card mb-4" id="passkeyCard">
-    <div class="card-body">
+  <div class="op-card mb-4" id="passkeyCard">
+    <div class="op-card-body">
       <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
         <div>
           <h2 class="h6 mb-1"><i class="bi bi-fingerprint"></i> 패스키 (지문·Face·PIN 로그인)</h2>
@@ -33,8 +33,8 @@
   </div>
 
   <!-- 토큰이 무엇인지 / 어떻게 동작하는지 설명 -->
-  <div class="card border-primary-subtle bg-primary-subtle mb-4">
-    <div class="card-body">
+  <div class="op-card border-primary-subtle bg-primary-subtle mb-4">
+    <div class="op-card-body">
       <h2 class="h6 mb-2"><i class="bi bi-key"></i> 토큰이 무엇이고, 무슨 일을 하나요?</h2>
       <p class="small mb-2">
         Personal Access Token(개인 액세스 토큰)은 <strong>비밀번호 대신 쓰는 긴 열쇠 문자열</strong>입니다.
@@ -43,13 +43,13 @@
       </p>
       <div class="row g-2 small">
         <div class="col-md-4">
-          <div class="border rounded-3 p-2 h-100 bg-white">
+          <div class="pc-inset h-100">
             <div class="fw-semibold">① 어떻게 쓰나</div>
             토큰을 발급해 크롬 확장 옵션이나 북마클릿에 한 번 붙여넣으면 끝. 이후 자동으로 사용됩니다.
           </div>
         </div>
         <div class="col-md-4">
-          <div class="border rounded-3 p-2 h-100 bg-white">
+          <div class="pc-inset h-100">
             <div class="fw-semibold">② 어떻게 동작하나</div>
             수집할 때 이 토큰으로 <strong>‘내 계정 것’임을 자동 확인</strong>하고 내 수집 이력에 저장해요.
             <span class="pc-help" data-bs-toggle="tooltip" data-bs-title="기술적으로는 요청 헤더에 Authorization: Bearer &lt;토큰&gt; 형태로 전송됩니다.">?</span>
@@ -57,7 +57,7 @@
           </div>
         </div>
         <div class="col-md-4">
-          <div class="border rounded-3 p-2 h-100 bg-white">
+          <div class="pc-inset h-100">
             <div class="fw-semibold">③ 안전한가</div>
             토큰은 발급 시 <strong>한 번만</strong> 보이고 서버엔 해시로만 저장됩니다. 새어나간 것 같으면
             언제든 <strong>삭제</strong>하면 즉시 무효화돼요. 만료일도 정할 수 있습니다.
@@ -72,14 +72,14 @@
   </div>
 
   {% if tokens %}
-  <div class="card mb-4">
-    <div class="card-body p-2 border-bottom d-flex align-items-center gap-2">
-      <button id="bulkRevokeBtn" class="btn btn-sm btn-outline-danger" type="button" disabled>
+  <div class="op-card mb-4">
+    <div class="op-card-body p-2 border-bottom d-flex align-items-center gap-2">
+      <button id="bulkRevokeBtn" class="btn btn-sm btn-ghost" type="button" disabled>
         <i class="bi bi-trash"></i> 선택 삭제 <span id="bulkRevokeCount">0</span>
       </button>
       <span class="text-muted small">체크박스로 여러 토큰을 골라 한 번에 삭제할 수 있어요.</span>
     </div>
-    <div class="card-body p-0">
+    <div class="op-card-body p-0">
       <table class="table table-hover mb-0">
         <thead class="table-light">
           <tr>
@@ -119,7 +119,7 @@
             </td>
             <td>
               {% if not tok.revoked %}
-              <button class="btn btn-sm btn-outline-danger revoke-btn"
+              <button class="btn btn-sm btn-ghost revoke-btn"
                       data-hash="{{ tok.token_hash }}">삭제</button>
               {% endif %}
             </td>
@@ -130,13 +130,13 @@
     </div>
   </div>
   {% else %}
-  <div class="alert alert-info">활성 토큰이 없습니다. 새 토큰을 발급하세요.{% if revoked_tokens %} (지난 발급/폐기 내역은 아래 ‘발급·폐기 이력’에서 볼 수 있어요.){% endif %}</div>
+  <div class="pc-status pc-status-info">활성 토큰이 없습니다. 새 토큰을 발급하세요.{% if revoked_tokens %} (지난 발급/폐기 내역은 아래 ‘발급·폐기 이력’에서 볼 수 있어요.){% endif %}</div>
   {% endif %}
 
   {# v38 #6: 폐기(삭제)된 토큰은 메인 목록을 어지럽히지 않게 '발급·폐기 이력'으로 분리(기본 접힘). #}
   {% if revoked_tokens %}
-  <div class="card mb-4">
-    <div class="card-body">
+  <div class="op-card mb-4">
+    <div class="op-card-body">
       <details>
         <summary class="text-muted small" style="cursor:pointer">
           <i class="bi bi-clock-history"></i> 발급·폐기 이력 ({{ revoked_tokens|length }}건) — 삭제된 토큰 보기
@@ -167,9 +167,9 @@
   {% endif %}
 
   <!-- 사용 가이드 -->
-  <div class="card">
-    <div class="card-header"><strong><i class="bi bi-card-list"></i> 사용 방법</strong></div>
-    <div class="card-body">
+  <div class="op-card">
+    <div class="op-card-head"><strong><i class="bi bi-card-list"></i> 사용 방법</strong></div>
+    <div class="op-card-body">
       <h6>크롬 확장에서</h6>
       <ol>
         <li>확장 아이콘 우클릭 → <strong>옵션</strong></li>
@@ -177,7 +177,7 @@
         <li>발급된 토큰을 <strong>Personal Access Token</strong> 필드에 붙여넣기</li>
       </ol>
       <h6 class="mt-3">북마클릿에서</h6>
-      <p><a href="/seller/bookmarklet" class="btn btn-sm btn-outline-secondary">→ 북마클릿 페이지로</a></p>
+      <p><a href="/seller/bookmarklet" class="btn btn-sm btn-ghost">→ 북마클릿 페이지로</a></p>
     </div>
   </div>
 </div>
@@ -214,18 +214,18 @@
           </select>
         </div>
         <div id="tokenResult" class="d-none">
-          <div class="alert alert-warning">
+          <div class="pc-status pc-status-warning">
             <i class="bi bi-exclamation-triangle"></i> 이 토큰은 <strong>지금 한 번만</strong> 표시됩니다. 안전한 곳에 복사해두세요.
           </div>
           <div class="input-group">
             <input type="text" class="form-control font-monospace" id="rawToken" readonly>
-            <button class="btn btn-outline-secondary" onclick="copyToken()">복사</button>
+            <button class="btn btn-ghost" onclick="copyToken()">복사</button>
           </div>
         </div>
-        <div id="tokenGenerateError" class="alert alert-danger d-none mt-3 mb-0"></div>
+        <div id="tokenGenerateError" class="pc-status pc-status-danger d-none mt-3 mb-0"></div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>
+        <button type="button" class="btn btn-ghost" data-bs-dismiss="modal">닫기</button>
         <button type="button" class="btn btn-primary" id="generateBtn">발급하기</button>
       </div>
     </div>

@@ -7,8 +7,8 @@
 <div class="row g-4">
   <!-- 입력 패널 (좌측) -->
   <div class="col-md-5">
-    <div class="card border-0 shadow-sm">
-      <div class="card-body">
+    <div class="op-card">
+      <div class="op-card-body">
         <h6 class="fw-semibold mb-3"><i class="bi bi-download"></i> 입력</h6>
 
         <!-- 매입가 + 통화 -->
@@ -16,7 +16,7 @@
           <label class="form-label fw-semibold">매입가</label>
           <div class="input-group">
             <input type="number" id="buyPrice" class="form-control" value="100" step="0.01" min="0.01">
-            <select id="currency" class="form-select" style="max-width:90px;">
+            <select id="currency" class="form-select pc-select-narrow">
               {% for c in default_currencies %}
               <option value="{{ c }}"{% if c == 'USD' %} selected{% endif %}>{{ c }}</option>
               {% endfor %}
@@ -134,16 +134,16 @@
     </div>
 
     <!-- 비교 차트 -->
-    <div class="card border-0 shadow-sm mb-3" id="chartCard" style="display:none!important;">
-      <div class="card-body">
+    <div class="op-card mb-3" id="chartCard" style="display:none!important;">
+      <div class="op-card-body">
         <h6 class="fw-semibold mb-3"><i class="bi bi-bar-chart"></i> 마진율 비교</h6>
         <canvas id="marginChart" height="120"></canvas>
       </div>
     </div>
 
     <!-- 랜딩 코스트 요약 -->
-    <div class="card border-0 shadow-sm" id="landedCostCard" style="display:none!important;">
-      <div class="card-body">
+    <div class="op-card" id="landedCostCard" style="display:none!important;">
+      <div class="op-card-body">
         <h6 class="fw-semibold mb-2"><i class="bi bi-box-seam"></i> 원가 상세</h6>
         <div id="landedCostDetail"></div>
       </div>
@@ -276,16 +276,16 @@ function renderResults(results, targetMarginPct) {
   const container = document.getElementById('marketCards');
   container.innerHTML = '';
   results.forEach(r => {
-    const marginColor = r.actual_margin_pct >= 20 ? 'success' : r.actual_margin_pct >= 10 ? 'warning' : 'danger';
+    const marginTone = r.actual_margin_pct >= 20 ? 'on' : r.actual_margin_pct >= 10 ? 'off' : 'danger';
     const label = MARKETPLACE_LABELS[r.marketplace] || r.marketplace;
     const card = document.createElement('div');
     card.className = 'col-sm-6';
     card.innerHTML = `
       <div class="op-card h-100">
-        <div class="card-body">
+        <div class="op-card-body">
           <div class="d-flex justify-content-between align-items-start mb-2">
             <h6 class="fw-bold mb-0">${label}</h6>
-            <span class="badge bg-${marginColor}">${r.actual_margin_pct}%</span>
+            <span class="pc-badge pc-badge-${marginTone}">${r.actual_margin_pct}%</span>
           </div>
           <div class="mb-1">
             <span class="text-muted small">권장 판매가</span>
@@ -358,7 +358,7 @@ async function applyPrice(marketplace, price) {
   const productId = (document.getElementById('productId')?.value || '').trim();
   const sku = (document.getElementById('sku')?.value || '').trim();
   if (!productId && !sku) {
-    showToast('저장할 상품 ID 또는 SKU를 입력하세요.');
+    pcToast('저장할 상품 ID 또는 SKU를 입력하세요.', 'warning');
     return;
   }
   try {
@@ -374,33 +374,13 @@ async function applyPrice(marketplace, price) {
     });
     const data = await res.json();
     if (!data.ok) {
-      showToast(data.error || '가격 반영 실패');
+      pcToast(data.error || '가격 반영 실패', 'danger');
       return;
     }
-    showToast(`${label} 권장 판매가 ₩${price.toLocaleString()} 저장 완료 · ${data.message || ''}`);
+    pcToast(`${label} 권장 판매가 ₩${price.toLocaleString()} 저장 완료 · ${data.message || ''}`, 'success');
   } catch (err) {
-    showToast(`가격 반영 요청 실패: ${err.message}`);
+    pcToast(`가격 반영 요청 실패: ${err.message}`, 'danger');
   }
-}
-
-function showToast(msg) {
-  let container = document.getElementById('toastContainer');
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'toastContainer';
-    container.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;';
-    document.body.appendChild(container);
-  }
-  const toast = document.createElement('div');
-  toast.className = 'toast show align-items-center pc-badge-muted border-0';
-  toast.role = 'alert';
-  toast.innerHTML = `
-    <div class="d-flex">
-      <div class="toast-body">${msg}</div>
-      <button type="button" class="btn-close btn-close-white me-2 m-auto" onclick="this.closest('.toast').remove()"></button>
-    </div>`;
-  container.appendChild(toast);
-  setTimeout(() => toast.remove(), 4000);
 }
 
 function showError(msg) {

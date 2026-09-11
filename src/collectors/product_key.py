@@ -101,11 +101,35 @@ def normalize_product_key(url: str) -> str:
         if gid:
             return f"temu:goods:{gid}"
 
+    # C-T2': 앱 공유 단축 링크(`e.tb.cn` 계열) — **이게 그 상품의 유일한 식별자다.**
+    #   실측(2026-09-11 상하이): 서버에서 이 링크를 펼 수 없다(중국 IP는 로그인 벽, 해외 IP는 연결 거부).
+    #   그래서 itemId를 못 얻고, 대신 **링크 자체**를 키로 삼는다.
+    #   ① 경로 토큰은 **대소문자를 보존**한다(`h.8IcTrtZuTU19ieN` — 소문자로 접으면 다른 상품과 충돌한다)
+    #   ② `tk`를 포함한다(같은 공유를 두 번 담았을 때만 중복으로 잡히게)
+    #
+    #   ★ 단 `id`가 실려 있으면 **그게 우선**이다(C-T2'' 실측: 폰이 편 최종 URL엔 id가 온다).
+    #     같은 상품을 단축 링크로도 담고 편 링크로도 담았을 때, itemId로 하나가 되게 하려는 것이다 —
+    #     tk는 공유마다 달라서 같은 상품을 남남으로 만든다.
+    if host in ("e.tb.cn", "m.tb.cn") or host.endswith(".tb.cn"):
+        gid = _query_id(query, ("id", "itemid"))
+        if gid:
+            return f"taobao:item:{gid}"
+        tok = re.sub(r"^/+", "", path)
+        tk = _query_id(query, ("tk",)) or ""
+        if tok:
+            return f"tbshare:{tok}" + (f":{tk}" if tk else "")
+
     # 타오바오/티몰/1688: 쿼리 id / offer 경로.
     if any(s in host for s in ("taobao.", "tmall.", "1688.")):
         m = _1688_RE.search(path)
         gid = m.group(1) if m else _query_id(query, ("id", "itemid", "offerid"))
         if gid:
+            # C-T2'': 타오바오 계열은 **호스트를 키에 넣지 않는다.** 같은 상품이
+            #   `item.taobao.com` · `m.intl.taobao.com` · `main.m.taobao.com`(폰이 편 최종 URL) 등
+            #   여러 호스트로 오는데, 호스트를 키에 넣으면 **같은 상품이 남남으로 쌓인다**.
+            #   티몰·1688은 그대로 둔다(상품 풀이 다르다 — 여기서 합치는 건 실측 없는 추측이다).
+            if "taobao." in host:
+                return f"taobao:item:{gid}"
             return f"{host}:item:{gid}"
 
     # 알리익스프레스: /item/<id>.html.

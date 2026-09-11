@@ -109,11 +109,14 @@
 <section class="op-card">
   <div class="op-card-head">
     <strong>URL로 수집</strong>
-    <span class="mc-hint">타오바오·아마존·1688 등 상품 페이지 주소를 붙여넣으면 제목·가격·이미지를 자동으로 가져와요.</span>
+    <span class="mc-hint">타오바오·아마존·1688 등 상품 주소를 붙여넣으면 제목·가격·이미지를 가져와요. 앱에서 <strong>공유하기</strong>로 복사한 글을 통째로 붙여넣어도 됩니다.</span>
   </div>
   <div class="op-card-body">
-    <label for="productUrl" class="form-label fw-semibold">상품 URL</label>
-    <input type="url" id="productUrl" class="form-control console-focus" placeholder="https://..." autocomplete="off" required>
+    <label for="productUrl" class="form-label fw-semibold">상품 링크 또는 공유 텍스트</label>
+    {# C-T1: `type="url"`이면 브라우저가 공유 텍스트를 **JS 전에** 거부한다(오너 실측: 타오바오 공유글 붙여넣기 → 거부).
+       링크 추출은 서버 파서(`share_text`)가 정본이므로 여기선 막지 않는다. #}
+    <textarea id="productUrl" class="form-control console-focus" rows="2" autocomplete="off" required
+              placeholder="https://... 또는 앱에서 공유한 글 통째로"></textarea>
     <div id="urlError" class="text-danger small mt-2 d-none" role="alert"></div>
   </div>
   <div class="op-card-foot">
@@ -290,12 +293,9 @@ function showToast(title, message, type='success') {
 function validateUrlInput(url) {
   const errEl = document.getElementById('urlError');
   errEl.classList.add('d-none');
-  try {
-    const parsed = new URL(url);
-    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('invalid protocol');
-    return true;
-  } catch (e) {
-    errEl.textContent = '유효한 http/https URL을 입력하세요.';
+  if (/https?:\/\/\S+/.test(url)) return true;
+  {
+    errEl.textContent = '링크를 찾지 못했어요. 링크나 앱 공유 텍스트를 그대로 붙여넣어 주세요.';
     errEl.classList.remove('d-none');
     return false;
   }
