@@ -69,7 +69,10 @@ def main():
               f"가격={r.get('price') or '(없음)'} 게이트={r.get('enrich_state')} "
               f"미수집={','.join(r.get('uncollected') or [])}")
 
-    shots = [("01-입력", "/seller/collect")]
+    shots = [("01-일괄결과", "/seller/collect")]
+    # C-F5: 오너가 실제로 겪은 자리 — 「여러 URL 한 번에」 결과 영역.
+    #   전엔 "전체 2 · 성공 0 · 실패 2"였다. 지금은 성공 카드 1장이어야 한다.
+    bulk_html = None
     for tag, r in made.items():
         if r.get("ok"):
             shots.append((f"02-초안-{tag}", f"/seller/collect/preview/{r['item_id']}?drawer=1"))
@@ -85,10 +88,27 @@ def main():
                 pg = br.new_page(viewport={"width": MOBILE[0], "height": MOBILE[1]})
                 pg.goto(f"file://{path}")
                 pg.wait_for_timeout(600)
-                if name == "01-입력":                 # 붙여넣은 상태를 재현
-                    pg.evaluate("t => { const e = document.getElementById('productUrl');"
-                                "if (e) e.value = t; }", SHARE_TEXT)
-                    pg.wait_for_timeout(200)
+                if name == "01-일괄결과":
+                    # 붙여넣고 실제로 일괄 수집을 돌린 **결과 영역**을 그린다(목업 아님).
+                    import json as _j
+                    with app.test_client() as c2:
+                        with c2.session_transaction() as sess:
+                            sess["user_id"] = SELLER
+                        bulk = c2.post("/seller/collect/bulk",
+                                       json={"urls": SHARE_TEXT}).get_json()
+                    pg.evaluate("""([t, d]) => {
+                      const e = document.getElementById('bulkUrls'); if (e) e.value = t;
+                      const box = document.getElementById('bulkResult'); if (!box) return;
+                      let h = `<div class="pc-status pc-status-info small mb-2">전체 ${d.total}개 · 성공 <strong>${d.success}</strong> · 실패 ${d.total - d.success}</div><ul class="list-group">`;
+                      (d.results || []).forEach(r => {
+                        const left = (r.uncollected || []).map(f => ({price:'가격',images:'이미지',options:'옵션',description:'상세설명'}[f] || f)).join('·');
+                        const note = r.kind === 'share_draft'
+                          ? `<div class="small text-muted mt-1">초안 1건 생성 — 제목 담김${r.price ? ' · 가격 ' + r.price + ' ' + (r.currency||'') : ''}${left ? ' · ' + left + '은 단축어/PC 보강' : ''}</div>` : '';
+                        h += `<li class="list-group-item d-flex justify-content-between align-items-start"><span><i class="bi bi-check-circle" style="color:var(--success)"></i> ${r.title}${note}</span><a href="#" class="btn btn-sm btn-ghost py-0">확인·등록</a></li>`;
+                      });
+                      box.innerHTML = h + '</ul>'; box.classList.remove('d-none');
+                    }""", [SHARE_TEXT, bulk])
+                    pg.wait_for_timeout(300)
                 a = pg.evaluate(AUDIT)
                 pg.screenshot(path=f"{OUT_DIR}/{name}.png", full_page=True)
                 pg.close()

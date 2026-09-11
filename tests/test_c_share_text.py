@@ -553,3 +553,34 @@ console.log(JSON.stringify(out));
     assert "못 읽었어요" in fail_msg, "진짜 실패는 여전히 친절 문구로 바뀌어야 한다"
     for ok in (ok1, ok2):
         assert "못 읽었어요" not in ok, f"성공 문구가 실패로 뒤집혔다: {ok}"
+
+
+def test_guide_field_names_are_the_ones_the_server_reads():
+    """★ 가이드가 쓰라고 한 필드를 **서버가 실제로 읽어야** 한다.
+
+    문서와 코드가 어긋나면 오너가 단축어를 그대로 조립해도 안 된다 — 그리고 왜 안 되는지
+    알 길이 없다(서버는 조용히 빈 입력을 받는다). 실물 테스트가 거기서 막힌다.
+    """
+    guide = Path("docs/MOBILE_COLLECT_GUIDE.md").read_text(encoding="utf-8")
+    api = Path("src/api/extension_api.py").read_text(encoding="utf-8")
+    for field in ("share_text", "final_url"):
+        assert field in guide, f"가이드에 {field} 안내가 없다"
+        assert f'"{field}"' in api, f"서버가 {field}를 안 읽는다(가이드가 거짓이 된다)"
+
+
+def test_share_text_field_actually_works(monkeypatch):
+    """★ 이름만 읽는 게 아니라 **그 값으로 초안이 선다**(가이드대로 보내면 된다)."""
+    import src.api.extension_api as ext
+    from src.order_webhook import app
+    monkeypatch.setattr(ext, "_require_token", lambda scopes=None: {"user_id": "u-g"})
+    monkeypatch.setattr("src.seller_console.collect_history_store.find_by_product_key",
+                        lambda *a, **k: None)
+    monkeypatch.setattr("src.seller_console.collect_history_store.append",
+                        lambda **kw: ("i", True))
+    with app.test_client() as c:
+        r = c.post("/api/v1/collect/one",
+                   json={"share_text": SHARE_FIXTURE, "final_url": FINAL_URL_FIXTURE})
+    d = r.get_json()
+    assert r.status_code == 200 and d.get("ok") is True
+    assert d.get("price") == "199", "가이드대로 보냈는데 가격이 안 담겼다"
+    assert d.get("item_id_taobao") == "993154784090"

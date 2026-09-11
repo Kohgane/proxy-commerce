@@ -1122,8 +1122,11 @@ def collect_one():
         return jsonify({"ok": False, "error": "인증이 필요합니다. 토큰을 확인하세요."}), 401
 
     body = request.get_json(force=True, silent=True) or {}
-    raw = (body.get("url") or request.form.get("url")
-           or request.args.get("url") or request.args.get("u") or "").strip()
+    # C-F4: 단축어 가이드가 쓰라고 한 필드 이름을 **서버가 실제로 읽어야** 한다.
+    #   `share_text`는 가이드의 정본 이름이다(공유 시트 입력 그대로). 나머지는 하위호환.
+    raw = (body.get("share_text") or body.get("url") or request.form.get("share_text")
+           or request.form.get("url") or request.args.get("url")
+           or request.args.get("u") or "").strip()
     if not raw:
         raw = str(body.get("text") or body.get("title")
                   or request.form.get("text") or request.args.get("text") or "")
