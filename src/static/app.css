@@ -2211,5 +2211,16 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .text-danger  { color: var(--danger) !important; }
 .text-success { color: var(--success) !important; }
 .text-warning { color: var(--warn) !important; }
+
+/* 같은 장치를 **채운 버튼**에도 건다. 꼬리 3군에 부트스트랩 솔리드가 아직 남아 있고,
+   마크업을 화면마다 고쳐도 다음 화면에서 또 만난다(6-g SKU 분홍의 교훈).
+   `btn-primary`·`btn-ghost`·`btn-cta`·`btn-gold`는 이미 우리 것이라 **건드리지 않는다**.
+   여기 넷은 색만 우리 팔레트로 되찾는 것이다 — pc-status 「안내」 파랑→청록과 같은 성격의 송환. */
+.btn-danger  { background-color: var(--danger);  border-color: var(--danger);  color: var(--on-accent); }
+.btn-success { background-color: var(--success); border-color: var(--success); color: var(--on-accent); }
+.btn-warning { background-color: var(--warn);    border-color: var(--warn);    color: var(--on-accent); }
+.btn-info    { background-color: var(--teal);    border-color: var(--teal);    color: var(--on-accent); }
+.btn-danger:hover, .btn-success:hover, .btn-warning:hover, .btn-info:hover { filter: brightness(.94); }
+
 /* 입력 그룹 안의 통화 선택 — 값이 3글자(USD·KRW)라 폭을 묶어 둔다(인라인 90px 대체). */
 .pc-select-narrow { max-width: 6rem; }

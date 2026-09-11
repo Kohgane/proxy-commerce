@@ -32,6 +32,28 @@ ROUTES = [
     ("seller-pricing-competitors", "/seller/pricing/competitors"),
     ("seller-pricing-history", "/seller/pricing/history"),
     ("seller-pricing-fx-impact", "/seller/pricing/fx-impact"),
+    # 3군(guide+기타) — `/collect/preview/<id>`·`/collect/receiver`처럼 인자·POST가 필요한 건 제외.
+    ("seller-about", "/seller/about"),
+    ("seller-analytics", "/seller/analytics"),
+    ("seller-api-status", "/seller/api-status"),
+    ("seller-billing", "/seller/billing"),
+    ("seller-bookmarklet", "/seller/bookmarklet"),
+    ("seller-collect-history", "/seller/collect/history"),
+    ("seller-discovery", "/seller/discovery"),
+    ("seller-discovery-keywords", "/seller/discovery/keywords"),
+    ("seller-extension", "/seller/extension"),
+    ("seller-guide-business", "/seller/guide/business"),
+    ("seller-guide-sources", "/seller/guide/sources"),
+    ("seller-keywords", "/seller/keywords"),
+    ("seller-me", "/seller/me"),
+    ("seller-messaging", "/seller/messaging"),
+    ("seller-notifications", "/seller/notifications"),
+    ("seller-orders", "/seller/orders"),
+    ("seller-pccc", "/seller/customs/pccc"),
+    ("seller-tokens", "/seller/me/tokens"),
+    ("seller-settlement", "/seller/settlement"),
+    ("seller-sourcing-monitor", "/seller/sourcing/monitor"),
+    ("seller-word-rules", "/seller/listing/word-rules"),
 ]
 
 AUDIT = """() => {
@@ -99,7 +121,10 @@ def main():
                 pg.goto(f"file://{path}")
                 pg.wait_for_timeout(500)
                 a = pg.evaluate(AUDIT)
-                pg.screenshot(path=f"{OUT_DIR}/{name}-{suffix}.png")
+                # **전체 페이지**로 찍는다. 뷰포트(1920×940)만 찍으면 접힌 아래가 대조에서 통째로 빠진다 —
+                # 실측: 32장 중 13장이 940보다 길어(북마클릿 1980) 화면 대부분이 안 재어지고 있었다.
+                # 합격 좌표계는 여전히 1920 폭이고, 세로는 내용이 정한다.
+                pg.screenshot(path=f"{OUT_DIR}/{name}-{suffix}.png", full_page=True)
                 pg.close()
                 print(f"  {name:30s} HTTP {code} · 높이 {int(a['pageHeight']):5d} · 가로스크롤 "
                       f"{'있음 ✗' if a['bodyScrollX'] else '없음 ✓'} · 카드 {a['cards']:2d} · v2 {a['v2']:2d} · "

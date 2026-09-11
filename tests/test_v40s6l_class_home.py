@@ -89,6 +89,27 @@ def test_every_class_we_write_has_a_home():
     assert not orphans, f"규칙도 JS 훅도 없는 이름(화면에 아무 일도 안 한다): {sorted(set(orphans))}"
 
 
+def test_standalone_pages_do_not_borrow_app_css_grammar():
+    """★ app.css를 **안 싣는** 페이지에 전역 문법을 쓰면 아무 규칙도 안 걸린다.
+
+    실측: `bookmarklet_testpage.html`은 외부 쇼핑몰을 흉내 내는 **독립 페이지**라
+    app.css를 일부러 안 싣고 `<style>`에 제 `.card`를 갖고 있다. 기계 치환이 그 마크업을
+    `op-card`로 바꿔 놨는데, 로컬 규칙은 여전히 `.card`였다 — **카드가 통째로 벗겨졌다.**
+    `op-card`는 app.css에 정의돼 있으니 "집이 있나" 검사로는 절대 안 잡힌다.
+    """
+    bad = []
+    for p in sorted(TPL.glob("*.html")):
+        html = p.read_text(encoding="utf-8")
+        if "app.css" in html or 'extends "_base' in html or "<!DOCTYPE" not in html:
+            continue                      # 전역 CSS를 타는 페이지는 이 계약의 일이 아니다
+        local = set(re.findall(r"\.([a-zA-Z][\w-]*)", "".join(
+            re.findall(r"<style[^>]*>(.*?)</style>", html, re.S))))
+        for _, tok in _classes(re.sub(r"<style.*?</style>", "", html, flags=re.S)):
+            if tok.startswith(OURS) and tok not in local:
+                bad.append(f"{p.name}:{tok}")
+    assert not bad, f"독립 페이지가 전역 문법을 빌려 썼다(그 규칙은 여기 없다): {sorted(set(bad))}"
+
+
 def test_variants_come_with_their_base():
     """★ 변형만 붙이면 색은 와도 **형태가 안 온다** — 알약이 알약이 아니게 된다."""
     bad = []
@@ -114,7 +135,9 @@ def test_badge_variants_are_only_on_badges():
             if not tok.startswith("pc-badge-"):
                 continue
             toks = set(re.split(r"[\s{}%]+", attr))
-            # 블록 조판 유틸과 한 자리에 있으면 그건 알약이 아니다
-            if toks & {"p-2", "p-3", "rounded", "border", "toast", "op-card-head", "col-12"}:
+            # 블록 조판·구조 클래스와 한 자리에 있으면 그건 알약이 아니다.
+            # `border`·`rounded`는 **뺀다** — 테두리 있는 칩은 정상이다(실측: api_status의 env 칩을
+            # 거짓 양성으로 잡았다). 알약과 블록을 가르는 건 테두리가 아니라 **여백과 구조**다.
+            if toks & {"p-2", "p-3", "p-4", "toast", "op-card-head", "op-card-body", "col-12"}:
                 bad.append(f"{p.name}:{attr.strip()[:60]}")
     assert not bad, f"뱃지가 아닌 것에 뱃지 변형이 붙었다(`pc-inset`이 그 자리다): {bad}"

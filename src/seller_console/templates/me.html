@@ -15,19 +15,19 @@
 <hr class="pc-hairline mt-2 mb-4">
 
 {% if not user %}
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-body text-center py-5">
+<div class="op-card border-0 shadow-sm mb-3">
+  <div class="op-card-body text-center py-5">
     <p class="text-muted mb-3">내 작업공간은 로그인한 사람만 볼 수 있어요. (개인 정보·수집 내역은 본인만)</p>
     <a href="/auth/login" class="btn btn-primary">로그인</a>
     &nbsp;
-    <a href="/auth/signup" class="btn btn-outline-secondary">회원가입</a>
+    <a href="/auth/signup" class="btn btn-ghost">회원가입</a>
   </div>
 </div>
 {% else %}
 
 <!-- 프로필 카드 -->
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-body">
+<div class="op-card border-0 shadow-sm mb-4">
+  <div class="op-card-body">
     <div class="d-flex align-items-center gap-3">
       {% if user.avatar_url %}
         <img src="{{ user.avatar_url }}" class="rounded-circle" width="60" height="60" alt="avatar"
@@ -58,8 +58,8 @@
 <div class="row g-3 mb-4">
   <div class="col-6 col-lg-3">
     <a href="/seller/collect/history" class="text-decoration-none">
-      <div class="card border-0 shadow-sm console-kpi-card console-kpi-primary h-100">
-        <div class="card-body">
+      <div class="op-card border-0 shadow-sm console-kpi-card console-kpi-primary h-100">
+        <div class="op-card-body">
           <div class="console-kpi-label">수집 상품</div>
           <div class="console-stat-value">{{ collected_count }}</div>
         </div>
@@ -68,8 +68,8 @@
   </div>
   <div class="col-6 col-lg-3">
     <a href="/seller/markets/connect" class="text-decoration-none">
-      <div class="card border-0 shadow-sm console-kpi-card console-kpi-success h-100">
-        <div class="card-body">
+      <div class="op-card border-0 shadow-sm console-kpi-card console-kpi-success h-100">
+        <div class="op-card-body">
           <div class="console-kpi-label">연동 마켓</div>
           <div class="console-stat-value">{{ markets_connected }}<span style="font-size:1.1rem;color:var(--text-muted);font-family:var(--font-ui);">/{{ markets_total }}</span></div>
         </div>
@@ -78,8 +78,8 @@
   </div>
   <div class="col-6 col-lg-3">
     <a href="/seller/sourcing#registryDomainInput" class="text-decoration-none">
-      <div class="card border-0 shadow-sm console-kpi-card console-kpi-warning h-100">
-        <div class="card-body">
+      <div class="op-card border-0 shadow-sm console-kpi-card console-kpi-warning h-100">
+        <div class="op-card-body">
           <div class="console-kpi-label">내 소싱처</div>
           <div class="console-stat-value">{{ sources_count }}</div>
         </div>
@@ -88,8 +88,8 @@
   </div>
   <div class="col-6 col-lg-3">
     <a href="/seller/me/tokens" class="text-decoration-none">
-      <div class="card border-0 shadow-sm console-kpi-card console-kpi-danger h-100">
-        <div class="card-body">
+      <div class="op-card border-0 shadow-sm console-kpi-card console-kpi-danger h-100">
+        <div class="op-card-body">
           <div class="console-kpi-label">보유 토큰</div>
           <div class="console-stat-value">{{ token_balance }}</div>
         </div>
@@ -99,8 +99,8 @@
 </div>
 
 <!-- 요금제(플랜) -->
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-3">
+<div class="op-card border-0 shadow-sm mb-4">
+  <div class="op-card-body d-flex flex-wrap justify-content-between align-items-center gap-3">
     <div>
       <div class="console-kpi-label">내 요금제</div>
       <div class="d-flex align-items-baseline gap-2">
@@ -118,8 +118,8 @@
 </div>
 
 <!-- 연결된 소셜 계정 -->
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-body">
+<div class="op-card border-0 shadow-sm mb-3">
+  <div class="op-card-body">
     <h6 class="fw-semibold mb-3"><i class="bi bi-link-45deg"></i> 연결된 소셜 계정</h6>
     {% set providers = ['kakao', 'google', 'naver'] %}
     {% set linked_providers = user.social_accounts | map(attribute='provider') | list %}
@@ -133,7 +133,7 @@
         {% if prov in linked_providers %}
           <span class="badge" style="background:color-mix(in srgb,var(--success) 18%,transparent);color:var(--success);">연결됨</span>
         {% else %}
-          <a href="/auth/{{ prov }}/start" class="btn btn-outline-secondary btn-sm">연결</a>
+          <a href="/auth/{{ prov }}/start" class="btn btn-ghost btn-sm">연결</a>
         {% endif %}
       </div>
     {% endfor %}
@@ -141,8 +141,8 @@
 </div>
 
 <!-- 알림 설정 -->
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-body">
+<div class="op-card border-0 shadow-sm mb-3">
+  <div class="op-card-body">
     <h6 class="fw-semibold mb-3"><i class="bi bi-bell"></i> 알림 채널</h6>
     <div class="d-flex justify-content-between align-items-center mb-2">
       <span><i class="bi bi-telegram"></i> 텔레그램</span>
@@ -164,13 +164,13 @@
 </div>
 
 <!-- 계정 관리 -->
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-body">
+<div class="op-card border-0 shadow-sm mb-3">
+  <div class="op-card-body">
     <h6 class="fw-semibold mb-3"><i class="bi bi-gear"></i> 계정 관리</h6>
     <form method="post" action="/auth/logout" class="d-inline">
-      <button type="submit" class="btn btn-outline-secondary btn-sm"><i class="bi bi-box-arrow-right"></i> 로그아웃</button>
+      <button type="submit" class="btn btn-ghost btn-sm"><i class="bi bi-box-arrow-right"></i> 로그아웃</button>
     </form>
-    <button class="btn btn-outline-danger btn-sm ms-2" onclick="confirmDeactivate()"><i class="bi bi-trash"></i> 탈퇴</button>
+    <button class="btn btn-ghost btn-sm ms-2" onclick="confirmDeactivate()"><i class="bi bi-trash"></i> 탈퇴</button>
   </div>
 </div>
 {% endif %}

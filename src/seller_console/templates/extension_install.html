@@ -18,14 +18,14 @@
   <!-- v15: 아무것도 모르는 유저를 위한 '왜 설치 / 왜 토큰' 초친절 비유 -->
   <div class="row g-2 mb-3">
     <div class="col-md-6">
-      <div class="card console-card h-100"><div class="card-body py-3">
+      <div class="op-card console-card h-100"><div class="op-card-body py-3">
         <div class="fw-semibold mb-1"><i class="bi bi-box-seam"></i> 고가수집기가 뭐예요?</div>
         <div class="small text-muted">쇼핑몰 상품 페이지에서 <b>제목·가격·이미지를 한 번에 가져오는 도우미</b>예요.
           하나하나 복사할 필요 없이 버튼 한 번이면 끝나요.</div>
       </div></div>
     </div>
     <div class="col-md-6">
-      <div class="card console-card h-100"><div class="card-body py-3">
+      <div class="op-card console-card h-100"><div class="op-card-body py-3">
         <div class="fw-semibold mb-1"><i class="bi bi-key"></i> 토큰은 왜 넣어요?</div>
         <div class="small text-muted">토큰은 <b>“이 수집기가 내 계정 것”임을 알려주는 열쇠</b>예요.
           딱 <b>한 번만</b> 넣으면, 가져온 상품이 내 계정으로 쏙 들어와요.</div>
@@ -34,15 +34,15 @@
   </div>
 
   <!-- 키노트식 단계 카드: 한 화면에 한 단계, 버튼 1개 + 다음/이전 -->
-  <div class="card console-card">
-    <div class="card-body text-center" style="min-height:340px">
+  <div class="op-card console-card">
+    <div class="op-card-body text-center" style="min-height:340px">
       <div class="small text-muted mb-2" id="extProgress"></div>
       <div class="progress mb-4" style="height:6px;background:#eee">
         <div class="progress-bar" id="extProgressBar" style="width:0%;background:var(--pc-color-primary)"></div>
       </div>
       <div id="extPanel"></div>
     </div>
-    <div class="card-footer d-flex justify-content-between align-items-center bg-transparent">
+    <div class="op-card-foot d-flex justify-content-between align-items-center bg-transparent">
       <button type="button" class="btn btn-ghost btn-sm" id="extPrev">← 이전</button>
       <span class="small text-muted" id="extStepNo"></span>
       <button type="button" class="btn btn-ghost btn-sm" id="extNext">다음 →</button>

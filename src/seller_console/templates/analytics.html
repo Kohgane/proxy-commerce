@@ -7,31 +7,31 @@
     <div class="console-kpi-label mb-1">분석 · BI</div>
     <h4 class="mb-0 fw-bold"><i class="bi bi-graph-up-arrow"></i> 재고·판매 분석</h4>
   </div>
-  <a href="/seller/analytics?force_refresh=1" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-clockwise"></i> 새로고침</a>
+  <a href="/seller/analytics?force_refresh=1" class="btn btn-ghost btn-sm"><i class="bi bi-arrow-clockwise"></i> 새로고침</a>
 </div>
 <hr class="pc-hairline mt-0 mb-4">
 
 <!-- 매출 KPI(세리프 대형 + 토큰 좌악센트) -->
 <div class="row g-3 mb-4">
   <div class="col-12 col-md-4">
-    <div class="card console-card console-kpi-card console-kpi-primary h-100">
-      <div class="card-body">
+    <div class="op-card console-card console-kpi-card console-kpi-primary h-100">
+      <div class="op-card-body">
         <div class="console-kpi-label mb-1">오늘 매출</div>
         <div class="console-stat-value">{{ data.sales_summary.today_krw }}<span style="font-size:1.1rem;color:var(--text-muted);font-family:var(--font-ui);">원</span></div>
       </div>
     </div>
   </div>
   <div class="col-12 col-md-4">
-    <div class="card console-card console-kpi-card console-kpi-success h-100">
-      <div class="card-body">
+    <div class="op-card console-card console-kpi-card console-kpi-success h-100">
+      <div class="op-card-body">
         <div class="console-kpi-label mb-1">이번주 매출</div>
         <div class="console-stat-value">{{ data.sales_summary.week_krw }}<span style="font-size:1.1rem;color:var(--text-muted);font-family:var(--font-ui);">원</span></div>
       </div>
     </div>
   </div>
   <div class="col-12 col-md-4">
-    <div class="card console-card console-kpi-card console-kpi-warning h-100">
-      <div class="card-body">
+    <div class="op-card console-card console-kpi-card console-kpi-warning h-100">
+      <div class="op-card-body">
         <div class="console-kpi-label mb-1">이번달 매출</div>
         <div class="console-stat-value">{{ data.sales_summary.month_krw }}<span style="font-size:1.1rem;color:var(--text-muted);font-family:var(--font-ui);">원</span></div>
       </div>
@@ -41,9 +41,9 @@
 
 <div class="row g-3">
   <div class="col-12 col-lg-6">
-    <div class="card console-card border-0 shadow-sm h-100">
-      <div class="card-header bg-white border-0 pt-3"><span class="console-kpi-label"><i class="bi bi-trophy"></i> 베스트셀러 TOP 20</span></div>
-      <div class="card-body p-0">
+    <div class="op-card console-card border-0 shadow-sm h-100">
+      <div class="op-card-head"><span class="console-kpi-label"><i class="bi bi-trophy"></i> 베스트셀러 TOP 20</span></div>
+      <div class="op-card-body p-0">
         <table class="table table-sm mb-0">
           <thead><tr><th>SKU</th><th>판매량</th><th>매출</th><th></th></tr></thead>
           <tbody>
@@ -52,7 +52,7 @@
               <td>{{ item.sku }}</td>
               <td>{{ item.qty }}</td>
               <td>{{ item.revenue|int }}원</td>
-              <td><a class="btn btn-outline-primary btn-sm" href="/seller/inventory/reorder?sku={{ item.sku }}">리오더</a></td>
+              <td><a class="btn btn-ghost btn-sm" href="/seller/inventory/reorder?sku={{ item.sku }}">리오더</a></td>
             </tr>
           {% endfor %}
           {% if not data.top_products %}
@@ -64,9 +64,9 @@
     </div>
   </div>
   <div class="col-12 col-lg-6">
-    <div class="card console-card border-0 shadow-sm h-100">
-      <div class="card-header bg-white border-0 pt-3"><span class="console-kpi-label"><i class="bi bi-box-seam"></i> 재고 알림</span></div>
-      <div class="card-body">
+    <div class="op-card console-card border-0 shadow-sm h-100">
+      <div class="op-card-head"><span class="console-kpi-label"><i class="bi bi-box-seam"></i> 재고 알림</span></div>
+      <div class="op-card-body">
         <div class="d-flex justify-content-between align-items-center mb-2">
           <span>재고 임박</span>
           <span class="fw-bold" style="color:var(--danger);">{{ data.inventory_alerts.low_stock|length }}개</span>
@@ -75,7 +75,7 @@
           <span>재고 과잉</span>
           <span class="fw-bold" style="color:var(--warn);">{{ data.inventory_alerts.over_stock|length }}개</span>
         </div>
-        <a class="btn btn-outline-warning btn-sm" href="/seller/marketing/campaigns">할인 캠페인 보기</a>
+        <a class="btn btn-ghost btn-sm" href="/seller/marketing/campaigns">할인 캠페인 보기</a>
       </div>
     </div>
   </div>
@@ -83,15 +83,15 @@
 
 <div class="row g-3 mt-1">
   <div class="col-12 col-lg-6">
-    <div class="card console-card border-0 shadow-sm h-100">
-      <div class="card-header bg-white border-0 pt-3"><span class="console-kpi-label"><i class="bi bi-megaphone"></i> 광고 ROI</span></div>
-      <div class="card-body">ROAS 임계값: <span class="fw-semibold">{{ data.ad_roi.roas_threshold }}</span></div>
+    <div class="op-card console-card border-0 shadow-sm h-100">
+      <div class="op-card-head"><span class="console-kpi-label"><i class="bi bi-megaphone"></i> 광고 ROI</span></div>
+      <div class="op-card-body">ROAS 임계값: <span class="fw-semibold">{{ data.ad_roi.roas_threshold }}</span></div>
     </div>
   </div>
   <div class="col-12 col-lg-6">
-    <div class="card console-card border-0 shadow-sm h-100">
-      <div class="card-header bg-white border-0 pt-3"><span class="console-kpi-label"><i class="bi bi-truck"></i> CS·배송 품질</span></div>
-      <div class="card-body">
+    <div class="op-card console-card border-0 shadow-sm h-100">
+      <div class="op-card-head"><span class="console-kpi-label"><i class="bi bi-truck"></i> CS·배송 품질</span></div>
+      <div class="op-card-body">
         <div class="d-flex justify-content-between mb-1"><span>24h 미응답</span><span class="fw-semibold">{{ data.quality.unanswered_24h }}건</span></div>
         <div class="d-flex justify-content-between mb-1"><span>배송 지연</span><span class="fw-semibold">{{ data.quality.delayed_shipping }}건</span></div>
         <div class="d-flex justify-content-between"><span>환불률</span><span class="fw-semibold">{{ data.quality.refund_rate }}%</span></div>
