@@ -73,16 +73,16 @@ def _coverage_badge(cov):
     fields = cov.get("fields") or []
     unver = cov.get("unverified") or []
     if level == "full":
-        return {"level": "full", "label": "완전 지원", "css": "success",
+        return {"level": "full", "label": "완전 지원", "css": "success", "pc": "on",
                 "detail": "제목·가격·갤러리·옵션·상세 하네스 검증"
                 + (" (리뷰 미검증)" if "reviews" in unver else ""),
                 "fixture": cov.get("fixture", "")}
     if level == "partial":
         miss = [f for f in _ALL_EXTRACT_FIELDS if f not in fields]
-        return {"level": "partial", "label": "부분 지원", "css": "warning",
+        return {"level": "partial", "label": "부분 지원", "css": "warning", "pc": "off",
                 "detail": "검증: " + "·".join(fields) + " / 미검증: " + "·".join(miss),
                 "fixture": cov.get("fixture", "")}
-    return {"level": "unverified", "label": "미검증", "css": "secondary",
+    return {"level": "unverified", "label": "미검증", "css": "secondary", "pc": "muted",
             "detail": "실페이지 스냅샷 필요(오너 제출 후 하네스 검증)", "fixture": ""}
 
 
