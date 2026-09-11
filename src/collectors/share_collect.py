@@ -15,12 +15,12 @@
 
 | 폰이 폈나 | 초안이 갖는 것 | 미수집 | 등록 |
 |---|---|---|---|
-| ✅ VPN 끔 **또는 규칙/Smart 모드** | 제목 · itemId · **가격(CNY)** · 링크 | 이미지 · 옵션 · 상세 | **가능** |
+| ✅ VPN 끔 **또는 규칙 모드** | 제목 · itemId · **가격(CNY)** · 링크 | 이미지 · 옵션 · 상세 | **가능** |
 | ❌ VPN **전체(Global) 모드** | 제목 · 단축 링크(tk) | 가격 · 이미지 · 옵션 · 상세 | 닫힘 |
 
 > VPN이 켜졌느냐가 아니라 **중국 사이트를 터널로 보내느냐**가 가른다.
-> 규칙(规则)/Smart 모드는 중국 사이트를 우회시키므로 그대로 동작한다
-> — 아스트릴 Smart Mode, Shadowrocket·Clash류 기본 규칙 모드.
+> 규칙(规则) 모드는 중국 사이트를 우회시키므로 그대로 동작한다(Shadowrocket·Clash류 기본).
+> **아스트릴 iOS엔 규칙 모드가 없다**(오너 실측) — 그 앱은 잠깐 끄는 게 유일한 방법이다.
 
 두 갈래를 섞지 않는다 — 한쪽을 다른 쪽인 척 하면 그게 가짜 성공이다.
 
@@ -140,3 +140,49 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
             # 가격이 왔으면 마진을 낼 수 있다 → 등록 가능. 없으면 닫힌 채(0 발명 금지).
             "enrich_state": ("done" if price else "pending"),
             }
+
+
+def collect_input(raw: str, *, seller_id: str = "", source: str = "input",
+                  final_url: str = "", translate: bool = True) -> dict:
+    """**입구 하나짜리 함수.** 단건·일괄·API·텔레그램이 전부 이걸 부른다.
+
+    실측(오너 2026-09-11, 폰): 「여러 URL 한 번에」가 이 판단을 **제 나름대로** 하고 있어
+    같은 공유 텍스트가 단건에선 초안이 되고 일괄에선 "실패 2"가 됐다.
+    판단이 네 벌이면 네 가지로 갈라진다 — 그래서 한 벌만 둔다.
+
+    판단은 둘뿐이다:
+      · 타오바오 계열이고 제목이 있으면 → **공유 초안**(서버 수집 시도 0)
+      · 그 외 → 기존 수집 코어(`collect_one_url`)
+
+    반환에 `kind`를 실어 호출부가 화면을 고를 수 있게 한다 —
+    `share_draft`(초안 생성) / `collected`(정상 수집) / `failed`.
+    """
+    from src.collectors.share_text import is_taobao_family, parse_share_text
+
+    share = parse_share_text(raw, final_url=final_url)
+    url = share.get("url", "")
+    if not url:
+        return {"ok": False, "kind": "failed", "url": "",
+                "error": "상품 링크를 찾지 못했습니다. 링크나 공유 텍스트를 그대로 붙여넣어 주세요."}
+
+    # 타오바오는 **서버가 못 읽는다**(실측). 읽어 보고 실패하는 게 아니라 아예 안 간다.
+    if is_taobao_family(url) and share.get("title"):
+        r = collect_from_share_text(raw, seller_id=seller_id, source=source,
+                                    translate=translate, final_url=final_url)
+        r["kind"] = "share_draft" if r.get("ok") else "failed"
+        return r
+
+    from src.api.extension_api import collect_one_url
+    r = collect_one_url(url, seller_id=seller_id, source=source)
+    if r.get("ok"):
+        r["kind"] = "collected"
+        return r
+    # 못 읽었지만 공유 글에 제목이 있으면 초안이라도 세운다(빈손으로 돌려보내지 않는다).
+    if share.get("title"):
+        r2 = collect_from_share_text(raw, seller_id=seller_id, source=source,
+                                     translate=translate, final_url=final_url)
+        if r2.get("ok"):
+            r2["kind"] = "share_draft"
+            return r2
+    r["kind"] = "failed"
+    return r

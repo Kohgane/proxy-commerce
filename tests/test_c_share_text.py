@@ -18,7 +18,11 @@
 """
 from __future__ import annotations
 
+import json
 import re
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -38,6 +42,14 @@ FINAL_URL_FIXTURE = (
     "ktBr0z9EoA23DpC3bsKDuDpMtRxy0MKFvoh78oM-t7xK1gwIyGJ2TGoPHYNgfpLKet3wMnHtnR9Dq-Gw"
     "&tbSocialPopKey=shareItem&sp_tk=bnlYcFQ3VkE3bHQ%3D&cpp=1&shareurl=true"
     "&short_name=h.8IcTrtZuTU19ieN&tk=nyXpT7VA7lt&app=macos_safari"
+)
+
+# 오너 2차 실물(소파 건) — `tk`·제목은 오너 제공값, 나머지 형식은 검증된 1차 원문과 같다.
+#   형식을 지어내지 않았다: 【淘宝】…「제목」…点击链接 3줄 구조는 1차에서 실측된 것이다.
+SHARE_FIXTURE_SOFA = (
+    "【淘宝】https://e.tb.cn/h.RZs4T76TlNx?tk=RZs4T76TlNx CZ0000\n"
+    "「沙发客厅小户型现代简约北欧布艺沙发」\n"
+    "点击链接直接打开 或者 淘宝搜索直接打开"
 )
 
 SHARE_FIXTURE = (
@@ -420,24 +432,124 @@ def test_pasted_final_url_behaves_like_shortcut_input():
 
 
 def test_vpn_guidance_names_the_mode_not_the_switch():
-    """★ 「VPN을 끄세요」는 **틀린 처방**이다 — 오너 확정 2026-09-11.
+    """★ 안내는 **모드를 이름으로 불러야** 한다 — "VPN을 끄세요"만으론 부족하다.
 
-    가르는 건 VPN이 켜졌느냐가 아니라 **중국 사이트를 터널로 보내느냐**다.
-    규칙(规则)/Smart 모드는 중국 사이트를 우회시키므로 VPN이 켜져 있어도 그대로 작동한다
-    (아스트릴 Smart Mode · Shadowrocket·Clash류 기본 규칙 모드).
+    처방 자체는 두 번 바뀌었다(오너 실측이 두 번 정정했다):
+      ① 「VPN을 끄세요」        → 틀렸다. 규칙 모드면 켜져 있어도 된다.
+      ② 「Smart 모드로 바꾸세요」 → iOS 아스트릴엔 **Smart Mode가 없다**(오너 실측).
 
-    "끄세요"라고 하면 유저는 **필요 없는 불편을 겪고**, 껐는데도 안 되면(다른 이유면)
-    우리 안내가 틀렸다는 것만 배운다. 원인을 이름으로 불러야 고칠 수 있다.
+    그래서 지금 정답은 **둘 다 말하는 것**이다 — "규칙 모드면 그대로, 전체(Global) 모드면 끄기".
+    계약이 잴 것은 특정 낱말이 아니라 **어떤 모드가 문제인지 말하는가**이다.
+    (이 계약은 ①을 금지하다가 ②에서 스스로 틀렸다 — 낱말을 금지하면 그 낱말이 정답이 되는 날 깨진다.)
     """
-    targets = ("src/seller_console/views.py", "src/api/extension_api.py",
-               "docs/MOBILE_COLLECT_GUIDE.md", "docs/C_TAOBAO_FIELD_TEST.md")
-    for path in targets:
-        s = Path(path).read_text(encoding="utf-8")
-        assert "VPN을 끄" not in s, f"{path}에 틀린 처방('VPN을 끄')이 돌아왔다"
-    # 유저가 실제로 읽는 두 곳은 **모드 이름**을 대야 한다.
     for path in ("src/seller_console/views.py", "src/api/extension_api.py"):
         s = Path(path).read_text(encoding="utf-8")
-        assert "Global" in s or "전체" in s, f"{path}가 어떤 모드가 문제인지 안 말한다"
+        assert "전체" in s or "Global" in s, f"{path}가 어떤 모드가 문제인지 안 말한다"
     guide = Path("docs/MOBILE_COLLECT_GUIDE.md").read_text(encoding="utf-8")
-    for term in ("Smart", "Global", "규칙"):
-        assert term in guide, f"가이드에 {term} 안내가 없다"
+    for term in ("규칙", "전체"):
+        assert term in guide, f"가이드에 '{term} 모드' 안내가 없다"
+    # iOS 아스트릴엔 Smart Mode가 없다 — 없는 기능을 쓰라고 하면 유저가 못 찾는다(오너 실측).
+    assert "아스트릴은 Smart Mode" not in guide, "iOS에 없는 기능을 안내하고 있다"
+
+
+# ── ⑦ C-fix: 네 입구가 같은 결과를 낸다 ─────────────────────────────────────
+def test_share_block_is_one_item_not_three():
+    """★ 공유 텍스트는 **한 상품**이다 — 줄 수만큼 쪼개지 않는다.
+
+    실측(오너 2026-09-11, 폰 웹 폼 「여러 URL 한 번에」): 붙여넣었더니
+    **「전체 2개 · 성공 0 · 실패 2」** — `splitlines()`가 한 상품을 둘로 쪼갰고,
+    1줄은 단축 링크만 남아 서버가 못 읽고 2줄은 `点击链接…`이라 링크가 아예 없었다.
+    """
+    from src.collectors.share_text import split_input_blocks
+    assert len(split_input_blocks(SHARE_FIXTURE)) == 1, "한 상품이 여러 항목으로 쪼개졌다"
+    # 맨 URL을 줄마다 넣던 기존 사용법은 그대로 동작해야 한다
+    assert len(split_input_blocks("https://a.invalid/1\nhttps://b.invalid/2")) == 2
+    # 공유 블록 둘이 붙어 와도 둘로 나뉜다
+    two = SHARE_FIXTURE + "\n" + SHARE_FIXTURE.replace("8IcTrtZuTU19ieN", "OTHERtoken")
+    assert len(split_input_blocks(two)) == 2
+
+
+def test_bulk_path_uses_the_one_entry_function():
+    """★ 갈래 판단이 입구마다 있으면 **같은 입력이 입구마다 다른 답**을 낸다(오너 실측)."""
+    src = Path("src/seller_console/views.py").read_text(encoding="utf-8")
+    i = src.index("def collect_bulk")
+    block = src[i: i + 3500]
+    assert "split_input_blocks" in block, "일괄이 줄 단위로 자르고 있다"
+    assert "collect_input(" in block, "일괄이 공용 입구 함수를 안 쓴다"
+    assert "_collect_real_draft" not in block, "일괄이 제 나름의 수집 경로를 다시 갖고 있다"
+
+
+def test_all_entries_agree_on_the_same_share_text(monkeypatch):
+    """★ **같은 공유 텍스트 → 네 입구 같은 결과.** 이 트랙의 원 결함이 정확히 이 불일치였다."""
+    import src.collectors.share_collect as sc
+    monkeypatch.setattr("src.seller_console.collect_history_store.append",
+                        lambda **kw: ("i", True))
+    calls = []
+    monkeypatch.setattr("src.api.extension_api.collect_one_url",
+                        lambda url, **kw: calls.append(url) or {"ok": False, "error": "x"})
+
+    from src.collectors.share_text import split_input_blocks
+    blocks = split_input_blocks(SHARE_FIXTURE)
+    assert len(blocks) == 1
+    results = [sc.collect_input(blocks[0], seller_id="u1", source=src_name, translate=False)
+               for src_name in ("bulk", "mobile", "telegram", "share")]
+    for r in results:
+        assert r["ok"] is True, "입구에 따라 실패했다"
+        assert r["kind"] == "share_draft", "타오바오 공유가 초안이 아니다"
+    assert calls == [], "타오바오에 서버 수집을 시도했다(일괄 포함 전 입구 0이어야 한다)"
+
+
+def test_taobao_never_shows_the_read_failure_message():
+    """★ 타오바오 링크에 「상품 정보를 읽지 못했어요」가 뜨면 안 된다 — 그 자리는 **초안 생성**이다.
+
+    실측: 오너 화면에 그 문구가 떴다. 서버가 읽으려 했다는 뜻이고, 읽을 수 없는 걸 읽으려 한 것이다.
+    """
+    import src.collectors.share_collect as sc
+    r = sc.collect_input(SHARE_FIXTURE, seller_id="u1", source="bulk", translate=False)
+    assert r.get("kind") == "share_draft"
+    assert "읽지 못" not in (r.get("error") or ""), "타오바오에 읽기 실패 문구가 나왔다"
+
+
+def test_second_owner_sample_parses_too():
+    """★ 픽스처가 하나면 그 하나에만 맞춘 파서가 된다 — 오너 2차 실물(소파 건)도 잰다."""
+    from src.collectors.share_text import parse_share_text, split_input_blocks
+    assert len(split_input_blocks(SHARE_FIXTURE_SOFA)) == 1
+    r = parse_share_text(SHARE_FIXTURE_SOFA)
+    assert r["tk"] == "RZs4T76TlNx"
+    assert "沙发" in r["title"]
+    assert r["is_short"] is True
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치")
+def test_success_copy_is_not_rewritten_as_failure():
+    """★ 성공 문구가 실패 문구로 **뒤집히지 않는다.**
+
+    실측(오너 화면): 하단에 「가격을 못 읽었어요」가 떴다. 친절 문구 규칙이 `/가격|price/`로
+    너무 넓어, **'가격'이라는 낱말만 있으면** 무엇이든 그 실패 문장으로 바꾸고 있었다.
+    초안 성공 문구("…가격까지 담았어요")까지 실패로 뒤집는다 — 한 상태를 두 번, 그것도 반대로.
+
+    소스 위치가 아니라 **함수를 실제로 돌려서** 잰다 — 앞뒤 몇 글자를 읽는 방식은
+    내 주석이 그 자리에 들어오면 바로 깨진다(이 계약을 쓰다가 실제로 그랬다).
+    """
+    js = Path("src/seller_console/static/seller.js").read_text(encoding="utf-8")
+    fn = re.search(r"function kgpFriendlyError[\s\S]*?\n\}", js).group(0)
+    harness = fn + """
+const out = [
+  kgpFriendlyError('가격 반영 실패'),
+  kgpFriendlyError('제목·상품번호·가격까지 담았어요(공유 시점 가격).'),
+  kgpFriendlyError('초안 1건 생성 — 제목 담김 · 가격 199 CNY'),
+];
+console.log(JSON.stringify(out));
+"""
+    f = tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8")
+    f.write(harness); f.close()
+    try:
+        r = subprocess.run(["node", f.name], capture_output=True, text=True, timeout=15)
+        assert r.returncode == 0, r.stderr
+        fail_msg, ok1, ok2 = json.loads(r.stdout.strip().splitlines()[-1])
+    finally:
+        Path(f.name).unlink()
+
+    assert "못 읽었어요" in fail_msg, "진짜 실패는 여전히 친절 문구로 바뀌어야 한다"
+    for ok in (ok1, ok2):
+        assert "못 읽었어요" not in ok, f"성공 문구가 실패로 뒤집혔다: {ok}"

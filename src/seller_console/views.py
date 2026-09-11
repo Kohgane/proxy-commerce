@@ -1979,8 +1979,11 @@ def collect_bulk():
 
     data = request.get_json(force=True, silent=True) or {}
     raw = data.get("urls")
+    # C-F1: **줄이 아니라 항목으로 자른다.** 공유 텍스트는 2~3줄이 한 상품이다 —
+    #   `splitlines()`로 자르면 한 상품이 "전체 2개 · 성공 0 · 실패 2"가 된다(오너 실측).
+    from src.collectors.share_text import split_input_blocks
     if isinstance(raw, str):
-        urls = [u.strip() for u in raw.splitlines() if u.strip()]
+        urls = split_input_blocks(raw)
     elif isinstance(raw, list):
         urls = [str(u).strip() for u in raw if str(u).strip()]
     else:
@@ -1995,41 +1998,31 @@ def collect_bulk():
 
     results = []
     success = 0
-    for url in urls:
-        # C-T1: 한 줄이 공유 텍스트일 수 있다(앱에서 복사하면 그 덩어리가 온다).
-        from src.collectors.share_text import parse_share_text
-        _parsed = parse_share_text(url).get("url", "")
-        if not _parsed:
-            results.append({"url": url, "ok": False,
-                            "error": "상품 링크를 찾지 못했습니다(링크나 공유 텍스트를 붙여넣어 주세요)."})
-            continue
-        url = _parsed
+    # C-F1: 판단은 **한 곳**(`collect_input`)에서만 한다 — 입구마다 제 나름대로 하면
+    #   같은 공유 텍스트가 단건에선 초안이 되고 일괄에선 "실패"가 된다(오너 실측).
+    from src.collectors.share_collect import collect_input
+    for block in urls:
         try:
-            # Phase 203: 목업 제거 — /collect/preview와 동일한 실 수집 파이프라인 사용
-            d = _collect_real_draft(url, translate=True)
-            if not d:
-                results.append({"url": url, "ok": False, "error": "자동 추출 실패 (수동 입력 필요)"})
-                continue
-            title = d.get("title_ko") or d.get("title") or d.get("title_en") or "(제목 없음)"
-            images = d.get("images") if isinstance(d.get("images"), list) else []
-            item_id = collect_history_store.append(
-                source="bulk",
-                url=url,
-                title=title,
-                image=images[0] if images else "",
-                price=_canon_price(d),   # v72b STEP1: 정본 단일 소스
-                currency=d.get("currency") or "",
-                extra=d,
-                seller_id=_seller_id(),
-            )
-            results.append({
-                "url": url, "ok": True, "title": title,
-                "id": item_id, "preview_url": f"/seller/collect/preview/{item_id}",
-            })
-            success += 1
+            r = collect_input(block, seller_id=_seller_id(), source="bulk", translate=True)
         except Exception as exc:
-            logger.warning("벌크 수집 실패 (%s): %s", url, exc)
-            results.append({"url": url, "ok": False, "error": "수집 실패 (URL/소싱처 확인)"})
+            logger.warning("벌크 수집 실패 (%s): %s", block[:80], exc)
+            results.append({"url": block[:200], "ok": False, "error": "수집 실패 (URL/소싱처 확인)"})
+            continue
+        if not r.get("ok"):
+            results.append({"url": r.get("url") or block[:200], "ok": False,
+                            "error": r.get("error") or "수집 실패 (URL/소싱처 확인)"})
+            continue
+        item_id = r.get("item_id")
+        results.append({
+            "url": r.get("url", ""), "ok": True,
+            "title": r.get("title_ko") or r.get("title") or "(제목 없음)",
+            "id": item_id, "preview_url": f"/seller/collect/preview/{item_id}",
+            # C-F3: 초안은 **실패가 아니다.** 화면이 성공 카드로 그릴 수 있게 종류를 실어 보낸다.
+            "kind": r.get("kind", "collected"),
+            "uncollected": r.get("uncollected") or [],
+            "price": r.get("price", ""), "currency": r.get("currency", ""),
+        })
+        success += 1
 
     return jsonify({"ok": True, "total": len(urls), "success": success, "results": results})
 

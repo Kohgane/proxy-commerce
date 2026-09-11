@@ -239,6 +239,35 @@ def parse_share_text(raw: str, final_url: str = "") -> dict:
     return out
 
 
+def split_input_blocks(raw: str) -> list:
+    """여러 줄 입력 → **항목 단위** 블록. 줄 단위가 아니다.
+
+    실측(오너 2026-09-11, 폰 웹 폼): 공유 텍스트를 「여러 URL 한 번에」에 붙여넣었더니
+    `splitlines()`가 **한 상품을 2~3개로 쪼갰다** — 「전체 2개 · 성공 0 · 실패 2」.
+    1줄은 단축 링크만 남아 서버가 못 읽고, 2줄은 `点击链接…`이라 링크가 아예 없다.
+
+    규칙 하나면 된다: **URL이 있는 줄이 새 항목을 연다.**
+    URL이 없는 줄(제목 「」·`点击链接…`)은 **앞 항목에 붙는다** — 그게 그 항목의 일부니까.
+
+        【淘宝】https://e.tb.cn/h.xxx?tk=yyy CZ356   ← URL 있음 → 항목 1 시작
+        「상품 제목」                                  ← URL 없음 → 항목 1에 붙음
+        点击链接直接打开 或者 淘宝搜索直接打开          ← URL 없음 → 항목 1에 붙음
+        https://item.taobao.com/item.htm?id=123      ← URL 있음 → 항목 2 시작
+
+    맨 URL을 한 줄에 하나씩 넣던 기존 사용법도 그대로 동작한다(줄마다 URL이 있으니까).
+    """
+    lines = str(raw or "").splitlines()
+    blocks: list = []
+    for line in lines:
+        if not line.strip():
+            continue
+        if _URL_RE.search(line) or not blocks:
+            blocks.append([line])
+        else:
+            blocks[-1].append(line)
+    return ["\n".join(b).strip() for b in blocks if "\n".join(b).strip()]
+
+
 def url_from_input(raw: str) -> str:
     """입력구 공용 단축 헬퍼 — 텍스트든 맨 URL이든 상품 URL 하나를 준다(없으면 '')."""
     return parse_share_text(raw).get("url", "")

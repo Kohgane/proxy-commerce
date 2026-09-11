@@ -130,7 +130,11 @@ def test_collect_core_is_shared_with_bulk():
     src = Path("src/api/extension_api.py").read_text(encoding="utf-8")
     assert src.count("def collect_one_url") == 1
     assert "return collect_one_url(url, seller_id=seller_id_val" in src   # 벌크가 위임
-    assert 'collect_one_url(url, seller_id=seller_id, source="mobile")' in src  # 단건이 위임
+    # C-F1: 단건은 이제 `collect_input`에 위임하고, 그 안에서 `collect_one_url`을 부른다.
+    #   계약이 재는 건 **코어가 하나인가**지 호출 문자열이 아니다(호출 경로는 리팩터로 바뀐다).
+    assert "collect_input(" in src, "단건이 공용 입구 함수를 안 쓴다"
+    core = Path("src/collectors/share_collect.py").read_text(encoding="utf-8")
+    assert "from src.api.extension_api import collect_one_url" in core, "공용 입구가 수집 코어를 안 쓴다"
     # 벌크·단건 어느 쪽도 이력 저장을 **직접** 하지 않는다 — 코어만 한다.
     bulk = src.split("def _run_bulk_job")[1].split("@extension_bp")[0]
     one = src.split("def collect_one()")[1].split("@extension_bp")[0]

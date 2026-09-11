@@ -1152,50 +1152,36 @@ def collect_one():
     except Exception as exc:                       # 중복 조회 실패가 수집을 막지 않게
         logger.warning("단건 수집 중복 조회 실패: %s", exc)
 
-    # C-T4''(최종): 타오바오 계열은 **서버 수집을 아예 시도하지 않는다.**
-    #   실측 2026-09-11 — 단축 링크는 해외 IP에서 연결 거부, 상세는 IP 무관 로그인 벽.
-    #   먼저 `collect_one_url`을 태우면 **반드시 실패할 요청**을 한 번 날리고 폴백한다.
-    #   그 실패 로그는 진단이 아니라 소음이다. 그래서 갈래를 앞에서 가른다.
-    from src.collectors.share_text import is_taobao_family
-    if is_taobao_family(url) and share.get("title"):
-        res = {"ok": False, "error": "taobao_share_path"}
-    else:
-        res = collect_one_url(url, seller_id=seller_id, source="mobile")
-    if not res.get("ok"):
-        # C-T3: 페이지를 못 읽어도 **공유 텍스트에 제목이 있으면** 그것만으로 초안을 세운다.
-        #   가격·이미지·옵션은 '미수집'으로 남는다(0으로 채우지 않는다).
-        if share.get("title"):
-            try:
-                from src.collectors.share_collect import collect_from_share_text
-                sr = collect_from_share_text(raw, seller_id=seller_id, source="mobile_share",
-                                             final_url=final_url)
-                if sr.get("ok"):
-                    _has_price = bool(sr.get("price"))
-                    return jsonify({
-                        "ok": True, "duplicate": False, "partial": True,
-                        "item_id": sr.get("item_id"), "url": sr.get("url"),
-                        "title": sr.get("title_ko") or sr.get("title") or "",
-                        "price": sr.get("price", ""), "currency": sr.get("currency", ""),
-                        "item_id_taobao": sr.get("item_id_taobao", ""),
-                        "uncollected": sr.get("uncollected", []),
-                        "enrich_state": sr.get("enrich_state", ""),
-                        "resolve_reason": sr.get("resolve_reason", ""),
-                        "message": ("제목·상품번호·가격까지 담았어요(공유 시점 가격). "
-                                    "이미지·옵션은 PC에서 고가수집기로 보강해 주세요."
-                                    if _has_price else
-                                    "제목과 링크만 담았어요. VPN이 전체(Global) 모드면 링크 해석이 막혀요 — 규칙/Smart 모드로 바꾸고 다시 공유하시면 가격·상품번호까지 담깁니다."),
-                    })
-            except Exception as exc:
-                logger.warning("단건 수집 공유 폴백 실패: %s", exc)
-        # 정직 실패 — 무엇이 왜 안 됐는지 그대로 올린다(가짜 성공 0).
-        return jsonify({"ok": False, "duplicate": False, "url": url,
-                        "error": res.get("error") or "수집 실패",
-                        "message": "수집하지 못했습니다. 봇 차단 사이트는 PC 확장을 권합니다."}), 502
-    out = {"ok": True, "duplicate": False, "item_id": res.get("item_id"),
-           "title": res.get("title", ""), "url": url, "message": "수집됐습니다."}
-    if _wants_review():
-        out["review"] = _review_verdict(url)
-    return jsonify(out)
+    # C-F1: 갈래 판단은 **한 곳**(`collect_input`)에서만 — 입구마다 제 나름대로 하면 갈라진다.
+    from src.collectors.share_collect import collect_input
+    res = collect_input(raw, seller_id=seller_id, source="mobile", final_url=final_url)
+    if res.get("ok"):
+        _partial = res.get("kind") == "share_draft"
+        out = {"ok": True, "duplicate": False, "item_id": res.get("item_id"),
+               "url": res.get("url", ""),
+               "title": res.get("title_ko") or res.get("title") or "",
+               "message": "수집됐습니다."}
+        if _partial:
+            _has_price = bool(res.get("price"))
+            out.update({
+                "partial": True, "price": res.get("price", ""), "currency": res.get("currency", ""),
+                "item_id_taobao": res.get("item_id_taobao", ""),
+                "uncollected": res.get("uncollected", []),
+                "enrich_state": res.get("enrich_state", ""),
+                "message": ("제목·상품번호·가격까지 담았어요(공유 시점 가격). "
+                            "이미지·옵션은 PC에서 고가수집기로 보강해 주세요."
+                            if _has_price else
+                            "제목과 링크만 담았어요. VPN이 전체(Global) 모드면 링크 해석이 막혀요 — "
+                            "규칙 모드로 바꾸거나 VPN을 끄고 다시 공유하시면 가격·상품번호까지 담깁니다."),
+            })
+        if _wants_review():
+            out["review"] = _review_verdict(res.get("url", ""))
+        return jsonify(out)
+    # 정직 실패 — 무엇이 왜 안 됐는지 그대로 올린다(가짜 성공 0).
+    #   초안 폴백은 `collect_input` 안에 있다 — 여기서 또 하면 그게 두 벌째다.
+    return jsonify({"ok": False, "duplicate": False, "url": res.get("url", ""),
+                    "error": res.get("error") or "수집 실패",
+                    "message": "수집하지 못했습니다. 봇 차단 사이트는 PC 확장을 권합니다."}), 502
 
 
 def _wants_review() -> bool:
