@@ -2,7 +2,7 @@
 
 body {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  background: var(--pc-color-bg, #f8fafc);
+  background: var(--pc-color-bg);
 }
 
 /* 사이드바 */
@@ -26,13 +26,13 @@ body {
 
 .sidebar .nav-link:hover,
 .sidebar .nav-link.text-white {
-  background: rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--on-accent) 10%, transparent);
 }
 
 /* 카드 공통 */
 .card {
   border-radius: var(--pc-radius-md, 10px);
-  border-color: var(--pc-color-border, #dbe2f2);
+  border-color: var(--pc-color-border);
 }
 
 /* KPI 값 */
@@ -52,7 +52,7 @@ body {
   font-size: 0.8rem;
   font-weight: 600;
   text-transform: uppercase;
-  color: #6c757d;
+  color: var(--text-muted);
   letter-spacing: 0.5px;
 }
 
@@ -69,13 +69,13 @@ body {
 
 /* 범위 슬라이더 */
 input[type="range"] {
-  accent-color: #0d6efd;
+  accent-color: var(--teal);
 }
 
 /* 토스트 */
 .toast {
   min-width: 280px;
-  box-shadow: var(--pc-shadow-md, 0 14px 30px rgba(2, 0, 16, .12));
+  box-shadow: var(--pc-shadow-md, 0 14px 30px color-mix(in srgb, var(--ink) 12%, transparent));
 }
 
 /* 이미지 갤러리 */
@@ -121,7 +121,7 @@ input[type="tel"] {
   .sidebar-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, .45);
+    background: color-mix(in srgb, var(--ink) 45%, transparent);
     z-index: 1040;
     display: none;
   }
@@ -140,7 +140,7 @@ input[type="tel"] {
   }
   .sidebar.show {
     left: 0;
-    box-shadow: 4px 0 16px rgba(0,0,0,.4);
+    box-shadow: 4px 0 16px color-mix(in srgb, var(--ink) 40%, transparent);
   }
   /* 메인 콘텐츠 패딩 조정 */
   main.flex-grow-1 {
