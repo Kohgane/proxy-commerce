@@ -1,12 +1,12 @@
 :root {
-  --console-bg: var(--pc-color-bg, #f5efe3);
-  --console-surface: var(--pc-color-surface, #fffdf8);
-  --console-sidebar: var(--pc-color-surface, #fffdf8);
-  --console-primary: var(--pc-color-primary, #0f9d8c);
-  --console-primary-weak: #e3f4f1;
-  --console-text: var(--pc-color-text, #1a1714);
-  --console-muted: var(--pc-color-text-muted, #64748b);
-  --console-border: var(--pc-color-border, #dbe2f2);
+  --console-bg: var(--pc-color-bg);
+  --console-surface: var(--pc-color-surface);
+  --console-sidebar: var(--pc-color-surface);
+  --console-primary: var(--pc-color-primary);
+  --console-primary-weak: color-mix(in srgb, var(--teal) 12%, var(--surface));
+  --console-text: var(--pc-color-text);
+  --console-muted: var(--pc-color-text-muted);
+  --console-border: var(--pc-color-border);
 }
 
 .console-body {
@@ -37,7 +37,7 @@
 }
 .console-brand:hover { opacity: 0.82; }
 .console-brand:active { opacity: 0.7; }
-.console-brand:focus-visible { outline: 2px solid var(--gold, #c9a24b); outline-offset: 3px; }
+.console-brand:focus-visible { outline: 2px solid var(--gold, var(--gold)); outline-offset: 3px; }
 
 .console-topbar-brand { cursor: pointer; transition: opacity 0.15s ease-out; }
 .console-topbar-brand:hover { opacity: 0.82; }
@@ -54,7 +54,7 @@
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  color: #334155;
+  color: var(--text-strong);
   text-decoration: none;
   border-radius: 10px;
   padding: 0.55rem 0.7rem;
@@ -65,12 +65,12 @@
 .console-nav-link:hover,
 .console-nav-link:focus {
   color: var(--console-text);
-  background: var(--pc-color-surface-muted, #f4f5fb);
+  background: var(--pc-color-surface-muted);
 }
 
 .console-nav-link.active {
   color: var(--on-accent);
-  background: linear-gradient(135deg, var(--console-primary), var(--pc-color-primary-strong, #0b7e72));
+  background: linear-gradient(135deg, var(--console-primary), var(--pc-color-primary-strong));
   font-weight: 600;
 }
 
@@ -126,7 +126,7 @@ body.kgp-editor .console-content { padding-bottom: 1rem; }
   background: var(--console-surface);
   border: 0;
   border-radius: var(--radius-xl, 18px);
-  box-shadow: var(--nm-up, 0 2px 10px rgba(2, 0, 16, .08));
+  box-shadow: var(--nm-up, 0 2px 10px color-mix(in srgb, var(--ink) 8%, transparent));
 }
 
 .console-card .card-body,
@@ -173,13 +173,13 @@ body.kgp-editor .console-content { padding-bottom: 1rem; }
 }
 
 .console-status-banner-success {
-  border-color: #bfdbfe;
-  background: #eff6ff;
+  border-color: color-mix(in srgb, var(--success) 34%, transparent);
+  background: color-mix(in srgb, var(--success) 8%, var(--surface));
 }
 
 .console-status-banner-warning {
-  border-color: #fde68a;
-  background: #fffbeb;
+  border-color: color-mix(in srgb, var(--warn) 34%, transparent);
+  background: color-mix(in srgb, var(--warn) 9%, var(--surface));
 }
 
 /* 디자인 시스템 v2 — KPI 카드 뉴모피즘 표면(절제, 단일소스 토큰). 하드 보더 제거 + 이중 그림자. */
@@ -234,11 +234,11 @@ body.kgp-editor .console-content { padding-bottom: 1rem; }
 }
 
 .console-trend-up {
-  color: #047857;
+  color: var(--success);
 }
 
 .console-trend-down {
-  color: #b91c1c;
+  color: var(--danger);
 }
 
 .console-trend-neutral {
@@ -250,7 +250,7 @@ body.kgp-editor .console-content { padding-bottom: 1rem; }
 }
 
 .console-activity-list .list-group-item {
-  border-color: #f1f5f9;
+  border-color: color-mix(in srgb, var(--ink) 4%, var(--surface));
 }
 
 .console-dashboard-footer {
@@ -300,12 +300,12 @@ body.kgp-editor .console-content { padding-bottom: 1rem; }
 .pc-swiss-table > thead th {
   background: transparent;
   border: 0;
-  border-bottom: 1px solid var(--hairline-color, rgba(201, 162, 75, .28));
+  border-bottom: 1px solid var(--hairline-color, color-mix(in srgb, var(--gold) 28%, transparent));
   text-transform: uppercase;
   letter-spacing: 0.1em;
   font-size: 0.68rem;
   font-weight: 600;
-  color: var(--gold-ink, #8a6d22);
+  color: var(--gold-ink, var(--gold-ink));
   padding: 0.55rem 0.75rem;
   white-space: nowrap;
 }
@@ -321,8 +321,8 @@ body.kgp-editor .console-content { padding-bottom: 1rem; }
    청록 완료). 장식 최소·정렬 위계. 하드코딩 hex 0(color-mix로 은은한 틴트). */
 .console-onboarding-card {
   border-color: var(--console-border);
-  background: var(--surface-warm, #FBF8F1);
-  border-top: 2px solid var(--hairline-color, rgba(201, 162, 75, .28));
+  background: var(--surface-warm, var(--paper));
+  border-top: 2px solid var(--hairline-color, color-mix(in srgb, var(--gold) 28%, transparent));
 }
 
 .onboarding-step-card {
@@ -385,7 +385,7 @@ button:focus,
 .form-switch .form-check-input {
   border: 0;
   box-shadow: var(--nm-in);
-  background-color: var(--surface-warm, #f0e9db);
+  background-color: var(--surface-warm, var(--border));
 }
 .form-switch .form-check-input:checked {
   background-color: var(--teal);
@@ -431,7 +431,7 @@ button:focus,
 .mobile-account-avatar {
   display: inline-flex; align-items: center; justify-content: center;
   width: 44px; height: 44px; border-radius: 50%;
-  background: var(--teal); color: #fff; font-weight: 700; text-decoration: none; font-size: 1.05rem;
+  background: var(--teal); color: var(--on-accent); font-weight: 700; text-decoration: none; font-size: 1.05rem;
 }
 .mobile-search {
   position: sticky; top: 52px; z-index: 1029;
@@ -493,3 +493,36 @@ button:focus,
 .console-nav-adv-summary::after { content: "▾"; margin-left: auto; transition: transform .15s ease; }
 details[open] > .console-nav-adv-summary::after { transform: rotate(180deg); }
 .console-nav-adv-summary:hover { background: var(--console-primary-weak); color: var(--console-primary); }
+
+/* ── Stage 6-k: 전역 chrome ──────────────────────────────────────────────────
+   `_base.html`의 인라인 스타일을 받는 자리. 전 화면에 걸리는 요소라 여기 한 곳에서 정한다
+   (인라인은 화면마다 다르게 흘러갈 수 있고, 실제로 `.console-account`는 **클래스만 있고
+   규칙이 없어** 인라인이 그 자리를 대신하고 있었다 — 이름은 있는데 집이 없었다). */
+.console-account {
+  background: color-mix(in srgb, var(--gold) 8%, transparent);
+  border: 1px solid var(--hairline-color);
+}
+.console-avatar {
+  width: 2.125rem; height: 2.125rem; border-radius: 50%;
+  background: var(--teal); color: var(--on-accent); font-weight: var(--w-bold, 700);
+}
+.console-account-name { font-size: .9rem; color: var(--text-strong); }
+.console-account-plan { font-size: .62rem; }
+
+/* For Beginners 고정 버튼 — 주황 글로우가 `rgba(239,122,34,.35)`로 박혀 있었다.
+   토큰에서 파생하면 브랜드 주황이 바뀔 때 글로우도 따라온다. */
+.fb-wrap {
+  position: fixed; right: var(--space-4); bottom: var(--space-4); z-index: 1035;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 3px;
+}
+.fb-btn {
+  border-radius: 999px; font-weight: 800; font-size: 1rem;
+  padding: .7rem 1.4rem;
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--orange) 35%, transparent);
+}
+.fb-hide { font-size: .68rem; text-decoration: none; }
+.fb-reopen {
+  display: none; position: fixed; right: var(--space-4); bottom: var(--space-4); z-index: 1035;
+  border-radius: 999px; width: 44px; height: 44px; font-size: 1.1rem;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--orange) 35%, transparent);
+}

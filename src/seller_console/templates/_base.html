@@ -99,15 +99,13 @@
     {# v34 P0: 개인화 헤더 — "내 작업공간"(로그인 계정·플랜) #}
     {% if _user_email or _user_name %}
     {% set _plan_label = {'free':'무료','plus':'플러스','pro':'프로'} %}
-    <a href="/seller/me" class="console-account text-decoration-none d-flex align-items-center gap-2 mb-3 p-2 rounded-3"
-       style="background:color-mix(in srgb, var(--gold) 8%, transparent);border:1px solid var(--hairline-color);">
-      <span class="d-inline-flex align-items-center justify-content-center flex-shrink-0"
-            style="width:34px;height:34px;border-radius:50%;background:var(--teal);color:#fff;font-weight:700;">
+    <a href="/seller/me" class="console-account text-decoration-none d-flex align-items-center gap-2 mb-3 p-2 rounded-3">
+      <span class="console-avatar d-inline-flex align-items-center justify-content-center flex-shrink-0">
         {{ (_user_name or _user_email or '나')[:1]|upper }}
       </span>
       <span class="flex-grow-1 text-truncate">
-        <span class="d-block text-truncate fw-semibold" style="font-size:.9rem;color:var(--text-strong);">{{ _user_name or _user_email }}</span>
-        <span class="console-kpi-label" style="font-size:.62rem;">내 작업공간 · {{ _plan_label.get(account_plan, '무료') }}{% if account_plan in ('plus','pro') %} 활성{% endif %}</span>
+        <span class="console-account-name d-block text-truncate fw-semibold">{{ _user_name or _user_email }}</span>
+        <span class="console-kpi-label console-account-plan">내 작업공간 · {{ _plan_label.get(account_plan, '무료') }}{% if account_plan in ('plus','pro') %} 활성{% endif %}</span>
       </span>
       <i class="bi bi-chevron-right text-muted small"></i>
     </a>
@@ -116,9 +114,9 @@
     {# v36 PART A: 모바일 드로어에서도 언어 전환 가능(공통 topbar가 모바일에서 숨겨지므로) #}
     <div class="btn-group btn-group-sm w-100 mb-3 d-md-none" role="group" aria-label="{{ t('lang.label') }}">
       <a href="/i18n/set?lang=ko&next={{ request.full_path|urlencode }}"
-         class="btn {{ 'btn-primary' if current_lang == 'ko' else 'btn-outline-secondary' }}">한국어</a>
+         class="btn {{ 'btn-primary' if current_lang == 'ko' else 'btn-ghost' }}">한국어</a>
       <a href="/i18n/set?lang=en&next={{ request.full_path|urlencode }}"
-         class="btn {{ 'btn-primary' if current_lang == 'en' else 'btn-outline-secondary' }}">EN</a>
+         class="btn {{ 'btn-primary' if current_lang == 'en' else 'btn-ghost' }}">EN</a>
     </div>
 
     <div class="flex-grow-1">
@@ -232,7 +230,7 @@
     <header class="console-topbar">
       <div class="d-flex align-items-center gap-2">
         <a href="/" class="console-topbar-brand text-decoration-none"><strong>{{ _brand_name }}</strong></a>
-        {% if _user_role == 'seller' %}<span class="badge text-bg-primary">셀러</span>{% endif %}
+        {% if _user_role == 'seller' %}<span class="pc-badge pc-badge-on">셀러</span>{% endif %}
       </div>
 
       <form class="console-search-wrap" action="/seller/catalog" method="get" role="search">
@@ -246,20 +244,20 @@
       <div class="d-flex align-items-center gap-2">
         {# v18 PART A: 운영 방식(수입형/수출형) 표시 + 전환(설정에서 언제든) #}
         {% if lane %}
-        <a href="/lane" class="btn btn-sm btn-outline-secondary" title="운영 방식 전환 (수입형/수출형)">
+        <a href="/lane" class="btn btn-sm btn-ghost" title="운영 방식 전환 (수입형/수출형)">
           {{ lane.title_ko }} ▾
         </a>
         {% endif %}
         {# v15 i18n: 언어 토글(한국어/English) — 기존 /i18n/set 쿠키 단일소스 #}
         <div class="btn-group btn-group-sm" role="group" aria-label="{{ t('lang.label') }}">
           <a href="/i18n/set?lang=ko&next={{ request.full_path|urlencode }}"
-             class="btn {{ 'btn-primary' if current_lang == 'ko' else 'btn-outline-secondary' }}">한국어</a>
+             class="btn {{ 'btn-primary' if current_lang == 'ko' else 'btn-ghost' }}">한국어</a>
           <a href="/i18n/set?lang=en&next={{ request.full_path|urlencode }}"
-             class="btn {{ 'btn-primary' if current_lang == 'en' else 'btn-outline-secondary' }}">EN</a>
+             class="btn {{ 'btn-primary' if current_lang == 'en' else 'btn-ghost' }}">EN</a>
         </div>
         {% if _user_id %}
         <div class="dropdown">
-          <button class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+          <button class="btn btn-ghost btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
             {{ _user_email or _user_name or '사용자' }}
           </button>
           <ul class="dropdown-menu dropdown-menu-end">
@@ -269,15 +267,15 @@
             <li><hr class="dropdown-divider"></li>
             <li>
               <form method="post" action="/auth/logout" class="px-2">
-                <button type="submit" class="btn btn-outline-secondary btn-sm w-100"><i class="bi bi-box-arrow-right"></i> 로그아웃</button>
+                <button type="submit" class="btn btn-ghost btn-sm w-100"><i class="bi bi-box-arrow-right"></i> 로그아웃</button>
               </form>
             </li>
           </ul>
         </div>
         {% else %}
         <div class="d-flex flex-wrap justify-content-end gap-1">
-          <a href="/auth/login" class="btn btn-outline-secondary btn-sm">OAuth 로그인</a>
-          <a href="/auth/magic-link" class="btn btn-outline-secondary btn-sm">이메일 로그인</a>
+          <a href="/auth/login" class="btn btn-ghost btn-sm">OAuth 로그인</a>
+          <a href="/auth/magic-link" class="btn btn-ghost btn-sm">이메일 로그인</a>
           {% if diagnostic_reveal_enabled %}
           <a href="/auth/diagnostic-token/issue?reveal_safe=1&format=html" class="btn btn-warning btn-sm"><i class="bi bi-life-preserver"></i> 비상 진입 (운영자)</a>
           {% endif %}
@@ -328,7 +326,7 @@
       </div>
       <div class="modal-body" id="pcConfirmBody"></div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" id="pcConfirmCancel">취소</button>
+        <button type="button" class="btn btn-ghost" data-bs-dismiss="modal" id="pcConfirmCancel">취소</button>
         <button type="button" class="btn btn-danger" id="pcConfirmOk">확인</button>
       </div>
     </div>
@@ -336,15 +334,13 @@
 </div>
 
 <!-- v14: For Beginners 진입 버튼 — 모든 페이지 고정 + 바로 밑 작은 on/off(상태 기억) -->
-<div id="fbWrap" style="position:fixed;right:18px;bottom:18px;z-index:1035;display:flex;flex-direction:column;align-items:flex-end;gap:3px">
-  <a href="/seller/start" id="fbBtn" class="btn btn-cta"
-     style="border-radius:999px;font-weight:800;font-size:1rem;padding:.7rem 1.4rem;box-shadow:0 8px 22px rgba(239,122,34,.35)">
+<div id="fbWrap" class="fb-wrap">
+  <a href="/seller/start" id="fbBtn" class="btn btn-cta fb-btn">
      <i class="bi bi-stars"></i> <span class="fb-label">{{ t('fb.cta') }}</span>
   </a>
-  <button type="button" id="fbHide" class="btn btn-link p-0 text-muted" style="font-size:.68rem;text-decoration:none">{{ t('fb.hide') }}</button>
+  <button type="button" id="fbHide" class="btn btn-link p-0 text-muted fb-hide">{{ t('fb.hide') }}</button>
 </div>
-<button type="button" id="fbReopen" class="btn btn-cta" title="처음이신가요? 가이드 열기"
-        style="display:none;position:fixed;right:18px;bottom:18px;z-index:1035;border-radius:999px;width:44px;height:44px;font-size:1.1rem;box-shadow:0 6px 18px rgba(239,122,34,.35)"><i class="bi bi-stars"></i></button>
+<button type="button" id="fbReopen" class="btn btn-cta fb-reopen" title="처음이신가요? 가이드 열기"><i class="bi bi-stars"></i></button>
 <script>
 (function () {
   var wrap = document.getElementById('fbWrap');

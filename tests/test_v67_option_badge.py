@@ -5,12 +5,16 @@
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 PREVIEW = Path("src/seller_console/templates/collect_preview.html").read_text(encoding="utf-8")
 # ★ Stage 6-c(2026-09-03): 이 화면들의 색·치수가 인라인 → **app.css로 이관**됐다.
 #   핀이 보는 건 "그 규칙이 살아 있나"이지 "어느 파일에 있나"가 아니다 — 소스만 갈아끼운다.
-CSS_S6C = Path("src/static/app.css").read_text(encoding="utf-8")
+# 6-k: 주석을 **걷어내고** 읽는다. 이 계약들은 클래스 이름으로 `split()`하는데,
+#   app.css 주석이 그 이름을 먼저 언급하면 split이 **설명문에 꽂힌다**(실제로 그렇게 깨졌다).
+#   선언만 보는 게 맞다 — 주석은 화면에 안 나온다.
+CSS_S6C = re.sub(r"/\*.*?\*/", "", Path("src/static/app.css").read_text(encoding="utf-8"), flags=re.S)
 
 
 

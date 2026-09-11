@@ -30,6 +30,16 @@
      스킬 토큰표에 있는 이름이라 호출부를 고치지 않고 **선언을 채운다**(단일 소스 유지). */
   --muted: #8A8275;
   --bg: #F7F2E8; --surface: #FFFFFF; --surface-warm: #FBF8F1; --border: #E7DECC;
+  /* 6-k: **폴백 없이 쓰이던 미정의 토큰** — 그 속성은 조용히 죽는다(배경 투명·색 기본값).
+     실측 6곳: `.kgp-badge-quiet`·`.ch-badge-src`·`.pc-code-chip` 배경(`--hanji`),
+     그리고 두 곳의 `--ink-soft` 색. 디자인 스킬이 정본 이름으로 `--hanji`/`--ink-soft`를
+     쓰므로 **그 이름을 살린다**(호출부를 고치면 다음 사람이 또 스킬 문서대로 쓴다).
+     값은 발명하지 않고 스킬 정본과 기존 토큰에서 가져온다. */
+  --hanji: var(--cream);          /* 스킬 정본 #F5EFE3 = 기존 --cream */
+  --ink-soft: #3A352E;            /* 스킬 정본 */
+  --w-bold: 700;                  /* --w-semi(600)와 짝 */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --caption-lh: 1.5;
   --success: #2E7D5B; --warn: #C9821F; --danger: #C2503C;
   /* 브랜드 음영(hover/텍스트) 단일소스 — 컴포넌트에서 하드코딩 금지 */
   --teal-strong: #0E8A7C; --teal-hover: #12A897;
@@ -185,10 +195,20 @@ a:hover {
   border: 1px solid var(--pc-color-border);
   padding: var(--pc-space-3) var(--pc-space-4);
 }
-.pc-status-success { background: #ecfdf5; border-color: #86efac; }
-.pc-status-info { background: #eff6ff; border-color: #bfdbfe; }
-.pc-status-warning { background: #fffbeb; border-color: #fde68a; }
-.pc-status-danger { background: #fef2f2; border-color: #fecaca; }
+/* 6-k: **규칙의 집 안에 규칙 위반이 있었다** — "app.css 토큰 단일 소스, 하드코딩 hex 금지"라고
+   해 놓고 이 네 줄이 raw hex였다(`#ecfdf5` 등, 우리 팔레트 밖 차가운 파스텔).
+   `.pc-badge`가 이미 쓰던 방식(`color-mix`)으로 토큰에서 파생한다 — 새 방식 발명 0.
+   실측 이동폭(RGB 합차): success 13 · info 13 · warning 12 · danger 8 — **네 변형 다 거의 같다.**
+   단 `info`는 색조가 **파랑 → 청록**으로 바뀐다. 파랑은 애초에 우리 팔레트에 없던 색이고
+   청록이 우리 링크·브랜드색이라, 이건 변경이 아니라 **수정**이다(전용 info 토큰은 만들지 않았다). */
+.pc-status-success { background: color-mix(in srgb, var(--success) 8%, var(--surface));
+                     border-color: color-mix(in srgb, var(--success) 34%, transparent); }
+.pc-status-info    { background: color-mix(in srgb, var(--teal) 8%, var(--surface));
+                     border-color: color-mix(in srgb, var(--teal) 32%, transparent); }
+.pc-status-warning { background: color-mix(in srgb, var(--warn) 9%, var(--surface));
+                     border-color: color-mix(in srgb, var(--warn) 34%, transparent); }
+.pc-status-danger  { background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+                     border-color: color-mix(in srgb, var(--danger) 32%, transparent); }
 
 /* 상태 뱃지 — 전 화면 공통 컴포넌트(gogabridj 토큰 단일 소스). 부트스트랩 컬러 뱃지 대체.
    연결/완료=청록, 미설정/대기=주황, 실패=적. color-mix로 은은한 배경(하드코딩 hex 0). */
@@ -987,7 +1007,12 @@ main:has(> .op-shell) > .op-shell { flex: 1 1 auto; height: auto; min-height: 0;
 /* 경고 성격의 스트립 — 좌측 주황 악센트 1점(원색은 신호로만). */
 .op-strip-warn { border-left: 3px solid var(--warn); }
 /* 카드 위 ghost 버튼은 테두리가 없으면 **버튼으로 안 읽힌다**(실측: '초기화'가 글자처럼 보였다). */
-.op-card .btn-ghost, .op-strip .btn-ghost { border-color: var(--border); }
+/* 고스트는 기본이 **테두리 없음**(Tertiary)이고, 카드 안에서만 선을 받는다.
+   6-k 실측: 상단바 버튼을 v2 아웃라인 → 고스트로 옮겼더니 **테두리를 잃어**
+   언어 토글이 분절 형태를 잃고 EN이 맨 텍스트로 떴다(before/after 대조로 잡음).
+   새 클래스를 만들지 않고 **같은 장치를 상단바에 확장**한다 — 규칙이 하나면 다음 자리도 같이 산다. */
+.op-card .btn-ghost, .op-strip .btn-ghost,
+.console-topbar .btn-ghost, .mobile-topbar .btn-ghost { border-color: var(--border); }
 /* 필터 컨트롤도 터치 타깃 44px(6-a가 전 폭에 건 규율). */
 .ch-page .form-select, .ch-page .form-control, .ch-page .op-card-body .btn { min-height: 44px; }
 @media (max-width: 1199.98px) { .ch-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
