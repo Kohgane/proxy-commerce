@@ -2184,3 +2184,13 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .si-result-box.is-warn { border-left: 3px solid var(--warn); }
 .si-result-box.is-bad  { border-left: 3px solid var(--danger); }
 .si-result-thumb { width: 4rem; height: 4rem; object-fit: cover; border-radius: var(--radius-sm); flex-shrink: 0; }
+
+/* ── 6-l: 부트스트랩 텍스트 색 → 우리 토큰 ───────────────────────────────────
+   `text-primary`는 부트스트랩 파랑(#0d6efd)이라 **우리 팔레트 밖 색**이 그대로 나간다.
+   실측(cs 통계): AI 채택률 수치가 파랑으로 떴다. 화면마다 클래스를 바꾸면 다음 화면에서 또 만나므로
+   ([[6-g SKU 분홍]]의 교훈) **유틸 자체를 토큰으로 덮는다** — 마크업은 그대로 두고 색만 우리 것으로.
+   `text-muted`는 이미 우리 것으로 동작하므로 건드리지 않는다(불필요한 변경 0). */
+.text-primary { color: var(--teal) !important; }
+.text-danger  { color: var(--danger) !important; }
+.text-success { color: var(--success) !important; }
+.text-warning { color: var(--warn) !important; }
