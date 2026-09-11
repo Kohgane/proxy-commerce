@@ -47,7 +47,7 @@
         <div class="d-flex justify-content-between align-items-center">
           <label class="form-label small fw-semibold mb-1" for="editTitle">제목</label>
           {# v39 D: 제목·상세 한국어 번역(온디맨드). 키 미설정이면 정직 안내(원문 유지). 무료 카운터 연동. #}
-          <button type="button" class="btn btn-outline-secondary btn-sm py-0" id="btnTranslateKo" onclick="translateToKo()">
+          <button type="button" class="btn btn-ghost btn-sm py-0" id="btnTranslateKo" onclick="translateToKo()">
             <i class="bi bi-translate"></i> 한국어로 번역
           </button>
         </div>
@@ -94,7 +94,7 @@
         </div>
         <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
           <span class="fw-semibold" id="krwPreview" style="font-size:.95rem;">≈ 원화 —</span>
-          <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2" id="btnConvertKrw"
+          <button type="button" class="btn btn-ghost btn-sm py-0 px-2" id="btnConvertKrw"
                   onclick="convertToKrw()" title="환율을 적용해 가격을 원화(KRW)로 바꿉니다">↻ 원화로 환산</button>
         </div>
         <div class="text-muted mb-1" id="fxNote" style="font-size:.74rem;"></div>
@@ -130,7 +130,7 @@
           </label>
           <div class="d-flex align-items-center gap-2">
             <!-- v39-E2 #3: 상세 없거나 빈약하면 AI 초안 생성(자동 확정 금지 — 편집/승인). 키 없으면 정직 구조화. -->
-            <button type="button" class="btn btn-outline-secondary btn-sm py-0" id="btnAiDescribe" onclick="aiDescribe()">
+            <button type="button" class="btn btn-ghost btn-sm py-0" id="btnAiDescribe" onclick="aiDescribe()">
               <i class="bi bi-stars"></i> AI 상세 초안 생성
             </button>
             <span class="text-muted" style="font-size:.75rem;"><span id="descCharCount">0</span>자</span>
@@ -204,11 +204,11 @@
           <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
             <span class="small text-muted">마켓 프리셋:</span>
             <div class="btn-group btn-group-sm" role="group" id="dpMarketPresets">
-              <button type="button" class="btn btn-outline-secondary active" data-market="common" onclick="dpSelectMarket('common')">공통</button>
-              <button type="button" class="btn btn-outline-secondary" data-market="coupang" onclick="dpSelectMarket('coupang')">쿠팡</button>
-              <button type="button" class="btn btn-outline-secondary" data-market="smartstore" onclick="dpSelectMarket('smartstore')">스마트스토어</button>
-              <button type="button" class="btn btn-outline-secondary" data-market="shopify" onclick="dpSelectMarket('shopify')">Shopify</button>
-              <button type="button" class="btn btn-outline-secondary" data-market="woocommerce" onclick="dpSelectMarket('woocommerce')">코가네멀티샵</button>
+              <button type="button" class="btn btn-ghost active" data-market="common" onclick="dpSelectMarket('common')">공통</button>
+              <button type="button" class="btn btn-ghost" data-market="coupang" onclick="dpSelectMarket('coupang')">쿠팡</button>
+              <button type="button" class="btn btn-ghost" data-market="smartstore" onclick="dpSelectMarket('smartstore')">스마트스토어</button>
+              <button type="button" class="btn btn-ghost" data-market="shopify" onclick="dpSelectMarket('shopify')">Shopify</button>
+              <button type="button" class="btn btn-ghost" data-market="woocommerce" onclick="dpSelectMarket('woocommerce')">코가네멀티샵</button>
             </div>
           </div>
           <div id="dpMarketNote" class="form-text mb-2"></div>
@@ -216,10 +216,10 @@
             <!-- 에디터 -->
             <div class="col-12 col-md-6">
               <div class="d-flex flex-wrap gap-1 mb-2">
-                <button type="button" class="btn btn-outline-primary btn-sm py-0" onclick="dpAddBlock('text')"><i class="bi bi-fonts"></i> 텍스트</button>
-                <button type="button" class="btn btn-outline-primary btn-sm py-0" onclick="dpAddBlock('image')"><i class="bi bi-image"></i> 이미지</button>
-                <button type="button" class="btn btn-outline-primary btn-sm py-0" onclick="dpAddBlock('highlight')"><i class="bi bi-star"></i> 강조박스</button>
-                <button type="button" class="btn btn-outline-primary btn-sm py-0" onclick="dpAddBlock('divider')"><i class="bi bi-dash-lg"></i> 구분선</button>
+                <button type="button" class="btn btn-ghost btn-sm py-0" onclick="dpAddBlock('text')"><i class="bi bi-fonts"></i> 텍스트</button>
+                <button type="button" class="btn btn-ghost btn-sm py-0" onclick="dpAddBlock('image')"><i class="bi bi-image"></i> 이미지</button>
+                <button type="button" class="btn btn-ghost btn-sm py-0" onclick="dpAddBlock('highlight')"><i class="bi bi-star"></i> 강조박스</button>
+                <button type="button" class="btn btn-ghost btn-sm py-0" onclick="dpAddBlock('divider')"><i class="bi bi-dash-lg"></i> 구분선</button>
               </div>
               <div id="dpBlocks" class="vstack gap-2"></div>
               <div id="dpWarn" class="small text-warning mt-2" style="display:none;"></div>
@@ -238,7 +238,7 @@
       <div class="kgp-esec mb-2 kgp-etab-hide" data-etab="options">
         <div class="d-flex justify-content-between align-items-center mb-2">
           <label class="form-label small fw-semibold mb-0">옵션 (예: 색상, 사이즈 — 값은 쉼표로 구분)</label>
-          <button type="button" class="btn btn-outline-secondary btn-sm py-0" onclick="addOptionRow()">+ 옵션 추가</button>
+          <button type="button" class="btn btn-ghost btn-sm py-0" onclick="addOptionRow()">+ 옵션 추가</button>
         </div>
         <div id="optionRows" class="vstack gap-2"></div>
       </div>
@@ -253,7 +253,7 @@
             <option value="{{ opt.code }}" {{ 'selected' if (current_category == opt.code) or (not current_category and category_suggestion and category_suggestion.code == opt.code) else '' }}>{{ opt.label }}</option>
             {% endfor %}
           </select>
-          <button type="button" class="btn btn-outline-primary" id="btnAutoCategory" onclick="autoClassify()" title="상품명·키워드로 카테고리 자동 추천"><i class="bi bi-magic"></i> 자동 분류</button>
+          <button type="button" class="btn btn-ghost" id="btnAutoCategory" onclick="autoClassify()" title="상품명·키워드로 카테고리 자동 추천"><i class="bi bi-magic"></i> 자동 분류</button>
         </div>
         <div id="categoryHint" class="form-text">
           {% if not current_category and category_suggestion and category_suggestion.code != 'GEN' %}
@@ -273,7 +273,7 @@
         <!-- 카테고리 기반 추천 키워드(칩) — 클릭해서 담기. 직접 입력도 가능. -->
         <div class="d-flex flex-wrap align-items-center gap-1 mt-2" id="keywordChips">
           <span class="small text-muted me-1">추천:</span>
-          <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" id="btnAddAllKw">＋ 전체 추가</button>
+          <button type="button" class="btn btn-ghost btn-sm py-0 px-2" id="btnAddAllKw">＋ 전체 추가</button>
         </div>
       </div>
 
@@ -331,8 +331,8 @@
     <div class="op-card-foot kgp-action-bar">
       <button class="btn btn-primary btn-sm" id="btnSaveEdits" onclick="saveEdits()"><i class="bi bi-save"></i> 변경사항 저장</button>
       <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer"
-         class="btn btn-outline-secondary btn-sm"><i class="bi bi-link-45deg"></i> 원본 페이지</a>
-      <button type="button" class="btn btn-outline-primary btn-sm" onclick="openMarginCalc()"><i class="bi bi-cash-coin"></i> 마진 계산기</button>
+         class="btn btn-ghost btn-sm"><i class="bi bi-link-45deg"></i> 원본 페이지</a>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="openMarginCalc()"><i class="bi bi-cash-coin"></i> 마진 계산기</button>
       <button class="btn btn-success btn-sm ms-auto" id="btnOpenUploadModal" onclick="openUploadModal()">
         <i class="bi bi-box-arrow-up-right"></i> 마켓에 등록
       </button>
@@ -372,7 +372,7 @@
           <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
             <div class="d-flex align-items-center gap-2">
               <h6 class="fw-semibold mb-0">1. 등록할 마켓 선택</h6>
-              <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" id="btnSelectAllMarkets"
+              <button type="button" class="btn btn-sm btn-ghost py-0 px-2" id="btnSelectAllMarkets"
                       onclick="toggleAllMarkets()">전체 선택</button>
             </div>
             {% set conn = market_connected or {} %}
@@ -414,7 +414,7 @@
           </div>
 
           <div class="d-flex gap-2 mt-3">
-            <button class="btn btn-outline-secondary" data-bs-dismiss="modal">취소</button>
+            <button class="btn btn-ghost" data-bs-dismiss="modal">취소</button>
             <button class="btn btn-primary" id="btnPrevalidate" onclick="runPrevalidate()">
               <i class="bi bi-search"></i> 사전검증 →
             </button>
@@ -426,7 +426,7 @@
           <h6 class="fw-semibold mb-3">사전검증 결과</h6>
           <div id="prevalidateResults"></div>
           <div class="d-flex gap-2 mt-3">
-            <button class="btn btn-outline-secondary" onclick="goToStep('stepSelect')">← 다시 선택</button>
+            <button class="btn btn-ghost" onclick="goToStep('stepSelect')">← 다시 선택</button>
             <button class="btn btn-success" id="btnConfirmUpload" onclick="runUpload()">
               <i class="bi bi-check-circle"></i> 통과 마켓에 업로드
             </button>
@@ -445,8 +445,8 @@
           <h6 class="fw-semibold mb-3"><i class="bi bi-clipboard"></i> 등록 결과</h6>
           <div id="uploadResults"></div>
           <div class="d-flex gap-2 mt-3">
-            <button class="btn btn-outline-secondary" data-bs-dismiss="modal">닫기</button>
-            <button class="btn btn-outline-primary" onclick="goToStep('stepSelect')">다시 등록</button>
+            <button class="btn btn-ghost" data-bs-dismiss="modal">닫기</button>
+            <button class="btn btn-ghost" onclick="goToStep('stepSelect')">다시 등록</button>
           </div>
         </div>
 
@@ -483,7 +483,7 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">닫기</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-bs-dismiss="modal">닫기</button>
       </div>
     </div>
   </div>

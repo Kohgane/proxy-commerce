@@ -17,31 +17,31 @@
   #install-banner { display: none; }
 </style>
 
-<div class="container-sm py-3" style="max-width:520px">
+<div class="container-sm py-3" class="pc-narrow">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h5 class="mb-0"><i class="bi bi-phone"></i> CS Mobile</h5>
     <div class="d-flex gap-2">
-      <a class="btn btn-outline-secondary btn-sm" href="/seller/cs/inbox">PC 버전</a>
-      <button class="btn btn-outline-primary btn-sm" id="install-banner" onclick="installPWA()">홈화면 추가</button>
+      <a class="btn btn-ghost btn-sm" href="/seller/cs/inbox">PC 버전</a>
+      <button class="btn btn-ghost btn-sm" id="install-banner" onclick="installPWA()">홈화면 추가</button>
     </div>
   </div>
 
   <!-- 통계 요약 -->
   <div class="row g-2 mb-3">
     <div class="col-4 text-center">
-      <div class="card py-2">
+      <div class="op-card py-2">
         <div class="text-muted" style="font-size:.75rem">미응답</div>
         <div class="fs-5 fw-bold">{{ stats.unanswered }}</div>
       </div>
     </div>
     <div class="col-4 text-center">
-      <div class="card py-2">
+      <div class="op-card py-2">
         <div class="text-muted" style="font-size:.75rem">긴급</div>
         <div class="fs-5 fw-bold text-danger">{{ stats.urgent_unanswered }}</div>
       </div>
     </div>
     <div class="col-4 text-center">
-      <div class="card py-2">
+      <div class="op-card py-2">
         <div class="text-muted" style="font-size:.75rem">24h 신규</div>
         <div class="fs-5 fw-bold">{{ stats.new_24h }}</div>
       </div>
@@ -50,15 +50,15 @@
 
   <!-- 메시지 카드 목록 -->
   {% for msg in messages %}
-  <div class="card msg-card shadow-sm mb-3 category-{{ msg.category or 'general' }}"
+  <div class="op-card msg-card mb-3 category-{{ msg.category or 'general' }}"
        id="card-{{ msg.message_id }}">
-    <div class="card-body pb-2">
+    <div class="op-card-body pb-2">
       <div class="d-flex justify-content-between align-items-start mb-1">
         <div>
           <span class="fw-semibold">{{ msg.customer_name }}</span>
-          <span class="badge bg-secondary ms-1 priority-badge">{{ msg.channel }}</span>
+          <span class="pc-badge pc-badge-muted ms-1 priority-badge">{{ msg.channel }}</span>
           {% if msg.priority >= 2 %}
-            <span class="badge bg-danger ms-1 priority-badge">긴급</span>
+            <span class="pc-badge pc-badge-danger ms-1 priority-badge">긴급</span>
           {% endif %}
         </div>
         <small class="text-muted">{{ msg.received_at[:16] if msg.received_at else '' }}</small>
@@ -81,11 +81,11 @@
                   placeholder="답변 입력 (비워두면 AI 제안 사용)"></textarea>
         <div class="d-flex gap-2 action-btns">
           <button type="submit" name="action" value="send"
-                  class="btn btn-success flex-fill"><i class="bi bi-send"></i> 발송</button>
+                  class="btn btn-primary flex-fill"><i class="bi bi-send"></i> 발송</button>
           <button type="submit" name="action" value="hold"
-                  class="btn btn-outline-warning flex-fill">⏸ 보류</button>
+                  class="btn btn-ghost flex-fill"><i class="bi bi-pause"></i> 보류</button>
           <button type="submit" name="action" value="resolve"
-                  class="btn btn-outline-secondary flex-fill"><i class="bi bi-check-lg"></i> 해결</button>
+                  class="btn btn-ghost flex-fill"><i class="bi bi-check-lg"></i> 해결</button>
         </div>
       </form>
     </div>

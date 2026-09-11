@@ -16,11 +16,11 @@
       <button id="checkAllBtn" class="btn btn-primary btn-sm" {% if not rows %}disabled{% endif %}>
         <i class="bi bi-arrow-repeat"></i> 전체 변화 확인
       </button>
-      <a href="/seller/collect/history" class="btn btn-outline-secondary btn-sm">수집 이력</a>
+      <a href="/seller/collect/history" class="btn btn-ghost btn-sm">수집 이력</a>
     </div>
   </div>
 
-  <div class="alert alert-light border small d-flex gap-2 align-items-start mb-3">
+  <div class="pc-status pc-status-info border small d-flex gap-2 align-items-start mb-3">
     <i class="bi bi-info-circle text-primary"></i>
     <div class="mb-0">
       <strong>어떻게 동작하나요?</strong> 소싱처 페이지를 실제로 다시 읽어 <strong>수집 당시 가격·옵션과 비교</strong>합니다.
@@ -38,7 +38,7 @@
     <a href="/seller/sourcing" class="btn btn-sm btn-primary">상품 수집하러 가기</a>
   </div>
   {% else %}
-  <div class="card console-card">
+  <div class="op-card console-card">
     <div class="table-responsive">
       <table class="table table-hover align-middle mb-0">
         <thead class="table-light">
@@ -67,15 +67,15 @@
             <td class="small text-muted mon-checked">{{ (r.monitor.checked_at or '')[:16]|replace('T',' ') or '미확인' }}</td>
             <td class="mon-change">
               {% set ch = r.monitor.change %}
-              {% if ch == 'out_of_stock' %}<span class="badge text-bg-danger">{{ r.monitor.summary }}</span>
-              {% elif ch == 'price' %}<span class="badge text-bg-warning text-dark">{{ r.monitor.summary }}</span>
-              {% elif ch == 'options' or ch == 'changed' %}<span class="badge text-bg-info">{{ r.monitor.summary }}</span>
-              {% elif ch == 'none' %}<span class="badge text-bg-success">변화 없음</span>
-              {% elif r.monitor.summary %}<span class="badge text-bg-secondary">{{ r.monitor.summary }}</span>
+              {% if ch == 'out_of_stock' %}<span class="badge pc-badge pc-badge-danger">{{ r.monitor.summary }}</span>
+              {% elif ch == 'price' %}<span class="badge pc-badge pc-badge-off text-dark">{{ r.monitor.summary }}</span>
+              {% elif ch == 'options' or ch == 'changed' %}<span class="badge pc-badge pc-badge-muted">{{ r.monitor.summary }}</span>
+              {% elif ch == 'none' %}<span class="badge pc-badge pc-badge-on">변화 없음</span>
+              {% elif r.monitor.summary %}<span class="badge pc-badge pc-badge-muted">{{ r.monitor.summary }}</span>
               {% else %}<span class="text-muted small">미확인</span>{% endif %}
             </td>
             <td>
-              <button class="btn btn-sm btn-outline-primary mon-check-btn" data-id="{{ r.id }}">변화 확인</button>
+              <button class="btn btn-sm btn-ghost mon-check-btn" data-id="{{ r.id }}">변화 확인</button>
             </td>
           </tr>
           {% endfor %}
@@ -94,10 +94,10 @@ function renderChange(td, mon) {
   const s = mon.summary || '확인 불가';
   let cls = 'pc-badge-muted', txt = s;
   if (ch === 'out_of_stock') cls = 'pc-badge-danger';
-  else if (ch === 'price') cls = 'pc-badge-off text-dark';
+  else if (ch === 'price') cls = 'pc-badge-off';
   else if (ch === 'options' || ch === 'changed') cls = 'pc-badge-muted';
   else if (ch === 'none') { cls = 'pc-badge-on'; txt = '변화 없음'; }
-  td.innerHTML = `<span class="badge ${cls}">${txt}</span>`;
+  td.innerHTML = `<span class="pc-badge ${cls}">${txt}</span>`;
 }
 
 async function checkItem(id, row) {

@@ -2,8 +2,8 @@
 {% block title %}북마클릿 수집{% endblock %}
 {% block content %}
 <div class="container-fluid py-4" style="max-width:680px">
-  <div class="card console-card">
-    <div class="card-body text-center py-4">
+  <div class="op-card console-card">
+    <div class="op-card-body text-center py-4">
       {% if ok %}
       <div class="display-6 mb-2"><i class="bi bi-check-circle text-success"></i></div>
       <h1 class="h5 mb-2">수집 완료</h1>
@@ -24,13 +24,13 @@
           <i class="bi bi-pencil"></i> 직접 입력으로 등록
         </a>
         {% endif %}
-        <a class="btn btn-outline-secondary btn-sm" href="/seller/bookmarklet">
+        <a class="btn btn-ghost btn-sm" href="/seller/bookmarklet">
           <i class="bi bi-bookmark"></i> 북마클릿 다시 보기
         </a>
-        <a class="btn btn-outline-secondary btn-sm" href="/seller/collect/history">수집 이력</a>
+        <a class="btn btn-ghost btn-sm" href="/seller/collect/history">수집 이력</a>
       </div>
 
-      <div class="alert alert-light border small mt-4 mb-0 text-start">
+      <div class="pc-status pc-status-info border small mt-4 mb-0 text-start">
         <i class="bi bi-lightbulb"></i> <strong>봇 차단이 강한 사이트</strong>(로그인 필요·강한 보호)는 <strong>크롬 확장(고가수집기)</strong>을
         쓰면 브라우저 화면 그대로 수집됩니다. <a href="/seller/markets/guide">설치 가이드 →</a>
       </div>

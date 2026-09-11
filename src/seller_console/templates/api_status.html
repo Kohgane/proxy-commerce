@@ -5,15 +5,15 @@
 <!-- 카드 매크로 -->
 {% macro render_card(api) %}
 <div class="col-md-6">
-  <div class="card border-0 shadow-sm h-100
+  <div class="op-card border-0 shadow-sm h-100
     {% if api.status == 'active' %}border-start border-success border-4{% else %}border-start border-warning border-4{% endif %}">
-    <div class="card-body">
+    <div class="op-card-body">
       <div class="d-flex justify-content-between align-items-start mb-2">
         <h6 class="card-title mb-0 fw-semibold">{{ api.name }}</h6>
         {% if api.status == 'active' %}
-          <span class="badge bg-success"><i class="bi bi-check-circle"></i> 활성</span>
+          <span class="pc-badge pc-badge-on"><i class="bi bi-check-circle"></i> 활성</span>
         {% else %}
-          <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> 미설정</span>
+          <span class="pc-badge pc-badge-off text-dark"><i class="bi bi-exclamation-triangle"></i> 미설정</span>
         {% endif %}
       </div>
       <p class="text-muted small mb-2">{{ api.purpose }}</p>
@@ -23,10 +23,10 @@
         {% for var_name, var_val in api.env_vars.items() %}
         <div class="d-flex align-items-center gap-2 mb-1">
           {% if var_val %}
-            <span class="badge bg-light text-dark border" style="font-family:monospace;font-size:0.7rem;"><i class="bi bi-check-circle"></i> {{ var_name }}</span>
+            <span class="pc-badge pc-badge-muted text-dark border" style="font-family:monospace;font-size:0.7rem;"><i class="bi bi-check-circle"></i> {{ var_name }}</span>
             <span class="text-muted" style="font-family:monospace;font-size:0.7rem;">{{ var_val }}</span>
           {% else %}
-            <span class="badge bg-danger" style="font-family:monospace;font-size:0.7rem;"><i class="bi bi-x-circle"></i> {{ var_name }}</span>
+            <span class="pc-badge pc-badge-danger" style="font-family:monospace;font-size:0.7rem;"><i class="bi bi-x-circle"></i> {{ var_name }}</span>
             <span class="text-muted small">미설정</span>
           {% endif %}
         </div>
@@ -35,7 +35,7 @@
 
       <!-- 발급 링크 -->
       {% if api.status == 'missing' %}
-      <a href="{{ api.docs_url }}" class="btn btn-outline-primary btn-sm" target="_blank">
+      <a href="{{ api.docs_url }}" class="btn btn-ghost btn-sm" target="_blank">
         <i class="bi bi-card-list"></i> 발급 가이드 →
       </a>
       {% endif %}
@@ -46,11 +46,11 @@
 
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h4 class="mb-0 fw-bold"><i class="bi bi-key"></i> API 상태</h4>
-  <a href="/seller/api-status/json" class="btn btn-outline-secondary btn-sm" target="_blank">JSON 보기</a>
+  <a href="/seller/api-status/json" class="btn btn-ghost btn-sm" target="_blank">JSON 보기</a>
 </div>
 
 <!-- Render Env 경고 배너 -->
-<div class="alert alert-warning d-flex align-items-start gap-2 mb-3" role="alert">
+<div class="pc-status pc-status-warning d-flex align-items-start gap-2 mb-3" role="alert">
   <span class="fs-5"><i class="bi bi-exclamation-triangle"></i></span>
   <div>
     <strong>GitHub Secrets는 인식하지 않습니다.</strong>
@@ -63,8 +63,8 @@
 
 <!-- 요약 진행 바 -->
 {% if summary %}
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-body py-3">
+<div class="op-card border-0 shadow-sm mb-4">
+  <div class="op-card-body py-3">
     <div class="d-flex justify-content-between align-items-center mb-1">
       <span class="fw-semibold">활성 API</span>
       <span class="text-muted small">
@@ -133,7 +133,7 @@
       {% for api in api_list %}
         {{ render_card(api) }}
       {% else %}
-      <div class="col-12"><div class="alert alert-info">API 상태 데이터를 로드할 수 없습니다.</div></div>
+      <div class="col-12"><div class="pc-status pc-status-info">API 상태 데이터를 로드할 수 없습니다.</div></div>
       {% endfor %}
     </div>
   </div>
@@ -155,13 +155,13 @@
   {{ render_card(api) }}
 {% else %}
 <div class="col-12">
-  <div class="alert alert-info">API 상태 데이터를 로드할 수 없습니다.</div>
+  <div class="pc-status pc-status-info">API 상태 데이터를 로드할 수 없습니다.</div>
 </div>
 {% endfor %}
 </div>
 {% endif %}
 
-<div class="mt-4 p-3 bg-light rounded">
+<div class="mt-4 pc-inset">
   <h6 class="fw-semibold mb-2"><i class="bi bi-pin-angle"></i> 환경변수 등록 방법</h6>
   <ol class="text-muted small mb-0">
     <li><a href="https://dashboard.render.com" target="_blank">Render Dashboard</a> → 내 서비스 → <strong>Environment</strong> 탭 클릭</li>

@@ -1013,6 +1013,13 @@ main:has(> .op-shell) > .op-shell { flex: 1 1 auto; height: auto; min-height: 0;
    새 클래스를 만들지 않고 **같은 장치를 상단바에 확장**한다 — 규칙이 하나면 다음 자리도 같이 산다. */
 .op-card .btn-ghost, .op-strip .btn-ghost,
 .console-topbar .btn-ghost, .mobile-topbar .btn-ghost { border-color: var(--border); }
+/* 페이지 머리의 액션 줄 — 카드도 스트립도 아닌, 제목 옆에 붙는 버튼 무리.
+   배경은 주지 않는다(제목과 한 표면이다). 대신 여기 선 고스트는 **선을 받는다**:
+   6-l 실측에서 가격 정책 화면의 머리가 아웃라인→고스트로 바뀌며 경계를 잃어,
+   링크 넷과 뱃지 하나가 **한 덩어리 글자 무더기**로 읽혔다. 세 번째로 같은 자리다 —
+   그래서 이번엔 셀렉터를 하나 더 붙이는 대신 **이름을 준다**(남은 화면이 같이 산다). */
+.op-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.op-actions .btn-ghost { border-color: var(--border); }
 /* 필터 컨트롤도 터치 타깃 44px(6-a가 전 폭에 건 규율). */
 .ch-page .form-select, .ch-page .form-control, .ch-page .op-card-body .btn { min-height: 44px; }
 @media (max-width: 1199.98px) { .ch-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -1244,6 +1251,16 @@ body.kgp-editor.console-body { background: var(--surface) !important; }
 .kgp-usage-pill.is-used { background: color-mix(in srgb, var(--teal) 10%, transparent); }
 .kgp-usage-pill.is-idle { background: color-mix(in srgb, var(--danger) 8%, transparent); }
 .kgp-badge-quiet { background: var(--hanji); color: var(--text-muted); border: 1px solid var(--border); }
+
+/* 카드 안의 조용한 블록 — 인용한 문의 원문, 부가 설명처럼 "본문보다 한 겹 뒤"인 것.
+   부트스트랩 `bg-light`가 서 있던 자리다. **뱃지가 아니다** — 배경이 필요하다고 뱃지 변형을
+   여기에 붙이면(`pc-badge-muted` 같은 것) 문법 오용이고, 화면에선 알약이 블록을 삼킨다. */
+.pc-inset {
+  background: var(--surface-warm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+}
 /* 목록 행(부분 템플릿) — 인라인으로 흩어져 있던 치수·색을 여기 모았다. */
 .ch-thumb { object-fit: cover; border-radius: var(--radius-sm, 7px); background: color-mix(in srgb, var(--ink) 4%, transparent); border: 1px solid var(--border); }
 .ch-thumb-lg { width: 52px; height: 52px; }
@@ -2184,3 +2201,26 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .si-result-box.is-warn { border-left: 3px solid var(--warn); }
 .si-result-box.is-bad  { border-left: 3px solid var(--danger); }
 .si-result-thumb { width: 4rem; height: 4rem; object-fit: cover; border-radius: var(--radius-sm); flex-shrink: 0; }
+
+/* ── 6-l: 부트스트랩 텍스트 색 → 우리 토큰 ───────────────────────────────────
+   `text-primary`는 부트스트랩 파랑(#0d6efd)이라 **우리 팔레트 밖 색**이 그대로 나간다.
+   실측(cs 통계): AI 채택률 수치가 파랑으로 떴다. 화면마다 클래스를 바꾸면 다음 화면에서 또 만나므로
+   ([[6-g SKU 분홍]]의 교훈) **유틸 자체를 토큰으로 덮는다** — 마크업은 그대로 두고 색만 우리 것으로.
+   `text-muted`는 이미 우리 것으로 동작하므로 건드리지 않는다(불필요한 변경 0). */
+.text-primary { color: var(--teal) !important; }
+.text-danger  { color: var(--danger) !important; }
+.text-success { color: var(--success) !important; }
+.text-warning { color: var(--warn) !important; }
+
+/* 같은 장치를 **채운 버튼**에도 건다. 꼬리 3군에 부트스트랩 솔리드가 아직 남아 있고,
+   마크업을 화면마다 고쳐도 다음 화면에서 또 만난다(6-g SKU 분홍의 교훈).
+   `btn-primary`·`btn-ghost`·`btn-cta`·`btn-gold`는 이미 우리 것이라 **건드리지 않는다**.
+   여기 넷은 색만 우리 팔레트로 되찾는 것이다 — pc-status 「안내」 파랑→청록과 같은 성격의 송환. */
+.btn-danger  { background-color: var(--danger);  border-color: var(--danger);  color: var(--on-accent); }
+.btn-success { background-color: var(--success); border-color: var(--success); color: var(--on-accent); }
+.btn-warning { background-color: var(--warn);    border-color: var(--warn);    color: var(--on-accent); }
+.btn-info    { background-color: var(--teal);    border-color: var(--teal);    color: var(--on-accent); }
+.btn-danger:hover, .btn-success:hover, .btn-warning:hover, .btn-info:hover { filter: brightness(.94); }
+
+/* 입력 그룹 안의 통화 선택 — 값이 3글자(USD·KRW)라 폭을 묶어 둔다(인라인 90px 대체). */
+.pc-select-narrow { max-width: 6rem; }

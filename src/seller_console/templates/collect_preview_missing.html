@@ -13,8 +13,8 @@
 </style>
 {% endif %}
 <div class="container-fluid py-5" style="max-width:640px;">
-  <div class="card border-0 shadow-sm">
-    <div class="card-body text-center py-5">
+  <div class="op-card border-0 shadow-sm">
+    <div class="op-card-body text-center py-5">
       <div class="mb-3" style="font-size:2.4rem;color:var(--warn,#e8772e);"><i class="bi bi-exclamation-triangle"></i></div>
       <h4 class="fw-bold mb-2">수집 실패</h4>
       <p class="text-muted mb-1">이 상품을 수집 이력에서 찾지 못했어요.</p>
@@ -24,7 +24,7 @@
       </p>
       <div class="d-flex flex-wrap gap-2 justify-content-center">
         <a href="/seller/collect" class="btn btn-cta"><i class="bi bi-arrow-repeat"></i> 다시 수집하기</a>
-        <a href="/seller/collect/history" class="btn btn-outline-secondary" {% if drawer %}onclick="if(window.parent&&window.parent!==window){window.parent.postMessage({kgp:'drawer-close'},'*');return false;}"{% endif %}>
+        <a href="/seller/collect/history" class="btn btn-ghost" {% if drawer %}onclick="if(window.parent&&window.parent!==window){window.parent.postMessage({kgp:'drawer-close'},'*');return false;}"{% endif %}>
           <i class="bi bi-journal-text"></i> 수집 이력으로
         </a>
       </div>
