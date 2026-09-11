@@ -1273,6 +1273,15 @@ def collect_one_url(url: str, *, seller_id: str = "", source: str = "bulk") -> d
         images = list(getattr(result, "images", []) or [])
         price = str(getattr(result, "price", "") or "")
         currency = getattr(result, "currency", "USD")
+        # C-F1 회귀 수리: **정본 가격 단일 소스(v72b)를 여기서 건다.**
+        #   전엔 벌크 라우트만 `_canon_price`를 불렀다 — 단건·모바일·텔레그램은 안 걸렸다는 뜻이다.
+        #   네 입구를 이 코어로 합치면서 벌크가 그걸 잃을 뻔했고(계약이 잡았다), 되살리는 김에
+        #   **코어에 둔다** — 그래야 네 입구가 다 같은 보증을 받는다(한 곳에 두는 이유가 이거다).
+        try:
+            from src.collectors.collect_sanitize import canonical_price as _cp
+            price = _cp(price, str(getattr(result, "price_original", "") or "")) or price
+        except Exception as _pexc:
+            logger.debug("정본 가격 정규화 스킵: %s", _pexc)
         _upsert_catalog(
             {"url": url, "title": title, "price": price, "currency": currency,
              "image": images[0] if images else ""},

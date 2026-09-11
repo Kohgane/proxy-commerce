@@ -56,11 +56,16 @@ def test_bulk_rejects_non_http_and_dedupes(client):
 
 
 def test_bulk_per_url_error_isolated(client):
+    """한 건이 실패해도 나머지는 수집된다.
+
+    C-F1: 벌크가 `_collect_real_draft`를 직접 부르던 것을 **공용 입구**(`collect_input`)로 합쳤다.
+    이음매가 옮겨졌을 뿐 **보장은 그대로여야 한다** — 그래서 계약은 지우지 않고 이음매만 옮긴다.
+    """
     def _collect(url, **k):
         if "bad" in url:
             raise RuntimeError("extract fail")
-        return _fake_draft(url=url)
-    with patch("src.seller_console.views._collect_real_draft", side_effect=_collect), \
+        return {"url": url, "ok": True, "item_id": "x", "title": "T"}
+    with patch("src.api.extension_api.collect_one_url", side_effect=_collect), \
          patch("src.seller_console.collect_history_store.append", return_value="x"):
         resp = client.post("/seller/collect/bulk", json={
             "urls": "https://good.com/1\nhttps://bad.com/2"})
@@ -71,7 +76,8 @@ def test_bulk_per_url_error_isolated(client):
 
 def test_bulk_no_mock_on_extract_failure(client):
     """실 추출 실패(None) 시 목업 없이 실패로 기록 (Phase 203)."""
-    with patch("src.seller_console.views._collect_real_draft", return_value=None), \
+    with patch("src.api.extension_api.collect_one_url",
+               return_value={"url": "https://blocked.com/1", "ok": False, "error": "자동 추출 실패"}), \
          patch("src.seller_console.collect_history_store.append") as mock_append:
         resp = client.post("/seller/collect/bulk", json={"urls": "https://blocked.com/1"})
     data = resp.get_json()
