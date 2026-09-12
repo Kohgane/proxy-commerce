@@ -313,7 +313,10 @@ def _collect_real_draft(url: str, translate: bool = True) -> Optional[dict]:
     #   반환 None = "자동 추출 못 함"이고, 호출부는 이미 그걸 정직하게 다룬다(목업 금지 규율).
     from src.collectors.share_text import is_taobao_family as _is_tb
     if _is_tb(url):
-        logger.info("수집 코어: 타오바오는 서버에서 못 읽는다 — 요청 생략 (%s)", url[:80])
+        # C-F11: 단축 링크는 서버가 **펼 수 있다**(실측) — 다만 이 코어는 상세 페이지를 긁는
+        #   자리이고, 펴서 얻는 것은 상품번호·가격뿐이라 여기서 만들 수 있는 초안이 없다.
+        #   초안은 `collect_from_share_text` 한 곳에서만 세운다(두 벌 금지) → 여기선 None.
+        logger.info("수집 코어: 타오바오 상세는 서버에서 못 읽는다 — 요청 생략 (%s)", url[:80])
         return None
 
     draft: Optional[dict] = None

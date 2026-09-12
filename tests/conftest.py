@@ -23,6 +23,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 # 세션 없이 페이지를 직접 호출하므로 OFF로 고정한다(모듈 로드 전에 설정해야 반영됨).
 os.environ.setdefault("SELLER_CONSOLE_AUTH", "0")
 
+# C-F11: 수집 경로가 단축 링크를 **직접 펴려고 밖으로 나간다**(운영 기본 ON).
+#   테스트에서 그대로 켜 두면 계약마다 실 HTTP를 시도하다 타임아웃까지 멈춘다 —
+#   그건 계약이 아니라 **환경을 재는 것**이다. 그래서 기본 OFF로 고정하고,
+#   펴기를 재는 계약만 명시적으로 켜거나 `resolve_short_link`를 목킹한다.
+os.environ.setdefault("KGP_SHORT_LINK_RESOLVE", "0")
+
 
 # ──────────────────────────────────────────────────────────
 # v86-K: KGP_REQUIRE_BROWSER — 인프라 부재 시 '조용한 skip' 금지(실패로 전환).
