@@ -56,8 +56,14 @@
         </div>
         <div class="col-6 col-md-3">
           <div class="op-card text-center py-3">
-            <div class="op-kpi-k">상품번호</div>
+            <div class="op-kpi-k">주소의 상품번호</div>
             <div class="op-kpi-v mt-1">{{ result.item_id or "없음" }}</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="op-card text-center py-3">
+            <div class="op-kpi-k">본문의 상품번호</div>
+            <div class="op-kpi-v mt-1">{{ result.body_item_id or "없음" }}</div>
           </div>
         </div>
         <div class="col-6 col-md-3">
@@ -66,28 +72,55 @@
             <div class="op-kpi-v mt-1">{{ (result.price ~ " " ~ result.currency) if result.price else "없음" }}</div>
           </div>
         </div>
-        <div class="col-6 col-md-3">
-          <div class="op-card text-center py-3">
-            <div class="op-kpi-k">걸린 시간</div>
-            <div class="op-kpi-v mt-1">{{ result.elapsed_ms }}<span class="small">ms</span></div>
-          </div>
-        </div>
       </div>
 
-      {% if result.error %}
-      <div class="pc-status pc-status-danger border small mb-4">
+      <p class="text-muted small mb-0">
+        위 숫자는 <strong>가장 멀리 간 측정</strong>({{ result.best_ua or "—" }})의 것입니다.
+        <strong>주소의 상품번호</strong>는 리다이렉트가 끝난 주소에서 읽은 값이고,
+        <strong>본문의 상품번호</strong>는 그 페이지 안에 박혀 있던 링크에서 찾은 값입니다 —
+        출처가 다르니 섞지 않고 따로 보여 드립니다.
+      </p>
+
+    </div>
+  </div>
+
+  {% if result.ua_disagree %}
+  <div class="op-strip op-strip-warn mt-3">
+    <i class="bi bi-arrow-left-right"></i>
+    <span>
+      <strong>UA에 따라 응답이 달랐습니다.</strong> 같은 주소인데 브라우저라고 말할 때와
+      아닐 때의 결과가 다릅니다 — 막힌 원인이 <strong>우리 서버 위치가 아니라 UA</strong>일 수 있다는
+      단서입니다. 아래 두 측정을 비교해 보세요.
+    </span>
+  </div>
+  {% endif %}
+
+  {% for p in result.probes %}
+  <div class="op-card console-card mt-3">
+    <div class="op-card-head">
+      <span class="console-kpi-label">측정 · UA {{ p.ua_label }}</span>
+      <span class="pc-badge {{ 'pc-badge-on' if p.ok else 'pc-badge-danger' }} ms-auto">
+        {{ ('최종 ' ~ p.final_status) if p.ok else '열지 못함' }} · {{ p.elapsed_ms }}ms
+      </span>
+    </div>
+    <div class="op-card-body">
+
+      <p class="small mb-3">{{ p.note }}</p>
+
+      {% if p.error %}
+      <div class="pc-status pc-status-danger border small mb-3">
         <i class="bi bi-exclamation-triangle"></i>
-        <strong>{{ result.error_class or "오류" }}</strong> — {{ result.error }}
+        <strong>{{ p.error_class or "오류" }}</strong> — {{ p.error }}
       </div>
       {% endif %}
 
-      {% if result.hops %}
+      {% if p.hops %}
       <div class="console-kpi-label mb-2">리다이렉트 체인</div>
-      <div class="table-responsive mb-4">
+      <div class="table-responsive mb-3">
         <table class="table table-sm align-middle mb-0">
           <thead><tr><th>#</th><th>요청한 곳</th><th>응답</th><th>다음 주소</th></tr></thead>
           <tbody>
-            {% for h in result.hops %}
+            {% for h in p.hops %}
             <tr>
               <td class="text-muted">{{ h.n }}</td>
               <td class="small">{{ h.host }}</td>
@@ -100,19 +133,44 @@
       </div>
       {% endif %}
 
-      {% if result.final_url %}
+      {% if p.final_url %}
       <div class="console-kpi-label mb-2">서버가 도착한 주소</div>
-      <div class="pc-inset small mb-3" style="word-break:break-all">{{ result.final_url }}</div>
+      <div class="pc-inset small mb-3" style="word-break:break-all">{{ p.final_url }}</div>
       <div class="console-kpi-label mb-2">우리가 저장하는 형태</div>
-      <div class="pc-inset small mb-3" style="word-break:break-all">{{ result.final_url_kept or "—" }}</div>
-      <p class="text-muted small mb-0">
-        두 줄의 차이가 <strong>일부러 버리는 값</strong>입니다 — 기기 식별자·세션 서명처럼 상품과 무관한
-        개인 정보라 이력에 남기지 않아요. 이 진단 결과도 저장하지 않습니다.
+      <div class="pc-inset small mb-3" style="word-break:break-all">{{ p.final_url_kept or "—" }}</div>
+      {% endif %}
+
+      {% if p.body_scanned %}
+      <div class="console-kpi-label mb-2">본문에서 찾은 것</div>
+      {% if p.body_item_url %}
+      <div class="pc-inset small mb-2" style="word-break:break-all">{{ p.body_item_url }}</div>
+      {% endif %}
+      {% if p.body_item_id %}
+      <p class="small mb-3">본문 안 상품번호: <strong>{{ p.body_item_id }}</strong></p>
+      {% else %}
+      <p class="small mb-2">상품 링크·상품번호를 찾지 못했습니다. 받은 페이지의 계량값만 적습니다:</p>
+      <ul class="small mb-3">
+        <li>본문 길이 {{ p.body_len }}자</li>
+        <li>제목 태그: {{ p.body_title or "없음" }}</li>
+        <li>스크립트 태그 {{ p.body_script_count }}개</li>
+      </ul>
+      <p class="text-muted small mb-3">
+        길이가 짧고 스크립트가 많으면 <strong>JS로 그리는 빈 껍데기</strong>, 제목에 로그인·안내가
+        보이면 <strong>로그인 벽</strong>입니다. 본문 원문은 담지도 저장하지도 않습니다.
       </p>
+      {% endif %}
       {% endif %}
 
     </div>
   </div>
+  {% endfor %}
+
+  {% if result.probes %}
+  <p class="text-muted small mt-3 mb-0">
+    기기 식별자·세션 서명처럼 상품과 무관한 값은 <strong>저장하는 형태</strong>에서 일부러 빠집니다.
+    이 진단 결과 자체도 저장하지 않습니다.
+  </p>
+  {% endif %}
   {% endif %}
 
 </div>

@@ -942,14 +942,19 @@ def test_link_diag_records_every_hop_and_reports_the_real_error():
         m.headers = {"Location": loc} if loc else {}
         return m
 
+    # UA 2종을 각각 재므로 체인도 **2벌** 준다. 한 벌만 주면 두 번째 측정이 StopIteration으로
+    #   죽고, 그래도 대표가 첫 벌이라 계약은 초록이 된다 — 우연한 초록을 만들지 않는다.
     chain = [
         _resp(302, "https://m.intl.taobao.com/detail/detail.html?id=993154784090&price=199"),
         _resp(200),
-    ]
+    ] * 2
     with patch.object(link_diag, "MAX_HOPS", 8), \
          patch("requests.get", side_effect=chain):
         out = link_diag.diagnose_link("https://e.tb.cn/h.8IcTrtZuTU19ieN?tk=nyXpT7VA7lt")
     assert out["ok"] is True
+    assert len(out["probes"]) == 2, "UA 2종을 재지 않았다"
+    assert [p["ua_label"] for p in out["probes"]] == ["기본", "iOS Safari"]
+    assert out["ua_disagree"] is False, "같은 응답인데 다르다고 말한다"
     assert out["hop_count"] == 2
     assert out["hops"][0]["status"] == 302 and out["hops"][0]["location"].startswith("https://m.intl")
     assert out["item_id"] == "993154784090"
@@ -966,6 +971,7 @@ def test_link_diag_records_every_hop_and_reports_the_real_error():
     assert bad["ok"] is False
     assert bad["error_class"] == "_Refused", "예외 클래스명을 덮었다"
     assert "Connection refused" in bad["error"], "원문 메시지를 덮었다"
+    assert len(bad["probes"]) == 2 and all(p["error_class"] == "_Refused" for p in bad["probes"])
 
 
 def test_link_diag_keeps_no_trace_of_session_values():
@@ -978,9 +984,12 @@ def test_link_diag_keeps_no_trace_of_session_values():
     src = Path("src/collectors/link_diag.py").read_text(encoding="utf-8")
     for banned in ("history_append", "collect_history_store", "orders_pg", "tx("):
         assert banned not in src, f"진단이 저장한다: {banned}"
-    # 로그 포맷에 URL 원문 자리가 없어야 한다(호스트만).
-    assert 'logger.info("[link-diag] host=%s' in src
-    assert "out[\"final_url\"]" not in src.split("logger.info")[-1], "로그 인자에 최종 URL이 실린다"
+    # 로그가 **무엇을 싣는지**를 잰다 — 포맷 문자열을 그대로 핀으로 박지 않는다
+    #   (그러면 문구를 다듬는 날 계약이 깨지면서 정작 개인정보는 안 본다).
+    call = src.split("logger.info(")[-1].split("return out")[0]
+    assert "hostname" in call, "로그가 호스트만 남기는지 확인할 수 없다"
+    for leak in ("final_url", "body_title", "body_item_url", ".text"):
+        assert leak not in call, f"로그 인자에 {leak}이(가) 실린다"
 
 
 def test_link_diag_has_two_doors_and_they_are_reachable():
@@ -1036,3 +1045,152 @@ def test_enrich_pending_has_no_consumer_yet_and_we_say_so():
         assert "소비자가 0" not in doc, "확장이 이제 폴링한다 — 문서를 갱신해야 한다"
     else:
         assert "소비자가 0" in doc, "안 쓰이는 큐를 안 쓰인다고 적지 않았다"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# C-F10 — 최종이 200이면 본문도 본다 · UA 2종 · 계량값만 보고
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 200 응답 본문 픽스처 — 안내·중간 페이지처럼 **본문에 상품 링크가 박힌** 형태.
+#   실제 타오바오 HTML이 아니다(그건 저작물이고 우리가 가진 실측도 아니다) —
+#   재는 것은 "우리 스캐너가 링크를 집어내는가"이므로 구조만 같으면 된다.
+BODY_WITH_ITEM = """<!doctype html><html><head><title>淘宝 - 안내</title></head>
+<body><div class="wrap">
+  <p>계속하려면 아래를 누르세요</p>
+  <a href="https://item.taobao.com/item.htm?spm=a1z10.5&id=993154784090">상품으로</a>
+  <script>window.__INIT__={"foo":1};</script>
+  <script src="/x.js"></script>
+</div></body></html>"""
+
+BODY_WALL = """<!doctype html><html><head><title>请登录 - 淘宝</title></head>
+<body><div id="app"></div><script src="/a.js"></script><script src="/b.js"></script>
+<script>var need_login=true;</script></body></html>"""
+
+
+def _diag_resp(status, loc="", text=""):
+    from unittest.mock import MagicMock
+    m = MagicMock()
+    m.status_code = status
+    m.headers = {"Location": loc} if loc else {}
+    m.text = text
+    return m
+
+
+def test_body_scan_finds_the_item_link_a_url_only_read_would_miss():
+    """★★★ 최종 URL에 `id`가 없어도 **본문에 상품 링크가 있으면** 그걸 찾는다.
+
+    안 보고 "상품번호 없음"이라 말하면 그건 **덜 보고 단정한 것**이다(F10-1).
+    발명이 아니다 — 이미 받아 놓고 안 열어 본 것을 여는 것이다.
+    """
+    from unittest.mock import patch
+    from src.collectors import link_diag
+
+    # 최종 주소엔 id가 없다(안내 페이지). 본문엔 있다.
+    chain = [_diag_resp(302, "https://m.intl.taobao.com/notice.html"),
+             _diag_resp(200, text=BODY_WITH_ITEM)] * 2
+    with patch("requests.get", side_effect=chain):
+        out = link_diag.diagnose_link("https://e.tb.cn/h.abc")
+
+    assert out["item_id"] == "", "주소엔 상품번호가 없어야 하는 픽스처다"
+    assert out["body_item_id"] == "993154784090", "본문 상품번호를 못 찾았다"
+    assert out["body_item_url"].startswith("https://item.taobao.com/item.htm")
+    assert out["body_scanned"] is True
+    # 출처가 다르면 섞지 않는다 — 주소에서 읽은 값으로 승격시키면 그게 날조다.
+    assert out["item_id"] != out["body_item_id"]
+    assert "본문에 상품 링크가 있습니다" in out["note"]
+
+
+def test_body_scan_reports_only_measurements_when_nothing_found():
+    """★★★ 못 찾으면 **길이·제목·스크립트 수만** 말한다. 본문 원문은 담지 않는다.
+
+    "왜 못 찾았는지"를 가늠할 최소치다 — 짧고 스크립트 많으면 빈 껍데기,
+    제목에 로그인이 보이면 로그인 벽. 그 이상은 진단에 필요 없는데 새면 곤란하다.
+    """
+    from unittest.mock import patch
+    from src.collectors import link_diag
+
+    chain = [_diag_resp(200, text=BODY_WALL)] * 2
+    with patch("requests.get", side_effect=chain):
+        out = link_diag.diagnose_link("https://item.taobao.com/item.htm")
+
+    assert out["body_item_id"] == "" and out["body_item_url"] == ""
+    assert out["body_len"] == len(BODY_WALL)
+    assert out["body_title"] == "请登录 - 淘宝"
+    assert out["body_script_count"] == 3
+    # 본문 원문이 결과 어디에도 실리지 않는다.
+    import json
+    blob = json.dumps(out, ensure_ascii=False)
+    assert "need_login=true" not in blob and "<div id=\"app\">" not in blob
+    assert "빈 껍데기" in out["note"] or "로그인 벽" in out["note"]
+
+
+def test_body_is_read_only_on_a_200_final_hop():
+    """★★ 200이 아니면 본문을 읽지 않는다 — 읽을 것이 없고, 읽으면 그게 낭비다."""
+    from unittest.mock import patch
+    from src.collectors import link_diag
+
+    chain = [_diag_resp(403, text=BODY_WITH_ITEM)] * 2
+    with patch("requests.get", side_effect=chain):
+        out = link_diag.diagnose_link("https://item.taobao.com/item.htm")
+    assert out["final_status"] == 403
+    assert out["body_scanned"] is False
+    assert out["body_item_id"] == "" and out["body_len"] == 0
+
+
+def test_ua_gating_is_measured_not_guessed():
+    """★★★ 타오바오는 **UA로 응답을 가른다** — 그러니 두 번 재고 둘 다 돌려준다(F10-2).
+
+    한 UA로만 재면 「막혔다」가 *서버 위치* 때문인지 *UA* 때문인지 구별이 안 된다.
+    구별이 안 되는 측정으로 원인을 말하면 그게 F9-1에서 걸린 그 단정이다.
+    """
+    from unittest.mock import patch
+    from src.collectors import link_diag
+
+    assert [lbl for lbl, _ in link_diag.UA_PROBES] == ["기본", "iOS Safari"]
+    assert link_diag.UA_PROBES[0][1] == "", "'기본'은 UA 미지정이어야 비교가 된다"
+
+    # 기본 UA는 막히고, iOS Safari는 통과하는 경우 — 실제로 가리는 상황.
+    calls = []
+
+    def _get(u, **kw):
+        ua = (kw.get("headers") or {}).get("User-Agent", "")
+        calls.append(ua)
+        if "iPhone" in ua:
+            return _diag_resp(200, text=BODY_WITH_ITEM)
+        return _diag_resp(403, text="")
+
+    with patch("requests.get", side_effect=_get):
+        out = link_diag.diagnose_link("https://item.taobao.com/item.htm")
+
+    assert len(out["probes"]) == 2
+    assert out["ua_disagree"] is True, "응답이 갈렸는데 갈렸다고 말하지 않는다"
+    # 대표는 **더 멀리 간 쪽** — 상품번호를 얻은 측정이다.
+    assert out["best_ua"] == "iOS Safari"
+    assert out["body_item_id"] == "993154784090"
+    # 두 측정이 각자 자기 결과를 갖고 있어야 비교가 된다(대표로 덮어쓰지 않는다).
+    by = {p["ua_label"]: p for p in out["probes"]}
+    assert by["기본"]["final_status"] == 403 and by["기본"]["body_item_id"] == ""
+    assert by["iOS Safari"]["final_status"] == 200
+    assert "" in calls, "UA 미지정 측정이 없었다"
+
+
+def test_link_diag_page_shows_both_probes_and_the_body_verdict():
+    """★★ 화면이 **둘 다** 보여 주는가 — 결과를 하나로 뭉개면 비교할 수 없다."""
+    from unittest.mock import patch
+    from src.order_webhook import app
+
+    def _get(u, **kw):
+        ua = (kw.get("headers") or {}).get("User-Agent", "")
+        return _diag_resp(200, text=BODY_WITH_ITEM) if "iPhone" in ua else _diag_resp(403)
+
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = "default"
+    with patch("requests.get", side_effect=_get):
+        r = c.post("/seller/collect/link-diag",
+                   data={"url": "https://e.tb.cn/h.8IcTrtZuTU19ieN"})
+    body = r.data.decode()
+    assert r.status_code == 200
+    assert "UA 기본" in body and "UA iOS Safari" in body, "두 측정이 화면에 없다"
+    assert "993154784090" in body, "본문에서 찾은 상품번호가 화면에 없다"
+    assert "UA에 따라 응답이 달랐습니다" in body, "갈렸다는 사실을 화면이 말하지 않는다"
