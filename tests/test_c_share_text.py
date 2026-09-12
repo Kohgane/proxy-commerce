@@ -431,28 +431,40 @@ def test_pasted_final_url_behaves_like_shortcut_input():
     assert "suid" not in a["url"] and "suid" not in b["url"]
 
 
-def test_vpn_guidance_names_the_mode_not_the_switch():
-    """★ 안내는 **모드를 이름으로 불러야** 한다 — "VPN을 끄세요"만으론 부족하다.
+def test_never_names_a_vpn_mode_that_does_not_exist():
+    """★★★ **없는 UI 이름을 안내하지 않는다.** 세 번 발명했다: `Smart` → `전체(Global)` → `규칙`.
 
-    처방 자체는 두 번 바뀌었다(오너 실측이 두 번 정정했다):
-      ① 「VPN을 끄세요」        → 틀렸다. 규칙 모드면 켜져 있어도 된다.
-      ② 「Smart 모드로 바꾸세요」 → iOS 아스트릴엔 **Smart Mode가 없다**(오너 실측).
+    오너 실측(2026-09-12) — 아스트릴 iOS **2.3.8** 화면에 있는 것:
+    **ON/OFF · 서버 · TCP/UDP · Always On · Reconnect.** **모드 선택이 없다.**
 
-    그래서 지금 정답은 **둘 다 말하는 것**이다 — "규칙 모드면 그대로, 전체(Global) 모드면 끄기".
-    계약이 잴 것은 특정 낱말이 아니라 **어떤 모드가 문제인지 말하는가**이다.
-    (이 계약은 ①을 금지하다가 ②에서 스스로 틀렸다 — 낱말을 금지하면 그 낱말이 정답이 되는 날 깨진다.)
+    틀린 안내보다 나쁘다 — 유저가 **찾다가 자기를 의심한다.**
+    허용 문장은 한 종류뿐이다: 「VPN이 켜져 있으면 끄고 다시 시도」(스위치는 실제로 있다).
+
+    ※ 이 자리에 있던 옛 계약은 **「전체(Global)」가 소스에 있어야 한다**고 요구했다.
+      즉 계약이 발명을 강제하고 있었다. 낱말을 핀으로 박으면 그 낱말이 틀리는 날 계약이
+      틀린 쪽을 지킨다 — 그래서 이제 **없어야 할 낱말**만 잰다.
     """
-    for path in ("src/seller_console/views.py", "src/api/extension_api.py"):
-        s = Path(path).read_text(encoding="utf-8")
-        assert "전체" in s or "Global" in s, f"{path}가 어떤 모드가 문제인지 안 말한다"
+    from src.collectors import share_text as st
+
+    invented = ("Smart", "Global", "규칙 모드", "规则")
+    faces = list(st._GAP_MESSAGE.values()) + [
+        st.link_failure_reason(""), st.link_failure_reason("￥HU591￥"),
+        st.link_failure_reason("링크 없는 글"), st.link_failure_reason("http 조각"),
+    ]
+    for msg in faces:
+        for bad in invented:
+            assert bad not in msg, f"없는 모드 이름이 사용자 문장에 있다({bad}): {msg}"
+        if "VPN" in msg:
+            assert "모드" not in msg, f"VPN과 모드를 함께 말한다: {msg}"
+
+    # 사용자 안내 문서도 같은 규칙. (실측 정본 문서는 '발명했다'는 기록을 남기므로 제외)
     guide = Path("docs/MOBILE_COLLECT_GUIDE.md").read_text(encoding="utf-8")
-    for term in ("규칙", "전체"):
-        assert term in guide, f"가이드에 '{term} 모드' 안내가 없다"
-    # iOS 아스트릴엔 Smart Mode가 없다 — 없는 기능을 쓰라고 하면 유저가 못 찾는다(오너 실측).
-    assert "아스트릴은 Smart Mode" not in guide, "iOS에 없는 기능을 안내하고 있다"
+    for bad in ("Smart", "Global", "规则"):
+        assert bad not in guide, f"가이드가 없는 모드 이름을 안내한다: {bad}"
+    assert "모드 선택이라는 것이 없습니다" in guide, "없다는 사실을 적어야 다음 사람이 또 안 만든다"
+    assert "켜져 있으면 끄고 다시 시도" in guide, "허용된 한 문장이 없다"
 
 
-# ── ⑦ C-fix: 네 입구가 같은 결과를 낸다 ─────────────────────────────────────
 def test_share_block_is_one_item_not_three():
     """★ 공유 텍스트는 **한 상품**이다 — 줄 수만큼 쪼개지 않는다.
 
@@ -758,3 +770,269 @@ def test_expanded_link_finds_the_short_link_draft():
         "복원한 단축 키가 원래 단축 링크와 같은 키여야 이어진다"
     api = Path("src/api/extension_api.py").read_text(encoding="utf-8")
     assert "short_name" in api and "_alt" in api, "중복 조회가 대체 키를 안 본다"
+
+
+# ── ⑩ C-F8: 가드는 코어에 있다(입구마다 두면 샌다) ──────────────────────────
+def test_taobao_guard_lives_in_the_cores_not_the_callers():
+    """★ **여섯 입구 중 둘만 서 있었다**(실측 2026-09-12).
+
+    가드를 호출부마다 두면 입구가 늘 때마다 샌다 — 미리보기·텔레그램·벌크잡·관리자가
+    전부 타오바오로 서버 요청을 내고 있었다. F2 계약은 `collect_input`을 타는 둘만 재고 있어 초록이었다.
+
+    가격 정규화 때와 같은 교훈이다: **보증은 코어에 둔다.**
+    """
+    for path in ("src/seller_console/views.py", "src/api/extension_api.py"):
+        s = Path(path).read_text(encoding="utf-8")
+        assert "is_taobao_family as _is_tb" in s, f"{path}의 수집 코어에 타오바오 가드가 없다"
+
+
+@pytest.mark.parametrize("label,path,marker",
+                         [(a, b, c) for a, b, c in __import__(
+                             "src.collectors.share_text", fromlist=["x"]).COLLECT_ENTRY_POINTS])
+def test_every_entry_point_reaches_a_guarded_core(label, path, marker):
+    """★ 열거된 입구가 **가드 있는 코어를 타는지** 순회 검사.
+
+    새 입구가 생겼는데 제 나름의 수집을 하면 여기서 걸린다 — 목록을 코드 상수로 둔 이유다.
+    """
+    s = Path(path).read_text(encoding="utf-8")
+    assert marker in s, f"{label}: 입구 표식 '{marker}'이 {path}에 없다(목록이 낡았다)"
+    # 그 파일은 반드시 가드 있는 코어 중 하나를 부른다
+    assert any(core in s for core in
+               ("_collect_real_draft", "collect_one_url", "collect_input")), \
+        f"{label}가 어떤 수집 코어도 안 쓴다(제 나름의 경로를 가졌을 수 있다)"
+
+
+def test_preview_route_accepts_share_text(monkeypatch):
+    """★ 미리보기 칸 이름이 「상품 링크 또는 공유 텍스트」인데 **라우트가 공유 텍스트를 안 받았다.**
+
+    실측(오너 라이브 2026-09-12): 공유 글을 붙이자 「상품 정보를 읽지 못했어요」 노랑 배너.
+    칸 이름이 받는다고 말하는데 라우트가 안 받으면 **그 이름이 거짓**이 된다.
+    """
+    from src.order_webhook import app
+    monkeypatch.setattr("src.seller_console.collect_history_store.append",
+                        lambda **kw: ("p1", True))
+    with app.test_client() as c:
+        with c.session_transaction() as s:
+            s["user_id"] = "default"
+        r = c.post("/seller/collect/preview", json={"url": FIX_SWEATER})
+    d = r.get_json()
+    assert r.status_code == 200 and d.get("ok") is True, f"미리보기가 실패로 떨어졌다: {d}"
+    assert d.get("kind") == "share_draft"
+    assert "藏青色" in (d.get("draft") or {}).get("title", ""), "제목이 안 담겼다"
+
+
+def test_empty_input_names_the_clipboard_setting():
+    """★ 빈 입력의 **가장 흔한 원인**을 콕 집는다 — 클립보드 설정.
+
+    실측(오너 2026-09-12): 타오바오 分享 →「复制链接」은 **타오바오 자체 패널**이라
+    iOS 공유 시트를 거치지 않는다(토스트 「已复制，快去粘贴吧」). 단축어를 나중에 실행하면
+    넘어오는 입력이 **항상 빈 값**이고, 클립보드가 유일한 입력원이다.
+
+    "변수 칩을 확인하세요"만으론 못 고친다 — 칩은 제대로 꽂혀 있고 **넘어올 값이 없는** 것이니까.
+    """
+    from src.collectors.share_text import link_failure_reason
+    msg = link_failure_reason("")
+    assert "클립보드" in msg, "가장 흔한 원인을 안 짚는다"
+    assert "复制链接" in msg or "링크 복사" in msg, "어느 버튼을 눌렀을 때인지 말해야 한다"
+    guide = Path("docs/MOBILE_COLLECT_GUIDE.md").read_text(encoding="utf-8")
+    assert "클립보드 가져오기" in guide, "가이드에 그 설정이 필수 단계로 없다"
+    assert "更多" in guide, "미측정 경로(更多)를 미측정으로 표기해야 한다"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# C-F9 — 서버가 모르는 것을 단정하지 않는다 · 링크 진단 · 문구 단일화
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_server_never_asserts_the_phones_vpn_state():
+    """★★★ 서버는 **폰의 VPN 상태를 모른다** — 그러니 말하지 않는다.
+
+    실측(오너 2026-09-12): VPN이 **꺼진 채로** 가격·상품번호가 비어 왔다.
+    그런데 문구는 VPN 설정 때문이라고 단정했다(있지도 않은 앱 모드 이름까지 들며) →
+    사용자는 이미 끈 것을 또 끄러 갔다. **오진은 침묵보다 나쁘다** — 엉뚱한 데로 보내니까.
+
+    이 계약은 **서버가 유저에게 내보내는 문장**에 VPN 단정이 없는지만 본다.
+    (문서에서 실측 사실로 언급하는 것은 막지 않는다 — 막을 것은 '서버의 진단'이다.)
+    """
+    import re
+    from src.collectors import share_text as st
+
+    faces = list(st._GAP_MESSAGE.values())
+    faces.append(st.link_failure_reason(""))
+    faces.append(st.link_failure_reason("￥HU591￥"))
+    faces.append(st.link_failure_reason("제목만 있고 링크 없음"))
+    faces.append(st.link_failure_reason("http로 시작하는 조각"))
+    for msg in faces:
+        assert "VPN" not in msg, f"서버가 VPN 상태를 단정한다: {msg}"
+        assert "Global" not in msg and "Smart" not in msg, f"없는 모드 이름을 댄다: {msg}"
+        # 개발 표기(마크다운)가 그대로 토스트에 뜨면 그건 유저에게 보이는 별표다.
+        assert "**" not in msg, f"마크다운이 사용자 문장에 남았다: {msg}"
+        assert not re.search(r"`[^`]+`", msg), f"백틱이 사용자 문장에 남았다: {msg}"
+
+
+def test_gap_verdict_says_only_what_the_server_saw():
+    """★★ 넷 중 하나 — 서버가 **실제로 본 것**으로만 갈린다."""
+    from src.collectors.share_text import resolve_gap
+
+    assert resolve_gap({"price": "199"}) == "ok"
+    assert resolve_gap({"price": "", "final_url": ""}) == "no_final_url"
+    assert resolve_gap({"price": "", "final_url": "https://m.intl.taobao.com/x"}) == "final_url_without_id"
+    assert resolve_gap({"price": "", "final_url": "https://m.intl.taobao.com/x?id=1",
+                        "item_id": "1"}) == "id_without_price"
+
+
+def test_gap_message_has_exactly_one_home():
+    """★★★ 문구는 **한 곳**에서만 만든다.
+
+    C-fix F1의 재발 방지: 같은 상황을 단건·일괄·미리보기가 각자 설명하고 있었다.
+    호출부가 자기 문장을 들고 있으면 한쪽만 고쳐지고 나머지가 옛말을 계속 한다.
+    """
+    import re
+    from pathlib import Path
+
+    # 옛 문구의 특징적 조각이 소스 어디에도 없어야 한다.
+    for rel in ("src/api/extension_api.py", "src/seller_console/views.py"):
+        src = Path(rel).read_text(encoding="utf-8")
+        assert "Global" not in src or "showGlobal" in src, f"{rel}에 옛 모드 이름이 남았다"
+        # '제목과 링크만 담았어요' 같은 완성 문장을 호출부가 직접 들고 있으면 두 벌째다.
+        assert "제목과 링크만 담았어요" not in src, f"{rel}이 문구를 직접 들고 있다"
+
+
+def test_share_draft_carries_its_own_verdict_not_the_row_id():
+    """★★★ `item_id`가 **두 뜻**으로 쓰이는 함정 — 반환 dict로 다시 판정하면 늘 오판한다.
+
+    `collect_from_share_text` 반환의 `item_id`는 **이력 행 ID**(항상 있다),
+    `share["item_id"]`는 **타오바오 상품번호**(없을 수 있다). 호출부가 반환 dict를
+    `resolve_gap`에 그대로 넘기면 언제나 `id_without_price`가 나온다.
+    → 판정은 원본 `share`를 아는 곳에서 한 번만 하고, 결과를 실어 보낸다.
+    """
+    from src.collectors.share_collect import collect_from_share_text
+
+    r = collect_from_share_text(FIX_SWEATER, seller_id="default", translate=False)
+    assert r.get("ok") is True
+    assert r.get("item_id"), "이력 행 ID가 없다"
+    assert r.get("resolve_gap") == "no_final_url", f"판정이 틀렸다: {r.get('resolve_gap')}"
+    assert r.get("message"), "문장이 안 실려 왔다"
+    assert "펴진 링크가 오지 않아" in r["message"]
+
+
+def test_link_diag_refuses_non_taobao_hosts():
+    """★★★ 임의 주소를 서버가 대신 따 주면 그건 진단이 아니라 **열린 프록시**다."""
+    from src.collectors.link_diag import diagnose_link, host_allowed
+
+    assert host_allowed("https://e.tb.cn/h.abc") is True
+    assert host_allowed("https://item.taobao.com/item.htm?id=1") is True
+    for bad in ("https://example.com/x", "http://169.254.169.254/latest/meta-data/",
+                "https://internal.local/admin"):
+        assert host_allowed(bad) is False, f"허용목록이 새 준다: {bad}"
+        out = diagnose_link(bad)
+        assert out["ok"] is False and "타오바오" in out["error"]
+
+
+def test_link_diag_records_every_hop_and_reports_the_real_error():
+    """★★★ 홉마다 **상태코드와 Location 원문**. 실패는 **클래스명 그대로** — 덮지 않는다.
+
+    「진단 실패」로 덮으면 진단을 또 해야 한다. 그게 F7-2가 오래 열려 있던 이유다.
+    """
+    from unittest.mock import patch, MagicMock
+    from src.collectors import link_diag
+
+    def _resp(status, loc=""):
+        m = MagicMock()
+        m.status_code = status
+        m.headers = {"Location": loc} if loc else {}
+        return m
+
+    chain = [
+        _resp(302, "https://m.intl.taobao.com/detail/detail.html?id=993154784090&price=199"),
+        _resp(200),
+    ]
+    with patch.object(link_diag, "MAX_HOPS", 8), \
+         patch("requests.get", side_effect=chain):
+        out = link_diag.diagnose_link("https://e.tb.cn/h.8IcTrtZuTU19ieN?tk=nyXpT7VA7lt")
+    assert out["ok"] is True
+    assert out["hop_count"] == 2
+    assert out["hops"][0]["status"] == 302 and out["hops"][0]["location"].startswith("https://m.intl")
+    assert out["item_id"] == "993154784090"
+    assert out["price"] == "199" and out["currency"] == "CNY"
+    # 저장하는 형태는 세션성 값을 뺀 것 — 원문과 나란히 보여 주는 게 진단의 요점이다.
+    assert out["final_url_kept"] and "suid" not in out["final_url_kept"]
+    assert "펼 수 있습니다" in out["note"]
+
+    class _Refused(Exception):
+        pass
+
+    with patch("requests.get", side_effect=_Refused("Connection refused")):
+        bad = link_diag.diagnose_link("https://e.tb.cn/h.abc")
+    assert bad["ok"] is False
+    assert bad["error_class"] == "_Refused", "예외 클래스명을 덮었다"
+    assert "Connection refused" in bad["error"], "원문 메시지를 덮었다"
+
+
+def test_link_diag_keeps_no_trace_of_session_values():
+    """★★★ 진단 결과는 **저장하지 않고**, 로그에도 원문 URL을 남기지 않는다.
+
+    최종 URL엔 `suid`(기기 UUID)·`un`(사용자 해시)·`wxsign`이 실려 온다(실측 원문).
+    화면에 보여 주는 건 오너 자신의 값이지만 **쌓아 두면 우리가 만든 구멍**이다.
+    """
+    from pathlib import Path
+    src = Path("src/collectors/link_diag.py").read_text(encoding="utf-8")
+    for banned in ("history_append", "collect_history_store", "orders_pg", "tx("):
+        assert banned not in src, f"진단이 저장한다: {banned}"
+    # 로그 포맷에 URL 원문 자리가 없어야 한다(호스트만).
+    assert 'logger.info("[link-diag] host=%s' in src
+    assert "out[\"final_url\"]" not in src.split("logger.info")[-1], "로그 인자에 최종 URL이 실린다"
+
+
+def test_link_diag_has_two_doors_and_they_are_reachable():
+    """★★ 폰(토큰)과 콘솔(세션) 둘 다 — 그리고 **사이드바에 닿는 길**이 있다.
+
+    응답 문구가 「링크 진단」을 가리키므로, 가리키기만 하고 길이 없으면 막다른 골목이다.
+    """
+    from pathlib import Path
+    api = Path("src/api/extension_api.py").read_text(encoding="utf-8")
+    assert '@extension_bp.post("/link-diag")' in api
+    assert "_require_token" in api.split('@extension_bp.post("/link-diag")')[1][:400], \
+        "토큰 경로가 무인증이다"
+    views = Path("src/seller_console/views.py").read_text(encoding="utf-8")
+    assert '"/collect/link-diag"' in views and "_check_auth()" in views
+    base = Path("src/seller_console/templates/_base.html").read_text(encoding="utf-8")
+    assert "/seller/collect/link-diag" in base, "사이드바에서 닿을 수 없다"
+
+
+def test_link_diag_template_uses_real_class_homes():
+    """★★★ 쓴 클래스에 **CSS 홈이 있나.** 없으면 화면에선 맨 텍스트로 뜬다.
+
+    실측 선례(6-l): `pc-pc-badge-*`처럼 규칙 없는 클래스를 뿌려도 잔재 계약은 초록이었다.
+    그래서 홈을 직접 센다.
+    """
+    from pathlib import Path
+    import re
+    tpl = Path("src/seller_console/templates/collect_link_diag.html").read_text(encoding="utf-8")
+    css = "".join(Path(p).read_text(encoding="utf-8") for p in
+                  ("src/static/app.css", "src/seller_console/static/console.css"))
+    # `class="..."` 안뿐 아니라 **템플릿 전체**에서 우리 접두어 토큰을 훑는다 —
+    #   `{% set cls = 'pc-badge-on' %}`처럼 속성 밖으로 빼도 화면엔 그대로 나가니까.
+    used = {c for c in re.findall(r"[a-z]+(?:-[a-z0-9]+)+", tpl)
+            if c.startswith(("op-", "pc-", "console-"))}
+    assert used, "검사할 클래스를 못 찾았다(정규식이 헛돌았다)"
+    missing = [c for c in sorted(used) if f".{c}" not in css]
+    assert not missing, f"CSS 홈이 없는 클래스: {missing}"
+
+
+def test_enrich_pending_has_no_consumer_yet_and_we_say_so():
+    """★★ **만들었는데 아무도 안 쓰는 큐** — 그 사실이 문서에 적혀 있어야 한다.
+
+    실측(C-F9-2): `GET /enrich/pending`의 소비자가 0이다. 확장은 자기가 벌크수집한 항목만
+    보강한다(`enrichTargets`). 폰이 만든 초안은 그 목록에 없다 → `pending`에서 안 움직인다.
+
+    고치는 순서가 「링크 진단」 결과에 달려 있어 **오너 판단 대기**다. 그동안 이 계약이
+    "없는 기능을 있다고 적지 않았나"를 지킨다 — 소비자가 생기면 이 계약을 바꿔야 한다.
+    """
+    from pathlib import Path
+    ext = "".join(p.read_text(encoding="utf-8")
+                  for p in Path("extensions/chrome-collector").glob("*.js"))
+    doc = Path("docs/C_TAOBAO_FIELD_TEST.md").read_text(encoding="utf-8")
+    if "enrich/pending" in ext:
+        assert "소비자가 0" not in doc, "확장이 이제 폴링한다 — 문서를 갱신해야 한다"
+    else:
+        assert "소비자가 0" in doc, "안 쓰이는 큐를 안 쓰인다고 적지 않았다"

@@ -307,6 +307,15 @@ def _collect_real_draft(url: str, translate: bool = True) -> Optional[dict]:
 
     실데이터를 못 얻으면 None 반환 — 호출부에서 정직한 에러로 처리(목업 금지).
     """
+    # C-F8: **타오바오는 여기서 멈춘다.** 가드를 호출부마다 두었더니 입구가 늘 때마다 새어 나갔다
+    #   (실측: 미리보기·텔레그램·벌크잡·관리자 — 「요청 0」이 서 있던 곳은 두 입구뿐이었다).
+    #   서버가 타오바오를 못 읽는 건 **어느 입구에서 부르든 같다** → 코어에 둔다.
+    #   반환 None = "자동 추출 못 함"이고, 호출부는 이미 그걸 정직하게 다룬다(목업 금지 규율).
+    from src.collectors.share_text import is_taobao_family as _is_tb
+    if _is_tb(url):
+        logger.info("수집 코어: 타오바오는 서버에서 못 읽는다 — 요청 생략 (%s)", url[:80])
+        return None
+
     draft: Optional[dict] = None
     source: Optional[str] = None
     warnings: list = []
@@ -1262,6 +1271,42 @@ def collect_preview():
     if not url:
         return jsonify({"ok": False, "error": "URL이 필요합니다."}), 400
 
+    # C-F8-b: 미리보기도 **공유 텍스트를 받는다.** 여기만 파서를 안 타고 raw를 URL로 쓰고 있었다
+    #   (실측: 오너가 공유 글을 「상품 링크 또는 공유 텍스트」 칸에 붙이자 노랑 배너).
+    #   칸 이름이 '공유 텍스트'를 받는다고 말하는데 라우트가 안 받으면 그 이름이 거짓이 된다.
+    from src.collectors.share_collect import collect_input
+    from src.collectors.share_text import is_taobao_family, parse_share_text
+    _share = parse_share_text(url)
+    if _share.get("url"):
+        url = _share["url"]
+
+    # 타오바오는 서버가 못 읽는다 → 미리보기 자리에서 **초안을 만들어 보여 준다**(실패 배너 대신).
+    if is_taobao_family(url):
+        _r = collect_input(data.get("url") or "", seller_id=_seller_id(),
+                           source="preview", translate=translate)
+        if _r.get("ok"):
+            # 응답 **모양은 갈래와 무관하게 같다** — `draft`·`source`·`trust`·`warnings`.
+            #   갈래마다 키가 다르면 프런트가 갈래를 알아야 하고, 그게 곧 두 벌째 판단이 된다.
+            _src = "taobao" if is_taobao_family(_r.get("url") or url) else "share_text"
+            return jsonify({
+                "ok": True, "kind": _r.get("kind"), "item_id": _r.get("item_id"),
+                "preview_url": f"/seller/collect/preview/{_r.get('item_id')}",
+                "draft": {"title": _r.get("title_ko") or _r.get("title", ""),
+                          "title_ko": _r.get("title_ko", ""), "images": [],
+                          "price": _r.get("price", ""), "currency": _r.get("currency", ""),
+                          # 어느 **소싱처**인가를 말한다. 'share_text'는 어떻게 왔는지(경로)일 뿐이라
+                          #   그걸 소싱처 자리에 넣으면 "타오바오 상품"이라는 사실이 사라진다.
+                          "source": _src, "collected_via": "share_text"},
+                "source": _src, "trust": None,
+                "uncollected": _r.get("uncollected", []),
+                "resolve_gap": _r.get("resolve_gap", ""),
+                # C-F9-1: 문구는 `gap_message` 한 곳. VPN 상태는 서버가 모른다(단정 금지).
+                "message": _r.get("message") or "담았어요.",
+                "warnings": [],
+            })
+        return jsonify({"ok": False, "manual_entry": True,
+                        "error": _r.get("error") or "상품 정보를 담지 못했습니다."}), 200
+
     try:
         draft = _collect_real_draft(url, translate=translate)
     except Exception as exc:
@@ -1375,14 +1420,12 @@ def _quick_collect(url: str, source: str = "bookmarklet", share_raw: str = "") -
                 r = collect_from_share_text(share_raw, seller_id=_seller_id(), source=source,
                                             final_url=_fin)
                 if r.get("ok"):
-                    _msg = ("제목·상품번호·가격까지 담았어요(공유 시점 가격). 이미지·옵션은 PC에서 "
-                            "고가수집기로 보강해 주세요."
-                            if r.get("price") else
-                            "제목과 링크만 담았어요. VPN이 전체(Global) 모드면 링크 해석이 막혀요 — 규칙/Smart 모드로 바꾸고 다시 공유하시면 가격·상품번호까지 담깁니다.")
-                    if r.get("resolve_reason"):
-                        _msg += f" · 링크 펴기 실패: {r['resolve_reason']}"
+                    # C-F9-1: 문구는 `gap_message`(share_collect가 이미 실어 준다) 한 곳에서만.
+                    #   옛 문구는 VPN 설정 때문이라 단정했는데 서버는 VPN을 모른다 —
+                    #   오너 실측에서 VPN이 꺼진 채로 같은 결과가 나와 그대로 오진이 됐다.
                     return {"ok": True, "item_id": r.get("item_id"), "status": 200,
-                            "partial": True, "message": _msg}
+                            "partial": True, "resolve_gap": r.get("resolve_gap", ""),
+                            "message": r.get("message") or "담았어요."}
             except Exception as exc:
                 logger.warning("공유 텍스트 폴백 실패: %s", exc)
         return {"ok": False, "item_id": None, "status": 200,
@@ -6367,6 +6410,30 @@ def _shape_collect_items(items, current_lang):
         except Exception:
             it["hygiene"] = {"is_candidate": False, "score": 0, "reasons": []}
     return items
+
+
+@bp.route("/collect/link-diag", methods=["GET", "POST"])
+def collect_link_diag_page():
+    """C-F9-3: 「링크 진단」 — 서버가 이 링크를 어디까지 펴는지 **서버 자신이 재서** 보여 준다.
+
+    F7-2(「Render 싱가포르에서 302 체인을 재라」)가 오너 Shell을 기다리며 열려 있었다.
+    측정을 사람 손에 맡기면 매번 사람 손이 필요하다 — 앱 안에 재는 자리를 두면 한 번 누르고 끝난다.
+
+    폰에서도 쓰게 **세션 인증**으로 둔다(토큰 경로는 `/api/v1/collect/link-diag`).
+    결과는 **저장하지 않는다** — 최종 URL엔 기기 UUID·세션 서명이 실려 온다(실측).
+    """
+    if not _check_auth():
+        return redirect(url_for("seller_console.index"))
+
+    asked, result = "", None
+    if request.method == "POST":
+        raw = (request.form.get("url") or "").strip()
+        if raw:
+            from src.collectors.share_text import parse_share_text
+            asked = parse_share_text(raw).get("url", "") or raw
+            from src.collectors.link_diag import diagnose_link
+            result = diagnose_link(asked)
+    return render_template("collect_link_diag.html", asked=asked, result=result)
 
 
 @bp.get("/collect/history")

@@ -58,6 +58,21 @@ ITEM_HOSTS = ("item.taobao.com", "detail.tmall.com", "m.intl.taobao.com",
               "world.taobao.com", "detail.1688.com", "item.tmall.com")
 
 
+# C-F8-b: **수집 입구 전수.** 가드를 호출부마다 두면 입구가 늘 때마다 샌다 —
+#   실측(2026-09-12): 여섯 입구 중 「타오바오 요청 0」이 서 있던 곳은 **둘뿐**이었다.
+#   그래서 가드는 **코어**(`_collect_real_draft`·`collect_one_url`)에 두고,
+#   이 목록은 계약이 순회하며 "새 입구가 생겼는데 코어를 안 타는가"를 검사한다.
+COLLECT_ENTRY_POINTS = (
+    ("웹 미리보기",      "src/seller_console/views.py",      "/collect/preview"),
+    ("웹 일괄",          "src/seller_console/views.py",      "/collect/bulk"),
+    ("북마클릿·공유타겟", "src/seller_console/views.py",      "_quick_collect"),
+    ("모바일 단건",      "src/api/extension_api.py",         "/one"),
+    ("확장 벌크(job)",   "src/api/extension_api.py",         "/bulk"),
+    ("텔레그램",         "src/api/telegram_collect.py",      "collect_one_url"),
+)
+# 셀러 수집 경로가 아닌 곳(관리자 진단·보강 큐)은 목록에 없다 — 같은 코어를 타므로 가드는 받는다.
+
+
 def is_taobao_family(url: str) -> bool:
     """타오바오 계열인가 — **서버가 나가면 안 되는 곳**이다(C-T4'' 실측).
 
@@ -129,6 +144,47 @@ def sanitize_final_url(url: str) -> str:
     kept = [(k, v[0]) for k in _KEEP_PARAMS for v in [q.get(k) or []] if v]
     query = urlencode(kept)
     return urlunparse((u.scheme, u.netloc, u.path, "", query, ""))
+
+
+def resolve_gap(share: dict) -> str:
+    """초안에 **무엇이 없고, 서버가 그걸 어떻게 아는지** — 넷 중 하나.
+
+    `ok` · `no_final_url` · `final_url_without_id` · `id_without_price`.
+
+    C-F9-1: 이전 문구는 VPN 설정 때문이라고 **단정**했다(있지도 않은 앱 모드 이름까지 들며).
+    서버는 폰의 VPN 상태를 모른다 — 오너 실측에서 VPN이 **꺼진 채로** 같은 결과가 나와
+    그 단정이 곧바로 오진이 됐다. 그래서 서버는 **자기가 본 것만** 말한다:
+    최종 URL이 왔는지 · 거기 상품번호가 있었는지 · 가격이 있었는지.
+    원인(VPN·앱·네트워크)은 「링크 진단」이 재서 말한다.
+    """
+    if share.get("price"):
+        return "ok"
+    if not (share.get("final_url") or "").strip():
+        return "no_final_url"
+    if not share.get("item_id"):
+        return "final_url_without_id"
+    return "id_without_price"
+
+
+# 갈래별 사용자 문장 — **한 벌만 둔다.** 단건·일괄·미리보기가 각자 문구를 갖고 있어
+#   같은 상황이 화면마다 다르게 설명됐다(C-fix F1의 재발 방지).
+_GAP_MESSAGE = {
+    "ok": ("제목·상품번호·가격까지 담았어요(공유 시점 가격). "
+           "이미지·옵션은 PC에서 고가수집기로 보강해 주세요."),
+    "no_final_url": ("제목과 링크만 담았어요 — 펴진 링크가 오지 않아 가격·상품번호는 비었습니다. "
+                     "가격·이미지는 PC에서 고가수집기로 보강해 주세요. "
+                     "링크가 왜 안 펴졌는지는 「링크 진단」이 재 드립니다."),
+    "final_url_without_id": ("제목과 링크만 담았어요 — 펴진 링크는 왔는데 거기 상품번호가 없었습니다. "
+                             "가격·이미지는 PC에서 고가수집기로 보강해 주세요. "
+                             "「링크 진단」에서 최종 URL을 확인하실 수 있습니다."),
+    "id_without_price": ("제목·상품번호까지 담았어요 — 가격은 오지 않았습니다. "
+                         "가격·이미지는 PC에서 고가수집기로 보강해 주세요."),
+}
+
+
+def gap_message(share: dict) -> str:
+    """초안 결과 → 사용자 문장. 서버가 **모르는 것은 말하지 않는다**(VPN 단정 금지)."""
+    return _GAP_MESSAGE.get(resolve_gap(share), _GAP_MESSAGE["no_final_url"])
 
 
 def parse_final_url(url: str) -> dict:
@@ -273,13 +329,17 @@ def link_failure_reason(raw: str, final_url: str = "") -> str:
     has_final = bool((final_url or "").strip())
 
     if n == 0:
-        return ("공유 내용이 비어서 왔습니다 — 단축어에서 「공유 시트 입력」이 본문 칸에 "
-                "연결됐는지 확인해 주세요(변수 칩을 골라야 값이 들어갑니다)."
+        # C-F8-a 실측: 타오바오 分享 →「复制链接」은 **타오바오 자체 패널**이라 iOS 공유 시트를
+        #   거치지 않는다 → 단축어를 나중에 실행하면 넘어오는 입력이 **항상 빈 값**이다.
+        #   클립보드가 유일한 입력원이므로, 그 설정을 콕 집어 말한다(가장 흔한 원인이 이것이다).
+        return ("공유 내용이 비어서 왔습니다 — 타오바오 「复制链接」(링크 복사)을 쓰셨다면 "
+                "단축어 첫 액션의 「입력이 없으면 → 클립보드 가져오기」를 켜 주세요. "
+                "공유 시트를 거치지 않는 방식이라 클립보드가 유일한 입력원입니다."
                 + (" 최종 URL은 함께 왔습니다." if has_final else ""))
 
     tk = _TAOKOULING_RE.search(text)
     if tk:
-        return (f"받은 것이 링크가 아니라 **타오바오 앱 전용 코드**입니다(淘口令, 길이 {n}자). "
+        return (f"받은 것이 링크가 아니라 타오바오 앱 전용 코드입니다(淘口令, 길이 {n}자). "
                 "서버에서는 이 코드를 열 수 없어요 — 앱에서 공유할 때 "
                 "「링크 복사」를 고르시면 링크가 옵니다.")
 

@@ -69,10 +69,14 @@ def _classes(html: str):
     `{{ ' pc-lc-dot--on' if on }}`처럼 조건부로 붙는 클래스도 화면에 나오니까(6-j-2가 배운 것:
     계약이 안 보는 만큼 그린은 거짓이다). 대신 그 이름을 감싼 **따옴표는 이름의 일부가 아니다** —
     안 벗기면 `pc-lc-dot--on'`이 미정의로 잡혀 거짓 경보가 난다(실제로 그랬다).
+
+    같은 이유로 **괄호도 벗긴다** — 중첩 삼항(`('pc-a' if x else 'pc-b')`)을 쓰면 마지막 토큰이
+    `pc-b')`로 잡혀 거짓 경보가 났다(실측 2026-09-12, C-F9의 링크 진단 화면).
+    벗기면 진짜 이름이 드러나고 그 이름이 그대로 검사된다 — 느슨해지는 게 아니라 정확해진다.
     """
     for m in re.finditer(r'class="([^"]*)"', html):
         for tok in re.split(r"[\s]+", m.group(1)):
-            tok = tok.strip("'\"")
+            tok = tok.strip("'\"()")
             if tok and "{" not in tok and "}" not in tok and "%" not in tok:
                 yield m.group(1), tok
 

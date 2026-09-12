@@ -1,0 +1,119 @@
+{% extends "_base.html" %}
+{% block title %}링크 진단{% endblock %}
+{% block content %}
+<div class="container-fluid py-4" style="max-width:860px">
+
+  {# 페이지 머리는 수집 이력과 같은 계보 — 오버라인(금 라벨) + 세리프 헤더 + 금 헤어라인. #}
+  <header>
+    <div class="console-kpi-label mb-1">수집 · 진단</div>
+    <div class="d-flex justify-content-between align-items-start gap-3">
+      <div>
+        <h4 class="mb-0 fw-bold"><i class="bi bi-activity"></i> 링크 진단</h4>
+        <p class="text-muted small mb-2">
+          타오바오 링크를 넣으면 <strong>우리 서버가 어디까지 펼 수 있는지</strong> 그대로 보여 드려요.
+          가격·상품번호가 안 담기는 이유를 짐작하지 않고 재서 말합니다.
+        </p>
+      </div>
+      <div class="op-actions">
+        <a class="btn btn-ghost btn-sm" href="/seller/collect/history">수집 이력</a>
+      </div>
+    </div>
+    <hr class="pc-hairline mt-0 mb-0">
+  </header>
+
+  <div class="op-card console-card mt-4 mb-3">
+    <div class="op-card-body">
+      <form method="post" action="/seller/collect/link-diag">
+        <label class="form-label small" for="diagUrl">타오바오 링크 — 앱 공유 글을 통째로 붙여넣어도 됩니다</label>
+        <textarea class="form-control mb-3" id="diagUrl" name="url" rows="3"
+                  placeholder="https://e.tb.cn/…">{{ asked or "" }}</textarea>
+        <button class="btn btn-primary" type="submit"><i class="bi bi-activity"></i> 진단하기</button>
+      </form>
+    </div>
+  </div>
+
+  {% if result %}
+  <div class="op-card console-card">
+    {# 뱃지 색은 한 줄로 정해 둔다 — class 속성 안에 중첩 삼항을 쓰면 읽기 어렵고,
+       클래스 홈 계약의 토큰 분리도 괄호에 걸린다(6-l 검출기 사각). #}
+    {% if result.item_id %}{% set verdict_cls = 'pc-badge-on' %}{% set verdict_txt = '상품번호 확보' %}
+    {% elif result.ok %}{% set verdict_cls = 'pc-badge-muted' %}{% set verdict_txt = '펴짐 · 상품번호 없음' %}
+    {% else %}{% set verdict_cls = 'pc-badge-danger' %}{% set verdict_txt = '열지 못함' %}{% endif %}
+    <div class="op-card-head">
+      <span class="console-kpi-label">결과</span>
+      <span class="pc-badge {{ verdict_cls }} ms-auto">{{ verdict_txt }}</span>
+    </div>
+    <div class="op-card-body">
+
+      <p class="mb-4">{{ result.note }}</p>
+
+      <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+          <div class="op-card text-center py-3">
+            <div class="op-kpi-k">거친 홉</div>
+            <div class="op-kpi-v mt-1">{{ result.hop_count }}</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="op-card text-center py-3">
+            <div class="op-kpi-k">상품번호</div>
+            <div class="op-kpi-v mt-1">{{ result.item_id or "없음" }}</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="op-card text-center py-3">
+            <div class="op-kpi-k">가격</div>
+            <div class="op-kpi-v mt-1">{{ (result.price ~ " " ~ result.currency) if result.price else "없음" }}</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="op-card text-center py-3">
+            <div class="op-kpi-k">걸린 시간</div>
+            <div class="op-kpi-v mt-1">{{ result.elapsed_ms }}<span class="small">ms</span></div>
+          </div>
+        </div>
+      </div>
+
+      {% if result.error %}
+      <div class="pc-status pc-status-danger border small mb-4">
+        <i class="bi bi-exclamation-triangle"></i>
+        <strong>{{ result.error_class or "오류" }}</strong> — {{ result.error }}
+      </div>
+      {% endif %}
+
+      {% if result.hops %}
+      <div class="console-kpi-label mb-2">리다이렉트 체인</div>
+      <div class="table-responsive mb-4">
+        <table class="table table-sm align-middle mb-0">
+          <thead><tr><th>#</th><th>요청한 곳</th><th>응답</th><th>다음 주소</th></tr></thead>
+          <tbody>
+            {% for h in result.hops %}
+            <tr>
+              <td class="text-muted">{{ h.n }}</td>
+              <td class="small">{{ h.host }}</td>
+              <td><span class="pc-badge {{ 'pc-badge-on' if h.status < 400 else 'pc-badge-danger' }}">{{ h.status }}</span></td>
+              <td class="small" style="word-break:break-all">{{ h.location or "—" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
+      {% if result.final_url %}
+      <div class="console-kpi-label mb-2">서버가 도착한 주소</div>
+      <div class="pc-inset small mb-3" style="word-break:break-all">{{ result.final_url }}</div>
+      <div class="console-kpi-label mb-2">우리가 저장하는 형태</div>
+      <div class="pc-inset small mb-3" style="word-break:break-all">{{ result.final_url_kept or "—" }}</div>
+      <p class="text-muted small mb-0">
+        두 줄의 차이가 <strong>일부러 버리는 값</strong>입니다 — 기기 식별자·세션 서명처럼 상품과 무관한
+        개인 정보라 이력에 남기지 않아요. 이 진단 결과도 저장하지 않습니다.
+      </p>
+      {% endif %}
+
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
