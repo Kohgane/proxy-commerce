@@ -237,6 +237,23 @@ def _suspect_tail(s: str) -> bool:
     return 2 <= len(tok) <= 7 and tok not in _COMPLETE_TAIL
 
 
+# C-F12-B: 짝이 안 맞는 괄호는 **잘렸다는 흔적**이지 제목의 일부가 아니다.
+#   짝이 맞는 것은 건드리지 않는다 — `（2개입）`처럼 실제 스펙일 수 있다(내용 훼손 금지).
+_BRACKET_PAIRS = (("(", ")"), ("（", "）"), ("<", ">"), ("《", "》"), ("〈", "〉"))
+
+
+def _strip_unpaired_brackets(text: str) -> str:
+    """열림·닫힘 개수가 다른 괄호만 떼낸다. 같으면 그대로 둔다."""
+    out = text
+    for op, cl in _BRACKET_PAIRS:
+        n_op, n_cl = out.count(op), out.count(cl)
+        if n_op == n_cl:
+            continue                              # 짝이 맞으면 내용을 건드리지 않는다
+        drop = op if n_op > n_cl else cl
+        out = out.replace(drop, " ")
+    return out
+
+
 def clean_title_ko(title, url: str = "") -> dict:
     """검수표용 제목 정제. **조용히 자르지 않는다** — 절단은 truncated(하드)/truncated_suspect(소프트) 플래그.
 
@@ -261,7 +278,11 @@ def clean_title_ko(title, url: str = "") -> dict:
     if m and m.group("st").upper() in _US_STATES:
         s = s[:m.start()].rstrip()
     s = _JP_KANA_RE.sub(" ", s)                                     # 일문(가나) 잔재 제거
-    s = re.sub(r"[\[\]【】〔〕]", " ", s)                            # 빈 괄호 잔해
+    # C-F12-B: 전각 괄호 **문자**를 떼낸다(내용은 남긴다 — 「」 안이 곧 제목이다).
+    #   실측 2026-09-12: `【淘宝】…`는 이미 통째로 지워졌지만 `「제목」`은 괄호가 그대로 남아
+    #   상품명에 따라붙었다. 공유 파서는 「」를 구분자로 쓰므로 제목의 일부일 수 없다.
+    s = re.sub(r"[\[\]【】〔〕「」『』]", " ", s)                      # 빈 괄호 잔해 + 전각 인용
+    s = _strip_unpaired_brackets(s)                                  # 짝 안 맞는 괄호 제거
     s = re.sub(r"\b(\w{2,})(\s+\1\b)+", r"\1", s, flags=re.I)       # 인접 중복어 축약
     s = re.sub(r"\s+", " ", s).strip(" -–·|,")
     if not s:

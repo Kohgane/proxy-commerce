@@ -1196,12 +1196,20 @@ def collect_one():
     #   오면 id·가격까지 건지고, 안 오면 단축 링크와 제목만으로 간다 — 두 갈래 다 정직 표기.
     final_url = str(body.get("final_url") or body.get("expanded_url")
                     or request.form.get("final_url") or request.args.get("final_url") or "").strip()
+    # C-F12-A: 단계별 소요(ms)를 응답에 싣는다. 폰이 「요청한 시간이 초과되었습니다」로 죽었을 때
+    #   **어디서** 오래 걸린 건지 알 방법이 없었다 — 모르는 채 예산을 조이면 엉뚱한 데를 조인다.
+    #   싣는 것은 **밀리초뿐**이다(원문·URL 0).
+    import time as _time
+    _t0 = _time.perf_counter()
     from src.collectors.share_text import parse_share_text
     share = parse_share_text(raw, final_url=final_url)
+    _timings = {"parse": int((_time.perf_counter() - _t0) * 1000)}
     url = share.get("url", "")
     if not url:
         from src.collectors.share_text import link_failure_reason
-        return jsonify({"ok": False, "error": link_failure_reason(raw, final_url)}), 400
+        _timings["total"] = int((_time.perf_counter() - _t0) * 1000)
+        return jsonify({"ok": False, "error": link_failure_reason(raw, final_url),
+                        "timings": _timings}), 400
 
     seller_id = str(user.get("user_id") or "")
     # 중복 수집 방지 — 기존 정규화 키(v42 1-3)를 그대로 쓴다(새 규칙 만들지 않는다).
@@ -1249,13 +1257,19 @@ def collect_one():
             #   가리키기만 하고 길이 없으면 그 문장은 안내가 아니라 막다른 골목이다.
             if res.get("resolve_gap") in ("no_final_url", "final_url_without_id"):
                 out["diag_url"] = request.url_root.rstrip("/") + "/seller/collect/link-diag"
+        _timings.update(res.get("timings") or {})
+        _timings["total"] = int((_time.perf_counter() - _t0) * 1000)
+        out["timings"] = _timings
         if _wants_review():
             out["review"] = _review_verdict(res.get("url", ""))
         return jsonify(out)
     # 정직 실패 — 무엇이 왜 안 됐는지 그대로 올린다(가짜 성공 0).
     #   초안 폴백은 `collect_input` 안에 있다 — 여기서 또 하면 그게 두 벌째다.
+    _timings.update(res.get("timings") or {})
+    _timings["total"] = int((_time.perf_counter() - _t0) * 1000)
     return jsonify({"ok": False, "duplicate": False, "url": res.get("url", ""),
                     "error": res.get("error") or "수집 실패",
+                    "timings": _timings,
                     "message": "수집하지 못했습니다. 봇 차단 사이트는 PC 확장을 권합니다."}), 502
 
 

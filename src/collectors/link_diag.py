@@ -53,7 +53,15 @@ MAX_HOPS = 8
 TIMEOUT_SEC = 10
 # 수집 경로에서 단축 링크를 펼 때의 예산. 진단(10s·UA 2종)보다 **짧게** 잡는다 —
 #   이건 요청 안에서 도는 코드라, W10에서 동기 번역 체인이 워커를 점유한 흉이 그대로 적용된다.
+#
+# C-F12-A 실측: 이 값이 **홉당** 타임아웃으로만 쓰이고 있었다. `MAX_HOPS=8`이라
+#   최악 8×6 = **48초** — 「6초 예산」은 문서에만 있었고 코드엔 없었다. 폰이
+#   「요청한 시간이 초과되었습니다」로 죽은 것이 그대로 설명된다.
+#   → 이제 **wall-clock 마감**을 둔다: 홉마다 남은 시간만 준다.
 RESOLVE_TIMEOUT_SEC = 6
+# 연결과 읽기를 따로 준다. 한 숫자로 주면 "연결이 안 되는 상황"과 "느린 응답"이 같은 예산을
+#   쓰고, 연결 단계에서 전부 태울 수 있다.
+CONNECT_TIMEOUT_SEC = 3
 # 본문에서 훑을 최대 길이. 진단이 페이지 전체를 메모리에 들고 있을 이유가 없다.
 BODY_SCAN_CAP = 400_000
 
@@ -166,11 +174,16 @@ def resolve_short_link(url: str, *, timeout: int = RESOLVE_TIMEOUT_SEC) -> dict:
 
     # 실측에서 성공한 UA로 한 번만 잰다. 수집 경로는 **요청 안에서** 도는 코드라
     #   진단(UA 2종·10s)과 달리 예산을 짧게 잡는다 — W10에서 동기 체인이 워커를 점유한 흉이 있다.
+    # **전체 예산**을 걸어 넘긴다 — 홉당이 아니다(실측: 홉당이면 최악 48초였다).
     p = _probe(url, ua_label="수집", user_agent=_IOS_SAFARI_UA,
-               max_hops=MAX_HOPS, timeout=timeout)
+               max_hops=MAX_HOPS, timeout=timeout,
+               deadline=time.monotonic() + float(timeout))
     out["final_status"] = p["final_status"]
     out["elapsed_ms"] = p["elapsed_ms"]
 
+    if p["error_class"] == "BudgetExceeded":
+        out["reason"] = "timeout"                 # 오너 지정 갈래 — 초안은 그대로 세운다
+        return out
     if p["error_class"]:
         out["reason"] = f"error:{p['error_class']}"
         return out
@@ -193,7 +206,7 @@ def resolve_short_link(url: str, *, timeout: int = RESOLVE_TIMEOUT_SEC) -> dict:
 
 
 def _probe(url: str, *, ua_label: str, user_agent: str,
-           max_hops: int, timeout: int) -> dict:
+           max_hops: int, timeout: int, deadline: float | None = None) -> dict:
     """한 UA로 리다이렉트 체인을 **직접 따라가며** 기록한다. 한 번의 측정 = 이 함수 한 번."""
     from src.collectors.share_text import parse_final_url, sanitize_final_url
 
@@ -216,8 +229,20 @@ def _probe(url: str, *, ua_label: str, user_agent: str,
     cur, final_resp = url, None
     try:
         for n in range(1, max_hops + 1):
+            # C-F12-A: 남은 예산을 홉마다 다시 계산한다. 마감을 넘겼으면 **더 안 나간다** —
+            #   요청이 죽는 것보다 부분 초안이 낫다(호출부가 `server_timeout`으로 읽는다).
+            if deadline is not None:
+                left = deadline - time.monotonic()
+                if left <= 0.3:
+                    out["error"] = f"예산({timeout}s) 초과 — {n - 1}홉에서 멈췄습니다."
+                    out["error_class"] = "BudgetExceeded"
+                    out["final_url"] = cur
+                    break
+                hop_timeout = (min(CONNECT_TIMEOUT_SEC, left), left)
+            else:
+                hop_timeout = (min(CONNECT_TIMEOUT_SEC, timeout), timeout)
             resp = requests.get(cur, headers=headers, allow_redirects=False,
-                                timeout=timeout, stream=True)
+                                timeout=hop_timeout, stream=True)
             loc = resp.headers.get("Location", "") or ""
             out["hops"].append({"n": n, "status": int(resp.status_code),
                                 "location": loc,
