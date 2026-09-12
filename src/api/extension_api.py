@@ -1169,14 +1169,23 @@ def collect_one():
     share = parse_share_text(raw, final_url=final_url)
     url = share.get("url", "")
     if not url:
-        return jsonify({"ok": False,
-                        "error": "상품 링크를 찾지 못했습니다. 링크나 공유 텍스트를 그대로 붙여넣어 주세요."}), 400
+        from src.collectors.share_text import link_failure_reason
+        return jsonify({"ok": False, "error": link_failure_reason(raw, final_url)}), 400
 
     seller_id = str(user.get("user_id") or "")
     # 중복 수집 방지 — 기존 정규화 키(v42 1-3)를 그대로 쓴다(새 규칙 만들지 않는다).
     try:
         from src.seller_console.collect_history_store import find_by_product_key
         dup = find_by_product_key(url, seller_ids={seller_id} if seller_id else None)
+        if not dup and final_url:
+            # C-F7: 폰이 편 링크로 왔을 때, **같은 상품의 단축 링크 초안**이 이미 있는지 본다.
+            #   편 링크가 `short_name`에 단축 토큰을 싣고 오므로 그 키로 한 번 더 조회한다 —
+            #   안 그러면 같은 상품이 `tbshare:…`와 `taobao:item:…` 두 행으로 쌓인다(실측).
+            _sn = parse_share_text("", final_url=final_url).get("short_name", "")
+            _tk2 = parse_share_text("", final_url=final_url).get("tk", "")
+            if _sn:
+                _alt = f"https://e.tb.cn/{_sn}" + (f"?tk={_tk2}" if _tk2 else "")
+                dup = find_by_product_key(_alt, seller_ids={seller_id} if seller_id else None)
         if dup:
             return jsonify({"ok": True, "duplicate": True, "item_id": dup.get("id"),
                             "title": dup.get("title", ""),

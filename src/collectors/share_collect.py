@@ -68,7 +68,9 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
     share = parse_share_text(raw, final_url=final_url)
     url = share.get("url", "")
     if not url:
-        return {"ok": False, "error": "상품 링크를 찾지 못했습니다. 링크나 공유 텍스트를 그대로 붙여넣어 주세요."}
+        # C-F7: 왜 못 찾았는지 말한다(길이·판정만 — 원문은 안 싣는다).
+        from src.collectors.share_text import link_failure_reason
+        return {"ok": False, "error": link_failure_reason(raw, final_url)}
     # 제목이 없으면 **초안을 만들지 않는다.** 이 경로가 존재하는 이유가 "공유 글엔 제목이 있다"인데,
     #   제목까지 없으면 남는 건 링크 하나뿐 — 제목도 가격도 이미지도 없는 행은 수집이 아니라 빈 껍데기다.
     #   (실측: 맨 URL을 넣었더니 빈 항목이 '수집됨'으로 앉아 편집 화면까지 넘어갔다.)
@@ -162,14 +164,34 @@ def collect_input(raw: str, *, seller_id: str = "", source: str = "input",
     share = parse_share_text(raw, final_url=final_url)
     url = share.get("url", "")
     if not url:
+        from src.collectors.share_text import link_failure_reason
         return {"ok": False, "kind": "failed", "url": "",
-                "error": "상품 링크를 찾지 못했습니다. 링크나 공유 텍스트를 그대로 붙여넣어 주세요."}
+                "error": link_failure_reason(raw, final_url)}
+
+    # C-F7: **같은 상품이 두 키로 쌓이는 것**을 막는다.
+    #   단축 링크만 담으면 `tbshare:<토큰>:<tk>`, 나중에 폰이 편 링크로 담으면 `taobao:item:<id>` —
+    #   키가 달라 남남이 된다. 다행히 **편 링크가 `short_name`에 그 토큰을 싣고 온다**(실측 원문).
+    #   그래서 편 링크로 올 때는 단축 키로도 한 번 더 찾아본다(발명 0 — 실측에 있는 값만 쓴다).
+    alt_key_url = ""
+    if share.get("short_name") and share.get("item_id"):
+        _tk = share.get("tk", "")
+        alt_key_url = f"https://e.tb.cn/{share['short_name']}" + (f"?tk={_tk}" if _tk else "")
 
     # 타오바오는 **서버가 못 읽는다**(실측). 읽어 보고 실패하는 게 아니라 아예 안 간다.
-    if is_taobao_family(url) and share.get("title"):
+    #   C-F7 실측: 조건에 `and share.get("title")`이 붙어 있어, **제목 없는 맨 타오바오 URL**은
+    #   그대로 서버 수집으로 떨어졌다(= F2의 "요청 0"에 구멍). 서버가 못 읽는 건 제목 유무와 무관하다.
+    if is_taobao_family(url):
+        if not share.get("title"):
+            # 링크는 타오바오인데 제목이 없다 → 초안을 세울 재료도, 서버가 읽을 방법도 없다.
+            return {"ok": False, "kind": "failed", "url": url,
+                    "error": ("타오바오 링크는 서버에서 열 수 없어요(로그인 벽). "
+                              "앱 공유 글을 **통째로** 보내 주시면 제목으로 초안을 만들고, "
+                              "가격·이미지는 PC에서 고가수집기로 보강합니다.")}
         r = collect_from_share_text(raw, seller_id=seller_id, source=source,
                                     translate=translate, final_url=final_url)
         r["kind"] = "share_draft" if r.get("ok") else "failed"
+        if alt_key_url:
+            r["alt_key_url"] = alt_key_url      # 호출부 중복 조회용(같은 상품의 단축 링크 형태)
         return r
 
     from src.api.extension_api import collect_one_url

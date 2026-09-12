@@ -638,3 +638,94 @@ def test_guide_header_name_matches_what_server_reads():
     assert 'request.headers.get("Authorization"' in api, "서버가 읽는 헤더 이름이 바뀌었다"
     assert "`Authorization`" in guide, "가이드가 헤더 이름을 명시하지 않는다"
     assert "Bearer" in guide, "가이드가 Bearer 접두를 명시하지 않는다"
+
+
+# ── ⑨ C-F7: 링크를 못 찾은 이유를 말한다 ────────────────────────────────────
+# 오너 2차 실물 픽스처(2026-09-12) — **링크와 제목이 같은 줄**이다(1차와 구조가 다르다).
+FIX_SWEATER = (
+    "【淘宝】假一赔四 https://e.tb.cn/h.8reU77YYNhKOUuE?tk=EYAGT7vTcVD CZ321 "
+    "「藏青色绞花开衫毛衣男春秋慵懒松弛感美式立领针织衫cleanfit外套」\n"
+    "点击链接直接打开 或者 淘宝搜索直接打开"
+)
+
+
+def test_single_line_share_text_parses():
+    """★ 링크와 제목이 **같은 줄**에 와도 물어야 한다 — 1차 픽스처만 맞춘 파서가 되지 않도록."""
+    from src.collectors.share_text import parse_share_text, split_input_blocks
+    assert len(split_input_blocks(FIX_SWEATER)) == 1
+    r = parse_share_text(FIX_SWEATER)
+    assert r["url"] == "https://e.tb.cn/h.8reU77YYNhKOUuE?tk=EYAGT7vTcVD"
+    assert r["tk"] == "EYAGT7vTcVD"
+    assert r["title"].startswith("藏青色")
+    assert r["share_code"] == "CZ321", "링크 뒤 공백 구분 영숫자 코드"
+    assert "「" not in r["url"] and "」" not in r["url"], "제목 괄호가 URL에 딸려 왔다"
+
+
+def test_scheme_less_short_link_is_recovered():
+    """★ `https://` 없이 온 단축 도메인도 건진다(앱이 텍스트로 줄 때 빠져 온다).
+
+    **아는 도메인일 때만** 스킴을 붙인다 — 아무 `a/b`에나 붙이면 오탐이 된다.
+    """
+    from src.collectors.share_text import parse_share_text
+    assert parse_share_text("m.tb.cn/h.g9KpLmN")["url"] == "https://m.tb.cn/h.g9KpLmN"
+    assert parse_share_text("e.tb.cn/h.ABC?tk=z")["url"].startswith("https://e.tb.cn/")
+    assert parse_share_text("사과/바나나")["url"] == "", "아무 슬래시 문자열에 스킴을 붙이면 안 된다"
+
+
+def test_taokouling_is_named_not_dismissed():
+    """★ 淘口令은 **링크가 아니라 앱 전용 코드**다 — "못 찾았다"가 아니라 그렇게 말한다."""
+    from src.collectors.share_text import link_failure_reason, parse_share_text
+    r = parse_share_text("￥CZ0001abcd￥ 复制打开淘宝App")
+    assert r["url"] == "" and r["taokouling"] == "CZ0001abcd"
+    msg = link_failure_reason("￥CZ0001abcd￥ 复制打开淘宝App")
+    assert "링크 복사" in msg, "무엇을 하면 되는지 말해야 한다"
+
+
+def test_link_failures_are_distinguishable_and_leak_nothing():
+    """★ 왜 못 찾았는지 갈라 말하되 **원문은 안 싣는다**(길이·판정만).
+
+    내용에 상품명·계정 정보가 섞여 올 수 있고, 그게 로그·스크린샷으로 새면 우리가 만든 구멍이다.
+    """
+    from src.collectors.share_text import link_failure_reason as R
+    secret = "비밀상품명ABC 계정12345"
+    msgs = [R(""), R("￥CZ0001abcd￥"), R("http 조각만"), R(secret)]
+    assert len(set(msgs)) == 4, f"네 경우가 같은 문장을 낸다: {msgs}"
+    assert secret not in msgs[3] and "비밀상품명" not in msgs[3], "원문이 새어 나갔다"
+    assert str(len(secret)) in msgs[3], "길이는 말해야 진단이 된다"
+
+
+def test_bare_taobao_url_never_hits_the_server(monkeypatch):
+    """★ **제목이 없어도** 타오바오엔 서버가 안 나간다.
+
+    실측(C-F7): 조건이 `is_taobao_family(url) and share.get("title")`이라
+    **제목 없는 맨 타오바오 URL**은 그대로 서버 수집으로 떨어졌다 — F2의 "요청 0"에 난 구멍이다.
+    서버가 못 읽는 건 제목 유무와 무관하다.
+    """
+    import src.collectors.share_collect as sc
+    calls = []
+    monkeypatch.setattr("src.api.extension_api.collect_one_url",
+                        lambda url, **kw: calls.append(url) or {"ok": True, "item_id": "x", "title": ""})
+    r = sc.collect_input("https://item.taobao.com/item.htm?id=993154784090",
+                         seller_id="u1", translate=False)
+    assert calls == [], "제목 없는 타오바오 URL이 서버 수집을 탔다"
+    assert r["ok"] is False and r["kind"] == "failed"
+    assert "통째로" in r["error"], "무엇을 하면 되는지 말해야 한다"
+
+
+def test_expanded_link_finds_the_short_link_draft():
+    """★ 같은 상품이 **두 키로 쌓이지 않는다.**
+
+    단축 링크만 담으면 `tbshare:<토큰>:<tk>`, 나중에 편 링크로 담으면 `taobao:item:<id>` —
+    키가 달라 남남이 된다. 편 링크가 `short_name`에 그 토큰을 싣고 오므로(실측 원문) 그걸로 잇는다.
+    """
+    from src.collectors.product_key import normalize_product_key as k
+    from src.collectors.share_text import parse_share_text
+    final = ("https://m.intl.taobao.com/detail/detail.html?id=812345678901"
+             "&short_name=h.8reU77YYNhKOUuE&tk=EYAGT7vTcVD")
+    f = parse_share_text("", final_url=final)
+    assert f["short_name"] == "h.8reU77YYNhKOUuE", "편 링크가 단축 토큰을 싣고 온다"
+    alt = f"https://e.tb.cn/{f['short_name']}?tk={f['tk']}"
+    assert k(alt) == k("https://e.tb.cn/h.8reU77YYNhKOUuE?tk=EYAGT7vTcVD"), \
+        "복원한 단축 키가 원래 단축 링크와 같은 키여야 이어진다"
+    api = Path("src/api/extension_api.py").read_text(encoding="utf-8")
+    assert "short_name" in api and "_alt" in api, "중복 조회가 대체 키를 안 본다"
