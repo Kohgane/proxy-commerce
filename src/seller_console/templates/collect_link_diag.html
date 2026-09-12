@@ -34,11 +34,14 @@
 
   {% if result %}
   <div class="op-card console-card">
+    {# 뱃지 색은 한 줄로 정해 둔다 — class 속성 안에 중첩 삼항을 쓰면 읽기 어렵고,
+       클래스 홈 계약의 토큰 분리도 괄호에 걸린다(6-l 검출기 사각). #}
+    {% if result.item_id %}{% set verdict_cls = 'pc-badge-on' %}{% set verdict_txt = '상품번호 확보' %}
+    {% elif result.ok %}{% set verdict_cls = 'pc-badge-muted' %}{% set verdict_txt = '펴짐 · 상품번호 없음' %}
+    {% else %}{% set verdict_cls = 'pc-badge-danger' %}{% set verdict_txt = '열지 못함' %}{% endif %}
     <div class="op-card-head">
       <span class="console-kpi-label">결과</span>
-      <span class="pc-badge {{ 'pc-badge-on' if result.item_id else ('pc-badge-muted' if result.ok else 'pc-badge-danger') }} ms-auto">
-        {% if result.item_id %}상품번호 확보{% elif result.ok %}펴짐 · 상품번호 없음{% else %}열지 못함{% endif %}
-      </span>
+      <span class="pc-badge {{ verdict_cls }} ms-auto">{{ verdict_txt }}</span>
     </div>
     <div class="op-card-body">
 

@@ -1010,11 +1010,10 @@ def test_link_diag_template_uses_real_class_homes():
     tpl = Path("src/seller_console/templates/collect_link_diag.html").read_text(encoding="utf-8")
     css = "".join(Path(p).read_text(encoding="utf-8") for p in
                   ("src/static/app.css", "src/seller_console/static/console.css"))
-    used = set()
-    for attr in re.findall(r'class="([^"]+)"', tpl):
-        for cls in attr.split():
-            if cls.startswith(("op-", "pc-", "console-")) and "{" not in cls:
-                used.add(cls)
+    # `class="..."` 안뿐 아니라 **템플릿 전체**에서 우리 접두어 토큰을 훑는다 —
+    #   `{% set cls = 'pc-badge-on' %}`처럼 속성 밖으로 빼도 화면엔 그대로 나가니까.
+    used = {c for c in re.findall(r"[a-z]+(?:-[a-z0-9]+)+", tpl)
+            if c.startswith(("op-", "pc-", "console-"))}
     assert used, "검사할 클래스를 못 찾았다(정규식이 헛돌았다)"
     missing = [c for c in sorted(used) if f".{c}" not in css]
     assert not missing, f"CSS 홈이 없는 클래스: {missing}"
