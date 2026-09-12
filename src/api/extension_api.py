@@ -463,6 +463,37 @@ def api_exists():
     return jsonify({"ok": True, "collected": collected})
 
 
+@extension_bp.post("/link-diag")
+def collect_link_diag():
+    """C-F9-3: **서버가 이 링크를 어디까지 펴는지** 서버 자신이 재서 원문으로 돌려준다.
+
+    F7-2(「Render 싱가포르에서 302 체인을 재라」)가 오너 Shell을 기다리며 열려 있었다.
+    측정을 사람 손에 맡기면 **매번** 사람 손이 필요하다 — 앱 안에 재는 자리를 두면
+    오너가 폰에서 한 번 누르고 끝난다.
+
+    요청 `{url}` · 응답은 `link_diag.diagnose_link` 원문 그대로(홉·최종 URL·오류 클래스).
+    **저장 0** — 진단 결과는 어디에도 쌓지 않는다(최종 URL에 세션성 값이 실려 온다).
+    """
+    user = _require_token(scopes=["collect.write"])
+    if not user:
+        return jsonify({"ok": False, "error": auth_failure_reason()}), 401
+
+    body = request.get_json(force=True, silent=True) or {}
+    raw = str(body.get("url") or body.get("share_text") or "").strip()
+    if not raw:
+        return jsonify({"ok": False, "error": "진단할 링크를 보내 주세요."}), 400
+
+    # 공유 글을 통째로 붙여도 되게 — 파서가 링크를 골라낸다(입구마다 다른 규칙 금지).
+    from src.collectors.share_text import parse_share_text
+    url = parse_share_text(raw).get("url", "") or raw
+
+    from src.collectors.link_diag import diagnose_link
+    out = diagnose_link(url)
+    out["asked"] = url                 # 무엇을 쟀는지 되비쳐 준다(오타·잘린 주소 확인용)
+    # 링크를 못 열었다는 **진단은 성공한 진단**이다 → 항상 200. 실패는 `error`가 말한다.
+    return jsonify(out), 200
+
+
 @extension_bp.get("/enrich/pending")
 def collect_enrich_pending():
     """C-T4': **보강 대기 목록** — 확장이 "무엇을 열어야 하는지" 묻는 곳.
@@ -1203,18 +1234,21 @@ def collect_one():
                "title": res.get("title_ko") or res.get("title") or "",
                "message": "수집됐습니다."}
         if _partial:
-            _has_price = bool(res.get("price"))
+            # C-F9-1: 문구는 `gap_message` 한 곳에서만 만든다. 서버는 **자기가 본 것만** 말한다 —
+            #   최종 URL이 왔는지·상품번호가 있었는지·가격이 있었는지. VPN 상태는 서버가 모른다
+            #   (오너 실측: VPN 꺼진 채로 같은 결과 → 「전체 모드면…」 단정이 그대로 오진이 됐다).
             out.update({
                 "partial": True, "price": res.get("price", ""), "currency": res.get("currency", ""),
                 "item_id_taobao": res.get("item_id_taobao", ""),
                 "uncollected": res.get("uncollected", []),
                 "enrich_state": res.get("enrich_state", ""),
-                "message": ("제목·상품번호·가격까지 담았어요(공유 시점 가격). "
-                            "이미지·옵션은 PC에서 고가수집기로 보강해 주세요."
-                            if _has_price else
-                            "제목과 링크만 담았어요. VPN이 전체(Global) 모드면 링크 해석이 막혀요 — "
-                            "규칙 모드로 바꾸거나 VPN을 끄고 다시 공유하시면 가격·상품번호까지 담깁니다."),
+                "resolve_gap": res.get("resolve_gap", ""),
+                "message": res.get("message") or "수집됐습니다.",
             })
+            # 문구가 「링크 진단」을 가리키면 **거기로 가는 길도 준다** — 폰에서는 사이드바를 못 쓴다.
+            #   가리키기만 하고 길이 없으면 그 문장은 안내가 아니라 막다른 골목이다.
+            if res.get("resolve_gap") in ("no_final_url", "final_url_without_id"):
+                out["diag_url"] = request.url_root.rstrip("/") + "/seller/collect/link-diag"
         if _wants_review():
             out["review"] = _review_verdict(res.get("url", ""))
         return jsonify(out)

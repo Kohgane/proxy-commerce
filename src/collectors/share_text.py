@@ -146,6 +146,47 @@ def sanitize_final_url(url: str) -> str:
     return urlunparse((u.scheme, u.netloc, u.path, "", query, ""))
 
 
+def resolve_gap(share: dict) -> str:
+    """초안에 **무엇이 없고, 서버가 그걸 어떻게 아는지** — 넷 중 하나.
+
+    `ok` · `no_final_url` · `final_url_without_id` · `id_without_price`.
+
+    C-F9-1: 이전 문구는 VPN 설정 때문이라고 **단정**했다(있지도 않은 앱 모드 이름까지 들며).
+    서버는 폰의 VPN 상태를 모른다 — 오너 실측에서 VPN이 **꺼진 채로** 같은 결과가 나와
+    그 단정이 곧바로 오진이 됐다. 그래서 서버는 **자기가 본 것만** 말한다:
+    최종 URL이 왔는지 · 거기 상품번호가 있었는지 · 가격이 있었는지.
+    원인(VPN·앱·네트워크)은 「링크 진단」이 재서 말한다.
+    """
+    if share.get("price"):
+        return "ok"
+    if not (share.get("final_url") or "").strip():
+        return "no_final_url"
+    if not share.get("item_id"):
+        return "final_url_without_id"
+    return "id_without_price"
+
+
+# 갈래별 사용자 문장 — **한 벌만 둔다.** 단건·일괄·미리보기가 각자 문구를 갖고 있어
+#   같은 상황이 화면마다 다르게 설명됐다(C-fix F1의 재발 방지).
+_GAP_MESSAGE = {
+    "ok": ("제목·상품번호·가격까지 담았어요(공유 시점 가격). "
+           "이미지·옵션은 PC에서 고가수집기로 보강해 주세요."),
+    "no_final_url": ("제목과 링크만 담았어요 — 펴진 링크가 오지 않아 가격·상품번호는 비었습니다. "
+                     "가격·이미지는 PC에서 고가수집기로 보강해 주세요. "
+                     "링크가 왜 안 펴졌는지는 「링크 진단」이 재 드립니다."),
+    "final_url_without_id": ("제목과 링크만 담았어요 — 펴진 링크는 왔는데 거기 상품번호가 없었습니다. "
+                             "가격·이미지는 PC에서 고가수집기로 보강해 주세요. "
+                             "「링크 진단」에서 최종 URL을 확인하실 수 있습니다."),
+    "id_without_price": ("제목·상품번호까지 담았어요 — 가격은 오지 않았습니다. "
+                         "가격·이미지는 PC에서 고가수집기로 보강해 주세요."),
+}
+
+
+def gap_message(share: dict) -> str:
+    """초안 결과 → 사용자 문장. 서버가 **모르는 것은 말하지 않는다**(VPN 단정 금지)."""
+    return _GAP_MESSAGE.get(resolve_gap(share), _GAP_MESSAGE["no_final_url"])
+
+
 def parse_final_url(url: str) -> dict:
     """리다이렉트가 끝난 **최종 URL**에서 건질 것 — `{item_id, price, currency, tk, short_name}`.
 
@@ -292,13 +333,13 @@ def link_failure_reason(raw: str, final_url: str = "") -> str:
         #   거치지 않는다 → 단축어를 나중에 실행하면 넘어오는 입력이 **항상 빈 값**이다.
         #   클립보드가 유일한 입력원이므로, 그 설정을 콕 집어 말한다(가장 흔한 원인이 이것이다).
         return ("공유 내용이 비어서 왔습니다 — 타오바오 「复制链接」(링크 복사)을 쓰셨다면 "
-                "단축어 첫 액션의 **「입력이 없으면 → 클립보드 가져오기」**를 켜 주세요. "
+                "단축어 첫 액션의 「입력이 없으면 → 클립보드 가져오기」를 켜 주세요. "
                 "공유 시트를 거치지 않는 방식이라 클립보드가 유일한 입력원입니다."
                 + (" 최종 URL은 함께 왔습니다." if has_final else ""))
 
     tk = _TAOKOULING_RE.search(text)
     if tk:
-        return (f"받은 것이 링크가 아니라 **타오바오 앱 전용 코드**입니다(淘口令, 길이 {n}자). "
+        return (f"받은 것이 링크가 아니라 타오바오 앱 전용 코드입니다(淘口令, 길이 {n}자). "
                 "서버에서는 이 코드를 열 수 없어요 — 앱에서 공유할 때 "
                 "「링크 복사」를 고르시면 링크가 옵니다.")
 

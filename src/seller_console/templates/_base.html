@@ -125,7 +125,7 @@
     <ul class="nav flex-column gap-1">
       <li><a class="console-nav-link {% if _path == '/seller/' or _path.startswith('/seller/dashboard') %}active{% endif %}" href="/seller/dashboard"><i class="bi bi-speedometer2"></i><span>{{ t('nav.home') }}</span></a></li>
       <li><a class="console-nav-link {% if _path == '/seller/sourcing' or _path.startswith('/seller/sourcing/my-sources') or _path.startswith('/seller/sourcing/collect') or _path.startswith('/seller/sourcing/recommend') %}active{% endif %}" href="/seller/sourcing"><i class="bi bi-stars"></i><span>AI 소싱·등록</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/manual-collect') or (_path.startswith('/seller/collect') and not _path.startswith('/seller/collect/history') and not _path.startswith('/seller/collect-history')) %}active{% endif %}" href="/seller/manual-collect"><i class="bi bi-search"></i><span>{{ t('nav.collect') }}</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/manual-collect') or (_path.startswith('/seller/collect') and not _path.startswith('/seller/collect/history') and not _path.startswith('/seller/collect-history') and not _path.startswith('/seller/collect/link-diag')) %}active{% endif %}" href="/seller/manual-collect"><i class="bi bi-search"></i><span>{{ t('nav.collect') }}</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/collect/history') or _path.startswith('/seller/collect-history') %}active{% endif %}" href="/seller/collect/history"><i class="bi bi-journal-text"></i><span>수집한 상품</span></a></li>
       <li><a class="console-nav-link {% if _path == '/seller/orders' or (_path.startswith('/seller/orders') and not _path.startswith('/seller/orders/auto')) %}active{% endif %}" href="/seller/orders"><i class="bi bi-receipt"></i><span>{{ t('nav.orders') }}</span></a></li>
       <li><a class="console-nav-link {% if (_path.startswith('/seller/markets') and not _path.startswith('/seller/markets/connect') and not _path.startswith('/seller/markets/guide')) or _path.startswith('/seller/market-status') %}active{% endif %}" href="/seller/markets"><i class="bi bi-shop"></i><span>{{ t('nav.markets') }}</span></a></li>
@@ -146,6 +146,8 @@
       <li><a class="console-nav-link {% if _path.startswith('/seller/sourcing/watches') %}active{% endif %}" href="/seller/sourcing/watches"><i class="bi bi-binoculars"></i><span>소싱 관심목록</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/sourcing/candidates') %}active{% endif %}" href="/seller/sourcing/candidates"><i class="bi bi-inboxes"></i><span>수집 대기목록</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/sourcing/monitor') %}active{% endif %}" href="/seller/sourcing/monitor"><i class="bi bi-broadcast"></i><span>소싱처 변동 알림</span></a></li>
+      {# C-F9-3: 링크 진단 — 응답 문구가 이 화면을 가리키므로 **닿는 길이 있어야** 한다(고아 문장 금지). #}
+      <li><a class="console-nav-link {% if _path.startswith('/seller/collect/link-diag') %}active{% endif %}" href="/seller/collect/link-diag"><i class="bi bi-activity"></i><span>링크 진단</span></a></li>
 
       <li class="console-nav-group-title">내 상품</li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/catalog') %}active{% endif %}" href="/seller/catalog"><i class="bi bi-box-seam"></i><span>내 상품(카탈로그)</span></a></li>

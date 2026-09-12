@@ -15,12 +15,14 @@
 
 | 폰이 폈나 | 초안이 갖는 것 | 미수집 | 등록 |
 |---|---|---|---|
-| ✅ VPN 끔 **또는 규칙 모드** | 제목 · itemId · **가격(CNY)** · 링크 | 이미지 · 옵션 · 상세 | **가능** |
-| ❌ VPN **전체(Global) 모드** | 제목 · 단축 링크(tk) | 가격 · 이미지 · 옵션 · 상세 | 닫힘 |
+| ✅ 폈다 | 제목 · itemId · **가격(CNY)** · 링크 | 이미지 · 옵션 · 상세 | **가능** |
+| ❌ 못 폈다 | 제목 · 단축 링크(tk) | 가격 · 이미지 · 옵션 · 상세 | 닫힘 |
 
-> VPN이 켜졌느냐가 아니라 **중국 사이트를 터널로 보내느냐**가 가른다.
-> 규칙(规则) 모드는 중국 사이트를 우회시키므로 그대로 동작한다(Shadowrocket·Clash류 기본).
-> **아스트릴 iOS엔 규칙 모드가 없다**(오너 실측) — 그 앱은 잠깐 끄는 게 유일한 방법이다.
+**우리는 왜 못 폈는지 모른다 — 그래서 단정하지 않는다**(C-F9-1).
+이전 문구는 VPN 설정 때문이라고 **단정**했는데, 오너 실측에서 **VPN이 꺼진 채로**
+같은 결과가 나와 그 문장이 그대로 오진이 됐다. 서버가 아는 건 셋뿐이다 —
+최종 URL이 왔나 · 거기 상품번호가 있었나 · 가격이 있었나(`resolve_gap`).
+원인은 「링크 진단」(`link_diag`)이 실제로 재서 말한다.
 
 두 갈래를 섞지 않는다 — 한쪽을 다른 쪽인 척 하면 그게 가짜 성공이다.
 
@@ -137,11 +139,17 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
                 item_id, url, share.get("item_id") or item_id_site or "-",
                 price or "-", currency or "", ",".join(uncollected) or "-",
                 "done" if price else "pending")
+    # C-F9-1: 갈래 판정과 문장은 **원본 `share`에서 한 번만** 만든다.
+    #   호출부가 반환 dict로 다시 판정하면 안 된다 — 여기서 `item_id`는 **이력 행 ID**고
+    #   `share["item_id"]`는 **상품번호**다. 같은 이름 다른 뜻이라 그대로 재면 늘 오판한다.
+    from src.collectors.share_text import gap_message, resolve_gap
     return {"ok": True, "item_id": item_id, "url": url, "title": title,
             "title_ko": title_ko, "item_id_taobao": share.get("item_id") or item_id_site,
             "uncollected": uncollected, "price": price, "currency": currency,
             # 가격이 왔으면 마진을 낼 수 있다 → 등록 가능. 없으면 닫힌 채(0 발명 금지).
             "enrich_state": ("done" if price else "pending"),
+            # 서버가 **본 것만** 담는다: 최종 URL이 왔나 · 상품번호가 있었나 · 가격이 있었나.
+            "resolve_gap": resolve_gap(share), "message": gap_message(share),
             }
 
 

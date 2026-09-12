@@ -300,27 +300,31 @@ class TestSellerConsoleViews:
         assert draft["is_mock"] is False
 
     def test_collect_preview_with_taobao_url(self, client):
-        """POST /seller/collect/preview — 타오바오 URL → source taobao + trust 키 포함."""
-        from src.seller_console.collectors.base import CollectorResult
+        """POST /seller/collect/preview — 타오바오는 **서버에 나가지 않고** 초안을 세운다.
 
-        mock_result = CollectorResult(
-            success=True,
-            url="https://item.taobao.com/item.htm?id=12345",
-            source="taobao",
-            title="淘宝商品",
-            images=["https://img.taobao.com/1.jpg"],
-        )
-        with patch("src.seller_console.collectors.dispatcher.collect", return_value=mock_result):
+        C-F8/F9: 예전엔 dispatcher로 타오바오를 긁으려 했다(위 목킹이 그 전제였다).
+        실측이 그 문을 닫았다 — 단축 링크는 해외 IP 연결 거부, 상세는 IP 무관 로그인 벽.
+        그래서 이 라우트는 **요청을 내지 않고** 제목·상품번호로 초안을 만든다.
+
+        응답 **모양은 유지**한다(`draft`·`source`·`trust`) — 갈래마다 키가 다르면
+        프런트가 갈래를 알아야 하고 그게 두 벌째 판단이 된다.
+        그리고 `source`는 **소싱처**(taobao)다. 'share_text'는 어떻게 왔는지일 뿐이라
+        그걸 소싱처 자리에 넣으면 "타오바오 상품"이라는 사실이 사라진다.
+        """
+        with patch("src.seller_console.collectors.dispatcher.collect") as spy:
             resp = client.post(
                 "/seller/collect/preview",
-                json={"url": "https://item.taobao.com/item.htm?id=12345"},
+                json={"url": "【淘宝】https://item.taobao.com/item.htm?id=12345\n「淘宝商品」"},
                 content_type="application/json",
             )
+        assert spy.call_count == 0, "타오바오인데 서버가 수집을 시도했다"
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["ok"] is True
+        assert data["kind"] == "share_draft"
         assert data["draft"]["source"] == "taobao"
-        # 응답에 trust 키가 존재해야 함
+        assert data["draft"]["collected_via"] == "share_text"
+        # 응답 모양은 갈래와 무관하게 같다
         assert "trust" in data
 
     def test_collect_preview_failure_returns_manual_entry(self, client):
