@@ -28,8 +28,12 @@ def test_currency_map_has_won_krw():
 def test_return_prefers_scoped_no_usd_default():
     # 반환이 og:price를 우선하지 않고 해결된 heuristicPrice/Currency를 그대로 씀 + USD 기본값 제거.
     assert "price: heuristicPrice," in CS
-    assert "currency: heuristicCurrency," in CS
+    # 재는 것은 **USD 기본값이 없다**는 것이지 그 줄의 글자가 아니다.
+    #   C-F13에서 사이트 전용 통화(타오바오 CNY)를 앞에 두려고 줄을 고치자 이 핀이 깨졌다 —
+    #   소스 핀은 "안 바뀌었다"를 지킬 뿐 "옳다"를 못 지킨다.
+    assert "heuristicCurrency" in CS, "통화 해결 결과를 안 쓴다"
     assert 'currency: getMeta("product:price:currency") || heuristicCurrency || "USD"' not in CS
+    assert '|| "USD"' not in CS and "|| 'USD'" not in CS, "USD 기본값이 돌아왔다"
 
 
 def test_scoped_price_computed_unconditionally():

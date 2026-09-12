@@ -66,6 +66,7 @@ user designates, and send it to the user's own gogabridj seller workspace for tr
 | `scripting` | Inject the collection UI and read rendered DOM on the active sourcing tab (MV3 scripting). |
 | `contextMenus` | Provide a right-click "Collect this product" entry as an alternative to the on-page button. |
 | `notifications` | Inform the user of collect success/failure when the on-page toast is not visible. |
+| `alarms` | Periodically (every 5 minutes) ask the user's own server for items whose images and options are still missing, then finish them in the user's logged-in browser. An MV3 service worker is suspended when idle, so `setInterval` cannot survive; `alarms` is the only way to resume. No data is sent anywhere except the user's own server. |
 
 ### 데이터 사용 공개(Privacy practices) — 심사 폼 체크
 - **수집 데이터**: 사용자가 수집한 상품의 공개 페이지 정보(제목·가격·이미지 URL·옵션·상세)와 인증 토큰. → 사용자 본인의 gogabridj 서버로 전송·저장.

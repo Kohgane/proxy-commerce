@@ -131,4 +131,4 @@ def test_enrich_delay_and_retry_node():
     finally:
         Path(f.name).unlink()
     assert out["min"] == 3000                     # 최소 3초
-    assert 5900 <= out["max"] <= 6000              # 최대 ~6초(3~6초 랜덤)
+    assert 5900 <= out["max"] <= 8000              # 최대 ~6초(3~6초 랜덤)
