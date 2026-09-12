@@ -152,12 +152,79 @@ function _kgpAmazonHiRes(u) {
   // 아마존 이미지 URL의 크기/포맷 수식자(._AC_SX466_ · ._SS40_ 등) 제거 → 원본 고해상.
   return u.replace(/\._[A-Za-z0-9,_-]+_\.(jpg|jpeg|png|gif|webp)/i, ".$1");
 }
+// C-F13-2b: 로그인 벽·확인 절차(캡차) **감지만** 한다. 뚫는 코드는 우회이고 금지다.
+//   감지 근거는 화면에 실제로 보이는 것뿐 — 주소·제목·본문의 로그인/검증 표시.
+function _kgpDetectWall() {
+  try {
+    const host = (location.hostname || "").toLowerCase();
+    const path = (location.pathname || "").toLowerCase();
+    if (/login|passport|sec\.|verify|punish/.test(host + path)) return "로그인·확인 페이지로 이동됨";
+    const t = (document.title || "");
+    if (/登录|登陆|请登录|验证|安全验证|滑动验证|Sign in|Log in/i.test(t)) return "제목이 로그인·검증 화면";
+    if (document.querySelector(
+      "#login, .login-box, [class*='loginWrap'], [id*='nc_1_wrapper'], [class*='nc-container'], " +
+      "[class*='captcha'], [id*='captcha'], [class*='SlideVerify']")) return "로그인·검증 요소 발견";
+    return "";
+  } catch (e) { return ""; }
+}
+
 function _kgpSitePdp() {
   const host = (location.hostname || "").toLowerCase();
   const out = { gallery: [], detail: [], description: "" };
   const _add = (arr, u) => { u = (u || "").trim(); if (u && u.indexOf("data:") !== 0 && arr.indexOf(u) < 0) arr.push(u); };
   try {
-    if (/(^|\.)amazon\.[a-z.]+$/.test(host)) {
+    // C-F13-2a: 타오바오·티몰 상세. **로그인된 크롬에서만** 열린다(실측) — 그래서 이 코드는
+    //   확장 안에서만 의미가 있다. 서버는 이 페이지를 못 읽는다.
+    //   가격은 두 개다: 优惠前(할인 전)과 补贴后(보조금 후). **둘 다 따로** 담는다 —
+    //   하나로 합치면 어느 쪽인지 영영 모르고, 마진의 분모가 흔들린다.
+    if (/(^|\.)(taobao|tmall)\.com$/.test(host)) {
+      // 큰 이미지 전체 — 썸네일 크기 토큰(_50x50, _q90 등)을 떼서 원본을 노린다.
+      const _tbHi = (u) => (u || "").replace(/_\d+x\d+(xz)?(\.jpg|\.png|\.webp)?(_\.webp)?$/i, "")
+                                    .replace(/_[qQ]\d+(\.jpg|\.webp)?$/i, "");
+      document.querySelectorAll(
+        "#J_UlThumb img, .tb-thumb img, [class*='thumbnail'] img, [class*='PicGallery'] img, " +
+        "[class*='mainPic'] img, [class*='MainPic'] img, [class*='preview'] img"
+      ).forEach((im) => _add(out.gallery, _tbHi(im.getAttribute("data-src") || im.currentSrc || im.src || "")));
+      // 상세 이미지(描述) — 지연 로딩이라 data-ks-lazyload를 함께 본다.
+      document.querySelectorAll(
+        "#description img, #J_DivItemDesc img, [class*='desc'] img, [class*='Detail'] img"
+      ).forEach((im) => _add(out.detail,
+        _tbHi(im.getAttribute("data-ks-lazyload") || im.getAttribute("data-src")
+              || im.currentSrc || im.src || "")));
+      // 옵션 — 颜色分类·尺码 등. 라벨과 값을 짝지어 담는다(값만 담으면 무슨 축인지 모른다).
+      out.options = [];
+      document.querySelectorAll("#J_isku .tb-prop, [class*='SkuContent'] [class*='valueItemWrapper'], [class*='skuItem']").forEach((grp) => {
+        const label = ((grp.querySelector(".tb-property-type, [class*='labelText'], dt") || {}).innerText || "").trim();
+        const vals = [];
+        grp.querySelectorAll("li a, [class*='valueItem'], [class*='valueItemText']").forEach((li) => {
+          const t = (li.getAttribute("title") || li.innerText || "").trim();
+          if (t && vals.indexOf(t) < 0) vals.push(t);
+        });
+        if (vals.length) out.options.push({ name: label || "옵션", values: vals });
+      });
+      // 가격 2종. 클래스명이 자주 바뀌므로 **텍스트 라벨**도 함께 본다(구조 변경 내성).
+      const _num = (t) => {
+        const m = String(t || "").replace(/,/g, "").match(/(\d+(?:\.\d+)?)/);
+        return m ? m[1] : "";
+      };
+      const _byText = (needle) => {
+        const els = Array.from(document.querySelectorAll("span,div,em,strong"));
+        for (const el of els) {
+          const t = (el.innerText || "").trim();
+          if (t && t.length < 40 && t.indexOf(needle) >= 0) {
+            const n = _num(t);
+            if (n) return n;
+          }
+        }
+        return "";
+      };
+      out.price_final = _num((document.querySelector("[class*='subsidy'] [class*='text'], [class*='Subsidy']") || {}).innerText)
+                        || _byText("补贴后");
+      out.price_list = _num((document.querySelector("[class*='originPrice'], [class*='OriginPrice'], .tb-rmb-num") || {}).innerText)
+                       || _byText("优惠前");
+      // 어느 쪽도 라벨로 못 찾으면 현재 표시가(단일)만 담는다 — 라벨을 지어내지 않는다.
+      out.currency = "CNY";
+    } else if (/(^|\.)amazon\.[a-z.]+$/.test(host)) {
       const main = document.querySelector("#imgTagWrapperId img, #landingImage, #imgBlkFront, #main-image");
       if (main) {
         _add(out.gallery, main.getAttribute("data-old-hires") || "");
@@ -350,9 +417,15 @@ function extractProductMeta() {
     images: images,
     gallery_images: gallery,               // v43-3: 갤러리(대표) / 상세 2버킷 — 서버가 스코프 반영
     detail_images: detail,
-    options: _kgpCollectOptions(),         // v45(5): 클릭 시점 옵션(색상/사이즈/수량) — 서버 편집 프리필
+    // C-F13-2a: 사이트 전용 추출(타오바오 颜色分类 등)이 옵션을 찾았으면 그쪽이 정확하다.
+    options: ((_site.options && _site.options.length) ? _site.options : _kgpCollectOptions()),
     price: heuristicPrice,                 // v42 1-1: 렌더 DOM 현재가 우선(위에서 scoped→meta→본문 순 해결)
-    currency: heuristicCurrency,           // 기본값 USD 금지 — 못 얻으면 빈 값 → 서버 '가격 확인 필요'
+    currency: (_site.currency || heuristicCurrency),   // 기본값 USD 금지 — 못 얻으면 빈 값
+    // 타오바오는 가격이 둘이다(优惠前/补贴后). **둘 다 따로** 올린다 — 서버가 섞지 않고 담는다.
+    price_list: (_site.price_list || ""),
+    price_final: (_site.price_final || ""),
+    // 로그인 벽·확인 절차를 **만났다는 사실**만 올린다. 뚫지 않는다(우회 금지).
+    wall: _kgpDetectWall(),
     description: _kgpRealDescription(),
     brand: getMeta("og:brand") || "",
     jsonld: jsonldScripts,

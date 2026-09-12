@@ -1,0 +1,157 @@
+{% extends "_base.html" %}
+{% block title %}보강 대기{% endblock %}
+{% block content %}
+<div class="container-fluid py-4" style="max-width:1000px">
+
+  <header>
+    <div class="console-kpi-label mb-1">수집 · 보강</div>
+    <h4 class="mb-0 fw-bold"><i class="bi bi-images"></i> 이미지·옵션 보강 현황</h4>
+    <p class="text-muted small mb-2">
+      폰으로 담은 초안은 제목·상품번호·가격까지입니다. <strong>이미지·옵션·상세는 PC에서</strong>
+      고가수집기가 채웁니다 — 타오바오에 로그인된 크롬을 열어 두시면 알아서 진행됩니다.
+    </p>
+    <hr class="pc-hairline mt-0 mb-0">
+  </header>
+
+  <div class="row g-3 mt-4 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="op-card text-center py-3">
+        <div class="op-kpi-k">보강 대기</div>
+        <div class="op-kpi-v mt-1">{{ pending|length }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="op-card text-center py-3">
+        <div class="op-kpi-k">막힘</div>
+        <div class="op-kpi-v mt-1">{{ blocked|length }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="op-card text-center py-3">
+        <div class="op-kpi-k">보강 완료</div>
+        <div class="op-kpi-v mt-1">{{ done|length }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="op-card text-center py-3">
+        <div class="op-kpi-k">저장본 없음</div>
+        <div class="op-kpi-v mt-1">{{ no_stored }}</div>
+      </div>
+    </div>
+  </div>
+
+  {% if not cdn_ready %}
+  <div class="op-strip op-strip-warn mb-4">
+    <i class="bi bi-hdd"></i>
+    <span>
+      <strong>서버 저장본은 만들지 않고 있습니다.</strong> 이미지 저장소(Cloudinary)가 연결되지
+      않아 <strong>원본 주소만</strong> 보관합니다. 소싱처가 이미지를 내리면 그 자리가 빕니다 —
+      연결하시면 그때부터 저장본이 함께 쌓입니다. 원본 주소는 어느 쪽이든 그대로 남습니다.
+    </span>
+  </div>
+  {% endif %}
+
+  {% if not pending and not blocked and not done %}
+  <div class="op-empty">
+    <i class="bi bi-inbox"></i>
+    <p class="mb-0">보강할 항목이 아직 없어요. 폰에서 타오바오 상품을 담으면 여기 나타납니다.</p>
+  </div>
+  {% endif %}
+
+  {% if blocked %}
+  <div class="op-card console-card mb-3">
+    <div class="op-card-head">
+      <span class="console-kpi-label">막힌 항목</span>
+      <span class="pc-badge pc-badge-danger ms-auto">{{ blocked|length }}건</span>
+    </div>
+    <div class="op-card-body">
+      <p class="small mb-3">
+        {{ max_attempts }}번 해 보고 멈춘 것들입니다. <strong>로그인 벽이나 확인 절차</strong>를
+        우리가 뚫지는 않습니다 — 타오바오에 로그인한 뒤 다시 열어 두시면 이어서 채웁니다.
+      </p>
+      <div class="table-responsive mb-0">
+        <table class="table table-sm align-middle mb-0">
+          <thead><tr><th>상품</th><th>시도</th><th>멈춘 이유</th><th></th></tr></thead>
+          <tbody>
+            {% for it in blocked %}
+            <tr>
+              <td class="small">{{ it.title[:40] }}{% if it.title|length > 40 %}…{% endif %}</td>
+              <td><span class="pc-badge pc-badge-off">{{ it.attempts }}/{{ max_attempts }}</span></td>
+              <td class="small">{{ it.reason or "사유 미기재" }}</td>
+              <td><a class="btn btn-ghost btn-sm" href="/seller/collect/preview/{{ it.id }}">열기</a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if pending %}
+  <div class="op-card console-card mb-3">
+    <div class="op-card-head">
+      <span class="console-kpi-label">보강 대기</span>
+      <span class="pc-badge pc-badge-muted ms-auto">{{ pending|length }}건</span>
+    </div>
+    <div class="op-card-body">
+      <div class="table-responsive mb-0">
+        <table class="table table-sm align-middle mb-0">
+          {# 지난 시도에서 막혔던 사유도 보여 준다 — 기록해 두고 안 보여 주면 없는 것과 같다. #}
+          <thead><tr><th>상품</th><th>아직 없는 것</th><th>시도</th><th>지난 시도</th><th></th></tr></thead>
+          <tbody>
+            {% for it in pending %}
+            <tr>
+              <td class="small">{{ it.title[:40] }}{% if it.title|length > 40 %}…{% endif %}</td>
+              <td class="small">{{ it.uncollected|join('·') if it.uncollected else '—' }}</td>
+              <td class="text-muted small">{{ it.attempts }}/{{ max_attempts }}</td>
+              <td class="small">{% if it.reason %}{{ it.reason }}{% else %}<span class="text-muted">아직 안 해 봄</span>{% endif %}</td>
+              <td><a class="btn btn-ghost btn-sm" href="/seller/collect/preview/{{ it.id }}">열기</a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if done %}
+  <div class="op-card console-card">
+    <div class="op-card-head">
+      <span class="console-kpi-label">보강 완료</span>
+      <span class="pc-badge pc-badge-on ms-auto">{{ done|length }}건</span>
+    </div>
+    <div class="op-card-body">
+      <div class="table-responsive mb-0">
+        <table class="table table-sm align-middle mb-0">
+          <thead><tr><th>상품</th><th>이미지</th><th>가격</th><th></th></tr></thead>
+          <tbody>
+            {% for it in done %}
+            <tr>
+              <td class="small">{{ it.title[:40] }}{% if it.title|length > 40 %}…{% endif %}</td>
+              <td class="small">
+                원본 {{ it.images }}장
+                {% if it.images_stored %} · 저장본 {{ it.images_stored }}장
+                {% elif it.stored_note %} · <span class="text-muted">{{ it.stored_note }}</span>{% endif %}
+              </td>
+              <td class="small">
+                {% if it.price %}{{ it.price }}
+                  {% if it.price_basis %}<span class="text-muted">({{ it.price_basis }})</span>{% endif %}
+                  {% if it.price_list and it.price_final %}
+                  <div class="text-muted">할인 전 {{ it.price_list }} · 보조금 후 {{ it.price_final }}</div>
+                  {% endif %}
+                {% else %}—{% endif %}
+              </td>
+              <td><a class="btn btn-ghost btn-sm" href="/seller/collect/preview/{{ it.id }}">열기</a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

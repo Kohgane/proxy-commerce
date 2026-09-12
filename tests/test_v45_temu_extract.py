@@ -15,7 +15,10 @@ API = Path("src/api/extension_api.py").read_text(encoding="utf-8")
 def test_options_in_payload():
     # 옵션 추출 함수 + payload에 options 포함(기존엔 누락)
     assert "function _kgpCollectOptions()" in CS
-    assert "options: _kgpCollectOptions()" in CS
+    # 재는 것은 **옵션이 페이로드에 실린다**는 것이다 — 어느 추출기를 먼저 쓰는지가 아니다.
+    #   C-F13에서 사이트 전용 옵션(타오바오 颜色分类)을 우선하도록 고치자 이 핀이 깨졌다.
+    import re as _re
+    assert _re.search(r"options:\s*\(?[^,\n]*_kgpCollectOptions\(\)", CS), "옵션이 페이로드에 없다"
 
 
 def test_price_scoping_max_value_fix():

@@ -267,6 +267,10 @@ def _field_empty(payload: dict, key: str) -> bool:
 #   셋 다 목록에서 '간이' 뱃지 + [다시 수집] 권유. **뱃지 조건은 여기 한 곳에서만 정의한다.**
 SIMPLE_COLLECT_MODES = frozenset({"core", "simple", "share"})
 
+# C-F13-2b: 보강 재시도 상한. 같은 벽에 무한히 머리를 박으면 그건 재시도가 아니라 소음이고,
+#   타오바오 쪽에서 보면 봇 신호다. 상한을 **서버가** 들고 있어야 확장 판본이 달라도 지켜진다.
+ENRICH_MAX_ATTEMPTS = 3
+
 
 def _resolve_collect_mode(payload: dict) -> str:
     """수집 모드를 **실체로 재검증**해 결정한다.
@@ -531,18 +535,128 @@ def collect_enrich_pending():
             ex = _json.loads(row.get("extra_json") or "{}") or {}
         except Exception:
             continue
+        # C-F13-2b: `blocked`는 대기가 아니다 — 큐가 같은 벽에 계속 머리를 박지 않게 뺀다.
         if str(ex.get("enrich_state") or "") != "pending":
             continue
+        _att = int(ex.get("enrich_attempts") or 0)
+        if _att >= ENRICH_MAX_ATTEMPTS:
+            continue                    # 상한을 넘긴 항목은 큐에 안 올린다(서버가 상한을 안다)
         out.append({
             "item_id": row.get("id"),
             "url": row.get("url") or "",
             "title": row.get("title") or ex.get("title") or "",
             "uncollected": ex.get("uncollected") or [],
+            "attempts": _att,
         })
         if len(out) >= limit:
             break
     logger.info("[enrich-pending] seller=%s 대기 %s건", seller_id_val or "?", len(out))
     return jsonify({"ok": True, "items": out, "total": len(out)})
+
+
+# C-F13-3: 이미지 저장본 만들기 예산. 이 라우트는 **확장이 백그라운드에서** 부르는 것이라
+#   사람이 기다리지 않지만, 그렇다고 무한정 잡아 두면 워커가 점유된다(W10 흉).
+IMAGE_STORE_BUDGET_SEC = 8
+IMAGE_STORE_CAP = 12
+
+
+def _store_image_copies(images: list, *, already=None) -> dict:
+    """원본 URL은 **그대로 두고** 서버 저장본을 따로 만든다.
+
+    C-F13-3: 원본을 덮어쓰면 D트랙(재번역·재가공)에서 되돌릴 데가 없다 — 원본이 유일한 진본이다.
+    CDN 미설정이면 저장본은 **비운다**: 원본 URL을 "저장본"이라 부르면 그게 가짜다.
+    왜 비었는지는 `images_stored_note`에 남긴다(다음 사람이 그걸로 시간을 안 쓰게).
+
+    예산 안에서 되는 만큼만 하고 **몇 장 했는지 적는다** — 다 못 했다고 실패로 적지 않는다.
+    """
+    import time as _t
+    out: dict = {}
+    urls = [u for u in (images or []) if u][:IMAGE_STORE_CAP]
+    if not urls:
+        return out
+    try:
+        from src.media.image_pipeline import process_image
+    except Exception as exc:                                   # pragma: no cover
+        return {"images_stored_note": f"이미지 파이프라인 미가용: {type(exc).__name__}"}
+
+    stored, deadline = [], _t.monotonic() + IMAGE_STORE_BUDGET_SEC
+    stopped_early = False
+    for u in urls:
+        if _t.monotonic() >= deadline:
+            stopped_early = True
+            break
+        try:
+            r = process_image(u)
+            # **업로드가 실제로 됐을 때만** 저장본으로 센다. 파이프라인은 미설정 시 원본 URL을
+            #   그대로 돌려주므로, 그 값을 저장본이라 적으면 같은 URL을 두 번 적는 셈이다.
+            if getattr(r, "cdn_uploaded", False) and getattr(r, "processed_url", ""):
+                stored.append(r.processed_url)
+        except Exception as exc:
+            logger.debug("[enrich] 이미지 저장본 1건 실패(원본 유지): %s", exc)
+
+    if stored:
+        out["images_stored"] = _union(already, stored)
+        out["images_stored_note"] = (f"{len(stored)}/{len(urls)}장 저장"
+                                     + (" · 예산 내 중단" if stopped_early else ""))
+    else:
+        out["images_stored_note"] = ("CDN 미설정 또는 처리 실패 — 원본 URL만 보관"
+                                     + (" · 예산 내 중단" if stopped_early else ""))
+    return out
+
+
+@extension_bp.post("/enrich/blocked")
+def collect_enrich_blocked():
+    """C-F13-2b: 보강이 **벽에 막혔다**는 사실을 기록한다 — 실패를 조용히 삼키지 않는다.
+
+    로그인 벽·캡차는 우리가 뚫을 것이 아니다(뚫으려는 코드는 우회이고, 오너가 금지했다).
+    막혔으면 그 항목에 **왜 막혔는지**를 적고 다음으로 넘어간다. 화면이 그걸 보여 준다.
+
+    `attempts`가 상한(`ENRICH_MAX_ATTEMPTS`)에 닿으면 `enrich_state="blocked"`로 굳는다 —
+    그 뒤론 대기 목록에 안 올라간다(같은 벽에 계속 박지 않게). 그 전엔 `pending`으로 남아
+    다음 순회에서 한 번 더 해 본다.
+
+    Request `{item_id, reason}` · Response `{ok, item_id, attempts, state}`.
+    """
+    user = _require_token(scopes=["collect.write"])
+    if not user:
+        return jsonify({"ok": False, "error": auth_failure_reason()}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    item_id = str(data.get("item_id") or "").strip()
+    if not item_id:
+        return jsonify({"ok": False, "error": "item_id가 필요합니다."}), 400
+    reason = str(data.get("reason") or "").strip()[:200] or "사유 미기재"
+
+    seller_id_val = str(user.get("user_id") or "")
+    ids = {seller_id_val}
+    try:
+        from src.auth.user_store import get_store as _gs
+        _u = _gs().find_by_id(seller_id_val)
+        if _u is not None and getattr(_u, "email", ""):
+            ids.add(str(_u.email))
+    except Exception:
+        pass
+
+    import json as _json
+    from src.seller_console.collect_history_store import get as _get, update as _update
+    item = _get(item_id, seller_ids=ids)
+    if not item:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    try:
+        extra = _json.loads(item.get("extra_json") or "{}")
+    except Exception:
+        extra = {}
+
+    attempts = int(extra.get("enrich_attempts") or 0) + 1
+    extra["enrich_attempts"] = attempts
+    extra["enrich_blocked_reason"] = reason
+    # 상한에 닿기 전엔 `pending`으로 남긴다 — 한 번 막혔다고 포기하지 않는다.
+    state = "blocked" if attempts >= ENRICH_MAX_ATTEMPTS else str(extra.get("enrich_state") or "pending")
+    extra["enrich_state"] = state
+    _update(item_id, seller_ids=ids, extra_json=_json.dumps(extra, ensure_ascii=False))
+    logger.info("[enrich-blocked] item=%s 시도=%s/%s 상태=%s 사유=%s",
+                item_id, attempts, ENRICH_MAX_ATTEMPTS, state, reason)
+    return jsonify({"ok": True, "item_id": item_id, "attempts": attempts,
+                    "max_attempts": ENRICH_MAX_ATTEMPTS, "state": state})
 
 
 @extension_bp.post("/enrich")
@@ -606,9 +720,20 @@ def collect_enrich():
     #   원래 가격은 보강 대상이 아니었다: 벌크 목록 수집엔 카드 가격이 이미 실려 있었으니까.
     #   공유 텍스트 초안은 **가격이 아예 없다** — 그래서 여기서 채우지 않으면 등록 게이트가 영영 안 열린다.
     #   기존 값이 있으면 손대지 않으므로 옛 경로의 '기존 우선' 규칙은 그대로다.
-    _pin = str(data.get("price") or "").strip()
+    # C-F13-2a: 타오바오는 가격을 **두 개** 보여 준다 — 优惠前(할인 전)과 补贴后(보조금 후).
+    #   하나로 합치면 어느 쪽인지 영영 모른다. **둘 다 따로 담고**, 마진 계산에 쓰는 쪽을
+    #   `price_basis`로 적어 둔다(무엇을 썼는지 화면이 말할 수 있게).
+    _p_list = str(data.get("price_list") or "").strip()          # 优惠前
+    _p_final = str(data.get("price_final") or "").strip()        # 补贴后
+    for _k, _v in (("price_list", _p_list), ("price_final", _p_final)):
+        if _v and not str(extra.get(_k) or "").strip():
+            extra[_k] = _v; changed[_k] = 1
+    # 실제로 살 때 내는 값이 마진의 분모다 → 补贴后 우선, 없으면 优惠前, 없으면 단일 `price`.
+    _pin = _p_final or _p_list or str(data.get("price") or "").strip()
     if _pin and not str(extra.get("price") or "").strip():
         extra["price"] = _pin; changed["price"] = 1
+        extra["price_basis"] = ("보조금 후" if _p_final else
+                                ("할인 전" if _p_list else "단일 표기"))
         _cin = str(data.get("currency") or "").strip()
         if _cin and not str(extra.get("currency") or "").strip():
             extra["currency"] = _cin; changed["currency"] = 1
@@ -627,6 +752,15 @@ def collect_enrich():
         extra["images"] = merged; changed["images"] = len(merged)
         extra["gallery_images"] = _union(gi, extra.get("gallery_images"))
         rep = merged[0] if merged else ""
+    # C-F13-3: **원본 URL은 그대로 두고** 서버 저장본을 따로 만든다.
+    #   원본을 덮어쓰면 D트랙(재번역·재가공)에서 되돌릴 데가 없다 — 원본이 유일한 진본이다.
+    #   CDN 미설정이면 저장본은 **비운다**(원본 URL을 저장본이라 부르면 그게 가짜다).
+    if changed.get("images") and str(data.get("store_images") or "1").strip() != "0":
+        extra.update(_store_image_copies(list(extra.get("images") or []),
+                                         already=extra.get("images_stored")))
+        if extra.get("images_stored"):
+            changed["images_stored"] = len(extra["images_stored"])
+
     extra["enriched"] = True
     # v86-F: 보강으로 상세가 실제로 채워졌으면 '간이'를 해제한다. 안 그러면 타일 수집분에 뱃지가
     #   영구히 남아 경고가 소음이 되고, 정작 진짜 간이 항목이 묻힌다. 단 **실제로 채워졌을 때만**
@@ -1378,7 +1512,10 @@ def collect_one_url(url: str, *, seller_id: str = "", source: str = "bulk") -> d
 
     try:
         result = _dispatcher_collect()(url)
-        title = getattr(result, "title", "") or ""
+        # C-F13-1: 정제기를 **코어에서** 통과시킨다(`canonical_price`와 같은 이유).
+        #   전엔 등록·검수 파이프에서만 불려서 수집 경로 제목에 「】」 같은 잔해가 남았다(실측).
+        from src.collectors.share_text import finalize_title as _fin_title
+        title = _fin_title(getattr(result, "title", "") or "", url=url)
         images = list(getattr(result, "images", []) or [])
         price = str(getattr(result, "price", "") or "")
         currency = getattr(result, "currency", "USD")
