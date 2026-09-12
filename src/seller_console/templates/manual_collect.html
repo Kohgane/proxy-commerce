@@ -326,11 +326,19 @@ async function bulkCollect() {
     html += '<ul class="list-group">';
     (data.results || []).forEach(r => {
       if (r.ok) {
-        html += `<li class="list-group-item list-group-item-success d-flex justify-content-between align-items-center">
-          <span><i class="bi bi-check-circle text-success"></i> ${escapeHtml(r.title)}</span>
-          <a href="${r.preview_url}" class="btn btn-sm btn-success py-0"><i class="bi bi-box-arrow-up-right"></i> 미리보기·등록</a></li>`;
+        // C-F3: 공유 초안은 **실패가 아니다.** 무엇이 담겼고 무엇이 남았는지 한 줄로 말한다.
+        //   (같은 상태를 두 번 말하지 않는다 — 하단 가격 경고는 이 카드가 대신한다.)
+        const draft = r.kind === 'share_draft';
+        const left = (r.uncollected || []).map(f => ({price:'가격', images:'이미지',
+          options:'옵션', description:'상세설명'}[f] || f)).join('·');
+        const note = draft
+          ? `<div class="small text-muted mt-1">초안 1건 생성 — 제목 담김${r.price ? ' · 가격 ' + escapeHtml(r.price) + ' ' + escapeHtml(r.currency || '') : ''}${left ? ' · ' + escapeHtml(left) + '은 단축어/PC 보강' : ''}</div>`
+          : '';
+        html += `<li class="list-group-item d-flex justify-content-between align-items-start">
+          <span><i class="bi bi-check-circle" style="color:var(--success)"></i> ${escapeHtml(r.title)}${note}</span>
+          <a href="${r.preview_url}" class="btn btn-sm btn-ghost py-0"><i class="bi bi-box-arrow-up-right"></i> 확인·등록</a></li>`;
       } else {
-        html += `<li class="list-group-item list-group-item-warning"><span class="small"><i class="bi bi-exclamation-triangle"></i> ${escapeHtml(r.url)} — ${escapeHtml(kgpFriendlyError(r.error || '실패'))}</span></li>`;
+        html += `<li class="list-group-item"><span class="small"><i class="bi bi-exclamation-triangle" style="color:var(--warn)"></i> ${escapeHtml(r.url)} — ${escapeHtml(kgpFriendlyError(r.error || '실패'))}</span></li>`;
       }
     });
     html += '</ul>';

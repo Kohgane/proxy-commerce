@@ -37,6 +37,35 @@ _BULK_MAX_WORKERS = int(os.getenv("BULK_MAX_WORKERS", "5"))
 # Personal Access Token 인증
 # ---------------------------------------------------------------------------
 
+def auth_failure_reason() -> str:
+    """인증이 왜 실패했는지 **한 문장으로**. 토큰 값은 절대 싣지 않는다(마스킹도 안 한다).
+
+    C-F6 실측(오너 단축어 v1): 응답이 「인증이 필요합니다. 토큰을 확인하세요.」 하나뿐이라
+    **헤더 이름이 틀린 건지 토큰이 틀린 건지 알 수 없었다.** 오너 캡처의 헤더는
+    `X-Intake-T…`였는데 서버가 읽는 건 `Authorization`이다 — 응답이 그걸 말해 줬어야 했다.
+
+    값을 앞 4자라도 비추지 않는다: 로그·스크린샷·채팅으로 새는 경로가 그만큼 늘어난다.
+    형식이 틀렸다는 것과 값이 틀렸다는 것만 말하면 유저는 고칠 수 있다.
+    """
+    raw = request.headers.get("Authorization")
+    if raw is None:
+        # 우리가 안 읽는 헤더로 보냈을 때가 여기다 — 그래서 **이름을 콕 집어** 말한다.
+        return ("인증 헤더가 없습니다. 헤더 이름을 정확히 `Authorization`으로 넣어 주세요"
+                "(다른 이름은 서버가 읽지 않습니다).")
+    if not raw.strip():
+        return "인증 헤더가 비어 있습니다. `Bearer ` 뒤에 토큰을 넣어 주세요."
+    if not raw.startswith("Bearer "):
+        return ("인증 헤더 값은 `Bearer ` 로 시작해야 합니다 — `Bearer`, 공백 한 칸, 그다음 토큰 순서입니다.")
+    token = raw[7:]
+    if not token.strip():
+        return "`Bearer ` 뒤에 토큰이 없습니다."
+    if token != token.strip() or any(c in token for c in "\r\n\t "):
+        return ("토큰에 공백이나 줄바꿈이 섞여 있습니다 — 복사할 때 앞뒤가 딸려 온 경우입니다. "
+                "토큰만 남기고 다시 넣어 주세요.")
+    return ("토큰이 확인되지 않았습니다(만료·폐기·오타). "
+            "셀러 콘솔 → 내 토큰에서 새로 발급해 단축어 헤더를 교체해 주세요.")
+
+
 def _require_token(scopes: list = None) -> Optional[dict]:
     """Authorization: Bearer 토큰 검증.
 
@@ -447,7 +476,7 @@ def collect_enrich_pending():
     """
     user = _require_token(scopes=["collect.write"])
     if not user:
-        return jsonify({"ok": False, "error": "인증이 필요합니다. 토큰을 확인하세요."}), 401
+        return jsonify({"ok": False, "error": auth_failure_reason()}), 401
     seller_id_val = str(user.get("user_id") or "")
     ids = {seller_id_val} if seller_id_val else set()
     try:
@@ -1119,11 +1148,14 @@ def collect_one():
     """
     user = _require_token(scopes=["collect.write"])
     if not user:
-        return jsonify({"ok": False, "error": "인증이 필요합니다. 토큰을 확인하세요."}), 401
+        return jsonify({"ok": False, "error": auth_failure_reason()}), 401
 
     body = request.get_json(force=True, silent=True) or {}
-    raw = (body.get("url") or request.form.get("url")
-           or request.args.get("url") or request.args.get("u") or "").strip()
+    # C-F4: 단축어 가이드가 쓰라고 한 필드 이름을 **서버가 실제로 읽어야** 한다.
+    #   `share_text`는 가이드의 정본 이름이다(공유 시트 입력 그대로). 나머지는 하위호환.
+    raw = (body.get("share_text") or body.get("url") or request.form.get("share_text")
+           or request.form.get("url") or request.args.get("url")
+           or request.args.get("u") or "").strip()
     if not raw:
         raw = str(body.get("text") or body.get("title")
                   or request.form.get("text") or request.args.get("text") or "")
@@ -1137,14 +1169,23 @@ def collect_one():
     share = parse_share_text(raw, final_url=final_url)
     url = share.get("url", "")
     if not url:
-        return jsonify({"ok": False,
-                        "error": "상품 링크를 찾지 못했습니다. 링크나 공유 텍스트를 그대로 붙여넣어 주세요."}), 400
+        from src.collectors.share_text import link_failure_reason
+        return jsonify({"ok": False, "error": link_failure_reason(raw, final_url)}), 400
 
     seller_id = str(user.get("user_id") or "")
     # 중복 수집 방지 — 기존 정규화 키(v42 1-3)를 그대로 쓴다(새 규칙 만들지 않는다).
     try:
         from src.seller_console.collect_history_store import find_by_product_key
         dup = find_by_product_key(url, seller_ids={seller_id} if seller_id else None)
+        if not dup and final_url:
+            # C-F7: 폰이 편 링크로 왔을 때, **같은 상품의 단축 링크 초안**이 이미 있는지 본다.
+            #   편 링크가 `short_name`에 단축 토큰을 싣고 오므로 그 키로 한 번 더 조회한다 —
+            #   안 그러면 같은 상품이 `tbshare:…`와 `taobao:item:…` 두 행으로 쌓인다(실측).
+            _sn = parse_share_text("", final_url=final_url).get("short_name", "")
+            _tk2 = parse_share_text("", final_url=final_url).get("tk", "")
+            if _sn:
+                _alt = f"https://e.tb.cn/{_sn}" + (f"?tk={_tk2}" if _tk2 else "")
+                dup = find_by_product_key(_alt, seller_ids={seller_id} if seller_id else None)
         if dup:
             return jsonify({"ok": True, "duplicate": True, "item_id": dup.get("id"),
                             "title": dup.get("title", ""),
@@ -1152,50 +1193,36 @@ def collect_one():
     except Exception as exc:                       # 중복 조회 실패가 수집을 막지 않게
         logger.warning("단건 수집 중복 조회 실패: %s", exc)
 
-    # C-T4''(최종): 타오바오 계열은 **서버 수집을 아예 시도하지 않는다.**
-    #   실측 2026-09-11 — 단축 링크는 해외 IP에서 연결 거부, 상세는 IP 무관 로그인 벽.
-    #   먼저 `collect_one_url`을 태우면 **반드시 실패할 요청**을 한 번 날리고 폴백한다.
-    #   그 실패 로그는 진단이 아니라 소음이다. 그래서 갈래를 앞에서 가른다.
-    from src.collectors.share_text import is_taobao_family
-    if is_taobao_family(url) and share.get("title"):
-        res = {"ok": False, "error": "taobao_share_path"}
-    else:
-        res = collect_one_url(url, seller_id=seller_id, source="mobile")
-    if not res.get("ok"):
-        # C-T3: 페이지를 못 읽어도 **공유 텍스트에 제목이 있으면** 그것만으로 초안을 세운다.
-        #   가격·이미지·옵션은 '미수집'으로 남는다(0으로 채우지 않는다).
-        if share.get("title"):
-            try:
-                from src.collectors.share_collect import collect_from_share_text
-                sr = collect_from_share_text(raw, seller_id=seller_id, source="mobile_share",
-                                             final_url=final_url)
-                if sr.get("ok"):
-                    _has_price = bool(sr.get("price"))
-                    return jsonify({
-                        "ok": True, "duplicate": False, "partial": True,
-                        "item_id": sr.get("item_id"), "url": sr.get("url"),
-                        "title": sr.get("title_ko") or sr.get("title") or "",
-                        "price": sr.get("price", ""), "currency": sr.get("currency", ""),
-                        "item_id_taobao": sr.get("item_id_taobao", ""),
-                        "uncollected": sr.get("uncollected", []),
-                        "enrich_state": sr.get("enrich_state", ""),
-                        "resolve_reason": sr.get("resolve_reason", ""),
-                        "message": ("제목·상품번호·가격까지 담았어요(공유 시점 가격). "
-                                    "이미지·옵션은 PC에서 고가수집기로 보강해 주세요."
-                                    if _has_price else
-                                    "제목과 링크만 담았어요. VPN이 전체(Global) 모드면 링크 해석이 막혀요 — 규칙/Smart 모드로 바꾸고 다시 공유하시면 가격·상품번호까지 담깁니다."),
-                    })
-            except Exception as exc:
-                logger.warning("단건 수집 공유 폴백 실패: %s", exc)
-        # 정직 실패 — 무엇이 왜 안 됐는지 그대로 올린다(가짜 성공 0).
-        return jsonify({"ok": False, "duplicate": False, "url": url,
-                        "error": res.get("error") or "수집 실패",
-                        "message": "수집하지 못했습니다. 봇 차단 사이트는 PC 확장을 권합니다."}), 502
-    out = {"ok": True, "duplicate": False, "item_id": res.get("item_id"),
-           "title": res.get("title", ""), "url": url, "message": "수집됐습니다."}
-    if _wants_review():
-        out["review"] = _review_verdict(url)
-    return jsonify(out)
+    # C-F1: 갈래 판단은 **한 곳**(`collect_input`)에서만 — 입구마다 제 나름대로 하면 갈라진다.
+    from src.collectors.share_collect import collect_input
+    res = collect_input(raw, seller_id=seller_id, source="mobile", final_url=final_url)
+    if res.get("ok"):
+        _partial = res.get("kind") == "share_draft"
+        out = {"ok": True, "duplicate": False, "item_id": res.get("item_id"),
+               "url": res.get("url", ""),
+               "title": res.get("title_ko") or res.get("title") or "",
+               "message": "수집됐습니다."}
+        if _partial:
+            _has_price = bool(res.get("price"))
+            out.update({
+                "partial": True, "price": res.get("price", ""), "currency": res.get("currency", ""),
+                "item_id_taobao": res.get("item_id_taobao", ""),
+                "uncollected": res.get("uncollected", []),
+                "enrich_state": res.get("enrich_state", ""),
+                "message": ("제목·상품번호·가격까지 담았어요(공유 시점 가격). "
+                            "이미지·옵션은 PC에서 고가수집기로 보강해 주세요."
+                            if _has_price else
+                            "제목과 링크만 담았어요. VPN이 전체(Global) 모드면 링크 해석이 막혀요 — "
+                            "규칙 모드로 바꾸거나 VPN을 끄고 다시 공유하시면 가격·상품번호까지 담깁니다."),
+            })
+        if _wants_review():
+            out["review"] = _review_verdict(res.get("url", ""))
+        return jsonify(out)
+    # 정직 실패 — 무엇이 왜 안 됐는지 그대로 올린다(가짜 성공 0).
+    #   초안 폴백은 `collect_input` 안에 있다 — 여기서 또 하면 그게 두 벌째다.
+    return jsonify({"ok": False, "duplicate": False, "url": res.get("url", ""),
+                    "error": res.get("error") or "수집 실패",
+                    "message": "수집하지 못했습니다. 봇 차단 사이트는 PC 확장을 권합니다."}), 502
 
 
 def _wants_review() -> bool:
@@ -1287,6 +1314,15 @@ def collect_one_url(url: str, *, seller_id: str = "", source: str = "bulk") -> d
         images = list(getattr(result, "images", []) or [])
         price = str(getattr(result, "price", "") or "")
         currency = getattr(result, "currency", "USD")
+        # C-F1 회귀 수리: **정본 가격 단일 소스(v72b)를 여기서 건다.**
+        #   전엔 벌크 라우트만 `_canon_price`를 불렀다 — 단건·모바일·텔레그램은 안 걸렸다는 뜻이다.
+        #   네 입구를 이 코어로 합치면서 벌크가 그걸 잃을 뻔했고(계약이 잡았다), 되살리는 김에
+        #   **코어에 둔다** — 그래야 네 입구가 다 같은 보증을 받는다(한 곳에 두는 이유가 이거다).
+        try:
+            from src.collectors.collect_sanitize import canonical_price as _cp
+            price = _cp(price, str(getattr(result, "price_original", "") or "")) or price
+        except Exception as _pexc:
+            logger.debug("정본 가격 정규화 스킵: %s", _pexc)
         _upsert_catalog(
             {"url": url, "title": title, "price": price, "currency": currency,
              "image": images[0] if images else ""},

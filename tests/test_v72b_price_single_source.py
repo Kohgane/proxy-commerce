@@ -38,9 +38,15 @@ def test_canonical_price(cands, expected):
 
 
 def test_source_contract_single_source():
-    # append 3경로(quick·bookmarklet·bulk)가 정본 단일 소스 사용.
+    # append 경로가 정본 단일 소스 사용.
+    #   C-F1: 벌크는 더 이상 views에서 직접 정규화하지 않는다 — **공용 코어**(`collect_one_url`)가 한다.
+    #   그게 더 넓은 보증이다: 전엔 벌크만 걸려 있었고 단건·모바일·텔레그램은 안 걸려 있었다.
+    #   그래서 계약도 "views에 호출이 있나"가 아니라 **"보증이 어딘가에 서 있나"**를 잰다.
     assert "def _canon_price(d)" in VIEWS
-    assert VIEWS.count("_canon_price(draft)") >= 2 and "_canon_price(d)," in VIEWS
+    assert VIEWS.count("_canon_price(draft)") >= 2, "quick·bookmarklet 경로가 정본 정규화를 잃었다"
+    core = Path("src/api/extension_api.py").read_text(encoding="utf-8")
+    assert "canonical_price as _cp" in core and "_cp(price," in core, \
+        "공용 수집 코어가 정본 가격 정규화를 안 건다(벌크·단건·모바일·텔레그램 전부 영향)"
     # 옛 이원화 표현(price_original 우선) 제거.
     assert 'str(draft.get("price_original") or draft.get("price")' not in VIEWS
     # 마켓 등록도 canonical_price 정규화.

@@ -40,6 +40,17 @@ _TITLE_RE = re.compile(r"[「『]([^」』]{2,200})[」』]")
 # 공유 코드(CZ356 같은 것) — 앱이 클립보드로 상품을 찾는 데 쓴다. 보존만 하고 해석하지 않는다.
 _SHARE_CODE_RE = re.compile(r"(?<![A-Za-z0-9])([A-Z]{2}[A-Za-z0-9]{3,8})(?![A-Za-z0-9])")
 
+# 淘口令(타오커우링) — 앱에 붙여넣어야 열리는 **코드**다. 링크가 아니다.
+#   ￥…￥ · $…$ · (…)  안에 8~12자. 우리가 서버에서 풀 수 없다(앱 전용) —
+#   그래서 "못 찾았다"가 아니라 **"이건 링크가 아니라 코드다"**라고 말해 준다.
+_TAOKOULING_RE = re.compile(r"[￥$¥]([A-Za-z0-9]{8,12})[￥$¥]|\(([A-Za-z0-9]{8,12})\)")
+
+# 스킴이 없는 단축 도메인 — 앱이 "링크 복사" 대신 텍스트를 줄 때 `https://`가 빠져 온다.
+#   실측(오너 F7): `_URL_RE`가 `https?://`를 요구해 이 형태를 통째로 놓쳤다.
+_BARE_HOST_RE = re.compile(
+    r"(?<![\w/@.])((?:[a-z0-9-]+\.)*(?:tb\.cn|taobao\.com|tmall\.com|goofish\.com|1688\.com)"
+    r"/[^\s<>\"'，。、！？「」【】]+)", re.I)
+
 # 단축 도메인 — 본문이 아니라 **리다이렉트**를 들고 있다(T2 해석기 대상).
 SHORT_HOSTS = ("e.tb.cn", "m.tb.cn", "s.click.taobao.com", "qr.1688.com")
 # 최종 상품 도메인 — 여기까지 오면 itemId를 URL에서 직접 뽑을 수 있다.
@@ -181,6 +192,12 @@ def parse_share_text(raw: str, final_url: str = "") -> dict:
     text = str(raw or "").strip()
     urls = [_clean_url(u) for u in _URL_RE.findall(text)]
     urls = [u for u in urls if u.startswith(("http://", "https://"))]
+    # C-F7: 스킴이 빠져 온 단축 도메인도 건진다(`m.tb.cn/h.xxx`).
+    #   실측: 앱이 "링크 복사" 대신 텍스트를 줄 때 `https://`가 없고, 그걸 통째로 놓치고 있었다.
+    #   **아는 도메인일 때만** 스킴을 붙인다 — 아무 `a/b`에나 붙이면 오탐이 된다.
+    if not urls:
+        for m_bare in _BARE_HOST_RE.finditer(text):
+            urls.append("https://" + _clean_url(m_bare.group(1)))
     urls.sort(key=_host_rank)                       # 상품 도메인 > 단축 > 그 외
     url = urls[0] if urls else ""
     # 유저가 **최종 URL을 통째로 붙여넣는** 경우도 있다(사파리 주소창 복사). 그때도 세션성 값을 떼어낸다 —
@@ -217,6 +234,8 @@ def parse_share_text(raw: str, final_url: str = "") -> dict:
         "short_name": "",
         "final_url": "",
         "share_code": codes[0] if codes else "",
+        # 淘口令이 있으면 **링크가 아니라 코드**가 온 것이다 — 호출부가 그렇게 안내한다.
+        "taokouling": (lambda m: (m.group(1) or m.group(2)) if m else "")(_TAOKOULING_RE.search(text)),
         "is_short": bool(url) and any(host == h or host.endswith("." + h) for h in SHORT_HOSTS),
         "raw": text,
     }
@@ -237,6 +256,70 @@ def parse_share_text(raw: str, final_url: str = "") -> dict:
         out["short_name"] = f["short_name"]
         out["tk"] = out["tk"] or f["tk"]
     return out
+
+
+def link_failure_reason(raw: str, final_url: str = "") -> str:
+    """링크를 못 찾았을 때 **무엇을 보고 그렇게 판단했는지** 한 문장으로.
+
+    C-F7 실측(오너 단축어): 인증을 통과한 뒤 「상품 링크를 찾지 못했습니다」 하나만 돌아왔다.
+    그 문장으로는 **공유 내용이 비어서 온 건지, 형태가 안 맞는 건지** 알 수 없다 —
+    F6에서 401을 가른 것과 같은 이유로 여기도 가른다.
+
+    **원문은 싣지 않는다.** 길이와 판정만 말한다: 내용에 상품명·계정 정보가 섞여 올 수 있고,
+    그게 로그·스크린샷으로 새면 우리가 만든 구멍이다.
+    """
+    text = str(raw or "")
+    n = len(text.strip())
+    has_final = bool((final_url or "").strip())
+
+    if n == 0:
+        return ("공유 내용이 비어서 왔습니다 — 단축어에서 「공유 시트 입력」이 본문 칸에 "
+                "연결됐는지 확인해 주세요(변수 칩을 골라야 값이 들어갑니다)."
+                + (" 최종 URL은 함께 왔습니다." if has_final else ""))
+
+    tk = _TAOKOULING_RE.search(text)
+    if tk:
+        return (f"받은 것이 링크가 아니라 **타오바오 앱 전용 코드**입니다(淘口令, 길이 {n}자). "
+                "서버에서는 이 코드를 열 수 없어요 — 앱에서 공유할 때 "
+                "「링크 복사」를 고르시면 링크가 옵니다.")
+
+    if "http" in text.lower():
+        return (f"링크처럼 보이는 조각은 있는데 주소를 읽지 못했습니다(길이 {n}자). "
+                "주소가 중간에 잘렸거나 줄바꿈이 섞인 경우입니다 — 공유 글을 통째로 다시 붙여넣어 주세요.")
+
+    return (f"받은 내용에 상품 링크가 없습니다(길이 {n}자, 링크 조각 0). "
+            "앱에서 「공유 → 링크 복사」로 받은 글을 통째로 보내 주세요."
+            + (" 최종 URL만 따로 왔는데 본문이 비어 그것만으로는 제목을 못 만듭니다."
+               if has_final else ""))
+
+
+def split_input_blocks(raw: str) -> list:
+    """여러 줄 입력 → **항목 단위** 블록. 줄 단위가 아니다.
+
+    실측(오너 2026-09-11, 폰 웹 폼): 공유 텍스트를 「여러 URL 한 번에」에 붙여넣었더니
+    `splitlines()`가 **한 상품을 2~3개로 쪼갰다** — 「전체 2개 · 성공 0 · 실패 2」.
+    1줄은 단축 링크만 남아 서버가 못 읽고, 2줄은 `点击链接…`이라 링크가 아예 없다.
+
+    규칙 하나면 된다: **URL이 있는 줄이 새 항목을 연다.**
+    URL이 없는 줄(제목 「」·`点击链接…`)은 **앞 항목에 붙는다** — 그게 그 항목의 일부니까.
+
+        【淘宝】https://e.tb.cn/h.xxx?tk=yyy CZ356   ← URL 있음 → 항목 1 시작
+        「상품 제목」                                  ← URL 없음 → 항목 1에 붙음
+        点击链接直接打开 或者 淘宝搜索直接打开          ← URL 없음 → 항목 1에 붙음
+        https://item.taobao.com/item.htm?id=123      ← URL 있음 → 항목 2 시작
+
+    맨 URL을 한 줄에 하나씩 넣던 기존 사용법도 그대로 동작한다(줄마다 URL이 있으니까).
+    """
+    lines = str(raw or "").splitlines()
+    blocks: list = []
+    for line in lines:
+        if not line.strip():
+            continue
+        if _URL_RE.search(line) or not blocks:
+            blocks.append([line])
+        else:
+            blocks[-1].append(line)
+    return ["\n".join(b).strip() for b in blocks if "\n".join(b).strip()]
 
 
 def url_from_input(raw: str) -> str:

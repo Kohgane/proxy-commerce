@@ -90,7 +90,10 @@ def test_rejects_non_url_honestly(client, monkeypatch):
     assert r.status_code == 400
     err = r.get_json()["error"]
     assert "링크" in err or "URL" in err, "무엇이 없는지 말해야 한다"
-    assert "붙여넣" in err, "다음에 무엇을 하면 되는지 말해야 한다"
+    # 낱말이 아니라 **다음 행동이 있는가**를 잰다. "붙여넣"을 못 박아 뒀더니
+    #   문구를 개선할 때마다 깨졌다(C-fix에 이어 C-F7에서 두 번째) — 계약이 카피를 붙잡으면 안 된다.
+    assert any(w in err for w in ("붙여넣", "보내 주세요", "복사")), \
+        "다음에 무엇을 하면 되는지 말해야 한다"
 
 
 def test_failure_is_honest_not_fake_success(client, monkeypatch):
@@ -130,7 +133,11 @@ def test_collect_core_is_shared_with_bulk():
     src = Path("src/api/extension_api.py").read_text(encoding="utf-8")
     assert src.count("def collect_one_url") == 1
     assert "return collect_one_url(url, seller_id=seller_id_val" in src   # 벌크가 위임
-    assert 'collect_one_url(url, seller_id=seller_id, source="mobile")' in src  # 단건이 위임
+    # C-F1: 단건은 이제 `collect_input`에 위임하고, 그 안에서 `collect_one_url`을 부른다.
+    #   계약이 재는 건 **코어가 하나인가**지 호출 문자열이 아니다(호출 경로는 리팩터로 바뀐다).
+    assert "collect_input(" in src, "단건이 공용 입구 함수를 안 쓴다"
+    core = Path("src/collectors/share_collect.py").read_text(encoding="utf-8")
+    assert "from src.api.extension_api import collect_one_url" in core, "공용 입구가 수집 코어를 안 쓴다"
     # 벌크·단건 어느 쪽도 이력 저장을 **직접** 하지 않는다 — 코어만 한다.
     bulk = src.split("def _run_bulk_job")[1].split("@extension_bp")[0]
     one = src.split("def collect_one()")[1].split("@extension_bp")[0]

@@ -18,7 +18,11 @@
 """
 from __future__ import annotations
 
+import json
 import re
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -38,6 +42,14 @@ FINAL_URL_FIXTURE = (
     "ktBr0z9EoA23DpC3bsKDuDpMtRxy0MKFvoh78oM-t7xK1gwIyGJ2TGoPHYNgfpLKet3wMnHtnR9Dq-Gw"
     "&tbSocialPopKey=shareItem&sp_tk=bnlYcFQ3VkE3bHQ%3D&cpp=1&shareurl=true"
     "&short_name=h.8IcTrtZuTU19ieN&tk=nyXpT7VA7lt&app=macos_safari"
+)
+
+# 오너 2차 실물(소파 건) — `tk`·제목은 오너 제공값, 나머지 형식은 검증된 1차 원문과 같다.
+#   형식을 지어내지 않았다: 【淘宝】…「제목」…点击链接 3줄 구조는 1차에서 실측된 것이다.
+SHARE_FIXTURE_SOFA = (
+    "【淘宝】https://e.tb.cn/h.RZs4T76TlNx?tk=RZs4T76TlNx CZ0000\n"
+    "「沙发客厅小户型现代简约北欧布艺沙发」\n"
+    "点击链接直接打开 或者 淘宝搜索直接打开"
 )
 
 SHARE_FIXTURE = (
@@ -420,24 +432,329 @@ def test_pasted_final_url_behaves_like_shortcut_input():
 
 
 def test_vpn_guidance_names_the_mode_not_the_switch():
-    """★ 「VPN을 끄세요」는 **틀린 처방**이다 — 오너 확정 2026-09-11.
+    """★ 안내는 **모드를 이름으로 불러야** 한다 — "VPN을 끄세요"만으론 부족하다.
 
-    가르는 건 VPN이 켜졌느냐가 아니라 **중국 사이트를 터널로 보내느냐**다.
-    규칙(规则)/Smart 모드는 중국 사이트를 우회시키므로 VPN이 켜져 있어도 그대로 작동한다
-    (아스트릴 Smart Mode · Shadowrocket·Clash류 기본 규칙 모드).
+    처방 자체는 두 번 바뀌었다(오너 실측이 두 번 정정했다):
+      ① 「VPN을 끄세요」        → 틀렸다. 규칙 모드면 켜져 있어도 된다.
+      ② 「Smart 모드로 바꾸세요」 → iOS 아스트릴엔 **Smart Mode가 없다**(오너 실측).
 
-    "끄세요"라고 하면 유저는 **필요 없는 불편을 겪고**, 껐는데도 안 되면(다른 이유면)
-    우리 안내가 틀렸다는 것만 배운다. 원인을 이름으로 불러야 고칠 수 있다.
+    그래서 지금 정답은 **둘 다 말하는 것**이다 — "규칙 모드면 그대로, 전체(Global) 모드면 끄기".
+    계약이 잴 것은 특정 낱말이 아니라 **어떤 모드가 문제인지 말하는가**이다.
+    (이 계약은 ①을 금지하다가 ②에서 스스로 틀렸다 — 낱말을 금지하면 그 낱말이 정답이 되는 날 깨진다.)
     """
-    targets = ("src/seller_console/views.py", "src/api/extension_api.py",
-               "docs/MOBILE_COLLECT_GUIDE.md", "docs/C_TAOBAO_FIELD_TEST.md")
-    for path in targets:
-        s = Path(path).read_text(encoding="utf-8")
-        assert "VPN을 끄" not in s, f"{path}에 틀린 처방('VPN을 끄')이 돌아왔다"
-    # 유저가 실제로 읽는 두 곳은 **모드 이름**을 대야 한다.
     for path in ("src/seller_console/views.py", "src/api/extension_api.py"):
         s = Path(path).read_text(encoding="utf-8")
-        assert "Global" in s or "전체" in s, f"{path}가 어떤 모드가 문제인지 안 말한다"
+        assert "전체" in s or "Global" in s, f"{path}가 어떤 모드가 문제인지 안 말한다"
     guide = Path("docs/MOBILE_COLLECT_GUIDE.md").read_text(encoding="utf-8")
-    for term in ("Smart", "Global", "규칙"):
-        assert term in guide, f"가이드에 {term} 안내가 없다"
+    for term in ("규칙", "전체"):
+        assert term in guide, f"가이드에 '{term} 모드' 안내가 없다"
+    # iOS 아스트릴엔 Smart Mode가 없다 — 없는 기능을 쓰라고 하면 유저가 못 찾는다(오너 실측).
+    assert "아스트릴은 Smart Mode" not in guide, "iOS에 없는 기능을 안내하고 있다"
+
+
+# ── ⑦ C-fix: 네 입구가 같은 결과를 낸다 ─────────────────────────────────────
+def test_share_block_is_one_item_not_three():
+    """★ 공유 텍스트는 **한 상품**이다 — 줄 수만큼 쪼개지 않는다.
+
+    실측(오너 2026-09-11, 폰 웹 폼 「여러 URL 한 번에」): 붙여넣었더니
+    **「전체 2개 · 성공 0 · 실패 2」** — `splitlines()`가 한 상품을 둘로 쪼갰고,
+    1줄은 단축 링크만 남아 서버가 못 읽고 2줄은 `点击链接…`이라 링크가 아예 없었다.
+    """
+    from src.collectors.share_text import split_input_blocks
+    assert len(split_input_blocks(SHARE_FIXTURE)) == 1, "한 상품이 여러 항목으로 쪼개졌다"
+    # 맨 URL을 줄마다 넣던 기존 사용법은 그대로 동작해야 한다
+    assert len(split_input_blocks("https://a.invalid/1\nhttps://b.invalid/2")) == 2
+    # 공유 블록 둘이 붙어 와도 둘로 나뉜다
+    two = SHARE_FIXTURE + "\n" + SHARE_FIXTURE.replace("8IcTrtZuTU19ieN", "OTHERtoken")
+    assert len(split_input_blocks(two)) == 2
+
+
+def test_bulk_path_uses_the_one_entry_function():
+    """★ 갈래 판단이 입구마다 있으면 **같은 입력이 입구마다 다른 답**을 낸다(오너 실측)."""
+    src = Path("src/seller_console/views.py").read_text(encoding="utf-8")
+    i = src.index("def collect_bulk")
+    block = src[i: i + 3500]
+    assert "split_input_blocks" in block, "일괄이 줄 단위로 자르고 있다"
+    assert "collect_input(" in block, "일괄이 공용 입구 함수를 안 쓴다"
+    assert "_collect_real_draft" not in block, "일괄이 제 나름의 수집 경로를 다시 갖고 있다"
+
+
+def test_all_entries_agree_on_the_same_share_text(monkeypatch):
+    """★ **같은 공유 텍스트 → 네 입구 같은 결과.** 이 트랙의 원 결함이 정확히 이 불일치였다."""
+    import src.collectors.share_collect as sc
+    monkeypatch.setattr("src.seller_console.collect_history_store.append",
+                        lambda **kw: ("i", True))
+    calls = []
+    monkeypatch.setattr("src.api.extension_api.collect_one_url",
+                        lambda url, **kw: calls.append(url) or {"ok": False, "error": "x"})
+
+    from src.collectors.share_text import split_input_blocks
+    blocks = split_input_blocks(SHARE_FIXTURE)
+    assert len(blocks) == 1
+    results = [sc.collect_input(blocks[0], seller_id="u1", source=src_name, translate=False)
+               for src_name in ("bulk", "mobile", "telegram", "share")]
+    for r in results:
+        assert r["ok"] is True, "입구에 따라 실패했다"
+        assert r["kind"] == "share_draft", "타오바오 공유가 초안이 아니다"
+    assert calls == [], "타오바오에 서버 수집을 시도했다(일괄 포함 전 입구 0이어야 한다)"
+
+
+def test_taobao_never_shows_the_read_failure_message():
+    """★ 타오바오 링크에 「상품 정보를 읽지 못했어요」가 뜨면 안 된다 — 그 자리는 **초안 생성**이다.
+
+    실측: 오너 화면에 그 문구가 떴다. 서버가 읽으려 했다는 뜻이고, 읽을 수 없는 걸 읽으려 한 것이다.
+    """
+    import src.collectors.share_collect as sc
+    r = sc.collect_input(SHARE_FIXTURE, seller_id="u1", source="bulk", translate=False)
+    assert r.get("kind") == "share_draft"
+    assert "읽지 못" not in (r.get("error") or ""), "타오바오에 읽기 실패 문구가 나왔다"
+
+
+def test_second_owner_sample_parses_too():
+    """★ 픽스처가 하나면 그 하나에만 맞춘 파서가 된다 — 오너 2차 실물(소파 건)도 잰다."""
+    from src.collectors.share_text import parse_share_text, split_input_blocks
+    assert len(split_input_blocks(SHARE_FIXTURE_SOFA)) == 1
+    r = parse_share_text(SHARE_FIXTURE_SOFA)
+    assert r["tk"] == "RZs4T76TlNx"
+    assert "沙发" in r["title"]
+    assert r["is_short"] is True
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치")
+def test_success_copy_is_not_rewritten_as_failure():
+    """★ 성공 문구가 실패 문구로 **뒤집히지 않는다.**
+
+    실측(오너 화면): 하단에 「가격을 못 읽었어요」가 떴다. 친절 문구 규칙이 `/가격|price/`로
+    너무 넓어, **'가격'이라는 낱말만 있으면** 무엇이든 그 실패 문장으로 바꾸고 있었다.
+    초안 성공 문구("…가격까지 담았어요")까지 실패로 뒤집는다 — 한 상태를 두 번, 그것도 반대로.
+
+    소스 위치가 아니라 **함수를 실제로 돌려서** 잰다 — 앞뒤 몇 글자를 읽는 방식은
+    내 주석이 그 자리에 들어오면 바로 깨진다(이 계약을 쓰다가 실제로 그랬다).
+    """
+    js = Path("src/seller_console/static/seller.js").read_text(encoding="utf-8")
+    fn = re.search(r"function kgpFriendlyError[\s\S]*?\n\}", js).group(0)
+    harness = fn + """
+const out = [
+  kgpFriendlyError('가격 반영 실패'),
+  kgpFriendlyError('제목·상품번호·가격까지 담았어요(공유 시점 가격).'),
+  kgpFriendlyError('초안 1건 생성 — 제목 담김 · 가격 199 CNY'),
+];
+console.log(JSON.stringify(out));
+"""
+    f = tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8")
+    f.write(harness); f.close()
+    try:
+        r = subprocess.run(["node", f.name], capture_output=True, text=True, timeout=15)
+        assert r.returncode == 0, r.stderr
+        fail_msg, ok1, ok2 = json.loads(r.stdout.strip().splitlines()[-1])
+    finally:
+        Path(f.name).unlink()
+
+    assert "못 읽었어요" in fail_msg, "진짜 실패는 여전히 친절 문구로 바뀌어야 한다"
+    for ok in (ok1, ok2):
+        assert "못 읽었어요" not in ok, f"성공 문구가 실패로 뒤집혔다: {ok}"
+
+
+def test_guide_field_names_are_the_ones_the_server_reads():
+    """★ 가이드가 쓰라고 한 필드를 **서버가 실제로 읽어야** 한다.
+
+    문서와 코드가 어긋나면 오너가 단축어를 그대로 조립해도 안 된다 — 그리고 왜 안 되는지
+    알 길이 없다(서버는 조용히 빈 입력을 받는다). 실물 테스트가 거기서 막힌다.
+    """
+    guide = Path("docs/MOBILE_COLLECT_GUIDE.md").read_text(encoding="utf-8")
+    api = Path("src/api/extension_api.py").read_text(encoding="utf-8")
+    for field in ("share_text", "final_url"):
+        assert field in guide, f"가이드에 {field} 안내가 없다"
+        assert f'"{field}"' in api, f"서버가 {field}를 안 읽는다(가이드가 거짓이 된다)"
+
+
+def test_share_text_field_actually_works(monkeypatch):
+    """★ 이름만 읽는 게 아니라 **그 값으로 초안이 선다**(가이드대로 보내면 된다)."""
+    import src.api.extension_api as ext
+    from src.order_webhook import app
+    monkeypatch.setattr(ext, "_require_token", lambda scopes=None: {"user_id": "u-g"})
+    monkeypatch.setattr("src.seller_console.collect_history_store.find_by_product_key",
+                        lambda *a, **k: None)
+    monkeypatch.setattr("src.seller_console.collect_history_store.append",
+                        lambda **kw: ("i", True))
+    with app.test_client() as c:
+        r = c.post("/api/v1/collect/one",
+                   json={"share_text": SHARE_FIXTURE, "final_url": FINAL_URL_FIXTURE})
+    d = r.get_json()
+    assert r.status_code == 200 and d.get("ok") is True
+    assert d.get("price") == "199", "가이드대로 보냈는데 가격이 안 담겼다"
+    assert d.get("item_id_taobao") == "993154784090"
+
+
+# ── ⑧ C-F6: 인증 실패가 무엇 때문인지 말한다 ────────────────────────────────
+def test_auth_failures_are_distinguishable():
+    """★ 「인증이 필요합니다」 하나로는 **헤더 이름이 틀린 건지 토큰이 틀린 건지 알 수 없다.**
+
+    실측(오너 단축어 v1): 헤더를 `X-Intake-T…`로 보냈는데 응답은 「토큰을 확인하세요」였다.
+    토큰은 멀쩡했다 — 서버가 안 읽는 이름으로 보낸 것뿐이다. 그 한 문장 때문에
+    오너는 토큰을 의심하며 시간을 썼다. **응답이 원인을 말해야 고칠 수 있다.**
+    """
+    from src.order_webhook import app
+    with app.test_client() as c:
+        no_header = c.post("/api/v1/collect/one", json={"share_text": SHARE_FIXTURE})
+        no_bearer = c.post("/api/v1/collect/one", json={"share_text": SHARE_FIXTURE},
+                           headers={"Authorization": "kgp_abc"})
+        bad_token = c.post("/api/v1/collect/one", json={"share_text": SHARE_FIXTURE},
+                           headers={"Authorization": "Bearer kgp_notreal"})
+    msgs = [r.get_json()["error"] for r in (no_header, no_bearer, bad_token)]
+    assert all(r.status_code == 401 for r in (no_header, no_bearer, bad_token))
+    assert len(set(msgs)) == 3, f"세 실패가 같은 문장을 낸다: {msgs}"
+    assert "Authorization" in msgs[0], "헤더 이름을 콕 집어 말해야 한다(오너가 막힌 자리)"
+    assert "Bearer" in msgs[1]
+    assert "발급" in msgs[2]
+
+
+def test_auth_errors_never_echo_the_token():
+    """★ 토큰 값을 응답에 싣지 않는다 — **앞 4자 마스킹도 안 한다.**
+
+    마스킹이라도 로그·스크린샷·채팅으로 새는 경로가 그만큼 늘어난다.
+    형식이 틀렸다는 것과 값이 틀렸다는 것만 말하면 유저는 고칠 수 있다.
+    """
+    from src.order_webhook import app
+    secret = "kgp_SUPERSECRETVALUE12345"
+    with app.test_client() as c:
+        r = c.post("/api/v1/collect/one", json={"share_text": SHARE_FIXTURE},
+                   headers={"Authorization": f"Bearer {secret}"})
+    body = r.get_data(as_text=True)
+    assert secret not in body
+    for n in (4, 6, 8):
+        assert secret[:n] not in body, f"토큰 앞 {n}자가 응답에 있다(마스킹도 금지)"
+    assert "SUPERSECRET" not in body
+
+
+def test_guide_header_name_matches_what_server_reads():
+    """★ `share_text`와 같은 장치 — **가이드가 쓰라는 헤더를 서버가 읽어야** 한다.
+
+    이번엔 가이드가 맞았고(`Authorization`) 단축어에 다른 이름이 들어갔다.
+    그래도 계약을 건다: 다음에 **가이드 쪽이** 어긋나면 그때는 아무도 못 잡는다.
+    """
+    guide = Path("docs/MOBILE_COLLECT_GUIDE.md").read_text(encoding="utf-8")
+    api = Path("src/api/extension_api.py").read_text(encoding="utf-8")
+    assert 'request.headers.get("Authorization"' in api, "서버가 읽는 헤더 이름이 바뀌었다"
+    assert "`Authorization`" in guide, "가이드가 헤더 이름을 명시하지 않는다"
+    assert "Bearer" in guide, "가이드가 Bearer 접두를 명시하지 않는다"
+
+
+# ── ⑨ C-F7: 링크를 못 찾은 이유를 말한다 ────────────────────────────────────
+# 오너 2차 실물 픽스처(2026-09-12) — **링크와 제목이 같은 줄**이다(1차와 구조가 다르다).
+FIX_SWEATER = (
+    "【淘宝】假一赔四 https://e.tb.cn/h.8reU77YYNhKOUuE?tk=EYAGT7vTcVD CZ321 "
+    "「藏青色绞花开衫毛衣男春秋慵懒松弛感美式立领针织衫cleanfit外套」\n"
+    "点击链接直接打开 或者 淘宝搜索直接打开"
+)
+
+
+def test_single_line_share_text_parses():
+    """★ 링크와 제목이 **같은 줄**에 와도 물어야 한다 — 1차 픽스처만 맞춘 파서가 되지 않도록."""
+    from src.collectors.share_text import parse_share_text, split_input_blocks
+    assert len(split_input_blocks(FIX_SWEATER)) == 1
+    r = parse_share_text(FIX_SWEATER)
+    assert r["url"] == "https://e.tb.cn/h.8reU77YYNhKOUuE?tk=EYAGT7vTcVD"
+    assert r["tk"] == "EYAGT7vTcVD"
+    assert r["title"].startswith("藏青色")
+    assert r["share_code"] == "CZ321", "링크 뒤 공백 구분 영숫자 코드"
+    assert "「" not in r["url"] and "」" not in r["url"], "제목 괄호가 URL에 딸려 왔다"
+
+
+def test_scheme_less_short_link_is_recovered():
+    """★ `https://` 없이 온 단축 도메인도 건진다(앱이 텍스트로 줄 때 빠져 온다).
+
+    **아는 도메인일 때만** 스킴을 붙인다 — 아무 `a/b`에나 붙이면 오탐이 된다.
+    """
+    from src.collectors.share_text import parse_share_text
+    assert parse_share_text("m.tb.cn/h.g9KpLmN")["url"] == "https://m.tb.cn/h.g9KpLmN"
+    assert parse_share_text("e.tb.cn/h.ABC?tk=z")["url"].startswith("https://e.tb.cn/")
+    assert parse_share_text("사과/바나나")["url"] == "", "아무 슬래시 문자열에 스킴을 붙이면 안 된다"
+
+
+def test_taokouling_is_named_not_dismissed():
+    """★ 淘口令은 **링크가 아니라 앱 전용 코드**다 — "못 찾았다"가 아니라 그렇게 말한다."""
+    from src.collectors.share_text import link_failure_reason, parse_share_text
+    r = parse_share_text("￥CZ0001abcd￥ 复制打开淘宝App")
+    assert r["url"] == "" and r["taokouling"] == "CZ0001abcd"
+    msg = link_failure_reason("￥CZ0001abcd￥ 复制打开淘宝App")
+    assert "링크 복사" in msg, "무엇을 하면 되는지 말해야 한다"
+
+
+def test_link_failures_are_distinguishable_and_leak_nothing():
+    """★ 왜 못 찾았는지 갈라 말하되 **원문은 안 싣는다**(길이·판정만).
+
+    내용에 상품명·계정 정보가 섞여 올 수 있고, 그게 로그·스크린샷으로 새면 우리가 만든 구멍이다.
+    """
+    from src.collectors.share_text import link_failure_reason as R
+    secret = "비밀상품명ABC 계정12345"
+    msgs = [R(""), R("￥CZ0001abcd￥"), R("http 조각만"), R(secret)]
+    assert len(set(msgs)) == 4, f"네 경우가 같은 문장을 낸다: {msgs}"
+    assert secret not in msgs[3] and "비밀상품명" not in msgs[3], "원문이 새어 나갔다"
+    assert str(len(secret)) in msgs[3], "길이는 말해야 진단이 된다"
+
+
+def test_bare_taobao_url_never_hits_the_server(monkeypatch):
+    """★ **제목이 없어도** 타오바오엔 서버가 안 나간다.
+
+    실측(C-F7): 조건이 `is_taobao_family(url) and share.get("title")`이라
+    **제목 없는 맨 타오바오 URL**은 그대로 서버 수집으로 떨어졌다 — F2의 "요청 0"에 난 구멍이다.
+    서버가 못 읽는 건 제목 유무와 무관하다.
+
+    ※ 거절하느냐 초안을 세우느냐는 **별개 질문**이다(아래 계약). 여기서 재는 건
+      "서버로 나가지 않는다" 하나다 — 둘을 한 계약에 섞으면 한쪽을 고칠 때 다른 쪽이 깨진다.
+    """
+    import src.collectors.share_collect as sc
+    calls = []
+    monkeypatch.setattr("src.api.extension_api.collect_one_url",
+                        lambda url, **kw: calls.append(url) or {"ok": True, "item_id": "x", "title": ""})
+    monkeypatch.setattr("src.seller_console.collect_history_store.append",
+                        lambda **kw: ("x", True))
+    for u in ("https://item.taobao.com/item.htm?id=993154784090",   # id 있음
+              "https://item.taobao.com/2",                          # id·제목 둘 다 없음
+              "https://e.tb.cn/h.ABC?tk=z"):                        # 단축
+        sc.collect_input(u, seller_id="u1", translate=False)
+    assert calls == [], f"타오바오에 서버 수집을 시도했다: {calls}"
+
+
+def test_draft_needs_something_to_continue_from(monkeypatch):
+    """★ 초안은 **다음 사람이 이어갈 수 있는 것**이 하나라도 있을 때만 선다.
+
+    제목이 있으면 사람이 알아보고, itemId가 있으면 **확장이 그 링크를 열어 보강**한다.
+    둘 다 없으면 남는 건 못 여는 링크 하나 — 그건 목록을 채우는 것이지 수집이 아니다.
+
+    (처음엔 제목만 기준으로 삼았는데, 그러면 `?id=…`가 붙은 진짜 상품 링크까지 거절했다.
+     빈 껍데기를 막으려던 규칙이 멀쩡한 재료를 버리고 있었다.)
+    """
+    import src.collectors.share_collect as sc
+    monkeypatch.setattr("src.seller_console.collect_history_store.append",
+                        lambda **kw: ("x", True))
+    cases = [
+        ("제목만", "「책상」 https://e.tb.cn/h.ABC?tk=z", True),
+        ("id만", "https://item.taobao.com/item.htm?id=993154784090", True),
+        ("둘 다 없음", "https://item.taobao.com/2", False),
+    ]
+    for label, text, should_ok in cases:
+        r = sc.collect_input(text, seller_id="u1", translate=False)
+        assert r["ok"] is should_ok, f"{label}: ok={r['ok']} (기대 {should_ok})"
+        if not should_ok:
+            assert "통째로" in r["error"], "무엇을 하면 되는지 말해야 한다"
+
+
+def test_expanded_link_finds_the_short_link_draft():
+    """★ 같은 상품이 **두 키로 쌓이지 않는다.**
+
+    단축 링크만 담으면 `tbshare:<토큰>:<tk>`, 나중에 편 링크로 담으면 `taobao:item:<id>` —
+    키가 달라 남남이 된다. 편 링크가 `short_name`에 그 토큰을 싣고 오므로(실측 원문) 그걸로 잇는다.
+    """
+    from src.collectors.product_key import normalize_product_key as k
+    from src.collectors.share_text import parse_share_text
+    final = ("https://m.intl.taobao.com/detail/detail.html?id=812345678901"
+             "&short_name=h.8reU77YYNhKOUuE&tk=EYAGT7vTcVD")
+    f = parse_share_text("", final_url=final)
+    assert f["short_name"] == "h.8reU77YYNhKOUuE", "편 링크가 단축 토큰을 싣고 온다"
+    alt = f"https://e.tb.cn/{f['short_name']}?tk={f['tk']}"
+    assert k(alt) == k("https://e.tb.cn/h.8reU77YYNhKOUuE?tk=EYAGT7vTcVD"), \
+        "복원한 단축 키가 원래 단축 링크와 같은 키여야 이어진다"
+    api = Path("src/api/extension_api.py").read_text(encoding="utf-8")
+    assert "short_name" in api and "_alt" in api, "중복 조회가 대체 키를 안 본다"

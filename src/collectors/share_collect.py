@@ -15,12 +15,12 @@
 
 | 폰이 폈나 | 초안이 갖는 것 | 미수집 | 등록 |
 |---|---|---|---|
-| ✅ VPN 끔 **또는 규칙/Smart 모드** | 제목 · itemId · **가격(CNY)** · 링크 | 이미지 · 옵션 · 상세 | **가능** |
+| ✅ VPN 끔 **또는 규칙 모드** | 제목 · itemId · **가격(CNY)** · 링크 | 이미지 · 옵션 · 상세 | **가능** |
 | ❌ VPN **전체(Global) 모드** | 제목 · 단축 링크(tk) | 가격 · 이미지 · 옵션 · 상세 | 닫힘 |
 
 > VPN이 켜졌느냐가 아니라 **중국 사이트를 터널로 보내느냐**가 가른다.
-> 규칙(规则)/Smart 모드는 중국 사이트를 우회시키므로 그대로 동작한다
-> — 아스트릴 Smart Mode, Shadowrocket·Clash류 기본 규칙 모드.
+> 규칙(规则) 모드는 중국 사이트를 우회시키므로 그대로 동작한다(Shadowrocket·Clash류 기본).
+> **아스트릴 iOS엔 규칙 모드가 없다**(오너 실측) — 그 앱은 잠깐 끄는 게 유일한 방법이다.
 
 두 갈래를 섞지 않는다 — 한쪽을 다른 쪽인 척 하면 그게 가짜 성공이다.
 
@@ -68,11 +68,14 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
     share = parse_share_text(raw, final_url=final_url)
     url = share.get("url", "")
     if not url:
-        return {"ok": False, "error": "상품 링크를 찾지 못했습니다. 링크나 공유 텍스트를 그대로 붙여넣어 주세요."}
+        # C-F7: 왜 못 찾았는지 말한다(길이·판정만 — 원문은 안 싣는다).
+        from src.collectors.share_text import link_failure_reason
+        return {"ok": False, "error": link_failure_reason(raw, final_url)}
     # 제목이 없으면 **초안을 만들지 않는다.** 이 경로가 존재하는 이유가 "공유 글엔 제목이 있다"인데,
     #   제목까지 없으면 남는 건 링크 하나뿐 — 제목도 가격도 이미지도 없는 행은 수집이 아니라 빈 껍데기다.
     #   (실측: 맨 URL을 넣었더니 빈 항목이 '수집됨'으로 앉아 편집 화면까지 넘어갔다.)
-    if not share.get("title"):
+    if not share.get("title") and not share.get("item_id"):
+        # 제목도 상품번호도 없으면 **이어갈 실마리가 없다** — 빈 행을 만들지 않는다.
         return {"ok": False, "url": url,
                 "error": "공유 글에서 상품 제목을 찾지 못했습니다. 상품 페이지에서 고가수집기로 수집해 주세요."}
 
@@ -140,3 +143,71 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
             # 가격이 왔으면 마진을 낼 수 있다 → 등록 가능. 없으면 닫힌 채(0 발명 금지).
             "enrich_state": ("done" if price else "pending"),
             }
+
+
+def collect_input(raw: str, *, seller_id: str = "", source: str = "input",
+                  final_url: str = "", translate: bool = True) -> dict:
+    """**입구 하나짜리 함수.** 단건·일괄·API·텔레그램이 전부 이걸 부른다.
+
+    실측(오너 2026-09-11, 폰): 「여러 URL 한 번에」가 이 판단을 **제 나름대로** 하고 있어
+    같은 공유 텍스트가 단건에선 초안이 되고 일괄에선 "실패 2"가 됐다.
+    판단이 네 벌이면 네 가지로 갈라진다 — 그래서 한 벌만 둔다.
+
+    판단은 둘뿐이다:
+      · 타오바오 계열이고 제목이 있으면 → **공유 초안**(서버 수집 시도 0)
+      · 그 외 → 기존 수집 코어(`collect_one_url`)
+
+    반환에 `kind`를 실어 호출부가 화면을 고를 수 있게 한다 —
+    `share_draft`(초안 생성) / `collected`(정상 수집) / `failed`.
+    """
+    from src.collectors.share_text import is_taobao_family, parse_share_text
+
+    share = parse_share_text(raw, final_url=final_url)
+    url = share.get("url", "")
+    if not url:
+        from src.collectors.share_text import link_failure_reason
+        return {"ok": False, "kind": "failed", "url": "",
+                "error": link_failure_reason(raw, final_url)}
+
+    # C-F7: **같은 상품이 두 키로 쌓이는 것**을 막는다.
+    #   단축 링크만 담으면 `tbshare:<토큰>:<tk>`, 나중에 폰이 편 링크로 담으면 `taobao:item:<id>` —
+    #   키가 달라 남남이 된다. 다행히 **편 링크가 `short_name`에 그 토큰을 싣고 온다**(실측 원문).
+    #   그래서 편 링크로 올 때는 단축 키로도 한 번 더 찾아본다(발명 0 — 실측에 있는 값만 쓴다).
+    alt_key_url = ""
+    if share.get("short_name") and share.get("item_id"):
+        _tk = share.get("tk", "")
+        alt_key_url = f"https://e.tb.cn/{share['short_name']}" + (f"?tk={_tk}" if _tk else "")
+
+    # 타오바오는 **서버가 못 읽는다**(실측). 읽어 보고 실패하는 게 아니라 아예 안 간다.
+    #   C-F7 실측: 조건에 `and share.get("title")`이 붙어 있어, **제목 없는 맨 타오바오 URL**은
+    #   그대로 서버 수집으로 떨어졌다(= F2의 "요청 0"에 구멍). 서버가 못 읽는 건 제목 유무와 무관하다.
+    if is_taobao_family(url):
+        # 초안은 **다음 사람이 이어갈 수 있는 것**이 하나라도 있을 때만 세운다.
+        #   제목이 있으면 사람이 알아보고, itemId가 있으면 확장이 그 링크를 열어 보강한다.
+        #   둘 다 없으면 남는 건 못 여는 링크 하나 — 그건 목록을 채우는 것이지 수집이 아니다.
+        if not share.get("title") and not share.get("item_id"):
+            return {"ok": False, "kind": "failed", "url": url,
+                    "error": ("타오바오 링크는 서버에서 열 수 없어요(로그인 벽). "
+                              "앱 공유 글을 **통째로** 보내 주시면 제목으로 초안을 만들고, "
+                              "가격·이미지는 PC에서 고가수집기로 보강합니다.")}
+        r = collect_from_share_text(raw, seller_id=seller_id, source=source,
+                                    translate=translate, final_url=final_url)
+        r["kind"] = "share_draft" if r.get("ok") else "failed"
+        if alt_key_url:
+            r["alt_key_url"] = alt_key_url      # 호출부 중복 조회용(같은 상품의 단축 링크 형태)
+        return r
+
+    from src.api.extension_api import collect_one_url
+    r = collect_one_url(url, seller_id=seller_id, source=source)
+    if r.get("ok"):
+        r["kind"] = "collected"
+        return r
+    # 못 읽었지만 공유 글에 제목이 있으면 초안이라도 세운다(빈손으로 돌려보내지 않는다).
+    if share.get("title"):
+        r2 = collect_from_share_text(raw, seller_id=seller_id, source=source,
+                                     translate=translate, final_url=final_url)
+        if r2.get("ok"):
+            r2["kind"] = "share_draft"
+            return r2
+    r["kind"] = "failed"
+    return r
