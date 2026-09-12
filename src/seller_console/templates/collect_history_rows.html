@@ -73,16 +73,12 @@
       {# C-F14: 부분 초안(폰으로 담은 것)은 **보강 축**으로 말한다 — 완전 수집 잣대(7필드)를
          들이대면 제목·상품번호·가격이 다 담긴 것도 「실패」가 된다(실측). #}
       {% set eb = it.enrich_badge %}
-      {% if eb.kind == "blocked" %}
-        <span class="badge" style="background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger)"
-              title="{{ eb.title }}"><i class="bi bi-hand-thumbs-down"></i> {{ eb.label }}</span>
-      {% elif eb.kind == "done" %}
-        <span class="badge" style="background:color-mix(in srgb,var(--teal) 15%,transparent);color:var(--teal)"
-              title="{{ eb.title }}"><i class="bi bi-check-lg"></i> {{ eb.label }}</span>
-      {% else %}
-        <span class="badge" style="background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)"
-              title="{{ eb.title }}"><i class="bi bi-hourglass-split"></i> {{ eb.label }}</span>
-      {% endif %}
+      {# 새 배지는 공용 문법(`pc-badge`)으로 쓴다 — 이 파일의 옛 인라인 `badge`는 v2 잔재이고
+         래칫(`test_v2_residue_never_grows`)이 그걸 늘리지 못하게 막는다. #}
+      {% if eb.kind == "blocked" %}{% set eb_cls = "pc-badge-danger" %}{% set eb_ico = "bi-hand-thumbs-down" %}
+      {% elif eb.kind == "done" %}{% set eb_cls = "pc-badge-on" %}{% set eb_ico = "bi-check-lg" %}
+      {% else %}{% set eb_cls = "pc-badge-off" %}{% set eb_ico = "bi-hourglass-split" %}{% endif %}
+      <span class="pc-badge {{ eb_cls }}" title="{{ eb.title }}"><i class="bi {{ eb_ico }}"></i> {{ eb.label }}</span>
     {% elif it.status == "ok" %}
       {# v47 STEP2: 수집 필드 상태 — 성공(N/5) 또는 부분(누락 필드명). 가짜 성공·무음 실패 금지. #}
       {% set cs = it.collect_status %}

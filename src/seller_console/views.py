@@ -1764,7 +1764,12 @@ def collect_upload():
                 # C-F14: 등록을 막는 근거는 **가격**(`gate_ready`)이지 보강 진행 상태가 아니다.
                 #   전엔 `enrich_state=="pending"`으로 막아서, 가격이 있는데 이미지가 없는 초안도
                 #   등록이 막혔고 화면은 그걸 「실패」로 읽었다(같은 필드, 두 뜻).
-                if not _gex.get("gate_ready"):
+                # C-F14 회귀 수리: `gate_ready`가 **없는** 행(일반 수집 — 보강 축 자체가 없다)까지
+                #   막으면 안 된다. 게이트는 **초안에만** 건다 — 일반 수집엔 아래 업로더의
+                #   가격 검사(`price <= 0` 거부)가 이미 한 겹 있다(계약이 잡았다).
+                from src.collectors.collect_status import enrich_axes as _eax14
+                _ax14 = _eax14(_gex)
+                if _ax14["is_draft"] and not _ax14["gate_ready"]:
                     return jsonify({
                         "ok": False, "enrich_required": True,
                         "error": "가격이 없어 마켓에 등록할 수 없어요. 마진을 낼 수 없습니다.",
