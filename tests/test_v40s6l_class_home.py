@@ -145,3 +145,76 @@ def test_badge_variants_are_only_on_badges():
             if toks & {"p-2", "p-3", "p-4", "toast", "op-card-head", "op-card-body", "col-12"}:
                 bad.append(f"{p.name}:{attr.strip()[:60]}")
     assert not bad, f"뱃지가 아닌 것에 뱃지 변형이 붙었다(`pc-inset`이 그 자리다): {bad}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 6 잔재 래칫 (실측 2026-09-12) — 0이 아니라 **늘지 않음**을 지킨다
+# ─────────────────────────────────────────────────────────────────────────────
+
+# v2(부트스트랩) 문법 토큰 — 우리 `op-*`/`pc-*`가 대신하기로 한 것들.
+#   `card`·`badge`·`alert`는 우리 CSS에 **홈이 없다**(`op-card`·`pc-badge`만 있다) →
+#   맨 이름으로 쓰면 부트스트랩 기본으로 떨어진다 = v2 그대로다.
+V2_TOKENS = {"card", "badge", "alert"} | {
+    f"bg-{x}" for x in ("light", "white", "secondary", "primary",
+                        "success", "danger", "warning", "info")}
+
+# 일부러 전역 문법을 안 쓰는 화면 — 외부 쇼핑몰을 흉내 내야 해서 app.css를 안 싣는다
+#   (v3 계약 ④). 여기 `card`는 잔재가 아니라 **그 페이지의 자기 클래스**다.
+STANDALONE_PAGES = {"bookmarklet_testpage.html"}
+
+# 실측 상한. **내려갈 때만 고친다** — 올리는 커밋은 곧 잔재를 들여온 커밋이다.
+V2_RESIDUE_CEILING = 46
+
+
+def _v2_residue() -> dict:
+    """화면별 v2 토큰 수. **토큰 정확 일치**로 센다 — 정규식 `\\b`로 세지 않는다.
+
+    실측 2026-09-12: `\\bcard\\b`로 셌더니 **350건**이 나왔다. `op-card`를 문 것이다
+    (`\\b`는 하이픈을 경계로 본다). 볼트 「정규식이 설명문을 선언으로 읽는다」가 적어 둔
+    그 함정을, 그 노트를 쓴 세션에서 또 밟았다 — 그래서 세는 방법 자체를 못 박는다.
+    """
+    out: dict[str, int] = {}
+    for p in sorted(TPL.glob("*.html")):
+        if p.name in STANDALONE_PAGES:
+            continue
+        html = re.sub(r"\{#.*?#\}|<!--.*?-->", "", p.read_text(encoding="utf-8"), flags=re.S)
+        n = 0
+        for attr in re.findall(r'class="([^"]*)"', html):
+            for tok in attr.split():
+                if tok.strip("'\"()") in V2_TOKENS:
+                    n += 1
+        if n:
+            out[p.name] = n
+    return out
+
+
+def test_v2_residue_never_grows():
+    """★★★ Stage 6은 **미종결**이다. 남은 잔재가 **늘지 않는 것**을 지킨다.
+
+    실측 2026-09-12 — 계약 238개가 초록인데 맨 `badge` 45건이 남아 있었다.
+    색 있는 `badge bg-success`는 잡았고 **색을 뺀 맨 `badge`는 재는 계약이 없었다**:
+    계약이 모집단을 「색이 있느냐」로 좁혀서, 안 재는 것이 결함이 아니라 무(無)가 됐다.
+
+    0을 요구하지 않는 이유: 뱃지마다 의미가 달라 `pc-badge-*` 매핑은 **화면별 판단**이고
+    기계 치환하면 색이 뜻을 잃는다. 그래서 지금은 **상한**만 걸어 둔다 —
+    새 화면이 v2 문법을 또 들여오는 것만 막고, 줄이는 일은 별 트랙으로 한다.
+    """
+    residue = _v2_residue()
+    total = sum(residue.values())
+    assert total <= V2_RESIDUE_CEILING, (
+        f"v2 잔재가 늘었다 {total} > {V2_RESIDUE_CEILING}: {residue}\n"
+        "새 화면에 맨 card/badge/alert/bg-* 를 쓰지 말고 op-*/pc-* 를 쓸 것.")
+    if total < V2_RESIDUE_CEILING:
+        raise AssertionError(
+            f"잔재가 {total}로 줄었다(상한 {V2_RESIDUE_CEILING}). "
+            f"V2_RESIDUE_CEILING을 {total}로 내려 래칫을 조일 것. 남은 곳: {residue}")
+
+
+def test_the_fake_prefix_from_6l_stays_dead():
+    """★★ `pc-pc-*` — 기계 치환이 만든 **규칙 없는 이름**. 다시 들어오면 안 된다.
+
+    실측 선례(6-l): 13곳에 뿌려졌고 뱃지가 맨 텍스트로 떴는데 잔재 계약은 초록이었다.
+    """
+    bad = {p.name: p.read_text(encoding="utf-8").count("pc-pc-")
+           for p in TPL.glob("*.html") if "pc-pc-" in p.read_text(encoding="utf-8")}
+    assert not bad, f"접두어가 겹친 가짜 클래스가 돌아왔다: {bad}"
