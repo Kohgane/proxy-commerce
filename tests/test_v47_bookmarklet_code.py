@@ -34,7 +34,7 @@ def test_code_route_returns_javascript_code():
             d = r.get_json()
             assert r.status_code == 200 and d["ok"] is True
             assert d["code"].startswith("javascript:")
-            assert "TOK123" in d["code"]                 # 내 토큰 baked
+            assert "TOK123" in d["code"]                 # 내 API 토큰 baked
             assert "/api/v1/collect/extension" in d["code"]
 
 
