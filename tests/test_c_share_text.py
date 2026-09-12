@@ -1395,3 +1395,229 @@ def test_diag_price_card_reads_the_body_price():
     body = r.data.decode()
     assert "76.86" in body, "본문에서 읽은 가격이 화면에 없다"
     assert "1060535477134" in body
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# C-F12 — 어디서 오래 걸렸나(timings) · 일곱 번째 입구 · 기준을 사실로 위장하지 않기
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 오너 실물(2026-09-12): 소싱 URL 검수에 붙인 tmall **풀링크**. 상품번호가 URL에 박혀 있다.
+#   세션성 값은 넣지 않는다(`un`·`suid`·`bxsign`·`ut_sk`·`sp_tk` 제외 — F11과 같은 규율).
+FIX_TMALL_FULL = ("https://detail.tmall.com/item.htm"
+                  "?spm=a1z10.5-b&id=1060535477134&price=76.86&sourceType=item")
+
+
+def test_response_says_where_the_time_went():
+    """★★★ 폰이 「요청한 시간이 초과되었습니다」로 죽었는데 **어디서** 느렸는지 알 길이 없었다.
+
+    모르는 채 예산을 조이면 엉뚱한 데를 조인다. 그래서 단계별 밀리초를 응답에 싣는다 —
+    **밀리초만** 싣는다(원문·URL 0).
+    """
+    from unittest.mock import patch
+    from src.order_webhook import app
+    from src.seller_console import collect_history_store as chs
+
+    try:
+        chs._in_memory.clear()
+    except Exception:
+        pass
+    c = app.test_client()
+    with patch("src.api.extension_api._require_token", return_value={"user_id": "default"}), \
+         patch.dict("os.environ", {"KGP_SHORT_LINK_RESOLVE": "1"}), \
+         patch("requests.get", side_effect=[_diag_resp(200, text=BODY_F11)]):
+        d = c.post("/api/v1/collect/one", json={"share_text": "https://e.tb.cn/h.abc"}).get_json()
+
+    t = d.get("timings") or {}
+    assert t, f"timings가 없다: {d}"
+    for stage in ("parse", "resolve", "save", "total"):
+        assert stage in t, f"{stage} 구간이 없다: {t}"
+        assert isinstance(t[stage], int) and t[stage] >= 0
+    assert t["total"] >= max(t[k] for k in t if k != "total"), "total이 구간 합보다 작다"
+    # 실패 응답에도 실린다 — 느려서 죽는 건 실패할 때도 마찬가지다.
+    with patch("src.api.extension_api._require_token", return_value={"user_id": "default"}):
+        bad = c.post("/api/v1/collect/one", json={"share_text": ""}).get_json()
+    assert (bad.get("timings") or {}).get("total") is not None, "실패 응답에 timings가 없다"
+    # 밀리초 말고 아무것도 들어가지 않는다(원문 유출 금지).
+    import json
+    assert all(isinstance(v, int) for v in t.values()), f"timings에 숫자 아닌 값: {t}"
+    del json
+
+
+def test_the_seventh_entry_point_is_registered():
+    """★★★ **일곱 번째 입구.** 검수표가 코어를 직접 주입해 쓰는데 목록에 없었다.
+
+    그래서 「타오바오는 초안으로」 규율이 여기만 안 서 있었고, tmall 풀링크가
+    「수집 실패(실데이터 못 얻음)」로 떨어졌다 — F8에서 배운 것과 **같은 모양**이다.
+    """
+    from src.collectors.share_text import COLLECT_ENTRY_POINTS
+
+    labels = [lbl for lbl, _, _ in COLLECT_ENTRY_POINTS]
+    assert "소싱 URL 검수" in labels, "검수표 입구가 목록에 없다"
+    assert len(COLLECT_ENTRY_POINTS) == 7
+
+
+def test_a_full_tmall_link_is_not_called_a_collection_failure():
+    """★★★ 상품번호가 **URL에 박혀 있는데** 「실데이터 못 얻음」이라 적으면 그건 거짓이다.
+
+    실측(오너 2026-09-12): 소싱 URL 검수에 tmall 풀링크를 넣으니 수집 실패로 떨어졌다.
+    못 얻은 게 아니라 **안 본 것**이었다.
+    """
+    from src.seller_console.views import build_review_for_urls
+
+    r = build_review_for_urls([FIX_TMALL_FULL])
+    assert len(r["failed"]) == 0, f"아직 수집 실패로 떨어진다: {r['failed']}"
+    assert len(r["review_pass"]) == 1
+
+    row = r["review_pass"][0]
+    assert row["item_id_taobao"] == "1060535477134"
+    # 없는 것은 **없다고 적는다** — 통과 숫자만 보고 등록 가능으로 읽지 않게.
+    assert row["partial"] is True and row["needs_enrich"] is True
+    assert set(row["missing"]) == {"제목", "이미지"}
+    assert len(r["needs_enrich"]) == 1, "보강 필요 집계가 없다"
+
+
+def test_image_zero_is_a_registration_bar_not_a_collection_failure():
+    """★★★ 이미지 0장은 **등록 기준 미달**이다. 「수집 실패」라 적으면 오너가 수집기를 고치러 간다.
+
+    기준을 사실로 위장하면 엉뚱한 데를 고치게 만든다 — 그게 이 문장이 나쁜 이유다.
+    """
+    from pathlib import Path
+    from src.pipeline.register_pipe import register_source_rows
+
+    # 소스 문자열이 아니라 **오너가 읽는 문장**을 잰다 — 소스로 재면 내가 단 주석(옛 문구 인용)을
+    #   읽고 빨개진다(실측: 그렇게 한 번 헛돌았다).
+    row = {"url": "https://item.taobao.com/item.htm?id=1", "title_ko": "제목",
+           "sale_krw": 30000, "excluded": False, "category_code": "GEN"}
+    out = register_source_rows([row], dispatch_fn=lambda *a, **k: {"success": True},
+                               enrich_fn=lambda r: {"images": [], "description_html": ""},
+                               approved=True, n=1, sleep_fn=lambda *_: None)
+    reasons = [r.get("reason", "") for r in (out.get("results") or [])]
+    assert reasons, f"행 결과가 없다: {out}"
+    joined = " ".join(reasons)
+    assert "이미지 0장" in joined, f"이미지 0장 갈래가 아니다: {joined}"
+    assert "수집 실패" not in joined, f"이미지 0장을 수집 실패라 부른다: {joined}"
+    assert "등록 기준 미달" in joined, f"무엇이 기준 미달인지 안 말한다: {joined}"
+
+    # 「검수 통과」의 정의는 **취급판정**이다(완성도가 아니다) — 그 사실이 코드에 남아 있어야 한다.
+    src = Path("src/pipeline/register_pipe.py").read_text(encoding="utf-8")
+    assert '"review_pass": [r for r in review if not r["excluded"]]' in src
+    assert '"needs_enrich"' in src, "완성도를 따로 세지 않는다"
+
+
+def test_titles_lose_full_width_brackets_but_keep_their_content():
+    """★★ 전각 괄호 문자는 떼고 **내용은 남긴다.** 짝이 맞는 괄호는 건드리지 않는다.
+
+    실측 2026-09-12: `【淘宝】…`는 이미 통째로 지워졌는데 `「제목」`은 괄호가 그대로 남았다.
+    공유 파서가 「」를 구분자로 쓰므로 제목의 일부일 수 없다.
+    반대로 `（2개입）`처럼 **짝이 맞는** 것은 실제 스펙일 수 있어 남긴다 — 내용 훼손 금지.
+    """
+    from src.pipeline.coupang_replicate import clean_title_ko
+
+    assert clean_title_ko("「新中式双人书桌」")["title"] == "新中式双人书桌"
+    assert clean_title_ko("『일본판』 상품명")["title"] == "일본판 상품명"
+    assert clean_title_ko("【淘宝】新中式双人书桌")["title"] == "新中式双人书桌"
+    # 짝 안 맞는 괄호 = 잘린 흔적 → 제거
+    assert "】" not in clean_title_ko("商品名】잘린 괄호")["title"]
+    assert "（" not in clean_title_ko("（未閉 商品名")["title"]
+    # 짝이 맞으면 그대로 — 스펙을 지우지 않는다
+    assert clean_title_ko("상품명（2개입）")["title"] == "상품명（2개입）"
+    # 전부 지워지는 입력이면 원문 보존(빈 제목 금지)
+    assert clean_title_ko("「」")["title"] == "「」"
+
+
+def test_blacklist_applies_at_review_not_only_at_register():
+    """★★ 금칙어는 **검수 단계에서** 걸린다 — 등록까지 가서 걸리는 게 아니다.
+
+    F12-B 질문에 대한 답을 코드로 못 박는다: `build_source_review_row`가 `is_forbidden(title)`을
+    불러 `excluded`를 세우고, 검수표가 그걸로 「취급 제외」를 가른다.
+    """
+    from pathlib import Path
+    src = Path("src/pipeline/register_pipe.py").read_text(encoding="utf-8")
+    row_fn = src[src.index("def build_source_review_row("):src.index("def build_source_review(")]
+    assert "is_forbidden(title" in row_fn, "검수 행에서 금칙어를 안 본다"
+    assert '"excluded": bool(fb)' in row_fn
+
+    # 제목이 비면 금칙어로 걸릴 수 없다 — 부분 초안이 '취급 제외'로 오분류되지 않아야 한다.
+    from src.pipeline.register_pipe import is_forbidden
+    assert not is_forbidden("", blacklist=["담배"]), "빈 제목을 금칙어로 잡는다"
+
+
+def test_the_six_second_budget_is_wall_clock_not_per_hop():
+    """★★★ 「6초 예산」이 **문서에만** 있었다 — 코드엔 홉당 타임아웃뿐이었다.
+
+    실측(C-F12-A): `MAX_HOPS=8` × 6s = **최악 48초.** 폰이 「요청한 시간이 초과되었습니다」로
+    죽은 것이 그대로 설명된다. 예산은 **전체 시간**이어야 하고, 넘기면 **해석 없이 초안**을
+    돌려준다 — 요청이 죽는 것보다 부분 초안이 낫다.
+    """
+    import time
+    from unittest.mock import MagicMock, patch
+    from src.collectors import link_diag
+    from src.collectors.share_text import gap_message, resolve_gap
+
+    hops = {"n": 0}
+
+    def _slow(u, **kw):
+        hops["n"] += 1
+        time.sleep(0.4)
+        m = MagicMock()
+        m.status_code = 302
+        m.headers = {"Location": f"https://main.m.taobao.com/x{hops['n']}"}
+        m.text = ""
+        return m
+
+    t0 = time.monotonic()
+    with patch.dict("os.environ", {"KGP_SHORT_LINK_RESOLVE": "1"}), \
+         patch("requests.get", side_effect=_slow):
+        r = link_diag.resolve_short_link("https://e.tb.cn/h.abc", timeout=1)
+    elapsed = time.monotonic() - t0
+
+    assert elapsed < 2.5, f"예산 1s인데 {elapsed:.1f}s 걸렸다(홉당으로 새고 있다)"
+    assert r["reason"] == "timeout", f"예산 초과 갈래가 아니다: {r}"
+    assert r["ok"] is False
+
+    # 오너 지정 갈래 — 초안은 그대로 서고, 화면이 왜 반쪽인지 말한다.
+    assert resolve_gap({"price": "", "resolve_reason": "timeout"}) == "server_timeout"
+    msg = gap_message({"price": "", "resolve_reason": "timeout"})
+    assert "시간이 너무 걸려" in msg
+    assert "다시 보내실 필요는 없습니다" in msg, "담긴 것이 남아 있다는 사실을 말해야 한다"
+    assert "**" not in msg and "VPN" not in msg
+
+
+def test_connect_and_read_budgets_are_separate():
+    """★★ 한 숫자로 주면 연결 단계에서 예산을 전부 태울 수 있다 — 그래서 튜플로 준다."""
+    from unittest.mock import MagicMock, patch
+    from src.collectors import link_diag
+
+    seen = []
+
+    def _cap(u, **kw):
+        seen.append(kw.get("timeout"))
+        m = MagicMock()
+        m.status_code = 200
+        m.headers = {}
+        m.text = BODY_F11
+        return m
+
+    with patch.dict("os.environ", {"KGP_SHORT_LINK_RESOLVE": "1"}), \
+         patch("requests.get", side_effect=_cap):
+        link_diag.resolve_short_link("https://e.tb.cn/h.abc", timeout=6)
+
+    assert seen and isinstance(seen[0], tuple), f"timeout이 튜플이 아니다: {seen}"
+    connect, read = seen[0]
+    assert connect <= link_diag.CONNECT_TIMEOUT_SEC
+    assert read <= 6
+
+
+def test_the_expand_action_is_documented_as_optional():
+    """★★ 서버가 펴 주게 된 뒤로 폰이 한 번 더 나갈 이유가 줄었다 — 가이드가 그걸 말해야 한다.
+
+    실측: 그 액션이 있는 채로 단축어가 타임아웃으로 죽었다. 권장을 안 바꾸면
+    유저는 계속 느린 쪽을 조립한다.
+    """
+    from pathlib import Path
+    guide = Path("docs/MOBILE_COLLECT_GUIDE.md").read_text(encoding="utf-8")
+    seg = guide[guide.index("### 액션 3"):guide.index("### 액션 4")]
+    assert "선택" in seg, "선택이라고 말하지 않는다"
+    assert "빼시는 쪽을 권합니다" in seg or "빼도 됩니다" in seg
+    assert "final_url" in seg, "무엇을 지우면 되는지 말해야 한다"
+    assert "timings" in guide, "느릴 때 무엇을 보는지 적혀 있지 않다"

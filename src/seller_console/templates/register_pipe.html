@@ -57,6 +57,12 @@
         <span class="rp-stat-v">{{ review.review_pass|length }}</span>
         <span class="rp-stat-unit">건</span><span class="rp-stat-l">검수 통과</span>
       </div>
+      {# C-F12-B: 「검수 통과」는 **취급판정** 통과일 뿐 완성도가 아니다. 제목·이미지가 빈 행도
+         거기 들어가므로 보강 필요분을 나란히 세운다 — 통과 숫자만 보고 등록 가능으로 읽지 않게. #}
+      <div class="rp-stat rp-stat-warn">
+        <span class="rp-stat-v">{{ review.needs_enrich|length }}</span>
+        <span class="rp-stat-unit">건</span><span class="rp-stat-l">보강 필요</span>
+      </div>
       <div class="rp-stat rp-stat-warn">
         <span class="rp-stat-v">{{ review.excluded|length }}</span>
         <span class="rp-stat-unit">건</span><span class="rp-stat-l">취급 제외</span>
@@ -130,6 +136,8 @@
                 <div class="rp-url" title="{{ r.url }}">{{ r.url_short or r.url }}</div>
                 {% if r.title_truncated or r.title_truncated_suspect %}<span class="pc-badge pc-badge-off">제목 절단 의심</span>{% endif %}
                 {% if r.title_cjk_residual %}<span class="pc-badge pc-badge-muted">번역 잔여(한자)</span>{% endif %}
+                {% if r.needs_enrich %}<span class="pc-badge pc-badge-off">보강 필요{% if r.missing %} · {{ r.missing|join('·') }} 없음{% endif %}</span>{% endif %}
+                {% if r.partial and r.item_id_taobao %}<span class="pc-badge pc-badge-muted">상품번호 {{ r.item_id_taobao }}</span>{% endif %}
               </td>
               <td class="rp-r" data-label="소싱가">
                 {% if r.cost_krw %}<span class="rp-num">{{ '{:,}'.format(r.cost_krw) }}<span class="rp-unit">원</span></span>

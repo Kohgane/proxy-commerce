@@ -464,6 +464,14 @@ def build_source_review_row(draft: dict, *, url: str = "", channel: str = "wooco
         "warnings": assess_warnings(title, brand, watch_brands=watch_brands),   # IPR 경고(차단 아님·표기)
         "forbidden": fb, "forbidden_detail": explain_forbidden(fb, title),
         "excluded": bool(fb), "registered": False,
+        # C-F12-B: **부분 초안**(제목·이미지 없이 상품번호만 온 것)을 「검수 통과」로만 적으면
+        #   화면이 거짓말을 한다 — `excluded`는 **취급판정**(금지어)일 뿐 완성도를 재지 않는다.
+        #   무엇이 비었는지 행이 직접 들고 다니게 한다.
+        "partial": bool(draft.get("partial")),
+        "item_id_taobao": str(draft.get("item_id_taobao") or draft.get("site_item_id") or ""),
+        "uncollected": list(draft.get("uncollected") or []),
+        "needs_enrich": bool(draft.get("partial")) or not images or not title,
+        "missing": [k for k, v in (("제목", title), ("이미지", images)) if not v],
     }
 
 
@@ -500,7 +508,10 @@ def build_source_review(urls, *, collect_fn, channel: str = "woocommerce_multish
                                                brand_country_fn=brand_country_fn, watch_brands=watch_brands))
     return {
         "count": len(review),
+        # 「검수 통과」의 정의는 **취급판정 통과**다(금지어 아님). 완성도와 다른 축이라
+        #   보강 필요분을 따로 센다 — 통과 숫자만 보고 등록 가능으로 읽지 않게.
         "review_pass": [r for r in review if not r["excluded"]],
+        "needs_enrich": [r for r in review if not r["excluded"] and r.get("needs_enrich")],
         "excluded": [r for r in review if r["excluded"]],
         "failed": failed,
         "requested": len(clean_urls),
@@ -579,8 +590,13 @@ def register_source_rows(rows, *, dispatch_fn, enrich_fn=None, account: str = "g
                                 "reason": f"collect 실패: {exc}", "image_count": 0, "product_id": None})
                 continue
         if not images:                                   # 이미지 0장 → 등록 보류(안 팔릴 상품 공개 방지)
+            # C-F12-B: 여기 문장이 「수집 실패」라고 말하고 있었다. **거짓이다** —
+            #   상품번호·가격까지 수집된 행도 이미지가 없으면 이 갈래로 온다.
+            #   이미지 0장은 **등록 기준 미달**이고 수집 결과가 아니다. 기준을 사실로 위장하면
+            #   오너가 수집기를 고치러 간다(엉뚱한 데를 고친다).
             results.append({"url": r.get("url"), "title": r.get("title_ko"), "registered": False,
-                            "reason": "이미지 0장 — 등록 보류(수집 실패, 확장 수집 권장)",
+                            "reason": ("이미지 0장 — 등록 보류(등록 기준 미달). "
+                                       "이미지는 PC 고가수집기로 보강하면 등록됩니다."),
                             "image_count": 0, "product_id": None})
             continue
         # 판매가 미확정(환율 미상 등) → 등록 안 함. 0원 전송은 마켓이 반드시 거부한다(왕복 절약·정직 사유).

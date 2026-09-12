@@ -69,6 +69,10 @@ COLLECT_ENTRY_POINTS = (
     ("모바일 단건",      "src/api/extension_api.py",         "/one"),
     ("확장 벌크(job)",   "src/api/extension_api.py",         "/bulk"),
     ("텔레그램",         "src/api/telegram_collect.py",      "collect_one_url"),
+    # C-F12-B 실측: **일곱 번째 입구**였다. 검수표가 `_collect_real_draft`를 직접 주입해
+    #   쓰는데 목록에 없어, 「타오바오는 초안으로」 규율이 여기만 안 서 있었다
+    #   (tmall 풀링크 → 코어가 None → 「수집 실패(실데이터 못 얻음)」).
+    ("소싱 URL 검수",    "src/seller_console/views.py",      "/sourcing/register-pipe"),
 )
 # 셀러 수집 경로가 아닌 곳(관리자 진단·보강 큐)은 목록에 없다 — 같은 코어를 타므로 가드는 받는다.
 
@@ -183,6 +187,8 @@ def resolve_gap(share: dict) -> str:
     # `not_short_link`·`disabled`는 **시도하지 않았다**는 뜻이라 실패 갈래가 아니다 —
     #   안 해 본 것을 실패로 적으면 그게 날조다.
     if reason and reason not in ("ok", "not_short_link", "disabled"):
+        if reason == "timeout":
+            return "server_timeout"               # 예산 안에 못 폈다 — 초안은 그대로 세운다
         return "server_opened_no_item" if reason == "no_item_in_body" else "server_could_not_open"
     if not (share.get("final_url") or "").strip():
         return "no_final_url"
@@ -208,6 +214,9 @@ _GAP_MESSAGE = {
     "server_opened_no_item": ("제목과 링크만 담았어요 — 링크를 열어 봤지만 그 안에 상품 링크가 "
                               "없었습니다. 가격·이미지는 PC에서 고가수집기로 보강해 주세요. "
                               "무엇이 왔는지는 「링크 진단」에서 보실 수 있습니다."),
+    "server_timeout": ("제목과 링크만 담았어요 — 링크를 펴는 데 시간이 너무 걸려 중간에 멈췄습니다. "
+                       "가격·이미지는 PC에서 고가수집기로 보강해 주세요. "
+                       "담긴 것은 그대로 남아 있으니 다시 보내실 필요는 없습니다."),
     "server_could_not_open": ("제목과 링크만 담았어요 — 링크를 여는 데 실패했습니다. "
                               "가격·이미지는 PC에서 고가수집기로 보강해 주세요. "
                               "실패 원인은 「링크 진단」이 원문으로 보여 드립니다."),

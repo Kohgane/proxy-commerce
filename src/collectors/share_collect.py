@@ -50,6 +50,8 @@ tier1 추출 → 초안 병합. 퍼센티가 같은 구조인 이유다.
 from __future__ import annotations
 
 import logging
+import time
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -80,10 +82,15 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
     #   여기서 펴는 것은 **상품번호와 공유 시점 가격**뿐이다 — 상세·이미지·옵션은
     #   여전히 로그인 벽 뒤이고(실측 불변) 그건 확장이 한다.
     #   폰이 이미 펴 줬으면(=id가 있으면) **다시 나가지 않는다.**
+    # C-F12-A: 단계별 소요를 **재서 응답에 싣는다.** 폰이 「요청한 시간이 초과되었습니다」로
+    #   죽었을 때 어디서 오래 걸린 건지 알 방법이 없었다 — 추측으로 예산을 조이면 엉뚱한 데를 조인다.
+    timings: dict = {}
     resolve_reason = ""
     if not share.get("item_id") and is_short_link(url):
         from src.collectors.link_diag import resolve_short_link
+        _t = time.perf_counter()
         r = resolve_short_link(url)
+        timings["resolve"] = int((time.perf_counter() - _t) * 1000)
         resolve_reason = r.get("reason", "")
         if r.get("ok"):
             share["item_id"] = r["item_id"]
@@ -109,12 +116,14 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
     title = share.get("title", "")
     title_ko = title
     if translate and title:
+        _t = time.perf_counter()
         try:
             from src.api.extension_api import _translate_payload
             tr = _translate_payload({"title": title, "description": ""})
             title_ko = tr.get("title_ko") or title
         except Exception as exc:                    # 번역 실패 = 원문 유지(가짜 번역 0)
             logger.warning("공유 수집: 제목 번역 실패 — %s", exc)
+        timings["translate"] = int((time.perf_counter() - _t) * 1000)
 
     # C-T3(3차): 폰이 링크를 펴 줬으면 **가격과 itemId가 함께 온다** → 미수집 목록이 줄어든다.
     #   가격은 공유 시점 값이다 — 실시간이 아니다. 그 사실을 필드로 남겨 화면이 그대로 말한다.
@@ -127,6 +136,7 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
         url = canonical_item_url(share["item_id"]) or share.get("final_url") or url
 
     from src.seller_console.collect_history_store import append as history_append
+    _t_save = time.perf_counter()
     _ret = history_append(
         return_durable=True, source=source, url=url,
         title=title_ko or title or "(제목 없음)",
@@ -151,6 +161,7 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
             "share_raw": share.get("raw", "")[:500],
         },
     )
+    timings["save"] = int((time.perf_counter() - _t_save) * 1000)
     item_id, durable = _ret if (isinstance(_ret, tuple) and len(_ret) == 2) else (_ret, True)
     if not item_id or not durable:
         return {"ok": False, "url": url, "error": "저장 영속화 실패(재시도 필요)"}
@@ -170,7 +181,65 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
             "enrich_state": ("done" if price else "pending"),
             # 서버가 **본 것만** 담는다: 최종 URL이 왔나 · 상품번호가 있었나 · 가격이 있었나.
             "resolve_gap": resolve_gap(share), "message": gap_message(share),
+            # 어디서 오래 걸렸는지 — 원문은 안 싣고 **밀리초만** 싣는다.
+            "timings": timings,
             }
+
+
+def partial_draft_for_taobao(url: str, *, resolve: bool = True) -> Optional[dict]:
+    """타오바오 계열 URL → **저장하지 않는 부분 초안.** 못 건지면 None.
+
+    C-F12-B: 검수표(소싱 URL 검수)가 `_collect_real_draft`를 주입해 쓰는데,
+    그 코어가 타오바오에 None을 돌려줘서 화면에 **「수집 실패(실데이터 못 얻음)」**이 떴다.
+    그런데 tmall 풀링크에는 **상품번호가 URL에 박혀 있다** — 못 얻은 게 아니라 안 본 것이다.
+
+    여기서 주는 것은 있는 것만이다:
+      · `item_id` — URL에서 직접(풀링크) 또는 단축 링크를 펴서
+      · `price`/`currency` — URL에 `price=`가 실려 있을 때만
+      · `title`·`images`는 **빈 값** — 페이지가 로그인 벽 뒤라 못 읽는다(실측 불변)
+
+    `partial=True`와 `uncollected`를 달아 **보강이 필요하다는 사실이 함께** 흐르게 한다.
+    저장은 하지 않는다 — 저장은 호출부 몫이고, 검수표는 저장하면 안 되는 화면이다.
+    """
+    from src.collectors.share_text import (canonical_item_url, extract_item_id,
+                                           is_short_link, is_taobao_family,
+                                           parse_final_url)
+
+    if not is_taobao_family(url):
+        return None
+
+    item_id = extract_item_id(url)
+    f = parse_final_url(url)                      # 풀링크에 `price=`가 실려 올 수 있다(실측)
+    price, currency = f.get("price", ""), f.get("currency", "")
+    reason = "not_short_link"
+
+    if not item_id and resolve and is_short_link(url):
+        from src.collectors.link_diag import resolve_short_link
+        r = resolve_short_link(url)
+        reason = r.get("reason", "")
+        if r.get("ok"):
+            item_id = r["item_id"]
+            price = price or r.get("price", "")
+            currency = currency or r.get("currency", "")
+
+    if not item_id:
+        return None                               # 이어갈 실마리가 없으면 초안도 없다
+
+    uncollected = [f2 for f2 in UNCOLLECTED_FIELDS if not (f2 == "price" and price)]
+    return {
+        "title": "", "title_ko": "", "title_en": "",
+        "price": price, "price_original": price, "currency": currency,
+        "images": [], "image": "", "description": "", "description_ko": "",
+        "source": "taobao", "collected_via": "url_only",
+        "site_item_id": item_id, "item_id_taobao": item_id,
+        "url": canonical_item_url(item_id) or url,
+        # 화면·검수표가 "이건 아직 반쪽"이라고 읽는 근거. 숨기면 등록까지 그냥 흘러간다.
+        "partial": True, "uncollected": uncollected,
+        "enrich_state": ("done" if price else "pending"),
+        "price_source": ("share_link" if price else ""),
+        "resolve_reason": reason,
+        "is_mock": False,
+    }
 
 
 def collect_input(raw: str, *, seller_id: str = "", source: str = "input",
@@ -216,7 +285,7 @@ def collect_input(raw: str, *, seller_id: str = "", source: str = "input",
         #   판단이 두 벌이면 늘 앞의 것이 이긴다. 그래서 한 벌만 남긴다(F1의 교훈과 같은 자리).
         r = collect_from_share_text(raw, seller_id=seller_id, source=source,
                                     translate=translate, final_url=final_url)
-        r["kind"] = "share_draft" if r.get("ok") else "failed"
+        r["kind"] = "share_draft" if r.get("ok") else "failed"   # timings는 r에 이미 실려 있다
         if alt_key_url:
             r["alt_key_url"] = alt_key_url      # 호출부 중복 조회용(같은 상품의 단축 링크 형태)
         return r
