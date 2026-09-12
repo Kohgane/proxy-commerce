@@ -125,6 +125,11 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
             logger.warning("공유 수집: 제목 번역 실패 — %s", exc)
         timings["translate"] = int((time.perf_counter() - _t) * 1000)
 
+    # C-F13-1: **번역 뒤에 정제한다.** 순서가 중요하다 — 번역이 「】」 같은 잔해를 그대로 넘기고,
+    #   정제기가 그걸 떼낸다. 실측(오너 라이브): 「iPhone 17 신제품】」이 응답에 그대로 나갔다.
+    from src.collectors.share_text import finalize_title
+    title_ko = finalize_title(title_ko, url=url)
+
     # C-T3(3차): 폰이 링크를 펴 줬으면 **가격과 itemId가 함께 온다** → 미수집 목록이 줄어든다.
     #   가격은 공유 시점 값이다 — 실시간이 아니다. 그 사실을 필드로 남겨 화면이 그대로 말한다.
     price = share.get("price", "")

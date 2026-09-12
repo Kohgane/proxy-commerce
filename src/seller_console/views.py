@@ -8886,59 +8886,65 @@ def listing_history():
 
 @bp.get("/media/queue")
 def media_queue():
-    """이미지 처리 큐 페이지 (Phase 144)."""
+    """보강 대기·막힘 현황 (C-F13-2d).
+
+    전엔 `queue_size: 0`이 **하드코딩**돼 있어 무엇을 하든 「대기 중 0건」이었다 —
+    화면이 있는데 아무것도 말하지 않으면 그건 없는 것보다 나쁘다(믿고 안 보게 된다).
+    이제 실제 보강 큐를 읽는다: 대기 · 막힘(사유) · 완료 · 서버 저장본 유무.
+    """
     guard = _sourcing_require_admin()
     if guard is not None:
         return guard
 
-    status = {
-        "enabled": os.getenv("IMAGE_PIPELINE_ENABLED", "1") == "1",
-        "inpaint_enabled": os.getenv("IMAGE_INPAINT_ENABLED", "1") == "1",
-        "provider": "pillow",
-        "queue_size": 0,
-    }
+    import json as _json
+    from . import collect_history_store
+    rows = []
+    try:
+        rows = collect_history_store.list_items(seller_ids=_seller_identities(), days=90, limit=500)
+    except Exception as exc:
+        logger.warning("보강 현황 조회 실패: %s", exc)
 
-    from markupsafe import Markup
+    pending, blocked, done = [], [], []
+    no_stored = 0
+    for row in rows:
+        try:
+            ex = _json.loads(row.get("extra_json") or "{}") or {}
+        except Exception:
+            continue
+        state = str(ex.get("enrich_state") or "")
+        if not state:
+            continue
+        entry = {
+            "id": row.get("id"),
+            "title": row.get("title") or ex.get("title") or "(제목 없음)",
+            "url": row.get("url") or "",
+            "images": len(ex.get("images") or []),
+            "images_stored": len(ex.get("images_stored") or []),
+            "stored_note": ex.get("images_stored_note") or "",
+            "attempts": int(ex.get("enrich_attempts") or 0),
+            "reason": ex.get("enrich_blocked_reason") or "",
+            "uncollected": ex.get("uncollected") or [],
+            "price": ex.get("price") or "",
+            "price_list": ex.get("price_list") or "",
+            "price_final": ex.get("price_final") or "",
+            "price_basis": ex.get("price_basis") or "",
+        }
+        if state == "blocked":
+            blocked.append(entry)
+        elif state == "pending":
+            pending.append(entry)
+        else:
+            done.append(entry)
+        if entry["images"] and not entry["images_stored"]:
+            no_stored += 1
 
-    enabled = status.get("enabled", True)
-    inpaint = status.get("inpaint_enabled", True)
-    provider = status.get("provider", "pillow")
-    queue_size = status.get("queue_size", 0)
-
-    enabled_badge = (
-        "<span class='badge bg-success'>ON</span>" if enabled
-        else "<span class='badge bg-secondary'>OFF</span>"
+    from src.api.extension_api import ENRICH_MAX_ATTEMPTS
+    return render_template(
+        "media_queue.html", page="media_queue",
+        pending=pending, blocked=blocked, done=done, no_stored=no_stored,
+        max_attempts=ENRICH_MAX_ATTEMPTS,
+        cdn_ready=bool(os.getenv("CLOUDINARY_CLOUD_NAME")),
     )
-    inpaint_badge = (
-        "<span class='badge bg-success'>ON</span>" if inpaint
-        else "<span class='badge bg-secondary'>OFF</span>"
-    )
-
-    body = Markup(
-        "<h4 class='mb-3'>🖼️ 이미지 처리 큐 (Phase 144)</h4>"
-        "<div class='row mb-4'>"
-        "  <div class='col-md-4'>"
-        "    <div class='card'>"
-        "      <div class='card-body'>"
-        "        <ul class='list-unstyled mb-0'>"
-        f"          <li>파이프라인: {enabled_badge}</li>"
-        f"          <li>Inpainting (워터마크 제거): {inpaint_badge}</li>"
-        f"          <li>Provider: <code>{provider}</code></li>"
-        f"          <li>대기 중: <strong>{queue_size}건</strong></li>"
-        "        </ul>"
-        "      </div>"
-        "    </div>"
-        "  </div>"
-        "</div>"
-        "<div class='alert alert-info'>"
-        "  🖼️ 소싱된 상품 이미지 자동 처리 현황입니다. 배경 제거·워터마크 인페인팅 결과를 확인하세요."
-        "</div>"
-        "<div class='d-flex gap-2 mt-3'>"
-        "  <a href='/seller/listing/history' class='btn btn-outline-primary btn-sm'>📦 등록 이력</a>"
-        "  <a href='/seller/sourcing/candidates' class='btn btn-outline-secondary btn-sm'>📥 후보 큐</a>"
-        "</div>"
-    )
-    return _render_seller_page("🖼️ 이미지 큐", body, page="media_queue")
 
 
 # ---------------------------------------------------------------------------

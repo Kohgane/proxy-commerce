@@ -120,18 +120,21 @@ async function handleExists(urls, sendResponse) {
 //   옵션·상세·리뷰·갤러리를 읽어 서버 /enrich로 기존 항목에 병합(fill-only). 사용자 브라우저
 //   컨텍스트라 차단 리스크 최소. 동시 1탭·항목당 3~6초 랜덤 간격·실패 1회 재시도·일시정지/중단.
 const KgpEnrich = {
-  queue: [], done: 0, total: 0, failed: 0, ok: 0,
+  queue: [], done: 0, total: 0, failed: 0, ok: 0, blocked: 0,
   paused: false, stopped: false, running: false, current: "",
+  queued: new Set(),                        // 같은 항목을 두 번 큐에 넣지 않게(폴링이 반복되므로)
 };
 function _kgpEnrichSnapshot() {
   return { done: KgpEnrich.done, total: KgpEnrich.total, failed: KgpEnrich.failed,
-    ok: KgpEnrich.ok, paused: KgpEnrich.paused, stopped: KgpEnrich.stopped,
-    running: KgpEnrich.running, current: KgpEnrich.current };
+    ok: KgpEnrich.ok, blocked: KgpEnrich.blocked, paused: KgpEnrich.paused,
+    stopped: KgpEnrich.stopped, running: KgpEnrich.running, current: KgpEnrich.current };
 }
-// 항목당 대기(3~6초 랜덤). rng 주입 가능(테스트).
+// 항목당 대기(3~8초 랜덤 · 오너 지정). rng 주입 가능(테스트).
+//   봇 판정 회피는 **상식 범위**다 — 사람이 상세를 넘겨보는 속도. 그 이상의 우회는 하지 않는다.
+const KGP_ENRICH_MAX_RETRIES = 3;          // 서버 상한(ENRICH_MAX_ATTEMPTS)과 같은 수
 function _kgpEnrichDelayMs(rng) {
   const r = (typeof rng === "function") ? rng() : Math.random();
-  return 3000 + Math.floor(r * 3000);
+  return 3000 + Math.floor(r * 5000);
 }
 function _kgpSleep(ms) { return new Promise((res) => setTimeout(res, ms)); }
 function _kgpWaitTabComplete(tabId, timeoutMs) {
@@ -211,6 +214,8 @@ async function _kgpEnrichOne(item, settings) {
     // v67 STEP2: 렌더 미보장 상태로 '보강 완료' 금지 — 테무 성공 기준 미달이면 정직 실패(재시도/보강 실패).
     const verdict = _kgpEnrichVerdict(item, meta);
     if (!verdict.ok) throw new Error(verdict.reason);
+    // C-F13-2b: 로그인 벽·확인 절차를 만났으면 **보강이 아니라 막힘**이다. 뚫지 않는다.
+    if (meta.wall) { const e = new Error(meta.wall); e.kgpWall = true; throw e; }
     const body = {
       item_id: item.item_id,
       options: meta.options || [],
@@ -220,6 +225,11 @@ async function _kgpEnrichOne(item, settings) {
       reviews: meta.reviews || [],
       rating: meta.rating || "",
       review_count: meta.review_count || "",
+      // C-F13-2a: 타오바오 가격 두 개를 **따로** 올린다(优惠前/补贴后). 서버가 섞지 않고 담는다.
+      price: meta.price || "",
+      price_list: meta.price_list || "",
+      price_final: meta.price_final || "",
+      currency: meta.currency || "",
     };
     const r = await fetch(`${settings.serverUrl}/api/v1/collect/enrich`, {
       method: "POST",
@@ -245,14 +255,23 @@ async function _kgpEnrichLoop() {
       await _kgpEnrichOne(item, settings);
       KgpEnrich.ok++;
     } catch (e) {
-      if ((item.retries || 0) < 1) {          // 실패 1회 재시도(뒤에 다시 넣음)
+      // C-F13-2b: 벽에 막힌 건 **다시 시도해도 같다** — 서버에 사유를 적고 다음 항목으로 간다.
+      //   나머지 실패는 상한(3회)까지 재시도. 상한을 넘기면 그 사실도 서버에 적는다.
+      const wall = !!(e && e.kgpWall);
+      const reason = (e && e.message) || "알 수 없는 오류";
+      if (wall) {
+        await _kgpReportBlocked(item, reason, settings);
+        KgpEnrich.blocked++;
+      } else if ((item.retries || 0) + 1 < KGP_ENRICH_MAX_RETRIES) {
         item.retries = (item.retries || 0) + 1;
         KgpEnrich.queue.push(item);
         KgpEnrich.done++; _kgpBroadcastEnrich();
         if (!KgpEnrich.stopped) await _kgpSleep(_kgpEnrichDelayMs());
         continue;
+      } else {
+        await _kgpReportBlocked(item, `${KGP_ENRICH_MAX_RETRIES}회 시도 실패 — ${reason}`, settings);
+        KgpEnrich.failed++;                     // 재시도도 실패 → '보강 실패' 정직 집계
       }
-      KgpEnrich.failed++;                       // 재시도도 실패 → '보강 실패' 정직 집계
     }
     KgpEnrich.done++;
     KgpEnrich.current = "";
@@ -263,6 +282,78 @@ async function _kgpEnrichLoop() {
   KgpEnrich.current = "";
   _kgpBroadcastEnrich();
 }
+// ── C-F13-2a: 보강 대기 폴러 ────────────────────────────────────────────────
+//   실측(F9-2)이 찾은 세 겹 막힘 중 마지막 하나 — `/enrich/pending`을 **아무도 안 집어갔다.**
+//   만들어 둔 큐에 소비자가 없으면 그건 기능이 아니라 장식이다.
+//
+//   왜 확장이 하나: 타오바오 상세는 **로그인된 브라우저에서만** 열린다(오너 실측). 서버는 못 한다.
+//   언제: 콘솔 탭을 열 때 + 5분마다(MV3 서비스워커는 잠들므로 `setInterval`이 아니라 `alarms`).
+//   어떻게: 동시 1탭 · 항목 간 3~8초 · 재시도 3회 · 벽을 만나면 사유를 적고 다음으로.
+const KGP_ENRICH_ALARM = "kgpEnrichPoll";
+const KGP_ENRICH_POLL_MIN = 5;
+
+async function _kgpReportBlocked(item, reason, settings) {
+  // 막힘을 **서버에 적는다.** 안 적으면 다음 순회가 같은 벽에 또 박고, 화면은 이유를 모른다.
+  try {
+    await fetch(`${settings.serverUrl}/api/v1/collect/enrich/blocked`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${settings.token}` },
+      body: JSON.stringify({ item_id: item.item_id, reason: String(reason || "").slice(0, 200) }),
+    });
+  } catch (e) {
+    try { console.warn("[고가수집기 보강] 막힘 보고 실패:", e && e.message); } catch (e2) {}
+  }
+}
+
+async function _kgpPollPending(reason) {
+  const settings = await getSettings();
+  if (!settings.token) return { ok: false, error: "토큰 미설정" };
+  let items = [];
+  try {
+    const r = await fetch(`${settings.serverUrl}/api/v1/collect/enrich/pending?limit=25`, {
+      headers: { "Authorization": `Bearer ${settings.token}` },
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d || !d.ok) return { ok: false, error: "대기 목록 조회 실패 HTTP " + r.status };
+    items = Array.isArray(d.items) ? d.items : [];
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || "네트워크 오류" };
+  }
+  // 이미 큐에 있는 항목은 다시 넣지 않는다 — 폴링이 5분마다 도는데 중복을 넣으면 같은 상품을
+  //   여러 번 열게 되고, 그건 봇 신호다.
+  const fresh = items.filter((it) => it && it.item_id && it.url && !KgpEnrich.queued.has(it.item_id));
+  if (!fresh.length) return { ok: true, added: 0, pending: items.length };
+  fresh.forEach((it) => KgpEnrich.queued.add(it.item_id));
+  try { console.log(`[고가수집기 보강] ${reason}: 대기 ${items.length}건 중 ${fresh.length}건 큐 투입`); } catch (e) {}
+  handleEnrichStart(fresh.map((it) => ({ item_id: it.item_id, url: it.url })), null);
+  return { ok: true, added: fresh.length, pending: items.length };
+}
+
+function _kgpIsConsoleUrl(url, serverUrl) {
+  if (!url || !serverUrl) return false;
+  try {
+    return new URL(url).host === new URL(serverUrl).host && /\/seller(\/|$)/.test(new URL(url).pathname);
+  } catch (e) { return false; }
+}
+
+try {
+  if (chrome.alarms && chrome.alarms.create) {
+    chrome.alarms.create(KGP_ENRICH_ALARM, { periodInMinutes: KGP_ENRICH_POLL_MIN });
+    chrome.alarms.onAlarm.addListener((a) => {
+      if (a && a.name === KGP_ENRICH_ALARM) _kgpPollPending(`${KGP_ENRICH_POLL_MIN}분 주기`);
+    });
+  }
+} catch (e) { /* alarms 미가용 환경은 탭 열림만으로 돈다 */ }
+
+// 콘솔 탭이 열리면 즉시 한 번 — 오너가 화면을 열어 둔 그 순간이 가장 좋은 시점이다.
+try {
+  chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
+    if (!info || info.status !== "complete" || !tab || !tab.url) return;
+    const settings = await getSettings();
+    if (_kgpIsConsoleUrl(tab.url, settings.serverUrl)) _kgpPollPending("콘솔 탭 열림");
+  });
+} catch (e) { /* noop */ }
+
 function handleEnrichStart(targets, sendResponse) {
   const items = (Array.isArray(targets) ? targets : [])
     .filter((t) => t && t.item_id && t.url)

@@ -1621,3 +1621,234 @@ def test_the_expand_action_is_documented_as_optional():
     assert "빼시는 쪽을 권합니다" in seg or "빼도 됩니다" in seg
     assert "final_url" in seg, "무엇을 지우면 되는지 말해야 한다"
     assert "timings" in guide, "느릴 때 무엇을 보는지 적혀 있지 않다"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# C-F13 — 정제기가 수집 경로도 탄다 · 보강 소비자(폴러·막힘·가격 2종) · 원본 보존
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_api_response_title_is_cleaned_not_just_the_review_table():
+    """★★★ 계약을 **함수가 아니라 API 응답 title**로 잰다(오너 지정).
+
+    실측(라이브): 응답 제목이 「iPhone 17 신제품**】**」이었다. 정제기는 있었지만
+    **등록·검수 파이프에서만** 불렸다 — 같은 결함이 두 화면에서 다르게 보인 이유다.
+    함수를 재면 "정제기는 잘 돈다"는 초록이 나오고 경로는 계속 새어 있다.
+    """
+    from unittest.mock import patch
+    from src.order_webhook import app
+    from src.seller_console import collect_history_store as chs
+
+    try:
+        chs._in_memory.clear()
+    except Exception:
+        pass
+    c = app.test_client()
+    fix = "【淘宝】https://e.tb.cn/h.zz?tk=ABC\n「iPhone 17 신제품】」\n点击链接"
+    with patch("src.api.extension_api._require_token", return_value={"user_id": "default"}):
+        d = c.post("/api/v1/collect/one", json={"share_text": fix, "translate": False}).get_json()
+
+    assert d.get("ok") is True, f"수집이 실패했다: {d}"
+    title = d.get("title") or ""
+    assert title == "iPhone 17 신제품", f"정제되지 않은 제목: {title!r}"
+    for junk in ("】", "【", "「", "」"):
+        assert junk not in title, f"{junk}가 응답 제목에 남았다"
+
+
+def test_pending_queue_hides_blocked_and_carries_attempts():
+    """★★★ `blocked`는 대기가 아니다 — 큐가 같은 벽에 계속 머리를 박지 않게 뺀다.
+
+    상한(`ENRICH_MAX_ATTEMPTS`)을 **서버가** 들고 있어야 확장 판본이 달라도 지켜진다.
+    """
+    from unittest.mock import patch
+    from src.api.extension_api import ENRICH_MAX_ATTEMPTS
+    from src.order_webhook import app
+    from src.seller_console import collect_history_store as chs
+
+    assert ENRICH_MAX_ATTEMPTS == 3, "오너 지정 상한(3회)"
+    try:
+        chs._in_memory.clear()
+    except Exception:
+        pass
+    c = app.test_client()
+    with patch("src.api.extension_api._require_token", return_value={"user_id": "default"}), \
+         patch.dict("os.environ", {"KGP_SHORT_LINK_RESOLVE": "0"}):
+        made = c.post("/api/v1/collect/one",
+                      json={"share_text": "【淘宝】https://e.tb.cn/h.q1?tk=T\n「책상」",
+                            "translate": False}).get_json()
+        item_id = made["item_id"]
+        assert made.get("enrich_state") == "pending"
+
+        pend = c.get("/api/v1/collect/enrich/pending").get_json()
+        ids = [i["item_id"] for i in pend["items"]]
+        assert item_id in ids, "대기 목록에 없다"
+        assert pend["items"][ids.index(item_id)]["attempts"] == 0
+
+        # 상한 미달 — 아직 대기로 남는다(한 번 막혔다고 포기하지 않는다).
+        r1 = c.post("/api/v1/collect/enrich/blocked",
+                    json={"item_id": item_id, "reason": "로그인 벽"}).get_json()
+        assert r1["attempts"] == 1 and r1["state"] == "pending"
+        assert item_id in [i["item_id"] for i in c.get("/api/v1/collect/enrich/pending").get_json()["items"]]
+
+        for _ in range(ENRICH_MAX_ATTEMPTS - 1):
+            rN = c.post("/api/v1/collect/enrich/blocked",
+                        json={"item_id": item_id, "reason": "로그인 벽"}).get_json()
+        assert rN["attempts"] == ENRICH_MAX_ATTEMPTS and rN["state"] == "blocked"
+        # 굳은 뒤엔 대기 목록에서 빠진다.
+        assert item_id not in [i["item_id"] for i in
+                              c.get("/api/v1/collect/enrich/pending").get_json()["items"]]
+
+
+def test_two_taobao_prices_are_kept_apart():
+    """★★★ 타오바오는 가격을 **둘** 보여 준다(优惠前 / 补贴后). 합치면 어느 쪽인지 영영 모른다.
+
+    마진의 분모는 **실제로 내는 값**이라 补贴后가 우선이고, 무엇을 썼는지 `price_basis`로 남긴다.
+    """
+    import json
+    from unittest.mock import patch
+    from src.order_webhook import app
+    from src.seller_console import collect_history_store as chs
+
+    try:
+        chs._in_memory.clear()
+    except Exception:
+        pass
+    c = app.test_client()
+    with patch("src.api.extension_api._require_token", return_value={"user_id": "default"}), \
+         patch.dict("os.environ", {"KGP_SHORT_LINK_RESOLVE": "0"}):
+        made = c.post("/api/v1/collect/one",
+                      json={"share_text": "【淘宝】https://e.tb.cn/h.q2?tk=T\n「의자」",
+                            "translate": False}).get_json()
+        item_id = made["item_id"]
+        r = c.post("/api/v1/collect/enrich",
+                   json={"item_id": item_id, "price_list": "199", "price_final": "76.86",
+                         "currency": "CNY", "gallery": ["https://img.alicdn.com/a.jpg"]}).get_json()
+    assert r["ok"] is True
+
+    row = chs.get(item_id, seller_ids={"default"})
+    ex = json.loads(row["extra_json"])
+    assert ex["price_list"] == "199", "할인 전 가격이 사라졌다"
+    assert ex["price_final"] == "76.86", "보조금 후 가격이 사라졌다"
+    assert ex["price"] == "76.86", "마진 분모는 실제 내는 값이어야 한다"
+    assert ex["price_basis"] == "보조금 후", "무엇을 썼는지 안 적었다"
+    # 가격이 왔으니 등록 게이트가 열린다.
+    assert ex["enrich_state"] == "done"
+
+
+def test_originals_survive_and_stored_copies_are_never_faked():
+    """★★★ 원본 URL은 **그대로** 남는다(D트랙 재번역 대비). 저장본이 없으면 없다고 적는다.
+
+    CDN 미설정 시 파이프라인은 원본 URL을 그대로 돌려준다 — 그 값을 「저장본」이라 적으면
+    같은 URL을 두 번 적는 셈이고, 화면은 저장된 줄 안다.
+    """
+    import json
+    from unittest.mock import patch
+    from src.order_webhook import app
+    from src.seller_console import collect_history_store as chs
+
+    try:
+        chs._in_memory.clear()
+    except Exception:
+        pass
+    c = app.test_client()
+    orig = ["https://img.alicdn.com/one.jpg", "https://img.alicdn.com/two.jpg"]
+    with patch("src.api.extension_api._require_token", return_value={"user_id": "default"}), \
+         patch.dict("os.environ", {"KGP_SHORT_LINK_RESOLVE": "0"}):
+        made = c.post("/api/v1/collect/one",
+                      json={"share_text": "【淘宝】https://e.tb.cn/h.q3?tk=T\n「램프」",
+                            "translate": False}).get_json()
+        c.post("/api/v1/collect/enrich",
+               json={"item_id": made["item_id"], "gallery": orig}).get_json()
+
+    ex = json.loads(chs.get(made["item_id"], seller_ids={"default"})["extra_json"])
+    assert ex["images"] == orig, "원본 URL이 바뀌었다"
+    assert not ex.get("images_stored"), "CDN 미설정인데 저장본이 생겼다(가짜)"
+    assert ex.get("images_stored_note"), "왜 저장본이 없는지 안 적었다"
+    assert orig[0] not in (ex.get("images_stored") or []), "원본을 저장본이라 적었다"
+
+
+def test_the_extension_actually_polls_the_pending_queue():
+    """★★★ F9-2가 찾은 마지막 막힘 — `/enrich/pending`의 **소비자가 0**이었다.
+
+    만들어 둔 큐에 소비자가 없으면 그건 기능이 아니라 장식이다.
+    폴러는 ①콘솔 탭 열림 ②5분 주기(`alarms` — MV3 서비스워커는 잠들므로 setInterval 불가).
+    """
+    from pathlib import Path
+    bg = Path("extensions/chrome-collector/background.js").read_text(encoding="utf-8")
+
+    assert "enrich/pending" in bg, "대기 목록을 조회하지 않는다"
+    assert "chrome.alarms" in bg and "periodInMinutes" in bg, "주기 폴링이 없다"
+    assert "KGP_ENRICH_POLL_MIN = 5" in bg, "오너 지정 5분 주기"
+    assert "chrome.tabs.onUpdated" in bg and "_kgpIsConsoleUrl" in bg, "콘솔 탭 열림 감지가 없다"
+    # 주기 폴링이 `alarms`로 도는지는 위에서 쟀다. "근처에 setInterval이 없다" 같은
+    #   **소스 위치** 검사는 하지 않는다 — 무관한 코드가 옆에 오면 깨지고, 정작 폴링은 안 본다.
+    # 중복 투입 방지 — 5분마다 도는데 같은 상품을 또 열면 그게 봇 신호다.
+    assert "KgpEnrich.queued" in bg, "같은 항목 중복 투입을 막지 않는다"
+    # 막힘 보고 경로
+    assert "enrich/blocked" in bg and "_kgpReportBlocked" in bg
+    # 오너 지정: 동시 1탭 · 3~8초 · 재시도 3회
+    assert "KGP_ENRICH_MAX_RETRIES = 3" in bg
+    assert "3000 + Math.floor(r * 5000)" in bg, "항목 간 간격이 3~8초가 아니다"
+    # alarms 권한이 실제로 선언돼 있어야 주기 폴링이 돈다
+    import json
+    mani = json.loads(Path("extensions/chrome-collector/manifest.json").read_text(encoding="utf-8"))
+    assert "alarms" in mani["permissions"], "alarms 권한 없이 주기 폴링은 안 돈다"
+
+
+def test_the_extension_detects_walls_and_does_not_try_to_break_them():
+    """★★★ 로그인 벽·캡차는 **감지만** 한다. 뚫는 코드는 우회이고 오너가 금지했다."""
+    from pathlib import Path
+    cs = Path("extensions/chrome-collector/content_script.js").read_text(encoding="utf-8")
+
+    assert "_kgpDetectWall" in cs, "벽 감지가 없다"
+    seg = cs[cs.index("function _kgpDetectWall"):]
+    seg = seg[:seg.index("function _kgpSitePdp")]
+    # 감지 근거는 화면에 보이는 것뿐 — 쿠키·헤더·토큰을 만지면 그건 우회다.
+    for banned in ("document.cookie", "localStorage.setItem", "XMLHttpRequest", "fetch("):
+        assert banned not in seg, f"벽 감지가 {banned}를 만진다(우회 금지)"
+    assert "captcha" in seg and "登录" in seg, "실제 벽 표시를 안 본다"
+
+    # 타오바오 옵션·가격 2종 추출이 있다
+    assert "price_list" in cs and "price_final" in cs
+    assert "补贴后" in cs and "优惠前" in cs, "두 가격 라벨을 안 본다"
+
+
+def test_queue_screen_shows_real_state_not_a_hardcoded_zero():
+    """★★★ 전엔 `queue_size: 0`이 **하드코딩**돼 무엇을 하든 「대기 중 0건」이었다.
+
+    화면이 있는데 아무것도 말하지 않으면 없는 것보다 나쁘다 — 믿고 안 보게 된다.
+    """
+    from unittest.mock import patch
+    from src.order_webhook import app
+    from src.seller_console import collect_history_store as chs
+
+    try:
+        chs._in_memory.clear()
+    except Exception:
+        pass
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = "default"
+    with patch("src.api.extension_api._require_token", return_value={"user_id": "default"}), \
+         patch.dict("os.environ", {"KGP_SHORT_LINK_RESOLVE": "0"}):
+        made = c.post("/api/v1/collect/one",
+                      json={"share_text": "【淘宝】https://e.tb.cn/h.q4?tk=T\n「선반」",
+                            "translate": False}).get_json()
+        # 한 번 막힌 것(아직 재시도 남음)도 **지난 시도 사유**가 보여야 한다 —
+        #   기록해 두고 안 보여 주면 없는 것과 같다.
+        c.post("/api/v1/collect/enrich/blocked",
+               json={"item_id": made["item_id"], "reason": "로그인 벽 감지"})
+        mid = c.get("/seller/media/queue").data.decode()
+        assert "로그인 벽 감지" in mid, "재시도 남은 항목의 지난 사유가 화면에 없다"
+        assert "1/3" in mid, "시도 횟수가 안 보인다"
+        # 상한까지 막히면 「막힘」으로 굳는다.
+        for _ in range(2):
+            c.post("/api/v1/collect/enrich/blocked",
+                   json={"item_id": made["item_id"], "reason": "로그인 벽 감지"})
+
+    body = c.get("/seller/media/queue").data.decode()
+    assert "로그인 벽 감지" in body, "막힌 사유가 화면에 없다"
+    assert "선반" in body, "막힌 항목이 화면에 없다"
+    assert "3/3" in body, "상한에 닿은 시도 횟수가 안 보인다"
+    # 개발 표기·이모지·v2 문법이 함께 사라졌는지(이 화면은 스텁이었다)
+    assert "Phase 144" not in body and "🖼" not in body
+    assert "bg-success" not in body and "alert-info" not in body

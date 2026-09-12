@@ -91,6 +91,26 @@ def is_taobao_family(url: str) -> bool:
     return any(host == h.rstrip(".") or host.endswith("." + h.rstrip(".")) or h in host for h in fam)
 
 
+def finalize_title(title: str, *, url: str = "") -> str:
+    """저장·응답에 나갈 **최종 제목**. 정제기를 **코어에서 한 번** 통과시킨다.
+
+    C-F13-1 실측(오너 라이브): `collect/one` 응답 제목이 「iPhone 17 신제품**】**」이었다.
+    정제기(`clean_title_ko`)는 있었지만 **등록·검수 파이프에서만** 불렸고 수집 경로는 안 탔다 —
+    같은 결함이 두 화면에서 다르게 보이던 이유다(검수표는 깨끗, 수집 목록은 지저분).
+
+    `canonical_price`를 코어에 둔 것과 같은 이유로 여기 둔다: 입구가 몇이든 같은 보증을 받게.
+    정제 실패는 **원문 유지**(빈 제목을 만들지 않는다 — 정제기 자체도 그 규율을 지킨다).
+    """
+    raw = str(title or "").strip()
+    if not raw:
+        return ""
+    try:
+        from src.pipeline.coupang_replicate import clean_title_ko
+        return clean_title_ko(raw, url=url).get("title") or raw
+    except Exception:                       # 정제기가 못 돌면 원문 그대로(제목을 잃지 않는다)
+        return raw
+
+
 def is_short_link(url: str) -> bool:
     """`e.tb.cn` 계열 **단축 링크**인가 — 본문을 펴면 상품 링크가 나오는 쪽(C-F11 실측)."""
     host = (urlparse(url).hostname or "").lower() if url else ""
