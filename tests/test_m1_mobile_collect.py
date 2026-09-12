@@ -90,7 +90,10 @@ def test_rejects_non_url_honestly(client, monkeypatch):
     assert r.status_code == 400
     err = r.get_json()["error"]
     assert "링크" in err or "URL" in err, "무엇이 없는지 말해야 한다"
-    assert "붙여넣" in err, "다음에 무엇을 하면 되는지 말해야 한다"
+    # 낱말이 아니라 **다음 행동이 있는가**를 잰다. "붙여넣"을 못 박아 뒀더니
+    #   문구를 개선할 때마다 깨졌다(C-fix에 이어 C-F7에서 두 번째) — 계약이 카피를 붙잡으면 안 된다.
+    assert any(w in err for w in ("붙여넣", "보내 주세요", "복사")), \
+        "다음에 무엇을 하면 되는지 말해야 한다"
 
 
 def test_failure_is_honest_not_fake_success(client, monkeypatch):

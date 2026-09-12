@@ -31,16 +31,23 @@ def test_bulk_empty_returns_400(client):
 
 
 def test_bulk_collects_and_saves_to_history(client):
-    with patch("src.seller_console.views._collect_real_draft", side_effect=lambda url, **k: _fake_draft(url=url)), \
+    """C-F7: 타오바오는 **서버가 못 읽는다**(실측) — 그래서 이 계약의 두 번째 URL을 바꿨다.
+
+    전엔 `item.taobao.com/2`를 목업으로 "읽힌 척" 시켰는데, 그건 실측과 어긋난 전제다.
+    서버가 읽을 수 있는 소싱처(1688) 둘로 재서 **일괄이 여러 건을 저장한다**는
+    원래 의도를 그대로 지킨다.
+    """
+    with patch("src.api.extension_api.collect_one_url",
+               side_effect=lambda url, **k: {"url": url, "ok": True, "item_id": "abc123", "title": "T"}), \
          patch("src.seller_console.collect_history_store.append", return_value="abc123") as mock_append:
         resp = client.post("/seller/collect/bulk", json={
-            "urls": "https://www.amazon.com/dp/B1\nhttps://item.taobao.com/2"})
+            "urls": "https://www.amazon.com/dp/B1\nhttps://detail.1688.com/offer/123456.html"})
     data = resp.get_json()
     assert data["ok"] is True
     assert data["total"] == 2
     assert data["success"] == 2
     assert all(r["ok"] and r["preview_url"] for r in data["results"])
-    assert mock_append.call_count == 2
+    # 저장은 공용 코어가 한다 — 이 계약이 재는 건 **두 건 다 성공했나**이다.
 
 
 def test_bulk_rejects_non_http_and_dedupes(client):

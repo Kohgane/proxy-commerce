@@ -74,7 +74,8 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
     # 제목이 없으면 **초안을 만들지 않는다.** 이 경로가 존재하는 이유가 "공유 글엔 제목이 있다"인데,
     #   제목까지 없으면 남는 건 링크 하나뿐 — 제목도 가격도 이미지도 없는 행은 수집이 아니라 빈 껍데기다.
     #   (실측: 맨 URL을 넣었더니 빈 항목이 '수집됨'으로 앉아 편집 화면까지 넘어갔다.)
-    if not share.get("title"):
+    if not share.get("title") and not share.get("item_id"):
+        # 제목도 상품번호도 없으면 **이어갈 실마리가 없다** — 빈 행을 만들지 않는다.
         return {"ok": False, "url": url,
                 "error": "공유 글에서 상품 제목을 찾지 못했습니다. 상품 페이지에서 고가수집기로 수집해 주세요."}
 
@@ -181,8 +182,10 @@ def collect_input(raw: str, *, seller_id: str = "", source: str = "input",
     #   C-F7 실측: 조건에 `and share.get("title")`이 붙어 있어, **제목 없는 맨 타오바오 URL**은
     #   그대로 서버 수집으로 떨어졌다(= F2의 "요청 0"에 구멍). 서버가 못 읽는 건 제목 유무와 무관하다.
     if is_taobao_family(url):
-        if not share.get("title"):
-            # 링크는 타오바오인데 제목이 없다 → 초안을 세울 재료도, 서버가 읽을 방법도 없다.
+        # 초안은 **다음 사람이 이어갈 수 있는 것**이 하나라도 있을 때만 세운다.
+        #   제목이 있으면 사람이 알아보고, itemId가 있으면 확장이 그 링크를 열어 보강한다.
+        #   둘 다 없으면 남는 건 못 여는 링크 하나 — 그건 목록을 채우는 것이지 수집이 아니다.
+        if not share.get("title") and not share.get("item_id"):
             return {"ok": False, "kind": "failed", "url": url,
                     "error": ("타오바오 링크는 서버에서 열 수 없어요(로그인 벽). "
                               "앱 공유 글을 **통째로** 보내 주시면 제목으로 초안을 만들고, "

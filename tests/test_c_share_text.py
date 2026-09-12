@@ -700,16 +700,45 @@ def test_bare_taobao_url_never_hits_the_server(monkeypatch):
     실측(C-F7): 조건이 `is_taobao_family(url) and share.get("title")`이라
     **제목 없는 맨 타오바오 URL**은 그대로 서버 수집으로 떨어졌다 — F2의 "요청 0"에 난 구멍이다.
     서버가 못 읽는 건 제목 유무와 무관하다.
+
+    ※ 거절하느냐 초안을 세우느냐는 **별개 질문**이다(아래 계약). 여기서 재는 건
+      "서버로 나가지 않는다" 하나다 — 둘을 한 계약에 섞으면 한쪽을 고칠 때 다른 쪽이 깨진다.
     """
     import src.collectors.share_collect as sc
     calls = []
     monkeypatch.setattr("src.api.extension_api.collect_one_url",
                         lambda url, **kw: calls.append(url) or {"ok": True, "item_id": "x", "title": ""})
-    r = sc.collect_input("https://item.taobao.com/item.htm?id=993154784090",
-                         seller_id="u1", translate=False)
-    assert calls == [], "제목 없는 타오바오 URL이 서버 수집을 탔다"
-    assert r["ok"] is False and r["kind"] == "failed"
-    assert "통째로" in r["error"], "무엇을 하면 되는지 말해야 한다"
+    monkeypatch.setattr("src.seller_console.collect_history_store.append",
+                        lambda **kw: ("x", True))
+    for u in ("https://item.taobao.com/item.htm?id=993154784090",   # id 있음
+              "https://item.taobao.com/2",                          # id·제목 둘 다 없음
+              "https://e.tb.cn/h.ABC?tk=z"):                        # 단축
+        sc.collect_input(u, seller_id="u1", translate=False)
+    assert calls == [], f"타오바오에 서버 수집을 시도했다: {calls}"
+
+
+def test_draft_needs_something_to_continue_from(monkeypatch):
+    """★ 초안은 **다음 사람이 이어갈 수 있는 것**이 하나라도 있을 때만 선다.
+
+    제목이 있으면 사람이 알아보고, itemId가 있으면 **확장이 그 링크를 열어 보강**한다.
+    둘 다 없으면 남는 건 못 여는 링크 하나 — 그건 목록을 채우는 것이지 수집이 아니다.
+
+    (처음엔 제목만 기준으로 삼았는데, 그러면 `?id=…`가 붙은 진짜 상품 링크까지 거절했다.
+     빈 껍데기를 막으려던 규칙이 멀쩡한 재료를 버리고 있었다.)
+    """
+    import src.collectors.share_collect as sc
+    monkeypatch.setattr("src.seller_console.collect_history_store.append",
+                        lambda **kw: ("x", True))
+    cases = [
+        ("제목만", "「책상」 https://e.tb.cn/h.ABC?tk=z", True),
+        ("id만", "https://item.taobao.com/item.htm?id=993154784090", True),
+        ("둘 다 없음", "https://item.taobao.com/2", False),
+    ]
+    for label, text, should_ok in cases:
+        r = sc.collect_input(text, seller_id="u1", translate=False)
+        assert r["ok"] is should_ok, f"{label}: ok={r['ok']} (기대 {should_ok})"
+        if not should_ok:
+            assert "통째로" in r["error"], "무엇을 하면 되는지 말해야 한다"
 
 
 def test_expanded_link_finds_the_short_link_draft():

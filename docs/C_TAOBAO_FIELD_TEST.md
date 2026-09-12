@@ -96,6 +96,33 @@ PC(로그인된 타오바오 탭): 고가수집기 → 이미지 · 옵션 보�
 
 가격·통화는 **기존이 비었을 때만** 채웁니다.
 
+## 미측정 — Render SG 302 체인 (열린 질문)
+
+오너 실측은 **폰 + VPN** 시점이었습니다. 우리 서버(Render 싱가포르)는 **다른 경유지**라
+아직 아무도 재지 않았습니다. 개발 샌드박스에서는 못 잽니다 —
+403의 정체가 타오바오가 아니라 **샌드박스 프록시**입니다(`CONNECT tunnel failed`,
+대조군 github는 200). UA를 iOS Safari로 바꿔도, `tk`를 빼도 동일합니다.
+
+Render Shell에서 그대로 돌리시면 됩니다:
+
+```bash
+L='https://e.tb.cn/h.8reU77YYNhKOUuE?tk=EYAGT7vTcVD'
+curl -sIL --max-time 20 "$L" | grep -Ei '^(HTTP|location)'
+curl -sIL --max-time 20 -A "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) \
+  AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1" \
+  "$L" | grep -Ei '^(HTTP|location)'
+curl -sIL --max-time 20 "${L%%\?*}" | grep -Ei '^(HTTP|location)'   # tk 없이
+```
+
+| 결과가 이러면 | 뜻 |
+|---|---|
+| 최종이 `item.taobao.com/...id=…` | **서버가 펼 수 있다** → 폰 단축어 없이도 가격·ID 확보 가능 |
+| 최종이 로그인·인터스티셜 | 지금 구조 유지(폰이 편다) |
+| 연결 거부 | 지금 구조 유지 — 이미 아는 결과의 재확인 |
+
+**이 결과와 무관하게 현재 경로는 동작합니다** — 제목만으로 초안이 서고,
+가격·ID는 폰이 펴 줄 때 담깁니다. 체인이 열리면 그때 **한 겹 더 좋아지는** 것뿐입니다.
+
 ## 백로그
 
 - **안드로이드**: Kiwi 브라우저가 크롬 확장을 돌립니다 → **폰에서 보강까지** 가능.
