@@ -758,3 +758,70 @@ def test_expanded_link_finds_the_short_link_draft():
         "복원한 단축 키가 원래 단축 링크와 같은 키여야 이어진다"
     api = Path("src/api/extension_api.py").read_text(encoding="utf-8")
     assert "short_name" in api and "_alt" in api, "중복 조회가 대체 키를 안 본다"
+
+
+# ── ⑩ C-F8: 가드는 코어에 있다(입구마다 두면 샌다) ──────────────────────────
+def test_taobao_guard_lives_in_the_cores_not_the_callers():
+    """★ **여섯 입구 중 둘만 서 있었다**(실측 2026-09-12).
+
+    가드를 호출부마다 두면 입구가 늘 때마다 샌다 — 미리보기·텔레그램·벌크잡·관리자가
+    전부 타오바오로 서버 요청을 내고 있었다. F2 계약은 `collect_input`을 타는 둘만 재고 있어 초록이었다.
+
+    가격 정규화 때와 같은 교훈이다: **보증은 코어에 둔다.**
+    """
+    for path in ("src/seller_console/views.py", "src/api/extension_api.py"):
+        s = Path(path).read_text(encoding="utf-8")
+        assert "is_taobao_family as _is_tb" in s, f"{path}의 수집 코어에 타오바오 가드가 없다"
+
+
+@pytest.mark.parametrize("label,path,marker",
+                         [(a, b, c) for a, b, c in __import__(
+                             "src.collectors.share_text", fromlist=["x"]).COLLECT_ENTRY_POINTS])
+def test_every_entry_point_reaches_a_guarded_core(label, path, marker):
+    """★ 열거된 입구가 **가드 있는 코어를 타는지** 순회 검사.
+
+    새 입구가 생겼는데 제 나름의 수집을 하면 여기서 걸린다 — 목록을 코드 상수로 둔 이유다.
+    """
+    s = Path(path).read_text(encoding="utf-8")
+    assert marker in s, f"{label}: 입구 표식 '{marker}'이 {path}에 없다(목록이 낡았다)"
+    # 그 파일은 반드시 가드 있는 코어 중 하나를 부른다
+    assert any(core in s for core in
+               ("_collect_real_draft", "collect_one_url", "collect_input")), \
+        f"{label}가 어떤 수집 코어도 안 쓴다(제 나름의 경로를 가졌을 수 있다)"
+
+
+def test_preview_route_accepts_share_text(monkeypatch):
+    """★ 미리보기 칸 이름이 「상품 링크 또는 공유 텍스트」인데 **라우트가 공유 텍스트를 안 받았다.**
+
+    실측(오너 라이브 2026-09-12): 공유 글을 붙이자 「상품 정보를 읽지 못했어요」 노랑 배너.
+    칸 이름이 받는다고 말하는데 라우트가 안 받으면 **그 이름이 거짓**이 된다.
+    """
+    from src.order_webhook import app
+    monkeypatch.setattr("src.seller_console.collect_history_store.append",
+                        lambda **kw: ("p1", True))
+    with app.test_client() as c:
+        with c.session_transaction() as s:
+            s["user_id"] = "default"
+        r = c.post("/seller/collect/preview", json={"url": FIX_SWEATER})
+    d = r.get_json()
+    assert r.status_code == 200 and d.get("ok") is True, f"미리보기가 실패로 떨어졌다: {d}"
+    assert d.get("kind") == "share_draft"
+    assert "藏青色" in (d.get("draft") or {}).get("title", ""), "제목이 안 담겼다"
+
+
+def test_empty_input_names_the_clipboard_setting():
+    """★ 빈 입력의 **가장 흔한 원인**을 콕 집는다 — 클립보드 설정.
+
+    실측(오너 2026-09-12): 타오바오 分享 →「复制链接」은 **타오바오 자체 패널**이라
+    iOS 공유 시트를 거치지 않는다(토스트 「已复制，快去粘贴吧」). 단축어를 나중에 실행하면
+    넘어오는 입력이 **항상 빈 값**이고, 클립보드가 유일한 입력원이다.
+
+    "변수 칩을 확인하세요"만으론 못 고친다 — 칩은 제대로 꽂혀 있고 **넘어올 값이 없는** 것이니까.
+    """
+    from src.collectors.share_text import link_failure_reason
+    msg = link_failure_reason("")
+    assert "클립보드" in msg, "가장 흔한 원인을 안 짚는다"
+    assert "复制链接" in msg or "링크 복사" in msg, "어느 버튼을 눌렀을 때인지 말해야 한다"
+    guide = Path("docs/MOBILE_COLLECT_GUIDE.md").read_text(encoding="utf-8")
+    assert "클립보드 가져오기" in guide, "가이드에 그 설정이 필수 단계로 없다"
+    assert "更多" in guide, "미측정 경로(更多)를 미측정으로 표기해야 한다"

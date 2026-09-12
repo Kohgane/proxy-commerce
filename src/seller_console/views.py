@@ -307,6 +307,15 @@ def _collect_real_draft(url: str, translate: bool = True) -> Optional[dict]:
 
     실데이터를 못 얻으면 None 반환 — 호출부에서 정직한 에러로 처리(목업 금지).
     """
+    # C-F8: **타오바오는 여기서 멈춘다.** 가드를 호출부마다 두었더니 입구가 늘 때마다 새어 나갔다
+    #   (실측: 미리보기·텔레그램·벌크잡·관리자 — 「요청 0」이 서 있던 곳은 두 입구뿐이었다).
+    #   서버가 타오바오를 못 읽는 건 **어느 입구에서 부르든 같다** → 코어에 둔다.
+    #   반환 None = "자동 추출 못 함"이고, 호출부는 이미 그걸 정직하게 다룬다(목업 금지 규율).
+    from src.collectors.share_text import is_taobao_family as _is_tb
+    if _is_tb(url):
+        logger.info("수집 코어: 타오바오는 서버에서 못 읽는다 — 요청 생략 (%s)", url[:80])
+        return None
+
     draft: Optional[dict] = None
     source: Optional[str] = None
     warnings: list = []
@@ -1261,6 +1270,37 @@ def collect_preview():
 
     if not url:
         return jsonify({"ok": False, "error": "URL이 필요합니다."}), 400
+
+    # C-F8-b: 미리보기도 **공유 텍스트를 받는다.** 여기만 파서를 안 타고 raw를 URL로 쓰고 있었다
+    #   (실측: 오너가 공유 글을 「상품 링크 또는 공유 텍스트」 칸에 붙이자 노랑 배너).
+    #   칸 이름이 '공유 텍스트'를 받는다고 말하는데 라우트가 안 받으면 그 이름이 거짓이 된다.
+    from src.collectors.share_collect import collect_input
+    from src.collectors.share_text import is_taobao_family, parse_share_text
+    _share = parse_share_text(url)
+    if _share.get("url"):
+        url = _share["url"]
+
+    # 타오바오는 서버가 못 읽는다 → 미리보기 자리에서 **초안을 만들어 보여 준다**(실패 배너 대신).
+    if is_taobao_family(url):
+        _r = collect_input(data.get("url") or "", seller_id=_seller_id(),
+                           source="preview", translate=translate)
+        if _r.get("ok"):
+            return jsonify({
+                "ok": True, "kind": _r.get("kind"), "item_id": _r.get("item_id"),
+                "preview_url": f"/seller/collect/preview/{_r.get('item_id')}",
+                "draft": {"title": _r.get("title_ko") or _r.get("title", ""),
+                          "title_ko": _r.get("title_ko", ""), "images": [],
+                          "price": _r.get("price", ""), "currency": _r.get("currency", ""),
+                          "source": "share_text"},
+                "uncollected": _r.get("uncollected", []),
+                "message": ("제목·상품번호·가격까지 담았어요(공유 시점 가격). "
+                            "이미지·옵션은 PC에서 고가수집기로 보강해 주세요."
+                            if _r.get("price") else
+                            "제목과 링크만 담았어요. 가격·이미지는 PC에서 고가수집기로 보강해 주세요."),
+                "warnings": [],
+            })
+        return jsonify({"ok": False, "manual_entry": True,
+                        "error": _r.get("error") or "상품 정보를 담지 못했습니다."}), 200
 
     try:
         draft = _collect_real_draft(url, translate=translate)

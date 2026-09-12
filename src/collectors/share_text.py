@@ -58,6 +58,21 @@ ITEM_HOSTS = ("item.taobao.com", "detail.tmall.com", "m.intl.taobao.com",
               "world.taobao.com", "detail.1688.com", "item.tmall.com")
 
 
+# C-F8-b: **수집 입구 전수.** 가드를 호출부마다 두면 입구가 늘 때마다 샌다 —
+#   실측(2026-09-12): 여섯 입구 중 「타오바오 요청 0」이 서 있던 곳은 **둘뿐**이었다.
+#   그래서 가드는 **코어**(`_collect_real_draft`·`collect_one_url`)에 두고,
+#   이 목록은 계약이 순회하며 "새 입구가 생겼는데 코어를 안 타는가"를 검사한다.
+COLLECT_ENTRY_POINTS = (
+    ("웹 미리보기",      "src/seller_console/views.py",      "/collect/preview"),
+    ("웹 일괄",          "src/seller_console/views.py",      "/collect/bulk"),
+    ("북마클릿·공유타겟", "src/seller_console/views.py",      "_quick_collect"),
+    ("모바일 단건",      "src/api/extension_api.py",         "/one"),
+    ("확장 벌크(job)",   "src/api/extension_api.py",         "/bulk"),
+    ("텔레그램",         "src/api/telegram_collect.py",      "collect_one_url"),
+)
+# 셀러 수집 경로가 아닌 곳(관리자 진단·보강 큐)은 목록에 없다 — 같은 코어를 타므로 가드는 받는다.
+
+
 def is_taobao_family(url: str) -> bool:
     """타오바오 계열인가 — **서버가 나가면 안 되는 곳**이다(C-T4'' 실측).
 
@@ -273,8 +288,12 @@ def link_failure_reason(raw: str, final_url: str = "") -> str:
     has_final = bool((final_url or "").strip())
 
     if n == 0:
-        return ("공유 내용이 비어서 왔습니다 — 단축어에서 「공유 시트 입력」이 본문 칸에 "
-                "연결됐는지 확인해 주세요(변수 칩을 골라야 값이 들어갑니다)."
+        # C-F8-a 실측: 타오바오 分享 →「复制链接」은 **타오바오 자체 패널**이라 iOS 공유 시트를
+        #   거치지 않는다 → 단축어를 나중에 실행하면 넘어오는 입력이 **항상 빈 값**이다.
+        #   클립보드가 유일한 입력원이므로, 그 설정을 콕 집어 말한다(가장 흔한 원인이 이것이다).
+        return ("공유 내용이 비어서 왔습니다 — 타오바오 「复制链接」(링크 복사)을 쓰셨다면 "
+                "단축어 첫 액션의 **「입력이 없으면 → 클립보드 가져오기」**를 켜 주세요. "
+                "공유 시트를 거치지 않는 방식이라 클립보드가 유일한 입력원입니다."
                 + (" 최종 URL은 함께 왔습니다." if has_final else ""))
 
     tk = _TAOKOULING_RE.search(text)
