@@ -99,7 +99,14 @@ def test_zone_hierarchy_present():
     for num in ("01", "02", "03", "04"):
         assert f'rp-step-num">{num}<' in html, num
     assert "rp-shell" in html and "rp-pane-in" in html and "rp-pane-work" in html
-    assert "rp-strip" in html and html.count("rp-stat-v") == 4      # KPI 4개는 스트립으로
+    # KPI는 **스트립 하나로 묶인다**(개별 카드 금지) — 재는 건 그 구조이고 개수가 아니다.
+    #   C-F12-B 실측: 여기 `== 4`가 박혀 있어, 정직한 지표(「보강 필요」)를 하나 더 세우자마자
+    #   깨졌다. 그 시점 개수를 핀으로 박으면 지표가 늘 때 계약이 **덜 말하는 쪽**을 지킨다.
+    #   `.rp-strip`은 `flex-wrap: wrap`이라 개수가 늘어도 레이아웃이 무너지지 않는다(실측).
+    assert "rp-strip" in html
+    _n = html.count("rp-stat-v")
+    assert _n >= 4, f"스트립 KPI가 {_n}개 — 최소 넷(통과·제외·실패·요청)은 보여야 한다"
+    assert html.count("rp-strip") == 1, "KPI가 스트립 하나로 묶여 있어야 한다"
     # E4 — 옛 존/카드 마크업 **잔재 0**(이중 구현 방지).
     for gone in ("rp-zone", "rp-kpis", "rp-kpi-value", "rp-kpi-label"):
         assert gone not in html, gone
