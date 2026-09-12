@@ -176,3 +176,74 @@ def status_summary(st: Dict[str, Any]) -> str:
         return f"수집 실패 — {st.get('cause') or '핵심 정보 미확보'}"
     miss = "·".join(st.get("missing_short") or st.get("missing") or [])
     return f"부분 수집 — {miss} 누락" if miss else "부분 수집"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# C-F14: 보강 축 — **등록 가능**(`gate_ready`)과 **보강 진행**(`enrich_state`)은 다른 축이다
+# ─────────────────────────────────────────────────────────────────────────────
+
+def enrich_axes(extra: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """저장된 `extra` → `{gate_ready, enrich_state, reason, attempts, is_draft}`.
+
+    ## 왜 읽는 쪽에서 보정하나
+
+    F11이 가격 확보 시 `enrich_state="done"`을 세웠고 그 뜻은 「등록 게이트 열림」이었다.
+    목록은 같은 필드를 「보강 완료」로 읽었다 — 한 필드에 두 뜻이 얹혀 있었다.
+    이미 저장된 행들이 그 상태로 남아 있으므로, **읽을 때 바로잡는다**:
+    이관 스크립트를 손으로 돌려야만 고쳐진다면, 안 돌린 동안 화면은 계속 거짓말을 한다.
+
+    보정 규칙(둘 다 **관측에서 나온다** — 추측 없음):
+      · `gate_ready`가 없으면 **가격 유무**로 정한다(F11이 원래 담으려던 뜻).
+      · `enrich_state == "done"`인데 **이미지가 0장**이면 `pending`이다 —
+        보강은 "큐가 돌았다"가 아니라 "채워졌다"가 기준이다.
+    """
+    ex = extra if isinstance(extra, dict) else {}
+    has_price = bool(str(ex.get("price") or "").strip()
+                     and str(ex.get("price")).strip() not in ("0", "0.0", "0.00"))
+    # lean projection은 이미지를 **첫 장만** 싣고 개수를 따로 보낸다 — 그 값을 우선한다.
+    #   안 그러면 20장짜리도 1장으로 세고, 화면이 "이미지 1장 · 보강 완료"라 적는다.
+    _ic = ex.get("images_count")
+    n_images = int(_ic) if isinstance(_ic, int) else len(ex.get("images") or [])
+
+    gate_ready = ex.get("gate_ready")
+    if gate_ready is None:                       # 옛 행 — 원래 의도한 뜻으로 되살린다
+        gate_ready = has_price
+
+    state = str(ex.get("enrich_state") or "")
+    if state == "done" and n_images < 1:
+        state = "pending"                        # 이미지가 없으면 보강은 안 끝났다
+    elif state == "pending" and n_images >= 1:
+        state = "done"
+
+    return {
+        "gate_ready": bool(gate_ready),
+        "enrich_state": state,                   # "" = 보강 축이 없는 항목(일반 수집)
+        "reason": str(ex.get("enrich_blocked_reason") or ""),
+        "attempts": int(ex.get("enrich_attempts") or 0),
+        # 보강 축이 붙어 있으면 **부분 초안**이다 — 완전 수집 잣대로 재면 안 된다.
+        "is_draft": bool(state),
+        "images": n_images,
+    }
+
+
+def enrich_badge(extra: Optional[Dict[str, Any]]) -> Optional[Dict[str, str]]:
+    """부분 초안의 목록 배지. 보강 축이 없으면 `None`(일반 수집은 기존 판정을 쓴다).
+
+    C-F14 실측: 제목·상품번호·가격이 다 담긴 초안이 목록에 **「실패 · 추출 실패」**로 떴다.
+    완전 수집 잣대(7필드)를 부분 초안에 들이댄 것이다 — 초안은 **아직 반쪽인 게 정상**이다.
+    「실패」는 **초안 자체가 없을 때만** 쓴다.
+    """
+    ax = enrich_axes(extra)
+    if not ax["is_draft"]:
+        return None
+    if ax["enrich_state"] == "blocked":
+        reason = ax["reason"] or "사유 미기재"    # 서버가 적은 그대로 — 지어내지 않는다
+        return {"kind": "blocked", "label": f"막힘 · {reason}",
+                "title": f"{ax['attempts']}회 시도 후 멈춤 — {reason}"}
+    if ax["enrich_state"] == "done":
+        return {"kind": "done", "label": "완료",
+                "title": f"이미지 {ax['images']}장 · 보강 완료"}
+    return {"kind": "pending", "label": "보강 대기",
+            "title": ("가격까지 담겼어요 — 이미지·옵션은 PC 고가수집기가 채웁니다."
+                      if ax["gate_ready"] else
+                      "제목·링크만 담겼어요 — 가격·이미지는 PC 고가수집기가 채웁니다.")}

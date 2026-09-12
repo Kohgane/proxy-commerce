@@ -1761,11 +1761,19 @@ def collect_upload():
             _git = _get_owned_item(_gid)
             if _git:
                 _gex = json.loads(_git.get("extra_json") or "{}") or {}
-                if str(_gex.get("enrich_state") or "") == "pending":
+                # C-F14: 등록을 막는 근거는 **가격**(`gate_ready`)이지 보강 진행 상태가 아니다.
+                #   전엔 `enrich_state=="pending"`으로 막아서, 가격이 있는데 이미지가 없는 초안도
+                #   등록이 막혔고 화면은 그걸 「실패」로 읽었다(같은 필드, 두 뜻).
+                # C-F14 회귀 수리: `gate_ready`가 **없는** 행(일반 수집 — 보강 축 자체가 없다)까지
+                #   막으면 안 된다. 게이트는 **초안에만** 건다 — 일반 수집엔 아래 업로더의
+                #   가격 검사(`price <= 0` 거부)가 이미 한 겹 있다(계약이 잡았다).
+                from src.collectors.collect_status import enrich_axes as _eax14
+                _ax14 = _eax14(_gex)
+                if _ax14["is_draft"] and not _ax14["gate_ready"]:
                     return jsonify({
                         "ok": False, "enrich_required": True,
-                        "error": "아직 보강되지 않은 상품이에요. 가격·이미지가 없어 마켓에 등록할 수 없습니다.",
-                        "message": "PC에서 상품 페이지를 열고 고가수집기로 보강한 뒤 등록해 주세요.",
+                        "error": "가격이 없어 마켓에 등록할 수 없어요. 마진을 낼 수 없습니다.",
+                        "message": "PC에서 고가수집기로 가격을 채운 뒤 등록해 주세요.",
                     }), 409
     except Exception as _gexc:
         # 게이트 판정 자체가 깨졌을 때(extra_json 파손 등) 전 상품 등록을 멈추진 않는다 —
@@ -6396,6 +6404,18 @@ def _shape_collect_items(items, current_lang):
         except Exception:
             cs = ex.get("collect_status") if isinstance(ex.get("collect_status"), dict) else None
         it["collect_status"] = cs
+        # C-F14: **부분 초안엔 완전 수집 잣대를 대지 않는다.** 실측(오너 2026-09-12): 제목·상품번호·
+        #   가격이 다 담긴 초안 셋이 목록에 「실패 · 추출 실패」로 떴다 — 이미지가 없다는 이유로.
+        #   초안은 **아직 반쪽인 게 정상**이고, 「실패」는 초안 자체가 없을 때 쓰는 말이다.
+        #   배지는 `enrich_badge` 한 곳에서만 만든다(화면마다 다르게 읽던 게 이 사달의 뿌리다).
+        try:
+            from src.collectors.collect_status import enrich_axes as _eax
+            from src.collectors.collect_status import enrich_badge as _ebadge
+            it["enrich_badge"] = _ebadge(ex)
+            _ax = _eax(ex)
+            it["gate_ready"] = _ax["gate_ready"]
+        except Exception:
+            it["enrich_badge"] = None
         # v87-W4: 목록에 리뷰 수·평점 노출(수신·저장 트랙). review_count 우선, 없으면 reviews 길이.
         _rc_raw = str(ex.get("review_count") or "").strip()
         _revs_n = len(ex.get("reviews") or []) if isinstance(ex.get("reviews"), list) else 0

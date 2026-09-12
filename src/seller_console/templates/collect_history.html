@@ -1351,6 +1351,13 @@ async function runBulkUpload() {
     if (!el) return;
     var expected = (el.getAttribute('data-expected') || '').trim();
     if (!expected) return;                                  // 서버가 버전 못 읽으면 배너 생략(가짜 금지)
+    // C-F14-6: 크롬 확장은 **데스크톱 크롬 계열에만** 있다. 모바일·사파리에서 「감지되지 않았어요」는
+    //   고칠 수 없는 일을 고치라는 말이라 안내가 아니라 소음이다(오너 실측: 폰에서 떴다).
+    //   판정은 UA 하나로 — 크롬/엣지/웨일 계열이면서 모바일 토큰이 없을 때만 띄운다.
+    var _ua = navigator.userAgent || '';
+    var _isMobile = /Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(_ua);
+    var _isChromium = /Chrome\/|Chromium\/|Edg\/|Whale\//.test(_ua) && !/OPR\//.test(_ua);
+    if (_isMobile || !_isChromium) return;                  // 확장을 설치할 수 없는 환경 → 배너 숨김
     function cmp(a, b) {                                    // semver-ish 숫자 비교(1.5.9 < 1.5.89)
       var pa = String(a).split('.'), pb = String(b).split('.');
       for (var i = 0; i < Math.max(pa.length, pb.length); i++) {
