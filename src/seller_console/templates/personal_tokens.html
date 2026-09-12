@@ -6,6 +6,15 @@
     <div>
       <div class="console-kpi-label mb-1">인증 토큰</div>
       <h1 class="h4 fw-bold mb-0"><i class="bi bi-key"></i> Personal Access Token 관리</h1>
+      {# C-F15-A1/A3: 발급 계정을 **첫 줄**에 말한다. 계정이 갈리면 담은 상품이 다른 목록으로
+         가는데 화면엔 아무 표시가 없었다(오너 실측: PC 0건 vs 폰 4건). #}
+      {% if session_account %}
+      <p class="small mb-0 mt-1">
+        <i class="bi bi-person-badge"></i> 지금 발급하면 <strong>{{ session_account }}</strong> 계정의 토큰이 됩니다.
+        <strong>고가수집기가 도는 크롬에 로그인한 계정</strong>에서 발급하세요 —
+        계정이 다르면 담은 상품이 서로 다른 목록으로 가고, PC 확장은 폰으로 담은 것을 아예 못 봅니다.
+      </p>
+      {% endif %}
       <small class="text-muted">크롬 확장 / 북마클릿이 “내 계정”으로 수집하도록 인증하는 열쇠입니다.</small>
     </div>
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#generateModal">
@@ -86,6 +95,10 @@
             <th style="width:38px"><input class="form-check-input" type="checkbox" id="tokSelectAll" aria-label="전체 선택"></th>
             <th>토큰 <span class="pc-help" data-bs-toggle="tooltip" data-bs-title="보안을 위해 토큰 원문은 발급 때 한 번만 보이고, 여기엔 식별용 앞부분만 표시돼요(해시).">?</span></th>
             <th>권한</th>
+            {# C-F15-A1: **발급 계정**을 보여 준다. 실측(오너): 단축어 토큰이 PC 세션과 다른
+               계정으로 발급돼 있었고, 어느 화면도 그 사실을 말하지 않아 목록이 비어 보이는
+               이유를 알 길이 없었다. 계정은 '보이지 않는 필터'라 눈에 보여야 한다. #}
+            <th>발급 계정</th>
             <th>발급일</th>
             <th>마지막 사용</th>
             <th>만료일</th>
@@ -103,6 +116,12 @@
               {% for scope in tok.scopes %}
               <span class="pc-badge pc-badge-muted me-1" data-bs-toggle="tooltip" title="{{ scope }}">{{ _scope_ko.get(scope, scope) }}</span>
               {% endfor %}
+            </td>
+            <td class="small">
+              {{ tok.user_id or '-' }}
+              {% if session_account and tok.user_id and tok.user_id != session_account %}
+              <span class="pc-badge pc-badge-off" title="이 토큰으로 담은 상품은 지금 보고 있는 계정({{ session_account }})의 목록에 나타나지 않습니다.">다른 계정</span>
+              {% endif %}
             </td>
             <td>{{ tok.created_at[:10] if tok.created_at else '-' }}</td>
             <td>{{ tok.last_used_at[:10] if tok.last_used_at else '아직 미사용' }}</td>

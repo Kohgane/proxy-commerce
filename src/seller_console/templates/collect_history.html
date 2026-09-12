@@ -7,6 +7,16 @@
     <div class="console-kpi-label mb-1">한눈에 보기</div>
     <h4 class="mb-0 fw-bold"><i class="bi bi-box-seam"></i> 수집한 상품, 한눈에</h4>
     <p class="text-muted small mb-2">크롬 확장·북마클릿·수동 입력으로 모은 상품을 한자리에서 확인·편집·업로드해요.</p>
+{# C-F15-A2: 이 화면이 **어느 계정**을 보고 있는지 말한다.
+   실측: PC와 폰이 다른 계정이었고 어느 화면도 그걸 말하지 않아, 목록이 비어 보이는 이유를
+   알 길이 없었다. 계정은 '보이지 않는 필터'라 눈에 보여야 한다. #}
+{% if session_account %}
+<p class="text-muted small mb-2">
+  <i class="bi bi-person-badge"></i> 지금 보고 있는 계정 <strong>{{ session_account }}</strong>
+  — 고가수집기 토큰도 <strong>이 계정</strong>에서 발급한 것이어야 같은 목록을 봅니다.
+  <a href="/seller/me/tokens">토큰 확인</a>
+</p>
+{% endif %}
     <hr class="pc-hairline mt-0 mb-0">
   </header>
 
