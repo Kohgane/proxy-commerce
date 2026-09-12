@@ -30,7 +30,7 @@ def test_bookmarklet_no_new_window():
 
 
 def test_bookmarklet_background_fetch_with_token():
-    # 백그라운드 fetch(/api/v1/collect/extension) + 내 토큰(Bearer) — 서버가 baked
+    # 백그라운드 fetch(/api/v1/collect/extension) + 내 API 토큰(Bearer) — 서버가 baked
     assert "/api/v1/collect/extension" in VIEWS
     assert "'Bearer '+T" in VIEWS
     # 토큰 발급(Supabase 1단계)은 파일 받기 라우트에서

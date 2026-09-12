@@ -20,7 +20,7 @@
 - **정직**: 토큰 저장 실패면 코드/파일 둘 다 안 준다(503, 가짜 성공 0).
 
 ## 검증
-- `/seller/bookmarklet/code`: 200 `{ok, code}`, `code` 는 `javascript:` 시작 + 내 토큰 baked + `/api/v1/collect/extension`. 토큰실패=503, 미인증=401.
+- `/seller/bookmarklet/code`: 200 `{ok, code}`, `code` 는 `javascript:` 시작 + 내 API 토큰 baked + `/api/v1/collect/extension`. 토큰실패=503, 미인증=401.
 - 페이지: '북마클릿 코드 복사' 주 버튼 + URL칸/주소창 경고 + 파일 대체 details. test_client 200 실측.
 - 가드 test_v47_bookmarklet_code(5) + test_v39b 갱신(주=코드복사·대체=파일). 전체 회귀 그린.
 

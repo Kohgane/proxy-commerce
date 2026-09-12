@@ -2240,3 +2240,41 @@ def test_the_guide_leads_with_the_account_rule():
     head = seg[:600]
     assert "고가수집기가 도는 크롬에 로그인한 계정" in head, "첫 줄이 계정을 말하지 않는다"
     assert "서로 다른 목록" in head or "다른 목록으로" in head, "계정이 여럿이면 안 되는 이유가 없다"
+
+
+def test_the_token_screen_is_named_by_its_real_nav_path():
+    """★★ 화면 이름은 **나브에 적힌 그대로** 쓴다 — 「내 토큰」은 실제로 없는 이름이었다.
+
+    실측(오너 2026-09-12): 가이드·안내가 「내 토큰」이라 적었는데 사이드바엔 그 항목이 없다.
+    실제 경로는 **설정 → 「내 정보·설정」 / 「API 토큰」**이다. 없는 메뉴 이름을 안내하면
+    유저가 찾다가 자기를 의심한다 — [[모드 이름을 세 번 발명했다]]와 같은 종류의 오류다.
+    """
+    from pathlib import Path
+
+    # ① 나브에 두 이름이 실제로 있다(우리가 쓰는 이름이 화면에 있는지 먼저 확인).
+    base = Path("src/seller_console/templates/_base.html").read_text(encoding="utf-8")
+    assert "<span>API 토큰</span>" in base, "나브에 'API 토큰' 항목이 없다"
+    assert "<span>내 정보·설정</span>" in base, "나브에 '내 정보·설정' 항목이 없다"
+
+    # ② 「내 토큰」은 **어디에도 남지 않는다**(사용자 문장·문서·주석 전부 — 오너 지시 '전수').
+    roots = [Path("src"), Path("docs"), Path("tests"), Path("extensions")]
+    hits = []
+    for root in roots:
+        for p in root.rglob("*"):
+            if p.suffix not in (".py", ".html", ".js", ".md") or "__pycache__" in str(p):
+                continue
+            # 이 계약 자신은 제외한다 — 금지어를 설명하려면 그 낱말을 써야 한다.
+            if p.resolve() == Path(__file__).resolve():
+                continue
+            try:
+                if "내 토큰" in p.read_text(encoding="utf-8"):
+                    hits.append(str(p))
+            except Exception:
+                continue
+    assert not hits, f"없는 메뉴 이름 「내 토큰」이 남았다: {hits}"
+
+    # ③ 사용자가 찾아갈 자리를 안내하는 곳은 **실명 + 경로**를 함께 준다.
+    guide = Path("docs/MOBILE_COLLECT_GUIDE.md").read_text(encoding="utf-8")
+    assert "내 정보·설정 → API 토큰" in guide and "/seller/me/tokens" in guide
+    api = Path("src/api/extension_api.py").read_text(encoding="utf-8")
+    assert "내 정보·설정 → API 토큰" in api, "401 안내가 옛 이름을 쓴다"
