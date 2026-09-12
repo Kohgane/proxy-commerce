@@ -65,7 +65,8 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
     반환 `{ok, item_id?, url, title, title_ko, item_id_taobao, price, currency, uncollected,
             enrich_state, error?}`.
     """
-    from src.collectors.share_text import parse_share_text
+    from src.collectors.share_text import (canonical_item_url, is_short_link,
+                                            parse_share_text)
 
     share = parse_share_text(raw, final_url=final_url)
     url = share.get("url", "")
@@ -73,18 +74,36 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
         # C-F7: 왜 못 찾았는지 말한다(길이·판정만 — 원문은 안 싣는다).
         from src.collectors.share_text import link_failure_reason
         return {"ok": False, "error": link_failure_reason(raw, final_url)}
-    # 제목이 없으면 **초안을 만들지 않는다.** 이 경로가 존재하는 이유가 "공유 글엔 제목이 있다"인데,
-    #   제목까지 없으면 남는 건 링크 하나뿐 — 제목도 가격도 이미지도 없는 행은 수집이 아니라 빈 껍데기다.
+    # C-F11: **서버가 단축 링크를 펼 수 있다**(오너 실측 2026-09-12 — `e.tb.cn` → 200 →
+    #   본문에 `item.taobao.com/…&id=…&price=…`). F9까지 "못 읽는다"고 적은 건
+    #   **리다이렉트 쿼리만 봤기 때문**이다. 쿼리엔 없었고 본문에는 있었다.
+    #   여기서 펴는 것은 **상품번호와 공유 시점 가격**뿐이다 — 상세·이미지·옵션은
+    #   여전히 로그인 벽 뒤이고(실측 불변) 그건 확장이 한다.
+    #   폰이 이미 펴 줬으면(=id가 있으면) **다시 나가지 않는다.**
+    resolve_reason = ""
+    if not share.get("item_id") and is_short_link(url):
+        from src.collectors.link_diag import resolve_short_link
+        r = resolve_short_link(url)
+        resolve_reason = r.get("reason", "")
+        if r.get("ok"):
+            share["item_id"] = r["item_id"]
+            # 가격은 **비어 있을 때만** 채운다(폰이 준 값이 더 가까운 시점이다).
+            if not share.get("price") and r.get("price"):
+                share["price"] = r["price"]
+                share["currency"] = r.get("currency") or "CNY"
+            # 저장 URL = 정규형. 추적 파라미터를 안 남기고, 같은 상품이 한 키로 합쳐진다.
+            url = canonical_item_url(r["item_id"]) or url
+    share["resolve_reason"] = resolve_reason
+
+    # 제목도 상품번호도 없으면 **이어갈 실마리가 없다** — 빈 행을 만들지 않는다.
+    #   단 이 검사는 **해석 뒤**에 온다: 실측(C-F11) 뒤로는 서버가 단축 링크를 펴서
+    #   상품번호를 만들어 낼 수 있으므로, 먼저 거절하면 그 실마리를 못 쓴다.
     #   (실측: 맨 URL을 넣었더니 빈 항목이 '수집됨'으로 앉아 편집 화면까지 넘어갔다.)
     if not share.get("title") and not share.get("item_id"):
-        # 제목도 상품번호도 없으면 **이어갈 실마리가 없다** — 빈 행을 만들지 않는다.
-        return {"ok": False, "url": url,
-                "error": "공유 글에서 상품 제목을 찾지 못했습니다. 상품 페이지에서 고가수집기로 수집해 주세요."}
+        return {"ok": False, "url": url, "resolve_reason": resolve_reason,
+                "error": ("이 링크에서 상품을 찾지 못했습니다. 앱 공유 글을 통째로 보내 주시거나, "
+                          "상품 페이지에서 고가수집기로 수집해 주세요.")}
 
-    # C-T4''(최종): 서버측 타오바오 fetch **코드 경로 0**.
-    #   실측 2026-09-11 상하이 — `m.intl.taobao.com` 상세는 **IP 무관 로그인 벽**이다
-    #   (VPN 온 +82 / 오프 +852 동일). 플래그조차 두지 않는다:
-    #   실측이 닫은 문 앞의 "혹시" 코드는 보험이 아니라 **부채**다. 펴는 일은 폰이 한다.
     item_id_site = share.get("item_id", "")
 
     title = share.get("title", "")
@@ -102,9 +121,10 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
     price = share.get("price", "")
     currency = share.get("currency", "")
     uncollected = [f for f in UNCOLLECTED_FIELDS if not (f == "price" and price)]
-    url_final = share.get("final_url") or url
+    # 폰이 펴 준 최종 URL이 있으면 그쪽이 더 정확한 소스다. 단 **정규형으로** 저장한다 —
+    #   원문엔 `suid`·`un`·`wxsign`이 붙어 오고, 파라미터가 다르면 같은 상품이 여러 행으로 갈린다.
     if share.get("item_id"):
-        url = url_final                       # id가 실린 URL이 더 정확한 소스다
+        url = canonical_item_url(share["item_id"]) or share.get("final_url") or url
 
     from src.seller_console.collect_history_store import append as history_append
     _ret = history_append(
@@ -190,14 +210,10 @@ def collect_input(raw: str, *, seller_id: str = "", source: str = "input",
     #   C-F7 실측: 조건에 `and share.get("title")`이 붙어 있어, **제목 없는 맨 타오바오 URL**은
     #   그대로 서버 수집으로 떨어졌다(= F2의 "요청 0"에 구멍). 서버가 못 읽는 건 제목 유무와 무관하다.
     if is_taobao_family(url):
-        # 초안은 **다음 사람이 이어갈 수 있는 것**이 하나라도 있을 때만 세운다.
-        #   제목이 있으면 사람이 알아보고, itemId가 있으면 확장이 그 링크를 열어 보강한다.
-        #   둘 다 없으면 남는 건 못 여는 링크 하나 — 그건 목록을 채우는 것이지 수집이 아니다.
-        if not share.get("title") and not share.get("item_id"):
-            return {"ok": False, "kind": "failed", "url": url,
-                    "error": ("타오바오 링크는 서버에서 열 수 없어요(로그인 벽). "
-                              "앱 공유 글을 **통째로** 보내 주시면 제목으로 초안을 만들고, "
-                              "가격·이미지는 PC에서 고가수집기로 보강합니다.")}
+        # C-F11: 「이어갈 실마리가 있나」 판단을 **여기서 또 하지 않는다.**
+        #   여기 있던 사본은 `collect_from_share_text`의 해석(단축 링크 펴기)보다 **먼저** 걸려서,
+        #   서버가 상품번호를 만들어 낼 수 있는 맨 단축 URL을 미리 거절했다 —
+        #   판단이 두 벌이면 늘 앞의 것이 이긴다. 그래서 한 벌만 남긴다(F1의 교훈과 같은 자리).
         r = collect_from_share_text(raw, seller_id=seller_id, source=source,
                                     translate=translate, final_url=final_url)
         r["kind"] = "share_draft" if r.get("ok") else "failed"

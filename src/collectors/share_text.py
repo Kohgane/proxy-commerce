@@ -87,6 +87,23 @@ def is_taobao_family(url: str) -> bool:
     return any(host == h.rstrip(".") or host.endswith("." + h.rstrip(".")) or h in host for h in fam)
 
 
+def is_short_link(url: str) -> bool:
+    """`e.tb.cn` 계열 **단축 링크**인가 — 본문을 펴면 상품 링크가 나오는 쪽(C-F11 실측)."""
+    host = (urlparse(url).hostname or "").lower() if url else ""
+    return bool(host) and any(host == h or host.endswith("." + h) for h in SHORT_HOSTS)
+
+
+def canonical_item_url(item_id: str) -> str:
+    """상품번호 → **정규형 URL**. 추적 파라미터는 전부 버린다.
+
+    C-F11: 단축 링크를 편 결과에는 `spm`·`tk`·`un`·`suid` 같은 것이 줄줄이 붙어 온다.
+    그걸 그대로 저장하면 **개인식별 가능한 값을 이력에 쌓는 셈**이고, 같은 상품이
+    파라미터만 달라 여러 행으로 갈린다. 상품을 가리키는 데 필요한 건 `id` 하나다.
+    """
+    item_id = str(item_id or "").strip()
+    return f"https://item.taobao.com/item.htm?id={item_id}" if item_id.isdigit() else ""
+
+
 def _clean_url(raw: str) -> str:
     """URL 꼬리에 물려 온 문장부호를 떼어낸다. **쿼리는 건드리지 않는다** — `tk`가 거기 있다."""
     u = raw.strip().rstrip(_TRAILING)
@@ -159,6 +176,14 @@ def resolve_gap(share: dict) -> str:
     """
     if share.get("price"):
         return "ok"
+    # C-F11: 서버가 단축 링크를 **직접 펴 봤을 때**의 결말도 여기 싣는다. 발명이 아니라
+    #   관측이다 — `resolve_short_link`가 돌려준 `reason`을 그대로 갈래로 쓴다.
+    #   (넷으로만 말하던 시절엔 서버가 시도한 경우와 안 한 경우가 한 문장으로 뭉개졌다.)
+    reason = str(share.get("resolve_reason") or "")
+    # `not_short_link`·`disabled`는 **시도하지 않았다**는 뜻이라 실패 갈래가 아니다 —
+    #   안 해 본 것을 실패로 적으면 그게 날조다.
+    if reason and reason not in ("ok", "not_short_link", "disabled"):
+        return "server_opened_no_item" if reason == "no_item_in_body" else "server_could_not_open"
     if not (share.get("final_url") or "").strip():
         return "no_final_url"
     if not share.get("item_id"):
@@ -179,6 +204,13 @@ _GAP_MESSAGE = {
                              "「링크 진단」에서 최종 URL을 확인하실 수 있습니다."),
     "id_without_price": ("제목·상품번호까지 담았어요 — 가격은 오지 않았습니다. "
                          "가격·이미지는 PC에서 고가수집기로 보강해 주세요."),
+    # C-F11: 서버가 링크를 **직접 열어 봤고**, 그 결말을 그대로 말한다.
+    "server_opened_no_item": ("제목과 링크만 담았어요 — 링크를 열어 봤지만 그 안에 상품 링크가 "
+                              "없었습니다. 가격·이미지는 PC에서 고가수집기로 보강해 주세요. "
+                              "무엇이 왔는지는 「링크 진단」에서 보실 수 있습니다."),
+    "server_could_not_open": ("제목과 링크만 담았어요 — 링크를 여는 데 실패했습니다. "
+                              "가격·이미지는 PC에서 고가수집기로 보강해 주세요. "
+                              "실패 원인은 「링크 진단」이 원문으로 보여 드립니다."),
 }
 
 

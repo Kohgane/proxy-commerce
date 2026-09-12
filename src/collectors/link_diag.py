@@ -42,6 +42,7 @@ CC 샌드박스 프록시가 그 도메인을 막고(`CONNECT tunnel failed`), R
 from __future__ import annotations
 
 import logging
+import os
 import re
 import time
 from urllib.parse import urljoin, urlparse
@@ -50,6 +51,9 @@ logger = logging.getLogger(__name__)
 
 MAX_HOPS = 8
 TIMEOUT_SEC = 10
+# 수집 경로에서 단축 링크를 펼 때의 예산. 진단(10s·UA 2종)보다 **짧게** 잡는다 —
+#   이건 요청 안에서 도는 코드라, W10에서 동기 번역 체인이 워커를 점유한 흉이 그대로 적용된다.
+RESOLVE_TIMEOUT_SEC = 6
 # 본문에서 훑을 최대 길이. 진단이 페이지 전체를 메모리에 들고 있을 이유가 없다.
 BODY_SCAN_CAP = 400_000
 
@@ -91,7 +95,7 @@ def scan_body_for_item(html: str) -> dict:
     **본문 원문은 담지 않는다** — 길이·제목·스크립트 수는 "무엇을 받았는지" 가늠할
     최소치이고, 그 이상은 진단에 필요하지 않은데 새면 곤란한 값이다.
     """
-    out = {"body_item_url": "", "body_item_id": "",
+    out = {"body_item_url": "", "body_item_id": "", "body_price": "", "body_currency": "",
            "body_len": 0, "body_title": "", "body_script_count": 0}
     if not html:
         return out
@@ -100,10 +104,16 @@ def scan_body_for_item(html: str) -> dict:
 
     m = _BODY_ITEM_RE.search(head)
     if m:
-        from src.collectors.share_text import extract_item_id
-        url = m.group(0).rstrip(".,;\"'")
+        from src.collectors.share_text import parse_final_url
+        url = m.group(0).rstrip(".,;\"'").replace("&amp;", "&")   # HTML 이스케이프 복원
         out["body_item_url"] = url
-        out["body_item_id"] = extract_item_id(url)
+        # C-F11 실측(오너 2026-09-12): 본문 링크에 `id`**와 `price`가 함께** 실려 온다
+        #   (`…&id=1060535477134&price=76.86&…`). 그래서 같은 파서로 둘을 한 번에 읽는다 —
+        #   `id`만 읽고 가격을 버리면 있는 값을 못 쓰는 것이고, 그게 곧 '보강 대기'다.
+        f = parse_final_url(url)
+        out["body_item_id"] = f.get("item_id", "")
+        out["body_price"] = f.get("price", "")
+        out["body_currency"] = f.get("currency", "")
 
     if not out["body_item_id"]:
         m2 = _BODY_ID_RE.search(head)
@@ -118,6 +128,70 @@ def scan_body_for_item(html: str) -> dict:
     return out
 
 
+def resolve_short_link(url: str, *, timeout: int = RESOLVE_TIMEOUT_SEC) -> dict:
+    """단축 링크(`e.tb.cn` 계열)를 **펴서 상품번호·가격만** 건진다.
+
+    ## 실측이 문을 다시 열었다 (오너 2026-09-12, 링크 진단 라이브)
+
+    `e.tb.cn` → **200**(UA 무관) → **본문에** `item.taobao.com/item.htm?…&id=…&price=…`.
+    F9까지 우리가 「서버는 타오바오를 못 읽는다」고 적은 건 **리다이렉트 쿼리만 봤기 때문**이다.
+    쿼리엔 없었지만 **본문에는 있었다** — 덜 보고 닫은 문이었다.
+
+    그래서 이 함수는 **펴는 일만** 한다:
+      · 상품번호(`id`)와 **공유 시점 가격**(`price`)을 본문 링크에서 읽는다
+      · 정규형 URL(`item.taobao.com/item.htm?id=<id>`)을 만든다 — 추적 파라미터 전부 버림
+      · **페이지를 수집하지 않는다.** 상세·이미지·옵션은 여전히 로그인 벽 뒤다(실측 불변).
+
+    반환 `{ok, item_id, price, currency, canonical_url, final_status, reason, elapsed_ms}`.
+    `reason`은 **실패 갈래를 그대로** 싣는다 — `ok`·`no_item_in_body`·`http_<코드>`·
+    `error:<예외클래스>`·`not_short_link`. 원인을 짐작해 붙이지 않는다.
+    """
+    from src.collectors.share_text import canonical_item_url, is_short_link
+
+    out = {"ok": False, "item_id": "", "price": "", "currency": "",
+           "canonical_url": "", "final_status": 0, "reason": "", "elapsed_ms": 0}
+    if not is_short_link(url):
+        out["reason"] = "not_short_link"
+        return out
+    # 수집 요청 안에서 밖으로 나가는 코드다 — 끌 수 있어야 한다(운영 기본 ON).
+    #   테스트는 `conftest`가 OFF로 고정한다: 계약이 네트워크를 재기 시작하면 그건 계약이 아니다.
+    if os.getenv("KGP_SHORT_LINK_RESOLVE", "1").strip() == "0":
+        out["reason"] = "disabled"
+        return out
+    try:
+        import requests                                            # noqa: F401
+    except Exception as exc:                                        # pragma: no cover
+        out["reason"] = f"error:{type(exc).__name__}"
+        return out
+
+    # 실측에서 성공한 UA로 한 번만 잰다. 수집 경로는 **요청 안에서** 도는 코드라
+    #   진단(UA 2종·10s)과 달리 예산을 짧게 잡는다 — W10에서 동기 체인이 워커를 점유한 흉이 있다.
+    p = _probe(url, ua_label="수집", user_agent=_IOS_SAFARI_UA,
+               max_hops=MAX_HOPS, timeout=timeout)
+    out["final_status"] = p["final_status"]
+    out["elapsed_ms"] = p["elapsed_ms"]
+
+    if p["error_class"]:
+        out["reason"] = f"error:{p['error_class']}"
+        return out
+    # 쿼리에 실려 온 값이 있으면 그게 1순위(출처가 더 짧다), 없으면 본문에서 찾은 값.
+    item_id = p["item_id"] or p["body_item_id"]
+    price = p["price"] or p["body_price"]
+    currency = p["currency"] or p["body_currency"]
+    if not item_id:
+        out["reason"] = ("no_item_in_body" if p["final_status"] == 200
+                         else f"http_{p['final_status'] or 0}")
+        return out
+
+    out.update({"ok": True, "item_id": item_id, "price": price, "currency": currency,
+                "canonical_url": canonical_item_url(item_id), "reason": "ok"})
+    # 로그엔 **원문 URL을 남기지 않는다** — 단축 링크에도 `tk`가 붙어 온다.
+    logger.info("[단축링크 펴기] host=%s 최종=%s 상품번호=%s 가격=%s%s %sms",
+                (urlparse(url).hostname or "?"), p["final_status"],
+                item_id, price or "-", currency or "", p["elapsed_ms"])
+    return out
+
+
 def _probe(url: str, *, ua_label: str, user_agent: str,
            max_hops: int, timeout: int) -> dict:
     """한 UA로 리다이렉트 체인을 **직접 따라가며** 기록한다. 한 번의 측정 = 이 함수 한 번."""
@@ -127,7 +201,8 @@ def _probe(url: str, *, ua_label: str, user_agent: str,
                  "final_url_kept": "", "item_id": "", "price": "", "currency": "",
                  "hop_count": 0, "elapsed_ms": 0, "error": "", "error_class": "",
                  "final_status": 0, "body_scanned": False,
-                 "body_item_url": "", "body_item_id": "",
+                 "body_item_url": "", "body_item_id": "", "body_price": "",
+                 "body_currency": "",
                  "body_len": 0, "body_title": "", "body_script_count": 0}
 
     import requests
@@ -244,7 +319,8 @@ def diagnose_link(url: str, *, max_hops: int = MAX_HOPS,
                  "final_url_kept": "", "item_id": "", "price": "", "currency": "",
                  "hop_count": 0, "elapsed_ms": 0, "error": "", "error_class": "",
                  "final_status": 0, "body_scanned": False, "body_item_url": "",
-                 "body_item_id": "", "body_len": 0, "body_title": "",
+                 "body_item_id": "", "body_price": "", "body_currency": "",
+                 "body_len": 0, "body_title": "",
                  "body_script_count": 0, "note": "", "ua_disagree": False}
 
     url = (url or "").strip()

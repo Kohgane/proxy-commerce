@@ -1343,11 +1343,23 @@ def collect_one_url(url: str, *, seller_id: str = "", source: str = "bulk") -> d
     끌어올린 것이고, 모바일 단건 엔드포인트가 같은 것을 부른다(이중 구현 금지).
     """
     # C-F8: 코어에서 멈춘다(호출부마다 두면 입구가 늘 때마다 샌다 — 실측 6곳 중 2곳만 서 있었다).
+    from src.collectors.share_text import is_short_link as _is_short
     from src.collectors.share_text import is_taobao_family as _is_tb
     if _is_tb(url):
-        logger.info("수집 코어: 타오바오는 서버에서 못 읽는다 — 요청 생략 (%s)", url[:80])
+        # C-F11: **단축 링크는 예외다 — 서버가 펼 수 있다**(오너 실측 2026-09-12).
+        #   맨 단축 URL만 온 경우(확장 벌크·텔레그램)도 초안이 서게 같은 자리로 보낸다.
+        #   상세 페이지(item/m.intl)는 여전히 로그인 벽이라 가드가 그대로 막는다.
+        if _is_short(url):
+            from src.collectors.share_collect import collect_from_share_text
+            r = collect_from_share_text(url, seller_id=seller_id, source=source)
+            if r.get("ok"):
+                return {"url": r.get("url", url), "ok": True, "item_id": r.get("item_id"),
+                        "title": r.get("title_ko") or r.get("title", ""),
+                        "partial": True, "message": r.get("message", "")}
+            return {"url": url, "ok": False, "error": r.get("error") or "수집 실패"}
+        logger.info("수집 코어: 타오바오 상세는 서버에서 못 읽는다 — 요청 생략 (%s)", url[:80])
         return {"url": url, "ok": False,
-                "error": ("타오바오는 서버에서 열 수 없어요(로그인 벽). "
+                "error": ("타오바오 상품 페이지는 서버에서 열 수 없어요(로그인 벽). "
                           "앱 공유 글을 통째로 보내시면 제목으로 초안을 만듭니다.")}
 
     try:

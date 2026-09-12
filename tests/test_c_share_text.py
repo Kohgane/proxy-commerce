@@ -1194,3 +1194,204 @@ def test_link_diag_page_shows_both_probes_and_the_body_verdict():
     assert "UA 기본" in body and "UA iOS Safari" in body, "두 측정이 화면에 없다"
     assert "993154784090" in body, "본문에서 찾은 상품번호가 화면에 없다"
     assert "UA에 따라 응답이 달랐습니다" in body, "갈렸다는 사실을 화면이 말하지 않는다"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# C-F11 — 서버가 단축 링크를 편다(실측이 문을 다시 열었다) · 마크다운은 사용자 면 전체 금지
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 오너 실측 2026-09-12(링크 진단 라이브): `e.tb.cn` → **200**(UA 무관) → 본문에 상품 링크.
+#   픽스처는 캡처 원문에서 `un`·`suid`·`bxsign`·`ut_sk`·`sp_tk`를 **뺀** 형태다 —
+#   기기 UUID·사용자 해시·세션 서명은 열쇠가 아니고, 레포에 남기면 우리가 만든 구멍이다.
+BODY_F11 = """<!doctype html><html><head><title>淘宝</title></head><body>
+<a href="https://item.taobao.com/item.htm?spm=a1z10.3-c.w4002&amp;id=1060535477134&amp;price=76.86&amp;sourceType=item">去看看</a>
+<script>var x=1;</script></body></html>"""
+
+
+def test_server_can_open_the_short_link_after_all():
+    """★★★ **실측이 닫았던 문을 실측이 다시 열었다.**
+
+    F9까지 우리는 「서버는 타오바오를 못 읽는다」고 적었다. 그건 **리다이렉트 쿼리만 봤기
+    때문**이다 — 쿼리엔 `id`가 없었고, **본문에는 있었다.** 덜 보고 닫은 문이었다.
+
+    이 계약이 지키는 것: 단축 링크를 펴서 **상품번호와 공유 시점 가격**을 얻고,
+    URL을 **정규형**으로 바꾼다(추적 파라미터 0). 페이지 수집은 여전히 안 한다.
+    """
+    from unittest.mock import patch
+    from src.collectors import link_diag
+
+    chain = [_diag_resp(302, "https://main.m.taobao.com/mid.html"),
+             _diag_resp(200, text=BODY_F11)]
+    with patch.dict("os.environ", {"KGP_SHORT_LINK_RESOLVE": "1"}), \
+         patch("requests.get", side_effect=chain):
+        r = link_diag.resolve_short_link("https://e.tb.cn/h.8reU77YYNhKOUuE?tk=EYAGT7vTcVD")
+
+    assert r["ok"] is True, f"펴지 못했다: {r}"
+    assert r["item_id"] == "1060535477134"
+    assert r["price"] == "76.86" and r["currency"] == "CNY"
+    assert r["reason"] == "ok"
+    # 정규형 — 추적 파라미터가 **하나도** 남지 않는다.
+    assert r["canonical_url"] == "https://item.taobao.com/item.htm?id=1060535477134"
+    for junk in ("spm", "tk", "sourceType", "price", "un", "suid"):
+        assert junk not in r["canonical_url"], f"{junk}가 정규형에 남았다"
+
+
+def test_resolver_failure_branches_ride_resolve_gap_verbatim():
+    """★★★ 실패는 **갈래 그대로** 실린다 — 원인을 짐작해 붙이지 않는다.
+
+    200인데 본문에 상품이 없는 것과, 아예 열지 못한 것은 **다른 사실**이다.
+    한 문장으로 뭉개면 다음 사람이 또 재야 한다.
+    """
+    from unittest.mock import patch
+    from src.collectors import link_diag
+    from src.collectors.share_text import resolve_gap
+
+    short = "https://e.tb.cn/h.abc"
+    with patch.dict("os.environ", {"KGP_SHORT_LINK_RESOLVE": "1"}), \
+         patch("requests.get", side_effect=[_diag_resp(200, text="<html><body>없음</body></html>")]):
+        r = link_diag.resolve_short_link(short)
+    assert r["ok"] is False and r["reason"] == "no_item_in_body"
+    assert resolve_gap({"price": "", "resolve_reason": r["reason"]}) == "server_opened_no_item"
+
+    class _Refused(Exception):
+        pass
+
+    with patch.dict("os.environ", {"KGP_SHORT_LINK_RESOLVE": "1"}), \
+         patch("requests.get", side_effect=_Refused("nope")):
+        r2 = link_diag.resolve_short_link(short)
+    assert r2["reason"] == "error:_Refused"
+    assert resolve_gap({"price": "", "resolve_reason": r2["reason"]}) == "server_could_not_open"
+
+    # **안 해 본 것은 실패가 아니다.** 끈 상태·단축 링크가 아닌 경우를 실패로 적으면 날조다.
+    for not_tried in ("disabled", "not_short_link", ""):
+        assert resolve_gap({"price": "", "resolve_reason": not_tried}) == "no_final_url"
+
+
+def test_a_bare_short_link_becomes_a_draft_with_price():
+    """★★★ 맨 단축 URL 하나로도 **가격까지 담긴 초안**이 선다 → `uncollected`에서 price 탈락.
+
+    이게 F9-2의 세 겹 막힘 중 1번을 푼다: 가격이 오면 등록 게이트가 열린다.
+    """
+    from unittest.mock import patch
+    from src.collectors.share_collect import collect_from_share_text
+    from src.seller_console import collect_history_store as chs
+
+    try:
+        chs._in_memory.clear()
+    except Exception:
+        pass
+
+    chain = [_diag_resp(200, text=BODY_F11)]
+    with patch.dict("os.environ", {"KGP_SHORT_LINK_RESOLVE": "1"}), \
+         patch("requests.get", side_effect=chain):
+        r = collect_from_share_text("https://e.tb.cn/h.8reU77YYNhKOUuE?tk=EYAGT7vTcVD",
+                                    seller_id="default", translate=False)
+
+    assert r["ok"] is True, f"초안이 안 섰다: {r}"
+    assert r["item_id_taobao"] == "1060535477134"
+    assert r["price"] == "76.86" and r["currency"] == "CNY"
+    assert "price" not in r["uncollected"], f"가격이 왔는데 미수집에 남았다: {r['uncollected']}"
+    assert r["enrich_state"] == "done", "가격이 왔으면 등록 게이트가 열려야 한다"
+    assert r["resolve_gap"] == "ok"
+    # 저장 URL이 정규형 — 같은 상품이 단축/편 링크로 두 번 담겨도 한 키로 합쳐진다.
+    assert r["url"] == "https://item.taobao.com/item.htm?id=1060535477134"
+    from src.collectors.product_key import normalize_product_key
+    assert normalize_product_key(r["url"]) == normalize_product_key(
+        "https://m.intl.taobao.com/detail/detail.html?id=1060535477134&price=76.86")
+
+
+def test_phone_supplied_values_win_over_the_server_probe():
+    """★★ 폰이 이미 펴 줬으면 **다시 나가지 않는다** — 같은 값을 두 번 재지 않는다.
+
+    폰이 준 값이 더 가까운 시점이고, 요청 안에서 한 번 더 밖으로 나가면 그건 낭비다.
+    """
+    from unittest.mock import patch
+    from src.collectors.share_collect import collect_from_share_text
+    from src.seller_console import collect_history_store as chs
+
+    try:
+        chs._in_memory.clear()
+    except Exception:
+        pass
+
+    with patch.dict("os.environ", {"KGP_SHORT_LINK_RESOLVE": "1"}), \
+         patch("requests.get") as spy:
+        r = collect_from_share_text(SHARE_FIXTURE, seller_id="default", translate=False,
+                                    final_url=FINAL_URL_FIXTURE)
+    assert spy.call_count == 0, "폰이 이미 펴 줬는데 서버가 또 나갔다"
+    assert r["item_id_taobao"] == "993154784090" and r["price"] == "199"
+
+
+def test_no_markdown_anywhere_a_user_can_see_it():
+    """★★★ 마크다운 금지를 **사용자 도달면 전체**로 넓힌다 — 소스가 아니라 결과를 잰다.
+
+    F8-a에서 내가 넣은 `**…**`가 토스트에 별표로 그대로 떴다. 소스 문자열로 재면
+    docstring과 구별이 안 되니(39건 중 대부분이 주석) **렌더된 화면·API 응답·토스트 호출**을 본다.
+    """
+    import json
+    import re
+    from unittest.mock import patch
+    from src.order_webhook import app
+
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = "default"
+
+    # ① 렌더된 화면 — `<script>`·`<style>` 걷어낸 **보이는 글**에 `**`가 없어야 한다.
+    for path in ("/seller/collect/link-diag", "/seller/collect/history", "/seller/collect"):
+        html = c.get(path).data.decode()
+        visible = re.sub(r"<script\b.*?</script>|<style\b.*?</style>", "", html, flags=re.S | re.I)
+        assert "**" not in visible, f"{path} 보이는 글에 마크다운이 있다"
+
+    # ② API 응답의 사람 문장
+    with patch("src.api.extension_api._require_token", return_value={"user_id": "default"}):
+        for body in ({"share_text": ""}, {"share_text": "￥HU591￥"},
+                     {"share_text": FIX_SWEATER}):
+            d = c.post("/api/v1/collect/one", json=body).get_json() or {}
+            for key in ("message", "error"):
+                val = str(d.get(key) or "")
+                assert "**" not in val, f"API {key}에 마크다운: {val}"
+                assert not re.search(r"`[^`]+`", val), f"API {key}에 백틱: {val}"
+
+    # ③ 수집 함수들이 내는 **error 문장** — 실측(C-F11): `collect_input`의 거절 문장에
+    #   `**통째로**`가 살아 있었는데 ①②로는 안 잡혔다. 그 경로가 안 밟혔기 때문이다.
+    #   그래서 실패 갈래를 **직접 불러** 문장을 꺼낸다.
+    from src.collectors.share_collect import collect_from_share_text, collect_input
+    probes = [
+        lambda: collect_input("", seller_id="default"),
+        lambda: collect_input("￥HU591￥", seller_id="default"),
+        lambda: collect_input("링크 없는 글입니다", seller_id="default"),
+        lambda: collect_input("https://e.tb.cn/h.zzz", seller_id="default", translate=False),
+        lambda: collect_from_share_text("", seller_id="default"),
+        lambda: collect_from_share_text("https://e.tb.cn/h.zzz", seller_id="default",
+                                        translate=False),
+    ]
+    for fn in probes:
+        out = fn() or {}
+        for key in ("error", "message"):
+            val = str(out.get(key) or "")
+            assert "**" not in val, f"수집 {key}에 마크다운: {val}"
+            assert not re.search(r"`[^`]+`", val), f"수집 {key}에 백틱: {val}"
+
+    # ④ 토스트 호출 인자
+    from pathlib import Path
+    for p in list(Path("src").rglob("*.js")) + list(Path("extensions").rglob("*.js")):
+        t = p.read_text(encoding="utf-8", errors="ignore")
+        for m in re.finditer(r"(?:pcToast|showGlobalToast|kgpToast)\s*\(\s*([\"'`])(.*?)\1", t, re.S):
+            assert "**" not in m.group(2), f"{p.name} 토스트에 마크다운: {m.group(2)[:80]}"
+    del json
+
+
+def test_diag_price_card_reads_the_body_price():
+    """★★ 본문에 가격이 있는데 화면이 「없음」이라 적으면 그것도 **덜 보고 단정**한 것이다."""
+    from unittest.mock import patch
+    from src.order_webhook import app
+
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = "default"
+    with patch("requests.get", side_effect=[_diag_resp(200, text=BODY_F11)] * 2):
+        r = c.post("/seller/collect/link-diag", data={"url": "https://e.tb.cn/h.abc"})
+    body = r.data.decode()
+    assert "76.86" in body, "본문에서 읽은 가격이 화면에 없다"
+    assert "1060535477134" in body

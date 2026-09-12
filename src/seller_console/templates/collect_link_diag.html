@@ -69,7 +69,11 @@
         <div class="col-6 col-md-3">
           <div class="op-card text-center py-3">
             <div class="op-kpi-k">가격</div>
-            <div class="op-kpi-v mt-1">{{ (result.price ~ " " ~ result.currency) if result.price else "없음" }}</div>
+            {# C-F11: 가격도 주소·본문 두 출처가 있다. 주소에 없으면 본문 링크에서 읽은 값을 쓴다 —
+               있는 값을 "없음"이라 적으면 그게 덜 보고 단정하는 것이다. #}
+            {% set shown_price = result.price or result.body_price %}
+            {% set shown_cur = result.currency or result.body_currency %}
+            <div class="op-kpi-v mt-1">{{ (shown_price ~ " " ~ shown_cur) if shown_price else "없음" }}</div>
           </div>
         </div>
       </div>
@@ -146,7 +150,10 @@
       <div class="pc-inset small mb-2" style="word-break:break-all">{{ p.body_item_url }}</div>
       {% endif %}
       {% if p.body_item_id %}
-      <p class="small mb-3">본문 안 상품번호: <strong>{{ p.body_item_id }}</strong></p>
+      <p class="small mb-3">
+        본문 안 상품번호: <strong>{{ p.body_item_id }}</strong>
+        {% if p.body_price %} · 본문 안 가격: <strong>{{ p.body_price }} {{ p.body_currency }}</strong>{% endif %}
+      </p>
       {% else %}
       <p class="small mb-2">상품 링크·상품번호를 찾지 못했습니다. 받은 페이지의 계량값만 적습니다:</p>
       <ul class="small mb-3">
