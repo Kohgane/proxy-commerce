@@ -27,6 +27,10 @@ _SHOPPING_HOSTS = (
     "mercari.com", "qoo10.", "dhgate.com", "iherb.com", "shopee.", "ebay.", "etsy.com",
     "shein.com", "yoshidakaban.com", "zozo.jp", "vvic.com", "paypaymall.yahoo.co.jp",
     "shopping.yahoo.co.jp", "store.shopping.yahoo.co.jp", "kohganemultishop", "wadiz.kr",
+    # C-F14 실측: 타오바오 **공식 단축 도메인**이 빠져 있었다. `taobao.com`은 있는데 `tb.cn`이
+    #   없어서, 폰으로 담은 초안(`e.tb.cn/h.…`)이 「소싱처 화이트리스트 밖」으로 잡혔다 —
+    #   쇼핑몰인데 쇼핑몰이 아니라고 읽은 것이다(점수 70, 「비상품 의심」 태그).
+    "tb.cn", "goofish.com", "s.click.taobao.com",
 )
 
 # 명백한 비쇼핑 서비스(부분일치). 이 host면 확정 후보(A).
@@ -135,6 +139,17 @@ def classify_row(row: dict) -> dict:
 
     # 오탐 0 보증: 쇼핑 도메인은 상품으로 간주(early-return).
     if not url or _is_shopping_host(url):
+        return result
+
+    # C-F14: **보강 대기 초안은 비상품이 아니다.** 가격·이미지가 없는 건 아직 안 채운 것이지
+    #   상품이 아니라는 뜻이 아니다 — 그 판정 근거(「가격·이미지·옵션 전무」)가 초안엔 그대로
+    #   해당되기 때문에, 안 걸러 두면 우리가 만든 초안을 우리가 비상품으로 의심하게 된다.
+    try:
+        import json as _json
+        _ex = _json.loads(row.get("extra_json") or "{}") or {}
+    except Exception:
+        _ex = {}
+    if str(_ex.get("enrich_state") or "") or _ex.get("gate_ready") is not None:
         return result
 
     score = 0

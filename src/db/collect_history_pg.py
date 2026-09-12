@@ -43,8 +43,18 @@ _LEAN_EXTRA = (
     "'translated', extra_json->'translated',"
     "'translate_error', extra_json->'translate_error',"
     "'translate_requested', extra_json->'translate_requested',"
+    # C-F14: 보강 축(등록 가능/보강 진행)을 목록이 **알 수 있게** 실어 보낸다.
+    #   없으면 목록이 완전 수집 잣대로 부분 초안을 재고 「실패」라 적는다(실측).
+    "'gate_ready', extra_json->'gate_ready',"
+    "'enrich_state', extra_json->'enrich_state',"
+    "'enrich_blocked_reason', extra_json->'enrich_blocked_reason',"
+    "'enrich_attempts', extra_json->'enrich_attempts',"
+    "'mode', extra_json->'mode',"
     "'images', CASE WHEN jsonb_typeof(extra_json->'images')='array' AND jsonb_array_length(extra_json->'images')>0 "
-    "THEN jsonb_build_array(extra_json->'images'->0) ELSE '[]'::jsonb END"
+    "THEN jsonb_build_array(extra_json->'images'->0) ELSE '[]'::jsonb END,"
+    # lean은 이미지를 **첫 장만** 싣는다 → 개수를 세면 늘 1이다. 실제 장수는 SQL이 세서 보낸다.
+    "'images_count', CASE WHEN jsonb_typeof(extra_json->'images')='array' "
+    "THEN jsonb_array_length(extra_json->'images') ELSE 0 END"
     ") AS extra_json"
 )
 _SELECT_LEAN = ("id, created_at, source, domain, url, title, image_url, price, currency, "

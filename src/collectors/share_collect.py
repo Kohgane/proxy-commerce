@@ -161,8 +161,14 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
             "short_name": share.get("short_name", ""),
             "final_url": share.get("final_url", ""),
             "uncollected": uncollected,
-            # C-T3: 보강 전까지 마켓 등록을 막는 근거(가격이 없으면 마진을 못 낸다 — 0 발명 금지).
-            "enrich_state": ("done" if price else "pending"),
+            # C-F14: **한 필드에 두 뜻을 지우지 않는다.** F11에서 가격이 오면 `enrich_state="done"`으로
+            #   뒀는데, 그건 「등록 게이트 열림」이라는 뜻이었다. 그런데 목록은 같은 필드를
+            #   「보강 완료」로 읽어서 **이미지 0장 + done = 추출 실패**로 표시했다 —
+            #   제목·상품번호·가격이 다 담긴 셋이 「실패」로, 아무것도 없는 하나가 「대기」로 뒤집혔다.
+            #   → 두 축을 나눈다: `gate_ready`(등록 가능) / `enrich_state`(보강 진행).
+            "gate_ready": bool(price),
+            # 보강은 **이미지가 실제로 들어왔을 때만** done이다. 가격이 왔다고 보강이 끝난 게 아니다.
+            "enrich_state": "pending",
             "share_raw": share.get("raw", "")[:500],
         },
     )
@@ -182,8 +188,9 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
     return {"ok": True, "item_id": item_id, "url": url, "title": title,
             "title_ko": title_ko, "item_id_taobao": share.get("item_id") or item_id_site,
             "uncollected": uncollected, "price": price, "currency": currency,
-            # 가격이 왔으면 마진을 낼 수 있다 → 등록 가능. 없으면 닫힌 채(0 발명 금지).
-            "enrich_state": ("done" if price else "pending"),
+            # 가격이 왔으면 마진을 낼 수 있다 → **등록 가능**(`gate_ready`).
+            #   보강(이미지·옵션)은 아직 안 됐으므로 `enrich_state`는 `pending`이다.
+            "gate_ready": bool(price), "enrich_state": "pending",
             # 서버가 **본 것만** 담는다: 최종 URL이 왔나 · 상품번호가 있었나 · 가격이 있었나.
             "resolve_gap": resolve_gap(share), "message": gap_message(share),
             # 어디서 오래 걸렸는지 — 원문은 안 싣고 **밀리초만** 싣는다.
@@ -240,7 +247,7 @@ def partial_draft_for_taobao(url: str, *, resolve: bool = True) -> Optional[dict
         "url": canonical_item_url(item_id) or url,
         # 화면·검수표가 "이건 아직 반쪽"이라고 읽는 근거. 숨기면 등록까지 그냥 흘러간다.
         "partial": True, "uncollected": uncollected,
-        "enrich_state": ("done" if price else "pending"),
+        "gate_ready": bool(price), "enrich_state": "pending",
         "price_source": ("share_link" if price else ""),
         "resolve_reason": reason,
         "is_mock": False,

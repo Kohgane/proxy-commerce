@@ -241,11 +241,11 @@ def test_gate_opens_only_when_price_actually_arrives(monkeypatch):
         # ① 상세만 보강 — 가격이 없으니 게이트는 닫힌 채다
         c.post("/api/v1/collect/enrich",
                json={"item_id": "it1", "description": "원목 책상입니다. " * 5})
-        assert state["extra"]["enrich_state"] == "pending", "가격 없이 게이트가 열렸다"
+        assert not state["extra"].get("gate_ready"), "가격 없이 게이트가 열렸다"
 
-        # ② 가격이 실제로 도착 — 그때 열린다
+        # ② 가격이 실제로 도착 — 그때 열린다(C-F14: 등록 축은 `gate_ready`)
         c.post("/api/v1/collect/enrich", json={"item_id": "it1", "price": "268000", "currency": "KRW"})
-        assert state["extra"]["enrich_state"] == "done"
+        assert state["extra"]["gate_ready"] is True
         assert "price" not in state["extra"]["uncollected"]
         assert state["cols"].get("price") == "268000", "행 컬럼이 안 바뀌면 목록은 '-'로 남는다"
 
@@ -313,7 +313,8 @@ def test_two_branches_are_not_mixed(monkeypatch):
         SHARE_FIXTURE, seller_id="u1", translate=False,
         final_url="https://example.invalid/x?id=993154784090&price=199")
     assert r["price"] == "199" and r["currency"] == "CNY"
-    assert r["enrich_state"] == "done"
+    assert r["gate_ready"] is True          # C-F14: 등록 가능 = 가격 확보
+    assert r["enrich_state"] == "pending"   # 보강(이미지·옵션)은 아직
     assert "price" not in r["uncollected"]
     assert saved["extra"]["price_source"] == "share_link", "실시간 시세가 아님을 표시해야 한다"
     assert saved["status"] == "ok"
@@ -1291,7 +1292,10 @@ def test_a_bare_short_link_becomes_a_draft_with_price():
     assert r["item_id_taobao"] == "1060535477134"
     assert r["price"] == "76.86" and r["currency"] == "CNY"
     assert "price" not in r["uncollected"], f"가격이 왔는데 미수집에 남았다: {r['uncollected']}"
-    assert r["enrich_state"] == "done", "가격이 왔으면 등록 게이트가 열려야 한다"
+    # C-F14: 등록 가능 여부는 `gate_ready`다. `enrich_state`는 **보강**(이미지·옵션) 진행이라
+    #   가격만 왔을 땐 여전히 `pending`이다 — 한 필드에 두 뜻을 지우지 않는다.
+    assert r["gate_ready"] is True, "가격이 왔으면 등록 게이트가 열려야 한다"
+    assert r["enrich_state"] == "pending", "이미지가 없는데 보강 완료로 적는다"
     assert r["resolve_gap"] == "ok"
     # 저장 URL이 정규형 — 같은 상품이 단축/편 링크로 두 번 담겨도 한 키로 합쳐진다.
     assert r["url"] == "https://item.taobao.com/item.htm?id=1060535477134"
@@ -1730,8 +1734,8 @@ def test_two_taobao_prices_are_kept_apart():
     assert ex["price_final"] == "76.86", "보조금 후 가격이 사라졌다"
     assert ex["price"] == "76.86", "마진 분모는 실제 내는 값이어야 한다"
     assert ex["price_basis"] == "보조금 후", "무엇을 썼는지 안 적었다"
-    # 가격이 왔으니 등록 게이트가 열린다.
-    assert ex["enrich_state"] == "done"
+    # 가격이 왔으니 등록 게이트가 열린다(보강 축과 별개).
+    assert ex["gate_ready"] is True
 
 
 def test_originals_survive_and_stored_copies_are_never_faked():
@@ -1852,3 +1856,234 @@ def test_queue_screen_shows_real_state_not_a_hardcoded_zero():
     # 개발 표기·이모지·v2 문법이 함께 사라졌는지(이 화면은 스텁이었다)
     assert "Phase 144" not in body and "🖼" not in body
     assert "bg-success" not in body and "alert-info" not in body
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# C-F14 — 한 필드에 두 뜻 · 목록이 성공을 실패로 읽었다
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _seed_owner_screen():
+    """오너 실측 화면(2026-09-12 15:08)을 그대로 모사한다.
+
+    소파 78 CNY / iPhone17 469 / iPhone18 469 — 셋 다 **F11 잔재**(`done` + 이미지 0장).
+    회전 큐브 — F11 이전(가격 없음, `pending`).
+    """
+    from src.seller_console import collect_history_store as chs
+    try:
+        chs._in_memory.clear()
+    except Exception:
+        pass
+    rows = [
+        ("소파 뒤쪽 수납 선반", "78", "done", [], None),
+        ("iPhone17 신제품", "469", "done", [], None),
+        ("iPhone18 필수템", "469", "done", [], None),
+        ("회전 큐브", "", "pending", [], None),
+    ]
+    ids = []
+    for t, p, st, imgs, reason in rows:
+        ex = {"title": t, "price": p, "currency": "CNY", "images": imgs, "mode": "share",
+              "enrich_state": st, "uncollected": ["images", "options", "description"]}
+        if reason:
+            ex["enrich_blocked_reason"] = reason
+            ex["enrich_attempts"] = 3
+        ids.append(chs.append(source="mobile",
+                              url=f"https://item.taobao.com/item.htm?id={abs(hash(t)) % 10**12}",
+                              title=t, image="", price=p, currency="CNY", seller_id="default",
+                              status=("ok" if p else "보강 대기"), extra=ex))
+    return ids
+
+
+def test_a_draft_with_price_is_never_called_a_collection_failure():
+    """★★★ 제목·상품번호·가격이 **다 담긴** 셋이 목록에 「실패 · 추출 실패」로 떴다(오너 실측).
+
+    이미지가 없다는 이유였다. 그런데 초안은 **아직 반쪽인 게 정상**이고, 「실패」는
+    초안 자체가 없을 때 쓰는 말이다. 완전 수집 잣대(7필드)를 부분 초안에 들이댄 것이다.
+
+    **계약은 목록 렌더 응답 HTML로 잰다**(오너 지정 — F3 재발 방지).
+    함수를 재면 "판정기는 잘 돈다"는 초록이 나오고 화면은 계속 거짓말을 한다.
+    """
+    from src.order_webhook import app
+
+    _seed_owner_screen()
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = "default"
+    html = c.get("/seller/collect/history").data.decode()
+
+    assert "실패 · 추출 실패" not in html, "가격까지 담긴 초안을 아직 실패라 부른다"
+    # 넷 다 보강 대기여야 한다(가격 유무는 등록 축이지 보강 축이 아니다).
+    assert html.count("보강 대기") >= 4, "초안이 보강 대기로 안 보인다"
+    for title in ("소파 뒤쪽 수납 선반", "iPhone17 신제품", "iPhone18 필수템", "회전 큐브"):
+        assert title in html, f"{title} 행이 없다"
+
+
+def test_list_badges_follow_the_owner_spec():
+    """★★★ 배지 규칙(오너 지정) — 목록 렌더 HTML로 잰다.
+
+    `gate_ready & pending` → 「보강 대기」 / `blocked` → 「막힘 · <사유>」 / `done` → 「완료」.
+    사유는 **서버가 적은 그대로** — 지어내지 않는다.
+    """
+    from src.order_webhook import app
+    from src.seller_console import collect_history_store as chs
+
+    try:
+        chs._in_memory.clear()
+    except Exception:
+        pass
+    cases = [
+        ("완료된 상품", "100", "pending", ["u1", "u2", "u3"], None),
+        ("막힌 상품", "50", "blocked", [], "로그인 벽 감지"),
+        ("대기 상품", "70", "pending", [], None),
+    ]
+    for t, p, st, imgs, reason in cases:
+        ex = {"title": t, "price": p, "currency": "CNY", "images": imgs, "mode": "share",
+              "enrich_state": st}
+        if reason:
+            ex["enrich_blocked_reason"] = reason
+            ex["enrich_attempts"] = 3
+        chs.append(source="mobile", url=f"https://item.taobao.com/item.htm?id={abs(hash(t)) % 10**9}",
+                   title=t, image="", price=p, currency="CNY", seller_id="default",
+                   status="ok", extra=ex)
+
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = "default"
+    html = c.get("/seller/collect/history").data.decode()
+
+    assert "막힘 · 로그인 벽 감지" in html, "막힌 사유를 서버 기록 그대로 안 보여 준다"
+    assert "보강 대기" in html
+    assert "완료" in html
+    assert "실패" not in html.split("막힘 · 로그인 벽 감지")[0][-2000:], "막힘을 실패라 부른다"
+
+
+def test_the_two_axes_never_share_a_field():
+    """★★★ **한 필드에 두 뜻을 지우지 않는다** — 이게 세 화면에서 성공→실패를 뒤집은 뿌리다.
+
+    F3(결과 카드) · F12(검수표) · F14(목록) — 세 번 같은 자리에서 났다.
+    `gate_ready`(등록 가능) 와 `enrich_state`(보강 진행)는 **다른 축**이다.
+    """
+    from src.collectors.collect_status import enrich_axes
+
+    # 가격만 있고 이미지 없음 = 등록은 되지만 보강은 안 됐다.
+    ax = enrich_axes({"price": "78", "images": []})
+    assert ax["gate_ready"] is True and ax["enrich_state"] != "done"
+
+    # F11 잔재 — 저장된 `done`을 그대로 믿지 않는다(이미지가 없으면 보강은 안 끝났다).
+    legacy = enrich_axes({"price": "78", "enrich_state": "done", "images": []})
+    assert legacy["gate_ready"] is True, "가격이 있으면 등록 축은 열려 있어야 한다"
+    assert legacy["enrich_state"] == "pending", "이미지 0장인데 보강 완료로 읽는다"
+
+    # 이미지가 실제로 왔을 때만 done.
+    ok = enrich_axes({"price": "78", "enrich_state": "pending", "images": ["a"]})
+    assert ok["enrich_state"] == "done"
+
+    # 막힘은 덮어쓰지 않는다(사람이 개입해야 풀리는 상태다).
+    blocked = enrich_axes({"price": "78", "enrich_state": "blocked", "images": []})
+    assert blocked["enrich_state"] == "blocked"
+
+
+def test_legacy_rows_reach_the_poller_without_a_manual_migration():
+    """★★★ 이관 스크립트를 **손으로 돌려야만** 고쳐진다면, 안 돌린 동안 화면은 계속 거짓말한다.
+
+    그리고 폴러가 저장된 원값(`done`)을 보고 건너뛰면 그 행들은 **영영 이미지가 안 들어온다** —
+    라이브 판정이 설계상 불가능해진다(오너 지적).
+    """
+    from unittest.mock import patch
+    from src.order_webhook import app
+
+    _seed_owner_screen()
+    c = app.test_client()
+    with patch("src.api.extension_api._require_token", return_value={"user_id": "default"}):
+        d = c.get("/api/v1/collect/enrich/pending").get_json()
+
+    titles = [i["title"] for i in d["items"]]
+    for t in ("소파 뒤쪽 수납 선반", "iPhone17 신제품", "iPhone18 필수템"):
+        assert t in titles, f"F11 잔재 {t}가 폴러 대상에 없다 — 영영 보강 안 된다"
+    assert d["total"] == 4
+
+
+def test_lean_projection_carries_what_the_list_needs():
+    """★★ 목록은 `lean` projection만 받는다 — 거기 없는 필드는 **화면이 알 수 없다.**
+
+    실측: 보강 축을 추가했는데 lean 허용목록에 안 넣어서 배지가 안 떴다.
+    그리고 lean은 이미지를 **첫 장만** 싣는다 → 개수를 세면 늘 1이라 "1장 · 완료"가 된다.
+    """
+    from src.seller_console import collect_history_store as chs
+
+    try:
+        chs._in_memory.clear()
+    except Exception:
+        pass
+    chs.append(source="mobile", url="https://item.taobao.com/item.htm?id=7", title="x", image="",
+               price="78", currency="CNY", seller_id="default", status="ok",
+               extra={"title": "x", "price": "78", "images": ["a", "b", "c"],
+                      "mode": "share", "enrich_state": "pending"})
+    import json as _json
+    row = chs.list_items(seller_ids={"default"}, days=90, limit=5, lean=True)[0]
+    ex = _json.loads(row["extra_json"])
+    for key in ("gate_ready", "enrich_state", "enrich_blocked_reason", "enrich_attempts",
+                "images_count", "price"):
+        assert key in ex, f"lean에 {key}가 없어 목록이 못 읽는다"
+    assert ex["images_count"] == 3, "lean이 첫 장만 싣는데 개수를 안 세 보낸다"
+
+    from src.collectors.collect_status import enrich_axes
+    assert enrich_axes(ex)["images"] == 3, "배지가 '1장'이라 적게 된다"
+
+
+def test_a_taobao_short_link_draft_is_not_suspected_of_being_a_non_product():
+    """★★ 「비상품 의심」의 근거가 **가격·이미지 없음**이면 그건 초안에 그대로 해당된다.
+
+    실측: 타오바오 **공식 단축 도메인**(`tb.cn`)이 쇼핑 호스트 목록에서 빠져 있어,
+    폰으로 담은 초안이 「소싱처 화이트리스트 밖」으로 70점을 받았다 —
+    쇼핑몰인데 쇼핑몰이 아니라고 읽은 것이다.
+    """
+    import json
+    from src.seller_console.collect_hygiene import classify_row
+
+    short = classify_row({"url": "https://e.tb.cn/h.8reU?tk=ABC",
+                          "extra_json": json.dumps({"title": "회전 큐브"})})
+    assert short["is_candidate"] is False, f"단축 링크 초안을 비상품으로 의심한다: {short}"
+
+    draft = classify_row({"url": "https://item.taobao.com/item.htm?id=1",
+                          "extra_json": json.dumps({"title": "x", "enrich_state": "pending"})})
+    assert draft["is_candidate"] is False, "보강 대기 초안을 비상품으로 의심한다"
+
+    # 진짜 비상품은 그대로 잡혀야 한다(오탐을 줄이려다 검출을 죽이지 않는다).
+    mail = classify_row({"url": "https://mail.google.com/mail/u/0",
+                         "extra_json": json.dumps({"title": "받은편지함"})})
+    assert mail["is_candidate"] is True, "진짜 비상품을 놓친다"
+
+
+def test_extension_banner_only_on_desktop_chromium():
+    """★★ 확장은 **데스크톱 크롬 계열에만** 있다.
+
+    모바일·사파리에서 「확장이 감지되지 않았어요」는 고칠 수 없는 일을 고치라는 말이라
+    안내가 아니라 소음이다(오너 실측: 폰에서 떴다).
+    """
+    from pathlib import Path
+    html = Path("src/seller_console/templates/collect_history.html").read_text(encoding="utf-8")
+    seg = html[html.index("extFreshBanner"):]
+    seg = seg[:seg.index("function paint")]
+    assert "navigator.userAgent" in seg, "UA를 안 본다"
+    assert "_isMobile" in seg and "_isChromium" in seg
+    assert "return;" in seg, "확장을 설치할 수 없는 환경에서 빠져나오지 않는다"
+
+    # 판정 자체를 node로 실증한다(정규식이 맞는지 눈으로 믿지 않는다).
+    import re
+    import subprocess
+    m = re.search(r"var _isMobile = (/.+?/i)\.test\(_ua\);", seg)
+    m2 = re.search(r"var _isChromium = (.+?);", seg)
+    assert m and m2
+    js = f"""
+    const chk=(u)=>{{const _ua=u;const _isMobile={m.group(1)}.test(_ua);
+      const _isChromium={m2.group(1)};return (_isMobile||!_isChromium)?'숨김':'표시';}};
+    const out=[chk('Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Chrome/128.0 Safari/537.36'),
+               chk('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1'),
+               chk('Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/128.0 Mobile Safari/537.36'),
+               chk('Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Version/17.0 Safari/605.1.15')];
+    console.log(JSON.stringify(out));
+    """
+    r = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=20)
+    assert r.returncode == 0, r.stderr
+    import json as _j
+    assert _j.loads(r.stdout.strip()) == ["표시", "숨김", "숨김", "숨김"], r.stdout

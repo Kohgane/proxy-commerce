@@ -536,7 +536,11 @@ def collect_enrich_pending():
         except Exception:
             continue
         # C-F13-2b: `blocked`는 대기가 아니다 — 큐가 같은 벽에 계속 머리를 박지 않게 뺀다.
-        if str(ex.get("enrich_state") or "") != "pending":
+        # C-F14: **보정된 축**으로 읽는다. 저장된 원값에는 F11 잔재(`done`인데 이미지 0장)가 있고,
+        #   그걸 그대로 믿으면 정작 보강이 필요한 행이 큐에 영영 안 올라온다 —
+        #   화면엔 「완료」로 떠 있는데 이미지는 없는 상태로 굳는다(실측: 오너 목록 3건).
+        from src.collectors.collect_status import enrich_axes as _eax
+        if _eax(ex)["enrich_state"] != "pending":
             continue
         _att = int(ex.get("enrich_attempts") or 0)
         if _att >= ENRICH_MAX_ATTEMPTS:
@@ -768,16 +772,28 @@ def collect_enrich():
     if changed and str(extra.get("mode") or "").lower() in SIMPLE_COLLECT_MODES:
         extra["mode"] = "full"
         changed["mode"] = 1
-    # C-T3/T4': 등록 게이트 해제 — **가격이 실제로 들어왔을 때만**.
-    #   상세·이미지만 채워지고 가격이 여전히 비면 마진을 못 낸다(그 상태로 열면 0 발명으로 돌아간다).
-    if str(extra.get("enrich_state") or "") == "pending":
+    # C-F14: 두 축을 **따로** 갱신한다. 한 필드에 두 뜻을 지우면 화면마다 다르게 읽는다
+    #   (실측: 목록이 `done`+이미지 0을 「추출 실패」로 읽어 성공한 셋을 실패로 표시했다).
+    #
+    #   ① 등록 게이트(`gate_ready`) — **가격이 실제로 들어왔을 때만** 연다.
+    #      상세·이미지만 채워지고 가격이 비면 마진을 못 낸다(그 상태로 열면 0 발명으로 돌아간다).
+    if not extra.get("gate_ready"):
         _price_now = str(extra.get("price") or "").strip()
         if _price_now and _price_now not in ("0", "0.0", "0.00"):
-            extra["enrich_state"] = "done"
+            extra["gate_ready"] = True
             extra["uncollected"] = [f for f in (extra.get("uncollected") or []) if f != "price"]
-            changed["enrich_state"] = 1
+            changed["gate_ready"] = 1
         else:
             logger.info("[enrich] item=%s 가격 미보강 — 등록 게이트 유지", item_id)
+    #   ② 보강 상태(`enrich_state`) — **이미지가 실제로 1장 이상**일 때만 done이다.
+    #      "큐가 돌았다"가 아니라 "채워졌다"가 기준이다(가짜 완료 금지).
+    if str(extra.get("enrich_state") or "") != "blocked":
+        if len(extra.get("images") or []) >= 1:
+            if extra.get("enrich_state") != "done":
+                extra["enrich_state"] = "done"
+                changed["enrich_state"] = 1
+        else:
+            extra["enrich_state"] = "pending"
     # 상태 배지 재계산(부분→성공).
     try:
         from src.collectors.collect_status import compute_collect_status as _ccs
