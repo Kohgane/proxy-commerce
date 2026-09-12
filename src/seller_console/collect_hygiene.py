@@ -149,8 +149,14 @@ def classify_row(row: dict) -> dict:
         _ex = _json.loads(row.get("extra_json") or "{}") or {}
     except Exception:
         _ex = {}
-    if str(_ex.get("enrich_state") or "") or _ex.get("gate_ready") is not None:
-        return result
+    # 초안 판정도 **한 함수**를 지난다(원값 직접 읽기를 한 곳도 남기지 않는다 — C-F15-6).
+    try:
+        from src.collectors.collect_status import enrich_axes as _eax
+        if _eax(_ex)["is_draft"] or _ex.get("gate_ready") is not None:
+            return result
+    except Exception:
+        if str(_ex.get("enrich_state") or "") or _ex.get("gate_ready") is not None:
+            return result
 
     score = 0
     reasons: list[str] = []

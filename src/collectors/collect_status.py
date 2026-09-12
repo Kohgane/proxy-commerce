@@ -182,6 +182,22 @@ def status_summary(st: Dict[str, Any]) -> str:
 # C-F14: 보강 축 — **등록 가능**(`gate_ready`)과 **보강 진행**(`enrich_state`)은 다른 축이다
 # ─────────────────────────────────────────────────────────────────────────────
 
+# C-F15-6: **보강 축을 읽는 자리 전수.** F14에서 목록·등록 게이트·폴러 셋을 `enrich_axes`로
+#   돌렸는데 「이미지 처리 대기」(내가 F13에서 만든 화면)를 빠뜨렸다 — 그래서 이미지 0장인
+#   F11 잔재가 그 화면에서만 「완료」로 떴다. 세 곳을 고치고 네 번째를 놓친 것이다.
+#
+#   그래서 목록을 상수로 둔다(F8 입구 전수와 같은 방식): 계약이 이걸 순회하며
+#   "그 파일이 `enrich_axes`를 부르는가"를 검사한다. 새 읽는 자리가 생기면 계약이 먼저 깨진다.
+ENRICH_STATE_READERS = (
+    ("수집한 상품 목록",   "src/seller_console/views.py",              "_shape_collect_items"),
+    ("이미지 처리 대기",   "src/seller_console/views.py",              "media_queue"),
+    ("등록 게이트",        "src/seller_console/views.py",              "enrich_required"),
+    ("보강 대기 큐(폴러)", "src/api/extension_api.py",                 "/enrich/pending"),
+    ("막힘 기록",          "src/api/extension_api.py",                 "/enrich/blocked"),
+    ("비상품 위생 판정",   "src/seller_console/collect_hygiene.py",     "classify_row"),
+)
+
+
 def enrich_axes(extra: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """저장된 `extra` → `{gate_ready, enrich_state, reason, attempts, is_draft}`.
 

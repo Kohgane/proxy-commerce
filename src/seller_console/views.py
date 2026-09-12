@@ -81,7 +81,17 @@ def inject_seller_template_flags():
         _cl_banner = banner_summary() or None
     except Exception:
         _cl_banner = None
+    # C-F15-A2: **현재 세션 계정**을 모든 콘솔 화면이 알 수 있게 한 곳에서 주입한다.
+    #   실측(오너 2026-09-12): PC 콘솔은 대기 0건, 폰 콘솔은 4건이었다 —
+    #   단축어 토큰이 **다른 계정**으로 발급돼 있었고 **어느 화면도 그 사실을 말하지 않았다.**
+    #   확장 폴러는 PC 계정으로 조회하니 폰 초안을 영영 못 본다(사람은 이유를 알 길이 없다).
+    _acct = None
+    try:
+        _acct = (session.get("user_email") or session.get("user_id") or "") or None
+    except Exception:
+        _acct = None
     return {
+        "session_account": _acct,
         "diagnostic_reveal_enabled": os.getenv("DIAGNOSTIC_REVEAL", "0") == "1",
         "sidebar_grouped": os.getenv("SIDEBAR_GROUPED", "1") == "1",
         "brand_name": get_brand_name(),
@@ -8931,14 +8941,20 @@ def media_queue():
             ex = _json.loads(row.get("extra_json") or "{}") or {}
         except Exception:
             continue
-        state = str(ex.get("enrich_state") or "")
+        # C-F15-5: **원값을 믿지 않는다.** F14에서 목록·게이트·폴러 셋을 `enrich_axes`로 돌렸는데
+        #   내가 F13에서 만든 이 화면을 빠뜨렸다 — 그래서 이미지 0장인 F11 잔재가 「완료」로 떴다
+        #   (오너 실측: 폰 콘솔에서 완료 3 · 전부 이미지 0장). 같은 뿌리, **네 번째 화면**이다.
+        from src.collectors.collect_status import enrich_axes as _eax
+        _ax = _eax(ex)
+        state = _ax["enrich_state"]
         if not state:
             continue
         entry = {
             "id": row.get("id"),
             "title": row.get("title") or ex.get("title") or "(제목 없음)",
             "url": row.get("url") or "",
-            "images": len(ex.get("images") or []),
+            "gate_ready": _ax["gate_ready"],
+            "images": _ax["images"],
             "images_stored": len(ex.get("images_stored") or []),
             "stored_note": ex.get("images_stored_note") or "",
             "attempts": int(ex.get("enrich_attempts") or 0),

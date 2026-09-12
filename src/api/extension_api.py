@@ -545,12 +545,17 @@ def collect_enrich_pending():
         _att = int(ex.get("enrich_attempts") or 0)
         if _att >= ENRICH_MAX_ATTEMPTS:
             continue                    # 상한을 넘긴 항목은 큐에 안 올린다(서버가 상한을 안다)
+        # C-F15-7: 확장 쪽도 **원값을 믿지 않게** 보정값을 함께 보낸다. 확장이 저장된
+        #   `enrich_state`를 다시 읽어 판단하면 같은 잔재에 또 걸린다.
+        _ax_p = _eax(ex)
         out.append({
             "item_id": row.get("id"),
             "url": row.get("url") or "",
             "title": row.get("title") or ex.get("title") or "",
             "uncollected": ex.get("uncollected") or [],
             "attempts": _att,
+            "gate_ready": _ax_p["gate_ready"],
+            "images_count": _ax_p["images"],
         })
         if len(out) >= limit:
             break
@@ -654,7 +659,11 @@ def collect_enrich_blocked():
     extra["enrich_attempts"] = attempts
     extra["enrich_blocked_reason"] = reason
     # 상한에 닿기 전엔 `pending`으로 남긴다 — 한 번 막혔다고 포기하지 않는다.
-    state = "blocked" if attempts >= ENRICH_MAX_ATTEMPTS else str(extra.get("enrich_state") or "pending")
+    # C-F15-6: 상한 미달일 때 **보정된 값**으로 되돌린다. 원값을 그대로 쓰면 F11 잔재(`done`)가
+    #   막힘 보고 뒤에도 `done`으로 남아, 이미지가 없는데 「완료」로 굳는다.
+    from src.collectors.collect_status import enrich_axes as _eax_blk
+    state = ("blocked" if attempts >= ENRICH_MAX_ATTEMPTS
+             else (_eax_blk(extra)["enrich_state"] or "pending"))
     extra["enrich_state"] = state
     _update(item_id, seller_ids=ids, extra_json=_json.dumps(extra, ensure_ascii=False))
     logger.info("[enrich-blocked] item=%s 시도=%s/%s 상태=%s 사유=%s",
@@ -1407,6 +1416,22 @@ def collect_one():
             #   가리키기만 하고 길이 없으면 그 문장은 안내가 아니라 막다른 골목이다.
             if res.get("resolve_gap") in ("no_final_url", "final_url_without_id"):
                 out["diag_url"] = request.url_root.rstrip("/") + "/seller/collect/link-diag"
+        # C-F15-A1: **어느 계정에 담겼는지** 한 줄로 말한다. 실측(오너): 단축어 토큰이 PC 세션과
+        #   다른 계정이라 담긴 것이 PC 목록에 안 보였는데, 응답은 그냥 "담았어요"라고만 했다.
+        #   담은 곳을 말해 주면 사람이 바로 알아챈다.
+        #   `validate_token`은 `user_id`만 돌려준다(email 없음) → 이메일은 사용자 저장소에서 한 번 찾고,
+        #   못 찾으면 `user_id`를 그대로 쓴다(빈 문자열로 두면 아무 말도 안 하는 게 된다).
+        _acct = str(user.get("user_id") or "").strip()
+        try:
+            from src.auth.user_store import get_store as _gs2
+            _u2 = _gs2().find_by_id(_acct)
+            if _u2 is not None and getattr(_u2, "email", ""):
+                _acct = str(_u2.email)
+        except Exception:
+            pass
+        if _acct:
+            out["account"] = _acct
+            out["message"] = f"{out.get('message', '')} ({_acct} 계정에 담았어요)".strip()
         _timings.update(res.get("timings") or {})
         _timings["total"] = int((_time.perf_counter() - _t0) * 1000)
         out["timings"] = _timings

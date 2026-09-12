@@ -10,6 +10,16 @@
       폰으로 담은 초안은 제목·상품번호·가격까지입니다. <strong>이미지·옵션·상세는 PC에서</strong>
       고가수집기가 채웁니다 — 타오바오에 로그인된 크롬을 열어 두시면 알아서 진행됩니다.
     </p>
+{# C-F15-A2: 이 화면이 **어느 계정**을 보고 있는지 말한다.
+   실측: PC와 폰이 다른 계정이었고 어느 화면도 그걸 말하지 않아, 목록이 비어 보이는 이유를
+   알 길이 없었다. 계정은 '보이지 않는 필터'라 눈에 보여야 한다. #}
+{% if session_account %}
+<p class="text-muted small mb-2">
+  <i class="bi bi-person-badge"></i> 지금 보고 있는 계정 <strong>{{ session_account }}</strong>
+  — 고가수집기 토큰도 <strong>이 계정</strong>에서 발급한 것이어야 같은 목록을 봅니다.
+  <a href="/seller/me/tokens">토큰 확인</a>
+</p>
+{% endif %}
     <hr class="pc-hairline mt-0 mb-0">
   </header>
 
@@ -125,6 +135,8 @@
     <div class="op-card-body">
       <div class="table-responsive mb-0">
         <table class="table table-sm align-middle mb-0">
+          {# C-F15: 「완료」 표엔 이미지가 **실제로 있는 행만** 온다(`enrich_axes`가 보증).
+             전엔 원값을 읽어 이미지 0장인 F11 잔재가 여기 앉아 있었다. #}
           <thead><tr><th>상품</th><th>이미지</th><th>가격</th><th></th></tr></thead>
           <tbody>
             {% for it in done %}

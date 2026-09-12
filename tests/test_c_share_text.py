@@ -2087,3 +2087,156 @@ def test_extension_banner_only_on_desktop_chromium():
     assert r.returncode == 0, r.stderr
     import json as _j
     assert _j.loads(r.stdout.strip()) == ["표시", "숨김", "숨김", "숨김"], r.stdout
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# C-F15 — 네 번째 화면이 원값을 읽었다 · 계정이 갈렸는데 아무 화면도 말하지 않았다
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_the_enrich_queue_screen_does_not_read_raw_state():
+    """★★★ **네 번째 화면.** F14에서 목록·게이트·폴러 셋을 보정했는데, 내가 F13에서 만든
+    「이미지 처리 대기」를 빠뜨렸다 — 그래서 이미지 0장인 F11 잔재가 그 화면에서만 「완료」로 떴다.
+
+    실측(오너 폰 콘솔 2026-09-12 16:53): 대기 1 · **완료 3**(전부 이미지 0장).
+    계약은 렌더 HTML로 잰다(오너 지정).
+    """
+    import re
+    from src.order_webhook import app
+    from src.seller_console import collect_history_store as chs
+
+    try:
+        chs._in_memory.clear()
+    except Exception:
+        pass
+    # 오너 화면 4행 — 회전 큐브(가격 없음) + F11 잔재 3(가격 있고 이미지 0장, 원값 `done`)
+    for t, p, st in [("회전 큐브", "", "pending"), ("소파 뒤쪽 수납 선반", "78", "done"),
+                     ("iPhone17 신제품", "469", "done"), ("iPhone18 필수템", "469", "done")]:
+        chs.append(source="mobile",
+                   url=f"https://item.taobao.com/item.htm?id={abs(hash(t)) % 10**12}",
+                   title=t, image="", price=p, currency="CNY", seller_id="default",
+                   status=("ok" if p else "보강 대기"),
+                   extra={"title": t, "price": p, "images": [], "mode": "share",
+                          "enrich_state": st,
+                          "uncollected": ["images", "options", "description"]})
+
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = "default"
+    html = c.get("/seller/media/queue").data.decode()
+
+    def kpi(label):
+        m = re.search(re.escape(label) + r'</div>\s*<div class="op-kpi-v mt-1">(\d+)', html)
+        return int(m.group(1)) if m else -1
+
+    assert kpi("보강 완료") == 0, "이미지 0장인데 「완료」로 센다"
+    assert kpi("보강 대기") == 4, "잔재가 대기로 안 잡힌다"
+
+
+def test_every_enrich_state_reader_goes_through_the_helper():
+    """★★★ 세 곳을 고치고 네 번째를 놓쳤다 — 그래서 **읽는 자리를 상수로** 둔다.
+
+    F8 입구 전수와 같은 방식: 계약이 목록을 순회하며 "그 파일이 `enrich_axes`를 부르는가"를
+    본다. 새 읽는 자리가 생기면 계약이 먼저 깨진다.
+    """
+    from pathlib import Path
+    from src.collectors.collect_status import ENRICH_STATE_READERS
+
+    assert len(ENRICH_STATE_READERS) >= 6
+    for label, path, marker in ENRICH_STATE_READERS:
+        src = Path(path).read_text(encoding="utf-8")
+        assert marker in src, f"{label}: 표식 {marker!r}가 {path}에 없다(이름이 바뀌었나)"
+        assert "enrich_axes" in src, f"{label}({path})가 보정 함수를 안 쓴다 — 원값을 읽는다"
+
+
+def test_the_poller_hands_the_extension_corrected_values():
+    """★★ 확장도 **원값을 믿지 않게** 보정값을 함께 받는다.
+
+    확장이 저장된 `enrich_state`를 다시 읽어 판단하면 같은 잔재에 또 걸린다.
+    """
+    from unittest.mock import patch
+    from src.order_webhook import app
+    from src.seller_console import collect_history_store as chs
+
+    try:
+        chs._in_memory.clear()
+    except Exception:
+        pass
+    chs.append(source="mobile", url="https://item.taobao.com/item.htm?id=5", title="책상",
+               image="", price="78", currency="CNY", seller_id="default", status="ok",
+               extra={"title": "책상", "price": "78", "images": [], "mode": "share",
+                      "enrich_state": "done"})           # F11 잔재
+    c = app.test_client()
+    with patch("src.api.extension_api._require_token", return_value={"user_id": "default"}):
+        d = c.get("/api/v1/collect/enrich/pending").get_json()
+
+    assert d["total"] == 1, "잔재가 큐에 안 올라온다"
+    it = d["items"][0]
+    assert it["gate_ready"] is True, "등록 가능 여부를 확장에 안 알려 준다"
+    assert it["images_count"] == 0, "이미지 개수를 안 알려 준다"
+
+
+def test_every_console_screen_says_which_account_it_is_showing():
+    """★★★ **계정은 보이지 않는 필터다.**
+
+    실측(오너 2026-09-12 16:53): PC 콘솔 대기 0건, 폰 콘솔 4건. 단축어 토큰이 **다른 계정**으로
+    발급돼 있었고 **어느 화면도 그 사실을 말하지 않았다** — 사람은 목록이 비어 보이는 이유를
+    알 길이 없고, PC 확장은 폰 초안을 영영 못 본다.
+    """
+    from src.order_webhook import app
+
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = "u1"
+        s["user_email"] = "shanks8@hanmail.net"
+
+    for path in ("/seller/media/queue", "/seller/collect/history", "/seller/me/tokens"):
+        html = c.get(path).data.decode()
+        assert "shanks8@hanmail.net" in html, f"{path}가 어느 계정인지 말하지 않는다"
+
+    # 발급 화면의 안내는 토큰이 없을 때도 보여야 한다(발급 **전에** 알아야 하는 정보다).
+    tok = c.get("/seller/me/tokens").data.decode()
+    assert "고가수집기가 도는 크롬에 로그인한 계정" in tok, "어느 계정에서 발급해야 하는지 안 말한다"
+
+    # 토큰이 있으면 **발급 계정 열**과 「다른 계정」 표시가 뜬다.
+    from unittest.mock import patch
+    other = [{"token_hash": "h1", "token_hash_prefix": "kgp_ab", "user_id": "other@example.com",
+              "scopes": ["collect.write"], "created_at": "2026-09-12T00:00:00",
+              "last_used_at": "", "expires_at": "", "revoked": False}]
+    with patch("src.auth.personal_tokens.list_tokens", return_value=other):
+        tok2 = c.get("/seller/me/tokens").data.decode()
+    assert "발급 계정" in tok2, "토큰 목록에 발급 계정 열이 없다"
+    assert "other@example.com" in tok2, "발급 계정을 안 보여 준다"
+    assert "다른 계정" in tok2, "세션과 다른 계정인데 표시하지 않는다"
+
+
+def test_the_collect_response_says_where_it_landed():
+    """★★ 「담았어요」만으로는 **어디에** 담겼는지 모른다 — 계정이 갈리면 그게 전부다."""
+    from unittest.mock import patch
+    from src.order_webhook import app
+    from src.seller_console import collect_history_store as chs
+
+    try:
+        chs._in_memory.clear()
+    except Exception:
+        pass
+    c = app.test_client()
+    with patch("src.api.extension_api._require_token",
+               return_value={"user_id": "shanks8@hanmail.net"}), \
+         patch.dict("os.environ", {"KGP_SHORT_LINK_RESOLVE": "0"}):
+        d = c.post("/api/v1/collect/one",
+                   json={"share_text": "【淘宝】https://e.tb.cn/h.zz?tk=A\n「책상」",
+                         "translate": False}).get_json()
+
+    assert d["account"] == "shanks8@hanmail.net"
+    assert "shanks8@hanmail.net 계정에 담았어요" in d["message"]
+    assert "**" not in d["message"]
+
+
+def test_the_guide_leads_with_the_account_rule():
+    """★★ 가이드 **첫 줄**이 계정을 말한다 — 조립을 끝낸 뒤 알면 늦다(오너 지정)."""
+    from pathlib import Path
+    guide = Path("docs/MOBILE_COLLECT_GUIDE.md").read_text(encoding="utf-8")
+    seg = guide[guide.index("## 1. 준비"):guide.index("## 2. iOS 단축어")]
+    head = seg[:600]
+    assert "고가수집기가 도는 크롬에 로그인한 계정" in head, "첫 줄이 계정을 말하지 않는다"
+    assert "서로 다른 목록" in head or "다른 목록으로" in head, "계정이 여럿이면 안 되는 이유가 없다"
