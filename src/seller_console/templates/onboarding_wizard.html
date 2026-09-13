@@ -76,6 +76,12 @@ const STEPS = [
     lead: '상품 페이지에서 버튼 한 번으로 수집되는 확장을 설치하세요. 모바일은 공유로 수집해요.',
     primary: { label: '확장 설치 안내 보기', cls: 'btn-primary', href: '/seller/extension' },
     secondary: { label: '다음', cls: 'btn-ghost', act: 'next' } },
+  // C-F18: 폰 수집은 **기본 경로**다(단축어는 선택). 같은 3줄을 토큰 화면·가이드와 함께 쓴다 —
+  //   세 곳이 제각각 설명하면 사람이 어느 게 맞는지 모른다.
+  { key: 'phone', title: '폰에서 수집하기', icon: 'bi-telegram',
+    lead: '① 텔레그램에서 <b>@gogaBridz_bot</b> 검색 → ② <code>/link 토큰</code> 1회 → ③ 타오바오 공유 글을 그대로 붙여넣기. 중국에서는 VPN을 켜고 보내 주세요.',
+    primary: { label: 'API 토큰 발급하러 가기', cls: 'btn-primary', href: '/seller/me/tokens' },
+    secondary: { label: '다음', cls: 'btn-ghost', act: 'next' } },
   { key: 'first', title: '첫 상품 수집하기', icon: 'bi-rocket-takeoff',
     lead: '이제 상품을 수집해 보세요. 수집 → 편집 → 마켓 등록까지, 여기서 다 됩니다.',
     primary: { label: '상품 수집 시작', cls: 'btn-cta', href: '/seller/manual-collect' },

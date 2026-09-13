@@ -43,7 +43,9 @@ def client(monkeypatch):
 def _quiet(monkeypatch):
     """실제 텔레그램 전송 차단 + 답장 캡처."""
     sent = []
-    monkeypatch.setattr(tg, "_reply", lambda chat_id, text: sent.append(text) or True)
+    # C-F18: `_reply`가 봇 이름표(slug)를 함께 받는다 — 목도 그 모양이어야 한다.
+    monkeypatch.setattr(tg, "_reply",
+                        lambda chat_id, text, slug="default": sent.append(text) or True)
     tg._sent = sent
     yield sent
 
@@ -54,8 +56,10 @@ def _link_chat(monkeypatch):
     쓰였는데, 바인딩이 우선이라 **레거시 env가 그대로 먹히는지**도 함께 지키게 된다."""
     from src.db import telegram_links_pg as tl
     tl.reset_for_tests()
+    tg.reset_runtime_state()
     yield
     tl.reset_for_tests()
+    tg.reset_runtime_state()
 
 
 def _post(client, text, *, secret=SECRET, chat=CHAT):
@@ -84,10 +88,14 @@ def test_missing_secret_config_refuses_instead_of_opening(client, monkeypatch):
 
 
 def test_unknown_sender_is_rejected(client, monkeypatch):
-    """★ 시크릿을 통과해도 **허용된 chat_id가 아니면** 쓰지 않는다."""
+    """★ 시크릿을 통과해도 **연결되지 않은 chat**이면 쓰지 않는다.
+
+    C-F18: 허용목록 env는 폐지됐다 — 「연결된 chat이 곧 허용목록」이다(사유=헤더 주석).
+    레거시 env 조합(`CHAT_IDS`+`SELLER_ID`)에 든 chat만 마이그레이션 폴백을 받는다.
+    """
     _ok_collect(monkeypatch)
     r = _post(client, "https://x.com/dp/1", chat="999")
-    assert r.status_code == 403 and r.get_json()["error"] == "not_allowed"
+    assert r.status_code == 403 and r.get_json()["error"] == "not_linked"
 
 
 def test_empty_allowlist_still_does_not_open_the_door(client, monkeypatch):
@@ -132,12 +140,15 @@ def test_missing_seller_scope_refuses_to_guess(client, monkeypatch, _quiet):
     """★ 저장 스코프가 없으면 **아무 스코프에나 쓰지 않는다** — 남의 이력에 섞인다.
 
     C-F17-B: 스코프의 정본이 env에서 `/link` 바인딩으로 바뀌었다(사유=헤더 주석).
+    C-F18: 안내 문구도 `MSG["need_link"]` 한 곳으로 모였다 — 그래서 **낱말이 아니라
+    무엇을 하라고 하는지**를 잰다(문구는 오너가 바꿀 수 있다).
     규율은 그대로 — 모르면 **담지 않고**, 무엇을 하면 되는지 말한다.
     """
     monkeypatch.delenv("TELEGRAM_COLLECT_SELLER_ID", raising=False)
     r = _post(client, "https://x.com/dp/1")
     assert r.status_code == 403 and r.get_json()["error"] == "not_linked"
-    assert "담지 않았습니다" in _quiet[0] and "/link" in _quiet[0]
+    assert r.get_json().get("item_id") is None, "담지 않았어야 한다"
+    assert "/link" in _quiet[0] and "API 토큰" in _quiet[0], _quiet[0]
 
 
 def test_collect_failure_is_honest(client, monkeypatch, _quiet):
