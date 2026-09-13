@@ -195,6 +195,11 @@ ENRICH_STATE_READERS = (
     ("보강 대기 큐(폴러)", "src/api/extension_api.py",                 "/enrich/pending"),
     ("막힘 기록",          "src/api/extension_api.py",                 "/enrich/blocked"),
     ("비상품 위생 판정",   "src/seller_console/collect_hygiene.py",     "classify_row"),
+    # C-F20-2: **일곱 번째 자리.** 편집 서랍의 수집 로그 머리줄이 완전 수집 잣대
+    #   (`compute_collect_status`)만 보고 「수집 실패 / 부분 수집 — X 누락」이라 적었다.
+    #   목록 배지는 F14에서 고쳤는데 서랍은 따라오지 않았다 — 같은 항목이 목록에선
+    #   「보강 대기」, 열어 보면 「수집 실패」였다.
+    ("편집 서랍 수집 로그", "src/seller_console/views.py",              "collect_preview_by_id"),
 )
 
 
