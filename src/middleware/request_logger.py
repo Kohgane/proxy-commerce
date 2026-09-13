@@ -33,6 +33,11 @@ _LOG_LEVEL = _LOG_LEVEL_MAP.get(
     logging.INFO,
 )
 
+# F21-3: 이 시간을 넘긴 요청은 **경고**로 따로 남긴다(라우트·쿼리수·외부호출·구간).
+#   평시 INFO에 섞이면 느린 요청을 찾는 데만 시간이 든다 —
+#   찾는 데 드는 시간이 곧 안 고쳐지는 이유다.
+_SLOW_MS = float(os.getenv("SLOW_REQUEST_MS", "1000"))
+
 _DEFAULT_MASK_FIELDS = "api_key,token,secret,password,authorization,x-api-key"
 _MASK_FIELDS: Set[str] = {
     f.strip().lower()
@@ -128,7 +133,8 @@ class RequestLogger:
         perf = {}
         counts = {}
         try:
-            from src.utils.perf import perf_snapshot, perf_server_timing, perf_counts, perf_ms_list
+            from src.utils.perf import (perf_snapshot, perf_server_timing, perf_counts,
+                                        perf_ms_list, perf_external_hosts)
             perf = perf_snapshot()
             counts = perf_counts()
             st = perf_server_timing()
@@ -136,7 +142,11 @@ class RequestLogger:
             #   구성(db/렌더/앱)을 바로 판정(서버시간 비중 ≥50%면 Render Standard 승급 근거).
             _db = float(perf.get("db", 0) or 0)
             _render = float(perf.get("render", 0) or 0)
-            _app = round(max(0.0, elapsed_ms - _db - _render), 2)
+            # F21-3: `external`·`auth`도 빼야 `app`이 **나머지**라는 뜻을 유지한다.
+            #   안 빼면 외부 호출 시간이 app에 섞여 "앱이 느리다"는 오진이 된다.
+            _ext = float(perf.get("external", 0) or 0)
+            _auth = float(perf.get("auth", 0) or 0)
+            _app = round(max(0.0, elapsed_ms - _db - _render - _ext - _auth), 2)
             total = f"app;dur={_app}, total;dur={elapsed_ms}"
             # v49 STEP2: 요청당 총 쿼리 수를 Server-Timing에 명시(N+1 진단, 목표 페이지당 ≤3).
             _q = int(counts.get("db_query", 0) or 0)
@@ -149,6 +159,31 @@ class RequestLogger:
             _mslist = perf_ms_list("db")
             if _mslist:
                 perf["db_ms_each"] = sorted(_mslist, reverse=True)[:10]
+            # F21-3: 외부 호출은 **어디로 나갔는지**까지 남긴다 — 건수만 알면
+            #   "느린데 어디로 나가는지 모르는" 상태가 그대로다.
+            _hosts = perf_external_hosts()
+            if _hosts:
+                perf["external_hosts"] = _hosts
+        except Exception:
+            pass
+
+        # F21-3: **1초 초과는 눈에 띄게** 남긴다. 평시 INFO 줄에 섞여 있으면
+        #   느린 요청을 찾으려고 로그를 훑어야 한다 — 찾는 데 드는 시간이 곧 안 고쳐지는 이유다.
+        try:
+            if elapsed_ms > _SLOW_MS:
+                self._request_log.warning(json.dumps({
+                    "event": "slow_request",
+                    "route": getattr(request, "endpoint", "") or "",
+                    "path": request.path,
+                    "elapsed_ms": elapsed_ms,
+                    "segments_ms": {k: perf.get(k) for k in ("auth", "db", "external", "render")
+                                    if perf.get(k) is not None},
+                    "db_queries": int(counts.get("db_query", 0) or 0),
+                    "db_conns": int(counts.get("db_conn", 0) or 0),
+                    "external_calls": int(counts.get("external_call", 0) or 0),
+                    "external_hosts": perf.get("external_hosts") or [],
+                    "db_ms_each": perf.get("db_ms_each") or [],
+                }, ensure_ascii=False))
         except Exception:
             pass
 

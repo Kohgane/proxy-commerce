@@ -37,6 +37,15 @@ except Exception:
 # PG-only 전환: 1차 저장소 = Supabase Postgres. 부팅 시 연결·스키마 부트스트랩(성공 시 'DB 연결: Supabase OK').
 #   프로덕션(APP_ENV=production)에서 DATABASE_URL이 없거나 연결 실패면 **조용한 폴백 대신 부팅 실패**
 #   (명확한 에러) — 셀러 데이터가 비영속 인메모리로 새는 것을 원천 차단. 개발/테스트는 인메모리 허용.
+# F21-3: 외부 호출 계측 겹을 **부팅 때 한 번** 씌운다(멱등, 재기만 함).
+#   공용 HTTP 래퍼가 없어 호출부마다 심으면 **모르는 자리**가 빠진다 —
+#   원인을 모르는 채 아는 자리만 재면 그게 바로 이번 판에서 피하려는 것이다.
+try:
+    from src.utils.perf import install_external_probe as _install_ext_probe
+    _install_ext_probe()
+except Exception as _probe_exc:
+    logger.warning("외부 호출 계측 설치 실패(계속): %s", _probe_exc)
+
 try:
     from src.db import pg as _pgboot
     _pg_ok = _pgboot.pg_enabled()     # 성공 시 pg.py가 'DB 연결: Supabase OK' 로깅
