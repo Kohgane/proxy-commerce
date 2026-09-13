@@ -68,7 +68,9 @@ COLLECT_ENTRY_POINTS = (
     ("북마클릿·공유타겟", "src/seller_console/views.py",      "_quick_collect"),
     ("모바일 단건",      "src/api/extension_api.py",         "/one"),
     ("확장 벌크(job)",   "src/api/extension_api.py",         "/bulk"),
-    ("텔레그램",         "src/api/telegram_collect.py",      "collect_one_url"),
+    # C-F17-B: 폰 **기본** 입구가 됐다(단축어는 선택). 자기 갈래 판단을 갖고 있던 것을
+    #   `collect_input` 한 곳으로 넘겼다 — 입구가 기본이 되면 갈라짐의 대가가 커진다.
+    ("텔레그램",         "src/api/telegram_collect.py",      "collect_input"),
     # C-F12-B 실측: **일곱 번째 입구**였다. 검수표가 `_collect_real_draft`를 직접 주입해
     #   쓰는데 목록에 없어, 「타오바오는 초안으로」 규율이 여기만 안 서 있었다
     #   (tmall 풀링크 → 코어가 None → 「수집 실패(실데이터 못 얻음)」).
@@ -246,6 +248,40 @@ _GAP_MESSAGE = {
 def gap_message(share: dict) -> str:
     """초안 결과 → 사용자 문장. 서버가 **모르는 것은 말하지 않는다**(VPN 단정 금지)."""
     return _GAP_MESSAGE.get(resolve_gap(share), _GAP_MESSAGE["no_final_url"])
+
+
+def collect_reply_text(res: dict, *, account: str = "") -> str:
+    """수집 결과 → **회신 한 덩어리**(평문). 단축어·텔레그램이 같은 문장을 쓰게 하는 한 곳.
+
+    C-F17-B 실측: 폰 기본 입구가 단축어에서 텔레그램 봇으로 바뀌었다. 입구가 둘이 되면
+    문장도 둘이 된다 — 봇이 「수집됨 — 제목」만 말하고 단축어는 가격·계정까지 말하면,
+    같은 상품을 두 경로로 담았을 때 사람이 **다른 일이 일어났다고 오해**한다.
+    그래서 문장은 여기서만 만든다(`gap_message`를 여기 둔 것과 같은 이유).
+
+    마크다운을 쓰지 않는다 — 별표는 토스트·봇 평문에서 그냥 별표로 보인다(C-F11-3).
+    계정 이름이 없으면 그 줄을 **통째로 뺀다**(UUID로 채우지 않는다 — C-F17-A).
+    """
+    if not res.get("ok"):
+        err = str(res.get("error") or "사유 미상").strip()
+        # 사유만 말하고 끝내지 않는다 — **다음에 뭘 하면 되는지**까지가 한 문장이다.
+        return f"담지 못했어요 — {err}\n봇 차단 사이트는 PC 확장(고가수집기)으로 담아 주세요."
+
+    title = str(res.get("title_ko") or res.get("title") or res.get("url") or "").strip()
+    lines = [f"담았어요 — {title}" if title else "담았어요."]
+
+    facts = []
+    if res.get("item_id_taobao"):
+        facts.append(f"상품번호 {res['item_id_taobao']}")
+    price, cur = str(res.get("price") or "").strip(), str(res.get("currency") or "").strip()
+    facts.append(f"가격 {price} {cur}".strip() if price else "가격 미수집")
+    lines.append(" · ".join(facts))
+
+    msg = str(res.get("message") or "").strip()
+    if msg and msg not in lines[0]:
+        lines.append(msg)
+    if account:
+        lines.append(f"({account} 계정에 담았어요)")
+    return "\n".join(lines)
 
 
 def parse_final_url(url: str) -> dict:

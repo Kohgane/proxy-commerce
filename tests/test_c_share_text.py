@@ -2233,13 +2233,22 @@ def test_the_collect_response_says_where_it_landed():
 
 
 def test_the_guide_leads_with_the_account_rule():
-    """★★ 가이드 **첫 줄**이 계정을 말한다 — 조립을 끝낸 뒤 알면 늦다(오너 지정)."""
+    """★★ 가이드가 **조립보다 먼저** 계정을 말한다 — 다 만들고 나서 알면 늦다(오너 지정).
+
+    C-F17: 이 계약이 절 제목(「## 1. 준비」·「## 2. iOS 단축어」)을 글자로 박고 있었다.
+    폰 기본 입구가 텔레그램으로 바뀌면서 절 번호가 밀리자, **옳은 변경인데 빨개졌다** —
+    계약이 글자를 박으면 진실을 막는 문이 된다([[계약이 글자를 박으면 옳은 변경도 막는다]]).
+    그래서 번호가 아니라 **순서**를 잰다.
+    """
     from pathlib import Path
     guide = Path("docs/MOBILE_COLLECT_GUIDE.md").read_text(encoding="utf-8")
-    seg = guide[guide.index("## 1. 준비"):guide.index("## 2. iOS 단축어")]
-    head = seg[:600]
-    assert "고가수집기가 도는 크롬에 로그인한 계정" in head, "첫 줄이 계정을 말하지 않는다"
-    assert "서로 다른 목록" in head or "다른 목록으로" in head, "계정이 여럿이면 안 되는 이유가 없다"
+    i_rule = guide.find("고가수집기가 도는 크롬에 로그인한 계정")
+    i_build = guide.find("액션 1 —")          # 단축어 조립이 시작되는 자리
+    assert i_rule != -1, "가이드가 계정 규칙을 말하지 않는다"
+    assert i_build == -1 or i_rule < i_build, "조립 설명이 계정 규칙보다 먼저 나온다"
+    head = guide[i_rule:i_rule + 600]
+    assert "서로 다른 목록" in head or "다른 목록으로" in head or "PC 목록에 보이지 않" in head, \
+        "계정이 여럿이면 안 되는 이유가 없다"
 
 
 def test_the_token_screen_is_named_by_its_real_nav_path():
@@ -2278,3 +2287,277 @@ def test_the_token_screen_is_named_by_its_real_nav_path():
     assert "내 정보·설정 → API 토큰" in guide and "/seller/me/tokens" in guide
     api = Path("src/api/extension_api.py").read_text(encoding="utf-8")
     assert "내 정보·설정 → API 토큰" in api, "401 안내가 옛 이름을 쓴다"
+
+
+# ---------------------------------------------------------------------------
+# C-F17-A — 계정은 **사람이 읽는 이름**으로. UUID는 응답에 없다.
+#   실측(오너 2026-09-13, PC curl): `collect/one`이 account·message에 UUID를 실었다.
+#   근원은 `user_store`의 깨진 import(늘 ImportError → find_by_id가 언제나 None)였고,
+#   앞 판의 폴백 「못 찾으면 user_id를 그대로」가 늘 발동했다.
+# ---------------------------------------------------------------------------
+
+_UUID_LIKE = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I)
+
+
+@pytest.fixture()
+def client():
+    from src.order_webhook import app
+    with app.test_client() as c:
+        yield c
+
+
+@pytest.fixture()
+def _fake_user_store(monkeypatch):
+    """사용자 저장소를 살아 있는 것으로 바꿔 끼운다(시트 없이도 이름을 찾게)."""
+    from src.auth import account_label as al
+
+    class _U:
+        email = "shanks8@hanmail.net"
+        name = "고가브릿지"
+
+    class _S:
+        def __init__(self, hit=True):
+            self.hit = hit
+
+        def find_by_id(self, uid):
+            return _U() if self.hit else None
+
+    def _install(hit=True):
+        import src.auth.user_store as us
+        monkeypatch.setattr(us, "get_store", lambda: _S(hit), raising=False)
+        al.reset_cache()
+
+    al.reset_cache()
+    yield _install
+    al.reset_cache()
+
+
+def _collect_one(client, token, text):
+    return client.post("/api/v1/collect/one", json={"text": text},
+                       headers={"Authorization": f"Bearer {token}"})
+
+
+def test_collect_one_names_the_account_by_email_not_uuid(client, _fake_user_store):
+    """계약은 **API 응답**으로 잰다 — 함수가 아니라 사람이 받는 것이 답이다(F3 재발 방지)."""
+    from src.auth import personal_tokens as pt
+    uid = "f275b60d-0000-4000-8000-00000000f17a"
+    raw = pt.generate_token(user_id=uid, scopes=["collect.write"])["raw_token"]
+
+    _fake_user_store(hit=True)
+    r = _collect_one(client, raw, "https://item.taobao.com/item.htm?id=1060535477134")
+    body = json.dumps(r.get_json() or {}, ensure_ascii=False)
+
+    assert (r.get_json() or {}).get("account") == "shanks8@hanmail.net"
+    assert "shanks8@hanmail.net 계정에 담았어요" in (r.get_json() or {}).get("message", "")
+    assert not _UUID_LIKE.search(body), f"응답에 UUID가 남았다: {body[:400]}"
+
+
+def test_collect_one_omits_the_account_line_when_it_cannot_name_it(client, _fake_user_store):
+    """못 찾으면 **줄을 뺀다** — 읽을 수 없는 값으로 채우지 않는다."""
+    from src.auth import personal_tokens as pt
+    uid = "f275b60d-0000-4000-8000-00000000f17b"
+    raw = pt.generate_token(user_id=uid, scopes=["collect.write"])["raw_token"]
+
+    _fake_user_store(hit=False)
+    r = _collect_one(client, raw, "https://item.taobao.com/item.htm?id=1060535477135")
+    d = r.get_json() or {}
+
+    assert "account" not in d, "이름을 못 찾았는데 계정 칸을 만들었다"
+    assert "계정에 담았어요" not in d.get("message", "")
+    assert not _UUID_LIKE.search(json.dumps(d, ensure_ascii=False))
+
+
+def test_the_user_store_import_is_not_broken():
+    """근원 — `user_store`가 없는 이름을 import하면 계정 이름을 **영영** 못 찾는다."""
+    import importlib
+    import src.utils.sheets as sheets
+    src_text = Path("src/auth/user_store.py").read_text(encoding="utf-8")
+    names = re.findall(r"from src\.utils\.sheets import ([^\n]+)", src_text)
+    assert names, "user_store가 sheets에서 무엇을 가져오는지 못 읽었다"
+    for chunk in names:
+        for n in [x.strip() for x in chunk.split(",") if x.strip()]:
+            assert hasattr(sheets, n), f"src.utils.sheets에 {n}이(가) 없다 — 저장소가 죽는다"
+    importlib.reload(sheets)
+
+
+def test_the_token_screen_shows_a_readable_issuing_account(client, _fake_user_store):
+    """계약은 **렌더된 HTML**로 잰다 — 칸이 있어도 값이 안 오면 사람에겐 없는 것이다."""
+    from src.auth import personal_tokens as pt
+    uid = "f275b60d-0000-4000-8000-00000000f17c"
+    pt.generate_token(user_id=uid, scopes=["collect.write"])
+
+    _fake_user_store(hit=True)
+    with client.session_transaction() as s:
+        s["user_id"] = uid
+        s["user_email"] = "shanks8@hanmail.net"
+        s["user_role"] = "seller"
+    html = client.get("/seller/me/tokens").get_data(as_text=True)
+
+    assert "발급 계정" in html
+    assert "shanks8@hanmail.net" in html
+    assert not _UUID_LIKE.search(html), "토큰 화면에 UUID가 찍혔다"
+
+
+def test_console_header_never_prints_a_uuid_as_the_account(client, _fake_user_store):
+    """세션에 이메일이 없어도 머리줄은 UUID를 말하지 않는다(C-F15가 남긴 폴백)."""
+    uid = "f275b60d-0000-4000-8000-00000000f17d"
+    _fake_user_store(hit=True)
+    with client.session_transaction() as s:
+        s["user_id"] = uid
+        s["user_role"] = "seller"
+    html = client.get("/seller/collect/history").get_data(as_text=True)
+    assert not _UUID_LIKE.search(html), "수집 목록 머리줄이 UUID를 찍었다"
+
+
+# ---------------------------------------------------------------------------
+# C-F17-B — 폰 **기본 입구**는 텔레그램 봇이다(단축어는 선택).
+#   실측(오너 2026-09-13): 폰 단축어가 VPN on/off·서버 무관 「네트워크 연결 유실」.
+#   같은 순간 PC curl은 HTTP 200 · 2.5초 — 서버는 멀쩡했다. 앞단 Cloudflare까지의
+#   중국 셀룰러 도달성은 우리 통제 밖이라, 우리가 못 고치는 구간을 지나는 길을 기본으로 삼는다.
+# ---------------------------------------------------------------------------
+
+_TG_SECRET = "f17-secret"
+
+
+@pytest.fixture()
+def tg(client, monkeypatch):
+    """봇 웹훅 호출기 + 봇이 **실제로 보낸 문장**을 모으는 통."""
+    import src.api.telegram_collect as tc
+    from src.db import telegram_links_pg as tl
+
+    monkeypatch.setenv("TELEGRAM_COLLECT_WEBHOOK_SECRET", _TG_SECRET)
+    monkeypatch.delenv("TELEGRAM_COLLECT_CHAT_IDS", raising=False)
+    monkeypatch.delenv("TELEGRAM_COLLECT_SELLER_ID", raising=False)
+    tl.reset_for_tests()
+
+    sent: list = []
+
+    def _fake_api(method, payload):
+        sent.append((method, payload))
+        return {"ok": True}
+
+    monkeypatch.setattr(tc, "_api", _fake_api)
+
+    def _send(text, chat_id="777", message_id=42, secret=_TG_SECRET):
+        return client.post(
+            "/webhooks/telegram/collect",
+            json={"message": {"text": text, "message_id": message_id, "chat": {"id": chat_id}}},
+            headers={"X-Telegram-Bot-Api-Secret-Token": secret})
+
+    _send.sent = sent
+    _send.texts = lambda: [p["text"] for m, p in sent if m == "sendMessage"]
+    return _send
+
+
+def test_bot_refuses_to_collect_before_the_chat_is_linked(tg):
+    """묶이지 않은 chat은 **담지 않는다** — 아무 스코프에나 쓰면 남의 목록에 섞인다."""
+    r = tg(SHARE_FIXTURE)
+    assert r.status_code == 403 and (r.get_json() or {}).get("error") == "not_linked"
+    assert any("/link" in t for t in tg.texts()), "무엇을 해야 하는지 말해 주지 않았다"
+
+
+def test_link_binds_the_chat_and_never_stores_the_token(tg, _fake_user_store):
+    """`/link <토큰>` 1회 → 바인딩. 토큰 **원문은 저장되지 않고** 메시지는 지워진다."""
+    from src.auth import personal_tokens as pt
+    from src.db import telegram_links_pg as tl
+    uid = "f275b60d-0000-4000-8000-00000000f17e"
+    raw = pt.generate_token(user_id=uid, scopes=["collect.write"])["raw_token"]
+
+    _fake_user_store(hit=True)
+    r = tg(f"/link {raw}")
+    assert r.status_code == 200 and (r.get_json() or {}).get("linked")
+    assert tl.user_id_for("777") == uid, "바인딩이 저장되지 않았다"
+
+    assert any(m == "deleteMessage" for m, _ in tg.sent), "토큰이 적힌 메시지를 지우려 하지 않았다"
+    joined = "\n".join(tg.texts())
+    assert raw not in joined, "회신이 토큰 원문을 되뱉었다"
+    assert "shanks8@hanmail.net 계정에 연결" in joined
+    assert not _UUID_LIKE.search(joined), "회신에 UUID가 남았다"
+
+
+def test_bot_reply_carries_title_item_id_and_account_in_one_wording(tg, _fake_user_store):
+    """픽스처 → 핸들러 → **응답 텍스트**. 문장은 단축어와 같은 한 곳에서 나온다."""
+    from src.auth import personal_tokens as pt
+    from src.db import telegram_links_pg as tl
+    uid = "f275b60d-0000-4000-8000-00000000f17f"
+    pt.generate_token(user_id=uid, scopes=["collect.write"])
+    tl.link("777", uid)
+    _fake_user_store(hit=True)
+
+    r = tg(SHARE_FIXTURE)
+    assert r.status_code == 200 and (r.get_json() or {}).get("ok")
+    text = "\n".join(tg.texts())
+
+    assert text.startswith("담았어요 — "), f"첫 줄이 다르다: {text[:80]}"
+    assert "新中式双人书桌" in text or (r.get_json() or {}).get("title"), "제목을 말하지 않았다"
+    assert "가격 미수집" in text, "공유 글엔 가격이 없다 — 없다고 말해야 한다"
+    assert "(shanks8@hanmail.net 계정에 담았어요)" in text
+    assert "**" not in text and "__" not in text, "마크다운은 평문에서 그냥 기호로 보인다"
+    assert not _UUID_LIKE.search(text)
+
+
+def test_bot_answers_the_sender_in_plain_text(tg, _fake_user_store):
+    """소스가 아니라 **보낸 것**으로 잰다 — 주석을 읽는 계약은 옳은 변경도 막는다(C-F10 교훈).
+
+    예전 답장은 `notifications.send_telegram`을 거쳐 고정 알림방(`TELEGRAM_CHAT_ID`)으로 갔고
+    앞에 이모지와 내부 표기를 붙였다. 둘 다 페이로드로 확인한다.
+    """
+    from src.auth import personal_tokens as pt
+    from src.db import telegram_links_pg as tl
+    uid = "f275b60d-0000-4000-8000-00000000f180"
+    pt.generate_token(user_id=uid, scopes=["collect.write"])
+    tl.link("888", uid)
+    _fake_user_store(hit=True)
+
+    tg(SHARE_FIXTURE, chat_id="888")
+    msgs = [p for m, p in tg.sent if m == "sendMessage"]
+    assert msgs, "답장을 보내지 않았다"
+    for p in msgs:
+        assert str(p["chat_id"]) == "888", "보낸 사람이 아니라 다른 방으로 답했다"
+        assert "parse_mode" not in p, "평문으로 보낸다(마크다운 해석 금지)"
+        assert "[proxy-commerce]" not in p["text"], "일반 사용자에게 내부 표기가 노출된다"
+        assert not re.match(r"^[\u2139\u26a0\U0001F000-\U0001FAFF]", p["text"]), "이모지 접두 금지"
+
+
+def test_bot_and_shortcut_say_the_same_sentence(tg, client, _fake_user_store):
+    """같은 상품을 두 입구로 담으면 **같은 문장**이 와야 한다 — 아니면 다른 일이 난 줄 안다."""
+    from src.auth import personal_tokens as pt
+    from src.db import telegram_links_pg as tl
+    uid = "f275b60d-0000-4000-8000-00000000f181"
+    raw = pt.generate_token(user_id=uid, scopes=["collect.write"])["raw_token"]
+    tl.link("999", uid)
+    _fake_user_store(hit=True)
+
+    tg(SHARE_FIXTURE, chat_id="999")
+    bot_text = "\n".join(p["text"] for m, p in tg.sent if m == "sendMessage")
+
+    # 같은 상품을 두 번 담으면 뒤엣것은 「이미 수집한 상품」이 된다 — 그래서 단축어 쪽은
+    # **다른 상품**의 같은 형태 공유 글로 잰다(둘의 사연이 같으면 문장도 같아야 한다).
+    shortcut = (_collect_one(client, raw, SHARE_FIXTURE_SOFA).get_json() or {}).get("message", "")
+    core = shortcut.split(" (")[0].strip()          # 계정 괄호는 봇이 제 줄로 따로 붙인다
+    assert core and core in bot_text, f"봇 문장이 단축어와 다르다\n봇: {bot_text}\n단축어: {core}"
+
+
+def test_telegram_is_listed_as_a_collect_entry_point():
+    """입구 상수에 있어야 한다 — 목록에 없는 입구는 코어 가드를 안 받는지 아무도 모른다."""
+    from src.collectors.share_text import COLLECT_ENTRY_POINTS
+    rows = [e for e in COLLECT_ENTRY_POINTS if "telegram" in e[1]]
+    assert rows, "텔레그램이 수집 입구 목록에 없다"
+    assert rows[0][2] == "collect_input", "봇이 단일 판단점을 타는지 목록이 말해야 한다"
+
+
+def test_bot_without_a_webhook_secret_does_nothing(tg, monkeypatch):
+    """잠금 장치가 없으면 열어 두지 않는다."""
+    monkeypatch.delenv("TELEGRAM_COLLECT_WEBHOOK_SECRET", raising=False)
+    assert tg(SHARE_FIXTURE).status_code == 503
+    monkeypatch.setenv("TELEGRAM_COLLECT_WEBHOOK_SECRET", _TG_SECRET)
+    assert tg(SHARE_FIXTURE, secret="wrong").status_code == 403
+
+
+def test_guide_puts_the_bot_first_and_the_shortcut_second():
+    """가이드 순서가 곧 권고다 — 되는 길을 1번에 둔다."""
+    g = Path("docs/MOBILE_COLLECT_GUIDE.md").read_text(encoding="utf-8")
+    i_bot, i_sc = g.find("텔레그램"), g.find("단축어")
+    assert i_bot != -1 and i_sc != -1, "가이드에 두 경로가 다 있어야 한다"
+    assert i_bot < i_sc, "단축어가 텔레그램보다 먼저 나온다(실측상 되는 길이 뒤에 있다)"
+    assert "VPN" in g

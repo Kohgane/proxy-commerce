@@ -4,8 +4,15 @@
 여기는 **오너가 자기 봇에게** 상품 URL을 던지는 경로 — 대상도 쓰기 권한도 다르다.
 한 핸들러에 섞으면 고객 문의가 수집으로, 수집이 CS 티켓으로 새어 나간다.
 
-**쓰기 경로라 두 겹으로 잠근다:** 웹훅 시크릿 + 발신자 허용목록.
+**쓰기 경로라 두 겹으로 잠근다:** 웹훅 시크릿 + **계정 바인딩**(`/link <API 토큰>`).
 시크릿만으로는 URL을 아는 누구나 우리 수집 이력에 쓸 수 있다.
+
+C-F17-B에서 두 번째 겹이 **발신자 허용목록 → 계정 바인딩**으로 바뀌었다. 이유:
+폰 기본 입구가 텔레그램이 되면서 셀러가 **스스로** 연결할 수 있어야 하는데, 허용목록은
+오너가 서버 env에 chat_id를 미리 적어 둬야 열린다(자기 chat_id를 알 방법부터가 없다).
+토큰 검증은 env 목록보다 **강한 증거**다 — 그 계정의 토큰을 가진 사람만 통과한다.
+지키던 규율은 그대로다: **기본은 '열림'이 아니고, 스코프를 추측하지 않는다.**
+허용목록(`TELEGRAM_COLLECT_CHAT_IDS`)은 남아 있되 **더 좁힐 때만** 쓴다.
 """
 from __future__ import annotations
 
@@ -41,6 +48,16 @@ def _quiet(monkeypatch):
     yield sent
 
 
+@pytest.fixture(autouse=True)
+def _link_chat(monkeypatch):
+    """C-F17-B: 저장 스코프의 정본은 `/link` 바인딩이다. 기존 계약들은 env 스코프를 전제로
+    쓰였는데, 바인딩이 우선이라 **레거시 env가 그대로 먹히는지**도 함께 지키게 된다."""
+    from src.db import telegram_links_pg as tl
+    tl.reset_for_tests()
+    yield
+    tl.reset_for_tests()
+
+
 def _post(client, text, *, secret=SECRET, chat=CHAT):
     return client.post("/webhooks/telegram/collect",
                        json={"message": {"text": text, "chat": {"id": chat}}},
@@ -73,24 +90,37 @@ def test_unknown_sender_is_rejected(client, monkeypatch):
     assert r.status_code == 403 and r.get_json()["error"] == "not_allowed"
 
 
-def test_empty_allowlist_allows_nobody(client, monkeypatch):
-    """허용목록 미설정 = 아무도 못 쓴다(기본이 '열림'이 아니다)."""
+def test_empty_allowlist_still_does_not_open_the_door(client, monkeypatch):
+    """★ 허용목록을 비워도 **기본은 '열림'이 아니다** — 이제 잠그는 것은 계정 바인딩이다.
+
+    C-F17-B 전에는 허용목록이 비면 403이었다. 지금은 바인딩(`/link`)이 없으면 담지 않는다.
+    지키는 규율은 같다: 잠금 장치 없이 열어 두지 않는다.
+    """
     monkeypatch.setenv("TELEGRAM_COLLECT_CHAT_IDS", "")
-    assert _post(client, "https://x.com/dp/1").status_code == 403
+    monkeypatch.delenv("TELEGRAM_COLLECT_SELLER_ID", raising=False)
+    r = _post(client, "https://x.com/dp/1")
+    assert r.status_code == 403 and r.get_json()["error"] == "not_linked"
 
 
 # ── 수집 ──────────────────────────────────────────────────────────────────────
 
 def test_url_in_message_is_collected(client, monkeypatch, _quiet):
+    """회신 문구는 C-F17-B에서 **단축어와 같은 제조기**(`collect_reply_text`)로 통일됐다."""
     _ok_collect(monkeypatch)
     r = _post(client, "이거 좀 봐줘 https://www.amazon.com/dp/B0T1 어때?")
     d = r.get_json()
     assert d["ok"] is True and d["item_id"] == "it-1"
-    assert "수집됨" in _quiet[0]
+    assert _quiet[0].startswith("담았어요 — "), _quiet[0]
+    assert "PopSockets" in _quiet[0]
 
 
-def test_no_url_gets_guidance_not_silence(client, _quiet):
-    """URL이 없으면 조용히 삼키지 않고 **무엇을 보내야 하는지** 알려준다."""
+def test_no_url_gets_guidance_not_silence(client, monkeypatch, _quiet):
+    """URL이 없으면 조용히 삼키지 않고 **무엇을 보내야 하는지** 알려준다.
+
+    C-F17-B: 링크 없는 인사는 **실패도, 미연결도 아니다** — 연결 여부보다 먼저 답한다.
+    (연결 안 됐다고 답하면 사람이 엉뚱한 데를 고치러 간다.)
+    """
+    monkeypatch.delenv("TELEGRAM_COLLECT_SELLER_ID", raising=False)
     r = _post(client, "안녕")
     assert r.get_json()["skipped"] == "no_url"
     # 낱말이 아니라 **안내가 있는가**를 본다(문구는 셀러 언어로 바뀔 수 있다).
@@ -99,11 +129,15 @@ def test_no_url_gets_guidance_not_silence(client, _quiet):
 
 
 def test_missing_seller_scope_refuses_to_guess(client, monkeypatch, _quiet):
-    """★ 저장 스코프 미설정이면 **아무 스코프에나 쓰지 않는다** — 남의 이력에 섞인다."""
+    """★ 저장 스코프가 없으면 **아무 스코프에나 쓰지 않는다** — 남의 이력에 섞인다.
+
+    C-F17-B: 스코프의 정본이 env에서 `/link` 바인딩으로 바뀌었다(사유=헤더 주석).
+    규율은 그대로 — 모르면 **담지 않고**, 무엇을 하면 되는지 말한다.
+    """
     monkeypatch.delenv("TELEGRAM_COLLECT_SELLER_ID", raising=False)
     r = _post(client, "https://x.com/dp/1")
-    assert r.status_code == 503 and r.get_json()["error"] == "seller_scope_missing"
-    assert "저장하지 않았습니다" in _quiet[0]
+    assert r.status_code == 403 and r.get_json()["error"] == "not_linked"
+    assert "담지 않았습니다" in _quiet[0] and "/link" in _quiet[0]
 
 
 def test_collect_failure_is_honest(client, monkeypatch, _quiet):
@@ -114,6 +148,7 @@ def test_collect_failure_is_honest(client, monkeypatch, _quiet):
     r = _post(client, "https://x.com/dp/1")
     assert r.status_code == 502
     assert "봇 차단" in _quiet[0] and "확장" in _quiet[0]
+    assert "담지 못했어요" in _quiet[0]
 
 
 def test_duplicate_uses_existing_key(client, monkeypatch, _quiet):
@@ -169,6 +204,8 @@ def test_separate_from_cs_webhook_and_reuses_core():
     src = Path("src/api/telegram_collect.py").read_text(encoding="utf-8")
     assert "/webhooks/telegram/collect" in src
     assert "cs_bot" not in src and "InboxStore" not in src      # CS 인박스와 섞이지 않는다
-    assert "collect_one_url" in src and "_review_verdict" in src
+    # C-F17-B: 코어를 `collect_one_url`에서 **`collect_input`**(단일 판단점)으로 올렸다.
+    #   그 안에서 여전히 `collect_one_url`을 부른다 — 판단이 한 벌이 됐을 뿐이다.
+    assert "collect_input" in src and "_review_verdict" in src
     for reinvented in ("history_append", "build_source_review", "dispatcher_collect"):
         assert reinvented not in src, reinvented

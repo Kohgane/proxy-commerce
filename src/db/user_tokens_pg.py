@@ -67,10 +67,13 @@ def list_for(id_set: set) -> list:
     if not id_set:
         return []
     with pg.query() as cur:
-        cur.execute("SELECT token_hash, scopes, created_at, last_used_at, expires_at, status FROM user_tokens WHERE user_id = ANY(%s) AND deleted_at IS NULL ORDER BY created_at DESC",
+        # C-F17-A5: `user_id`를 안 싣고 있었다 — 화면의 「발급 계정」 칸이 늘 비어 있던 이유다
+        #   (칸은 C-F15가 만들었는데 채울 값이 오지 않았다). 이름 짓기는 화면이 아니라
+        #   `account_label`이 하고, 여기서는 원값만 올려 준다.
+        cur.execute("SELECT token_hash, scopes, created_at, last_used_at, expires_at, status, user_id FROM user_tokens WHERE user_id = ANY(%s) AND deleted_at IS NULL ORDER BY created_at DESC",
                     (list(id_set),))
         out = []
-        for token_hash, scopes_raw, created_at, last_used_at, expires_at, status in cur.fetchall():
+        for token_hash, scopes_raw, created_at, last_used_at, expires_at, status, user_id in cur.fetchall():
             try:
                 scopes = json.loads(scopes_raw) if scopes_raw else []
             except Exception:
@@ -83,5 +86,6 @@ def list_for(id_set: set) -> list:
                 "last_used_at": last_used_at.astimezone(timezone.utc).isoformat() if last_used_at else "",
                 "expires_at": expires_at.astimezone(timezone.utc).isoformat() if expires_at else "",
                 "revoked": str(status) == "revoked",
+                "user_id": str(user_id or ""),
             })
         return out
