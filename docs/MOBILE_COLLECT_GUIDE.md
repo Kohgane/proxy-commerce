@@ -7,7 +7,7 @@ PC 크롬 확장이 못 도는 자리(아이폰·외출 중)를 메웁니다.
 
 | 순위 | 방법 | 설정 | 쓸 때 |
 |---|---|---|---|
-| **1 (기본)** | **텔레그램 봇** | `/link` 1회 | 复制链接 → 봇에 붙여넣기 **(VPN 켜고)** |
+| **1 (기본)** | **텔레그램 `@gogaBridz_bot`** | `/link` 1회 | 复制链接 → 봇에 붙여넣기 **(VPN 켜고)** |
 | 2 (선택) | iOS 단축어 | 5분(한 번) | 사파리·쇼핑앱 → 공유 → 고가브릿지 수집 |
 | 3 | PWA 공유 | 앱을 홈 화면에 추가 | 안드로이드 공유 → 고가브릿지 |
 
@@ -25,19 +25,23 @@ PC 크롬 확장이 못 도는 자리(아이폰·외출 중)를 메웁니다.
 
 ---
 
-## 1. 텔레그램 봇 — 기본 경로
+## 1. 텔레그램 `@gogaBridz_bot` — 기본 경로
+
+> 수집 봇은 **`@gogaBridz_bot`** 하나입니다(웹훅 `/webhooks/telegram/collect`).
+> 시장동향을 알려주는 **`KOHGANE시장동향`** 봇과는 **다른 봇**입니다 — 그쪽은 폴링으로 돌고
+> **웹훅을 걸면 안 됩니다**(걸면 그 봇의 GO 승인이 죽습니다. 아래 ★ 상자 참고).
 
 ### 처음 한 번만
 
 1. 콘솔 → **내 정보·설정 → API 토큰**(`/seller/me/tokens`) → 새 토큰 발급(스코프 `collect.write`)
-2. 텔레그램에서 봇 대화창을 열고 **`/link 토큰값`** 을 보냅니다
+2. 텔레그램에서 **`@gogaBridz_bot`** 대화창을 열고 **`/link 토큰값`** 을 보냅니다
 3. 봇이 「○○ 계정에 연결됐습니다」라고 답하면 끝입니다
    — **토큰이 적힌 그 메시지는 봇이 지웁니다**(못 지웠으면 그렇게 말해 줍니다. 그땐 직접 지우세요)
 
 ### 그다음부터
 
 1. 타오바오 앱 → 分享 → **「复制链接」**
-2. 텔레그램 봇 대화창에 **그대로 붙여넣기** (**VPN 켜고**)
+2. **`@gogaBridz_bot`** 대화창에 **그대로 붙여넣기** (**VPN 켜고**)
 3. 봇이 이렇게 답합니다:
 
 ```
@@ -63,20 +67,47 @@ PC 크롬 확장이 못 도는 자리(아이폰·외출 중)를 메웁니다.
 
 ### 오너 설정 (서버 env — 한 번)
 
+> ### ★ 웹훅은 **`@gogaBridz_bot`에만** 겁니다. 다른 봇에 걸면 그 봇이 죽습니다.
+>
+> 텔레그램은 봇 하나당 **업데이트 수신구를 하나만** 둡니다 — 웹훅이면 웹훅 하나,
+> 폴링이면 폴링. 둘을 겹치거나 웹훅을 두 번 걸면 **나중 것이 앞의 것을 말없이 덮습니다.**
+>
+> | 봇 | 방식 | 수집 웹훅 |
+> |---|---|---|
+> | **`@gogaBridz_bot`** (수집) | 웹훅 `/webhooks/telegram/collect` | **여기에만** |
+> | **`KOHGANE시장동향`** (트렌드) | **폴링 유지** | **금지** — `getUpdates`가 409로 막혀 **GO 승인이 죽습니다** |
+>
+> 이 서비스의 다른 수신구(`/webhook/telegram` 봇 명령, `/webhooks/telegram/cs` CS)도
+> 같은 봇을 쓰면 서로를 덮습니다 — 수신구를 늘리면 봇도 늘립니다.
+
 | 이름 | 값 형식 | 필수 |
 |---|---|---|
-| `TELEGRAM_BOT_TOKEN` | BotFather가 준 값 (`123456789:AA…`) | 필수 |
+| `TELEGRAM_COLLECT_BOT_TOKEN` | **`@gogaBridz_bot`**의 BotFather 값 (`123456789:AA…`) | 필수 |
 | `TELEGRAM_COLLECT_WEBHOOK_SECRET` | 임의 문자열 1~256자 (`A-Z a-z 0-9 _ -`) | 필수 |
 | `TELEGRAM_COLLECT_CHAT_IDS` | 쉼표 구분 chat_id — **더 좁히고 싶을 때만** | 선택 |
 | `TELEGRAM_COLLECT_SELLER_ID` | `/link` 이전에 쓰던 레거시. 바인딩이 있으면 무시됨 | 선택 |
 
+`TELEGRAM_COLLECT_BOT_TOKEN`이 비면 답장은 공용 `TELEGRAM_BOT_TOKEN`으로 나가고 서버 로그에
+경고가 남습니다. **보내기만 그렇게 되는 것이고, 웹훅은 절대 다른 봇에 걸지 마세요** —
+답장이 나가는 것과 그 봇의 수신구를 빼앗는 것은 다른 문제입니다.
+
 그리고 텔레그램에 웹훅을 한 번 등록합니다(방식 = **웹훅**, 폴링 아님):
 
 ```
-curl -sS "https://api.telegram.org/bot<BOT_TOKEN>/setWebhook" \
+curl -sS "https://api.telegram.org/bot<TELEGRAM_COLLECT_BOT_TOKEN>/setWebhook" \
   -d "url=https://kohganepercentiii.com/webhooks/telegram/collect" \
   -d "secret_token=<TELEGRAM_COLLECT_WEBHOOK_SECRET 와 같은 값>"
 ```
+
+지금 그 봇에 무엇이 걸려 있는지는 이걸로 봅니다(**걸기 전에 확인**하세요):
+
+```
+curl -sS "https://api.telegram.org/bot<토큰>/getWebhookInfo"
+```
+
+`url`이 비어 있으면 폴링 봇이거나 아직 아무것도 안 걸린 봇이고, 다른 주소가 들어 있으면
+**그 봇은 이미 누군가 쓰고 있습니다** — 거기에 걸면 그쪽이 죽습니다.
+(`KOHGANE시장동향`은 폴링이라 `url`이 비어 있는 게 정상입니다. **비어 있다고 걸면 안 됩니다.**)
 
 `TELEGRAM_COLLECT_WEBHOOK_SECRET`이 없으면 서버는 **아무것도 하지 않고 503**으로 거절합니다
 (잠금 장치 없이 열어 두지 않습니다).
@@ -296,6 +327,8 @@ https://www.amazon.com/dp/B0XXXX 검수
 | 봇이 「연결돼 있지 않다」고 함 | `/link`를 아직 안 했거나 해제됨 | `/link 토큰값` 다시 1회 |
 | 봇이 무반응 | `TELEGRAM_COLLECT_CHAT_IDS`를 좁혀 뒀는데 내 chat_id가 없음 | 그 값을 비우거나 chat_id 추가 |
 | 봇이 503 | `TELEGRAM_COLLECT_WEBHOOK_SECRET` 누락 | 1번 절 env 표 확인 |
+| 봇이 아예 무반응 | 그 봇에 웹훅이 안 걸렸거나 **다른 주소로** 걸림 | `getWebhookInfo`로 `url` 확인 |
+| **`KOHGANE시장동향` GO 승인이 멈춤** | 그 폴링 봇에 수집 웹훅을 걸어 `getUpdates`가 409 | 그 봇에 `deleteWebhook` → 폴링 복구. 수집은 **`@gogaBridz_bot`**으로 |
 | 폰에서 「네트워크 연결 유실」 | 셀룰러가 우리 앞단(Cloudflare)에 못 닿음 | VPN을 켜고 재시도 — 안 되면 텔레그램 봇으로 |
 | 목록 페이지를 공유함 | 상세가 아니라 검색·목록 주소 | 상품 **상세** 페이지에서 공유 |
 

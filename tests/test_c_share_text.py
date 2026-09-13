@@ -2561,3 +2561,116 @@ def test_guide_puts_the_bot_first_and_the_shortcut_second():
     assert i_bot != -1 and i_sc != -1, "가이드에 두 경로가 다 있어야 한다"
     assert i_bot < i_sc, "단축어가 텔레그램보다 먼저 나온다(실측상 되는 길이 뒤에 있다)"
     assert "VPN" in g
+
+
+# ---------------------------------------------------------------------------
+# C-F17b — 봇 하나는 수신구 하나. 수집 봇은 따로 판다(오너 결정).
+# ---------------------------------------------------------------------------
+
+def test_reply_goes_to_the_sender_chat_not_a_fixed_room(monkeypatch, client):
+    """★ 발신 chat_id로 **직접** 보낸다 — 고정 알림방(`TELEGRAM_CHAT_ID`)으로 가지 않는다.
+
+    `_api`가 아니라 **HTTP 한 겹 아래**(requests.post)에서 잡아, 어느 봇 토큰으로
+    어느 chat에 갔는지 URL·본문으로 확인한다.
+    """
+    import src.api.telegram_collect as tc
+    from src.auth import personal_tokens as pt
+    from src.db import telegram_links_pg as tl
+
+    monkeypatch.setenv("TELEGRAM_COLLECT_WEBHOOK_SECRET", "f17b")
+    monkeypatch.setenv("TELEGRAM_COLLECT_BOT_TOKEN", "COLLECTBOT:zzz")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "TRENDBOT:aaa")       # 폴링으로 도는 공용 봇
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "고정알림방")
+    monkeypatch.delenv("TELEGRAM_COLLECT_CHAT_IDS", raising=False)
+    monkeypatch.delenv("ADAPTER_DRY_RUN", raising=False)
+    tl.reset_for_tests()
+
+    uid = "f275b60d-0000-4000-8000-00000000f17b"
+    pt.generate_token(user_id=uid, scopes=["collect.write"])
+    tl.link("55501", uid)
+
+    calls: list = []
+
+    class _R:
+        ok = True
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"ok": True}
+
+    import requests
+    monkeypatch.setattr(requests, "post",
+                        lambda url, **kw: (calls.append((url, kw.get("json") or {})), _R)[1])
+
+    client.post("/webhooks/telegram/collect",
+                json={"message": {"text": SHARE_FIXTURE, "message_id": 7, "chat": {"id": "55501"}}},
+                headers={"X-Telegram-Bot-Api-Secret-Token": "f17b"})
+
+    sends = [(u, b) for u, b in calls if u.endswith("/sendMessage")]
+    assert sends, f"sendMessage를 부르지 않았다: {calls}"
+    for url, body in sends:
+        assert "COLLECTBOT:zzz" in url, f"수집 전용 봇이 아니라 다른 토큰으로 보냈다: {url}"
+        assert "TRENDBOT" not in url, "공용(폴링) 봇 토큰으로 보냈다"
+        assert str(body.get("chat_id")) == "55501", f"발신 chat이 아니다: {body.get('chat_id')}"
+        assert body.get("chat_id") != "고정알림방"
+
+
+def test_collect_bot_token_wins_over_the_shared_one(monkeypatch):
+    """전용 토큰이 있으면 그것을 쓰고, 없을 때만 공용으로 떨어진다(그때는 경고를 남긴다)."""
+    import src.api.telegram_collect as tc
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "SHARED:1")
+    monkeypatch.setenv("TELEGRAM_COLLECT_BOT_TOKEN", "OWN:2")
+    assert tc._bot_token() == "OWN:2"
+
+    monkeypatch.delenv("TELEGRAM_COLLECT_BOT_TOKEN", raising=False)
+    tc._bot_token._warned = False
+    assert tc._bot_token() == "SHARED:1", "전용 토큰이 없으면 공용으로 보내기는 한다"
+
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    assert tc._bot_token() == "", "토큰이 없으면 없다고 말한다(추측 금지)"
+
+
+def test_repo_has_more_telegram_receivers_than_one_bot_can_serve():
+    """★ 이 레포 안에만 텔레그램 수신구가 셋이다 — 한 봇에 다 걸 수 없다.
+
+    텔레그램은 봇당 웹훅 **하나**만 기억한다(폴링과도 양립 불가). 수신구가 늘 때
+    「토큰도 따로」라는 규율이 같이 따라오지 않으면, 나중에 건 웹훅이 앞의 것을 말없이 덮는다.
+    """
+    routes = {
+        "봇 명령": ("src/bot/telegram_bot.py", "/webhook/telegram"),
+        "CS 인바운드": ("src/cs_bot/inbound_telegram.py", "/webhooks/telegram/cs"),
+        "수집": ("src/api/telegram_collect.py", "/webhooks/telegram/collect"),
+    }
+    for label, (path, route) in routes.items():
+        assert route in Path(path).read_text(encoding="utf-8"), f"{label} 수신구가 사라졌다"
+
+    # 수집 입구만은 **제 토큰**을 먼저 본다 — 공용 토큰에 웹훅을 걸라고 유도하지 않는다.
+    src = Path("src/api/telegram_collect.py").read_text(encoding="utf-8")
+    assert "TELEGRAM_COLLECT_BOT_TOKEN" in src
+
+    guide = Path("docs/MOBILE_COLLECT_GUIDE.md").read_text(encoding="utf-8")
+    assert "TELEGRAM_COLLECT_BOT_TOKEN" in guide, "가이드가 전용 토큰을 말하지 않는다"
+
+
+def test_guide_names_the_two_bots_and_forbids_the_webhook_on_the_polling_one():
+    """★ 봇을 **실명**으로 적는다 — 「전용 봇」이라고만 하면 어느 봇인지 사람이 고른다.
+
+    오너 확정(2026-09-13): 수집 = `@gogaBridz_bot`(웹훅), 트렌드 = `KOHGANE시장동향`(폴링 유지).
+    폴링 봇에 웹훅을 걸면 `getUpdates`가 409로 막혀 **GO 승인이 죽는다** —
+    그래서 금지를 말로만 두지 않고 **어느 봇인지 이름으로** 못 박는다.
+    """
+    guide = Path("docs/MOBILE_COLLECT_GUIDE.md").read_text(encoding="utf-8")
+    assert "@gogaBridz_bot" in guide, "수집 봇 실명이 없다"
+    assert "KOHGANE시장동향" in guide, "트렌드 봇 실명이 없다"
+
+    # 트렌드 봇 이름 근처에 '폴링 유지'와 '금지'가 함께 서 있어야 한다.
+    i = guide.find("KOHGANE시장동향")
+    near = guide[max(0, i - 400):i + 400]
+    assert "폴링" in near and ("금지" in near or "걸면 안" in near), \
+        "트렌드 봇이 폴링이고 웹훅을 걸면 안 된다는 말이 이름 옆에 없다"
+    assert "409" in guide, "왜 죽는지(409)를 말하지 않는다"
+
+    # 1번 절이 수집 봇 실명 기준으로 쓰여 있는지 — 섹션 제목에 이름이 있다.
+    assert "## 1. 텔레그램 `@gogaBridz_bot`" in guide, "1번 절이 봇 실명 기준이 아니다"

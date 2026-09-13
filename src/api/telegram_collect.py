@@ -83,14 +83,41 @@ def _seller_id_for(chat_id: str) -> str:
     return os.getenv("TELEGRAM_COLLECT_SELLER_ID", "").strip()
 
 
+def _bot_token() -> str:
+    """이 입구가 쓸 봇 토큰. **수집 전용 봇**(`TELEGRAM_COLLECT_BOT_TOKEN`)이 정본이다.
+
+    C-F17b: **봇 하나는 웹훅이든 폴링이든 업데이트 수신구를 하나만 갖는다**(텔레그램 규칙).
+    한 토큰을 나눠 쓰면 나중에 건 쪽이 앞의 것을 **말없이 덮는다**:
+
+      · 폴링으로 도는 봇(오너 트렌드 봇의 GO 승인)에 웹훅을 걸면 `getUpdates`가 409로 죽는다.
+      · 이 레포 안에도 수신구가 셋이다 — `/webhook/telegram`(봇 명령)·`/webhooks/telegram/cs`(CS)·
+        `/webhooks/telegram/collect`(수집). 한 봇에 셋을 다 걸 수는 없다.
+
+    그래서 수집 봇은 **따로 판다**(오너 결정). 전용 토큰이 없으면 공용 토큰으로 보내기는 하되,
+    그건 '보내기'만 안전하고 **웹훅 등록이 위험하다**는 걸 로그로 남긴다(조용히 넘어가지 않는다).
+    """
+    tok = os.getenv("TELEGRAM_COLLECT_BOT_TOKEN", "").strip()
+    if tok:
+        return tok
+    shared = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    if shared and not _bot_token._warned:
+        logger.warning("수집 전용 봇 토큰(TELEGRAM_COLLECT_BOT_TOKEN) 미설정 — 공용 봇으로 답장한다. "
+                       "공용 봇에 수집 웹훅을 걸면 그 봇의 기존 수신구(폴링·다른 웹훅)가 죽는다.")
+        _bot_token._warned = True
+    return shared
+
+
+_bot_token._warned = False       # 매 요청 같은 경고를 쌓지 않는다
+
+
 def _api(method: str, payload: dict) -> dict:
     """봇 API 한 번. 실패는 삼키되 **무엇이 실패했는지는 남긴다**(토큰 값은 로그에 없다)."""
     if os.getenv("ADAPTER_DRY_RUN", "0") == "1":
         logger.info("ADAPTER_DRY_RUN=1 — 텔레그램 %s 차단", method)
         return {}
-    token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    token = _bot_token()
     if not token:
-        logger.warning("TELEGRAM_BOT_TOKEN 미설정 — 봇 답장 불가")
+        logger.warning("봇 토큰 미설정(TELEGRAM_COLLECT_BOT_TOKEN) — 봇 답장 불가")
         return {}
     try:
         import requests
