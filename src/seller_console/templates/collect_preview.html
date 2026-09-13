@@ -308,11 +308,28 @@
     {# v47 STEP2: 수집 로그 — 어느 소스(JSON/DOM/없음)가 어느 필드를 줬는지 정직 표기. 전 탭 하단 접이식. #}
     {% if collect_status %}
     <details class="mx-3 mb-2 small kgp-inset">
+      {# C-F20-2/3: 부분 초안(공유 텍스트로 담은 것)에는 **완전 수집 잣대를 대지 않는다.**
+         실측(F14): 제목·상품번호·가격이 다 담긴 초안이 「수집 실패」로 떴다 — 이미지가 없다는 이유로.
+         초안은 아직 반쪽인 게 정상이고, 「실패」는 초안 자체가 없을 때 쓰는 말이다.
+         판정은 `enrich_axes` 한 곳에서만 온다(화면마다 다르게 읽던 게 그 사달의 뿌리).
+         등록 기준이 아닌 누락(리뷰·평점 등)은 **경고가 아니라 정보 톤** — 노랑은
+         "손을 봐야 한다"는 뜻인데, 손댈 것이 없으면 그 노랑이 사람을 세운다. #}
       <summary style="cursor:pointer;font-weight:600">
-        {% if collect_status.status == "실패" %}
+        {% if enrich and enrich.is_draft %}
+          {% if enrich.enrich_state == "blocked" %}
+            <span style="color:var(--warn)"><i class="bi bi-exclamation-triangle"></i> 보강 막힘{% if enrich.reason %} — {{ enrich.reason }}{% endif %}</span>
+          {% elif enrich.enrich_state == "done" %}
+            <span style="color:var(--success)"><i class="bi bi-check-circle"></i> 보강 완료</span>
+          {% else %}
+            <span style="color:var(--teal)"><i class="bi bi-hourglass-split"></i> 보강 대기 — PC에서 고가수집기가 채웁니다</span>
+          {% endif %}
+        {% elif collect_status.status == "실패" %}
           <span style="color:var(--danger)"><i class="bi bi-x-octagon"></i> 수집 실패 — {{ collect_status.cause }}</span>
+        {% elif collect_status.status == "부분" and collect_status.core_missing %}
+          {# 등록 기준(가격·이미지)이 빈 경우에만 경고 톤. #}
+          <span style="color:var(--warn)"><i class="bi bi-exclamation-triangle"></i> 부분 수집 — {{ collect_status.core_missing|join('·') }} 누락</span>
         {% elif collect_status.status == "부분" %}
-          <span style="color:var(--warn)"><i class="bi bi-exclamation-triangle"></i> 부분 수집 — {{ collect_status.missing|join('·') }} 누락</span>
+          <span class="text-muted"><i class="bi bi-info-circle"></i> 수집됨 — {{ collect_status.missing|join('·') }}은(는) 없음</span>
         {% else %}
           <span style="color:var(--success)"><i class="bi bi-check-circle"></i> 수집 완료</span>
         {% endif %}

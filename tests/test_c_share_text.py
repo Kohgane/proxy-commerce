@@ -3120,3 +3120,83 @@ def test_owner_identity_defaults_need_no_env(identity):
     assert idmod.OWNER_PRIMARY_EMAIL == "shanks8@hanmail.net"
     assert idmod.OWNER_DISPLAY_NAME == "고가"
     assert dict(idmod.OWNER_LOGINS)["google"] == "cigua7134@gmail.com"
+
+
+# ---------------------------------------------------------------------------
+# C-F20 — 편집 서랍도 보강 축으로 말한다(일곱 번째 자리).
+#   F14에서 목록·게이트·폴러를 `enrich_axes`로 돌렸는데 **서랍은 안 따라왔다** —
+#   같은 항목이 목록에선 「보강 대기」, 열어 보면 「수집 실패」였다.
+# ---------------------------------------------------------------------------
+
+def _drawer_html(client, monkeypatch, extra):
+    """드로어를 실제로 렌더해 HTML을 돌려준다 — 함수가 아니라 **사람이 보는 것**을 잰다."""
+    import json as _json
+    from src.seller_console import views as v
+
+    row = {"id": "f20-1", "url": "https://item.taobao.com/item.htm?id=1060535477134",
+           "title": "책상", "extra_json": _json.dumps(extra, ensure_ascii=False),
+           "seller_id": "u-f20", "created_at": "2026-09-13T00:00:00+00:00",
+           "price": extra.get("price", ""), "currency": "CNY", "status": "ok",
+           "source": "telegram", "domain": "item.taobao.com"}
+    monkeypatch.setattr(v, "_get_owned_item", lambda item_id: dict(row), raising=False)
+    with client.session_transaction() as s:
+        s["user_id"] = "u-f20"
+        s["user_email"] = "u-f20@example.com"
+        s["user_role"] = "seller"
+    return client.get("/seller/collect/preview/f20-1").get_data(as_text=True)
+
+
+def test_drawer_says_waiting_not_failed_for_a_share_draft(client, monkeypatch):
+    """★ 제목·상품번호·가격이 담긴 초안을 「수집 실패」라 부르지 않는다."""
+    html = _drawer_html(client, monkeypatch, {
+        "title": "책상", "price": "76.86", "item_id_taobao": "1060535477134",
+        "gate_ready": True, "enrich_state": "pending", "images": [],
+        "uncollected": ["images", "options", "description"],
+    })
+    assert "보강 대기" in html, "초안인데 보강 대기라 말하지 않는다"
+    assert "수집 실패" not in html
+    assert "부분 수집" not in html
+
+
+def test_drawer_shows_the_block_reason_verbatim(client, monkeypatch):
+    """막힘은 **사유를 그대로** 보여 준다 — 무엇이 막았는지 모르면 손쓸 데가 없다."""
+    html = _drawer_html(client, monkeypatch, {
+        "title": "책상", "price": "76.86", "gate_ready": True,
+        "enrich_state": "blocked", "enrich_blocked_reason": "로그인 벽", "images": [],
+        "enrich_attempts": 3,
+    })
+    assert "보강 막힘" in html and "로그인 벽" in html
+    assert "수집 실패" not in html
+
+
+def test_drawer_says_done_when_images_actually_arrived(client, monkeypatch):
+    """「완료」는 **이미지가 실제로 온** 뒤에만."""
+    html = _drawer_html(client, monkeypatch, {
+        "title": "책상", "price": "76.86", "gate_ready": True,
+        "enrich_state": "done", "images": ["https://x/1.jpg", "https://x/2.jpg"],
+    })
+    assert "보강 완료" in html
+    assert "보강 대기" not in html and "수집 실패" not in html
+
+
+def test_non_gate_missing_fields_are_information_not_a_warning(client, monkeypatch):
+    """★ 등록 기준이 아닌 누락(리뷰·평점)은 **경고가 아니라 정보 톤**.
+
+    노랑은 "손을 봐야 한다"는 뜻인데, 손댈 것이 없으면 그 노랑이 사람을 세운다.
+    """
+    html = _drawer_html(client, monkeypatch, {
+        "title": "책상", "price": "76.86", "currency": "CNY",
+        "images": ["https://x/1.jpg"], "options": [{"name": "색상", "values": ["흑"]}],
+        "description": "원목 책상입니다. " * 6,
+    })
+    seg = html[html.find("수집 로그 보기") - 1200:html.find("수집 로그 보기")]
+    assert "부분 수집" not in seg, seg[-400:]
+    assert "bi-info-circle" in seg or "수집 완료" in seg
+
+
+def test_the_drawer_is_listed_as_an_enrich_state_reader():
+    """읽는 자리는 **상수로 적어 두고** 계약이 순회한다 — 목록에 없으면 다음에 또 놓친다."""
+    from src.collectors.collect_status import ENRICH_STATE_READERS
+    rows = [r for r in ENRICH_STATE_READERS if "collect_preview_by_id" in r[2]]
+    assert rows, "편집 서랍이 읽는 자리 목록에 없다"
+    assert len(ENRICH_STATE_READERS) >= 7

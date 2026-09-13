@@ -456,6 +456,14 @@ def api_exists():
             ids.add(str(_u.email))
     except Exception:
         pass
+    # C-F20-1: 스코프를 **정체성 표에서도** 넓힌다(같은 사람의 이메일 별칭).
+    #   시트가 닿지 않으면 위 블록이 아무것도 더하지 못해, 별칭으로 저장된 초안이
+    #   큐에 안 올라온다 — 사람은 "왜 안 채워지지"만 보고 이유를 알 길이 없다.
+    try:
+        from src.db.user_identities_pg import emails_for as _emails
+        ids |= {e for e in _emails(seller_id_val) if e}
+    except Exception:
+        pass
     collected = []
     try:
         from src.seller_console.collect_history_store import find_by_product_key as _find

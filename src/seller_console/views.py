@@ -6859,6 +6859,14 @@ def collect_preview_by_id(item_id: str):
     except Exception:
         collect_status = extra.get("collect_status") if isinstance(extra.get("collect_status"), dict) else None
 
+    # C-F20-2: 부분 초안에는 **완전 수집 잣대를 대지 않는다**(F14 교훈이 서랍엔 안 왔다).
+    #   초안이면 「보강 대기 / 막힘 / 완료」로 말하고, 일반 수집만 기존 판정을 쓴다.
+    try:
+        from src.collectors.collect_status import enrich_axes as _eax20
+        enrich = _eax20(extra)
+    except Exception:
+        enrich = {"is_draft": False, "enrich_state": "", "reason": "", "gate_ready": False, "images": 0}
+
     from src.utils.perf import perf_block as _pb
     with _pb("render"):
       return render_template(
@@ -6867,6 +6875,7 @@ def collect_preview_by_id(item_id: str):
         item=item,
         extra=extra,
         collect_status=collect_status,
+        enrich=enrich,
         fx_rates=fx_rates,
         fx_is_mock=fx_is_mock,
         fx_updated=fx_updated,
