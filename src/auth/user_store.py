@@ -216,6 +216,20 @@ def upsert_by_email(
     display_name = (name or normalized_email.split("@")[0] or provider_id or "user").strip()
 
     user = store.find_by_email(normalized_email) if normalized_email else None
+    if user is None and normalized_email:
+        # C-F19: **만들기 전에 정체성 표를 본다.** 시트 조회가 실패해도(그런 일이 있었다 —
+        #   C-F17-A1) 표가 기억하고 있으면 같은 사람이다. 없을 때만 새로 만든다.
+        try:
+            from src.auth.identity import register_login, resolve_user_id
+            known = resolve_user_id(provider, normalized_email)
+            if known:
+                user = store.find_by_id(known)
+                if user is None:
+                    user = User(user_id=known, email=normalized_email, name=display_name,
+                                avatar_url=avatar_url, role="seller", active=True)
+                register_login(provider, normalized_email, known)
+        except Exception as exc:
+            logger.warning("정체성 표 조회 실패(계속): %s", exc)
     if user is None:
         user = User.new(
             email=normalized_email,
@@ -231,6 +245,12 @@ def upsert_by_email(
                 "linked_at": datetime.now(timezone.utc).isoformat(),
             }]
         store.create(user)
+        try:    # 새 사람이면 표에 적는다 — 다음부터는 새로 만들지 않는다.
+            from src.auth.identity import register_login
+            if normalized_email:
+                register_login(provider, normalized_email, user.user_id, display_name=display_name)
+        except Exception as exc:
+            logger.warning("정체성 등록 실패(계속): %s", exc)
         return user
 
     changed = False
