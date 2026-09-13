@@ -218,6 +218,20 @@
       <i class="bi bi-phone"></i> 앱처럼 쓰기: <strong>공유</strong> → <strong>홈 화면에 추가</strong>
     </div>
 
+    {# F21-A: **로그아웃이 모바일에 아예 없었다.** 유일한 출구가 `console-topbar` 드롭다운인데
+       그 탑바는 모바일에서 CSS로 숨는다(v36 PART A) — 폰에서는 나갈 길이 없었다.
+       사이드바(=햄버거 드로어)는 모바일에서 열리는 자리라 여기 둔다. 데스크톱도 같이 얻는다.
+       POST인 이유: 로그아웃은 부작용이 있는 동작이라 링크(GET)로 두면 프리페치가 눌러 버린다
+       (이 파일 위쪽 speculationrules·프리페치가 로그아웃 경로를 일부러 제외하는 것과 같은 이유). #}
+    {% if _user_id %}
+    <form method="post" action="/auth/logout" class="mt-3 pt-2 border-top">
+      <button type="submit" class="btn btn-ghost btn-sm w-100 text-start">
+        <i class="bi bi-box-arrow-right"></i> 로그아웃{% if _user_email %}
+        <span class="d-block console-kpi-label text-truncate">{{ _user_email }}</span>{% endif %}
+      </button>
+    </form>
+    {% endif %}
+
     <div class="small text-secondary mt-3 pt-2 border-top">
       {% if _user_role == 'admin' %}
       <a class="d-block text-decoration-none mb-1" href="/admin/diagnostics"><i class="bi bi-tools"></i> 관리자 패널</a>

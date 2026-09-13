@@ -147,10 +147,14 @@ def _check_auth() -> bool:
     """
     if not _AUTH_ENABLED:
         return True
-    try:
-        return bool(session.get("user_id") or session.get("user_email"))
-    except Exception:
-        return False
+    # F21-3: 인증 구간도 잰다. 여기는 세션 dict만 읽으므로 **0에 가까워야** 정상이다 —
+    #   0이라는 사실 자체가 답이다(인증은 느림의 원인이 아니라는 증거).
+    from src.utils.perf import perf_block as _pb_auth
+    with _pb_auth("auth"):
+        try:
+            return bool(session.get("user_id") or session.get("user_email"))
+        except Exception:
+            return False
 
 
 def _current_user_id() -> str | None:
