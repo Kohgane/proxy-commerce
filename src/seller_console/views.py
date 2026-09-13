@@ -91,7 +91,10 @@ def inject_seller_template_flags():
     _acct = None
     try:
         from src.auth.account_label import account_label as _al
-        _acct = (session.get("user_email") or "").strip() or _al(session.get("user_id")) or None
+        #   이름은 로그인 때 세션에 실린다(`establish_session`) — 그리는 자리에서 또 묻지 않는다
+        #   (`allow_lookup=False`: 캐시에 있으면 쓰고, 없으면 비운다. 쿼리 0).
+        _acct = ((session.get("user_email") or "").strip()
+                 or _al(session.get("user_id"), allow_lookup=False) or None)
     except Exception:
         _acct = None
     return {

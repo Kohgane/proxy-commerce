@@ -52,13 +52,18 @@ def reset_cache() -> None:
     _CACHE.clear()
 
 
-def resolve_account(user_id) -> dict:
+def resolve_account(user_id, *, allow_lookup: bool = True) -> dict:
     """`{user_id, email, name, label}` — `label`은 **사람이 읽는 이름**, 못 찾으면 빈 문자열.
 
     순서:
       1. 값에 `@`가 있으면 그 자체가 사람이 읽는 이름이다(별칭으로 발급된 토큰) — 조회 없이 통과.
-      2. 아니면 사용자 저장소를 한 번 찾는다(TTL 캐시). 이메일 > 이름 순으로 `label`.
+      2. 아니면 정체성 표 → 사용자 저장소 순으로 한 번 찾는다(TTL 캐시).
       3. 못 찾으면 `label=""` — **user_id를 label로 승격하지 않는다.**
+
+    `allow_lookup=False`면 **캐시에 있는 것만** 답한다(조회 0). 화면을 그리는 경로가 쓴다 —
+    C-F19에서 머리줄이 매 렌더마다 조회를 한 번 더 해 수집 목록 쿼리가 3→4로 늘었다
+    (계약 `test_query_count_and_timing_measured`가 잡았다). 이름은 **로그인 때 한 번**
+    세션에 실리므로, 그리는 자리에서 또 물을 이유가 없다.
     """
     uid = str(user_id or "").strip()
     if not uid:
@@ -70,8 +75,25 @@ def resolve_account(user_id) -> dict:
     hit = _CACHE.get(uid)
     if hit and (time.monotonic() - hit[0]) < (_TTL_OK_SEC if hit[1].get("label") else _TTL_MISS_SEC):
         return dict(hit[1])
+    if not allow_lookup:
+        return dict(_EMPTY, user_id=uid)
 
     out = {"user_id": uid, "email": "", "name": "", "label": ""}
+
+    # C-F19: **정체성 표를 먼저** 본다. 사용자 저장소는 시트라 닿지 않을 수 있고,
+    #   실제로 닿지 않아 이름이 통째로 사라진 적이 있다(C-F17-A). 표는 PG에 있다.
+    try:
+        from src.auth.identity import profile as _idprofile
+        prof = _idprofile(uid)
+        if prof.get("email") or prof.get("display_name"):
+            out["email"] = str(prof.get("email") or "")
+            out["name"] = str(prof.get("display_name") or "")
+            out["label"] = out["email"] or out["name"]
+            _CACHE[uid] = (time.monotonic(), dict(out))
+            return dict(out)
+    except Exception as exc:
+        logger.warning("정체성 표 조회 실패(사용자 저장소로 계속): %s", exc)
+
     try:
         from src.auth.user_store import get_store
         u = get_store().find_by_id(uid)
@@ -89,9 +111,9 @@ def resolve_account(user_id) -> dict:
     return dict(out)
 
 
-def account_label(user_id) -> str:
+def account_label(user_id, *, allow_lookup: bool = True) -> str:
     """사람이 읽는 계정 이름 한 줄. 못 찾으면 빈 문자열(호출부가 그 자리를 비운다)."""
-    return resolve_account(user_id).get("label", "")
+    return resolve_account(user_id, allow_lookup=allow_lookup).get("label", "")
 
 
 def same_account(a, b, *, identities: Optional[set] = None) -> bool:

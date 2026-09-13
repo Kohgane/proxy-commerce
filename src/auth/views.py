@@ -143,7 +143,16 @@ def establish_session(user, role: Optional[str] = None, remember: bool = False) 
     """
     resolved_role = role or getattr(user, "role", "seller")
     session["user_id"] = getattr(user, "user_id", "")
-    session["user_email"] = getattr(user, "email", "")
+    # C-F19: 이메일이 비어 오면 **정체성 표**에서 대표 이메일을 가져다 싣는다.
+    #   여기서 한 번 채워 두면 화면을 그릴 때마다 다시 물을 일이 없다(쿼리 0).
+    _mail = getattr(user, "email", "") or ""
+    if not _mail:
+        try:
+            from .identity import profile as _idprof
+            _mail = _idprof(getattr(user, "user_id", "")).get("email", "") or ""
+        except Exception:
+            _mail = ""
+    session["user_email"] = _mail
     session["user_name"] = getattr(user, "name", "")
     session["user_role"] = resolved_role
     session.permanent = bool(remember) or (resolved_role == "admin")
@@ -561,6 +570,11 @@ def signup_post():
         store = get_store()
 
         existing = store.find_by_email(email)
+        if existing is None:
+            # C-F19: 시트 조회가 실패해도 **표가 알고 있으면** 이미 있는 사람이다.
+            from .identity import resolve_user_id as _rid
+            if _rid("password", email):
+                existing = True
         if existing:
             flash("이미 등록된 이메일입니다. 로그인하세요.", "warning")
             return redirect(url_for("auth.login"))
@@ -591,16 +605,21 @@ def signup_post():
         except Exception as mail_exc:
             logger.warning("인증 메일 발송 실패 (가입은 완료됨): %s", mail_exc)
 
-        # 텔레그램 알림 (백그라운드)
-        try:
-            from src.notifications.telegram import send_telegram
-            _async_notify(
-                send_telegram,
-                f"🆕 신규 셀러 가입\n이메일: {email}\n이름: {name}\n경로: 이메일 가입",
-                urgency="info",
-            )
-        except Exception:
-            pass
+        # C-F19: 표에 적고, **처음 보는 이메일일 때만** 알린다.
+        from .identity import known_email as _known, register_login as _reg
+        was_known = _known(email)
+        _reg("password", email, user.user_id, display_name=name)
+
+        if not was_known:
+            try:
+                from src.notifications.telegram import send_telegram
+                _async_notify(
+                    send_telegram,
+                    f"🆕 신규 셀러 가입\n이메일: {email}\n이름: {name}\n경로: 이메일 가입",
+                    urgency="info",
+                )
+            except Exception:
+                pass
 
         flash("가입이 완료되었습니다. 이메일 인증 후 로그인해주세요.", "success")
         return redirect(url_for("auth.login"))
@@ -761,6 +780,32 @@ def oauth_callback(provider: str):
                     "provider_user_id": provider_user_id,
                 })
 
+        # C-F19: **만들기 전에 정체성 표를 본다.** 실측(오너 2026-09-13 16:02): 구글로 들어왔더니
+        #   「신규 셀러 가입」이 뜨고 새 user_id가 났다 — 데이터를 쥔 UUID는 따로였다.
+        #   찾기가 실패할 수 있는 한, 만들기 앞에 **기억해 둔 표**가 있어야 한다.
+        known_uid = ""
+        if user is None and email:
+            from .identity import register_login, resolve_user_id
+            known_uid = resolve_user_id(provider, email)
+            if known_uid:
+                # 저장소 조회가 **터져도 로그인은 계속된다.** 표가 "누구인지"를 이미 알고 있으니,
+                #   못 읽은 것은 그 신원으로 세우면 된다 — 여기서 예외가 나면 사람이 못 들어온다.
+                try:
+                    user = store.find_by_id(known_uid)
+                except Exception as exc:
+                    logger.warning("사용자 레코드 조회 실패(정체성으로 계속): %s", exc)
+                    user = None
+                if user is None:
+                    # 사용자 저장소(시트)가 닿지 않아도 로그인은 된다 —
+                    #   정체성 표가 "누구인지"를 알고 있으므로 그 신원으로 세션을 연다.
+                    from .identity import profile as _idprof
+                    prof = _idprof(known_uid)
+                    user = User(user_id=known_uid, email=email,
+                                name=prof.get("display_name") or name,
+                                avatar_url=avatar_url, role="seller",
+                                email_verified=True, active=True)
+                register_login(provider, email, known_uid)
+
         if user is None:
             # 신규 가입
             role = _resolve_user_role(email, provider=provider, provider_user_id=provider_user_id)
@@ -773,17 +818,25 @@ def oauth_callback(provider: str):
             }]
             store.create(user)
 
-            # 텔레그램 알림 (백그라운드)
-            try:
-                from src.notifications.telegram import send_telegram
-                provider_label = {"kakao": "카카오", "google": "구글", "naver": "네이버"}.get(provider, provider)
-                _async_notify(
-                    send_telegram,
-                    f"🆕 신규 셀러 가입\n이메일: {email}\n이름: {name}\n경로: {provider_label} 로그인",
-                    urgency="info",
-                )
-            except Exception:
-                pass
+            # C-F19: 이 사람을 **표에 적는다** — 다음 로그인부터는 새로 만들지 않는다.
+            from .identity import known_email as _known, register_login as _reg
+            was_known = _known(email) if email else False
+            if email:
+                _reg(provider, email, user.user_id, display_name=name)
+
+            # 텔레그램 알림 — **처음 보는 이메일일 때만**(같은 사람이 로그인할 때마다
+            #   「신규 가입」이 오면 그 알림은 곧 아무 뜻도 없게 된다).
+            if not was_known:
+                try:
+                    from src.notifications.telegram import send_telegram
+                    provider_label = {"kakao": "카카오", "google": "구글", "naver": "네이버"}.get(provider, provider)
+                    _async_notify(
+                        send_telegram,
+                        f"🆕 신규 셀러 가입\n이메일: {email}\n이름: {name}\n경로: {provider_label} 로그인",
+                        urgency="info",
+                    )
+                except Exception:
+                    pass
 
         role = _resolve_user_role(email, provider=provider, provider_user_id=provider_user_id)
         if not email:

@@ -2934,3 +2934,189 @@ def test_guide_says_the_allowlist_env_is_retired():
     # 봇 둘 쓰는 법(경로·env)도 적혀 있어야 한다 — 계정 둘을 쓰는 사람이 실제로 있다.
     assert "/webhooks/telegram/collect/<봇이름표>" in g
     assert "TELEGRAM_COLLECT_BOT_TOKEN_<봇이름표 대문자>" in g
+
+
+# ---------------------------------------------------------------------------
+# C-F19 — 정체성은 로그인마다 새로 나면 안 된다.
+#   실측(오너 2026-09-13 16:02): 구글 로그인 → 「신규 셀러 가입」 + 새 user_id + 수집 0건.
+#   어제 hanmail 로그인은 또 다른 UUID. 데이터를 쥔 UUID는 세 번째였다.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def identity(monkeypatch):
+    """정체성 표를 비우고, 사용자 저장소는 **닿지 않는 상태**로 둔다.
+
+    시트가 죽어 있어도 표만으로 같은 사람을 알아봐야 한다 — 그게 이 판의 요점이다
+    (C-F17-A1에서 시트가 통째로 죽어 있었고, 그게 정체성이 흩어진 근원이었다).
+    """
+    from src.auth import account_label as al, identity as idmod
+    from src.db import user_identities_pg as store
+
+    store.reset_for_tests()
+    al.reset_cache()
+
+    class _DeadStore:
+        def find_by_id(self, uid): return None
+        def find_by_email(self, email): return None
+        def find_by_provider(self, p, pid): return None
+        def create(self, user): return user
+        def update(self, user): return None
+
+    import src.auth.user_store as us
+    monkeypatch.setattr(us, "get_store", lambda: _DeadStore(), raising=False)
+    yield idmod
+    store.reset_for_tests()
+    al.reset_cache()
+
+
+def test_two_logins_of_one_person_resolve_to_one_user_id(identity):
+    """★ 이메일 로그인 → 구글 로그인 → **같은 user_id**.
+
+    표에 없으면 새로 만든다는 규칙 하나만 있으면, 못 찾을 때마다 사람이 는다.
+    """
+    canonical = identity.OWNER_USER_ID
+    identity.register_login("password", "shanks8@hanmail.net", canonical, primary=True,
+                            display_name="고가")
+    identity.register_login("google", "cigua7134@gmail.com", canonical)
+
+    assert identity.resolve_user_id("password", "shanks8@hanmail.net") == canonical
+    assert identity.resolve_user_id("google", "cigua7134@gmail.com") == canonical
+    # 같은 이메일이 **다른 프로바이더**로 처음 와도 같은 사람이다.
+    assert identity.resolve_user_id("kakao", "shanks8@hanmail.net") == canonical
+    # 모르는 이메일은 여전히 모른다(아무나 정본에 붙지 않는다).
+    assert identity.resolve_user_id("google", "stranger@example.com") == ""
+
+
+def test_bootstrap_fixes_the_canonical_identity_without_owner_shell(identity):
+    """★ 배포와 함께 자동. 두 줄이 등록되고 대표 이메일·이름이 선다."""
+    report = identity.bootstrap(merge=False)
+
+    assert report["canonical"] == identity.OWNER_USER_ID
+    assert any("shanks8@hanmail.net" in r for r in report["registered"])
+    assert any("cigua7134@gmail.com" in r for r in report["registered"])
+
+    prof = identity.profile(identity.OWNER_USER_ID)
+    assert prof.get("email") == "shanks8@hanmail.net", prof
+    assert prof.get("display_name") == "고가"
+
+    # 멱등 — 두 번 돌아도 같은 결과(부팅마다 돈다).
+    again = identity.bootstrap(merge=False)
+    assert again["canonical"] == report["canonical"]
+    assert identity.profile(identity.OWNER_USER_ID).get("email") == "shanks8@hanmail.net"
+
+
+def test_the_account_name_is_never_blank_once_the_identity_is_known(identity):
+    """★★ 「계정에 연결됐어요」에 **계정명이 비면 빨강**(오너 F19-5).
+
+    실측: `/link` 답장이 계정명 없이 왔다 — 정본 UUID에 레코드가 없어서였다.
+    이제 표가 이름을 쥐고 있으므로, 시트가 죽어 있어도 이름이 나온다.
+    """
+    from src.auth.account_label import account_label, reset_cache
+    identity.bootstrap(merge=False)
+    reset_cache()
+
+    label = account_label(identity.OWNER_USER_ID)
+    assert label == "shanks8@hanmail.net", f"계정명이 비었다: {label!r}"
+
+
+def test_link_reply_names_the_account_after_bootstrap(bot, identity):
+    """픽스처 → `/link` → **응답 텍스트에 계정명**. 빈 이름 갈래로 떨어지면 빨강."""
+    import src.api.telegram_collect as tc
+    from src.auth import personal_tokens as pt
+
+    identity.bootstrap(merge=False)
+    raw = pt.generate_token(user_id=identity.OWNER_USER_ID, scopes=["collect.write"])["raw_token"]
+    bot(f"/link {raw}", chat="19001")
+
+    text = "\n".join(bot.texts())
+    assert "shanks8@hanmail.net 계정에 연결됐어요" in text, text
+    assert text.strip() != tc.MSG["link_ok_noname"].format(tail="").strip()
+    assert not _UUID_LIKE.search(text)
+
+
+def test_signup_notice_fires_once_per_new_email(identity):
+    """★ 「신규 셀러 가입」은 **표에 없는 이메일이 처음 올 때만**.
+
+    같은 사람이 로그인할 때마다 「신규 가입」이 오면 그 알림은 곧 아무 뜻도 없게 된다.
+    """
+    assert identity.known_email("newbie@example.com") is False
+    identity.register_login("google", "newbie@example.com", "u-newbie")
+    assert identity.known_email("newbie@example.com") is True
+    # 다른 프로바이더로 다시 와도 이미 아는 사람이다(알림 재발 금지).
+    assert identity.known_email("NEWBIE@example.com") is True
+
+
+@pytest.fixture()
+def fake_orphans(monkeypatch):
+    """고아 스캔을 갈아 끼운다 — `monkeypatch`로 (테스트가 끝나면 원래대로).
+
+    ※ 모듈 전역에 직접 대입하면 **그 프로세스의 나머지 테스트까지 오염**된다.
+    """
+    import src.auth.identity as idmod
+
+    state = {"orphans": set(), "emails": {}, "counts": {}, "moved": [], "deactivated": []}
+
+    monkeypatch.setattr(idmod, "_pg_ok", lambda: True)
+    monkeypatch.setattr(idmod, "_orphan_user_ids", lambda: set(state["orphans"]))
+    monkeypatch.setattr(idmod, "_email_of", lambda uid: state["emails"].get(uid, ""))
+    monkeypatch.setattr(idmod, "_counts_for", lambda uid: dict(state["counts"].get(uid, {})))
+    monkeypatch.setattr(idmod, "_merge_into_canonical",
+                        lambda o, b: (state["moved"].append((o, b)), {"초안": 5})[1])
+    monkeypatch.setattr(idmod, "_deactivate_user_record",
+                        lambda uid: (state["deactivated"].append(uid), True)[1])
+    return state
+
+
+def test_merge_never_moves_data_it_cannot_prove_is_the_same_person(identity, fake_orphans):
+    """★★ F18로 이 서비스는 **여러 사람이 쓴다** — 증명 없는 병합은 남의 데이터 이동이다.
+
+    이메일을 확인할 수 없는 고아는 **세기만 하고 옮기지 않는다**.
+    """
+    fake_orphans["orphans"] = {"stranger-uuid"}
+    fake_orphans["emails"] = {"stranger-uuid": ""}
+    fake_orphans["counts"] = {"stranger-uuid": {"토큰": 2, "초안": 5}}
+
+    report = identity.bootstrap(merge=True)
+
+    assert fake_orphans["moved"] == [], "같은 사람임을 확인 못 했는데 옮겼다"
+    assert any("stranger-uuid" in s for s in report["skipped"])
+    assert report["orphans"][0]["counts"]["초안"] == 5, "세지도 않았다(표는 나와야 한다)"
+
+
+def test_proven_same_person_with_data_is_merged_and_empty_one_is_absorbed(identity, fake_orphans):
+    """★ 데이터가 있는 고아는 정본으로 **합치고**, 빈 고아는 **흡수 후 레코드 폐기**(F19-3)."""
+    identity.bootstrap(merge=False)          # 표를 먼저 세운다(두 로그인 등록)
+
+    fake_orphans["orphans"] = {"orphan-with-data", "orphan-empty"}
+    fake_orphans["emails"] = {"orphan-with-data": "shanks8@hanmail.net",
+                              "orphan-empty": "cigua7134@gmail.com"}
+    fake_orphans["counts"] = {"orphan-with-data": {"토큰": 1, "초안": 3},
+                              "orphan-empty": {"토큰": 0, "초안": 0, "텔레그램 매핑": 0}}
+
+    report = identity.bootstrap(merge=True)
+
+    assert [o for o, _b in fake_orphans["moved"]] == ["orphan-with-data"], fake_orphans["moved"]
+    assert [r["user_id"] for r in report["absorbed"]] == ["orphan-empty"], report["absorbed"]
+    # 합친 쪽도 빈 쪽도 레코드는 폐기된다(조회에서 사라진다).
+    assert set(fake_orphans["deactivated"]) == {"orphan-with-data", "orphan-empty"}
+
+
+def test_counting_failure_is_not_written_down_as_zero(identity, fake_orphans):
+    """못 센 것을 0으로 적지 않는다 — 0이면 「빈 고아」로 보고 흡수해 버린다."""
+    fake_orphans["orphans"] = {"orphan-unknown"}
+    fake_orphans["emails"] = {"orphan-unknown": "shanks8@hanmail.net"}
+    fake_orphans["counts"] = {"orphan-unknown": {"토큰": -1, "초안": -1}}   # -1 = 못 셌다
+    identity.bootstrap(merge=False)
+
+    report = identity.bootstrap(merge=True)
+    assert fake_orphans["moved"] == [], "못 셌는데 병합했다"
+    assert fake_orphans["deactivated"] == [], "못 셌는데 폐기했다"
+
+
+def test_owner_identity_defaults_need_no_env(identity):
+    """기본값이 정답이라 오너가 Shell을 열 일이 없다(F19-8)."""
+    import src.auth.identity as idmod
+    assert idmod.OWNER_USER_ID == "f275b60d-9728-4349-9f44-00cedb037516"
+    assert idmod.OWNER_PRIMARY_EMAIL == "shanks8@hanmail.net"
+    assert idmod.OWNER_DISPLAY_NAME == "고가"
+    assert dict(idmod.OWNER_LOGINS)["google"] == "cigua7134@gmail.com"

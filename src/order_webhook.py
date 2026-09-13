@@ -42,6 +42,15 @@ try:
     _pg_ok = _pgboot.pg_enabled()     # 성공 시 pg.py가 'DB 연결: Supabase OK' 로깅
     if _pg_ok:
         _pgboot.init_schema()         # 이관 테이블 idempotent 생성(직접 연결)
+        # C-F19: 로그인 정체성 고정·정리. **배포와 함께 자동**으로 돌고 멱등이다(오너 Shell 불필요).
+        #   실측(2026-09-13 16:02): 로그인할 때마다 새 user_id가 나서 데이터를 쥔 UUID와
+        #   흩어졌다. 표를 세우고, **같은 사람임이 증명된 고아만** 정본으로 합친다(백업 후).
+        #   여기서 실패해도 부팅은 계속한다 — 정리는 서비스의 전제조건이 아니다.
+        try:
+            from src.auth.identity import bootstrap as _identity_bootstrap
+            _identity_bootstrap()
+        except Exception as _idexc:
+            logger.warning("정체성 부트스트랩 실패(계속): %s", _idexc)
     else:
         # v87-W3: '조용한 휘발' 봉인. 예전 가드는 APP_ENV==production일 때만 실패해, 그 값을
         #   안 두면 배포서도 조용히 in-memory로 폴백 → 수집 이력이 배포마다 소실됐다. 이제

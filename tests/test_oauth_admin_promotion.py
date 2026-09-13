@@ -40,6 +40,15 @@ class _DummyStore:
     def find_by_email(self, email: str):
         return self.by_email.get((email or "").lower())
 
+    def find_by_id(self, user_id: str):
+        # C-F19: 실제 `UserStore`에 있는 메서드다. 더블이 이걸 빼먹고 있어서,
+        #   정체성 표를 보는 경로가 붙자 **로그인이 통째로 죽었다**(AttributeError).
+        #   더블은 흉내 내는 대상의 얼굴을 갖춰야 한다 — 없는 얼굴은 없는 계약이다.
+        for user in self.by_email.values():
+            if getattr(user, "user_id", None) == user_id:
+                return user
+        return None
+
     def link_social(self, user_id: str, provider_data: dict) -> None:
         pass
 
