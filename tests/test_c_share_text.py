@@ -2429,10 +2429,11 @@ def tg(client, monkeypatch):
     monkeypatch.delenv("TELEGRAM_COLLECT_CHAT_IDS", raising=False)
     monkeypatch.delenv("TELEGRAM_COLLECT_SELLER_ID", raising=False)
     tl.reset_for_tests()
+    tc.reset_runtime_state()
 
     sent: list = []
 
-    def _fake_api(method, payload):
+    def _fake_api(method, payload, slug="default"):
         sent.append((method, payload))
         return {"ok": True}
 
@@ -2674,3 +2675,262 @@ def test_guide_names_the_two_bots_and_forbids_the_webhook_on_the_polling_one():
 
     # 1번 절이 수집 봇 실명 기준으로 쓰여 있는지 — 섹션 제목에 이름이 있다.
     assert "## 1. 텔레그램 `@gogaBridz_bot`" in guide, "1번 절이 봇 실명 기준이 아니다"
+
+
+# ---------------------------------------------------------------------------
+# C-F18 — 봇은 여러 사람이 쓴다. 키는 (봇, chat_id).
+#   "고가브릿지 계정이 있는 누구나 자기 봇 채팅에서 수집 → 자기 계정에 저장"(오너).
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def bot(client, monkeypatch):
+    """봇 웹훅 호출기 — 봇 이름표·발신 chat을 골라 보낼 수 있다."""
+    import src.api.telegram_collect as tc
+    from src.db import telegram_links_pg as tl
+
+    monkeypatch.setenv("TELEGRAM_COLLECT_WEBHOOK_SECRET", "f18")
+    monkeypatch.delenv("TELEGRAM_COLLECT_CHAT_IDS", raising=False)
+    monkeypatch.delenv("TELEGRAM_COLLECT_SELLER_ID", raising=False)
+    tl.reset_for_tests()
+    tc.reset_runtime_state()
+
+    sent: list = []
+    monkeypatch.setattr(tc, "_api",
+                        lambda m, p, slug="default": (sent.append((slug, m, p)), {"ok": True})[1])
+
+    def _send(text, *, chat="1", slug=None, message_id=9, secret="f18"):
+        path = "/webhooks/telegram/collect" + (f"/{slug}" if slug else "")
+        return client.post(path,
+                           json={"message": {"text": text, "message_id": message_id,
+                                             "chat": {"id": chat}}},
+                           headers={"X-Telegram-Bot-Api-Secret-Token": secret})
+
+    _send.sent = sent
+    _send.texts = lambda: [p["text"] for _s, m, p in sent if m == "sendMessage"]
+    return _send
+
+
+def _issue(uid):
+    from src.auth import personal_tokens as pt
+    return pt.generate_token(user_id=uid, scopes=["collect.write"])["raw_token"]
+
+
+def test_two_chats_write_only_to_their_own_account(bot, _fake_user_store, monkeypatch):
+    """★ 교차 오염 0 — 두 사람이 같은 봇을 써도 각자 계정에만 담긴다."""
+    from src.collectors import share_collect as sc
+    _fake_user_store(hit=True)
+
+    a, b = "f275b60d-0000-4000-8000-0000000f18a1", "f275b60d-0000-4000-8000-0000000f18b2"
+    bot(f"/link {_issue(a)}", chat="111")
+    bot(f"/link {_issue(b)}", chat="222")
+
+    seen: list = []
+    monkeypatch.setattr(sc, "collect_input",
+                        lambda raw, seller_id="", **kw: (seen.append(seller_id),
+                                                         {"ok": True, "kind": "share_draft",
+                                                          "item_id": "x", "title": "t"})[1])
+    bot(SHARE_FIXTURE, chat="111")
+    bot(SHARE_FIXTURE_SOFA, chat="222")
+
+    assert seen == [a, b], f"담긴 계정이 어긋났다: {seen}"
+
+
+def test_same_chat_maps_to_different_accounts_per_bot(bot, _fake_user_store, monkeypatch):
+    """★ 한 사람이 봇 둘로 **콘솔 로그인 둘**을 따로 쓴다 — chat_id는 같은데 계정이 다르다."""
+    from src.collectors import share_collect as sc
+    from src.db import telegram_links_pg as tl
+    _fake_user_store(hit=True)
+
+    goga, uju = "f275b60d-0000-4000-8000-0000000f18c3", "f275b60d-0000-4000-8000-0000000f18d4"
+    bot(f"/link {_issue(goga)}", chat="777", slug="gogabridz")
+    bot(f"/link {_issue(uju)}", chat="777", slug="uju")
+
+    assert tl.user_id_for("777", bot_slug="gogabridz") == goga
+    assert tl.user_id_for("777", bot_slug="uju") == uju, "두 번째 봇이 첫 번째를 덮었다"
+
+    seen: list = []
+    monkeypatch.setattr(sc, "collect_input",
+                        lambda raw, seller_id="", **kw: (seen.append(seller_id),
+                                                         {"ok": True, "kind": "share_draft"})[1])
+    bot(SHARE_FIXTURE, chat="777", slug="gogabridz")
+    bot(SHARE_FIXTURE_SOFA, chat="777", slug="uju")
+    assert seen == [goga, uju], f"같은 chat인데 봇별로 갈리지 않았다: {seen}"
+
+
+def test_unknown_bot_slug_is_refused(bot):
+    """경로 조각이 곧 env 이름이 된다 — **env 이름으로 샐 수 있는 모양**은 받지 않는다.
+
+    대소문자는 막지 않는다(`/GOGABRIDZ`와 `/gogabridz`는 같은 봇이어야 한다) —
+    막아야 하는 건 점·공백·한글처럼 env 이름 조회로 새어 들어갈 수 있는 글자다.
+    """
+    for bad in ("bot.name", "bot name", "봇", "a" * 40):
+        r = bot(SHARE_FIXTURE, chat="1", slug=bad)
+        assert r.status_code in (403, 404), f"{bad!r}를 받아 버렸다(status={r.status_code})"
+
+    # 같은 봇의 대소문자 변형은 **같은 봇**으로 본다.
+    import src.api.telegram_collect as tc
+    assert tc._env_suffix("gogabridz") == tc._env_suffix("GOGABRIDZ".lower())
+
+
+def test_unlinked_chat_is_told_once_then_ignored(bot):
+    """★ 미연결 chat에는 **한 번만** 안내한다 — 두드릴 때마다 답하면 그게 확성기다."""
+    for _ in range(4):
+        r = bot(SHARE_FIXTURE, chat="909")
+        assert r.status_code == 403
+    texts = bot.texts()
+    assert len(texts) == 1, f"안내를 {len(texts)}번 했다"
+    assert "/link" in texts[0] and "API 토큰" in texts[0]
+
+
+def test_revoking_the_token_in_console_breaks_the_binding(bot, _fake_user_store):
+    """★ 콘솔에서 토큰을 지우면 **매핑도 무효**다 — 지운 사람이 믿는 것이 사실이어야 한다."""
+    from src.auth import personal_tokens as pt
+    from src.db import telegram_links_pg as tl
+    _fake_user_store(hit=True)
+
+    uid = "f275b60d-0000-4000-8000-0000000f18e5"
+    res = pt.generate_token(user_id=uid, scopes=["collect.write"])
+    bot(f"/link {res['raw_token']}", chat="333")
+    assert tl.user_id_for("333") == uid
+
+    assert pt.revoke_token(res["token_hash"], uid), "토큰 폐기 자체가 실패했다"
+    bot.sent.clear()
+    r = bot(SHARE_FIXTURE, chat="333")
+
+    assert r.status_code == 403 and (r.get_json() or {}).get("error") == "token_revoked"
+    assert any("토큰이 콘솔에서 삭제" in t for t in bot.texts()), bot.texts()
+    assert tl.user_id_for("333") == "", "폐기됐는데 매핑이 살아 있다"
+
+
+def test_link_stores_the_hash_never_the_token(bot, _fake_user_store):
+    """토큰 원문은 저장하지 않는다 — 해시만(재확인에 쓸 만큼만)."""
+    from src.db import telegram_links_pg as tl
+    _fake_user_store(hit=True)
+    uid = "f275b60d-0000-4000-8000-0000000f18f6"
+    raw = _issue(uid)
+    bot(f"/link {raw}", chat="444")
+
+    row = tl.get("444")
+    assert row["user_id"] == uid
+    assert row["token_hash"] and row["token_hash"] != raw, "해시가 아니라 원문을 넣었다"
+    assert raw not in "\n".join(bot.texts()), "회신이 토큰 원문을 되뱉었다"
+
+
+def test_per_chat_rate_limits_say_so_instead_of_going_quiet(bot, _fake_user_store, monkeypatch):
+    """상한에 걸리면 **말해 준다** — 조용히 삼키면 사람은 서버가 죽은 줄 안다."""
+    import src.api.telegram_collect as tc
+    from src.collectors import share_collect as sc
+    _fake_user_store(hit=True)
+
+    uid = "f275b60d-0000-4000-8000-0000000f1807"
+    bot(f"/link {_issue(uid)}", chat="555")
+    monkeypatch.setattr(sc, "collect_input",
+                        lambda raw, seller_id="", **kw: {"ok": True, "kind": "share_draft"})
+    monkeypatch.setattr("src.seller_console.collect_history_store.find_by_product_key",
+                        lambda url, seller_id=None, seller_ids=None: None)
+
+    for _ in range(tc.RATE_PER_MINUTE):
+        assert bot(SHARE_FIXTURE, chat="555").status_code == 200
+    bot.sent.clear()
+    r = bot(SHARE_FIXTURE, chat="555")
+    assert r.status_code == 429
+    assert any(str(tc.RATE_PER_MINUTE) in t for t in bot.texts()), bot.texts()
+
+
+def test_link_locks_after_five_failures(bot):
+    """`/link` 무차별 대입에 얕은 턱 — 5회 실패면 10분."""
+    import src.api.telegram_collect as tc
+    for _ in range(tc.LINK_FAIL_MAX):
+        assert bot("/link kgp_" + "0" * 60, chat="666").status_code == 403
+    assert bot("/link kgp_" + "0" * 60, chat="666").status_code == 429
+
+
+def test_every_user_facing_sentence_lives_in_one_constant():
+    """★ 사용자 노출 문장은 `MSG` 한 곳에 모인다(오너 F18 — 나중 다국어 치환 지점).
+
+    소스를 정규식으로 훑지 않는다 — 주석·독스트링을 읽고 **옳은 변경을 막는** 계약이 된다
+    (C-F17b에서 실제로 그랬다). 파이썬 AST로 **코드 안의 문자열 리터럴만** 보고,
+    한글이 든 것이 `MSG` 바깥에 있는지 잰다.
+    """
+    import ast
+    import src.api.telegram_collect as tc
+
+    src = Path("src/api/telegram_collect.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+
+    # MSG 대입문의 줄 범위 — 그 안은 허용.
+    msg_span = None
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+                getattr(t, "id", "") == "MSG" for t in node.targets):
+            msg_span = (node.lineno, node.end_lineno)
+    assert msg_span, "MSG 상수가 없다"
+
+    # 로그·JSON 오류는 **채팅으로 가지 않는다** — 사용자 문장이 아니다.
+    #   (로그는 운영자가 읽고, jsonify 본문은 텔레그램 인프라가 받는다. 사람은 못 본다.)
+    exempt_spans = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func
+        is_log = isinstance(fn, ast.Attribute) and getattr(fn.value, "id", "") == "logger"
+        is_json = isinstance(fn, ast.Name) and fn.id == "jsonify"
+        if is_log or is_json:
+            exempt_spans.append((node.lineno, node.end_lineno))
+
+    def _exempt(lineno):
+        return any(a <= lineno <= b for a, b in exempt_spans)
+
+    # 독스트링은 사용자 문장이 아니다 — 빼고 본다.
+    docstrings = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            body = getattr(node, "body", [])
+            if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
+                    and isinstance(body[0].value.value, str):
+                docstrings.add(id(body[0].value))
+
+    hangul = re.compile(r"[가-힣]")
+    stray = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
+            continue
+        if id(node) in docstrings or not hangul.search(node.value):
+            continue
+        if msg_span[0] <= node.lineno <= msg_span[1] or _exempt(node.lineno):
+            continue
+        # 검수 트리거 낱말은 **입력을 알아듣는** 값이지 사용자에게 보내는 문장이 아니다.
+        if node.value in tc._REVIEW_WORDS:
+            continue
+        stray.append((node.lineno, node.value[:40]))
+
+    assert not stray, f"MSG 밖에 사용자 문장이 있다: {stray}"
+    assert tc.MSG["need_link"] and "API 토큰" in tc.MSG["need_link"]
+
+
+def test_the_three_lines_appear_in_all_three_places():
+    """★ 「텔레그램 수집 시작하기」 3줄이 가이드·온보딩·토큰 화면에 **같이** 있다.
+
+    세 곳이 제각각 설명하면 사람은 어느 게 맞는지 모른다 — 그러면 셋 다 안 읽는다.
+    """
+    places = {
+        "가이드": Path("docs/MOBILE_COLLECT_GUIDE.md"),
+        "온보딩": Path("src/seller_console/templates/onboarding_wizard.html"),
+        "토큰 화면": Path("src/seller_console/templates/personal_tokens.html"),
+    }
+    for label, path in places.items():
+        text = path.read_text(encoding="utf-8")
+        assert "gogaBridz_bot" in text, f"{label}에 봇 이름이 없다"
+        assert "/link" in text, f"{label}에 연결 절차가 없다"
+        assert "VPN" in text, f"{label}에 VPN 안내가 없다"
+        assert "API 토큰" in text, f"{label}에 토큰 발급처가 없다"
+
+
+def test_guide_says_the_allowlist_env_is_retired():
+    """허용목록 env 폐지를 가이드가 말한다 — 남아 있는 값을 보고 헤매지 않게."""
+    g = Path("docs/MOBILE_COLLECT_GUIDE.md").read_text(encoding="utf-8")
+    assert "폐지" in g and "TELEGRAM_COLLECT_CHAT_IDS" in g
+    assert "연결된 chat이 곧 허용목록" in g
+    # 봇 둘 쓰는 법(경로·env)도 적혀 있어야 한다 — 계정 둘을 쓰는 사람이 실제로 있다.
+    assert "/webhooks/telegram/collect/<봇이름표>" in g
+    assert "TELEGRAM_COLLECT_BOT_TOKEN_<봇이름표 대문자>" in g

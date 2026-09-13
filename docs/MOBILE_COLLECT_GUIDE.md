@@ -27,6 +27,15 @@ PC 크롬 확장이 못 도는 자리(아이폰·외출 중)를 메웁니다.
 
 ## 1. 텔레그램 `@gogaBridz_bot` — 기본 경로
 
+### 텔레그램 수집 시작하기
+
+1. 텔레그램에서 **`@gogaBridz_bot`** 검색
+2. **`/link 토큰`** 1회 (토큰 = 콘솔 → 내 정보·설정 → API 토큰)
+3. 타오바오 공유 글을 **그대로 붙여넣기** (중국에서는 VPN 켜고)
+
+이 3줄은 **콘솔 온보딩 화면과 API 토큰 화면에도 같은 문장**으로 있습니다 —
+세 곳이 제각각 설명하면 어느 게 맞는지 알 수 없기 때문입니다.
+
 > 수집 봇은 **`@gogaBridz_bot`** 하나입니다(웹훅 `/webhooks/telegram/collect`).
 > 시장동향을 알려주는 **`KOHGANE시장동향`** 봇과는 **다른 봇**입니다 — 그쪽은 폴링으로 돌고
 > **웹훅을 걸면 안 됩니다**(걸면 그 봇의 GO 승인이 죽습니다. 아래 ★ 상자 참고).
@@ -84,8 +93,28 @@ PC 크롬 확장이 못 도는 자리(아이폰·외출 중)를 메웁니다.
 |---|---|---|
 | `TELEGRAM_COLLECT_BOT_TOKEN` | **`@gogaBridz_bot`**의 BotFather 값 (`123456789:AA…`) | 필수 |
 | `TELEGRAM_COLLECT_WEBHOOK_SECRET` | 임의 문자열 1~256자 (`A-Z a-z 0-9 _ -`) | 필수 |
-| `TELEGRAM_COLLECT_CHAT_IDS` | 쉼표 구분 chat_id — **더 좁히고 싶을 때만** | 선택 |
-| `TELEGRAM_COLLECT_SELLER_ID` | `/link` 이전에 쓰던 레거시. 바인딩이 있으면 무시됨 | 선택 |
+| `TELEGRAM_COLLECT_CHAT_IDS` | **폐지**(마이그레이션 폴백만) — 아래 설명 | 없음 |
+| `TELEGRAM_COLLECT_SELLER_ID` | **폐지**(마이그레이션 폴백만) — 아래 설명 | 없음 |
+
+**허용목록 env는 폐지됐습니다.** 이제 **연결된 chat이 곧 허용목록**입니다 —
+`/link`로 자기 계정에 묶은 사람만 담을 수 있고, 서버에 사람을 하나하나 적어 둘 필요가 없습니다.
+옛 두 env가 **둘 다** 있으면 그 chat은 배포 직후 한 번 자동으로 바인딩으로 옮겨집니다
+(그 뒤로는 env가 없어도 됩니다). 한쪽만 있으면 아무 일도 일어나지 않습니다.
+
+### 봇을 둘 이상 쓸 때 (콘솔 로그인이 둘일 때)
+
+한 사람이 **콘솔 계정 둘**(예: 고가네 / 우주대행)을 따로 쓰려면 **봇도 둘**이어야 합니다.
+같은 텔레그램 계정이라 chat_id가 같아서, 봇이 하나면 나중 연결이 앞 연결을 덮습니다.
+
+| 봇마다 | 값 |
+|---|---|
+| 웹훅 경로 | `/webhooks/telegram/collect/<봇이름표>` |
+| 토큰 env | `TELEGRAM_COLLECT_BOT_TOKEN_<봇이름표 대문자>` |
+| 시크릿 env | `TELEGRAM_COLLECT_WEBHOOK_SECRET_<봇이름표 대문자>` (없으면 공용 값) |
+
+봇이름표는 소문자·숫자·`_`·`-`만, 32자까지입니다(경로 조각이 곧 env 이름이 되므로 그 밖은 거절).
+예: `@gogaBridz_bot` → `gogabridz` → `/webhooks/telegram/collect/gogabridz`,
+`TELEGRAM_COLLECT_BOT_TOKEN_GOGABRIDZ`.
 
 `TELEGRAM_COLLECT_BOT_TOKEN`이 비면 답장은 공용 `TELEGRAM_BOT_TOKEN`으로 나가고 서버 로그에
 경고가 남습니다. **보내기만 그렇게 되는 것이고, 웹훅은 절대 다른 봇에 걸지 마세요** —
@@ -325,6 +354,9 @@ https://www.amazon.com/dp/B0XXXX 검수
 | 단축어가 401만 반환 | 헤더가 `Bearer ` 접두 없이 들어감 | `Bearer` + 공백 + 토큰 |
 | 토큰에 공백·줄바꿈 | 복사할 때 앞뒤가 딸려 옴 | 토큰만 남기고 다시 붙여넣기 |
 | 봇이 「연결돼 있지 않다」고 함 | `/link`를 아직 안 했거나 해제됨 | `/link 토큰값` 다시 1회 |
+| 「토큰이 콘솔에서 삭제돼 연결이 풀렸습니다」 | 그 토큰을 콘솔에서 폐기함(의도된 동작) | 새 토큰 발급 후 `/link` 다시 |
+| 「1분에 10건까지」 | 분당 상한 | 잠시 뒤 다시 (하루 상한은 300건) |
+| 봇이 한 번만 답하고 조용해짐 | **연결 안 된 chat**에는 안내를 1회만 합니다 | `/link`로 연결하면 정상 동작 |
 | 봇이 무반응 | `TELEGRAM_COLLECT_CHAT_IDS`를 좁혀 뒀는데 내 chat_id가 없음 | 그 값을 비우거나 chat_id 추가 |
 | 봇이 503 | `TELEGRAM_COLLECT_WEBHOOK_SECRET` 누락 | 1번 절 env 표 확인 |
 | 봇이 아예 무반응 | 그 봇에 웹훅이 안 걸렸거나 **다른 주소로** 걸림 | `getWebhookInfo`로 `url` 확인 |
