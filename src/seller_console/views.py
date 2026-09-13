@@ -85,9 +85,13 @@ def inject_seller_template_flags():
     #   실측(오너 2026-09-12): PC 콘솔은 대기 0건, 폰 콘솔은 4건이었다 —
     #   단축어 토큰이 **다른 계정**으로 발급돼 있었고 **어느 화면도 그 사실을 말하지 않았다.**
     #   확장 폴러는 PC 계정으로 조회하니 폰 초안을 영영 못 본다(사람은 이유를 알 길이 없다).
+    #   C-F17-A4: 폴백이 `user_id`(UUID)였다 — 세션에 이메일이 없으면 화면 머리줄이
+    #   「지금 보고 있는 계정 f275b60d-…」라고 말했다. 사람이 못 읽는 값은 안내가 아니다.
+    #   이름 짓기는 `account_label` 한 곳에서만 하고, 못 찾으면 **머리줄을 아예 안 그린다**.
     _acct = None
     try:
-        _acct = (session.get("user_email") or session.get("user_id") or "") or None
+        from src.auth.account_label import account_label as _al
+        _acct = (session.get("user_email") or "").strip() or _al(session.get("user_id")) or None
     except Exception:
         _acct = None
     return {
@@ -5789,6 +5793,14 @@ def personal_tokens():
         tokens = list_tokens(user_id, user_ids=_seller_identities())
     except Exception as exc:
         logger.warning("토큰 목록 조회 실패: %s", exc)
+
+    # C-F17-A5: 「발급 계정」 칸이 `user_id`(UUID)를 그대로 찍고 있었다. 게다가 화면은
+    #   `tok.user_id != session_account`(UUID vs 이메일)로 비교해 **모든 토큰에 「다른 계정」**을
+    #   달았다 — 이 목록은 `_seller_identities()`로 이미 본인 것만 담기므로 그 뱃지는 뜰 수가 없다.
+    #   즉 가짜 신호였다. 실명으로 바꾸고, 못 찾으면 그 칸을 비운다(UUID 승격 금지).
+    from src.auth.account_label import account_label as _al
+    for _t in tokens:
+        _t["account"] = _al(_t.get("user_id"))
 
     # v38 #6: 활성 토큰만 메인 목록에, 폐기(삭제)된 토큰은 '발급/폐기 이력'으로 분리(목록 어지럽힘 방지).
     active_tokens = [t for t in tokens if not t.get("revoked")]

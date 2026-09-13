@@ -13,6 +13,9 @@
         <i class="bi bi-person-badge"></i> 지금 발급하면 <strong>{{ session_account }}</strong> 계정의 토큰이 됩니다.
         <strong>고가수집기가 도는 크롬에 로그인한 계정</strong>에서 발급하세요 —
         계정이 다르면 담은 상품이 서로 다른 목록으로 가고, PC 확장은 폰으로 담은 것을 아예 못 봅니다.
+        {# C-F17-A5: 「다른 계정」 뱃지가 있던 자리. 뱃지는 뜰 수 없는 신호였다 —
+           아래 목록은 본인 토큰만 담기므로, 말해야 할 사실은 **여기 없다는 것**이다. #}
+        다른 계정에서 발급한 토큰은 <strong>이 목록에 보이지 않습니다</strong> — 그 계정으로 로그인해야 보입니다.
       </p>
       {% endif %}
       <small class="text-muted">크롬 확장 / 북마클릿이 “내 계정”으로 수집하도록 인증하는 열쇠입니다.</small>
@@ -117,12 +120,11 @@
               <span class="pc-badge pc-badge-muted me-1" data-bs-toggle="tooltip" title="{{ scope }}">{{ _scope_ko.get(scope, scope) }}</span>
               {% endfor %}
             </td>
-            <td class="small">
-              {{ tok.user_id or '-' }}
-              {% if session_account and tok.user_id and tok.user_id != session_account %}
-              <span class="pc-badge pc-badge-off" title="이 토큰으로 담은 상품은 지금 보고 있는 계정({{ session_account }})의 목록에 나타나지 않습니다.">다른 계정</span>
-              {% endif %}
-            </td>
+            {# C-F17-A5: 칸은 있었는데 채울 값이 오지 않아 늘 '-'였다(목록이 user_id를 안 실었다).
+               이름은 `account_label`이 짓고(이메일 우선), 못 찾으면 **비운다** — UUID는 찍지 않는다.
+               「다른 계정」 뱃지는 뺐다: 이 목록은 본인 식별자 집합으로만 조회되므로
+               다른 계정 토큰은 애초에 여기 없다(뜰 수 없는 뱃지 = 가짜 신호). #}
+            <td class="small">{{ tok.account or '—' }}</td>
             <td>{{ tok.created_at[:10] if tok.created_at else '-' }}</td>
             <td>{{ tok.last_used_at[:10] if tok.last_used_at else '아직 미사용' }}</td>
             <td>{{ tok.expires_at[:10] if tok.expires_at else '-' }}</td>

@@ -24,6 +24,8 @@ from typing import Optional
 
 from flask import Blueprint, jsonify, request
 
+from src.auth.account_label import resolve_account as _resolve_account
+
 logger = logging.getLogger(__name__)
 
 extension_bp = Blueprint("extension_api", __name__, url_prefix="/api/v1/collect")
@@ -1420,18 +1422,16 @@ def collect_one():
         # C-F15-A1: **어느 계정에 담겼는지** 한 줄로 말한다. 실측(오너): 단축어 토큰이 PC 세션과
         #   다른 계정이라 담긴 것이 PC 목록에 안 보였는데, 응답은 그냥 "담았어요"라고만 했다.
         #   담은 곳을 말해 주면 사람이 바로 알아챈다.
-        #   `validate_token`은 `user_id`만 돌려준다(email 없음) → 이메일은 사용자 저장소에서 한 번 찾고,
-        #   못 찾으면 `user_id`를 그대로 쓴다(빈 문자열로 두면 아무 말도 안 하는 게 된다).
-        _acct = str(user.get("user_id") or "").strip()
-        try:
-            from src.auth.user_store import get_store as _gs2
-            _u2 = _gs2().find_by_id(_acct)
-            if _u2 is not None and getattr(_u2, "email", ""):
-                _acct = str(_u2.email)
-        except Exception:
-            pass
+        #   C-F17-A3 실측(오너 PC curl 2026-09-13): 그 문장이 「f275b60d-… 계정에 담았어요」였다.
+        #   앞 판이 「못 찾으면 user_id를 그대로 쓴다」는 폴백을 뒀는데, 저장소가 죽어 있어
+        #   **늘 그 폴백**이 돌았다(근원=C-F17-A1). UUID는 사람이 못 읽으니 이 문장은
+        #   있으나 마나였다 — 못 찾으면 **계정 줄을 통째로 뺀다**(읽을 수 없는 값으로 채우지 않는다).
+        _acct_info = _resolve_account(user.get("user_id"))
+        _acct = _acct_info.get("label", "")
         if _acct:
             out["account"] = _acct
+            if _acct_info.get("name") and _acct_info["name"] != _acct:
+                out["account_name"] = _acct_info["name"]
             out["message"] = f"{out.get('message', '')} ({_acct} 계정에 담았어요)".strip()
         _timings.update(res.get("timings") or {})
         _timings["total"] = int((_time.perf_counter() - _t0) * 1000)

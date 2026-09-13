@@ -40,9 +40,16 @@ def _get_worksheet():
     try:
         import gspread
         from oauth2client.service_account import ServiceAccountCredentials
-        from src.utils.sheets import SCOPES, _get_credentials_dict
+        # C-F17-A1 실측(2026-09-13): 이 import가 **항상 ImportError**였다 —
+        #   `src.utils.sheets`에 `_get_credentials_dict`(밑줄)는 없다(`get_credentials_dict`뿐).
+        #   그래서 `_get_worksheet()`가 늘 None을 돌려주고 **사용자 저장소 읽기가 통째로 죽어** 있었다.
+        #   결과: `find_by_id`가 언제나 None → 계정 이름을 못 찾아 응답이 UUID를 그대로 노출했고
+        #   (`collect/one`의 「f275b60d-… 계정에 담았어요」), 로그인마다 `upsert_by_email`이
+        #   **새 UUID를 새로 만들어** 세션 user_id가 매번 달라졌다(`create`도 ws=None이라 건너뛴다).
+        #   파일이 2026-08-22 커밋에 `new file mode`로 되살아난 흔적이 있다 — 컨테이너 레포 역행 자국.
+        from src.utils.sheets import SCOPES, get_credentials_dict
 
-        creds_dict = _get_credentials_dict()
+        creds_dict = get_credentials_dict()
         if not creds_dict:
             return None
         sheet_id = os.getenv("GOOGLE_SHEET_ID", "")

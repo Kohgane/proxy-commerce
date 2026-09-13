@@ -235,5 +235,6 @@ def list_tokens(user_id: str, *, user_ids=None) -> list:
             "expires_at": row.get("expires_at", ""),
             "revoked": bool(row.get("revoked")),
             "idle_expired": _is_idle_expired(row, now),   # v81 STEP2: 90일 미사용 유휴 만료(정직 표기)
+            "user_id": str(row.get("user_id", "")),       # C-F17-A5: 「발급 계정」 칸의 원값(이름 짓기는 account_label)
         })
     return result
