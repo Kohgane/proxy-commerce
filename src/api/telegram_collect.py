@@ -120,12 +120,14 @@ MSG = {
     "rules_why_bad_flag": "예/아니오로 답해 주세요",
 
     # ── F24 기본 등록 계정 ─────────────────────────────────────────────────
-    "account_now": "이 봇의 기본 등록 계정: {label} ({market_ko})",
-    "account_none": "이 봇의 기본 등록 계정이 정해져 있지 않습니다.",
-    "account_set": "기본 등록 계정을 {label} ({market_ko})(으)로 바꿨어요.",
-    "account_not_saved": "기본 등록 계정을 저장하지 못했습니다.",
-    "account_unknown": "그런 등록 계정이 없어요 — {name}",
-    "account_choices": "고를 수 있는 계정: {choices}",
+    #   단위는 **사업체**다(오너 2026-09-14): 「우주대행」 = 쿠팡 + 스마트스토어 둘 다.
+    "account_now": "이 봇의 기본 등록처: {label}\n{markets}",
+    "account_none": "이 봇의 기본 등록처가 정해져 있지 않습니다.",
+    "account_set": "기본 등록처를 {label}(으)로 바꿨어요.\n{markets}",
+    "account_market_line": "· {market_ko}: {account}",
+    "account_not_saved": "기본 등록처를 저장하지 못했습니다.",
+    "account_unknown": "그런 등록처가 없어요 — {name}",
+    "account_choices": "고를 수 있는 곳: {choices}",
 
     # ── F24 자동 판정 ──────────────────────────────────────────────────────
     "sourcing_head": "{mark} {verdict_ko}",
@@ -176,6 +178,7 @@ def reset_runtime_state() -> None:
     _LINK_FAILS.clear()
     _GUIDED.clear()
     _bot_token._warned = False
+    _bot_token._warned_slugs = {}
 
 
 # ---------------------------------------------------------------------------
@@ -203,6 +206,17 @@ def _bot_token(slug: str = DEFAULT_BOT_SLUG) -> str:
     tok = os.getenv(f"TELEGRAM_COLLECT_BOT_TOKEN_{_env_suffix(slug)}", "").strip()
     if tok:
         return tok
+    # F24b: **이름표가 붙은 봇은 기본 봇 토큰으로 떨어지지 않는다.** 다른 봇이기 때문이다.
+    #   떨어지면 KohujooBot에 보낸 글을 gogaBridz_bot이 답하려 들고, 그 chat은 그 봇과
+    #   대화한 적이 없어 텔레그램이 거절한다 — **답장이 조용히 사라진다.**
+    #   담기는 담기는데 아무 말이 없으니 사람은 「봇이 죽었다」고 읽는다. 그게 제일 나쁜 실패다.
+    if slug != DEFAULT_BOT_SLUG:
+        if not _bot_token._warned_slugs.get(slug):
+            logger.warning("봇 토큰 미설정 — TELEGRAM_COLLECT_BOT_TOKEN_%s 를 넣어 주세요"
+                           "(다른 봇 토큰으로 답장하지 않습니다). bot=%s",
+                           _env_suffix(slug), slug)
+            _bot_token._warned_slugs[slug] = True
+        return ""
     tok = os.getenv("TELEGRAM_COLLECT_BOT_TOKEN", "").strip()
     if tok:
         return tok
@@ -215,6 +229,7 @@ def _bot_token(slug: str = DEFAULT_BOT_SLUG) -> str:
 
 
 _bot_token._warned = False       # 매 요청 같은 경고를 쌓지 않는다
+_bot_token._warned_slugs = {}    # 이름표 붙은 봇은 봇마다 한 번씩만 경고한다
 
 
 def _webhook_secret(slug: str = DEFAULT_BOT_SLUG) -> str:
@@ -555,7 +570,11 @@ def _reply_text(res: dict, seller_id: str) -> str:
 
 
 def _default_account(slug: str, chat_id: str) -> str:
-    """이 (봇, chat)의 기본 등록 계정. 사람이 정한 값 > env > 봇 기본값."""
+    """이 (봇, chat)의 기본 등록 **사업체**. 사람이 정한 값 > env > 봇 기본값.
+
+    돌려주는 것은 사업체 id(`gogane`/`woojoo`)다 — 마켓별 계정은 등록할 때 따라온다
+    (`ops_snapshot.account_for`). 여기서 마켓 하나를 골라 버리면 다른 마켓이 빈다.
+    """
     try:
         from src.db.telegram_links_pg import get as _tg_get
         chosen = str(_tg_get(chat_id, bot_slug=slug).get("default_market_account") or "")
@@ -567,32 +586,53 @@ def _default_account(slug: str, chat_id: str) -> str:
     return env or BOT_DEFAULT_ACCOUNT.get(slug, "")
 
 
+def _market_lines(biz: dict) -> str:
+    """이 사업체가 어느 마켓의 어느 계정을 뜻하는지 **펼쳐서** 보여 준다.
+
+    「우주대행」이라고만 답하면 쿠팡만 바뀐 줄 알 수 있다 — 둘 다 바뀐다는 것을 눈으로 보게.
+    """
+    from src.pipeline.ops_snapshot import ACCOUNT_AXES
+    ko = {m: k for m, k, _a in ACCOUNT_AXES}
+    return "\n".join(MSG["account_market_line"].format(market_ko=ko.get(m, m), account=a)
+                     for m, a in sorted((biz.get("accounts") or {}).items()))
+
+
+def _biz_choices() -> str:
+    from src.pipeline.ops_snapshot import BUSINESSES
+    return " · ".join(b["label"] for b in BUSINESSES)
+
+
 def _handle_account(slug: str, chat_id: str, text: str):
-    """`/account` 현재 표시 · `/account 우주대행` 설정. 계정 목록은 `ops_snapshot`이 정본."""
-    from src.pipeline.ops_snapshot import account_choices, resolve_account
+    """`/account` 현재 표시 · `/account 우주대행` 설정.
+
+    단위는 **사업체**다(오너 2026-09-14) — 「우주대행」은 쿠팡 A01504840과
+    스마트스토어 gocosmos **둘 다**를 뜻한다. 목록의 정본은 `ops_snapshot`이다.
+    """
+    from src.pipeline.ops_snapshot import resolve_business
     arg = text.split(" ", 1)[1].strip() if " " in text else ""
     if not arg:
-        acct = _default_account(slug, chat_id)
-        row = resolve_account(acct) if acct else {}
-        _reply(chat_id, (MSG["account_now"].format(**row) if row else MSG["account_none"]) + "\n"
-               + MSG["account_choices"].format(
-                   choices=" · ".join(c["label"] for c in account_choices())), slug=slug)
-        return jsonify({"ok": True, "account": acct})
+        cur = _default_account(slug, chat_id)
+        biz = resolve_business(cur) if cur else {}
+        head = (MSG["account_now"].format(label=biz["label"], markets=_market_lines(biz))
+                if biz else MSG["account_none"])
+        _reply(chat_id, head + "\n" + MSG["account_choices"].format(choices=_biz_choices()),
+               slug=slug)
+        return jsonify({"ok": True, "business": biz.get("business", "")})
 
-    row = resolve_account(arg)
-    if not row:
+    biz = resolve_business(arg)
+    if not biz:
         # **짐작해서 고르지 않는다** — 계정을 잘못 고르면 남의 스토어에 올라간다.
         _reply(chat_id, MSG["account_unknown"].format(name=arg) + "\n"
-               + MSG["account_choices"].format(
-                   choices=" · ".join(c["label"] for c in account_choices())), slug=slug)
+               + MSG["account_choices"].format(choices=_biz_choices()), slug=slug)
         return jsonify({"ok": False, "error": "unknown_account"}), 400
 
     from src.db.telegram_links_pg import set_default_account
-    if not set_default_account(chat_id, row["account"], bot_slug=slug):
+    if not set_default_account(chat_id, biz["business"], bot_slug=slug):
         _reply(chat_id, MSG["account_not_saved"], slug=slug)
         return jsonify({"ok": False, "error": "not_saved"}), 500
-    _reply(chat_id, MSG["account_set"].format(**row), slug=slug)
-    return jsonify({"ok": True, "account": row["account"]})
+    _reply(chat_id, MSG["account_set"].format(label=biz["label"], markets=_market_lines(biz)),
+           slug=slug)
+    return jsonify({"ok": True, "business": biz["business"]})
 
 
 def _handle_rules(slug: str, chat_id: str, text: str, seller_id: str):
@@ -685,7 +725,8 @@ def _save_verdict(item_id: str, seller_id: str, rv: dict, account: str) -> None:
             extra["sourcing_verdict"] = {"verdict": rv["verdict"], "verdict_ko": rv["verdict_ko"],
                                          "items": rv["items"], "at": _now_iso()}
         if account:
-            extra["default_market_account"] = account
+            # 사업체 id다(마켓 계정이 아니다). 이름이 뜻과 어긋나면 다음 사람이 마켓 계정으로 읽는다.
+            extra["default_business"] = account
         _update(item_id, seller_ids={seller_id},
                 extra_json=json.dumps(extra, ensure_ascii=False))
     except Exception as exc:

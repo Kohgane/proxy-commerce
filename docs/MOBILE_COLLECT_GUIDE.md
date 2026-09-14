@@ -101,25 +101,6 @@ PC 크롬 확장이 못 도는 자리(아이폰·외출 중)를 메웁니다.
 옛 두 env가 **둘 다** 있으면 그 chat은 배포 직후 한 번 자동으로 바인딩으로 옮겨집니다
 (그 뒤로는 env가 없어도 됩니다). 한쪽만 있으면 아무 일도 일어나지 않습니다.
 
-### 봇을 둘 이상 쓸 때 (콘솔 로그인이 둘일 때)
-
-한 사람이 **콘솔 계정 둘**(예: 고가네 / 우주대행)을 따로 쓰려면 **봇도 둘**이어야 합니다.
-같은 텔레그램 계정이라 chat_id가 같아서, 봇이 하나면 나중 연결이 앞 연결을 덮습니다.
-
-| 봇마다 | 값 |
-|---|---|
-| 웹훅 경로 | `/webhooks/telegram/collect/<봇이름표>` |
-| 토큰 env | `TELEGRAM_COLLECT_BOT_TOKEN_<봇이름표 대문자>` |
-| 시크릿 env | `TELEGRAM_COLLECT_WEBHOOK_SECRET_<봇이름표 대문자>` (없으면 공용 값) |
-
-봇이름표는 소문자·숫자·`_`·`-`만, 32자까지입니다(경로 조각이 곧 env 이름이 되므로 그 밖은 거절).
-예: `@gogaBridz_bot` → `gogabridz` → `/webhooks/telegram/collect/gogabridz`,
-`TELEGRAM_COLLECT_BOT_TOKEN_GOGABRIDZ`.
-
-`TELEGRAM_COLLECT_BOT_TOKEN`이 비면 답장은 공용 `TELEGRAM_BOT_TOKEN`으로 나가고 서버 로그에
-경고가 남습니다. **보내기만 그렇게 되는 것이고, 웹훅은 절대 다른 봇에 걸지 마세요** —
-답장이 나가는 것과 그 봇의 수신구를 빼앗는 것은 다른 문제입니다.
-
 그리고 텔레그램에 웹훅을 한 번 등록합니다(방식 = **웹훅**, 폴링 아님):
 
 ```
@@ -140,6 +121,50 @@ curl -sS "https://api.telegram.org/bot<토큰>/getWebhookInfo"
 
 `TELEGRAM_COLLECT_WEBHOOK_SECRET`이 없으면 서버는 **아무것도 하지 않고 503**으로 거절합니다
 (잠금 장치 없이 열어 두지 않습니다).
+
+### 봇을 둘 이상 쓸 때 (콘솔 로그인이 둘일 때)
+
+한 사람이 **콘솔 계정 둘**(예: 고가네 / 우주대행)을 따로 쓰려면 **봇도 둘**이어야 합니다.
+같은 텔레그램 계정이라 chat_id가 같아서, 봇이 하나면 나중 연결이 앞 연결을 덮습니다.
+
+| 봇마다 | 값 |
+|---|---|
+| 웹훅 경로 | `/webhooks/telegram/collect/<봇이름표>` |
+| 토큰 env | `TELEGRAM_COLLECT_BOT_TOKEN_<봇이름표 대문자>` |
+| 시크릿 env | `TELEGRAM_COLLECT_WEBHOOK_SECRET_<봇이름표 대문자>` (없으면 공용 값) |
+
+봇이름표는 소문자·숫자·`_`·`-`만, 32자까지입니다(경로 조각이 곧 env 이름이 되므로 그 밖은 거절).
+예: `@gogaBridz_bot` → `gogabridz` → `/webhooks/telegram/collect/gogabridz`,
+`TELEGRAM_COLLECT_BOT_TOKEN_GOGABRIDZ`.
+
+기본 봇(`TELEGRAM_COLLECT_BOT_TOKEN`)이 비면 답장은 공용 `TELEGRAM_BOT_TOKEN`으로 나가고
+서버 로그에 경고가 남습니다. **보내기만 그렇게 되는 것이고, 웹훅은 절대 다른 봇에 걸지 마세요** —
+답장이 나가는 것과 그 봇의 수신구를 빼앗는 것은 다른 문제입니다.
+
+> **이름표가 붙은 봇은 기본 봇 토큰으로 떨어지지 않습니다**(F24b). 다른 봇이기 때문입니다.
+> 떨어지면 KohujooBot에 보낸 글을 gogaBridz_bot이 답하려 들고, 그 chat은 그 봇과 대화한 적이
+> 없어 텔레그램이 거절합니다 — **담기긴 담기는데 답장이 조용히 사라집니다.**
+> 사람은 「봇이 죽었다」고 읽습니다. 그래서 토큰이 없으면 답장을 시도하지 않고 로그로 말합니다.
+
+### KohujooBot 붙이기 — 실값 셋
+
+| | 실값 |
+|---|---|
+| 봇이름표(슬러그) | `kohujoo` |
+| 웹훅 경로 | `https://kohganepercentiii.com/webhooks/telegram/collect/kohujoo` |
+| 토큰 env | `TELEGRAM_COLLECT_BOT_TOKEN_KOHUJOO` = KohujooBot의 BotFather 토큰 |
+| 시크릿 | **기존 `TELEGRAM_COLLECT_WEBHOOK_SECRET` 그대로 재사용**(봇별로 따로 두고 싶으면 `TELEGRAM_COLLECT_WEBHOOK_SECRET_KOHUJOO`) |
+| 기본 등록처 | 코드에 `kohujoo` → 우주대행으로 이미 박혀 있음(env 불필요) |
+
+```
+curl -sS "https://api.telegram.org/bot<KohujooBot 토큰>/setWebhook" \
+  -d "url=https://kohganepercentiii.com/webhooks/telegram/collect/kohujoo" \
+  -d "secret_token=<TELEGRAM_COLLECT_WEBHOOK_SECRET 와 같은 값>"
+```
+
+**순서가 중요합니다**: Render에 `TELEGRAM_COLLECT_BOT_TOKEN_KOHUJOO`를 먼저 넣고 배포가 끝난 뒤에
+`setWebhook`을 거세요. 반대로 하면 그 사이에 온 메시지는 담기지만 답장이 안 나갑니다.
+걸기 전에 `getWebhookInfo`로 그 봇에 이미 걸린 게 없는지 확인하세요(아래).
 
 ---
 
@@ -385,12 +410,24 @@ https://www.amazon.com/dp/B0XXXX 검수
 ```
 /account            → 지금 무엇으로 돼 있는지
 /account 우주대행    → 바꾸기
+→ 기본 등록처를 우주대행(으)로 바꿨어요.
+  · 쿠팡: woojoo
+  · 스마트스토어: gocosmos
 ```
 
-여기서 정한 계정이 담는 초안에 실려서, 콘솔 등록 화면이 그걸 미리 골라 둡니다.
+**단위는 사업체입니다.** 등록 계정 넷은 따로 서 있는 게 아니라 **사업체 2 × 마켓 2**입니다:
+
+| 사업체 | 쿠팡 | 스마트스토어 |
+|---|---|---|
+| 고가네 | `gogane` (A01381223) | `chezgoga` |
+| 우주대행 | `woojoo` (A01504840) | `gocosmos` |
+
+「우주대행」이라고 하면 **둘 다**를 뜻합니다. 여기서 정한 사업체가 담는 초안에 실려서,
+콘솔 등록 화면이 **고른 마켓에 맞는 계정**을 미리 골라 둡니다.
+
 봇을 하나 더 붙일 때는 웹훅 경로 `/webhooks/telegram/collect/<이름표>` + env
-`TELEGRAM_COLLECT_BOT_TOKEN_<이름표>`를 두고, 기본 계정은 `TELEGRAM_BOT_ACCOUNT_<이름표>`로
-정합니다(코드 배포 없이). KohujooBot의 이름표는 `kohujoo`입니다.
+`TELEGRAM_COLLECT_BOT_TOKEN_<이름표>`를 두고, 기본 등록처는 `TELEGRAM_BOT_ACCOUNT_<이름표>`로
+정합니다(코드 배포 없이). KohujooBot의 이름표는 `kohujoo`이고, 붙이는 실값은 **1번 절**에 있습니다.
 
 > **잠금은 두 겹입니다.** ① 웹훅 시크릿(텔레그램이 보낸 게 맞는지) ② `/link` 계정 바인딩.
 > 시크릿이 없으면 서버는 아무것도 하지 않고, 바인딩이 없는 대화는 **담지 않습니다** —
