@@ -97,7 +97,15 @@ def inject_seller_template_flags():
                  or _al(session.get("user_id"), allow_lookup=False) or None)
     except Exception:
         _acct = None
+    # F26: 사이드바 「고가수집기 다운로드」가 **어느 화면에서도** 최신 버전을 말해야 한다.
+    #   manifest 1회 읽기(경량). 못 읽으면 비우고 — 버전 없는 버튼은 그냥 다운로드 버튼이다.
+    _ext_ver = ""
+    try:
+        _ext_ver = _chrome_extension_version()
+    except Exception:
+        _ext_ver = ""
     return {
+        "latest_ext_version": _ext_ver,
         "session_account": _acct,
         "diagnostic_reveal_enabled": os.getenv("DIAGNOSTIC_REVEAL", "0") == "1",
         "sidebar_grouped": os.getenv("SIDEBAR_GROUPED", "1") == "1",
@@ -6220,9 +6228,16 @@ def _chrome_extension_dir() -> str:
 
 
 def _chrome_extension_version() -> str:
+    """확장 최신 버전 — **zip을 만드는 그 코드**에 묻는다(F26).
+
+    예전엔 여기서 manifest를 따로 읽었다. 값은 같았지만 **읽는 코드가 두 벌**이었다 —
+    두 벌이면 언젠가 갈리고, 갈리면 배너가 「낮아요」를 영원히 띄우거나(콘솔이 더 높게 읽음)
+    갱신이 있는데도 조용하다(콘솔이 더 낮게 읽음). 사람은 그 이유를 알 길이 없다.
+    """
     try:
-        with open(os.path.join(_chrome_extension_dir(), "manifest.json"), encoding="utf-8") as f:
-            return str(json.load(f).get("version", ""))
+        from pathlib import Path as _P
+        from src.build_extension import read_version
+        return read_version(_P(_chrome_extension_dir()))
     except Exception:
         return ""
 
@@ -10639,44 +10654,37 @@ BENCH_SCORE_AXES = (
 
 @bp.post("/admin/image-translate-bench/run")
 def image_translate_bench_run():
-    """픽스처 12장을 돌린다. **재시도 0** — 장당 과금이라 조용한 재시도는 조용한 청구다."""
+    """픽스처 12장 — **접수만** 하고 202. 실제 실행은 요청 밖에서 돈다.
+
+    F25 실측: 초당 1장이 계정 한도라 12장이면 15초가 넘는다. 응답 안에서 돌리면
+    워커를 그만큼 잡는다(F22와 같은 자리). 화면이 `GET ?run=<id>`로 진행을 본다.
+
+    **재시도는 초당 한도 1회뿐** — 장당 과금이라 조용한 재시도는 조용한 청구다.
+    """
     if not _check_auth() or not _is_admin_user():
         return jsonify({"ok": False, "error": "관리자 전용입니다."}), 403
 
-    from src.services import image_translate_store as store
     from src.services import image_translate_tencent as tc
-    from src.db import image_translate_usage_pg as usage
-
     if not tc.is_configured():
         return jsonify({"ok": False, "error": "공급사 미연결",
                         "status": tc.status()}), 503
 
     run_id = datetime.now(timezone.utc).strftime("bench-%Y%m%d-%H%M%S")
-    seller = _seller_id()
-    results, entries = [], []
-    for fx in _bench_fixture_rows():
-        for i, img in enumerate(fx.get("images") or []):
-            r = tc.translate_image(url=img["url"])
-            e = store.build_entry(i, r, item_id=str(fx.get("item_id") or fx["item_no"]),
-                                  seller_id=seller)
-            entries.append(e)
-            results.append({
-                "item_no": fx["item_no"], "kind": img.get("kind", ""),
-                "original": img["url"], "idx": i,
-                **{k: e.get(k) for k in ("status", "url", "stored_by", "ms", "target_text",
-                                         "warn", "error_class", "error_code", "error_message",
-                                         "hint", "store_note")},
-            })
-    try:
-        usage.save_run(run_id, seller, results)
-        store.record_usage(seller, entries)
-    except Exception as exc:
-        logger.warning("[벤치] 저장 실패(결과는 응답에 있음): %s", exc)
+    from src.services import image_translate_bench as bench
+    if bench.is_running():
+        return jsonify({"ok": False, "error": "이미 실행 중입니다. 끝나면 다시 눌러 주세요."}), 409
+    total = bench.start(run_id, _seller_id(), _bench_fixture_rows())
+    return jsonify({"ok": True, "run_id": run_id, "total": total, "accepted": True}), 202
 
-    ok = sum(1 for r in results if r.get("status") == "done")
-    logger.info("[벤치] %s — %d장 중 %d장 성공", run_id, len(results), ok)
-    return jsonify({"ok": True, "run_id": run_id, "total": len(results), "done": ok,
-                    "results": results})
+
+@bp.get("/admin/image-translate-bench/status")
+def image_translate_bench_status():
+    """벤치 진행 — 화면 폴링용. 끝났는지까지 말한다(무한 폴링 금지)."""
+    if not _check_auth() or not _is_admin_user():
+        return jsonify({"ok": False, "error": "관리자 전용입니다."}), 403
+    from src.services import image_translate_bench as bench
+    run_id = (request.args.get("run") or "").strip()
+    return jsonify(bench.status(run_id))
 
 
 @bp.post("/admin/image-translate-bench/score")
@@ -10714,59 +10722,41 @@ def collect_image_ko(item_id: str, idx: int):
 
 @bp.post("/collect/<item_id>/translate-images")
 def collect_translate_images(item_id: str):
-    """편집 서랍 「이미지 번역」 — 고른 장만 번역해 `images_ko`에 넣는다.
+    """편집 서랍 「이미지 번역」 — **접수만** 하고 202. 실제 번역은 요청 밖에서 돈다.
+
+    F25 실측: 공급사 한도가 **계정 단위 초당 1회**라 5장이면 6초가 넘는다.
+    그걸 응답 안에서 돌리면 F22와 같은 자리(워커 점유 → 502)에 선다.
+    화면은 `GET .../images-ko`를 폴링해 장별 상태를 갱신한다.
 
     **원본 `images`는 건드리지 않는다.** 등록 흐름도 아직 손대지 않는다(D2).
     """
     if not _check_auth():
         return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
-    item = _get_owned_item(item_id)
-    if item is None:
+    if _get_owned_item(item_id) is None:
         return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
 
-    from src.services import image_translate_store as store
     from src.services import image_translate_tencent as tc
     if not tc.is_configured():
         return jsonify({"ok": False, "error": "공급사 미연결", "status": tc.status()}), 503
 
     data = request.get_json(silent=True) or {}
-    try:
-        wanted = sorted({int(i) for i in (data.get("indices") or [])})
-    except Exception:
-        wanted = []
-    if not wanted:
-        return jsonify({"ok": False, "error": "번역할 이미지를 골라 주세요."}), 400
+    from src.services import image_translate_job as job
+    out = job.accept(item_id, _seller_id(), data.get("indices") or [],
+                     seller_ids=_seller_identities())
+    if not out.get("ok"):
+        return jsonify(out), 409 if out.get("already_running") else 400
+    return jsonify(out), 202
 
-    extra = store.load_extra(item)
-    images = [u for u in (extra.get("images") or []) if u]
-    if not images:
-        return jsonify({"ok": False, "error": "이 상품엔 이미지가 없습니다."}), 400
 
-    seller = _seller_id()
-    entries = []
-    for i in wanted:
-        if not (0 <= i < len(images)):
-            entries.append({"idx": i, "status": "skipped",
-                            "at": datetime.now(timezone.utc).isoformat(),
-                            "reason": "그런 장이 없습니다"})
-            continue
-        entries.append(store.build_entry(
-            i, tc.translate_image(url=images[i]), item_id=item_id, seller_id=seller))
-
-    extra["images_ko"] = store.merge_images_ko(extra, entries)
-    # **원본은 그대로 다시 넣는다** — 이 자리에서 images가 바뀌지 않았음을 눈으로 확인할 수 있게.
-    extra["images"] = images
-    try:
-        from . import collect_history_store
-        collect_history_store.update(item_id, seller_ids=_seller_identities(),
-                                     extra_json=json.dumps(extra, ensure_ascii=False))
-    except Exception as exc:
-        logger.warning("[이미지번역] 저장 실패: %s", exc)
-        return jsonify({"ok": False, "error": "번역은 됐지만 저장에 실패했습니다."}), 500
-
-    store.record_usage(seller, entries)
-    return jsonify({"ok": True, "entries": entries,
-                    "summary": store.summarize(extra)})
+@bp.get("/collect/<item_id>/images-ko")
+def collect_images_ko_status(item_id: str):
+    """서랍 폴링 — 장별 상태. 끝났는지(`running`)까지 말한다(무한 폴링 금지)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    if _get_owned_item(item_id) is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    from src.services import image_translate_job as job
+    return jsonify(job.status(item_id, _seller_identities()))
 
 
 @bp.post("/collect/<item_id>/enrich-retry")

@@ -43,6 +43,7 @@ from __future__ import annotations
 import base64
 import logging
 import os
+import threading
 import time
 from typing import Optional
 
@@ -65,6 +66,36 @@ DEFAULT_ENDPOINT_KEY = "intl"     # 오너 계정은 국제 콘솔 가입분(한
 # 호출 예산(초). SDK는 단일 값만 받는다 — 위 독스트링 참고.
 DEFAULT_TIMEOUT_SEC = int(os.getenv("TENCENT_TMT_TIMEOUT_SEC", "20"))
 
+# ── F25: 실측이 고친 두 가지 (2026-09-14 첫 라이브) ────────────────────────────
+#
+# ① **URL 입력은 받지 않는다.** SDK 주석은 「Url을 쓸 때 Data에 ""를 넣으라」고 적혀 있고
+#    우리는 실제로 그렇게 보냈다. 전선에 실려 나간 것까지 확인했다:
+#        {'Data': '', 'Target': 'ko', 'Url': 'https://…', 'Mode': 0}
+#    그런데 공급사는 **「Data: is required」**로 거절했다 — **빈 문자열을 「없음」으로 본다.**
+#    주석이 시킨 대로 해도 안 되는 길이다. 그래서 URL이 와도 **우리가 내려받아 base64로** 보낸다.
+#
+# ② **초당 1회가 계정 한도다.** 5장을 나란히 보내니 2~5번이 전부 `LimitExceeded`였다.
+#    한도는 **계정 단위**라 사용자가 둘이어도 합쳐서 1회다 → 프로세스 전역으로 직렬화한다.
+#
+# 크기 상한은 **SDK 원문 그대로**다(지어낸 값 없음):
+#   Data — 「经Base64编码后不超过 9M」 · 600×800 이상 권장 · PNG/JPG/JPEG
+MAX_BASE64_BYTES = 9 * 1024 * 1024
+DOWNLOAD_TIMEOUT_SEC = int(os.getenv("TENCENT_IMAGE_FETCH_TIMEOUT_SEC", "10"))
+
+# 장 사이 최소 간격. 한도가 「초당 1회」라 1.0초로 두면 경계에서 계속 걸린다 — 여유를 둔다.
+MIN_INTERVAL_SEC = float(os.getenv("TENCENT_TMT_MIN_INTERVAL_SEC", "1.1"))
+RATE_RETRY_WAIT_SEC = float(os.getenv("TENCENT_TMT_RATE_RETRY_WAIT_SEC", "2"))
+
+# 한도에 걸렸는지 알아보는 표식. 코드는 SDK 표에 실재하고(`LimitExceeded`),
+#   메시지 조각은 **오너 실측 원문**에서 가져왔다.
+_RATE_CODES = ("LimitExceeded",)
+_RATE_TEXTS = ("频率", "每秒", "rate limit", "too many requests")
+
+# 전역 직렬 게이트 — 한도가 계정 단위라 **요청이 갈라져도 하나씩** 나가야 한다.
+#   워커가 여럿이면 프로세스마다 따로 센다(얕은 턱이다. 그 이상이라고 말하지 않는다).
+_GATE = threading.Lock()
+_LAST_CALL = [0.0]
+
 # 공급사가 돌려주는 에러 코드 → 사람이 읽는 한 줄.
 #   **전부 SDK `errorcodes.py`에 실재하는 코드다.** 없는 코드를 지어 넣지 않는다.
 #   원문 설명은 중국어라, 뜻을 바꾸지 않는 선에서 우리말로 옮겼다.
@@ -82,7 +113,9 @@ ERROR_HINTS = {
     "InternalError.RequestFailed": "공급사 요청이 실패했습니다.",
     "InvalidParameter": "파라미터 오류입니다.",
     "InvalidParameter.MissingParameter": "필수 파라미터가 빠졌습니다.",
-    "LimitExceeded": "호출 한도를 넘었습니다.",
+    # F25 실측(2026-09-14): 5장을 나란히 보내니 2~5번이 전부 이 코드로 돌아왔다.
+    #   원문 「您当前每秒请求 N 次，超过了每秒频率上限 1」 = **초당 1회**가 계정 한도다.
+    "LimitExceeded": "초당 1장 한도 — 순서대로 다시 보냅니다.",
     "MissingParameter": "필수 파라미터가 빠졌습니다.",
     "UnauthorizedOperation.ActionNotFound": "액션 이름이 올바르지 않습니다.",
     "UnsupportedOperation": "지원하지 않는 동작입니다.",
@@ -120,6 +153,42 @@ def region() -> str:
     쓰는 날 env가 비어도 조용히 싱가포르로 나가고, 그때는 어긋난 줄도 모른다.
     """
     return os.getenv("TENCENT_REGION", "").strip()
+
+
+def fetch_image(url: str) -> tuple:
+    """이미지를 **우리가** 내려받는다. 반환 `(bytes, 오류문자열)` — 하나만 채워진다.
+
+    F25: 공급사가 URL 입력을 거절해서(위 ① 참고) 우리가 받아 base64로 보낸다.
+    받는 데도 예산이 있다 — 소싱처가 느린 날 여기서 워커를 잡으면 F22와 같은 자리다.
+    """
+    import urllib.request
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "gogabridj/1.0"})
+        with urllib.request.urlopen(req, timeout=DOWNLOAD_TIMEOUT_SEC) as resp:
+            # base64는 원본의 4/3이다 — 원본 단계에서 미리 끊어 9M 상한을 넘기지 않게.
+            raw = resp.read(int(MAX_BASE64_BYTES * 3 / 4) + 1)
+    except Exception as exc:
+        return b"", f"이미지를 내려받지 못했습니다({type(exc).__name__})"
+    if not raw:
+        return b"", "이미지가 비어 있습니다"
+    if len(raw) * 4 / 3 > MAX_BASE64_BYTES:
+        return b"", "이미지가 너무 큽니다(공급사 상한 base64 9MB)"
+    return raw, ""
+
+
+def _is_rate_limited(code: str, message: str) -> bool:
+    """초당 한도에 걸린 응답인가. 코드가 정본이고, 메시지는 보조 표식이다."""
+    if str(code or "") in _RATE_CODES:
+        return True
+    low = str(message or "").lower()
+    return any(t in low for t in _RATE_TEXTS)
+
+
+def _wait_turn() -> None:
+    """직전 호출과 **최소 간격**을 띄운다. 잠금을 쥔 채로 잔다 — 그래야 한 번에 하나다."""
+    gap = MIN_INTERVAL_SEC - (time.monotonic() - _LAST_CALL[0])
+    if gap > 0:
+        time.sleep(gap)
 
 
 def is_configured() -> bool:
@@ -165,18 +234,21 @@ def translate_image(*, url: str = "", data: bytes = b"", mode: int = 0,
                     timeout_sec: Optional[int] = None) -> dict:
     """이미지 1장 → 한국어가 박힌 이미지.
 
-    `url`이나 `data` 중 하나. 둘 다 오면 `url`을 쓴다(요청이 더 가볍다).
+    `url`이나 `data` 중 하나. **URL이면 우리가 내려받아** base64로 보낸다 —
+    공급사가 URL 입력을 거절하기 때문이다(F25 실측: 「Data: is required」).
 
     반환(성공/실패 공통 키): `ok` · `ms` · `vendor` · `action` · `request_bytes`
     성공: `image_b64`(JPG) · `source_lang` · `target_lang` · `source_text` · `target_text`
           · `lines`[{source, target, box}] · `request_id`
     실패: `error_class`(예외 **클래스명 그대로**) · `error_code` · `error_message` · `hint`
 
-    **재시도하지 않는다.** 장당 과금이라 조용한 재시도는 조용한 청구다.
+    **재시도는 초당 한도에 걸렸을 때 1회뿐이다.** 그 외에는 하지 않는다 —
+    장당 과금이라 조용한 재시도는 조용한 청구다. 한도 재시도는 「같은 장을 다시」가 아니라
+    「아직 한 번도 못 보낸 장을 순서대로」라서 청구가 늘지 않는다.
     """
     t0 = time.perf_counter()
     out = {"ok": False, "vendor": VENDOR, "action": ACTION, "ms": 0,
-           "request_bytes": len(data or b""), "used": "url" if url else "data"}
+           "request_bytes": len(data or b""), "used": "data"}
 
     if not is_configured():
         out.update({"error_class": "NotConfigured", "error_code": "",
@@ -189,19 +261,44 @@ def translate_image(*, url: str = "", data: bytes = b"", mode: int = 0,
         out["ms"] = int((time.perf_counter() - t0) * 1000)
         return out
 
+    # F25 ①: URL이 와도 **우리가 내려받는다.** 공급사가 URL 입력을 거절했다(실측).
+    if not data:
+        data, why = fetch_image(url)
+        if why:
+            out.update({"error_class": "FetchFailed", "error_code": "",
+                        "error_message": why, "hint": "원본 주소가 아직 열려 있는지 확인하세요."})
+            out["ms"] = int((time.perf_counter() - t0) * 1000)
+            return out
+        out["request_bytes"] = len(data)
+
     try:
         from tencentcloud.tmt.v20180321 import models
         req = models.ImageTranslateLLMRequest()
         # 요청 모델에 `Source`가 없다 — 자동 감지다(위 독스트링).
-        payload = {"Target": TARGET_LANG, "Mode": int(mode)}
-        if url:
-            payload["Url"] = url
-            payload["Data"] = ""          # SDK 주석: Url을 쓰면 Data에 "" 를 넣는다
-        else:
-            payload["Data"] = base64.b64encode(data).decode("ascii")
+        #   `Url`도 보내지 않는다 — 보내면 「Data: is required」로 거절당한다(실측).
+        payload = {"Target": TARGET_LANG, "Mode": int(mode),
+                   "Data": base64.b64encode(data).decode("ascii")}
         req.from_json_string(__import__("json").dumps(payload))
 
-        resp = _client(timeout_sec or DEFAULT_TIMEOUT_SEC).ImageTranslateLLM(req)
+        # F25 ②: 한도가 **계정 단위 초당 1회**다 → 프로세스 전역으로 하나씩 내보낸다.
+        #   한도에 걸리면 **딱 한 번만** 쉬었다 다시 보낸다(그 외 재시도는 여전히 0 —
+        #   장당 과금이라 조용한 재시도는 조용한 청구다).
+        cli = _client(timeout_sec or DEFAULT_TIMEOUT_SEC)
+        with _GATE:
+            _wait_turn()
+            try:
+                resp = cli.ImageTranslateLLM(req)
+            except Exception as first:
+                code = getattr(first, "code", "") or ""
+                msg = getattr(first, "message", "") or str(first)
+                if not _is_rate_limited(code, msg):
+                    _LAST_CALL[0] = time.monotonic()
+                    raise
+                logger.info("[이미지번역] 초당 한도 — %.0f초 쉬고 1회 재시도", RATE_RETRY_WAIT_SEC)
+                out["rate_retried"] = True
+                time.sleep(RATE_RETRY_WAIT_SEC)
+                resp = cli.ImageTranslateLLM(req)
+            _LAST_CALL[0] = time.monotonic()
 
         lines = []
         for d in (getattr(resp, "TransDetails", None) or []):

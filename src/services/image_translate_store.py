@@ -168,9 +168,13 @@ def merge_images_ko(extra: dict, entries: list) -> list:
 
 
 def summarize(extra: dict) -> dict:
-    """화면용 한 줄 요약 — `{done, failed, skipped, warn, total}`."""
+    """화면용 한 줄 요약 — `{done, failed, skipped, queued, warn, total}`.
+
+    F25: `queued`(접수됐지만 아직 안 보낸 장)를 **따로 센다.** 없으면 화면이
+    「아직 안 된 장」을 실패로 읽거나, 다 된 줄 알고 폴링을 멈춘다.
+    """
     rows = (extra or {}).get("images_ko") or []
-    out = {"done": 0, "failed": 0, "skipped": 0, "warn": 0, "total": len(rows)}
+    out = {"done": 0, "failed": 0, "skipped": 0, "queued": 0, "warn": 0, "total": len(rows)}
     for r in rows:
         if not isinstance(r, dict):
             continue

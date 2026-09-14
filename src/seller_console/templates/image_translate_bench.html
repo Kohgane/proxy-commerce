@@ -217,20 +217,43 @@
   if (runBtn) runBtn.addEventListener('click', function () {
     runBtn.disabled = true;
     out.innerHTML = '<div class="pc-status pc-status-info mb-4">' +
-      '<i class="bi bi-hourglass-split"></i> 실행 중… 장당 몇 초 걸립니다.</div>';
+      '<i class="bi bi-hourglass-split"></i> 접수했어요 — 초당 1장씩 순서대로 보냅니다.</div>';
     fetch('/seller/admin/image-translate-bench/run', {method: 'POST'})
       .then(function (r) { return r.json().then(function (d) { return {s: r.status, d: d}; }); })
       .then(function (res) {
-        if (res.d && res.d.ok) { location.search = '?run=' + encodeURIComponent(res.d.run_id); return; }
+        if (res.d && res.d.ok) { benchPoll(res.d.run_id, 0); return; }
+        if (res.s) console.warn('[벤치] HTTP', res.s, res.d);
         out.innerHTML = '<div class="pc-status pc-status-danger mb-4">' +
-          '실행하지 못했습니다 — ' + ((res.d && res.d.error) || ('HTTP ' + res.s)) + '</div>';
+          '실행하지 못했습니다 — ' + ((res.d && res.d.error) || '잠시 후 다시 시도해 주세요.') + '</div>';
         runBtn.disabled = false;
       })
       .catch(function (e) {
-        out.innerHTML = '<div class="pc-status pc-status-danger mb-4">실행 중 오류: ' + e + '</div>';
+        out.innerHTML = '<div class="pc-status pc-status-danger mb-4">실행하지 못했습니다.</div>';
+        console.warn('[벤치]', e);
         runBtn.disabled = false;
       });
   });
+
+  // F25: 초당 1장이 계정 한도라 12장이면 15초가 넘는다. 응답을 붙잡지 않고 진행을 물어본다.
+  function benchPoll(runId, n) {
+    if (n > 200) {                       // 3초 × 200 = 10분. 그 뒤엔 멈추고 사람에게 말한다.
+      out.innerHTML = '<div class="pc-status pc-status-warn mb-4">' +
+        '아직 끝나지 않았어요. 잠시 뒤 이 화면을 새로 열어 확인해 주세요.</div>';
+      runBtn.disabled = false;
+      return;
+    }
+    fetch('/seller/admin/image-translate-bench/status?run=' + encodeURIComponent(runId))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || !d.ok) { runBtn.disabled = false; return; }
+        out.innerHTML = '<div class="pc-status pc-status-info mb-4">' +
+          '<i class="bi bi-hourglass-split"></i> ' + (d.processed || 0) + ' / ' + (d.total || 0) +
+          '장 · 성공 ' + (d.done || 0) + '</div>';
+        if (d.running) { setTimeout(function () { benchPoll(runId, n + 1); }, 3000); return; }
+        location.search = '?run=' + encodeURIComponent(runId);
+      })
+      .catch(function (e) { runBtn.disabled = false; console.warn('[벤치 폴링]', e); });
+  }
 
   var form = document.getElementById('benchScoreForm');
   if (form) form.addEventListener('submit', function (ev) {
