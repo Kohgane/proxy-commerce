@@ -1388,9 +1388,14 @@ async function runBulkUpload() {
       var c = cmp(installed, expected);
       if (c < 0) {
         el.classList.add('pc-status-warning');
+        // F26: 예전 문장은 「새로고침하면 갱신됩니다」였다 — **거짓이다.**
+        //   압축해제 로드 확장은 **폴더 내용이 안 바뀌면** 새로고침해도 그대로다.
+        //   그래서 사람이 새로고침을 반복해도 배너가 안 사라진다(실측: 8번 재설치).
         el.innerHTML = '<i class="bi bi-exclamation-triangle"></i><span>설치된 고가수집기 <strong>v' + installed +
           '</strong>가 최신 <strong>v' + expected + '</strong>보다 낮아요 — ' +
-          '<code>chrome://extensions</code>에서 새로고침(재로딩)하면 최신 추출기로 갱신됩니다.</span>';
+          '<a href="/seller/extension/download">최신 zip 받기</a> → 압축 풀어 <strong>기존 폴더에 덮어쓰기</strong> → ' +
+          '<code>chrome://extensions</code>에서 <strong>새로고침</strong>. ' +
+          '새로고침만으로는 갱신되지 않습니다(폴더가 그대로라서요).</span>';
       } else {
         el.classList.add('pc-status-success');
         el.innerHTML = '<i class="bi bi-check-circle"></i><span>고가수집기 최신 버전입니다 (v' + installed + ')</span>';

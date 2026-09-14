@@ -1638,6 +1638,7 @@ function kgpImgkoRender() {
     if (e && e.status === 'done') badge = '<span class="pc-badge pc-badge-on ms-1">번역됨</span>';
     else if (e && e.status === 'failed') badge = '<span class="pc-badge pc-badge-danger ms-1">실패</span>';
     else if (e && e.status === 'skipped') badge = '<span class="pc-badge pc-badge-muted ms-1">건너뜀</span>';
+    else if (e && e.status === 'queued') badge = '<span class="pc-badge pc-badge-off ms-1">차례 기다리는 중</span>';
     var warn = (e && e.warn && e.warn.length)
       ? '<span class="pc-badge pc-badge-off ms-1" title="' + e.warn.join(' · ') + '">금칙어</span>' : '';
     var shot = (e && e.url) ? '<img src="' + e.url + '" alt="번역본" class="kgp-imgko-thumb">' : '';
@@ -1662,33 +1663,57 @@ function kgpImgkoRun() {
   document.querySelectorAll('.imgko-pick:checked').forEach(function (c) { idx.push(parseInt(c.value, 10)); });
   if (!idx.length) { msg.textContent = '번역할 이미지를 골라 주세요.'; msg.style.color = 'var(--warn)'; return; }
   btn.disabled = true;
-  msg.textContent = idx.length + '장 번역 중…'; msg.style.color = '';
+  // F25: 공급사 한도가 **초당 1장**이라 5장이면 6초가 넘는다. 그래서 서버는 접수만 하고
+  //   바로 답한다 — 화면이 장별 상태를 물어 가며 갱신한다(응답을 붙잡고 기다리지 않는다).
+  msg.textContent = idx.length + '장 접수했어요 — 초당 1장씩 순서대로 보냅니다.';
+  msg.style.color = '';
   fetch(window.location.pathname.replace('/preview/', '/') + '/translate-images', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({indices: idx})
   }).then(function (r) { return r.json().then(function (d) { return {s: r.status, d: d}; }); })
     .then(function (res) {
-      btn.disabled = false;
       if (!res.d || !res.d.ok) {
-        // 상태코드는 **셀러의 말이 아니다** — 무엇이 안 됐고 뭘 하면 되는지만 말한다.
-        //   진단용 숫자는 콘솔에만 남긴다(계약 test_seller_screens_do_not_dump_raw_outside_details).
+        btn.disabled = false;
         if (res.s) console.warn('[이미지번역] HTTP', res.s, res.d);
-        msg.textContent = (res.d && res.d.error)
-          ? ('번역하지 못했습니다 — ' + res.d.error)
-          : '번역하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+        msg.textContent = (res.d && res.d.error) || '접수하지 못했습니다. 잠시 후 다시 시도해 주세요.';
         msg.style.color = 'var(--danger)';
         return;
       }
-      KGP_IMAGES_KO = res.d.entries.concat((KGP_IMAGES_KO || []).filter(function (e) {
-        return !res.d.entries.some(function (n) { return n.idx === e.idx; });
-      }));
-      var sm = res.d.summary || {};
+      kgpImgkoPoll(0);
+    }).catch(function (e) {
+      btn.disabled = false; msg.textContent = '접수하지 못했습니다.'; msg.style.color = 'var(--danger)';
+      console.warn('[이미지번역]', e);
+    });
+}
+function kgpImgkoPoll(n) {
+  var btn = document.getElementById('imgkoRunBtn');
+  var msg = document.getElementById('imgkoMsg');
+  // 장당 1.1초 + 여유. 200회면 10분 — 그 뒤엔 멈추고 사람에게 말한다(무한 폴링 금지).
+  if (n > 200) {
+    btn.disabled = false;
+    msg.textContent = '아직 끝나지 않았어요. 화면을 새로 열어 확인해 주세요.';
+    msg.style.color = 'var(--warn)';
+    return;
+  }
+  fetch(window.location.pathname.replace('/preview/', '/') + '/images-ko')
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!d || !d.ok) { btn.disabled = false; return; }
+      KGP_IMAGES_KO = d.entries || [];
+      kgpImgkoRender();
+      var sm = d.summary || {};
+      if (d.running || (sm.queued || 0) > 0) {
+        msg.textContent = '번역 중… 완료 ' + (sm.done || 0) + ' · 남음 ' + (sm.queued || 0);
+        msg.style.color = '';
+        setTimeout(function () { kgpImgkoPoll(n + 1); }, 3000);
+        return;
+      }
+      btn.disabled = false;
       msg.textContent = '완료 ' + (sm.done || 0) + ' · 실패 ' + (sm.failed || 0) +
         (sm.warn ? ' · 금칙어 ' + sm.warn : '');
-      msg.style.color = 'var(--teal)';
-      kgpImgkoRender();
+      msg.style.color = (sm.failed ? 'var(--warn)' : 'var(--teal)');
     }).catch(function (e) {
-      btn.disabled = false; msg.textContent = '오류: ' + e; msg.style.color = 'var(--danger)';
+      btn.disabled = false; console.warn('[이미지번역 폴링]', e);
     });
 }
 document.addEventListener('DOMContentLoaded', kgpImgkoRender);

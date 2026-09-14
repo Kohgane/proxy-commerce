@@ -526,3 +526,17 @@ details[open] > .console-nav-adv-summary::after { transform: rotate(180deg); }
   border-radius: 999px; width: 44px; height: 44px; font-size: 1.1rem;
   box-shadow: 0 6px 18px color-mix(in srgb, var(--orange) 35%, transparent);
 }
+
+/* F26: 사이드바 「고가수집기 다운로드」 — 받는 길과 덮어쓰는 순서를 한자리에.
+   압축해제 로드 확장은 폴더가 그대로면 새로고침해도 갱신되지 않는다 —
+   그래서 「새로고침하세요」만 있던 안내가 사람을 8번 재설치하게 만들었다. */
+.kgp-extdl-help {
+  padding: var(--space-2) var(--space-3);
+  margin-top: var(--space-1);
+  border-left: 2px solid var(--gold);
+  background: color-mix(in srgb, var(--hanji) 60%, transparent);
+  border-radius: var(--radius-sm);
+  font-size: var(--caption);
+}
+.kgp-extdl-help ol { padding-left: var(--space-4); margin-bottom: var(--space-2); }
+.kgp-extdl-help code { word-break: break-all; }

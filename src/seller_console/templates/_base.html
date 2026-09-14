@@ -124,6 +124,27 @@
     {% if _show_console_nav %}
     <ul class="nav flex-column gap-1">
       <li><a class="console-nav-link {% if _path == '/seller/' or _path.startswith('/seller/dashboard') %}active{% endif %}" href="/seller/dashboard"><i class="bi bi-speedometer2"></i><span>{{ t('nav.home') }}</span></a></li>
+      {# F26: 「고가수집기 다운로드」를 **홈 바로 아래 고정**. 어떤 화면에서도 한 클릭이다.
+         압축해제 로드 확장은 **폴더 내용이 안 바뀌면 새로고침해도 그대로**다 —
+         그래서 「새로고침하세요」만 적어 두면 사람은 갱신한 줄 알고 계속 옛 버전을 쓴다.
+         받는 길과 덮어쓰는 순서를 같은 자리에 둔다. #}
+      <li class="kgp-extdl" data-latest="{{ latest_ext_version or '' }}">
+        <a class="console-nav-link" href="/seller/extension/download" id="kgpExtDlLink">
+          <i class="bi bi-download"></i><span>고가수집기 다운로드</span>
+          <span class="pc-badge pc-badge-muted ms-auto" id="kgpExtDlBadge"></span>
+        </a>
+        <div class="kgp-extdl-help d-none" id="kgpExtDlHelp">
+          <ol class="mb-1">
+            <li>받은 zip <strong>압축 풀기</strong></li>
+            <li>기존 확장 폴더에 <strong>덮어쓰기</strong></li>
+            <li><code>chrome://extensions</code>에서 <strong>새로고침</strong></li>
+          </ol>
+          <button type="button" class="btn btn-ghost btn-sm" id="kgpExtDlCopy">
+            <i class="bi bi-clipboard"></i> chrome://extensions 복사
+          </button>
+          <div class="form-text">크롬이 이 주소는 클릭으로 못 열게 막습니다 — 복사해서 붙여넣으세요.</div>
+        </div>
+      </li>
       <li><a class="console-nav-link {% if _path == '/seller/sourcing' or _path.startswith('/seller/sourcing/my-sources') or _path.startswith('/seller/sourcing/collect') or _path.startswith('/seller/sourcing/recommend') %}active{% endif %}" href="/seller/sourcing"><i class="bi bi-stars"></i><span>AI 소싱·등록</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/manual-collect') or (_path.startswith('/seller/collect') and not _path.startswith('/seller/collect/history') and not _path.startswith('/seller/collect-history') and not _path.startswith('/seller/collect/link-diag')) %}active{% endif %}" href="/seller/manual-collect"><i class="bi bi-search"></i><span>{{ t('nav.collect') }}</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/collect/history') or _path.startswith('/seller/collect-history') %}active{% endif %}" href="/seller/collect/history"><i class="bi bi-journal-text"></i><span>수집한 상품</span></a></li>
@@ -606,6 +627,55 @@ if ('serviceWorker' in navigator) {
       var url = eligible(a);
       if (url) prefetch(url);
     }, { passive: true });
+  });
+})();
+
+// ── F26: 사이드바 「고가수집기 다운로드」 ────────────────────────────────────────
+//   설치 버전은 content_script가 documentElement[data-kgp-ext]에 각인한다(v72b STEP4).
+//   각인이 늦게 올 수 있어 몇 차례 다시 본다 — 한 번 보고 「미설치」라 적으면 거짓이다.
+(function () {
+  var li = document.querySelector('.kgp-extdl');
+  if (!li) return;
+  var latest = (li.getAttribute('data-latest') || '').trim();
+  var badge = document.getElementById('kgpExtDlBadge');
+  var help = document.getElementById('kgpExtDlHelp');
+  function cmp(a, b) {
+    var x = String(a).split('.'), y = String(b).split('.');
+    for (var i = 0; i < Math.max(x.length, y.length); i++) {
+      var n = parseInt(x[i] || '0', 10), m = parseInt(y[i] || '0', 10);
+      if (isNaN(n)) n = 0; if (isNaN(m)) m = 0;
+      if (n !== m) return n < m ? -1 : 1;
+    }
+    return 0;
+  }
+  function paint() {
+    if (!badge || !latest) return;
+    var installed = (document.documentElement.getAttribute('data-kgp-ext') || '').trim();
+    if (!installed) { badge.textContent = latest; badge.title = '최신 ' + latest; return; }
+    var c = cmp(installed, latest);
+    badge.textContent = (c < 0) ? (installed + ' → ' + latest) : '최신';
+    badge.className = 'pc-badge ms-auto ' + (c < 0 ? 'pc-badge-off' : 'pc-badge-muted');
+    badge.title = c < 0 ? ('설치 ' + installed + ' · 최신 ' + latest) : ('설치 ' + installed);
+    if (c < 0 && help) help.classList.remove('d-none');   // 낮을 때만 3줄을 펼친다
+  }
+  var tries = 0;
+  (function again() { paint(); if (++tries < 8) setTimeout(again, 500); })();
+
+  var link = document.getElementById('kgpExtDlLink');
+  if (link) link.addEventListener('click', function () {
+    if (help) help.classList.remove('d-none');            // 받으면 덮어쓰는 순서를 바로 보여 준다
+  });
+  var copy = document.getElementById('kgpExtDlCopy');
+  if (copy) copy.addEventListener('click', function () {
+    var txt = 'chrome://extensions';
+    function done() { copy.innerHTML = '<i class="bi bi-check-lg"></i> 복사했어요'; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(done).catch(function () {
+        copy.textContent = '복사하지 못했어요 — chrome://extensions';
+      });
+    } else {
+      copy.textContent = '복사하지 못했어요 — chrome://extensions';
+    }
   });
 })();
 </script>

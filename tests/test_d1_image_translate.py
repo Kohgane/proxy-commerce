@@ -66,12 +66,17 @@ def tc(monkeypatch):
 
     class _Client:
         def ImageTranslateLLM(self, request):          # noqa: N802 — SDK 이름 그대로
-            sent["payload"] = json.loads(request.to_json_string())
+            sent["payload"] = request._serialize()        # 전선에 실제로 나가는 것
             if sent.get("raise"):
                 raise sent["raise"]
             return _Resp()
 
     monkeypatch.setattr(mod, "_client", lambda timeout_sec: _Client())
+    # F25: URL이 와도 **우리가 내려받아** Data로 보낸다(공급사가 URL 입력을 거절했다).
+    #   그래서 이 픽스처도 다운로드를 목으로 둔다 — 계약이 밖으로 나가면 안 된다.
+    monkeypatch.setattr(mod, "fetch_image", lambda url: (b"\xff\xd8\xff-img", ""))
+    monkeypatch.setattr(mod, "MIN_INTERVAL_SEC", 0.0)      # 간격은 F25 계약이 따로 잰다
+    mod._LAST_CALL[0] = 0.0
     mod._sent = sent
     return mod
 
@@ -84,10 +89,13 @@ def test_request_carries_only_fields_the_sdk_defines(tc):
     p = tc._sent["payload"]
 
     assert p["Target"] == "ko"
-    assert p["Url"] == "https://img/1.jpg"
-    assert p["Data"] == "", "Url을 쓰면 Data는 빈 문자열(SDK 주석 그대로)"
     assert p["Mode"] == 0
     assert "Source" not in p, f"요청 모델에 없는 필드를 보냈다: {sorted(p)}"
+    # F25 실측: SDK 주석대로 `Url` + `Data:""`를 보냈더니 공급사가
+    #   **「Data: is required」**로 거절했다(빈 문자열을 「없음」으로 본다).
+    #   그래서 이제 우리가 내려받아 Data를 채운다.
+    assert p["Data"], "Data가 비어 있다 — 공급사가 거절한 그 모양이다"
+    assert "Url" not in p, "거절당하는 Url 필드를 다시 보내고 있다"
 
 
 def test_bytes_go_as_base64(tc):
@@ -292,6 +300,13 @@ def test_drawer_translation_never_touches_the_originals(monkeypatch, store, tmp_
 
     from src.seller_console import collect_history_store as chs
     monkeypatch.setattr(chs, "update", _update, raising=False)
+
+    # F25: 접수도 저장소를 읽는다(고른 장이 실제로 있는지 본다) — 읽기도 목으로.
+    def _get(item_id, seller_ids=None, seller_id=None):
+        return {"id": "it1", "title": "책상",
+                "extra_json": json.dumps(state["extra"], ensure_ascii=False)}
+
+    monkeypatch.setattr(chs, "get", _get, raising=False)
     monkeypatch.setattr(tcmod, "is_configured", lambda: True)
     monkeypatch.setattr(tcmod, "translate_image", lambda **kw: _ok_result())
 
@@ -302,9 +317,15 @@ def test_drawer_translation_never_touches_the_originals(monkeypatch, store, tmp_
             s["user_role"] = "seller"
         r = c.post("/seller/collect/it1/translate-images", json={"indices": [0, 2]})
 
-    assert r.status_code == 200, r.get_data(as_text=True)[:300]
+    # F25: 초당 1장이 계정 한도라 응답 안에서 돌리지 않는다 — **접수(202)**다.
+    assert r.status_code == 202, r.get_data(as_text=True)[:300]
     body = r.get_json()
-    assert body["ok"] is True
+    assert body["ok"] is True and body["accepted"] == 2
+
+    # 뒤에서 도는 일을 **여기서 직접** 돌려 결과까지 확인한다(스레드 타이밍에 기대지 않는다).
+    from src.services import image_translate_job as job
+    job._run("it1", "u1", [0, 2], {"u1"})
+
     assert state["extra"]["images"] == originals, "원본이 바뀌었다"
     assert [e["idx"] for e in state["extra"]["images_ko"]] == [0, 2]
     assert all(e["status"] == "done" for e in state["extra"]["images_ko"])
