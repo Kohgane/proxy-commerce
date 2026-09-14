@@ -1,0 +1,250 @@
+{% extends "_base.html" %}
+{% block title %}이미지 번역 채점{% endblock %}
+{% block content %}
+{# D1: 공급사 품질을 **눈으로** 재는 자리. 스키마 비교로는 「배경 복원이 자연스러운가」를
+   알 수 없다 — 그건 봐야 안다. 관리자 전용. #}
+<div class="container-fluid py-4">
+  <div class="console-kpi-label mb-1">이미지 번역</div>
+  <h1 class="h4 fw-bold mb-1"><i class="bi bi-translate"></i> 공급사 채점</h1>
+  <p class="text-muted small mb-0">
+    픽스처를 한 번에 돌려 <strong>원본과 번역본을 나란히</strong> 보고, 5축으로 점수를 매깁니다.
+  </p>
+  <hr class="pc-hairline mt-2 mb-4">
+
+  {# 미연결은 **오류가 아니라 상태**다 — 무엇이 빠졌는지까지 말한다. #}
+  {% if not vendor_status.configured %}
+  <div class="pc-status pc-status-warn mb-4">
+    <i class="bi bi-plug"></i> <strong>공급사 미연결</strong> —
+    빠진 것: {{ vendor_status.missing|join(' · ') }}
+    <span class="d-block console-kpi-label mt-1">
+      엔드포인트 {{ vendor_status.endpoint }} · 리전 {{ vendor_status.region }}
+    </span>
+  </div>
+  {% else %}
+  <div class="pc-status pc-status-info mb-4">
+    <i class="bi bi-plug-fill"></i> {{ vendor_status.vendor }} · {{ vendor_status.action }} ·
+    대상 언어 {{ vendor_status.target }}
+    <span class="d-block console-kpi-label mt-1">
+      엔드포인트 {{ vendor_status.endpoint }} · 리전 {{ vendor_status.region }}
+      {%- if vendor_status.region == '(미설정)' %} — 계정 리전과 어긋나면 공급사가
+      <code>FailedOperation.ErrorUserArea</code>로 알려 줍니다{% endif %}
+    </span>
+  </div>
+  {% endif %}
+
+  <!-- 픽스처 -->
+  <div class="op-card mb-4">
+    <div class="op-card-head d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <h2 class="h6 mb-0"><i class="bi bi-images"></i> 픽스처</h2>
+      <button class="btn btn-primary btn-sm" id="benchRunBtn"
+              {% if not vendor_status.configured %}disabled{% endif %}>
+        <i class="bi bi-play-fill"></i> 전체 실행
+      </button>
+    </div>
+    <div class="op-card-body">
+      {% for fx in fixtures %}
+      <div class="pc-inset mb-2">
+        <div class="d-flex justify-content-between flex-wrap gap-2">
+          <div>
+            <strong>{{ fx.item_no }}</strong>
+            <span class="text-muted small">{{ fx.note }}</span>
+          </div>
+          <div class="console-kpi-label">
+            {{ fx.images|length }}장{% if fx.source %} · {{ fx.source }}{% endif %}
+          </div>
+        </div>
+        {% if fx.missing %}
+        <div class="small mt-1" style="color:var(--warn)">
+          <i class="bi bi-exclamation-triangle"></i> {{ fx.missing }}
+        </div>
+        {% endif %}
+        {% if fx.detail_missing %}
+        <div class="small text-muted mt-1"><i class="bi bi-info-circle"></i> {{ fx.detail_missing }}</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+      <div class="form-text">
+        서버 저장본이 있으면 그걸 쓰고, 없으면 원본 URL을 그대로 보냅니다(공급사가 URL도 받습니다).
+        <strong>재시도는 하지 않습니다</strong> — 장당 과금이라 조용한 재시도는 조용한 청구입니다.
+      </div>
+    </div>
+  </div>
+
+  <div id="benchOut"></div>
+
+  <!-- 결과 -->
+  {% if run and run.results %}
+  <div class="op-card mb-4">
+    <div class="op-card-head">
+      <h2 class="h6 mb-0"><i class="bi bi-card-image"></i> {{ run.run_id }}</h2>
+    </div>
+    <div class="op-card-body">
+      {% for r in run.results %}
+      <div class="pc-inset mb-3">
+        <div class="d-flex justify-content-between flex-wrap gap-2 mb-2">
+          <div>
+            <strong>{{ r.item_no }}</strong>
+            <span class="pc-badge pc-badge-muted ms-1">{{ r.kind }}</span>
+            {% if r.status == 'done' %}
+            <span class="pc-badge pc-badge-on ms-1">번역됨</span>
+            {% else %}
+            <span class="pc-badge pc-badge-danger ms-1">실패</span>
+            {% endif %}
+            {% if r.warn %}
+            <span class="pc-badge pc-badge-off ms-1" title="{{ r.warn|join(' · ') }}">금칙어</span>
+            {% endif %}
+          </div>
+          <span class="console-kpi-label">{{ r.ms }} ms</span>
+        </div>
+        <div class="row g-2">
+          <div class="col-md-6">
+            <div class="console-kpi-label mb-1">원본</div>
+            <img src="{{ r.original }}" alt="원본" class="img-fluid" referrerpolicy="no-referrer">
+          </div>
+          <div class="col-md-6">
+            <div class="console-kpi-label mb-1">번역본</div>
+            {% if r.url %}
+            <img src="{{ r.url }}" alt="번역본" class="img-fluid">
+            {% else %}
+            <div class="op-empty small">
+              {{ r.error_message or '번역본 없음' }}
+              {% if r.error_code %}<div class="console-kpi-label mt-1">{{ r.error_code }}</div>{% endif %}
+              {% if r.hint %}<div class="small mt-1">{{ r.hint }}</div>{% endif %}
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% if r.target_text %}
+        <details class="mt-2 small">
+          <summary style="cursor:pointer">번역된 글자 보기</summary>
+          <div class="pc-inset mt-1" style="white-space:pre-wrap">{{ r.target_text }}</div>
+        </details>
+        {% endif %}
+        {% if r.store_note %}
+        <div class="small text-muted mt-1"><i class="bi bi-info-circle"></i> {{ r.store_note }}</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- 채점 -->
+  <div class="op-card mb-4">
+    <div class="op-card-head"><h2 class="h6 mb-0"><i class="bi bi-clipboard-check"></i> 채점 (1~5)</h2></div>
+    <div class="op-card-body">
+      <form id="benchScoreForm" data-run="{{ run.run_id }}">
+        {% for key, label, help in score_axes %}
+        <div class="mb-2">
+          <label class="form-label small fw-semibold mb-1" for="score-{{ key }}">{{ label }}</label>
+          <div class="text-muted small mb-1">{{ help }}</div>
+          <input class="form-control form-control-sm" id="score-{{ key }}" name="{{ key }}"
+                 type="number" min="1" max="5" step="1"
+                 value="{{ run.scores.get(key, '') }}">
+        </div>
+        {% endfor %}
+        <div class="mb-2">
+          <label class="form-label small fw-semibold mb-1" for="score-note">메모</label>
+          <textarea class="form-control form-control-sm" id="score-note" name="note"
+                    rows="3">{{ run.scores.get('note', '') }}</textarea>
+        </div>
+        <button class="btn btn-primary btn-sm" type="submit"><i class="bi bi-save"></i> 점수 저장</button>
+        <span id="scoreMsg" class="small ms-2"></span>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- 지난 실행 -->
+  <div class="op-card mb-4">
+    <div class="op-card-head"><h2 class="h6 mb-0"><i class="bi bi-clock-history"></i> 지난 실행</h2></div>
+    <div class="op-card-body p-0">
+      {% if runs %}
+      <table class="table table-hover mb-0">
+        <thead class="table-light"><tr>
+          <th>실행</th><th>시각</th><th>장수</th><th>성공</th><th>채점</th>
+        </tr></thead>
+        <tbody>
+          {% for r in runs %}
+          <tr>
+            <td><a href="?run={{ r.run_id }}">{{ r.run_id }}</a></td>
+            <td class="small">{{ r.created_at[:19] }}</td>
+            <td>{{ r.pages }}</td>
+            <td>{{ r.ok }}</td>
+            <td>{% if r.scored %}<span class="pc-badge pc-badge-on">있음</span>{% else %}—{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="op-empty">아직 실행한 적이 없습니다.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- 사용량 -->
+  <div class="op-card">
+    <div class="op-card-head"><h2 class="h6 mb-0"><i class="bi bi-receipt"></i> 일 합계 (최근 14일)</h2></div>
+    <div class="op-card-body p-0">
+      {% if totals %}
+      <table class="table mb-0">
+        <thead class="table-light"><tr>
+          <th>날짜</th><th>계정</th><th>호출</th><th>장수</th><th>성공 장수</th><th>합계 ms</th>
+        </tr></thead>
+        <tbody>
+          {% for t in totals %}
+          <tr>
+            <td>{{ t.day }}</td><td class="small">{{ t.user_id }}</td>
+            <td>{{ t.calls }}</td><td>{{ t.pages }}</td><td>{{ t.ok_pages }}</td><td>{{ t.ms }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="op-empty">아직 호출 기록이 없습니다.</div>
+      {% endif %}
+      <div class="form-text px-3 pb-2">
+        호출을 행으로 남기고 더해서 냅니다 — <strong>따로 카운터를 두지 않습니다</strong>
+        (카운터와 실제가 갈리면 어느 쪽이 맞는지 알 수 없게 됩니다).
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var runBtn = document.getElementById('benchRunBtn');
+  var out = document.getElementById('benchOut');
+  if (runBtn) runBtn.addEventListener('click', function () {
+    runBtn.disabled = true;
+    out.innerHTML = '<div class="pc-status pc-status-info mb-4">' +
+      '<i class="bi bi-hourglass-split"></i> 실행 중… 장당 몇 초 걸립니다.</div>';
+    fetch('/seller/admin/image-translate-bench/run', {method: 'POST'})
+      .then(function (r) { return r.json().then(function (d) { return {s: r.status, d: d}; }); })
+      .then(function (res) {
+        if (res.d && res.d.ok) { location.search = '?run=' + encodeURIComponent(res.d.run_id); return; }
+        out.innerHTML = '<div class="pc-status pc-status-danger mb-4">' +
+          '실행하지 못했습니다 — ' + ((res.d && res.d.error) || ('HTTP ' + res.s)) + '</div>';
+        runBtn.disabled = false;
+      })
+      .catch(function (e) {
+        out.innerHTML = '<div class="pc-status pc-status-danger mb-4">실행 중 오류: ' + e + '</div>';
+        runBtn.disabled = false;
+      });
+  });
+
+  var form = document.getElementById('benchScoreForm');
+  if (form) form.addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var msg = document.getElementById('scoreMsg');
+    var body = {run_id: form.getAttribute('data-run')};
+    new FormData(form).forEach(function (v, k) { body[k] = v; });
+    fetch('/seller/admin/image-translate-bench/score', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      msg.textContent = d && d.ok ? '저장했습니다.' : ('저장 실패 — ' + ((d && d.error) || ''));
+      msg.style.color = d && d.ok ? 'var(--teal)' : 'var(--danger)';
+    }).catch(function (e) { msg.textContent = '저장 실패 — ' + e; msg.style.color = 'var(--danger)'; });
+  });
+})();
+</script>
+{% endblock %}

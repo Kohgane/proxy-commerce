@@ -10498,3 +10498,236 @@ def sourcing_my_sources_list():
     except Exception as exc:
         logger.warning("My Sources 목록 조회 실패: %s", exc)
         return jsonify({"ok": False, "error": "즐겨찾기 목록 조회 중 오류가 발생했습니다."}), 500
+
+
+# ---------------------------------------------------------------------------
+# D1: 이미지 내 텍스트 번역 — 관리자 벤치 + 수동 번역
+# ---------------------------------------------------------------------------
+# 원칙(D0): 원본 `images`는 **영구 보존**, 번역본은 `images_ko`에 **장별 상태**로.
+#   등록 흐름은 **아직 손대지 않는다**(D2) — 지금은 "번역해 보고 눈으로 고르는" 단계다.
+
+#: 벤치 픽스처 — 오너가 지목한 두 상품(타오바오 상품번호)과 장수.
+BENCH_FIXTURES = (
+    ("617129397971", 5, "SPORTLINK — 로고 + 큰 중문 + 빨간 주의문(어려운 쪽)"),
+    ("946378497679", 5, "슬리퍼 — 텍스트 적음(쉬운 쪽)"),
+)
+BENCH_DETAIL_PAGES = 2      # 텍스트 밀도 높은 상세 이미지
+
+
+def _bench_fixture_rows() -> list:
+    """픽스처 12장을 모은다. **없으면 없다고 말한다**(빈 자리를 지어내지 않는다).
+
+    서버 저장본(`images_stored`)이 있으면 그걸 쓰고, 없으면 원본 URL을 쓴다 —
+    공급사는 URL로도 받는다(`Url` 파라미터).
+    """
+    from src.collectors.share_text import canonical_item_url
+    out = []
+    for item_no, want, note in BENCH_FIXTURES:
+        row = None
+        try:
+            from . import collect_history_store
+            row = collect_history_store.find_by_product_key(
+                canonical_item_url(item_no), seller_ids=_seller_identities())
+        except Exception as exc:
+            logger.warning("[벤치] 픽스처 조회 실패(%s): %s", item_no, exc)
+        if not row:
+            out.append({"item_no": item_no, "note": note, "missing": "수집 이력에 없음",
+                        "images": []})
+            continue
+        ex = {}
+        try:
+            ex = json.loads(row.get("extra_json") or "{}") or {}
+        except Exception:
+            ex = {}
+        stored = [u for u in (ex.get("images_stored") or []) if u]
+        originals = [u for u in (ex.get("images") or []) if u]
+        pool = stored or originals
+        details = [u for u in (ex.get("detail_images") or []) if u]
+        picked = [{"url": u, "kind": "상품"} for u in pool[:want]]
+        # 상세 이미지는 **텍스트가 빽빽한 쪽**을 보려고 넣는다. 없으면 없다고 적는다.
+        for u in details[:BENCH_DETAIL_PAGES]:
+            picked.append({"url": u, "kind": "상세"})
+        out.append({
+            "item_no": item_no, "note": note, "item_id": row.get("id"),
+            "title": row.get("title") or "", "images": picked,
+            "source": "서버 저장본" if stored else "원본 URL",
+            "missing": "" if len(picked) >= want else f"이미지 {want}장 중 {len(pool)}장만 있음",
+            "detail_missing": "" if details else "상세 이미지 없음",
+        })
+    return out
+
+
+@bp.get("/admin/image-translate-bench")
+def image_translate_bench():
+    """공급사 품질을 **눈으로** 재는 자리(관리자 전용).
+
+    스키마 비교로는 「배경 복원이 자연스러운가」를 알 수 없다 — 그건 봐야 안다.
+    """
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
+    if not _is_admin_user():
+        return redirect(url_for("seller_console.dashboard"))
+
+    from src.services import image_translate_tencent as tc
+    from src.db import image_translate_usage_pg as usage
+
+    run_id = (request.args.get("run") or "").strip()
+    run = {}
+    try:
+        run = usage.get_run(run_id) if run_id else {}
+    except Exception as exc:
+        logger.warning("[벤치] 실행 조회 실패: %s", exc)
+    try:
+        runs, totals = usage.list_runs(20), usage.daily_totals(14)
+    except Exception as exc:
+        logger.warning("[벤치] 목록·집계 실패: %s", exc)
+        runs, totals = [], []
+
+    return render_template(
+        "image_translate_bench.html", page="admin",
+        vendor_status=tc.status(), fixtures=_bench_fixture_rows(),
+        run=run, runs=runs, totals=totals,
+        score_axes=BENCH_SCORE_AXES,
+    )
+
+
+#: 채점 5축 — D0에서 정한 그대로(화면과 저장이 같은 목록을 쓴다).
+BENCH_SCORE_AXES = (
+    ("accuracy", "번역 정확도", "뜻이 맞나. 상품명·스펙 숫자가 살아 있나"),
+    ("inpaint", "배경 복원", "글자 지운 자리가 자연스럽나(번짐·잔상·색 끊김)"),
+    ("typography", "폰트/정렬", "한국어가 칸에 맞나. 줄바꿈·잘림·겹침"),
+    ("logo", "로고·워터마크 보존", "브랜드 로고를 번역·삭제하지 않았나"),
+    ("banned", "금칙어 발생", "번역문에 쿠팡 금칙어가 생겼나"),
+)
+
+
+@bp.post("/admin/image-translate-bench/run")
+def image_translate_bench_run():
+    """픽스처 12장을 돌린다. **재시도 0** — 장당 과금이라 조용한 재시도는 조용한 청구다."""
+    if not _check_auth() or not _is_admin_user():
+        return jsonify({"ok": False, "error": "관리자 전용입니다."}), 403
+
+    from src.services import image_translate_store as store
+    from src.services import image_translate_tencent as tc
+    from src.db import image_translate_usage_pg as usage
+
+    if not tc.is_configured():
+        return jsonify({"ok": False, "error": "공급사 미연결",
+                        "status": tc.status()}), 503
+
+    run_id = datetime.now(timezone.utc).strftime("bench-%Y%m%d-%H%M%S")
+    seller = _seller_id()
+    results, entries = [], []
+    for fx in _bench_fixture_rows():
+        for i, img in enumerate(fx.get("images") or []):
+            r = tc.translate_image(url=img["url"])
+            e = store.build_entry(i, r, item_id=str(fx.get("item_id") or fx["item_no"]),
+                                  seller_id=seller)
+            entries.append(e)
+            results.append({
+                "item_no": fx["item_no"], "kind": img.get("kind", ""),
+                "original": img["url"], "idx": i,
+                **{k: e.get(k) for k in ("status", "url", "stored_by", "ms", "target_text",
+                                         "warn", "error_class", "error_code", "error_message",
+                                         "hint", "store_note")},
+            })
+    try:
+        usage.save_run(run_id, seller, results)
+        store.record_usage(seller, entries)
+    except Exception as exc:
+        logger.warning("[벤치] 저장 실패(결과는 응답에 있음): %s", exc)
+
+    ok = sum(1 for r in results if r.get("status") == "done")
+    logger.info("[벤치] %s — %d장 중 %d장 성공", run_id, len(results), ok)
+    return jsonify({"ok": True, "run_id": run_id, "total": len(results), "done": ok,
+                    "results": results})
+
+
+@bp.post("/admin/image-translate-bench/score")
+def image_translate_bench_score():
+    """오너가 매긴 5축 점수 저장. **사람이 매긴 값**이라 파일이 아니라 DB에 둔다."""
+    if not _check_auth() or not _is_admin_user():
+        return jsonify({"ok": False, "error": "관리자 전용입니다."}), 403
+    data = request.get_json(silent=True) or request.form or {}
+    run_id = str(data.get("run_id") or "").strip()
+    if not run_id:
+        return jsonify({"ok": False, "error": "실행 이름표가 없습니다."}), 400
+    scores = {k: data.get(k) for k, _l, _h in BENCH_SCORE_AXES if data.get(k) not in (None, "")}
+    scores["note"] = str(data.get("note") or "")[:1000]
+    from src.db import image_translate_usage_pg as usage
+    if not usage.save_scores(run_id, scores):
+        return jsonify({"ok": False, "error": "저장하지 못했습니다(실행을 찾을 수 없음)."}), 404
+    return jsonify({"ok": True, "run_id": run_id, "scores": scores})
+
+
+@bp.get("/collect/image-ko/<item_id>/<int:idx>")
+def collect_image_ko(item_id: str, idx: int):
+    """파일로 둔 번역 이미지 서빙. **본인 항목만**(스코프는 기존 헬퍼 그대로)."""
+    if not _check_auth():
+        return ("", 404)
+    if _get_owned_item(item_id) is None:
+        return ("", 404)          # 남의 항목 이미지는 없다고 답한다(존재 여부도 안 알린다)
+    from src.services.image_translate_store import read_translated
+    raw = read_translated(item_id, idx)
+    if not raw:
+        return ("", 404)
+    from flask import Response
+    return Response(raw, mimetype="image/jpeg",
+                    headers={"Cache-Control": "private, max-age=300"})
+
+
+@bp.post("/collect/<item_id>/translate-images")
+def collect_translate_images(item_id: str):
+    """편집 서랍 「이미지 번역」 — 고른 장만 번역해 `images_ko`에 넣는다.
+
+    **원본 `images`는 건드리지 않는다.** 등록 흐름도 아직 손대지 않는다(D2).
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+
+    from src.services import image_translate_store as store
+    from src.services import image_translate_tencent as tc
+    if not tc.is_configured():
+        return jsonify({"ok": False, "error": "공급사 미연결", "status": tc.status()}), 503
+
+    data = request.get_json(silent=True) or {}
+    try:
+        wanted = sorted({int(i) for i in (data.get("indices") or [])})
+    except Exception:
+        wanted = []
+    if not wanted:
+        return jsonify({"ok": False, "error": "번역할 이미지를 골라 주세요."}), 400
+
+    extra = store.load_extra(item)
+    images = [u for u in (extra.get("images") or []) if u]
+    if not images:
+        return jsonify({"ok": False, "error": "이 상품엔 이미지가 없습니다."}), 400
+
+    seller = _seller_id()
+    entries = []
+    for i in wanted:
+        if not (0 <= i < len(images)):
+            entries.append({"idx": i, "status": "skipped",
+                            "at": datetime.now(timezone.utc).isoformat(),
+                            "reason": "그런 장이 없습니다"})
+            continue
+        entries.append(store.build_entry(
+            i, tc.translate_image(url=images[i]), item_id=item_id, seller_id=seller))
+
+    extra["images_ko"] = store.merge_images_ko(extra, entries)
+    # **원본은 그대로 다시 넣는다** — 이 자리에서 images가 바뀌지 않았음을 눈으로 확인할 수 있게.
+    extra["images"] = images
+    try:
+        from . import collect_history_store
+        collect_history_store.update(item_id, seller_ids=_seller_identities(),
+                                     extra_json=json.dumps(extra, ensure_ascii=False))
+    except Exception as exc:
+        logger.warning("[이미지번역] 저장 실패: %s", exc)
+        return jsonify({"ok": False, "error": "번역은 됐지만 저장에 실패했습니다."}), 500
+
+    store.record_usage(seller, entries)
+    return jsonify({"ok": True, "entries": entries,
+                    "summary": store.summarize(extra)})

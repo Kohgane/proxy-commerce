@@ -23,3 +23,9 @@ webauthn>=2.0,<3  # v40-D 패스키 — cryptography<49 호환(2.x 라인)
 psycopg[binary,pool]>=3.1,<4  # v49 STEP2 pool = 상시 커넥션 풀(PG_PERSISTENT_POOL=1일 때만)
 openpyxl>=3.1,<4  # v47 STEP5 엑셀 벌크 내보내기/업로드
 Pillow>=10.0,<14  # 카나리 3차: 네이버 미허용 WebP → JPEG 실변환(image_norm) + 이미지 파이프라인. 이전엔 requirements 미기재라 프로덕션 이미지에 없었다(조용한 무력화).
+
+# D1 이미지 번역 — 텐센트 TMT `ImageTranslateLLM`.
+#   **제품 단위 패키지**를 쓴다(전체 SDK가 아니라). 이미지에 안 쓰는 제품 모듈이 딸려 오지 않게.
+#   common은 tmt의 의존성이지만 버전을 눈에 보이게 두려고 함께 적는다.
+tencentcloud-sdk-python-tmt>=3.1.129,<4
+tencentcloud-sdk-python-common>=3.1.175,<4
