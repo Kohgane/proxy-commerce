@@ -257,19 +257,49 @@ def test_account_list_comes_from_one_place():
     assert by["chezgoga"]["market"] == "smartstore"
 
 
-@pytest.mark.parametrize("name,account", [
-    ("우주대행", "woojoo"), ("고가네", "gogane"), ("woojoo", "woojoo"), ("chezgoga", "chezgoga"),
+def test_four_accounts_are_two_businesses_times_two_markets():
+    """오너 2026-09-14: 계정 넷은 따로 서 있는 게 아니라 **사업체 2 × 마켓 2**다."""
+    from src.pipeline.ops_snapshot import BUSINESSES, account_for, business_of
+    assert {b["business"] for b in BUSINESSES} == {"gogane", "woojoo"}
+    assert account_for("woojoo", "coupang") == "woojoo"
+    assert account_for("woojoo", "smartstore") == "gocosmos"
+    assert account_for("gogane", "smartstore") == "chezgoga"
+    # 거꾸로도 참이어야 한다 — 계정 하나를 보면 어느 사업체인지 안다.
+    assert business_of("gocosmos") == "woojoo"
+    assert business_of("chezgoga") == "gogane"
+    assert business_of("없는계정") == ""
+
+
+def test_smartstore_accounts_carry_the_real_korean_names():
+    """오너가 준 상호를 쓴다(chezgoga=고가네·gocosmos=우주대행) — 지어낸 값이 아니다."""
+    from src.pipeline.ops_snapshot import account_choices
+    by = {r["account"]: r for r in account_choices()}
+    assert by["chezgoga"]["business_ko"] == "고가네"
+    assert by["gocosmos"]["business_ko"] == "우주대행"
+
+
+@pytest.mark.parametrize("name,business", [
+    ("우주대행", "woojoo"), ("고가네", "gogane"), ("woojoo", "woojoo"),
+    ("chezgoga", "gogane"),          # 계정명으로 불러도 **그 사업체**다
+    ("gocosmos", "woojoo"),
 ])
-def test_account_resolves_by_real_name(name, account):
-    from src.pipeline.ops_snapshot import resolve_account
-    assert resolve_account(name)["account"] == account
+def test_business_resolves_by_real_name(name, business):
+    from src.pipeline.ops_snapshot import resolve_business
+    assert resolve_business(name)["business"] == business
 
 
-def test_account_does_not_guess():
+def test_one_word_means_both_markets():
+    """「우주대행」은 쿠팡 A01504840 **과** 스마트스토어 gocosmos 둘 다를 뜻한다."""
+    from src.pipeline.ops_snapshot import resolve_business
+    accts = resolve_business("우주대행")["accounts"]
+    assert accts == {"coupang": "woojoo", "smartstore": "gocosmos"}
+
+
+def test_business_does_not_guess():
     """계정을 잘못 고르면 남의 스토어에 올라간다 — 모르면 고르지 않는다."""
-    from src.pipeline.ops_snapshot import resolve_account
-    assert resolve_account("우주") == {}
-    assert resolve_account("") == {}
+    from src.pipeline.ops_snapshot import resolve_business
+    assert resolve_business("우주") == {}
+    assert resolve_business("") == {}
 
 
 def test_bot_default_accounts_match_the_owner_statement():
@@ -281,20 +311,29 @@ def test_bot_default_accounts_match_the_owner_statement():
 def test_default_account_prefers_what_a_person_chose(monkeypatch):
     """사람이 정한 값 > env > 봇 기본값. 사람이 고른 것을 코드가 덮지 않는다."""
     from src.api import telegram_collect as T
-    monkeypatch.setenv("TELEGRAM_BOT_ACCOUNT_KOHUJOO", "chezgoga")
-    with patch("src.db.telegram_links_pg.get", return_value={"default_market_account": "gogane"}):
-        assert T._default_account("kohujoo", "1") == "gogane"
+    monkeypatch.setenv("TELEGRAM_BOT_ACCOUNT_KOHUJOO", "gogane")
+    with patch("src.db.telegram_links_pg.get", return_value={"default_market_account": "woojoo"}):
+        assert T._default_account("kohujoo", "1") == "woojoo"
     with patch("src.db.telegram_links_pg.get", return_value={}):
-        assert T._default_account("kohujoo", "1") == "chezgoga"
+        assert T._default_account("kohujoo", "1") == "gogane"
         monkeypatch.delenv("TELEGRAM_BOT_ACCOUNT_KOHUJOO")
         assert T._default_account("kohujoo", "1") == "woojoo"
 
 
 def test_register_screen_preselects_only_when_unanimous():
-    """행마다 계정이 다르면 **고르지 않는다** — 절반만 맞는 기본값은 찾기 더 어렵다."""
+    """행마다 사업체가 다르면 **고르지 않는다** — 절반만 맞는 기본값은 찾기 더 어렵다."""
     src = (ROOT / "src/seller_console/views.py").read_text(encoding="utf-8")
-    seg = src.split("preferred_account", 1)[1][:400]
-    assert "len(accts) == 1" in seg
+    seg = src.split("preferred_business", 1)[1][:500]
+    assert "len(bizs) == 1" in seg
+
+
+def test_register_screen_resolves_business_per_market():
+    """사업체를 **고른 마켓에 맞는 계정**으로 푼다 — 축을 섞으면 남의 스토어에 올라간다."""
+    tpl = (ROOT / "src/seller_console/templates/register_pipe.html").read_text(encoding="utf-8")
+    seg = tpl.split("function p3SyncAccounts()", 1)[1][:800]
+    assert "P3_BIZ_ACCOUNTS[P3_BUSINESS][market]" in seg
+    # 그 마켓의 선택지에 실제로 있을 때만 고른다.
+    assert "P3_ACCOUNTS[market] || []" in seg
 
 
 # ---------------------------------------------------------------------------
@@ -352,6 +391,57 @@ def test_collect_reply_carries_the_verdict_block():
     assert "_sourcing_block(" in seg and "_save_verdict(" in seg
 
 
+def test_named_bot_never_falls_back_to_the_default_bot_token(monkeypatch):
+    """F24b: **이름표 붙은 봇은 기본 봇 토큰으로 떨어지지 않는다.** 다른 봇이기 때문이다.
+
+    떨어지면 KohujooBot에 보낸 글을 gogaBridz_bot이 답하려 들고, 그 chat은 그 봇과
+    대화한 적이 없어 텔레그램이 거절한다 — **담기긴 담기는데 답장이 조용히 사라진다.**
+    사람은 「봇이 죽었다」고 읽는다. 그게 제일 나쁜 실패다.
+    """
+    from src.api import telegram_collect as T
+    T.reset_runtime_state()
+    monkeypatch.setenv("TELEGRAM_COLLECT_BOT_TOKEN", "111:default-bot")
+    monkeypatch.delenv("TELEGRAM_COLLECT_BOT_TOKEN_KOHUJOO", raising=False)
+    assert T._bot_token("kohujoo") == "", "다른 봇 토큰으로 답장하려 한다"
+    # 기본 봇은 그대로 동작한다(무회귀).
+    assert T._bot_token("default") == "111:default-bot"
+    # 제 토큰이 있으면 그걸 쓴다.
+    monkeypatch.setenv("TELEGRAM_COLLECT_BOT_TOKEN_KOHUJOO", "222:kohujoo-bot")
+    assert T._bot_token("kohujoo") == "222:kohujoo-bot"
+
+
+def test_named_bot_can_reuse_the_shared_webhook_secret(monkeypatch):
+    """시크릿은 공용 값 재사용이 된다 — 토큰과 달리 **봇을 가리지 않는 잠금**이라서다."""
+    from src.api import telegram_collect as T
+    monkeypatch.setenv("TELEGRAM_COLLECT_WEBHOOK_SECRET", "shared-secret")
+    monkeypatch.delenv("TELEGRAM_COLLECT_WEBHOOK_SECRET_KOHUJOO", raising=False)
+    assert T._webhook_secret("kohujoo") == "shared-secret"
+    monkeypatch.setenv("TELEGRAM_COLLECT_WEBHOOK_SECRET_KOHUJOO", "own-secret")
+    assert T._webhook_secret("kohujoo") == "own-secret"
+
+
+def test_guide_carries_the_exact_values_for_kohujoo():
+    """오너가 붙이려면 **실값 셋**이 문서에 있어야 한다(슬러그·토큰 env·setWebhook)."""
+    g = (ROOT / "docs/MOBILE_COLLECT_GUIDE.md").read_text(encoding="utf-8")
+    assert "/webhooks/telegram/collect/kohujoo" in g
+    assert "TELEGRAM_COLLECT_BOT_TOKEN_KOHUJOO" in g
+    assert "setWebhook" in g and "secret_token" in g
+    # 사업체 표(오너가 준 상호)도 문서에 있어야 한다.
+    assert "chezgoga" in g and "gocosmos" in g
+
+
+def test_tencent_region_still_has_no_default(monkeypatch):
+    """리전 실값을 알게 됐어도 **기본값으로 박지 않는다** — 리전은 계정마다 다르다.
+
+    박아 두면 다른 계정을 쓰는 날 env가 비어도 조용히 싱가포르로 나가고, 어긋난 줄도 모른다.
+    """
+    from src.services import image_translate_tencent as tc
+    monkeypatch.delenv("TENCENT_REGION", raising=False)
+    assert tc.region() == ""
+    monkeypatch.setenv("TENCENT_REGION", "ap-singapore")
+    assert tc.region() == "ap-singapore"
+
+
 def test_verdict_is_saved_on_the_draft():
     from src.api import telegram_collect as T
     saved = {}
@@ -363,7 +453,7 @@ def test_verdict_is_saved_on_the_draft():
                         "woojoo")
     ex = json.loads(saved["extra_json"])
     assert ex["sourcing_verdict"]["verdict"] == "hold"
-    assert ex["default_market_account"] == "woojoo"
+    assert ex["default_business"] == "woojoo"
 
 
 def test_review_keyword_still_works():

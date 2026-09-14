@@ -7859,13 +7859,17 @@ def sourcing_register_pipe():
         raw_urls = [ln.strip() for ln in urls_text.splitlines() if ln.strip()]
         review = build_review_for_urls(raw_urls)
 
-    # F24-1: 검수한 행들이 **모두 같은** 기본 등록 계정을 가리킬 때만 미리 고른다.
+    # F24-1: 검수한 행들이 **모두 같은** 사업체를 가리킬 때만 미리 고른다.
     #   섞여 있으면 고르지 않는다 — 절반만 맞는 기본값은 틀린 기본값보다 찾기 어렵다.
-    accts = {r.get("default_market_account") for r in (review.get("review_pass") or [])
-             if r.get("default_market_account")} if review else set()
-    preferred_account = accts.pop() if len(accts) == 1 else ""
+    bizs = {r.get("default_business") for r in (review.get("review_pass") or [])
+            if r.get("default_business")} if review else set()
+    preferred_business = bizs.pop() if len(bizs) == 1 else ""
+    # 사업체 → 마켓별 계정. 화면이 고른 마켓에 맞는 계정을 고르게 한다(축을 섞지 않는다).
+    from src.pipeline.ops_snapshot import BUSINESSES
+    business_accounts = {b["business"]: dict(b["accounts"]) for b in BUSINESSES}
     return render_template("register_pipe.html", page="sourcing", review=review,
-                           urls_text=urls_text, preferred_account=preferred_account)
+                           urls_text=urls_text, preferred_business=preferred_business,
+                           business_accounts=business_accounts)
 
 
 def build_review_for_urls(urls, *, cap: int = 50, rules: "dict | None" = None) -> dict:

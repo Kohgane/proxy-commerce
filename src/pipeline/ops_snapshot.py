@@ -22,32 +22,65 @@ ACCOUNT_AXES = (
 )
 
 
-def account_choices() -> list:
-    """등록 계정 4개 — `[{market, market_ko, account, label}]`. **여기가 목록의 정본이다.**
+# ── 사업체 축 (오너 2026-09-14) ────────────────────────────────────────────────
+# **등록 계정 4개 = 사업체 2 × 마켓 2.** 계정 넷이 따로 서 있는 게 아니다 —
+# 「우주대행」이라고 말하면 쿠팡 A01504840과 스마트스토어 gocosmos **둘 다**를 뜻한다.
+#
+# F24 첫 판에서 이걸 평평한 계정 넷으로 뒀다. 그러면 `/account 우주대행`이 쿠팡 하나만 고르고,
+# 스마트스토어에 등록할 때 계정이 비거나 엉뚱한 것이 선다 — **계정 축은 되돌리기 어렵다.**
+# 스마트스토어 두 계정의 한글 상호도 여기서 처음 확정됐다(오너 답, 지어낸 값 아님).
+BUSINESSES = (
+    {"business": "gogane", "label": "고가네",
+     "accounts": {"coupang": "gogane", "smartstore": "chezgoga"}},
+    {"business": "woojoo", "label": "우주대행",
+     "accounts": {"coupang": "woojoo", "smartstore": "gocosmos"}},
+)
 
-    F24: 봇 `/account 우주대행`이 실명을 이 목록에 맞춘다. 계정 축을 봇 안에 다시 적으면
+_BIZ_OF_ACCOUNT = {a: b["business"] for b in BUSINESSES for a in b["accounts"].values()}
+
+
+def business_of(account: str) -> str:
+    """계정 하나가 속한 사업체. 모르면 빈 문자열(짐작하지 않는다)."""
+    return _BIZ_OF_ACCOUNT.get(str(account or "").strip(), "")
+
+
+def account_choices() -> list:
+    """등록 계정 4개 — `[{market, market_ko, account, label, business, business_ko}]`.
+
+    **여기가 목록의 정본이다.** 계정 축을 봇이나 화면 안에 다시 적으면
     쿠팡(고가네·우주대행)과 스마트스토어(chezgoga·gocosmos)가 **다른 축**이라는 사실이
     한 곳에서만 참이게 된다 — 그러면 언젠가 갈린다.
 
-    스마트스토어 두 계정엔 한글 상호가 없다(라벨이 곧 계정명이다). **지어내지 않는다** —
-    없는 이름을 만들면 오너가 콘솔에서 보는 이름과 봇이 부르는 이름이 달라진다.
+    `label`은 사람이 부르는 이름이다: 한글 상호가 있으면 그걸 쓰고(쿠팡·스마트스토어 둘 다
+    오너가 확정), 없으면 계정명 그대로 — **지어내지 않는다.**
     """
+    biz_by_market = {}
+    for b in BUSINESSES:
+        for market, acct in b["accounts"].items():
+            biz_by_market[(market, acct)] = b
+
     out = []
     for market, market_ko, accounts in ACCOUNT_AXES:
         for a in accounts:
-            label = a
+            b = biz_by_market.get((market, a))
+            label = b["label"] if b else a
             if market == "coupang":
                 try:
                     from src.pipeline.coupang_replicate import COUPANG_ACCOUNTS
-                    label = (COUPANG_ACCOUNTS.get(a) or {}).get("label") or a
+                    label = (COUPANG_ACCOUNTS.get(a) or {}).get("label") or label
                 except Exception:
                     pass
-            out.append({"market": market, "market_ko": market_ko, "account": a, "label": label})
+            out.append({"market": market, "market_ko": market_ko, "account": a, "label": label,
+                        "business": b["business"] if b else "",
+                        "business_ko": b["label"] if b else ""})
     return out
 
 
-def resolve_account(name: str) -> dict:
-    """사람이 쓴 이름(「우주대행」·「woojoo」) → 계정 1개. 못 찾으면 빈 dict.
+def resolve_business(name: str) -> dict:
+    """사람이 쓴 이름(「우주대행」·「woojoo」·「gocosmos」) → **사업체 하나**. 못 찾으면 빈 dict.
+
+    사업체를 고르면 마켓별 계정은 따라온다 — 그게 오너가 말하는 단위다
+    (「우주대행」 = 쿠팡 A01504840 + 스마트스토어 gocosmos).
 
     **짐작해서 고르지 않는다.** 계정을 잘못 고르면 남의 스토어에 올라간다 —
     모르겠으면 되묻는 편이 비교할 수 없이 싸다.
@@ -55,10 +88,21 @@ def resolve_account(name: str) -> dict:
     q = str(name or "").strip().lower().replace(" ", "")
     if not q:
         return {}
-    for row in account_choices():
-        if q in (row["account"].lower(), row["label"].lower().replace(" ", "")):
-            return dict(row)
+    for b in BUSINESSES:
+        names = {b["business"].lower(), b["label"].lower().replace(" ", "")}
+        names |= {a.lower() for a in b["accounts"].values()}     # 계정명으로 불러도 그 사업체다
+        if q in names:
+            return {"business": b["business"], "label": b["label"],
+                    "accounts": dict(b["accounts"])}
     return {}
+
+
+def account_for(business: str, market: str) -> str:
+    """이 사업체의 이 마켓 계정. 없으면 빈 문자열 — **없는 계정을 만들어 내지 않는다.**"""
+    for b in BUSINESSES:
+        if b["business"] == str(business or "").strip():
+            return b["accounts"].get(str(market or "").strip(), "")
+    return ""
 
 
 def _coupang_account(account: str) -> dict:

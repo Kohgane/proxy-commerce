@@ -245,17 +245,21 @@
       smartstore: '등록 후 승인 심사를 거칩니다.',
       woocommerce: '자사몰이라 심사가 없습니다. 임시저장(draft)으로 올라가니 확인 후 공개하세요.'
     };
-    // F24-1: 봇이 담을 때 정해 둔 기본 등록 계정. 그 계정이 이 마켓의 축에 **있을 때만** 고른다
-    //   (쿠팡 계정을 스마트스토어 자리에 고르면 축이 다른 값을 보내게 된다).
-    var P3_PREFERRED = {{ (preferred_account or '') | tojson }};
+    // F24-1: 봇이 담을 때 정해 둔 **사업체**. 고른 마켓에 맞는 계정을 여기서 푼다 —
+    //   「우주대행」은 쿠팡 A01504840과 스마트스토어 gocosmos **둘 다**를 뜻한다(오너 2026-09-14).
+    //   사업체를 마켓 하나로 굳혀 두면 다른 마켓에서 계정이 비거나 엉뚱한 것이 선다.
+    var P3_BUSINESS = {{ (preferred_business or '') | tojson }};
+    var P3_BIZ_ACCOUNTS = {{ (business_accounts or {}) | tojson }};
     function p3SyncAccounts() {
       var market = document.getElementById('p3Market').value;
       var sel = document.getElementById('p3Account');
       sel.innerHTML = (P3_ACCOUNTS[market] || []).map(function (a) {
         return '<option value="' + a[0] + '">' + a[1] + '</option>';
       }).join('');
-      if (P3_PREFERRED && (P3_ACCOUNTS[market] || []).some(function (a) { return a[0] === P3_PREFERRED; })) {
-        sel.value = P3_PREFERRED;
+      var want = P3_BUSINESS && P3_BIZ_ACCOUNTS[P3_BUSINESS]
+        ? P3_BIZ_ACCOUNTS[P3_BUSINESS][market] : '';
+      if (want && (P3_ACCOUNTS[market] || []).some(function (a) { return a[0] === want; })) {
+        sel.value = want;
       }
       var note = document.getElementById('p3MarketNote');
       if (note) { note.textContent = P3_MARKET_NOTE[market] || ''; }

@@ -474,9 +474,10 @@ def build_source_review_row(draft: dict, *, url: str = "", channel: str = "wooco
         #   무엇이 비었는지 행이 직접 들고 다니게 한다.
         "partial": bool(draft.get("partial")),
         "item_id_taobao": str(draft.get("item_id_taobao") or draft.get("site_item_id") or ""),
-        # F24-1: 봇이 담을 때 정해 둔 **기본 등록 계정**. 등록 화면이 이걸 미리 고른다 —
-        #   매번 사람이 고르면 언젠가 남의 스토어에 올린다(계정 축은 되돌리기 어렵다).
-        "default_market_account": str(draft.get("default_market_account") or ""),
+        # F24-1: 봇이 담을 때 정해 둔 **기본 등록 사업체**. 등록 화면이 고른 마켓에 맞는
+        #   계정을 여기서 풀어 미리 고른다 — 매번 사람이 고르면 언젠가 남의 스토어에 올린다
+        #   (계정 축은 되돌리기 어렵다). 사업체 하나 = 마켓마다 계정 하나(오너 2026-09-14).
+        "default_business": str(draft.get("default_business") or ""),
         "uncollected": list(draft.get("uncollected") or []),
         "needs_enrich": bool(draft.get("partial")) or not images or not title,
         "missing": [k for k, v in (("제목", title), ("이미지", images)) if not v],
