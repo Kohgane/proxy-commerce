@@ -376,7 +376,8 @@ def init_schema():
                   "schema_stage5.sql",   # v88-B: translation_jobs(백그라운드 번역 큐)
                   "schema_stage6.sql",   # P4: market_registrations(마켓 등록 대장·반려감시 소스)
                   "schema_stage7.sql",   # C-F17-B: telegram_links(폰 기본 입구의 chat_id↔셀러 바인딩)
-                  "schema_stage8.sql"):  # C-F19: user_identities((provider,email)→user_id) + 병합 백업
+                  "schema_stage8.sql",   # C-F19: user_identities((provider,email)→user_id) + 병합 백업
+                  "schema_stage9.sql"):  # D1: image_translate_usage(장당 과금 장부) + image_bench_runs
         f = here / fname
         if f.exists():
             run_ddl(f.read_text(encoding="utf-8"))

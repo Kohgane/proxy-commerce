@@ -2224,3 +2224,7 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 
 /* 입력 그룹 안의 통화 선택 — 값이 3글자(USD·KRW)라 폭을 묶어 둔다(인라인 90px 대체). */
 .pc-select-narrow { max-width: 6rem; }
+
+/* D1 이미지 번역 — 원본/번역본 나란히 보는 작은 미리보기.
+   템플릿·JS에 px를 박지 않는다(토큰 단일 소스). 두 장을 한 줄에 놓고 눈으로 대조하는 크기. */
+.kgp-imgko-thumb { max-height: 4.5rem; width: auto; border-radius: var(--radius-sm, 6px); }
