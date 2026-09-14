@@ -6866,8 +6866,17 @@ def collect_preview_by_id(item_id: str):
     # C-F20-2: 부분 초안에는 **완전 수집 잣대를 대지 않는다**(F14 교훈이 서랍엔 안 왔다).
     #   초안이면 「보강 대기 / 막힘 / 완료」로 말하고, 일반 수집만 기존 판정을 쓴다.
     try:
-        from src.collectors.collect_status import enrich_axes as _eax20
+        from src.collectors.collect_status import enrich_axes as _eax20, humanize_block_reason
         enrich = _eax20(extra)
+        # F22: 다듬은 사유를 **원본 자리에도** 되쓴다. 서랍은 `extra`를 통째로 페이지에 실어
+        #   보내므로(편집 폼 프리필), 여기서 안 바꾸면 다듬기 전 문장이 문서에 같이 실린다 —
+        #   화면엔 안 보여도 셀러가 보는 페이지 안에 「HTTP 502」가 남아 있는 건 같다.
+        if extra.get("enrich_blocked_reason"):
+            extra["enrich_blocked_reason"] = humanize_block_reason(extra["enrich_blocked_reason"])
+        # 그리고 **행의 원문 컬럼은 아예 안 싣는다.** `extra`로 이미 같은 내용을 보내면서
+        #   `extra_json` 문자열까지 같이 보내면, 다듬기 전 문장이 그 문자열에 그대로 남는다.
+        #   (읽는 JS도 없다 — `_EXTRA`만 쓴다.) 두 번 보낼 이유가 없다.
+        item = {k: v for k, v in dict(item).items() if k != "extra_json"}
     except Exception:
         enrich = {"is_draft": False, "enrich_state": "", "reason": "", "gate_ready": False, "images": 0}
 
@@ -8986,7 +8995,8 @@ def media_queue():
             "images_stored": len(ex.get("images_stored") or []),
             "stored_note": ex.get("images_stored_note") or "",
             "attempts": int(ex.get("enrich_attempts") or 0),
-            "reason": ex.get("enrich_blocked_reason") or "",
+            # F22: 상태코드는 셀러의 말이 아니다 — 사유는 한 자리(`humanize_block_reason`)를 거친다.
+            "reason": _ax["reason"],
             "uncollected": ex.get("uncollected") or [],
             "price": ex.get("price") or "",
             "price_list": ex.get("price_list") or "",
@@ -10731,3 +10741,47 @@ def collect_translate_images(item_id: str):
     store.record_usage(seller, entries)
     return jsonify({"ok": True, "entries": entries,
                     "summary": store.summarize(extra)})
+
+
+@bp.post("/collect/<item_id>/enrich-retry")
+def collect_enrich_retry(item_id: str):
+    """F22-3: 「막힘」을 **다시 줄 세운다** — 시도 횟수를 0으로 되돌려 폴러가 다시 집게.
+
+    막힘은 세 번 시도하고 멈춘 상태다(같은 벽에 계속 머리를 박지 않으려고). 그런데 벽이
+    우리 쪽 일시적 결함이었으면 — 이번 502처럼 — 사람이 손으로 다시 줄 세울 길이 있어야 한다.
+    그게 없으면 고쳐 놓고도 **그 항목만 영원히 막힌 채**다.
+
+    되돌리는 것은 **시도 횟수와 사유뿐**이다. 이미 담긴 값은 건드리지 않는다.
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    try:
+        extra = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        extra = {}
+
+    extra["enrich_attempts"] = 0
+    extra.pop("enrich_blocked_reason", None)
+    # `blocked`를 **먼저 지운다.** 보정기는 done↔pending만 바로잡지 blocked는 손대지 않는다
+    #   (막힘은 관측된 사실이라 읽는 쪽이 마음대로 풀면 안 된다) — 푸는 건 사람이 누를 때뿐이다.
+    extra.pop("enrich_state", None)
+    # 그다음 **보정된 값**으로 되돌린다(원값을 그대로 쓰면 F11 잔재가 되살아난다 — C-F15-6).
+    from src.collectors.collect_status import enrich_axes as _eax
+    extra["enrich_state"] = _eax(extra)["enrich_state"] or "pending"
+
+    try:
+        from . import collect_history_store
+        ok = collect_history_store.update(item_id, seller_ids=_seller_identities(),
+                                          extra_json=json.dumps(extra, ensure_ascii=False))
+    except Exception as exc:
+        logger.warning("[보강 재시도] 저장 실패 item=%s: %s", item_id, exc)
+        return jsonify({"ok": False, "error": "다시 줄 세우지 못했습니다."}), 500
+    if not ok:
+        return jsonify({"ok": False, "error": "다시 줄 세우지 못했습니다."}), 500
+
+    logger.info("[보강 재시도] item=%s 시도 0으로 · 상태=%s", item_id, extra["enrich_state"])
+    return jsonify({"ok": True, "item_id": item_id, "state": extra["enrich_state"],
+                    "message": "다시 줄 세웠어요. PC에서 고가수집기가 열려 있으면 곧 채워집니다."})

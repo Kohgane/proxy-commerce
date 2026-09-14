@@ -355,6 +355,19 @@
         {% endif %}
         <span class="text-muted fw-normal">({{ collect_status.filled }}/{{ collect_status.total }} 필드) · 수집 로그 보기</span>
       </summary>
+      {# F22-3: 막힌 항목을 **다시 줄 세울 길**. 벽이 우리 쪽 일시 결함이었으면 고쳐 놓고도
+         그 항목만 영원히 막힌 채로 남는다 — 사람이 다시 보낼 수 있어야 한다. #}
+      {% if enrich and enrich.enrich_state == "blocked" %}
+      <div class="mt-2">
+        <button type="button" class="btn btn-primary btn-sm" id="enrichRetryBtn" onclick="kgpEnrichRetry()">
+          <i class="bi bi-arrow-clockwise"></i> 다시 시도
+        </button>
+        <span id="enrichRetryMsg" class="small ms-2"></span>
+        <div class="text-muted small mt-1">
+          {{ enrich.attempts }}회 시도 후 멈춰 있어요. 다시 누르면 PC 고가수집기가 한 번 더 가져갑니다.
+        </div>
+      </div>
+      {% endif %}
       {# v56 STEP4: 테무 Tier1 최종 판정 — 확장 API 인터셉터 동작/원인(콘솔 안 봐도 드로어에서 확인). #}
       {% set _t1 = extra.get('tier1_diag') if extra else None %}
       {% if _t1 and (_t1.used or _t1.cause) %}
@@ -749,13 +762,34 @@ function kgpGalleryReorder(from, to) {
   wrap.insertBefore(rf, from < to ? rt.nextSibling : rt);
   refreshPrimaryImage(); refreshImageBadges();
 }
+// F23: 「이미지가 없습니다」를 **한 자리에서만** 쓴다. 그리고 *왜* 없는지까지 말한다.
+//   서버가 센 장수(`_KGP_IMG_COUNT`)와 화면이 그린 장수가 어긋나면 그건 데이터가 없는 게 아니라
+//   **화면이 못 읽은 것**이다 — 그 둘이 같은 문장으로 보이면 다음에도 추측으로 푼다.
+var _KGP_IMG_COUNT = {{ (enrich.images if enrich else 0) | int }};
+var _KGP_ENRICH_STATE = {{ (enrich.enrich_state if enrich else '') | tojson }};
+function kgpNoImagesHtml() {
+  if (_KGP_IMG_COUNT > 0) {
+    return '<span class="small" style="color:var(--danger)">'
+      + '서버에는 이미지 ' + _KGP_IMG_COUNT + '장이 있는데 이 화면이 읽지 못했습니다. '
+      + '새로고침해도 같으면 알려 주세요.</span>';
+  }
+  if (_KGP_ENRICH_STATE === 'blocked') {
+    return '<span class="small" style="color:var(--warn)">'
+      + '아직 이미지가 없습니다 — 보강이 멈춰 있어요. 위의 ‘다시 시도’를 눌러 주세요.</span>';
+  }
+  if (_KGP_ENRICH_STATE === 'pending') {
+    return '<span class="text-muted small">'
+      + '아직 이미지가 없습니다 — PC에서 고가수집기가 열려 있으면 곧 채워집니다.</span>';
+  }
+  return '<span class="text-muted small">이미지가 없습니다. 아래 ‘이미지 추가’로 넣을 수 있어요.</span>';
+}
 function renderGallery() {
   const g = document.getElementById('imageGallery');
   if (!g) return;
   const urls = _kgpImageUrls();
   g.innerHTML = '';
   if (!urls.length) {
-    g.innerHTML = '<span class="text-muted small">이미지가 없습니다. 아래 ‘이미지 추가’로 넣을 수 있어요.</span>';
+    g.innerHTML = kgpNoImagesHtml();
     return;
   }
   urls.forEach((u, i) => {
@@ -1591,12 +1625,11 @@ var KGP_IMAGES_KO = {{ (extra.get('images_ko') or []) | tojson }};
 function kgpImgkoRender() {
   var host = document.getElementById('imgkoList');
   if (!host) return;
-  var rows = document.querySelectorAll('#imageGallery img, .kgp-img-row input.kgp-img-url');
-  var urls = [];
-  document.querySelectorAll('input[name="images"]').forEach(function (el) {
-    if (el.value && el.value.trim()) urls.push(el.value.trim());
-  });
-  if (!urls.length) { host.innerHTML = '<div class="text-muted small">이미지가 없습니다.</div>'; return; }
+  // F23: 예전엔 `input[name="images"]`를 찾았는데 **그런 요소가 없다** — 이미지 행의 입력은
+  //   `#imageRows .img-url`이다(name 속성이 없다). 그래서 5장이 담긴 상품에서도 늘
+  //   「이미지가 없습니다」였다. 썸네일 탭과 **같은 모델**을 읽는다(읽는 자리를 둘로 두지 않는다).
+  var urls = (typeof _kgpImageUrls === 'function') ? _kgpImageUrls() : [];
+  if (!urls.length) { host.innerHTML = kgpNoImagesHtml(); return; }
   var byIdx = {};
   (KGP_IMAGES_KO || []).forEach(function (e) { byIdx[e.idx] = e; });
   host.innerHTML = urls.map(function (u, i) {
@@ -1659,6 +1692,34 @@ function kgpImgkoRun() {
     });
 }
 document.addEventListener('DOMContentLoaded', kgpImgkoRender);
+
+// ── F22-3: 막힘 → 다시 줄 세우기 ──────────────────────────────────────────────
+function kgpEnrichRetry() {
+  var btn = document.getElementById('enrichRetryBtn');
+  var msg = document.getElementById('enrichRetryMsg');
+  if (!btn || !msg) return;
+  btn.disabled = true;
+  msg.textContent = '보내는 중…'; msg.style.color = '';
+  fetch(window.location.pathname.replace('/preview/', '/') + '/enrich-retry', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}
+  }).then(function (r) { return r.json().then(function (d) { return {s: r.status, d: d}; }); })
+    .then(function (res) {
+      if (res.d && res.d.ok) {
+        msg.textContent = res.d.message || '다시 줄 세웠어요.';
+        msg.style.color = 'var(--teal)';
+        return;
+      }
+      // 상태코드는 셀러의 말이 아니다 — 숫자는 콘솔에만.
+      if (res.s) console.warn('[보강 재시도] HTTP', res.s, res.d);
+      btn.disabled = false;
+      msg.textContent = (res.d && res.d.error) || '다시 줄 세우지 못했습니다.';
+      msg.style.color = 'var(--danger)';
+    }).catch(function (e) {
+      btn.disabled = false;
+      msg.textContent = '다시 줄 세우지 못했습니다.'; msg.style.color = 'var(--danger)';
+      console.warn('[보강 재시도]', e);
+    });
+}
 
 </script>
 {% endblock %}

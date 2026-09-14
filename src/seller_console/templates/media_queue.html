@@ -88,7 +88,13 @@
               <td class="small">{{ it.title[:40] }}{% if it.title|length > 40 %}…{% endif %}</td>
               <td><span class="pc-badge pc-badge-off">{{ it.attempts }}/{{ max_attempts }}</span></td>
               <td class="small">{{ it.reason or "사유 미기재" }}</td>
-              <td><a class="btn btn-ghost btn-sm" href="/seller/collect/preview/{{ it.id }}">열기</a></td>
+              <td class="text-nowrap">
+                {# F22-3: 여기서도 다시 줄 세울 수 있어야 한다 — 막힌 것을 모아 보는 화면인데
+                   손쓸 방법이 없으면 보기만 하는 화면이 된다. #}
+                <button type="button" class="btn btn-primary btn-sm kgp-requeue"
+                        data-id="{{ it.id }}"><i class="bi bi-arrow-clockwise"></i> 다시 시도</button>
+                <a class="btn btn-ghost btn-sm" href="/seller/collect/preview/{{ it.id }}">열기</a>
+              </td>
             </tr>
             {% endfor %}
           </tbody>
@@ -166,4 +172,29 @@
   {% endif %}
 
 </div>
+<script>
+// F22-3: 막힌 항목을 다시 줄 세운다. 성공하면 그 줄만 바꾼다(새로고침 강요 금지).
+document.addEventListener('click', function (ev) {
+  var btn = ev.target.closest ? ev.target.closest('.kgp-requeue') : null;
+  if (!btn) return;
+  var id = btn.getAttribute('data-id');
+  if (!id) return;
+  btn.disabled = true;
+  var old = btn.innerHTML;
+  btn.textContent = '보내는 중…';
+  fetch('/seller/collect/' + encodeURIComponent(id) + '/enrich-retry', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}
+  }).then(function (r) { return r.json().then(function (d) { return {s: r.status, d: d}; }); })
+    .then(function (res) {
+      if (res.d && res.d.ok) { btn.textContent = '다시 줄 세웠어요'; return; }
+      if (res.s) console.warn('[보강 재시도] HTTP', res.s, res.d);
+      btn.disabled = false; btn.innerHTML = old;
+      if (window.pcToast) pcToast((res.d && res.d.error) || '다시 줄 세우지 못했습니다.', 'error');
+    }).catch(function (e) {
+      btn.disabled = false; btn.innerHTML = old;
+      console.warn('[보강 재시도]', e);
+      if (window.pcToast) pcToast('다시 줄 세우지 못했습니다.', 'error');
+    });
+});
+</script>
 {% endblock %}

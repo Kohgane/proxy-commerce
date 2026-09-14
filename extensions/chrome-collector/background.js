@@ -237,7 +237,13 @@ async function _kgpEnrichOne(item, settings) {
       body: JSON.stringify(body),
     });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok || !d || !d.ok) throw new Error("서버 보강 실패 HTTP " + r.status);
+    // F22: 사유 문장에 **상태코드를 넣지 않는다** — 이 글이 서랍·목록에 그대로 실려
+    //   셀러가 「HTTP 502」를 읽게 된다. 셀러가 그 숫자로 할 수 있는 일은 없다.
+    //   숫자는 여기 콘솔과 서버 로그에 남으니 부검에는 지장이 없다.
+    if (!r.ok || !d || !d.ok) {
+      try { console.warn("[고가수집기 보강] 서버 응답", r.status, d); } catch (e) {}
+      throw new Error(r.ok ? "서버가 저장하지 못했어요" : "서버가 받지 못했어요");
+    }
     return true;
   } finally {
     if (win && win.id != null) { try { await chrome.windows.remove(win.id); } catch (e) {} }
