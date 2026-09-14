@@ -53,17 +53,44 @@ def link(chat_id: str, user_id: str, *, bot_slug: str = "default", token_hash: s
 
 
 def get(chat_id: str, *, bot_slug: str = "default") -> dict:
-    """묶인 계정 `{user_id, token_hash}`. 없으면 빈 dict — 호출부가 **정직 거절**한다."""
+    """묶인 계정 `{user_id, token_hash, default_market_account}`. 없으면 빈 dict.
+
+    없을 때 빈 dict인 이유는 호출부가 **정직 거절**하기 위해서다 — 기본값을 주면 아무 스코프에나 담긴다.
+    """
     slug, cid = _key(bot_slug, chat_id)
     if not (slug and cid):
         return {}
     if not _enabled():
         return dict(_MEM.get((slug, cid), {}))
     with pg.query() as cur:
-        cur.execute("SELECT user_id, token_hash FROM telegram_links "
+        cur.execute("SELECT user_id, token_hash, coalesce(default_market_account, '') "
+                    "FROM telegram_links "
                     "WHERE bot_slug = %s AND chat_id = %s AND deleted_at IS NULL", (slug, cid))
         row = cur.fetchone()
-    return {"user_id": str(row[0]), "token_hash": str(row[1] or "")} if row else {}
+    return {"user_id": str(row[0]), "token_hash": str(row[1] or ""),
+            "default_market_account": str(row[2] or "")} if row else {}
+
+
+def set_default_account(chat_id: str, account: str, *, bot_slug: str = "default") -> bool:
+    """F24-1: 이 (봇, chat)의 **기본 등록 계정**. 담는 초안에 실려 등록 화면이 미리 고른다.
+
+    바인딩이 없으면 만들지 않는다 — 계정 없이 기본 계정만 있는 행은 뜻이 없다.
+    """
+    slug, cid = _key(bot_slug, chat_id)
+    acct = str(account or "").strip()
+    if not (slug and cid):
+        return False
+    if not _enabled():
+        row = _MEM.get((slug, cid))
+        if not row:
+            return False
+        row["default_market_account"] = acct
+        return True
+    with pg.tx() as cur:
+        cur.execute("UPDATE telegram_links SET default_market_account = %s "
+                    "WHERE bot_slug = %s AND chat_id = %s AND deleted_at IS NULL",
+                    (acct, slug, cid))
+        return bool(cur.rowcount)
 
 
 def user_id_for(chat_id: str, *, bot_slug: str = "default") -> str:

@@ -6445,6 +6445,13 @@ def _shape_collect_items(items, current_lang):
             it["gate_ready"] = _ax["gate_ready"]
         except Exception:
             it["enrich_badge"] = None
+        # F24: 소싱 판정 뱃지 — 봇이 담을 때 원칙으로 재서 적어 둔 값. 판정이 없으면 뱃지도 없다
+        #   (없는 뱃지를 만들지 않는다 — 「판정 없음」이라는 뱃지가 제일 쓸모없다).
+        try:
+            from src.sourcing.verdict import badge as _sbadge
+            it["sourcing_badge"] = _sbadge(ex.get("sourcing_verdict"))
+        except Exception:
+            it["sourcing_badge"] = None
         # v87-W4: 목록에 리뷰 수·평점 노출(수신·저장 트랙). review_count 우선, 없으면 reviews 길이.
         _rc_raw = str(ex.get("review_count") or "").strip()
         _revs_n = len(ex.get("reviews") or []) if isinstance(ex.get("reviews"), list) else 0
@@ -7852,17 +7859,30 @@ def sourcing_register_pipe():
         raw_urls = [ln.strip() for ln in urls_text.splitlines() if ln.strip()]
         review = build_review_for_urls(raw_urls)
 
-    return render_template("register_pipe.html", page="sourcing", review=review, urls_text=urls_text)
+    # F24-1: 검수한 행들이 **모두 같은** 기본 등록 계정을 가리킬 때만 미리 고른다.
+    #   섞여 있으면 고르지 않는다 — 절반만 맞는 기본값은 틀린 기본값보다 찾기 어렵다.
+    accts = {r.get("default_market_account") for r in (review.get("review_pass") or [])
+             if r.get("default_market_account")} if review else set()
+    preferred_account = accts.pop() if len(accts) == 1 else ""
+    return render_template("register_pipe.html", page="sourcing", review=review,
+                           urls_text=urls_text, preferred_account=preferred_account)
 
 
-def build_review_for_urls(urls, *, cap: int = 50) -> dict:
+def build_review_for_urls(urls, *, cap: int = 50, rules: "dict | None" = None) -> dict:
     """소싱 URL 목록 → 검수표. **콘솔 화면과 모바일 API(M1-2)의 단일 배선**.
 
     환율·금지어·채널을 붙이는 이 조립을 두 곳에 쓰면 한쪽만 갱신된다 — 그래서 여기 한 곳뿐이다.
     수집은 기존 `_collect_real_draft`, 판정은 기존 `build_source_review`(둘 다 재구현 0).
+
+    F24: 마진·배송비 상한은 **소싱 원칙 저장소**에서 온다(콘솔과 봇이 같은 표를 읽는다).
+    안 주면 옛 상수가 그대로 선다 — 무회귀.
     """
-    from src.pipeline.coupang_replicate import load_blacklist85
+    from src.pipeline.coupang_replicate import DEFAULT_MARGIN_RATE, load_blacklist85
     from src.pipeline.register_pipe import build_source_review
+
+    if rules is None:
+        from src.sourcing import rules as sourcing_rules
+        rules = sourcing_rules.get(_seller_id())
 
     # 환율(원가 KRW 환산) — 통화별 실환율. 없으면 외화 원가는 '환산 불가' 정직 표기(가짜 환산 0).
     fx_map = _register_pipe_fx_map()
@@ -7870,7 +7890,9 @@ def build_review_for_urls(urls, *, cap: int = 50) -> dict:
     review = build_source_review(
         urls, collect_fn=_collect_real_draft,
         channel="woocommerce_multishop", blacklist=bl.get("terms"),
-        fx_rates=fx_map, cap=cap)
+        fx_rates=fx_map, cap=cap,
+        margin_rate=rules.get("target_margin_pct") or DEFAULT_MARGIN_RATE,
+        ship_cost_max_pct=rules.get("ship_cost_max_pct"))
     review["fx_usd_krw"] = fx_map.get("USD")
     review["fx_rates"] = fx_map
     review["blacklist_count"] = bl.get("count", 0)

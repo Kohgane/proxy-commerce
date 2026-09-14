@@ -22,6 +22,45 @@ ACCOUNT_AXES = (
 )
 
 
+def account_choices() -> list:
+    """등록 계정 4개 — `[{market, market_ko, account, label}]`. **여기가 목록의 정본이다.**
+
+    F24: 봇 `/account 우주대행`이 실명을 이 목록에 맞춘다. 계정 축을 봇 안에 다시 적으면
+    쿠팡(고가네·우주대행)과 스마트스토어(chezgoga·gocosmos)가 **다른 축**이라는 사실이
+    한 곳에서만 참이게 된다 — 그러면 언젠가 갈린다.
+
+    스마트스토어 두 계정엔 한글 상호가 없다(라벨이 곧 계정명이다). **지어내지 않는다** —
+    없는 이름을 만들면 오너가 콘솔에서 보는 이름과 봇이 부르는 이름이 달라진다.
+    """
+    out = []
+    for market, market_ko, accounts in ACCOUNT_AXES:
+        for a in accounts:
+            label = a
+            if market == "coupang":
+                try:
+                    from src.pipeline.coupang_replicate import COUPANG_ACCOUNTS
+                    label = (COUPANG_ACCOUNTS.get(a) or {}).get("label") or a
+                except Exception:
+                    pass
+            out.append({"market": market, "market_ko": market_ko, "account": a, "label": label})
+    return out
+
+
+def resolve_account(name: str) -> dict:
+    """사람이 쓴 이름(「우주대행」·「woojoo」) → 계정 1개. 못 찾으면 빈 dict.
+
+    **짐작해서 고르지 않는다.** 계정을 잘못 고르면 남의 스토어에 올라간다 —
+    모르겠으면 되묻는 편이 비교할 수 없이 싸다.
+    """
+    q = str(name or "").strip().lower().replace(" ", "")
+    if not q:
+        return {}
+    for row in account_choices():
+        if q in (row["account"].lower(), row["label"].lower().replace(" ", "")):
+            return dict(row)
+    return {}
+
+
 def _coupang_account(account: str) -> dict:
     """쿠팡 계정 1개 상태. 자격 판별은 기존 `_account_creds`가 정본(재구현 0)."""
     try:

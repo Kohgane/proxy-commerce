@@ -79,6 +79,12 @@
       {% elif eb.kind == "done" %}{% set eb_cls = "pc-badge-on" %}{% set eb_ico = "bi-check-lg" %}
       {% else %}{% set eb_cls = "pc-badge-off" %}{% set eb_ico = "bi-hourglass-split" %}{% endif %}
       <span class="pc-badge {{ eb_cls }}" title="{{ eb.title }}"><i class="bi {{ eb_ico }}"></i> {{ eb.label }}</span>
+      {% if it.sourcing_badge %}
+      {# F24: 소싱 원칙 판정 — 봇이 담을 때 재서 적어 둔 값. 화면 기호는 **토큰 색**이다
+         (텔레그램 답장은 기호를 쓰지만 콘솔은 이모지 0 — 자리가 다르다). #}
+      <span class="pc-badge pc-badge-{{ it.sourcing_badge.kind }} ms-1"
+            title="소싱 원칙 판정"><i class="bi bi-clipboard-check"></i> {{ it.sourcing_badge.label }}</span>
+      {% endif %}
     {% elif it.status == "ok" %}
       {# v47 STEP2: 수집 필드 상태 — 성공(N/5) 또는 부분(누락 필드명). 가짜 성공·무음 실패 금지. #}
       {% set cs = it.collect_status %}
