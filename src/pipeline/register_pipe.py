@@ -358,7 +358,8 @@ def build_source_review_row(draft: dict, *, url: str = "", channel: str = "wooco
                             blacklist=None, margin_rate: float = DEFAULT_MARGIN_RATE,
                             fx_rate: Optional[float] = None, fx_rates: Optional[dict] = None,
                             ship_check_fn=None, ship_cost_fn=None,
-                            brand_country_fn=None, watch_brands=None) -> dict:
+                            brand_country_fn=None, watch_brands=None,
+                            ship_cost_max_pct: Optional[float] = None) -> dict:
     """수집 초안(draft) → 검수표 1행(파일럿 동형). **등록 안 함**(registered=False 불변).
 
     - 제목: 번역 초안(title_ko) 재정제(clean_title_ko) + 절단/CJK 플래그(조용히 자르지 않음).
@@ -433,7 +434,11 @@ def build_source_review_row(draft: dict, *, url: str = "", channel: str = "wooco
             ship_cost_krw = round(float(v)) if v is not None else None
         except Exception:
             ship_cost_krw = None
-    ship_over_35pct = bool(ship_cost_krw and cost_krw and ship_cost_krw > 0.35 * cost_krw)
+    # F24: 상한이 **코드 상수**였다(0.35). 원칙은 사람이 정하는 것인데 사람이 못 바꾸는 자리에
+    #   있었다 → `sourcing_rules`가 값을 준다. 안 주면 35%(옛 값 그대로 — 무회귀).
+    _ship_max = 35.0 if ship_cost_max_pct is None else float(ship_cost_max_pct)
+    ship_over_35pct = bool(ship_cost_krw and cost_krw
+                           and ship_cost_krw > (_ship_max / 100.0) * cost_krw)
 
     # ── 실마진 — 단일 소스(MarginCalculator). 27.4% 근사 교체 ─────────────────────
     sale_krw = price.get("sale_price_krw") if price.get("ok") else None
@@ -469,6 +474,9 @@ def build_source_review_row(draft: dict, *, url: str = "", channel: str = "wooco
         #   무엇이 비었는지 행이 직접 들고 다니게 한다.
         "partial": bool(draft.get("partial")),
         "item_id_taobao": str(draft.get("item_id_taobao") or draft.get("site_item_id") or ""),
+        # F24-1: 봇이 담을 때 정해 둔 **기본 등록 계정**. 등록 화면이 이걸 미리 고른다 —
+        #   매번 사람이 고르면 언젠가 남의 스토어에 올린다(계정 축은 되돌리기 어렵다).
+        "default_market_account": str(draft.get("default_market_account") or ""),
         "uncollected": list(draft.get("uncollected") or []),
         "needs_enrich": bool(draft.get("partial")) or not images or not title,
         "missing": [k for k, v in (("제목", title), ("이미지", images)) if not v],
@@ -480,7 +488,7 @@ def build_source_review(urls, *, collect_fn, channel: str = "woocommerce_multish
                         fx_rate: Optional[float] = None, fx_rates: Optional[dict] = None,
                         cap: int = 50,
                         ship_check_fn=None, ship_cost_fn=None, brand_country_fn=None,
-                        watch_brands=None) -> dict:
+                        watch_brands=None, ship_cost_max_pct: Optional[float] = None) -> dict:
     """소싱 URL 목록 → 검수표. collect_fn(url)=서버 수집(주입). **등록 없음.**
 
     수집 실패/취급금지는 조용히 버리지 않고 failed/excluded로 사유와 함께 분리.
@@ -505,7 +513,8 @@ def build_source_review(urls, *, collect_fn, channel: str = "woocommerce_multish
                                                margin_rate=margin_rate, fx_rate=fx_rate,
                                                fx_rates=fx_rates,
                                                ship_check_fn=ship_check_fn, ship_cost_fn=ship_cost_fn,
-                                               brand_country_fn=brand_country_fn, watch_brands=watch_brands))
+                                               brand_country_fn=brand_country_fn, watch_brands=watch_brands,
+                                               ship_cost_max_pct=ship_cost_max_pct))
     return {
         "count": len(review),
         # 「검수 통과」의 정의는 **취급판정 통과**다(금지어 아님). 완성도와 다른 축이라

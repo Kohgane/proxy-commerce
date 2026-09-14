@@ -43,6 +43,7 @@ chat_id는 같은데 담길 계정이 다르다 — chat_id만으로 키를 잡�
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -99,10 +100,54 @@ MSG = {
     "verdict_margin": "실마진 {pct}%",
     "verdict_margin_none": "마진 미반영",
     "verdict_ship": "배송 {status}",
+
+    # ── F24 소싱 원칙 ──────────────────────────────────────────────────────
+    #   원칙은 사람이 정하고 봇은 재서 말한다 — **판정은 사장님**.
+    "rules_head": "소싱 원칙 — {account}",
+    "rules_line": "· {ko}: {value}",
+    "rules_tail": ("한 줄에 하나씩 바꿉니다 — 예: /rules 원가 50 · /rules 배송비율 35 · /rules 마진 25\n"
+                   "원칙은 사장님이 정하고, 봇은 그 기준으로 재서 말합니다."),
+    "rules_saved": "{ko} → {value} 로 바꿨어요.",
+    "rules_not_saved": "원칙을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+    "rules_bad": ("무슨 값인지 모르겠어요 — {why}\n"
+                  "예: /rules 원가 50 · /rules 배송비율 35 · /rules 마진 25 · /rules 니치브랜드 예\n"
+                  "바꿀 수 있는 항목: {fields}"),
+    "rules_why_empty": "바꿀 항목이 없습니다",
+    "rules_why_no_value": "값이 빠졌습니다",
+    "rules_why_unknown_field": "그런 항목이 없습니다",
+    "rules_why_bad_number": "숫자가 아닙니다",
+    "rules_why_bad_percent": "비율은 100을 넘을 수 없습니다",
+    "rules_why_bad_flag": "예/아니오로 답해 주세요",
+
+    # ── F24 기본 등록 계정 ─────────────────────────────────────────────────
+    "account_now": "이 봇의 기본 등록 계정: {label} ({market_ko})",
+    "account_none": "이 봇의 기본 등록 계정이 정해져 있지 않습니다.",
+    "account_set": "기본 등록 계정을 {label} ({market_ko})(으)로 바꿨어요.",
+    "account_not_saved": "기본 등록 계정을 저장하지 못했습니다.",
+    "account_unknown": "그런 등록 계정이 없어요 — {name}",
+    "account_choices": "고를 수 있는 계정: {choices}",
+
+    # ── F24 자동 판정 ──────────────────────────────────────────────────────
+    "sourcing_head": "{mark} {verdict_ko}",
+    "sourcing_item": "{mark} {name} — {text}",
+    "sourcing_reasons": "사유: {reasons}",
+    "sourcing_none": "판정할 수 없었어요 — {reason}",
+    "verdict_usage": "사용법: /verdict 상품번호 (예: /verdict 1060535477134)",
+    "verdict_not_found": "그 상품번호로 담은 것을 못 찾았어요 — {item_no}",
+    "my_account": "내 계정",
+    "sourcing_no_draft": "초안을 읽지 못했습니다",
 }
 
-# 메시지에 이 말이 섞여 있으면 검수 판정까지(없으면 수집만 — 판정은 느리다).
+# 메시지에 이 말이 섞여 있으면 **상세 판정을 다시 출력**한다(없어도 요약 판정은 늘 붙는다).
 _REVIEW_WORDS = ("검수", "판정", "review")
+
+# F24-1: 봇마다 기본 등록 계정이 다르다. env `TELEGRAM_BOT_ACCOUNT_<SLUG>`가 있으면 그게 이긴다 —
+#   여기 적힌 값은 **오너가 말한 두 봇의 기본값**이고, 새 봇은 env로 정한다(코드 배포 없이).
+BOT_DEFAULT_ACCOUNT = {
+    "default": "gogane",      # gogaBridz_bot — 기본 경로 `/webhooks/telegram/collect`
+    "gogabridz": "gogane",
+    "kohujoo": "woojoo",      # KohujooBot — `/webhooks/telegram/collect/kohujoo`
+}
 
 # 봇 이름표 — 경로 조각이 곧 env 이름이 되므로 **엄격히** 제한한다.
 #   (임의 문자열이 환경변수 조회로 들어가면 안 된다.)
@@ -415,6 +460,17 @@ def _handle_update(slug: str):
         _reply(chat_id, MSG["whoami"].format(account=label) if label else MSG["whoami_none"],
                slug=slug)
         return jsonify({"ok": True})
+    if low.startswith("/account"):
+        return _handle_account(slug, chat_id, text)
+    if low.startswith("/rules") or low.startswith("/verdict"):
+        # 원칙과 판정은 **그 사람의 것**이라 연결이 먼저다.
+        uid, why = _resolve_account(chat_id, slug)
+        if not uid:
+            _reply(chat_id, MSG["need_link"], slug=slug)
+            return jsonify({"ok": False, "error": why or "not_linked"}), 403
+        if low.startswith("/rules"):
+            return _handle_rules(slug, chat_id, text, uid)
+        return _handle_verdict(slug, chat_id, text, uid)
 
     # 링크가 아예 없는 말(인사·잡담)은 **실패가 아니다.** 연결 여부를 따지기 전에
     #   무엇을 보내면 되는지 알려 준다 — 「연결 안 됨」이라고 답하면 엉뚱한 데를 고치게 된다.
@@ -467,16 +523,23 @@ def _handle_update(slug: str):
     except Exception:
         pass
 
-    verdict = None
+    # F24: 담은 **그 자리에서** 소싱 원칙으로 잰다. '검수'가 섞여 있으면 항목별로 펼친다.
+    #   판정은 저장된 초안으로 한다 — 여기서 다시 수집하면 F22와 같은 자리에 서게 된다.
     out = _reply_text(res, seller_id)
-    if any(w in low for w in _REVIEW_WORDS):
-        from src.api.extension_api import _review_verdict
-        verdict = _review_verdict(res.get("url", ""))
-        out = f"{out}\n{_format_verdict(verdict)}"
+    item_id = res.get("item_id") or ""
+    block, rv = ("", None)
+    if item_id:
+        block, rv = _sourcing_block(item_id, seller_id, bot_slug=slug,
+                                    detail=any(w in low for w in _REVIEW_WORDS))
+        if block:
+            out = f"{out}\n{block}"
+        _save_verdict(item_id, seller_id, rv, _default_account(slug, chat_id))
     _reply(chat_id, out, slug=slug)
-    return jsonify({"ok": True, "item_id": res.get("item_id"),
+    return jsonify({"ok": True, "item_id": item_id,
                     "title": res.get("title_ko") or res.get("title", ""),
-                    "kind": res.get("kind", ""), "review": verdict})
+                    "kind": res.get("kind", ""),
+                    "verdict": (rv or {}).get("verdict"),
+                    "account": _default_account(slug, chat_id)})
 
 
 def _reply_text(res: dict, seller_id: str) -> str:
@@ -489,6 +552,180 @@ def _reply_text(res: dict, seller_id: str) -> str:
     from src.auth.account_label import account_label
     from src.collectors.share_text import collect_reply_text
     return collect_reply_text(res, account=account_label(seller_id))
+
+
+def _default_account(slug: str, chat_id: str) -> str:
+    """이 (봇, chat)의 기본 등록 계정. 사람이 정한 값 > env > 봇 기본값."""
+    try:
+        from src.db.telegram_links_pg import get as _tg_get
+        chosen = str(_tg_get(chat_id, bot_slug=slug).get("default_market_account") or "")
+        if chosen:
+            return chosen
+    except Exception as exc:
+        logger.warning("[기본계정] 조회 실패: %s", exc)
+    env = os.getenv(f"TELEGRAM_BOT_ACCOUNT_{slug.upper().replace('-', '_')}", "").strip()
+    return env or BOT_DEFAULT_ACCOUNT.get(slug, "")
+
+
+def _handle_account(slug: str, chat_id: str, text: str):
+    """`/account` 현재 표시 · `/account 우주대행` 설정. 계정 목록은 `ops_snapshot`이 정본."""
+    from src.pipeline.ops_snapshot import account_choices, resolve_account
+    arg = text.split(" ", 1)[1].strip() if " " in text else ""
+    if not arg:
+        acct = _default_account(slug, chat_id)
+        row = resolve_account(acct) if acct else {}
+        _reply(chat_id, (MSG["account_now"].format(**row) if row else MSG["account_none"]) + "\n"
+               + MSG["account_choices"].format(
+                   choices=" · ".join(c["label"] for c in account_choices())), slug=slug)
+        return jsonify({"ok": True, "account": acct})
+
+    row = resolve_account(arg)
+    if not row:
+        # **짐작해서 고르지 않는다** — 계정을 잘못 고르면 남의 스토어에 올라간다.
+        _reply(chat_id, MSG["account_unknown"].format(name=arg) + "\n"
+               + MSG["account_choices"].format(
+                   choices=" · ".join(c["label"] for c in account_choices())), slug=slug)
+        return jsonify({"ok": False, "error": "unknown_account"}), 400
+
+    from src.db.telegram_links_pg import set_default_account
+    if not set_default_account(chat_id, row["account"], bot_slug=slug):
+        _reply(chat_id, MSG["account_not_saved"], slug=slug)
+        return jsonify({"ok": False, "error": "not_saved"}), 500
+    _reply(chat_id, MSG["account_set"].format(**row), slug=slug)
+    return jsonify({"ok": True, "account": row["account"]})
+
+
+def _handle_rules(slug: str, chat_id: str, text: str, seller_id: str):
+    """`/rules` 현재 표 · `/rules 원가 50` 한 줄 바꾸기."""
+    from src.auth.account_label import account_label
+    from src.sourcing import rules as R
+
+    arg = text.split(" ", 1)[1].strip() if " " in text else ""
+    if not arg:
+        cur = R.get(seller_id, bot_slug=slug)
+        lines = [MSG["rules_head"].format(
+            account=account_label(seller_id) or MSG["my_account"])]
+        lines += [MSG["rules_line"].format(ko=ko, value=val) for ko, val, _d in R.as_table(cur)]
+        lines.append(MSG["rules_tail"])
+        _reply(chat_id, "\n".join(lines), slug=slug)
+        return jsonify({"ok": True, "rules": cur})
+
+    field, value = R.parse_command(arg)
+    if field is None:
+        # **짐작해서 바꾸지 않는다.** 원칙을 잘못 바꾸면 그 뒤 모든 판정이 조용히 틀린다.
+        _reply(chat_id, MSG["rules_bad"].format(
+            why=MSG.get(f"rules_why_{value}", value),
+            fields=" · ".join(f["ko"] for f in R.FIELDS)), slug=slug)
+        return jsonify({"ok": False, "error": value}), 400
+
+    if not R.set_one(seller_id, field, value, bot_slug=slug):
+        _reply(chat_id, MSG["rules_not_saved"], slug=slug)
+        return jsonify({"ok": False, "error": "not_saved"}), 500
+    ko = next(f["ko"] for f in R.FIELDS if f["key"] == field)
+    _reply(chat_id, MSG["rules_saved"].format(ko=ko, value=R.format_value(field, value)), slug=slug)
+    return jsonify({"ok": True, "field": field, "value": value})
+
+
+def _sourcing_block(item_id: str, seller_id: str, *, bot_slug: str, detail: bool) -> tuple:
+    """담은 초안 → 소싱 판정 블록. 반환 `(문장, 판정dict)`.
+
+    **다시 수집하지 않는다** — 저장된 초안으로 잰다. 응답 안에서 남의 서버를 다시 부르면
+    그 서버가 느린 날 우리가 죽는다(F22에서 그렇게 502가 났다).
+    """
+    from src.sourcing import rules as R
+    from src.sourcing.verdict import evaluate
+    try:
+        from src.seller_console.collect_history_store import get as _get
+        row = _get(item_id, seller_ids={seller_id}) or {}
+        extra = json.loads(row.get("extra_json") or "{}") or {}
+    except Exception as exc:
+        logger.warning("[소싱판정] 초안 조회 실패: %s", exc)
+        return MSG["sourcing_none"].format(reason=MSG["sourcing_no_draft"]), None
+
+    draft = dict(extra)
+    draft.setdefault("title", row.get("title") or "")
+    draft.setdefault("price", row.get("price") or "")
+    draft.setdefault("currency", row.get("currency") or "")
+
+    try:
+        from src.pipeline.coupang_replicate import load_blacklist85
+        from src.pipeline.register_pipe import build_source_review_row
+        from src.seller_console.views import _register_pipe_fx_map
+        rules = R.get(seller_id, bot_slug=bot_slug)
+        fx = _register_pipe_fx_map()
+        rrow = build_source_review_row(
+            draft, url=row.get("url") or "", blacklist=load_blacklist85().get("terms"),
+            fx_rates=fx, margin_rate=rules.get("target_margin_pct"),
+            ship_cost_max_pct=rules.get("ship_cost_max_pct"))
+        rv = evaluate(rrow, rules, fx_rates=fx, extra=extra)
+    except Exception as exc:
+        logger.warning("[소싱판정] 판정 실패: %s", exc)
+        return MSG["sourcing_none"].format(reason=f"{type(exc).__name__}"), None
+
+    from src.sourcing.verdict import MARK
+    lines = [MSG["sourcing_head"].format(mark=rv["mark"], verdict_ko=rv["verdict_ko"])]
+    if detail:
+        lines += [MSG["sourcing_item"].format(mark=MARK[i["state"]], name=i["name"], text=i["text"])
+                  for i in rv["items"]]
+    elif rv["reasons"]:
+        lines.append(MSG["sourcing_reasons"].format(reasons=" · ".join(rv["reasons"])))
+    return "\n".join(lines), rv
+
+
+def _save_verdict(item_id: str, seller_id: str, rv: dict, account: str) -> None:
+    """판정과 기본 등록 계정을 **초안에 적는다** — 목록 뱃지·등록 화면이 그걸 읽는다.
+
+    적는 데 실패해도 답장은 이미 나갔다. 저장 실패로 판정을 되돌리지 않는다(부가 기록).
+    """
+    try:
+        from src.seller_console.collect_history_store import get as _get, update as _update
+        row = _get(item_id, seller_ids={seller_id}) or {}
+        extra = json.loads(row.get("extra_json") or "{}") or {}
+        if rv:
+            extra["sourcing_verdict"] = {"verdict": rv["verdict"], "verdict_ko": rv["verdict_ko"],
+                                         "items": rv["items"], "at": _now_iso()}
+        if account:
+            extra["default_market_account"] = account
+        _update(item_id, seller_ids={seller_id},
+                extra_json=json.dumps(extra, ensure_ascii=False))
+    except Exception as exc:
+        logger.warning("[소싱판정] 저장 실패(답장은 나갔다): %s", exc)
+
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _handle_verdict(slug: str, chat_id: str, text: str, seller_id: str):
+    """`/verdict 1060535477134` — 담아 둔 것의 판정만 다시 본다(다시 담지 않는다)."""
+    arg = text.split(" ", 1)[1].strip() if " " in text else ""
+    item_no = re.sub(r"\D", "", arg)
+    if not item_no:
+        _reply(chat_id, MSG["verdict_usage"], slug=slug)
+        return jsonify({"ok": False, "error": "usage"}), 400
+
+    item_id = ""
+    try:
+        from src.seller_console.collect_history_store import list_items
+        for row in list_items(seller_ids={seller_id}, days=365, limit=500):
+            ex = json.loads(row.get("extra_json") or "{}") or {}
+            if item_no in (str(ex.get("item_id_taobao") or ""),
+                           str(ex.get("site_item_id") or "")) or item_no in (row.get("url") or ""):
+                item_id = row.get("id") or ""
+                break
+    except Exception as exc:
+        logger.warning("[소싱판정] 상품번호 조회 실패: %s", exc)
+
+    if not item_id:
+        _reply(chat_id, MSG["verdict_not_found"].format(item_no=item_no), slug=slug)
+        return jsonify({"ok": False, "error": "not_found"}), 404
+
+    block, rv = _sourcing_block(item_id, seller_id, bot_slug=slug, detail=True)
+    _reply(chat_id, block, slug=slug)
+    if rv:
+        _save_verdict(item_id, seller_id, rv, "")
+    return jsonify({"ok": True, "item_id": item_id, "verdict": (rv or {}).get("verdict")})
 
 
 def _format_verdict(rv: dict) -> str:

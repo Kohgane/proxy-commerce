@@ -174,38 +174,75 @@ def test_duplicate_uses_existing_key(client, monkeypatch, _quiet):
 
 # ── 검수 판정(M1-2 연결) ──────────────────────────────────────────────────────
 
-def test_review_is_opt_in_by_keyword(client, monkeypatch, _quiet):
-    """'검수'가 섞였을 때만 판정까지 — 판정은 느리다."""
+def _draft(monkeypatch, extra: dict, *, title="PopSockets 그립톡"):
+    """판정이 읽을 **저장된 초안**. F24부터 판정은 여기서 나온다 — 다시 수집하지 않는다."""
+    import json as _json
+    row = {"id": "it-1", "title": title, "url": "https://x.com/dp/1",
+           "price": extra.get("price", ""), "currency": extra.get("currency", ""),
+           "extra_json": _json.dumps(extra, ensure_ascii=False)}
+    monkeypatch.setattr("src.seller_console.collect_history_store.get",
+                        lambda item_id, seller_ids=None, seller_id=None: dict(row))
+    monkeypatch.setattr("src.seller_console.collect_history_store.update",
+                        lambda item_id, **kw: True)
+
+
+def test_verdict_is_always_attached_and_keyword_expands_it(client, monkeypatch, _quiet):
+    """F24: 판정은 **늘** 붙는다. '검수'는 그걸 **항목별로 펼치는** 말이다.
+
+    옛 계약은 '검수'가 있어야만 판정이 붙었다(판정이 느렸으니까). 이제 판정은 저장된
+    초안으로만 재기 때문에 느리지 않다 — 그래서 담는 자리에서 바로 말한다.
+    """
     _ok_collect(monkeypatch)
-    monkeypatch.setattr("src.api.extension_api._review_verdict",
-                        lambda url: {"ok": True, "excluded": False, "sale_krw": 19900,
-                                     "margin_pct": 27.4, "ship_status": "배송가능"})
+    _draft(monkeypatch, {"price": "60", "currency": "USD", "images": ["a.jpg"]})
+
     plain = _post(client, "https://x.com/dp/1").get_json()
-    assert plain.get("review") is None
+    assert plain["verdict"] in ("ok", "hold", "no"), "판정이 안 붙었다"
+    plain_text = _quiet[0]
 
     _quiet.clear()
-    withrv = _post(client, "https://x.com/dp/2 검수").get_json()
-    assert withrv["review"]["ok"] is True
-    assert "판매가 19,900원" in _quiet[0] and "27.4%" in _quiet[0]
+    _post(client, "https://x.com/dp/2 검수")
+    detail_text = _quiet[0]
+    # 펼친 쪽이 항목을 이름으로 말한다(요약 쪽엔 없다).
+    assert "마진율" in detail_text and "배송비율" in detail_text
+    assert len(detail_text.splitlines()) > len(plain_text.splitlines())
 
 
 def test_excluded_verdict_carries_reason(client, monkeypatch, _quiet):
-    _ok_collect(monkeypatch)
-    monkeypatch.setattr("src.api.extension_api._review_verdict",
-                        lambda url: {"ok": True, "excluded": True, "reason": "금지어 '레플리카'"})
+    """취급 제외는 **사유와 함께** 나간다 — 조용한 탈락 금지(옛 계약의 뜻 그대로)."""
+    _ok_collect(monkeypatch, title="레플리카 가방")
+    _draft(monkeypatch, {"price": "60", "currency": "USD"}, title="레플리카 가방")
     _post(client, "https://x.com/dp/3 검수")
-    assert "취급 제외" in _quiet[0] and "레플리카" in _quiet[0]
+    text = _quiet[0]
+    assert "금칙어" in text and "레플리카" in text
 
 
 def test_missing_numbers_are_not_faked(client, monkeypatch, _quiet):
     """★ 숫자가 없으면 **없다고 쓴다** — 0으로 채우지 않는다."""
     _ok_collect(monkeypatch)
-    monkeypatch.setattr("src.api.extension_api._review_verdict",
-                        lambda url: {"ok": True, "excluded": False,
-                                     "sale_krw": None, "margin_pct": None})
+    _draft(monkeypatch, {})          # 가격·통화 없음
     _post(client, "https://x.com/dp/4 검수")
-    assert "판매가 미산출" in _quiet[0] and "마진 미반영" in _quiet[0]
-    assert "0원" not in _quiet[0]
+    text = _quiet[0]
+    assert "산출 불가" in text or "미상" in text or "환산 불가" in text
+    assert "0원" not in text and "0%" not in text
+
+
+def test_verdict_command_reads_a_saved_draft(client, monkeypatch, _quiet):
+    """`/verdict 상품번호` — 담아 둔 것의 판정만 다시 본다(다시 담지 않는다)."""
+    import json as _json
+    monkeypatch.setattr("src.seller_console.collect_history_store.list_items",
+                        lambda **kw: [{"id": "it-1", "url": "https://item.taobao.com/item.htm?id=1060535477134",
+                                       "extra_json": _json.dumps({"item_id_taobao": "1060535477134"})}])
+    _draft(monkeypatch, {"price": "60", "currency": "USD", "item_id_taobao": "1060535477134"})
+    r = _post(client, "/verdict 1060535477134")
+    assert r.get_json()["ok"] is True
+    assert "마진율" in _quiet[0]
+
+
+def test_verdict_command_says_when_it_cannot_find_it(client, monkeypatch, _quiet):
+    monkeypatch.setattr("src.seller_console.collect_history_store.list_items", lambda **kw: [])
+    r = _post(client, "/verdict 999")
+    assert r.status_code == 404
+    assert "못 찾았어요" in _quiet[0]
 
 
 # ── 구조 ──────────────────────────────────────────────────────────────────────
@@ -217,6 +254,12 @@ def test_separate_from_cs_webhook_and_reuses_core():
     assert "cs_bot" not in src and "InboxStore" not in src      # CS 인박스와 섞이지 않는다
     # C-F17-B: 코어를 `collect_one_url`에서 **`collect_input`**(단일 판단점)으로 올렸다.
     #   그 안에서 여전히 `collect_one_url`을 부른다 — 판단이 한 벌이 됐을 뿐이다.
-    assert "collect_input" in src and "_review_verdict" in src
-    for reinvented in ("history_append", "build_source_review", "dispatcher_collect"):
+    assert "collect_input" in src
+    # F24: 판정도 **콘솔 검수표와 같은 빌더**를 부른다(`build_source_review_row`).
+    #   부르는 것은 재사용이고, 여기서 마진·금지어를 **다시 계산하면** 이중 구현이다.
+    assert "build_source_review_row" in src
+    #   공용 로더를 **부르는 것**은 재사용이다(`load_blacklist85()`). 재구현은 이런 것들이다:
+    #   제 금지어 목록을 들고 있거나, 마진 공식을 다시 쓰거나, 수집을 제 손으로 하는 것.
+    for reinvented in ("history_append", "dispatcher_collect", "MarginCalculator",
+                       "_calc_margin", "recalc_channel_price"):
         assert reinvented not in src, reinvented
