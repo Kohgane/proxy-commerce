@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional
 
 # 필드 순서 = 표시 순서. (키, 한글 라벨, 핵심 여부)
@@ -203,6 +204,29 @@ ENRICH_STATE_READERS = (
 )
 
 
+def humanize_block_reason(reason: Optional[str]) -> str:
+    """막힘 사유를 **셀러의 말**로. 상태코드는 셀러의 말이 아니다.
+
+    F22 실측: 서랍·목록에 「3회 시도 실패 — 서버 보강 실패 HTTP 502」가 그대로 떴다.
+    셀러가 `502`로 할 수 있는 일은 없다 — 무엇이 안 됐고 뭘 하면 되는지만 말한다.
+    숫자는 확장 콘솔·서버 로그에 남으니 부검에는 지장이 없다.
+
+    이미 저장된 행에도 그 문장이 들어 있으므로 **읽을 때 바로잡는다**
+    (이관을 손으로 돌려야만 고쳐진다면, 안 돌린 동안 화면은 계속 그 말을 한다 — F14와 같은 규칙).
+
+    벤치 화면에서 지운 규칙을 **두 번째 화면**에도 적용하는 것이다.
+    """
+    txt = str(reason or "").strip()
+    if not txt:
+        return ""
+    # `서버 보강 실패 HTTP 502` 처럼 코드를 달고 오는 문장을 통째로 사람 말로.
+    txt = re.sub(r"서버\s*보강\s*실패\s*HTTP\s*\d{3}", "서버가 받지 못했어요", txt)
+    # 남은 `HTTP 502`·`(HTTP 502)` 조각도 지운다(어느 문장에 붙어 왔든).
+    txt = re.sub(r"\(?\s*HTTP\s*\d{3}\s*\)?", "", txt)
+    txt = re.sub(r"\s{2,}", " ", txt).strip(" —-·,")
+    return txt
+
+
 def enrich_axes(extra: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """저장된 `extra` → `{gate_ready, enrich_state, reason, attempts, is_draft}`.
 
@@ -239,7 +263,7 @@ def enrich_axes(extra: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return {
         "gate_ready": bool(gate_ready),
         "enrich_state": state,                   # "" = 보강 축이 없는 항목(일반 수집)
-        "reason": str(ex.get("enrich_blocked_reason") or ""),
+        "reason": humanize_block_reason(ex.get("enrich_blocked_reason")),
         "attempts": int(ex.get("enrich_attempts") or 0),
         # 보강 축이 붙어 있으면 **부분 초안**이다 — 완전 수집 잣대로 재면 안 된다.
         "is_draft": bool(state),

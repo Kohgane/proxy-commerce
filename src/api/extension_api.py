@@ -574,52 +574,103 @@ def collect_enrich_pending():
     return jsonify({"ok": True, "items": out, "total": len(out)})
 
 
-# C-F13-3: 이미지 저장본 만들기 예산. 이 라우트는 **확장이 백그라운드에서** 부르는 것이라
-#   사람이 기다리지 않지만, 그렇다고 무한정 잡아 두면 워커가 점유된다(W10 흉).
+# C-F13-3: 이미지 저장본 만들기 예산.
+#
+# F22 실측(2026-09-14): 이 예산은 **벽시계 예산이 아니었다.** 마감을 장과 장 **사이**에서만
+#   보기 때문에, 한 장이 오래 걸리면 그 한 장은 절대 안 끊긴다(실측: 장당 3초 × 12장 = 9.0초,
+#   예산 8초를 넘겨서 끝났다). 소싱처가 느리게 흘려 보내면 한 장이 분 단위로 갈 수 있고,
+#   그러면 gunicorn `--timeout 120`이 워커를 죽이고 프록시가 502를 돌려준다.
+#   → 예산을 **장마다** 건다(아래 `_copy_one`). 「예산이 문서에만 있었다」와 같은 뿌리다.
 IMAGE_STORE_BUDGET_SEC = 8
 IMAGE_STORE_CAP = 12
+IMAGE_STORE_PER_IMAGE_SEC = 6          # 한 장에 걸 수 있는 벽시계 상한
 
 
-def _store_image_copies(images: list, *, already=None) -> dict:
+def _cdn_configured() -> bool:
+    """저장본을 **둘 데가 있는가**. 없으면 만들어 봐야 버린다.
+
+    F22: 예전엔 미설정이어도 내려받고·워터마크 검사하고·리사이즈하고·WebP로 바꾼 **다음에야**
+    「올릴 데가 없다」를 알았다. 버릴 것을 만드느라 워커를 잡고 있었던 셈이다.
+    """
+    try:
+        from src.media.image_pipeline import _cloudinary_configured, _CDN_UPLOAD_ENABLED
+        return bool(_CDN_UPLOAD_ENABLED and _cloudinary_configured())
+    except Exception:
+        return False
+
+
+def _copy_one(process_image, url: str, budget_sec: float):
+    """한 장을 **벽시계 예산 안에서만** 처리한다. 넘기면 버리고 다음 장으로.
+
+    내려받기의 `timeout=10`은 **소켓 타임아웃**이지 전송 총량 마감이 아니다 —
+    느리게 흘려 보내는 서버에는 마감이 없는 것과 같다. 그래서 시간을 여기서 건다.
+    (넘긴 스레드는 소켓 타임아웃에 걸려 스스로 끝난다. 결과만 버린다.)
+    """
+    import threading
+    box: dict = {}
+
+    def _run():
+        try:
+            box["r"] = process_image(url)
+        except Exception as exc:
+            box["e"] = exc
+
+    th = threading.Thread(target=_run, daemon=True)
+    th.start()
+    th.join(budget_sec)
+    if th.is_alive():
+        logger.info("[이미지저장] 한 장이 %.0f초를 넘겨 버림(원본 유지)", budget_sec)
+        return None
+    return box.get("r")
+
+
+def _store_image_copies(images: list, *, already=None,
+                        budget_sec: float = IMAGE_STORE_BUDGET_SEC) -> dict:
     """원본 URL은 **그대로 두고** 서버 저장본을 따로 만든다.
 
     C-F13-3: 원본을 덮어쓰면 D트랙(재번역·재가공)에서 되돌릴 데가 없다 — 원본이 유일한 진본이다.
     CDN 미설정이면 저장본은 **비운다**: 원본 URL을 "저장본"이라 부르면 그게 가짜다.
     왜 비었는지는 `images_stored_note`에 남긴다(다음 사람이 그걸로 시간을 안 쓰게).
 
-    예산 안에서 되는 만큼만 하고 **몇 장 했는지 적는다** — 다 못 했다고 실패로 적지 않는다.
+    **요청 경로에서 부르지 않는다**(F22) — 크론이 부른다. 응답을 기다리는 사람이 있는 자리에서
+    남의 서버에서 이미지를 내려받으면, 그 서버가 느린 날 우리가 502가 된다.
     """
     import time as _t
     out: dict = {}
     urls = [u for u in (images or []) if u][:IMAGE_STORE_CAP]
     if not urls:
         return out
+    if not _cdn_configured():
+        # 만들기 전에 **둘 데가 있는지부터** 본다. 없으면 아무것도 내려받지 않는다.
+        return {"images_stored_note": "CDN 미설정 — 원본 URL만 보관(저장본 없음)"}
     try:
         from src.media.image_pipeline import process_image
     except Exception as exc:                                   # pragma: no cover
         return {"images_stored_note": f"이미지 파이프라인 미가용: {type(exc).__name__}"}
 
-    stored, deadline = [], _t.monotonic() + IMAGE_STORE_BUDGET_SEC
+    stored, deadline = [], _t.monotonic() + budget_sec
     stopped_early = False
     for u in urls:
-        if _t.monotonic() >= deadline:
+        left = deadline - _t.monotonic()
+        if left <= 0:
             stopped_early = True
             break
-        try:
-            r = process_image(u)
-            # **업로드가 실제로 됐을 때만** 저장본으로 센다. 파이프라인은 미설정 시 원본 URL을
-            #   그대로 돌려주므로, 그 값을 저장본이라 적으면 같은 URL을 두 번 적는 셈이다.
-            if getattr(r, "cdn_uploaded", False) and getattr(r, "processed_url", ""):
-                stored.append(r.processed_url)
-        except Exception as exc:
-            logger.debug("[enrich] 이미지 저장본 1건 실패(원본 유지): %s", exc)
+        r = _copy_one(process_image, u, min(left, IMAGE_STORE_PER_IMAGE_SEC))
+        if r is None:
+            continue
+        # **업로드가 실제로 됐을 때만** 저장본으로 센다. 파이프라인은 미설정 시 원본 URL을
+        #   그대로 돌려주므로, 그 값을 저장본이라 적으면 같은 URL을 두 번 적는 셈이다.
+        if getattr(r, "cdn_uploaded", False) and getattr(r, "processed_url", ""):
+            stored.append(r.processed_url)
 
     if stored:
-        out["images_stored"] = _union(already, stored)
+        # F22: 예전엔 여기서 `_union`을 불렀는데 그 이름은 `collect_enrich` **안에만** 있었다
+        #   (module-level NameError). CDN이 켜지는 날 처음 터졌을 잠복 결함이다.
+        out["images_stored"] = _union_images(list(already or []), stored)
         out["images_stored_note"] = (f"{len(stored)}/{len(urls)}장 저장"
                                      + (" · 예산 내 중단" if stopped_early else ""))
     else:
-        out["images_stored_note"] = ("CDN 미설정 또는 처리 실패 — 원본 URL만 보관"
+        out["images_stored_note"] = ("처리 실패 — 원본 URL만 보관"
                                      + (" · 예산 내 중단" if stopped_early else ""))
     return out
 
@@ -778,12 +829,19 @@ def collect_enrich():
         rep = merged[0] if merged else ""
     # C-F13-3: **원본 URL은 그대로 두고** 서버 저장본을 따로 만든다.
     #   원본을 덮어쓰면 D트랙(재번역·재가공)에서 되돌릴 데가 없다 — 원본이 유일한 진본이다.
-    #   CDN 미설정이면 저장본은 **비운다**(원본 URL을 저장본이라 부르면 그게 가짜다).
+    #
+    # F22: 그 복사를 **여기서 하지 않는다.** 남의 서버에서 이미지를 내려받는 일을 응답 안에 두면,
+    #   그 서버가 느린 날 우리가 502가 된다(실측: 초안 1060535477134 · 3회 모두 502).
+    #   저장은 지금 끝낸다(원본 URL) — 복사·변환은 **접수만** 하고 크론이 가져간다.
     if changed.get("images") and str(data.get("store_images") or "1").strip() != "0":
-        extra.update(_store_image_copies(list(extra.get("images") or []),
-                                         already=extra.get("images_stored")))
-        if extra.get("images_stored"):
-            changed["images_stored"] = len(extra["images_stored"])
+        if _cdn_configured():
+            extra["images_copy_state"] = "queued"
+            extra["images_copy_queued_at"] = _now_iso_w4()
+            changed["images_copy"] = 1
+        else:
+            # 둘 데가 없으면 **큐에 넣지 않는다** — 아무도 못 비우는 큐는 가짜 큐다.
+            extra.pop("images_copy_state", None)
+            extra["images_stored_note"] = "CDN 미설정 — 원본 URL만 보관(저장본 없음)"
 
     extra["enriched"] = True
     # v86-F: 보강으로 상세가 실제로 채워졌으면 '간이'를 해제한다. 안 그러면 타일 수집분에 뱃지가

@@ -1229,6 +1229,15 @@ try:
 except Exception as _cron_bp_exc:
     logger.warning("재가격 Cron Blueprint 등록 실패: %s", _cron_bp_exc)
 
+# F22: 이미지 저장본 큐 소비자 (/cron/image-copies).
+#   보강 요청 안에서 이미지를 내려받다 워커가 죽어 502가 났다 — 복사는 요청 밖으로 옮겼다.
+try:
+    from .api.media_cron import media_cron_bp
+    app.register_blueprint(media_cron_bp)
+    logger.info("이미지 저장본 Cron Blueprint 등록 완료 (/cron/image-copies)")
+except Exception as _media_cron_exc:
+    logger.warning("이미지 저장본 Cron Blueprint 등록 실패: %s", _media_cron_exc)
+
 # Phase 132: /shop 블루프린트는 외부 kohganemultishop.org가 진짜 자체몰이므로 기본 비활성.
 # 향후 데모/쇼윈도우 용도로 부활시키려면 ENABLE_INTERNAL_SHOP=1 환경변수 설정.
 if os.getenv("ENABLE_INTERNAL_SHOP", "0") == "1":
