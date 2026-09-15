@@ -378,7 +378,8 @@ def init_schema():
                   "schema_stage7.sql",   # C-F17-B: telegram_links(폰 기본 입구의 chat_id↔셀러 바인딩)
                   "schema_stage8.sql",   # C-F19: user_identities((provider,email)→user_id) + 병합 백업
                   "schema_stage9.sql",   # D1: image_translate_usage(장당 과금 장부) + image_bench_runs
-                  "schema_stage10.sql"): # F24: sourcing_rules(소싱 원칙) + 봇별 기본 등록 계정
+                  "schema_stage10.sql",  # F24: sourcing_rules(소싱 원칙) + 봇별 기본 등록 계정
+                  "schema_stage11.sql"): # F25b: api_rate_slots(서버 전역 호출 차례표)
         f = here / fname
         if f.exists():
             run_ddl(f.read_text(encoding="utf-8"))

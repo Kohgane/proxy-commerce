@@ -91,10 +91,15 @@ RATE_RETRY_WAIT_SEC = float(os.getenv("TENCENT_TMT_RATE_RETRY_WAIT_SEC", "2"))
 _RATE_CODES = ("LimitExceeded",)
 _RATE_TEXTS = ("频率", "每秒", "rate limit", "too many requests")
 
-# 전역 직렬 게이트 — 한도가 계정 단위라 **요청이 갈라져도 하나씩** 나가야 한다.
-#   워커가 여럿이면 프로세스마다 따로 센다(얕은 턱이다. 그 이상이라고 말하지 않는다).
+# 같은 워커 안 스레드끼리의 게이트. **이것만으로는 부족하다** —
+#   실측: gunicorn `--workers 2`(start_render.sh:30) · gthread × threads 4(gunicorn.conf.py:6-7).
+#   워커가 둘이면 잠금도 둘이라 각자 「하나씩」 보내면서 **합쳐서 둘**이 나간다.
+#   그래서 서버 전역 차례표(`rate_slot`)를 함께 쓴다 — 이 잠금은 그 앞의 얕은 턱일 뿐이다.
 _GATE = threading.Lock()
 _LAST_CALL = [0.0]
+
+# 한도가 걸리는 단위. 계정 하나가 한 줄을 선다(사용자가 여럿이어도 같은 줄이다).
+RATE_KEY = "tencent:image-translate"
 
 # 공급사가 돌려주는 에러 코드 → 사람이 읽는 한 줄.
 #   **전부 SDK `errorcodes.py`에 실재하는 코드다.** 없는 코드를 지어 넣지 않는다.
@@ -284,6 +289,17 @@ def translate_image(*, url: str = "", data: bytes = b"", mode: int = 0,
         #   한도에 걸리면 **딱 한 번만** 쉬었다 다시 보낸다(그 외 재시도는 여전히 0 —
         #   장당 과금이라 조용한 재시도는 조용한 청구다).
         cli = _client(timeout_sec or DEFAULT_TIMEOUT_SEC)
+        # F25b: **서버 전역** 차례표를 먼저 선다(워커가 둘이라 프로세스 잠금만으론 부족).
+        #   기다림은 잠금 **밖**이다 — DB 연결을 붙잡은 채 자지 않는다.
+        from src.services import rate_slot
+        turn = rate_slot.wait_turn(RATE_KEY, MIN_INTERVAL_SEC)
+        out["rate_scope"] = turn.get("backend", "")
+        if turn.get("too_long"):
+            out.update({"error_class": "RateQueueTooLong", "error_code": "",
+                        "error_message": "지금은 번역 줄이 깁니다. 잠시 후 다시 시도해 주세요.",
+                        "hint": f"앞에 {turn.get('wait', 0):.0f}초치가 밀려 있습니다."})
+            out["ms"] = int((time.perf_counter() - t0) * 1000)
+            return out
         with _GATE:
             _wait_turn()
             try:
