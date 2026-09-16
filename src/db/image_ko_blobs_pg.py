@@ -146,6 +146,35 @@ def get_cdn(item_id: str, idx: int, *, kind: str = "gallery") -> str:
         return ""
 
 
+def status_for_item(item_id: str):
+    """그 상품의 번역본 현황 — `{(kind, idx): {bytes, cdn_url, cdn_error, cdn_at}}`.
+
+    **못 읽었으면 `None`.** 「행이 하나도 없다」와 「물어보지 못했다」는 다른 말이다 —
+    같은 값(`{}`)으로 돌려주면 호출부가 「번역본이 사라졌다」와 「DB가 대답을 안 한다」를
+    구분할 수 없고, 멀쩡한 번역본을 사라진 것으로 지운다.
+
+    **한 번에 읽는다.** 장마다 묻는 것은 서랍 한 번 여는 데 쿼리 N개다(N+1).
+    `bytes`는 **길이만** 낸다 — 화면은 「있나 없나」만 알면 되고, 바이트를 끌고 오면 행이 붓는다.
+    """
+    if not _enabled():
+        return {(k[1], k[2]): {"bytes": len(v.get("bytes") or b""),
+                               "cdn_url": v.get("cdn_url", ""),
+                               "cdn_error": v.get("cdn_error", ""), "cdn_at": ""}
+                for k, v in _MEM.items() if k[0] == str(item_id)}
+    try:
+        from src.db import pg
+        with pg.query() as cur:
+            cur.execute("SELECT kind, idx, length(bytes), cdn_url, cdn_error, cdn_at "
+                        "FROM image_ko_blobs WHERE item_id = %s", (str(item_id),))
+            return {(str(r[0]), int(r[1])): {
+                "bytes": int(r[2] or 0), "cdn_url": str(r[3] or ""),
+                "cdn_error": str(r[4] or ""),
+                "cdn_at": r[5].isoformat() if r[5] else ""} for r in cur.fetchall()}
+    except Exception as exc:
+        logger.warning("[번역본 현황] 조회 실패 item=%s: %s", item_id, exc)
+        return None            # 모름 — 호출부가 「없음」으로 읽지 않게
+
+
 def delete_item(item_id: str) -> int:
     """그 상품의 번역본을 모두 지운다(상품이 지워질 때). 지운 수를 돌려준다."""
     if not _enabled():

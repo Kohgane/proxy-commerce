@@ -258,7 +258,8 @@ def load_extra(row: dict) -> dict:
 # D2 — 등록에 실제로 나갈 배열
 # ---------------------------------------------------------------------------
 
-def effective_images(extra: dict, *, kind: str = "gallery", originals=None) -> list:
+def effective_images(extra: dict, *, kind: str = "gallery", originals=None,
+                     item_id: str = "") -> list:
     """등록에 **실제로 나갈** 이미지 배열. 원본은 건드리지 않는다.
 
     규칙은 하나다: 그 장의 번역본이 **놓여 있고**(`status=done` + `url`) **쓰기로 돼 있으면**
@@ -279,17 +280,33 @@ def effective_images(extra: dict, *, kind: str = "gallery", originals=None) -> l
         originals = [u for u in (originals or []) if u]
     by_idx = {int(e.get("idx", -1)): e for e in (ex.get(ko_key) or []) if isinstance(e, dict)}
 
+    # F27: **사라진 번역본은 쓰지 않는다.** `images_ko`에 URL이 적혀 있어도 바이트가 없으면
+    #   등록에 내보내는 순간 마켓이 404를 본다 — 적혀 있는 것과 있는 것은 다르다.
+    #   `item_id`를 주면 실제 바이트까지 확인한다(안 주면 적힌 대로 — 옛 호출부 무회귀).
+    live = None                       # None = 못 물어봤다 → 적힌 대로 간다
+    if item_id:
+        try:
+            from src.db import image_ko_blobs_pg as _blobs
+            live = _blobs.status_for_item(item_id)
+        except Exception as exc:
+            logger.warning("[이미지번역] 현황 조회 실패(적힌 대로 진행): %s", exc)
+
     out = []
     for i, orig in enumerate(originals):
         e = by_idx.get(i) or {}
-        if e.get("use") and e.get("status") == "done" and e.get("url"):
-            out.append(e["url"])
+        url = e.get("url") or ""
+        if e.get("use") and e.get("status") == "done" and url:
+            internal = url.startswith(("/seller/", "/admin/", "/api/"))
+            gone = bool(internal and live is not None
+                        and not (live.get((kind, i)) or {}).get("bytes"))
+            out.append(orig if gone else url)
         else:
             out.append(orig)
     return out
 
 
-def effective_plan(extra: dict, *, kind: str = "gallery", originals=None) -> list:
+def effective_plan(extra: dict, *, kind: str = "gallery", originals=None,
+                   item_id: str = "") -> list:
     """화면용 — 장마다 `{idx, url, source, translated_url, use, warn, dense, status}`.
 
     썸네일 탭이 **등록에 나갈 목록 그대로**를 보여 주려면 「이 장이 원본인지 번역본인지」를
@@ -304,10 +321,28 @@ def effective_plan(extra: dict, *, kind: str = "gallery", originals=None) -> lis
         originals = [u for u in (originals or []) if u]
     by_idx = {int(e.get("idx", -1)): e for e in (ex.get(ko_key) or []) if isinstance(e, dict)}
 
+    # F27: **바이트가 실제로 있는지**까지 본다. 「URL이 적혀 있다」와 「이미지가 온다」는 다르다 —
+    #   D1 시절 번역본은 컨테이너 파일에 있었고 D2 배포에 사라졌는데, `images_ko`엔 URL이
+    #   그대로 남아 화면이 **깨진 이미지**만 보여 줬다(무슨 일이 났는지는 아무 데도 없었다).
+    live = None                       # None = **못 물어봤다**(있음/없음을 판단하지 않는다)
+    if item_id:
+        try:
+            from src.db import image_ko_blobs_pg as _blobs
+            live = _blobs.status_for_item(item_id)
+        except Exception as exc:
+            logger.warning("[이미지번역] 현황 조회 실패(표시만 영향): %s", exc)
+
     plan = []
     for i, orig in enumerate(originals):
         e = by_idx.get(i) or {}
-        usable = bool(e.get("status") == "done" and e.get("url"))
+        marked = bool(e.get("status") == "done" and e.get("url"))
+        blob = live.get((kind, i)) if live is not None else None
+        # 외부(CDN) 주소면 우리 저장소와 무관하게 산다. 우리 주소면 **바이트가 있어야** 산다.
+        internal = str(e.get("url") or "").startswith(("/seller/", "/admin/", "/api/"))
+        # `live is None`(못 물어봤다)이면 판단하지 않는다 — 모름으로 멀쩡한 번역본을 지우지 않는다.
+        gone = bool(marked and internal and live is not None
+                    and not (blob and blob.get("bytes")))
+        usable = bool(marked and not gone)
         use = bool(usable and e.get("use"))
         plan.append({
             "idx": i, "original": orig, "kind": kind,
@@ -320,6 +355,11 @@ def effective_plan(extra: dict, *, kind: str = "gallery", originals=None) -> lis
             "warn": list(e.get("warn") or []),
             "dense": bool(e.get("dense")),
             "stored_by": e.get("stored_by", ""),
+            # F27: 「번역했다고 적혀 있는데 바이트가 없다」 — 사라진 것이다. 그렇게 말한다.
+            "gone": gone,
+            "bytes": int((blob or {}).get("bytes") or 0),
+            "cdn_url": str((blob or {}).get("cdn_url") or ""),
+            "cdn_error": str((blob or {}).get("cdn_error") or ""),
         })
     return plan
 

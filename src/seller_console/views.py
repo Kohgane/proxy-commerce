@@ -1793,12 +1793,14 @@ def collect_upload():
             if _uit:
                 from src.services import image_translate_store as _its
                 _uex = json.loads(_uit.get("extra_json") or "{}") or {}
-                _eff = _its.effective_images(_uex, originals=product_data.get("images") or [])
+                _eff = _its.effective_images(_uex, item_id=_uid,
+                                             originals=product_data.get("images") or [])
                 if _eff:
                     product_data["images"] = _eff
                     product_data["thumbnail"] = _eff[0]
                 _dt = _its.effective_images(
-                    _uex, kind="detail", originals=product_data.get("detail_images") or [])
+                    _uex, kind="detail", item_id=_uid,
+                    originals=product_data.get("detail_images") or [])
                 if _dt:
                     product_data["detail_images"] = _dt
                 _warn_pages = _its.effective_summary(_uex).get("warn_idx") or []
@@ -6952,8 +6954,8 @@ def collect_preview_by_id(item_id: str):
     #   그 판단을 화면이 다시 하지 않게 서버가 계산해 내려보낸다(계산하는 자리는 하나다).
     try:
         from src.services import image_translate_store as _its
-        imgko_plan = _its.effective_plan(extra)
-        imgko_detail_plan = _its.effective_plan(extra, kind="detail")
+        imgko_plan = _its.effective_plan(extra, item_id=item_id)
+        imgko_detail_plan = _its.effective_plan(extra, kind="detail", item_id=item_id)
         imgko_storage = _its.storage_backend()
     except Exception:
         imgko_plan, imgko_detail_plan, imgko_storage = [], [], ""
@@ -10665,6 +10667,93 @@ def _bench_fixture_rows() -> list:
             "detail_missing": "" if details else "상세 이미지 없음",
         })
     return out
+
+
+@bp.get("/admin/image-storage")
+def image_storage_diag():
+    """F27-4: **이미지 저장소 진단** — 오너가 Render 로그 없이 본다.
+
+    실측(2026-09-16): 번역 탭이 깨진 아이콘만 보여 줬고, 왜 그런지는 서버 로그에만 있었다.
+    **로그를 회수시키지 않는다** — 화면이 말해야 한다.
+
+    보여 주는 것: 항목별 장마다 **바이트 유무 · CDN 주소 · 백필 사유 · 외부 HEAD 결과**.
+    env는 **이름과 존재 여부만** — 값은 절대 내보내지 않는다.
+    """
+    guard = _sourcing_require_admin()
+    if guard is not None:
+        return guard
+
+    from src.services import image_cdn_backfill as bf
+    from src.services import image_reachability as reach
+    from src.services import image_translate_store as store
+    from src.db import image_ko_blobs_pg as blobs
+    from . import collect_history_store
+
+    # 외부 확인은 **눌렀을 때만** 한다 — 화면을 열 때마다 나가면 그게 곧 왕복 비용이다.
+    probe = (request.args.get("probe") or "") == "1"
+
+    rows = []
+    try:
+        items = collect_history_store.list_items(seller_ids=_seller_identities(),
+                                                 days=90, limit=200)
+    except Exception as exc:
+        logger.warning("[저장소 진단] 목록 조회 실패: %s", exc)
+        items = []
+
+    for it in items:
+        try:
+            ex = json.loads(it.get("extra_json") or "{}") or {}
+        except Exception:
+            continue
+        if not (ex.get("images_ko") or ex.get("detail_images_ko")):
+            continue
+        live = blobs.status_for_item(it.get("id") or "") or {}
+        pages = []
+        for kind in ("gallery", "detail"):
+            for p in store.effective_plan(ex, kind=kind, item_id=it.get("id") or ""):
+                if not p["translatable"] and not p.get("gone"):
+                    continue
+                blob = live.get((kind, p["idx"])) or {}
+                page = {
+                    "kind": kind, "idx": p["idx"],
+                    "url": p["translated_url"] or (p.get("cdn_url") or ""),
+                    "bytes": int(blob.get("bytes") or 0),
+                    "cdn_url": str(blob.get("cdn_url") or ""),
+                    "cdn_at": str(blob.get("cdn_at") or ""),
+                    "cdn_error": str(blob.get("cdn_error") or ""),
+                    "gone": bool(p.get("gone")),
+                    "use": p["use"],
+                    "reach": None,
+                }
+                if probe and page["cdn_url"]:
+                    page["reach"] = reach.check_one(page["cdn_url"])
+                pages.append(page)
+        if pages:
+            rows.append({"id": it.get("id"), "title": it.get("title") or "",
+                         "pages": pages})
+
+    # env는 **이름과 존재 여부만**. 값은 진단에도 안 나온다.
+    env_names = ("CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET")
+    env_state = [{"name": n, "set": bool(os.getenv(n))} for n in env_names]
+
+    return render_template(
+        "image_storage_diag.html", page="media_queue",
+        rows=rows, probed=probe,
+        backend=store.storage_backend(),
+        cdn_ready=bf.cdn_ready(),
+        env_state=env_state,
+        pending=len(blobs.pending_cdn(limit=500)),
+    )
+
+
+@bp.post("/admin/image-storage/backfill")
+def image_storage_backfill_now():
+    """진단 화면에서 백필을 **지금** 돌린다 — 배포를 기다리지 않게."""
+    guard = _sourcing_require_admin()
+    if guard is not None:
+        return guard
+    from src.services import image_cdn_backfill as bf
+    return jsonify(bf.run())
 
 
 @bp.get("/admin/image-translate-bench")

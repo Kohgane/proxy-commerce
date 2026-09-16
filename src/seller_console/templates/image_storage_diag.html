@@ -1,0 +1,163 @@
+{% extends "_base.html" %}
+{% block title %}이미지 저장소 진단{% endblock %}
+{% block content %}
+{# F27-4: 번역본이 왜 안 보이는지를 **화면이 말한다.** 실측(2026-09-16): 서랍에 깨진 아이콘만
+   떴고 이유는 서버 로그에만 있었다 — 로그를 오너에게 회수시키지 않는다. 관리자 전용. #}
+<div class="container-fluid py-4">
+  <div class="console-kpi-label mb-1">이미지</div>
+  <h1 class="h4 fw-bold mb-1"><i class="bi bi-hdd-stack"></i> 저장소 진단</h1>
+  <p class="text-muted small mb-0">
+    번역본이 <strong>실제로 있는지</strong>, <strong>마켓이 가져갈 수 있는지</strong>를 장마다 봅니다.
+  </p>
+  <hr class="pc-hairline mt-2 mb-4">
+
+  <!-- 지금 상태 -->
+  <div class="op-card mb-4">
+    <div class="op-card-head d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <h2 class="h6 mb-0"><i class="bi bi-plug"></i> 저장소</h2>
+      <div class="d-flex gap-2">
+        <a class="btn btn-ghost btn-sm" href="?probe=1">
+          <i class="bi bi-globe"></i> 외부에서 열리는지 확인
+        </a>
+        <button class="btn btn-primary btn-sm" id="backfillBtn">
+          <i class="bi bi-cloud-upload"></i> 지금 올리기
+        </button>
+      </div>
+    </div>
+    <div class="op-card-body">
+      <div class="pc-inset mb-2">
+        {% if backend == 'cdn' %}
+        <span class="pc-badge pc-badge-on">CDN</span>
+        <span class="small ms-1">새 번역본은 Cloudinary로 바로 올라갑니다.</span>
+        {% elif backend == 'db' %}
+        <span class="pc-badge pc-badge-off">DB</span>
+        <span class="small ms-1">
+          번역본은 우리 DB에 있습니다 — <strong>마켓은 이 주소를 못 가져갑니다.</strong>
+          Cloudinary를 연결하면 등록에 나갈 주소가 생깁니다.
+        </span>
+        {% else %}
+        <span class="pc-badge pc-badge-danger">저장소 없음</span>
+        <span class="small ms-1">번역본을 둘 곳이 없습니다.</span>
+        {% endif %}
+      </div>
+
+      {# env는 **이름과 존재 여부만**. 값은 진단에도 안 나온다. #}
+      <div class="d-flex gap-2 flex-wrap mb-2">
+        {% for e in env_state %}
+        <span class="pc-badge {{ 'pc-badge-on' if e.set else 'pc-badge-danger' }}">
+          {{ e.name }} {{ '있음' if e.set else '없음' }}
+        </span>
+        {% endfor %}
+      </div>
+      <div class="form-text">값은 보여 주지 않습니다 — 있는지 없는지만 봅니다.</div>
+
+      <div class="console-kpi-label mt-2">아직 외부 주소가 없는 장: {{ pending }}</div>
+      <div id="backfillOut" class="small mt-2"></div>
+    </div>
+  </div>
+
+  <!-- 항목별 -->
+  {% if rows %}
+  {% for r in rows %}
+  <div class="op-card mb-3">
+    <div class="op-card-head">
+      <h2 class="h6 mb-0">{{ r.title[:60] or r.id }}</h2>
+    </div>
+    <div class="op-card-body p-0">
+      <table class="table table-sm mb-0">
+        <thead class="table-light"><tr>
+          <th>장</th><th>바이트</th><th>외부 주소</th><th>백필</th><th>등록에 나감</th>
+          {% if probed %}<th>외부 확인</th>{% endif %}
+        </tr></thead>
+        <tbody>
+          {% for p in r.pages %}
+          <tr>
+            <td class="small">
+              {{ '상세' if p.kind == 'detail' else '갤러리' }} {{ p.idx + 1 }}
+            </td>
+            <td>
+              {% if p.bytes %}
+              <span class="pc-badge pc-badge-on">{{ '%.0f'|format(p.bytes / 1024) }} KB</span>
+              {% else %}
+              <span class="pc-badge pc-badge-danger">없음</span>
+              {% endif %}
+            </td>
+            <td class="small">
+              {% if p.cdn_url %}
+              <span class="pc-badge pc-badge-on">CDN</span>
+              {% else %}
+              <span class="pc-badge pc-badge-off">아직 없음</span>
+              {% endif %}
+            </td>
+            <td class="small">
+              {% if p.cdn_error %}
+              <span style="color:var(--danger)">{{ p.cdn_error[:80] }}</span>
+              {% elif p.cdn_at %}
+              {{ p.cdn_at[:19] }}
+              {% else %}—{% endif %}
+            </td>
+            <td>
+              {% if p.gone %}
+              <span class="pc-badge pc-badge-danger">번역본 사라짐</span>
+              {% elif p.use %}
+              <span class="pc-badge pc-badge-on">번역본</span>
+              {% else %}
+              <span class="pc-badge pc-badge-muted">원본</span>
+              {% endif %}
+            </td>
+            {% if probed %}
+            <td class="small">
+              {% if p.reach and p.reach.ok %}
+              <span class="pc-badge pc-badge-on">{{ p.reach.status }} {{ p.reach.content_type }}</span>
+              {% elif p.reach %}
+              <span class="pc-badge pc-badge-danger" title="{{ p.reach.reason }}">
+                {{ p.reach.status or '실패' }}
+              </span>
+              {% else %}—{% endif %}
+            </td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endfor %}
+  {% else %}
+  <div class="op-empty">번역한 이미지가 아직 없습니다.</div>
+  {% endif %}
+</div>
+
+<script>
+(function () {
+  var btn = document.getElementById('backfillBtn');
+  var out = document.getElementById('backfillOut');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    btn.disabled = true;
+    out.textContent = '올리는 중…'; out.style.color = '';
+    fetch('/seller/admin/image-storage/backfill', {method: 'POST'})
+      .then(function (r) { return r.json().then(function (d) { return {s: r.status, d: d}; }); })
+      .then(function (res) {
+        btn.disabled = false;
+        var d = res.d || {};
+        if (!d.ok) {
+          // 「0건 처리」와 「할 수 없다」는 다른 뜻이다 — 사유를 그대로 보여 준다.
+          out.textContent = d.reason || '올리지 못했습니다.';
+          out.style.color = 'var(--danger)';
+          return;
+        }
+        out.textContent = '올림 ' + (d.uploaded || 0) + ' · 실패 ' + (d.failed || 0) +
+          ' · 건너뜀 ' + (d.skipped || 0);
+        out.style.color = (d.failed ? 'var(--warn)' : 'var(--teal)');
+        if (d.uploaded) setTimeout(function () { location.reload(); }, 800);
+      })
+      .catch(function (e) {
+        btn.disabled = false;
+        out.textContent = '올리지 못했습니다.'; out.style.color = 'var(--danger)';
+        console.warn('[저장소 진단]', e);
+      });
+  });
+})();
+</script>
+{% endblock %}
