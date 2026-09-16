@@ -48,7 +48,7 @@ def _clean():
 JPG = b"\xff\xd8\xff\xe0-korean-pixels"
 
 
-def _client():
+def _client(*, admin: bool = False):
     os.environ.setdefault("SELLER_CONSOLE_AUTH", "0")
     from src.order_webhook import app
     app.config["TESTING"] = True
@@ -56,6 +56,10 @@ def _client():
     with c.session_transaction() as s:
         s["user_id"] = "u1"
         s["user_email"] = "a@b.c"
+        # F29: 진단 화면은 **진짜 관리자만**. F27 때는 이름이 `require_admin`인 가드가
+        #   로그인만 봐서 아무 셀러나 들어갔다 — 그 구멍을 막으며 이 계약도 실제 역할을 쓴다.
+        if admin:
+            s["user_role"] = "admin"
     return c
 
 
@@ -258,7 +262,7 @@ def test_diagnostic_shows_bytes_cdn_and_reason():
     blobs.put("i1", 0, JPG, seller_id="u1")
     blobs.set_cdn("i1", 0, "", error="boom")
     ex = _extra_with_translation()
-    c = _client()
+    c = _client(admin=True)
     with patch.object(V, "_sourcing_require_admin", lambda: None), \
          patch("src.seller_console.collect_history_store.list_items",
                return_value=[_row(ex)]):
@@ -272,7 +276,7 @@ def test_diagnostic_never_shows_env_values(monkeypatch):
     """env는 **이름과 존재 여부만** — 값은 진단에도 나오지 않는다."""
     import src.seller_console.views as V
     monkeypatch.setenv("CLOUDINARY_API_SECRET", "super-secret-value")
-    c = _client()
+    c = _client(admin=True)
     with patch.object(V, "_sourcing_require_admin", lambda: None), \
          patch("src.seller_console.collect_history_store.list_items", return_value=[]):
         html = c.get("/seller/admin/image-storage").get_data(as_text=True)

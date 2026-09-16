@@ -47,19 +47,55 @@ OWNER_LOGINS = (
     ("google", os.getenv("OWNER_GOOGLE_EMAIL", "cigua7134@gmail.com").strip().lower()),
 )
 
-# 데이터가 붙어 있는 표 — 병합 대상(오너가 지목한 셋).
-#   (테이블, user_id 컬럼, 사람이 읽는 이름)
-MERGE_TABLES = (
-    ("user_tokens", "user_id", "토큰"),
-    ("collect_history", "user_id", "초안"),
-    ("telegram_links", "user_id", "텔레그램 매핑"),
+# ---------------------------------------------------------------------------
+# 사용자 단위 데이터를 가진 표 — **전수**
+# ---------------------------------------------------------------------------
+# F29 실측(2026-09-16): 오너가 과거 입력한 쿠팡 자격이 등록 사전검증에서 「미입력」인데
+#   대시보드는 같은 계정을 「자격 설정됨」이라고 했다. 자격 행이 **고아 UUID**에 남아 있었다.
+#
+#   F19는 병합 대상을 **셋으로 열거**했고 주석에 「오너가 지목한 셋」이라고 적었다.
+#   지목은 그때의 예시였는데 그게 **목록이 되어 굳었다** — 그 뒤에 늘어난 표
+#   (소싱 원칙·번역 작업·이미지 번역 사용량·채점·번역본 바이트…)는 아무도 안 옮겼다.
+#
+# > 열거는 굳는다. **스키마가 정본이고, 목록은 스키마를 따라간다** —
+# > 계약이 `src/db/schema_stage*.sql`을 순회해 여기 빠진 표가 있으면 빨개진다.
+#
+#   (테이블, 스코프 컬럼, 사람이 읽는 이름, PK 컬럼, 소프트삭제 있음, 충돌 정책)
+#
+#   충돌 정책 — 유일 제약에 걸렸을 때 고아 쪽을 어떻게 할지:
+#     "fold" : 고아 행을 소프트삭제한다. **같은 것이 양쪽에 있는 게 확실한 표만.**
+#     "keep" : 그대로 둔다(보고만). 지우면 되돌릴 수 없는 것 — 주문·자격·과금 기록.
+#   기본은 **keep**이다. 지우는 쪽을 기본값으로 두면 한 번의 충돌이 데이터를 먹는다.
+USER_SCOPED_TABLES = (
+    ("collect_history", "user_id", "초안", "id", True, "fold"),
+    ("user_tokens", "user_id", "토큰", "id", True, "keep"),
+    ("telegram_links", "user_id", "텔레그램 매핑", "id", True, "fold"),
+    ("market_links", "user_id", "마켓 자격", "id", True, "keep"),
+    ("sourcing_rules", "user_id", "소싱 원칙", "id", True, "keep"),
+    ("translation_jobs", "user_id", "번역 작업", "id", True, "keep"),
+    ("settings", "user_id", "가격 정책", "user_id", False, "keep"),
+    ("settings_history", "user_id", "설정 이력", "id", False, "keep"),
+    ("image_translate_usage", "user_id", "이미지 번역 사용량", "id", False, "keep"),
+    ("image_bench_runs", "user_id", "이미지 번역 채점", "id", False, "keep"),
+    ("image_ko_blobs", "seller_id", "번역본 이미지", "", False, "keep"),
+    ("orders", "user_id", "주문", "id", True, "keep"),
 )
-# 병합하지 않고 **세기만** 하는 표 — 옮기면 유일성·정산이 얽힌다. 오너 판단 사안으로 보고만.
-REPORT_TABLES = (
-    ("market_links", "user_id", "마켓 연동"),
-    ("settings", "user_id", "가격 정책"),
-    ("orders", "user_id", "주문"),
-)
+
+# `user_identities`는 **스코프 컬럼이 있어도 옮기지 않는다** — 이 표가 「어느 로그인이 누구인가」의
+#   정본이다. 여기의 user_id를 정본으로 덮으면 고아를 가리키던 줄까지 정본을 가리켜,
+#   **무엇이 고아였는지 알 수 없게 된다**(되돌림도 같이 죽는다).
+NEVER_MERGE = ("user_identities", "identity_merge_backup")
+
+# 하위 호환 — 옛 이름으로 부르는 자리가 남아 있다. 이제 **전수**를 가리킨다.
+MERGE_TABLES = tuple((t, c, label) for t, c, label, _pk, _soft, _pol in USER_SCOPED_TABLES)
+REPORT_TABLES = ()
+
+
+def _table_meta(table: str) -> tuple:
+    for row in USER_SCOPED_TABLES:
+        if row[0] == table:
+            return row
+    return (table, "user_id", table, "id", True, "keep")
 
 
 def _pg_ok() -> bool:
@@ -150,10 +186,12 @@ def _counts_for(user_id: str) -> dict:
     if not _pg_ok():
         return out
     from src.db import pg
-    for table, col, label in MERGE_TABLES + REPORT_TABLES:
+    for table, col, label, _pk, soft, _pol in USER_SCOPED_TABLES:
         # 표마다 소프트삭제 칸이 있기도 없기도 하다(`settings`엔 없다) — 있으면 살아 있는 행만,
         #   없으면 전부 센다. 없다고 **-1(못 셌다)로 두면 빈 고아가 영영 흡수되지 못한다.**
-        for where in (f"{col} = %s AND deleted_at IS NULL", f"{col} = %s"):
+        wheres = ((f"{col} = %s AND deleted_at IS NULL", f"{col} = %s") if soft
+                  else (f"{col} = %s",))
+        for where in wheres:
             try:
                 with pg.query() as cur:
                     cur.execute(f"SELECT count(*) FROM {table} WHERE {where}", (user_id,))
@@ -170,10 +208,13 @@ def _orphan_user_ids() -> set:
     if not _pg_ok():
         return found
     from src.db import pg
-    for table, col, _label in MERGE_TABLES:
+    for table, col, _label, _pk, soft, _pol in USER_SCOPED_TABLES:
+        if table in NEVER_MERGE:
+            continue
+        where = " WHERE deleted_at IS NULL" if soft else ""
         try:
             with pg.query() as cur:
-                cur.execute(f"SELECT DISTINCT {col} FROM {table} WHERE deleted_at IS NULL")
+                cur.execute(f"SELECT DISTINCT {col} FROM {table}{where}")
                 found |= {str(r[0]) for r in cur.fetchall() if r[0]}
         except Exception as exc:
             logger.warning("[정체성] %s 스캔 실패: %s", table, exc)
@@ -204,11 +245,15 @@ def _merge_into_canonical(orphan_id: str, batch_id: str) -> dict:
     """
     from src.db import pg, user_identities_pg as idstore
     moved = {}
-    for table, col, label in MERGE_TABLES:
+    for table, col, label, pk, soft, policy in USER_SCOPED_TABLES:
+        if table in NEVER_MERGE:
+            continue
+        live = f"{col} = %s AND deleted_at IS NULL" if soft else f"{col} = %s"
         try:
+            # 되돌릴 수 있게 **먼저 적는다.** PK가 없는 표(`image_ko_blobs`)는 스코프 컬럼을
+            #   행 키로 쓴다 — 되돌림은 「이 표에서 정본인 행을 고아로」 되돌리는 단위면 충분하다.
             with pg.query() as cur:
-                cur.execute(f"SELECT id FROM {table} WHERE {col} = %s AND deleted_at IS NULL",
-                            (orphan_id,))
+                cur.execute(f"SELECT {pk or col} FROM {table} WHERE {live}", (orphan_id,))
                 ids = [str(r[0]) for r in cur.fetchall()]
             if not ids:
                 moved[label] = 0
@@ -216,12 +261,17 @@ def _merge_into_canonical(orphan_id: str, batch_id: str) -> dict:
             idstore.backup_rows(batch_id, [(table, rid, col, orphan_id, OWNER_USER_ID)
                                            for rid in ids])
             with pg.tx() as cur:
-                cur.execute(f"UPDATE {table} SET {col} = %s "
-                            f"WHERE {col} = %s AND deleted_at IS NULL",
+                cur.execute(f"UPDATE {table} SET {col} = %s WHERE {live}",
                             (OWNER_USER_ID, orphan_id))
                 moved[label] = int(cur.rowcount or 0)
         except Exception as exc:
-            # 유일성 충돌 등 — 통째로 죽이지 않고, 그 표만 **겹치는 행을 접는다**.
+            # 유일성 충돌 등. **기본은 그대로 두는 것**이다 — 지우는 쪽을 기본값으로 두면
+            #   한 번의 충돌이 주문·자격·과금 기록을 먹는다(되돌릴 수 없다).
+            if policy != "fold" or not soft:
+                logger.warning("[정체성] %s 병합 충돌 — **남겨 둔다**(정책 %s): %s",
+                               table, policy, exc)
+                moved[label] = -2          # -2 = 충돌로 남겨 둠(0건과 다른 뜻)
+                continue
             logger.warning("[정체성] %s 병합 충돌 — 겹치는 행을 접는다: %s", table, exc)
             try:
                 with pg.tx() as cur:
@@ -232,6 +282,66 @@ def _merge_into_canonical(orphan_id: str, batch_id: str) -> dict:
                 logger.warning("[정체성] %s 접기도 실패: %s", table, exc2)
                 moved[label] = -1
     return moved
+
+
+def restore_batch(batch_id: str) -> dict:
+    """병합을 **되돌린다**. 백업표에 적힌 그대로 스코프 컬럼을 옛 값으로 돌려놓는다.
+
+    F29 실측: 백업 코드는 있고 「되돌릴 수 있어야 병합해도 된다」고 적혀 있는데
+    **되돌리는 코드가 없었다.** 되돌릴 수 없는 백업은 백업이 아니라 기록이다.
+    """
+    out = {"batch": batch_id, "restored": {}, "failed": {}}
+    if not _pg_ok():
+        out["reason"] = "PG 미설정 — 되돌릴 대상이 없습니다"
+        return out
+    from src.db import pg
+    try:
+        with pg.query() as cur:
+            cur.execute("SELECT table_name, row_id, field, old_value FROM identity_merge_backup "
+                        "WHERE batch_id = %s", (batch_id,))
+            rows = cur.fetchall()
+    except Exception as exc:
+        out["reason"] = f"백업 조회 실패: {type(exc).__name__}"
+        return out
+    if not rows:
+        out["reason"] = "그 배치의 백업이 없습니다"
+        return out
+    for table_name, row_id, field, old_value in rows:
+        table = str(table_name)
+        if table in NEVER_MERGE or not any(t == table for t, *_ in USER_SCOPED_TABLES):
+            out["failed"][table] = "알 수 없는 표 — 건드리지 않음"
+            continue
+        _t, _c, _label, pk, _soft, _pol = _table_meta(table)
+        key = pk or str(field)
+        try:
+            with pg.tx() as cur:
+                cur.execute(f"UPDATE {table} SET {field} = %s WHERE {key} = %s",
+                            (str(old_value), str(row_id)))
+                out["restored"][table] = out["restored"].get(table, 0) + int(cur.rowcount or 0)
+        except Exception as exc:
+            out["failed"][table] = f"{type(exc).__name__}"
+    return out
+
+
+def dry_run() -> dict:
+    """**옮기지 않고** 보여 준다 — 고아 UUID마다 표별 행 수.
+
+    오너 Shell 없이 화면에서 보게 하려고 따로 뺐다. 「어느 UUID에 마켓 자격이 있나」는
+    여기서 답이 나온다. 숫자는 전부 실측이고, 못 센 표는 **-1(못 셌다)**로 둔다(0이 아니다).
+    """
+    out = {"canonical": OWNER_USER_ID, "orphans": [], "tables": [], "reason": ""}
+    out["tables"] = [{"table": t, "label": label, "scope": c}
+                     for t, c, label, _pk, _soft, _pol in USER_SCOPED_TABLES]
+    if not _pg_ok():
+        out["reason"] = "PG 미설정 — 셀 수 있는 표가 없습니다"
+        return out
+    out["canonical_counts"] = _counts_for(OWNER_USER_ID)
+    for uid in sorted(_orphan_user_ids()):
+        counts = _counts_for(uid)
+        out["orphans"].append({"user_id": uid, "email": _email_of(uid),
+                               "counts": counts,
+                               "total": sum(v for v in counts.values() if v > 0)})
+    return out
 
 
 def _deactivate_user_record(user_id: str) -> bool:

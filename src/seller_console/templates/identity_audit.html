@@ -1,0 +1,89 @@
+{% extends "_base.html" %}
+{% block title %}정체성 감사{% endblock %}
+{% block content %}
+{# F29-2: 「어느 UUID에 무엇이 붙어 있나」를 화면이 말한다. Render Shell을 열게 하지 않는다.
+   여기서는 **옮기지 않는다** — 보는 자리다. 관리자 전용. #}
+<div class="container-fluid py-4">
+  <div class="console-kpi-label mb-1">계정</div>
+  <h1 class="h4 fw-bold mb-1"><i class="bi bi-person-badge"></i> 정체성 감사</h1>
+  <p class="text-muted small mb-0">
+    로그인이 갈라지면 데이터가 <strong>다른 UUID</strong>에 남습니다. 그 UUID마다 무엇이 몇 건인지 봅니다.
+  </p>
+  <hr class="pc-hairline mt-2 mb-4">
+
+  <div class="op-card mb-4">
+    <div class="op-card-head">
+      <h2 class="h6 mb-0"><i class="bi bi-bullseye"></i> 정본</h2>
+    </div>
+    <div class="op-card-body">
+      <div class="pc-inset mb-2">
+        <code class="small">{{ report.canonical }}</code>
+      </div>
+      {% if report.reason %}
+      <div class="pc-status pc-status-warn"><i class="bi bi-info-circle"></i> {{ report.reason }}</div>
+      {% elif report.canonical_counts %}
+      <div class="d-flex gap-2 flex-wrap">
+        {% for label, n in report.canonical_counts.items() %}
+        <span class="pc-badge {{ 'pc-badge-on' if n > 0 else 'pc-badge-muted' }}">
+          {{ label }} {{ '못 셈' if n < 0 else n }}
+        </span>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if report.orphans %}
+  {% for o in report.orphans %}
+  <div class="op-card mb-3">
+    <div class="op-card-head d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <h2 class="h6 mb-0"><code class="small">{{ o.user_id }}</code></h2>
+      <span class="pc-badge {{ 'pc-badge-danger' if o.total else 'pc-badge-muted' }}">
+        합계 {{ o.total }}건
+      </span>
+    </div>
+    <div class="op-card-body">
+      {% if o.email %}<div class="small text-muted mb-2">{{ o.email }}</div>{% endif %}
+      <div class="d-flex gap-2 flex-wrap">
+        {% for label, n in o.counts.items() %}
+        {% if n != 0 %}
+        <span class="pc-badge {{ 'pc-badge-danger' if n > 0 else 'pc-badge-off' }}">
+          {{ label }} {{ '못 셈' if n < 0 else n }}
+        </span>
+        {% endif %}
+        {% endfor %}
+        {% if o.total == 0 %}<span class="pc-badge pc-badge-muted">붙어 있는 데이터 없음</span>{% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+  {% elif not report.reason %}
+  <div class="op-empty">정본 밖에 남은 UUID가 없습니다.</div>
+  {% endif %}
+
+  <div class="op-card">
+    <div class="op-card-head">
+      <h2 class="h6 mb-0"><i class="bi bi-list-check"></i> 사용자 단위 표 {{ tables|length }}개</h2>
+    </div>
+    <div class="op-card-body p-0">
+      <table class="table table-sm mb-0">
+        <thead class="table-light"><tr><th>표</th><th>부르는 이름</th><th>스코프 칸</th></tr></thead>
+        <tbody>
+          {% for t in tables %}
+          <tr>
+            <td class="small"><code>{{ t.table }}</code></td>
+            <td class="small">{{ t.label }}</td>
+            <td class="small"><code>{{ t.scope }}</code></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="op-card-foot">
+      <span class="small text-muted">
+        이 목록은 스키마를 따라갑니다 — 표가 늘면 계약이 여기 빠진 것을 잡습니다.
+      </span>
+    </div>
+  </div>
+</div>
+{% endblock %}

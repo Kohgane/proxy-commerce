@@ -225,7 +225,12 @@ class UploadDispatcher:
 
         # 토큰/환경변수 검증
         required_envs = _MARKET_REQUIRED_ENVS.get(market, [])
-        missing = [k for k in required_envs if not os.getenv(k)]
+        # F29: 쿠팡은 **계정 접두**(`COUPANG_GOGANE_ACCESS_KEY`)로도 들어온다. 여기서
+        #   무접두만 보면 대시보드는 「자격 설정됨」인데 여기만 「미입력」이 된다(오너 실측).
+        #   판정은 아래 `coupang_api_state`가 대시보드와 **같은 함수**로 한다.
+        missing = ([] if market == "coupang"
+                   else [k for k in required_envs if not os.getenv(k)])
+        _cred_source = ""          # F29-5: 어느 저장소를 보고 판정했는지(문장에 싣는다)
 
         # Shopify: SHOPIFY_AUTO_TOKEN 또는 SHOPIFY_ACCESS_TOKEN 중 하나만 있어도 됨
         # (required_envs에는 SHOPIFY_SHOP만 있어서 토큰 별도 체크 필요)
@@ -246,18 +251,21 @@ class UploadDispatcher:
 
         # 쿠팡: API 키 외에 출고지/반품지(Wing 배송정보)도 필수 — 없으면 등록 거부됨
         if market == "coupang":
-            _coupang_ship = {
-                "COUPANG_VENDOR_USER_ID": "Wing 로그인 ID",
-                "COUPANG_RETURN_CENTER_CODE": "반품지센터코드",
-                "COUPANG_OUTBOUND_SHIPPING_PLACE_CODE": "출고지코드",
-                "COUPANG_RETURN_ZIP_CODE": "반품지우편번호",
-                "COUPANG_RETURN_ADDRESS": "반품지주소",
-                "COUPANG_RETURN_CHARGE_NAME": "반품지담당자명",
-                "COUPANG_COMPANY_CONTACT_NUMBER": "반품지연락처",
-            }
-            for env, label in _coupang_ship.items():
-                if not os.getenv(env):
-                    missing.append(f"{env}({label})")
+            # F29 실측(2026-09-16): 여기만 **무접두 이름**(`COUPANG_RETURN_CENTER_CODE`)을 봤다.
+            #   오너는 계정 접두(`COUPANG_GOGANE_*`)로 넣어 뒀고, 실제 업로더는 접두를 읽는다.
+            #   그래서 **업로더는 값을 찾는데 사전검증은 「미입력」**이라고 했다 — 같은 자격을
+            #   두 자리가 다른 규약으로 읽으면, 한쪽은 반드시 거짓말을 한다.
+            #   판정기를 새로 쓰지 않고 **업로더의 읽기(`_ship_env`)를 그대로 부른다**(재구현 0).
+            from src.seller_console.market_cred_view import (
+                coupang_api_state, coupang_shipping_state)
+            _api = coupang_api_state()
+            _state = coupang_shipping_state(_api.get("account") or "")
+            for env, label in list(_api["missing"]) + list(_state["missing"]):
+                missing.append(f"{env}({label})")
+            _cred_source = _state["source"]
+            # **못 물어본 것을 「없다」고 하지 않는다** — 조회 자체가 실패했으면 그렇게 말한다.
+            if _api.get("unknown") or _state.get("unknown"):
+                _cred_source = "자격 저장소를 확인하지 못했습니다"
 
         # WooCommerce: 실제 업로드 경로는 WOO_* 사용, 진단은 WC_* 사용 → 둘 다 허용
         if market == "woocommerce":
@@ -269,6 +277,9 @@ class UploadDispatcher:
                 missing.append("WC_SECRET (또는 WOO_CS)")
 
         if missing:
+            # F29-5: 「미입력」만 말하면 셀러는 **이미 넣어 둔 값을 또 넣는다**(오너가 그랬다).
+            #   어느 저장소를 봤는지와 빈 필드를 그대로 싣는다.
+            _where = ("확인한 곳: " + _cred_source + ". ") if _cred_source else ""
             return PrevalidationResult(
                 market=market,
                 ok=False,
@@ -276,7 +287,7 @@ class UploadDispatcher:
                 message="이 마켓의 API 키(또는 배송정보)가 아직 입력되지 않았어요.",
                 hint=("‘마켓 연동’ 화면에서 이 마켓의 키를 입력하세요 (/seller/markets/connect/" + market + "). "
                       "이 키는 앱에 입력하는 ‘내 마켓 키’이며, 서버 환경변수(MARKET_CRED_ENC_KEY 등 인프라 키)와는 다릅니다. "
-                      "누락: " + ", ".join(missing)),
+                      + _where + "비어 있는 값: " + ", ".join(missing)),
             )
 
         # 필수 필드 검증

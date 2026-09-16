@@ -8554,6 +8554,22 @@ def sourcing_monitor_check():
     return jsonify({"ok": True, "results": results})
 
 
+def _require_real_admin():
+    """**진짜 관리자만.** 다른 사람의 UUID·건수·저장소 상태가 보이는 화면에 쓴다.
+
+    F29 실측: `_sourcing_require_admin`은 이름과 달리 **로그인만** 확인한다(셀러 작업 화면용).
+    F27에서 내가 그 가드로 `/admin/image-storage`를 막았고, 그래서 **로그인한 아무 셀러나**
+    관리자 화면을 볼 수 있었다 — 이름을 믿고 고른 것이 구멍이었다.
+
+    > 가드는 **이름이 아니라 하는 일**로 고른다.
+    """
+    if not session.get("user_id") and _AUTH_ENABLED:
+        return redirect(url_for("auth.login", next=request.url))
+    if not _is_admin_user():
+        return ("관리자만 볼 수 있는 화면입니다.", 403)
+    return None
+
+
 def _sourcing_require_admin():
     """소싱/등록/이미지 페이지 접근 가드.
 
@@ -10688,7 +10704,7 @@ def image_storage_diag():
     보여 주는 것: 항목별 장마다 **바이트 유무 · CDN 주소 · 백필 사유 · 외부 HEAD 결과**.
     env는 **이름과 존재 여부만** — 값은 절대 내보내지 않는다.
     """
-    guard = _sourcing_require_admin()
+    guard = _require_real_admin()
     if guard is not None:
         return guard
 
@@ -10758,7 +10774,7 @@ def image_storage_diag():
 @bp.post("/admin/image-storage/backfill")
 def image_storage_backfill_now():
     """진단 화면에서 백필을 **지금** 돌린다 — 배포를 기다리지 않게."""
-    guard = _sourcing_require_admin()
+    guard = _require_real_admin()
     if guard is not None:
         return guard
     from src.services import image_cdn_backfill as bf
@@ -11000,3 +11016,39 @@ def collect_enrich_retry(item_id: str):
     logger.info("[보강 재시도] item=%s 시도 0으로 · 상태=%s", item_id, extra["enrich_state"])
     return jsonify({"ok": True, "item_id": item_id, "state": extra["enrich_state"],
                     "message": "다시 줄 세웠어요. PC에서 고가수집기가 열려 있으면 곧 채워집니다."})
+
+
+@bp.get("/admin/identity-audit")
+def identity_audit():
+    """F29-2: **고아 UUID 감사** — 어느 UUID에 무엇이 붙어 있는지 화면에서 본다.
+
+    실측(2026-09-16): 오너가 과거 입력한 쿠팡 자격이 등록 사전검증에서 「미입력」인데
+    대시보드는 「자격 설정됨」이었다. 자격 행이 **정본이 아닌 UUID**에 남아 있었다.
+    F19가 병합 대상을 셋으로 열거했고 `market_links`는 그 셋에 없었다.
+
+    **옮기지 않는다** — 여기는 보는 자리다. 옮기는 것은 부팅 병합이 하고, 되돌림은
+    배치 단위로 남는다. 「무엇이 어디 있나」를 Render Shell 없이 보여 주는 게 목적이다.
+    """
+    guard = _require_real_admin()
+    if guard is not None:
+        return guard
+
+    from src.auth import identity
+    report = identity.dry_run()
+    return render_template("identity_audit.html", report=report,
+                           tables=report.get("tables") or [])
+
+
+@bp.post("/admin/identity-audit/restore")
+def identity_audit_restore():
+    """병합을 **되돌린다**(배치 단위). 되돌릴 수 없는 백업은 백업이 아니다."""
+    guard = _require_real_admin()
+    if guard is not None:
+        return guard
+    batch = str((request.get_json(silent=True) or {}).get("batch_id") or "").strip()
+    if not batch:
+        return jsonify({"ok": False, "reason": "되돌릴 배치를 지정해 주세요."}), 400
+    from src.auth import identity
+    out = identity.restore_batch(batch)
+    ok = bool(out.get("restored")) and not out.get("failed")
+    return jsonify({"ok": ok, **out}), (200 if ok else 409)
