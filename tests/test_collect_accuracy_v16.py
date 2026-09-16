@@ -113,8 +113,14 @@ def test_admin_panel_hidden_and_blocked(client):
 
 
 def test_admin_link_template_gated():
+    """관리자 링크는 **관리자에게만**.
+
+    F30: 예전엔 `_user_role == 'admin'`이라는 **특정 구현**을 못박았다. 그게 셋 중
+    가장 약한 판정기였고(세션 role만 본다), 오너가 구글로 로그인하면 링크가 사라졌다.
+    판정을 `is_admin` 하나로 합치면서 이 계약도 **뜻**으로 옮긴다 — 가드가 있는가,
+    그리고 일반 셀러에게 안 보이는가(그 실동작은 바로 위 테스트가 잰다).
+    """
     base = Path("src/seller_console/templates/_base.html").read_text(encoding="utf-8")
-    # 관리자 패널 링크는 admin 역할 가드 안에 있어야 함
-    assert "_user_role == 'admin'" in base
+    assert "{% if is_admin %}" in base, "관리자 가드가 없다"
     idx = base.find("관리자 패널")
-    assert idx > 0 and "admin" in base[max(0, idx - 200):idx]
+    assert idx > 0 and "is_admin" in base[max(0, idx - 300):idx]

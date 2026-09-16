@@ -51,6 +51,33 @@
       </div>
       <div class="form-text">값은 보여 주지 않습니다 — 있는지 없는지만 봅니다.</div>
 
+      {# F30-2: 번역은 「완료」인데 이미지가 없을 때, **왜**를 여기서 읽는다.
+         연결·표 존재·마지막 쓰기 오류. 접속 문자열은 보여 주지 않는다. #}
+      <div class="pc-inset mt-2">
+        <div class="console-kpi-label mb-1">데이터베이스</div>
+        <div class="d-flex gap-2 flex-wrap">
+          <span class="pc-badge {{ 'pc-badge-on' if db.configured else 'pc-badge-danger' }}">
+            DATABASE_URL {{ '있음' if db.configured else '없음' }}</span>
+          <span class="pc-badge {{ 'pc-badge-on' if db.connected else 'pc-badge-danger' }}">
+            연결 {{ '됨' if db.connected else '안 됨' }}</span>
+          <span class="pc-badge {{ 'pc-badge-on' if db.table else 'pc-badge-danger' }}">
+            표 {{ '있음' if db.table else '없음' }}</span>
+          {% if db.rows >= 0 %}
+          <span class="pc-badge pc-badge-muted">저장된 장 {{ db.rows }}</span>
+          {% endif %}
+        </div>
+        {% if db.reason %}
+        <div class="small mt-2" style="color:var(--danger); word-break:break-all">{{ db.reason }}</div>
+        {% endif %}
+        {% if db.last_error and db.last_error.detail %}
+        <div class="small mt-2" style="word-break:break-all">
+          <span class="pc-badge pc-badge-danger">마지막 쓰기 오류</span>
+          <span class="ms-1 text-muted">{{ db.last_error.at }}</span>
+          <div style="color:var(--danger)">{{ db.last_error.detail }}</div>
+        </div>
+        {% endif %}
+      </div>
+
       <div class="console-kpi-label mt-2">아직 외부 주소가 없는 장: {{ pending }}</div>
       <div id="backfillOut" class="small mt-2"></div>
     </div>
