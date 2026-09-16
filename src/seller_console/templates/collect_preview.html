@@ -813,13 +813,18 @@ function renderGallery() {
     g.innerHTML = kgpNoImagesHtml();
     return;
   }
+  // D2-2/F27: 썸네일 탭은 **등록에 나갈 목록 그대로**를 보여 준다.
+  //   모델(`#imageRows` 입력값)은 원본을 유지한다 — 저장이 원본을 덮으면 되돌릴 데가 없어진다.
+  //   보여 주는 그림만 번역본으로 바꾼다. D2에서 뱃지만 붙이고 그림은 원본을 그렸는데,
+  //   그래서 「번역본 뱃지가 붙은 중국어 이미지」가 떴다(실측 2026-09-16).
+  const shown = kgpEffectiveImages(urls);
   urls.forEach((u, i) => {
     const sz = i === 0 ? 84 : 56;
     const card = document.createElement('div');
     card.className = 'kgp-gimg'; card.draggable = true; card.dataset.i = i;
     card.className = 'kgp-gimg' + (i === 0 ? ' is-main' : '');
     card.innerHTML =
-      '<img src="' + u.replace(/"/g, '&quot;') + '" alt="" loading="lazy" referrerpolicy="no-referrer" ' +
+      '<img src="' + String(shown[i] || u).replace(/"/g, '&quot;') + '" alt="" loading="lazy" referrerpolicy="no-referrer" ' +
       'style="width:' + sz + 'px;height:' + sz + 'px" ' +
       'onerror="this.parentElement.style.display=\'none\'">' +
       (i === 0 ? '<span class="kgp-gimg-main-tag">대표</span>' : '') +
@@ -1290,6 +1295,9 @@ function kgpEffectiveImages(originals) {
   (KGP_IMAGES_KO || []).forEach(function (e) { byIdx[e.idx] = e; });
   return (originals || []).map(function (u, i) {
     var e = byIdx[i];
+    // F27: **사라진 번역본은 쓰지 않는다** — 그리면 또 깨지고, 등록에 나가면 마켓이 404를 본다.
+    var plan = (typeof kgpPlanAt === 'function') ? kgpPlanAt(i) : null;
+    if (plan && plan.gone) return u;
     return (e && e.use && e.status === 'done' && e.url) ? e.url : u;
   });
 }
@@ -1673,6 +1681,17 @@ window.addEventListener('load', _kgpSignalReady);
 // ── D1: 이미지 번역 탭 ───────────────────────────────────────────────────────
 //   원본 images는 **읽기만** 한다. 번역 결과는 서버가 images_ko에 장별로 넣는다.
 var KGP_IMAGES_KO = {{ (extra.get('images_ko') or []) | tojson }};
+// F27: 서버가 **바이트가 실제로 있는지까지** 재서 준 판단표. 화면이 다시 계산하지 않는다.
+//   실측(2026-09-16): D1 시절 번역본은 컨테이너 파일에 있었고 D2 배포에 사라졌는데,
+//   `images_ko`엔 URL이 그대로 남아 화면이 **깨진 이미지**만 보여 줬다 —
+//   무슨 일이 났는지는 아무 데도 없었다. 이제 그걸 `gone`으로 말한다.
+var KGP_IMGKO_PLAN = {{ (imgko_plan or []) | tojson }};
+function kgpPlanAt(i) {
+  for (var n = 0; n < (KGP_IMGKO_PLAN || []).length; n++) {
+    if (KGP_IMGKO_PLAN[n].idx === i) return KGP_IMGKO_PLAN[n];
+  }
+  return null;
+}
 function kgpImgkoRender() {
   var host = document.getElementById('imgkoList');
   if (!host) return;
@@ -1725,7 +1744,10 @@ function kgpImgkoRender() {
       shot +
       '<div class="flex-grow-1 small"><strong>' + (i + 1) + '번째</strong>' + badge + warn + dense + reach +
       (e && e.ms ? '<span class="console-kpi-label ms-2">' + e.ms + ' ms</span>' : '') +
-      use + why + '</div></div>';
+      use + why +
+      (goneNow ? '<div class="small" style="color:var(--danger)">저장된 번역본이 없습니다 — ' +
+                 '이 장을 다시 골라 번역해 주세요.</div>' : '') +
+      '</div></div>';
   }).join('');
   kgpRenderUseBadges();
 }

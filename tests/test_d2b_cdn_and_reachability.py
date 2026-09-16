@@ -285,6 +285,10 @@ def _client():
 def test_upload_is_blocked_when_a_page_is_only_on_our_server():
     """★ 여기가 D2b의 판정 지점이다 — `/seller/…`가 섞이면 **등록이 나가지 않는다**."""
     import src.seller_console.views as V
+    from src.db import image_ko_blobs_pg as blobs
+    # F27 이후: 바이트가 **정말 있어야** 그 장이 「번역본 사라짐」이 아니다. 바이트를 안 두면
+    # effective가 원본(외부 주소)으로 갈아끼워 버려서, 이 계약이 재려던 자리에 아예 못 간다.
+    blobs.put("i1", 0, b"\xff\xd8-img", seller_id="u1")
     extra = {"images": ["https://o/0.jpg"],
              "images_ko": [{"idx": 0, "status": "done", "use": True,
                             "url": "/seller/collect/image-ko/i1/0", "warn": []}]}
