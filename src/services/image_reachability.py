@@ -102,14 +102,18 @@ def check_one(url: str) -> dict:
     return out
 
 
-def check_all(urls, *, limit: int = MAX_CHECKS) -> dict:
+def check_all(urls, *, limit: int = MAX_CHECKS, labels=None) -> dict:
     """`{ok, checked, bad: [...], unknown: [...]}`.
 
     `ok`는 **나쁜 장이 하나도 없을 때만** True다. 모름(`unknown`)은 막지 않는다 —
     우리가 못 물어본 것으로 셀러의 등록을 세우면, 우리 네트워크 사정이 그 사람의 벽이 된다.
+
+    F28: `labels`(주소와 같은 순서)를 주면 결과에 **어느 장인지**가 붙는다. 「5장이 안 열린다」만
+    들은 셀러는 **어느 장을 고쳐야 하는지 모른다** — 장 번호가 없으면 그 문장은 행동으로 못 옮긴다.
     """
     seen, bad, unknown, checked = set(), [], [], 0
-    for u in (urls or []):
+    labels = list(labels or [])
+    for n, u in enumerate(urls or []):
         u = str(u or "").strip()
         if not u or u in seen:
             continue
@@ -117,6 +121,7 @@ def check_all(urls, *, limit: int = MAX_CHECKS) -> dict:
         if checked >= limit:
             break
         r = check_one(u)
+        r["label"] = str(labels[n]) if n < len(labels) else ""
         checked += 1
         if r.get("unknown"):
             unknown.append(r)
@@ -125,9 +130,30 @@ def check_all(urls, *, limit: int = MAX_CHECKS) -> dict:
     return {"ok": not bad, "checked": checked, "bad": bad, "unknown": unknown}
 
 
+def describe(one: dict) -> str:
+    """한 장을 한 줄로 — 「갤러리 3번째 — 응답 403」. **있는 값만** 쓴다.
+
+    응답코드가 0인 경우(우리 서버 주소·네트워크 실패)는 코드를 지어내지 않고 사유만 적는다.
+    """
+    one = one or {}
+    label = str(one.get("label") or "").strip()
+    status = int(one.get("status") or 0)
+    reason = str(one.get("reason") or "").strip()
+    head = label or str(one.get("url") or "")[:60]
+    return f"{head} — {reason}" if status <= 0 else f"{head} — 응답 {status}"
+
+
 def message(result: dict) -> str:
-    """셀러에게 나가는 한 줄. **응답코드는 사유에만**, 문장은 사람 말로."""
+    """셀러에게 나가는 문장. **어느 장·어느 단계·무슨 응답**인지 싣는다.
+
+    F28 실측: 예전 문장은 「이미지 5장이 외부에서 열리지 않아요」였고, 그마저 화면에서
+    「이미지 처리에 실패했어요 — 잠시 후 다시 시도」로 덮였다. 잠시 후 다시 시도하면
+    **똑같이 막힌다** — 사람을 헛되이 기다리게 하는 문장은 친절이 아니다.
+
+    **발명 금지** — 장 번호·응답코드는 실제 확인 결과에서만 가져온다.
+    """
     bad = (result or {}).get("bad") or []
     if not bad:
         return ""
-    return (f"이미지 {len(bad)}장이 외부에서 열리지 않아요 — 저장소 연결 확인")
+    head = f"등록 전 이미지 확인에서 막혔어요 — {len(bad)}장을 마켓이 가져갈 수 없습니다"
+    return head + " (" + " · ".join(describe(b) for b in bad[:5]) + ")"

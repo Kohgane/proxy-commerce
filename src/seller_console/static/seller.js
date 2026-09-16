@@ -136,6 +136,17 @@ function kgpEscapeForHtml(s) {
 
 function kgpFriendlyError(raw) {
   let msg = '';
+  // F28: 서버가 **이미 셀러의 말로** 쓴 문장은 다시 번역하지 않는다.
+  //   실측(2026-09-16): 등록 게이트가 「등록 전 이미지 확인에서 막혔어요 — 갤러리 3번째 · 응답 403」을
+  //   보냈는데 아래 규칙이 「이미지 처리에 실패했어요 — 잠시 후 다시 시도」로 덮었다.
+  //   사유가 사라진 것도 문제지만, **틀린 조언**이 더 나쁘다 — 잠시 후 다시 시도하면 똑같이 막힌다.
+  //   판단은 추측(문장 모양)이 아니라 **서버가 단 표식**으로 한다.
+  if (raw && typeof raw === 'object' && raw.user_message && raw.error) {
+    const s = String(raw.error).trim();
+    // 표식이 붙어도 개발 메시지는 통과시키지 않는다(표식은 면허가 아니다).
+    const devish = /traceback|stacktrace|<!doctype|<html|cannot read prop|is not defined/i.test(s);
+    if (s && !devish && s.length <= 300) return s;
+  }
   if (raw == null) msg = '';
   else if (typeof raw === 'string') msg = raw;
   else if (raw.error) msg = String(raw.error);
@@ -162,7 +173,11 @@ function kgpFriendlyError(raw) {
       '마켓에 등록하지 못했어요 — 키와 필수값을 확인하고 다시 시도해 주세요.'],
     [/상품 정보|읽지 못|추출|수집.*실패|상세 페이지|collect/i,
       '상품 정보를 읽지 못했어요 — 상품 상세 페이지인지 확인하고 다시 수집해 주세요.'],
-    [/이미지/i, '이미지 처리에 실패했어요 — 잠시 후 다시 시도해 주세요.'],
+    // F28: 이 규칙은 **「이미지」라는 낱말만 보고** 문장을 통째로 갈아치웠다 — 등록 게이트의
+    //   정직한 사유(장 번호·응답코드)까지 덮었다. C-F3에서 '가격' 규칙에 똑같은 일이 있었고
+    //   그때 좁혔는데, 옆 줄의 같은 함정은 그대로 뒀다. 실패 어형일 때만 잡는다.
+    [/이미지[^.]{0,14}(못|실패|없|오류|깨졌|안\s*올라)|image[^.]{0,14}(fail|error|invalid)/i,
+      '이미지 처리에 실패했어요 — 잠시 후 다시 시도해 주세요.'],
   ];
   for (const [re, friendly] of rules) { if (re.test(msg)) return friendly; }
   // 개발 메시지(undefined/스택/HTTP/env 대문자 토큰/HTML 등)는 가리고 일반 안내로.

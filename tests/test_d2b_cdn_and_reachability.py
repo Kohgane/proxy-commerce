@@ -254,17 +254,31 @@ def test_network_failure_is_unknown_not_failure():
 
 
 def test_message_is_the_owner_sentence():
+    """F28에서 오너가 **문장을 바꾸라고 했다** — 「어느 장·어느 단계·응답코드를 실어라」.
+
+    D2b의 원래 문장은 「이미지 2장이 외부에서 열리지 않아요 — 저장소 연결 확인」이었고,
+    그때 규율은 「상태코드는 셀러의 말이 아니다」였다. 실측이 그 규율의 한계를 보여 줬다 —
+    장 번호가 없으니 **어느 장을 고칠지 모른 채** 「다시 시도」만 누르게 된다.
+    최신 지시가 이긴다. 다만 **사람 말 + 행동 가능**이라는 원래 뜻은 그대로 잰다.
+    """
     from src.services import image_reachability as R
-    msg = R.message({"bad": [{"url": "x"}, {"url": "y"}]})
-    assert msg == "이미지 2장이 외부에서 열리지 않아요 — 저장소 연결 확인"
+    msg = R.message({"bad": [{"url": "x", "label": "갤러리 1번째", "status": 403,
+                              "reason": "응답 403"},
+                             {"url": "y", "label": "상세 2번째", "status": 404,
+                              "reason": "응답 404"}]})
+    assert "2장" in msg
+    assert "갤러리 1번째" in msg and "상세 2번째" in msg
     assert R.message({"bad": []}) == ""
 
 
-def test_message_carries_no_status_code():
-    """상태코드는 셀러의 말이 아니다 — 숫자는 사유·로그에만."""
+def test_message_stays_a_human_sentence():
+    """숫자를 실어도 **개발 메시지가 되지는 않는다** — 원래 규율에서 살릴 것은 이쪽이다."""
     from src.services import image_reachability as R
-    msg = R.message({"bad": [{"url": "x", "status": 404, "reason": "응답 404"}]})
-    assert "404" not in msg
+    msg = R.message({"bad": [{"url": "https://o/x.jpg?token=abc", "label": "갤러리 1번째",
+                              "status": 404, "reason": "응답 404"}]})
+    assert "마켓이 가져갈 수 없습니다" in msg
+    for leak in ("Traceback", "http", "None", "{"):
+        assert leak not in msg, f"{leak!r}가 셀러 문장에 샜다"
 
 
 # ---------------------------------------------------------------------------
@@ -309,7 +323,9 @@ def test_upload_is_blocked_when_a_page_is_only_on_our_server():
         })
     assert r.status_code == 409, r.get_data(as_text=True)[:300]
     d = r.get_json()
-    assert "외부에서 열리지 않아요" in d["error"]
+    # F28: 문장이 「어느 장인지」까지 말하도록 바뀌었다(오너 지시). 막는다는 뜻은 그대로.
+    assert "마켓이 가져갈 수 없습니다" in d["error"]
+    assert "갤러리 1번째" in d["error"]
     assert d["unreachable"][0]["url"] == "/seller/collect/image-ko/i1/0"
     assert not sent, "막혔는데 디스패처가 불렸다"
 

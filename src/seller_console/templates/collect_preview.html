@@ -1606,7 +1606,17 @@ function retryFailedUpload(markets) {
 function renderUploadResults(data) {
   const el = document.getElementById('uploadResults');
   if (!data.ok) {
-    el.innerHTML = `<div class="pc-status pc-status-danger"><i class="bi bi-exclamation-triangle"></i> ${kgpEscapeForHtml(kgpFriendlyError(data))}</div>`;
+    // F28: 막힌 이유를 **장 단위로** 편다. 한 줄 요약만 보여 주면 셀러는 어느 장을
+    //   고쳐야 하는지 모른 채 「다시 시도」만 누른다(그리고 똑같이 막힌다).
+    let detail = '';
+    if (data && Array.isArray(data.unreachable) && data.unreachable.length) {
+      detail = '<ul class="small mt-2 mb-0">' + data.unreachable.slice(0, 10).map(function (b) {
+        const where = kgpEscapeForHtml(b.label || (b.url || '').slice(0, 60));
+        const code = (b.status && b.status > 0) ? ('응답 ' + b.status) : kgpEscapeForHtml(b.reason || '');
+        return '<li>' + where + ' — ' + code + '</li>';
+      }).join('') + '</ul>';
+    }
+    el.innerHTML = `<div class="pc-status pc-status-danger"><i class="bi bi-exclamation-triangle"></i> ${kgpEscapeForHtml(kgpFriendlyError(data))}${detail}</div>`;
     return;
   }
   const result = data.result;
@@ -1704,6 +1714,12 @@ function kgpImgkoRender() {
   (KGP_IMAGES_KO || []).forEach(function (e) { byIdx[e.idx] = e; });
   host.innerHTML = urls.map(function (u, i) {
     var e = byIdx[i] || null;
+    // F28: `goneNow`를 **선언하지 않고 아래에서 썼다**(F27). 브라우저는 그 자리에서
+    //   ReferenceError를 던지고 `map`이 통째로 끊긴다 → `host.innerHTML`이 아예 대입되지
+    //   않아 **원본 5장이 있는데도 목록이 0장**이었다. 서버 HTML엔 `#imgkoList`가 멀쩡히
+    //   들어 있어서, 렌더된 HTML만 읽는 계약은 이걸 못 본다(**목록은 JS가 그린다**).
+    var plan = (typeof kgpPlanAt === 'function') ? kgpPlanAt(i) : null;
+    var goneNow = !!(plan && plan.gone);
     var badge = '';
     if (e && e.status === 'done') badge = '<span class="pc-badge pc-badge-on ms-1">번역됨</span>';
     else if (e && e.status === 'failed') badge = '<span class="pc-badge pc-badge-danger ms-1">실패</span>';
@@ -1717,13 +1733,14 @@ function kgpImgkoRender() {
     // D2b: 마켓이 가져갈 수 있는 주소인가. 우리 서버 주소(/seller/…)는 로그인 게이트 뒤라
     //   등록 직전에 막힌다 — 그 사실을 **막히기 전에** 보여 준다.
     var reach = '';
-    if (e && e.status === 'done' && e.url) {
+    if (e && e.status === 'done' && e.url && !goneNow) {
       var external = !/^\/(seller|admin|api)\//.test(e.url);
       reach = external
         ? '<span class="pc-badge pc-badge-on ms-1" title="마켓이 가져갈 수 있는 주소입니다">CDN</span>'
         : '<span class="pc-badge pc-badge-off ms-1" title="우리 서버 주소라 마켓이 가져갈 수 없어요 — 저장소 연결이 필요합니다">외부 미공개</span>';
     }
-    var usable = !!(e && e.status === 'done' && e.url);
+    // 사라진 번역본은 「쓸 수 있는 것」이 아니다 — 그리면 또 깨지고, 토글을 켜 봐야 원본이 나간다.
+    var usable = !!(e && e.status === 'done' && e.url && !goneNow);
     var shot = usable
       ? '<img src="' + e.url + '" alt="번역본" class="kgp-imgko-thumb" ' +
         'onclick="kgpImgkoZoom(\'' + e.url + '\')" title="클릭하면 크게 보기">'
