@@ -451,22 +451,13 @@ _KEYWORD_PERIOD_LABELS: dict[str, str] = {
 
 
 def _scrub_infra(text: str) -> str:
-    """오류 문장에서 **인프라 흔적**을 지운다 (F30-3).
+    """오류 문장에서 **인프라 흔적**을 지운다 — 세척기 정본은 `src/utils/redact`.
 
-    사유는 셀러에게 보여 줘야 한다(그래야 「인터넷이 끊겼나」와 「우리가 죽었나」를 가린다).
-    그렇다고 접속 호스트·포트·자격이 같이 나가면 안 된다 — psycopg의
-    psycopg의 연결 실패 문장에는 **호스트·아이피·포트**가 그대로 들어 있다.
-    그게 셀러 화면에 나가면 그건 사유가 아니라 인프라 지도다.
-
-    **지우는 것**: URL · `user:pass@host` · 호스트:포트 · IP.
-    **남기는 것**: 예외 타입과 사람이 읽을 사유(타임아웃·권한 없음·표 없음 …).
+    F31: 같은 세척기가 세 군데로 늘어날 참이라 한 곳으로 합쳤다.
+    여기는 이름만 남겨 호출부를 안 건드린다(재구현 0).
     """
-    out = str(text or "")
-    out = re.sub(r"\b[a-z][a-z0-9+.-]*://\S+", "[주소]", out)
-    out = re.sub(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", "[아이피]", out)
-    out = re.sub(r'"[A-Za-z0-9.-]+\.[A-Za-z]{2,}"', '"[호스트]"', out)
-    out = re.sub(r"\bport\s+\d+\b", "port [포트]", out, flags=re.I)
-    return out[:240]
+    from src.utils.redact import scrub_infra
+    return scrub_infra(text)
 
 
 def _is_admin_user() -> bool:

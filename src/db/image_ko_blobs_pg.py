@@ -45,16 +45,9 @@ def _configured() -> bool:
 
 
 def _scrub(text: str) -> str:
-    """오류 문장에서 **인프라 흔적**(주소·아이피·포트)을 지운다 — 사유만 남긴다.
-
-    진단 화면은 오너가 보지만, 그 화면도 접속 지도가 되어선 안 된다.
-    """
-    out = str(text or "")
-    out = re.sub(r"\b[a-z][a-z0-9+.-]*://\S+", "[주소]", out)
-    out = re.sub(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", "[아이피]", out)
-    out = re.sub(r'"[A-Za-z0-9.-]+\.[A-Za-z]{2,}"', '"[호스트]"', out)
-    out = re.sub(r"\bport\s+\d+\b", "port [포트]", out, flags=re.I)
-    return out
+    """오류에서 좌표만 지운다 — 정본은 `src/utils/redact.scrub_infra`(두 벌 금지)."""
+    from src.utils.redact import scrub_infra
+    return scrub_infra(text, limit=400)
 
 
 def _note_error(op: str, detail: str) -> None:

@@ -50,17 +50,25 @@ def _now() -> str:
 # 바이트 두기
 # ---------------------------------------------------------------------------
 
-def _store_via_cdn(raw: bytes) -> str:
-    """CDN에 올리고 URL. 미설정·실패면 빈 문자열(가짜 URL을 만들지 않는다)."""
+def _store_via_cdn(raw: bytes) -> tuple:
+    """`(url, error)` — CDN에 올린 결과. 실패면 url이 비고 **사유가 남는다**.
+
+    F31: 예전엔 URL 문자열만 돌려줘서, 번역 시점 업로드가 실패해도 **왜인지 아무도 몰랐고**
+    조용히 DB 경로로 떨어졌다(그 자체는 맞지만, 사유가 사라지는 건 다른 문제다).
+    백필과 **같은 함수**(`upload_bytes`)를 쓴다 — 업로드 경로가 두 벌이면 한쪽만 고치게 된다.
+    """
     try:
-        from src.media.image_pipeline import _upload_to_cdn      # noqa: SLF001
-    except Exception:
-        return ""
+        from src.media.image_pipeline import upload_bytes
+    except Exception as exc:
+        return "", f"이미지 파이프라인 미가용: {type(exc).__name__}"
     try:
-        return str(_upload_to_cdn(raw) or "")
+        res = upload_bytes(raw)
     except Exception as exc:
         logger.warning("[이미지번역] CDN 업로드 실패: %s", exc)
-        return ""
+        return "", f"{type(exc).__name__}: {str(exc)[:160]}"
+    if res.get("ok") and res.get("secure_url"):
+        return str(res["secure_url"]), ""
+    return "", str(res.get("error") or "")
 
 
 def storage_backend() -> str:
@@ -93,9 +101,11 @@ def store_translated(item_id: str, idx: int, image_b64: str, *,
     if not raw:
         return {"url": "", "stored_by": "", "bytes": 0, "note": "빈 이미지"}
 
-    url = _store_via_cdn(raw)
+    url, cdn_err = _store_via_cdn(raw)
     if url:
         return {"url": url, "stored_by": "cdn", "bytes": len(raw), "note": ""}
+    # CDN이 안 됐으면 DB로 간다(그게 맞다). 다만 **왜 안 됐는지는 들고 간다** —
+    #   나중에 백필이 같은 이유로 또 실패할 때 그 사유가 이미 화면에 있다.
 
     if not (_SAFE.match(str(item_id)) and isinstance(idx, int) and 0 <= idx < 1000):
         return {"url": "", "stored_by": "", "bytes": len(raw), "note": "식별자 형식 오류"}
@@ -105,9 +115,13 @@ def store_translated(item_id: str, idx: int, image_b64: str, *,
     if blobs.put(item_id, idx, raw, seller_id=seller_id, kind=kind):
         suffix = "" if kind == "gallery" else f"?kind={kind}"
         return {"url": f"/seller/collect/image-ko/{item_id}/{idx}{suffix}",
-                "stored_by": "db", "bytes": len(raw),
+                "stored_by": "db", "bytes": len(raw), "cdn_error": cdn_err,
                 "note": "" if _durable() else "임시 보관 — 저장소가 붙기 전까지 유지되지 않습니다"}
-    return {"url": "", "stored_by": "", "bytes": len(raw), "note": "번역본을 저장하지 못했습니다"}
+    # 둘 다 실패 — DB 사유가 정본이고, CDN 사유도 함께 남긴다(둘 중 하나가 답이다).
+    db_err = (blobs.last_error() or {}).get("detail") or ""
+    note = db_err or cdn_err or "번역본을 저장하지 못했습니다"
+    return {"url": "", "stored_by": "", "bytes": len(raw), "note": note,
+            "cdn_error": cdn_err}
 
 
 def _durable() -> bool:

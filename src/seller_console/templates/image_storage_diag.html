@@ -174,10 +174,21 @@
           out.style.color = 'var(--danger)';
           return;
         }
-        out.textContent = '올림 ' + (d.uploaded || 0) + ' · 실패 ' + (d.failed || 0) +
+        // F31-3: 숫자만 보여 주면 **어느 장이 왜** 실패했는지를 또 모른다. 장별로 편다.
+        var head = '올림 ' + (d.uploaded || 0) + ' · 실패 ' + (d.failed || 0) +
           ' · 건너뜀 ' + (d.skipped || 0);
+        var rows = (d.results || []).map(function (r) {
+          var where = (r.kind === 'detail' ? '상세 ' : '갤러리 ') + ((r.idx || 0) + 1) + '번째';
+          var mark = r.ok ? (r.skipped ? '건너뜀' : '올림') : '실패';
+          var why = r.error ? ' — ' + r.error : '';
+          return '<li style="color:' + (r.ok ? 'var(--muted)' : 'var(--danger)') + '">' +
+            where + ' · ' + mark + why + '</li>';
+        }).join('');
+        out.innerHTML = '<div>' + head + '</div>' +
+          (rows ? '<ul class="mt-1 mb-0">' + rows + '</ul>' : '');
         out.style.color = (d.failed ? 'var(--warn)' : 'var(--teal)');
-        if (d.uploaded) setTimeout(function () { location.reload(); }, 800);
+        // 실패가 있으면 **새로고침하지 않는다** — 사유를 읽기도 전에 화면이 사라진다.
+        if (d.uploaded && !d.failed) setTimeout(function () { location.reload(); }, 1500);
       })
       .catch(function (e) {
         btn.disabled = false;

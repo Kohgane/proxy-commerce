@@ -88,7 +88,7 @@ def test_bytes_round_trip_through_the_blob_store():
     import base64
     from src.services import image_translate_store as store
     raw = b"\xff\xd8\xff-hello"
-    with patch.object(store, "_store_via_cdn", return_value=""):
+    with patch.object(store, "_store_via_cdn", return_value=("", "")):   # F31: (url, error)
         placed = store.store_translated("i1", 0, base64.b64encode(raw).decode(),
                                         seller_id="u1")
     assert placed["stored_by"] == "db"
@@ -100,7 +100,7 @@ def test_detail_images_have_their_own_slot():
     """D2-4: 상세 이미지도 같은 구조다 — 갤러리 0번과 상세 0번이 서로를 덮으면 안 된다."""
     import base64
     from src.services import image_translate_store as store
-    with patch.object(store, "_store_via_cdn", return_value=""):
+    with patch.object(store, "_store_via_cdn", return_value=("", "")):   # F31: (url, error)
         store.store_translated("i1", 0, base64.b64encode(b"gal").decode())
         store.store_translated("i1", 0, base64.b64encode(b"det").decode(), kind="detail")
     assert store.read_translated("i1", 0) == b"gal"
@@ -194,11 +194,11 @@ def test_summary_flags_only_pages_that_actually_go_out():
 def test_dense_is_measured_not_guessed():
     """「레이아웃 확인」은 공급사가 돌려준 **줄 수** 그대로다 — 임의 점수가 아니다."""
     from src.services import image_translate_store as store
-    with patch.object(store, "_store_via_cdn", return_value=""):
+    with patch.object(store, "_store_via_cdn", return_value=("", "")):   # F31: (url, error)
         e = store.build_entry(0, {"ok": True, "image_b64": "aW1n", "vendor": "t",
                                   "lines": [{}] * store.DENSE_TEXT_LINES}, item_id="i1")
     assert e["dense"] is True
-    with patch.object(store, "_store_via_cdn", return_value=""):
+    with patch.object(store, "_store_via_cdn", return_value=("", "")):   # F31: (url, error)
         e2 = store.build_entry(1, {"ok": True, "image_b64": "aW1n", "vendor": "t",
                                    "lines": [{}]}, item_id="i1")
     assert e2["dense"] is False
@@ -207,7 +207,7 @@ def test_dense_is_measured_not_guessed():
 def test_a_fresh_translation_defaults_to_being_used():
     """번역한 장은 기본으로 쓴다 — 그러려고 번역했다(사람이 끌 수 있다)."""
     from src.services import image_translate_store as store
-    with patch.object(store, "_store_via_cdn", return_value=""):
+    with patch.object(store, "_store_via_cdn", return_value=("", "")):   # F31: (url, error)
         e = store.build_entry(0, {"ok": True, "image_b64": "aW1n", "vendor": "t"},
                               item_id="i1")
     assert e["use"] is True
