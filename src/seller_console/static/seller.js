@@ -141,8 +141,10 @@ function kgpFriendlyError(raw) {
   //   보냈는데 아래 규칙이 「이미지 처리에 실패했어요 — 잠시 후 다시 시도」로 덮었다.
   //   사유가 사라진 것도 문제지만, **틀린 조언**이 더 나쁘다 — 잠시 후 다시 시도하면 똑같이 막힌다.
   //   판단은 추측(문장 모양)이 아니라 **서버가 단 표식**으로 한다.
-  if (raw && typeof raw === 'object' && raw.user_message && raw.error) {
-    const s = String(raw.error).trim();
+  if (raw && typeof raw === 'object' && raw.user_message && (raw.error || raw.message)) {
+    // F30: `Error` 객체에도 표식을 달 수 있게 `message`까지 본다 — 「응답이 아예 없었다」는
+    //   사실은 응답 객체가 없으니 오직 이 경로로만 올라온다.
+    const s = String(raw.error || raw.message).trim();
     // 표식이 붙어도 개발 메시지는 통과시키지 않는다(표식은 면허가 아니다).
     const devish = /traceback|stacktrace|<!doctype|<html|cannot read prop|is not defined/i.test(s);
     if (s && !devish && s.length <= 300) return s;

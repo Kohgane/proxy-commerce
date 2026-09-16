@@ -228,9 +228,33 @@ function collectValues(form) {
   return values;
 }
 async function postJson(url, payload) {
-  const resp = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload || {})});
-  const data = await resp.json().catch(() => ({}));
-  return {ok: resp.ok, data};
+  // F30-3: 예전엔 응답코드를 **버렸다**(`{ok, data}`만). 서버가 500을 주든 HTML을 주든
+  //   화면엔 「문제가 생겼어요」 한 줄이었고, 연결이 끊기면 「인터넷 연결이 불안정했어요」였다.
+  //   그 문장으로는 **우리 서버가 죽은 것**과 **인터넷이 끊긴 것**을 가릴 수 없다.
+  //   → 응답코드와 본문 앞부분을 함께 실어 보낸다(F28 규칙: 사유를 덮지 않는다).
+  let resp;
+  try {
+    resp = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                             body: JSON.stringify(payload || {})});
+  } catch (err) {
+    // fetch 자체가 실패 = 응답이 **아예 없다**(연결 끊김·워커 종료·CORS). 그렇게 말한다.
+    const e = new Error('서버에 닿지 못했어요 — 응답이 오지 않았습니다 (' +
+                        (err && err.message ? err.message : '원인 미상') + ')');
+    e.user_message = true;
+    throw e;
+  }
+  const text = await resp.text();
+  let data = {};
+  try { data = text ? JSON.parse(text) : {}; } catch (e) { data = {}; }
+  if (!resp.ok && !data.error) {
+    // JSON이 아닌 오류(HTML 500 등) — **응답코드와 본문 앞부분을 그대로** 싣는다.
+    data = Object.assign({}, data, {
+      error: '서버가 ' + resp.status + '로 답했어요' +
+             (text ? ' — ' + text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160) : ''),
+      user_message: true, status: resp.status,
+    });
+  }
+  return {ok: resp.ok, status: resp.status, data};
 }
 function renderTestResult(form, result) {
   const box = form.querySelector('[data-role="test-result"]');

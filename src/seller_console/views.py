@@ -66,6 +66,15 @@ def inject_seller_template_flags():
         _lang = normalize_lang(request.cookies.get("kgp_lang"))
     except Exception:
         _lang = "ko"
+    # F30: 관리자 여부는 **한 곳에서만** 판정한다. 사이드바는 `session['user_role']`만 봤는데,
+    #   그건 세 번째 판정기이자 가장 약한 것이었다 — 오너가 구글로 로그인하면 role이 seller라
+    #   자기 진단 화면 링크가 **아예 안 보였다**(그리고 F29 게이트는 들어가지도 못하게 막았다).
+    #   `is_admin_session`이 정본이고, 거기에 정본 user_id·오너 로그인 이메일이 들어 있다.
+    _is_admin = False
+    try:
+        _is_admin = _is_admin_user()
+    except Exception:
+        _is_admin = False
     # v34: 개인화 헤더용 내 플랜(로그인 시에만, 경량 — 인메모리/시트 1회 조회)
     _plan = None
     try:
@@ -105,6 +114,7 @@ def inject_seller_template_flags():
     except Exception:
         _ext_ver = ""
     return {
+        "is_admin": _is_admin,          # F30: 화면은 이 값 하나만 본다(판정기 셋 금지)
         "latest_ext_version": _ext_ver,
         "session_account": _acct,
         "diagnostic_reveal_enabled": os.getenv("DIAGNOSTIC_REVEAL", "0") == "1",
@@ -438,6 +448,25 @@ _KEYWORD_PERIOD_LABELS: dict[str, str] = {
     "month": "월",
     "year": "년",
 }
+
+
+def _scrub_infra(text: str) -> str:
+    """오류 문장에서 **인프라 흔적**을 지운다 (F30-3).
+
+    사유는 셀러에게 보여 줘야 한다(그래야 「인터넷이 끊겼나」와 「우리가 죽었나」를 가린다).
+    그렇다고 접속 호스트·포트·자격이 같이 나가면 안 된다 — psycopg의
+    psycopg의 연결 실패 문장에는 **호스트·아이피·포트**가 그대로 들어 있다.
+    그게 셀러 화면에 나가면 그건 사유가 아니라 인프라 지도다.
+
+    **지우는 것**: URL · `user:pass@host` · 호스트:포트 · IP.
+    **남기는 것**: 예외 타입과 사람이 읽을 사유(타임아웃·권한 없음·표 없음 …).
+    """
+    out = str(text or "")
+    out = re.sub(r"\b[a-z][a-z0-9+.-]*://\S+", "[주소]", out)
+    out = re.sub(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", "[아이피]", out)
+    out = re.sub(r'"[A-Za-z0-9.-]+\.[A-Za-z]{2,}"', '"[호스트]"', out)
+    out = re.sub(r"\bport\s+\d+\b", "port [포트]", out, flags=re.I)
+    return out[:240]
 
 
 def _is_admin_user() -> bool:
@@ -5055,8 +5084,14 @@ def markets_connect_save(market):
         mc.save(_seller_id(), market, values)
         return jsonify({"ok": True, "status": mc.status(_seller_id(), market)})
     except Exception as exc:
+        # F30-3: 예전엔 「저장 중 오류가 발생했습니다」 한 줄이었고, 화면은 그마저
+        #   「인터넷 연결이 불안정했어요」로 덮었다 — **우리 저장소가 죽은 것**과
+        #   **인터넷이 끊긴 것**을 셀러가 가릴 수 없었다. 사유 종류를 그대로 싣는다
+        #   (접속 문자열·자격 값은 절대 나가지 않는다 — 예외 **타입과 메시지**만).
         logger.warning("마켓 자격증명 저장 오류 (%s): %s", market, exc)
-        return jsonify({"ok": False, "error": "저장 중 오류가 발생했습니다."}), 500
+        return jsonify({"ok": False, "user_message": True,
+                        "error": "저장소에 쓰지 못했어요 — "
+                                 + _scrub_infra(f"{type(exc).__name__}: {exc}")}), 500
 
 
 @bp.post("/markets/connect/<market>/test")
@@ -8566,7 +8601,14 @@ def _require_real_admin():
     if not session.get("user_id") and _AUTH_ENABLED:
         return redirect(url_for("auth.login", next=request.url))
     if not _is_admin_user():
-        return ("관리자만 볼 수 있는 화면입니다.", 403)
+        # F30-0: **왜 막혔는지** 보여 준다. 예전엔 한 줄뿐이라, 오너가 자기 화면에서
+        #   막혔을 때 「어느 계정으로 들어와 있는지」를 알 길이 없었다(로그인이 갈린 게
+        #   원인인데 화면은 그 말을 안 했다). user_id는 **앞 8자만** — 전체는 식별자다.
+        _uid = str(session.get("user_id") or "")
+        _mail = str(session.get("user_email") or "").strip()
+        return (("관리자만 볼 수 있는 화면입니다. "
+                 f"지금 로그인: {_mail or '(이메일 없음)'} · "
+                 f"계정 {(_uid[:8] + '…') if _uid else '(없음)'}"), 403)
     return None
 
 
@@ -10718,6 +10760,9 @@ def image_storage_diag():
     probe = (request.args.get("probe") or "") == "1"
 
     rows = []
+    # F30-1: **돈은 나갔는데 저장을 못 한 장**을 따로 센다. 장당 과금이라 이 숫자가
+    #   곧 손실이고, 「실패 N건」에 섞여 버리면 아무도 크기를 모른다.
+    paid_lost = 0
     try:
         items = collect_history_store.list_items(seller_ids=_seller_identities(),
                                                  days=90, limit=200)
@@ -10730,6 +10775,11 @@ def image_storage_diag():
             ex = json.loads(it.get("extra_json") or "{}") or {}
         except Exception:
             continue
+        for _k in ("images_ko", "detail_images_ko"):
+            for _e in (ex.get(_k) or []):
+                # 공급사는 답했고(과금) 우리가 못 뒀다 — `NotStored`가 그 자리다.
+                if isinstance(_e, dict) and _e.get("error_class") == "NotStored":
+                    paid_lost += 1
         if not (ex.get("images_ko") or ex.get("detail_images_ko")):
             continue
         live = blobs.status_for_item(it.get("id") or "") or {}
@@ -10768,6 +10818,10 @@ def image_storage_diag():
         cdn_ready=bf.cdn_ready(),
         env_state=env_state,
         pending=len(blobs.pending_cdn(limit=500)),
+        # F30-2: **왜 저장이 안 됐는지**를 화면이 말한다 — 연결·표 존재·마지막 쓰기 오류 원문.
+        #   「오너 캡처 1장이 답」이 되려면 이만큼은 있어야 한다.
+        db=blobs.probe(),
+        paid_lost=paid_lost,
     )
 
 

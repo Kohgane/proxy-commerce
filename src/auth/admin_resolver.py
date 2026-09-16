@@ -90,7 +90,73 @@ def is_admin_session(sess: dict) -> Tuple[bool, str]:
     if email and email in _env_list("ADMIN_EMAILS"):
         return True, "ADMIN_EMAILS"
 
+    # F30-0: **판정 기준은 정본 user_id다** — 이메일 문자열이 아니다.
+    #
+    #   이 함수는 원래 세션 role과 `ADMIN_EMAILS` 둘만 봤다(위 두 줄). `ADMIN_EMAILS`가
+    #   설정돼 있지 않으면 오너가 자기 화면(저장소 진단·정체성 감사)에 **못 들어간다** —
+    #   게이트를 세게 잠근 F29가 그 위험을 만들었다.
+    #
+    #   F19가 이미 「어느 로그인이 누구인가」를 **정본 user_id 하나로** 묶어 뒀다
+    #   (hanmail이든 구글이든 같은 사람). 그 결론을 여기서 쓴다 — 정체성 판정을 두 벌로
+    #   만들지 않는다. 이메일은 **판정 기준이 아니라 정체성 표를 찾는 열쇠**로만 쓴다.
+    if _user_id_is_admin(str(user_id).strip()):
+        return True, "ADMIN_USER_IDS"
+    if email:
+        canonical = _canonical_of(email)
+        if canonical and _user_id_is_admin(canonical):
+            return True, "ADMIN_USER_IDS(정체성)"
+
     return False, ""
+
+
+def _canonical_of(email: str) -> str:
+    """이 로그인 이메일의 **정본 user_id**. 모르면 빈 문자열.
+
+    ① 정체성 표(`user_identities`)가 정본이다.
+    ② 표가 대답 못 하면(PG 미연결·부팅 직후) **그 표의 씨앗**을 본다 —
+       `identity.OWNER_LOGINS`가 곧 부팅 때 표에 등록되는 두 줄이다.
+
+    **이메일이 권한을 주는 게 아니다.** 이메일은 표를 찾는 열쇠이고, 판정은 나온 id로 한다.
+    """
+    mail = str(email or "").strip().lower()
+    if not mail:
+        return ""
+    try:
+        from src.auth.identity import OWNER_LOGINS, OWNER_USER_ID, resolve_user_id
+    except Exception as exc:
+        logger.debug("[관리자 판정] 정체성 모듈 없음: %s", exc)
+        return ""
+    try:
+        hit = resolve_user_id("", mail)
+        if hit:
+            return hit
+    except Exception as exc:
+        logger.debug("[관리자 판정] 정체성 표 조회 실패: %s", exc)
+    if mail in {e for _p, e in OWNER_LOGINS if e}:
+        return OWNER_USER_ID
+    return ""
+
+
+def admin_user_ids() -> set:
+    """관리자 **user_id** 목록.
+
+    `ADMIN_USER_IDS`(콤마 구분) + 정본 오너 id. `user_identities.is_admin` 컬럼도,
+    `ADMIN_USER_IDS` env도 **코드에 없던 것**이라 env 쪽을 골랐다 —
+    스키마 변경·마이그레이션 없이 지금 배포에서 바로 듣고, 기본값이 정본 id를 포함한다.
+    """
+    ids = set(_env_list("ADMIN_USER_IDS"))
+    try:
+        from src.auth.identity import OWNER_USER_ID
+        if OWNER_USER_ID:
+            ids.add(OWNER_USER_ID.strip().lower())
+    except Exception:
+        pass
+    return {i for i in ids if i}
+
+
+def _user_id_is_admin(user_id: str) -> bool:
+    uid = str(user_id or "").strip().lower()
+    return bool(uid) and uid in admin_user_ids()
 
 
 def resolve_role_for_login(
