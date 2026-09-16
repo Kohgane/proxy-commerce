@@ -1695,6 +1695,15 @@ function kgpImgkoRender() {
     // D2-4: 글자가 빽빽했던 장은 줄바꿈이 원본과 달라질 수 있다 — 사람이 한 번 보게.
     var dense = (e && e.dense)
       ? '<span class="pc-badge pc-badge-off ms-1" title="번역 후 줄바꿈이 달라질 수 있어요">레이아웃 확인</span>' : '';
+    // D2b: 마켓이 가져갈 수 있는 주소인가. 우리 서버 주소(/seller/…)는 로그인 게이트 뒤라
+    //   등록 직전에 막힌다 — 그 사실을 **막히기 전에** 보여 준다.
+    var reach = '';
+    if (e && e.status === 'done' && e.url) {
+      var external = !/^\/(seller|admin|api)\//.test(e.url);
+      reach = external
+        ? '<span class="pc-badge pc-badge-on ms-1" title="마켓이 가져갈 수 있는 주소입니다">CDN</span>'
+        : '<span class="pc-badge pc-badge-off ms-1" title="우리 서버 주소라 마켓이 가져갈 수 없어요 — 저장소 연결이 필요합니다">외부 미공개</span>';
+    }
     var usable = !!(e && e.status === 'done' && e.url);
     var shot = usable
       ? '<img src="' + e.url + '" alt="번역본" class="kgp-imgko-thumb" ' +
@@ -1714,7 +1723,7 @@ function kgpImgkoRender() {
       '<img src="' + u + '" alt="원본" referrerpolicy="no-referrer" class="kgp-imgko-thumb" ' +
         'onclick="kgpImgkoZoom(\'' + u + '\')" title="클릭하면 크게 보기">' +
       shot +
-      '<div class="flex-grow-1 small"><strong>' + (i + 1) + '번째</strong>' + badge + warn + dense +
+      '<div class="flex-grow-1 small"><strong>' + (i + 1) + '번째</strong>' + badge + warn + dense + reach +
       (e && e.ms ? '<span class="console-kpi-label ms-2">' + e.ms + ' ms</span>' : '') +
       use + why + '</div></div>';
   }).join('');
