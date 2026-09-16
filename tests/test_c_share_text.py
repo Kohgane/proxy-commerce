@@ -199,10 +199,18 @@ def test_registration_is_blocked_before_enrichment():
 
     가격이 없으면 마진을 못 낸다. 0으로 채우면 그건 계산이 아니라 날조다.
     """
+    # **함수 전체**를 본다. 글자 수로 자르면 앞에 게이트가 하나 더 붙는 날 창이 밀려서
+    #   있는 것을 없다고 말한다(D2b에서 실제로 그랬다).
+    import ast as _ast
     src = Path("src/seller_console/views.py").read_text(encoding="utf-8")
-    i = src.index("def collect_upload")
-    block = src[i: i + 4000]
-    assert "enrich_state" in block and "pending" in block, "업로드 라우트에 보강 게이트가 없다"
+    fn = next(n for n in _ast.walk(_ast.parse(src))
+              if isinstance(n, _ast.FunctionDef) and n.name == "collect_upload")
+    block = _ast.unparse(fn)
+    # **코드가 실제로 쓰는 이름**으로 잰다. 옛 계약은 글자 수로 자른 창에서
+    #   `enrich_state`를 찾았는데 그건 **주석에만** 있었다 — 주석을 근거로 초록이던 셈이다
+    #   (D2b에서 창이 밀리며 드러났다). `ast.unparse`는 주석을 버리므로 이제 그럴 수 없다.
+    assert "enrich_axes" in block, "업로드 라우트가 보강 축을 읽지 않는다"
+    assert "is_draft" in block and "gate_ready" in block, "초안 게이트가 없다"
     assert "enrich_required" in block, "차단 사유를 호출부가 구분할 수 있어야 한다"
 
 

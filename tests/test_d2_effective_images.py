@@ -37,12 +37,14 @@ def _clean():
 def _extra(**kw):
     base = {
         "images": ["https://o/0.jpg", "https://o/1.jpg", "https://o/2.jpg"],
+        # D2b: 등록에 나가는 주소는 **외부에서 열리는 것**이어야 한다(CDN).
+        #   우리 서버 주소(`/seller/…`)는 로그인 게이트 뒤라 마켓이 못 가져간다.
         "images_ko": [
-            {"idx": 0, "status": "done", "url": "/seller/collect/image-ko/i1/0", "use": True,
-             "warn": [], "dense": False},
+            {"idx": 0, "status": "done", "url": "https://res.cloudinary.com/x/0.jpg",
+             "use": True, "warn": [], "dense": False},
             {"idx": 1, "status": "failed", "error_message": "실패"},
-            {"idx": 2, "status": "done", "url": "/seller/collect/image-ko/i1/2", "use": False,
-             "warn": ["최고"], "dense": True},
+            {"idx": 2, "status": "done", "url": "https://res.cloudinary.com/x/2.jpg",
+             "use": False, "warn": ["최고"], "dense": True},
         ],
     }
     base.update(kw)
@@ -128,7 +130,7 @@ def test_effective_uses_translation_only_where_it_is_on_and_done():
     from src.services.image_translate_store import effective_images
     eff = effective_images(_extra())
     assert eff == [
-        "/seller/collect/image-ko/i1/0",   # done + use
+        "https://res.cloudinary.com/x/0.jpg",   # done + use
         "https://o/1.jpg",                 # failed → 원본
         "https://o/2.jpg",                 # done인데 use=False → 원본
     ]
@@ -163,7 +165,7 @@ def test_live_originals_win_over_saved_ones():
     """사람이 서랍에서 방금 고친 목록이 등록에 나간다(저장된 옛 목록이 아니라)."""
     from src.services.image_translate_store import effective_images
     eff = effective_images(_extra(), originals=["https://new/0.jpg", "https://new/1.jpg"])
-    assert eff == ["/seller/collect/image-ko/i1/0", "https://new/1.jpg"]
+    assert eff == ["https://res.cloudinary.com/x/0.jpg", "https://new/1.jpg"]
 
 
 def test_plan_tells_the_screen_what_goes_out():
@@ -222,7 +224,7 @@ def test_review_sheet_reads_effective():
     from src.pipeline.register_pipe import build_source_review_row
     draft = dict(_extra(), title="수행방패", price="100", currency="KRW")
     row = build_source_review_row(draft, url="https://item.taobao.com/item.htm?id=1")
-    assert row["thumbnail"] == "/seller/collect/image-ko/i1/0"
+    assert row["thumbnail"] == "https://res.cloudinary.com/x/0.jpg"
     assert row["image_count"] == 3
 
 
@@ -265,8 +267,12 @@ def test_upload_route_swaps_in_the_translations():
             sent["product"] = dict(product_data)
             return _Result()          # 라우트가 `result.to_dict()`를 부른다(실제 모양 그대로)
 
+    # D2b 게이트는 **통과시킨다** — 여기서 재는 것은 「무엇이 실려 나갔나」이고,
+    #   게이트 자체는 `test_d2b_cdn_and_reachability.py`가 잰다(계약 하나에 두 가지를 재지 않는다).
     with patch.object(V, "_get_owned_item", lambda i: dict(row)), \
-         patch.object(V, "_get_upload_dispatcher", lambda: _Dispatcher()):
+         patch.object(V, "_get_upload_dispatcher", lambda: _Dispatcher()), \
+         patch("src.services.image_reachability.check_all",
+               return_value={"ok": True, "checked": 3, "bad": [], "unknown": []}):
         r = c.post("/seller/collect/upload", json={
             "item_id": "i1", "markets": ["coupang"],
             "product": {"title": "수행방패", "price": "100", "currency": "KRW",
@@ -275,11 +281,11 @@ def test_upload_route_swaps_in_the_translations():
     assert r.status_code == 200, r.get_data(as_text=True)[:300]
     assert sent, "디스패처가 불리지 않았다 — 계약이 아무것도 재지 못했다"
     assert sent["product"]["images"] == [
-        "/seller/collect/image-ko/i1/0",   # 번역본
+        "https://res.cloudinary.com/x/0.jpg",   # 번역본
         "https://o/1.jpg",                 # 실패 → 원본
         "https://o/2.jpg",                 # 꺼 둠 → 원본
     ]
-    assert sent["product"]["thumbnail"] == "/seller/collect/image-ko/i1/0"
+    assert sent["product"]["thumbnail"] == "https://res.cloudinary.com/x/0.jpg"
 
 
 def test_upload_asks_once_when_a_used_page_has_banned_words():
@@ -289,7 +295,9 @@ def test_upload_asks_once_when_a_used_page_has_banned_words():
     ex["images_ko"][2]["use"] = True          # 금칙어 걸린 장을 쓰기로
     row = {"id": "i1", "extra_json": json.dumps(ex)}
     c = _client()
-    with patch.object(V, "_get_owned_item", lambda i: dict(row)):
+    with patch.object(V, "_get_owned_item", lambda i: dict(row)), \
+         patch("src.services.image_reachability.check_all",
+               return_value={"ok": True, "checked": 3, "bad": [], "unknown": []}):
         r = c.post("/seller/collect/upload", json={
             "item_id": "i1", "markets": ["coupang"],
             "product": {"title": "수행방패", "price": "100", "images": ex["images"]},

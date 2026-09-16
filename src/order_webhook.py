@@ -60,6 +60,15 @@ try:
             _identity_bootstrap()
         except Exception as _idexc:
             logger.warning("정체성 부트스트랩 실패(계속): %s", _idexc)
+        # D2b: 번역본에 **외부에서 열리는 주소**를 붙인다(CDN 백필, 멱등).
+        #   우리 서버 주소는 로그인 게이트 뒤라 마켓이 못 가져간다 — 그대로 두면
+        #   등록 직전 도달성 게이트에 걸려 셀러가 영문을 모른 채 막힌다.
+        #   Cloudinary가 없으면 **아무것도 하지 않는다**(할 수가 없다 — 그렇게 말한다).
+        try:
+            from src.services.image_cdn_backfill import run_quietly as _cdn_backfill
+            _cdn_backfill()
+        except Exception as _cbexc:
+            logger.warning("번역본 CDN 백필 건너뜀(계속): %s", _cbexc)
     else:
         # v87-W3: '조용한 휘발' 봉인. 예전 가드는 APP_ENV==production일 때만 실패해, 그 값을
         #   안 두면 배포서도 조용히 in-memory로 폴백 → 수집 이력이 배포마다 소실됐다. 이제

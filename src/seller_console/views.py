@@ -1805,6 +1805,22 @@ def collect_upload():
     except Exception as exc:
         logger.warning("[등록] 번역본 반영 실패(원본으로 계속): %s", exc)
 
+    # D2b: **외부 관점**으로 이미지가 열리는지 본다. 마켓은 우리 세션 쿠키가 없다 —
+    #   `/seller/collect/image-ko/…`는 로그인 게이트 뒤라 쿠팡이 받으러 오면 404를 본다.
+    #   우리 화면엔 잘 보이니까 **보내고 반려 통지로 알게 되는** 것이 기본값이었다.
+    try:
+        from src.services import image_reachability as _reach
+        _rc = _reach.check_all(list(product_data.get("images") or [])
+                               + list(product_data.get("detail_images") or []))
+        if not _rc["ok"]:
+            logger.warning("[등록] 외부 도달성 실패 %s건: %s", len(_rc["bad"]),
+                           [(b["url"][:80], b["status"], b["reason"]) for b in _rc["bad"]])
+            return jsonify({"ok": False, "error": _reach.message(_rc),
+                            "unreachable": _rc["bad"]}), 409
+    except Exception as exc:
+        # 확인 자체가 실패하면 **막지 않는다** — 우리 네트워크 사정이 셀러의 벽이 되면 안 된다.
+        logger.warning("[등록] 도달성 확인 건너뜀: %s", exc)
+
     # 금칙어가 걸린 번역본을 쓰는 경우 — **막지는 않되 응답에 실어** 화면이 확인 문구를 띄운다.
     #   조용히 올리면 반려 사유를 나중에 반려 통지로 알게 된다.
     if _warn_pages and not data.get("confirm_warn"):
