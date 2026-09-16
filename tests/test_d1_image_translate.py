@@ -221,11 +221,18 @@ def test_no_live_network_in_this_file():
 # ── 4. 저장 — 원본 불변 · 장별 상태 · 금칙어 warn ─────────────────────────────
 
 @pytest.fixture()
-def store(monkeypatch, tmp_path):
+def store(monkeypatch):
+    """D2: 번역본 바이트는 **로컬 파일이 아니라 DB**에 둔다(PG 없으면 인메모리).
+
+    D1에선 `tmp_path`에 디렉터리를 갈아끼웠는데, 그 자리 자체가 사라졌다 —
+    Render는 배포마다 그 디스크를 버리므로 「저장했다」고 부를 수 없었기 때문이다.
+    """
+    from src.db import image_ko_blobs_pg as blobs
     from src.services import image_translate_store as mod
-    monkeypatch.setattr(mod, "IMAGES_KO_DIR", tmp_path / "images_ko")
+    blobs.reset_for_tests()
     monkeypatch.setattr(mod, "_store_via_cdn", lambda raw: "")      # CDN 미설정 상황
-    return mod
+    yield mod
+    blobs.reset_for_tests()
 
 
 def _ok_result(target="최고 인기"):
@@ -238,9 +245,12 @@ def test_entry_records_status_and_keeps_the_translation_addressable(store):
     e = store.build_entry(2, _ok_result(), item_id="it1", seller_id="u1")
     assert e["idx"] == 2 and e["status"] == "done"
     assert e["url"] == "/seller/collect/image-ko/it1/2"
-    assert e["stored_by"] == "file" and e["bytes"] > 0
+    # D2: 갈래는 cdn·db 둘뿐이다(로컬 파일은 없앴다 — 배포에 사라지는 자리다).
+    assert e["stored_by"] == "db" and e["bytes"] > 0
     assert store.read_translated("it1", 2).startswith(b"\xff\xd8\xff")
-    assert "배포 시 사라집니다" in e["store_note"], "휘발성을 말하지 않으면 나중에 추측으로 푼다"
+    # 「어디에 뒀는지 말한다」는 규율은 그대로다. 휘발 경고는 **저장소가 없을 때만** —
+    #   늘 띄우면 아무도 안 읽고, 이제는 사실도 아니다(배너는 `imgko_storage`가 판단).
+    assert e["stored_by"] in ("db", "cdn"), "어디에 뒀는지 말하지 않는다"
 
 
 def test_failed_entry_says_why(store):

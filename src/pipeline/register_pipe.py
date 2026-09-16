@@ -402,7 +402,16 @@ def build_source_review_row(draft: dict, *, url: str = "", channel: str = "wooco
     price = recalc_channel_price(cost_krw, channel, margin_rate=margin_rate) if cost_krw \
         else {"ok": False, "reason": cost_basis}
     ct = clean_title_ko(title, url=url)
+    # D2: 검수표·카나리도 **등록에 나갈 배열**을 본다(번역본 사용 토글 반영).
+    #   초안에 `images_ko`가 없으면(새로 수집한 URL 등) 원본 그대로다 — 무회귀.
+    #   배열을 만드는 자리는 `image_translate_store.effective_images` 하나다.
     images = [i for i in (draft.get("images") or []) if i]
+    if draft.get("images_ko"):
+        try:
+            from src.services.image_translate_store import effective_images
+            images = effective_images(draft, originals=images)
+        except Exception:
+            pass
 
     # ── 배송(ship_real) — 플래그만(등록 차단 안 함) ──────────────────────────────
     brand = _brand_of(draft, title)
