@@ -1812,12 +1812,21 @@ def collect_upload():
     #   우리 화면엔 잘 보이니까 **보내고 반려 통지로 알게 되는** 것이 기본값이었다.
     try:
         from src.services import image_reachability as _reach
-        _rc = _reach.check_all(list(product_data.get("images") or [])
-                               + list(product_data.get("detail_images") or []))
+        _gal = list(product_data.get("images") or [])
+        _det = list(product_data.get("detail_images") or [])
+        # F28: **어느 장인지**를 결과에 달아 보낸다. 「5장이 안 열린다」만으로는 셀러가
+        #   무엇을 고쳐야 하는지 모른다 — 장 번호가 없는 문장은 행동으로 못 옮긴다.
+        _labels = ([f"갤러리 {i + 1}번째" for i in range(len(_gal))]
+                   + [f"상세 {i + 1}번째" for i in range(len(_det))])
+        _rc = _reach.check_all(_gal + _det, labels=_labels)
         if not _rc["ok"]:
             logger.warning("[등록] 외부 도달성 실패 %s건: %s", len(_rc["bad"]),
                            [(b["url"][:80], b["status"], b["reason"]) for b in _rc["bad"]])
+            # `user_message`: 이 문장은 **이미 셀러의 말**이다. 화면의 친절 처리기가
+            #   다시 번역하면(F28 실측: 「이미지 처리에 실패했어요 — 잠시 후 다시 시도」)
+            #   사유가 사라지고, 게다가 **틀린 조언**이 된다 — 다시 시도해도 똑같이 막힌다.
             return jsonify({"ok": False, "error": _reach.message(_rc),
+                            "user_message": True, "step": "도달성 확인",
                             "unreachable": _rc["bad"]}), 409
     except Exception as exc:
         # 확인 자체가 실패하면 **막지 않는다** — 우리 네트워크 사정이 셀러의 벽이 되면 안 된다.
