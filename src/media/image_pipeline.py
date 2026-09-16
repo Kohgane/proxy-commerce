@@ -228,42 +228,92 @@ def _cloudinary_configured() -> bool:
     )
 
 
-def _upload_to_cdn(image_bytes: bytes, *, prefer_webp: bool = False) -> Optional[str]:
-    """처리된 이미지 바이트를 Cloudinary에 업로드하고 보안 URL을 반환.
+def upload_bytes(image_bytes: bytes, *, prefer_webp: bool = False) -> Dict[str, Any]:
+    """바이트 → Cloudinary. **결과를 dict 그대로** 돌려준다 (F31).
 
-    자격증명 미설정·라이브러리 미설치·업로드 실패 시 None을 반환(호출부는 원본 URL 유지).
-    거짓 성공을 보고하지 않기 위해 실패는 None으로 정직하게 전달한다.
+    ## 왜 dict인가
+
+    실측(오너 2026-09-16, 진단 화면): 저장된 장 5(96~126KB) · Cloudinary env 3개 있음 ·
+    DB 연결됨. 그런데 백필 사유가 **「업로드가 주소를 돌려주지 않았습니다」 ×5**였다.
+
+    옛 `_upload_to_cdn`은 반환이 `Optional[str]`이라 **여섯 가지 실패를 전부 `None` 하나로**
+    뭉갰다 — 토글 꺼짐 · 자격 미설정 · dry-run · SDK 미설치 · SDK 예외 · 응답에 URL 없음.
+    호출부는 「주소가 없다」만 알 뿐 **왜인지는 알 길이 없었다**(사유는 로그 안에서 끝났다).
+
+    > **반환 타입이 좁으면 사유가 죽는다.** `str | None`은 「됐다/안 됐다」만 담는다 —
+    > 안 된 이유를 담을 칸이 없으니, 그 이유는 어디에도 안 남는다.
+
+    돌려주는 것:
+      `ok` · `secure_url` · `public_id` · `bytes` · `error`(사유) · `keys`(응답 키 목록)
+
+    `keys`는 **다음 판의 답**이다. 응답은 왔는데 우리가 아는 키가 없으면,
+    무슨 키가 왔는지를 그대로 실어야 이름을 고칠 수 있다(발명 금지).
     """
-    if not _CDN_UPLOAD_ENABLED or not _cloudinary_configured() or not image_bytes:
-        return None
+    from src.utils.redact import scrub_infra
+    out: Dict[str, Any] = {"ok": False, "secure_url": "", "public_id": "",
+                           "bytes": 0, "error": "", "keys": []}
+    if not image_bytes:
+        out["error"] = "올릴 바이트가 없습니다"
+        return out
+    # 토글·자격·dry-run을 **각각 다른 문장**으로 — 셋 다 「주소 없음」이던 것이 F31의 병이다.
+    if not _CDN_UPLOAD_ENABLED:
+        out["error"] = "IMAGE_CDN_UPLOAD_ENABLED=0 — 업로드가 꺼져 있습니다"
+        return out
+    if not _cloudinary_configured():
+        missing = [n for n in ("CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY",
+                               "CLOUDINARY_API_SECRET") if not os.getenv(n)]
+        out["error"] = "Cloudinary 자격 미설정: " + ", ".join(missing)
+        return out
     if os.getenv("ADAPTER_DRY_RUN", "0") == "1":
-        logger.info("ADAPTER_DRY_RUN=1 — CDN 업로드 차단")
-        return None
+        out["error"] = "ADAPTER_DRY_RUN=1 — 실제 업로드를 막았습니다"
+        return out
     try:
         import cloudinary
         import cloudinary.uploader
-
+    except Exception as exc:
+        # 예전엔 `logger.debug` 한 줄이라 **아무 데도 안 보였다**. 이제 사유가 화면까지 간다.
+        out["error"] = f"cloudinary 라이브러리 없음: {type(exc).__name__}"
+        return out
+    try:
         cloudinary.config(
             cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
             api_key=os.getenv("CLOUDINARY_API_KEY"),
             api_secret=os.getenv("CLOUDINARY_API_SECRET"),
             secure=True,
         )
-        folder = os.getenv("CLOUDINARY_FOLDER", "proxy-commerce")
-        opts: Dict[str, Any] = {"folder": folder, "resource_type": "image"}
+        opts: Dict[str, Any] = {"folder": os.getenv("CLOUDINARY_FOLDER", "proxy-commerce"),
+                                "resource_type": "image"}
         if prefer_webp:
             opts["format"] = "webp"
-        result = cloudinary.uploader.upload(io.BytesIO(image_bytes), **opts)
-        url = (result or {}).get("secure_url") or (result or {}).get("url")
-        if url:
-            return str(url)
-        return None
-    except ImportError:
-        logger.debug("cloudinary 미설치 — CDN 업로드 스킵")
-        return None
+        result = cloudinary.uploader.upload(io.BytesIO(image_bytes), **opts) or {}
     except Exception as exc:
-        logger.warning("CDN 업로드 실패: %s", exc)
-        return None
+        # SDK 예외 문장을 **그대로**(좌표·긴 토큰만 지운다). `Invalid api_key` 같은 말이
+        #   여기 있어야 다음 수리가 추측 없이 시작된다.
+        out["error"] = scrub_infra(f"{type(exc).__name__}: {exc}")
+        logger.warning("CDN 업로드 실패: %s", out["error"])
+        return out
+
+    out["keys"] = sorted(str(k) for k in (result.keys() if hasattr(result, "keys") else []))
+    url = result.get("secure_url") or result.get("url")
+    if not url:
+        # **다음엔 키 이름이 답이다.** 무엇이 왔는지를 그대로 싣는다.
+        out["error"] = ("업로드 응답에 주소가 없습니다 — 응답 키 목록: "
+                        + (", ".join(out["keys"]) if out["keys"] else "(비어 있음)"))
+        return out
+    out.update({"ok": True, "secure_url": str(url),
+                "public_id": str(result.get("public_id") or ""),
+                "bytes": int(result.get("bytes") or len(image_bytes))})
+    return out
+
+
+def _upload_to_cdn(image_bytes: bytes, *, prefer_webp: bool = False) -> Optional[str]:
+    """처리된 이미지 바이트를 Cloudinary에 올리고 보안 URL을 반환(없으면 None).
+
+    **얇은 껍데기다** — 진짜 일은 `upload_bytes`가 한다(두 벌 금지). 사유가 필요한 호출부는
+    `upload_bytes`를 직접 부른다. 여기는 사유를 담을 칸이 없는 옛 계약이라 그대로 둔다.
+    """
+    res = upload_bytes(image_bytes, prefer_webp=prefer_webp)
+    return res["secure_url"] if res["ok"] else None
 
 
 # ---------------------------------------------------------------------------

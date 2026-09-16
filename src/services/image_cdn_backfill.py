@@ -41,16 +41,25 @@ def cdn_ready() -> bool:
 
 
 def _upload(raw: bytes) -> tuple:
-    """`(url, error)` — 하나만 채워진다. 가짜 URL을 만들지 않는다."""
+    """`(url, error)` — 하나만 채워진다. 가짜 URL을 만들지 않는다.
+
+    F31: 예전엔 `_upload_to_cdn`(반환 `str|None`)을 불러서, 여섯 가지 실패가 전부
+    **「업로드가 주소를 돌려주지 않았습니다」** 한 문장이 됐다(오너 실측 ×5).
+    이제 **결과 dict**를 받아 사유를 그대로 올린다 — 토글·자격·dry-run·SDK 미설치·
+    SDK 예외·응답에 주소 없음(+ **응답 키 목록**)이 각각 다른 문장이다.
+    """
     try:
-        from src.media.image_pipeline import _upload_to_cdn      # noqa: SLF001
+        from src.media.image_pipeline import upload_bytes
     except Exception as exc:
         return "", f"이미지 파이프라인 미가용: {type(exc).__name__}"
     try:
-        url = str(_upload_to_cdn(raw) or "")
+        res = upload_bytes(raw)
     except Exception as exc:
         return "", f"{type(exc).__name__}: {str(exc)[:160]}"
-    return (url, "") if url else ("", "업로드가 주소를 돌려주지 않았습니다")
+    if res.get("ok") and res.get("secure_url"):
+        return str(res["secure_url"]), ""
+    # 원본 URL 되돌림 같은 「성공 같은 실패」도 여기서 실패로 떨어진다(ok가 아니면 실패다).
+    return "", str(res.get("error") or "업로드가 주소를 돌려주지 않았습니다")
 
 
 def _point_entry_at_cdn(item_id: str, idx: int, kind: str, url: str) -> bool:
@@ -94,32 +103,42 @@ def run(limit: int = BATCH) -> dict:
 
     pending = blobs.pending_cdn(limit=limit)
     uploaded = failed = skipped = 0
+    # F31-3: 「지금 올리기」가 숫자만 돌려주면 **어느 장이 왜 실패했는지**를 또 모른다.
+    #   장별 결과를 그대로 싣는다(화면이 바로 편다).
+    results = []
     for p in pending:
         item_id, idx, kind = p["item_id"], int(p["idx"]), p.get("kind", "gallery")
         # 멱등: 그 사이 누가 올렸으면 건너뛴다.
         if blobs.get_cdn(item_id, idx, kind=kind):
             skipped += 1
+            results.append({"item_id": item_id, "idx": idx, "kind": kind,
+                            "ok": True, "skipped": True, "error": "이미 올라가 있음"})
             continue
         raw, _ct = blobs.get(item_id, idx, kind=kind)
         if not raw:
             blobs.set_cdn(item_id, idx, "", kind=kind, error="바이트가 없습니다")
             failed += 1
+            results.append({"item_id": item_id, "idx": idx, "kind": kind,
+                            "ok": False, "error": "바이트가 없습니다"})
             continue
         url, err = _upload(raw)
         if not url:
             blobs.set_cdn(item_id, idx, "", kind=kind, error=err)
             failed += 1
+            results.append({"item_id": item_id, "idx": idx, "kind": kind,
+                            "ok": False, "error": err})
             logger.warning("[CDN 백필] 실패 item=%s idx=%s: %s", item_id, idx, err)
             continue
         blobs.set_cdn(item_id, idx, url, kind=kind)
         _point_entry_at_cdn(item_id, idx, kind, url)
         uploaded += 1
+        results.append({"item_id": item_id, "idx": idx, "kind": kind, "ok": True, "error": ""})
 
     if uploaded or failed:
         logger.info("[CDN 백필] 올림 %s · 실패 %s · 건너뜀 %s (대기 %s)",
                     uploaded, failed, skipped, len(pending))
     return {"ok": True, "uploaded": uploaded, "failed": failed, "skipped": skipped,
-            "pending": len(pending), "reason": ""}
+            "pending": len(pending), "reason": "", "results": results}
 
 
 def run_quietly() -> None:
