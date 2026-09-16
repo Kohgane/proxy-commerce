@@ -321,6 +321,23 @@ def _mask(value: str) -> str:
     return value[:2] + "••••" + value[-2:]
 
 
+def _suggest_value(env: str) -> str:
+    """빈 칸에 미리 채워 줄 값 — **아는 것만**. 모르면 빈 문자열(추측 0).
+
+    F29: 오너가 채워야 할 칸을 줄이는 게 목적이다. 다만 **이 서버의 자격이 오너 계정일 때만**
+    제안한다 — 다른 셀러가 자기 키를 넣어 둔 상태(무접두)면 계정이 빈 문자열이 되고,
+    그때는 아무것도 제안하지 않는다(남의 Wing 아이디를 남의 칸에 채우지 않는다).
+    """
+    if env != "COUPANG_VENDOR_USER_ID":
+        return ""
+    try:
+        from src.seller_console.market_cred_view import (
+            WING_USER_IDS, resolve_upload_account)
+        return WING_USER_IDS.get(resolve_upload_account(), "")
+    except Exception:
+        return ""
+
+
 def status(seller_id: str, market: str) -> Dict[str, Any]:
     """화면 표시용 상태 (마스킹된 값 포함, 비밀값 노출 금지)."""
     stored = get(seller_id, market)
@@ -345,6 +362,10 @@ def status(seller_id: str, market: str) -> Dict[str, Any]:
             "display": display,
             "help": field.get("help", ""),
             "section": field.get("section", ""),
+            # F29: 아는 값은 **미리 채워 둔다**(비어 있는 칸에 한해). 사람이 고칠 수 있고,
+            #   고친 값을 상수가 덮지 않는다. 비밀값엔 절대 제안을 붙이지 않는다.
+            "suggest": ("" if (has_value or field.get("secret"))
+                        else _suggest_value(env)),
         })
     return {
         "market": market,

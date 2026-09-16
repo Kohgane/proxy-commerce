@@ -23,9 +23,18 @@ def upload(product_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     from src.uploaders.coupang_uploader import CoupangUploader
 
+    # F29: 예전엔 `CoupangUploader()` — **계정 없이** 만들었다. 계정이 없으면 배송·자격을
+    #   무접두 이름으로만 읽으므로, 오너가 Render에 `COUPANG_GOGANE_*`로 넣어 둔 값이
+    #   이 경로에선 아예 안 보였다(그래서 「미입력 7필드」였다).
+    #   **무접두가 있으면 계정은 빈 문자열** — 그게 셀러가 연동 화면에 넣은 자기 키다.
+    #   무접두가 없을 때만 계정 접두로 내려간다(순서를 뒤집으면 남의 등록이 오너 자격으로 나간다).
+    from src.seller_console.market_cred_view import resolve_upload_account
+    account = resolve_upload_account()
+    required = REQUIRED_ENVS if not account else []   # 계정 자격은 무접두로 존재하지 않는다
+
     return run_upload(
-        CoupangUploader(),
+        CoupangUploader(account=account) if account else CoupangUploader(),
         product_data,
-        required_envs=REQUIRED_ENVS,
+        required_envs=required,
         market_label=MARKET_LABEL,
     )

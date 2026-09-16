@@ -180,7 +180,14 @@
         <input type="{{ 'password' if f.secret else 'text' }}" class="form-control form-control-sm" name="{{ f.env }}"
                data-secret="{{ '1' if f.secret else '0' }}"
                placeholder="{{ '저장됨 (' ~ f.display ~ ')' if (f.has_value and f.secret) else (f.display or f.env) }}"
-               value="{{ '' if f.secret else f.display }}">
+               value="{{ '' if f.secret else (f.display or f.suggest) }}">
+        {% if f.suggest and not f.has_value %}
+        {# F29: 아는 값은 미리 채워 두되 **채웠다고 말한다** — 말없이 채우면 사람은 자기가
+           넣은 값인 줄 안다. 고치면 고친 값이 저장된다. #}
+        <div class="form-text small mt-1" style="color:var(--teal)">
+          <i class="bi bi-magic"></i> 미리 채워 뒀어요 — 다르면 고쳐 주세요.
+        </div>
+        {% endif %}
         {% if f.help %}<div class="form-text small text-muted mt-1">{{ f.help }}</div>{% endif %}
       </div>
       {% endfor %}
