@@ -11052,3 +11052,33 @@ def identity_audit_restore():
     out = identity.restore_batch(batch)
     ok = bool(out.get("restored")) and not out.get("failed")
     return jsonify({"ok": ok, **out}), (200 if ok else 409)
+
+
+@bp.post("/markets/connect/coupang/lookup")
+def coupang_shipping_lookup_route():
+    """F29-4: 쿠팡에서 **출고지·반품지를 불러온다**. 저장은 하지 않는다(고르는 것은 사람).
+
+    경로는 오너 제공 공식 목록(2026-09-16), 서명·릴레이는 `CoupangUploader._api_request`가 정본.
+    응답 JSON은 **그대로** 실어 보낸다 — 화면이 원문 키를 나열해 우리가 못 고른 칸을
+    사람이 고르게 한다. 쿼리 파라미터는 미확인이라 붙이지 않는다(400이면 그 문장 그대로).
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    from . import market_credentials as mc
+    from .coupang_shipping_lookup import fetch
+
+    try:
+        with mc.seller_market_env(_seller_id(), "coupang"):
+            out = fetch()
+    except Exception as exc:
+        logger.warning("[쿠팡 불러오기] 실패: %s", exc)
+        return jsonify({"ok": False, "error": "불러오지 못했습니다.",
+                        "user_message": True}), 502
+    if not out.get("ok"):
+        # 사유를 지어내지 않는다 — 자격 미설정이면 그 말, 쿠팡이 거부하면 **그 응답 원문**.
+        reason = (out.get("reason")
+                  or (out.get("return_centers") or {}).get("error")
+                  or (out.get("outbound_places") or {}).get("error")
+                  or "불러오지 못했습니다.")
+        return jsonify({"ok": False, "error": reason, "user_message": True, **out}), 409
+    return jsonify({"ok": True, **out})

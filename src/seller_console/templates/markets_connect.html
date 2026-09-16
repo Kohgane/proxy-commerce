@@ -167,6 +167,14 @@
       <a href="{{ _g.official_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm w-100 mb-3">
         <i class="bi bi-box-arrow-up-right"></i> {{ _g.official_label or '발급 페이지 열기' }}</a>
       {% endif %}
+      {% if m.market == 'coupang' %}
+      {# F29-4: 배송 7필드를 Wing에서 옮겨 적지 않는다 — 쿠팡이 API로 준다.
+         키·업체코드가 먼저 저장돼 있어야 부를 수 있다(없으면 그렇게 말한다). #}
+      <button type="button" class="btn btn-ghost btn-sm w-100 mb-2" data-action="coupang-lookup">
+        <i class="bi bi-download"></i> 쿠팡에서 출고지·반품지 불러오기
+      </button>
+      <div class="small mb-3 d-none" data-role="coupang-lookup-out"></div>
+      {% endif %}
       {% for f in m.fields %}
       {% if f.section %}
       <div class="mt-3 mb-2 pt-2 border-top">
@@ -253,6 +261,68 @@ function updateBadge(market, connected) {
   if (nav) { nav.dataset.connected = connected ? '1' : '0'; const d = nav.querySelector('.mc-dot'); if (d) d.className = 'mc-dot ' + (connected ? 'on' : 'off'); }
 }
 
+// F29-4: 불러온 결과 렌더 — 블록마다 라디오 목록 + 「원문 보기」(우리가 못 고른 칸용).
+function renderLookup(form, data) {
+  const blocks = [
+    ['return_centers', '반품지'],
+    ['outbound_places', '출고지'],
+  ];
+  let html = '';
+  blocks.forEach(([key, label]) => {
+    const b = data[key] || {};
+    if (!b.ok) {
+      html += `<div class="pc-status pc-status-warn mb-2"><i class="bi bi-info-circle"></i>
+        ${kgpEscapeForHtml(label)} — ${kgpEscapeForHtml(b.error || '불러오지 못했습니다.')}</div>`;
+      return;
+    }
+    const list = b.entries || [];
+    if (!list.length) {
+      html += `<div class="pc-status pc-status-warn mb-2"><i class="bi bi-info-circle"></i>
+        ${kgpEscapeForHtml(label)} — 등록된 것이 없습니다.</div>`;
+      return;
+    }
+    html += `<div class="console-kpi-label mt-2">${kgpEscapeForHtml(label)} ${list.length}개</div>`;
+    list.forEach((e, i) => {
+      const name = kgpEscapeForHtml(e.label || Object.values(e.values || {})[0] || `${i + 1}번째`);
+      const raw = Object.keys(e.raw || {}).map(k =>
+        `${kgpEscapeForHtml(k)}: ${kgpEscapeForHtml(String(e.raw[k]))}`).join(' · ');
+      html += `<label class="pc-inset d-flex gap-2 align-items-start mb-1">
+        <input type="radio" class="form-check-input" name="lk-${key}" value="${i}"
+               data-lk-key="${key}" ${list.length === 1 ? 'checked' : ''}>
+        <span class="small flex-grow-1"><strong>${name}</strong>
+          <details class="mt-1"><summary class="text-muted">원문 보기</summary>
+            <div class="text-muted" style="word-break:break-all">${raw}</div></details></span>
+      </label>`;
+    });
+  });
+  if ((data.unmapped || []).length) {
+    html += `<div class="pc-status pc-status-warn mt-2"><i class="bi bi-info-circle"></i>
+      쿠팡 응답에서 못 찾은 칸이 있어요 — 「원문 보기」에서 값을 찾아 직접 넣어 주세요:
+      ${kgpEscapeForHtml((data.unmapped || []).join(', '))}</div>`;
+  }
+  html += `<button type="button" class="btn btn-primary btn-sm w-100 mt-2"
+    data-action="lookup-apply"><i class="bi bi-check-lg"></i> 고른 값으로 칸 채우기</button>`;
+  // 채우기 — **화면의 칸만** 채운다. 저장은 기존 「저장」 버튼이 한다(한 자리에서).
+  setTimeout(() => {
+    const apply = form.querySelector('[data-action="lookup-apply"]');
+    if (!apply) return;
+    apply.addEventListener('click', () => {
+      let filled = 0;
+      form.querySelectorAll('input[type="radio"][data-lk-key]:checked').forEach(r => {
+        const block = data[r.dataset.lkKey] || {};
+        const entry = (block.entries || [])[Number(r.value)] || {};
+        Object.keys(entry.values || {}).forEach(env => {
+          const input = form.querySelector(`[name="${env}"]`);
+          if (input) { input.value = entry.values[env]; filled++; }
+        });
+      });
+      pcToast(filled ? `${filled}개 칸을 채웠어요 — 확인 후 저장해 주세요.`
+                     : '채울 값을 찾지 못했어요.', filled ? 'success' : 'error');
+    });
+  }, 0);
+  return html;
+}
+
 // 폼 동작(인증하기/저장/연결해제) — 드로어 안 폼에 바인딩
 document.querySelectorAll('.market-connect-form').forEach(form => {
   const market = form.dataset.market;
@@ -273,6 +343,28 @@ document.querySelectorAll('.market-connect-form').forEach(form => {
       updateBadge(market, data.status && data.status.connected);
       pcToast(`${market} 연동 정보를 저장했어요.`, 'success');
     } catch (err) { pcToast(kgpFriendlyError(err), 'error'); } finally { setButtonLoading(btn, false); }
+  });
+  // F29-4: 쿠팡에서 출고지·반품지 불러오기 → 여러 개면 **라디오로 고르고** 칸을 채운다.
+  //   우리가 못 고른 칸은 원문 키를 그대로 펴서 사람이 보게 한다(필드명 발명 금지).
+  const lk = form.querySelector('[data-action="coupang-lookup"]');
+  if (lk) lk.addEventListener('click', async () => {
+    const out = form.querySelector('[data-role="coupang-lookup-out"]');
+    out.classList.remove('d-none');
+    out.innerHTML = '<span class="text-muted">쿠팡에 물어보는 중…</span>';
+    setButtonLoading(lk, true, '불러오는 중…');
+    try {
+      const {data} = await postJson(`/seller/markets/connect/coupang/lookup`, {});
+      if (!data.ok) {
+        // 쿠팡이 거부하면 **그 응답 문장 그대로** 보여 준다(다음 판에서 쿼리 파라미터를 채운다).
+        out.innerHTML = `<div class="pc-status pc-status-danger">
+          <i class="bi bi-exclamation-triangle"></i> ${kgpEscapeForHtml(kgpFriendlyError(data))}</div>`;
+        return;
+      }
+      out.innerHTML = renderLookup(form, data);
+    } catch (err) {
+      out.innerHTML = `<div class="pc-status pc-status-danger">
+        <i class="bi bi-exclamation-triangle"></i> ${kgpEscapeForHtml(kgpFriendlyError(err))}</div>`;
+    } finally { setButtonLoading(lk, false); }
   });
   const dc = form.querySelector('[data-action="disconnect"]');
   if (dc) dc.addEventListener('click', async () => {
