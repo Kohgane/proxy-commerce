@@ -1781,6 +1781,36 @@ def collect_upload():
     if not markets:
         return jsonify({"ok": False, "error": "업로드 대상 마켓을 선택하세요."}), 400
 
+    # D2: 마켓에 나가는 이미지는 **번역본 사용 토글을 반영한 배열**이다.
+    #   폼이 보낸 목록(사람이 방금 고친 원본 순서)을 기준으로, 저장된 토글을 서버가 매핑한다 —
+    #   화면과 서버가 각자 계산하면 「서랍은 한국어인데 마켓은 중국어」가 된다.
+    #   **원본 `images`는 건드리지 않는다**(저장 경로는 그대로 폼 값을 쓴다).
+    _warn_pages = []
+    try:
+        _uid = data.get("item_id")
+        if _uid:
+            _uit = _get_owned_item(_uid)
+            if _uit:
+                from src.services import image_translate_store as _its
+                _uex = json.loads(_uit.get("extra_json") or "{}") or {}
+                _eff = _its.effective_images(_uex, originals=product_data.get("images") or [])
+                if _eff:
+                    product_data["images"] = _eff
+                    product_data["thumbnail"] = _eff[0]
+                _dt = _its.effective_images(
+                    _uex, kind="detail", originals=product_data.get("detail_images") or [])
+                if _dt:
+                    product_data["detail_images"] = _dt
+                _warn_pages = _its.effective_summary(_uex).get("warn_idx") or []
+    except Exception as exc:
+        logger.warning("[등록] 번역본 반영 실패(원본으로 계속): %s", exc)
+
+    # 금칙어가 걸린 번역본을 쓰는 경우 — **막지는 않되 응답에 실어** 화면이 확인 문구를 띄운다.
+    #   조용히 올리면 반려 사유를 나중에 반려 통지로 알게 된다.
+    if _warn_pages and not data.get("confirm_warn"):
+        return jsonify({"ok": False, "needs_confirm": True, "warn_pages": _warn_pages,
+                        "error": "번역문에 금칙어가 걸린 이미지가 있습니다. 확인 후 등록해 주세요."}), 409
+
     # C-T3: **보강 전 등록 차단.** 공유 텍스트 초안은 가격이 없다 — 마진을 낼 수 없고,
     #   0으로 채우면 그건 계산이 아니라 날조다. 버튼을 숨기는 것으로는 부족하다(직접 호출이 남는다).
     #   게이트는 **서버**에 둔다.
@@ -6902,6 +6932,16 @@ def collect_preview_by_id(item_id: str):
     except Exception:
         enrich = {"is_draft": False, "enrich_state": "", "reason": "", "gate_ready": False, "images": 0}
 
+    # D2: 썸네일 탭이 **등록에 나갈 목록 그대로**를 보여 주려면 장마다 원본/번역을 알아야 한다.
+    #   그 판단을 화면이 다시 하지 않게 서버가 계산해 내려보낸다(계산하는 자리는 하나다).
+    try:
+        from src.services import image_translate_store as _its
+        imgko_plan = _its.effective_plan(extra)
+        imgko_detail_plan = _its.effective_plan(extra, kind="detail")
+        imgko_storage = _its.storage_backend()
+    except Exception:
+        imgko_plan, imgko_detail_plan, imgko_storage = [], [], ""
+
     from src.utils.perf import perf_block as _pb
     with _pb("render"):
       return render_template(
@@ -6909,6 +6949,9 @@ def collect_preview_by_id(item_id: str):
         page="collect_history",
         item=item,
         extra=extra,
+        imgko_plan=imgko_plan,
+        imgko_detail_plan=imgko_detail_plan,
+        imgko_storage=imgko_storage,
         collect_status=collect_status,
         enrich=enrich,
         fx_rates=fx_rates,
@@ -10706,18 +10749,60 @@ def image_translate_bench_score():
 
 @bp.get("/collect/image-ko/<item_id>/<int:idx>")
 def collect_image_ko(item_id: str, idx: int):
-    """파일로 둔 번역 이미지 서빙. **본인 항목만**(스코프는 기존 헬퍼 그대로)."""
+    """둔 번역 이미지 서빙. **본인 항목만**(스코프는 기존 헬퍼 그대로)."""
     if not _check_auth():
         return ("", 404)
     if _get_owned_item(item_id) is None:
         return ("", 404)          # 남의 항목 이미지는 없다고 답한다(존재 여부도 안 알린다)
     from src.services.image_translate_store import read_translated
-    raw = read_translated(item_id, idx)
+    kind = "detail" if (request.args.get("kind") or "") == "detail" else "gallery"
+    raw = read_translated(item_id, idx, kind=kind)
     if not raw:
         return ("", 404)
     from flask import Response
     return Response(raw, mimetype="image/jpeg",
                     headers={"Cache-Control": "private, max-age=300"})
+
+
+@bp.post("/collect/<item_id>/image-use")
+def collect_image_use(item_id: str):
+    """D2: 장별 「번역본 사용」 토글. `{flags: {idx: bool}, kind?}` → 갱신된 plan.
+
+    **원본 `images`는 건드리지 않는다.** 바뀌는 것은 `images_ko[i].use` 하나뿐이고,
+    등록에 나갈 배열은 그걸 읽어 그때 계산한다(`effective_images`).
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+
+    data = request.get_json(silent=True) or {}
+    kind = "detail" if str(data.get("kind") or "") == "detail" else "gallery"
+    try:
+        flags = {int(k): bool(v) for k, v in (data.get("flags") or {}).items()}
+    except Exception:
+        return jsonify({"ok": False, "error": "무엇을 바꿀지 알 수 없습니다."}), 400
+    if not flags:
+        return jsonify({"ok": False, "error": "바꿀 장이 없습니다."}), 400
+
+    from src.services import image_translate_store as store
+    extra = store.load_extra(item)
+    ko_key = "images_ko" if kind == "gallery" else "detail_images_ko"
+    extra[ko_key] = store.set_use_flags(extra, flags, kind=kind)
+    try:
+        from . import collect_history_store
+        ok = collect_history_store.update(item_id, seller_ids=_seller_identities(),
+                                          extra_json=json.dumps(extra, ensure_ascii=False))
+    except Exception as exc:
+        logger.warning("[이미지번역] 사용 토글 저장 실패: %s", exc)
+        return jsonify({"ok": False, "error": "저장하지 못했습니다."}), 500
+    if not ok:
+        return jsonify({"ok": False, "error": "저장하지 못했습니다."}), 500
+
+    return jsonify({"ok": True, "kind": kind,
+                    "plan": store.effective_plan(extra, kind=kind),
+                    "summary": store.effective_summary(extra)})
 
 
 @bp.post("/collect/<item_id>/translate-images")

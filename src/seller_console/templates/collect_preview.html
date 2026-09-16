@@ -306,6 +306,14 @@
           고른 장만 번역합니다. <strong>원본은 그대로 남습니다</strong> — 번역본은 따로 저장돼
           마음에 안 들면 원본으로 되돌릴 수 있어요.
         </p>
+        {# D2: 저장소가 안 붙어 있으면 **사실일 때만** 말한다. 번역본은 장당 과금이라
+           배포에 사라지면 그 돈을 다시 쓴다. #}
+        {% if not imgko_storage %}
+        <div class="pc-status pc-status-warn mb-2">
+          <i class="bi bi-hdd"></i> <strong>저장소 미연결</strong> —
+          번역본이 배포 시 유실될 수 있습니다. 운영자에게 알려 주세요.
+        </div>
+        {% endif %}
         <div id="imgkoList" class="mb-2"></div>
         <div class="d-flex gap-2 flex-wrap">
           <button type="button" class="btn btn-ghost btn-sm" onclick="kgpImgkoAll(true)">전체 선택</button>
@@ -315,6 +323,19 @@
           </button>
         </div>
         <div id="imgkoMsg" class="small mt-2"></div>
+        {# D2-1: 등록에 **무엇이 나갈지**를 여기서 정한다. 번역했다고 반드시 쓰는 게 아니다. #}
+        <hr class="pc-hairline my-3">
+        <label class="form-label small fw-semibold d-block mb-1">
+          <i class="bi bi-box-arrow-up-right"></i> 등록에 나갈 이미지
+        </label>
+        <p class="text-muted small mb-2">
+          번역된 장은 기본으로 <strong>번역본</strong>이 나갑니다. 장별로 끄면 그 장만 원본이 나가요.
+        </p>
+        <div class="d-flex gap-2 flex-wrap mb-2">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="kgpImgkoUseAll(true)">모두 번역본</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="kgpImgkoUseAll(false)">모두 원본</button>
+          <span id="imgkoUseMsg" class="small align-self-center"></span>
+        </div>
       </div>
 
       <div class="kgp-esec kgp-etab-hide" data-etab="upload">
@@ -1263,6 +1284,24 @@ function initEditor() {
 }
 
 // ── 폼 → 상품 데이터 ──
+// D2: 폼의 원본 목록 + 저장된 토글 → 등록에 나갈 배열. **원본 배열은 그대로 둔다.**
+function kgpEffectiveImages(originals) {
+  var byIdx = {};
+  (KGP_IMAGES_KO || []).forEach(function (e) { byIdx[e.idx] = e; });
+  return (originals || []).map(function (u, i) {
+    var e = byIdx[i];
+    return (e && e.use && e.status === 'done' && e.url) ? e.url : u;
+  });
+}
+// D2-3: 금칙어가 걸린 번역본이 섞여 있으면 서버가 409로 **한 번 물어본다**.
+//   조용히 올리면 반려 사유를 나중에 반려 통지로 알게 된다.
+function kgpWarnConfirmText(pages) {
+  var lines = (pages || []).map(function (p) {
+    return (p.idx + 1) + '번째 이미지 — ' + (p.warn || []).join(' · ');
+  });
+  return '번역문에 금칙어가 걸린 이미지가 있습니다:\n\n' + lines.join('\n') +
+    '\n\n이대로 등록할까요? (원본으로 바꾸려면 「이미지 번역」 탭에서 그 장을 끄세요)';
+}
 function buildProductData() {
   const images = Array.from(document.querySelectorAll('#imageRows .img-url'))
     .map(el => el.value.trim()).filter(Boolean);
@@ -1286,7 +1325,10 @@ function buildProductData() {
     description, description_ko: description,
     images, options,
     keywords, tags: keywords,
-    thumbnail: images[0] || '',   // 맨 위(대표) 이미지 = 썸네일
+    // D2: 번역본 사용 토글을 반영한 **등록에 나갈 배열**. 최종 판단은 서버가 다시 하지만
+    //   (`effective_images`), 화면도 같은 값을 들고 있어야 미리보기가 거짓말을 안 한다.
+    images_effective: kgpEffectiveImages(images),
+    thumbnail: (kgpEffectiveImages(images)[0] || images[0] || ''),   // 맨 위(대표) = 썸네일
     url: _ITEM.url || _EXTRA.url || '',
     source: _ITEM.source || _EXTRA.source || '',
     brand: _EXTRA.brand || '',
@@ -1510,7 +1552,7 @@ function renderPrevalidateResults(results) {
 }
 
 // ── 실제 업로드 ──
-async function runUpload() {
+async function runUpload(confirmWarn) {
   if (_validatedMarkets.length === 0) return;
   const targetMarginPct = parseInt(document.getElementById('uploadMarginPct').value) || 22;
 
@@ -1525,9 +1567,18 @@ async function runUpload() {
         markets: _validatedMarkets,
         target_margin_pct: targetMarginPct,
         item_id: _ITEM_ID,                 // v44-1: 성공 마켓을 항목에 영속(목록 '등록됨' 뱃지)
+        confirm_warn: !!confirmWarn,       // D2-3: 금칙어 확인을 이미 받았나
       }),
     });
     const data = await resp.json();
+    // D2-3: 금칙어가 걸린 번역본이 섞여 있으면 **한 번 물어본다**(막지는 않는다).
+    if (data && data.needs_confirm) {
+      goToStep('stepMarkets');
+      if (await pcConfirm(kgpWarnConfirmText(data.warn_pages))) {
+        return runUpload(true);
+      }
+      return;
+    }
     renderUploadResults(data);
     goToStep('stepResult');
   } catch (err) {
@@ -1641,20 +1692,118 @@ function kgpImgkoRender() {
     else if (e && e.status === 'queued') badge = '<span class="pc-badge pc-badge-off ms-1">차례 기다리는 중</span>';
     var warn = (e && e.warn && e.warn.length)
       ? '<span class="pc-badge pc-badge-off ms-1" title="' + e.warn.join(' · ') + '">금칙어</span>' : '';
-    var shot = (e && e.url) ? '<img src="' + e.url + '" alt="번역본" class="kgp-imgko-thumb">' : '';
+    // D2-4: 글자가 빽빽했던 장은 줄바꿈이 원본과 달라질 수 있다 — 사람이 한 번 보게.
+    var dense = (e && e.dense)
+      ? '<span class="pc-badge pc-badge-off ms-1" title="번역 후 줄바꿈이 달라질 수 있어요">레이아웃 확인</span>' : '';
+    var usable = !!(e && e.status === 'done' && e.url);
+    var shot = usable
+      ? '<img src="' + e.url + '" alt="번역본" class="kgp-imgko-thumb" ' +
+        'onclick="kgpImgkoZoom(\'' + e.url + '\')" title="클릭하면 크게 보기">'
+      : '';
     var why = (e && e.status === 'failed')
       ? '<div class="small" style="color:var(--danger)">' + (e.error_message || '') + '</div>' : '';
+    // D2-1: 장별 「번역본 사용」. 번역본이 없는 장은 켤 수 없다(켜 봐야 원본이 나간다).
+    var use = usable
+      ? '<label class="small d-inline-flex align-items-center gap-1 ms-2">' +
+        '<input class="form-check-input imgko-use" type="checkbox" data-idx="' + i + '"' +
+        (e.use ? ' checked' : '') + ' onchange="kgpImgkoUseOne(' + i + ', this.checked)">' +
+        '<span>번역본 사용</span></label>'
+      : '';
     return '<div class="pc-inset mb-2 d-flex gap-2 align-items-start">' +
       '<input class="form-check-input imgko-pick" type="checkbox" value="' + i + '">' +
-      '<img src="' + u + '" alt="원본" referrerpolicy="no-referrer" class="kgp-imgko-thumb">' +
+      '<img src="' + u + '" alt="원본" referrerpolicy="no-referrer" class="kgp-imgko-thumb" ' +
+        'onclick="kgpImgkoZoom(\'' + u + '\')" title="클릭하면 크게 보기">' +
       shot +
-      '<div class="flex-grow-1 small"><strong>' + (i + 1) + '번째</strong>' + badge + warn +
+      '<div class="flex-grow-1 small"><strong>' + (i + 1) + '번째</strong>' + badge + warn + dense +
       (e && e.ms ? '<span class="console-kpi-label ms-2">' + e.ms + ' ms</span>' : '') +
-      why + '</div></div>';
+      use + why + '</div></div>';
   }).join('');
+  kgpRenderUseBadges();
+}
+// D2: 원본/번역본 크게 보기 — 새 창·라우트 이동 없이 같은 화면 위에 띄운다.
+function kgpImgkoZoom(url) {
+  if (!url) return;
+  var box = document.getElementById('kgpImgZoom');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'kgpImgZoom';
+    box.className = 'kgp-img-zoom';
+    box.addEventListener('click', function () { box.classList.remove('on'); });
+    document.body.appendChild(box);
+  }
+  box.innerHTML = '<img src="' + url + '" alt="크게 보기" referrerpolicy="no-referrer">';
+  box.classList.add('on');
+}
+// D2-2: 썸네일 탭의 각 행에 **등록에 무엇이 나가는지**를 붙인다.
+function kgpRenderUseBadges() {
+  var rows = document.querySelectorAll('#imageRows .img-row');
+  var byIdx = {};
+  (KGP_IMAGES_KO || []).forEach(function (e) { byIdx[e.idx] = e; });
+  rows.forEach(function (row, i) {
+    var old = row.querySelector('.kgp-src-badge');
+    if (old) old.remove();
+    var e = byIdx[i];
+    var usable = !!(e && e.status === 'done' && e.url);
+    var span = document.createElement('span');
+    span.className = 'pc-badge kgp-src-badge flex-shrink-0 ' +
+      ((usable && e.use) ? 'pc-badge-on' : 'pc-badge-muted');
+    span.textContent = (usable && e.use) ? '번역본' : '원본';
+    span.title = (usable && e.use)
+      ? '등록에 번역본이 나갑니다 — 「이미지 번역」 탭에서 끌 수 있어요'
+      : (usable ? '번역본이 있지만 원본이 나갑니다' : '번역본이 없습니다');
+    row.appendChild(span);
+  });
 }
 function kgpImgkoAll(on) {
   document.querySelectorAll('.imgko-pick').forEach(function (c) { c.checked = !!on; });
+}
+// D2-1: 「번역본 사용」 — 장별 / 모두. 서버가 저장하고 갱신된 plan을 돌려준다
+//   (같은 판단을 화면이 따로 하지 않게 — 그러면 서랍과 마켓이 갈린다).
+function kgpImgkoSendUse(flags) {
+  var msg = document.getElementById('imgkoUseMsg');
+  if (msg) { msg.textContent = '저장 중…'; msg.style.color = ''; }
+  return fetch(window.location.pathname.replace('/preview/', '/') + '/image-use', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({flags: flags})
+  }).then(function (r) { return r.json().then(function (d) { return {s: r.status, d: d}; }); })
+    .then(function (res) {
+      if (!res.d || !res.d.ok) {
+        if (res.s) console.warn('[번역본 사용] HTTP', res.s, res.d);
+        if (msg) { msg.textContent = (res.d && res.d.error) || '저장하지 못했습니다.'; msg.style.color = 'var(--danger)'; }
+        return;
+      }
+      // 서버가 준 plan을 그대로 받는다 — 화면이 제 계산을 덧대지 않는다.
+      var byIdx = {};
+      (res.d.plan || []).forEach(function (p) { byIdx[p.idx] = p; });
+      (KGP_IMAGES_KO || []).forEach(function (e) {
+        if (byIdx[e.idx]) e.use = byIdx[e.idx].use;
+      });
+      kgpImgkoRender();
+      var sm = res.d.summary || {};
+      if (msg) {
+        msg.textContent = '등록에 번역본 ' + (sm.translated || 0) + '장 · 원본 ' + (sm.original || 0) + '장';
+        msg.style.color = 'var(--teal)';
+      }
+    }).catch(function (e) {
+      if (msg) { msg.textContent = '저장하지 못했습니다.'; msg.style.color = 'var(--danger)'; }
+      console.warn('[번역본 사용]', e);
+    });
+}
+function kgpImgkoUseOne(idx, on) {
+  var f = {}; f[idx] = !!on;
+  kgpImgkoSendUse(f);
+}
+function kgpImgkoUseAll(on) {
+  var f = {};
+  (KGP_IMAGES_KO || []).forEach(function (e) {
+    if (e.status === 'done' && e.url) f[e.idx] = !!on;
+  });
+  if (!Object.keys(f).length) {
+    var msg = document.getElementById('imgkoUseMsg');
+    if (msg) { msg.textContent = '아직 번역된 장이 없습니다.'; msg.style.color = 'var(--warn)'; }
+    return;
+  }
+  kgpImgkoSendUse(f);
 }
 function kgpImgkoRun() {
   var btn = document.getElementById('imgkoRunBtn');
