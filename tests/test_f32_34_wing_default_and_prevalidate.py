@@ -142,7 +142,9 @@ def test_saved_credentials_make_the_coupang_precheck_pass(clean_env, tmp_path):
     """
     from src.seller_console import market_credentials as mc
     from src.seller_console.upload_dispatcher import UploadDispatcher
-    clean_env.setenv("MARKET_CRED_DIR", str(tmp_path))
+    # `_DATA_DIR`은 **모듈 로드 시점 상수**다 — env를 바꿔도 안 바뀐다(그렇게 썼다가
+    #   테스트가 레포의 `data/market_credentials/`에 실제로 파일을 썼다). 상수를 세운다.
+    clean_env.setattr(mc, "_DATA_DIR", str(tmp_path), raising=False)
 
     with patch.object(mc, "_pg_links", return_value=None):   # 파일 저장소로 고정
         mc.save("seller-1", "coupang", dict(FULL_COUPANG))
@@ -162,7 +164,7 @@ def test_one_missing_shipping_field_still_blocks(clean_env, tmp_path):
     """일곱 중 하나만 비어도 막는다 — 반쯤 채운 채 등록 보내면 쿠팡이 거부한다."""
     from src.seller_console import market_credentials as mc
     from src.seller_console.upload_dispatcher import UploadDispatcher
-    clean_env.setenv("MARKET_CRED_DIR", str(tmp_path))
+    clean_env.setattr(mc, "_DATA_DIR", str(tmp_path), raising=False)
     partial = dict(FULL_COUPANG)
     partial.pop("COUPANG_RETURN_ZIP_CODE")
 

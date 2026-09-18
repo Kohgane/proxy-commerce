@@ -208,7 +208,7 @@ def status_for_item(item_id: str):
     if not _enabled():
         return {(k[1], k[2]): {"bytes": len(v.get("bytes") or b""),
                                "cdn_url": v.get("cdn_url", ""),
-                               "cdn_error": v.get("cdn_error", ""), "cdn_at": ""}
+                               "cdn_error": _scrub(v.get("cdn_error", "")), "cdn_at": ""}
                 for k, v in _MEM.items() if k[0] == str(item_id)}
     try:
         from src.db import pg
@@ -217,7 +217,7 @@ def status_for_item(item_id: str):
                         "FROM image_ko_blobs WHERE item_id = %s", (str(item_id),))
             return {(str(r[0]), int(r[1])): {
                 "bytes": int(r[2] or 0), "cdn_url": str(r[3] or ""),
-                "cdn_error": str(r[4] or ""),
+                "cdn_error": _scrub(str(r[4] or "")),
                 "cdn_at": r[5].isoformat() if r[5] else ""} for r in cur.fetchall()}
     except Exception as exc:
         logger.warning("[번역본 현황] 조회 실패 item=%s: %s", item_id, exc)
