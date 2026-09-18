@@ -114,8 +114,11 @@ def test_response_parsing_keeps_every_field_we_promised(tc):
     assert r["source_lang"] == "zh" and r["target_lang"] == "ko"
     assert r["source_text"] == "爆款" and r["target_text"] == "최고 인기"
     assert r["request_id"] == "req-1"
+    # F33: `line_height`·`lines_count`가 늘었다(SDK `TransDetail`에 실재하는 필드).
+    #   벤치 C축의 **참고 수치**로 쓴다 — 점수로는 쓰지 않는다(박스는 원문 문단의 자리다).
     assert r["lines"] == [{"source": "爆款 여름 신상", "target": "최고 인기 여름 신상",
-                           "box": {"x": 1, "y": 2, "w": 3, "h": 4}}]
+                           "box": {"x": 1, "y": 2, "w": 3, "h": 4},
+                           "line_height": None, "lines_count": None}]
     assert isinstance(r["ms"], int)
 
 

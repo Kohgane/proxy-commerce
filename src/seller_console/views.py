@@ -10852,12 +10852,49 @@ def image_translate_bench():
         logger.warning("[벤치] 목록·집계 실패: %s", exc)
         runs, totals = [], []
 
+    # F33: 축 다섯(A~E)과, 이 실행의 **장×축 표**를 같이 넘긴다.
+    from src.services import image_bench_axes as axesmod
+    grid = _bench_grid(run)
     return render_template(
         "image_translate_bench.html", page="admin",
         vendor_status=tc.status(), fixtures=_bench_fixture_rows(),
         run=run, runs=runs, totals=totals,
         score_axes=BENCH_SCORE_AXES,
+        f33_axes=axesmod.AXES, f33_human=axesmod.HUMAN_AXES,
+        grid=grid,
     )
+
+
+def _bench_grid(run: dict) -> dict:
+    """한 실행의 **장×축 표**. 빈칸을 만들지 않는다 — 못 잰 칸엔 「측정 불가」와 사유가 있다."""
+    from src.services import image_bench_axes as axesmod
+    results = (run or {}).get("results") or []
+    cells = ((run or {}).get("scores") or {}).get("cells") or {}
+    pages = []
+    for r in results:
+        idx = int(r.get("idx") or 0)
+        auto = r.get("axes") or {}
+        row = {"idx": idx, "kind": r.get("kind", ""), "original": r.get("original", ""),
+               "url": r.get("url", ""), "status": r.get("status", ""),
+               "ms": r.get("ms"), "lines": r.get("lines") or [],
+               "box_hints": r.get("box_hints") or [], "axes": {}}
+        for key, _label, kind, _hint in axesmod.AXES:
+            if kind == "auto":
+                row["axes"][key] = auto.get(key) or {"score": None, "reason": "결과 없음"}
+            else:
+                v = cells.get(f"{idx}:{key}")
+                row["axes"][key] = {"score": v,
+                                    "reason": "" if v in (0, 1) else "사람이 아직 안 찍음"}
+        pages.append(row)
+    # 모드는 실행 행에 없으면 **결과 줄에서** 읽는다(저장 모양이 바뀌어도 표가 안 빈다).
+    mode = (run or {}).get("mode")
+    if mode is None and results:
+        mode = results[0].get("mode")
+    return {"mode": mode, "pages": pages,
+            "summary": axesmod.summarize(pages),
+            "filled": sum(1 for p in pages for k in p["axes"]
+                          if p["axes"][k].get("score") in (0, 1)),
+            "cells_total": len(pages) * len(axesmod.AXES)}
 
 
 #: 채점 5축 — D0에서 정한 그대로(화면과 저장이 같은 목록을 쓴다).
@@ -10887,12 +10924,26 @@ def image_translate_bench_run():
         return jsonify({"ok": False, "error": "공급사 미연결",
                         "status": tc.status()}), 503
 
-    run_id = datetime.now(timezone.utc).strftime("bench-%Y%m%d-%H%M%S")
+    data = request.get_json(silent=True) or request.form or {}
+    # F33: `mode`(0=pro / 1=lite)와 **대상 상품 하나**를 받는다. 같은 장을 두 번 돌려
+    #   모드를 나란히 세우는 것이 이 트랙의 전부다 — 두 모드를 한 실행에 섞지 않는다
+    #   (초당 1장 한도를 어기고, 표에서 무엇이 무엇인지도 갈리지 않는다).
+    mode = 1 if str(data.get("mode") or "0").strip() == "1" else 0
+    only = str(data.get("item_no") or "").strip()
+    rows = _bench_fixture_rows()
+    if only:
+        rows = [r for r in rows if str(r.get("item_no")) == only]
+        if not rows:
+            return jsonify({"ok": False, "error": f"픽스처에 없는 상품번호입니다: {only}"}), 404
+    title = " ".join(str(r.get("title") or "") for r in rows).strip()
+
+    run_id = datetime.now(timezone.utc).strftime(f"bench-%Y%m%d-%H%M%S-m{mode}")
     from src.services import image_translate_bench as bench
     if bench.is_running():
         return jsonify({"ok": False, "error": "이미 실행 중입니다. 끝나면 다시 눌러 주세요."}), 409
-    total = bench.start(run_id, _seller_id(), _bench_fixture_rows())
-    return jsonify({"ok": True, "run_id": run_id, "total": total, "accepted": True}), 202
+    total = bench.start(run_id, _seller_id(), rows, mode=mode, title=title)
+    return jsonify({"ok": True, "run_id": run_id, "total": total, "mode": mode,
+                    "item_no": only, "accepted": True}), 202
 
 
 @bp.get("/admin/image-translate-bench/status")
@@ -10916,10 +10967,24 @@ def image_translate_bench_score():
         return jsonify({"ok": False, "error": "실행 이름표가 없습니다."}), 400
     scores = {k: data.get(k) for k, _l, _h in BENCH_SCORE_AXES if data.get(k) not in (None, "")}
     scores["note"] = str(data.get("note") or "")[:1000]
+    # F33: **장별** 사람 축(C 박스 맞춤 · E 타이포 일치). 키는 `"<idx>:<축>"`.
+    #   0/1만 받는다 — 빈 값은 「아직 안 찍음」이고, 그건 0과 다르다.
+    from src.services.image_bench_axes import HUMAN_AXES
+    cells = {}
+    for key, val in (data.get("cells") or {}).items():
+        try:
+            idx, axis = str(key).split(":", 1)
+            if axis in HUMAN_AXES and int(idx) >= 0 and str(val) in ("0", "1"):
+                cells[f"{int(idx)}:{axis}"] = int(val)
+        except Exception:
+            continue
+    if cells:
+        scores["cells"] = cells
     from src.db import image_translate_usage_pg as usage
     if not usage.save_scores(run_id, scores):
         return jsonify({"ok": False, "error": "저장하지 못했습니다(실행을 찾을 수 없음)."}), 404
-    return jsonify({"ok": True, "run_id": run_id, "scores": scores})
+    return jsonify({"ok": True, "run_id": run_id, "scores": scores,
+                    "cells_saved": len(cells)})
 
 
 @bp.get("/collect/image-ko/<item_id>/<int:idx>")

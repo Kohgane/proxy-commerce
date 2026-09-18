@@ -128,6 +128,124 @@
     </div>
   </div>
 
+  {# F33: 장×축 표 — 5장 × 5축. **빈칸을 만들지 않는다**(못 잰 칸엔 「측정 불가」와 사유).
+     A·B·D는 응답 줄로 자동, C·E는 사람이 0/1을 찍는다. 텐센트 응답은 **고쳐 그리지 않는다.** #}
+  {% if grid and grid.pages %}
+  <div class="op-card mb-4">
+    <div class="op-card-head d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <h2 class="h6 mb-0">
+        <i class="bi bi-table"></i> 장 × 축
+        <span class="pc-badge pc-badge-muted ms-1">
+          Mode {{ grid.mode if grid.mode is not none else '?' }}
+          {{ '(pro)' if grid.mode == 0 else '(lite)' if grid.mode == 1 else '' }}</span>
+      </h2>
+      <span class="console-kpi-label">채워진 칸 {{ grid.filled }} / {{ grid.cells_total }}</span>
+    </div>
+    <div class="op-card-body p-0">
+      <table class="table table-sm mb-0 align-middle">
+        <thead class="table-light"><tr>
+          <th>장</th>
+          {% for key, label, kind, hint in f33_axes %}
+          <th title="{{ hint }}">{{ key }} {{ label }}
+            <span class="console-kpi-label">{{ '자동' if kind == 'auto' else '사람' }}</span></th>
+          {% endfor %}
+        </tr></thead>
+        <tbody>
+          {% for p in grid.pages %}
+          <tr>
+            <td class="small"><strong>{{ p.idx + 1 }}</strong>
+              <div class="console-kpi-label">{{ p.kind }}</div></td>
+            {% for key, label, kind, hint in f33_axes %}
+            {% set cell = p.axes[key] %}
+            <td class="small">
+              {% if cell.score == 1 %}
+              <span class="pc-badge pc-badge-on">1</span>
+              {% elif cell.score == 0 %}
+              <span class="pc-badge pc-badge-danger">0</span>
+              {% else %}
+              <span class="pc-badge pc-badge-off">측정 불가</span>
+              {% endif %}
+              {% if kind == 'human' %}
+              <span class="ms-1">
+                <button type="button" class="btn btn-ghost btn-sm py-0 px-1"
+                        data-cell="{{ p.idx }}:{{ key }}" data-val="1">1</button>
+                <button type="button" class="btn btn-ghost btn-sm py-0 px-1"
+                        data-cell="{{ p.idx }}:{{ key }}" data-val="0">0</button>
+              </span>
+              {% endif %}
+              {% if cell.reason %}
+              <div class="text-muted" style="font-size:.78rem">{{ cell.reason }}</div>
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="table-light"><tr>
+          <th class="small">합계</th>
+          {% for key, label, kind, hint in f33_axes %}
+          {% set sm = grid.summary[key] %}
+          <th class="small">{{ sm.ones }} / {{ sm.scored }}
+            {% if sm.unmeasured %}
+            <div class="console-kpi-label">측정 불가 {{ sm.unmeasured }}</div>
+            {% endif %}
+          </th>
+          {% endfor %}
+        </tr></tfoot>
+      </table>
+    </div>
+    <div class="op-card-foot d-flex gap-2 flex-wrap align-items-center">
+      <button type="button" class="btn btn-primary btn-sm" id="f33Save">
+        <i class="bi bi-save"></i> 사람 점수 저장
+      </button>
+      <span class="small text-muted" id="f33Out"></span>
+      <span class="small text-muted ms-auto">
+        분모는 <strong>잰 것만</strong>입니다 — 「측정 불가」를 0으로 세지 않습니다.
+      </span>
+    </div>
+  </div>
+
+  {# 판정 근거 — 우리가 고쳐 그린 것이 아니라 **공급사가 준 줄** 그대로. #}
+  <div class="op-card mb-4">
+    <div class="op-card-head"><h2 class="h6 mb-0">
+      <i class="bi bi-list-columns"></i> 응답 원문(TransDetails)</h2></div>
+    <div class="op-card-body p-0">
+      {% for p in grid.pages %}
+      <details class="p-2 border-bottom">
+        <summary style="cursor:pointer" class="small">
+          {{ p.idx + 1 }}번째 · 줄 {{ p.lines|length }}개</summary>
+        <table class="table table-sm mt-2 mb-0">
+          <thead class="table-light"><tr>
+            <th>원문 줄</th><th>번역 줄</th>
+            <th title="원문 문단의 자리입니다 — 번역문이 그려진 자리가 아닙니다">
+              박스(참고)</th>
+          </tr></thead>
+          <tbody>
+            {% for h in p.box_hints %}
+            <tr>
+              <td class="small" style="word-break:break-all">{{ h.source }}</td>
+              <td class="small" style="word-break:break-all">{{ h.target }}</td>
+              <td class="small text-muted">
+                {% if h.box_w %}{{ h.box_w }}×{{ h.box_h }}{% else %}—{% endif %}
+                {% if h.len_ratio %} · 길이비 {{ h.len_ratio }}{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </details>
+      {% endfor %}
+    </div>
+    <div class="op-card-foot">
+      <span class="small text-muted">
+        박스는 <strong>원문 문단의 자리</strong>입니다(공급사 주석 「段落文本框位置」) —
+        번역문이 그려진 자리가 아니라서 <strong>C를 이 값으로 판정하지 않습니다.</strong>
+        사람이 찍는 데 쓰는 참고 수치입니다.
+      </span>
+    </div>
+  </div>
+  {% endif %}
+
   <!-- 채점 -->
   <div class="op-card mb-4">
     <div class="op-card-head"><h2 class="h6 mb-0"><i class="bi bi-clipboard-check"></i> 채점 (1~5)</h2></div>
@@ -271,3 +389,41 @@
 })();
 </script>
 {% endblock %}
+
+<script>
+(function () {
+  // F33: 장별 사람 축(C·E). 0/1만 보낸다 — 빈 값은 「아직 안 찍음」이고 0과 다르다.
+  var picked = {};
+  document.querySelectorAll('[data-cell]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.dataset.cell;
+      picked[key] = b.dataset.val;
+      document.querySelectorAll('[data-cell="' + key + '"]').forEach(function (o) {
+        o.classList.toggle('btn-primary', o === b);
+        o.classList.toggle('btn-ghost', o !== b);
+      });
+    });
+  });
+  var save = document.getElementById('f33Save');
+  if (!save) return;
+  save.addEventListener('click', function () {
+    var out = document.getElementById('f33Out');
+    var form = document.getElementById('benchScoreForm');
+    var run = form ? form.dataset.run : '';
+    if (!run) { out.textContent = '실행을 먼저 고르세요.'; return; }
+    if (!Object.keys(picked).length) { out.textContent = '찍은 칸이 없습니다.'; return; }
+    save.disabled = true; out.textContent = '저장 중…';
+    fetch('/seller/admin/image-translate-bench/score', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({run_id: run, cells: picked}),
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      save.disabled = false;
+      if (!d.ok) { out.textContent = d.error || '저장하지 못했습니다.'; return; }
+      out.textContent = (d.cells_saved || 0) + '칸 저장했습니다.';
+      setTimeout(function () { location.reload(); }, 800);
+    }).catch(function () {
+      save.disabled = false; out.textContent = '저장하지 못했습니다.';
+    });
+  });
+})();
+</script>
