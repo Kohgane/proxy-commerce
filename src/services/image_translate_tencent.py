@@ -325,6 +325,12 @@ def translate_image(*, url: str = "", data: bytes = b"", mode: int = 0,
                 "box": ({"x": getattr(box, "X", None), "y": getattr(box, "Y", None),
                          "w": getattr(box, "Width", None), "h": getattr(box, "Height", None)}
                         if box is not None else None),
+                # F33: SDK 모델에 실재하는 필드다(`TransDetail.LineHeight`·`LinesCount` —
+                #   `tencentcloud.tmt.v20180321.models` 원문 확인, 추측 아님).
+                #   **C 축을 이걸로 판정하지는 않는다** — 박스는 「段落文本框位置」,
+                #   곧 **원문** 문단의 자리이지 번역문이 그려진 자리가 아니다. 참고 수치다.
+                "line_height": getattr(d, "LineHeight", None),
+                "lines_count": getattr(d, "LinesCount", None),
             })
         img_b64 = getattr(resp, "Data", "") or ""
         out.update({

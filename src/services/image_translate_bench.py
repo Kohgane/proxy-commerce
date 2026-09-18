@@ -13,7 +13,8 @@ import threading
 
 logger = logging.getLogger(__name__)
 
-_STATE: dict = {"run_id": "", "running": False, "total": 0, "results": []}
+_STATE: dict = {"run_id": "", "running": False, "total": 0, "results": [],
+                "mode": 0, "title": ""}
 _LOCK = threading.Lock()
 
 
@@ -27,34 +28,49 @@ def is_running() -> bool:
         return bool(_STATE["running"])
 
 
-def start(run_id: str, seller_id: str, fixtures) -> int:
-    """접수 — 총 장수를 돌려주고 뒤에서 돈다. 이미 돌고 있으면 0."""
+def start(run_id: str, seller_id: str, fixtures, *, mode: int = 0,
+          title: str = "") -> int:
+    """접수 — 총 장수를 돌려주고 뒤에서 돈다. 이미 돌고 있으면 0.
+
+    F33: `mode`(0=pro / 1=lite)를 실어 **같은 장을 두 번** 돌린다. 두 실행은 따로 저장되고
+    화면이 나란히 세운다 — 한 번에 둘을 돌리면 초당 1장 한도를 어긴다.
+    `title`은 **브랜드 사전의 출처**다(상품명에서 영문 대문자 토큰을 뽑는다).
+    """
     planned = [(fx, i, img) for fx in (fixtures or [])
                for i, img in enumerate(fx.get("images") or [])]
     with _LOCK:
         if _STATE["running"]:
             return 0
-        _STATE.update({"run_id": run_id, "running": True,
-                       "total": len(planned), "results": []})
-    threading.Thread(target=_run, args=(run_id, seller_id, planned),
+        _STATE.update({"run_id": run_id, "running": True, "mode": int(mode),
+                       "title": str(title or ""), "total": len(planned), "results": []})
+    threading.Thread(target=_run, args=(run_id, seller_id, planned, int(mode), str(title or "")),
                      daemon=True, name=f"bench-{run_id}").start()
     return len(planned)
 
 
-def _run(run_id: str, seller_id: str, planned) -> None:
+def _run(run_id: str, seller_id: str, planned, mode: int = 0, title: str = "") -> None:
     from src.db import image_translate_usage_pg as usage
+    from src.services import image_bench_axes as axes
     from src.services import image_translate_store as store
     from src.services import image_translate_tencent as tc
 
+    tokens = axes.brand_tokens(title)
     entries = []
     try:
         for fx, i, img in planned:
-            r = tc.translate_image(url=img["url"])
+            r = tc.translate_image(url=img["url"], mode=mode)
             e = store.build_entry(i, r, item_id=str(fx.get("item_id") or fx["item_no"]),
                                   seller_id=seller_id)
             entries.append(e)
+            lines = r.get("lines") or []
             row = {"item_no": fx["item_no"], "kind": img.get("kind", ""),
-                   "original": img["url"], "idx": i,
+                   "original": img["url"], "idx": i, "mode": mode,
+                   # F33: 판정의 근거를 **그대로** 남긴다 — 표가 틀렸다는 말이 나오면
+                   #   이 줄들로 다시 센다(우리가 고쳐 그린 것이 아니다).
+                   "lines": lines,
+                   "axes": axes.auto_scores(lines, tokens),
+                   "box_hints": axes.box_hints(lines),
+                   "brand_tokens": list(tokens),
                    **{k: e.get(k) for k in ("status", "url", "stored_by", "ms", "target_text",
                                             "warn", "error_class", "error_code",
                                             "error_message", "hint", "store_note")}}
@@ -82,9 +98,10 @@ def status(run_id: str = "") -> dict:
     with _LOCK:
         cur, running = _STATE["run_id"], _STATE["running"]
         total, results = _STATE["total"], list(_STATE["results"])
+        mode = _STATE.get("mode", 0)
     if run_id and run_id != cur:
         return {"ok": True, "run_id": run_id, "running": False,
-                "total": 0, "done": 0, "results": []}
-    return {"ok": True, "run_id": cur, "running": running, "total": total,
+                "total": 0, "done": 0, "results": [], "mode": 0}
+    return {"ok": True, "run_id": cur, "running": running, "total": total, "mode": mode,
             "done": sum(1 for r in results if r.get("status") == "done"),
             "processed": len(results), "results": results}
