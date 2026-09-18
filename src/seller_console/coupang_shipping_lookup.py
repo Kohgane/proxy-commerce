@@ -33,6 +33,12 @@ logger = logging.getLogger(__name__)
 RETURN_CENTERS_PATH = "/v2/providers/openapi/apis/api/v5/vendors/{vendor_id}/returnShippingCenters"
 RETURN_CENTER_ONE_PATH = "/v2/providers/openapi/apis/api/v3/return/shipping-places/center-code"
 OUTBOUND_PLACES_PATH = "/v2/providers/marketplace_openapi/apis/api/v2/vendor/shipping-place/outbound"
+# F32-2 실측(2026-09-18): 파라미터 없이 부르면 **400 INVALID_ARGUMENT**
+#   `(pageNum & pageSize) or placeCodes or placeNames must be provided`.
+#   **오류 문장이 준 이름을 그대로** 쓴다 — F29-4에서 「미확인이라 안 붙인다」로 둔 것이
+#   옳았다(지어냈으면 다른 이름을 넣고 또 400을 받았다).
+#   상한이 다르면 다음 400 원문이 알려 준다 — 그 문장이 그대로 화면에 뜬다.
+OUTBOUND_PLACES_QUERY = "?pageNum=1&pageSize=50"
 
 # 우리 칸 ← 쿠팡 응답 키 **후보**. 후보는 「이 이름이면 이 칸」이라는 사전일 뿐이고,
 #   **응답에 그 키가 실제로 있을 때만** 쓴다. 하나도 없으면 그 칸은 비워 두고 화면이 원문 키를
@@ -77,10 +83,31 @@ def _rows(payload: Any) -> List[dict]:
 
 
 def _pick(row: dict, candidates) -> str:
-    """후보 중 **실제로 있는** 키의 값. 없으면 빈 문자열(추측 0)."""
+    """후보 중 **실제로 있는** 키의 값. 없으면 빈 문자열(추측 0).
+
+    F32-2 실측(2026-09-18, 「원문 보기」): 반품지 row의 **최상위 키는 아홉 개뿐**이다 —
+    `createdAt · deliverCode · deliverName · errorMessage · goodsflowStatus ·
+    returnCenterCode · shippingPlaceName · usable · vendorId`.
+    우편번호·주소·연락처는 **최상위에 없다.** 그래서 최상위만 보던 이 함수는 넷을 못 찾았다.
+
+    → 최상위에서 못 찾으면 **한 단만** 내려간다(값이 dict이거나 list[dict]인 키).
+      리스트는 0번부터, **첫 매치 채택**. 두 단 이상은 안 판다 — 깊이를 늘리면
+      엉뚱한 가지에서 같은 이름을 주워 올 수 있고, 그건 매핑이 아니라 우연이다.
+
+    **후보 사전은 손대지 않는다.** 하위 키 이름은 아직 미실측이다 — 지어내지 않는다.
+    이 수리가 하는 일은 「같은 후보 이름을 한 단 더 넓은 자리에서 찾는다」까지다.
+    """
     for key in candidates:
         if key in row and str(row[key] or "").strip():
             return str(row[key]).strip()
+    # 한 단 아래 — 순서는 dict 삽입 순서 그대로(응답이 준 순서가 곧 우선순위다).
+    for value in row.values():
+        for child in ([value] if isinstance(value, dict) else
+                      [c for c in value if isinstance(c, dict)]
+                      if isinstance(value, list) else []):
+            for key in candidates:
+                if key in child and str(child[key] or "").strip():
+                    return str(child[key]).strip()
     return ""
 
 
@@ -111,16 +138,45 @@ def _fetch_one(up, path: str, candidates: Dict[str, tuple]) -> dict:
     rows = _rows(payload)
     entries = []
     for i, row in enumerate(rows):
+        flat = _flatten(row)
         entries.append({
             "index": i,
             "label": _label(row),
             "values": _map_row(row, candidates),
             # 화면이 **원문 키를 나열**한다 — 우리가 못 고른 칸을 사람이 고를 수 있게.
-            "raw": {k: ("" if v is None else v) for k, v in row.items()
-                    if not isinstance(v, (list, dict))},
+            "raw": flat,
         })
-    raw_keys = sorted({k for r in rows for k in r.keys()})
+    raw_keys = sorted({k for e in entries for k in e["raw"].keys()})
     return {"ok": True, "entries": entries, "raw_keys": raw_keys, "error": ""}
+
+
+def _flatten(row: dict) -> dict:
+    """중첩을 `부모키[i].자식키`로 펴서 **문자열 값을 전부** 내놓는다 (F32-2).
+
+    예전엔 `isinstance(v, (list, dict))`인 값을 **버렸다.** 그래서 우편번호·주소·연락처가
+    하위에 들어 있던 반품지 응답에서, 화면 「원문 보기」에 그 키들이 **아예 안 보였다** —
+    우리가 못 고른 것을 사람이 고를 수도 없었다(그러라고 만든 자리인데).
+
+    한 단만 편다. `_pick`이 파는 깊이와 **같은 깊이**여야 한다 —
+    화면에 보이는데 못 고르거나, 고를 수 있는데 안 보이는 일이 없게.
+    """
+    out = {}
+    for key, value in (row or {}).items():
+        if isinstance(value, dict):
+            for ck, cv in value.items():
+                if not isinstance(cv, (list, dict)):
+                    out[f"{key}.{ck}"] = "" if cv is None else cv
+        elif isinstance(value, list):
+            for i, child in enumerate(value):
+                if isinstance(child, dict):
+                    for ck, cv in child.items():
+                        if not isinstance(cv, (list, dict)):
+                            out[f"{key}[{i}].{ck}"] = "" if cv is None else cv
+                elif not isinstance(child, list):
+                    out[f"{key}[{i}]"] = "" if child is None else child
+        else:
+            out[key] = "" if value is None else value
+    return out
 
 
 def fetch(account: str = "") -> dict:
@@ -145,7 +201,8 @@ def fetch(account: str = "") -> dict:
 
     ret = _fetch_one(up, RETURN_CENTERS_PATH.format(vendor_id=vendor_id),
                      RETURN_FIELD_CANDIDATES)
-    out = _fetch_one(up, OUTBOUND_PLACES_PATH, OUTBOUND_FIELD_CANDIDATES)
+    out = _fetch_one(up, OUTBOUND_PLACES_PATH + OUTBOUND_PLACES_QUERY,
+                     OUTBOUND_FIELD_CANDIDATES)
 
     # 우리가 못 채운 칸 — 화면이 「이 칸은 직접」이라고 말할 수 있게 이름으로 올린다.
     filled = set()

@@ -58,10 +58,20 @@ def test_return_center_path_carries_the_vendor_id():
 
 
 def test_no_query_parameters_are_invented():
-    """쿼리 파라미터(페이지 등)는 **미확인** — 붙이지 않는다."""
+    """쿼리 파라미터는 **실측이 준 것만** 붙인다.
+
+    F29-4에선 전부 미확인이라 하나도 안 붙였고, 그 덕에 2026-09-18 라이브가
+    **400 원문으로 이름을 알려 줬다**(`(pageNum & pageSize) or placeCodes or placeNames`).
+    지어냈으면 다른 이름을 넣고 또 400을 받았을 것이다.
+
+    지금도 규율은 같다 — **경로 상수엔 쿼리가 없고**, 실측으로 확인된 것만
+    별도 상수(`OUTBOUND_PLACES_QUERY`)로 붙인다.
+    """
     from src.seller_console import coupang_shipping_lookup as L
     for path in (L.RETURN_CENTERS_PATH, L.RETURN_CENTER_ONE_PATH, L.OUTBOUND_PLACES_PATH):
         assert "?" not in path, path
+    # 반품지는 파라미터 없이 **실제로 성공했다**(1건 조회) — 그래서 안 붙인다.
+    assert not hasattr(L, "RETURN_CENTERS_QUERY")
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +102,11 @@ def test_the_call_goes_through_the_uploaders_request():
     with patch.object(L, "_uploader", lambda acct: _Up()):
         L.fetch("gogane")
     assert ("GET", "/v2/providers/openapi/apis/api/v5/vendors/A01381223/returnShippingCenters") in seen
-    assert ("GET", "/v2/providers/marketplace_openapi/apis/api/v2/vendor/shipping-place/outbound") in seen
+    # F32-2: 출고지는 실측 400이 준 쿼리(`pageNum & pageSize`)를 달고 나간다 —
+    #   **경로가 맞는가**가 이 계약의 뜻이므로 접두로 잰다(쿼리는 F32-2 계약이 따로 잰다).
+    assert any(p.startswith(
+        "/v2/providers/marketplace_openapi/apis/api/v2/vendor/shipping-place/outbound")
+        for _m, p in seen), seen
     assert all(m == "GET" for m, _ in seen), "조회인데 GET이 아니다"
 
 
