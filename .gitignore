@@ -15,6 +15,11 @@ htmlcov/
 logs/*.jsonl
 
 # Phase 147: 런타임 데이터 파일
+# 셀러 마켓 자격증명(암호문) — 레포에 들어갈 것이 아니다.
+#   F32-3·4에서 테스트가 실제로 이 자리에 파일을 써 커밋됐다(가짜 값이었지만
+#   자격 파일이 레포에 들어가는 길이 열려 있었다는 뜻이다).
+data/market_credentials/
+
 data/job_queue.jsonl
 data/job_dead_letter.jsonl
 data/push_subscriptions.jsonl

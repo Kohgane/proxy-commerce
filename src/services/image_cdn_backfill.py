@@ -59,7 +59,9 @@ def _upload(raw: bytes) -> tuple:
     if res.get("ok") and res.get("secure_url"):
         return str(res["secure_url"]), ""
     # 원본 URL 되돌림 같은 「성공 같은 실패」도 여기서 실패로 떨어진다(ok가 아니면 실패다).
-    return "", str(res.get("error") or "업로드가 주소를 돌려주지 않았습니다")
+    #   사유는 **화면에 닿기 전에** 같은 세척기를 지난다(한 필드 두 규칙 금지).
+    from src.utils.redact import scrub_infra
+    return "", scrub_infra(str(res.get("error") or "업로드가 주소를 돌려주지 않았습니다"))
 
 
 def _point_entry_at_cdn(item_id: str, idx: int, kind: str, url: str) -> bool:
