@@ -325,15 +325,19 @@ def _suggest_value(env: str) -> str:
     """빈 칸에 미리 채워 줄 값 — **아는 것만**. 모르면 빈 문자열(추측 0).
 
     F29: 오너가 채워야 할 칸을 줄이는 게 목적이다. 다만 **이 서버의 자격이 오너 계정일 때만**
-    제안한다 — 다른 셀러가 자기 키를 넣어 둔 상태(무접두)면 계정이 빈 문자열이 되고,
-    그때는 아무것도 제안하지 않는다(남의 Wing 아이디를 남의 칸에 채우지 않는다).
+    제안한다 — 모르는 업체코드면 아무것도 제안하지 않는다(남의 Wing 아이디를 남의 칸에
+    채우지 않는다).
+
+    F32-3 실측: 처음엔 `resolve_upload_account()`로 물었는데, 그건 「**어느 이름으로 읽나**」다.
+    오너 Render엔 접두와 무접두가 **둘 다** 있어 그 답이 `""`였고, 제안이 통째로 사라졌다.
+    물어야 할 것은 「이 자격이 **누구 것인가**」 — `business_account()`가 그 질문이다
+    (무접두여도 업체코드로 사업체를 안다).
     """
     if env != "COUPANG_VENDOR_USER_ID":
         return ""
     try:
-        from src.seller_console.market_cred_view import (
-            WING_USER_IDS, resolve_upload_account)
-        return WING_USER_IDS.get(resolve_upload_account(), "")
+        from src.seller_console.market_cred_view import WING_USER_IDS, business_account
+        return WING_USER_IDS.get(business_account(), "")
     except Exception:
         return ""
 
