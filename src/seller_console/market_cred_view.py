@@ -165,6 +165,34 @@ def _default_account() -> str:
     return resolve_upload_account()
 
 
+def business_account() -> str:
+    """이 서버의 쿠팡 자격이 **어느 사업체 것인가**. 모르면 빈 문자열 (F32-3).
+
+    `resolve_upload_account()`와 **다른 질문**이다:
+      · `resolve_upload_account()` = 「업로더가 **어느 이름으로 읽을** 것인가」
+        → 무접두가 있으면 `""`(무접두로 읽는다)
+      · 여기 = 「그 자격이 **누구 것인가**」
+        → 무접두여도 **업체코드로 사업체를 안다**
+
+    실측(F32-3): 오너 Render엔 접두(`COUPANG_GOGANE_*`)와 무접두가 **둘 다** 있다.
+    그래서 `resolve_upload_account()`가 `""`를 내고, Wing 아이디 제안이
+    `WING_USER_IDS.get("")` → 빈 값이 됐다 — **화면에 안 채워졌다.**
+
+    다른 셀러 보호는 그대로다: 무접두 업체코드가 우리가 아는 둘 중 어느 것도 아니면
+    `resolve_base_account()`가 `None`을 내고, 여기도 빈 문자열이다.
+    **남의 Wing 아이디를 남의 칸에 채우지 않는다.**
+    """
+    acct = resolve_upload_account()
+    if acct:
+        return acct
+    try:
+        from src.pipeline.coupang_replicate import resolve_base_account
+        return resolve_base_account() or ""
+    except Exception as exc:
+        logger.warning("[마켓 자격] 사업체 해석 실패: %s", exc)
+        return ""
+
+
 def coupang_wing_user_id(account: str = "") -> str:
     """이 계정의 Wing 로그인 ID — 이미 넣어 둔 값이 있으면 **그것이 우선**이다.
 
