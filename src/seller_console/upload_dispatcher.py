@@ -165,6 +165,68 @@ class PrevalidationResult:
     error_code: Optional[str] = None
     message: str = ""
     hint: str = ""
+    # F35-2: **「닿나」를 쟀는가.** None = 안 쟀다(측정 안 한 것을 통과로 읽지 않는다).
+    reach_ok: Optional[bool] = None
+    reach_ms: Optional[int] = None
+    reach_detail: str = ""
+
+
+# F35-2: 사전검증에서 **도달성만** 재는 자리들. 자격은 보내지 않는다 — 「닿나」만 묻는다.
+#   쿠팡·스마트스토어는 IP 화이트리스트라 릴레이를 타고, 무자격 GET이 의미가 없어 제외한다
+#   (그 둘의 도달성은 릴레이 상태가 답이다).
+_REACH_TIMEOUT_SEC = 5
+
+
+def market_reach(market: str) -> Dict[str, Any]:
+    """가벼운 GET 1회로 「닿나」만 잰다 — `{ok, ms, detail}`. 못 재면 `ok=None` (F35-2).
+
+    ## 왜 이게 필요했나 (오너 실측 2026-09-19)
+
+    멀티샵(WooCommerce) 사전검증이 **「통과」**였는데, 같은 시각 그 사이트는
+    **45초 동안 0바이트**였다(Bluehost PHP 전면 정지). 사전검증이 잰 것은
+    **자격이 입력돼 있나**였지 **사이트가 살아 있나**가 아니었다.
+
+    > ★ **「키가 있다」는 「닿는다」가 아니다.** 등록 직전에 한 번은 실제로 두드려 봐야
+    > 「통과」가 거짓말이 아니게 된다.
+
+    어떤 HTTP 응답이든 **도달**로 본다(401·403·404도 서버가 살아 있다는 뜻이다).
+    연결 실패·타임아웃만 **도달 불가**다. 재시도는 하지 않는다 — 사전검증은 사람이
+    기다리는 화면이고, 여기서 백오프를 돌면 5초 예산이 30초가 된다.
+    """
+    import time as _time
+
+    url = ""
+    if market == "woocommerce":
+        base = (os.getenv("WC_URL") or os.getenv("WOO_BASE_URL") or "").strip().rstrip("/")
+        if base and not base.startswith("http"):
+            base = "https://" + base
+        url = f"{base}/wp-json/" if base else ""
+    elif market == "elevenst":
+        url = "https://api.11st.co.kr/rest"
+    elif market == "shopify":
+        shop = (os.getenv("SHOPIFY_SHOP") or "").strip().rstrip("/")
+        if shop and not shop.startswith("http"):
+            shop = "https://" + shop
+        url = shop
+    if not url:
+        return {"ok": None, "ms": None, "detail": "주소가 없어 도달을 재지 못했습니다"}
+
+    try:
+        from src.market_throttle import pace
+        pace(market)                              # 페이싱은 지키되 재시도는 하지 않는다
+    except Exception:                             # noqa: BLE001 — 페이싱 실패가 검증을 막지 않는다
+        pass
+    started = _time.monotonic()
+    try:
+        import requests
+        resp = requests.get(url, timeout=_REACH_TIMEOUT_SEC,
+                            headers={"User-Agent": "gogabridj-reachcheck/1.0",
+                                     "Accept": "*/*"})
+        ms = int((_time.monotonic() - started) * 1000)
+        return {"ok": True, "ms": ms, "detail": f"HTTP {resp.status_code}"}
+    except Exception as exc:                      # noqa: BLE001 — 사유 종류를 그대로 싣는다
+        ms = int((_time.monotonic() - started) * 1000)
+        return {"ok": False, "ms": ms, "detail": f"{type(exc).__name__}"}
 
 
 # ---------------------------------------------------------------------------
@@ -340,6 +402,20 @@ class UploadDispatcher:
                         hint="마켓에서 접근 가능한 공개 이미지 URL을 사용하세요.",
                     )
 
+        # F35-2: **등록 직전에 한 번** 두드려 본다 — 「키가 있다」를 「닿는다」로 읽지 않는다.
+        if market in ("woocommerce", "elevenst", "shopify"):
+            reach = market_reach(market)
+            if reach["ok"] is False:
+                return PrevalidationResult(
+                    market=market, ok=False, error_code="market_unreachable",
+                    message=f"이 마켓에 닿지 못했습니다 ({reach['detail']}).",
+                    hint=(f"{reach['ms']}ms 동안 기다렸지만 응답이 없었습니다. "
+                          "사이트(또는 마켓 API)가 멈춰 있으면 등록도 실패합니다 — "
+                          "사이트가 열리는지 먼저 확인하세요."),
+                    reach_ok=False, reach_ms=reach["ms"], reach_detail=reach["detail"])
+            return PrevalidationResult(market=market, ok=True, message="사전검증 통과",
+                                       reach_ok=reach["ok"], reach_ms=reach["ms"],
+                                       reach_detail=reach["detail"])
         return PrevalidationResult(market=market, ok=True, message="사전검증 통과")
 
     def dispatch(

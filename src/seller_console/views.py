@@ -2009,6 +2009,10 @@ def collect_prevalidate():
                     "error_code": r.error_code,
                     "message": r.message,
                     "hint": r.hint,
+                    # F35-2: 도달 여부·소요 ms. None = 안 잰 마켓(화면이 「측정 안 함」이라 말한다).
+                    "reach_ok": r.reach_ok,
+                    "reach_ms": r.reach_ms,
+                    "reach_detail": r.reach_detail,
                 }
                 for r in results
             ],

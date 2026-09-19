@@ -46,6 +46,65 @@ _IP_GATED_MARKETS = {"coupang", "smartstore", "naver", "naver_commerce"}
 _RELAY_USER_AGENT = "gogabridj-relay/1.0 (+https://kohganepercentiii.com)"
 
 
+def relay_wait_plan() -> dict:
+    """릴레이가 **몇 번, 얼마나** 기다리는가 — `{attempts, timeout_sec, backoff_sec, total_sec, sentence}`.
+
+    ## F35 실측 (2026-09-19 06:3x UTC — 오너/채팅이 직접 curl)
+
+    | 대상 | 결과 |
+    |---|---|
+    | relay 정적 파일 | 0.4s 즉답 |
+    | `mkt.php` | **45s · 0바이트** |
+    | `kohganemultishop.org` | **45s · 0바이트** |
+
+    정적은 살아 있고 PHP만 죽었다 — **코드 결함이 아니라 호스팅 장애**다.
+
+    ## 왜 계획을 숫자로 만들어 두나
+
+    릴레이 호출은 `throttled_request`가 감싸고, 그건 **예외도 재시도한다**(기본 3회 재시도 =
+    총 4회 시도, 백오프 1→2→4s). 릴레이 타임아웃이 35s면 최악 **4×35 + 7 = 147초**다.
+
+    그런데 gunicorn은 `--timeout 120`이다. **147초짜리 요청은 문장을 내기 전에 워커가 죽는다** —
+    셀러는 사유는커녕 응답 자체를 못 받는다. 기다린 시간을 적어 주려면 **먼저 그 시간이
+    응답으로 돌아올 수 있어야 한다.**
+
+    > ★ **기다리는 시간은 워커가 살아 있는 시간 안에 들어와야 한다.**
+    > 안 그러면 재시도는 사용자에게 「느림」이 아니라 **「아무 말 없음」**이다.
+
+    그래서 시도 횟수를 상수로 박지 않고 **워커 타임아웃에서 역산한다**(여유분을 뺀 예산).
+    """
+    timeout = _as_int_env("MARKET_RELAY_TIMEOUT_SEC", 35)
+    worker = _as_int_env("GUNICORN_TIMEOUT", 120)
+    margin = _as_int_env("MARKET_RELAY_BUDGET_MARGIN_SEC", 20)
+    budget = max(timeout, worker - margin)          # 최소 1회는 시도한다
+    attempts, total, backoff = 1, timeout, 0
+    while attempts < _RELAY_MAX_ATTEMPTS:
+        wait = int(_RELAY_BASE_DELAY * (2 ** (attempts - 1)))
+        if total + wait + timeout > budget:
+            break
+        total += wait + timeout
+        backoff += wait
+        attempts += 1
+    return {
+        "attempts": attempts, "timeout_sec": timeout, "backoff_sec": backoff,
+        "total_sec": total,
+        "sentence": (f"{timeout}초씩 {attempts}번, 총 {total}초 기다렸습니다"
+                     if attempts > 1 else f"1회, {timeout}초 기다렸습니다"),
+    }
+
+
+def _as_int_env(name: str, default: int) -> int:
+    try:
+        v = int(str(os.getenv(name) or "").strip())
+        return v if v > 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+_RELAY_MAX_ATTEMPTS = 4          # throttled_request 기본(재시도 3 = 총 4회)과 같은 상한
+_RELAY_BASE_DELAY = 1.0          # throttled_request의 백오프 기준(1→2→4s)과 같아야 한다
+
+
 class RelayError(requests.exceptions.RequestException):
     """릴레이 경유 자체의 실패 — 마켓 직결 오류와 **구분해** 표기한다.
 
@@ -262,10 +321,12 @@ def relay_request(method, url, *, headers=None, json=None, data=None, params=Non
         else:
             _via_relay = (urlparse(url).hostname or "").lower() in _API_RELAY_ALLOWED_HOSTS
 
+    _plan = relay_wait_plan()
+
     def _send():
         # mkt.php 릴레이가 설정돼 있으면 경유(구 MARKET_RELAY_URL 경로보다 우선).
         if _via_relay:
-            return _api_relay_send(method, url, headers, json, data, 35)
+            return _api_relay_send(method, url, headers, json, data, _plan["timeout_sec"])
         if not relay_enabled(market):
             # 직결도 관문을 지난 뒤 **한 가지 방식**(requests.request)으로 나간다.
             #   v87-S7: 호출부를 이 관문으로 옮기면 그 모듈의 테스트도 requests.request를 목해야 한다
@@ -304,4 +365,14 @@ def relay_request(method, url, *, headers=None, json=None, data=None, params=Non
         out = r.json()
         return RelayResponse(int(out.get("status", 502)), out.get("body", ""), headers=out.get("headers"))
 
-    return throttled_request(_send, market=(market or "").strip().lower() or "generic", key=key or "")
+    _m = (market or "").strip().lower() or "generic"
+    if not _via_relay:
+        return throttled_request(_send, market=_m, key=key or "")
+    # F35: 릴레이가 무응답이면 **몇 번 얼마나 기다렸는지**를 문장에 적는다. 예전엔
+    #   「릴레이에 닿지 못했습니다」 한 줄이라, 셀러는 1초 만에 포기한 건지 2분을 기다린 건지
+    #   알 수 없었다(오너 실측: 45초 0바이트가 조용히 반복됐다).
+    try:
+        return throttled_request(_send, market=_m, key=key or "",
+                                 retries=max(0, int(_plan["attempts"]) - 1))
+    except RelayError as exc:
+        raise RelayError(f"{exc} — {_plan['sentence']}") from exc

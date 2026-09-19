@@ -9,11 +9,25 @@ from __future__ import annotations
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
 class TestPrevalidateEnvAliases:
     """실제 업로드 경로가 쓰는 환경변수 별칭을 prevalidate가 인정한다."""
+
+    @pytest.fixture(autouse=True)
+    def _no_reach_probe(self, monkeypatch):
+        """F35-2: 여기서 재는 것은 **자격 이름**이지 도달성이 아니다.
+
+        사전검증은 이제 등록 직전에 「닿나」를 한 번 두드려 본다(WC·11번가·Shopify).
+        이 클래스의 URL은 `https://x` 같은 가짜라 그 두드림이 실패하고, 그러면
+        **자격 별칭을 재던 계약이 네트워크를 재게 된다.** 도달은 안 잰 것으로 둔다.
+        """
+        from src.seller_console import upload_dispatcher as UD
+        monkeypatch.setattr(UD, "market_reach",
+                            lambda m: {"ok": None, "ms": None, "detail": "테스트에서 미측정"})
 
     def _prevalidate(self, market):
         from src.seller_console.upload_dispatcher import UploadDispatcher

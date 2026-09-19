@@ -1538,10 +1538,18 @@ function renderPrevalidateResults(results) {
     const badge = r.ok
       ? '<span class="pc-badge pc-badge-on">통과</span>'
       : '<span class="pc-badge pc-badge-danger">실패</span>';
+    // F35-2: 「닿나」를 잰 마켓은 걸린 시간을 적는다. 안 잰 마켓을 「빠르다」로 읽지 않게
+    //   아무 표시도 하지 않는다(측정 안 한 것을 통과의 근거로 쓰지 않는다).
+    let reach = '';
+    if (r.reach_ok === true) {
+      reach = `<span class="pc-badge pc-badge-muted ms-1">도달 ${r.reach_ms}ms</span>`;
+    } else if (r.reach_ok === false) {
+      reach = `<span class="pc-badge pc-badge-danger ms-1">도달 불가 · ${r.reach_ms}ms</span>`;
+    }
     html += `
       <div class="list-group-item d-flex justify-content-between align-items-start">
         <div>
-          <div class="fw-semibold">${r.market_label || r.market} ${badge}</div>
+          <div class="fw-semibold">${r.market_label || r.market} ${badge}${reach}</div>
           <div class="text-muted small">${r.message}</div>
           ${r.hint ? `<div class="text-warning small mt-1"><i class="bi bi-lightbulb"></i> ${r.hint}</div>` : ''}
         </div>
