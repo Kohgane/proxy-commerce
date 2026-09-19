@@ -231,6 +231,7 @@ class UploadDispatcher:
         missing = ([] if market == "coupang"
                    else [k for k in required_envs if not os.getenv(k)])
         _cred_source = ""          # F29-5: 어느 저장소를 보고 판정했는지(문장에 싣는다)
+        _empty_label = "비어 있는 값: "   # F34-1: 읽지 못했으면 이 말이 바뀐다
 
         # Shopify: SHOPIFY_AUTO_TOKEN 또는 SHOPIFY_ACCESS_TOKEN 중 하나만 있어도 됨
         # (required_envs에는 SHOPIFY_SHOP만 있어서 토큰 별도 체크 필요)
@@ -266,6 +267,10 @@ class UploadDispatcher:
             # **못 물어본 것을 「없다」고 하지 않는다** — 조회 자체가 실패했으면 그렇게 말한다.
             if _api.get("unknown") or _state.get("unknown"):
                 _cred_source = "자격 저장소를 확인하지 못했습니다"
+            # F34-1: 저장소를 **읽지 못한** 것과 값이 **비어 있는** 것은 다른 사건이다.
+            #   섞어 말하면 셀러는 이미 넣어 둔 값을 또 넣는다(오너가 실제로 그랬다).
+            if _state.get("read_failed"):
+                _empty_label = "읽지 못해 확인하지 못한 값: "
 
         # WooCommerce: 실제 업로드 경로는 WOO_* 사용, 진단은 WC_* 사용 → 둘 다 허용
         if market == "woocommerce":
@@ -287,7 +292,7 @@ class UploadDispatcher:
                 message="이 마켓의 API 키(또는 배송정보)가 아직 입력되지 않았어요.",
                 hint=("‘마켓 연동’ 화면에서 이 마켓의 키를 입력하세요 (/seller/markets/connect/" + market + "). "
                       "이 키는 앱에 입력하는 ‘내 마켓 키’이며, 서버 환경변수(MARKET_CRED_ENC_KEY 등 인프라 키)와는 다릅니다. "
-                      + _where + "비어 있는 값: " + ", ".join(missing)),
+                      + _where + _empty_label + ", ".join(missing)),
             )
 
         # 필수 필드 검증

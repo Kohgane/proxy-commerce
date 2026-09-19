@@ -15,6 +15,30 @@ from . import pg
 
 logger = logging.getLogger(__name__)
 
+# F34-1: **읽기 실패를 「비어 있음」이라 말하지 않는다.**
+#   실측(오너 2026-09-19): 드로어에 6칸을 넣고 저장했는데 사전검증이 **7칸 전부 「비어 있음」**.
+#   복호화가 실패하면 `_decode`가 조용히 `{}`를 돌려줬고, 그 빈 dict가 화면·검증기를 지나
+#   「입력한 적 없음」처럼 보였다. **못 읽은 것과 없는 것은 다른 사건이다.**
+_LAST_READ_ERROR: dict = {}
+
+
+def last_read_error() -> dict:
+    """마지막 읽기 실패 — `{reason, at}`. 성공적으로 읽으면 비워진다."""
+    return dict(_LAST_READ_ERROR)
+
+
+def _note_read_error(reason: str) -> None:
+    from datetime import datetime, timezone
+    from src.utils.redact import scrub_infra
+    _LAST_READ_ERROR.clear()
+    _LAST_READ_ERROR.update({
+        "reason": scrub_infra(reason),
+        "at": datetime.now(timezone.utc).isoformat(timespec="seconds")})
+
+
+def _clear_read_error() -> None:
+    _LAST_READ_ERROR.clear()
+
 
 def _encode(values: dict):
     """values dict → (enc_blob, is_encrypted). 키 있으면 Fernet 암호문, 없으면 평문 JSON."""
@@ -33,6 +57,9 @@ def _decode(enc_blob: str, is_encrypted: bool) -> dict:
             from src.seller_console import market_credentials as mc
             fernet = mc._fernet()
             if not fernet:
+                # 키가 없어서 못 읽은 것이다 — **저장된 게 없는 것이 아니다.**
+                _note_read_error("암호화된 값인데 복호화 키가 없습니다"
+                                 "(MARKET_CRED_ENC_KEY 또는 SECRET_KEY 확인)")
                 logger.warning("암호화된 자격증명이나 복호화 키 없음 — 빈 값")
                 return {}
             raw = fernet.decrypt(str(enc_blob or "").encode()).decode("utf-8")
@@ -41,12 +68,15 @@ def _decode(enc_blob: str, is_encrypted: bool) -> dict:
         data = json.loads(raw)
         return data if isinstance(data, dict) else {}
     except Exception as exc:
+        # 키가 바뀌었거나 값이 깨졌다 — 그 사실을 올린다(빈 값으로 덮지 않는다).
+        _note_read_error(f"복호화 실패: {type(exc).__name__}")
         logger.warning("자격증명 복호화 실패: %s", exc)
         return {}
 
 
 def load_all(seller_id: str) -> dict:
     """{market: {env: value}} — 셀러의 모든 마켓 연동정보."""
+    _clear_read_error()
     out = {}
     with pg.query() as cur:
         cur.execute("SELECT market, enc_blob, is_encrypted FROM market_links WHERE user_id=%s AND deleted_at IS NULL",
@@ -57,6 +87,7 @@ def load_all(seller_id: str) -> dict:
 
 
 def get(seller_id: str, market: str) -> dict:
+    _clear_read_error()
     with pg.query() as cur:
         cur.execute("SELECT enc_blob, is_encrypted FROM market_links WHERE user_id=%s AND market=%s AND deleted_at IS NULL LIMIT 1",
                     (str(seller_id or ""), market))

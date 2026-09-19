@@ -5074,6 +5074,12 @@ def markets_connect_save(market):
     try:
         mc.save(_seller_id(), market, values)
         return jsonify({"ok": True, "status": mc.status(_seller_id(), market)})
+    except ValueError as exc:
+        # F34-1: **거부는 거부라고 말한다.** 보낸 값이 이 마켓에 없는 칸뿐이면 예전엔
+        #   아무것도 안 쓰고 200 「저장했어요」였다 — 셀러는 저장된 줄 알았다.
+        logger.warning("마켓 자격증명 저장 거부 (%s): %s", market, exc)
+        return jsonify({"ok": False, "user_message": True,
+                        "error": _scrub_infra(str(exc))}), 400
     except Exception as exc:
         # F30-3: 예전엔 「저장 중 오류가 발생했습니다」 한 줄이었고, 화면은 그마저
         #   「인터넷 연결이 불안정했어요」로 덮었다 — **우리 저장소가 죽은 것**과
