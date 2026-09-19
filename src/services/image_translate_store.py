@@ -305,6 +305,7 @@ def effective_images(extra: dict, *, kind: str = "gallery", originals=None,
         except Exception as exc:
             logger.warning("[이미지번역] 현황 조회 실패(적힌 대로 진행): %s", exc)
 
+    cdn_map = origin_cdn_map(ex, kind)
     out = []
     for i, orig in enumerate(originals):
         e = by_idx.get(i) or {}
@@ -315,10 +316,50 @@ def effective_images(extra: dict, *, kind: str = "gallery", originals=None,
             internal = url.startswith(("/seller/", "/admin/", "/api/"))
             gone = bool(internal and live is not None
                         and not (blob or {}).get("bytes"))
-            out.append(orig if gone else url)
+            out.append(_origin_or_cdn(orig, cdn_map, i) if gone else url)
         else:
-            out.append(orig)
+            out.append(_origin_or_cdn(orig, cdn_map, i))
     return out
+
+
+# 번역본이 아닌 **원본**을 CDN에 올린 주소. 원본 배열(`images`)은 건드리지 않는다 —
+#   공급사 주소는 재번역·소싱처 감시가 쓴다. 옆에 따로 적는다 (F34-2b).
+CDN_MAP_KEYS = {"gallery": "images_cdn", "detail": "detail_images_cdn"}
+
+
+def origin_cdn_map(extra: dict, kind: str) -> dict:
+    """`{idx(int): cdn_url}` — 원본을 CDN에 올려 둔 주소."""
+    raw = (extra or {}).get(CDN_MAP_KEYS.get(kind, "")) or {}
+    if not isinstance(raw, dict):
+        return {}
+    out = {}
+    for k, v in raw.items():
+        try:
+            if str(v or "").strip():
+                out[int(k)] = str(v).strip()
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _origin_or_cdn(orig: str, cdn_map: dict, i: int) -> str:
+    """원본을 쓸 자리 — CDN 사본이 있으면 **그게 나간다** (F34-2b).
+
+    실측(오너 2026-09-19 카나리 2차): 등록 게이트가 **상세 1번째**를 「우리 서버 주소」로
+    막았는데, 진단 표엔 **상세 행이 0**이고 「남은 장」도 0이었다.
+
+    그 장은 **번역된 적이 없는 원본**이다. 번역본이 없으니 `images_ko`에 항목이 없고,
+    항목이 없으니 blob도 없고, blob이 없으니 **백필도 진단도 그 장을 아예 못 본다.**
+    등록만이 그 장을 본다 — 등록에 나가는 집합에는 들어 있으니까.
+
+    > ★★ **「저장소에 있는 것」을 순회하면, 저장소에 없는 장은 영원히 안 보인다.**
+    > 순회해야 하는 것은 **등록에 나가는 집합**이다.
+
+    원본 주소가 마켓에서 안 열리는 경우는 둘이다 — 우리 주소이거나(프록시),
+    **스킴이 없거나**(`//img.example.com/a.jpg`). 확장이 `data-src`·`srcset` 원문을
+    절대화 없이 그대로 보내므로 후자가 흔하다. 둘 다 CDN 사본이 답이다.
+    """
+    return cdn_map.get(i) or orig
 
 
 def _outward_url(url: str, blob) -> str:
@@ -379,6 +420,7 @@ def effective_plan(extra: dict, *, kind: str = "gallery", originals=None,
         except Exception as exc:
             logger.warning("[이미지번역] 현황 조회 실패(표시만 영향): %s", exc)
 
+    cdn_map = origin_cdn_map(ex, kind)
     plan = []
     for i, orig in enumerate(originals):
         e = by_idx.get(i) or {}
@@ -397,8 +439,10 @@ def effective_plan(extra: dict, *, kind: str = "gallery", originals=None,
         plan.append({
             "idx": i, "original": orig, "kind": kind,
             "translated_url": _eurl if usable else "",
-            "url": (_eurl if use else orig),
+            "url": (_eurl if use else _origin_or_cdn(orig, cdn_map, i)),
             "source": "translated" if use else "original",
+            # F34-2b: 원본을 CDN에 올려 뒀나(번역과 무관하게 등록이 쓸 수 있는 주소).
+            "origin_cdn": cdn_map.get(i, ""),
             "translatable": usable,          # 번역본이 있다(토글을 켤 수 있다)
             "use": use,
             "status": e.get("status", ""),
@@ -428,6 +472,54 @@ def set_use_flags(extra: dict, flags: dict, *, kind: str = "gallery") -> list:
         if i in want:
             e["use"] = bool(want[i] and e.get("status") == "done" and e.get("url"))
     return rows
+
+
+def outbound_pages(extra: dict, *, item_id: str = "") -> list:
+    """**등록에 나가는 집합** — 갤러리·상세 전 장. 저장소에 무엇이 있든 상관없다 (F34-2b).
+
+    ## 왜 이 함수가 생겼나
+
+    오너 실측(2026-09-19 카나리 2차): 진단 표는 **상세 행 0 · 남은 장 0**인데
+    등록 게이트는 **상세 1번째**를 「우리 서버 주소」로 막았다.
+
+    진단과 백필은 `image_ko_blobs`(번역본이 있는 장)를 순회했다. 번역된 적 없는 원본은
+    그 표에 **행 자체가 없다.** 그래서 두 화면은 그 장을 **아예 못 봤고**, 등록만 봤다.
+
+    > ★★★ **저장소를 순회하면 저장소에 없는 것은 영원히 안 보인다.**
+    > 세어야 하는 분모는 **등록이 보내는 집합**이다.
+    > (e.tb.cn 규칙: 못 한다는 결론도 **측정 범위**를 함께 적는다.)
+
+    각 장: `{kind, idx, url, original, source, translated_url, origin_cdn,
+    bytes, cdn_url, cdn_error, gone, use, outward}`.
+    `outward=False`면 **마켓이 못 가져간다** — 그 장이 등록을 막는다.
+    """
+    from src.services.image_reachability import is_internal
+
+    pages = []
+    for kind in ("gallery", "detail"):
+        for p in effective_plan(extra, kind=kind, item_id=item_id):
+            row = dict(p)
+            row["outward"] = not is_internal(row.get("url") or "")
+            pages.append(row)
+    return pages
+
+
+def outbound_missing(extra: dict, *, item_id: str = "") -> list:
+    """등록에 나가는 장 중 **마켓이 못 가져가는** 것들. 백필이 손봐야 할 목록이다."""
+    return [p for p in outbound_pages(extra, item_id=item_id) if not p["outward"]]
+
+
+def set_origin_cdn(extra: dict, kind: str, idx: int, url: str) -> dict:
+    """원본 CDN 주소를 적는다 — 갱신된 `extra`를 돌려준다(원본 배열은 불변)."""
+    key = CDN_MAP_KEYS.get(kind)
+    if not key:
+        raise KeyError(kind)
+    ex = dict(extra or {})
+    cur = ex.get(key)
+    cur = dict(cur) if isinstance(cur, dict) else {}
+    cur[str(int(idx))] = str(url or "").strip()
+    ex[key] = cur
+    return ex
 
 
 def effective_summary(extra: dict) -> dict:
