@@ -25,6 +25,11 @@ logger = logging.getLogger(__name__)
 
 _DATA_DIR = os.getenv("MARKET_CRED_DIR") or os.path.join("data", "market_credentials")
 
+# F34-1: **못 읽은 것과 없는 것은 다른 사건이다.** 복호화가 실패하면 예전엔 조용히 `{}`였고,
+#   그 빈 dict가 화면·사전검증을 지나 「입력한 적 없음」처럼 보였다(오너 실측 2026-09-19:
+#   6칸을 넣고 저장했는데 검증기는 7칸 전부 「비어 있음」이라고 했다).
+_FILE_READ_ERROR: dict = {}
+
 
 # 마켓별 입력 필드 정의 (env = 코드가 실제로 읽는 표준 환경변수 이름).
 # secret=True 인 값은 화면에 마스킹해서 표시한다.
@@ -161,6 +166,36 @@ def _pg_links():
     return None
 
 
+def backend_state() -> Dict[str, Any]:
+    """어느 저장소에 쓰고 읽는가 — `{backend, degraded, reason}` (F34-1).
+
+    ## 왜 이걸 따로 묻나
+
+    `pg.pg_enabled()`는 **워커 수명 동안 첫 접속 결과를 캐시한다.** 그래서 접속이 한 번
+    삐끗한 워커는 그 뒤로 계속 `data/<seller>.json`에 쓴다 — 그 파일은 Render에서
+    **컨테이너와 함께 사라지고, 옆 워커에는 보이지도 않는다.**
+
+    그러면 셀러 화면엔 「저장됨」이 뜨고, 다음 요청(다른 워커)에서 사전검증은 「비어 있음」이
+    된다. 오너가 6칸을 넣고 저장했는데 7칸 전부 비었다고 나온 그 모양이다.
+
+    > ★ **운영에서 DATABASE_URL이 있는데 PG로 못 가면, 파일에 쓰는 것은 저장이 아니라 거짓말이다.**
+    > (같은 판정을 F30이 이미 이미지 저장소에 적용했다 — 여기만 예외일 이유가 없다.)
+    """
+    try:
+        from src.db import pg as _pgmod
+        url = (_pgmod.db_url() or "").strip()
+        if not url:
+            return {"backend": "file", "degraded": False, "reason": ""}
+        if _pgmod.pg_enabled():
+            return {"backend": "pg", "degraded": False, "reason": ""}
+        return {"backend": "file", "degraded": True,
+                "reason": "DB(Postgres)에 연결하지 못했습니다 — 지금 저장하면 "
+                          "재시작 때 사라지고 다른 워커에는 보이지 않습니다"}
+    except Exception as exc:
+        return {"backend": "file", "degraded": True,
+                "reason": f"저장소 상태를 확인하지 못했습니다: {type(exc).__name__}"}
+
+
 def _path(seller_id: str) -> str:
     return os.path.join(_DATA_DIR, f"{_safe_seller_id(seller_id)}.json")
 
@@ -174,6 +209,7 @@ def _load_all(seller_id: str) -> Dict[str, Dict[str, str]]:
 
 def load_all_from_file(seller_id: str) -> Dict[str, Dict[str, str]]:
     """data/<seller>.json에서 직접 로드(복호화) — 이관 스크립트가 PG 활성 시에도 원본을 읽게."""
+    _FILE_READ_ERROR.clear()
     path = _path(seller_id)
     if not os.path.exists(path):
         return {}
@@ -189,6 +225,9 @@ def load_all_from_file(seller_id: str) -> Dict[str, Dict[str, str]]:
     if blob.get("_enc"):
         fernet = _fernet()
         if not fernet:
+            _FILE_READ_ERROR.update({
+                "reason": "암호화된 값인데 복호화 키가 없습니다"
+                          "(MARKET_CRED_ENC_KEY 또는 SECRET_KEY 확인)"})
             logger.warning("암호화된 자격증명이나 복호화 키 없음 — 빈 값 반환")
             return {}
         try:
@@ -196,6 +235,7 @@ def load_all_from_file(seller_id: str) -> Dict[str, Dict[str, str]]:
             data = json.loads(decrypted)
             return data if isinstance(data, dict) else {}
         except Exception as exc:
+            _FILE_READ_ERROR.update({"reason": f"복호화 실패: {type(exc).__name__}"})
             logger.warning("자격증명 복호화 실패: %s", exc)
             return {}
     data = blob.get("data")
@@ -227,8 +267,26 @@ def get(seller_id: str, market: str) -> Dict[str, str]:
     return dict(_load_all(seller_id).get(market, {}))
 
 
+def unknown_fields(market: str, values: Dict[str, str]) -> List[str]:
+    """이 마켓에 **없는 칸 이름** — 조용히 버리지 않고 이름을 돌려준다 (F34-1)."""
+    allowed = {f["env"] for f in MARKET_CRED_FIELDS.get(canonical_market(market), [])}
+    return sorted(k for k, v in (values or {}).items()
+                  if k not in allowed and str(v or "").strip())
+
+
 def save(seller_id: str, market: str, values: Dict[str, str]) -> Dict[str, str]:
-    """알려진 필드만 추려 저장한다. 빈 값은 제외. 저장된 값 반환."""
+    """알려진 필드만 추려 저장한다. 빈 값은 제외. 저장된 값 반환.
+
+    ## F34-1 — 저장은 **다시 읽힐 때** 저장이다
+
+    오너 실측(2026-09-19): 드로어에 여섯 칸을 넣고 저장했는데, 다음 날 드로어를 다시 여니
+    **여섯 칸이 전부 비어 있었다**(유일하게 차 있던 Wing ID는 저장값이 아니라 제안이었다).
+    화면은 「저장했어요」라고 했다.
+
+    쓰기가 어디로 갔든 — 사라질 파일이든, 못 읽을 암호문이든, 아무 칸도 안 남은
+    빈 병합이든 — **되읽어서 없으면 그건 저장이 아니다.** 그러면 실패라고 말한다.
+    (같은 규율을 수집 이력이 STEP 1-0에서 이미 쓴다 — write-then-verify.)
+    """
     if market not in MARKET_CRED_FIELDS:
         raise KeyError(market)
     allowed = {f["env"] for f in MARKET_CRED_FIELDS[market]}
@@ -237,16 +295,47 @@ def save(seller_id: str, market: str, values: Dict[str, str]) -> Dict[str, str]:
         for env, val in (values or {}).items()
         if env in allowed and str(val).strip()
     }
+    # 보낸 값이 **전부** 이 마켓에 없는 이름이면, 아무것도 안 하고 「저장됨」이라 하지 않는다.
+    if (values or {}) and not cleaned:
+        bad = unknown_fields(market, values)
+        raise ValueError("저장할 값이 없습니다"
+                         + (f" — 이 마켓에 없는 칸: {', '.join(bad)}" if bad else
+                            " — 보낸 값이 모두 비어 있습니다"))
     data = _load_all(seller_id)
     # 병합: 입력한 필드만 갱신하고 나머지(예: 비워둔 비밀값)는 기존 값 유지.
     existing = data.get(market) if isinstance(data.get(market), dict) else {}
     merged = {**existing, **cleaned}
     _b = _pg_links()
     if _b is not None:
-        return _b.save(seller_id, market, merged)     # PG: (user_id,market) upsert(암호문)
-    data[market] = merged
-    _save_all(seller_id, data)
-    return merged
+        saved = _b.save(seller_id, market, merged)     # PG: (user_id,market) upsert(암호문)
+    else:
+        # F34-1: **폴백 저장은 성공이 아니다.** DATABASE_URL이 있는데 PG로 못 갔다면, 파일에
+        #   써 봐야 다음 요청(다른 워커)에선 없다 — 화면엔 「저장됨」, 검증기엔 「비어 있음」.
+        _bs = backend_state()
+        if _bs.get("degraded"):
+            raise RuntimeError(_bs.get("reason") or "자격 저장소에 연결하지 못했습니다")
+        data[market] = merged
+        _save_all(seller_id, data)
+        saved = merged
+    _verify_saved(seller_id, market, cleaned)
+    return saved
+
+
+def _verify_saved(seller_id: str, market: str, cleaned: Dict[str, str]) -> None:
+    """쓴 값을 **되읽는다.** 안 보이면 실패다 — 사유를 문장에 싣고 올린다 (F34-1)."""
+    if not cleaned:
+        return
+    try:
+        back = get(seller_id, market)
+    except Exception as exc:                 # 되읽기 자체가 터졌다 = 저장 확인 불가
+        raise RuntimeError(f"저장 뒤 확인에 실패했습니다: {type(exc).__name__}") from exc
+    gone = sorted(env for env, val in cleaned.items() if str(back.get(env, "")) != val)
+    if not gone:
+        return
+    why = read_state(seller_id)
+    raise RuntimeError(
+        f"저장한 값이 다시 읽히지 않습니다({len(gone)}칸: {', '.join(gone)})"
+        + (f" — {why.get('reason')}" if not why.get("ok") else ""))
 
 
 def delete(seller_id: str, market: str) -> bool:
@@ -260,6 +349,28 @@ def delete(seller_id: str, market: str) -> bool:
         _save_all(seller_id, data)
         return True
     return False
+
+
+def read_state(seller_id: str = "") -> Dict[str, Any]:
+    """저장된 자격을 **읽을 수 있었나**. `{ok, reason}` (F34-1).
+
+    화면·사전검증이 「비어 있음」이라 말하기 전에 **이걸 먼저 묻는다.**
+    못 읽은 것을 「없다」고 말하면, 사람은 이미 넣어 둔 값을 또 넣는다(오너가 실제로 그랬다).
+    """
+    _bs = backend_state()
+    if _bs.get("degraded"):
+        return {"ok": False, "reason": str(_bs.get("reason") or "저장소 상태 미상")}
+    _b = _pg_links()
+    if _b is not None:
+        try:
+            err = _b.last_read_error()
+        except Exception:
+            err = {}
+    else:
+        err = dict(_FILE_READ_ERROR)
+    if err.get("reason"):
+        return {"ok": False, "reason": str(err["reason"])}
+    return {"ok": True, "reason": ""}
 
 
 def credential_env(seller_id: str, market: str) -> Dict[str, str]:

@@ -51,6 +51,16 @@ WING_USER_IDS = {
 }
 
 
+def _read_state() -> dict:
+    """저장소를 **읽을 수 있었나** — `market_credentials.read_state`가 정본."""
+    try:
+        from src.seller_console.market_credentials import read_state
+        return read_state()
+    except Exception as exc:
+        logger.warning("[마켓 자격] 읽기 상태 조회 실패: %s", exc)
+        return {"ok": True, "reason": ""}      # 모르면 **판단하지 않는다**(기존 문장 유지)
+
+
 def _uploader_reader(account: str = ""):
     """업로더의 배송 env 읽기를 그대로 쓴다 — 접두 우선 + 무접두 폴백(재구현 0)."""
     from src.uploaders.coupang_uploader import CoupangUploader
@@ -89,15 +99,25 @@ def coupang_shipping_state(account: str = "") -> dict:
         return {"missing": [], "present": [], "unknown": True, "account": acct,
                 "source": "확인하지 못했습니다"}
 
+    read_failed = ""
     if not present:
-        src = ("마켓 연동 화면에 입력된 값 · 서버 환경변수 둘 다 비어 있음" if not acct
-               else f"쿠팡 계정 「{acct}」 서버 환경변수 · 마켓 연동 화면 둘 다 비어 있음")
+        # F34-1: **「비어 있음」이라 말하기 전에 「읽을 수 있었나」를 먼저 묻는다.**
+        #   실측(2026-09-19): 6칸을 넣고 저장했는데 검증기는 7칸 전부 「비어 있음」이라 했다.
+        #   복호화가 실패하거나 저장소가 갈리면 빈 dict가 올라왔고, 그게 「입력한 적 없음」으로
+        #   보였다. 못 읽은 것을 「없다」고 말하면 사람은 이미 넣은 값을 또 넣는다.
+        read = _read_state()
+        if not read.get("ok"):
+            read_failed = str(read.get("reason") or "사유 미상")
+            src = f"저장된 값을 읽지 못했습니다 — {read_failed}"
+        else:
+            src = ("마켓 연동 화면에 입력된 값 · 서버 환경변수 둘 다 비어 있음" if not acct
+                   else f"쿠팡 계정 「{acct}」 서버 환경변수 · 마켓 연동 화면 둘 다 비어 있음")
     elif prefixed and acct:
         src = f"서버 환경변수(계정 접두 COUPANG_{acct.upper()}_*)"
     else:
         src = "마켓 연동 화면에 입력된 값(또는 무접두 환경변수)"
     return {"missing": missing, "present": present, "unknown": False,
-            "account": acct, "source": src}
+            "account": acct, "source": src, "read_failed": read_failed}
 
 
 _BASE_KEYS = ("COUPANG_ACCESS_KEY", "COUPANG_SECRET_KEY", "COUPANG_VENDOR_ID")
