@@ -310,13 +310,46 @@ def effective_images(extra: dict, *, kind: str = "gallery", originals=None,
         e = by_idx.get(i) or {}
         url = e.get("url") or ""
         if e.get("use") and e.get("status") == "done" and url:
+            blob = live.get((kind, i)) if live is not None else None
+            url = _outward_url(url, blob)
             internal = url.startswith(("/seller/", "/admin/", "/api/"))
             gone = bool(internal and live is not None
-                        and not (live.get((kind, i)) or {}).get("bytes"))
+                        and not (blob or {}).get("bytes"))
             out.append(orig if gone else url)
         else:
             out.append(orig)
     return out
+
+
+def _outward_url(url: str, blob) -> str:
+    """우리 주소인데 **CDN에 이미 올라가 있으면** 그 주소를 쓴다 (F34-2).
+
+    ## 왜 이 한 줄이 필요한가 — 진단과 등록이 다른 표를 봤다
+
+    오너 실측(2026-09-19): 진단 화면은 **「남은 장 0」**(= CDN 대기 0)인데, 같은 항목을
+    등록하면 **「상세 1번째 — 우리 서버 주소」**로 막혔다.
+
+    갈라 보니 **세는 표가 달랐다.**
+
+    | 보는 곳 | 읽는 표 |
+    |---|---|
+    | 진단 「남은 장」·백필 | `image_ko_blobs` (**cdn_url이 여기 있다**) |
+    | 등록에 나갈 배열 | 초안 `extra_json`의 `images_ko[].url` |
+
+    백필은 CDN에 올린 뒤 `_point_entry_at_cdn`으로 초안을 고쳐 두 표를 맞췄는데,
+    **그 결과를 확인하지 않았다.** 못 고쳐도 「올림」으로 세었다.
+    그러면 blob엔 `cdn_url`이 있어 **대기 0**이고, 초안은 여전히 우리 주소라 **등록은 막힌다.**
+
+    > ★★ **진단이 세는 집합과 등록이 보내는 집합이 다르면, 둘 다 맞는 말을 하면서 서로를 반박한다.**
+    > 사본을 맞추는 대신 **정본을 읽는다** — CDN 주소의 정본은 blob 표다.
+
+    게이트는 그대로다(fail-closed). 바뀌는 건 **이미 외부에 있는 장을 못 찾던 것**뿐이다.
+    """
+    u = str(url or "")
+    if not u.startswith(("/seller/", "/admin/", "/api/")):
+        return u
+    cdn = str((blob or {}).get("cdn_url") or "")
+    return cdn or u
 
 
 def effective_plan(extra: dict, *, kind: str = "gallery", originals=None,
@@ -351,8 +384,11 @@ def effective_plan(extra: dict, *, kind: str = "gallery", originals=None,
         e = by_idx.get(i) or {}
         marked = bool(e.get("status") == "done" and e.get("url"))
         blob = live.get((kind, i)) if live is not None else None
+        # F34-2: 초안이 우리 주소를 가리켜도 **blob에 CDN 주소가 있으면 그게 정본**이다.
+        #   (진단과 등록이 서로 다른 표를 보던 자리 — `_outward_url` 주석 참조.)
+        _eurl = _outward_url(e.get("url") or "", blob)
         # 외부(CDN) 주소면 우리 저장소와 무관하게 산다. 우리 주소면 **바이트가 있어야** 산다.
-        internal = str(e.get("url") or "").startswith(("/seller/", "/admin/", "/api/"))
+        internal = _eurl.startswith(("/seller/", "/admin/", "/api/"))
         # `live is None`(못 물어봤다)이면 판단하지 않는다 — 모름으로 멀쩡한 번역본을 지우지 않는다.
         gone = bool(marked and internal and live is not None
                     and not (blob and blob.get("bytes")))
@@ -360,8 +396,8 @@ def effective_plan(extra: dict, *, kind: str = "gallery", originals=None,
         use = bool(usable and e.get("use"))
         plan.append({
             "idx": i, "original": orig, "kind": kind,
-            "translated_url": e.get("url", "") if usable else "",
-            "url": (e.get("url") if use else orig),
+            "translated_url": _eurl if usable else "",
+            "url": (_eurl if use else orig),
             "source": "translated" if use else "original",
             "translatable": usable,          # 번역본이 있다(토글을 켤 수 있다)
             "use": use,

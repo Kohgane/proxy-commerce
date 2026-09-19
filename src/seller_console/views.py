@@ -10790,8 +10790,16 @@ def image_storage_diag():
                 if not p["translatable"] and not p.get("gone"):
                     continue
                 blob = live.get((kind, p["idx"])) or {}
+                # F34-2: 초안이 아직 우리 주소를 가리키는 장 — 진단은 「대기 0」인데
+                #   등록에선 막히던 자리다. 세는 표가 갈렸다는 사실을 **화면이 말한다.**
+                _entry = next((e for e in (ex.get("images_ko" if kind == "gallery"
+                                                  else "detail_images_ko") or [])
+                               if isinstance(e, dict) and int(e.get("idx", -1)) == p["idx"]), {})
+                _drifted = bool(str(_entry.get("url") or "").startswith(
+                    ("/seller/", "/admin/", "/api/")) and blob.get("cdn_url"))
                 page = {
                     "kind": kind, "idx": p["idx"],
+                    "drifted": _drifted,
                     "url": p["translated_url"] or (p.get("cdn_url") or ""),
                     "bytes": int(blob.get("bytes") or 0),
                     "cdn_url": str(blob.get("cdn_url") or ""),
