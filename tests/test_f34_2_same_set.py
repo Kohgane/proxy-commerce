@@ -176,15 +176,16 @@ def test_the_backfill_carries_detail_pages():
 # ---------------------------------------------------------------------------
 
 def test_the_diagnostics_walks_both_kinds():
-    """진단이 두 kind를 같은 표로 돈다 — 주석이 아니라 코드로 잰다."""
-    import ast
-    import inspect
-    from src.seller_console import views
+    """진단이 두 kind를 같은 표로 돈다 — 주석이 아니라 **동작으로** 잰다.
 
-    tree = ast.parse(inspect.getsource(views.image_storage_diag))
-    kinds = [n for n in ast.walk(tree) if isinstance(n, ast.Tuple)
-             and {getattr(e, "value", None) for e in n.elts} == {"gallery", "detail"}]
-    assert kinds, "진단이 상세를 같이 돌지 않는다"
+    ※ F34-2b: 예전엔 진단 함수 안의 `("gallery", "detail")` 튜플을 AST로 찾았다.
+      그 순회가 `outbound_pages`로 옮겨 가면서 계약이 빨개졌는데, **의도는 그대로**이고
+      오히려 강해졌다(이제 blob이 없는 장까지 돈다). 구현 위치가 아니라 결과를 잰다.
+    """
+    from src.services import image_translate_store as S
+    ex = {**_extra("gallery", url=CDN), **_extra("detail", url=CDN)}
+    kinds = {p["kind"] for p in S.outbound_pages(ex)}
+    assert kinds == {"gallery", "detail"}, kinds
 
 
 def test_the_diagnostics_marks_the_drifted_page():

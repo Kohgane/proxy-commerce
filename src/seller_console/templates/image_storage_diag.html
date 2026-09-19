@@ -78,7 +78,12 @@
         {% endif %}
       </div>
 
-      <div class="console-kpi-label mt-2">아직 외부 주소가 없는 장: {{ pending }}</div>
+      {# F34-2b: 분모는 **등록에 나가는 집합**이다(갤러리·상세, 번역본·원본 불문).
+         예전엔 blob 표만 세어서, 번역된 적 없는 원본은 0으로 보였다. 범위를 함께 적는다. #}
+      <div class="console-kpi-label mt-2">
+        마켓이 못 가져가는 장: {{ pending }}
+        <span class="text-muted">(등록에 나가는 전 장 기준 · 번역본 대기 {{ pending_blobs }})</span>
+      </div>
       <div id="backfillOut" class="small mt-2"></div>
     </div>
   </div>
@@ -105,6 +110,9 @@
             <td>
               {% if p.bytes %}
               <span class="pc-badge pc-badge-on">{{ '%.0f'|format(p.bytes / 1024) }} KB</span>
+              {% elif not p.in_store %}
+              {# F34-2b: 번역된 적 없는 원본 — 저장소에 행 자체가 없다. 「없음」과 다르다. #}
+              <span class="pc-badge pc-badge-muted" title="번역본이 없는 원본이라 저장소에 행이 없습니다">저장소에 없음</span>
               {% else %}
               <span class="pc-badge pc-badge-danger">없음</span>
               {% endif %}
@@ -135,6 +143,10 @@
               <span class="pc-badge pc-badge-on">번역본</span>
               {% else %}
               <span class="pc-badge pc-badge-muted">원본</span>
+              {% endif %}
+              {# F34-2b: 이 장이 등록을 막는다 — 마켓이 그 주소를 못 연다. #}
+              {% if not p.outward %}
+              <span class="pc-badge pc-badge-danger ms-1" title="{{ p.url[:120] }}">마켓이 못 가져감</span>
               {% endif %}
             </td>
             {% if probed %}

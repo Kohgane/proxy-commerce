@@ -64,6 +64,121 @@ def _upload(raw: bytes) -> tuple:
     return "", scrub_infra(str(res.get("error") or "업로드가 주소를 돌려주지 않았습니다"))
 
 
+def normalize_outward(url: str) -> str:
+    """마켓이 가져갈 수 있는 **절대 주소**로 편다. 못 펴면 빈 문자열 (F34-2b).
+
+    확장이 `data-src`·`srcset` **원문 그대로**를 보낸다(`content_script.js:239` 등 —
+    `im.src`와 달리 브라우저가 절대화해 주지 않는다). 그래서 타오바오·1688·Temu처럼
+    스킴 없는 주소(`//img.example.com/a.jpg`)를 쓰는 사이트의 상세 이미지가
+    **스킴 없는 채로** 초안에 박힌다.
+
+    `image_reachability.is_internal()`은 스킴이나 호스트가 없으면 **우리 주소로 친다**
+    (그게 안전한 기본값이다). 그래서 그런 장은 등록에서 「우리 서버 주소」로 막힌다 —
+    **메시지는 정확하지 않지만 판정은 옳다**(마켓은 그 주소를 못 연다).
+
+    여기서는 **`//`만 편다.** 사이트 상대 경로(`/img/a.jpg`)는 어느 호스트의 것인지
+    모르므로 **지어내지 않는다** — 빈 문자열을 내고, 호출부가 「원본 주소를 못 폅니다」라고 말한다.
+    """
+    u = str(url or "").strip()
+    if not u:
+        return ""
+    if u.startswith("//"):
+        return "https:" + u
+    if u.startswith(("http://", "https://")):
+        return u
+    return ""
+
+
+def fetch_original(url: str, *, timeout: int = 15) -> tuple:
+    """원본 이미지 바이트를 가져온다 — `(bytes, error)`. 하나만 채워진다 (F34-2b).
+
+    번역본은 우리가 만들었으니 바이트가 저장소에 있다. **원본은 없다** —
+    CDN에 올리려면 공급사에서 한 번 받아 와야 한다.
+    """
+    direct = normalize_outward(url)
+    if not direct:
+        return b"", "원본 주소를 절대 주소로 펴지 못했습니다(호스트 미상)"
+    try:
+        import requests
+    except Exception as exc:                                   # pragma: no cover
+        return b"", f"확인 불가: {type(exc).__name__}"
+    try:
+        # 공급사가 핫링크를 막는 경우가 있어 리퍼러를 보내지 않는다(우리 화면도 같은 규약).
+        r = requests.get(direct, timeout=timeout,
+                         headers={"User-Agent": "gogabridj-imagefetch/1.0",
+                                  "Referer": "", "Accept": "image/*,*/*"})
+    except Exception as exc:
+        return b"", f"{type(exc).__name__}: {str(exc)[:120]}"
+    if r.status_code != 200:
+        return b"", f"공급사 응답 HTTP {r.status_code}"
+    if not r.content:
+        return b"", "공급사가 빈 응답을 줬습니다"
+    return r.content, ""
+
+
+def run_originals(items, limit: int = BATCH) -> dict:
+    """**번역 안 된 원본**을 CDN에 올린다 — `{ok, uploaded, failed, reason, results}`.
+
+    순회 대상은 저장소가 아니라 **등록에 나가는 집합**이다(`outbound_pages`).
+    오너 실측: 진단 「남은 장 0」인데 등록은 상세 1번째에서 막혔다 — 그 장은
+    blob에 행이 없어 **아무도 안 보고 있었다.**
+
+    이미 밖에서 열리는 장은 **건드리지 않는다**(멱등 · 비용).
+    """
+    import json as _json
+
+    from src.services import image_translate_store as store
+
+    if not cdn_ready():
+        return {"ok": False, "uploaded": 0, "failed": 0, "skipped": 0, "results": [],
+                "reason": "CDN 미연결 — CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET 확인"}
+
+    uploaded = failed = 0
+    results = []
+    for it in items or []:
+        if uploaded + failed >= limit:
+            break
+        item_id = str(it.get("id") or "")
+        try:
+            extra = _json.loads(it.get("extra_json") or "{}") or {}
+        except Exception:
+            continue
+        changed = False
+        for p in store.outbound_missing(extra, item_id=item_id):
+            if uploaded + failed >= limit:
+                break
+            # 번역본이 나가는 장은 번역본 백필(`run`)의 몫이다 — 여기선 원본만 본다.
+            if p.get("source") == "translated":
+                continue
+            raw, err = fetch_original(p.get("original") or "")
+            if not raw:
+                failed += 1
+                results.append({"item_id": item_id, "kind": p["kind"], "idx": p["idx"],
+                                "ok": False, "error": err})
+                continue
+            url, uerr = _upload(raw)
+            if not url:
+                failed += 1
+                results.append({"item_id": item_id, "kind": p["kind"], "idx": p["idx"],
+                                "ok": False, "error": uerr})
+                continue
+            extra = store.set_origin_cdn(extra, p["kind"], p["idx"], url)
+            changed = True
+            uploaded += 1
+            results.append({"item_id": item_id, "kind": p["kind"], "idx": p["idx"],
+                            "ok": True, "error": ""})
+        if changed:
+            from src.seller_console import collect_history_store as chs
+            if not chs.update(item_id, extra_json=_json.dumps(extra, ensure_ascii=False)):
+                # 올렸는데 초안에 못 적었다 — F34-2와 같은 반쪽 성공이다. 사실대로 남긴다.
+                logger.warning("[CDN 백필] 원본 주소 기록 실패 item=%s", item_id)
+                results.append({"item_id": item_id, "kind": "", "idx": -1, "ok": False,
+                                "error": "CDN에는 올렸지만 초안에 주소를 적지 못했습니다"})
+                failed += 1
+    return {"ok": True, "uploaded": uploaded, "failed": failed, "skipped": 0,
+            "reason": "", "results": results}
+
+
 def _point_entry_at_cdn(item_id: str, idx: int, kind: str, url: str) -> bool:
     """초안의 그 장이 **CDN 주소를 가리키게** 한다. 원본 `images`는 건드리지 않는다.
 

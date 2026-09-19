@@ -10781,40 +10781,46 @@ def image_storage_diag():
                 # 공급사는 답했고(과금) 우리가 못 뒀다 — `NotStored`가 그 자리다.
                 if isinstance(_e, dict) and _e.get("error_class") == "NotStored":
                     paid_lost += 1
-        if not (ex.get("images_ko") or ex.get("detail_images_ko")):
-            continue
+        # F34-2b: 순회 대상은 **등록에 나가는 집합**이다. 예전엔 `images_ko`가 있는 항목만
+        #   보고, 그 안에서도 번역본이 있는 장만 봤다 — 그래서 **번역된 적 없는 상세 원본**은
+        #   진단 표에 행 자체가 없었다(오너 실측: 상세 행 0 · 남은 장 0 · 그런데 등록은 막힘).
+        #   저장소를 순회하면 저장소에 없는 장은 영원히 안 보인다.
         live = blobs.status_for_item(it.get("id") or "") or {}
         pages = []
-        for kind in ("gallery", "detail"):
-            for p in store.effective_plan(ex, kind=kind, item_id=it.get("id") or ""):
-                if not p["translatable"] and not p.get("gone"):
-                    continue
-                blob = live.get((kind, p["idx"])) or {}
-                # F34-2: 초안이 아직 우리 주소를 가리키는 장 — 진단은 「대기 0」인데
-                #   등록에선 막히던 자리다. 세는 표가 갈렸다는 사실을 **화면이 말한다.**
-                _entry = next((e for e in (ex.get("images_ko" if kind == "gallery"
-                                                  else "detail_images_ko") or [])
-                               if isinstance(e, dict) and int(e.get("idx", -1)) == p["idx"]), {})
-                _drifted = bool(str(_entry.get("url") or "").startswith(
-                    ("/seller/", "/admin/", "/api/")) and blob.get("cdn_url"))
-                page = {
-                    "kind": kind, "idx": p["idx"],
-                    "drifted": _drifted,
-                    "url": p["translated_url"] or (p.get("cdn_url") or ""),
-                    "bytes": int(blob.get("bytes") or 0),
-                    "cdn_url": str(blob.get("cdn_url") or ""),
-                    "cdn_at": str(blob.get("cdn_at") or ""),
-                    "cdn_error": str(blob.get("cdn_error") or ""),
-                    "gone": bool(p.get("gone")),
-                    "use": p["use"],
-                    "reach": None,
-                }
-                if probe and page["cdn_url"]:
-                    page["reach"] = reach.check_one(page["cdn_url"])
-                pages.append(page)
+        for p in store.outbound_pages(ex, item_id=it.get("id") or ""):
+            kind = p["kind"]
+            blob = live.get((kind, p["idx"])) or {}
+            # F34-2: 초안이 아직 우리 주소를 가리키는 장 — 진단은 「대기 0」인데
+            #   등록에선 막히던 자리다. 세는 표가 갈렸다는 사실을 **화면이 말한다.**
+            _entry = next((e for e in (ex.get("images_ko" if kind == "gallery"
+                                              else "detail_images_ko") or [])
+                           if isinstance(e, dict) and int(e.get("idx", -1)) == p["idx"]), {})
+            _drifted = bool(str(_entry.get("url") or "").startswith(
+                ("/seller/", "/admin/", "/api/")) and blob.get("cdn_url"))
+            page = {
+                "kind": kind, "idx": p["idx"],
+                "drifted": _drifted,
+                "url": p["url"],                     # **등록에 나갈 그 주소**
+                "source": p["source"],
+                "outward": p["outward"],             # 마켓이 가져갈 수 있나
+                "origin_cdn": p.get("origin_cdn") or "",
+                "in_store": bool(blob),              # False = 저장소에 행이 없다
+                "bytes": int(blob.get("bytes") or 0),
+                "cdn_url": str(blob.get("cdn_url") or "") or (p.get("origin_cdn") or ""),
+                "cdn_at": str(blob.get("cdn_at") or ""),
+                "cdn_error": str(blob.get("cdn_error") or ""),
+                "gone": bool(p.get("gone")),
+                "use": p["use"],
+                "reach": None,
+            }
+            if probe and page["outward"] and page["url"]:
+                page["reach"] = reach.check_one(page["url"])
+            pages.append(page)
         if pages:
             rows.append({"id": it.get("id"), "title": it.get("title") or "",
-                         "pages": pages})
+                         "pages": pages,
+                         # 「남은 장」의 분모도 같은 집합이다.
+                         "blocked": sum(1 for p in pages if not p["outward"])})
 
     # env는 **이름과 존재 여부만**. 값은 진단에도 안 나온다.
     env_names = ("CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET")
@@ -10826,7 +10832,11 @@ def image_storage_diag():
         backend=store.storage_backend(),
         cdn_ready=bf.cdn_ready(),
         env_state=env_state,
-        pending=len(blobs.pending_cdn(limit=500)),
+        # F34-2b: 「남은 장」의 분모를 **등록에 나가는 집합**으로 바꾼다. 예전엔
+        #   `pending_cdn`(= blob 표에서 cdn_url이 빈 행)이라, 번역된 적 없는 원본은
+        #   분모에 없었다 — 그래서 0인데 등록은 막혔다.
+        pending=sum(r["blocked"] for r in rows),
+        pending_blobs=len(blobs.pending_cdn(limit=500)),
         # F30-2: **왜 저장이 안 됐는지**를 화면이 말한다 — 연결·표 존재·마지막 쓰기 오류 원문.
         #   「오너 캡처 1장이 답」이 되려면 이만큼은 있어야 한다.
         db=blobs.probe(),
@@ -10836,12 +10846,33 @@ def image_storage_diag():
 
 @bp.post("/admin/image-storage/backfill")
 def image_storage_backfill_now():
-    """진단 화면에서 백필을 **지금** 돌린다 — 배포를 기다리지 않게."""
+    """진단 화면에서 백필을 **지금** 돌린다 — 배포를 기다리지 않게.
+
+    F34-2b: 번역본(blob)뿐 아니라 **번역 안 된 원본**도 올린다.
+    등록에 나가는 장은 **전부** 마켓이 가져갈 수 있는 주소여야 한다.
+    """
     guard = _require_real_admin()
     if guard is not None:
         return guard
     from src.services import image_cdn_backfill as bf
-    return jsonify(bf.run())
+    from . import collect_history_store
+
+    out = bf.run()
+    try:
+        items = collect_history_store.list_items(seller_ids=_seller_identities(),
+                                                 days=90, limit=200)
+    except Exception as exc:
+        logger.warning("[CDN 백필] 목록 조회 실패: %s", exc)
+        items = []
+    orig = bf.run_originals(items)
+    out["originals"] = orig
+    # 합계는 **둘을 더한 값**이다 — 한쪽만 세면 화면이 또 반쪽을 말한다.
+    out["uploaded"] = int(out.get("uploaded") or 0) + int(orig.get("uploaded") or 0)
+    out["failed"] = int(out.get("failed") or 0) + int(orig.get("failed") or 0)
+    out["results"] = list(out.get("results") or []) + list(orig.get("results") or [])
+    if not out.get("ok") and orig.get("ok"):
+        out["ok"] = True
+    return jsonify(out)
 
 
 @bp.get("/admin/image-translate-bench")
