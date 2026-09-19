@@ -90,6 +90,17 @@ class TestUploadResultFields:
 class TestPrevalidate:
     """UploadDispatcher.prevalidate() 단위 테스트."""
 
+    @pytest.fixture(autouse=True)
+    def _no_reach_probe(self, monkeypatch):
+        """F35-2: 여기서 재는 것은 **자격·필수값**이지 도달성이 아니다.
+
+        사전검증이 등록 직전에 「닿나」를 두드리게 됐는데, 이 클래스의 상점 주소는
+        가짜(`myshop.myshopify.com`)라 두드림이 실패한다 → 도달은 안 잰 것으로 둔다.
+        """
+        from src.seller_console import upload_dispatcher as UD
+        monkeypatch.setattr(UD, "market_reach",
+                            lambda m: {"ok": None, "ms": None, "detail": "테스트에서 미측정"})
+
     def _dispatcher(self):
         from src.seller_console.upload_dispatcher import UploadDispatcher
         return UploadDispatcher()
