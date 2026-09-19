@@ -112,6 +112,11 @@
             <td class="small">
               {% if p.cdn_url %}
               <span class="pc-badge pc-badge-on">CDN</span>
+              {# F34-2: CDN엔 있는데 초안이 아직 우리 주소를 가리키는 장.
+                 진단은 「대기 0」인데 등록에선 막히던 자리 — 이제 화면이 말한다. #}
+              {% if p.drifted %}
+              <span class="pc-badge pc-badge-off" title="초안이 아직 우리 서버 주소를 가리킵니다 — 등록에는 CDN 주소가 나갑니다">초안 미갱신</span>
+              {% endif %}
               {% else %}
               <span class="pc-badge pc-badge-off">아직 없음</span>
               {% endif %}

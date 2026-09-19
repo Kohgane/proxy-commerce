@@ -131,10 +131,18 @@ def run(limit: int = BATCH) -> dict:
                             "ok": False, "error": err})
             logger.warning("[CDN 백필] 실패 item=%s idx=%s: %s", item_id, idx, err)
             continue
-        blobs.set_cdn(item_id, idx, url, kind=kind)
-        _point_entry_at_cdn(item_id, idx, kind, url)
+        # F34-2: 초안 갱신 결과를 **버리면 안 된다.** 못 고치면 blob엔 CDN 주소가 있어
+        #   진단은 「대기 0」인데 등록은 여전히 우리 주소를 보내 막힌다 — 두 화면이
+        #   서로를 반박한다. (읽는 쪽도 이제 blob을 정본으로 보지만, 못 고쳤다는 사실은
+        #   사실대로 남긴다 — 조용한 반쪽 성공을 만들지 않는다.)
+        repointed = _point_entry_at_cdn(item_id, idx, kind, url)
+        note = "" if repointed else "CDN에는 올렸지만 초안이 그 주소를 가리키게 하지 못했습니다"
+        blobs.set_cdn(item_id, idx, url, kind=kind, error=note)
+        if not repointed:
+            logger.warning("[CDN 백필] 초안 미갱신 item=%s idx=%s kind=%s", item_id, idx, kind)
         uploaded += 1
-        results.append({"item_id": item_id, "idx": idx, "kind": kind, "ok": True, "error": ""})
+        results.append({"item_id": item_id, "idx": idx, "kind": kind, "ok": True,
+                        "repointed": repointed, "error": note})
 
     if uploaded or failed:
         logger.info("[CDN 백필] 올림 %s · 실패 %s · 건너뜀 %s (대기 %s)",
