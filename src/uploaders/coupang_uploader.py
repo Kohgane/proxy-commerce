@@ -1020,9 +1020,32 @@ class CoupangUploader(BaseUploader):
     def _generate_hmac_signature(self, method: str, url_path: str, date: str) -> str:
         """Coupang Wing API용 HMAC-SHA256 서명을 생성한다.
 
-        message = date + method + url_path (query string 포함)
+        message = date + method + path + query — **물음표는 빼고** (CEA 규칙)
+
+        ## F37 실측 (2026-09-19, 라이브)
+
+        | 경로 | 결과 |
+        |---|---|
+        | 반품지 `…/returnShippingCenters` (쿼리 **없음**) | **200** |
+        | 출고지 `…/outbound?pageNum=1&pageSize=50` | **401 Invalid signature** |
+
+        갈린 것은 **쿼리가 있느냐**뿐이었다. 우리는 `url_path`를 통째로 이어 붙였고,
+        거기엔 `?`가 들어 있었다. 쿠팡은 `?`를 **빼고** 서명한다
+        (`datetime + method + path + query`). 그래서 쿼리 없는 경로는 두 계산이
+        우연히 같아 200이었고, 쿼리가 붙는 순간에만 어긋났다.
+
+        > ★ **쿼리 없는 경로에서 통과한 서명은 「서명이 맞다」의 증거가 아니다.**
+        > 두 규칙이 같은 답을 내는 입력에서만 재 본 것이다.
+
+        레포 안의 독립 구현이 같은 규칙을 쓴다 —
+        `seller_console/market_adapters/coupang_adapter._hmac_sign`은
+        `f"{datetime_str}{method}{url_path}{query}"`로 잇고, 호출부가 `query`를
+        **`?` 없이**(`urlencode(params)`) 넘긴다. 이쪽만 어긋나 있었다.
+
+        첫 `?` 하나만 지운다 — 쿼리 **값** 안에 들어 있는 `?`는 서명 대상 문자열의
+        일부라 건드리면 안 된다.
         """
-        message = date + method + url_path
+        message = date + method + url_path.replace('?', '', 1)
         signature = hmac.new(
             self.secret_key.encode('utf-8'),
             message.encode('utf-8'),

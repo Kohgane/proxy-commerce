@@ -238,10 +238,20 @@ def test_a_400_still_comes_through_verbatim():
 
 
 def test_the_signature_covers_the_query_string():
-    """서명은 `date + method + url_path`이고 **쿼리를 포함**한다 — 경로에 붙여야 맞는다."""
-    src = (ROOT / "src/uploaders/coupang_uploader.py").read_text(encoding="utf-8")
-    fn = re.search(r"def _generate_hmac_signature\(.*?\n(?=\n    def )", src, re.S)
-    assert fn and "query string 포함" in fn.group(0)
+    """서명에 **쿼리가 들어간다** — 그래서 호출부가 쿼리를 경로에 붙여야 맞는다.
+
+    ※ F37(2026-09-19): 이 계약은 원래 **docstring에 「query string 포함」이라 적혀 있나**를
+      읽었다. 그 문장은 참이었고, 그런데도 라이브는 401이었다 — 쿼리는 포함하되
+      **`?`는 빼야** 한다는 걸 아무도 안 쟀기 때문이다.
+      주석을 읽는 계약은 코드가 틀려도 초록이다. **서명되는 문자열을 직접 잰다.**
+      `?` 제거 자체는 `test_f37_hmac_query_signature.py`가 정본이다.
+    """
+    from src.uploaders.coupang_uploader import CoupangUploader
+    up = CoupangUploader.__new__(CoupangUploader)
+    up.secret_key = "sk"
+    a = up._generate_hmac_signature("GET", "/v2/x/outbound?pageNum=1", "260919T000000Z")
+    b = up._generate_hmac_signature("GET", "/v2/x/outbound?pageNum=2", "260919T000000Z")
+    assert a != b, "쿼리가 바뀌어도 서명이 같다 = 쿼리를 안 서명한다"
     look = (ROOT / "src/seller_console/coupang_shipping_lookup.py").read_text(encoding="utf-8")
     body = "\n".join(l for l in look.splitlines() if not l.strip().startswith("#"))
     assert "OUTBOUND_PLACES_PATH + OUTBOUND_PLACES_QUERY" in body
