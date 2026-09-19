@@ -103,19 +103,28 @@ def test_we_do_not_dig_deeper_than_one_level():
     assert "COUPANG_RETURN_ZIP_CODE" not in out["return_centers"]["entries"][0]["values"]
 
 
-def test_the_candidate_dictionary_was_not_touched():
-    """★ **후보 이름을 지어내지 않았다** — 하위 키 이름은 아직 미실측이다.
+def test_candidate_names_are_never_invented():
+    """★ **후보 이름을 지어내지 않는다** — 오너가 준 이름과 실측된 이름만 쓴다.
 
-    이 판이 한 일은 「같은 후보를 더 넓은 자리에서 찾는다」까지다.
+    F32-2에서는 「이 판에선 사전을 아예 안 건드린다」로 못 박았었다.
+    F34-3에서 오너가 **`addressDetail`은 기본주소가 아니다**라고 지목했고,
+    상세주소 후보 이름(`returnAddressDetail`)도 함께 줬다 — 그건 실측이지 발명이 아니다.
+    그래서 계약을 **의도**로 옮긴다(최신 우선): 「안 건드린다」가 아니라 **「안 지어낸다」**.
     """
     from src.seller_console import coupang_shipping_lookup as L
     assert L.RETURN_FIELD_CANDIDATES["COUPANG_RETURN_ZIP_CODE"] == (
         "returnZipCode", "zipCode", "postCode", "postalCode")
+    # F34-3: 상세주소는 기본주소 후보에서 빠지고 **자기 칸**으로 갔다.
     assert L.RETURN_FIELD_CANDIDATES["COUPANG_RETURN_ADDRESS"] == (
-        "returnAddress", "address", "addressDetail", "roadAddress")
+        "returnAddress", "address", "roadAddress")
+    assert L.RETURN_FIELD_CANDIDATES["COUPANG_RETURN_ADDRESS_DETAIL"] == (
+        "returnAddressDetail",)
     assert L.OUTBOUND_FIELD_CANDIDATES["COUPANG_OUTBOUND_SHIPPING_PLACE_CODE"] == (
         "outboundShippingPlaceCode", "shippingPlaceCode",
         "outboundShippingPlaceId", "placeCode")
+    # 후보는 전부 **우리 env 이름**을 키로 갖고, 값은 쿠팡이 준 이름뿐이다.
+    for env in L.RETURN_FIELD_CANDIDATES:
+        assert env.startswith("COUPANG_"), env
 
 
 def test_the_live_top_level_shape_still_maps_what_it_can():

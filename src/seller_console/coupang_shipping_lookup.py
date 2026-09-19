@@ -46,11 +46,18 @@ OUTBOUND_PLACES_QUERY = "?pageNum=1&pageSize=50"
 RETURN_FIELD_CANDIDATES: Dict[str, tuple] = {
     "COUPANG_RETURN_CENTER_CODE": ("returnCenterCode", "shippingPlaceCode", "centerCode"),
     "COUPANG_RETURN_ZIP_CODE": ("returnZipCode", "zipCode", "postCode", "postalCode"),
-    "COUPANG_RETURN_ADDRESS": ("returnAddress", "address", "addressDetail", "roadAddress"),
+    # F34-3(오너 2026-09-19): `addressDetail`은 **기본주소가 아니라 상세주소**다.
+    #   기본주소 칸에 「4층 101호」가 들어가면, 그 값은 보이는 자리에선 그럴듯하고
+    #   쿠팡에 나가는 순간 틀린다 — **같은 줄에 두 뜻을 담지 않는다.**
+    "COUPANG_RETURN_ADDRESS": ("returnAddress", "address", "roadAddress"),
+    "COUPANG_RETURN_ADDRESS_DETAIL": ("returnAddressDetail",),
     "COUPANG_RETURN_CHARGE_NAME": ("returnChargeName", "shippingPlaceName", "placeName", "name"),
     "COUPANG_COMPANY_CONTACT_NUMBER": ("companyContactNumber", "phoneNumber", "phoneNumber1",
                                        "contactNumber", "tel"),
 }
+# 채워지면 좋지만 **없어도 등록이 되는** 칸 — 「미매핑」으로 세지 않는다 (F34-3).
+OPTIONAL_FIELDS = frozenset({"COUPANG_RETURN_ADDRESS_DETAIL"})
+
 OUTBOUND_FIELD_CANDIDATES: Dict[str, tuple] = {
     "COUPANG_OUTBOUND_SHIPPING_PLACE_CODE": ("outboundShippingPlaceCode", "shippingPlaceCode",
                                              "outboundShippingPlaceId", "placeCode"),
@@ -209,7 +216,10 @@ def fetch(account: str = "") -> dict:
     for block in (ret, out):
         for e in block.get("entries") or []:
             filled |= set(e["values"])
-    wanted = set(RETURN_FIELD_CANDIDATES) | set(OUTBOUND_FIELD_CANDIDATES)
+    # F34-3: 상세주소는 **선택 칸**이다(화면 라벨도 「(선택)」). 못 채웠다고 「미매핑」에
+    #   세면, 다 채워진 응답에도 빨간 칸이 하나 남아 사람이 없는 값을 찾게 된다.
+    wanted = ((set(RETURN_FIELD_CANDIDATES) | set(OUTBOUND_FIELD_CANDIDATES))
+              - OPTIONAL_FIELDS)
     return {"ok": bool(ret["ok"] or out["ok"]), "account": acct, "vendor_id": vendor_id,
             "return_centers": ret, "outbound_places": out,
             "unmapped": sorted(wanted - filled)}
