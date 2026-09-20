@@ -1829,6 +1829,11 @@ def collect_upload():
                     originals=product_data.get("detail_images") or [])
                 if _dt:
                     product_data["detail_images"] = _dt
+                # F42e: 상세에 **갤러리와 같은 장**이 섞여 있었다(실측: 상세 1·2 = 갤러리 1).
+                #   같은 사진을 세 번 올리면 상품 페이지가 같은 그림으로 찬다.
+                _g, _d = _its.drop_cross_duplicates(product_data.get("images") or [],
+                                                    product_data.get("detail_images") or [])
+                product_data["images"], product_data["detail_images"] = _g, _d
                 _warn_pages = _its.effective_summary(_uex).get("warn_idx") or []
     except Exception as exc:
         logger.warning("[등록] 번역본 반영 실패(원본으로 계속): %s", exc)

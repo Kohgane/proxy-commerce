@@ -125,7 +125,7 @@ class TestPrevalidate:
         monkeypatch.delenv("COUPANG_SECRET_KEY", raising=False)
         monkeypatch.delenv("COUPANG_VENDOR_ID", raising=False)
 
-        product = {"title": "테스트 상품", "price": 10000}
+        product = {"title": "테스트 상품", "title_en": "Umbrella", "price": 10000}
         results = self._dispatcher().prevalidate(product, ["coupang"])
         assert len(results) == 1
         assert results[0].ok is False
@@ -146,7 +146,7 @@ class TestPrevalidate:
         """가격 없을 때 missing_field 오류."""
         self._set_coupang_envs(monkeypatch)
 
-        product = {"title": "좋은 상품", "price": 0}
+        product = {"title": "좋은 상품", "title_en": "Umbrella", "price": 0}
         results = self._dispatcher().prevalidate(product, ["coupang"])
         assert results[0].ok is False
         assert results[0].error_code == "missing_field"
@@ -155,7 +155,7 @@ class TestPrevalidate:
         """필수 필드 + 환경변수 모두 있으면 통과."""
         self._set_coupang_envs(monkeypatch)
 
-        product = {"title": "좋은 상품", "price": 9900}
+        product = {"title": "좋은 상품", "title_en": "Umbrella", "price": 9900}
         results = self._dispatcher().prevalidate(product, ["coupang"])
         assert results[0].ok is True
 
@@ -192,7 +192,7 @@ class TestPrevalidate:
         monkeypatch.setenv("SHOPIFY_AUTO_TOKEN", "atk_ok")
         monkeypatch.delenv("COUPANG_ACCESS_KEY", raising=False)
 
-        product = {"title": "테스트", "price": 5000}
+        product = {"title": "테스트", "title_en": "Umbrella", "price": 5000}
         results = self._dispatcher().prevalidate(product, ["shopify", "coupang"])
         assert len(results) == 2
         shopify_r = next(r for r in results if r.market == "shopify")
@@ -294,7 +294,7 @@ class TestUploadFailureHandling:
         result = dispatcher.dispatch(
             # F42a: 가격 게이트가 검증보다 **먼저** 선다(원가 그대로 등록 금지).
             #   이 계약이 재는 것은 **검증/API 실패 코드**라, 가격은 풀리게 두고 그 경로까지 간다.
-            {"title": "", "price": 100, "currency": "KRW"}, ["shopify"])
+            {"title": "", "title_en": "Umbrella", "price": 100, "currency": "KRW"}, ["shopify"])
         r = result.results[0]
         assert r.success is False
         assert r.error_code == "validation_failed"
@@ -603,7 +603,7 @@ class TestWooCommerceUploadPath:
         monkeypatch.setattr(woo, "prepare_product_data", fake_prepare)
         monkeypatch.setattr(woo, "upsert_product", fake_upsert)
 
-        product = {"title": "코가네백", "sell_price_krw": 88000, "sku": "SKU-1"}
+        product = {"title": "코가네백", "title_en": "Umbrella", "sell_price_krw": 88000, "sku": "SKU-1"}
         result = mod.UploadDispatcher()._upload_woocommerce(product)
         assert result.success is True
         assert result.external_product_id == "999"

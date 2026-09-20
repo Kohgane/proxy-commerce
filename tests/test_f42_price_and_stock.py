@@ -126,7 +126,7 @@ def test_an_unresolvable_price_is_refused_not_guessed(dispatcher):
 
 def test_shopify_holds_instead_of_listing_the_cost(dispatcher, monkeypatch):
     """★★ 판매가를 못 내면 **등록하지 않는다**(원가 등록 금지)."""
-    res = dispatcher._upload_shopify({"title": "수행방패", "price": 100})
+    res = dispatcher._upload_shopify({"title": "수행방패", "title_en": "Umbrella", "price": 100})
     assert res.success is False
     assert res.error_code == "price_unresolved"
     assert "원가 그대로" in (res.hint or ""), res.hint
@@ -148,7 +148,7 @@ def test_shopify_sends_the_store_currency(dispatcher, monkeypatch):
 
     monkeypatch.setattr("src.markets.adapters.shopify.ShopifyAdapter", _Adapter)
     monkeypatch.setenv("SHOPIFY_STORE_CURRENCY", "USD")
-    dispatcher._upload_shopify({"title": "수행방패", "price_original": 29.9, "currency": "CNY"})
+    dispatcher._upload_shopify({"title": "수행방패", "title_en": "Umbrella", "price_original": 29.9, "currency": "CNY"})
     assert sent["currency"] == "USD", sent
     assert sent["price"] > 29.9 * CNYKRW / USDKRW, sent
 
