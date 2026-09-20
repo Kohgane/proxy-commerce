@@ -10916,6 +10916,12 @@ def image_storage_backfill_now():
     out["results"] = list(out.get("results") or []) + list(orig.get("results") or [])
     if not out.get("ok") and orig.get("ok"):
         out["ok"] = True
+    # F34-2c 실측(오너 2026-09-20): 결과가 「상세 1번째 · 올림」 ×3이라 **어느 상품인지 알 수 없었다.**
+    #   `item_id`는 실려 있었지만 사람이 읽는 이름이 아니다. 제목 앞 20자를 붙인다.
+    _titles = {str(it.get("id") or ""): str(it.get("title") or "") for it in items}
+    for _r in out.get("results") or []:
+        _t = _titles.get(str(_r.get("item_id") or ""), "")
+        _r["title"] = _t[:20]
     return jsonify(out)
 
 

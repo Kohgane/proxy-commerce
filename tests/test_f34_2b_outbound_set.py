@@ -145,10 +145,15 @@ def test_only_scheme_relative_urls_are_expanded(raw, expect):
 
 
 def test_an_unexpandable_original_reports_why():
-    """못 펴면 **왜 못 폈는지** 말한다 — 조용히 건너뛰면 또 안 보인다."""
+    """못 펴면 **왜 못 폈는지** 말한다 — 조용히 건너뛰면 또 안 보인다.
+
+    ※ F34-2d: 문장이 바뀌었다. 상대 경로는 이제 **그 상품의 소스 페이지**로 푼다 —
+      못 푸는 건 그 기준조차 없을 때뿐이다. 계약은 **의도**(사유를 말한다)를 재고,
+      상대 경로 해석 자체는 `test_f34_2cd_…`가 정본이다.
+    """
     from src.services.image_cdn_backfill import fetch_original
     raw, err = fetch_original("/img/a.jpg")
-    assert raw == b"" and "호스트 미상" in err
+    assert raw == b"" and "소스 페이지 주소도 없습니다" in err, err
 
 
 def test_a_supplier_error_is_reported_verbatim():

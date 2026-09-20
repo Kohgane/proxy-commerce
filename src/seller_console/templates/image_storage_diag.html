@@ -195,14 +195,24 @@
         var head = '올림 ' + (d.uploaded || 0) + ' · 실패 ' + (d.failed || 0) +
           ' · 건너뜀 ' + (d.skipped || 0);
         var rows = (d.results || []).map(function (r) {
+          // F34-2c: 「상세 1번째 · 올림」만으로는 **어느 상품인지 알 수 없다**(오너 실측).
+          //   제목 앞 20자를 앞에 붙인다 — 같은 화면에 여러 상품이 섞여 있다.
+          var who = r.title ? r.title + ' · ' : '';
           var where = (r.kind === 'detail' ? '상세 ' : '갤러리 ') + ((r.idx || 0) + 1) + '번째';
           var mark = r.ok ? (r.skipped ? '건너뜀' : '올림') : '실패';
           var why = r.error ? ' — ' + r.error : '';
           return '<li style="color:' + (r.ok ? 'var(--muted)' : 'var(--danger)') + '">' +
-            where + ' · ' + mark + why + '</li>';
+            who + where + ' · ' + mark + why + '</li>';
         }).join('');
         out.innerHTML = '<div>' + head + '</div>' +
           (rows ? '<ul class="mt-1 mb-0">' + rows + '</ul>' : '');
+        // F34-2c 실측(오너): 요약은 「올림 2」인데 **아래 표는 전부 「아직 없음」**이었다.
+        //   표는 페이지를 열 때 서버가 그린 것이라 이 응답을 모른다 — 두 화면이 서로를
+        //   반박한다(F34-2의 모양). 올린 게 있으면 표를 **다시 그려** 맞춘다.
+        if ((d.uploaded || 0) > 0) {
+          out.innerHTML += '<div class="text-muted mt-1">표를 새로 불러옵니다…</div>';
+          setTimeout(function () { location.reload(); }, 1200);
+        }
         out.style.color = (d.failed ? 'var(--warn)' : 'var(--teal)');
         // 실패가 있으면 **새로고침하지 않는다** — 사유를 읽기도 전에 화면이 사라진다.
         if (d.uploaded && !d.failed) setTimeout(function () { location.reload(); }, 1500);

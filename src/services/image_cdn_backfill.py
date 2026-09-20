@@ -64,7 +64,7 @@ def _upload(raw: bytes) -> tuple:
     return "", scrub_infra(str(res.get("error") or "업로드가 주소를 돌려주지 않았습니다"))
 
 
-def normalize_outward(url: str) -> str:
+def normalize_outward(url: str, base_url: str = "") -> str:
     """마켓이 가져갈 수 있는 **절대 주소**로 편다. 못 펴면 빈 문자열 (F34-2b).
 
     확장이 `data-src`·`srcset` **원문 그대로**를 보낸다(`content_script.js:239` 등 —
@@ -76,8 +76,16 @@ def normalize_outward(url: str) -> str:
     (그게 안전한 기본값이다). 그래서 그런 장은 등록에서 「우리 서버 주소」로 막힌다 —
     **메시지는 정확하지 않지만 판정은 옳다**(마켓은 그 주소를 못 연다).
 
-    여기서는 **`//`만 편다.** 사이트 상대 경로(`/img/a.jpg`)는 어느 호스트의 것인지
-    모르므로 **지어내지 않는다** — 빈 문자열을 내고, 호출부가 「원본 주소를 못 폅니다」라고 말한다.
+    ## F34-2d — 상대 경로는 **그 상품의 소스 페이지**를 기준으로 편다
+
+    F34-2b에선 사이트 상대 경로(`/img/a.jpg`)를 「호스트 미상」으로 두었다. 호스트를
+    지어내면 안 되니까. 그런데 **지어낼 필요가 없었다** — 그 이미지가 실려 있던 페이지 주소가
+    수집 시점에 저장돼 있다(행의 `url`). 브라우저가 그 페이지에서 하는 일과 **같은 계산**이다.
+
+    > ★ **발명과 참조는 다르다.** 호스트를 만들어 내는 건 발명이고,
+    > **그 이미지가 있던 페이지**를 기준으로 푸는 건 참조다.
+
+    `base_url`이 없으면 예전대로 「호스트 미상」이다 — 그땐 정말 모른다.
     """
     u = str(url or "").strip()
     if not u:
@@ -86,18 +94,24 @@ def normalize_outward(url: str) -> str:
         return "https:" + u
     if u.startswith(("http://", "https://")):
         return u
+    base = str(base_url or "").strip()
+    if base.startswith(("http://", "https://")):
+        from urllib.parse import urljoin
+        joined = urljoin(base, u)
+        return joined if joined.startswith(("http://", "https://")) else ""
     return ""
 
 
-def fetch_original(url: str, *, timeout: int = 15) -> tuple:
+def fetch_original(url: str, *, timeout: int = 15, base_url: str = "") -> tuple:
     """원본 이미지 바이트를 가져온다 — `(bytes, error)`. 하나만 채워진다 (F34-2b).
 
     번역본은 우리가 만들었으니 바이트가 저장소에 있다. **원본은 없다** —
     CDN에 올리려면 공급사에서 한 번 받아 와야 한다.
     """
-    direct = normalize_outward(url)
+    direct = normalize_outward(url, base_url)
     if not direct:
-        return b"", "원본 주소를 절대 주소로 펴지 못했습니다(호스트 미상)"
+        return b"", ("원본 주소를 절대 주소로 펴지 못했습니다"
+                     "(상대 경로인데 그 상품의 소스 페이지 주소도 없습니다)")
     try:
         import requests
     except Exception as exc:                                   # pragma: no cover
@@ -144,13 +158,17 @@ def run_originals(items, limit: int = BATCH) -> dict:
         except Exception:
             continue
         changed = False
+        # F34-2d: 상대 경로를 풀 기준 = **그 상품의 소스 페이지**. 수집 시점에 저장된
+        #   실측값이다(행의 `url`) — 호스트를 지어내는 것과 다르다.
+        from src.seller_console.upload_dispatcher import draft_url
+        base = str(it.get("url") or "").strip() or draft_url(extra)
         for p in store.outbound_missing(extra, item_id=item_id):
             if uploaded + failed >= limit:
                 break
             # 번역본이 나가는 장은 번역본 백필(`run`)의 몫이다 — 여기선 원본만 본다.
             if p.get("source") == "translated":
                 continue
-            raw, err = fetch_original(p.get("original") or "")
+            raw, err = fetch_original(p.get("original") or "", base_url=base)
             if not raw:
                 failed += 1
                 results.append({"item_id": item_id, "kind": p["kind"], "idx": p["idx"],
