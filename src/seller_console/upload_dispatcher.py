@@ -15,9 +15,11 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# 초안이 상품 주소를 담는 **이름들**. 한 필드에 두 이름이 붙은 것이 이번 사건의 근원이다 (F39).
-#   읽는 순서 = 우선순위. 앞의 것이 있으면 그걸 쓴다.
-DRAFT_URL_KEYS = ("url", "source_url", "product_url")
+# 초안이 상품 주소를 담는 **이름들**. 한 필드에 두 이름이 붙은 것이 F39의 근원이었다.
+#   F40 실측(2026-09-20): 텔레그램/공유 수집은 `extra`에 **`final_url`**(폰이 편 최종 주소)을 담고
+#   `url` 키는 **아예 안 만든다**(`share_collect.py`의 extra 키 실측: title·…·final_url·share_raw).
+#   행의 `url` 컬럼(= 「원본 보기」가 읽는 그 값)은 정규형이지만 **extra에는 없다.**
+DRAFT_URL_KEYS = ("url", "final_url", "source_url", "product_url")
 
 
 def draft_url(product_data: Dict[str, Any]) -> str:
@@ -39,13 +41,34 @@ def draft_url(product_data: Dict[str, Any]) -> str:
 
     F34-2의 사본 드리프트와 **같은 모양**이다 — 거기선 한 사실이 두 표에 있었고,
     여기선 한 값이 두 이름으로 있다. 둘 다 답은 「한 자리에서 꺼낸다」다.
+
+    ## F40 — **펴진 최종 주소**를 고른다
+
+    2차 실측(2026-09-20): F39 배포 뒤에도 빈값이었다. 「원본 보기」는 티몰 정규형을 여는데
+    페이로드는 아무것도 못 찾았다 — **읽는 자리가 달랐다**(그쪽은 행의 `url` 컬럼, 이쪽은 `extra`).
+
+    그리고 이름이 여럿일 때 **어느 것을 고르느냐**도 문제다. 공유 링크(`e.tb.cn/h.…?tk=…`)는
+    주소이긴 하지만 **상품번호가 없다.** 먼저 나온 이름이 그거면 빈 SKU가 그대로 나간다.
+
+    > ★★ **후보가 여럿이면 「있는 것」이 아니라 「쓸 수 있는 것」을 고른다.**
+    > 상품번호가 나오는 주소를 먼저 찾고, 없을 때만 아무 주소나 쓴다.
+
+    공유 링크는 그래서 **최후 폴백**이 된다 — 규칙을 따로 쓰지 않아도(호스트 목록 하드코딩
+    없이) 그렇게 된다.
     """
     d = product_data if isinstance(product_data, dict) else {}
-    for key in DRAFT_URL_KEYS:
-        val = str(d.get(key) or "").strip()
-        if val:
-            return val
-    return ""
+    cands = [str(d.get(k) or "").strip() for k in DRAFT_URL_KEYS]
+    cands = [c for c in cands if c]
+    if not cands:
+        return ""
+    try:
+        from src.collectors.product_key import vendor_sku
+        for c in cands:
+            if vendor_sku(c):
+                return c
+    except Exception as exc:                  # 식별자 계산 실패가 주소 선택을 막지 않는다
+        logger.warning("[등록] 주소 선택 중 식별자 계산 실패(첫 후보 사용): %s", exc)
+    return cands[0]
 
 
 def render_detail_blocks_html(detail_blocks: Any, market: str) -> str:
@@ -466,6 +489,11 @@ class UploadDispatcher:
         """
         # F39: `url` 하나만 읽으면 `ProductDraft.to_dict()`(→ `source_url`) 초안에서 빈값이 된다.
         url = draft_url(product_data)
+        # F40: **고른 주소를 로그에 남긴다.** 오너 지시 — 이건 URL이라 마스킹 대상이 아니다.
+        #   2차 실측 때 이 한 줄이 있었으면 한 판 아꼈다(화면은 열리는데 등록은 빈값이었다).
+        logger.info("[등록] 주소 선택 url=%s 후보키=%s",
+                    url or "(없음)",
+                    [k for k in DRAFT_URL_KEYS if str(product_data.get(k) or "").strip()])
         result = DispatchResult(product_url=url)
 
         # 원화 마켓용 sell_price_krw가 없으면 원문가+목표 마진율로 산정해 주입.

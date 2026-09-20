@@ -1813,6 +1813,12 @@ def collect_upload():
             if _uit:
                 from src.services import image_translate_store as _its
                 _uex = json.loads(_uit.get("extra_json") or "{}") or {}
+                # F40: 주소는 **행의 `url` 컬럼**이 정본이다(「원본 보기」가 여는 그 값).
+                #   폼이 안 실어 보냈으면 여기서 채운다 — 화면과 등록이 다른 주소를 보면
+                #   「화면은 열리는데 등록은 알 수 없는 사이트」가 된다.
+                from .upload_dispatcher import draft_url as _durl
+                if not _durl(product_data) and _uit.get("url"):
+                    product_data["url"] = _uit.get("url")
                 _eff = _its.effective_images(_uex, item_id=_uid,
                                              originals=product_data.get("images") or [])
                 if _eff:
@@ -2244,6 +2250,13 @@ def collect_bulk_upload():
                 if not product:
                     product = {"title": item.get("title"), "url": item.get("url"),
                                "price": item.get("price"), "currency": item.get("currency")}
+                # F40: 행의 `url` 컬럼(= 「원본 보기」가 여는 그 주소)을 **항상** 싣는다.
+                #   예전엔 `extra_json`이 비었을 때만 넣었는데, 텔레그램/공유 수집의 extra는
+                #   비어 있지 않고 **`url` 키가 없다**(`final_url`만 있다) → 페이로드에 주소가
+                #   통째로 없었다. 화면은 주소를 여는데 등록은 「알 수 없는 사이트」라고 했다.
+                from .upload_dispatcher import draft_url as _durl
+                if not _durl(product) and item.get("url"):
+                    product["url"] = item.get("url")
                 if target_margin_pct is not None:
                     try:
                         product["target_margin_pct"] = float(target_margin_pct)
