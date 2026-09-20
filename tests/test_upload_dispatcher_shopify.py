@@ -55,6 +55,9 @@ def test_upload_dispatcher_shopify_validate_failure(monkeypatch):
 
     monkeypatch.setattr("src.markets.adapters.shopify.ShopifyAdapter", _FakeAdapter)
     dispatcher = mod.UploadDispatcher()
-    result = dispatcher.dispatch({"title": "", "price_original": 10, "currency": "USD"}, ["shopify"])
+    result = dispatcher.dispatch(
+        # F42d: 영문 제목이 없으면 Shopify는 **보류**다. 이 계약이 재는 건
+        #   어댑터의 검증 실패가 화면까지 오는가이므로, 제목은 풀리게 두고 그 경로까지 간다.
+        {"title": "", "title_en": "Umbrella", "price_original": 10, "currency": "USD"}, ["shopify"])
     assert result.failed == 1
     assert "validation failed" in result.results[0].message

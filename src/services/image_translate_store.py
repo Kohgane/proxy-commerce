@@ -504,6 +504,33 @@ def outbound_pages(extra: dict, *, item_id: str = "") -> list:
     return pages
 
 
+def drop_cross_duplicates(gallery: list, detail: list) -> tuple:
+    """상세에서 **갤러리와 같은 장**을 덜어낸다 — `(gallery, detail)` (F42e).
+
+    실측(오너 2026-09-20 카나리 1호): **상세 1·2가 갤러리 1과 같은 파일**이었다.
+    같은 사진을 세 번 올리면 상품 페이지가 같은 그림으로 채워진다.
+
+    갤러리를 남기고 상세에서 뺀다 — 갤러리가 **대표**이고, 상세는 보조다.
+
+    ## 무엇으로 「같다」고 하나 — 한계를 적는다
+
+    **나가는 주소가 같으면** 같은 장으로 본다. 바이트 해시는 쓰지 않는다 —
+    그러려면 등록할 때마다 모든 이미지를 **내려받아야** 하고, 그 비용이 이 결함보다 크다.
+
+    > ★ **같은 그림이 다른 주소로 두 번 오면 이 방법은 못 잡는다.**
+    > 그건 못 한다고 적어 둔다(측정 범위를 함께 적는 규칙).
+    """
+    seen = {str(u).strip() for u in (gallery or []) if str(u or "").strip()}
+    out = []
+    for u in (detail or []):
+        s = str(u or "").strip()
+        if not s or s in seen:
+            continue
+        seen.add(s)
+        out.append(u)
+    return list(gallery or []), out
+
+
 def outbound_missing(extra: dict, *, item_id: str = "") -> list:
     """등록에 나가는 장 중 **마켓이 못 가져가는** 것들. 백필이 손봐야 할 목록이다."""
     return [p for p in outbound_pages(extra, item_id=item_id) if not p["outward"]]

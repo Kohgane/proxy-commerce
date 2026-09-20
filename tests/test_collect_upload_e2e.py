@@ -71,7 +71,7 @@ def _patch_shopify_adapter(monkeypatch, *, validate_ok=True, upload_ok=True,
 
 _PRODUCT = {
     "title": "데모 상품",
-    "price": 19.9,
+    "title_en": "Umbrella", "price": 19.9,
     "currency": "USD",
     "sku": "DEMO-001",
     "images": [],  # 빈 이미지 → prevalidate의 HEAD 체크 비대상 (업로드 경로엔 영향 없음)

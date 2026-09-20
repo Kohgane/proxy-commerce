@@ -10,6 +10,7 @@ from __future__ import annotations
 import html as _html
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -20,6 +21,9 @@ logger = logging.getLogger(__name__)
 #   `url` 키는 **아예 안 만든다**(`share_collect.py`의 extra 키 실측: title·…·final_url·share_raw).
 #   행의 `url` 컬럼(= 「원본 보기」가 읽는 그 값)은 정규형이지만 **extra에는 없다.**
 DRAFT_URL_KEYS = ("url", "final_url", "source_url", "product_url")
+
+# F42d: 한글이 섞여 있으면 영문 제목이 아니다 — 글자로 재는 판정(짐작 0).
+_HANGUL_RE = re.compile(r"[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]")
 
 
 def draft_url(product_data: Dict[str, Any]) -> str:
@@ -720,6 +724,20 @@ class UploadDispatcher:
         _blocks_html = render_detail_blocks_html(payload.get("detail_blocks"), market)
         if _blocks_html:
             payload["description_html"] = _blocks_html
+        # F42b 실측(오너 2026-09-20 카나리 1호): 상세설명에 **티몰 셀러 카드**가 들어갔다
+        #   (旗舰店·88VIP·发货·回复). 남의 가게 광고를 우리 상세로 내보낸 셈이다.
+        #   **여기가 모든 마켓이 지나는 한 자리**다 — 마켓마다 걸면 언젠가 한 마켓이 빠진다
+        #   (F42a에서 Shopify가 그렇게 빠져 있었다).
+        #   셀러가 직접 꾸민 블록(`detail_blocks`)은 **사람이 만든 것**이라 건드리지 않는다.
+        if not _blocks_html:
+            try:
+                from src.collectors.universal_scraper import strip_seller_card
+                for _k in ("description_html", "description"):
+                    _v = payload.get(_k)
+                    if isinstance(_v, str) and _v.strip():
+                        payload[_k] = strip_seller_card(_v)
+            except Exception as exc:        # 정제 실패가 등록을 막지 않는다
+                logger.warning("[등록] 셀러 카드 정제 실패(원문 유지): %s", exc)
         localized_map = payload.get("localized") if isinstance(payload.get("localized"), dict) else {}
         try:
             from src.markets.adapters.base import get_marketplace_meta
@@ -1002,8 +1020,26 @@ class UploadDispatcher:
                     hint=("원가·통화·환율을 확인하세요. 원가 그대로 올리면 마진·배송비가 빠져 "
                           "팔수록 손해입니다."))
 
+            # F42d 실측(오너 2026-09-20): Shopify(US 스토어)에 **한국어 제목**이 올라갔다.
+            #   미국 손님은 그 제목을 못 읽는다 — 「원문 사용」은 답이 아니다(오너).
+            #   영문 제목이 없으면 **등록하지 않는다.** 한글이 섞여 있으면 영문 제목이 아니다
+            #   (호스트별 짐작이 아니라 **글자로 재는** 판정이다).
+            _title = str(product_data.get("title_en")
+                         or product_data.get("title_original") or "").strip()
+            if not _title or _HANGUL_RE.search(_title):
+                _title = ""
+            if not _title:
+                _ko = str(product_data.get("title") or product_data.get("title_ko") or "").strip()
+                if _ko and not _HANGUL_RE.search(_ko):
+                    _title = _ko        # 애초에 영문 제목이면 그대로 쓴다
+            if not _title:
+                return UploadResult(
+                    market="shopify", success=False, error_code="title_not_english",
+                    message="영문 제목이 없어 등록하지 않았습니다(한국어 제목을 그대로 올리지 않습니다).",
+                    hint="편집 화면에서 영문 상품명을 채우거나 번역을 돌린 뒤 다시 등록하세요.")
+
             payload = ListingPayload(
-                title=str(product_data.get("title") or product_data.get("title_ko") or "").strip(),
+                title=_title,
                 # v86-O: 셀러가 꾸민 상세(블록→description_html, _payload_for_market서 주입)를
                 #   Shopify body_html로 반영. 블록 없으면 기존 plain description 폴백(회귀 0).
                 description=str(product_data.get("description_html") or product_data.get("description") or "").strip(),

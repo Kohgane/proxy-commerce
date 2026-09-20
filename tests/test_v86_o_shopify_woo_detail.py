@@ -35,7 +35,7 @@ def _dispatch_shopify_capture(monkeypatch, product):
 
 def test_shopify_uses_block_html_when_present(monkeypatch):
     product = {
-        "url": "https://example.com/i", "title": "우산", "price_original": 10, "currency": "USD",
+        "url": "https://example.com/i", "title": "우산", "title_en": "Umbrella", "price_original": 10, "currency": "USD",
         "description": "간단한 원문", "sku": "S1",
         "detail_blocks": {"common": [{"type": "text", "content": "블록 상세 본문"}]},
     }
@@ -47,7 +47,7 @@ def test_shopify_uses_block_html_when_present(monkeypatch):
 
 def test_shopify_falls_back_to_plain_description(monkeypatch):
     product = {
-        "url": "https://example.com/i", "title": "우산", "price_original": 10, "currency": "USD",
+        "url": "https://example.com/i", "title": "우산", "title_en": "Umbrella", "price_original": 10, "currency": "USD",
         "description": "원문 설명 유지", "sku": "S1",
     }
     payload = _dispatch_shopify_capture(monkeypatch, product)
@@ -85,7 +85,7 @@ def test_woo_prepare_product_data_carries_seller_description():
 def test_woo_end_to_end_blocks_reach_description():
     # _payload_for_market(블록→description_html) → to_collected → catalog_row.description → 본문 반영.
     product = {
-        "title": "우산", "price": "12000", "currency": "KRW", "sell_price_krw": 19900,
+        "title": "우산", "title_en": "Umbrella", "price": "12000", "currency": "KRW", "sell_price_krw": 19900,
         "detail_blocks": {"common": [{"type": "text", "content": "우드케이스 상세"}]},
     }
     payload, _ = mod.UploadDispatcher._payload_for_market(product, "woocommerce")
