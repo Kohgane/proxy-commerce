@@ -291,7 +291,10 @@ class TestUploadFailureHandling:
 
         monkeypatch.setattr("src.markets.adapters.shopify.ShopifyAdapter", _FakeAdapter)
         dispatcher = mod.UploadDispatcher()
-        result = dispatcher.dispatch({"title": "", "price": 100}, ["shopify"])
+        result = dispatcher.dispatch(
+            # F42a: 가격 게이트가 검증보다 **먼저** 선다(원가 그대로 등록 금지).
+            #   이 계약이 재는 것은 **검증/API 실패 코드**라, 가격은 풀리게 두고 그 경로까지 간다.
+            {"title": "", "price": 100, "currency": "KRW"}, ["shopify"])
         r = result.results[0]
         assert r.success is False
         assert r.error_code == "validation_failed"
@@ -312,7 +315,10 @@ class TestUploadFailureHandling:
 
         monkeypatch.setattr("src.markets.adapters.shopify.ShopifyAdapter", _FakeAdapter)
         dispatcher = mod.UploadDispatcher()
-        result = dispatcher.dispatch({"title": "T", "price": 100}, ["shopify"])
+        result = dispatcher.dispatch(
+            # F42a: 가격 게이트가 검증보다 **먼저** 선다(원가 그대로 등록 금지).
+            #   이 계약이 재는 것은 **검증/API 실패 코드**라, 가격은 풀리게 두고 그 경로까지 간다.
+            {"title": "T", "price": 100, "currency": "KRW"}, ["shopify"])
         r = result.results[0]
         assert r.success is False
         assert r.error_code == "api_error"

@@ -524,6 +524,91 @@ class UploadDispatcher:
         return result
 
     @staticmethod
+    def _landed_krw(product_data: Dict[str, Any]) -> float:
+        """원가 → 랜딩코스트 기반 **원화 판매가**. 못 내면 0 (F42a).
+
+        `calc_landed_cost` 하나만 쓴다 — 식이 두 벌이 되면 마켓마다 값이 갈린다.
+        """
+        raw = product_data.get("price_original")
+        if raw is None:
+            raw = product_data.get("price")
+        try:
+            cost = float(raw)
+        except (TypeError, ValueError):
+            return 0.0
+        if cost <= 0:
+            return 0.0
+        cur = str(product_data.get("currency") or "").strip().upper()
+        if not cur:
+            return 0.0
+        try:
+            margin = float(product_data.get("target_margin_pct"))
+        except (TypeError, ValueError):
+            margin = float(os.getenv("IMPORT_MARGIN_PCT", "25"))
+        try:
+            from src.price import _build_fx_rates, calc_landed_cost
+            return float(calc_landed_cost(buy_price=cost, buy_currency=cur,
+                                          margin_pct=margin, fx_rates=_build_fx_rates()))
+        except Exception as exc:
+            logger.warning("[등록] 판매가 산정 실패(%s %s): %s", cost, cur, exc)
+            return 0.0
+
+    @staticmethod
+    def sell_price_in(product_data: Dict[str, Any], currency: str) -> tuple:
+        """목표 통화 **판매가** — `(값, 사유)`. 못 내면 `(None, 사유)` (F42a).
+
+        ## 마진 정의 (실측 · 오너 지시로 계약에 명기)
+
+        `src/price.calc_landed_cost`가 정본이고, **markup**이다(gross margin 아님):
+
+            판매가KRW = (원가KRW + 배대지수수료KRW + 국제배송비KRW)
+                        × (1 + 관부가세율) × (1 + 마진율)
+
+        - 포함: 배대지 수수료(`FORWARDER_FEE_JPY`) · 국제배송비(`SHIPPING_FEE_DEFAULT`) ·
+          관부가세(면세 기준 `CUSTOMS_THRESHOLD_KRW` 초과 시)
+        - **미포함: 마켓 판매수수료**(쿠팡·11번가·Shopify 결제수수료 등). `target_margin_pct`는
+          그 수수료를 덮지 않는다 — 실수령 마진은 이보다 **낮다.**
+
+        ## 왜 이 함수가 생겼나
+
+        오너 실측(2026-09-20 카나리 1호): Shopify에 **$4.10**이 떴다 — **원가 그대로**다.
+        마진도 배송비도 안 붙었다. 원인은 `_ensure_sell_price_krw`의 docstring이 그대로 적어
+        둔 그것이다: 「**Shopify는 원문가/통화를 직접 사용하므로 영향받지 않는다**」.
+        원화 마켓만 산정하고 **외화 마켓은 원가를 그대로 냈다.**
+
+        > ★★★ **판매가 산정식이 마켓마다 따로면, 안 고친 마켓이 원가로 나간다.**
+        > 식은 하나여야 한다 — 여기서 KRW로 한 번 내고, 통화만 환산한다.
+
+        환율을 못 구하면 **원가로 폴백하지 않는다.** `(None, 사유)`를 내고 호출부가 등록을
+        보류한다 — 원가로 파는 것은 손해고, 조용한 손해는 가짜 성공보다 나쁘다.
+        """
+        cur = str(currency or "").strip().upper()
+        if not cur:
+            return None, "대상 통화를 알 수 없습니다"
+        try:
+            krw = float(product_data.get("sell_price_krw") or 0)
+        except (TypeError, ValueError):
+            krw = 0.0
+        if krw <= 0:
+            # `_ensure_sell_price_krw`는 **원가 통화가 KRW면 일찍 돌아간다**(원화 마켓은
+            #   다운스트림 `price_if_krw`가 처리하므로). 그 경우에도 외화 마켓은 판매가가
+            #   있어야 한다 — **같은 식으로** 한 번 더 낸다(식을 두 벌로 만들지 않는다).
+            krw = UploadDispatcher._landed_krw(product_data)
+        if krw <= 0:
+            return None, ("판매가를 산정하지 못했습니다 — 원가·통화·환율을 확인하세요"
+                          "(원가 그대로 등록하지 않습니다).")
+        if cur == "KRW":
+            return round(krw), ""
+        try:
+            from src.price import _build_fx_rates
+            rate = float(_build_fx_rates().get(f"{cur}KRW") or 0)
+        except Exception as exc:
+            return None, f"{cur} 환율을 구하지 못했습니다: {type(exc).__name__}"
+        if rate <= 0:
+            return None, f"{cur} 환율이 없습니다(원가 그대로 등록하지 않습니다)"
+        return round(krw / rate, 2), ""
+
+    @staticmethod
     def _ensure_sell_price_krw(product_data: Dict[str, Any]) -> Dict[str, Any]:
         """원화 마켓용 sell_price_krw 주입.
 
@@ -849,8 +934,17 @@ class UploadDispatcher:
                 # v88-C 파일럿 카나리: draft 상태 + 파일럿 메타(비노출) + 재고(무재고 모델) 통과. 수동 업로드는 미지정→기존 동작.
                 "status": product_data.get("status") or "",
                 "extra_meta": product_data.get("pilot_meta") or [],
-                "manage_stock": product_data.get("manage_stock"),
-                "stock_status": product_data.get("stock_status") or "",
+                # F42c 실측(오너 2026-09-20 카나리 1호): WC 상품이 **Out of stock**으로 떴다.
+                #   `stock`이 없으면 0으로 나가고, `woocommerce_client`가 `0 → outofstock`으로
+                #   바꾼다. 그런데 우리 모델은 **무재고 구매대행**이다 — 우리 창고 재고가 0인 게
+                #   정상이고, 그걸 「품절」로 번역하면 **등록하자마자 못 판다.**
+                #   파일럿 경로는 이미 `manage_stock=False · instock`으로 보내고 있었다(views:8108).
+                #   수동 업로드 경로만 안 보내고 있었다 — 같은 모델이면 같은 값이어야 한다.
+                #   호출부가 명시하면 그게 이긴다(재고 관리형 셀러를 막지 않는다).
+                "manage_stock": (product_data.get("manage_stock")
+                                 if product_data.get("manage_stock") is not None else False),
+                "stock_status": (str(product_data.get("stock_status") or "").strip()
+                                 or "instock"),
                 # v88-C: 상품 타입(자사 결제형 simple) — 미지정이면 기존 동작 불변.
                 "product_type": product_data.get("product_type") or "",
             }
@@ -896,11 +990,17 @@ class UploadDispatcher:
             from src.markets.adapters.base import ListingPayload
             from src.markets.adapters.shopify import ShopifyAdapter
 
-            raw_price = product_data.get("price") or product_data.get("price_original")
-            try:
-                price = float(raw_price)
-            except (TypeError, ValueError):
-                price = None
+            # F42a: 예전엔 `price or price_original` — **원가 그대로**였다(실측 $4.10).
+            #   판매가 산정식은 하나뿐이고(`sell_price_in`), 못 내면 **등록하지 않는다.**
+            store_cur = (os.getenv("SHOPIFY_STORE_CURRENCY", "").strip().upper()
+                         or "USD")     # US 스토어 기준. 다른 통화면 env로 지정한다.
+            price, _why = self.sell_price_in(product_data, store_cur)
+            if price is None:
+                return UploadResult(
+                    market="shopify", success=False, error_code="price_unresolved",
+                    message=f"판매가를 정하지 못해 등록하지 않았습니다 — {_why}",
+                    hint=("원가·통화·환율을 확인하세요. 원가 그대로 올리면 마진·배송비가 빠져 "
+                          "팔수록 손해입니다."))
 
             payload = ListingPayload(
                 title=str(product_data.get("title") or product_data.get("title_ko") or "").strip(),
@@ -908,7 +1008,9 @@ class UploadDispatcher:
                 #   Shopify body_html로 반영. 블록 없으면 기존 plain description 폴백(회귀 0).
                 description=str(product_data.get("description_html") or product_data.get("description") or "").strip(),
                 price=price,
-                currency=str(product_data.get("currency") or "USD").upper(),
+                # F42a: 통화도 **스토어 통화**다. 공급사 통화를 그대로 내면 숫자는 그대로인데
+                #   스토어가 제 통화로 읽어 값이 통째로 달라진다.
+                currency=store_cur,
                 sku=str(product_data.get("sku") or product_data.get("asin") or "").strip(),
                 qty=int(product_data.get("qty") or 0),
                 options={
