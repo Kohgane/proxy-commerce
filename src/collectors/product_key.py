@@ -106,11 +106,23 @@ def sku_expectation(url: str) -> str:
 
 
 def sku_failure_message(url: str) -> str:
-    """SKU를 못 뽑았을 때 사람에게 할 말 — **무엇을 기대했는지**를 싣는다 (F39)."""
-    want = sku_expectation(url)
+    """SKU를 못 뽑았을 때 사람에게 할 말 — **무엇을 기대했는지**를 싣는다 (F39).
+
+    F40: **어느 주소를 봤는지**도 싣는다. 2차 실측 때 「알 수 없는 사이트」만 떠서,
+    주소가 틀린 건지 **주소가 아예 없는 건지** 구분할 수 없었다 — 실제로는 후자였다.
+    """
+    raw = str(url or "").strip()
+    if not raw:
+        return "상품 주소가 페이로드에 없습니다(빈 값) — 수집 항목의 원본 주소를 확인하세요."
+    try:
+        host = _host(urlparse(raw).netloc)
+    except Exception:
+        host = ""
+    where = f" 본 주소: {host or raw[:60]}."
+    want = sku_expectation(raw)
     if want:
-        return f"상품 주소에서 식별자를 찾지 못했습니다. 기대한 값: {want}."
-    return "상품 주소에서 식별자를 찾지 못했습니다(알 수 없는 사이트)."
+        return f"상품 주소에서 식별자를 찾지 못했습니다. 기대한 값: {want}.{where}"
+    return f"상품 주소에서 식별자를 찾지 못했습니다(알 수 없는 사이트).{where}"
 
 
 def is_valid_vendor_sku(sku: str) -> bool:
