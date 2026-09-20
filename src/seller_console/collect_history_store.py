@@ -60,7 +60,32 @@ def append(
     seller_id: str = "",
     return_durable: bool = False,
 ):
-    """수집 이력 1건 추가. PG면 트랜잭션 커밋 후 durable, 아니면 인메모리(개발/테스트)."""
+    """수집 이력 1건 추가. PG면 트랜잭션 커밋 후 durable, 아니면 인메모리(개발/테스트).
+
+    ## F39 — SKU는 **수집 시점에** 확정한다
+
+    실측(오너 2026-09-20): 수행방패 쿠팡 업로드가 「SKU 추출 실패 … `''`」로 중단됐다.
+    그 행의 주소엔 상품번호가 없었고, **아무도 그걸 그때까지 말해 주지 않았다** —
+    목록에도 드로어에도 정상으로 보였고, **업로더가 처음 알려 줬다.** 너무 늦다
+    (카나리 8차와 같은 모양: 등록 직전에야 드러나는 결함).
+
+    > ★★ **등록에 필요한 값은 등록할 때가 아니라 수집할 때 확정한다.**
+    > 그래야 사람이 **목록에서** 안다.
+
+    여기가 모든 수집 경로가 지나는 **단 하나의 관문**이다(확장·공유·텔레그램·URL·벌크).
+    그래서 여기서 찍는다 — 경로마다 찍으면 언젠가 한 경로가 빠진다.
+    """
+    extra = dict(extra or {})
+    if not str(extra.get("vendor_sku") or "").strip():
+        try:
+            from src.collectors.product_key import sku_expectation, vendor_sku
+            _sku = vendor_sku(url or "")
+            extra["vendor_sku"] = _sku
+            # 못 뽑았으면 **무엇을 찾으려 했는지**를 같이 적는다 — 화면이 그대로 말한다.
+            extra["vendor_sku_expected"] = "" if _sku else sku_expectation(url or "")
+        except Exception as exc:              # 식별자 계산 실패가 수집을 막지 않는다
+            logger.warning("[수집] SKU 확정 실패(수집은 계속): %s", exc)
+            extra.setdefault("vendor_sku", "")
     _b = _pg_backend()
     if _b:
         return _b.append(source=source, url=url, title=title, image=image, price=price,

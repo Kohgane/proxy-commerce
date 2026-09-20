@@ -286,12 +286,15 @@ class CoupangUploader(BaseUploader):
                 }
             # SKU 유효성(카나리 8차 근원) — itemName/externalVendorSku로 그대로 나가는 값이다.
             #   URL 파편('…&ref_=pd_hp_…')이 들어오면 쿠팡이 옵션명으로 거부한다. 쓰레기 값 전송 금지.
-            from src.collectors.product_key import is_valid_vendor_sku
+            # F39: 「(아마존 ASIN 등)」 한 문장은 **타오바오 상품 앞에서 헷갈린다** — 그 상품엔
+            #   ASIN이 있을 리 없다. 이 주소에서 **무엇을 찾으려 했는지**를 호스트별로 말한다.
+            from src.collectors.product_key import is_valid_vendor_sku, sku_failure_message
             sku = str(product.get('sku', '') or '').strip()
             if not is_valid_vendor_sku(sku):
+                _why = sku_failure_message(str(product.get('url') or ''))
                 return {'success': False, 'held': True, 'sku': sku,
                         'error': ('SKU 추출 실패 — 등록 중단(쓰레기 SKU 전송 금지). '
-                                  f'상품 URL에서 식별자(아마존 ASIN 등)를 뽑지 못했습니다: {sku!r}')}
+                                  f'{_why} 뽑힌 값: {sku!r}')}
             # 이미지 규격 게이트(반려 1호) — 대형본 치환 후 **실치수** 심사. 미달 이미지는 제외하고,
             #   대표이미지가 전멸하면 등록 중단(규격 미달 이미지로 카나리 태우지 않는다·동형 게이트 3번째).
             #   측정 불가는 제외하지 않는다 — '확인 실패'를 '미달'로 단정하지 않는다(정직).

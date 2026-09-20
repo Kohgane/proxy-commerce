@@ -630,10 +630,16 @@ def register_source_rows(rows, *, dispatch_fn, enrich_fn=None, account: str = "g
                             "image_count": len(images), "product_id": None})
             continue
         # 판매자 SKU(마켓 옵션명·externalVendorSku) — URL 파편 전송 금지. 못 뽑으면 등록 중단.
-        sku = vendor_sku(r.get("url") or "")
+        # F39: `url` 한 이름만 읽으면 `source_url`로 오는 초안에서 빈값이 된다 — 한 자리에서 꺼낸다.
+        from src.seller_console.upload_dispatcher import draft_url
+        _src = draft_url(r)
+        sku = vendor_sku(_src)
         if not sku:
+            # F39: **무엇을 기대했는지**를 호스트별로 싣는다(타오바오에 ASIN을 요구하지 않게).
+            from src.collectors.product_key import sku_failure_message
             results.append({"url": r.get("url"), "title": r.get("title_ko"), "registered": False,
-                            "reason": "SKU 추출 실패 — 등록 보류(상품 URL에서 식별자를 뽑지 못했습니다).",
+                            "reason": ("SKU 추출 실패 — 등록 보류. "
+                                       + sku_failure_message(_src)),
                             "image_count": len(images), "product_id": None})
             continue
         # **중복 등록 방지(오너 지시):** 이미 등록된 상품이면 신규 POST를 하지 않는다.

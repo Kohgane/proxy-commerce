@@ -6533,6 +6533,24 @@ def _shape_collect_items(items, current_lang):
         up = ex.get("uploaded")
         it["uploaded_markets"] = [str(u.get("market_label") or u.get("market"))
                                   for u in up if isinstance(u, dict) and (u.get("market_label") or u.get("market"))] if isinstance(up, list) else []
+        # F39: **등록에 필요한 식별자가 있나**를 목록에서 말한다. 없으면 등록이 막히는데,
+        #   예전엔 업로더가 처음 알려 줬다(너무 늦다 — 카나리 8차 동형).
+        #   옛 레코드는 `vendor_sku`가 아예 없으니 **그때 계산해서** 판정한다(스테일 금지).
+        _vs = str(ex.get("vendor_sku") or "").strip()
+        if not _vs and "vendor_sku" not in ex:
+            try:
+                from src.collectors.product_key import vendor_sku as _vsku
+                _vs = _vsku(it.get("url") or "")
+            except Exception:
+                _vs = ""
+        it["vendor_sku"] = _vs
+        if not _vs:
+            try:
+                from src.collectors.product_key import sku_expectation
+                it["vendor_sku_expected"] = (str(ex.get("vendor_sku_expected") or "").strip()
+                                             or sku_expectation(it.get("url") or ""))
+            except Exception:
+                it["vendor_sku_expected"] = ""
         # v87-W11 item②: 저장된 collect_status를 신뢰하지 말고 **조회 시 항상 재계산** — 판정 로직이
         #   개선돼도 옛 레코드의 스테일 값(예: 단일 상품 4/5)을 화면이 그대로 믿던 구조를 봉인.
         try:
@@ -7897,6 +7915,8 @@ def _smartstore_account_dispatch(product_data, account):
     from src.collectors.product_key import vendor_sku
     from src.uploaders.naver_uploader import NaverSmartStoreUploader
 
+    from .upload_dispatcher import draft_url
+
     up = NaverSmartStoreUploader(account=account)
     if not (up.client_id and up.client_secret):
         return {"success": False,
@@ -7910,7 +7930,7 @@ def _smartstore_account_dispatch(product_data, account):
         "price": int(product_data.get("sell_price_krw") or 0),
         "category_id": product_data.get("category_code") or "",   # 미상이면 업로더가 정본 기본 리프
         "sku": (product_data.get("sku")
-                or vendor_sku(product_data.get("url") or "")),
+                or vendor_sku(draft_url(product_data))),
         "description_html": (product_data.get("description_html")
                              or product_data.get("title_ko") or ""),
         "images": normalize_image_urls(product_data.get("images") or []),
@@ -8029,6 +8049,8 @@ def _coupang_account_dispatch(product_data, account):
     from src.pipeline.coupang_replicate import _account_creds
     from src.uploaders.coupang_uploader import CoupangUploader
     from src.collectors.product_key import vendor_sku
+
+    from .upload_dispatcher import draft_url
     ak, sk, vid = _account_creds(account)
     if not (ak and sk):
         return {"success": False, "error": f"{account} 쿠팡 자격 미설정(env) — 등록 불가"}
@@ -8045,7 +8067,10 @@ def _coupang_account_dispatch(product_data, account):
         "category_id": (up.CATEGORY_MAP.get(cat, "") if cat else ""),
         # 카나리 8차: URL 꼬리 40자(쿼리 파편) → **상품 식별자**(아마존 ASIN 등). 못 뽑으면 빈값 →
         #   업로더가 'SKU 추출 실패'로 등록 중단(쓰레기 값으로 카나리 태우지 않는다).
-        "sku": (product_data.get("sku") or vendor_sku(product_data.get("url") or "")),
+        "sku": (product_data.get("sku") or vendor_sku(draft_url(product_data))),
+        # F39: 업로더가 **무엇을 찾으려 했는지**를 말하려면 원 주소가 있어야 한다
+        #   (호스트별 기대값 — 타오바오 상품에 「아마존 ASIN 등」이라고 하지 않게).
+        "url": draft_url(product_data),
         # 키 정정: 페이로드 contents는 `description_html`을 읽는다(구 `description`은 무시돼 상세 소실).
         "description_html": product_data.get("description_html") or product_data.get("title_ko") or "",
         "images": product_data.get("images") or [],
@@ -8074,13 +8099,14 @@ def _woocommerce_dispatch(product_data, account):
     dispatcher = _get_upload_dispatcher()
     if dispatcher is None:
         return {"success": False, "error": "업로드 디스패처 로드 실패 — 등록 불가"}
+    from .upload_dispatcher import draft_url
     sku = str(product_data.get("sku") or "").strip()
     pd = {
         "title_ko": product_data.get("title_ko"),
         "sell_price_krw": int(product_data.get("sell_price_krw") or 0),
         "images": product_data.get("images") or [],
         "description_html": product_data.get("description_html") or "",
-        "url": product_data.get("url") or "",
+        "url": draft_url(product_data),
         "sku": sku,
         "brand": product_data.get("brand") or "",
         "category_code": product_data.get("category_code") or "",
@@ -8091,7 +8117,7 @@ def _woocommerce_dispatch(product_data, account):
         "product_type": "simple",
         # 비노출 메타 — 다음 실행·백필이 출처를 알 수 있게(파일럿 `_kgp_pilot_sid`와 같은 계열).
         "pilot_meta": [{"key": "_kgp_source_sku", "value": sku},
-                       {"key": "_kgp_source_url", "value": product_data.get("url") or ""}],
+                       {"key": "_kgp_source_url", "value": draft_url(product_data)}],
     }
     try:
         dr = dispatcher.dispatch(pd, ["woocommerce"])

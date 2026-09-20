@@ -15,6 +15,38 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# 초안이 상품 주소를 담는 **이름들**. 한 필드에 두 이름이 붙은 것이 이번 사건의 근원이다 (F39).
+#   읽는 순서 = 우선순위. 앞의 것이 있으면 그걸 쓴다.
+DRAFT_URL_KEYS = ("url", "source_url", "product_url")
+
+
+def draft_url(product_data: Dict[str, Any]) -> str:
+    """초안에서 **상품 주소**를 꺼낸다 — 이름이 뭐든 (F39).
+
+    ## 실측 (오너 2026-09-20)
+
+    수행방패 쿠팡 등록이 **「SKU 추출 실패 … `''`」**로 중단됐다. 그런데
+    `vendor_sku('https://detail.tmall.com/item.htm?id=617129397971')`는
+    **`'617129397971'`**을 잘 낸다 — 규칙은 멀쩡했다.
+
+    갈라 보니 **주소가 페이로드에 없었다.** `ProductDraft.to_dict()`는
+    `source_url`을 내고 **`url` 키를 아예 안 만든다**(`listing/auto_publish.py:124`).
+    그런데 페이로드를 만드는 자리들은 전부 `product_data.get("url")`을 읽었다 →
+    빈 문자열 → `vendor_sku("")` → `''` → 정직 중단.
+
+    > ★★★ **한 필드에 두 이름이 붙으면, 쓰는 쪽과 읽는 쪽은 반드시 갈린다.**
+    > 갈린 순간을 사람이 못 보므로(둘 다 정상으로 보인다) **꺼내는 자리를 하나로 만든다.**
+
+    F34-2의 사본 드리프트와 **같은 모양**이다 — 거기선 한 사실이 두 표에 있었고,
+    여기선 한 값이 두 이름으로 있다. 둘 다 답은 「한 자리에서 꺼낸다」다.
+    """
+    d = product_data if isinstance(product_data, dict) else {}
+    for key in DRAFT_URL_KEYS:
+        val = str(d.get(key) or "").strip()
+        if val:
+            return val
+    return ""
+
 
 def render_detail_blocks_html(detail_blocks: Any, market: str) -> str:
     """v86-N: 드로어 '상세페이지 꾸미기'(v40-C) 블록 → 마켓 상세설명 HTML.
@@ -432,7 +464,8 @@ class UploadDispatcher:
         Returns:
             DispatchResult 인스턴스
         """
-        url = product_data.get("url", "")
+        # F39: `url` 하나만 읽으면 `ProductDraft.to_dict()`(→ `source_url`) 초안에서 빈값이 된다.
+        url = draft_url(product_data)
         result = DispatchResult(product_url=url)
 
         # 원화 마켓용 sell_price_krw가 없으면 원문가+목표 마진율로 산정해 주입.
@@ -859,7 +892,7 @@ class UploadDispatcher:
                     "idempotency_key": product_data.get("idempotency_key")
                     or product_data.get("sku")
                     or product_data.get("asin")
-                    or product_data.get("url"),
+                    or draft_url(product_data),          # F39: 이름이 뭐든 꺼낸다
                 },
             )
 
