@@ -63,12 +63,54 @@ def vendor_sku(url: str) -> str:
     if asin:
         return asin
     key = normalize_product_key(url)
+    # F39: **`tbshare:` 키는 SKU가 아니다.** 앱 공유 단축 링크의 키는 `tbshare:<토큰>[:<tk>]`인데,
+    #   `tk`가 붙으면 콜론이 둘이라 아래 규칙을 통과해 **`tk`가 SKU로 나갔다**(실측:
+    #   `e.tb.cn/h.8IcTrtZuTU19ieN?tk=nyXpT7VA7lt` → `'nyXpT7VA7lt'`).
+    #   `tk`는 **공유할 때마다 바뀌는 토큰**이고 상품번호가 아니다 — 마켓에 그걸 보내면
+    #   같은 상품이 공유마다 다른 SKU로 등록된다. **빈값보다 나쁘다.**
+    if key.startswith("tbshare:"):
+        return ""
     # 도메인 규칙이 잡힌 키만 채택(`host:kind:id` 형태). 폴백 키(host+path)는 ':' 규칙이 없다.
     if key.count(":") >= 2:
         ident = key.rsplit(":", 1)[-1]
         if is_valid_vendor_sku(ident):
             return ident
     return ""
+
+
+# 호스트별로 **무엇을 기대했는지**. 「(아마존 ASIN 등)」 한 문장은 타오바오 상품 앞에서
+#   사람을 헷갈리게 한다 — 그 상품엔 ASIN이 있을 리 없다 (F39 오너 지적).
+_SKU_EXPECTATION = (
+    ("amazon.", "아마존 상품번호(ASIN) — 주소의 `/dp/` 뒤 10자"),
+    ("temu.", "Temu 상품번호 — 주소의 `g-…` 또는 `goods_id`"),
+    ("1688.", "1688 오퍼 번호 — 주소의 `offer/<번호>.html`"),
+    ("tmall.", "티몰 상품번호 — 주소의 `id=` 값"),
+    ("taobao.", "타오바오 상품번호 — 주소의 `id=` 값"),
+    ("aliexpress.", "알리익스프레스 상품번호 — 주소의 `/item/<번호>.html`"),
+    (".tb.cn", "타오바오 상품번호 — 공유 단축 링크에는 상품번호가 없습니다(앱에서 펴진 주소가 필요합니다)"),
+)
+
+
+def sku_expectation(url: str) -> str:
+    """이 주소에서 **무엇을 찾으려 했는지** 한 문장. 모르는 호스트면 빈 문자열 (F39)."""
+    try:
+        host = _host(urlparse(str(url or "").strip()).netloc)
+    except Exception:
+        return ""
+    if not host:
+        return ""
+    for frag, text in _SKU_EXPECTATION:
+        if frag in host:
+            return text
+    return ""
+
+
+def sku_failure_message(url: str) -> str:
+    """SKU를 못 뽑았을 때 사람에게 할 말 — **무엇을 기대했는지**를 싣는다 (F39)."""
+    want = sku_expectation(url)
+    if want:
+        return f"상품 주소에서 식별자를 찾지 못했습니다. 기대한 값: {want}."
+    return "상품 주소에서 식별자를 찾지 못했습니다(알 수 없는 사이트)."
 
 
 def is_valid_vendor_sku(sku: str) -> bool:

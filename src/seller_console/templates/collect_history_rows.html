@@ -43,6 +43,12 @@
     {% if it.hygiene and it.hygiene.is_candidate %}
     <span class="pc-badge pc-badge-off mt-1" title="{{ it.hygiene.reasons|join(' · ') }} — ‘정리 후보’에서 보관할 수 있어요(삭제 아님)"><i class="bi bi-exclamation-triangle"></i> 비상품 의심</span>
     {% endif %}
+    {# F39: 등록에 쓸 **상품 식별자**가 없는 행. 예전엔 업로더가 처음 알려 줬다(너무 늦다) —
+       목록에서 미리 안다. 무엇을 찾으려 했는지도 함께 말한다(호스트별). #}
+    {% if not it.vendor_sku %}
+    <span class="pc-badge pc-badge-danger mt-1"
+          title="{{ it.vendor_sku_expected or '상품 주소에서 식별자를 찾지 못했습니다' }} — 이대로는 마켓에 등록할 수 없어요"><i class="bi bi-hash"></i> 식별자 없음</span>
+    {% endif %}
     {# v44-1: 업로드 성공한 마켓 '등록됨' 뱃지(서버 확인분 영구 표시). #}
     {% if it.uploaded_markets %}
     <span class="badge mt-1" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"
