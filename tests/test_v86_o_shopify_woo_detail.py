@@ -9,9 +9,24 @@ v86-N은 description_html을 읽는 마켓(쿠팡/스스/11번가)만 배선. �
 """
 from __future__ import annotations
 
+import pytest
+
 from src.seller_console import upload_dispatcher as mod
 from src.channel_sync._channel_bridge import to_collected
 from src.vendors import woocommerce_client as wc
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 2026-09-20 이후 판매가는 **실수령 마진 기준**이라 마켓 판매수수료율이 필요하다.
+#   수수료율이 없으면 등록이 **보류**된다(F42a, 의도된 동작) — 이 파일이 재려는 건 그게
+#   아니므로 수수료를 주고 그 게이트를 지나게 한다. 보류 자체는
+#   `test_f42_price_and_stock.py::test_a_market_without_a_measured_commission_holds`가 잰다.
+# ──────────────────────────────────────────────────────────────────────────────
+@pytest.fixture(autouse=True)
+def _market_commissions(monkeypatch):
+    for mkt, pct in (("SHOPIFY", "2.9"), ("WOOCOMMERCE", "3.0"),
+                     ("SMARTSTORE", "5.0"), ("ELEVENST", "12.0")):
+        monkeypatch.setenv(f"MARKET_COMMISSION_PCT_{mkt}", pct)
 
 
 def _dispatch_shopify_capture(monkeypatch, product):

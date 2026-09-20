@@ -500,9 +500,6 @@ class UploadDispatcher:
                     [k for k in DRAFT_URL_KEYS if str(product_data.get(k) or "").strip()])
         result = DispatchResult(product_url=url)
 
-        # 원화 마켓용 sell_price_krw가 없으면 원문가+목표 마진율로 산정해 주입.
-        enriched = self._ensure_sell_price_krw(product_data)
-
         for market in markets:
             if market not in SUPPORTED_MARKETS:
                 result.results.append(
@@ -515,6 +512,9 @@ class UploadDispatcher:
                 result.failed += 1
                 continue
 
+            # 판매가는 **마켓마다** 낸다(수수료율이 다르다). 루프 밖에서 한 번 내면
+            #   수수료 낮은 마켓엔 비싸게, 높은 마켓엔 손해로 나간다.
+            enriched = self._ensure_sell_price_krw(product_data, market)
             upload_result = self._upload_to_market(enriched, market)
             result.results.append(upload_result)
             if upload_result.success:
@@ -528,10 +528,11 @@ class UploadDispatcher:
         return result
 
     @staticmethod
-    def _landed_krw(product_data: Dict[str, Any]) -> float:
-        """원가 → 랜딩코스트 기반 **원화 판매가**. 못 내면 0 (F42a).
+    def _landed_krw(product_data: Dict[str, Any], market: str = "") -> tuple:
+        """원가 → **원화 판매가** `(값, 사유)`. 못 내면 `(0.0, 사유)` (F42a).
 
-        `calc_landed_cost` 하나만 쓴다 — 식이 두 벌이 되면 마켓마다 값이 갈린다.
+        `calc_sell_price` 하나만 쓴다 — 식이 두 벌이 되면 마켓마다 값이 갈린다.
+        **마켓마다 수수료가 다르므로 값도 마켓마다 다르다** — 그래서 market을 받는다.
         """
         raw = product_data.get("price_original")
         if raw is None:
@@ -539,39 +540,46 @@ class UploadDispatcher:
         try:
             cost = float(raw)
         except (TypeError, ValueError):
-            return 0.0
+            return 0.0, "원가를 숫자로 읽지 못했습니다"
         if cost <= 0:
-            return 0.0
+            return 0.0, "원가가 없습니다"
         cur = str(product_data.get("currency") or "").strip().upper()
         if not cur:
-            return 0.0
+            return 0.0, "원가 통화를 알 수 없습니다"
         try:
             margin = float(product_data.get("target_margin_pct"))
         except (TypeError, ValueError):
             margin = float(os.getenv("IMPORT_MARGIN_PCT", "25"))
         try:
-            from src.price import _build_fx_rates, calc_landed_cost
-            return float(calc_landed_cost(buy_price=cost, buy_currency=cur,
-                                          margin_pct=margin, fx_rates=_build_fx_rates()))
+            from src.price import _build_fx_rates, calc_sell_price, reference_market
+            val = calc_sell_price(buy_price=cost, buy_currency=cur,
+                                  market=market or reference_market(),
+                                  margin_pct=margin, fx_rates=_build_fx_rates())
+            return float(val), ""
         except Exception as exc:
-            logger.warning("[등록] 판매가 산정 실패(%s %s): %s", cost, cur, exc)
-            return 0.0
+            logger.warning("[등록] 판매가 산정 실패(%s %s %s): %s", cost, cur, market, exc)
+            return 0.0, str(exc)
 
     @staticmethod
-    def sell_price_in(product_data: Dict[str, Any], currency: str) -> tuple:
+    def sell_price_in(product_data: Dict[str, Any], currency: str,
+                      market: str = "") -> tuple:
         """목표 통화 **판매가** — `(값, 사유)`. 못 내면 `(None, 사유)` (F42a).
 
-        ## 마진 정의 (실측 · 오너 지시로 계약에 명기)
+        ## 마진 정의 — **실수령 마진**(오너 결정 2026-09-20, 볼트 정책)
 
-        `src/price.calc_landed_cost`가 정본이고, **markup**이다(gross margin 아님):
+        `src/price.calc_sell_price`가 정본이다:
 
-            판매가KRW = (원가KRW + 배대지수수료KRW + 국제배송비KRW)
-                        × (1 + 관부가세율) × (1 + 마진율)
+            판매가KRW = (랜딩코스트 + 국내배송비) ÷ (1 − 마켓수수료율 − 목표마진율)
+            랜딩코스트 = (원가KRW + 배대지수수료KRW + 국제배송비) × (1 + 관부가세율)
 
         - 포함: 배대지 수수료(`FORWARDER_FEE_JPY`) · 국제배송비(`SHIPPING_FEE_DEFAULT`) ·
-          관부가세(면세 기준 `CUSTOMS_THRESHOLD_KRW` 초과 시)
-        - **미포함: 마켓 판매수수료**(쿠팡·11번가·Shopify 결제수수료 등). `target_margin_pct`는
-          그 수수료를 덮지 않는다 — 실수령 마진은 이보다 **낮다.**
+          관부가세(면세 기준 `CUSTOMS_THRESHOLD_KRW` 초과 시) ·
+          **마켓 판매수수료** · **국내배송비**(`DOMESTIC_SHIPPING_FEE_KRW`)
+        - `target_margin_pct`는 **남는 비율**이다 — 판매가에서 수수료·배송을 빼면
+          정확히 그 비율이 남는다. (예전엔 markup이라 실수령이 한참 낮았다.)
+
+        > ★ 마켓수수료율을 **모르면 등록하지 않는다.** 짐작한 수수료로 매긴 값은
+        > 빈칸보다 나쁘다 — 틀린 값으로 실제로 팔리기 때문이다.
 
         ## 왜 이 함수가 생겼나
 
@@ -593,14 +601,15 @@ class UploadDispatcher:
             krw = float(product_data.get("sell_price_krw") or 0)
         except (TypeError, ValueError):
             krw = 0.0
+        why = ""
         if krw <= 0:
             # `_ensure_sell_price_krw`는 **원가 통화가 KRW면 일찍 돌아간다**(원화 마켓은
             #   다운스트림 `price_if_krw`가 처리하므로). 그 경우에도 외화 마켓은 판매가가
             #   있어야 한다 — **같은 식으로** 한 번 더 낸다(식을 두 벌로 만들지 않는다).
-            krw = UploadDispatcher._landed_krw(product_data)
+            krw, why = UploadDispatcher._landed_krw(product_data, market)
         if krw <= 0:
-            return None, ("판매가를 산정하지 못했습니다 — 원가·통화·환율을 확인하세요"
-                          "(원가 그대로 등록하지 않습니다).")
+            return None, (why or "판매가를 산정하지 못했습니다 — 원가·통화·환율을 확인하세요"
+                                 "(원가 그대로 등록하지 않습니다).")
         if cur == "KRW":
             return round(krw), ""
         try:
@@ -613,16 +622,18 @@ class UploadDispatcher:
         return round(krw / rate, 2), ""
 
     @staticmethod
-    def _ensure_sell_price_krw(product_data: Dict[str, Any]) -> Dict[str, Any]:
-        """원화 마켓용 sell_price_krw 주입.
+    def _ensure_sell_price_krw(product_data: Dict[str, Any],
+                               market: str = "") -> Dict[str, Any]:
+        """원화 마켓용 sell_price_krw 주입 — **마켓마다 따로 낸다.**
 
         쿠팡/스마트스토어/11번가/WooCommerce는 원화 판매가가 필요하다.
         이미 양수 KRW 판매가(sell_price_krw / recommended_price(_krw) / price_krw)가
-        있으면 그대로 둔다. 없고 원문가(외화 포함) + 통화가 있으면
-        목표 마진율(target_margin_pct, 없으면 IMPORT_MARGIN_PCT, 기본 25)로
-        landed cost 기반 원화 판매가를 산정해 주입한다.
-        (KRW 원문가는 브리지의 price_if_krw 경로가 처리하므로 별도 산정하지 않는다.
-         Shopify는 원문가/통화를 직접 사용하므로 영향받지 않는다.)
+        있으면 그대로 둔다(셀러가 직접 적은 값이 이긴다). 없고 원문가(외화 포함) +
+        통화가 있으면 목표 마진율(target_margin_pct, 없으면 IMPORT_MARGIN_PCT)로 산정한다.
+
+        > ★ **마켓마다 판매수수료가 다르므로 판매가도 다르다.** 예전엔 등록 루프 **밖에서**
+        > 한 번만 산정해 모든 마켓에 같은 값을 보냈다 — 수수료가 식에 들어온 지금은
+        > 그러면 수수료가 낮은 마켓에서 비싸게, 높은 마켓에서 손해로 팔린다.
         """
         pd = dict(product_data or {})
 
@@ -656,13 +667,14 @@ class UploadDispatcher:
             margin_pct = float(os.getenv("IMPORT_MARGIN_PCT", "25"))
 
         try:
-            from src.price import calc_landed_cost, _build_fx_rates
+            from src.price import calc_sell_price, reference_market, _build_fx_rates
 
             fx_rates = _build_fx_rates()
             sell_krw = float(
-                calc_landed_cost(
+                calc_sell_price(
                     buy_price=price_orig,
                     buy_currency=currency,
+                    market=market or reference_market(),
                     margin_pct=margin_pct,
                     fx_rates=fx_rates,
                 )
@@ -693,6 +705,14 @@ class UploadDispatcher:
             UploadResult
         """
         market_payload, localized = self._payload_for_market(product_data, market)
+
+        # ★ 판매가 단일 관문 (오너 결정 2026-09-20 — 실수령 마진 기준).
+        #   판매수수료율을 모르는 마켓은 **여기서 멈춘다.** 마켓별 업로더마다 따로 막으면
+        #   한 곳을 빠뜨리고, 빠뜨린 그 마켓이 원가로 나간다(F42a가 정확히 그거였다).
+        hold = self._price_gate(market_payload, market)
+        if hold is not None:
+            return hold
+
         if market == "coupang":
             result = self._upload_coupang(market_payload)
         elif market == "smartstore":
@@ -712,6 +732,35 @@ class UploadDispatcher:
         if not localized and result.success:
             result.message = f"{result.message} (미현지화: 원문 사용)"
         return result
+
+    @staticmethod
+    def _price_gate(payload: Dict[str, Any], market: str):
+        """판매가를 못 정하면 `UploadResult`(보류), 정하면 `None`.
+
+        **모든 마켓이 이 한 곳을 지난다.** 수수료율을 모르는 마켓은 등록하지 않는다 —
+        짐작한 수수료로 매긴 값은 빈칸보다 나쁘다(틀린 값으로 실제로 팔린다).
+
+        셀러가 판매가를 직접 적었으면 그건 셀러의 결정이라 통과시킨다.
+        """
+        from src.price import commission_pct
+
+        try:
+            if float(payload.get("sell_price_krw") or 0) > 0:
+                return None                       # 셀러가 정한 값이 이긴다
+        except (TypeError, ValueError):
+            pass
+        rate, why = commission_pct(market)
+        if rate is not None:
+            return None
+        logger.warning("[등록] %s 판매가 보류 — %s", market, why)
+        return UploadResult(
+            market=market,
+            success=False,
+            error_code="commission_unknown",
+            message=f"판매수수료율을 몰라 등록하지 않았습니다 — {why}",
+            hint=("실수령 마진 기준으로 값을 매기려면 그 마켓의 판매수수료율이 필요합니다. "
+                  "실측값을 넣거나, 이 상품의 판매가를 직접 입력해 주세요."),
+        )
 
     @staticmethod
     def _payload_for_market(product_data: Dict[str, Any], market: str) -> tuple[Dict[str, Any], bool]:
@@ -1012,7 +1061,7 @@ class UploadDispatcher:
             #   판매가 산정식은 하나뿐이고(`sell_price_in`), 못 내면 **등록하지 않는다.**
             store_cur = (os.getenv("SHOPIFY_STORE_CURRENCY", "").strip().upper()
                          or "USD")     # US 스토어 기준. 다른 통화면 env로 지정한다.
-            price, _why = self.sell_price_in(product_data, store_cur)
+            price, _why = self.sell_price_in(product_data, store_cur, market="shopify")
             if price is None:
                 return UploadResult(
                     market="shopify", success=False, error_code="price_unresolved",

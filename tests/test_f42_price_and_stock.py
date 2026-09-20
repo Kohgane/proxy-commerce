@@ -18,16 +18,23 @@
 > ★★★ **판매가 산정식이 마켓마다 따로면, 안 고친 마켓이 원가로 나간다.**
 > 식은 하나여야 한다 — KRW로 한 번 내고 **통화만 환산**한다.
 
-### 마진 정의 (오너 지시로 계약에 명기)
+### 마진 정의 — **실수령 마진**(오너 결정 2026-09-20, 갱신)
 
-`src/price.calc_landed_cost`가 정본이고 **markup**이다(gross margin 아님):
+처음 이 계약은 식이 **markup**이라고 적었다. 오너가 그걸 읽고 **정책을 따르라**고 했다
+(볼트 [[가격 정책 — 실마진 기준]]). 그래서 코드를 고쳤고, 이 계약도 같이 고친다:
 
-    판매가KRW = (원가KRW + 배대지수수료KRW + 국제배송비KRW) × (1 + 관부가세율) × (1 + 마진율)
+    판매가 = (랜딩코스트 + 국내배송비) ÷ (1 − 마켓수수료율 − 목표마진율)
+    랜딩코스트 = (원가KRW + 배대지수수료 + 국제배송비) × (1 + 관부가세율)
 
-- **포함**: 배대지 수수료(`FORWARDER_FEE_JPY`) · 국제배송비(`SHIPPING_FEE_DEFAULT`) ·
-  관부가세(`CUSTOMS_THRESHOLD_KRW` 초과 시)
-- **미포함**: **마켓 판매수수료**(쿠팡·11번가·Shopify 결제수수료 등).
-  `target_margin_pct`는 그 수수료를 덮지 않으므로 **실수령 마진은 이보다 낮다.**
+- **포함**: 배대지 수수료 · 국제배송비 · 관부가세 · **마켓 판매수수료** · **국내배송비**
+- `target_margin_pct` = **남는 비율.** 판매가에서 수수료·배송을 빼면 정확히 그 비율이다.
+
+> ★★★ **왜 고쳤나 — 이 카나리가 근거다.**
+> WC 실측 ₩24,682는 옛 markup 22%가 낸 값이다. 거기서 수수료 10.8%와 국내배송 ₩3,000을
+> 빼면 **실마진 −4.9%**다. **팔릴수록 손해인 가격이 이미 올라가 있었다.**
+
+> ★ **마켓수수료율을 모르면 등록하지 않는다.** 실측된 건 쿠팡 10.8%뿐이다.
+> 짐작한 수수료로 매긴 값은 빈칸보다 나쁘다 — 틀린 값으로 **실제로 팔린다.**
 
 ## c) 우리 재고 0을 「품절」로 번역했다
 
@@ -61,7 +68,12 @@ def dispatcher():
 def _fixed_fx(monkeypatch):
     monkeypatch.setattr("src.price._build_fx_rates", lambda *a, **k: dict(FX))
     for k, v in (("FORWARDER_FEE_JPY", "300"), ("SHIPPING_FEE_DEFAULT", "12000"),
-                 ("CUSTOMS_THRESHOLD_KRW", "150000"), ("IMPORT_MARGIN_PCT", "25")):
+                 ("CUSTOMS_THRESHOLD_KRW", "150000"), ("IMPORT_MARGIN_PCT", "25"),
+                 ("DOMESTIC_SHIPPING_FEE_KRW", "3000"),
+                 # 카나리 마켓들의 **실측 수수료는 아직 없다.** 계약이 값을 내려면 줘야 한다 —
+                 #   그 사실 자체를 아래 `test_a_market_without_a_measured_commission_holds`가 잰다.
+                 ("MARKET_COMMISSION_PCT_SHOPIFY", "2.9"),
+                 ("MARKET_COMMISSION_PCT_WOOCOMMERCE", "3.0")):
         monkeypatch.setenv(k, v)
 
 
@@ -72,56 +84,108 @@ def _fixed_fx(monkeypatch):
 def test_the_price_is_never_the_raw_cost(dispatcher):
     """★★ **F42a의 판정 지점** — 판매가가 원가보다 **확실히 크다**."""
     pd = {"price_original": 29.9, "currency": "CNY", "target_margin_pct": 25.0}
-    usd, why = dispatcher.sell_price_in(pd, "USD")
+    usd, why = dispatcher.sell_price_in(pd, "USD", market="shopify")
     assert usd is not None, why
     cost_usd = 29.9 * CNYKRW / USDKRW
     assert usd > cost_usd * 1.2, (usd, cost_usd)
 
 
-def test_the_margin_definition_is_markup_on_landed_cost(dispatcher):
-    """★★ 오너 지시 — **식을 계약에 박는다**(markup · 배송·수수료 포함 범위).
+def test_the_target_margin_is_what_actually_remains(dispatcher):
+    """★★★ **이 계약이 식의 뜻이다**(오너 지시, 2026-09-20 갱신).
 
-    판매가KRW = (원가KRW + 배대지수수료KRW + 국제배송비) × (1+관부가세율) × (1+마진율)
+    「판매가에서 수수료·배송을 빼면 정확히 목표마진.」
     """
-    from src.price import calc_landed_cost
+    from src.price import landed_cost_krw, net_margin_pct
 
-    pd = {"price_original": 100.0, "currency": "USD", "target_margin_pct": 25.0}
-    krw, _ = dispatcher.sell_price_in(pd, "KRW")
-    expected = float(calc_landed_cost(buy_price=100.0, buy_currency="USD",
-                                      margin_pct=25.0, fx_rates=dict(FX)))
-    assert abs(krw - round(expected)) <= 1, (krw, expected)
-
-    # 배송비가 실제로 들어간다 — 0원이면 이 값이 달라진다.
-    cost_only = 100.0 * USDKRW
-    assert krw > cost_only * 1.25, "배송비·배대지 수수료가 빠졌다"
+    pd = {"price_original": 100.0, "currency": "USD", "target_margin_pct": 22.0}
+    krw, why = dispatcher.sell_price_in(pd, "KRW", market="coupang")
+    assert krw, why
+    landed = landed_cost_krw(100.0, "USD", fx_rates=dict(FX))
+    got = float(net_margin_pct(krw, landed, "coupang"))
+    assert abs(got - 22.0) < 0.05, got
 
 
-def test_market_commission_is_not_included_and_we_say_so(dispatcher):
-    """★ **미포함을 명시한다.** 실수령 마진은 이보다 낮다 — 모르면 사람이 잘못 판단한다."""
+def test_the_old_markup_price_was_actually_a_loss():
+    """★★★ **왜 식을 바꿨나** — 카나리 1호 WC 실측 ₩24,682의 실마진은 **음수**다.
+
+    옛 식(markup 22%)이 낸 그 값에서 쿠팡 수수료 10.8%와 국내배송 ₩3,000을 빼면
+    남는 게 **마이너스**다. 팔릴수록 손해인 가격이 이미 올라가 있었다.
+    """
+    from decimal import Decimal as D
+
+    from src.price import net_margin_pct
+
+    listed = D("24682")                    # 오너 실측
+    landed = listed / D("1.22")            # 옛 markup 22%를 역산한 랜딩코스트
+    got = net_margin_pct(listed, landed, "coupang")
+    assert got < 0, got
+
+
+def test_the_formula_is_stated_in_the_docstring(dispatcher):
+    """★ 식이 **무엇을 포함하는지** 코드가 말한다 — 모르면 사람이 잘못 판단한다."""
     import inspect
     doc = inspect.getdoc(dispatcher.sell_price_in) or ""
-    assert "미포함" in doc and "마켓 판매수수료" in doc
-    assert "markup" in doc
+    assert "마켓 판매수수료" in doc and "국내배송비" in doc
+    assert "남는 비율" in doc
 
 
 def test_one_formula_for_every_currency(dispatcher):
     """★ KRW로 한 번 내고 통화만 환산한다 — 식이 두 벌이면 마켓마다 값이 갈린다."""
     pd = {"price_original": 100.0, "currency": "USD", "target_margin_pct": 25.0}
-    krw, _ = dispatcher.sell_price_in(pd, "KRW")
-    usd, _ = dispatcher.sell_price_in(pd, "USD")
+    krw, _ = dispatcher.sell_price_in(pd, "KRW", market="shopify")
+    usd, _ = dispatcher.sell_price_in(pd, "USD", market="shopify")
     assert abs(usd - krw / USDKRW) < 0.02
+
+
+def test_the_same_product_costs_more_where_the_commission_is_higher(dispatcher):
+    """★★ **마켓마다 값이 달라야 한다** — 수수료가 식에 들어왔기 때문.
+
+    루프 밖에서 한 번만 산정하면 수수료 높은 마켓에서 그만큼 손해다.
+    """
+    pd = {"price_original": 100.0, "currency": "USD", "target_margin_pct": 22.0}
+    coupang, _ = dispatcher.sell_price_in(pd, "KRW", market="coupang")     # 10.8%
+    shopify, _ = dispatcher.sell_price_in(pd, "KRW", market="shopify")     # 2.9%
+    assert coupang > shopify, (coupang, shopify)
 
 
 def test_a_krw_cost_still_gets_a_sell_price(dispatcher):
     """★ 원가가 KRW여도 외화 마켓 판매가가 나온다 — 예전엔 일찍 돌아가 빈값이었다."""
-    usd, why = dispatcher.sell_price_in({"price": 29900, "currency": "KRW"}, "USD")
+    usd, why = dispatcher.sell_price_in({"price": 29900, "currency": "KRW"}, "USD",
+                                        market="shopify")
     assert usd is not None and usd > 29900 / USDKRW, (usd, why)
 
 
 def test_an_unresolvable_price_is_refused_not_guessed(dispatcher):
     """★★ 환율·통화가 없으면 **원가로 폴백하지 않는다** — 조용한 손해가 가짜 성공보다 나쁘다."""
-    val, why = dispatcher.sell_price_in({"price": 100}, "USD")   # 통화 없음
+    val, why = dispatcher.sell_price_in({"price": 100}, "USD", market="shopify")
     assert val is None and why
+
+
+def test_a_market_without_a_measured_commission_holds(dispatcher, monkeypatch):
+    """★★★ **모르면 등록하지 않는다**(오너 지시).
+
+    11번가 수수료율은 아직 실측이 없다. 짐작해서 매긴 값으로 파느니 **보류**다.
+    """
+    monkeypatch.delenv("MARKET_COMMISSION_PCT_ELEVENST", raising=False)
+    val, why = dispatcher.sell_price_in(
+        {"price_original": 100.0, "currency": "USD"}, "KRW", market="elevenst")
+    assert val is None
+    assert "판매수수료율" in why and "MARKET_COMMISSION_PCT_ELEVENST" in why
+
+
+def test_the_price_gate_is_one_place_for_every_market(dispatcher, monkeypatch):
+    """★★ 마켓별 업로더마다 따로 막으면 **한 곳을 빠뜨리고, 그 마켓이 원가로 나간다.**"""
+    monkeypatch.delenv("MARKET_COMMISSION_PCT_ELEVENST", raising=False)
+    for mkt in ("coupang", "smartstore", "elevenst", "woocommerce", "shopify"):
+        res = dispatcher._price_gate({"price_original": 100.0, "currency": "USD"}, mkt)
+        from src.price import commission_pct
+        rate, _ = commission_pct(mkt)
+        assert (res is None) is (rate is not None), (mkt, res)
+
+
+def test_a_price_the_seller_typed_still_wins(dispatcher):
+    """★ 셀러가 직접 적은 판매가는 셀러의 결정이다 — 수수료를 몰라도 막지 않는다."""
+    assert dispatcher._price_gate({"sell_price_krw": 39000}, "elevenst") is None
 
 
 def test_shopify_holds_instead_of_listing_the_cost(dispatcher, monkeypatch):

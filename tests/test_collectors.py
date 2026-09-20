@@ -424,13 +424,18 @@ class TestPriceCalculation:
         assert result.get('sell_price_krw') is None
 
     def test_customs_threshold_below(self):
-        """상품 원가가 관세 기준(15만원) 이하이면 관세 없음."""
-        from src.price import calc_landed_cost, _build_fx_rates
+        """상품 원가가 관세 기준(15만원) 이하이면 관세 없음.
+
+        ※ 2026-09-20: 판매가 식이 실수령 마진 기준으로 바뀌어(수수료·국내배송 포함)
+          「마진 0%면 판매가 ≈ 원가」가 더는 성립하지 않는다. 이 테스트가 재려던 건
+          **관세**이므로 `landed_cost_krw`로 **직접** 잰다(식 변경에 흔들리지 않는다).
+        """
+        from src.price import landed_cost_krw, _build_fx_rates
         with patch.dict(os.environ, {'FX_USDKRW': '1300', 'FX_USE_LIVE': '0', 'CUSTOMS_THRESHOLD_KRW': '150000'}):
             fx = _build_fx_rates()
             # $100 ≈ 130,000원 < 150,000원 → 관세 없음
-            price = calc_landed_cost(100, 'USD', margin_pct=0, fx_rates=fx, shipping_fee=0)
-        assert price == pytest.approx(130000, rel=0.05)
+            landed = landed_cost_krw(100, 'USD', fx_rates=fx, shipping_fee=0)
+        assert landed == pytest.approx(130000, rel=0.05)
 
     def test_customs_threshold_above(self):
         """상품 원가가 관세 기준 초과이면 관세 부과."""

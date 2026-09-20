@@ -94,9 +94,20 @@ def _load_fx_rates() -> Dict[str, Decimal]:
 def default_commission_rate(marketplace: Marketplace) -> Decimal:
     """마켓별 기본 수수료율 반환.
 
-    src.channels.percenty.MARKET_PRICE_POLICY 우선,
-    미정의 마켓(자체몰/Shopify)은 _DEFAULT_COMMISSION 사용.
+    ① **실측·오너 입력값**(`src.price.commission_pct` — `MARKET_COMMISSION_PCT_<마켓>` env
+       또는 실측 상수)이 있으면 **그게 이긴다.** 등록 판매가와 이 계산기가 같은 숫자를 봐야
+       한다 — 두 벌이면 계산기는 흑자라는데 등록가는 적자다.
+    ② 없으면 아래 기존 가정값(시뮬레이터용). **등록 파이프는 ②를 쓰지 않는다** —
+       거기선 수수료를 모르면 등록을 보류한다(오너 결정 2026-09-20).
     """
+    try:
+        from src.price import commission_pct as _measured
+        rate, _why = _measured(marketplace)
+        if rate is not None:
+            return Decimal(str(rate))
+    except Exception:
+        pass
+
     try:
         from src.channels.percenty import MARKET_PRICE_POLICY  # type: ignore
         if marketplace in MARKET_PRICE_POLICY:
