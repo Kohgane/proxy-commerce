@@ -91,9 +91,23 @@ class ElevenStUploader(BaseUploader):
                 market="elevenst",
             )
             if resp.status_code not in (200, 201):
+                # F41 실측(오너 2026-09-20 카나리 3차): 11번가 500의 **본문이 화면에 안 닿았다.**
+                #   전체는 로그로, 앞 300자는 문장에. 본문이 정말 비었으면 **그렇게 말한다** —
+                #   「메시지 없음」과 「본문을 안 줬다」는 다른 사건이다.
+                _b = str(getattr(resp, "text", "") or "")
+                logger.warning("[11번가] HTTP %s 본문(%d자): %s",
+                               resp.status_code, len(_b), _b[:2000])
+                try:
+                    from src.utils.secret_mask import mask_text as _mask
+                except Exception:
+                    _mask = lambda s, **k: s   # noqa: E731
+                # 본문이 우리 키를 되비출 수 있다 — **리터럴을 넘겨야** 가려진다.
+                _tail = (f": {_mask(_b[:300], secrets=(self.api_key,))}" if _b.strip()
+                         else " — 11번가가 응답 본문을 주지 않았습니다(빈 응답).")
                 return {
                     "success": False,
-                    "error": f"HTTP {resp.status_code}: {resp.text[:200]}",
+                    "error": f"HTTP {resp.status_code}{_tail}",
+                    "http_status": resp.status_code,
                     "sku": product.get("sku", ""),
                 }
             parsed = self._parse_response(resp.text)
@@ -216,11 +230,26 @@ class ElevenStUploader(BaseUploader):
         Returns:
             {'ok': bool, 'product_no': str, 'message': str}
         """
+        # F41: **본문은 무조건 남긴다.** 파싱이 되든 안 되든, 11번가가 준 XML이 사유의 정본이다.
+        #   전체는 로그, 앞 300자는 화면 문장에.
+        _body = str(xml_text or "")
+        logger.info("[11번가] 응답 본문(%d자): %s", len(_body), _body[:2000])
+        _key = os.getenv("ELEVENST_API_KEY", "")
+        try:
+            from src.utils.secret_mask import mask_text as _m
+            # 본문이 우리 키를 되비출 수 있다 — **리터럴을 넘겨야** 가려진다.
+            _mask = lambda s, **k: _m(s, secrets=(_key,))   # noqa: E731
+        except Exception:
+            _mask = lambda s, **k: s   # noqa: E731
         try:
             root = ET.fromstring(xml_text)
         except Exception as exc:
             logger.warning("11번가 응답 XML 파싱 실패: %s", exc)
-            return {"ok": False, "product_no": "", "message": "응답 파싱 실패"}
+            # 「응답 파싱 실패」만 내면 **11번가가 뭐라 했는지 통째로 사라진다**(F41 실측).
+            return {"ok": False, "product_no": "", "code": "",
+                    "message": ("11번가 응답을 XML로 읽지 못했습니다 — 원문 앞 300자: "
+                                + _mask(_body[:300]) if _body.strip()
+                                else "11번가가 응답 본문을 주지 않았습니다(빈 응답).")}
 
         def _find(*names):
             for name in names:
@@ -234,16 +263,18 @@ class ElevenStUploader(BaseUploader):
         product_no = _find("ProductNo", "product_no", "prdNo")
         ok = code in ("100", "200", "0") or bool(product_no)
         # v61 STEP4: '등록 실패: 등록 실패' 동어반복 금지 — 응답 코드·메시지 원문(마스킹)으로 구체화.
-        try:
-            from src.utils.secret_mask import mask_text
-        except Exception:
-            mask_text = lambda s, **k: s   # noqa: E731
+        mask_text = _mask
         if raw_msg and code:
             message = mask_text(f"[{code}] {raw_msg}")
         elif raw_msg:
             message = mask_text(raw_msg)
         elif code:
-            message = f"11번가 응답 코드 {code} (메시지 없음 — 코드로 원인 확인 필요)"
+            # F41: 「메시지 없음」은 **우리가 안 읽은 것**이지 11번가가 안 준 게 아니다(오너).
+            #   코드만 있고 메시지 태그를 못 찾았으면 **원문을 그대로** 붙인다 —
+            #   태그 이름을 우리가 다 아는 게 아니다.
+            message = (f"11번가 응답 코드 {code} — 원문 앞 300자: " + mask_text(_body[:300])
+                       if _body.strip()
+                       else f"11번가 응답 코드 {code}(본문 없음)")
         else:
             # 코드·메시지 둘 다 없음 → 원문 앞부분을 마스킹해 진단(뭉뚱그림 금지).
             _raw = ""
