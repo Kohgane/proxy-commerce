@@ -30,6 +30,11 @@ COPY extensions/ ./extensions/
 # v88-C: 파일럿 정적 데이터(sourcing_map·pilot_population) — /admin/coupang-pilot 이 CWD(/app) 기준 data/ 로 읽는다.
 #   Dockerfile이 data/를 통째로 COPY하지 않아 배포본 부재 → 400 'pilot_population 없음' 근원(#423 extensions/·#227 scripts/ 동류).
 COPY data/sourcing_map.json data/pilot_population.json ./data/
+# D3-3: 한국어 렌더 폰트(Noto Sans KR 가변, OFL). 3단계가 박스에 한글을 그리려면
+#   글리프가 **이미지 안에** 있어야 한다. 빌드 때 받아 오면 네트워크 흔들리는 날 배포가 깨지고,
+#   시스템 폰트에 기대면 base 이미지가 바뀌는 날 글자가 두부(□□□)로 나간다.
+#   (#423 extensions/·#227 scripts/·F43 cv2와 같은 자리 — 「레포엔 있는데 이미지엔 없다」.)
+COPY assets/fonts/ ./assets/fonts/
 COPY gunicorn.conf.py .
 COPY config.example.yml .
 

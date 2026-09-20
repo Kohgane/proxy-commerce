@@ -3051,17 +3051,24 @@ def media_process_image():
         return jsonify({"ok": False, "error": "이미지 처리 중 오류가 발생했습니다."}), 500
     processed = d.get("processed_url") or image_url
     cdn = bool(d.get("cdn_uploaded"))
-    message = None
+    parts = []
     if not cdn and processed == image_url:
-        message = ("이미지 처리 결과를 호스팅할 CDN(CLOUDINARY_*)이 설정되지 않았거나 처리가 적용되지 "
-                   "않아 원본 URL을 유지했습니다.")
+        parts.append("이미지 처리 결과를 호스팅할 CDN(CLOUDINARY_*)이 설정되지 않았거나 처리가 적용되지 "
+                     "않아 원본 URL을 유지했습니다.")
+    # F43 — **워터마크를 「봤는데 없었다」와 「안 봤다」는 다르다.** 화면이 그걸 구분해 말한다.
+    #   못 본 사유의 원문(모듈명 등)은 로그에만 남긴다 — 셀러 화면에 개발 표기 금지.
+    if not d.get("watermark_checked"):
+        parts.append("워터마크는 확인하지 않았습니다.")
+        if d.get("watermark_reason"):
+            logger.info("[이미지] 워터마크 미확인 사유: %s", d.get("watermark_reason"))
     return jsonify({
         "ok": True,
         "processed_url": processed,
         "cdn_uploaded": cdn,
         "watermark_removed": bool(d.get("watermark_removed")),
+        "watermark_checked": bool(d.get("watermark_checked")),
         "success": bool(d.get("success", True)),
-        "message": message,
+        "message": " ".join(parts) or None,
     })
 
 

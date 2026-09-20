@@ -29,3 +29,13 @@ Pillow>=10.0,<14  # 카나리 3차: 네이버 미허용 WebP → JPEG 실변환(
 #   common은 tmt의 의존성이지만 버전을 눈에 보이게 두려고 함께 적는다.
 tencentcloud-sdk-python-tmt>=3.1.129,<4
 tencentcloud-sdk-python-common>=3.1.175,<4
+
+# D3-3 이미지 번역 렌더 — 박스 inpaint + 한국어 폭맞춤 렌더(3단계).
+#   headless: 서버에 GUI(libGL·X11)가 없다. `opencv-python`(비-headless)을 넣으면
+#   부팅이 libGL.so.1 부재로 죽는다 — headless가 유일한 선택이다.
+#   Pillow만으로는 골든 샘플 5축 C(배경 복원)·E(자연스러움)를 못 넘긴다(오너 판단 2026-09-20).
+#   ★ 이 줄이 들어오면서 `image_pipeline`의 워터마크 경로가 **처음으로 살 수 있게** 된다.
+#     검토 없이 살아나지 않도록 `IMAGE_INPAINT_ENABLED` 기본값을 0으로 내려 뒀다(F43).
+#   실측 설치 용량: opencv-python-headless 162MB · numpy 73MB (압축 wheel 62MB·17MB).
+opencv-python-headless>=4.10,<5
+numpy>=1.26,<3

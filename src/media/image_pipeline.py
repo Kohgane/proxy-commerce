@@ -8,7 +8,25 @@
 
 환경변수:
   IMAGE_PIPELINE_ENABLED=1    파이프라인 활성화 (기본: 1)
-  IMAGE_INPAINT_ENABLED=1     워터마크 inpainting 활성화 (기본: 1)
+  IMAGE_INPAINT_ENABLED=1     워터마크 inpainting 활성화 (**기본: 0** — 아래 F43)
+
+## F43 — 워터마크 제거는 라이브에서 한 번도 돈 적이 없다 (실측 2026-09-20)
+
+`cv2`가 `requirements.txt`·`Dockerfile` **어디에도 없었다**. 그래서 프로덕션 이미지엔
+OpenCV가 없었고, 아래 두 함수는 `ImportError`를 **debug 로그로 삼키고** 각각
+`False` / 원본을 돌려줬다. 결과 dict은 `watermark_detected: False`라고 말했는데,
+그건 **「없다고 확인했다」가 아니라 「재지 않았다」**였다 — 화면에서 구분이 안 됐다.
+
+같은 유형 재발이다: `Pillow`도 requirements 미기재로 조용히 무력이었다(카나리 3차에 발견).
+
+그래서 이 파일이 바뀐 것 둘:
+
+1. **사유를 싣는다.** `watermark_checked` + `watermark_reason` — 「안 쟀다」와
+   「재고 없었다」가 다른 값으로 나온다. 못 잰 이유는 **WARNING**으로 남긴다(debug 아님).
+2. **기본값을 실제 동작에 맞춘다.** D3가 `opencv-python-headless`를 이미지에 넣으면서
+   이 경로가 **처음으로 살아난다.** 검토 없이 살아나면 그건 회귀다 — 모서리 inpaint가
+   상품 사진을 건드린다. 그래서 `IMAGE_INPAINT_ENABLED` 기본값을 `0`으로 내린다.
+   **지금까지 실제로 벌어진 일과 똑같이 둔다.** 켜는 건 오너가 env 하나로 한다.
 """
 from __future__ import annotations
 
@@ -21,7 +39,9 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 _PIPELINE_ENABLED = os.getenv("IMAGE_PIPELINE_ENABLED", "1") == "1"
-_INPAINT_ENABLED = os.getenv("IMAGE_INPAINT_ENABLED", "1") == "1"
+# F43 — 기본 off. 이 기능은 cv2 부재로 **라이브에서 돈 적이 없다**(모듈 독스트링).
+#   cv2가 이미지에 들어왔다고 해서 검토 없이 켜지면 그게 회귀다. 켜는 건 명시적으로.
+_INPAINT_ENABLED = os.getenv("IMAGE_INPAINT_ENABLED", "0") == "1"
 # 처리본을 CDN(Cloudinary)에 업로드해 새 URL을 발급할지. 기본 on이지만 자격증명 없으면 자동 비활성.
 _CDN_UPLOAD_ENABLED = os.getenv("IMAGE_CDN_UPLOAD_ENABLED", "1") == "1"
 
@@ -66,6 +86,9 @@ class ImageProcessResult:
     format: str = "JPEG"
     watermark_detected: bool = False
     watermark_removed: bool = False
+    # F43 — **잰 적이 있나.** False면 `watermark_detected`는 「없다」가 아니라 「모른다」다.
+    watermark_checked: bool = False
+    watermark_reason: str = ""       # 못 쟀거나 못 지운 이유(빈 문자열 = 정상)
     background_unified: bool = False
     webp_converted: bool = False
     cdn_uploaded: bool = False   # 처리본을 CDN에 업로드해 새 URL을 발급했는지
@@ -82,6 +105,8 @@ class ImageProcessResult:
             "format": self.format,
             "watermark_detected": self.watermark_detected,
             "watermark_removed": self.watermark_removed,
+            "watermark_checked": self.watermark_checked,
+            "watermark_reason": self.watermark_reason,
             "background_unified": self.background_unified,
             "webp_converted": self.webp_converted,
             "cdn_uploaded": self.cdn_uploaded,
@@ -95,15 +120,53 @@ class ImageProcessResult:
 # 워터마크 감지 (OpenCV graceful)
 # ---------------------------------------------------------------------------
 
-def _detect_watermark(image_bytes: bytes) -> bool:
-    """워터마크 영역 자동 감지 (OpenCV 미설치 시 False 반환)."""
+_CV2_WARNED = False
+_PIL_WARNED = False
+
+
+def _warn_once(flag: str, message: str) -> None:
+    """같은 부재를 **한 번은 WARNING으로** 알린다 — 매 장마다 울지는 않는다.
+
+    debug로 두면 Render 로그(INFO 이상)에 안 남아 **기능이 죽어도 아무도 모른다**(F43).
+    """
+    if globals().get(flag):
+        return
+    globals()[flag] = True
+    logger.warning("[이미지] %s", message)
+
+
+def _load_cv2():
+    """`(cv2, numpy, 사유)` — 못 불러오면 **사유가 남는다** (F43).
+
+    예전엔 `ImportError`를 `logger.debug`로 삼켰다. Render 로그는 INFO 이상만 남으니
+    **아무 데도 안 보였고**, 결과는 「워터마크 없음」이라고 말했다. 그건 거짓이 아니라
+    **측정하지 않은 것**이었다. 이제 한 번은 WARNING으로 운다.
+    """
+
     try:
         import cv2
         import numpy as np
+        return cv2, np, ""
+    except ImportError as exc:
+        reason = f"OpenCV(cv2) 미설치 — 워터마크를 재지 못했습니다 ({exc})"
+        _warn_once("_CV2_WARNED", reason)
+        return None, None, reason
+
+
+def _detect_watermark(image_bytes: bytes) -> tuple:
+    """워터마크 감지 — `(감지됨, 사유)`.
+
+    **사유가 비어 있을 때만 「쟀다」는 뜻이다.** 사유가 있으면 못 잰 것이고,
+    그 경우 `감지됨=False`는 「없다」가 아니라 「모른다」다.
+    """
+    cv2, np, reason = _load_cv2()
+    if reason:
+        return False, reason
+    try:
         nparr = np.frombuffer(image_bytes, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if img is None:
-            return False
+            return False, "이미지를 디코드하지 못했습니다"
         # 간단한 휴리스틱: 밝기 높은 영역 + 텍스트 가능 영역 감지
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
@@ -117,25 +180,27 @@ def _detect_watermark(image_bytes: bytes) -> bool:
         ]
         for corner in corners:
             if corner.size > 0 and corner.mean() > 25:
-                return True
-        return False
-    except ImportError:
-        logger.debug("OpenCV 미설치 — 워터마크 감지 스킵")
-        return False
+                return True, ""
+        return False, ""          # 사유 없음 = **실제로 재고 없었다**
     except Exception as exc:
-        logger.debug("워터마크 감지 오류: %s", exc)
-        return False
+        logger.warning("[이미지] 워터마크 감지 오류: %s", exc)
+        return False, f"감지 오류: {type(exc).__name__}"
 
 
-def _inpaint_watermark(image_bytes: bytes) -> bytes:
-    """워터마크 inpainting (OpenCV 미설치 시 원본 반환)."""
+def _inpaint_watermark(image_bytes: bytes) -> tuple:
+    """워터마크 inpainting — `(바이트, 지웠나, 사유)`.
+
+    실패하면 **원본을 그대로** 돌려주고 `지웠나=False`다. 못 지웠는데 지웠다고
+    말하지 않는다.
+    """
+    cv2, np, reason = _load_cv2()
+    if reason:
+        return image_bytes, False, reason
     try:
-        import cv2
-        import numpy as np
         nparr = np.frombuffer(image_bytes, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if img is None:
-            return image_bytes
+            return image_bytes, False, "이미지를 디코드하지 못했습니다"
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         _, mask = cv2.threshold(gray, 240, 255, cv2.THRESH_BINARY)
         # 모서리 마스크만 사용 (전체 적용 시 상품 손상 우려)
@@ -148,13 +213,10 @@ def _inpaint_watermark(image_bytes: bytes) -> bytes:
         dilated = cv2.dilate(full_mask, kernel, iterations=2)
         result = cv2.inpaint(img, dilated, 3, cv2.INPAINT_TELEA)
         _, buf = cv2.imencode(".jpg", result, [cv2.IMWRITE_JPEG_QUALITY, 92])
-        return buf.tobytes()
-    except ImportError:
-        logger.debug("OpenCV 미설치 — inpainting 스킵")
-        return image_bytes
+        return buf.tobytes(), True, ""
     except Exception as exc:
-        logger.debug("inpainting 오류: %s", exc)
-        return image_bytes
+        logger.warning("[이미지] inpainting 오류(원본 유지): %s", exc)
+        return image_bytes, False, f"inpainting 오류: {type(exc).__name__}"
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +250,8 @@ def _resize_and_crop(
         img.save(buf, format="JPEG", quality=90, optimize=True)
         return buf.getvalue()
     except ImportError:
-        logger.debug("Pillow 미설치 — 리사이즈 스킵")
+        # F43 동류 — Pillow도 한때 requirements 미기재로 조용히 무력이었다. 이제 운다.
+        _warn_once("_PIL_WARNED", "Pillow 미설치 — 리사이즈를 건너뜁니다(원본 유지)")
         return image_bytes
     except Exception as exc:
         logger.debug("리사이즈 오류: %s", exc)
@@ -208,7 +271,7 @@ def _convert_to_webp(image_bytes: bytes, quality: int = 85) -> bytes:
             return image_bytes
         return webp_bytes
     except ImportError:
-        logger.debug("Pillow 미설치 — WebP 변환 스킵")
+        _warn_once("_PIL_WARNED", "Pillow 미설치 — WebP 변환을 건너뜁니다(원본 유지)")
         return image_bytes
     except Exception as exc:
         logger.debug("WebP 변환 오류: %s", exc)
@@ -352,13 +415,20 @@ def process_image(
             error=f"다운로드 실패: {exc}",
         )
 
+    # F43 — 「껐다」·「못 쟀다」·「재고 없었다」가 **서로 다른 값**으로 나간다.
     watermark_detected = False
     watermark_removed = False
-    if _INPAINT_ENABLED:
-        watermark_detected = _detect_watermark(image_bytes)
+    watermark_checked = False
+    watermark_reason = ""
+    if not _INPAINT_ENABLED:
+        watermark_reason = "워터마크 제거가 꺼져 있습니다 (IMAGE_INPAINT_ENABLED)"
+    else:
+        watermark_detected, watermark_reason = _detect_watermark(image_bytes)
+        watermark_checked = not watermark_reason
         if watermark_detected:
-            image_bytes = _inpaint_watermark(image_bytes)
-            watermark_removed = True
+            image_bytes, watermark_removed, why = _inpaint_watermark(image_bytes)
+            if why:
+                watermark_reason = why
 
     # 리사이즈
     min_res = _CHANNEL_MIN_RESOLUTION.get(channel, _CHANNEL_MIN_RESOLUTION["default"])
@@ -396,6 +466,8 @@ def process_image(
         format=fmt,
         watermark_detected=watermark_detected,
         watermark_removed=watermark_removed,
+        watermark_checked=watermark_checked,
+        watermark_reason=watermark_reason,
         background_unified=False,
         webp_converted=webp_converted,
         cdn_uploaded=cdn_uploaded,
@@ -429,6 +501,8 @@ def image_pipeline_stats(results: List[ImageProcessResult]) -> Dict[str, Any]:
     success = sum(1 for r in results if r.success)
     wm_detected = sum(1 for r in results if r.watermark_detected)
     wm_removed = sum(1 for r in results if r.watermark_removed)
+    # F43 — **분모는 잰 것만.** 「0건 검출」은 0/0일 때 아무 뜻도 없다.
+    wm_checked = sum(1 for r in results if r.watermark_checked)
     webp = sum(1 for r in results if r.webp_converted)
     cdn_uploaded = sum(1 for r in results if r.cdn_uploaded)
     return {
@@ -437,6 +511,7 @@ def image_pipeline_stats(results: List[ImageProcessResult]) -> Dict[str, Any]:
         "success_pct": round(success / total * 100, 0) if total > 0 else 0,
         "watermark_detected": wm_detected,
         "watermark_removed": wm_removed,
+        "watermark_checked": wm_checked,
         "webp_converted": webp,
         "cdn_uploaded": cdn_uploaded,
         "pipeline_enabled": _PIPELINE_ENABLED,
