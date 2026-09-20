@@ -107,15 +107,19 @@ class TestProcessImageUrls:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class TestDetectWatermark:
+    """F43 이후 `(감지됨, 사유)` — **사유가 있으면 「못 쟀다」**는 뜻이다."""
+
     def test_invalid_bytes_returns_false(self):
         from src.media.image_pipeline import _detect_watermark
-        result = _detect_watermark(b"not_an_image")
-        assert result is False
+        detected, reason = _detect_watermark(b"not_an_image")
+        assert detected is False
+        assert reason          # 「없다」가 아니라 사유가 붙는다
 
     def test_empty_bytes_returns_false(self):
         from src.media.image_pipeline import _detect_watermark
-        result = _detect_watermark(b"")
-        assert result is False
+        detected, reason = _detect_watermark(b"")
+        assert detected is False
+        assert reason
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -126,8 +130,10 @@ class TestInpaintWatermark:
     def test_invalid_bytes_returns_original(self):
         from src.media.image_pipeline import _inpaint_watermark
         original = b"not_an_image"
-        result = _inpaint_watermark(original)
-        assert result == original
+        out, removed, reason = _inpaint_watermark(original)
+        assert out == original
+        assert removed is False   # 못 지웠으면 지웠다고 말하지 않는다 (F43)
+        assert reason
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

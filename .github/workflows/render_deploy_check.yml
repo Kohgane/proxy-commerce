@@ -33,8 +33,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Measure image size (D3-3 — 전후 숫자를 사람이 읽게)
+        run: |
+          echo "== 배포 이미지 크기 =="
+          docker image inspect proxy-commerce:ci --format '{{.Size}}' \
+            | awk '{printf "image_size_bytes=%d (%.0f MB)\n", $1, $1/1024/1024}'
+          echo "== 파이썬 패키지 상위 10 (무엇이 크기를 차지하나) =="
+          docker run --rm proxy-commerce:ci sh -c \
+            'du -sm /usr/local/lib/python3.11/site-packages/* 2>/dev/null | sort -rn | head -10'
+
       - name: Start container
         run: |
+          START=$(date +%s.%N)
           docker run -d \
             --name pc-ci \
             -p 10000:10000 \
@@ -42,7 +52,20 @@ jobs:
             -e APP_ENV=ci \
             -e FX_DISABLE_NETWORK=1 \
             proxy-commerce:ci
+          echo "$START" > /tmp/pc_start_ts
           echo "Container started, waiting for health..."
+
+      - name: Verify D3-3 render font in image (F43 동류 — 레포엔 있는데 이미지엔 없다)
+        run: |
+          # 폰트가 이미지에 없으면 3단계 한글이 두부(□□□)로 나간다. 존재 + 크기(서브셋 아님)를 잰다.
+          docker exec pc-ci ls -l /app/assets/fonts/
+          docker exec pc-ci test -f /app/assets/fonts/NotoSansKR-VF.ttf \
+            || { echo "✗ 렌더 폰트 MISSING in deploy image"; exit 1; }
+          SZ=$(docker exec pc-ci stat -c %s /app/assets/fonts/NotoSansKR-VF.ttf)
+          echo "font_bytes=$SZ"
+          # 서브셋이면 수백 KB로 떨어진다 — 5MB 미만이면 서브셋을 의심한다.
+          [ "$SZ" -gt 5000000 ] || { echo "✗ 폰트가 너무 작다 — 서브셋 의심($SZ)"; exit 1; }
+          docker exec pc-ci python -c "import cv2, numpy; print('cv2', cv2.__version__, 'numpy', numpy.__version__)"
 
       - name: Verify operational scripts in image (v87-W1 아티팩트 게이트 · 완료조건 5항)
         run: |
@@ -83,6 +106,10 @@ jobs:
           for i in $(seq 1 15); do
             if curl -sf http://localhost:10000/health; then
               echo ""
+              # D3-3 — 기동 시간. 앞선 검증 스텝이 낀 뒤라 **상한**이지 순수 부팅 시간은 아니다.
+              #   (cv2·numpy는 함수 안 import라 부팅 경로에 없다 — 실측 근거는 PR 본문.)
+              NOW=$(date +%s.%N); START=$(cat /tmp/pc_start_ts 2>/dev/null || echo "$NOW")
+              awk -v a="$START" -v b="$NOW" 'BEGIN{printf "boot_to_health_upper_bound=%.1fs\n", b-a}'
               echo "✓ Health check passed on attempt $i"
               exit 0
             fi
