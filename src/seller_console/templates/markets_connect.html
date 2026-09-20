@@ -319,10 +319,30 @@ function renderLookup(form, data) {
       </label>`;
     });
   });
+  // F38 실측(오너 2026-09-20): 출고지 2개(22796911/25099966)가 왔는데
+  //   「고른 값으로 칸 채우기」가 OUTBOUND를 **건너뛰었다.** 라디오는 그려졌다 —
+  //   빈 것은 `entry.values`였다(응답 키 이름이 우리 후보 사전에 없다).
+  //   >> 키 이름을 **지어내지 않는다**(실측 전). 대신 **응답이 실제로 준 키**를 골라 담게 한다 —
+  //     사람이 한 번 고르면 그 값이 칸에 들어간다. 「못 고른 것을 보여 주고 사람이 고른다」.
   if ((data.unmapped || []).length) {
+    const rawKeys = [];
+    blocks.forEach(([key]) => {
+      ((data[key] || {}).entries || []).forEach((e, i) => {
+        Object.keys(e.raw || {}).forEach(k => rawKeys.push([key, i, k, e.raw[k]]));
+      });
+    });
     html += `<div class="pc-status pc-status-warn mt-2"><i class="bi bi-info-circle"></i>
-      쿠팡 응답에서 못 찾은 칸이 있어요 — 「원문 보기」에서 값을 찾아 직접 넣어 주세요:
-      ${kgpEscapeForHtml((data.unmapped || []).join(', '))}</div>`;
+      쿠팡 응답에서 <strong>우리가 못 고른 칸</strong>이 있어요. 아래에서 값을 골라 주세요
+      (한 번 고르면 그 칸에 들어갑니다).</div>`;
+    (data.unmapped || []).forEach(env => {
+      const opts = rawKeys.map(([bk, i, k, v]) =>
+        `<option value="${kgpEscapeForHtml(bk)}|${i}|${kgpEscapeForHtml(k)}">${kgpEscapeForHtml(k)} = ${kgpEscapeForHtml(String(v)).slice(0, 40)}</option>`).join('');
+      html += `<label class="pc-inset d-block mb-1">
+        <span class="small text-muted d-block mb-1">${kgpEscapeForHtml(env)}</span>
+        <select class="form-select form-select-sm" data-lk-manual="${kgpEscapeForHtml(env)}">
+          <option value="">— 고르지 않음 —</option>${opts}
+        </select></label>`;
+    });
   }
   html += `<button type="button" class="btn btn-primary btn-sm w-100 mt-2"
     data-action="lookup-apply"><i class="bi bi-check-lg"></i> 고른 값으로 칸 채우기</button>`;
@@ -332,16 +352,31 @@ function renderLookup(form, data) {
     if (!apply) return;
     apply.addEventListener('click', () => {
       let filled = 0;
+      const missed = [];
       form.querySelectorAll('input[type="radio"][data-lk-key]:checked').forEach(r => {
         const block = data[r.dataset.lkKey] || {};
         const entry = (block.entries || [])[Number(r.value)] || {};
-        Object.keys(entry.values || {}).forEach(env => {
+        const vals = entry.values || {};
+        // F38: 고른 항목에 **우리가 고른 값이 하나도 없으면** 그 사실을 말한다.
+        //   예전엔 조용히 건너뛰어, 사람은 「채웠다」는 토스트만 보고 빈 칸을 몰랐다.
+        if (!Object.keys(vals).length) missed.push(r.dataset.lkKey === 'outbound_places' ? '출고지' : '반품지');
+        Object.keys(vals).forEach(env => {
           const input = form.querySelector(`[name="${env}"]`);
-          if (input) { input.value = entry.values[env]; filled++; }
+          if (input) { input.value = vals[env]; filled++; }
         });
       });
-      pcToast(filled ? `${filled}개 칸을 채웠어요 — 확인 후 저장해 주세요.`
-                     : '채울 값을 찾지 못했어요.', filled ? 'success' : 'error');
+      // F38: 사람이 원문 키에서 직접 고른 값도 함께 채운다.
+      form.querySelectorAll('select[data-lk-manual]').forEach(sel => {
+        if (!sel.value) return;
+        const [bk, idx, key] = sel.value.split('|');
+        const entry = ((data[bk] || {}).entries || [])[Number(idx)] || {};
+        const v = (entry.raw || {})[key];
+        const input = form.querySelector(`[name="${sel.dataset.lkManual}"]`);
+        if (input && v !== undefined && String(v).trim()) { input.value = String(v).trim(); filled++; }
+      });
+      const tail = missed.length ? ` (${missed.join('·')}는 우리가 고르지 못했어요 — 위에서 값을 골라 주세요)` : '';
+      pcToast(filled ? `${filled}개 칸을 채웠어요 — 확인 후 저장해 주세요.${tail}`
+                     : `채울 값을 찾지 못했어요.${tail}`, filled ? 'success' : 'error');
     });
   }, 0);
   return html;
