@@ -94,7 +94,9 @@
       <details class="rp-note">
         <summary>실마진 · 배송(한국) 판정 기준</summary>
         <div class="rp-note-body">
-          <strong>실마진</strong>은 채널 수수료·배송비를 반영한 실제 마진이에요(목표 마진율과 별도, 같은 공식 단일 소스).
+          <strong>실마진</strong>은 채널 수수료·배송비를 반영한 실제 마진이에요.
+          2026-09-20부터 <strong>등록 판매가도 이 기준으로 역산</strong>합니다 —
+          「남길 마진율」이 곧 실마진이라, 목표와 실측이 같은 잣대를 씁니다.
           배송비를 아직 못 구한 상품은 <strong>마진 미반영</strong>으로 정직 표기합니다.<br>
           <strong>배송(한국)</strong>은 소스가 한국으로 실제 배송되는지 판정이며(ALPAKA·ULANZI 등 전례는 배송불가),
           실측 전이면 <strong>미검증</strong>으로 둡니다 — <strong>등록을 막지는 않고 표시만</strong> 합니다.
@@ -151,7 +153,7 @@
                 {% if r.margin_pct is not none %}
                   <span class="rp-num">{{ r.margin_pct }}<span class="rp-unit">%</span></span>
                   {% if r.net_krw is not none %}<div class="rp-sub">순 {{ '{:,}'.format(r.net_krw) }}원</div>{% endif %}
-                  <div class="rp-sub" title="목표 마진(÷0.618)">목표 {{ r.target_margin_pct }}%</div>
+                  <div class="rp-sub" title="남길 마진율 — 수수료·배송비를 뺀 뒤 남는 비율">목표 {{ r.target_margin_pct }}%</div>
                   {% if r.ship_over_35pct %}<span class="pc-badge pc-badge-off" title="소싱 6조건 §6">배송비 &gt; 원가 35%</span>{% endif %}
                 {% else %}<span class="rp-sub">마진 미반영</span>{% endif %}
               </td>

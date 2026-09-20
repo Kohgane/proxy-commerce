@@ -327,8 +327,9 @@
           </div>
         </div>
         <div class="mb-2">
-          <label class="form-label small mb-1">목표 마진율 (%)</label>
+          <label class="form-label small mb-1" for="bulkMargin">남길 마진율 (%)</label>
           <input type="number" id="bulkMargin" class="form-control form-control-sm" value="22" min="0" max="90" step="1">
+          <div class="form-text">마켓 수수료·배송비를 <strong>빼고 나서</strong> 실제로 남는 비율이에요. 판매가는 여기에 맞춰 역산합니다.</div>
         </div>
         <!-- v45: 벌크 등록 진행률(청크 단위 실제 진행) -->
         <div id="bulkUploadProgress" class="mt-2 d-none">
@@ -379,9 +380,12 @@
       <div class="modal-body">
         <p class="small text-muted">선택한 <strong id="priceSelCount">0</strong>개 상품에 적용합니다. 둘 중 하나만 입력해도 됩니다.</p>
         <div class="mb-3">
-          <label class="form-label small mb-1" for="bulkMarginPct">목표 마진율 (%)</label>
-          <input type="number" id="bulkMarginPct" class="form-control form-control-sm" placeholder="예: 25" min="0" max="90" step="1">
-          <div class="form-text">업로드 시 판매가 계산에 사용됩니다(각 상품에 저장).</div>
+          <label class="form-label small mb-1" for="bulkMarginPct">남길 마진율 (%)</label>
+          <input type="number" id="bulkMarginPct" class="form-control form-control-sm" placeholder="예: 22" min="0" max="90" step="1">
+          <div class="form-text">
+            마켓 수수료·배송비를 <strong>빼고 나서</strong> 실제로 남는 비율이에요(각 상품에 저장).
+            판매가는 마켓마다 수수료가 달라 <strong>마켓별로 다르게</strong> 나옵니다.
+          </div>
         </div>
         <div class="mb-1">
           <label class="form-label small mb-1" for="bulkPriceMult">수집가(원가) 배수 (×)</label>
