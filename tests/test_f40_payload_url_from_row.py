@@ -127,22 +127,26 @@ def test_the_coupang_payload_gets_the_sku(monkeypatch):
 
 
 def test_the_bulk_path_carries_the_row_url():
-    """★★ 행의 `url` 컬럼(= 「원본 보기」가 여는 값)이 **항상** 페이로드에 실린다."""
-    import inspect
-    from src.seller_console import views
-    src = inspect.getsource(views.collect_bulk_upload)
-    assert 'product["url"] = item.get("url")' in src
-    # `if not product:` 안에만 있으면 안 된다 — extra가 비어 있지 않은 게 보통이다.
-    guarded = src.index("if not product:")
-    always = src.rindex('product["url"] = item.get("url")')
-    assert always > guarded, "행 url 주입이 여전히 빈 extra일 때만 일어난다"
+    """★★ 행의 `url` 컬럼(= 「원본 보기」가 여는 값)이 **항상** 페이로드에 실린다.
+
+    ※ F40-b(2026-09-21): 예전엔 이 계약이 **대입문 한 줄을 글자로** 찾았다.
+      세 경로가 공용 빌더를 쓰게 되면서 그 줄이 사라지자 터졌다 — **구현을 재고 있었다.**
+      이제 **행 url이 실제로 실리는지**를 잰다(경로 열거는 `test_f40b_…`가 맡는다).
+    """
+    from src.seller_console.upload_dispatcher import build_dispatch_payload, draft_url
+    pd = build_dispatch_payload({"title": "t", "price": 1}, {"url": TMALL})
+    assert draft_url(pd) == TMALL
+    # extra가 **비어 있지 않아도** 실린다 — 그게 F40의 근원이었다(텔레그램 extra엔 url 키가 없다).
+    pd2 = build_dispatch_payload({"title": "t", "final_url": "", "share_tk": "x"},
+                                 {"url": TMALL})
+    assert draft_url(pd2) == TMALL
 
 
 def test_the_single_upload_path_fills_it_too():
+    """★★ 단건도 같은 빌더를 지난다 — 카나리 4차에서 **여기만** 빠져 있었다."""
     import inspect
     from src.seller_console import views
-    src = inspect.getsource(views.collect_upload)
-    assert 'product_data["url"] = _uit.get("url")' in src
+    assert "build_dispatch_payload" in inspect.getsource(views.collect_upload)
 
 
 # ---------------------------------------------------------------------------

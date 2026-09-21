@@ -1801,6 +1801,12 @@ def collect_upload():
     if not markets:
         return jsonify({"ok": False, "error": "업로드 대상 마켓을 선택하세요."}), 400
 
+    # F40-b: 주소 채우기는 **공용 빌더 한 자리**에서, 그리고 아래 이미지·도달성 `try` **밖에서**.
+    #   예전엔 그 블록 안에 있었는데 블록의 except가 모든 예외를 삼켜, 앞쪽에서 무엇 하나
+    #   터지면 **주소 채우기가 조용히 건너뛰어졌다**(카나리 4차 실측: 뽑힌 값 '').
+    from .upload_dispatcher import build_dispatch_payload as _build_payload
+    product_data = _build_payload(product_data, _get_owned_item(data.get("item_id") or ""))
+
     # D2: 마켓에 나가는 이미지는 **번역본 사용 토글을 반영한 배열**이다.
     #   폼이 보낸 목록(사람이 방금 고친 원본 순서)을 기준으로, 저장된 토글을 서버가 매핑한다 —
     #   화면과 서버가 각자 계산하면 「서랍은 한국어인데 마켓은 중국어」가 된다.
@@ -1813,12 +1819,8 @@ def collect_upload():
             if _uit:
                 from src.services import image_translate_store as _its
                 _uex = json.loads(_uit.get("extra_json") or "{}") or {}
-                # F40: 주소는 **행의 `url` 컬럼**이 정본이다(「원본 보기」가 여는 그 값).
-                #   폼이 안 실어 보냈으면 여기서 채운다 — 화면과 등록이 다른 주소를 보면
-                #   「화면은 열리는데 등록은 알 수 없는 사이트」가 된다.
-                from .upload_dispatcher import draft_url as _durl
-                if not _durl(product_data) and _uit.get("url"):
-                    product_data["url"] = _uit.get("url")
+                # (F40-b: 주소 채우기는 이 블록 **밖**으로 옮겼다 — 여기 except가 모든 예외를
+                #  삼켜서, 앞이 터지면 주소가 조용히 안 채워졌다. 위 `build_dispatch_payload` 참조.)
                 _eff = _its.effective_images(_uex, item_id=_uid,
                                              originals=product_data.get("images") or [])
                 if _eff:
@@ -2255,13 +2257,10 @@ def collect_bulk_upload():
                 if not product:
                     product = {"title": item.get("title"), "url": item.get("url"),
                                "price": item.get("price"), "currency": item.get("currency")}
-                # F40: 행의 `url` 컬럼(= 「원본 보기」가 여는 그 주소)을 **항상** 싣는다.
-                #   예전엔 `extra_json`이 비었을 때만 넣었는데, 텔레그램/공유 수집의 extra는
-                #   비어 있지 않고 **`url` 키가 없다**(`final_url`만 있다) → 페이로드에 주소가
-                #   통째로 없었다. 화면은 주소를 여는데 등록은 「알 수 없는 사이트」라고 했다.
-                from .upload_dispatcher import draft_url as _durl
-                if not _durl(product) and item.get("url"):
-                    product["url"] = item.get("url")
+                # F40-b: 단건·일괄·재등록이 **같은 빌더**를 쓴다. 행의 `url` 컬럼
+                #   (= 「원본 보기」가 여는 그 주소)이 정본이다.
+                from .upload_dispatcher import build_dispatch_payload as _build_payload
+                product = _build_payload(product, item)
                 if target_margin_pct is not None:
                     try:
                         product["target_margin_pct"] = float(target_margin_pct)
@@ -8156,7 +8155,11 @@ def _woocommerce_dispatch(product_data, account):
     dispatcher = _get_upload_dispatcher()
     if dispatcher is None:
         return {"success": False, "error": "업로드 디스패처 로드 실패 — 등록 불가"}
-    from .upload_dispatcher import draft_url
+    # F40-b: 세 번째 경로도 **같은 빌더**를 지난다. 여긴 행이 없어(상위에서 이미 만든 값)
+    #   빌더가 그대로 돌려주지만, **경로가 빌더를 지난다는 사실**이 계약의 모집단이다 —
+    #   나중에 이 경로에 행이 붙으면 그때 자동으로 채워진다.
+    from .upload_dispatcher import build_dispatch_payload, draft_url
+    product_data = build_dispatch_payload(product_data, product_data.get("_row"))
     sku = str(product_data.get("sku") or "").strip()
     pd = {
         "title_ko": product_data.get("title_ko"),
