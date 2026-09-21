@@ -374,17 +374,24 @@ class CoupangAdapter(MarketAdapter):
 
         return results
 
-    def update_tracking(self, order_id: str, shipment_box_id: str = None, courier: str = "", tracking_no: str = "") -> bool:
-        """쿠팡 운송장 등록.
+    def update_tracking(self, order_id: str, shipment_box_id: str = None, courier: str = "", tracking_no: str = "") -> dict:
+        """쿠팡 운송장 등록 — `{ok, http_status, body, error}` (F45).
 
-        ADAPTER_DRY_RUN=1 이면 로그만 기록 후 True 반환.
+        ## 왜 dict인가
+
+        예전엔 `bool`이었고 **실패 사유(응답 원문)를 로그로만** 흘렸다. 화면엔
+        「실패」 석 자도 아니고 **「성공」**이 떴다(호출부가 우리 DB 성공으로 덮었다).
+        원문이 화면에 와야 무엇이 틀렸는지 사람이 안다 — **F41과 같은 규율**이다.
+
+        `body`는 **마스킹 후 300자**. ADAPTER_DRY_RUN=1이면 전송하지 않고 ok=True.
         """
         if not self.is_active:
-            return False
+            return {"ok": False, "http_status": None, "body": "",
+                    "error": "쿠팡 자격증명이 설정되지 않았습니다"}
 
         if _dry_run():
             logger.info("ADAPTER_DRY_RUN=1 — 쿠팡 update_tracking 차단: %s", order_id)
-            return True
+            return {"ok": True, "http_status": None, "body": "", "error": ""}
 
         vendor_id = os.getenv("COUPANG_VENDOR_ID", "")
         box_id = shipment_box_id or order_id
@@ -401,12 +408,23 @@ class CoupangAdapter(MarketAdapter):
             )
             if resp.status_code in (200, 201):
                 logger.info("쿠팡 운송장 등록 성공: %s", order_id)
-                return True
-            logger.warning("쿠팡 운송장 등록 실패 HTTP %s: %s", resp.status_code, resp.text)
-            return False
+                return {"ok": True, "http_status": resp.status_code, "body": "", "error": ""}
+            # 실패 원문은 **로그에 전문, 화면에 300자**(F41 규율). 마스킹은 항상 거친다 —
+            #   쿠팡이 우리 요청을 되울려 주면 거기에 자격증명이 섞일 수 있다.
+            from src.utils.secret_mask import mask_text
+            raw = mask_text(resp.text or "", secrets=(os.getenv("COUPANG_SECRET_KEY", ""),
+                                                      os.getenv("COUPANG_ACCESS_KEY", "")))
+            logger.warning("쿠팡 운송장 등록 실패 HTTP %s: %s", resp.status_code, raw[:2000])
+            return {
+                "ok": False,
+                "http_status": resp.status_code,
+                "body": raw[:300] if raw.strip() else "본문을 주지 않았습니다(빈 응답)",
+                "error": f"쿠팡이 운송장 등록을 거부했습니다 (HTTP {resp.status_code})",
+            }
         except Exception as exc:
             logger.warning("쿠팡 update_tracking 오류: %s", exc)
-            return False
+            return {"ok": False, "http_status": None, "body": str(exc)[:300],
+                    "error": f"쿠팡 호출 중 오류: {type(exc).__name__}"}
 
     def fetch_orders(self, created_at_from: Optional[str] = None) -> list:
         """쿠팡 주문 조회.

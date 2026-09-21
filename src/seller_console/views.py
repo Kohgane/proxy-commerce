@@ -3769,8 +3769,20 @@ def order_tracking(marketplace: str, order_id: str):
         return jsonify({"ok": False, "error": "서비스 준비 중입니다."}), 503
 
     try:
-        ok = svc.update_tracking(order_id, marketplace, courier, tracking_no)
-        return jsonify({"ok": ok})
+        # F45: `ok`는 **마켓 반영 여부**다. 우리 DB 저장은 `local_ok`로 따로 나간다 —
+        #   한 필드가 두 뜻을 가지면 「성공」이 무엇을 뜻하는지 아무도 모른다.
+        res = svc.update_tracking(order_id, marketplace, courier, tracking_no)
+        if not res.get("ok"):
+            _log_order_op("warning", "tracking_update", marketplace=marketplace,
+                          order_id=order_id, reason="market_not_updated")
+        return jsonify({
+            "ok": bool(res.get("ok")),
+            "local_ok": bool(res.get("local_ok")),
+            "market_supported": bool(res.get("market_supported", True)),
+            "error": res.get("error", ""),
+            "error_body": res.get("error_body", ""),
+            "http_status": res.get("http_status"),
+        })
     except Exception as exc:
         _log_order_op("error", "tracking_update", marketplace=marketplace, order_id=order_id, reason="internal_error", exc=exc)
         return jsonify({"ok": False, "error": "운송장 등록 중 오류가 발생했습니다."}), 500
@@ -3848,15 +3860,27 @@ def orders_bulk_tracking():
             )
             continue
         try:
-            ok = svc.update_tracking(
+            res = svc.update_tracking(
                 order_id,
                 marketplace,
                 courier,
                 tracking_no,
             )
+            ok = bool(res.get("ok"))
             if ok:
                 success_count += 1
-            results.append({"order_id": order_id, "marketplace": marketplace, "ok": ok})
+            else:
+                _log_order_op("warning", "bulk_tracking_update", marketplace=marketplace,
+                              order_id=order_id, reason="market_not_updated")
+            # F45: 실패면 **사유와 마켓 응답 원문**이 같이 간다(한 줄 「실패」로 끝내지 않는다).
+            results.append({
+                "order_id": order_id, "marketplace": marketplace, "ok": ok,
+                "local_ok": bool(res.get("local_ok")),
+                "market_supported": bool(res.get("market_supported", True)),
+                "error": res.get("error", ""),
+                "error_body": res.get("error_body", ""),
+                "http_status": res.get("http_status"),
+            })
         except Exception as exc:
             _log_order_op("error", "bulk_tracking_update", marketplace=marketplace, order_id=order_id, reason="internal_error", exc=exc)
             results.append({"order_id": order_id, "marketplace": marketplace, "ok": False, "error": "운송장 등록 중 오류가 발생했습니다."})

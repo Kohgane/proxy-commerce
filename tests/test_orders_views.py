@@ -49,7 +49,12 @@ def mock_sync_service():
         "11st": {"fetched": 0, "upserted": 0, "status": "ok"},
         "kohganemultishop": {"fetched": 0, "upserted": 0, "status": "ok"},
     }
-    svc.update_tracking.return_value = True
+    # F45: update_tracking은 이제 **dict**을 낸다 — `ok`(마켓 반영)와 `local_ok`(우리 기록)가
+    #   다른 칸이다. 예전엔 bool 하나가 두 뜻을 겸했다.
+    svc.update_tracking.return_value = {
+        "ok": True, "local_ok": True, "market_supported": True,
+        "error": "", "error_body": "", "http_status": 200,
+    }
     return svc
 
 
@@ -149,14 +154,20 @@ class TestOrdersViews:
         assert data["ok"] is True
 
     def test_post_tracking_allows_free_text_courier(self, client, mock_sync_service):
-        """목록에 없는 택배사 입력도 저장 경로를 막지 않는다."""
+        """목록에 없는 택배사 입력도 **라우트는** 막지 않는다.
+
+        ※ F45(2026-09-21) 이후 쿠팡 전송은 **서비스 안 단일 관문**이 막는다
+          (코드 모양이 아니면 보류). 라우트는 그대로 통과시키고, 관문이 하나뿐이어야
+          단일·일괄 두 경로를 다 덮는다. 그래서 여기서는 **관문이 없는 마켓**으로 잰다 —
+          쿠팡의 보류는 `test_f45_tracking_honesty.py`가 전송 0회로 확인한다.
+        """
         with patch("src.seller_console.views._get_order_sync_service", return_value=mock_sync_service):
             resp = client.post(
-                "/seller/orders/coupang/CP-001/tracking",
+                "/seller/orders/smartstore/SS-001/tracking",
                 json={"courier": "신규택배", "tracking_no": "1234567890"},
             )
         assert resp.status_code == 200
-        mock_sync_service.update_tracking.assert_called_with("CP-001", "coupang", "신규택배", "1234567890")
+        mock_sync_service.update_tracking.assert_called_with("SS-001", "smartstore", "신규택배", "1234567890")
 
     def test_post_tracking_missing_fields(self, client, mock_sync_service):
         """운송장 정보 누락 → 400."""
