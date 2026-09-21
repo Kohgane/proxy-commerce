@@ -31,6 +31,11 @@ def _echo(s):
     return s
 
 
+#: 이 모듈들이 D3 단계를 import하는 것은 **연결이 아니다** — 벤치(관리자 화면)와
+#: 그 안의 3단계 렌더가 서로를 쓰는 자리다. 등록·번역 경로는 여기 없다.
+BENCH_ONLY = {"image_translate_bench.py", "image_text_render.py"}
+
+
 def _importers_of(module_name: str, *, allow=()) -> list:
     """`src/` 안에서 그 모듈을 **실제로 import 하는** 파일들 (글자 일치 아님).
 
@@ -233,5 +238,9 @@ def test_it_is_not_wired_into_the_pipeline_yet():
     ※ **글자가 아니라 `import`를 잰다.** 예전엔 파일 안에 이름이 보이기만 해도 실패였는데,
       3단계 모듈의 **독스트링이 2단계를 설명하면서** 이름을 적자 터졌다. 그건 연결이 아니다.
       계약이 주석을 읽으면 헛것을 재는 것이다.
+
+    ※ **벤치는 파이프라인이 아니다**(D3-3b, 오너 2026-09-21). 관리자 화면이 오너 클릭으로
+      한 장을 돌려 보는 자리이고, 결과는 벤치 저장소에만 간다. 여기서 막는 것은
+      **등록·번역 경로가 이 모듈을 집어 가는 것**이다.
     """
-    assert _importers_of("image_text_glossary") == []
+    assert _importers_of("image_text_glossary", allow=BENCH_ONLY) == []

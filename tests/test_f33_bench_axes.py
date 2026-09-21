@@ -280,9 +280,17 @@ def test_the_run_route_refuses_to_mix_modes_in_one_run():
 
 
 def test_the_run_id_carries_the_mode():
-    """실행 이름표에 모드가 들어간다 — 두 실행을 나중에 헷갈리지 않게."""
-    src = (ROOT / "src/seller_console/views.py").read_text(encoding="utf-8")
-    assert 'bench-%Y%m%d-%H%M%S-m{mode}' in src
+    """실행 이름표에 모드가 들어간다 — 두 실행을 나중에 헷갈리지 않게.
+
+    ※ 소스의 포맷 문자열을 찾던 계약이었는데, **그러면 코드를 조금만 고쳐도 터진다**
+      (D3-3b가 접미어를 붙이자 그랬다). 이제 **낸 값**을 잰다.
+    """
+    from src.seller_console.views import bench_run_id
+    assert bench_run_id(0).endswith("-m0")
+    assert bench_run_id(1).endswith("-m1")
+    # D3-3b: 같은 모드라도 **D3 실행은 이름이 다르다** — 표에서 짝이 갈리지 않게.
+    assert bench_run_id(0, True).endswith("-m0-d3")
+    assert bench_run_id(0) != bench_run_id(0, True)
 
 
 # ---------------------------------------------------------------------------
