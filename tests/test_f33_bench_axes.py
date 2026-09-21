@@ -121,9 +121,29 @@ def test_a_page_without_any_known_idiom_is_unmeasured():
 
 
 def test_the_idiom_table_only_holds_measured_entries():
-    """실측된 것만 — 표를 상상으로 채우면 그때부터 채점이 소설이다."""
+    """실측된 것만 — 표를 상상으로 채우면 그때부터 채점이 소설이다.
+
+    오너가 실측으로 준 원문만 들어간다. **목록을 못박지 않는다** — 그러면 표를 늘리는
+    것 자체가 계약 위반이 되고, 이 표는 늘어나라고 있는 것이다. 대신 **형태**를 잰다.
+    """
     from src.services.image_bench_axes import IDIOMS
-    assert [i["source"] for i in IDIOMS] == ["三合一"]
+    assert IDIOMS[0]["source"] == "三合一"           # 최초 실측(2026-09-18)
+    for i in IDIOMS:
+        assert i["source"] and i["good"], i
+        assert "note" in i and i["note"], i           # 어디서 왔는지 없으면 실측이 아니다
+        assert isinstance(i["bad"], tuple), i
+
+
+def test_a_correct_line_is_never_marked_wrong_by_an_empty_bad_list():
+    """★★ `bad`를 비워 둔 것은 **발명을 피한 것**이다(D3-4 ④).
+
+    오너는 「오역이었다」고 알려 줬지 틀린 문장을 주지 않았다. 지어 넣으면 그 문장이
+    안 나오는 **다른 오역**을 정답으로 통과시킨다. 그래서 정본이면 1, 아니면 **측정 불가**다.
+    """
+    from src.services.image_bench_axes import judge_idiom
+
+    assert judge_idiom(_lines(("一放秒充", "올려놓기만 하면 충전")))["score"] == 1
+    assert judge_idiom(_lines(("一放秒充", "한 번 놓으면 초충전입니다")))["score"] is None
 
 
 # ---------------------------------------------------------------------------

@@ -205,7 +205,55 @@ def test_the_summary_counts_only_what_it_measured():
     rows = G.translate_lines(
         [{"source": "三合一"}, {"source": "START"}, {"source": ""}], _echo)
     s = G.summarize(rows)
-    assert s == {"total": 3, "translated": 1, "kept": 1, "failed": 0}
+    assert s == {"total": 3, "translated": 1, "kept": 1, "failed": 0, "glossary": 0}
+
+
+# ---------------------------------------------------------------------------
+# ★★ D3-4 ④ 정본 용어집 + 문체 지시 (오너 실측 오역 2026-09-21)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("source,ko", [
+    ("一放秒充", "올려놓기만 하면 충전"),
+    ("拒绝凌乱", "지저분함은 이제 그만"),
+    ("轻松收纳", "간편 수납"),
+])
+def test_a_measured_mistranslation_is_answered_from_the_glossary(source, ko):
+    """★★★ 오너가 **정본을 준 줄**은 번역기에 묻지 않는다 — 답을 아는데 또 틀릴 이유가 없다."""
+    calls = []
+
+    def _fn(s):
+        calls.append(s)
+        return "엉뚱한 번역입니다"
+
+    rows = G.translate_lines([{"source": source}], _fn)
+    assert rows[0]["render_text"] == ko
+    assert rows[0]["glossary_hit"] == source
+    assert calls == [], calls            # 전송 0회
+
+
+def test_the_glossary_survives_spacing():
+    """★ 공급사가 준 원문에 공백이 끼어도 같은 줄이다."""
+    assert G.glossary_line(" 轻松 收纳 ") == "간편 수납"
+
+
+def test_a_line_that_is_not_in_the_table_still_goes_to_the_translator():
+    """★★ 표에 없는 줄까지 가로채면 **번역이 사라진다** — 표에 있는 것만 답한다."""
+    rows = G.translate_lines([{"source": "超强吸力"}], _echo)
+    assert not rows[0].get("glossary_hit")
+    assert rows[0]["render_text"] == "超强吸力"
+
+
+def test_the_summary_counts_the_glossary_lines():
+    rows = G.translate_lines([{"source": "一放秒充"}, {"source": "超强吸力"}], _echo)
+    assert G.summarize(rows)["glossary"] == 1
+
+
+def test_the_style_instruction_bans_declarative_endings():
+    """★★ 오너 지시 문구가 **실제 지시문에** 들어 있다 — 광고 카피체·평서형 종결 금지."""
+    assert "광고 카피" in G.STYLE_INSTRUCTION
+    assert "평서형 종결" in G.STYLE_INSTRUCTION
+    for ending in ("입니다", "합니다"):
+        assert ending in G.STYLE_INSTRUCTION, ending
 
 
 # ---------------------------------------------------------------------------
@@ -213,21 +261,33 @@ def test_the_summary_counts_only_what_it_measured():
 # ---------------------------------------------------------------------------
 
 def test_it_reuses_the_bench_dictionaries():
-    """★★ 생성과 채점이 **같은 표**를 본다 — 두 벌이면 만들면서 틀리고 재면서 통과한다."""
-    import inspect
-    src = inspect.getsource(G)
-    assert "from src.services.image_bench_axes import" in src
-    for name in ("IDIOMS", "_BRAND_TOKEN", "_EN_UI", "_NOT_BRAND"):
-        assert name in src, name
+    """★★ 생성과 채점이 **같은 표**를 본다 — 두 벌이면 만들면서 틀리고 재면서 통과한다.
+
+    ※ 소스 문자열이 아니라 **객체가 같은지**를 본다(메타 계약). 이름만 적어 두고
+      다른 표를 들고 있으면 문자열 검사는 통과하지만 **표는 두 벌**이다.
+    """
+    from src.services import image_bench_axes as axes
+
+    assert G.IDIOMS is axes.IDIOMS
+    assert G._BRAND_TOKEN is axes._BRAND_TOKEN
+    assert G._EN_UI is axes._EN_UI
+    assert G._NOT_BRAND is axes._NOT_BRAND
+    # 정본 용어집도 그 표에서 **파생**된다 — 손으로 적은 두 번째 표가 아니다.
+    assert set(G.LINE_GLOSSARY.values()) == {i["ko"] for i in axes.IDIOMS if i.get("ko")}
 
 
 def test_the_vendor_is_injected_not_chosen_here():
-    """★ 공급사를 여기서 고르지 않는다 — 계약이 라이브 없이 규칙을 잰다."""
-    import inspect
-    src = inspect.getsource(G)
-    assert "translate_fn" in src
-    for vendor in ("tencent", "openai", "deepl", "papago"):
-        assert vendor not in src.lower(), vendor
+    """★ 공급사를 여기서 고르지 않는다 — 계약이 라이브 없이 규칙을 잰다.
+
+    ※ **import 구조**로 잰다. 예전엔 소스 문자열에서 공급사 이름을 찾았는데,
+      독스트링이 「LLM만 문체 지시를 따른다」를 설명하는 순간 헛것을 재게 된다.
+    """
+    from tests._ast_probe import calls_in, imports_in
+
+    assert "translate_fn" in calls_in(G.translate_lines)
+    joined = " ".join(imports_in(G)).lower()
+    for vendor in ("tencent", "openai", "deepl", "papago", "translator"):
+        assert vendor not in joined, vendor
 
 
 def test_it_is_not_wired_into_the_pipeline_yet():

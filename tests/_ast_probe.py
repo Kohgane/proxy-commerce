@@ -114,6 +114,23 @@ def importers_of(module_name: str, *, allow: Iterable[str] = ()) -> list:
     return sorted(set(hits))
 
 
+def imports_in(module) -> Set[str]:
+    """그 모듈이 **import 하는 이름들**(`from a.b import c` → `a.b`, `a.b.c`).
+
+    「이 모듈이 공급사를 고르지 않는다」를 잴 때. 독스트링이 공급사 이름을 **설명**해도
+    안 잡힌다 — 설명과 의존은 다른 사실이다.
+    """
+    out: Set[str] = set()
+    for n in ast.walk(ast.parse(inspect.getsource(module))):
+        if isinstance(n, ast.Import):
+            out.update(a.name for a in n.names)
+        elif isinstance(n, ast.ImportFrom):
+            mod = n.module or ""
+            out.add(mod)
+            out.update(f"{mod}.{a.name}" for a in n.names)
+    return out
+
+
 def callers_of(module, call_name: str) -> Set[str]:
     """그 모듈 안에서 `call_name(...)`을 부르는 **함수 이름들**.
 

@@ -86,6 +86,56 @@ def load(size: int, weight: str = "regular"):
     return f
 
 
+_PROBE_SIZE = 40
+_PROBE_MISSING = ""      # 사설 사용 영역 — **어떤 폰트에도 없다**(두부 기준선)
+_supported_cache: dict = {}
+
+
+def _glyph_bits(ch: str, font) -> bytes:
+    from PIL import Image, ImageDraw
+    img = Image.new("L", (_PROBE_SIZE + 24, _PROBE_SIZE + 24), 255)
+    ImageDraw.Draw(img).text((8, 4), ch, font=font, fill=0)
+    return img.tobytes()
+
+
+def supported(text: str) -> str:
+    """이 폰트가 **실제로 그릴 수 있는** 글자만 남긴다.
+
+    ## 왜 필요한가 (실측 2026-09-21)
+
+    `NotoSansKR-VF`엔 한글·라틴·상용 한자가 있지만 **간체자 일부가 없다** —
+    `绝` · `轻` · `纳` · `线` · `电`은 **두부(□)**로 그려진다.
+
+    그린 그림이 두부여도 `getbbox()`는 **멀쩡한 숫자**를 돌려준다. 그래서 폭·굵기를
+    그걸로 재면 **두부를 글자로 재게 된다.** 픽셀로 확인한다.
+
+    (렌더 자체는 한국어라 영향이 없다. 이 함수가 필요한 곳은 **원문 글자를 기준선으로
+    그려 보는 자리**다 — D3-4 ③ `estimate_weight`.)
+    """
+    text = str(text or "")
+    if not text:
+        return ""
+    if not available()[0]:
+        return ""
+    try:
+        font = load(_PROBE_SIZE, "regular")
+        if font is None:
+            return ""
+        if "\x00tofu" not in _supported_cache:
+            _supported_cache["\x00tofu"] = _glyph_bits(_PROBE_MISSING, font)
+        tofu = _supported_cache["\x00tofu"]
+        out = []
+        for ch in text:
+            if ch not in _supported_cache:
+                _supported_cache[ch] = _glyph_bits(ch, font)
+            if _supported_cache[ch] != tofu:
+                out.append(ch)
+        return "".join(out)
+    except Exception as exc:                                  # pragma: no cover
+        logger.warning("[D3 렌더] 글자 지원 확인 실패: %s", exc)
+        return ""
+
+
 def text_width(text: str, size: int, weight: str = "regular") -> Optional[int]:
     """그 굵기·크기로 그렸을 때의 **가로 폭**(px). 폰트가 없으면 `None`.
 

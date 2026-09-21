@@ -37,9 +37,15 @@ pytest.importorskip("PIL.Image")
 
 
 def _jpeg(w=300, h=120) -> bytes:
+    """원문 **글자**가 박힌 한 장.
+
+    ※ 예전엔 검은 사각형을 그렸다. D3-4 ②로 마스크가 **글자 픽셀만** 잡게 된 뒤
+      그건 「글자가 아니라 도형」으로 **정확히 거부된다** — 픽스처가 현실과 달랐던 것이다.
+    """
     from PIL import Image, ImageDraw
+    from src.services.image_render_font import load
     img = Image.new("RGB", (w, h), (238, 234, 226))
-    ImageDraw.Draw(img).rectangle([20, 20, 180, 60], fill=(25, 25, 25))
+    ImageDraw.Draw(img).text((26, 26), "三合一", font=load(28, "bold"), fill=(25, 25, 25))
     buf = io.BytesIO(); img.save(buf, format="JPEG", quality=92)
     return buf.getvalue()
 
@@ -69,9 +75,12 @@ def wired(monkeypatch):
     monkeypatch.setattr("src.services.image_translate_store.store_translated", _store)
 
     class _T:
-        def translate_product(self, src):
+        def translate_product(self, src, *, style=""):
             calls["llm"] += 1
-            return {"title_ko": "3-in-1 충전기"}
+            calls.setdefault("styles", []).append(style)
+            # 지시를 따를 수 있는 단이 받았다고 **가정하지 않는다** — 목도 사실대로 답한다.
+            return {"title_ko": "3-in-1 충전기", "provider": "openai",
+                    "style": style, "style_applied": bool(style)}
 
     monkeypatch.setattr("src.seller_console.ai.translator.AITranslator", _T)
     return B, calls
@@ -88,9 +97,9 @@ def test_the_d3_render_reuses_the_single_tencent_response(wired):
     이 계약은 D3 단계가 **공급사 호출을 하지 않음**을 함수 수준에서 못박는다.
     """
     B, calls = wired
-    import inspect
-    src = inspect.getsource(B._run_d3_stage) + inspect.getsource(B._render_d3_for)
-    assert "translate_image" not in src, "D3 단계가 공급사를 다시 부른다"
+    from tests._ast_probe import calls_in
+    got = calls_in(B._run_d3_stage) | calls_in(B._render_d3_for)
+    assert "translate_image" not in got, "D3 단계가 공급사를 다시 부른다"
 
 
 def test_the_result_goes_to_the_bench_store_only(wired):
@@ -163,25 +172,107 @@ def test_the_screen_says_tokens_were_not_measured():
 # 5) 채점 칸이 섞이지 않는다
 # ---------------------------------------------------------------------------
 
-def test_the_d3_cells_are_namespaced_and_take_all_five_axes():
-    """★★ 공급사 렌더본 점수와 **같은 자리에 섞으면** 무엇을 채점한 건지 갈린다."""
-    import inspect
+def test_the_d3_cells_are_namespaced():
+    """★★ 공급사 렌더본 점수와 **같은 자리에 섞으면** 무엇을 채점한 건지 갈린다.
 
+    ※ 소스 문자열이 아니라 **라우트를 돌려** 확인한다(메타 계약).
+    """
+    from src.services.image_bench_axes import AUTO_AXES
+    from tests._ast_probe import string_constants_in
     from src.seller_console import views
-    src = inspect.getsource(views.image_translate_bench_score)
-    assert '"d3:"' in src or "'d3:'" in src
-    # D3는 자동 축(A·B·D)도 사람이 찍는다 — 렌더가 달라지면 값도 달라지기 때문이다.
-    assert "all_axes" in src
+
+    consts = string_constants_in(views.image_translate_bench_score)
+    assert "d3:" in consts, consts
+    # D3-4 ⑤ — 자동 축은 **자동이 정본**이므로 사람 칸으로 받지 않는다.
+    assert AUTO_AXES == ("A", "B", "D")
 
 
 def test_the_grid_keeps_the_two_scores_apart():
     from src.seller_console.views import _bench_grid
     run = {"results": [{"idx": 0, "d3": {"drawn": 1}}],
-           "scores": {"cells": {"0:C": 1, "d3:0:C": 0, "d3:0:A": 1}}}
+           "scores": {"cells": {"0:C": 1, "d3:0:C": 0}}}
     page = _bench_grid(run)["pages"][0]
     assert page["axes"]["C"]["score"] == 1        # 공급사
     assert page["d3_axes"]["C"]["score"] == 0     # 우리 — 다른 값이 따로 산다
-    assert page["d3_axes"]["A"]["score"] == 1
+
+
+# ---------------------------------------------------------------------------
+# ★★ D3-4 ⑤ — D3 열의 A·B·D는 **자동**(오너 브리프 2026-09-21)
+# ---------------------------------------------------------------------------
+
+def test_the_d3_column_is_auto_scored_by_the_same_judge(wired):
+    """★★★ **판정 지점** — 우리 결과를 공급사와 **같은 판정기**로 잰다.
+
+    다른 판정기를 쓰면 두 열의 숫자를 나란히 놓을 수 없다. 그게 비교의 전부다.
+    """
+    B, _ = wired
+    out = B._run_d3_stage({"item_no": "X1"}, 0, {"url": "u"}, {"lines": _LINES}, "s",
+                          ["SPORTLINK"])
+    assert out["axes"]["B"]["score"] == 1, out["axes"]      # 三合一 → 3-in-1
+    for key in ("A", "B", "D"):
+        assert key in out["axes"], out["axes"]
+
+
+def test_the_d3_judge_reads_our_text_not_the_vendors():
+    """★★★ `target`이 **우리가 그린 글자**여야 한다 — 공급사 번역을 채점하면 남의 답안지다."""
+    from src.services.image_translate_bench import d3_judgeable
+
+    rows = [{"source": "三合一", "target": "삼합일", "render_text": "3-in-1"}]
+    assert d3_judgeable(rows) == [{"source": "三合一", "target": "3-in-1"}]
+
+
+def test_the_grid_shows_the_auto_scores_for_d3():
+    """★★ 표가 그 값을 읽는다 — 계산만 하고 화면이 안 보면 채점이 아니다."""
+    from src.seller_console.views import _bench_grid
+
+    run = {"results": [{"idx": 0, "d3": {
+        "drawn": 1, "axes": {"A": {"score": 1, "reason": "브랜드 원형 유지"},
+                             "B": {"score": 0, "reason": "직역됨"},
+                             "D": {"score": None, "reason": "영문 줄 없음"}}}}],
+           "scores": {"cells": {}}}
+    d3 = _bench_grid(run)["pages"][0]["d3_axes"]
+    assert d3["A"]["score"] == 1 and d3["B"]["score"] == 0
+    assert d3["D"]["score"] is None and d3["D"]["reason"]
+    assert d3["C"]["reason"] == "사람이 아직 안 찍음"       # C·E는 여전히 사람
+
+
+def test_a_human_cannot_overwrite_an_auto_axis_on_the_d3_row():
+    """★ 자동 축을 사람이 덮으면 **두 열이 다른 자**로 재진다."""
+    from src.seller_console.views import _bench_grid
+
+    run = {"results": [{"idx": 0, "d3": {"drawn": 1,
+                                         "axes": {"A": {"score": 0, "reason": "브랜드 소실"}}}}],
+           "scores": {"cells": {"d3:0:A": 1}}}
+    assert _bench_grid(run)["pages"][0]["d3_axes"]["A"]["score"] == 0
+
+
+def test_the_style_instruction_is_passed_and_counted(wired):
+    """★★ D3-4 ④ — 문체 지시를 **보냈고**, 따를 수 있는 단이 받았는지 **센다**."""
+    from src.services.image_text_glossary import STYLE_INSTRUCTION
+
+    B, calls = wired
+    out = B._run_d3_stage({"item_no": "X1"}, 0, {"url": "u"}, {"lines": _LINES}, "s")
+    assert calls["styles"] == [STYLE_INSTRUCTION]
+    assert out["llm"]["styled"] == 1 and out["llm"]["unstyled"] == 0
+
+
+def test_an_unstyled_provider_is_reported_not_hidden(wired, monkeypatch):
+    """★★★ 사전형 MT가 받았으면 **따른 척하지 않는다** — 숫자로 남는다.
+
+    이게 없으면 카피가 여전히 평서문일 때 **어디를 봐야 하는지** 모른다.
+    """
+    B, calls = wired
+
+    class _Dict:
+        def translate_product(self, src, *, style=""):
+            # 문체 지시를 받긴 했지만 **따를 자리가 없다** — 평서문이 그대로 나온다.
+            return {"title_ko": "이것은 3-in-1 충전기입니다", "provider": "mymemory",
+                    "style_applied": False}
+
+    monkeypatch.setattr("src.seller_console.ai.translator.AITranslator", _Dict)
+    out = B._run_d3_stage({"item_no": "X1"}, 0, {"url": "u"}, {"lines": _LINES}, "s")
+    assert out["llm"]["unstyled"] == 1 and out["llm"]["styled"] == 0
+    assert out["llm"]["providers"] == {"mymemory": 1}
 
 
 # ---------------------------------------------------------------------------

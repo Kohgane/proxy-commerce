@@ -67,14 +67,22 @@ def _d3_translate_fn():
     바깥으로 내주지 않는다(`choices`만 읽는다). 그래서 **호출 수와 글자 수**를 센다 —
     토큰을 추정해 적는 것은 지어내는 것이다. 토큰이 필요하면 체인이 `usage`를 실어야 한다.
     """
-    stat = {"calls": 0, "chars": 0, "errors": 0}
+    stat = {"calls": 0, "chars": 0, "errors": 0, "providers": {}, "styled": 0, "unstyled": 0}
 
     def _fn(text: str) -> str:
         stat["calls"] += 1
         stat["chars"] += len(text or "")
         from src.seller_console.ai.translator import AITranslator
-        got = AITranslator().translate_product({"title": text, "description": ""})
-        out = str((got or {}).get("title_ko") or "").strip()
+        from src.services.image_text_glossary import STYLE_INSTRUCTION
+        got = AITranslator().translate_product({"title": text, "description": ""},
+                                               style=STYLE_INSTRUCTION) or {}
+        # ★ D3-4 ④ — 「문체를 지시했다」가 아니라 **따를 수 있는 단이 받았나**를 센다.
+        #   사전형 MT가 받았으면 지시는 아무 일도 하지 않았다. 그 사실이 표에 남아야
+        #   카피가 여전히 평서문일 때 **어디를 봐야 하는지** 알 수 있다.
+        stat["styled" if got.get("style_applied") else "unstyled"] += 1
+        p = str(got.get("provider") or "?")
+        stat["providers"][p] = stat["providers"].get(p, 0) + 1
+        out = str(got.get("title_ko") or "").strip()
         if not out:
             stat["errors"] += 1
         return out
@@ -82,8 +90,9 @@ def _d3_translate_fn():
     return _fn, stat
 
 
-def _render_d3_for(raw: bytes, lines: list) -> dict:
+def _render_d3_for(raw: bytes, lines: list, tokens=()) -> dict:
     """2단계(용어집) + 3단계(지우고 그리기). 실패해도 **공급사 결과는 안 건드린다.**"""
+    from src.services import image_bench_axes as axes
     from src.services import image_text_glossary as glossary
     from src.services import image_text_render as render
 
@@ -98,12 +107,28 @@ def _render_d3_for(raw: bytes, lines: list) -> dict:
         "skipped": out.get("skipped") or [],
         "error": out.get("error", ""),
         "glossary": glossary.summarize(rows),
+        # ★★ D3-4 ⑤ — D3 열도 **텐센트 열과 같은 판정기**로 A·B·D를 자동 채점한다.
+        #   다른 판정기를 쓰면 두 열의 점수를 나란히 놓을 수 없다(그게 비교의 전부다).
+        #   C·E는 여전히 사람이 찍는다 — 박스는 **원문**의 자리라 자동으로 못 잰다(F33).
+        "axes": axes.auto_scores(d3_judgeable(rows), list(tokens or [])),
+        "typography": out.get("typography") or [],
         "rows": rows,
-        "llm": stat,          # {calls, chars, errors} — 토큰은 위 설명 참조
+        "llm": stat,          # {calls, chars, errors, providers, styled} — 토큰은 위 설명 참조
     }
 
 
-def _run_d3_stage(fx: dict, idx: int, img: dict, result: dict, seller_id: str) -> dict:
+def d3_judgeable(rows: list) -> list:
+    """우리 렌더 결과를 **판정기가 읽는 모양**(`{source, target}`)으로 바꾼다.
+
+    ★ `target`은 **우리가 그린 글자**(`render_text`)다 — 공급사 번역이 아니다.
+    두 열이 같은 판정기를 쓰되 **각자 자기 결과**를 채점해야 비교가 성립한다.
+    """
+    return [{"source": r.get("source") or "", "target": r.get("render_text") or ""}
+            for r in (rows or [])]
+
+
+def _run_d3_stage(fx: dict, idx: int, img: dict, result: dict, seller_id: str,
+                  tokens=()) -> dict:
     """한 장의 D3 렌더 — 실패해도 **행 전체를 죽이지 않는다**(사유만 남긴다)."""
     import base64
 
@@ -124,7 +149,7 @@ def _run_d3_stage(fx: dict, idx: int, img: dict, result: dict, seller_id: str) -
                 "drawn": 0, "erased": 0, "skipped": [], "url": ""}
 
     try:
-        out = _render_d3_for(raw, lines)
+        out = _render_d3_for(raw, lines, tokens)
     except Exception as exc:                                   # pragma: no cover
         logger.warning("[벤치·D3] 렌더 실패: %s", exc)
         return {"ok": False, "error": f"렌더 오류: {type(exc).__name__}",
@@ -146,6 +171,8 @@ def _run_d3_stage(fx: dict, idx: int, img: dict, result: dict, seller_id: str) -
         "drawn": out.get("drawn", 0),
         "skipped": out.get("skipped") or [],
         "glossary": out.get("glossary") or {},
+        "axes": out.get("axes") or {},
+        "typography": out.get("typography") or [],
         "llm": out.get("llm") or {},
         "error": out.get("error", "") or (
             "" if stored.get("url") else (stored.get("note") or "저장하지 못했습니다")),
@@ -180,7 +207,7 @@ def _run(run_id: str, seller_id: str, planned, mode: int = 0, title: str = "",
                                             "warn", "error_class", "error_code",
                                             "error_message", "hint", "store_note")}}
             if render_d3:
-                row["d3"] = _run_d3_stage(fx, i, img, r, seller_id)
+                row["d3"] = _run_d3_stage(fx, i, img, r, seller_id, tokens)
             with _LOCK:
                 _STATE["results"].append(row)
                 snapshot = list(_STATE["results"])
