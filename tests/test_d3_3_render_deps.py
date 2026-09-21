@@ -177,11 +177,13 @@ def test_cv2_is_not_imported_at_boot():
 # ---------------------------------------------------------------------------
 
 def test_the_font_loader_is_not_wired_into_the_pipeline_yet():
-    """★★ 오너 지시 — 골든 샘플 5축 통과 전에는 텐센트 경로가 그대로다."""
-    hits = []
-    for p in (ROOT / "src").rglob("*.py"):
-        if p.name == "image_render_font.py":
-            continue
-        if "image_render_font" in p.read_text(encoding="utf-8"):
-            hits.append(str(p.relative_to(ROOT)))
-    assert not hits, f"아직 연결하면 안 된다: {hits}"
+    """★★ 오너 지시 — 골든 샘플 5축 통과 전에는 텐센트 경로가 그대로다.
+
+    **3단계 렌더(`image_text_render`)가 폰트를 쓰는 것은 연결이 아니다** — 그 모듈 자체가
+    아직 파이프라인 밖이고, 그건 자기 계약이 따로 지킨다(`test_d3_3_render.py`).
+    여기서 막는 것은 **등록·번역 파이프가 폰트를 집어 가는 것**이다.
+
+    ※ 글자가 아니라 `import`를 잰다(주석에 이름이 보이는 것과 실제 연결은 다르다).
+    """
+    from tests.test_d3_glossary import _importers_of
+    assert _importers_of("image_render_font", allow={"image_text_render.py"}) == []
