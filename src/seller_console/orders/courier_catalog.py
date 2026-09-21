@@ -166,13 +166,48 @@ def _fetch_trackingmore_catalog() -> tuple[dict, ...]:
     return tuple(rows)
 
 
-def get_courier_catalog(include_dynamic: bool = True) -> list[dict]:
-    """UI/검색용 통합 택배사 카탈로그."""
+def get_courier_catalog(include_dynamic: bool = True,
+                        include_coupang: bool = True) -> list[dict]:
+    """UI/검색용 통합 택배사 카탈로그.
+
+    F44-c: **쿠팡 코드표 전체**를 함께 싣는다 — 드롭다운에서 「모든 코드가 검색으로
+    도달 가능」해야 하고, **합병/폐업도 보여야** 한다(숨기면 「내 택배사가 왜 없지」가 된다).
+    폐업 행은 `coupang_status.selectable=False`로 내려가고 **화면이 회색·선택 불가**로 그린다.
+    """
     rows = [_to_payload(entry) for entry in _BUILTIN_ENTRIES]
     if include_dynamic:
         rows.extend(_fetch_trackingmore_catalog())
+    if include_coupang:
+        rows.extend(_coupang_rows())
     merged = _merge_catalog(rows)
     return merged or [_to_payload(entry) for entry in _BUILTIN_ENTRIES]
+
+
+def _coupang_rows() -> list[dict]:
+    """쿠팡 코드표 → 카탈로그 행. **추적 공급사 축은 비운다**(그건 다른 축이다)."""
+    try:
+        from .coupang_courier_codes import COUPANG_COURIERS
+        from .coupang_courier_rules import COUPANG_ALIASES, status
+    except Exception:                                   # pragma: no cover
+        return []
+    out = []
+    for c in COUPANG_COURIERS:
+        st = status(c.code)
+        terms = {c.code, c.code.lower(), c.name, _normalize(c.name)}
+        terms |= {a for a, code in COUPANG_ALIASES.items() if code == c.code}
+        out.append({
+            "name": c.name,
+            "trackingmore_code": "",      # 이 축은 이 행이 모른다 — 빈칸이 정직하다
+            "sweet_code": "",
+            "coupang_code": c.code,
+            "coupang_status": st,
+            "naver_code": "",
+            "elevenst_code": "",
+            "aliases": sorted(a for a, code in COUPANG_ALIASES.items() if code == c.code),
+            "search_terms": sorted(t for t in terms if t),
+            "source": "coupang",
+        })
+    return out
 
 
 def get_trackingmore_courier_map() -> dict[str, str]:

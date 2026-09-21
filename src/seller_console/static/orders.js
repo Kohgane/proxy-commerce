@@ -64,15 +64,38 @@ function renderCourierSuggestions() {
   }
 
   typeaheadState.suggestions.forEach((courier, index) => {
+    // F44-c: 쿠팡이 안 받는 택배사(합병·폐업)는 **보이되 고를 수 없다.**
+    //   숨기면 「내 택배사가 왜 없지」가 되고, 그건 사유가 사라진 것이다.
+    //   고를 수 있게 두면 등록이 마켓에서 거부된다 — 여기서 말해 주는 편이 빠르다.
+    const cs = courier.coupang_status || {};
+    const retired = cs.found === true && cs.selectable === false;
+
     const option = document.createElement("button");
     option.type = "button";
-    option.className = `list-group-item list-group-item-action${index === typeaheadState.activeIndex ? " active" : ""}`;
+    option.className = `list-group-item list-group-item-action${
+      index === typeaheadState.activeIndex && !retired ? " active" : ""
+    }${retired ? " disabled text-muted" : ""}`;
     option.id = `tm-courier-option-${index}`;
     option.setAttribute("role", "option");
-    option.setAttribute("aria-selected", index === typeaheadState.activeIndex ? "true" : "false");
-    option.textContent = courier.name;
-    option.addEventListener("mousedown", (event) => event.preventDefault());
-    option.addEventListener("click", () => selectCourierSuggestion(index));
+    option.setAttribute("aria-selected", index === typeaheadState.activeIndex && !retired ? "true" : "false");
+
+    if (retired) {
+      option.disabled = true;
+      option.setAttribute("aria-disabled", "true");
+      option.dataset.retired = "1";
+      option.innerHTML = "";
+      const nameEl = document.createElement("span");
+      nameEl.textContent = courier.name;
+      const why = document.createElement("small");
+      why.className = "d-block";
+      why.textContent = cs.reason || "합병/폐업 — 쿠팡 미지원";
+      option.appendChild(nameEl);
+      option.appendChild(why);
+    } else {
+      option.textContent = courier.name;
+      option.addEventListener("mousedown", (event) => event.preventDefault());
+      option.addEventListener("click", () => selectCourierSuggestion(index));
+    }
     listbox.appendChild(option);
   });
 
@@ -176,6 +199,10 @@ function selectCourierSuggestion(index) {
   const { input, trackingInput } = getCourierTypeaheadElements();
   const selected = typeaheadState.suggestions[index];
   if (!input || !selected) return;
+  // F44-c: 키보드(Enter)도 **같은 문을 지난다.** 버튼만 disabled로 두면
+  //   마우스는 막히고 키보드는 통과한다 — 한 경로를 빠뜨리면 그리로 샌다.
+  const cs = selected.coupang_status || {};
+  if (cs.found === true && cs.selectable === false) return;
   input.value = selected.name;
   closeCourierSuggestions();
   trackingInput?.focus();

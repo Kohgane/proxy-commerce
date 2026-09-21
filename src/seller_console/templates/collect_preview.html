@@ -423,10 +423,21 @@
       <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer"
          class="btn btn-ghost btn-sm"><i class="bi bi-link-45deg"></i> 원본 페이지</a>
       <button type="button" class="btn btn-ghost btn-sm" onclick="openMarginCalc()"><i class="bi bi-cash-coin"></i> 마진 계산기</button>
+      {% if session.get('user_role') == 'admin' %}
+      {# F40-c: 등록 **직전 페이로드**를 전송 없이 본다(관리자만).
+         같은 증상(뽑힌 값 '')을 네 번 고치는 동안 매번 로그로 되짚었다 — 이 화면이 좌표를 준다. #}
+      <button type="button" class="btn btn-ghost btn-sm" id="btnPayloadPreview"
+              onclick="showPayloadPreview()">
+        <i class="bi bi-braces"></i> 페이로드 보기
+      </button>
+      {% endif %}
       <button class="btn btn-success btn-sm ms-auto" id="btnOpenUploadModal" onclick="openUploadModal()">
         <i class="bi bi-box-arrow-up-right"></i> 마켓에 등록
       </button>
     </div>
+    {% if session.get('user_role') == 'admin' %}
+    <div id="payloadPreviewOut" class="p-3 border-top d-none"></div>
+    {% endif %}
   </section>
 
   <!-- RAW 메타 JSON — v31: 개발용 원본 메타는 관리자 전용(일반 유저 비노출) -->
@@ -1475,6 +1486,45 @@ function _refreshSelectAllLabel() {
   btn.textContent = allChecked ? '전체 해제' : '전체 선택';
 }
 _refreshSelectAllLabel();
+
+// F40-c: 등록 페이로드 미리보기 — **전송 0회**. 등록이 쓰는 그 함수를 서버에서 부른다.
+function showPayloadPreview() {
+  const out = document.getElementById('payloadPreviewOut');
+  if (!out) return;
+  out.classList.remove('d-none');
+  out.innerHTML = '<div class="pc-status pc-status-info">페이로드를 만드는 중…</div>';
+  fetch('/seller/collect/payload-preview', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({product: buildProductData(), item_id: _ITEM_ID}),
+  }).then(r => r.json()).then(d => {
+    if (!d.ok) {
+      out.innerHTML = '<div class="pc-status pc-status-danger">' + (d.error || '실패') + '</div>';
+      return;
+    }
+    let h = '<div class="pc-status ' + (d.sku_ok ? 'pc-status-ok' : 'pc-status-danger') + ' mb-2">' +
+      (d.sku_ok ? ('상품번호(SKU): <strong>' + d.sku + '</strong> — 이 값이 마켓으로 갑니다.')
+                : ('SKU 없음 — ' + (d.reason || ''))) + '</div>';
+    h += '<div class="console-kpi-label mb-1">주소 후보 (draft_url이 고른 것에 표시)</div>';
+    h += '<table class="table table-sm"><thead><tr><th></th><th>어디서</th><th>주소</th>' +
+         '<th>상품번호</th></tr></thead><tbody>';
+    (d.candidates || []).forEach(c => {
+      h += '<tr class="' + (c.used ? 'table-light fw-semibold' : '') + '">' +
+           '<td>' + (c.used ? '<i class="bi bi-check-lg"></i>' : '') + '</td>' +
+           '<td class="small">' + c.source + '</td>' +
+           '<td class="small" style="word-break:break-all">' + c.url + '</td>' +
+           '<td class="small">' + (c.sku || '<span class="text-muted">못 뽑음</span>') + '</td></tr>';
+    });
+    if (!(d.candidates || []).length) {
+      h += '<tr><td colspan="4" class="small text-muted">주소 후보가 하나도 없습니다 — ' +
+           '수집 행과 폼 둘 다 비어 있습니다.</td></tr>';
+    }
+    h += '</tbody></table><div class="small text-muted">읽는 이름: ' +
+         (d.url_keys || []).join(' · ') + ' · <strong>전송 0회</strong></div>';
+    out.innerHTML = h;
+  }).catch(() => {
+    out.innerHTML = '<div class="pc-status pc-status-danger">미리보기를 만들지 못했습니다.</div>';
+  });
+}
 
 function openUploadModal() {
   const modal = new bootstrap.Modal(document.getElementById('uploadModal'));
