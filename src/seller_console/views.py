@@ -11071,6 +11071,32 @@ BENCH_SCORE_AXES = (
 )
 
 
+@bp.post("/collect/payload-preview")
+def collect_payload_preview():
+    """F40-c 등록 페이로드 미리보기 — **관리자만 · 전송 0회**.
+
+    같은 증상(`뽑힌 값: ''`)을 네 번 고쳤다. 매번 로그로 되짚는 동안 카나리가 멈춰 있었다.
+    이 화면이 **좌표를 준다**: 주소 후보 전부(어디서 왔는지·상품번호가 나오는지),
+    `draft_url`이 고른 값, `vendor_sku` 결과, 실패면 **등록이 낼 바로 그 문장**.
+
+    ★ 등록이 쓰는 **그 함수**(`build_dispatch_payload`)를 부른다 — 미리보기와 실제가
+    갈리면 미리보기는 거짓말이다(계약이 둘의 sku가 같은지 잰다).
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    if not _is_admin_user():
+        return jsonify({"ok": False, "error": "관리자 전용입니다."}), 403
+    data = request.get_json(silent=True) or {}
+    product_data = data.get("product") or {}
+    item = _get_owned_item(str(data.get("item_id") or "")) or None
+    try:
+        from .upload_dispatcher import payload_diagnosis
+        return jsonify({"ok": True, **payload_diagnosis(product_data, item)})
+    except Exception as exc:
+        logger.warning("[등록] 페이로드 미리보기 실패: %s", exc)
+        return jsonify({"ok": False, "error": "미리보기를 만들지 못했습니다."}), 500
+
+
 @bp.post("/admin/courier-detect")
 def admin_courier_detect():
     """F44-p 택배사 판별 프로브 — **키는 서버에 있고, 오너는 송장번호만 넣는다.**

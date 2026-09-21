@@ -26,10 +26,13 @@
 """
 from __future__ import annotations
 
+import ast
 import inspect
-import re
+import textwrap
 
 import pytest
+
+from tests._ast_probe import calls_in, callers_of, string_constants_in
 
 from src.seller_console import views
 from src.seller_console.upload_dispatcher import (DISPATCH_PATHS, build_dispatch_payload,
@@ -43,6 +46,18 @@ PAYLOAD_BUILDERS = (
 )
 
 TMALL = "https://detail.tmall.com/item.htm?id=617129397971"
+
+
+def _builder_names(fn) -> set:
+    """그 함수 안에서 **빌더로 바인딩된 이름들**(별칭 포함) — import 구조에서 읽는다."""
+    tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+    out = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            for a in node.names:
+                if a.name == "build_dispatch_payload":
+                    out.add(a.asname or a.name)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -93,9 +108,14 @@ def test_an_empty_row_url_changes_nothing(row):
 
 @pytest.mark.parametrize("fn", PAYLOAD_BUILDERS, ids=lambda f: f.__name__)
 def test_every_dispatch_path_goes_through_the_builder(fn):
-    """★★★ **오너 지시의 판정 지점** — 세 경로가 각각 빌더를 부른다."""
-    src = inspect.getsource(fn)
-    assert "build_dispatch_payload" in src, f"{fn.__name__}이 빌더를 안 쓴다"
+    """★★★ **오너 지시의 판정 지점** — 세 경로가 각각 빌더를 **부른다**.
+
+    ※ 소스 문자열이 아니라 **호출 구조**로 잰다 — 주석에 이름이 있어도 통과하지 않는다.
+    """
+    # 호출부가 `as _build_payload`로 별칭을 쓰기도 한다 — **그 모듈이 빌더를 import 했고**
+    #   그 이름을 **부른다**는 두 사실을 함께 본다(글자 하나를 찾는 게 아니다).
+    bound = _builder_names(fn)
+    assert bound & calls_in(fn), f"{fn.__name__}이 빌더를 안 쓴다 (import된 이름: {bound})"
 
 
 def test_the_path_list_matches_the_contract_population():
@@ -108,15 +128,7 @@ def test_no_dispatch_call_bypasses_the_builder():
 
     소스에서 `dispatcher.dispatch(` 호출을 세고, **그 함수들이 전부 위 목록**인지 본다.
     """
-    src = (inspect.getsource(views))
-    callers = set()
-    cur = None
-    for line in src.splitlines():
-        m = re.match(r"\s*def (\w+)\(", line)
-        if m:
-            cur = m.group(1)
-        if re.search(r"dispatcher\.dispatch\(", line) and cur:
-            callers.add(cur)
+    callers = callers_of(views, "dispatch")
     known = {f.__name__ for f in PAYLOAD_BUILDERS}
     assert callers <= known, f"빌더를 안 지나는 등록 경로가 생겼다: {callers - known}"
 
@@ -131,20 +143,38 @@ def test_the_single_path_fills_the_url_outside_the_swallowing_try():
     주소 채우기가 이미지·도달성 `try` 안에 있으면, 그 블록이 **다른 이유로** 터졌을 때
     주소가 조용히 안 채워진다. 빌더 호출이 그 `try`보다 **앞**에 있어야 한다.
     """
-    src = inspect.getsource(views.collect_upload)
-    build_at = src.index("build_dispatch_payload")
-    try_at = src.index("_warn_pages = []")       # 이미지·도달성 블록의 시작 표식
-    assert build_at < try_at, "주소 채우기가 여전히 삼키는 블록 안이다"
+    # **구조로 잰다**: 빌더 호출이 어떤 `try` 안에도 들어 있지 않아야 한다.
+    #   (예전엔 줄번호로 앞뒤를 쟀다 — 코드가 조금만 움직여도 헛것이 된다.)
+    tree = ast.parse(textwrap.dedent(inspect.getsource(views.collect_upload)))
+    inside_try = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Try):
+            for sub_node in ast.walk(node):
+                if isinstance(sub_node, ast.Call):
+                    nm = getattr(sub_node.func, "attr", None) or getattr(sub_node.func, "id", None)
+                    inside_try.add(nm)
+    assert "_build_payload" not in inside_try and "build_dispatch_payload" not in inside_try, \
+        "주소 채우기가 여전히 삼키는 try 블록 안이다"
 
 
 def test_the_single_path_does_not_refill_inside_the_block():
     """★ 같은 일을 두 자리에서 하면 한쪽만 고쳐진다 — 블록 안의 옛 채우기는 사라졌다."""
-    src = inspect.getsource(views.collect_upload)
-    tail = src[src.index("_warn_pages = []"):]
-    assert 'product_data["url"] =' not in tail
+    # 빌더 말고 **다른 자리에서 `["url"]`에 대입**하는 곳이 없어야 한다.
+    #   (다른 키 대입은 이 계약의 일이 아니다 — 이미지·상세는 그 자리가 맞다.)
+    tree = ast.parse(textwrap.dedent(inspect.getsource(views.collect_upload)))
+    url_writes = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        for t in node.targets:
+            if (isinstance(t, ast.Subscript) and isinstance(t.slice, ast.Constant)
+                    and t.slice.value == "url"):
+                url_writes.append(ast.unparse(t))
+    assert not url_writes, f"라우트가 주소를 직접 채운다 — 빌더 한 자리여야 한다: {url_writes}"
 
 
 def test_the_fill_is_logged_so_the_next_canary_can_see_it():
     """★ F40이 남긴 규율 — 고른 주소를 로그에 남긴다(URL이라 마스킹 대상이 아니다)."""
-    src = inspect.getsource(build_dispatch_payload)
-    assert "logger.info" in src and "url=%s" in src
+    # 「로그를 남기나」는 **호출**로, 「무엇을 남기나」는 **그 코드가 쓰는 값**으로 잰다.
+    assert "info" in calls_in(build_dispatch_payload)
+    assert any("url=%s" in s for s in string_constants_in(build_dispatch_payload))

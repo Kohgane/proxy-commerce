@@ -114,18 +114,104 @@ def build_dispatch_payload(product_data: Dict[str, Any],
     pd = dict(product_data or {})
     row_url = str((item or {}).get("url") or "").strip() if item else ""
     if not row_url:
-        return pd
+        return _fill_sku(pd)
 
     cur = draft_url(pd)
     if cur and vendor_sku(cur):
-        return pd                              # 이미 쓸 수 있다 — 건드리지 않는다
+        return _fill_sku(pd)                   # 이미 쓸 수 있다 — 주소는 건드리지 않는다
     if cur and not vendor_sku(row_url):
-        return pd                              # 행 것도 못 쓴다 — 바꿀 이유가 없다
+        return _fill_sku(pd)                   # 행 것도 못 쓴다 — 바꿀 이유가 없다
 
     pd["url"] = row_url
     logger.info("[등록] 주소를 행에서 채웠다 item=%s url=%s 이전=%s",
                 item.get("id") or item.get("item_id") or "?", row_url, cur or "(없음)")
+    return _fill_sku(pd)
+
+
+def _fill_sku(pd: Dict[str, Any]) -> Dict[str, Any]:
+    """주소에서 **상품번호(SKU)**를 뽑아 채운다 — 없을 때만 (F40-c 실측).
+
+    ## 왜 주소만으론 부족했나 (2026-09-21, 라이브 697c9ef)
+
+    F40-b로 **주소는 채워졌는데** 수행방패가 여전히 `뽑힌 값: ''`이었다. 갈라 보니
+    쿠팡 업로더는 `product['sku']`를 읽는데 — **그 키를 아무도 안 만들었다.**
+    서랍의 `buildProductData()`엔 `sku`가 없고, 단건·일괄 경로도 채우지 않았다.
+    `vendor_sku(draft_url(...))`를 하는 자리는 **파일럿(멀티샵) 한 곳뿐**이었다.
+
+    > ★★★ **주소를 고친 것과 상품번호가 나가는 것은 다른 사실이다.**
+    > F39는 주소의 *이름*을, F40은 주소의 *출처*를, F40-b는 주소의 *경로*를 고쳤다 —
+    > 셋 다 맞았는데 **주소에서 번호를 뽑는 자리**가 비어 있었다.
+
+    셀러가 적어 둔 `sku`가 있으면 **그게 이긴다**(우리가 덮지 않는다).
+    """
+    if str(pd.get("sku") or "").strip():
+        return pd
+    from src.collectors.product_key import vendor_sku
+
+    url = draft_url(pd)
+    got = vendor_sku(url) if url else ""
+    if got:
+        pd["sku"] = got
+        logger.info("[등록] 주소에서 상품번호를 뽑았다 sku=%s url=%s", got, url)
     return pd
+
+
+def payload_diagnosis(product_data: Dict[str, Any],
+                      item: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """**전송 없이** 등록 페이로드가 어떻게 정해지는지 보여 준다 (F40-c).
+
+    ## 왜 화면이 필요한가 (오너 2026-09-21)
+
+    같은 증상(`뽑힌 값: ''`)을 **네 번** 고쳤다. 매번 「어디서 끊겼나」를 로그로 되짚었는데,
+    그 사이 카나리가 멈춰 있었다. **좌표를 화면이 주면** 한 번에 끝난다.
+
+    > ★ **이 함수는 등록이 쓰는 바로 그 함수들을 부른다** — `build_dispatch_payload`,
+    > `draft_url`, `vendor_sku`. 미리보기와 실제가 갈리면 미리보기는 거짓말이 된다.
+
+    반환: 후보 주소 전부(어디서 왔는지 · 상품번호가 나오는지) · 고른 값 · SKU · 사유.
+    **마켓 호출 0.**
+    """
+    from src.collectors.product_key import sku_failure_message, vendor_sku
+
+    built = build_dispatch_payload(product_data, item)
+
+    cands = []
+    for key in DRAFT_URL_KEYS:
+        val = str((product_data or {}).get(key) or "").strip()
+        if val:
+            cands.append({"source": f"페이로드 · {key}", "url": val,
+                          "sku": vendor_sku(val), "used": False})
+    row_url = str((item or {}).get("url") or "").strip() if item else ""
+    if row_url:
+        cands.append({"source": "수집 이력 행 · url 컬럼(「원본 보기」가 여는 값)",
+                      "url": row_url, "sku": vendor_sku(row_url), "used": False})
+    # extra_json의 나머지 이름들도 **보여 준다** — 「왜 이건 안 쓰나」가 화면에서 풀린다.
+    for key in ("share_raw", "share_tk", "site_item_id", "short_name"):
+        val = str((product_data or {}).get(key) or "").strip()
+        if val:
+            cands.append({"source": f"페이로드 · {key}(주소 후보 아님)", "url": val,
+                          "sku": "", "used": False})
+
+    # ★ 같은 주소가 두 자리에 있을 수 있다(폼의 `final_url`과 행의 `url` 컬럼이 같은 값).
+    #   그때 **둘 다 「썼다」고 표시하면** 어느 쪽이 값을 줬는지 화면이 거짓으로 말한다.
+    #   실제 우선순위(페이로드 이름 순 → 행) 그대로 **먼저 걸리는 하나만** 표시한다.
+    chosen = draft_url(built)
+    for c in cands:
+        if c["url"] == chosen:
+            c["used"] = True
+            break
+
+    sku = str(built.get("sku") or "").strip()
+    return {
+        "candidates": cands,
+        "chosen_url": chosen,
+        "sku": sku,
+        "sku_ok": bool(sku),
+        # 실패할 때 **등록이 낼 바로 그 문장**을 미리 보여 준다.
+        "reason": "" if sku else (sku_failure_message(chosen) + f" 뽑힌 값: {sku!r}"),
+        "url_keys": list(DRAFT_URL_KEYS),
+        "sent": False,          # ★ 전송 0회 — 이 화면은 아무것도 보내지 않는다
+    }
 
 
 def render_detail_blocks_html(detail_blocks: Any, market: str) -> str:
