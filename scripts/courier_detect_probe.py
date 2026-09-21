@@ -33,6 +33,8 @@ from __future__ import annotations
 import os
 import sys
 
+sys.path.insert(0, os.getcwd())
+
 # 오너가 지목한 9곳. 이름은 우리 카탈로그(`courier_catalog`) 표기와 맞춘다.
 TARGETS = [
     ("CJ대한통운", "국내"), ("롯데택배", "국내"), ("한진택배", "국내"),

@@ -31,6 +31,38 @@ def _echo(s):
     return s
 
 
+def _importers_of(module_name: str, *, allow=()) -> list:
+    """`src/` 안에서 그 모듈을 **실제로 import 하는** 파일들 (글자 일치 아님).
+
+    D3 트랙 공용 — 「아직 연결하지 않았다」를 지키는 잣대다. `allow`는 같은 트랙 안의
+    모듈(3단계가 폰트 로더를 쓰는 것 같은 것)이고, **파이프라인 연결이 아니다.**
+    """
+    import ast
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    skip = {f"{module_name}.py", *allow}
+    hits = []
+    for p in (root / "src").rglob("*.py"):
+        if p.name in skip:
+            continue
+        try:
+            tree = ast.parse(p.read_text(encoding="utf-8"))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            names = []
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                names = [node.module or ""] + [f"{node.module or ''}.{a.name}" for a in node.names]
+            if any(module_name == n.rsplit(".", 1)[-1] or n.endswith(f".{module_name}")
+                   for n in names):
+                hits.append(str(p.relative_to(root)))
+                break
+    return sorted(set(hits))
+
+
 # ---------------------------------------------------------------------------
 # D) 영문·숫자만인 줄은 건드리지 않는다
 # ---------------------------------------------------------------------------
@@ -197,13 +229,9 @@ def test_it_is_not_wired_into_the_pipeline_yet():
     """★★ 오너 지시 — **골든 샘플 5축 통과 전에는 연결하지 않는다.**
 
     지금 도는 텐센트 경로는 그대로다. 이 계약이 그 약속을 지킨다.
+
+    ※ **글자가 아니라 `import`를 잰다.** 예전엔 파일 안에 이름이 보이기만 해도 실패였는데,
+      3단계 모듈의 **독스트링이 2단계를 설명하면서** 이름을 적자 터졌다. 그건 연결이 아니다.
+      계약이 주석을 읽으면 헛것을 재는 것이다.
     """
-    from pathlib import Path
-    root = Path(__file__).resolve().parents[1]
-    hits = []
-    for p in (root / "src").rglob("*.py"):
-        if p.name in ("image_text_glossary.py",):
-            continue
-        if "image_text_glossary" in p.read_text(encoding="utf-8"):
-            hits.append(str(p.relative_to(root)))
-    assert not hits, f"아직 연결하면 안 된다: {hits}"
+    assert _importers_of("image_text_glossary") == []
