@@ -194,9 +194,12 @@ def test_a_failure_returns_the_original_bytes(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_it_is_not_wired_into_the_pipeline_yet():
-    """★★ 오너 지시 — **골든 샘플 5축 통과 전에는 연결하지 않는다.**"""
-    from pathlib import Path
-    root = Path(__file__).resolve().parents[1]
-    hits = [str(p.relative_to(root)) for p in (root / "src").rglob("*.py")
-            if p.name != "image_text_render.py" and "image_text_render" in p.read_text(encoding="utf-8")]
-    assert not hits, f"아직 연결하면 안 된다: {hits}"
+    """★★ 오너 지시 — **골든 샘플 5축 통과 전에는 연결하지 않는다.**
+
+    **벤치는 예외다**(D3-3b): 관리자 화면이 오너 클릭으로 한 장을 돌려 보는 자리이고,
+    결과는 벤치 저장소(`kind="d3"`)에만 간다. 막는 것은 **등록·번역 경로**다.
+
+    ※ 글자가 아니라 `import`를 잰다 — 독스트링에 이름이 보이는 것은 연결이 아니다.
+    """
+    from tests.test_d3_glossary import BENCH_ONLY, _importers_of
+    assert _importers_of("image_text_render", allow=BENCH_ONLY) == []

@@ -36,10 +36,21 @@
   <div class="op-card mb-4">
     <div class="op-card-head d-flex justify-content-between align-items-center flex-wrap gap-2">
       <h2 class="h6 mb-0"><i class="bi bi-images"></i> 픽스처</h2>
-      <button class="btn btn-primary btn-sm" id="benchRunBtn"
-              {% if not vendor_status.configured %}disabled{% endif %}>
-        <i class="bi bi-play-fill"></i> 전체 실행
-      </button>
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        {# D3-3b: 같은 텐센트 호출 하나로 **우리 3단계 렌더본**을 함께 만든다.
+           장당 과금은 그대로다 — 우리는 그 응답의 박스+원문을 다시 쓸 뿐이다. #}
+        <div class="form-check form-switch mb-0">
+          <input class="form-check-input" type="checkbox" id="benchRenderD3">
+          <label class="form-check-label small" for="benchRenderD3"
+                 title="텐센트 응답(박스+원문)으로 우리가 지우고 다시 그립니다. 벤치 저장소에만 둡니다.">
+            D3 렌더 함께
+          </label>
+        </div>
+        <button class="btn btn-primary btn-sm" id="benchRunBtn"
+                {% if not vendor_status.configured %}disabled{% endif %}>
+          <i class="bi bi-play-fill"></i> 전체 실행
+        </button>
+      </div>
     </div>
     <div class="op-card-body">
       {% for fx in fixtures %}
@@ -97,12 +108,35 @@
           <span class="console-kpi-label">{{ r.ms }} ms</span>
         </div>
         <div class="row g-2">
-          <div class="col-md-6">
+          <div class="{{ 'col-md-4' if r.d3 else 'col-md-6' }}">
             <div class="console-kpi-label mb-1">원본</div>
             <img src="{{ r.original }}" alt="원본" class="img-fluid" referrerpolicy="no-referrer">
           </div>
-          <div class="col-md-6">
-            <div class="console-kpi-label mb-1">번역본</div>
+          {% if r.d3 %}
+          {# D3-3b: 공급사 렌더본과 **우리 3단계 렌더본**을 같은 줄에 세운다.
+             같은 텐센트 호출 하나에서 나온 두 결과라, 차이는 렌더 방식뿐이다. #}
+          <div class="col-md-4">
+            <div class="console-kpi-label mb-1">D3 렌더본 (우리)</div>
+            {% if r.d3.url %}
+            <img src="{{ r.d3.url }}" alt="D3 렌더본" class="img-fluid">
+            <div class="small text-muted mt-1">
+              지움 {{ r.d3.erased }} · 그림 {{ r.d3.drawn }}
+              {% if r.d3.skipped %} · <span class="text-warning">건너뜀 {{ r.d3.skipped|length }}</span>{% endif %}
+            </div>
+            {% if r.d3.skipped %}
+            <details class="small mt-1"><summary style="cursor:pointer">안 그린 줄</summary>
+              <ul class="mb-0 ps-3">
+                {% for s in r.d3.skipped %}<li>{{ s.text }} — {{ s.reason }}</li>{% endfor %}
+              </ul>
+            </details>
+            {% endif %}
+            {% else %}
+            <div class="op-empty small">{{ r.d3.error or 'D3 렌더본 없음' }}</div>
+            {% endif %}
+          </div>
+          {% endif %}
+          <div class="{{ 'col-md-4' if r.d3 else 'col-md-6' }}">
+            <div class="console-kpi-label mb-1">번역본{% if r.d3 %} (공급사){% endif %}</div>
             {% if r.url %}
             <img src="{{ r.url }}" alt="번역본" class="img-fluid">
             {% else %}
@@ -141,6 +175,26 @@
       </h2>
       <span class="console-kpi-label">채워진 칸 {{ grid.filled }} / {{ grid.cells_total }}</span>
     </div>
+    {% if grid.has_d3 %}
+    {# D3-3b 장당 원가 — **잰 것만** 적는다. 텐센트는 장당 1콜(두 렌더본이 같은 응답을 쓴다). #}
+    <div class="op-card-body border-bottom">
+      <div class="console-kpi-label mb-1">D3 장당 원가 (실측)</div>
+      <div class="d-flex flex-wrap gap-3 small">
+        <span>장 <strong>{{ grid.d3_cost.pages }}</strong></span>
+        <span>텐센트 호출 <strong>{{ grid.d3_cost.tencent_calls }}</strong>
+          <span class="text-muted">(장당 1 — 두 렌더본이 같은 응답을 쓴다)</span></span>
+        <span>LLM 호출 <strong>{{ grid.d3_cost.llm_calls }}</strong></span>
+        <span>LLM 글자 <strong>{{ grid.d3_cost.llm_chars }}</strong></span>
+        {% if grid.d3_cost.llm_errors %}
+        <span class="text-warning">번역 실패 {{ grid.d3_cost.llm_errors }}</span>
+        {% endif %}
+      </div>
+      <div class="text-muted mt-1" style="font-size:.78rem">
+        토큰 수: <strong>재지 못함</strong> — {{ grid.d3_cost.tokens_note }}.
+        추정치를 적지 않습니다.
+      </div>
+    </div>
+    {% endif %}
     <div class="op-card-body p-0">
       <table class="table table-sm mb-0 align-middle">
         <thead class="table-light"><tr>
@@ -179,6 +233,35 @@
             </td>
             {% endfor %}
           </tr>
+          {% if p.d3 %}
+          {# D3-3b: 우리 렌더본은 **5축 전부 사람이** 찍는다 — 렌더가 달라지면 자동 축 값도
+             달라지기 때문이다. 공급사 줄 점수와 섞지 않으려고 칸을 따로 둔다. #}
+          <tr class="table-light">
+            <td class="small"><span class="pc-badge pc-badge-muted">D3</span>
+              <div class="console-kpi-label">우리 렌더본</div></td>
+            {% for key, label, kind, hint in f33_axes %}
+            {% set cell = p.d3_axes[key] %}
+            <td class="small">
+              {% if cell.score == 1 %}
+              <span class="pc-badge pc-badge-on">1</span>
+              {% elif cell.score == 0 %}
+              <span class="pc-badge pc-badge-danger">0</span>
+              {% else %}
+              <span class="pc-badge pc-badge-off">미채점</span>
+              {% endif %}
+              <span class="ms-1">
+                <button type="button" class="btn btn-ghost btn-sm py-0 px-1"
+                        data-cell="d3:{{ p.idx }}:{{ key }}" data-val="1">1</button>
+                <button type="button" class="btn btn-ghost btn-sm py-0 px-1"
+                        data-cell="d3:{{ p.idx }}:{{ key }}" data-val="0">0</button>
+              </span>
+              {% if cell.reason %}
+              <div class="text-muted" style="font-size:.78rem">{{ cell.reason }}</div>
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endif %}
           {% endfor %}
         </tbody>
         <tfoot class="table-light"><tr>
@@ -336,7 +419,12 @@
     runBtn.disabled = true;
     out.innerHTML = '<div class="pc-status pc-status-info mb-4">' +
       '<i class="bi bi-hourglass-split"></i> 접수했어요 — 초당 1장씩 순서대로 보냅니다.</div>';
-    fetch('/seller/admin/image-translate-bench/run', {method: 'POST'})
+    var d3El = document.getElementById('benchRenderD3');
+    fetch('/seller/admin/image-translate-bench/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({render: (d3El && d3El.checked) ? '1' : ''}),
+    })
       .then(function (r) { return r.json().then(function (d) { return {s: r.status, d: d}; }); })
       .then(function (res) {
         if (res.d && res.d.ok) { benchPoll(res.d.run_id, 0); return; }

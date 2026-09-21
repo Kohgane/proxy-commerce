@@ -75,6 +75,59 @@ def draft_url(product_data: Dict[str, Any]) -> str:
     return cands[0]
 
 
+#: 등록 페이로드를 만드는 경로들 — **이 목록이 계약의 모집단**이다 (F40-b).
+#:   새 경로가 생기면 여기 이름을 올리고 `build_dispatch_payload`를 쓰게 한다.
+DISPATCH_PATHS = ("단건(서랍)", "일괄(수집 이력)", "재등록(멀티샵)")
+
+
+def build_dispatch_payload(product_data: Dict[str, Any],
+                           item: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """등록에 나갈 페이로드 — **세 경로가 이 한 자리를 쓴다** (F40-b).
+
+    ## 왜 한 자리여야 하나 (실측 2026-09-20 · 09-21)
+
+    같은 결함이 **두 번** 났다. F39에서 「`url` 키가 없다」를 고쳤고, F40에서
+    「행의 `url` 컬럼을 안 싣는다」를 고쳤는데 — **일괄 경로만** 고쳐졌다.
+    카나리 4차에서 **단건(서랍) 경로**가 같은 문장을 다시 냈다:
+
+        상품 주소가 페이로드에 없습니다(빈 값) … 뽑힌 값: ''
+
+    > ★★★ **두 번 같은 자리에서 빠졌으면, 세 번째는 경로가 늘어서 온다.**
+    > 그래서 고치는 방식이 「그 경로도 고친다」가 아니라 **「경로가 한 함수를 지난다」**다.
+
+    단건 경로의 채우기는 게다가 **이미지·도달성 `try` 블록 안**에 있었다.
+    그 블록의 `except`는 모든 예외를 삼키고 넘어간다 — 앞쪽에서 무엇 하나 터지면
+    **주소 채우기가 조용히 건너뛰어진다.** 그래서 이 함수는 그 블록 **밖에서** 불린다.
+
+    `item`은 수집 이력의 **행**이다(있으면). 행의 `url` 컬럼이 「원본 보기」가 여는
+    그 주소이고, **그게 정본**이다 — 폼이 안 실어 보냈으면 여기서 채운다.
+    행이 없으면(직접 호출·AI 경로) 페이로드를 **그대로** 돌려준다. 지어내지 않는다.
+
+    ## ★ 「있는 주소」가 아니라 「쓸 수 있는 주소」 (F40의 규율을 여기까지 끌고 온다)
+
+    공유 링크(`e.tb.cn/h.…?tk=…`)는 **주소이긴 한데 상품번호가 없다.** 페이로드에 그게
+    들어 있으면 `draft_url`은 「있다」고 답하고, 행에 멀쩡한 정규형 주소가 있어도 안 쓴다 →
+    SKU가 빈 채로 나간다. **행 주소가 SKU를 내는데 페이로드 것이 못 내면 행이 이긴다.**
+    """
+    from src.collectors.product_key import vendor_sku
+
+    pd = dict(product_data or {})
+    row_url = str((item or {}).get("url") or "").strip() if item else ""
+    if not row_url:
+        return pd
+
+    cur = draft_url(pd)
+    if cur and vendor_sku(cur):
+        return pd                              # 이미 쓸 수 있다 — 건드리지 않는다
+    if cur and not vendor_sku(row_url):
+        return pd                              # 행 것도 못 쓴다 — 바꿀 이유가 없다
+
+    pd["url"] = row_url
+    logger.info("[등록] 주소를 행에서 채웠다 item=%s url=%s 이전=%s",
+                item.get("id") or item.get("item_id") or "?", row_url, cur or "(없음)")
+    return pd
+
+
 def render_detail_blocks_html(detail_blocks: Any, market: str) -> str:
     """v86-N: 드로어 '상세페이지 꾸미기'(v40-C) 블록 → 마켓 상세설명 HTML.
 

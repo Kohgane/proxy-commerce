@@ -378,6 +378,76 @@
   </div>
 </div>
 
+{% if is_admin %}
+{# F44-p 택배사 판별 프로브 — **관리자 전용**.
+   오너 규칙(2026-09-21): 외부 키가 필요한 측정은 **키가 있는 곳**에서 돌린다.
+   서버 env의 TRACKINGMORE_API_KEY를 그대로 읽고, 오너는 송장번호만 붙여 넣는다. #}
+<div class="op-card mt-4" id="courierDetectCard">
+  <div class="op-card-head">
+    <h2 class="h6 mb-0"><i class="bi bi-search"></i> 택배사 판별 테스트
+      <span class="pc-badge pc-badge-muted ms-1">관리자</span></h2>
+  </div>
+  <div class="op-card-body">
+    <p class="small text-muted mb-2">
+      실제 송장번호를 <strong>한 줄에 하나씩</strong> 붙여 넣으세요.
+      <code>택배사이름 [탭] 송장번호</code> 형식이면 기대값과 대조하고, 번호만 넣으면 무엇으로
+      판별되는지만 봅니다. 키는 이 서버에 있는 값을 씁니다.
+    </p>
+    <div class="small text-muted mb-2">
+      대상 9곳: {{ detect_targets|join(' · ') }}
+    </div>
+    <textarea id="cdInput" class="form-control form-control-sm mb-2" rows="5"
+              placeholder="CJ대한통운&#9;123456789012&#10;DHL&#9;1234567890"></textarea>
+    <button class="btn btn-primary btn-sm" id="cdRun">
+      <i class="bi bi-play-fill"></i> 판별 실행
+    </button>
+    <div id="cdOut" class="mt-3"></div>
+  </div>
+</div>
+<script>
+(function () {
+  var btn = document.getElementById('cdRun');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var out = document.getElementById('cdOut');
+    btn.disabled = true;
+    out.innerHTML = '<div class="pc-status pc-status-info">판별 중…</div>';
+    fetch('/seller/admin/courier-detect', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({numbers: document.getElementById('cdInput').value}),
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      btn.disabled = false;
+      if (!d.ok) {
+        out.innerHTML = '<div class="pc-status pc-status-danger">' +
+          (d.error || '판별하지 못했습니다.') + '</div>';
+        return;
+      }
+      var cls = d.verdict === 'keep' ? 'pc-status-ok' : 'pc-status-warn';
+      var h = '<div class="pc-status ' + cls + ' mb-2">' + (d.sentence || '') + '</div>';
+      h += '<table class="table table-sm"><thead><tr><th>택배사</th><th>송장</th>' +
+           '<th>판정</th><th>비고</th><th>응답 원문</th></tr></thead><tbody>';
+      (d.rows || []).forEach(function (r) {
+        var badgeCls = r.verdict === '판별' ? 'pc-badge-on'
+                     : r.verdict === '후보' ? 'pc-badge-muted'
+                     : r.verdict === '못함' ? 'pc-badge-danger' : 'pc-badge-off';
+        h += '<tr><td class="small">' + (r.name || '<span class="text-muted">(이름 없음)</span>') +
+             '</td><td class="small">' + r.number +
+             '</td><td><span class="pc-badge ' + badgeCls + '">' + r.verdict + '</span>' +
+             '</td><td class="small">' + (r.note || '') +
+             '</td><td class="small text-muted" style="word-break:break-all;max-width:22rem">' +
+             (r.raw || '') + (r.http_status ? ' <span class="pc-badge pc-badge-off">HTTP ' +
+             r.http_status + '</span>' : '') + '</td></tr>';
+      });
+      out.innerHTML = h + '</tbody></table>';
+    }).catch(function () {
+      btn.disabled = false;
+      out.innerHTML = '<div class="pc-status pc-status-danger">판별하지 못했습니다.</div>';
+    });
+  });
+})();
+</script>
+{% endif %}
+
 <script id="tm-courier-catalog" type="application/json">{{ courier_catalog|tojson }}</script>
 <script src="/seller/static/orders.js"></script>
 {% endblock %}

@@ -1801,6 +1801,12 @@ def collect_upload():
     if not markets:
         return jsonify({"ok": False, "error": "업로드 대상 마켓을 선택하세요."}), 400
 
+    # F40-b: 주소 채우기는 **공용 빌더 한 자리**에서, 그리고 아래 이미지·도달성 `try` **밖에서**.
+    #   예전엔 그 블록 안에 있었는데 블록의 except가 모든 예외를 삼켜, 앞쪽에서 무엇 하나
+    #   터지면 **주소 채우기가 조용히 건너뛰어졌다**(카나리 4차 실측: 뽑힌 값 '').
+    from .upload_dispatcher import build_dispatch_payload as _build_payload
+    product_data = _build_payload(product_data, _get_owned_item(data.get("item_id") or ""))
+
     # D2: 마켓에 나가는 이미지는 **번역본 사용 토글을 반영한 배열**이다.
     #   폼이 보낸 목록(사람이 방금 고친 원본 순서)을 기준으로, 저장된 토글을 서버가 매핑한다 —
     #   화면과 서버가 각자 계산하면 「서랍은 한국어인데 마켓은 중국어」가 된다.
@@ -1813,12 +1819,8 @@ def collect_upload():
             if _uit:
                 from src.services import image_translate_store as _its
                 _uex = json.loads(_uit.get("extra_json") or "{}") or {}
-                # F40: 주소는 **행의 `url` 컬럼**이 정본이다(「원본 보기」가 여는 그 값).
-                #   폼이 안 실어 보냈으면 여기서 채운다 — 화면과 등록이 다른 주소를 보면
-                #   「화면은 열리는데 등록은 알 수 없는 사이트」가 된다.
-                from .upload_dispatcher import draft_url as _durl
-                if not _durl(product_data) and _uit.get("url"):
-                    product_data["url"] = _uit.get("url")
+                # (F40-b: 주소 채우기는 이 블록 **밖**으로 옮겼다 — 여기 except가 모든 예외를
+                #  삼켜서, 앞이 터지면 주소가 조용히 안 채워졌다. 위 `build_dispatch_payload` 참조.)
                 _eff = _its.effective_images(_uex, item_id=_uid,
                                              originals=product_data.get("images") or [])
                 if _eff:
@@ -2255,13 +2257,10 @@ def collect_bulk_upload():
                 if not product:
                     product = {"title": item.get("title"), "url": item.get("url"),
                                "price": item.get("price"), "currency": item.get("currency")}
-                # F40: 행의 `url` 컬럼(= 「원본 보기」가 여는 그 주소)을 **항상** 싣는다.
-                #   예전엔 `extra_json`이 비었을 때만 넣었는데, 텔레그램/공유 수집의 extra는
-                #   비어 있지 않고 **`url` 키가 없다**(`final_url`만 있다) → 페이로드에 주소가
-                #   통째로 없었다. 화면은 주소를 여는데 등록은 「알 수 없는 사이트」라고 했다.
-                from .upload_dispatcher import draft_url as _durl
-                if not _durl(product) and item.get("url"):
-                    product["url"] = item.get("url")
+                # F40-b: 단건·일괄·재등록이 **같은 빌더**를 쓴다. 행의 `url` 컬럼
+                #   (= 「원본 보기」가 여는 그 주소)이 정본이다.
+                from .upload_dispatcher import build_dispatch_payload as _build_payload
+                product = _build_payload(product, item)
                 if target_margin_pct is not None:
                     try:
                         product["target_margin_pct"] = float(target_margin_pct)
@@ -3642,7 +3641,15 @@ def orders():
         offset=offset,
         ops_health=ops_health,
         courier_catalog=get_courier_catalog(include_dynamic=True),
+        # F44-p: 택배사 판별 프로브는 **관리자만** 본다(셀러 화면에 진단 도구를 띄우지 않는다).
+        is_admin=_is_admin_user(),
+        detect_targets=[n for n, _k in _detect_targets()],
     )
+
+
+def _detect_targets():
+    from src.seller_console.orders.courier_detect import TARGETS
+    return TARGETS
 
 
 @bp.post("/orders/sync")
@@ -8148,7 +8155,11 @@ def _woocommerce_dispatch(product_data, account):
     dispatcher = _get_upload_dispatcher()
     if dispatcher is None:
         return {"success": False, "error": "업로드 디스패처 로드 실패 — 등록 불가"}
-    from .upload_dispatcher import draft_url
+    # F40-b: 세 번째 경로도 **같은 빌더**를 지난다. 여긴 행이 없어(상위에서 이미 만든 값)
+    #   빌더가 그대로 돌려주지만, **경로가 빌더를 지난다는 사실**이 계약의 모집단이다 —
+    #   나중에 이 경로에 행이 붙으면 그때 자동으로 채워진다.
+    from .upload_dispatcher import build_dispatch_payload, draft_url
+    product_data = build_dispatch_payload(product_data, product_data.get("_row"))
     sku = str(product_data.get("sku") or "").strip()
     pd = {
         "title_ko": product_data.get("title_ko"),
@@ -11007,7 +11018,14 @@ def _bench_grid(run: dict) -> dict:
         row = {"idx": idx, "kind": r.get("kind", ""), "original": r.get("original", ""),
                "url": r.get("url", ""), "status": r.get("status", ""),
                "ms": r.get("ms"), "lines": r.get("lines") or [],
-               "box_hints": r.get("box_hints") or [], "axes": {}}
+               "box_hints": r.get("box_hints") or [], "axes": {},
+               # D3-3b: 우리 3단계 렌더본(있으면). 없으면 빈 dict — 화면이 칸을 비운다.
+               "d3": r.get("d3") or {},
+               # D3 렌더본의 5축은 **전부 사람이** 찍는다(자동 축도 렌더가 달라지면 값이 달라진다).
+               "d3_axes": {key: {"score": cells.get(f"d3:{idx}:{key}"),
+                                 "reason": "" if cells.get(f"d3:{idx}:{key}") in (0, 1)
+                                           else "사람이 아직 안 찍음"}
+                           for key, _l, _k, _h in axesmod.AXES}}
         for key, _label, kind, _hint in axesmod.AXES:
             if kind == "auto":
                 row["axes"][key] = auto.get(key) or {"score": None, "reason": "결과 없음"}
@@ -11020,8 +11038,24 @@ def _bench_grid(run: dict) -> dict:
     mode = (run or {}).get("mode")
     if mode is None and results:
         mode = results[0].get("mode")
+    # D3-3b 장당 원가 — **잰 것만 센다.**
+    #   텐센트는 장당 1콜(우리는 그 응답을 다시 쓸 뿐 두 번 부르지 않는다).
+    #   LLM은 줄마다 1콜이고, **토큰은 못 잰다** — 번역 체인이 공급사 `usage`를 안 내준다.
+    #   추정해서 적으면 그건 지어낸 숫자다.
+    d3_pages = [p for p in pages if p.get("d3")]
+    cost = {
+        "pages": len(d3_pages),
+        "tencent_calls": len(d3_pages),
+        "llm_calls": sum(int((p["d3"].get("llm") or {}).get("calls") or 0) for p in d3_pages),
+        "llm_chars": sum(int((p["d3"].get("llm") or {}).get("chars") or 0) for p in d3_pages),
+        "llm_errors": sum(int((p["d3"].get("llm") or {}).get("errors") or 0) for p in d3_pages),
+        "tokens": None,
+        "tokens_note": "토큰 수는 번역 체인이 공급사 usage를 내주지 않아 재지 못했습니다",
+    }
     return {"mode": mode, "pages": pages,
             "summary": axesmod.summarize(pages),
+            "has_d3": bool(d3_pages),
+            "d3_cost": cost,
             "filled": sum(1 for p in pages for k in p["axes"]
                           if p["axes"][k].get("score") in (0, 1)),
             "cells_total": len(pages) * len(axesmod.AXES)}
@@ -11035,6 +11069,43 @@ BENCH_SCORE_AXES = (
     ("logo", "로고·워터마크 보존", "브랜드 로고를 번역·삭제하지 않았나"),
     ("banned", "금칙어 발생", "번역문에 쿠팡 금칙어가 생겼나"),
 )
+
+
+@bp.post("/admin/courier-detect")
+def admin_courier_detect():
+    """F44-p 택배사 판별 프로브 — **키는 서버에 있고, 오너는 송장번호만 넣는다.**
+
+    오너 규칙(2026-09-21): **외부 키가 필요한 측정은 키가 있는 곳에서 돌린다.**
+    CC 환경으로 키를 옮기지 않는다 — 측정을 이리로 옮긴다.
+
+    응답에 **공급사 원문**이 실린다(F41 규율): 빈 후보가 「못 찾음」인지 「429」인지
+    「키 오류」인지 구분하려면 원문이 있어야 한다.
+    """
+    if not _check_auth() or not _is_admin_user():
+        return jsonify({"ok": False, "error": "관리자 전용입니다."}), 403
+    data = request.get_json(silent=True) or request.form or {}
+    text = str(data.get("numbers") or "").strip()
+    if not text:
+        return jsonify({"ok": False, "error": "송장번호를 한 줄에 하나씩 넣어 주세요."}), 400
+
+    from src.seller_console.orders import courier_detect as probe
+    try:
+        result = probe.probe(text)
+    except Exception as exc:
+        logger.warning("[택배사 판별] 실패: %s", exc)
+        return jsonify({"ok": False, "error": "판별 중 오류가 발생했습니다."}), 500
+    result["sentence"] = probe.verdict_sentence(result)
+    return jsonify(result), (200 if result.get("ok") else 503)
+
+
+def bench_run_id(mode: int, render_d3: bool = False) -> str:
+    """실행 이름표 — **모드와 D3 여부가 이름에 산다.**
+
+    두 실행을 나중에 표에서 짝지어야 하는데, 이름이 같으면 무엇이 무엇인지 갈린다.
+    (예: `bench-20260921-101500-m0-d3`)
+    """
+    return datetime.now(timezone.utc).strftime(
+        f"bench-%Y%m%d-%H%M%S-m{int(mode)}" + ("-d3" if render_d3 else ""))
 
 
 @bp.post("/admin/image-translate-bench/run")
@@ -11059,6 +11130,9 @@ def image_translate_bench_run():
     #   모드를 나란히 세우는 것이 이 트랙의 전부다 — 두 모드를 한 실행에 섞지 않는다
     #   (초당 1장 한도를 어기고, 표에서 무엇이 무엇인지도 갈리지 않는다).
     mode = 1 if str(data.get("mode") or "0").strip() == "1" else 0
+    # D3-3b: 같은 텐센트 호출 한 번으로 **우리 3단계 렌더본**을 함께 만든다(장당 과금 불변).
+    #   결과는 벤치 저장소(kind="d3")에만 둔다 — 등록·번역 경로는 쳐다보지 않는다.
+    render_d3 = str(data.get("render") or "").strip() in ("1", "true", "on")
     only = str(data.get("item_no") or "").strip()
     rows = _bench_fixture_rows()
     if only:
@@ -11067,13 +11141,32 @@ def image_translate_bench_run():
             return jsonify({"ok": False, "error": f"픽스처에 없는 상품번호입니다: {only}"}), 404
     title = " ".join(str(r.get("title") or "") for r in rows).strip()
 
-    run_id = datetime.now(timezone.utc).strftime(f"bench-%Y%m%d-%H%M%S-m{mode}")
+    run_id = bench_run_id(mode, render_d3)
     from src.services import image_translate_bench as bench
     if bench.is_running():
         return jsonify({"ok": False, "error": "이미 실행 중입니다. 끝나면 다시 눌러 주세요."}), 409
-    total = bench.start(run_id, _seller_id(), rows, mode=mode, title=title)
+    total = bench.start(run_id, _seller_id(), rows, mode=mode, title=title,
+                        render_d3=render_d3)
     return jsonify({"ok": True, "run_id": run_id, "total": total, "mode": mode,
-                    "item_no": only, "accepted": True}), 202
+                    "render_d3": render_d3, "item_no": only, "accepted": True}), 202
+
+
+@bp.get("/admin/image-translate-bench/image/<item_id>/<int:idx>")
+def image_translate_bench_d3_image(item_id: str, idx: int):
+    """D3 렌더본 서빙 — **관리자 전용, 벤치 저장소(`kind="d3"`)만**.
+
+    셀러 경로(`/collect/image-ko/...`)를 쓰지 않는다. 그쪽은 등록에 나가는 번역본의 자리이고,
+    벤치 산출물이 거기 섞이면 **파이프라인에 연결된 것처럼 보인다.** 자리를 갈라 둔다.
+    """
+    if not _check_auth() or not _is_admin_user():
+        return ("", 404)
+    from src.services.image_translate_store import read_translated
+    raw = read_translated(item_id, idx, kind="d3")
+    if not raw:
+        return ("", 404)
+    from flask import Response
+    return Response(raw, mimetype="image/jpeg",
+                    headers={"Cache-Control": "private, max-age=60"})
 
 
 @bp.get("/admin/image-translate-bench/status")
@@ -11099,13 +11192,20 @@ def image_translate_bench_score():
     scores["note"] = str(data.get("note") or "")[:1000]
     # F33: **장별** 사람 축(C 박스 맞춤 · E 타이포 일치). 키는 `"<idx>:<축>"`.
     #   0/1만 받는다 — 빈 값은 「아직 안 찍음」이고, 그건 0과 다르다.
-    from src.services.image_bench_axes import HUMAN_AXES
+    #   D3-3b: `d3:<idx>:<축>`은 **우리 3단계 렌더본**의 칸이다. 공급사 렌더본 점수와
+    #   같은 자리에 섞으면 무엇을 채점한 것인지 갈린다 — 접두어로 갈라 둔다.
+    #   D3 칸은 **5축 전부** 사람이 찍는다(자동 축도 렌더본이 달라지면 값이 달라진다).
+    from src.services.image_bench_axes import AXES, HUMAN_AXES
+    all_axes = tuple(k for k, _l, _kind, _h in AXES)
     cells = {}
     for key, val in (data.get("cells") or {}).items():
         try:
-            idx, axis = str(key).split(":", 1)
-            if axis in HUMAN_AXES and int(idx) >= 0 and str(val) in ("0", "1"):
-                cells[f"{int(idx)}:{axis}"] = int(val)
+            k = str(key)
+            is_d3 = k.startswith("d3:")
+            idx, axis = (k[3:] if is_d3 else k).split(":", 1)
+            allowed = all_axes if is_d3 else HUMAN_AXES
+            if axis in allowed and int(idx) >= 0 and str(val) in ("0", "1"):
+                cells[f"{'d3:' if is_d3 else ''}{int(idx)}:{axis}"] = int(val)
         except Exception:
             continue
     if cells:
