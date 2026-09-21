@@ -61,14 +61,43 @@ def _iter_terms(entry: CourierCatalogEntry) -> Iterable[str]:
 
 def _to_payload(entry: CourierCatalogEntry, source: str = "builtin") -> dict:
     terms = sorted(set(_iter_terms(entry)))
+    # F44-a: **마켓별 컬럼**을 한 표에 둔다. 쿠팡 열이 먼저 붙었고(정본 코드표 확보),
+    #   네이버·11번가는 코드표 문서가 오면 같은 자리에 열을 늘린다.
+    #   기존 TrackingMore/스윗 축은 **그대로** 둔다 — 추적 공급사와 마켓 코드는 다른 축이다.
+    coupang = _coupang_code_for(entry)
     return {
         "name": entry.name,
         "trackingmore_code": entry.trackingmore_code,
         "sweet_code": entry.sweet_code,
+        "coupang_code": coupang,
+        # 「미지원」은 **빈칸과 다르다** — 빈칸은 「아직 안 붙였다」이고 이건 「그 마켓엔 없다」다.
+        "coupang_status": _coupang_status(coupang),
+        "naver_code": "",          # 코드표 문서 대기 — 짐작해 채우지 않는다
+        "elevenst_code": "",       # 〃
         "aliases": list(entry.aliases),
         "search_terms": terms,
         "source": source,
     }
+
+
+def _coupang_code_for(entry: CourierCatalogEntry) -> str:
+    """우리 카탈로그 행 → 쿠팡 코드. **확실할 때만** 채운다(부분일치 금지)."""
+    try:
+        from .coupang_courier_rules import resolve_name
+    except Exception:                                   # pragma: no cover
+        return ""
+    for cand in (entry.name, *entry.aliases):
+        code = resolve_name(cand)
+        if code:
+            return code
+    return ""
+
+
+def _coupang_status(code: str) -> dict:
+    if not code:
+        return {"found": False, "selectable": False, "reason": "쿠팡 코드 미매핑", "lens_label": ""}
+    from .coupang_courier_rules import status
+    return status(code)
 
 
 def _merge_catalog(rows: Iterable[dict]) -> list[dict]:
