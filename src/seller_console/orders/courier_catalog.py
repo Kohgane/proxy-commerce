@@ -10,7 +10,12 @@ from typing import Iterable
 import requests
 
 logger = logging.getLogger(__name__)
-DEFAULT_SWEET_CODE = "00"
+
+# F45 — 모르는 택배사는 **빈 코드**다. 예전엔 `"00"`을 조용히 돌려줬다:
+#   카탈로그에 없는 이름이 들어와도 **아무 말 없이 코드가 하나 나왔다.**
+#   그건 「미지원」을 「00번 택배사」로 바꿔 말한 것이고, 침묵 매핑이다(F44 b 금지사항).
+SWEET_CODE_UNSUPPORTED = ""
+DEFAULT_SWEET_CODE = SWEET_CODE_UNSUPPORTED   # 옛 이름 — 값이 바뀌었다(위 참조)
 
 
 @dataclass(frozen=True)
@@ -186,9 +191,13 @@ def lookup_trackingmore_code(name: str) -> str:
 
 
 def lookup_sweet_code(name: str) -> str:
-    """택배사 이름/별칭 -> 스윗트래커 코드."""
+    """택배사 이름/별칭 -> 스윗트래커 코드. **모르면 빈 문자열**(F45).
+
+    ★ 예전엔 모르는 이름에 `"00"`을 돌려줬다 — 호출부는 그게 **찾은 코드인지
+    폴백인지 구분할 수 없었다.** 빈 값이면 호출부가 「미지원」이라고 말할 수 있다.
+    """
     key = (name or "").strip()
     if not key:
-        return DEFAULT_SWEET_CODE
+        return SWEET_CODE_UNSUPPORTED
     mapping = get_sweet_courier_map()
-    return mapping.get(key) or mapping.get(_normalize(key), DEFAULT_SWEET_CODE)
+    return mapping.get(key) or mapping.get(_normalize(key), SWEET_CODE_UNSUPPORTED)

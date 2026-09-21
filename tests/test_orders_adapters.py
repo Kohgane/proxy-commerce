@@ -65,7 +65,11 @@ class TestCoupangOrdersUnified:
         monkeypatch.delenv("ADAPTER_DRY_RUN", raising=False)
 
     def test_update_tracking_dry_run(self, monkeypatch):
-        """ADAPTER_DRY_RUN=1 → True 반환 (API 미호출)."""
+        """ADAPTER_DRY_RUN=1 → 전송 없이 ok (API 미호출).
+
+        ※ F45: 반환이 bool → dict(`{ok, http_status, body, error}`)이다. 실패 사유(응답 원문)를
+          로그로만 흘리지 않기 위해서다.
+        """
         monkeypatch.setenv("COUPANG_VENDOR_ID", "V001")
         monkeypatch.setenv("COUPANG_ACCESS_KEY", "AK001")
         monkeypatch.setenv("COUPANG_SECRET_KEY", "SK001")
@@ -73,21 +77,27 @@ class TestCoupangOrdersUnified:
 
         from src.seller_console.market_adapters.coupang_adapter import CoupangAdapter
         result = CoupangAdapter().update_tracking("ORDER-001", courier="CJ", tracking_no="123456")
-        assert result is True
+        assert result["ok"] is True
         monkeypatch.delenv("ADAPTER_DRY_RUN", raising=False)
 
     def test_update_tracking_no_api_keys(self, monkeypatch):
-        """API 키 없음 → False 반환."""
+        """API 키 없음 → 실패 + **사유**(F45: 예전엔 사유 없는 False)."""
         monkeypatch.delenv("COUPANG_VENDOR_ID", raising=False)
         monkeypatch.delenv("COUPANG_ACCESS_KEY", raising=False)
         monkeypatch.delenv("COUPANG_SECRET_KEY", raising=False)
 
         from src.seller_console.market_adapters.coupang_adapter import CoupangAdapter
         result = CoupangAdapter().update_tracking("ORDER-001", courier="CJ", tracking_no="123456")
-        assert result is False
+        assert result["ok"] is False
+        assert "자격증명" in result["error"]
 
-    @patch("requests.put")
+    # ★ 실제 호출 경로는 `relay_request`다(고정 IP 릴레이 경유). `requests.put/post`를
+    #   가로채면 **아무것도 안 막힌다** — 이 테스트들은 그동안 이웃 테스트가 남긴
+    #   ADAPTER_DRY_RUN 때문에 통과했고, 단독 실행하면 실 네트워크를 때리고 실패했다.
+    #   (F45 작업 중 발견. 공허한 그린 — 「통과했지만 아무것도 안 쟀다」.)
+    @patch("src.seller_console.market_adapters.coupang_adapter.relay_request")
     def test_update_tracking_active_success(self, mock_put, monkeypatch):
+        monkeypatch.delenv("ADAPTER_DRY_RUN", raising=False)
         monkeypatch.setenv("COUPANG_VENDOR_ID", "V001")
         monkeypatch.setenv("COUPANG_ACCESS_KEY", "AK001")
         monkeypatch.setenv("COUPANG_SECRET_KEY", "SK001")
@@ -96,7 +106,7 @@ class TestCoupangOrdersUnified:
         from src.seller_console.market_adapters.coupang_adapter import CoupangAdapter
         adapter = CoupangAdapter()
         assert adapter.is_active is True
-        assert adapter.update_tracking("ORDER-001", courier="CJ", tracking_no="123456") is True
+        assert adapter.update_tracking("ORDER-001", courier="CJ", tracking_no="123456")["ok"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -150,8 +160,9 @@ class TestSmartStoreOrdersUnified:
         result = SmartStoreAdapter().update_tracking("ORDER-001", courier="CJ", tracking_no="123456")
         assert result is False
 
-    @patch("requests.post")
+    @patch("src.seller_console.market_adapters.smartstore_adapter.relay_request")
     def test_update_tracking_active_success(self, mock_post, monkeypatch):
+        monkeypatch.delenv("ADAPTER_DRY_RUN", raising=False)
         monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "NAVER_ID")
         monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", "NAVER_SECRET")
         mock_post.return_value = MagicMock(status_code=200)
@@ -232,8 +243,9 @@ class TestElevenOrdersUnified:
         result = ElevenAdapter().update_tracking("ORDER-001", courier="04", tracking_no="123456")
         assert result is False
 
-    @patch("requests.post")
+    @patch("src.seller_console.market_adapters.eleven_adapter.relay_request")
     def test_update_tracking_active_success(self, mock_post, monkeypatch):
+        monkeypatch.delenv("ADAPTER_DRY_RUN", raising=False)
         monkeypatch.setenv("ELEVENST_API_KEY", "ELEVEN_KEY")
         mock_post.return_value = MagicMock(status_code=200)
 

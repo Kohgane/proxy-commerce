@@ -143,7 +143,10 @@ class TestOrderSyncServiceKpiSummary:
 
 class TestOrderSyncServiceUpdateTracking:
     def test_update_tracking_dry_run(self, monkeypatch):
-        """ADAPTER_DRY_RUN=1 → True 반환 (API/Sheets 미호출)."""
+        """ADAPTER_DRY_RUN=1 → 전송 없이 ok (API/Sheets 미호출).
+
+        ※ F45: 반환이 bool → dict이다. 막은 것을 「성공」이라 부르되 **왜인지** 적는다.
+        """
         monkeypatch.setenv("ADAPTER_DRY_RUN", "1")
 
         from src.seller_console.orders.sync_service import OrderSyncService
@@ -151,13 +154,19 @@ class TestOrderSyncServiceUpdateTracking:
         svc.sheets.update_tracking = MagicMock(return_value=True)
 
         result = svc.update_tracking("ORDER-001", "coupang", "CJ", "123456")
-        assert result is True
+        assert result["ok"] is True
+        assert "전송하지 않았습니다" in result["error"]
         # dry-run 이므로 Sheets 호출 안 함
         svc.sheets.update_tracking.assert_not_called()
         monkeypatch.delenv("ADAPTER_DRY_RUN", raising=False)
 
     def test_update_tracking_sheets_only(self, monkeypatch):
-        """API 키 없음 → Sheets만 갱신."""
+        """★★★ API 키 없음 → 대장만 갱신되고, **그건 성공이 아니다** (F45).
+
+        이 테스트는 예전에 `assert result is True`였다 — **쿠팡에 아무것도 안 갔는데
+        성공이라고 못박고 있었다.** 계약이 거짓을 지키고 있었던 셈이다.
+        지금은 두 사실이 다른 칸으로 나온다: 마켓 미반영(ok=False) · 우리 기록됨(local_ok=True).
+        """
         monkeypatch.delenv("ADAPTER_DRY_RUN", raising=False)
         monkeypatch.delenv("COUPANG_VENDOR_ID", raising=False)
 
@@ -166,5 +175,7 @@ class TestOrderSyncServiceUpdateTracking:
         svc.sheets.update_tracking = MagicMock(return_value=True)
 
         result = svc.update_tracking("ORDER-001", "coupang", "CJ", "123456")
-        assert result is True
+        assert result["ok"] is False
+        assert result["local_ok"] is True
+        assert result["error"]
         svc.sheets.update_tracking.assert_called_once_with("ORDER-001", "coupang", "CJ", "123456")

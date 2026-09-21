@@ -17,6 +17,12 @@ import time
 from typing import List, Optional
 
 from src.seller_console.market_status import MarketStatusItem
+# F45 실측(2026-09-21): `relay_request`가 **함수 안에서만** import돼 있었고(토큰 발급 함수),
+#   `update_tracking`·상품조회는 그 이름을 **모듈 스코프에서 맨 채로** 썼다 → 호출 즉시
+#   `NameError` → `except`가 삼키고 False. **스마트스토어 운송장 등록은 한 번도 성공한 적이 없다.**
+#   그런데 호출부가 `sheets_ok or api_ok`였던 탓에 화면엔 「성공」이 떴다.
+#   쿠팡 어댑터와 같은 방식(모듈 최상단 import)으로 맞춘다.
+from src.market_relay import relay_request
 from .base import MarketAdapter
 
 logger = logging.getLogger(__name__)
