@@ -16,16 +16,28 @@ _COURIER_CODE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
 _CODE_GATED_MARKETS = {"coupang"}
 
 
-def courier_code_hold(marketplace: str, courier: str) -> str:
-    """전송을 **보류할 사유**(없으면 빈 문자열) — F45.
+def courier_code_hold(marketplace: str, courier: str, tracking_no: str = "") -> str:
+    """전송을 **보류할 사유**(없으면 빈 문자열) — F45 → **F44-a로 강화**.
 
     실측(2026-09-21): 일괄 송장 화면의 **자유 입력 문자열이 쿠팡에 그대로** 갔다.
     셀러가 「CJ대한통운」이라고 치면 그 한글이 `courierCode`로 나갔다.
 
-    > ★ **여기서 매핑하지 않는다.** 쿠팡 코드표가 아직 없으므로(F44, 오너 캡처 대기)
-    > 「이름 → 코드」를 지어내면 그게 발명이다. **코드 모양이 아닌 값이 나가는 것만 막는다.**
+    ## F44-a 이후 — 이제 **표를 본다**
+
+    쿠팡 공식 코드표(문서 2609170000)가 정본으로 들어왔다. 그래서 막는 것이 셋이 됐다:
+
+    | 무엇 | 사유 |
+    |---|---|
+    | 코드 모양이 아니다 | 한국어 이름이 그대로 나가는 것 |
+    | 표에 없다 · 합병/폐업 | 쿠팡이 안 받는 코드 |
+    | 자리수·패턴 불일치 | 문서 첫 줄 「규격에 맞지 않는 운송장은 에러」 |
+
+    > ★ **여전히 매핑하지 않는다.** 「CJ대한통운 → CJGLS」를 여기서 자동으로 바꾸지 않는다 —
+    > 고르는 것은 사람이고, 화면의 검색이 그 자리다. 여기는 **막는 자리**다.
+    > 폐업 코드의 **후계도 짐작하지 않는다**(KOREX → CJGLS 금지).
 
     값은 **바꾸지 않는다** — 대소문자 보정조차 하지 않는다(조용한 변형 금지).
+    자리수가 **미지정**인 택배사는 검증을 건너뛴다(모르면서 막지 않는다).
     """
     mkt = str(marketplace or "").strip().lower()
     val = str(courier or "").strip()
@@ -33,10 +45,21 @@ def courier_code_hold(marketplace: str, courier: str) -> str:
         return ""
     if not val:
         return "택배사를 입력하세요"
-    if _COURIER_CODE_RE.match(val):
-        return ""
-    return (f"쿠팡 코드표의 코드가 필요합니다 — 「{val}」은(는) 택배사 **이름**으로 보입니다. "
-            "쿠팡 Wing의 택배사 코드(영문/숫자)를 넣어 주세요.")
+    if not _COURIER_CODE_RE.match(val):
+        return (f"쿠팡 코드표의 코드가 필요합니다 — 「{val}」은(는) 택배사 **이름**으로 보입니다. "
+                "쿠팡 Wing의 택배사 코드(영문/숫자)를 넣어 주세요.")
+
+    from .coupang_courier_rules import status, validate
+    st = status(val)
+    if not st["found"]:
+        return f"쿠팡 코드표에 없는 코드입니다 — 「{val}」"
+    if not st["active"]:
+        return f"{st['name']}({st['code']})는 {st['reason']}입니다 — 다른 택배사를 골라 주세요"
+    if tracking_no:
+        ok, why = validate(val, tracking_no)
+        if not ok:
+            return why
+    return ""
 
 
 def _market_tracking_result(raw) -> tuple:
@@ -151,7 +174,7 @@ class OrderSyncService:
 
         # ★ 택배사 코드 관문 — **모든 경로가 여기를 지난다**(단일/일괄 둘 다).
         #   마켓별 업로더마다 따로 막으면 한 곳을 빠뜨리고, 그 마켓으로 한국어가 나간다.
-        hold = courier_code_hold(marketplace, courier)
+        hold = courier_code_hold(marketplace, courier, tracking_no)
         if hold:
             logger.warning("[운송장] %s 전송 보류 — %s", marketplace, hold)
             return {**result, "error": hold}

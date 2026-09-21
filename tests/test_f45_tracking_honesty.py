@@ -21,8 +21,9 @@
 | 4 | 우리 기록은 **따로** 표기된다 | 「DB는 '우리 쪽 기록됨, 마켓 미반영'」 |
 | 5 | 모르는 택배사는 **미지원**(`"00"` 아님) | 「침묵 폴백도 미지원으로」 |
 
-※ 매핑(이름→코드)은 **만들지 않는다.** 쿠팡 코드표가 아직 없다(F44, 오너 캡처 대기).
-  여기서 지어내면 그게 발명이다 — **코드 모양이 아닌 값이 나가는 것만** 막는다.
+※ 매핑(이름→코드)은 **여전히 만들지 않는다.** 고르는 것은 사람이고, 관문은 **막는 자리**다.
+  ※ 2026-09-21 F44-a로 코드표가 정본으로 들어와 관문이 셋을 본다:
+    모양 · **표에 있나(합병/폐업 포함)** · **자리수·패턴**. 그 계약은 `test_f44a_…`에 있다.
 
 라이브 호출 0.
 """
@@ -83,7 +84,7 @@ def test_a_market_rejection_is_a_failure_on_screen(svc):
         "body": '{"code":"ERROR","message":"courierCode is invalid"}',
         "error": "쿠팡이 운송장 등록을 거부했습니다 (HTTP 400)",
     })
-    res = svc.update_tracking("ORD-1", "coupang", "CJGLS", "123456789")
+    res = svc.update_tracking("ORD-1", "coupang", "CJGLS", "1234567890")
 
     assert res["ok"] is False                      # 마켓이 정본
     assert res["local_ok"] is True                 # 우리 기록은 남았다 — 다른 칸에
@@ -96,20 +97,20 @@ def test_the_raw_body_reaches_the_caller_not_just_the_log(svc):
     """★ F41과 같은 규율 — **원문이 화면에 온다.**"""
     svc.adapters["coupang"] = _Adapter({"ok": False, "http_status": 409,
                                         "body": "DUPLICATED_INVOICE", "error": "거부"})
-    res = svc.update_tracking("ORD-2", "coupang", "CJGLS", "1")
+    res = svc.update_tracking("ORD-2", "coupang", "CJGLS", "1234567890")
     assert res["error_body"] == "DUPLICATED_INVOICE"
 
 
 def test_a_success_says_so(svc):
     svc.adapters["coupang"] = _Adapter({"ok": True, "http_status": 200, "body": "", "error": ""})
-    res = svc.update_tracking("ORD-3", "coupang", "CJGLS", "1")
+    res = svc.update_tracking("ORD-3", "coupang", "CJGLS", "1234567890")
     assert res["ok"] is True and res["local_ok"] is True
     assert res["error"] == ""
 
 
 def test_an_exception_is_a_failure_with_a_reason(svc):
     svc.adapters["coupang"] = _Adapter(RuntimeError("connection reset"))
-    res = svc.update_tracking("ORD-4", "coupang", "CJGLS", "1")
+    res = svc.update_tracking("ORD-4", "coupang", "CJGLS", "1234567890")
     assert res["ok"] is False
     assert "RuntimeError" in res["error"]
     assert "connection reset" in res["error_body"]
@@ -141,19 +142,45 @@ def test_a_korean_courier_name_is_never_transmitted(svc, name):
     assert name in res["error"]          # 무엇이 문제였는지 그 값을 보여 준다
 
 
-@pytest.mark.parametrize("code", ["CJGLS", "EPOST", "HANJIN", "DIRECT", "UPS", "CJ1", "A-B_C"])
-def test_a_code_shaped_value_passes(svc, code):
+@pytest.mark.parametrize("code,num", [
+    ("CJGLS", "1234567890"), ("EPOST", "6900004147609"), ("HANJIN", "1547827315"),
+    ("DIRECT", "202012250930"), ("UPS", "772523220")])
+def test_a_code_shaped_value_passes(svc, code, num):
+    """★ F44-a 이후 — **표에 있는 코드 + 그 규격의 번호**만 지난다.
+
+    예전엔 「모양만 맞으면」 통과였다(`CJ1`·`A-B_C` 같은 아무 문자열). 코드표가 들어온 지금은
+    그것도 막힌다 — 아래 `test_a_code_shaped_value_not_in_the_table_is_refused`가 그걸 잰다.
+    """
     adapter = _Adapter({"ok": True})
     svc.adapters["coupang"] = adapter
-    assert svc.update_tracking("O", "coupang", code, "1")["ok"] is True
+    assert svc.update_tracking("O", "coupang", code, num)["ok"] is True, code
     assert adapter.calls and adapter.calls[0][1] == code
+
+
+@pytest.mark.parametrize("code", ["CJ1", "A-B_C", "NOSUCH"])
+def test_a_code_shaped_value_not_in_the_table_is_refused(svc, code):
+    """★★ F44-a — 모양만 코드인 값도 **표에 없으면 안 나간다.**"""
+    adapter = _Adapter({"ok": True})
+    svc.adapters["coupang"] = adapter
+    res = svc.update_tracking("O", "coupang", code, "1234567890")
+    assert res["ok"] is False and adapter.calls == []
+    assert "코드표에 없는" in res["error"]
+
+
+def test_a_wrong_length_is_refused_before_sending(svc):
+    """★★★ 문서 첫 줄 — 「규격에 맞지 않는 운송장은 에러」. 마켓 왕복 전에 멈춘다."""
+    adapter = _Adapter({"ok": True})
+    svc.adapters["coupang"] = adapter
+    res = svc.update_tracking("O", "coupang", "CJGLS", "123")
+    assert res["ok"] is False and adapter.calls == []
+    assert "쿠팡 규격" in res["error"]
 
 
 def test_the_value_is_not_quietly_rewritten(svc):
     """★ 대소문자 보정조차 하지 않는다 — **조용한 변형 금지.**"""
     adapter = _Adapter({"ok": True})
     svc.adapters["coupang"] = adapter
-    svc.update_tracking("O", "coupang", "cjgls", "1")
+    svc.update_tracking("O", "coupang", "cjgls", "1234567890")
     assert adapter.calls[0][1] == "cjgls"
 
 
@@ -193,7 +220,7 @@ def test_the_local_record_never_manufactures_success(svc):
       주석만 고쳐도 통과한다. 그래서 **행동으로** 잰다.
     """
     svc.adapters["coupang"] = _Adapter({"ok": False, "body": "no", "error": "거부"})
-    res = svc.update_tracking("O", "coupang", "CJGLS", "1")
+    res = svc.update_tracking("O", "coupang", "CJGLS", "1234567890")
     assert res["local_ok"] is True and res["ok"] is False
     assert svc.sheets.calls, "대장에는 남아야 한다(추적·재시도 근거)"
 
@@ -211,7 +238,7 @@ def test_the_route_sends_both_facts_separately():
 def test_dry_run_says_it_did_not_send(svc, monkeypatch):
     """★ 막은 것을 「성공」이라 부르되, **왜 성공인지** 적어 둔다."""
     monkeypatch.setenv("ADAPTER_DRY_RUN", "1")
-    res = svc.update_tracking("O", "coupang", "CJGLS", "1")
+    res = svc.update_tracking("O", "coupang", "CJGLS", "1234567890")
     assert res["ok"] is True
     assert "전송하지 않았습니다" in res["error"]
 

@@ -174,8 +174,8 @@ class TestOrderSyncServiceUpdateTracking:
         svc = OrderSyncService()
         svc.sheets.update_tracking = MagicMock(return_value=True)
 
-        result = svc.update_tracking("ORDER-001", "coupang", "CJ", "123456")
+        result = svc.update_tracking("ORDER-001", "coupang", "CJGLS", "1234567890")
         assert result["ok"] is False
         assert result["local_ok"] is True
         assert result["error"]
-        svc.sheets.update_tracking.assert_called_once_with("ORDER-001", "coupang", "CJ", "123456")
+        svc.sheets.update_tracking.assert_called_once_with("ORDER-001", "coupang", "CJGLS", "1234567890")
