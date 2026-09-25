@@ -292,7 +292,8 @@ def _cloudinary_configured() -> bool:
 
 
 def upload_bytes(image_bytes: bytes, *, prefer_webp: bool = False,
-                 eager: Optional[list] = None) -> Dict[str, Any]:
+                 eager: Optional[list] = None, folder: str = "",
+                 resource_type: str = "image") -> Dict[str, Any]:
     """바이트 → Cloudinary. **결과를 dict 그대로** 돌려준다 (F31).
 
     ## 왜 dict인가
@@ -349,8 +350,10 @@ def upload_bytes(image_bytes: bytes, *, prefer_webp: bool = False,
             api_secret=os.getenv("CLOUDINARY_API_SECRET"),
             secure=True,
         )
-        opts: Dict[str, Any] = {"folder": os.getenv("CLOUDINARY_FOLDER", "proxy-commerce"),
-                                "resource_type": "image"}
+        base = os.getenv("CLOUDINARY_FOLDER", "proxy-commerce")
+        # F48-b — 인보이스 같은 **서류**는 상품 이미지와 다른 폴더(섞이지 않게)·PDF 허용(auto).
+        opts: Dict[str, Any] = {"folder": f"{base}/{folder}" if folder else base,
+                                "resource_type": resource_type or "image"}
         if prefer_webp:
             opts["format"] = "webp"
         if eager:

@@ -86,6 +86,7 @@ def test_fallback_to_etc_when_schema_absent():
 def test_upload_product_registers_with_fallback_origin(monkeypatch):
     # 오너 지시(보류 폐기): 원산지 없어도 폴백 문구로 **등록 진행**. 폴백을 끄면 보류.
     for s in ("VENDOR_USER_ID", "RETURN_CENTER_CODE", "OUTBOUND_SHIPPING_PLACE_CODE",
+              "OVERSEAS_OUTBOUND_SHIPPING_PLACE_CODE",      # F48-a — AGENT_BUY 해외 칸
               "RETURN_ZIP_CODE", "RETURN_ADDRESS", "RETURN_CHARGE_NAME", "COMPANY_CONTACT_NUMBER"):
         monkeypatch.setenv(f"COUPANG_{s}", "x")
     monkeypatch.setenv("COUPANG_DELIVERY_COMPANY_CODE", "EPOST")   # 택배사 코드(필수·카나리 6차)
@@ -115,6 +116,7 @@ def test_upload_product_registers_with_fallback_origin(monkeypatch):
 def test_predict_category_used_for_display_code(monkeypatch):
     # 예측 카테고리 실 리프 ID가 displayCategoryCode + 고시정보 스키마 조회에 쓰인다.
     for s in ("VENDOR_USER_ID", "RETURN_CENTER_CODE", "OUTBOUND_SHIPPING_PLACE_CODE",
+              "OVERSEAS_OUTBOUND_SHIPPING_PLACE_CODE",      # F48-a — AGENT_BUY 해외 칸
               "RETURN_ZIP_CODE", "RETURN_ADDRESS", "RETURN_CHARGE_NAME", "COMPANY_CONTACT_NUMBER"):
         monkeypatch.setenv(f"COUPANG_{s}", "x")
     monkeypatch.setenv("COUPANG_DELIVERY_COMPANY_CODE", "EPOST")   # 택배사 코드(필수·카나리 6차)

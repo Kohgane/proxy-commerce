@@ -2026,6 +2026,8 @@ def collect_prevalidate():
                     "reach_ok": r.reach_ok,
                     "reach_ms": r.reach_ms,
                     "reach_detail": r.reach_detail,
+                    # F48-d — 전송 전에 잡은 사유 한 줄씩(쿠팡 배송·구매옵션·필수서류)
+                    "details": list(getattr(r, "details", None) or []),
                 }
                 for r in results
             ],
@@ -11477,6 +11479,26 @@ def identity_audit_restore():
     out = identity.restore_batch(batch)
     ok = bool(out.get("restored")) and not out.get("failed")
     return jsonify({"ok": ok, **out}), (200 if ok else 409)
+
+
+@bp.post("/markets/connect/coupang/invoice")
+def coupang_invoice_upload_route():
+    """F48-b — 쿠팡 구매대행 **인보이스영수증 파일**을 받아 서버가 Cloudinary에 올리고 저장한다.
+
+    키·서명은 서버 env에만 있다(브라우저는 파일만 보낸다). 저장 자리는 쿠팡 자격의 한 칸뿐 —
+    다른 마켓으로 샐 경로를 만들지 않는다(`coupang_invoice` 모듈 독스트링).
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    f = request.files.get("file")
+    if f is None:
+        return jsonify({"ok": False, "error": "파일을 골라 주세요.", "user_message": True}), 400
+    from .coupang_invoice import save_invoice
+    out = save_invoice(_seller_id(), f.read(), f.filename or "")
+    if not out.get("ok"):
+        return jsonify({"ok": False, "error": out.get("error") or "올리지 못했습니다.",
+                        "user_message": True}), 502
+    return jsonify({"ok": True, "secure_url": out["secure_url"], "kind": out.get("kind", "")})
 
 
 @bp.post("/markets/connect/coupang/lookup")

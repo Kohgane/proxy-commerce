@@ -42,6 +42,13 @@ def _open_gates(up, monkeypatch):
     monkeypatch.setattr(up, '_build_notices', lambda p, s: ([], None))
     monkeypatch.setattr(up, 'get_category_attribute_schema', lambda code:
                         [{'attributeTypeName': '사이즈', 'required': 'MANDATORY', 'dataType': 'STRING'}])
+    # F48 — 사전검증(`precheck`)은 스키마 사본이 아니라 **메타 원문**에서 옵션을 계획하고,
+    #   AGENT_BUY는 해외 출고지 칸만 본다. 같은 메타를 그 자리에도 준다.
+    monkeypatch.setattr(up, 'get_category_meta', lambda code:
+                        {'attributes': [{'attributeTypeName': '사이즈', 'required': 'MANDATORY',
+                                         'dataType': 'STRING'}]})
+    monkeypatch.setattr(up, 'outbound_for_delivery', lambda: ('25099966', ''))
+    monkeypatch.setattr(up, 'outbound_address_type', lambda code: 'OVERSEA')
 
 
 PRODUCT = {'sku': 'CANARY-C3', 'title': '테스트 상품', 'price': 19900, 'stock': 3,
@@ -291,6 +298,8 @@ def test_p2_gate_and_payload_use_the_same_block(monkeypatch, caplog):
                         lambda *a, **k: _Resp(400, '{"message":"거부"}'))
     with caplog.at_level(logging.INFO):
         up.upload_product({**PRODUCT,
-                           'attributes': [{'attributeTypeName': '수량', 'attributeValueName': '1'}]})
+                           'attributes': [{'attributeTypeName': '수량', 'attributeValueName': '1'},
+                                          # F48-b — 색상은 MANDATORY라 없으면 보류된다(기본값 채움 폐기).
+                                          {'attributeTypeName': '색상', 'attributeValueName': '블랙'}]})
     line = next(r.getMessage() for r in caplog.records if '전송블록' in r.getMessage())
     assert '"attributeValueName": "1개"' in line       # 결합된 값 그대로 전송

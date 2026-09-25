@@ -174,12 +174,27 @@ def test_several_entries_are_all_offered():
 
 
 def test_outbound_code_is_mapped_from_its_own_block():
+    """F48-a — 출고지 코드는 **주소 유형이 정한 칸**으로 간다(국내 → 국내 칸).
+
+    유형이 없는 행은 어느 칸에도 자동으로 안 넣는다(`code_unassigned`) — 해외 출고지가
+    국내 칸에 들어가면 구매대행 등록이 거부된다(이번 쿠팡 거부의 모양).
+    """
     from src.seller_console import coupang_shipping_lookup as L
-    outb = {"data": [{"outboundShippingPlaceCode": 7437895, "placeName": "출고지"}]}
+    outb = {"data": [{"outboundShippingPlaceCode": 7437895, "placeName": "출고지",
+                      "addressType": "DOMESTIC"}]}
     with patch.object(L, "_uploader", lambda a: _fake_uploader([], outb)):
         out = L.fetch("gogane")
     vals = out["outbound_places"]["entries"][0]["values"]
     assert vals["COUPANG_OUTBOUND_SHIPPING_PLACE_CODE"] == "7437895"
+
+
+def test_an_untyped_outbound_code_is_not_auto_assigned():
+    from src.seller_console import coupang_shipping_lookup as L
+    outb = {"data": [{"outboundShippingPlaceCode": 7437895, "placeName": "출고지"}]}
+    with patch.object(L, "_uploader", lambda a: _fake_uploader([], outb)):
+        out = L.fetch("gogane")
+    e = out["outbound_places"]["entries"][0]
+    assert e["values"] == {} and e["code_unassigned"] == "7437895"
 
 
 # ---------------------------------------------------------------------------

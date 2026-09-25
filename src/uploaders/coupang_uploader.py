@@ -58,6 +58,20 @@ class CoupangUploader(BaseUploader):
     # 계정별 배송 env 접두 — `_account_creds`(coupang_replicate)와 동일 규약(COUPANG_GOGANE_*/COUPANG_WOOJOO_*).
     ACCOUNT_PREFIXES = {'gogane': 'COUPANG_GOGANE', 'woojoo': 'COUPANG_WOOJOO'}
 
+    # ── F48-a 구매대행 출고지(해외) ─────────────────────────────────────────
+    #   오너 문서 정본: deliveryMethod=AGENT_BUY(구매대행)면 outboundShippingPlaceCode는 **해외 주소지만**.
+    #   국내 출고지(22796911 장말로)를 AGENT_BUY로 보내 거부됐다. 볼트에도 같은 사실이 있다
+    #   (00_운영상태: `25099966 ForAmazon ★AGENT_BUY 전용` · `22796911 장말로 국내배송용 — 쓰면 400`).
+    #   그래서 **칸을 나눈다** — AGENT_BUY는 이 칸만, 국내 칸은 SEQUENCIAL 전용.
+    OVERSEAS_OUTBOUND_ENV = 'COUPANG_OVERSEAS_OUTBOUND_SHIPPING_PLACE_CODE'
+    # 구매대행 필수 서류(인보이스) 파일 URL — **오너 결정 사항**. 없으면 전송 전 보류.
+    INVOICE_URL_ENV = 'COUPANG_INVOICE_DOCUMENT_URL'
+    INVOICE_TEMPLATE_MARK = '해외구매대행'
+    #   requiredDocuments 한 줄에서 **파일 주소를 싣는 키 이름** — 오너 브리프 F48-b(2026-09-25)가
+    #   문서 정본으로 준 이름: `requiredDocuments[templateName="인보이스영수증(해외구매대행 선택시)"].documentPath`.
+    #   (그 전엔 이름을 못 봐서 비워 두고 보류했다 — 지어내지 않았다.)
+    REQUIRED_DOC_PATH_KEY = 'documentPath'
+
     # 고시정보 실값 배선(P3 카나리 반려 대응) — 수입자 = 계정별 상호(발명 금지·사실).
     _IMPORTER_NAMES = {'gogane': '고가네', 'woojoo': '우주대행'}
     # 카테고리 예측 + 카테고리별 고시정보 스키마 조회(동적·권위) — '기타 재화' 기본값 폐기.
@@ -90,6 +104,10 @@ class CoupangUploader(BaseUploader):
         self.vendor_user_id = self._ship_env('COUPANG_VENDOR_USER_ID')
         self.return_center_code = self._ship_env('COUPANG_RETURN_CENTER_CODE')
         self.outbound_place_code = self._ship_env('COUPANG_OUTBOUND_SHIPPING_PLACE_CODE')
+        # F48-a — 구매대행(AGENT_BUY) 전용 해외 출고지. 국내 칸과 **섞지 않는다.**
+        self.overseas_outbound_place_code = self._ship_env(self.OVERSEAS_OUTBOUND_ENV)
+        self.invoice_document_url = self._ship_env(self.INVOICE_URL_ENV)
+        self._address_type_cache = {}
         self.return_zip = self._ship_env('COUPANG_RETURN_ZIP_CODE')
         self.return_addr = self._ship_env('COUPANG_RETURN_ADDRESS')
         self.return_addr_detail = self._ship_env('COUPANG_RETURN_ADDRESS_DETAIL')
@@ -315,36 +333,28 @@ class CoupangUploader(BaseUploader):
                 return {'success': False, 'held': True, 'sku': sku,
                         'error': (f'판매가 미확정({price}원) — 등록 중단. 쿠팡은 옵션 판매가 10원 이상을 '
                                   '요구합니다. 검수표 판매가가 페이로드까지 전달됐는지 확인하세요.')}
-            # 카테고리 예측(실 리프 ID) → 그 코드로 고시정보 스키마 조회(동적·권위). 네트워크는 이 경로에만.
-            #   **정본: 예측 실패 시 등록 중단**(임의 카테고리로 보내면 거부/오분류 — 추측 전송 금지).
-            cat = self.predict_category(product.get('title', '')) or str(product.get('category_id', '') or '')
-            if not cat:
+            # ★ F48-d — 배송(a)·구매옵션(b)·고시정보·필수서류는 **사전검증과 같은 함수**로 판정한다.
+            #   여기서 다시 계산하면 「사전검증이 통과시킨 것」과 「보내는 것」이 갈릴 수 있다.
+            chk = self.precheck(product)
+            if not chk['ok']:
                 return {'success': False, 'held': True, 'sku': product.get('sku', ''),
-                        'error': '쿠팡 카테고리 예측 실패 — 등록 중단(임의 카테고리 전송 금지). 상품명 확인 필요.'}
-            product = {**product, 'category_id': cat}
-            schema = self.get_category_notice_schema(cat) or None
-            # 고시정보 실값 미확인(원산지 등) → 등록 보류(추정 금지·가짜 성공 0).
-            _, hold = self._build_notices(product, schema)
-            if hold:
-                return {'success': False, 'error': hold, 'sku': product.get('sku', ''), 'held': True}
-            # 필수 구매 옵션(attributes) — 메타 스키마로 채우고, 못 채운 필수 속성이 있으면 등록 중단.
-            #   카나리 9차 거부("필수 구매 옵션 … 존재하지 않습니다") 재발 방지.
-            attr_schema = self.get_category_attribute_schema(cat)
-            attributes = self.build_attrs(product, attr_schema)
-            unmet = self.missing_required_attrs(attributes, attr_schema)
-            if unmet:
-                return {'success': False, 'held': True, 'sku': product.get('sku', ''),
-                        'error': ('필수 구매 옵션 미충족으로 등록 중단(빈 값 전송 금지): '
-                                  + ', '.join(unmet))}
-            payload = self._build_product_payload(product, notice_schema=schema,
-                                                  attr_schema=attr_schema, attributes=attributes)
+                        'error': ' · '.join(chk['holds']),
+                        'error_lines': list(chk['holds'])}
+            product = {**product, 'category_id': chk['category']}
+            schema = self.get_category_notice_schema(chk['category']) or None
+            payload = self._build_product_payload(
+                product, notice_schema=schema, attributes=chk['attributes'],
+                outbound_code=chk['outbound_code'], documents=chk['documents'],
+                search_extra=chk['search_extra'])
             path = '/v2/providers/seller_api/apis/api/v1/marketplace/seller-products'
             result = self._api_request('POST', path, data=payload)
             if 'error' in result:
                 # 실패 = 무조건 전송 블록 원문을 남긴다(다음 세션이 로그 고고학을 반복하지 않게).
                 self._log_attr_block(product.get('sku', ''), payload,
                                      outcome='fail', detail=str(result['error']))
-                return {'success': False, 'error': result['error'], 'sku': product.get('sku', '')}
+                from src.uploaders.coupang_options import error_lines
+                return {'success': False, 'error': result['error'], 'sku': product.get('sku', ''),
+                        'error_lines': error_lines(result.get('error_body') or '')}
             # 쿠팡 응답의 data는 sellerProductId(숫자) 또는 {"sellerProductId": ...} 또는 null일 수 있다.
             data = result.get('data')
             if isinstance(data, dict):
@@ -359,7 +369,9 @@ class CoupangUploader(BaseUploader):
                 msg = result.get('message') or f'코드 {code}'
                 self._log_attr_block(product.get('sku', ''), payload, outcome='fail',
                                      detail=f'code={code} message={msg}')
-                return {'success': False, 'error': f'쿠팡 등록 거부: {msg}', 'sku': product.get('sku', '')}
+                from src.uploaders.coupang_options import error_lines
+                return {'success': False, 'error': f'쿠팡 등록 거부: {msg}', 'sku': product.get('sku', ''),
+                        'error_lines': error_lines(result)}
             # 성공분도 남긴다 — 다음 실패의 **대조 정본**(통과한 attributes가 어떤 모양이었나).
             self._log_attr_block(product.get('sku', ''), payload, outcome='ok',
                                  detail=f'sellerProductId={product_id}')
@@ -594,6 +606,140 @@ class CoupangUploader(BaseUploader):
             logger.warning('카테고리 예측 실패(폴백 사용): %s', exc)
         self._predict_cache[name] = cid
         return cid
+
+    # ------------------------------------------------------------------
+    # F48 — 사전검증과 등록이 **같은 판정**을 쓴다(precheck)
+    # ------------------------------------------------------------------
+
+    def is_agent_buy(self) -> bool:
+        return str(self.delivery_method or '').strip().upper() == 'AGENT_BUY'
+
+    def outbound_for_delivery(self) -> tuple:
+        """배송방법에 맞는 출고지 코드 — `(코드, 보류사유)`.
+
+        ★ AGENT_BUY는 **해외 칸만** 본다. 국내 칸으로 떨어지지 않는다 — 그게 바로 이번 거부다.
+        """
+        if self.is_agent_buy():
+            code = str(self.overseas_outbound_place_code or '').strip()
+            if not code:
+                # 화면에 나가는 문장이다 — env 이름·마크다운 기호를 넣지 않는다(F48 캡처 자기비평).
+                #   칸 이름은 연동 화면의 라벨 그대로 쓴다.
+                dom = str(self.outbound_place_code or '').strip()
+                return '', ('구매대행 출고지는 해외 주소지만 받습니다 — 「구매대행 출고지 (해외)」가 비어 있습니다. '
+                            '마켓 연동 › 쿠팡 › 「불러오기」에서 해외(OVERSEA) 출고지를 고르세요'
+                            + (f'(국내 출고지 {dom}는 국내 배송 전용입니다)' if dom else '') + '.')
+            return code, ''
+        code = str(self.outbound_place_code or '').strip()
+        return code, ('' if code else '출고지 코드가 비어 있습니다')
+
+    def outbound_address_type(self, code: str) -> str:
+        """출고지 코드의 `addressType`(예: OVERSEA). 못 알아내면 빈 문자열 — **모른다**.
+
+        조회 경로와 파라미터는 F32-2 실측 400 문장이 준 이름(`placeCodes`)을 그대로 쓴다.
+        응답에서 행을 찾는 방식은 불러오기와 **같은 함수**(구조로 찾기)다 — 두 벌 금지.
+        """
+        code = str(code or '').strip()
+        if not code:
+            return ''
+        if code in self._address_type_cache:
+            return self._address_type_cache[code]
+        at = ''
+        try:
+            from src.seller_console.coupang_shipping_lookup import OUTBOUND_PLACES_PATH, _pick, _rows
+            payload = self._api_request('GET', f'{OUTBOUND_PLACES_PATH}?placeCodes={code}')
+            if isinstance(payload, dict) and not payload.get('error'):
+                for row in _rows(payload):
+                    rc = _pick(row, ('outboundShippingPlaceCode', 'shippingPlaceCode', 'placeCode'))
+                    if not rc or rc == code:
+                        at = _pick(row, ('addressType',))
+                        if at:
+                            break
+        except Exception as exc:
+            logger.warning('쿠팡 출고지 주소유형 조회 실패(모름으로 둔다): %s', exc)
+        self._address_type_cache[code] = at
+        return at
+
+    @staticmethod
+    def required_document_templates(meta: dict) -> list:
+        """카테고리 메타 `requiredDocumentNames`의 서류 이름들. 모양을 모르니 둘 다 받는다(문자열·dict)."""
+        out = []
+        for d in (meta or {}).get('requiredDocumentNames') or []:
+            if isinstance(d, str) and d.strip():
+                out.append(d.strip())
+            elif isinstance(d, dict):
+                n = str(d.get('templateName') or d.get('name') or '').strip()
+                if n:
+                    out.append(n)
+        return out
+
+    def required_documents_plan(self, meta: dict) -> tuple:
+        """구매대행 필수 서류 — `(requiredDocuments, 보류사유)`.
+
+        오너: 인보이스 URL은 **오너 결정 사항** — 없으면 전송 전 보류 + 사유.
+        URL이 있어도 **주소를 싣는 키 이름**을 문서 원문으로 못 봤으면 보류한다(지어내지 않는다).
+        """
+        if not self.is_agent_buy():
+            return [], ''
+        tpl = [n for n in self.required_document_templates(meta) if self.INVOICE_TEMPLATE_MARK in n]
+        if not tpl:
+            return [], ''
+        if not str(self.invoice_document_url or '').strip():
+            return [], (f'구매대행 필수 서류 「{tpl[0]}」의 파일 URL이 없습니다 — '
+                        '인보이스 URL은 오너 결정 사항입니다(결정 전까지 전송 보류).')
+        if not self.REQUIRED_DOC_PATH_KEY:
+            return [], (f'「{tpl[0]}」 파일 주소를 싣는 requiredDocuments 필드 이름을 문서 원문으로 '
+                        '확인하지 못했습니다 — 전송 보류(필드 이름을 지어내지 않는다).')
+        return [{'templateName': tpl[0], self.REQUIRED_DOC_PATH_KEY: self.invoice_document_url}], ''
+
+    def precheck(self, product: dict) -> dict:
+        """F48-d — **등록을 누르기 전에** a(배송)·b(구매옵션)를 판정한다.
+
+        `_upload_product_inner`도 **이 함수를 그대로** 부른다 — 사전검증이 통과시킨 것과
+        등록이 보내는 것이 갈리면 둘 중 하나는 거짓말을 한다.
+
+        반환: `{ok, holds, notes, category, meta_ok, attributes, outbound_code, documents,
+                search_extra, notice_hold}`
+        """
+        from src.uploaders.coupang_options import plan_attributes
+        holds, notes = [], []
+        out = {'ok': False, 'holds': holds, 'notes': notes, 'category': '', 'meta_ok': False,
+               'attributes': [], 'outbound_code': '', 'documents': [], 'search_extra': []}
+
+        # a) 배송 — 방법에 맞는 출고지, 그리고 AGENT_BUY면 **정말 해외인가**.
+        code, hold = self.outbound_for_delivery()
+        out['outbound_code'] = code
+        if hold:
+            holds.append(hold)
+        elif self.is_agent_buy():
+            at = self.outbound_address_type(code)
+            if at and at.upper() != 'OVERSEA':
+                holds.append(f'「구매대행 출고지 (해외)」 {code}의 주소 유형이 {at}입니다 — '
+                             'AGENT_BUY는 해외(OVERSEA) 출고지만 받습니다.')
+            elif not at:
+                notes.append(f'출고지 {code}의 주소 유형을 확인하지 못했습니다(조회 실패) — 해외인지 모릅니다.')
+
+        # b) 카테고리 → 메타(고시정보·구매옵션·필수서류 단일 소스)
+        cat = self.predict_category(product.get('title', '')) or str(product.get('category_id', '') or '')
+        out['category'] = cat
+        if not cat:
+            holds.append('쿠팡 카테고리 예측 실패 — 임의 카테고리 전송 금지.')
+            return out
+        meta = self.get_category_meta(cat)
+        out['meta_ok'] = bool(meta)
+        docs, dhold = self.required_documents_plan(meta)
+        out['documents'] = docs
+        if dhold:
+            holds.append(dhold)
+        _n, nhold = self._build_notices(product, self.get_category_notice_schema(cat) or None)
+        if nhold:
+            holds.append(nhold)
+        self._log_meta_attributes(cat, meta.get('attributes') or [])
+        plan = plan_attributes(meta.get('attributes') or [], product, meta_ok=bool(meta))
+        holds.extend(plan['holds'])
+        notes.extend(plan['notes'])
+        out.update(attributes=plan['attributes'], search_extra=plan['search_extra'])
+        out['ok'] = not holds
+        return out
 
     def get_category_meta(self, display_category_code: str) -> dict:
         """카테고리 메타 API 응답 `data` 원문(고시정보·속성 스키마의 **단일 소스**). 실패 시 {}.
@@ -922,7 +1068,8 @@ class CoupangUploader(BaseUploader):
         return images
 
     def _build_product_payload(self, product: dict, notice_schema=None, attr_schema=None,
-                               attributes=None) -> dict:
+                               attributes=None, outbound_code=None, documents=None,
+                               search_extra=None) -> dict:
         """Coupang Wing API용 상품 페이로드를 구성한다.
 
         쿠팡 createProduct 필수 필드를 모두 채운다(null/누락 시 등록 거부).
@@ -946,7 +1093,9 @@ class CoupangUploader(BaseUploader):
         # 정본: searchTags = [브랜드 정규화[:20] or "수입", "해외직구"] + 키워드, 최대 10.
         tags = product.get('tags') or []
         kw = [str(t).strip() for t in tags if str(t).strip()] if isinstance(tags, list) else []
-        search_tags = ([(brand[:20] or '수입'), '해외직구'] + kw)[:10]
+        # F48-b — 옵션으로 못 보낸 원 옵션 값은 **검색어로만**(자유옵션은 노출 제한).
+        extra = [str(t).strip() for t in (search_extra or []) if str(t).strip()]
+        search_tags = ([(brand[:20] or '수입'), '해외직구'] + kw + extra)[:10]
 
         # ★ items[] — 5,691건 검증 정본(오너 SSH 실측 coupang_upload.py:122~145). 카나리 7차 거부
         #   "옵션(...): 10원 이상의 판매가를 입력해주세요"의 정답지. 필드명·값 전부 정본 그대로.
@@ -1006,7 +1155,9 @@ class CoupangUploader(BaseUploader):
             'remoteAreaDeliveryCharge': 0,
             'underPriceGuarantee': False,
             # 출고지/반품지 (셀러 Wing 배송정보)
-            'outboundShippingPlaceCode': self._as_int(self.outbound_place_code),   # 정본: int
+            # F48-a — 배송방법에 맞는 칸(AGENT_BUY=해외 칸). 호출부가 precheck로 정해 넘긴다.
+            'outboundShippingPlaceCode': self._as_int(
+                outbound_code if outbound_code is not None else self.outbound_for_delivery()[0]),
             'returnCenterCode': self.return_center_code,
             'returnChargeName': self.return_charge_name,    # 반품지담당자명
             'companyContactNumber': self.company_contact,   # 반품지연락처
@@ -1018,6 +1169,8 @@ class CoupangUploader(BaseUploader):
             'requested': True,                              # 자동승인 요청
             'mediumCategoryType': category_code,
             'items': [item],
+            # F48-a — 구매대행 필수 서류. 준비가 안 됐으면 precheck가 이미 보류시켰다.
+            **({'requiredDocuments': list(documents)} if documents else {}),
         }
 
     def _generate_hmac_signature(self, method: str, url_path: str, date: str) -> str:
@@ -1117,7 +1270,9 @@ class CoupangUploader(BaseUploader):
                     last = self._fail_detail(stage, attempt + 1, status=resp.status_code,
                                              body=self._resp_body(resp))
                     logger.warning('쿠팡 거부 — %s', last)
-                    return {'error': f'쿠팡 거부 — {last}'}
+                    # F48-c — 본문을 **따로** 싣는다. 사유 한 줄에 섞으면 문장별로 못 나눈다.
+                    return {'error': f'쿠팡 거부 — {last}',
+                            'error_body': self._resp_body(resp, limit=8000)}
                 resp.raise_for_status()
                 return resp.json()
             except RelayError as exc:

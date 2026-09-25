@@ -42,8 +42,12 @@ MARKET_CRED_FIELDS: Dict[str, List[Dict[str, Any]]] = {
         {"env": "COUPANG_VENDOR_USER_ID", "label": "Wing 로그인 ID", "secret": False, "required": False,
          "section": "출고지·반품지 정보 — 상품 등록에 필수 (한 번만 입력하면 모든 등록에 자동 사용)",
          "help": "쿠팡 윙에 로그인할 때 쓰는 아이디(이메일/ID). Vendor ID(A+숫자)와 다릅니다."},
-        {"env": "COUPANG_OUTBOUND_SHIPPING_PLACE_CODE", "label": "출고지 코드", "secret": False, "required": False,
-         "help": "쿠팡 윙 → 판매자정보 → 배송정보(출고지/반품지) → ‘출고지’의 코드(숫자). 예: 7437895"},
+        {"env": "COUPANG_OUTBOUND_SHIPPING_PLACE_CODE", "label": "출고지 코드 (국내 · 일반배송)", "secret": False, "required": False,
+         "help": "국내 주소 출고지 코드 — 배송방법 SEQUENCIAL(일반배송) 전용. 구매대행(AGENT_BUY)은 아래 해외 칸을 씁니다."},
+        # F48-a — 구매대행(AGENT_BUY)은 **해외 주소 출고지만** 받는다(오너 문서 정본). 칸을 나눈다.
+        {"env": "COUPANG_OVERSEAS_OUTBOUND_SHIPPING_PLACE_CODE", "label": "구매대행 출고지 (해외)", "secret": False, "required": False,
+         "help": "배송방법 AGENT_BUY(구매대행) 전용 — 주소 유형이 해외(OVERSEA)인 출고지 코드. "
+                 "‘불러오기’에서 해외 출고지만 이 칸 후보로 나옵니다."},
         {"env": "COUPANG_RETURN_CENTER_CODE", "label": "반품지센터코드", "secret": False, "required": False,
          "help": "쿠팡 윙 → 배송정보 → ‘반품지’의 센터코드(숫자). 예: 1000274592"},
         {"env": "COUPANG_RETURN_ZIP_CODE", "label": "반품지 우편번호", "secret": False, "required": False,
@@ -58,6 +62,11 @@ MARKET_CRED_FIELDS: Dict[str, List[Dict[str, Any]]] = {
          "help": "반품 문의 전화번호. 예: 02-123-4567"},
         {"env": "COUPANG_RETURN_CHARGE", "label": "반품배송비 (선택, 기본 5000원)", "secret": False, "required": False,
          "help": "편도 반품배송비(원). 비워두면 5000원으로 자동 설정됩니다."},
+        # F48-a — 구매대행 필수 서류(카테고리 메타 requiredDocumentNames). URL은 **오너 결정 사항**.
+        {"env": "COUPANG_INVOICE_DOCUMENT_URL", "label": "인보이스(영수증) 파일 URL (구매대행)", "secret": False,
+         "required": False,
+         "help": "카테고리가 ‘인보이스영수증(해외구매대행 선택시)’ 서류를 요구하면 등록에 함께 나갑니다. "
+                 "비어 있으면 그 카테고리는 전송 전에 보류됩니다."},
     ],
     "smartstore": [
         {"env": "NAVER_CLIENT_ID", "label": "Client ID", "secret": False, "required": True},

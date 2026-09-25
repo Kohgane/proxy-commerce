@@ -303,4 +303,8 @@ def test_it_is_not_wired_into_the_pipeline_yet():
       한 장을 돌려 보는 자리이고, 결과는 벤치 저장소에만 간다. 여기서 막는 것은
       **등록·번역 경로가 이 모듈을 집어 가는 것**이다.
     """
-    assert _importers_of("image_text_glossary", allow=BENCH_ONLY) == []
+    # F48-b(오너 2026-09-25): 쿠팡 **색상 속성값** 매핑은 「D3 용어집 재사용」이 지시다 —
+    #   렌더를 잇는 게 아니라 표 한 장을 읽는다. 열어 주는 자리는 `coupang_options.py` 하나,
+    #   가져가는 이름은 `glossary_line` 하나(`test_d3_3b_bench_render`가 그 좁힘을 잰다).
+    assert _importers_of("image_text_glossary",
+                         allow=set(BENCH_ONLY) | {"coupang_options.py"}) == []

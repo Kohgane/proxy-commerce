@@ -267,7 +267,10 @@ def test_unmapped_shrinks_once_the_values_are_reachable():
     row = dict(LIVE_TOP_KEYS)
     row["place"] = {"returnZipCode": "06000", "returnAddress": "서울시 강남구 1",
                     "companyContactNumber": "02-1234-5678"}
-    outb = [{"place": {"outboundShippingPlaceCode": 7437895}}]
+    # F48-a — 출고지는 **주소 유형**으로 칸이 갈린다. 해외·국내 하나씩 있으면 두 칸이 다 찬다.
+    #   유형도 코드와 같은 깊이(한 단 아래)에 있을 수 있다 — 같은 깊이에서 찾는다.
+    outb = [{"place": {"outboundShippingPlaceCode": 7437895, "addressType": "DOMESTIC"}},
+            {"place": {"outboundShippingPlaceCode": 25099966, "addressType": "OVERSEA"}}]
     with patch.object(L, "_uploader", lambda a: _fake_up({"data": [row]}, outb)):
         out = L.fetch("gogane")
     assert out["unmapped"] == [], out["unmapped"]

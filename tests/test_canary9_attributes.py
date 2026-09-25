@@ -101,6 +101,8 @@ _META = {"data": {"attributes": [
 def _up(monkeypatch, meta=None):
     for k, v in {
         "COUPANG_GOGANE_OUTBOUND_SHIPPING_PLACE_CODE": "1",
+        # F48-a — AGENT_BUY(구매대행)는 해외 출고지 칸만 본다.
+        "COUPANG_GOGANE_OVERSEAS_OUTBOUND_SHIPPING_PLACE_CODE": "25099966",
         "COUPANG_GOGANE_RETURN_CENTER_CODE": "R1",
         "COUPANG_GOGANE_RETURN_ZIP_CODE": "12345",
         "COUPANG_GOGANE_RETURN_ADDRESS": "서울시",
@@ -175,13 +177,13 @@ def test_missing_required_attrs_names_the_gap(monkeypatch):
 
 
 def test_upload_blocks_before_post_when_required_attr_unmet(monkeypatch):
+    """F48-b — 색상을 모르면 **보류**한다(옛 경로는 `블랙`을 지어 넣었다). 문장은 오너 지정 형식."""
     up = _up(monkeypatch)
     monkeypatch.setattr(up, "predict_category", lambda *a, **k: "1001")
-    monkeypatch.setattr(up, "build_attrs", lambda *a, **k: [])   # 인위적 미충족(회귀 재현)
     monkeypatch.setattr(up, "_api_request", _fail_on_post(up))
     res = up.upload_product(dict(_PRODUCT))
     assert res["success"] is False and res.get("held") is True
-    assert "필수 구매 옵션 미충족" in res["error"] and "색상" in res["error"]
+    assert "필수 옵션: 색상" in res["error"]
 
 
 def _fail_on_post(up):
@@ -193,8 +195,12 @@ def _fail_on_post(up):
 
 
 def test_upload_proceeds_to_post_when_attrs_ok(monkeypatch):
-    """정상 경로 회귀: 속성이 채워지면 등록 POST까지 간다(과잉 차단 0)."""
+    """정상 경로 회귀: 속성이 채워지면 등록 POST까지 간다(과잉 차단 0).
+
+    F48-b — 색상은 **상품이 준 값**이어야 한다(지어낸 `블랙` 금지). 옵션으로 준다.
+    """
     up = _up(monkeypatch)
+    _PRODUCT_OK = {**_PRODUCT, "options": [{"name": "색상", "values": ["블랙"]}]}
     monkeypatch.setattr(up, "predict_category", lambda *a, **k: "1001")
     sent = {}
 
@@ -208,7 +214,7 @@ def test_upload_proceeds_to_post_when_attrs_ok(monkeypatch):
 
     monkeypatch.setattr(up, "_api_request", _req)
     monkeypatch.setattr("time.sleep", lambda s: None)
-    res = up.upload_product(dict(_PRODUCT))
+    res = up.upload_product(dict(_PRODUCT_OK))
     assert res["success"] is True and res["product_id"] == "12345"
     assert sent["payload"]["items"][0]["attributes"] == [
         {"attributeTypeName": "수량", "attributeValueName": "1", "exposed": "EXPOSED"},

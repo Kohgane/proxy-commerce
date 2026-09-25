@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 COUPANG_SHIP_FIELDS = (
     ("COUPANG_VENDOR_USER_ID", "Wing 로그인 ID"),
     ("COUPANG_RETURN_CENTER_CODE", "반품지센터코드"),
-    ("COUPANG_OUTBOUND_SHIPPING_PLACE_CODE", "출고지코드"),
+    ("COUPANG_OUTBOUND_SHIPPING_PLACE_CODE", "출고지코드(국내)"),
     ("COUPANG_RETURN_ZIP_CODE", "반품지우편번호"),
     ("COUPANG_RETURN_ADDRESS", "반품지주소"),
     ("COUPANG_RETURN_CHARGE_NAME", "반품지담당자명"),

@@ -380,4 +380,14 @@ def test_the_registration_pipeline_still_does_not_see_the_renderer():
     from tests.test_d3_glossary import _importers_of
     allowed = {"image_translate_bench.py"}          # 벤치만
     assert _importers_of("image_text_render", allow=allowed) == []
-    assert _importers_of("image_text_glossary", allow=allowed) == []
+    # F48-b(오너 2026-09-25): 쿠팡 색상 **속성값** 매핑은 「D3 용어집 재사용」이 지시다.
+    #   그건 이미지 렌더를 파이프라인에 잇는 게 아니라 **표 한 장**을 읽는 것이다 — 그래서
+    #   열어 주는 자리는 `coupang_options.py` 하나, 부르는 함수는 `glossary_line` 하나로 좁힌다.
+    assert _importers_of("image_text_glossary",
+                         allow=allowed | {"coupang_options.py"}) == []
+    from src.uploaders import coupang_options
+    from tests._ast_probe import calls_in, imports_in
+    glossary = {n for n in imports_in(coupang_options) if "image_text_glossary" in n}
+    assert glossary == {"src.services.image_text_glossary",
+                        "src.services.image_text_glossary.glossary_line"}
+    assert "glossary_line" in calls_in(coupang_options.color_ko)
