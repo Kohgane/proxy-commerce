@@ -51,7 +51,7 @@ def test_api_registry_has_new_keys():
         "toss_payments", "paypal",
         "kakao_login", "google_oauth", "naver_login",
         "telegram", "resend",
-        "trackingmore",
+        "seventeentrack",
         "shopify", "woocommerce",
         "exchange_rate", "pexels", "unsplash",
         # Phase 134 신규

@@ -258,7 +258,9 @@ def test_the_catalog_gained_a_coupang_column_without_losing_the_others():
     from src.seller_console.orders.courier_catalog import get_courier_catalog
     rows = get_courier_catalog(include_dynamic=False)
     for r in rows:
-        assert "trackingmore_code" in r and "sweet_code" in r     # 기존 축 보존
+        # F44-b: 추적 공급사 축은 TrackingMore → 17TRACK으로 **갈렸다**(병존 금지).
+        assert "seventeentrack_code" in r and "sweet_code" in r   # 축은 남는다
+        assert "trackingmore_code" not in r                       # 죽은 공급사는 안 남긴다
         assert "coupang_code" in r and "coupang_status" in r
 
 

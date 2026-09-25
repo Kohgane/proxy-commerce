@@ -11108,13 +11108,16 @@ def collect_payload_preview():
 
 @bp.post("/admin/courier-detect")
 def admin_courier_detect():
-    """F44-p 택배사 판별 프로브 — **키는 서버에 있고, 오너는 송장번호만 넣는다.**
+    """F44-p·F44-b 택배사 판별 프로브 — **키는 서버에 있고, 오너는 송장번호만 넣는다.**
 
     오너 규칙(2026-09-21): **외부 키가 필요한 측정은 키가 있는 곳에서 돌린다.**
     CC 환경으로 키를 옮기지 않는다 — 측정을 이리로 옮긴다.
 
-    응답에 **공급사 원문**이 실린다(F41 규율): 빈 후보가 「못 찾음」인지 「429」인지
+    응답에 **공급사 원문**이 실린다(F41 규율): 빈 후보가 「못 찾음」인지 「쿼터 소진」인지
     「키 오류」인지 구분하려면 원문이 있어야 한다.
+
+    F44-b: 공급사가 17TRACK으로 바뀌었고 **판별이 쿼터를 쓴다** — 응답에 남은 칸과
+    이번에 쓴 칸이 함께 실린다.
     """
     if not _check_auth() or not _is_admin_user():
         return jsonify({"ok": False, "error": "관리자 전용입니다."}), 403
@@ -11130,6 +11133,8 @@ def admin_courier_detect():
         logger.warning("[택배사 판별] 실패: %s", exc)
         return jsonify({"ok": False, "error": "판별 중 오류가 발생했습니다."}), 500
     result["sentence"] = probe.verdict_sentence(result)
+    # F44-b 오너 지시 — **남은 쿼터를 화면에 적는다.** 못 읽었으면 못 읽었다고 적는다.
+    result["quota_sentence"] = probe.quota_sentence(result.get("quota"), result.get("spent"))
     return jsonify(result), (200 if result.get("ok") else 503)
 
 

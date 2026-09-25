@@ -59,7 +59,9 @@ def test_the_tracking_axes_are_not_clobbered():
     from src.seller_console.orders.courier_catalog import get_courier_catalog
     rows = {r["name"]: r for r in get_courier_catalog(include_dynamic=False)}
     cj = rows["CJ대한통운"]
-    assert cj["trackingmore_code"] == "cj-korea"
+    # F44-b: 17TRACK 코드는 **캐리어 목록 문서가 와야** 채운다 — 빈칸이 정직하다.
+    assert cj["seventeentrack_code"] == ""
+    assert "cj-korea" in cj["search_terms"]        # 옛 코드는 **검색어로** 남는다
     assert cj["sweet_code"] == "04"
     assert cj["coupang_code"] == "CJGLS"
 

@@ -341,10 +341,11 @@ API_REGISTRY: list = [
     ),
     # ── 물류 ─────────────────────────────────────────────────────────────
     ApiKey(
-        name="trackingmore",
-        env_vars=["TRACKINGMORE_API_KEY"],
-        purpose="TrackingMore 운송장 자동 추적 (Phase 133+)",
-        docs_url="https://www.trackingmore.com",
+        name="seventeentrack",
+        env_vars=["SEVENTEENTRACK_API_KEY"],
+        # F44-b: TrackingMore는 무료 쿼터 소진(4190)으로 **교체**됐다(병존 금지).
+        purpose="17TRACK 택배사 자동판별·운송장 추적 (F44-b)",
+        docs_url="https://api.17track.net/en/doc",
         category=ApiCategory.LOGISTICS,
     ),
     # ── 자체몰 ───────────────────────────────────────────────────────────
