@@ -148,6 +148,8 @@
 </div>
 
 <div id="errorAlert" class="pc-status pc-status-danger small d-none" role="alert"></div>
+{# F49-T — 서버가 못 여는 사이트(타오바오·티몰)는 **확장으로 연다.** 서버 fetch는 시도하지 않는다. #}
+<div id="extOpenBox" class="pc-status pc-status-info small d-none" data-role="ext-open"></div>
 
 <div id="previewCard" class="d-none">
   <section class="op-card">
@@ -334,8 +336,13 @@ async function bulkCollect() {
         const note = draft
           ? `<div class="small text-muted mt-1">초안 1건 생성 — 제목 담김${r.price ? ' · 가격 ' + escapeHtml(r.price) + ' ' + escapeHtml(r.currency || '') : ''}${left ? ' · ' + escapeHtml(left) + '은 단축어/PC 보강' : ''}</div>`
           : '';
+        // F49-T — 타오바오 계열 초안이면 「확장으로 열기」 + 채워지는 상태를 그 자리에서 보여 준다.
+        const ext = r.open_url ? `<div class="mt-1"><button type="button" class="btn btn-sm btn-cta py-0"
+            data-ext-open="${escapeHtml(r.open_url)}" data-ext-item="${escapeHtml(r.id)}">
+            <i class="bi bi-puzzle"></i> 확장으로 열기</button>
+            <span class="text-muted ms-1" data-ext-state="${escapeHtml(r.id)}">서버가 못 여는 사이트예요 — PC 확장이 채웁니다</span></div>` : '';
         html += `<li class="list-group-item d-flex justify-content-between align-items-start">
-          <span><i class="bi bi-check-circle" style="color:var(--success)"></i> ${escapeHtml(r.title)}${note}</span>
+          <span><i class="bi bi-check-circle" style="color:var(--success)"></i> ${escapeHtml(r.title)}${note}${ext}</span>
           <a href="${r.preview_url}" class="btn btn-sm btn-ghost py-0"><i class="bi bi-box-arrow-up-right"></i> 확인·등록</a></li>`;
       } else {
         html += `<li class="list-group-item"><span class="small"><i class="bi bi-exclamation-triangle" style="color:var(--warn)"></i> ${escapeHtml(r.url)} — ${escapeHtml(kgpFriendlyError(r.error || '실패'))}</span></li>`;
@@ -373,6 +380,7 @@ function extractProduct() {
       }
       currentDraft = data.draft || {};
       renderPreview(currentDraft, data.source || currentDraft.source || currentDraft.adapter_used || 'unknown');
+      kgpShowExtOpen(data);
       setStep(2);
       showToast('미리보기 완료', '상품 정보를 확인하고 마켓을 선택하세요.');
     })
@@ -389,7 +397,8 @@ function renderPreview(draft, source) {
   document.getElementById('sourceBadge').textContent = `소스: ${source}`;
   document.getElementById('titleKo').value = draft.title_ko || draft.title || '';
   document.getElementById('priceOriginal').value = draft.price_original || draft.price || '';
-  document.getElementById('currencyLabel').textContent = draft.currency || 'USD';
+  // F49-T: 통화를 모르면 USD라 쓰지 않는다(임의 표기 금지 — v42 1-1).
+  document.getElementById('currencyLabel').textContent = draft.currency || '통화 미상';
 
   const cards = document.getElementById('extractedCards');
   cards.innerHTML = '';
@@ -417,7 +426,7 @@ function renderPreview(draft, source) {
   metaEl.textContent = `${draft.brand || '브랜드 미확인'} · ${draft.category || '카테고리 미확인'}`;
   const priceEl = document.createElement('div');
   priceEl.className = 'small mt-1';
-  priceEl.textContent = `${draft.currency || 'USD'} ${draft.price_original || draft.price || '—'}`;
+  priceEl.textContent = `${draft.currency || '통화 미상'} ${draft.price_original || draft.price || '—'}`;
   textWrap.appendChild(titleEl);
   textWrap.appendChild(metaEl);
   textWrap.appendChild(priceEl);
@@ -469,6 +478,57 @@ function selectedTargetLocales() {
   if (!sel) return [];
   return Array.from(sel.selectedOptions || []).map((x) => x.value).filter(Boolean);
 }
+
+// ── F49-T 확장으로 열기 ──────────────────────────────────────────────────────
+//   서버는 타오바오·티몰 상품 페이지를 못 연다(로그인 벽). 새 탭에서 열면 PC 확장이 채우고,
+//   이 화면은 그 초안의 **상태만** 들여다본다(4초 간격 · 최대 10분 · 채워지거나 막히면 멈춘다).
+function kgpShowExtOpen(data) {
+  const box = document.getElementById('extOpenBox');
+  if (!box) return;
+  if (!data || !data.open_url || !data.item_id) { box.classList.add('d-none'); box.innerHTML = ''; return; }
+  box.innerHTML = `<div><i class="bi bi-info-circle"></i> 서버가 못 여는 사이트예요(로그인 벽) — 서버에서 열어 보지 않았어요.</div>
+    <div class="mt-1"><button type="button" class="btn btn-sm btn-cta" data-ext-open="${escapeHtml(data.open_url)}"
+      data-ext-item="${escapeHtml(data.item_id)}"><i class="bi bi-puzzle"></i> 확장으로 열기</button>
+    <span class="text-muted ms-1" data-ext-state="${escapeHtml(data.item_id)}">새 탭에서 열면 PC 고가수집기가 채웁니다</span></div>`;
+  box.classList.remove('d-none');
+}
+
+const _kgpExtPolls = {};
+function kgpWatchItem(itemId) {
+  if (_kgpExtPolls[itemId]) return;
+  let n = 0;
+  const say = (html) => document.querySelectorAll(`[data-ext-state="${CSS.escape(itemId)}"]`)
+    .forEach(el => { el.innerHTML = html; });
+  const tick = async () => {
+    n += 1;
+    try {
+      const r = await fetch(`/seller/collect/${encodeURIComponent(itemId)}/state`);
+      const d = await r.json();
+      if (d && d.ok) {
+        const miss = (d.missing || []).map(m => escapeHtml(m.label) + (m.reason ? ` <span class="text-muted">(${escapeHtml(m.reason)})</span>` : '')).join(' · ');
+        if (d.enrich_state === 'done') {
+          say(`<span style="color:var(--success)"><i class="bi bi-check-circle"></i> 채워졌어요 · ${d.filled}/${d.total} 필드</span>${miss ? ' — 없음: ' + miss : ''}`);
+          clearInterval(_kgpExtPolls[itemId]); return;
+        }
+        if (d.enrich_state === 'blocked') {
+          say(`<span style="color:var(--warn)"><i class="bi bi-exclamation-triangle"></i> 막혔어요${d.reason ? ' — ' + escapeHtml(d.reason) : ''}</span>`);
+          clearInterval(_kgpExtPolls[itemId]); return;
+        }
+        say(`<i class="bi bi-hourglass-split"></i> 확장이 채우기를 기다리는 중 · ${d.filled}/${d.total} 필드`);
+      }
+    } catch (e) { /* 다음 틱에 다시 */ }
+    if (n >= 150) { say('10분 동안 채워지지 않았어요 — 열린 탭에서 고가수집기 버튼을 눌러 주세요'); clearInterval(_kgpExtPolls[itemId]); }
+  };
+  _kgpExtPolls[itemId] = setInterval(tick, 4000);
+  tick();
+}
+
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-ext-open]');
+  if (!b) return;
+  window.open(b.getAttribute('data-ext-open'), '_blank', 'noopener');
+  kgpWatchItem(b.getAttribute('data-ext-item'));
+});
 
 function escapeHtml(value) {
   return String(value || '')
@@ -563,7 +623,7 @@ function saveToSheets() {
     body: JSON.stringify({
       title: payload.title_ko || payload.title,
       price: payload.price_original || payload.price,
-      currency: payload.currency || 'USD',
+      currency: payload.currency || '',     // F49-T: 모르면 비운다(서버도 KRW로 짐작하지 않는다)
       sku: payload.sku || payload.asin,
       asin: payload.asin,
       brand: payload.brand,

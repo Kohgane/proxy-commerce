@@ -71,6 +71,14 @@ def _field_confirmed_none(key: str, extra: Dict[str, Any], core_ok: bool) -> boo
     - reviews: review_count가 명시적으로 0이면 = 리뷰 없음 확인(수집 실패 아님).
     보수적: 확인 근거가 없으면 False(수집 실패로 남겨 정직 표기)."""
     if key == "options":
+        # F49-T — 페이지에 **옵션 자리가 있었다**고 확장이 쟀으면(`page_diag.sel.options > 0`)
+        #   「단일 상품 확인」이 아니다. 자리는 있는데 못 읽은 것이다(수집 실패로 남긴다).
+        _sel = ((extra.get("page_diag") or {}).get("sel") or {}) if isinstance(extra.get("page_diag"), dict) else {}
+        try:
+            if int(_sel.get("options", 0)) > 0:
+                return False
+        except (TypeError, ValueError):
+            pass
         return core_ok and not _nonempty(extra.get("options"))
     if key == "reviews":
         rc = extra.get("review_count")
@@ -82,6 +90,68 @@ def _field_confirmed_none(key: str, extra: Dict[str, Any], core_ok: bool) -> boo
         if extra.get("reviews_none") is True:
             return True
     return False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# F49-T — 필드별 **실패 사유**(오너: 「4/5의 빠진 1개가 뭔지부터 화면이 말하게」)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# 사유는 **확장이 잰 페이지 상태**(`page_diag`)에서만 나온다. 재지 않은 것은 「사유 미상」이다 —
+# 「셀렉터 없음」을 짐작으로 붙이면 다음 수리가 엉뚱한 곳을 판다.
+#
+# | 사유 | 근거(page_diag) |
+# |---|---|
+# | 로그인 필요 | `wall` — 로그인·검증 화면 감지(확장 `_kgpDetectWall`) |
+# | lazy 미로딩 | `lazy.pending` > 0 — data-src 계열인데 아직 안 불러온 이미지(이미지 필드만) |
+# | 셀렉터 없음 | `sel.<그룹>` == 0 — 이 레포가 아는 타오바오·티몰 자리가 페이지에 0개 |
+
+#: 필드 → 셀렉터 그룹(확장 `_KGP_TB_SELECTORS` 키). 대응이 없는 필드는 셀렉터 사유를 쓰지 않는다.
+_FIELD_SEL = {"images": "gallery", "detail": "detail", "options": "options"}
+_IMAGE_FIELDS = ("images", "detail")
+
+
+def clean_page_diag(raw) -> Dict[str, Any]:
+    """확장이 보낸 `page_diag`를 **알려진 키·짧은 값**만 남겨 저장한다(크기·모양 방어)."""
+    if not isinstance(raw, dict):
+        return {}
+    out: Dict[str, Any] = {"at": str(raw.get("at") or "")[:40],
+                           "url": str(raw.get("url") or "")[:300],
+                           "wall": str(raw.get("wall") or "")[:120]}
+    nav = raw.get("nav") if isinstance(raw.get("nav"), dict) else {}
+    st = nav.get("status")
+    out["nav"] = {"status": st if isinstance(st, int) else None,
+                  "redirects": int(nav.get("redirects") or 0) if str(nav.get("redirects") or "0").isdigit() else 0,
+                  "type": str(nav.get("type") or "")[:20],
+                  "requested": str(nav.get("requested") or "")[:300]}
+    lz = raw.get("lazy") if isinstance(raw.get("lazy"), dict) else {}
+    out["lazy"] = {k: int(lz.get(k) or 0) for k in ("total", "pending")
+                   if str(lz.get(k) or "0").lstrip("-").isdigit()}
+    sel = raw.get("sel") if isinstance(raw.get("sel"), dict) else {}
+    out["sel"] = {str(k)[:20]: int(v) for k, v in sel.items()
+                  if str(v).lstrip("-").isdigit()}
+    out["errors"] = [str(e)[:200] for e in (raw.get("errors") or [])[:5]]
+    return out
+
+
+def field_reason(key: str, diag: Optional[Dict[str, Any]]) -> str:
+    """빠진 필드의 사유 — **잰 값에서만**. 못 대면 「사유 미상」(진단이 없으면 그렇다고)."""
+    if not diag:
+        return "사유 미상 — 이 수집엔 페이지 진단이 없습니다(확장 갱신 전 수집)"
+    wall = str(diag.get("wall") or "")
+    if wall:
+        return f"로그인 필요 — {wall}"
+    lz = diag.get("lazy") or {}
+    if key in _IMAGE_FIELDS and int(lz.get("pending") or 0) > 0:
+        return f"lazy 미로딩 — 아직 안 불러온 이미지 {int(lz['pending'])}장(스크롤 후 다시 수집)"
+    grp = _FIELD_SEL.get(key)
+    sel = diag.get("sel") or {}
+    if grp and grp in sel:
+        n = int(sel[grp])
+        if n == 0:
+            return f"셀렉터 없음 — 이 페이지에 알려진 {grp} 자리가 0개"
+        if n > 0:
+            return f"자리는 있음({grp} {n}개) — 추출이 읽지 못했습니다"
+    return "사유 미상 — 진단값으로 설명되지 않습니다"
 
 
 def compute_collect_status(
@@ -121,7 +191,9 @@ def compute_collect_status(
             "tier1": "Tier1(API/상태)", "tier2": "Tier2(DOM)", "tier3": "Tier3(og)",
             "ldjson": "ld+json", "json": "JSON", "dom": "DOM", "server": "서버파싱",
         }.get(src, ("해당 없음" if na else ("있음" if ok else "없음")))
-        fields.append({"key": key, "label": label, "ok": ok, "core": core, "na": na, "source": src_label})
+        fields.append({"key": key, "label": label, "ok": ok, "core": core, "na": na, "source": src_label,
+                       # F49-T — 빠진 필드엔 **잰 근거로** 사유를 붙인다(없으면 「사유 미상」).
+                       "reason": "" if (ok or na) else field_reason(key, extra.get("page_diag"))})
         if na:
             continue                      # 분모(effective_total)에서 제외 — 만점 계산에 미포함
         effective_total += 1

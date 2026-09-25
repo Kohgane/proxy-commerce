@@ -1359,6 +1359,8 @@ def collect_preview():
                 "source": _src, "trust": None,
                 "uncollected": _r.get("uncollected", []),
                 "resolve_gap": _r.get("resolve_gap", ""),
+                # F49-T — 서버가 못 여는 사이트다. **확장으로 여는 주소**를 준다(서버 fetch 시도 0).
+                "open_url": extension_open_url(_r.get("url") or url) if _r.get("uncollected") else "",
                 # C-F9-1: 문구는 `gap_message` 한 곳. VPN 상태는 서버가 모른다(단정 금지).
                 "message": _r.get("message") or "담았어요.",
                 "warnings": [],
@@ -2123,13 +2125,20 @@ def collect_save():
         from datetime import datetime
 
         adapter = MarketStatusSheetsAdapter()
-        payload_currency = str(payload.get("currency") or "KRW").upper()
+        # F49-T(캡처에서 발견): 통화를 모르면 **모른다**. 예전엔 빈 통화를 KRW로 두고 가격을 그대로
+        #   `price_krw`에 넣었다 — 위안 24가 「24원」이 되는 임의 환산이다(v42 1-1 「USD 기본값 금지」와 같은 병).
+        payload_currency = str(payload.get("currency") or "").upper()
         payload_price = None
         if payload.get("price"):
             try:
                 payload_price = float(payload["price"])
             except (TypeError, ValueError):
                 return jsonify({"ok": False, "error": "가격은 숫자 형식이어야 합니다."}), 400
+            if not payload_currency:
+                # `MarketStatusItem`은 빈 통화를 KRW로 채운다(국내 마켓 행엔 맞는 규칙) — 그래서
+                #   **여기서** 막는다. 모르는 통화의 가격을 원화로 저장하지 않는다.
+                return jsonify({"ok": False, "user_message": True,
+                                "error": "가격의 통화를 모릅니다 — 통화를 확인한 뒤 저장해 주세요."}), 400
         item = MarketStatusItem(
             marketplace=payload.get("marketplace", "collected"),
             product_id=payload.get("sku") or payload.get("asin") or f"col_{int(datetime.now().timestamp())}",
@@ -2207,6 +2216,9 @@ def collect_bulk():
             "kind": r.get("kind", "collected"),
             "uncollected": r.get("uncollected") or [],
             "price": r.get("price", ""), "currency": r.get("currency", ""),
+            # F49-T — 타오바오 계열 초안이면 확장으로 여는 주소(서버 fetch 시도 0).
+            "open_url": (extension_open_url(r.get("url") or "")
+                         if r.get("kind") == "share_draft" and r.get("uncollected") else ""),
         })
         success += 1
 
@@ -4731,6 +4743,16 @@ def _seller_identities() -> set:
         pass
     ids.add(_seller_id())
     return ids
+
+
+def extension_open_url(url: str) -> str:
+    """F49-T — **확장으로 열** 주소. 타오바오 계열만, 진입 마커(`kgpsrc=app`)를 붙인다(v17 P0 —
+    유저가 호스트를 꺼 놨어도 앱이 띄운 탭엔 수집기가 뜬다). 그 밖은 빈 문자열."""
+    from src.collectors.share_text import is_taobao_family
+    u = str(url or "").strip()
+    if not u.startswith(("http://", "https://")) or not is_taobao_family(u):
+        return ""
+    return u + ("&" if "?" in u else "?") + "kgpsrc=app"
 
 
 def _get_owned_item(item_id: str) -> "dict | None":
@@ -11399,6 +11421,36 @@ def collect_images_ko_status(item_id: str):
         return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
     from src.services import image_translate_job as job
     return jsonify(job.status(item_id, _seller_identities()))
+
+
+@bp.get("/collect/<item_id>/state")
+def collect_item_state(item_id: str):
+    """F49-T — 초안 한 건의 **지금 상태**(수집 화면이 「확장으로 열기」 뒤에 들여다본다).
+
+    `{ok, enrich_state, filled, total, missing:[{label, reason}], images}` — 사유는 확장이 잰
+    페이지 진단(`page_diag`)에서만 온다(없으면 「사유 미상」).
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    row = _get_owned_item(item_id)
+    if not row:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    import json as _json
+    try:
+        ex = _json.loads(row.get("extra_json") or "{}")
+    except Exception:
+        ex = {}
+    from src.collectors.collect_status import compute_collect_status, enrich_axes
+    st = compute_collect_status(ex, title_fallback=row.get("title") or "")
+    ax = enrich_axes(ex)
+    return jsonify({
+        "ok": True, "item_id": item_id,
+        "enrich_state": ax.get("enrich_state") or "", "reason": ax.get("reason") or "",
+        "filled": st.get("filled"), "total": st.get("total"),
+        "images": len(ex.get("images") or []),
+        "missing": [{"label": f["label"], "reason": f.get("reason") or ""}
+                    for f in st.get("fields") or [] if f.get("count", True) and not f.get("ok") and not f.get("na")],
+    })
 
 
 @bp.post("/collect/<item_id>/enrich-retry")

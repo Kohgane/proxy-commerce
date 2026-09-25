@@ -25,6 +25,7 @@ from typing import Optional
 from flask import Blueprint, jsonify, request
 
 from src.auth.account_label import resolve_account as _resolve_account
+from src.collectors.collect_status import clean_page_diag
 
 logger = logging.getLogger(__name__)
 
@@ -734,6 +735,30 @@ def collect_enrich_blocked():
                     "max_attempts": ENRICH_MAX_ATTEMPTS, "state": state})
 
 
+def _awaiting_enrich(row) -> bool:
+    """이 행이 **채우기를 기다리는 초안**인가 — 보강 축이 있고 아직 `done`이 아니다."""
+    import json as _json
+    try:
+        ex = _json.loads((row or {}).get("extra_json") or "{}")
+    except Exception:
+        return False
+    from src.collectors.collect_status import enrich_axes
+    ax = enrich_axes(ex)
+    return bool(ax.get("is_draft")) and ax.get("enrich_state") != "done"
+
+
+def draft_alt_url(url: str) -> str:
+    """확장이 담은 타오바오 계열 상품 URL → **초안이 저장된 모양**(`canonical_item_url`). 없으면 빈 문자열."""
+    from src.collectors.share_text import canonical_item_url, is_taobao_family
+    from urllib.parse import parse_qs, urlparse
+    if not url or not is_taobao_family(url):
+        return ""
+    q = parse_qs(urlparse(url).query)
+    gid = (q.get("id") or q.get("itemId") or [""])[0]
+    alt = canonical_item_url(gid)
+    return alt if alt and alt != url else ""
+
+
 @extension_bp.post("/enrich")
 def collect_enrich():
     """v64 STEP1: 벌크 2단 수집 — 목록 데이터 저장 후 확장이 각 상품 상세 페이지에서 읽은
@@ -778,6 +803,10 @@ def collect_enrich():
         return out
 
     changed: dict = {}
+    # F49-T: 페이지 진단은 **측정값**이라 fill-only가 아니라 **최신으로 덮는다**(이번에 연 페이지의 상태).
+    #   이게 없으면 초안을 채운 뒤에도 드로어·수집 화면이 「진단이 없습니다」라고 말한다.
+    if isinstance(data.get("page_diag"), dict):
+        extra["page_diag"] = clean_page_diag(data.get("page_diag"))
     # 옵션·리뷰: 리스트가 오고 기존이 비었으면 채움.
     for k in ("options", "reviews"):
         v = data.get(k)
@@ -1087,10 +1116,30 @@ def collect_from_extension():
     try:
         from src.seller_console.collect_history_store import find_by_product_key as _find_dup
         _dup = _find_dup(url, seller_ids=_dedup_ids)
+        if not _dup:
+            # F49-T — 붙여넣기로 만든 **초안**은 `canonical_item_url`(item.taobao.com?id=)로 저장된다.
+            #   같은 상품을 확장이 detail.tmall.com에서 담으면 키가 달라(`detail.tmall.com:item:<id>`)
+            #   초안이 **안 채워지고 새 행**이 생겼다. 초안 키로 한 번 더 찾되, **채우기를 기다리는 초안**만
+            #   잇는다(일반 수집 행과 호스트를 합치는 판단은 실측 전이라 하지 않는다).
+            _alt = draft_alt_url(url)
+            if _alt:
+                _cand = _find_dup(_alt, seller_ids=_dedup_ids)
+                if _cand and _awaiting_enrich(_cand):
+                    _dup = _cand
     except Exception:
         _dup = None
     if _dup and _dup.get("id"):
         _dup_id = _dup.get("id")
+        if not _force and _awaiting_enrich(_dup):
+            # F49-T — **채우기를 기다리는 초안**이다(붙여넣기·공유로 담은 것). 「이미 수집한 상품」으로
+            #   돌려보내면 사람이 페이지를 열고 눌러도 초안은 영원히 비어 있다. 확장에게 **보강으로 채우라**고
+            #   말한다 — 병합 규칙은 `/enrich` 한 곳(fill-only·등록 게이트·보강 상태)을 그대로 쓴다.
+            logger.info("[collect %s] 초안 보강 대상 → /enrich 안내 id=%s url=%s", _corr, _dup_id, url[:80])
+            return jsonify({
+                "ok": True, "duplicate": True, "draft_pending": True, "item_id": _dup_id,
+                "preview_url": f"/seller/collect/preview/{_dup_id}",
+                "message": "담아 둔 초안이 있어요 — 이 페이지로 채웁니다.",
+            })
         if _force:
             # 다시 수집(덮어쓰기): 기존 항목의 가격·이미지·제목을 새 수집값으로 갱신(중복 행 안 만듦).
             try:
@@ -1200,6 +1249,8 @@ def collect_from_extension():
         "translation_attempts": tr.get("attempts") or [],
         "tier1_source": payload.get("tier1_source", ""),      # v55: 자가발견 채택 API URL
         "tier1_diag": payload.get("tier1_diag") or {},        # v56 STEP4: Tier1 최종 판정(used·원인) 저장
+        # F49-T: 확장이 잰 **페이지 상태**(벽·내비·lazy·셀렉터 적중·오류) — 필드별 실패 사유의 유일한 근거.
+        "page_diag": clean_page_diag(payload.get("page_diag")),
         "mode": _resolve_collect_mode(payload),   # v81 'core'(북마클릿) / v86-F 'simple'(목록 타일) / 'full'
     }
     _field_status = {}

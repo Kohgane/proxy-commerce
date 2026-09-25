@@ -267,7 +267,75 @@ function _kgpSitePdp() {
   return out;
 }
 
+// ── F49-T 실측 도구 — 「왜 못 읽었나」를 **추출과 따로** 잰다 ─────────────────────────
+//   추출 로직은 건드리지 않는다(kgp-extractor.js 무변경). 여기서 재는 것은 페이지의 **상태**다:
+//   로그인 벽 · 내비게이션(HTTP 상태·리다이렉트) · 아직 안 불러온(lazy) 이미지 · 알려진 셀렉터 적중 수 ·
+//   주입 뒤 페이지 오류. 서버는 이 값으로만 필드별 실패 사유를 말한다(없으면 「사유 미상」).
+const _KGP_PAGE_ERRORS = [];
+try {
+  window.addEventListener("error", (ev) => {
+    if (_KGP_PAGE_ERRORS.length < 5) {
+      _KGP_PAGE_ERRORS.push(String((ev && (ev.message || (ev.error && ev.error.message))) || "error").slice(0, 200));
+    }
+  }, true);
+} catch (e) { /* noop */ }
+
+//: 타오바오·티몰 셀렉터 — **이 레포에 이미 있던 것만**(새로 지어낸 것 0): 갤러리·상세·옵션은
+//:   이 파일 `_kgpSitePdp` 타오바오 갈래, 제목은 `kgp-extractor.js` `_adapterTitle` 타오바오 줄.
+//:   추출에 쓰지 않는다 — 「이 페이지에 그 자리가 있었나」를 세는 데만 쓴다.
+const _KGP_TB_SELECTORS = {
+  gallery: "#J_UlThumb img, .tb-thumb img, [class*='thumbnail'] img, [class*='PicGallery'] img, [class*='mainPic'] img, [class*='MainPic'] img, [class*='preview'] img",
+  detail: "#description img, #J_DivItemDesc img, [class*='desc'] img, [class*='Detail'] img",
+  options: "#J_isku .tb-prop, [class*='SkuContent'] [class*='valueItemWrapper'], [class*='skuItem']",
+  title: "[class*='mainTitle'], [class*='ItemTitle'], h1",
+};
+
+function kgpPageDiag() {
+  const out = { at: new Date().toISOString(), url: location.href, wall: "", nav: {}, lazy: {}, sel: {}, errors: [] };
+  try { out.wall = _kgpDetectWall(); } catch (e) { /* noop */ }
+  try {
+    const nav = (performance.getEntriesByType && performance.getEntriesByType("navigation") || [])[0];
+    if (nav) {
+      out.nav = {
+        // responseStatus는 크롬 109+에만 있다 — 없으면 **비워 둔다**(200이라 지어내지 않는다).
+        status: (typeof nav.responseStatus === "number") ? nav.responseStatus : null,
+        redirects: nav.redirectCount || 0,
+        type: nav.type || "",
+        requested: String(nav.name || "").slice(0, 300),
+      };
+    }
+  } catch (e) { /* noop */ }
+  try {
+    let pending = 0, total = 0;
+    document.querySelectorAll("img").forEach((im) => {
+      const lazy = im.getAttribute("data-src") || im.getAttribute("data-ks-lazyload") || im.getAttribute("data-lazy");
+      if (!lazy) return;
+      total += 1;
+      const cur = im.currentSrc || im.getAttribute("src") || "";
+      if (!cur || /^data:|blank|spacer|placeholder|1x1/i.test(cur) || !im.naturalWidth) pending += 1;
+    });
+    out.lazy = { total, pending };
+  } catch (e) { /* noop */ }
+  try {
+    const host = (location.hostname || "").toLowerCase();
+    if (/(^|\.)(taobao|tmall)\.com$/.test(host)) {
+      Object.keys(_KGP_TB_SELECTORS).forEach((k) => {
+        try { out.sel[k] = document.querySelectorAll(_KGP_TB_SELECTORS[k]).length; } catch (e) { out.sel[k] = -1; }
+      });
+    }
+  } catch (e) { /* noop */ }
+  out.errors = _KGP_PAGE_ERRORS.slice(0, 5);
+  return out;
+}
+
 function extractProductMeta() {
+  // F49-T: 어느 갈래로 뽑든 **페이지 진단**을 붙인다(추출 결과는 그대로).
+  const meta = _extractProductMetaInner();
+  try { if (meta && typeof meta === "object") meta.page_diag = kgpPageDiag(); } catch (e) { /* noop */ }
+  return meta;
+}
+
+function _extractProductMetaInner() {
   // 공유 추출기(kgp-extractor.js) 우선 — 확장·북마클릿 동일 코드(JSON우선·DOM폴백·부분수집·가격 sanity).
   //   manifest가 이 스크립트보다 먼저 로드. 만약 미로드면 아래 레거시 DOM 폴백으로 정직 동작.
   if (typeof window.kgpExtractProduct === "function") {
