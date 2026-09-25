@@ -11021,11 +11021,20 @@ def _bench_grid(run: dict) -> dict:
                "box_hints": r.get("box_hints") or [], "axes": {},
                # D3-3b: 우리 3단계 렌더본(있으면). 없으면 빈 dict — 화면이 칸을 비운다.
                "d3": r.get("d3") or {},
-               # D3 렌더본의 5축은 **전부 사람이** 찍는다(자동 축도 렌더가 달라지면 값이 달라진다).
-               "d3_axes": {key: {"score": cells.get(f"d3:{idx}:{key}"),
-                                 "reason": "" if cells.get(f"d3:{idx}:{key}") in (0, 1)
-                                           else "사람이 아직 안 찍음"}
-                           for key, _l, _k, _h in axesmod.AXES}}
+               "d3_axes": {}}
+        # ★ D3-4 ⑤ — D3 열도 **A·B·D는 자동**이다(오너 브리프 2026-09-21).
+        #   전에는 다섯 축 전부 사람이 찍었는데, 그 이유는 「렌더가 달라지면 자동 축 값도
+        #   달라진다」였다. 이제 우리 결과(`render_text`)를 **같은 판정기**로 채점하므로
+        #   그 걱정은 사라졌다 — 두 열이 같은 자로 재고, 사람은 **C·E만** 본다.
+        d3_auto = (r.get("d3") or {}).get("axes") or {}
+        for key, _label, kind, _hint in axesmod.AXES:
+            if kind == "auto":
+                row["d3_axes"][key] = d3_auto.get(key) or {
+                    "score": None, "reason": "D3 결과 없음"}
+            else:
+                v = cells.get(f"d3:{idx}:{key}")
+                row["d3_axes"][key] = {"score": v,
+                                       "reason": "" if v in (0, 1) else "사람이 아직 안 찍음"}
         for key, _label, kind, _hint in axesmod.AXES:
             if kind == "auto":
                 row["axes"][key] = auto.get(key) or {"score": None, "reason": "결과 없음"}
@@ -11220,16 +11229,16 @@ def image_translate_bench_score():
     #   0/1만 받는다 — 빈 값은 「아직 안 찍음」이고, 그건 0과 다르다.
     #   D3-3b: `d3:<idx>:<축>`은 **우리 3단계 렌더본**의 칸이다. 공급사 렌더본 점수와
     #   같은 자리에 섞으면 무엇을 채점한 것인지 갈린다 — 접두어로 갈라 둔다.
-    #   D3 칸은 **5축 전부** 사람이 찍는다(자동 축도 렌더본이 달라지면 값이 달라진다).
-    from src.services.image_bench_axes import AXES, HUMAN_AXES
-    all_axes = tuple(k for k, _l, _kind, _h in AXES)
+    #   D3-4 ⑤: D3 칸도 **사람은 C·E만** 찍는다 — A·B·D는 우리 결과(`render_text`)를
+    #   공급사와 **같은 판정기**로 자동 채점한다(두 열을 같은 자로 잰다).
+    from src.services.image_bench_axes import HUMAN_AXES
     cells = {}
     for key, val in (data.get("cells") or {}).items():
         try:
             k = str(key)
             is_d3 = k.startswith("d3:")
             idx, axis = (k[3:] if is_d3 else k).split(":", 1)
-            allowed = all_axes if is_d3 else HUMAN_AXES
+            allowed = HUMAN_AXES
             if axis in allowed and int(idx) >= 0 and str(val) in ("0", "1"):
                 cells[f"{'d3:' if is_d3 else ''}{int(idx)}:{axis}"] = int(val)
         except Exception:

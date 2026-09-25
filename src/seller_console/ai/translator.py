@@ -30,6 +30,12 @@ _CONTAM_RE = re.compile(
 )
 
 
+#: 문체 지시를 **실제로 따를 수 있는** 프로바이더 (D3-4 ④).
+#:   사전형·통계형 MT(mymemory·papago·deepl·azure)는 「평서형 종결 금지」 같은 지시를 받을
+#:   자리가 없다. 거기에 지시를 보내 놓고 「지시했다」고 적으면 그건 **따른 척**이다.
+STYLE_CAPABLE = ("openai",)
+
+
 def _is_contaminated(s: str) -> bool:
     """상품 텍스트가 아니라 확장 UI·페이지 크롬 오염어인지(초안·키워드에서 배제)."""
     return bool(s) and bool(_CONTAM_RE.search(str(s)))
@@ -519,12 +525,21 @@ class AITranslator:
         left = self._budget_left()
         return max(1.0, min(float(default), left)) if left < 1e8 else float(default)
 
-    def translate_product(self, source: dict) -> dict:
+    def translate_product(self, source: dict, *, style: str = "") -> dict:
         """상품 메타데이터를 한국어로 번역하고 마켓별 카피 생성 — **프로바이더 체인**(순차 폴백).
 
         반환: {title_ko, description_ko, copy_*, provider, attempts:[{provider,ok,error}], (translate_error)}
         - 첫 성공 프로바이더의 결과 반환 + attempts(시도 이력). 전부 실패면 원문 유지 + provider="none" +
           translate_error(마지막 사유). 키/프로바이더 전무면 stub(원문 유지, 실패 아님).
+
+        ## `style` — 문체 지시 (D3-4 ④, 오너 2026-09-21)
+
+        상품 이미지의 글자는 **광고 카피**다. 일반 프롬프트는 「~입니다」로 끝나는 평서문을 낸다.
+        지시가 오면 **지시를 따를 수 있는 프로바이더**(`STYLE_CAPABLE`)로 체인을 좁힌다 —
+        사전형 MT에 문체를 시키는 것은 시키는 척일 뿐이다.
+
+        그런 프로바이더가 **하나도 없으면** 원래 체인 그대로 돌리되 결과에
+        **`style_applied=False`**를 남긴다. 조용히 따른 척하지 않는다.
         """
         # v87-W8 item3: 라쿠텐 상용구(楽ギフ_包装·あす着·送料無料 등)를 **번역 전** 제목에서 제거
         #   (상품 속성어 보존). 안 그러면 mymemory가 상용구를 오역해 "Rakugifu_포장 내일 착용 서신"류가 남는다.
@@ -541,6 +556,13 @@ class AITranslator:
         #   ja는 papago/deepl 선행, mymemory 후순위(저품질 로마자화 방지). 감지·체인을 결과에 기록(진단).
         _src = _route_src_lang((title or "") + " " + (description or ""))
         chain = self._provider_chain(src_lang=_src)
+        # D3-4 ④ — 문체 지시가 있으면 **따를 수 있는 단**으로 좁힌다(없으면 그대로 + 정직 표기).
+        style = str(style or "").strip()
+        style_applied = False
+        if style and chain:
+            capable = [n for n in chain if n in STYLE_CAPABLE]
+            if capable:
+                chain, style_applied = capable, True
         if not chain:
             logger.warning("AI 번역 프로바이더 없음(키·무료 모두 불가) — 원본 반환 (stub 모드)")
             return {"title_ko": title, "description_ko": description, "provider": "stub",
@@ -574,7 +596,7 @@ class AITranslator:
                 elif name == "azure":
                     res = self._translate_azure(title, description)
                 elif name == "openai":
-                    res = self._translate_openai(title, description)
+                    res = self._translate_openai(title, description, style=style)
                 else:
                     continue
             except Exception as exc:
@@ -586,6 +608,9 @@ class AITranslator:
                 res["attempts"] = attempts
                 res["detected_lang"] = _src          # v87-W9 item1: 감지 언어·선택 체인 기록(진단만으로 판독)
                 res["chain"] = list(chain)
+                if style:
+                    res["style"] = style
+                    res["style_applied"] = bool(style_applied and name in STYLE_CAPABLE)
                 return res
             logger.warning("[번역 체인] %s 실패(%s) → 다음 프로바이더", name, res.get("error") or "원인 미상")
 
@@ -811,7 +836,7 @@ class AITranslator:
     # 내부 구현
     # ------------------------------------------------------------------
 
-    def _translate_openai(self, title: str, description: str) -> dict:
+    def _translate_openai(self, title: str, description: str, *, style: str = "") -> dict:
         """OpenAI GPT-4o-mini로 번역 + 카피 생성."""
         try:
             import requests as _req
@@ -831,6 +856,9 @@ class AITranslator:
                 "4) 상품명은 한국 관례 **브랜드 + 핵심 스펙 + 용도** 순, 자연스러운 명사구(어색한 조사·번역기 말투 금지).\n"
                 "5) 설명은 원문 불릿(·) 구조를 유지하며 한국어로."
             )
+            if style:
+                # D3-4 ④ — 호출부가 준 문체 지시(예: 상품 이미지 광고 카피체). 규칙 뒤에 붙인다.
+                system += "\n6) 문체: " + str(style)
             prompt = (
                 "아래 상품을 위 규칙대로 한국어로 번역하고, 마켓용 판매 카피도 만드세요.\n"
                 f"[제목]\n{title}\n\n[설명]\n{description}\n\n"

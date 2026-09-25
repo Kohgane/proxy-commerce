@@ -130,6 +130,29 @@
               </ul>
             </details>
             {% endif %}
+            {# D3-4 ③④ — 「왜 이렇게 그렸나」의 재료. 점수가 아니라 **잰 값**이다. #}
+            <div class="small text-muted mt-1">
+              {% if r.d3.glossary and r.d3.glossary.glossary %}
+              정본 용어집 {{ r.d3.glossary.glossary }}줄 ·
+              {% endif %}
+              {% if r.d3.llm and r.d3.llm.unstyled %}
+              <span class="text-warning">문체 지시 미적용 {{ r.d3.llm.unstyled }}줄</span>
+              <span class="pc-help" data-bs-toggle="tooltip"
+                    title="사전형 번역기가 받은 줄입니다 — 지시를 따를 수 있는 단(LLM)이 아니었습니다">?</span>
+              {% elif r.d3.llm and r.d3.llm.styled %}
+              문체 지시 적용 {{ r.d3.llm.styled }}줄
+              {% endif %}
+            </div>
+            {% if r.d3.typography %}
+            <details class="small mt-1"><summary style="cursor:pointer">원본에서 잰 타이포</summary>
+              <ul class="mb-0 ps-3">
+                {% for t in r.d3.typography %}
+                <li>{{ t.weight }} · {{ t.align }} · RGB{{ t.color }}
+                  {% if t.reason %}<span class="text-warning">— {{ t.reason }}</span>{% endif %}</li>
+                {% endfor %}
+              </ul>
+            </details>
+            {% endif %}
             {% else %}
             <div class="op-empty small">{{ r.d3.error or 'D3 렌더본 없음' }}</div>
             {% endif %}
@@ -234,8 +257,9 @@
             {% endfor %}
           </tr>
           {% if p.d3 %}
-          {# D3-3b: 우리 렌더본은 **5축 전부 사람이** 찍는다 — 렌더가 달라지면 자동 축 값도
-             달라지기 때문이다. 공급사 줄 점수와 섞지 않으려고 칸을 따로 둔다. #}
+          {# D3-4 ⑤: 우리 렌더본도 **A·B·D는 자동**이다 — 공급사 열과 **같은 판정기**로
+             우리 결과(render_text)를 채점한다. 사람은 C·E만 본다(박스는 원문의 자리라
+             자동으로 못 잰다 — F33). 공급사 점수와 섞이지 않게 줄을 따로 둔다. #}
           <tr class="table-light">
             <td class="small"><span class="pc-badge pc-badge-muted">D3</span>
               <div class="console-kpi-label">우리 렌더본</div></td>
@@ -247,14 +271,16 @@
               {% elif cell.score == 0 %}
               <span class="pc-badge pc-badge-danger">0</span>
               {% else %}
-              <span class="pc-badge pc-badge-off">미채점</span>
+              <span class="pc-badge pc-badge-off">{{ '측정 불가' if kind == 'auto' else '미채점' }}</span>
               {% endif %}
+              {% if kind == 'human' %}
               <span class="ms-1">
                 <button type="button" class="btn btn-ghost btn-sm py-0 px-1"
                         data-cell="d3:{{ p.idx }}:{{ key }}" data-val="1">1</button>
                 <button type="button" class="btn btn-ghost btn-sm py-0 px-1"
                         data-cell="d3:{{ p.idx }}:{{ key }}" data-val="0">0</button>
               </span>
+              {% endif %}
               {% if cell.reason %}
               <div class="text-muted" style="font-size:.78rem">{{ cell.reason }}</div>
               {% endif %}

@@ -34,7 +34,7 @@ import logging
 import re
 from typing import Callable, Dict, List, Optional
 
-from src.services.image_bench_axes import IDIOMS, _BRAND_TOKEN, _EN_UI, _NOT_BRAND
+from src.services.image_bench_axes import IDIOMS, _BRAND_TOKEN, _EN_UI, _NOT_BRAND  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +123,37 @@ def apply_idioms(source: str, translated: str) -> str:
     return out
 
 
+#: ★ D3-4 ④ — **문체 지시**(오너 브리프 2026-09-21).
+#:
+#: 상품 이미지의 글자는 상품명이 아니라 **광고 카피**다. 일반 번역 프롬프트는
+#: 「~입니다」로 끝나는 평서문을 낸다 — 표지에 그게 박히면 광고가 아니라 설명문이 된다.
+#:
+#: ⚠️ 이 지시는 **지시를 따를 수 있는 프로바이더**에서만 효력이 있다(LLM). 사전형 MT는
+#: 문체를 못 바꾸므로, 그럴 때 번역기는 `style_applied=False`를 남긴다 — 따른 척하지 않는다.
+STYLE_INSTRUCTION = (
+    "이 문장은 상품 이미지에 박히는 **제품 광고 카피**입니다. 짧은 명사구나 구호로 쓰고, "
+    "평서형 종결(~입니다·~합니다·~이다·~해요)을 쓰지 마세요."
+)
+
+
+def _norm_line(s: str) -> str:
+    return re.sub(r"\s+", "", str(s or ""))
+
+
+#: 원문 줄 → **오너가 확정한 정본 한국어**. 표는 `image_bench_axes.IDIOMS`가 정본이고
+#: 여기서는 **읽기만 한다** — 생성과 판정이 두 표를 보면 만들면서 틀리고 재면서 통과한다.
+LINE_GLOSSARY = {_norm_line(i["source"]): i["ko"] for i in IDIOMS if i.get("ko")}
+
+
+def glossary_line(source: str) -> str:
+    """이 줄에 **정본 한국어**가 있나 — 없으면 빈 문자열.
+
+    실측으로 오역이 확인된 카피만 들어 있다. 있으면 **번역기를 부르지 않는다**:
+    이미 정답을 아는 줄에 돈과 시간을 쓰고 **또 틀릴** 이유가 없다.
+    """
+    return LINE_GLOSSARY.get(_norm_line(source), "")
+
+
 def plan_line(source: str) -> Dict:
     """이 줄을 어떻게 다룰지 — `{action, reason, tokens}`. 번역 전에 정해진다."""
     s = str(source or "").strip()
@@ -161,6 +192,15 @@ def translate_lines(lines: List[Dict], translate_fn: Callable[[str], str],
             out.append(row)
             continue
 
+        # ★ D3-4 ④ — **정본이 있는 줄은 번역기를 안 부른다.** 답을 아는데 또 물어서
+        #   또 틀릴 이유가 없다. 어디서 왔는지는 `glossary_hit`으로 남는다.
+        fixed = glossary_line(src)
+        if fixed:
+            row["render_text"] = fixed
+            row["glossary_hit"] = src
+            out.append(row)
+            continue
+
         masked, toks = protect(src)
         try:
             got = translate_fn(masked)
@@ -186,7 +226,7 @@ def translate_lines(lines: List[Dict], translate_fn: Callable[[str], str],
 
 
 def summarize(rows: List[Dict]) -> Dict:
-    """무엇을 했는지 — `{total, translated, kept, failed}`. **분모는 잰 것만.**"""
+    """무엇을 했는지 — `{total, translated, kept, failed, glossary}`. **분모는 잰 것만.**"""
     rows = rows or []
     return {
         "total": len(rows),
@@ -194,4 +234,6 @@ def summarize(rows: List[Dict]) -> Dict:
                           and not r.get("translate_error")),
         "kept": sum(1 for r in rows if r.get("action") == "keep"),
         "failed": sum(1 for r in rows if r.get("translate_error")),
+        # 정본 용어집이 받아 낸 줄 — 번역기를 안 부른 수(D3-4 ④).
+        "glossary": sum(1 for r in rows if r.get("glossary_hit")),
     }
