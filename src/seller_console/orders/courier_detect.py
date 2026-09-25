@@ -131,8 +131,6 @@ def probe(text: str) -> Dict:
         })
 
     after = client.quota()
-    covered = {r["name"] for r in rows if r["name"]
-               and r["verdict"] in (VERDICT_HIT, VERDICT_CAND, VERDICT_INFO)}
     untested = [n for n, _k in TARGETS if n not in {r["name"] for r in rows}]
     # ★★★ 「판별됐다」와 「맞는 걸 판별했다」는 **다른 사실**이다.
     #   우리 코드표가 없으면 공급사가 무언가를 내놨다는 것만 알 뿐, 그게 그 택배사인지는
@@ -150,8 +148,10 @@ def probe(text: str) -> Dict:
     return {
         "ok": True, "rows": rows, "verdict": verdict,
         "misses": sorted(set(misses)), "untested": untested,
-        "unverified": unverified,
-        "covered": sorted(covered), "measured": measured,
+        # ※ 예전엔 `covered`(다룬 곳)도 실어 보냈는데 **아무도 안 읽었고**,
+        #   `참고`를 `판별`과 한 덩어리로 세고 있었다 — 위 ★★★가 고친 그 혼동이다.
+        #   안 읽히는 값이 틀린 뜻을 들고 있으면 다음 사람이 그대로 화면에 붙인다. 지웠다.
+        "unverified": unverified, "measured": measured,
         "targets": [n for n, _k in TARGETS],
         "quota": after if after.get("ok") else before,
         "spent": _spent(before, after),
