@@ -50,6 +50,9 @@ logger = logging.getLogger(__name__)
 INPAINT_METHODS = ("telea", "ns")
 
 _MIN_FONT_PX = 11          # 이보다 작으면 사람이 못 읽는다 — 그리느니 안 그린다
+#: D3-6 ③(오너 2026-09-25) — 박스 높이가 **원본 높이의 1.5%** 미만이면 손대지 않는다
+#: (750×1000이면 15px). 시계 화면 속 작은 글자를 지우고 다시 그리면 「워ㅇ이」가 된다.
+SMALL_TEXT_RATIO = 0.015
 _BOX_PAD_RATIO = 0.06      # 박스 안쪽 여백(글자가 테두리에 붙지 않게)
 
 
@@ -138,6 +141,8 @@ def _glyph_mask(cv2, np, img, rect, dilate_px: int) -> tuple:
             if float((inner > 0).sum()) / float(inner.size) >= 0.005:
                 mask_roi = inner
 
+    mask_roi = _peel_plate(cv2, np, mask_roi)
+
     ratio = float((mask_roi > 0).sum()) / float(mask_roi.size)
     if ratio < 0.005:
         return None, f"글자 픽셀을 못 찾았습니다(비율 {ratio:.3f})"
@@ -152,6 +157,105 @@ def _glyph_mask(cv2, np, img, rect, dilate_px: int) -> tuple:
     full = np.zeros(img.shape[:2], np.uint8)
     full[y1:y2, x1:x2] = mask_roi
     return full, ""
+
+
+#: D3-6 ⑤ — 「판(알약·띠)」으로 볼 덩어리: 박스 면적의 이 비율 이상이고, 자기 외접 사각형을
+#: 이만큼 이상 채운(속이 찬) 모양. 글자 한 획은 둘 다 못 넘는다.
+PLATE_MIN_AREA = 0.20
+PLATE_MIN_SOLIDITY = 0.55
+
+
+def plate_rect(image_bytes: bytes, box: Dict) -> Optional[Dict]:
+    """박스 안에 글자를 태운 **판**(알약·띠)이 있으면, 글자를 앉힐 **판 안쪽** `{x,y,w,h}` (D3-6 ⑤).
+
+    텐센트 박스가 알약보다 크면, 박스 폭에 맞춰 그린 한국어가 **알약 밖으로 삐져나간다**
+    (합성 ebvllh 캡처 · cphvcw 「부제 넘침」의 유력 원인). 판이 있으면 판 안쪽에 앉힌다 —
+    둥근 끝(높이의 절반)은 빼고, 위아래도 조금 뺀다. 판이 없으면 None(박스 그대로).
+    """
+    cv2, np, why = _load_cv2()
+    if why:
+        return None
+    try:
+        img = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
+    except Exception:                                          # pragma: no cover
+        return None
+    if img is None:
+        return None
+    h, w = img.shape[:2]
+    rect = _norm_box(box or {}, w, h)
+    if rect is None:
+        return None
+    x1, y1, x2, y2 = rect
+    gray = cv2.cvtColor(img[y1:y2, x1:x2], cv2.COLOR_BGR2GRAY)
+    border = np.concatenate([gray[0, :], gray[-1, :], gray[:, 0], gray[:, -1]])
+    diff = np.abs(gray.astype(np.int16) - float(np.median(border))).astype(np.uint8)
+    if int(diff.max()) < 30:
+        return None
+    _t, m = cv2.threshold(diff, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    got = _find_plate(cv2, np, m)
+    if got is None:
+        return None
+    px, py, pw, ph = got
+    inset_x, inset_y = int(min(ph / 2.0, pw * 0.2)), int(ph * 0.12)
+    if pw - 2 * inset_x < 8 or ph - 2 * inset_y < _MIN_FONT_PX:
+        return None
+    return {"x": x1 + px + inset_x, "y": y1 + py + inset_y,
+            "w": pw - 2 * inset_x, "h": ph - 2 * inset_y}
+
+
+def _plates(cv2, np, mask_roi) -> list:
+    """마스크 안의 **판** 덩어리들 — `[(bbox(roi), comp, holes)]`. 판 판정 규칙은 **여기 하나**다.
+
+    판 = 박스 면적의 `PLATE_MIN_AREA` 이상 · 자기 외접 사각형을 `PLATE_MIN_SOLIDITY` 이상 채움 ·
+    **구멍(글자)을 품음**. 글자 한 획은 셋을 다 못 넘는다.
+    """
+    n, lab, stats, _c = cv2.connectedComponentsWithStats(mask_roi, 8)
+    area_total = float(mask_roi.size)
+    out = []
+    for i in range(1, n):
+        area = float(stats[i, cv2.CC_STAT_AREA])
+        bw, bh = stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT]
+        if area / area_total < PLATE_MIN_AREA or area / float(max(1, bw * bh)) < PLATE_MIN_SOLIDITY:
+            continue
+        comp = (lab == i).astype(np.uint8) * 255
+        cnts, _h = cv2.findContours(comp, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        filled = np.zeros_like(comp)
+        cv2.drawContours(filled, cnts, -1, 255, thickness=-1)
+        holes = cv2.bitwise_and(filled, cv2.bitwise_not(comp))
+        if float((holes > 0).sum()) / area_total < 0.003:
+            continue
+        bbox = (int(stats[i, cv2.CC_STAT_LEFT]), int(stats[i, cv2.CC_STAT_TOP]), int(bw), int(bh))
+        out.append((bbox, comp, holes))
+    return out
+
+
+def _find_plate(cv2, np, mask_roi) -> Optional[tuple]:
+    """가장 큰 판의 외접 사각형(roi 좌표). 없으면 None."""
+    got = _plates(cv2, np, mask_roi)
+    return max((g[0] for g in got), key=lambda b: b[2] * b[3]) if got else None
+
+
+def _peel_plate(cv2, np, mask_roi):
+    """글자를 태운 **판**(알약)을 마스크에서 걷어 내고, 판 안의 **구멍 = 글자**만 남긴다 (D3-6 ⑤).
+
+    ## 왜 (오너 벤치 ebvllh 실측 2026-09-25 — 회색 유령 사각형 + 파란 번짐)
+
+    텐센트 박스가 알약보다 **크면** 테두리 중앙값 = 페이지 바탕(흰색)이 되고, 파란 알약 전체가
+    「바탕과 먼 픽셀」 = 글자로 잡힌다. 테두리에 안 닿으니 D3-5의 걸러내기도 통과한다.
+    그 마스크로 지우면 **알약이 통째로 지워진다.**
+
+    알약 위 글자는 알약 색과 다르다 — 그러니 알약 덩어리에서 **구멍**으로 나타난다.
+    큰·속이 찬 덩어리를 판으로 보고, 판 외곽을 채운 영역에서 판 픽셀을 빼면 글자가 남는다.
+    판 밖의 다른 덩어리(판 바깥 글자)는 그대로 둔다. 구멍이 없으면 **아무것도 안 바꾼다.**
+    """
+    got = _plates(cv2, np, mask_roi)
+    if not got:
+        return mask_roi
+    out = mask_roi.copy()
+    for _bbox, comp, holes in got:
+        out[comp > 0] = 0            # 판은 지우지 않는다
+        out = cv2.bitwise_or(out, holes)
+    return out
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -304,9 +408,16 @@ def sample_typography(image_bytes: bytes, box: Dict, source: str = "") -> Dict:
         ys, xs = np.nonzero(m)
 
         # 색 — 글자 **속살**만 본다. 가장자리는 배경과 섞여 있어 색을 흐린다.
+        #   D3-6 ⑤: 기준은 박스 테두리가 아니라 **글자 바로 둘레**다. 알약 위 흰 글자는
+        #   박스 테두리(페이지 흰색) 기준으론 「가장 먼 픽셀」이 알약 쪽 가장자리가 되어
+        #   **파랑을 글자색으로** 재 버렸다(합성 ebvllh 캡처). 둘레 = 알약색이 기준이다.
         gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY).astype(np.int16)
-        border = np.concatenate([gray[0, :], gray[-1, :], gray[:, 0], gray[:, -1]])
-        d = np.abs(gray[ys, xs] - float(np.median(border)))
+        k_in, k_out = np.ones((3, 3), np.uint8), np.ones((9, 9), np.uint8)
+        ring = cv2.dilate(m, k_out) & ~cv2.dilate(m, k_in)
+        ref_px = gray[ring > 0]
+        if ref_px.size == 0:
+            ref_px = np.concatenate([gray[0, :], gray[-1, :], gray[:, 0], gray[:, -1]])
+        d = np.abs(gray[ys, xs] - float(np.median(ref_px)))
         core = d >= np.percentile(d, 60)
         px = roi[ys[core], xs[core]]
         out["color"] = tuple(int(np.median(px[:, i])) for i in (2, 1, 0))   # BGR→RGB
@@ -608,6 +719,20 @@ def _wrap(text: str, font, max_w: int) -> Optional[List[str]]:
     return lines or None
 
 
+def _overflows(plan: Dict, weight: str, box_w: int) -> bool:
+    """이 배치로 그리면 **실제 잉크**가 박스 폭을 넘나 — 가장 넓은 줄을 가운데 놓고 잰다."""
+    font = load_font(plan["size"], weight)
+    if font is None:
+        return False
+    for line in plan["lines"]:
+        l, _t, r, _b = font.getbbox(line)
+        lw = r - l
+        cx = (box_w - lw) // 2
+        if cx + l < 0 or cx + r > box_w:
+            return True
+    return False
+
+
 def draw_lines(image_bytes: bytes, lines: List[Dict], *, weight: str = "regular",
                color: Tuple[int, int, int] = (26, 23, 20)) -> tuple:
     """지워진 이미지 위에 한국어를 **앉힌다** — `(바이트, 그린 수, 건너뛴 것들)`.
@@ -632,7 +757,8 @@ def draw_lines(image_bytes: bytes, lines: List[Dict], *, weight: str = "regular"
     drawn, skipped = 0, []
     for ln in lines or []:
         text = str(ln.get("render_text") or "").strip()
-        rect = _norm_box(ln.get("box") or {}, img.width, img.height)
+        # D3-6 ⑤ — 판이 있으면 판 안쪽(`draw_box`), 없으면 원문 박스.
+        rect = _norm_box(ln.get("draw_box") or ln.get("box") or {}, img.width, img.height)
         if not text:
             skipped.append({"text": text, "reason": "그릴 글자가 없습니다"})
             continue
@@ -648,6 +774,15 @@ def draw_lines(image_bytes: bytes, lines: List[Dict], *, weight: str = "regular"
         align = str(ln.get("align") or "center").lower()
 
         plan = fit_text(text, x2 - x1, y2 - y1, weight=w_key)
+        # D3-6 ⑤(cphvcw 부제 넘침) — `fit_text`는 **글리프 폭**(bbox[2]-bbox[0])으로 재는데,
+        #   실제로 그릴 땐 왼쪽 여백(bbox[0])까지 밀려 끝이 박스를 넘을 수 있다. 그리기 전에
+        #   **그려질 자리 그대로** 재고, 넘으면 한 단계씩 줄인다. 줄였으면 가운데로 앉힌다.
+        shrunk = False
+        while plan is not None and _overflows(plan, w_key, x2 - x1):
+            plan = fit_text(text, x2 - x1, y2 - y1, weight=w_key, max_px=plan["size"] - 1)
+            shrunk = True
+        if shrunk:
+            align = "center"
         if plan is None:
             # ★ 억지로 그리지 않는다 — 삐져나온 글자는 상품 사진을 망친다.
             skipped.append({"text": text, "reason": f"박스에 안 들어갑니다({x2 - x1}×{y2 - y1}px)"})
@@ -675,6 +810,26 @@ def draw_lines(image_bytes: bytes, lines: List[Dict], *, weight: str = "regular"
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=92)
     return buf.getvalue(), drawn, skipped
+
+
+def small_text_reason(line: Dict, image_h: int) -> str:
+    """박스가 **너무 작으면** 손대지 않는 사유 — 아니면 빈 문자열 (D3-6 ③)."""
+    try:
+        bh = float((line.get("box") or {}).get("h") or 0)
+    except (TypeError, ValueError, AttributeError):
+        return ""
+    if image_h > 0 and 0 < bh < SMALL_TEXT_RATIO * image_h:
+        return (f"소형 텍스트 — 박스 높이 {bh:.0f}px < 원본 높이의 1.5%"
+                f"({SMALL_TEXT_RATIO * image_h:.0f}px): 손대지 않음")
+    return ""
+
+
+def _image_height(image_bytes: bytes) -> int:
+    try:
+        from PIL import Image
+        return int(Image.open(io.BytesIO(image_bytes)).height)
+    except Exception:
+        return 0
 
 
 def untouched_reason(line: Dict) -> str:
@@ -727,8 +882,20 @@ def render(image_bytes: bytes, lines: List[Dict], *, method: str = "telea",
     그러면 F축 비교가 거짓이 된다. 그래서 결과는 **실제로 쓴 인페인터 이름**을 든다.
     청구(`cloud_tx`)도 폴백과 **따로** 적는다 — 지우기는 실패했어도 돈은 나갔을 수 있다.
     """
-    paintable, untouched = [], []
+    paintable, untouched, drops = [], [], []
+    image_h = _image_height(image_bytes)
     for ln in lines or []:
+        # D3-6 ③ — 작은 글자는 **번역·지우기·그리기 전부** 안 한다(라인명 삭제도 포함).
+        why = small_text_reason(ln, image_h)
+        if why:
+            untouched.append({"text": str(ln.get("source") or ""), "reason": why})
+            continue
+        if str(ln.get("action") or "") == "drop" and ln.get("box"):
+            # D3-6 ①-b — **지우기만** 한다(그릴 글자 없음). 사유는 결과에 남긴다.
+            drops.append(ln)
+            untouched.append({"text": str(ln.get("source") or ""),
+                              "reason": str(ln.get("rule_reason") or "지우기만 함")})
+            continue
         why = untouched_reason(ln)
         if why:
             # ★ 조용히 빼지 않는다 — 안 건드린 줄도 **사유와 함께** 결과에 남는다.
@@ -752,11 +919,23 @@ def render(image_bytes: bytes, lines: List[Dict], *, method: str = "telea",
             measured.append(row)
         paintable = measured
 
-    if not paintable:
+    # D3-6 ⑤ — 판(알약) 위 글자는 **판 안쪽**에 앉힌다(지우기 박스는 그대로 원문 박스).
+    placed = []
+    for ln in paintable:
+        row = dict(ln)
+        if not row.get("draw_box"):
+            pr = plate_rect(image_bytes, row.get("box") or {})
+            if pr:
+                row["draw_box"] = pr
+        placed.append(row)
+    paintable = placed
+
+    if not paintable and not drops:
         return {"ok": False, "image_bytes": image_bytes, "erased": 0, "drawn": 0,
                 "skipped": untouched, "error": "그릴 줄이 없습니다(원본 그대로)"}
 
-    boxes = [ln["box"] for ln in paintable]
+    # 지우는 박스 = 그릴 줄 + 지우기만 할 줄(라인명). 그리는 건 `paintable`뿐이다.
+    boxes = [ln["box"] for ln in paintable] + [ln["box"] for ln in drops]
     inpainter, fallback, cloud = str(method or "telea").lower(), "", {"tx": 0, "credits": 0.0}
     erased_bytes, erased, why = image_bytes, 0, ""
 
@@ -792,7 +971,9 @@ def render(image_bytes: bytes, lines: List[Dict], *, method: str = "telea",
 
     out, drawn, skipped = draw_lines(erased_bytes, paintable, weight=weight)
     return {
-        "ok": drawn > 0,
+        # 라인명만 지운 장도 **결과가 있는 장**이다(그릴 줄이 0이어도 지운 것이 산출물).
+        "ok": drawn > 0 or (bool(drops) and erased > 0),
+        "dropped": len(drops),
         "image_bytes": out,
         "erased": erased,
         "drawn": drawn,
@@ -808,5 +989,5 @@ def render(image_bytes: bytes, lines: List[Dict], *, method: str = "telea",
         #   ★ `erased_bytes`는 잰 뒤 버린다(벤치 저장소·실행 기록에 싣지 않는다).
         "painted_boxes": boxes,
         "erased_bytes": erased_bytes,
-        "error": "" if drawn else "한 줄도 앉히지 못했습니다",
+        "error": "" if (drawn or (drops and erased)) else "한 줄도 앉히지 못했습니다",
     }

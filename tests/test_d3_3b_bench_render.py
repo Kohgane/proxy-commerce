@@ -66,8 +66,8 @@ def wired(monkeypatch):
 
     monkeypatch.setattr("src.services.image_translate_tencent.fetch_image", _fetch)
 
-    def _store(item_id, idx, b64, *, seller_id="", kind="gallery"):
-        calls["stored"].append({"item_id": item_id, "idx": idx, "kind": kind,
+    def _store(item_id, idx, b64, *, seller_id="", kind="gallery", label=None):
+        calls["stored"].append({"item_id": item_id, "idx": idx, "kind": kind, "label": label,
                                 "bytes": len(base64.b64decode(b64))})
         return {"url": f"/seller/admin/image-translate-bench/image/{item_id}/{idx}",
                 "stored_by": "db", "note": ""}
@@ -79,7 +79,9 @@ def wired(monkeypatch):
             calls["llm"] += 1
             calls.setdefault("styles", []).append(style)
             # 지시를 따를 수 있는 단이 받았다고 **가정하지 않는다** — 목도 사실대로 답한다.
-            return {"title_ko": "3-in-1 충전기", "provider": "openai",
+            # D3-6 ① — 관용구·브랜드는 자리표시자로 온다. 진짜 번역기처럼 **그대로 두고** 나머지만 옮긴다.
+            return {"title_ko": str(src.get("title") or "").replace("充电器", "충전기"),
+                    "provider": "openai",
                     "style": style, "style_applied": bool(style)}
 
     monkeypatch.setattr("src.seller_console.ai.translator.AITranslator", _T)
@@ -286,16 +288,27 @@ def _chrome_opts():
     return {"executable_path": hits[0]} if hits else {}
 
 
+
+def _grid_block(html: str) -> str:
+    """세 칸/네 칸 블록을 **템플릿 원문에서** 잘라 온다 — 시작은 행, 끝은 번역본 그림 줄.
+
+    D3-6 ⑥: 그림은 `shot()` 매크로로 그린다 — 매크로 정의도 **원문에서** 같이 잘라 붙인다
+    (손으로 마크업을 재조립하면 우리가 만든 것을 재는 셈이다).
+    """
+    m0 = html.index("{% macro shot(")
+    m1 = html.index("{%- endmacro %}", m0) + len("{%- endmacro %}")
+    start = html.index('<div class="row g-2">')
+    end = html.index("shot(r.url, '번역본')", start)
+    end = html.index("\n", end)
+    return html[m0:m1] + html[start:end] + "\n{% endif %}</div></div>"
+
 def test_three_images_stand_side_by_side_in_a_real_browser():
     """★★ **JS를 실행해서** 센다 — 마크업을 눈으로 읽고 「있겠지」 하지 않는다."""
     pw = pytest.importorskip("playwright.sync_api")
     html = TPL.read_text(encoding="utf-8")
     # 세 칸 블록을 **템플릿 원문에서** 잘라 온다 — 시작은 행, 끝은 번역본 이미지 줄.
     #   (손으로 마크업을 재조립하면 그건 우리가 만든 것을 재는 셈이다.)
-    start = html.index('<div class="row g-2">')
-    end = html.index('alt="번역본"', start)
-    end = html.index("\n", end)
-    block = html[start:end] + "\n{% endif %}</div></div>"
+    block = _grid_block(html)
 
     from jinja2 import Environment
     out = Environment().from_string(block).render(
@@ -320,10 +333,7 @@ def test_four_images_stand_side_by_side_with_gen_remove():
     """
     pw = pytest.importorskip("playwright.sync_api")
     html = TPL.read_text(encoding="utf-8")
-    start = html.index('<div class="row g-2">')
-    end = html.index('alt="번역본"', start)
-    end = html.index("\n", end)
-    block = html[start:end] + "\n{% endif %}</div></div>"
+    block = _grid_block(html)
 
     from jinja2 import Environment
     out = Environment().from_string(block).render(
@@ -352,10 +362,7 @@ def test_a_fallback_is_named_telea_on_the_gen_remove_column():
     """★★★ 폴백을 숨기면 gen_remove 칸에 **telea 그림이 gen_remove 이름으로** 올라간다."""
     from jinja2 import Environment
     html = TPL.read_text(encoding="utf-8")
-    start = html.index('<div class="row g-2">')
-    end = html.index('alt="번역본"', start)
-    end = html.index("\n", end)
-    block = html[start:end] + "\n{% endif %}</div></div>"
+    block = _grid_block(html)
     out = Environment().from_string(block).render(
         r={"original": "o.jpg", "url": "t.jpg",
            "d3": {"url": "d.jpg", "erased": 1, "drawn": 1, "skipped": []},

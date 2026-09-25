@@ -293,7 +293,8 @@ def _cloudinary_configured() -> bool:
 
 def upload_bytes(image_bytes: bytes, *, prefer_webp: bool = False,
                  eager: Optional[list] = None, folder: str = "",
-                 resource_type: str = "image") -> Dict[str, Any]:
+                 resource_type: str = "image", public_id: str = "",
+                 context: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     """바이트 → Cloudinary. **결과를 dict 그대로** 돌려준다 (F31).
 
     ## 왜 dict인가
@@ -356,6 +357,12 @@ def upload_bytes(image_bytes: bytes, *, prefer_webp: bool = False,
                                 "resource_type": resource_type or "image"}
         if prefer_webp:
             opts["format"] = "webp"
+        # D3-6 ⓪ — 벤치 산출물은 **주소만 보고** 어느 열인지 알아야 채점이 된다.
+        #   public_id에 실행·장·파이프라인을 싣고, 같은 값을 context에도 둔다(콘솔 검색용).
+        if public_id:
+            opts["public_id"] = public_id
+        if context:
+            opts["context"] = {str(k): str(v) for k, v in context.items()}
         if eager:
             opts["eager"] = eager
         result = cloudinary.uploader.upload(io.BytesIO(image_bytes), **opts) or {}

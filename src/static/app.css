@@ -13,6 +13,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@600&display=swap');
 
 :root {
+  /* D3-6 ⑥ — 벤치 결과 그림 표시 폭(출력물 영향 0) */
+  --bench-shot-max: 375px;
   /* ========================================================================
      v18 디자인 토큰 — 단일 소스(에디토리얼 럭셔리). 전 화면이 이 토큰만 참조.
      하드코딩 hex/px 금지. 화면당 강조색 1개(주황=주요행동, 청록=브랜드/링크, 금=얕은 악센트).
@@ -2244,3 +2246,7 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .kgp-imgko-thumb { cursor: zoom-in; }
 /* 썸네일 탭 각 행의 「원본/번역본」 표식 — 등록에 무엇이 나가는지 그 자리에서 보이게. */
 .kgp-src-badge { align-self: center; }
+
+/* D3-6 ⑥ — 벤치 카드 결과 그림: 작게 보고 누르면 원본 새 탭 */
+.bench-shot { max-width: var(--bench-shot-max); width: 100%; height: auto; }
+.bench-shot-link { display: inline-block; cursor: zoom-in; }

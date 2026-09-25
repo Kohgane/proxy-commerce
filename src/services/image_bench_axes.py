@@ -129,6 +129,18 @@ _NOT_BRAND = {"XL", "XXL", "USB", "LED", "PVC", "ABS", "TPU", "EVA", "CM", "MM",
 # 원문 줄이 **영문+숫자+기호만**이면 제품 화면 속 UI다 — 건드리면 안 된다.
 _EN_UI = re.compile(r"^[\x20-\x7E]+$")
 
+
+def is_en_ui(source: str) -> bool:
+    """영문 UI 줄인가 — **생성(2단계)과 판정(D축)이 같이 쓴다.**
+
+    D3-6 ②: OCR은 시계 화면의 `Alarm 6:45am`을 **전각**(`Ａｌａｒｍ ６：４５ａｍ`)이나
+    전각 콜론으로 돌려주기도 한다. 그러면 `\x20-\x7E` 판정을 빠져나가 번역 대상이 되고
+    「알람 6:45A」가 박힌다. NFKC로 폭만 접어서 본다(글자를 바꾸지 않는다 — 판정용).
+    """
+    import unicodedata
+    s = unicodedata.normalize("NFKC", str(source or "")).strip()
+    return bool(s) and bool(_EN_UI.match(s))
+
 #: 관용구 — **실측된 것만** 적는다. 표에 없으면 판정하지 않는다(「측정 불가」).
 #:   오너 실측(2026-09-18): `三合一`이 `삼합일`로 직역돼 나왔다.
 #:
@@ -154,6 +166,14 @@ IDIOMS = (
      "bad": (),
      "ko": "지저분함은 이제 그만",
      "note": "정리 카피 — 오너 실측 오역(2026-09-21), 정본 지정"},
+    # D3-6 ①(오너 2026-09-25): 같은 카피가 **다른 한자**로도 온다(凌乱 ↔ 混乱) — 실측에서
+    #   이 줄은 표에 없어 페이지마다 「지저분함은 이제 그만」/「혼란을 거부하세요」로 갈렸다.
+    #   정본은 형제 줄(拒绝凌乱)의 오너 정본을 그대로 쓴다. `bad`는 **실측된 문장 하나만**.
+    {"source": "拒绝混乱",
+     "good": ("지저분함은 이제 그만",),
+     "bad": ("혼란을 거부하세요",),
+     "ko": "지저분함은 이제 그만",
+     "note": "정리 카피 — 오너 D3-6 실측(2026-09-25), 拒绝凌乱과 같은 정본"},
     {"source": "轻松收纳",
      "good": ("간편 수납",),
      "bad": (),
@@ -243,7 +263,7 @@ def judge_en_ui(lines) -> dict:
     hits, touched = [], []
     for ln in (lines or []):
         src, tgt = str(ln.get("source") or "").strip(), str(ln.get("target") or "").strip()
-        if not src or not _EN_UI.match(src):
+        if not src or not is_en_ui(src):
             continue
         same = _norm(src) == _norm(tgt)
         hits.append({"source": src, "target": tgt, "kept": same})

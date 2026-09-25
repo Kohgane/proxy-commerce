@@ -151,15 +151,24 @@ def test_two_brands_round_trip():
 # ---------------------------------------------------------------------------
 
 def test_a_literal_idiom_is_corrected():
-    """★★ 실측된 오역 — `三合一`이 「삼합일」로 나왔다."""
-    rows = G.translate_lines([{"source": "三合一 충전 케이블"}], lambda s: "삼합일 충전 케이블")
-    assert "3-in-1" in rows[0]["render_text"]
-    assert "삼합일" not in rows[0]["render_text"]
+    """★★ 실측된 오역 — `三合一`이 「삼합일」로 나왔다.
+
+    D3-6 ①(오너 2026-09-25): 사후 치환만으로는 모자랐다 — 관용구는 **번역기에 아예 안 준다.**
+    자리표시자로 감싸 두고 정본(`3-in-1`)을 박는다. 번역기가 본 문장에 `三合一`이 없어야 한다.
+    """
+    seen = []
+    rows = G.translate_lines([{"source": "三合一 充电线"}],
+                             lambda s: seen.append(s) or s.replace("充电线", "충전 케이블"))
+    assert rows[0]["render_text"] == "3-in-1 충전 케이블"
+    assert seen and all("三合一" not in x for x in seen)
 
 
-def test_a_good_translation_is_left_alone():
-    rows = G.translate_lines([{"source": "三合一"}], lambda s: "3-in-1 충전기")
-    assert rows[0]["render_text"] == "3-in-1 충전기"
+def test_an_idiom_only_line_does_not_call_the_translator():
+    """관용구만 있는 줄은 번역할 말이 없다 — 번역기를 부르지 않고 정본을 쓴다."""
+    def _never(s):
+        raise AssertionError("번역기를 부르면 안 된다")
+    rows = G.translate_lines([{"source": "三合一"}], _never)
+    assert rows[0]["render_text"] == "3-in-1" and not rows[0]["translate_error"]
 
 
 def test_an_unknown_idiom_is_not_invented():
@@ -168,10 +177,15 @@ def test_an_unknown_idiom_is_not_invented():
     assert rows[0]["render_text"] == "오합일 케이블"
 
 
-def test_an_idiom_translated_by_meaning_is_not_overwritten():
-    """원문에 관용구가 있어도, 번역기가 뜻을 옮겼으면 **덧붙이지 않는다**(판정은 벤치가)."""
-    rows = G.translate_lines([{"source": "三合一"}], lambda s: "3가지 기능")
-    assert rows[0]["render_text"] == "3가지 기능"
+def test_the_same_idiom_renders_the_same_on_every_page():
+    """★★ D3-6 ① — `拒绝混乱`이 페이지마다 「지저분함은 이제 그만」/「혼란을 거부하세요」로 갈렸다.
+
+    (옛 계약 「번역기가 뜻을 옮겼으면 덮지 않는다」는 이 실측으로 **폐기**했다 — 뜻을 옮긴
+    결과가 페이지마다 달랐다. 이제 표에 있는 관용구는 번역기가 뭐라 하든 **한 문장**이다.)
+    """
+    outs = {G.translate_lines([{"source": "拒绝混乱"}], fn)[0]["render_text"]
+            for fn in (lambda s: "혼란을 거부하세요", lambda s: "지저분함은 이제 그만", lambda s: s)}
+    assert outs == {"지저분함은 이제 그만"}
 
 
 # ---------------------------------------------------------------------------
@@ -205,7 +219,8 @@ def test_the_summary_counts_only_what_it_measured():
     rows = G.translate_lines(
         [{"source": "三合一"}, {"source": "START"}, {"source": ""}], _echo)
     s = G.summarize(rows)
-    assert s == {"total": 3, "translated": 1, "kept": 1, "failed": 0, "glossary": 0}
+    # D3-6 ① — `三合一`은 이제 정본으로 받는다(용어집 1).
+    assert s == {"total": 3, "translated": 1, "kept": 1, "failed": 0, "glossary": 1}
 
 
 # ---------------------------------------------------------------------------

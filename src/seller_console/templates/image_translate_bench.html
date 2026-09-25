@@ -1,6 +1,17 @@
 {% extends "_base.html" %}
 {% block title %}이미지 번역 채점{% endblock %}
 {% block content %}
+{# D3-6 ⑥ — 결과 그림은 **작게(375px)** 보고, 누르면 원본을 새 탭에서 연다. 출력물은 그대로다.
+   주소 복사: 채점 재료 전달용. 벤치 라우트(`/seller/…`)는 **관리자 로그인이 필요**하다 — 공개 아님을 적는다. #}
+{% macro shot(url, alt, ref='') -%}
+<a href="{{ url }}" target="_blank" rel="noopener noreferrer" class="bench-shot-link">
+  <img src="{{ url }}" alt="{{ alt }}" class="img-fluid bench-shot"{% if ref %} referrerpolicy="{{ ref }}"{% endif %}></a>
+<div class="d-flex flex-wrap align-items-center gap-1 mt-1">
+  <button type="button" class="btn btn-ghost btn-sm py-0 px-2" data-copy-url="{{ url }}">
+    <i class="bi bi-link-45deg"></i> 주소 복사</button>
+  {% if url.startswith('/') %}<span class="console-kpi-label">관리자 전용 주소</span>{% endif %}
+</div>
+{%- endmacro %}
 {# D1: 공급사 품질을 **눈으로** 재는 자리. 스키마 비교로는 「배경 복원이 자연스러운가」를
    알 수 없다 — 그건 봐야 안다. 관리자 전용. #}
 <div class="container-fluid py-4">
@@ -10,6 +21,15 @@
     픽스처를 한 번에 돌려 <strong>원본과 번역본을 나란히</strong> 보고, 5축으로 점수를 매깁니다.
   </p>
   <hr class="pc-hairline mt-2 mb-4">
+  {# D3-6 — 「최신 런」 한 번에. 지금 보는 실행이 최신이 아니면 그렇게 말한다. #}
+  {% if runs %}
+  <div class="small mb-3">
+    <i class="bi bi-lightning-charge"></i> 최신 런:
+    <a href="?run={{ runs[0].run_id }}">{{ runs[0].run_id }}</a>
+    {% if run and run.run_id and run.run_id != runs[0].run_id %}
+    <span class="text-warning ms-1">(지금 보는 것은 {{ run.run_id }} — 최신 아님)</span>{% endif %}
+  </div>
+  {% endif %}
 
   {# 미연결은 **오류가 아니라 상태**다 — 무엇이 빠졌는지까지 말한다. #}
   {% if not vendor_status.configured %}
@@ -123,7 +143,7 @@
           {% set sugg = (r.pick or {}).get('pick', '') %}
           <div class="{{ colcls }}">
             <div class="console-kpi-label mb-1">원본</div>
-            <img src="{{ r.original }}" alt="원본" class="img-fluid" referrerpolicy="no-referrer">
+            {{ shot(r.original, '원본', 'no-referrer') }}
           </div>
           {% if r.d3 %}
           {# D3-3b: 공급사 렌더본과 **우리 3단계 렌더본**을 같은 줄에 세운다.
@@ -132,7 +152,7 @@
             <div class="console-kpi-label mb-1">D3·telea (우리)
               {% if sugg == 'd3' %}<span class="pc-badge pc-badge-on ms-1">제안</span>{% endif %}</div>
             {% if r.d3.url %}
-            <img src="{{ r.d3.url }}" alt="D3 렌더본" class="img-fluid">
+            {{ shot(r.d3.url, 'D3 렌더본') }}
             <div class="small text-muted mt-1">
               지움 {{ r.d3.erased }} · 그림 {{ r.d3.drawn }}
               {% if r.d3.skipped %} · <span class="text-warning">건너뜀 {{ r.d3.skipped|length }}</span>{% endif %}
@@ -191,7 +211,7 @@
             </div>
             {% endif %}
             {% if r.d3g.url %}
-            <img src="{{ r.d3g.url }}" alt="D3 gen_remove 렌더본" class="img-fluid">
+            {{ shot(r.d3g.url, 'D3 gen_remove 렌더본') }}
             <div class="small text-muted mt-1">
               지움 {{ r.d3g.erased }} · 그림 {{ r.d3g.drawn }}
               · Cloudinary
@@ -212,7 +232,7 @@
             <div class="console-kpi-label mb-1">번역본{% if r.d3 %} (공급사){% endif %}
               {% if sugg == 'tencent' and r.d3 %}<span class="pc-badge pc-badge-on ms-1">제안</span>{% endif %}</div>
             {% if r.url %}
-            <img src="{{ r.url }}" alt="번역본" class="img-fluid">
+            {{ shot(r.url, '번역본') }}
             {% else %}
             <div class="op-empty small">
               {{ r.error_message or '번역본 없음' }}
@@ -225,6 +245,24 @@
         {% if r.pick and r.pick.reason and r.d3 %}
         {# D3-5 ③ — 장마다 최선을 **제안**한다. 등록본은 아래 표에서 사람이 뒤집을 수 있다. #}
         <div class="small mt-2"><i class="bi bi-signpost-2"></i> 자동 제안: {{ r.pick.reason }}</div>
+        {% endif %}
+        {% if r.lines is defined %}
+        {# D3-6 ④ — 텐센트가 준 박스 **원문 그대로**. 여기 없는 글자는 공급사가 박스를 안 준 것이다. #}
+        <details class="mt-2 small">
+          <summary style="cursor:pointer">텐센트 박스 원문 {{ (r.lines or [])|length }}개
+            {% if r.unboxed %}<span class="pc-badge pc-badge-off ms-1">박스 밖 OCR {{ r.unboxed|length }}</span>{% endif %}</summary>
+          <ul class="mb-1 mt-1 ps-3">
+            {% for ln in (r.lines or []) %}
+            <li><code>{{ ln.source }}</code>
+              {% if ln.box %}<span class="text-muted">· x{{ ln.box.x }} y{{ ln.box.y }} {{ ln.box.w }}×{{ ln.box.h }}</span>{% endif %}</li>
+            {% endfor %}
+          </ul>
+          {% if r.unboxed %}
+          <div class="text-warning">전체 OCR 문에는 있는데 박스가 없는 조각: {{ r.unboxed|join(' · ') }}</div>
+          {% elif r.source_text is defined and not r.source_text %}
+          <div class="text-muted">이 실행은 전체 OCR 문을 저장하지 않았습니다(D3-6 이전 실행) — 박스 목록만으로 봅니다.</div>
+          {% endif %}
+        </details>
         {% endif %}
         {% if r.target_text %}
         <details class="mt-2 small">
@@ -558,6 +596,26 @@
   </div>
 </div>
 
+<script>
+// D3-6 — 결과 그림 주소 복사(채점 재료 전달용). 상대 주소는 절대 주소로 바꿔 복사한다.
+document.addEventListener('click', function (e) {
+  var b = e.target.closest('[data-copy-url]');
+  if (!b) return;
+  var u = new URL(b.getAttribute('data-copy-url'), location.href).href;
+  var done = function () { b.innerHTML = '<i class="bi bi-check-lg"></i> 복사됨'; };
+  // 클립보드를 못 쓰면 **주소를 옆에 펼친다**(선택해 복사). 복사됐다고 말하지 않는다.
+  var show = function () {
+    if (b.nextElementSibling && b.nextElementSibling.matches('input[data-copy-fallback]')) return;
+    var i = document.createElement('input');
+    i.type = 'text'; i.readOnly = true; i.value = u; i.setAttribute('data-copy-fallback', '1');
+    i.className = 'form-control form-control-sm w-auto flex-grow-1';
+    b.insertAdjacentElement('afterend', i); i.select();
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(u).then(done, show);
+  } else { show(); }
+});
+</script>
 <script>
 (function () {
   var runBtn = document.getElementById('benchRunBtn');

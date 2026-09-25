@@ -453,7 +453,7 @@ def test_db_stored_bench_images_use_the_bench_route_with_their_kind(monkeypatch)
 
     stored = []
 
-    def _st(item_id, idx, b64, *, seller_id="", kind="gallery"):
+    def _st(item_id, idx, b64, *, seller_id="", kind="gallery", label=None):
         stored.append(kind)
         return {"url": f"/seller/collect/image-ko/{item_id}/{idx}?kind={kind}",
                 "stored_by": "db", "note": ""}

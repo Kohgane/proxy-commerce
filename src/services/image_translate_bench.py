@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 import threading
 
@@ -154,8 +155,14 @@ def d3_judgeable(rows: list) -> list:
             for r in (rows or [])]
 
 
+def bench_label(run_id: str, fx: dict, idx: int, pipeline: str) -> dict:
+    """D3-6 ⓪ — 벤치 산출물의 **이름표**. 주소(public_id)와 context에 그대로 박힌다."""
+    return {"run_id": str(run_id or ""), "item_no": str(fx.get("item_no") or ""),
+            "page": str(idx), "pipeline": pipeline}
+
+
 def _run_d3_stage(fx: dict, idx: int, img: dict, result: dict, seller_id: str,
-                  tokens=(), gen_remove: bool = False) -> dict:
+                  tokens=(), gen_remove: bool = False, run_id: str = "") -> dict:
     """한 장의 D3 렌더 — 실패해도 **행 전체를 죽이지 않는다**(사유만 남긴다).
 
     D3-5: `gen_remove`면 결과에 `gen_remove` 키로 **두 번째 렌더**가 붙는다(`kind="d3g"`).
@@ -191,9 +198,11 @@ def _run_d3_stage(fx: dict, idx: int, img: dict, result: dict, seller_id: str,
         # 벤치 저장소에만 둔다 — `kind="d3"`/`"d3g"`. 등록 경로가 보는 gallery/detail은 안 건드린다.
         if not one.get("image_bytes"):
             return {"url": "", "stored_by": "", "note": ""}
+        # D3-6 ⓪ — 이름표는 **실제로 쓴 인페인터**로 붙인다(폴백이면 TELEA — 이름을 속이지 않는다).
+        pipe = "GEN_REMOVE" if one.get("inpainter") == "gen_remove" else "TELEA"
         got = store.store_translated(
             item_id, idx, base64.b64encode(one["image_bytes"]).decode("ascii"),
-            seller_id=seller_id, kind=kind)
+            seller_id=seller_id, kind=kind, label=bench_label(run_id, fx, idx, pipe))
         if got.get("stored_by") == "db":
             # ★ D3-5에서 찾은 구멍 — DB에 두면 저장소가 **셀러 경로**(`/collect/image-ko/…?kind=d3`)를
             #   준다. 그런데 그 라우트는 `detail`이 아닌 kind를 전부 **gallery로** 읽는다 —
@@ -255,7 +264,8 @@ def _run(run_id: str, seller_id: str, planned, mode: int = 0, title: str = "",
         for fx, i, img in planned:
             r = tc.translate_image(url=img["url"], mode=mode)
             e = store.build_entry(i, r, item_id=str(fx.get("item_id") or fx["item_no"]),
-                                  seller_id=seller_id)
+                                  seller_id=seller_id,
+                                  label=bench_label(run_id, fx, i, "TENCENT"))
             entries.append(e)
             lines = r.get("lines") or []
             row = {"item_no": fx["item_no"], "kind": img.get("kind", ""),
@@ -269,14 +279,26 @@ def _run(run_id: str, seller_id: str, planned, mode: int = 0, title: str = "",
                    **{k: e.get(k) for k in ("status", "url", "stored_by", "ms", "target_text",
                                             "warn", "error_class", "error_code",
                                             "error_message", "hint", "store_note")}}
+            # D3-6 ④ — 「박스가 있었는데 버렸나, 애초에 없었나」를 **응답 원문으로** 가른다.
+            #   파싱은 TransDetails를 하나도 거르지 않는다 → `lines`가 곧 응답의 박스 전부다.
+            #   전체 OCR 문(`SourceText`)엔 있는데 어느 박스에도 없는 조각 = **텐센트가 박스를 안 준 것**.
+            row["source_text"] = str(r.get("source_text") or "")
+            row["unboxed"] = unboxed_fragments(row["source_text"], lines)
+            logger.info("[벤치·텐센트] run=%s item=%s p%d 박스 %d개 · 박스 밖 OCR %s · 원문=%s",
+                        run_id, fx["item_no"], i, len(lines), row["unboxed"] or "없음",
+                        json.dumps([{"s": ln.get("source"), "b": ln.get("box")} for ln in lines],
+                                   ensure_ascii=False)[:3000])
             # D3-5 ② — 텐센트의 F는 **잴 수 없다**(지운 중간본이 없다). 0이 아니라 측정 불가.
             row["axes"]["F"] = {"score": None, "reason": axes.F_UNMEASURABLE_TENCENT}
             if render_d3:
-                d3 = _run_d3_stage(fx, i, img, r, seller_id, tokens, gen_remove=gen_remove)
+                d3 = _run_d3_stage(fx, i, img, r, seller_id, tokens, gen_remove=gen_remove,
+                                   run_id=run_id)
                 row["d3g"] = d3.pop("gen_remove", {}) or {}
                 row["d3"] = d3
             # D3-5 ③ — 장마다 **최선**을 제안한다(사람이 뒤집을 수 있다).
             row["pick"] = axes.pick_best(pick_candidates(row))
+            if render_d3:
+                logger.info("[벤치·F] %s", f_log_line(run_id, fx["item_no"], i, row))
             with _LOCK:
                 _STATE["results"].append(row)
                 snapshot = list(_STATE["results"])
@@ -294,6 +316,37 @@ def _run(run_id: str, seller_id: str, planned, mode: int = 0, title: str = "",
             store.record_usage(seller_id, entries)
         ok = sum(1 for e in entries if e.get("status") == "done")
         logger.info("[벤치] %s — %d장 중 %d장 성공", run_id, len(entries), ok)
+
+
+def unboxed_fragments(source_text: str, lines: list) -> list:
+    """전체 OCR 문의 조각 중 **어느 박스 원문에도 없는 것** (D3-6 ④).
+
+    조각 = 줄바꿈·공백으로 나눈 덩어리. 박스 원문들을 공백 없이 이어 붙인 문자열에
+    안 들어 있으면 「박스 밖」이다. 응답에 `SourceText`가 없으면 빈 목록(판정 불가를 0으로 쓰지 않는다).
+    """
+    joined = "".join("".join(str(ln.get("source") or "").split()) for ln in (lines or []))
+    out = []
+    for frag in str(source_text or "").split():
+        if frag and frag not in joined and frag not in out:
+            out.append(frag)
+    return out
+
+
+def _f_of(col: dict) -> str:
+    f = ((col or {}).get("axes") or {}).get("F") or {}
+    sc = f.get("score")
+    return "측정불가" if sc is None else str(sc)
+
+
+def f_log_line(run_id: str, item_no, idx: int, row: dict) -> str:
+    """장마다 F와 선택 — **왜 GEN_REMOVE가 안 뽑혔는지** 로그 한 줄로 (D3-6 ⑤)."""
+    d3, g = row.get("d3") or {}, row.get("d3g") or {}
+    pick = row.get("pick") or {}
+    return (f"run={run_id} item={item_no} p{idx} "
+            f"TELEA F={_f_of(d3)} · GEN_REMOVE F={_f_of(g)}"
+            f"(인페인터={g.get('inpainter') or '-'}"
+            f"{' 폴백: ' + str(g.get('inpaint_fallback')) if g.get('inpaint_fallback') else ''}) · "
+            f"선택={pick.get('pick') or '-'} · 사유={pick.get('reason') or '-'}")
 
 
 def pick_candidates(row: dict) -> dict:
