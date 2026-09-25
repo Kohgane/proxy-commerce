@@ -46,9 +46,79 @@ AXES = (
     ("C", "박스 맞춤", "human", "번역문이 원 배경 도형 밖으로 넘치면 0"),
     ("D", "영문 UI 보존", "auto", "제품 화면 속 영문을 건드리면 0"),
     ("E", "타이포 일치", "human", "폰트 굵기·정렬이 원본과 다르면 0"),
+    # D3-5 ② — 오너 브리프 2026-09-25. 판정기는 `image_text_render.background_score`.
+    ("F", "배경 복원", "auto", "지운 자리와 주변 16px 링의 색·결 차이가 임계 이하면 1"),
 )
 AUTO_AXES = tuple(k for k, _l, kind, _h in AXES if kind == "auto")
 HUMAN_AXES = tuple(k for k, _l, kind, _h in AXES if kind == "human")
+
+#: F축은 **지운 결과**(글자를 얹기 전)에서 잰다. 텐센트는 그 중간본을 주지 않는다.
+F_UNMEASURABLE_TENCENT = "텐센트는 지운 중간본을 주지 않습니다 — F는 D3끼리만 잽니다"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# D3-5 ③ 장별 자동 선택 — 「전부 D3」가 아니라 **장마다 최선**
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# 후보: 텐센트 렌더 · D3(telea) · D3(gen_remove). 자동축(A·B·D·F) 합이 가장 높은 것을 제안한다.
+#
+# ## ★ 합은 **모든 후보가 잰 축만** 더한다
+#
+# 텐센트는 F를 잴 수 없다(위). 잰 축만 더하면 D3는 4축, 텐센트는 3축 — **D3가 공짜로 1점**을
+# 먹는다. 그건 비교가 아니라 편들기다. 그래서 **공통으로 잰 축**만 합한다.
+#
+# ## 동점일 때
+#
+# 1. **F**: 통과 > 못 잼 > 실패 — 복원을 잰 쪽이 좋으면 이기고, 나쁘면 진다.
+#    (「못 잼」을 0점이나 1점으로 바꾸지 않는다 — 순서로만 쓴다.)
+# 2. **돈**: 텐센트(이미 냈다) → D3·telea(공짜) → D3·gen_remove(크레딧) 순으로 앞선다.
+#
+# 사람이 뒤집을 수 있다 — 제안은 제안이다(`pick:<장>` 칸).
+CANDIDATES = (
+    ("tencent", "텐센트 렌더"),
+    ("d3", "D3·telea"),
+    ("d3g", "D3·gen_remove"),
+)
+_COST_RANK = {"tencent": 0, "d3": 1, "d3g": 2}
+_F_RANK = {1: 2, None: 1, 0: 0}
+
+
+def pick_best(cands: dict) -> dict:
+    """`{name: axes_dict}` → `{pick, scores, common, reason}`.
+
+    `cands`에는 **이미지를 실제로 낸** 후보만 넣는다(실패한 렌더는 후보가 아니다).
+    """
+    names = [n for n, _l in CANDIDATES if n in (cands or {})]
+    if not names:
+        return {"pick": "", "scores": {}, "common": [], "reason": "고를 후보가 없습니다"}
+    common = [k for k in AUTO_AXES
+              if all(((cands[n] or {}).get(k) or {}).get("score") in (0, 1) for n in names)]
+    scores = {n: sum(int(cands[n][k]["score"]) for k in common) for n in names}
+
+    def _f(n):
+        v = ((cands[n] or {}).get("F") or {}).get("score")
+        return v if v in (0, 1) else None
+
+    ranked = sorted(names, key=lambda n: (-scores[n], -_F_RANK[_f(n)], _COST_RANK[n]))
+    best = ranked[0]
+    label = dict(CANDIDATES)[best]
+    if len(names) == 1:
+        reason = f"후보가 하나뿐입니다 — {label}"
+    else:
+        top = [n for n in names if scores[n] == scores[best]]
+        if common:
+            reason = f"공통 자동축({'·'.join(common)}) 합 {scores[best]}"
+            if len(top) > 1:
+                reason += " 동점"
+        else:
+            # ★ 흔한 경우다 — 브랜드·관용구·영문 UI가 없는 장은 A·B·D가 전부 측정 불가다.
+            #   그땐 **F와 돈만으로** 고른 것이고, 화면이 그렇게 말해야 한다(합 0을 점수처럼 보이지 않게).
+            reason = "모든 후보가 함께 잰 자동축이 없습니다"
+        if len(top) > 1:
+            fs = [_f(n) for n in top]
+            reason += " → F로 갈랐습니다" if len(set(fs)) > 1 else " → 돈이 덜 드는 쪽"
+        reason += f" — {label}"
+    return {"pick": best, "scores": scores, "common": common, "reason": reason}
 
 # 상품명에서 브랜드로 볼 토큰 — **영문 대문자** 2자 이상.
 _BRAND_TOKEN = re.compile(r"\b[A-Z][A-Z0-9]{1,}\b")

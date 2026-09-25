@@ -376,16 +376,43 @@ def test_a_glyph_our_font_lacks_is_not_used_as_the_reference():
 
     없는 글자는 **두부(□)**로 그려지는데 `getbbox()`는 멀쩡한 숫자를 돌려준다.
     그대로 기준선으로 쓰면 **글자가 아니라 네모를 재게 된다.**
-    """
-    from src.services.image_render_font import supported
 
+    D3-5 ④로 원문 기준선은 **SC 서브셋(GB2312)**이 그린다 — 그 다섯도 이제 잰다.
+    그래도 **두 폰트 모두에 없는 글자**(확장 한자 등)는 여전히 두부이고, 그땐 찍지 않는다.
+    """
+    from src.services.image_render_font import supported, supported_source
+
+    # 한국어 렌더 폰트의 결손은 **그대로** — 그 폰트로 한자를 그리지 않으니 괜찮다.
     assert supported("拒绝凌乱") == "拒凌乱"
     assert supported("간편 수납") == "간편 수납"       # 한글은 전부 있다
-    assert supported("绝线电") == ""                   # 하나도 못 그린다
+    assert supported("绝线电") == ""
+    # 원문 기준선 폰트는 다섯을 전부 그린다(D3-5 ④).
+    assert supported_source("绝轻纳线电") == "绝轻纳线电"
 
-    got = R.sample_typography(_line_image(weight="bold", text="拒凌乱"), BOX, "绝线电")
+    got = R.sample_typography(_line_image(weight="bold", text="拒凌乱"), BOX, "拒绝凌乱")
+    assert "폰트에 없어" not in got["reason"], got
+
+    # 두 폰트 모두에 없는 글자(CJK 확장 B·GB2312 밖) — **여전히 찍지 않는다.**
+    got = R.sample_typography(_line_image(weight="bold", text="拒凌乱"), BOX, "\U00020000龘")
     assert got["weight"] == "regular"
-    assert "우리 폰트에 없어" in got["reason"], got
+    assert "폰트에 없어" in got["reason"], got
+
+
+def test_the_source_font_measures_the_five_it_used_to_miss():
+    """★★ D3-5 ④의 판정 지점 — **예전엔 못 재던 글자로** 굵기를 읽어 낸다.
+
+    원본 이미지에 `绝轻纳线电`이 굵게 박혀 있으면, 기준선도 같은 글자로 그려야 맞게 잰다.
+    """
+    from src.services.image_render_font import load_source
+    from PIL import Image as _I, ImageDraw
+
+    for weight in ("regular", "bold"):
+        img = _I.new("RGB", (400, 120), (240, 238, 230))
+        ImageDraw.Draw(img).text((40, 30), "绝轻纳线电", font=load_source(40, weight),
+                                 fill=(20, 20, 20))
+        buf = io.BytesIO(); img.save(buf, format="JPEG", quality=95)
+        got = R.sample_typography(buf.getvalue(), BOX, "绝轻纳线电")
+        assert got["weight"] == weight, (weight, got)
 
 
 def test_without_the_source_text_it_says_so_instead_of_guessing():

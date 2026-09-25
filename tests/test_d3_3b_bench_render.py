@@ -183,8 +183,8 @@ def test_the_d3_cells_are_namespaced():
 
     consts = string_constants_in(views.image_translate_bench_score)
     assert "d3:" in consts, consts
-    # D3-4 ⑤ — 자동 축은 **자동이 정본**이므로 사람 칸으로 받지 않는다.
-    assert AUTO_AXES == ("A", "B", "D")
+    # D3-4 ⑤ — 자동 축은 **자동이 정본**이므로 사람 칸으로 받지 않는다. (D3-5 ②로 F 추가)
+    assert AUTO_AXES == ("A", "B", "D", "F")
 
 
 def test_the_grid_keeps_the_two_scores_apart():
@@ -311,6 +311,58 @@ def test_three_images_stand_side_by_side_in_a_real_browser():
             "() => Array.from(document.querySelectorAll('[class*=col-md-4]')).length")
         assert cols == 3, cols
         browser.close()
+
+
+def test_four_images_stand_side_by_side_with_gen_remove():
+    """★★ D3-5 ① — gen_remove가 붙으면 **네 장**이 한 줄에 선다(원본·telea·gen_remove·공급사).
+
+    같은 방식으로 **템플릿 원문을 잘라** JS까지 돌려 센다.
+    """
+    pw = pytest.importorskip("playwright.sync_api")
+    html = TPL.read_text(encoding="utf-8")
+    start = html.index('<div class="row g-2">')
+    end = html.index('alt="번역본"', start)
+    end = html.index("\n", end)
+    block = html[start:end] + "\n{% endif %}</div></div>"
+
+    from jinja2 import Environment
+    out = Environment().from_string(block).render(
+        r={"original": "o.jpg", "url": "t.jpg",
+           "d3": {"url": "d.jpg", "erased": 1, "drawn": 1, "skipped": []},
+           "d3g": {"url": "g.jpg", "erased": 1, "drawn": 1, "inpainter": "gen_remove",
+                   "cloud_tx": 51, "cloud_credits": 0.051,
+                   "axes": {"F": {"score": 1, "reason": "지운 자리가 주변과 닮았습니다"}}},
+           "pick": {"pick": "d3g"}})
+
+    with pw.sync_playwright() as p:
+        browser = p.chromium.launch(**_chrome_opts())
+        page = browser.new_page()
+        page.set_content(out)
+        assert page.locator("img").count() == 4, page.content()[:400]
+        cols = page.evaluate(
+            "() => Array.from(document.querySelectorAll('[class*=col-md-3]')).length")
+        assert cols == 4, cols
+        body = page.inner_text("body")
+        assert "51 tx" in body and "0.051 크레딧" in body         # 오너: 원가를 적어라
+        assert "제안" in body                                        # 장별 제안 표지
+        browser.close()
+
+
+def test_a_fallback_is_named_telea_on_the_gen_remove_column():
+    """★★★ 폴백을 숨기면 gen_remove 칸에 **telea 그림이 gen_remove 이름으로** 올라간다."""
+    from jinja2 import Environment
+    html = TPL.read_text(encoding="utf-8")
+    start = html.index('<div class="row g-2">')
+    end = html.index('alt="번역본"', start)
+    end = html.index("\n", end)
+    block = html[start:end] + "\n{% endif %}</div></div>"
+    out = Environment().from_string(block).render(
+        r={"original": "o.jpg", "url": "t.jpg",
+           "d3": {"url": "d.jpg", "erased": 1, "drawn": 1, "skipped": []},
+           "d3g": {"url": "g.jpg", "erased": 1, "drawn": 1, "inpainter": "telea",
+                   "inpaint_fallback": "Cloudinary 자격 미설정", "cloud_tx": 0,
+                   "cloud_credits": 0.0}})
+    assert "telea로 폴백" in out and "Cloudinary 자격 미설정" in out
 
 
 def test_the_run_button_sends_the_render_flag():
