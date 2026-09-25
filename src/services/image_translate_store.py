@@ -35,7 +35,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ def _now() -> str:
 # 바이트 두기
 # ---------------------------------------------------------------------------
 
-def _store_via_cdn(raw: bytes) -> tuple:
+def _store_via_cdn(raw: bytes, label: Optional[Dict[str, str]] = None) -> tuple:
     """`(url, error)` — CDN에 올린 결과. 실패면 url이 비고 **사유가 남는다**.
 
     F31: 예전엔 URL 문자열만 돌려줘서, 번역 시점 업로드가 실패해도 **왜인지 아무도 몰랐고**
@@ -62,13 +62,32 @@ def _store_via_cdn(raw: bytes) -> tuple:
     except Exception as exc:
         return "", f"이미지 파이프라인 미가용: {type(exc).__name__}"
     try:
-        res = upload_bytes(raw)
+        if label:
+            res = upload_bytes(raw, folder="bench", public_id=bench_public_id(label),
+                               context=label)
+        else:
+            res = upload_bytes(raw)
     except Exception as exc:
         logger.warning("[이미지번역] CDN 업로드 실패: %s", exc)
         return "", f"{type(exc).__name__}: {str(exc)[:160]}"
     if res.get("ok") and res.get("secure_url"):
         return str(res["secure_url"]), ""
     return "", str(res.get("error") or "")
+
+
+#: 벤치 열 이름 — **주소에 그대로** 박힌다(D3-6 ⓪). 오너 표기(TELEA/GEN_REMOVE)에 공급사 열을 더했다.
+BENCH_PIPELINES = ("TENCENT", "TELEA", "GEN_REMOVE")
+
+
+def bench_public_id(label: Dict[str, str]) -> str:
+    """`{run_id, item_no, page, pipeline}` → Cloudinary public_id(폴더 `…/bench` 아래).
+
+    예: `bench-20260925-101500-m0-d3g_617129397971_p3_GEN_REMOVE`
+    Cloudinary public_id에 쓸 수 있는 글자(영숫자·`-`·`_`)만 남긴다.
+    """
+    parts = [label.get("run_id", ""), label.get("item_no", ""),
+             f"p{label.get('page', '')}", label.get("pipeline", "")]
+    return "_".join(re.sub(r"[^A-Za-z0-9_-]", "-", str(p)) for p in parts if str(p))
 
 
 def storage_backend() -> str:
@@ -92,8 +111,12 @@ def storage_backend() -> str:
 
 
 def store_translated(item_id: str, idx: int, image_b64: str, *,
-                     seller_id: str = "", kind: str = "gallery") -> dict:
-    """번역 이미지를 두고 `{url, stored_by, bytes}`. 못 두면 `stored_by=""`."""
+                     seller_id: str = "", kind: str = "gallery",
+                     label: Optional[Dict[str, str]] = None) -> dict:
+    """번역 이미지를 두고 `{url, stored_by, bytes}`. 못 두면 `stored_by=""`.
+
+    `label`(D3-6 ⓪)은 **벤치만** 준다 — 있으면 public_id·context에 실행·장·파이프라인이 박힌다.
+    """
     try:
         raw = base64.b64decode(image_b64 or "", validate=False)
     except Exception:
@@ -101,7 +124,8 @@ def store_translated(item_id: str, idx: int, image_b64: str, *,
     if not raw:
         return {"url": "", "stored_by": "", "bytes": 0, "note": "빈 이미지"}
 
-    url, cdn_err = _store_via_cdn(raw)
+    # 셀러 경로는 예전 그대로(인자 하나) — 이름표는 **벤치만** 준다(D3-6 ⓪).
+    url, cdn_err = _store_via_cdn(raw, label) if label else _store_via_cdn(raw)
     if url:
         return {"url": url, "stored_by": "cdn", "bytes": len(raw), "note": ""}
     # CDN이 안 됐으면 DB로 간다(그게 맞다). 다만 **왜 안 됐는지는 들고 간다** —
@@ -148,7 +172,7 @@ DENSE_TEXT_LINES = 8
 
 
 def build_entry(idx: int, result: dict, *, item_id: str = "", seller_id: str = "",
-                kind: str = "gallery") -> dict:
+                kind: str = "gallery", label: Optional[Dict[str, str]] = None) -> dict:
     """공급사 결과 1장 → `images_ko` 한 줄. **이 모양을 만드는 자리는 여기 하나다.**
 
     `status`: `done`(번역본이 실제로 놓였다) / `failed`(사유 있음) / `skipped`(할 게 없었다)
@@ -171,7 +195,7 @@ def build_entry(idx: int, result: dict, *, item_id: str = "", seller_id: str = "
 
     target_text = str(result.get("target_text") or "")
     placed = store_translated(item_id, int(idx), result.get("image_b64") or "",
-                              seller_id=seller_id, kind=kind)
+                              seller_id=seller_id, kind=kind, label=label)
     n_lines = len(result.get("lines") or [])
     entry.update({
         "status": "done" if placed.get("url") else "failed",

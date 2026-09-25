@@ -34,7 +34,8 @@ import logging
 import re
 from typing import Callable, Dict, List, Optional
 
-from src.services.image_bench_axes import IDIOMS, _BRAND_TOKEN, _EN_UI, _NOT_BRAND  # noqa: F401
+from src.services.image_bench_axes import (IDIOMS, _BRAND_TOKEN, _EN_UI, _NOT_BRAND,  # noqa: F401
+                                            is_en_ui)
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +52,8 @@ def is_untranslatable(source: str) -> bool:
     제품 화면 속 UI(시계의 `12:30`·`START`)가 여기 걸린다. 번역하면 **없던 한국어가
     제품 사진에 생긴다** — 그건 상품을 잘못 설명하는 것이다.
     """
-    s = str(source or "").strip()
-    return bool(s) and bool(_EN_UI.match(s))
+    # D3-6 ② — 판정기(D축)와 **같은 함수**를 쓴다(전각 `Ａｌａｒｍ` 도 영문 UI다).
+    return is_en_ui(source)
 
 
 def brand_tokens_in(source: str) -> List[str]:
@@ -154,6 +155,113 @@ def glossary_line(source: str) -> str:
     return LINE_GLOSSARY.get(_norm_line(source), "")
 
 
+#: 관용구의 **정본 한국어** — `ko`가 있으면 그것, 없으면 `good`의 첫 형태(`三合一` → `3-in-1`).
+IDIOM_CANON = [(i["source"], i.get("ko") or i["good"][0]) for i in IDIOMS if i.get("good")]
+
+
+def protect_idioms(masked: str, tokens: List[str]) -> tuple:
+    """줄 **안의** 관용구를 자리표시자로 바꾼다 — `(masked, tokens)` (D3-6 ①).
+
+    ## 왜 (오너 벤치 실측 2026-09-25)
+
+    용어집은 **줄 전체가 같을 때만** 먹었다(`glossary_line`). `三合一`이 다른 글자와 한 줄에
+    붙어 오면 통째로 번역기에 가서 「삼합일」이 됐고, `拒绝混乱`은 페이지마다 다른 말이 됐다.
+    관용구는 **번역기에 주지 않는다** — 브랜드와 같은 자리표시자로 감싸 두고, 돌아올 때
+    정본을 박는다. 번역기가 자리표시자를 버리면 `restore`가 실패로 잡는다(원문 유지).
+    """
+    out, toks = str(masked or ""), list(tokens or [])
+    for src, canon in IDIOM_CANON:
+        if src in out:
+            out = out.replace(src, _PH.format(len(toks)))
+            toks.append(canon)
+    return out, toks
+
+
+def _only_placeholders(masked: str) -> bool:
+    """번역할 글자가 남지 않았다(자리표시자·공백·기호뿐) — 번역기를 부를 이유가 없다."""
+    rest = _PH_RE.sub("", str(masked or ""))
+    return not re.search(r"[^\W\d_]", rest)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# D3-6 ①-b — 라인명 삭제(`line_name_drop`, 오너 결정 2026-09-25)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# 브랜드 워드마크(`SPORTLINK`) 옆에 붙은 **2~4자 한자**(`随行盾`)는 제품 **라인명**이다.
+# 번역하면 「수행방패」 같은 없는 상품명이 생긴다. 오너 결정: **번역 금지, 지우고 아무것도 안 쓴다.**
+# 브랜드 로고는 그대로 둔다(영문 UI 규칙이 이미 안 건드린다).
+LINE_NAME_RULE = "line_name_drop"
+_LINE_NAME = re.compile(r"^[\u4e00-\u9fff]{2,4}$")
+
+
+def _rect(box) -> Optional[tuple]:
+    try:
+        x, y = float(box.get("x") or 0), float(box.get("y") or 0)
+        w, h = float(box.get("w") or 0), float(box.get("h") or 0)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return (x, y, w, h) if w > 0 and h > 0 else None
+
+
+def boxes_adjacent(a, b) -> bool:
+    """두 박스가 **붙어 있나** — 같은 줄(세로가 반 이상 겹치고 가로 틈이 글자 높이 2배 이내)
+    또는 위아래(가로가 30% 이상 겹치고 세로 틈이 글자 높이 1.5배 이내).
+
+    ⚠️ 비율은 오너 브리프의 「같은 행/인접 박스」를 옮긴 것이다 — 실물 3장으로 교정 전이다.
+    """
+    ra, rb = _rect(a or {}), _rect(b or {})
+    if not ra or not rb:
+        return False
+    ax, ay, aw, ah = ra
+    bx, by, bw, bh = rb
+    hmax = max(ah, bh)
+    v_overlap = min(ay + ah, by + bh) - max(ay, by)
+    h_overlap = min(ax + aw, bx + bw) - max(ax, bx)
+    if v_overlap >= 0.5 * min(ah, bh):
+        h_gap = max(bx - (ax + aw), ax - (bx + bw), 0)
+        return h_gap <= 2.0 * hmax
+    if h_overlap >= 0.3 * min(aw, bw):
+        v_gap = max(by - (ay + ah), ay - (by + bh), 0)
+        return v_gap <= 1.5 * hmax
+    return False
+
+
+def _is_brand_only(source: str) -> bool:
+    return is_en_ui(source) and bool(brand_tokens_in(source))
+
+
+def line_name_drops(lines: List[Dict]) -> Dict[int, str]:
+    """`{줄 번호: 사유}` — 라인명으로 보고 **지우기만** 할 줄."""
+    brands = [ln.get("box") for ln in lines or [] if _is_brand_only(str(ln.get("source") or ""))]
+    out = {}
+    if not brands:
+        return out
+    for i, ln in enumerate(lines or []):
+        src = re.sub(r"\s+", "", str(ln.get("source") or ""))
+        if _LINE_NAME.match(src) and any(boxes_adjacent(ln.get("box"), b) for b in brands):
+            out[i] = f"{LINE_NAME_RULE}: 브랜드 옆 라인명 {src} — 번역하지 않고 지운다(오너 결정)"
+    return out
+
+
+def same_box_line_name(source: str) -> str:
+    """브랜드와 라인명이 **한 박스**에 온 줄(`SPORTLINK 随行盾`)이면 사유, 아니면 빈 문자열.
+
+    한 박스 안에서 라인명만 떼어 지우려면 글자 위치를 **추정**해야 한다 — 그건 지어내는 것이다.
+    그렇다고 번역하면 오너 결정(「번역 금지」)을 어긴다. 그래서 **원문 그대로 둔다**(안 건드림).
+    """
+    toks = brand_tokens_in(source)
+    if not toks:
+        return ""
+    rest = str(source or "")
+    for t in toks:
+        rest = re.sub(r"\b" + re.escape(t) + r"\b", "", rest)
+    rest = re.sub(r"\s+", "", rest)
+    if _LINE_NAME.match(rest):
+        return (f"{LINE_NAME_RULE}: 브랜드와 한 박스인 라인명 {rest} — 떼어 지울 수 없어 "
+                "원문 그대로 둔다(번역 금지)")
+    return ""
+
+
 def plan_line(source: str) -> Dict:
     """이 줄을 어떻게 다룰지 — `{action, reason, tokens}`. 번역 전에 정해진다."""
     s = str(source or "").strip()
@@ -178,7 +286,8 @@ def translate_lines(lines: List[Dict], translate_fn: Callable[[str], str],
     계약이 라이브 호출 없이 규칙만 잴 수 있어야 한다.
     """
     out = []
-    for ln in lines or []:
+    drops = line_name_drops(lines or [])
+    for n, ln in enumerate(lines or []):
         row = dict(ln)
         src = str(row.get("source") or "")
         plan = plan_line(src)
@@ -186,6 +295,17 @@ def translate_lines(lines: List[Dict], translate_fn: Callable[[str], str],
         row["rule_reason"] = plan["reason"]
         row["protected"] = plan["tokens"]
         row["translate_error"] = ""
+
+        if n in drops:
+            # ①-b — **지우고 아무것도 안 쓴다.** 3단계가 `action == "drop"`을 지우기만 한다.
+            row.update(action="drop", rule_reason=drops[n], render_text="", rule=LINE_NAME_RULE)
+            out.append(row)
+            continue
+
+        same = same_box_line_name(src) if plan["action"] == "translate" else ""
+        if same:
+            row.update(action="keep", rule_reason=same, rule=LINE_NAME_RULE)
+            plan["action"] = "keep"
 
         if plan["action"] != "translate":
             row["render_text"] = src
@@ -202,6 +322,16 @@ def translate_lines(lines: List[Dict], translate_fn: Callable[[str], str],
             continue
 
         masked, toks = protect(src)
+        # D3-6 ① — 줄 **안의** 관용구도 번역기에 주지 않는다(정본을 박는다).
+        masked, toks = protect_idioms(masked, toks)
+        if toks[len(plan["tokens"]):]:
+            row["glossary_hit"] = src
+        if _only_placeholders(masked):
+            # 번역할 말이 남지 않았다 — 부르지 않는다(브랜드·정본만으로 된 줄).
+            text, ok = restore(masked, toks)
+            row["render_text"] = text
+            out.append(row)
+            continue
         try:
             got = translate_fn(masked)
         except Exception as exc:
