@@ -341,3 +341,15 @@ def test_the_collect_page_never_labels_an_unknown_currency_usd(monkeypatch):
         html = c.get("/seller/collect").get_data(as_text=True)
     js = html[html.index("function renderPreview("):]
     assert "|| 'USD'" not in js and "통화 미상" in js
+
+
+def test_importing_the_extension_api_does_not_load_collector_adapters():
+    """★ 순서 오염 봉인 — `extension_api`를 불러오는 것만으로 수집기 어댑터가 로드되면, 어댑터가
+    `ADAPTER_DRY_RUN`을 **import 시점에** 읽어 뒤 테스트의 설정이 안 먹는다(실측: 전체 스위트에서만 4건 실패).
+    새 프로세스에서 **실제로 불러 보고** 잰다."""
+    import subprocess
+    import sys
+    code = ("import sys; import src.api.extension_api; "
+            "print(any(m.startswith('src.collectors.adapters') for m in sys.modules))")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    assert out.stdout.strip().splitlines()[-1] == "False", out.stdout[-400:]

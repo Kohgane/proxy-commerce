@@ -25,7 +25,6 @@ from typing import Optional
 from flask import Blueprint, jsonify, request
 
 from src.auth.account_label import resolve_account as _resolve_account
-from src.collectors.collect_status import clean_page_diag
 
 logger = logging.getLogger(__name__)
 
@@ -735,6 +734,13 @@ def collect_enrich_blocked():
                     "max_attempts": ENRICH_MAX_ATTEMPTS, "state": state})
 
 
+def _clean_page_diag(raw):
+    """F49-T — 지연 import(이 파일 관례). 모듈 최상단에서 `src.collectors`를 불러오면 테스트 수집 단계에
+    수집기 어댑터가 먼저 로드돼 `ADAPTER_DRY_RUN`을 **import 시점에** 읽어 버린다(실측: 순서 오염 4건)."""
+    from src.collectors.collect_status import clean_page_diag
+    return clean_page_diag(raw)
+
+
 def _awaiting_enrich(row) -> bool:
     """이 행이 **채우기를 기다리는 초안**인가 — 보강 축이 있고 아직 `done`이 아니다."""
     import json as _json
@@ -806,7 +812,7 @@ def collect_enrich():
     # F49-T: 페이지 진단은 **측정값**이라 fill-only가 아니라 **최신으로 덮는다**(이번에 연 페이지의 상태).
     #   이게 없으면 초안을 채운 뒤에도 드로어·수집 화면이 「진단이 없습니다」라고 말한다.
     if isinstance(data.get("page_diag"), dict):
-        extra["page_diag"] = clean_page_diag(data.get("page_diag"))
+        extra["page_diag"] = _clean_page_diag(data.get("page_diag"))
     # 옵션·리뷰: 리스트가 오고 기존이 비었으면 채움.
     for k in ("options", "reviews"):
         v = data.get(k)
@@ -1250,7 +1256,7 @@ def collect_from_extension():
         "tier1_source": payload.get("tier1_source", ""),      # v55: 자가발견 채택 API URL
         "tier1_diag": payload.get("tier1_diag") or {},        # v56 STEP4: Tier1 최종 판정(used·원인) 저장
         # F49-T: 확장이 잰 **페이지 상태**(벽·내비·lazy·셀렉터 적중·오류) — 필드별 실패 사유의 유일한 근거.
-        "page_diag": clean_page_diag(payload.get("page_diag")),
+        "page_diag": _clean_page_diag(payload.get("page_diag")),
         "mode": _resolve_collect_mode(payload),   # v81 'core'(북마클릿) / v86-F 'simple'(목록 타일) / 'full'
     }
     _field_status = {}
