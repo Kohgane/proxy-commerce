@@ -134,15 +134,23 @@ def probe(text: str) -> Dict:
     covered = {r["name"] for r in rows if r["name"]
                and r["verdict"] in (VERDICT_HIT, VERDICT_CAND, VERDICT_INFO)}
     untested = [n for n, _k in TARGETS if n not in {r["name"] for r in rows}]
+    # ★★★ 「판별됐다」와 「맞는 걸 판별했다」는 **다른 사실**이다.
+    #   우리 코드표가 없으면 공급사가 무언가를 내놨다는 것만 알 뿐, 그게 그 택배사인지는
+    #   확인 못 한다. 그걸 `ready`로 묶으면 **부분 통과를 통과로 읽는 것**이다.
+    unverified = sorted({r["name"] for r in rows
+                         if r["name"] and r["verdict"] == VERDICT_INFO})
     if not measured:
         verdict = "unknown"
     elif misses or untested:
         verdict = "gap"
+    elif unverified:
+        verdict = "unverified"
     else:
         verdict = "ready"
     return {
         "ok": True, "rows": rows, "verdict": verdict,
         "misses": sorted(set(misses)), "untested": untested,
+        "unverified": unverified,
         "covered": sorted(covered), "measured": measured,
         "targets": [n for n, _k in TARGETS],
         "quota": after if after.get("ok") else before,
@@ -182,7 +190,13 @@ def verdict_sentence(result: Dict) -> str:
     """사람이 읽을 결론 한 줄. **부분 통과를 통과로 읽지 않는다.**"""
     v = (result or {}).get("verdict")
     if v == "ready":
-        return "넣은 곳은 전부 판별됐습니다. 남은 대상까지 채우면 9곳 전부 확인입니다."
+        return "넣은 곳은 전부 판별됐고 우리 코드와도 맞았습니다."
+    if v == "unverified":
+        # ★ 여기서 「전부 판별됐습니다」로 끝내면 **확인 못 한 것을 확인했다고** 말하는 것이다.
+        names = ", ".join((result.get("unverified") or [])[:9])
+        return ("전부 판별은 됐지만 **맞는지는 확인 못 했습니다** — "
+                f"우리 코드표가 비어 있습니다({names}). "
+                "17TRACK 캐리어 목록 URL을 넣으면 그때 대조합니다.")
     if v == "gap":
         gaps = (result.get("misses") or []) + (result.get("untested") or [])
         return ("아직 다 못 잽니다 — " + ", ".join(gaps[:9]) +

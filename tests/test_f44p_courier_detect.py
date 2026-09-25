@@ -184,13 +184,34 @@ def test_one_row_is_not_a_pass(keyed):
     assert "안 잰 곳이 있으면" in D.verdict_sentence(out)
 
 
-def test_all_nine_measured_is_a_pass(keyed):
+def test_all_nine_detected_is_not_yet_a_pass(keyed):
+    """★★★ **판정 지점** — 「판별됐다」와 「맞는 걸 판별했다」는 다른 사실이다.
+
+    우리 코드표가 비어 있으면 공급사가 뭔가를 내놨다는 것만 안다. 아홉 줄이 전부
+    돌아왔다고 `ready`로 묶으면 **확인 못 한 것을 확인했다고** 말하는 것이다.
+    """
+    lines = [f"{name}\t100{i}" for i, (name, _k) in enumerate(D.TARGETS)]
+    with patch("requests.post",
+               side_effect=_router(*[_accepted(3011) for _ in lines])):
+        out = D.probe("\n".join(lines))
+    assert out["verdict"] == "unverified", out
+    assert not out["misses"] and not out["untested"]
+    assert len(out["unverified"]) == len(D.TARGETS)
+    assert "확인 못 했습니다" in D.verdict_sentence(out)
+
+
+def test_all_nine_matched_against_our_codes_is_a_pass(keyed, monkeypatch):
+    """★ 코드표가 채워지면 **그때** 통과다 — 대조까지 끝나야 한다."""
+    real = D._catalog_index
+    monkeypatch.setattr(D, "_catalog_index",
+                        lambda: {k: {**v, D.OUR_CODE_FIELD: "3011"}
+                                 for k, v in real().items()})
     lines = [f"{name}\t100{i}" for i, (name, _k) in enumerate(D.TARGETS)]
     with patch("requests.post",
                side_effect=_router(*[_accepted(3011) for _ in lines])):
         out = D.probe("\n".join(lines))
     assert out["verdict"] == "ready", out
-    assert not out["misses"] and not out["untested"]
+    assert not out["unverified"]
 
 
 def test_a_rejected_row_keeps_it_from_passing(keyed):
