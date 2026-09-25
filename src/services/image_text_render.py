@@ -38,7 +38,9 @@ import logging
 from typing import Dict, List, Optional, Tuple
 
 from src.services.image_render_font import load as load_font
+from src.services.image_render_font import load_source as load_source_font
 from src.services.image_render_font import supported as font_supported
+from src.services.image_render_font import supported_source as source_font_supported
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +119,25 @@ def _glyph_mask(cv2, np, img, rect, dilate_px: int) -> tuple:
     #   (청록 글자가 먹 글자보다 얇게 측정 — 실측 2026-09-21). Otsu는 색과 무관하다.
     _t, mask_roi = cv2.threshold(diff, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
+    # ★ D3-5에서 찾은 구멍 — **박스 테두리에 닿는 덩어리는 글자가 아니라 배경 도형**이다.
+    #   문단 박스가 알약에 딱 붙어 있으면 테두리 중앙값이 알약 색이 되고, 박스 네 귀퉁이에 걸친
+    #   **페이지 바탕**이 「배경과 먼 픽셀」로 잡혔다. 그러면 마스크의 외접 사각형이 **박스 전체**가
+    #   되어 gen_remove가 **알약을 통째로 새로 그린다**(오너가 막으라던 그 사고). telea도 귀퉁이를 칠했다.
+    #   글자는 박스 안에 떠 있다 — 테두리에 닿는 덩어리를 뺀다. 다 빠지면(글자가 테두리에
+    #   붙은 좁은 박스) **원래 마스크를 그대로 쓴다** — 없는 걸 지어내지 않는다.
+    n, lab, stats, _c = cv2.connectedComponentsWithStats(mask_roi, 8)
+    if n > 1:
+        hh, ww = mask_roi.shape
+        touching = [i for i in range(1, n)
+                    if stats[i, cv2.CC_STAT_LEFT] == 0 or stats[i, cv2.CC_STAT_TOP] == 0
+                    or stats[i, cv2.CC_STAT_LEFT] + stats[i, cv2.CC_STAT_WIDTH] >= ww
+                    or stats[i, cv2.CC_STAT_TOP] + stats[i, cv2.CC_STAT_HEIGHT] >= hh]
+        if touching:
+            inner = mask_roi.copy()
+            inner[np.isin(lab, touching)] = 0
+            if float((inner > 0).sum()) / float(inner.size) >= 0.005:
+                mask_roi = inner
+
     ratio = float((mask_roi > 0).sum()) / float(mask_roi.size)
     if ratio < 0.005:
         return None, f"글자 픽셀을 못 찾았습니다(비율 {ratio:.3f})"
@@ -152,9 +173,19 @@ def _stroke_ratio(cv2, np, mask) -> Optional[float]:
     return (2.0 * float(len(ys)) / per) / gh
 
 
+def _has_han(text: str) -> bool:
+    return any("\u4e00" <= ch <= "\u9fff" or "\u3400" <= ch <= "\u4dbf" for ch in str(text or ""))
+
+
 def _render_ref(cv2, np, text: str, size: int, weight: str):
-    """그 글자를 **우리 폰트**로 그려 보고 `(획비, 글자높이)`를 잰다. 못 그리면 `(None, 0)`."""
-    font = load_font(max(8, int(size)), weight)
+    """그 글자를 **기준선 폰트**로 그려 보고 `(획비, 글자높이)`를 잰다. 못 그리면 `(None, 0)`.
+
+    ★ D3-5 ④ — **한자가 있으면 원문 기준선 폰트(SC 서브셋)**, 없으면 한국어 렌더 폰트.
+    두 폰트는 같은 설계(Source Han Sans)라 획 두께가 같은 자로 잰다.
+    **이건 원문을 재려고 그려 보는 자리다 — 한국어를 그리는 자리가 아니다.**
+    """
+    loader = load_source_font if _has_han(text) else load_font
+    font = loader(max(8, int(size)), weight)
     if font is None:
         return None, 0.0
     try:
@@ -201,9 +232,10 @@ def estimate_weight(cv2, np, text: str, glyph_h: float, measured: float) -> tupl
     text = str(text or "").strip()
     if not text:
         return "regular", "원문 글자를 몰라 굵기를 못 쟀습니다"
-    # ★ 우리 폰트에 **없는 글자**(간체자 일부)는 두부(□)로 그려진다 — 두부를 기준선으로
-    #   삼으면 글자가 아니라 네모를 재게 된다. 그릴 수 있는 글자만 남긴다.
-    drawable = font_supported(text)
+    # ★ 기준선 폰트에 **없는 글자**는 두부(□)로 그려진다 — 두부를 기준선으로 삼으면
+    #   글자가 아니라 네모를 재게 된다. 그릴 수 있는 글자만 남긴다.
+    #   D3-5 ④: 한자는 SC 서브셋(GB2312 전체)으로 재므로 `绝`·`轻`·`纳`도 이제 잰다.
+    drawable = source_font_supported(text) if _has_han(text) else font_supported(text)
     if not drawable:
         return "regular", "원문 글자가 우리 폰트에 없어 굵기를 못 쟀습니다"
     text = drawable
@@ -301,6 +333,159 @@ def sample_typography(image_bytes: bytes, box: Dict, source: str = "") -> Dict:
         logger.warning("[D3 렌더] 타이포 측정 실패(기본값 사용): %s", exc)
         out["reason"] = f"측정 오류: {type(exc).__name__}"
         return out
+
+
+def glyph_regions(image_bytes: bytes, boxes: List[Dict], *, dilate_px: int = 3,
+                  pad: int = 2) -> tuple:
+    """박스마다 **글자 마스크의 외접 사각형**을 낸다 — `([(x,y,w,h)…], 사유들)` (D3-5 ①).
+
+    오너 브리프: gen_remove의 영역은 **「글자 마스크 bbox」**다 — 텐센트 문단 박스가 아니다.
+    문단 박스를 통째로 넘기면 그 안의 **알약·띠까지** 새로 그려 버린다(C축에서 본 그 사고).
+    글자 픽셀만 둘러싼 사각형이면 새로 그리는 면적이 가장 작다.
+
+    마스크를 못 뽑은 박스는 **빼고 사유를 남긴다**(telea와 같은 규율).
+    """
+    cv2, np, why = _load_cv2()
+    if why:
+        return [], [why]
+    try:
+        img = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
+    except Exception as exc:                                   # pragma: no cover
+        return [], [f"이미지를 디코드하지 못했습니다: {type(exc).__name__}"]
+    if img is None:
+        return [], ["이미지를 디코드하지 못했습니다"]
+    h, w = img.shape[:2]
+    rects, failures = [], []
+    for b in boxes or []:
+        rect = _norm_box(b, w, h)
+        if rect is None:
+            failures.append("박스를 쓸 수 없습니다")
+            continue
+        gm, why = _glyph_mask(cv2, np, img, rect, dilate_px)
+        if gm is None:
+            failures.append(why)
+            continue
+        ys, xs = np.nonzero(gm)
+        x1, y1 = max(0, int(xs.min()) - pad), max(0, int(ys.min()) - pad)
+        x2, y2 = min(w, int(xs.max()) + 1 + pad), min(h, int(ys.max()) + 1 + pad)
+        if x2 - x1 >= 2 and y2 - y1 >= 2:
+            rects.append((x1, y1, x2 - x1, y2 - y1))
+    return rects, failures
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# D3-5 ② F축 「배경 복원」 — 지운 자리가 **주변과 닮았나**
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# 오너 정의: 「지운 영역 주변 16px 링과 내부의 색/텍스처 차이(평균색·분산 차)가 임계 이하면 1」.
+#
+# ## 어디를 재나 — **지운 픽셀 그 자체**
+#
+# 처음엔 박스 전체를 쟀다. 그러자 **telea·완벽 복원·아예 안 지운 것**이 같은 점수가 나왔다
+# (실측): telea는 가는 획만 다시 칠하므로 박스의 75%가 원래 배경이고, 통계가 거기에 묻힌다.
+# 그래서 「지운 영역」 = **원문 글자 마스크 픽셀**(지우기가 실제로 건드린 곳)로 잡고,
+# 「주변 링」 = 그 마스크를 16px 부풀린 띠에서 마스크를 뺀 곳으로 잡는다.
+#
+# ## 어느 그림에서 재나 — **지운 결과**(한국어를 얹기 전)
+#
+# 얹은 한국어가 통계를 덮으면 복원이 아니라 글씨를 재게 된다. 그래서 D3만 잴 수 있다 —
+# **텐센트는 지운 중간본을 주지 않는다**(F = 측정 불가, 사유 명시).
+#
+# ## 임계 — 합성 픽스처로 교정(2026-09-25)
+#
+# | 경우 | 평균색 차 | 결 비(지운 std ÷ 링 std) |
+# |---|---|---|
+# | 안 지움(글자 그대로) | **100 ~ 211** | 3 ~ 5 |
+# | 완벽 복원(배경 그대로) | 0 ~ 10 | **0.84 ~ 1.13** |
+# | telea — 굵은 획·사진 결 | 1 ~ 8 | **0.72 ~ 0.94** |
+#
+# 가는 획에선 telea도 결을 거의 지킨다(0.86~0.96) — **그땐 F가 telea를 떨어뜨리지 않는다.**
+# 그게 맞다. F는 「telea면 0」이 아니라 「결을 잃었으면 0」이다.
+#
+# ⚠️ 교정은 **합성 이미지**로 했다. 실제 상품 사진에서 이 임계가 맞는지는 오너 벤치가 판정한다.
+F_RING_PX = 16
+F_MAX_MEAN_DIFF = 12.0
+F_TEXTURED_RING_STD = 4.0          # 링이 이보다 거칠면 「결이 있는 배경」으로 본다
+F_TEXTURE_RATIO = (0.82, 1.25)     # 지운 자리 결 ÷ 링 결 — 이 밖이면 결을 잃었거나 찌꺼기가 남았다
+F_FLAT_MAX_STD = 4.0               # 민 배경인데 지운 자리가 이보다 거칠면 찌꺼기다
+F_MIN_PIXELS = 30
+
+
+def background_score(erased_bytes: bytes, source_bytes: bytes, boxes: List[Dict]) -> Dict:
+    """F축 — `{score: 1|0|None, reason, hits:[박스별 수치]}` (D3-5 ②).
+
+    `source_bytes`로 **원문 글자 마스크**(지운 자리)를 잡고, `erased_bytes`(한국어를 얹기 전)에서
+    그 자리와 주변 링을 비교한다. 박스 하나라도 떨어지면 0 — 부분 통과를 통과로 읽지 않는다.
+    """
+    cv2, np, why = _load_cv2()
+    if why:
+        return {"score": None, "reason": why, "hits": []}
+    try:
+        src = cv2.imdecode(np.frombuffer(source_bytes, np.uint8), cv2.IMREAD_COLOR)
+        out = cv2.imdecode(np.frombuffer(erased_bytes, np.uint8), cv2.IMREAD_COLOR)
+    except Exception as exc:                                   # pragma: no cover
+        return {"score": None, "reason": f"디코드 실패: {type(exc).__name__}", "hits": []}
+    if src is None or out is None:
+        return {"score": None, "reason": "이미지를 디코드하지 못했습니다", "hits": []}
+    if src.shape[:2] != out.shape[:2]:
+        # gen_remove가 크기를 바꿔 돌려주면(6140px 초과 시 축소·확대) 좌표가 어긋난다 — 재지 않는다.
+        return {"score": None, "reason": (f"지운 결과 크기가 원본과 다릅니다 "
+                                          f"{out.shape[1]}×{out.shape[0]} ≠ {src.shape[1]}×{src.shape[0]}"),
+                "hits": []}
+    h, w = src.shape[:2]
+    outf = out.astype(np.float32)
+    lum_w = np.array([0.114, 0.587, 0.299], np.float32)          # BGR 휘도
+    k = np.ones((F_RING_PX * 2 + 1, F_RING_PX * 2 + 1), np.uint8)
+
+    # 모든 지운 자리의 합집합 — 한 박스의 링이 **옆 박스의 지운 자리**를 먹지 않게.
+    masks = []
+    for b in boxes or []:
+        rect = _norm_box(b, w, h)
+        gm, _why = _glyph_mask(cv2, np, src, rect, 2) if rect else (None, "박스를 쓸 수 없습니다")
+        masks.append(gm)
+    union = np.zeros((h, w), np.uint8)
+    for gm in masks:
+        if gm is not None:
+            union = cv2.bitwise_or(union, gm)
+
+    hits, fails = [], []
+    for b, gm in zip(boxes or [], masks):
+        if gm is None:
+            hits.append({"box": b, "score": None, "reason": "원문 글자 마스크를 못 뽑았습니다"})
+            continue
+        E = gm > 0
+        ring = (cv2.dilate(gm, k) > 0) & (union == 0)
+        if int(E.sum()) < F_MIN_PIXELS or int(ring.sum()) < F_MIN_PIXELS:
+            hits.append({"box": b, "score": None, "reason": "잴 픽셀이 너무 적습니다"})
+            continue
+        e, r = outf[E], outf[ring]
+        mean_d = float(np.linalg.norm(e.mean(0) - r.mean(0)))
+        std_e, std_r = float((e @ lum_w).std()), float((r @ lum_w).std())
+        textured = std_r >= F_TEXTURED_RING_STD
+        ratio = std_e / std_r if std_r > 1e-6 else None
+        ok = mean_d <= F_MAX_MEAN_DIFF and (
+            (F_TEXTURE_RATIO[0] <= ratio <= F_TEXTURE_RATIO[1]) if textured
+            else std_e <= F_FLAT_MAX_STD)
+        why_box = ""
+        if mean_d > F_MAX_MEAN_DIFF:
+            why_box = f"색이 주변과 다릅니다(평균색 차 {mean_d:.1f} > {F_MAX_MEAN_DIFF:g})"
+        elif textured and not (F_TEXTURE_RATIO[0] <= ratio <= F_TEXTURE_RATIO[1]):
+            why_box = (f"결이 주변과 다릅니다(결 비 {ratio:.2f}, 허용 "
+                       f"{F_TEXTURE_RATIO[0]:g}~{F_TEXTURE_RATIO[1]:g})")
+        elif not textured and std_e > F_FLAT_MAX_STD:
+            why_box = f"민 배경에 찌꺼기가 남았습니다(지운 자리 거칠기 {std_e:.1f})"
+        hits.append({"box": b, "score": 1 if ok else 0, "reason": why_box,
+                     "mean_diff": round(mean_d, 2), "ratio": None if ratio is None else round(ratio, 3),
+                     "ring_std": round(std_r, 2), "erased_std": round(std_e, 2)})
+        if not ok:
+            fails.append(why_box)
+
+    measured = [x for x in hits if x["score"] in (0, 1)]
+    if not measured:
+        return {"score": None, "reason": "잴 수 있는 지운 자리가 없습니다", "hits": hits}
+    if fails:
+        return {"score": 0, "reason": fails[0], "hits": hits}
+    return {"score": 1, "reason": "지운 자리가 주변과 닮았습니다", "hits": hits}
 
 
 def erase_boxes(image_bytes: bytes, boxes: List[Dict], *, method: str = "telea",
@@ -528,10 +713,19 @@ def untouched_reason(line: Dict) -> str:
 
 def render(image_bytes: bytes, lines: List[Dict], *, method: str = "telea",
            weight: str = "regular", inherit_typography: bool = True) -> Dict:
-    """3단계 전체 — 지우고 쓴다. `{ok, image_bytes, erased, drawn, skipped, error}`.
+    """3단계 전체 — 지우고 쓴다. `{ok, image_bytes, erased, drawn, skipped, error, …}`.
 
     **그릴 게 하나도 없으면 지우지도 않는다** — 멀쩡한 원본을 괜히 뭉개지 않기 위해서다.
     실패는 언제나 **원본 바이트**로 끝난다.
+
+    ## `method="gen_remove"` (D3-5 ①) — 인페인터 2단
+
+    1. 글자 마스크 외접 사각형을 **Cloudinary `e_gen_remove`**로 지운다(`image_gen_remove`).
+    2. 안 되면 **telea로 폴백**하고, 그 사실을 `inpainter`·`inpaint_fallback`에 남긴다.
+
+    ★ 폴백을 숨기면 「D3(gen_remove)」 칸에 **telea 결과가 gen_remove 이름으로** 올라간다 —
+    그러면 F축 비교가 거짓이 된다. 그래서 결과는 **실제로 쓴 인페인터 이름**을 든다.
+    청구(`cloud_tx`)도 폴백과 **따로** 적는다 — 지우기는 실패했어도 돈은 나갔을 수 있다.
     """
     paintable, untouched = [], []
     for ln in lines or []:
@@ -562,11 +756,39 @@ def render(image_bytes: bytes, lines: List[Dict], *, method: str = "telea",
         return {"ok": False, "image_bytes": image_bytes, "erased": 0, "drawn": 0,
                 "skipped": untouched, "error": "그릴 줄이 없습니다(원본 그대로)"}
 
-    erased_bytes, erased, why = erase_boxes(
-        image_bytes, [ln["box"] for ln in paintable], method=method)
+    boxes = [ln["box"] for ln in paintable]
+    inpainter, fallback, cloud = str(method or "telea").lower(), "", {"tx": 0, "credits": 0.0}
+    erased_bytes, erased, why = image_bytes, 0, ""
+
+    if inpainter == "gen_remove":
+        from src.services import image_gen_remove as G
+        can, why_cfg = G.configured()
+        rects, rect_fail = glyph_regions(image_bytes, boxes) if can else ([], [])
+        if not can:
+            fallback = why_cfg
+        elif not rects:
+            fallback = ("글자 마스크 영역이 없습니다: " +
+                        (rect_fail[0] if rect_fail else "사유 불명"))
+        else:
+            g = G.gen_remove(image_bytes, rects)
+            cloud = {"tx": g.get("tx"), "credits": g.get("credits")}
+            if g.get("ok"):
+                erased_bytes, erased = g["image_bytes"], len(rects)
+            else:
+                fallback = g.get("error") or "gen_remove 실패(사유 불명)"
+        if fallback:
+            # ★ 폴백 — 이름을 **바꿔서** 적는다. 숨기면 F축 비교가 거짓이 된다.
+            logger.info("[D3 렌더] gen_remove → telea 폴백: %s", fallback)
+            inpainter = "telea"
+
+    if inpainter != "gen_remove":
+        erased_bytes, erased, why = erase_boxes(
+            image_bytes, boxes, method=("ns" if inpainter == "ns" else "telea"))
     if why:
         return {"ok": False, "image_bytes": image_bytes, "erased": 0, "drawn": 0,
-                "skipped": untouched, "error": why}
+                "skipped": untouched, "error": why, "inpainter": inpainter,
+                "inpaint_fallback": fallback, "cloud_tx": cloud["tx"],
+                "cloud_credits": cloud["credits"]}
 
     out, drawn, skipped = draw_lines(erased_bytes, paintable, weight=weight)
     return {
@@ -577,5 +799,14 @@ def render(image_bytes: bytes, lines: List[Dict], *, method: str = "telea",
         "skipped": untouched + list(skipped),
         # ★ 잰 타이포를 결과에 남긴다 — 벤치 표가 「왜 굵게 그렸나」를 보여 줄 수 있어야 한다.
         "typography": [r.get("typography") for r in paintable if r.get("typography")],
+        # D3-5 ① — **실제로 쓴** 인페인터와 폴백 사유, 그리고 청구(폴백과 따로).
+        "inpainter": inpainter,
+        "inpaint_fallback": fallback,
+        "cloud_tx": cloud["tx"],
+        "cloud_credits": cloud["credits"],
+        # D3-5 ② F축은 **지운 자리**를 잰다 — 어느 박스를 지웠는지와 **지운 결과**를 넘긴다.
+        #   ★ `erased_bytes`는 잰 뒤 버린다(벤치 저장소·실행 기록에 싣지 않는다).
+        "painted_boxes": boxes,
+        "erased_bytes": erased_bytes,
         "error": "" if drawn else "한 줄도 앉히지 못했습니다",
     }

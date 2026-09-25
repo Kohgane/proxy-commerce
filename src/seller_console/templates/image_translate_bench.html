@@ -46,6 +46,15 @@
             D3 렌더 함께
           </label>
         </div>
+        {# D3-5 ①: gen_remove는 **Cloudinary 크레딧을 쓴다** — 따로 켜고, 값을 켜기 전에 말한다. #}
+        <div class="form-check form-switch mb-0">
+          <input class="form-check-input" type="checkbox" id="benchGenRemove">
+          <label class="form-check-label small" for="benchGenRemove"
+                 title="D3를 한 번 더 그립니다 — 지우기를 Cloudinary 생성형 지우기로. D3 렌더가 켜져 있어야 돕니다.">
+            + gen_remove
+            <span class="text-muted">(장당 51 tx ≈ 0.051 크레딧)</span>
+          </label>
+        </div>
         <button class="btn btn-primary btn-sm" id="benchRunBtn"
                 {% if not vendor_status.configured %}disabled{% endif %}>
           <i class="bi bi-play-fill"></i> 전체 실행
@@ -108,15 +117,20 @@
           <span class="console-kpi-label">{{ r.ms }} ms</span>
         </div>
         <div class="row g-2">
-          <div class="{{ 'col-md-4' if r.d3 else 'col-md-6' }}">
+          {# D3-5: 칸 수가 2~4로 변한다(원본·D3·gen_remove·공급사). 폭은 칸 수로 나눈다. #}
+          {% set ncol = 2 + (1 if r.d3 else 0) + (1 if r.d3g else 0) %}
+          {% set colcls = 'col-md-' ~ (12 // ncol) %}
+          {% set sugg = (r.pick or {}).get('pick', '') %}
+          <div class="{{ colcls }}">
             <div class="console-kpi-label mb-1">원본</div>
             <img src="{{ r.original }}" alt="원본" class="img-fluid" referrerpolicy="no-referrer">
           </div>
           {% if r.d3 %}
           {# D3-3b: 공급사 렌더본과 **우리 3단계 렌더본**을 같은 줄에 세운다.
              같은 텐센트 호출 하나에서 나온 두 결과라, 차이는 렌더 방식뿐이다. #}
-          <div class="col-md-4">
-            <div class="console-kpi-label mb-1">D3 렌더본 (우리)</div>
+          <div class="{{ colcls }}">
+            <div class="console-kpi-label mb-1">D3·telea (우리)
+              {% if sugg == 'd3' %}<span class="pc-badge pc-badge-on ms-1">제안</span>{% endif %}</div>
             {% if r.d3.url %}
             <img src="{{ r.d3.url }}" alt="D3 렌더본" class="img-fluid">
             <div class="small text-muted mt-1">
@@ -143,6 +157,11 @@
               문체 지시 적용 {{ r.d3.llm.styled }}줄
               {% endif %}
             </div>
+            {% if r.d3.axes and r.d3.axes.F %}
+            <div class="small text-muted mt-1">F 배경 복원:
+              {{ '통과' if r.d3.axes.F.score == 1 else ('실패' if r.d3.axes.F.score == 0 else '측정 불가') }}
+              {% if r.d3.axes.F.reason %}— {{ r.d3.axes.F.reason }}{% endif %}</div>
+            {% endif %}
             {% if r.d3.typography %}
             <details class="small mt-1"><summary style="cursor:pointer">원본에서 잰 타이포</summary>
               <ul class="mb-0 ps-3">
@@ -158,8 +177,40 @@
             {% endif %}
           </div>
           {% endif %}
-          <div class="{{ 'col-md-4' if r.d3 else 'col-md-6' }}">
-            <div class="console-kpi-label mb-1">번역본{% if r.d3 %} (공급사){% endif %}</div>
+          {% if r.d3g %}
+          {# D3-5 ①: 같은 번역 줄을 **Cloudinary 생성형 지우기** 위에 그린 것.
+             폴백이면 이름이 telea다 — gen_remove 칸에 telea를 gen_remove라고 올리지 않는다. #}
+          <div class="{{ colcls }}">
+            <div class="console-kpi-label mb-1">D3·gen_remove
+              {% if sugg == 'd3g' %}<span class="pc-badge pc-badge-on ms-1">제안</span>{% endif %}</div>
+            {% if r.d3g.inpainter and r.d3g.inpainter != 'gen_remove' %}
+            <div class="pc-status pc-status-warn small mb-1">
+              <i class="bi bi-exclamation-triangle"></i>
+              gen_remove를 못 써서 <strong>telea로 폴백</strong>했습니다 — {{ r.d3g.inpaint_fallback }}
+              <div class="text-muted">이 장은 자동 선택 후보에서 뺍니다(telea 칸과 같은 그림).</div>
+            </div>
+            {% endif %}
+            {% if r.d3g.url %}
+            <img src="{{ r.d3g.url }}" alt="D3 gen_remove 렌더본" class="img-fluid">
+            <div class="small text-muted mt-1">
+              지움 {{ r.d3g.erased }} · 그림 {{ r.d3g.drawn }}
+              · Cloudinary
+              {% if r.d3g.cloud_tx is none %}<span class="text-warning">청구 불명</span>
+              {% else %}{{ r.d3g.cloud_tx }} tx ≈ {{ r.d3g.cloud_credits }} 크레딧{% endif %}
+            </div>
+            {% if r.d3g.axes and r.d3g.axes.F %}
+            <div class="small text-muted mt-1">F 배경 복원:
+              {{ '통과' if r.d3g.axes.F.score == 1 else ('실패' if r.d3g.axes.F.score == 0 else '측정 불가') }}
+              {% if r.d3g.axes.F.reason %}— {{ r.d3g.axes.F.reason }}{% endif %}</div>
+            {% endif %}
+            {% else %}
+            <div class="op-empty small">{{ r.d3g.error or 'gen_remove 렌더본 없음' }}</div>
+            {% endif %}
+          </div>
+          {% endif %}
+          <div class="{{ colcls }}">
+            <div class="console-kpi-label mb-1">번역본{% if r.d3 %} (공급사){% endif %}
+              {% if sugg == 'tencent' and r.d3 %}<span class="pc-badge pc-badge-on ms-1">제안</span>{% endif %}</div>
             {% if r.url %}
             <img src="{{ r.url }}" alt="번역본" class="img-fluid">
             {% else %}
@@ -171,6 +222,10 @@
             {% endif %}
           </div>
         </div>
+        {% if r.pick and r.pick.reason and r.d3 %}
+        {# D3-5 ③ — 장마다 최선을 **제안**한다. 등록본은 아래 표에서 사람이 뒤집을 수 있다. #}
+        <div class="small mt-2"><i class="bi bi-signpost-2"></i> 자동 제안: {{ r.pick.reason }}</div>
+        {% endif %}
         {% if r.target_text %}
         <details class="mt-2 small">
           <summary style="cursor:pointer">번역된 글자 보기</summary>
@@ -208,6 +263,19 @@
           <span class="text-muted">(장당 1 — 두 렌더본이 같은 응답을 쓴다)</span></span>
         <span>LLM 호출 <strong>{{ grid.d3_cost.llm_calls }}</strong></span>
         <span>LLM 글자 <strong>{{ grid.d3_cost.llm_chars }}</strong></span>
+        {% if grid.has_d3g %}
+        {# D3-5 ① — 오너 지시: 장당 Cloudinary 크레딧 소비를 원가 줄에 적는다. #}
+        <span>Cloudinary <strong>{{ grid.d3_cost.cloud_tx }}</strong> tx
+          ≈ <strong>{{ grid.d3_cost.cloud_credits }}</strong> 크레딧
+          ({{ grid.d3_cost.gen_remove_pages }}장)
+          <span class="pc-help" data-bs-toggle="tooltip" title="{{ grid.d3_cost.cloud_note }}">?</span></span>
+        {% if grid.d3_cost.cloud_unknown %}
+        <span class="text-warning">청구 불명 {{ grid.d3_cost.cloud_unknown }}장 — 합계에 넣지 않았습니다</span>
+        {% endif %}
+        {% if grid.d3_cost.gen_remove_fallbacks %}
+        <span class="text-warning">telea 폴백 {{ grid.d3_cost.gen_remove_fallbacks }}장</span>
+        {% endif %}
+        {% endif %}
         {% if grid.d3_cost.llm_errors %}
         <span class="text-warning">번역 실패 {{ grid.d3_cost.llm_errors }}</span>
         {% endif %}
@@ -262,7 +330,7 @@
              자동으로 못 잰다 — F33). 공급사 점수와 섞이지 않게 줄을 따로 둔다. #}
           <tr class="table-light">
             <td class="small"><span class="pc-badge pc-badge-muted">D3</span>
-              <div class="console-kpi-label">우리 렌더본</div></td>
+              <div class="console-kpi-label">D3·telea</div></td>
             {% for key, label, kind, hint in f33_axes %}
             {% set cell = p.d3_axes[key] %}
             <td class="small">
@@ -286,6 +354,59 @@
               {% endif %}
             </td>
             {% endfor %}
+          </tr>
+          {% endif %}
+          {% if p.d3g %}
+          {# D3-5 ①: gen_remove 줄 — 자동 축(A·B·D·F)은 판정기, 사람은 C·E만(`d3g:` 칸). #}
+          <tr class="table-light">
+            <td class="small"><span class="pc-badge pc-badge-muted">D3</span>
+              <div class="console-kpi-label">D3·gen_remove</div>
+              {% if p.d3g.inpainter and p.d3g.inpainter != 'gen_remove' %}
+              <div class="text-warning" style="font-size:.78rem">telea 폴백</div>{% endif %}</td>
+            {% for key, label, kind, hint in f33_axes %}
+            {% set cell = p.d3g_axes[key] %}
+            <td class="small">
+              {% if cell.score == 1 %}
+              <span class="pc-badge pc-badge-on">1</span>
+              {% elif cell.score == 0 %}
+              <span class="pc-badge pc-badge-danger">0</span>
+              {% else %}
+              <span class="pc-badge pc-badge-off">{{ '측정 불가' if kind == 'auto' else '미채점' }}</span>
+              {% endif %}
+              {% if kind == 'human' %}
+              <span class="ms-1">
+                <button type="button" class="btn btn-ghost btn-sm py-0 px-1"
+                        data-cell="d3g:{{ p.idx }}:{{ key }}" data-val="1">1</button>
+                <button type="button" class="btn btn-ghost btn-sm py-0 px-1"
+                        data-cell="d3g:{{ p.idx }}:{{ key }}" data-val="0">0</button>
+              </span>
+              {% endif %}
+              {% if cell.reason %}
+              <div class="text-muted" style="font-size:.78rem">{{ cell.reason }}</div>
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endif %}
+          {% if p.d3 %}
+          {# D3-5 ③: 장별 **등록본 제안** — 자동축 합이 최고인 후보. 사람이 뒤집을 수 있다(`pick:` 칸). #}
+          <tr>
+            <td class="small"><i class="bi bi-signpost-2"></i> 등록본</td>
+            <td class="small" colspan="{{ f33_axes|length }}">
+              <span class="me-2">제안:
+                <strong>{{ dict(grid.candidates).get(p.pick.suggested, '없음') }}</strong></span>
+              {% for name, label in grid.candidates %}
+              {% if name == 'tencent' or (name == 'd3' and p.d3) or (name == 'd3g' and p.d3g) %}
+              <button type="button"
+                      class="btn btn-sm py-0 px-2 {{ 'btn-primary' if p.pick.chosen == name else 'btn-ghost' }}"
+                      data-cell="pick:{{ p.idx }}" data-val="{{ name }}">{{ label }}</button>
+              {% endif %}
+              {% endfor %}
+              {% if p.pick.override %}
+              <span class="pc-badge pc-badge-muted ms-1">사람이 뒤집음</span>
+              {% endif %}
+              <div class="text-muted" style="font-size:.78rem">{{ p.pick.reason }}</div>
+            </td>
           </tr>
           {% endif %}
           {% endfor %}
@@ -446,10 +567,12 @@
     out.innerHTML = '<div class="pc-status pc-status-info mb-4">' +
       '<i class="bi bi-hourglass-split"></i> 접수했어요 — 초당 1장씩 순서대로 보냅니다.</div>';
     var d3El = document.getElementById('benchRenderD3');
+    var grEl = document.getElementById('benchGenRemove');
     fetch('/seller/admin/image-translate-bench/run', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({render: (d3El && d3El.checked) ? '1' : ''}),
+      body: JSON.stringify({render: (d3El && d3El.checked) ? '1' : '',
+                            gen_remove: (grEl && grEl.checked) ? '1' : ''}),
     })
       .then(function (r) { return r.json().then(function (d) { return {s: r.status, d: d}; }); })
       .then(function (res) {

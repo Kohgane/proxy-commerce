@@ -291,7 +291,8 @@ def _cloudinary_configured() -> bool:
     )
 
 
-def upload_bytes(image_bytes: bytes, *, prefer_webp: bool = False) -> Dict[str, Any]:
+def upload_bytes(image_bytes: bytes, *, prefer_webp: bool = False,
+                 eager: Optional[list] = None) -> Dict[str, Any]:
     """바이트 → Cloudinary. **결과를 dict 그대로** 돌려준다 (F31).
 
     ## 왜 dict인가
@@ -311,10 +312,14 @@ def upload_bytes(image_bytes: bytes, *, prefer_webp: bool = False) -> Dict[str, 
 
     `keys`는 **다음 판의 답**이다. 응답은 왔는데 우리가 아는 키가 없으면,
     무슨 키가 왔는지를 그대로 실어야 이름을 고칠 수 있다(발명 금지).
+
+    `eager`(D3-5): 업로드와 **같은 호출에서** 파생본을 만든다(동기 — `eager_async` 안 씀).
+    결과는 `eager`로 그대로 싣는다. 생성형 효과(`gen_remove`)는 **fetch 이미지에 못 쓰므로**
+    업로드가 먼저 있어야 하고, 그 업로드가 이 함수다 — 업로드 경로를 두 벌 두지 않는다.
     """
     from src.utils.redact import scrub_infra
     out: Dict[str, Any] = {"ok": False, "secure_url": "", "public_id": "",
-                           "bytes": 0, "error": "", "keys": []}
+                           "bytes": 0, "error": "", "keys": [], "eager": []}
     if not image_bytes:
         out["error"] = "올릴 바이트가 없습니다"
         return out
@@ -348,6 +353,8 @@ def upload_bytes(image_bytes: bytes, *, prefer_webp: bool = False) -> Dict[str, 
                                 "resource_type": "image"}
         if prefer_webp:
             opts["format"] = "webp"
+        if eager:
+            opts["eager"] = eager
         result = cloudinary.uploader.upload(io.BytesIO(image_bytes), **opts) or {}
     except Exception as exc:
         # SDK 예외 문장을 **그대로**(좌표·긴 토큰만 지운다). `Invalid api_key` 같은 말이
@@ -357,6 +364,7 @@ def upload_bytes(image_bytes: bytes, *, prefer_webp: bool = False) -> Dict[str, 
         return out
 
     out["keys"] = sorted(str(k) for k in (result.keys() if hasattr(result, "keys") else []))
+    out["eager"] = list(result.get("eager") or []) if hasattr(result, "get") else []
     url = result.get("secure_url") or result.get("url")
     if not url:
         # **다음엔 키 이름이 답이다.** 무엇이 왔는지를 그대로 싣는다.

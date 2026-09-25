@@ -11006,42 +11006,56 @@ def image_translate_bench():
     )
 
 
+def _bench_axes_for(axesmod, auto: dict, cells: dict, prefix: str, idx: int,
+                    missing: str) -> dict:
+    """한 후보 줄의 축 칸 — 자동 축은 판정기 값, 사람 축은 `<prefix><idx>:<축>` 칸."""
+    out = {}
+    for key, _label, kind, _hint in axesmod.AXES:
+        if kind == "auto":
+            out[key] = (auto or {}).get(key) or {"score": None, "reason": missing}
+        else:
+            v = cells.get(f"{prefix}{idx}:{key}")
+            out[key] = {"score": v, "reason": "" if v in (0, 1) else "사람이 아직 안 찍음"}
+    return out
+
+
 def _bench_grid(run: dict) -> dict:
     """한 실행의 **장×축 표**. 빈칸을 만들지 않는다 — 못 잰 칸엔 「측정 불가」와 사유가 있다."""
     from src.services import image_bench_axes as axesmod
+    from src.services.image_translate_bench import pick_candidates
     results = (run or {}).get("results") or []
     cells = ((run or {}).get("scores") or {}).get("cells") or {}
+    names = [n for n, _l in axesmod.CANDIDATES]
     pages = []
     for r in results:
         idx = int(r.get("idx") or 0)
-        auto = r.get("axes") or {}
         row = {"idx": idx, "kind": r.get("kind", ""), "original": r.get("original", ""),
                "url": r.get("url", ""), "status": r.get("status", ""),
                "ms": r.get("ms"), "lines": r.get("lines") or [],
-               "box_hints": r.get("box_hints") or [], "axes": {},
+               "box_hints": r.get("box_hints") or [],
                # D3-3b: 우리 3단계 렌더본(있으면). 없으면 빈 dict — 화면이 칸을 비운다.
                "d3": r.get("d3") or {},
-               "d3_axes": {}}
-        # ★ D3-4 ⑤ — D3 열도 **A·B·D는 자동**이다(오너 브리프 2026-09-21).
-        #   전에는 다섯 축 전부 사람이 찍었는데, 그 이유는 「렌더가 달라지면 자동 축 값도
-        #   달라진다」였다. 이제 우리 결과(`render_text`)를 **같은 판정기**로 채점하므로
-        #   그 걱정은 사라졌다 — 두 열이 같은 자로 재고, 사람은 **C·E만** 본다.
-        d3_auto = (r.get("d3") or {}).get("axes") or {}
-        for key, _label, kind, _hint in axesmod.AXES:
-            if kind == "auto":
-                row["d3_axes"][key] = d3_auto.get(key) or {
-                    "score": None, "reason": "D3 결과 없음"}
-            else:
-                v = cells.get(f"d3:{idx}:{key}")
-                row["d3_axes"][key] = {"score": v,
-                                       "reason": "" if v in (0, 1) else "사람이 아직 안 찍음"}
-        for key, _label, kind, _hint in axesmod.AXES:
-            if kind == "auto":
-                row["axes"][key] = auto.get(key) or {"score": None, "reason": "결과 없음"}
-            else:
-                v = cells.get(f"{idx}:{key}")
-                row["axes"][key] = {"score": v,
-                                    "reason": "" if v in (0, 1) else "사람이 아직 안 찍음"}
+               # D3-5 ①: gen_remove 렌더본(있으면).
+               "d3g": r.get("d3g") or {}}
+        row["axes"] = _bench_axes_for(axesmod, r.get("axes") or {}, cells, "", idx, "결과 없음")
+        # ★ D3-4 ⑤ — D3 열도 **A·B·D는 자동**이다. D3-5 ②로 **F**도 자동으로 붙었다
+        #   (지운 결과에서 잰다 — 텐센트 줄의 F는 측정 불가).
+        row["d3_axes"] = _bench_axes_for(axesmod, row["d3"].get("axes"), cells, "d3:", idx,
+                                         "D3 결과 없음")
+        row["d3g_axes"] = _bench_axes_for(axesmod, row["d3g"].get("axes"), cells, "d3g:", idx,
+                                          "gen_remove 결과 없음")
+        # ★ D3-5 ③ — 장별 제안. **저장된 제안이 없으면 지금 다시 계산한다**(옛 실행도 표가 찬다).
+        suggested = r.get("pick") or axesmod.pick_best(pick_candidates(r))
+        override = cells.get(f"pick:{idx}")
+        row["pick"] = {
+            "suggested": suggested.get("pick", ""),
+            "reason": suggested.get("reason", ""),
+            "scores": suggested.get("scores") or {},
+            "common": suggested.get("common") or [],
+            # 사람이 뒤집었으면 **그게 등록본**이다. 제안은 제안이다.
+            "override": override if override in names else "",
+            "chosen": override if override in names else suggested.get("pick", ""),
+        }
         pages.append(row)
     # 모드는 실행 행에 없으면 **결과 줄에서** 읽는다(저장 모양이 바뀌어도 표가 안 빈다).
     mode = (run or {}).get("mode")
@@ -11052,6 +11066,11 @@ def _bench_grid(run: dict) -> dict:
     #   LLM은 줄마다 1콜이고, **토큰은 못 잰다** — 번역 체인이 공급사 `usage`를 안 내준다.
     #   추정해서 적으면 그건 지어낸 숫자다.
     d3_pages = [p for p in pages if p.get("d3")]
+    g_pages = [p for p in pages if p.get("d3g")]
+    # D3-5 ① — Cloudinary 청구. **모르는 장이 하나라도 있으면 합계를 단정하지 않는다.**
+    g_tx = [p["d3g"].get("cloud_tx") for p in g_pages]
+    known_tx = [t for t in g_tx if isinstance(t, (int, float))]
+    unknown_tx = len(g_tx) - len(known_tx)
     cost = {
         "pages": len(d3_pages),
         "tencent_calls": len(d3_pages),
@@ -11060,10 +11079,21 @@ def _bench_grid(run: dict) -> dict:
         "llm_errors": sum(int((p["d3"].get("llm") or {}).get("errors") or 0) for p in d3_pages),
         "tokens": None,
         "tokens_note": "토큰 수는 번역 체인이 공급사 usage를 내주지 않아 재지 못했습니다",
+        "gen_remove_pages": len(g_pages),
+        "cloud_tx": sum(known_tx),
+        "cloud_credits": round(sum(known_tx) / 1000, 4),
+        "cloud_unknown": unknown_tx,
+        "cloud_note": ("gen_remove 1회 = 50 tx + 파생본 1 tx(문서 「Effects with special counts」), "
+                       "1 크레딧 = 1,000 tx(문서 「Credits」)"),
+        "gen_remove_fallbacks": sum(1 for p in g_pages
+                                    if p["d3g"].get("inpainter") and
+                                    p["d3g"].get("inpainter") != "gen_remove"),
     }
     return {"mode": mode, "pages": pages,
             "summary": axesmod.summarize(pages),
             "has_d3": bool(d3_pages),
+            "has_d3g": bool(g_pages),
+            "candidates": axesmod.CANDIDATES,
             "d3_cost": cost,
             "filled": sum(1 for p in pages for k in p["axes"]
                           if p["axes"][k].get("score") in (0, 1)),
@@ -11138,14 +11168,14 @@ def admin_courier_detect():
     return jsonify(result), (200 if result.get("ok") else 503)
 
 
-def bench_run_id(mode: int, render_d3: bool = False) -> str:
+def bench_run_id(mode: int, render_d3: bool = False, gen_remove: bool = False) -> str:
     """실행 이름표 — **모드와 D3 여부가 이름에 산다.**
 
     두 실행을 나중에 표에서 짝지어야 하는데, 이름이 같으면 무엇이 무엇인지 갈린다.
-    (예: `bench-20260921-101500-m0-d3`)
+    (예: `bench-20260921-101500-m0-d3`, gen_remove까지면 `-d3g`)
     """
-    return datetime.now(timezone.utc).strftime(
-        f"bench-%Y%m%d-%H%M%S-m{int(mode)}" + ("-d3" if render_d3 else ""))
+    tail = ("-d3g" if gen_remove else "-d3") if render_d3 else ""
+    return datetime.now(timezone.utc).strftime(f"bench-%Y%m%d-%H%M%S-m{int(mode)}" + tail)
 
 
 @bp.post("/admin/image-translate-bench/run")
@@ -11173,6 +11203,8 @@ def image_translate_bench_run():
     # D3-3b: 같은 텐센트 호출 한 번으로 **우리 3단계 렌더본**을 함께 만든다(장당 과금 불변).
     #   결과는 벤치 저장소(kind="d3")에만 둔다 — 등록·번역 경로는 쳐다보지 않는다.
     render_d3 = str(data.get("render") or "").strip() in ("1", "true", "on")
+    # D3-5 ①: gen_remove는 **크레딧을 쓴다**(장당 51 tx) — 따로 켠다. D3 없이 켜면 무시.
+    gen_remove = render_d3 and str(data.get("gen_remove") or "").strip() in ("1", "true", "on")
     only = str(data.get("item_no") or "").strip()
     rows = _bench_fixture_rows()
     if only:
@@ -11181,14 +11213,15 @@ def image_translate_bench_run():
             return jsonify({"ok": False, "error": f"픽스처에 없는 상품번호입니다: {only}"}), 404
     title = " ".join(str(r.get("title") or "") for r in rows).strip()
 
-    run_id = bench_run_id(mode, render_d3)
+    run_id = bench_run_id(mode, render_d3, gen_remove)
     from src.services import image_translate_bench as bench
     if bench.is_running():
         return jsonify({"ok": False, "error": "이미 실행 중입니다. 끝나면 다시 눌러 주세요."}), 409
     total = bench.start(run_id, _seller_id(), rows, mode=mode, title=title,
-                        render_d3=render_d3)
+                        render_d3=render_d3, gen_remove=gen_remove)
     return jsonify({"ok": True, "run_id": run_id, "total": total, "mode": mode,
-                    "render_d3": render_d3, "item_no": only, "accepted": True}), 202
+                    "render_d3": render_d3, "gen_remove": gen_remove,
+                    "item_no": only, "accepted": True}), 202
 
 
 @bp.get("/admin/image-translate-bench/image/<item_id>/<int:idx>")
@@ -11200,8 +11233,12 @@ def image_translate_bench_d3_image(item_id: str, idx: int):
     """
     if not _check_auth() or not _is_admin_user():
         return ("", 404)
+    # D3-5: gen_remove 렌더본은 `kind="d3g"`. **벤치 저장소 둘만** 연다(등록 자리는 안 연다).
+    kind = str(request.args.get("kind") or "d3")
+    if kind not in ("d3", "d3g"):
+        return ("", 404)
     from src.services.image_translate_store import read_translated
-    raw = read_translated(item_id, idx, kind="d3")
+    raw = read_translated(item_id, idx, kind=kind)
     if not raw:
         return ("", 404)
     from flask import Response
@@ -11237,15 +11274,23 @@ def image_translate_bench_score():
     #   D3-4 ⑤: D3 칸도 **사람은 C·E만** 찍는다 — A·B·D는 우리 결과(`render_text`)를
     #   공급사와 **같은 판정기**로 자동 채점한다(두 열을 같은 자로 잰다).
     from src.services.image_bench_axes import HUMAN_AXES
+    #   D3-5: `d3g:<idx>:<축>`은 **gen_remove 렌더본**의 칸, `pick:<idx>`는 **사람이 뒤집은 등록본**.
+    from src.services.image_bench_axes import CANDIDATES
+    pick_names = {n for n, _l in CANDIDATES}
     cells = {}
     for key, val in (data.get("cells") or {}).items():
         try:
             k = str(key)
-            is_d3 = k.startswith("d3:")
-            idx, axis = (k[3:] if is_d3 else k).split(":", 1)
+            if k.startswith("pick:"):
+                idx = int(k[5:])
+                if idx >= 0 and str(val) in pick_names:
+                    cells[f"pick:{idx}"] = str(val)
+                continue
+            prefix = "d3g:" if k.startswith("d3g:") else ("d3:" if k.startswith("d3:") else "")
+            idx, axis = k[len(prefix):].split(":", 1)
             allowed = HUMAN_AXES
             if axis in allowed and int(idx) >= 0 and str(val) in ("0", "1"):
-                cells[f"{'d3:' if is_d3 else ''}{int(idx)}:{axis}"] = int(val)
+                cells[f"{prefix}{int(idx)}:{axis}"] = int(val)
         except Exception:
             continue
     if cells:

@@ -29,7 +29,7 @@ def is_running() -> bool:
 
 
 def start(run_id: str, seller_id: str, fixtures, *, mode: int = 0,
-          title: str = "", render_d3: bool = False) -> int:
+          title: str = "", render_d3: bool = False, gen_remove: bool = False) -> int:
     """접수 — 총 장수를 돌려주고 뒤에서 돈다. 이미 돌고 있으면 0.
 
     F33: `mode`(0=pro / 1=lite)를 실어 **같은 장을 두 번** 돌린다. 두 실행은 따로 저장되고
@@ -44,6 +44,11 @@ def start(run_id: str, seller_id: str, fixtures, *, mode: int = 0,
 
     > ★ **이건 파이프라인 연결이 아니다.** 결과는 벤치 저장소(`kind="d3"`)에만 두고,
     > 등록·번역 경로는 이 값을 쳐다보지 않는다. 5축을 통과해야 연결을 논한다.
+
+    ## D3-5 — `gen_remove=True`면 D3를 **두 번 그린다**(telea · gen_remove)
+
+    번역(LLM)은 **한 번**이다 — 같은 줄을 두 인페인터로 그릴 뿐이다. gen_remove는
+    Cloudinary 크레딧을 쓰므로(장당 51 tx ≈ 0.051 크레딧) **따로 켠다**.
     """
     planned = [(fx, i, img) for fx in (fixtures or [])
                for i, img in enumerate(fx.get("images") or [])]
@@ -52,10 +57,11 @@ def start(run_id: str, seller_id: str, fixtures, *, mode: int = 0,
             return 0
         _STATE.update({"run_id": run_id, "running": True, "mode": int(mode),
                        "title": str(title or ""), "total": len(planned), "results": [],
-                       "render_d3": bool(render_d3)})
+                       "render_d3": bool(render_d3),
+                       "gen_remove": bool(render_d3 and gen_remove)})
     threading.Thread(target=_run,
                      args=(run_id, seller_id, planned, int(mode), str(title or ""),
-                           bool(render_d3)),
+                           bool(render_d3), bool(render_d3 and gen_remove)),
                      daemon=True, name=f"bench-{run_id}").start()
     return len(planned)
 
@@ -90,31 +96,52 @@ def _d3_translate_fn():
     return _fn, stat
 
 
-def _render_d3_for(raw: bytes, lines: list, tokens=()) -> dict:
-    """2단계(용어집) + 3단계(지우고 그리기). 실패해도 **공급사 결과는 안 건드린다.**"""
+def _render_d3_for(raw: bytes, lines: list, tokens=(), gen_remove: bool = False) -> dict:
+    """2단계(용어집) + 3단계(지우고 그리기). 실패해도 **공급사 결과는 안 건드린다.**
+
+    D3-5: 번역은 **한 번** 하고, 같은 줄로 telea를 그리고(항상), `gen_remove`면 한 번 더 그린다.
+    두 결과 모두 **F축**(지운 자리 vs 주변 링)을 **지운 결과**에서 잰다 —
+    지운 결과 바이트는 재고 나서 **버린다**(저장소·실행 기록에 싣지 않는다).
+    """
     from src.services import image_bench_axes as axes
     from src.services import image_text_glossary as glossary
     from src.services import image_text_render as render
 
     fn, stat = _d3_translate_fn()
     rows = glossary.translate_lines(lines or [], fn)
-    out = render.render(raw, rows, method="telea")
-    return {
-        "ok": bool(out.get("ok")),
-        "image_bytes": out.get("image_bytes") or b"",
-        "erased": out.get("erased", 0),
-        "drawn": out.get("drawn", 0),
-        "skipped": out.get("skipped") or [],
-        "error": out.get("error", ""),
-        "glossary": glossary.summarize(rows),
-        # ★★ D3-4 ⑤ — D3 열도 **텐센트 열과 같은 판정기**로 A·B·D를 자동 채점한다.
-        #   다른 판정기를 쓰면 두 열의 점수를 나란히 놓을 수 없다(그게 비교의 전부다).
-        #   C·E는 여전히 사람이 찍는다 — 박스는 **원문**의 자리라 자동으로 못 잰다(F33).
-        "axes": axes.auto_scores(d3_judgeable(rows), list(tokens or [])),
-        "typography": out.get("typography") or [],
-        "rows": rows,
-        "llm": stat,          # {calls, chars, errors, providers, styled} — 토큰은 위 설명 참조
-    }
+    # ★★ D3-4 ⑤ — D3 열도 **텐센트 열과 같은 판정기**로 A·B·D를 자동 채점한다.
+    #   다른 판정기를 쓰면 두 열의 점수를 나란히 놓을 수 없다(그게 비교의 전부다).
+    #   C·E는 여전히 사람이 찍는다 — 박스는 **원문**의 자리라 자동으로 못 잰다(F33).
+    text_axes = axes.auto_scores(d3_judgeable(rows), list(tokens or []))
+
+    def _one(method: str) -> dict:
+        out = render.render(raw, rows, method=method)
+        erased = out.pop("erased_bytes", b"") or b""
+        f = ({"score": None, "reason": out.get("error") or "지운 결과가 없습니다", "hits": []}
+             if not (out.get("ok") and erased)
+             else render.background_score(erased, raw, out.get("painted_boxes") or []))
+        return {
+            "ok": bool(out.get("ok")),
+            "image_bytes": out.get("image_bytes") or b"",
+            "erased": out.get("erased", 0),
+            "drawn": out.get("drawn", 0),
+            "skipped": out.get("skipped") or [],
+            "error": out.get("error", ""),
+            "axes": {**text_axes, "F": {"score": f["score"], "reason": f["reason"]}},
+            "f_hits": f.get("hits") or [],
+            "typography": out.get("typography") or [],
+            "inpainter": out.get("inpainter", method),
+            "inpaint_fallback": out.get("inpaint_fallback", ""),
+            "cloud_tx": out.get("cloud_tx", 0),
+            "cloud_credits": out.get("cloud_credits", 0.0),
+        }
+
+    tel = _one("telea")
+    tel.update({"glossary": glossary.summarize(rows), "rows": rows,
+                "llm": stat})     # {calls, chars, errors, providers, styled} — 토큰은 위 설명 참조
+    if gen_remove:
+        tel["gen_remove"] = _one("gen_remove")
+    return tel
 
 
 def d3_judgeable(rows: list) -> list:
@@ -128,8 +155,11 @@ def d3_judgeable(rows: list) -> list:
 
 
 def _run_d3_stage(fx: dict, idx: int, img: dict, result: dict, seller_id: str,
-                  tokens=()) -> dict:
-    """한 장의 D3 렌더 — 실패해도 **행 전체를 죽이지 않는다**(사유만 남긴다)."""
+                  tokens=(), gen_remove: bool = False) -> dict:
+    """한 장의 D3 렌더 — 실패해도 **행 전체를 죽이지 않는다**(사유만 남긴다).
+
+    D3-5: `gen_remove`면 결과에 `gen_remove` 키로 **두 번째 렌더**가 붙는다(`kind="d3g"`).
+    """
     import base64
 
     from src.services import image_translate_store as store
@@ -149,20 +179,51 @@ def _run_d3_stage(fx: dict, idx: int, img: dict, result: dict, seller_id: str,
                 "drawn": 0, "erased": 0, "skipped": [], "url": ""}
 
     try:
-        out = _render_d3_for(raw, lines, tokens)
+        out = _render_d3_for(raw, lines, tokens, gen_remove=gen_remove)
     except Exception as exc:                                   # pragma: no cover
         logger.warning("[벤치·D3] 렌더 실패: %s", exc)
         return {"ok": False, "error": f"렌더 오류: {type(exc).__name__}",
                 "drawn": 0, "erased": 0, "skipped": [], "url": ""}
 
-    # 벤치 저장소에만 둔다 — `kind="d3"`. 등록 경로가 보는 gallery/detail은 건드리지 않는다.
-    stored = {"url": "", "stored_by": "", "note": ""}
-    if out.get("image_bytes"):
-        stored = store.store_translated(
-            str(fx.get("item_id") or fx.get("item_no")), idx,
-            base64.b64encode(out["image_bytes"]).decode("ascii"),
-            seller_id=seller_id, kind="d3")
+    item_id = str(fx.get("item_id") or fx.get("item_no"))
+
+    def _store(one: dict, kind: str) -> dict:
+        # 벤치 저장소에만 둔다 — `kind="d3"`/`"d3g"`. 등록 경로가 보는 gallery/detail은 안 건드린다.
+        if not one.get("image_bytes"):
+            return {"url": "", "stored_by": "", "note": ""}
+        got = store.store_translated(
+            item_id, idx, base64.b64encode(one["image_bytes"]).decode("ascii"),
+            seller_id=seller_id, kind=kind)
+        if got.get("stored_by") == "db":
+            # ★ D3-5에서 찾은 구멍 — DB에 두면 저장소가 **셀러 경로**(`/collect/image-ko/…?kind=d3`)를
+            #   준다. 그런데 그 라우트는 `detail`이 아닌 kind를 전부 **gallery로** 읽는다 —
+            #   D3 칸에 **엉뚱한 그림(텐센트 번역본)이** 뜬다. 벤치 그림은 벤치 라우트로만 연다
+            #   (D3-3b가 그 라우트를 만든 이유다 — 주소만 안 이어져 있었다).
+            got = {**got, "url": f"/seller/admin/image-translate-bench/image/{item_id}/{idx}"
+                                 f"?kind={kind}"}
+        return got
+
+    stored = _store(out, "d3")
+    g_row = {}
+    if out.get("gen_remove"):
+        g = out["gen_remove"]
+        gs = _store(g, "d3g")
+        g_row = {
+            "ok": bool(g.get("ok")) and bool(gs.get("url")),
+            "url": gs.get("url", ""), "stored_by": gs.get("stored_by", ""),
+            "store_note": gs.get("note", ""),
+            "erased": g.get("erased", 0), "drawn": g.get("drawn", 0),
+            "skipped": g.get("skipped") or [],
+            "axes": g.get("axes") or {}, "f_hits": g.get("f_hits") or [],
+            # ★ 폴백이면 **이름이 telea**다 — gen_remove 칸에 telea를 gen_remove로 올리지 않는다.
+            "inpainter": g.get("inpainter", ""),
+            "inpaint_fallback": g.get("inpaint_fallback", ""),
+            "cloud_tx": g.get("cloud_tx"), "cloud_credits": g.get("cloud_credits"),
+            "error": g.get("error", "") or (
+                "" if gs.get("url") else (gs.get("note") or "저장하지 못했습니다")),
+        }
     return {
+        "gen_remove": g_row,
         "ok": bool(out.get("ok")) and bool(stored.get("url")),
         "url": stored.get("url", ""),
         "stored_by": stored.get("stored_by", ""),
@@ -172,6 +233,8 @@ def _run_d3_stage(fx: dict, idx: int, img: dict, result: dict, seller_id: str,
         "skipped": out.get("skipped") or [],
         "glossary": out.get("glossary") or {},
         "axes": out.get("axes") or {},
+        "f_hits": out.get("f_hits") or [],
+        "inpainter": out.get("inpainter", "telea"),
         "typography": out.get("typography") or [],
         "llm": out.get("llm") or {},
         "error": out.get("error", "") or (
@@ -180,7 +243,7 @@ def _run_d3_stage(fx: dict, idx: int, img: dict, result: dict, seller_id: str,
 
 
 def _run(run_id: str, seller_id: str, planned, mode: int = 0, title: str = "",
-         render_d3: bool = False) -> None:
+         render_d3: bool = False, gen_remove: bool = False) -> None:
     from src.db import image_translate_usage_pg as usage
     from src.services import image_bench_axes as axes
     from src.services import image_translate_store as store
@@ -206,8 +269,14 @@ def _run(run_id: str, seller_id: str, planned, mode: int = 0, title: str = "",
                    **{k: e.get(k) for k in ("status", "url", "stored_by", "ms", "target_text",
                                             "warn", "error_class", "error_code",
                                             "error_message", "hint", "store_note")}}
+            # D3-5 ② — 텐센트의 F는 **잴 수 없다**(지운 중간본이 없다). 0이 아니라 측정 불가.
+            row["axes"]["F"] = {"score": None, "reason": axes.F_UNMEASURABLE_TENCENT}
             if render_d3:
-                row["d3"] = _run_d3_stage(fx, i, img, r, seller_id, tokens)
+                d3 = _run_d3_stage(fx, i, img, r, seller_id, tokens, gen_remove=gen_remove)
+                row["d3g"] = d3.pop("gen_remove", {}) or {}
+                row["d3"] = d3
+            # D3-5 ③ — 장마다 **최선**을 제안한다(사람이 뒤집을 수 있다).
+            row["pick"] = axes.pick_best(pick_candidates(row))
             with _LOCK:
                 _STATE["results"].append(row)
                 snapshot = list(_STATE["results"])
@@ -225,6 +294,23 @@ def _run(run_id: str, seller_id: str, planned, mode: int = 0, title: str = "",
             store.record_usage(seller_id, entries)
         ok = sum(1 for e in entries if e.get("status") == "done")
         logger.info("[벤치] %s — %d장 중 %d장 성공", run_id, len(entries), ok)
+
+
+def pick_candidates(row: dict) -> dict:
+    """이 장에서 **실제로 그림을 낸** 후보만 — `{name: axes}`.
+
+    ★ gen_remove가 **telea로 폴백**했으면 후보가 아니다 — 같은 그림을 두 번 세게 된다.
+    """
+    out = {}
+    if row.get("status") == "done" and row.get("url"):
+        out["tencent"] = row.get("axes") or {}
+    d3 = row.get("d3") or {}
+    if d3.get("ok") and d3.get("url"):
+        out["d3"] = d3.get("axes") or {}
+    g = row.get("d3g") or {}
+    if g.get("ok") and g.get("url") and g.get("inpainter") == "gen_remove":
+        out["d3g"] = g.get("axes") or {}
+    return out
 
 
 def status(run_id: str = "") -> dict:

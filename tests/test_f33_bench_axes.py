@@ -173,9 +173,10 @@ def test_a_chinese_line_is_not_an_english_ui_line():
 # ---------------------------------------------------------------------------
 
 def test_c_and_e_are_human_axes():
+    """D3-5 ② — F(배경 복원)가 **자동** 축으로 붙었다. 사람은 여전히 C·E만 찍는다."""
     from src.services.image_bench_axes import AUTO_AXES, HUMAN_AXES
     assert set(HUMAN_AXES) == {"C", "E"}
-    assert set(AUTO_AXES) == {"A", "B", "D"}
+    assert set(AUTO_AXES) == {"A", "B", "D", "F"}
 
 
 def test_box_data_is_offered_as_a_hint_not_a_score():
@@ -217,7 +218,10 @@ def _page(idx, lines):
 
 
 def test_every_cell_is_either_a_score_or_a_reason():
-    """★ 사람이 받는 것 — 25칸(5장×5축)이 **채워지거나 사유가 적힌다**. 빈칸 0."""
+    """★ 사람이 받는 것 — 장×축 칸이 **채워지거나 사유가 적힌다**. 빈칸 0.
+
+    ※ 축 수를 박지 않는다 — D3-5에서 F가 붙어 5→6축이 됐다. 축은 `AXES`가 정본이다.
+    """
     from src.services import image_bench_axes as A
     import src.seller_console.views as V
     results = [{"idx": i, "kind": "상품", "original": f"https://o/{i}.jpg",
@@ -228,9 +232,9 @@ def test_every_cell_is_either_a_score_or_a_reason():
                 "box_hints": []} for i in range(5)]
     grid = V._bench_grid({"results": results, "scores": {}, "mode": 0})
     assert len(grid["pages"]) == 5
-    assert grid["cells_total"] == 25
+    assert grid["cells_total"] == 5 * len(A.AXES)
     for p in grid["pages"]:
-        for key in ("A", "B", "C", "D", "E"):
+        for key, _l, _k, _h in A.AXES:
             cell = p["axes"][key]
             assert cell.get("score") in (0, 1) or cell.get("reason"), (p["idx"], key)
 
