@@ -38,3 +38,18 @@ def upload(product_data: Dict[str, Any]) -> Dict[str, Any]:
         required_envs=required,
         market_label=MARKET_LABEL,
     )
+
+
+def precheck(product_data: Dict[str, Any]) -> Dict[str, Any]:
+    """F48-d 사전검증 — **등록과 같은 변환**(to_collected → prepare_product)을 거친 뒤 판정한다.
+
+    같은 상품을 다른 모양으로 넣고 판정하면, 사전검증이 본 것과 등록이 보내는 것이 갈린다.
+    """
+    from src.uploaders.coupang_uploader import CoupangUploader
+    from src.seller_console.market_cred_view import resolve_upload_account
+    from ._channel_bridge import to_collected
+
+    account = resolve_upload_account()
+    up = CoupangUploader(account=account) if account else CoupangUploader()
+    prepared = up.prepare_product(to_collected(product_data))
+    return up.precheck(prepared)

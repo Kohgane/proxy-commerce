@@ -342,6 +342,32 @@ def sample_shopify_order():
 # Phase 10: 검증기 상태 리셋 fixture
 # ──────────────────────────────────────────────────────────
 
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "coupang_precheck: 쿠팡 사전검증의 **깊은 판정**(카테고리·메타·출고지 조회)을 실제로 돌린다 (F48)")
+
+
+@pytest.fixture(autouse=True)
+def _coupang_deep_precheck_not_measured(request, monkeypatch):
+    """F48 — 쿠팡 사전검증은 이제 **네트워크로** 카테고리·메타·출고지를 판다.
+
+    옛 계약 대부분은 그 **앞** 관문(자격·배송 칸·제목·가격)을 재는데, 목 없이 깊은 판정까지 가면
+    실제 쿠팡 API를 두드린다(스로틀 재시도로 수십 초). 그래서 기본은 **「안 쟀다」(ok=None)**로 두고,
+    깊은 판정을 재는 계약은 `@pytest.mark.coupang_precheck`로 **명시해서** 켠다.
+
+    ★ 「안 쟀다」는 **통과가 아니다** — 사전검증은 사유 없이 앞 관문 결과만 돌려준다.
+    """
+    if request.node.get_closest_marker("coupang_precheck"):
+        return
+    try:
+        import src.channel_sync.coupang_uploader as _cu
+    except Exception:                                          # pragma: no cover
+        return
+    monkeypatch.setattr(_cu, "precheck",
+                        lambda product_data: {"ok": None, "holds": [], "notes": []})
+
+
 @pytest.fixture(autouse=True)
 def reset_order_validator():
     """각 테스트 후 OrderValidator 중복 감지 캐시를 초기화한다.

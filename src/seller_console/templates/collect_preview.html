@@ -1577,6 +1577,16 @@ async function runPrevalidate() {
   }
 }
 
+// F48-c/d — 마켓이 준 사유를 **한 줄씩**. 한 문자열로 뭉치면 사람은 첫 문장만 읽는다.
+//   한 줄이면 요약(message)이 곧 그 문장이다 — 목록을 또 펴면 같은 말이 두 번 나온다.
+function renderDetailLines(lines, cls) {
+  if (!lines || lines.length < 2) return '';
+  const esc = (typeof kgpEscapeForHtml === 'function') ? kgpEscapeForHtml
+    : (t => String(t).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])));
+  return '<ul class="small mb-0 mt-1 ps-3 ' + (cls || '') + '" data-role="detail-lines">'
+    + lines.map(l => '<li>' + esc(l) + '</li>').join('') + '</ul>';
+}
+
 function renderPrevalidateResults(results) {
   _validatedMarkets = results.filter(r => r.ok).map(r => r.market);
   const el = document.getElementById('prevalidateResults');
@@ -1601,6 +1611,7 @@ function renderPrevalidateResults(results) {
         <div>
           <div class="fw-semibold">${r.market_label || r.market} ${badge}${reach}</div>
           <div class="text-muted small">${r.message}</div>
+          ${renderDetailLines(r.details, r.ok ? 'text-muted' : 'text-danger')}
           ${r.hint ? `<div class="text-warning small mt-1"><i class="bi bi-lightbulb"></i> ${r.hint}</div>` : ''}
         </div>
       </div>`;
@@ -1723,6 +1734,7 @@ function renderUploadResults(data) {
         <div class="list-group-item list-group-item-danger">
           <div class="fw-semibold"><i class="bi bi-x-circle text-danger"></i> ${r.market_label || r.market} — 실패</div>
           <div class="small">${r.message}</div>
+          ${renderDetailLines(r.details, 'text-danger')}
           ${r.hint ? `<div class="text-warning small mt-1"><i class="bi bi-lightbulb"></i> 조치: ${r.hint}</div>` : ''}
           ${r.error_code ? `<div class="text-muted small">오류코드: ${r.error_code}</div>` : ''}
         </div>`;

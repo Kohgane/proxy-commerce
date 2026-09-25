@@ -16,6 +16,8 @@ _SHIP = ("VENDOR_USER_ID", "RETURN_CENTER_CODE", "OUTBOUND_SHIPPING_PLACE_CODE",
 def _up(monkeypatch):
     for s in _SHIP:
         monkeypatch.setenv(f"COUPANG_{s}", "7437895" if s == "OUTBOUND_SHIPPING_PLACE_CODE" else "x")
+    # F48-a — AGENT_BUY(기본)는 **해외 칸**만 본다. 정수 캐스팅 계약은 그 칸 값으로 잰다.
+    monkeypatch.setenv("COUPANG_OVERSEAS_OUTBOUND_SHIPPING_PLACE_CODE", "7437895")
     return CoupangUploader(access_key="a", secret_key="b", vendor_id="v")
 
 
@@ -128,6 +130,9 @@ def test_approval_requested_after_register(monkeypatch):
             return {"data": 777, "code": "SUCCESS"}
         if m == "PUT" and "approvals" in p:
             return {"code": "SUCCESS"}
+        if "category-related-metas" in p:
+            # F48 — 사전검증은 메타를 못 읽으면 보류한다. 속성 없는 메타 한 벌.
+            return {"data": {"attributes": [], "noticeCategories": []}}
         return {}
     monkeypatch.setattr(up, "_api_request", _api)
     monkeypatch.setattr("time.sleep", lambda s: None)

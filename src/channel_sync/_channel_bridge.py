@@ -25,7 +25,16 @@ class ChannelCredentialsMissing(RuntimeError):
 
 
 class ChannelUploadError(RuntimeError):
-    """채널 API 업로드 실패 또는 업로드 불가(원화가 0 등)."""
+    """채널 API 업로드 실패 또는 업로드 불가(원화가 0 등).
+
+    F48-c — `lines`: 마켓이 준 거부 문장을 **한 줄씩**. 사유를 문자열 하나로 뭉치면 화면이
+    첫 문장만 보여 준다. `held`: 전송 전 보류였는지(보낸 뒤 거부와 다른 사건이다).
+    """
+
+    def __init__(self, message: str = "", *, lines=None, held: bool = False):
+        super().__init__(message)
+        self.lines = [str(x) for x in (lines or []) if str(x).strip()]
+        self.held = bool(held)
 
 
 def _first_positive_number(*values: Any) -> float | None:
@@ -112,7 +121,10 @@ def run_upload(
 
     if not isinstance(resp, dict) or not resp.get("success"):
         error = resp.get("error") if isinstance(resp, dict) else "알 수 없는 오류"
-        raise ChannelUploadError(f"{market_label} 업로드 실패: {error}")
+        raise ChannelUploadError(
+            f"{market_label} 업로드 실패: {error}",
+            lines=(resp.get("error_lines") if isinstance(resp, dict) else None),
+            held=bool(isinstance(resp, dict) and resp.get("held")))
 
     return {
         "product_id": str(resp.get("product_id") or "").strip() or None,

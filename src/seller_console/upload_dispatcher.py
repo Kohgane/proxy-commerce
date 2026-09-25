@@ -258,10 +258,13 @@ def render_detail_blocks_html(detail_blocks: Any, market: str) -> str:
 
 # 채널 브리지 예외 (자격증명 미설정 식별용). 브리지 미존재 시 폴백 정의.
 try:
-    from src.channel_sync._channel_bridge import ChannelCredentialsMissing
+    from src.channel_sync._channel_bridge import ChannelCredentialsMissing, ChannelUploadError
 except Exception:  # pragma: no cover - 브리지 모듈 부재 시 안전 폴백
     class ChannelCredentialsMissing(RuntimeError):
         """채널 API 자격증명 미설정 (폴백 정의)."""
+
+    class ChannelUploadError(RuntimeError):
+        """채널 업로드 실패 (폴백 정의)."""
 
 # 지원 마켓 코드
 SUPPORTED_MARKETS = ["coupang", "smartstore", "elevenst", "woocommerce", "shopify"]
@@ -316,6 +319,8 @@ class UploadResult:
     external_url: Optional[str] = None         # 마켓 상품 URL
     error_code: Optional[str] = None           # 오류 코드 (token_missing, scope_insufficient 등)
     hint: Optional[str] = None                 # 즉시 행동 가이드
+    # F48-c — 마켓 거부 문장 **한 줄씩**(쿠팡 `|` 분리 · errorItems[].itemAttributes[].message)
+    details: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -348,6 +353,7 @@ class DispatchResult:
                     "external_url": r.external_url,
                     "error_code": r.error_code,
                     "hint": r.hint,
+                    "details": list(r.details or []),
                 }
                 for r in self.results
             ],
@@ -367,6 +373,20 @@ class PrevalidationResult:
     reach_ok: Optional[bool] = None
     reach_ms: Optional[int] = None
     reach_detail: str = ""
+    # F48-d — 전송 전에 잡은 사유 **한 줄씩**(쿠팡 배송·구매옵션·필수서류)
+    details: List[str] = field(default_factory=list)
+
+
+def lines_message(prefix: str, lines: List[str]) -> str:
+    """사유 한 줄 요약. 한 줄이면 그 문장을, 여러 줄이면 **건수만** 적는다.
+
+    여러 줄일 때 첫 줄을 요약에 넣으면 바로 아래 목록(`details`)과 같은 문장이 두 번 보인다
+    (F48 캡처 자기비평). 문장 자체는 `details`에 그대로 있고, 화면은 두 줄 이상일 때만 목록을 편다.
+    """
+    lines = [str(x) for x in (lines or []) if str(x or "").strip()]
+    if len(lines) == 1:
+        return f"{prefix} — {lines[0]}"
+    return f"{prefix} — 사유 {len(lines)}건(아래)"
 
 
 # F35-2: 사전검증에서 **도달성만** 재는 자리들. 자격은 보내지 않는다 — 「닿나」만 묻는다.
@@ -599,6 +619,26 @@ class UploadDispatcher:
                         message=f"상품 이미지 URL에 접근할 수 없습니다: {first_img[:60]}",
                         hint="마켓에서 접근 가능한 공개 이미지 URL을 사용하세요.",
                     )
+
+        # ★ F48-d — 쿠팡은 **등록 버튼을 눌러야 아는 것**을 여기서 판다: 배송(해외 출고지)·
+        #   구매옵션(필수·택1·3개 제한·색상 매핑)·필수서류(인보이스). 등록과 **같은 함수**(precheck).
+        if market == "coupang":
+            try:
+                from src.channel_sync import coupang_uploader as _cu
+                chk = _cu.precheck(product_data)
+            except Exception as exc:
+                logger.warning("[사전검증] 쿠팡 판정 실패: %s", exc)
+                chk = {"ok": None, "holds": [], "notes": [f"쿠팡 판정을 돌리지 못했습니다: {type(exc).__name__}"]}
+            if chk.get("ok") is False:
+                return PrevalidationResult(
+                    market=market, ok=False, error_code="coupang_hold",
+                    message=lines_message("등록하면 쿠팡이 거부할 것이라 여기서 멈췄습니다", chk["holds"]),
+                    hint=" · ".join(chk.get("notes") or []),
+                    details=list(chk["holds"]))
+            if chk.get("notes"):
+                # 참고 사항은 힌트 한 자리에만 — 목록에도 적으면 같은 말이 두 번 나온다.
+                return PrevalidationResult(market=market, ok=True, message="사전검증 통과",
+                                           hint=" · ".join(chk["notes"]))
 
         # F35-2: **등록 직전에 한 번** 두드려 본다 — 「키가 있다」를 「닿는다」로 읽지 않는다.
         if market in ("woocommerce", "elevenst", "shopify"):
@@ -994,6 +1034,20 @@ class UploadDispatcher:
                 message=str(exc),
                 error_code="token_missing",
                 hint=_MARKET_TOKEN_HINTS.get("coupang"),
+            )
+        except ChannelUploadError as exc:
+            # F48-c — 거부 문장을 **한 줄씩** 화면에. 보류(전송 전)와 거부(전송 후)를 가른다.
+            lines = list(getattr(exc, "lines", []) or [])
+            held = bool(getattr(exc, "held", False))
+            return UploadResult(
+                market="coupang",
+                success=False,
+                message=lines_message("전송 전에 보류했습니다" if held else "쿠팡이 거부했습니다",
+                                      lines or [str(exc)]),
+                # 코드 이름은 옛것을 지킨다(`api_error`) — 다른 자리가 그 이름으로 가른다.
+                #   새로 생긴 것은 **전송 전 보류**(`held`) 하나다.
+                error_code="held" if held else "api_error",
+                details=lines,
             )
         except Exception as exc:
             logger.warning("쿠팡 업로드 오류: %s", exc)

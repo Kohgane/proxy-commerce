@@ -41,6 +41,8 @@ def coupang_uploader(monkeypatch):
     monkeypatch.setenv('COUPANG_VENDOR_USER_ID', 'wing_user')
     monkeypatch.setenv('COUPANG_RETURN_CENTER_CODE', '1000274592')
     monkeypatch.setenv('COUPANG_OUTBOUND_SHIPPING_PLACE_CODE', '7437895')
+    # F48-a — AGENT_BUY(구매대행)는 해외 출고지 칸만 본다.
+    monkeypatch.setenv('COUPANG_OVERSEAS_OUTBOUND_SHIPPING_PLACE_CODE', '25099966')
     monkeypatch.setenv('COUPANG_RETURN_ZIP_CODE', '06000')
     monkeypatch.setenv('COUPANG_RETURN_ADDRESS', '서울시 강남구 테헤란로 1')
     monkeypatch.setenv('COUPANG_RETURN_CHARGE_NAME', '반품담당')
@@ -227,6 +229,24 @@ class TestCoupangApiRequest:
         assert 'error' in result
 
 
+def _coupang_route(post_resp):
+    """F48 — 등록 전 사전검증이 **카테고리 메타**를 읽는다(못 읽으면 보류).
+
+    POST 응답 매핑을 재는 테스트라, 메타 GET에는 **속성 없는 메타**를 주고
+    POST(seller-products)에만 재려는 응답을 준다. 한 값으로 모든 호출을 받던 목은
+    메타 자리에도 그 값을 줘서 「메타를 못 읽었다」로 보류됐다.
+    """
+    def _api(method, path, data=None):
+        if method == 'POST' and 'seller-products' in path:
+            return post_resp
+        if 'categorization/predict' in path:
+            return {'code': 'SUCCESS', 'data': {'predictedCategoryId': '1001'}}
+        if 'category-related-metas' in path or 'meta' in path:
+            return {'code': 'SUCCESS', 'data': {'attributes': [], 'noticeCategories': []}}
+        return {}
+    return _api
+
+
 class TestCoupangUploadProduct:
     def test_upload_product_success(self, coupang_uploader):
         prepared = coupang_uploader.prepare_product(SAMPLE_COLLECTED)
@@ -248,7 +268,7 @@ class TestCoupangUploadProduct:
         """쿠팡은 data를 sellerProductId 숫자로 직접 반환 — 크래시 없이 매핑."""
         prepared = coupang_uploader.prepare_product(SAMPLE_COLLECTED)
         with patch.object(coupang_uploader, '_api_request',
-                          return_value={'code': 'SUCCESS', 'data': 12345678}):
+                          side_effect=_coupang_route({'code': 'SUCCESS', 'data': 12345678})):
             result = coupang_uploader.upload_product(prepared)
         assert result['success'] is True
         assert result['product_id'] == '12345678'
@@ -257,7 +277,7 @@ class TestCoupangUploadProduct:
         """data=null + 비성공 코드 → 가짜 성공이 아니라 정직한 실패 (NoneType 크래시 금지)."""
         prepared = coupang_uploader.prepare_product(SAMPLE_COLLECTED)
         with patch.object(coupang_uploader, '_api_request',
-                          return_value={'code': 'ERROR', 'message': '카테고리 오류', 'data': None}):
+                          side_effect=_coupang_route({'code': 'ERROR', 'message': '카테고리 오류', 'data': None})):
             result = coupang_uploader.upload_product(prepared)
         assert result['success'] is False
         assert '카테고리 오류' in result['error']

@@ -63,6 +63,21 @@ OUTBOUND_FIELD_CANDIDATES: Dict[str, tuple] = {
                                              "outboundShippingPlaceId", "placeCode"),
 }
 
+# F48-a — 출고지는 **주소 유형**으로 칸이 갈린다(오너 문서 정본: AGENT_BUY는 해외 주소지만).
+#   `addressType`은 오너가 문서에서 받아 적은 이름이다. 값이 `OVERSEA`면 구매대행 칸,
+#   아니면 국내 칸. **유형을 못 읽은 행은 어느 칸에도 자동으로 넣지 않는다** — 사람이 고른다.
+OVERSEAS_OUTBOUND_ENV = "COUPANG_OVERSEAS_OUTBOUND_SHIPPING_PLACE_CODE"
+DOMESTIC_OUTBOUND_ENV = "COUPANG_OUTBOUND_SHIPPING_PLACE_CODE"
+ADDRESS_TYPE_KEYS = ("addressType",)
+
+
+def outbound_slot(address_type: str) -> str:
+    """주소 유형 → 이 출고지가 들어갈 **칸 이름**. 모르면 빈 문자열(자동 배정 안 함)."""
+    at = str(address_type or "").strip().upper()
+    if not at:
+        return ""
+    return OVERSEAS_OUTBOUND_ENV if at == "OVERSEA" else DOMESTIC_OUTBOUND_ENV
+
 # 사람이 고를 때 읽는 이름(라디오 한 줄). 없으면 코드만 보여 준다.
 LABEL_CANDIDATES = ("shippingPlaceName", "placeName", "returnCenterName", "name", "companyName")
 
@@ -210,6 +225,22 @@ def fetch(account: str = "") -> dict:
                      RETURN_FIELD_CANDIDATES)
     out = _fetch_one(up, OUTBOUND_PLACES_PATH + OUTBOUND_PLACES_QUERY,
                      OUTBOUND_FIELD_CANDIDATES)
+    # F48-a — 출고지를 **주소 유형**으로 칸에 나눈다. 국내 출고지가 구매대행 칸 후보로 뜨면
+    #   사람이 그걸 고르고, 쿠팡은 AGENT_BUY로 온 국내 코드를 거부한다(이번 거부가 그 모양이다).
+    for e in out.get("entries") or []:
+        # `_pick`과 **같은 깊이**(최상위 + 한 단)에서 찾는다 — 코드는 한 단 아래서 찾는데
+        #   유형은 최상위만 보면, 같은 행에서 코드만 찾고 유형은 「모름」이 된다.
+        at = next((str(v).strip() for k, v in (e["raw"] or {}).items()
+                   if (k in ADDRESS_TYPE_KEYS or any(k.endswith("." + t) for t in ADDRESS_TYPE_KEYS))
+                   and str(v or "").strip()), "")
+        e["address_type"] = at
+        code = e["values"].pop(DOMESTIC_OUTBOUND_ENV, "")
+        slot = outbound_slot(at)
+        e["slot"] = slot
+        if code and slot:
+            e["values"][slot] = code
+        elif code:
+            e["code_unassigned"] = code          # 유형 모름 — 사람이 칸을 고른다
 
     # 우리가 못 채운 칸 — 화면이 「이 칸은 직접」이라고 말할 수 있게 이름으로 올린다.
     filled = set()
@@ -218,8 +249,8 @@ def fetch(account: str = "") -> dict:
             filled |= set(e["values"])
     # F34-3: 상세주소는 **선택 칸**이다(화면 라벨도 「(선택)」). 못 채웠다고 「미매핑」에
     #   세면, 다 채워진 응답에도 빨간 칸이 하나 남아 사람이 없는 값을 찾게 된다.
-    wanted = ((set(RETURN_FIELD_CANDIDATES) | set(OUTBOUND_FIELD_CANDIDATES))
-              - OPTIONAL_FIELDS)
+    wanted = ((set(RETURN_FIELD_CANDIDATES) | set(OUTBOUND_FIELD_CANDIDATES)
+               | {OVERSEAS_OUTBOUND_ENV}) - OPTIONAL_FIELDS)
     return {"ok": bool(ret["ok"] or out["ok"]), "account": acct, "vendor_id": vendor_id,
             "return_centers": ret, "outbound_places": out,
             "unmapped": sorted(wanted - filled)}

@@ -197,6 +197,20 @@
         </div>
         {% endif %}
         {% if f.help %}<div class="form-text small text-muted mt-1">{{ f.help }}</div>{% endif %}
+        {% if f.env == 'COUPANG_INVOICE_DOCUMENT_URL' %}
+        {# F48-b — 주소를 복사해 오라고 하지 않는다. 여기서 올리면 서버가 Cloudinary에 올리고
+           이 칸에 주소를 저장한다(키는 서버에만). 쿠팡 전용 칸 — 다른 마켓엔 이 칸이 없다. #}
+        <div class="pc-inset mt-2" data-role="invoice-box">
+          <div class="small mb-1"><i class="bi bi-receipt"></i> 인보이스영수증 파일 올리기 <span class="text-muted">(JPG·PNG·PDF, 10MB까지)</span></div>
+          <div class="d-flex flex-wrap gap-2 align-items-center">
+            <input type="file" class="form-control form-control-sm w-auto flex-grow-1"
+                   accept="image/jpeg,image/png,application/pdf" data-role="invoice-file">
+            <button type="button" class="btn btn-ghost btn-sm" data-action="invoice-upload">
+              <i class="bi bi-cloud-arrow-up"></i> 올리고 저장</button>
+          </div>
+          <div class="small mt-1" data-role="invoice-result"></div>
+        </div>
+        {% endif %}
       </div>
       {% endfor %}
       <div class="d-flex flex-wrap gap-2 mt-3">
@@ -305,18 +319,39 @@ function renderLookup(form, data) {
         ${kgpEscapeForHtml(label)} — 등록된 것이 없습니다.</div>`;
       return;
     }
-    html += `<div class="console-kpi-label mt-2">${kgpEscapeForHtml(label)} ${list.length}개</div>`;
-    list.forEach((e, i) => {
-      const name = kgpEscapeForHtml(e.label || Object.values(e.values || {})[0] || `${i + 1}번째`);
-      const raw = Object.keys(e.raw || {}).map(k =>
-        `${kgpEscapeForHtml(k)}: ${kgpEscapeForHtml(String(e.raw[k]))}`).join(' · ');
-      html += `<label class="pc-inset d-flex gap-2 align-items-start mb-1">
-        <input type="radio" class="form-check-input" name="lk-${key}" value="${i}"
-               data-lk-key="${key}" ${list.length === 1 ? 'checked' : ''}>
-        <span class="small flex-grow-1"><strong>${name}</strong>
-          <details class="mt-1"><summary class="text-muted">원문 보기</summary>
-            <div class="text-muted" style="word-break:break-all">${raw}</div></details></span>
-      </label>`;
+    // F48-a — 출고지는 **주소 유형으로 두 무리**로 나눈다. 구매대행(AGENT_BUY)은 해외 주소지만 받으므로
+    //   국내 출고지가 그 칸 후보로 뜨면 안 된다(이번 쿠팡 거부가 그 모양이었다).
+    const groups = key === 'outbound_places'
+      ? [['COUPANG_OVERSEAS_OUTBOUND_SHIPPING_PLACE_CODE', '출고지 — 구매대행(해외 · AGENT_BUY)'],
+         ['COUPANG_OUTBOUND_SHIPPING_PLACE_CODE', '출고지 — 국내(일반배송 · SEQUENCIAL)'],
+         ['', '출고지 — 주소 유형을 못 읽음(칸 자동 배정 안 함 · 직접 고르세요)']]
+      : [[null, label]];
+    groups.forEach(([slot, glabel]) => {
+      const rows = list.map((e, i) => [e, i]).filter(([e]) => slot === null || (e.slot || '') === slot);
+      if (slot !== null && !rows.length) {
+        if (slot) html += `<div class="small text-muted mt-2">${kgpEscapeForHtml(glabel)} — 없음</div>`;
+        return;
+      }
+      html += `<div class="console-kpi-label mt-2">${kgpEscapeForHtml(glabel)} ${rows.length}개</div>`;
+      rows.forEach(([e, i]) => {
+        const code = Object.values(e.values || {})[0] || e.code_unassigned || '';
+        const name = kgpEscapeForHtml(e.label || code || `${i + 1}번째`);
+        const at = e.address_type ? ` <span class="pc-badge pc-badge-muted">${kgpEscapeForHtml(e.address_type)}</span>` : '';
+        const raw = Object.keys(e.raw || {}).map(k =>
+          `${kgpEscapeForHtml(k)}: ${kgpEscapeForHtml(String(e.raw[k]))}`).join(' · ');
+        // 라디오 이름: 유형을 아는 무리는 **각자** 이름(해외·국내 하나씩 고를 수 있게),
+        //   유형을 모르는 무리는 **옛 이름 그대로**(F38 — 못 고른 블록을 채우기가 말해야 한다).
+        const rname = slot === 'COUPANG_OVERSEAS_OUTBOUND_SHIPPING_PLACE_CODE' ? `lk-${key}-ov`
+          : (slot === 'COUPANG_OUTBOUND_SHIPPING_PLACE_CODE' ? `lk-${key}-dom` : `lk-${key}`);
+        html += `<label class="pc-inset d-flex gap-2 align-items-start mb-1">
+          <input type="radio" class="form-check-input" name="${rname}" value="${i}"
+                 data-lk-key="${key}" ${rows.length === 1 ? 'checked' : ''}>
+          <span class="small flex-grow-1"><strong>${name}</strong> ${kgpEscapeForHtml(code)}${at}
+            ${slot === '' ? '<div class="text-warning">주소 유형을 못 읽어 어느 칸에도 자동으로 넣지 않았어요 — 아래에서 직접 고르세요.</div>' : ''}
+            <details class="mt-1"><summary class="text-muted">원문 보기</summary>
+              <div class="text-muted" style="word-break:break-all">${raw}</div></details></span>
+        </label>`;
+      });
     });
   });
   // F38 실측(오너 2026-09-20): 출고지 2개(22796911/25099966)가 왔는데
@@ -424,6 +459,30 @@ document.querySelectorAll('.market-connect-form').forEach(form => {
       out.innerHTML = `<div class="pc-status pc-status-danger">
         <i class="bi bi-exclamation-triangle"></i> ${kgpEscapeForHtml(kgpFriendlyError(err))}</div>`;
     } finally { setButtonLoading(lk, false); }
+  });
+  // F48-b — 인보이스 파일: 브라우저는 **파일만** 보낸다(multipart). 올리기·저장은 서버가.
+  const inv = form.querySelector('[data-action="invoice-upload"]');
+  if (inv) inv.addEventListener('click', async () => {
+    const box = inv.closest('[data-role="invoice-box"]');
+    const file = (box.querySelector('[data-role="invoice-file"]').files || [])[0];
+    const out = box.querySelector('[data-role="invoice-result"]');
+    if (!file) { out.innerHTML = '<span class="text-warning">먼저 파일을 골라 주세요.</span>'; return; }
+    const fd = new FormData(); fd.append('file', file);
+    setButtonLoading(inv, true, '올리는 중…');
+    try {
+      const resp = await fetch('/seller/markets/connect/coupang/invoice', {method: 'POST', body: fd});
+      const data = await resp.json().catch(() => ({ok: false, error: '응답을 읽지 못했습니다.'}));
+      if (!data.ok) {
+        out.innerHTML = `<span class="text-danger">${kgpEscapeForHtml(data.error || '올리지 못했습니다.')}</span>`;
+        return;
+      }
+      const field = form.querySelector('[name="COUPANG_INVOICE_DOCUMENT_URL"]');
+      if (field) field.value = data.secure_url;
+      out.innerHTML = `<span style="color:var(--success)"><i class="bi bi-check-lg"></i> 올리고 저장했어요</span>
+        <a href="${kgpEscapeForHtml(data.secure_url)}" target="_blank" rel="noopener noreferrer" class="ms-1">파일 보기</a>`;
+    } catch (err) {
+      out.innerHTML = `<span class="text-danger">${kgpEscapeForHtml(kgpFriendlyError(err))}</span>`;
+    } finally { setButtonLoading(inv, false); }
   });
   const dc = form.querySelector('[data-action="disconnect"]');
   if (dc) dc.addEventListener('click', async () => {

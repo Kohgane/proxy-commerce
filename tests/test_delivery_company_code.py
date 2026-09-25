@@ -7,6 +7,7 @@ from __future__ import annotations
 from src.uploaders.coupang_uploader import CoupangUploader
 
 _SHIP = ("VENDOR_USER_ID", "RETURN_CENTER_CODE", "OUTBOUND_SHIPPING_PLACE_CODE",
+         "OVERSEAS_OUTBOUND_SHIPPING_PLACE_CODE",          # F48-a — AGENT_BUY 해외 칸
          "RETURN_ZIP_CODE", "RETURN_ADDRESS", "RETURN_CHARGE_NAME", "COMPANY_CONTACT_NUMBER")
 _COMPANIES = {"data": [{"deliveryCompanyCode": "EPOST", "deliveryCompanyName": "우체국택배"},
                        {"deliveryCompanyCode": "CJGLS", "deliveryCompanyName": "CJ대한통운"}]}
@@ -29,6 +30,9 @@ def _wire(monkeypatch, up, sent=None):
             return _COMPANIES
         if "categorization/predict" in p:
             return {"data": {"predictedCategoryId": "1001"}}
+        if "category-related-metas" in p:
+            # F48 — 사전검증은 메타를 못 읽으면 보류한다. 속성 없는 메타 한 벌.
+            return {"data": {"attributes": [], "noticeCategories": []}}
         if m == "POST" and "seller-products" in p:
             if sent is not None:
                 sent["payload"] = data
