@@ -23,19 +23,20 @@ def test_catalog_contains_required_aliases():
 
 
 def test_alias_lookup_ko_and_en():
-    from src.seller_console.orders.courier_catalog import lookup_trackingmore_code
+    """별칭 검색어가 살아 있나 — **공급사가 갈려도 검색은 그대로여야 한다**(F44-b).
 
-    assert lookup_trackingmore_code("CJ") == "cj-korea"
-    assert lookup_trackingmore_code("씨제이") == "cj-korea"
-    assert lookup_trackingmore_code("cj-korea") == "cj-korea"
-    assert lookup_trackingmore_code("한진") == "hanjin"
-    assert lookup_trackingmore_code("hanjin") == "hanjin"
-    assert lookup_trackingmore_code("롯데") == "lotte"
-    assert lookup_trackingmore_code("lotte") == "lotte"
-    assert lookup_trackingmore_code("우체국") == "korea-post"
-    assert lookup_trackingmore_code("korea-post") == "korea-post"
-    assert lookup_trackingmore_code("로젠") == "logen"
-    assert lookup_trackingmore_code("logen") == "logen"
+    ★ 옛 TrackingMore 코드(`cj-korea`·`hanjin`…)는 **검색어로 남긴다.** 코드 축은
+    사라졌지만 사람이 그 글자로 찾던 습관은 남는다 — 검색에서 빼면 「내 택배사가 없다」가 된다.
+    """
+    from src.seller_console.orders.courier_catalog import find_couriers
+
+    for term, name in (("CJ", "CJ대한통운"), ("씨제이", "CJ대한통운"),
+                       ("cj-korea", "CJ대한통운"), ("한진", "한진택배"),
+                       ("hanjin", "한진택배"), ("롯데", "롯데택배"),
+                       ("lotte", "롯데택배"), ("우체국", "우체국택배"),
+                       ("korea-post", "우체국택배"), ("로젠", "로젠택배"),
+                       ("logen", "로젠택배")):
+        assert any(r["name"] == name for r in find_couriers(term)), term
 
 
 def test_find_couriers_by_alias():
@@ -45,43 +46,20 @@ def test_find_couriers_by_alias():
     assert any(row["name"] == "한진택배" for row in results)
 
 
-def test_dynamic_catalog_fallback_when_api_unavailable(monkeypatch):
-    monkeypatch.setenv("TRACKINGMORE_API_KEY", "tm_test")
+def test_the_catalog_does_not_call_a_guessed_vendor_url():
+    """★★★ F44-b — 추적 공급사 목록 확장은 **지금 없다.**
 
-    class FailResp:
-        def raise_for_status(self):
-            raise RuntimeError("offline")
+    예전엔 TrackingMore `couriers/all`을 받아 카탈로그를 넓혔다. 그 공급사는
+    **쿼터 소진으로 교체**됐고, 17TRACK 캐리어 목록 URL은 문서에 링크로만 있다.
 
-    with mock.patch("requests.get", return_value=FailResp()):
-        from src.seller_console.orders import courier_catalog
+    ★ **짐작한 주소를 박아 두면** 매 요청이 없는 곳을 두드리고, 실패는 조용한 빈 목록이
+    된다 — 그건 「목록이 비었다」와 구분되지 않는다. 그래서 **부르지 않는다.**
+    """
+    from unittest import mock
 
-        courier_catalog._fetch_trackingmore_catalog.cache_clear()
+    from src.seller_console.orders import courier_catalog
+
+    with mock.patch("requests.get", side_effect=AssertionError("부르면 안 된다")), \
+         mock.patch("requests.post", side_effect=AssertionError("부르면 안 된다")):
         rows = courier_catalog.get_courier_catalog(include_dynamic=True)
-        assert rows
-        assert any(row["name"] == "CJ대한통운" for row in rows)
-
-
-def test_dynamic_catalog_expands_when_api_available(monkeypatch):
-    monkeypatch.setenv("TRACKINGMORE_API_KEY", "tm_test")
-
-    class OkResp:
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {
-                "data": [
-                    {
-                        "courier_code": "custom-courier",
-                        "courier_name": "Custom Courier",
-                        "courier_name_kr": "커스텀택배",
-                    }
-                ]
-            }
-
-    with mock.patch("requests.get", return_value=OkResp()):
-        from src.seller_console.orders import courier_catalog
-
-        courier_catalog._fetch_trackingmore_catalog.cache_clear()
-        rows = courier_catalog.get_courier_catalog(include_dynamic=True)
-        assert any(row["trackingmore_code"] == "custom-courier" for row in rows)
+    assert rows and any(row["name"] == "CJ대한통운" for row in rows)

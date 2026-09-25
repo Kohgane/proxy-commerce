@@ -2041,22 +2041,24 @@ def deep_health():
             "detail": "Resend 헬스 체크 오류",
         })
 
-    # ── TrackingMore 체크 (Phase 133) ──────────────────────────────────
+    # ── 17TRACK 체크 (F44-b — TrackingMore 교체, 병존 금지) ─────────────
+    #   ★ 헬스 체크는 **쿼터 조회**로 한다(등록과 달리 칸을 안 쓴다). 그리고 남은 칸을
+    #     같이 싣는다 — 한도가 다 찬 뒤 4190으로 알게 되는 건 늦다(TrackingMore 실측).
     try:
-        from .seller_console.orders.tracking_trackingmore import TrackingMoreClient as _TMClient
-        _tm_result = _TMClient().health_check()
+        from .seller_console.orders.tracking_17track import SeventeenTrackClient as _T17
+        _t17_result = _T17().health_check()
         check_list.append({
-            "name": "trackingmore",
+            "name": "seventeentrack",
             "category": "logistics",
-            **_tm_result,
+            **_t17_result,
         })
-    except Exception as _tm_exc:
-        logger.warning("TrackingMore 헬스 체크 오류: %s", _tm_exc)
+    except Exception as _t17_exc:
+        logger.warning("17TRACK 헬스 체크 오류: %s", _t17_exc)
         check_list.append({
-            "name": "trackingmore",
+            "name": "seventeentrack",
             "category": "logistics",
             "status": "fail",
-            "detail": "TrackingMore 헬스 체크 오류",
+            "detail": "17TRACK 헬스 체크 오류",
         })
 
     # ── 인증 프로바이더 체크 (Phase 133) ───────────────────────────────
@@ -2115,66 +2117,34 @@ def shop_order_cancel():
 
 @app.get('/cron/track-shipments')
 def cron_track_shipments():
-    """운송장 자동 추적 cron (30분 폴링, Phase 133).
+    """운송장 자동 추적 cron — **F44-b로 공급사가 갈리면서 지금은 멈춰 있다.**
 
-    TRACKINGMORE_API_KEY 활성 시:
-    - 운송장 등록된 주문 → 상태 폴링
-    - 변경 시 orders 시트 갱신
+    ## 왜 멈췄나 (정직하게)
+
+    이 크론은 TrackingMore의 `get_status`로 배송완료를 감지했다. 그 공급사는
+    **무료 쿼터 소진(`4190`, 실측)으로 교체**됐고(오너 결정, 병존 금지), 17TRACK의
+    **상태 조회 응답 모양은 아직 우리가 확인하지 못했다** — 문서에 실린 예시가
+    갈려 있어(`data.trackings[]` vs `providers[]`) **짐작해 파서를 쓰면** 배송완료를
+    잘못 찍거나 조용히 못 찍는다. 그건 주문 상태를 우리가 지어내는 것이다.
+
+    ★ 그래서 **아무 일도 안 하고, 안 한다고 말한다.** 200 + `status: "paused"`이므로
+    외부 크론은 계속 살아 있고(라우트가 404로 사라지지 않는다), 응답만 보면
+    **왜 안 도는지**가 바로 보인다.
+
+    판별·등록·쿼터는 17TRACK으로 이미 돌아간다(`tracking_17track`) —
+    남은 건 **상태 조회 응답 모양 확인**뿐이다.
     """
-    api_key = os.getenv("TRACKINGMORE_API_KEY")
-    if not api_key:
-        return jsonify({"status": "skip", "detail": "TRACKINGMORE_API_KEY 미설정"}), 200
+    from .seller_console.orders.tracking_17track import API_KEY_ENV, SeventeenTrackClient
 
-    if os.getenv("ADAPTER_DRY_RUN", "0") == "1":
-        return jsonify({"status": "dry_run", "detail": "ADAPTER_DRY_RUN=1"}), 200
-
-    updated = 0
-    errors = []
-    try:
-        from .seller_console.orders.sheets_adapter import OrderSheetsAdapter
-        from .seller_console.orders.tracking_trackingmore import TrackingMoreClient
-
-        sheets = OrderSheetsAdapter()
-        tracker_client = TrackingMoreClient()
-        rows = sheets.get_all_rows()
-
-        for row in rows:
-            tracking_no = str(row.get("tracking_no", "")).strip()
-            courier = str(row.get("courier", "")).strip()
-            status = str(row.get("status", "")).strip().lower()
-
-            if not tracking_no or not courier:
-                continue
-            if status in ("delivered", "canceled", "returned"):
-                continue
-
-            try:
-                result = tracker_client.get_status(tracking_no, courier)
-                is_delivered = result.get("is_delivered", False)
-                if is_delivered and status != "delivered":
-                    row["status"] = "delivered"
-                    sheets.upsert_row(row)
-                    updated += 1
-                    # 알림 (구매자 연락처 없으므로 telegram 만)
-                    try:
-                        from .notifications.telegram import send_telegram
-                        send_telegram(
-                            f"📦 배송완료 #{row.get('order_id')} "
-                            f"(운송장: {courier}/{tracking_no})",
-                            urgency="info",
-                        )
-                    except Exception:
-                        pass
-            except Exception as exc:
-                errors.append(f"{tracking_no}: {exc}")
-
-    except Exception as exc:
-        logger.warning("cron_track_shipments 실패: %s", exc)
-        return jsonify({"status": "fail", "error": "운송장 추적 중 오류가 발생했습니다."}), 500
-
-    # 내부 오류 메시지는 로그에만 기록
-    sanitized_errors = [f"추적 오류 {i+1}" for i, _ in enumerate(errors[:10])]
-    return jsonify({"status": "ok", "updated": updated, "errors": sanitized_errors})
+    client = SeventeenTrackClient()
+    return jsonify({
+        "status": "paused",
+        "vendor": "17track",
+        "key_present": client.active,
+        "detail": ("공급사 교체(F44-b) 중 — 17TRACK 상태 조회 응답 모양을 확인한 뒤 잇습니다. "
+                   f"키({API_KEY_ENV})는 " + ("있습니다." if client.active else "아직 없습니다.")),
+        "updated": 0,
+    }), 200
 
 
 # Phase 135: Discovery 봇 cron

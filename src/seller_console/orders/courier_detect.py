@@ -1,26 +1,33 @@
-"""src/seller_console/orders/courier_detect.py — F44-p **택배사 판별 프로브**.
+"""src/seller_console/orders/courier_detect.py — 택배사 **판별 프로브** (F44-p → F44-b).
 
-## 무엇을 정하려고 재나 (오너 2026-09-21)
+## 무엇을 정하려고 재나
 
-> 택배사 자동판별 공급사는 **하나만**. 먼저 `TrackingMore.detect_courier`가
-> 한국 5대(CJ·롯데·한진·우체국·로젠) + 국제(EMS·DHL·FedEx·UPS)를 판별하는지 실측.
-> 되면 TrackingMore 유지, **17TRACK 안 붙인다.** 안 되면 17TRACK으로 **통째 교체**(둘 병존 금지).
+F44-p에서 TrackingMore로 재려 했다. 그 사이 오너 실측으로 **무료 쿼터가 소진**됐고
+(`code 4190`), 오너가 공급사를 **17TRACK으로 교체**하기로 정했다(**병존 금지**).
+이 화면은 그대로 두고 **속만 갈아 끼운다** — 재는 자리를 옮기지 않는다.
 
 ## ★★ 키를 옮기지 말고 **측정을 옮긴다** (오너 규칙, 2026-09-21)
 
 예전 판이면 스크립트를 주고 「키 넣고 돌려 보세요」 했다. 그러면 **키가 돌아다닌다.**
-이 모듈은 **서버 env(`TRACKINGMORE_API_KEY`)를 그대로 읽는 라우트**의 속이고,
+이 모듈은 **서버 env(`SEVENTEENTRACK_API_KEY`)를 그대로 읽는 라우트**의 속이고,
 오너는 관리자 화면에서 **송장번호만 붙여 넣는다.** 키는 있던 자리에 있는다.
+
+## ★ 이 측정은 **쿼터를 쓴다**
+
+TrackingMore엔 공짜 판별(`couriers/detect`)이 있었지만 17TRACK엔 없다 —
+**판별은 등록의 부산물**이다. 그래서 한 줄 = 쿼터 한 칸이고,
+프로브는 **전후 잔량을 같이 재서** 몇 칸을 썼는지 화면에 적는다. 모르고 태우지 않도록.
 
 ## 판정 셋 — 부분 통과를 통과로 읽지 않는다
 
 | 값 | 뜻 |
 |---|---|
-| `판별` | 공급사가 그 택배사를 **1순위로** 지목했다 |
-| `후보` | 후보 안에는 있지만 1순위가 아니다 |
-| `못함` | 후보에 없다 · 빈 목록 · 호출 실패 |
+| `판별` | 공급사가 **`accepted`**에 넣고 캐리어 코드를 줬다 |
+| `참고` | 판별은 됐지만 **우리 코드표가 없어** 맞다/틀리다를 말할 수 없다 |
+| `못함` | 거절됐다 · 빈 목록 · 호출 실패 |
 
-**`못함`이 하나라도 있으면 TrackingMore 단독으로는 부족한 것**이다.
+**`accepted` 배열이 증거다** — 200은 등록의 증거가 아니다
+(볼트 [[17TRACK 등록 조용한 실패]]). `못함`이 하나라도 있으면 그 택배사는 **아직 못 다룬다.**
 """
 from __future__ import annotations
 
@@ -36,7 +43,11 @@ TARGETS = (
     ("EMS", "국제"), ("DHL", "국제"), ("FedEx", "국제"), ("UPS", "국제"),
 )
 
-VERDICT_HIT, VERDICT_CAND, VERDICT_MISS = "판별", "후보", "못함"
+VERDICT_HIT, VERDICT_CAND, VERDICT_MISS, VERDICT_INFO = "판별", "후보", "못함", "참고"
+
+#: 우리 카탈로그의 17TRACK 코드 축. 캐리어 목록 문서가 오기 전까진 **전부 빈칸**이고,
+#: 그때는 「맞다/틀리다」 대신 **되돌아온 코드만** 적는다(F44-a와 같은 규율).
+OUR_CODE_FIELD = "seventeentrack_code"
 
 
 def parse_input(text: str) -> List[Dict]:
@@ -70,31 +81,35 @@ def _catalog_index() -> Dict[str, Dict]:
 def probe(text: str) -> Dict:
     """붙여 넣은 목록을 판별해 **표와 결론**을 낸다.
 
-    결론은 셋 중 하나다: `keep`(TrackingMore 유지) · `replace`(17TRACK 교체 검토) ·
-    `unknown`(잰 게 없어 못 정함). **못 잰 것을 통과로 읽지 않는다.**
+    결론 셋: `ready`(9곳 다룬다) · `gap`(못 다루는 곳이 있다) · `unknown`(잰 게 없다).
+    **못 잰 것을 통과로 읽지 않는다.**
     """
-    from .tracking_trackingmore import TrackingMoreClient
+    from .tracking_17track import API_KEY_ENV, SeventeenTrackClient
 
-    client = TrackingMoreClient()
+    client = SeventeenTrackClient()
     if not client.active:
         return {"ok": False, "rows": [], "verdict": "unknown",
-                "error": "TRACKINGMORE_API_KEY가 이 서버에 없습니다 — 판별을 잴 수 없습니다.",
-                "targets": [n for n, _k in TARGETS]}
+                "error": f"{API_KEY_ENV}가 이 서버에 없습니다 — 판별을 잴 수 없습니다.",
+                "targets": [n for n, _k in TARGETS], "quota": {}, "spent": None}
+
+    # ★ 전후 잔량 — 이 측정이 **몇 칸을 썼는지** 화면이 말할 수 있어야 한다.
+    before = client.quota()
 
     idx = _catalog_index()
     rows, misses, measured = [], [], 0
     for item in parse_input(text):
         name, number = item["name"], item["number"]
         known = idx.get(name.lower()) if name else None
-        want = (known or {}).get("trackingmore_code", "")
+        want = str((known or {}).get(OUR_CODE_FIELD) or "")
         got = client.detect_detail(number)
-        codes = got.get("codes") or []
+        codes = [str(c) for c in (got.get("codes") or [])]
 
         if not codes:
             verdict, note = VERDICT_MISS, got.get("error") or "후보가 없습니다"
         elif not want:
             # 기대값이 없으면 **맞다/틀리다를 말하지 않는다** — 무엇이 나왔는지만 적는다.
-            verdict, note = "참고", f"1순위={codes[0]}"
+            verdict = VERDICT_INFO
+            note = f"판별 코드={codes[0]} · 우리 코드표 없음(17TRACK 캐리어 목록 대기)"
         elif codes[0] == want:
             verdict, note = VERDICT_HIT, f"1순위={codes[0]}"
         elif want in codes:
@@ -102,7 +117,7 @@ def probe(text: str) -> Dict:
         else:
             verdict, note = VERDICT_MISS, f"후보={codes[:3]} · 우리 코드는 {want}"
 
-        if want:
+        if name:
             measured += 1
             if verdict == VERDICT_MISS:
                 misses.append(name)
@@ -110,35 +125,66 @@ def probe(text: str) -> Dict:
             "name": name, "number": number,
             "in_catalog": bool(known), "our_code": want,
             "codes": codes, "verdict": verdict, "note": note,
+            "accepted": bool(got.get("accepted")),
             "raw": got.get("raw", ""), "http_status": got.get("http_status"),
             "error": got.get("error", ""),
         })
 
-    covered = {r["name"] for r in rows if r["name"] and r["verdict"] in (VERDICT_HIT, VERDICT_CAND)}
+    after = client.quota()
+    covered = {r["name"] for r in rows if r["name"]
+               and r["verdict"] in (VERDICT_HIT, VERDICT_CAND, VERDICT_INFO)}
     untested = [n for n, _k in TARGETS if n not in {r["name"] for r in rows}]
     if not measured:
         verdict = "unknown"
     elif misses or untested:
-        verdict = "replace"
+        verdict = "gap"
     else:
-        verdict = "keep"
+        verdict = "ready"
     return {
         "ok": True, "rows": rows, "verdict": verdict,
         "misses": sorted(set(misses)), "untested": untested,
         "covered": sorted(covered), "measured": measured,
         "targets": [n for n, _k in TARGETS],
+        "quota": after if after.get("ok") else before,
+        "spent": _spent(before, after),
         "error": "",
     }
+
+
+def _spent(before: Dict, after: Dict):
+    """이 측정이 **몇 칸을 썼나**. 한쪽이라도 못 읽었으면 `None`(모른다고 말한다)."""
+    b, a = (before or {}).get("remain"), (after or {}).get("remain")
+    if not isinstance(b, int) or not isinstance(a, int):
+        return None
+    return b - a
+
+
+def quota_sentence(quota: Dict, spent=None) -> str:
+    """잔량 한 줄. **못 읽었으면 그렇게 말한다** — 숫자를 지어내지 않는다."""
+    q = quota or {}
+    if not q:
+        return "남은 쿼터를 읽지 않았습니다."
+    if not q.get("ok"):
+        return "남은 쿼터를 읽지 못했습니다 — " + (q.get("error") or "사유 불명")
+    parts = [f"남은 쿼터 {q.get('remain')} / 전체 {q.get('total')}"]
+    if isinstance(q.get("today_used"), int):
+        parts.append(f"오늘 {q['today_used']}칸")
+    if q.get("max_daily") == 0:
+        parts.append("일 한도 없음")
+    elif isinstance(q.get("max_daily"), int):
+        parts.append(f"일 한도 {q['max_daily']}")
+    if isinstance(spent, int):
+        parts.append(f"이번 측정 {spent}칸")
+    return " · ".join(parts)
 
 
 def verdict_sentence(result: Dict) -> str:
     """사람이 읽을 결론 한 줄. **부분 통과를 통과로 읽지 않는다.**"""
     v = (result or {}).get("verdict")
-    if v == "keep":
-        return "9곳 전부 다룹니다 → TrackingMore 유지, 17TRACK 안 붙입니다."
-    if v == "replace":
+    if v == "ready":
+        return "넣은 곳은 전부 판별됐습니다. 남은 대상까지 채우면 9곳 전부 확인입니다."
+    if v == "gap":
         gaps = (result.get("misses") or []) + (result.get("untested") or [])
         return ("아직 다 못 잽니다 — " + ", ".join(gaps[:9]) +
-                " (안 잰 곳이 있으면 그것도 「통과」가 아닙니다). "
-                "전부 채운 뒤에도 못 다루는 곳이 남으면 17TRACK 교체를 검토합니다.")
+                " (안 잰 곳이 있으면 그것도 「통과」가 아닙니다).")
     return result.get("error") or "잰 것이 없습니다 — 송장번호를 넣어 주세요."

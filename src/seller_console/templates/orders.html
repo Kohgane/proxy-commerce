@@ -379,9 +379,9 @@
 </div>
 
 {% if is_admin %}
-{# F44-p 택배사 판별 프로브 — **관리자 전용**.
+{# F44-p·F44-b 택배사 판별 프로브 — **관리자 전용**.
    오너 규칙(2026-09-21): 외부 키가 필요한 측정은 **키가 있는 곳**에서 돌린다.
-   서버 env의 TRACKINGMORE_API_KEY를 그대로 읽고, 오너는 송장번호만 붙여 넣는다. #}
+   서버 env의 SEVENTEENTRACK_API_KEY를 그대로 읽고, 오너는 송장번호만 붙여 넣는다. #}
 <div class="op-card mt-4" id="courierDetectCard">
   <div class="op-card-head">
     <h2 class="h6 mb-0"><i class="bi bi-search"></i> 택배사 판별 테스트
@@ -395,6 +395,14 @@
     </p>
     <div class="small text-muted mb-2">
       대상 9곳: {{ detect_targets|join(' · ') }}
+    </div>
+    {# F44-b: 17TRACK엔 공짜 판별이 없다 — 판별은 **등록의 부산물**이라 쿼터를 쓴다.
+       모르고 태우지 않도록 **실행 전에** 말하고, 실행 후 **몇 칸 썼는지** 적는다. #}
+    <div class="pc-status pc-status-warn small mb-2">
+      <i class="bi bi-exclamation-triangle"></i>
+      이 측정은 <strong>쿼터를 씁니다</strong> — 17TRACK은 공짜 판별 자리가 없어
+      <strong>송장 한 줄 = 한 칸</strong>입니다(등록의 부산물). 실행 후 남은 칸과
+      이번에 쓴 칸을 아래에 적습니다.
     </div>
     <textarea id="cdInput" class="form-control form-control-sm mb-2" rows="5"
               placeholder="CJ대한통운&#9;123456789012&#10;DHL&#9;1234567890"></textarea>
@@ -422,13 +430,19 @@
           (d.error || '판별하지 못했습니다.') + '</div>';
         return;
       }
-      var cls = d.verdict === 'keep' ? 'pc-status-ok' : 'pc-status-warn';
+      var cls = d.verdict === 'ready' ? 'pc-status-ok' : 'pc-status-warn';
       var h = '<div class="pc-status ' + cls + ' mb-2">' + (d.sentence || '') + '</div>';
+      // F44-b 오너 지시 — 남은 쿼터를 화면에 적는다(다 쓴 뒤 4190으로 아는 건 늦다).
+      if (d.quota_sentence) {
+        h += '<div class="small text-muted mb-2"><i class="bi bi-battery-half"></i> ' +
+             d.quota_sentence + '</div>';
+      }
       h += '<table class="table table-sm"><thead><tr><th>택배사</th><th>송장</th>' +
            '<th>판정</th><th>비고</th><th>응답 원문</th></tr></thead><tbody>';
       (d.rows || []).forEach(function (r) {
         var badgeCls = r.verdict === '판별' ? 'pc-badge-on'
                      : r.verdict === '후보' ? 'pc-badge-muted'
+                     : r.verdict === '참고' ? 'pc-badge-off'
                      : r.verdict === '못함' ? 'pc-badge-danger' : 'pc-badge-off';
         h += '<tr><td class="small">' + (r.name || '<span class="text-muted">(이름 없음)</span>') +
              '</td><td class="small">' + r.number +
