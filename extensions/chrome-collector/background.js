@@ -216,21 +216,7 @@ async function _kgpEnrichOne(item, settings) {
     if (!verdict.ok) throw new Error(verdict.reason);
     // C-F13-2b: 로그인 벽·확인 절차를 만났으면 **보강이 아니라 막힘**이다. 뚫지 않는다.
     if (meta.wall) { const e = new Error(meta.wall); e.kgpWall = true; throw e; }
-    const body = {
-      item_id: item.item_id,
-      options: meta.options || [],
-      description: meta.description || "",
-      detail_images: meta.detail_images || [],
-      gallery: meta.gallery_images || meta.images || [],
-      reviews: meta.reviews || [],
-      rating: meta.rating || "",
-      review_count: meta.review_count || "",
-      // C-F13-2a: 타오바오 가격 두 개를 **따로** 올린다(优惠前/补贴后). 서버가 섞지 않고 담는다.
-      price: meta.price || "",
-      price_list: meta.price_list || "",
-      price_final: meta.price_final || "",
-      currency: meta.currency || "",
-    };
+    const body = _kgpEnrichBody(item.item_id, meta);
     const r = await fetch(`${settings.serverUrl}/api/v1/collect/enrich`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${settings.token}` },
@@ -394,6 +380,53 @@ async function collectFromTab(tab) {
   }
 }
 
+// 보강 본문 — **한 곳**에서 만든다(대기열 보강 · F49-T 초안 채우기가 같이 쓴다).
+function _kgpEnrichBody(itemId, meta) {
+  return {
+    item_id: itemId,
+    options: meta.options || [],
+    description: meta.description || "",
+    detail_images: meta.detail_images || [],
+    gallery: meta.gallery_images || meta.images || [],
+    reviews: meta.reviews || [],
+    rating: meta.rating || "",
+    review_count: meta.review_count || "",
+    // C-F13-2a: 타오바오 가격 두 개를 **따로** 올린다(优惠前/补贴后). 서버가 섞지 않고 담는다.
+    price: meta.price || "",
+    price_list: meta.price_list || "",
+    price_final: meta.price_final || "",
+    currency: meta.currency || "",
+    // F49-T: 왜 못 읽었나 — 페이지 진단도 같이(서버가 필드별 사유를 이걸로만 말한다).
+    page_diag: meta.page_diag || null,
+  };
+}
+
+// F49-T — 서버가 「채우기를 기다리는 초안」이라고 답하면(`draft_pending`) **보강으로 채운다.**
+//   예전엔 「이미 수집한 상품」으로 끝나서, 사람이 페이지를 열고 눌러도 초안이 비어 있었다.
+async function _kgpFillDraft(settings, data, meta) {
+  if (meta && meta.page_diag && meta.page_diag.wall) {
+    return { ...data, ok: false, error: `로그인·확인 화면이라 채우지 못했어요 — ${meta.page_diag.wall}` };
+  }
+  try {
+    const r = await fetch(`${settings.serverUrl}/api/v1/collect/enrich`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${settings.token}` },
+      body: JSON.stringify(_kgpEnrichBody(data.item_id, meta || {})),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d || !d.ok) {
+      try { console.warn("[고가수집기] 초안 채우기 서버 응답", r.status, d); } catch (e) {}
+      return { ...data, ok: false, error: "초안을 채우지 못했어요(서버가 저장하지 못함)" };
+    }
+    const n = Object.keys(d.changed || {}).length;
+    return { ...data, ok: true, duplicate: false, enriched: true, filled: d.filled, total: d.total,
+             message: n ? `담아 둔 초안을 채웠어요 (${d.filled}/${d.total} 필드)`
+                        : "이 페이지에서 새로 채울 값이 없었어요" };
+  } catch (e) {
+    return { ...data, ok: false, error: "초안을 채우지 못했어요(네트워크)" };
+  }
+}
+
 async function handleCollect(meta, sendResponse) {
   const settings = await getSettings();
   const serverUrl = settings.serverUrl;
@@ -433,6 +466,9 @@ async function handleCollect(meta, sendResponse) {
     }
     if (!data.error && !data.ok) data.error = `수집 실패 (HTTP ${response.status})`;
     if (data.httpStatus === undefined) data.httpStatus = response.status;
+    if (data.ok && data.draft_pending && data.item_id) {
+      data = await _kgpFillDraft(settings, data, meta);
+    }
 
     if (sendResponse) sendResponse(data);
     // 알럿 중복 방지: content_script가 인페이지 토스트로 결과를 보여주는 경로(sendResponse 있음)에서는

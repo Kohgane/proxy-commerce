@@ -407,7 +407,10 @@
             <td class="text-muted kgp-label-col">{{ f.label }}{% if f.core %} <span title="핵심 필드">*</span>{% endif %}</td>
             <td>
               {% if f.ok %}<i class="bi bi-check-lg" style="color:var(--success)"></i> 수집됨
-              {% else %}<i class="bi bi-dash" style="color:var(--warn)"></i> 없음{% endif %}
+              {% else %}<i class="bi bi-dash" style="color:var(--warn)"></i> 없음
+                {# F49-T — 왜 없는지(확장이 잰 페이지 상태에서만). #}
+                {% if f.reason %}<div class="text-muted" data-role="field-reason">{{ f.reason }}</div>{% endif %}
+              {% endif %}
             </td>
             <td class="text-muted text-end">{{ f.source }}</td>
           </tr>
@@ -415,6 +418,21 @@
         </tbody>
       </table>
       <p class="text-muted mb-0 mt-1" style="font-size:.75rem">* 핵심 필드(제목·가격·이미지). 소스=JSON(초기 상태)·DOM(화면 셀렉터)·서버파싱·있음/없음.</p>
+      {# F49-T — 확장이 연 페이지의 **원문 상태**(HTTP·리다이렉트·벽·lazy·셀렉터·오류). 추측 없이 잰 값만. #}
+      {% set _pd = extra.get('page_diag') if extra else None %}
+      {% if _pd %}
+      <div class="mt-2" data-role="page-diag" style="font-size:.78rem">
+        <div class="console-kpi-label mb-1">페이지 진단(확장 실측)</div>
+        <div>HTTP {{ _pd.nav.status if _pd.nav and _pd.nav.status is not none else '미상(브라우저가 안 알려 줌)' }}
+          · 리다이렉트 {{ _pd.nav.redirects if _pd.nav else 0 }}회
+          {% if _pd.wall %}· <span style="color:var(--warn)">벽: {{ _pd.wall }}</span>{% endif %}
+          {% if _pd.lazy %}· lazy {{ _pd.lazy.get('pending', 0) }}/{{ _pd.lazy.get('total', 0) }}장 미로딩{% endif %}</div>
+        {% if _pd.sel %}<div>셀렉터 적중: {% for k, v in _pd.sel.items() %}{{ k }} {{ v }}{% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}
+        {% if _pd.nav and _pd.nav.requested and _pd.nav.requested != _pd.url %}
+        <div class="text-muted" style="word-break:break-all">요청 {{ _pd.nav.requested }} → 도착 {{ _pd.url }}</div>{% endif %}
+        {% if _pd.errors %}<div class="text-muted">페이지 오류: {{ _pd.errors|join(' · ') }}</div>{% endif %}
+      </div>
+      {% endif %}
     </details>
     {% endif %}
 

@@ -20,7 +20,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.151"
+    assert MANIFEST["version"] == "1.5.152"
 
 
 def test_source_contract():
@@ -46,7 +46,8 @@ def _fn(name):
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치")
 def test_enrich_window_fallback_and_gate_node():
-    deps = _fn("_kgpEnrichVerdict") + "\n" + _fn("_kgpEnrichOne")
+    # F49-T: 보강 본문은 `_kgpEnrichBody` **한 곳**에서 만든다(대기열·초안 채우기 공용) — 같이 잘라 온다.
+    deps = _fn("_kgpEnrichVerdict") + "\n" + _fn("_kgpEnrichBody") + "\n" + _fn("_kgpEnrichOne")
     harness = deps + "\n" + r"""
 var calls = {};
 function reset(){ calls = { winCreate:0, winRemove:0, tabCreate:0, tabCreateActive:null, tabRemove:0, fetch:0 }; }
