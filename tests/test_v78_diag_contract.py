@@ -70,7 +70,7 @@ def _contract_view(e):
 
 def test_manifest_version_pinned():
     # STEP5는 확장 런타임 무변경(하네스·픽스처만) → 버전 유지(1.5.120).
-    assert MANIFEST["version"] == "1.5.155"
+    assert MANIFEST["version"] == "1.5.156"
 
 
 def test_diag_dir_and_readme():
@@ -140,4 +140,14 @@ def test_diag_bundle_is_regression_contract(path):
     reextracted = _reextract(url, snapshot)
     got = _contract_view(reextracted)
     want = _contract_view(recorded)
+    # F49-T 2부-b: **기록 자체가 결함**인 진단 파일(오너가 「이게 틀렸다」고 보낸 캡처)은 원본을 고치지 않고
+    #   옆에 `<이름>.expected.json`을 둔다 — {reason, supersedes_ext_version, expected(계약 뷰)}.
+    #   원본은 증거로 남고, 새 기대값과 그 이유는 리뷰 가능한 파일 한 장으로 남는다.
+    side = Path(path).with_name(Path(path).stem + ".expected.json")
+    if side.exists():
+        spec = json.loads(side.read_text(encoding="utf-8"))
+        assert str(spec.get("reason") or "").strip(), ("기대값 교체에 이유가 없다", side.name)
+        assert spec.get("supersedes_ext_version") == diag.get("ext_version"), ("어느 기록을 대체하는지 불일치", side.name)
+        assert set(spec["expected"]) == set(want), ("기대값 스키마가 계약 뷰와 다르다", side.name)
+        want = spec["expected"]
     assert got == want, {"fixture": Path(path).name, "want": want, "got": got}

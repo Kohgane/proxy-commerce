@@ -13,7 +13,7 @@ from unittest.mock import patch
 from playwright.sync_api import sync_playwright
 import src.api.extension_api as ext
 from src.order_webhook import app
-FIX = json.load(open("/home/user/proxy-commerce/tests/fixtures/tmall_1064346880857_ice.json"))
+FIX = __import__("tests.test_f49t2_tmall_ice_sku", fromlist=["x"]).res_of("tests/fixtures/realpages/tmall_1064346880857_ice_min.html")
 info = FIX["skuCore"]["sku2info"]; names = {v["vid"]: v["name"] for v in FIX["skuBase"]["props"][0]["values"]}
 fen = lambda m: (f"{int(m)//100}.{int(m)%100:02d}" if str(m or "").isdigit() else "")
 skus = [{"spec": [names[s["propPath"].split(":")[1]]], "sku_id": s["skuId"], "price": fen(info[s["skuId"]]["price"]["priceMoney"]),
