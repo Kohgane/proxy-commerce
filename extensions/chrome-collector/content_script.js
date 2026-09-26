@@ -361,7 +361,13 @@ function kgpPageDiag() {
 function extractProductMeta() {
   // F49-T: 어느 갈래로 뽑든 **페이지 진단**을 붙인다(추출 결과는 그대로).
   const meta = _extractProductMetaInner();
-  try { if (meta && typeof meta === "object") meta.page_diag = kgpPageDiag(); } catch (e) { /* noop */ }
+  try {
+    if (meta && typeof meta === "object") {
+      meta.page_diag = kgpPageDiag();
+      // F49-T 2부-b: ICE가 있는데 못 읽었으면 그 덩어리 앞 200자(+사유)를 진단에 싣는다.
+      if (meta.ice_error) meta.page_diag.ice_error = String(meta.ice_error).slice(0, 300);
+    }
+  } catch (e) { /* noop */ }
   return meta;
 }
 
@@ -1454,7 +1460,11 @@ function kgpMergeMeta(base, extra) {
     if (empty(out[k]) && !empty(extra[k])) out[k] = extra[k];
   });
   out.translated_dom = !!(out.translated_dom || extra.translated_dom);   // v83 STEP1: 어느 월드든 번역 DOM 감지 시 표기
+  // F49-T 2부-b: ICE(티몰 상태)가 옵션·SKU를 줬으면 그게 정본이다 — 「긴 쪽이 이긴다」 규칙으로
+  //   DOM 잡음 그룹(已售/可开发票/加入购物车 류 4그룹)이 ICE 1그룹을 덮으면 안 된다.
+  const _iceBase = !!(base && base.field_sources && base.field_sources.sku === "ice_context");
   ["images", "gallery_images", "detail_images", "options", "skus", "reviews", "detail_specs"].forEach((k) => {
+    if (_iceBase && (k === "options" || k === "skus")) return;
     const a = Array.isArray(out[k]) ? out[k] : [], b = Array.isArray(extra[k]) ? extra[k] : [];
     if (b.length > a.length) out[k] = b;
   });
