@@ -88,6 +88,8 @@ def to_collected(product_data: Dict[str, Any]) -> Dict[str, Any]:
         "tags": tags,
         # F48-c — 오너가 정한 마켓 속성(쿠팡 필수 옵션). 예전엔 여기서 **떨어져** 입력칸이 있어도 안 갔다.
         "attributes": pd.get("attributes") if isinstance(pd.get("attributes"), list) else [],
+        # F51 — SKU(ICE 컨텍스트)와 SKU별 판매가. 여기서 떨어지면 다중 등록이 조용히 단일로 돌아간다.
+        "skus": [k for k in (pd.get("skus") or []) if isinstance(k, dict)] if isinstance(pd.get("skus"), list) else [],
     }
 
 

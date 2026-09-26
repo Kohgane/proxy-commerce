@@ -34,7 +34,7 @@ def upload(product_data: Dict[str, Any]) -> Dict[str, Any]:
 
     return run_upload(
         CoupangUploader(account=account) if account else CoupangUploader(),
-        with_choices(product_data),     # F48-c — 사전검증과 같은 반영
+        prepared_input(product_data),   # F48-c 선택 · F51 SKU별 판매가 — 사전검증과 같은 반영
         required_envs=required,
         market_label=MARKET_LABEL,
     )
@@ -51,7 +51,7 @@ def precheck(product_data: Dict[str, Any]) -> Dict[str, Any]:
 
     account = resolve_upload_account()
     up = CoupangUploader(account=account) if account else CoupangUploader()
-    prepared = up.prepare_product(to_collected(with_choices(product_data)))
+    prepared = up.prepare_product(to_collected(prepared_input(product_data)))
     return up.precheck(prepared)
 
 
@@ -65,6 +65,47 @@ def with_choices(product_data: Dict[str, Any]) -> Dict[str, Any]:
     return apply_choices(pd, pd.get("coupang_attributes"), pd.get("coupang_option_pick"))
 
 
+def with_sku_prices(product_data: Dict[str, Any]) -> Dict[str, Any]:
+    """F51 — SKU마다 **그 SKU 원가로** 쿠팡 판매가를 낸다(`sell_price_krw`). 식은 등록과 같은 하나
+    (`UploadDispatcher._landed_krw` → `calc_sell_price`). 못 내면 판매가를 비우고 사유(`price_why`)만 남긴다 —
+    그 SKU가 하나라도 있으면 다중 등록은 열리지 않는다(F51 규칙 2, `coupang_options.sku_mode`).
+    """
+    pd = dict(product_data or {})
+    skus = pd.get("skus")
+    if not isinstance(skus, list) or not skus:
+        return pd
+    from src.seller_console.upload_dispatcher import UploadDispatcher
+    out = []
+    for k in skus:
+        if not isinstance(k, dict):
+            continue
+        k = dict(k)
+        try:
+            cost = float(k.get("price"))
+        except (TypeError, ValueError):
+            cost = 0.0
+        cur = str(k.get("currency") or pd.get("currency") or "").strip().upper()
+        if cost > 0 and cur:
+            val, why = UploadDispatcher._landed_krw(
+                {**pd, "price_original": cost, "price": cost, "currency": cur}, "coupang")
+            if val > 0:
+                k["sell_price_krw"] = int(round(val))
+            else:
+                k.pop("sell_price_krw", None)
+                k["price_why"] = why
+        else:
+            k.pop("sell_price_krw", None)
+            k["price_why"] = "SKU 원가 또는 통화가 없습니다"
+        out.append(k)
+    pd["skus"] = out
+    return pd
+
+
+def prepared_input(product_data: Dict[str, Any]) -> Dict[str, Any]:
+    """사전검증·등록·옵션 블록이 **같이** 지나는 입력 정리 — F48-c 선택 → F51 SKU별 판매가."""
+    return with_sku_prices(with_choices(product_data))
+
+
 def option_form(product_data: Dict[str, Any]) -> Dict[str, Any]:
     """F48-c — 「쿠팡 필수 옵션」 블록 재료. 카테고리 예측 → 메타(릴레이 경유·카테고리 캐시) → 계획."""
     from src.uploaders.coupang_uploader import CoupangUploader
@@ -74,7 +115,7 @@ def option_form(product_data: Dict[str, Any]) -> Dict[str, Any]:
 
     account = resolve_upload_account()
     up = CoupangUploader(account=account) if account else CoupangUploader()
-    prepared = up.prepare_product(to_collected(with_choices(product_data)))
+    prepared = up.prepare_product(to_collected(prepared_input(product_data)))
     cat = up.predict_category(prepared.get("title", "")) or str(prepared.get("category_id") or "")
     if not cat:
         return {"ok": False, "error": "쿠팡 카테고리를 예측하지 못했습니다 — 제목을 확인해 주세요."}
