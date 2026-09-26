@@ -86,7 +86,7 @@ def drain_image_copies():
             break
         out = _store_image_copies(list(ex.get("images") or []),
                                   already=ex.get("images_stored"),
-                                  budget_sec=left)
+                                  budget_sec=left, item_id=str(row.get("id") or ""))
         ex.update(out)
         # 상태는 **결과를 보고** 적는다. 저장본이 생겼으면 done, 아니면 사유를 남기고 done —
         #   못 한 것을 queued로 되돌리면 같은 벽에 영원히 머리를 박는다(C-F13-2b와 같은 규칙).

@@ -157,8 +157,8 @@ def d3_judgeable(rows: list) -> list:
 
 def bench_label(run_id: str, fx: dict, idx: int, pipeline: str) -> dict:
     """D3-6 ⓪ — 벤치 산출물의 **이름표**. 주소(public_id)와 context에 그대로 박힌다."""
-    return {"run_id": str(run_id or ""), "item_no": str(fx.get("item_no") or ""),
-            "page": str(idx), "pipeline": pipeline}
+    from src.media.image_label import make_label
+    return make_label(run_id, fx.get("item_no"), idx, pipeline, folder="bench")
 
 
 def _run_d3_stage(fx: dict, idx: int, img: dict, result: dict, seller_id: str,

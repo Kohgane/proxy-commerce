@@ -233,7 +233,7 @@ def store(monkeypatch):
     from src.db import image_ko_blobs_pg as blobs
     from src.services import image_translate_store as mod
     blobs.reset_for_tests()
-    monkeypatch.setattr(mod, "_store_via_cdn", lambda raw: ("", ""))  # CDN 미설정 상황(F31: (url, error))
+    monkeypatch.setattr(mod, "_store_via_cdn", lambda raw, label=None: ("", ""))  # 0-b: 이름표 인자  # CDN 미설정 상황(F31: (url, error))
     yield mod
     blobs.reset_for_tests()
 

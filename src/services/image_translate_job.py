@@ -121,7 +121,10 @@ def _run(item_id: str, seller_id: str, indices, seller_ids) -> None:
     """② 처리 — **한 장씩**. 장마다 저장한다(중간에 죽어도 앞선 장은 남게)."""
     from src.services import image_translate_store as istore
     from src.services import image_translate_tencent as tc
+    from src.media.image_label import make_label, run_stamp
     done_entries = []
+    # 0-b — 셀러 경로 번역본도 **이름표**를 단다(벤치와 같은 규칙). 한 번 누른 작업 = 한 run.
+    run_id = run_stamp("sel")
     try:
         for i in indices:
             _row, extra = _load(item_id, seller_ids)
@@ -129,7 +132,8 @@ def _run(item_id: str, seller_id: str, indices, seller_ids) -> None:
             if not (0 <= i < len(images)):
                 continue
             result = tc.translate_image(url=images[i])
-            entry = istore.build_entry(i, result, item_id=item_id, seller_id=seller_id)
+            entry = istore.build_entry(i, result, item_id=item_id, seller_id=seller_id,
+                                       label=make_label(run_id, item_id, i, "TENCENT", folder="seller"))
             done_entries.append(entry)
             extra["images_ko"] = istore.merge_images_ko(extra, [entry])
             _save(item_id, seller_ids, extra)
