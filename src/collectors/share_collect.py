@@ -133,7 +133,9 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
     # C-T3(3차): 폰이 링크를 펴 줬으면 **가격과 itemId가 함께 온다** → 미수집 목록이 줄어든다.
     #   가격은 공유 시점 값이다 — 실시간이 아니다. 그 사실을 필드로 남겨 화면이 그대로 말한다.
     price = share.get("price", "")
-    currency = share.get("currency", "")
+    # F49-T 2부 — 가격이 없어도 **사이트의 통화**는 안다(타오바오·티몰 = CNY, 도메인 측정).
+    from src.collectors.share_text import site_currency
+    currency = share.get("currency", "") or site_currency(share.get("final_url") or share.get("url") or url)
     uncollected = [f for f in UNCOLLECTED_FIELDS if not (f == "price" and price)]
     # 폰이 펴 준 최종 URL이 있으면 그쪽이 더 정확한 소스다. 단 **정규형으로** 저장한다 —
     #   원문엔 `suid`·`un`·`wxsign`이 붙어 오고, 파라미터가 다르면 같은 상품이 여러 행으로 갈린다.
@@ -236,6 +238,8 @@ def partial_draft_for_taobao(url: str, *, resolve: bool = True) -> Optional[dict
 
     if not item_id:
         return None                               # 이어갈 실마리가 없으면 초안도 없다
+    from src.collectors.share_text import site_currency
+    currency = currency or site_currency(url)     # F49-T 2부 — 도메인이 곧 통화(CNY)
 
     uncollected = [f2 for f2 in UNCOLLECTED_FIELDS if not (f2 == "price" and price)]
     return {

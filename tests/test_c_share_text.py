@@ -138,7 +138,9 @@ def test_share_draft_leaves_uncollected_fields_empty(monkeypatch):
     r = sc.collect_from_share_text(SHARE_FIXTURE, seller_id="u1", translate=False)
 
     assert r["ok"] and r["item_id"] == "item-1"
-    assert saved["price"] == "" and saved["currency"] == "" and saved["image"] == ""
+    # F49-T 2부(오너 2026-09-26): 가격은 여전히 **비운다**. 통화만 도메인 규칙으로 CNY
+    #   (타오바오·티몰은 위안으로 값을 매긴다 — 가격을 지어내는 것과 다르다).
+    assert saved["price"] == "" and saved["currency"] == "CNY" and saved["image"] == ""
     assert saved["extra"]["images"] == []
     assert saved["extra"]["price"] == ""
     assert set(saved["extra"]["uncollected"]) == {"price", "images", "options", "description"}
